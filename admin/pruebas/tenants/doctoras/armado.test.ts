@@ -42,7 +42,8 @@ const NODOS = { produccion: 43, prueba: 38 };
 
 describe('el armado: lo versionado es lo que arma la plantilla', () => {
   it('hay un archivo de datos por doctora y cada uno arma sus DOS JSON', () => {
-    expect(mod.tenantsConDatos()).toEqual(TENANTS.filter((t) => readdirSync(DATOS).includes(`${t}.json`)));
+    expect([...mod.tenantsConDatos()].sort()).toEqual(TENANTS.filter((t) => readdirSync(DATOS).includes(`${t}.json`)).sort());
+    expect(mod.tenantsConDatos()).toHaveLength(2);
   });
 
   it('`--verificar`: los JSON de cada doctora están al día, sin guardias violadas', () => {
@@ -260,7 +261,7 @@ describe('el SANEO del repo público y la regla multi-tenant', () => {
     const literales = new Set<string>(['Evy', 'Emma', 'Enma', 'DentalCor', 'Radiesse', 'HArmonyCa', 'Sculptra', 'Piraí', 'Sapocó', 'Pauserna', 'Cotoca', 'Spa Medic', 'Rojas', 'Aguilera', 'Mozer']);
     for (const t of mod.tenantsConDatos()) {
       const d = (datosDe(t as 'rroca-evy')['doctora'] as J);
-      for (const campo of ['nombreCorto', 'nombreCompleto', 'clinica', 'direccion']) for (const w of String(d[campo]).split(/[^\p{L}]+/u)) if (w.length >= 5 && !/^(Clínica|Avenida|anillo|segundo|Santa|Calle)$/i.test(w)) literales.add(w);
+      for (const campo of ['nombreCorto', 'nombreCompleto', 'clinica', 'direccion']) for (const w of String(d[campo]).split(/[^\p{L}]+/u)) if (w.length >= 5 && !/^(Clínica|Avenida|anillo|segundo|Santa|Calle|Medic|Canal|entre)$/i.test(w)) literales.add(w);
       for (const tr of d['tratamientos'] as J[]) literales.add(String(tr['nombre']).replace(/[®™]/g, ''));
     }
     for (const a of SRC) {

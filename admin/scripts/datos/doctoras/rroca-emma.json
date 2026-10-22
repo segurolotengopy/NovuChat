@@ -1,0 +1,132 @@
+{
+  "_fuente": "Datos de la Dra. Emma (tenant rroca-emma, cliente07, Emma Spa Medic) para el flujo Flujos/experimental/doctoras/. Zona Tenants: solo datos y marcadores REEMPLAZAR_* (identificadores, rutas, número de recepción). Los textos salen del guion y del Excel de la doctora (CLIENTES/RUBEN_ROCA/Enma/, la carpeta se llama «Enma») con las 13 salvedades de WAM resueltas por la propuesta del inventario del 20/10/2026 (§6.4): son DATO reemplazable, no código. El nombre visible es «Dra. Emma» (así lo dicen sus artes y prellenados; decisión P4 pendiente de confirmar). HORARIO: el Excel trae dos (fila «Lugar de atención»: L–V 9:30 a 19:00, sáb 9:30 a 17:00; filas del flujo: L–V 9:00–12:00 y 14:00–18:00, sáb 9:00–12:00). Se usa el segundo (el del flujo y el del inventario) y queda por confirmar con la doctora (P2). Las claves que empiezan con `_` son notas.",
+  "tenant": "rroca-emma",
+  "nombreFlujo": "NovuChat — Dra. Emma (rroca-emma)",
+  "nombreFlujoPrueba": "NovuChat — Dra. Emma (rroca-emma, prueba)",
+  "credenciales": {
+    "ingesta": "NovuChat ingesta (Dra. Emma)",
+    "graph": "Graph WhatsApp Dra. Emma (Bearer)",
+    "graphPrueba": "Graph WhatsApp — pruebas (no producción)",
+    "entradaPrueba": "Entrada de prueba Dra. Emma",
+    "gemini": "Google Gemini(PaLM) Api account",
+    "geminiPrueba": "Gemini — pruebas (no producción)"
+  },
+  "receptor": {
+    "ruta": "REEMPLAZAR_RUTA_RECEPTOR_RROCA_EMMA",
+    "urlVerificador": "REEMPLAZAR_URL_VERIFICADOR_RECEPTOR",
+    "wabaIdEsperado": "REEMPLAZAR_WABA_ID_RROCA_EMMA"
+  },
+  "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA_RROCA_EMMA",
+  "configBase": {
+    "waGraphVersion": "v26.0",
+    "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_EMMA",
+    "numeroRecepcion": "REEMPLAZAR_NUMERO_RECEPCION_RROCA_EMMA",
+    "nombreNegocio": "Dra. Emma — Emma Spa Medic",
+    "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
+    "prefijosPermitidos": "591",
+    "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA",
+    "modelo": "gemini-3.5-flash-lite",
+    "temperatura": 0.3,
+    "avisoSolicitudPlantilla": "aviso_solicitud_valoracion",
+    "avisoSolicitudEstado": "PENDING",
+    "avisoPlantillaIdioma": "es"
+  },
+  "doctora": {
+    "nombreCorto": "Dra. Emma",
+    "nombreCompleto": "Dra. Emma Aguilera Mozer",
+    "clinica": "Emma Spa Medic",
+    "especialidad": "especialista en armonización facial; aplica personalmente Sculptra® y Radiesse®",
+    "direccion": "Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055 (Santa Cruz)",
+    "horario": "de lunes a viernes de 09:00 a 12:00 y de 14:00 a 18:00, y los sábados de 09:00 a 12:00",
+    "tratamientos": [
+      {
+        "id": "scu",
+        "nombre": "Sculptra®",
+        "claves": [
+          "sculptra"
+        ],
+        "frase": "Sculptra® es un bioestimulador a base de ácido poli-L-láctico."
+      },
+      {
+        "id": "rad",
+        "nombre": "Radiesse®",
+        "claves": [
+          "radiesse"
+        ],
+        "frase": "Radiesse® es un bioestimulador a base de microesferas de hidroxiapatita de calcio."
+      }
+    ],
+    "artes": [
+      {
+        "id": "aut",
+        "claves": [
+          "activa tu colageno natural"
+        ],
+        "enviable": false,
+        "apertura": "Qué gusto que nos escribas desde nuestro anuncio."
+      },
+      {
+        "id": "comp",
+        "claves": [
+          "sculptra o radiesse",
+          "comparacion de los dos bioestimuladores"
+        ],
+        "enviable": false,
+        "apertura": "Veo que te llamó la atención la comparativa de nuestros bioestimuladores."
+      },
+      {
+        "id": "real",
+        "claves": [
+          "resultados reales sigues siendo tu"
+        ],
+        "enviable": false,
+        "apertura": "La imagen que compartes es el caso de una paciente de la Dra. Emma. Cada piel responde distinto, por eso no se promete un resultado igual."
+      },
+      {
+        "id": "joven",
+        "claves": [
+          "te sientes joven por dentro"
+        ],
+        "enviable": false,
+        "apertura": "Qué lindo mensaje el de la imagen que compartes."
+      }
+    ],
+    "prellenados": [
+      {
+        "id": "p1",
+        "claves": [
+          "vi su anuncio de bioestimuladores"
+        ],
+        "apertura": ""
+      },
+      {
+        "id": "p2",
+        "claves": [
+          "sculptra o radiesse es para mi"
+        ],
+        "apertura": ""
+      }
+    ],
+    "textos": {
+      "apertura": "La valoración con la {doctora} es gratuita y sin compromiso.\n\nPuedes reservarla directo, sin pagar nada.",
+      "pregunta": "¿Qué te gustaría conocer?",
+      "lista_intro": "Elige lo que te interesa y te cuento.",
+      "quien": "La {doctora} es especialista en armonización facial y aplica personalmente Sculptra® y Radiesse®.\n\nAtiende en {clinica}.",
+      "que_es": "Los bioestimuladores son tratamientos de medicina estética que se aplican en consulta, sin cirugía.\n\nLa {doctora} te explica en la valoración en qué consisten y cuál corresponde a tu caso.",
+      "gratis": "Sí, de verdad: por esta campaña la valoración con la {doctora} es gratuita y la reservas directo, sin pagar nada.\n\nSolo si después decides hacerte un tratamiento, la doctora te da el presupuesto.",
+      "precio": "Entiendo que quieras conocer la inversión. No tenemos un precio fijo: depende del bioestimulador que la doctora indique, de las zonas y de las sesiones que necesites.\n\nPor eso el primer paso es la valoración gratuita: ahí te dan un presupuesto claro y tú decides sin compromiso.",
+      "sin_compromiso": "No pasa absolutamente nada. La valoración es sin compromiso y no pagas nada para reservarla.\n\nVienes, la {doctora} evalúa tu caso, te explica todo y tú decides si deseas continuar.",
+      "donde": "La valoración es en {clinica}, en Santa Cruz.\n\nDirección: {direccion}.\n\nSi necesitas la ubicación exacta, pídesela a la recepción con el botón.",
+      "cual_mejor": "Eso lo define la {doctora} en la valoración, según tu caso.\n\nPor eso el primer paso es la valoración gratuita: ahí la doctora evalúa qué corresponde a cada persona.",
+      "diferencia": "Esa comparación te la explica la {doctora} en la valoración, porque depende de cada caso.\n\nDesde este chat no puedo orientarte sobre eso.",
+      "dolor": "Es normal tener esa inquietud.\n\nEn la valoración la {doctora} te explica el procedimiento y cómo cuida tu comodidad.",
+      "resultados": "Depende de cada caso.\n\nLa {doctora} te dice en la valoración qué puedes esperar y cuántas sesiones corresponden a tu caso.",
+      "antes_despues": "Es el caso de una paciente de la {doctora}. Cada piel responde distinto, así que no puedo prometerte un resultado igual.\n\nEn la valoración la doctora evalúa tu caso y te cuenta qué es realista para ti.",
+      "recuperacion": "Los cuidados posteriores y los tiempos dependen del producto y de la zona.\n\nLa {doctora} te los explica con detalle en la valoración, para que lo organices con tu trabajo.",
+      "artificial": "Entiendo esa preocupación.\n\nEn la valoración la {doctora} te explica cómo trabaja y puedes preguntarle todo lo que quieras.",
+      "probe_otros": "Gracias por contármelo, es comprensible.\n\nLa {doctora} define el tratamiento según el análisis de tu caso; con la valoración gratuita puedes conocer su opinión sin compromiso.",
+      "pensar": "Claro, tómate tu tiempo.\n\nLa valoración es gratuita y sin compromiso, así que no arriesgas nada por conocer tu caso.",
+      "especifico": "De todas formas, la {doctora} define en la valoración cuál es el más adecuado para ti: puede ser ese u otro tratamiento que corresponda.\n\nEso lo definen juntas en la cita gratuita."
+    }
+  }
+}
