@@ -67,6 +67,9 @@ if (esAudio) {
 const textoCliente = t.tipo === 'interactive' ? '' : (esAudio ? transcrito : String(t.texto || ''));
 const norm = raNorm(textoCliente);
 textoDelTurno = raLineaCliente(textoCliente, 300).replace(/\s+/g, ' ').trim();
+// Un «Sí» o un «No» suelto con una pregunta nuestra vigente (30 min): el modelo recibe la pregunta como dato y qué hacer con ella. Sin pregunta vigente, nada.
+const respSuelta = !esVisual && ficha.ultimaPregunta !== '' ? raRespuestaSuelta(norm) : '';
+const respuestaAPregunta = respSuelta ? { tipo: respSuelta, pregunta: ficha.ultimaPregunta } : null;
 
 // El aviso de consulta a Antonio lleva el MOTIVO exacto (`clave` + `motivo`). El límite (a lo más UN aviso cada 30 minutos por teléfono Y por motivo) lo aplica «Armar avisos», que ve la ficha.
 const avisoDeConsulta = (clave, motivo) => ({ tipo: 'consulta', clave: clave, motivo: motivo, mensaje: t.tipo === 'interactive' ? '' : String(textoCliente || leido).slice(0, 200) });
@@ -204,7 +207,7 @@ if (raPideCatalogo(norm)) {
 const angulo = raAngulo(norm) || (esVisual ? raAngulo(raNorm(leido)) : '');
 if (angulo && !hayQrAbierto) {
   return salir({ tipo: 'angulo', angulo: angulo, conPresentacion: !ficha.saludado, cat: cat, textoCliente: String(textoCliente || leido).slice(0, 500) }, {
-    llamarModelo: true, cuerpoModelo: raCuerpoModelo(textoCliente || leido, ficha.hist, RA_ANGULOS[angulo].tema, base.temperatura),
+    llamarModelo: true, cuerpoModelo: raCuerpoModelo(textoCliente || leido, ficha.hist, RA_ANGULOS[angulo].tema, base.temperatura, respuestaAPregunta),
   });
 }
 // Una pregunta de precio: el PRIMER mensaje recibe el saludo, SIN monto; ya saludado, el precio exacto sale POR CÓDIGO desde el catálogo, sin modelo, con el menú. Sin ningún precio en el catálogo se deriva a Antonio.
@@ -230,7 +233,7 @@ if (esAudio && raAudioIlegible(norm)) return salir({ tipo: 'audio_fijo', causa: 
 if (hayQrAbierto) {
   if (raPideProducto(norm) || !raEsPreguntaLibre(textoCliente, norm)) return salir(recordatorio(''));
   return salir({ tipo: 'modelo', cat: cat, qrAbierto: true, textoCliente: String(textoCliente).slice(0, 500) }, {
-    llamarModelo: true, cuerpoModelo: raCuerpoModelo(textoCliente, ficha.hist, '', base.temperatura),
+    llamarModelo: true, cuerpoModelo: raCuerpoModelo(textoCliente, ficha.hist, '', base.temperatura, respuestaAPregunta),
   });
 }
 // EL PRIMER TURNO de un teléfono (PR-D, [B]): el saludo fijo por código —la presentación una sola vez y la pregunta abierta, sin montos—; el modelo no abre la conversación. Lo que dijo queda en la memoria
@@ -238,5 +241,5 @@ if (hayQrAbierto) {
 if (!ficha.saludado) return salir(saludo());
 const paraElModelo = esVisual ? 'El cliente envió la captura de un anuncio. Texto leído: ' + leido : textoCliente;
 return salir({ tipo: 'modelo', cat: cat, textoCliente: String(paraElModelo).slice(0, 500) }, {
-  llamarModelo: true, cuerpoModelo: raCuerpoModelo(paraElModelo, ficha.hist, '', base.temperatura),
+  llamarModelo: true, cuerpoModelo: raCuerpoModelo(paraElModelo, ficha.hist, '', base.temperatura, respuestaAPregunta),
 });
