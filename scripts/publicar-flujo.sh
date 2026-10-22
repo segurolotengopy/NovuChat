@@ -254,10 +254,15 @@ fi
 # confirmado, y que el flujo sea el de ESA doctora) y (2) la confirmacion explicita: escribir
 # PUBLICAR DOCTORAS, o --confirmo-doctoras sin terminal. --forzar NO salta nada de esto.
 # `--apagar` nunca pide confirmacion. Si el nombre menciona a las dos doctoras, se NIEGA.
+# ETAPA: `--crear` SIN `--activar` usa `--etapa crear` (tolera plantilla sin APPROVED y horario pendiente);
+# --encender, --aplicar sobre un flujo activo y --crear --activar usan la etapa completa.
 doctoras_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = tenant (rroca-evy | rroca-emma | ambos)
-  echo "Flujo de las doctoras ($3): se revisa la guardia de publicación ($1)."
+  # Etapa `crear`: SOLO al crear un flujo INACTIVO (--crear sin --activar ni --encender); todo lo demás exige la etapa completa.
+  local etapa=encender
+  [[ $CREAR -eq 1 && $ACTIVAR -eq 0 && $ENCENDER -eq 0 ]] && etapa=crear
+  echo "Flujo de las doctoras ($3): se revisa la guardia de publicación ($1; etapa $etapa)."
   if [[ "$3" == "rroca-evy" || "$3" == "rroca-emma" ]] \
-     && node Flujos/experimental/doctoras/construir.mjs --publicable --tenant "$3" --flujo "$2"; then
+     && node Flujos/experimental/doctoras/construir.mjs --publicable --tenant "$3" --flujo "$2" --etapa "$etapa"; then
     GUARDIA_DOCTORAS_OK=1
   else
     GUARDIA_DOCTORAS_OK=0
