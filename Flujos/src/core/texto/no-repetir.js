@@ -1,9 +1,10 @@
 // CORE · TEXTO · NO REPETIR (21/10/2026). Nunca el mismo texto dos veces seguidas a un teléfono. Funciones PURAS para incluir byte a byte en un nodo Code de n8n (JS): sin importaciones ni globales de Node, sin retorno de nivel superior.
 // Origen canónico: `rrNorm`, `rrHashTexto`, `rrFichaVigente` y `rrAlternaDeRepetido` de Rubén (rr.js) y `chSimilitud` de chat.js. `ctNormTexto` y `ctHashTexto` dan EXACTAMENTE los mismos valores que `rrNorm` y `rrHashTexto`, para que los hashes ya guardados en las fichas sigan valiendo.
+// SALIDA: lo que devuelve `ctAlternaDeRepetido` (sobre todo con `alternas` del tenant) DEBE pasar en el consumidor por el filtro de salida común (`cmMotivoDeRechazo` de comun-sin-agente/src/filtro-redaccion.js, NIEGA_IA y CB_PROHIBIDAS de procesar-respuesta.js); si lo rechaza, se usa el conjunto base. El PR que conecte esta función a un flujo no puede fusionarse sin ese filtro.
 // Las EXENCIONES (qué planes o textos no se verifican: el QR, el comprobante, la protección ante violencia…) las decide cada cliente, no el core.
 
 function ctNormTexto(t) {
-  return (t === undefined || t === null ? '' : String(t)).normalize('NFKC').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  return (t === undefined || t === null ? '' : String(t)).normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 // Hash corto (djb2 sobre el texto normalizado) para comparar textos enviados; no es criptográfico ni se usa para nada de seguridad.
@@ -66,6 +67,8 @@ const CT_ALTERNAS = {
     ],
   },
 };
+for (const k of ['tu', 'usted']) { Object.freeze(CT_ALTERNAS[k].contenido); Object.freeze(CT_ALTERNAS[k].medio); Object.freeze(CT_ALTERNAS[k]); }
+Object.freeze(CT_ALTERNAS);
 // El texto alternativo que no repite el último enviado (`hashUltimo`): la primera alterna cuyo hash difiere; si ninguna, la primera.
 // `medio` = la respuesta era a un audio, imagen o documento. `tratamiento` 'usted' usa ese conjunto; cualquier otro valor (tu, vos, neutro…) usa `tu` (nunca voseo).
 // `alternas` opcional del tenant ({contenido, medio} o una lista): si es una lista válida de textos no vacíos reemplaza la base; si no, se descarta.
@@ -73,16 +76,20 @@ function ctAlternaDeRepetido(opciones) {
   const o = opciones && typeof opciones === 'object' ? opciones : {};
   const conj = o.tratamiento === 'usted' ? CT_ALTERNAS.usted : CT_ALTERNAS.tu;
   const clave = o.medio === true ? 'medio' : 'contenido';
-  const valida = (l) => Array.isArray(l) && l.length > 0 && l.every((x) => typeof x === 'string' && x.trim() !== '');
+  // Alternas del tenant: a lo más 5 textos de a lo más 400 caracteres, sin caracteres de control ni de dirección (salvo el salto de línea).
+  const valida = (l) => Array.isArray(l) && l.length > 0 && l.length <= 5 && l.every((x) => typeof x === 'string' && x.trim() !== '' && x.length <= 400 && !/[\p{C}\u200E\u200F\u202A-\u202E\u2066-\u2069]/u.test(x.replace(/\n/g, '')));
   let lista = conj[clave];
   if (o.alternas && typeof o.alternas === 'object' && !Array.isArray(o.alternas)) { if (valida(o.alternas[clave])) lista = o.alternas[clave]; } else if (valida(o.alternas)) lista = o.alternas;
-  const titular = typeof o.titular === 'string' && o.titular.trim() !== '' ? o.titular.trim() : 'el negocio';
+  // El titular se sanea: sin caracteres de control ni de dirección, a lo más 60 caracteres; vacío → «el negocio».
+  const crudo = typeof o.titular === 'string' ? o.titular.slice(0, 400).replace(/[\p{C}\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu, '').trim().slice(0, 60).replace(/[\uD800-\uDBFF]$/, '').trim() : '';
+  const titular = crudo !== '' ? crudo : 'el negocio';
   const textos = lista.map((x) => x.split('{titular}').join(titular));
   const h = typeof o.hashUltimo === 'string' ? o.hashUltimo : '';
   return textos.find((x) => ctHashTexto(x) !== h) || textos[0];
 }
 // Anota en la ficha el último texto enviado (una imagen no guarda hash) y devuelve lo anterior para poder deshacerlo.
 function ctRecordarEnviado(ficha, texto, firma, esImagen) {
+  if (!ficha || typeof ficha !== 'object') return null;
   const previo = { h: ficha.ultimoHash, f: ficha.ultimaFirma };
   ficha.ultimoHash = esImagen === true ? '' : ctHashTexto(texto);
   ficha.ultimaFirma = typeof firma === 'string' && /^[a-z_]{1,30}$/.test(firma) ? firma : '';

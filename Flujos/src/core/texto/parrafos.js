@@ -20,8 +20,9 @@ function ctOraciones(bloque) {
 }
 // ¿Esta oración es la pregunta final? Cuenta aunque tras el «?» venga un emoji o espacios.
 function ctEsPregunta(oracion) { return /\?[^\p{L}\p{N}]*$/u.test(oracion); }
+// La entrada se corta a 4096 caracteres ANTES de partir (acota el costo de las expresiones regulares); para textos de hasta 4096 es idéntica a rrParrafos.
 function ctParrafos(texto) {
-  const t = String(texto === undefined || texto === null ? '' : texto).replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  const t = String(texto === undefined || texto === null ? '' : texto).slice(0, 4096).replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   if (t === '') return t;
   return t.split('\n\n').map((bloque) => {
     if (bloque.indexOf('\n') >= 0) return bloque;

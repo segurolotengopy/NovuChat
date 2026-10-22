@@ -5,7 +5,9 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { ejecutar } from '../lib/flujo';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../Flujos/src/core/texto');
 interface Ficha { ultimoHash: string; ultimaFirma: string }
@@ -105,6 +107,45 @@ describe('core/texto/no-repetir', () => {
   });
 });
 
+const FILTRO = readFileSync(join(RAIZ, '../../../experimental/comun-sin-agente/src/filtro-redaccion.js'), 'utf8');
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const F = ejecutar(`${FILTRO}\nreturn [{ json: { cmMotivoDeRechazo } }];`, [{}])[0] as unknown as { json: { cmMotivoDeRechazo: (t: string) => string } } | { cmMotivoDeRechazo: (t: string) => string };
+const motivo = (t: string): string => ('json' in F ? F.json : F).cmMotivoDeRechazo(t);
+
+describe('core/texto: seguridad de ctAlternaDeRepetido', () => {
+  it('contrato con el consumidor: alternas que niegan ser IA o acreditan un pago NO se rechazan aquí, pero el filtro común SÍ las rechaza', () => {
+    for (const mala of ['Tu pago fue acreditado. No soy un bot, soy una persona real.', 'No soy un bot, soy una persona real.', 'Tu pago fue acreditado.']) {
+      const salida = L.ctAlternaDeRepetido({ alternas: [mala] });
+      expect(salida).toBe(mala);
+      expect(motivo(salida)).not.toBe('');
+    }
+    expect(motivo(L.ctAlternaDeRepetido({ titular: 'Ana' }))).toBe('');
+  });
+  it('titular: se sanea (control, NUL y bidi fuera) y se corta a 60', () => {
+    const r = L.ctAlternaDeRepetido({ alternas: ['Escriba a {titular}.'], titular: 'A\u0000n\u202Ea\u200F\u2066 \u0007Pérez' });
+    expect(r).toBe('Escriba a An\u0061 Pérez.'.replace('An\u0061', 'Ana'));
+    for (const t of ['\u0000\u202E', '   ', '\u200F']) expect(L.ctAlternaDeRepetido({ alternas: ['Hola {titular}'], titular: t })).toBe('Hola el negocio');
+    const largo = L.ctAlternaDeRepetido({ alternas: ['{titular}'], titular: 'x'.repeat(100000) });
+    expect(largo.length).toBeLessThanOrEqual(60);
+    expect(largo.length).toBeGreaterThan(0);
+  });
+  it('alternas del tenant: más de 5, de más de 400 caracteres o con control/bidi se descartan', () => {
+    const base = L.ctAlternaDeRepetido({ titular: 'Ana' });
+    for (const mala of [Array(6).fill('ok'), ['x'.repeat(401)], ['ok\u0000'], ['ok\u202Eno'], ['ok\u200F']]) expect(L.ctAlternaDeRepetido({ alternas: mala, titular: 'Ana' })).toBe(base);
+    expect(L.ctAlternaDeRepetido({ alternas: Array(5).fill('x'.repeat(400)) })).toBe('x'.repeat(400));
+    expect(L.ctAlternaDeRepetido({ alternas: ['Línea uno.\nLínea dos.'] })).toBe('Línea uno.\nLínea dos.');
+  });
+  it('CT_ALTERNAS está congelado', () => {
+    expect(Object.isFrozen(L.CT_ALTERNAS)).toBe(true);
+    expect(Object.isFrozen(L.CT_ALTERNAS.tu.contenido)).toBe(true);
+    expect(Object.isFrozen(L.CT_ALTERNAS.usted.medio)).toBe(true);
+  });
+  it('ctRecordarEnviado y ctRestaurarEnviado con ficha nula no lanzan', () => {
+    expect(L.ctRecordarEnviado(null as unknown as Ficha, 'x', 'a', false)).toBeNull();
+    expect(() => L.ctRestaurarEnviado(null as unknown as Ficha, null as unknown as { h: string; f: string })).not.toThrow();
+  });
+});
+
 describe('core/texto: pureza (se incluyen byte a byte en un Code de n8n)', () => {
   for (const archivo of ['parrafos.js', 'no-repetir.js']) {
     const src = readFileSync(join(RAIZ, archivo), 'utf8');
@@ -114,12 +155,20 @@ describe('core/texto: pureza (se incluyen byte a byte en un Code de n8n)', () =>
       expect(src).not.toMatch(/\bURL\b/);
       expect(src).not.toMatch(/\bBuffer\b/);
       expect(src).not.toMatch(/\bcrypto\b/);
+      expect(src).not.toMatch(/\bprocess\b/);
+      expect(src).not.toMatch(/\bglobalThis\b/);
       expect(src).not.toMatch(/^return\b/m);
       expect(src).not.toMatch(/\d{10,}/);
     });
     it(`${archivo}: se evalúa en un Function sin globales de Node`, () => {
       // nosemgrep: devsecops.js-eval-prohibido
       expect(() => new Function('URL', 'Buffer', 'crypto', 'require', src)).not.toThrow();
+    });
+    it(`${archivo}: corre en un contexto vm vacío (sin ningún global de Node)`, () => {
+      const ctx = vm.createContext(Object.create(null));
+      const llamada = archivo === 'parrafos.js' ? "ctParrafos('Uno. Dos. Tres.')" : "ctHashTexto('Hola')";
+      const r = vm.runInContext(`${src}\n${llamada}`, ctx) as string;
+      expect(r).toBe(archivo === 'parrafos.js' ? 'Uno. Dos.\n\nTres.' : L.ctHashTexto('Hola'));
     });
   }
 });

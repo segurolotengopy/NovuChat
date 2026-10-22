@@ -67,4 +67,13 @@ describe('core/texto/parrafos', () => {
     expect(L.ctOraciones('Son Bs. 150. Listo.')).toEqual(['Son Bs. 150.', 'Listo.']);
     expect(L.ctOraciones('No. El libro.')).toEqual(['No.', 'El libro.']);
   });
+  it('corta la entrada a 4096 caracteres antes de partir; hasta 4096 es idéntica a rr.js', () => {
+    const base = 'Esta es una oración de prueba. ';
+    const largo = base.repeat(400);
+    expect(largo.length).toBeGreaterThan(4096);
+    expect(L.ctParrafos(largo).replace(/\s+/g, '').length).toBeLessThanOrEqual(4096);
+    expect(L.ctParrafos(' '.repeat(100000) + 'x').length).toBeLessThanOrEqual(1);
+    const justo = base.repeat(100).slice(0, 4096);
+    expect(L.ctParrafos(justo).replace(/\s+/g, '')).toBe(justo.replace(/\s+/g, ''));
+  });
 });
