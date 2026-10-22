@@ -43,6 +43,11 @@ const fichaCliente = rrFichaVigente(cnFichaDe(fichas, from));
 const ultimoMotivo = clave ? (fichaCliente.avisosConsulta[clave] || 0) : 0;
 if (ultimoMotivo > 0 && ahora - ultimoMotivo >= 0 && ahora - ultimoMotivo < RR_VENTANA_AVISO_CONSULTA_MS) return sin({ repetido: true });
 
+// 2b. TOPE GLOBAL por hora de avisos a Rubén (todo el flujo, no por teléfono): un atacante con muchos números no puede inundarlo. Lo limitan las consultas, derivaciones, cancelaciones, el QR insistente y el comprobante «tardío»
+// (sin cotejo con motivo); el aviso del comprobante que CUADRA (o casi) NUNCA se limita aquí: un pago real no se descarta. Lleno, no sale aviso y «Armar mensajes» le dice la verdad al cliente (con el botón de Rubén).
+const limitado = aviso.tipo === 'consulta' || (aviso.tipo === 'comprobante' && aviso.resultado === 'sin_cotejo' && clave === '');
+if (limitado && rrHoraN(cnObjetoGlobal('rrTopes', false).mapa.avisos, ahora) >= rrTopeHora(base.topeAvisosHora, RR_AVISOS_HORA, RR_AVISOS_HORA_MAX)) return sin({ motivoFallo: 'tope_avisos' });
+
 // 3. El destinatario: Rubén (o el teléfono de prueba).
 const prueba = cfg.modoPrueba === true;
 let destinatarios = [];
@@ -93,7 +98,7 @@ if (aviso.tipo === 'comprobante') {
 }
 texto = avLimpio(texto, 900);
 
-const comun = { phoneNumberId: String(cfg.phoneNumberId || ''), waGraphVersion: cfg.waGraphVersion || 'v26.0', sinAviso: false, plan: plan.tipo || '', planeado: true, repetido: false, clave: clave, motivoFallo: '' };
+const comun = { phoneNumberId: String(cfg.phoneNumberId || ''), waGraphVersion: cfg.waGraphVersion || 'v26.0', sinAviso: false, limitado: limitado, plan: plan.tipo || '', planeado: true, repetido: false, clave: clave, motivoFallo: '' };
 const items = [];
 for (const d of destinatarios) {
   const rec = rrFichaVigente(cnFichaDe(fichas, d.tel));

@@ -168,7 +168,16 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     // El documento y el archivo no aceptado salen con el botón de Rubén; la imagen no mirada, sin él.
     if (plan.variante === 'documento') m = conRuben(RR_TEXTO_DOCUMENTO);
     else if (plan.variante === 'archivo_no_aceptado') m = conRuben(RR_TEXTO_ARCHIVO_NO_ACEPTADO);
-    else m = plan.variante === 'saturado' ? conRuben(RR_TEXTO_IMAGEN_NO_VISTA) : texto(plan.variante === 'tope' ? RR_TEXTO_IMAGEN_TOPE : (plan.variante === 'no_vista' ? RR_TEXTO_IMAGEN_NO_VISTA : RR_TEXTO_IMAGEN));
+    else if (plan.variante === 'saturado') m = conRuben(RR_TEXTO_IMAGEN_NO_VISTA);
+    else {
+      // Con un cobro abierto, vencido o en revisión (`conRuben`), la foto que no se pudo mirar (tope diario lleno o visión apagada) lleva el botón de Rubén: puede ser un pago real.
+      const t = plan.variante === 'tope' ? RR_TEXTO_IMAGEN_TOPE : (plan.variante === 'no_vista' ? RR_TEXTO_IMAGEN_NO_VISTA : RR_TEXTO_IMAGEN);
+      m = plan.conRuben === true ? conRuben(t) : texto(t);
+    }
+  } else if (tipoDePlan === 'cancele_como_pago') {
+    // «Ya cancelé» sin QR abierto = «ya pagué»: se pide el comprobante de un pedido; sin aviso a Rubén y sin afirmar que se recibió nada. Con opciones de compra, el menú; sin ellas, el botón de Rubén.
+    const op = menuAbierto();
+    m = op.length ? conBotones(RR_TEXTO_CANCELE_COMO_PAGO, op) : conRuben(RR_TEXTO_CANCELE_COMO_PAGO_RUBEN);
   } else if (tipoDePlan === 'imagen_comprobante') {
     // Una foto que parece un comprobante SIN pedido abierto: no se coteja ni se avisa; el cliente puede escribirle a Rubén.
     m = conRuben(RR_TEXTO_IMAGEN_COMPROBANTE);
@@ -226,6 +235,8 @@ if (claveOk && t.extranjero === true) {
   if (decision.vioImagen === true) ficha.imagenes = rrContarMedio(ficha.imagenes, ahora);
   // El contador GLOBAL por hora de llamadas a Gemini (audio y visión) cuenta lo mismo.
   if (decision.oyoAudio === true || decision.vioImagen === true) { const rrTg = cnObjetoGlobal('rrTopes', true); if (rrTg.sd) rrTg.mapa.gemini = rrHoraContar(rrTg.mapa.gemini, ahora); }
+  // El contador GLOBAL de avisos a Rubén por hora cuenta solo los avisos limitados que SALIERON de verdad (el comprobante que cuadra no entra).
+  if (avisoPlaneado && !avisoRepetido && avisoEnviado && av.limitado === true) { const rrTa = cnObjetoGlobal('rrTopes', true); if (rrTa.sd) rrTa.mapa.avisos = rrHoraContar(rrTa.mapa.avisos, ahora); }
   // El límite de 30 minutos por motivo: se fija solo si el aviso SALIÓ (no si se repitió ni si no se pudo enviar).
   if (avisoPlaneado && !avisoRepetido && avisoSalio && typeof av.clave === 'string' && RR_CLAVES_AVISO.indexOf(av.clave) >= 0) ficha.avisosConsulta[av.clave] = ahora;
   if (usadoNuevo && ficha.usados.indexOf(usadoNuevo) < 0) ficha.usados = ficha.usados.concat([usadoNuevo]).slice(-10);

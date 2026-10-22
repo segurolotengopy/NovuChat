@@ -25,6 +25,8 @@ const RR_EXTRANJEROS_HORA = 30;    // respuestas a números de otro país por ho
 const RR_EXTRANJEROS_HORA_MAX = 200;
 const RR_GEMINI_HORA = 120;        // llamadas de audio y visión (no el modelo conversacional ni el cotejo del comprobante) por hora, en TODO el flujo (por omisión)
 const RR_GEMINI_HORA_MAX = 600;
+const RR_AVISOS_HORA = 30;         // avisos REALES a Rubén (consultas, derivaciones, cancelaciones, QR insistente, comprobante tardío) por hora, en TODO el flujo (por omisión); el comprobante que cuadra no entra
+const RR_AVISOS_HORA_MAX = 120;
 const RR_TOPE_FICHAS = 300;   // fichas guardadas a lo más (n8n graba TODAS en cada ejecución)
 const RR_TOPE_IDS = 5;        // ids de Meta que se recuerdan por ficha (entregas repetidas)
 const RR_OLVIDO_MS = 48 * 60 * 60 * 1000;
@@ -251,9 +253,8 @@ function rrFichaVigente(f) {
     avisosConsulta: rrAvisosConsulta(f && f.avisosConsulta),
     producto: f && typeof f.producto === 'string' && Object.prototype.hasOwnProperty.call(RR_PRODUCTOS, f.producto) ? f.producto : '',
     historial: rrHistorialSaneado(f && f.historial),
-    // MEDIOS ENTRANTES: cuántos audios y cuántas imágenes se gastaron en la ventana de 24 h del teléfono (los topes diarios) y cuándo se le respondió por última vez como número extranjero.
+    // MEDIOS ENTRANTES: cuántos audios y cuántas imágenes se gastaron en la ventana de 24 h del teléfono (los topes diarios). (Un campo viejo `extranjeroMs` ya no se conserva: los extranjeros no tienen ficha y al leerla se descarta.)
     imagenes: rrConteoDeFicha(f && f.imagenes), audios: rrConteoDeFicha(f && f.audios),
-    extranjeroMs: f && Number.isFinite(f.extranjeroMs) && f.extranjeroMs > 0 ? f.extranjeroMs : 0,
     // ANTI-REPETICIÓN (21/10/2026): el hash corto del ÚLTIMO texto que se le envió y el tipo de plan de ese turno: «Armar mensajes» no manda dos veces seguidas el mismo texto y «Decidir turno» escala el
     // recordatorio del QR si ya fue lo último que se dijo.
     ultimoHash: f && typeof f.ultimoHash === 'string' && /^[0-9a-f]{8}$/.test(f.ultimoHash) ? f.ultimoHash : '',
@@ -606,6 +607,11 @@ function rrCancelaPedido(n) {
   if (/\b(cancele|cancelado|cancelada|cancelamos|cancelo|cancelando)\b/.test(n) && (/\b(ya|pago|transferencia|deposito|compra|qr|monto|libro|pack)\b/.test(n) || !/\bmi pedido\b/.test(n)) && !/\bno (lo |la )?(quiero|voy a)\b/.test(n)) return '';
   return /\b(solo|solamente|nomas|nada mas)\b[^.?!]{0,20}\b(saber|ver|conocer|informacion|info|preguntar|consultar|mirar|curiosear)\b/.test(n) ? 'curioso' : 'cancela';
 }
+// «Ya cancelé», «cancelé», «cancelado» (SIN un QR abierto): en Bolivia significa «ya pagué», nunca una cancelación. Es intención de pago: se pide el comprobante de un pedido y se ofrece el menú, SIN aviso a Rubén.
+// Solo el participio («cancelé», «cancelado/a», «cancelamos»); «cancelo» o «cómo cancelo» no entran, ni una negación («no he cancelado»), ni «no quiero / no voy a».
+function rrCancelaComoPago(n) {
+  return /\b(cancele|cancelado|cancelada|cancelamos)\b/.test(n) && !/\bno\b/.test(n) && !/\?/.test(n);
+}
 // «¿Tienes imágenes?», «¿me mandas una foto del libro?», «¿tienes capturas?»: el flujo NO envía imágenes del libro (solo existe el QR como imagen saliente).
 function rrPideImagenes(n) {
   const palabras = n === '' ? 0 : n.split(' ').length;
@@ -762,6 +768,9 @@ const RR_TEXTO_DOCUMENTO = 'Recibí tu archivo, pero por aquí solo puedo leer t
 const RR_TEXTO_ARCHIVO_NO_ACEPTADO = 'Recibí tu archivo, pero no pude leerlo. Si es tu comprobante, envíalo como foto o como PDF, o escríbele a Rubén con el botón.';
 const RR_TEXTO_IMAGEN_NO_VISTA = 'Recibí tu imagen, pero no pude verla bien. ¿Me cuentas por escrito qué buscas?';
 const RR_TEXTO_IMAGEN_TOPE = 'Recibí tu imagen. Por hoy ya no puedo revisar más imágenes por aquí; ¿me cuentas por escrito qué buscas?';
+// «Ya cancelé» sin QR abierto (= «ya pagué»): el texto fijo. Con opciones de compra van los botones del menú; sin ellas, el botón de Rubén y la frase que lo nombra. Jamás «recibí / acredité» nada.
+const RR_TEXTO_CANCELE_COMO_PAGO = 'Si ya pagaste, para ayudarte necesito el comprobante: primero elige tu producto aquí para generar tu QR y luego envíame la captura.';
+const RR_TEXTO_CANCELE_COMO_PAGO_RUBEN = 'Si ya pagaste, para ayudarte necesito el comprobante: primero elige tu producto para generar tu QR y luego envíame la captura; o escríbele a Rubén con el botón.';
 const RR_TEXTO_IMAGEN_COMPROBANTE = 'Esto parece un comprobante, pero no tengo un pedido abierto a tu nombre por aquí, así que no puedo revisarlo. Si ya hiciste un pago, escríbele a Rubén con el botón.';
 const RR_TEXTO_IMAGEN_CAIDO = 'Gracias por la imagen. ¿Me cuentas a qué te dedicas o qué te gustaría mejorar primero en tu negocio?';
 const RR_TEXTO_IMAGEN_DERIVAR = 'Eso lo ve directamente Rubén; si quieres, escríbele con el botón.';
