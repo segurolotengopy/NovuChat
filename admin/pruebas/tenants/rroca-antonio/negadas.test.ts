@@ -312,10 +312,11 @@ describe('MEDIUM 1: el modelo no habla del estado de un pago ni de una entrega, 
     expect(hablar(w, ANA, mTexto('discutimos siempre por lo mismo y no sé qué hacer')).mensajes[0]!.cuerpo).toMatch(/capítulos 4 y 5/);
   });
   it('«ya pagué, ¿cuándo llega mi libro?» tras un comprobante NO llama al modelo: derivación de no entrega sin plazo en horas, aviso y botón', () => {
-    const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE }, modeloDice: 'Todo en orden, el material ya salió.' });
-    hablar(w, ANA, mImagen());
-    w.dobles['Traer configuración'] = () => panelOk();
     for (const texto of ['ya pagué, ¿cuándo llega mi libro?', '¿ya revisaron mi transferencia?', 'el material, ¿cuándo?']) {
+      // Un mundo por texto: el MISMO texto dos veces seguidas a un teléfono se sustituye por una alternativa (PR-D, [D]).
+      const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE }, modeloDice: 'Todo en orden, el material ya salió.' });
+      hablar(w, ANA, mImagen());
+      w.dobles['Traer configuración'] = () => panelOk();
       w.avanzar(31);
       const t = hablar(w, ANA, mTexto(texto));
       expect(t.ejecutados.has('Conversar con el modelo'), texto).toBe(false);

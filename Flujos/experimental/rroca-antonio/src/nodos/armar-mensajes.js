@@ -45,6 +45,7 @@ let respuestaDelModelo = false;   // el texto que sale es la redacción del mode
 let pedidoNuevo = null;
 let riesgoNuevo = false;    // este turno activó (o mantiene) la protección
 let qrPrevio = null;        // la ficha antes de la marca provisional del QR
+let hashPrevio = null;      // lo último dicho al teléfono antes de este turno (hash y plan): vuelve si Meta no aceptó el envío
 let qrLiberado = null;      // la guarda de QR abierto que este turno de comprobante libera (se restaura si el aviso al cliente no sale)
 
 const texto = (cuerpo, extra) => { const c = raSeguro(cuerpo); return cmMensaje('cliente', cmTexto(c), c, c, Object.assign({ tipoReporte: 'text' }, extra || {})); };
@@ -104,17 +105,27 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
       maximo: 700, enlacesPermitidos: [], quienPromete: ['antonio', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: t.texto, extra: [raExtraRedaccion],
     });
     const bueno = rev.motivo === '' && rev.texto.trim() !== '';
-    // Desde la SEGUNDA respuesta del modelo se muestra el menú (la primera es solo para acompañar); sin botones, el texto no habla de opciones.
-    const op = fichaAntes.modeloN >= 1 ? menuAbierto() : [];
+    // PR-D: el menú NO sale antes de tiempo. Las dos primeras respuestas de la charla (el saludo fijo y una conversación) son solo para acompañar; desde la TERCERA el menú acompaña a la respuesta del modelo.
+    // Con un QR abierto jamás hay botones de producto (solo el de Antonio): no se abre otro QR. Sin botones, el texto no habla de opciones.
+    const op = plan.qrAbierto === true ? [] : (fichaAntes.charlaN >= 2 ? menuAbierto() : []);
     let cuerpo;
     if (bueno) { cuerpo = conPresentacion(rev.texto); respuestaDelModelo = true; }
     else if (tipoDePlan === 'angulo') cuerpo = raAperturaFija(plan.angulo, presentacion);
     else cuerpo = conPresentacion(raTextoModeloCaido(op.length > 0));
-    m = conBotones(cuerpo, op);
+    m = plan.qrAbierto === true ? conAntonio(cuerpo) : conBotones(cuerpo, op);
     tipoDePlan = bueno ? tipoDePlan : (tipoDePlan === 'angulo' ? 'angulo_fijo' : 'modelo_caido');
   } else if (tipoDePlan === 'precio') {
-    const op = menuAbierto();
-    m = conBotones(raTextoPrecio(cat, plan.producto, op.length > 0), op);
+    const op = plan.qrAbierto === true ? [] : menuAbierto();
+    // Con un QR abierto no se ofrecen botones de producto (no se abre otro QR): solo el de Antonio y el texto no cierra con una pregunta.
+    m = plan.qrAbierto === true ? conAntonio(raTextoPrecio(cat, plan.producto, false)) : conBotones(raTextoPrecio(cat, plan.producto, op.length > 0), op);
+  } else if (tipoDePlan === 'catalogo') {
+    // El catálogo completo con precio, por código (los precios son los del catálogo de la consola). Con un QR abierto, sin botones de producto: solo el de Antonio.
+    const op = plan.qrAbierto === true ? [] : menuAbierto();
+    m = plan.qrAbierto === true ? conAntonio(raTextoCatalogo(cat, false)) : conBotones(raTextoCatalogo(cat, op.length > 0), op);
+  } else if (tipoDePlan === 'imagenes') {
+    // «¿Tienes imágenes?»: respuesta fija (no se envían imágenes del libro) y lo que sí hay, con los botones del menú vigente (con un QR abierto, solo el de Antonio).
+    const op = plan.qrAbierto === true ? [] : menuAbierto();
+    m = plan.qrAbierto === true ? conAntonio(raTextoImagenes(true, false)) : conBotones(raTextoImagenes(false, op.length > 0), op);
   } else if (tipoDePlan === 'menu') {
     const op = menuAbierto().length ? menuAbierto() : raMenu(cat, usadosHoy());
     m = op.length ? conBotones(RA_TEXTO_OPCIONES, op) : conAntonio('Por ahora no puedo mostrarte las opciones de compra. Escríbele directo a Antonio con el botón.');
@@ -125,8 +136,8 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     const productos = Array.isArray(plan.productos) ? plan.productos.filter((k) => Object.prototype.hasOwnProperty.call(RA_PRODUCTOS, k)) : [];
     m = conBotones(raTextoBonos(productos, cat, plan.conPresentacion === true), raMenuDeBonos(productos, cat, fichaAntes.usados));
   } else if (tipoDePlan === 'resultado') {
-    const op = menuAbierto();
-    m = conBotones(conPresentacion(raTextoResultado(op.length > 0)), op);
+    const op = plan.qrAbierto === true ? [] : menuAbierto();
+    m = plan.qrAbierto === true ? conAntonio(conPresentacion(raTextoResultado(false))) : conBotones(conPresentacion(raTextoResultado(op.length > 0)), op);
   } else if (tipoDePlan === 'qr') {
     const monto = raPrecio(cat, plan.producto);
     const mediaId = raMediaId(plan.mediaId);
@@ -155,7 +166,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
   } else if (tipoDePlan === 'imagen_otra') {
     m = texto(RA_TEXTO_IMAGEN);
   } else if (tipoDePlan === 'audio_fijo') {
-    m = texto(plan.causa === 'largo' ? RA_TEXTO_AUDIO_LARGO : (plan.causa === 'no_entendido' ? RA_TEXTO_AUDIO_NO_ENTENDIDO : RA_TEXTO_ARCHIVO_NO_ABIERTO));
+    m = texto(plan.causa === 'largo' ? RA_TEXTO_AUDIO_LARGO : (plan.causa === 'corto' ? RA_TEXTO_AUDIO_CORTO : plan.causa === 'no_entendido' ? RA_TEXTO_AUDIO_NO_ENTENDIDO : RA_TEXTO_ARCHIVO_NO_ABIERTO));
   } else if (tipoDePlan === 'archivo') {
     m = texto(plan.pesado === true ? RA_TEXTO_ARCHIVO_PESADO : RA_TEXTO_ARCHIVO_NO_ABIERTO);
   } else if (tipoDePlan === 'otro') {
@@ -164,6 +175,15 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     // Un plan desconocido jamás deja al cliente sin respuesta: la presentación mínima.
     m = texto(RA_SALUDO_MINIMO);
   }
+}
+
+// NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS (PR-D, [D]): si lo que sale es idéntico (por hash) a lo último que se le envió a este teléfono, sale una alternativa fija (con el botón de Antonio). Quedan EXENTOS el QR (su pie
+// lleva el pedido), el resultado de un comprobante (cada comprobante es un hecho distinto), la protección ante violencia o miedo (su texto fijo y breve nunca se sustituye), el texto a un número extranjero y lo que
+// contiene la presentación del asistente (qué ES: nunca se sustituye). Es el MISMO mensaje: no agrega ni quita ninguno.
+if (m && puerta.ruta === 'sigue' && m.tipoReporte !== 'image' && ['comprobante', 'riesgo', 'fuera_pais'].indexOf(tipoDePlan) < 0 && !/asistente virtual/i.test(String(m.texto || '')) && fichaAntes.ultimoHash !== '' && raHashTexto(m.texto) === fichaAntes.ultimoHash) {
+  const medio = /^(audio|imagen|otro|archivo)/.test(tipoDePlan);
+  tipoDePlan = 'repetido';
+  m = conAntonio(raAlternaDeRepetido(medio, fichaAntes.ultimoHash));
 }
 
 // La ficha: un solo lugar, al final del turno. Hasta en un turno sin mensaje (bloqueado) se recuerda el id de Meta (una entrega repetida no se cuenta dos veces).
@@ -180,6 +200,13 @@ if (claveOk) {
   if (avisoPlaneado && !avisoRepetido && avisoSalio && typeof av.clave === 'string' && RA_CLAVES_AVISO.indexOf(av.clave) >= 0) ficha.avisosConsulta[av.clave] = ahora;
   if (usadoNuevo && ficha.usados.indexOf(usadoNuevo) < 0) ficha.usados = ficha.usados.concat([usadoNuevo]).slice(-10);
   if (respuestaDelModelo) ficha.modeloN += 1;
+  // Las respuestas de conversación entregadas (saludo, ángulo, modelo): el menú que no se pidió sale desde la tercera.
+  if (m && ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido'].indexOf(tipoDePlan) >= 0) ficha.charlaN = Math.min(ficha.charlaN + 1, 1000);
+  // Lo último que se le dijo (hash del texto y tipo de plan): el recordatorio del QR no se repite dos veces seguidas y ningún texto sale idéntico dos veces seguidas. Solo cuenta el turno que contesta de verdad.
+  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma };
+  if (m && puerta.ruta === 'sigue') { ficha.ultimoHash = m.tipoReporte === 'image' ? '' : raHashTexto(m.texto); ficha.ultimaFirma = /^[a-z_]{1,30}$/.test(tipoDePlan) ? tipoDePlan : ''; }
+  // «Cancela mi pedido» con un QR abierto: se libera la guarda LOCAL del QR (el servidor sigue con su solicitud hasta que venza); se restaura si la respuesta no sale (`Resumen del turno`).
+  if (tipoDePlan === 'derivar' && plan.liberaGuarda === true && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
   if (riesgoNuevo) ficha.riesgo = true;
   // La memoria de la charla (15 mensajes): lo que dijo el cliente y lo que se le respondió, solo en la conversación (no en el cobro) y NUNCA en la protección por violencia o miedo.
   if (m && ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'precio', 'resultado', 'complemento'].indexOf(tipoDePlan) >= 0) {
@@ -219,6 +246,7 @@ const salida = {
 };
 if (qrPrevio) salida.qrPrevio = qrPrevio;
 if (qrLiberado) salida.qrLiberado = qrLiberado;
+if (hashPrevio) salida.hashPrevio = hashPrevio;
 if (m.reglaCobro === 2) salida.reglaCobro = 2;
 if (m.referencia) salida.referencia = m.referencia;
 if (m.monto !== undefined) salida.monto = m.monto;

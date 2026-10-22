@@ -8,6 +8,13 @@
  *      de la LIBRERÍA (`raOraciones` de `ra.js`): no puede haber desacuerdo entre quien reparte y quien vigila;
  *   5. NINGUNA PREGUNTA POR OPCIONES SIN BOTONES: un texto que pregunta por «las opciones», «¿cuál prefieres?» o «¿con cuál…?» sale con al menos un botón o una lista en ese mismo mensaje;
  *   6. LÍMITES DE WHATSAPP: título de botón ≤ 20 caracteres, de fila de lista ≤ 24, a lo más 3 botones; y NINGUNA clave `link` en ningún payload (el QR sale por `id` de medio).
+ * PR-D (22/10/2026):
+ *   7. NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS a un teléfono (exentos: el QR, el resultado de un comprobante, la protección ante violencia o miedo, el texto a un número extranjero y la presentación);
+ *   8. CON UN QR ABIERTO (el servidor dice `cobro.pendiente`) no hay un segundo QR ni botones de producto en ningún mensaje: solo texto y el botón de Antonio;
+ *   9. SIN CONFIGURACIÓN (el panel falló o no trae catálogo) no hay montos, ni QR, ni botones de producto, y el modelo no contesta;
+ *  10. EL FLUJO NO PROMETE IMÁGENES: ningún texto dice «te envío/muestro/comparto» una foto, imagen, captura o la portada;
+ *  11. UNA NOTA DE VOZ DE MENOS DE 3 PALABRAS nunca llega al modelo;
+ *  12. EL MENÚ NO SALE ANTES DE TIEMPO: en las dos primeras respuestas a un teléfono, un mensaje libre (sin precio, catálogo, compra ni producto) no recibe botones de producto ni montos.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -25,7 +32,7 @@ export const LIB = new Function(['cobro.js', 'avisos.js', 'ra.js'].map((a) => re
 };
 
 export interface UxMsg { tipo: string; cuerpo: string; payload: J }
-interface UxEstado { pulsados: Map<string, Set<string>>; presentaciones: Map<string, number>; turnos: number }
+interface UxEstado { pulsados: Map<string, Set<string>>; presentaciones: Map<string, number>; turnos: number; ultimo: Map<string, string>; respuestas: Map<string, number> }
 export const UX_ESTADO = new WeakMap<Mundo, UxEstado>();
 export const UX_CONTADOR = { turnos: 0, mundos: new Set<Mundo>() };
 export const idsDeBotones = (m: { payload: J }): string[] => {
@@ -56,7 +63,24 @@ const IDS_DE_PRODUCTO = ['b_pack', 'b_libro', 'b_workbook', 'b_guia', 'b_calenda
  * Las violaciones de los invariantes para UN turno; `pulsados` se actualiza con el toque de este turno ANTES de mirar la respuesta. `presentaciones` (opcional) cuenta, por teléfono,
  * los mensajes con presentación ya enviados. Función pura, probada también con casos negativos.
  */
-export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, transcripcion = ''): string[] {
+export interface ContextoUx {
+  /** Lo último que se le dijo a este teléfono (texto). */
+  ultimoTexto?: string;
+  /** Cuántas respuestas ha recibido ya este teléfono. */
+  respuestasPrevias?: number;
+  /** Hay un QR abierto según el servidor (`cobro.pendiente`). */
+  qrAbierto?: boolean;
+  /** El panel de la consola falló o no trae catálogo. */
+  sinConfig?: boolean;
+  /** El modelo de conversación corrió en este turno. */
+  llamoAlModelo?: boolean;
+  /** El turno fue una nota de voz. */
+  esAudio?: boolean;
+}
+/** Los textos EXENTOS del invariante 7 (el mismo texto dos veces seguidas). */
+const EXENTO_REPETIDO = (m: UxMsg): boolean => m.tipo === 'image' || /comprobante/i.test(m.cuerpo) || m.cuerpo === LIB.RA_TEXTO_RIESGO || /^Gracias por escribirnos\. El pago de este material/.test(m.cuerpo) || esPresentacion(m.cuerpo);
+const TRIGGER_DE_OPCIONES = /precio|cu[aá]nto|cuesta|vale\b|cat[aá]logo|vend|lista|opciones|compr|pagar|pago|adquirir|llevo|pack|libro|workbook|calendario|preguntas|bono|^hola, (quiero|me interesa)|garant|resultado|imagen|foto/i;
+export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, transcripcion = '', ctx: ContextoUx = {}): string[] {
   const v: string[] = [];
   const inter = entrante['interactive'] as J | undefined;
   const idToque = entrante['type'] === 'interactive' && inter ? String((inter['button_reply'] ?? inter['list_reply'])?.id ?? '') : '';
@@ -67,7 +91,26 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
   const confirmacion = /\b(me llevo|lo compro|quiero (comprar |pagar )?(el|la)\b|quiero comprar)/i.test(dicho) && /\b(pack|libro|workbook|calendario|preguntas)\b/i.test(dicho) && !/informaci|saber|incluye|cu[aá]nto|precio/i.test(dicho);
   const prellenadoDeProducto = /^Hola, quiero conocer el Pack de Reconexi[oó]n/.test(dicho) ? 'b_pack' : (/^Hola, quiero el libro El Puente/.test(dicho) ? 'b_libro' : '');
   const eligioProducto = IDS_DE_PRODUCTO.includes(idToque) || prellenadoDeProducto !== '' || confirmacion;
+  let ultimoTexto = ctx.ultimoTexto ?? '';
+  const palabrasDeVoz = LIB.raNorm(transcripcion).split(' ').filter(Boolean).length;
+  if (ctx.esAudio && palabrasDeVoz < 3 && ctx.llamoAlModelo) v.push('una nota de voz de menos de 3 palabras llegó al modelo');
+  const abierto = !ctx.qrAbierto && (ctx.respuestasPrevias ?? 99) < 2 && entrante['type'] === 'text' && !TRIGGER_DE_OPCIONES.test(textoEntrante);
   for (const m of mensajes) {
+    if (ultimoTexto !== '' && m.cuerpo === ultimoTexto && !EXENTO_REPETIDO(m)) v.push(`el mismo texto dos veces seguidas: «${m.cuerpo.slice(0, 40)}…»`);
+    ultimoTexto = m.cuerpo;
+    const botonesDeProducto = idsDeBotones(m).filter((id) => IDS_DE_PRODUCTO.includes(id) || id === 'b_bonos');
+    if (ctx.qrAbierto) {
+      if (m.tipo === 'image') v.push('con un QR abierto salió un segundo QR');
+      if (botonesDeProducto.length) v.push(`con un QR abierto salieron botones de producto: ${botonesDeProducto.join(', ')}`);
+    }
+    if (ctx.sinConfig) {
+      if (m.tipo === 'image') v.push('sin configuración salió un QR');
+      if (botonesDeProducto.length) v.push('sin configuración salieron botones de producto');
+      if (/\d\s*Bs\b/i.test(m.cuerpo)) v.push('sin configuración salió un monto');
+      if (ctx.llamoAlModelo) v.push('sin configuración contestó el modelo');
+    }
+    if (/\b(te (muestro|envio|envío|mando|comparto|paso|adjunto)|aqu[ií] (tienes|te dejo))\b[^.?!]{0,40}\b(imagen|im[aá]genes|foto|fotos|captura|capturas|portada)\b/i.test(m.cuerpo)) v.push('el texto promete una imagen que el flujo no envía');
+    if (abierto && m.tipo !== 'image' && (botonesDeProducto.length || /\d\s*Bs\b/i.test(m.cuerpo))) v.push('el menú o un monto salió antes de tiempo (en las dos primeras respuestas a un mensaje libre)');
     for (const id of idsDeBotones(m)) if (pulsados.has(id)) v.push(`el botón pulsado «${id}» reapareció`);
     if (m.tipo === 'image' && !eligioProducto) v.push('se ofreció el QR (pagar) sin que el cliente eligiera un producto en este turno');
     if (m.tipo !== 'image' && /escanea el qr/i.test(m.cuerpo)) v.push('un texto de pago fuera del QR');
@@ -103,9 +146,15 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
 }
 export function vigilarUx(mundo: Mundo): void {
   const original = mundo.turno.bind(mundo);
-  const estado: UxEstado = { pulsados: new Map(), presentaciones: new Map(), turnos: 0 };
+  const estado: UxEstado = { pulsados: new Map(), presentaciones: new Map(), turnos: 0, ultimo: new Map(), respuestas: new Map() };
   UX_ESTADO.set(mundo, estado);
   mundo.turno = (entrada: J, opciones?: Parameters<Mundo['turno']>[1]) => {
+    // Lo que dice el servidor ANTES del turno: un QR abierto, o la configuración caída (el doble de la consola; es una función pura de la prueba).
+    const dp = mundo.dobles['Traer configuración'];
+    const panel = (typeof dp === 'function' ? dp({} as never) : dp) as J | undefined;
+    const cuerpoPanel = (panel?.['body'] ?? {}) as J;
+    const sinConfig = !panel || Number(panel['statusCode']) !== 200 || !Array.isArray(cuerpoPanel['catalogo']) || (cuerpoPanel['catalogo'] as unknown[]).length === 0;
+    const qrAbierto = !sinConfig && cuerpoPanel['cobro']?.pendiente === true;
     const t = original(entrada, opciones);
     const msg = ((entrada['body']?.value?.messages ?? [])[0] ?? {}) as J;
     const from = String(msg['from'] ?? '');
@@ -115,7 +164,10 @@ export function vigilarUx(mundo: Mundo): void {
     // Los mensajes al cliente de este turno (sin los avisos a Antonio ni los respaldos de texto).
     const salida = t.mensajes.filter((e) => !e.respaldo).map((e) => ({ tipo: e.tipo, cuerpo: e.cuerpo, payload: e.payload }));
     const trans = String((t.porNodo['Preparar transcripción']?.[0]?.['userInput'] ?? '')).replace(/^\(audio transcripto\) /, '').split('\n')[0]!;
-    const v = violacionesDeUx(pulsados, msg, salida, pres, trans);
+    const v = violacionesDeUx(pulsados, msg, salida, pres, trans, {
+      ultimoTexto: estado.ultimo.get(from), respuestasPrevias: estado.respuestas.get(from) ?? 0, qrAbierto, sinConfig: sinConfig && Number(panel?.['statusCode']) !== 409, llamoAlModelo: t.ejecutados.has('Conversar con el modelo'), esAudio: msg['type'] === 'audio',
+    });
+    if (salida.length) { estado.ultimo.set(from, salida[salida.length - 1]!.cuerpo); estado.respuestas.set(from, (estado.respuestas.get(from) ?? 0) + salida.length); }
     estado.presentaciones.set(from, pres.n);
     estado.turnos += 1; UX_CONTADOR.turnos += 1; UX_CONTADOR.mundos.add(mundo);
     expect(v, `invariante de UX violado: ${v.join('; ')}`).toEqual([]);
