@@ -55,7 +55,7 @@ describe('guardia de publicación de Antonio: la ruta feliz y lo versionado de h
     const h = guardiaDePublicacion({ flujo: PRODUCCION, datos: DATOS, negocio: NEGOCIO }) as string[];
     expect(h.some((x) => /marcador sin sustituir/.test(x))).toBe(true);
     expect(h.join('|')).not.toMatch(/avisoComprobanteEstado|avisoConsultaEstado|lineaProteccion/);
-    expect(h.join('|')).toMatch(/negocio: marcador sin sustituir/);
+    expect(h.join('|')).not.toMatch(/negocio: marcador/);
   });
   it('los literales de comentario y de expresión regular de los módulos copiados NO cuentan como marcador (pero un marcador real, sí)', () => {
     const f = publicable(PRODUCCION);

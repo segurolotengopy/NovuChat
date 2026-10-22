@@ -1,9 +1,9 @@
 {
   "_fuente": "Datos del negocio de «El Puente» de Antonio (tenant rroca-antonio, flujo Flujos/experimental/rroca-antonio/). Se carga con admin/scripts/datos/cargar-negocio.mjs, que solo admite las secciones negocio, agendamiento, catalogo y funcionarios: aquí van negocio y catalogo. Las claves que empiezan con `_` son notas y no se escriben. Los ids del catálogo salen del nombre (idDe) y son los que lee el flujo (raCatalogo): el monto de un QR sale de aquí y de ningún otro lado.",
   "_pendiente": {
-    "_nota": "NO SE APLICA mientras quede algún valor REEMPLAZAR_… en este archivo, notas incluidas, fuera de numeroRecepcionMarcador (`cargar-negocio.mjs --aplicar` lo NIEGA y la guardia de publicación `construir.mjs --publicable` también). Antonio todavía debe dar estos datos; al llegar, se reemplaza cada marcador por el dato real. El número de recepción nunca va aquí: se resuelve contra la tabla local.",
-    "razonComercial": "REEMPLAZAR_RAZON_COMERCIAL_ANTONIO",
-    "horarioDeRecepcion": "REEMPLAZAR_HORARIO_RECEPCION_ANTONIO"
+    "_nota": "Resuelto el 21/10/2026: razón comercial del guion y horario abierto siempre (24/7), decisión de Andres del 19/10/2026. El número de recepción sigue siendo un marcador de la tabla local. NovuChat no entrega enlaces: Antonio los envía a mano.",
+    "razonComercial": "Antonio Dauber — Libros digitales El Puente",
+    "horarioDeRecepcion": "Abierto siempre (24/7)"
   },
   "negocio": {
     "nombreNegocio": "El Puente",
@@ -21,7 +21,17 @@
       "factura",
       "otros medios de pago",
       "plazo exacto de entrega"
-    ]
+    ],
+    "horarios": {
+      "_nota": "Abierto siempre (24/7), decisión de Andres del 19/10/2026. El asistente no promete plazo de respuesta humana.",
+      "lun": "00:00-23:59",
+      "mar": "00:00-23:59",
+      "mie": "00:00-23:59",
+      "jue": "00:00-23:59",
+      "vie": "00:00-23:59",
+      "sab": "00:00-23:59",
+      "dom": "00:00-23:59"
+    }
   },
   "catalogo": [
     {
