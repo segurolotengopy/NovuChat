@@ -1,0 +1,427 @@
+#!/usr/bin/env node
+/**
+ * =============================================================================
+ * construir.mjs — arma los JSON de «captación con derivación a recepción» de las doctoras (tenants rroca-evy y rroca-emma) desde UNA plantilla y los datos de cada una
+ * =============================================================================
+ *
+ *   node Flujos/experimental/doctoras/construir.mjs               escribe doctoras.<tenant>.json y doctoras.<tenant>.prueba.json de cada tenant con datos
+ *   node Flujos/experimental/doctoras/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
+ *   (cualquier otro argumento se rechaza: la ayuda no existe como opción, para que nada escriba por error)
+ *
+ * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código y sin los datos: UN código para las dos doctoras. El código de los nodos lo arma el armador genérico
+ * `../comun-sin-agente/construir.mjs` (importado, no copiado) con el `CONFIG` de este archivo. Cada tenant tiene su archivo de datos
+ * `admin/scripts/datos/doctoras/<tenant>.json` (zona Tenants: solo datos y marcadores `REEMPLAZAR_*`, nunca código ni un token) y de él salen DOS JSON: producción y prueba.
+ *
+ *   - `@@dato:a.b.c@@` (en cualquier texto de la plantilla) por ese dato; `@@cred:ingesta|graph|entradaPrueba|gemini` (nombre de credencial) por el del archivo de datos;
+ *   - `@@medio:<paquete>`: los tres módulos comunes de medios (`Flujos/src/core/medios/*.js`) se INCLUYEN desde su fuente, nunca se copian;
+ *   - «Config base» se llena con `configBase` (texto, número o booleano) y el bloque `doctora` como UN texto JSON (lo lee `drDatos`);
+ *   - LA CADENA DE ENVÍO es común (`../comun-sin-agente/src/envio.mjs`, `injertar()`), con las credenciales por NOMBRE; la «puerta de la entrega» `¿Meta aceptó?` solo reencamina una conexión;
+ *   - dos variantes por tenant: PRODUCCIÓN (con la entrada verificada del receptor y sin «Entrada de prueba») y PRUEBA (al revés).
+ *
+ * LAS GUARDIAS de lo armado (también se aplican al archivo versionado, aunque alguien lo haya tocado a mano):
+ *   - ≤ 48 nodos; nunca un WhatsApp Trigger (prohibición 7); nunca `subscriptions` ni `subscribed_apps`; ni agente, ni memoria, ni modelo de chat de n8n;
+ *   - producción: solo el webhook del receptor, sin «Entrada de prueba»; prueba: solo «Entrada de prueba» (con credencial de cabecera) y sin receptor;
+ *   - la verificación del receptor: `wabaIdEsperado` FIJO (nunca una expresión), sin «Continue on Fail» ni `onError`, y «Descartar repetidos» entre ejecuciones;
+ *   - un nodo HTTP solo habla con Meta, Gemini y las Functions de la consola; `REEMPLAZAR_*` solo donde se declara; ajustes de retención, orden y zona;
+ *   - «Reportar mensaje (entrante)» va ARRIBA de la rama que responde (el reporte del entrante corre antes que el de la respuesta).
+ */
+import { closeSync, constants, openSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
+import { injertar } from '../comun-sin-agente/src/envio.mjs';
+
+export const AQUI = dirname(fileURLToPath(import.meta.url));
+export const CARPETA_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/doctoras');
+export const TOPE_DE_NODOS = 48;
+/** Los tenants con archivo de datos (`<tenant>.json`, sin los `negocio-*.json`): hoy las dos doctoras. */
+export function tenantsConDatos(carpeta = CARPETA_DE_DATOS) {
+  return readdirSync(carpeta).filter((a) => /^rroca-[a-z0-9-]+\.json$/.test(a)).map((a) => a.replace(/\.json$/, '')).sort();
+}
+export const archivoDeDatos = (tenant) => join(CARPETA_DE_DATOS, `${tenant}.json`);
+export const archivoDeNegocio = (tenant) => join(CARPETA_DE_DATOS, `negocio-${tenant}.json`);
+export const nombreDeFlujo = (tenant, prueba) => `doctoras.${tenant}${prueba ? '.prueba' : ''}.json`;
+
+/**
+ * El config del armador genérico. Vive aquí y no en un `construir.config.json`: el saneo del repo público trata todo JSON bajo `Flujos/` como un export de n8n.
+ * `raiz` es `Flujos/`: de ahí se leen los módulos comunes de medios. Las variantes salen de los tenants con datos.
+ */
+export function configDe(tenants = tenantsConDatos()) {
+  return {
+    plantilla: 'flujo.plantilla.json',
+    raiz: '../..',
+    librerias: ['src/lib/dr.js'],
+    comun: ['src/nodos/_comun.js'],
+    paquetes: {
+      mensajes: ['../comun-sin-agente/src/mensajes.js'],
+      filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
+      'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
+      'm-imagen': ['../../src/core/medios/preparar-imagen.js'],
+      'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
+    },
+    variantes: tenants.flatMap((t) => [
+      { archivo: nombreDeFlujo(t, false), quitar: 'Entrada de prueba', nombre: 'se toma de los datos' },
+      { archivo: nombreDeFlujo(t, true), quitar: ['Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos'], nombre: 'se toma de los datos' },
+    ]),
+  };
+}
+
+/** Los nodos que los módulos comunes de medios leen por contrato (los exige `--verificar`). */
+export const NODOS_CONTRATO_MEDIOS = ['Normalizar entrada', 'Config del negocio', 'Obtener URL del medio (general)', 'Preparar transcripción', 'Preparar imagen', 'Medio no aceptado'];
+const NODO_PRUEBA = 'Entrada de prueba';
+const NODO_RECEPTOR = 'Entrega del receptor';
+const NODOS_DEL_RECEPTOR = [NODO_RECEPTOR, 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos'];
+const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
+const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', ANFITRION_CONSOLA];
+
+// ----------------------------------------------------------------- lectura y escritura sin seguir enlaces simbólicos
+const noExiste = (e) => e && (e.code === 'ENOENT' || e.code === 'ENOTDIR');
+function leerSiExiste(ruta, nombre) {
+  let fd;
+  try {
+    fd = openSync(ruta, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (e) {
+    if (noExiste(e)) return null;
+    if (e && e.code === 'ELOOP') throw new Error(`${nombre}: es un enlace simbólico y no se lee`);
+    throw e;
+  }
+  try { return readFileSync(fd, 'utf8'); } finally { closeSync(fd); }
+}
+function escribirSinSeguirEnlaces(ruta, texto, nombre) {
+  let fd;
+  try {
+    fd = openSync(ruta, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o644);
+  } catch (e) {
+    if (e && e.code === 'ELOOP') throw new Error(`${nombre}: es un enlace simbólico y no se escribe`);
+    throw e;
+  }
+  try { writeFileSync(fd, texto); } finally { closeSync(fd); }
+}
+
+// ----------------------------------------------------------------- los datos
+const MARCADOR = /^REEMPLAZAR_[A-Z0-9_]+$/;
+const FORMAS_CONFIG = {
+  waGraphVersion: /^v\d{1,2}\.\d{1,2}$/,
+  phoneNumberIdEsperado: /^(\d{6,25}|REEMPLAZAR_[A-Z0-9_]+)$/,
+  numeroRecepcion: /^(\d{6,20}|REEMPLAZAR_[A-Z0-9_]+)$/,
+  prefijosPermitidos: /^\d{1,4}(,\d{1,4})*$/,
+  telefonosDePrueba: /^(\d{6,20}(,\d{6,20})*|REEMPLAZAR_[A-Z0-9_]+)$/,
+  // El ÚNICO modelo de este flujo (decisión de Andres): gemini-3.5-flash-lite.
+  modelo: /^gemini-3\.5-flash-lite$/,
+  temperatura: /^(0|1|0\.\d{1,2})$/,
+};
+const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
+
+/** Las palabras que NINGÚN texto de la doctora puede llevar (salvedades 1, 2, 6 y 15 del plan): promesa de resultado, «ideal para», precio, enlaces. Las comprueba el armado y el runtime (`drSeguro`). */
+export const PALABRAS_PROHIBIDAS = /inmediat|primera sesi|firmeza|ideal para|garantiz|como la foto|lifting|\b250\b|\bbs\b|bolivianos|\$|https?:|www\.|wa\.me|maps|google|(?:^|[^\p{L}])\d+\s*(?:usd|dolares)/iu;
+
+const lleno = (v) => typeof v === 'string' && v.trim() !== '';
+const textoSinMarcas = (v) => !/@@/.test(String(v)) && !/\{\{/.test(String(v));
+
+/** Valida el bloque `doctora`. Devuelve la lista de errores (cada uno nombra el campo). Un texto de contenido puede llevar `{nombre}`, `{doctora}`, `{clinica}`, `{direccion}` y `{horario}`. */
+export function erroresDeDoctora(d) {
+  const e = [];
+  if (!d || typeof d !== 'object' || Array.isArray(d)) return ['doctora: falta el bloque'];
+  const cadena = (ruta, v, { max = 400, vacio = false } = {}) => {
+    if (typeof v !== 'string' || (!vacio && v.trim() === '')) e.push(`${ruta}: falta`);
+    else if (v.length > max) e.push(`${ruta}: más de ${max} caracteres`);
+    else if (!textoSinMarcas(v)) e.push(`${ruta}: no puede llevar «@@» ni «{{»`);
+    else if (PALABRAS_PROHIBIDAS.test(v.normalize('NFD').replace(/[̀-ͯ]/g, ''))) e.push(`${ruta}: lleva una palabra que ningún texto de la doctora puede decir (promesa de resultado, «ideal para», precio, enlace)`);
+  };
+  for (const c of ['nombreCorto', 'nombreCompleto', 'clinica', 'especialidad', 'direccion']) cadena(`doctora.${c}`, d[c], { max: 200 });
+  // El horario puede estar vacío o ser un marcador: la doctora aún no lo dio y el flujo no dice ninguno.
+  cadena('doctora.horario', d.horario, { max: 200, vacio: true });
+  const ids = new Set();
+  if (!Array.isArray(d.tratamientos) || d.tratamientos.length < 1 || d.tratamientos.length > 6) e.push('doctora.tratamientos: de 1 a 6');
+  else {
+    d.tratamientos.forEach((t, i) => {
+      const r = `doctora.tratamientos[${i}]`;
+      if (!t || typeof t !== 'object') { e.push(`${r}: tiene que ser un objeto`); return; }
+      if (!/^[a-z0-9]{1,12}$/.test(String(t.id))) e.push(`${r}.id: de 1 a 12 minúsculas o dígitos`);
+      if (ids.has(t.id)) e.push(`${r}.id: repetido`);
+      ids.add(t.id);
+      cadena(`${r}.nombre`, t.nombre, { max: 24 });
+      cadena(`${r}.frase`, t.frase, { max: 400 });
+      if (!Array.isArray(t.claves) || !t.claves.length || !t.claves.every((c) => typeof c === 'string' && /^[a-z0-9 ]{3,40}$/.test(c))) e.push(`${r}.claves: lista de palabras en minúsculas sin acentos ni signos`);
+    });
+  }
+  for (const lista of ['artes', 'prellenados']) {
+    if (!Array.isArray(d[lista]) || d[lista].length > 8) { e.push(`doctora.${lista}: lista de 0 a 8`); continue; }
+    d[lista].forEach((a, i) => {
+      const r = `doctora.${lista}[${i}]`;
+      if (!a || typeof a !== 'object') { e.push(`${r}: tiene que ser un objeto`); return; }
+      if (!/^[a-z0-9]{1,16}$/.test(String(a.id))) e.push(`${r}.id: de 1 a 16 minúsculas o dígitos`);
+      if (!Array.isArray(a.claves) || !a.claves.length || !a.claves.every((c) => typeof c === 'string' && /^[a-z0-9 ]{3,60}$/.test(c))) e.push(`${r}.claves: lista de frases en minúsculas sin acentos ni signos`);
+      // Ningún arte se envía por el asistente (decisión por defecto, P3): el arte comparativo trae «efecto lifting inmediato».
+      if (lista === 'artes' && a.enviable !== false) e.push(`${r}.enviable: tiene que ser false (el asistente no envía artes; lo decide la doctora por escrito)`);
+      cadena(`${r}.apertura`, a.apertura, { max: 300, vacio: true });
+    });
+  }
+  const t = d.textos;
+  if (!t || typeof t !== 'object' || Array.isArray(t)) e.push('doctora.textos: falta');
+  else {
+    for (const c of TEXTOS_DE_CONTENIDO) cadena(`doctora.textos.${c}`, t[c], { max: 700 });
+    for (const c of Object.keys(t)) if (!TEXTOS_DE_CONTENIDO.includes(c) && !TEXTOS_COMUNES_PERMITIDOS.includes(c)) e.push(`doctora.textos.${c}: clave desconocida`);
+    for (const c of TEXTOS_COMUNES_PERMITIDOS) if (c in t) cadena(`doctora.textos.${c}`, t[c], { max: 700 });
+  }
+  return e;
+}
+/** Los textos de CONTENIDO que cada doctora aporta (las claves que `Decidir turno` y `Armar mensajes` leen del dato). */
+export const TEXTOS_DE_CONTENIDO = ['apertura', 'pregunta', 'lista_intro', 'quien', 'que_es', 'gratis', 'precio', 'sin_compromiso', 'donde', 'cual_mejor', 'diferencia', 'dolor', 'resultados', 'antes_despues', 'recuperacion', 'artificial', 'probe_otros', 'pensar', 'especifico'];
+/** Los textos de estructura que son COMUNES (están en `dr.js`) y que una doctora puede reemplazar si lo pide por escrito. */
+export const TEXTOS_COMUNES_PERMITIDOS = ['presentacion', 'baja_instruccion', 'consentimiento', 'consentimiento_no', 'pedir_nombre', 'pedir_contacto', 'pedir_otro_numero', 'pedir_horario', 'cierre_con_aviso', 'cierre_sin_aviso', 'medica', 'medica_documento', 'ia', 'baja_ok', 'otra', 'gracias'];
+
+/** Lee y valida el archivo de datos de UN tenant. Cada error nombra el campo. */
+export function cargarDatos(ruta) {
+  const texto = leerSiExiste(ruta, 'archivo de datos');
+  if (texto === null) throw new Error(`no existe el archivo de datos ${ruta}`);
+  let d;
+  try { d = JSON.parse(texto); } catch (e) { throw new Error('archivo de datos: no es un JSON válido'); }
+  if (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error('archivo de datos: tiene que ser un objeto');
+  const errores = [];
+  const cadena = (ruta2, v) => { if (typeof v !== 'string' || v.trim() === '') errores.push(`${ruta2}: falta`); };
+  cadena('tenant', d.tenant);
+  if (typeof d.tenant === 'string' && !/^rroca-[a-z0-9-]+$/.test(d.tenant)) errores.push('tenant: forma no válida');
+  cadena('nombreFlujo', d.nombreFlujo);
+  cadena('nombreFlujoPrueba', d.nombreFlujoPrueba);
+  for (const c of ['ingesta', 'graph', 'graphPrueba', 'entradaPrueba', 'gemini', 'geminiPrueba']) cadena(`credenciales.${c}`, (d.credenciales || {})[c]);
+  for (const c of ['ruta', 'urlVerificador', 'wabaIdEsperado']) {
+    const v = (d.receptor || {})[c];
+    cadena(`receptor.${c}`, v);
+    // Repo público: la ruta del receptor y la URL del verificador son marcadores; el wabaId también (lo sustituye el publicador).
+    if (typeof v === 'string' && !MARCADOR.test(v) && !(c === 'wabaIdEsperado' && /^\d{6,25}$/.test(v))) errores.push(`receptor.${c}: tiene que ser un marcador REEMPLAZAR_*`);
+  }
+  if (typeof d.pruebaRuta !== 'string' || !MARCADOR.test(d.pruebaRuta)) errores.push('pruebaRuta: tiene que ser un marcador REEMPLAZAR_*');
+  const cb = d.configBase && typeof d.configBase === 'object' && !Array.isArray(d.configBase) ? d.configBase : null;
+  if (!cb) errores.push('configBase: falta');
+  else {
+    for (const [c, v] of Object.entries(cb)) {
+      if (!['string', 'number', 'boolean'].includes(typeof v)) errores.push(`configBase.${c}: solo texto, número o booleano`);
+      if (FORMAS_CONFIG[c] && !FORMAS_CONFIG[c].test(String(v))) errores.push(`configBase.${c}: forma no válida`);
+      if (c === 'doctora') errores.push('configBase.doctora: el bloque va en `doctora`, no en `configBase`');
+    }
+    for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
+  }
+  errores.push(...erroresDeDoctora(d.doctora));
+  if (errores.length) throw new Error(`${d.tenant || 'archivo de datos'}: datos no válidos: ${errores.join('; ')}`);
+  return d;
+}
+
+function dato(datos, ruta, donde) {
+  let x = datos;
+  for (const p of ruta.split('.')) x = x && typeof x === 'object' ? x[p] : undefined;
+  if (typeof x !== 'string' || x === '') throw new Error(`${donde}: falta el dato «${ruta}» en el archivo de datos`);
+  if (CARACTERES_PELIGROSOS.test(x) && !ruta.startsWith('credenciales.') && !/^nombreFlujo/.test(ruta)) throw new Error(`${donde}: el dato «${ruta}» trae una comilla, una barra invertida, una llave o un salto de línea`);
+  return x;
+}
+function reemplazarTextos(valor, datos, donde) {
+  if (typeof valor === 'string') return valor.replace(/@@dato:([A-Za-z0-9_.]+)@@/g, (_, ruta) => dato(datos, ruta, donde));
+  if (Array.isArray(valor)) return valor.map((v) => reemplazarTextos(v, datos, donde));
+  if (valor && typeof valor === 'object') return Object.fromEntries(Object.entries(valor).map(([c, v]) => [c, reemplazarTextos(v, datos, donde)]));
+  return valor;
+}
+/** «Config base»: los valores de `configBase` más el bloque `doctora` como UN texto JSON (lo lee `drDatos`). */
+const asignaciones = (datos) => {
+  const todo = { ...datos.configBase, doctora: JSON.stringify(datos.doctora) };
+  return Object.entries(todo).map(([nombre, valor]) => ({ id: `cb_${nombre}`, name: nombre, type: typeof valor, value: valor }));
+};
+
+// ----------------------------------------------------------------- las guardias de lo armado
+export function anfitrionPermitido(url, nombreDelNodo = '') {
+  if (MARCADOR.test(url)) return true;
+  // La única excepción: «Descargar medio» baja el medio de la URL que le devuelve Meta (la anterior, «¿Tamaño aceptable?», exige https://lookaside.fbsbx.com/ y un tamaño).
+  if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
+  const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
+  if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
+  return ANFITRIONES.includes(m[1].toLowerCase());
+}
+
+/** Lo que un JSON de este flujo no puede tener. `variante`: 'produccion' | 'prueba'. Devuelve la lista de hallazgos (vacía si está limpio). */
+export function guardias(variante, flujo) {
+  const h = [];
+  const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
+  const nombres = new Set(nodos.map((n) => n.name));
+  const por = (nombre) => nodos.find((n) => n.name === nombre);
+  const p = (n) => (n && n.parameters) || {};
+  if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace`);
+  if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
+  if (/subscriptions|subscribed_apps/i.test(JSON.stringify(flujo))) h.push('menciona «subscriptions» o «subscribed_apps» (prohibición 7)');
+  if (/langchain\.(agent|memory\w*|lmChat\w*|chain\w*)$/i.test(nodos.map((n) => n.type).join('\n'))) h.push('lleva un agente, memoria o modelo de chat de n8n: este flujo no los lleva');
+  // Los nodos de medios comunes tienen que estar, con los nombres que esos módulos leen por contrato.
+  for (const n of NODOS_CONTRATO_MEDIOS) if (!nombres.has(n)) h.push(`falta el nodo «${n}» (contrato con los módulos comunes de medios)`);
+  // El reporte del entrante corre ANTES que la rama que responde: «Reportar mensaje (entrante)» arriba de la «Puerta del turno» y de toda la rama de medios y de decisión.
+  const rep = por('Reportar mensaje (entrante)');
+  if (rep) {
+    for (const n of nodos) {
+      if (['Puerta del turno', '¿Bajar medio?', 'Obtener URL del medio (general)', 'Decidir turno', 'Armar mensajes'].includes(n.name) && !(rep.position[1] < n.position[1])) h.push(`«Reportar mensaje (entrante)» tiene que ir arriba de «${n.name}» en el lienzo`);
+    }
+  }
+  // El reporte saliente lleva el evento de baja o de protección (`no_contactar`) siempre, aunque salga el respaldo.
+  const repSal = por('Reportar mensaje (saliente)');
+  if (repSal && !/no_contactar/.test(String(p(repSal).jsonBody || ''))) h.push('«Reportar mensaje (saliente)» no reporta el evento `no_contactar` (condición dura de la baja y de la protección)');
+  // El reporte del entrante lleva `no_contactar` por la baja o el riesgo escritos (una sola expresión: la de dr.js).
+  if (rep && !(/bajaEscrita === true/.test(String(p(rep).jsonBody || '')) && /riesgoEscrito === true/.test(String(p(rep).jsonBody || '')))) h.push('«Reportar mensaje (entrante)» no reporta `no_contactar` por la baja ni por el riesgo escritos');
+  // La variante de PRUEBA nunca usa credenciales de producción: ni la de Graph ni la de Gemini (los nodos de medios, el aviso, el envío y el modelo).
+  if (variante === 'prueba') {
+    for (const n of nodos) {
+      for (const [tipo, c] of Object.entries(n.credentials || {})) {
+        const nombreCred = String((c || {}).name || '');
+        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && n.name !== 'Reportar protección' && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred))) {
+          h.push(`la prueba usa una credencial de producción en «${n.name}» (${tipo})`);
+        }
+      }
+    }
+  }
+  if (variante === 'produccion') {
+    if (nombres.has(NODO_PRUEBA)) h.push(`contiene «${NODO_PRUEBA}» (activa el modo prueba): solo va en el JSON de prueba`);
+    for (const n of NODOS_DEL_RECEPTOR) if (!nombres.has(n)) h.push(`falta el nodo «${n}» de la entrada verificada del receptor`);
+  } else {
+    for (const n of NODOS_DEL_RECEPTOR) if (nombres.has(n)) h.push(`la prueba contiene «${n}» (entrada del receptor): no va`);
+    const ep = por(NODO_PRUEBA);
+    if (!ep) h.push(`falta «${NODO_PRUEBA}»`);
+    else if (p(ep).authentication !== 'headerAuth' || !((ep.credentials || {}).httpHeaderAuth || {}).name) h.push(`«${NODO_PRUEBA}» tiene que exigir una credencial de cabecera (httpHeaderAuth)`);
+  }
+  // Webhooks: en producción solo el del receptor; en la prueba solo la entrada de prueba.
+  for (const n of nodos.filter((x) => x.type === 'n8n-nodes-base.webhook')) {
+    if (n.name !== (variante === 'produccion' ? NODO_RECEPTOR : NODO_PRUEBA)) h.push(`el webhook «${n.name}» no corresponde a esta variante`);
+  }
+  // La entrada verificada del receptor.
+  if (variante === 'produccion') {
+    const v = por('Verificar firma con el receptor');
+    if (v) {
+      if (v.onError !== undefined || v.continueOnFail !== undefined) h.push('«Verificar firma con el receptor» no puede llevar «Continue on Fail» ni `onError` (un 503 del verificador daría 401 y la entrega moriría en vez de reintentarse)');
+      const cuerpo = String(p(v).jsonBody || '');
+      if (!/wabaIdEsperado: "(REEMPLAZAR_[A-Z0-9_]+|\d{6,25})"/.test(cuerpo)) h.push('«Verificar firma con el receptor»: `wabaIdEsperado` tiene que ser un valor FIJO entre comillas (nunca una expresión)');
+      if (!anfitrionPermitido(String(p(v).url || ''))) h.push('«Verificar firma con el receptor» llama a un anfitrión no permitido');
+    }
+    const f = por('¿Firma válida?');
+    if (f && (f.onError !== undefined || f.continueOnFail !== undefined)) h.push('«¿Firma válida?» no puede llevar «Continue on Fail»');
+    const d = por('Descartar repetidos');
+    if (d && (p(d).operation !== 'removeItemsSeenInPreviousExecutions' || p(d).logic !== 'removeItemsWithAlreadySeenKeyValues')) h.push('«Descartar repetidos» tiene que descartar entre ejecuciones (removeItemsSeenInPreviousExecutions)');
+  }
+  // Un nodo HTTP solo habla con Meta, con Gemini y con las Functions de la consola.
+  for (const n of nodos.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
+    const url = String(p(n).url || '');
+    if (!anfitrionPermitido(url, n.name)) h.push(`el nodo «${n.name}» llama a un anfitrión fuera de la lista (graph.facebook.com, generativelanguage.googleapis.com, las Functions de la consola)`);
+  }
+  // Retención de ejecuciones, orden y zona horaria.
+  const st = (flujo && flujo.settings) || {};
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'all' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «all» y saveExecutionProgress false');
+  if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow`');
+  if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
+  if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
+  // `REEMPLAZAR_` solo en «Config base», en el receptor y en la ruta de la entrada de prueba.
+  const conMarcador = new Set(['Config base', NODO_RECEPTOR, 'Verificar firma con el receptor', NODO_PRUEBA]);
+  for (const n of nodos) {
+    if (conMarcador.has(n.name)) continue;
+    if (/REEMPLAZAR_[A-Z0-9]/.test(JSON.stringify(n))) h.push(`el nodo «${n.name}» trae un marcador REEMPLAZAR_: solo va en «Config base», el receptor y la ruta de prueba`);
+  }
+  return h;
+}
+
+// ----------------------------------------------------------------- armar
+const sinMarcas = (v, esCodigo) => {
+  if (typeof v === 'string') return esCodigo ? !v.startsWith('@@') : !v.includes('@@');
+  if (Array.isArray(v)) return v.every((x) => sinMarcas(x, false));
+  if (v && typeof v === 'object') return Object.entries(v).every(([c, x]) => sinMarcas(x, c === 'jsCode'));
+  return true;
+};
+
+/** Arma UNA variante de UN tenant con los datos ya validados. Devuelve el texto del JSON. */
+export function armarDoctora(proyecto, datos, v) {
+  const prueba = v.archivo === nombreDeFlujo(datos.tenant, true);
+  const donde = v.archivo;
+  const plantilla = JSON.parse(JSON.stringify(proyecto.plantilla));
+  // Primero se quita lo que no corresponde: sus credenciales y rutas no tienen por qué estar resueltas.
+  const quitar = new Set(Array.isArray(v.quitar) ? v.quitar : (v.quitar ? [v.quitar] : []));
+  plantilla.nodes = plantilla.nodes.filter((n) => !quitar.has(n.name));
+  for (const n of plantilla.nodes) {
+    n.parameters = reemplazarTextos(n.parameters, datos, `${donde} · ${n.name}`);
+    for (const c of Object.values(n.credentials || {})) {
+      const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini)$/.exec(String(c.name));
+      // La variante de PRUEBA nunca usa las credenciales de producción de Meta ni de Gemini: los nodos de medios, el aviso y el modelo van con las de prueba (como el envío).
+      const clave = prueba && m && m[1] === 'graph' ? 'graphPrueba' : (prueba && m && m[1] === 'gemini' ? 'geminiPrueba' : (m ? m[1] : ''));
+      if (m) c.name = dato(datos, `credenciales.${clave}`, `${donde} · ${n.name}`);
+    }
+    if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos);
+    // Los módulos comunes de medios se INCLUYEN desde su fuente (ya leída por el armador genérico, dentro de la raíz): el código queda tal cual, sin una sola edición.
+    const js = n.parameters && n.parameters.jsCode;
+    const m = typeof js === 'string' ? /^@@medio:([a-z0-9-]+)$/.exec(js) : null;
+    if (m) {
+      const fuente = proyecto.paquetes[m[1]];
+      if (!fuente || fuente.length !== 1) throw new Error(`${donde} · ${n.name}: el config no declara el paquete «${m[1]}»`);
+      n.parameters.jsCode = fuente[0] + '\n';
+    }
+  }
+  // La cadena de envío común (no se copia), con las credenciales por NOMBRE. Cuelga de «Armar mensajes»; el resumen cuelga aparte y corre al final.
+  injertar(plantilla, {
+    credenciales: { graph: dato(datos, prueba ? 'credenciales.graphPrueba' : 'credenciales.graph', donde), ingesta: dato(datos, 'credenciales.ingesta', donde) },
+    ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`,
+    entrada: 'Normalizar entrada',
+    desde: [6200, 300],
+  });
+  // Puerta de la entrega (propia): el reporte saliente cuelga de «¿Meta aceptó?». Solo se reencamina la CONEXIÓN de la cadena común; sus nodos quedan intactos.
+  const reporta = plantilla.connections['¿Reportar? (saliente)'];
+  if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);
+  reporta.main[0] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
+  // El reporte saliente de ESTE flujo (propio): igual al común, más el EVENTO `no_contactar` (la baja y la protección), que viaja SIEMPRE, aunque salga el respaldo.
+  const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
+  if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes('evento: m.evento')) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
+  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } return JSON.stringify(r); })() }}";
+  const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
+  const flujo = JSON.parse(texto);
+  if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);
+  return JSON.stringify(flujo, null, 2) + '\n';
+}
+
+/**
+ * Arma (o verifica) las dos variantes de cada tenant con datos. Devuelve un resultado por archivo. Lanza ante un dato inválido o una guardia violada en lo armado.
+ *   opciones: { carpeta, tenants, carpetaDeDatos, verificar, tope }   (`tope` y `carpetaDeDatos` son para las pruebas)
+ */
+export function construir({ carpeta = AQUI, tenants, carpetaDeDatos = CARPETA_DE_DATOS, verificar = false, tope } = {}) {
+  const lista = tenants || tenantsConDatos(carpetaDeDatos);
+  const proyecto = leerProyecto(carpeta, configDe(lista), tope ? { tope } : {});
+  const salida = [];
+  for (const t of lista) {
+    const datos = cargarDatos(join(carpetaDeDatos, `${t}.json`));
+    if (datos.tenant !== t) throw new Error(`${t}.json: el campo «tenant» dice otro (${datos.tenant})`);
+    for (const v of proyecto.variantes.filter((x) => x.archivo === nombreDeFlujo(t, false) || x.archivo === nombreDeFlujo(t, true))) {
+      const texto = armarDoctora(proyecto, datos, v);
+      const variante = v.archivo === nombreDeFlujo(t, true) ? 'prueba' : 'produccion';
+      // Lo que se arma nunca viola las guardias…
+      const propios = guardias(variante, JSON.parse(texto));
+      if (propios.length) throw new Error(`${v.archivo}: ${propios.join('; ')}`);
+      const ruta = join(carpeta, v.archivo);
+      const actual = leerSiExiste(ruta, v.archivo);
+      // …y el archivo VERSIONADO tampoco las viola (aunque alguien lo haya tocado a mano).
+      let versionado = [];
+      if (actual !== null) {
+        try { versionado = guardias(variante, JSON.parse(actual)); } catch (x) { versionado = ['no es un JSON válido']; }
+      }
+      if (!verificar) escribirSinSeguirEnlaces(ruta, texto, v.archivo);
+      salida.push({ archivo: v.archivo, tenant: t, nodos: JSON.parse(texto).nodes.length, existia: actual !== null, alDia: actual === texto, versionado });
+    }
+  }
+  return salida;
+}
+
+// ----------------------------------------------------------------- línea de comandos
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const args = process.argv.slice(2);
+  const desconocidos = args.filter((a) => a !== '--verificar');
+  if (desconocidos.length) { console.error(`✗ argumento desconocido: ${desconocidos.join(' ').slice(0, 60)}. Solo existe --verificar; sin argumentos escribe los JSON.`); process.exit(2); }
+  const verificar = args.includes('--verificar');
+  try {
+    let difiere = false;
+    for (const r of construir({ verificar })) {
+      if (!verificar) { console.log(`✓ ${r.archivo} escrito (${r.nodos} nodos)`); continue; }
+      if (r.versionado.length) { difiere = true; console.error(`✗ ${r.archivo} ${r.versionado.join('; ')}`); }
+      else if (!r.alDia) { difiere = true; console.error(`✗ ${r.archivo} ${r.existia ? 'difiere de lo que arma la plantilla' : 'no existe'}: corra «node construir.mjs»`); }
+      else console.log(`✓ ${r.archivo} al día (${r.nodos} nodos)`);
+    }
+    process.exit(difiere ? 1 : 0);
+  } catch (e) {
+    console.error(`✗ ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(1);
+  }
+}
