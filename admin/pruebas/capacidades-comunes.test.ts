@@ -59,7 +59,12 @@ const PREPARAR = ['Preparar transcripción', 'Preparar imagen'] as const;
  * medios: `archivo → porqué`. Cada uno tiene que figurar en
  * `docs/versiones-por-cliente.md`. Vacío desde el 28/09/2026.
  */
-const EXCEPCIONES: Record<string, string> = {};
+const EXCEPCIONES: Record<string, string> = {
+  // 22/10/2026 («el asistente entiende las imágenes»): estos dos JSON conservan el «Preparar imagen» anterior
+  // (sin descripción de lo que se ve) por orden de Andres de no tocarlos ni publicarlos.
+  'platinum-agendamiento.json': 'Conserva el «Preparar imagen» anterior a la descripción de imágenes: orden de Andres de no tocar Platinum hasta nuevo aviso.',
+  'bellido-agendamiento.json': 'Conserva el «Preparar imagen» anterior a la descripción de imágenes: orden de Andres de no tocar Bellido (corre otro flujo) hasta nuevo aviso.',
+};
 
 const archivos = readdirSync(CARPETA_FLUJOS)
   .filter((a) => a.endsWith('.json') && !a.endsWith('.local.json'))
