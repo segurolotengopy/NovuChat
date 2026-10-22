@@ -427,6 +427,12 @@ function raPideProducto(n) {
   const verbo = /\b(quiero|quisiera|dame|damelo|deme|me das|me llevo|llevo|llevar|comprar|compro|comprarlo|adquirir|pedir|pido|ordenar|elijo|prefiero|vamos con)\b/.test(n);
   return /\b(comprar|compro|comprarlo|me lo llevo|lo llevo)\b/.test(n) || (nombra && verbo);
 }
+// Pide ver OTRAS opciones o productos («otras opciones», «qué más tienes», «alternativas»): es un cliente que mira, no que cancela. Sobre el texto normalizado (sin acentos).
+function raPideOtrasOpciones(n) {
+  return /\b(otras opciones|otros productos|mas opciones|ver otras|alternativas|otra cosa)\b/.test(n)
+    || /\bque (otras |mas )?opciones (tengo|hay|tienes|tiene|existen)\b/.test(n)
+    || /\bque mas (tengo|tienes|tiene|hay|ofreces|ofrece|vendes|vende)\b/.test(n);
+}
 // «Cancela mi pedido», «no quiero comprar», «ya no lo quiero»: devuelve 'cancela'; con «solo quiero saber / ver / conocer» el cliente solo está mirando y devuelve 'curioso'; si no, ''.
 // El flujo NO puede cerrar la solicitud de cobro del servidor: un 'cancela' pasa a Antonio (aviso + botón) y el texto no dice jamás que el pedido quedó cancelado.
 function raCancelaPedido(n) {
@@ -435,7 +441,9 @@ function raCancelaPedido(n) {
   // («cancela», «cancelar», «cancelo», «cancelen», «anula», «anular», «anulo») cuentan como cancelar.
   if (/\b(cancele|cancelado|cancelada|cancelamos|cancelaron)\b/.test(n)) return '';
   const verbo = /\b(cancela|cancelar|cancelo|cancelen|cancelalo|cancelala|anula|anular|anulo|anulen|anulalo)\b/.test(n);
-  const cancela = (verbo && (/\b(pedido|compra|orden|qr|pago)\b/.test(n) || palabras <= 3))
+  // «No quiero comprar, quiero ver otras opciones»: sin un verbo explícito de cancelar el pedido, el QR o el pago, NO es una cancelación.
+  if (raPideOtrasOpciones(n) && !(verbo && /\b(pedido|compra|orden|qr|pago)\b/.test(n))) return '';
+  const cancela = (verbo && (/\b(pedido|compra|orden|qr|pago)\b/.test(n) || palabras <= 3 || /\bno (puedes|puede|pueden|se puede|podes) (cancelar|anular)\b/.test(n)))
     || /\bno (lo |la |los |las )?(quiero|quisiera|necesito|voy a|pienso|deseo) (ya |mas )?(comprar|pagar|seguir|el pedido|nada|el libro|el pack|el producto|continuar)\b/.test(n)
     || /\bya no (lo |la |los |las )?(quiero|necesito|voy a|me interesa|deseo)\b/.test(n) || /\bno me interesa\b|\bdesisto\b|\bme arrepenti\b/.test(n);
   if (!cancela) return '';
@@ -452,6 +460,7 @@ function raPideImagenes(n) {
 // La intención «catálogo»: «dame tu catálogo», «qué vendes», «qué productos tienes», «lista», «opciones», «qué ofreces». Corta (a lo más 8 palabras).
 function raPideCatalogo(n) {
   const palabras = n === '' ? 0 : n.split(' ').length;
+  if (raPideOtrasOpciones(n) && palabras <= 16) return true;
   if (palabras > 8) return false;
   return /\bcatalogo\b/.test(n)
     || /\bque (vendes|vende|venden|ofreces|ofrece|ofrecen|manejas|manejan)\b/.test(n)
@@ -569,9 +578,9 @@ const RA_ALTERNAS_CONTENIDO = [
   'Esa información ya está más arriba en este chat. Si algo no quedó claro, pregúntamelo de otra forma o escríbele a Antonio con el botón.',
 ];
 const RA_ALTERNAS_MEDIO = [
-  'Sigo sin poder usar ese archivo por aquí. Cuéntame por escrito qué necesitas, o escríbele a Antonio con el botón.',
-  'Ese archivo tampoco lo pude revisar. Escríbeme lo que necesitas en un mensaje, o escríbele directo a Antonio con el botón.',
-  'Por aquí no puedo trabajar con ese archivo. Dime con palabras qué buscas, o escríbele a Antonio con el botón.',
+  'Por aquí no puedo trabajar con ese archivo. Cuéntame por escrito qué necesitas, o escríbele a Antonio con el botón.',
+  'No pude usar ese archivo en este chat. Escríbeme lo que necesitas en un mensaje, o escríbele directo a Antonio con el botón.',
+  'Ese archivo no lo puedo revisar por aquí. Dime con palabras qué buscas, o escríbele a Antonio con el botón.',
 ];
 // El texto alternativo que no repite el último enviado (`hashUltimo`); `medio` = la respuesta era a un audio, imagen o documento.
 function raAlternaDeRepetido(medio, hashUltimo) {
@@ -592,6 +601,7 @@ const RA_TEXTO_MODELO_CAIDO_SIN = 'Gracias por escribir. Cuéntame un poco más 
 function raTextoModeloCaido(conOpciones) { return conOpciones === false ? RA_TEXTO_MODELO_CAIDO_SIN : RA_TEXTO_MODELO_CAIDO_CON; }
 const RA_TEXTO_RESULTADO = 'No puedo prometerte que tu relación se recupere en 30 días: es un entrenamiento práctico con herramientas reales para comunicarse mejor, y el resultado depende del compromiso y del contexto de cada pareja.';
 function raTextoResultado(conOpciones) { return RA_TEXTO_RESULTADO + (conOpciones === false ? '' : '\n\n¿Quieres ver las opciones?'); }
+const RA_TEXTO_DOCUMENTO = 'Recibí tu archivo, pero por este chat solo puedo leer texto y los comprobantes de un pago en imagen o PDF. Cuéntame por escrito en qué te puedo ayudar.';
 const RA_TEXTO_IMAGEN = 'Recibí tu imagen, pero por este chat solo puedo leer texto y los comprobantes de un pago. Cuéntame por escrito en qué te puedo ayudar.';
 const RA_TEXTO_AUDIO_NO_ENTENDIDO = 'No pude entender tu nota de voz. ¿Me la envías de nuevo o me cuentas por escrito?';
 const RA_TEXTO_AUDIO_CORTO = 'Tu nota de voz fue muy corta y no alcancé a entender qué necesitas.\n\n¿Me la repites un poco más completa o me lo cuentas por escrito?';

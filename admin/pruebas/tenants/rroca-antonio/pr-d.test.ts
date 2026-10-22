@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
-import { ANA, COMPROBANTE, COTEJO_VALIDO, PRELLENADOS, crear, hablar, mAudio, mTexto, mBoton, panelConQr, panelOk, type Opciones } from './mundo';
+import { ANA, COMPROBANTE, COTEJO_VALIDO, PRELLENADOS, crear, hablar, mAudio, mDocumento, mImagen, mTexto, mBoton, panelConQr, panelOk, type Opciones } from './mundo';
 import { vigilarUx } from './vigilante-ux';
 
 const nuevo = (o: Opciones = {}): Mundo => { const w = crear(o); vigilarUx(w); return w; };
@@ -24,19 +24,67 @@ describe('C. con un QR abierto: se responde, no se repite el recordatorio, no se
     expect(esBotonDeAntonio(t)).toBe(true);
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/Ya tienes un QR abierto/);
   });
-  it('las TRES frases de la prueba real ya no reciben el mismo recordatorio tres veces', () => {
+  it('pedir OTRAS opciones con un QR abierto da el catálogo: sin aviso a Antonio, sin cancelación, sin botones de producto', () => {
+    for (const x of ['no quiero comprar, quiero ver otras opciones', 'que otras opciones tengo?', 'quiero ver otras opciones', 'qué más tienes']) {
+      const w = conQr();
+      const t = hablar(w, ANA, mTexto(x));
+      expect(t.avisos, x).toHaveLength(0);
+      expect(t.mensajes, x).toHaveLength(1);
+      expect(t.mensajes[0]!.cuerpo, x).toMatch(/Pack Completo: 49 Bs/);
+      expect(t.mensajes[0]!.cuerpo, x).not.toMatch(/no puedo cancelar un pedido/);
+      expect(t.mensajes[0]!.tipo, x).not.toBe('image');
+      expect(t.ejecutados.has('Conversar con el modelo'), x).toBe(false);
+    }
+  });
+  it('«cancela ese qr» tras pedir opciones cancela con aviso; repetido, sale «Antonio ya recibió tu aviso anterior», NUNCA la alterna genérica', () => {
     const w = conQr();
-    const textos = ['¿qué otras opciones tengo?', 'no quiero comprar, quiero ver otras opciones', 'cancela ese qr'].map((x) => hablar(w, ANA, mTexto(x)));
-    const cuerpos = textos.map((t) => t.mensajes[0]!.cuerpo);
-    expect(new Set(cuerpos).size).toBe(3);
-    expect(cuerpos.filter((c) => /Ya tienes un QR abierto/.test(c))).toHaveLength(0);
-    // El aviso sale una vez (límite de 30 minutos por motivo); la tercera frase llevaría el MISMO texto que la segunda y por eso sale la alternativa fija (D), siempre con el botón.
-    expect(textos[1]!.avisos).toHaveLength(1);
-    expect(textos[2]!.avisos).toHaveLength(0);
-    expect(cuerpos[1]).toMatch(/no puedo cancelar un pedido/);
-    expect(cuerpos[1]).not.toMatch(/queda(ó|ron)? cancelad/i);
-    expect(cuerpos[2]).toMatch(/Antonio/);
-    for (const t of textos.slice(1)) expect(esBotonDeAntonio(t)).toBe(true);
+    const o = hablar(w, ANA, mTexto('no quiero comprar, quiero ver otras opciones'));
+    expect(o.avisos).toHaveLength(0);
+    const c1 = hablar(w, ANA, mTexto('cancela ese qr'));
+    expect(c1.avisos).toHaveLength(1);
+    expect(c1.mensajes[0]!.cuerpo).toMatch(/no puedo cancelar un pedido/);
+    expect(c1.mensajes[0]!.cuerpo).toMatch(/Le avisé/);
+    // El segundo aviso del mismo motivo: texto distinto del primero («ya recibió»), no la alterna genérica. (Un tercero idéntico al segundo cae en la alterna por la regla de nunca el mismo texto dos veces.)
+    for (const x of ['cancela el qr']) {
+      const t = hablar(w, ANA, mTexto(x));
+      expect(t.avisos, x).toHaveLength(0);
+      expect(t.mensajes[0]!.cuerpo, x).toMatch(/Antonio ya recibió tu aviso anterior/);
+      expect(t.mensajes[0]!.cuerpo, x).not.toMatch(/Eso ya te lo conté|Prefiero no repetirte|ya está más arriba/);
+      expect(esBotonDeAntonio(t), x).toBe(true);
+    }
+  });
+  it('«no puedes cancelar» (solo o con «dime por favor») sigue derivando a Antonio con aviso y botón; «qué más tengo» solo es el catálogo', () => {
+    for (const x of ['no puedes cancelar', 'Entonces no puedes cancelar… dime por favor']) {
+      const w = conQr();
+      const c = hablar(w, ANA, mTexto(x));
+      expect(c.avisos, x).toHaveLength(1);
+      expect(esBotonDeAntonio(c), x).toBe(true);
+      expect(c.mensajes[0]!.cuerpo, x).toMatch(/Antonio/);
+      expect(c.mensajes[0]!.cuerpo, x).not.toMatch(/queda(ó|ron)? cancelad/i);
+    }
+    const w2 = conQr();
+    const o = hablar(w2, ANA, mTexto('qué más tengo'));
+    expect(o.avisos).toHaveLength(0);
+    expect(o.mensajes[0]!.cuerpo).toMatch(/Pack Completo: 49 Bs/);
+  });
+  it('(E) un PDF genérico tras una imagen recibe su texto propio (sin «sigo»); dos PDF seguidos, la alterna neutra', () => {
+    const w = nuevo();
+    const i = hablar(w, ANA, mImagen());
+    expect(i.mensajes[0]!.cuerpo).toMatch(/Recibí tu imagen/);
+    const d1 = hablar(w, ANA, mDocumento());
+    expect(d1.mensajes[0]!.cuerpo).toMatch(/Recibí tu archivo/);
+    expect(d1.mensajes[0]!.cuerpo).not.toMatch(/\bsigo\b|tampoco/i);
+    const d2 = hablar(w, ANA, mDocumento());
+    expect(d2.mensajes[0]!.cuerpo).toMatch(/Por aquí no puedo trabajar con ese archivo|No pude usar ese archivo|Ese archivo no lo puedo revisar/);
+    expect(d2.mensajes[0]!.cuerpo).not.toMatch(/\bsigo\b|tampoco/i);
+  });
+  it('«no quiero comprar» a secas, «ya no lo quiero» y «cancela mi pedido» siguen siendo cancelación', () => {
+    for (const x of ['no quiero comprar', 'ya no lo quiero', 'cancela mi pedido']) {
+      const w = conQr();
+      const t = hablar(w, ANA, mTexto(x));
+      expect(t.avisos, x).toHaveLength(1);
+      expect(t.mensajes[0]!.cuerpo, x).toMatch(/no puedo cancelar un pedido/);
+    }
   });
   it('«cancela/cancelar el qr/pedido» escala a Antonio con aviso y botón, y libera la guarda local del QR', () => {
     for (const x of ['cancela ese qr', 'quiero cancelar el pedido', 'ya no lo quiero']) {
