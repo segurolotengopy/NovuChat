@@ -182,7 +182,7 @@ zona, y la zona es la carpeta:
 | **Plataforma** | Lo que ve NovuChat como operador: Negocios, alta, baja, suspensión, los tres ejes de la cuenta | NovuChat |
 | **Módulos** | Lo que se enciende por tenant, con su manifiesto: Productos, Agenda, Pedidos, Cobros, Inventario, Campañas, Catálogo web, Captación, Menú interactivo | NovuChat, un módulo a la vez, con una versión |
 | **Tenants** | Datos de un cliente. **Nunca código** | El comercio desde su consola; NovuChat desde Plataforma |
-| **Flujo de cliente** | Las piezas propias de un cliente (`Flujos/clientes/<tenant>/`) sobre el núcleo común obligatorio | NovuChat; la segunda vez que otro cliente pide una pieza, pasa a módulo |
+| **Flujo de cliente** | Las piezas propias de un cliente (`Flujos/clientes/<tenant>/`) sobre el núcleo común obligatorio | NovuChat; lo general sube a core o a un módulo común, lo específico es dato del tenant y, si es código que otro cliente necesita, sub-módulo del anfitrión (`docs/arquitectura/submodulos.md`) |
 
 Más dos piezas con nombre: el **coordinador de turno** (el único código que
 conoce a todas las zonas, y solo a través del registro) y el **registro de
@@ -208,8 +208,7 @@ Functions, consola y ensamblador).
   sin «Continue on Fail», repetidos descartados entre ejecuciones—,
   normalización de entrada y filtro de promesas sin respaldo—,
   que se **incluye** desde core y módulos y **nunca se copia** (una prueba de
-  CI lo comparará byte a byte: compuerta futura, hoy no existe). La segunda vez
-  que otro cliente pide una pieza propia, pasa a módulo. Seguridad y
+  CI lo comparará byte a byte: compuerta futura, hoy no existe). Lo general, con sus textos, sube a core o a un módulo común. Lo específico de un cliente (tratamiento, tono, calendario, catálogo, reglas comerciales) es un dato de su tenant; si es código y otro cliente lo necesita, se adjunta como sub-módulo del anfitrión, declarado en su PROPIO.md y probado por submodulos.test.ts: sin datos, secretos ni rutas compartidas entre tenants (`docs/arquitectura/submodulos.md`). Seguridad y
   protección valen para todos sin excepción. Los barridos comunes (uno por
   tipo, que recorre los tenants) son la excepción declarada **a «flujo propio»**,
   no a seguridad ni protección: cada iteración usa solo el número, la credencial
