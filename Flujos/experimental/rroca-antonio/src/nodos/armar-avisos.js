@@ -23,6 +23,8 @@ const ahora = Number(t.ahoraMs) || Date.now();
 
 // 1. ¿Hay algo que avisar? El plan de «Decidir turno», el estado «operador» o el DERIVAR del modelo.
 let aviso = plan.aviso && typeof plan.aviso === 'object' ? plan.aviso : null;
+// Cancelar el cobro abierto: si el servidor lo cerró (200), el aviso es informativo («cerró su pedido; si pagó, revisar»); si no, queda el de la escalada.
+if (plan.tipo === 'cancelar_cobro' && plan.avisoCerrado && typeof plan.avisoCerrado === 'object' && raCobroCerrado(cnPrimero('Cancelar cobro en el servidor'))) aviso = plan.avisoCerrado;
 if (!aviso && puerta.ruta === 'uso_extendido' && puerta.responder === true && String(puerta.texto || '').trim() !== '') {
   aviso = { tipo: 'consulta', clave: 'atencion_humana', motivo: 'uso extendido: se le dijo al cliente que una persona continúa la conversación', mensaje: '' };
 }

@@ -10,11 +10,14 @@
  *   6. LÍMITES DE WHATSAPP: título de botón ≤ 20 caracteres, de fila de lista ≤ 24, a lo más 3 botones; y NINGUNA clave `link` en ningún payload (el QR sale por `id` de medio).
  * PR-D (22/10/2026):
  *   7. NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS a un teléfono (exentos: el QR, el resultado de un comprobante, la protección ante violencia o miedo, el texto a un número extranjero y la presentación);
- *   8. CON UN QR ABIERTO (el servidor dice `cobro.pendiente`) no hay un segundo QR ni botones de producto en ningún mensaje: solo texto y el botón de Antonio;
+ *   8. CON UN QR ABIERTO (el servidor dice `cobro.pendiente`) no hay un segundo QR ni botones de producto en ningún mensaje: solo texto plano (el botón de Antonio va solo al derivar, invariante 13);
  *   9. SIN CONFIGURACIÓN (el panel falló o no trae catálogo) no hay montos, ni QR, ni botones de producto, y el modelo no contesta;
  *  10. EL FLUJO NO PROMETE IMÁGENES: ningún texto dice «te envío/muestro/comparto» una foto, imagen, captura o la portada;
  *  11. UNA NOTA DE VOZ DE MENOS DE 3 PALABRAS nunca llega al modelo;
  *  12. EL MENÚ NO SALE ANTES DE TIEMPO: en las dos primeras respuestas a un teléfono, un mensaje libre (sin precio, catálogo, compra ni producto) no recibe botones de producto ni montos.
+ * Botón de Antonio (23/10/2026, regla de Andres):
+ *  13. EL BOTÓN DE CONTACTO VA SOLO AL DERIVAR, por tipo de plan: una respuesta RESUELTA (`PLANES_SIN_BOTON`: precio, catálogo, imágenes, resultado, menú, bonos, recordatorio del QR, saludo, conversación…) sale como texto
+ *      plano o con sus botones de producto, NUNCA con el botón de Antonio; un plan que deriva (`PLANES_CON_BOTON`: derivar, consulta, repetido, fuera de país, cierre del cobro…) lo lleva siempre.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -58,6 +61,12 @@ export function violacionesDeParrafos(cuerpo: string): string[] {
 }
 /** ¿Este mensaje contiene la presentación del asistente (la frase de presentación o el saludo largo)? */
 export const esPresentacion = (cuerpo: string): boolean => /asistente virtual de antonio|qu[eé] gusto saludarte/i.test(cuerpo);
+/** Los planes que resuelven (no derivan): jamás llevan el botón de contacto de Antonio. El de `comprobante` depende del resultado y no se vigila aquí. */
+export const PLANES_SIN_BOTON = ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'precio', 'catalogo', 'imagenes', 'resultado', 'menu', 'bonos', 'complemento', 'qr', 'qr_pendiente', 'imagen_otra', 'audio_fijo', 'archivo', 'otro', 'riesgo', 'suspendido'];
+/** Los planes que derivan a Antonio: siempre con el botón. */
+export const PLANES_CON_BOTON = ['derivar', 'consulta', 'qr_insistente', 'cancelacion', 'sin_configuracion', 'fuera_pais', 'repetido', 'cobro_cerrado', 'cobro_ya_cerrado', 'uso_extendido'];
+/** ¿El mensaje lleva el botón que abre el chat de Antonio (`cta_url`)? */
+export const llevaBotonDeContacto = (m: { payload: J }): boolean => (m.payload['interactive'] as J | undefined)?.['type'] === 'cta_url';
 const IDS_DE_PRODUCTO = ['b_pack', 'b_libro', 'b_workbook', 'b_guia', 'b_calendario', 'b_preguntas'];
 /**
  * Las violaciones de los invariantes para UN turno; `pulsados` se actualiza con el toque de este turno ANTES de mirar la respuesta. `presentaciones` (opcional) cuenta, por teléfono,
@@ -105,6 +114,10 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
     if (ctx.qrAbierto) {
       if (m.tipo === 'image') v.push('con un QR abierto salió un segundo QR');
       if (botonesDeProducto.length) v.push(`con un QR abierto salieron botones de producto: ${botonesDeProducto.join(', ')}`);
+    }
+    if (ctx.plan && m.tipo !== 'image') {
+      if (PLANES_SIN_BOTON.includes(ctx.plan) && llevaBotonDeContacto(m)) v.push(`el plan «${ctx.plan}» resuelve y no deriva, pero salió con el botón de Antonio`);
+      if (PLANES_CON_BOTON.includes(ctx.plan) && !llevaBotonDeContacto(m)) v.push(`el plan «${ctx.plan}» deriva a Antonio, pero salió sin su botón`);
     }
     if (ctx.sinConfig) {
       if (m.tipo === 'image') v.push('sin configuración salió un QR');

@@ -48,7 +48,7 @@ Origen = `venta-minima`, **no `rroca-ruben`**. Cada declaración se compara BYTE
 | `src/lib/avisos.js` | `venta-minima/src/lib/avisos.js` | `avLimpio` (con `avSinProhibidas`, `avCanon`, `avNorm`…), `avTexto`, `avPlantilla`, `avDestinatarios` (+ `avUnificar`, `avPrefijos`, `avDigitos`), `avPrimerNombre`, `avParametro` |
 | `RA_NIEGA_IA` en `src/lib/ra.js` | `chat-novuchat/src/lib/chat.js` (`CH_NIEGA_IA`) | La expresión, idéntica salvo el nombre (la prueba la compara) |
 
-Los 10 nodos nuevos de `flujo.plantilla.json` (`Interpretar lectura`, `¿Cotejar?`, `Cotejar en el servidor`, `¿Conversar con el modelo?`, `Conversar con el modelo`, `Armar avisos`, `¿Hay avisos?`, `Enviar aviso`, `¿Falló la protección?` y `Reportar protección`) son propios de este flujo (producción 46 nodos, prueba 41; tope 48).
+Los 12 nodos nuevos de `flujo.plantilla.json` (`Interpretar lectura`, `¿Cotejar?`, `Cotejar en el servidor`, `¿Conversar con el modelo?`, `Conversar con el modelo`, `Armar avisos`, `¿Hay avisos?`, `Enviar aviso`, `¿Falló la protección?`, `Reportar protección`, `¿Cancelar cobro?` y `Cancelar cobro en el servidor`) son propios de este flujo (producción 48 nodos, prueba 43; tope 48).
 
 ## Propio de Antonio
 

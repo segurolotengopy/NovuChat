@@ -12,6 +12,7 @@
 //   qr_pendiente   ya hay un QR abierto Y el cliente habla de pagar o pide un producto: el recordatorio (un solo QR a la vez, un pedido = un producto). Si ya fue lo último que se le dijo, se escala a Antonio (`derivar` con `qr_insistente`).
 //                  Cualquier otra pregunta con un QR abierto se responde (precio, catálogo, imágenes, resultado o el modelo) SIN botones de producto y SIN abrir otro QR (`qrAbierto: true`);
 //   catalogo       «qué vendes», «catálogo», «lista», «opciones»: los productos con precio leídos del catálogo de la consola, por código;   imagenes   «¿tienes imágenes?»: texto fijo, el flujo no envía imágenes;
+//   cancelar_cobro «cancela ese qr» con un QR abierto y sin comprobante: el servidor cierra el cobro (llamada síncrona) y sale `cobro_cerrado`; si el servidor no responde 200, sale la derivación `cancelacion`;   cobro_ya_cerrado   la segunda cancelación seguida;
 //   comprobante    el resultado del cotejo traducido por `cbResultadoVenta`;
 //   derivar        pasa a Antonio (factura, otro medio de pago, garantía, reclamo, una persona; producto agotado; sin QR utilizable; «cancela mi pedido» con un QR abierto: `cancelacion`; SIN CONFIGURACIÓN del negocio: `sin_configuracion`): aviso + botón;
 //   resultado      «¿me garantiza recuperar mi relación?»: frase fija;
@@ -172,11 +173,21 @@ if (pre === 'workbook' || pre === 'calendario_preguntas') {
 }
 const derivacion = raDerivacion(norm, { comprobante: ficha.comprobanteMs > 0 || cobro.enRevision === true, qrAbierto: hayQrAbierto });
 if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', clave: derivacion.clave, aviso: avisoDeConsulta(derivacion.clave, derivacion.motivo), cat: cat });
-// «Cancela mi pedido», «no quiero comprar», «ya no lo quiero» (con un QR abierto o un pedido hecho): pasa a Antonio con aviso y botón y libera la guarda LOCAL del QR. El flujo NO puede cerrar la solicitud de cobro del
-// servidor, así que el texto nunca dice que el pedido quedó cancelado. «Solo quiero saber…» no cancela nada: es un cliente que mira (se le responde más abajo).
+// «Cancela mi pedido», «no quiero comprar», «ya no lo quiero» (con un QR abierto o un pedido hecho). «Solo quiero saber…» no cancela nada: es un cliente que mira (se le responde más abajo).
+// CANCELAR POR CÓDIGO: (a) QR abierto de regla 2 que el servidor ve (`cobro.pendiente`) y SIN comprobante previo: plan `cancelar_cobro`; «Cancelar cobro en el servidor» reporta `cobro_cancelado` ANTES de armar el texto
+// y «Armar mensajes» dice «cerré tu pedido» solo si el servidor respondió 200; si no, cae a la escalada de siempre (`aviso` de este plan). (c) Con comprobante previo (en revisión o ya cotejado) NO se cancela: se escala y se
+// reporta `anulacion_avisada` (solo avisa). Una segunda cancelación seguida recibe «ya cerrado» (la firma del último plan), sin repetir nada.
 const cancelacion = raCancelaPedido(norm);
-if (cancelacion === 'cancela' && (hayQrAbierto || ficha.pedidos > 0)) {
-  return salir({ tipo: 'derivar', motivo: 'cancelacion', clave: 'cancelacion', aviso: avisoDeConsulta('cancelacion', 'quiere cancelar su pedido o ya no quiere comprar (el flujo no puede cerrar la solicitud del cobro)'), cat: cat, liberaGuarda: hayQrAbierto });
+if (cancelacion === 'cancela') {
+  if (ficha.ultimaFirma === 'cobro_cerrado' || ficha.ultimaFirma === 'cobro_ya_cerrado') return salir({ tipo: 'cobro_ya_cerrado', aviso: null, cat: cat });
+  const conComprobante = ficha.comprobanteMs > 0 || cobro.enRevision === true;
+  if (hayQrAbierto || ficha.pedidos > 0 || conComprobante) {
+    const escalada = avisoDeConsulta('cancelacion', 'quiere cancelar su pedido o ya no quiere comprar (el cobro no se pudo cerrar desde el asistente)');
+    if (!conComprobante && cobro.pendiente === true && cobro.regla === 2) {
+      return salir({ tipo: 'cancelar_cobro', aviso: escalada, avisoCerrado: { tipo: 'consulta', clave: 'cancelacion', motivo: 'cerró su pedido; si pagó, revisar', mensaje: '' }, cat: cat, liberaGuarda: true });
+    }
+    return salir(Object.assign({ tipo: 'derivar', motivo: 'cancelacion', clave: 'cancelacion', aviso: escalada, cat: cat, liberaGuarda: hayQrAbierto }, conComprobante ? { evento: 'anulacion_avisada' } : {}));
+  }
 }
 if (raPreguntaPorResultado(norm)) return salir({ tipo: 'resultado', cat: cat, qrAbierto: hayQrAbierto });
 // CON UN QR ABIERTO (PR-D, «como Rubén»): el recordatorio SOLO sale si el cliente habla de pagar («ya pagué», «cómo pago», «comprobante», «QR», «monto») o pide un producto (más abajo). Todo lo demás se responde

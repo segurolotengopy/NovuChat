@@ -324,13 +324,13 @@ describe('los botones y la lista', () => {
     expect(b.mensajes[0]!.cuerpo).not.toMatch(/\b5 Bs/);
   });
 
-  it('con un QR abierto no sale otro: el recordatorio (con el monto) y el botón de Antonio; un solo QR a la vez', () => {
+  it('con un QR abierto no sale otro: el recordatorio (con el monto) en texto plano, sin botón; un solo QR a la vez', () => {
     const w = nuevo();
     hablar(w, ANA, mTexto(PRELLENADOS.pack));
     const t = hablar(w, ANA, mBoton('b_libro'));
     expect(t.mensajes.some((m) => m.tipo === 'image')).toBe(false);
     expect(t.mensajes[0]!.cuerpo).toMatch(/Ya tienes un QR abierto/);
-    expect(esBotonDeAntonio(t)).toBe(true);
+    expect(esBotonDeAntonio(t)).toBe(false);
     // El servidor también lo dice (el estado del cobro de la consola).
     const w2 = nuevo({ panel: panelConQr(35) });
     const u = hablar(w2, ANA, mTexto('quiero otro'));
