@@ -50,7 +50,7 @@ export function configDe(tenants = tenantsConDatos()) {
   return {
     plantilla: 'flujo.plantilla.json',
     raiz: '../..',
-    librerias: ['src/lib/dr.js'],
+    librerias: ['../venta-minima/src/lib/avisos.js', 'src/lib/dr.js'],
     comun: ['src/nodos/_comun.js'],
     paquetes: {
       mensajes: ['../comun-sin-agente/src/mensajes.js'],
@@ -65,6 +65,10 @@ export function configDe(tenants = tenantsConDatos()) {
     ]),
   };
 }
+
+/** La conversación: el modelo que clasifica y el aviso a recepción. La guardia los exige (sin el aviso, los textos que dicen «ya avisé» no tendrían respaldo). */
+export const NODOS_DEL_AVISO = ['Armar avisos', '¿Hay avisos?', 'Enviar aviso'];
+export const NODOS_DE_LA_CONVERSACION = ['¿Conversar con el modelo?', 'Conversar con el modelo', '¿Falló la protección?', 'Reportar protección'];
 
 /** Los nodos que los módulos comunes de medios leen por contrato (los exige `--verificar`). */
 export const NODOS_CONTRATO_MEDIOS = ['Normalizar entrada', 'Config del negocio', 'Obtener URL del medio (general)', 'Preparar transcripción', 'Preparar imagen', 'Medio no aceptado'];
@@ -109,6 +113,10 @@ const FORMAS_CONFIG = {
   // El ÚNICO modelo de este flujo (decisión de Andres): gemini-3.5-flash-lite.
   modelo: /^gemini-3\.5-flash-lite$/,
   temperatura: /^(0|1|0\.\d{1,2})$/,
+  // La plantilla UTILITY del aviso a recepción. El estado es el de Meta: solo APPROVED habilita el aviso fuera de la ventana de la recepción; el nombre puede ser un marcador mientras no exista.
+  avisoSolicitudPlantilla: /^([a-z0-9_]{1,100}|REEMPLAZAR_[A-Z0-9_]+)$/,
+  avisoSolicitudEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
+  avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
 
@@ -169,7 +177,7 @@ export function erroresDeDoctora(d) {
 /** Los textos de CONTENIDO que cada doctora aporta (las claves que `Decidir turno` y `Armar mensajes` leen del dato). */
 export const TEXTOS_DE_CONTENIDO = ['apertura', 'pregunta', 'lista_intro', 'quien', 'que_es', 'gratis', 'precio', 'sin_compromiso', 'donde', 'cual_mejor', 'diferencia', 'dolor', 'resultados', 'antes_despues', 'recuperacion', 'artificial', 'probe_otros', 'pensar', 'especifico'];
 /** Los textos de estructura que son COMUNES (están en `dr.js`) y que una doctora puede reemplazar si lo pide por escrito. */
-export const TEXTOS_COMUNES_PERMITIDOS = ['presentacion', 'baja_instruccion', 'consentimiento', 'consentimiento_no', 'pedir_nombre', 'pedir_contacto', 'pedir_otro_numero', 'pedir_horario', 'cierre_con_aviso', 'cierre_sin_aviso', 'medica', 'medica_documento', 'ia', 'baja_ok', 'otra', 'gracias'];
+export const TEXTOS_COMUNES_PERMITIDOS = ['presentacion', 'baja_instruccion', 'consentimiento', 'consentimiento_no', 'pedir_nombre', 'nombre_repetir', 'pedir_contacto', 'pedir_otro_numero', 'pedir_horario', 'pedir_horario_con', 'cierre_con_aviso', 'cierre_sin_aviso', 'ya_derivado', 'medica', 'medica_con_aviso', 'medica_documento', 'ia', 'baja_ok', 'otra', 'otra_con_aviso', 'gracias', 'duda', 'horario_con', 'horario_sin', 'cancelar_ok'];
 
 /** Lee y valida el archivo de datos de UN tenant. Cada error nombra el campo. */
 export function cargarDatos(ruta) {
@@ -247,6 +255,21 @@ export function guardias(variante, flujo) {
   if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
   if (/subscriptions|subscribed_apps/i.test(JSON.stringify(flujo))) h.push('menciona «subscriptions» o «subscribed_apps» (prohibición 7)');
   if (/langchain\.(agent|memory\w*|lmChat\w*|chain\w*)$/i.test(nodos.map((n) => n.type).join('\n'))) h.push('lleva un agente, memoria o modelo de chat de n8n: este flujo no los lleva');
+  // La conversación completa: el modelo que clasifica y el aviso a recepción. Sin el aviso, los textos que dicen «ya avisé» no tendrían respaldo («solo se ofrece lo que se cumple»).
+  for (const n of [...NODOS_DE_LA_CONVERSACION, ...NODOS_DEL_AVISO]) if (!nombres.has(n)) h.push(`falta el nodo «${n}» de la conversación`);
+  const conex = (flujo && flujo.connections) || {};
+  const destinosDe = (nombre, salida) => (((conex[nombre] || {}).main || [])[salida] || []).map((x) => x.node);
+  if (nombres.has('Armar avisos') && !destinosDe('Armar avisos', 0).includes('¿Hay avisos?')) h.push('«Armar avisos» no está conectado a «¿Hay avisos?»');
+  if (nombres.has('¿Hay avisos?') && !destinosDe('¿Hay avisos?', 0).includes('Enviar aviso')) h.push('«¿Hay avisos?» no envía por «Enviar aviso»');
+  if (nombres.has('Enviar aviso') && !destinosDe('Enviar aviso', 0).includes('Armar mensajes')) h.push('«Enviar aviso» no cuelga de «Armar mensajes»: el aviso tiene que correr ANTES de armar el mensaje que dice si salió');
+  if (nombres.has('¿Hay avisos?') && !destinosDe('¿Hay avisos?', 1).includes('Armar mensajes')) h.push('«¿Hay avisos?» no envía la rama sin aviso (salida 1) a «Armar mensajes»');
+  const enviarAviso = por('Enviar aviso');
+  if (enviarAviso && !((enviarAviso.credentials || {}).httpHeaderAuth || {}).name) h.push('«Enviar aviso» no lleva credencial (httpHeaderAuth)');
+  if (enviarAviso && enviarAviso.onError !== 'continueRegularOutput') h.push('«Enviar aviso» no lleva `onError: continueRegularOutput`: si Meta lo rechaza, el turno se cortaría y la persona quedaría sin respuesta');
+  const codigoAvisos = String(p(por('Armar avisos')).jsCode || '');
+  if (nombres.has('Armar avisos') && !(/drPlantilla\(/.test(codigoAvisos) && /avPlantilla\(/.test(codigoAvisos) && /DR_VENTANA_RECEPCION_MS/.test(codigoAvisos) && /consentimiento === 'si'/.test(codigoAvisos))) h.push('«Armar avisos» no lleva la plantilla, la ventana de la recepción ni el consentimiento: el aviso fuera de las 24 h no saldría o saldría sin permiso');
+  const modelo = por('Conversar con el modelo');
+  if (modelo && !/^=?https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\//.test(String(p(modelo).url || ''))) h.push('«Conversar con el modelo» no llama a Gemini');
   // Los nodos de medios comunes tienen que estar, con los nombres que esos módulos leen por contrato.
   for (const n of NODOS_CONTRATO_MEDIOS) if (!nombres.has(n)) h.push(`falta el nodo «${n}» (contrato con los módulos comunes de medios)`);
   // El reporte del entrante corre ANTES que la rama que responde: «Reportar mensaje (entrante)» arriba de la «Puerta del turno» y de toda la rama de medios y de decisión.

@@ -807,6 +807,160 @@
       "notes": "Última rama de «Armar mensajes». Verifica la entrega (regla I-ENTREGA). En la variante de prueba, «Entrada de prueba» responde con esto."
     },
     {
+      "id": "conversar-si",
+      "name": "¿Conversar con el modelo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4760,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.llamarModelo === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Solo hay llamada al modelo en una conversación libre con la puerta abierta: pausa por persona = CERO llamadas."
+    },
+    {
+      "id": "conversar",
+      "name": "Conversar con el modelo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5000,
+        200
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "@@cred:gemini"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $json.modelo }}:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.cuerpoModelo) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "notes": "generateContent de Gemini con el cuerpo que armó «Decidir turno». El modelo (`modelo` de «Config base», gemini-3.5-flash-lite, el único modelo de este flujo) es un DATO: se cambia sin tocar el flujo. Solo conversa; su salida pasa por el filtro de redacción en «Armar mensajes»."
+    },
+    {
+      "id": "armar-avisos",
+      "name": "Armar avisos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5240,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@todo:nodos/armar-avisos.js"
+      },
+      "notes": "El aviso a la recepción: texto libre dentro de su ventana de 23,5 h; fuera de ella, plantilla UTILITY (nombre, idioma y estado son DATO de «Config base»; solo APPROVED). Sin plantilla aprobada no sale nada y «Armar mensajes» le dice la verdad al cliente."
+    },
+    {
+      "id": "hay-avisos-si",
+      "name": "¿Hay avisos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5480,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.sinAviso !== true && ($('Config del negocio').first().json.modoPrueba !== true || $('Config del negocio').first().json.enviarDeVerdad === true) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "En modo prueba sin `enviarDeVerdad` el aviso no se envía."
+    },
+    {
+      "id": "enviar-aviso",
+      "name": "Enviar aviso",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5720,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ /^v\\d+\\.\\d$/.test(String($json.waGraphVersion)) ? $json.waGraphVersion : 'v26.0' }}/{{ String($json.phoneNumberId).replace(/\\D/g, '') }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:graph"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "El aviso a la recepción (texto libre dentro de su ventana, o plantilla), nunca al propio número de quien escribe. Sin reintentos: un aviso repetido llegaría dos veces. El resultado (un `wamid` real o un error) lo lee «Armar mensajes» para decirle al cliente la verdad."
+    },
+    {
       "id": "proteccion-si",
       "name": "¿Falló la protección?",
       "type": "n8n-nodes-base.if",
@@ -1215,7 +1369,7 @@
       "main": [
         [
           {
-            "node": "Armar mensajes",
+            "node": "¿Conversar con el modelo?",
             "type": "main",
             "index": 0
           }
@@ -1248,6 +1402,75 @@
           }
         ],
         []
+      ]
+    },
+    "¿Conversar con el modelo?": {
+      "main": [
+        [
+          {
+            "node": "Conversar con el modelo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Armar avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conversar con el modelo": {
+      "main": [
+        [
+          {
+            "node": "Armar avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar avisos": {
+      "main": [
+        [
+          {
+            "node": "¿Hay avisos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay avisos?": {
+      "main": [
+        [
+          {
+            "node": "Enviar aviso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar aviso": {
+      "main": [
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "¿Falló la protección?": {

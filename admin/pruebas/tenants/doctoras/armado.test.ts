@@ -38,7 +38,7 @@ const nodo = (f: J, n: string): J => (f['nodes'] as J[]).find((x) => x['name'] =
 const PRODUCCION = flujoDe('rroca-evy') as unknown as J;
 const PRUEBA = flujoDe('rroca-evy', true) as unknown as J;
 /** Los nodos de cada variante en esta etapa (cambia con la conversación; el tope es 48). */
-const NODOS = { produccion: 38, prueba: 33 };
+const NODOS = { produccion: 43, prueba: 38 };
 
 describe('el armado: lo versionado es lo que arma la plantilla', () => {
   it('hay un archivo de datos por doctora y cada uno arma sus DOS JSON', () => {
@@ -83,7 +83,8 @@ describe('el armado: lo versionado es lo que arma la plantilla', () => {
     expect(env['parameters'].options.batching.batch).toEqual({ batchSize: 1, batchInterval: 1500 });
     expect(env['onError']).toBe('continueRegularOutput');
     expect(JSON.stringify(nodo(PRODUCCION, 'Reportar mensaje (saliente)'))).toContain("$('Normalizar entrada')");
-    expect(JSON.stringify(PRODUCCION)).not.toContain('Interpretar entrada');
+    // (El comentario de `avisos.js`, incluido desde venta-minima, nombra ese nodo: lo que importa es que ningún nodo ni conexión lo lea.)
+    expect(JSON.stringify({ c, n: (PRODUCCION['nodes'] as J[]).map((x) => ({ ...x, parameters: { ...x['parameters'], jsCode: undefined } })) })).not.toContain('Interpretar entrada');
   });
 
   it('«Armar mensajes» cuelga también de «Resumen del turno», que es el nodo más bajo del lienzo (corre al final con executionOrder v1)', () => {

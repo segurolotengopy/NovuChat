@@ -72,6 +72,18 @@ describe('HUECOS del núcleo: el código copiado de rroca-antonio, con SOLO las 
     const literalDeAntonio = cuerpo.slice(i, j + 2);
     expect(`/${dr.DR_BAJA.source}/${dr.DR_BAJA.flags}`).toBe(literalDeAntonio);
   });
+
+  it('dr.js: la hoja de párrafos (raOraciones, raEsPregunta, raParrafos) es la de Antonio con el prefijo `dr`', () => {
+    const fuente = (t: string): string => {
+      const i = t.indexOf('function raOraciones(');
+      const j = t.indexOf('// El texto que ve el cliente, con la barrera aplicada');
+      return t.slice(i, j);
+    };
+    const origen = fuente(leer(join(ANTONIO, 'src/lib/ra.js'))).replace(/\bra(Oraciones|EsPregunta|Parrafos)\b/g, 'dr$1').replace(/\bRA_PARRAFO_MAX\b/g, 'DR_PARRAFO_MAX');
+    const propio = leer(join(DR, 'src/lib/dr.js'));
+    expect(origen.length).toBeGreaterThan(1000);
+    expect(propio).toContain(origen.trim());
+  });
 });
 
 describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo salvo `id`, `notes` y `position`', () => {

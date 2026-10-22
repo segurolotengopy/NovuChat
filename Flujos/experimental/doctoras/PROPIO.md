@@ -10,3 +10,6 @@ Mensajes (`comun-sin-agente/src/mensajes.js`), filtro de redacción, cadena de e
 
 ## Propio
 `src/lib/dr.js`, `normalizar-entrada.js`, `decidir-turno.js`, `armar-mensajes.js`, `resumen-del-turno.js`, la plantilla y los datos de cada doctora.
+
+## PR-B
+Incluido desde su fuente además: `venta-minima/src/lib/avisos.js` (texto libre y plantilla del aviso; `librerias` del armador). Copia declarada: las funciones de párrafos (`drOraciones`, `drEsPregunta`, `drParrafos`) son las de `rroca-antonio/src/lib/ra.js` con otro prefijo (prueba de igualdad). Propio: intenciones, textos comunes, consentimiento, `armar-avisos.js`, `armar-mensajes.js`, `decidir-turno.js`. Pruebas: `conversacion.test.ts`, `negadas.test.ts` (batería de más de 60 mensajes con el vigilante de UX), `referencias-a-nodos.test.ts` (importa `problemasDeReferencias` de Rubén, sin copiarla; lista permitida exacta).
