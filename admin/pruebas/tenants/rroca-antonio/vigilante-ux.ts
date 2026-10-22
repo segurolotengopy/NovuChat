@@ -74,11 +74,14 @@ export interface ContextoUx {
   sinConfig?: boolean;
   /** El modelo de conversación corrió en este turno. */
   llamoAlModelo?: boolean;
+  /** El plan que decidió el turno (`Armar mensajes`). */
+  plan?: string;
   /** El turno fue una nota de voz. */
   esAudio?: boolean;
 }
-/** Los textos EXENTOS del invariante 7 (el mismo texto dos veces seguidas). */
-const EXENTO_REPETIDO = (m: UxMsg): boolean => m.tipo === 'image' || /comprobante/i.test(m.cuerpo) || m.cuerpo === LIB.RA_TEXTO_RIESGO || /^Gracias por escribirnos\. El pago de este material/.test(m.cuerpo) || esPresentacion(m.cuerpo);
+/** Los mensajes EXENTOS del invariante 7, POR PLAN (no por palabras): el QR, el resultado del cotejo, la protección ante violencia o miedo y el texto a un número extranjero; y la presentación. */
+const PLANES_EXENTOS = ['qr', 'comprobante', 'riesgo', 'fuera_pais'];
+const EXENTO_REPETIDO = (m: UxMsg, plan: string): boolean => m.tipo === 'image' || PLANES_EXENTOS.includes(plan) || esPresentacion(m.cuerpo);
 const TRIGGER_DE_OPCIONES = /precio|cu[aá]nto|cuesta|vale\b|cat[aá]logo|vend|lista|opciones|compr|pagar|pago|adquirir|llevo|pack|libro|workbook|calendario|preguntas|bono|^hola, (quiero|me interesa)|garant|resultado|imagen|foto/i;
 export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, transcripcion = '', ctx: ContextoUx = {}): string[] {
   const v: string[] = [];
@@ -96,7 +99,7 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
   if (ctx.esAudio && palabrasDeVoz < 3 && ctx.llamoAlModelo) v.push('una nota de voz de menos de 3 palabras llegó al modelo');
   const abierto = !ctx.qrAbierto && (ctx.respuestasPrevias ?? 99) < 2 && entrante['type'] === 'text' && !TRIGGER_DE_OPCIONES.test(textoEntrante);
   for (const m of mensajes) {
-    if (ultimoTexto !== '' && m.cuerpo === ultimoTexto && !EXENTO_REPETIDO(m)) v.push(`el mismo texto dos veces seguidas: «${m.cuerpo.slice(0, 40)}…»`);
+    if (ultimoTexto !== '' && m.cuerpo === ultimoTexto && !EXENTO_REPETIDO(m, ctx.plan ?? '')) v.push(`el mismo texto dos veces seguidas: «${m.cuerpo.slice(0, 40)}…»`);
     ultimoTexto = m.cuerpo;
     const botonesDeProducto = idsDeBotones(m).filter((id) => IDS_DE_PRODUCTO.includes(id) || id === 'b_bonos');
     if (ctx.qrAbierto) {
@@ -165,7 +168,7 @@ export function vigilarUx(mundo: Mundo): void {
     const salida = t.mensajes.filter((e) => !e.respaldo).map((e) => ({ tipo: e.tipo, cuerpo: e.cuerpo, payload: e.payload }));
     const trans = String((t.porNodo['Preparar transcripción']?.[0]?.['userInput'] ?? '')).replace(/^\(audio transcripto\) /, '').split('\n')[0]!;
     const v = violacionesDeUx(pulsados, msg, salida, pres, trans, {
-      ultimoTexto: estado.ultimo.get(from), respuestasPrevias: estado.respuestas.get(from) ?? 0, qrAbierto, sinConfig: sinConfig && Number(panel?.['statusCode']) !== 409, llamoAlModelo: t.ejecutados.has('Conversar con el modelo'), esAudio: msg['type'] === 'audio',
+      ultimoTexto: estado.ultimo.get(from), respuestasPrevias: estado.respuestas.get(from) ?? 0, qrAbierto, sinConfig: sinConfig && Number(panel?.['statusCode']) !== 409, llamoAlModelo: t.ejecutados.has('Conversar con el modelo'), esAudio: msg['type'] === 'audio', plan: String((t.porNodo['Armar mensajes']?.[0]?.['plan'] ?? '')),
     });
     if (salida.length) { estado.ultimo.set(from, salida[salida.length - 1]!.cuerpo); estado.respuestas.set(from, (estado.respuestas.get(from) ?? 0) + salida.length); }
     estado.presentaciones.set(from, pres.n);

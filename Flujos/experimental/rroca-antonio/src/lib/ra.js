@@ -431,12 +431,14 @@ function raPideProducto(n) {
 // El flujo NO puede cerrar la solicitud de cobro del servidor: un 'cancela' pasa a Antonio (aviso + botón) y el texto no dice jamás que el pedido quedó cancelado.
 function raCancelaPedido(n) {
   const palabras = n === '' ? 0 : n.split(' ').length;
-  const cancela = (/\b(cancel\w*|anul\w*)\b/.test(n) && (/\b(pedido|compra|orden|qr|pago)\b/.test(n) || palabras <= 3))
+  // En Bolivia «cancelé», «cancelado», «cancelada», «cancelamos» (pretérito y participio) significan «ya pagué»: SIEMPRE es intención de pago, nunca una cancelación. Solo el presente y el imperativo
+  // («cancela», «cancelar», «cancelo», «cancelen», «anula», «anular», «anulo») cuentan como cancelar.
+  if (/\b(cancele|cancelado|cancelada|cancelamos|cancelaron)\b/.test(n)) return '';
+  const verbo = /\b(cancela|cancelar|cancelo|cancelen|cancelalo|cancelala|anula|anular|anulo|anulen|anulalo)\b/.test(n);
+  const cancela = (verbo && (/\b(pedido|compra|orden|qr|pago)\b/.test(n) || palabras <= 3))
     || /\bno (lo |la |los |las )?(quiero|quisiera|necesito|voy a|pienso|deseo) (ya |mas )?(comprar|pagar|seguir|el pedido|nada|el libro|el pack|el producto|continuar)\b/.test(n)
     || /\bya no (lo |la |los |las )?(quiero|necesito|voy a|me interesa|deseo)\b/.test(n) || /\bno me interesa\b|\bdesisto\b|\bme arrepenti\b/.test(n);
   if (!cancela) return '';
-  // En Bolivia «cancelé», «ya cancelé», «cancelado», «cancelamos» significan «ya pagué»: es intención de pago, nunca una cancelación (salvo «cancelo/cancelé mi pedido» sin «ya» ni palabras de pago).
-  if (/\b(cancele|cancelado|cancelada|cancelamos|cancelo|cancelando)\b/.test(n) && (/\b(ya|pago|transferencia|deposito|compra|qr|monto|libro|pack)\b/.test(n) || !/\bmi pedido\b/.test(n)) && !/\bno (lo |la )?(quiero|voy a)\b/.test(n)) return '';
   return /\b(solo|solamente|nomas|nada mas)\b[^.?!]{0,20}\b(saber|ver|conocer|informacion|info|preguntar|consultar|mirar|curiosear)\b/.test(n) ? 'curioso' : 'cancela';
 }
 // «¿Tienes imágenes?», «¿me mandas una foto del libro?», «¿tienes capturas?»: el flujo NO envía imágenes del libro (solo existe el QR como imagen saliente).

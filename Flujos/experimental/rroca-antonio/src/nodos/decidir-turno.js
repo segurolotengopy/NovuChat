@@ -104,7 +104,13 @@ if (esAudio && falloAudio) return salir({ tipo: 'audio_fijo', causa: falloAudio,
 if (t.categoria === 'otro') return salir({ tipo: 'otro', cat: cat });
 // 1c. SIN CONFIGURACIÓN (PR-D, orden de Andres): si «Traer configuración» falló o no trae catálogo, cobro ni venta, el flujo NO improvisa (ni el modelo, ni «no puedo mostrarte el QR» como si solo faltara el QR, ni precios):
 //     texto honesto, aviso a Antonio y botón. El comprobante de una imagen tampoco se coteja a ciegas.
-if (raSinConfiguracion(panel)) return salir({ tipo: 'derivar', motivo: 'sin_configuracion', clave: 'sin_configuracion', aviso: avisoDeConsulta('sin_configuracion', 'el asistente no pudo leer la configuración del negocio (catálogo, cobro o venta)'), cat: cat });
+if (raSinConfiguracion(panel)) {
+  // Con una imagen o un PDF el aviso dice que pudo ser un comprobante, sin copiar texto del cliente.
+  const aviso = esVisual
+    ? { tipo: 'consulta', clave: 'sin_configuracion', motivo: 'envió una imagen (posible comprobante) mientras la configuración no estaba disponible', mensaje: '' }
+    : avisoDeConsulta('sin_configuracion', 'el asistente no pudo leer la configuración del negocio (catálogo, cobro o venta)');
+  return salir({ tipo: 'derivar', motivo: 'sin_configuracion', clave: 'sin_configuracion', aviso: aviso, cat: cat });
+}
 
 // 2. Una imagen o un documento.
 if (esVisual) {
@@ -201,13 +207,14 @@ const confirmado = raProductoConfirmado(norm);
 if (confirmado) return salir(elegir(confirmado, ''));
 if (raQuiereOpciones(norm)) return salir(hayQrAbierto ? recordatorio('') : (ficha.saludado ? opcionesDe(ficha.usados, '') : saludo()));
 if (!ficha.saludado && raEsSoloSaludo(norm)) return salir(saludo());
-// Una nota de voz corta o ininteligible (menos de 3 palabras o sin letras que valgan) que el código no atendió arriba: se pide repetirla con un texto fijo; el modelo no inventa una respuesta.
-if (esAudio && raAudioIlegible(norm)) return salir({ tipo: 'audio_fijo', causa: 'corto', cat: cat });
 // Después de un comprobante recibido, hablar de pago, libro, material o entrega NO es una charla libre (y esto va DESPUÉS de las preguntas de precio, la confirmación de un producto y «cómo pago», que son una compra nueva): el modelo no habla del estado de un pago ni de una entrega. Va la derivación de no entrega
 // (texto fijo con el plazo del dato, aviso y botón).
 if (ficha.comprobanteMs > 0 && (raHablaDePagar(norm) || /\b(pago|pague|pagado|pagaste|comprobante|transferencia|deposito|material|llega\w*|llego|enviar\w*|enviaron|mandar\w*|mandaron|recib\w*|entrega\w*)\b/.test(norm) || (/\blibro\b/.test(norm) && /\b(cuando|donde|llega\w*|llego|envi\w*|mand\w*|recib\w*)\b/.test(norm)))) {
   return salir({ tipo: 'derivar', motivo: 'consulta', clave: 'no_entrega', aviso: avisoDeConsulta('no_entrega', 'queja de no entrega: el cliente pregunta por su pago o por el material'), cat: cat });
 }
+// Una nota de voz corta o ininteligible (menos de 3 palabras o sin letras que valgan) que el código no atendió arriba (ni siquiera la derivación de no entrega tras un comprobante, que va antes): se pide repetirla
+// con un texto fijo; el modelo no inventa una respuesta.
+if (esAudio && raAudioIlegible(norm)) return salir({ tipo: 'audio_fijo', causa: 'corto', cat: cat });
 // Con un QR abierto, lo que queda: pedir un producto (recordatorio), una pregunta (el modelo, sin botones de producto ni otro QR) o cualquier otra cosa (recordatorio).
 if (hayQrAbierto) {
   if (raPideProducto(norm) || !raEsPreguntaLibre(textoCliente, norm)) return salir(recordatorio(''));

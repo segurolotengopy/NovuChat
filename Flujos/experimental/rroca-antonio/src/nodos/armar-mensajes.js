@@ -166,7 +166,9 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
   } else if (tipoDePlan === 'imagen_otra') {
     m = texto(RA_TEXTO_IMAGEN);
   } else if (tipoDePlan === 'audio_fijo') {
-    m = texto(plan.causa === 'largo' ? RA_TEXTO_AUDIO_LARGO : (plan.causa === 'corto' ? RA_TEXTO_AUDIO_CORTO : plan.causa === 'no_entendido' ? RA_TEXTO_AUDIO_NO_ENTENDIDO : RA_TEXTO_ARCHIVO_NO_ABIERTO));
+    // Si es el primer mensaje del teléfono, la presentación fija va en el MISMO mensaje, en su propio párrafo (sin agregar un envío).
+    const fijoAudio = plan.causa === 'largo' ? RA_TEXTO_AUDIO_LARGO : (plan.causa === 'corto' ? RA_TEXTO_AUDIO_CORTO : plan.causa === 'no_entendido' ? RA_TEXTO_AUDIO_NO_ENTENDIDO : RA_TEXTO_ARCHIVO_NO_ABIERTO);
+    m = texto(presentacion ? RA_SALUDO_APERTURA + '\n\n' + fijoAudio : fijoAudio);
   } else if (tipoDePlan === 'archivo') {
     m = texto(plan.pesado === true ? RA_TEXTO_ARCHIVO_PESADO : RA_TEXTO_ARCHIVO_NO_ABIERTO);
   } else if (tipoDePlan === 'otro') {

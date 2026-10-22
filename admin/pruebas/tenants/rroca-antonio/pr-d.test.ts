@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
-import { ANA, COMPROBANTE, PRELLENADOS, crear, hablar, mAudio, mTexto, mBoton, panelConQr, panelOk, type Opciones } from './mundo';
+import { ANA, COMPROBANTE, COTEJO_VALIDO, PRELLENADOS, crear, hablar, mAudio, mTexto, mBoton, panelConQr, panelOk, type Opciones } from './mundo';
 import { vigilarUx } from './vigilante-ux';
 
 const nuevo = (o: Opciones = {}): Mundo => { const w = crear(o); vigilarUx(w); return w; };
@@ -98,6 +98,63 @@ describe('D. nunca el mismo texto dos veces seguidas, con reversión si Meta no 
     expect(t.fallo).not.toBeNull();
     expect(fichaDe(w)['ultimoHash']).toBe('');
     expect(fichaDe(w)['ultimaFirma']).toBe('');
+  });
+});
+
+describe('revisión de #588', () => {
+  it('(1) un audio «ya pagué» o «ya cancelé» tras un comprobante recibe la derivación de no entrega con aviso, NO «tu nota de voz fue muy corta»', () => {
+    for (const voz of ['ya pagué', 'ya cancelé']) {
+      const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE, transcripcion: voz }, cotejo: COTEJO_VALIDO });
+      hablar(w, ANA, { type: 'image', image: { id: 'media-img', mime_type: 'image/jpeg' } });
+      w.dobles['Traer configuración'] = () => panelOk();
+      w.avanzar(31);
+      const t = hablar(w, ANA, mAudio());
+      expect(t.mensajes[0]!.cuerpo, voz).not.toMatch(/muy corta/);
+      expect(t.mensajes[0]!.cuerpo, voz).toMatch(/Antonio revisa los comprobantes/);
+      expect(t.avisos, voz).toHaveLength(1);
+      expect(esBotonDeAntonio(t), voz).toBe(true);
+    }
+  });
+  it('(2) cancelación: «cancelo el pedido», «me arrepentí, lo cancelo», «cancela ese qr» cancelan; «cancelé», «cancelado» y «ya cancelé el libro» son PAGO y no cancelan', () => {
+    for (const x of ['cancelo el pedido', 'me arrepentí, lo cancelo', 'cancela ese qr', 'quiero anular la compra']) {
+      const w = conQr();
+      const t = hablar(w, ANA, mTexto(x));
+      expect(t.mensajes[0]!.cuerpo, x).toMatch(/no puedo cancelar un pedido/);
+      expect(t.avisos, x).toHaveLength(1);
+    }
+    for (const x of ['cancelé', 'ya está cancelado', 'ya cancelé el libro', 'cancelamos ayer el pack']) {
+      const w = conQr();
+      const t = hablar(w, ANA, mTexto(x));
+      expect(t.mensajes[0]!.cuerpo, x).not.toMatch(/no puedo cancelar un pedido/);
+      expect(t.mensajes[0]!.cuerpo, x).toMatch(/Ya tienes un QR abierto/);
+    }
+  });
+  it('(3) sin configuración con una imagen: el aviso dice «posible comprobante» y no copia el texto del cliente', () => {
+    const w = nuevo({ panel: 'cae', medio: { clasificacion: COMPROBANTE } });
+    const t = hablar(w, ANA, { type: 'image', image: { id: 'media-img', mime_type: 'image/jpeg', caption: 'TEXTO-DEL-CLIENTE-123' } });
+    expect(t.avisos).toHaveLength(1);
+    expect(t.avisos[0]!.cuerpo).toMatch(/envió una imagen \(posible comprobante\) mientras la configuración no estaba disponible/);
+    expect(t.avisos[0]!.cuerpo).not.toContain('TEXTO-DEL-CLIENTE-123');
+  });
+  it('(4) un primer audio corto lleva la presentación fija y luego el texto de repetir, en UN mensaje con párrafos separados; el segundo no se vuelve a presentar', () => {
+    const w = nuevo({ medio: { transcripcion: 'eh' } });
+    const a = hablar(w, ANA, mAudio());
+    expect(a.mensajes).toHaveLength(1);
+    expect(a.mensajes[0]!.cuerpo).toMatch(/^¡Hola![^\n]*asistente virtual de Antonio Dauber\.\n\n[\s\S]*muy corta/);
+    const b = hablar(w, ANA, mAudio());
+    expect(b.mensajes[0]!.cuerpo).not.toMatch(/asistente virtual/);
+  });
+  it('(5) la reversión con un ultimoHash previo NO vacío: el turno cuyo envío falla deja hash y firma como estaban', () => {
+    const w = nuevo();
+    hablar(w, ANA, mTexto('hola'));
+    const antes = { h: fichaDe(w)['ultimoHash'], f: fichaDe(w)['ultimaFirma'] };
+    expect(antes.h).toMatch(/^[0-9a-f]{8}$/);
+    const falla = () => ({ error: { message: '(#131053) Media upload error', code: 131053 } });
+    w.dobles['Enviar a WhatsApp'] = falla;
+    w.dobles['Enviar respaldo'] = falla;
+    const t = hablar(w, ANA, mTexto('¿qué vendes?'), { toleraFallo: true });
+    expect(t.fallo).not.toBeNull();
+    expect({ h: fichaDe(w)['ultimoHash'], f: fichaDe(w)['ultimaFirma'] }).toEqual(antes);
   });
 });
 
