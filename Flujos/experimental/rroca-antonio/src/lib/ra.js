@@ -434,7 +434,7 @@ function raPideOtrasOpciones(n) {
     || /\bque mas (tengo|tienes|tiene|hay|ofreces|ofrece|vendes|vende)\b/.test(n);
 }
 // «Cancela mi pedido», «no quiero comprar», «ya no lo quiero»: devuelve 'cancela'; con «solo quiero saber / ver / conocer» el cliente solo está mirando y devuelve 'curioso'; si no, ''.
-// El flujo NO puede cerrar la solicitud de cobro del servidor: un 'cancela' pasa a Antonio (aviso + botón) y el texto no dice jamás que el pedido quedó cancelado.
+// «Decidir turno» decide qué hacer con un 'cancela' (cerrar el cobro por código si el servidor responde 200; si no, escalar a Antonio).
 function raCancelaPedido(n) {
   const palabras = n === '' ? 0 : n.split(' ').length;
   // En Bolivia «cancelé», «cancelado», «cancelada», «cancelamos» (pretérito y participio) significan «ya pagué»: SIEMPRE es intención de pago, nunca una cancelación. Solo el presente y el imperativo
@@ -620,8 +620,19 @@ function raPieQr(producto, monto, codigo, conPresentacion) {
 function raTextoQrPendiente(producto, monto) {
   const p = producto && RA_PRODUCTOS[producto] ? RA_PRODUCTOS[producto].nombre : 'tu pedido';
   const m = typeof monto === 'number' && monto > 0 ? ' Ingresa exactamente ' + raMontoBs(monto) + ' y' : ' Ingresa el monto indicado y';
-  return 'Ya tienes un QR abierto con ' + p + '.' + m + ' mándame aquí la captura del comprobante. Si algo falla, escríbele a Antonio con el botón.';
+  // Una respuesta resuelta sale SIN el botón de Antonio (el botón va solo cuando se deriva): el texto tampoco lo menciona.
+  return 'Ya tienes un QR abierto con ' + p + '.' + m + ' mándame aquí la captura del comprobante.';
 }
+// CANCELAR EL COBRO ABIERTO (regla 2, sin comprobante previo). El servidor cierra la solicitud con el evento `cobro_cancelado` (200); cualquier otra respuesta, o un error de red, es «no se cerró» y el flujo
+// cae a la escalada de siempre (nunca se dice que se cerró lo que no se cerró). `servicio.estado === 'cortado'` es un 200 que no se atendió.
+function raCobroCerrado(resp) {
+  const c = cbCuerpoDe(resp);
+  if (c.codigo !== 200) return false;
+  return !(cbEsObjeto(c.cuerpo.servicio) && c.cuerpo.servicio.estado === 'cortado');
+}
+// El texto de «cerré tu pedido»: no dice que el dinero se devolvió ni que el pago quedó anulado (eso lo ve Antonio); con el botón porque deriva la devolución.
+const RA_TEXTO_COBRO_CERRADO = 'Listo, cerré tu pedido y el QR.\n\nSi ya hiciste el pago con ese QR, envíame el comprobante o escríbele a Antonio con el botón: cualquier devolución la ve él directamente.';
+const RA_TEXTO_COBRO_YA_CERRADO = 'Tu pedido ya quedó cerrado y no hay un QR abierto.\n\nSi hiciste un pago con ese QR, envíame el comprobante o escríbele a Antonio con el botón.';
 // Derivación a Antonio. `salio` = el aviso devolvió un `wamid` real (true), no salió (false) o se suprimió por el límite de 30 minutos ('repetido'): SOLO con true se dice «le avisé».
 function raTextoDerivacion(motivo, salio, clave, base) {
   if (salio === 'repetido' && motivo === 'consulta') return 'Eso lo ve Antonio directamente. Antonio ya recibió el aviso de tu consulta anterior; si quieres, escríbele directo con el botón.';
@@ -632,7 +643,7 @@ function raTextoDerivacion(motivo, salio, clave, base) {
         : (clave === 'otro_medio_pago' ? 'El pago de este material se hace con el QR que te muestro por este chat; cualquier otra forma de pago la ve Antonio directamente.' : 'Eso lo ve directamente Antonio y puedes conversarlo con él.'));
     return salio === true ? intro + ' Le avisé; también puedes escribirle directo con el botón.' : intro + ' No pude avisarle; escríbele directo con el botón.';
   }
-  // PR-D · [C] «cancela mi pedido» / «no quiero comprar» con un QR abierto. El flujo NO puede cerrar la solicitud de cobro del servidor, así que NUNCA dice que el pedido quedó cancelado: dice que Antonio lo atiende.
+  // «cancela mi pedido» / «no quiero comprar» que NO se pudo cerrar por código (el servidor no respondió 200, o hay un comprobante previo): NUNCA dice que el pedido quedó cancelado, dice que Antonio lo atiende.
   if (motivo === 'cancelacion') {
     const c = 'Entiendo. Por aquí no puedo cancelar un pedido: eso lo atiende Antonio directamente.';
     if (salio === 'repetido') return c + ' Antonio ya recibió tu aviso anterior; si quieres, escríbele directo con el botón.';

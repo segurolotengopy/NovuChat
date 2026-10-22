@@ -166,7 +166,7 @@ Procedimiento exacto (nada se ejecuta aquí; cada paso que escribe lo corre Clau
 
 ## PR-D (22/10/2026): lo que cambia y cómo se reconcilió
 
-Port propio de piezas de `rroca-ruben` (declarado en `PROPIO.md`); 46 nodos (sin nodos nuevos), **0 mensajes agregados por conversación** (un mensaje por turno, o ninguno). Pruebas: `pr-d.test.ts` y los invariantes 7 a 12 de `vigilante-ux.ts` en toda la batería.
+Port propio de piezas de `rroca-ruben` (declarado en `PROPIO.md`); 46 nodos (sin nodos nuevos; 48 desde la sección «Botón de Antonio solo al derivar…»), **0 mensajes agregados por conversación** (un mensaje por turno, o ninguno). Pruebas: `pr-d.test.ts` y los invariantes 7 a 12 de `vigilante-ux.ts` en toda la batería.
 
 - **C. QR abierto.** Con un QR abierto (`cobro.pendiente` del servidor o la guarda local) se responde: catálogo («qué otras opciones tengo» incluido), precio, imágenes, «¿me garantiza?» y, para una pregunta que el código no sabe, el modelo, siempre sin botones de producto (solo el de Antonio) y sin abrir otro QR. El recordatorio sale solo si habla de pagar (`raHablaDelCobro`: ya pagué, comprobante, QR, monto, cómo pago) o pide un producto, y si ya fue lo último que se le dijo (`ficha.ultimaFirma`) se escala a Antonio (`qr_insistente`). «Cancela el QR/pedido», «no quiero comprar», «ya no lo quiero» (con QR abierto o un pedido hecho): `cancelacion`, aviso y botón, libera la guarda local, y el texto nunca dice que quedó cancelado. Claves de aviso nuevas: `cancelacion`, `qr_insistente`, `sin_configuracion`.
 - **D. Nunca el mismo texto dos veces seguidas.** Hash del último texto en la ficha (`ultimoHash`, `ultimaFirma`); si el siguiente sería idéntico sale una alternativa fija con el botón de Antonio. Exentos: el QR, el resultado de un comprobante, la protección ante violencia o miedo, el texto a un número no boliviano y todo texto con la presentación. `Resumen del turno` revierte hash y firma si Meta no aceptó ni el envío ni el respaldo.
@@ -178,3 +178,34 @@ Port propio de piezas de `rroca-ruben` (declarado en `PROPIO.md`); 46 nodos (sin
 ### Correcciones de la revisión de #588 (22/10/2026)
 
 - El chequeo de audio corto va DESPUÉS de la derivación de no entrega: un audio «ya pagué» tras un comprobante deriva con aviso. «Cancelé», «cancelado», «cancelamos» son SIEMPRE pago; solo «cancela/cancelar/cancelo/anula…» cancelan. El aviso de «sin configuración» con una imagen dice «posible comprobante» sin copiar texto del cliente. Un primer audio fijo lleva la presentación en el mismo mensaje. El vigilante exime del invariante 7 por plan, no por palabra.
+
+## Botón de Antonio solo al derivar y cancelar el QR por código (23/10/2026)
+
+**0 mensajes agregados por conversación** (un mensaje por turno, o ninguno). Nodos: producción **48** (tope 48; +`¿Cancelar cobro?` y `Cancelar cobro en el servidor`), prueba 43. Pruebas: `botones-y-cancelar.test.ts` y el invariante 13 de `vigilante-ux.ts` en toda la batería.
+
+### Parte 1. Regla de Andres: el botón «Escribirle a Antonio» va SOLO cuando se deriva
+
+Una respuesta RESUELTA sale como texto plano (o con sus botones de producto, que son otra cosa); con un QR abierto jamás lleva botones de producto ni el de Antonio. El botón lo trae solo un plan que deriva. El texto del recordatorio del QR ya no dice «con el botón».
+
+| Plan (`resumen.plan`) | ¿Botón de Antonio? | Nota |
+|---|---|---|
+| saludo, angulo, angulo_fijo, modelo, modelo_caido | No | con un QR abierto, texto plano (antes llevaba el botón) |
+| precio, catalogo, imagenes, resultado | No | con un QR abierto, texto plano (antes llevaba el botón) |
+| menu, bonos, complemento | No | sin opciones que ofrecer el plan pasa a `derivar` (sí lleva el botón) |
+| qr, qr_pendiente | No | el recordatorio es texto plano; el segundo recordatorio seguido escala a `derivar` (`qr_insistente`) |
+| audio_fijo, archivo, otro, imagen_otra, riesgo, suspendido | No | |
+| comprobante | Según el resultado | cuadra e ilegible: no; aproximado, diferencia (`reintentar`), tardío, en revisión, sin cotejo, ya cotejado: sí (el texto lo menciona y deriva) |
+| derivar (factura, garantía, reclamo, no_entrega, sin_configuracion, qr_insistente, cancelacion, agotado, sin QR, «no supo» del modelo…) | Sí | |
+| fuera_pais, uso_extendido (estado «operador»), repetido (alternas que mencionan el botón) | Sí | |
+| cobro_cerrado, cobro_ya_cerrado | Sí | mencionan que cualquier devolución la ve Antonio |
+
+### Parte 2. Cancelar el QR abierto por código
+
+- **Cuándo cancela** (`Decidir turno`, plan `cancelar_cobro`): «cancela ese qr», «no quiero comprar», «ya no lo quiero», «cancela mi pedido»… con un QR abierto que el SERVIDOR ve (`cobro.pendiente`, regla 2), sin comprobante previo (`ficha.comprobanteMs == 0` y sin `enRevision`). «Otras opciones» nunca cancela (`raCancelaPedido`, sin cambios). Con la guarda local sola (el servidor no ve el cobro) no se cierra nada: se escala como antes.
+- **Llamada síncrona.** `¿Cancelar cobro?` (IF sobre `plan.tipo`) cuelga de la salida «falso» de `¿Conversar con el modelo?`; si es verdadero pasa por `Cancelar cobro en el servidor` (HTTP POST a `ingesta`, `fullResponse`, `neverError`, 8 s, `onError: continueRegularOutput`) y ambas ramas confluyen en `Armar avisos`. Ambos nodos Code leen la respuesta por nombre (`raCobroCerrado`: 200 y `servicio.estado` distinto de `cortado`) ANTES de componer aviso y texto; sin nodo ejecutado, sin respuesta o con cualquier otro código, vale «no se cerró». El orden de ramas del lienzo no cambia (el nodo nuevo va por debajo de `Conversar con el modelo`, en una rama que solo recorre el turno que cancela).
+- **Contrato con el servidor: SIN cambios.** Se usa el evento que `ingesta` ya entiende (`cobro_cancelado`, solo cierra un cobro abierto de regla 2, nunca uno de regla 1). Va como mensaje ENTRANTE con `idMeta` vacío y texto «(el cliente cerró su pedido)», como hace `Reportar protección`: no es un mensaje de WhatsApp, no cuenta como respuesta ni abre otra conversación (la ventana ya la abrió el entrante real). Costo: una llamada HTTP y un documento de mensaje por cancelación.
+- **Éxito (200):** responde UNA vez «Listo, cerré tu pedido y el QR.» y, en otro párrafo, que si ya pagó envíe el comprobante o escriba a Antonio (cualquier devolución la ve él); con el botón de Antonio. Aviso informativo a Antonio con la clave `cancelacion` (límite de 30 min) y motivo «cerró su pedido; si pagó, revisar». Libera la guarda local (`qrHastaMs = 0`; se restaura si el mensaje no sale) y la firma queda `cobro_cerrado`.
+- **Falla (servidor niega o no responde):** cae a la escalada de siempre («Por aquí no puedo cancelar un pedido: eso lo atiende Antonio», aviso con el motivo viejo y botón). Nunca se dice «cerré» sin el 200.
+- **Con comprobante previo (en revisión o ya cotejado):** NO cancela; escala como hoy y el reporte del mensaje lleva `anulacion_avisada` (solo avisa; el servidor lo ignora si no corresponde).
+- **Segunda cancelación seguida** (la firma del último plan es `cobro_cerrado` o `cobro_ya_cerrado`): «Tu pedido ya quedó cerrado…», sin llamada, sin evento y sin aviso nuevo. Pasado otro turno distinto, una cancelación sin QR abierto vuelve a la escalada (no se inventa un cierre).
+- **Límites declarados.** (1) Un 200 del servidor no distingue «cerrado» de «ignorado» (p. ej. el cobro venció justo antes): el flujo confía en `cobro.pendiente` del turno. (2) Si el cierre llegó al servidor pero el mensaje al cliente no salió, el cobro quedó cerrado y el flujo restaura la guarda local; el cliente verá el estado correcto en el turno siguiente (la consola dice que no hay cobro abierto). (3) El texto nunca dice «reembolsado», «devuelto» ni «cancelado el pago»; no hay promesa sobre dinero.

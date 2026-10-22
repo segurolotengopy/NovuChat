@@ -969,6 +969,86 @@
       "notes": "generateContent de Gemini con el cuerpo que armó «Decidir turno». El modelo (`modelo` de «Config base», gemini-3.5-flash-lite, el único modelo de este flujo) es un DATO: se cambia sin tocar el flujo. Solo conversa; su salida pasa por el filtro de redacción en «Armar mensajes»."
     },
     {
+      "id": "cancelar-si",
+      "name": "¿Cancelar cobro?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5000,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ ($json.plan || {}).tipo === 'cancelar_cobro' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Solo cuando «Decidir turno» decidió cerrar el cobro abierto (regla 2, sin comprobante previo): la llamada al servidor va ANTES de armar el aviso y el texto, para no decir que se canceló si no se canceló. Cualquier otro turno pasa de largo (cero llamadas)."
+    },
+    {
+      "id": "cancelar-cobro",
+      "name": "Cancelar cobro en el servidor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5120,
+        500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ (() => { const c = $('Config del negocio').first().json; return c.modoPrueba === true ? String(c.phoneNumberIdEsperado || '') : String($('Normalizar entrada').first().json.phoneNumberId || ''); })() }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $('Normalizar entrada').first().json.from, direccion: 'entrante', tipo: 'text', texto: '(el cliente cerró su pedido)', idMeta: '', evento: 'cobro_cancelado' }) }}",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "`POST ingesta` con el evento `cobro_cancelado` (el servidor cierra SOLO un cobro abierto de regla 2; nunca uno de regla 1) y responde 200 si lo recibió. Es síncrono: «Armar avisos» y «Armar mensajes» leen su respuesta (200 = se cerró; cualquier otra cosa, o un error de red, cae a la escalada «no puedo cancelar: lo atiende Antonio»). Va como entrante con idMeta vacío (igual que «Reportar protección»): no es un mensaje de WhatsApp, no cuenta como respuesta ni abre otra conversación. Solo corre en el turno que cancela."
+    },
+    {
       "id": "armar-avisos",
       "name": "Armar avisos",
       "type": "n8n-nodes-base.code",
@@ -1551,7 +1631,7 @@
         ],
         [
           {
-            "node": "Armar avisos",
+            "node": "¿Cancelar cobro?",
             "type": "main",
             "index": 0
           }
@@ -1619,6 +1699,35 @@
           }
         ],
         []
+      ]
+    },
+    "¿Cancelar cobro?": {
+      "main": [
+        [
+          {
+            "node": "Cancelar cobro en el servidor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Armar avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancelar cobro en el servidor": {
+      "main": [
+        [
+          {
+            "node": "Armar avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   }

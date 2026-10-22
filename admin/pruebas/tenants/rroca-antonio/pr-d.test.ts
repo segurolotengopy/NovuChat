@@ -21,7 +21,8 @@ describe('C. con un QR abierto: se responde, no se repite el recordatorio, no se
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
     expect(t.mensajes[0]!.cuerpo).toMatch(/Pack Completo: 49 Bs[\s\S]*Libro[^\n]*: 35 Bs[\s\S]*Workbook: 20 Bs/);
     expect(t.mensajes[0]!.tipo).not.toBe('image');
-    expect(esBotonDeAntonio(t)).toBe(true);
+    expect(esBotonDeAntonio(t)).toBe(false);
+    expect(t.mensajes[0]!.tipo).toBe('text');
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/Ya tienes un QR abierto/);
   });
   it('pedir OTRAS opciones con un QR abierto da el catálogo: sin aviso a Antonio, sin cancelación, sin botones de producto', () => {
@@ -36,14 +37,15 @@ describe('C. con un QR abierto: se responde, no se repite el recordatorio, no se
       expect(t.ejecutados.has('Conversar con el modelo'), x).toBe(false);
     }
   });
-  it('«cancela ese qr» tras pedir opciones cancela con aviso; repetido, sale «Antonio ya recibió tu aviso anterior», NUNCA la alterna genérica', () => {
-    const w = conQr();
+  it('si el servidor NO cierra el cobro: «cancela ese qr» escala; repetido, sale «Antonio ya recibió tu aviso anterior», NUNCA la alterna genérica', () => {
+    const w = conQr({ cancelar: 'cae' });
     const o = hablar(w, ANA, mTexto('no quiero comprar, quiero ver otras opciones'));
     expect(o.avisos).toHaveLength(0);
     const c1 = hablar(w, ANA, mTexto('cancela ese qr'));
     expect(c1.avisos).toHaveLength(1);
     expect(c1.mensajes[0]!.cuerpo).toMatch(/no puedo cancelar un pedido/);
     expect(c1.mensajes[0]!.cuerpo).toMatch(/Le avisé/);
+    expect(c1.mensajes[0]!.cuerpo).not.toMatch(/cerré tu pedido/);
     // El segundo aviso del mismo motivo: texto distinto del primero («ya recibió»), no la alterna genérica. (Un tercero idéntico al segundo cae en la alterna por la regla de nunca el mismo texto dos veces.)
     for (const x of ['cancela el qr']) {
       const t = hablar(w, ANA, mTexto(x));
@@ -78,12 +80,16 @@ describe('C. con un QR abierto: se responde, no se repite el recordatorio, no se
     expect(d2.mensajes[0]!.cuerpo).toMatch(/Por aquí no puedo trabajar con ese archivo|No pude usar ese archivo|Ese archivo no lo puedo revisar/);
     expect(d2.mensajes[0]!.cuerpo).not.toMatch(/\bsigo\b|tampoco/i);
   });
-  it('«no quiero comprar» a secas, «ya no lo quiero» y «cancela mi pedido» siguen siendo cancelación', () => {
+  it('«no quiero comprar» a secas, «ya no lo quiero» y «cancela mi pedido» siguen siendo cancelación: con el servidor caído, escalan', () => {
     for (const x of ['no quiero comprar', 'ya no lo quiero', 'cancela mi pedido']) {
-      const w = conQr();
-      const t = hablar(w, ANA, mTexto(x));
-      expect(t.avisos, x).toHaveLength(1);
-      expect(t.mensajes[0]!.cuerpo, x).toMatch(/no puedo cancelar un pedido/);
+      for (const cancelar of ['cae', { statusCode: 409, body: {} }] as const) {
+        const w = conQr({ cancelar });
+        const t = hablar(w, ANA, mTexto(x));
+        expect(t.avisos, x).toHaveLength(1);
+        expect(t.mensajes[0]!.cuerpo, x).toMatch(/no puedo cancelar un pedido/);
+        expect(t.mensajes[0]!.cuerpo, x).not.toMatch(/cerré tu pedido/);
+        expect(esBotonDeAntonio(t), x).toBe(true);
+      }
     }
   });
   it('«cancela/cancelar el qr/pedido» escala a Antonio con aviso y botón, y libera la guarda local del QR', () => {
@@ -119,7 +125,7 @@ describe('C. con un QR abierto: se responde, no se repite el recordatorio, no se
     const w = conQr({ modeloDice: 'El libro tiene 14 capítulos con ejercicios prácticos para cada semana.' });
     const t = hablar(w, ANA, mTexto('¿el libro sirve si mi pareja no quiere leerlo?'));
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(true);
-    expect(esBotonDeAntonio(t)).toBe(true);
+    expect(esBotonDeAntonio(t)).toBe(false);
   });
 });
 
@@ -165,7 +171,7 @@ describe('revisión de #588', () => {
   });
   it('(2) cancelación: «cancelo el pedido», «me arrepentí, lo cancelo», «cancela ese qr» cancelan; «cancelé», «cancelado» y «ya cancelé el libro» son PAGO y no cancelan', () => {
     for (const x of ['cancelo el pedido', 'me arrepentí, lo cancelo', 'cancela ese qr', 'quiero anular la compra']) {
-      const w = conQr();
+      const w = conQr({ cancelar: 'cae' });
       const t = hablar(w, ANA, mTexto(x));
       expect(t.mensajes[0]!.cuerpo, x).toMatch(/no puedo cancelar un pedido/);
       expect(t.avisos, x).toHaveLength(1);
