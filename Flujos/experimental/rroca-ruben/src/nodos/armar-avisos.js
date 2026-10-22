@@ -43,6 +43,14 @@ const fichaCliente = rrFichaVigente(cnFichaDe(fichas, from));
 const ultimoMotivo = clave ? (fichaCliente.avisosConsulta[clave] || 0) : 0;
 if (ultimoMotivo > 0 && ahora - ultimoMotivo >= 0 && ahora - ultimoMotivo < RR_VENTANA_AVISO_CONSULTA_MS) return sin({ repetido: true });
 
+// 2b. TOPES GLOBALES por hora de avisos a Rubén (todo el flujo, no por teléfono). Solo los avisos de tipo CONSULTA se limitan; NINGÚN aviso de tipo comprobante (cuadra, casi cuadra, tardío, en revisión, sin cotejo)
+// se limita ni consume tope: son pagos reales. Dos contadores separados, para que llenar uno no silencie al otro: `avisos` (la consulta que el modelo no supo y el QR insistente; `topeAvisosHora`, 30 por omisión, máx. 120)
+// y `derivaciones` (lo que pide el cliente o tiene causa real: factura, reclamo, hablar con Rubén, cancelación…; `topeDerivacionesHora`, 60 por omisión, máx. 240).
+// Lleno, no sale aviso y «Armar mensajes» le dice la verdad al cliente (con el botón de Rubén).
+const cubeta = aviso.tipo !== 'consulta' ? '' : (clave === 'no_supo' || clave === 'qr_insistente' ? 'avisos' : 'derivaciones');
+const topeCubeta = cubeta === 'avisos' ? rrTopeHora(base.topeAvisosHora, RR_AVISOS_HORA, RR_AVISOS_HORA_MAX) : rrTopeHora(base.topeDerivacionesHora, RR_DERIVACIONES_HORA, RR_DERIVACIONES_HORA_MAX);
+if (cubeta !== '' && rrHoraN(cnObjetoGlobal('rrTopes', false).mapa[cubeta], ahora) >= topeCubeta) return sin({ motivoFallo: 'tope_avisos' });
+
 // 3. El destinatario: Rubén (o el teléfono de prueba).
 const prueba = cfg.modoPrueba === true;
 let destinatarios = [];
@@ -93,7 +101,7 @@ if (aviso.tipo === 'comprobante') {
 }
 texto = avLimpio(texto, 900);
 
-const comun = { phoneNumberId: String(cfg.phoneNumberId || ''), waGraphVersion: cfg.waGraphVersion || 'v26.0', sinAviso: false, plan: plan.tipo || '', planeado: true, repetido: false, clave: clave, motivoFallo: '' };
+const comun = { phoneNumberId: String(cfg.phoneNumberId || ''), waGraphVersion: cfg.waGraphVersion || 'v26.0', sinAviso: false, limitado: cubeta, plan: plan.tipo || '', planeado: true, repetido: false, clave: clave, motivoFallo: '' };
 const items = [];
 for (const d of destinatarios) {
   const rec = rrFichaVigente(cnFichaDe(fichas, d.tel));

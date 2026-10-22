@@ -625,7 +625,7 @@ describe('guardia de apertura (20/10/2026): abrir al PÚBLICO exige audio, image
 
   it('`mediosHabilitados` y `modoApertura` tienen forma validada en los datos', () => {
     const ruta = join(mkdtempSync(join(tmpdir(), 'rroca-apertura-')), 'datos.json');
-    for (const [campo, valor] of [['mediosHabilitados', 'Audio, Imagen'], ['modoApertura', 'abierto']] as const) {
+    for (const [campo, valor] of [['mediosHabilitados', 'Audio, Imagen'], ['modoApertura', 'abierto'], ['topeAvisosHora', '121'], ['topeAvisosHora', '-1'], ['topeAvisosHora', 'x'], ['topeDerivacionesHora', '241'], ['topeDerivacionesHora', '-1']] as const) {
       const d = JSON.parse(leer(ARCHIVO_DE_DATOS)) as { configBase: Record<string, unknown> };
       d.configBase[campo] = valor;
       writeFileSync(ruta, JSON.stringify(d));
@@ -640,7 +640,9 @@ describe('CIERRE · la lista de prueba de la guardia de apertura exige al menos 
     for (const malo of ['1', ',', '   ', '12345', '1,2,3', ', ,', 'a1b2c3', '']) expect(modoDeApertura({ telefonosDePrueba: malo }), JSON.stringify(malo)).toBe('publico');
     const tel = ['5', '9', '1', '7', '0', '1', '2', '3', '4', '5'].join('');
     expect(modoDeApertura({ telefonosDePrueba: tel })).toBe('prueba');
-    expect(modoDeApertura({ telefonosDePrueba: '1,' + tel })).toBe('prueba');
+    // NEGADA (cierre 2): TODOS los elementos deben ser teléfonos de 6 o más dígitos; una lista con basura no pasa como prueba.
+    for (const basura of ['1,' + tel, tel + ',abc', '000000,abc', tel + ',', tel + ',12345', tel + ' , 1']) expect(modoDeApertura({ telefonosDePrueba: basura }), basura).toBe('publico');
+    expect(modoDeApertura({ telefonosDePrueba: tel + ', ' + tel })).toBe('prueba');
     expect(modoDeApertura({ telefonosDePrueba: 'REEMPLAZAR_TELEFONOS_DE_PRUEBA' })).toBe('prueba');
     expect(modoDeApertura({ telefonosDePrueba: tel, modoApertura: 'publico' })).toBe('publico');
     expect(modoDeApertura({})).toBe('publico');
