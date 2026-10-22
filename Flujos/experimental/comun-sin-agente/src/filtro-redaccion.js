@@ -191,13 +191,13 @@ function cmMotivoDeRechazo(texto, opciones) {
   if (CM_AFIRMA.test(n) || CM_AFIRMA.test(nj) || CM_AFIRMA.test(nl)) return 'afirma_un_hecho';
   if (CM_AFIRMA_C.test(cmColapsa(cmJuntoLetras(cmLeet(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , ')))))) || CM_AFIRMA_C.test(cmColapsa(nl))) return 'afirma_un_hecho';
   if (CM_HUECO.test(n)) return 'hueco';
+  const pregunta = cmNorm(o.textoDelCliente || '');
+  if (pregunta && CM_PREGUNTA_DE_IDENTIDAD.test(pregunta) && /^\W*si\b/.test(n)) return 'identidad';
+  if (pregunta && CM_PREGUNTA_DE_BOT.test(pregunta) && /\b(no|nop|nel|para nada)\b/.test(n) && !/\b(asistente|virtual)\b/.test(n)) return 'identidad';
   if (o.sinImagenes) {
     const nlc = cmJuntoLetras(cmLeet(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , '))));
     if (CM_PROMETE_IMAGENES.test(n) || CM_PROMETE_IMAGENES.test(nj) || CM_PROMETE_IMAGENES.test(nl) || CM_PROMETE_IMAGENES.test(nlc)) return 'promete_imagenes';
   }
-  const pregunta = cmNorm(o.textoDelCliente || '');
-  if (pregunta && CM_PREGUNTA_DE_IDENTIDAD.test(pregunta) && /^\W*si\b/.test(n)) return 'identidad';
-  if (pregunta && CM_PREGUNTA_DE_BOT.test(pregunta) && /\b(no|nop|nel|para nada)\b/.test(n) && !/\b(asistente|virtual)\b/.test(n)) return 'identidad';
   for (const re of (o.prohibidos || [])) if (re.test(n)) return 'prohibido';
   // ENLACES: por defecto NINGUNO sale. `enlacesPermitidos` es la lista de enlaces COMPLETOS del negocio (mapa, redes,
   // wa.me). Se detectan `https?://…`, `www.…` y los dominios sueltos más comunes (wa.me/…, bit.ly/…, algo.com); un

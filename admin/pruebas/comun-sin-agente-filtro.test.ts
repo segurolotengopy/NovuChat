@@ -403,6 +403,9 @@ describe('opción `sinImagenes`: promesa de imágenes sin respaldo', () => {
   for (const t of ['No tenemos imágenes', 'El libro tiene 12 capítulos', 'Puedes ver la portada en la tienda', 'Te cuento de qué trata el libro']) {
     it(`no rechaza con la opción: «${t}»`, () => expect(motivo(t, O)).toBe(''));
   }
+  it('la identidad manda sobre la promesa de imágenes, también con la opción encendida', () => {
+    expect(motivo('Claro que no, soy Rubén. Te muestro las fotos', { ...O, textoDelCliente: '¿eres un bot?' })).toBe('identidad');
+  });
   it('la opción no apaga las demás reglas', () => {
     expect(motivo('Tu pago fue acreditado', O)).toBe('afirma_un_hecho');
   });

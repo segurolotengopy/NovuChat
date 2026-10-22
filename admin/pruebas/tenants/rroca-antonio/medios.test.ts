@@ -185,19 +185,19 @@ describe('recorrido: imagen y PDF', () => {
   });
 
   it('un sticker, una ubicación y un contacto reciben el MISMO texto cortés fijo: UN mensaje, sin medios y sin modelo', () => {
-    const w = crear();
     const casos: J[] = [
       { type: 'sticker', sticker: { id: 'st1' } },
       { type: 'location', location: { latitude: -16.5, longitude: -68.1 } },
       { type: 'contacts', contacts: [{ name: { formatted_name: 'X' } }] },
     ];
+    // Un teléfono por caso: el MISMO texto dos veces seguidas a un mismo teléfono se sustituye por una alternativa (PR-D, [D]; ver `pr-d.test.ts`).
     for (const msg of casos) {
+      const w = crear();
       const t = hablar(w, ANA, msg);
       expect(t.mensajes, String(msg['type'])).toHaveLength(1);
       expect(t.ejecutados.has('Obtener URL del medio (general)')).toBe(false);
+      expect(textos(t)[0], String(msg['type'])).toMatch(/solo puedo leer texto, notas de voz, fotos y archivos PDF/);
     }
-    const t = hablar(w, ANA, { type: 'sticker', sticker: { id: 'st2' } });
-    expect(textos(t)[0]).toMatch(/solo puedo leer texto, notas de voz, fotos y archivos PDF/);
   });
 });
 

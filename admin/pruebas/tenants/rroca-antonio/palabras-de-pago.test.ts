@@ -29,8 +29,11 @@ describe('(a) «cancelé» es «ya pagué» en Bolivia', () => {
     hablar(w, ANA, mImagen());
     const t = hablar(w, ANA, mTexto('ya cancelé'));
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
+    // «Cancelo mi pedido» con el QR abierto es una cancelación (PR-D, [C]): aviso y botón, pero NO una queja de no entrega ni un pago.
     const u = hablar(w, ANA, mTexto('cancelo mi pedido'));
-    expect(u.ejecutados.has('Conversar con el modelo') || u.avisos.length === 0).toBe(true);
+    expect(u.ejecutados.has('Conversar con el modelo')).toBe(false);
+    expect(u.mensajes[0]!.cuerpo).toMatch(/no puedo cancelar un pedido/);
+    expect(u.mensajes[0]!.cuerpo).not.toMatch(/Antonio revisa los comprobantes|material/);
   });
 });
 
