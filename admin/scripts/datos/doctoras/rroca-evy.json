@@ -1,0 +1,77 @@
+{
+  "_fuente": "Datos de la Dra. Evy Karina (tenant rroca-evy, cliente08, Clínica DentalCor) para el flujo Flujos/experimental/doctoras/. Zona Tenants: solo datos y marcadores REEMPLAZAR_* (identificadores, rutas, número de recepción, horario). Los textos salen del guion y del Excel de la doctora (CLIENTES/RUBEN_ROCA/Evy_Karina/) con las 13 salvedades de WAM resueltas por la propuesta del inventario del 20/10/2026 (§6.4): son DATO reemplazable, no código. Las claves que empiezan con `_` son notas.",
+  "tenant": "rroca-evy",
+  "nombreFlujo": "NovuChat — Dra. Evy Karina (rroca-evy)",
+  "nombreFlujoPrueba": "NovuChat — Dra. Evy Karina (rroca-evy, prueba)",
+  "credenciales": {
+    "ingesta": "NovuChat ingesta (Evy)",
+    "graph": "Graph WhatsApp Dra. Evy (Bearer)",
+    "graphPrueba": "Graph WhatsApp — pruebas (no producción)",
+    "entradaPrueba": "Entrada de prueba Dra. Evy",
+    "gemini": "Google Gemini(PaLM) Api account",
+    "geminiPrueba": "Gemini — pruebas (no producción)"
+  },
+  "receptor": {
+    "ruta": "REEMPLAZAR_RUTA_RECEPTOR_RROCA_EVY",
+    "urlVerificador": "REEMPLAZAR_URL_VERIFICADOR_RECEPTOR",
+    "wabaIdEsperado": "REEMPLAZAR_WABA_ID_RROCA_EVY"
+  },
+  "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA_RROCA_EVY",
+  "configBase": {
+    "waGraphVersion": "v26.0",
+    "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_EVY",
+    "numeroRecepcion": "REEMPLAZAR_NUMERO_RECEPCION_RROCA_EVY",
+    "nombreNegocio": "Dra. Evy Karina Rojas",
+    "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
+    "prefijosPermitidos": "591",
+    "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA",
+    "modelo": "gemini-3.5-flash-lite",
+    "temperatura": 0.3,
+    "avisoSolicitudPlantilla": "aviso_solicitud_valoracion",
+    "avisoSolicitudEstado": "PENDING",
+    "avisoPlantillaIdioma": "es"
+  },
+  "doctora": {
+    "nombreCorto": "Dra. Evy",
+    "nombreCompleto": "Dra. Evy Karina Rojas",
+    "clinica": "Clínica DentalCor",
+    "especialidad": "ortodoncista y especialista en armonización facial, aplicadora certificada de Radiesse® y HArmonyCa®",
+    "direccion": "Avenida Piraí, segundo anillo, Calle Sapocó # 53 (Santa Cruz)",
+    "horario": "REEMPLAZAR_HORARIO_RROCA_EVY",
+    "tratamientos": [
+      { "id": "rad", "nombre": "Radiesse®", "claves": ["radiesse"], "frase": "Radiesse® es un bioestimulador a base de hidroxiapatita de calcio." },
+      { "id": "har", "nombre": "HArmonyCa®", "claves": ["harmonyca", "harmony ca"], "frase": "HArmonyCa® es un inyectable híbrido de ácido hialurónico e hidroxiapatita de calcio." }
+    ],
+    "artes": [
+      { "id": "comp", "claves": ["radiesse o harmonyca", "dos bioestimuladores un mismo objetivo"], "enviable": false, "apertura": "Veo que te llamó la atención la comparativa de nuestros bioestimuladores." },
+      { "id": "aut", "claves": ["armonia que se nota", "aplicadora certificada"], "enviable": false, "apertura": "Qué gusto que nos escribas desde el anuncio «Armonía que se nota»." },
+      { "id": "joven", "claves": ["te sientes joven por dentro"], "enviable": false, "apertura": "Qué lindo mensaje el de la imagen que compartes." },
+      { "id": "real", "claves": ["resultado real", "firmeza y contorno recuperados"], "enviable": false, "soloImagen": true, "apertura": "La imagen que compartes es el caso de una paciente de la Dra. Evy. Cada rostro responde distinto, por eso no se promete un resultado igual." }
+    ],
+    "prellenados": [
+      { "id": "p1", "claves": ["vi su anuncio de armonizacion facial"], "apertura": "" },
+      { "id": "p2", "claves": ["radiesse o harmonyca es para mi"], "apertura": "" }
+    ],
+    "textos": {
+      "apertura": "La valoración con la {doctora} es gratuita y sin compromiso.\n\nNo tienes que pagar nada para reservarla.",
+      "pregunta": "¿Qué te gustaría conocer?",
+      "lista_intro": "Elige lo que te interesa y te cuento.",
+      "quien": "La {doctora} es ortodoncista y especialista en armonización facial, aplicadora certificada de Radiesse® y HArmonyCa®.\n\nAtiende en {clinica}.",
+      "que_es": "Los bioestimuladores son tratamientos de medicina estética que se aplican en consulta, sin cirugía.\n\nLa {doctora} te explica en la valoración en qué consisten y cuál corresponde a tu caso.",
+      "gratis": "Sí, de verdad: la valoración con la {doctora} es gratuita y no tienes que pagar nada para reservar tu cita.\n\nSolo si después decides hacerte un tratamiento, la doctora te da el presupuesto.",
+      "precio": "Entiendo que quieras conocer la inversión. El tratamiento no tiene un precio fijo: depende del producto que la doctora indique, de las zonas y de la cantidad que necesites.\n\nPor eso el primer paso es la valoración gratuita: ahí te dan un presupuesto claro y decides sin compromiso.",
+      "sin_compromiso": "No pasa nada. La valoración es sin compromiso y no pagas nada para agendarla.\n\nVienes, la {doctora} te explica tu caso y tú decides si quieres continuar o no.",
+      "donde": "La valoración es en {clinica}.\n\nDirección: {direccion}.\n\nSi necesitas la ubicación exacta, pídesela a la recepción con el botón.",
+      "cual_mejor": "Eso lo define la {doctora} en la valoración, según tu caso.\n\nPor eso el primer paso es la valoración gratuita: ahí la doctora evalúa qué corresponde a cada persona.",
+      "diferencia": "Esa comparación te la explica la {doctora} en la valoración, porque depende de cada caso.\n\nDesde este chat no puedo orientarte sobre eso.",
+      "dolor": "Es normal tener esa inquietud.\n\nEn la valoración la {doctora} te explica el procedimiento y cómo cuida tu comodidad.",
+      "resultados": "Depende de cada caso.\n\nLa {doctora} te dice en la valoración qué puedes esperar y cuántas sesiones corresponden a tu caso.",
+      "antes_despues": "Es el caso de una paciente de la {doctora}. Cada rostro responde distinto, así que no puedo prometerte un resultado igual.\n\nEn la valoración la doctora evalúa tu caso y te cuenta qué es realista para ti.",
+      "recuperacion": "Los cuidados posteriores y los tiempos dependen del producto y de la zona.\n\nLa {doctora} te los explica con detalle en la valoración, para que lo organices con tu trabajo.",
+      "artificial": "Entiendo esa preocupación.\n\nEn la valoración la {doctora} te explica cómo trabaja y puedes preguntarle todo lo que quieras.",
+      "probe_otros": "Gracias por contármelo, es comprensible.\n\nLa {doctora} define el tratamiento según el análisis de tu caso; con la valoración gratuita puedes conocer su opinión sin compromiso.",
+      "pensar": "Claro, tómate tu tiempo.\n\nLa valoración es gratuita y sin compromiso, así que no arriesgas nada por conocer tu caso.",
+      "especifico": "De todas formas, la {doctora} define en la valoración cuál es el más adecuado para ti: puede ser ese u otro tratamiento que corresponda.\n\nEso lo define la doctora en la valoración gratuita."
+    }
+  }
+}
