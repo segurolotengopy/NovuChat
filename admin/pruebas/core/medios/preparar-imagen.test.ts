@@ -278,6 +278,7 @@ describe('seguridad', () => {
 
   it('el módulo es autocontenido: sin URL, Buffer ni crypto', () => {
     expect(NUEVO).not.toMatch(/\b(URL|Buffer|crypto)\b/);
-    expect(() => new Function('$input', '$', NUEVO)).not.toThrow();
+    // Que compila y corre ya lo prueba `ejecutar` (lib/flujo.ts) en todas las demás pruebas.
+    expect(nuevo({ categoria: 'foto' })['categoriaMedio']).toBe('foto');
   });
 });
