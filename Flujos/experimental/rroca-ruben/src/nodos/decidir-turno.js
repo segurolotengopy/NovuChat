@@ -96,8 +96,8 @@ if (t.esComprobante === true || t.comprobanteSimulado === true) {
     if (t.tipo === 'document') return salir({ tipo: 'imagen_otra', variante: hayQrAbierto ? 'archivo_no_aceptado' : 'documento', cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'documento', pieImagen) });
     if (hayQrAbierto) return salir(recordatorio(''));
     const topeFotos = rrTopeMedio(base.topeImagenesDia, RR_TOPE_IMAGENES_DIA, 20);
-    if (topeFotos === 0) return salir({ tipo: 'imagen_otra', variante: '', cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
-    if (rrConteoVigente(ficha.imagenes, ahora) >= topeFotos) return salir({ tipo: 'imagen_otra', variante: 'tope', cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
+    if (topeFotos === 0) return salir({ tipo: 'imagen_otra', variante: '', conRuben: true, cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
+    if (rrConteoVigente(ficha.imagenes, ahora) >= topeFotos) return salir({ tipo: 'imagen_otra', variante: 'tope', conRuben: true, cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
     return planDeImagenVista(lecL);
   };
   if (delLector && delLector.noEsComprobante === true) return comoImagenVista();  // El cotejo corrió solo si hubo medio utilizable; si no (tamaño, descarga, servidor caído), `cbResultadoVenta` lo deja en «sin cotejar» con aviso y botón: nunca «cuadra».
@@ -186,6 +186,8 @@ if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', clave: deriv
 // servidor, así que el texto nunca dice que el pedido quedó cancelado. «Solo quiero saber…» no cancela nada: es un cliente que mira (se le responde el contenido más abajo).
 const cancelacion = rrCancelaPedido(norm);
 if (cancelacion === 'cancela' && (hayQrAbierto || ficha.pedidos > 0)) return salir({ tipo: 'derivar', motivo: 'cancelacion', clave: 'cancelacion', aviso: avisoDeConsulta('cancelacion', 'quiere cancelar su pedido o ya no quiere comprar (el flujo no puede cerrar la solicitud del cobro)'), cat: cat, liberaGuarda: hayQrAbierto });
+// «Ya cancelé» / «cancelado» SIN un QR abierto (en Bolivia = «ya pagué»): intención de pago. Texto fijo con el menú y SIN aviso a Rubén (con un QR abierto, `rrHablaDePagar` da el recordatorio más abajo).
+if (!hayQrAbierto && rrCancelaComoPago(norm)) return salir({ tipo: 'cancele_como_pago', cat: cat });
 // Identidad POR CÓDIGO (prohibición 4): «¿eres un bot?», «¿quién eres?», «¿hablo con Rubén?»… reciben una frase fija que reconoce ser un asistente virtual con IA; el modelo no interviene.
 if (rrPreguntaPorIA(norm)) return salir({ tipo: 'identidad', cat: cat, qrAbierto: hayQrAbierto });
 if (rrPreguntaPorIngresos(norm)) return salir({ tipo: 'ingresos', cat: cat, qrAbierto: hayQrAbierto });
