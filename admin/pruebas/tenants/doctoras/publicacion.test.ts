@@ -203,6 +203,75 @@ describe('la línea de comandos: `--publicable` sale 1 hoy, nunca imprime valore
   });
 });
 
+describe('la etapa «crear» (flujo INACTIVO para dar la URL de entrada): tolera solo la plantilla sin APPROVED y el horario pendiente', () => {
+  const HORARIO_EVY = 'REEMPLAZAR_HORARIO_RROCA_EVY';
+  /** Todo sustituido, plantilla PENDING y horario pendiente (Evy: marcador; Emma: por confirmar). */
+  function pendiente(t: Tenant): { flujo: Flujo; datos: Datos; negocio: Record<string, unknown> } {
+    const x = listo(t);
+    const estadoDelFlujo = asignaciones(x.flujo).find((a) => a.name === 'avisoSolicitudEstado')!;
+    estadoDelFlujo.value = 'PENDING'; x.datos.configBase['avisoSolicitudEstado'] = 'PENDING';
+    if (t === 'rroca-evy') {
+      x.datos.doctora['horario'] = HORARIO_EVY;
+      const a = asignaciones(x.flujo).find((y) => y.name === 'doctora')!;
+      const d = JSON.parse(String(a.value)) as Record<string, unknown>; d['horario'] = HORARIO_EVY; a.value = JSON.stringify(d);
+    } else {
+      x.datos.doctora['horarioPorConfirmar'] = true;
+      const a = asignaciones(x.flujo).find((y) => y.name === 'doctora')!;
+      const d = JSON.parse(String(a.value)) as Record<string, unknown>; d['horarioPorConfirmar'] = true; a.value = JSON.stringify(d);
+    }
+    return x;
+  }
+  const crear = (x: { flujo: Flujo; datos: Datos; negocio: Record<string, unknown> }): string[] => guardiaDePublicacion({ ...x, etapa: 'crear' }) as string[];
+  for (const t of TENANTS) {
+    it(`${t}: con plantilla PENDING y horario pendiente, la etapa crear PASA y la completa (encender) NIEGA, también sin etapa`, () => {
+      const x = pendiente(t);
+      expect(crear(x)).toEqual([]);
+      const completa = hallazgos(x).join('|');
+      expect(completa).toMatch(/avisoSolicitudEstado/);
+      expect(completa).toMatch(t === 'rroca-evy' ? /horario/ : /horarioPorConfirmar/);
+      expect((guardiaDePublicacion({ ...x, etapa: 'encender' }) as string[]).length).toBeGreaterThan(0);
+    });
+    it(`${t}: cada defecto por separado se NIEGA en la etapa crear: marcador distinto del horario, medio faltante, sin credencial, identidad cruzada`, () => {
+      const m = pendiente(t); asignaciones(m.flujo).find((a) => a.name === 'phoneNumberIdEsperado')!.value = 'REEMPLAZAR_PHONE_ID';
+      expect(crear(m).join('|')).toMatch(/marcador sin sustituir: REEMPLAZAR_PHONE_ID/);
+      const n = pendiente(t); n.negocio['otro'] = 'REEMPLAZAR_OTRO';
+      expect(crear(n).join('|')).toMatch(/marcador sin sustituir: REEMPLAZAR_OTRO/);
+      const f = pendiente(t); f.flujo.nodes = f.flujo.nodes.filter((y) => y.name !== 'Describir imagen');
+      expect(crear(f).join('|')).toMatch(/medios: falta el nodo «Describir imagen»/);
+      const c = pendiente(t); delete (c.flujo.nodes.find((y) => y.name === 'Transcribir audio') as { credentials?: unknown }).credentials;
+      expect(crear(c).join('|')).toMatch(/«Transcribir audio» no lleva credencial de Gemini/);
+      const o = TENANTS.find((y) => y !== t)!;
+      const i = pendiente(t); i.datos = pendiente(o).datos;
+      expect(crear(i).join('|')).toMatch(/no es el de esta doctora|no coincide con/);
+    });
+  }
+  it('el marcador del horario de Evy se tolera SOLO en Evy y SOLO en crear: un marcador de horario en Emma, o con otro nombre, se niega', () => {
+    const e = pendiente('rroca-evy'); e.negocio['x'] = 'REEMPLAZAR_HORARIO_OTRA';
+    expect(crear(e).join('|')).toMatch(/REEMPLAZAR_HORARIO_OTRA/);
+    const ne = pendiente('rroca-evy'); ne.negocio['horario'] = HORARIO_EVY;
+    expect(crear(ne)).toEqual([]);
+    expect(hallazgos(ne).join('|')).toMatch(/negocio: marcador sin sustituir: REEMPLAZAR_HORARIO_RROCA_EVY/);
+    const nm = pendiente('rroca-emma'); nm.negocio['horario'] = HORARIO_EVY;
+    expect(crear(nm).join('|')).toMatch(/negocio: marcador sin sustituir: REEMPLAZAR_HORARIO_RROCA_EVY/);
+    const m = pendiente('rroca-emma'); m.datos.doctora['horario'] = HORARIO_EVY;
+    expect(crear(m).join('|')).toMatch(/horario|no coincide/);
+  });
+  it('una etapa desconocida no pasa; por la línea de comandos sale 2', () => {
+    expect(guardiaDePublicacion({ ...pendiente('rroca-evy'), etapa: 'x' }).length).toBeGreaterThan(0);
+    expect(cli('--publicable', '--etapa', 'x').status).toBe(2);
+    expect(cli('--publicable', '--etapa').status).toBe(2);
+  });
+  it('por la línea de comandos, lo versionado de hoy NO pasa la etapa crear (marcadores de ids), ni sin etapa', () => {
+    for (const t of TENANTS) {
+      const c = cli('--publicable', '--etapa', 'crear', '--tenant', t);
+      expect(c.status).toBe(1);
+      expect(c.out).toMatch(/marcador sin sustituir/);
+      expect(c.out).not.toMatch(/avisoSolicitudEstado|horarioPorConfirmar/);
+      expect(cli('--publicable', '--tenant', t).status).toBe(1);
+    }
+  });
+});
+
 describe('publicar-flujo.sh: la guardia y la confirmación de los flujos de las doctoras', () => {
   const SCRIPT = join(REPO, 'scripts/publicar-flujo.sh');
   const dir = mkdtempSync(join(tmpdir(), 'doctoras-sh-'));
@@ -297,6 +366,42 @@ describe('publicar-flujo.sh: la guardia y la confirmación de los flujos de las 
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/NEGADO: el flujo de las doctoras no se publica/);
     expect(escribio()).toBe(false);
+  });
+  // Una copia del script con un construir.mjs de juguete que SOLO aprueba la etapa `crear`: prueba qué etapa pide el publicador.
+  function raizSoloCrear(): string {
+    const raiz = raizConGuardia(1);
+    writeFileSync(join(raiz, 'Flujos/experimental/doctoras/construir.mjs'), "process.exit(process.argv.join(' ').includes('--etapa crear') ? 0 : 1);\n");
+    return raiz;
+  }
+  it('--crear SIN activar pide la etapa crear (pasa la guardia); --crear --activar, --encender y --aplicar sobre un flujo activo exigen la completa y se NIEGAN; --forzar no salta nada', () => {
+    const raiz = raizSoloCrear();
+    const ok = correrEn(raiz, ['--flujo', REL, '--crear', '--aplicar', '--confirmo-doctoras'], vivoOtro);
+    expect(ok.stdout).toMatch(/etapa crear/);
+    expect(ok.stderr).not.toMatch(/NEGADO/);
+    const sinConfirmar = correrEn(raiz, ['--flujo', REL, '--crear', '--aplicar'], vivoOtro);
+    expect(sinConfirmar.status).toBe(1);
+    expect(sinConfirmar.stderr).toMatch(/solo se publican con --confirmo-doctoras/);
+    for (const args of [['--flujo', REL, '--crear', '--activar', '--aplicar', '--confirmo-doctoras'], ['--flujo', REL, '--crear', '--activar', '--forzar', '--aplicar', '--confirmo-doctoras'],
+      ['--flujo', REL, '--aplicar', '--confirmo-doctoras'], ['--flujo', REL, '--forzar', '--aplicar', '--confirmo-doctoras']]) {
+      const r = correrEn(raiz, args, vivoEvy);
+      expect(r.status, args.join(' ')).toBe(1);
+      expect(r.stdout).toMatch(/etapa encender/);
+      expect(r.stderr).toMatch(/NEGADO/);
+      expect(escribio()).toBe(false);
+    }
+    const e = correrEn(raiz, ['--encender', '--aplicar', '--confirmo-doctoras'], vivoEvy);
+    expect(e.status).toBe(1);
+    expect(e.stdout).toMatch(/etapa encender/);
+    expect(escribio()).toBe(false);
+  });
+  it('--crear sin activar con el construir.mjs REAL sobre lo versionado se NIEGA (marcadores de ids) y no escribe; un flujo de otro cliente no pasa por la guardia', () => {
+    const r = correr(['--flujo', EVY, '--crear', '--aplicar', '--confirmo-doctoras', '--forzar']);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toMatch(/etapa crear/);
+    expect(r.stderr).toMatch(/NEGADO/);
+    expect(escribio()).toBe(false);
+    const o = correr(['--flujo', join(REPO, 'Flujos/demo-a-agendamiento.json'), '--crear', '--aplicar']);
+    expect(o.stdout + o.stderr).not.toMatch(/Flujo de las doctoras|NEGADO/);
   });
   it('--encender --aplicar sobre el flujo vivo de una doctora: sin confirmación se niega; con la guardia en rojo se niega aunque lleve --confirmo-doctoras; con todo en verde activa', () => {
     const sin = correrEn(raizConGuardia(0), ['--encender', '--aplicar'], vivoEvy);
