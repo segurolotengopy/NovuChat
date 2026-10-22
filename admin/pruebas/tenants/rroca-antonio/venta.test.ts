@@ -64,8 +64,9 @@ describe('el saludo: una presentación, una pregunta, sin montos', () => {
 });
 
 describe('la conversación libre: el modelo conversa, el código calcula', () => {
-  it('la primera respuesta del modelo acompaña SIN menú; desde la segunda lleva el menú de 3 botones con los precios del catálogo (títulos ≤ 20)', () => {
-    const w = nuevo();
+  it('las dos primeras respuestas (el saludo fijo y una conversación) van SIN menú; desde la tercera la respuesta del modelo lleva el menú de 3 botones con los precios del catálogo (títulos ≤ 20)', () => {
+    let n = 0;
+    const w = nuevo({ modeloDice: () => `Entiendo lo que cuentas, es un momento delicado. ¿Qué es lo que más te pesa hoy? (${++n})` });
     saludar(w);
     const a = hablar(w, ANA, mTexto('últimamente discutimos mucho y estoy cansada'));
     expect(a.mensajes).toHaveLength(1);
@@ -116,7 +117,9 @@ describe('la conversación libre: el modelo conversa, el código calcula', () =>
 
   it('la MEMORIA es por teléfono y de 15 mensajes: el modelo recibe la charla reciente de ESE teléfono y de ningún otro', () => {
     const vistos: J[] = [];
-    const w = nuevo({ modeloDice: (ll) => { vistos.push(ll.cuerpo as J); return 'Te leo con atención. ¿Cómo te sientes con eso?'; } });
+    let n = 0;
+    // La respuesta cambia en cada turno: el mismo texto dos veces seguidas se sustituye (PR-D) y no entraría a la memoria.
+    const w = nuevo({ modeloDice: (ll) => { vistos.push(ll.cuerpo as J); return `Te leo con atención. ¿Cómo te sientes con eso? (${++n})`; } });
     saludar(w);
     saludar(w, BETO);
     for (let i = 0; i < 12; i++) hablar(w, ANA, mTexto(`mensaje número ${i} de Ana`));

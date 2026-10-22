@@ -78,3 +78,7 @@ SALE: `lineaProteccion` (dato, forma, guardia de publicación y pruebas), los te
 ## Port propio del PR-C: palabras de pago de Bolivia
 
 `raHablaDePagar` (`src/lib/ra.js`) y los cierres de pago de `raExtraRedaccion`, portados de `rroca-ruben` (`rrHablaDePagar`) solo en su parte de pago: «cancelé», «cancelado», «cancelamos», «voucher», «recibo», «abono» y «mi pago» cuentan como «ya pagué»; NO se porta ninguna cancelación de pedido. «Ya recibí todo», «todo listo» y «coinciden… todo listo» dan `estado_de_pago` (lo dice solo el código). Reutiliza `filtro-redaccion.js` común. Pruebas: `palabras-de-pago.test.ts`.
+
+## Port propio del PR-D: piezas de Rubén sin módulo común
+
+No hay módulo común de estas piezas; se portan a `src/lib/ra.js` desde `rroca-ruben/src/lib/rr.js` (solo lectura) con el catálogo de Antonio, y se declaran aquí: `raHablaDelCobro` (sobre `rrHablaDePagar`), `raPideProducto`, `raCancelaPedido`, `raPideImagenes`, `raPideCatalogo` (más «otras opciones»), `raEsPreguntaLibre`, `raHashTexto`, `raAlternaDeRepetido` (alternativas con el botón de Antonio), la ficha `ultimoHash`/`ultimaFirma` y la reversión en `Resumen del turno`, el recordatorio escalable del QR (`qr_insistente`), la cancelación (`cancelacion`) y el filtro de promesas de imagen en `raExtraRedaccion`. Propias de Antonio (no vienen de Rubén): `raSinConfiguracion`, `raAudioIlegible` y el contador `charlaN`. Mensajes por conversación: 0 agregados. Pruebas: `pr-d.test.ts`.
