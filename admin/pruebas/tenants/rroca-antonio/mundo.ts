@@ -57,6 +57,8 @@ export interface Opciones {
   base?: Record<string, unknown>;
   /** Lo que contesta `cotejarComprobanteVenta`: un código y un cuerpo, o 'cae'. */
   cotejo?: { statusCode: number; body: J } | 'cae';
+  /** Lo que contesta `ingesta` al evento `cobro_cancelado` (nodo «Cancelar cobro en el servidor»): un código y un cuerpo, o 'cae'. Por omisión, 200. */
+  cancelar?: { statusCode: number; body: J } | 'cae';
   /** Lo que escribe el modelo de conversación: un texto, null (sin texto), 'cae' (error de servicio) o una función. */
   modeloDice?: string | null | 'cae' | ((ll: LlamadaDoble) => string);
   /** Cómo contesta Meta al aviso a Antonio: 'acepta' (por omisión), 'error' o 'lanza'. */
@@ -108,6 +110,7 @@ export function crear(o: Opciones = {}): Mundo {
     'Obtener URL del medio (general)': () => ({ id: 'm', url: m.url ?? 'https://lookaside.fbsbx.com/whatsapp_business/attachments/medio-1', mime_type: m.mime ?? 'image/jpeg', file_size: m.bytes ?? 100_000 }),
     'Descargar medio': () => ({ descargado: true }),
     'Cotejar en el servidor': () => (o.cotejo === 'cae' ? { statusCode: 503, body: {} } : (o.cotejo ?? COTEJO_VALIDO)),
+    'Cancelar cobro en el servidor': () => (o.cancelar === 'cae' ? { statusCode: 503, body: {} } : (o.cancelar ?? { statusCode: 200, body: { atencion: { estado: 'normal' } } })),
     'Conversar con el modelo': (ll) => {
       const d = o.modeloDice === undefined ? 'Gracias por contármelo. Se nota que es importante para ti. ¿Desde cuándo sienten esa distancia?' : o.modeloDice;
       if (d === 'cae') return { error: { message: 'servicio no disponible', code: 503 } };
