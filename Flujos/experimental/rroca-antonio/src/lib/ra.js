@@ -630,9 +630,9 @@ function raCobroCerrado(resp) {
   if (c.codigo !== 200) return false;
   return !(cbEsObjeto(c.cuerpo.servicio) && c.cuerpo.servicio.estado === 'cortado');
 }
-// El texto de «cerré tu pedido»: no dice que el dinero se devolvió ni que el pago quedó anulado (eso lo ve Antonio); con el botón porque deriva la devolución.
-const RA_TEXTO_COBRO_CERRADO = 'Listo, cerré tu pedido y el QR.\n\nSi ya hiciste el pago con ese QR, envíame el comprobante o escríbele a Antonio con el botón: cualquier devolución la ve él directamente.';
-const RA_TEXTO_COBRO_YA_CERRADO = 'Tu pedido ya quedó cerrado y no hay un QR abierto.\n\nSi hiciste un pago con ese QR, envíame el comprobante o escríbele a Antonio con el botón.';
+// El texto de «cerré tu pedido»: el QR de monto abierto sigue sirviendo para pagar, así que NO dice que el QR quedó cerrado ni promete devoluciones («solo se ofrece lo que se cumple»); con el botón porque deriva el pago a Antonio.
+const RA_TEXTO_COBRO_CERRADO = 'Listo, cerré tu pedido.\n\nNo pagues con ese QR: si ya lo hiciste, envíame el comprobante o escríbele a Antonio con el botón; el pago lo revisa él.';
+const RA_TEXTO_COBRO_YA_CERRADO = 'Tu pedido ya quedó cerrado.\n\nNo pagues con ese QR: si ya lo hiciste, envíame el comprobante o escríbele a Antonio con el botón; el pago lo revisa él.';
 // Derivación a Antonio. `salio` = el aviso devolvió un `wamid` real (true), no salió (false) o se suprimió por el límite de 30 minutos ('repetido'): SOLO con true se dice «le avisé».
 function raTextoDerivacion(motivo, salio, clave, base) {
   if (salio === 'repetido' && motivo === 'consulta') return 'Eso lo ve Antonio directamente. Antonio ya recibió el aviso de tu consulta anterior; si quieres, escríbele directo con el botón.';

@@ -15,7 +15,7 @@ const fichaDe = (w: Mundo, tel = ANA): J => ((w.sd['antonio'] ?? {}) as J)[tel] 
 const conBoton = (t: ResultadoTurno): boolean => t.mensajes.length > 0 && llevaBotonDeContacto(t.mensajes[0]!);
 const eventos = (t: ResultadoTurno): string[] => t.registro.map((r) => String(r.cuerpo?.['evento'] ?? '')).filter(Boolean);
 const planDe = (t: ResultadoTurno): string => String(t.porNodo['Armar mensajes']?.[0]?.['plan'] ?? '');
-const PROHIBIDO = /reembols|devuelt|devolvimos|cancelado el pago|acreditad|verificad|recibimos tu pago/i;
+const PROHIBIDO = /reembols|devuelt|devolvimos|devoluci|cerré el QR|cancelado el pago|acreditad|verificad|recibimos tu pago/i;
 
 describe('PARTE 1. el botón de Antonio va SOLO al derivar', () => {
   it('con un QR abierto: «cuánto cuesta el libro» y «¿qué otras opciones tengo?», escritos o por voz, salen en texto plano, sin botón de Antonio ni de producto', () => {
@@ -89,7 +89,7 @@ describe('PARTE 2. cancelar el QR abierto por código', () => {
       expect(eventos(t).filter((e) => e === 'cobro_cancelado'), x).toHaveLength(1);
       expect(t.mensajes, x).toHaveLength(1);
       expect(planDe(t), x).toBe('cobro_cerrado');
-      expect(t.mensajes[0]!.cuerpo, x).toMatch(/^Listo, cerré tu pedido y el QR\.\n\nSi ya hiciste el pago con ese QR, envíame el comprobante o escríbele a Antonio/);
+      expect(t.mensajes[0]!.cuerpo, x).toMatch(/^Listo, cerré tu pedido\.\n\nNo pagues con ese QR: si ya lo hiciste, envíame el comprobante o escríbele a Antonio con el botón; el pago lo revisa él\.$/);
       expect(t.mensajes[0]!.cuerpo, x).not.toMatch(PROHIBIDO);
       expect(conBoton(t), x).toBe(true);
       expect(t.avisos, x).toHaveLength(1);
@@ -97,6 +97,30 @@ describe('PARTE 2. cancelar el QR abierto por código', () => {
       expect(t.ejecutados.has('Conversar con el modelo'), x).toBe(false);
       expect(fichaDe(w)['qrHastaMs'], x).toBe(0);
     }
+  });
+  it('NEGANDO: con un cobro de REGLA 1, o con la guarda local sola (el servidor no ve cobro abierto), no se llama al servidor ni se dice que se cerró', () => {
+    const regla1 = nuevo({ panel: panelOk({ cobro: { activo: true, qr: { url: 'https://qr.example.com/q.png' }, pendiente: true, monto: 49, pedido: 'AN1', regla: 1 } }) });
+    hablar(regla1, ANA, mTexto('hola'));
+    const a = hablar(regla1, ANA, mTexto('cancela ese qr'));
+    expect(a.ejecutados.has(NODO)).toBe(false);
+    expect(eventos(a)).not.toContain('cobro_cancelado');
+    expect(a.mensajes[0]!.cuerpo).not.toMatch(/cerré tu pedido/);
+    const w = nuevo();
+    hablar(w, ANA, mTexto('quiero el pack')); // el QR sale y deja la guarda local; el servidor (doble) sigue sin cobro pendiente
+    expect(Number(fichaDe(w)['qrHastaMs'])).toBeGreaterThan(0);
+    const b = hablar(w, ANA, mTexto('cancela ese qr'));
+    expect(b.ejecutados.has(NODO)).toBe(false);
+    expect(eventos(b)).not.toContain('cobro_cancelado');
+    expect(b.mensajes[0]!.cuerpo).not.toMatch(/cerré tu pedido/);
+    expect(conBoton(b)).toBe(true);
+  });
+  it('«cancela ese qr» por AUDIO llama al servidor exactamente una vez', () => {
+    const w = conQr({ medio: { transcripcion: 'cancela ese qr' } });
+    const t = hablar(w, ANA, mAudio());
+    expect(t.registro.filter((r) => r.nodo === NODO)).toHaveLength(1);
+    expect(eventos(t).filter((e) => e === 'cobro_cancelado')).toHaveLength(1);
+    expect(planDe(t)).toBe('cobro_cerrado');
+    expect(t.mensajes[0]!.cuerpo).toMatch(/^Listo, cerré tu pedido\./);
   });
   it('el aviso a Antonio respeta el límite de 30 minutos por motivo', () => {
     const w = conQr();
