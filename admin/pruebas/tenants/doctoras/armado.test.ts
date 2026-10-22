@@ -135,7 +135,7 @@ describe('las guardias: cada una rechaza su violación', () => {
   it('falta un nodo del contrato con los módulos comunes de medios', () => {
     for (const n of ['Normalizar entrada', 'Config del negocio', 'Obtener URL del medio (general)', 'Preparar transcripción', 'Preparar imagen', 'Medio no aceptado']) {
       const f = clon(PRODUCCION); f['nodes'] = (f['nodes'] as J[]).filter((x) => x['name'] !== n);
-      expect(hallazgos('produccion', f), n).toMatch(new RegExp(`falta el nodo «${n}»`.replace(/[()?]/g, '\\$&')));
+      expect(hallazgos('produccion', f), n).toMatch(new RegExp(`falta el nodo «${n}»`.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')));
     }
   });
   it('el reporte saliente sin el evento `no_contactar`, y el entrante sin la baja o el riesgo escritos', () => {
