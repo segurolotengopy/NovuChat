@@ -60,9 +60,9 @@ const PREPARAR = ['Preparar transcripción', 'Preparar imagen'] as const;
  * `docs/versiones-por-cliente.md`. Vacío desde el 28/09/2026.
  */
 const EXCEPCIONES: Record<string, string> = {
-  // 22/10/2026 («el asistente entiende las imágenes»): estos dos JSON conservan el «Preparar imagen» anterior
-  // (sin descripción de lo que se ve) por orden de Andres de no tocarlos ni publicarlos.
-  'platinum-agendamiento.json': 'Conserva el «Preparar imagen» anterior a la descripción de imágenes: orden de Andres de no tocar Platinum hasta nuevo aviso.',
+  // 22/10/2026 («el asistente entiende las imágenes»): Bellido conserva el «Preparar imagen» anterior
+  // (sin descripción de lo que se ve) por orden de Andres de no tocarlo ni publicarlo. Platinum SE REGENERÓ
+  // (Andres levantó el veto el 22/10 y autorizó regenerarlo sin publicar), por eso ya no figura aquí.
   'bellido-agendamiento.json': 'Conserva el «Preparar imagen» anterior a la descripción de imágenes: orden de Andres de no tocar Bellido (corre otro flujo) hasta nuevo aviso.',
 };
 
