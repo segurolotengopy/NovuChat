@@ -20,6 +20,8 @@
 //   quienPromete      sujetos (ya normalizados) cuyo «<sujeto> te…» es una promesa: ['recepcion', 'el doctor']
 //   prohibidos        regex extra, probadas contra el texto NORMALIZADO (minúsculas y sin tildes)
 //   textoDelCliente   lo que preguntó el cliente: a una pregunta de IDENTIDAD no se contesta empezando con «Sí»
+//   sinImagenes       true: el flujo NO envía imágenes; «te muestro / envío fotos, capturas, la portada…» es una promesa sin respaldo
+//                     y se rechaza con el motivo `promete_imagenes`. Apagado por defecto (hay flujos que sí envían imágenes)
 //   extra             funciones (texto, normalizado) => motivo ('' si pasa): las reglas propias del flujo (horas, etc.)
 // Las promesas sin respaldo, afirmar un hecho que solo el código puede afirmar (quedó agendado, pago acreditado…),
 // negar ser una IA y los huecos de plantilla se revisan SIEMPRE, y no se pueden apagar.
@@ -149,6 +151,9 @@ function cmLeet(t) {
 }
 const CM_PALABRA_DE_NUMERO = 'un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|quince|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscientos|trescientos|quinientos|mil|medio';
 const CM_MONTO = new RegExp('\\b\\d[\\d.,]*\\s*(bs|bob|bolivianos?|usd|usdt|dolar(es)?|\\$us)\\b|\\b(?:bs|bob|usd)\\.?\\s*\\d|\\$\\s*\\d|\\b(?:' + CM_PALABRA_DE_NUMERO + ')\\s+(bolivianos?|dolar(es)?|bs|bob|usdt)\\b');
+// Promesa de IMÁGENES sin respaldo (opción `sinImagenes`): «te muestro / envío / comparto…» o «puedo mostrar…», «aquí tienes», «te dejo»,
+// «adjunto» cerca de una foto, captura, portada, vista previa o ejemplo visual. Se prueba sobre el texto normalizado.
+const CM_PROMETE_IMAGENES = /\b(te (muestro|envio|mando|comparto|paso|adjunto|enviare|mandare|mostrare|compartire)|(puedo|podria|podemos|voy a|vamos a) (mostrar|enviar|mandar|compartir|pasar|adjuntar)(te|les|le)?|aqui (tienes|te dejo)|te dejo|adjunto|enviare|mandare|mostrare|compartire)\b[^.?!]{0,40}\b(imagen|imagenes|foto|fotos|fotografia|fotografias|captura|capturas|pantallazo|pantallazos|screenshot|screenshots|portada|detalles visuales|ejemplos visuales|vista previa)\b/;
 // Un hueco de plantilla («a las )», «{{x}}», «undefined») nunca sale.
 const CM_HUECO = /\(\s*\)|\ba las?\s*[).,;:!?]|\ba las?\s*$|\bde\s*\)|«\s*»|\{\{|undefined|null\b/;
 // El cliente pregunta si habla con un bot / una IA / una persona: ahí una NEGACIÓN en la respuesta («Claro que no, soy Rubén») es negar ser una IA.
@@ -189,6 +194,10 @@ function cmMotivoDeRechazo(texto, opciones) {
   const pregunta = cmNorm(o.textoDelCliente || '');
   if (pregunta && CM_PREGUNTA_DE_IDENTIDAD.test(pregunta) && /^\W*si\b/.test(n)) return 'identidad';
   if (pregunta && CM_PREGUNTA_DE_BOT.test(pregunta) && /\b(no|nop|nel|para nada)\b/.test(n) && !/\b(asistente|virtual)\b/.test(n)) return 'identidad';
+  if (o.sinImagenes) {
+    const nlc = cmJuntoLetras(cmLeet(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , '))));
+    if (CM_PROMETE_IMAGENES.test(n) || CM_PROMETE_IMAGENES.test(nj) || CM_PROMETE_IMAGENES.test(nl) || CM_PROMETE_IMAGENES.test(nlc)) return 'promete_imagenes';
+  }
   for (const re of (o.prohibidos || [])) if (re.test(n)) return 'prohibido';
   // ENLACES: por defecto NINGUNO sale. `enlacesPermitidos` es la lista de enlaces COMPLETOS del negocio (mapa, redes,
   // wa.me). Se detectan `https?://…`, `www.…` y los dominios sueltos más comunes (wa.me/…, bit.ly/…, algo.com); un

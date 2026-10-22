@@ -378,3 +378,35 @@ describe('re-revisión de seguridad del #568: negación ante «¿eres un bot?» 
     expect(motivo('a'.repeat(2000), { maximo: 1e9 })).toBe('');
   });
 });
+
+describe('opción `sinImagenes`: promesa de imágenes sin respaldo', () => {
+  const O = { sinImagenes: true };
+  const RECHAZOS = [
+    'Te muestro imágenes del libro',
+    'Te envío las fotos del libro',
+    'Aquí tienes una captura',
+    'Puedo mandarte la portada',
+    'TE MUESTRO LAS IMÁGENES',
+    'Te envío las f0t0s del libro',
+    'Te mu3stro las imag3nes',
+    'Te envío las f-o-t-o-s del libro',
+    'Te envío las f o t o s del libro',
+    'Aquí te dejo la vista previa',
+    'Te comparto ejemplos visuales',
+    'Voy a enviar una captura',
+    'Te envío las ｆｏｔｏｓ',
+  ];
+  for (const t of RECHAZOS) {
+    it(`rechaza con la opción: «${t}»`, () => expect(motivo(t, O)).toBe('promete_imagenes'));
+    it(`sin la opción no es de este filtro: «${t}»`, () => expect(motivo(t)).not.toBe('promete_imagenes'));
+  }
+  for (const t of ['No tenemos imágenes', 'El libro tiene 12 capítulos', 'Puedes ver la portada en la tienda', 'Te cuento de qué trata el libro']) {
+    it(`no rechaza con la opción: «${t}»`, () => expect(motivo(t, O)).toBe(''));
+  }
+  it('la identidad manda sobre la promesa de imágenes, también con la opción encendida', () => {
+    expect(motivo('Claro que no, soy Rubén. Te muestro las fotos', { ...O, textoDelCliente: '¿eres un bot?' })).toBe('identidad');
+  });
+  it('la opción no apaga las demás reglas', () => {
+    expect(motivo('Tu pago fue acreditado', O)).toBe('afirma_un_hecho');
+  });
+});
