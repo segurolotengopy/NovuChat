@@ -235,8 +235,8 @@ if (claveOk && t.extranjero === true) {
   if (decision.vioImagen === true) ficha.imagenes = rrContarMedio(ficha.imagenes, ahora);
   // El contador GLOBAL por hora de llamadas a Gemini (audio y visión) cuenta lo mismo.
   if (decision.oyoAudio === true || decision.vioImagen === true) { const rrTg = cnObjetoGlobal('rrTopes', true); if (rrTg.sd) rrTg.mapa.gemini = rrHoraContar(rrTg.mapa.gemini, ahora); }
-  // El contador GLOBAL de avisos a Rubén por hora cuenta solo los avisos limitados que SALIERON de verdad (el comprobante que cuadra no entra).
-  if (avisoPlaneado && !avisoRepetido && avisoEnviado && av.limitado === true) { const rrTa = cnObjetoGlobal('rrTopes', true); if (rrTa.sd) rrTa.mapa.avisos = rrHoraContar(rrTa.mapa.avisos, ahora); }
+  // Los contadores GLOBALES de avisos a Rubén por hora (`avisos` y `derivaciones`) cuentan solo los avisos de consulta que SALIERON de verdad (el comprobante que cuadra no entra).
+  if (avisoPlaneado && !avisoRepetido && avisoEnviado && (av.limitado === 'avisos' || av.limitado === 'derivaciones')) { const rrTa = cnObjetoGlobal('rrTopes', true); if (rrTa.sd) rrTa.mapa[av.limitado] = rrHoraContar(rrTa.mapa[av.limitado], ahora); }
   // El límite de 30 minutos por motivo: se fija solo si el aviso SALIÓ (no si se repitió ni si no se pudo enviar).
   if (avisoPlaneado && !avisoRepetido && avisoSalio && typeof av.clave === 'string' && RR_CLAVES_AVISO.indexOf(av.clave) >= 0) ficha.avisosConsulta[av.clave] = ahora;
   if (usadoNuevo && ficha.usados.indexOf(usadoNuevo) < 0) ficha.usados = ficha.usados.concat([usadoNuevo]).slice(-10);

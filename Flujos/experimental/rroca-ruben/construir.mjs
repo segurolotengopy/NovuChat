@@ -207,6 +207,7 @@ const FORMAS_CONFIG = {
   topeGeminiHora: /^([0-9]|[1-9][0-9]|[1-5][0-9]{2}|600)$/,
   // El tope GLOBAL por hora de avisos a Rubén (hasta 120; sin valor, 30). El comprobante que cuadra no entra.
   topeAvisosHora: /^([0-9]|[1-9][0-9]|1[01][0-9]|120)$/,
+  topeDerivacionesHora: /^([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-3][0-9]|240)$/,
   modoApertura: /^(prueba|publico)$/,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;

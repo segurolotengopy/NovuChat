@@ -4776,52 +4776,74 @@ describe('ENTREGA 1 · [CATÁLOGO] «dame tu catálogo» responde por código lo
 });
 
 
-describe('CIERRE 2 · tope GLOBAL por hora de avisos a Rubén (el comprobante que cuadra no entra)', () => {
+describe('CIERRE 2 · topes GLOBALES por hora de avisos a Rubén: consultas y derivaciones aparte; ningún aviso de comprobante se limita', () => {
   const tel = (i: number): string => '5917' + String(1000000 + i).slice(1).padStart(7, '0');
-  const avisosHora = (w: Mundial): unknown => ((w.mundo.sd as J)['rrTopes'] ?? {}).avisos;
+  const contador = (w: Mundial, k: string): unknown => ((w.mundo.sd as J)['rrTopes'] ?? {})[k];
+  const HABLAR = 'quiero hablar con Rubén';
+  const NO_SUPO = (): Doble => () => geminiTexto('DERIVAR');
+  const consulta = (w: Mundial, i: number, opt = { avanzarMin: 0 }): ResultadoTurno => hablar(w, tel(i), mTexto('cuéntame algo raro del libro'), opt);
+  const TARDIO = (): J => ({ statusCode: 200, body: { estado: 'tardio', avisarComercio: true, importe: 60 } });
+  const REVISION = (): J => ({ statusCode: 200, body: { estado: 'en_revision', avisarComercio: true } });
 
-  it('31 teléfonos distintos piden hablar con Rubén en una hora: el 31 NO avisa, el cliente recibe el texto de fallo con el botón y el reporte dice `no_salio`; a la hora siguiente vuelve', () => {
-    const w = crear();
-    for (let i = 1; i <= 30; i++) {
-      const t = hablar(w, tel(i), mTexto('quiero hablar con Rubén'), { avanzarMin: 0 });
-      expect(avisosDe(t), `teléfono ${i}`).toHaveLength(1);
-    }
-    expect((avisosHora(w) as J)['n']).toBe(30);
-    const t = hablar(w, tel(31), mTexto('quiero hablar con Rubén'), { avanzarMin: 0 });
+  it('derivaciones: con el tope en 30, el teléfono 31 que pide hablar con Rubén NO avisa (texto «No pude avisarle» con botón, reporte `no_salio`); a la hora siguiente vuelve', () => {
+    const w = crear({ base: { topeDerivacionesHora: 30 } });
+    for (let i = 1; i <= 30; i++) expect(avisosDe(hablar(w, tel(i), mTexto(HABLAR), { avanzarMin: 0 })), `teléfono ${i}`).toHaveLength(1);
+    expect((contador(w, 'derivaciones') as J)['n']).toBe(30);
+    const t = hablar(w, tel(31), mTexto(HABLAR), { avanzarMin: 0 });
     expect(avisosDe(t)).toHaveLength(0);
     const m = unico(t);
     expect(m.cuerpo).toContain('No pude avisar');
     expect(m.cuerpo).not.toContain('Le avisé');
     expect(tieneBotonRuben(m)).toBe(true);
-    const rep = w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['telefono'] === tel(31));
-    expect(rep.at(-1)?.['aviso']).toBe('no_salio');
-    expect((avisosHora(w) as J)['n']).toBe(30);
-    // A la hora siguiente vuelve a avisar.
-    const de_nuevo = hablar(w, tel(32), mTexto('quiero hablar con Rubén'), { avanzarMin: 61 });
-    expect(avisosDe(de_nuevo)).toHaveLength(1);
-    expect((avisosHora(w) as J)['n']).toBe(1);
+    expect(w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['telefono'] === tel(31)).at(-1)?.['aviso']).toBe('no_salio');
+    expect(avisosDe(hablar(w, tel(32), mTexto(HABLAR), { avanzarMin: 61 }))).toHaveLength(1);
+    expect((contador(w, 'derivaciones') as J)['n']).toBe(1);
   });
 
-  it('con el tope lleno, un comprobante que CUADRA sigue avisando a Rubén (un pago real nunca se descarta) y no consume el tope', () => {
-    const w = crear({ base: { topeAvisosHora: 1 } });
-    expect(avisosDe(hablar(w, tel(1), mTexto('quiero hablar con Rubén'), { avanzarMin: 0 }))).toHaveLength(1);
-    expect(avisosDe(hablar(w, tel(2), mTexto('quiero hablar con Rubén'), { avanzarMin: 0 }))).toHaveLength(0);
+  it('consultas del modelo: con el tope lleno la siguiente no avisa (texto de fallo + botón); llenarlas NO bloquea una derivación real («hablar con Rubén», factura); se reinicia a la hora', () => {
+    const w = crear({ modelo: NO_SUPO(), base: { topeAvisosHora: 2 } });
+    expect(avisosDe(consulta(w, 1))).toHaveLength(1);
+    expect(avisosDe(consulta(w, 2))).toHaveLength(1);
+    const lleno = consulta(w, 3);
+    expect(avisosDe(lleno)).toHaveLength(0);
+    expect(unico(lleno).cuerpo).toContain('No pude avisar');
+    expect(tieneBotonRuben(unico(lleno))).toBe(true);
+    expect(w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['telefono'] === tel(3)).at(-1)?.['aviso']).toBe('no_salio');
+    expect(avisosDe(hablar(w, tel(4), mTexto(HABLAR), { avanzarMin: 0 }))).toHaveLength(1);
+    expect(avisosDe(hablar(w, tel(5), mTexto('necesito una factura'), { avanzarMin: 0 }))).toHaveLength(1);
+    expect(avisosDe(consulta(w, 6, { avanzarMin: 61 }))).toHaveLength(1);
+    expect((contador(w, 'avisos') as J)['n']).toBe(1);
+  });
+
+  it('NEGADA: con AMBOS topes llenos (0), el comprobante que cuadra, el tardío y el en revisión SÍ avisan a Rubén y no consumen ningún tope', () => {
+    for (const cotejo of [undefined, TARDIO, REVISION]) {
+      const w = crear({ base: { topeAvisosHora: 0, topeDerivacionesHora: 0 }, ...(cotejo ? { cotejo } : {}) });
+      expect(avisosDe(hablar(w, tel(1), mTexto(HABLAR), { avanzarMin: 0 }))).toHaveLength(0);
+      pedirQr(w, 'pack');
+      const t = hablar(w, ANA, mImagen(), { avanzarMin: 0 });
+      expect(avisosDe(t), String(cotejo)).toHaveLength(1);
+      expect(avisosDe(t)[0]).toMatch(/comprobante recibido/);
+      expect(contador(w, 'avisos')).toBeUndefined();
+      expect(contador(w, 'derivaciones')).toBeUndefined();
+    }
+  });
+
+  it('con el tope de derivaciones lleno un comprobante sigue avisando con su texto aprobado', () => {
+    const w = crear({ base: { topeDerivacionesHora: 1 } });
+    expect(avisosDe(hablar(w, tel(1), mTexto(HABLAR), { avanzarMin: 0 }))).toHaveLength(1);
+    expect(avisosDe(hablar(w, tel(2), mTexto(HABLAR), { avanzarMin: 0 }))).toHaveLength(0);
     pedirQr(w, 'pack');
     const t = hablar(w, ANA, mImagen(), { avanzarMin: 0 });
     expect(avisosDe(t)).toHaveLength(1);
-    expect(avisosDe(t)[0]).toMatch(/comprobante recibido/);
     expect(unico(t).cuerpo).toBe(IGUAL_QUE_ANTES);
-    expect((avisosHora(w) as J)['n']).toBe(1);
   });
 
-  it('tope 0: ninguna consulta avisa (se corta todo lo limitado); un valor mayor a 120 se recorta y lo que no es número vuelve a 30', () => {
-    const w = crear({ base: { topeAvisosHora: 0 } });
-    expect(avisosDe(hablar(w, tel(1), mTexto('quiero hablar con Rubén')))).toHaveLength(0);
-    const L = new Function(readFileSync(join(CARPETA, 'src/lib/rr.js'), 'utf8') + '\nreturn { rrTopeHora, RR_AVISOS_HORA, RR_AVISOS_HORA_MAX };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call -- nosemgrep: devsecops.js-eval-prohibido
-    expect(L.RR_AVISOS_HORA).toBe(30);
-    expect(L.RR_AVISOS_HORA_MAX).toBe(120);
+  it('los topes: 30 y 60 por omisión, 120 y 240 como máximo duro, lo que no es número vuelve al valor por omisión; ambos validados en los datos', () => {
+    const L = new Function(readFileSync(join(CARPETA, 'src/lib/rr.js'), 'utf8') + '\nreturn { rrTopeHora, RR_AVISOS_HORA, RR_AVISOS_HORA_MAX, RR_DERIVACIONES_HORA, RR_DERIVACIONES_HORA_MAX };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call -- nosemgrep: devsecops.js-eval-prohibido
+    expect([L.RR_AVISOS_HORA, L.RR_AVISOS_HORA_MAX, L.RR_DERIVACIONES_HORA, L.RR_DERIVACIONES_HORA_MAX]).toEqual([30, 120, 60, 240]);
     expect(L.rrTopeHora('99999', L.RR_AVISOS_HORA, L.RR_AVISOS_HORA_MAX)).toBe(120);
-    expect(L.rrTopeHora('abc', L.RR_AVISOS_HORA, L.RR_AVISOS_HORA_MAX)).toBe(30);
+    expect(L.rrTopeHora('99999', L.RR_DERIVACIONES_HORA, L.RR_DERIVACIONES_HORA_MAX)).toBe(240);
+    expect(L.rrTopeHora('abc', L.RR_DERIVACIONES_HORA, L.RR_DERIVACIONES_HORA_MAX)).toBe(60);
   });
 });
 

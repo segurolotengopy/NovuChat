@@ -625,7 +625,7 @@ describe('guardia de apertura (20/10/2026): abrir al PÚBLICO exige audio, image
 
   it('`mediosHabilitados` y `modoApertura` tienen forma validada en los datos', () => {
     const ruta = join(mkdtempSync(join(tmpdir(), 'rroca-apertura-')), 'datos.json');
-    for (const [campo, valor] of [['mediosHabilitados', 'Audio, Imagen'], ['modoApertura', 'abierto'], ['topeAvisosHora', '121'], ['topeAvisosHora', '-1'], ['topeAvisosHora', 'x']] as const) {
+    for (const [campo, valor] of [['mediosHabilitados', 'Audio, Imagen'], ['modoApertura', 'abierto'], ['topeAvisosHora', '121'], ['topeAvisosHora', '-1'], ['topeAvisosHora', 'x'], ['topeDerivacionesHora', '241'], ['topeDerivacionesHora', '-1']] as const) {
       const d = JSON.parse(leer(ARCHIVO_DE_DATOS)) as { configBase: Record<string, unknown> };
       d.configBase[campo] = valor;
       writeFileSync(ruta, JSON.stringify(d));
