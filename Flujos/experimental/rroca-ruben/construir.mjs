@@ -205,6 +205,9 @@ const FORMAS_CONFIG = {
   // Los topes GLOBALES por hora (todo el flujo, no por teléfono): respuestas a números de otro país (hasta 200) y llamadas a Gemini de audio y visión (hasta 600). Sin valor, 30 y 120.
   topeExtranjerosHora: /^([0-9]|[1-9][0-9]|1[0-9]{2}|200)$/,
   topeGeminiHora: /^([0-9]|[1-9][0-9]|[1-5][0-9]{2}|600)$/,
+  // El tope GLOBAL por hora de avisos a Rubén (hasta 120; sin valor, 30). El comprobante que cuadra no entra.
+  topeAvisosHora: /^([0-9]|[1-9][0-9]|1[01][0-9]|120)$/,
+  topeDerivacionesHora: /^([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-3][0-9]|240)$/,
   modoApertura: /^(prueba|publico)$/,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
@@ -400,7 +403,9 @@ export const MEDIOS_PARA_ABRIR = ['audio', 'imagen', 'documento'];
 export function modoDeApertura(cb) {
   const c = cb && typeof cb === 'object' ? cb : {};
   // Una lista de prueba tiene al menos un teléfono de 6 o más dígitos seguidos (o es el marcador `REEMPLAZAR_*` que otra guardia obliga a sustituir): «,», «1» o «   » no es una lista y deja el flujo abierto al público (hueco que declaró seguridad).
-  const tel = typeof c.telefonosDePrueba === 'string' && (/\d{6,}/.test(c.telefonosDePrueba) || MARCADOR.test(c.telefonosDePrueba.trim())) ? c.telefonosDePrueba.trim() : '';
+  // Y TODOS sus elementos (separados por coma) lo son: «000000,abc» o «5911…,1» no pasan por lista de prueba.
+  const crudo = typeof c.telefonosDePrueba === 'string' ? c.telefonosDePrueba.trim() : '';
+  const tel = crudo !== '' && (MARCADOR.test(crudo) || crudo.split(',').every((x) => /^\d{6,}$/.test(x.trim()))) ? crudo : '';
   const modo = c.modoApertura === undefined || c.modoApertura === null || c.modoApertura === '' ? 'prueba' : String(c.modoApertura);
   return tel !== '' && modo === 'prueba' ? 'prueba' : 'publico';
 }
