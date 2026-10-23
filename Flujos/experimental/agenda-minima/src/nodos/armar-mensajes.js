@@ -271,9 +271,17 @@ switch (plan) {
     break;
   }
 
-  case 'imagen_sin_texto':
-    menu('Recibí tu imagen. ¿Qué necesitas?');
+  case 'imagen_sin_texto': {
+    // El módulo común de medios clasifica la imagen. Consultorio pediátrico: de una FOTO o un documento de salud no se
+    // repite ningún detalle (puede ser clínico); solo se dice qué tipo de cosa se recibió y que por este chat no se valora.
+    // La frase de lo que se ve solo se usa en una captura de pantalla. No se ofrece nada que el flujo no cumpla.
+    const cat = String(base.categoriaMedio || '');
+    const ve = cat === 'captura_de_pantalla' ? String(base.descripcionMedio || '').trim() : '';
+    if (cat === 'foto') menu('Recibí tu foto. Por este chat no puedo valorarla. ¿Qué necesitas?');
+    else if (cat === 'captura_de_pantalla') menu('Recibí tu captura' + (ve ? ': ' + ve : '') + '. Por este chat no puedo valorarla. ¿Qué necesitas?');
+    else menu('Recibí tu imagen. ¿Qué necesitas?');
     break;
+  }
 
   case 'emergencia': {
     // P3: solo el boton a recepcion y «ya le avise al doctor», con el texto de la configuracion.
@@ -321,7 +329,8 @@ switch (plan) {
 
   case 'derivar_medio':
     transferir('el paciente envió un mensaje que este canal no lee (foto, archivo u otro)',
-      'Por este chat solo puedo ayudarte a agendar, cancelar o mover citas. Para otra cosa, escríbele directo a recepción tocando el botón.');
+      (t.tipo === 'document' ? 'Recibí tu archivo. ' : '')
+      + 'Por este chat solo puedo ayudarte a agendar, cancelar o mover citas. Para otra cosa, escríbele directo a recepción tocando el botón.');
     break;
 
   case 'audio_ilegible': {
