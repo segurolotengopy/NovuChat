@@ -305,7 +305,9 @@ describe('4. Los dos «Preparar …» son el MISMO módulo que en reservas, y en
   });
 
   it('una categoría que el modelo invente cae en «otro»', () => {
-    for (const categoria of ['zapatilla', 'producto', '', 'PUBLICIDAD']) {
+    // 'PUBLICIDAD' ya no está acá: el módulo común normaliza mayúsculas y la lee como «publicidad»
+    // (22/10/2026); en el Demo B la reduce «Filtrar categoría» y se prueba abajo, a nivel de flujo.
+    for (const categoria of ['zapatilla', 'producto', '']) {
       expect(clasificar(gemini(JSON.stringify({ categoria })))['categoriaMedio'], categoria).toBe('otro');
     }
   });
@@ -329,6 +331,12 @@ describe('4. Los dos «Preparar …» son el MISMO módulo que en reservas, y en
       expect(String(s['userInput'])).not.toMatch(AFIRMA_PAGO);
       expect(String(s['userInput'])).toContain('Promo 2x1, Bs 350');
     });
+
+  it('«PUBLICIDAD» en mayúsculas, a nivel de flujo, también queda en «otro»', () => {
+    const s = filtrarYPreparar(gemini(JSON.stringify({ categoria: 'PUBLICIDAD', texto: 'Promo 2x1' })));
+    expect(s['categoriaMedio']).toBe('otro');
+    expect(String(s['userInput'])).not.toMatch(NO_SE_CUMPLE);
+  });
 
   it('«Filtrar categoría» conserva la forma de Gemini y el emparejamiento, y solo deja pasar categoría y texto', () => {
     const r = ejecutar(codigoDe(f, 'Filtrar categoría'), [
