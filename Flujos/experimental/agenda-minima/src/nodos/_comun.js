@@ -50,6 +50,7 @@ function cnCfg() {
 
 function cnNorm(t) {
   return String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[\p{Cf}\u180E\uFE00-\uFE0F\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}\u2061-\u2064\u115F\u1160\u3164\uFFA0\u2800\u17B4\u17B5]/gu, '')
     .toLowerCase().replace(/\s+/g, ' ').trim();
 }
 function cnDigitos(v) {

@@ -2229,6 +2229,38 @@ describe('Agenda mínima v0: revisión de seguridad, «Armar mensajes»', () => 
     const t = ofertaCon('Tengo estos horarios; toca el que prefieras.');
     expect(t.enviados[0]!.cuerpo).toBe('Tengo estos horarios; toca el que prefieras.');
   });
+  // Invisibles (23/10): una letra con un carácter invisible pegado evadía las reglas de arriba.
+  // Se descarta la redacción y sale la ruta de código: 0 mensajes extra.
+  const cp = (...c: number[]) => String.fromCodePoint(...c);
+  const TAG = cp(0xe0061);
+  const evasiones: Array<[string, string]> = [
+    ['Tu pago fue acreditado', 'Tu pago fue acreditado'],
+    ['Recibimos tu pago', 'Recibimos tu pago'],
+    ['Pago verificado', 'Pago verificado'],
+    ['No soy un bot', 'No soy un bot'],
+    ['Soy una persona real', 'Soy una persona real'],
+    ['Quedó agendada tu cita', 'Quedó agendada tu cita'],
+  ];
+  for (const [nombre, frase] of evasiones) {
+    for (const [rotulo, inv] of [['etiqueta', TAG], ['U+3164', cp(0x3164)], ['U+2800', cp(0x2800)], ['U+115F', cp(0x115f)], ['U+FFA0', cp(0xffa0)], ['U+17B4', cp(0x17b4)]] as const) {
+      it(`NIEGA: «${nombre}» con ${rotulo} dentro de la palabra se descarta`, () => {
+        const sucia = frase.replace(/(\p{L}{2})(\p{L})/u, `$1${inv}$2`);
+        expect(sucia).not.toBe(frase);
+        const t = ofertaCon(sucia);
+        expect(t.enviados[0]!.cuerpo).not.toBe(sucia);
+      });
+    }
+    it(`NIEGA: «${nombre}» con U+3164 y U+2800 como separador se descarta`, () => {
+      const sucia = frase.replace(/ /g, cp(0x3164)) + cp(0x2800);
+      expect(ofertaCon(sucia).enviados[0]!.cuerpo).not.toBe(sucia);
+    });
+  }
+  it('sin invisibles, el texto sin evasión pasa igual que antes (emojis con ZWJ y VS16 incluidos)', () => {
+    for (const ok of [`Tengo estos horarios ${cp(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467)}; toca el que prefieras.`,
+      `Tengo estos horarios ${cp(0x2764, 0xfe0f)}; toca el que prefieras.`, 'Tengo estos horarios; no hemos recibido comprobante todavía.']) {
+      expect(ofertaCon(ok).enviados[0]!.cuerpo).toBe(ok);
+    }
+  });
   it('emergencia SIN número del doctor: no dice «ya le avisé al doctor» y avisa a recepción marcado EMERGENCIA', () => {
     const panel = JSON.parse(JSON.stringify(PANEL)) as J;
     delete ((panel['operacion'] as J)['numeroDoctor']);
