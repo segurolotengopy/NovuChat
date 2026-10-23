@@ -2852,8 +2852,8 @@ describe('Agenda mínima v0: el mapa también sale si el panel trae otra instruc
 // ---------------------------------------------------------------------------------------------
 describe('Agenda mínima: rama de medios del core', () => {
   const CORE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'Flujos', 'src', 'core', 'medios');
-  const MODULOS: Record<string, string> = {
-    'Preparar transcripción': 'preparar-transcripcion.js', 'Preparar imagen': 'preparar-imagen.js', 'Medio no aceptado': 'medio-no-aceptado.js',
+  const MODULOS: Record<string, string | string[]> = {
+    'Preparar transcripción': 'preparar-transcripcion.js', 'Preparar imagen': ['anuncio-por-titular.js', 'preparar-imagen.js'], 'Medio no aceptado': 'medio-no-aceptado.js',
   };
   const NODOS = ['Normalizar entrada', '¿Bajar medio?', 'Obtener URL del medio (general)', '¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?',
     'Transcribir audio', '¿Es un documento?', 'Describir documento', 'Describir imagen', ...Object.keys(MODULOS)];
@@ -2876,8 +2876,14 @@ describe('Agenda mínima: rama de medios del core', () => {
     });
     it(`${etiqueta}: el código de los tres módulos es el del módulo común, sin una edición`, () => {
       for (const [nodo, archivo] of Object.entries(MODULOS)) {
-        const fuente = readFileSync(join(CORE, archivo), 'utf8').trimEnd();
-        expect(String((por(nodo)!.parameters as J)['jsCode'])).toContain(fuente);
+        const codigo = String((por(nodo)!.parameters as J)['jsCode']);
+        let desde = 0;
+        for (const a of [archivo].flat()) {
+          const fuente = readFileSync(join(CORE, a), 'utf8').trimEnd();
+          const i = codigo.indexOf(fuente, desde);
+          expect(i, `${nodo}: ${a} en orden`).toBeGreaterThanOrEqual(desde);
+          desde = i + fuente.length;
+        }
       }
     });
     it(`${etiqueta}: los tres nodos de Gemini de la rama de medios traen su credencial (vacía hasta publicar) y ninguno trae un token`, () => {
