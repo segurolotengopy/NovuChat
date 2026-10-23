@@ -39,8 +39,8 @@ function ctEsRepetido(texto, opciones) {
   return false;
 }
 // Los textos alternos de base; `{titular}` es el nombre de quien atiende (el negocio decide cómo se llama).
-// El conjunto `tu` es el de Rubén (rr.js) con «Rubén» → {titular}.
-// El conjunto `usted` es la conjugación literal de las mismas frases: SU TEXTO ESTÁ PENDIENTE DE APROBACIÓN de Silvana y de Andres.
+// El conjunto `tu` de `contenido` es el de Rubén (rr.js) con «Rubén» → {titular}; el de `medio` se reescribió el 23/10/2026 por reclamo de Andres (el «Sigo sin poder…» salía la primera vez que el cliente mandaba el archivo): redacción NEUTRA, sin «sigo», «tampoco» ni nada que presuponga una repetición previa; sus tres textos son los de Antonio (#593). Las de `contenido` sí presuponen repetición porque solo se usan cuando el bot iba a repetir exactamente el mismo texto.
+// El conjunto `usted` es la conjugación literal de las mismas frases: SU TEXTO SIGUE PENDIENTE DE APROBACIÓN de Silvana y de Andres.
 const CT_ALTERNAS = {
   tu: {
     contenido: [
@@ -49,9 +49,9 @@ const CT_ALTERNAS = {
       'Esa información ya está más arriba en este chat. Si algo no quedó claro, pregúntamelo de otra forma o escríbele a {titular} con el botón.',
     ],
     medio: [
-      'Sigo sin poder usar ese archivo por aquí. Cuéntame por escrito qué necesitas, o escríbele a {titular} con el botón.',
-      'Ese archivo tampoco lo pude revisar. Escríbeme lo que necesitas en un mensaje, o escríbele directo a {titular} con el botón.',
-      'Por aquí no puedo trabajar con ese archivo. Dime con palabras qué buscas, o escríbele a {titular} con el botón.',
+      'Por aquí no puedo trabajar con ese archivo. Cuéntame por escrito qué necesitas, o escríbele a {titular} con el botón.',
+      'No pude usar ese archivo en este chat. Escríbeme lo que necesitas en un mensaje, o escríbele directo a {titular} con el botón.',
+      'Ese archivo no lo puedo revisar por aquí. Dime con palabras qué buscas, o escríbele a {titular} con el botón.',
     ],
   },
   usted: {
@@ -61,9 +61,9 @@ const CT_ALTERNAS = {
       'Esa información ya está más arriba en este chat. Si algo no quedó claro, pregúnteme de otra forma o escríbale a {titular} con el botón.',
     ],
     medio: [
-      'Sigo sin poder usar ese archivo por aquí. Cuénteme por escrito qué necesita, o escríbale a {titular} con el botón.',
-      'Ese archivo tampoco lo pude revisar. Escríbame lo que necesita en un mensaje, o escríbale directo a {titular} con el botón.',
-      'Por aquí no puedo trabajar con ese archivo. Dígame con palabras qué busca, o escríbale a {titular} con el botón.',
+      'Por aquí no puedo trabajar con ese archivo. Cuénteme por escrito qué necesita, o escríbale a {titular} con el botón.',
+      'No pude usar ese archivo en este chat. Escríbame lo que necesita en un mensaje, o escríbale directo a {titular} con el botón.',
+      'Ese archivo no lo puedo revisar por aquí. Dígame con palabras qué busca, o escríbale a {titular} con el botón.',
     ],
   },
 };
