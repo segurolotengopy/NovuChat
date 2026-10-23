@@ -119,6 +119,9 @@ function leerCoordenadas(c: Coordenadas): { error: string | null; ubicacion: { l
  *
  * EL FORMATO GUARDADO ES EL QUE YA LEEN LOS DEMÁS, sin cambiar nada: un mapa
  * `horarios` con claves `lun … dom` y valores `'HH:MM-HH:MM'` o `'cerrado'`.
+ * Desde el 23/10/2026 un día admite además TURNO PARTIDO: hasta tres tramos
+ * separados por coma sin espacios, `'09:00-12:00,14:00-18:00'`. Un documento de
+ * un solo rango se lee y se guarda igual que siempre.
  * Lo leen `horarioAtencion()` (functions/src/core/prompt/prompt.ts), que arma la frase que
  * el asistente le dice al cliente, y `horarioDeHoy()` en el Tablero.
  *
@@ -136,16 +139,21 @@ const DIAS_SEMANA = [
   ['vie', 'Viernes'], ['sab', 'Sábado'], ['dom', 'Domingo'],
 ] as const;
 
+type TramoHorario = { desde: string; hasta: string };
+
 type DiaHorario = {
   cerrado: boolean;
-  desde: string;
-  hasta: string;
+  /** Siempre al menos uno; hasta `MAX_TRAMOS`. Un tramo vacío (sin horas) es «sin datos». */
+  tramos: TramoHorario[];
   /** Lo que había guardado y no se pudo leer, para decírselo al comercio. */
   ilegible?: string;
 };
 
+/** Tope de turnos por día: el mismo que el servidor (`horario-tramos.ts`). */
+const MAX_TRAMOS = 3;
 const RANGO_HORARIO = /^(([01]\d|2[0-3]):[0-5]\d)-(([01]\d|2[0-3]):[0-5]\d)$/;
-const DIA_VACIO: DiaHorario = { cerrado: false, desde: '', hasta: '' };
+const TRAMO_VACIO: TramoHorario = { desde: '', hasta: '' };
+const DIA_VACIO: DiaHorario = { cerrado: false, tramos: [TRAMO_VACIO] };
 
 function leerHorarios(valor: unknown): Record<string, DiaHorario> {
   const crudo = (typeof valor === 'object' && valor !== null)
@@ -155,9 +163,11 @@ function leerHorarios(valor: unknown): Record<string, DiaHorario> {
     const v = crudo[clave];
     if (v === undefined) { salida[clave] = DIA_VACIO; continue; }
     if (v === 'cerrado') { salida[clave] = { ...DIA_VACIO, cerrado: true }; continue; }
-    const rango = typeof v === 'string' ? RANGO_HORARIO.exec(v) : null;
-    salida[clave] = rango
-      ? { cerrado: false, desde: rango[1]!, hasta: rango[3]! }
+    // Un rango («09:00-18:00») o hasta tres separados por coma.
+    const partes = typeof v === 'string' ? v.split(',') : [];
+    const tramos = partes.map((p) => RANGO_HORARIO.exec(p));
+    salida[clave] = partes.length >= 1 && partes.length <= MAX_TRAMOS && tramos.every((m) => m !== null)
+      ? { cerrado: false, tramos: tramos.map((m) => ({ desde: m![1]!, hasta: m![3]! })) }
       // Un valor viejo con otro formato (cargado por script, antes de que la
       // regla lo cerrara) se muestra vacío y se avisa: guardarlo tal cual haría
       // que el servidor rechazara TODO el formulario sin decir por qué.
@@ -169,12 +179,25 @@ function leerHorarios(valor: unknown): Record<string, DiaHorario> {
 /** `null` si el día está bien (o sin datos). Si no, qué corregir. */
 function errorDelDia(d: DiaHorario): string | null {
   if (d.cerrado) return null;
-  if (d.desde === '' && d.hasta === '') return null;
-  if (d.desde === '') return 'Falta la hora de apertura.';
-  if (d.hasta === '') return 'Falta la hora de cierre.';
-  // Se compara como texto: con «HH:MM» de largo fijo da el mismo orden que
-  // las horas. Es la misma comparación que hace la regla.
-  if (d.desde >= d.hasta) return 'La hora de apertura tiene que ser anterior a la de cierre.';
+  const unico = d.tramos.length === 1;
+  for (let i = 0; i < d.tramos.length; i++) {
+    const t = d.tramos[i] ?? TRAMO_VACIO;
+    const turno = unico ? '' : ` del turno ${i + 1}`;
+    if (t.desde === '' && t.hasta === '') {
+      // Un solo tramo vacío es un día sin datos; un turno agregado y vacío, no.
+      if (unico) return null;
+      return `Completa el turno ${i + 1} o quítalo.`;
+    }
+    if (t.desde === '') return `Falta la hora de apertura${turno}.`;
+    if (t.hasta === '') return `Falta la hora de cierre${turno}.`;
+    // Se compara como texto: con «HH:MM» de largo fijo da el mismo orden que
+    // las horas. Es la misma comparación que hace la regla.
+    if (t.desde >= t.hasta) return `La hora de apertura${turno} tiene que ser anterior a la de cierre.`;
+    const previo = d.tramos[i - 1];
+    if (previo && previo.hasta >= t.desde) {
+      return `El turno ${i + 1} tiene que empezar después de que termina el turno ${i}.`;
+    }
+  }
   return null;
 }
 
@@ -182,8 +205,9 @@ function escribirHorarios(h: Record<string, DiaHorario>): Record<string, string>
   const salida: Record<string, string> = {};
   for (const [clave] of DIAS_SEMANA) {
     const d = h[clave] ?? DIA_VACIO;
-    if (d.cerrado) salida[clave] = 'cerrado';
-    else if (d.desde !== '' && d.hasta !== '') salida[clave] = `${d.desde}-${d.hasta}`;
+    if (d.cerrado) { salida[clave] = 'cerrado'; continue; }
+    const completos = d.tramos.filter((t) => t.desde !== '' && t.hasta !== '');
+    if (completos.length > 0) salida[clave] = completos.map((t) => `${t.desde}-${t.hasta}`).join(',');
   }
   return salida;
 }
@@ -361,6 +385,18 @@ export function Configuracion() {
       // el comercio ya lo está corrigiendo.
       [clave]: { ...(h[clave] ?? DIA_VACIO), ...cambio, ilegible: undefined },
     }));
+  const cambiarTramo = (clave: string, i: number, cambio: Partial<TramoHorario>) =>
+    cambiarDia(clave, {
+      tramos: (horarios[clave] ?? DIA_VACIO).tramos.map((t, k) => (k === i ? { ...t, ...cambio } : t)),
+    });
+  const agregarTramo = (clave: string) => {
+    const tramos = (horarios[clave] ?? DIA_VACIO).tramos;
+    if (tramos.length < MAX_TRAMOS) cambiarDia(clave, { tramos: [...tramos, TRAMO_VACIO] });
+  };
+  const quitarTramo = (clave: string, i: number) => {
+    const tramos = (horarios[clave] ?? DIA_VACIO).tramos.filter((_, k) => k !== i);
+    cambiarDia(clave, { tramos: tramos.length ? tramos : [TRAMO_VACIO] });
+  };
 
   const guardar = async (evento: React.FormEvent) => {
     evento.preventDefault();
@@ -533,7 +569,9 @@ export function Configuracion() {
             <p className="ayuda">
               El asistente usa este horario para responder «¿a qué hora atienden?».
               Marca <strong>Cerrado</strong> los días que no abres; un día que dejas
-              sin datos no se menciona. <strong>Es opcional</strong>: si no tienes
+              sin datos no se menciona. Si cierras al mediodía, usa{' '}
+              <strong>Agregar turno</strong> (hasta tres por día), por ejemplo de
+              09:00 a 12:00 y de 14:00 a 18:00. <strong>Es opcional</strong>: si no tienes
               horario fijo, deja todos los días vacíos y el asistente no mencionará
               horarios.
               {conAgenda && <> Si en «Agenda» no cargaste a nadie, las citas también
@@ -552,21 +590,39 @@ export function Configuracion() {
                              onChange={(e) => cambiarDia(clave, { cerrado: e.target.checked })} />
                       <span>Cerrado</span>
                     </label>
-                    <div className="horario-horas">
-                      {/* Paso de 15 minutos: nadie abre a las 9:07. Las horas se
-                          conservan al marcar «Cerrado», para que desmarcarlo no
-                          obligue a escribirlas de nuevo. */}
-                      <label>desde
-                        <input type="time" step={900} value={d.desde} disabled={d.cerrado}
-                               aria-label={`${nombre}, desde`} aria-invalid={error !== null}
-                               onChange={(e) => cambiarDia(clave, { desde: e.target.value })} />
-                      </label>
-                      <label>hasta
-                        <input type="time" step={900} value={d.hasta} disabled={d.cerrado}
-                               aria-label={`${nombre}, hasta`} aria-invalid={error !== null}
-                               onChange={(e) => cambiarDia(clave, { hasta: e.target.value })} />
-                      </label>
-                    </div>
+                    {/* Paso de 15 minutos: nadie abre a las 9:07. Las horas se
+                        conservan al marcar «Cerrado», para que desmarcarlo no
+                        obligue a escribirlas de nuevo. Un día puede tener hasta
+                        tres turnos (turno partido); el primero conserva las
+                        etiquetas de siempre. */}
+                    {d.tramos.map((t, i) => {
+                      const turno = i === 0 ? '' : `, turno ${i + 1}`;
+                      return (
+                        <div key={i} className="horario-horas">
+                          {i > 0 && <span className="ayuda">Turno {i + 1}</span>}
+                          <label>desde
+                            <input type="time" step={900} value={t.desde} disabled={d.cerrado}
+                                   aria-label={`${nombre}${turno}, desde`} aria-invalid={error !== null}
+                                   onChange={(e) => cambiarTramo(clave, i, { desde: e.target.value })} />
+                          </label>
+                          <label>hasta
+                            <input type="time" step={900} value={t.hasta} disabled={d.cerrado}
+                                   aria-label={`${nombre}${turno}, hasta`} aria-invalid={error !== null}
+                                   onChange={(e) => cambiarTramo(clave, i, { hasta: e.target.value })} />
+                          </label>
+                          {i > 0 && (
+                            <button type="button" className="btn btn-ghost" disabled={d.cerrado}
+                                    aria-label={`${nombre}, quitar turno ${i + 1}`}
+                                    onClick={() => quitarTramo(clave, i)}>Quitar turno</button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {d.tramos.length < MAX_TRAMOS && (
+                      <button type="button" className="btn btn-ghost" disabled={d.cerrado}
+                              aria-label={`${nombre}, agregar turno`}
+                              onClick={() => agregarTramo(clave)}>Agregar turno</button>
+                    )}
                     {error && <p role="alert" className="ayuda aviso-datos">{error}</p>}
                     {d.ilegible !== undefined && (
                       <p role="alert" className="ayuda aviso-datos">

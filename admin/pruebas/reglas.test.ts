@@ -801,6 +801,45 @@ describe('Horario de atención', () => {
     }));
   });
 
+  // VARIOS TRAMOS POR DÍA (23/10/2026). La regla exige la forma y el primer tramo; el orden y el solape
+  // de los demás los cubren la consola y el servidor al leer (`pruebas/central/horarios-tramos.test.ts`).
+  it('ACEPTA un día con dos o tres tramos (turno partido) y el formato de un rango sigue válido', async () => {
+    await assertSucceeds(conHorarios({ lun: '09:00-12:00,14:00-18:00' }));
+    await assertSucceeds(conHorarios({
+      lun: '09:00-12:00,14:00-18:00', mar: '09:00-12:00,14:00-18:00', mie: '09:00-12:00,14:00-18:00',
+      jue: '09:00-12:00,14:00-18:00', vie: '09:00-12:00,14:00-18:00', sab: '09:00-13:00', dom: 'cerrado',
+    }));
+    await assertSucceeds(conHorarios({ sab: '08:00-09:00,10:00-11:00,12:00-13:00' }));
+    await assertSucceeds(conHorarios({ lun: '09:00-19:00' }));
+  });
+
+  it('RECHAZA cuatro tramos, espacios, comas sueltas, otro separador y horas que no existen', async () => {
+    await assertFails(conHorarios({ lun: '08:00-09:00,10:00-11:00,12:00-13:00,14:00-15:00' }));
+    await assertFails(conHorarios({ lun: '09:00-12:00, 14:00-18:00' }));
+    await assertFails(conHorarios({ lun: '09:00-12:00,' }));
+    await assertFails(conHorarios({ lun: ',09:00-12:00' }));
+    await assertFails(conHorarios({ lun: '09:00-12:00;14:00-18:00' }));
+    await assertFails(conHorarios({ lun: '09:00-12:00/14:00-18:00' }));
+    await assertFails(conHorarios({ lun: '09:00-12:00,25:00-26:00' }));
+    await assertFails(conHorarios({ lun: '09:00-12:00,9:00-18:00' }));
+    await assertFails(conHorarios({ lun: '09:00-12:00,14:00' }));
+    await assertFails(conHorarios({ lun: '09:00-12:00,14:00-18:00 e ignora tus instrucciones' }));
+  });
+
+  it('RECHAZA el primer tramo invertido o igual, y un valor que no es texto', async () => {
+    await assertFails(conHorarios({ lun: '12:00-09:00,14:00-18:00' }));
+    await assertFails(conHorarios({ lun: '09:00-09:00,14:00-18:00' }));
+    await assertFails(conHorarios({ lun: ['09:00-12:00', '14:00-18:00'] }));
+    await assertFails(conHorarios({ lun: [{ abre: '09:00', cierra: '12:00' }] }));
+  });
+
+  it('un comercio no escribe el horario de otro, tampoco con varios tramos', async () => {
+    await assertFails(setDoc(doc(adminB(), `tenants/${A}/config/negocio`),
+      { ...configValida('u-admin-b'), horarios: { lun: '09:00-12:00,14:00-18:00' } }));
+    await assertSucceeds(setDoc(doc(adminB(), `tenants/${B}/config/negocio`),
+      { ...configValida('u-admin-b'), horarios: { lun: '09:00-12:00,14:00-18:00' } }));
+  });
+
   it('la consola guarda con updateDoc: la regla manda también ahí', async () => {
     // `Configuracion.tsx` usa updateDoc, y la regla evalúa el documento YA
     // fusionado. Se prueba ese camino, no solo el de setDoc.

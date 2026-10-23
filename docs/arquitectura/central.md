@@ -537,6 +537,17 @@ estilo de `ESTADO.md`: el agente alternaba «usted» y «tú» con el mismo clie
 - `horarioAtencion` se calcula desde `horarios`. Guardarlo además invitaría a que
   los dos valores se separaran y a que el agente anunciara un horario que la
   pantalla no muestra.
+- **Horario con varios tramos por día (23/10/2026).** El valor de un día de
+  `horarios` sigue siendo un texto: `cerrado`, `HH:MM-HH:MM` (como siempre) o de
+  dos a tres tramos separados por coma sin espacios, `09:00-12:00,14:00-18:00`
+  (turno partido). Ordenados, sin solaparse ni tocarse, cierre posterior a la
+  apertura, dentro del día, hora de La Paz. La regla de Firestore exige la forma
+  y el primer tramo (no cabe más en el presupuesto de 1.000 expresiones de
+  `config/negocio`); el orden y el solape los exigen la consola al guardar, el
+  cargador `cargar-negocio.mjs` y el servidor al leer
+  (`functions/src/core/prompt/horario-tramos.ts`: un día partido inválido se
+  omite, no se anuncia). Los lectores del flujo ya partían por coma. Un documento
+  de un solo rango no cambia.
 
 Las reglas los rechazan por lista blanca **y** `configuracionFlujo` nunca los lee
 de la configuración aunque aparecieran. Dos barreras, a propósito.
