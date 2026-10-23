@@ -13,8 +13,10 @@
 //
 // NIVELES, en este orden (el primero que algun anuncio cumpla gana):
 //   1) igualdad con algun titular
-//   2) contencion por palabras completas, con 3 palabras o mas en el texto contenido
-//   3) similitud de Dice por bigramas >= 0,85, con 12 caracteres o mas
+//   2) el titular del DATO, con 3 palabras o mas, esta contenido en lo leido (palabras completas)
+//   3) similitud de Dice por bigramas >= 0,85, con 12 caracteres o mas y las MISMAS cifras
+// Se calcula el nivel de TODOS los anuncios: si coinciden varios en niveles distintos, o varios por
+// contencion con el mismo largo, no hay coincidencia (null). Una igualdad unica siempre gana.
 // Si dos anuncios DISTINTOS cumplen el mejor nivel, no hay coincidencia (null): ante la
 // duda el asistente cae en su comportamiento de siempre, que es preguntar.
 //
@@ -54,18 +56,21 @@ const anuncioPorTitular = (() => {
     for (const [k, n] of ma) comun += Math.min(n, mb.get(k) || 0);
     return (2 * comun) / ((a.length - 1) + (b.length - 1));
   };
-  // 1, 2, 3 si el texto coincide con ese titular en ese nivel; 0 si no.
+  // { nivel, largo } si el texto leido coincide con ese titular; nivel 0 si no.
+  //  1) igualdad  2) el titular DEL DATO (>= 3 palabras) esta contenido en lo leido, por palabras completas
+  //  3) Dice >= 0,85 con 12 caracteres o mas Y las mismas cifras en el mismo orden ('3x1' no es '2x1').
+  const cifras = (x) => (x.match(/\d+/g) || []).join(',');
   const nivelContra = (t, h) => {
-    if (!t || !h) return 0;
-    if (t === h) return 1;
-    const chico = t.length <= h.length ? t : h;
-    const grande = chico === t ? h : t;
-    if (palabras(chico).length >= 3 && contiene(grande, chico)) return 2;
-    if (t.length >= 12 && h.length >= 12 && dice(t, h) >= 0.85) return 3;
-    return 0;
+    if (!t || !h) return { nivel: 0, largo: 0 };
+    if (t === h) return { nivel: 1, largo: h.length };
+    if (palabras(h).length >= 3 && contiene(t, h)) return { nivel: 2, largo: h.length };
+    if (t.length >= 12 && h.length >= 12 && cifras(t) === cifras(h) && dice(t, h) >= 0.85) return { nivel: 3, largo: h.length };
+    return { nivel: 0, largo: 0 };
   };
-  const texto = (v, tope) => (typeof v === 'string'
-    ? v.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/[\[\]{}<>"`]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, tope) : '');
+  // Un campo con caracteres de control, bidireccionales o de ancho cero se OMITE (queda vacio), no se limpia.
+  const RARO = new RegExp('[\\u0000-\\u001f\\u007f-\\u009f\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff\\u00ad]');
+  const texto = (v, tope) => (typeof v === 'string' && !RARO.test(v)
+    ? v.replace(/[\[\]{}<>"`]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, tope) : '');
   const producto = (p) => {
     if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
     const nombre = texto(p.nombre, 120);
@@ -86,17 +91,32 @@ const anuncioPorTitular = (() => {
         if (!id || !crudos.length) continue;
         validos.push({ a, id, crudos: crudos.slice(0, 3) });
       }
-      let mejor = 4;
-      let ganadores = [];
+      // El nivel de TODOS los anuncios, antes de decidir: nadie gana solo por mirarse primero.
+      const hallados = [];
       for (const v of validos) {
-        let nivel = 4;
-        for (const c of v.crudos) { const n = nivelContra(t, norm(c)); if (n && n < nivel) nivel = n; }
-        if (nivel > 3) continue;
-        if (nivel < mejor) { mejor = nivel; ganadores = [v]; } else if (nivel === mejor) ganadores.push(v);
+        let mejorDe = { nivel: 0, largo: 0 };
+        for (const c of v.crudos) {
+          const r = nivelContra(t, norm(c));
+          if (r.nivel && (!mejorDe.nivel || r.nivel < mejorDe.nivel || (r.nivel === mejorDe.nivel && r.largo > mejorDe.largo))) mejorDe = r;
+        }
+        if (mejorDe.nivel) hallados.push({ v, ...mejorDe });
       }
-      if (!ganadores.length) return null;
-      if (new Set(ganadores.map((g) => g.id)).size !== 1) return null;
-      const g = ganadores[0];
+      if (!hallados.length) return null;
+      const ids = new Set(hallados.map((h) => h.v.id));
+      let ganadores;
+      if (ids.size === 1) ganadores = [hallados[0]];
+      else {
+        // Varios anuncios distintos coinciden. Solo se resuelve si hay igualdad (nivel 1) unica, o si todos son
+        // contencion (nivel 2) y uno contiene un titular estrictamente mas largo que los demas. Todo lo demas: ninguno.
+        const igualdad = hallados.filter((h) => h.nivel === 1);
+        if (igualdad.length) ganadores = igualdad;
+        else if (hallados.every((h) => h.nivel === 2)) {
+          const tope = Math.max(...hallados.map((h) => h.largo));
+          ganadores = hallados.filter((h) => h.largo === tope);
+        } else return null;
+        if (new Set(ganadores.map((h) => h.v.id)).size !== 1) return null;
+      }
+      const g = ganadores[0].v;
       return { id: texto(g.id, 80), titular: texto(g.crudos[0], 100),
         angulo: texto(g.a.angulo, 300), producto: producto(g.a.producto) };
     } catch (e) { return null; }

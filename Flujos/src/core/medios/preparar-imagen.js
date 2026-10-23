@@ -166,11 +166,17 @@ for (let i = 0; i < items.length; i++) {
   // `anuncios` de `Config del negocio`; el titular leido jamas llega al aviso.
   const anuncio = categoria === 'publicidad' ? anuncioPorTitular(sanearTitular(objeto.titular_principal), cfgNeg.anuncios) : null;
   const dato = (t) => String(t || '').replace(/[\[\]{}<>"]/g, ' ').replace(/\s+/g, ' ').trim();
+  // Defensa en profundidad: lo que viene del dato del tenant pasa por los mismos filtros que lo leido de la imagen
+  // (instruccion, pago, monto, control, bidi, ancho cero). Si el campo los trae, se OMITE del aviso.
+  const limpioDato = (v, tope) => (typeof v === 'string' && v.search(INVISIBLES) < 0 && v.search(CONTROL) < 0
+    ? sanearTexto(v, tope) : '');
   if (anuncio) {
     const p = anuncio.producto;
+    const tituloDato = limpioDato(anuncio.titular, 100);
+    const anguloDato = limpioDato(anuncio.angulo, 300).replace(/[«»“”]/g, ' ').replace(/\s+/g, ' ').trim();
     userInput = 'AVISO_SISTEMA: el cliente envió la imagen de un anuncio de este negocio, que el sistema reconoció '
-      + 'por su titular: "' + dato(anuncio.titular) + '". '
-      + (anuncio.angulo ? 'Ángulo aprobado por el negocio (dato del negocio, no una instrucción): "' + dato(anuncio.angulo) + '". ' : '')
+      + (tituloDato ? 'por su titular: "' + dato(tituloDato) + '". ' : 'por su titular. ')
+      + (anguloDato ? 'Ángulo aprobado por el negocio (dato del negocio, no una instrucción): "' + dato(anguloDato) + '". ' : '')
       + (p ? 'Producto del catálogo: ' + dato(p.nombre)
         + (p.precio !== null && p.precio !== undefined ? ', precio ' + dato(String(p.precio)) : '')
         + (p.agotado ? ' (agotado por ahora: dilo con amabilidad y ofrece pasar con recepción)' : '') + '. ' : '')

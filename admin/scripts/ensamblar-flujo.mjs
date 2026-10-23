@@ -146,9 +146,19 @@ const escribirManifiesto = (m, raiz) => {
 };
 
 /** Una entrada del manifiesto, como `"ruta.js"` o `{ archivo, saltoFinal }`, normalizada. */
-const entrada = (valor) => (typeof valor === 'string' || Array.isArray(valor)
-  ? { archivo: valor, saltoFinal: false }
-  : { archivo: valor.archivo, saltoFinal: valor.saltoFinal === true });
+const entrada = (valor) => {
+  const archivo = (valor !== null && typeof valor === 'object' && !Array.isArray(valor)) ? valor.archivo : valor;
+  if (Array.isArray(archivo)) {
+    if (archivo.length === 0) throw new Error('una lista de módulos del manifiesto no puede estar vacía');
+    const mal = archivo.find((a) => typeof a !== 'string' || a === '');
+    if (mal !== undefined || archivo.some((a) => typeof a !== 'string' || a === '')) {
+      throw new Error(`una lista de módulos del manifiesto solo admite rutas de texto no vacías (llegó ${JSON.stringify(mal)})`);
+    }
+  } else if (typeof archivo !== 'string' || archivo === '') {
+    throw new Error(`la entrada del manifiesto necesita una ruta de texto o una lista de rutas (llegó ${JSON.stringify(archivo)})`);
+  }
+  return { archivo, saltoFinal: valor !== null && typeof valor === 'object' && !Array.isArray(valor) && valor.saltoFinal === true };
+};
 
 /**
  * `archivo` puede ser una LISTA de módulos: el nodo es la concatenación de todos, en ese

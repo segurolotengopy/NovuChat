@@ -501,3 +501,27 @@ describe('9. Las carpetas transitorias de FL2 solo se achican', () => {
     });
   }
 });
+
+describe('8. Una lista de módulos mal formada se rechaza con un error claro', () => {
+  const conEntrada = (valor: unknown): string => {
+    const dir = copiaDeFlujos();
+    const ruta = rutaDeManifiesto('demo-a-agendamiento.json', dir);
+    const m = JSON.parse(readFileSync(ruta, 'utf8'));
+    m.codigo['Preparar imagen'] = valor;
+    writeFileSync(ruta, JSON.stringify(m, null, 2) + '\n');
+    return dir;
+  };
+  it.each([
+    ['lista vacía', []],
+    ['elemento que no es texto', ['core/medios/preparar-imagen.js', 7]],
+    ['elemento vacío', ['']],
+    ['null dentro de la lista', [null]],
+    ['objeto con lista vacía', { archivo: [] }],
+    ['sin ruta', {}],
+    ['número', 5],
+  ])('%s', (_n, valor) => {
+    const dir = conEntrada(valor);
+    expect(() => ensamblarEnMemoria('demo-a-agendamiento.json', dir)).toThrow(/manifiesto/);
+    expect(() => extraerFlujo('demo-a-agendamiento.json', { raiz: dir })).toThrow(/manifiesto/);
+  });
+});
