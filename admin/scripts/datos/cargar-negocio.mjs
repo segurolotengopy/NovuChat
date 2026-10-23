@@ -263,8 +263,14 @@ function validar(d) {
             // escribirlo: en un archivo de carga, un día que falta es más
             // probablemente un olvido que un cierre.
             if (v === undefined) { p.push(`negocio.horarios.${dia}: falta (escriba «cerrado» si no atiende)`); continue; }
-            const ok = v === 'cerrado' || (typeof v === 'string' && RANGO_HORA.test(v) && v.split('-')[0] < v.split('-')[1]);
-            if (!ok) p.push(`negocio.horarios.${dia}: «cerrado» o HH:MM-HH:MM con inicio antes que fin`);
+            // Turno partido (23/10/2026): hasta tres tramos separados por coma sin espacios, cada
+            // uno con inicio antes que fin, ordenados y sin tocarse. Acá SÍ se valida completo (la
+            // regla de Firestore solo exige la forma y el primer tramo; ver `horario-tramos.ts`).
+            const tramos = typeof v === 'string' ? v.split(',') : [];
+            const ok = v === 'cerrado' || (tramos.length >= 1 && tramos.length <= 3
+              && tramos.every((t, i) => RANGO_HORA.test(t) && t.split('-')[0] < t.split('-')[1]
+                && (i === 0 || tramos[i - 1].split('-')[1] < t.split('-')[0])));
+            if (!ok) p.push(`negocio.horarios.${dia}: «cerrado» o HH:MM-HH:MM con inicio antes que fin (o hasta tres tramos separados por coma, ordenados y sin solaparse)`);
           }
         }
       }

@@ -4,7 +4,7 @@
  * Aquí es la TERCERA vez que se pide un flujo «sin agente» con puerta del turno, ficha por teléfono, carga de entrada y configuración del negocio (Antonio, Rubén y las doctoras), y todavía no existe
  * el módulo común (ticket para Rearquitectura: es Core, no se crea en este PR). Mientras tanto cada pieza es una COPIA declarada de `rroca-antonio` (que a su vez declara su origen en `chat-novuchat`
  * y `venta-minima`), y esta suite la compara con su origen, byte a byte:
- *   - `puerta-del-turno.js`, `carga-de-entrada.js` y `config-del-negocio.js`: IDÉNTICOS a los de Antonio;
+ *   - `carga-de-entrada.js`: IDÉNTICO al de Antonio; `puerta-del-turno.js` y `config-del-negocio.js`: los de Antonio + SOLO el modo prueba (`etapaPrueba`, fragmentos declarados aquí);
  *   - `_comun.js`: IGUAL al de Antonio una vez aplicadas las sustituciones declaradas (y solo ellas);
  *   - las expresiones de `dr.js` que son de Antonio (NIEGA_IA, violencia o miedo, baja) tienen la MISMA fuente que en su origen, y las funciones de párrafos son las suyas con otro prefijo;
  *   - los nodos JSON de la plantilla (receptor, configuración, medios…) son iguales a los de Antonio en todo salvo `id`, `notes` y `position`.
@@ -34,11 +34,26 @@ function unico(t: string, de: string, a: string): string {
 }
 
 describe('HUECOS del núcleo: el código copiado de rroca-antonio, con SOLO las sustituciones declaradas', () => {
-  it('puerta-del-turno.js, carga-de-entrada.js y config-del-negocio.js son IDÉNTICOS byte a byte a los de Antonio', () => {
-    for (const a of ['puerta-del-turno.js', 'carga-de-entrada.js', 'config-del-negocio.js']) {
-      expect(huella(nodoDe(DR, a)), a).toBe(huella(nodoDe(ANTONIO, a)));
-      expect(nodoDe(DR, a), a).toBe(nodoDe(ANTONIO, a));
-    }
+  it('carga-de-entrada.js es IDÉNTICO byte a byte al de Antonio', () => {
+    expect(huella(nodoDe(DR, 'carga-de-entrada.js'))).toBe(huella(nodoDe(ANTONIO, 'carga-de-entrada.js')));
+    expect(nodoDe(DR, 'carga-de-entrada.js')).toBe(nodoDe(ANTONIO, 'carga-de-entrada.js'));
+  });
+
+  it('puerta-del-turno.js y config-del-negocio.js = los de Antonio + SOLO el modo prueba (`etapaPrueba`), declarado: quitados esos fragmentos, son idénticos byte a byte', () => {
+    const sin = (t: string, fragmento: string): string => unico(t, fragmento, '');
+    // Puerta: la ruta `fuera_de_prueba` (la primera que se mira) y su línea en la cabecera.
+    let puerta = nodoDe(DR, 'puerta-del-turno.js');
+    puerta = sin(puerta, "//   fuera_de_prueba -> `etapaPrueba = si` y el teléfono no está en `telefonosDePrueba`: no se responde, no se avisa, no se llama al modelo. Nunca se le escribe a un cliente. Es lo PRIMERO que se mira.\n");
+    puerta = sin(puerta, "if (cfg.etapaPrueba === true) {\n  const permitidos = Array.isArray(cfg.telefonosEtapaPrueba) ? cfg.telefonosEtapaPrueba : [];\n  const quien = cnDigitos(t.from);\n"
+      + "  if (!quien || permitidos.indexOf(quien) < 0) return [{ json: { ruta: 'fuera_de_prueba', texto: '', responder: false, transferir: false, motivo: '', from: t.from } }];\n}\n");
+    expect(puerta).toBe(nodoDe(ANTONIO, 'puerta-del-turno.js'));
+    // Config del negocio: la recepción de «Config base» manda en la etapa de prueba, y se exponen `etapaPrueba` y la lista.
+    let config = nodoDe(DR, 'config-del-negocio.js');
+    config = sin(config, "// ETAPA DE PRUEBA (`etapaPrueba = si` en `Config base`): el flujo vivo solo atiende a `telefonosDePrueba` (lo cierra `Puerta del turno`). El aviso nunca puede llegar a la recepción REAL de la doctora:\n"
+      + "// con la etapa encendida el número de recepción es el de `Config base` y se IGNORA el de la Consola. Sin `si` (vacío, marcador o cualquier otro valor) todo queda como siempre.\n"
+      + "const etapaPrueba = valor(base.etapaPrueba).toLowerCase() === 'si';\nif (etapaPrueba) cfg.numeroRecepcion = deBase.numeroRecepcion;\n\n");
+    config = sin(config, "  etapaPrueba,\n  telefonosEtapaPrueba: etapaPrueba ? permitidos : [],\n");
+    expect(config).toBe(nodoDe(ANTONIO, 'config-del-negocio.js'));
   });
 
   it('_comun.js = el de Antonio + sustituciones declaradas (título, referencia a la librería, clave de la ficha `doctoras`)', () => {
@@ -98,10 +113,24 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo 
     }
   });
 
-  it('Entrada de prueba, Config base, Traer configuración, ¿Meta aceptó? y ¿Reportar? (entrante) son los de Antonio, sin ninguna diferencia', () => {
-    for (const n of ['Entrada de prueba', 'Config base', 'Traer configuración', '¿Meta aceptó?', '¿Reportar? (entrante)']) {
+  it('Entrada de prueba, Config base, Traer configuración y ¿Meta aceptó? son los de Antonio, sin ninguna diferencia', () => {
+    for (const n of ['Entrada de prueba', 'Config base', 'Traer configuración', '¿Meta aceptó?']) {
       expect(sinLibres(de(plantilla, n)), n).toEqual(sinLibres(de(antonio, n)));
     }
+  });
+
+  it('¿Reportar? (entrante) es el de Antonio con UN cambio PROPIO declarado: tampoco reporta (ni cuenta conversación) a un número ajeno en la etapa de prueba', () => {
+    const origen = JSON.stringify(sinLibres(de(antonio, '¿Reportar? (entrante)')));
+    const propio = JSON.stringify(sinLibres(de(plantilla, '¿Reportar? (entrante)')));
+    const viejo = "$('Config del negocio').first().json.modoPrueba !== true }}";
+    expect(origen, 'el origen ya no trae la condición declarada: hay que revisar').toContain(viejo);
+    const i = propio.indexOf("$('Config del negocio').first().json.modoPrueba !== true && !(");
+    const j = propio.indexOf(' }}', i);
+    expect(i).toBeGreaterThan(0);
+    const nuevo = propio.slice(i, j + 3);
+    expect(nuevo).toContain('etapaPrueba === true');
+    expect(nuevo).toContain('telefonosEtapaPrueba');
+    expect(propio.replace(nuevo, viejo)).toBe(origen);
   });
 
   it('Reportar mensaje (entrante) es el de Antonio con UN cambio PROPIO declarado: el `evento` sale de `bajaEscrita` y `riesgoEscrito` (la expresión de la baja vive una sola vez, en dr.js)', () => {
