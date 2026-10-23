@@ -7,12 +7,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
-import { ANA, BETO, REC, crear, datosDe, hablar, mAudio, mBoton, mDocumento, mImagen, mLista, mTexto, textos, type Opciones } from './mundo';
+import { ANA, BETO, REC, crear, datosDe, doctoraViva, negocioDe, panelOk, hablar, mAudio, mBoton, mDocumento, mImagen, mLista, mTexto, textos, type Opciones } from './mundo';
 import { LIB, UX_CONTADOR, vigilarUx } from './vigilante-ux';
 
 const AP = { avisoSolicitudEstado: 'APPROVED' };
 const mundo = (o: Opciones = {}) => { const w = crear({ ...o, base: { ...AP, ...(o.base ?? {}) } }); vigilarUx(w); return w; };
-const DOC = datosDe('rroca-evy')['doctora'] as J;
+const DOC = doctoraViva('rroca-evy');
 const T = (c: string, extra?: J): string => LIB.drParrafos(LIB.drTextoDe(DOC, c, extra));
 /** El mundo después del primer turno (ya presentada). */
 const saludada = (o: Opciones = {}) => { const w = mundo(o); hablar(w, ANA, mTexto('Hola Dra. Evy, vi su anuncio de armonización facial y quiero agendar mi valoración gratuita 🙌')); return w; };
@@ -167,15 +167,16 @@ describe('cada intención responde SU texto fijo, sin modelo', () => {
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/maps|goo\.gl|https?:|wa\.me/i);
   });
 
-  it('el horario: la doctora que NO lo tiene (marcador) no dice ninguno; con horario en el dato, lo dice', () => {
-    const sin = saludada({ base: { doctora: JSON.stringify({ ...DOC, horario: 'REEMPLAZAR_HORARIO' }) } });
+  it('el horario sale de la CONSOLA: sin horario en la consola ni respaldo no se dice ninguno; con el de la consola, lo dice', () => {
+    const base = { doctora: JSON.stringify({ ...(datosDe('rroca-evy')['doctora'] as J), horario: 'REEMPLAZAR_HORARIO' }) };
+    const sinPanel = panelOk({ operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'], horarioAtencion: '' } });
+    const sin = saludada({ base, panel: sinPanel });
     const a = hablar(sin, ANA, mTexto('¿qué horarios tienen?'));
     expect(a.mensajes[0]!.cuerpo).toMatch(/lo confirma la recepción/);
     expect(a.mensajes[0]!.cuerpo).not.toMatch(/lunes|\d{1,2}:\d{2}|\bde \d+ a \d+/i);
-    const con = mundo({ base: { doctora: JSON.stringify({ ...DOC, horario: 'de lunes a viernes de 09:00 a 12:00' }) } });
-    hablar(con, ANA, mTexto('hola'));
+    const con = saludada({ base });
     const b = hablar(con, ANA, mTexto('¿qué horarios tienen?'));
-    expect(b.mensajes[0]!.cuerpo).toMatch(/Atendemos de lunes a viernes de 09:00 a 12:00/);
+    expect(b.mensajes[0]!.cuerpo).toMatch(/Atendemos lunes a viernes, de 08:30 a 18:30; sábado, de 09:00 a 12:00; domingo: cerrado/);
   });
 
   it('«¿eres un bot?» responde con naturalidad que es una inteligencia artificial, con el botón de la recepción', () => {

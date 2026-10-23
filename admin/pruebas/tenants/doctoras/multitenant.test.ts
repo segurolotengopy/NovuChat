@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import type { Mundo } from '../../lib/n8n-de-mentira';
-import { ANA, CARPETA, TENANTS, crear, datosDe, hablar, mBoton, mLista, mTexto, textos, type Tenant } from './mundo';
+import { ANA, CARPETA, TENANTS, crear, datosDe, negocioDe, hablar, mBoton, mLista, mTexto, textos, type Tenant } from './mundo';
 import { vigilarUx } from './vigilante-ux';
 
 const LITERALES: Record<Tenant, string[]> = {
@@ -61,18 +61,21 @@ describe('un mismo teléfono escribe a las DOS doctoras', () => {
     expect(emma).toMatch(/Atendemos de lunes a viernes de 09:00 a 12:00 y de 14:00 a 18:00, y los sábados de 09:00 a 12:00/);
     expect(emma).not.toMatch(/08:30|18:30/);
     const evy = conversar('rroca-evy').salida.join('\n');
-    expect(evy).toMatch(/Atendemos de lunes a viernes de 08:30 a 18:30 y los sábados de 09:00 a 12:00; los domingos no se atiende/);
+    // Evy lo dice de la CONSOLA (negocio.horarios, derivado por el servidor); su dato ya no lo trae.
+    expect(evy).toMatch(/Atendemos lunes a viernes, de 08:30 a 18:30; sábado, de 09:00 a 12:00; domingo: cerrado/);
     expect(evy).not.toMatch(/14:00|18:00/);
-    // Aunque el dato de Evy fuera un marcador, no se dice.
-    const marcador = conversar('rroca-evy', ANA, { doctora: JSON.stringify({ ...(datosDe('rroca-evy')['doctora'] as J), horario: 'REEMPLAZAR_HORARIO' }) });
-    expect(marcador.salida.join('\n')).not.toMatch(/REEMPLAZAR|Atendemos de/);
+    expect(datosDe('rroca-evy')['doctora']).not.toHaveProperty('horario');
+    // Emma: la consola no trae horario (turno partido) y su respaldo es un marcador: no se dice ninguno.
+    const marcador = conversar('rroca-emma', ANA, { doctora: JSON.stringify({ ...(datosDe('rroca-emma')['doctora'] as J), horario: 'REEMPLAZAR_HORARIO' }) });
+    expect(marcador.salida.join('\n')).not.toMatch(/REEMPLAZAR|Atendemos de|Atendemos lunes/);
   });
 
-  it('la dirección, la clínica y la plantilla de cada aviso salen del dato de CADA una', () => {
+  it('la dirección (de la consola de CADA una), la clínica y la plantilla de cada aviso salen de lo de CADA una', () => {
     for (const tenant of TENANTS) {
       const d = datosDe(tenant)['doctora'] as J;
+      expect(d).not.toHaveProperty('direccion');
       const { salida, avisos } = conversar(tenant);
-      expect(salida.join('\n')).toContain(String(d['direccion']));
+      expect(salida.join('\n')).toContain(String(negocioDe(tenant)['direccion']));
       expect(salida.join('\n')).toContain(String(d['clinica']));
       expect(avisos).toHaveLength(1);
       expect(avisos[0]).toContain('aviso_solicitud_valoracion');
