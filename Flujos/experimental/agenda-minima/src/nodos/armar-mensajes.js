@@ -100,7 +100,8 @@ function redaccionValida(texto, huecos, aviso) {
   const algun = (re) => re.test(n) || re.test(n2);
   // Un invisible pegado a una letra (etiquetas, relleno hangul, braille vacio) es una evasion de las reglas de abajo: la redaccion cae a la ruta de codigo.
   // ZWJ y VS16 dentro de un emoji (familia, corazon) no tocan una letra y siguen pasando.
-  if (/[\p{L}][\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]|[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800][\p{L}\s]/u.test(s)) return false;
+  const sAdy = s.replace(/(\p{Extended_Pictographic}[\u{1F3FB}-\u{1F3FF}]?)\uFE0F/gu, '$1').replace(/(\p{Extended_Pictographic}[\u{1F3FB}-\u{1F3FF}]?)\u200D(?=\p{Extended_Pictographic})/gu, '$1');
+  if (/[\p{L}][\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]|[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800][\p{L}\s]/u.test(sAdy)) return false;
   // Un MONTO nunca sale de la redacción: el costo solo lo dice el código, con `respuestaCosto`, y solo si el
   // paciente lo pregunta (Andres, 30/09). Aunque `instruccionesExtra` lo nombre, el modelo no lo repite.
   if (/\b\d[\d.,]*\s*(bs|bolivianos?|usd|dolares)\b|\bbs\.?\s*\d|\$\s*\d/.test(n)) return false;
@@ -111,7 +112,7 @@ function redaccionValida(texto, huecos, aviso) {
   // R13: un hueco («a las )») nunca sale.
   if (/\(\s*\)|\ba las?\s*[).,;:!?]|\ba las?\s*$|\bde\s*\)|«\s*»|\{\{|undefined|null\b/.test(n)) return false;
   const propios = [String(cfg.direccionMaps || ''), String(cfg.instruccionesExtra || ''), String(cfg.mensajeRedes || '')].join(' ');
-  const enlaces = s.match(/https?:\/\/\S+/gi) || [];
+  const enlaces = String(texto || '').trim().match(/https?:\/\/\S+/gi) || [];
   if (enlaces.some((e) => propios.indexOf(e.replace(/[).,;:!?]+$/, '')) < 0)) return false;
   if (/\bh\|\d{4}/.test(s)) return false;
   // Ninguna hora que no este entre los huecos (ni entre los horarios del negocio).

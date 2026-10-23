@@ -2269,6 +2269,18 @@ describe('Agenda mínima v0: revisión de seguridad, «Armar mensajes»', () => 
       expect(ofertaCon(ok).enviados[0]!.cuerpo).toBe(ok);
     }
   });
+  it('un emoji con VS16 o ZWJ seguido de espacio o letra NO es evasión: la redacción legítima pasa', () => {
+    for (const ok of [`Te esperamos el lunes ${cp(0x2764, 0xfe0f)} Toca el horario.`, `Listo ${cp(0x2714, 0xfe0f)} Elige uno de los horarios.`,
+      `${cp(0x1f468, 0x200d, 0x2695, 0xfe0f)} El doctor atiende el lunes.`, `${cp(0x2600, 0xfe0f)}Buenos días, tengo estos horarios.`, `${cp(0x26a0, 0xfe0f)} Recuerda llegar con tiempo.`]) {
+      const t = ofertaCon(ok);
+      expect(t.enviados[0]!.cuerpo, ok).toBe(ok);
+    }
+  });
+  it('NIEGA: un enlace con la ruta en caracteres de ancho completo no se envía aunque su forma NFKC coincida con el permitido', () => {
+    const ancho = 'https://maps.app.goo.gl/' + cp(0xff45, 0xff4a, 0xff45, 0xff4d, 0xff50, 0xff4c, 0xff4f, 0xff11, 0xff12, 0xff13);
+    const t = ofertaCon(`Tengo estos horarios; mapa: ${ancho}`);
+    expect(t.enviados[0]!.cuerpo).not.toContain(ancho);
+  });
   it('emergencia SIN número del doctor: no dice «ya le avisé al doctor» y avisa a recepción marcado EMERGENCIA', () => {
     const panel = JSON.parse(JSON.stringify(PANEL)) as J;
     delete ((panel['operacion'] as J)['numeroDoctor']);
