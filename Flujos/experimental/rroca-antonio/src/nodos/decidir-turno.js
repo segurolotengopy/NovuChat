@@ -109,7 +109,8 @@ const planComprobante = () => {
 // 1. VIOLENCIA O MIEDO: antes que cualquier otra cosa (corta la venta). Se mira el texto, la transcripción, el texto leído de la imagen y el pie de foto; una vez activada, sigue activa 48 horas. El turno que trae
 //    un COMPROBANTE (imagen o PDF) sigue su camino normal del cobro (cotejo y aviso a Antonio): el riesgo se detecta solo en turnos sin comprobante pendiente de cotejar. Sin aviso a Antonio, sin consejos.
 if (!(esVisual && categoriaMedio === 'comprobante') && (ficha.riesgo || raEsRiesgo(raNorm([textoCliente, leido, t.pie].join(' '))))) {
-  return salir({ tipo: 'riesgo', aviso: null, cat: cat });
+  // `nuevo`: el riesgo se activa AHORA (no lo traía la ficha) y no lo dijo el texto escrito: «¿Avisar al servidor?» reporta `no_contactar` una sola vez, antes de armar el mensaje (un audio, una imagen o el pie ya viajan por su vía).
+  return salir({ tipo: 'riesgo', aviso: null, cat: cat, nuevo: ficha.riesgo !== true });
 }
 
 // 1b. Lo que no necesita la configuración del negocio: una nota de voz que no se pudo usar (o que es corta o ininteligible: se pide repetirla, nunca la contesta el modelo) y lo que este canal no lee.
@@ -141,6 +142,23 @@ if (esVisual) {
   // La captura de un pago rechazado, pendiente o con error: nunca se coteja ni se afirma qué pasó con el dinero. Lo ve Antonio: aviso con ese motivo (a lo más uno cada 30 minutos por teléfono) y el botón.
   if (categoriaMedio === 'pago_con_problema') {
     return salir({ tipo: 'derivar', motivo: 'pago_con_problema', clave: 'pago_con_problema', aviso: { tipo: 'consulta', clave: 'pago_con_problema', motivo: 'envió la captura de un pago que parece no haberse completado', mensaje: '' }, cat: cat });
+  }
+  // UNA IMAGEN DE CAMPAÑA RECONOCIDA POR SU TITULAR (punto 9 de la lista aprobada): «Preparar imagen» comparó el titular principal que leyó el clasificador con los `anuncios` de la Consola y, SOLO si coincide, deja `anuncioMedio` (el id del anuncio). Aquí el código
+  // responde con SU producto, por código y SIN compuerta (el cliente ya mostró de qué anuncio viene): el precio es el del catálogo de la Consola (nunca el de la imagen ni uno inventado); si el anuncio no tiene producto (o es uno que este flujo no vende, o no tiene
+  // precio) no se inventa ninguno: la conversación sigue con el ángulo del anuncio como dato; si el producto figura agotado, Antonio con aviso y botón. Un titular que no es de los anuncios no llega aquí (`anuncioMedio` vacío).
+  const idAnuncio = categoriaMedio === 'publicidad' ? String(prep.anuncioMedio || '') : '';
+  const anuncio = idAnuncio !== '' && Array.isArray(cfg.anuncios) ? cfg.anuncios.find((a) => a && a.id === idAnuncio) || null : null;
+  if (anuncio) {
+    const prodAnuncio = anuncio.producto && typeof anuncio.producto === 'object' ? anuncio.producto : null;
+    const k = prodAnuncio ? Object.keys(RA_PRODUCTOS).find((x) => RA_PRODUCTOS[x].catId === prodAnuncio.id) : undefined;
+    textoDelTurno = raLineaCliente('Imagen del anuncio «' + String(anuncio.titulares && anuncio.titulares[0] || '').replace(/[«»\[\]]/g, ' ') + '»', 300).replace(/\s+/g, ' ').trim();
+    if (k && (agotados.indexOf(k) >= 0 || (prodAnuncio && prodAnuncio.agotado === true))) return salir({ tipo: 'derivar', motivo: 'agotado', aviso: avisoDeConsulta('producto_agotado', 'preguntó por un anuncio de ' + RA_PRODUCTOS[k].nombre + ', que figura como agotado'), cat: cat, anuncio: idAnuncio });
+    if (k && raPrecio(cat, k) !== null) return salir(Object.assign({ tipo: 'precio', producto: k, cat: cat, conPresentacion: !ficha.saludado, temprano: !habilitado, anuncio: idAnuncio }, abierto()));
+    // Sin producto con precio: nada de montos; el ángulo del anuncio (dato aprobado por el negocio) abre la conversación. Como primer mensaje, el saludo fijo.
+    if (!ficha.saludado) return salir({ tipo: 'saludo', cat: cat, boton: '', anuncio: idAnuncio });
+    return salir(Object.assign({ tipo: 'modelo', cat: cat, modo: 'charla', anuncio: idAnuncio, textoCliente: textoDelTurno }, abierto()), {
+      llamarModelo: true, cuerpoModelo: raCuerpoModelo(textoDelTurno, ficha.hist, String(anuncio.angulo || anuncio.titulares && anuncio.titulares[0] || ''), base.temperatura, null, 'charla', cfg.nombreNegocio),
+    });
   }
   // Foto, captura de pantalla, «otro» (y la categoría inventada, que ya cayó en «otro») y una publicidad cuyo ángulo no se reconoce: el asistente dice lo que ve (descripción ya saneada por «Preparar imagen»; en una publicidad,
   // una frase fija del código) y ofrece el libro y los precios. Una publicidad con ángulo conocido sigue más abajo (apertura del ángulo).
@@ -228,7 +246,7 @@ if (pre === 'workbook' || pre === 'calendario_preguntas') {
 const derivacion = raDerivacion(norm, { comprobante: ficha.comprobanteMs > 0 || cobro.enRevision === true, qrAbierto: hayQrAbierto });
 if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', clave: derivacion.clave, aviso: avisoDeConsulta(derivacion.clave, derivacion.motivo), cat: cat });
 // «Cancela mi pedido», «no quiero comprar», «ya no lo quiero» (con un QR abierto o un pedido hecho). «Solo quiero saber…» no cancela nada: es un cliente que mira (se le responde más abajo).
-// CANCELAR POR CÓDIGO: (a) QR abierto de regla 2 que el servidor ve (`cobro.pendiente`) y SIN comprobante previo: plan `cancelar_cobro`; «Cancelar cobro en el servidor» reporta `cobro_cancelado` ANTES de armar el texto
+// CANCELAR POR CÓDIGO: (a) QR abierto de regla 2 que el servidor ve (`cobro.pendiente`) y SIN comprobante previo: plan `cancelar_cobro`; «Avisar al servidor» reporta `cobro_cancelado` ANTES de armar el texto
 // y «Armar mensajes» dice «cerré tu pedido» solo si el servidor respondió 200; si no, cae a la escalada de siempre (`aviso` de este plan). (c) Con comprobante previo (en revisión o ya cotejado) NO se cancela: se escala y se
 // reporta `anulacion_avisada` (solo avisa). Una segunda cancelación seguida recibe «ya cerrado» (la firma del último plan), sin repetir nada.
 const cancelacion = raCancelaPedido(norm);

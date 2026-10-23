@@ -49,7 +49,7 @@ const PID = '59100000003';
 const REC = '59100000001';
 const MEDIA_QR = 'MEDIAQR100200';
 const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
-const NEGOCIO = 'El Puente';
+const NEGOCIO = 'Método Puente';
 const CATALOGO = [
   { id: 'pack-completo', nombre: 'Pack completo', precio: 49, activo: true },
   { id: 'libro', nombre: 'Libro', precio: 35, activo: true },
@@ -139,7 +139,6 @@ function crearDobles({ tel, seco, turnoActual, credencial, opciones, deps, nodoM
       if (c.evento === 'qr_enviado') { cobro.pendiente = true; cobro.monto = Number(c.monto); cobro.pedido = String(c.referencia); }
       return { ok: true };
     },
-    'Reportar protección': () => ({ ok: true }),
     'Enviar aviso': envio, 'Enviar a WhatsApp': envio, 'Enviar respaldo': envio,
     'Obtener URL del medio (general)': () => ({ url: 'https://lookaside.fbsbx.com/m', mime_type: 'image/jpeg', file_size: 100_000 }),
     'Descargar medio': () => ({}),
@@ -147,7 +146,8 @@ function crearDobles({ tel, seco, turnoActual, credencial, opciones, deps, nodoM
     'Describir imagen': () => gemini(JSON.stringify({ categoria: 'otro', texto: '' })),
     'Describir documento': () => gemini(JSON.stringify({ categoria: 'otro', texto: '' })),
     'Cotejar en el servidor': () => { cobro.pendiente = false; return { statusCode: 200, body: { estado: 'valido', importe: 49, avisarComercio: true } }; },
-    'Cancelar cobro en el servidor': () => ({ statusCode: 200, body: { atencion: { estado: 'normal' } } }),
+    // «Avisar al servidor» (cancelar el cobro o reportar `no_contactar`): el servidor lo recibe siempre.
+    'Avisar al servidor': () => ({ statusCode: 200, body: { atencion: { estado: 'normal' } } }),
     // LO ÚNICO QUE SALE A LA RED (y solo fuera de --seco): el cuerpo exacto que arma el flujo.
     'Conversar con el modelo': async (ll) => {
       const t = turnoActual();

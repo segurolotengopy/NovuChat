@@ -108,8 +108,10 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
       '  cfg = {',
       '    ...deBase, ...atencion,',
       '  };',
+      // Fase 2 del rehecho de Antonio: los anuncios de la Consola (≤ 20), solo en la rama 200.
+      '  const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === \'object\' && !Array.isArray(a)).slice(0, 20) : [];',
       '  cfg = {',
-      '    ...deBase, ...deLaConsola, ...atencion,',
+      '    ...deBase, ...deLaConsola, ...atencion, anuncios,',
       '  };',
       'const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;',
       'return [{ json: {',

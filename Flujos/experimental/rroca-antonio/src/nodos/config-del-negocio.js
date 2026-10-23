@@ -5,7 +5,7 @@
 //   409            -> SUSPENDIDO: es una respuesta válida, no un error;
 //   otra           -> no se pudo saber -> respaldo de `Config base`.
 //
-// DE LA CONSOLA salen SOLO: el nombre del negocio, el número de recepción, los prefijos permitidos y la atención (los umbrales de uso extendido). El catálogo y el cobro NO pasan por este nodo.
+// DE LA CONSOLA salen SOLO: el nombre del negocio, el número de recepción, los prefijos permitidos, la atención (los umbrales de uso extendido) y los ANUNCIOS (a lo más 20, solo en la rama 200). El catálogo y el cobro NO pasan por este nodo.
 
 const base = cnPrimero('Config base') || {};
 const carga = cnPrimero('Carga de entrada') || {};
@@ -70,8 +70,11 @@ if (codigo === 409) {
     prefijosPermitidos: Array.isArray(op.prefijosPermitidos) && op.prefijosPermitidos.length ? op.prefijosPermitidos.join(',') : undefined,
   });
   const estadoDeLaConsola = util(cuerpo.estadoComercio);
+  // LOS ANUNCIOS (campañas vigentes de la Consola, con sus titulares, su ángulo y su producto): el módulo común `anuncio-por-titular.js` (en «Preparar imagen») decide por CÓDIGO si la imagen de un cliente es de uno de ellos.
+  // A lo más 20; solo objetos (lo que no lo es se descarta). Sin anuncios en la respuesta, la lista va vacía y todo queda como antes.
+  const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === 'object' && !Array.isArray(a)).slice(0, 20) : [];
   cfg = {
-    ...deBase, ...deLaConsola, ...atencion,
+    ...deBase, ...deLaConsola, ...atencion, anuncios,
     estadoComercio: estadoDeLaConsola === 'activo' ? 'operativo' : (estadoDeLaConsola ? 'suspendido' : 'operativo'),
     configDeLaConsola: true,
   };

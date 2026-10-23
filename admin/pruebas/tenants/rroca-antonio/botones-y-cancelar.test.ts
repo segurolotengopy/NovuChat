@@ -8,7 +8,7 @@ import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { ANA, COMPROBANTE, COTEJO_VALIDO, crear, hablar, mAudio, mImagen, mTexto, panelConQr, panelOk, type Opciones } from './mundo';
 import { PLANES_CON_BOTON, PLANES_SIN_BOTON, llevaBotonDeContacto, vigilarUx, violacionesDeUx } from './vigilante-ux';
 
-const NODO = 'Cancelar cobro en el servidor';
+const NODO = 'Avisar al servidor';
 const nuevo = (o: Opciones = {}): Mundo => { const w = crear(o); vigilarUx(w); return w; };
 const conQr = (o: Opciones = {}): Mundo => { const w = nuevo({ panel: panelConQr(49), ...o }); hablar(w, ANA, mTexto('hola')); return w; };
 const fichaDe = (w: Mundo, tel = ANA): J => ((w.sd['antonio'] ?? {}) as J)[tel] as J;

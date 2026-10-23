@@ -358,13 +358,12 @@ describe('`no_contactar` aunque el envío falle (y el aviso del pago ya no lleva
     const w = nuevo({ medio: { transcripcion: 'mi pareja me golpea' }, envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
     const t = hablar(w, ANA, mAudio(), { toleraFallo: true });
     expect(t.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar')).toHaveLength(1);
-    expect(t.ejecutados.has('Reportar protección')).toBe(true);
-    // Si el mensaje salió, no se duplica el reporte.
+    expect(t.ejecutados.has('Avisar al servidor')).toBe(true);
+    // Si el riesgo está escrito, viaja en el entrante Y en el saliente (el servidor marca un solo hecho; «Avisar al servidor» no corre).
     const v = nuevo();
     const u = hablar(v, ANA, mTexto('mi pareja me golpea'));
-    // El riesgo escrito viaja en el entrante Y en el saliente (el servidor marca un solo hecho; el reporte aparte no corre).
     expect(u.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar').map((c) => c['direccion']).sort()).toEqual(['entrante', 'saliente']);
-    expect(u.ejecutados.has('Reportar protección')).toBe(false);
+    expect(u.ejecutados.has('Avisar al servidor')).toBe(false);
   });
 });
 
@@ -378,20 +377,20 @@ describe('plantillas de Antonio (APPROVED en Meta): un estado distinto de APPROV
 });
 
 describe('revisión de código de #576', () => {
-  it('(1) el reporte de protección: el riesgo escrito viaja en el reporte del ENTRANTE (sin reporte aparte ni mensaje de más), y «Reportar protección» no reintenta', () => {
+  it('(1) el reporte de protección: el riesgo escrito viaja en el reporte del ENTRANTE (sin reporte aparte ni mensaje de más), y «Avisar al servidor» no reintenta', () => {
     const w = nuevo({ envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
     const t = hablar(w, ANA, mTexto('mi pareja me golpea'), { toleraFallo: true });
     const nc = t.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar');
     expect(nc).toHaveLength(1);
     expect(nc[0]!['direccion']).toBe('entrante');
-    expect(t.ejecutados.has('Reportar protección')).toBe(false);
-    const f = PRODUCCION_JSON.nodes.find((n: J) => n['name'] === 'Reportar protección')!;
+    expect(t.ejecutados.has('Avisar al servidor')).toBe(false);
+    const f = PRODUCCION_JSON.nodes.find((n: J) => n['name'] === 'Avisar al servidor')!;
     expect(f['retryOnFail']).toBeUndefined();
   });
-  it('(1) EFECTO DECLARADO: si el riesgo solo se conoce por un audio, una imagen o la marca del modelo Y fallan el envío y su respaldo, `Reportar protección` agrega UN reporte entrante (la ingesta escribe un mensaje por reporte); sin él, la persona podría recibir un rescate', () => {
+  it('(1) EFECTO DECLARADO: si el riesgo solo se conoce por un audio, una imagen o la marca del modelo Y fallan el envío y su respaldo, `Avisar al servidor` agrega UN reporte entrante (la ingesta escribe un mensaje por reporte); sin él, la persona podría recibir un rescate', () => {
     const w = nuevo({ medio: { transcripcion: 'mi marido me pega' }, envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
     const t = hablar(w, ANA, mAudio(), { toleraFallo: true });
-    expect(t.ejecutados.has('Reportar protección')).toBe(true);
+    expect(t.ejecutados.has('Avisar al servidor')).toBe(true);
     const nc = t.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar');
     expect(nc).toHaveLength(1);
     expect(nc[0]).toMatchObject({ direccion: 'entrante', idMeta: '' });

@@ -46,11 +46,11 @@ Origen: `chat-novuchat` o `venta-minima`, **no `rroca-ruben`**. Cada hueco tiene
 |---|---|---|
 | `RA_NIEGA_IA` en `src/lib/ra.js` | `chat-novuchat/src/lib/chat.js` (`CH_NIEGA_IA`) | La expresión, idéntica salvo el nombre (la prueba la compara). No se tocó en el rehecho: también la compara `doctoras/huecos.test.ts` |
 
-Los 12 nodos nuevos de `flujo.plantilla.json` (`Interpretar lectura`, `¿Cotejar?`, `Cotejar en el servidor`, `¿Conversar con el modelo?`, `Conversar con el modelo`, `Armar avisos`, `¿Hay avisos?`, `Enviar aviso`, `¿Falló la protección?`, `Reportar protección`, `¿Cancelar cobro?` y `Cancelar cobro en el servidor`) son propios de este flujo (producción 48 nodos, prueba 43; tope 48). **Sin cambios en la fase 1**: el corte a 46/41 es de la fase 2.
+Los 10 nodos propios de este flujo en `flujo.plantilla.json` (`Interpretar lectura`, `¿Cotejar?`, `Cotejar en el servidor`, `¿Conversar con el modelo?`, `Conversar con el modelo`, `Armar avisos`, `¿Hay avisos?`, `Enviar aviso`, `¿Avisar al servidor?` y `Avisar al servidor`) — producción **46** nodos, prueba **41**; tope 46. Hasta la fase 1 eran 12 (48 y 43): `¿Cancelar cobro?`, `Cancelar cobro en el servidor`, `¿Falló la protección?` y `Reportar protección` se reemplazaron en la fase 2 por `¿Avisar al servidor?` y `Avisar al servidor` (una sola llamada síncrona a la ingesta, con el evento en una lista cerrada: `cobro_cancelado` | `no_contactar`).
 
-## Lo que NO se cambió en la fase 1 (lo compara `doctoras/huecos.test.ts` con el Antonio vivo)
+## Fase 2 del rehecho: lo que cambia en lo que antes compartía `doctoras/huecos.test.ts` con Antonio
 
-`puerta-del-turno.js`, `carga-de-entrada.js`, `config-del-negocio.js`, `_comun.js`; en `ra.js`, `RA_NIEGA_IA`, `RA_RIESGO` y el bloque desde `function raOraciones(` hasta `// El texto que ve el cliente…`; los nodos JSON del receptor, de configuración y de medios; y «¿Falló la protección?», «Reportar protección», «¿Cancelar cobro?» y «Cancelar cobro en el servidor». Quedan para la fase 2, tras el OK de Clínicas: el corte de nodos 48 → 46, el campo `anuncios` en «Config del negocio» y el reconocimiento de la imagen de campaña sin texto por `titular_principal` (punto 9 de la lista aprobada).
+Con #634 de Clínicas en `main` (`afc05293`), `doctoras/huecos.test.ts` ya NO lee a Antonio en vivo: compara a las doctoras contra la huella (sha256) de los archivos y nodos de Antonio tal como están en `afc05293` (commit aparte, con el diff para Clínicas). Por eso la fase 2 pudo cambiar: `config-del-negocio.js` (rama 200: `anuncios`, ≤ 20, desde la respuesta de la Consola), el prompt de «Describir imagen» y «Describir documento» (+ `titular_principal`) y la cadena de cancelar y proteger. Lo que Antonio copia de otros (puerta, carga, `_comun.js`) y `RA_NIEGA_IA`, `RA_RIESGO` y la hoja de párrafos NO se tocaron; `rehecho.test.ts` lo fija con las mismas huellas. Toda corrección de seguridad de Antonio que también aplique a las doctoras se avisa a Clínicas (las doctoras conservan «¿Falló la protección?» y «Reportar protección», que Antonio ya no tiene).
 
 ## Propio de Antonio
 
@@ -99,10 +99,11 @@ Lista de 12 funcionalidades y decisiones D1 a D3 aprobadas por Andres el 23/10/2
 | 6. Cobro real por QR | Sin cambios (un solo QR, cancelar por código conservado) |
 | 7. Después del QR sigue conversando con la invitación a pagar | Hecho |
 | 8. Un audio es texto | Sin cambios de fondo (ya era así); probado |
-| 9. Imagen de campaña sin texto por `titular_principal` | **FASE 2** (toca nodos que compara `doctoras/huecos.test.ts`) |
+| 9. Imagen de campaña sin texto por `titular_principal` | Hecho (fase 2): `anuncios` en «Config del negocio», `titular_principal` en «Describir …», `anuncioPorTitular` (módulo común dentro de «Preparar imagen») y el producto del anuncio por código, sin compuerta |
 | 10. Botón de Antonio solo al derivar | Hecho (vigilante, invariante 13) |
 | 11. `cmRevisarRedaccion` con los tres filtros siempre y `maxOraciones: 3` solo con QR abierto | Hecho |
 | 12. Número no boliviano | Sin cambios |
+| Datos | `Config base` y el negocio dicen «Método Puente» (como la Consola en vivo): una recarga con los datos del repositorio no lo revierte |
 | D1. Protección por violencia o miedo | Conservada |
 
-Números: nodos 48/43 (sin cambio; corte a 46/41 en la fase 2); `RA_PROMPT` 3.128 → 3.522 caracteres (tope 4.670); `ra.js` 83.527 → 87.516 bytes. Mensajes por conversación: 0 agregados; el puente de «precio primero» en general es el mensaje que antes traía el menú (+1 declarado en el plan, un solo mensaje por turno). Llamadas al modelo: igual que antes (0 o 1 por turno); el puente y el bloque de las opciones usan la misma llamada.
+Números: nodos **48/43 → 46/41** (fase 2); `RA_PROMPT` 3.128 → 3.522 caracteres (tope 4.670); `ra.js` 83.527 → 88.708 bytes; prompt de «Describir imagen» 2.442 → 2.638; `decidir-turno.js` 33.886 → 36.710 y `config-del-negocio.js` 5.922 → 6.502 bytes (fase 2); JSON de producción 1.321.050 → 1.324.207 bytes en la fase 2 (4 nodos menos, 2 más y el código con las librerías). Mensajes por conversación: 0 agregados; el puente de «precio primero» en general es el mensaje que antes traía el menú (+1 declarado en el plan, un solo mensaje por turno). Llamadas al modelo: igual que antes (0 o 1 por turno); el puente y el bloque de las opciones usan la misma llamada.

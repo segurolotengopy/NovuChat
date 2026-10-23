@@ -99,7 +99,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
   // atendió (un QR ya abierto, el saludo, una derivación) no se marca: el botón sigue disponible.
   // CANCELAR EL COBRO: «cobro_cerrado» solo si el servidor respondió 200 al evento; si no, la escalada de siempre (nunca se dice que se cerró lo que no se cerró).
   if (tipoDePlan === 'cancelar_cobro') {
-    if (raCobroCerrado(cnPrimero('Cancelar cobro en el servidor'))) tipoDePlan = 'cobro_cerrado';
+    if (raCobroCerrado(cnPrimero('Avisar al servidor'))) tipoDePlan = 'cobro_cerrado';
     else { tipoDePlan = 'derivar'; plan.motivo = 'cancelacion'; plan.clave = 'cancelacion'; }
   }
   if (tipoDePlan === 'qr' && RA_PRODUCTOS[plan.producto]) usadoNuevo = RA_PRODUCTOS[plan.producto].boton;
