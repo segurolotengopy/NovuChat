@@ -320,13 +320,44 @@ describe('los flujos que incluyen «Preparar imagen» llevan anuncio-por-titular
     }
   };
   buscar(RAIZ);
+
+  // EXCEPCIONES por nodo, declaradas y con vencimiento (patrón de las demás tablas: porqué + fecha absoluta, tope 90 días).
+  // Bellido corre «Agenda mínima v0» (publicado el 23/10/2026, orden de Andres: no se toca). Su «Preparar imagen» lleva
+  // `sanearDescripcion` pero NO el comparador de anuncios, y regenerarlo desalinearía el JSON del flujo vivo. Es inerte:
+  // el flujo no recibe `anuncios` en su Config. Se alinea al regenerar con el próximo cambio real de Bellido.
+  const ALTA = '2026-10-23';
+  const TOPE = '2027-01-21'; // ALTA + 90 días
+  const EXCEPCIONES: Record<string, { nodo: string; porque: string; vence: string }> = {
+    'experimental/agenda-minima/agenda-minima.prueba.json': { nodo: 'Preparar imagen', vence: TOPE,
+      porque: 'Bellido corre Agenda mínima v0 (no se toca por orden de Andres); conserva «Preparar imagen» sin el comparador de anuncios, inerte' },
+    'experimental/agenda-minima/agenda-minima.v0.json': { nodo: 'Preparar imagen', vence: TOPE,
+      porque: 'Bellido corre Agenda mínima v0 (no se toca por orden de Andres); conserva «Preparar imagen» sin el comparador de anuncios, inerte' },
+  };
+
   const incluyen = jsons.flatMap((f) => {
     let j: { nodes?: Array<{ name: string; parameters?: { jsCode?: string } }> };
     try { j = JSON.parse(readFileSync(f, 'utf8')); } catch { return []; }
     const n = (j.nodes ?? []).find((x) => x.name === 'Preparar imagen');
     // Bellido conserva el «Preparar imagen» anterior a la descripción (excepción declarada): no trae `sanearDescripcion`.
+    const rel = f.slice(RAIZ.length + 1);
+    if (EXCEPCIONES[rel]?.nodo === n?.name) return [];
     return n && typeof n.parameters?.jsCode === 'string' && n.parameters.jsCode.includes('sanearDescripcion')
-      ? [[f.slice(RAIZ.length + 1), n.parameters.jsCode] as const] : [];
+      ? [[rel, n.parameters.jsCode] as const] : [];
+  });
+
+  it('las excepciones: existen, tienen porqué, vencen dentro de 90 días del alta y NO han vencido', () => {
+    const registro = readFileSync(join(RAIZ, '../docs/versiones-por-cliente.md'), 'utf8');
+    const limite = new Date(`${ALTA}T00:00:00Z`).getTime() + 90 * 86_400_000;
+    expect(new Date(`${TOPE}T00:00:00Z`).getTime()).toBe(limite);
+    for (const [rel, e] of Object.entries(EXCEPCIONES)) {
+      expect(jsons.map((f) => f.slice(RAIZ.length + 1)), rel).toContain(rel);
+      expect(e.porque.length, rel).toBeGreaterThan(20);
+      const t = new Date(`${e.vence}T00:00:00Z`).getTime();
+      expect(Number.isNaN(t), rel).toBe(false);
+      expect(t, `${rel}: vence después del tope de 90 días`).toBeLessThanOrEqual(limite);
+      expect(Date.now(), `${rel}: la excepción VENCIÓ el ${e.vence}: se regenera el flujo o se renueva con decisión de Andres`).toBeLessThan(t);
+      expect(registro, rel).toContain(rel.split('/').pop());
+    }
   });
 
   it('hay flujos que lo incluyen (la prueba no es vacía)', () => {
