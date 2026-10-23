@@ -21,7 +21,9 @@
  * Rehecho de Antonio sobre la Entrega 2 (23/10/2026):
  *  14. LA ETIQUETA DE UN BOTÓN CON PRECIO ES «<nombre DEL CATÁLOGO> <precio>Bs» (≤ 20 caracteres, el nombre completo o recortado por palabras): ningún nombre ni precio sale del código;
  *  15. EL BOTÓN «Ver opciones» (el del puente) NO lleva precio ni dígitos, y nunca sale junto a botones de producto;
- *  16. «Ver complementos» abre la lista de bonos: es el único botón de menú sin precio.
+ *  16. «Ver complementos» abre la lista de bonos: es el único botón de menú sin precio;
+ *  17. LO QUE SE OFRECE SE CUMPLE: tras «¿Te muestro las opciones?» (el puente, o el precio de un producto antes de la charla), el «sí» o el botón «Ver opciones» reciben los botones de producto con precio (salvo con un QR abierto);
+ *      y ese «sí» no es «el menú antes de tiempo» (invariante 12).
  */
 import { expect } from 'vitest';
 import type { J } from '../../lib/flujo';
@@ -109,7 +111,11 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
   let ultimoTexto = ctx.ultimoTexto ?? '';
   const palabrasDeVoz = LIB.raNorm(transcripcion).split(' ').filter(Boolean).length;
   if (ctx.esAudio && palabrasDeVoz < 3 && ctx.llamoAlModelo) v.push('una nota de voz de menos de 3 palabras llegó al modelo');
-  const abierto = !ctx.qrAbierto && (ctx.respuestasPrevias ?? 99) < 2 && entrante['type'] === 'text' && !TRIGGER_DE_OPCIONES.test(textoEntrante);
+  // El «sí» (o el botón «Ver opciones») a «¿Te muestro las opciones?» pide las opciones: no son «antes de tiempo» y SE DEBEN cumplir (invariante 17).
+  const dijoSi = /^\s*(s[ií]|claro|dale|ok|okey|bueno|por favor|me interesa|adelante|s[ií],? por favor)\s*[.!]*\s*$/i.test(dicho);
+  const respondeAlPuente = /¿Te muestro las opciones\?\s*$/.test(ultimoTexto) && (idToque === 'b_opciones' || dijoSi);
+  if (respondeAlPuente && !ctx.qrAbierto && !mensajes.some((m) => m.tipo === 'image' || idsDeBotones(m).some((id) => IDS_DE_MENU.includes(id)))) v.push('se ofreció «¿Te muestro las opciones?» y la respuesta no trae los botones de producto');
+  const abierto = !ctx.qrAbierto && !respondeAlPuente && (ctx.respuestasPrevias ?? 99) < 2 && entrante['type'] === 'text' && !TRIGGER_DE_OPCIONES.test(textoEntrante);
   for (const m of mensajes) {
     if (ultimoTexto !== '' && m.cuerpo === ultimoTexto && !EXENTO_REPETIDO(m, ctx.plan ?? '')) v.push(`el mismo texto dos veces seguidas: «${m.cuerpo.slice(0, 40)}…»`);
     ultimoTexto = m.cuerpo;

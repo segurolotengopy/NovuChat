@@ -33,6 +33,8 @@ const nom = raNombres(raPanelDe(cnPrimero('Traer configuración')).cuerpo);
 // Las opciones (precios, catálogo, menú) solo con la compuerta abierta; la calcula «Decidir turno».
 const habil = decision.opcionesHabilitadas === true;
 const qrAbierto = plan.qrAbierto === true;
+// El «No» a «¿Te muestro las opciones?» se respeta: esa respuesta sale sin el bloque de las opciones y sin botones de producto.
+const sinMenu = plan.sinMenu === true;
 
 const raId = (j) => { const m = j && j.messages; return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== ''; };
 // Lo que pasó con el aviso a Antonio lo dice «Armar avisos» (`planeado`: había un aviso y se armó, por texto libre o por plantilla; `repetido`: ya salió uno por el mismo motivo hace menos de 30 minutos;
@@ -129,7 +131,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     // SEGURIDAD (solo se ofrece lo que se cumple): en los modos `puente` y `opciones` el código pone las opciones, y con la compuerta cerrada no hay botones de producto: toda oración del modelo que prometa opciones o precios se QUITA.
     const modo = typeof plan.modo === 'string' ? plan.modo : 'charla';
     const modoPuente = modo === 'puente' && !qrAbierto;
-    const modoOpciones = modo === 'opciones' && !qrAbierto && menu1().length > 0;
+    const modoOpciones = modo === 'opciones' && !qrAbierto && !sinMenu && menu1().length > 0;
     const modoAntes = modo === 'antes' && !qrAbierto;
     const sinPromesa = rev.motivo === '' && !qrAbierto && (!habil || modoPuente || modoOpciones) ? vdQuitarPromesaDeOpciones(rev.texto, RA_PROMETE_DEBILES) : rev.texto;
     let bueno = rev.motivo === '' && sinPromesa.trim() !== '';
@@ -139,7 +141,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     const sinPregunta = bueno && (modoPuente || modoOpciones) ? vdSinPreguntaFinal(sinPromesa) : sinPromesa;
     if (bueno && (modoPuente || modoOpciones) && sinPregunta.trim() === '') bueno = false;
     // Con un QR abierto jamás hay botones de producto: no se abre otro QR. Una respuesta resuelta sale en texto plano (el botón de Antonio va solo al derivar). Sin botones, el texto no habla de opciones.
-    const op = qrAbierto ? [] : menuAbierto();
+    const op = qrAbierto || sinMenu ? [] : menuAbierto();
     let cuerpo;
     let ya = false;   // el texto fijo del ángulo ya trae la presentación
     if (modoPuente) cuerpo = (bueno ? sinPregunta : raTextoPuenteFijo(fichaAntes.ultimoHash)) + '\n\n' + RA_CIERRE_PUENTE;

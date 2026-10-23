@@ -85,7 +85,8 @@ const recordatorio = (boton) => ({ tipo: 'qr_pendiente', producto: producto, mon
 const sinOpciones = (boton) => ({ tipo: 'derivar', motivo: 'sin_opciones', aviso: avisoDeConsulta('qr_no_disponible', 'sin opciones de compra disponibles'), cat: cat, boton: boton });
 const hayQrAbierto = cobro.pendiente === true || ficha.qrHastaMs > ahora;
 // Con un QR abierto toda respuesta se da sin botones de producto, sin abrir otro QR y con la invitación a pagar el QR pendiente (el producto y el monto son del código).
-const abierto = () => (hayQrAbierto ? { qrAbierto: true, qrProducto: producto, qrMonto: cobro.monto } : {});
+// (Si el servidor no dice el monto, es el del catálogo del producto del pedido: un QR de Antonio siempre se abre por el precio del catálogo.)
+const abierto = () => (hayQrAbierto ? { qrAbierto: true, qrProducto: producto, qrMonto: cobro.monto !== null ? cobro.monto : raPrecio(cat, producto) } : {});
 const hayCobro = cobro.modo === 'real' && (cobro.pendiente || cobro.enRevision || cobro.vencidoHaceMin !== null);
 const producto = ficha.producto || '';
 // La compuerta de las opciones (`vdHabilitado`, base común): dos mensajes de conversación o una excepción declarada.
@@ -263,7 +264,10 @@ if (angulo && !hayQrAbierto) {
 // Una pregunta de precios EN GENERAL (sin producto) sí pasa por la compuerta. Sin ningún precio en el catálogo se deriva a Antonio.
 const precioPedido = raPrecioPedido(norm);
 if (precioPedido && precioPedido.producto !== '') {
-  return salir(Object.keys(cat).length ? Object.assign({ tipo: 'precio', producto: precioPedido.producto, cat: cat, conPresentacion: !ficha.saludado, temprano: !habilitado }, abierto()) : sinOpciones(''));
+  const k = precioPedido.producto;
+  // Un producto sin precio en el catálogo (agotado, o ausente) no se cotiza: con la bandera `agotado` se dice la verdad con el aviso y el botón; si no, no hay opciones que mostrar. Nunca se lista OTRO precio en su lugar.
+  if (raPrecio(cat, k) === null) return salir(agotados.indexOf(k) >= 0 ? { tipo: 'derivar', motivo: 'agotado', aviso: avisoDeConsulta('producto_agotado', 'preguntó el precio de ' + RA_PRODUCTOS[k].nombre + ', que figura como agotado'), cat: cat } : sinOpciones(''));
+  return salir(Object.assign({ tipo: 'precio', producto: k, cat: cat, conPresentacion: !ficha.saludado, temprano: !habilitado }, abierto()));
 }
 // «¿Tienes imágenes?»: respuesta fija, el flujo no envía imágenes del libro. Como PRIMER mensaje, el saludo.
 if (raPideImagenes(norm)) return salir(!ficha.saludado ? saludo() : Object.assign({ tipo: 'imagenes', cat: cat }, abierto()));
@@ -306,6 +310,8 @@ if (hayQrAbierto) {
 // de la charla (el plan `saludo` la guarda), así que el modelo lo lee en la respuesta siguiente.
 if (!ficha.saludado) return salir(saludo());
 const paraElModelo = esVisual ? 'El cliente envió la captura de un anuncio. Texto leído: ' + leido : textoCliente;
+// El «No» a «¿Te muestro las opciones?» se respeta: esa respuesta es charla pura, sin el bloque de las opciones y sin botones de producto (`sinMenu`).
+const declino = !!siNo && siNo.estado === 'resuelta' && siNo.intencion === 'ver_opciones' && siNo.tipo === 'no';
 // El modo del turno. Habilitado: la primera respuesta conversada que sigue lleva el bloque de las opciones (`opciones`) si aún no se vieron y hay productos que ofrecer; después, charla. Sin habilitar: si pidió opciones y ya hubo UN mensaje de conversación, puente.
-const modoFinal = habilitado ? (!ficha.opcionesVistas && raMenu(cat, ficha.usados).length ? 'opciones' : 'charla') : (ficha.pidioOpciones && ficha.charlaN === 1 ? 'puente' : 'charla');
-return modeloDelTurno(modoFinal, {}, '', paraElModelo);
+const modoFinal = declino ? 'charla' : (habilitado ? (!ficha.opcionesVistas && raMenu(cat, ficha.usados).length ? 'opciones' : 'charla') : (ficha.pidioOpciones && ficha.charlaN === 1 ? 'puente' : 'charla'));
+return modeloDelTurno(modoFinal, declino ? { sinMenu: true } : {}, '', paraElModelo);

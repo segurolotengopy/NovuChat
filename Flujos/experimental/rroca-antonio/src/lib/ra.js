@@ -424,7 +424,7 @@ function raProductoConfirmado(n) {
 }
 // El texto ya normalizado quiere ver las opciones o comprar («quiero comprar», «cómo pago», «opciones»): se muestra el menú, sin modelo.
 function raQuiereOpciones(n) {
-  return /\b(quiero comprar|quiero pagar|como pago|como compro|como puedo pagar|donde pago|ver opciones|que opciones|opciones de compra|quiero adquirir|lo quiero|lo compro)\b/.test(n);
+  return /\b(quiero comprar|quiero pagar|como (te |lo |le )?(pago|pagar|pagas)|como compro|como puedo pagar|donde (pago|pagar)|ver opciones|que opciones|opciones de compra|quiero adquirir|lo quiero|lo compro)\b/.test(n);
 }
 
 // -----------------------------------------------------------------------------
@@ -879,6 +879,8 @@ function raExtraRedaccion(texto, norm) {
   if (/\b(te (muestro|envio|mando|comparto|paso|adjunto|enviare|mandare|mostrare|compartire)|(puedo|podria|podemos|voy a|vamos a) (mostrar|enviar|mandar|compartir|pasar|adjuntar)(te|les|le)?|aqui (tienes|te dejo)|te dejo|adjunto|enviare|mandare|mostrare|compartire)\b[^.?!]{0,40}\b(imagen|imagenes|foto|fotos|fotografia|fotografias|captura|capturas|pantallazo|pantallazos|screenshot|screenshots|portada|detalles visuales|ejemplos visuales|vista previa)\b/.test(norm)) return 'promete_imagenes';
   if (/\b(qr|banco|titular|mercantil|cuenta bancaria)\b/.test(norm)) return 'datos_de_cobro';
   if (/\b(asistente virtual|soy el asistente|me presento)\b/.test(norm)) return 'presentacion_repetida';
+  // El modelo no se hace pasar por el autor ni por una persona con nombre (regla 4: se presenta como asistente virtual): «soy Antonio», «te habla Antonio Dauber», «me llamo Antonio».
+  if (/\b(soy|me llamo|te habla|te escribe|habla|escribe|aqui esta) (el |la )?(mismo |propio )?(antonio|dauber|autor|autora)\b/.test(norm)) return 'suplanta_al_autor';
   if (/\b(agend\w*|cita|citas)\b/.test(norm)) return 'agenda';
   if (/\b(psicolog\w*|terapeuta\w*|terapia)\b/.test(norm) && !/\bno (es|soy|hago|reemplaza|sustituye)\b/.test(norm)) return 'terapia';
   if (/\b(garantiz\w*|reconcili\w*|te aseguro|seguro que)\b/.test(norm)) return 'promesa_de_resultado';
