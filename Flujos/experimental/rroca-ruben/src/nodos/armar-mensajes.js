@@ -118,7 +118,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     m = op.length ? conBotones(rrTextoOpciones(cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : [])), op) : texto(rrTextoModeloCaido(false));
   } else if (tipoDePlan === 'modelo') {
     // LO QUE REDACTA EL MODELO: se revisa y se pule; un rechazo (monto, promesa, enlace, negar ser IA, varias preguntas…), un error del servicio o un texto vacío caen al texto fijo.
-    const crudo = cnTextoDeGemini(cnPrimero('Conversar con el modelo'));
+    const crudo = rrQuitarEcoDeMarcador(cnTextoDeGemini(cnPrimero('Conversar con el modelo')));
     if (rrEsDerivar(crudo)) {
       // DERIVAR: el modelo no supo responder. La palabra jamás llega al cliente: aviso a Rubén (lo armó «Armar avisos», salvo en una imagen) y el botón.
       if (plan.origen === 'imagen') { tipoDePlan = 'imagen_derivar'; m = conRuben(RR_TEXTO_IMAGEN_DERIVAR); } else { tipoDePlan = 'derivar'; m = conRuben(rrTextoDerivacion('consulta', estadoAviso)); }
@@ -128,7 +128,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       m = plan.qrAbierto === true ? conRuben(RR_TEXTO_IDENTIDAD) : conBotones(RR_TEXTO_IDENTIDAD, menuAbierto());
     } else {
       const rev = crudo.trim() === '' ? { texto: '', motivo: 'vacio' } : cmRevisarRedaccion(crudo, {
-        maximo: 900, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: plan.textoRevision || t.texto, extra: [(tx, nx) => rrExtraRedaccion(tx, nx, { compuertaCerrada: !habil && plan.qrAbierto !== true && plan.modo !== 'puente' })],
+        maximo: 900, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: plan.textoRevision || t.texto, extra: [rrExtraRedaccion],
       });
       // UNA sola presentación (Silvana, 20/10/2026): ya saludado, el modelo no vuelve a presentarse (se quita de su salida)... PERO la regla dura 4 manda: una oración de presentación que dice qué ES el asistente
       // (virtual, IA, programa, bot…) NUNCA se borra. Como primer mensaje cabe UNA, nunca dos. Si al quitar la presentación no queda nada, cae al texto fijo.
@@ -161,6 +161,8 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
         // LAS OPCIONES: la respuesta del modelo a su duda o su objeción (sin pregunta) y debajo el bloque de código con el ahorro calculado y el menú de productos.
         cuerpo = (bueno ? sinPregunta + '\n\n' : '') + rrTextoOpciones(cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []));
       }
+      // Si el texto de respaldo del modelo caído es idéntico a lo último que se le envió, sale el alterno (no «Eso ya te lo conté…»).
+      if (!bueno && !modoPuente && !modoOpciones && !modoAntes && plan.origen !== 'imagen' && fichaAntes.ultimoHash !== '' && rrHashTexto(rrSeguro(cuerpo)) === fichaAntes.ultimoHash) cuerpo = RR_TEXTO_CAIDO_ALTERNO;
       const conPresentacion = falta ? RR_PRESENTACION + '\n\n' + cuerpo : cuerpo;
       if (modoPuente) m = conBotones(conPresentacion, [rrBoton(RR_BOTON_OPCIONES, 'Ver opciones')], undefined, true);
       else if (modoOpciones) m = conBotones(conPresentacion, menu1());

@@ -208,7 +208,8 @@ export function violacionesDePromesaConCompuertaCerrada(est: EstadoCharla, entra
   if (est.charla >= 2 || est.qrVisto || panelConCobro || esPrellenadoDeProducto(textoEntrante(entrante)) || PLANES_EXENTOS_DE_COMPUERTA.includes(plan)) return v;
   for (const m of mensajes) {
     for (const o of m.cuerpo.replace(CIERRE_DEL_PUENTE, ' ').split(/(?<=[.!?…])\s+|\n+/)) {
-      const n = LIB.rrNorm(o);
+      // Contextos que no prometen nada (el negocio del cliente y «sin costo»), medidos en la batería real del 23/10: se retiran antes de mirar el objeto.
+      const n = LIB.rrNorm(o).replace(/\b(preguntan|piden|consultan|cotizan)( por)?( los| las)? (precios?|costos?|tarifas?)\b|\bsin costos?\b|\b(tu|tus|su|sus) (catalogo|precios|tarifas|costos|paquetes|planes)\b/g, ' ');
       // Detector PROPIO y ancho del vigilante (no el de producción), POR OBJETO: la oración menciona un objeto de precio u opciones (con la compuerta cerrada el modelo no habla de eso), o un marcador de inminencia con «te las paso».
       const objeto = /\b(precios?|costos?|valor(es)?|montos?|tarifas?|paquetes?|planes|opciones|opcion|alternativas?|catalogo|lista de (precios|opciones|productos)|carta|menu|botones|de abajo|cuanto (cuesta|cuestan|sale|salen|vale|valen|es|seria)|lo que (cuesta|cuestan|sale|vale)|precos?|custos?|opcoes|planos|prices?|costs?|options)\b/.test(n);
       const marca = /\b(ya te|ahorita|ahora te|enseguida|en seguida|en un momento|luego|mas tarde|proximo mensaje|siguiente mensaje|a continuacion|abajo|ahora mismo|dame un|ya (viene|llega|van)|en breve|ya mismo|al toque|vou|ja te|daqui a pouco)\b/.test(n);

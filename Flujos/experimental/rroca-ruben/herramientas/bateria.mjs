@@ -26,6 +26,7 @@
 //   --env <archivo>   archivo con la clave (`.env` y este). --vertex <proyecto> usa Vertex AI con el token de `gcloud` (la clave vive solo en n8n). --locacion <región>.
 //   --confirmo-gasto  OBLIGATORIA fuera de `--seco`: la corrida real es GASTO y solo se hace con el «sí» de Andres. USA UNA CREDENCIAL DEL PROYECTO DE PRUEBAS, NUNCA la de producción.
 //   --conversaciones  además del informe, imprime cada conversación (lo que dijo el cliente y lo que se le envió) para compararla con el PDF.
+//   --crudo           por turno del modelo: el TEXTO CRUDO que devolvió Gemini (antes de filtros), el motivo EXACTO de rechazo (nombre de la regla) y el texto que quedó tras cada barrera. Sin secretos.
 //   --json            salida de máquina: UN objeto JSON en la salida estándar. --ayuda: este resumen.
 //
 // NUNCA SE IMPRIME EL VALOR DE UN SECRETO (sale el NOMBRE de la variable). NO ESCRIBE ARCHIVOS. El código del flujo se ejecuta con `new Function` (como el motor de chat-novuchat): es código del propio repositorio.
@@ -53,10 +54,11 @@ const CATALOGO = [
   { id: 'closer-ventas', nombre: 'Prompt Closer', precio: 20, activo: true },
   { id: 'videos-ia', nombre: 'Videos con IA', precio: 25, activo: true },
 ];
-const CIFRAS_PERMITIDAS = new Set(['4', '7', '12', '30', '100', '230']);
+// Legítimas: las del libro (4 bonos, 7 días, 12 capítulos, 30 ideas, 100 prompts, 230 páginas) y el número de un capítulo (1 a 12: «capítulo 6»).
+const CIFRAS_PERMITIDAS = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '30', '100', '230']);
 const UMBRAL_SIN_RESPALDO = 0.85;
 const PLANES_DEL_MODELO_BUENOS = ['modelo', 'audio_modelo', 'imagen_modelo', 'puente', 'opciones'];
-const PLANES_DE_RESPALDO = ['modelo_caido', 'audio_modelo_caido', 'puente_fijo', 'opciones_fijo', 'charla_fija'];
+const PLANES_DE_RESPALDO = ['identidad', 'modelo_caido', 'audio_modelo_caido', 'puente_fijo', 'opciones_fijo', 'charla_fija'];
 const PLANES_DE_CHARLA = ['saludo', 'modelo', 'audio_modelo', 'imagen_modelo', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo'];
 const PLANES_EXENTOS = ['qr', 'qr_pendiente', 'complemento', 'comprobante', 'cancele_como_pago'];
 const BOTONES_DE_PRODUCTO = ['b_pack', 'b_libro', 'b_comp', 'b_closer', 'b_videos'];
@@ -65,7 +67,7 @@ const CIERRE_PUENTE = '¿Te muestro las opciones?';
 const BLOQUE = /Te dejo aqu[ií] abajo las opciones/;
 
 const AYUDA = `Batería de la conversación de Rubén contra el modelo (ENTREGA 2).
-  --seco  --n <1..20>  --casos A,B,C  --env <archivo>  --vertex <proyecto>  --locacion <región>  --confirmo-gasto  --conversaciones  --json  --ayuda
+  --seco  --n <1..20>  --casos A,B,C  --env <archivo>  --vertex <proyecto>  --locacion <región>  --confirmo-gasto  --conversaciones  --crudo  --json  --ayuda
 Fuera de --seco la corrida es GASTO: exige --confirmo-gasto y una credencial del proyecto de PRUEBAS (nunca la de producción).`;
 
 const norm = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -76,7 +78,7 @@ const objeto = (v) => (v !== null && typeof v === 'object' && !Array.isArray(v) 
 /** Las funciones de la librería del flujo (rr.js y las comunes) en un contexto aislado, sin los globales de Node. */
 export function cargarLibreria() {
   const fuente = [RUTA_FILTRO, ...['cobro.js', 'avisos.js', 'rr.js'].map((a) => join(CARPETA_LIB, a))].map((r) => readFileSync(r, 'utf8')).join('\n');
-  return runInNewContext(`${fuente}\n({ cmRevisarRedaccion, rrExtraRedaccion, rrSuplantaARuben, rrEsDerivar })`, {});
+  return runInNewContext(`${fuente}\n({ rrQuitarEcoDeMarcador, cmRevisarRedaccion, rrExtraRedaccion, rrSuplantaARuben, rrEsDerivar, rrQuitarRepeticionDelLibro, rrQuitarPromesaDeOpciones, rrUnaPresentacion, rrSinPreguntaFinal, rrPreguntaPorIA, rrNorm, rrTienePresentacionIA })`, {});
 }
 
 // ------------------------------------------------------------------------------------------------------- los casos
@@ -192,7 +194,10 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       tokensEntrada: Number(objeto(objeto(respuestaModelo).usageMetadata).promptTokenCount) || 0, tokensSalida: Number(objeto(objeto(respuestaModelo).usageMetadata).candidatesTokenCount) || 0,
       ms: actual.ms, reintentos: actual.reintentos, marcas: turno,
     };
-    t.motivo = t.llamoAlModelo ? motivoDeRechazo(lib, crudo, turno.dice ?? '') : '';
+    const planDec = objeto(decision.plan);
+    t.diagnostico = t.llamoAlModelo ? diagnosticar(lib, crudo, { modo: String(planDec.modo ?? ''), habil: decision.opcionesHabilitadas === true, qrAbierto: planDec.qrAbierto === true, saludado: i > 0, textoCliente: String(planDec.textoRevision ?? turno.dice ?? '') }) : null;
+    t.motivo = t.diagnostico ? t.diagnostico.motivo : '';
+    t.modo = String(planDec.modo ?? '');
     t.violaciones = [...violacionesDelTurno(estado, turno, t), ...(r.fallo ? [`el flujo falló en «${r.fallo.nodo}»: ${r.fallo.mensaje}`] : [])];
     actualizarEstado(estado, t);
     registro.push(t);
@@ -200,12 +205,31 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
   return { caso: caso.id, rep, turnos: registro };
 }
 
-/** Por qué las barreras rechazarían lo que dijo el modelo ('' = pasa). Es la misma revisión del flujo (`cmRevisarRedaccion` con el tope de 900 y `rrExtraRedaccion`). */
-function motivoDeRechazo(lib, crudo, textoCliente) {
-  if (String(crudo).trim() === '') return 'vacio';
-  if (lib.rrEsDerivar(crudo)) return 'derivar';
-  if (lib.rrSuplantaARuben(crudo)) return 'suplanta';
-  return lib.cmRevisarRedaccion(crudo, { maximo: 900, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: 'Rubén Roca', textoDelCliente: textoCliente, extra: [lib.rrExtraRedaccion] }).motivo;
+/**
+ * EL DIAGNÓSTICO de un turno del modelo: repite, etapa por etapa y con las mismas condiciones, la cadena de «Armar mensajes» (derivar, suplantación, `cmRevisarRedaccion` con `rrExtraRedaccion` y el flag de la compuerta, quita de la
+ * repetición del libro, quita de promesas, una presentación, pregunta final del puente y de las opciones) y devuelve `{ motivo, pasos }`: `motivo` es el NOMBRE de la regla que rechazó (o «vacio_tras_<etapa>» si una quita dejó el
+ * texto vacío; '' si pasa) y `pasos` el texto que quedó tras cada barrera. `ctx` = { modo, habil, qrAbierto, saludado, textoCliente }.
+ */
+export function diagnosticar(lib, crudo, ctx) {
+  const pasos = [{ etapa: 'crudo', texto: String(crudo ?? '') }];
+  const sinEco = lib.rrQuitarEcoDeMarcador(String(crudo ?? ''));
+  if (sinEco !== String(crudo ?? '').trim()) pasos.push({ etapa: 'sin eco de marcador', texto: sinEco });
+  crudo = sinEco;
+  const fin = (motivo) => ({ motivo, pasos });
+  if (String(crudo).trim() === '') return fin('vacio');
+  if (lib.rrEsDerivar(crudo)) return fin('derivar');
+  if (lib.rrSuplantaARuben(crudo)) return fin('suplanta');
+  const rev = lib.cmRevisarRedaccion(crudo, { maximo: 900, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: 'Rubén Roca', textoDelCliente: ctx.textoCliente, extra: [lib.rrExtraRedaccion] });
+  pasos.push({ etapa: 'filtro (cmRevisarRedaccion + rrExtraRedaccion)', texto: rev.texto, motivo: rev.motivo });
+  if (rev.motivo !== '') return fin(rev.motivo);
+  let t = rev.texto;
+  if (ctx.saludado) { t = lib.rrQuitarRepeticionDelLibro(t); pasos.push({ etapa: 'sin repetir el libro', texto: t }); if (t.trim() === '') return fin('vacio_tras_repeticion_del_libro'); }
+  if (ctx.qrAbierto !== true && (!ctx.habil || ctx.modo === 'puente' || ctx.modo === 'opciones')) { t = lib.rrQuitarPromesaDeOpciones(t); pasos.push({ etapa: 'sin promesas de opciones', texto: t }); if (t.trim() === '') return fin('vacio_tras_promesas_de_opciones'); }
+  t = lib.rrUnaPresentacion(t, !ctx.saludado || lib.rrPreguntaPorIA(lib.rrNorm(ctx.textoCliente)), true);
+  pasos.push({ etapa: 'una presentación', texto: t });
+  if (t.trim() === '') return fin('vacio_tras_presentacion');
+  if (ctx.modo === 'puente' || ctx.modo === 'opciones') { t = lib.rrSinPreguntaFinal(t); pasos.push({ etapa: 'sin pregunta final', texto: t }); if (t.trim() === '') return fin('vacio_tras_pregunta_final'); }
+  return fin('');
 }
 
 // ------------------------------------------------------------------------------------------------------- invariantes (espejo del vigilante, sobre lo que el cliente recibe)
@@ -305,6 +329,16 @@ function textoDelInforme(m, proveedor, opciones) {
   l.push(`VEREDICTO: ${m.umbral.cumple ? 'cumple el umbral' : 'NO cumple el umbral'} (${opciones.seco ? 'en seco solo cuenta la parte de violaciones' : 'si no cumple: decisión de Andres, D9'}).`);
   return l.join('\n');
 }
+function textoDelCrudo(corridas) {
+  const l = [];
+  for (const c of corridas) for (const t of c.turnos.filter((x) => x.llamoAlModelo)) {
+    l.push(`--- ${c.caso}#${c.rep} turno ${t.n} · modo ${t.modo || '-'} · plan final «${t.plan}» · motivo exacto: ${t.motivo || '(pasa las barreras)'} · finishReason ${t.finishReason || '-'}`);
+    l.push(`Cliente: ${t.dice}`);
+    for (const p of t.diagnostico.pasos) l.push(`  [${p.etapa}]${p.motivo ? ` RECHAZA «${p.motivo}»` : ''} ${JSON.stringify(String(p.texto).slice(0, 1200))}`);
+    l.push(`  Cliente recibió: ${t.mensajes.map((m) => JSON.stringify(m.cuerpo.slice(0, 600))).join(' | ') || '(nada)'}`);
+  }
+  return l.join('\n');
+}
 function textoDeConversaciones(corridas) {
   return corridas.map((c) => [`--- Caso ${c.caso}, corrida ${c.rep}`, ...c.turnos.flatMap((t) => [`Cliente: ${t.dice}`, ...(t.mensajes.length ? t.mensajes.map((m) => `Asistente [${t.plan}]: ${m.cuerpo.replace(/\n+/g, ' / ')}${t.botones.length ? `  (botones: ${t.botones.map((b) => b.title).join(' | ')})` : ''}`) : [`Asistente [${t.plan}]: (sin mensaje)`])])].join('\n')).join('\n\n');
 }
@@ -321,7 +355,8 @@ export async function main(argv, deps = {}) {
   try {
     const confirmaGasto = argv.includes('--confirmo-gasto');
     const conversaciones = argv.includes('--conversaciones');
-    const opciones = leerArgumentos(argv.filter((a) => a !== '--confirmo-gasto' && a !== '--conversaciones'));
+    const crudo = argv.includes('--crudo');
+    const opciones = leerArgumentos(argv.filter((a) => a !== '--confirmo-gasto' && a !== '--conversaciones' && a !== '--crudo'));
     if (opciones.ayuda) { d.salida(AYUDA + '\n'); return 0; }
     // La corrida real es GASTO: sin la confirmación explícita (que solo da el «sí» de Andres) no se llama a nada.
     if (!opciones.seco && !confirmaGasto) throw new ErrorDeUso('La corrida real es GASTO (≈ USD 0,043 con --n 3): agregue --confirmo-gasto solo con el «sí» de Andres, y con una credencial del proyecto de PRUEBAS. Para verificar sin gasto, use --seco.');
@@ -340,7 +375,7 @@ export async function main(argv, deps = {}) {
       }
     }
     const m = medir(corridas);
-    d.salida(opciones.json ? JSON.stringify({ proveedor, medidas: m, ...(conversaciones ? { conversaciones: corridas } : {}) }) + '\n' : textoDelInforme(m, proveedor, opciones) + (conversaciones ? '\n\n' + textoDeConversaciones(corridas) : '') + '\n');
+    d.salida(opciones.json ? JSON.stringify({ proveedor, medidas: m, ...(conversaciones ? { conversaciones: corridas } : {}), ...(crudo ? { crudo: corridas.flatMap((c) => c.turnos.filter((x) => x.llamoAlModelo).map((x) => ({ caso: c.caso, rep: c.rep, turno: x.n, modo: x.modo, motivo: x.motivo, pasos: x.diagnostico.pasos }))) } : {}) }) + '\n' : textoDelInforme(m, proveedor, opciones) + (conversaciones ? '\n\n' + textoDeConversaciones(corridas) : '') + (crudo ? '\n\n' + textoDelCrudo(corridas) : '') + '\n');
     return m.violaciones.length === 0 ? 0 : 1;
   } catch (e) {
     const secretos = [credencial.clave, credencial.token];

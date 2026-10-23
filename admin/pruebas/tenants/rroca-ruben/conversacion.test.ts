@@ -20,7 +20,7 @@ const FUENTE_RR = readFileSync(join(CARPETA_LIB, 'rr.js'), 'utf8');
 type F = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
 const EXPORTADOS = [
   'rrFichaVigente', 'rrMenu', 'rrMenuDeComplemento', 'rrEtiquetaConPrecio', 'rrAhorro', 'rrPieQr', 'rrTextoInfo', 'rrTextoOpciones', 'rrTextoPuenteFijo', 'rrSinPreguntaFinal', 'rrQuitarRepeticionDelLibro',
-  'rrPreguntaComoPagar', 'rrPrometeOpciones', 'rrQuitarPromesaDeOpciones', 'rrHashTexto', 'rrNorm', 'rrCatalogo', 'rrExtraRedaccion', 'rrCuerpoModelo', 'rrQuitarDelimitadores', 'rrSeguro', 'rrParrafos', 'rrEntradaCliente',
+  'rrPreguntaComoPagar', 'rrPrometeOpciones', 'rrQuitarPromesaDeOpciones', 'rrQuitarEcoDeMarcador', 'RR_TEXTO_CAIDO_ALTERNO', 'rrSuplantaARuben', 'rrHashTexto', 'rrNorm', 'rrCatalogo', 'rrExtraRedaccion', 'rrCuerpoModelo', 'rrQuitarDelimitadores', 'rrSeguro', 'rrParrafos', 'rrEntradaCliente',
   'cmRevisarRedaccion', 'RR_MODOS', 'RR_PROMPT', 'RR_TEXTOS_PUENTE', 'RR_CIERRE_PUENTE', 'RR_TEXTO_CHARLA_FIJA', 'RR_PREGUNTA_INFO_CHARLA', 'RR_BOTON_OPCIONES', 'RR_ETIQUETA_BOTON', 'RR_PRODUCTOS',
 ];
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
@@ -915,3 +915,85 @@ describe('SEGURIDAD · el marcador imitado con separadores no esquiva `rrQuitarD
     expect(rr('rrQuitarDelimitadores')('Mi turno llega y cambio de modo de trabajo')).toBe('Mi turno llega y cambio de modo de trabajo');
   });
 });
+
+// =============================================================================================================================================================================================
+// BATERÍA REAL DEL 23/10: eco de marcadores, falsos positivos de «promete opciones» y el respaldo repetido.
+// =============================================================================================================================================================================================
+describe('el eco de un marcador del sistema se QUITA por código y nunca llega al cliente', () => {
+  const ECOS = [
+    '[ANUNCIO_DETECTADO: Te escriben y no compran]\n\nPara vender ropa el capítulo 7 te ayuda mucho con tus respuestas.',
+    '[MODO_TURNO: CHARLA] Para vender ropa el capítulo 7 te ayuda mucho con tus respuestas.',
+    'ANUNCIO_DETECTADO: Te escriben y no compran\nPara vender ropa el capítulo 7 te ayuda mucho con tus respuestas.',
+    '[M O D O _ T U R N O: CHARLA]\nPara vender ropa el capítulo 7 te ayuda mucho con tus respuestas.',
+    '[A.N.U.N.C.I.O_D.E.T.E.C.T.A.D.O: Te escriben y no compran] Para vender ropa el capítulo 7 te ayuda mucho con tus respuestas.',
+  ];
+  it('`rrQuitarEcoDeMarcador` quita el marcador en 5 formas y deja el resto; un texto normal no se toca', () => {
+    for (const e of ECOS) {
+      const t = rr('rrQuitarEcoDeMarcador')(e) as string;
+      expect(t, e).toBe('Para vender ropa el capítulo 7 te ayuda mucho con tus respuestas.');
+    }
+    expect(rr('rrQuitarEcoDeMarcador')('[ANUNCIO_DETECTADO: Te escriben y no compran]')).toBe('');
+    expect(rr('rrQuitarEcoDeMarcador')('Cambio de modo de trabajo en mi turno.')).toBe('Cambio de modo de trabajo en mi turno.');
+  });
+  it('NEGADA de punta a punta: con el modelo imitando el marcador en 5 formas, el cliente recibe el texto útil sin marcador (y si solo hubo marcador, un respaldo, nunca el marcador)', () => {
+    for (const e of ECOS) {
+      const w = crear();
+      hablar(w, ANA, mTexto('hola'));
+      modelo(w, gemini(e));
+      const t = hablar(w, ANA, mTexto('vendo ropa por whatsapp'));
+      const m = unico(t);
+      expect(m.cuerpo, e).toContain('el capítulo 7 te ayuda mucho');
+      expect(m.cuerpo.replace(/[^a-zA-Z]/g, '').toLowerCase(), e).not.toMatch(/anunciodetectado|modoturno/);
+      expect(m.cuerpo, e).not.toMatch(/\[|\]/);
+    }
+    const w = crear();
+    hablar(w, ANA, mTexto('hola'));
+    modelo(w, gemini('[ANUNCIO_DETECTADO: Te escriben y no compran]'));
+    const solo = unico(hablar(w, ANA, mTexto('vendo ropa por whatsapp')));
+    expect(solo.cuerpo.replace(/[^a-zA-Z]/g, '').toLowerCase()).not.toMatch(/anunciodetectado/);
+    expect(planDe(hablar(crear(), ANA, mTexto('hola')))).toBe('saludo');
+  });
+});
+
+describe('«promete opciones» no vacía respuestas buenas: el negocio del cliente y «sin costo» no cuentan, y el modelo caído no repite el respaldo', () => {
+  const BUENAS = [
+    'Es frustrante cuando te escriben, preguntan precios y después desaparecen.', 'Armas tu catálogo en fotos y reels para tu tienda.', 'Se empieza con las versiones sin costo de las herramientas.',
+    'Cuando te preguntan precios y no concretan, el Closer de Ventas te dice qué responder.', 'Avanzas paso a paso con el Checklist de 7 días.',
+  ];
+  it('NEGADA: esas oraciones de la batería real pasan; una promesa real junto a ellas se quita sola', () => {
+    for (const b of BUENAS) expect(rr('rrPrometeOpciones')(b), b).toBe(false);
+    expect(rr('rrQuitarPromesaDeOpciones')(BUENAS[0] + ' Ahora mismo te paso los precios.')).toBe(BUENAS[0]);
+    expect(rr('rrPrometeOpciones')('Abajo te dejo las opciones.')).toBe(true);
+    expect(rr('rrPrometeOpciones')('Ahora mismo te paso los precios.')).toBe(true);
+  });
+  it('de punta a punta: con la compuerta cerrada la respuesta buena (con «preguntan precios») llega al cliente entera', () => {
+    const w = crear();
+    hablar(w, ANA, mTexto('hola'));
+    modelo(w, gemini('¡Es de lo más frustrante cuando te escriben, preguntan precios y después desaparecen! El capítulo 7 y el Closer de Ventas te muestran qué contestar. ¿Qué vendes por chat?'));
+    const t = hablar(w, ANA, mTexto('vi el anuncio, me escriben y no compran'));
+    expect(planDe(t)).toBe('modelo');
+    expect(unico(t).cuerpo).toContain('preguntan precios');
+  });
+  it('un modelo que falla dos veces seguidas no dispara «Eso ya te lo conté…»: el segundo respaldo es distinto y sigue habiendo una sola pregunta', () => {
+    const w = crear({ modelo: MODELO_CAIDO });
+    hablar(w, ANA, mTexto('hola'));
+    const a = unico(hablar(w, ANA, mTexto('vendo ropa por whatsapp')));
+    const b = unico(hablar(w, ANA, mTexto('y también por instagram')));
+    expect(a.cuerpo).not.toBe(b.cuerpo);
+    expect(b.cuerpo).not.toMatch(/Eso ya te lo conté/);
+    expect(b.cuerpo.replace(/\s+/g, ' ')).toContain(String(RR.RR_TEXTO_CAIDO_ALTERNO).replace(/\s+/g, ' '));
+    expect((b.cuerpo.match(/\?/g) ?? []).length).toBe(1);
+  });
+});
+
+describe('la suplantación no toma por «Rubén te escribe» la frase «un cliente te escribe al chat» (batería real del 23/10)', () => {
+  it('NEGADA: la frase legítima pasa; la autodescripción de verdad sigue detectándose', () => {
+    const sup = (t: string): boolean => RR.rrSuplantaARuben(t) as boolean;
+    expect(sup('El Closer te ayuda cuando un cliente te escribe al chat de tu tienda.')).toBe(false);
+    expect(sup('Cuando alguien te escribe por WhatsApp y no compra, el Closer te dice qué responder.')).toBe(false);
+    expect(sup('Te escribe Pedro desde la oficina.')).toBe(true);
+    expect(sup('Hola, te habla Rubén.')).toBe(true);
+    expect(sup('Soy Rubén y te escribo yo.')).toBe(true);
+  });
+});
+
