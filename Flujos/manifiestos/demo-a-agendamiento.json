@@ -27,7 +27,10 @@
     "Respuesta de la seña": "modulos/cobros/respuesta-de-la-sena.js",
     "Mensaje de la seña": "modulos/cobros/mensaje-de-la-sena.js",
     "Preparar transcripción": "core/medios/preparar-transcripcion.js",
-    "Preparar imagen": "core/medios/preparar-imagen.js"
+    "Preparar imagen": [
+      "core/medios/anuncio-por-titular.js",
+      "core/medios/preparar-imagen.js"
+    ]
   },
   "prompts": {
     "AI Agent (Sofía)": {

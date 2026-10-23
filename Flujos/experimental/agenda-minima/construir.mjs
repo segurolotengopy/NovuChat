@@ -16,6 +16,7 @@
  * Code de n8n no tiene módulos). Dos marcas más, para no repetir código que el nodo no usa:
  *   `"@@comun:nodos/<archivo>.js"`  utilidades comunes + el archivo (sin la librería de agenda);
  *   `"@@solo:nodos/<archivo>.js"`   solo el archivo.
+ *   `"@@medio:<paquete>"`           un módulo común de medios (`Flujos/src/core/medios/`), tal cual, sin edición.
  *
  * DOS VARIANTES, de la misma plantilla:
  *   - agenda-minima.v0.json      PRODUCCIÓN: con «WhatsApp Trigger», SIN «Entrada de prueba».
@@ -43,7 +44,20 @@ const VARIANTES = [
   { archivo: 'agenda-minima.prueba.json', quitar: 'WhatsApp Trigger', nombre: 'NovuChat — Agenda mínima (v0, prueba)' },
 ];
 
+// Los tres módulos comunes de medios (`Flujos/src/core/medios/`) se INCLUYEN desde su fuente con `"@@medio:<paquete>"`,
+// sin una sola edición: nunca se copian a esta carpeta (una prueba compara el código del nodo con el módulo).
+const MEDIOS = {
+  'm-transcripcion': '../../src/core/medios/preparar-transcripcion.js',
+  'm-imagen': '../../src/core/medios/preparar-imagen.js',
+  'm-no-aceptado': '../../src/core/medios/medio-no-aceptado.js',
+};
+
 function codigoDe(marca, nodo) {
+  if (marca.startsWith('@@medio:')) {
+    const archivo = MEDIOS[marca.slice('@@medio:'.length)];
+    if (!archivo) throw new Error(`${nodo}: paquete de medios desconocido: ${marca}`);
+    return leer(archivo).trimEnd() + '\n';
+  }
   const modo = marca.startsWith('@@solo:') ? 'solo' : (marca.startsWith('@@comun:') ? 'comun' : 'todo');
   const ruta = marca.slice(modo === 'solo' ? '@@solo:'.length : (modo === 'comun' ? '@@comun:'.length : '@@'.length));
   if (!/^nodos\/[a-z0-9-]+\.js$/.test(ruta)) throw new Error(`${nodo}: ruta de código no válida: ${marca}`);
