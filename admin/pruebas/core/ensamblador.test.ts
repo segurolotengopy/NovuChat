@@ -491,7 +491,8 @@ describe('9. Las carpetas transitorias de FL2 solo se achican', () => {
       'texto-enviado.js', 'uso-extendido.js'],
     'core/captacion': ['comercio-no-operativo.js', 'config-del-negocio.js', 'normalizar-entrada.js', 'procesar-respuesta.js',
       'salida.js', 'traspaso-a-un-asesor.js', 'uso-extendido.js'],
-    'modulos/cobros/venta': ['interpretar-lectura.js', 'preparar-reenvio-del-qr.js', 'qr-no-enviado.js'],
+    // #611: el módulo común de Cobros (venta) —`lectura.js`, `cotejo.js`, `textos.js`— es NUEVO y vive aquí por indicación de la coordinación (carpeta de su módulo); las tres de FL2 siguen achicándose.
+    'modulos/cobros/venta': ['interpretar-lectura.js', 'preparar-reenvio-del-qr.js', 'qr-no-enviado.js', 'lectura.js', 'cotejo.js', 'textos.js'],
   };
   for (const [carpeta, permitidos] of Object.entries(PERMITIDOS)) {
     it(`${carpeta}/ no tiene archivos fuera de la lista de FL2`, () => {
