@@ -189,7 +189,7 @@ describe('core/negocio/datos-del-negocio', () => {
       expect(sinComentarios).not.toMatch(/^return\b/m);
     });
     it('compila sin URL, Buffer, crypto ni require', () => {
-      expect(() => new Function('URL', 'Buffer', 'crypto', 'require', src)).not.toThrow();
+      expect(() => new vm.Script(src)).not.toThrow();
     });
     it('corre en un contexto vm vacío (sin ningún global de Node)', () => {
       const ctx = vm.createContext(Object.create(null));
