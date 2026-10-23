@@ -277,7 +277,7 @@ function cmOraciones(t, estricto) {
 
 const CM_INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]/u;
 // Frases críticas SIN espacios ni signos («P a g o v e r i f i c a d o», «Pagoverificado»); un falso positivo cae al texto fijo.
-const CM_JUNTAS = /pago(?:fue)?(?:acreditad|verificad|recibid)|recibimos(?:tu|su)?pago|nosoyun(?:bot|robot|maquina)|soyunapersona|quedoagendad/;
+const CM_JUNTAS = /pago(?:fue)?(?:acreditad|verificad|recibid)|recibimos(?:tu|su)?pago|nosoyun(?:bot|robot|maquina)|soyunapersona|quedoagendad|yaagende|agende(?:tu|su)(?:cita|turno|reserva)/;
 function cmMotivoDeRechazo(texto, opciones) {
   const m = cmMotivo1(texto, opciones);
   if (m) return m;

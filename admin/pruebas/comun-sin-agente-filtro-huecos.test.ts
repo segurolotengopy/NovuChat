@@ -129,7 +129,7 @@ describe('invisibles Default_Ignorable y Braille (re-revisión): no evaden las p
 });
 
 describe('invisibles ENTRE palabras y frases sin espacios (revisión de seguridad del #630)', () => {
-  const OCHO = ['Tu pago fue acreditado', 'Recibimos tu pago', 'Pago verificado', 'No soy un bot', 'Soy una persona real', 'Quedó agendada tu cita', 'Pago verificado, gracias', 'Soy una persona real, no un bot'];
+  const OCHO = ['Tu pago fue acreditado', 'Recibimos tu pago', 'Pago verificado', 'No soy un bot', 'Soy una persona real', 'Quedó agendada tu cita', 'Pago verificado, gracias', 'Soy una persona real, no un bot', 'Ya agendé tu cita'];
   const SEP = ['\u2800', '\u3164', '\u115F', '\u17B4', '\u17B5', '\u180B', '\u180E', '\u034F', '\u200B', '\u00AD', '\u2800\u2800'];
   const TODAS = { permitirMontos: true, sinDatosDePago: true, sinAfirmarCompra: true, sinPromesasDeAviso: true };
   for (const sep of SEP) {

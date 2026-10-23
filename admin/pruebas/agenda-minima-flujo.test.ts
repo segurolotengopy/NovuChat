@@ -2242,7 +2242,7 @@ describe('Agenda mínima v0: revisión de seguridad, «Armar mensajes»', () => 
     ['Quedó agendada tu cita', 'Quedó agendada tu cita'],
   ];
   for (const [nombre, frase] of evasiones) {
-    for (const [rotulo, inv] of [['etiqueta', TAG], ['U+3164', cp(0x3164)], ['U+2800', cp(0x2800)], ['U+115F', cp(0x115f)], ['U+FFA0', cp(0xffa0)], ['U+17B4', cp(0x17b4)]] as const) {
+    for (const [rotulo, inv] of [['etiqueta', TAG], ['U+3164', cp(0x3164)], ['U+2800', cp(0x2800)], ['U+115F', cp(0x115f)], ['U+FFA0', cp(0xffa0)], ['U+17B4', cp(0x17b4)], ['U+180B', cp(0x180b)], ['U+180C', cp(0x180c)], ['U+180D', cp(0x180d)], ['U+034F', cp(0x34f)]] as const) {
       it(`NIEGA: «${nombre}» con ${rotulo} dentro de la palabra se descarta`, () => {
         const sucia = frase.replace(/(\p{L}{2})(\p{L})/u, `$1${inv}$2`);
         expect(sucia).not.toBe(frase);
@@ -2254,12 +2254,32 @@ describe('Agenda mínima v0: revisión de seguridad, «Armar mensajes»', () => 
       const sucia = frase.replace(/ /g, cp(0x3164)) + cp(0x2800);
       expect(ofertaCon(sucia).enviados[0]!.cuerpo).not.toBe(sucia);
     });
+    for (const [rotulo, inv] of [['U+180B', cp(0x180b)], ['U+180C', cp(0x180c)], ['U+180D', cp(0x180d)], ['U+034F', cp(0x34f)], ['U+17B4', cp(0x17b4)], ['U+2800', cp(0x2800)]] as const) {
+      it(`NIEGA: «${nombre}» con ${rotulo} como separador se descarta`, () => {
+        const sucia = frase.replace(/ /g, inv);
+        expect(sucia).not.toBe(frase);
+        expect(ofertaCon(sucia).enviados[0]!.cuerpo).not.toBe(sucia);
+      });
+    }
   }
   it('sin invisibles, el texto sin evasión pasa igual que antes (emojis con ZWJ y VS16 incluidos)', () => {
     for (const ok of [`Tengo estos horarios ${cp(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467)}; toca el que prefieras.`,
-      `Tengo estos horarios ${cp(0x2764, 0xfe0f)}; toca el que prefieras.`, 'Tengo estos horarios; no hemos recibido comprobante todavía.']) {
+      `Tengo estos horarios ${cp(0x2764, 0xfe0f)}; toca el que prefieras.`,
+      `Tengo estos horarios ${cp(0x31, 0xfe0f, 0x20e3)} ${cp(0x1f44b, 0x1f3fd)}; toca el que prefieras.`, `Tengo estos horarios ${cp(0x1f468, 0x200d, 0x2695, 0xfe0f)}; toca el que prefieras.`, 'Tengo estos horarios; no hemos recibido comprobante todavía.']) {
       expect(ofertaCon(ok).enviados[0]!.cuerpo).toBe(ok);
     }
+  });
+  it('un emoji con VS16 o ZWJ seguido de espacio o letra NO es evasión: la redacción legítima pasa', () => {
+    for (const ok of [`Te esperamos el lunes ${cp(0x2764, 0xfe0f)} Toca el horario.`, `Listo ${cp(0x2714, 0xfe0f)} Elige uno de los horarios.`,
+      `${cp(0x1f468, 0x200d, 0x2695, 0xfe0f)} El doctor atiende el lunes.`, `${cp(0x2600, 0xfe0f)}Buenos días, tengo estos horarios.`, `${cp(0x26a0, 0xfe0f)} Recuerda llegar con tiempo.`]) {
+      const t = ofertaCon(ok);
+      expect(t.enviados[0]!.cuerpo, ok).toBe(ok);
+    }
+  });
+  it('NIEGA: un enlace con la ruta en caracteres de ancho completo no se envía aunque su forma NFKC coincida con el permitido', () => {
+    const ancho = 'https://maps.app.goo.gl/' + cp(0xff45, 0xff4a, 0xff45, 0xff4d, 0xff50, 0xff4c, 0xff4f, 0xff11, 0xff12, 0xff13);
+    const t = ofertaCon(`Tengo estos horarios; mapa: ${ancho}`);
+    expect(t.enviados[0]!.cuerpo).not.toContain(ancho);
   });
   it('emergencia SIN número del doctor: no dice «ya le avisé al doctor» y avisa a recepción marcado EMERGENCIA', () => {
     const panel = JSON.parse(JSON.stringify(PANEL)) as J;
