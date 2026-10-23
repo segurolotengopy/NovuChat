@@ -55,6 +55,7 @@ export const SUITES_PURAS = [
   'pruebas/chat-novuchat-lib.test.ts',
   'pruebas/chat-novuchat-flujo.test.ts',
   'pruebas/chat-novuchat-bateria.test.ts',
+  'pruebas/venta-digital-base.test.ts',
   'pruebas/venta-minima-bateria.test.ts',
   'pruebas/venta-minima-comun.test.ts',
   'pruebas/venta-minima-pedido.test.ts',
