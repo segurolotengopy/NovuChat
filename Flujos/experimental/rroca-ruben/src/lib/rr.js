@@ -1148,30 +1148,41 @@ const RR_REMITE_A_WEB = new RegExp([
 // OPCIONES, sin importar el verbo ni la persona (precio, costo, valor de, monto, tarifa, «cuánto cuesta/sale/vale/es/sería», paquete, plan(es), opción, alternativa, catálogo, lista de…, carta, menú, botones, «los de abajo»; y sus formas en
 // portugués y en inglés). Falso positivo ACEPTADO y declarado: «Hay varias opciones según tu negocio» también cae. SEGUNDA RED: un marcador de inminencia o futuro (ya te, ahorita, luego, abajo, a continuación, vou, já…) con un verbo de
 // comunicar (también el infinitivo con pronombre pegado: mostrarte, enviarte, pasarte…, «hago llegar», ver, verás, «aquí tienes»), sin exigir objeto («Te muestro en un momento»); y «te las/los/lo/la + verbo».
-const RR_PROMETE_OBJETO = /\b(precios?|costos?|valores de|valor de|montos?|tarifas?|paquetes?|planes|opciones|opcion|alternativas?|catalogo|lista de (precios|opciones|productos)|carta|menu|botones|los de abajo|cuanto (cuesta|cuestan|sale|salen|vale|valen|es|seria|serian)|lo que (cuesta|cuestan|sale|salen|vale|valen)|precos?|custos?|opcoes|planos|valores|prices?|costs?|options|pricing)\b/;
-const RR_PROMETE_MARCA = /\b(ya te|ya le|ya me|ahorita|ahora te|ahora le|enseguida|en seguida|en un momento|luego|mas tarde|en el proximo mensaje|en el siguiente mensaje|a continuacion|abajo|mas abajo|ahora mismo|dame un (segundo|momento|instante)|ya (viene|vienen|llega|llegan|van)|en breve|ya mismo|al toque|ahi (van|va)|vou|ja te|ja vou|daqui a pouco|agora)\b/;
-const RR_PROMETE_VERBO = /\b((muestr|mostr|pas|dej|compart|cuent|cont|ens[ei]n|explic|present|inform|detall|escrib|mand|envi|dec|dig|dir|coment)\w*|(mostrar|pasar|enviar|mandar|dejar|compartir|contar|decir|ensenar|explicar|presentar|dar|informar|detallar|escribir)(te|le|me|selos|selas|tela|telas|telo|telos)|doy|dare|dar|llegan|llega|llegaran|viene|vienen|va|van|ver|veras|vas a ver|pase|mira|mire|ve|revisa|adjunto|aqui tienes|tienes|hago llegar|passo|mostro|conto|falo)\b/;
+const RR_PROMETE_OBJETO = /\b(precios?|costos?|montos?|tarifas?|paquetes?|planes|opciones|opcion|alternativas?|catalogo|lista de (precios|opciones|productos)|carta|menu|botones|los de abajo|cotizacion(es)?|inversion(es)?|packs|combos?|productos disponibles|modalidades|formas? de pago|(link|enlace)s? de pago|como comprar\w*|para comprar\w*|valor(?! de (tu|su|la|mi) (marca|empresa|negocio))|cuanto (te )?(cuesta|cuestan|sale|salen|vale|valen|es|seria|serian|saldria|costaria)|(lo )?que (cuesta|cuestan|sale|salen|vale|valen)|lo que (tenemos|ofrecemos)|los numeros|precos?|custos?|opcoes|planos|prices?|costs?|options|pricing)\b/;
+// Objetos «débiles»: solo prometen junto a un verbo de mostrar («Te muestro el Pack Completo»; «El Pack Completo suma el Closer» no promete nada).
+const RR_PROMETE_DEBIL = /\b(pack|versiones|detalles)\b/;
+const RR_PROMETE_MARCA = /\b(ya te|ya le|ya me|ahorita|abajito|ahora te|ahora le|enseguida|en seguida|en un momento|luego|mas tarde|en el proximo mensaje|en el siguiente mensaje|a continuacion|abajo|mas abajo|ahora mismo|dame un (segundo|momento|instante)|ya (viene|vienen|llega|llegan|van)|en breve|ya mismo|al toque|ahi (van|va)|vou|ja te|ja vou|daqui a pouco|agora)\b/;
+const RR_PROMETE_VERBO = /\b(muestro|muestra|mostrar|mostrare|paso|pasare|pasar|doy|dare|dar|envio|enviare|enviar|mando|mandare|mandar|dejo|dejare|dejar|comparto|compartire|compartir|cuento|contare|contar|digo|dire|decir|comento|comentare|comentar|presento|presentare|presentar|enseno|ensenare|ensenar|explico|explicare|explicar|detallo|detallare|detallar|informo|informar|suelto|armo|armare|preparo|preparare|(mostrar|pasar|enviar|mandar|dejar|compartir|contar|decir|ensenar|explicar|presentar|dar|informar|detallar|escribir)(te|le|me|selos|selas|tela|telas|telo|telos)|llegan|llega|llegaran|viene|vienen|va|van|ver|veras|vas a ver|pase|mira|mire|ve|revisa|adjunto|aqui tienes|tienes|hago llegar|passo|mostro|conto|falo)\b/;
 // Contextos que NO prometen nada aunque nombren un objeto de precio (medidos en la batería real del 23/10): el negocio del cliente («te preguntan precios», «tu catálogo en fotos») y «versiones sin costo».
-const RR_PROMETE_EXENTO = /\b(preguntan|pregunta|preguntar|preguntas|piden|pide|pedir|consultan|consulta|cotizan|piden por|escriben por|sin costo|sin costos)( por| los| las| el| la)?( los| las)? (precios?|costos?|precio|tarifas?)\b|\bsin costos?\b|\b(tu|tus|su|sus|mi|mis) (catalogo|precios|tarifas|costos|paquetes|planes|opciones de negocio)\b/g;
+const RR_PROMETE_EXENTO = /\b(preguntan|pregunta|preguntar|preguntas|piden|pide|pedir|consultan|consulta|cotizan|piden por|escriben por|sin costo|sin costos)( por| los| las| el| la)?( los| las)? (precios?|costos?|precio|tarifas?)\b|\bsin costos?\b|\b(bajar|reducir|ahorrar|recortar) (los )?costos\b|\b(tu|tus|su|sus|mi|mis) (catalogo|precios|tarifas|costos|paquetes|planes|menu|carta|opciones de negocio)\b/g;
 function rrPrometeOpciones(oracion) {
   const n = rrNorm(oracion).replace(RR_PROMETE_EXENTO, ' ');
   if (RR_PROMETE_OBJETO.test(n)) return true;
-  return (RR_PROMETE_VERBO.test(n) && RR_PROMETE_MARCA.test(n)) || /\bte (las|los|lo|la) (paso|dejo|muestro|mando|envio|comparto|pasare|dejare|mostrare|mandare|enviare|digo|comento|hago llegar)\b/.test(n);
+  const verbo = RR_PROMETE_VERBO.test(n);
+  return (verbo && (RR_PROMETE_MARCA.test(n) || RR_PROMETE_DEBIL.test(n))) || /\bte (las|los|lo|la) (paso|dejo|muestro|mando|envio|comparto|pasare|dejare|mostrare|mandare|enviare|digo|comento|hago llegar)\b/.test(n);
 }
 // ECO DE UN MARCADOR DEL SISTEMA: el modelo a veces imita al principio de su respuesta la línea [MODO_TURNO: …] o [ANUNCIO_DETECTADO: …] (medido en la batería real del 23/10: llegó a salir como mensaje al cliente). El CÓDIGO la quita antes de los
 // filtros (en vez de rechazar el turno): todo segmento entre corchetes, y toda línea suelta, cuyas letras (sin tildes, espacios ni signos) empiecen por o contengan esos nombres de marcador, en cualquier forma ya normalizada.
 function rrQuitarEcoDeMarcador(texto) {
-  const es = (x) => /anunciodetectado|modoturno/.test(rrNorm(x).replace(/[^a-z]/g, '').replace(/0/g, 'o'));
-  const sinCorchetes = rrTexto(texto).replace(/\[[^\]]*\]/g, (seg) => (es(seg) ? ' ' : seg));
-  return sinCorchetes.split('\n').filter((l) => !es(l)).join('\n').replace(/[ \t]{2,}/g, ' ').replace(/^[ \t]+|[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+  // Letras comparables: homoglifos a latín, 0→o y 1→i ANTES de quitar todo lo que no es letra (así «M0D0_TURN0» y «М О D О» cuentan).
+  const letras = (x) => Array.from(rrTexto(x).normalize('NFKC')).map((c) => RR_HOMOGLIFOS[c] || c).join('').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/0/g, 'o').replace(/1/g, 'i').replace(/[^a-z]/g, '');
+  // Un marcador, un nombre de modo (CHARLA_ANTES_DE_OPCIONES) o el título de sección del prompt («MODO DEL TURNO»), con o sin su valor.
+  const es = (x) => /anunciodetectado|modoturno|mododelturno|charlaantesdeopciones|^(modo|turno)(charla|puente|opciones|antes)/.test(letras(x));
+  let t = rrTexto(texto).replace(/\[[^\]]*\]/g, (seg) => (es(seg) ? ' ' : seg)).replace(/\[[^\]]*$/g, (seg) => (es(seg) ? ' ' : seg));
+  t = t.split('\n').filter((l) => !es(l)).join('\n');
+  return t.replace(/^[\s\])]+/, '').replace(/[ \t]{2,}/g, ' ').replace(/^[ \t]+|[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
 }
 // Quita del texto del modelo las oraciones que prometen opciones o precios (los párrafos se conservan). '' si no queda nada.
 function rrQuitarPromesaDeOpciones(texto) {
-  const bloques = rrTexto(texto).split('\n\n').map((bloque) => {
-    if (bloque.indexOf('\n') >= 0) return bloque;
-    return rrOraciones(bloque).filter((o) => !rrPrometeOpciones(o)).join(' ');
-  }).filter((b) => b.trim() !== '');
-  return bloques.join('\n\n');
+  // Cada LÍNEA es una unidad y, dentro de ella, cada ORACIÓN: un salto de línea simple («…mucho 😊\nAhí van los precios 👇») no esconde la promesa.
+  const lineas = rrTexto(texto).split('\n').map((l) => (l.trim() === '' ? '' : rrOraciones(l).filter((o) => !rrPrometeOpciones(o)).join(' ')));
+  const salida = [];
+  for (let i = 0; i < lineas.length; i += 1) {
+    const original = rrTexto(texto).split('\n')[i];
+    if (lineas[i] === '' && original.trim() !== '') continue;   // la línea era solo una promesa: se va entera
+    salida.push(lineas[i]);
+  }
+  return salida.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 // ENTREGA 2 (seguridad): montos y promesas comerciales que el modelo no puede decir, en cifras o en palabras. Sobre el texto normalizado (`n`).
 const RR_NUMW = '(?:diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|veinti[a-z]+|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscientos|trescientos|quinientos|mil)(?: y (?:uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve))?';

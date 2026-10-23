@@ -138,6 +138,8 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       const sinPromesa = rev.motivo === '' && plan.qrAbierto !== true && (!habil || plan.modo === 'puente' || plan.modo === 'opciones') ? rrQuitarPromesaDeOpciones(sinRepetir) : sinRepetir;
       const limpio = rev.motivo === '' ? rrUnaPresentacion(sinPromesa, !fichaAntes.saludado || rrPreguntaPorIA(rrNorm(plan.textoRevision || t.texto)), true) : '';
       let bueno = rev.motivo === '' && limpio.trim() !== '';
+      // RED DOBLE (seguridad): con la compuerta cerrada, si tras quitar las promesas aún queda una (el detector la ve en el texto entero), el turno completo cae al texto fijo.
+      if (bueno && !habil && plan.qrAbierto !== true && plan.modo !== 'puente' && rrExtraRedaccion(limpio, rrNorm(limpio), { compuertaCerrada: true }) === 'promete_opciones') bueno = false;
       // Los modos `puente` y `opciones`: el código quita la pregunta del modelo y agrega la suya (nunca hay una pregunta antes de los botones ni dos preguntas). Sin nada que conservar, cuenta como no bueno.
       const modoPuente = plan.modo === 'puente' && plan.qrAbierto !== true;
       const modoOpciones = plan.modo === 'opciones' && plan.qrAbierto !== true && menu1().length > 0;

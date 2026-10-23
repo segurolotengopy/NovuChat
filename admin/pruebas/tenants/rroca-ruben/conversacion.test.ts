@@ -997,3 +997,76 @@ describe('la suplantación no toma por «Rubén te escribe» la frase «un clien
   });
 });
 
+// =============================================================================================================================================================================================
+// 4.ª PASADA DE SEGURIDAD: promesas tras un salto de línea, objetos ampliados y eco de modos.
+// =============================================================================================================================================================================================
+const VIEJAS_25 = ['Ahora te muestro las opciones.', 'Déjame mostrarte los precios.', 'Puedo pasarte la lista de precios.', 'Quiero enviarte las opciones.', 'Voy a contarte cuánto cuesta.', 'Aquí tienes las opciones:', 'Al toque te paso la lista.',
+  'Ahí van los precios 👇', 'Estas son las opciones:', 'Los precios están abajo.', 'Te las paso enseguida.', 'En el siguiente mensaje verás los paquetes.', 'Ya te comparto el catálogo.', 'Mira abajo 👇', 'Te dejo los planes.',
+  'Enseguida te digo cuánto sale.', 'Permíteme enviarte el catálogo.', 'Te puedo mostrar las alternativas.', 'Para que elijas, revisa las opciones de abajo.', 'Dame un segundo y te paso los costos.', 'Ya vienen los precios.',
+  'Te lo muestro abajo.', 'Puedo detallarte las tarifas.', 'Te comento cuánto vale.', 'Aquí van las opciones para ti:'];
+const NUEVAS_32 = ['Te digo el valor del libro.', 'Te paso el valor.', 'Te digo cuánto te sale.', 'Te cuento cuánto te costaría.', 'Te muestro cuánto te saldría.', 'Te armo una cotización.', 'Te preparo una cotización a tu medida.',
+  'Te muestro los productos disponibles.', 'Te muestro los combos.', 'Si quieres te muestro cómo comprarlo.', 'Te explico qué cuesta cada uno.', 'Te comparto la inversión del pack.', 'Si te animas, te muestro los packs.',
+  'Te enseño las versiones del libro y lo que trae cada una.', 'Te mando el link de pago.', 'Te muestro las formas de pago.', 'Here are the prices.', 'Segue a lista de preços.', '¿Quieres que te muestre lo que tenemos?',
+  'Puedo presentarte las modalidades de compra.', 'Te paso la info para comprarlo.', 'Con gusto te detallo las inversiones.', 'Abajito te dejo todo.', 'Ahorita nomás te suelto los números.',
+  'Te muestro el Pack Completo y el libro solo para que compares.', 'Te paso el combo con su valor.', 'Te digo cuánto es.', 'Mirá los botones de acá abajo.', 'Si gustas, en el próximo mensaje van los detalles del pack.',
+  '¿Te comparto lo que cuesta cada uno?', 'Te detallo los montos.', 'Te cuento cuánto sale el pack.'];
+const LEGITIMAS_26 = ['Con el libro respondes más rápido a tus clientes.', 'El capítulo 7 te enseña a cerrar ventas por chat.', 'Te cuento cómo funciona el Closer de Ventas: pegas el mensaje y te dice qué responder.',
+  'Te muestro un ejemplo: pegas el mensaje del cliente y te sugiere qué contestar.', 'Luego armas tu contenido con los 100 prompts.', 'Primero el checklist y luego el contenido.', 'Ya te imaginas el contenido que podrías crear para tu tienda.',
+  'La IA te ayuda a bajar costos en tu negocio.', 'Con la IA describes los platos de tu menú en segundos.', 'Los valores de tu marca se notan en cada post.', 'Ahora te toca publicar con constancia.',
+  'El Pack Completo suma el Closer de Ventas y el curso de videos.', 'Con el Checklist de 7 días avanzas paso a paso.', 'El bono de 30 ideas de negocio te ayuda a arrancar.', 'Te escriben y no compran: el capítulo 7 te enseña a responder.',
+  'Cuando te preguntan precios por chat, el Closer te dice qué contestar.', 'Armas tu catálogo en fotos y reels para tu tienda.', 'Se empieza con las versiones sin costo de las herramientas de IA.', 'El curso «Crea videos con IA» te enseña a grabar reels.',
+  'Para tu pastelería, el capítulo 6 te da ideas de contenido.', 'Lo bueno es que no necesitas saber de tecnología.', 'Con el Mapa de Automatización ves qué tareas delegar.', 'El capítulo 9 te muestra cómo tener tu asistente personal.',
+  'Con los prompts escribes descripciones de productos más atractivas.', 'Mira, con el Closer pegas la conversación y te sugiere la respuesta.', 'Te explico: el libro va de lo básico a lo avanzado.'];
+
+describe('SEGURIDAD (4.ª pasada) · las promesas no se esconden tras un salto de línea', () => {
+  const PREF = 'Para una tienda de ropa el libro ayuda mucho';
+  const formas = (p: string): string[] => [`${PREF}.\n${p}`, `${PREF}.\n\n${p}`, `${PREF} 😊\n${p}`, `${PREF}:\n${p}`];
+  it('NEGADA: `rrQuitarPromesaDeOpciones` quita las 25 promesas en las 4 formas de salto y conserva la frase buena', () => {
+    for (const p of VIEJAS_25) for (const f of formas(p)) {
+      const r = rr('rrQuitarPromesaDeOpciones')(f) as string;
+      expect(r, f).toContain('el libro ayuda mucho');
+      for (const linea of r.split('\n')) expect(rr('rrPrometeOpciones')(linea), `${f} -> ${r}`).toBe(false);
+    }
+  });
+  it('NEGADA de punta a punta (compuerta cerrada, modo charla y antes): ninguna llega al cliente', () => {
+    for (const p of VIEJAS_25) {
+      const base = rr('rrNorm')(p).trim();
+      for (const f of [`${PREF} 😊\n${p}`, `${PREF}:\n${p}`, p]) {
+        const a = crear();
+        hablar(a, ANA, mTexto('hola'));
+        modelo(a, gemini(f));
+        const m = unico(hablar(a, ANA, mTexto('vendo ropa por whatsapp')));
+        expect(rr('rrNorm')(m.cuerpo), `${f}`).not.toContain(base);
+      }
+    }
+    const c = crear();
+    unico(hablar(c, ANA, mTexto('¿eres un bot?')));
+    modelo(c, gemini('Qué bueno que vendes ropa 😊\nAhí van los precios 👇'));
+    const an = unico(hablar(c, ANA, mTexto('vendo ropa por whatsapp')));
+    expect(an.cuerpo).not.toMatch(/Ahí van los precios/);
+  });
+  it('NEGADA: los objetos y marcadores ampliados detectan las 32 frases nuevas y no las 26 legítimas', () => {
+    for (const p of NUEVAS_32) expect(rr('rrPrometeOpciones')(p), p).toBe(true);
+    for (const l of LEGITIMAS_26) expect(rr('rrPrometeOpciones')(l), l).toBe(false);
+  });
+});
+
+describe('SEGURIDAD (4.ª pasada) · el eco de los nombres de modo y el título de sección se quita', () => {
+  const T = 'Para vender ropa el capítulo 7 te ayuda mucho.';
+  const ECOS_MODO = ['MODO DEL TURNO: CHARLA\n' + T, 'CHARLA_ANTES_DE_OPCIONES\n' + T, 'MODO: CHARLA\n' + T, 'TURNO: CHARLA\n' + T, 'M0D0_TURN0: CHARLA\n' + T, '[[MODO_TURNO: CHARLA]] ' + T,
+    '[MODO_TURNO: CHARLA ' + T, 'MODO_TURNO: PUENTE\n' + T];
+  it('NEGADA: cada forma deja solo el texto útil', () => {
+    for (const e of ECOS_MODO) expect(rr('rrQuitarEcoDeMarcador')(e), e).toBe(e.includes('[MODO_TURNO: CHARLA ') ? '' : T);
+  });
+  it('de punta a punta ninguna llega al cliente', () => {
+    for (const e of ECOS_MODO.filter((x) => !x.includes('[MODO_TURNO: CHARLA '))) {
+      const w = crear();
+      hablar(w, ANA, mTexto('hola'));
+      modelo(w, gemini(e));
+      const m = unico(hablar(w, ANA, mTexto('vendo ropa por whatsapp')));
+      expect(m.cuerpo, e).toContain('el capítulo 7 te ayuda mucho');
+      expect(m.cuerpo.replace(/[^a-zA-Z]/g, '').toLowerCase(), e).not.toMatch(/modoturno|charlaantes|mododelturno|turnocharla/);
+    }
+  });
+});
+
