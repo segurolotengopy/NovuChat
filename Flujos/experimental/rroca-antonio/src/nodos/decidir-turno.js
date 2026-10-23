@@ -128,7 +128,19 @@ if (esVisual) {
     // Un comprobante sin cobro abierto: no se coteja nada; lo ve Antonio.
     return salir({ tipo: 'derivar', motivo: 'comprobante_sin_cobro', clave: 'comprobante_sin_cobro', aviso: avisoDeConsulta('comprobante_sin_cobro', 'recibió una imagen que parece un comprobante, pero no hay un QR abierto'), cat: cat });
   }
-  if (categoriaMedio !== 'publicidad') return salir({ tipo: 'imagen_otra', documento: t.esDocumento === true, cat: cat });
+  // La captura de un pago rechazado, pendiente o con error: nunca se coteja ni se afirma qué pasó con el dinero. Lo ve Antonio: aviso con ese motivo (a lo más uno cada 30 minutos por teléfono) y el botón.
+  if (categoriaMedio === 'pago_con_problema') {
+    return salir({ tipo: 'derivar', motivo: 'pago_con_problema', clave: 'pago_con_problema', aviso: { tipo: 'consulta', clave: 'pago_con_problema', motivo: 'envió la captura de un pago que parece no haberse completado', mensaje: '' }, cat: cat });
+  }
+  // Foto, captura de pantalla, «otro» (y la categoría inventada, que ya cayó en «otro») y una publicidad cuyo ángulo no se reconoce: el asistente dice lo que ve (descripción ya saneada por «Preparar imagen»; en una publicidad,
+  // una frase fija del código) y ofrece el libro y los precios. Una publicidad con ángulo conocido sigue más abajo (apertura del ángulo).
+  if (categoriaMedio !== 'publicidad' || raAngulo(raNorm(leido)) === '') {
+    // Segunda barrera sobre la descripción: si traía un enlace, un correo, una cifra larga, un dominio o un delimitador, el módulo común lo quitó y quedaría una frase mutilada («Veo escribe a»): se descarta ENTERA.
+    const cruda = String(jsonImagen.descripcion || '');
+    const mutilada = /https?:|www\.|@|\d[\d\s.\-\/,]{3,}\d|\b\S+\.(?:com|net|org|bo|io|app|me|link|ly)\b|[\[\]{}<>«»"'`*_\\|#]/i.test(cruda);
+    const descripcion = categoriaMedio === 'publicidad' ? 'una imagen publicitaria' : (mutilada ? '' : String(prep.descripcionMedio || ''));
+    return salir({ tipo: 'imagen_descrita', documento: t.esDocumento === true, descripcion: descripcion, cat: cat });
+  }
   // Una captura de anuncio: se reconoce el ángulo por el texto leído; sin ángulo, se sigue como una charla.
 }
 
