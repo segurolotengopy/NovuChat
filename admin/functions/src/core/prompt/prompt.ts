@@ -224,38 +224,81 @@ export function vozFija(config: Record<string, unknown>): {
  * la duda, el trato que no presume jerarquía.
  */
 export type TratamientoClave = 'tu' | 'usted';
+const TRATAMIENTOS_VALIDOS = ['usted', 'tu', 'vos', 'neutro'] as const;
+
+/**
+ * EL TRATAMIENTO EFECTIVO: un valor del enumerado, o 'tu' si falta o no se
+ * conoce (decisión de Andres: texto común «tu neutro, sin voseo»). La frase
+ * (`voz.tratamiento`) y la clave (`voz.tratamientoClave`) salen del MISMO
+ * valor, así que no se contradicen cuando el campo falta.
+ */
+export function tratamientoEfectivo(config: Record<string, unknown>): string {
+  const t = config['tratamiento'];
+  return (TRATAMIENTOS_VALIDOS as readonly unknown[]).includes(t) ? t as string : 'tu';
+}
 export function tratamientoClave(config: Record<string, unknown>): TratamientoClave {
-  return config['tratamiento'] === 'usted' ? 'usted' : 'tu';
+  return tratamientoEfectivo(config) === 'usted' ? 'usted' : 'tu';
 }
 
 /** Tope del nombre de quien atiende (igual que la regla de Firestore). */
 export const TOPE_QUIEN_ATIENDE = 60;
 
 /**
- * ¿Es válido el «nombre de quien atiende»? Es TEXTO QUE LLEGA A CLIENTES FINALES
- * dentro de frases fijas («Rubén te responde…»), así que se valida por
- * patrones deterministas, los mismos que la regla de `config/negocio` (dos
- * barreras: la regla frena el guardado, esto frena un documento escrito por
- * otro camino, p. ej. un script con el SDK Admin):
- *  - hasta 60 caracteres, una línea, sin controles, marcas bidi ni cero ancho;
- *  - sin enlaces, correos ni dígitos largos (6 o más seguidos);
- *  - sin lo que prohíben las prohibiciones 3 y 4 de CLAUDE.md: hacerse pasar
- *    por el banco, afirmar un pago o negar ser una IA.
- * Devuelve el motivo del rechazo, o `null` si es válido (vacío es válido).
+ * FUENTE ÚNICA DE PATRONES de «nombre de quien atiende». Las mismas cadenas
+ * están, caracter por caracter, en `firestore.rules` y en
+ * `web/src/central/lib/payloadNegocio.ts`; `pruebas/core/voz-quien-atiende.test.ts`
+ * lee los tres archivos y exige que coincidan.
+ *
+ * LISTA DE PERMITIDOS, no de prohibidos: solo letras latinas (con acentos y
+ * eñe), dígitos, espacio y `.,&()-`. Eso elimina de una vez invisibles (guion
+ * suave, etiquetas U+E00xx, selectores de variación, U+061C), homoglifos
+ * cirílicos y griegos, ancho completo, emoji, controles y marcas bidi. El
+ * vocabulario se busca encima, sobre un texto que ya solo tiene caracteres
+ * conocidos. Es TEXTO QUE LLEGA A CLIENTES FINALES: prohibiciones 3 y 4 de
+ * CLAUDE.md (no hacerse pasar por el banco, no afirmar un pago, no negar ser IA).
  */
-const RE_QUIEN_CARACTERES = /[\u0000-\u001F\u007F-\u009F\u2028\u2029\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF<>[\]{}]/;
-const RE_QUIEN_ENLACE = /:\/\/|www\.|@|\.(com|net|org|bo|me|app|io|gl|ly)\b|wa\.me|t\.me/i;
-const RE_QUIEN_DIGITOS = /[0-9]{6,}/;
-const RE_QUIEN_PROHIBIDO =
-  /\b(banco|bancos|bancaria|bancario|pago|pagos|pagado|acreditad[oa]s?|acreditaci[oó]n|verificad[oa]s?|comprobante|recibimos|bot|bots|robot|chatbot|humano|humana|persona real)\b|no soy (un|una)\b|\b(ia|ai)\b/i;
+export const QUIEN_RE_CARACTERES = '^[A-Za-zÀ-ÖØ-öø-ÿ0-9 .,&()-]{0,60}$';
+export const QUIEN_RE_VOCABULARIO =
+  'banc|pag[oóu]|dep[oó]sit|transferenc|tesorer|acreditad|verificad|comprobante|recibimos'
+  + '|\\bbots?\\b|robot|humano|persona real|persona de verdad|soy una persona|\\bi[.]?a\\b|\\ba[.]?i\\b'
+  + '|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][ .-]?){6,}'
+  + '|\\b(bnb|bcp|fie|asfi|sin|jefe)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money'
+  + '|impuestos nacionales|polic[ií]a|sistema|tu jefe|ya pag';
+const RE_CARACTERES = new RegExp(QUIEN_RE_CARACTERES);
+const RE_VOCABULARIO = new RegExp(QUIEN_RE_VOCABULARIO, 'i');
+
+/**
+ * Solo del servidor (la regla de Firestore no puede normalizar): NFKC, minúsculas,
+ * sin diacríticos, cifras parecidas a letras (4->a, 3->e, 1->i, 0->o, 5->s,
+ * 7->t, @->a, $->s) y sin ningún separador, para ver «B A N C O», «b.a.n.c.o»
+ * o «b4nco».
+ */
+const COMPACTO_PROHIBIDO = [
+  'banc', 'pago', 'pagu', 'deposit', 'transferenc', 'tesorer', 'acreditad', 'verificad',
+  'comprobante', 'recibimos', 'robot', 'chatbot', 'humano', 'personareal', 'personadeverdad',
+  'unapersona', 'mercantil', 'ganadero', 'economico', 'fassil', 'tigomoney',
+  'impuestosnacionales', 'policia', 'sistema', 'tujefe', 'yapag',
+];
+export function compactarQuien(texto: string): string {
+  return texto.normalize('NFKC').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[4]/g, 'a').replace(/3/g, 'e').replace(/1/g, 'i').replace(/0/g, 'o')
+    .replace(/5/g, 's').replace(/7/g, 't').replace(/@/g, 'a').replace(/\$/g, 's')
+    .replace(/[^a-z]/g, '');
+}
+
+/**
+ * ¿Es válido el «nombre de quien atiende»? Devuelve el motivo del rechazo, o
+ * `null` si es válido (vacío es válido). El servidor es AL MENOS tan estricto
+ * como la regla: aplica los mismos patrones y además la forma compacta.
+ */
 export function motivoQuienAtiendeInvalido(valor: unknown): string | null {
   if (valor === undefined || valor === null || valor === '') return null;
   if (typeof valor !== 'string') return 'no es texto';
   if (Array.from(valor).length > TOPE_QUIEN_ATIENDE) return `supera los ${TOPE_QUIEN_ATIENDE} caracteres`;
-  if (RE_QUIEN_CARACTERES.test(valor)) return 'tiene caracteres no permitidos';
-  if (RE_QUIEN_ENLACE.test(valor)) return 'no puede llevar enlaces ni correos';
-  if (RE_QUIEN_DIGITOS.test(valor)) return 'no puede llevar números largos';
-  if (RE_QUIEN_PROHIBIDO.test(valor)) return 'no puede hablar de bancos, pagos ni de ser o no una IA';
+  if (!RE_CARACTERES.test(valor)) return 'solo admite letras, números, espacios y . , & ( ) -';
+  if (RE_VOCABULARIO.test(valor)) return 'no puede llevar enlaces, números largos ni hablar de bancos, pagos o de ser o no una IA';
+  const compacto = compactarQuien(valor);
+  if (COMPACTO_PROHIBIDO.some((t) => compacto.includes(t))) return 'no puede hablar de bancos, pagos o instituciones';
   return null;
 }
 

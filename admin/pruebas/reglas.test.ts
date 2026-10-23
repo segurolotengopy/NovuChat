@@ -21,6 +21,7 @@
  * que se aplica es siempre la de la segunda pasada, y las 42 aserciones de esta
  * suite verifican justamente esa decisión final.
  */
+import { ARNES_REGLA } from './lib/quien-atiende-arnes.ts';
 import {
   assertFails,
   assertSucceeds,
@@ -3625,7 +3626,7 @@ describe('Nombre de quien atiende (config/negocio)', () => {
     await assertSucceeds(setDoc(doc(adminA(), ruta), configValida('u-admin-a')));
   });
 
-  it('61 caracteres, algo que no es texto, salto, control, bidi o cero ancho, no', async () => {
+  it('61 caracteres, algo que no es texto, salto, control, <>[]{}, no', async () => {
     await assertFails(con('x'.repeat(61)));
     await assertFails(con(7));
     await assertFails(con(['Rubén']));
@@ -3633,31 +3634,18 @@ describe('Nombre de quien atiende (config/negocio)', () => {
     await assertFails(con('Ru\u0000bén'));
     await assertFails(con('Ru\u202Ebén'));
     await assertFails(con('Ru\u200Bbén'));
-    await assertFails(con('Ru\u2066bén'));
     await assertFails(con('Ru<bén>'));
   });
 
-  it('enlaces, correos y dígitos largos, no', async () => {
-    await assertFails(con('https://malo.example/x'));
-    await assertFails(con('www.malo.bo'));
-    await assertFails(con('escribe a ruben' + '@' + 'malo.bo'));
-    await assertFails(con('malo.com'));
-    await assertFails(con('wa.me/591'));
-    await assertFails(con('Rubén 7000001'));
-    await assertSucceeds(con('Rubén 123'));
+  it('el arnés del revisor: invisibles, homoglifos, bancos, pagos, teléfonos, enlaces, IA', async () => {
+    for (const [, valor] of ARNES_REGLA) await assertFails(con(valor));
   });
 
-  it('afirmar un pago, hablar del banco o negar ser una IA, no', async () => {
-    await assertFails(con('pago acreditado'));
-    await assertFails(con('Pago Acreditado'));
-    await assertFails(con('el banco'));
-    await assertFails(con('Banco Union'));
-    await assertFails(con('no soy un bot'));
-    await assertFails(con('No soy una IA'));
-    await assertFails(con('soy humano'));
-    await assertFails(con('Robot'));
-    await assertFails(con('pago verificado'));
-    await assertFails(con('recibimos tu pago'));
+  it('nombres legítimos con acentos, eñe, puntos y 3 dígitos pasan', async () => {
+    await assertSucceeds(con('Rubén Núñez'));
+    await assertSucceeds(con('María José (recepción)'));
+    await assertSucceeds(con('Clínica Sofía & Equipo'));
+    await assertSucceeds(con('Turno 123'));
   });
 
   it('el operador no lo escribe y el admin de B no escribe el de A', async () => {

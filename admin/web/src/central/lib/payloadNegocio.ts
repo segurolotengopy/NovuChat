@@ -92,19 +92,47 @@ export function datosDeNegocio(v: Record<string, unknown>): Record<string, strin
 /**
  * Validación en el navegador de «Nombre de quien atiende». Es ayuda para decir
  * POR QUÉ; la autoridad es la regla de Firestore (y `quienAtiende` en el
- * servidor). Devuelve el motivo, o `null` si es válido (vacío es válido).
+ * servidor). Las cadenas son las MISMAS de `firestore.rules` y de prompt.ts
+ * (`voz-quien-atiende.test.ts` las compara). Lista de permitidos + vocabulario.
  */
-const RE_QUIEN_CARACTERES = /[\u0000-\u001F\u007F-\u009F\u2028\u2029\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF<>[\]{}]/;
-const RE_QUIEN_ENLACE = /:\/\/|www\.|@|wa\.me|t\.me|\.(com|net|org|bo|me|app|io|gl|ly)\b|[0-9]{6}/i;
-const RE_QUIEN_PROHIBIDO =
-  /\b(banco|bancos|bancaria|bancario|pago|pagos|pagado|comprobante|recibimos|bot|bots|robot|chatbot|humano|humana|ia|ai)\b|acreditad|acreditaci|verificad|persona real|no soy (un|una)\b/i;
 export const TOPE_QUIEN_ATIENDE = 60;
+export const QUIEN_RE_CARACTERES = '^[A-Za-zÀ-ÖØ-öø-ÿ0-9 .,&()-]{0,60}$';
+export const QUIEN_RE_VOCABULARIO =
+  'banc|pag[oóu]|dep[oó]sit|transferenc|tesorer|acreditad|verificad|comprobante|recibimos'
+  + '|\\bbots?\\b|robot|humano|persona real|persona de verdad|soy una persona|\\bi[.]?a\\b|\\ba[.]?i\\b'
+  + '|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][ .-]?){6,}'
+  + '|\\b(bnb|bcp|fie|asfi|sin|jefe)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money'
+  + '|impuestos nacionales|polic[ií]a|sistema|tu jefe|ya pag';
+const RE_CARACTERES = new RegExp(QUIEN_RE_CARACTERES);
+const RE_VOCABULARIO = new RegExp(QUIEN_RE_VOCABULARIO, 'i');
+const COMPACTO_PROHIBIDO = [
+  'banc', 'pago', 'pagu', 'deposit', 'transferenc', 'tesorer', 'acreditad', 'verificad',
+  'comprobante', 'recibimos', 'robot', 'chatbot', 'humano', 'personareal', 'personadeverdad',
+  'unapersona', 'mercantil', 'ganadero', 'economico', 'fassil', 'tigomoney',
+  'impuestosnacionales', 'policia', 'sistema', 'tujefe', 'yapag',
+];
+export function compactarQuien(texto: string): string {
+  return texto.normalize('NFKC').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[4]/g, 'a').replace(/3/g, 'e').replace(/1/g, 'i').replace(/0/g, 'o')
+    .replace(/5/g, 's').replace(/7/g, 't').replace(/@/g, 'a').replace(/\$/g, 's')
+    .replace(/[^a-z]/g, '');
+}
+
+
 export function errorQuienAtiende(valor: string): string | null {
+  if (valor === '') return null;
   if (Array.from(valor).length > TOPE_QUIEN_ATIENDE) {
     return `El nombre de quien atiende puede tener hasta ${TOPE_QUIEN_ATIENDE} caracteres.`;
   }
-  if (RE_QUIEN_CARACTERES.test(valor)) return 'El nombre de quien atiende tiene caracteres no permitidos.';
-  if (RE_QUIEN_ENLACE.test(valor)) return 'El nombre de quien atiende no puede llevar enlaces, correos ni números largos.';
-  if (RE_QUIEN_PROHIBIDO.test(valor)) return 'El nombre de quien atiende no puede hablar de bancos, pagos ni de ser o no una inteligencia artificial.';
+  if (!RE_CARACTERES.test(valor)) {
+    return 'El nombre de quien atiende solo admite letras, números, espacios y . , & ( ) -';
+  }
+  if (RE_VOCABULARIO.test(valor)) {
+    return 'El nombre de quien atiende no puede llevar enlaces ni números largos, ni hablar de bancos, pagos o de ser o no una inteligencia artificial.';
+  }
+  const compacto = compactarQuien(valor);
+  if (COMPACTO_PROHIBIDO.some((t) => compacto.includes(t))) {
+    return 'El nombre de quien atiende no puede hablar de bancos, pagos o instituciones.';
+  }
   return null;
 }

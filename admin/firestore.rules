@@ -951,17 +951,19 @@ service cloud.firestore {
             // NOMBRE DE QUIEN ATIENDE (`nombreQuienAtiende`, 23/10/2026). Opcional,
             // hasta 60 caracteres. Es TEXTO QUE LLEGA A CLIENTES FINALES dentro de
             // frases fijas del código: la regla es la primera barrera (el servidor,
-            // `quienAtiende` en prompt.ts, la segunda). Una línea y sin controles,
-            // marcas bidi ni cero ancho (la primera `matches`, que también topea
-            // el largo); sin enlaces, correos ni dígitos largos, y sin vocabulario
-            // de banco, pago o de ser/no ser una IA (prohibiciones 3 y 4 de
-            // CLAUDE.md). Ausente pasa, vacío pasa: los textos usan «nuestro
+            // `quienAtiende` en prompt.ts, la segunda). LISTA DE PERMITIDOS: la
+            // primera `matches` solo deja letras latinas, dígitos, espacio y
+            // `.,&()-` (y topea el largo), lo que elimina invisibles, homoglifos,
+            // ancho completo y emoji; la segunda busca el vocabulario prohibido
+            // (banco, pago, enlaces, números largos, ser/no ser una IA; prohibiciones
+            // 3 y 4 de CLAUDE.md). Las mismas cadenas están en prompt.ts y en
+            // payloadNegocio.ts (`voz-quien-atiende.test.ts` las compara). Ausente pasa, vacío pasa: los textos usan «nuestro
             // equipo». Va EN LÍNEA y sin `let` a propósito: el documento completo
             // de la consola tiene un piso de holgura (`reglas-presupuesto.test.ts`)
             // y el campo ausente cuesta solo `in`, `!` y `||`.
             && (!('nombreQuienAtiende' in d)
-                || (d.nombreQuienAtiende.matches('^[^\\x00-\\x1F\\x7F-\\x9F\\x{2028}\\x{2029}\\x{200B}-\\x{200F}\\x{202A}-\\x{202E}\\x{2060}-\\x{2069}\\x{FEFF}<>\\[\\]{}]{0,60}$')
-                    && !d.nombreQuienAtiende.matches('(?is).*(://|www[.]|@|wa[.]me|t[.]me|[.](com|net|org|bo|me|app|io|gl|ly)\\b|[0-9]{6}|\\b(banco|bancos|bancaria|bancario|pago|pagos|pagado|comprobante|recibimos|bot|bots|robot|chatbot|humano|humana|ia|ai)\\b|acreditad|acreditaci|verificad|persona real|no soy (un|una)\\b).*')))
+                || (d.nombreQuienAtiende.matches('^[A-Za-zÀ-ÖØ-öø-ÿ0-9 .,&()-]{0,60}$')
+                    && !d.nombreQuienAtiende.matches('(?is).*(banc|pag[oóu]|dep[oó]sit|transferenc|tesorer|acreditad|verificad|comprobante|recibimos|\\bbots?\\b|robot|humano|persona real|persona de verdad|soy una persona|\\bi[.]?a\\b|\\ba[.]?i\\b|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][ .-]?){6,}|\\b(bnb|bcp|fie|asfi|sin|jefe)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money|impuestos nacionales|polic[ií]a|sistema|tu jefe|ya pag).*')))
 
 
             && d.get('mensajes', {}) is map
