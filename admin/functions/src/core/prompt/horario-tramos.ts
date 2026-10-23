@@ -104,6 +104,9 @@ export function horariosSaneados(horarios: unknown): Record<string, unknown> {
   if (typeof horarios !== 'object' || horarios === null) return {};
   const salida: Record<string, unknown> = {};
   for (const [dia, valor] of Object.entries(horarios as Record<string, unknown>)) {
+    // `__proto__` como clave propia (un JSON lo permite) cambiaría el prototipo de
+    // `salida` en vez de crear una clave: se descarta, no es un día.
+    if (dia === '__proto__') continue;
     const tramos = tramosNormalizados(valor);
     if (tramos === null) { salida[dia] = valor; continue; }
     salida[dia] = tramos.length === 0 ? 'cerrado' : tramos.map((t) => `${t.abre}-${t.cierra}`).join(',');
@@ -114,4 +117,63 @@ export function horariosSaneados(horarios: unknown): Record<string, unknown> {
 /** `09:00-12:00,14:00-18:00` → `de 09:00 a 12:00 y de 14:00 a 18:00`. */
 export function tramosEnPalabras(tramos: Tramo[]): string {
   return tramos.map((t) => `de ${t.abre} a ${t.cierra}`).join(' y ');
+}
+
+const DIAS_FLUJO = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'] as const;
+/**
+ * Un tramo tal como lo LEE el candado de los flujos (`tramosDelDia` de
+ * `comprobar-reserva.js`): horas de uno o dos dígitos, separador `-`, `–` o `a`,
+ * con espacios opcionales. Lo que el flujo acepta aquí se conserva (normalizado a
+ * `HH:MM`) para no cerrarle la agenda a quien hoy funciona.
+ */
+const TRAMO_FLEXIBLE = /^(\d{1,2}):(\d{2})\s*[-\u2013a]\s*(\d{1,2}):(\d{2})$/;
+const aMin = (h: string, m: string): number | null => {
+  const hh = Number(h); const mm = Number(m);
+  return hh <= 24 && mm < 60 && (hh < 24 || mm === 0) ? hh * 60 + mm : null;
+};
+const hhmm = (min: number): string => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+
+/**
+ * El horario de un funcionario tal como debe llegar a los FLUJOS: FALLA CERRADO.
+ *
+ * POR QUÉ. El candado de horario (`fueraDeHorario`) toma un día ilegible como
+ * «no se puede juzgar» y deja pasar la cita (falla abierta a propósito para no
+ * deshacer citas buenas por una configuración incompleta). Pero la regla de
+ * Firestore solo exige que `horarioTrabajo` sea un mapa: un día con texto ilegible
+ * («x», «9 a 5», «09:00-») llegaba intacto y se podía agendar fuera de horario.
+ * Aquí, para lo que va a los flujos, todo día NO vacío que no sea `cerrado`, un
+ * rango legible o varios tramos legibles pasa a `cerrado`. Un día vacío o ausente
+ * se deja vacío (sin dato: el comportamiento de siempre). Solo recorre `lun…dom`.
+ *
+ * NO se usa para `horarioAtencion` (el texto que lee el cliente): ahí «solo con
+ * cita previa» es un texto legítimo.
+ */
+export function horarioParaFlujos(horarios: unknown): Record<string, unknown> {
+  const base = horariosSaneados(horarios);
+  const salida: Record<string, unknown> = {};
+  for (const dia of DIAS_FLUJO) {
+    if (!Object.prototype.hasOwnProperty.call(base, dia)) continue;
+    const valor = base[dia];
+    if (valor === undefined || valor === null) continue;
+    if (typeof valor !== 'string') { salida[dia] = 'cerrado'; continue; }
+    const t = valor.trim();
+    if (t === '') { salida[dia] = valor; continue; }
+    if (/^cerrad[oa]s?$/i.test(t)) { salida[dia] = 'cerrado'; continue; }
+    const validos: Tramo[] = [];
+    for (const parte of t.split(/[,;]/)) {
+      const m = TRAMO_FLEXIBLE.exec(parte.trim());
+      if (!m) continue;
+      const i = aMin(m[1] as string, m[2] as string);
+      const f = aMin(m[3] as string, m[4] as string);
+      if (i !== null && f !== null && f > i) validos.push({ abre: hhmm(i), cierra: hhmm(f) });
+    }
+    validos.sort((a, b) => (a.abre < b.abre ? -1 : a.abre > b.abre ? 1 : 0));
+    const unidos: Tramo[] = [];
+    for (const x of validos) {
+      const u = unidos[unidos.length - 1];
+      if (u && x.abre <= u.cierra) { if (x.cierra > u.cierra) u.cierra = x.cierra; } else unidos.push({ ...x });
+    }
+    salida[dia] = unidos.length === 0 ? 'cerrado' : unidos.map((x) => `${x.abre}-${x.cierra}`).join(',');
+  }
+  return salida;
 }
