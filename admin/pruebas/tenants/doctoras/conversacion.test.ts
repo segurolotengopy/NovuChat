@@ -168,7 +168,7 @@ describe('cada intención responde SU texto fijo, sin modelo', () => {
   });
 
   it('el horario: la doctora que NO lo tiene (marcador) no dice ninguno; con horario en el dato, lo dice', () => {
-    const sin = saludada();
+    const sin = saludada({ base: { doctora: JSON.stringify({ ...DOC, horario: 'REEMPLAZAR_HORARIO' }) } });
     const a = hablar(sin, ANA, mTexto('¿qué horarios tienen?'));
     expect(a.mensajes[0]!.cuerpo).toMatch(/lo confirma la recepción/);
     expect(a.mensajes[0]!.cuerpo).not.toMatch(/lunes|\d{1,2}:\d{2}|\bde \d+ a \d+/i);
@@ -220,7 +220,7 @@ describe('la solicitud de valoración: consentimiento, datos y aviso a recepció
     expect(c.mensajes[0]!.cuerpo).toMatch(/Mucho gusto, María López/);
     expect(ids(c.mensajes[0]!)).toEqual(['n_este', 'n_otro']);
     const h = hablar(w, ANA, mBoton('n_este'));
-    expect(textos(h)[0]).toBe(T('pedir_horario'));
+    expect(textos(h)[0]).toBe(T('pedir_horario_con'));
     const fin = hablar(w, ANA, mTexto('el jueves en la tarde'));
     expect(fin.avisos).toHaveLength(1);
     expect(fin.avisos[0]!.a).toBe(REC);
@@ -243,7 +243,7 @@ describe('la solicitud de valoración: consentimiento, datos y aviso a recepció
     hablar(w, ANA, mBoton('a_agendar')); hablar(w, ANA, mBoton('c_si1')); hablar(w, ANA, mTexto('Ana'));
     expect(textos(hablar(w, ANA, mBoton('n_otro')))[0]).toBe(T('pedir_otro_numero'));
     expect(textos(hablar(w, ANA, mTexto('no sé')))[0]).toBe(T('pedir_otro_numero'));
-    expect(textos(hablar(w, ANA, mTexto('+591 00000077')))[0]).toBe(T('pedir_horario'));
+    expect(textos(hablar(w, ANA, mTexto('+591 00000077')))[0]).toBe(T('pedir_horario_con'));
     const fin = hablar(w, ANA, mTexto('mañana'));
     expect(JSON.stringify(fin.avisos[0]!.payload)).toContain('+59100000077');
   });

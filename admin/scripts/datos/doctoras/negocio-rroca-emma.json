@@ -1,7 +1,7 @@
 {
   "_fuente": "Datos del negocio de la Dra. Emma (tenant rroca-emma, flujo Flujos/experimental/doctoras/). Se carga con admin/scripts/datos/cargar-negocio.mjs, que solo admite las secciones negocio, agendamiento, catalogo y funcionarios: aquí va solo negocio (la recepción agenda y la valoración es gratuita: no hay catálogo, agenda ni cobro). Las claves que empiezan con `_` son notas y no se escriben.",
   "_pendiente": {
-    "_nota": "El horario de Emma (L–V 9:00–12:00 y 14:00–18:00, sáb 9:00–12:00) es de turno partido y el contrato de `negocio.horarios` admite UN rango por día: no se carga en la consola; el flujo lo dice desde su dato `doctora.horario`. El Excel trae además otro horario (9:30–19:00): confirmar con la doctora. El número de recepción es un marcador de la tabla local (CONFIGURACION.local.md); el número real no va en el repositorio."
+    "_nota": "El horario de Emma (L–V 9:00–12:00 y 14:00–18:00, sáb 9:00–12:00; domingo cerrado) está confirmado por Andres (22/10/2026). Es de turno partido y el contrato de `negocio.horarios` admite UN rango por día: no se carga en la consola; el flujo lo dice desde su dato `doctora.horario`. El número de recepción es un marcador de la tabla local (CONFIGURACION.local.md); el número real no va en el repositorio."
   },
   "negocio": {
     "nombreNegocio": "Dra. Emma — Emma Spa Medic",
