@@ -2933,7 +2933,7 @@ describe('Agenda mínima: pregunta de salud y medios con pie de foto', () => {
   it('NIEGA: una emergencia gana sobre la consulta clínica', () => {
     const t = mundo({ eventos: [] }).turno(texto(MAMA, 'tiene fiebre y convulsiona'));
     expect(textos(t)).not.toMatch(/no puedo orientarte sobre salud/);
-    expect(JSON.stringify(t.enviados)).toMatch(/EMERGENCIA|AHORA/);
+    expect(JSON.stringify(t.aPaciente(MAMA))).toMatch(/AHORA/);
   });
   it('NIEGA: un apellido como «Dolores» al pedir el nombre no es una consulta de salud', () => {
     const m = mundo({ eventos: [] });
@@ -2941,6 +2941,46 @@ describe('Agenda mínima: pregunta de salud y medios con pie de foto', () => {
     m.gemini.extraer = extraccion({ pacientes: ['Dolores Pérez Gómez'] });
     const t = m.turno(texto(MAMA, 'Dolores Pérez Gómez'));
     expect(textos(t)).not.toMatch(/no puedo orientarte sobre salud/);
+  });
+  it('NIEGA: las palabras se buscan ENTERAS: «tostadas», «Dolores» sola, «medicina general» y «¿qué hago para llegar?» no son consultas de salud', () => {
+    for (const q of ['tienen tostadas', 'me llamo Dolores', '¿atienden medicina general?', '¿qué hago para llegar?', 'quiero hablar con alguien']) {
+      const t = mundo({ eventos: [] }).turno(texto(MAMA, q));
+      expect(textos(t), q).not.toMatch(/no puedo orientarte sobre salud/);
+    }
+  });
+  it('«calentura» (como se dice fiebre en Bolivia), «cómo controlo la fiebre» y «¿se golpeó?» SÍ pasan con recepción', () => {
+    for (const q of ['mi bebé tiene calentura', 'cómo controlo la fiebre', 'se golpeó la cabeza ¿qué le hago?', 'tiene ronchas en la piel']) {
+      const t = mundo({ eventos: [] }).turno(texto(MAMA, q));
+      expect(textos(t), q).toMatch(/no puedo orientarte sobre salud/);
+      expect(t.extraer, q).toHaveLength(0);
+    }
+  });
+  it('con una oferta de horarios pendiente, una pregunta de salud también pasa con recepción (no sigue al modelo)', () => {
+    const m = mundo({ eventos: [] });
+    m.turno(texto(MAMA, 'quiero cita el jueves en la tarde'));
+    m.gemini.extraer = extraccion({ servicio: SERV_CNS, fechaPreferida: JUEVES, franja: 'tarde' });
+    m.turno(lista(MAMA, SERV_CNS, 'Servicio'));
+    const t = m.turno(texto(MAMA, 'mi hijo tiene fiebre ¿qué le doy?'));
+    expect(textos(t)).toMatch(/no puedo orientarte sobre salud/);
+    expect(t.extraer).toHaveLength(0);
+  });
+  it('por pie de foto y por audio transcrito se trata igual que por texto', () => {
+    const porPie = mundo({ eventos: [] }).turno(conPie(MAMA, 'image', 'tiene ronchas en la espalda'));
+    expect(textos(porPie)).toMatch(/no puedo orientarte sobre salud/);
+    const m = mundo({ eventos: [] });
+    m.gemini.transcripcion = 'mi hijo tiene calentura y vomita';
+    expect(textos(m.turno(audio(MAMA)))).toMatch(/no puedo orientarte sobre salud/);
+  });
+  it('la emergencia por pie de foto sigue siendo emergencia aunque la imagen ya no se baje', () => {
+    const t = mundo({ eventos: [] }).turno(conPie(MAMA, 'image', 'emergencia, no respira'));
+    expect(t.ejecutados.has('Describir imagen')).toBe(false);
+    expect(textos(t)).not.toMatch(/no puedo orientarte sobre salud/);
+    expect(JSON.stringify(t.aPaciente(MAMA))).toMatch(/AHORA/);
+  });
+  it('la lista de «Config base» reemplaza a la de código: con otra lista, «fiebre» ya no deriva y la palabra nueva sí', () => {
+    const conLista = { configBase: { palabrasClaveClinicas: 'ictericia' } };
+    expect(textos(mundo({ eventos: [], ...conLista }).turno(texto(MAMA, 'tiene fiebre')))).not.toMatch(/no puedo orientarte sobre salud/);
+    expect(textos(mundo({ eventos: [], ...conLista }).turno(texto(MAMA, 'tiene ictericia')))).toMatch(/no puedo orientarte sobre salud/);
   });
   it('NIEGA: una pregunta común («¿cuánto cuesta?», «¿dónde queda?») no se toma por consulta de salud', () => {
     for (const q of ['¿cuánto cuesta?', '¿dónde queda?', 'hola']) {

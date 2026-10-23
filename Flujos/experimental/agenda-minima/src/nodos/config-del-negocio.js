@@ -48,8 +48,8 @@ const RESPALDO = {
   palabrasClaveDoctor: 'vacuna|vacunas|vacunar|vacunacion|vacunación|crema|cremas|consulta virtual|consultas virtuales|virtual|virtuales|videollamada|video llamada|en linea|en línea|online|a distancia',
   palabrasClaveRecepcion: '',
   // Preguntas de SALUD («¿si tiene fiebre qué hago?»): el asistente no orienta; ofrece pasar con recepción (aviso + botón). Solo
-  // se miran al comienzo de la conversación (paso `inicio` o `menu`) y si el mensaje NO pide una cita. La emergencia gana siempre.
-  palabrasClaveClinicas: 'fiebre|febril|temperatura|vomito|vomitos|vomita|diarrea|tos|resfrio|resfriado|gripe|congestion|moco|sarpullido|erupcion|ronchas|granitos|manchas|alergia|dolor|me duele|le duele|le duelen|medicamento|medicina|dosis|jarabe|antibiotico|paracetamol|ibuprofeno|que hago|que le doy|puedo darle|infeccion|garganta|oido|deshidrat|respira mal',
+  // se miran en cualquier paso salvo cuando se espera un nombre, y si el mensaje NO pide una cita. La emergencia gana siempre.
+  palabrasClaveClinicas: 'fiebre|febril|calentura|vomito|vomitos|vomita|vomitando|diarrea|tos|resfrio|resfriado|gripe|congestion|moco|mocos|sarpullido|erupcion|ronchas|granitos|manchas|alergia|dolor|duele|duelen|me duele|le duele|le duelen|medicamento|medicamentos|dosis|jarabe|antibiotico|paracetamol|ibuprofeno|que le doy|que le puedo dar|puedo darle|infeccion|garganta|oido|oidos|deshidratado|deshidratacion|respira mal|respira rapido|colico|colicos|sangra|sangrado|golpe|se golpeo|se cayo|quemadura|picadura|intoxicacion|ictericia',
   datosQueNoTenemos: '',
   estadoComercio: 'operativo',
   // Horario FICTICIO del respaldo. Sin calendario no se ofrece nada de todos modos.
