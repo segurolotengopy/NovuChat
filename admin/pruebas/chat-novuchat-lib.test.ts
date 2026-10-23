@@ -1053,6 +1053,9 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
       expect([q, p.ruta]).not.toEqual([q, 'modelo']);
       if (esperado !== '') expect([q, JSON.stringify(ficha), p.ruta, p.fijo]).toEqual([q, JSON.stringify(ficha), 'fijo', esperado]);
     }
+    // palabras reales a una edición de una clave NO se corrigen (hallazgo de seguridad): no cambian de ruta
+    for (const q of ['Quiero una rebanada de torta', '¿Cuánto es el premio?', 'Abrí una cuenta de ahorros', 'cuanto cuesto yo', '¿Tienen rebana?']) expect([q, decidir2(q, {}).ruta]).not.toEqual([q, 'fijo']);
+    expect(decidir2('¿Cuánto es el premio?', {}).ruta).toBe('modelo');
     // lo corregido llega también a la situación (botones): «cuanto cuesa» sin plan es interés
     const s = f('chSituacion')({ plan: { ruta: 'modelo' }, res: null, eventos: [ev('cuanto cuesa el servicio')], ficha: fichaBase() });
     expect(s.interes).toBe(true);

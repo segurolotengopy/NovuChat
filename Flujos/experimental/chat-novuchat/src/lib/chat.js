@@ -205,7 +205,7 @@ const CH_NUMERO_PROPIO = new RegExp([
   '\\b(?:se pierde|se perdera|se pierden|se borran?|se eliminan?|voy a perder|perdere|pierdo|perderia)\\b(?: \\w+){0,3} (?:mi numero|mis chats|mis conversaciones|mis contactos|mis grupos|mi whatsapp)\\b',
 ].join('|'));
 const CH_NUM_PREGUNTA = /^(?:y |entonces |oye |disculpa |hola |una pregunta )?(?:puedo|podria|podemos|se puede|puede|pueden|es posible|tengo que|debo|necesito|necesitamos|hay que|hace falta|seguira|seguiria|va a seguir|sirve|funciona|funcionara|que numero|cual numero|que chip|coexist\w*|conecto|como conecto|quiero usar|quisiera usar|queremos usar|quiero conectar|quisiera conectar)\b|\b(?:se puede|es posible|quiero saber|quisiera saber|queria saber|me pregunto|tengo una duda)\b/;
-const CH_CLAVES_TIPEO = ['actual', 'coexisten', 'coexiste', 'coexistir', 'convivir', 'whatsapp', 'cobra', 'meta', 'mensajes', 'conversaciones', 'domingos', 'descuento', 'descuentos', 'rebaja', 'cuesta', 'cuestan', 'precio', 'precios', { c: 'numero', plural: true }, { c: 'telefono', plural: true }, { c: 'celular', plural: true }]; // Palabras a las que se corrige UN error de tipeo («acrual», «cobar», «domigos»); la corrección (`ctTipeo`, core/texto/tipeo.js) se aplica UNA vez a los eventos del turno, en chDecidir y chSituacion.
+const CH_CLAVES_TIPEO = ['actual', 'coexisten', 'coexiste', 'coexistir', 'convivir', 'whatsapp', 'cobra', 'meta', 'mensajes', 'conversaciones', 'domingos', 'descuento', 'descuentos', 'rebaja', 'cuesta', 'cuestan', 'precio', 'precios', { c: 'numero', plural: true }, { c: 'telefono', plural: true }, { c: 'celular', plural: true }], CH_PROTEGIDAS_TIPEO = ['rebana', 'rebanada', 'rebanadas', 'premio', 'premios', 'cuenta', 'cuentas', 'cuesto', 'cuestas']; // Palabras a las que se corrige UN error de tipeo («acrual», «cobar», «domigos»); la corrección (`ctTipeo`, core/texto/tipeo.js) se aplica UNA vez a los eventos del turno, en chDecidir y chSituacion.
 function chPreguntaNumeroActual(t) {
   const n = chNorm(t);
   if (!/\b(?:numero|numeros|whatsapp|wasap|watsap|linea|chip|telefono|celular|chats|conversaciones|contactos|que ya tengo|coexist\w*)\b/.test(n)) return false;
@@ -832,7 +832,7 @@ function chPedirDatosAntes(f) {
   return !!f && f.nombrePedido !== true && f.planesMostrados !== true && f.equipoAhora !== true && !(chPlano(f.nombre) !== '' && chPlano(f.empresa) !== '');
 }
 function chDecidir(a) {
-  const ev = (Array.isArray(a.eventos) ? a.eventos : []).map((e) => (e && (e.k === 'texto' || e.k === 'audio') ? Object.assign({}, e, { c: ctTipeo(e.c, CH_CLAVES_TIPEO) }) : e));
+  const ev = (Array.isArray(a.eventos) ? a.eventos : []).map((e) => (e && (e.k === 'texto' || e.k === 'audio') ? Object.assign({}, e, { c: ctTipeo(e.c, CH_CLAVES_TIPEO, CH_PROTEGIDAS_TIPEO) }) : e));
   const f = a.ficha;
   const cfg = a.cfg;
   const d = chDatos(cfg);
@@ -1394,7 +1394,7 @@ function chSituacion(a) {
   const f = a.ficha || {};
   const p = a.plan || {};
   const r = a.res || {};
-  const textos = (a.eventos || []).filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').map((e) => ctTipeo(e.c, CH_CLAVES_TIPEO));
+  const textos = (a.eventos || []).filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').map((e) => ctTipeo(e.c, CH_CLAVES_TIPEO, CH_PROTEGIDAS_TIPEO));
   const t = textos.map(chNorm).join(' ');
   const ev = p.ruta === 'modelo' ? chTexto(r.origen === 'modelo' ? r.contexto : r.evento) : '';
   const rub = chTexto(p.rubroElegido || r.rubroId || f.rubro);
