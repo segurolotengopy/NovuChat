@@ -272,13 +272,14 @@ switch (plan) {
   }
 
   case 'imagen_sin_texto': {
-    // Con lectura del módulo común de medios se dice QUÉ se recibió (frase neutra, ya saneada). Nada clínico:
-    // este canal no valora fotos, y se dice. Sin lectura queda el texto de antes.
-    const ve = String(base.descripcionMedio || '').trim();
-    const que = base.categoriaMedio === 'captura_de_pantalla' ? 'captura' : 'imagen';
-    menu(ve
-      ? 'Recibí tu ' + que + ': ' + ve + '. Por este chat no puedo valorarla; si es para el doctor, escríbele a recepción con el botón. ¿Qué necesitas?'
-      : 'Recibí tu imagen. ¿Qué necesitas?');
+    // El módulo común de medios clasifica la imagen. Consultorio pediátrico: de una FOTO o un documento de salud no se
+    // repite ningún detalle (puede ser clínico); solo se dice qué tipo de cosa se recibió y que por este chat no se valora.
+    // La frase de lo que se ve solo se usa en una captura de pantalla. No se ofrece nada que el flujo no cumpla.
+    const cat = String(base.categoriaMedio || '');
+    const ve = cat === 'captura_de_pantalla' ? String(base.descripcionMedio || '').trim() : '';
+    if (cat === 'foto') menu('Recibí tu foto. Por este chat no puedo valorarla. ¿Qué necesitas?');
+    else if (cat === 'captura_de_pantalla') menu('Recibí tu captura' + (ve ? ': ' + ve : '') + '. Por este chat no puedo valorarla. ¿Qué necesitas?');
+    else menu('Recibí tu imagen. ¿Qué necesitas?');
     break;
   }
 
@@ -326,13 +327,11 @@ switch (plan) {
     break;
   }
 
-  case 'derivar_medio': {
-    const ve = String(base.descripcionMedio || '').trim();
+  case 'derivar_medio':
     transferir('el paciente envió un mensaje que este canal no lee (foto, archivo u otro)',
-      (ve ? 'Recibí tu archivo: ' + ve + '. ' : '')
+      (t.tipo === 'document' ? 'Recibí tu archivo. ' : '')
       + 'Por este chat solo puedo ayudarte a agendar, cancelar o mover citas. Para otra cosa, escríbele directo a recepción tocando el botón.');
     break;
-  }
 
   case 'audio_ilegible': {
     const cuerpo = base.audioMuyLargo
