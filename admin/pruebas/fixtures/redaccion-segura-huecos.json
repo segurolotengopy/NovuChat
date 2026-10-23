@@ -1,0 +1,114 @@
+{
+ "_leeme": [
+  "Banco de los 4 huecos del filtro de redaccion segura (opciones opt-in). Lo lee admin/pruebas/comun-sin-agente-filtro-huecos.test.ts.",
+  "Cada grupo: { opcion, motivo, rechazos: [texto], pasan: [texto] }. `pasan` se prueba CON la opcion encendida: lo legitimo debe seguir saliendo.",
+  "Sin numeros de cuenta ni telefonos reales: cifras cortas inventadas."
+ ],
+ "grupos": [
+  {
+   "opcion": "sinDatosDePago",
+   "motivo": "datos_de_pago",
+   "rechazos": [
+    "Deposita a la cuenta 1234567 y listo",
+    "Puedes pagar por Tigo Money",
+    "Transfiere al banco y me avisas",
+    "Paga con TIGO MONEY",
+    "Mi alias es libros_antonio",
+    "Te paso el QR para que pagues",
+    "Hazlo por giro o billetera",
+    "Realiza el depósito y envíame el comprobante",
+    "Haz la transferencia hoy",
+    "Envía el dinero cuando quieras",
+    "Las formas de pago son varias",
+    "Tigo-Money es lo más fácil",
+    "T i g o   M o n e y",
+    "Dep0sita a la cuenta del libro",
+    "Paaaagar por aquí",
+    "El número de cuenta es el 4567",
+    "Puedes depositar en efectivo en el banco"
+   ],
+   "pasan": [
+    "El libro cuesta 49 Bs e incluye 4 bonos",
+    "Visita la página del libro para ver el índice",
+    "Los bonos incluyen plantillas y guías",
+    "Hola, ¿en qué libro estás interesado?",
+    "Te cuento de qué trata el libro",
+    "El libro cuenta con cuatro capítulos",
+    "Tienes que tener en cuenta que es digital",
+    "Puedes escribirle a Antonio con el botón",
+    "Es un pago único, sin mensualidades",
+    "Los clientes pagan una sola vez"
+   ]
+  },
+  {
+   "opcion": "sinAfirmarCompra",
+   "motivo": "afirma_compra",
+   "rechazos": [
+    "Ya compraste el libro",
+    "Ya te llegó el libro",
+    "Tu pedido fue entregado",
+    "Tu compra está confirmada",
+    "Te lo enviamos hoy mismo",
+    "Ya te enviamos el libro",
+    "Tu pedido ya está en camino",
+    "Compra exitosa, disfrútalo",
+    "Gracias por tu compra",
+    "YA COMPRASTE EL LIBRO",
+    "Ya c o m p r a s t e el libro",
+    "Ya te lo entregamos",
+    "Ya tienes el libro contigo"
+   ],
+   "pasan": [
+    "El libro cuesta 49 Bs e incluye 4 bonos",
+    "¿Ya compraste el libro?",
+    "¿Ya te llegó el libro?",
+    "Puedes comprar el libro cuando quieras",
+    "Si compras el libro recibes 4 bonos",
+    "El libro es digital y viene con una guía",
+    "Cuéntame qué te interesa del libro",
+    "El equipo lo revisa y te orienta"
+   ]
+  },
+  {
+   "opcion": "sinPromesasDeAviso",
+   "motivo": "promete_aviso",
+   "rechazos": [
+    "Un asesor se comunicará contigo",
+    "Nos pondremos en contacto contigo",
+    "Te llamaremos mañana",
+    "Te escribiremos pronto",
+    "Te avisaremos cuando esté listo",
+    "Le avisaremos al equipo",
+    "Alguien se pondrá en contacto",
+    "Un asesor te contactará",
+    "Un asesor se comunicara con contigo",
+    "Te va a llamar un asesor",
+    "Estaremos en contacto",
+    "Te a-v-i-s-a-r-e-m-o-s",
+    "Te av1saremos"
+   ],
+   "pasan": [
+    "Puedes escribirle a Antonio con el botón",
+    "El equipo lo revisa",
+    "El libro cuesta 49 Bs e incluye 4 bonos",
+    "Hola, ¿en qué te ayudo?",
+    "Si quieres, te paso con una persona del equipo",
+    "Escríbenos cuando quieras",
+    "Te cuento cómo funciona el libro"
+   ],
+   "conAvisoRespaldado": {
+    "pasan": [
+     "Le avisamos al equipo",
+     "Le avisaremos a recepción",
+     "Le avisamos al asesor para que lo revise"
+    ],
+    "rechazos": [
+     "Un asesor se comunicará contigo",
+     "Te llamaremos mañana",
+     "Le avisaremos cuando esté listo",
+     "Te avisaremos al equipo"
+    ]
+   }
+  }
+ ]
+}

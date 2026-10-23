@@ -74,6 +74,7 @@ export const SUITES_PURAS = [
   'pruebas/comun-sin-agente-construir.test.ts',
   'pruebas/comun-sin-agente-envio.test.ts',
   'pruebas/comun-sin-agente-filtro.test.ts',
+  'pruebas/comun-sin-agente-filtro-huecos.test.ts',
   'pruebas/comun-sin-agente-mensajes.test.ts',
   'pruebas/agendamiento-seguimientos.test.ts',
   'pruebas/alta-plan-inicial.test.ts',
