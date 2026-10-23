@@ -11,7 +11,7 @@
 | **Qué contiene hoy** | `campanas.ts`, `verificarCampanas.ts`, `config/campanas`; `Campanas.tsx` |
 | **Depende de** | — |
 | **Límite por plan** | campañas (0 / 3 / 10; BYOC 10; propuesta del 24/09 a confirmar). Hecho el 24/09 en `firestore.rules` en `config/campanas`: `lista.size() <= limiteCampanas()`, con la copia `cuenta/estado.limites.campanas` o el plan; `configuracionFlujo` recorta al tope. Ver `limites.md` |
-| **Configuración** | `config/campanas`: texto exacto, vigencia, tope |
+| **Configuración** | `config/campanas`: texto exacto, vigencia, tope; opcionales por anuncio: `titulares`, `productoId`, `angulo` (ver «Anuncios como dato del tenant») |
 | **Colecciones** | `config/campanas` |
 | **Pestañas** | Campañas (`admin`) |
 | **Prompt** | las campañas vigentes recortadas al tope entran al contexto de turno |
@@ -116,3 +116,51 @@ La consola compara con la misma cuenta; `campanas-consola.test.ts` lo fija.
 
 **Mensajes:** −1 por cada conversación que entra por una campaña reconocida en
 un flujo con menú (el menú no sale); 0 en el resto.
+
+## Anuncios como dato del tenant (PR-1, 22/10/2026)
+
+Los anuncios **son las campañas** de `config/campanas`: no hay colección nueva.
+Cada elemento de `lista` conserva `{id, texto, inicio, fin}` y admite tres
+claves opcionales: `titulares` (de 1 a 5, de 6 a 100 caracteres; el primero es
+el canónico y las variantes del mismo titular van en el mismo registro),
+`productoId` (id de un documento ACTIVO de `catalogo`; el producto y el precio
+se referencian, no se copian) y `angulo` (hasta 300 caracteres; es
+comportamiento del asistente, así que lo verifica el servidor). `texto` es
+opcional si hay titulares.
+
+- **Regla:** `unaCampanaValida` admite de 4 a 7 claves y un texto de hasta 300;
+  no usa `hasOnly` por elemento (agotaría el tope de 1.000 expresiones, medido).
+  Tampoco mira el ángulo por la misma razón. La forma fina la decide
+  `revisarSinModelo`. Compatible hacia atrás: los documentos de 4 claves valen.
+- **Servidor (`revisarSinModelo`):** un titular con un monto, un titular repetido
+  en otro anuncio, un `productoId` inexistente o inactivo, un ángulo largo o
+  cualquier patrón de inyección en titulares o ángulo rechaza el anuncio.
+  `instruccionCampana` entrega titulares y ángulo al verificador de seguridad.
+- **Flujo:** `configuracionFlujo` devuelve la clave `anuncios`
+  (`anunciosParaElFlujo`: vigentes de hoy, dentro del tope del plan y con
+  titulares; `producto: null` si el id ya no existe o no está activo). Usa el
+  catálogo activo que el turno ya lee: **0 lecturas nuevas por turno**. La clave
+  `campanas` no cambia.
+- **Mensajes:** 0. **Límites:** los mismos (10 por documento, tope del plan,
+  un año de duración); ningún límite de tenant se sube desde acá.
+
+### Revisión de seguridad del PR-1 (22/10/2026)
+
+- **El tope del plan es uno solo** para `campanas` y `anuncios`: ambos se derivan de
+  `vigentesDeHoyDentroDelTope` (las primeras `limite` vigentes en curso hoy), así que
+  juntos nunca suman más que el plan.
+- **El ángulo es comportamiento del asistente.** El flujo que consuma `anuncios.angulo`
+  debe **entrecomillarlo y subordinarlo** como a `instruccionesExtra` (dato del negocio,
+  nunca una orden que pueda contradecir las reglas del flujo). Titulares y ángulo se
+  rechazan si traen caracteres invisibles, de control o bidi, o frases que hagan negar
+  ser una IA o afirmar un pago; los patrones se aplican también al texto plegado
+  (homoglifos y leet); el revisor de modelo recibe los criterios de `comportamiento.ts`.
+- **Tamaño de la respuesta:** al flujo viajan a lo sumo 3 titulares por anuncio y el
+  nombre del producto recortado a 80. Peor caso medido (10 anuncios, ángulo de 300):
+  ~8,0 kB; tope declarado 8,5 kB.
+- **Regla:** `texto is string` no cabe en el presupuesto de expresiones con 10 campañas
+  (medido); un texto no string da error de evaluación y se niega, y `leerCampanas` lo descarta.
+- **Producto:** `productoId` entra en la huella (cambiarlo vuelve a revisión) y debe cumplir
+  `^[A-Za-z0-9_-]{1,100}$` sin ser `__x__`. La coherencia titular-producto la revisa el modelo
+  con la huella, no el servidor por reglas.
+
