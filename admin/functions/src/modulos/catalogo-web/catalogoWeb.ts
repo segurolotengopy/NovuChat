@@ -47,6 +47,7 @@
  * al flujo; el flujo decide qué decir, con qué voz y —si la ventana de 24 horas
  * se cerró— con qué plantilla.
  */
+import { CONSERVAR_EMOJI, limpiarInvisibles } from '../../core/seguridad/invisibles.js';
 import { onRequest, onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -175,9 +176,11 @@ export function lineaLimpia(v: unknown, max: number): string {
   // un surrogate suelto.
   let tope = v.slice(0, 1000);
   if (/[\ud800-\udbff]$/.test(tope)) tope = tope.slice(0, -1);
-  const limpio = tope
+  // Los invisibles de la tabla única (etiquetas, selectores, relleno de Hangul…) se quitan; el selector de
+  // emoji y el unidor legítimos («1 + keycap», «emoji con unidor») se conservan y el resto de lo ilegible vale espacio.
+  const limpio = limpiarInvisibles(tope)
     // Cs: surrogates sueltos; Co: uso privado. Ninguno es texto legible.
-    .replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}\u{115f}\u{1160}\u{3164}\u{ffa0}\u{fe00}-\u{fe0f}<>&]/gu, ' ')
+    .replace(new RegExp('(' + CONSERVAR_EMOJI + ')|[\\p{Cc}\\p{Cf}\\p{Cs}\\p{Co}\\p{Zl}\\p{Zp}<>&]', 'gu'), (m, k) => (k === undefined ? ' ' : m))
     .replace(/https?:\/\/\S+/gi, ' ')
     .replace(/www\.\S+/gi, ' ')
     .replace(/\s+/g, ' ')

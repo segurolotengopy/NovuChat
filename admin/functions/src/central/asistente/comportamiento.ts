@@ -84,17 +84,32 @@ export function hashCorto(texto: string): string {
 }
 
 /**
- * Caracteres que una persona no ve y el modelo sí lee: formato (\p{Cf}), control (\p{Cc}),
- * caracteres de etiqueta (U+E0000-E007F), selectores de variación, relleno de Hangul y
- * separadores de línea. Se escriben como escapes: nunca como caracteres crudos.
+ * Caracteres que una persona no ve y el modelo sí lee (etiquetas, selectores de variación, relleno de
+ * Hangul, ancho cero, bidi, control…). COPIA de `core/seguridad/invisibles.ts`: este archivo lo importan
+ * scripts de Node sin transpilar (cargar-negocio, pase-a-produccion…) y no puede traer imports relativos.
+ * `pruebas/endurecer-invisibles.test.ts` falla si la copia diverge de la tabla.
  */
-const INVISIBLES_A_QUITAR = /[\p{Cf}\p{Cc}\u{34f}\u{115f}\u{1160}\u{180e}\u{2028}\u{2029}\u{3164}\u{fe00}-\u{fe0f}\u{ffa0}\u{e0000}-\u{e007f}]/gu;
+export const CLASE_INVISIBLES_COPIA =
+  '\\p{Cf}\\u{0}-\\u{8}\\u{b}\\u{c}\\u{e}-\\u{1f}\\u{7f}-\\u{9f}\\u{34f}\\u{115f}\\u{1160}\\u{17b4}\\u{17b5}\\u{180b}-\\u{180f}'
+  + '\\u{2028}\\u{2029}\\u{3164}\\u{fe00}-\\u{fe0f}\\u{ffa0}\\u{e0000}-\\u{e007f}\\u{e0100}-\\u{e01ef}';
+export const CONSERVAR_EMOJI_COPIA =
+  '(?<=[\\p{Extended_Pictographic}\\p{Emoji_Modifier}0-9#*])\\u{fe0f}(?![\\u{fe00}-\\u{fe0f}\\u{e0100}-\\u{e01ef}])'
+  + '|(?<=\\p{Extended_Pictographic}[\\p{Emoji_Modifier}\\u{fe0f}]?)\\u{200d}(?=\\p{Extended_Pictographic})';
+const RE_INVISIBLES_TODOS = new RegExp('[' + CLASE_INVISIBLES_COPIA + ']', 'gu');
+const RE_LIMPIAR_INVISIBLES = new RegExp('(' + CONSERVAR_EMOJI_COPIA + ')|[' + CLASE_INVISIBLES_COPIA + ']', 'gu');
+/** ¿Trae algo que una persona no ve? Los de emoji legítimos («❤», «1 + keycap») no cuentan. */
+const tieneInvisibles = (t: string): boolean =>
+  t.replace(RE_LIMPIAR_INVISIBLES, (m: string, k: string | undefined) => (k === undefined ? '' : m)) !== t;
+
 /**
- * Lo que se RECHAZA: los invisibles que no tienen uso legítimo en un texto de instrucciones.
- * Quedan fuera el salto de línea, la tabulación, el unidor de emojis (U+200D) y el selector
- * de presentación de emoji (U+FE0F), que sí se usan; para buscar patrones se quitan igual.
+ * Letras griegas y cirílicas que se ven como latinas: «іgnora» (i cirílica) es «ignora». Solo para COMPARAR
+ * (los patrones y los nombres ajenos); el texto guardado no cambia.
  */
-const INVISIBLES_PROHIBIDOS = /[\u{0}-\u{8}\u{b}\u{c}\u{e}-\u{1f}\u{7f}-\u{9f}\u{ad}\u{34f}\u{61c}\u{115f}\u{1160}\u{180e}\u{200b}\u{200c}\u{200e}\u{200f}\u{2028}\u{2029}\u{202a}-\u{202e}\u{2060}-\u{206f}\u{3164}\u{fe00}-\u{fe0e}\u{feff}\u{ffa0}\u{e0000}-\u{e007f}]/u;
+const HOMOGLIFOS: Readonly<Record<string, string>> = Object.fromEntries(
+  ([[0x430, 'a'], [0x435, 'e'], [0x43e, 'o'], [0x440, 'p'], [0x441, 'c'], [0x445, 'x'], [0x443, 'y'], [0x456, 'i'],
+    [0x455, 's'], [0x458, 'j'], [0x501, 'd'], [0x3bf, 'o'], [0x3b1, 'a'], [0x3b5, 'e'], [0x3b9, 'i'], [0x3bd, 'v'],
+    [0x3c1, 'p']] as [number, string][]).map(([n, l]) => [String.fromCodePoint(n), l]),
+);
 
 /**
  * Forma comparable de un texto: sin acentos, en minúsculas y con los blancos
@@ -105,10 +120,12 @@ const INVISIBLES_PROHIBIDOS = /[\u{0}-\u{8}\u{b}\u{c}\u{e}-\u{1f}\u{7f}-\u{9f}\u
 export function normalizar(texto: string): string {
   return texto
     .normalize('NFKC')
-    .replace(INVISIBLES_A_QUITAR, '')
+    .replace(/[\u{2028}\u{2029}]/gu, ' ')
+    .replace(RE_INVISIBLES_TODOS, '')
     .normalize('NFD')
     .replace(/\p{M}+/gu, '')
     .toLowerCase()
+    .replace(/[\u{370}-\u{3ff}\u{400}-\u{4ff}]/gu, (c) => HOMOGLIFOS[c] ?? c)
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -348,11 +365,12 @@ export function verificarPatrones(
     return { nivel: 'rechazado', coincidencias: ['tope'], motivo: `supera los ${TOPE_INSTRUCCIONES} caracteres` };
   }
   // Un invisible escondido se rechaza: lo que la persona ve y lo que lee el modelo no coinciden.
-  if (INVISIBLES_PROHIBIDOS.test(texto.normalize('NFKC'))) {
+  // (Los de emoji legítimos —«❤», «1 + keycap»— no cuentan; ver core/seguridad/invisibles.ts.)
+  if (tieneInvisibles(texto.normalize('NFKC'))) {
     return { nivel: 'rechazado', coincidencias: ['invisibles'], motivo: 'contiene caracteres ocultos o de control' };
   }
-  // El texto «crudo» también pasa por NFKC: «＜＜＜» de ancho completo es «<<<».
-  const crudoNfkc = texto.normalize('NFKC').replace(INVISIBLES_A_QUITAR, '');
+  // El texto «crudo» también pasa por NFKC: el ancho completo de «<<<» es «<<<».
+  const crudoNfkc = texto.normalize('NFKC').replace(RE_INVISIBLES_TODOS, '');
   const normalizado = normalizar(texto);
   const fuertes: string[] = [];
   const debiles: string[] = [];

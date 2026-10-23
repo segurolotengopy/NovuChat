@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { quitarResiduosDeCopiado } from '../lib/residuosDeCopiado';
 import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { funciones } from '../../core/lib/firebase';
@@ -641,7 +642,7 @@ export function Configuracion() {
                   rows={8}
                   aria-describedby="instrucciones-ayuda"
                   placeholder="Campaña de septiembre: limpieza dental a 150 Bs hasta el 30. Ortodoncia solo con valoración previa, que no tiene costo. Si preguntan por implantes, el precio se da en consulta."
-                  onChange={(e) => setDatos({ ...datos, instruccionesExtra: e.target.value })} />
+                  onChange={(e) => { e.target.value = quitarResiduosDeCopiado(e.target.value); setDatos({ ...datos, instruccionesExtra: e.target.value }); }} />
               ), <span className="text-muted">{propuesto.length} de {TOPE_INSTRUCCIONES} caracteres</span>)}
               <p className="ayuda" id="instrucciones-ayuda">
                 Acá va lo que el asistente tiene que saber de tu negocio <strong>hoy</strong>:

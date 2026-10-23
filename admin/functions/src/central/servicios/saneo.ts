@@ -12,6 +12,7 @@
  */
 
 import { RE_BIDI, recortar, sinMarcas, textoPlano } from '../../core/prompt/texto.js';
+import { limpiarInvisibles } from '../../core/seguridad/invisibles.js';
 
 /** Salieron a `core/prompt/texto.ts` (corte C2 de F2): el prompt los usa y es Core. */
 export { recortar, sinMarcas, textoPlano };
@@ -68,8 +69,7 @@ export function neutralizarEncabezado(valor: unknown, maxLargo: number): string 
  */
 export function textoConSaltos(valor: unknown, maxLargo: number): string {
   if (typeof valor !== 'string') return '';
-  const limpio = valor
-    .replace(/\r\n?|[\u2028\u2029]/g, '\n')
+  const limpio = limpiarInvisibles(valor.replace(/\r\n?|[\u2028\u2029]/g, '\n'))
     .replace(/\t/g, ' ')
     .replace(RE_CONTROLES, '')
     .replace(RE_BIDI, '')

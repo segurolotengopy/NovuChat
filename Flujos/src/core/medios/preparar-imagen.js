@@ -83,14 +83,18 @@ const CATEGORIAS = ['comprobante', 'publicidad', 'pago_con_problema', 'captura_d
 // Los rangos Unicode se escriben como texto con escapes (\\uXXXX), no como caracteres literales.
 const RX = (cuerpo, banderas) => new RegExp(cuerpo, banderas);
 const TILDES = RX('[\\u0300-\\u036f]', 'g');
-const INVISIBLES = RX('[\\u00ad\\u034f\\u061c\\u115f\\u1160\\u180e\\u200b-\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2060-\\u206f\\u3164\\ufe00-\\ufe0f\\ufeff\\uffa0\\u{e0000}-\\u{e007f}]', 'gu');
+// Tabla UNICA de invisibles (copia de admin/functions/src/core/seguridad/invisibles.ts; una prueba compara las copias).
+const INV_CLASE = '\\p{Cf}\\u{0}-\\u{8}\\u{b}\\u{c}\\u{e}-\\u{1f}\\u{7f}-\\u{9f}\\u{34f}\\u{115f}\\u{1160}\\u{17b4}\\u{17b5}\\u{180b}-\\u{180f}\\u{2028}\\u{2029}\\u{3164}\\u{fe00}-\\u{fe0f}\\u{ffa0}\\u{e0000}-\\u{e007f}\\u{e0100}-\\u{e01ef}';
+const INV_CONSERVAR = '(?<=[\\p{Extended_Pictographic}\\p{Emoji_Modifier}0-9#*])\\u{fe0f}(?![\\u{fe00}-\\u{fe0f}\\u{e0100}-\\u{e01ef}])|(?<=\\p{Extended_Pictographic}[\\p{Emoji_Modifier}\\u{fe0f}]?)\\u{200d}(?=\\p{Extended_Pictographic})';
+const INV_RE = new RegExp('(' + INV_CONSERVAR + ')|[' + INV_CLASE + ']', 'gu');
+const limpiarInv = (t) => t.replace(INV_RE, (m, k) => (k === undefined ? '' : m));
 const CONTROL = RX('[\\u0000-\\u001f\\u007f-\\u009f]', 'g');
-// Texto del dato: tras NFKC (el ancho completo pasa a ASCII), invisibles y control se buscan juntos.
-const RARO_DATO = (v) => { const n = v.normalize('NFKC'); return n.search(INVISIBLES) >= 0 || n.search(CONTROL) >= 0; };
+// Texto del dato: tras NFKC (el ancho completo pasa a ASCII), invisibles (salvo los de emoji) y control se buscan juntos.
+const RARO_DATO = (v) => { const n = v.normalize('NFKC'); return limpiarInv(n) !== n || n.search(CONTROL) >= 0; };
 const COMILLAS_TIPOGRAFICAS = RX('[\\u201c\\u201d\\u2018\\u2019]', 'g');
 // Letras cirilicas y griegas que se ven como latinas: 'ignora' escrito con una i cirilica sigue siendo 'ignora'.
-const PARECIDAS_DE = 'аеорсухіѕјԁοα';
-const PARECIDAS_A = 'aeopcyxisjdoa';
+const PARECIDAS_DE = 'аеорсухіѕјԁοα' + '\u03b9';
+const PARECIDAS_A = 'aeopcyxisjdoai';
 const aLatinas = (s) => s.replace(RX('[' + PARECIDAS_DE + ']', 'g'), (c) => PARECIDAS_A.charAt(PARECIDAS_DE.indexOf(c)));
 const sinLeet = (s) => s.replace(/0/g, 'o').replace(/1/g, 'i').replace(/3/g, 'e').replace(/4/g, 'a')
   .replace(/5/g, 's').replace(/7/g, 't').replace(/@/g, 'a').replace(/\$/g, 's');
@@ -112,7 +116,7 @@ const normalizarCategoria = (v) => {
 const sanearTexto = (v, tope) => {
   if (typeof v !== 'string') return '';
   // Tope de entrada ANTES de cualquier regex: una entrada enorme no puede colgar el nodo.
-  let t = v.slice(0, 2000).normalize('NFKC').replace(INVISIBLES, '').replace(CONTROL, ' ')
+  let t = limpiarInv(v.slice(0, 2000).normalize('NFKC')).replace(CONTROL, ' ')
     .replace(COMILLAS_TIPOGRAFICAS, ' ');
   const plano = aLatinas(t.normalize('NFD').replace(TILDES, '').toLowerCase());
   const pegado = sinLeet(plano).replace(/[^a-z]/g, '');
@@ -139,7 +143,7 @@ const sanearDescripcion = (v) => sanearTexto(v, 120);
 // Si parece instruccion, afirma un pago o trae un monto, queda vacio y no hay coincidencia.
 const sanearTitular = (v) => sanearTexto(v, 100);
 
-const sanear =(t) => String(t || '').replace(/[\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500);
+const sanear =(t) => limpiarInv(String(t || '')).replace(/[\[\]\uff3b\uff3d]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500);
 
 const entradas = $('Normalizar entrada').all();
 const items = $input.all();

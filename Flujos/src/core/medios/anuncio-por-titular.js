@@ -67,10 +67,20 @@ const anuncioPorTitular = (() => {
     if (t.length >= 12 && h.length >= 12 && cifras(t) === cifras(h) && dice(t, h) >= 0.85) return { nivel: 3, largo: h.length };
     return { nivel: 0, largo: 0 };
   };
-  // Un campo con caracteres de control, bidireccionales o de ancho cero se OMITE (queda vacio), no se limpia.
-  const RARO = new RegExp('[\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u034f\\u061c\\u115f\\u1160\\u180e\\u200b-\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2060-\\u206f\\u3164\\ufe00-\\ufe0f\\ufeff\\uffa0\\u{e0000}-\\u{e007f}]', 'u');
-  const texto = (v, tope) => (typeof v === 'string' && !RARO.test(v.normalize('NFKC'))
-    ? v.normalize('NFKC').replace(/[\[\]{}<>"`]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, tope) : '');
+  // Tabla UNICA de invisibles (copia de admin/functions/src/core/seguridad/invisibles.ts; una prueba compara las copias).
+  const INV_CLASE = '\\p{Cf}\\u{0}-\\u{8}\\u{b}\\u{c}\\u{e}-\\u{1f}\\u{7f}-\\u{9f}\\u{34f}\\u{115f}\\u{1160}\\u{17b4}\\u{17b5}\\u{180b}-\\u{180f}\\u{2028}\\u{2029}\\u{3164}\\u{fe00}-\\u{fe0f}\\u{ffa0}\\u{e0000}-\\u{e007f}\\u{e0100}-\\u{e01ef}';
+  const INV_CONSERVAR = '(?<=[\\p{Extended_Pictographic}\\p{Emoji_Modifier}0-9#*])\\u{fe0f}(?![\\u{fe00}-\\u{fe0f}\\u{e0100}-\\u{e01ef}])|(?<=\\p{Extended_Pictographic}[\\p{Emoji_Modifier}\\u{fe0f}]?)\\u{200d}(?=\\p{Extended_Pictographic})';
+  const INV_RE = new RegExp('(' + INV_CONSERVAR + ')|[' + INV_CLASE + ']', 'gu');
+  const limpiarInv = (t) => t.replace(INV_RE, (m, k) => (k === undefined ? '' : m));
+  // Un campo con invisibles (etiquetas, selectores, relleno de Hangul, ancho cero, bidi, control) se OMITE (queda vacio), no se
+  // limpia; el selector de emoji y el unidor legitimos («teclas con selector de emoji») pasan. NFKC solo para DETECTAR: la salida conserva el texto.
+  const esMarca = (c) => /[\u226a\u226b]/.test(c) || /[\[\]{}<>"`]/.test(c.normalize('NFKC'));
+  const texto = (v, tope) => {
+    if (typeof v !== 'string') return '';
+    const n = v.normalize('NFKC');
+    if (limpiarInv(n) !== n || /[\u0000-\u001f]/.test(n)) return '';
+    return Array.from(v).map((c) => (esMarca(c) ? ' ' : c)).join('').replace(/\s+/g, ' ').trim().slice(0, tope);
+  };
   const producto = (p) => {
     if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
     const nombre = texto(p.nombre, 120);
