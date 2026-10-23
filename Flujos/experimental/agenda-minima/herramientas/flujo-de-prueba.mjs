@@ -50,6 +50,8 @@ const bandera = (n) => args.includes(`--${n}`);
 const morir = (m) => { console.error(`✗ ${m}`); process.exit(1); };
 
 // `--actualizar-codigo` corre SOLO: antes, con `--borrar` al lado, corría `--borrar` (revisión de seguridad del #364).
+if (bandera('desde-b') && !bandera('sobre-bellido')) morir('--desde-b solo se usa con --sobre-bellido');
+if (bandera('actualizar-codigo') && ['desde-b'].some((m) => args.includes(`--${m}`))) morir('--actualizar-codigo no se combina con --desde-b');
 if (bandera('actualizar-codigo') && ['borrar', 'sobre-bellido', 'sobre-demo-a', 'restaurar-respaldo', 'turno'].some((m) => args.includes(`--${m}`))) morir('--actualizar-codigo no se combina con otro modo');
 const ENV = opcion('env') ?? morir('falta --env <archivo .env del Demo A>');
 // `--actualizar-codigo` no guarda ningún estado: no necesita (ni lee) `--estado`.
@@ -187,7 +189,7 @@ const MARCA_PHONE = /REEMPLAZAR_PHONE_NUMBER_ID_[A-Z0-9_]+/g;
 
 // ---------------------------------------------------------------- sobre Bellido (publicación definitiva)
 /*
- * --sobre-bellido --respaldo <archivo fuera del repo> [--flujo <json>] [--aplicar]
+ * --sobre-bellido --respaldo <archivo fuera del repo> [--flujo <json>] [--desde-b] [--aplicar]
  *   Pone el candidato (por omisión agenda-minima.v0.json) EN el flujo vivo de Bellido (id del .env que se
  *   pase, que tiene que ser el de Bellido). Es la publicación definitiva y solo va con el «sí» de Andres.
  *   - El «WhatsApp Trigger» es EL DE BELLIDO, tal cual.
@@ -213,7 +215,15 @@ if (bandera('sobre-bellido')) {
     if (JSON.stringify(cuerpoPut(previo)) !== JSON.stringify(cuerpoPut(vivo.datos))) morir('el respaldo existente difiere del vivo: no se pisa (use --restaurar-respaldo o elija otra ruta)');
   }
   const PROPIOS_DE_B = ['Plan del turno', 'Resolver con agenda', 'Candado', 'Resumen del turno'];
-  if (vivo.datos.nodes.some((n) => PROPIOS_DE_B.includes(n.name))) morir('el vivo de Bellido ya tiene el candidato B');
+  // `--desde-b`: el vivo YA es B y el cambio es de ESTRUCTURA (nodos nuevos, como la rama de medios del 23/10/2026).
+  // Es el mismo camino de esta publicación (trigger, credenciales por tipo e id, «Config base» desde el vivo, respaldo
+  // exacto y lectura de vuelta); solo cambia lo que se exige del vivo. Para cambiar SOLO código: --actualizar-codigo.
+  const vivoYaEsB = PROPIOS_DE_B.every((x) => vivo.datos.nodes.some((n) => n.name === x));
+  if (bandera('desde-b')) {
+    if (!vivoYaEsB) morir('--desde-b es para un vivo que YA es B (le faltan los nodos propios de B): use --sobre-bellido sin --desde-b');
+  } else if (vivo.datos.nodes.some((n) => PROPIOS_DE_B.includes(n.name))) {
+    morir('el vivo de Bellido ya tiene el candidato B: para un cambio de estructura use --desde-b; para solo código, --actualizar-codigo');
+  }
   const ARCHIVO = resolve(opcion('flujo') ?? join(AQUI, '..', 'agenda-minima.v0.json'));
   const b = JSON.parse(readFileSync(ARCHIVO, 'utf8'));
   if (b.nodes.some((n) => n.type === 'n8n-nodes-base.webhook')) morir('el candidato no puede traer un Webhook de prueba');
@@ -254,7 +264,11 @@ if (bandera('sobre-bellido')) {
   const baseB = b.nodes.find((n) => n.name === 'Config base') ?? morir('el candidato no tiene «Config base»');
   const llenados = [];
   for (const a of baseB.parameters.assignments.assignments) {
-    const origen = { respaldoNumeroRecepcion: 'numeroRecepcion', respaldoNumeroDoctor: 'numeroDoctor', horarioAtencion: 'horarioAtencion' }[a.name];
+    // Con `--desde-b` el vivo ya es B: su «Config base» tiene los MISMOS campos (los llena la publicación anterior);
+    // el flujo viejo de 96 nodos los tenía con otro nombre (`numeroRecepcion`, `numeroDoctor`).
+    const origen = bandera('desde-b')
+      ? (['respaldoNumeroRecepcion', 'respaldoNumeroDoctor', 'horarioAtencion'].includes(a.name) ? a.name : undefined)
+      : { respaldoNumeroRecepcion: 'numeroRecepcion', respaldoNumeroDoctor: 'numeroDoctor', horarioAtencion: 'horarioAtencion' }[a.name];
     if (!origen || !/^REEMPLAZAR_/.test(String(a.value))) continue;
     const v = String(valorVivo(origen) ?? '');
     if (v && !v.startsWith('REEMPLAZAR_') && !v.startsWith('=')) { a.value = v; llenados.push(a.name); }
@@ -283,6 +297,8 @@ if (bandera('sobre-bellido')) {
   }
   // Activo no prueba que la versión PUBLICADA sea el candidato (n8n separa borrador y publicada).
   if (!PROPIOS_DE_B.every((x) => tras.nodes.some((n) => n.name === x))) morir('el flujo leído después del PUT no tiene los nodos del candidato. Use --restaurar-respaldo');
+  const faltan = b.nodes.filter((n) => !tras.nodes.some((x) => x.name === n.name)).map((n) => n.name);
+  if (faltan.length || tras.nodes.length !== b.nodes.length) morir(`el flujo leído después del PUT no coincide con el candidato (faltan: ${faltan.join(', ') || 'ninguno'}; ${tras.nodes.length} nodos de ${b.nodes.length}). Use --restaurar-respaldo`);
   if (tras.versionId && tras.activeVersionId && tras.versionId !== tras.activeVersionId) morir('la versión ACTIVA no es la que se acaba de escribir (versionId ≠ activeVersionId). Revise n8n y use --restaurar-respaldo');
   console.log(`✓ candidato sobre Bellido: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
   console.log('FALTA, ya: verificar-meta.sh --env .env.bellido (suscripción), un mensaje real desde un teléfono registrado y su ejecución en n8n. Si algo falla: --restaurar-respaldo.');
