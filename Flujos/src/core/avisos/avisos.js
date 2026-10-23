@@ -7,6 +7,9 @@
 // `avisos.test.ts` compara declaración por declaración con el canon. Sin globales de Node, reloj ni red.
 // NOTA: `AV_PROHIBIDAS` (y `CB_PROHIBIDAS` del módulo Cobros) son la misma red que el filtro común de salida (`filtro-redaccion.js`); se dejan DECLARADAS aquí, sin tocar ese filtro, hasta que
 // el core tenga una sola fuente para la red.
+// NO llamar directamente a `avPalabrasProhibidas`, `avSinBordes`, `avCortar`, `avAjustarFinal`, `avUnificar`: lanzan con entradas que no son texto; usar los puntos de entrada (`avLimpio`, `avParametro`…).
+// OBSERVACIÓN (revisión de seguridad de #611): `avProhibidas` cede ante un `VM_PROHIBIDAS` global si el flujo lo declara (`comun.js`), tal como en #519; cambiarlo rompería la igualdad byte a byte con
+// el canon, así que NO se cambia aquí. Un flujo que incluya este módulo sin `comun.js` usa la red propia de este archivo; una prueba lo fija.
 // =============================================================================
 
 // La copia local de la red de palabras que el asistente jamás dice (la de `comun.js` manda si existe).

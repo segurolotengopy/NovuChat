@@ -2,7 +2,7 @@
 // COBROS · VENTA · TEXTOS AL CLIENTE (prefijo `cb` / `CB_`)  —  `Flujos/src/modulos/cobros/venta/textos.js`
 // =============================================================================
 // Tercer archivo del módulo (después de `lectura.js` y `cotejo.js`, de los que usa `CB_PROHIBIDAS`, `cbCanon`, `cbLinea`, `cbEsObjeto`, `cbMonto`, `cbMoneda`, `cbCodigo`, `cbTotalValido`,
-// `CB_ROTULO_SIMULADO` y `cbDiferencia`). TODO es nuevo: unifica el árbol de textos de comprobante de Rubén (`rrTextoComprobante`) y de Antonio (`raTextoComprobante`) con el nombre de quien
+// `CB_ROTULO_SIMULADO` y `cbDiferencia`). TODO es nuevo (incluida `CB_NIEGA_IA`, copia exacta de la de `procesar-respuesta.js`): unifica el árbol de textos de comprobante de Rubén (`rrTextoComprobante`) y de Antonio (`raTextoComprobante`) con el nombre de quien
 // atiende COMO PARÁMETRO. El módulo escribe todo el texto de dinero: NUNCA sale del modelo.
 //
 // PROHIBICIONES DE CLAUDE.md, ESTRUCTURALES (las prueba `cobros-venta-comun.test.ts` sobre la matriz completa):
@@ -11,17 +11,24 @@
 //   «Solo se ofrece lo que se cumple»: con `salio !== true` nunca «ya lo pasé» ni «le avisé».
 // Toda salida pasa por `CB_PROHIBIDAS` (con `cbCanon`): lo que cae, se rearma con «nuestro equipo» y, si aún cae, sale un texto mínimo.
 //
-// ÚNICA EXENCIÓN: `CB_TEXTO_COMPROBANTE_LEIDO` (decidida por Andres el 20/10/2026), por COINCIDENCIA EXACTA y como constante de este archivo: nunca se lee de datos editables ni la parametriza
-// el comercio. Dice «confirmamos» y «validado» en FUTURO (lo que el negocio hará al mirar su banco). La devuelve `cbTextoComprobante` con `fijo: true`, solo con `cuadra` + aviso salido + trato «tú».
+// SIN EXENCIONES: este módulo es código COMÚN y no lleva texto de ningún cliente. El texto fijo de «comprobante leído» de Rubén (decidido por Andres el 20/10/2026 solo para él: dice «confirmamos»
+// y «validado» en futuro y habla de la entrega de un producto digital) vive en SU pieza propia (`rr.js`: `RR_TEXTO_COMPROBANTE_LEIDO`, que `rrSeguro(texto, true)` exime por coincidencia exacta) y se adopta
+// en el PR de Rubén. Aquí `cuadra` con aviso salido da un texto común neutro, sin `fijo`, y SIEMPRE pasa por `CB_PROHIBIDAS`.
+// «15 minutos» (QR de la regla 2) y «tercer intento» son texto fijo que debe coincidir con el servidor (`MINUTOS_QR_VENTA_REGLA_2` y `MAX_INTENTOS_INVALIDOS` de `cobroVenta.ts`): una prueba lo vigila.
+// NO llamar directamente a `avPalabrasProhibidas`, `avSinBordes`, `avCortar`, `avAjustarFinal`, `avUnificar` (core/avisos) ni a `cbCampoLeido`: lanzan con entradas que no son texto; usar los puntos de entrada.
 //
 // `tratamiento`: 'tu' o 'usted'; cualquier otro valor (vos, vacío, basura) es 'tu': sin voseo. El texto 'usted' conjuga LITERALMENTE las mismas frases de 'tu' y está PENDIENTE de aprobación de
-// Andres y de Silvana (como en `core/texto/no-repetir.js`); la excepción: la constante exenta no tiene versión 'usted' (no se exime nada que Andres no haya aprobado), así que `cuadra` con 'usted'
-// sale con otra frase, sin la palabra «confirmamos». `quien` = nombre de quien atiende (`voz.quienAtiende`); vacío o raro => «nuestro equipo».
+// Andres y de Silvana (como en `core/texto/no-repetir.js`). `quien` = nombre de quien atiende (`voz.quienAtiende`); vacío o raro => «nuestro equipo».
 // Funciones puras: sin globales de Node, reloj ni red.
 // =============================================================================
 
-// La ÚNICA constante exenta de `CB_PROHIBIDAS`. Copia exacta de `RR_TEXTO_COMPROBANTE_LEIDO` (rr.js); una prueba compara los dos.
-const CB_TEXTO_COMPROBANTE_LEIDO = '¡Gracias! 🙌 Ya recibí tu comprobante, dame un momento mientras confirmamos tu pago. En cuanto esté validado, te mando tus enlaces de descarga aquí mismo.';
+// Prohibición 4: el nombre de quien atiende no puede ser una negación de ser una IA. Copia EXACTA de `NIEGA_IA` de `core/venta/procesar-respuesta.js` (una prueba lo comprueba).
+const CB_NIEGA_IA = /(no\s+soy\s+(un[ao]?\s+)?(bot|robot|m[aá]quina|programa|inteligencia\s+artificial|\bia\b|asistente\s+virtual|autom[aá]tic[ao])|soy\s+(un[ao]?\s+)?(persona|humano|humana|ser\s+humano)|habl(as|[aá]s|a)\s+con\s+(un[ao]?\s+)?(persona|humano|humana))/i;
+
+// Lista cerrada de monedas que el módulo escribe: `Bs` y `USD`; cualquier otra cosa es `Bs`.
+function cbMonedaCerrada(m) {
+  return /^usd$/i.test(cbMoneda(m)) ? 'USD' : 'Bs';
+}
 
 // Las frases fijas que `cbDiferencia` devuelve sin monto: son las únicas (junto con la del monto) que se aceptan ya armadas.
 const CB_DIFERENCIAS_FIJAS = [
@@ -46,13 +53,10 @@ function cbQuien(q) {
   if (s === '') return 'nuestro equipo';
   const c = cbCanon(s);
   if (/https?:|www\.|@|\d{4,}|[|*_~`\\[\]{}]/.test(s)) return 'nuestro equipo';
+  const n = c.replace(/[^a-z0-9]+/g, ' ').trim();
+  if (CB_NIEGA_IA.test(n) || /\b(banco|sistema|bot|ia|robot|persona real|humano)\b/.test(n)) return 'nuestro equipo';
   if (CB_PROHIBIDAS.test(c) || /simulad|prueba|acredit|verific|ya\s+entr|pagad|\bpago\b|\bpagu|recib|\bqr\b/.test(c)) return 'nuestro equipo';
   return s;
-}
-
-// ¿Este texto es EXACTAMENTE la constante exenta (con los espacios colapsados)? Por coincidencia exacta, nunca por patrón.
-function cbEsTextoFijoExento(texto) {
-  return String(texto === undefined || texto === null ? '' : texto).replace(/\s+/g, ' ').trim() === CB_TEXTO_COMPROBANTE_LEIDO;
 }
 
 // ¿Este texto cae en la red de frases prohibidas?
@@ -62,12 +66,12 @@ function cbTextoProhibido(texto) {
 
 // La diferencia que se le dice al cliente: la frase fija que arma `cbDiferencia` desde lo que dice el servidor, o una YA armada con esa misma forma. Lo leído de la imagen nunca pasa.
 function cbDiferenciaPara(diferencia, moneda) {
-  const armada = cbDiferencia(diferencia, moneda);
+  const armada = cbDiferencia(diferencia, cbMonedaCerrada(moneda));
   if (armada !== '') return armada;
   if (typeof diferencia !== 'string') return '';
   const t = diferencia.trim();
   if (CB_DIFERENCIAS_FIJAS.indexOf(t) >= 0) return t;
-  return /^el comprobante dice \d+(?:,\d+)? [A-Za-z$.]{1,5} y tu pedido es de \d+(?:,\d+)? [A-Za-z$.]{1,5}$/.test(t) ? t : '';
+  return /^el comprobante dice \d{1,7}(?:,\d{1,2})? (?:Bs|USD) y tu pedido es de \d{1,7}(?:,\d{1,2})? (?:Bs|USD)$/.test(t) ? t : '';
 }
 
 // El MOTIVO exacto de un aviso por un comprobante que no cuadra, para que el negocio sepa qué mirar. `estado` = tardio | en_revision | aproximado | '' (sin cotejar); `motivoSrv` = el
@@ -91,19 +95,21 @@ function cbArmarComprobante(resultado, causa, salio, dif, q, u, simulado) {
   if (simulado) {
     return { cuerpo: 'Recibí ' + s('tu', 'su') + ' comprobante SIMULADO. Es una prueba: no se movió dinero ni se envía ningún material.', boton: false };
   }
+  // El aviso se suprimió por el límite: no se dice «no pude avisarle» ni «ya lo pasé» de ESTE comprobante.
+  const repetido = { cuerpo: 'Recibí ' + s('tu', 'su') + ' comprobante, pero no pude cotejarlo. ' + q + ' ya recibió el aviso de un comprobante anterior; ' + s('si quieres, escríbele', 'si quiere, escríbale') + ' directo con el botón.', boton: true };
   if (resultado === 'aproximado') {
     // Los datos NO coinciden del todo: no se dice que coinciden. Se dice lo que se sabe (el motivo, si es el monto) y que lo revisa quien atiende.
     const detalle = causa === 'monto_distinto' ? 'el monto del comprobante no coincide del todo con ' + s('tu', 'su') + ' pedido' : 'hay un dato del comprobante que ' + q + ' tiene que mirar con cuidado';
+    if (salio === 'repetido') return repetido;
     return salio === true
       ? { cuerpo: 'Recibí ' + s('tu', 'su') + ' comprobante, pero ' + detalle + '. Ya pasé ' + s('tu', 'su') + ' comprobante a ' + q + ' para que lo revise; ' + s('si quieres escribirle, toca', 'si quiere escribirle, toque') + ' el botón.', boton: true }
       : { cuerpo: sinAviso, boton: true };
   }
   if (resultado === 'cuadra') {
+    if (salio === 'repetido') return repetido;
     if (salio !== true) return { cuerpo: sinAviso, boton: true };
-    // El texto fijo exento solo existe en trato «tú»; en «usted» sale una frase sin «confirmamos» ni «validado».
-    return u
-      ? { cuerpo: 'Recibí su comprobante y ya se lo pasé a ' + q + ' para que lo revise; si quiere escribirle, toque el botón.', boton: true }
-      : { cuerpo: CB_TEXTO_COMPROBANTE_LEIDO, boton: false, fijo: true };
+    // Texto común neutro (sin «confirmamos», «validado» ni nada de un cliente): el comprobante llegó y lo revisa quien atiende.
+    return { cuerpo: 'Recibí ' + s('tu', 'su') + ' comprobante y ya se lo pasé a ' + q + ' para que lo revise; ' + s('si quieres escribirle, toca', 'si quiere escribirle, toque') + ' el botón.', boton: true };
   }
   if (resultado === 'reintentar') {
     return { cuerpo: 'Recibí ' + s('tu', 'su') + ' comprobante, pero veo una diferencia con ' + s('tu', 'su') + ' compra' + (dif ? ': ' + dif : '') + '. ' + s('Si te equivocaste, envíame', 'Si se equivocó, envíeme')
@@ -140,7 +146,7 @@ function cbArmarComprobante(resultado, causa, salio, dif, q, u, simulado) {
 //   salio       true SOLO si el aviso al negocio devolvió un `wamid` real; 'repetido' = el aviso se suprimió por el límite; cualquier otra cosa = no salió.
 //   diferencia  lo que dio el servidor (`cbDiferencia` lo vuelve frase fija) o una frase ya armada con esa forma; lo demás se ignora.
 //   codigo, resumen, moneda: reservados para el pie del pedido; NO cambian el texto del comprobante (la adopción por Rubén y Antonio no cambia nada de lo que ven hoy). `moneda` sí entra en la diferencia.
-// Devuelve { cuerpo, boton, aviso, fijo? }: `boton` = lleva el botón para escribir al negocio; `aviso` = el motivo para el aviso al negocio ('' si este resultado no lo genera); `fijo` = es la constante exenta.
+// Devuelve { cuerpo, boton, aviso }: `boton` = lleva el botón para escribir al negocio; `aviso` = el motivo para el aviso al negocio ('' si este resultado no lo genera).
 function cbTextoComprobante(resultado, opciones) {
   const o = cbEsObjeto(opciones) ? opciones : {};
   const r = typeof resultado === 'string' ? resultado : '';
@@ -151,7 +157,7 @@ function cbTextoComprobante(resultado, opciones) {
   const dif = r === 'reintentar' ? cbDiferenciaPara(o.diferencia, o.moneda).replace(/\btu\b/g, u ? 'su' : 'tu') : '';
   let q = cbQuien(o.quien);
   let t = cbArmarComprobante(r, causa, salio, dif, q, u, simulado);
-  if (t.fijo !== true && cbTextoProhibido(t.cuerpo)) {
+  if (cbTextoProhibido(t.cuerpo)) {
     q = 'nuestro equipo';
     t = cbArmarComprobante(r, causa, salio, dif, q, u, simulado);
     if (cbTextoProhibido(t.cuerpo)) t = { cuerpo: 'Recibí ' + (u ? 'su' : 'tu') + ' archivo. ' + (u ? 'Escríbale' : 'Escríbele') + ' directo a nuestro equipo con el botón.', boton: true };
@@ -162,21 +168,21 @@ function cbTextoComprobante(resultado, opciones) {
     else if (['cuadra', 'reintentar', 'ilegible', 'ya_cotejado'].indexOf(r) < 0) aviso = cbMotivoAviso(causa === 'tardio' || causa === 'en_revision' ? causa : '', causa);
   }
   const salida = { cuerpo: t.cuerpo, boton: t.boton === true, aviso: aviso };
-  if (t.fijo === true) salida.fijo = true;
   return salida;
 }
 
 // El monto como se le dice al cliente («55 Bs», «12,50 Bs»), o '' si no es un monto válido.
 function cbMontoConMoneda(monto, moneda) {
   const m = cbTotalValido(typeof monto === 'number' ? monto : Number(monto));
-  return m === null ? '' : cbMonto(m) + ' ' + cbMoneda(moneda);
+  return m === null ? '' : cbMonto(m) + ' ' + cbMonedaCerrada(moneda);
 }
 
 // Un nombre de producto para el pie: una línea limpia, sin frases de dinero y, en el cobro REAL, sin «simulado» ni «prueba».
-function cbNombreDeProducto(texto, real) {
-  const s = cbLinea(texto, 120);
+function cbNombreDeProducto(texto, real, max) {
+  const s = cbLinea(texto, max || 120);
   if (s === '') return '';
   const c = cbCanon(s);
+  if (/https?:|www\.|wa\.me|t\.me|bit\.ly|\d{7,}/.test(c)) return '';
   if (CB_PROHIBIDAS.test(c)) return '';
   if (real && /simulad|simulacr|demostracion|prueba/.test(c)) return '';
   return s;
@@ -198,7 +204,7 @@ function cbPieQr(datos) {
   }
   const nom = cbNombreDeProducto(d.producto, true) || (u ? 'su opción' : 'tu opción');
   const inc = cbNombreDeProducto(d.incluye, true);
-  const pres = typeof d.presentacion === 'string' && d.presentacion !== '' && !cbTextoProhibido(d.presentacion) && !/simulad/i.test(d.presentacion) ? d.presentacion.slice(0, 300) : '';
+  const pres = cbNombreDeProducto(d.presentacion, true, 300);
   const texto = (pres ? pres + ' ' : '') + (u ? 'Eligió ' : 'Elegiste ') + nom + (inc ? ' (' + inc + ')' : '') + ' por ' + m + '. '
     + (u ? 'Escanee el QR: es de monto abierto, así que ingrese exactamente ' + m + ' y después mándeme aquí la captura del comprobante.'
       : 'Escanea el QR: es de monto abierto, así que ingresa exactamente ' + m + ' y después mándame aquí la captura del comprobante.')

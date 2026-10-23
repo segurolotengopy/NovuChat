@@ -143,6 +143,16 @@ describe('core/avisos: lo que no debe pasar con entradas malformadas', () => {
       for (const l of [[], [t], [t, t]]) for (const p of ['', t]) expect(() => f('avUnificar')(l, p, []), 'avUnificar').not.toThrow();
     }
   });
+  it('observación documentada: `avProhibidas` cede ante un `VM_PROHIBIDAS` ajeno (igual que #519); sin él, el módulo usa su red propia y no depende de ningún global', () => {
+    const solo = vm.createContext(Object.create(null));
+    vm.runInContext(src, solo);
+    expect(vm.runInContext('avProhibidas() === AV_PROHIBIDAS', solo)).toBe(true);
+    expect(vm.runInContext("avSinProhibidas('su pago acreditado') !== 'su pago acreditado'", solo)).toBe(true);
+    const con = vm.createContext(Object.create(null));
+    vm.runInContext('const VM_PROHIBIDAS = /^$/;\n' + src, con);
+    expect(vm.runInContext('avProhibidas() === VM_PROHIBIDAS', con)).toBe(true);
+    expect(src).toContain('OBSERVACIÓN (revisión de seguridad de #611)');
+  });
   it('un aviso nunca lleva una frase prohibida ni un enlace: avSinProhibidas y avLimpio los quitan', () => {
     const limpio = f('avLimpio')('Su pago acreditado ya llegó, mire https://malo.example/x', 200) as string;
     expect(limpio).not.toMatch(/https?:|malo\.example/i);

@@ -102,7 +102,7 @@ describe('cobros/venta común: las 27 declaraciones comunes, BYTE A BYTE contra 
     const nombres = (a: string): string[] => [...FUENTES[a]!.matchAll(/^(?:function|const) ([A-Za-z_][A-Za-z0-9_]*)/gm)].map((m) => m[1]!);
     expect(nombres('lectura.js').sort()).toEqual([...EN_LECTURA].sort());
     expect(nombres('cotejo.js').sort()).toEqual([...EN_COTEJO, 'cbCobroDelPanel'].sort());
-    expect(nombres('textos.js').sort()).toEqual(['CB_DIFERENCIAS_FIJAS', 'CB_TEXTO_COMPROBANTE_LEIDO', 'cbArmarComprobante', 'cbDiferenciaPara', 'cbEsTextoFijoExento', 'cbMontoConMoneda', 'cbMotivoAviso', 'cbNombreDeProducto', 'cbPieQr', 'cbQuien', 'cbTextoCobroCancelado', 'cbTextoComprobante', 'cbTextoProhibido', 'cbTextoQrAbierto', 'cbTextoQrVencido', 'cbTratamiento']);
+    expect(nombres('textos.js').sort()).toEqual(['CB_DIFERENCIAS_FIJAS', 'CB_NIEGA_IA', 'cbArmarComprobante', 'cbDiferenciaPara', 'cbMonedaCerrada', 'cbMontoConMoneda', 'cbMotivoAviso', 'cbNombreDeProducto', 'cbPieQr', 'cbQuien', 'cbTextoCobroCancelado', 'cbTextoComprobante', 'cbTextoProhibido', 'cbTextoQrAbierto', 'cbTextoQrVencido', 'cbTratamiento']);
   });
 });
 
@@ -142,9 +142,8 @@ const M = (nombre: string): ((...a: unknown[]) => any) => vm.runInContext(nombre
 const prohibida = vm.runInContext('CB_PROHIBIDAS', ctx) as RegExp;
 const canon = M('cbCanon');
 const cbTextoComprobante = M('cbTextoComprobante');
-const FIJO = vm.runInContext('CB_TEXTO_COMPROBANTE_LEIDO', ctx) as string;
 
-interface Salida { cuerpo: string; boton: boolean; aviso: string; fijo?: boolean }
+interface Salida { cuerpo: string; boton: boolean; aviso: string }
 const RESULTADOS = ['cuadra', 'aproximado', 'reintentar', 'ilegible', 'sin_cotejo', 'ya_cotejado', 'simulado', 'no_cuadra', 'cosa_rara', undefined, 5];
 const CAUSAS = ['', 'tardio', 'en_revision', 'monto_distinto', 'pago acreditado', 7];
 const SALIOS = [true, false, 'repetido', 'true'];
@@ -173,12 +172,9 @@ describe('cobros/venta común · textos: la matriz completa, pruebas negadas', (
       expect(typeof f.s.aviso).toBe('string');
     }
   });
-  it('(1) ningún cuerpo cae en CB_PROHIBIDAS, salvo la constante exenta (exacta, con fijo:true)', () => {
+  it('(1) ningún cuerpo cae en CB_PROHIBIDAS (sin exención alguna en el módulo común)', () => {
     const fallos: string[] = [];
-    for (const f of FILAS) {
-      if (f.s.fijo === true) { if (f.s.cuerpo !== FIJO) fallos.push('fijo distinto: ' + f.s.cuerpo); continue; }
-      if (prohibida.test(canon(f.s.cuerpo))) fallos.push(f.s.cuerpo);
-    }
+    for (const f of FILAS) if (prohibida.test(canon(f.s.cuerpo))) fallos.push(f.s.cuerpo);
     expect(fallos.slice(0, 3)).toEqual([]);
   });
   it('(1) ningún cuerpo dice «pago acreditado/verificado», «recibimos tu pago», «acreditad», «verificad» ni «ya entró» (la constante exenta tampoco)', () => {
@@ -186,25 +182,29 @@ describe('cobros/venta común · textos: la matriz completa, pruebas negadas', (
       expect(canon(f.s.cuerpo)).not.toMatch(/acreditad|verificad|recibimos (tu|su) pago|ya entr[oó]|ya llego|pago recibido|pago confirmado/);
     }
   });
-  it('la constante exenta sale SOLO con cuadra + aviso salido + trato «tú» + no simulado, y es idéntica a la de rr.js', () => {
+  it('M-1: NINGUNA combinación devuelve `fijo` ni dice «confirmamos tu pago» ni «enlaces de descarga»; el módulo no declara la constante de Rubén', () => {
     for (const f of FILAS) {
-      if (f.s.fijo !== true) continue;
-      expect(f.r).toBe('cuadra');
-      expect(f.salio).toBe(true);
-      expect(f.tr === 'usted').toBe(false);
-      expect(f.sim === true).toBe(false);
-      expect(f.s.boton).toBe(false);
+      expect('fijo' in f.s).toBe(false);
+      expect(f.s.cuerpo).not.toMatch(/confirmamos tu pago|enlaces de descarga|esté validado/i);
     }
-    expect(FILAS.some((f) => f.s.fijo === true)).toBe(true);
-    const rr = leer(join(EXP, 'rroca-ruben/src/lib/rr.js'));
-    const m = /^const RR_TEXTO_COMPROBANTE_LEIDO = '(.*)';$/m.exec(rr);
-    expect(m).not.toBeNull();
-    expect(FIJO).toBe(m![1]);
+    expect(TODO).not.toMatch(/CB_TEXTO_COMPROBANTE_LEIDO|cbEsTextoFijoExento|enlaces de descarga/);
+  });
+  it('`cuadra` con aviso salido da el texto común neutro (con botón), en «tú» y en «usted»', () => {
+    expect(cbTextoComprobante('cuadra', { salio: true, quien: 'Rubén' })).toEqual({ cuerpo: 'Recibí tu comprobante y ya se lo pasé a Rubén para que lo revise; si quieres escribirle, toca el botón.', boton: true, aviso: '' });
+    expect(cbTextoComprobante('cuadra', { salio: true, quien: '', tratamiento: 'usted' }).cuerpo).toBe('Recibí su comprobante y ya se lo pasé a nuestro equipo para que lo revise; si quiere escribirle, toque el botón.');
+  });
+  it('LOW-3: con salio «repetido», cuadra y aproximado usan la frase de «repetido» y no dicen «no pude avisarle»', () => {
+    for (const r of ['cuadra', 'aproximado']) {
+      for (const tr of ['tu', 'usted']) {
+        const c = cbTextoComprobante(r, { salio: 'repetido', quien: 'Rubén', tratamiento: tr }).cuerpo as string;
+        expect(c).toMatch(/Rubén ya recibió el aviso de un comprobante anterior/);
+        expect(c).not.toMatch(/no pude avisarle|ya lo pas|le avis/i);
+      }
+    }
   });
   it('(2) `aproximado` nunca dice «coinciden» (ni «cuadra», «coincide con tu compra»): distinto de `cuadra`', () => {
     for (const f of FILAS.filter((x) => x.r === 'aproximado' && x.sim !== true)) {
       expect(f.s.cuerpo).not.toMatch(/\bcoinciden\b|\bcuadra\b|\bcoincide con (tu|su) (compra|pedido)\b/i);
-      expect(f.s.fijo).toBeUndefined();
     }
   });
   it('(2) con `salio` distinto de true NUNCA dice «ya lo pasé», «ya pasé», «le avisé», «ya avisé» ni «pasé tu comprobante»', () => {
@@ -222,7 +222,6 @@ describe('cobros/venta común · textos: la matriz completa, pruebas negadas', (
   it('(2) el simulado nunca promete nada de dinero: sin «pago», sin botón de pago, sin aviso al negocio', () => {
     for (const f of FILAS.filter((x) => x.sim === true || x.r === 'simulado')) {
       expect(f.s.aviso).toBe('');
-      expect(f.s.fijo).toBeUndefined();
       expect(f.s.cuerpo).toMatch(/no se movió dinero/);
     }
   });
@@ -256,7 +255,7 @@ describe('cobros/venta común · textos: la matriz completa, pruebas negadas', (
     for (const quien of ['el pago ya', 'tu pago', 'la plata ya llegó', 'Rubén y su pago ya fue recibido']) {
       for (const r of RESULTADOS) {
         const s = cbTextoComprobante(r, { quien, salio: true, causa: 'tardio' }) as Salida;
-        if (s.fijo !== true) expect(prohibida.test(canon(s.cuerpo))).toBe(false);
+        expect(prohibida.test(canon(s.cuerpo))).toBe(false);
       }
     }
   });
@@ -276,16 +275,38 @@ describe('cobros/venta común · textos: la matriz completa, pruebas negadas', (
     for (const r of ['cuadra', 'reintentar', 'ilegible', 'ya_cotejado', 'simulado']) expect(cbTextoComprobante(r, { salio: true }).aviso).toBe('');
     expect(cbTextoComprobante('aproximado', { causa: 'Pago acreditado a Juan', salio: true }).aviso).not.toContain('Juan');
   });
-  it('cbEsTextoFijoExento: solo la constante exacta (espacios colapsados); una letra distinta, un homoglifo o una frase agregada, no', () => {
-    const e = M('cbEsTextoFijoExento');
-    expect(e(FIJO)).toBe(true);
-    expect(e('  ' + FIJO.replace(' ', '   ') + '\n')).toBe(true);
-    expect(e(FIJO + ' Gracias.')).toBe(false);
-    expect(e(FIJO.replace('validado', 'validаdo'))).toBe(false); // «а» cirílica
-    expect(e(FIJO.replace('Ya recibí', 'Ya recibimos'))).toBe(false);
-    expect(e(null)).toBe(false);
-    expect(e(undefined)).toBe(false);
-    expect(e({})).toBe(false);
+  it('LOW-1: `quien` que niega ser una IA o nombra banco/sistema/bot cae en «nuestro equipo»', () => {
+    for (const quien of ['no soy un bot', 'soy una persona real', 'el banco', 'el sistema', 'Bot de ventas', 'Soy humano', 'Robot', 'IA', 'Banco Unión']) {
+      expect(cbTextoComprobante('ya_cotejado', { quien }).cuerpo, quien).toContain('nuestro equipo');
+    }
+    expect(cbTextoComprobante('ya_cotejado', { quien: 'Antonio' }).cuerpo).toContain('Antonio');
+  });
+  it('LOW-1: CB_NIEGA_IA es copia exacta de NIEGA_IA de procesar-respuesta.js', () => {
+    const venta = leer(join(REPO, 'Flujos/src/core/venta/procesar-respuesta.js')).split('\n').find((l) => l.startsWith('const NIEGA_IA'))!;
+    const mio = FUENTES['textos.js']!.split('\n').find((l) => l.startsWith('const CB_NIEGA_IA'))!;
+    expect(mio).toBe(venta.replace('const NIEGA_IA', 'const CB_NIEGA_IA'));
+  });
+  it('LOW-2: lista cerrada de monedas (Bs, USD): una moneda rara cae en Bs; la diferencia ya armada solo acepta Bs/USD y hasta 7 dígitos', () => {
+    const pie = M('cbPieQr');
+    const t = (moneda: unknown, dif: unknown): string => cbTextoComprobante('reintentar', { moneda, diferencia: dif }).cuerpo;
+    expect(t('USD', ['El comprobante dice 10 y el pedido es de 12'])).toContain('10 USD y tu pedido es de 12 USD');
+    expect(t('pago acreditado', ['El comprobante dice 10 y el pedido es de 12'])).toContain('10 Bs y tu pedido es de 12 Bs');
+    expect(t(undefined, 'el comprobante dice 10 EUR y tu pedido es de 12 Bs')).not.toContain('EUR');
+    expect(t(undefined, 'el comprobante dice 12345678 Bs y tu pedido es de 12 Bs')).not.toContain('12345678');
+    expect(t(undefined, 'el comprobante dice 1234567 Bs y tu pedido es de 12 Bs')).toContain('1234567 Bs');
+    expect(pie({ producto: 'x', monto: 5, moneda: 'EUR' })).toContain('5 Bs');
+    expect(pie({ producto: 'x', monto: 5, moneda: 'usd' })).toContain('5 USD');
+  });
+  it('LOW-4: «15 minutos» y «tercer intento» coinciden con el servidor (cobroVenta.ts)', () => {
+    const srv = leer(join(REPO, 'admin/functions/src/modulos/cobros/cobroVenta.ts'));
+    const min = /export const MINUTOS_QR_VENTA_REGLA_2 = (\d+);/.exec(srv);
+    const max = /export const MAX_INTENTOS_INVALIDOS = (\d+);/.exec(srv);
+    expect(min?.[1]).toBe('15');
+    expect(max?.[1]).toBe('3');
+    expect(cbTextoComprobante('sin_cotejo', { causa: 'tardio', salio: true }).cuerpo).toContain('después de los ' + min![1] + ' minutos');
+    expect(cbTextoComprobante('sin_cotejo', { causa: 'en_revision', salio: true }).cuerpo).toContain('varios intentos');
+    expect(M('cbMotivoAviso')('en_revision', '')).toContain('tercer intento');
+    expect(Number(max![1])).toBe(3);
   });
 });
 
@@ -331,6 +352,19 @@ describe('cobros/venta común · el resto de los textos (pie del QR, QR abierto,
   });
   it('el pie real no nombra banco, titular ni cuenta (el QR ya los lleva)', () => {
     expect(pie({ producto: 'el Pack', monto: 150, titular: 'Juan', banco: 'Banco X', cuenta: '123' })).not.toMatch(/Juan|Banco|cuenta/i);
+  });
+  it('M-2: la `presentacion` del pie REAL se trata como el nombre del producto: simulado/prueba/enlaces/números largos la dejan fuera', () => {
+    const num = '1234' + '5678';
+    const MALAS = ['S\u200bIMULADO', 'Hola, soy el asistente sіmulado', 'Prueba de demostración', 'Hola\nsoy el asistente de prueba', 'Escríbenos a https://wa.me/' + num, 'Llámanos al ' + num, 'Hola \u{e0073}\u{e0069}mulado prueba'];
+    for (const presentacion of MALAS) {
+      const t = pie({ producto: 'el Pack', monto: 150, presentacion });
+      expect(t, presentacion).toMatch(/^Elegiste el Pack por 150 Bs\./);
+      expect(t).not.toMatch(/<|https?:|wa\.me/);
+    }
+    // Las marcas HTML quedan sin `<` ni `>` (cbLinea los quita).
+    expect(pie({ producto: 'el Pack', monto: 150, presentacion: 'Hola <b>soy</b> el asistente' })).not.toMatch(/[<>]/);
+    // En el simulado la presentación no se usa; en el real una buena pasa tal cual (así la ve hoy Rubén).
+    expect(pie({ producto: 'el Pack', monto: 150, presentacion: 'Hola, soy el asistente virtual de Rubén.' })).toMatch(/^Hola, soy el asistente virtual de Rubén\. Elegiste/);
   });
   it('QR vencido: «ya avisé» solo con salio === true', () => {
     for (const salio of [false, 'repetido', undefined, 'true']) expect(vencido({ salio, quien: 'Rubén' }).cuerpo).not.toMatch(/ya avis[eé]|le avis[eé]/i);
@@ -391,20 +425,37 @@ describe.skipIf(!hayLibs)('cobros/venta común · TABLA DORADA contra rr.js y ra
   const DIFS_G = ['', 'el comprobante dice 10 Bs y tu pedido es de 12 Bs', 'la cuenta de destino no es la del QR'];
   const RESULT_G = ['cuadra', 'aproximado', 'reintentar', 'ilegible', 'sin_cotejo', 'ya_cotejado', 'cosa_rara'];
 
-  it('RUBÉN: rrTextoComprobante == cbTextoComprobante(quien: «Rubén», tu) en TODA la matriz (cuerpo, boton y fijo), incluido `simulado`', () => {
-    let n = 0;
+  // Rubén conserva SU texto exento (`RR_TEXTO_COMPROBANTE_LEIDO`) en su pieza propia; el módulo común no lo trae (M-1). Se compara todo lo demás.
+  const RR_EXENTO = (): string => RR('RR_TEXTO_COMPROBANTE_LEIDO') as string;
+  it('RUBÉN: rrTextoComprobante == cbTextoComprobante(quien: «Rubén», tu) en TODA la matriz salvo las DIFERENCIAS INTENCIONALES declaradas, incluido `simulado`', () => {
+    let iguales = 0; let cuadra = 0; let repetido = 0;
     for (const r of [...RESULT_G, 'simulado']) for (const causa of CAUSAS_G) for (const salio of SALIOS_G) for (const dif of DIFS_G) {
-      const hoy = RR('rrTextoComprobante')(r, causa, salio, dif) as Salida;
+      const hoy = RR('rrTextoComprobante')(r, causa, salio, dif) as Salida & { fijo?: boolean };
       const nuevo = cbTextoComprobante(r, { causa, salio, diferencia: dif, quien: 'Rubén', tratamiento: 'tu' }) as Salida;
+      if (r === 'cuadra' && salio === true) {
+        // DIFERENCIA INTENCIONAL 1: Rubén conserva su constante exenta en su pieza (rr.js); el módulo común da el texto neutro, con botón.
+        expect(hoy.fijo).toBe(true);
+        expect(hoy.cuerpo).toBe(RR_EXENTO());
+        expect(nuevo.cuerpo).toBe('Recibí tu comprobante y ya se lo pasé a Rubén para que lo revise; si quieres escribirle, toca el botón.');
+        expect(nuevo.boton).toBe(true);
+        cuadra++;
+        continue;
+      }
+      if ((r === 'cuadra' || r === 'aproximado') && salio === 'repetido') {
+        // DIFERENCIA INTENCIONAL 2 (LOW-3): hoy dice «no pude avisarle a Rubén» aunque el aviso se suprimió; el módulo usa la frase de «repetido».
+        expect(hoy.cuerpo).toContain('no pude avisarle a Rubén');
+        expect(nuevo.cuerpo).toContain('Rubén ya recibió el aviso de un comprobante anterior');
+        repetido++;
+        continue;
+      }
       expect(nuevo.cuerpo, [r, causa, salio, dif].join('|')).toBe(hoy.cuerpo);
       expect(nuevo.boton).toBe(hoy.boton);
-      expect(nuevo.fijo === true).toBe(hoy.fijo === true);
-      n++;
+      expect('fijo' in nuevo).toBe(false);
+      iguales++;
     }
-    expect(n).toBeGreaterThan(300);
-  });
-  it('RUBÉN: la constante exenta del módulo es la de rr.js y rrSeguro la reconoce como fija', () => {
-    expect(RR('RR_TEXTO_COMPROBANTE_LEIDO')).toBe(FIJO);
+    expect(iguales).toBeGreaterThan(300);
+    expect(cuadra).toBe(CAUSAS_G.length * DIFS_G.length);
+    expect(repetido).toBe(2 * CAUSAS_G.length * DIFS_G.length);
   });
   it('ANTONIO: raTextoComprobante == cbTextoComprobante(quien: «Antonio», tu) en TODA la matriz, SALVO las diferencias intencionales', () => {
     let iguales = 0; let distintos = 0;
@@ -412,19 +463,19 @@ describe.skipIf(!hayLibs)('cobros/venta común · TABLA DORADA contra rr.js y ra
       const hoy = RA('raTextoComprobante')(r, causa, salio, dif, {}) as Salida;
       const nuevo = cbTextoComprobante(r, { causa, salio, diferencia: dif, quien: 'Antonio', tratamiento: 'tu' }) as Salida;
       if (r === 'cuadra' && salio === true) {
-        // DIFERENCIA INTENCIONAL 1: `cuadra` con aviso salido. Antonio decía «los datos coinciden con tu compra… él te enviará el material»; el módulo usa el texto fijo exento decidido por Andres (20/10).
+        // DIFERENCIA INTENCIONAL 1: `cuadra` con aviso salido. Antonio decía «los datos coinciden con tu compra… él te enviará el material»; el módulo da el texto común neutro (sin la constante de Rubén). Antonio solo con un «sí» explícito de Andres.
         expect(hoy.cuerpo).toContain('los datos coinciden');
-        expect(nuevo.fijo).toBe(true);
-        expect(nuevo.cuerpo).toBe(FIJO);
+        expect(nuevo.cuerpo).toBe('Recibí tu comprobante y ya se lo pasé a Antonio para que lo revise; si quieres escribirle, toca el botón.');
         distintos++;
         continue;
       }
+      if ((r === 'cuadra' || r === 'aproximado') && salio === 'repetido') { distintos++; continue; } // LOW-3: ver la diferencia de Rubén
       expect(nuevo.cuerpo, [r, causa, salio, dif].join('|')).toBe(hoy.cuerpo);
       expect(nuevo.boton).toBe(hoy.boton);
       iguales++;
     }
     expect(iguales).toBeGreaterThan(250);
-    expect(distintos).toBe(CAUSAS_G.length * DIFS_G.length);
+    expect(distintos).toBe(3 * CAUSAS_G.length * DIFS_G.length);
   });
   it('ANTONIO: `simulado` y `aproximado` (DIFERENCIAS INTENCIONALES 2 y 3): Antonio no tiene cobro simulado; `aproximado` nunca dice «coinciden» y el módulo ya lo hace bien', () => {
     expect(RA('raTextoComprobante')('aproximado', '', true, '', {}).cuerpo).not.toMatch(/\bcoinciden\b/);
@@ -509,7 +560,7 @@ describe('cobros/venta común · fuzz: entradas malformadas no lanzan', () => {
     return o;
   };
   const NOMBRES = ['cbCanon', 'cbLinea', 'cbEsObjeto', 'cbTotalValido', 'cbMonto', 'cbMoneda', 'cbCodigo', 'cbUrlSegura', 'cbCobroReal', 'cbTextoDeGemini', 'cbObjetoUnico', 'cbLectura', 'cbCuerpoDe', 'cbRutaGuardada', 'cbResultadoVenta', 'cbEstadoParaAviso', 'cbImporteDelServidor', 'cbDiferencia',
-    'cbCobroDelPanel', 'cbTratamiento', 'cbQuien', 'cbEsTextoFijoExento', 'cbTextoProhibido', 'cbDiferenciaPara', 'cbMotivoAviso', 'cbTextoComprobante', 'cbMontoConMoneda', 'cbNombreDeProducto', 'cbPieQr', 'cbTextoQrAbierto', 'cbTextoQrVencido', 'cbTextoCobroCancelado'];
+    'cbCobroDelPanel', 'cbTratamiento', 'cbQuien', 'cbMonedaCerrada', 'cbTextoProhibido', 'cbDiferenciaPara', 'cbMotivoAviso', 'cbTextoComprobante', 'cbMontoConMoneda', 'cbNombreDeProducto', 'cbPieQr', 'cbTextoQrAbierto', 'cbTextoQrVencido', 'cbTextoCobroCancelado'];
   it('ninguna función del módulo lanza con 1 a 3 argumentos de cualquier forma (1.500 corridas por función)', () => {
     for (const nombre of NOMBRES) {
       const fn = M(nombre);
@@ -528,7 +579,7 @@ describe('cobros/venta común · fuzz: entradas malformadas no lanzan', () => {
       const s = cbTextoComprobante(valor(), valor()) as Salida;
       expect(typeof s.cuerpo).toBe('string');
       expect(typeof s.boton).toBe('boolean');
-      if (s.fijo !== true) expect(prohibida.test(canon(s.cuerpo))).toBe(false);
+      expect(prohibida.test(canon(s.cuerpo))).toBe(false);
     }
   });
 });
