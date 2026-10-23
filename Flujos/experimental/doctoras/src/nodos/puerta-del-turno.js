@@ -4,12 +4,18 @@
 //                    que el negocio debe dinero. El texto es neutro y sale de «Config del negocio». Se corta ANTES de cualquier llamada al modelo, a la planilla o a recepción.
 //   uso_extendido -> el cliente pasó el umbral de operador o el de bloqueo: operador responde el aviso fijo (cuenta como cualquier respuesta) y la PRIMERA vez avisa a recepción;
 //                    bloqueado no responde nada. NO se llama al modelo.
+//   fuera_de_prueba -> `etapaPrueba = si` y el teléfono no está en `telefonosDePrueba`: no se responde, no se avisa, no se llama al modelo. Nunca se le escribe a un cliente. Es lo PRIMERO que se mira.
 //   sigue         -> todo lo demás: medios, registro del evento, espera de la ráfaga, modelo.
 //
 // La atención sale de lo que devolvió la ingesta del entrante si lo trae y, si no, de `configuracionFlujo` (`cnAtencion`). Sin modelo; sin ficha.
 const FIJO = 'Gracias por tu paciencia. Para atenderte mejor, una persona del equipo va a continuar esta conversación.';
 const cfg = cnCfg();
 const t = cnPrimero('Normalizar entrada') || {};
+if (cfg.etapaPrueba === true) {
+  const permitidos = Array.isArray(cfg.telefonosEtapaPrueba) ? cfg.telefonosEtapaPrueba : [];
+  const quien = cnDigitos(t.from);
+  if (!quien || permitidos.indexOf(quien) < 0) return [{ json: { ruta: 'fuera_de_prueba', texto: '', responder: false, transferir: false, motivo: '', from: t.from } }];
+}
 const previo = cnPrimero('Reportar mensaje (entrante)');
 const cortado = !!(previo && previo.servicio && previo.servicio.estado === 'cortado');
 if (cfg.estadoComercio !== 'operativo' || cortado) {
