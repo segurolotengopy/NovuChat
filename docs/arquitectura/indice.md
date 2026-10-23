@@ -154,3 +154,7 @@ cita sigue resolviéndose.
   está en `main` (búsqueda por palabra, no leídos, ventana de 24 h, índices, bandera,
   relleno y reversión) y, al final, el resumen de H2 que apunta a su contrato.
   Es documento nuevo: no mueve ninguna sección de `admin/DISENO.md`.
+- `docs/arquitectura/core.md`, «Medios guardados (H3)» (23/10/2026): decisiones de
+  Andres sobre guardar los medios entrantes 90 días, los 6 PR del plan y la
+  advertencia previa a la bandera. Enmienda la regla 2 de §4terdecies; no mueve
+  ninguna sección de `admin/DISENO.md`.
