@@ -92,6 +92,7 @@ export const SUITES_PURAS = [
   'pruebas/core/apps-ajenas-escrituras.test.ts',
   'pruebas/core/cotejar-ids-ajenos.test.ts',
   'pruebas/core/entregas.test.ts',
+  'pruebas/core/ux-derivacion.test.ts',
   'pruebas/core/marcador-local-reemplazar.test.ts',
   'pruebas/campanas-consola.test.ts',
   'pruebas/campanas-anuncios-consola.test.ts',
