@@ -19,6 +19,8 @@ import type { J } from '../../lib/flujo';
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
 const CARPETA = join(REPO, 'Flujos/experimental/rroca-antonio');
+// ra.js llama al texto común (`ct*`): sus módulos van delante, como en el flujo.
+const CORE_TEXTO = ['parrafos.js', 'no-repetir.js'].map((a) => readFileSync(join(REPO, 'Flujos/src/core/texto', a), 'utf8')).join('\n') + '\n';
 const mod = (await import(pathToFileURL(join(CARPETA, 'construir.mjs')).href)) as {
   construir: (o?: J) => Array<{ archivo: string; nodos: number; alDia: boolean; existia: boolean; versionado: string[] }>;
   guardias: (v: 'produccion' | 'prueba', f: J) => string[];
@@ -289,7 +291,7 @@ describe('zona: nada de otro cliente en el código de Antonio', () => {
 describe('ra.js: la ficha por teléfono', () => {
   // El código evaluado es el de un archivo del propio repositorio (src/lib), no una entrada externa: solo prueba.
   // nosemgrep: devsecops.js-eval-prohibido
-  const ra = new Function(readFileSync(join(CARPETA, 'src/lib/ra.js'), 'utf8') + '\nreturn { raFichaVigente, raYaVisto, raRecordarIds, raBarrer, RA_OLVIDO_MS, RA_TOPE_IDS, RA_TOPE_FICHAS };')() as J;
+  const ra = new Function(CORE_TEXTO + readFileSync(join(CARPETA, 'src/lib/ra.js'), 'utf8') + '\nreturn { raFichaVigente, raYaVisto, raRecordarIds, raBarrer, RA_OLVIDO_MS, RA_TOPE_IDS, RA_TOPE_FICHAS };')() as J;
   it('una ficha de más de 48 horas se olvida; una vigente conserva sus ids', () => {
     const ahora = 1_000_000_000_000;
     expect(ra.raFichaVigente({ ultimoMs: ahora - ra.RA_OLVIDO_MS - 1, ultimosIds: ['a'] }, ahora).ultimosIds).toEqual([]);

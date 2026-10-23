@@ -54,7 +54,8 @@ export const NODOS_DE_LA_CONVERSACION = ['Interpretar lectura', '¿Cotejar?', 'C
 export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
-  librerias: ['src/lib/cobro.js', 'src/lib/avisos.js', 'src/lib/ra.js'],
+  // Los dos módulos comunes de texto (párrafos y no repetir) van PRIMERO: `ra.js` los llama. Se incluyen desde su fuente, nunca se copian.
+  librerias: ['../../src/core/texto/parrafos.js', '../../src/core/texto/no-repetir.js', 'src/lib/cobro.js', 'src/lib/avisos.js', 'src/lib/ra.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],

@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 const RA = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-antonio');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
 // nosemgrep: devsecops.js-eval-prohibido
-const ra = new Function(`${readFileSync(join(RA, 'src/lib/ra.js'), 'utf8')}\nreturn { raHablaDePagar, raExtraRedaccion, raNorm };`)() as { raHablaDePagar: (n: string) => boolean; raExtraRedaccion: (t: string, n: string) => string; raNorm: (t: string) => string };
+const ra = new Function(`${['parrafos.js', 'no-repetir.js'].map((a) => readFileSync(join(RA, '../../src/core/texto', a), 'utf8')).join('\n')}\n${readFileSync(join(RA, 'src/lib/ra.js'), 'utf8')}\nreturn { raHablaDePagar, raExtraRedaccion, raNorm };`)() as { raHablaDePagar: (n: string) => boolean; raExtraRedaccion: (t: string, n: string) => string; raNorm: (t: string) => string };
 
 describe('(a) «cancelé» es «ya pagué» en Bolivia', () => {
   it('cuentan como pago', () => {

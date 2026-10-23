@@ -1,0 +1,114 @@
+{
+ "nota": "Salidas literales de raParrafos y raHashTexto de main (cf4395a8) calculadas ANTES de borrarlos. Entrada null = null.",
+ "casos": [
+  {
+   "entrada": "Hola. Soy Antonio. El libro cuesta 35 Bs. Incluye todo.",
+   "parrafos": "Hola. Soy Antonio.\n\nEl libro cuesta 35 Bs. Incluye todo.",
+   "hash": "ce2f67f6"
+  },
+  {
+   "entrada": "Hablé con el Dr. Pérez. Sr. López dice etc. Luego sigue.",
+   "parrafos": "Hablé con el Dr. Pérez. Sr. López dice etc. Luego sigue.",
+   "hash": "076ab16f"
+  },
+  {
+   "entrada": "Cuesta Bs. 35. Y el pack Bs. 49. ¿Cuál prefieres?",
+   "parrafos": "Cuesta Bs. 35. Y el pack Bs. 49.\n\n¿Cuál prefieres?",
+   "hash": "de268a20"
+  },
+  {
+   "entrada": "Tengo 1. Pack 2. Libro 3. Workbook. ¿Cuál?",
+   "parrafos": "Tengo 1. Pack 2. Libro 3. Workbook.\n\n¿Cuál?",
+   "hash": "94ef7d12"
+  },
+  {
+   "entrada": "Desde 2026. Tiene todo. Incluye bonos.",
+   "parrafos": "Desde 2026. Tiene todo.\n\nIncluye bonos.",
+   "hash": "485cb58d"
+  },
+  {
+   "entrada": "Son 12. Incluye mucho. Y más cosas.",
+   "parrafos": "Son 12. Incluye mucho.\n\nY más cosas.",
+   "hash": "a782be22"
+  },
+  {
+   "entrada": "No. El libro no trae videos. Solo texto.",
+   "parrafos": "No. El libro no trae videos.\n\nSolo texto.",
+   "hash": "cc41661b"
+  },
+  {
+   "entrada": "¿Quieres el libro? 😊",
+   "parrafos": "¿Quieres el libro? 😊",
+   "hash": "9726df7a"
+  },
+  {
+   "entrada": "Te cuento todo. Es un libro. ¿Te interesa? 😊 ",
+   "parrafos": "Te cuento todo. Es un libro.\n\n¿Te interesa? 😊",
+   "hash": "187fab57"
+  },
+  {
+   "entrada": "Línea uno\r\nLínea dos\r\n\r\n\r\n\r\nOtro bloque. Con dos. Y tres.",
+   "parrafos": "Línea uno\nLínea dos\n\nOtro bloque. Con dos.\n\nY tres.",
+   "hash": "349cecdc"
+  },
+  {
+   "entrada": "a  \nb\t\nc",
+   "parrafos": "a\nb\nc",
+   "hash": "0a3ff845"
+  },
+  {
+   "entrada": "• Pack: 49 Bs\n• Libro: 35 Bs\n\n¿Cuál te interesa?",
+   "parrafos": "• Pack: 49 Bs\n• Libro: 35 Bs\n\n¿Cuál te interesa?",
+   "hash": "5ba1de74"
+  },
+  {
+   "entrada": "",
+   "parrafos": "",
+   "hash": "00001505"
+  },
+  {
+   "entrada": null,
+   "parrafos": "",
+   "hash": "00001505"
+  },
+  {
+   "entrada": "   ",
+   "parrafos": "",
+   "hash": "00001505"
+  },
+  {
+   "entrada": "Hola.\n\n\n\nAdiós. Gracias.",
+   "parrafos": "Hola.\n\nAdiós. Gracias.",
+   "hash": "7b62d433"
+  },
+  {
+   "entrada": "Oración larga palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra termina aquí. Otra cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa final. Una más.",
+   "parrafos": "Oración larga palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra palabra termina aquí.\n\nOtra cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa cosa final. Una más.",
+   "hash": "1ece77ce"
+  },
+  {
+   "entrada": "¡Hola! ¿Cómo estás? Bien, gracias. «Citado» aquí.",
+   "parrafos": "¡Hola! ¿Cómo estás?\n\nBien, gracias. «Citado» aquí.",
+   "hash": "eb5664c5"
+  },
+  {
+   "entrada": "N° 5. Nº 6. Lic. Ruiz. Ing. Gómez.",
+   "parrafos": "N° 5. Nº 6. Lic. Ruiz. Ing. Gómez.",
+   "hash": "e955c2e1"
+  },
+  {
+   "entrada": "Primera frase corta. Segunda frase corta. Tercera frase corta. ¿Cuarta es pregunta?",
+   "parrafos": "Primera frase corta. Segunda frase corta.\n\nTercera frase corta.\n\n¿Cuarta es pregunta?",
+   "hash": "fd75ccac"
+  },
+  {
+   "entrada": {
+    "repetir": "Frase número uno de prueba. ",
+    "veces": 146,
+    "recortar": 4096
+   },
+   "parrafos": "Frase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.\n\nFrase número uno de prueba. Frase número uno de prueba.",
+   "hash": "49c402e5"
+  }
+ ]
+}

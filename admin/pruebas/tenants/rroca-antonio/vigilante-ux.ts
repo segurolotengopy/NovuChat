@@ -5,7 +5,7 @@
  *   2. NO SE OFRECE ALGO ANTES DE TIEMPO: el QR solo sale si en ese turno el cliente eligió un producto (botón, fila de la lista o prellenado del Pack o del Libro), y ningún texto de pago aparece sin QR;
  *   3. UNA SOLA PRESENTACIÓN por mensaje Y UNA POR TELÉFONO: «asistente virtual de Antonio» (y el saludo largo) sale a lo más una vez en toda la conversación;
  *   4. PÁRRAFOS: cada párrafo (separado por una línea en blanco) tiene a lo más DOS oraciones y, con dos, a lo más 220 caracteres; sin saltos triples ni espacios sobrantes. La partición en oraciones es la
- *      de la LIBRERÍA (`raOraciones` de `ra.js`): no puede haber desacuerdo entre quien reparte y quien vigila;
+ *      de la LIBRERÍA (`ctOraciones` de `core/texto/parrafos.js`): no puede haber desacuerdo entre quien reparte y quien vigila;
  *   5. NINGUNA PREGUNTA POR OPCIONES SIN BOTONES: un texto que pregunta por «las opciones», «¿cuál prefieres?» o «¿con cuál…?» sale con al menos un botón o una lista en ese mismo mensaje;
  *   6. LÍMITES DE WHATSAPP: título de botón ≤ 20 caracteres, de fila de lista ≤ 24, a lo más 3 botones; y NINGUNA clave `link` en ningún payload (el QR sale por `id` de medio).
  * PR-D (22/10/2026):
@@ -23,11 +23,12 @@ import { expect } from 'vitest';
 import type { J } from '../../lib/flujo';
 import type { Mundo } from '../../lib/n8n-de-mentira';
 
+const CARPETA_CORE_TEXTO = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/src/core/texto');
 const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-antonio/src/lib');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
 // nosemgrep: devsecops.js-eval-prohibido
-export const LIB = new Function(['cobro.js', 'avisos.js', 'ra.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { raOraciones, raParrafos, raNorm, raSeguro, RA_TEXTO_RIESGO, RA_PRODUCTOS, RA_ANGULOS, RA_NIEGA_IA };')() as {
-  raOraciones: (b: string) => string[]; raParrafos: (t: string) => string; raNorm: (t: string) => string; raSeguro: (t: string) => string;
+export const LIB = new Function([...['parrafos.js', 'no-repetir.js'].map((a) => readFileSync(join(CARPETA_CORE_TEXTO, a), 'utf8')), ...['cobro.js', 'avisos.js', 'ra.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8'))].join('\n') + '\nreturn { ctOraciones, ctParrafos, raNorm, raSeguro, RA_TEXTO_RIESGO, RA_PRODUCTOS, RA_ANGULOS, RA_NIEGA_IA };')() as {
+  ctOraciones: (b: string) => string[]; ctParrafos: (t: string) => string; raNorm: (t: string) => string; raSeguro: (t: string) => string;
   RA_TEXTO_RIESGO: string; RA_PRODUCTOS: Record<string, { boton: string }>; RA_ANGULOS: Record<string, { fijo: string; pregunta: string }>; RA_NIEGA_IA: RegExp;
 };
 
@@ -50,7 +51,7 @@ export function violacionesDeParrafos(cuerpo: string): string[] {
   if (cuerpo !== cuerpo.trim() || /[ \t]+\n|\n[ \t]+/.test(cuerpo)) v.push('espacios sobrantes al borde o antes de un salto');
   for (const par of cuerpo.split('\n\n')) {
     if (par.includes('\n')) continue; // listas y rótulos de líneas sueltas
-    const oraciones = LIB.raOraciones(par).length;
+    const oraciones = LIB.ctOraciones(par).length;
     if (oraciones > PARRAFO_MAX_ORACIONES) v.push(`un párrafo con ${oraciones} oraciones sin línea en blanco: «${par.slice(0, 40)}…»`);
     else if (oraciones === 2 && par.length > PARRAFO_MAX_CARACTERES) v.push(`un párrafo de 2 oraciones con ${par.length} caracteres`);
   }

@@ -22,7 +22,7 @@ type Item = { nombre: string; precio: number; moneda: string; activo: boolean };
 const D = JSON.parse(TEXTO) as Record<string, any> & { catalogo: Item[] };
 const idDe = (nombre: string): string => nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-const CODIGO = ['cobro.js', 'avisos.js', 'ra.js'].map((a) => readFileSync(join(RA, a), 'utf8')).join('\n');
+const CODIGO = [...['parrafos.js', 'no-repetir.js'].map((a) => readFileSync(join(REPO, 'Flujos/src/core/texto', a), 'utf8')), ...['cobro.js', 'avisos.js', 'ra.js'].map((a) => readFileSync(join(RA, a), 'utf8'))].join('\n');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
 // nosemgrep: devsecops.js-eval-prohibido
 const L = new Function(CODIGO + '\nreturn { raCatalogo };')() as { raCatalogo: (c: unknown) => Record<string, number> };

@@ -182,10 +182,10 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
 // NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS (PR-D, [D]): si lo que sale es idéntico (por hash) a lo último que se le envió a este teléfono, sale una alternativa fija (con el botón de Antonio). Quedan EXENTOS el QR (su pie
 // lleva el pedido), el resultado de un comprobante (cada comprobante es un hecho distinto), la protección ante violencia o miedo (su texto fijo y breve nunca se sustituye), el texto a un número extranjero y lo que
 // contiene la presentación del asistente (qué ES: nunca se sustituye). Es el MISMO mensaje: no agrega ni quita ninguno.
-if (m && puerta.ruta === 'sigue' && m.tipoReporte !== 'image' && ['comprobante', 'riesgo', 'fuera_pais'].indexOf(tipoDePlan) < 0 && !/asistente virtual/i.test(String(m.texto || '')) && fichaAntes.ultimoHash !== '' && raHashTexto(m.texto) === fichaAntes.ultimoHash) {
+if (m && puerta.ruta === 'sigue' && m.tipoReporte !== 'image' && ['comprobante', 'riesgo', 'fuera_pais'].indexOf(tipoDePlan) < 0 && !/asistente virtual/i.test(String(m.texto || '')) && fichaAntes.ultimoHash !== '' && ctEsRepetido(m.texto, { hash: fichaAntes.ultimoHash })) {
   const medio = /^(audio|imagen|otro|archivo)/.test(tipoDePlan);
   tipoDePlan = 'repetido';
-  m = conAntonio(raAlternaDeRepetido(medio, fichaAntes.ultimoHash));
+  m = conAntonio(raAlternaFiltrada({ medio, hashUltimo: fichaAntes.ultimoHash }, (x) => cmMotivoDeRechazo(x, { maximo: 700, enlacesPermitidos: [], quienPromete: ['antonio', 'el equipo'], nombreNegocio: cfg.nombreNegocio })));
 }
 
 // La ficha: un solo lugar, al final del turno. Hasta en un turno sin mensaje (bloqueado) se recuerda el id de Meta (una entrega repetida no se cuenta dos veces).
@@ -205,8 +205,7 @@ if (claveOk) {
   // Las respuestas de conversación entregadas (saludo, ángulo, modelo): el menú que no se pidió sale desde la tercera.
   if (m && ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido'].indexOf(tipoDePlan) >= 0) ficha.charlaN = Math.min(ficha.charlaN + 1, 1000);
   // Lo último que se le dijo (hash del texto y tipo de plan): el recordatorio del QR no se repite dos veces seguidas y ningún texto sale idéntico dos veces seguidas. Solo cuenta el turno que contesta de verdad.
-  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma };
-  if (m && puerta.ruta === 'sigue') { ficha.ultimoHash = m.tipoReporte === 'image' ? '' : raHashTexto(m.texto); ficha.ultimaFirma = /^[a-z_]{1,30}$/.test(tipoDePlan) ? tipoDePlan : ''; }
+  hashPrevio = (m && puerta.ruta === 'sigue') ? ctRecordarEnviado(ficha, m.texto, tipoDePlan, m.tipoReporte === 'image') : { h: ficha.ultimoHash, f: ficha.ultimaFirma };
   // «Cancela mi pedido» con un QR abierto: se libera la guarda LOCAL del QR (el servidor sigue con su solicitud hasta que venza); se restaura si la respuesta no sale (`Resumen del turno`).
   if (tipoDePlan === 'derivar' && plan.liberaGuarda === true && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
   if (riesgoNuevo) ficha.riesgo = true;

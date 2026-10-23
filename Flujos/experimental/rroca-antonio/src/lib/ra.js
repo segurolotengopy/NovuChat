@@ -2,7 +2,7 @@
 // RA (prefijo `ra`): lo PROPIO del flujo de Antonio («El Puente», tenant rroca-antonio)
 // =============================================================================
 // PR-B: la conversación, el catálogo, el cobro por QR de monto abierto, el comprobante, los avisos, la derivación y la protección ante violencia o miedo.
-// Se pega DELANTE de `_comun.js` y del código de cada nodo, DESPUÉS de `cobro.js` y `avisos.js` (huecos declarados). JavaScript plano: sin `require`, `URL`, `Buffer` ni `crypto`, y nada de red.
+// Se pega DESPUÉS de `core/texto/parrafos.js` y `core/texto/no-repetir.js` (comunes; `ct*`) y DELANTE de `_comun.js` y del código de cada nodo, DESPUÉS de `cobro.js` y `avisos.js` (huecos declarados). JavaScript plano: sin `require`, `URL`, `Buffer` ni `crypto`, y nada de red.
 // Ningún texto de este archivo nombra a otro cliente. Los textos que ve el cliente van en párrafos separados por una línea en blanco.
 //
 // REGLAS QUE ESTA LIBRERÍA HACE CUMPLIR (el prompt NO es una barrera):
@@ -28,6 +28,10 @@ const RA_MODELO = 'gemini-3.5-flash-lite';   // el ÚNICO modelo de este flujo (
 // (HUECO en PROPIO.md): la expresión es idéntica y una prueba la compara. Se aplica al texto NORMALIZADO (`raNorm`).
 const RA_NIEGA_IA = /\bno (?:soy|es|eres|estas hablando con|hablas con)\b[^.!?]{0,20}\b(?:ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)\b|\bpersona (?:real|de verdad)\b|\bcarne y hueso\b|\bno (?:contesta|responde|atiende|hay) (?:ningun\w* )?(?:ia|inteligencia|bot|robot|maquina)\b|\bnada de (?:robots?|bots?|maquinas?)\b|\bhumano\b|\bpersonalmente\b|\bconmigo (?:hablas|conversas)\b|\bequipo humano\b|\b(?:soy|es) (?:una )?persona\b|\balguien real\b|\bhuman[oa]s?\b|\b(?:personas?|gente) (?:real(?:es)?|de verdad)\b|\b(?:persona|gente|alguien|humano|equipo|ejecutiv\w*|asesor\w*) (?:real|de verdad)\b|\bde verdad\b[^.!?]{0,20}\b(?:persona|gente|humano)\w*|\bno (?:contesta|responde|atiende|hay|habla) (?:(?:un|una|el|la|ningun\w*) )?(?:ia|inteligencia|bot|chatbot|robot|maquina|programa)\b|\bno es (?:un )?(?:mensaje |chat )?automatic\w*|\b(?:es|soy) (?:una? )?(?:chica|chico|mujer|hombre|senorita|joven)\b/;
 
+// Datos de Antonio para el texto común (core/texto): quién atiende y cómo se trata al cliente (una prueba exige que RA_TRATAMIENTO sea el `tratamiento` del negocio).
+const RA_TITULAR = 'Antonio';
+const RA_TRATAMIENTO = 'tu';
+
 // Lo mínimo si, por un cambio mal hecho, un texto cayera en NIEGA_IA o en las palabras prohibidas del cobro: nunca sale un texto que niegue ser una IA o afirme un pago.
 const RA_SALUDO_MINIMO = 'Hola, soy el asistente virtual de Antonio Dauber.';
 
@@ -49,46 +53,15 @@ function raLineaCliente(v, max) {
 function raMontoBs(n) { return cbMonto(n) + ' Bs'; }
 
 // -----------------------------------------------------------------------------
-// PÁRRAFOS (regla de Andres, 20/10/2026): el texto al cliente nunca va en un bloque corrido. Cada párrafo lleva a lo más DOS oraciones y, con dos, a lo más RA_PARRAFO_MAX caracteres; la pregunta
-// final va en su propio párrafo; se separan con UNA línea en blanco. Es el MISMO mensaje (0 mensajes agregados) y NO cambia ni una palabra: solo reparte espacios en blanco.
+// PÁRRAFOS (regla de Andres, 20/10/2026): el texto al cliente nunca va en un bloque corrido. La partición (`ctParrafos`) es COMÚN: viene de `Flujos/src/core/texto/parrafos.js`, incluida delante de esta librería, nunca copiada.
+// Es el MISMO mensaje (0 mensajes agregados) y NO cambia ni una palabra: solo reparte espacios en blanco.
 // -----------------------------------------------------------------------------
-const RA_PARRAFO_MAX = 220;
-function raOraciones(bloque) {
-  const partes = bloque.split(/(?<=[.!?…])\s+(?=[¿¡«"A-ZÁÉÍÓÚÑ0-9])/);
-  const out = [];
-  for (const p of partes) {
-    const previa = out.length ? out[out.length - 1] : '';
-    const une = out.length && (/(^|\s)(Sr|Sra|Srta|Dr|Dra|Lic|Ing|etc|Nº|N°)\.$/.test(previa)
-      || (/(^|\s)Bs\.$/.test(previa) && /^\d/.test(p))
-      || (/(^|\s)\d{1,2}\.$/.test(previa) && /^[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(p) && (/\s\d{1,2}\.$/.test(p) || /(^|\s)\d{1,2}\.\s/.test(previa))));
-    if (une) out[out.length - 1] += ' ' + p; else out.push(p);
-  }
-  return out;
-}
-function raEsPregunta(oracion) { return /\?[^\p{L}\p{N}]*$/u.test(oracion); }
-function raParrafos(texto) {
-  const t = String(texto === undefined || texto === null ? '' : texto).replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-  if (t === '') return t;
-  return t.split('\n\n').map((bloque) => {
-    if (bloque.indexOf('\n') >= 0) return bloque;
-    const ors = raOraciones(bloque);
-    if (ors.length < 2) return bloque;
-    const pars = [];
-    let i = 0;
-    while (i < ors.length) {
-      const esUltima = i === ors.length - 1;
-      const sigueFinal = i + 1 === ors.length - 1 && raEsPregunta(ors[ors.length - 1]);
-      if (!esUltima && !sigueFinal && (ors[i] + ' ' + ors[i + 1]).length <= RA_PARRAFO_MAX) { pars.push(ors[i] + ' ' + ors[i + 1]); i += 2; } else { pars.push(ors[i]); i += 1; }
-    }
-    return pars.join('\n\n');
-  }).join('\n\n');
-}
 // El texto que ve el cliente, con la barrera aplicada: si niega ser una IA (prohibición 4) o dice que un pago está acreditado, verificado o recibido (prohibición 3: el comprobante no es una
 // acreditación bancaria), sale el mínimo. `CB_PROHIBIDAS` y `cbCanon` son del hueco `cobro.js`.
 function raSeguro(texto) {
-  if (RA_NIEGA_IA.test(raNorm(texto))) return raParrafos(RA_SALUDO_MINIMO);
-  if (CB_PROHIBIDAS.test(cbCanon(texto))) return raParrafos(RA_SALUDO_MINIMO);
-  return raParrafos(texto);
+  if (RA_NIEGA_IA.test(raNorm(texto))) return ctParrafos(RA_SALUDO_MINIMO);
+  if (CB_PROHIBIDAS.test(cbCanon(texto))) return ctParrafos(RA_SALUDO_MINIMO);
+  return ctParrafos(texto);
 }
 
 // -----------------------------------------------------------------------------
@@ -128,8 +101,8 @@ function raFichaVigente(e, ahoraMs) {
     riesgo: e.riesgo === true,
     fueraDePaisMs: nums(e.fueraDePaisMs),
     charlaN: Number.isFinite(e.charlaN) && e.charlaN > 0 ? Math.min(Math.floor(e.charlaN), 1000) : 0,
-    ultimoHash: typeof e.ultimoHash === 'string' && /^[0-9a-f]{8}$/.test(e.ultimoHash) ? e.ultimoHash : '',
-    ultimaFirma: typeof e.ultimaFirma === 'string' && /^[a-z_]{1,30}$/.test(e.ultimaFirma) ? e.ultimaFirma : '',
+    ultimoHash: ctFichaNoRepetir(e).ultimoHash,
+    ultimaFirma: ctFichaNoRepetir(e).ultimaFirma,
   };
 }
 // Cuándo salió el último aviso de consulta a Antonio, POR MOTIVO (clave de `RA_CLAVES_AVISO`): { <clave>: ms }. Solo claves conocidas y números finitos; lo demás se descarta.
@@ -155,13 +128,6 @@ function raRecordarMensaje(f, r, texto) {
   if (t === '') return f;
   f.hist = (Array.isArray(f.hist) ? f.hist : []).concat([{ r: r === 'm' ? 'm' : 'u', t: t }]).slice(-RA_MEMORIA);
   return f;
-}
-// Hash corto (djb2 sobre el texto normalizado) para comparar textos enviados; no es criptográfico ni se usa para nada de seguridad. PORT PROPIO de `rrHashTexto` (rroca-ruben), declarado en PROPIO.md.
-function raHashTexto(t) {
-  const s = raNorm(t);
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
-  return ('00000000' + h.toString(16)).slice(-8);
 }
 // Barre el mapa: fuera las de más de 48 h (o sin hora) y, si pasan del tope, las más viejas.
 function raBarrer(mapa, ahoraMs) {
@@ -562,21 +528,15 @@ function raTextoImagenes(qrAbierto, conOpciones) {
   if (qrAbierto === true) return 'Por aquí no tengo imágenes del libro para mostrarte; lo único que se envía por este chat es el QR de pago, que ya tienes abierto.\n\nSí puedo contarte de qué trata el libro: escríbeme tu pregunta.';
   return 'Por aquí no tengo imágenes del libro para mostrarte; lo único que se envía por este chat es el QR de pago cuando eliges un producto.\n\nSí puedo contarte de qué trata el libro: escríbeme tu pregunta' + (conOpciones === false ? '.' : ' o toca una de las opciones.');
 }
-// Las alternativas cuando el texto que sigue sería IDÉNTICO al último que se envió al teléfono (nunca el mismo texto dos veces seguidas). Con dos o más alternativas, una siempre difiere del último enviado.
-const RA_ALTERNAS_CONTENIDO = [
-  'Eso ya te lo conté en mi mensaje anterior. Si te quedó alguna duda, cuéntame cuál; y si prefieres hablar con Antonio, escríbele con el botón.',
-  'Prefiero no repetirte lo mismo. Dime con otras palabras qué necesitas saber, o escríbele directo a Antonio con el botón.',
-  'Esa información ya está más arriba en este chat. Si algo no quedó claro, pregúntamelo de otra forma o escríbele a Antonio con el botón.',
-];
-const RA_ALTERNAS_MEDIO = [
-  'Sigo sin poder usar ese archivo por aquí. Cuéntame por escrito qué necesitas, o escríbele a Antonio con el botón.',
-  'Ese archivo tampoco lo pude revisar. Escríbeme lo que necesitas en un mensaje, o escríbele directo a Antonio con el botón.',
-  'Por aquí no puedo trabajar con ese archivo. Dime con palabras qué buscas, o escríbele a Antonio con el botón.',
-];
-// El texto alternativo que no repite el último enviado (`hashUltimo`); `medio` = la respuesta era a un audio, imagen o documento.
-function raAlternaDeRepetido(medio, hashUltimo) {
-  const lista = medio === true ? RA_ALTERNAS_MEDIO : RA_ALTERNAS_CONTENIDO;
-  return lista.find((x) => raHashTexto(x) !== hashUltimo) || lista[0];
+// El texto alternativo cuando el que sigue sería IDÉNTICO al último enviado: lo genera el core (`ctAlternaDeRepetido`) y ESTA función es la ÚNICA que lo llama, porque su salida DEBE pasar por el filtro de salida
+// (NIEGA_IA, `CB_PROHIBIDAS` y `motivoDe`, que en «Armar mensajes» es `cmMotivoDeRechazo`): propia (con `o.alternas` del tenant, hoy ninguna) → si no pasa, la base sin `alternas` → si no pasa, el saludo mínimo. Pura.
+function raAlternaFiltrada(o, motivoDe) {
+  const pasa = (x) => typeof x === 'string' && x.trim() !== '' && motivoDe(x) === '' && !RA_NIEGA_IA.test(raNorm(x)) && !CB_PROHIBIDAS.test(cbCanon(x));
+  const propia = ctAlternaDeRepetido({ medio: o.medio === true, hashUltimo: o.hashUltimo, titular: RA_TITULAR, tratamiento: RA_TRATAMIENTO, alternas: o.alternas });
+  if (pasa(propia)) return propia;
+  const base = ctAlternaDeRepetido({ medio: o.medio === true, hashUltimo: o.hashUltimo, titular: RA_TITULAR, tratamiento: RA_TRATAMIENTO });
+  if (pasa(base)) return base;
+  return RA_SALUDO_MINIMO;
 }
 // Los prellenados de bonos: confirma el precio y ofrece el Pack con el ahorro CALCULADO por el código (si el Pack está disponible).
 function raTextoBonos(productos, cat, conPresentacion) {
