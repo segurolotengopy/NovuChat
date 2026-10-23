@@ -16,7 +16,7 @@ type Fn = (...a: any[]) => any;
 const F = ejecutar(`${FUENTE}\nreturn [{ json: { cmMotivoDeRechazo, cmPulirRedaccion } }];`, [{}])[0] as Record<'cmMotivoDeRechazo' | 'cmPulirRedaccion', Fn>;
 const motivo = (t: string, o?: object): string => F.cmMotivoDeRechazo(t, o);
 
-interface Grupo { opcion: string; motivo: string; rechazos: string[]; pasan: string[]; conAvisoRespaldado?: { pasan: string[]; rechazos: string[] } }
+interface Grupo { falsosPositivosConocidos?: string[]; opcion: string; motivo: string; rechazos: string[]; pasan: string[]; conAvisoRespaldado?: { pasan: string[]; rechazos: string[] } }
 const BANCO = JSON.parse(readFileSync(join(AQUI, 'fixtures/redaccion-segura-huecos.json'), 'utf8')) as { grupos: Grupo[] };
 // Los montos los dice el código; el banco prueba la opción, así que se permiten para que el motivo sea el de la opción.
 const base = { permitirMontos: true };
@@ -26,6 +26,8 @@ for (const g of BANCO.grupos) {
     // Lo que una regla de NovuChat que no se apaga ya rechazaba (`promesa`, `afirma_un_hecho`) sigue con ese motivo; lo NUEVO, con el de la opción.
     for (const t of g.rechazos) it(`rechaza «${t}»`, () => expect(motivo(t, { ...base, [g.opcion]: true }), t).toBe(motivo(t, base) || g.motivo));
     for (const t of g.pasan) it(`deja pasar «${t}»`, () => expect(motivo(t, { ...base, [g.opcion]: true }), t).toBe(''));
+    // Falsos positivos conocidos: caen al texto fijo del código (barato). Si dejan de rechazarse, se quitan del banco.
+    for (const t of g.falsosPositivosConocidos || []) it(`falso positivo conocido (documentado): «${t}»`, () => expect(motivo(t, { ...base, [g.opcion]: true }), t).toBe(g.motivo));
     it('apagada (por defecto) no cambia nada: ningún rechazo es de esta opción', () => {
       for (const t of g.rechazos) expect(motivo(t, base), t).not.toBe(g.motivo);
     });
@@ -41,6 +43,10 @@ describe('avisoRespaldado: el aviso al equipo se puede decir, el aviso al client
   const o = { ...base, sinPromesasDeAviso: true, avisoRespaldado: true };
   for (const t of g.conAvisoRespaldado!.pasan) it(`pasa «${t}»`, () => expect(motivo(t, o), t).toBe(''));
   for (const t of g.conAvisoRespaldado!.rechazos) it(`rechaza «${t}»`, () => expect(motivo(t, o), t).not.toBe(''));
+  it('avisoRespaldado solo actúa con sinPromesasDeAviso: solo, no debilita la regla base', () => {
+    expect(motivo('Le avisamos al equipo', { ...base, avisoRespaldado: true })).toBe('promesa');
+    expect(motivo('Le avisamos al asesor que te llame', { ...base, avisoRespaldado: true })).toBe('promesa');
+  });
   it('sin avisoRespaldado, «le avisamos al equipo» se rechaza', () => {
     expect(motivo('Le avisamos al equipo', { ...base, sinPromesasDeAviso: true })).not.toBe('');
     expect(motivo('Le avisamos al equipo', base)).not.toBe('');
@@ -89,5 +95,40 @@ describe('costo: con todo encendido, un texto adversarial de 2000 caracteres no 
     const t0 = Date.now();
     for (const m of malos) motivo(m.slice(0, 2000), o);
     expect(Date.now() - t0).toBeLessThan(1000);
+  });
+});
+
+describe('invisibles: cmNorm los quita (las prohibiciones 3 y 4 no se evaden con etiquetas U+E00xx)', () => {
+  const tag = (x: string, k: number): string => [...x].map((c, i) => (i % k === 0 ? String.fromCodePoint(0xe0061) : '') + c).join('');
+  const FRASES = ['Tu pago fue acreditado', 'Recibimos tu pago', 'Pago verificado', 'No soy un bot', 'Soy una persona real', 'Quedó agendada tu cita'];
+  for (const t of FRASES) {
+    for (const k of [2, 3]) it(`rechaza con una etiqueta cada ${k}: «${t}»`, () => expect(motivo(tag(t, k)), t).toBe('afirma_un_hecho'));
+    it(`rechaza con selectores de variación y ZWJ: «${t}»`, () => expect(motivo([...t].join('\uFE0F\u200D')), t).toBe('afirma_un_hecho'));
+  }
+  it('con texto sin invisibles la salida no cambia', () => {
+    for (const t of ['Tenemos lugar el viernes a las 11:30. ¿Te sirve?', 'El libro incluye 4 bonos 😊', 'Hola, ¿en qué te ayudo?']) expect(motivo(t, { permitirMontos: true })).toBe('');
+  });
+});
+
+describe('maxOraciones: saltos de línea, emojis y listas numeradas', () => {
+  const o = { maxOraciones: 3 };
+  it('el salto de línea y el emoji final cierran oración', () => {
+    expect(motivo('Uno\ndos\ntres\ncuatro', o)).toBe('largo_en_oraciones');
+    expect(motivo('Uno 😊 dos 😊 tres 😊 cuatro', o)).toBe('largo_en_oraciones');
+  });
+  it('un número de lista no cierra oración y pulir no deja «1. ¿Te interesa?»', () => {
+    const t = 'El libro tiene: 1. Teoría 2. Práctica 3. Bonos ¿Te interesa?';
+    expect(motivo(t, o)).toBe('');
+    expect(F.cmPulirRedaccion(t, o)).toBe(t);
+    expect(F.cmPulirRedaccion('El libro tiene: 1. Teoría 2. Práctica. Uno. Dos. Tres. ¿Te interesa?', o)).not.toMatch(/^El libro tiene: 1\. ¿Te interesa\?$/);
+  });
+});
+
+describe('tiempo: dígitos largos junto a «cuenta»', () => {
+  it('2000 dígitos no son cuadráticos', () => {
+    const t0 = Date.now();
+    motivo('9'.repeat(1990) + ' cuenta', { maximo: 2000, sinDatosDePago: true });
+    motivo('cuenta ' + '9'.repeat(1990), { maximo: 2000, sinDatosDePago: true });
+    expect(Date.now() - t0).toBeLessThan(300);
   });
 });
