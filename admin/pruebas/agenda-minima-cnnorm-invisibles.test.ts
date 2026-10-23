@@ -38,7 +38,9 @@ const conEtiquetas = (s: string, cada: number) =>
 describe('cnNorm de agenda-minima', () => {
   it('el fuente lleva escapes, sin caracteres invisibles crudos', () => {
     expect(FUENTE_CNNORM).toContain('\\p{Cf}');
-    expect(/[\u200b-\u200f\u2060-\u2064\ufe00-\ufe0f\ufeff]/u.test(COMUN)).toBe(false);
+    for (const t of [COMUN, ...['agenda-minima.v0.json', 'agenda-minima.prueba.json'].map((j) => readFileSync(join(RAIZ, j), 'utf8'))]) {
+      expect(/[\p{Cf}\u115F\u1160\u3164\uFFA0\u2800\u17B4\u17B5]/u.test(t)).toBe(false);
+    }
     expect(/[\u{e0000}-\u{e007f}]/u.test(COMUN)).toBe(false);
   });
 
@@ -60,7 +62,7 @@ describe('cnNorm de agenda-minima', () => {
   });
 
   it('otros invisibles: ZWSP, ZWNJ, ZWJ, BOM, joiners, selector de variación, mongol, etiquetas', () => {
-    for (const inv of ['\u200b', '\u200c', '\u200d', '\ufeff', '\u2060', '\u2061', '\u2064', '\ufe0f', '\u180e', '\u{e0100}', '\u{e0001}']) {
+    for (const inv of ['\u200b', '\u200c', '\u200d', '\ufeff', '\u2060', '\u2061', '\u2064', '\ufe0f', '\u180e', '\u{e0100}', '\u{e0001}', '\u115f', '\u1160', '\u3164', '\uffa0', '\u2800', '\u17b4', '\u17b5']) {
       expect(nueva(`pago${inv} verificado`)).toBe('pago verificado');
       expect(nueva(`re${inv}ci${inv}bimos tu pago`)).toBe('recibimos tu pago');
     }

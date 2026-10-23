@@ -77,7 +77,7 @@ const CLINICO = /dosis|\bmg\b|\bml\b|gotas|paracetamol|ibuprofeno|amoxicilina|an
 const PROMESAS = /lo consulto|lo consultar[eé]|te aviso|te avisar[eé]|te avisamos|te llamamos|te llamar[eé]|te escribir[aá]n|te escribiremos|te contactar[eé]|nos comunicaremos|te confirmo luego|recepcion te|el doctor te/;
 // Lo que el modelo NO puede afirmar (revisión de seguridad): que una cita quedó agendada, confirmada
 // o reservada —eso solo lo dice el código después del candado—, ni negar ser una IA (prohibición 4).
-const AFIRMA = /\b(qued[oa]|esta|estan) (agendad|confirmad|reservad|registrad|list|hech|fij)|\bagende\b|\breserve\b|\bte (agende|reserve)\b|confirm(o|ada|ado) (tu|la|su) cita|tu cita (ya )?(esta|quedo|queda)|no soy (una |un )?(ia|inteligencia|bot|robot|asistente virtual)|soy (una |un )?(persona|humana|humano)\b|soy (el |la )?(doctor|doctora|dr|dra)\b/;
+const AFIRMA = /pago (fue )?(acreditad|verificad|confirmad)|recibimos (tu|su) pago|\b(qued[oa]|esta|estan) (agendad|confirmad|reservad|registrad|list|hech|fij)|\bagende\b|\breserve\b|\bte (agende|reserve)\b|confirm(o|ada|ado) (tu|la|su) cita|tu cita (ya )?(esta|quedo|queda)|no soy (una |un )?(ia|inteligencia|bot|robot|asistente virtual)|soy (una |un )?(persona|humana|humano)\b|soy (el |la )?(doctor|doctora|dr|dra)\b/;
 const NEGACION = /no (nos )?(quedan?|hay) (mas )?(horarios?|espacios?|turnos?|citas?|disponibilidad)|sin horarios|no tenemos (horarios|espacio|disponibilidad)|agenda (llena|completa)/;
 function clavesDeHora(texto) {
   const claves = [];
@@ -95,6 +95,9 @@ function redaccionValida(texto, huecos, aviso) {
   const s = String(texto || '').trim();
   if (!s || s.length > 900 || /^SIN_RESPUESTA/.test(s)) return false;
   const n = cnNorm(s);
+  // Un invisible pegado a una letra (etiquetas, relleno hangul, braille vacio) es una evasion de las reglas de abajo: la redaccion cae a la ruta de codigo.
+  // ZWJ y VS16 dentro de un emoji (familia, corazon) no tocan una letra y siguen pasando.
+  if (/[\p{L}][\p{Cf}\u115F\u1160\u3164\uFFA0\u2800\u17B4\u17B5]|[\p{Cf}\u115F\u1160\u3164\uFFA0\u2800\u17B4\u17B5][\p{L}\s]/u.test(s)) return false;
   // Un MONTO nunca sale de la redacción: el costo solo lo dice el código, con `respuestaCosto`, y solo si el
   // paciente lo pregunta (Andres, 30/09). Aunque `instruccionesExtra` lo nombre, el modelo no lo repite.
   if (/\b\d[\d.,]*\s*(bs|bolivianos?|usd|dolares)\b|\bbs\.?\s*\d|\$\s*\d/.test(n)) return false;
