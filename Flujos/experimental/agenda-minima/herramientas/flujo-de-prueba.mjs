@@ -51,6 +51,7 @@ const morir = (m) => { console.error(`✗ ${m}`); process.exit(1); };
 
 // `--actualizar-codigo` corre SOLO: antes, con `--borrar` al lado, corría `--borrar` (revisión de seguridad del #364).
 if (bandera('desde-b') && !bandera('sobre-bellido')) morir('--desde-b solo se usa con --sobre-bellido');
+if (bandera('sobre-bellido') && ['borrar', 'restaurar-respaldo', 'sobre-demo-a', 'turno', 'actualizar-codigo'].some((m) => args.includes(`--${m}`))) morir('--sobre-bellido no se combina con otro modo');
 if (bandera('actualizar-codigo') && ['desde-b'].some((m) => args.includes(`--${m}`))) morir('--actualizar-codigo no se combina con --desde-b');
 if (bandera('actualizar-codigo') && ['borrar', 'sobre-bellido', 'sobre-demo-a', 'restaurar-respaldo', 'turno'].some((m) => args.includes(`--${m}`))) morir('--actualizar-codigo no se combina con otro modo');
 const ENV = opcion('env') ?? morir('falta --env <archivo .env del Demo A>');
@@ -208,6 +209,9 @@ if (bandera('sobre-bellido')) {
   const vivo = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`);
   if (vivo.cod !== 200) morir(`GET del flujo vivo → ${vivo.cod}`);
   if (!/bellido/i.test(vivo.datos.name)) morir(`el flujo del .env no es el de Bellido («${vivo.datos.name}»)`);
+  if (/platinum|qtaco|captacion|segurolo|otp|aab1|whatsappmodular|receptor/.test(String(vivo.datos.name).toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, ''))) morir(`el flujo del .env tiene el nombre de un sistema ajeno («${vivo.datos.name}»): no se pisa`);
+  // Un vivo inactivo no se reactiva desde acá (reactivaría la suscripción del número): se decide aparte.
+  if (bandera('desde-b') && vivo.datos.active !== true) morir('el vivo de Bellido está INACTIVO: --desde-b no lo reactiva');
   const cuerpoPut = (w) => ({ name: w.name, nodes: w.nodes, connections: w.connections, settings: w.settings ?? {} });
   if (existsSync(RESPALDO)) {
     const previo = JSON.parse(readFileSync(RESPALDO, 'utf8'));
@@ -279,6 +283,9 @@ if (bandera('sobre-bellido')) {
   console.log(`Candidato (${ARCHIVO.split(sep).slice(-2).join('/')}): ${b.nodes.length} nodos. El nombre del flujo queda «${vivo.datos.name}».`);
   console.log(`Nodos que se van: ${[...nv].filter((x) => !nb.has(x)).length} · que llegan: ${[...nb].filter((x) => !nv.has(x)).length} · en los dos: ${[...nb].filter((x) => nv.has(x)).length}`);
   console.log('Credenciales, nodo por nodo:'); tabla.forEach((l) => console.log(l));
+  const estable = (x) => JSON.stringify(x, (_, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([p], [q]) => (p < q ? -1 : 1))) : v));
+  const cambiadosCompartidos = b.nodes.filter((n) => vivo.datos.nodes.some((x) => x.name === n.name && estable(x.parameters) !== estable(n.parameters))).map((n) => n.name);
+  console.log(`Nodos en los dos con PARÁMETROS que cambian (${cambiadosCompartidos.length}; se sobrescriben con los del candidato, sin mostrar valores): ${cambiadosCompartidos.join(', ') || '—'}`);
   console.log(`Respaldo de «Config base» llenado desde el vivo (sin mostrar valores): ${llenados.join(', ') || '—'}`);
   console.log(`Marcadores que quedan: ${marcas.join(', ') || 'ninguno'}`);
   console.log(`Respaldo del vivo: ${RESPALDO}`);
@@ -287,10 +294,11 @@ if (bandera('sobre-bellido')) {
   if (!APLICAR) { console.log('\nEn seco: no se escribió nada en n8n (solo el respaldo local). Agregue --aplicar.'); process.exit(0); }
   if (marcas.length) morir(`quedan marcadores sin reponer: ${marcas.join(', ')}`);
   const put = await llamar('PUT', `/workflows/${env.N8N_WORKFLOW_ID}`, { name: vivo.datos.name, nodes: b.nodes, connections: b.connections, settings: b.settings ?? vivo.datos.settings ?? {} });
-  if (put.cod !== 200) morir(`PUT → ${put.cod}: ${JSON.stringify(put.datos.message ?? '').slice(0, 300)}. Revise y use --restaurar-respaldo`);
+  if (put.cod !== 200) morir(`PUT → ${put.cod}: ${JSON.stringify(put.datos.message ?? '').slice(0, 300).replace(/\d{6,}/g, '<num>')}. Revise y use --restaurar-respaldo`);
   const leer = async () => { const r = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`); if (r.cod !== 200) morir(`GET después del PUT → ${r.cod}. Revise n8n y use --restaurar-respaldo`); return r.datos; };
   let tras = await leer();
-  if (tras.active !== true) {
+  // n8n separa borrador y versión publicada: si no coinciden, se activa de nuevo (como --actualizar-codigo) y se vuelve a leer.
+  if (tras.active !== true || (tras.versionId && tras.activeVersionId && tras.versionId !== tras.activeVersionId)) {
     const a = await llamar('POST', `/workflows/${env.N8N_WORKFLOW_ID}/activate`);
     tras = await leer();
     if (tras.active !== true) morir(`el flujo de Bellido quedó INACTIVO (activate → ${a.cod}). Use --restaurar-respaldo YA`);
@@ -300,6 +308,9 @@ if (bandera('sobre-bellido')) {
   const faltan = b.nodes.filter((n) => !tras.nodes.some((x) => x.name === n.name)).map((n) => n.name);
   if (faltan.length || tras.nodes.length !== b.nodes.length) morir(`el flujo leído después del PUT no coincide con el candidato (faltan: ${faltan.join(', ') || 'ninguno'}; ${tras.nodes.length} nodos de ${b.nodes.length}). Use --restaurar-respaldo`);
   if (tras.versionId && tras.activeVersionId && tras.versionId !== tras.activeVersionId) morir('la versión ACTIVA no es la que se acaba de escribir (versionId ≠ activeVersionId). Revise n8n y use --restaurar-respaldo');
+  // Lo que el mensaje afirma, se LEYÓ: las credenciales de cada nodo y las conexiones, contra el candidato que se escribió.
+  const credsDe = (w) => JSON.stringify(Object.fromEntries(w.nodes.map((n) => [n.name, n.credentials ?? null]).sort(([x], [y]) => (x < y ? -1 : 1))));
+  if (credsDe(tras) !== credsDe(b) || JSON.stringify(tras.connections) !== JSON.stringify(b.connections)) morir('después del PUT las credenciales o las conexiones leídas no coinciden con el candidato. Use --restaurar-respaldo');
   console.log(`✓ candidato sobre Bellido: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
   console.log('FALTA, ya: verificar-meta.sh --env .env.bellido (suscripción), un mensaje real desde un teléfono registrado y su ejecución en n8n. Si algo falla: --restaurar-respaldo.');
   process.exit(0);
