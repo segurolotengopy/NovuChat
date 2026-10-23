@@ -22,24 +22,24 @@
 //   textoDelCliente   lo que preguntó el cliente: a una pregunta de IDENTIDAD no se contesta empezando con «Sí»
 //   sinImagenes       true: el flujo NO envía imágenes; «te muestro / envío fotos, capturas, la portada…» es una promesa sin respaldo
 //                     y se rechaza con el motivo `promete_imagenes`. Apagado por defecto (hay flujos que sí envían imágenes)
-//   maxOraciones      número: tope de oraciones (apagado por defecto). `cmMotivoDeRechazo` rechaza con `largo_en_oraciones` y `cmPulirRedaccion` recorta
-//                     (conserva la pregunta final si la había)
-//   sinDatosDePago    true: el modelo NUNCA escribe datos de pago (cuenta, banco, Tigo Money, QR, alias, giro, billetera, «deposita/paga/transfiere…»);
-//                     el texto de pagos lo escribe solo el código. Motivo `datos_de_pago`. Apagado por defecto
-//   sinAfirmarCompra  true: el modelo no afirma una compra ni una entrega («ya compraste», «ya te llegó», «tu pedido fue entregado», «te lo enviamos»).
-//                     Motivo `afirma_compra`. Una PREGUNTA («¿ya te llegó?») no afirma. Apagado por defecto
-//   sinPromesasDeAviso true: promesas de contacto o aviso sin respaldo («un asesor se comunicará contigo», «nos pondremos en contacto», «te avisaremos»,
-//                     «te llamaremos»). Motivo `promete_aviso`. Con `avisoRespaldado: true` (el flujo SÍ avisa al equipo) se permite «le avisamos al equipo /
-//                     a recepción / al asesor» (también en la regla `promesa`); lo que promete contactar AL CLIENTE sigue rechazado. Apagado por defecto
+//   maxOraciones      tope de oraciones (apagado): motivo `largo_en_oraciones`; pulir recorta y conserva la pregunta final
+//   sinDatosDePago    true: ningún dato de pago lo escribe el modelo (cuenta, banco, Tigo Money, Yape, QR, «deposita/paga…»): `datos_de_pago`
+//   sinAfirmarCompra  true: no afirma compra ni entrega («ya compraste», «ya te llegó», «te lo enviamos»); una pregunta no afirma: `afirma_compra`
+//   sinPromesasDeAviso true: «un asesor se comunicará», «te avisaremos/llamaremos…»: `promete_aviso`. `avisoRespaldado: true` (el flujo SÍ avisa) permite
+//                     «le avisamos al equipo/recepción/asesor» solo si cierra la oración y no promete contactar al cliente
 //   extra             funciones (texto, normalizado) => motivo ('' si pasa): las reglas propias del flujo (horas, etc.)
 // Las promesas sin respaldo, afirmar un hecho que solo el código puede afirmar (quedó agendado, pago acreditado…),
 // negar ser una IA y los huecos de plantilla se revisan SIEMPRE, y no se pueden apagar.
 
+// Texto sin invisibles (Default_Ignorable y Cf) y con Braille como espacio, ANTES de partir por espacios: un separador invisible no esconde la frase.
+function cmPre(s) {
+  return String(s).normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '').replace(/\u2800/g, ' ');
+}
 function cmNorm(t) {
-  // NFKC junta las formas de ancho completo («ｑｕｅｄó» → «quedó»); se quitan los caracteres invisibles (U+200B a U+200D,
-  // U+2060, U+FEFF), el guion blando, los selectores de variación y las etiquetas U+E0000 a U+E007F (todo \p{Cf}), que partían una palabra sin que se viera («agen​dé»).
-  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/[\p{Cf}\u180E\uFE00-\uFE0F\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}\u2061-\u2064]/gu, '').replace(/[。｡]/g, '.')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  // NFKC junta el ancho completo; se quitan los invisibles (Default_Ignorable y Cf: U+200B, U+00AD, U+17B4, U+180B…, selectores, tags) que partían
+  // una palabra sin verse, y Braille U+2800 vale como ESPACIO. Todo en copias para comparar.
+  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '').replace(/\u2800/g, ' ').replace(/[。｡]/g, '.')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 // El texto SIN los guiones, puntos y asteriscos que parten una palabra para esconderla («agen-dada», «a.gen.dé»).
 function cmJunto(n) {
@@ -164,11 +164,11 @@ const CM_MONTO = new RegExp('\\b\\d[\\d.,]*\\s*(bs|bob|bolivianos?|usd|usdt|dola
 // Promesa de IMÁGENES sin respaldo (opción `sinImagenes`): «te muestro / envío / comparto…» o «puedo mostrar…», «aquí tienes», «te dejo»,
 // «adjunto» cerca de una foto, captura, portada, vista previa o ejemplo visual. Se prueba sobre el texto normalizado.
 const CM_PROMETE_IMAGENES = /\b(te (muestro|envio|mando|comparto|paso|adjunto|enviare|mandare|mostrare|compartire)|(puedo|podria|podemos|voy a|vamos a) (mostrar|enviar|mandar|compartir|pasar|adjuntar)(te|les|le)?|aqui (tienes|te dejo)|te dejo|adjunto|enviare|mandare|mostrare|compartire)\b[^.?!]{0,40}\b(imagen|imagenes|foto|fotos|fotografia|fotografias|captura|capturas|pantallazo|pantallazos|screenshot|screenshots|portada|detalles visuales|ejemplos visuales|vista previa)\b/;
-// ---- Reglas OPT-IN (apagadas por defecto). Se prueban sobre cuatro formas del texto (normal, sin separadores, letras juntas, leet) y su copia colapsada.
+// ---- Reglas OPT-IN (apagadas por defecto), sobre cuatro formas del texto y su copia colapsada.
 function cmDuo(fuentes) { const f = fuentes.join('|'); return [new RegExp(f), new RegExp(cmColapsa(f))]; }
 function cmVariantes(s) {
   const base = cmNorm(s);
-  const sp = cmNorm(String(s).replace(/[ \t ]{2,}|\n+/g, ' , '));
+  const sp = cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , '));
   const nlc = cmJuntoLetras(cmLeet(sp));
   return [base, cmJunto(base), cmJuntoLetras(sp), nlc, cmJunto(cmColapsa(base)), cmColapsa(nlc)];
 }
@@ -187,7 +187,6 @@ const CM_DATOS_PAGO = cmDuo([
   '\\b(?:formas?|metodos?|medios?|datos|link|enlace) de pago\\b|\\bdatos (?:bancarios|para (?:el |la |tu )?(?:pago|deposito|transferencia|abono)|del? (?:pago|deposito|cuenta))\\b',
   '\\bcuenta\\b[^.!?]{0,20}\\d{4,}|(?<!\\d)\\d{4,}[^.!?]{0,15}\\bcuenta\\b',
   '\\b' + CM_MEDIO_PAGO + '\\b[^.!?]{0,30}\\b' + CM_VERBO_PAGO + '\\b',
-  // en Bolivia «cancelar» es pagar: «lo cancelas en efectivo», «cancela por transferencia»
   '\\bcancel\\w*\\b[^.!?]{0,25}\\b(?:efectivo|transferencia|tarjeta|qr|banco|cuenta|deposito|tigo|yape)\\b',
   '\\b(?:envia|manda|pas)\\w* (?:me |nos )?(?:el |tu |la |un |lo |su )?(?:dinero|plata|pago|monto|saldo)\\b',
   '\\b(?:haz|hacer|realiza|realizar|haga|realice|hacen) (?:el |tu |la |un |una |su )?(?:pago|deposito|transferencia|abono)\\b',
@@ -214,7 +213,6 @@ const CM_AFIRMA_COMPRA = cmDuo([
   '\\bgracias por (?:comprar|haber comprado|adquirir)\\b',
   '\\b(?:gracias|felicidades|felicitaciones)\\b[^.!?]{0,15}\\b(?:por|de) (?:tu|su|la|haber)\\b[^.!?]{0,15}\\b(?:compra|comprado|adquirido|pedido)\\b',
 ]);
-const CM_PRONOMBRE_A = '(?:te|le|les)';
 const CM_PROMETE_AVISO = cmDuo([
   '\\bse (?:comunicara|comunicaran|contactara|contactaran|pondra|pondran)\\b',
   '\\b(?:te|le|les|lo|la) (?:llamara|llamaran|escribira|escribiran|contactara|contactaran|respondera|responderan|avisara|avisaran|buscara|buscaran|marcara)\\b',
@@ -231,8 +229,7 @@ const CM_PROMETE_AVISO = cmDuo([
   '\\b(?:comunicara|comunicaran|contactara|contactaran|llamara|llamaran|escribira|escribiran)\\b[^.!?]{0,15}\\bcontigo\\b',
   '\\b(?:te|le) (?:aviso|avisamos)\\b',
 ]);
-// Con `avisoRespaldado` (y `sinPromesasDeAviso`) el aviso AL EQUIPO es real y puede decirse, pero SOLO si cierra la oración y la oración no
-// promete además contactar al cliente: «Le avisamos al asesor que te llame» o «…y te llama» siguen rechazadas.
+// Aviso AL EQUIPO permitido (avisoRespaldado): solo si cierra la oración y no promete contactar al cliente.
 const CM_AVISO_AL_EQUIPO = /\b(?:le|les) avis\w+ (?:al|a la|a los|a las|a) (?:equipo|negocio|recepcion|asesor\w*|doctor\w*|encargad\w*)(?=[\s.!?]*$)/;
 const CM_PROMETE_RESTO = /\b(?:te|le|lo|la)\s+(?:llam|escrib|contact|respond|busc|atiend)\w*|\bpara que\b|\bque te\b/;
 function cmSinAvisoAlEquipo(n) {
@@ -260,16 +257,15 @@ const CM_PREGUNTA_DE_IDENTIDAD = /\b(eres|es|sos) (el |la )?(doctor|doctora|dr|d
 const CM_ENLACE = new RegExp('(?:[a-z][a-z0-9+.-]*:\\/\\/|www\\.)\\S+|\\b\\d{1,3}(?:\\.\\d{1,3}){3}(?::\\d+)?(?:\\/\\S*)?|\\b[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.[a-z]{2,}(?![a-z0-9-])(?::\\d+)?(?:\\/\\S*)?', 'gi');
 function cmEnlacesDe(texto) {
   // Primero se normaliza igual que el resto (ancho completo, invisibles, «。») y se junta lo que un salto o un espacio parte antes de la terminación.
-  const t = String(texto || '').normalize('NFKC').replace(/[\p{Cf}\u180E\uFE00-\uFE0F\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}\u2061-\u2064]/gu, '').replace(/[。｡]/g, '.').replace(/\s+(?=\.[a-z]{2,}\b)/gi, '');
+  const t = String(texto || '').normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '').replace(/\u2800/g, ' ').replace(/[。｡]/g, '.').replace(/\s+(?=\.[a-z]{2,}\b)/gi, '');
   return (t.match(CM_ENLACE) || []).map((e) => e.replace(/[).,;:!?»”"'\]]+$/, ''));
 }
 function cmNormEnlace(e) {
   return String(e || '').normalize('NFKC').trim().replace(/[).,;:!?»”"'\]]+$/, '').replace(/^https?:\/\//i, '').replace(/^www\./i, '').toLowerCase();
 }
 
-// Oraciones completas: las abreviaturas de trato («Dr.», «Sra.») no cierran oración.
 function cmOraciones(t, estricto) {
-  // `estricto` (solo para `maxOraciones`): el salto de línea y un emoji final también cierran oración, y un número de lista («1.») no.
+  // `estricto` (maxOraciones): el salto de línea y un emoji cierran oración; «1.» no.
   const ABREV = estricto ? /(?:\b(?:Dr|Dra|Sr|Sra|Srta|Lic|Ing|Prof|Esp|Av|Edif|Of|No|Nro)|(?:^|\s)\d{1,2})\.$/i : /\b(Dr|Dra|Sr|Sra|Srta|Lic|Ing|Prof|Esp|Av|Edif|Of|No|Nro)\.$/i;
   const oraciones = [];
   for (const x of String(t).split(estricto ? /(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic})\s+|\s*\n+\s*/u : /(?<=[.!?…])\s+/)) {
@@ -279,7 +275,19 @@ function cmOraciones(t, estricto) {
   return oraciones;
 }
 
+const CM_INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]/u;
+// Frases críticas SIN espacios ni signos («P a g o v e r i f i c a d o», «Pagoverificado»); un falso positivo cae al texto fijo.
+const CM_JUNTAS = /pago(?:fue)?(?:acreditad|verificad|recibid)|recibimos(?:tu|su)?pago|nosoyun(?:bot|robot|maquina)|soyunapersona|quedoagendad|yaagende|agende(?:tu|su)(?:cita|turno|reserva)/;
 function cmMotivoDeRechazo(texto, opciones) {
+  const m = cmMotivo1(texto, opciones);
+  if (m) return m;
+  const t = String(texto === undefined || texto === null ? '' : texto);
+  // Segunda forma: el invisible (o el Braille) como SEPARADOR de palabras (el invisible entre «Tu» y «pago»), no dentro de ellas.
+  if (CM_INVISIBLE.test(t)) { const m2 = cmMotivo1(t.replace(new RegExp(CM_INVISIBLE.source, 'gu'), ' '), opciones); if (m2) return m2; }
+  const n = cmNorm(t);
+  return CM_JUNTAS.test(n.replace(/[^\p{L}\p{N}]+/gu, '')) || CM_JUNTAS.test(cmLeet(n).replace(/[^\p{L}\p{N}]+/gu, '')) ? 'afirma_un_hecho' : '';
+}
+function cmMotivo1(texto, opciones) {
   const o = opciones || {};
   const s = String(texto || '').trim();
   if (!s) return 'vacio';
@@ -295,15 +303,15 @@ function cmMotivoDeRechazo(texto, opciones) {
   if (sujetos.length && new RegExp('\\b(?:' + sujetos.join('|') + ') te\\b').test(n)) return 'promesa';
   if (cmAlfabetoMixto(s)) return 'afirma_un_hecho';
   // Dos o más espacios (o un salto) separan palabras aunque las letras vayan sueltas: «P a g o   r e c i b i d o».
-  const nl = cmJuntoLetras(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , ')));
+  const nl = cmJuntoLetras(cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , ')));
   if (CM_AFIRMA.test(n) || CM_AFIRMA.test(nj) || CM_AFIRMA.test(nl)) return 'afirma_un_hecho';
-  if (CM_AFIRMA_C.test(cmColapsa(cmJuntoLetras(cmLeet(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , ')))))) || CM_AFIRMA_C.test(cmColapsa(nl))) return 'afirma_un_hecho';
+  if (CM_AFIRMA_C.test(cmColapsa(cmJuntoLetras(cmLeet(cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , ')))))) || CM_AFIRMA_C.test(cmColapsa(nl))) return 'afirma_un_hecho';
   if (CM_HUECO.test(n)) return 'hueco';
   const pregunta = cmNorm(o.textoDelCliente || '');
   if (pregunta && CM_PREGUNTA_DE_IDENTIDAD.test(pregunta) && /^\W*si\b/.test(n)) return 'identidad';
   if (pregunta && CM_PREGUNTA_DE_BOT.test(pregunta) && /\b(no|nop|nel|para nada)\b/.test(n) && !/\b(asistente|virtual)\b/.test(n)) return 'identidad';
   if (o.sinImagenes) {
-    const nlc = cmJuntoLetras(cmLeet(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , '))));
+    const nlc = cmJuntoLetras(cmLeet(cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , '))));
     if (CM_PROMETE_IMAGENES.test(n) || CM_PROMETE_IMAGENES.test(nj) || CM_PROMETE_IMAGENES.test(nl) || CM_PROMETE_IMAGENES.test(nlc)) return 'promete_imagenes';
   }
   if (o.maxOraciones >= 1 && cmOraciones(s, true).filter((x) => /[\p{L}\p{N}]/u.test(x)).length > o.maxOraciones) return 'largo_en_oraciones';
@@ -363,7 +371,7 @@ function cmPulirRedaccion(texto, opciones) {
     oraciones.push(...corte);
   }
   let t = oraciones.join(' ').trim();
-  const sinTilde = (w) => w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const sinTilde = (w) => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const palabras = String(o.nombreNegocio || '').split(/[^A-Za-zÀ-ÿ]+/).filter((w) => w.length >= 4);
   for (const w of palabras) {
     t = t.replace(/[A-Za-zÀ-ÿ]+/g, (x) => (x !== w && sinTilde(x) === sinTilde(w)) ? w : x);
