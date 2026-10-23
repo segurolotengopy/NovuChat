@@ -110,6 +110,24 @@ describe('invisibles: cmNorm los quita (las prohibiciones 3 y 4 no se evaden con
   });
 });
 
+describe('invisibles Default_Ignorable y Braille (re-revisión): no evaden las prohibiciones 3 y 4', () => {
+  const FRASES = ['Tu pago fue acreditado', 'Recibimos tu pago', 'Pago verificado', 'No soy un bot', 'Soy una persona real', 'Quedó agendada tu cita'];
+  const INVISIBLES: Array<[string, string]> = [['U+17B4', '឴'], ['U+17B5', '឵'], ['U+180B', '᠋'], ['U+180C', '᠌'], ['U+180D', '᠍'], ['U+180E', '᠎'], ['U+180F', '᠏'], ['U+2800', '⠀'], ['U+034F', '͏'], ['U+115F', 'ᅟ'], ['U+3164', 'ㅤ']];
+  for (const [nombre, ch] of INVISIBLES) {
+    for (const t of FRASES) it(`${nombre} dentro de «${t}»`, () => expect(motivo(ch === '\u2800' ? t.replace(/\S+$/, (w) => [...w].join(ch)) : [...t].join(ch)), t).toBe('afirma_un_hecho')); // Braille cuenta como ESPACIO: letras sueltas, como «p a g o»
+    it(`${nombre} en una frase de pago de las opciones`, () => expect(motivo(['Deposita', 'a', 'la', 'cuenta'].join(ch === '⠀' ? ch : ' ' + ch), { sinDatosDePago: true })).not.toBe(''));
+  }
+  it('el enlace partido con invisibles se detecta', () => {
+    expect(motivo(`Mira ejemplo${'⠀'}.mx/x${'឴'}`)).toBe('enlace_ajeno');
+  });
+  it('los emojis siguen pasando', () => {
+    for (const e of ['👨‍⚕️', '❤️', '👩‍👩‍👧', '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}', '1️⃣', '👋🏽']) {
+      expect(motivo(`Hola ${e} ¿en qué te ayudo?`), e).toBe('');
+      expect(F.cmPulirRedaccion(`Hola ${e} ¿en qué te ayudo?`), e).toContain(e);
+    }
+  });
+});
+
 describe('maxOraciones: saltos de línea, emojis y listas numeradas', () => {
   const o = { maxOraciones: 3 };
   it('el salto de línea y el emoji final cierran oración', () => {
