@@ -83,8 +83,10 @@ const CATEGORIAS = ['comprobante', 'publicidad', 'pago_con_problema', 'captura_d
 // Los rangos Unicode se escriben como texto con escapes (\\uXXXX), no como caracteres literales.
 const RX = (cuerpo, banderas) => new RegExp(cuerpo, banderas);
 const TILDES = RX('[\\u0300-\\u036f]', 'g');
-const INVISIBLES = RX('[\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff\\u00ad]', 'g');
+const INVISIBLES = RX('[\\u00ad\\u034f\\u061c\\u115f\\u1160\\u180e\\u200b-\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2060-\\u206f\\u3164\\ufe00-\\ufe0f\\ufeff\\uffa0\\u{e0000}-\\u{e007f}]', 'gu');
 const CONTROL = RX('[\\u0000-\\u001f\\u007f-\\u009f]', 'g');
+// Texto del dato: tras NFKC (el ancho completo pasa a ASCII), invisibles y control se buscan juntos.
+const RARO_DATO = (v) => { const n = v.normalize('NFKC'); return n.search(INVISIBLES) >= 0 || n.search(CONTROL) >= 0; };
 const COMILLAS_TIPOGRAFICAS = RX('[\\u201c\\u201d\\u2018\\u2019]', 'g');
 // Letras cirilicas y griegas que se ven como latinas: 'ignora' escrito con una i cirilica sigue siendo 'ignora'.
 const PARECIDAS_DE = 'аеорсухіѕјԁοα';
@@ -168,7 +170,7 @@ for (let i = 0; i < items.length; i++) {
   const dato = (t) => String(t || '').replace(/[\[\]{}<>"]/g, ' ').replace(/\s+/g, ' ').trim();
   // Defensa en profundidad: lo que viene del dato del tenant pasa por los mismos filtros que lo leido de la imagen
   // (instruccion, pago, monto, control, bidi, ancho cero). Si el campo los trae, se OMITE del aviso.
-  const limpioDato = (v, tope) => (typeof v === 'string' && v.search(INVISIBLES) < 0 && v.search(CONTROL) < 0
+  const limpioDato = (v, tope) => (typeof v === 'string' && !RARO_DATO(v)
     ? sanearTexto(v, tope) : '');
   if (anuncio) {
     const p = anuncio.producto;

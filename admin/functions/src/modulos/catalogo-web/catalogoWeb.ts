@@ -177,7 +177,7 @@ export function lineaLimpia(v: unknown, max: number): string {
   if (/[\ud800-\udbff]$/.test(tope)) tope = tope.slice(0, -1);
   const limpio = tope
     // Cs: surrogates sueltos; Co: uso privado. Ninguno es texto legible.
-    .replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}<>&]/gu, ' ')
+    .replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}\u{115f}\u{1160}\u{3164}\u{ffa0}\u{fe00}-\u{fe0f}<>&]/gu, ' ')
     .replace(/https?:\/\/\S+/gi, ' ')
     .replace(/www\.\S+/gi, ' ')
     .replace(/\s+/g, ' ')

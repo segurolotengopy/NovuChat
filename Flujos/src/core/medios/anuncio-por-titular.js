@@ -68,9 +68,9 @@ const anuncioPorTitular = (() => {
     return { nivel: 0, largo: 0 };
   };
   // Un campo con caracteres de control, bidireccionales o de ancho cero se OMITE (queda vacio), no se limpia.
-  const RARO = new RegExp('[\\u0000-\\u001f\\u007f-\\u009f\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff\\u00ad]');
-  const texto = (v, tope) => (typeof v === 'string' && !RARO.test(v)
-    ? v.replace(/[\[\]{}<>"`]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, tope) : '');
+  const RARO = new RegExp('[\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u034f\\u061c\\u115f\\u1160\\u180e\\u200b-\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2060-\\u206f\\u3164\\ufe00-\\ufe0f\\ufeff\\uffa0\\u{e0000}-\\u{e007f}]', 'u');
+  const texto = (v, tope) => (typeof v === 'string' && !RARO.test(v.normalize('NFKC'))
+    ? v.normalize('NFKC').replace(/[\[\]{}<>"`]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, tope) : '');
   const producto = (p) => {
     if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
     const nombre = texto(p.nombre, 120);

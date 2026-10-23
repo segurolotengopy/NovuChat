@@ -84,6 +84,19 @@ export function hashCorto(texto: string): string {
 }
 
 /**
+ * Caracteres que una persona no ve y el modelo sí lee: formato (\p{Cf}), control (\p{Cc}),
+ * caracteres de etiqueta (U+E0000-E007F), selectores de variación, relleno de Hangul y
+ * separadores de línea. Se escriben como escapes: nunca como caracteres crudos.
+ */
+const INVISIBLES_A_QUITAR = /[\p{Cf}\p{Cc}\u{34f}\u{115f}\u{1160}\u{180e}\u{2028}\u{2029}\u{3164}\u{fe00}-\u{fe0f}\u{ffa0}\u{e0000}-\u{e007f}]/gu;
+/**
+ * Lo que se RECHAZA: los invisibles que no tienen uso legítimo en un texto de instrucciones.
+ * Quedan fuera el salto de línea, la tabulación, el unidor de emojis (U+200D) y el selector
+ * de presentación de emoji (U+FE0F), que sí se usan; para buscar patrones se quitan igual.
+ */
+const INVISIBLES_PROHIBIDOS = /[\u{0}-\u{8}\u{b}\u{c}\u{e}-\u{1f}\u{7f}-\u{9f}\u{ad}\u{34f}\u{61c}\u{115f}\u{1160}\u{180e}\u{200b}\u{200c}\u{200e}\u{200f}\u{2028}\u{2029}\u{202a}-\u{202e}\u{2060}-\u{206f}\u{3164}\u{fe00}-\u{fe0e}\u{feff}\u{ffa0}\u{e0000}-\u{e007f}]/u;
+
+/**
  * Forma comparable de un texto: sin acentos, en minúsculas y con los blancos
  * colapsados. Sobre esto se buscan los patrones, así «ignorá», «Ignora» e
  * «IGNORA» son la misma palabra. Los caracteres de marca (`[`, `«`…) no
@@ -91,6 +104,8 @@ export function hashCorto(texto: string): string {
  */
 export function normalizar(texto: string): string {
   return texto
+    .normalize('NFKC')
+    .replace(INVISIBLES_A_QUITAR, '')
     .normalize('NFD')
     .replace(/\p{M}+/gu, '')
     .toLowerCase()
@@ -332,11 +347,17 @@ export function verificarPatrones(
   if (texto.length > TOPE_INSTRUCCIONES) {
     return { nivel: 'rechazado', coincidencias: ['tope'], motivo: `supera los ${TOPE_INSTRUCCIONES} caracteres` };
   }
+  // Un invisible escondido se rechaza: lo que la persona ve y lo que lee el modelo no coinciden.
+  if (INVISIBLES_PROHIBIDOS.test(texto.normalize('NFKC'))) {
+    return { nivel: 'rechazado', coincidencias: ['invisibles'], motivo: 'contiene caracteres ocultos o de control' };
+  }
+  // El texto «crudo» también pasa por NFKC: «＜＜＜» de ancho completo es «<<<».
+  const crudoNfkc = texto.normalize('NFKC').replace(INVISIBLES_A_QUITAR, '');
   const normalizado = normalizar(texto);
   const fuertes: string[] = [];
   const debiles: string[] = [];
   for (const p of PATRONES) {
-    if (p.re.test(p.crudo ? texto : normalizado)) (p.fuerza === 'fuerte' ? fuertes : debiles).push(p.nombre);
+    if (p.re.test(p.crudo ? crudoNfkc : normalizado)) (p.fuerza === 'fuerte' ? fuertes : debiles).push(p.nombre);
   }
   if (mencionaOtroComercio(normalizado, otros)) fuertes.push('otro comercio');
 

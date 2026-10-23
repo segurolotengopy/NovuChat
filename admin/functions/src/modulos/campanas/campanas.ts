@@ -224,7 +224,7 @@ export const productoIdValido = (v: unknown): v is string =>
   typeof v === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(v) && !/^__.*__$/.test(v);
 
 /** Caracteres de formato, control o bidi (zero-width, U+202A-202E, U+2066-2069...): esconden palabras a los patrones. */
-const INVISIBLES = /[\p{Cf}\p{Cc}]/u;
+const INVISIBLES = /[\p{Cf}\p{Cc}\u{34f}\u{115f}\u{1160}\u{180e}\u{2028}\u{2029}\u{3164}\u{fe00}-\u{fe0f}\u{ffa0}\u{e0000}-\u{e007f}]/u;
 const HOMOGLIFOS: Record<string, string> = {
   'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'х': 'x', 'у': 'y', 'і': 'i', 'ѕ': 's', 'ј': 'j',
   'ο': 'o', 'α': 'a', 'ε': 'e', 'ι': 'i', 'ν': 'v', 'ρ': 'p',
@@ -232,7 +232,7 @@ const HOMOGLIFOS: Record<string, string> = {
 const LEET: Record<string, string> = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's' };
 /** El texto como lo leería una persona: sin invisibles, sin homoglifos ni leet. */
 export const plegarParaPatrones = (t: string): string =>
-  t.normalize('NFKC').replace(/\p{Cf}/gu, '').toLowerCase()
+  t.normalize('NFKC').replace(/[\p{Cf}\p{Cc}\u{34f}\u{115f}\u{1160}\u{180e}\u{2028}\u{2029}\u{3164}\u{fe00}-\u{fe0f}\u{ffa0}\u{e0000}-\u{e007f}]/gu, '').toLowerCase()
     .replace(/[\u0370-\u03ff\u0400-\u04ff]/gu, (ch) => HOMOGLIFOS[ch] ?? ch)
     .replace(/[013457@$]/g, (ch) => LEET[ch] ?? ch);
 /**
