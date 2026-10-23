@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { J } from '../../lib/flujo';
+import { ejecutar, type J } from '../../lib/flujo';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
@@ -130,13 +130,11 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
 });
 
 describe('config-del-negocio.js sin Object.assign: el cuerpo de «Traer configuración» es entrada y no contamina (prueba negada)', () => {
-  const correr = (cuerpo: unknown, codigo = 200): Record<string, unknown> => {
-    const cnPrimero = (n: string): unknown => (n === 'Config base' ? { nombreNegocio: 'Base', numeroRecepcion: '5917123' } : { phoneNumberId: 'p1' });
-    const entrada = { first: () => ({ json: { statusCode: codigo, body: cuerpo } }) };
-    const f = new Function('cnPrimero', 'cnDigitos', '$input', nodoDe('config-del-negocio.js'));
-    const r = f(cnPrimero, (v: unknown) => String(v ?? '').replace(/\D/g, ''), entrada) as Array<{ json: Record<string, unknown> }>;
-    return r[0].json;
-  };
+  const correr = (cuerpo: unknown, codigo = 200): Record<string, unknown> =>
+    ejecutar(`${nodoDe('_comun.js')}\n${nodoDe('config-del-negocio.js')}`, [{ statusCode: codigo, body: cuerpo }], {
+      'Config base': { nombreNegocio: 'Base', numeroRecepcion: '5917123' },
+      'Carga de entrada': { phoneNumberId: 'p1' },
+    })[0];
 
   it('un cuerpo con __proto__, constructor y prototype no aparece en la salida ni contamina Object.prototype', () => {
     const cuerpo = JSON.parse('{"tenantId":"t","__proto__":{"contaminado":true},"constructor":{"prototype":{"contaminado2":true}},"prototype":{"x":1},"datosDelNegocio":{"__proto__":{"contaminado3":true},"nombreNegocio":"Panel"},"operacion":{"__proto__":{"contaminado4":true}},"atencion":{"__proto__":{"contaminado5":true},"estado":"operador"}}');
