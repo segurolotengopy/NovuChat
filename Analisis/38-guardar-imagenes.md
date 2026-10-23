@@ -143,6 +143,7 @@ categoría dice cuándo el original agrega algo que el derivado no.
    pago no es asunto suyo, igual que hoy la evidencia de pagos excluye al
    operador.
 4. **Consentimiento en el chat** para las categorías de salud, con su registro.
+   *(Reemplazado el 23/10/2026 por decisión de Andres: el consentimiento pasa a ser el anexo aceptado por el comercio y el «sí» de Andres para encender la bandera `guardarMedios`; el audio entrante también se guarda. El riesgo de datos de salud de terceros —privacidad y retención— sigue. Ver `docs/arquitectura/core.md`, «Medios guardados (H3)».)*
 5. **Purga automática**, sin la cual nada de esto se enciende.
 
 ---

@@ -5,7 +5,7 @@
  */
 
 /** Una entrada del manifiesto: la ruta del módulo, o la ruta con la marca de salto final. */
-export type EntradaDeModulo = string | { archivo: string; saltoFinal?: boolean };
+export type EntradaDeModulo = string | string[] | { archivo: string | string[]; saltoFinal?: boolean };
 
 export interface Manifiesto {
   flujo: string;
