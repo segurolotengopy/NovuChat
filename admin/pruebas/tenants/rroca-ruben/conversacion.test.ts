@@ -80,7 +80,7 @@ describe('ENTREGA 2 · P1: ficha, etiquetas, pie del QR y ayudas de texto', () =
 
   it('el pie del QR real es el del PDF, con «Pedido #X» al final, sin banco, titular ni cuenta, y cabe en 1024 caracteres; el simulado no cambia', () => {
     const pie = rr('rrPieQr')('pack', 60, 'RR1ABC9', false, false) as string;
-    expect(pie).toBe('¡Genial! Te llevas el Pack Completo (Libro + 4 bonos + Closer de Ventas + Curso de Videos con IA).\n\nAquí tienes el QR de pago. Está con monto abierto, así que ingresa 60 Bs en tu aplicación bancaria.\n\nApenas lo realices, envíame la captura del comprobante por aquí mismo 😊\n\nPedido #RR1ABC9.');
+    expect(pie).toBe('¡Genial! Te llevas el Pack Completo (Libro + 4 bonos + Closer de Ventas + Curso de Videos con IA).\n\nEste es el QR de pago, con monto abierto: ingresa 60 Bs en tu aplicación bancaria.\n\nApenas lo realices, envíame la captura del comprobante por aquí mismo 😊\n\nPedido #RR1ABC9.');
     expect(pie).not.toMatch(/banco|titular|cuenta|mercantil|escanea/i);
     expect(pie.length).toBeLessThanOrEqual(1024);
     expect(rr('rrPieQr')('libro', 32, 'RR1ABC9', true, false)).toMatch(/^Hola, soy el asistente virtual de Rubén\. ¡Genial! Te llevas el libro «IA para Emprendedores Independientes» con sus 4 bonos\./);
@@ -371,7 +371,7 @@ describe('ENTREGA 2 · el camino del PDF: saludo, charla, objeción con las opci
     const t4 = hablar(w, ANA, mBoton('b_pack'));
     const q = unico(t4);
     expect(q.tipo).toBe('image');
-    expect(q.cuerpo).toMatch(/^¡Genial! Te llevas el Pack Completo \(Libro \+ 4 bonos \+ Closer de Ventas \+ Curso de Videos con IA\)\.\n\nAquí tienes el QR de pago\. Está con monto abierto, así que ingresa 60 Bs en tu aplicación bancaria\.\n\nApenas lo realices, envíame la captura del comprobante por aquí mismo 😊\n\nPedido #[A-Za-z0-9]+\.$/);
+    expect(q.cuerpo).toMatch(/^¡Genial! Te llevas el Pack Completo \(Libro \+ 4 bonos \+ Closer de Ventas \+ Curso de Videos con IA\)\.\n\nEste es el QR de pago, con monto abierto: ingresa 60 Bs en tu aplicación bancaria\.\n\nApenas lo realices, envíame la captura del comprobante por aquí mismo 😊\n\nPedido #[A-Za-z0-9]+\.$/);
     expect(q.cuerpo).not.toMatch(/banco|titular|cuenta|escanea/i);
     expect(eventosQr(w)).toHaveLength(1);
     // 5. El comprobante que cuadra: el texto aprobado por Andres, idéntico (no cambia).

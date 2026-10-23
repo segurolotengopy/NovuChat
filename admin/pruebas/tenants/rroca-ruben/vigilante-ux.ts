@@ -267,7 +267,7 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
   for (const m of mensajes) {
     for (const id of idsDeBotones(m)) if (pulsados.has(id)) v.push(`el botón pulsado «${id}» reapareció`);
     if (m.tipo === 'image' && !eligioProducto) v.push('se ofreció el QR (pagar) sin que el cliente eligiera un producto en este turno');
-    if (m.tipo !== 'image' && /escanea el qr|aqu[ií] tienes el qr de pago|ingresa \d+(?:[.,]\d+)? ?bs/i.test(m.cuerpo)) v.push('un texto de pago fuera del QR');
+    if (m.tipo !== 'image' && /escanea el qr|este es el qr de pago|aqu[ií] tienes el qr de pago|ingresa \d+(?:[.,]\d+)? ?bs/i.test(m.cuerpo)) v.push('un texto de pago fuera del QR');
     if (m.tipo === 'interactive' && idsDeBotones(m).length && !eligioProducto && /(pagar|\bqr\b)/i.test(((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => String(b['reply']?.title)).join(' '))) v.push('un botón de pago antes de elegir producto');
     if (/opciones|¿cu[aá]l prefieres|¿qu[eé] opci[oó]n|¿con cu[aá]l/i.test(m.cuerpo) && m.tipo !== 'interactive') v.push('el texto pregunta por opciones pero el mensaje no trae ningún botón');
     v.push(...violacionesDeParrafos(m.cuerpo));

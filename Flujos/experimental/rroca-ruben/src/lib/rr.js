@@ -915,8 +915,8 @@ function rrPieQr(producto, monto, codigo, conPresentacion, simulado) {
     return (CB_ROTULO_SIMULADO + '\nElegiste ' + p.nombre + '. Total de la prueba: ' + m + (cod ? ' (pedido #' + cod + ')' : '') + '.\n'
       + 'No intentes pagarlo: tu banco lo va a rechazar. Para seguir con la prueba, envíame aquí cualquier foto como comprobante simulado.').slice(0, 1024);
   }
-  // ENTREGA 2: el texto del PDF modelo («¡Genial! Te llevas…», «Aquí tienes el QR de pago…»), con «Pedido #X» al final por trazabilidad (Rubén lo ve en la consola).
-  return ((conPresentacion ? RR_PRESENTACION + ' ' : '') + '¡Genial! Te llevas ' + p.llevas + '.\n\nAquí tienes el QR de pago. Está con monto abierto, así que ingresa ' + m + ' en tu aplicación bancaria.\n\nApenas lo realices, envíame la captura del comprobante por aquí mismo 😊'
+  // ENTREGA 2: el texto del PDF modelo («¡Genial! Te llevas…», «Este es el QR de pago, con monto abierto…»; la frase del PDF «Aquí tienes el QR…» ANUNCIA el QR y la regla 5 de entregas.test.ts la marca: aquí DESCRIBE la imagen adjunta), con «Pedido #X» al final por trazabilidad (Rubén lo ve en la consola).
+  return ((conPresentacion ? RR_PRESENTACION + ' ' : '') + '¡Genial! Te llevas ' + p.llevas + '.\n\nEste es el QR de pago, con monto abierto: ingresa ' + m + ' en tu aplicación bancaria.\n\nApenas lo realices, envíame la captura del comprobante por aquí mismo 😊'
     + (cod ? '\n\nPedido #' + cod + '.' : '')).slice(0, 1024);
 }
 function rrTextoQrPendiente(producto, monto) {
