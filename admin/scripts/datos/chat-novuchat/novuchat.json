@@ -160,14 +160,8 @@
       "rubro": "¿Te gustaría ver nuestros planes? 🤝",
       "precios": "¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝",
       "equipo": "¿Te gustaría hablar con alguien de nuestro equipo para entender mejor qué buscas y no hacerte perder tiempo? 🤝",
-      "consumo": "¿Te gustaría hablar con alguien de nuestro equipo para analizar el volumen de tu negocio y recomendarte el plan que mejor se ajuste a tu realidad? 🤝",
-      "banco": "¿Te gustaría hablar con alguien de nuestro equipo para ver cómo quedaría en tu negocio? 🤝",
       "costoMeta": "¿Te gustaría hablar con alguien de nuestro equipo para que te ayude con esa duda? 🤝",
-      "integracion": "¿Te gustaría hablar con alguien de nuestro equipo para saber si es posible en tu caso? 🤝",
-      "descuento": "¿Te gustaría hablar con alguien de nuestro equipo para ver tu caso? 🤝",
-      "disponibilidad": "¿Te gustaría hablar con alguien de nuestro equipo para ver cómo funcionaría en tu caso? 🤝",
-      "numeroActual": "¿Te gustaría hablar con alguien de nuestro equipo para revisarlo en tu caso? 🤝",
-      "coexistencia": "¿Te gustaría hablar con alguien de nuestro equipo para ver qué opción te sirve? 🤝"
+      "integracion": "¿Te gustaría hablar con alguien de nuestro equipo para saber si es posible en tu caso? 🤝"
     },
     "precios": {
       "estandar": "Setup estándar",
@@ -183,7 +177,7 @@
       "integracion": "Esa no la tengo a la mano 🤔.",
       "descuento": "Los precios son los que ves en los planes: no puedo cambiarlos ni ofrecer otros valores.",
       "disponibilidad": "Yo atiendo las 24 horas, todos los días, incluso fuera de tu horario. El equipo atiende en horario de oficina.",
-      "numeroActual": "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.",
+      "numeroActual": "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente.",
       "coexistencia": "Meta ofrece un modo en que la app WhatsApp Business y la API conviven, con limitaciones (por ejemplo, sin grupos). Hoy no lo ofrecemos."
     },
     "respaldos": {

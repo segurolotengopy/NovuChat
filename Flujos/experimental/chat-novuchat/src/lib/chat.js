@@ -1386,7 +1386,7 @@ const CH_DECLINA = /\b(?:no (?:lo|la) tengo a la mano|no sabr\w+ decir\w* (?:eso
 function chDeclinaTexto(texto) { return chTexto(texto).split(/[.!?¿\n]+/).some((o) => CH_DECLINA.test(chNorm(o))); }
 const CH_SIN_RESPUESTA = ['otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico'];
 const CH_SIN_OFERTA = ['pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte'];
-const CH_FIJO_SIN_RESPUESTA = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual', 'coexistencia'];
+const CH_FIJO_SIN_RESPUESTA = ['costoMeta', 'integracion'];
 // ¿El texto que el MODELO escribió ofrece hablar con el equipo? (su pregunta final, o —si no tiene pregunta final— cualquier oración): sin depender de CÓMO declina, eso dice que no pudo resolver.
 function chOfreceAlEquipo(texto) { const q = chPreguntaFinal(texto); return CH_OFRECE_EQ.test(q) || (q === '' && /\bhablar con (?:alguien|una persona|(?:nuestro |el )?equipo)|\bun asesor\b/.test(chNorm(texto))); }
 // Las señales del turno, calculadas UNA vez. a = { plan, res (resultado del modelo), eventos, ficha (la de antes) }
@@ -1400,7 +1400,7 @@ function chSituacion(a) {
   const rub = chTexto(p.rubroElegido || r.rubroId || f.rubro);
   const modeloOfreceEq = p.ruta === 'modelo' && r.origen === 'modelo' && chOfreceAlEquipo(r.texto);
   return {
-    ruta: p.ruta, fijo: chTexto(p.fijo), ev, aMedida: p.aMedida === true,
+    ruta: p.ruta, fijo: chTexto(p.fijo), ev, aMedida: p.aMedida === true, sinPlanes: p.sinPlanes === true,
     interes: CH_INTERES.test(t) || textos.some((c) => chPideCostoDelServicio(c)),
     acabadas: CH_FIN_PREGUNTAS.test(t) || (f.explicado === true && f.respondidas >= 2),
     // declina = el cliente propone una función no documentada para su rubro, o el modelo no la puede resolver (declina o la inventó)
@@ -1413,9 +1413,9 @@ const CH_TABLA = [
   { id: 'lista', cuando: (s) => s.ruta === 'lista', planes: false, equipo: false, nota: 'La lista de rubros (saludo o pitch del primer contacto): la lista misma es la salida; nada se ofrece antes de elegir rubro.' },
   { id: 'traspaso', cuando: (s) => s.ruta === 'equipo', planes: false, equipo: false, nota: 'El traspaso lleva su propio botón de contacto (enlace a recepción) y el aviso a recepción.' },
   { id: 'pide-datos', cuando: (s) => s.ruta === 'pedirNombre', planes: false, equipo: false, nota: 'Pidió planes y faltan nombre y negocio: se piden UNA vez, sin botón de planes (los planes salen al contestar).' },
-  { id: 'planes', cuando: (s) => s.ruta === 'planes', planes: false, equipo: true, nota: 'Los planes (o su tope y complemento): se acabaron las preguntas de precio, cierra con la oferta del equipo.' },
-  { id: 'consulta-sin-respuesta', cuando: (s) => s.ruta === 'fijo' && CH_FIJO_SIN_RESPUESTA.includes(s.fijo), planes: false, equipo: true, nota: 'Integración, costo de Meta, banco, descuento, consumo o el número propio del prospecto: el chat no lo resuelve, requiere al equipo.' },
-  { id: 'respuesta-fija', cuando: (s) => s.ruta === 'fijo', planes: false, equipo: false, nota: 'Identidad y disponibilidad: se contestan completas, sin invitaciones.' },
+  { id: 'planes', cuando: (s) => s.ruta === 'planes', planes: false, equipo: 'sinPlanes', nota: 'Los planes (o su tope y complemento): respuesta completa, sin botón del equipo; el botón sale solo al derivar, y deriva cuando no hay planes ni imagen que mostrar (si no, sería un callejón sin salida).' },
+  { id: 'consulta-sin-respuesta', cuando: (s) => s.ruta === 'fijo' && CH_FIJO_SIN_RESPUESTA.includes(s.fijo), planes: false, equipo: true, nota: 'Integración o costo de Meta: el chat no lo resuelve, deriva al equipo (el botón sale solo al derivar).' },
+  { id: 'respuesta-fija', cuando: (s) => s.ruta === 'fijo', planes: false, equipo: false, nota: 'Identidad, disponibilidad, banco, consumo, descuento, número propio y coexistencia: se contestan completas, sin invitaciones ni botón.' },
   { id: 'sin-respuesta', cuando: (s) => CH_SIN_RESPUESTA.includes(s.ev), planes: false, equipo: true, nota: 'Sin dato, no documentado, a medida («Otro»), cierre hacia el equipo o error del modelo: requiere al equipo.' },
   { id: 'rubro-declina', cuando: (s) => s.declina && (s.ev === 'rubro' || s.ev === 'multiple'), planes: true, equipo: true, nota: 'Eligió rubro y además propone una función no documentada: «Ver planes» y la salida al equipo.' },
   { id: 'declina-ofrece-equipo', cuando: (s) => s.declina && s.modeloOfreceEq && !['identidad', 'cortesia'].includes(s.ev), planes: false, equipo: true, nota: 'El modelo no pudo resolver y su pregunta final ofrece hablar con el equipo: se conserva esa oferta con su botón (aunque la pregunta traiga una palabra de interés).' },
@@ -1429,7 +1429,7 @@ const CH_TABLA = [
 // Aplica la tabla y las compuertas → { fila, planes, equipo, ordinaria, ofrecio } (`ofrecio` = lo que DE VERDAD saldrá como oferta: los botones).
 function chBotonesDe(s) {
   const fila = CH_TABLA.find((x) => x.cuando(s));
-  const v = (x) => x === true || (x === 'interes' && s.interes === true);
+  const v = (x) => x === true || (x === 'interes' && s.interes === true) || (x === 'sinPlanes' && s.sinPlanes === true);
   const planes = v(fila.planes) && !s.planesTocado && !s.planesVistos;
   const equipo = v(fila.equipo) && !s.equipoTocado;
   return { fila: fila.id, planes: planes, equipo: equipo, ordinaria: fila.id.startsWith('ordinaria'), ofrecio: planes && equipo ? 'ambas' : (planes ? 'planes' : (equipo ? 'equipo' : 'ninguna')) };

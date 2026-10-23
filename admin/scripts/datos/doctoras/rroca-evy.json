@@ -18,6 +18,7 @@
   },
   "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA_RROCA_EVY",
   "configBase": {
+    "tenantId": "rroca-evy",
     "waGraphVersion": "v26.0",
     "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_EVY",
     "numeroRecepcion": "REEMPLAZAR_NUMERO_RECEPCION_RROCA_EVY",
@@ -36,8 +37,6 @@
     "nombreCompleto": "Dra. Evy Karina Rojas",
     "clinica": "Clínica DentalCor",
     "especialidad": "ortodoncista y especialista en armonización facial, aplicadora certificada de Radiesse® y HArmonyCa®",
-    "direccion": "Avenida Piraí, segundo anillo, Calle Sapocó # 53 (Santa Cruz)",
-    "horario": "de lunes a viernes de 08:30 a 18:30 y los sábados de 09:00 a 12:00; los domingos no se atiende",
     "tratamientos": [
       { "id": "rad", "nombre": "Radiesse®", "claves": ["radiesse"], "frase": "Radiesse® es un bioestimulador a base de hidroxiapatita de calcio." },
       { "id": "har", "nombre": "HArmonyCa®", "claves": ["harmonyca", "harmony ca"], "frase": "HArmonyCa® es un inyectable híbrido de ácido hialurónico e hidroxiapatita de calcio." }

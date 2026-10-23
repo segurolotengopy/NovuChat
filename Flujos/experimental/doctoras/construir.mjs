@@ -138,9 +138,11 @@ export function erroresDeDoctora(d) {
     else if (!textoSinMarcas(v)) e.push(`${ruta}: no puede llevar «@@» ni «{{»`);
     else if (PALABRAS_PROHIBIDAS.test(v.normalize('NFD').replace(/[̀-ͯ]/g, ''))) e.push(`${ruta}: lleva una palabra que ningún texto de la doctora puede decir (promesa de resultado, «ideal para», precio, enlace)`);
   };
-  for (const c of ['nombreCorto', 'nombreCompleto', 'clinica', 'especialidad', 'direccion']) cadena(`doctora.${c}`, d[c], { max: 200 });
+  for (const c of ['nombreCorto', 'nombreCompleto', 'clinica', 'especialidad']) cadena(`doctora.${c}`, d[c], { max: 200 });
+  // La dirección vive en la Consola (`negocio.direccion` → `/config/negocio`): el flujo la lee de «Config del negocio». Duplicarla aquí sería incrustar lo vivo (regla de Andres, 22/10/2026).
+  if ('direccion' in d) e.push('doctora.direccion: la dirección se lee de la Consola (negocio.direccion); no se incrusta en el flujo');
   // El horario puede estar vacío o ser un marcador: la doctora aún no lo dio y el flujo no dice ninguno. `horarioPorConfirmar: true` = hay un horario cargado pero la doctora no lo confirmó: el flujo se arma, la guardia --publicable NO deja publicar.
-  cadena('doctora.horario', d.horario, { max: 200, vacio: true });
+  if (d.horario !== undefined) cadena('doctora.horario', d.horario, { max: 200, vacio: true });
   if ('horarioPorConfirmar' in d && typeof d.horarioPorConfirmar !== 'boolean') e.push('doctora.horarioPorConfirmar: tiene que ser true o false');
   const ids = new Set();
   if (!Array.isArray(d.tratamientos) || d.tratamientos.length < 1 || d.tratamientos.length > 6) e.push('doctora.tratamientos: de 1 a 6');
@@ -181,7 +183,7 @@ export function erroresDeDoctora(d) {
 /** Los textos de CONTENIDO que cada doctora aporta (las claves que `Decidir turno` y `Armar mensajes` leen del dato). */
 export const TEXTOS_DE_CONTENIDO = ['apertura', 'pregunta', 'lista_intro', 'quien', 'que_es', 'gratis', 'precio', 'sin_compromiso', 'donde', 'cual_mejor', 'diferencia', 'dolor', 'resultados', 'antes_despues', 'recuperacion', 'artificial', 'probe_otros', 'pensar', 'especifico'];
 /** Los textos de estructura que son COMUNES (están en `dr.js`) y que una doctora puede reemplazar si lo pide por escrito. */
-export const TEXTOS_COMUNES_PERMITIDOS = ['presentacion', 'baja_instruccion', 'consentimiento', 'consentimiento_no', 'pedir_nombre', 'nombre_repetir', 'pedir_contacto', 'pedir_otro_numero', 'pedir_horario', 'pedir_horario_con', 'cierre_con_aviso', 'cierre_sin_aviso', 'ya_derivado', 'medica', 'medica_con_aviso', 'medica_documento', 'ia', 'baja_ok', 'otra', 'otra_con_aviso', 'gracias', 'duda', 'horario_con', 'horario_sin', 'cancelar_ok'];
+export const TEXTOS_COMUNES_PERMITIDOS = ['presentacion', 'baja_instruccion', 'consentimiento', 'consentimiento_no', 'pedir_nombre', 'nombre_repetir', 'pedir_contacto', 'pedir_otro_numero', 'pedir_horario', 'pedir_horario_con', 'cierre_con_aviso', 'cierre_sin_aviso', 'ya_derivado', 'medica', 'medica_con_aviso', 'medica_documento', 'ia', 'baja_ok', 'otra', 'otra_con_aviso', 'gracias', 'duda', 'horario_con', 'horario_sin', 'donde_sin', 'cancelar_ok'];
 
 /** Lee y valida el archivo de datos de UN tenant. Cada error nombra el campo. */
 export function cargarDatos(ruta) {
@@ -212,7 +214,9 @@ export function cargarDatos(ruta) {
       if (FORMAS_CONFIG[c] && !FORMAS_CONFIG[c].test(String(v))) errores.push(`configBase.${c}: forma no válida`);
       if (c === 'doctora') errores.push('configBase.doctora: el bloque va en `doctora`, no en `configBase`');
     }
-    for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
+    for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio', 'tenantId']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
+    // El flujo solo cree a la Consola si responde por ESTE tenant: la dirección y el horario de otra doctora nunca se dicen (multi-tenant estricto).
+    if (cb.tenantId !== undefined && cb.tenantId !== d.tenant) errores.push('configBase.tenantId: tiene que ser el tenant de este archivo');
   }
   errores.push(...erroresDeDoctora(d.doctora));
   if (errores.length) throw new Error(`${d.tenant || 'archivo de datos'}: datos no válidos: ${errores.join('; ')}`);
@@ -365,7 +369,6 @@ const marcasEn = (v) => (sinComentarios(JSON.stringify(v) || '').match(/reemplaz
 // Etapas de la guardia: `encender` (la completa, por defecto) y `crear` (solo para CREAR un flujo INACTIVO: WAM necesita su URL de entrada). La etapa `crear` tolera exactamente dos cosas (el marcador solo en los datos de rroca-evy): el estado de la plantilla distinto
 // de APPROVED y el horario pendiente (el marcador del horario de Evy; `horarioPorConfirmar: true` de Emma). Todo lo demás se exige igual: marcadores, identidad, credenciales y los tres medios.
 export const ETAPAS = ['crear', 'encender'];
-const MARCADOR_HORARIO_TOLERADO = 'REEMPLAZAR_HORARIO_RROCA_EVY';
 
 function hallazgosDeConfig(cb, donde, etapa = 'encender') {
   const h = [];
@@ -377,24 +380,27 @@ function hallazgosDeConfig(cb, donde, etapa = 'encender') {
 }
 
 /** Lo que cada doctora tiene que traer lleno para publicar: la dirección y el horario (si no, el flujo no podría decirlos) y el número de recepción. Los textos de contenido ya los exige `cargarDatos`. */
-function hallazgosDeLaDoctora(datos, etapa = 'encender') {
+function hallazgosDeLaDoctora(datos, etapa = 'encender', negocio = null) {
   const h = [];
   const d = datos && datos.doctora;
   if (!d || typeof d !== 'object') return ['datos: no trae el bloque `doctora`'];
-  for (const c of ['nombreCorto', 'nombreCompleto', 'clinica', 'direccion', 'horario']) if (!VALOR_LLENO(d[c]) && !(etapa === 'crear' && datos.tenant === 'rroca-evy' && c === 'horario' && d[c] === MARCADOR_HORARIO_TOLERADO)) h.push(`datos: doctora.${c} está vacío o es un marcador`);
+  // El horario sale de la Consola (`negocio.horarios`) o, si la Consola no lo admite (turno partido), del respaldo `doctora.horario`: basta uno de los dos.
+  const hs = negocio && negocio.negocio && negocio.negocio.horarios;
+  const horarioEnConsola = !!hs && typeof hs === 'object' && Object.values(hs).some((v) => VALOR_LLENO(v));
+  for (const c of ['nombreCorto', 'nombreCompleto', 'clinica', 'horario']) if (!VALOR_LLENO(d[c]) && !(c === 'horario' && horarioEnConsola)) h.push(`datos: doctora.${c} está vacío o es un marcador`);
   // Las doctoras atienden público: el horario lo confirma la doctora. Mientras el indicador esté en true (se pone en false cuando lo confirma), no se publica.
   if (etapa !== 'crear' && d.horarioPorConfirmar === true) h.push('datos: doctora.horarioPorConfirmar es true: el horario aún no lo confirmó la doctora');
   if (!Array.isArray(d.tratamientos) || !d.tratamientos.length) h.push('datos: doctora.tratamientos está vacío');
   return h;
 }
 
-function hallazgosDelNegocio(negocio, tolerarHorario = false) {
+function hallazgosDelNegocio(negocio) {
   const h = [];
   if (!negocio || typeof negocio !== 'object' || Array.isArray(negocio)) return ['negocio: no se pudo leer el archivo de datos del negocio'];
   // El número de recepción va como `numeroRecepcionMarcador` (lo resuelve la tabla local al cargar): es el único campo donde un REEMPLAZAR_ se tolera; cualquier otro es un dato sin cargar.
   const { negocio: n, ...resto } = negocio;
   const { numeroRecepcionMarcador: _n, ...restoNegocio } = n && typeof n === 'object' ? n : {};
-  for (const m of new Set(marcasEn({ ...resto, negocio: restoNegocio }).map((x) => x.toUpperCase()))) if (!(tolerarHorario && m === MARCADOR_HORARIO_TOLERADO)) h.push(`negocio: marcador sin sustituir: ${m}`);
+  for (const m of new Set(marcasEn({ ...resto, negocio: restoNegocio }).map((x) => x.toUpperCase()))) h.push(`negocio: marcador sin sustituir: ${m}`);
   if (!n || !VALOR_LLENO(n.direccion)) h.push('negocio: falta la dirección');
   return h;
 }
@@ -466,7 +472,7 @@ export function guardiaDePublicacion({ flujo, datos, negocio, etapa = 'encender'
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   if (!nodos.length) h.push('el flujo no trae nodos');
   // 1. Marcadores sin sustituir en CUALQUIER parte del JSON completo (nodos, conexiones, ajustes, pinData, staticData, nivel superior).
-  for (const m of new Set(marcasEn(flujo).map((x) => x.toUpperCase()))) if (!(etapa === 'crear' && datos && datos.tenant === 'rroca-evy' && m === MARCADOR_HORARIO_TOLERADO)) h.push(`marcador sin sustituir: ${m}`);
+  for (const m of new Set(marcasEn(flujo).map((x) => x.toUpperCase()))) h.push(`marcador sin sustituir: ${m}`);
   // 2. La plantilla UTILITY del aviso, en lo que se publica («Config base»)…
   const base = nodos.find((n) => n.name === 'Config base');
   const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
@@ -478,9 +484,9 @@ export function guardiaDePublicacion({ flujo, datos, negocio, etapa = 'encender'
   }
   // 3. …en los datos, con lo que cada doctora tiene que traer lleno…
   h.push(...hallazgosDeConfig(datos && datos.configBase, 'datos', etapa));
-  h.push(...hallazgosDeLaDoctora(datos, etapa));
+  h.push(...hallazgosDeLaDoctora(datos, etapa, negocio));
   // 4. …los marcadores del negocio…
-  h.push(...hallazgosDelNegocio(negocio, etapa === 'crear' && !!datos && datos.tenant === 'rroca-evy'));
+  h.push(...hallazgosDelNegocio(negocio));
   // 5. …y la rama de medios completa y la conversación completa (con el aviso: sin él, «ya avisé» no tendría respaldo).
   h.push(...hallazgosDeMedios(flujo));
   const nombres = new Set(nodos.map((n) => n.name));

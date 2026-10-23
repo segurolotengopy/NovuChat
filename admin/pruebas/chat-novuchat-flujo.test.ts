@@ -102,7 +102,8 @@ const tipoInter = (e: Enviado): string => String(inter(e)['type'] ?? '');
 const botonesDe = (e: Enviado): { id: string; title: string }[] => (((inter(e)['action'] ?? {})['buttons'] ?? []) as J[]).map((b) => b['reply'] as { id: string; title: string });
 const filasDe = (e: Enviado): J[] => ((((inter(e)['action'] ?? {})['sections'] ?? []) as J[]).flatMap((s) => (s['rows'] ?? []) as J[]));
 const urlDe = (e: Enviado): string => String((((inter(e)['action'] ?? {})['parameters']) ?? {})['url'] ?? '');
-const encabezadoDe = (e: Enviado): J | undefined => inter(e)['header'] as J | undefined;
+// (los planes SIN botones —el botón del equipo sale solo al derivar, 23/10— salen como mensaje `image` con `caption`; el «encabezado» es entonces la propia imagen)
+const encabezadoDe = (e: Enviado): J | undefined => (e.tipo === 'image' ? { type: 'image', image: e.payload['image'] } : (inter(e)['header'] as J | undefined));
 const idsBotones = (e: Enviado): string[] => botonesDe(e).map((b) => b.id);
 const titulosBotones = (e: Enviado): string[] => botonesDe(e).map((b) => b.title);
 const idsFilas = (e: Enviado): string[] => filasDe(e).map((f) => String(f['id']));
@@ -275,7 +276,7 @@ function propiedades(w: W, t: T, from: string, entrada: string, tiposSinBotones:
   for (const e of t.mensajes) {
     const c = e.cuerpo;
     const que = `${ctx}, a ${e.a === from ? 'quien escribe' : e.a === REC ? 'recepción' : 'otro'}: «${c.slice(0, 140).replace(/\n/g, ' / ')}»`;
-    expect(['text', 'interactive', 'template'], `${que}: tipo de mensaje`).toContain(e.tipo);
+    expect(['text', 'interactive', 'template', 'image', 'document'], `${que}: tipo de mensaje`).toContain(e.tipo);
     if (e.tipo === 'template') {
       const comp = (((e.payload['template'] ?? {}) as J)['components'] ?? []) as J[];
       const params = comp.flatMap((x) => (x['parameters'] ?? []) as J[]);
@@ -307,6 +308,12 @@ function propiedades(w: W, t: T, from: string, entrada: string, tiposSinBotones:
     // (el complemento de los planes trae a propósito los tamaños de agendas y de catálogo; ver `complementoPlanes`)
     if (!/^Te cuento un poco más de los planes/.test(c)) expect(sinPermitidos, `${que}: dígitos de más`).not.toMatch(/\d/);
     else expect(c, `${que}: cifras de conversaciones o de consumo`).not.toMatch(/\d+\s+(conversaciones?|mensajes?|interacciones?|respuestas?|chats?)\b|ilimitad|gratis/i);
+    if (e.tipo === 'image' || e.tipo === 'document') {
+      expect(e.tipo, `${que}: la imagen de planes sale como imagen`).toBe('image');
+      expect(String((e.payload['image'] as J)['link']), `${que}: la imagen no es el archivo de planes de la consola`).toBe(ARCHIVO.url);
+      expect(/planes/i.test(c), `${que}: imagen en un mensaje que no es el de planes`).toBe(true);
+      expect(c, `${que}: la imagen de planes ofrece al equipo sin botón`).not.toMatch(/hablar con (?:alguien|una persona|(?:alguien de )?(?:nuestro |el )?equipo)|un asesor/i);
+    }
     if (e.tipo === 'interactive') {
       expect(['list', 'button', 'cta_url'], `${que}: tipo de interactivo`).toContain(tipoInter(e));
       const h = encabezadoDe(e);
@@ -754,11 +761,12 @@ describe('las conversaciones del PDF «Opciones de conversaciones»', () => {
     expect(e3.cuerpo).toContain('Setup estándar USD 65, pago único (configuración llave en mano y conexión a Meta).');
     expect(e3.cuerpo).toContain('Planes mensuales (Impulso, Crecimiento, Pro) desde USD 25.');
     expect(e3.cuerpo).not.toMatch(/Setup a medida/);
-    expect(e3.cuerpo.endsWith(CIERRE_PRECIOS)).toBe(true);
+    expect(e3.cuerpo).not.toMatch(/hablar con alguien de nuestro equipo|Lo revisamos contigo/i); // (Andres, 23/10) los planes ya no cierran con la oferta del equipo
     expect(e3.cuerpo).not.toMatch(/conversaciones|productos/i);
-    expect(idsBotones(e3)).toEqual(['equipo']); // R5: los planes ya se vieron, solo queda «Hablar con el equipo»
-    // «Hablar con el equipo»: traspaso con el botón de enlace a recepción y UN aviso con plantilla
-    const t4 = j.boton('equipo');
+    expect(e3.tipo).toBe('image'); // sin botones: imagen con pie
+    expect(idsBotones(e3)).toEqual([]); // (Andres, 23/10) el botón del equipo sale solo al derivar
+    // pedir una persona: traspaso con el botón de enlace a recepción y UN aviso con plantilla
+    const t4 = j.texto('Quiero hablar con una persona del equipo');
     const e4 = t4.aMi[0]!;
     expect(tipoInter(e4)).toBe('cta_url');
     expect(urlDe(e4)).toMatch(new RegExp(`^https://wa\\.me/${REC}\\?text=`));
@@ -840,8 +848,8 @@ describe('reglas duras que hace cumplir el CÓDIGO (el modelo no se consulta)', 
       const e = t.aMi[0]!;
       expect(e.cuerpo).toMatch(/cada conversación cubra sin problemas todo el flujo necesario/);
       expect(e.cuerpo).not.toMatch(/\d/);
-      expect(e.cuerpo).toMatch(/hablar con alguien de nuestro equipo para analizar el volumen/);
-      expect(idsBotones(e)).toEqual(['equipo']);
+      expect(e.cuerpo).not.toMatch(/hablar con alguien de nuestro equipo|Lo revisamos contigo/i); // (Andres, 23/10) sin invitación ni botón
+      expect(idsBotones(e)).toEqual([]);
     }
     expect(w.modelo.llamadas).toHaveLength(0);
   });
@@ -881,6 +889,8 @@ describe('reglas duras que hace cumplir el CÓDIGO (el modelo no se consulta)', 
     expect(c).toMatch(/no lo valida con el banco/);
     expect(c).toMatch(/Quien confirma que el dinero entró es tu banco, y tú como dueño/);
     expect(c).not.toMatch(COBRO_REAL);
+    expect(c).not.toMatch(/hablar con alguien de nuestro equipo|Lo revisamos contigo/i); // (Andres, 23/10) sin invitación ni botón
+    expect(idsBotones(t.aMi[0]!)).toEqual([]);
     expect(w.modelo.llamadas).toHaveLength(0);
   });
 
@@ -889,22 +899,47 @@ describe('reglas duras que hace cumplir el CÓDIGO (el modelo no se consulta)', 
     const j = jugar(w, MAMA);
     j.texto('Hola');
     for (const q of ['¿Cuánto cobra Meta?', '¿Quién paga a Meta los mensajes de WhatsApp?']) {
-      const c = j.texto(q).aMi[0]!.cuerpo;
+      const e = j.texto(q).aMi[0]!;
+      const c = e.cuerpo;
       expect(c).toMatch(/^Esa no la tengo a la mano/);
       expect(c).not.toMatch(/centavos|casi nada|gratis|\d/i);
       expect(c).toMatch(/hablar con alguien de nuestro equipo/);
+      expect(idsBotones(e)).toEqual(['equipo']); // (Andres, 23/10) costoMeta SIGUE derivando, con botón
     }
     expect(w.modelo.llamadas).toHaveLength(0);
+  });
+
+  it('(Andres, 23/10) el botón «Hablar con el equipo» sale SOLO AL DERIVAR: banco, consumo, descuento, número propio, coexistencia y planes no llevan botón ni la pregunta de cierre; costo de Meta e integración SIGUEN con botón', () => {
+    const NO_DEBE = /hablar con alguien de nuestro equipo|Lo revisamos contigo/i;
+    for (const q of ['¿Valida mis transferencias con el banco?', '¿Cuántos mensajes incluye una conversación?', 'Dame un descuento y te contrato hoy', '¿Puedo usar mi número actual?', '¿Coexisten?', 'Planes por favor']) {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.texto('Hola');
+      if (q === 'Planes por favor') j.texto(q); // (pide el nombre; los planes salen al contestar)
+      const e = j.texto(q === 'Planes por favor' ? 'Ana Pérez, Tienda Uno' : q).aMi[0]!;
+      expect(idsBotones(e), q).toEqual([]);
+      expect(e.cuerpo, q).not.toMatch(NO_DEBE);
+      if (q === 'Planes por favor') expect(e.tipo, q).toBe('image');
+    }
+    for (const q of ['¿Cuánto cobra Meta?', '¿Se integra con mi ERP?']) {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.texto('Hola');
+      w.modelo.con = 'ERROR';
+      expect(idsBotones(j.texto(q).aMi[0]!), q).toEqual(['equipo']);
+    }
   });
 
   it('«dame un descuento» → la política (los precios son los de los planes) y el equipo; ni un descuento ni una oferta', () => {
     const w = crear();
     const j = jugar(w, MAMA);
     j.texto('Hola');
-    const c = j.texto('Dame un descuento y te contrato hoy').aMi[0]!.cuerpo;
+    const e = j.texto('Dame un descuento y te contrato hoy').aMi[0]!;
+    const c = e.cuerpo;
     expect(c).toMatch(/Los precios son los que ves en los planes/);
     expect(c).not.toMatch(/descuento|gratis|promo/i);
-    expect(c).toMatch(/hablar con alguien de nuestro equipo/);
+    expect(c).not.toMatch(/hablar con alguien de nuestro equipo|Lo revisamos contigo/i); // (Andres, 23/10) sin invitación ni botón
+    expect(idsBotones(e)).toEqual([]);
     expect(w.modelo.llamadas).toHaveLength(0);
   });
 
@@ -1209,7 +1244,7 @@ describe('recepción (el número de Silvana) escribiendo desde su propio teléfo
     expect(pedido.cuerpo).toMatch(/Para mostrarte los planes que mejor te sirvan/);
     expect(idsBotones(pedido)).toEqual([]);
     const p = j.texto('Ana, Salón Rosa').aMi[0]!;
-    expect(idsBotones(p)).toEqual(['equipo']);
+    expect(idsBotones(p)).toEqual([]); // (Andres, 23/10) los planes no llevan el botón del equipo
     expect((encabezadoDe(p)?.['image'] as J)['link']).toBe(ARCHIVO.url);
   });
   it('«Hablar con el equipo» desde recepción responde «Ya estás en contacto con el equipo», con los dos botones, SIN plantilla de aviso y SIN botón a su propio chat', () => {
@@ -1865,7 +1900,7 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
     // «Ver planes»: ya se pidió el nombre una vez, así que se muestran (imagen) y queda SOLO «Hablar con el equipo»
     const t5 = j.boton('planes');
     expect((encabezadoDe(t5.aMi[0]!)?.['image'] as J)['link']).toBe(ARCHIVO.url);
-    expect(idsBotones(t5.aMi[0]!)).toEqual(['equipo']);
+    expect(idsBotones(t5.aMi[0]!)).toEqual([]); // (Andres, 23/10) los planes ya no llevan botones
     // «Dame mas info sobre la empresa»: el modelo evade; la red lo rechaza y sale la respuesta con los hechos verificados
     w.modelo.con = dice(EVASION);
     const t6 = j.texto('Dame mas info sobre la empresa');
@@ -1969,7 +2004,7 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
     expect(idsBotones(j.lista('rubro:belleza').aMi[0]!)).toEqual(['planes']);
     w.modelo.con = dice(MAS);
     expect(idsBotones(j.texto('Cuéntame cómo se agenda').aMi[0]!)).toEqual(['equipo']);
-    expect(idsBotones(j.boton('planes').aMi[0]!)).toEqual(['equipo']);
+    expect(idsBotones(j.boton('planes').aMi[0]!)).toEqual([]); // (Andres, 23/10) los planes ya no llevan botones
     w.modelo.con = dice(FINDE);
     expect(idsBotones(j.texto('¿Atienden también los fines de semana?').aMi[0]!)).toEqual([]);
     const eq = j.boton('equipo');
@@ -2055,9 +2090,11 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
     expect(p2.cuerpo).toMatch(/Impulso 1, Crecimiento hasta 5, Pro hasta 10/);
     expect(p2.cuerpo).not.toMatch(/conversaciones/i);
     expect(p2.cuerpo).not.toBe(p1.cuerpo);
-    expect(idsBotones(p2)).toEqual(['equipo']);
+    expect(idsBotones(p2)).toEqual([]); // (Andres, 23/10)
+    expect(p2.cuerpo).not.toMatch(/hablar con alguien de nuestro equipo|Lo revisamos contigo/i);
     const p3 = j.texto('y los precios?').aMi[0]!;
-    expect(p3.cuerpo).toMatch(/^En resumen 😊: Setup estándar USD 65, Setup a medida desde USD 125, planes mensuales desde USD 25\. ¿Te gustaría hablar con alguien de nuestro equipo/);
+    expect(p3.cuerpo).toMatch(/^En resumen 😊: Setup estándar USD 65, Setup a medida desde USD 125, planes mensuales desde USD 25\./);
+    expect(p3.cuerpo).not.toMatch(/hablar con alguien de nuestro equipo|Lo revisamos contigo/i); // (Andres, 23/10) sin la pregunta de cierre
     expect(encabezadoDe(p3)).toBeUndefined();
     expect(p3.cuerpo.length).toBeLessThan(260); // una línea de precios, sin repetir la imagen
     expect(new Set([p1.cuerpo, p2.cuerpo, p3.cuerpo]).size).toBe(3);
@@ -2263,7 +2300,8 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
       j3.texto('Planes por favor');
       const comp = j3.texto('Quiero ver los planes otra vez').aMi[0]!.cuerpo;
       expect(veces(comp)).toBe(1);
-      expect(antesDeLaPregunta(comp)).toBe(true);
+      expect(comp.indexOf(SITIO), 'el sitio va al final: el complemento ya no cierra con la pregunta del equipo (Andres, 23/10)').toBeGreaterThan(-1);
+      expect(comp).not.toMatch(/hablar con alguien de nuestro equipo/);
       expect(comp).toMatch(/servicio prepago mensual/);
     });
     it('NO aparece en el saludo, el pitch, los planes, el traspaso, la plantilla, la hoja ni el historial', () => {
@@ -2443,17 +2481,24 @@ describe('«Sí» a la oferta de hablar con el equipo: la deriva el código, no 
     expect(f['equipoAhora']).toBe(true);
     expect((f['hechos'] as J)['pidioEquipo']).toBe(true);
   };
-  it('la conversación real: «Ver planes» → el nombre → los planes con la oferta del equipo → «Sí» = UNA derivación (aviso a recepción + botón), con la ficha avisado y pidioEquipo', () => {
+  it('la conversación real: «Ver planes» → el nombre → los planes SIN oferta del equipo (Andres, 23/10) → un «Sí» suelto NO deriva; pedir una persona = UNA derivación (aviso a recepción + botón), con la ficha avisado y pidioEquipo', () => {
     const w = crear();
     const j = jugar(w, MAMA);
     j.texto('Hola');
     w.modelo.con = 'ERROR';
     expect(idsBotones(j.boton('planes').aMi[0]!)).toEqual([]);
     const planes = j.texto('Ana Pérez, Tienda Uno').aMi[0]!;
-    expect(idsBotones(planes)).toEqual(['equipo']);
-    expect(planes.cuerpo).toMatch(/hablar con alguien de nuestro equipo/);
+    expect(idsBotones(planes)).toEqual([]);
+    expect(planes.cuerpo).not.toMatch(/hablar con alguien de nuestro equipo|Lo revisamos contigo/i);
+    expect(fichaDe(w, MAMA)!['ofrecio']).toBe('ninguna'); // ya no hay oferta pendiente
+    // un «Sí» suelto NO deriva: pasa al flujo ordinario
+    const suelto = j.texto('Si');
+    expect(suelto.plantillas).toHaveLength(0);
+    expect((fichaDe(w, MAMA)!['hechos'] as J)['pidioEquipo']).toBe(false);
+    expect(fichaDe(w, MAMA)!['avisado']).toBe(false);
+    // pedir una persona SÍ deriva
     const llamadas = w.modelo.llamadas.length;
-    const t = j.texto('Si');
+    const t = j.texto('Quiero hablar con una persona del equipo');
     derivo(w, t, llamadas);
   });
   it('las afirmaciones cortas (con signos, tildes, mayúsculas, emojis y alargadas) aceptan la oferta', () => {
@@ -2760,14 +2805,14 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
     expect(p.cuerpo).toMatch(/cómo te llamas y cómo se llama tu negocio/);
     expect(fichaDe(w, MAMA)!['planesTocado']).toBe(false); // lo pidió por texto, no pulsó el botón
     const t = j.texto('Ana Pérez, Salón Rosa');
-    expect(idsBotones(t.aMi[0]!)).toEqual(['equipo']);
+    expect(idsBotones(t.aMi[0]!)).toEqual([]); // (Andres, 23/10) los planes no llevan el botón del equipo
     expect((encabezadoDe(t.aMi[0]!)?.['image'] as J)['link']).toBe(ARCHIVO.url);
   });
   it('(d) «Ver planes» PULSADO no se vuelve a ofrecer nunca: ni en el pedido del nombre, ni tras los planes, ni ante nuevas preguntas de interés, ni en otro rubro', () => {
     const { w, j } = tras();
     expect(idsBotones(j.boton('planes').aMi[0]!)).toEqual([]);
     expect(fichaDe(w, MAMA)!['planesTocado']).toBe(true);
-    expect(idsBotones(j.texto('Tienda Uno').aMi[0]!)).toEqual(['equipo']);
+    expect(idsBotones(j.texto('Tienda Uno').aMi[0]!)).toEqual([]); // (Andres, 23/10) los planes no llevan el botón del equipo
     w.modelo.con = dice(INC);
     expect(idsBotones(j.texto('¿Y qué incluye el setup?').aMi[0]!)).not.toContain('planes');
     w.modelo.con = 'ERROR';
@@ -2846,8 +2891,8 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
     expect(fichaDe(w, MAMA)!['equipoTocado']).toBe(false);
     expect(j.texto('¿Cuánto cuesta?').aMi[0]!.cuerpo).toMatch(/cómo se llama tu negocio/);
     const pl = j.texto('Luis Rojas, Clínica Sol').aMi[0]!;
-    expect(idsBotones(pl)).toEqual(['equipo']);
-    const t2 = j.texto('Sí');
+    expect(idsBotones(pl)).toEqual([]); // (Andres, 23/10) los planes no llevan el botón del equipo
+    const t2 = j.texto('Quiero hablar con una persona del equipo');
     expect(tipoInter(t2.aMi[0]!)).toBe('cta_url');
     expect(t2.plantillas).toHaveLength(1);
     // y en otro mundo: tras el traspaso y otro rubro, una consulta sin respuesta lleva «Hablar con el equipo» (ni callejón sin salida ni promesa sin mecanismo)
@@ -2913,7 +2958,7 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
     }
   });
   it('«¿Puedo usar mi número actual?» y sus variantes: respuesta FIJA con la frase oficial, sin llamar al modelo, solo «Hablar con el equipo»; el «Sí» deriva con UN aviso; con el equipo ya pulsado sale sin botón; los negativos no activan la ruta', () => {
-    const FRASE = 'Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.';
+    const FRASE = 'Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente.';
     const VARIANTES = ['¿Puedo usar mi número actual?', 'puedo usar mi numero actual', '¿Tengo que comprar un número nuevo?', '¿Mi número seguirá funcionando en el celular?', '¿Puedo seguir usando mi WhatsApp en mi celular?', '¿Se pierden mis chats?', '¿Puedo conectar el que ya tengo?', '¿Qué número necesito?'];
     for (const q of VARIANTES) {
       const { w, j } = tras();
@@ -2921,10 +2966,14 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
       const e = j.texto(q).aMi[0]!;
       expect(w.modelo.llamadas, q).toHaveLength(llamadas);
       expect(e.cuerpo, q).toContain(FRASE);
-      expect(e.cuerpo, q).toContain('¿Te gustaría hablar con alguien de nuestro equipo para revisarlo en tu caso?');
+      expect(e.cuerpo, q).not.toMatch(/hablar con alguien de nuestro equipo|Lo revisamos contigo/i); // (Andres, 23/10) sin invitación ni botón
       expect(e.cuerpo, q).not.toMatch(/coexisten|certificad|ver nuestros planes/i);
-      expect(idsBotones(e), q).toEqual(['equipo']);
-      const t = j.texto('Sí');
+      expect(idsBotones(e), q).toEqual([]);
+      expect(fichaDe(w, MAMA)!['ofrecio'], q).toBe('ninguna'); // sin oferta pendiente: un «Sí» suelto no deriva
+      const suelto = j.texto('Sí');
+      expect(suelto.plantillas, q).toHaveLength(0);
+      expect((fichaDe(w, MAMA)!['hechos'] as J)['pidioEquipo'], q).toBe(false);
+      const t = j.texto('Quiero hablar con una persona del equipo'); // pedir una persona SÍ deriva, con UN aviso
       expect(tipoInter(t.aMi[0]!), q).toBe('cta_url');
       expect(t.plantillas, q).toHaveLength(1);
     }
@@ -2936,7 +2985,8 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
       expect(w.modelo.llamadas, q).toHaveLength(llamadas);
       expect(e.cuerpo, q).toContain('Meta ofrece un modo en que la app WhatsApp Business y la API conviven, con limitaciones (por ejemplo, sin grupos). Hoy no lo ofrecemos.');
       expect(e.cuerpo, q).not.toMatch(/evaluamos|pronto|proximamente|próximamente|respaldo de Meta|certificad|ver nuestros planes/i);
-      expect(idsBotones(e), q).toEqual(['equipo']);
+      expect(e.cuerpo, q).not.toMatch(/hablar con alguien de nuestro equipo|Lo revisamos contigo/i); // (Andres, 23/10) sin invitación ni botón
+      expect(idsBotones(e), q).toEqual([]);
     }
     // con el equipo ya pulsado: la respuesta sale, sin botón ni invitación (lo pulsado no reaparece)
     const { w, j } = tras();
