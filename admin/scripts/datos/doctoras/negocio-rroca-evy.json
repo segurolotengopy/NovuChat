@@ -1,8 +1,8 @@
 {
   "_fuente": "Datos del negocio de la Dra. Evy Karina (tenant rroca-evy, flujo Flujos/experimental/doctoras/). Se carga con admin/scripts/datos/cargar-negocio.mjs, que solo admite las secciones negocio, agendamiento, catalogo y funcionarios: aquí va solo negocio (la recepción agenda y la valoración es gratuita: no hay catálogo, agenda ni cobro). Las claves que empiezan con `_` son notas y no se escriben.",
   "_pendiente": {
-    "_nota": "Falta el horario de atención de la Clínica DentalCor (la doctora aún no lo dio): no se inventa y el flujo no dice ninguno. El número de recepción es un marcador de la tabla local (CONFIGURACION.local.md); el número real no va en el repositorio.",
-    "horarioDeRecepcion": "REEMPLAZAR_HORARIO_RROCA_EVY"
+    "_nota": "Horario de la Clínica DentalCor confirmado por Andres el 22/10/2026 (L–V 8:30–18:30 continuo, sáb 9:00–12:00, domingo cerrado). El número de recepción es un marcador de la tabla local (CONFIGURACION.local.md); el número real no va en el repositorio.",
+    "horarioDeRecepcion": "de lunes a viernes de 08:30 a 18:30 y los sábados de 09:00 a 12:00; los domingos no se atiende"
   },
   "negocio": {
     "nombreNegocio": "Dra. Evy Karina Rojas",
@@ -12,9 +12,17 @@
     "zonaHoraria": "America/La_Paz",
     "tratamiento": "tu",
     "estiloEmojis": "pocos",
+    "horarios": {
+      "lun": "08:30-18:30",
+      "mar": "08:30-18:30",
+      "mie": "08:30-18:30",
+      "jue": "08:30-18:30",
+      "vie": "08:30-18:30",
+      "sab": "09:00-12:00",
+      "dom": "cerrado"
+    },
     "prefijosPermitidos": ["591"],
     "datosQueNoTenemos": [
-      "horario de atención",
       "precio del tratamiento (lo da la doctora en la valoración)",
       "consejo médico o diagnóstico"
     ]
