@@ -94,6 +94,7 @@ export const SUITES_PURAS = [
   'pruebas/core/entregas.test.ts',
   'pruebas/core/marcador-local-reemplazar.test.ts',
   'pruebas/campanas-consola.test.ts',
+  'pruebas/campanas-anuncios-consola.test.ts',
   'pruebas/central/contrato-f1b-puras.test.ts',
   'pruebas/central/prepago-bolsas.test.ts',
   'pruebas/central/turno-honestidad.test.ts',
