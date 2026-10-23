@@ -2528,8 +2528,10 @@
      "texto": "Tienda Uno",
      "exige": {
       "sinCifras": true,
+      "botones": "equipo",
       "contiene": [
-       "Por ahora no tengo los planes a la mano"
+       "Por ahora no tengo los planes a la mano",
+       "hablar con alguien de nuestro equipo"
       ],
       "noContiene": [
        "USD"

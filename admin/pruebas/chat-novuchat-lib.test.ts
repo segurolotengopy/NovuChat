@@ -2296,6 +2296,14 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
     expect(new Set(T.map((x) => x['id'])).size, 'ids únicos').toBe(T.length);
     expect(T.at(-1)!['id']).toBe('ordinaria'); // la última fila siempre coincide: toda situación tiene fila
   });
+  it('PLANES sin planes ni imagen que mostrar: SÍ deriva (no hay callejón sin salida); con planes o imagen, no; y lo pulsado no reaparece', () => {
+    const s = (extra: J): J => f('chSituacion')({ plan: { ruta: 'planes', ...extra }, res: null, eventos: [ev('Planes por favor')], ficha: fichaBase() });
+    expect(botones(s({ sinPlanes: true }))).toMatchObject({ fila: 'planes', equipo: true, planes: false });
+    expect(botones(s({ sinPlanes: false }))).toMatchObject({ fila: 'planes', equipo: false, planes: false });
+    expect(botones(s({}))).toMatchObject({ fila: 'planes', equipo: false });
+    const tocado = f('chSituacion')({ plan: { ruta: 'planes', sinPlanes: true }, res: null, eventos: [ev('Planes por favor')], ficha: { ...fichaBase(), equipoTocado: true } });
+    expect(botones(tocado)).toMatchObject({ fila: 'planes', equipo: false });
+  });
   it('PROPIEDADES sobre las 6.336 situaciones: lo pulsado no reaparece; «Ver planes» nunca sin interés; el equipo solo si es requerido o se acabaron las preguntas; nunca un callejón sin salida; el pedido de datos no lleva botón de planes', () => {
     const cuenta: Record<string, number> = {};
     const ok = (k: string): void => { cuenta[k] = (cuenta[k] ?? 0) + 1; };
