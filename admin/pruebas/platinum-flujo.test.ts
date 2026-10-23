@@ -3262,7 +3262,9 @@ describe.each([
     });
 
     it('lo que no entra en la lista cerrada cae en «otro»: el modelo no puede abrir un camino nuevo', () => {
-      for (const c of ['inventada', '', 'BOCA_O_DIENTES', 'publicidad; drop', null, 42]) {
+      for (const c of ['inventada', '', 'boca_o_dientes_y_mas', 'publicidad; drop', null, 42]) {
+        // 22/10/2026: las mayúsculas y los espacios se normalizan («BOCA_O_DIENTES» ya es una categoría
+        // válida de la lista cerrada); lo que sigue fuera de la lista cae en «otro».
         const s = clasificar(gemini(JSON.stringify({ categoria: c, texto: 'x' })));
         expect(s['categoriaMedio'], String(c)).toBe('otro');
         expect(String(s['userInput'])).toMatch(/Pregúntale de qué se trata/);

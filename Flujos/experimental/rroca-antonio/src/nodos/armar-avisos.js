@@ -7,6 +7,7 @@
 //   - Quién avisa: un comprobante (cuadra, o con su motivo: tardío, en revisión, casi coincide, sin cotejar), una derivación (factura, otro medio de pago, garantía, reclamo, hablar con Antonio, acceso al
 //     material, descuento, producto agotado, QR no disponible, comprobante sin QR abierto), el modelo cuando contesta DERIVAR y el estado «operador» (el texto fijo promete que una persona continúa).
 //     La pausa por persona (`bloqueado`) NO avisa: cero envío. La violencia o el miedo NO avisan (salvo un comprobante que sí cuadra, que viene en el plan).
+//   - La captura de un pago que no se completó (`pago_con_problema`) avisa a Antonio con ese motivo exacto; el MENSAJE del cliente nunca viaja en ese aviso.
 //   - A lo más UN aviso de consulta por teléfono Y POR MOTIVO (`clave`) cada 30 minutos (`avisosConsulta` de la ficha; «Armar mensajes» lo fija solo si el aviso SALIÓ).
 //
 // Todo texto pasa por `avLimpio` (sin enlaces, sin llaves, sin palabras prohibidas, con tope). El aviso NUNCA reenvía la imagen del comprobante ni dice «pago acreditado». En modo prueba el aviso va
@@ -23,6 +24,8 @@ const ahora = Number(t.ahoraMs) || Date.now();
 
 // 1. ¿Hay algo que avisar? El plan de «Decidir turno», el estado «operador» o el DERIVAR del modelo.
 let aviso = plan.aviso && typeof plan.aviso === 'object' ? plan.aviso : null;
+// Cancelar el cobro abierto: si el servidor lo cerró (200), el aviso es informativo («cerró su pedido; si pagó, revisar»); si no, queda el de la escalada.
+if (plan.tipo === 'cancelar_cobro' && plan.avisoCerrado && typeof plan.avisoCerrado === 'object' && raCobroCerrado(cnPrimero('Cancelar cobro en el servidor'))) aviso = plan.avisoCerrado;
 if (!aviso && puerta.ruta === 'uso_extendido' && puerta.responder === true && String(puerta.texto || '').trim() !== '') {
   aviso = { tipo: 'consulta', clave: 'atencion_humana', motivo: 'uso extendido: se le dijo al cliente que una persona continúa la conversación', mensaje: '' };
 }

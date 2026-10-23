@@ -2,7 +2,7 @@
 
 Regla (Andres, 09/10/2026): **flujo propio = composición propia + núcleo común obligatorio**. Lo común se incluye desde su fuente, nunca se copia; lo propio vive aquí.
 Zona: `Flujos/experimental/rroca-antonio/` (precedente `chat-novuchat`); se muda después a `Flujos/clientes/`. Este es el **PR-B** sobre el esqueleto del PR-A: conversación, catálogo, ángulos de anuncio, QR, comprobante, avisos, derivación, texto fijo ante violencia o miedo y números no bolivianos. El PR-C (datos del negocio, guardia de publicación `--publicable` y su confirmación en `publicar-flujo.sh`) sigue; **hasta entonces no se publica**.
-Pruebas: `admin/pruebas/tenants/rroca-antonio/` — `armado.test.ts` (armado, guardias, datos, zona, `ra.js`), `huecos.test.ts` y `huecos-cobro.test.ts` (los huecos contra su origen, con hash fijado), `medios.test.ts` (los medios comunes incluidos y su contrato), `flujo.test.ts` (el esqueleto), `venta.test.ts` (la conversación y el cobro), `negadas.test.ts` (las pruebas negadas del plan §5 sobre una batería amplia), `rescate-contrato.test.ts` (el contrato con el rescate de 22 h) y `vigilante-ux.ts` (los invariantes de UX aplicados a TODA la batería), todas punta a punta con el n8n de mentira.
+Pruebas: `admin/pruebas/tenants/rroca-antonio/` — `armado.test.ts` (armado, guardias, datos, zona, `ra.js`), `huecos.test.ts` y `huecos-cobro.test.ts` (los huecos contra su origen, con hash fijado), `medios.test.ts` (los medios comunes incluidos y su contrato), `flujo.test.ts` (el esqueleto), `venta.test.ts` (la conversación y el cobro), `negadas.test.ts` (las pruebas negadas del plan §5 sobre una batería amplia), `rescate-contrato.test.ts` (el contrato con el rescate de 22 h) y `vision-categorias.test.ts` (la visión por categorías), `vigilante-ux.ts` (los invariantes de UX aplicados a TODA la batería), todas punta a punta con el n8n de mentira.
 Armado: `node Flujos/experimental/rroca-antonio/construir.mjs` escribe `rroca-antonio.json` y `rroca-antonio.prueba.json`; con `--verificar` no escribe y sale 1 si difieren o violan una guardia.
 
 ## Común, INCLUIDO desde su fuente (sin copia)
@@ -48,15 +48,35 @@ Origen = `venta-minima`, **no `rroca-ruben`**. Cada declaración se compara BYTE
 | `src/lib/avisos.js` | `venta-minima/src/lib/avisos.js` | `avLimpio` (con `avSinProhibidas`, `avCanon`, `avNorm`…), `avTexto`, `avPlantilla`, `avDestinatarios` (+ `avUnificar`, `avPrefijos`, `avDigitos`), `avPrimerNombre`, `avParametro` |
 | `RA_NIEGA_IA` en `src/lib/ra.js` | `chat-novuchat/src/lib/chat.js` (`CH_NIEGA_IA`) | La expresión, idéntica salvo el nombre (la prueba la compara) |
 
-Los 10 nodos nuevos de `flujo.plantilla.json` (`Interpretar lectura`, `¿Cotejar?`, `Cotejar en el servidor`, `¿Conversar con el modelo?`, `Conversar con el modelo`, `Armar avisos`, `¿Hay avisos?`, `Enviar aviso`, `¿Falló la protección?` y `Reportar protección`) son propios de este flujo (producción 46 nodos, prueba 41; tope 48).
+Los 12 nodos nuevos de `flujo.plantilla.json` (`Interpretar lectura`, `¿Cotejar?`, `Cotejar en el servidor`, `¿Conversar con el modelo?`, `Conversar con el modelo`, `Armar avisos`, `¿Hay avisos?`, `Enviar aviso`, `¿Falló la protección?`, `Reportar protección`, `¿Cancelar cobro?` y `Cancelar cobro en el servidor`) son propios de este flujo (producción 48 nodos, prueba 43; tope 48).
 
 ## Propio de Antonio
 
-- `src/lib/ra.js`: la ficha por teléfono (olvido a las 48 h, últimos 40 ids de mensaje, memoria de 15 mensajes, tope de 1.000 fichas), el catálogo de 6 productos (el precio vive solo en la consola), los 5 prellenados, los 7 ángulos de anuncio, los menús, los textos fijos, el prompt del modelo y sus reglas de redacción, la derivación, el detector de violencia o miedo, y la barrera `raSeguro` (NIEGA_IA, palabras prohibidas del cobro y párrafos).
+- `src/lib/ra.js`: la ficha por teléfono (olvido a las 48 h, últimos 40 ids de mensaje, memoria de 15 mensajes, tope de 1.000 fichas), el catálogo de 6 productos (el precio vive solo en la consola), los 5 prellenados, los 7 ángulos de anuncio, los menús, los textos fijos, el prompt del modelo y sus reglas de redacción, la derivación, el detector de violencia o miedo, y la barrera `raSeguro` (NIEGA_IA, palabras prohibidas del cobro y párrafos con `ctParrafos` común).
 - `src/nodos/normalizar-entrada.js` (H-NORM): la normalización de la entrada. No hay fuente común utilizable (`core/normalizar-entrada.js` es del contrato del agente). Cubre text, interactive, button, audio/voice, image, document y cualquier otro tipo; emite `categoria` (`conversacion`, `medio`, `otro`) y los campos del contrato con los medios comunes.
 - `src/nodos/decidir-turno.js`: el código decide el turno. En PR-A solo cierra la puerta o responde el texto cortés; el resto queda `pendiente` (sin respuesta).
 - `src/nodos/armar-mensajes.js`: un ítem por mensaje, o ninguno; arma el QR, los menús, la lista, la protección y los textos fijos; revisa lo que redacta el modelo; escribe la ficha con la clave `messages[0].from`.
 - `flujo.plantilla.json`, `construir.mjs` (guardias, datos, «¿Meta aceptó?») y los datos `admin/scripts/datos/rroca-antonio/rroca-antonio.json` (solo marcadores `REEMPLAZAR_*`).
+
+## Común incluido: core/texto
+
+`Flujos/src/core/texto/parrafos.js` y `Flujos/src/core/texto/no-repetir.js` se **incluyen** desde su fuente (nunca se copian) DELANTE de `cobro.js`, `avisos.js` y `ra.js` en los 5 nodos `@@todo` (Normalizar entrada, Decidir turno, Armar mensajes, Interpretar lectura, Armar avisos). `texto-comun.test.ts` exige que cada uno empiece exactamente con `parrafos.js` + `no-repetir.js`.
+
+| Pieza común | Reemplaza (borrado de `ra.js`) |
+|---|---|
+| `ctParrafos`, `ctOraciones`, `ctEsPregunta` | `raParrafos`, `raOraciones`, `raEsPregunta`, `RA_PARRAFO_MAX` |
+| `ctHashTexto`, `ctEsRepetido`, `ctRecordarEnviado` | `raHashTexto` y la anotación de `ultimoHash`/`ultimaFirma` |
+| `ctFichaNoRepetir` | la validación de `ultimoHash`/`ultimaFirma` en `raFichaVigente` |
+| `ctAlternaDeRepetido` | `RA_ALTERNAS_CONTENIDO`, `RA_ALTERNAS_MEDIO`, `raAlternaDeRepetido` |
+
+**Sigue propio de Antonio** (el core no lo decide): las exenciones de «nunca el mismo texto dos veces» (`puerta.ruta === 'sigue'`, la imagen, los planes `comprobante`, `riesgo`, `fuera_pais` e `imagen_descrita`, y la presentación `/asistente virtual/i`), la detección del tipo de medio (`/^(audio|imagen|otro|archivo)/` sobre el plan, que se pasa como `medio`), la derivación repetida (`raTextoDerivacion(..., 'repetido')`), `raNorm` y `Resumen del turno`. Los datos de Antonio son constantes de `ra.js`: `RA_TITULAR = 'Antonio'` y `RA_TRATAMIENTO = 'tu'` (una prueba exige que sea el `tratamiento` del negocio). Sin `alternas` del tenant ni dato nuevo en la consola.
+
+**Contrato del filtro.** La salida de `ctAlternaDeRepetido` se usa SOLO a través de `raAlternaFiltrada(o, motivoDe)` (pura): pasa si es texto no vacío, `motivoDe(x) === ''` (en «Armar mensajes» es `cmMotivoDeRechazo`), no cae en `RA_NIEGA_IA` y no cae en `CB_PROHIBIDAS`; si la alterna propia no pasa, se usa la base; si la base no pasa, `RA_SALUDO_MINIMO`. Además, `conAntonio` aplica `raSeguro` encima. La prueba estática exige que `ctAlternaDeRepetido(` aparezca solo dentro de `raAlternaFiltrada`.
+
+**Diferencias declaradas.**
+- Un texto de MÁS DE 4096 caracteres: `ctParrafos` lo corta a 4096 ANTES de partir (acota el costo de las expresiones regulares); la partición propia anterior no cortaba. Ningún texto del flujo se acerca a ese largo; el modelo está limitado a 700 caracteres por el filtro.
+- Los textos de la alterna «medio» (audio, imagen, documento repetido) pasan a ser los del core («Sigo sin poder usar ese archivo por aquí…»), no los que `ra.js` traía antes. Los de contenido son idénticos.
+- Mensajes por conversación: 0 agregados, 0 quitados. Es el mismo mensaje con la misma partición (corpus fijo `corpus-parrafos.json`, salidas de main).
 
 ## Condiciones declaradas (no se resuelven en el PR-B)
 
@@ -81,4 +101,4 @@ SALE: `lineaProteccion` (dato, forma, guardia de publicación y pruebas), los te
 
 ## Port propio del PR-D: piezas de Rubén sin módulo común
 
-No hay módulo común de estas piezas; se portan a `src/lib/ra.js` desde `rroca-ruben/src/lib/rr.js` (solo lectura) con el catálogo de Antonio, y se declaran aquí: `raHablaDelCobro` (sobre `rrHablaDePagar`), `raPideProducto`, `raCancelaPedido`, `raPideImagenes`, `raPideCatalogo` (más «otras opciones»), `raEsPreguntaLibre`, `raHashTexto`, `raAlternaDeRepetido` (alternativas con el botón de Antonio), la ficha `ultimoHash`/`ultimaFirma` y la reversión en `Resumen del turno`, el recordatorio escalable del QR (`qr_insistente`), la cancelación (`cancelacion`) y el filtro de promesas de imagen en `raExtraRedaccion`. Propias de Antonio (no vienen de Rubén): `raSinConfiguracion`, `raAudioIlegible` y el contador `charlaN`. Mensajes por conversación: 0 agregados. Pruebas: `pr-d.test.ts`.
+No hay módulo común de estas piezas; se portan a `src/lib/ra.js` desde `rroca-ruben/src/lib/rr.js` (solo lectura) con el catálogo de Antonio, y se declaran aquí: `raHablaDelCobro` (sobre `rrHablaDePagar`), `raPideProducto`, `raCancelaPedido`, `raPideImagenes`, `raPideCatalogo` (más «otras opciones»), `raEsPreguntaLibre`, la reversión en `Resumen del turno` (el hash y la firma de la ficha `ultimoHash`/`ultimaFirma` son ahora comunes: ver «Común incluido: core/texto»), el recordatorio escalable del QR (`qr_insistente`), la cancelación (`cancelacion`) y el filtro de promesas de imagen en `raExtraRedaccion`. Propias de Antonio (no vienen de Rubén): `raSinConfiguracion`, `raAudioIlegible` y el contador `charlaN`. Mensajes por conversación: 0 agregados. Pruebas: `pr-d.test.ts`.

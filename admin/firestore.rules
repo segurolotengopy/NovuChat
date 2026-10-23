@@ -619,18 +619,22 @@ service cloud.firestore {
                 .get(cuenta.get('plan', ''), 0);
         }
 
-        // LA FORMA MÍNIMA DE UNA CAMPAÑA: un mapa de cuatro claves con un texto
-        // de hasta 300 caracteres. Nada más, y a propósito: una petición tiene
+        // LA FORMA MÍNIMA DE UNA CAMPAÑA: un mapa de cuatro a siete claves (las
+        // cuatro de siempre más `titulares`, `productoId` y `angulo`, opcionales)
+        // con un texto de hasta 300 caracteres. Nada más, y a propósito: una petición tiene
         // un tope de 1.000 expresiones evaluadas, y validar campo por campo diez
         // campañas lo agotaba desde la quinta (claves) o la séptima (formato);
         // medido en el emulador el 24/09. El formato del id y de las fechas, el
         // orden de las fechas, que no sean pasadas ni muy futuras, los
         // duplicados y el contenido los decide el SERVIDOR (`campanas.ts`) antes
         // de aplicar: una campaña mal escrita queda cargada y NUNCA viaja al
-        // flujo. Lo que la regla sí tiene que hacer cumplir, que es el tope del
+        // flujo. EL ÁNGULO (<= 300) TAMPOCO SE MIRA ACÁ: medido en el emulador, con
+        // diez campañas de siete claves ese chequeo agota el tope; lo decide el
+        // servidor (`revisarSinModelo`) y lo verifica el revisor de seguridad.
+        // Lo que la regla sí tiene que hacer cumplir, que es el tope del
         // plan, lo hace con el tamaño de la lista.
         function unaCampanaValida(c) {
-          return c is map && c.size() == 4 && c.get('texto', 0) is string && c.texto.size() <= 300;
+          return c is map && c.size() >= 4 && c.size() <= 7 && c.get('texto', '').size() <= 300;
         }
 
         function campanaValida(lista, i) {

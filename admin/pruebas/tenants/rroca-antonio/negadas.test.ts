@@ -260,14 +260,15 @@ describe('12. audio y medios', () => {
       expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
     }
   });
-  it('una captura de anuncio sin ángulo reconocido, ya saludado, sigue como charla; una foto cualquiera recibe el texto fijo', () => {
+  it('una captura de anuncio sin ángulo reconocido, ya saludado, sigue como charla; una foto cualquiera dice lo que ve y ofrece el libro y los precios', () => {
     const w = nuevo({ medio: { clasificacion: { categoria: 'publicidad', texto: 'Oferta de zapatos' } } });
     hablar(w, ANA, mTexto('hola'));
     const t = hablar(w, ANA, mImagen());
     expect(t.mensajes).toHaveLength(1);
     expect(t.mensajes.some((m) => m.tipo === 'image')).toBe(false);
     const o = nuevo({ medio: { clasificacion: { categoria: 'otro', texto: '' } } });
-    expect(hablar(o, ANA, mImagen()).mensajes[0]!.cuerpo).toMatch(/solo puedo leer texto y los comprobantes/);
+    expect(hablar(o, ANA, mImagen()).mensajes[0]!.cuerpo).toMatch(/Recibí tu imagen\. Cuéntame qué necesitas sobre esto, o pregúntame por el libro y los precios\./);
+    expect(hablar(o, ANA, mImagen()).mensajes[0]!.cuerpo).not.toMatch(/solo puedo leer/);
   });
 });
 

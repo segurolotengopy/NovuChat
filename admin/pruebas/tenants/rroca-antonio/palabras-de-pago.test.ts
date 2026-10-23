@@ -55,13 +55,13 @@ describe('(c) una foto o un PDF que no es comprobante no cotiza ni avisa (cobro 
   ];
   for (const [estado, panel] of paneles) {
     for (const [tipo, msg, mime] of [['foto', mImagen(), 'image/jpeg'], ['PDF', mDocumento(), 'application/pdf']] as const) {
-      it(`${tipo} que no es comprobante con el cobro ${estado}: sin cotejo, sin aviso, texto fijo`, () => {
+      it(`${tipo} que no es comprobante con el cobro ${estado}: sin cotejo, sin aviso, texto que ofrece el libro y los precios`, () => {
         const w = crear({ panel, medio: { clasificacion: { categoria: 'otro', texto: 'mi perro' }, mime } }); vigilarUx(w);
         const t = hablar(w, ANA, msg);
         expect(t.ejecutados.has('Cotejar en el servidor')).toBe(false);
         expect(t.llamadas.cotejo).toHaveLength(0);
         expect(t.avisos.filter((a) => a.a === REC)).toHaveLength(0);
-        expect(textos(t)[0]).toMatch(/solo puedo leer texto y los comprobantes/);
+        expect(textos(t)[0]).toMatch(/Cuéntame qué necesitas sobre esto, o pregúntame por el libro y los precios/);
       });
     }
   }

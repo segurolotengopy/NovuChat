@@ -324,13 +324,13 @@ describe('los botones y la lista', () => {
     expect(b.mensajes[0]!.cuerpo).not.toMatch(/\b5 Bs/);
   });
 
-  it('con un QR abierto no sale otro: el recordatorio (con el monto) y el botón de Antonio; un solo QR a la vez', () => {
+  it('con un QR abierto no sale otro: el recordatorio (con el monto) en texto plano, sin botón; un solo QR a la vez', () => {
     const w = nuevo();
     hablar(w, ANA, mTexto(PRELLENADOS.pack));
     const t = hablar(w, ANA, mBoton('b_libro'));
     expect(t.mensajes.some((m) => m.tipo === 'image')).toBe(false);
     expect(t.mensajes[0]!.cuerpo).toMatch(/Ya tienes un QR abierto/);
-    expect(esBotonDeAntonio(t)).toBe(true);
+    expect(esBotonDeAntonio(t)).toBe(false);
     // El servidor también lo dice (el estado del cobro de la consola).
     const w2 = nuevo({ panel: panelConQr(35) });
     const u = hablar(w2, ANA, mTexto('quiero otro'));
@@ -472,12 +472,12 @@ describe('el comprobante: el cotejo lo hace el servidor; el flujo traduce su est
     expect(t.mensajes[0]!.cuerpo).not.toMatch(PROHIBIDAS);
   });
 
-  it('una imagen que NO es un comprobante, con un QR abierto, no se coteja ni se avisa: «solo puedo leer texto y comprobantes»', () => {
+  it('una imagen que NO es un comprobante, con un QR abierto, no se coteja ni se avisa: dice lo que recibió y ofrece el libro y los precios', () => {
     const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: { categoria: 'otro', texto: 'mi perro' } } });
     const t = hablar(w, ANA, mImagen());
     expect(t.ejecutados.has('Cotejar en el servidor')).toBe(false);
     expect(t.avisos).toHaveLength(0);
-    expect(t.mensajes[0]!.cuerpo).toMatch(/solo puedo leer texto y los comprobantes/);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Cuéntame qué necesitas sobre esto, o pregúntame por el libro y los precios/);
   });
 
   it('un archivo demasiado pesado con un cobro abierto va a Antonio sin cotejar (nunca «cuadra»); sin cobro, se pide uno más liviano', () => {

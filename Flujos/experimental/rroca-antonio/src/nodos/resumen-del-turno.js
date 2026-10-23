@@ -34,7 +34,7 @@ if (cnNodo('Enviar a WhatsApp')) {
   if (raHp && typeof raHp === 'object' && !cnTodos('Enviar a WhatsApp').some(raId) && !cnTodos('Enviar respaldo').some(raId)) {
     const raFichas3 = cnMapaDeFichas(true);
     const raF3 = cnFichaDe(raFichas3.mapa, String((items[0] || {}).from || ''));
-    if (raF3) { raF3.ultimoHash = String(raHp.h || ''); raF3.ultimaFirma = String(raHp.f || ''); }
+    if (raF3) { raF3.ultimoHash = String(raHp.h || ''); raF3.ultimaFirma = String(raHp.f || ''); raF3.ultimaPregunta = String(raHp.p || ''); raF3.ultimaPreguntaMs = Number(raHp.pm) || 0; }
   }
   const raEsperados = items.filter((i) => i && i.sinMensajes !== true).length;
   const raEntregados = cnTodos('Enviar a WhatsApp').filter(raId).length + cnTodos('Enviar respaldo').filter(raId).length;

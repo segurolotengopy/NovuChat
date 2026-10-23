@@ -40,7 +40,7 @@ import {
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
 // El aviso de consumo al 80 % se decide en `planes.ts`, también puro.
 import { avisoConsumoPendiente, avisoDeConsumo, limiteDeCampanas, periodoDe } from './central/cuenta/planes.js';
-import { campanasParaElFlujo } from './modulos/campanas/campanas.js';
+import { anunciosParaElFlujo, campanasParaElFlujo } from './modulos/campanas/campanas.js';
 // EL PREPAGO se decide en `prepago.ts`, puro: cobertura del mes, gracia,
 // saldo de conversaciones y si el corte SE APLICA o solo se observa. Acá se
 // aplica lo que decidió, dentro de la transacción que ya existía.
@@ -1681,6 +1681,23 @@ export const configuracionFlujo = onRequest(
         db.doc(`tenants/${comercio.tenantId}/config/campanas`).get(),
       ]);
 
+    // LOS ANUNCIOS COMO DATO DEL TENANT (PR-1 de Campañas): las campañas vigentes
+    // que traen titulares, con el producto y su precio leídos del catálogo activo
+    // que este turno YA trajo (cero lecturas nuevas). El tenant sale de la ruta
+    // autenticada. Va en la respuesta solo si hay alguno: un comercio sin anuncios
+    // recibe la respuesta de siempre, byte a byte (`despacho-sesion.test.ts`).
+    const anunciosDeHoy = anunciosParaElFlujo(
+      campanas.exists ? campanas.get('vigentes') : [],
+      limiteDeCampanas(cuenta.exists ? cuenta.data() as Record<string, unknown> : null),
+      ahoraMs,
+      catalogo.docs.map((d) => {
+        const datos = d.data();
+        const quedan = existencias(datos);
+        return { id: d.id, nombre: datos['nombre'], precio: datos['precio'],
+          ...(quedan !== null ? { agotado: quedan === 0 } : {}) };
+      }),
+    );
+
     // -------------------------------------------------------------------------
     // EL CORTE DEL PREPAGO REUTILIZA EL 409 (`DISENO.md` §4undecies.3). Los tres
     // flujos ya tratan un 409 de acá como «no operativo» y mandan la cortesía
@@ -2139,6 +2156,12 @@ export const configuracionFlujo = onRequest(
         limiteDeCampanas(cuenta.exists ? cuenta.data() as Record<string, unknown> : null),
         ahoraMs,
       ),
+
+      // LOS ANUNCIOS COMO DATO DEL TENANT (PR-1 de Campañas): las mismas campañas
+      // vigentes, pero las que traen titulares, con el producto y su precio leídos
+      // del catálogo activo que este turno YA trajo (cero lecturas nuevas). El
+      // tenant sale de la ruta autenticada. `campanas` (arriba) no cambia.
+      ...(anunciosDeHoy.length > 0 ? { anuncios: anunciosDeHoy } : {}),
     });
   },
 );
