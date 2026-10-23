@@ -48,7 +48,7 @@ const VARIANTES = [
 // sin una sola edición: nunca se copian a esta carpeta (una prueba compara el código del nodo con el módulo).
 const MEDIOS = {
   'm-transcripcion': '../../src/core/medios/preparar-transcripcion.js',
-  'm-imagen': '../../src/core/medios/preparar-imagen.js',
+  'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
   'm-no-aceptado': '../../src/core/medios/medio-no-aceptado.js',
 };
 
@@ -56,7 +56,7 @@ function codigoDe(marca, nodo) {
   if (marca.startsWith('@@medio:')) {
     const archivo = MEDIOS[marca.slice('@@medio:'.length)];
     if (!archivo) throw new Error(`${nodo}: paquete de medios desconocido: ${marca}`);
-    return leer(archivo).trimEnd() + '\n';
+    return [].concat(archivo).map((a) => leer(a).trimEnd()).join('\n') + '\n';
   }
   const modo = marca.startsWith('@@solo:') ? 'solo' : (marca.startsWith('@@comun:') ? 'comun' : 'todo');
   const ruta = marca.slice(modo === 'solo' ? '@@solo:'.length : (modo === 'comun' ? '@@comun:'.length : '@@'.length));
