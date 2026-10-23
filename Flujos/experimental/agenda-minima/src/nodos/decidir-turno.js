@@ -30,7 +30,7 @@ if (t.tipo === 'reaction') return salir('nada');
 const SEGUNDOS_MAX = 300;
 const BYTES_POR_SEGUNDO = 2400; // medido en una nota real de 256 s: 2.360 B/s
 if (t.tipo === 'audio') {
-  const medio = cnPrimero('Obtener URL del medio') || {};
+  const medio = cnPrimero('Obtener URL del medio (general)') || {};
   const tam = Number(medio.file_size !== undefined ? medio.file_size : medio.fileSize) || 0;
   if (!t.esAudio) return salir('audio_ilegible');
   if (tam > SEGUNDOS_MAX * BYTES_POR_SEGUNDO) return salir('audio_ilegible', { audioMuyLargo: true });
@@ -44,9 +44,17 @@ if (t.tipo === 'audio') {
 // sencillas, intencion de cita, emergencia...); una imagen SIN texto pide que diga que necesita
 // (`imagen_sin_texto`); un documento sin texto se deriva a una persona. `Interpretar entrada` ya lee
 // `image.caption` y `document.caption` y los recorta a 1.500 caracteres.
+//
+// LO QUE LEYÓ EL MÓDULO COMÚN (`Preparar imagen`): solo la categoría y una frase neutra de lo que se ve, ya saneada
+// (dato NO confiable del paciente). Se usa para decir QUÉ se recibió; nunca para decidir una cita, un cobro ni nada
+// clínico. Con el medio demasiado pesado o que no se pudo abrir no hay lectura: queda el texto de antes.
 if (t.tipo === 'image' || t.tipo === 'document') {
   if (texto.trim()) tipoEf = 'text';
-  else return salir(t.tipo === 'image' ? 'imagen_sin_texto' : 'derivar_medio');
+  else {
+    const lectura = cnPrimero('Preparar imagen') || {};
+    const extra = { categoriaMedio: String(lectura.categoriaMedio || ''), descripcionMedio: String(lectura.descripcionMedio || '').slice(0, 120) };
+    return salir(t.tipo === 'image' ? 'imagen_sin_texto' : 'derivar_medio', extra);
+  }
 }
 
 // --- Lo que no es texto ni boton: se deriva a una persona ------------------------

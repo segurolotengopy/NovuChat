@@ -45,6 +45,7 @@ export const SUITES_PURAS = [
   'pruebas/agenda-minima-flujo.test.ts',
   'pruebas/agenda-minima-lib.test.ts',
   'pruebas/agenda-minima-herramienta-actualizar.test.ts',
+  'pruebas/agenda-minima-herramienta-desde-b.test.ts',
   'pruebas/recordatorio-bellido.test.ts',
   'pruebas/recordatorio-bellido-v1.test.ts',
   'pruebas/captacion-minima-lib.test.ts',

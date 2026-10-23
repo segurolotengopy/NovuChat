@@ -29,8 +29,15 @@ const AGENDA = join(aqui, '../../Flujos/experimental/agenda-minima');
 // --- EL CONFIG DE «AGENDA MÍNIMA», escrito aquí: su carpeta no se toca -------------------------------
 const CONFIG_AGENDA: ConfigDeConstruccion = {
   plantilla: 'flujo.plantilla.json',
+  // Los tres módulos comunes de medios (`Flujos/src/core/medios/`): el flujo los INCLUYE con `@@medio:<paquete>`.
+  raiz: '../..',
   librerias: ['src/lib/agenda.js'],
   comun: ['src/nodos/_comun.js'],
+  paquetes: {
+    'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
+    'm-imagen': ['../../src/core/medios/preparar-imagen.js'],
+    'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
+  },
   variantes: [
     { archivo: 'agenda-minima.v0.json', quitar: 'Entrada de prueba', nombre: 'NovuChat — Agenda mínima (v0)' },
     { archivo: 'agenda-minima.prueba.json', quitar: 'WhatsApp Trigger', nombre: 'NovuChat — Agenda mínima (v0, prueba)' },
