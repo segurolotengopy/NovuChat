@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
-import { UX_CONTADOR, UX_ESTADO, contarPresentaciones, esPresentacion, preguntaPorIdentidad, seDeclaraIA, vigilarUx, violacionesDeAvisoTardio, violacionesDeMedio, violacionesDeParrafos, violacionesDePromesaDeImagen, violacionesDeQrAbierto, violacionesDeRepeticion, violacionesDeUx, type UxMsg } from './vigilante-ux';
+import { UX_CONTADOR, UX_ESTADO, contarPresentaciones, esPresentacion, preguntaPorIdentidad, seDeclaraIA, sembrarCharlaUx, vigilarUx, violacionesDeAvisoTardio, violacionesDeMedio, violacionesDeParrafos, violacionesDePromesaDeImagen, violacionesDeQrAbierto, violacionesDeRepeticion, violacionesDeUx, type UxMsg } from './vigilante-ux';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../../../Flujos/experimental/rroca-ruben');
@@ -2137,13 +2137,13 @@ describe('INVARIANTES DE UX · vigilados en TODOS los turnos de la batería (un 
     }
     // Con b_pack, b_libro y b_comp ya pulsados pero el Closer y los Videos aún comprables NO se deriva: se muestra el menú de complementos (solo esos dos botones).
     const wc = crear();
-    (wc.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: ['b_pack', 'b_libro', 'b_comp'] };
+    (wc.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: ['b_pack', 'b_libro', 'b_comp'] }; sembrarCharlaUx(wc.mundo, ANA);
     const rc = unico(hablar(wc, ANA, mBoton('b_precios')));
     expect(ids(rc)).toEqual(['b_closer', 'b_videos']);
     expect(rc.payload['interactive']?.type).not.toBe('cta_url');
     // Todos los productos ya pulsados (también los complementos): ahora sí se deriva a Rubén.
     const w = crear();
-    (w.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: ['b_pack', 'b_libro', 'b_comp', 'b_closer', 'b_videos'] };
+    (w.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: ['b_pack', 'b_libro', 'b_comp', 'b_closer', 'b_videos'] }; sembrarCharlaUx(w.mundo, ANA);
     const r = hablar(w, ANA, mBoton('b_precios'));
     const m = unico(r);
     expect(m.cuerpo).not.toMatch(SIN);
@@ -2151,7 +2151,7 @@ describe('INVARIANTES DE UX · vigilados en TODOS los turnos de la batería (un 
     expect(r.avisos).toHaveLength(1);
     // Y «precio» ya saludado, con todo pulsado: el precio sin cerrar con una pregunta sin opciones.
     const w2 = crear();
-    (w2.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: ['b_pack', 'b_libro', 'b_comp', 'b_closer', 'b_videos'] };
+    (w2.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: ['b_pack', 'b_libro', 'b_comp', 'b_closer', 'b_videos'] }; sembrarCharlaUx(w2.mundo, ANA);
     const p = unico(hablar(w2, ANA, mTexto('cuánto cuesta el pack')));
     expect(p.cuerpo).toContain('60 Bs');
     expect(p.cuerpo).not.toMatch(SIN);
@@ -2620,13 +2620,13 @@ describe('RONDA FINAL (20/10/2026) · el primer mensaje nunca lleva montos; nunc
   it('I-2 · sin botones que ofrecer, «ingresos» y el respaldo del modelo caído NO preguntan por opciones', () => {
     const TODO = ['b_pack', 'b_libro', 'b_comp', 'b_closer', 'b_videos', 'b_precios', 'b_ruben'];
     const w = crear();
-    (w.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: TODO };
+    (w.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: TODO }; sembrarCharlaUx(w.mundo, ANA);
     const a = unico(hablar(w, ANA, mTexto('¿me garantizas ganar dinero?')));
     expect(a.cuerpo).toMatch(/^No puedo prometerte ingresos/);
     expect(a.cuerpo).not.toMatch(/opciones|prefieres/i);
     expect(a.tipo).toBe('text');
     const w2 = crear({ modelo: geminiTexto('') });
-    (w2.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: TODO };
+    (w2.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: TODO }; sembrarCharlaUx(w2.mundo, ANA);
     const b = unico(hablar(w2, ANA, mTexto('cuéntame del libro')));
     expect(b.cuerpo).toMatch(/^Gracias por escribir\./);
     expect(b.cuerpo).not.toMatch(/opciones|prefieres/i);
@@ -2669,12 +2669,12 @@ describe('RONDA FINAL (20/10/2026) · el primer mensaje nunca lleva montos; nunc
 
   it('M-4 · con productos y «Ver complementos» ya pulsados pero el Closer o los Videos aún comprables, un botón desconocido muestra los complementos y NO deriva; sin ninguno, deriva', () => {
     const w = crear();
-    (w.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: ['b_pack', 'b_libro', 'b_comp'] };
+    (w.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: ['b_pack', 'b_libro', 'b_comp'] }; sembrarCharlaUx(w.mundo, ANA);
     const m = unico(hablar(w, ANA, mBoton('b_viejo')));
     expect(ids(m)).toEqual(['b_closer', 'b_videos']);
     expect(m.payload['interactive']?.type).not.toBe('cta_url');
     const w2 = crear();
-    (w2.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: ['b_pack', 'b_libro', 'b_comp', 'b_closer', 'b_videos'] };
+    (w2.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, charlaN: 2, usados: ['b_pack', 'b_libro', 'b_comp', 'b_closer', 'b_videos'] }; sembrarCharlaUx(w2.mundo, ANA);
     const r = hablar(w2, ANA, mBoton('b_viejo'));
     expect(unico(r).payload['interactive']?.type).toBe('cta_url');
     expect(r.avisos).toHaveLength(1);

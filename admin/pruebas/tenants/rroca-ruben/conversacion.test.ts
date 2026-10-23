@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
-import { vigilarUx } from './vigilante-ux';
+import { BLOQUE_DE_OPCIONES, CIERRE_DEL_PUENTE, CON_PRECIO_BS, PLANES_DE_CHARLA, estadoCharlaNuevo, esUnSi, sembrarCharlaUx, vigilarUx, violacionesDeBloqueDeOpciones, violacionesDeCompuerta, violacionesDeDescripcionRepetida, violacionesDePromesaDeOpciones, violacionesDeUnaPregunta, type UxMsg } from './vigilante-ux';
 
 const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-ruben/src/lib');
 const FUENTE_RR = readFileSync(join(CARPETA_LIB, 'rr.js'), 'utf8');
@@ -278,7 +278,7 @@ const PACK = 'Hola Rubén, quiero el Pack Completo: libro + 4 bonos + Closer de 
 const CLOSER = 'Hola Rubén, quiero el Prompt Maestro de Cierre de Ventas (20 Bs)';
 
 interface Cobro { pendiente: boolean; monto: number | null; pedido: string | null }
-interface Opc { modelo?: Doble; transcripcion?: string }
+interface Opc { modelo?: Doble; transcripcion?: string; flujo?: Flujo }
 function crear(o: Opc = {}) {
   const cobros: Record<string, Cobro> = {};
   const de = (tel: string): Cobro => (cobros[tel] ??= { pendiente: false, monto: null, pedido: null });
@@ -314,7 +314,7 @@ function crear(o: Opc = {}) {
     'Leer comprobante (imagen)': () => gemini(JSON.stringify({ monto: '60.00', cuentaDestino: '59100000077', nombreCuenta: 'Titular Ejemplo', fecha: '05/10/2026', hora: '10:02', banco: 'Banco Ejemplo' })),
     'Cotejar en el servidor': () => { for (const c of Object.values(cobros)) c.pendiente = false; return { statusCode: 200, body: { estado: 'valido', importe: 60, avisarComercio: true, cierreId: 'venta_1' } }; },
   };
-  const mundo: Mundo = crearMundo({ flujo: PRODUCCION, dobles, ahoraMs: AHORA, configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: ANA } });
+  const mundo: Mundo = crearMundo({ flujo: o.flujo ?? PRODUCCION, dobles, ahoraMs: AHORA, configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: ANA } });
   (mundo.sd as J)['rroca'] = { [REC]: { ultimoMs: AHORA - 5 * 60_000, turnos: 1 } };
   vigilarUx(mundo);
   return { mundo, cobro: de(ANA) };
@@ -385,7 +385,7 @@ describe('ENTREGA 2 · el camino del PDF: saludo, charla, objeción con las opci
     calentar(w);
     const a = unico(hablar(w, ANA, mTexto('cuéntame más del libro')));
     expect(a.cuerpo).toContain('Te dejo aquí abajo las opciones');
-    const b = unico(hablar(w, ANA, mTexto('y los bonos qué tal son')));
+    const b = unico(hablar(w, ANA, mTexto('y sirve para una tienda pequeña')));
     expect(b.cuerpo).not.toContain('Te dejo aquí abajo las opciones');
     const c = unico(hablar(w, ANA, mTexto('gracias por la info')));
     expect(c.cuerpo).not.toContain('Te dejo aquí abajo las opciones');
@@ -582,7 +582,7 @@ describe('ENTREGA 2 · modelo caído en todo el camino, el modelo que se equivoc
     expect(titulos(mc)).toEqual(['Closer Ventas 20Bs', 'Mejor el Pack 60Bs']);
     // Una ficha con un producto elegido (el QR ya venció): el precio sale por código.
     const x = crear();
-    (x.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, producto: 'libro', pedidos: 1, charlaN: 0 };
+    (x.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, producto: 'libro', pedidos: 1, charlaN: 0 }; sembrarCharlaUx(x.mundo, ANA, { qrVisto: true }); // el producto salió de un QR anterior
     const pp = unico(hablar(x, ANA, mTexto('precio del pack')));
     expect(pp.cuerpo).toContain('60 Bs');
     expect(titulos(pp)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
@@ -642,14 +642,14 @@ describe('ENTREGA 2 · el contador solo cuenta lo que Meta aceptó, vence a las 
   });
   it('vencimiento: una ficha de más de 48 h vuelve a charlaN 0 (la compuerta se cierra de nuevo); a las 47 h sigue abierta', () => {
     const vieja = crear();
-    (vieja.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA - 49 * 3_600_000, turnos: 5, saludado: true, charlaN: 5, opcionesVistas: true, pidioOpciones: false };
+    (vieja.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA - 49 * 3_600_000, turnos: 5, saludado: true, charlaN: 5, opcionesVistas: true, pidioOpciones: false }; sembrarCharlaUx(vieja.mundo, ANA, { charla: 5 });
     const t = hablar(vieja, ANA, mTexto('precio'));
     const m = unico(t);
     expect(sinBs(m)).toBe(true);
     expect(planDe(t)).not.toBe('precio');
     expect(fichaDe(vieja)['charlaN']).toBeLessThanOrEqual(1);
     const reciente = crear();
-    (reciente.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA - 47 * 3_600_000, turnos: 5, saludado: true, charlaN: 5, opcionesVistas: true };
+    (reciente.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA - 47 * 3_600_000, turnos: 5, saludado: true, charlaN: 5, opcionesVistas: true }; sembrarCharlaUx(reciente.mundo, ANA, { charla: 5 });
     const t2 = hablar(reciente, ANA, mTexto('precio'));
     expect(unico(t2).cuerpo).toContain('60 Bs');
     expect(planDe(t2)).toBe('precio');
@@ -670,5 +670,127 @@ describe('ENTREGA 2 · el contador solo cuenta lo que Meta aceptó, vence a las 
       expect(mensajes).toBe(pasos.length);
     }
     // El camino del PDF usa 5 turnos del cliente y 5 mensajes: 0 mensajes agregados frente al PDF; el «precio primero» llega a las opciones con UN turno y UN mensaje más (declarado en DISENO.md).
+  });
+});
+
+// =============================================================================================================================================================================================
+// LOS INVARIANTES 11 A 15 DEL VIGILANTE: cada uno con su prueba NEGADA (la función pura detecta la violación) y con la producción MUTADA (el vigilante hace fallar la batería).
+// =============================================================================================================================================================================================
+describe('ENTREGA 2 · invariantes 11 a 15 del vigilante: negados con casos puros', () => {
+  const botonesMsg = (titulos: string[], cuerpo = 'texto'): UxMsg => ({ tipo: 'interactive', cuerpo, payload: { interactive: { action: { buttons: titulos.map((t, i) => ({ reply: { id: /^Pack/.test(t) ? 'b_pack' : /^Libro/.test(t) ? 'b_libro' : /^Ver Comp/.test(t) ? 'b_comp' : 'b_info', title: t } })) } } } });
+  const txt = (cuerpo: string): UxMsg => ({ tipo: 'text', cuerpo, payload: {} });
+  const charla = (n: number, extra: object = {}) => ({ ...estadoCharlaNuevo(), charla: n, ...extra });
+
+  it('11 · ningún precio antes de tiempo: detecta el «NN Bs» en el cuerpo y en un botón, y los botones de producto; calla con 2 mensajes de conversación y en cada excepción declarada', () => {
+    const precio = txt('El pack cuesta 60 Bs.');
+    const menu = botonesMsg(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
+    expect(violacionesDeCompuerta(charla(1), mTexto('precio'), [precio], 'precio', false)).not.toEqual([]);
+    expect(violacionesDeCompuerta(charla(0), mTexto('hola'), [menu], 'precios', false)).not.toEqual([]);
+    expect(violacionesDeCompuerta(charla(1), mTexto('hola'), [botonesMsg(['Ver Complementos'])], 'modelo', false)).not.toEqual([]); // un botón de producto sin precio también
+    expect(violacionesDeCompuerta(charla(1), mTexto('x'), [txt('Son 60,50 Bs')], 'precio', false)).not.toEqual([]);
+    // Con 2 mensajes de conversación: nada que vigilar.
+    expect(violacionesDeCompuerta(charla(2), mTexto('precio'), [precio, menu], 'precio', false)).toEqual([]);
+    // Las excepciones declaradas.
+    expect(violacionesDeCompuerta(charla(0, { qrVisto: true }), mTexto('precio'), [precio], 'precio', false)).toEqual([]);
+    expect(violacionesDeCompuerta(charla(0), mTexto('precio'), [precio], 'precio', true)).toEqual([]); // el panel trae un cobro pendiente, en revisión o vencido
+    expect(violacionesDeCompuerta(charla(0), mTexto(PACK), [precio], 'qr', false)).toEqual([]);
+    expect(violacionesDeCompuerta(charla(0), mTexto(CLOSER), [precio, menu], 'modelo', false)).toEqual([]); // un prellenado de producto
+    for (const plan of ['qr', 'qr_pendiente', 'complemento', 'comprobante', 'cancele_como_pago']) expect(violacionesDeCompuerta(charla(0), mTexto('x'), [menu], plan, false), plan).toEqual([]);
+    // Un mensaje sin precios ni botones de producto no viola nada.
+    expect(violacionesDeCompuerta(charla(0), mTexto('hola'), [botonesMsg(['Más información'])], 'saludo', false)).toEqual([]);
+    expect(CON_PRECIO_BS.test('60Bs')).toBe(true);
+  });
+  it('12 · el bloque de las opciones a lo más una vez por teléfono', () => {
+    const bloque = txt('Te dejo aquí abajo las opciones para que elijas la que prefieras:');
+    expect(violacionesDeBloqueDeOpciones(0, [bloque])).toEqual([]);
+    expect(violacionesDeBloqueDeOpciones(1, [bloque])).not.toEqual([]);
+    expect(violacionesDeBloqueDeOpciones(1, [txt('otra cosa')])).toEqual([]);
+    expect(BLOQUE_DE_OPCIONES.test(bloque.cuerpo)).toBe(true);
+  });
+  it('13 · lo que se ofrece se cumple: tras «¿Te muestro las opciones?» el «sí» o el botón dan botones con precio, salvo con un QR abierto', () => {
+    const conPrecio = botonesMsg(['Pack Completo 60Bs']);
+    const sinPrecio = botonesMsg(['Más información']);
+    expect(violacionesDePromesaDeOpciones(true, mTexto('sí'), [sinPrecio], false)).not.toEqual([]);
+    expect(violacionesDePromesaDeOpciones(true, mBoton('b_opciones'), [txt('hola')], false)).not.toEqual([]);
+    expect(violacionesDePromesaDeOpciones(true, mTexto('claro'), [conPrecio], false)).toEqual([]);
+    expect(violacionesDePromesaDeOpciones(true, mTexto('sí'), [sinPrecio], true)).toEqual([]); // con un QR abierto
+    expect(violacionesDePromesaDeOpciones(false, mTexto('sí'), [sinPrecio], false)).toEqual([]); // no hubo promesa
+    expect(violacionesDePromesaDeOpciones(true, mTexto('tengo una tienda'), [sinPrecio], false)).toEqual([]); // no aceptó
+    expect(esUnSi('Sí')).toBe(true);
+    expect(esUnSi('sí, pero primero cuéntame')).toBe(false);
+    expect(CIERRE_DEL_PUENTE).toBe('¿Te muestro las opciones?');
+  });
+  it('14 · sin repetir la descripción: si ya salió «230 páginas», el modelo no la repite (el texto fijo del código no cuenta)', () => {
+    const repite = txt('El libro tiene más de 230 páginas y te sirve.');
+    expect(violacionesDeDescripcionRepetida(true, [repite], 'modelo')).not.toEqual([]);
+    expect(violacionesDeDescripcionRepetida(true, [repite], 'puente')).not.toEqual([]);
+    expect(violacionesDeDescripcionRepetida(true, [repite], 'opciones')).not.toEqual([]);
+    expect(violacionesDeDescripcionRepetida(false, [repite], 'modelo')).toEqual([]); // aún no había salido
+    expect(violacionesDeDescripcionRepetida(true, [repite], 'info')).toEqual([]); // la información fija es del código
+    expect(violacionesDeDescripcionRepetida(true, [txt('Te sirve para tu tienda.')], 'modelo')).toEqual([]);
+  });
+  it('15 · una sola pregunta: más de un «?» en un mensaje de conversación, o el bloque de opciones terminado en pregunta', () => {
+    expect(violacionesDeUnaPregunta([txt('¿Qué vendes? ¿Dónde?')], 'modelo')).not.toEqual([]);
+    expect(violacionesDeUnaPregunta([txt('Algo.\n\n¿Te muestro las opciones?')], 'puente')).toEqual([]);
+    expect(violacionesDeUnaPregunta([txt('Te dejo las opciones, ¿cuál prefieres?')], 'opciones')).not.toEqual([]);
+    expect(violacionesDeUnaPregunta([txt('Te dejo las opciones, ¿cuál prefieres?')], 'opciones_fijo')).not.toEqual([]);
+    expect(violacionesDeUnaPregunta([txt('Lo que sea ¿sí? ¿no?')], 'info')).toEqual([]); // fuera de los planes de conversación
+    expect((PLANES_DE_CHARLA as string[]).includes('puente_fijo')).toBe(true);
+  });
+  it('el vigilante cuenta la conversación por su cuenta (no importa nada del flujo) y `sembrarCharlaUx` le da el punto de partida de una ficha sembrada a mano', () => {
+    const w = crear();
+    expect(() => sembrarCharlaUx(w.mundo, ANA)).not.toThrow();
+    expect(() => sembrarCharlaUx({} as Mundo, ANA)).toThrow(/no está vigilado/);
+  });
+});
+
+describe('ENTREGA 2 · el vigilante FALLA si la producción se muta (invariantes 11 a 15)', () => {
+  // `veces`: cuántas veces aparece el patrón en el JSON (una función de la librería viaja en cada nodo que la pide).
+  const mutar = (de: string, a: string, veces = 1): Flujo => {
+    const orig = JSON.stringify(PRODUCCION);
+    expect(orig.split(de).length, `el patrón mutado no está o aparece otra cantidad de veces: ${de.slice(0, 50)}`).toBe(veces + 1);
+    const m = JSON.parse(orig.split(de).join(a)) as Flujo;
+    expect(JSON.stringify(m)).not.toBe(orig);
+    return m;
+  };
+  it('11 · con la compuerta abierta siempre, el precio sale con un solo mensaje de conversación y el vigilante lo detecta', () => {
+    const w = crear({ flujo: mutar('|| cobro.enRevision === true || ficha.charlaN >= 2;', '|| cobro.enRevision === true || true;') });
+    hablar(w, ANA, mTexto('hola'));
+    expect(() => hablar(w, ANA, mTexto('precio'))).toThrow(/un precio antes de tiempo|un botón de producto antes de tiempo/);
+  });
+  it('12 · si el bloque de las opciones se repite en cada respuesta, el vigilante lo detecta', () => {
+    const w = crear({ flujo: mutar("(!ficha.opcionesVistas && rrMenu(1, cat, ficha.usados).length ? 'opciones'", "(rrMenu(1, cat, ficha.usados).length ? 'opciones'") });
+    calentar(w);
+    hablar(w, ANA, mTexto('cuéntame más del libro'));
+    modelo(w, gemini('Es una buena idea: te ayuda a responder más rápido a tus clientes.')); // otro texto: el mismo texto dos veces seguidas lo sustituye la barrera de repetición
+    expect(() => hablar(w, ANA, mTexto('y sirve para una tienda pequeña'))).toThrow(/el bloque de las opciones salió 2 veces/);
+  });
+  it('13 · si el «sí» al puente no trae las opciones con precio, el vigilante lo detecta (lo que se ofrece se cumple)', () => {
+    const w = crear({ flujo: mutar('m = op.length ? conBotones(rrTextoOpciones(', 'm = false ? conBotones(rrTextoOpciones(') });
+    hablar(w, ANA, mTexto('precio'));
+    hablar(w, ANA, mTexto('tengo una tienda de ropa'));
+    expect(() => hablar(w, ANA, mTexto('sí'))).toThrow(/la respuesta al «sí» o al botón no trae botones con precio/);
+  });
+  it('14 · si el modelo puede repetir la descripción del libro, el vigilante lo detecta', () => {
+    const w = crear({ flujo: mutar("const sinRepetir = rev.motivo === '' && fichaAntes.saludado ? rrQuitarRepeticionDelLibro(rev.texto) : rev.texto;", 'const sinRepetir = rev.texto;') });
+    hablar(w, ANA, mTexto('hola'));
+    modelo(w, gemini('El libro tiene 12 capítulos y más de 230 páginas. Te sirve mucho para tu tienda.'));
+    expect(() => hablar(w, ANA, mTexto('tengo una tienda de ropa'))).toThrow(/repite la descripción del libro/);
+  });
+  it('15 · si no se quita la pregunta del modelo en el puente, salen dos preguntas y el vigilante lo detecta', () => {
+    const w = crear({ flujo: mutar('function rrSinPreguntaFinal(texto) {', 'function rrSinPreguntaFinal(texto) { return texto;', 5) });
+    hablar(w, ANA, mTexto('hola'));
+    modelo(w, gemini('Te sirve para tu tienda. ¿Qué vendes?'));
+    expect(() => hablar(w, ANA, mTexto('precio'))).toThrow(/más de una pregunta/);
+  });
+  it('la batería sana pasa los cinco invariantes (el mismo recorrido sin mutar no falla)', () => {
+    const w = crear();
+    calentar(w);
+    hablar(w, ANA, mTexto('cuéntame más del libro'));
+    hablar(w, ANA, mTexto('y sirve para una tienda pequeña'));
+    const x = crear();
+    hablar(x, ANA, mTexto('precio'));
+    hablar(x, ANA, mTexto('tengo una tienda de ropa'));
+    expect(unico(hablar(x, ANA, mTexto('sí'))).cuerpo).toContain('Te dejo aquí abajo las opciones');
   });
 });
