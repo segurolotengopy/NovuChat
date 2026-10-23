@@ -42,7 +42,8 @@ UN código y UNA plantilla; los datos de cada doctora en `admin/scripts/datos/do
 - **Ruta del flujo (P9):** el flujo de las doctoras NO envía su tipo de flujo; lo decide la ruta (`rutasWhatsApp.flujo`) del número.
 - **Datos de Emma** (`admin/scripts/datos/doctoras/rroca-emma.json`): «Dra. Emma» (así lo dicen sus artes y prellenados; P4 pendiente de confirmar), Emma Spa Medic, Sculptra® y Radiesse®, dirección del Excel («Lugar de atención»), horario L–V 09:00–12:00 y 14:00–18:00, sáb 09:00–12:00. **Contradicción del material:** el mismo Excel trae otro horario (L–V 9:30–19:00, sáb 9:30–17:00); se usó el de los pasos del flujo y del inventario, confirmado por Andres el 22/10/2026. El turno partido no cabe en el contrato de `negocio.horarios` (un rango por día): el flujo lo dice desde su dato.
 - **No está en este PR:** la fila de `docs/versiones-por-cliente.md` (nada se publica con este PR). Tampoco `fijar-flujos` (P9) ni el ticket del módulo común de puerta/ficha/carga (Core, Rearquitectura).
-- **Pendientes que no son código:** línea y WABA de cada doctora (Evy: portafolio de Rubén; Emma: el de Antonio), aprobación de la plantilla `aviso_solicitud_valoracion` por WAM, aprobación escrita de cada doctora de los textos (P10), política de Meta sobre salud y estética, texto final del consentimiento y de la baja (P1), envío de artes (P3, por defecto ninguno), fuente única o carpeta por tenant (P8).
+- **Textos aprobados (Andres, 23/10/2026, relayado por la sesión Principal):** los textos finales de las doctoras —consentimiento, baja, saludo y guion— quedan APROBADOS; ya no son pendientes (P1 y P10).
+- **Pendientes que no son código:** línea y WABA de cada doctora (Evy: portafolio de Rubén; Emma: el de Antonio), aprobación de la plantilla `aviso_solicitud_valoracion` por WAM, política de Meta sobre salud y estética, envío de artes (P3, por defecto ninguno), fuente única o carpeta por tenant (P8).
 
 ## Etapa «crear» de la guardia (22/10/2026)
 
