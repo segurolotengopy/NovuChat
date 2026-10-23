@@ -31,11 +31,15 @@
 // Las promesas sin respaldo, afirmar un hecho que solo el código puede afirmar (quedó agendado, pago acreditado…),
 // negar ser una IA y los huecos de plantilla se revisan SIEMPRE, y no se pueden apagar.
 
+// Texto sin invisibles (Default_Ignorable y Cf) y con Braille como espacio, ANTES de partir por espacios: un separador invisible no esconde la frase.
+function cmPre(s) {
+  return String(s).normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '').replace(/\u2800/g, ' ');
+}
 function cmNorm(t) {
-  // NFKC junta las formas de ancho completo («ｑｕｅｄó» → «quedó»); se quitan los caracteres invisibles (U+200B a U+200D,
-  // U+2060, U+FEFF), el guion blando, los selectores de variación y las etiquetas U+E0000 a U+E007F (todo \p{Cf}), que partían una palabra sin que se viera («agen​dé»).
+  // NFKC junta el ancho completo; se quitan los invisibles (Default_Ignorable y Cf: U+200B, U+00AD, U+17B4, U+180B…, selectores, tags) que partían
+  // una palabra sin verse, y Braille U+2800 vale como ESPACIO. Todo en copias para comparar.
   return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '').replace(/\u2800/g, ' ').replace(/[。｡]/g, '.')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 // El texto SIN los guiones, puntos y asteriscos que parten una palabra para esconderla («agen-dada», «a.gen.dé»).
 function cmJunto(n) {
@@ -164,7 +168,7 @@ const CM_PROMETE_IMAGENES = /\b(te (muestro|envio|mando|comparto|paso|adjunto|en
 function cmDuo(fuentes) { const f = fuentes.join('|'); return [new RegExp(f), new RegExp(cmColapsa(f))]; }
 function cmVariantes(s) {
   const base = cmNorm(s);
-  const sp = cmNorm(String(s).replace(/[ \t\u00a0]{2,}|\n+/g, ' , '));
+  const sp = cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , '));
   const nlc = cmJuntoLetras(cmLeet(sp));
   return [base, cmJunto(base), cmJuntoLetras(sp), nlc, cmJunto(cmColapsa(base)), cmColapsa(nlc)];
 }
@@ -271,7 +275,19 @@ function cmOraciones(t, estricto) {
   return oraciones;
 }
 
+const CM_INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]/u;
+// Frases críticas SIN espacios ni signos («P a g o v e r i f i c a d o», «Pagoverificado»); un falso positivo cae al texto fijo.
+const CM_JUNTAS = /pago(?:fue)?(?:acreditad|verificad|recibid)|recibimos(?:tu|su)?pago|nosoyun(?:bot|robot|maquina)|soyunapersona|quedoagendad/;
 function cmMotivoDeRechazo(texto, opciones) {
+  const m = cmMotivo1(texto, opciones);
+  if (m) return m;
+  const t = String(texto === undefined || texto === null ? '' : texto);
+  // Segunda forma: el invisible (o el Braille) como SEPARADOR de palabras (el invisible entre «Tu» y «pago»), no dentro de ellas.
+  if (CM_INVISIBLE.test(t)) { const m2 = cmMotivo1(t.replace(new RegExp(CM_INVISIBLE.source, 'gu'), ' '), opciones); if (m2) return m2; }
+  const n = cmNorm(t);
+  return CM_JUNTAS.test(n.replace(/[^\p{L}\p{N}]+/gu, '')) || CM_JUNTAS.test(cmLeet(n).replace(/[^\p{L}\p{N}]+/gu, '')) ? 'afirma_un_hecho' : '';
+}
+function cmMotivo1(texto, opciones) {
   const o = opciones || {};
   const s = String(texto || '').trim();
   if (!s) return 'vacio';
@@ -287,15 +303,15 @@ function cmMotivoDeRechazo(texto, opciones) {
   if (sujetos.length && new RegExp('\\b(?:' + sujetos.join('|') + ') te\\b').test(n)) return 'promesa';
   if (cmAlfabetoMixto(s)) return 'afirma_un_hecho';
   // Dos o más espacios (o un salto) separan palabras aunque las letras vayan sueltas: «P a g o   r e c i b i d o».
-  const nl = cmJuntoLetras(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , ')));
+  const nl = cmJuntoLetras(cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , ')));
   if (CM_AFIRMA.test(n) || CM_AFIRMA.test(nj) || CM_AFIRMA.test(nl)) return 'afirma_un_hecho';
-  if (CM_AFIRMA_C.test(cmColapsa(cmJuntoLetras(cmLeet(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , ')))))) || CM_AFIRMA_C.test(cmColapsa(nl))) return 'afirma_un_hecho';
+  if (CM_AFIRMA_C.test(cmColapsa(cmJuntoLetras(cmLeet(cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , ')))))) || CM_AFIRMA_C.test(cmColapsa(nl))) return 'afirma_un_hecho';
   if (CM_HUECO.test(n)) return 'hueco';
   const pregunta = cmNorm(o.textoDelCliente || '');
   if (pregunta && CM_PREGUNTA_DE_IDENTIDAD.test(pregunta) && /^\W*si\b/.test(n)) return 'identidad';
   if (pregunta && CM_PREGUNTA_DE_BOT.test(pregunta) && /\b(no|nop|nel|para nada)\b/.test(n) && !/\b(asistente|virtual)\b/.test(n)) return 'identidad';
   if (o.sinImagenes) {
-    const nlc = cmJuntoLetras(cmLeet(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , '))));
+    const nlc = cmJuntoLetras(cmLeet(cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , '))));
     if (CM_PROMETE_IMAGENES.test(n) || CM_PROMETE_IMAGENES.test(nj) || CM_PROMETE_IMAGENES.test(nl) || CM_PROMETE_IMAGENES.test(nlc)) return 'promete_imagenes';
   }
   if (o.maxOraciones >= 1 && cmOraciones(s, true).filter((x) => /[\p{L}\p{N}]/u.test(x)).length > o.maxOraciones) return 'largo_en_oraciones';
@@ -355,7 +371,7 @@ function cmPulirRedaccion(texto, opciones) {
     oraciones.push(...corte);
   }
   let t = oraciones.join(' ').trim();
-  const sinTilde = (w) => w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const sinTilde = (w) => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const palabras = String(o.nombreNegocio || '').split(/[^A-Za-zÀ-ÿ]+/).filter((w) => w.length >= 4);
   for (const w of palabras) {
     t = t.replace(/[A-Za-zÀ-ÿ]+/g, (x) => (x !== w && sinTilde(x) === sinTilde(w)) ? w : x);

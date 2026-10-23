@@ -112,19 +112,39 @@ describe('invisibles: cmNorm los quita (las prohibiciones 3 y 4 no se evaden con
 
 describe('invisibles Default_Ignorable y Braille (re-revisión): no evaden las prohibiciones 3 y 4', () => {
   const FRASES = ['Tu pago fue acreditado', 'Recibimos tu pago', 'Pago verificado', 'No soy un bot', 'Soy una persona real', 'Quedó agendada tu cita'];
-  const INVISIBLES: Array<[string, string]> = [['U+17B4', '឴'], ['U+17B5', '឵'], ['U+180B', '᠋'], ['U+180C', '᠌'], ['U+180D', '᠍'], ['U+180E', '᠎'], ['U+180F', '᠏'], ['U+2800', '⠀'], ['U+034F', '͏'], ['U+115F', 'ᅟ'], ['U+3164', 'ㅤ']];
+  const INVISIBLES: Array<[string, string]> = [['U+17B4', '\u17B4'], ['U+17B5', '\u17B5'], ['U+180B', '\u180B'], ['U+180C', '\u180C'], ['U+180D', '\u180D'], ['U+180E', '\u180E'], ['U+180F', '\u180F'], ['U+2800', '\u2800'], ['U+034F', '\u034F'], ['U+115F', '\u115F'], ['U+3164', '\u3164']];
   for (const [nombre, ch] of INVISIBLES) {
     for (const t of FRASES) it(`${nombre} dentro de «${t}»`, () => expect(motivo(ch === '\u2800' ? t.replace(/\S+$/, (w) => [...w].join(ch)) : [...t].join(ch)), t).toBe('afirma_un_hecho')); // Braille cuenta como ESPACIO: letras sueltas, como «p a g o»
-    it(`${nombre} en una frase de pago de las opciones`, () => expect(motivo(['Deposita', 'a', 'la', 'cuenta'].join(ch === '⠀' ? ch : ' ' + ch), { sinDatosDePago: true })).not.toBe(''));
+    it(`${nombre} en una frase de pago de las opciones`, () => expect(motivo(['Deposita', 'a', 'la', 'cuenta'].join(ch === '\u2800' ? ch : ' ' + ch), { sinDatosDePago: true })).not.toBe(''));
   }
   it('el enlace partido con invisibles se detecta', () => {
-    expect(motivo(`Mira ejemplo${'⠀'}.mx/x${'឴'}`)).toBe('enlace_ajeno');
+    expect(motivo(`Mira ejemplo${'\u2800'}.mx/x${'\u17B4'}`)).toBe('enlace_ajeno');
   });
   it('los emojis siguen pasando', () => {
     for (const e of ['👨‍⚕️', '❤️', '👩‍👩‍👧', '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}', '1️⃣', '👋🏽']) {
       expect(motivo(`Hola ${e} ¿en qué te ayudo?`), e).toBe('');
       expect(F.cmPulirRedaccion(`Hola ${e} ¿en qué te ayudo?`), e).toContain(e);
     }
+  });
+});
+
+describe('invisibles ENTRE palabras y frases sin espacios (revisión de seguridad del #630)', () => {
+  const OCHO = ['Tu pago fue acreditado', 'Recibimos tu pago', 'Pago verificado', 'No soy un bot', 'Soy una persona real', 'Quedó agendada tu cita', 'Pago verificado, gracias', 'Soy una persona real, no un bot'];
+  const SEP = ['\u2800', '\u3164', '\u115F', '\u17B4', '\u17B5', '\u180B', '\u180E', '\u034F', '\u200B', '\u00AD', '\u2800\u2800'];
+  const TODAS = { permitirMontos: true, sinDatosDePago: true, sinAfirmarCompra: true, sinPromesasDeAviso: true };
+  for (const sep of SEP) {
+    for (const t of OCHO) {
+      for (const [nombre, o] of [['sin opciones', undefined], ['con opciones', TODAS]] as Array<[string, object | undefined]>) {
+        it(`${nombre}: U+${sep.codePointAt(0)!.toString(16).toUpperCase()} como separador de «${t}»`, () => expect(motivo(t.split(' ').join(sep), o), t).not.toBe(''));
+        it(`${nombre}: U+${sep.codePointAt(0)!.toString(16).toUpperCase()} dentro de las palabras de «${t}»`, () => expect(motivo([...t].join(sep), o), t).not.toBe(''));
+      }
+    }
+  }
+  it('letras sueltas con espacios y sin ellos', () => {
+    for (const t of ['P a g o v e r i f i c a d o', 'Pagoverificado', 'P a g o   v e r i f i c a d o', 'Nosoyunbot', 'Soyunapersona', 'Recibimostupago', 'Quedoagendada']) expect(motivo(t), t).toBe('afirma_un_hecho');
+  });
+  it('un texto honesto con invisibles de emoji sigue pasando', () => {
+    for (const e of ['👨‍⚕️', '❤️', '👩‍👩‍👧', '1️⃣', '👋🏽']) expect(motivo(`Hola ${e} ¿en qué te ayudo con el libro?`, { permitirMontos: true }), e).toBe('');
   });
 });
 
