@@ -21,7 +21,7 @@ import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { PLANES, PLANES_PUBLICADOS, esPlanPublicado, esPlanVendible, limiteDeCampanas, nombreDePlan } from '../../central/lib/planes';
 import {
   MAX_LARGO_TITULAR, MAX_TITULARES, TOPE_ANGULO, TOPE_TEXTO_CAMPANA, campanaParaGuardar, diaBolivia, estadoVisible, fechaLegible, hashListaEnNavegador, idNuevo,
-  leerCampanas, problemaDeTitular, problemaEnPantalla, productosElegibles, sumarDias,
+  ilegiblesAlLeer, leerCampanas, problemaDeTitular, problemaEnPantalla, productosElegibles, sumarDias,
   type Campana, type ProductoElegible, type RevisionDeCampana,
 } from './campanas';
 
@@ -60,6 +60,7 @@ export function Campanas() {
   const [original, setOriginal] = useState<Campana | null>(null);
   const [estado, setEstado] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  const [ilegibles, setIlegibles] = useState(0);
   const [productos, setProductos] = useState<ProductoElegible[]>([]);
 
   useEffect(() => {
@@ -67,6 +68,7 @@ export function Campanas() {
     const a = onSnapshot(doc(db, 'tenants', tenantId, 'config', 'campanas'), (d) => {
       setExiste(d.exists());
       setLista(leerCampanas(d.get('lista')));
+      setIlegibles(ilegiblesAlLeer(d.get('lista')));
       setRevision(leerRevisiones(d.get('revision')));
     }, () => setEstado('No se pudieron leer las campañas.'));
     const b = onSnapshot(doc(db, 'tenants', tenantId, 'cuenta', 'estado'),
@@ -79,8 +81,8 @@ export function Campanas() {
   }, [tenantId]);
 
   useEffect(() => { void hashListaEnNavegador(lista).then(setHashActual); }, [lista]);
-  // Sin hash en el navegador se confía en el servidor, como en Configuración.
-  const fresca = hashActual === null || (revision.hash !== '' && revision.hash === hashActual);
+  // Sin hash en el navegador no se puede saber si la revisión es de lo escrito: cuenta como «Revisando…».
+  const fresca = hashActual !== null && (revision.hash !== '' && revision.hash === hashActual);
 
   const limite = limiteDeCampanas(cuenta);
   const plan = cuenta?.['plan'];
@@ -167,6 +169,13 @@ export function Campanas() {
         )}
       </div>
 
+      {ilegibles > 0 && (
+        <p className="ayuda alerta" role="alert">
+          {ilegibles} {ilegibles === 1 ? 'campaña ilegible se eliminará' : 'campañas ilegibles se eliminarán'} al
+          guardar: no tienen el formato que el sistema lee o pasan del máximo de 10.
+        </p>
+      )}
+
       {lista.length > 0 && (
         <table>
           <thead><tr><th>Anuncio</th><th>Desde</th><th>Hasta</th><th>Estado</th><th /></tr></thead>
@@ -184,7 +193,8 @@ export function Campanas() {
                     ))}
                     {c.texto !== '' && <div><TextoSeguro valor={c.texto} maxLargo={TOPE_TEXTO_CAMPANA} /></div>}
                     {c.productoId && (
-                      <div className="ayuda">Producto: {productos.find((x) => x.id === c.productoId)?.nombre ?? 'no disponible'}</div>
+                      <div className="ayuda">Producto: {productos.find((x) => x.id === c.productoId)?.nombre
+                        ? <TextoSeguro valor={productos.find((x) => x.id === c.productoId)?.nombre ?? ''} maxLargo={100} /> : 'no disponible'}</div>
                     )}
                   </td>
                   <td>{fechaLegible(c.inicio)}</td>
@@ -237,8 +247,9 @@ export function Campanas() {
             Producto del anuncio (opcional)
             <select value={edicion.productoId ?? ''} aria-invalid={problema?.campo === 'productoId'}
               onChange={(e) => {
-                const { productoId: _quitado, ...resto } = edicion;
-                setEdicion(e.target.value === '' ? resto : { ...resto, productoId: e.target.value });
+                const nuevo: Campana = { ...edicion };
+                if (e.target.value === '') delete nuevo.productoId; else nuevo.productoId = e.target.value;
+                setEdicion(nuevo);
               }}>
               <option value="">Ninguno</option>
               {productos.map((x) => <option key={x.id} value={x.id}>{x.nombre}</option>)}
@@ -246,7 +257,7 @@ export function Campanas() {
           </label>
           {productoElegido && (
             <p className="ayuda">
-              {productoElegido.nombre}
+              <TextoSeguro valor={productoElegido.nombre} maxLargo={100} />
               {productoElegido.precio !== null ? `: ${productoElegido.precio} ${productoElegido.moneda}` : ': precio a consultar'}.
               {' '}Se toma del catálogo; para cambiarlo, edítalo en Catálogo.
             </p>

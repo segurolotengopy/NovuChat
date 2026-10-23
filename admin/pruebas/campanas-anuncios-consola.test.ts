@@ -112,6 +112,27 @@ describe('lo que se escribe', () => {
   });
 });
 
+describe('lectura con el criterio del servidor', () => {
+  it('lee lo mismo que el servidor y cuenta lo que se perdería al guardar', () => {
+    const crudo = [
+      { id: 'a', texto: 'Quiero una cita', inicio: HOY, fin: dia(3) },
+      { id: 'MAL ID', texto: 'Quiero una cita', inicio: HOY, fin: dia(3) },
+      { id: 'b', inicio: HOY, fin: dia(3), titulares: ['Control niño sano'], productoId: 7 },
+      { id: 'c', inicio: HOY, fin: dia(3), titulares: Array(11).fill('Titular válido') },
+      'basura',
+      ...Array.from({ length: 10 }, (_, i) => ({ id: `x${i}`, texto: 'Quiero una cita', inicio: HOY, fin: dia(3) })),
+    ];
+    expect(consola.leerCampanas(crudo)).toEqual(servidor.leerCampanas(crudo));
+    expect(consola.ilegiblesAlLeer(crudo)).toBe(crudo.length - servidor.leerCampanas(crudo).length);
+    expect(consola.ilegiblesAlLeer(crudo)).toBeGreaterThan(0);
+    expect(consola.ilegiblesAlLeer([crudo[0]])).toBe(0);
+  });
+  it('el nombre de producto no lleva bidi, zero-width ni control', () => {
+    expect(consola.nombreVisible('Pi\u202Ezza\u200b\u0007 grande')).toBe('Pizza grande');
+    expect(consola.productosElegibles([{ id: 'p', data: { nombre: '\u200b\u202e', activo: true } }])).toEqual([]);
+  });
+});
+
 describe('la página', () => {
   const sinComentarios = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const pagina = sinComentarios(readFileSync(join(aqui, '..', 'web', 'src', 'modulos', 'campanas', 'Campanas.tsx'), 'utf8'));
@@ -119,6 +140,13 @@ describe('la página', () => {
     expect(pagina).not.toMatch(/vigentes\s*:/);
     expect(pagina).not.toMatch(/revision\s*:/);
     expect((pagina.match(/map\(campanaParaGuardar\)/g) ?? []).length).toBe(2);
+  });
+  it('sin hash en el navegador la revisión no se da por vigente; nombres con TextoSeguro; aviso de ilegibles', () => {
+    expect(pagina).toContain('hashActual !== null &&');
+    expect(pagina).not.toContain('hashActual === null ||');
+    expect((pagina.match(/<TextoSeguro valor=\{(productoElegido|productos)/g) ?? []).length).toBeGreaterThanOrEqual(1);
+    expect(pagina).toContain('al\n          guardar');
+    expect(pagina).not.toContain('_quitado');
   });
   it('lee el catálogo solo del tenant de la ruta y no lo escribe', () => {
     expect(pagina).toContain("collection(db, 'tenants', tenantId, 'catalogo')");

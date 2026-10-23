@@ -36,10 +36,10 @@ export interface ProductoElegible { id: string; nombre: string; precio: number |
 /** Solo los productos activos con nombre, ordenados; lo demás no se ofrece. */
 export function productosElegibles(docs: ReadonlyArray<{ id: string; data: Record<string, unknown> }>): ProductoElegible[] {
   return docs
-    .filter((d) => d.data['activo'] === true && typeof d.data['nombre'] === 'string' && d.data['nombre'].trim() !== '')
+    .filter((d) => d.data['activo'] === true && typeof d.data['nombre'] === 'string' && nombreVisible(d.data['nombre']) !== '')
     .map((d) => ({
       id: d.id,
-      nombre: String(d.data['nombre']).trim(),
+      nombre: nombreVisible(String(d.data['nombre'])),
       precio: typeof d.data['precio'] === 'number' && Number.isFinite(d.data['precio']) ? d.data['precio'] : null,
       moneda: d.data['moneda'] === 'USD' ? 'USD' : 'Bs',
     }))
@@ -113,26 +113,48 @@ export function fechaLegible(f: string): string {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : f;
 }
 
-/** Las campañas bien formadas de lo que vino de Firestore; lo demás se descarta. El texto puede faltar si hay titulares. */
+const ID = /^[a-z0-9-]{1,40}$/;
+/** Nunca se leen más de estas: el tope de cualquier plan es 10 (igual que el servidor). */
+export const MAXIMO_LEIDAS = 10;
+
+/** Una entrada de `lista` tal como la lee el servidor, o `null` si la descartaría. */
+function leerUna(c: unknown): Campana | null {
+  if (typeof c !== 'object' || c === null) return null;
+  const r = c as Record<string, unknown>;
+  if (typeof r['id'] !== 'string' || !ID.test(r['id'])) return null;
+  if (typeof r['inicio'] !== 'string' || typeof r['fin'] !== 'string') return null;
+  if (r['texto'] !== undefined && typeof r['texto'] !== 'string') return null;
+  let titulares: string[] | undefined;
+  if (r['titulares'] !== undefined) {
+    const t = r['titulares'];
+    if (!Array.isArray(t) || t.length > 2 * MAX_TITULARES || t.some((x) => typeof x !== 'string')) return null;
+    titulares = t as string[];
+  }
+  if (r['productoId'] !== undefined && typeof r['productoId'] !== 'string') return null;
+  if (r['angulo'] !== undefined && typeof r['angulo'] !== 'string') return null;
+  if (r['texto'] === undefined && titulares === undefined) return null;
+  return {
+    id: r['id'], texto: (r['texto'] as string | undefined) ?? '', inicio: r['inicio'], fin: r['fin'],
+    ...(titulares !== undefined ? { titulares } : {}),
+    ...(r['productoId'] !== undefined ? { productoId: r['productoId'] as string } : {}),
+    ...(r['angulo'] !== undefined ? { angulo: r['angulo'] as string } : {}),
+  };
+}
+
+/** Las campañas bien formadas de lo que vino de Firestore, con el mismo criterio del servidor. */
 export function leerCampanas(valor: unknown): Campana[] {
   if (!Array.isArray(valor)) return [];
-  const out: Campana[] = [];
-  for (const c of valor) {
-    if (typeof c !== 'object' || c === null) continue;
-    const r = c as Record<string, unknown>;
-    if (typeof r['id'] !== 'string' || typeof r['inicio'] !== 'string' || typeof r['fin'] !== 'string') continue;
-    if (r['texto'] !== undefined && typeof r['texto'] !== 'string') continue;
-    const titulares = Array.isArray(r['titulares']) && r['titulares'].every((x) => typeof x === 'string')
-      ? r['titulares'] as string[] : undefined;
-    if (r['texto'] === undefined && titulares === undefined) continue;
-    out.push({
-      id: r['id'], texto: (r['texto'] as string | undefined) ?? '', inicio: r['inicio'], fin: r['fin'],
-      ...(titulares ? { titulares } : {}),
-      ...(typeof r['productoId'] === 'string' ? { productoId: r['productoId'] } : {}),
-      ...(typeof r['angulo'] === 'string' ? { angulo: r['angulo'] } : {}),
-    });
-  }
-  return out;
+  return valor.slice(0, MAXIMO_LEIDAS).map(leerUna).filter((c): c is Campana => c !== null);
+}
+
+/** Cuántas entradas de la lista guardada se perderían al guardar (ilegibles o sobre el máximo). */
+export function ilegiblesAlLeer(valor: unknown): number {
+  return Array.isArray(valor) ? valor.length - leerCampanas(valor).length : 0;
+}
+
+/** El nombre de un producto para un texto plano (`<option>`): sin control, bidi ni zero-width. */
+export function nombreVisible(t: string): string {
+  return t.replace(/[\p{Cc}\p{Cf}]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 100);
 }
 
 /**
