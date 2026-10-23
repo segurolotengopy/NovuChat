@@ -62,7 +62,7 @@ export function violacionesDeParrafos(cuerpo: string): string[] {
 /** ¿Este mensaje contiene la presentación del asistente (la frase de presentación o el saludo largo)? */
 export const esPresentacion = (cuerpo: string): boolean => /asistente virtual de antonio|qu[eé] gusto saludarte/i.test(cuerpo);
 /** Los planes que resuelven (no derivan): jamás llevan el botón de contacto de Antonio. El de `comprobante` depende del resultado y no se vigila aquí. */
-export const PLANES_SIN_BOTON = ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'precio', 'catalogo', 'imagenes', 'resultado', 'menu', 'bonos', 'complemento', 'qr', 'qr_pendiente', 'imagen_otra', 'audio_fijo', 'archivo', 'otro', 'riesgo', 'suspendido'];
+export const PLANES_SIN_BOTON = ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'precio', 'catalogo', 'imagenes', 'resultado', 'menu', 'bonos', 'complemento', 'qr', 'qr_pendiente', 'imagen_descrita', 'imagen_otra', 'audio_fijo', 'archivo', 'otro', 'riesgo', 'suspendido'];
 /** Los planes que derivan a Antonio: siempre con el botón. */
 export const PLANES_CON_BOTON = ['derivar', 'consulta', 'qr_insistente', 'cancelacion', 'sin_configuracion', 'fuera_pais', 'repetido', 'cobro_cerrado', 'cobro_ya_cerrado', 'uso_extendido'];
 /** ¿El mensaje lleva el botón que abre el chat de Antonio (`cta_url`)? */

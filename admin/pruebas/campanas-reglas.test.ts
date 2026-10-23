@@ -142,7 +142,8 @@ describe('config/campanas: quién y qué', () => {
 
   it('la forma mínima de cada campaña: un mapa de cuatro claves con texto de hasta 300', async () => {
     const malas: unknown[] = [
-      { ...campana('a'), extra: 1 },
+      { ...campana('a'), titulares: ['Un titular largo'], productoId: 'p1', angulo: 'x', otra: 1 },   // 8 claves
+      { ...campana('a'), texto: 7 },
       { id: 'a', texto: 'x', inicio: dia(0) },
       { ...campana('a'), texto: 'x'.repeat(301) },
       { ...campana('a'), texto: 7 },
@@ -156,5 +157,47 @@ describe('config/campanas: quién y qué', () => {
     // El formato fino (id, fechas, su orden) no lo mira la regla: lo decide el
     // servidor, que NUNCA aplica una campaña así (`campanas.test.ts`).
     await assertSucceeds(updateDoc(doc(adminA(), ruta(A)), { lista: [{ ...campana('ok'), inicio: '24/09/2026' }], ...sello() }));
+  });
+});
+
+describe('config/campanas: los anuncios como dato (titulares, productoId, ángulo)', () => {
+  const anuncio = (id: string) => ({
+    ...campana(id), titulares: [`Titular número ${id}`, `Otro titular ${id}`], productoId: 'prod-1', angulo: 'Enfocar en la entrega rápida',
+  });
+  const anuncios = (n: number) => Array.from({ length: n }, (_, i) => anuncio(`a${i + 1}`));
+
+  it('una campaña de siete claves entra, y diez de siete claves caben en el tope de 1.000 expresiones', async () => {
+    await preparar(A, { plan: 'pro' });
+    await assertSucceeds(setDoc(doc(adminA(), ruta(A)), { lista: [anuncio('a1')], ...sello() }));
+    await assertSucceeds(updateDoc(doc(adminA(), ruta(A)), { lista: anuncios(10), ...sello() }));
+  });
+
+  it('un anuncio sin `texto` (cuatro claves: id, fechas y titulares) entra; los documentos viejos de cuatro claves siguen valiendo', async () => {
+    const solo = { id: 'solo', inicio: dia(0), fin: dia(30), titulares: ['Solo por titulares'] };
+    await assertSucceeds(setDoc(doc(adminA(), ruta(A)), { lista: [solo, campana('vieja')], ...sello() }));
+  });
+
+  it('más de siete claves, o un texto de más de 300 con claves nuevas, NO entra', async () => {
+    const ocho = { ...anuncio('x'), otra: 1 };
+    await assertFails(setDoc(doc(adminA(), ruta(A)), { lista: [ocho], ...sello() }));
+    await assertFails(setDoc(doc(adminA(), ruta(A)), { lista: [{ ...anuncio('x'), texto: 'x'.repeat(301) }], ...sello() }));
+    await assertFails(setDoc(doc(adminA(), ruta(A)), { lista: [{ id: 'a', inicio: dia(0) }], ...sello() }));   // 2 claves
+  });
+
+  it('el tope del plan vale con anuncios: Crecimiento (3) admite 3 y NO 4; un plan con tope 4 no admite 5', async () => {
+    await assertSucceeds(setDoc(doc(adminA(), ruta(A)), { lista: anuncios(3), ...sello() }));
+    await assertFails(updateDoc(doc(adminA(), ruta(A)), { lista: anuncios(4), ...sello() }));
+    await preparar(B, { plan: 'impulso', limites: { campanas: 4 } });
+    await assertSucceeds(setDoc(doc(adminB(), ruta(B)), { lista: anuncios(4), ...sello('u-admin-b') }));
+    await assertFails(updateDoc(doc(adminB(), ruta(B)), { lista: anuncios(5), ...sello('u-admin-b') }));
+  });
+
+  it('el administrador de A no escribe los anuncios de B, ni nadie escribe lo aprobado (ni siquiera con anuncios)', async () => {
+    await preparar(B, { plan: 'crecimiento' }, anuncios(1));
+    await assertFails(updateDoc(doc(adminA(), ruta(B)), { lista: anuncios(2), ...sello() }));
+    await assertFails(setDoc(doc(adminA(), ruta(B)), { lista: anuncios(1), ...sello() }));
+    await assertFails(updateDoc(doc(adminB(), ruta(B)), { vigentes: anuncios(3), ...sello('u-admin-b') }));
+    await assertFails(updateDoc(doc(adminB(), ruta(B)), { lista: anuncios(1), revision: { hash: 'z' }, ...sello('u-admin-b') }));
+    await assertFails(updateDoc(doc(operA(), ruta(A)), { lista: anuncios(1), ...sello('u-oper-a') }));
   });
 });

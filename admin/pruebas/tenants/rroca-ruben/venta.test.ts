@@ -3404,6 +3404,8 @@ describe('BLOQUE DE PAGOS · la constante «comprobante leído» es la ÚNICA ex
       const rep = w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['texto'] === m.cuerpo);
       expect(rep).toHaveLength(1);
       expect(rep[0]!['aviso']).toBe('no_salio');
+      if (o.aviso === 'error' || o.aviso === 'sin-id') expect(rep[0]!['avisoMotivo']).toBe('meta');
+      else expect(rep[0]).not.toHaveProperty('avisoMotivo');
     }
     // Y la función pura: solo `salio === true` da la constante.
     for (const s of [false, 'repetido', undefined, null, 1, 'true']) expect(L.rrTextoComprobante('cuadra', '', s).cuerpo).not.toBe(LEIDO);
@@ -3452,11 +3454,13 @@ describe('BLOQUE DE PAGOS · el aviso a Rubén sale en la misma vuelta, dice «r
     const repHola = w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['texto'] === unico(hola).cuerpo);
     expect(repHola).toHaveLength(1);
     expect(repHola[0]!['aviso']).toBe('ninguno');
+    expect(repHola[0]).not.toHaveProperty('avisoMotivo');
     pedirQr(w, 'pack');
     const t = hablar(w, ANA, mImagen());
     const rep = w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['texto'] === unico(t).cuerpo);
     expect(rep).toHaveLength(1);
     expect(rep[0]!['aviso']).toBe('salio');
+    expect(rep[0]).not.toHaveProperty('avisoMotivo');
     // El campo es opcional y cerrado: se evalúa la expresión del nodo con valores fuera del enum.
     const cuerpo = String((PRODUCCION.nodes.find((n) => n.name === 'Reportar mensaje (saliente)')!.parameters as { jsonBody: string }).jsonBody);
     expect(cuerpo).toContain("(m.resumen || {}).aviso");
@@ -3472,6 +3476,18 @@ describe('BLOQUE DE PAGOS · el aviso a Rubén sale en la misma vuelta, dice «r
     for (const v of ['salio', 'no_salio', 'ninguno']) expect(reportar(v)['aviso']).toBe(v);
     for (const v of ['SALIO', 'sí', '', 'salio ', 'otro', 1, true, null, undefined, { x: 1 }, ['salio']]) expect(reportar(v), JSON.stringify(v)).not.toHaveProperty('aviso');
     expect(reportar(undefined, false)).not.toHaveProperty('aviso');
+    // `avisoMotivo`: solo con `no_salio` y solo uno de los tres valores cerrados; con `salio`/`ninguno` o cualquier otro valor, el campo no se envía.
+    const conMotivo = (aviso: unknown, avisoMotivo: unknown): J => {
+      const item = { para: ANA, tipoReporte: 'text', texto: 'x', resumen: { aviso, avisoMotivo } };
+      // nosemgrep: devsecops.js-eval-prohibido
+      const f = new Function('$', '$json', 'return ' + expr + ';');
+      const doble = (nombre: string) => ({ item: { json: nombre === 'Armar mensajes' ? item : {} }, first: () => ({ json: item }) });
+      return JSON.parse(f(doble, { messages: [{ id: 'wamid.X' }] }) as string) as J;
+    };
+    for (const v of ['tope', 'meta', 'mismo_numero']) expect(conMotivo('no_salio', v)['avisoMotivo']).toBe(v);
+    for (const v of ['', 'otro', 'TOPE', 1, null, undefined, { x: 1 }]) expect(conMotivo('no_salio', v), JSON.stringify(v)).not.toHaveProperty('avisoMotivo');
+    for (const a of ['salio', 'ninguno']) expect(conMotivo(a, 'tope'), a).not.toHaveProperty('avisoMotivo');
+    expect(conMotivo('no_salio', 'tope')['aviso']).toBe('no_salio');
   });
 });
 
@@ -4798,8 +4814,34 @@ describe('CIERRE 2 · topes GLOBALES por hora de avisos a Rubén: consultas y de
     expect(m.cuerpo).not.toContain('Le avisé');
     expect(tieneBotonRuben(m)).toBe(true);
     expect(w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['telefono'] === tel(31)).at(-1)?.['aviso']).toBe('no_salio');
+    expect(w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['telefono'] === tel(31)).at(-1)?.['avisoMotivo']).toBe('tope');
     expect(avisosDe(hablar(w, tel(32), mTexto(HABLAR), { avanzarMin: 61 }))).toHaveLength(1);
     expect((contador(w, 'derivaciones') as J)['n']).toBe(1);
+  });
+
+  it('PROMESA SIN RESPALDO DEL BOTÓN: si quien escribe ES la recepción, ninguna respuesta nombra un botón que no hay, el texto no se repite en turnos seguidos (MISMO mundo) y el reporte dice `no_salio` con `avisoMotivo: mismo_numero`', () => {
+    const w = crear({ base: { prefijosPermitidos: ['591'] } });
+    const frases = [HABLAR, 'necesito una factura', 'quiero hacer un reclamo', HABLAR, 'hola'];
+    const cuerpos: string[] = [];
+    for (const f of frases) {
+      // El vigilante de UX corta si dos respuestas seguidas son iguales: el texto del caso rota entre 3 redacciones.
+      const t = hablar(w, REC, mTexto(f), { avanzarMin: 0 });
+      expect(t.mensajes.length, f).toBeGreaterThan(0);
+      for (const m of t.mensajes) {
+        expect(tieneBotonRuben(m), f).toBe(false);
+        expect(JSON.stringify(m.payload), f).not.toMatch(/bot[oó]n/i);
+        cuerpos.push(m.cuerpo);
+      }
+    }
+    for (let i = 1; i < cuerpos.length; i++) expect(cuerpos[i], `turno ${i}`).not.toBe(cuerpos[i - 1]);
+    const reps = w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['telefono'] === REC);
+    expect(reps.length).toBeGreaterThan(0);
+    for (const r of reps) {
+      expect(String(r['texto'])).not.toMatch(/bot[oó]n/i);
+      if (r['aviso'] === 'no_salio') expect(r['avisoMotivo']).toBe('mismo_numero');
+      else expect(r).not.toHaveProperty('avisoMotivo');
+    }
+    expect(reps.some((r) => r['aviso'] === 'no_salio')).toBe(true);
   });
 
   it('consultas del modelo: con el tope lleno la siguiente no avisa (texto de fallo + botón); llenarlas NO bloquea una derivación real («hablar con Rubén», factura); se reinicia a la hora', () => {
@@ -4811,6 +4853,7 @@ describe('CIERRE 2 · topes GLOBALES por hora de avisos a Rubén: consultas y de
     expect(unico(lleno).cuerpo).toContain('No pude avisar');
     expect(tieneBotonRuben(unico(lleno))).toBe(true);
     expect(w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['telefono'] === tel(3)).at(-1)?.['aviso']).toBe('no_salio');
+    expect(w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['telefono'] === tel(3)).at(-1)?.['avisoMotivo']).toBe('tope');
     expect(avisosDe(hablar(w, tel(4), mTexto(HABLAR), { avanzarMin: 0 }))).toHaveLength(1);
     expect(avisosDe(hablar(w, tel(5), mTexto('necesito una factura'), { avanzarMin: 0 }))).toHaveLength(1);
     expect(avisosDe(consulta(w, 6, { avanzarMin: 61 }))).toHaveLength(1);
