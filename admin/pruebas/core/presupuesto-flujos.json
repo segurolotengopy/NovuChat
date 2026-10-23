@@ -1,0 +1,227 @@
+{
+  "version": 1,
+  "medidoEl": "2026-10-23",
+  "topePromptKB": 6,
+  "flujos": {
+    "Flujos/bellido-agendamiento.json": {
+      "nodos": 96,
+      "jsCodeKB": 319,
+      "promptKB": 28.9,
+      "porque": "Línea base del 23/10/2026 (Bellido, flujo de 96 nodos heredado; el vivo es agenda-minima): no crece, solo baja.",
+      "ultimoAumento": "2026-10-23",
+      "exencionPrompt": {
+        "porque": "Prompt heredado con agente y herramientas, anterior al tope de 6 KB; se declara en lugar de ocultarlo. Debe recortarse (o el flujo retirarse) antes del vencimiento.",
+        "desde": "2026-10-23",
+        "vence": "2027-01-21"
+      }
+    },
+    "Flujos/demo-a-agendamiento.json": {
+      "nodos": 77,
+      "jsCodeKB": 318.4,
+      "promptKB": 31.3,
+      "porque": "Línea base del 23/10/2026: Demo A, esqueleto de agendamiento con agente y herramientas, el más pesado de los heredados.",
+      "ultimoAumento": "2026-10-23",
+      "exencionPrompt": {
+        "porque": "Prompt heredado con agente y herramientas, anterior al tope de 6 KB; se declara en lugar de ocultarlo. Debe recortarse (o el flujo retirarse) antes del vencimiento.",
+        "desde": "2026-10-23",
+        "vence": "2027-01-21"
+      }
+    },
+    "Flujos/demo-b-venta-cobro.json": {
+      "nodos": 76,
+      "jsCodeKB": 174.4,
+      "promptKB": 19.1,
+      "porque": "Línea base del 23/10/2026: Demo B de venta y cobro con agente y herramientas.",
+      "ultimoAumento": "2026-10-23",
+      "exencionPrompt": {
+        "porque": "Prompt heredado con agente y herramientas, anterior al tope de 6 KB; se declara en lugar de ocultarlo. Debe recortarse (o el flujo retirarse) antes del vencimiento.",
+        "desde": "2026-10-23",
+        "vence": "2027-01-21"
+      }
+    },
+    "Flujos/experimental/agenda-minima/agenda-minima.prueba.json": {
+      "nodos": 53,
+      "jsCodeKB": 380.6,
+      "promptKB": 2.8,
+      "porque": "Línea base del 23/10/2026: Agenda mínima (el código calcula, el modelo conversa), incluye los módulos comunes de agenda y medios.",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/agenda-minima/agenda-minima.v0.json": {
+      "nodos": 53,
+      "jsCodeKB": 380.6,
+      "promptKB": 2.8,
+      "porque": "Línea base del 23/10/2026: Agenda mínima (el código calcula, el modelo conversa), incluye los módulos comunes de agenda y medios.",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/captacion-minima/captacion-minima.novuchat.json": {
+      "nodos": 43,
+      "jsCodeKB": 514.8,
+      "promptKB": 2,
+      "porque": "Línea base del 23/10/2026: Captación mínima (guion por código, modelo solo para empatía y clasificar).",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/captacion-minima/captacion-minima.prueba.json": {
+      "nodos": 43,
+      "jsCodeKB": 514.8,
+      "promptKB": 2,
+      "porque": "Línea base del 23/10/2026: Captación mínima (guion por código, modelo solo para empatía y clasificar).",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/chat-novuchat/chat-novuchat.novuchat.json": {
+      "nodos": 44,
+      "jsCodeKB": 1099.1,
+      "promptKB": 2,
+      "porque": "Línea base del 23/10/2026: chat de NovuChat sobre captación mínima; el jsCode incluye el corpus de conocimiento del sitio.",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/chat-novuchat/chat-novuchat.prueba.json": {
+      "nodos": 44,
+      "jsCodeKB": 1099.1,
+      "promptKB": 2,
+      "porque": "Línea base del 23/10/2026: chat de NovuChat sobre captación mínima; el jsCode incluye el corpus de conocimiento del sitio.",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/doctoras/doctoras.rroca-emma.json": {
+      "nodos": 43,
+      "jsCodeKB": 531.3,
+      "promptKB": 2,
+      "porque": "Línea base del 23/10/2026: flujo de las doctoras (agenda mínima con medios y comprobante).",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/doctoras/doctoras.rroca-emma.prueba.json": {
+      "nodos": 38,
+      "jsCodeKB": 531.3,
+      "promptKB": 2,
+      "porque": "Línea base del 23/10/2026: flujo de las doctoras (agenda mínima con medios y comprobante).",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/doctoras/doctoras.rroca-evy.json": {
+      "nodos": 43,
+      "jsCodeKB": 531.3,
+      "promptKB": 2,
+      "porque": "Línea base del 23/10/2026: flujo de las doctoras (agenda mínima con medios y comprobante).",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/doctoras/doctoras.rroca-evy.prueba.json": {
+      "nodos": 38,
+      "jsCodeKB": 531.3,
+      "promptKB": 2,
+      "porque": "Línea base del 23/10/2026: flujo de las doctoras (agenda mínima con medios y comprobante).",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/rroca-antonio/rroca-antonio.json": {
+      "nodos": 48,
+      "jsCodeKB": 771.6,
+      "promptKB": 4.8,
+      "porque": "Línea base del 23/10/2026: flujo de Antonio Roca sobre agenda mínima con medios y entrega.",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/rroca-antonio/rroca-antonio.prueba.json": {
+      "nodos": 43,
+      "jsCodeKB": 771.6,
+      "promptKB": 4.8,
+      "porque": "Línea base del 23/10/2026: flujo de Antonio Roca sobre agenda mínima con medios y entrega.",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/rroca-ruben/rroca-ruben.json": {
+      "nodos": 45,
+      "jsCodeKB": 965.1,
+      "promptKB": 4.4,
+      "porque": "Línea base del 23/10/2026: flujo de Rubén Roca (cuatro cuentas) sobre venta mínima; su Entrega 2 deberá recortar el prompt a 6 KB o menos.",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/rroca-ruben/rroca-ruben.prueba.json": {
+      "nodos": 40,
+      "jsCodeKB": 965.1,
+      "promptKB": 4.4,
+      "porque": "Línea base del 23/10/2026: flujo de Rubén Roca (cuatro cuentas) sobre venta mínima; su Entrega 2 deberá recortar el prompt a 6 KB o menos.",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/venta-minima/venta-minima.ensayo-demo-a.json": {
+      "nodos": 44,
+      "jsCodeKB": 1979.7,
+      "promptKB": 2,
+      "porque": "Línea base del 23/10/2026: Venta mínima (Q'Taco y variantes), el esqueleto con más módulos comunes incluidos (pedido, cobro, catálogo, reservas).",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/venta-minima/venta-minima.prueba.json": {
+      "nodos": 46,
+      "jsCodeKB": 1980.7,
+      "promptKB": 2,
+      "porque": "Línea base del 23/10/2026: Venta mínima (Q'Taco y variantes), el esqueleto con más módulos comunes incluidos (pedido, cobro, catálogo, reservas).",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/experimental/venta-minima/venta-minima.qtaco.json": {
+      "nodos": 50,
+      "jsCodeKB": 1979.7,
+      "promptKB": 2,
+      "porque": "Línea base del 23/10/2026: Venta mínima (Q'Taco y variantes), el esqueleto con más módulos comunes incluidos (pedido, cobro, catálogo, reservas).",
+      "ultimoAumento": "2026-10-23"
+    },
+    "Flujos/novuchat-onboarding.json": {
+      "nodos": 51,
+      "jsCodeKB": 974.9,
+      "promptKB": 10.2,
+      "porque": "Línea base del 23/10/2026: asistente de alta y captación heredado con agente y herramientas.",
+      "ultimoAumento": "2026-10-23",
+      "exencionPrompt": {
+        "porque": "Prompt heredado con agente y herramientas, anterior al tope de 6 KB; se declara en lugar de ocultarlo. Debe recortarse (o el flujo retirarse) antes del vencimiento.",
+        "desde": "2026-10-23",
+        "vence": "2027-01-21"
+      }
+    },
+    "Flujos/platinum-agendamiento.json": {
+      "nodos": 77,
+      "jsCodeKB": 318.4,
+      "promptKB": 31.8,
+      "porque": "Línea base del 23/10/2026 (demo Platinum; congelado, no se toca): flujo con agente y herramientas heredado, código y prompt por encima de los esqueletos mínimos.",
+      "ultimoAumento": "2026-10-23",
+      "exencionPrompt": {
+        "porque": "Prompt heredado con agente y herramientas, anterior al tope de 6 KB; se declara en lugar de ocultarlo. Debe recortarse (o el flujo retirarse) antes del vencimiento.",
+        "desde": "2026-10-23",
+        "vence": "2027-01-21"
+      }
+    }
+  },
+  "exentos": {
+    "Flujos/agendamiento-seguimientos.json": {
+      "porque": "Programado (cron): recorre citas y envía seguimientos; no conversa con el cliente ni tiene nodos de IA."
+    },
+    "Flujos/agendamiento-senas-vencidas.json": {
+      "porque": "Programado (cron): libera señas vencidas; no conversa ni tiene nodos de IA."
+    },
+    "Flujos/demo-a-recordatorios.json": {
+      "porque": "Programado (cron): envía recordatorios de cita; no conversa ni tiene nodos de IA."
+    },
+    "Flujos/experimental/agenda-minima/flujo.plantilla.json": {
+      "porque": "Plantilla de construcción: su jsCode se inyecta al ensamblar el flujo; el tamaño se vigila en los flujos construidos de la misma carpeta."
+    },
+    "Flujos/experimental/captacion-minima/flujo.plantilla.json": {
+      "porque": "Plantilla de construcción: su jsCode se inyecta al ensamblar el flujo; el tamaño se vigila en los flujos construidos de la misma carpeta."
+    },
+    "Flujos/experimental/chat-novuchat/flujo.plantilla.json": {
+      "porque": "Plantilla de construcción: su jsCode se inyecta al ensamblar el flujo; el tamaño se vigila en los flujos construidos de la misma carpeta."
+    },
+    "Flujos/experimental/doctoras/flujo.plantilla.json": {
+      "porque": "Plantilla de construcción: su jsCode se inyecta al ensamblar el flujo; el tamaño se vigila en los flujos construidos de la misma carpeta."
+    },
+    "Flujos/experimental/recordatorio-bellido/recordatorio-bellido.prueba.json": {
+      "porque": "Programado (cron) de recordatorios de Bellido, variante de prueba; no conversa ni tiene nodos de IA."
+    },
+    "Flujos/experimental/recordatorio-bellido/recordatorio-bellido.v1.json": {
+      "porque": "Programado (cron) de recordatorios de Bellido; no conversa ni tiene nodos de IA."
+    },
+    "Flujos/experimental/rroca-antonio/flujo.plantilla.json": {
+      "porque": "Plantilla de construcción: su jsCode se inyecta al ensamblar el flujo; el tamaño se vigila en los flujos construidos de la misma carpeta."
+    },
+    "Flujos/experimental/rroca-ruben/flujo.plantilla.json": {
+      "porque": "Plantilla de construcción: su jsCode se inyecta al ensamblar el flujo; el tamaño se vigila en los flujos construidos de la misma carpeta."
+    },
+    "Flujos/experimental/venta-minima/flujo.plantilla.json": {
+      "porque": "Plantilla de construcción: su jsCode se inyecta al ensamblar el flujo; el tamaño se vigila en los flujos construidos de la misma carpeta."
+    },
+    "Flujos/salida-de-persona.json": {
+      "porque": "Programado/servicio de salida de persona (toques de campaña): sin nodos de IA ni conversación."
+    }
+  }
+}
