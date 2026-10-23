@@ -62,7 +62,7 @@ const conLista = (cuerpo, filas) => {
 };
 const conAntonio = (cuerpo, extra) => {
   const c = raSeguro(cuerpo);
-  return cmContactoConBoton(Object.assign({ numero: cnDigitos(cfg.numeroRecepcion), desde: from, cuerpo: c, botonTexto: RA_BOTON_ANTONIO, saludo: 'Hola Antonio, vengo del asistente virtual.', textoDelRespaldo: 'Escríbele aquí:', sinNumero: 'Eso lo ve Antonio directamente.' }, extra || {}));
+  return cmContactoConBoton(Object.assign({ numero: cnDigitos(cfg.numeroRecepcion), desde: from, cuerpo: c, botonTexto: RA_BOTON_ANTONIO, saludo: 'Hola Antonio, vengo del asistente virtual.', textoDelRespaldo: 'Escríbele aquí:', sinNumero: 'Eso lo ve Antonio directamente.', esRepetido: (x) => fichaAntes.ultimoHash !== '' && raHashTexto(x) === fichaAntes.ultimoHash }, extra || {}));
 };
 const usadosHoy = () => fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
 // REGLA (P7): un saludo SIN producto decidido no lleva botones con montos. Mientras no esté saludado no hay menú en las respuestas libres; ya saludado, el menú principal sin los botones que ya pulsó.
@@ -253,7 +253,8 @@ if (claveOk) {
   raBarrer(fichas.mapa, ahora);
 }
 
-const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, aviso: avisoPlaneado || avisoRepetido ? (avisoSalio || avisoRepetido ? 'salio' : 'no_salio') : (av.motivoFallo ? 'no_salio' : 'ninguno') };
+const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, aviso: avisoPlaneado || avisoRepetido ? (avisoSalio || avisoRepetido ? 'salio' : 'no_salio') : (av.motivoFallo ? 'no_salio' : 'ninguno'), avisoMotivo: '' };
+resumen.avisoMotivo = cmMotivoAviso({ aviso: resumen.aviso, motivoFallo: av.motivoFallo, planeado: avisoPlaneado, desde: from, numeroRecepcion: cnDigitos(cfg.numeroRecepcion) });
 let numero = from;
 if (prueba) numero = telPrueba;
 // `mensajes` se calcula DESPUÉS de decidir el número: en prueba con un teléfono no permitido (`telPrueba` vacío) no sale nada y el resumen lo dice.

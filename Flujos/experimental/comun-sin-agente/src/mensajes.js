@@ -62,14 +62,40 @@ function cmUrlWa(numero, saludo) {
 function cmMensaje(para, payload, texto, respaldo, extra) {
   return Object.assign({ para: para, payload: payload, texto: texto, respaldo: respaldo || texto }, extra || {});
 }
-// Un texto que nombra «el botón» cuando no hay botón queda mal: se le quitan esas frases.
+// Un texto que nombra «el botón» cuando no hay botón queda mal: se QUITA la oración completa que lo menciona (con o sin tilde,
+// en cualquier mayúscula), nunca palabras sueltas, para no dejar frases rotas. Si no queda texto útil, sale el de por defecto.
+// Todo en tiempo lineal (sin cuantificadores anidados): el texto puede traer miles de espacios.
 function cmSinMencionDelBoton(cuerpo, porDefecto) {
-  const s = String(cuerpo || '').replace(/\s*T[oó]ca(le)? el bot[oó]n[^.!?]*[.!?]?/gi, '')
-    .replace(/\s*tocando el bot[oó]n/gi, '').replace(/\s+([.,])/g, '$1').trim();
-  return s || String(porDefecto || '');
+  const lineas = String(cuerpo || '').replace(/[ \t]+/g, ' ').split('\n').map((linea) => {
+    const oraciones = linea.match(/[^.!?]+[.!?]*/g) || [];
+    return oraciones.filter((o) => !/bot[oó]n/i.test(o)).join('').trim();
+  });
+  const s = lineas.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return s && !/^[\s.,;:!?¡¿-]*$/.test(s) ? s : String(porDefecto || '');
+}
+// Quien escribe ES la recepción: no hay botón (sería a su propio chat) y tampoco a quién pasarle. Este texto no nombra ningún botón y no
+// promete nada («te escribirán», «te llamamos», «ya avisé»): solo dice la verdad.
+const cmTextosMismoNumero = [
+  'Estás escribiendo desde el mismo número de recepción, así que desde aquí no hay a quién pasarte.',
+  'Este chat es el de recepción: desde aquí no puedo pasarte con otra persona.',
+  'Como escribes desde el número de recepción, no hay otra persona a quien pasarte desde este chat.',
+];
+const cmTextoMismoNumero = cmTextosMismoNumero[0];
+// El motivo por el que un aviso a recepción NO salió, para el reporte (`avisoMotivo`). El contrato `aviso` ('salio' | 'no_salio' | 'ninguno')
+// no cambia: este campo solo lo explica. Devuelve 'tope' (se alcanzó el tope de avisos), 'mismo_numero' (quien escribe es la recepción),
+// 'meta' (el aviso se armó y Meta no aceptó el envío) o '' (aviso salió, no hubo aviso, o la causa no es ninguna de las tres).
+//   x = { aviso, motivoFallo, planeado, desde, numeroRecepcion }
+function cmMotivoAviso(x) {
+  if (!x || x.aviso !== 'no_salio') return '';
+  if (x.motivoFallo === 'tope_avisos') return 'tope';
+  const rec = String(x.numeroRecepcion || '').replace(/\D/g, '');
+  const desde = String(x.desde || '').replace(/\D/g, '');
+  if (rec && rec === desde) return 'mismo_numero';
+  if (x.planeado === true && !x.motivoFallo) return 'meta';
+  return '';
 }
 // PASAR CON UNA PERSONA: el mensaje con el botón que abre su chat, o solo texto si no hay a quién mandarlo.
-//   op = { numero, desde, cuerpo, botonTexto, saludo, para?, evento?, textoDelRespaldo?, sinNumero? }
+//   op = { numero, desde, cuerpo, botonTexto, saludo, para?, evento?, textoDelRespaldo?, sinNumero?, sinBotonMismoNumero?, esRepetido?, rotacion? }
 // Hay botón solo si `numero` existe y NO es el de quien escribe (`desde`): un botón a su propio chat no sirve.
 // Devuelve el item, con `tipoReporte` ('interactive' o 'text') y `conBoton`.
 function cmContactoConBoton(op) {
@@ -84,6 +110,20 @@ function cmContactoConBoton(op) {
       cmRecorte(op.cuerpo, 4000 - pie.length) + pie,
       { tipoReporte: 'interactive', evento: op.evento, conBoton: true });
   }
-  const sinBoton = cmSinMencionDelBoton(op.cuerpo, op.sinNumero || 'Eso lo coordina una persona del equipo.');
+  // Mismo número: texto propio, que no nombra botón. Sin número configurado: el cuerpo sin las frases del botón.
+  // `op.esRepetido(texto)` (opcional) dice si ese texto es el último que salió a este teléfono: se elige la primera redacción que no lo es.
+  let sinBoton = '';
+  if (numero && numero === desde) {
+    const opciones = op.sinBotonMismoNumero ? [op.sinBotonMismoNumero] : cmTextosMismoNumero;
+    // `op.rotacion` (opcional, un contador por teléfono, p. ej. los turnos de su ficha) rota entre las redacciones cuando el flujo no guarda el último texto.
+    const n = opciones.length;
+    const inicio = Number.isFinite(op.rotacion) ? Math.abs(Math.floor(op.rotacion)) % n : 0;
+    let elegido = opciones[inicio];
+    for (let i = 0; i < n; i++) {
+      const o = opciones[(inicio + i) % n];
+      if (typeof op.esRepetido !== 'function' || !op.esRepetido(cmSinMencionDelBoton(o, cmTextoMismoNumero))) { elegido = o; break; }
+    }
+    sinBoton = cmSinMencionDelBoton(elegido, cmTextoMismoNumero);
+  } else sinBoton = cmSinMencionDelBoton(op.cuerpo, op.sinNumero || 'Eso lo coordina una persona del equipo.');
   return cmMensaje(para, cmTexto(sinBoton), sinBoton, sinBoton, { tipoReporte: 'text', evento: op.evento, conBoton: false });
 }
