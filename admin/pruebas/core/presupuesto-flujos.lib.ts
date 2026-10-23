@@ -5,7 +5,7 @@
  *
  * Solo sintaxis borrable (sin enums ni parameter properties) para que Node la pueda ejecutar directo.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -75,9 +75,10 @@ export function descubrirFlujos(raiz = RAIZ): string[] {
   const salida: string[] = [];
   const IGNORAR = new Set(['node_modules', 'herramientas', 'fuentes', 'manifiestos', 'src', 'prompts']);
   const recorrer = (dir: string): void => {
-    for (const nombre of readdirSync(dir).sort()) {
+    for (const ent of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const nombre = ent.name;
       const ruta = join(dir, nombre);
-      if (statSync(ruta).isDirectory()) {
+      if (ent.isDirectory()) {
         if (!IGNORAR.has(nombre)) recorrer(ruta);
       } else if (nombre.endsWith('.json')) {
         try {
@@ -125,9 +126,10 @@ export function fuentesDeModulos(raiz = RAIZ): string[] {
   const salida: string[] = [];
   const recorrer = (dir: string): void => {
     if (!existsSync(dir)) return;
-    for (const nombre of readdirSync(dir).sort()) {
+    for (const ent of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const nombre = ent.name;
       const ruta = join(dir, nombre);
-      if (statSync(ruta).isDirectory()) recorrer(ruta);
+      if (ent.isDirectory()) recorrer(ruta);
       else if (/\.(js|mjs)$/.test(nombre) && !nombre.endsWith('.d.mts')) salida.push(relative(raiz, ruta).split('\\').join('/'));
     }
   };
@@ -195,9 +197,20 @@ function largoDeDefinicion(c: string, ini: number): number {
   return Math.min(i, c.length) - ini;
 }
 
+const esIdent = (ch: string | undefined): boolean => ch !== undefined && /[A-Za-z0-9_$]/.test(ch);
+
+/** Cuenta las apariciones de `nombre` como identificador completo (sin letra, dígito, _, $ ni punto antes, ni identificador después). Sin expresiones regulares dinámicas. */
+function contarPalabra(c: string, nombre: string): number {
+  let total = 0;
+  for (let i = c.indexOf(nombre); i >= 0; i = c.indexOf(nombre, i + 1)) {
+    const antes = c[i - 1];
+    if (!esIdent(antes) && antes !== '.' && !esIdent(c[i + nombre.length])) total++;
+  }
+  return total;
+}
+
 export function codigoMuertoDe(flujo: Flujo): Muerto[] {
-  const alt = PREFIJOS_COMUNES.join('|');
-  const reDef = new RegExp(`(?:^|[\\s;{}])((?:async\\s+)?function\\s+\\*?\\s*|(?:const|let|var)\\s+)((?:${alt})[A-Za-z0-9_$]*)\\b`, 'g');
+  const reDef = /(?:^|[\s;{}])((?:async\s+)?function\s+\*?\s*|(?:const|let|var)\s+)((?:ct|cb|dn|cm|av|anuncio)[A-Za-z0-9_$]*)\b/g;
   const salida: Muerto[] = [];
   for (const n of flujo.nodes) {
     const c = jsCodeDe(n);
@@ -209,7 +222,7 @@ export function codigoMuertoDe(flujo: Flujo): Muerto[] {
       defs.set(nombre, [...(defs.get(nombre) ?? []), ini]);
     }
     for (const [nombre, inis] of defs) {
-      const total = [...c.matchAll(new RegExp(`(?<![A-Za-z0-9_$.])${nombre.replace(/\$/g, '\\$')}(?![A-Za-z0-9_$])`, 'g'))].length;
+      const total = contarPalabra(c, nombre);
       if (total <= inis.length) salida.push({ nodo: n.name ?? '?', nombre, chars: inis.reduce((a, i) => a + largoDeDefinicion(c, i), 0) });
     }
   }
