@@ -224,8 +224,10 @@ if (claveOk) {
   // Las respuestas de conversación entregadas (saludo, ángulo, modelo): el menú que no se pidió sale desde la tercera.
   if (m && ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido'].indexOf(tipoDePlan) >= 0) ficha.charlaN = Math.min(ficha.charlaN + 1, 1000);
   // Lo último que se le dijo (hash del texto y tipo de plan): el recordatorio del QR no se repite dos veces seguidas y ningún texto sale idéntico dos veces seguidas. Solo cuenta el turno que contesta de verdad.
-  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma };
+  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma, p: ficha.ultimaPregunta, pm: ficha.ultimaPreguntaMs };
   if (m && puerta.ruta === 'sigue') { ficha.ultimoHash = m.tipoReporte === 'image' ? '' : raHashTexto(m.texto); ficha.ultimaFirma = /^[a-z_]{1,30}$/.test(tipoDePlan) ? tipoDePlan : ''; }
+  // La última pregunta que se le hizo (para entender un «Sí» o un «No» suelto): sale del texto que de verdad se envía; si ese texto no termina en pregunta, se borra. Vuelve si Meta no aceptó el envío.
+  if (m && puerta.ruta === 'sigue') { ficha.ultimaPregunta = m.tipoReporte === 'image' ? '' : raUltimaPregunta(m.texto); ficha.ultimaPreguntaMs = ficha.ultimaPregunta !== '' ? ahora : 0; }
   // «Cancela mi pedido» con un QR abierto: se libera la guarda LOCAL del QR (si el servidor cerró el cobro, ya no hay nada abierto; si no, sigue hasta que venza); se restaura si la respuesta no sale (`Resumen del turno`).
   if ((tipoDePlan === 'derivar' || tipoDePlan === 'cobro_cerrado') && plan.liberaGuarda === true && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
   if (riesgoNuevo) ficha.riesgo = true;
