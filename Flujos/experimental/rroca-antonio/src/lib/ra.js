@@ -225,7 +225,7 @@ const RA_BOTON_BONOS = 'b_bonos';
 const RA_PRODUCTO_DE_BOTON = { b_pack: 'pack', b_libro: 'libro', b_workbook: 'workbook', b_guia: 'guia', b_calendario: 'calendario', b_preguntas: 'preguntas' };
 const RA_BOTON_ANTONIO = 'Escribirle a Antonio';
 // Los motivos de los avisos de consulta (la clave limita el aviso: uno cada 30 minutos por teléfono y clave).
-const RA_CLAVES_AVISO = ['factura', 'otro_medio_pago', 'garantia', 'reclamo', 'hablar_con_antonio', 'acceso_material', 'descuento', 'qr_no_disponible', 'no_entrega', 'no_supo', 'atencion_humana', 'comprobante_sin_cotejo', 'comprobante_sin_cobro', 'producto_agotado', 'cancelacion', 'qr_insistente', 'sin_configuracion'];
+const RA_CLAVES_AVISO = ['factura', 'otro_medio_pago', 'garantia', 'reclamo', 'hablar_con_antonio', 'acceso_material', 'descuento', 'qr_no_disponible', 'no_entrega', 'no_supo', 'atencion_humana', 'comprobante_sin_cotejo', 'comprobante_sin_cobro', 'producto_agotado', 'cancelacion', 'qr_insistente', 'sin_configuracion', 'pago_con_problema'];
 
 function raProductoDeBoton(id) {
   return Object.prototype.hasOwnProperty.call(RA_PRODUCTO_DE_BOTON, id) ? RA_PRODUCTO_DE_BOTON[id] : '';
@@ -633,6 +633,19 @@ const RA_TEXTO_RESULTADO = 'No puedo prometerte que tu relación se recupere en 
 function raTextoResultado(conOpciones) { return RA_TEXTO_RESULTADO + (conOpciones === false ? '' : '\n\n¿Quieres ver las opciones?'); }
 const RA_TEXTO_DOCUMENTO = 'Recibí tu archivo, pero por este chat solo puedo leer texto y los comprobantes de un pago en imagen o PDF. Cuéntame por escrito en qué te puedo ayudar.';
 const RA_TEXTO_IMAGEN = 'Recibí tu imagen, pero por este chat solo puedo leer texto y los comprobantes de un pago. Cuéntame por escrito en qué te puedo ayudar.';
+// ADOPCIÓN DE VISIÓN POR CATEGORÍAS (23/10/2026): ante una foto, una captura, una publicidad sin ángulo reconocido o «otro», el asistente dice lo que ve y ofrece lo que SÍ hace (el libro y los precios).
+// `descripcion` es la frase que ya saneó «Preparar imagen» (módulo común: sin enlaces, cifras largas, montos, instrucciones ni delimitadores) y SOLO se muestra: no viaja al modelo ni a la memoria.
+// Sin descripción (el clasificador no la dio o se descartó entera), el texto no inventa nada. Las alternativas evitan decir lo mismo dos veces seguidas (sin botón: no se deriva).
+function raTextoImagenDescrita(descripcion, documento, hashUltimo) {
+  const d = String(descripcion || '').replace(/[\s.,;:!?]+$/, '').trim();
+  const ofrece = 'Cuéntame qué necesitas sobre esto, o pregúntame por el libro y los precios.';
+  const lista = [
+    (d ? 'Veo ' + d + '.' : (documento === true ? 'Recibí tu archivo.' : 'Recibí tu imagen.')) + ' ' + ofrece,
+    (documento === true ? 'Ese archivo ya lo recibí.' : 'Esa imagen ya la recibí.') + ' Dime con palabras qué quieres saber, o pregúntame por el libro y los precios.',
+    'Aún no sé qué necesitas con eso. Escríbeme tu pregunta, o consulta por el libro y los precios.',
+  ];
+  return lista.find((x) => raHashTexto(x) !== hashUltimo) || lista[0];
+}
 const RA_TEXTO_AUDIO_NO_ENTENDIDO = 'No pude entender tu nota de voz. ¿Me la envías de nuevo o me cuentas por escrito?';
 const RA_TEXTO_AUDIO_CORTO = 'Tu nota de voz fue muy corta y no alcancé a entender qué necesitas.\n\n¿Me la repites un poco más completa o me lo cuentas por escrito?';
 const RA_TEXTO_AUDIO_LARGO = 'Tu nota de voz es muy larga para escucharla entera. ¿Me cuentas lo esencial por escrito o en un audio más corto?';
@@ -690,6 +703,12 @@ function raTextoDerivacion(motivo, salio, clave, base) {
     const c = 'Ahora mismo no puedo consultar la información necesaria para atenderte desde este chat.';
     if (salio === 'repetido') return c + ' Antonio ya recibió el aviso; si quieres, escríbele directo con el botón.';
     return salio === true ? c + ' Le avisé a Antonio; también puedes escribirle directo con el botón.' : c + ' No pude avisarle a Antonio; escríbele directo con el botón.';
+  }
+  // La captura de un pago que no se completó (categoría `pago_con_problema` del clasificador): NO se afirma qué pasó con el dinero (ni «reembolsado» ni «devuelto» ni «acreditado»); lo ve Antonio.
+  if (motivo === 'pago_con_problema') {
+    const c = 'Veo una captura donde el pago no se completó. Eso lo ve Antonio directamente';
+    if (salio === 'repetido') return c + '; Antonio ya recibió tu aviso anterior, y si quieres puedes escribirle directo con el botón.';
+    return salio === true ? c + '; le avisé, y también puedes escribirle con el botón.' : c + '. No pude avisarle; escríbele directo con el botón.';
   }
   if (motivo === 'qr_sin_aviso') return 'Por ahora no puedo mostrarte el QR de pago. Escríbele directo a Antonio con el botón.';
   if (motivo === 'sin_opciones') return salio === true ? 'Por ahora no puedo mostrarte las opciones de compra. Le avisé a Antonio; también puedes escribirle directo con el botón.' : 'Por ahora no puedo mostrarte las opciones de compra. No pude avisarle a Antonio; escríbele directo con el botón.';

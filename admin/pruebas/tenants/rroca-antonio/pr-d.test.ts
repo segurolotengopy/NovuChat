@@ -77,7 +77,7 @@ describe('C. con un QR abierto: se responde, no se repite el recordatorio, no se
     expect(d1.mensajes[0]!.cuerpo).toMatch(/Recibí tu archivo/);
     expect(d1.mensajes[0]!.cuerpo).not.toMatch(/\bsigo\b|tampoco/i);
     const d2 = hablar(w, ANA, mDocumento());
-    expect(d2.mensajes[0]!.cuerpo).toMatch(/Por aquí no puedo trabajar con ese archivo|No pude usar ese archivo|Ese archivo no lo puedo revisar/);
+    expect(d2.mensajes[0]!.cuerpo).toMatch(/Ese archivo ya lo recibí/);
     expect(d2.mensajes[0]!.cuerpo).not.toMatch(/\bsigo\b|tampoco/i);
   });
   it('«no quiero comprar» a secas, «ya no lo quiero» y «cancela mi pedido» siguen siendo cancelación: con el servidor caído, escalan', () => {

@@ -33,7 +33,7 @@ const avisoPlaneado = av.planeado === true;
 const avisoRepetido = av.repetido === true;
 const avisoEnviado = avisoPlaneado && (cnTodos('Enviar aviso').some(raId) || (prueba && cfg.enviarDeVerdad !== true));
 // Un aviso suprimido por el límite de 30 minutos trató OTRO contenido en los motivos de texto variable: ahí NO se dice «le avisé» de esta vez.
-const repetidoVariable = avisoRepetido && (av.clave === 'no_supo' || av.clave === 'comprobante_sin_cotejo' || av.clave === 'cancelacion' || av.clave === 'qr_insistente' || av.clave === 'sin_configuracion');
+const repetidoVariable = avisoRepetido && (av.clave === 'no_supo' || av.clave === 'comprobante_sin_cotejo' || av.clave === 'cancelacion' || av.clave === 'qr_insistente' || av.clave === 'sin_configuracion' || av.clave === 'pago_con_problema');
 const avisoSalio = avisoEnviado || (avisoRepetido && !repetidoVariable);
 const estadoAviso = repetidoVariable ? 'repetido' : avisoSalio;
 
@@ -176,6 +176,10 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     m = conAntonio(raTextoDerivacion(plan.motivo, estadoAviso, plan.clave, base));
     // Con un comprobante previo, «cancelar» no cancela: el evento `anulacion_avisada` solo avisa al servidor (viaja con el reporte del mensaje).
     if (plan.evento === 'anulacion_avisada') m.evento = 'anulacion_avisada';
+  } else if (tipoDePlan === 'imagen_descrita') {
+    // Dice lo que ve (descripción saneada por el módulo común, solo mostrada) y ofrece el libro y los precios. Sin botón de Antonio: no se deriva nada. Si es el primer mensaje, la presentación va en el MISMO mensaje.
+    const cuerpo = raTextoImagenDescrita(plan.descripcion, plan.documento === true, fichaAntes.ultimoHash);
+    m = texto(presentacion ? RA_SALUDO_APERTURA + '\n\n' + cuerpo : cuerpo);
   } else if (tipoDePlan === 'imagen_otra') {
     m = texto(plan.documento === true ? RA_TEXTO_DOCUMENTO : RA_TEXTO_IMAGEN);
   } else if (tipoDePlan === 'audio_fijo') {
@@ -195,7 +199,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
 // NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS (PR-D, [D]): si lo que sale es idéntico (por hash) a lo último que se le envió a este teléfono, sale una alternativa fija (con el botón de Antonio). Una derivación por cancelación, QR insistente o sin configuración repetida NO usa la alterna de contenido (no tiene sentido ahí): sale el texto de «Antonio ya recibió tu aviso anterior» y solo si también fuera idéntico, la alterna. Quedan EXENTOS el QR (su pie
 // lleva el pedido), el resultado de un comprobante (cada comprobante es un hecho distinto), la protección ante violencia o miedo (su texto fijo y breve nunca se sustituye), el texto a un número extranjero y lo que
 // contiene la presentación del asistente (qué ES: nunca se sustituye). Es el MISMO mensaje: no agrega ni quita ninguno.
-if (m && puerta.ruta === 'sigue' && m.tipoReporte !== 'image' && ['comprobante', 'riesgo', 'fuera_pais'].indexOf(tipoDePlan) < 0 && !/asistente virtual/i.test(String(m.texto || '')) && fichaAntes.ultimoHash !== '' && raHashTexto(m.texto) === fichaAntes.ultimoHash) {
+if (m && puerta.ruta === 'sigue' && m.tipoReporte !== 'image' && ['comprobante', 'riesgo', 'fuera_pais', 'imagen_descrita'].indexOf(tipoDePlan) < 0 && !/asistente virtual/i.test(String(m.texto || '')) && fichaAntes.ultimoHash !== '' && raHashTexto(m.texto) === fichaAntes.ultimoHash) {
   const medio = /^(audio|imagen|otro|archivo)/.test(tipoDePlan);
   const motivoDeriva = tipoDePlan === 'derivar' ? String(plan.motivo || '') : '';
   const repetidoDeriva = motivoDeriva === 'cancelacion' || motivoDeriva === 'qr_insistente' || motivoDeriva === 'sin_configuracion' ? raTextoDerivacion(motivoDeriva, 'repetido', plan.clave, base) : '';
