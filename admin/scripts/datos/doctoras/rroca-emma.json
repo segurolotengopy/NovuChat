@@ -18,6 +18,7 @@
   },
   "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA_RROCA_EMMA",
   "configBase": {
+    "tenantId": "rroca-emma",
     "waGraphVersion": "v26.0",
     "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_EMMA",
     "numeroRecepcion": "REEMPLAZAR_NUMERO_RECEPCION_RROCA_EMMA",
@@ -36,7 +37,6 @@
     "nombreCompleto": "Dra. Emma Aguilera Mozer",
     "clinica": "Emma Spa Medic",
     "especialidad": "especialista en armonización facial; aplica personalmente Sculptra® y Radiesse®",
-    "direccion": "Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055 (Santa Cruz)",
     "horario": "de lunes a viernes de 09:00 a 12:00 y de 14:00 a 18:00, y los sábados de 09:00 a 12:00",
     "horarioPorConfirmar": false,
     "tratamientos": [

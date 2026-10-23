@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
-import { TENANTS, datosDe, flujoDe } from './mundo';
+import { TENANTS, datosDe, flujoDe, negocioDe } from './mundo';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
@@ -219,7 +219,7 @@ describe('los DATOS de cada doctora', () => {
   });
   it('el bloque `doctora` va en `doctora`, no en `configBase`; y le faltan campos: se nombra cuál', () => {
     const a = evy(); a['configBase'].doctora = '{}'; expect(carga(a)).toMatch(/configBase\.doctora/);
-    const b = evy(); delete b['doctora'].direccion; expect(carga(b)).toMatch(/doctora\.direccion: falta/);
+    const b = evy(); b['doctora'].direccion = 'Av. X # 1'; expect(carga(b)).toMatch(/doctora\.direccion: la dirección se lee de la Consola/);
     const c = evy(); delete c['doctora']; expect(carga(c)).toMatch(/doctora: falta el bloque/);
     const d = evy(); delete d['doctora'].textos.precio; expect(carga(d)).toMatch(/doctora\.textos\.precio: falta/);
     const e = evy(); d['doctora'].tratamientos = []; expect(carga(e) + carga(d)).toMatch(/tratamientos: de 1 a 6/);
@@ -263,7 +263,7 @@ describe('el SANEO del repo público y la regla multi-tenant', () => {
     const literales = new Set<string>(['Evy', 'Emma', 'Enma', 'DentalCor', 'Radiesse', 'HArmonyCa', 'Sculptra', 'Piraí', 'Sapocó', 'Pauserna', 'Cotoca', 'Spa Medic', 'Rojas', 'Aguilera', 'Mozer']);
     for (const t of mod.tenantsConDatos()) {
       const d = (datosDe(t as 'rroca-evy')['doctora'] as J);
-      for (const campo of ['nombreCorto', 'nombreCompleto', 'clinica', 'direccion']) for (const w of String(d[campo]).split(/[^\p{L}]+/u)) if (w.length >= 5 && !/^(Clínica|Avenida|anillo|segundo|Santa|Calle|Medic|Canal|entre)$/i.test(w)) literales.add(w);
+      for (const campo of ['nombreCorto', 'nombreCompleto', 'clinica', 'direccion']) for (const w of String(campo === 'direccion' ? negocioDe(t as 'rroca-evy')['direccion'] : d[campo]).split(/[^\p{L}]+/u)) if (w.length >= 5 && !/^(Clínica|Avenida|anillo|segundo|Santa|Calle|Medic|Canal|entre)$/i.test(w)) literales.add(w);
       for (const tr of d['tratamientos'] as J[]) literales.add(String(tr['nombre']).replace(/[®™]/g, ''));
     }
     for (const a of SRC) {

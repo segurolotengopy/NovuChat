@@ -769,10 +769,33 @@ service cloud.firestore {
         // `split('-')`. Es lo mismo: una vez que `matches` pasó, el texto mide
         // exactamente 11 caracteres, `HH:MM-HH:MM`. Siete días × (un `get` más
         // dos `split`) era lo que más pesaba en `config/negocio` completo.
+        //
+        // VARIOS TRAMOS POR DÍA (23/10/2026, Andres: turno partido). Un día
+        // sigue siendo UN texto: `HH:MM-HH:MM` (un tramo, el formato de siempre)
+        // o hasta TRES tramos separados por coma sin espacios,
+        // `09:00-12:00,14:00-18:00`. Se conserva el texto porque los lectores del
+        // flujo (`agTramos`, `tramosDelDia`) ya parten por coma.
+        //
+        // LO QUE LA REGLA EXIGE Y LO QUE NO. La regex fija la FORMA (de uno a
+        // tres tramos, horas reales, sin espacios ni texto de más) y la
+        // comparación exige que el PRIMER tramo abra antes de cerrar, como antes.
+        // El orden entre tramos, el solape y el cierre > apertura del segundo y
+        // el tercero NO caben acá: se midió que una sola comparación más por día
+        // (siete días) deja `config/negocio` sin presupuesto de expresiones al
+        // denegar (`reglas-diferencial-config-negocio.test.ts`, parte B, rótulo
+        // LIMITE en vez de rechazo). Esos controles los hacen la consola al
+        // guardar y el servidor al LEER (`horario-tramos.ts`: un día mal ordenado
+        // o solapado se omite y no llega al asistente ni a los flujos). Lo que
+        // pasa por la regla sin esos controles solo puede ser una cadena con la
+        // forma `HH:MM-HH:MM` repetida hasta tres veces: no es texto libre ni una
+        // puerta de inyección al prompt.
+        //
+        // Sin `v is string`: `matches` sobre un valor que no es texto da error y
+        // la regla deniega, igual que antes; se ahorran dos expresiones por día
+        // de las que este cambio necesita.
         function horarioDiaValido(v) {
           return v == 'cerrado'
-            || (v is string
-                && v.matches('^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$')
+            || (v.matches('^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9](,([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]){0,2}$')
                 && v[0:5] < v[6:11]);
         }
 

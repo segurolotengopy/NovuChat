@@ -44,6 +44,7 @@ export const CONFIG_BASE = {
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
     filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
+    tipeo: ['../../src/core/texto/tipeo.js'],
   },
 };
 
@@ -147,7 +148,7 @@ const CIERRE_RUBRO_EXACTO = '¿Te gustaría ver nuestros planes? 🤝'; // (el e
 const CIERRE_PRECIOS_EXACTO = '¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝';
 const MARCADORES = ['asistente', 'negocio', 'cierreRubro', 'cierrePrecios', 'cierreEquipo'];
 const CLAVES_INSTRUCCIONES = ['rol', 'tono', 'rubros', 'cierreRubro', 'otros', 'precios', 'limites', 'restricciones', 'ambiguedad', 'abierta', 'salida', 'seguridad'];
-const CLAVES_CIERRES = ['rubro', 'precios', 'equipo', 'consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad', 'numeroActual', 'coexistencia'];
+const CLAVES_CIERRES = ['rubro', 'precios', 'equipo', 'costoMeta', 'integracion'];
 const CLAVES_RESPUESTAS = ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad', 'numeroActual', 'coexistencia'];
 const CLAVES_RESPALDOS = ['multiple', 'otroElegido', 'otroLibre', 'fuera', 'equipo', 'generico', 'identidad', 'cortesia', 'datosAmbos', 'datosSoloNombre', 'datosSoloEmpresa', 'datosNinguno', 'empresa', 'complemento', 'noDocumentado', 'sinDato'];
 const CLAVES_TEXTOS = ['saludo', 'listaBoton', 'listaTitulo', 'planesIntro', 'planesIntroRepite', 'planesIntroTopes', 'planesSinPrecios', 'traspasoConPregunta', 'traspasoSinPregunta',

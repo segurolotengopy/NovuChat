@@ -205,9 +205,9 @@ const CH_NUMERO_PROPIO = new RegExp([
   '\\b(?:se pierde|se perdera|se pierden|se borran?|se eliminan?|voy a perder|perdere|pierdo|perderia)\\b(?: \\w+){0,3} (?:mi numero|mis chats|mis conversaciones|mis contactos|mis grupos|mi whatsapp)\\b',
 ].join('|'));
 const CH_NUM_PREGUNTA = /^(?:y |entonces |oye |disculpa |hola |una pregunta )?(?:puedo|podria|podemos|se puede|puede|pueden|es posible|tengo que|debo|necesito|necesitamos|hay que|hace falta|seguira|seguiria|va a seguir|sirve|funciona|funcionara|que numero|cual numero|que chip|coexist\w*|conecto|como conecto|quiero usar|quisiera usar|queremos usar|quiero conectar|quisiera conectar)\b|\b(?:se puede|es posible|quiero saber|quisiera saber|queria saber|me pregunto|tengo una duda)\b/;
-const chCerca = (a, b) => { a = a.replace(/s$/, ''); if (a === b) return true; if (Math.abs(a.length - b.length) > 1) return false; let i = 0; while (a[i] === b[i]) i++; return a.slice(i + 1) === b.slice(i + 1) || a.slice(i) === b.slice(i + 1) || a.slice(i + 1) === b.slice(i) || (a[i + 1] === b[i] && a[i] === b[i + 1] && a.slice(i + 2) === b.slice(i + 2)); }, chTipeo = (n) => n.split(' ').map((w) => (w.length < 5 ? w : ['actual', 'numero', 'telefono', 'celular', 'whatsapp', 'coexisten', 'coexiste', 'coexistir', 'convivir'].find((c) => chCerca(w, c)) || w)).join(' '); // (tolera UN error de tipeo —letra de más, de menos, cambiada o dos intercambiadas— y el plural en las palabras clave: «acrual», «los telefonos»; sin esto la pregunta cae al modelo, que contesta «no lo tengo a la mano»)
+const CH_CLAVES_TIPEO = ['actual', 'coexisten', 'coexiste', 'coexistir', 'convivir', 'whatsapp', 'cobra', 'meta', 'mensajes', 'conversaciones', 'domingos', 'descuento', 'descuentos', 'rebaja', 'cuesta', 'cuestan', 'precio', 'precios', { c: 'numero', plural: true }, { c: 'telefono', plural: true }, { c: 'celular', plural: true }], CH_PROTEGIDAS_TIPEO = ['rebana', 'rebanada', 'rebanadas', 'premio', 'premios', 'cuenta', 'cuentas', 'cuesto', 'cuestas']; // Palabras a las que se corrige UN error de tipeo («acrual», «cobar», «domigos»); la corrección (`ctTipeo`, core/texto/tipeo.js) se aplica UNA vez a los eventos del turno, en chDecidir y chSituacion.
 function chPreguntaNumeroActual(t) {
-  const n = chTipeo(chNorm(t));
+  const n = chNorm(t);
   if (!/\b(?:numero|numeros|whatsapp|wasap|watsap|linea|chip|telefono|celular|chats|conversaciones|contactos|que ya tengo|coexist\w*)\b/.test(n)) return false;
   if (/\b(?:cuanto|cuanta|cuesta|cuestan|precio|precios|costo|costos|tarifa|tarifas)\b/.test(n) || /\bcon (?:mi|el|un|una|nuestro|nuestra) (?:sistema|erp|crm|software|programa|sap|excel|facturacion|contabilidad|tienda|calendario|pagina|sitio|web|base de datos)\b/.test(n)) return false;
   if (!/[?¿]/.test(chTexto(t)) && !CH_NUM_PREGUNTA.test(n)) return false;
@@ -713,7 +713,7 @@ function chPreguntaEmpresa(t) { const n = chNorm(t); return n !== '' && n.split(
 // «¿Atienden también los fines de semana?», «¿responde de noche?», «¿funciona en feriados?»: el documento dice «Atención en segundos 24/7». Una PREGUNTA sobre el servicio (no el horario del propio negocio del cliente).
 const CH_VERBO_HORARIO = '(?:atienden|atiende|responden|responde|contestan|contesta|funcionan|funciona|trabajan|trabaja|estan disponibles|esta disponible|opera|operan|hay atencion)';
 const CH_HORA_HORARIO = '(?:fines? de semana|sabados?|domingos?|feriados?|de noche|por la noche|en la noche|madrugada|cualquier hora|toda hora|todo el dia|las 24|24 horas|24 7|todos los dias|7 dias|siete dias|de dia y de noche)';
-const CH_PREGUNTA_HORARIO = new RegExp('\\b' + CH_VERBO_HORARIO + '\\b[^.?]{0,40}\\b' + CH_HORA_HORARIO + '\\b|\\b' + CH_HORA_HORARIO + '\\b[^.?]{0,40}\\b' + CH_VERBO_HORARIO + '\\b');
+const CH_PREGUNTA_HORARIO = new RegExp('\\b' + CH_VERBO_HORARIO + '\\b[^.?]{0,40}\\b' + CH_HORA_HORARIO + '\\b|\\b' + CH_HORA_HORARIO + '\\b[^.?]{0,40}\\b' + CH_VERBO_HORARIO + '\\b|\\ba que hora (?:atienden|abren|cierran|responden|contestan)\\b');
 function chPreguntaHorario(t) {
   const n = chNorm(t);
   const m = CH_PREGUNTA_HORARIO.exec(n);
@@ -832,7 +832,7 @@ function chPedirDatosAntes(f) {
   return !!f && f.nombrePedido !== true && f.planesMostrados !== true && f.equipoAhora !== true && !(chPlano(f.nombre) !== '' && chPlano(f.empresa) !== '');
 }
 function chDecidir(a) {
-  const ev = Array.isArray(a.eventos) ? a.eventos : [];
+  const ev = (Array.isArray(a.eventos) ? a.eventos : []).map((e) => (e && (e.k === 'texto' || e.k === 'audio') ? Object.assign({}, e, { c: ctTipeo(e.c, CH_CLAVES_TIPEO, CH_PROTEGIDAS_TIPEO) }) : e));
   const f = a.ficha;
   const cfg = a.cfg;
   const d = chDatos(cfg);
@@ -1386,7 +1386,7 @@ const CH_DECLINA = /\b(?:no (?:lo|la) tengo a la mano|no sabr\w+ decir\w* (?:eso
 function chDeclinaTexto(texto) { return chTexto(texto).split(/[.!?¿\n]+/).some((o) => CH_DECLINA.test(chNorm(o))); }
 const CH_SIN_RESPUESTA = ['otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico'];
 const CH_SIN_OFERTA = ['pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte'];
-const CH_FIJO_SIN_RESPUESTA = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual', 'coexistencia'];
+const CH_FIJO_SIN_RESPUESTA = ['costoMeta', 'integracion'];
 // ¿El texto que el MODELO escribió ofrece hablar con el equipo? (su pregunta final, o —si no tiene pregunta final— cualquier oración): sin depender de CÓMO declina, eso dice que no pudo resolver.
 function chOfreceAlEquipo(texto) { const q = chPreguntaFinal(texto); return CH_OFRECE_EQ.test(q) || (q === '' && /\bhablar con (?:alguien|una persona|(?:nuestro |el )?equipo)|\bun asesor\b/.test(chNorm(texto))); }
 // Las señales del turno, calculadas UNA vez. a = { plan, res (resultado del modelo), eventos, ficha (la de antes) }
@@ -1394,13 +1394,13 @@ function chSituacion(a) {
   const f = a.ficha || {};
   const p = a.plan || {};
   const r = a.res || {};
-  const textos = (a.eventos || []).filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').map((e) => e.c);
+  const textos = (a.eventos || []).filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').map((e) => ctTipeo(e.c, CH_CLAVES_TIPEO, CH_PROTEGIDAS_TIPEO));
   const t = textos.map(chNorm).join(' ');
   const ev = p.ruta === 'modelo' ? chTexto(r.origen === 'modelo' ? r.contexto : r.evento) : '';
   const rub = chTexto(p.rubroElegido || r.rubroId || f.rubro);
   const modeloOfreceEq = p.ruta === 'modelo' && r.origen === 'modelo' && chOfreceAlEquipo(r.texto);
   return {
-    ruta: p.ruta, fijo: chTexto(p.fijo), ev, aMedida: p.aMedida === true,
+    ruta: p.ruta, fijo: chTexto(p.fijo), ev, aMedida: p.aMedida === true, sinPlanes: p.sinPlanes === true,
     interes: CH_INTERES.test(t) || textos.some((c) => chPideCostoDelServicio(c)),
     acabadas: CH_FIN_PREGUNTAS.test(t) || (f.explicado === true && f.respondidas >= 2),
     // declina = el cliente propone una función no documentada para su rubro, o el modelo no la puede resolver (declina o la inventó)
@@ -1413,9 +1413,9 @@ const CH_TABLA = [
   { id: 'lista', cuando: (s) => s.ruta === 'lista', planes: false, equipo: false, nota: 'La lista de rubros (saludo o pitch del primer contacto): la lista misma es la salida; nada se ofrece antes de elegir rubro.' },
   { id: 'traspaso', cuando: (s) => s.ruta === 'equipo', planes: false, equipo: false, nota: 'El traspaso lleva su propio botón de contacto (enlace a recepción) y el aviso a recepción.' },
   { id: 'pide-datos', cuando: (s) => s.ruta === 'pedirNombre', planes: false, equipo: false, nota: 'Pidió planes y faltan nombre y negocio: se piden UNA vez, sin botón de planes (los planes salen al contestar).' },
-  { id: 'planes', cuando: (s) => s.ruta === 'planes', planes: false, equipo: true, nota: 'Los planes (o su tope y complemento): se acabaron las preguntas de precio, cierra con la oferta del equipo.' },
-  { id: 'consulta-sin-respuesta', cuando: (s) => s.ruta === 'fijo' && CH_FIJO_SIN_RESPUESTA.includes(s.fijo), planes: false, equipo: true, nota: 'Integración, costo de Meta, banco, descuento, consumo o el número propio del prospecto: el chat no lo resuelve, requiere al equipo.' },
-  { id: 'respuesta-fija', cuando: (s) => s.ruta === 'fijo', planes: false, equipo: false, nota: 'Identidad y disponibilidad: se contestan completas, sin invitaciones.' },
+  { id: 'planes', cuando: (s) => s.ruta === 'planes', planes: false, equipo: 'sinPlanes', nota: 'Los planes (o su tope y complemento): respuesta completa, sin botón del equipo; el botón sale solo al derivar, y deriva cuando no hay planes ni imagen que mostrar (si no, sería un callejón sin salida).' },
+  { id: 'consulta-sin-respuesta', cuando: (s) => s.ruta === 'fijo' && CH_FIJO_SIN_RESPUESTA.includes(s.fijo), planes: false, equipo: true, nota: 'Integración o costo de Meta: el chat no lo resuelve, deriva al equipo (el botón sale solo al derivar).' },
+  { id: 'respuesta-fija', cuando: (s) => s.ruta === 'fijo', planes: false, equipo: false, nota: 'Identidad, disponibilidad, banco, consumo, descuento, número propio y coexistencia: se contestan completas, sin invitaciones ni botón.' },
   { id: 'sin-respuesta', cuando: (s) => CH_SIN_RESPUESTA.includes(s.ev), planes: false, equipo: true, nota: 'Sin dato, no documentado, a medida («Otro»), cierre hacia el equipo o error del modelo: requiere al equipo.' },
   { id: 'rubro-declina', cuando: (s) => s.declina && (s.ev === 'rubro' || s.ev === 'multiple'), planes: true, equipo: true, nota: 'Eligió rubro y además propone una función no documentada: «Ver planes» y la salida al equipo.' },
   { id: 'declina-ofrece-equipo', cuando: (s) => s.declina && s.modeloOfreceEq && !['identidad', 'cortesia'].includes(s.ev), planes: false, equipo: true, nota: 'El modelo no pudo resolver y su pregunta final ofrece hablar con el equipo: se conserva esa oferta con su botón (aunque la pregunta traiga una palabra de interés).' },
@@ -1429,7 +1429,7 @@ const CH_TABLA = [
 // Aplica la tabla y las compuertas → { fila, planes, equipo, ordinaria, ofrecio } (`ofrecio` = lo que DE VERDAD saldrá como oferta: los botones).
 function chBotonesDe(s) {
   const fila = CH_TABLA.find((x) => x.cuando(s));
-  const v = (x) => x === true || (x === 'interes' && s.interes === true);
+  const v = (x) => x === true || (x === 'interes' && s.interes === true) || (x === 'sinPlanes' && s.sinPlanes === true);
   const planes = v(fila.planes) && !s.planesTocado && !s.planesVistos;
   const equipo = v(fila.equipo) && !s.equipoTocado;
   return { fila: fila.id, planes: planes, equipo: equipo, ordinaria: fila.id.startsWith('ordinaria'), ofrecio: planes && equipo ? 'ambas' : (planes ? 'planes' : (equipo ? 'equipo' : 'ninguna')) };
