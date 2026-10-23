@@ -3243,7 +3243,7 @@ describe('Medios entrantes: el agente recibe texto, nunca el audio ni la imagen'
       { codigo: Record<string, string> };
     for (const n of ['Preparar transcripción', 'Preparar imagen']) {
       expect(`${nodo(n).parameters.jsCode as string}\n`)
-        .toBe(readFileSync(join(aqui, '../../Flujos/src', m.codigo[n]!), 'utf8'));
+        .toBe([m.codigo[n]!].flat().map((r) => readFileSync(join(aqui, '../../Flujos/src', r), 'utf8')).join(''));
     }
   });
 

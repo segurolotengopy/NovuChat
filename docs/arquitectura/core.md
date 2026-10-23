@@ -474,6 +474,17 @@ gente no vuelve a escribir— y de la imagen **inventó** que era un comprobante
    credencial de Gemini tiene que ser de **nivel pago**: en el gratuito el
    contenido puede usarse para entrenar.
 
+   > **Enmendada el 23/10/2026 por decisión de Andres (H3, «Medios guardados»):
+   > lo que cambia es el «Nada se guarda».** Con la bandera `guardarMedios` del
+   > comercio encendida y el anexo aceptado por el cliente, los medios
+   > **entrantes** (audio, foto, PDF) se guardan 90 días en el almacén de
+   > medios. **Sin la bandera, nada se guarda**, y la regla de arriba sigue
+   > rigiendo tal cual. Lo que NO cambia: el asistente nunca ve el medio (regla
+   > 1) y el comprobante sigue las reglas de §4nonies.3. El texto de la regla 2
+   > queda arriba como histórico; el diseño está al final de este archivo, en
+   > «Medios guardados (H3)». **Reemplazado el 23/10/2026 por decisión de
+   > Andres**; no construido todavía.
+
 **Lo que cuesta: nada en mensajes.** Cero agregados. Los dos nodos nuevos
 contra Meta son de lectura (`media/mediaUrlGet` y la descarga del archivo) y
 estos caminos **reemplazan** a la respuesta vacía que ya se pagaba. El modelo
@@ -501,3 +512,75 @@ una persona lo mire (eso sería un depósito de medios en la consola, que no
 existe), ni reenviarlo al celular de recepción (§4.1 del mismo análisis: se
 pierde con la ventana cerrada y deja datos de salud en un teléfono sin
 retención).
+
+
+## Medios guardados (H3)
+
+> **Estado: DECIDIDO por Andres (20/10 y 22/10/2026, asentado el 23/10);
+> NO construido; el aspecto legal está PENDIENTE de revisión legal y del «sí»
+> de Andres.** Enmienda la regla 2 («Nada se guarda») de §4terdecies. Meta
+> (documentación oficial consultada el 23/10/2026): la URL de un medio entrante
+> expira a los 5 minutos; el id del medio en el webhook, a los 7 días; imagen
+> jpeg/png hasta 5 MB, audio aac/amr/mpeg/mp4/ogg-opus hasta 16 MB, documento
+> hasta 100 MB. Los topes de 5 / 16 / 10 MB que siguen son de NovuChat.
+
+### Decidido
+
+- **Qué:** guardar los medios **entrantes** del cliente final (audio, foto, PDF)
+  durante **90 días**, con TTL.
+- **Quién ve:** solo el admin y el operador del tenant, por una Function
+  auditada que devuelve **bytes**, nunca una URL pública. Soporte de NovuChat
+  **no ve los medios** (a diferencia de `verComprobante`).
+- **Baja del comercio:** los medios se borran al darlo de baja.
+- **Topes por medio:** imagen 5 MB, audio 16 MB, PDF 10 MB. El tipo se decide
+  por la **firma de los bytes**, no por lo que declare el remitente.
+- **Etapas:** 1 = guardar y ver u oír en la consola; 2 = enviar como persona
+  («Tomar») con medios.
+- **D1:** se guarda también con la conversación tomada (hoy «pausa = cero
+  descargas»).
+- **D2:** se bajan audios desde 720 kB hasta 16 MB **solo para guardarlos**, sin
+  transcribirlos.
+- **D3 (legal):** la bandera `guardarMedios` del comercio se enciende **solo
+  con el anexo aceptado por el cliente y el «sí» explícito de Andres**. El
+  consentimiento que antes se pensaba pedir al paciente en el chat
+  (`Analisis/38`) pasa a ser el anexo aceptado por el comercio.
+- **D4:** soporte no ve los medios.
+- **D5:** cupo de guardado por comercio y día: 1.000 medios o 2 GB.
+- **D6:** docx, xlsx y otros documentos **no** se guardan.
+- **Rutas:** Storage `tenants/{t}/medios/{fecha La Paz}/{objeto}.{ext}`;
+  Firestore `tenants/{t}/mediosRecibidos` con el campo `vence` y política TTL.
+- **Functions:** `guardarMedio` (la sube el flujo, porque la ingesta no tiene el
+  token de Meta; el receptor de AAB1 es de WhatsApp-Modular y no se toca),
+  `verMedio` y `purgarMedios`.
+- **Riesgo que se asume por escrito:** muchas fotos y PDF son datos de salud de
+  terceros; guardarlos es un dato personal más que custodiar (privacidad y
+  retención). Por eso la bandera nace apagada y la purga va antes que todo.
+
+### Pendiente (legal)
+
+- **PENDIENTE de revisión legal y de Andres:** la redacción del §9 del anexo
+  técnico y de SLA. Hay un borrador aparte,
+  `docs/contrato/anexo-tecnico-sla-v2-BORRADOR.md`; el anexo vigente no se toca.
+  El §13 del anexo exige acuerdo escrito del cliente cuando una versión reduce
+  un compromiso, y «Qué no se guarda» es uno.
+
+### Los 6 PR del plan (ninguno construido salvo PR-0)
+
+| PR | Contenido |
+|---|---|
+| PR-0 | Documentación: estas decisiones, la enmienda y el borrador del anexo |
+| PR-1 | `guardarMedio`, `purgarMedios` y las reglas de Firestore y Storage |
+| PR-2 | `verMedio` |
+| PR-3 | Script de la bandera `guardarMedios` por comercio |
+| PR-4 | Rama «Guardar medio» en el flujo de Cartera |
+| PR-5 | Consola: visor, y CSP con `media-src blob:` |
+
+### Antes de encender la bandera
+
+Verificar en la VM de n8n que `N8N_DEFAULT_BINARY_MODE=filesystem` y que la
+poda de ejecuciones (`EXECUTIONS_DATA_PRUNE`, `EXECUTIONS_DATA_MAX_AGE`) están
+activas: la regla 2 de §4terdecies dice que **no estaba hecho**, y sin eso los
+bytes quedan en la base de n8n fuera del plazo y del borrado de arriba. Ninguna
+bandera se enciende antes de que la purga esté desplegada y probada.
+
+**Costo en mensajes por conversación: 0** (guardar no envía nada).
