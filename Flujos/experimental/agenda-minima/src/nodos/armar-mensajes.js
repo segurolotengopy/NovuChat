@@ -271,9 +271,16 @@ switch (plan) {
     break;
   }
 
-  case 'imagen_sin_texto':
-    menu('Recibí tu imagen. ¿Qué necesitas?');
+  case 'imagen_sin_texto': {
+    // Con lectura del módulo común de medios se dice QUÉ se recibió (frase neutra, ya saneada). Nada clínico:
+    // este canal no valora fotos, y se dice. Sin lectura queda el texto de antes.
+    const ve = String(base.descripcionMedio || '').trim();
+    const que = base.categoriaMedio === 'captura_de_pantalla' ? 'captura' : 'imagen';
+    menu(ve
+      ? 'Recibí tu ' + que + ': ' + ve + '. Por este chat no puedo valorarla; si es para el doctor, escríbele a recepción con el botón. ¿Qué necesitas?'
+      : 'Recibí tu imagen. ¿Qué necesitas?');
     break;
+  }
 
   case 'emergencia': {
     // P3: solo el boton a recepcion y «ya le avise al doctor», con el texto de la configuracion.
@@ -319,10 +326,13 @@ switch (plan) {
     break;
   }
 
-  case 'derivar_medio':
+  case 'derivar_medio': {
+    const ve = String(base.descripcionMedio || '').trim();
     transferir('el paciente envió un mensaje que este canal no lee (foto, archivo u otro)',
-      'Por este chat solo puedo ayudarte a agendar, cancelar o mover citas. Para otra cosa, escríbele directo a recepción tocando el botón.');
+      (ve ? 'Recibí tu archivo: ' + ve + '. ' : '')
+      + 'Por este chat solo puedo ayudarte a agendar, cancelar o mover citas. Para otra cosa, escríbele directo a recepción tocando el botón.');
     break;
+  }
 
   case 'audio_ilegible': {
     const cuerpo = base.audioMuyLargo
