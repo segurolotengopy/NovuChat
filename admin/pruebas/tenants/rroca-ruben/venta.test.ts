@@ -104,6 +104,8 @@ interface Opciones {
   /** 'aprobadas': las dos plantillas de aviso en estado APPROVED en «Config base». Por omisión, lo que traen los datos (APPROVED desde el 19/10/2026); 'pendientes' fabrica PENDING. */
   plantillas?: 'aprobadas' | 'pendientes' | 'sin-nombre' | 'rechazada-consulta';
 }
+// Un catálogo SANO cuyos productos están todos agotados: es configuración (hay panel), pero no hay nada a la venta. (Un catálogo VACÍO ya no es esto: es «sin configuración», ver el bloque de 22/10/2026.)
+const TODO_AGOTADO = CATALOGO.map((i) => ({ ...i, agotado: true }));
 const PLANTILLAS_APROBADAS = { avisoComprobanteEstado: 'APPROVED', avisoConsultaEstado: 'APPROVED' };
 const RESPUESTA_DEL_MODELO = 'Qué buen punto. El libro te enseña paso a paso a usar la IA en tu negocio, sin ser experto. ¿A qué te dedicas?';
 // Lo que ve el cliente: el MISMO texto con la pregunta final en su propio párrafo (solo se reparten espacios en blanco).
@@ -998,7 +1000,7 @@ describe('+0 mensajes agregados al cliente y nunca textos prohibidos', () => {
     for (const k of ['closer', 'videos']) for (const c of [true, false]) textos.push(L.rrTextoComplemento(k, cat, c));
     for (const [p, sim] of [['pack', false], ['libro', false], ['closer', true], ['videos', false]] as const) for (const c of [true, false]) textos.push(L.rrPieQr(p, 60, 'RRABC1', c, sim));
     for (const q of [cat, {}]) for (const preg of ['', '¿a?', '¿b?']) textos.push(L.rrSaludo(q, preg));
-    for (const mot of ['sin_cobro', 'sin_medio', 'sin_precio', 'consulta', 'en_revision', 'qr_sin_aviso']) for (const s of [true, false, 'repetido']) textos.push(L.rrTextoDerivacion(mot, s));
+    for (const mot of ['sin_cobro', 'sin_medio', 'sin_precio', 'consulta', 'en_revision', 'qr_sin_aviso', 'sin_configuracion']) for (const s of [true, false, 'repetido']) textos.push(L.rrTextoDerivacion(mot, s));
     for (const clave of ['factura', 'garantia', 'otro_medio_pago', 'reclamo', 'no_entrega']) for (const s of [true, false]) textos.push(L.rrTextoDerivacion('consulta', s, clave));
     for (const r of ['cuadra', 'aproximado', 'reintentar', 'ilegible', 'ya_cotejado', 'simulado', 'sin_cotejo']) for (const c of ['', 'tardio', 'en_revision']) for (const s of [true, false, 'repetido']) textos.push(L.rrTextoComprobante(r, c, s, 'el comprobante dice 5 Bs y tu pedido es de 60 Bs').cuerpo);
     expect(textos.length).toBeGreaterThan(60);
@@ -2090,7 +2092,7 @@ describe('INVARIANTES DE UX · vigilados en TODOS los turnos de la batería (un 
   it('SIN OPCIONES: con el catálogo vacío o con todos los productos ya pulsados, nunca «Estas son las opciones» sin opciones: se deriva a Rubén (aviso + botón)', () => {
     const SIN = /Estas son las opciones|¿Cuál prefieres\?|¿Qué opción prefieres\?/;
     // Catálogo vacío (o agotado): «Ver precios» ya no se ofrece, pero un botón viejo, «precio» o un «Ver precios» de un saludo anterior no dejan al cliente sin una respuesta honesta.
-    for (const catalogo of [[], CATALOGO.map((i) => ({ ...i, agotado: true }))]) {
+    for (const catalogo of [TODO_AGOTADO, CATALOGO.map((i) => ({ ...i, agotado: true }))]) {
       const w = crear({ catalogo });
       // Cada tipo de entrada, con su propio teléfono ya saludado.
       let n = 0;
@@ -2670,7 +2672,7 @@ describe('OBSERVACIONES DE SILVANA (20/10/2026) · el saludo no ofrece a Rubén;
       expect(m.payload['interactive']?.type).not.toBe('cta_url');
     }
     // Sin catálogo: solo «Más información».
-    expect(titulos(unico(hablar(crear({ catalogo: [] }), ANA, mTexto('hola'))))).toEqual(['Más información']);
+    expect(titulos(unico(hablar(crear({ catalogo: TODO_AGOTADO }), ANA, mTexto('hola'))))).toEqual(['Más información']);
   });
 
   it('«Más información» responde por código con el libro y sus 4 bonos en párrafos, sin precios ni presentación, y debajo los botones de compra; ni el botón ni el saludo vuelven a ofrecerse', () => {
@@ -4752,7 +4754,7 @@ describe('ENTREGA 1 · [CATÁLOGO] «dame tu catálogo» responde por código lo
     const c = unico(hablar(w2, ANA, mTexto('qué vendes'))).cuerpo;
     expect(c).not.toContain('Closer de Ventas:');
     expect(c).toContain('Videos con IA: 25 Bs');
-    const w3 = crear({ catalogo: [] });
+    const w3 = crear({ catalogo: TODO_AGOTADO });
     hablar(w3, ANA, mTexto('hola'));
     const t = hablar(w3, ANA, mTexto('dame tu catálogo'));
     expect(avisosDe(t)).toHaveLength(1);
@@ -4865,7 +4867,7 @@ describe('CIERRE 2 · «ya cancelé» SIN QR abierto es «ya pagué»: pide el c
     }
   });
   it('sin opciones de compra el mismo texto sale con el botón de Rubén; con un QR abierto sigue el recordatorio y «cómo cancelo» no es un pago', () => {
-    const w = crear({ catalogo: [] });
+    const w = crear({ catalogo: TODO_AGOTADO });
     hablar(w, BETO, mTexto('hola'));
     const m = unico(hablar(w, BETO, mTexto('ya cancelé')));
     expect(m.cuerpo).toContain('Si ya pagaste');

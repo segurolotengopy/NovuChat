@@ -14,10 +14,10 @@
 //   qr_pendiente   ya hay un QR abierto Y el cliente habla de pagar o pide un producto: el recordatorio (un solo QR a la vez). Si ya fue lo último que se le dijo, se escala a Rubén (`derivar`, `qr_insistente`) en vez de repetirlo;
 //                  cualquier otra pregunta con un QR abierto se responde (info, bonos, capítulos, precio, catálogo, identidad, derivación, o el modelo) SIN abrir otro QR (`qrAbierto: true`);
 //   comprobante    el resultado del cotejo (o el de la prueba simulada) traducido por `cbResultadoVenta`;
-//   derivar        pasa a Rubén («cancela mi pedido» / «no quiero comprar» con un QR abierto: `cancelacion`, y libera la guarda LOCAL del QR; el flujo no puede cerrar la solicitud del servidor; factura, otro medio de pago, garantía, reclamo, una persona; o no hay QR utilizable): aviso + botón;
+//   derivar        pasa a Rubén («cancela mi pedido» / «no quiero comprar» con un QR abierto: `cancelacion`, y libera la guarda LOCAL del QR; el flujo no puede cerrar la solicitud del servidor; factura, otro medio de pago, garantía, reclamo, una persona; o no hay QR utilizable; o SIN CONFIGURACIÓN del negocio: `sin_configuracion`, el panel falló o no trae catálogo, cobro ni venta): aviso + botón;
 //   ingresos       «¿me garantiza ganar dinero?»: frase fija;
 //   modelo         una conversación libre: llama al modelo y le pone el menú;
-//   audio          una nota de voz que no se pudo usar (`variante`: largo, no_entendido, no_abierto, tope, apagado): texto fijo; una que SÍ se transcribió sigue la cadena del TEXTO (con `origen: 'audio'` si llega al modelo);
+//   audio          una nota de voz que no se pudo usar (`variante`: largo, no_entendido, no_abierto, tope, apagado): texto fijo; `no_entendido` también cubre una nota DUDOSA (menos de 3 palabras, muletillas o «no se oye»), que nunca llega al modelo; una que SÍ se transcribió sigue la cadena del TEXTO (con `origen: 'audio'` si llega al modelo);
 //   audio_pago     «ya pagué / transferí / te mando el comprobante» dicho por audio, sin QR abierto: texto fijo con el botón de Rubén, sin aviso (el pago nunca lo redacta el modelo);
 //   imagen_comprobante   una foto que PARECE un comprobante pero no hay pedido abierto: texto fijo con el botón; no se coteja ni se avisa;
 //   imagen_otra    un documento o una imagen que no se mira (`variante`: documento, archivo_no_aceptado, tope, no_vista, '' = visión apagada o formato no soportado): texto fijo; una imagen que SÍ se miró llega al modelo (`modelo` con `origen: 'imagen'`);
@@ -40,7 +40,7 @@ if (puerta.ruta !== 'sigue') return salir({ tipo: 'nada' });
 const panel = rrPanelDe(cnPrimero('Traer configuración'));
 const cat = rrCatalogo(panel.cuerpo);
 const cobro = rrCobro(panel, base);
-const ficha = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from));
+const ficha = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora);
 // UN NÚMERO DE OTRO PAÍS: se le responde UNA vez al día (el texto fijo con el botón de Rubén) y dentro del día no se le responde. Ni QR, ni descarga de medios, ni aviso, ni modelo.
 // No tienen ficha: solo `{ número: hora }` en `rrExtranjeros`, y un contador GLOBAL por hora (`rrTopes.extranjeros`, configurable en «Config base»: `topeExtranjerosHora`); lleno, silencio y sin costo.
 if (t.extranjero === true) {
@@ -55,6 +55,10 @@ const deAudio = !!au && au.estado === 'ok';
 const textoTurno = deAudio ? au.texto : String(t.texto || '');
 medioExtra = { oyoAudio: cnNodo('Transcribir audio') !== null, vioImagen: cnNodo('Ver imagen') !== null, entradaHistorial: deAudio ? rrHistorialAudio(au.texto) : '' };
 const norm = rrNorm(textoTurno);
+// Un «Sí» o un «No» suelto con una pregunta nuestra vigente (30 min): el modelo recibe la pregunta como DATO y qué hacer con ella (port de rroca-antonio). Sin pregunta vigente, nada. Nunca abre un QR ni un cobro por sí solo:
+// solo cambia lo que el modelo ve; el QR lo abre el código con un producto elegido.
+const respSuelta = ficha.ultimaPregunta !== '' ? rrRespuestaSuelta(norm) : '';
+const respuestaAPregunta = respSuelta ? { tipo: respSuelta, pregunta: ficha.ultimaPregunta } : null;
 const hayQrAbierto = cobro.pendiente === true || ficha.qrHastaMs > ahora;
 const producto = ficha.producto || '';
 // El aviso de consulta a Rubén lleva el MOTIVO exacto (`clave` + `motivo`). El límite (a lo más UN aviso cada 30 minutos por teléfono Y por motivo) lo aplica «Armar avisos», que ve la ficha.
@@ -81,6 +85,17 @@ const planDeImagenVista = (lec) => {
   }
   return salir({ tipo: 'imagen_otra', variante: 'no_vista', cat: cat }, h('no_vista'));
 };
+
+// 0. SIN CONFIGURACIÓN (22/10/2026, port de rroca-antonio): si «Traer configuración» falló (401, 500, timeout, cuerpo vacío) o no trae catálogo, cobro ni venta, el flujo NO improvisa (ni el modelo, ni «no puedo mostrarte el QR»
+// como si solo faltara el QR, ni precios): texto honesto, aviso a Rubén (cubeta `derivaciones`, una vez cada 30 minutos por teléfono) y botón. El comprobante de una imagen tampoco se coteja a ciegas. Con una imagen, un documento o un
+// toque no se copia texto del cliente al aviso. (El audio ya se bajó y transcribió río arriba —eso no se puede evitar sin un nodo nuevo—, pero su transcripción solo viaja, enmascarada, en el aviso a Rubén.)
+if (rrSinConfiguracion(panel)) {
+  const visual = t.categoria === 'medio' && !deAudio;
+  const aviso = visual
+    ? { tipo: 'consulta', clave: 'sin_configuracion', motivo: 'envió una imagen o un archivo (posible comprobante) mientras la configuración no estaba disponible', mensaje: '' }
+    : avisoDeConsulta('sin_configuracion', 'el asistente no pudo leer la configuración del negocio (catálogo, cobro o venta)');
+  return salir({ tipo: 'derivar', motivo: 'sin_configuracion', clave: 'sin_configuracion', aviso: aviso, cat: cat });
+}
 
 // 1. Un comprobante (o la foto de la prueba simulada).
 if (t.esComprobante === true || t.comprobanteSimulado === true) {
@@ -219,12 +234,15 @@ if (deAudio && !hayQrAbierto) {
 // «No quiero comprar, solo quiero saber más de los capítulos»: un cliente que mira recibe el contenido (capítulos, bonos o la información general), no una cancelación.
 const tema = rrTemaDeInfo(norm) || (cancelacion === 'curioso' ? (/\bcapitulos?\b/.test(norm) ? 'capitulos' : (/\bbonos?\b/.test(norm) ? 'bonos' : 'info')) : '');
 if (tema) return salir(ficha.saludado ? { tipo: 'info', tema: tema, cat: cat, qrAbierto: hayQrAbierto } : { tipo: 'saludo', pregunta: 'general', cat: cat });
+// AUDIO DUDOSO (22/10/2026, port de `raAudioIlegible` de rroca-antonio): una nota de voz cuya transcripción tiene menos de 3 palabras (sin muletillas), menos de 8 letras o una marca de «no se oye» y que el código no atendió arriba
+// (precio, catálogo, información, pago, derivación, identidad…) NO llega al modelo: texto fijo «no se escuchó bien», sin modelo y sin aviso. Un saludo («hola»), que es válido, sigue su camino.
+if (deAudio && rrAudioDudoso(norm) && !/^(hola|holi|holas|buenas|buen dia|buenos dias|buenas tardes|buenas noches|hey|ola)( ruben)?$/.test(norm)) return salir({ tipo: 'audio', variante: 'no_entendido', cat: cat });
 // Con un QR abierto, lo que queda: pedir un producto (recordatorio), una pregunta (el modelo, sin QR) o cualquier otra cosa (recordatorio).
 if (hayQrAbierto) {
   if (rrPideProducto(norm) || !rrEsPreguntaLibre(textoTurno, norm)) return salir(recordatorio(''));
   return salir({ tipo: 'modelo', origen: deAudio ? 'audio' : '', cat: cat, qrAbierto: true, textoCliente: (deAudio ? '(audio) ' + rrEnmascarar(textoTurno) : textoTurno).slice(0, 500), textoRevision: textoTurno.slice(0, 500) }, {
     llamarModelo: true,
-    cuerpoModelo: deAudio ? rrCuerpoModelo(rrEtiquetaAudio(au), rrHistorialVigente(ficha, ahora), { rotulado: true, tope: RR_TOPE_AUDIO_MODELO + 100 }) : rrCuerpoModelo(t.texto, rrHistorialVigente(ficha, ahora)),
+    cuerpoModelo: deAudio ? rrCuerpoModelo(rrEtiquetaAudio(au), rrHistorialVigente(ficha, ahora), { rotulado: true, tope: RR_TOPE_AUDIO_MODELO + 100, respuesta: respuestaAPregunta }) : rrCuerpoModelo(t.texto, rrHistorialVigente(ficha, ahora), { respuesta: respuestaAPregunta }),
   });
 }
 if (!ficha.saludado && rrEsSoloSaludo(norm)) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
@@ -236,6 +254,6 @@ if (anuncio && anuncio.clave === 'desde_32') {
 }
 return salir({ tipo: 'modelo', origen: deAudio ? 'audio' : '', cat: cat, textoCliente: (deAudio ? '(audio) ' + rrEnmascarar(textoTurno) : textoTurno).slice(0, 500), textoRevision: textoTurno.slice(0, 500) }, {
   llamarModelo: true,
-  cuerpoModelo: deAudio ? rrCuerpoModelo(rrEtiquetaAudio(au), rrHistorialVigente(ficha, ahora), { rotulado: true, tope: RR_TOPE_AUDIO_MODELO + 100 })
-    : rrCuerpoModelo(t.texto, rrHistorialVigente(ficha, ahora)),
+  cuerpoModelo: deAudio ? rrCuerpoModelo(rrEtiquetaAudio(au), rrHistorialVigente(ficha, ahora), { rotulado: true, tope: RR_TOPE_AUDIO_MODELO + 100, respuesta: respuestaAPregunta })
+    : rrCuerpoModelo(t.texto, rrHistorialVigente(ficha, ahora), { respuesta: respuestaAPregunta }),
 });
