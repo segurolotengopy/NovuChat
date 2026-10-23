@@ -194,7 +194,7 @@ describe('revisión de #588', () => {
     const w = nuevo({ medio: { transcripcion: 'eh' } });
     const a = hablar(w, ANA, mAudio());
     expect(a.mensajes).toHaveLength(1);
-    expect(a.mensajes[0]!.cuerpo).toMatch(/^¡Hola![^\n]*asistente virtual de Antonio Dauber\.\n\n[\s\S]*muy corta/);
+    expect(a.mensajes[0]!.cuerpo).toMatch(/^¡Hola![^\n]*asistente virtual del Método Puente\.\n\n[\s\S]*muy corta/);
     const b = hablar(w, ANA, mAudio());
     expect(b.mensajes[0]!.cuerpo).not.toMatch(/asistente virtual/);
   });
@@ -262,7 +262,7 @@ describe('B. saludo fijo en el primer turno y el menú no antes de tiempo', () =
     const w = nuevo({ modeloDice: () => `Te escucho con atención, gracias por contarlo. ¿Desde cuándo pasa esto? (${++n})` });
     const a = hablar(w, ANA, mTexto('estamos discutiendo mucho y no sé qué hacer'));
     expect(a.ejecutados.has('Conversar con el modelo')).toBe(false);
-    expect(a.mensajes[0]!.cuerpo).toMatch(/asistente virtual de Antonio Dauber/);
+    expect(a.mensajes[0]!.cuerpo).toMatch(/asistente virtual del Método Puente/);
     expect(a.mensajes[0]!.cuerpo).not.toMatch(/Bs/);
     const b = hablar(w, ANA, mTexto('desde hace meses'));
     expect(b.ejecutados.has('Conversar con el modelo')).toBe(true);

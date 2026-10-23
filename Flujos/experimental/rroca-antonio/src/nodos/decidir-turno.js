@@ -25,6 +25,7 @@ const cfg = cnCfg();
 const t = cnPrimero('Normalizar entrada') || {};
 const puerta = cnPrimero('Puerta del turno') || {};
 const base = cnPrimero('Config base') || {};
+raFijarNombre(cfg.nombreNegocio, base.nombreNegocio);   // el nombre sale de la consola; «Config base» y luego «Método Puente» son el respaldo
 const from = String(t.from || '');
 const ahora = Number(t.ahoraMs) || Date.now();
 let textoDelTurno = '';   // lo que escribió (o dijo) el cliente en este turno: «Armar mensajes» lo guarda en la memoria de la charla

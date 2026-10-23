@@ -75,7 +75,7 @@ export const MEDIA_QR = 'media-qr-1';
 export const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({
   statusCode: 200,
   body: {
-    tenantId: 'rroca-antonio', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'El Puente' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, atencion: { estado: 'normal' },
+    tenantId: 'rroca-antonio', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Método Puente' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, atencion: { estado: 'normal' },
     catalogo: CATALOGO.map((c) => ({ ...c })),
     venta: { mediaIdQr: MEDIA_QR },
     cobroReal: { nombreCuenta: 'Cuenta del comercio', banco: 'Banco' },

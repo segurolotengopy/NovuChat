@@ -3,7 +3,7 @@
  * `vigilarUx(mundo)` envuelve `mundo.turno`: cada escenario que habla con el flujo pasa por aquí, así que los invariantes valen en TODA la batería (no en estados sueltos). Invariantes:
  *   1. UN BOTÓN (O FILA DE LISTA) YA PULSADO NO REAPARECE en ningún mensaje posterior de esa conversación, por teléfono; tampoco el del producto cuyo QR abrió un prellenado;
  *   2. NO SE OFRECE ALGO ANTES DE TIEMPO: el QR solo sale si en ese turno el cliente eligió un producto (botón, fila de la lista o prellenado del Pack o del Libro), y ningún texto de pago aparece sin QR;
- *   3. UNA SOLA PRESENTACIÓN por mensaje Y UNA POR TELÉFONO: «asistente virtual de Antonio» (y el saludo largo) sale a lo más una vez en toda la conversación;
+ *   3. UNA SOLA PRESENTACIÓN por mensaje Y UNA POR TELÉFONO: «asistente virtual del Método Puente» (y el saludo largo) sale a lo más una vez en toda la conversación;
  *   4. PÁRRAFOS: cada párrafo (separado por una línea en blanco) tiene a lo más DOS oraciones y, con dos, a lo más 220 caracteres; sin saltos triples ni espacios sobrantes. La partición en oraciones es la
  *      de la LIBRERÍA (`raOraciones` de `ra.js`): no puede haber desacuerdo entre quien reparte y quien vigila;
  *   5. NINGUNA PREGUNTA POR OPCIONES SIN BOTONES: un texto que pregunta por «las opciones», «¿cuál prefieres?» o «¿con cuál…?» sale con al menos un botón o una lista en ese mismo mensaje;
@@ -60,7 +60,7 @@ export function violacionesDeParrafos(cuerpo: string): string[] {
   return v;
 }
 /** ¿Este mensaje contiene la presentación del asistente (la frase de presentación o el saludo largo)? */
-export const esPresentacion = (cuerpo: string): boolean => /asistente virtual de antonio|qu[eé] gusto saludarte/i.test(cuerpo);
+export const esPresentacion = (cuerpo: string): boolean => /asistente virtual del m[eé]todo puente|qu[eé] gusto saludarte/i.test(cuerpo);
 /** Los planes que resuelven (no derivan): jamás llevan el botón de contacto de Antonio. El de `comprobante` depende del resultado y no se vigila aquí. */
 export const PLANES_SIN_BOTON = ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'precio', 'catalogo', 'imagenes', 'resultado', 'menu', 'bonos', 'complemento', 'qr', 'qr_pendiente', 'imagen_descrita', 'imagen_otra', 'audio_fijo', 'archivo', 'otro', 'riesgo', 'suspendido'];
 /** Los planes que derivan a Antonio: siempre con el botón. */

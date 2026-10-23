@@ -13,6 +13,7 @@
 // VIOLENCIA O MIEDO: si «Decidir turno» la detectó, o el modelo contestó la marca RIESGO, sale SOLO el texto fijo («Este asistente no atiende ese tipo de consultas.»: sin botones, sin QR, sin precios, sin aviso a Antonio) y el mensaje se reporta con el evento `no_contactar`.
 const cfg = cnCfg();
 const base = cnPrimero('Config base') || {};
+raFijarNombre(cfg.nombreNegocio, base.nombreNegocio);   // el nombre sale de la consola; «Config base» y luego «Método Puente» son el respaldo
 const t = cnPrimero('Normalizar entrada') || {};
 const puerta = cnPrimero('Puerta del turno') || {};
 const decision = cnPrimero('Decidir turno') || {};
@@ -69,7 +70,7 @@ const usadosHoy = () => fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : [])
 // Un prellenado con producto ya decidido (Workbook, Calendario/Preguntas) SÍ muestra el precio y los botones con montos desde el primer mensaje, y el Pack o el Libro van directo al QR con su monto.
 const menuAbierto = () => (fichaAntes.saludado ? raMenu(cat, usadosHoy()) : []);
 const presentacion = !fichaAntes.saludado;
-const conPresentacion = (cuerpo) => (presentacion ? RA_SALUDO_APERTURA + '\n\n' + cuerpo : cuerpo);
+const conPresentacion = (cuerpo) => (presentacion ? raSaludoApertura() + '\n\n' + cuerpo : cuerpo);
 
 // La protección ante violencia o miedo se arma aunque la puerta no «siga» (comercio suspendido, estado «operador») o el número no sea boliviano.
 const rutaDelTurno = tipoDePlan === 'riesgo' ? 'sigue' : puerta.ruta;
@@ -179,20 +180,20 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
   } else if (tipoDePlan === 'imagen_descrita') {
     // Dice lo que ve (descripción saneada por el módulo común, solo mostrada) y ofrece el libro y los precios. Sin botón de Antonio: no se deriva nada. Si es el primer mensaje, la presentación va en el MISMO mensaje.
     const cuerpo = raTextoImagenDescrita(plan.descripcion, plan.documento === true, fichaAntes.ultimoHash);
-    m = texto(presentacion ? RA_SALUDO_APERTURA + '\n\n' + cuerpo : cuerpo);
+    m = texto(presentacion ? raSaludoApertura() + '\n\n' + cuerpo : cuerpo);
   } else if (tipoDePlan === 'imagen_otra') {
     m = texto(plan.documento === true ? RA_TEXTO_DOCUMENTO : RA_TEXTO_IMAGEN);
   } else if (tipoDePlan === 'audio_fijo') {
     // Si es el primer mensaje del teléfono, la presentación fija va en el MISMO mensaje, en su propio párrafo (sin agregar un envío).
     const fijoAudio = plan.causa === 'largo' ? RA_TEXTO_AUDIO_LARGO : (plan.causa === 'corto' ? RA_TEXTO_AUDIO_CORTO : plan.causa === 'no_entendido' ? RA_TEXTO_AUDIO_NO_ENTENDIDO : RA_TEXTO_ARCHIVO_NO_ABIERTO);
-    m = texto(presentacion ? RA_SALUDO_APERTURA + '\n\n' + fijoAudio : fijoAudio);
+    m = texto(presentacion ? raSaludoApertura() + '\n\n' + fijoAudio : fijoAudio);
   } else if (tipoDePlan === 'archivo') {
     m = texto(plan.pesado === true ? RA_TEXTO_ARCHIVO_PESADO : RA_TEXTO_ARCHIVO_NO_ABIERTO);
   } else if (tipoDePlan === 'otro') {
     m = texto(RA_TEXTO_CORTES);
   } else {
     // Un plan desconocido jamás deja al cliente sin respuesta: la presentación mínima.
-    m = texto(RA_SALUDO_MINIMO);
+    m = texto(raSaludoMinimo());
   }
 }
 

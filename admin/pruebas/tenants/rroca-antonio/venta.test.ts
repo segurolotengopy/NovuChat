@@ -35,7 +35,7 @@ describe('el saludo: una presentación, una pregunta, sin montos', () => {
     const t = hablar(w, ANA, mTexto('hola'));
     expect(t.mensajes).toHaveLength(1);
     const tx = t.mensajes[0]!.cuerpo;
-    expect(tx).toMatch(/asistente virtual de Antonio Dauber/);
+    expect(tx).toMatch(/asistente virtual del Método Puente/);
     expect(tx).toMatch(/volver a escucharse, discutir menos o recuperar la cercanía/);
     expect(tx.match(/\?/g)).toHaveLength(1);
     expect(tx).not.toMatch(/\d+\s*Bs|Bs\s*\d/i);
@@ -81,7 +81,7 @@ describe('la conversación libre: el modelo conversa, el código calcula', () =>
     const malos = [
       'El Pack cuesta 49 Bs y es lo mejor.', 'Mañana te llamo para contarte más.', 'Mira www.ejemplo.com para ver más.', 'No soy un bot, soy una persona real.',
       'Soy psicólogo y te puedo ayudar.', 'Tu pago fue acreditado, gracias.', '¿Desde cuándo? ¿Y qué han intentado?', 'Te garantizo que van a reconciliarse.',
-      'Elige una opción de compra con los botones.', 'Soy el asistente virtual de Antonio, encantado.', 'Pagaste con el QR del banco Mercantil.',
+      'Elige una opción de compra con los botones.', 'Soy el asistente virtual del Método Puente, encantado.', 'Pagaste con el QR del banco Mercantil.',
     ];
     for (const crudo of malos) {
       const w = nuevo({ modeloDice: crudo });
@@ -156,7 +156,7 @@ describe('las entradas: 5 prellenados y 7 ángulos de anuncio', () => {
     expect(m.tipo).toBe('image');
     expect(m.payload['image'].id).toBe(MEDIA_QR);
     expect(JSON.stringify(m.payload)).not.toMatch(/"link"/);
-    expect(m.cuerpo).toMatch(/asistente virtual de Antonio/);
+    expect(m.cuerpo).toMatch(/asistente virtual del Método Puente/);
     expect(m.cuerpo).toMatch(/ingresa exactamente 49 Bs/);
     expect(m.cuerpo).toMatch(/Pedido #AN/);
     expect(m.cuerpo).not.toMatch(/banco|titular|cuenta|mercantil/i);
@@ -208,7 +208,7 @@ describe('las entradas: 5 prellenados y 7 ángulos de anuncio', () => {
       const t = hablar(w, ANA, mTexto(titular));
       expect(t.mensajes, angulo).toHaveLength(1);
       expect(sistema, angulo).toContain('llegó por un anuncio sobre');
-      expect(t.mensajes[0]!.cuerpo, angulo).toMatch(/asistente virtual de Antonio/);
+      expect(t.mensajes[0]!.cuerpo, angulo).toMatch(/asistente virtual del Método Puente/);
       const w2 = nuevo({ modeloDice: 'cae' });
       const f = hablar(w2, ANA, mTexto(titular));
       expect(f.mensajes[0]!.cuerpo, angulo).not.toMatch(/\d+\s*Bs/);

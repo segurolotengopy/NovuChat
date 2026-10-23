@@ -206,9 +206,9 @@ describe('11. el vigilante de UX, probado con casos negativos (una regla que nun
     expect(violacionesDeUx(new Set(), toque('b_pack'), [boton('b_pack')]).join()).toMatch(/reapareció/);
     expect(violacionesDeUx(new Set(), mTexto('hola'), [{ tipo: 'image', cuerpo: 'qr', payload: {} }]).join()).toMatch(/sin que el cliente eligiera/);
     expect(violacionesDeUx(new Set(), mTexto('hola'), [msg('Escanea el QR y paga.')]).join()).toMatch(/texto de pago fuera del QR/);
-    expect(violacionesDeUx(new Set(), mTexto('hola'), [msg('Soy el asistente virtual de Antonio. Soy el asistente virtual de Antonio.')]).join()).toMatch(/más de una vez/);
+    expect(violacionesDeUx(new Set(), mTexto('hola'), [msg('Soy el asistente virtual del Método Puente. Soy el asistente virtual del Método Puente.')]).join()).toMatch(/más de una vez/);
     const pres = { n: 1 };
-    expect(violacionesDeUx(new Set(), mTexto('hola'), [msg('Soy el asistente virtual de Antonio.')], pres).join()).toMatch(/más de una vez en la conversación/);
+    expect(violacionesDeUx(new Set(), mTexto('hola'), [msg('Soy el asistente virtual del Método Puente.')], pres).join()).toMatch(/más de una vez en la conversación/);
     expect(violacionesDeUx(new Set(), mTexto('hola'), [msg('¿Cuál prefieres?')]).join()).toMatch(/opciones pero el mensaje no trae/);
   });
   it('un título de botón de más de 20, una fila de más de 24, más de 3 botones, una clave `link` y un párrafo corrido se detectan', () => {
