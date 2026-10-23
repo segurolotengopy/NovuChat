@@ -314,7 +314,7 @@ describe('segunda ronda de la revisión de seguridad (#364): nombre, disparador,
     }
     for (const nombre of [BELLIDO, 'NovuChat Demo A — Agendamiento (Belleza y Salud)', 'demo a de prueba']) {
       nuevo(vivoDe(nombre));
-      expect((await correr('--aplicar')).codigo, nombre).toBe(0);
+      const rr = await correr('--aplicar'); expect(rr.codigo, nombre + ' :: ' + rr.salida).toBe(0);
     }
   });
   it('NIEGA: un enlace simbólico DENTRO del repositorio que apunta a un archivo de afuera no es el candidato', async () => {
