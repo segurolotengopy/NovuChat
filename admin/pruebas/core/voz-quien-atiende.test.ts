@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import {
   quienAtiende, tratamientoClave, tratamientoEfectivo, instruccionesDeVoz, motivoQuienAtiendeInvalido,
   QUIEN_RE_CARACTERES, QUIEN_RE_VOCABULARIO,
@@ -58,7 +59,7 @@ describe('una sola fuente de patrones: servidor, consola y regla', () => {
   const valorDe = (fuente: string, nombre: string): string => {
     const ini = fuente.indexOf(`${nombre} =`);
     const fin = fuente.indexOf(';', ini);
-    return new Function(`return (${fuente.slice(ini + nombre.length + 2, fin)})`)() as string;
+    return runInNewContext(`(${fuente.slice(ini + nombre.length + 2, fin)})`) as string;
   };
   it('las cadenas de la regla y de la consola son las del servidor', () => {
     const enRegla = (c: string): string => c.replace(/\\/g, '\\\\');
