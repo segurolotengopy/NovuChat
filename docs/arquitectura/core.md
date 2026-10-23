@@ -109,6 +109,37 @@ Los del bloque de 25 respuestas por conversación y los umbrales de operador y
 bloqueo (`ingesta.ts`, `atencion.ts`). La tabla completa de límites, con su
 estado, está en `limites.md` y en `docs/base-comercial.md` §7.
 
+También el **cupo diario de medios guardados** (1.000 medios o 2 GB por comercio
+y día; `core/medios/guardarMedio.ts`, contador `cuposDeMedios/{día}`), y los
+topes por tipo (imagen 5 MB, audio 16 MB, PDF 10 MB).
+
+## Medios entrantes guardados (H3, PR-1; Andres 20, 22 y 23/10/2026)
+
+Esto **corrige** la nota de «Lo que este bloque NO hace» de §4terdecies («guardar
+el medio para que una persona lo mire»): desde el 20/10 se guardan los medios
+**entrantes** (audio, foto, PDF) 90 días, y la bandera por comercio
+`guardarMedios` (ficha del tenant) está **apagada por defecto**. Se enciende solo
+con el anexo aceptado y el «sí» de Andres, por el script de plataforma (PR-3), no
+por el comercio: la ficha no la escribe ningún navegador.
+
+- **`guardarMedio`** (HTTP, solo el token por número; una firma se rechaza):
+  409 con la bandera apagada; 400 por teléfono o `idMeta` inválidos; 413 por el
+  tope del tipo; 415 por la firma de los bytes (SVG, HTML, docx y xlsx no se
+  guardan); 409 `sin_mensaje` si no hay un mensaje **entrante** del mismo tipo con
+  ese `idMeta` de hace 30 minutos o menos (impide llenar el depósito con un token
+  robado); 429 con el cupo del día lleno. Un repetido responde 200 sin reescribir.
+  No es un comprobante: no toca `solicitud`, `cierres`, `comprobantesRecibidos`,
+  `metricas` ni `conteo`.
+- **Datos:** Storage `tenants/{t}/medios/{aaaa-mm-dd La Paz}/{sha256(idMeta)}.{ext}`
+  (sin teléfono en la ruta ni en los metadatos; las reglas niegan todo acceso) y
+  Firestore `tenants/{t}/mediosRecibidos/{sha256(idMeta)}` con TTL sobre `vence`.
+- **`purgarMedios`** (03:45 La Paz): borra las carpetas de más de 90 días y, con
+  la baja del comercio, el prefijo entero y sus colecciones.
+- **Quién lo ve:** nadie todavía. El visor (callable auditada que devuelve bytes,
+  con tope, solo admin y operador; soporte no) es el PR-2.
+- `almacen.ts` es copia declarada del de `modulos/cobros/comprobantes.ts` (Core no
+  importa módulos); que Cobros importe de Core es un PR aparte del agente `modulo`.
+
 ## Secciones movidas desde `admin/DISENO.md`
 
 Texto original, sin cambios. Cada bloque dice de qué sección viene.

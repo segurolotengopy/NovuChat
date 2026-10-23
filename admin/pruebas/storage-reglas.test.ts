@@ -559,4 +559,35 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
       await assertFails(getMetadata(ref(adminD(), rc(D))));
     });
   });
+
+  // ===========================================================================
+  // MEDIOS ENTRANTES GUARDADOS (storage.rules, /tenants/{t}/medios/**; Core, H3 PR-1).
+  // Los escribe y los borra solo el servidor: ninguna persona los lee, escribe,
+  // borra ni lista desde el navegador, ni siquiera del propio comercio.
+  // ===========================================================================
+  describe('Medios entrantes guardados (Core)', () => {
+    const rm = (t: string, dia = '2026-10-23', nombre = 'objetoX.ogg') => `tenants/${t}/medios/${dia}/${nombre}`;
+    beforeEach(async () => { await sembrarArchivo(rm(A), 'audio/ogg'); });
+
+    it('nadie lee un medio: ni administrador, ni operador, ni propietario, ni ingesta, ni anónimo', async () => {
+      for (const quien of [adminA(), operA(), propietario(), ingestaA(), anonimo()]) {
+        await assertFails(getMetadata(ref(quien, rm(A))));
+        await assertFails(getDownloadURL(ref(quien, rm(A))));
+      }
+    });
+
+    it('nadie lo escribe, lo reemplaza, lo borra ni lo lista', async () => {
+      for (const quien of [adminA(), operA(), propietario(), ingestaA(), anonimo()]) {
+        await assertFails(subir(quien, rm(A, '2026-10-24', 'nuevo.ogg'), 1024, 'audio/ogg'));
+        await assertFails(subir(quien, rm(A), 1024, 'audio/ogg'));
+        await assertFails(deleteObject(ref(quien, rm(A))));
+        await assertFails(listAll(ref(quien, `tenants/${A}/medios`)));
+      }
+    });
+
+    it('el administrador de otro comercio tampoco lee el medio de A ni escribe en el suyo', async () => {
+      await assertFails(getMetadata(ref(adminB(), rm(A))));
+      await assertFails(subir(adminB(), rm(B), 1024, 'audio/ogg'));
+    });
+  });
 });

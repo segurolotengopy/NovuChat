@@ -1852,6 +1852,27 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // /mediosRecibidos/{objeto} — los medios ENTRANTES (audio, foto, PDF) que
+      // `guardarMedio` guardó 90 días (Core; Andres, 20 a 23/10/2026). Los escribe
+      // SOLO el servidor, en la misma transacción que marca el mensaje. Lo lee
+      // quien puede leer conversaciones; el documento nombra la conversación
+      // (`wa_<teléfono>`) pero no lleva el teléfono suelto ni el contenido. Los
+      // BYTES no se leen por acá: están en Storage, cerrado a todos, y el visor
+      // (PR-2) será una callable auditada. Lo borra el TTL (`vence`) o la purga.
+      // -----------------------------------------------------------------------
+      match /mediosRecibidos/{objeto} {
+        allow get, list: if puedeLeerConversaciones(tenantId);
+        allow create, update, delete: if false;
+      }
+
+      // /cuposDeMedios/{dia} — el contador de medios y bytes del día (tope de 1.000 o
+      // 2 GB por comercio). Lo lee y lo escribe SOLO `guardarMedio`, con el SDK Admin;
+      // si el comercio pudiera borrarlo, el cupo no sería un cupo. Caduca por TTL.
+      match /cuposDeMedios/{dia} {
+        allow read, write: if false;
+      }
+
+      // -----------------------------------------------------------------------
       // /conversaciones/{conversacionId} — visor de conversaciones.
       // Es el dato más sensible del sistema: mensajes de clientes finales.
       // -----------------------------------------------------------------------
@@ -2747,6 +2768,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /topesDeTurno/{uid} {
+      allow read, write: if false;
+    }
+
+    // /topesDeMedios/{uid} — el contador de tope por usuario del visor de medios (PR-2,
+    // Core). Lo lee y lo escribe SOLO esa callable, con el SDK Admin. Vive fuera de
+    // /tenants porque el tope es de la persona, no del comercio.
+    match /topesDeMedios/{uid} {
       allow read, write: if false;
     }
 

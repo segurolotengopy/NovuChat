@@ -376,6 +376,18 @@ service firebase.storage {
     }
 
     // =========================================================================
+    // /tenants/{tenantId}/medios/** — LOS MEDIOS ENTRANTES GUARDADOS (audio, foto,
+    // PDF; Core, Andres 20 a 23/10/2026). NINGUNA PERSONA LEE NI ESCRIBE AQUÍ,
+    // tampoco el administrador, el operador ni el propietario: escribe
+    // `guardarMedio` (SDK Admin) y borra `purgarMedios` (90 días y baja). Se leen
+    // por una callable auditada que devuelve bytes (PR-2), sin URL ni token de
+    // descarga, de modo que no existe una capacidad que se pueda reenviar.
+    // =========================================================================
+    match /tenants/{tenantId}/medios/{resto=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
     // NEGACIÓN FINAL. Todo lo que no coincidió arriba queda prohibido: otros
     // caminos, otros nombres, carpetas ajenas del mismo comercio, rutas con
     // `..`. Es la red de seguridad del archivo. No borrarla.

@@ -19,6 +19,7 @@
 | Campañas simultáneas por plan | módulo Campañas |
 | Aviso de consumo al 80 % | Central (cuenta) |
 | Cambios de configuración incluidos al mes (`cambiosIncluidos`, F1) | Central (cuenta) |
+| Medios guardados: 1.000 por comercio y día o 2 GB; topes por tipo (imagen 5 MB, audio 16 MB, PDF 10 MB). Constantes de seguridad y de costo de almacenamiento, no de plan | Core (`guardarMedio`, contador `cuposDeMedios`) |
 
 ### 7. Todo límite comercial se hace cumplir en el SERVIDOR
 
