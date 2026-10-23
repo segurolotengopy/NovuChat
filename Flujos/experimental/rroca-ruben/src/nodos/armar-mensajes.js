@@ -21,7 +21,7 @@ const prueba = cfg.modoPrueba === true;
 const telPrueba = String(cfg.telefonoDePrueba || '');
 const claveOk = cnClaveValida(from);
 const cat = plan.cat && typeof plan.cat === 'object' ? plan.cat : {};
-const fichaAntes = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from));
+const fichaAntes = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora);
 
 const rrId = (j) => { const m = j && j.messages; return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== ''; };
 // Lo que pasó con el aviso a Rubén lo dice «Armar avisos» (`planeado`: había un aviso y se armó, por texto libre o por plantilla; `repetido`: ya salió uno por el mismo motivo hace menos de 30 minutos;
@@ -31,7 +31,7 @@ const avisoPlaneado = av.planeado === true;
 const avisoRepetido = av.repetido === true;
 const avisoEnviado = avisoPlaneado && (cnTodos('Enviar aviso').some(rrId) || (prueba && cfg.enviarDeVerdad !== true));
 // Un aviso suprimido por el límite de 30 minutos trató OTRO contenido en los motivos de texto variable (la consulta que el modelo no supo, el comprobante sin cotejar): ahí NO se dice «le avisé» de esta vez.
-const repetidoVariable = avisoRepetido && (av.clave === 'no_supo' || av.clave === 'comprobante_sin_cotejo');
+const repetidoVariable = avisoRepetido && (av.clave === 'no_supo' || av.clave === 'comprobante_sin_cotejo' || av.clave === 'sin_configuracion');
 const avisoSalio = avisoEnviado || (avisoRepetido && !repetidoVariable);
 const estadoAviso = repetidoVariable ? 'repetido' : avisoSalio;
 
@@ -203,8 +203,14 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
 // pedido) ni el resultado de un comprobante (cada comprobante es un hecho distinto) ni el silencio de un número extranjero entran, ni lo que dice qué ES el asistente (regla dura 4: esa respuesta nunca se sustituye). Es el MISMO mensaje: no agrega ni quita ninguno.
 if (m && puerta.ruta === 'sigue' && t.extranjero !== true && m.tipoReporte !== 'image' && tipoDePlan !== 'comprobante' && tipoDePlan !== 'identidad' && !rrTienePresentacionIA(m.texto) && fichaAntes.ultimoHash !== '' && rrHashTexto(m.texto) === fichaAntes.ultimoHash) {
   const medio = /^(audio|imagen|otro)/.test(tipoDePlan);
-  tipoDePlan = 'repetido';
-  m = conRuben(rrAlternaDeRepetido(medio, fichaAntes.ultimoHash));
+  // Una derivación SIN CONFIGURACIÓN repetida no usa la alterna de contenido (no tendría sentido): sale «Rubén ya recibió el aviso anterior» y solo si ese texto también fuera idéntico, la alterna.
+  const repetidoDeriva = tipoDePlan === 'derivar' && plan.motivo === 'sin_configuracion' ? rrTextoDerivacion('sin_configuracion', 'repetido', plan.clave) : '';
+  if (repetidoDeriva !== '' && rrHashTexto(repetidoDeriva) !== fichaAntes.ultimoHash) {
+    m = conRuben(repetidoDeriva);
+  } else {
+    tipoDePlan = 'repetido';
+    m = conRuben(rrAlternaDeRepetido(medio, fichaAntes.ultimoHash));
+  }
 }
 
 // La ficha: un solo lugar, al final del turno. Hasta en un turno sin mensaje (bloqueado) se recuerda el id de Meta (una entrega repetida no se cuenta dos veces).
@@ -218,7 +224,7 @@ if (claveOk && t.extranjero === true) {
   }
 } else if (claveOk) {
   const fichas = cnMapaDeFichas(true);
-  const ficha = rrFichaVigente(cnFichaDe(fichas.mapa, from));
+  const ficha = rrFichaVigente(cnFichaDe(fichas.mapa, from), ahora);
   // MEMORIA POR TELÉFONO (clave `messages[0].from`): vacía si pasaron más de 48 h. Aquí entra lo que dijo el cliente; lo del asistente lo agrega «Resumen del turno» SOLO si Meta lo aceptó.
   const histPrevio = rrHistorialVigente(ficha, ahora);
   // La entrada de un audio transcrito, de una imagen o de un documento la arma «Decidir turno» (`entradaHistorial`, ya enmascarada).
@@ -228,8 +234,10 @@ if (claveOk && t.extranjero === true) {
   ficha.ultimoMs = ahora;
   if (m) ficha.saludado = true;
   // Lo último que se le dijo (hash del texto y tipo de plan): el recordatorio del QR no se repite dos veces seguidas y ningún texto sale idéntico dos veces seguidas. Solo cuenta el turno que contesta de verdad.
-  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma };
+  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma, p: ficha.ultimaPregunta, pm: ficha.ultimaPreguntaMs };
   if (m && puerta.ruta === 'sigue') { ficha.ultimoHash = m.tipoReporte === 'image' ? '' : rrHashTexto(m.texto); ficha.ultimaFirma = /^[a-z_]{1,30}$/.test(tipoDePlan) ? tipoDePlan : ''; }
+  // La última pregunta que se le hizo (para entender un «Sí» o un «No» suelto): sale del texto que de verdad se envía, enmascarado como el historial; si ese texto no termina en pregunta (o es un QR), se borra. Vuelve si Meta no aceptó el envío.
+  if (m && puerta.ruta === 'sigue') { ficha.ultimaPregunta = m.tipoReporte === 'image' ? '' : rrUltimaPregunta(m.texto); ficha.ultimaPreguntaMs = ficha.ultimaPregunta !== '' ? ahora : 0; }
   // Los topes diarios de medios cuentan cada llamada a Gemini que corrió, aunque haya fallado (un cliente no gasta sin límite con audios ilegibles).
   if (decision.oyoAudio === true) ficha.audios = rrContarMedio(ficha.audios, ahora);
   if (decision.vioImagen === true) ficha.imagenes = rrContarMedio(ficha.imagenes, ahora);

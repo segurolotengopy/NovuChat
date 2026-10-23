@@ -46,7 +46,7 @@ const entrega = (texto: string, from = ANA): J => ({
 function crear(modelo: Doble): Mundo {
   const dobles: Record<string, Doble> = {
     'Verificar firma con el receptor': (ll: LlamadaDoble) => ({ valido: true, deliveryId: ll.cuerpo?.['deliveryId'] }),
-    'Traer configuración': () => ({ statusCode: 200, body: { tenantId: 'rroca-ruben', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Rubén Roca' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, voz: { nombreAsistente: '' }, atencion: { estado: 'normal' } } }),
+    'Traer configuración': () => ({ statusCode: 200, body: { tenantId: 'rroca-ruben', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Rubén Roca' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, voz: { nombreAsistente: '' }, atencion: { estado: 'normal' }, catalogo: [{ id: 'pack-completo', precio: 60, agotado: true }, { id: 'libro-bonos', precio: 32, agotado: true }, { id: 'closer-ventas', precio: 20, agotado: true }, { id: 'videos-ia', precio: 25, agotado: true }], venta: {} } }),
     'Reportar mensaje (entrante)': () => ({ ok: true }),
     'Reportar mensaje (saliente)': () => ({ ok: true }),
     'Conversar con el modelo': modelo,

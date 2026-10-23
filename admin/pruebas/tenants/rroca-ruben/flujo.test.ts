@@ -63,9 +63,12 @@ interface Opciones {
   /** El valor de `telefonosDePrueba` en «Config base» (por omisión, ANA y BETO). */
   telefonosDePrueba?: string;
 }
+// Una consola SANA (22/10/2026: un panel sin catálogo ya no es configuración) cuyos cuatro productos están agotados: no hay precios que decir, pero el flujo sí ve la configuración.
+const SIN_PRODUCTOS_A_LA_VENTA = [{ id: 'pack-completo', precio: 60, agotado: true }, { id: 'libro-bonos', precio: 32, agotado: true }, { id: 'closer-ventas', precio: 20, agotado: true }, { id: 'videos-ia', precio: 25, agotado: true }];
+const SIN_CONFIG = /^Ahora mismo no puedo ver la información del negocio/;
 const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({
   statusCode: 200,
-  body: { tenantId: 'rroca-ruben', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Rubén Roca' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, voz: { nombreAsistente: '' }, atencion: { estado: 'normal' }, ...extra },
+  body: { tenantId: 'rroca-ruben', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Rubén Roca' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, voz: { nombreAsistente: '' }, atencion: { estado: 'normal' }, catalogo: SIN_PRODUCTOS_A_LA_VENTA, venta: {}, ...extra },
 });
 function crear(o: Opciones = {}) {
   const envio = o.envio ?? {};
@@ -366,7 +369,8 @@ describe('la puerta del turno: pausa por persona, uso extendido y comercio no op
     expect(t.fallo).toBeNull();
     expect(t.porNodo['Puerta del turno']![0]!['ruta']).toBe('sigue');
     expect(textos(t)).toHaveLength(1);
-    expect(textos(t)[0]).toMatch(SALUDO);
+    // (22/10/2026) Sin la consola ya no hay saludo ni modelo: la persona recibe el texto honesto de «sin configuración», con el botón de Rubén.
+    expect(textos(t)[0]).toMatch(SIN_CONFIG);
   });
 
   it('cruce declarado: «suspendido» se evalúa antes que «bloqueado»: una persona en pausa con el comercio suspendido recibe el texto neutro', () => {
@@ -403,13 +407,15 @@ describe('la puerta del turno: pausa por persona, uso extendido y comercio no op
     expect(t.mensajes[0]!.cuerpo.toLowerCase()).not.toMatch(/deuda|pago|suspend|mora|factura/);
   });
 
-  it('consola suspendida por estado: lo mismo; consola caída: sigue con el respaldo de «Config base» (no se queda sin responder)', () => {
+  it('consola suspendida por estado: lo mismo; consola caída: SIN CONFIGURACIÓN (22/10/2026): no improvisa, deriva a Rubén con aviso y botón (no se queda sin responder)', () => {
     const w = crear({ panel: panelOk({ estadoComercio: 'suspendido' }) });
     expect(textos(hablar(w, ANA, mTexto('hola')))).toEqual([SUSPENDIDO]);
     const w2 = crear({ panel: 'cae' });
     const t = hablar(w2, ANA, mTexto('hola'));
     expect(t.mensajes).toHaveLength(1);
-    expect(t.mensajes[0]!.cuerpo).toMatch(SALUDO);
+    expect(t.mensajes[0]!.cuerpo).toMatch(SIN_CONFIG);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(SALUDO);
+    expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
   });
 
   it('un reporte entrante de la ingesta que cortó el servicio («cortado») también cierra el turno con el texto neutro', () => {
