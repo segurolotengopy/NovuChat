@@ -144,3 +144,23 @@ opcional si hay titulares.
 - **Mensajes:** 0. **Límites:** los mismos (10 por documento, tope del plan,
   un año de duración); ningún límite de tenant se sube desde acá.
 
+### Revisión de seguridad del PR-1 (22/10/2026)
+
+- **El tope del plan es uno solo** para `campanas` y `anuncios`: ambos se derivan de
+  `vigentesDeHoyDentroDelTope` (las primeras `limite` vigentes en curso hoy), así que
+  juntos nunca suman más que el plan.
+- **El ángulo es comportamiento del asistente.** El flujo que consuma `anuncios.angulo`
+  debe **entrecomillarlo y subordinarlo** como a `instruccionesExtra` (dato del negocio,
+  nunca una orden que pueda contradecir las reglas del flujo). Titulares y ángulo se
+  rechazan si traen caracteres invisibles, de control o bidi, o frases que hagan negar
+  ser una IA o afirmar un pago; los patrones se aplican también al texto plegado
+  (homoglifos y leet); el revisor de modelo recibe los criterios de `comportamiento.ts`.
+- **Tamaño de la respuesta:** al flujo viajan a lo sumo 3 titulares por anuncio y el
+  nombre del producto recortado a 80. Peor caso medido (10 anuncios, ángulo de 300):
+  ~8,0 kB; tope declarado 8,5 kB.
+- **Regla:** `texto is string` no cabe en el presupuesto de expresiones con 10 campañas
+  (medido); un texto no string da error de evaluación y se niega, y `leerCampanas` lo descarta.
+- **Producto:** `productoId` entra en la huella (cambiarlo vuelve a revisión) y debe cumplir
+  `^[A-Za-z0-9_-]{1,100}$` sin ser `__x__`. La coherencia titular-producto la revisa el modelo
+  con la huella, no el servidor por reglas.
+

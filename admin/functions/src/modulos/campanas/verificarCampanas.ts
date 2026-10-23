@@ -23,7 +23,7 @@ import type { ConsultarModelo } from '../../central/asistente/comportamiento.js'
 import { consultarGemini, otrosComercios } from '../../central/asistente/verificarComportamiento.js';
 import { limiteDeCampanas } from '../../central/cuenta/planes.js';
 import {
-  hashLista, leerCampanas, revisarCampanas,
+  hashLista, leerCampanas, productoIdValido, revisarCampanas,
   type ContextoDelNegocio, type ResultadoCampanas, type RevisionCampana,
 } from './campanas.js';
 
@@ -56,7 +56,7 @@ export async function productosActivosReferenciados(
   db: Firestore, tenantId: string, lista: readonly { productoId?: string }[],
 ): Promise<Set<string>> {
   const ids = [...new Set(lista.map((c) => c.productoId)
-    .filter((i): i is string => typeof i === 'string' && i !== '' && i.length <= 100 && !i.includes('/')))];
+    .filter(productoIdValido))];
   if (ids.length === 0) return new Set();
   const docs = await db.getAll(...ids.map((i) => db.doc(`tenants/${tenantId}/catalogo/${i}`)));
   return new Set(docs.filter((d) => d.exists && d.get('activo') === true).map((d) => d.id));
