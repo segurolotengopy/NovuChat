@@ -29,10 +29,10 @@ const NODOS_TODO = ['Normalizar entrada', 'Decidir turno', 'Armar mensajes', 'In
 const CODIGO = [PARRAFOS, NO_REPETIR, leer(`${PROPIO}/lib/cobro.js`), leer(`${PROPIO}/lib/avisos.js`), RA_JS].join('\n');
 // nosemgrep: devsecops.js-eval-prohibido
 const L = new Function(`${CODIGO}
-return { ctParrafos, ctHashTexto, raParrafosViejoNoExiste: typeof raParrafos, raSeguro, raAlternaFiltrada, RA_TRATAMIENTO, RA_TITULAR, RA_SALUDO_MINIMO, RA_NIEGA_IA, raNorm, CB_PROHIBIDAS, cbCanon };`)() as {
+return { ctParrafos, ctHashTexto, raParrafosViejoNoExiste: typeof raParrafos, raSeguro, raAlternaFiltrada, RA_TRATAMIENTO, RA_TITULAR, RA_SALUDO_MINIMO, RA_NIEGA_IA, raNorm, CB_PROHIBIDAS, cbCanon, RA_ALTERNAS };`)() as {
   ctParrafos: (t: unknown) => string; ctHashTexto: (t: unknown) => string; raParrafosViejoNoExiste: string; raSeguro: (t: string) => string;
   raAlternaFiltrada: (o: { medio?: boolean; hashUltimo?: string; alternas?: unknown }, motivoDe: (x: string) => string) => string;
-  RA_TRATAMIENTO: string; RA_TITULAR: string; RA_SALUDO_MINIMO: string; RA_NIEGA_IA: RegExp; raNorm: (t: string) => string; CB_PROHIBIDAS: RegExp; cbCanon: (t: string) => string;
+  RA_ALTERNAS: { medio: string[] }; RA_TRATAMIENTO: string; RA_TITULAR: string; RA_SALUDO_MINIMO: string; RA_NIEGA_IA: RegExp; raNorm: (t: string) => string; CB_PROHIBIDAS: RegExp; cbCanon: (t: string) => string;
 };
 
 describe('(1) los 5 nodos incluyen el texto común desde su fuente', () => {
@@ -116,7 +116,7 @@ describe('(4) SEGURIDAD: la alterna pasa siempre por el filtro de salida', () =>
 });
 
 describe('(4b) las alternas de archivo de Antonio son dato propio (no el texto del core)', () => {
-  const lib = new Function(`${CODIGO}\nreturn { raAlternaFiltrada, RA_ALTERNAS };`)() as { raAlternaFiltrada: (o: { medio?: boolean; hashUltimo?: string }, m: (x: string) => string) => string; RA_ALTERNAS: { medio: string[] } };
+  const lib = L;
   it('por omisión, la alterna de medio es la primera de RA_ALTERNAS (sin «sigo» ni «tampoco») y rota si repite', () => {
     const a = lib.raAlternaFiltrada({ medio: true, hashUltimo: '' }, () => '');
     expect(a).toBe(lib.RA_ALTERNAS.medio[0]);

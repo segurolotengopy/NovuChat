@@ -57,7 +57,7 @@ describe('HUECOS del núcleo: el código copiado de rroca-antonio, con SOLO las 
     // eslint-disable-next-line no-new-func
     const cargar = (ruta: string, nombres: string): J => new Function(`${leer(ruta)}\nreturn { ${nombres} };`)() as J; // nosemgrep: devsecops.js-eval-prohibido
     // El código evaluado es el de los archivos del propio repositorio (src/lib de Antonio y de las doctoras), no una entrada externa: solo prueba.
-    const ra = cargar(join(ANTONIO, 'src/lib/ra.js'), 'RA_NIEGA_IA, RA_RIESGO, raOraciones, raEsPregunta, raParrafos') as unknown as { RA_NIEGA_IA: RegExp; RA_RIESGO: RegExp };
+    const ra = cargar(join(ANTONIO, 'src/lib/ra.js'), 'RA_NIEGA_IA, RA_RIESGO') as unknown as { RA_NIEGA_IA: RegExp; RA_RIESGO: RegExp };
     const dr = cargar(join(DR, 'src/lib/dr.js'), 'DR_NIEGA_IA, DR_RIESGO, DR_BAJA') as unknown as { DR_NIEGA_IA: RegExp; DR_RIESGO: RegExp; DR_BAJA: RegExp };
     expect(dr.DR_NIEGA_IA.source).toBe(ra.RA_NIEGA_IA.source);
     expect(dr.DR_NIEGA_IA.flags).toBe(ra.RA_NIEGA_IA.flags);
@@ -73,14 +73,13 @@ describe('HUECOS del núcleo: el código copiado de rroca-antonio, con SOLO las 
     expect(`/${dr.DR_BAJA.source}/${dr.DR_BAJA.flags}`).toBe(literalDeAntonio);
   });
 
-  it('dr.js: la hoja de párrafos (raOraciones, raEsPregunta, raParrafos) es la de Antonio con el prefijo `dr`', () => {
-    const fuente = (t: string): string => {
-      const i = t.indexOf('function raOraciones(');
-      const j = t.indexOf('// El texto que ve el cliente, con la barrera aplicada');
-      return t.slice(i, j);
-    };
-    const origen = fuente(leer(join(ANTONIO, 'src/lib/ra.js'))).replace(/\bra(Oraciones|EsPregunta|Parrafos)\b/g, 'dr$1').replace(/\bRA_PARRAFO_MAX\b/g, 'DR_PARRAFO_MAX');
-    const propio = leer(join(DR, 'src/lib/dr.js'));
+  it('dr.js: la hoja de párrafos (drOraciones, drEsPregunta, drParrafos) es la del módulo común `core/texto/parrafos.js` con el prefijo `dr` (sin la cota de 4096 caracteres, que dr.js no tiene)', () => {
+    // Antonio adoptó el módulo común (ya no tiene `raOraciones`): el origen de la copia es ahora el core. Se comparan sin comentarios.
+    const sinComentarios = (t: string): string => t.split('\n').map((l) => l.replace(/\s*\/\/.*$/, '')).filter((l) => l.trim() !== '').join('\n');
+    const core = leer(join(REPO, 'Flujos/src/core/texto/parrafos.js'));
+    const origen = sinComentarios(core.slice(core.indexOf('function ctOraciones(')))
+      .replace(/\bct(Oraciones|EsPregunta|Parrafos)\b/g, 'dr$1').replace(/\bCT_PARRAFO_MAX\b/g, 'DR_PARRAFO_MAX').replace('.slice(0, 4096)', '');
+    const propio = sinComentarios(leer(join(DR, 'src/lib/dr.js')));
     expect(origen.length).toBeGreaterThan(1000);
     expect(propio).toContain(origen.trim());
   });
