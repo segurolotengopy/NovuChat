@@ -47,6 +47,9 @@ const RESPALDO = {
   palabrasClaveEmergencia: 'emergencia|urgencia|urgente|no respira|convulsion|convulsión|convulsiona|se ahoga|inconsciente|desmayo|se desmayó',
   palabrasClaveDoctor: 'vacuna|vacunas|vacunar|vacunacion|vacunación|crema|cremas|consulta virtual|consultas virtuales|virtual|virtuales|videollamada|video llamada|en linea|en línea|online|a distancia',
   palabrasClaveRecepcion: '',
+  // Preguntas de SALUD («¿si tiene fiebre qué hago?»): el asistente no orienta; ofrece pasar con recepción (aviso + botón). Solo
+  // se miran al comienzo de la conversación (paso `inicio` o `menu`) y si el mensaje NO pide una cita. La emergencia gana siempre.
+  palabrasClaveClinicas: 'fiebre|febril|temperatura|vomito|vomitos|vomita|diarrea|tos|resfrio|resfriado|gripe|congestion|moco|sarpullido|erupcion|ronchas|granitos|manchas|alergia|dolor|me duele|le duele|le duelen|medicamento|medicina|dosis|jarabe|antibiotico|paracetamol|ibuprofeno|que hago|que le doy|puedo darle|infeccion|garganta|oido|deshidrat|respira mal',
   datosQueNoTenemos: '',
   estadoComercio: 'operativo',
   // Horario FICTICIO del respaldo. Sin calendario no se ofrece nada de todos modos.
@@ -89,7 +92,7 @@ const CAMPOS_BASE = ['nombreNegocio','descripcion','direccion','direccionMaps','
   'mensajeCierre','mensajeErrorTemporal','mensajeReservaNoConfirmada','mensajeComercioSuspendido','mensajeMenu',
   'mensajeContactoRecepcion','mensajeContactoDoctor','mensajeEmergencia','mensajeRedes','reglasAgenda','tratamiento',
   'estiloEmojis','nivelEmojis','datosQueNoTenemos','prefijosPermitidos','palabrasClaveRecepcion','palabrasClaveDoctor',
-  'palabrasClaveEmergencia','horarioAtencion','respuestaServicios','respuestaCosto'];
+  'palabrasClaveEmergencia','palabrasClaveClinicas','horarioAtencion','respuestaServicios','respuestaCosto'];
 const deBase = {};
 for (const k of CAMPOS_BASE) {
   const v = typeof base[k] === 'string' ? base[k].trim() : '';

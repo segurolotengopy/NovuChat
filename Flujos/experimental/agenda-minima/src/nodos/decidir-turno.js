@@ -73,6 +73,11 @@ if (!boton) {
   // Vacunas y cremas van al DOCTOR, no a recepcion (P5, 23/09): es la cuarta opcion del
   // menu y tambien las palabras que la configuracion nombra.
   if (t.eleccion === 'vacunas_otros' || (reDoc && reDoc.test(norm))) return salir('contacto_doctor');
+  // Una pregunta de SALUD no la responde el asistente: se ofrece pasar con recepción (aviso + botón). Solo al comienzo de la
+  // conversación (en «esperando_nombre» un apellido como «Dolores» no es una consulta) y si no pide una cita.
+  const reClin = cnRegexDeLista(cfg.palabrasClaveClinicas);
+  const pideCita = /(?<![\p{L}\p{N}])(cita|citas|agendar|agenda|reservar|reserva|turno|horario|horarios|cancelar|reagendar|mover|control)/iu;
+  if (reClin && reClin.test(norm) && !pideCita.test(norm) && ['inicio', 'menu'].indexOf(String(est.paso || 'inicio')) >= 0) return salir('consulta_clinica');
 }
 
 if (boton && boton.tipo === 'h') return salir('elegir_hueco', { boton: boton });

@@ -333,6 +333,12 @@ switch (plan) {
       + 'Por este chat solo puedo ayudarte a agendar, cancelar o mover citas. Para otra cosa, escríbele directo a recepción tocando el botón.');
     break;
 
+  case 'consulta_clinica':
+    // Pregunta de salud: no se orienta. Lo único que se ofrece es pasar con recepción, que es aviso + botón (política «solo se ofrece lo que se cumple»).
+    transferir('el paciente hizo una consulta de salud que el asistente no responde',
+      'Esa consulta la debe ver el doctor y yo no puedo orientarte sobre salud. Para hacérsela, escríbele a recepción tocando el botón.');
+    break;
+
   case 'audio_ilegible': {
     const cuerpo = base.audioMuyLargo
       ? 'Tu nota de voz es muy larga para escucharla entera. ¿Me cuentas lo esencial por escrito o en un audio más corto?'
