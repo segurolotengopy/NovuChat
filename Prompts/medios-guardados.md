@@ -44,7 +44,7 @@ Lee primero, en este orden: `CLAUDE.md` entero, `ESTADO.md`,
 2. **Se guarda por categoría, con el criterio en el servidor.** Comprobantes,
    sí. Publicidad y «otro», configurable por comercio y **apagado por
    defecto**. **Boca o dientes y documentos de salud, no**, salvo que el
-   comercio lo active y el paciente lo consienta en el chat. **Audio, nunca.**
+   comercio lo active y el paciente lo consienta en el chat. **Audio, nunca.** *(Reemplazado el 23/10/2026 por decisión de Andres: el audio entrante también se guarda, hasta 16 MB y 90 días, con la bandera `guardarMedios` y el anexo aceptado; ver «Medios guardados (H3)» en `docs/arquitectura/core.md`.)*
 3. **El asistente no elige una imagen libremente.** Cada pieza tiene una clave;
    el servidor decide cuándo se manda. Si el modelo la pide, lo hace con una
    marca de una **lista cerrada** que el servidor valida. Ninguna URL escrita
@@ -125,6 +125,8 @@ categoría del clasificador; permisos por rol; bandera por comercio, apagada por
 defecto.
 
 ### Bloque 5 — Consentimiento para las categorías de salud (½ jornada)
+> *Reemplazado el 23/10/2026 por decisión de Andres: el consentimiento pasa a ser el anexo aceptado por el comercio (D3), no un pedido en el chat. Riesgo que queda: datos de salud de terceros, de privacidad y retención. Ver `docs/arquitectura/core.md`, «Medios guardados (H3)».*
+
 Rama `medios/consentimiento`. Pedido en el chat, registro de la respuesta, y el
 borrado a pedido. Sin consentimiento registrado, no se guarda.
 
