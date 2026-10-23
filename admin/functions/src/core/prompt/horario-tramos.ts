@@ -21,9 +21,10 @@
  * (cada comparación de más, por siete días, la deja sin margen). La AUTORIDAD del
  * orden y del solape es la NORMALIZACIÓN AL LEER (`horariosSaneados`): ordena los
  * tramos, descarta los de cierre <= apertura y fusiona los que se solapan o se
- * tocan, y si no queda ninguno devuelve `cerrado`. Es la misma unión que calculan
- * los flujos (`tramosDelDia` de `comprobar-reserva.js`, `agTramos`), así que el
- * asistente anuncia lo que el candado hace cumplir. FALLA CERRADO: un día partido
+ * tocan, y si no queda ninguno devuelve `cerrado`. Es la misma unión que calcula
+ * `agTramos`, así que el asistente anuncia lo que se ofrece. OJO: `tramosDelDia`
+ * de `comprobar-reserva.js` NO fusiona (exige que la cita quepa en UN tramo); por
+ * eso `horarioParaFlujos` entrega ya fusionado lo que va al candado. FALLA CERRADO: un día partido
  * sin ningún tramo válido es `cerrado`, nunca un día «sin datos» (los flujos
  * toman un día ausente como «no se puede juzgar» y dejarían pasar la cita).
  * La consola y el cargador validan además al guardar.
@@ -157,7 +158,7 @@ export function horarioParaFlujos(horarios: unknown): Record<string, unknown> {
     if (valor === undefined || valor === null) continue;
     if (typeof valor !== 'string') { salida[dia] = 'cerrado'; continue; }
     const t = valor.trim();
-    if (t === '') { salida[dia] = valor; continue; }
+    if (t === '') { salida[dia] = ''; continue; }
     if (/^cerrad[oa]s?$/i.test(t)) { salida[dia] = 'cerrado'; continue; }
     const validos: Tramo[] = [];
     for (const parte of t.split(/[,;]/)) {

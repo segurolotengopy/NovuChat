@@ -29,12 +29,26 @@ describe('resolverFuncionarios: el horario que llega a los flujos falla cerrado'
   it.each([
     ['x'], ['9 a 5'], ['cerrado '], ['09:00-'], ['25:00-26:00'], ['18:00-09:00'], ['09:00-09:00'],
     ['solo con cita previa'], ['09:00-12:00 y 14:00-18:00'],
+    ['09:00\u200b-18:00'], ['\uff10\uff19:\uff10\uff10-\uff11\uff18:\uff10\uff10'], ['09:00\u201418:00'], ['09:00-24:30'],
   ])('el día %j llega como cerrado', (texto) => {
     expect(horarioDe({ lun: texto }).lun).toBe('cerrado');
   });
 
   it.each([[7], [true], [{ a: 1 }], [['09:00-18:00']]])('un valor que no es texto (%j) llega como cerrado', (v) => {
     expect(horarioDe({ lun: v }).lun).toBe('cerrado');
+  });
+
+  it.each([['   '], ['\u3000'], [' '.repeat(100000)]])('un día de solo espacios viaja como vacío, no como el texto original', (v) => {
+    expect(horarioDe({ lun: v }).lun).toBe('');
+  });
+
+  it('00:00-24:00 se conserva y 09:00-12:00;12:00-14:00 se fusiona (la cita que cruza la frontera se acepta)', () => {
+    expect(horarioDe({ lun: '00:00-24:00' }).lun).toBe('00:00-24:00');
+    expect(horarioDe({ lun: '09:00-12:00;12:00-14:00' }).lun).toBe('09:00-14:00');
+  });
+
+  it('una clave constructor se descarta', () => {
+    expect(Object.keys(horarioDe(JSON.parse('{"constructor": "x", "lun": "09:00-10:00"}')))).toEqual(['lun']);
   });
 
   it('un día vacío o ausente NO se inventa: sigue sin dato', () => {
@@ -112,6 +126,16 @@ describe('el nodo real «Comprobar reserva» con ese dato: ya NO agenda fuera de
     expect(r['citaSolapada']).toBe(true);
     expect(r['eventoABorrar']).toBe('nueva');
     expect(r['causaDeLaCaida']).toBe('horario');
+  });
+
+  it('09:00-24:30 deshace una cita que cruza la medianoche', () => {
+    const cruza = { ...cita, start: { dateTime: '2026-09-21T23:30:00-04:00' }, end: { dateTime: '2026-09-22T00:30:00-04:00' } };
+    const [f] = resolverFuncionarios([{ id: 'f1', datos: { activo: true, nombre: 'D', calendarioId: CAL, horarioTrabajo: { lun: '09:00-24:30' } } }], NEGOCIO, new Set());
+    const r = ejecutar(codigo, [cruza], {
+      'Config del negocio': { mensajeReservaNoConfirmada: '', funcionarios: JSON.stringify([{ nombre: 'D', servicios: [], calendario: CAL, horario: f?.horarioTrabajo }]) },
+      'Procesar respuesta': previa,
+    }, { Date: Reloj })[0] ?? {};
+    expect(r['citaSolapada']).toBe(true);
   });
 
   it('un horario bueno que contiene la cita NO se toca', () => {
