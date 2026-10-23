@@ -138,7 +138,13 @@ if (esVisual) {
     // Segunda barrera sobre la descripción: si traía un enlace, un correo, una cifra larga, un dominio o un delimitador, el módulo común lo quitó y quedaría una frase mutilada («Veo escribe a»): se descarta ENTERA.
     const cruda = String(jsonImagen.descripcion || '');
     const mutilada = /https?:|www\.|@|\d[\d\s.\-\/,]{3,}\d|\b\S+\.(?:com|net|org|bo|io|app|me|link|ly)\b|[\[\]{}<>«»"'`*_\\|#]/i.test(cruda);
-    const descripcion = categoriaMedio === 'publicidad' ? 'una imagen publicitaria' : (mutilada ? '' : String(prep.descripcionMedio || ''));
+    // Tercera barrera (revisión de seguridad de #602): la descripción se muestra tal cual al cliente, así que NO puede prometer ni afirmar nada (reembolso, devolución, descuento, regalo, dinero), ni afirmar un pago (`CB_PROHIBIDAS`), ni negar ser una IA.
+    // Se mira la cruda y la saneada. No se descarta por «antonio» ni por «pago» a secas: el logo del comercio y «pago no se completó» siguen funcionando.
+    const prometedora = [cruda, String(prep.descripcionMedio || '')].some((x) => {
+      const n = raNorm(x);
+      return /reembols|devol|devuelt|reintegr|anulad|rechazad|gratis|gratuit|descuent|promet|promoci|oferta|garant|regal|dinero|plata/.test(n) || CB_PROHIBIDAS.test(cbCanon(x)) || RA_NIEGA_IA.test(n);
+    });
+    const descripcion = categoriaMedio === 'publicidad' ? 'una imagen publicitaria' : (mutilada || prometedora ? '' : String(prep.descripcionMedio || ''));
     return salir({ tipo: 'imagen_descrita', documento: t.esDocumento === true, descripcion: descripcion, cat: cat });
   }
   // Una captura de anuncio: se reconoce el ángulo por el texto leído; sin ángulo, se sigue como una charla.

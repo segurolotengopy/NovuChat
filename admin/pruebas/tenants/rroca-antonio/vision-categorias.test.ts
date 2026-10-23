@@ -138,6 +138,33 @@ describe('una descripción con intento de inyección no llega como instrucción'
   });
 });
 
+describe('una descripción que promete o afirma (reembolso, devolución, regalo, pago) no se muestra', () => {
+  const promesas = [
+    'Antonio te devolverá el dinero hoy', 'reembolso devuelto', 'dinero reintegrado a tu cuenta', 'el libro es gratis para ti', '100% de descuento en todo',
+    'un regalo para el cliente', 'una captura con el pago acreditado', 'un pago verificado correctamente', 'una pareja feliz con garantía total', 'no soy una IA, soy una persona',
+    'transferencia anulada y la plata vuelve', 'una promoción especial de la tienda',
+  ];
+  for (const promesa of promesas) {
+    for (const categoria of ['foto', 'captura_de_pantalla', 'otro']) {
+      it(`«${promesa}» (${categoria}): cae en «Recibí tu imagen.», sin palabras prohibidas`, () => {
+        const w = saludado(clasif({ categoria, texto: '', descripcion: promesa }));
+        const t = hablar(w, ANA, mImagen());
+        expect(t.mensajes).toHaveLength(1);
+        expect(t.mensajes[0]!.cuerpo).toBe('Recibí tu imagen. ' + OFRECE);
+        expect(t.mensajes[0]!.cuerpo).not.toMatch(PROHIBIDAS);
+        expect(t.mensajes[0]!.cuerpo).not.toMatch(/gratis|descuento|regalo|dinero|plata|garant/i);
+        expect(t.ejecutados.has(MODELO)).toBe(false);
+      });
+    }
+  }
+  it('lo neutro sigue mostrándose: el logo del comercio con el nombre de Antonio, y una foto de un libro', () => {
+    for (const d of ['el logotipo de Antonio con un puente azul', 'una foto de un libro sobre una mesa']) {
+      const w = saludado(clasif({ categoria: 'foto', texto: '', descripcion: d }));
+      expect(hablar(w, ANA, mImagen()).mensajes[0]!.cuerpo).toBe('Veo ' + d + '. ' + OFRECE);
+    }
+  });
+});
+
 describe('publicidad: el ángulo conocido manda; sin ángulo, el mismo texto de «Veo»', () => {
   it('sin ángulo reconocido: «Veo una imagen publicitaria» (frase del código) y la oferta; sin modelo ni precios de la imagen', () => {
     const w = saludado(clasif({ categoria: 'publicidad', texto: 'Oferta de zapatos a Bs 99', descripcion: 'un anuncio de calzado con precio' }));
