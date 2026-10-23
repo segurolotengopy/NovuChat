@@ -12,7 +12,7 @@
 // si puede decir «ya le avisé». En modo prueba el aviso va al teléfono de prueba, nunca a la recepción. Un destinatario igual a quien escribe se descarta (`avDestinatarios`).
 const cfg = cnCfg();
 const base = cnPrimero('Config base') || {};
-const datos = drDatos(base);
+const datos = drDatosVivos(base, cnPrimero('Traer configuración'));
 const decision = cnPrimero('Decidir turno') || {};
 const t = cnPrimero('Normalizar entrada') || {};
 const from = String(decision.from || t.from || '');
