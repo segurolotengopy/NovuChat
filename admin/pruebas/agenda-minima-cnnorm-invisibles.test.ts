@@ -37,9 +37,10 @@ const conEtiquetas = (s: string, cada: number) =>
 
 describe('cnNorm de agenda-minima', () => {
   it('el fuente lleva escapes, sin caracteres invisibles crudos', () => {
+    expect(FUENTE_CNNORM).toContain('\\p{Default_Ignorable_Code_Point}');
     expect(FUENTE_CNNORM).toContain('\\p{Cf}');
     for (const t of [COMUN, ...['agenda-minima.v0.json', 'agenda-minima.prueba.json'].map((j) => readFileSync(join(RAIZ, j), 'utf8'))]) {
-      expect(/[\p{Cf}\u115F\u1160\u3164\uFFA0\u2800\u17B4\u17B5]/u.test(t)).toBe(false);
+      expect(/[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]/u.test(t)).toBe(false);
     }
     expect(/[\u{e0000}-\u{e007f}]/u.test(COMUN)).toBe(false);
   });
@@ -62,9 +63,21 @@ describe('cnNorm de agenda-minima', () => {
   });
 
   it('otros invisibles: ZWSP, ZWNJ, ZWJ, BOM, joiners, selector de variación, mongol, etiquetas', () => {
-    for (const inv of ['\u200b', '\u200c', '\u200d', '\ufeff', '\u2060', '\u2061', '\u2064', '\ufe0f', '\u180e', '\u{e0100}', '\u{e0001}', '\u115f', '\u1160', '\u3164', '\uffa0', '\u2800', '\u17b4', '\u17b5']) {
+    for (const inv of ['\u200b', '\u200c', '\u200d', '\ufeff', '\u2060', '\u2061', '\u2064', '\ufe0f', '\u180e', '\u{e0100}', '\u{e0001}', '\u115f', '\u1160', '\u3164', '\uffa0', '\u17b4', '\u17b5', '\u180b', '\u180c', '\u180d', '\u034f']) {
       expect(nueva(`pago${inv} verificado`)).toBe('pago verificado');
       expect(nueva(`re${inv}ci${inv}bimos tu pago`)).toBe('recibimos tu pago');
+    }
+  });
+
+  it('Braille U+2800 cuenta como espacio: separa palabras en vez de pegarlas', () => {
+    expect(nueva('pago\u2800verificado')).toBe('pago verificado');
+    expect(nueva('no\u2800soy\u2800un\u2800bot')).toBe('no soy un bot');
+  });
+
+  it('emojis con ZWJ, VS16 y keycap, y el texto sano, se normalizan sin perder letras', () => {
+    expect(nueva('no hemos recibido comprobante')).toBe('no hemos recibido comprobante');
+    for (const e of ['\u{1F468}\u200D\u2695\uFE0F', '\u2764\uFE0F', '\u{1F469}\u200D\u{1F469}\u200D\u{1F467}', '1\uFE0F\u20E3', '\u{1F44B}\u{1F3FD}']) {
+      expect(nueva(`hola ${e} mundo`)).toBe(vieja(`hola ${e} mundo`.replace(/[\u200D\uFE0F]/g, '')));
     }
   });
 
