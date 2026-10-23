@@ -89,6 +89,13 @@ describe('el tipo se decide por los bytes', () => {
     ];
     for (const [b, ext, tipo] of casos) expect(ti.tipoPorFirma(b), ext).toMatchObject({ ext, tipo });
   });
+  it('NIEGA: ftyp de video (isom, mp42), y un PDF que también es ZIP (políglota)', () => {
+    for (const marca of ['isom', 'mp42', 'mp41', 'iso2']) {
+      expect(ti.tipoPorFirma(Buffer.concat([Buffer.alloc(4), Buffer.from(`ftyp${marca}`), Buffer.alloc(50)])), marca).toBeNull();
+    }
+    expect(ti.tipoPorFirma(Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(50)]))).toBeNull();
+    expect(ti.tipoPorFirma(PDF())).toMatchObject({ ext: 'pdf' });
+  });
   it('NIEGA: HTML, SVG, docx, texto, un RIFF que no es WEBP, un ftyp de otra marca y bytes vacíos', () => {
     const heic = Buffer.concat([Buffer.alloc(4), Buffer.from('ftypheic'), Buffer.alloc(50)]);
     for (const b of [HTML(), SVG(), DOCX(), Buffer.from('hola'), Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE')]), heic, Buffer.alloc(0), Buffer.alloc(20)]) {
@@ -166,7 +173,7 @@ describe('POST guardarMedio: lo que entra', () => {
     expect(r.cuerpo.ruta).not.toContain(TEL);
     expect([...almacen.objetos.keys()].join()).not.toContain(TEL);
     const reg = await db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`).get();
-    expect(reg.data()).toMatchObject({ idMeta: id, conversacionId: `wa_${TEL}`, tipo, ext, tamano: bytes().length, ruta: r.cuerpo.ruta });
+    expect(reg.data()).toMatchObject({ idMeta: id, conversacionId: `wa_${TEL}`, tipo, ext, tamano: bytes().length, ruta: r.cuerpo.ruta, estado: 'guardado' });
     expect(reg.get('sha256')).toMatch(/^[0-9a-f]{64}$/);
     const dias = (reg.get('vence').toMillis() - reg.get('en').toMillis()) / DIA_MS;
     expect(dias).toBe(90);
@@ -371,12 +378,49 @@ describe('POST guardarMedio: un repetido y lo que no toca', () => {
     expect((await cupoRef().get()).data()).toEqual(cupo);
   });
 
-  it('un objeto que ya estaba en Storage (intento anterior sin registro) se registra sin gastar otro cupo', async () => {
+  it('un objeto que ya estaba en Storage (intento anterior sin registro) se registra y gasta UN cupo', async () => {
     const id = idNuevo(); await mensaje(id);
     almacen.objetos.set(gm.rutaDeMedio(T, hoy(), id, 'ogg'), { bytes: OGG(), contentType: 'audio/ogg' });
     expect((await peticion(OGG(), buenas(id, 'audio', 'audio/ogg'))).codigo).toBe(200);
+    expect((await cupoRef().get()).get('n')).toBe(1);
+    expect((await db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`).get()).get('estado')).toBe('guardado');
+  });
+
+  it('CONCURRENCIA: 5 guardados simultáneos con el MISMO idMeta gastan UN solo cupo y un solo objeto', async () => {
+    const id = idNuevo(); await mensaje(id);
+    const bytes = OGG(3000);
+    const rs = await Promise.all(Array.from({ length: 5 }, () => gm.guardarMedioDe(
+      { tenantId: T, telefono: TEL, idMeta: id, tipo: 'audio', bytes, contentType: 'audio/ogg' }, { almacen })));
+    for (const r of rs) expect([200, 409]).toContain(r.codigo);
+    expect(rs.filter((r) => r.codigo === 200 && !(r.cuerpo as any).repetido)).toHaveLength(1);
+    const cupo = (await cupoRef().get()).data();
+    expect(cupo).toMatchObject({ n: 1, bytes: 3000 });
+    expect(almacen.objetos.size).toBe(1);
+    expect((await db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`).get()).get('estado')).toBe('guardado');
+  });
+
+  it('CONCURRENCIA con falla de Storage: el cupo vuelve exactamente UNA vez y no queda marcador', async () => {
+    const id = idNuevo(); await mensaje(id);
+    almacen.falla = true;
+    const rs = await Promise.all(Array.from({ length: 4 }, () => gm.guardarMedioDe(
+      { tenantId: T, telefono: TEL, idMeta: id, tipo: 'audio', bytes: OGG(3000), contentType: 'audio/ogg' }, { almacen })));
+    for (const r of rs) expect([502, 409]).toContain(r.codigo);
     expect((await cupoRef().get()).get('n')).toBe(0);
-    expect((await db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`).get()).exists).toBe(true);
+    expect((await cupoRef().get()).get('bytes')).toBe(0);
+    expect((await db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`).get()).exists).toBe(false);
+  });
+
+  it('un marcador pendiente reciente da 409 en_curso; uno viejo (instancia muerta) se retoma sin otro cupo', async () => {
+    const id = idNuevo(); await mensaje(id);
+    const ref = db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`);
+    await cupoRef().set({ n: 1, bytes: 2048, vence: Timestamp.now() });
+    await ref.set({ idMeta: id, estado: 'pendiente', ruta: gm.rutaDeMedio(T, hoy(), id, 'ogg'), en: Timestamp.now(), vence: Timestamp.now() });
+    expect((await peticion(OGG(), buenas(id, 'audio', 'audio/ogg'))).cuerpo).toEqual({ error: 'en_curso' });
+    expect(almacen.objetos.size).toBe(0);
+    await ref.update({ en: Timestamp.fromMillis(Date.now() - 6 * MIN) });
+    expect((await peticion(OGG(), buenas(id, 'audio', 'audio/ogg'))).codigo).toBe(200);
+    expect((await cupoRef().get()).get('n')).toBe(1);
+    expect((await ref.get()).get('estado')).toBe('guardado');
   });
 
   it('NO ES UN COMPROBANTE: no toca solicitud, cierres, comprobantesRecibidos, métricas ni conteo, ni la ficha', async () => {

@@ -34,8 +34,8 @@
  * existe en la propia conversación.
  *
  * COSTO por medio guardado (solo con bandera encendida): lecturas de ruta,
- * ficha, mensaje, registro previo y cupo, más las de la transacción final;
- * escrituras: cupo, registro y marca en el mensaje (3), más el objeto.
+ * ficha, mensaje, y marcador y cupo en la transacción de reserva; escrituras:
+ * cupo y marcador (reserva), y marcador y mensaje (cierre), más el objeto.
  */
 
 import { createHash } from 'node:crypto';
@@ -69,34 +69,24 @@ const milis = (v: unknown): number | null => {
   return typeof t?.toMillis === 'function' ? t.toMillis() : null;
 };
 
-/**
- * El cupo del día, en UNA transacción y ANTES de tocar Storage. `false` si con
- * este medio se pasaría de 1.000 medios o de 2 GB.
- */
-async function reservarCupo(tenantId: string, dia: string, tamano: number, ahoraMs: number): Promise<boolean> {
-  const db = getFirestore();
-  const ref = db.doc(`tenants/${tenantId}/cuposDeMedios/${dia}`);
-  return db.runTransaction(async (tx) => {
-    const actual = await tx.get(ref);
-    const n = Number(actual.get('n') ?? 0);
-    const bytes = Number(actual.get('bytes') ?? 0);
-    if (n + 1 > CUPO_MEDIOS_POR_DIA || bytes + tamano > CUPO_BYTES_POR_DIA) return false;
-    tx.set(ref, { n: n + 1, bytes: bytes + tamano, vence: Timestamp.fromMillis(ahoraMs + 3 * DIA_MS) }, { merge: true });
-    return true;
-  });
-}
+/** Máximo que un marcador `pendiente` se considera «en vuelo»; pasado, se retoma. */
+const PENDIENTE_MAXIMO_MS = 5 * 60_000;
 
-/** Devuelve el cupo si el medio no llegó a guardarse (mejor esfuerzo, nunca lanza). */
-async function liberarCupo(tenantId: string, dia: string, tamano: number): Promise<void> {
-  const db = getFirestore();
-  const ref = db.doc(`tenants/${tenantId}/cuposDeMedios/${dia}`);
+/**
+ * Si Storage falló: borra el marcador pendiente y devuelve el cupo, en UNA transacción y solo si el
+ * marcador sigue pendiente (así el cupo vuelve exactamente una vez). Mejor esfuerzo, nunca lanza.
+ */
+async function deshacerReserva(
+  refMedio: FirebaseFirestore.DocumentReference, refCupo: FirebaseFirestore.DocumentReference, tamano: number,
+): Promise<void> {
   try {
-    await db.runTransaction(async (tx) => {
-      const actual = await tx.get(ref);
-      if (!actual.exists) return;
-      tx.update(ref, { n: Math.max(0, Number(actual.get('n') ?? 0) - 1), bytes: Math.max(0, Number(actual.get('bytes') ?? 0) - tamano) });
+    await getFirestore().runTransaction(async (tx) => {
+      const [m, c] = await Promise.all([tx.get(refMedio), tx.get(refCupo)]);
+      if (!m.exists || m.get('estado') !== 'pendiente') return;
+      tx.delete(refMedio);
+      if (c.exists) tx.update(refCupo, { n: Math.max(0, Number(c.get('n') ?? 0) - 1), bytes: Math.max(0, Number(c.get('bytes') ?? 0) - tamano) });
     });
-  } catch { /* el cupo se corrige solo al día siguiente */ }
+  } catch { /* el marcador caduca por TTL y el cupo se corrige al día siguiente */ }
 }
 
 export interface EntradaDeGuardar {
@@ -142,41 +132,64 @@ export async function guardarMedioDe(
   });
   if (!mensaje) return { codigo: 409, cuerpo: { error: 'sin_mensaje' } };
 
-  // Un repetido responde lo mismo y no reescribe nada (ni gasta cupo).
   const refMedio = db.doc(`tenants/${e.tenantId}/mediosRecibidos/${nombreDeObjeto(idMeta)}`);
-  const previo = await refMedio.get();
-  if (previo.exists) return { codigo: 200, cuerpo: { ruta: String(previo.get('ruta') ?? ''), repetido: true } };
-
   const dia = diaDeLaPaz(ahoraMs);
-  if (!await reservarCupo(e.tenantId, dia, e.bytes.length, ahoraMs)) {
-    return { codigo: 429, cuerpo: { error: 'cupo_diario_lleno' } };
-  }
-
+  const refCupo = db.doc(`tenants/${e.tenantId}/cuposDeMedios/${dia}`);
   const ruta = rutaDeMedio(e.tenantId, dia, idMeta, firma.ext);
+  const vence = Timestamp.fromMillis(ahoraMs + DIAS_DE_RETENCION * DIA_MS);
+
+  // LA DEDUPLICACIÓN Y EL CUPO SON UNA SOLA TRANSACCIÓN (revisión de seguridad del #617). El marcador
+  // `mediosRecibidos/{hash}` nace `pendiente` en la MISMA transacción que reserva el cupo: de varias
+  // peticiones simultáneas con el mismo idMeta solo UNA lo crea y gasta cupo; las demás ven el marcador.
+  // El cupo se devuelve a lo sumo UNA vez, y solo por la petición que lo reservó.
+  type Decision =
+    | { t: 'repetido'; ruta: string } | { t: 'en_curso' } | { t: 'lleno' } | { t: 'reservado' } | { t: 'tomar' };
+  const decision = await db.runTransaction(async (tx): Promise<Decision> => {
+    const [previo, cupo] = await Promise.all([tx.get(refMedio), tx.get(refCupo)]);
+    if (previo.exists) {
+      if (previo.get('estado') !== 'pendiente') return { t: 'repetido', ruta: String(previo.get('ruta') ?? '') };
+      // Un pendiente reciente es otra petición en vuelo; uno viejo es de una instancia que murió: se retoma
+      // (su cupo ya está reservado, no se cobra otra vez).
+      const desde = milis(previo.get('en'));
+      if (desde !== null && ahoraMs - desde < PENDIENTE_MAXIMO_MS) return { t: 'en_curso' };
+      tx.update(refMedio, { en: Timestamp.fromMillis(ahoraMs) });
+      return { t: 'tomar' };
+    }
+    const n = Number(cupo.get('n') ?? 0);
+    const bytes = Number(cupo.get('bytes') ?? 0);
+    if (n + 1 > CUPO_MEDIOS_POR_DIA || bytes + e.bytes.length > CUPO_BYTES_POR_DIA) return { t: 'lleno' };
+    tx.set(refCupo, { n: n + 1, bytes: bytes + e.bytes.length, vence: Timestamp.fromMillis(ahoraMs + 3 * DIA_MS) }, { merge: true });
+    tx.create(refMedio, {
+      idMeta, conversacionId: `wa_${e.telefono}`, tipo, mime: firma.mime, ext: firma.ext, estado: 'pendiente',
+      tamano: e.bytes.length, ruta, en: Timestamp.fromMillis(ahoraMs),
+      // Un pendiente huérfano caduca solo por el TTL en un día.
+      vence: Timestamp.fromMillis(ahoraMs + DIA_MS),
+    });
+    return { t: 'reservado' };
+  });
+  if (decision.t === 'repetido') return { codigo: 200, cuerpo: { ruta: decision.ruta, repetido: true } };
+  if (decision.t === 'en_curso') return { codigo: 409, cuerpo: { error: 'en_curso' } };
+  if (decision.t === 'lleno') return { codigo: 429, cuerpo: { error: 'cupo_diario_lleno' } };
+
   try {
-    // `ifGenerationMatch: 0`: un medio nunca se sobrescribe. Si ya estaba (un intento anterior que
-    // guardó el objeto pero no alcanzó a registrarlo), se sigue al registro sin gastar otro cupo.
-    if (await almacen.guardar(ruta, e.bytes, firma.mime) === 'existe') await liberarCupo(e.tenantId, dia, e.bytes.length);
+    // `ifGenerationMatch: 0`: un medio nunca se sobrescribe. Si el objeto ya estaba (un intento anterior
+    // que no alcanzó a terminar), se sigue a finalizar el registro; el cupo ya estaba reservado.
+    await almacen.guardar(ruta, e.bytes, firma.mime);
   } catch {
-    await liberarCupo(e.tenantId, dia, e.bytes.length);
+    await deshacerReserva(refMedio, refCupo, e.bytes.length);
     return { codigo: 502, cuerpo: { error: 'no_se_guardo' } };
   }
 
-  const vence = Timestamp.fromMillis(ahoraMs + DIAS_DE_RETENCION * DIA_MS);
   try {
-    const repetido = await db.runTransaction(async (tx) => {
-      if ((await tx.get(refMedio)).exists) return true;
-      tx.create(refMedio, {
-        idMeta, conversacionId: `wa_${e.telefono}`, tipo, mime: firma.mime, ext: firma.ext,
-        tamano: e.bytes.length, sha256: createHash('sha256').update(e.bytes).digest('hex'),
-        ruta, en: Timestamp.fromMillis(ahoraMs), vence,
+    await db.runTransaction(async (tx) => {
+      tx.update(refMedio, {
+        estado: 'guardado', sha256: createHash('sha256').update(e.bytes).digest('hex'), vence,
       });
       tx.update(mensaje.ref, { medio: { estado: 'guardado', mime: firma.mime, tamano: e.bytes.length, vence } });
-      return false;
     });
-    if (repetido) await liberarCupo(e.tenantId, dia, e.bytes.length);
-    return { codigo: 200, cuerpo: { ruta, repetido } };
+    return { codigo: 200, cuerpo: { ruta, repetido: false } };
   } catch {
+    // El marcador queda `pendiente`: un reintento pasados 5 minutos lo retoma sin gastar otro cupo.
     return { codigo: 502, cuerpo: { error: 'no_se_registro' } };
   }
 }
@@ -192,7 +205,8 @@ export const guardarMedio = onRequest(
     cors: false,
     maxInstances: 10,
     // Hasta 16 MB de audio más el sobre HTTP.
-    memory: '512MiB',
+    // 1 GiB (revisión de seguridad): el cuerpo de un audio de 16 MB se copia varias veces y no hay concurrencia.
+    memory: '1GiB',
   },
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }

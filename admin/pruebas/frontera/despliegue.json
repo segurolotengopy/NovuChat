@@ -1023,7 +1023,7 @@
     "httpsTrigger": {}
   },
   "guardarMedio": {
-    "availableMemoryMb": 512,
+    "availableMemoryMb": 1024,
     "timeoutSeconds": null,
     "minInstances": null,
     "maxInstances": 10,

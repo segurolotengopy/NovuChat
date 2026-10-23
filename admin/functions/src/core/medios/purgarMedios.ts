@@ -67,5 +67,7 @@ export const purgarMedios = onSchedule(
   async () => {
     const r = await purgarMediosDe();
     console.info(`purga de medios: ${JSON.stringify(r)}`);
+    // Texto FIJO y buscable para una alerta de registros (severidad ERROR): ver core.md, «Medios entrantes guardados».
+    if (r.errores > 0) console.error(`PURGA_MEDIOS_CON_ERRORES comercios_con_error=${r.errores}`);
   },
 );

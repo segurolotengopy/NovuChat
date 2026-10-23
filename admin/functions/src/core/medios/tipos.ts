@@ -37,7 +37,10 @@ export const MIMES_ACEPTADOS: Record<ExtensionDeMedio, readonly string[]> = {
   pdf: ['application/pdf'],
 };
 
-const MARCAS_FTYP = new Set(['M4A ', 'M4B ', 'mp42', 'mp41', 'isom', 'iso2']);
+// Solo M4A y M4B: `isom`, `mp41`, `mp42` e `iso2` también las usa el VIDEO MP4, y un video no es un audio
+// (revisión de seguridad del #617). Un audio m4a de WhatsApp declara M4A; si alguno llegara con otra marca,
+// da 415 y se corrige con evidencia, no se abre de más.
+const MARCAS_FTYP = new Set(['M4A ', 'M4B ']);
 const texto = (bytes: Buffer, desde: number, hasta: number) => bytes.subarray(desde, hasta).toString('latin1');
 
 export function tipoPorFirma(bytes: Buffer): FirmaDeMedio | null {
@@ -61,6 +64,7 @@ export function tipoPorFirma(bytes: Buffer): FirmaDeMedio | null {
   if (n >= 2 && b(0) === 0xff && (b(1) & 0xe0) === 0xe0 && (b(1) & 0x06) === 0x02 && (b(1) & 0x18) !== 0x08) {
     return { ext: 'mp3', tipo: 'audio', mime: 'audio/mpeg' };
   }
-  if (n >= 5 && texto(bytes, 0, 5) === '%PDF-') return { ext: 'pdf', tipo: 'document', mime: 'application/pdf' };
+  // Un PDF que a la vez es un ZIP (docx, APK, jar) en sus primeros bytes es un políglota: se rechaza.
+  if (n >= 5 && texto(bytes, 0, 5) === '%PDF-' && !bytes.subarray(0, 1024).includes(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) return { ext: 'pdf', tipo: 'document', mime: 'application/pdf' };
   return null;
 }
