@@ -68,8 +68,8 @@ const CM_PROMESAS = /lo consulto|lo consultar[eé]|consultar[eé]|\b(te|le) avis
 // Y negar ser una IA (prohibición 4: NUNCA): «no soy un bot / una máquina / un asistente», «soy una persona»,
 // «hablas con una persona», «persona real», «de carne y hueso».
 // Medios y sustantivos del pago. Medios que existen en Bolivia: QR simple, transferencia, Tigo Money, tarjeta, efectivo y depósito.
-// (Nequi y PIX no existen aquí y no se listan. Yape SÍ existe —la billetera del BCP, según la revisión de seguridad del #625—: la lista de arriba no la
-// nombra porque es solo para AFIRMAR un pago, pero la opción `sinDatosDePago` la bloquea. Fuente oficial sin verificar en línea desde esta sesión: pendiente.)
+// (Nequi y PIX no existen aquí y no se listan. Yape SÍ existe y es una de las billeteras más grandes y difundidas de Bolivia: la lista de abajo no la
+// nombra porque es solo para AFIRMAR un pago, pero la opción `sinDatosDePago` la bloquea.)
 // Formas EXPLÍCITAS (nunca `pag\w*`: «página» no es un pago) y sin `cancel*` (cancelar una suscripción no es pagar; «cancelaste/cancelamos/cancelaron» tienen su regla).
 // «abono» (también fertilizante) y «cobro» solo cuentan junto a un estado o verbo de recepción.
 const CM_PAGO = '(?:pagos?|pag|pagad[oa]s?|pagar|pagas?|pagan|pague|pagaste|pagamos|pagaron|comprobantes?|abonos?|abonad[oa]s?|abonar|abonaste|abonamos|abonaron|cobros?|cobrad[oa]s?|cobrar|cobramos|cobraron|plata|dinero|depositos?|transferencias?|qr|tigo ?money|tarjeta|efectivo|vouchers?|bs|bolivianos)';

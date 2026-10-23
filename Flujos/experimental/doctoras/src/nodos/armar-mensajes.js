@@ -12,7 +12,7 @@
 // La ficha del teléfono (`doctoras[<messages[0].from>]`) se escribe AQUÍ, una sola vez por turno. La baja y el riesgo se reportan con el evento `no_contactar`.
 const cfg = cnCfg();
 const base = cnPrimero('Config base') || {};
-const datos = drDatos(base);
+const datos = drDatosVivos(base, cnPrimero('Traer configuración'));
 const t = cnPrimero('Normalizar entrada') || {};
 const puerta = cnPrimero('Puerta del turno') || {};
 const decision = cnPrimero('Decidir turno') || {};

@@ -60,9 +60,9 @@ debajo de los envíos y la hoja. No hay ciclos: ningún nodo lee por nombre algo
 | 1 | `lista` | no | no | ninguna | La lista de rubros (saludo o pitch del primer contacto): la lista misma es la salida; nada se ofrece antes de elegir rubro. |
 | 2 | `traspaso` | no | no | ninguna | El traspaso lleva su propio botón de contacto (enlace a recepción) y el aviso a recepción. |
 | 3 | `pide-datos` | no | no | ninguna | Pidió planes y faltan nombre y negocio: se piden UNA vez, sin botón de planes (los planes salen al contestar). |
-| 4 | `planes` | no | sí | equipo | Los planes (o su tope y complemento): se acabaron las preguntas de precio, cierra con la oferta del equipo. |
-| 5 | `consulta-sin-respuesta` | no | sí | equipo | Integración, costo de Meta, banco, descuento, consumo o el número propio del prospecto: el chat no lo resuelve, requiere al equipo. |
-| 6 | `respuesta-fija` | no | no | ninguna | Identidad y disponibilidad: se contestan completas, sin invitaciones. |
+| 4 | `planes` | no | solo sin planes | equipo | Los planes (o su tope y complemento): respuesta completa, sin botón del equipo; el botón sale solo al derivar, y deriva cuando no hay planes ni imagen que mostrar (si no, sería un callejón sin salida). |
+| 5 | `consulta-sin-respuesta` | no | sí | equipo | Integración o costo de Meta: el chat no lo resuelve, deriva al equipo (el botón sale solo al derivar). |
+| 6 | `respuesta-fija` | no | no | ninguna | Identidad, disponibilidad, banco, consumo, descuento, número propio y coexistencia: se contestan completas, sin invitaciones ni botón. |
 | 7 | `sin-respuesta` | no | sí | equipo | Sin dato, no documentado, a medida («Otro»), cierre hacia el equipo o error del modelo: requiere al equipo. |
 | 8 | `rubro-declina` | sí | sí | planes y equipo | Eligió rubro y además propone una función no documentada: «Ver planes» y la salida al equipo. |
 | 9 | `declina-ofrece-equipo` | no | sí | equipo | El modelo no pudo resolver y su pregunta final ofrece hablar con el equipo: se conserva esa oferta con su botón (aunque la pregunta traiga una palabra de interés). |

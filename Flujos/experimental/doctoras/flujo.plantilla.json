@@ -234,7 +234,7 @@
         }
       },
       "onError": "continueRegularOutput",
-      "notes": "De la consola salen SOLO el nombre del negocio, el número de recepción, los prefijos y la atención (uso extendido). Con la consola caída, «Config del negocio» usa el respaldo de «Config base»."
+      "notes": "De la consola salen SOLO el nombre del negocio, la dirección, el horario, el número de recepción, los prefijos y la atención (uso extendido). Con la consola caída, «Config del negocio» usa el respaldo de «Config base»."
     },
     {
       "parameters": {
