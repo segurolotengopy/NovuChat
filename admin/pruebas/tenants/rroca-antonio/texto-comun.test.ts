@@ -72,8 +72,9 @@ describe('(3) los datos de Antonio', () => {
 
 describe('(4) SEGURIDAD: la alterna pasa siempre por el filtro de salida', () => {
   const sinFiltro = (): string => '';
-  const base = L.raAlternaFiltrada({ medio: false, hashUltimo: '' }, sinFiltro);
-  const baseMedio = L.raAlternaFiltrada({ medio: true, hashUltimo: '' }, sinFiltro);
+  // `alternas: null` = sin alternas del tenant: la base del core.
+  const base = L.raAlternaFiltrada({ medio: false, hashUltimo: '', alternas: null }, sinFiltro);
+  const baseMedio = L.raAlternaFiltrada({ medio: true, hashUltimo: '', alternas: null }, sinFiltro);
   it('la base nombra a Antonio y no trae llaves', () => {
     expect(base).toContain('Antonio');
     expect(base).not.toContain('{titular}');
@@ -92,11 +93,11 @@ describe('(4) SEGURIDAD: la alterna pasa siempre por el filtro de salida', () =>
     expect(L.raAlternaFiltrada({ medio: false, hashUltimo: '', alternas: ['Ya te lo dije, Antonio puede ayudarte con el botón.'] }, motivoDe)).toBe('Ya te lo dije, Antonio puede ayudarte con el botón.');
   });
   it('si el filtro rechaza todo, sale el saludo mínimo', () => {
-    expect(L.raAlternaFiltrada({ medio: false, hashUltimo: '' }, () => 'siempre')).toBe(L.RA_SALUDO_MINIMO);
+    expect(L.raAlternaFiltrada({ medio: false, hashUltimo: '', alternas: null }, () => 'siempre')).toBe(L.RA_SALUDO_MINIMO);
     expect(L.raAlternaFiltrada({ medio: true, hashUltimo: '', alternas: ['hola'] }, () => 'siempre')).toBe(L.RA_SALUDO_MINIMO);
   });
   it('la base nunca repite el último hash enviado', () => {
-    const otra = L.raAlternaFiltrada({ medio: false, hashUltimo: L.ctHashTexto(base) }, sinFiltro);
+    const otra = L.raAlternaFiltrada({ medio: false, hashUltimo: L.ctHashTexto(base), alternas: null }, sinFiltro);
     expect(otra).not.toBe(base);
   });
   it('ESTÁTICA: `ctAlternaDeRepetido(` se llama solo dentro de raAlternaFiltrada, y armar-mensajes.js no la llama', () => {
@@ -111,6 +112,20 @@ describe('(4) SEGURIDAD: la alterna pasa siempre por el filtro de salida', () =>
     expect(cuerpo).toContain('ctAlternaDeRepetido(');
     expect(ARMAR).not.toContain('ctAlternaDeRepetido(');
     expect(ARMAR).toContain('raAlternaFiltrada(');
+  });
+});
+
+describe('(4b) las alternas de archivo de Antonio son dato propio (no el texto del core)', () => {
+  const lib = new Function(`${CODIGO}\nreturn { raAlternaFiltrada, RA_ALTERNAS };`)() as { raAlternaFiltrada: (o: { medio?: boolean; hashUltimo?: string }, m: (x: string) => string) => string; RA_ALTERNAS: { medio: string[] } };
+  it('por omisión, la alterna de medio es la primera de RA_ALTERNAS (sin «sigo» ni «tampoco») y rota si repite', () => {
+    const a = lib.raAlternaFiltrada({ medio: true, hashUltimo: '' }, () => '');
+    expect(a).toBe(lib.RA_ALTERNAS.medio[0]);
+    expect(a).not.toMatch(/\bsigo\b|tampoco/i);
+    expect(lib.raAlternaFiltrada({ medio: true, hashUltimo: L.ctHashTexto(a) }, () => '')).toBe(lib.RA_ALTERNAS.medio[1]);
+  });
+  it('respeta los límites de ctAlternaDeRepetido (≤5 textos de ≤400)', () => {
+    expect(lib.RA_ALTERNAS.medio.length).toBeLessThanOrEqual(5);
+    for (const x of lib.RA_ALTERNAS.medio) expect(x.length).toBeLessThanOrEqual(400);
   });
 });
 

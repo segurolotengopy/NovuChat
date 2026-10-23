@@ -34,6 +34,15 @@ const RA_TITULAR = 'Antonio';
 const RA_TRATAMIENTO = 'tu';
 
 // Lo mínimo si, por un cambio mal hecho, un texto cayera en NIEGA_IA o en las palabras prohibidas del cobro: nunca sale un texto que niegue ser una IA o afirme un pago.
+// Las alternas de ARCHIVO de Antonio son DATO de este flujo (decisión del 23/10/2026: sin «sigo» ni «tampoco»), no del core: se pasan como `alternas` a `ctAlternaDeRepetido` (a lo más 5 textos de a lo más 400 caracteres).
+// Las de contenido son las del core (idénticas a las que Antonio tenía).
+const RA_ALTERNAS = {
+  medio: [
+    'Por aquí no puedo trabajar con ese archivo. Cuéntame por escrito qué necesitas, o escríbele a Antonio con el botón.',
+    'No pude usar ese archivo en este chat. Escríbeme lo que necesitas en un mensaje, o escríbele directo a Antonio con el botón.',
+    'Ese archivo no lo puedo revisar por aquí. Dime con palabras qué buscas, o escríbele a Antonio con el botón.',
+  ],
+};
 const RA_SALUDO_MINIMO = 'Hola, soy el asistente virtual de Antonio Dauber.';
 
 // Lo que el cliente ve cuando manda algo que este canal no lee (sticker, ubicación, contacto, pedido, mensaje no soportado, o un medio sin id): texto cortés fijo, sin modelo.
@@ -568,10 +577,10 @@ function raTextoImagenes(qrAbierto, conOpciones) {
   return 'Por aquí no tengo imágenes del libro para mostrarte; lo único que se envía por este chat es el QR de pago cuando eliges un producto.\n\nSí puedo contarte de qué trata el libro: escríbeme tu pregunta' + (conOpciones === false ? '.' : ' o toca una de las opciones.');
 }
 // El texto alternativo cuando el que sigue sería IDÉNTICO al último enviado: lo genera el core (`ctAlternaDeRepetido`) y ESTA función es la ÚNICA que lo llama, porque su salida DEBE pasar por el filtro de salida
-// (NIEGA_IA, `CB_PROHIBIDAS` y `motivoDe`, que en «Armar mensajes» es `cmMotivoDeRechazo`): propia (con `o.alternas` del tenant, hoy ninguna) → si no pasa, la base sin `alternas` → si no pasa, el saludo mínimo. Pura.
+// (NIEGA_IA, `CB_PROHIBIDAS` y `motivoDe`, que en «Armar mensajes» es `cmMotivoDeRechazo`): propia (con `o.alternas`, por omisión `RA_ALTERNAS` de Antonio) → si no pasa, la base sin `alternas` → si no pasa, el saludo mínimo. Pura.
 function raAlternaFiltrada(o, motivoDe) {
   const pasa = (x) => typeof x === 'string' && x.trim() !== '' && motivoDe(x) === '' && !RA_NIEGA_IA.test(raNorm(x)) && !CB_PROHIBIDAS.test(cbCanon(x));
-  const propia = ctAlternaDeRepetido({ medio: o.medio === true, hashUltimo: o.hashUltimo, titular: RA_TITULAR, tratamiento: RA_TRATAMIENTO, alternas: o.alternas });
+  const propia = ctAlternaDeRepetido({ medio: o.medio === true, hashUltimo: o.hashUltimo, titular: RA_TITULAR, tratamiento: RA_TRATAMIENTO, alternas: o.alternas === undefined ? RA_ALTERNAS : o.alternas });
   if (pasa(propia)) return propia;
   const base = ctAlternaDeRepetido({ medio: o.medio === true, hashUltimo: o.hashUltimo, titular: RA_TITULAR, tratamiento: RA_TRATAMIENTO });
   if (pasa(base)) return base;
