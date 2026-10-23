@@ -16,19 +16,24 @@ const DN_TOPE_NOMBRE_PRODUCTO = 80;
 function dnLimpiar(t) {
   if (typeof t !== 'string') return '';
   return t
-    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
-    .replace(/[\u00ad\u034f\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, '')
+    .normalize('NFKC')
+    .replace(/[\u{0}-\u{1f}\u{7f}-\u{9f}\u{2028}\u{2029}]/gu, ' ')
+    .replace(/[\u{ad}\u{34f}\u{61c}\u{115f}\u{1160}\u{180e}\u{200b}-\u{200f}\u{202a}-\u{202e}\u{2060}-\u{206f}\u{3164}\u{fe00}-\u{fe0f}\u{feff}\u{ffa0}\u{e0000}-\u{e007f}]/gu, '')
     .replace(/<<<|>>>/g, ' ')
     .replace(/[\[\]{}]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+// Recorta por caracteres (no por unidades UTF-16): nunca parte un emoji.
+function dnRecortar(s, n) {
+  return Array.from(s).slice(0, n).join('').trim();
 }
 function dnEsMarcador(t) {
   return typeof t === 'string' && t.indexOf('REEMPLAZAR_') >= 0;
 }
 function dnDireccion(t) {
   if (dnEsMarcador(t)) return '';
-  return dnLimpiar(t).slice(0, DN_TOPE_DIRECCION).trim();
+  return dnRecortar(dnLimpiar(t), DN_TOPE_DIRECCION);
 }
 // El horario no se recorta nunca: si no cabe, no hay horario de esta fuente.
 function dnHorario(t) {
@@ -41,7 +46,7 @@ function dnProducto(p) {
   if (typeof p.id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(p.id)) return null;
   return {
     id: p.id,
-    nombre: dnLimpiar(p.nombre).slice(0, DN_TOPE_NOMBRE_PRODUCTO).trim(),
+    nombre: dnRecortar(dnLimpiar(p.nombre), DN_TOPE_NOMBRE_PRODUCTO),
     precio: typeof p.precio === 'number' && Number.isFinite(p.precio) && p.precio >= 0 ? p.precio : null,
     agotado: p.agotado === true,
   };
@@ -53,7 +58,7 @@ function dnAnuncios(lista) {
     const a = lista[i];
     if (!a || typeof a !== 'object' || Array.isArray(a)) continue;
     if (typeof a.id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(a.id)) continue;
-    const titulares = (Array.isArray(a.titulares) ? a.titulares : [])
+    const titulares = (Array.isArray(a.titulares) ? a.titulares.slice(0, DN_MAX_ANUNCIOS) : [])
       .map(dnLimpiar)
       .filter((x) => x.length >= DN_MIN_LARGO_TITULAR && x.length <= DN_MAX_LARGO_TITULAR)
       .slice(0, DN_MAX_TITULARES);
@@ -61,27 +66,37 @@ function dnAnuncios(lista) {
     salida.push({
       id: a.id,
       titulares,
-      angulo: dnLimpiar(a.angulo).slice(0, DN_TOPE_ANGULO).trim(),
+      angulo: dnRecortar(dnLimpiar(a.angulo), DN_TOPE_ANGULO),
       producto: dnProducto(a.producto),
     });
   }
   return salida;
 }
-// Punto de entrada. Nunca lanza: cualquier entrada malformada da la salida segura.
-function dnDatosDelNegocio(codigo, cuerpo, base) {
-  const b = base && typeof base === 'object' && !Array.isArray(base) ? base : {};
-  const vale = codigo === 200 && !!cuerpo && typeof cuerpo === 'object' && !Array.isArray(cuerpo) && typeof cuerpo.tenantId === 'string';
-  const c = vale ? cuerpo : {};
-  const op = c.operacion && typeof c.operacion === 'object' ? c.operacion : {};
-  const dn = c.datosDelNegocio && typeof c.datosDelNegocio === 'object' ? c.datosDelNegocio : {};
-  const horarioConsola = dnHorario(op.horarioAtencion);
-  const horarioBase = dnHorario(b.horarioAtencion);
-  const manda = typeof b.horarioAtencionManda === 'string' && b.horarioAtencionManda.trim().toLowerCase() === 'si';
-  const horarioAtencion = manda && horarioBase !== '' ? horarioBase : (horarioConsola !== '' ? horarioConsola : horarioBase);
-  const dirConsola = dnDireccion(dn.direccion);
-  return {
-    horarioAtencion,
-    direccion: dirConsola !== '' ? dirConsola : dnDireccion(b.direccion),
-    anuncios: vale ? dnAnuncios(c.anuncios) : [],
-  };
+// Punto de entrada. Cualquier entrada malformada da la salida segura; si algo lanza (un getter hostil), devuelve el respaldo de `base` con `anuncios: []`. `tenantEsperado` (opcional): si viene, el cuerpo solo vale con ese mismo `tenantId`; un `tenantId` vacío nunca vale. `horarioAtencionManda` solo acepta «si» (sin tilde).
+function dnDatosDelNegocio(codigo, cuerpo, base, tenantEsperado) {
+  try {
+    const b = base && typeof base === 'object' && !Array.isArray(base) ? base : {};
+    const vale = codigo === 200 && !!cuerpo && typeof cuerpo === 'object' && !Array.isArray(cuerpo)
+      && typeof cuerpo.tenantId === 'string' && cuerpo.tenantId !== ''
+      && (tenantEsperado === undefined || tenantEsperado === null || cuerpo.tenantId === tenantEsperado);
+    const c = vale ? cuerpo : {};
+    const op = c.operacion && typeof c.operacion === 'object' ? c.operacion : {};
+    const dn = c.datosDelNegocio && typeof c.datosDelNegocio === 'object' ? c.datosDelNegocio : {};
+    const horarioConsola = dnHorario(op.horarioAtencion);
+    const horarioBase = dnHorario(b.horarioAtencion);
+    const manda = typeof b.horarioAtencionManda === 'string' && b.horarioAtencionManda.trim().toLowerCase() === 'si';
+    const horarioAtencion = manda && horarioBase !== '' ? horarioBase : (horarioConsola !== '' ? horarioConsola : horarioBase);
+    const dirConsola = dnDireccion(dn.direccion);
+    return {
+      horarioAtencion,
+      direccion: dirConsola !== '' ? dirConsola : dnDireccion(b.direccion),
+      anuncios: vale ? dnAnuncios(c.anuncios) : [],
+    };
+  } catch (e) {
+    try {
+      return { horarioAtencion: dnHorario(base.horarioAtencion), direccion: dnDireccion(base.direccion), anuncios: [] };
+    } catch (e2) {
+      return { horarioAtencion: '', direccion: '', anuncios: [] };
+    }
+  }
 }

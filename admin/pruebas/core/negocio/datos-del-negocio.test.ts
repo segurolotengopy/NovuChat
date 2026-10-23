@@ -12,7 +12,7 @@ const ARCHIVO = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujo
 const src = readFileSync(ARCHIVO, 'utf8');
 // El código evaluado es el de un archivo del propio repositorio: solo prueba.
 // nosemgrep: devsecops.js-eval-prohibido
-const dn = new Function(src + '\nreturn dnDatosDelNegocio;')() as (c: unknown, b: unknown, base?: unknown) => {
+const dn = new Function(src + '\nreturn dnDatosDelNegocio;')() as (c: unknown, b: unknown, base?: unknown, tenantEsperado?: unknown) => {
   horarioAtencion: string; direccion: string;
   anuncios: Array<{ id: string; titulares: string[]; angulo: string; producto: null | { id: string; nombre: string; precio: number | null; agotado: boolean } }>;
 };
@@ -135,6 +135,50 @@ describe('core/negocio/datos-del-negocio', () => {
     dn(200, ok({ anuncios: [anuncio({ id: 'otro' })] }), {});
     expect(dn(200, cuerpo, {})).toEqual(a);
     expect(JSON.stringify(cuerpo)).toBe(copia);
+  });
+  it('negada: invisibles de etiqueta, selectores, rellenos hangul y ancho completo se saneán', () => {
+    const cp = (...n: number[]) => String.fromCodePoint(...n);
+    const invisibles = [cp(0xe0041, 0xe0042), cp(0xe0000), cp(0xe007f), cp(0xfe0f), cp(0xfe00), cp(0x115f), cp(0x1160), cp(0x3164), cp(0xffa0)];
+    for (const inv of invisibles) {
+      expect(dn(200, ok({ datosDelNegocio: { direccion: `Calle${inv} 5` } }), {}).direccion).toBe('Calle 5');
+      expect(dn(200, ok({ anuncios: [anuncio({ titulares: [`Titular${inv} valido`], angulo: `a${inv}b` })] }), {}).anuncios[0]!.angulo).toBe('ab');
+    }
+    const ancho = dn(200, ok({ datosDelNegocio: { direccion: `Calle ${cp(0xff1c, 0xff1c, 0xff1c)}x${cp(0xff1e, 0xff1e, 0xff1e)} ${cp(0xff3b)}y${cp(0xff3d)} ${cp(0xff5b)}z${cp(0xff5d)}` } }), {}).direccion;
+    expect(ancho).toBe('Calle x y z');
+  });
+  it('negada: el recorte no parte un emoji', () => {
+    const d = dn(200, ok({ datosDelNegocio: { direccion: 'a'.repeat(199) + String.fromCodePoint(0x1f600) + 'zzz' } }), {}).direccion;
+    expect(Array.from(d)).toHaveLength(200);
+    expect(d.endsWith(String.fromCodePoint(0x1f600))).toBe(true);
+    expect(d).not.toMatch(/[\ud800-\udbff]$/);
+  });
+  it('negada: un getter que lanza devuelve el respaldo de base con anuncios []', () => {
+    const hostil = { tenantId: 't1', get operacion(): never { throw new Error('x'); } };
+    expect(dn(200, hostil, { horarioAtencion: 'Base', direccion: 'Dir' })).toEqual({ horarioAtencion: 'Base', direccion: 'Dir', anuncios: [] });
+    const proxy = new Proxy({}, { get() { throw new Error('x'); }, getPrototypeOf() { throw new Error('x'); } });
+    expect(() => dn(200, ok({ anuncios: [anuncio()] }), proxy)).not.toThrow();
+    expect(dn(200, ok(), proxy)).toEqual(VACIO);
+  });
+  it('negada: un millón de titulares se resuelve en menos de 50 ms', () => {
+    const titulares = Array.from({ length: 1_000_000 }, () => 'Titular valido');
+    const t0 = performance.now();
+    const r = dn(200, ok({ anuncios: [anuncio({ titulares })] }), {});
+    expect(performance.now() - t0).toBeLessThan(50);
+    expect(r.anuncios[0]!.titulares).toHaveLength(3);
+  });
+  it('tenantEsperado: exige el mismo tenantId; tenantId vacío nunca vale', () => {
+    const c = ok({ operacion: { horarioAtencion: 'Consola' }, anuncios: [anuncio()] });
+    const base = { horarioAtencion: 'Base' };
+    expect(dn(200, c, base, 't1').horarioAtencion).toBe('Consola');
+    expect(dn(200, c, base, 't1').anuncios).toHaveLength(1);
+    expect(dn(200, c, base, 'otro')).toEqual({ horarioAtencion: 'Base', direccion: '', anuncios: [] });
+    expect(dn(200, c, base, '')).toEqual({ horarioAtencion: 'Base', direccion: '', anuncios: [] });
+    expect(dn(200, { ...c, tenantId: '' }, base)).toEqual({ horarioAtencion: 'Base', direccion: '', anuncios: [] });
+    expect(dn(200, { ...c, tenantId: '' }, base, '')).toEqual({ horarioAtencion: 'Base', direccion: '', anuncios: [] });
+  });
+  it('horarioAtencionManda solo acepta si sin tilde', () => {
+    const c = ok({ operacion: { horarioAtencion: 'Consola' } });
+    expect(dn(200, c, { horarioAtencion: 'Base', horarioAtencionManda: 'sí' }).horarioAtencion).toBe('Consola');
   });
   describe('pureza', () => {
     it('sin importaciones, globales de Node ni estado del flujo', () => {
