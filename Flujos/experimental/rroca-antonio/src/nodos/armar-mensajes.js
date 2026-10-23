@@ -62,7 +62,7 @@ const conLista = (cuerpo, filas) => {
 };
 const conAntonio = (cuerpo, extra) => {
   const c = raSeguro(cuerpo);
-  return cmContactoConBoton(Object.assign({ numero: cnDigitos(cfg.numeroRecepcion), desde: from, cuerpo: c, botonTexto: RA_BOTON_ANTONIO, saludo: 'Hola Antonio, vengo del asistente virtual.', textoDelRespaldo: 'Escríbele aquí:', sinNumero: 'Eso lo ve Antonio directamente.' }, extra || {}));
+  return cmContactoConBoton(Object.assign({ numero: cnDigitos(cfg.numeroRecepcion), desde: from, cuerpo: c, botonTexto: RA_BOTON_ANTONIO, saludo: 'Hola Antonio, vengo del asistente virtual.', textoDelRespaldo: 'Escríbele aquí:', sinNumero: 'Eso lo ve Antonio directamente.', esRepetido: (x) => fichaAntes.ultimoHash !== '' && raHashTexto(x) === fichaAntes.ultimoHash }, extra || {}));
 };
 const usadosHoy = () => fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
 // REGLA (P7): un saludo SIN producto decidido no lleva botones con montos. Mientras no esté saludado no hay menú en las respuestas libres; ya saludado, el menú principal sin los botones que ya pulsó.

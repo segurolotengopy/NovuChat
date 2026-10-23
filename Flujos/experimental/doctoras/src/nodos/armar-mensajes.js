@@ -57,7 +57,7 @@ const hayBoton = numeroRecepcion !== '' && numeroRecepcion !== cnDigitos(from);
 const conRecepcion = (cuerpo) => {
   const pars = String(cuerpo).split('\n\n').filter((p) => hayBoton || !/bot[oó]n/i.test(p));
   const c = drSeguro(pars.join('\n\n') || dt('otra').split('\n\n')[0]);
-  return cmContactoConBoton({ numero: numeroRecepcion, desde: from, cuerpo: c, botonTexto: DR_BOTON_RECEPCION, saludo: 'Hola, escribo desde el chat de la ' + doctora + '.', textoDelRespaldo: 'Escríbele aquí:', sinNumero: 'Eso lo ve la recepción directamente.' });
+  return cmContactoConBoton({ numero: numeroRecepcion, desde: from, cuerpo: c, botonTexto: DR_BOTON_RECEPCION, saludo: 'Hola, escribo desde el chat de la ' + doctora + '.', textoDelRespaldo: 'Escríbele aquí:', sinNumero: 'Eso lo ve la recepción directamente.', rotacion: fichaAntes.turnos });
 };
 // La línea de empatía del modelo: solo si pasa el filtro común y las reglas propias; si no, no sale.
 let empatia = '';

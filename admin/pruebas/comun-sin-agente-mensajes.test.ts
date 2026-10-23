@@ -13,7 +13,7 @@ import { ejecutar } from './lib/flujo';
 
 const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/comun-sin-agente/src/mensajes.js');
 const FUENTE = readFileSync(RUTA, 'utf8');
-const NOMBRES = ['cmRecorte', 'cmTexto', 'cmBotones', 'cmLista', 'cmEnlace', 'cmUrlWa', 'cmMensaje', 'cmSinMencionDelBoton', 'cmMotivoAviso', 'cmContactoConBoton'] as const;
+const NOMBRES = ['cmRecorte', 'cmTexto', 'cmBotones', 'cmLista', 'cmEnlace', 'cmUrlWa', 'cmMensaje', 'cmSinMencionDelBoton', 'cmMotivoAviso', 'cmTextosMismoNumero', 'cmContactoConBoton'] as const;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Fn = (...a: any[]) => any;
 const M = ejecutar(`${FUENTE}\nreturn [{ json: { ${NOMBRES.join(', ')} } }];`, [{}])[0] as Record<(typeof NOMBRES)[number], Fn>;
@@ -138,7 +138,7 @@ describe('pasar con una persona: el botón, o solo texto', () => {
   it('si al quitar la mención no queda nada, sale el texto por defecto', () => {
     expect(M.cmSinMencionDelBoton('Tócale el botón.', 'Lo coordina una persona.')).toBe('Lo coordina una persona.');
     expect(M.cmSinMencionDelBoton('Hola. Toca el botón de abajo', 'x')).toBe('Hola.');
-    expect(M.cmSinMencionDelBoton('Escríbele tocando el botón de abajo.', 'x')).toBe('Escríbele.');
+    expect(M.cmSinMencionDelBoton('Escríbele tocando el botón de abajo.', 'x')).toBe('x');
   });
   it('un texto sin mención del botón queda igual', () => {
     expect(M.cmSinMencionDelBoton('Gracias por escribirnos.', 'x')).toBe('Gracias por escribirnos.');
@@ -226,9 +226,9 @@ describe('PROMESA SIN RESPALDO DEL BOTÓN: quien escribe es la recepción', () =
     for (const v of ['toca el botón', 'Toca el boton', 'TÓCALE EL BOTÓN', 'tócale el botón de abajo', 'tocando el botón', 'con el botón', 'con el boton de abajo', 'pulsa el botón', 'presiona el botón', 'aprieta el boton', 'usa el botón', 'el botón', 'botón', 'BOTON']) {
       const s = M.cmSinMencionDelBoton('Hola equipo. ' + v + ' ahora.', 'por defecto') as string;
       expect(s, v).not.toMatch(/bot[oó]n/i);
-      expect(s, v).toMatch(/^Hola equipo\./);
+      expect(s, v).toBe('Hola equipo.');
     }
-    expect(M.cmSinMencionDelBoton('Escríbele con el botón.', 'D')).toBe('Escríbele.');
+    expect(M.cmSinMencionDelBoton('Escríbele con el botón.', 'D')).toBe('D');
     expect(M.cmSinMencionDelBoton('Toca el botón', 'D')).toBe('D');
   });
 });
@@ -246,5 +246,49 @@ describe('cmMotivoAviso: por qué no salió el aviso', () => {
     expect(M.cmMotivoAviso({})).toBe('');
     expect(M.cmMotivoAviso({ aviso: 'no_salio', motivoFallo: 'plantilla_no_configurada', planeado: false, desde: '71234562', numeroRecepcion: rec })).toBe('');
     expect(M.cmMotivoAviso({ aviso: 'no_salio', motivoFallo: 'sin_destinatario', planeado: false, desde: '71234562', numeroRecepcion: '' })).toBe('');
+  });
+});
+
+describe('la limpieza quita la oración entera, nunca deja una frase rota', () => {
+  it('NIEGA: «Dale al botón para escribirle.», «Haz clic en el botón de abajo.», «El botón rojo cuesta 50 Bs.», «Usa el botón o llama al 70000000.»', () => {
+    for (const f of ['Dale al botón para escribirle.', 'Haz clic en el botón de abajo.', 'El botón rojo cuesta 50 Bs.', 'Usa el botón o llama al 70000000.']) {
+      const s = M.cmSinMencionDelBoton('Eso lo ve recepción. ' + f + ' Gracias.', 'D') as string;
+      expect(s, f).toBe('Eso lo ve recepción. Gracias.');
+      expect(M.cmSinMencionDelBoton(f, 'D'), f).toBe('D');
+    }
+    expect(M.cmSinMencionDelBoton('Hola 👇\n\nEl botón abre su chat.\n\nGracias.', 'D')).toBe('Hola 👇\n\nGracias.');
+  });
+  it('tiempo lineal: 4096 y 20.000 espacios (o puntos) no cuelgan (< 50 ms)', () => {
+    for (const n of [4096, 20000]) for (const base of [' ', ' .', '\n ']) {
+      const t0 = Date.now();
+      M.cmSinMencionDelBoton('a' + base.repeat(n) + 'tócale el botón' + base.repeat(n), 'D');
+      expect(Date.now() - t0).toBeLessThan(50);
+    }
+  });
+});
+
+describe('la rotación por contador (flujos sin memoria del último texto)', () => {
+  it('NIEGA: dos contadores seguidos nunca dan el mismo texto', () => {
+    const op = { numero: '71234561', desde: '71234561', cuerpo: 'x', botonTexto: 'E', saludo: 'h' };
+    for (let n = 0; n < 9; n++) expect(M.cmContactoConBoton({ ...op, rotacion: n }).texto).not.toBe(M.cmContactoConBoton({ ...op, rotacion: n + 1 }).texto);
+    expect(M.cmContactoConBoton({ ...op, rotacion: NaN }).texto).toBe(M.cmTextosMismoNumero[0]);
+  });
+});
+
+describe('tres redacciones fijas para el mismo número, sin repetir la última', () => {
+  const op = { numero: '71234561', desde: '71234561', cuerpo: 'x', botonTexto: 'E', saludo: 'h' };
+  it('son 3, distintas, sin botón ni promesa', () => {
+    const t = M.cmTextosMismoNumero as string[];
+    expect(new Set(t).size).toBe(3);
+    for (const x of t) { expect(x).not.toMatch(/bot[oó]n|te (escribir|llam|avis)|ya (le )?avis|luego/i); expect(M.cmSinMencionDelBoton(x, 'D')).toBe(x); }
+  });
+  it('NIEGA: con `esRepetido` nunca devuelve la redacción que acaba de salir, en cadena de 6 turnos', () => {
+    let ultimo = '';
+    for (let i = 0; i < 6; i++) {
+      const m = M.cmContactoConBoton({ ...op, esRepetido: (x: string) => x === ultimo });
+      expect(m.texto).not.toBe(ultimo);
+      expect(m.texto).not.toMatch(/bot[oó]n/i);
+      ultimo = m.texto;
+    }
   });
 });

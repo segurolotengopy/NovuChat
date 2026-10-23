@@ -3402,7 +3402,8 @@ describe('BLOQUE DE PAGOS · la constante «comprobante leído» es la ÚNICA ex
       const rep = w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['texto'] === m.cuerpo);
       expect(rep).toHaveLength(1);
       expect(rep[0]!['aviso']).toBe('no_salio');
-      expect(rep[0]!['avisoMotivo']).toBe(o.aviso === 'error' || o.aviso === 'sin-id' ? 'meta' : rep[0]!['avisoMotivo']);
+      if (o.aviso === 'error' || o.aviso === 'sin-id') expect(rep[0]!['avisoMotivo']).toBe('meta');
+      else expect(rep[0]).not.toHaveProperty('avisoMotivo');
     }
     // Y la función pura: solo `salio === true` da la constante.
     for (const s of [false, 'repetido', undefined, null, 1, 'true']) expect(L.rrTextoComprobante('cuadra', '', s).cuerpo).not.toBe(LEIDO);
@@ -4816,19 +4817,22 @@ describe('CIERRE 2 · topes GLOBALES por hora de avisos a Rubén: consultas y de
     expect((contador(w, 'derivaciones') as J)['n']).toBe(1);
   });
 
-  it('PROMESA SIN RESPALDO DEL BOTÓN: si quien escribe ES la recepción, ninguna respuesta nombra un botón que no hay, y el reporte dice `no_salio` con `avisoMotivo: mismo_numero`', () => {
-    const frases = [HABLAR, 'necesito una factura', 'quiero hacer un reclamo', 'hola'];
-    const reps: J[] = [];
+  it('PROMESA SIN RESPALDO DEL BOTÓN: si quien escribe ES la recepción, ninguna respuesta nombra un botón que no hay, el texto no se repite en turnos seguidos (MISMO mundo) y el reporte dice `no_salio` con `avisoMotivo: mismo_numero`', () => {
+    const w = crear({ base: { prefijosPermitidos: ['591'] } });
+    const frases = [HABLAR, 'necesito una factura', 'quiero hacer un reclamo', HABLAR, 'hola'];
+    const cuerpos: string[] = [];
     for (const f of frases) {
-      // Un mundo por frase: el texto de ese caso es fijo y el vigilante de UX no admite la misma respuesta dos veces seguidas.
-      const w = crear({ base: { prefijosPermitidos: ['591'] } });
+      // El vigilante de UX corta si dos respuestas seguidas son iguales: el texto del caso rota entre 3 redacciones.
       const t = hablar(w, REC, mTexto(f), { avanzarMin: 0 });
-      for (const m of t.mensajes ?? []) {
+      expect(t.mensajes.length, f).toBeGreaterThan(0);
+      for (const m of t.mensajes) {
         expect(tieneBotonRuben(m), f).toBe(false);
         expect(JSON.stringify(m.payload), f).not.toMatch(/bot[oó]n/i);
+        cuerpos.push(m.cuerpo);
       }
-      reps.push(...w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['telefono'] === REC));
     }
+    for (let i = 1; i < cuerpos.length; i++) expect(cuerpos[i], `turno ${i}`).not.toBe(cuerpos[i - 1]);
+    const reps = w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente' && c['telefono'] === REC);
     expect(reps.length).toBeGreaterThan(0);
     for (const r of reps) {
       expect(String(r['texto'])).not.toMatch(/bot[oó]n/i);
