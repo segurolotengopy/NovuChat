@@ -255,6 +255,7 @@ function rrFichaVigente(f, ahoraMs) {
   const preguntaMs = f && Number.isFinite(f.ultimaPreguntaMs) && f.ultimaPreguntaMs > 0 ? f.ultimaPreguntaMs : 0;
   const preguntaVale = !!f && typeof f.ultimaPregunta === 'string' && RR_RE_PREGUNTA.test(f.ultimaPregunta) && preguntaMs > 0
     && (!Number.isFinite(ahoraMs) || (preguntaMs <= ahoraMs + 60 * 1000 && ahoraMs - preguntaMs <= RR_VENTANA_PREGUNTA_MS));
+  const charlaVencida = !!f && Number.isFinite(ahoraMs) && Number.isFinite(f.ultimoMs) && f.ultimoMs > 0 && ahoraMs - f.ultimoMs > RR_OLVIDO_MS;
   return {
     ultimosIds: ids.slice(-RR_TOPE_IDS), turnos: f && Number.isFinite(f.turnos) ? f.turnos : 0, ultimoMs: f && Number.isFinite(f.ultimoMs) ? f.ultimoMs : 0,
     saludado: !!f && f.saludado === true, usados: usados, pedidos: f && Number.isFinite(f.pedidos) && f.pedidos >= 0 ? Math.floor(f.pedidos) : 0,
@@ -273,9 +274,10 @@ function rrFichaVigente(f, ahoraMs) {
     ultimaPregunta: preguntaVale ? f.ultimaPregunta : '',
     ultimaPreguntaMs: preguntaVale ? preguntaMs : 0,
     // ENTREGA 2 (23/10/2026): cuántos mensajes de CONVERSACIÓN se le enviaron (0 a 1000; lo cuenta «Armar mensajes» y solo cuenta lo que Meta aceptó), si ya pidió precios u opciones y si ya vio el bloque de opciones.
-    charlaN: f && Number.isFinite(f.charlaN) && f.charlaN > 0 ? Math.min(Math.floor(f.charlaN), 1000) : 0,
-    pidioOpciones: !!f && f.pidioOpciones === true,
-    opcionesVistas: !!f && f.opcionesVistas === true,
+    // Con `ahoraMs`, la conversación vence a las 48 h (como el historial): quien vuelve después empieza otra charla (charlaN 0, sin marcas), aunque su ficha siga en el mapa porque nadie la barrió.
+    charlaN: f && !charlaVencida && Number.isFinite(f.charlaN) && f.charlaN > 0 ? Math.min(Math.floor(f.charlaN), 1000) : 0,
+    pidioOpciones: !!f && !charlaVencida && f.pidioOpciones === true,
+    opcionesVistas: !!f && !charlaVencida && f.opcionesVistas === true,
   };
 }
 // Hash corto (djb2 sobre el texto normalizado) para comparar textos enviados; no es criptográfico ni se usa para nada de seguridad.
