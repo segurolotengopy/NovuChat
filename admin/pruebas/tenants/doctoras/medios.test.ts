@@ -16,7 +16,10 @@ import { ANA, TENANTS, crear, flujoDe, hablar, mAudio, mDocumento, mImagen, text
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const MEDIOS = join(AQUI, '../../../../Flujos/src/core/medios');
-const fuente = (a: string): string => readFileSync(join(MEDIOS, a), 'utf8');
+const leer = (a: string): string => readFileSync(join(MEDIOS, a), 'utf8');
+// «Preparar imagen» se arma con el reconocimiento por titular DELANTE (PR-3): el nodo es los dos módulos, en ese orden.
+const fuente = (a: string): string => (a === 'preparar-imagen.js'
+  ? leer('anuncio-por-titular.js').trimEnd() + '\n\n' + leer(a) : leer(a));
 
 const MODULOS: Array<[string, string]> = [
   ['Preparar transcripción', 'preparar-transcripcion.js'],

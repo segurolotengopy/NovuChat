@@ -146,9 +146,27 @@ const escribirManifiesto = (m, raiz) => {
 };
 
 /** Una entrada del manifiesto, como `"ruta.js"` o `{ archivo, saltoFinal }`, normalizada. */
-const entrada = (valor) => (typeof valor === 'string'
-  ? { archivo: valor, saltoFinal: false }
-  : { archivo: valor.archivo, saltoFinal: valor.saltoFinal === true });
+const entrada = (valor) => {
+  const archivo = (valor !== null && typeof valor === 'object' && !Array.isArray(valor)) ? valor.archivo : valor;
+  if (Array.isArray(archivo)) {
+    if (archivo.length === 0) throw new Error('una lista de módulos del manifiesto no puede estar vacía');
+    const mal = archivo.find((a) => typeof a !== 'string' || a === '');
+    if (mal !== undefined || archivo.some((a) => typeof a !== 'string' || a === '')) {
+      throw new Error(`una lista de módulos del manifiesto solo admite rutas de texto no vacías (llegó ${JSON.stringify(mal)})`);
+    }
+  } else if (typeof archivo !== 'string' || archivo === '') {
+    throw new Error(`la entrada del manifiesto necesita una ruta de texto o una lista de rutas (llegó ${JSON.stringify(archivo)})`);
+  }
+  return { archivo, saltoFinal: valor !== null && typeof valor === 'object' && !Array.isArray(valor) && valor.saltoFinal === true };
+};
+
+/**
+ * `archivo` puede ser una LISTA de módulos: el nodo es la concatenación de todos, en ese
+ * orden (los helpers comunes primero, el nodo al final). `extraer` escribe solo el ÚLTIMO módulo y exige
+ * que los de adelante existan y sean el comienzo del nodo; si no, lo deja como está y avisa.
+ */
+const rutasDe = (base, archivo, flujo) => (Array.isArray(archivo)
+  ? archivo.map((a) => dentroDe(base, a, flujo)) : dentroDe(base, archivo, flujo));
 
 /** Lo mismo, en la forma más corta que lo representa. */
 const compactar = ({ archivo, saltoFinal }) => (saltoFinal ? { archivo, saltoFinal: true } : archivo);
@@ -178,6 +196,16 @@ function carpetaValida(carpeta) {
 
 /** El contenido que va al JSON, leído del archivo del módulo según la convención del salto final. */
 function contenidoDeModulo(ruta, saltoFinal) {
+  if (Array.isArray(ruta)) {
+    const partes = ruta.map((r) => {
+      const p = leerSiExiste(r);
+      if (p === null) throw new Error(`falta el módulo ${r}`);
+      if (!p.endsWith('\n')) throw new Error(`${r}: el archivo de un módulo termina en un salto de línea`);
+      return p;
+    });
+    const junto = partes.join('');
+    return saltoFinal ? junto : junto.slice(0, -1);
+  }
   const t = leerSiExiste(ruta);
   if (t === null) throw new Error(`falta el módulo ${ruta}`);
   if (saltoFinal) return t;
@@ -217,7 +245,7 @@ function recorrer(j, manifiesto, raiz, visitar) {
     if (n.type !== TIPO_CODE) throw new Error(`${manifiesto.flujo}: «${nombre}» no es un nodo Code (${n.type})`);
     const e = entrada(valor);
     visitar({
-      nodo: n, campo: 'jsCode', clave: `codigo/${nombre}`, ...e, ruta: dentroDe(c.src, e.archivo, manifiesto.flujo),
+      nodo: n, campo: 'jsCode', clave: `codigo/${nombre}`, ...e, ruta: rutasDe(c.src, e.archivo, manifiesto.flujo),
       leer: () => n.parameters.jsCode,
       escribir: (v) => { n.parameters.jsCode = v; },
       anotar: (nuevaEntrada) => { manifiesto.codigo[nombre] = compactar(nuevaEntrada); },
@@ -234,7 +262,7 @@ function recorrer(j, manifiesto, raiz, visitar) {
         throw new Error(`${manifiesto.flujo}: «${nombre}» no tiene el campo ${campo} en el JSON`);
       }
       visitar({
-        nodo: n, campo, clave: `prompts/${nombre}.${campo}`, ...e, ruta: dentroDe(c.prompts, e.archivo, manifiesto.flujo),
+        nodo: n, campo, clave: `prompts/${nombre}.${campo}`, ...e, ruta: rutasDe(c.prompts, e.archivo, manifiesto.flujo),
         leer,
         escribir: campo === 'text'
           ? (v) => { n.parameters.text = v; }
@@ -332,6 +360,23 @@ export function extraerFlujo(archivoFlujo, { raiz = RAIZ_FLUJOS, nuevo = null } 
   const escritos = [];
   const avisos = [];
   recorrer(j, manifiesto, raiz, ({ clave, ruta, leer, anotar, archivo }) => {
+    if (Array.isArray(ruta)) {
+      // Un nodo armado con varios módulos: los de adelante (helpers compartidos) tienen que existir y ser el
+      // comienzo del nodo; solo el ÚLTIMO es del nodo y es el que se escribe.
+      const previos = ruta.slice(0, -1).map((r) => leerSiExiste(r));
+      const prefijo = previos.join('');
+      const { texto: t, saltoFinal: sf } = archivoDeContenido(leer(), clave);
+      if (previos.some((p) => p === null) || !t.startsWith(prefijo)) {
+        avisos.push(`${clave} se arma con varios módulos (${archivo.join(' + ')}) y no empieza por los de adelante; extraer no lo parte y lo deja como está`);
+        return;
+      }
+      const resto = t.slice(prefijo.length);
+      mkdirSync(dirname(ruta[ruta.length - 1]), { recursive: true });
+      writeFileSync(ruta[ruta.length - 1], resto);
+      anotar({ archivo, saltoFinal: sf });
+      escritos.push(ruta[ruta.length - 1]);
+      return;
+    }
     const { texto, saltoFinal } = archivoDeContenido(leer(), clave);
     const previo = leerSiExiste(ruta);
     if (previo !== null && previo !== texto) {
