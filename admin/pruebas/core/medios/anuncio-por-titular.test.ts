@@ -339,3 +339,40 @@ describe('los flujos que incluyen «Preparar imagen» llevan anuncio-por-titular
     expect(b).toBeGreaterThan(a);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Agenda mínima (Bellido): sus dos JSON llevan el módulo nuevo, definido antes de usarse, e INERTE sin `anuncios`
+// ---------------------------------------------------------------------------
+describe('Agenda mínima: «Preparar imagen» de cada JSON define anuncioPorTitular y es inerte sin anuncios', () => {
+  const DIR = join(aqui, '../../../../Flujos/experimental/agenda-minima');
+  for (const archivo of ['agenda-minima.v0.json', 'agenda-minima.prueba.json']) {
+    const flujo = JSON.parse(readFileSync(join(DIR, archivo), 'utf8')) as { nodes: Array<{ name: string; parameters?: { jsCode?: string } }> };
+    const codigo = String(flujo.nodes.find((n) => n.name === 'Preparar imagen')?.parameters?.jsCode ?? '');
+
+    it(`${archivo}: define anuncioPorTitular ANTES de llamarla`, () => {
+      const def = codigo.indexOf('const anuncioPorTitular =');
+      expect(def).toBeGreaterThanOrEqual(0);
+      expect(codigo.indexOf('? anuncioPorTitular(')).toBeGreaterThan(def);
+    });
+
+    it(`${archivo}: con categoría publicidad y titular, con y sin anuncios, no lanza ReferenceError`, () => {
+      const o = { categoria: 'publicidad', titular_principal: 'Tu piel merece más cuidado', texto: 'Promo' };
+      for (const cfg of [{}, { anuncios: LISTA }, { anuncios: [] }, { anuncios: [null, {}] }]) {
+        expect(() => correr(codigo, o, cfg), JSON.stringify(cfg)).not.toThrow();
+      }
+    });
+
+    it(`${archivo}: SIN anuncios (ausente, vacío, malformado) la salida es la del módulo anterior salvo anuncioMedio vacío`, () => {
+      const categorias = ['comprobante', 'publicidad', 'pago_con_problema', 'captura_de_pantalla', 'foto', 'otro', 'boca_o_dientes', 'documento_salud'];
+      const sinAnuncios: Array<unknown> = [undefined, [], null, 'x', [null, {}]];
+      for (const c of categorias) {
+        for (const a of sinAnuncios) {
+          const o = { categoria: c, titular_principal: 'Tu piel merece más cuidado', texto: 'Promo 2x1', descripcion: 'una calle' };
+          const { anuncioMedio, ...resto } = correr(codigo, o, a === undefined ? {} : { anuncios: a });
+          expect(anuncioMedio, c).toBe('');
+          expect(resto, `${c} ${JSON.stringify(a)}`).toEqual(correr(ANTERIOR, o, {}));
+        }
+      }
+    });
+  }
+});
