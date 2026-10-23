@@ -37,6 +37,8 @@ let habilitado = false;   // la compuerta de las opciones; se calcula más abajo
 const salir = (plan, extra) => [{ json: Object.assign({ plan: plan, from: from, textoCliente: textoDelTurno, llamarModelo: false, cuerpoModelo: null, modelo: raModeloValido(base.modelo), opcionesHabilitadas: habilitado }, extra || {}) }];
 const panel = raPanelDe(cnPrimero('Traer configuración'));
 const cat = raCatalogo(panel.cuerpo);
+// Los NOMBRES del catálogo de la Consola: los motivos de los avisos a Antonio nombran el producto como lo escribió el comercio.
+const nom = raNombres(panel.cuerpo);
 const agotados = raAgotados(panel.cuerpo);
 const cobro = raCobro(panel);
 const ficha = raFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora);
@@ -91,7 +93,7 @@ const hayCobro = cobro.modo === 'real' && (cobro.pendiente || cobro.enRevision |
 const producto = ficha.producto || '';
 // La compuerta de las opciones (`vdHabilitado`, base común): dos mensajes de conversación o una excepción declarada.
 habilitado = vdHabilitado({ charlaN: ficha.charlaN, qrAbierto: hayQrAbierto, producto: ficha.producto, pedidos: ficha.pedidos, comprobanteMs: ficha.comprobanteMs, enRevision: cobro.enRevision === true });
-const nombreProducto = producto && RA_PRODUCTOS[producto] ? RA_PRODUCTOS[producto].nombre : 'sin producto';
+const nombreProducto = producto && RA_PRODUCTOS[producto] ? raTitulo(nom, producto) : 'sin producto';
 
 // El resultado del cotejo (si corrió) como plan de comprobante. Solo corrió si la imagen era un comprobante y había un cobro real; si no, «cbResultadoVenta» lo deja en «sin cotejar» con aviso y botón: nunca «cuadra».
 const planComprobante = () => {
@@ -152,7 +154,7 @@ if (esVisual) {
     const prodAnuncio = anuncio.producto && typeof anuncio.producto === 'object' ? anuncio.producto : null;
     const k = prodAnuncio ? Object.keys(RA_PRODUCTOS).find((x) => RA_PRODUCTOS[x].catId === prodAnuncio.id) : undefined;
     textoDelTurno = raLineaCliente('Imagen del anuncio «' + String(anuncio.titulares && anuncio.titulares[0] || '').replace(/[«»\[\]]/g, ' ') + '»', 300).replace(/\s+/g, ' ').trim();
-    if (k && (agotados.indexOf(k) >= 0 || (prodAnuncio && prodAnuncio.agotado === true))) return salir({ tipo: 'derivar', motivo: 'agotado', aviso: avisoDeConsulta('producto_agotado', 'preguntó por un anuncio de ' + RA_PRODUCTOS[k].nombre + ', que figura como agotado'), cat: cat, anuncio: idAnuncio });
+    if (k && (agotados.indexOf(k) >= 0 || (prodAnuncio && prodAnuncio.agotado === true))) return salir({ tipo: 'derivar', motivo: 'agotado', aviso: avisoDeConsulta('producto_agotado', 'preguntó por un anuncio de ' + raTitulo(nom, k) + ', que figura como agotado'), cat: cat, anuncio: idAnuncio });
     if (k && raPrecio(cat, k) !== null) return salir(Object.assign({ tipo: 'precio', producto: k, cat: cat, conPresentacion: !ficha.saludado, temprano: !habilitado, anuncio: idAnuncio }, abierto()));
     // Sin producto con precio: nada de montos; el ángulo del anuncio (dato aprobado por el negocio) abre la conversación. Como primer mensaje, el saludo fijo.
     if (!ficha.saludado) return salir({ tipo: 'saludo', cat: cat, boton: '', anuncio: idAnuncio });
@@ -185,7 +187,7 @@ const elegir = (k, boton) => {
   const precio = raPrecio(cat, k);
   const agotado = agotados.indexOf(k) >= 0;
   const sinQr = precio === null ? (agotado ? 'agotado' : 'sin_precio') : (cobro.modo === 'ninguno' ? 'sin_cobro' : (cobro.mediaId === '' ? 'sin_medio' : ''));
-  if (sinQr === 'agotado') return { tipo: 'derivar', motivo: 'agotado', aviso: avisoDeConsulta('producto_agotado', 'pidió ' + RA_PRODUCTOS[k].nombre + ', que figura como agotado'), cat: cat, boton: boton };
+  if (sinQr === 'agotado') return { tipo: 'derivar', motivo: 'agotado', aviso: avisoDeConsulta('producto_agotado', 'pidió ' + raTitulo(nom, k) + ', que figura como agotado'), cat: cat, boton: boton };
   if (sinQr) return { tipo: 'derivar', motivo: sinQr, aviso: avisoDeConsulta('qr_no_disponible', 'QR no disponible (' + sinQr + ')'), cat: cat, boton: boton };
   return { tipo: 'qr', producto: k, monto: precio, mediaId: cobro.mediaId, pedidoId: raIdPedido(ahora, ficha.pedidos + 1), conPresentacion: !ficha.saludado, cat: cat, boton: boton };
 };
@@ -284,7 +286,7 @@ const precioPedido = raPrecioPedido(norm);
 if (precioPedido && precioPedido.producto !== '') {
   const k = precioPedido.producto;
   // Un producto sin precio en el catálogo (agotado, o ausente) no se cotiza: con la bandera `agotado` se dice la verdad con el aviso y el botón; si no, no hay opciones que mostrar. Nunca se lista OTRO precio en su lugar.
-  if (raPrecio(cat, k) === null) return salir(agotados.indexOf(k) >= 0 ? { tipo: 'derivar', motivo: 'agotado', aviso: avisoDeConsulta('producto_agotado', 'preguntó el precio de ' + RA_PRODUCTOS[k].nombre + ', que figura como agotado'), cat: cat } : sinOpciones(''));
+  if (raPrecio(cat, k) === null) return salir(agotados.indexOf(k) >= 0 ? { tipo: 'derivar', motivo: 'agotado', aviso: avisoDeConsulta('producto_agotado', 'preguntó el precio de ' + raTitulo(nom, k) + ', que figura como agotado'), cat: cat } : sinOpciones(''));
   return salir(Object.assign({ tipo: 'precio', producto: k, cat: cat, conPresentacion: !ficha.saludado, temprano: !habilitado }, abierto()));
 }
 // «¿Tienes imágenes?»: respuesta fija, el flujo no envía imágenes del libro. Como PRIMER mensaje, el saludo.
@@ -319,9 +321,10 @@ if (ficha.comprobanteMs > 0 && (raHablaDePagar(norm) || /\b(pago|pague|pagado|pa
 // Una nota de voz corta o ininteligible (menos de 3 palabras o sin letras que valgan) que el código no atendió arriba (ni siquiera la derivación de no entrega tras un comprobante, que va antes): se pide repetirla
 // con un texto fijo; el modelo no inventa una respuesta.
 if (esAudio && raAudioIlegible(norm)) return salir({ tipo: 'audio_fijo', causa: 'corto', cat: cat });
-// Con un QR abierto, lo que queda: pedir un producto (recordatorio), una pregunta (el modelo, sin botones de producto ni otro QR, y con la invitación a pagar) o cualquier otra cosa (recordatorio).
+// Con un QR abierto, lo que queda: pedir un producto (el recordatorio: un solo QR a la vez) o CUALQUIER otra cosa —una pregunta, una afirmación («casi no hablamos», «me parece bien») o un audio transcrito sin «?»—: la contesta el modelo
+// (sin botones de producto ni otro QR) y «Armar mensajes» agrega la invitación a pagar. La conversación sigue; el recordatorio de pago solo sale cuando habla de pagar (más arriba) o pide un producto.
 if (hayQrAbierto) {
-  if (raPideProducto(norm) || !raEsPreguntaLibre(textoCliente, norm)) return salir(recordatorio(''));
+  if (raPideProducto(norm)) return salir(recordatorio(''));
   return modeloDelTurno('charla');
 }
 // EL PRIMER TURNO de un teléfono (PR-D, [B]): el saludo fijo por código —la presentación una sola vez y la pregunta abierta, sin montos—; el modelo no abre la conversación. Lo que dijo queda en la memoria

@@ -14,6 +14,7 @@ import type { J } from '../../lib/flujo';
 import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { readFileSync } from 'node:fs';
 import { ANGULOS, PRELLENADOS, COMPROBANTE, ANA, BETO, REC, crear, entrega, hablar, mAudio, mBoton, mDocumento, mImagen, mLista, mTexto, panelConAgotados, panelConQr, panelOk, valorMeta, type Opciones } from './mundo';
+import { cargarLibrerias } from './librerias';
 import { LIB, UX_CONTADOR, vigilarUx, violacionesDeParrafos, violacionesDeUx, type UxMsg } from './vigilante-ux';
 
 const PRODUCCION_JSON = JSON.parse(readFileSync(new URL('../../../../Flujos/experimental/rroca-antonio/rroca-antonio.json', import.meta.url), 'utf8')) as { nodes: J[] };
@@ -409,7 +410,7 @@ describe('revisión de código de #576', () => {
       expect(x).toMatch(/ \d+(?:,\d+)?Bs$/);
       expect(x).not.toMatch(/\b(de|del|el|la|y)\s+\d+(?:,\d+)?Bs$/i);
     }
-    expect(titulos).toEqual(['Calendario 17,50Bs', 'Preguntas 15,50Bs', 'Mejor Pack 49,50Bs']);
+    expect(titulos).toEqual(['Calendario 17,50Bs', 'Preguntas 15,50Bs', 'Pack 49,50Bs']);
     const v = nuevo({ panel: panelOk({ catalogo }) });
     hablar(v, ANA, mTexto('hola'));
     hablar(v, ANA, mTexto('estamos pasando un momento difícil'));
@@ -448,5 +449,70 @@ describe('revisión de código de #576', () => {
     hablar(u, ANA, mTexto('estamos pasando un momento difícil'));
     hablar(u, ANA, mBoton('b_comp'));
     expect((u.sd['antonio'] as J)[ANA]['usados']).toContain('b_comp');
+  });
+});
+
+// =============================================================================================================== S2: «SOLO SE OFRECE LO QUE SE CUMPLE» EN LA REDACCIÓN DEL MODELO
+// Revisión de seguridad (23/10/2026): estas salidas pasaban el filtro. Son reglas GENERALES (deberían subir al filtro común del core); cada una tiene su prueba NEGADA y una POSITIVA (los textos legítimos no se rechazan).
+describe('S2 · el modelo no promete consultar ni volver, no afirma un aviso, no inventa beneficios ni precios, no da teléfonos y no se hace pasar por el autor', () => {
+  const L = cargarLibrerias('raExtraRedaccion, raNorm') as { raExtraRedaccion: (t: string, n: string) => string; raNorm: (t: string) => string };
+  const motivo = (x: string): string => L.raExtraRedaccion(x, L.raNorm(x));
+  const CASOS: Array<[string, string[], string[]]> = [
+    ['promesa_de_consulta', ['Déjame consultarlo.', 'Déjame consultarlo con calma y te respondo.', 'Lo reviso y vuelvo contigo.', 'Voy a hablar con Antonio y te digo.', 'Permíteme verificarlo un momento.', 'Lo consulto y te cuento luego.', 'Te respondo más tarde con eso.'], []],
+    ['aviso_afirmado', ['Ya avisé a Antonio.', 'Le avisé a Antonio de tu mensaje.', 'Ya le pasé tu consulta al equipo.', 'Antonio ya sabe de tu caso.', 'Ya quedó avisado.'], []],
+    ['beneficio_inventado', ['Tenemos 2x1 hoy.', 'Hay un 20 % menos hoy.', 'Te incluyo de regalo el calendario.', 'Si no te gusta te devolvemos el dinero.', 'Hoy hay rebaja en el libro.'], []],
+    ['precio_inventado', ['Te sale a 100.', 'Cuesta 1OO Bs.', 'Sale en cien bolis.', 'El libro vale 35 bolivianos.', 'Son 50 Bs en total.', 'Cuesta l00 pesitos.', 'Por solo Bs 80.'], []],
+    ['telefono', ['Escríbeme al 76988663.', 'Llama al 7 6 9 8 8 6 6 3.', 'Mi número es 769-886-63.', 'Es el 7698.8663.'], []],
+    ['suplanta_al_autor', ['Aquí Antonio, encantado.', 'Soy quien escribió el libro.', 'S0y Ant0nio.', 'Soy Ant@nio y te atiendo.', 'Yo escribí este libro hace años.', 'Habla Antonio Dauber.'], []],
+  ];
+  for (const [regla, malos] of CASOS) {
+    it(`NEGADA · ${regla}: cada frase se rechaza con ese motivo`, () => {
+      for (const x of malos) expect(motivo(x), x).toBe(regla);
+    });
+  }
+  const LEGITIMOS = [
+    'Entiendo lo agotador que es sentir que cada discusión termina igual. Los capítulos 4, 5 y 8 del libro enseñan a hacer pausas a tiempo.',
+    'El método propone una ruta de 30 días con ejercicios de 10 a 20 minutos al día.',
+    'Cuesta mucho hablar cuando hay enojo, pero se puede practicar de a poco.',
+    'Déjame decirte que es muy común sentirse así. ¿Desde cuándo notan esa distancia?',
+    'Puedes consultar con tu pareja un momento tranquilo para conversar sobre esto.',
+    'El libro tiene 14 capítulos y 138 páginas, con ejercicios y retos semanales.',
+    'Antes de nada, respira: lo que sientes es válido. ¿Qué es lo que más extrañas de cómo se comunicaban?',
+    'Lo vemos con calma, paso a paso. ¿Qué suele pasar cuando intentan hablar de un tema difícil?',
+    'Los 6 pilares del Método PUENTE empiezan por la pausa. ¿Te cuesta más escuchar o expresar lo que necesitas?',
+    'Esto no es terapia: es una guía práctica de lectura y ejercicios para hacer en casa.',
+    'Muchas parejas se sienten como compañeros de cuarto. ¿Hace cuánto notas eso?',
+    'Si tu pareja no quiere leerlo contigo, sirve igual: cambiar tu forma de escuchar cambia la respuesta del otro.',
+    'Lo mejor es empezar por el capítulo 2, que trabaja la escucha. ¿Quieres que te cuente de qué trata?',
+    'No hace falta saber de tecnología ni tener mucho tiempo. ¿Qué te gustaría lograr primero?',
+    'Eso que cuentas se puede trabajar. Valoro que lo compartas conmigo.',
+    'Hablar sin herir es posible con práctica. ¿En qué momento del día suelen discutir?',
+  ];
+  it('POSITIVA · los textos legítimos de la charla NO se rechazan (sin falsos positivos)', () => {
+    for (const x of LEGITIMOS) expect(motivo(x), x).toBe('');
+    // (Los textos fijos del código no pasan por este filtro: los pone el código, no el modelo.)
+  });
+  it('un descuento dicho con las palabras de siempre ya se rechazaba (otra regla): sigue rechazado', () => {
+    expect(motivo('Te llevas un 15% de descuento.')).not.toBe('');
+    expect(motivo('Hoy tenemos una promoción especial.')).not.toBe('');
+  });
+  it('de punta a punta: cada salida peligrosa del modelo cae al texto fijo y NUNCA llega al cliente', () => {
+    const peligrosas = CASOS.flatMap(([, malos]) => malos);
+    for (const crudo of peligrosas) {
+      const w = nuevo({ modeloDice: crudo });
+      hablar(w, ANA, mTexto('hola'));
+      const t = hablar(w, ANA, mTexto('estamos pasando un momento difícil'));
+      expect(t.mensajes[0]!.cuerpo, crudo).toMatch(/Gracias por escribir\. Cuéntame un poco más/);
+      expect(t.mensajes[0]!.cuerpo, crudo).not.toContain(crudo.slice(0, 14));
+      expect(t.avisos, crudo).toHaveLength(0);
+    }
+  });
+  it('de punta a punta: una respuesta legítima de la charla SÍ sale', () => {
+    for (const crudo of LEGITIMOS.slice(0, 6)) {
+      const w = nuevo({ modeloDice: crudo });
+      hablar(w, ANA, mTexto('hola'));
+      const t = hablar(w, ANA, mTexto('estamos pasando un momento difícil'));
+      expect(t.mensajes[0]!.cuerpo, crudo).toContain(crudo.slice(0, 20));
+    }
   });
 });

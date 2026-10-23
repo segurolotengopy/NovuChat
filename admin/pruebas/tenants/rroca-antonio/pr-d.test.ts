@@ -141,14 +141,16 @@ describe('C. con un QR abierto: se responde, no se repite el recordatorio, no se
 });
 
 describe('D. nunca el mismo texto dos veces seguidas, con reversión si Meta no aceptó el envío', () => {
-  it('el mismo texto dos veces seguidas sale como alternativa con el botón de Antonio; el QR y el resultado de un comprobante están exentos', () => {
+  it('el mismo texto dos veces seguidas sale como alternativa en texto PLANO (sin el botón de Antonio: una repetición no deriva); el QR y el resultado de un comprobante están exentos', () => {
     const w = nuevo();
     // «hola» repetido: el saludo, el modelo, el bloque de las opciones (una sola vez) y por fin la charla, cuyo texto sí se repite.
     for (let i = 0; i < 3; i++) hablar(w, ANA, mTexto('hola'));
     const a = hablar(w, ANA, mTexto('hola'));
     const b = hablar(w, ANA, mTexto('hola'));
     expect(b.mensajes[0]!.cuerpo).not.toBe(a.mensajes[0]!.cuerpo);
-    expect(esBotonDeAntonio(b)).toBe(true);
+    expect(esBotonDeAntonio(b)).toBe(false);
+    expect(b.mensajes[0]!.cuerpo).not.toMatch(/bot[oó]n/i);
+    expect(b.avisos).toHaveLength(0);
     expect(fichaDe(w)['ultimaFirma']).toBe('repetido');
   });
   it('la protección ante violencia o miedo NO se sustituye aunque se repita', () => {

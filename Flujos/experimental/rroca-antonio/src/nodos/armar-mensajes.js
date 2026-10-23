@@ -192,7 +192,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     else { tipoDePlan = 'derivar'; m = conAntonio('Por ahora no puedo mostrarte los bonos. Escríbele directo a Antonio con el botón.'); }
   } else if (tipoDePlan === 'complemento') {
     const productos = Array.isArray(plan.productos) ? plan.productos.filter((k) => Object.prototype.hasOwnProperty.call(RA_PRODUCTOS, k)) : [];
-    m = conBotones(raTextoBonos(productos, cat, plan.conPresentacion === true, negocio), raMenuDeBonos(productos, cat, fichaAntes.usados, nom));
+    m = conBotones(raTextoBonos(productos, cat, plan.conPresentacion === true, negocio, nom), raMenuDeBonos(productos, cat, fichaAntes.usados, nom));
   } else if (tipoDePlan === 'resultado') {
     const op = qrAbierto ? [] : menuAbierto();
     m = qrAbierto ? texto(invitar(conPresentacion(raTextoResultado(false)))) : conBotones(conPresentacion(raTextoResultado(op.length > 0)), op);
@@ -258,7 +258,10 @@ if (m && puerta.ruta === 'sigue' && m.tipoReporte !== 'image' && ['comprobante',
     m = conAntonio(repetidoDeriva);
   } else {
     tipoDePlan = 'repetido';
-    m = conAntonio(ctAlternaDeRepetido({ medio: medio, hashUltimo: fichaAntes.ultimoHash, titular: 'Antonio', tratamiento: 'tu' }));
+    // El botón de Antonio va SOLO cuando el plan deriva: una repetición no deriva nada, así que sale en texto plano; si lo que se repite era una derivación (ya traía el botón), la alternativa lo conserva.
+    const eraDerivacion = !!m.payload && !!m.payload.interactive && m.payload.interactive.type === 'cta_url';
+    const alterna = ctAlternaDeRepetido({ medio: medio, hashUltimo: fichaAntes.ultimoHash, titular: 'Antonio', tratamiento: 'tu', alternas: RA_ALTERNAS });
+    m = eraDerivacion ? conAntonio(alterna) : texto(alterna);
   }
 }
 

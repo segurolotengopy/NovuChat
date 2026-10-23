@@ -17,7 +17,8 @@
  *  12. EL MENÚ NO SALE ANTES DE TIEMPO: en las dos primeras respuestas a un teléfono, un mensaje libre (sin precio, catálogo, compra ni producto) no recibe botones de producto ni montos.
  * Botón de Antonio (23/10/2026, regla de Andres):
  *  13. EL BOTÓN DE CONTACTO VA SOLO AL DERIVAR, por tipo de plan: una respuesta RESUELTA (`PLANES_SIN_BOTON`: precio, catálogo, imágenes, resultado, menú, bonos, recordatorio del QR, saludo, conversación, puente, opciones…) sale como texto
- *      plano o con sus botones de producto, NUNCA con el botón de Antonio; un plan que deriva (`PLANES_CON_BOTON`: derivar, consulta, repetido, fuera de país, cierre del cobro…) lo lleva siempre.
+ *      plano o con sus botones de producto, NUNCA con el botón de Antonio; un plan que deriva (`PLANES_CON_BOTON`: derivar, consulta, fuera de país, cierre del cobro…) lo lleva siempre.
+ *      El plan `repetido` (la alternativa cuando el texto saldría idéntico) NO está en ninguna lista: no deriva, así que sale en texto plano, salvo que lo repetido fuera una derivación (conserva su botón).
  * Rehecho de Antonio sobre la Entrega 2 (23/10/2026):
  *  14. LA ETIQUETA DE UN BOTÓN CON PRECIO ES «<nombre DEL CATÁLOGO> <precio>Bs» (≤ 20 caracteres, el nombre completo o recortado por palabras): ningún nombre ni precio sale del código;
  *  15. EL BOTÓN «Ver opciones» (el del puente) NO lleva precio ni dígitos, y nunca sale junto a botones de producto;
@@ -65,7 +66,7 @@ export const esPresentacion = (cuerpo: string): boolean => /soy el asistente vir
 /** Los planes que resuelven (no derivan): jamás llevan el botón de contacto de Antonio. El de `comprobante` depende del resultado y no se vigila aquí. */
 export const PLANES_SIN_BOTON = ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo', 'precio', 'catalogo', 'imagenes', 'resultado', 'menu', 'bonos', 'complemento', 'qr', 'qr_pendiente', 'imagen_descrita', 'imagen_otra', 'audio_fijo', 'archivo', 'otro', 'riesgo', 'suspendido'];
 /** Los planes que derivan a Antonio: siempre con el botón. */
-export const PLANES_CON_BOTON = ['derivar', 'consulta', 'cancelacion', 'sin_configuracion', 'fuera_pais', 'repetido', 'cobro_cerrado', 'cobro_ya_cerrado', 'uso_extendido'];
+export const PLANES_CON_BOTON = ['derivar', 'consulta', 'cancelacion', 'sin_configuracion', 'fuera_pais', 'cobro_cerrado', 'cobro_ya_cerrado', 'uso_extendido'];
 /** ¿El mensaje lleva el botón que abre el chat de Antonio (`cta_url`)? */
 export const llevaBotonDeContacto = (m: { payload: J }): boolean => (m.payload['interactive'] as J | undefined)?.['type'] === 'cta_url';
 const IDS_DE_PRODUCTO = ['b_pack', 'b_libro', 'b_workbook', 'b_guia', 'b_calendario', 'b_preguntas'];
@@ -156,7 +157,7 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
         if (!mm) v.push(`botón con precio que no termina en « <monto>Bs»: «${titulo}»`);
         else {
           const nombre = mm[1]!;
-          const nombres = [...(ctx.nombresDelCatalogo ?? []), 'Mejor Pack'];
+          const nombres = [...(ctx.nombresDelCatalogo ?? [])];
           const esDelCatalogo = nombres.some((n) => n === nombre || n.startsWith(nombre + ' '));
           if (ctx.nombresDelCatalogo && !esDelCatalogo) v.push(`la etiqueta «${titulo}» no usa el nombre del catálogo (${nombres.join(' | ')})`);
           if (/\b(de|del|el|la|y)$/i.test(nombre) && !nombres.includes(nombre)) v.push(`botón con una preposición colgando: «${titulo}»`);

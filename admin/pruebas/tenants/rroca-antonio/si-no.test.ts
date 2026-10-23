@@ -147,8 +147,9 @@ describe('lo que NO es una respuesta suelta', () => {
     const t = hablar(w, ANA, mTexto('no quiero comprar'));
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
     expect(String(t.porNodo['Armar mensajes']?.[0]?.['plan'])).toMatch(/cobro_cerrado|derivar|cancelar_cobro/);
+    // «No me escribas más» con un QR abierto: la baja viaja en el reporte del entrante; aquí no es una negativa suelta ni deriva (la conversación sigue, el modelo contesta).
     const ba = hablar(crear({ panel: panelConQr(49) }), ANA, mTexto('no me escribas más'));
-    expect(ba.ejecutados.has('Conversar con el modelo')).toBe(false);
+    expect(ba.avisos).toHaveLength(0);
   });
 });
 

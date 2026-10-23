@@ -41,7 +41,7 @@ describe('PARTE 1. el botón de Antonio va SOLO al derivar', () => {
       w.avanzar(31);
     }
   });
-  it('lo que DERIVA sí lleva el botón: factura, garantía, reclamo, fuera de país, repetición y «no supo» del modelo', () => {
+  it('lo que DERIVA sí lleva el botón: factura, garantía, reclamo, fuera de país y «no supo» del modelo (y la repetición NO)', () => {
     const w = nuevo();
     hablar(w, ANA, mTexto('hola'));
     for (const x of ['necesito factura', 'tengo un reclamo']) {
@@ -60,7 +60,8 @@ describe('PARTE 1. el botón de Antonio va SOLO al derivar', () => {
     for (let i = 0; i < 4; i++) hablar(r, ANA, mTexto('hola'));
     const rep = hablar(r, ANA, mTexto('hola'));
     expect(planDe(rep)).toBe('repetido');
-    expect(conBoton(rep)).toBe(true);
+    expect(conBoton(rep)).toBe(false);   // una repetición NO deriva: texto plano, sin aviso y sin el botón
+    expect(rep.avisos).toHaveLength(0);
   });
   it('NEGANDO el vigilante: un plan que resuelve con el botón, y un plan que deriva sin él, dan violación', () => {
     const cta: J = { type: 'interactive', interactive: { type: 'cta_url', action: {} } };
@@ -70,7 +71,7 @@ describe('PARTE 1. el botón de Antonio va SOLO al derivar', () => {
       expect(violacionesDeUx(new Set(), { type: 'text' }, salida(cta), undefined, '', { plan }).join('|'), plan).toMatch(/resuelve y no deriva/);
       expect(violacionesDeUx(new Set(), { type: 'text' }, salida(plano), undefined, '', { plan }).join('|'), plan).not.toMatch(/botón/);
     }
-    for (const plan of ['derivar', 'repetido', 'fuera_pais', 'cobro_cerrado']) {
+    for (const plan of ['derivar', 'fuera_pais', 'cobro_cerrado']) {
       expect(violacionesDeUx(new Set(), { type: 'text' }, salida(plano), undefined, '', { plan }).join('|'), plan).toMatch(/deriva a Antonio, pero salió sin su botón/);
       expect(violacionesDeUx(new Set(), { type: 'text' }, salida(cta), undefined, '', { plan }).join('|'), plan).not.toMatch(/botón/);
     }
