@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { PRODUCCION, PRUEBA } from './mundo';
 
@@ -27,9 +28,9 @@ const NODOS_TODO = ['Normalizar entrada', 'Decidir turno', 'Armar mensajes', 'In
 
 // El código evaluado es el de archivos del propio repositorio (core y src/lib), no una entrada externa: solo prueba.
 const CODIGO = [PARRAFOS, NO_REPETIR, leer(`${PROPIO}/lib/cobro.js`), leer(`${PROPIO}/lib/avisos.js`), RA_JS].join('\n');
-// nosemgrep: devsecops.js-eval-prohibido
-const L = new Function(`${CODIGO}
-return { ctParrafos, ctHashTexto, raParrafosViejoNoExiste: typeof raParrafos, raSeguro, raAlternaFiltrada, RA_TRATAMIENTO, RA_TITULAR, RA_SALUDO_MINIMO, RA_NIEGA_IA, raNorm, CB_PROHIBIDAS, cbCanon, RA_ALTERNAS };`)() as {
+const L = new vm.Script(`(function () {\n${CODIGO}
+return { ctParrafos, ctHashTexto, raParrafosViejoNoExiste: typeof raParrafos, raSeguro, raAlternaFiltrada, RA_TRATAMIENTO, RA_TITULAR, RA_SALUDO_MINIMO, RA_NIEGA_IA, raNorm, CB_PROHIBIDAS, cbCanon, RA_ALTERNAS };
+})()`).runInThisContext() as {
   ctParrafos: (t: unknown) => string; ctHashTexto: (t: unknown) => string; raParrafosViejoNoExiste: string; raSeguro: (t: string) => string;
   raAlternaFiltrada: (o: { medio?: boolean; hashUltimo?: string; alternas?: unknown }, motivoDe: (x: string) => string) => string;
   RA_ALTERNAS: { medio: string[] }; RA_TRATAMIENTO: string; RA_TITULAR: string; RA_SALUDO_MINIMO: string; RA_NIEGA_IA: RegExp; raNorm: (t: string) => string; CB_PROHIBIDAS: RegExp; cbCanon: (t: string) => string;
