@@ -69,21 +69,22 @@ describe('la guardia de publicación: la ruta feliz y lo versionado de hoy', () 
     expect(JSON.stringify(flujoDe('rroca-evy'))).toMatch(/\^REEMPLAZAR_|reemplazar_\/i|`REEMPLAZAR_`/);
     expect(hallazgos(listo('rroca-evy'))).toEqual([]);
   });
-  it('el horario de Evy (pendiente, marcador) bloquea la publicación, con su campo nombrado; Evy se arma con el marcador', () => {
+  it('el horario de Evy está confirmado (22/10): lo versionado no trae marcador de horario ni lo pide la guardia; un marcador de horario sigue bloqueando', () => {
+    expect(datosDe('rroca-evy').doctora['horario']).toBe('de lunes a viernes de 08:30 a 18:30 y los sábados de 09:00 a 12:00; los domingos no se atiende');
+    expect(JSON.stringify(negocioDe('rroca-evy'))).not.toMatch(/REEMPLAZAR_HORARIO/);
     const h = hallazgos({ flujo: flujoDe('rroca-evy'), datos: datosDe('rroca-evy'), negocio: negocioDe('rroca-evy') });
-    expect(h).toContain('datos: doctora.horario está vacío o es un marcador');
-    expect(h).toContain('marcador sin sustituir: REEMPLAZAR_HORARIO_RROCA_EVY');
-    // Solo el horario pendiente: con todo lo demás listo, Evy sigue sin poder publicarse.
+    expect(h.join('|')).not.toMatch(/horario/i);
+    // Negada: con el marcador de horario, la etapa completa falla aunque todo lo demás esté listo.
     const x = listo('rroca-evy'); x.datos.doctora['horario'] = 'REEMPLAZAR_HORARIO_RROCA_EVY';
     expect(hallazgos(x)).toContain('datos: doctora.horario está vacío o es un marcador');
   });
-  it('el horario de Emma es el de su Excel pero «por confirmar»: con horarioPorConfirmar en true la guardia FALLA; en false, pasa', () => {
-    expect(datosDe('rroca-emma').doctora['horarioPorConfirmar']).toBe(true);
+  it('el horario de Emma está confirmado (22/10): horarioPorConfirmar es false; con true la etapa completa FALLA', () => {
+    expect(datosDe('rroca-emma').doctora['horarioPorConfirmar']).toBe(false);
     expect(datosDe('rroca-emma').doctora['horario']).toMatch(/lunes a viernes de 09:00 a 12:00 y de 14:00 a 18:00.*sábados de 09:00 a 12:00/);
     const h = hallazgos({ flujo: flujoDe('rroca-emma'), datos: datosDe('rroca-emma'), negocio: negocioDe('rroca-emma') });
-    expect(h).toContain('datos: doctora.horarioPorConfirmar es true: el horario aún no lo confirmó la doctora');
-    const x = listo('rroca-emma'); x.datos.doctora['horarioPorConfirmar'] = true; confirmarEnFlujo(x.flujo);
-    const a = x.flujo.nodes.find((n) => n.name === 'Config base')!; const lista = (a.parameters as { assignments: { assignments: Asignacion[] } }).assignments.assignments.find((q) => q.name === 'doctora')!;
+    expect(h.join('|')).not.toMatch(/horario/i);
+    const x = listo('rroca-emma'); x.datos.doctora['horarioPorConfirmar'] = true;
+    const lista = asignaciones(x.flujo).find((q) => q.name === 'doctora')!;
     lista.value = JSON.stringify({ ...(JSON.parse(String(lista.value)) as object), horarioPorConfirmar: true });
     expect(hallazgos(x)).toEqual(['datos: doctora.horarioPorConfirmar es true: el horario aún no lo confirmó la doctora']);
     expect(hallazgos(listo('rroca-emma'))).toEqual([]);
@@ -268,6 +269,7 @@ describe('la etapa «crear» (flujo INACTIVO para dar la URL de entrada): tolera
       expect(c.out).toMatch(/marcador sin sustituir/);
       expect(c.out).not.toMatch(/avisoSolicitudEstado|horarioPorConfirmar/);
       expect(cli('--publicable', '--tenant', t).status).toBe(1);
+      expect(cli('--publicable', '--tenant', t).out).not.toMatch(/horario/i);
     }
   });
 });

@@ -79,3 +79,7 @@ Cuando #519 se fusione y exista el módulo común de Cobros y de Avisos, estos d
 - «Config base»: `modelo` (Gemini, por defecto `gemini-3.5-flash-lite`) y `cobroSimuladoActivo` (booleano, `false` por defecto: sin él, `cobroSimulado` del servidor se ignora).
 - «Config base» (PR-3), las plantillas de aviso a Rubén: `avisoComprobantePlantilla` (`aviso_comprobante_recibido`, 4 variables: cliente, producto, monto, teléfono), `avisoComprobanteEstado`, `avisoConsultaPlantilla` (`aviso_consulta_para_ruben`, 3 variables: motivo, teléfono, resumen), `avisoConsultaEstado` y `avisoPlantillaIdioma` (`es`). Los estados son los de Meta: **solo `APPROVED` habilita el aviso fuera de la ventana de Rubén**; con `PENDING`/`REJECTED`, sin nombre o sin idioma no se inventa nada (`plantilla_no_configurada`) y el cliente lee la versión honesta con el botón. En el PR-5 se pasan a `APPROVED` cuando Meta las apruebe (o cambian los nombres si se recrean).
 - Credenciales por nombre: `ingesta`, `graph`, `medios` (WhatsApp, para bajar el comprobante) y `gemini` (modelo y lectura del comprobante).
+
+## Ports de Antonio (22/10/2026)
+
+Rubén tiene SU copia de lo portado de `rroca-antonio` (audio dudoso `rrAudioDudoso`, sin configuración `rrSinConfiguracion` y «Sí»/«No» suelto con `ultimaPregunta`), en `src/lib/rr.js` y los nodos `decidir-turno.js`, `armar-mensajes.js` y `resumen-del-turno.js`; no comparte código con el de Antonio. La segunda vez que otro cliente pida una de estas piezas, pasa a módulo. Diferencias con Antonio y riesgos: ver «Lo portado de Antonio» en `DISENO.md`.
