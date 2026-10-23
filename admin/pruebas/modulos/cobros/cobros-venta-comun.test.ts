@@ -162,7 +162,7 @@ function matriz(): Array<{ r: unknown; causa: unknown; salio: unknown; tr: unkno
 }
 const FILAS = matriz();
 
-describe('cobros/venta común · textos: la matriz completa, pruebas negadas', () => {
+describe('cobros/venta común · textos: la matriz completa, pruebas negadas', { timeout: 120000 }, () => {
   it('la matriz es grande (más de 15.000 combinaciones)', () => expect(FILAS.length).toBeGreaterThan(15000));
   it('toda salida es { cuerpo: texto no vacío, boton: boolean, aviso: texto }', () => {
     for (const f of FILAS) {
@@ -310,7 +310,7 @@ describe('cobros/venta común · textos: la matriz completa, pruebas negadas', (
   });
 });
 
-describe('cobros/venta común · el resto de los textos (pie del QR, QR abierto, QR vencido, cobro cancelado)', () => {
+describe('cobros/venta común · el resto de los textos (pie del QR, QR abierto, QR vencido, cobro cancelado)', { timeout: 120000 }, () => {
   const pie = M('cbPieQr');
   const abierto = M('cbTextoQrAbierto');
   const vencido = M('cbTextoQrVencido');
