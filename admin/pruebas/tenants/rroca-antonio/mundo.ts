@@ -66,10 +66,10 @@ export interface Opciones {
   /** Lo que devuelven los medios. */
   medio?: { bytes?: number; url?: string; mime?: string; transcripcion?: string | null; clasificacion?: J | null };
 }
-/** El catálogo de la consola de Antonio: ids que salen de `idDe(nombre)`; los precios son del catálogo, nunca del flujo. */
+/** El catálogo de la consola de Antonio: ids que salen de `idDe(nombre)`; los NOMBRES y los precios son del catálogo, nunca del flujo (las etiquetas de los botones dicen «<nombre> <precio>Bs»). */
 export const CATALOGO = [
-  { id: 'pack-completo', precio: 49 }, { id: 'libro', precio: 35 }, { id: 'workbook', precio: 20 },
-  { id: 'guia-de-conversaciones', precio: 19 }, { id: 'calendario-de-conexion', precio: 17 }, { id: 'preguntas-profundas', precio: 15 },
+  { id: 'pack-completo', nombre: 'Pack completo', precio: 49 }, { id: 'libro', nombre: 'Libro', precio: 35 }, { id: 'workbook', nombre: 'Workbook', precio: 20 },
+  { id: 'guia-de-conversaciones', nombre: 'Guía de conversaciones', precio: 19 }, { id: 'calendario-de-conexion', nombre: 'Calendario de conexión', precio: 17 }, { id: 'preguntas-profundas', nombre: 'Preguntas profundas', precio: 15 },
 ];
 export const MEDIA_QR = 'media-qr-1';
 export const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({

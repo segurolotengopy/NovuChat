@@ -396,10 +396,10 @@ describe('revisión de código de #576', () => {
     expect(nc).toHaveLength(1);
     expect(nc[0]).toMatchObject({ direccion: 'entrante', idMeta: '' });
   });
-  it('(2) un botón con precio conserva SIEMPRE « <monto> Bs», con ≤ 20 caracteres, sin palabras cortadas ni preposición colgando, también con precios de 2 decimales', () => {
+  it('(2) un botón con precio conserva SIEMPRE «<monto>Bs», con ≤ 20 caracteres, el nombre del catálogo sin palabras cortadas ni preposición colgando, también con precios de 2 decimales', () => {
     const catalogo = [
-      { id: 'pack-completo', precio: 49.5 }, { id: 'libro', precio: 35.25 }, { id: 'workbook', precio: 20.75 },
-      { id: 'guia-de-conversaciones', precio: 19.9 }, { id: 'calendario-de-conexion', precio: 17.5 }, { id: 'preguntas-profundas', precio: 15.5 },
+      { id: 'pack-completo', nombre: 'Pack completo', precio: 49.5 }, { id: 'libro', nombre: 'Libro', precio: 35.25 }, { id: 'workbook', nombre: 'Workbook', precio: 20.75 },
+      { id: 'guia-de-conversaciones', nombre: 'Guía de conversaciones', precio: 19.9 }, { id: 'calendario-de-conexion', nombre: 'Calendario de conexión', precio: 17.5 }, { id: 'preguntas-profundas', nombre: 'Preguntas profundas', precio: 15.5 },
     ];
     const w = nuevo({ panel: panelOk({ catalogo }) });
     const t = hablar(w, ANA, mTexto(PRELLENADOS.calendario));
@@ -407,13 +407,16 @@ describe('revisión de código de #576', () => {
     expect(titulos.length).toBeGreaterThan(1);
     for (const x of titulos) {
       expect(x.length).toBeLessThanOrEqual(20);
-      expect(x).toMatch(/ \d+(?:,\d+)? Bs$/);
-      expect(x).not.toMatch(/\b(de|del|el|la|y)\s+\d+(?:,\d+)? Bs$/i);
+      expect(x).toMatch(/ \d+(?:,\d+)?Bs$/);
+      expect(x).not.toMatch(/\b(de|del|el|la|y)\s+\d+(?:,\d+)?Bs$/i);
     }
+    expect(titulos).toEqual(['Calendario 17,50Bs', 'Preguntas 15,50Bs', 'Mejor Pack 49,50Bs']);
     const v = nuevo({ panel: panelOk({ catalogo }) });
     hablar(v, ANA, mTexto('hola'));
+    hablar(v, ANA, mTexto('estamos pasando un momento difícil'));
     const m = hablar(v, ANA, mTexto('quiero comprar'));
-    for (const b of (m.mensajes[0]!.payload['interactive'].action.buttons as J[]).filter((x) => /\d/.test(String(x['reply'].title)))) expect(String(b['reply'].title)).toMatch(/ \d+(?:,\d+)? Bs$/);
+    const conPrecio = (m.mensajes[0]!.payload['interactive'].action.buttons as J[]).filter((x) => /\d/.test(String(x['reply'].title)));
+    expect(conPrecio.map((b) => String(b['reply'].title))).toEqual(['Pack 49,50Bs', 'Libro 35,25Bs']);   // «Pack completo 49,50Bs» mide 21: se recorta el nombre por palabras y el «49,50Bs» queda intacto
   });
   it('(4) tras un comprobante, «¿cómo pago el workbook?», «quiero el libro» y «¿cuánto cuesta el pack?» son una compra nueva (no una queja de no entrega)', () => {
     const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE } });
@@ -429,17 +432,22 @@ describe('revisión de código de #576', () => {
     const c = hablar(w, ANA, mTexto('quiero el libro'));
     expect(c.mensajes[0]!.tipo).toBe('image');
   });
-  it('(5) un toque en «Bonos sueltos» que el plan no atiende (QR abierto, o antes del saludo) NO marca el botón como usado', () => {
+  it('(5) un toque en «Ver complementos» que el plan no atiende (QR abierto, antes del saludo o antes de las opciones) NO marca el botón como usado; el que sí abre la lista, sí', () => {
     const w = nuevo();
     hablar(w, ANA, mTexto(PRELLENADOS.pack));
-    hablar(w, ANA, mBoton('b_bonos'));
-    expect((w.sd['antonio'] as J)[ANA]['usados']).not.toContain('b_bonos');
+    hablar(w, ANA, mBoton('b_comp'));
+    expect((w.sd['antonio'] as J)[ANA]['usados']).not.toContain('b_comp');
     const v = nuevo();
-    hablar(v, BETO, mBoton('b_bonos'));
-    expect((v.sd['antonio'] as J)[BETO]['usados']).not.toContain('b_bonos');
+    hablar(v, BETO, mBoton('b_comp'));
+    expect((v.sd['antonio'] as J)[BETO]['usados']).not.toContain('b_comp');
+    const s = nuevo();
+    hablar(s, ANA, mTexto('hola'));
+    hablar(s, ANA, mBoton('b_comp'));
+    expect((s.sd['antonio'] as J)[ANA]['usados']).not.toContain('b_comp');
     const u = nuevo();
     hablar(u, ANA, mTexto('hola'));
-    hablar(u, ANA, mBoton('b_bonos'));
-    expect((u.sd['antonio'] as J)[ANA]['usados']).toContain('b_bonos');
+    hablar(u, ANA, mTexto('estamos pasando un momento difícil'));
+    hablar(u, ANA, mBoton('b_comp'));
+    expect((u.sd['antonio'] as J)[ANA]['usados']).toContain('b_comp');
   });
 });

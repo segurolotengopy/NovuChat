@@ -30,7 +30,7 @@ if (!aviso && puerta.ruta === 'uso_extendido' && puerta.responder === true && St
   aviso = { tipo: 'consulta', clave: 'atencion_humana', motivo: 'uso extendido: se le dijo al cliente que una persona continúa la conversación', mensaje: '' };
 }
 if (!aviso && (plan.tipo === 'modelo' || plan.tipo === 'angulo')) {
-  const crudo = cnTextoDeGemini(cnPrimero('Conversar con el modelo'));
+  const crudo = raQuitarEcoDeMarcador(cnTextoDeGemini(cnPrimero('Conversar con el modelo')));
   if (raEsDerivar(crudo)) aviso = { tipo: 'consulta', clave: 'no_supo', motivo: 'consulta que el asistente no supo responder', mensaje: String(plan.textoCliente || '').slice(0, 200) };
 }
 const clave = aviso && typeof aviso.clave === 'string' && RA_CLAVES_AVISO.indexOf(aviso.clave) >= 0 ? aviso.clave : '';

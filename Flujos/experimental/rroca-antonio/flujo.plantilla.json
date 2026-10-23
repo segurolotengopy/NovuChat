@@ -794,7 +794,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@comun:nodos/resumen-del-turno.js"
+        "jsCode": "@@todo:nodos/resumen-del-turno.js"
       },
       "id": "resumen-del-turno",
       "name": "Resumen del turno",

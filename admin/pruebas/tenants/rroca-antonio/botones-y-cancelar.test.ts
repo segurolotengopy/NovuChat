@@ -56,8 +56,8 @@ describe('PARTE 1. el botón de Antonio va SOLO al derivar', () => {
     expect(planDe(t)).toBe('derivar');
     expect(conBoton(t)).toBe(true);
     const r = nuevo();
-    hablar(r, ANA, mTexto('hola'));
-    hablar(r, ANA, mTexto('hola'));
+    // «hola» repetido: el saludo, luego el modelo (dos mensajes de conversación), luego el bloque de las opciones (una sola vez) y por fin la charla, cuyo texto se repite.
+    for (let i = 0; i < 4; i++) hablar(r, ANA, mTexto('hola'));
     const rep = hablar(r, ANA, mTexto('hola'));
     expect(planDe(rep)).toBe('repetido');
     expect(conBoton(rep)).toBe(true);

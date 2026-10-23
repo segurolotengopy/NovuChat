@@ -38,6 +38,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
+import { problemasDeReferencias } from '../rroca-ruben/construir.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-antonio/rroca-antonio.json');
@@ -54,7 +55,8 @@ export const NODOS_DE_LA_CONVERSACION = ['Interpretar lectura', '¿Cotejar?', 'C
 export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
-  librerias: ['src/lib/cobro.js', 'src/lib/avisos.js', 'src/lib/ra.js'],
+  // La base común de las ventas digitales (cobro, avisos y el motor de la conversación: prefijos `cb`, `av` y `vd`), los módulos del core de texto (no repetir y pregunta pendiente: prefijo `ct`) y, al final, lo PROPIO de Antonio (`ra.js`: solo datos y textos).
+  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/ra.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
@@ -71,6 +73,15 @@ export const CONFIG = {
 
 /** Los nodos que los módulos comunes de medios leen por contrato (los exige `--verificar` y `--publicable`). */
 export const NODOS_CONTRATO_MEDIOS = ['Normalizar entrada', 'Config del negocio', 'Obtener URL del medio (general)', 'Preparar transcripción', 'Preparar imagen', 'Medio no aceptado'];
+/**
+ * Las referencias a nodos (`$('…')`) que hoy no cumplen la regla del task runner de n8n —solo literales y antecesores— y que se DECLARAN como conocidas: «¿Falló la protección?» lee `Enviar a WhatsApp` y `Enviar respaldo`, ramas paralelas
+ * que ya corrieron (`executionOrder: v1`), con try/catch. Ese nodo (y «Reportar protección») lo compara `doctoras/huecos.test.ts` con el vivo de las doctoras, así que NO se cambia en esta fase: queda para la FASE 2 del rehecho.
+ * Cualquier otro hallazgo es un defecto y la guardia lo rechaza.
+ */
+export const REFERENCIAS_CONOCIDAS = [
+  '«¿Falló la protección?» nombra «Enviar a WhatsApp», que existe pero NO es su antecesor en el grafo',
+  '«¿Falló la protección?» nombra «Enviar respaldo», que existe pero NO es su antecesor en el grafo',
+];
 const NODO_PRUEBA = 'Entrada de prueba';
 const NODO_RECEPTOR = 'Entrega del receptor';
 const NODOS_DEL_RECEPTOR = [NODO_RECEPTOR, 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos'];
@@ -268,6 +279,8 @@ export function guardias(variante, flujo) {
     const url = String(p(n).url || '');
     if (!anfitrionPermitido(url, n.name)) h.push(`el nodo «${n.name}» llama a un anfitrión fuera de la lista (graph.facebook.com, generativelanguage.googleapis.com, las Functions de la consola)`);
   }
+  // Las referencias a nodos del task runner de n8n (la lógica es la de Rubén, importada y no copiada): solo literales y antecesores, salvo la lista declarada de arriba.
+  for (const x of problemasDeReferencias(flujo || {})) if (!REFERENCIAS_CONOCIDAS.includes(x)) h.push(x);
   // Retención de ejecuciones, orden y zona horaria.
   const st = (flujo && flujo.settings) || {};
   if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'all' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «all» y saveExecutionProgress false');

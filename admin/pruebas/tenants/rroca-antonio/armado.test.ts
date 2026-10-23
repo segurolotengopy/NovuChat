@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
+import { cargarLibrerias } from './librerias';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
@@ -287,9 +288,7 @@ describe('zona: nada de otro cliente en el código de Antonio', () => {
 });
 
 describe('ra.js: la ficha por teléfono', () => {
-  // El código evaluado es el de un archivo del propio repositorio (src/lib), no una entrada externa: solo prueba.
-  // nosemgrep: devsecops.js-eval-prohibido
-  const ra = new Function(readFileSync(join(CARPETA, 'src/lib/ra.js'), 'utf8') + '\nreturn { raFichaVigente, raYaVisto, raRecordarIds, raBarrer, RA_OLVIDO_MS, RA_TOPE_IDS, RA_TOPE_FICHAS };')() as J;
+  const ra = cargarLibrerias('raFichaVigente, raYaVisto, raRecordarIds, raBarrer, RA_OLVIDO_MS, RA_TOPE_IDS, RA_TOPE_FICHAS') as J;
   it('una ficha de más de 48 horas se olvida; una vigente conserva sus ids', () => {
     const ahora = 1_000_000_000_000;
     expect(ra.raFichaVigente({ ultimoMs: ahora - ra.RA_OLVIDO_MS - 1, ultimosIds: ['a'] }, ahora).ultimosIds).toEqual([]);

@@ -28,6 +28,8 @@ const salientes = (t: ResultadoTurno): J[] => t.llamadas.ingesta.filter((c) => c
 const esBotonDeAntonio = (t: ResultadoTurno, i = 0): boolean => t.mensajes[i]?.payload['interactive']?.type === 'cta_url';
 /** Una conversación hasta que el modelo ya acompañó una vez (la siguiente respuesta lleva el menú). */
 const saludar = (w: Mundo, tel = ANA): void => { hablar(w, tel, mTexto('hola')); };
+/** Dos mensajes de conversación (el saludo y una charla): la compuerta de las opciones ya está abierta y el siguiente mensaje puede traer el menú. */
+const charlar = (w: Mundo, tel = ANA): void => { saludar(w, tel); hablar(w, tel, mTexto('estamos pasando un momento difícil')); };
 
 describe('el saludo: una presentación, una pregunta, sin montos', () => {
   it('el primer «hola»: UN mensaje con la presentación UNA vez, el método y UNA pregunta; sin montos, sin botones y sin «hablar con» nadie', () => {
@@ -35,7 +37,8 @@ describe('el saludo: una presentación, una pregunta, sin montos', () => {
     const t = hablar(w, ANA, mTexto('hola'));
     expect(t.mensajes).toHaveLength(1);
     const tx = t.mensajes[0]!.cuerpo;
-    expect(tx).toMatch(/asistente virtual de Antonio Dauber/);
+    expect(tx).toMatch(/asistente virtual de El Puente\./);
+    expect(tx).not.toMatch(/Antonio|Dauber/);
     expect(tx).toMatch(/volver a escucharse, discutir menos o recuperar la cercanía/);
     expect(tx.match(/\?/g)).toHaveLength(1);
     expect(tx).not.toMatch(/\d+\s*Bs|Bs\s*\d/i);
@@ -45,14 +48,26 @@ describe('el saludo: una presentación, una pregunta, sin montos', () => {
     expect(fichaDe(w, ANA)['saludado']).toBe(true);
   });
 
-  it('una pregunta de precio como PRIMER mensaje recibe el saludo sin monto; ya saludado, el precio exacto del catálogo, por código y con el menú', () => {
+  it('«¿cuánto cuesta?» en general como PRIMER mensaje recibe el saludo sin monto; el precio de UN producto nombrado sale por código YA (aunque la charla no llegó a dos mensajes), con el cierre del puente y sin menú', () => {
     const w = nuevo();
     const a = hablar(w, ANA, mTexto('¿cuánto cuesta?'));
     expect(a.mensajes[0]!.cuerpo).not.toMatch(/\d+\s*Bs/);
+    expect(a.ejecutados.has('Conversar con el modelo')).toBe(false);
     const b = hablar(w, ANA, mTexto('¿cuánto cuesta el libro?'));
     expect(b.ejecutados.has('Conversar con el modelo')).toBe(false);
     expect(b.mensajes[0]!.cuerpo).toMatch(/35 Bs/);
-    expect(titulos(b)).toEqual(['Pack completo 49 Bs', 'Solo libro 35 Bs', 'Bonos sueltos']);
+    expect(b.mensajes[0]!.cuerpo).toMatch(/¿Te muestro las opciones\?/);
+    expect(b.mensajes[0]!.cuerpo).not.toMatch(/49 Bs|20 Bs/);
+    expect(titulos(b)).toEqual(['Ver opciones']);
+  });
+
+  it('con las opciones habilitadas (dos mensajes de conversación), el precio exacto sale por código y con el menú de productos', () => {
+    const w = nuevo();
+    charlar(w);
+    const b = hablar(w, ANA, mTexto('¿cuánto cuesta el libro?'));
+    expect(b.ejecutados.has('Conversar con el modelo')).toBe(false);
+    expect(b.mensajes[0]!.cuerpo).toMatch(/35 Bs/);
+    expect(titulos(b)).toEqual(['Pack completo 49Bs', 'Libro 35Bs', 'Ver complementos']);
   });
 
   it('el saludo no se repite: la presentación sale una vez por teléfono aunque vuelva a escribir «hola»', () => {
@@ -72,8 +87,10 @@ describe('la conversación libre: el modelo conversa, el código calcula', () =>
     expect(a.mensajes).toHaveLength(1);
     expect(a.ejecutados.has('Conversar con el modelo')).toBe(true);
     expect(a.mensajes[0]!.tipo).toBe('text');
+    // La TERCERA respuesta lleva el bloque de las opciones (por código, con el ahorro calculado) y los botones con el NOMBRE DEL CATÁLOGO y su precio.
     const b = hablar(w, ANA, mTexto('no sé si hay solución'));
-    expect(titulos(b)).toEqual(['Pack completo 49 Bs', 'Solo libro 35 Bs', 'Bonos sueltos']);
+    expect(titulos(b)).toEqual(['Pack completo 49Bs', 'Libro 35Bs', 'Ver complementos']);
+    expect(b.mensajes[0]!.cuerpo).toMatch(/con el Pack Completo ahorras 57 Bs/);
     for (const x of titulos(b)) expect(x.length).toBeLessThanOrEqual(20);
   });
 
@@ -156,7 +173,7 @@ describe('las entradas: 5 prellenados y 7 ángulos de anuncio', () => {
     expect(m.tipo).toBe('image');
     expect(m.payload['image'].id).toBe(MEDIA_QR);
     expect(JSON.stringify(m.payload)).not.toMatch(/"link"/);
-    expect(m.cuerpo).toMatch(/asistente virtual de Antonio/);
+    expect(m.cuerpo).toMatch(/asistente virtual de El Puente/);
     expect(m.cuerpo).toMatch(/ingresa exactamente 49 Bs/);
     expect(m.cuerpo).toMatch(/Pedido #AN/);
     expect(m.cuerpo).not.toMatch(/banco|titular|cuenta|mercantil/i);
@@ -188,7 +205,7 @@ describe('las entradas: 5 prellenados y 7 ángulos de anuncio', () => {
     expect(tx).toMatch(/20 Bs/);
     expect(tx).toMatch(/Pack Completo \(49 Bs\)/);
     expect(tx).toMatch(/ahorras 57 Bs/);
-    expect(titulos(t)).toEqual(['Workbook 20 Bs', 'Mejor el Pack 49 Bs']);
+    expect(titulos(t)).toEqual(['Workbook 20Bs', 'Mejor Pack 49Bs']);
     expect(t.mensajes.some((m) => m.tipo === 'image')).toBe(false);
   });
 
@@ -197,7 +214,8 @@ describe('las entradas: 5 prellenados y 7 ángulos de anuncio', () => {
     const t = hablar(w, ANA, mTexto(PRELLENADOS.calendario));
     expect(t.mensajes[0]!.cuerpo).toMatch(/17 Bs/);
     expect(t.mensajes[0]!.cuerpo).toMatch(/15 Bs/);
-    expect(titulos(t)).toEqual(['Calendario de 30 d… 17 Bs'.length ? titulos(t)[0]! : '', titulos(t)[1]!, 'Mejor el Pack 49 Bs']);
+    // Los nombres son los del catálogo, recortados por palabras a 20 caracteres con el «NNBs» intacto y sin preposición colgando.
+    expect(titulos(t)).toEqual(['Calendario 17Bs', 'Preguntas 15Bs', 'Mejor Pack 49Bs']);
     for (const x of titulos(t)) expect(x.length).toBeLessThanOrEqual(20);
   });
 
@@ -208,7 +226,7 @@ describe('las entradas: 5 prellenados y 7 ángulos de anuncio', () => {
       const t = hablar(w, ANA, mTexto(titular));
       expect(t.mensajes, angulo).toHaveLength(1);
       expect(sistema, angulo).toContain('llegó por un anuncio sobre');
-      expect(t.mensajes[0]!.cuerpo, angulo).toMatch(/asistente virtual de Antonio/);
+      expect(t.mensajes[0]!.cuerpo, angulo).toMatch(/asistente virtual de El Puente/);
       const w2 = nuevo({ modeloDice: 'cae' });
       const f = hablar(w2, ANA, mTexto(titular));
       expect(f.mensajes[0]!.cuerpo, angulo).not.toMatch(/\d+\s*Bs/);
@@ -239,9 +257,9 @@ describe('catálogo COMPLETO por defecto; la bandera `agotado` de la consola sig
     const w = nuevo();
     expect(salientes(hablar(w, ANA, mTexto(PRELLENADOS.pack)))[0]).toMatchObject({ evento: 'qr_enviado', monto: 49 });
     const v = nuevo();
-    saludar(v);
-    expect(ids(hablar(v, ANA, mTexto('quiero comprar')))).toEqual(['b_pack', 'b_libro', 'b_bonos']);
-    expect(filas(hablar(v, ANA, mBoton('b_bonos'))).map((r) => r['id'])).toEqual(['b_workbook', 'b_guia', 'b_calendario', 'b_preguntas']);
+    charlar(v);
+    expect(ids(hablar(v, ANA, mTexto('quiero comprar')))).toEqual(['b_pack', 'b_libro', 'b_comp']);
+    expect(filas(hablar(v, ANA, mBoton('b_comp'))).map((r) => r['id'])).toEqual(['b_workbook', 'b_guia', 'b_calendario', 'b_preguntas']);
   });
 
   it('con el Pack agotado, el prellenado del Pack deriva a Antonio con aviso y botón: ningún QR, ningún monto', () => {
@@ -258,13 +276,13 @@ describe('catálogo COMPLETO por defecto; la bandera `agotado` de la consola sig
 
   it('el menú no ofrece el Pack y la lista de bonos no ofrece la Guía (Bono 4); los otros tres bonos se cobran normal', () => {
     const w = nuevo({ panel: panelConAgotados('pack-completo', 'guia-de-conversaciones') });
-    saludar(w);
+    charlar(w);
     hablar(w, ANA, mTexto('quiero comprar'));
     const w2 = nuevo({ panel: panelConAgotados('pack-completo', 'guia-de-conversaciones') });
-    saludar(w2);
+    charlar(w2);
     const menu = hablar(w2, ANA, mTexto('quiero comprar'));
-    expect(ids(menu)).toEqual(['b_libro', 'b_bonos']);
-    const lista = hablar(w2, ANA, mBoton('b_bonos'));
+    expect(ids(menu)).toEqual(['b_libro', 'b_comp']);
+    const lista = hablar(w2, ANA, mBoton('b_comp'));
     expect(filas(lista).map((r) => r['id'])).toEqual(['b_workbook', 'b_calendario', 'b_preguntas']);
     const qr = hablar(w2, ANA, mLista('b_workbook'));
     expect(qr.mensajes[0]!.tipo).toBe('image');
@@ -286,7 +304,7 @@ describe('catálogo COMPLETO por defecto; la bandera `agotado` de la consola sig
     const w = nuevo({ panel: panelConAgotados('pack-completo', 'guia-de-conversaciones') });
     const t = hablar(w, ANA, mTexto(PRELLENADOS.workbook));
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/Pack|ahorras/);
-    expect(titulos(t)).toEqual(['Workbook 20 Bs']);
+    expect(titulos(t)).toEqual(['Workbook 20Bs']);
   });
 });
 
@@ -300,10 +318,10 @@ describe('los botones y la lista', () => {
     expect(fichaDe(w, ANA)['usados']).toContain('b_pack');
   });
 
-  it('«Bonos sueltos» abre la LISTA de los 4 bonos (fila ≤ 24, el precio en la descripción); elegir una fila abre su QR y la fila no reaparece', () => {
+  it('«Ver complementos» abre la LISTA de los 4 bonos (fila ≤ 24, el precio en la descripción); elegir una fila abre su QR y la fila no reaparece; el id viejo `b_bonos` de un chat anterior se atiende igual', () => {
     const w = nuevo();
-    saludar(w);
-    const l = hablar(w, ANA, mBoton('b_bonos'));
+    charlar(w);
+    const l = hablar(w, ANA, mBoton('b_comp'));
     expect(l.mensajes[0]!.payload['interactive'].type).toBe('list');
     expect(filas(l).map((r) => r['id'])).toEqual(['b_workbook', 'b_guia', 'b_calendario', 'b_preguntas']);
     expect(filas(l).map((r) => r['description'])).toEqual(['20 Bs', '19 Bs', '17 Bs', '15 Bs']);
@@ -311,6 +329,9 @@ describe('los botones y la lista', () => {
     const q = hablar(w, ANA, mLista('b_calendario'));
     expect(q.mensajes[0]!.tipo).toBe('image');
     expect(salientes(q)[0]).toMatchObject({ monto: 17 });
+    const v = nuevo();
+    charlar(v);
+    expect(filas(hablar(v, ANA, mBoton('b_bonos'))).map((r) => r['id'])).toEqual(['b_workbook', 'b_guia', 'b_calendario', 'b_preguntas']);
   });
 
   it('un texto que diga «b_pack» NO es un botón; el monto que diga el cliente («por 5 Bs») no mueve el QR', () => {
