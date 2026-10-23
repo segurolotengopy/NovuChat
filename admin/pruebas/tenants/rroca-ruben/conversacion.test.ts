@@ -24,8 +24,8 @@ const EXPORTADOS = [
   'cmRevisarRedaccion', 'RR_MODOS', 'RR_PROMPT', 'RR_TEXTOS_PUENTE', 'RR_CIERRE_PUENTE', 'RR_TEXTO_CHARLA_FIJA', 'RR_PREGUNTA_INFO_CHARLA', 'RR_BOTON_OPCIONES', 'RR_ETIQUETA_BOTON', 'RR_PRODUCTOS',
 ];
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-// nosemgrep: devsecops.js-eval-prohibido
 const FILTRO = readFileSync(join(CARPETA_LIB, '../../../comun-sin-agente/src/filtro-redaccion.js'), 'utf8');
+// nosemgrep: devsecops.js-eval-prohibido
 export const RR = new Function(FILTRO + '\n' + ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + `\nreturn { ${EXPORTADOS.join(', ')} };`)() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const rr = (n: string): F => RR[n] as F;
 
