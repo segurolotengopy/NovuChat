@@ -920,7 +920,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     ctx.textoModelo = String(resumen.textoModelo ?? '');
     ctx.eligioRubro = eventosDelTurno.some((e) => e.tipo === 'fila' && /^rubro:/.test(e.id)) || (corrida.rubroPrev !== String(ficha.rubro ?? '') && String(ficha.rubro ?? '') !== '');
     ctx.interes = textosDelTurno.some((x) => /\b(cuanto|precio|precios|costo|costos|cuesta|cuestan|tarifa|plan|planes|incluye|incluyen|funciona|funcionan|interesa|interesan|empezar|comenzar|contratar|contrato|instalacion|instalar|implementar|tarda|demora|informacion|info|detalles)\b/.test(x));
-    const requeridoPorMensaje = ['planes'].includes(ctx.plan) || (ctx.plan === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual', 'coexistencia'].includes(String(resumen.fijo ?? ''))) || ['sin_dato', 'no_documentado', 'equipo', 'complemento', 'generico', 'ambiguo', 'otro', 'otroRespuesta'].includes(String(resumen.evento ?? ''));
+    const requeridoPorMensaje = (ctx.plan === 'fijo' && ['costoMeta', 'integracion'].includes(String(resumen.fijo ?? ''))) || ['sin_dato', 'no_documentado', 'equipo', 'complemento', 'generico', 'ambiguo', 'otro', 'otroRespuesta'].includes(String(resumen.evento ?? ''));
     const ordinaria = ctx.plan === 'modelo' && !['rubro', 'multiple', 'pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte', 'otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'generico', 'ambiguo'].includes(String(resumen.evento ?? ''));
     const acabaron = ordinaria && (textosDelTurno.some((x) => /\b(no tengo mas (dudas|preguntas)|ninguna duda|eso es todo|nada mas|ya entendi|queda claro|quiero empezar|como contrato|como se contrata|como empiezo|como empezamos|listo para empezar|donde firmo)\b/.test(x)) || (String(ficha.explicado) === 'true' && corrida.respondidasPrev >= 2) || ['otro', 'captacion'].includes(String(ficha.rubro ?? '')) || textosDelTurno.some((x) => /(^| )(a medida|personaliz\w*|integra\w*|erp|sistema propio|mi sistema|sistemas)( |$)/.test(x)) || (resumen.causas ?? []).includes('funcion_inventada'));
     // Una consulta que el chat no puede resolver es REQUERIDA: el cliente propone una función no documentada para su rubro (cobros, QR, adelanto, seña, pago total fuera de gastronomía, retail y «otro»).
@@ -960,7 +960,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       if (!redactaElModelo && ex.contieneAlguna !== undefined && ![].concat(ex.contieneAlguna).some((x) => n(todo).includes(n(x)))) falla(i + 1, dicho, 'falta_lo_que_se_exige', `falta alguna de ${[].concat(ex.contieneAlguna).join(' | ')} en: ${todo}`);
       if (!redactaElModelo && ex.termina !== undefined && !buenos.some((m) => [].concat(ex.termina).some((x) => n(m.cuerpo).endsWith(n(x))))) falla(i + 1, dicho, 'no_termina_como_se_exige', todo);
       if (ex.sinCifras === true && /\d/.test(todo.replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' '))) falla(i + 1, dicho, 'cifra_donde_no_va', todo);
-      if (ex.imagenPlanes === true && !buenos.some((m) => objeto(objeto(m.payload).interactive).header !== undefined)) falla(i + 1, dicho, 'sin_imagen_de_planes', todo);
+      if (ex.imagenPlanes === true && !buenos.some((m) => objeto(objeto(m.payload).interactive).header !== undefined || ['image', 'document'].includes(String(objeto(m.payload).type ?? '')))) falla(i + 1, dicho, 'sin_imagen_de_planes', todo);
       if (ex.sinModelo === true && comp.captura.modelo.length) falla(i + 1, dicho, 'llamo_al_modelo_sin_necesidad', todo);
       if (ex.conModelo === true && !comp.captura.modelo.length) falla(i + 1, dicho, 'no_llamo_al_modelo', todo);
       if (ex.cta === true && !buenos.some((m) => tipoInter(m.payload) === 'cta_url')) falla(i + 1, dicho, 'sin_el_boton_de_recepcion', todo);
@@ -981,7 +981,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
         const real = !m0 ? 'ninguno' : tipo0 === 'button' ? botonesDe(m0.payload).join('+') : tipo0 === 'list' ? 'lista' : tipo0 === 'cta_url' ? 'cta' : 'texto';
         if (real !== [].concat(ex.botones).join('+')) falla(i + 1, dicho, 'botones_inesperados', `salió «${real}» y se esperaba «${[].concat(ex.botones).join('+')}»`);
       }
-      if (ex.imagenPlanes === false && buenos.some((m) => objeto(objeto(m.payload).interactive).header !== undefined)) falla(i + 1, dicho, 'imagen_de_planes_repetida', todo);
+      if (ex.imagenPlanes === false && buenos.some((m) => objeto(objeto(m.payload).interactive).header !== undefined || ['image', 'document'].includes(String(objeto(m.payload).type ?? '')))) falla(i + 1, dicho, 'imagen_de_planes_repetida', todo);
       if (ex.noRepite === true && buenos[0] && anterior && lib.chSimilitud(buenos[0].cuerpo, anterior) >= 0.75) falla(i + 1, dicho, 'repite_el_mensaje_anterior', buenos[0].cuerpo);
     }
     corrida.conversacion.push({ turno: i + 1, dicho, mensajes: alCliente.filter((m) => !m.esRespaldo).map((m) => m.cuerpo), origen: String(resumen.origen ?? ''), contexto: String(resumen.contexto ?? '') });

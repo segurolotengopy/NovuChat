@@ -464,14 +464,15 @@
        "desde USD 25"
       ],
       "noContiene": [
-       "Setup a medida"
+       "Setup a medida",
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
       ],
-      "botones": "equipo"
+      "botones": "texto"
      }
     },
     {
-     "tipo": "boton",
-     "id": "equipo",
+     "tipo": "texto",
      "exige": {
       "cta": true,
       "plantillas": 1,
@@ -479,7 +480,8 @@
        "cómo te llamas",
        "cómo se llama"
       ]
-     }
+     },
+     "texto": "Quiero hablar con una persona del equipo"
     }
    ],
    "planilla": {
@@ -988,7 +990,7 @@
   },
   {
    "id": "D1",
-   "titulo": "Consumo: ni un número, y la invitación al equipo",
+   "titulo": "Consumo: ni un número y sin invitación ni botón del equipo (el botón sale solo al derivar)",
    "turnos": [
     {
      "tipo": "texto",
@@ -1014,8 +1016,12 @@
       "sinModelo": true,
       "sinCifras": true,
       "contiene": [
-       "cada conversación cubra sin problemas todo el flujo necesario",
-       "hablar con alguien de nuestro equipo para analizar el volumen"
+       "cada conversación cubra sin problemas todo el flujo necesario"
+      ],
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
       ]
      }
     },
@@ -1024,7 +1030,12 @@
      "texto": "¿Hay algún límite de interacciones?",
      "exige": {
       "sinModelo": true,
-      "sinCifras": true
+      "sinCifras": true,
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
+      ]
      }
     },
     {
@@ -1032,7 +1043,12 @@
      "texto": "Quiero detalles técnicos sobre el consumo",
      "exige": {
       "sinModelo": true,
-      "sinCifras": true
+      "sinCifras": true,
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
+      ]
      }
     }
    ]
@@ -2026,7 +2042,11 @@
      "exige": {
       "imagenPlanes": true,
       "ruta": "planes",
-      "botones": "equipo"
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
+      ]
      }
     },
     {
@@ -2627,9 +2647,11 @@
       "ruta": "planes",
       "sinModelo": true,
       "imagenPlanes": true,
-      "botones": "equipo",
+      "botones": "texto",
       "noContiene": [
-       "novuchat.site"
+       "novuchat.site",
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
       ]
      }
     },
@@ -2780,7 +2802,11 @@
       "contiene": [
        "Setup estándar USD 65"
       ],
-      "botones": "equipo"
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
+      ]
      }
     }
    ],
@@ -2830,7 +2856,11 @@
       "ruta": "planes",
       "sinModelo": true,
       "imagenPlanes": true,
-      "botones": "equipo"
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
+      ]
      }
     }
    ],
@@ -3027,7 +3057,11 @@
       "contiene": [
        "Setup estándar USD 65"
       ],
-      "botones": "equipo"
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
+      ]
      }
     },
     {
@@ -3048,9 +3082,10 @@
       ],
       "noContiene": [
        "Planes mensuales (Impulso, Crecimiento, Pro) desde",
-       "conversaciones"
+       "conversaciones",
+       "hablar con alguien de nuestro equipo"
       ],
-      "botones": "equipo"
+      "botones": "texto"
      }
     },
     {
@@ -3068,9 +3103,10 @@
        "planes mensuales desde USD 25"
       ],
       "noContiene": [
-       "Ya te compartí"
+       "Ya te compartí",
+       "hablar con alguien de nuestro equipo"
       ],
-      "botones": "equipo"
+      "botones": "texto"
      }
     }
    ]
@@ -3251,7 +3287,11 @@
       "ruta": "planes",
       "sinModelo": true,
       "imagenPlanes": true,
-      "botones": "equipo"
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
+      ]
      }
     }
    ],
@@ -3303,7 +3343,11 @@
       "ruta": "planes",
       "sinModelo": true,
       "imagenPlanes": true,
-      "botones": "equipo"
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
+      ]
      }
     }
    ]
@@ -3384,7 +3428,7 @@
   },
   {
    "id": "A10",
-   "titulo": "El «Sí» a la oferta de hablar con el equipo (la del cierre de precios) lo deriva el CÓDIGO (el cliente real que se perdió): planes → «Si» = aviso a recepción + botón, sin modelo; «sí, pero cuánto cuesta» y «no» no derivan",
+   "titulo": "La derivación la hace el CÓDIGO (el cliente real que se perdió): planes (sin botón ni cierre del equipo, 23/10) → pedir una persona = aviso a recepción + botón, sin modelo; «sí, pero cuánto cuesta» y «no» no derivan",
    "turnos": [
     {
      "tipo": "texto",
@@ -3410,13 +3454,16 @@
       "ruta": "planes",
       "sinModelo": true,
       "imagenPlanes": true,
-      "botones": "equipo",
-      "termina": "¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝"
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
+      ]
      }
     },
     {
      "tipo": "texto",
-     "texto": "Si",
+     "texto": "Quiero hablar con una persona del equipo",
      "exige": {
       "sinModelo": true,
       "ruta": "equipo",
@@ -3974,7 +4021,11 @@
       "ruta": "planes",
       "sinModelo": true,
       "imagenPlanes": true,
-      "botones": "equipo"
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
+      ]
      }
     }
    ]
@@ -4019,7 +4070,11 @@
      "exige": {
       "ruta": "planes",
       "sinModelo": true,
-      "botones": "equipo"
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
+      ]
      }
     },
     {
@@ -4396,7 +4451,7 @@
   },
   {
    "id": "D14",
-   "titulo": "Segundo negocio tras el traspaso: otro rubro → «¿cuánto cuesta?» → nombre → planes con el cierre de precios → «Sí» = el equipo vuelve a ser ofrecible y deriva (empresa nueva: aviso a recepción)",
+   "titulo": "Segundo negocio tras el traspaso: otro rubro → «¿cuánto cuesta?» → nombre → planes (sin botón del equipo, 23/10) → una consulta sin respuesta (ERP) ofrece el equipo con su botón → «Sí» = el equipo vuelve a ser ofrecible y deriva (empresa nueva: aviso a recepción)",
    "turnos": [
     {
      "tipo": "texto",
@@ -4459,7 +4514,23 @@
       "ruta": "planes",
       "sinModelo": true,
       "imagenPlanes": true,
-      "botones": "equipo"
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se integra con mi ERP?",
+     "exige": {
+      "sinModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "Esa no la tengo a la mano",
+       "hablar con alguien de nuestro equipo"
+      ]
      }
     },
     {
@@ -5889,7 +5960,7 @@
   },
   {
    "id": "NUM1",
-   "titulo": "Número propio: «¿Puedo usar mi número actual?» → respuesta fija con la frase oficial, solo «Hablar con el equipo», sin modelo; «Sí» deriva (aviso a recepción + botón)",
+   "titulo": "Número propio: «¿Puedo usar mi número actual?» → respuesta fija con la frase oficial, sin invitación ni botón del equipo (23/10), sin modelo; pedir una persona deriva (aviso a recepción + botón)",
    "turnos": [
     {
      "tipo": "texto",
@@ -5920,20 +5991,21 @@
      "exige": {
       "ruta": "fijo",
       "sinModelo": true,
-      "botones": "equipo",
+      "botones": "texto",
       "contiene": [
-       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.",
-       "hablar con alguien de nuestro equipo"
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente."
       ],
       "noContiene": [
        "certificado",
-       "ver nuestros planes"
+       "ver nuestros planes",
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
       ]
      }
     },
     {
      "tipo": "texto",
-     "texto": "Sí",
+     "texto": "Quiero hablar con una persona del equipo",
      "exige": {
       "sinModelo": true,
       "ruta": "equipo",
@@ -5976,20 +6048,21 @@
      "exige": {
       "ruta": "fijo",
       "sinModelo": true,
-      "botones": "equipo",
+      "botones": "texto",
       "contiene": [
-       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.",
-       "hablar con alguien de nuestro equipo"
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente."
       ],
       "noContiene": [
        "certificado",
-       "ver nuestros planes"
+       "ver nuestros planes",
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
       ]
      }
     },
     {
      "tipo": "texto",
-     "texto": "Sí",
+     "texto": "Quiero hablar con una persona del equipo",
      "exige": {
       "sinModelo": true,
       "ruta": "equipo",
@@ -6032,20 +6105,21 @@
      "exige": {
       "ruta": "fijo",
       "sinModelo": true,
-      "botones": "equipo",
+      "botones": "texto",
       "contiene": [
-       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.",
-       "hablar con alguien de nuestro equipo"
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente."
       ],
       "noContiene": [
        "certificado",
-       "ver nuestros planes"
+       "ver nuestros planes",
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
       ]
      }
     },
     {
      "tipo": "texto",
-     "texto": "Sí",
+     "texto": "Quiero hablar con una persona del equipo",
      "exige": {
       "sinModelo": true,
       "ruta": "equipo",
@@ -6105,12 +6179,14 @@
       "ruta": "fijo",
       "sinModelo": true,
       "contiene": [
-       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar."
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente."
       ],
       "noContiene": [
        "hablar con alguien de nuestro equipo",
-       "ver nuestros planes"
-      ]
+       "ver nuestros planes",
+       "Lo revisamos contigo"
+      ],
+      "botones": "lista"
      }
     }
    ]
@@ -6243,15 +6319,19 @@
      "exige": {
       "ruta": "fijo",
       "sinModelo": true,
-      "botones": "equipo",
+      "botones": "texto",
       "contiene": [
-       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar."
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente."
+      ],
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "Lo revisamos contigo"
       ]
      }
     },
     {
      "tipo": "texto",
-     "texto": "Sí",
+     "texto": "Quiero hablar con una persona del equipo",
      "exige": {
       "sinModelo": true,
       "ruta": "equipo",
