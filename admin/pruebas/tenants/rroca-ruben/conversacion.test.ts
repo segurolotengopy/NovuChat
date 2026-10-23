@@ -801,14 +801,19 @@ describe('ENTREGA 2 · el vigilante FALLA si la producción se muta (invariantes
 const PROMESAS = [
   'Claro, en un momento te muestro los precios.', 'Ahora mismo te paso las opciones.', 'Abajo te dejo las opciones.', 'Ya te mando los precios.',
   'Enseguida te las paso.', 'En un momento te las dejo.', 'Te muestro los precios en un momento.', 'Te cuento lo que cuesta cada cosa.', 'Mira las opciones que vienen abajo.', 'Ya viene el catálogo.',
+  'Ya te digo el precio.', 'Luego te digo cuánto cuesta.', 'Ahorita te digo cuánto sale.', 'Te mando los costos.', 'Te comento los montos enseguida.', 'Ya te comento el valor.', 'En el próximo mensaje te llegan los precios.',
+  'Te enseño los paquetes en un momento.', 'Ahora te presento las alternativas.', 'Ahorita te paso la info.', 'Te muestro en un momento.', 'Ya te muestro todo lo que incluye.', 'Con gusto, ya te digo el precio. ¿A qué te dedicas?',
+  'Vou te mostrar os preços agora.', 'Já te mando as opções.',
   'Te envío el catálogo enseguida.', 'Te comparto los planes ahora mismo.', 'A continuación te dejo los precios.', 'Te lo muestro abajo.', 'Ya te paso la lista de precios.', 'En breve te mando las opciones.',
 ];
-const LEGITIMAS = ['Con el libro armas tus ideas de contenido en un par de minutos.', 'Antes de hablar de opciones, cuéntame a qué te dedicas.', 'El libro tiene 12 capítulos y más de 230 páginas.', 'Trae 100 prompts y 30 ideas de negocio.', 'El Checklist de 7 días te lleva de la mano.', 'Los precios los ve el sistema cuando llegue el momento de elegir.'];
+const LEGITIMAS = ['Con el libro armas tus ideas de contenido en un par de minutos.', 'Antes de hablar de opciones, cuéntame a qué te dedicas.', 'El libro tiene 12 capítulos y más de 230 páginas.', 'Trae 100 prompts y 30 ideas de negocio.', 'Hay varias opciones según tu negocio.', 'Te cuento cómo funciona el Closer de Ventas.', 'El libro tiene 12 capítulos y más de 230 páginas.', 'El Checklist de 7 días te lleva de la mano.', 'Los precios los ve el sistema cuando llegue el momento de elegir.'];
 
 describe('SEGURIDAD · con la compuerta cerrada el modelo no promete opciones ni precios', () => {
-  it('NEGADA: `rrPrometeOpciones` detecta las 16 promesas y no las frases legítimas', () => {
+  it('NEGADA: `rrPrometeOpciones` detecta las 31 promesas y no las frases legítimas', () => {
     for (const p of PROMESAS) expect(rr('rrPrometeOpciones')(p), p).toBe(true);
     for (const l of LEGITIMAS.filter((x) => !/Los precios los ve/.test(x))) expect(rr('rrPrometeOpciones')(l), l).toBe(false);
+    // La frase con pregunta: se quita la promesa y queda la pregunta.
+    expect(rr('rrQuitarPromesaDeOpciones')('Con gusto, ya te digo el precio. ¿A qué te dedicas?')).toBe('¿A qué te dedicas?');
   });
   it('`rrQuitarPromesaDeOpciones` quita solo la oración que promete y conserva el resto; sin nada que conservar, devuelve \'\'', () => {
     expect(rr('rrQuitarPromesaDeOpciones')('Buena idea para tu tienda. Ahora mismo te paso las opciones. El libro te ayuda con las respuestas.')).toBe('Buena idea para tu tienda. El libro te ayuda con las respuestas.');
@@ -848,7 +853,7 @@ describe('SEGURIDAD · con la compuerta cerrada el modelo no promete opciones ni
     const est = { ...estadoCharlaNuevo(), charla: 1 };
     const msg = (cuerpo: string): UxMsg => ({ tipo: 'text', cuerpo, payload: {} });
     for (const p of PROMESAS) expect(violacionesDePromesaConCompuertaCerrada(est, mTexto('x'), [msg(p)], 'modelo', false), p).not.toEqual([]);
-    for (const l of LEGITIMAS) expect(violacionesDePromesaConCompuertaCerrada(est, mTexto('x'), [msg(l)], 'modelo', false), l).toEqual([]);
+    for (const l of LEGITIMAS.filter((x) => !/Los precios los ve/.test(x))) expect(violacionesDePromesaConCompuertaCerrada(est, mTexto('x'), [msg(l)], 'modelo', false), l).toEqual([]);
     expect(violacionesDePromesaConCompuertaCerrada(est, mTexto('x'), [msg('Algo útil.\n\n¿Te muestro las opciones?')], 'puente', false)).toEqual([]);
     expect(violacionesDePromesaConCompuertaCerrada({ ...est, charla: 2 }, mTexto('x'), [msg(PROMESAS[0]!)], 'modelo', false)).toEqual([]);
     expect(violacionesDePromesaConCompuertaCerrada(est, mTexto('x'), [msg(PROMESAS[0]!)], 'qr', false)).toEqual([]);

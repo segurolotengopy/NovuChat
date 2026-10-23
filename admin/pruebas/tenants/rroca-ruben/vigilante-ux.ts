@@ -209,9 +209,11 @@ export function violacionesDePromesaConCompuertaCerrada(est: EstadoCharla, entra
   for (const m of mensajes) {
     for (const o of m.cuerpo.replace(CIERRE_DEL_PUENTE, ' ').split(/(?<=[.!?…])\s+|\n+/)) {
       const n = LIB.rrNorm(o);
-      const objeto = /\b(opciones|opcion|precios?|catalogo|planes|valores|tarifas|lo que cuesta|lo que cuestan|cuanto cuesta)\b/.test(n);
-      const muestra = /\b(muestro|mostrare|paso|pasare|dejo|dejare|mando|mandare|envio|enviare|comparto|cuento|viene|vienen|mira|adjunto|abajo|enseguida|en un momento|ahora mismo|a continuacion|en breve|ya mismo)\b/.test(n);
-      if ((objeto && muestra) || /\bte (las|los|lo|la) (paso|dejo|muestro|mando|envio|comparto)\b/.test(n)) v.push(`con la compuerta cerrada, el mensaje promete opciones o precios: «${o.slice(0, 50)}»`);
+      // Detector PROPIO y ancho del vigilante (no el de producción): un marcador de inminencia con un verbo de comunicar, o un verbo con un objeto de precio, en cualquier orden.
+      const verbo = /\b(muestr\w*|mostrar\w*|pas[oae]\w*|doy|dar[eé]?|envi\w*|mand\w*|dej[oae]\w*|compart\w*|cuento|contare|contar|dig[oa]|dir[eé]|decir|comento|comentar\w*|present\w*|ense[nñ]\w*|explic\w*|lleg\w*|vien\w*|mira\w*|adjunt\w*|passo|falo)\b/.test(n);
+      const marca = /\b(ya te|ahorita|ahora te|enseguida|en seguida|en un momento|luego|mas tarde|proximo mensaje|siguiente mensaje|a continuacion|abajo|ahora mismo|dame un|ya (viene|llega|van)|en breve|ya mismo|vou|ja te|daqui a pouco)\b/.test(n);
+      const objeto = /\b(precios?|costos?|valor\w*|montos?|tarifas?|paquetes?|planes|opciones|opcion|alternativas?|catalogo|lista de precios|cuanto (cuesta|sale|vale)\w*|lo que (cuesta|sale|vale)\w*|precos?|opcoes|planos)\b/.test(n);
+      if ((verbo && (marca || objeto)) || /\bte (las|los|lo|la) (paso|dejo|muestro|mando|envio|comparto|digo)\b/.test(n)) v.push(`con la compuerta cerrada, el mensaje promete opciones o precios: «${o.slice(0, 50)}»`);
     }
   }
   return v;

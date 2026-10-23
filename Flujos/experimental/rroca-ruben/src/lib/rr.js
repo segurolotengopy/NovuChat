@@ -1145,13 +1145,16 @@ const RR_REMITE_A_WEB = new RegExp([
 // ENTREGA 2 (seguridad): «solo se ofrece lo que se cumple». Con la compuerta cerrada (aún no hay dos mensajes de conversación) el modelo NO puede prometer mostrar, pasar, dejar o mandar opciones, precios, catálogo, planes o «lo que cuesta»:
 // no hay ningún botón de producto detrás. Es por ORACIÓN, sobre el texto normalizado: un objeto de precio (opciones, precios, catálogo, planes, valores, tarifas, «lo que cuesta») junto a un verbo de mostrar (muestro, paso, dejo, mando, envío,
 // comparto, cuento, viene, mira, ve, revisa) o a un marcador de lugar o de tiempo (abajo, en un momento, ahora mismo, enseguida, a continuación); o un pronombre («te las paso», «te lo muestro»).
+// REMEDIACIÓN ESTRUCTURAL (no una lista suelta de frases): una oración PROMETE si (A) combina un MARCADOR DE INMINENCIA O DE FUTURO con un verbo de comunicar, mostrar, pasar, dar, enviar, mandar, dejar, compartir, contar, decir, comentar,
+// presentar, enseñar, explicar o llegar (sin exigir objeto: «Te muestro en un momento»), o (B) combina uno de esos verbos con un objeto de precio AMPLIADO (precio, costo, valor, monto, tarifa, paquete, plan, opción, alternativa, catálogo,
+// «cuánto cuesta», y sus formas en portugués), en cualquier orden y con o sin «te»; o (C) «te las/los/lo/la + verbo». Sin objeto y sin marcador («te cuento cómo funciona el Closer») NO promete.
+const RR_PROMETE_MARCA = /\b(ya te|ya le|ya me|ahorita|ahora te|ahora le|enseguida|en seguida|en un momento|luego|mas tarde|en el proximo mensaje|en el siguiente mensaje|a continuacion|abajo|mas abajo|ahora mismo|dame un (segundo|momento|instante)|ya (viene|vienen|llega|llegan|van)|en breve|ya mismo|vou|ja te|ja vou|daqui a pouco|agora)\b/;
+const RR_PROMETE_VERBO = /\b(muestro|mostrare|mostrar|muestra|paso|pasare|pasar|doy|dare|dar|envio|enviare|enviar|mando|mandare|mandar|dejo|dejare|dejar|comparto|compartire|compartir|cuento|contare|contar|digo|dire|decir|comento|comentare|comentar|presento|presentare|presentar|enseno|ensenare|ensenar|explico|explicare|explicar|llegan|llega|llegaran|viene|vienen|mira|mire|ve|revisa|adjunto|passo|mostro|envio|conto|falo)\b/;
+const RR_PROMETE_OBJETO = /\b(precios?|costos?|valor|valores|montos?|tarifas?|paquetes?|planes|opciones|opcion|alternativas?|catalogo|lista de precios|cuanto (cuesta|cuestan|sale|salen|vale|valen)|lo que (cuesta|cuestan|sale|salen|vale|valen)|precos?|opcoes|planos|info de precios|informacion de precios)\b/;
 function rrPrometeOpciones(oracion) {
   const n = rrNorm(oracion);
-  const objeto = /\b(opciones|opcion|precios?|catalogo|planes|valores|tarifas|lo que cuesta|cuanto cuesta|cuanto cuestan|lo que cuestan|lista de precios)\b/.test(n);
-  const verbo = /\b(muestro|mostrare|mostrar|muestra|paso|pasare|pasar|dejo|dejare|dejar|mando|mandare|mandar|envio|enviare|enviar|comparto|compartire|compartir|cuento|contare|viene|vienen|mira|mire|ve|revisa|adjunto)\b/.test(n);
-  const lugar = /\b(abajo|en un momento|ahora mismo|enseguida|en seguida|a continuacion|mas abajo|en breve|ya mismo)\b/.test(n);
-  const pronombre = /\bte (las|los|lo|la) (paso|dejo|muestro|mando|envio|comparto|pasare|dejare|mostrare|mandare|enviare)\b/.test(n);
-  return (objeto && (verbo || lugar)) || pronombre;
+  const verbo = RR_PROMETE_VERBO.test(n);
+  return (verbo && RR_PROMETE_MARCA.test(n)) || (verbo && RR_PROMETE_OBJETO.test(n)) || /\bte (las|los|lo|la) (paso|dejo|muestro|mando|envio|comparto|pasare|dejare|mostrare|mandare|enviare|digo|comento)\b/.test(n);
 }
 // Quita del texto del modelo las oraciones que prometen opciones o precios (los párrafos se conservan). '' si no queda nada.
 function rrQuitarPromesaDeOpciones(texto) {
