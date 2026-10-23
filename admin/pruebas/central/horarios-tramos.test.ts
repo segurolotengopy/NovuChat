@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { ejecutar } from '../lib/flujo.ts';
 import {
   MAX_TRAMOS as MAX_TRAMOS_CLIENTE, errorDelDia, escribirHorarios, leerHorarios, type DiaHorario,
 } from '../../web/src/central/lib/horarios.ts';
@@ -154,8 +155,11 @@ describe('horariosSaneados: lo que reciben los flujos', () => {
 describe('el horario normalizado coincide con lo que hace cumplir el candado de los flujos', () => {
   const fuenteFlujo = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'Flujos', 'src', 'modulos', 'agenda', 'comprobar-reserva.js'), 'utf8');
   const trozo = fuenteFlujo.slice(fuenteFlujo.indexOf('const aMinutos'), fuenteFlujo.indexOf("// '' si la cita entra"));
-  const tramosDelDia = new Function(`${trozo}; return tramosDelDia;`)() as
-    (h: unknown, dia: string) => Array<{ i: number; f: number }> | null;
+  // Se ejecuta con el cargador común de las pruebas de flujos (`pruebas/lib/flujo.ts`), que ya lleva su
+  // excepción documentada; esta suite no evalúa código por su cuenta.
+  const codigoTramos = `${trozo}\nconst e = $input.first().json;\nreturn [{ json: { r: tramosDelDia(e.h, e.dia) } }];`;
+  const tramosDelDia = (h: unknown, dia: string) =>
+    ejecutar(codigoTramos, [{ h, dia }])[0]?.['r'] as Array<{ i: number; f: number }> | null;
   const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
   /** Minutos del día que el candado deja pasar (cita de un minuto que entra completa en un tramo). */
   const abiertos = (h: unknown) => {
