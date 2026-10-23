@@ -47,6 +47,8 @@ const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', '..', 'scripts', 'ensamblar-flujo.mjs');
 
 const FLUJOS = listarFlujos();
+/** La ruta del módulo propio del nodo: la entrada, o la ÚLTIMA de la lista si el nodo se arma con varios (helpers primero). */
+const rutaDe = (v: string | string[] | { archivo: string }): string => (typeof v === 'string' ? v : Array.isArray(v) ? v[v.length - 1]! : v.archivo);
 const CON_MANIFIESTO = FLUJOS.filter((f) => leerManifiesto(f) !== null);
 /**
  * El archivo de un nodo Code, leído del manifiesto del Demo A y no escrito acá:
@@ -54,9 +56,9 @@ const CON_MANIFIESTO = FLUJOS.filter((f) => leerManifiesto(f) !== null);
  * no una ruta armada con `join(carpetas(dir).src, …)`.
  */
 const moduloDe = (nodo: string): string => {
-  const v = (leerManifiesto('demo-a-agendamiento.json') as { codigo: Record<string, string | { archivo: string }> }).codigo[nodo];
+  const v = (leerManifiesto('demo-a-agendamiento.json') as { codigo: Record<string, string | string[] | { archivo: string }> }).codigo[nodo];
   if (!v) throw new Error(`el manifiesto del Demo A no tiene el nodo ${nodo}`);
-  return typeof v === 'string' ? v : v.archivo;
+  return rutaDe(v);
 };
 /** Marcadores declarados además de `Config base` (F3a, higiene). */
 const MARCADORES_DECLARADOS_APARTE: Record<string, Record<string, string>> = {
@@ -107,7 +109,7 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
       // Las variantes de los nodos comunes viven en su carpeta transitoria, no en core/ (F3b las unifica).
       for (const nodo of ['Normalizar entrada', 'Procesar respuesta', 'Config del negocio', 'Comercio no operativo', 'Uso extendido']) {
         const v = m.codigo[nodo];
-        expect(typeof v === 'string' ? v : v.archivo, `${f} ${nodo}`).toMatch(/^core\/(venta|captacion)\//);
+        expect(rutaDe(v), `${f} ${nodo}`).toMatch(/^core\/(venta|captacion)\//);
       }
       expect(m.prompts, f).toEqual({});
     }
@@ -172,6 +174,16 @@ describe('3. `extraer` seguido de `ensamblar` es la identidad', () => {
     const dir = copiaDeFlujos();
     rmSync(carpetas(dir).src, { recursive: true, force: true });
     rmSync(carpetas(dir).prompts, { recursive: true, force: true });
+    // Los helpers de un nodo armado con varios módulos (p. ej. `anuncio-por-titular.js`) son compartidos y `extraer`
+    // los exige presentes: se devuelven; el módulo propio del nodo es el que `extraer` tiene que recrear.
+    const m = leerManifiesto(archivo) as { codigo?: Record<string, string | string[] | { archivo: string }> };
+    for (const v of Object.values(m.codigo ?? {})) {
+      if (!Array.isArray(v)) continue;
+      for (const h of v.slice(0, -1)) {
+        mkdirSync(dirname(join(carpetas(dir).src, h)), { recursive: true });
+        cpSync(join(carpetas(RAIZ_FLUJOS).src, h), join(carpetas(dir).src, h));
+      }
+    }
     const r = extraerFlujo(archivo, { raiz: dir });
     expect(r.avisos).toEqual([]);
     // Los módulos y el manifiesto: 22 + 1 en reservas, 2 + 1 en el Demo B y la captación.
@@ -313,7 +325,7 @@ describe('5. Un nodo renombrado hace fallar con un mensaje claro', () => {
     // Una válida crea el manifiesto bajo esa carpeta, y todo queda dentro de la copia.
     const r = extraerFlujo('demo-b-venta-cobro.json', { raiz: dir, nuevo: 'venta' });
     expect(r.escritos.every((e) => e.startsWith(dir + '/'))).toBe(true);
-    expect(Object.values(r.manifiesto.codigo!).every((v) => (typeof v === 'string' ? v : v.archivo).startsWith('venta/'))).toBe(true);
+    expect(Object.values(r.manifiesto.codigo!).every((v) => (rutaDe(v)).startsWith('venta/'))).toBe(true);
   });
 });
 
@@ -393,8 +405,8 @@ describe('7. El Demo A y Platinum comparten todos los módulos salvo el prompt d
   // hasta FL1 y `modulos/<m>/` o `core/medios/` desde FL1.
   const COMUN = /^(comun|core)\/[^/]+\.js$/;
   it('cinco módulos son comunes por nombre a los otros verticales y trece son del vertical de reservas', () => {
-    const a = leerManifiesto('demo-a-agendamiento.json') as { codigo: Record<string, string | { archivo: string }> };
-    const rutas = Object.values(a.codigo).map((v) => (typeof v === 'string' ? v : v.archivo));
+    const a = leerManifiesto('demo-a-agendamiento.json') as { codigo: Record<string, string | string[] | { archivo: string }> };
+    const rutas = Object.values(a.codigo).map((v) => (rutaDe(v)));
     expect(rutas.filter((r) => COMUN.test(r))).toHaveLength(5);
     expect(rutas.filter((r) => /^(reservas|modulos\/[a-z-]+|core\/medios)\/[^/]+\.js$/.test(r))).toHaveLength(13);
     // Los comunes existen con el mismo nombre en el Demo B y en la captación,
@@ -407,7 +419,7 @@ describe('7. El Demo A y Platinum comparten todos los módulos salvo el prompt d
     // por nombre Y por archivo: los inyecta el ensamblador desde el mismo módulo.
     const MEDIOS = ['Preparar transcripción', 'Preparar imagen'];
     for (const [nombre, v] of Object.entries(a.codigo)) {
-      const ruta = typeof v === 'string' ? v : v.archivo;
+      const ruta = rutaDe(v);
       const enOtros = otros.every((o) => o.nodes.some((n) => n.name === nombre));
       if (MEDIOS.includes(nombre)) {
         expect(enOtros, nombre).toBe(true);
@@ -421,9 +433,9 @@ describe('7. El Demo A y Platinum comparten todos los módulos salvo el prompt d
   });
 
   it('el nombre de archivo de cada módulo es el nombre del nodo normalizado', () => {
-    const a = leerManifiesto('demo-a-agendamiento.json') as { codigo: Record<string, string | { archivo: string }> };
+    const a = leerManifiesto('demo-a-agendamiento.json') as { codigo: Record<string, string | string[] | { archivo: string }> };
     for (const [nombre, v] of Object.entries(a.codigo)) {
-      const ruta = typeof v === 'string' ? v : v.archivo;
+      const ruta = rutaDe(v);
       expect(ruta.replace(/^.*\//, '')).toBe(`${slug(nombre)}.js`);
     }
     expect(slug('AI Agent (Sofía)')).toBe('ai-agent-sofia');
@@ -488,4 +500,28 @@ describe('9. Las carpetas transitorias de FL2 solo se achican', () => {
       expect(hay.filter((a) => !permitidos.includes(a)), carpeta).toEqual([]);
     });
   }
+});
+
+describe('8. Una lista de módulos mal formada se rechaza con un error claro', () => {
+  const conEntrada = (valor: unknown): string => {
+    const dir = copiaDeFlujos();
+    const ruta = rutaDeManifiesto('demo-a-agendamiento.json', dir);
+    const m = JSON.parse(readFileSync(ruta, 'utf8'));
+    m.codigo['Preparar imagen'] = valor;
+    writeFileSync(ruta, JSON.stringify(m, null, 2) + '\n');
+    return dir;
+  };
+  it.each([
+    ['lista vacía', []],
+    ['elemento que no es texto', ['core/medios/preparar-imagen.js', 7]],
+    ['elemento vacío', ['']],
+    ['null dentro de la lista', [null]],
+    ['objeto con lista vacía', { archivo: [] }],
+    ['sin ruta', {}],
+    ['número', 5],
+  ])('%s', (_n, valor) => {
+    const dir = conEntrada(valor);
+    expect(() => ensamblarEnMemoria('demo-a-agendamiento.json', dir)).toThrow(/manifiesto/);
+    expect(() => extraerFlujo('demo-a-agendamiento.json', { raiz: dir })).toThrow(/manifiesto/);
+  });
 });
