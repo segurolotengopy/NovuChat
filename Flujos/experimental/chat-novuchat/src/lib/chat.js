@@ -205,9 +205,9 @@ const CH_NUMERO_PROPIO = new RegExp([
   '\\b(?:se pierde|se perdera|se pierden|se borran?|se eliminan?|voy a perder|perdere|pierdo|perderia)\\b(?: \\w+){0,3} (?:mi numero|mis chats|mis conversaciones|mis contactos|mis grupos|mi whatsapp)\\b',
 ].join('|'));
 const CH_NUM_PREGUNTA = /^(?:y |entonces |oye |disculpa |hola |una pregunta )?(?:puedo|podria|podemos|se puede|puede|pueden|es posible|tengo que|debo|necesito|necesitamos|hay que|hace falta|seguira|seguiria|va a seguir|sirve|funciona|funcionara|que numero|cual numero|que chip|coexist\w*|conecto|como conecto|quiero usar|quisiera usar|queremos usar|quiero conectar|quisiera conectar)\b|\b(?:se puede|es posible|quiero saber|quisiera saber|queria saber|me pregunto|tengo una duda)\b/;
-const chCerca = (a, b) => { a = a.replace(/s$/, ''); if (a === b) return true; if (Math.abs(a.length - b.length) > 1) return false; let i = 0; while (a[i] === b[i]) i++; return a.slice(i + 1) === b.slice(i + 1) || a.slice(i) === b.slice(i + 1) || a.slice(i + 1) === b.slice(i) || (a[i + 1] === b[i] && a[i] === b[i + 1] && a.slice(i + 2) === b.slice(i + 2)); }, chTipeo = (n) => n.split(' ').map((w) => (w.length < 5 ? w : ['actual', 'numero', 'telefono', 'celular', 'whatsapp', 'coexisten', 'coexiste', 'coexistir', 'convivir'].find((c) => chCerca(w, c)) || w)).join(' '); // (tolera UN error de tipeo —letra de más, de menos, cambiada o dos intercambiadas— y el plural en las palabras clave: «acrual», «los telefonos»; sin esto la pregunta cae al modelo, que contesta «no lo tengo a la mano»)
+const CH_CLAVES_TIPEO = ['actual', 'coexisten', 'coexiste', 'coexistir', 'convivir', 'whatsapp', 'cobra', 'meta', 'mensajes', 'conversaciones', 'domingos', 'descuento', 'descuentos', 'rebaja', 'cuesta', 'cuestan', 'precio', 'precios', { c: 'numero', plural: true }, { c: 'telefono', plural: true }, { c: 'celular', plural: true }]; // Palabras a las que se corrige UN error de tipeo («acrual», «cobar», «domigos»); la corrección (`ctTipeo`, core/texto/tipeo.js) se aplica UNA vez a los eventos del turno, en chDecidir y chSituacion.
 function chPreguntaNumeroActual(t) {
-  const n = chTipeo(chNorm(t));
+  const n = chNorm(t);
   if (!/\b(?:numero|numeros|whatsapp|wasap|watsap|linea|chip|telefono|celular|chats|conversaciones|contactos|que ya tengo|coexist\w*)\b/.test(n)) return false;
   if (/\b(?:cuanto|cuanta|cuesta|cuestan|precio|precios|costo|costos|tarifa|tarifas)\b/.test(n) || /\bcon (?:mi|el|un|una|nuestro|nuestra) (?:sistema|erp|crm|software|programa|sap|excel|facturacion|contabilidad|tienda|calendario|pagina|sitio|web|base de datos)\b/.test(n)) return false;
   if (!/[?¿]/.test(chTexto(t)) && !CH_NUM_PREGUNTA.test(n)) return false;
@@ -712,7 +712,7 @@ const CH_PREGUNTA_EMPRESA = /\b(?:sobre|acerca de|de) (?:la |su |tu )?(?:empresa
 function chPreguntaEmpresa(t) { const n = chNorm(t); return n !== '' && n.split(' ').length <= 14 && CH_PREGUNTA_EMPRESA.test(n); }
 // «¿Atienden también los fines de semana?», «¿responde de noche?», «¿funciona en feriados?»: el documento dice «Atención en segundos 24/7». Una PREGUNTA sobre el servicio (no el horario del propio negocio del cliente).
 const CH_VERBO_HORARIO = '(?:atienden|atiende|responden|responde|contestan|contesta|funcionan|funciona|trabajan|trabaja|estan disponibles|esta disponible|opera|operan|hay atencion)';
-const CH_HORA_HORARIO = '(?:fines? de semana|sabados?|domingos?|feriados?|de noche|por la noche|en la noche|madrugada|cualquier hora|toda hora|todo el dia|las 24|24 horas|24 7|todos los dias|7 dias|siete dias|de dia y de noche)';
+const CH_HORA_HORARIO = '(?:a que hora|fines? de semana|sabados?|domingos?|feriados?|de noche|por la noche|en la noche|madrugada|cualquier hora|toda hora|todo el dia|las 24|24 horas|24 7|todos los dias|7 dias|siete dias|de dia y de noche)';
 const CH_PREGUNTA_HORARIO = new RegExp('\\b' + CH_VERBO_HORARIO + '\\b[^.?]{0,40}\\b' + CH_HORA_HORARIO + '\\b|\\b' + CH_HORA_HORARIO + '\\b[^.?]{0,40}\\b' + CH_VERBO_HORARIO + '\\b');
 function chPreguntaHorario(t) {
   const n = chNorm(t);
@@ -832,7 +832,7 @@ function chPedirDatosAntes(f) {
   return !!f && f.nombrePedido !== true && f.planesMostrados !== true && f.equipoAhora !== true && !(chPlano(f.nombre) !== '' && chPlano(f.empresa) !== '');
 }
 function chDecidir(a) {
-  const ev = Array.isArray(a.eventos) ? a.eventos : [];
+  const ev = (Array.isArray(a.eventos) ? a.eventos : []).map((e) => (e && (e.k === 'texto' || e.k === 'audio') ? Object.assign({}, e, { c: ctTipeo(e.c, CH_CLAVES_TIPEO) }) : e));
   const f = a.ficha;
   const cfg = a.cfg;
   const d = chDatos(cfg);
@@ -1394,7 +1394,7 @@ function chSituacion(a) {
   const f = a.ficha || {};
   const p = a.plan || {};
   const r = a.res || {};
-  const textos = (a.eventos || []).filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').map((e) => e.c);
+  const textos = (a.eventos || []).filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').map((e) => ctTipeo(e.c, CH_CLAVES_TIPEO));
   const t = textos.map(chNorm).join(' ');
   const ev = p.ruta === 'modelo' ? chTexto(r.origen === 'modelo' ? r.contexto : r.evento) : '';
   const rub = chTexto(p.rubroElegido || r.rubroId || f.rubro);
