@@ -18,7 +18,8 @@ const PID = '59100000042';
 const ANA = '59100000011';
 const REC = '59100000031';
 const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
-const TEXTO_CAIDO = 'Gracias por escribir. ¿Quieres que te cuente qué incluye el libro o prefieres ver las opciones de compra?';
+// ENTREGA 2: sin las opciones habilitadas (aún no hubo dos mensajes de conversación) el respaldo no ofrece «ver las opciones de compra».
+const TEXTO_CAIDO = 'Gracias por escribir. ¿Quieres que te cuente qué incluye el libro?';
 
 const codigo = ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA, 'src/lib', a), 'utf8')).join('\n');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
@@ -78,7 +79,7 @@ describe('rrAnuncioDe: la lista cerrada de los 9 anuncios', () => {
 describe('el prompt y el cuerpo del modelo', () => {
   it('el prompt lleva los 9 ángulos y las objeciones, sin montos, enlaces ni banco, y no supera un tamaño razonable', () => {
     const p: string = L.RR_PROMPT;
-    for (const n of ['Cap', 'caps. 8 y 10', 'caps. 9', 'cap. 7', 'Mapa de Automatización', 'checklist de 7 días', 'Closer de Ventas en Tiempo Real', 'Crea videos con IA', 'programar', 'versiones gratuitas', 'este mismo chat', 'ahorra']) expect(p, n).toContain(n === 'Cap' ? 'cap. 6' : n);
+    for (const n of ['Cap', 'caps. 8 y 10', 'caps. 9', 'cap. 7', 'Mapa de Automatización', 'checklist de 7 días', 'Closer de Ventas en Tiempo Real', 'Crea videos con IA', 'programar', 'versiones sin costo', 'este mismo chat', 'ahorra']) expect(p, n).toContain(n === 'Cap' ? 'cap. 6' : n);
     expect(p).not.toMatch(/\d+\s*Bs|https?:|www\.|banco\s+\w+\s+cuenta/i);
     // Medios entrantes (20/10/2026): +~1.000 caracteres (las líneas IMÁGENES y AUDIOS), unos +270 tokens por llamada al modelo (~0,00008 USD).
     expect(p.length).toBeLessThan(6000);
