@@ -1,0 +1,69 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_). Misma convención que chat-novuchat y captacion-minima.",
+  "nodes": [],
+  "nota": "A2 y A3 cambian dos palabras del PDF (\"precios\" y \"precio\" por \"consultas\" y \"por las tortas\"): con ellas el flujo actual (`rrPreguntaPorPrecio`, de la ENTREGA 1) toma el mensaje por una pregunta de precio y lo manda por la compuerta en vez de a la charla. Es un hallazgo declarado en DISENO.md; la batería mide el modelo, no ese detector.",
+  "descripcion": "ENTREGA 2 de Rubén: 12 turnos del cliente en tres casos (A el PDF, B «precio primero», C anuncio y salidas de tema). 8 turnos llaman al modelo. `seco` es la respuesta fija del modo --seco (no significa nada sobre el modelo real); `rubro`, `tema` y `objecion` son las marcas que mide la batería real.",
+  "casos": [
+    {
+      "id": "A",
+      "nombre": "El PDF: saludo, pastelería y TikTok, objeción con las opciones y el Pack",
+      "turnos": [
+        { "dice": "Hola" },
+        {
+          "dice": "Tengo una pastelería artesanal, hago tortas a pedido, pero entre hornear y responder consultas por WhatsApp no me da la vida para pensar qué subir a TikTok. Oye y una consulta nada que ver jaja, ¿tú sabes si es mejor pagar publicidad en TikTok o en Facebook acá en Bolivia?",
+          "rubro": ["torta", "pasteler"],
+          "tema": ["tiktok", "facebook"],
+          "seco": "¡Jaja qué buena pregunta! Mira, hoy en Bolivia TikTok te da muchísimo alcance orgánico sin pagar publicidad si el video engancha en los primeros segundos, mientras que Facebook e Instagram siguen siendo geniales para segmentar anuncios directo a tu zona.\n\nDe hecho, para tu pastelería eso te viene como anillo al dedo: con el libro (y los 100 Prompts incluidos) le pides a la IA que te arme las ideas y guiones en un par de minutos. ¿Qué sientes que te ayudaría más hoy: organizar tus ideas de contenido o también cerrar más pedidos?"
+        },
+        {
+          "dice": "Uff los dos, porque me preguntan por las tortas y luego me dejan en visto jajaja. Pero ¿no es muy complicado de usar? Yo apenas uso ChatGPT una vez al mes.",
+          "objecion": true,
+          "seco": "¡Para nada! Si ya abriste ChatGPT una vez, ya tienes todo lo que necesitas. El libro te lleva de la mano desde cero con un Checklist de 7 días, y para esos clientes que te dejan en visto, con el Closer de Ventas solo copias su mensaje, lo pegas y la IA te da la respuesta exacta."
+        },
+        { "boton": "b_pack" }
+      ]
+    },
+    {
+      "id": "B",
+      "nombre": "Precio primero: el catálogo se pide antes de conversar",
+      "turnos": [
+        { "dice": "¿cuánto cuesta el libro?" },
+        {
+          "dice": "tengo una tienda de ropa en Cochabamba",
+          "rubro": ["ropa", "tienda"],
+          "seco": "Entiendo, para una tienda de ropa el libro te ayuda a responder a tus clientes más rápido con sus 100 Prompts, sin saber nada de tecnología."
+        },
+        { "dice": "sí" },
+        {
+          "dice": "¿y el closer qué es exactamente?",
+          "seco": "El Closer de Ventas es un prompt: pegas el mensaje que te escribe tu cliente y te sugiere qué responderle para cerrar el pedido. ¿Lo usarías para tu tienda de ropa?"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "nombre": "Anuncio de Meta y salidas de tema",
+      "turnos": [
+        {
+          "dice": "Vi el anuncio ¿Te escriben pero no compran?",
+          "seco": "Qué buen tema: cuando te escriben y no compran, el capítulo 7 y el Closer de Ventas del Pack Completo te ayudan a responder mejor. ¿Qué vendes por chat?"
+        },
+        {
+          "dice": "jaja oye, ¿conviene más Instagram o TikTok para vender ropa?",
+          "rubro": ["ropa"],
+          "tema": ["instagram", "tiktok"],
+          "seco": "¡Jaja buena pregunta! Para vender ropa Instagram te sirve para mostrar prendas y que te escriban al WhatsApp, y TikTok para llegar a más gente con videos cortos. Con el libro y sus 100 Prompts armas las ideas de ambos. ¿Cuál usas hoy?"
+        },
+        {
+          "dice": "¿no es caro? no sé nada de tecnología",
+          "objecion": true,
+          "seco": "Tranquila, no necesitas saber de tecnología: el libro te lleva de la mano desde cero con el Checklist de 7 días y trae 100 Prompts para copiar y pegar en tu negocio de ropa."
+        },
+        {
+          "dice": "¿y si después quiero solo los videos?",
+          "seco": "Claro, el curso «Crea videos con IA» viene en el Pack Completo y también puedes sumarlo después por este mismo chat. ¿Qué tipo de videos quieres hacer?"
+        }
+      ]
+    }
+  ]
+}
