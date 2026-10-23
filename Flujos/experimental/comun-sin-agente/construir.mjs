@@ -147,8 +147,8 @@ export function codigoDe(p, marca, nodo) {
   const medio = /^@@medio:([a-z][a-z0-9-]*)$/.exec(marca);
   if (medio) {
     const fuente = p.paquetes[medio[1]];
-    if (!fuente || fuente.length !== 1) throw new Error(`${nodo}: el config no declara el paquete «${medio[1]}»`);
-    return fuente[0] + '\n';
+    if (!fuente || fuente.length < 1) throw new Error(`${nodo}: el config no declara el paquete «${medio[1]}»`);
+    return fuente.join('\n') + '\n';
   }
   const m = MARCA.exec(marca);
   if (!m) throw new Error(`${nodo}: marca no válida: ${marca}`);
