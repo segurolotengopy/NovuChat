@@ -1533,7 +1533,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ $('Normalizar entrada').first().json.esMedioAudio === true || $('Normalizar entrada').first().json.esMedioVisual === true }}",
+              "leftValue": "={{ $('Normalizar entrada').first().json.esMedioAudio === true || ($('Normalizar entrada').first().json.esMedioVisual === true && String($('Normalizar entrada').first().json.texto || '').trim() === '') }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -1546,7 +1546,7 @@
         },
         "options": {}
       },
-      "notes": "Solo se baja un medio si es una nota de voz (para transcribirla) o una imagen o PDF (para clasificarlo)."
+      "notes": "Solo se baja un medio si es una nota de voz (para transcribirla) o una imagen o PDF SIN pie de foto (para clasificarlo): con pie, ese texto ya decide el turno y no se paga la llamada a Gemini."
     },
     {
       "id": "obtener-url-general",

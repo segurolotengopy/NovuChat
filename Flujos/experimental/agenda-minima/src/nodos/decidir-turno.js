@@ -73,6 +73,15 @@ if (!boton) {
   // Vacunas y cremas van al DOCTOR, no a recepcion (P5, 23/09): es la cuarta opcion del
   // menu y tambien las palabras que la configuracion nombra.
   if (t.eleccion === 'vacunas_otros' || (reDoc && reDoc.test(norm))) return salir('contacto_doctor');
+  // Una pregunta de SALUD no la responde el asistente: se ofrece pasar con recepción (aviso + botón). Cada palabra de la lista
+  // se busca ENTERA (límite de palabra a los dos lados: «tos» no es «tostadas» ni «dolor» es «Dolores»), en cualquier paso salvo
+  // cuando se espera un nombre, y solo si el mensaje no pide una cita.
+  const reClin = (() => {
+    const partes = String(cfg.palabrasClaveClinicas || '').split('|').map((p) => cnNorm(p)).filter(Boolean).map((p) => p.replace(/[.*+?^${}()[\]\\]/g, '\\$&'));
+    return partes.length ? new RegExp('(?<![\\p{L}\\p{N}])(?:' + partes.join('|') + ')(?![\\p{L}\\p{N}])', 'iu') : null;
+  })();
+  const pideCita = /(?<![\p{L}\p{N}])(cita|citas|agendar|agendame|agendarme|reservar|cancelar|reagendar)(?![\p{L}\p{N}])/iu;
+  if (reClin && reClin.test(norm) && !pideCita.test(norm) && String(est.paso || 'inicio').indexOf('esperando') !== 0) return salir('consulta_clinica');
 }
 
 if (boton && boton.tipo === 'h') return salir('elegir_hueco', { boton: boton });
