@@ -58,7 +58,7 @@ export function configDe(tenants = tenantsConDatos()) {
       mensajes: ['../comun-sin-agente/src/mensajes.js'],
       filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
       'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
-      'm-imagen': ['../../src/core/medios/preparar-imagen.js'],
+      'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
       'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
     },
     variantes: tenants.flatMap((t) => [
@@ -408,7 +408,7 @@ export const ARISTAS_DE_MEDIOS = [
   ['Transcribir audio', 'Preparar transcripción'], ['Preparar transcripción', 'Decidir turno'], ['Describir documento', 'Preparar imagen'], ['Describir imagen', 'Preparar imagen'],
   ['Preparar imagen', 'Decidir turno'], ['Medio no aceptado', 'Decidir turno'],
 ];
-const MODULOS_DE_MEDIOS = { 'Preparar transcripción': 'preparar-transcripcion.js', 'Preparar imagen': 'preparar-imagen.js', 'Medio no aceptado': 'medio-no-aceptado.js' };
+const MODULOS_DE_MEDIOS = { 'Preparar transcripción': 'preparar-transcripcion.js', 'Preparar imagen': ['anuncio-por-titular.js', 'preparar-imagen.js'], 'Medio no aceptado': 'medio-no-aceptado.js' };
 export function hallazgosDeMedios(flujo) {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
@@ -418,9 +418,16 @@ export function hallazgosDeMedios(flujo) {
   for (const [de, a] of ARISTAS_DE_MEDIOS) {
     if (por(de) && por(a) && !(conex[de] && (conex[de].main || []).some((s) => (s || []).some((x) => x.node === a)))) h.push(`medios: «${de}» no está conectado a «${a}»`);
   }
-  for (const [nombre, archivo] of Object.entries(MODULOS_DE_MEDIOS)) {
-    const fuente = readFileSync(join(AQUI, '../../src/core/medios', archivo), 'utf8');
-    if (por(nombre) && !String((por(nombre).parameters || {}).jsCode || '').includes(fuente)) h.push(`medios: el código de «${nombre}» no es el del módulo común ${archivo}`);
+  for (const [nombre, archivos] of Object.entries(MODULOS_DE_MEDIOS)) {
+    // «Preparar imagen» se arma con varios módulos (el reconocimiento por titular primero): cada uno tiene que estar entero y en ese orden.
+    const codigo = String((por(nombre) && por(nombre).parameters || {}).jsCode || '');
+    let desde = 0;
+    for (const archivo of [archivos].flat()) {
+      const fuente = readFileSync(join(AQUI, '../../src/core/medios', archivo), 'utf8');
+      const i = codigo.indexOf(fuente, desde);
+      if (por(nombre) && i < 0) { h.push(`medios: el código de «${nombre}» no es el del módulo común ${archivo}`); break; }
+      desde = i + fuente.length;
+    }
   }
   for (const n of ['Transcribir audio', 'Describir documento', 'Describir imagen']) {
     if (por(n) && !(((por(n).credentials || {}).googlePalmApi || {}).name)) h.push(`medios: «${n}» no lleva credencial de Gemini`);
@@ -511,8 +518,8 @@ export function armarDoctora(proyecto, datos, v) {
     const m = typeof js === 'string' ? /^@@medio:([a-z0-9-]+)$/.exec(js) : null;
     if (m) {
       const fuente = proyecto.paquetes[m[1]];
-      if (!fuente || fuente.length !== 1) throw new Error(`${donde} · ${n.name}: el config no declara el paquete «${m[1]}»`);
-      n.parameters.jsCode = fuente[0] + '\n';
+      if (!fuente || fuente.length < 1) throw new Error(`${donde} · ${n.name}: el config no declara el paquete «${m[1]}»`);
+      n.parameters.jsCode = fuente.join('\n\n') + '\n';
     }
   }
   // La cadena de envío común (no se copia), con las credenciales por NOMBRE. Cuelga de «Armar mensajes»; el resumen cuelga aparte y corre al final.
