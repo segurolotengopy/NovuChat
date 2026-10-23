@@ -91,7 +91,7 @@ Lista de 12 funcionalidades y decisiones D1 a D3 aprobadas por Andres el 23/10/2
 
 | Punto | Estado |
 |---|---|
-| 1. Saludo fijo, una vez por teléfono, «asistente virtual de <nombreNegocio>» (Consola; respaldo `Config base`), nunca «de Antonio Dauber» | Hecho (`raPresentacion`). Se dice «de <nombre>» y no «del <nombre>»: «del El Puente» no se lee |
+| 1. Saludo fijo, una vez por teléfono, «asistente virtual del <nombreNegocio>» (Consola; respaldo `Config base`), nunca «de Antonio Dauber» | Hecho (`raPresentacion`, fase 1b): el artículo es un dato del tenant (`RA_ARTICULO_DEL_NEGOCIO = 'del'`) y se contrae si el nombre ya lo trae («El Puente» → «del Puente»; «La X» → «de la X»); «Método Puente» → «del Método Puente». Los textos del precio y del pie del QR usan el nombre del catálogo (respaldo: `RA_PRODUCTOS`) |
 | 2. Charla de la Entrega 2 (`charlaN`), precios desde el 3.er mensaje, puente con «Ver opciones» | Hecho |
 | 3. «¿Cuánto cuesta el libro?» → precio de ESE producto por código ya; en general → puente | Hecho (`vdPrecioPedido`) |
 | 4. «Sí»/«no» suelto con la pregunta pendiente | Hecho (core `pregunta-pendiente.js`; intención `ver_opciones`) |

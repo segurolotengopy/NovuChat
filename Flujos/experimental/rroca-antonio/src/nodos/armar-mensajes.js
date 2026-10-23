@@ -84,7 +84,7 @@ const presentacion = !fichaAntes.saludado;
 const textoPresentacion = raPresentacion(negocio);
 const conPresentacion = (cuerpo) => (presentacion ? textoPresentacion + '\n\n' + cuerpo : cuerpo);
 // La invitación a pagar el QR pendiente: se agrega al final de toda respuesta que se da con un QR abierto (el producto y el monto son del código, nunca del modelo).
-const invitar = (cuerpo) => (qrAbierto ? cuerpo + '\n\n' + raInvitacionQr(plan.qrProducto, plan.qrMonto) : cuerpo);
+const invitar = (cuerpo) => (qrAbierto ? cuerpo + '\n\n' + raInvitacionQr(plan.qrProducto, plan.qrMonto, nom) : cuerpo);
 const botonOpciones = () => [raBoton(RA_BOTON_OPCIONES, RA_ETIQUETA_OPCIONES)];
 
 // La protección ante violencia o miedo se arma aunque la puerta no «siga» (comercio suspendido, estado «operador») o el número no sea boliviano.
@@ -163,11 +163,11 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
   } else if (tipoDePlan === 'precio') {
     if (plan.temprano === true && !qrAbierto) {
       // El precio de UN producto antes de la charla: lo dice el código (con la presentación si es el primer mensaje), sin botones de producto; el cierre es el del puente («¿Te muestro las opciones?» y el botón «Ver opciones»).
-      m = conBotones(conPresentacion(raTextoPrecio(cat, plan.producto, 'puente')), botonOpciones(), undefined, true);
+      m = conBotones(conPresentacion(raTextoPrecio(cat, plan.producto, 'puente', nom)), botonOpciones(), undefined, true);
     } else {
       const op = qrAbierto ? [] : menuAbierto();
       // Con un QR abierto no se ofrecen botones de producto (no se abre otro QR) ni el de Antonio: el texto cierra con la invitación a pagar, no con una pregunta.
-      m = qrAbierto ? texto(invitar(raTextoPrecio(cat, plan.producto, false))) : conBotones(raTextoPrecio(cat, plan.producto, op.length > 0), op);
+      m = qrAbierto ? texto(invitar(raTextoPrecio(cat, plan.producto, false, nom))) : conBotones(raTextoPrecio(cat, plan.producto, op.length > 0, nom), op);
     }
   } else if (tipoDePlan === 'catalogo') {
     // El catálogo completo con precio, por código (los precios son los del catálogo de la consola). Con un QR abierto, texto plano con la invitación a pagar.
@@ -204,7 +204,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
       tipoDePlan = 'derivar';
       m = conAntonio(raTextoDerivacion('qr_sin_aviso', false, '', base));
     } else {
-      const pie = raSeguro(raPieQr(plan.producto, monto, plan.pedidoId, plan.conPresentacion === true, negocio));
+      const pie = raSeguro(raPieQr(plan.producto, monto, plan.pedidoId, plan.conPresentacion === true, negocio, nom));
       const respaldo = 'No pude mostrarte el QR en este momento. Escríbeme de nuevo en unos minutos para intentarlo otra vez.';
       m = cmMensaje('cliente', Object.assign(cmBase('image'), { image: { id: mediaId, caption: pie } }), pie, respaldo, { tipoReporte: 'image' });
       // El evento que ABRE el cobro: `qr_enviado`, con `referencia` (el pedido) y `monto` (el del catálogo). Cobro real: regla 2 (15 minutos, 3 intentos).
@@ -215,7 +215,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
       pedidoNuevo = { producto: plan.producto };
     }
   } else if (tipoDePlan === 'qr_pendiente') {
-    m = texto(raTextoQrPendiente(plan.producto, plan.monto, fichaAntes.ultimoHash));
+    m = texto(raTextoQrPendiente(plan.producto, plan.monto, fichaAntes.ultimoHash, nom));
   } else if (tipoDePlan === 'cobro_cerrado') {
     m = conAntonio(RA_TEXTO_COBRO_CERRADO);
   } else if (tipoDePlan === 'cobro_ya_cerrado') {

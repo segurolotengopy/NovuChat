@@ -3,7 +3,7 @@
  * `vigilarUx(mundo)` envuelve `mundo.turno`: cada escenario que habla con el flujo pasa por aquí, así que los invariantes valen en TODA la batería (no en estados sueltos). Invariantes:
  *   1. UN BOTÓN (O FILA DE LISTA) YA PULSADO NO REAPARECE en ningún mensaje posterior de esa conversación, por teléfono; tampoco el del producto cuyo QR abrió un prellenado;
  *   2. NO SE OFRECE ALGO ANTES DE TIEMPO: el QR solo sale si en ese turno el cliente eligió un producto (botón, fila de la lista o prellenado del Pack o del Libro), y ningún texto de pago aparece sin QR;
- *   3. UNA SOLA PRESENTACIÓN por mensaje Y UNA POR TELÉFONO: «Soy el asistente virtual de <el negocio de la Consola>» (y el saludo largo) sale a lo más una vez en toda la conversación, y NUNCA con el nombre de una persona;
+ *   3. UNA SOLA PRESENTACIÓN por mensaje Y UNA POR TELÉFONO: «Soy el asistente virtual del <negocio de la Consola>» (y el saludo largo) sale a lo más una vez en toda la conversación, y NUNCA con el nombre de una persona;
  *   4. PÁRRAFOS: cada párrafo (separado por una línea en blanco) tiene a lo más DOS oraciones y, con dos, a lo más 220 caracteres; sin saltos triples ni espacios sobrantes. La partición en oraciones es la
  *      de la LIBRERÍA (`raOraciones` de `ra.js`): no puede haber desacuerdo entre quien reparte y quien vigila;
  *   5. NINGUNA PREGUNTA POR OPCIONES SIN BOTONES: un texto que pregunta por «las opciones», «¿cuál prefieres?» o «¿con cuál…?» sale con al menos un botón o una lista en ese mismo mensaje;

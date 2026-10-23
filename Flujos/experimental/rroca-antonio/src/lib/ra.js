@@ -252,6 +252,10 @@ function raNombres(cuerpo) {
 function raTitulo(nom, k) {
   return cbEsObjeto(nom) && Object.prototype.hasOwnProperty.call(nom, k) && typeof nom[k] === 'string' && nom[k] !== '' ? nom[k] : RA_PRODUCTOS[k].titulo;
 }
+// El nombre de un producto DENTRO de una frase: el del catálogo de la consola entre « » (el comercio lo escribió) y, solo como respaldo, el texto descriptivo de `RA_PRODUCTOS`.
+function raNombreEnTexto(nom, k) {
+  return cbEsObjeto(nom) && Object.prototype.hasOwnProperty.call(nom, k) && typeof nom[k] === 'string' && nom[k] !== '' ? '«' + nom[k] + '»' : RA_PRODUCTOS[k].nombre;
+}
 function raPrecio(cat, producto) {
   return cbEsObjeto(cat) && Object.prototype.hasOwnProperty.call(RA_PRODUCTOS, producto) && Object.prototype.hasOwnProperty.call(cat, producto) ? cbTotalValido(cat[producto]) : null;
 }
@@ -547,9 +551,19 @@ function raMenuDeBonos(productos, cat, usados, nom) {
 // -----------------------------------------------------------------------------
 // UNA sola presentación por teléfono, sin precios, sin banco ni enlaces, sin «hablar con» nadie.
 // El nombre del negocio llega de la Consola (`datosDelNegocio.nombreNegocio`; «Config del negocio» ya lo resuelve con el respaldo de `Config base`): nunca el nombre de una persona. Sin nombre, la presentación sigue diciendo qué ES.
-function raPresentacion(nombre) {
+// El ARTÍCULO con que se une al nombre es un dato del tenant («del Método Puente»). Si el nombre de la Consola ya empieza con un artículo, se contrae: «El Puente» → «del Puente»; «La X» → «de la X»; «Los X» → «de los X»;
+// «Las X» → «de las X». Nunca «del El» ni «de el». Sin nombre (o solo un artículo), no se dice de quién.
+const RA_ARTICULO_DEL_NEGOCIO = 'del';
+function raDelNegocio(nombre) {
   const n = cbLinea(nombre, 60);
-  return '¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual' + (n !== '' ? ' de ' + n : '') + '.';
+  if (n === '' || /^(el|la|los|las)$/i.test(n)) return '';
+  const m = /^(el|la|los|las)\s+(\S.*)$/i.exec(n);
+  if (m) return m[1].toLowerCase() === 'el' ? 'del ' + m[2] : 'de ' + m[1].toLowerCase() + ' ' + m[2];
+  return RA_ARTICULO_DEL_NEGOCIO + ' ' + n;
+}
+function raPresentacion(nombre) {
+  const d = raDelNegocio(nombre);
+  return '¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual' + (d !== '' ? ' ' + d : '') + '.';
 }
 const RA_PREGUNTA_GENERAL = '¿Qué sienten que les gustaría mejorar más en este momento: volver a escucharse, discutir menos o recuperar la cercanía?';
 const RA_TEXTO_INTRO = '«El Puente que nos vuelve a unir» es un método práctico de 14 capítulos y una ruta de 30 días para mejorar la comunicación y recuperar la complicidad.';
@@ -568,20 +582,20 @@ const RA_TEXTO_OPCIONES = 'Estas son las opciones. ¿Cuál prefieres?';
 const RA_TEXTO_BONOS = 'Estos son los bonos que puedes llevar por separado. ¿Cuál te interesa?';
 // El precio por código. Con producto reconocido y con precio en el catálogo, lo dice exacto; si no, lista los que SÍ tienen precio (nunca un precio inventado).
 // `conOpciones === false`: no hay botones que ofrecer (todos pulsados): el texto no termina con una pregunta sin opciones.
-function raTextoPrecio(cat, producto, conOpciones) {
+function raTextoPrecio(cat, producto, conOpciones, nom) {
   // `conOpciones`: true = botones de producto (cierra con «¿Qué opción prefieres?»); false = sin botones ni pregunta; 'puente' = aún no hay opciones (la compuerta está cerrada) y el cierre es el del puente.
   const cierre = conOpciones === false ? '' : (conOpciones === 'puente' ? '\n\n' + RA_CIERRE_PUENTE : ' ¿Qué opción prefieres?');
   const p = producto ? raPrecio(cat, producto) : null;
   if (p !== null) {
-    const nombre = RA_PRODUCTOS[producto].nombre;
+    const nombre = raNombreEnTexto(nom, producto);
     const cap = nombre.charAt(0).toUpperCase() + nombre.slice(1);
     const ahorro = producto === 'pack' ? raAhorro(cat) : null;
     return cap + ' cuesta ' + raMontoBs(p) + '.' + (producto === 'pack' ? ' Incluye el libro y 4 bonos prácticos' + (ahorro === null ? '.' : ', y ahorras ' + raMontoBs(ahorro) + ' frente a comprarlos por separado.') : '') + cierre;
   }
   const partes = [];
-  if (raPrecio(cat, 'pack') !== null) partes.push('el Pack Completo (libro y 4 bonos) ' + raMontoBs(raPrecio(cat, 'pack')));
-  if (raPrecio(cat, 'libro') !== null) partes.push('solo el libro ' + raMontoBs(raPrecio(cat, 'libro')));
-  for (const k of RA_BONOS) if (raPrecio(cat, k) !== null) partes.push(RA_PRODUCTOS[k].nombre + ' ' + raMontoBs(raPrecio(cat, k)));
+  if (raPrecio(cat, 'pack') !== null) partes.push(raNombreEnTexto(nom, 'pack') + ' (libro y 4 bonos) ' + raMontoBs(raPrecio(cat, 'pack')));
+  if (raPrecio(cat, 'libro') !== null) partes.push(raNombreEnTexto(nom, 'libro') + ' ' + raMontoBs(raPrecio(cat, 'libro')));
+  for (const k of RA_BONOS) if (raPrecio(cat, k) !== null) partes.push(raNombreEnTexto(nom, k) + ' ' + raMontoBs(raPrecio(cat, k)));
   return partes.length ? 'Los precios son: ' + partes.join(', ') + '.' + cierre : RA_TEXTO_OPCIONES;
 }
 // ENTREGA PR-D · [E]: el catálogo completo con precio, por código, desde el catálogo de la consola (nunca un precio escrito aquí). `conOpciones === false`: sin botones, sin pregunta de cierre.
@@ -658,17 +672,17 @@ const RA_TEXTO_ARCHIVO_PESADO = 'Tu archivo es demasiado pesado para abrirlo. ¿
 const RA_TEXTO_ARCHIVO_NO_ABIERTO = 'No pude abrir tu archivo. ¿Me lo reenvías o me cuentas por escrito lo que necesitas?';
 const RA_TEXTO_FUERA_DE_PAIS = 'Gracias por escribirnos. El pago de este material se hace con un QR de un banco boliviano, y por eso desde este chat no puedo cobrarte desde otro país.\n\nSi quieres consultar otra forma de pago, puedes escribirle directo a Antonio con el botón.';
 // EL PIE DEL QR: el producto, el monto exacto a ingresar y el pedido. NUNCA nombra banco, titular ni cuenta (el QR ya los lleva).
-function raPieQr(producto, monto, codigo, conPresentacion, nombre) {
+function raPieQr(producto, monto, codigo, conPresentacion, nombre, nom) {
   const p = RA_PRODUCTOS[producto];
   const m = raMontoBs(monto);
   const cod = cbCodigo(codigo);
-  return ((conPresentacion ? raPresentacion(nombre) + ' ' : '') + 'Elegiste ' + p.nombre + (p.incluye ? ' (' + p.incluye + ')' : '') + ' por ' + m + '. Escanea el QR: es de monto abierto, así que ingresa exactamente ' + m
+  return ((conPresentacion ? raPresentacion(nombre) + ' ' : '') + 'Elegiste ' + raNombreEnTexto(nom, producto) + (p.incluye ? ' (' + p.incluye + ')' : '') + ' por ' + m + '. Escanea el QR: es de monto abierto, así que ingresa exactamente ' + m
     + ' y después mándame aquí la captura del comprobante.' + (cod ? ' Pedido #' + cod + '.' : '')).slice(0, 1024);
 }
 // Una respuesta resuelta sale SIN el botón de Antonio (el botón va solo cuando se deriva): el texto tampoco lo menciona. Dos formas, para que el recordatorio nunca salga igual dos veces seguidas (`hashUltimo`):
 // ya no se escala a Antonio por insistir con el QR abierto.
-function raTextoQrPendiente(producto, monto, hashUltimo) {
-  const p = producto && RA_PRODUCTOS[producto] ? RA_PRODUCTOS[producto].nombre : 'tu pedido';
+function raTextoQrPendiente(producto, monto, hashUltimo, nom) {
+  const p = producto && RA_PRODUCTOS[producto] ? raNombreEnTexto(nom, producto) : 'tu pedido';
   const m = typeof monto === 'number' && monto > 0 ? ' Ingresa exactamente ' + raMontoBs(monto) + ' y' : ' Ingresa el monto indicado y';
   const formas = [
     'Ya tienes un QR abierto con ' + p + '.' + m + ' mándame aquí la captura del comprobante.',
@@ -677,8 +691,8 @@ function raTextoQrPendiente(producto, monto, hashUltimo) {
   return formas.find((x) => ctHashTexto(x) !== hashUltimo) || formas[0];
 }
 // La invitación a pagar que se agrega al final de una respuesta mientras hay un QR abierto (el producto y el monto salen del código, nunca del modelo).
-function raInvitacionQr(producto, monto) {
-  const p = producto && RA_PRODUCTOS[producto] ? RA_PRODUCTOS[producto].nombre : 'tu pedido';
+function raInvitacionQr(producto, monto, nom) {
+  const p = producto && RA_PRODUCTOS[producto] ? raNombreEnTexto(nom, producto) : 'tu pedido';
   const m = typeof monto === 'number' && monto > 0 ? ' Ingresa exactamente ' + raMontoBs(monto) + ' y' : ' Ingresa el monto indicado y';
   return 'Cuando quieras, tu QR sigue abierto con ' + p + '.' + m + ' mándame aquí la captura del comprobante.';
 }

@@ -30,7 +30,7 @@ import { CONFIG, REFERENCIAS_CONOCIDAS, TOPE_DE_NODOS, guardias } from '../../..
 import { problemasDeReferencias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
 
 const RA = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-antonio');
-const LIB = cargarLibrerias('RA_PROMPT, RA_TEXTO_RIESGO, RA_CIERRE_PUENTE, RA_TEXTOS_PUENTE, RA_PRODUCTOS, raPresentacion, raMenu, raEtiqueta, raNombres, raQuitarEcoDeMarcador, raSeguro, vdEtiquetaConPrecio') as J;
+const LIB = cargarLibrerias('RA_PROMPT, RA_TEXTO_RIESGO, RA_CIERRE_PUENTE, RA_TEXTOS_PUENTE, RA_PRODUCTOS, raPresentacion, raMenu, raEtiqueta, raNombres, raQuitarEcoDeMarcador, raSeguro, vdEtiquetaConPrecio, raDelNegocio, RA_ARTICULO_DEL_NEGOCIO, raPieQr, raTextoPrecio') as J;
 
 const nuevo = (o: Opciones = {}): Mundo => { const w = crear(o); vigilarUx(w); return w; };
 const fichaDe = (w: Mundo, tel = ANA): J => ((w.sd['antonio'] ?? {}) as J)[tel] as J;
@@ -55,36 +55,36 @@ function conCuerpos(o: Opciones & { dice?: string | ((n: number) => string) } = 
 }
 
 // =============================================================================================================== LOS CINCO CASOS DE LA LISTA APROBADA
-describe('REHECHO · 1. el saludo fijo: «asistente virtual de <el negocio de la Consola>», una vez por teléfono, nunca el nombre de una persona', () => {
+describe('REHECHO · 1. el saludo fijo: «asistente virtual del <negocio de la Consola>», una vez por teléfono, nunca el nombre de una persona', () => {
   it('el primer «hola» se presenta con el nombre del negocio de la Consola, sin modelo, sin montos y sin «Antonio Dauber»', () => {
     const w = nuevo();
     const t = hablar(w, ANA, mTexto('hola'));
     const m = unico(t);
-    expect(m.cuerpo).toMatch(/^¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual de El Puente\./);
+    expect(m.cuerpo).toMatch(/^¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual del Puente\./);
     expect(m.cuerpo).not.toMatch(/Antonio|Dauber/);
     expect(sinBs(t)).toBe(true);
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
     expect(planDe(t)).toBe('saludo');
   });
   it('el nombre sale de la CONSOLA: con otro nombre de negocio en el panel, la presentación lo dice (nada escrito en el código)', () => {
-    const w = nuevo({ panel: panelOk({ datosDelNegocio: { nombreNegocio: 'Libros del Alba' } }) });
-    expect(unico(hablar(w, ANA, mTexto('hola'))).cuerpo).toContain('Soy el asistente virtual de Libros del Alba.');
+    const w = nuevo({ panel: panelOk({ datosDelNegocio: { nombreNegocio: 'Método Alba' } }) });
+    expect(unico(hablar(w, ANA, mTexto('hola'))).cuerpo).toContain('Soy el asistente virtual del Método Alba.');
   });
   it('RESPALDO: si el panel no trae nombre, manda `Config base` (también para el QR del primer mensaje, las imágenes y los audios)', () => {
-    const w = nuevo({ panel: panelOk({ datosDelNegocio: {} }), base: { nombreNegocio: 'Casa del Puente' } });
+    const w = nuevo({ panel: panelOk({ datosDelNegocio: {} }), base: { nombreNegocio: 'Método Casa' } });
     const a = unico(hablar(w, ANA, mTexto('hola')));
-    expect(a.cuerpo).toContain('Soy el asistente virtual de Casa del Puente.');
-    const v = nuevo({ panel: panelOk({ datosDelNegocio: {} }), base: { nombreNegocio: 'Casa del Puente' } });
-    expect(unico(hablar(v, ANA, mTexto(PRELLENADOS.pack))).cuerpo).toContain('Soy el asistente virtual de Casa del Puente.');
-    const u = nuevo({ panel: panelOk({ datosDelNegocio: {} }), base: { nombreNegocio: 'Casa del Puente' }, medio: { transcripcion: 'eh' } });
-    expect(unico(hablar(u, ANA, mAudio())).cuerpo).toContain('Soy el asistente virtual de Casa del Puente.');
+    expect(a.cuerpo).toContain('Soy el asistente virtual del Método Casa.');
+    const v = nuevo({ panel: panelOk({ datosDelNegocio: {} }), base: { nombreNegocio: 'Método Casa' } });
+    expect(unico(hablar(v, ANA, mTexto(PRELLENADOS.pack))).cuerpo).toContain('Soy el asistente virtual del Método Casa.');
+    const u = nuevo({ panel: panelOk({ datosDelNegocio: {} }), base: { nombreNegocio: 'Método Casa' }, medio: { transcripcion: 'eh' } });
+    expect(unico(hablar(u, ANA, mAudio())).cuerpo).toContain('Soy el asistente virtual del Método Casa.');
   });
   it('UNA vez por teléfono: ni el segundo mensaje, ni el modelo, ni otro teléfono repiten la presentación del primero', () => {
     const { w } = conCuerpos();
     const a = hablar(w, ANA, mTexto('hola'));
-    expect(unico(a).cuerpo).toMatch(/asistente virtual de El Puente/);
+    expect(unico(a).cuerpo).toMatch(/asistente virtual del Puente/);
     for (const x of ['hola de nuevo', 'estamos distanciados', 'sí', 'no sé qué hacer']) expect(hablar(w, ANA, mTexto(x)).mensajes.map((m) => m.cuerpo).join(' '), x).not.toMatch(/asistente virtual|Qué gusto saludarte/);
-    expect(unico(hablar(w, BETO, mTexto('hola'))).cuerpo).toMatch(/asistente virtual de El Puente/);
+    expect(unico(hablar(w, BETO, mTexto('hola'))).cuerpo).toMatch(/asistente virtual del Puente/);
   });
   it('NEGANDO: el modelo no puede presentarse con el nombre de una persona ni negar que es una IA (cae al texto fijo)', () => {
     for (const crudo of ['Soy el asistente virtual de Antonio Dauber, encantado.', 'No soy una IA, soy una persona real que te escribe.', 'Soy Antonio Dauber y te atiendo yo.']) {
@@ -222,7 +222,7 @@ describe('REHECHO · 3. «¿cuánto cuesta el libro?»: el precio de ESE product
     const t = hablar(w, ANA, mTexto('¿Cuánto cuesta el libro?'));
     const m = unico(t);
     expect(planDe(t)).toBe('precio');
-    expect(m.cuerpo).toMatch(/^¡Hola![^\n]*asistente virtual de El Puente\./);
+    expect(m.cuerpo).toMatch(/^¡Hola![^\n]*asistente virtual del Puente\./);
     expect(m.cuerpo).toMatch(/cuesta 35 Bs/);
     expect(m.cuerpo).not.toMatch(/49 Bs|20 Bs|19 Bs|17 Bs|15 Bs/);
     expect(m.cuerpo.endsWith('¿Te muestro las opciones?')).toBe(true);
@@ -748,8 +748,77 @@ describe('REHECHO · los invariantes 14 a 17 del vigilante: negados con casos pu
   });
   it('3 · la presentación con el nombre de un negocio cuenta como presentación (una vez por teléfono)', () => {
     const pres = { n: 0 };
-    const m = msg('¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual de Libros del Alba.');
+    const m = msg('¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual del Método Alba.');
     expect(violacionesDeUx(new Set(), mTexto('hola'), [m], pres, '', { respuestasPrevias: 5 }).join('|')).toBe('');
     expect(violacionesDeUx(new Set(), mTexto('hola'), [m], pres, '', { respuestasPrevias: 5 }).join('|')).toMatch(/la presentación del asistente salió más de una vez/);
+  });
+});
+
+// =============================================================================================================== FASE 1b: EL ARTÍCULO DEL NEGOCIO Y LOS NOMBRES DEL CATÁLOGO EN LOS TEXTOS
+describe('REHECHO · 1b. «Soy el asistente virtual del Método Puente»: el artículo es un dato del tenant y se contrae si el nombre ya lo trae', () => {
+  const pres = LIB['raPresentacion'] as (n: string) => string;
+  it('con el nombre de la Consola «Método Puente» sale EXACTAMENTE «Soy el asistente virtual del Método Puente.» (de punta a punta, sin escribir el nombre en el código)', () => {
+    const w = nuevo({ panel: panelOk({ datosDelNegocio: { nombreNegocio: 'Método Puente' } }) });
+    expect(unico(hablar(w, ANA, mTexto('hola'))).cuerpo).toMatch(/^¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual del Método Puente\.\n\n/);
+    const codigo = readFileSync(join(RA, 'src/lib/ra.js'), 'utf8').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    expect(codigo).not.toMatch(/Método Puente|Metodo Puente/);
+    expect(LIB['RA_ARTICULO_DEL_NEGOCIO']).toBe('del');
+  });
+  it('el nombre que ya empieza con artículo se contrae: «El Puente» → «del Puente», «La X» → «de la X», «Los X» → «de los X», «Las X» → «de las X»; nunca «del El» ni «de el»', () => {
+    expect(pres('El Puente')).toBe('¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual del Puente.');
+    expect(pres('La Casa de Alba')).toContain('asistente virtual de la Casa de Alba.');
+    expect(pres('LOS Libros')).toContain('asistente virtual de los Libros.');
+    expect(pres('Las Rutas')).toContain('asistente virtual de las Rutas.');
+    expect(pres('Método Puente')).toContain('asistente virtual del Método Puente.');
+    for (const n of ['El Puente', 'el puente', 'EL PUENTE', 'La Casa', 'Los Libros', 'Las Rutas', 'Método Puente', 'Puente', '']) {
+      const x = pres(n);
+      expect(x, n).not.toMatch(/\bdel (el|la|los|las) /i);
+      expect(x, n).not.toMatch(/\bde el\b/i);
+      expect(x, n).not.toMatch(/Antonio|Dauber/);
+    }
+  });
+  it('NEGANDO: sin nombre (o solo un artículo) la presentación dice qué ES y no de quién; ni un nombre de persona sale del código', () => {
+    expect(pres('')).toBe('¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual.');
+    for (const n of ['El', 'la', '   ', '\n']) expect(pres(n), JSON.stringify(n)).toBe('¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual.');
+    expect((LIB['raDelNegocio'] as (n: string) => string)('Método Puente')).toBe('del Método Puente');
+  });
+  it('el respaldo `Config base` («El Puente») también sale contraído: «del Puente»', () => {
+    const w = nuevo({ panel: panelOk({ datosDelNegocio: {} }) });
+    expect(unico(hablar(w, ANA, mTexto('hola'))).cuerpo).toContain('Soy el asistente virtual del Puente.');
+  });
+});
+
+describe('REHECHO · 1b. el precio de un producto y el pie del QR dicen el nombre DEL CATÁLOGO de la Consola (RA_PRODUCTOS solo como respaldo)', () => {
+  const catalogo = [{ id: 'pack-completo', nombre: 'Todo en uno', precio: 99 }, { id: 'libro', nombre: 'Solo el libro', precio: 12 }, { id: 'workbook', nombre: 'Cuaderno', precio: 30 }];
+  it('con otro nombre en el catálogo, el texto del precio y el pie del QR lo dicen; sin nombre, el respaldo descriptivo', () => {
+    const w = nuevo({ panel: panelOk({ catalogo }) });
+    const p = hablar(w, ANA, mTexto('¿cuánto cuesta el libro?'));
+    expect(unico(p).cuerpo).toContain('«Solo el libro» cuesta 12 Bs.');
+    expect(unico(p).cuerpo).not.toMatch(/El Puente que nos vuelve|35 Bs/);
+    const q = hablar(w, ANA, mBoton('b_pack'));
+    expect(unico(q).cuerpo).toMatch(/Elegiste «Todo en uno» \(el libro y 4 bonos prácticos\) por 99 Bs\./);
+    expect(unico(q).cuerpo).not.toMatch(/Reconexión/);
+    const r = hablar(w, ANA, mTexto('¿cuánto cuesta el workbook?'));
+    expect(unico(r).cuerpo).toMatch(/Ya tienes un QR abierto|tu QR sigue abierto|cuesta 30 Bs/);
+    const sinNombres = nuevo({ panel: panelOk({ catalogo: [{ id: 'libro', precio: 35 }, { id: 'pack-completo', precio: 49 }] }) });
+    expect(unico(hablar(sinNombres, ANA, mTexto('¿cuánto cuesta el libro?'))).cuerpo).toContain('El libro «El Puente que nos vuelve a unir» cuesta 35 Bs.');
+    expect(unico(hablar(sinNombres, ANA, mBoton('b_pack'))).cuerpo).toContain('Elegiste el Pack Completo de Reconexión');
+  });
+  it('con el QR abierto, el recordatorio y la invitación a pagar nombran el producto del pedido con el nombre del catálogo', () => {
+    const w = nuevo({ panel: panelOk({ catalogo }) });
+    hablar(w, ANA, mBoton('b_pack'));
+    w.dobles['Traer configuración'] = () => panelConQr(99, { catalogo });
+    const r = hablar(w, ANA, mTexto('ya voy a pagar'));
+    expect(unico(r).cuerpo).toContain('«Todo en uno»');
+    const i = hablar(w, ANA, mTexto('¿el libro tiene ejercicios?'));
+    expect(unico(i).cuerpo).toMatch(/tu QR sigue abierto con «Todo en uno»/);
+  });
+  it('funciones puras: el pie del QR y el precio usan `nom` y caen a `RA_PRODUCTOS` sin él', () => {
+    const pie = LIB['raPieQr'] as (...a: unknown[]) => string;
+    const precio = LIB['raTextoPrecio'] as (...a: unknown[]) => string;
+    expect(pie('libro', 12, 'AN1', false, 'X', { libro: 'Solo el libro' })).toContain('Elegiste «Solo el libro» por 12 Bs.');
+    expect(pie('libro', 35, 'AN1', false, 'X')).toContain('Elegiste el libro «El Puente que nos vuelve a unir» por 35 Bs.');
+    expect(precio({ libro: 12 }, 'libro', false, { libro: 'Solo el libro' })).toBe('«Solo el libro» cuesta 12 Bs.');
+    expect(precio({ pack: 49, libro: 35 }, '', false, { pack: 'Todo en uno', libro: 'Solo el libro' })).toBe('Los precios son: «Todo en uno» (libro y 4 bonos) 49 Bs, «Solo el libro» 35 Bs.');
   });
 });
