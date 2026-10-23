@@ -35,7 +35,7 @@ const CONFIG_AGENDA: ConfigDeConstruccion = {
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
-    'm-imagen': ['../../src/core/medios/preparar-imagen.js'],
+    'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
   },
   variantes: [
