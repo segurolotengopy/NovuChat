@@ -113,10 +113,24 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo 
     }
   });
 
-  it('Entrada de prueba, Config base, Traer configuración, ¿Meta aceptó? y ¿Reportar? (entrante) son los de Antonio, sin ninguna diferencia', () => {
-    for (const n of ['Entrada de prueba', 'Config base', 'Traer configuración', '¿Meta aceptó?', '¿Reportar? (entrante)']) {
+  it('Entrada de prueba, Config base, Traer configuración y ¿Meta aceptó? son los de Antonio, sin ninguna diferencia', () => {
+    for (const n of ['Entrada de prueba', 'Config base', 'Traer configuración', '¿Meta aceptó?']) {
       expect(sinLibres(de(plantilla, n)), n).toEqual(sinLibres(de(antonio, n)));
     }
+  });
+
+  it('¿Reportar? (entrante) es el de Antonio con UN cambio PROPIO declarado: tampoco reporta (ni cuenta conversación) a un número ajeno en la etapa de prueba', () => {
+    const origen = JSON.stringify(sinLibres(de(antonio, '¿Reportar? (entrante)')));
+    const propio = JSON.stringify(sinLibres(de(plantilla, '¿Reportar? (entrante)')));
+    const viejo = "$('Config del negocio').first().json.modoPrueba !== true }}";
+    expect(origen, 'el origen ya no trae la condición declarada: hay que revisar').toContain(viejo);
+    const i = propio.indexOf("$('Config del negocio').first().json.modoPrueba !== true && !(");
+    const j = propio.indexOf(' }}', i);
+    expect(i).toBeGreaterThan(0);
+    const nuevo = propio.slice(i, j + 3);
+    expect(nuevo).toContain('etapaPrueba === true');
+    expect(nuevo).toContain('telefonosEtapaPrueba');
+    expect(propio.replace(nuevo, viejo)).toBe(origen);
   });
 
   it('Reportar mensaje (entrante) es el de Antonio con UN cambio PROPIO declarado: el `evento` sale de `bajaEscrita` y `riesgoEscrito` (la expresión de la baja vive una sola vez, en dr.js)', () => {

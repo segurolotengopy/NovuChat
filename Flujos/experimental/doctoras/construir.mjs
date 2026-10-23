@@ -385,6 +385,11 @@ function hallazgosDeEtapaPrueba(enFlujo, etapa) {
   if (!validos) h.push('Config base: la etapa prueba exige telefonosDePrueba lleno y válido (solo dígitos, sin marcador)');
   const rec = typeof enFlujo.numeroRecepcion === 'string' ? enFlujo.numeroRecepcion.trim() : '';
   if (!/^\d{6,20}$/.test(rec) || !lista.some((x) => soloDigitos(x) === rec)) h.push('Config base: la etapa prueba exige que numeroRecepcion esté dentro de telefonosDePrueba');
+  // Cada teléfono de prueba y la recepción tienen que empezar con uno de los prefijos permitidos del negocio (un número local sin prefijo no es un destino válido de WhatsApp).
+  const prefijos = String(enFlujo.prefijosPermitidos || '591').split(',').map((x) => soloDigitos(x)).filter((x) => x !== '');
+  const sinPrefijo = (x) => !prefijos.some((p) => soloDigitos(x).startsWith(p));
+  if (validos && lista.some(sinPrefijo)) h.push('Config base: la etapa prueba exige que cada teléfono de telefonosDePrueba empiece con uno de los prefijosPermitidos');
+  if (/^\d{6,20}$/.test(rec) && sinPrefijo(rec)) h.push('Config base: la etapa prueba exige que numeroRecepcion empiece con uno de los prefijosPermitidos');
   return h;
 }
 

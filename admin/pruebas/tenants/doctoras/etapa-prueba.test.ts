@@ -6,7 +6,7 @@
  * la etapa completa (`encender`) rechaza `etapaPrueba = si`. Se escribe NEGANDO. Sin teléfonos reales: los números son los ficticios de `mundo.ts` o se arman al vuelo.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,6 +40,15 @@ describe('la puerta en modo prueba: solo pasan los teléfonos de prueba', () => 
       expect(t.ejecutados.has('Enviar a WhatsApp')).toBe(false);
       expect(t.ejecutados.has('Enviar aviso')).toBe(false);
     }
+  });
+  it('un ajeno NO se reporta a la ingesta (no se cuenta conversación ni se guarda su texto): 0 llamadas; un teléfono de prueba sí se reporta; sin etapa también', () => {
+    const w = enPrueba();
+    const t = hablar(w, AJENO, mTexto('hola'));
+    expect(t.llamadas.ingesta).toHaveLength(0);
+    expect(t.ejecutados.has('Reportar mensaje (entrante)')).toBe(false);
+    expect(hablar(w, ANA, mTexto('hola')).llamadas.ingesta.length).toBeGreaterThan(0);
+    const sinEtapa = crear({ telefonosDePrueba: `${ANA},${BETO}`, base: AP });
+    expect(hablar(sinEtapa, AJENO, mTexto('hola')).llamadas.ingesta.length).toBeGreaterThan(0);
   });
   it('un ajeno tampoco recibe el texto de «comercio suspendido» ni el de uso extendido: la etapa de prueba se mira PRIMERO', () => {
     const suspendido = enPrueba();
@@ -147,6 +156,13 @@ describe('la guardia: la etapa «prueba»', () => {
       const vacio = pruebaLista(t); poner(vacio, 'numeroRecepcion', '');
       expect(etapa(vacio, 'prueba').length).toBeGreaterThan(0);
     });
+    it(`${t}: un teléfono de prueba o una recepción SIN prefijo permitido (número local) NO enciende en prueba`, () => {
+      const local = ['7', '7', '1', '2', '3', '4', '5', '6'].join('');
+      const x = pruebaLista(t); poner(x, 'telefonosDePrueba', `${ANA},${REC},${local}`);
+      expect(etapa(x, 'prueba')).toEqual(['Config base: la etapa prueba exige que cada teléfono de telefonosDePrueba empiece con uno de los prefijosPermitidos']);
+      const y = pruebaLista(t); poner(y, 'telefonosDePrueba', `${ANA},${local}`); poner(y, 'numeroRecepcion', local);
+      expect(etapa(y, 'prueba').join('|')).toMatch(/numeroRecepcion empiece con uno de los prefijosPermitidos/);
+    });
     it(`${t}: con un marcador sin resolver NO enciende en prueba`, () => {
       const x = pruebaLista(t); poner(x, 'telefonosDePrueba', 'REEMPLAZAR_TELEFONOS_DE_PRUEBA');
       expect(etapa(x, 'prueba').join('|')).toMatch(/marcador sin sustituir: REEMPLAZAR_TELEFONOS_DE_PRUEBA/);
@@ -219,11 +235,79 @@ describe('publicar-flujo.sh: `--encender --etapa-prueba` pide la etapa prueba; l
     expect(completa.stdout).toMatch(/etapa encender/);
     expect(completa.stderr).toMatch(/NEGADO/);
   });
-  it('--etapa-prueba solo va con --encender: sola o con --crear se rechaza (2) y no habla con n8n', () => {
-    for (const args of [['--flujo', REL, '--etapa-prueba', '--aplicar', '--confirmo-doctoras'], ['--flujo', REL, '--crear', '--etapa-prueba', '--aplicar', '--confirmo-doctoras']]) {
-      const r = correr(args);
-      expect(r.status).toBe(2);
-      expect(r.stderr).toMatch(/--etapa-prueba solo va con --encender/);
+  it('la actualización en su lugar (`--flujo … --aplicar`) con --etapa-prueba pide la etapa prueba (nunca la completa); sin la bandera pide la completa y se NIEGA', () => {
+    const ok = correr(['--flujo', REL, '--etapa-prueba', '--aplicar', '--confirmo-doctoras']);
+    expect(ok.stdout).toMatch(/archivo de origen; etapa prueba/);
+    expect(ok.stdout).not.toMatch(/etapa encender/);
+    expect(ok.stderr).not.toMatch(/NEGADO/);
+    const completa = correr(['--flujo', REL, '--aplicar', '--confirmo-doctoras']);
+    expect(completa.status).toBe(1);
+    expect(completa.stdout).toMatch(/etapa encender/);
+    expect(completa.stderr).toMatch(/NEGADO/);
+  });
+  it('--etapa-prueba con --crear, --activar o --apagar se rechaza (2) y no habla con n8n', () => {
+    for (const extra of [['--crear'], ['--crear', '--activar'], ['--apagar'], ['--activar']]) {
+      const r = correr(['--flujo', REL, '--etapa-prueba', ...extra, '--aplicar', '--confirmo-doctoras']);
+      expect(r.status, extra.join(' ')).toBe(2);
+      expect(r.stderr).toMatch(/--etapa-prueba va con --encender o con la actualización en su lugar/);
+      expect(readFileSync(log, 'utf8')).toBe('');
     }
   });
+});
+
+describe('publicar-flujo.sh es ADITIVO: sin --etapa-prueba se comporta igual que el de origin/main (salida, error, código y llamadas)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'doctoras-aditivo-'));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  // El script de la rama base: `origin/main` (o `main`). Solo lee un objeto de git; si no hay rama base en este checkout, la prueba se salta y el motivo queda dicho.
+  const base = ['origin/main', 'main'].map((r) => spawnSync('git', ['show', `${r}:scripts/publicar-flujo.sh`], { cwd: REPO, encoding: 'utf8' })).find((r) => r.status === 0);
+  const bin = join(dir, 'bin'); mkdirSync(bin);
+  writeFileSync(join(bin, 'curl'), '#!/usr/bin/env bash\necho "$*" >> "$LOG_CURL"\nwhile [[ $# -gt 0 ]]; do case "$1" in -o) O="$2"; shift 2;; *) shift;; esac; done\n[[ -n "$O" ]] && cp "$VIVO_SIMULADO" "$O"\nprintf 200\n');
+  chmodSync(join(bin, 'curl'), 0o755);
+  const envRel = join(dir, 'env');
+  writeFileSync(envRel, 'N8N_API_KEY=clave-de-juguete\nN8N_WORKFLOW_ID=1\nN8N_BASE_URL=http://n8n.invalido\n');
+  const vivoEvy = join(dir, 'vivo-evy.json');
+  writeFileSync(vivoEvy, JSON.stringify({ name: 'NovuChat — Dra. Evy Karina (rroca-evy)', active: false, nodes: [] }));
+  const vivoOtro = join(dir, 'vivo-otro.json');
+  writeFileSync(vivoOtro, JSON.stringify({ name: 'Otro cliente', active: false, nodes: [] }));
+  const REL = 'Flujos/experimental/doctoras/doctoras.rroca-evy.json';
+  const raizCon = (nombre: string, script: string, salida: number): string => {
+    const raiz = join(dir, `${nombre}-${salida}`);
+    mkdirSync(join(raiz, 'scripts'), { recursive: true });
+    mkdirSync(join(raiz, 'Flujos/experimental/doctoras'), { recursive: true });
+    writeFileSync(join(raiz, 'scripts/publicar-flujo.sh'), script); chmodSync(join(raiz, 'scripts/publicar-flujo.sh'), 0o755);
+    writeFileSync(join(raiz, 'Flujos/experimental/doctoras/construir.mjs'), `process.exit(${salida});\n`);
+    writeFileSync(join(raiz, REL), JSON.stringify({ name: 'doctoras', nodes: [] }));
+    return raiz;
+  };
+  const correrEn = (raiz: string, args: string[], vivo: string) => {
+    const log = join(raiz, 'curl.log'); writeFileSync(log, '');
+    const r = spawnSync('bash', [join(raiz, 'scripts/publicar-flujo.sh'), ...args, '--env', relative(raiz, envRel)], {
+      cwd: raiz, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+      env: entornoDelEmulador(undefined, { PATH: `${bin}:${process.env['PATH'] ?? ''}`, VIVO_SIMULADO: vivo, LOG_CURL: log }),
+    });
+    const sinRaiz = (t: string): string => t.split(raiz).join('<raiz>').replace(/\/tmp\/tmp\.[A-Za-z0-9]+/g, '<tmp>');
+    return { status: r.status, stdout: sinRaiz(r.stdout), stderr: sinRaiz(r.stderr), curl: sinRaiz(readFileSync(log, 'utf8')) };
+  };
+  const CASOS: string[][] = [
+    ['--flujo', REL, '--aplicar', '--confirmo-doctoras'],
+    ['--flujo', REL, '--aplicar'],
+    ['--flujo', REL],
+    ['--flujo', REL, '--forzar', '--aplicar', '--confirmo-doctoras'],
+    ['--flujo', REL, '--encender', '--aplicar', '--confirmo-doctoras'],
+    ['--encender', '--aplicar', '--confirmo-doctoras'],
+    ['--apagar', '--aplicar'],
+    ['--flujo', REL, '--crear', '--aplicar', '--confirmo-doctoras'],
+    ['--flujo', REL, '--crear', '--activar', '--aplicar', '--confirmo-doctoras'],
+  ];
+  it.skipIf(!base)('actualizar en su lugar, encender, apagar y crear SIN la bandera: misma salida, error, código y llamadas que el script de origin/main', () => {
+    for (const salida of [0, 1]) {
+      const propio = raizCon('propio', readFileSync(join(REPO, 'scripts/publicar-flujo.sh'), 'utf8'), salida);
+      const origen = raizCon('origen', base!.stdout, salida);
+      for (const vivo of [vivoEvy, vivoOtro]) {
+        for (const args of CASOS) {
+          expect(correrEn(propio, args, vivo), `guardia ${salida}: ${args.join(' ')}`).toEqual(correrEn(origen, args, vivo));
+        }
+      }
+    }
+  }, 180_000);
 });
