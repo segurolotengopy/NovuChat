@@ -72,6 +72,7 @@ ENV_FILE=".env"
 CONFIRMO_RUBEN=0
 CONFIRMO_ANTONIO=0
 CONFIRMO_DOCTORAS=0
+ETAPA_PRUEBA=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -89,12 +90,17 @@ while [[ $# -gt 0 ]]; do
     --confirmo-ruben) CONFIRMO_RUBEN=1; shift ;;
     --confirmo-antonio) CONFIRMO_ANTONIO=1; shift ;;
     --confirmo-doctoras) CONFIRMO_DOCTORAS=1; shift ;;
+    --etapa-prueba) ETAPA_PRUEBA=1; shift ;;
     --env)     ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
     --env=*)   ENV_FILE="${1#*=}"; shift ;;
     -h|--help) sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opcion desconocida: $1" >&2; exit 2 ;;
   esac
 done
+
+if [[ $ETAPA_PRUEBA -eq 1 && ( $CREAR -eq 1 || $ACTIVAR -eq 1 || $APAGAR -eq 1 ) ]]; then
+  echo "✗ --etapa-prueba va con --encender o con la actualización en su lugar (--aplicar), nunca con --crear, --activar ni --apagar." >&2; exit 2
+fi
 
 # Si existe el archivo preparado (con los valores reales ya puestos por
 # preparar-import.sh), se usa ESE y no el versionado. Empujar el versionado
@@ -254,12 +260,15 @@ fi
 # confirmado, y que el flujo sea el de ESA doctora) y (2) la confirmacion explicita: escribir
 # PUBLICAR DOCTORAS, o --confirmo-doctoras sin terminal. --forzar NO salta nada de esto.
 # `--apagar` nunca pide confirmacion. Si el nombre menciona a las dos doctoras, se NIEGA.
+# ETAPA PRUEBA: `--etapa-prueba` (con --encender o con la actualización en su lugar --aplicar) usa la etapa `prueba` EN TODOS los casos: archivo de origen, flujo vivo de destino y encendido
+# (etapaPrueba = si, solo teléfonos de prueba, recepción dentro de ellos). Sin `--etapa-prueba` rige la completa, que RECHAZA etapaPrueba = si. Con --crear, --activar o --apagar se NIEGA (2).
 # ETAPA: `--crear` SIN `--activar` usa `--etapa crear` (tolera plantilla sin APPROVED y horario pendiente);
-# --encender, --aplicar sobre un flujo activo y --crear --activar usan la etapa completa.
+# --encender, --aplicar sobre un flujo activo y --crear --activar usan la completa, salvo con --etapa-prueba.
 doctoras_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = tenant (rroca-evy | rroca-emma | ambos)
-  # Etapa `crear`: SOLO al crear un flujo INACTIVO (--crear sin --activar ni --encender); todo lo demás exige la etapa completa.
+  # Etapa `crear`: SOLO al crear un flujo INACTIVO (--crear sin --activar ni --encender); todo lo demás exige la etapa completa (o la `prueba`, con --etapa-prueba).
   local etapa=encender
   [[ $CREAR -eq 1 && $ACTIVAR -eq 0 && $ENCENDER -eq 0 ]] && etapa=crear
+  [[ $ETAPA_PRUEBA -eq 1 ]] && etapa=prueba
   echo "Flujo de las doctoras ($3): se revisa la guardia de publicación ($1; etapa $etapa)."
   if [[ "$3" == "rroca-evy" || "$3" == "rroca-emma" ]] \
      && node Flujos/experimental/doctoras/construir.mjs --publicable --tenant "$3" --flujo "$2" --etapa "$etapa"; then

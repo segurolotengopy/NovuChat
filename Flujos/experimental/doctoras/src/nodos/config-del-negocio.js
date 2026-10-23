@@ -85,8 +85,15 @@ const permitidos = valor(base.telefonosDePrueba).split(',').map((x) => cnDigitos
 const telefonoDePrueba = prueba ? cnDigitos(prueba.telefonoDePrueba) : '';
 const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;
 
+// ETAPA DE PRUEBA (`etapaPrueba = si` en `Config base`): el flujo vivo solo atiende a `telefonosDePrueba` (lo cierra `Puerta del turno`). El aviso nunca puede llegar a la recepción REAL de la doctora:
+// con la etapa encendida el número de recepción es el de `Config base` y se IGNORA el de la Consola. Sin `si` (vacío, marcador o cualquier otro valor) todo queda como siempre.
+const etapaPrueba = valor(base.etapaPrueba).toLowerCase() === 'si';
+if (etapaPrueba) cfg.numeroRecepcion = deBase.numeroRecepcion;
+
 return [{ json: {
   ...cfg,
+  etapaPrueba,
+  telefonosEtapaPrueba: etapaPrueba ? permitidos : [],
   // El modelo es un dato de `Config base` (solo un id con forma de modelo de Gemini).
   modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/.test(String(base.modelo || '')) ? String(base.modelo) : 'gemini-3.5-flash-lite',
   waGraphVersion: /^v\d{1,2}\.\d{1,2}$/.test(String(base.waGraphVersion || '')) ? String(base.waGraphVersion) : 'v26.0',
