@@ -157,11 +157,12 @@ describe('ENTREGA 2 · P2: el prompt, los modos del turno y los topes', () => {
     expect(ejemplo).not.toMatch(/gratis|gratuit|descuent|oferta|promoci|garant|regalo|\bBs\b/i);
     expect(ejemplo).toMatch(/sin pagar publicidad/);
     expect(ejemplo).toMatch(/en un par de minutos/);
-    // Tamaño esperado: unos 7.500 caracteres (la tolerancia es amplia: lo que se cuida es que no crezca sin control).
-    expect(PROMPT.length).toBeGreaterThan(6000);
-    expect(PROMPT.length).toBeLessThan(10000);
+    // TAMAÑO (regla de Andres, 23/10/2026: los ajustes no saturan los flujos): a lo más 5.000 caracteres, 6.000 BYTES y 13 líneas (el de origin/main medía 5.756, 5.907 y 13).
+    expect(PROMPT.length).toBeLessThanOrEqual(5000);
+    expect(Buffer.byteLength(PROMPT, 'utf8')).toBeLessThanOrEqual(6000);
+    expect(PROMPT.split('\n').length).toBeLessThanOrEqual(13);
     // El orden: IDENTIDAD, CÓMO CONVERSAS, OBJECIONES, MODO DEL TURNO, PROHIBIDO, DATOS, ANUNCIOS, DUDAS, IMÁGENES, AUDIOS, EJEMPLO.
-    const pos = ['Eres el asistente virtual', 'CÓMO CONVERSAS:', 'OBJECIONES:', 'MODO DEL TURNO:', 'PROHIBIDO:', 'DATOS DEL LIBRO:', 'ANUNCIOS:', 'DUDAS:', 'IMÁGENES:', 'AUDIOS:', 'EJEMPLO DE TONO Y ORDEN'].map((x) => PROMPT.indexOf(x));
+    const pos = ['Eres el asistente virtual', 'CÓMO CONVERSAS:', 'OBJECIONES:', 'MODO DEL TURNO:', 'PROHIBIDO:', 'DATOS:', 'ANUNCIOS:', 'DUDAS:', 'IMÁGENES:', 'AUDIOS:', 'EJEMPLO DE TONO Y ORDEN'].map((x) => PROMPT.indexOf(x));
     expect(pos.every((p) => p >= 0)).toBe(true);
     expect([...pos].sort((a, b) => a - b)).toEqual(pos);
     // Las reglas de seguridad de antes siguen: DERIVAR, el dato entre <<< >>>, nunca fingir ser Rubén.
@@ -172,7 +173,7 @@ describe('ENTREGA 2 · P2: el prompt, los modos del turno y los topes', () => {
 
   it('los dos ejemplos del prompt (las dos respuestas modelo) pasan los filtros de producción: `cmRevisarRedaccion` con el tope de 900 y `rrExtraRedaccion`', () => {
     const ejemplo = PROMPT.slice(PROMPT.indexOf('EJEMPLO DE TONO Y ORDEN'));
-    const citas = [...ejemplo.matchAll(/«([^»]{200,})»/g)].map((m) => (m[1] ?? '').replace(/\\n/g, '\n'));
+    const citas = [...ejemplo.matchAll(/«([^»]{100,})»/g)].map((m) => (m[1] ?? '').replace(/\\n/g, '\n'));
     expect(citas).toHaveLength(2);
     for (const c of citas) {
       const rev = rr('cmRevisarRedaccion')(c, OPCIONES_PRODUCCION);

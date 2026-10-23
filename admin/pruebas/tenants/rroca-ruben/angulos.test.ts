@@ -82,8 +82,7 @@ describe('el prompt y el cuerpo del modelo', () => {
     for (const n of ['Cap', 'caps. 8 y 10', 'caps. 9', 'cap. 7', 'Mapa de Automatización', 'checklist de 7 días', 'Closer de Ventas en Tiempo Real', 'Crea videos con IA', 'programar', 'versiones sin costo', 'este mismo chat', 'ahorra']) expect(p, n).toContain(n === 'Cap' ? 'cap. 6' : n);
     expect(p).not.toMatch(/\d+\s*Bs|https?:|www\.|banco\s+\w+\s+cuenta/i);
     // Medios entrantes (20/10/2026): +~1.000 caracteres (las líneas IMÁGENES y AUDIOS), unos +270 tokens por llamada al modelo (~0,00008 USD).
-    // ENTREGA 2 (23/10/2026): el prompt se reescribe (CÓMO CONVERSAS, OBJECIONES, MODO DEL TURNO y el ejemplo del PDF): el tope sube de 6.000 a 10.000 caracteres (unos +0,0003 USD por llamada).
-    expect(p.length).toBeLessThan(10000);
+    expect(p.length).toBeLessThan(6000);
     expect(p).toContain('[AUDIO_TRANSCRITO: «…»]');
     expect(p).toContain('[IMAGEN_RECIBIDA: …]');
   });
