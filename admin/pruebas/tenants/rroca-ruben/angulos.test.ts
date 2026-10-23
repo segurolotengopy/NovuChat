@@ -18,7 +18,8 @@ const PID = '59100000042';
 const ANA = '59100000011';
 const REC = '59100000031';
 const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
-const TEXTO_CAIDO = 'Gracias por escribir. ¿Quieres que te cuente qué incluye el libro o prefieres ver las opciones de compra?';
+// ENTREGA 2: sin las opciones habilitadas (aún no hubo dos mensajes de conversación) el respaldo no ofrece «ver las opciones de compra».
+const TEXTO_CAIDO = 'Gracias por escribir. ¿Quieres que te cuente qué incluye el libro?';
 
 const codigo = ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA, 'src/lib', a), 'utf8')).join('\n');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.

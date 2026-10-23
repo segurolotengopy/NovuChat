@@ -173,6 +173,7 @@ describe('AUDIO DUDOSO · una nota de voz de menos de 3 palabras, muletillas o �
     for (const voz of ['precio pack', 'catálogo']) {
       const w = crear({ transcripcion: voz });
       hablar(w, ANA, mTexto('hola'));
+      hablar(w, ANA, mTexto('tengo una tienda de ropa')); // ENTREGA 2: la segunda charla abre las opciones
       const t = hablar(w, ANA, mAudio());
       const m = unico(t);
       expect(m.cuerpo, voz).not.toContain(NO_ENTENDIDO);

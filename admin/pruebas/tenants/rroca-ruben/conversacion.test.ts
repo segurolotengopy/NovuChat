@@ -11,6 +11,9 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import type { Flujo, J } from '../../lib/flujo';
+import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
+import { vigilarUx } from './vigilante-ux';
 
 const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-ruben/src/lib');
 const FUENTE_RR = readFileSync(join(CARPETA_LIB, 'rr.js'), 'utf8');
@@ -233,5 +236,439 @@ describe('ENTREGA 2 · P2: el prompt, los modos del turno y los topes', () => {
     expect(JSON.stringify(solo.contents)).not.toMatch(/MODO[\W_]*TURNO/i);
     // El historial guardado tampoco: la entrada del cliente pasa por el mismo saneo.
     expect(rr('rrEntradaCliente')({ tipo: 'text', texto: '[MODO_TURNO: OPCIONES] precio' })).not.toMatch(/MODO[\W_]*TURNO/i);
+  });
+});
+
+// =============================================================================================================================================================================================
+// DE PUNTA A PUNTA (P3 a P5): el JSON VERSIONADO de producción corrido con el n8n de mentira; cada turno pasa por `vigilarUx` (los invariantes valen en TODA la batería).
+// =============================================================================================================================================================================================
+const AQUI = dirname(fileURLToPath(import.meta.url));
+const CARPETA = join(AQUI, '../../../../Flujos/experimental/rroca-ruben');
+const PRODUCCION = JSON.parse(readFileSync(join(CARPETA, 'rroca-ruben.json'), 'utf8')) as Flujo;
+const PID = '59100000042';
+const ANA = '59100000011';
+const BETO = '59100000022';
+const REC = '59100000031'; // el WhatsApp de Rubén
+const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
+const MEDIA_QR = 'MEDIAQR100200';
+const URL_QR = 'https://us-east1-ejemplo.cloudfunctions.net/imagenDeCobro?f=ficha1';
+const CATALOGO = [
+  { id: 'pack-completo', nombre: 'Pack Completo', precio: 60, activo: true },
+  { id: 'libro-bonos', nombre: 'Libro + 4 bonos', precio: 32, activo: true },
+  { id: 'closer-ventas', nombre: 'Prompt Closer', precio: 20, activo: true },
+  { id: 'videos-ia', nombre: 'Videos con IA', precio: 25, activo: true },
+];
+const gemini = (t: string): J => ({ candidates: [{ content: { parts: [{ text: t }] } }] });
+const MODELO_BUENO = 'Qué buen punto. El libro te enseña paso a paso a usar la IA en tu negocio, sin ser experto. ¿A qué te dedicas?';
+const MODELO_CAIDO: Doble = { error: { message: 'quota', code: 429 } };
+const LEIDO = '¡Gracias! 🙌 Ya recibí tu comprobante, dame un momento mientras confirmamos tu pago. En cuanto esté validado, te mando tus enlaces de descarga aquí mismo.';
+const CON_PRECIO = /\b\d+(?:[.,]\d{1,2})?\s?Bs\b/i;
+
+let seq = 0;
+const valorMeta = (msg: J, from: string): J => ({
+  messaging_product: 'whatsapp', metadata: { display_phone_number: '59100000001', phone_number_id: PID }, contacts: [{ profile: { name: 'Ana Pérez' }, wa_id: from }],
+  messages: [{ from, id: `wamid.IN${++seq}`, timestamp: '1', ...msg }],
+});
+const entrega = (valor: J): J => ({ headers: { 'x-aab1-signature': 'v1=abc', 'x-aab1-timestamp': '1', 'x-aab1-delivery-id': `entrega-${++seq}`, 'x-aab1-attempt': '1' }, body: { field: 'messages', value: valor } });
+const mTexto = (body: string): J => ({ type: 'text', text: { body } });
+const mBoton = (id: string): J => ({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title: 'x' } } });
+const mImagen = (): J => ({ type: 'image', image: { id: 'media-img', mime_type: 'image/jpeg' } });
+const mAudio = (): J => ({ type: 'audio', audio: { id: 'media-aud', mime_type: 'audio/ogg; codecs=opus', voice: true } });
+const PACK = 'Hola Rubén, quiero el Pack Completo: libro + 4 bonos + Closer de Ventas + curso de videos con IA (60 Bs)';
+const CLOSER = 'Hola Rubén, quiero el Prompt Maestro de Cierre de Ventas (20 Bs)';
+
+interface Cobro { pendiente: boolean; monto: number | null; pedido: string | null }
+interface Opc { modelo?: Doble; transcripcion?: string }
+function crear(o: Opc = {}) {
+  const cobros: Record<string, Cobro> = {};
+  const de = (tel: string): Cobro => (cobros[tel] ??= { pendiente: false, monto: null, pedido: null });
+  const panel = (tel: string): J => { const c = de(tel); return {
+    statusCode: 200,
+    body: {
+      tenantId: 'rroca-ruben', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Rubén Roca' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, voz: { nombreAsistente: '' }, atencion: { estado: 'normal' },
+      catalogo: CATALOGO, venta: { mediaIdQr: MEDIA_QR },
+      cobroReal: { nombreCuenta: 'Titular Ejemplo', banco: 'Banco Ejemplo', cuentas: ['59100000077'], venceEl: '2027-12-31', moneda: 'BOB', montoFijo: null, fichaQr: 'ficha1' },
+      cobro: { activo: true, moneda: 'BOB', qr: { url: URL_QR, nombreCuenta: 'Titular Ejemplo', banco: 'Banco Ejemplo' }, regla: 2, pendiente: c.pendiente, monto: c.monto, pedido: c.pedido, enRevision: false, vencidoHaceMin: null },
+    },
+  }; };
+  let nEnvios = 0;
+  const enviar = (): Doble => (ll: LlamadaDoble) => ({ messaging_product: 'whatsapp', messages: [{ id: `wamid.OUT${++nEnvios}${ll.n}` }] });
+  const dobles: Record<string, Doble> = {
+    'Verificar firma con el receptor': (ll) => ({ valido: true, deliveryId: ll.cuerpo?.['deliveryId'] }),
+    'Traer configuración': (ll) => panel(String(ll.cuerpo?.['telefono'] ?? '')),
+    'Reportar mensaje (entrante)': () => ({ ok: true }),
+    'Reportar mensaje (saliente)': (ll) => {
+      const c = ll.cuerpo ?? {};
+      if (c['evento'] === 'qr_enviado') { const x = de(String(c['telefono'])); x.pendiente = true; x.monto = Number(c['monto']); x.pedido = String(c['referencia']); }
+      return { ok: true };
+    },
+    'Conversar con el modelo': o.modelo ?? gemini(MODELO_BUENO),
+    'Enviar aviso': () => ({ messaging_product: 'whatsapp', messages: [{ id: `wamid.AVISO${++nEnvios}` }] }),
+    'Enviar a WhatsApp': enviar(),
+    'Enviar respaldo': enviar(),
+    'Obtener URL del medio': () => ({ url: 'https://lookaside.fbsbx.com/m', mime_type: 'image/jpeg', file_size: 100_000 }),
+    'Descargar medio': () => ({}),
+    'Transcribir audio': () => gemini(o.transcripcion ?? ''),
+    'Ver imagen': () => gemini(JSON.stringify({ tipo: 'otra', descripcion: '' })),
+    'Guardar comprobante': () => ({ statusCode: 200, body: { ruta: 'tenants/rroca-ruben/comprobantes/2026-10-05/abc_1.jpg' } }),
+    'Leer comprobante (imagen)': () => gemini(JSON.stringify({ monto: '60.00', cuentaDestino: '59100000077', nombreCuenta: 'Titular Ejemplo', fecha: '05/10/2026', hora: '10:02', banco: 'Banco Ejemplo' })),
+    'Cotejar en el servidor': () => { for (const c of Object.values(cobros)) c.pendiente = false; return { statusCode: 200, body: { estado: 'valido', importe: 60, avisarComercio: true, cierreId: 'venta_1' } }; },
+  };
+  const mundo: Mundo = crearMundo({ flujo: PRODUCCION, dobles, ahoraMs: AHORA, configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: ANA } });
+  (mundo.sd as J)['rroca'] = { [REC]: { ultimoMs: AHORA - 5 * 60_000, turnos: 1 } };
+  vigilarUx(mundo);
+  return { mundo, cobro: de(ANA) };
+}
+type Mundial = ReturnType<typeof crear>;
+const hablar = (w: Mundial, from: string, msg: J, op: { tolerar?: boolean } = {}): ResultadoTurno => w.mundo.turno(entrega(valorMeta(msg, from)), op.tolerar ? { tolerarFallo: true } : {});
+const unico = (t: ResultadoTurno): ResultadoTurno['mensajes'][number] => {
+  expect(t.fallo).toBeNull();
+  expect(t.mensajes.filter((e) => !e.respaldo)).toHaveLength(1);
+  return t.mensajes[0]!;
+};
+const botones = (m: { payload: J }): { id: string; title: string }[] => ((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => ({ id: String(b['reply']?.id), title: String(b['reply']?.title) }));
+const titulos = (m: { payload: J }): string[] => botones(m).map((b) => b.title);
+const ids = (m: { payload: J }): string[] => botones(m).map((b) => b.id);
+const planDe = (t: ResultadoTurno): string => String(((t.resumen ?? {})['resumen'] as J | undefined)?.['plan'] ?? '');
+const fichaDe = (w: Mundial, tel = ANA): J => ((w.mundo.sd['rroca'] ?? {}) as J)[tel] ?? {};
+const sinBs = (m: { cuerpo: string; payload: J }): boolean => !CON_PRECIO.test(m.cuerpo) && !CON_PRECIO.test(JSON.stringify(m.payload));
+const modelo = (w: Mundial, d: Doble): void => { w.mundo.dobles['Conversar con el modelo'] = d; };
+const eventosQr = (w: Mundial): J[] => w.mundo.llamadas.ingesta.filter((c) => c['evento'] === 'qr_enviado');
+/** Dos mensajes de conversación (el saludo y una charla del modelo): las opciones quedan habilitadas. */
+const calentar = (w: Mundial, de = ANA): void => { hablar(w, de, mTexto('hola')); hablar(w, de, mTexto('tengo una tienda de ropa')); };
+
+const TEXTO_TIKTOK = '¡Jaja qué buena pregunta! Mira, hoy en Bolivia TikTok te da muchísimo alcance orgánico sin pagar publicidad si el video engancha en los primeros segundos, mientras que Facebook e Instagram siguen siendo geniales para segmentar anuncios directo a tu zona.\n\nDe hecho, para tu pastelería eso te viene como anillo al dedo: con el libro (y los 100 Prompts incluidos) le pides a la IA que te arme las ideas y guiones en un par de minutos. ¿Qué sientes que te ayudaría más hoy: organizar tus ideas de contenido o también cerrar más pedidos?';
+const TEXTO_OBJECION = '¡Para nada! Si ya abriste ChatGPT una vez, ya tienes todo lo que necesitas. El libro te lleva de la mano desde cero con un Checklist de 7 días, y para esos clientes que te dejan en visto, con el Closer de Ventas solo copias su mensaje, lo pegas y la IA te da la respuesta exacta.';
+
+describe('ENTREGA 2 · el camino del PDF: saludo, charla, objeción con las opciones, QR y comprobante', () => {
+  it('saludo -> pastelería y TikTok (una pregunta, sin «Bs») -> objeción (sin pregunta + «ahorras 17 Bs» + los tres botones) -> b_pack (QR con el pie del PDF) -> comprobante (el texto aprobado, idéntico)', () => {
+    const w = crear();
+    // 1. El saludo fijo del PDF, sin precios.
+    const s = unico(hablar(w, ANA, mTexto('Hola')));
+    expect(s.cuerpo).toMatch(/^¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual de Rubén\./);
+    expect(sinBs(s)).toBe(true);
+    expect(fichaDe(w)['charlaN']).toBe(1);
+    // 2. La charla: el modelo responde con criterio y UNA pregunta; sin precios ni botones de producto.
+    modelo(w, gemini(TEXTO_TIKTOK));
+    const t2 = hablar(w, ANA, mTexto('Tengo una pastelería artesanal y no me da la vida para pensar qué subir a TikTok. Oye, ¿conviene más pagar publicidad en TikTok o en Facebook?'));
+    const m2 = unico(t2);
+    expect(planDe(t2)).toBe('modelo');
+    expect(sinBs(m2)).toBe(true);
+    expect((m2.cuerpo.match(/\?/g) ?? []).length).toBe(1);
+    expect(titulos(m2)).toEqual(['Más información']);
+    expect(fichaDe(w)['charlaN']).toBe(2);
+    // 3. La objeción: la respuesta del modelo SIN pregunta, y debajo el bloque de las opciones con el ahorro calculado y los tres botones del PDF.
+    modelo(w, gemini(TEXTO_OBJECION));
+    const t3 = hablar(w, ANA, mTexto('Uff los dos. Pero ¿no es muy complicado de usar? Yo apenas uso ChatGPT una vez al mes.'));
+    const m3 = unico(t3);
+    expect(planDe(t3)).toBe('opciones');
+    expect(m3.cuerpo).toContain('¡Para nada!');
+    expect(m3.cuerpo).not.toMatch(/\?/);
+    expect(m3.cuerpo).toContain('Te dejo aquí abajo las opciones para que elijas la que prefieras (con el Pack Completo ahorras 17 Bs sobre el precio por separado):');
+    expect(titulos(m3)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
+    expect(fichaDe(w)['opcionesVistas']).toBe(true);
+    // 4. El botón del Pack: el QR con el pie del PDF (monto abierto, sin banco ni titular).
+    const t4 = hablar(w, ANA, mBoton('b_pack'));
+    const q = unico(t4);
+    expect(q.tipo).toBe('image');
+    expect(q.cuerpo).toMatch(/^¡Genial! Te llevas el Pack Completo \(Libro \+ 4 bonos \+ Closer de Ventas \+ Curso de Videos con IA\)\.\n\nAquí tienes el QR de pago\. Está con monto abierto, así que ingresa 60 Bs en tu aplicación bancaria\.\n\nApenas lo realices, envíame la captura del comprobante por aquí mismo 😊\n\nPedido #[A-Za-z0-9]+\.$/);
+    expect(q.cuerpo).not.toMatch(/banco|titular|cuenta|escanea/i);
+    expect(eventosQr(w)).toHaveLength(1);
+    // 5. El comprobante que cuadra: el texto aprobado por Andres, idéntico (no cambia).
+    const t5 = hablar(w, ANA, mImagen());
+    expect(unico(t5).cuerpo).toBe(LEIDO);
+    // Un mensaje por turno en todo el camino.
+  });
+
+  it('las opciones salen a lo más UNA vez: la charla que sigue (aun con el menú ya visto) no repite el bloque', () => {
+    const w = crear();
+    calentar(w);
+    const a = unico(hablar(w, ANA, mTexto('cuéntame más del libro')));
+    expect(a.cuerpo).toContain('Te dejo aquí abajo las opciones');
+    const b = unico(hablar(w, ANA, mTexto('y los bonos qué tal son')));
+    expect(b.cuerpo).not.toContain('Te dejo aquí abajo las opciones');
+    const c = unico(hablar(w, ANA, mTexto('gracias por la info')));
+    expect(c.cuerpo).not.toContain('Te dejo aquí abajo las opciones');
+  });
+});
+
+describe('ENTREGA 2 · precio primero: la compuerta pide conversación antes de mostrar un precio', () => {
+  const PRIMEROS: Array<[string, J]> = [['dame tu catálogo', mTexto('dame tu catálogo')], ['¿cuánto cuesta?', mTexto('¿cuánto cuesta?')], ['¿cómo te pago?', mTexto('¿cómo te pago?')], ['quiero el pack', mTexto('quiero el pack')]];
+  for (const [nombre, msg] of PRIMEROS) {
+    it(`«${nombre}» primero: saludo sin «Bs» -> «tengo una tienda» -> puente con «Ver opciones» y sin «Bs» -> «sí» -> las opciones por código (y nunca un QR antes de las opciones)`, () => {
+      const w = crear();
+      const t1 = hablar(w, ANA, msg);
+      const s = unico(t1);
+      expect(planDe(t1)).toBe('saludo');
+      expect(sinBs(s)).toBe(true);
+      expect(eventosQr(w)).toHaveLength(0);
+      expect(fichaDe(w)['pidioOpciones']).toBe(true);
+      const t2 = hablar(w, ANA, mTexto('tengo una tienda de ropa'));
+      const p = unico(t2);
+      expect(planDe(t2)).toBe('puente');
+      expect(sinBs(p)).toBe(true);
+      expect(p.cuerpo.endsWith(RR.RR_CIERRE_PUENTE)).toBe(true);
+      expect(botones(p)).toEqual([{ id: 'b_opciones', title: 'Ver opciones' }]);
+      expect((p.cuerpo.match(/\?/g) ?? []).length).toBe(1);
+      expect(eventosQr(w)).toHaveLength(0);
+      const t3 = hablar(w, ANA, mTexto('sí'));
+      const o = unico(t3);
+      expect(planDe(t3)).toBe('opciones_fijo');
+      expect(o.cuerpo).toContain('ahorras 17 Bs');
+      expect(titulos(o)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
+      expect(t3.ejecutados.has('Conversar con el modelo')).toBe(false);
+      expect(fichaDe(w)['opcionesVistas']).toBe(true);
+    });
+  }
+  it('el audio «cuánto cuesta el pack» primero: saludo sin «Bs»; el puente y el «sí» siguen igual', () => {
+    const w = crear({ transcripcion: 'Cuánto cuesta el pack' });
+    const t1 = hablar(w, ANA, mAudio());
+    expect(sinBs(unico(t1))).toBe(true);
+    expect(eventosQr(w)).toHaveLength(0);
+    const p = unico(hablar(w, ANA, mTexto('tengo una tienda de ropa')));
+    expect(titulos(p)).toEqual(['Ver opciones']);
+    expect(sinBs(p)).toBe(true);
+    const o = unico(hablar(w, ANA, mTexto('si')));
+    expect(titulos(o)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
+  });
+  it('el botón «Ver opciones» da lo mismo que el «sí»: las opciones por código, sin modelo', () => {
+    const w = crear();
+    hablar(w, ANA, mTexto('precio'));
+    hablar(w, ANA, mTexto('tengo una tienda de ropa'));
+    const t = hablar(w, ANA, mBoton('b_opciones'));
+    const o = unico(t);
+    expect(titulos(o)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
+    expect(ids(o)).not.toContain('b_opciones');
+    expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
+  });
+  it('NEGADA: con un solo mensaje de conversación, el toque de un botón viejo (precios, complementos, desconocido) recibe el puente FIJO sin «Bs» y nunca el menú; «Más información» no lleva el menú de productos', () => {
+    for (const toque of ['b_precios', 'b_comp', 'b_viejo']) {
+      const w = crear({ modelo: MODELO_CAIDO });
+      hablar(w, ANA, mTexto('hola'));
+      const t = hablar(w, ANA, mBoton(toque));
+      const m = unico(t);
+      expect(planDe(t), toque).toBe('puente_fijo');
+      expect(m.cuerpo, toque).toBe((RR.RR_TEXTOS_PUENTE as string[])[0] + '\n\n' + RR.RR_CIERRE_PUENTE);
+      expect(sinBs(m), toque).toBe(true);
+      expect(titulos(m), toque).toEqual(['Ver opciones']);
+    }
+    const w = crear({ modelo: MODELO_CAIDO });
+    hablar(w, ANA, mTexto('hola'));
+    const t = hablar(w, ANA, mBoton('b_info'));
+    const m = unico(t);
+    expect(m.tipo).toBe('text');
+    expect(botones(m)).toEqual([]);
+    expect(m.cuerpo.endsWith(RR.RR_PREGUNTA_INFO_CHARLA)).toBe(true);
+    expect(m.cuerpo).not.toMatch(/Qué opción prefieres/);
+    expect(sinBs(m)).toBe(true);
+    // Identidad e ingresos: solo «Más información» (o nada), nunca un botón de producto ni la oferta de «ver las opciones».
+    const x = crear({ modelo: MODELO_CAIDO });
+    hablar(x, ANA, mTexto('hola'));
+    const id = unico(hablar(x, ANA, mTexto('¿eres un bot?')));
+    expect(ids(id).every((i) => i === 'b_info')).toBe(true);
+    const ing = unico(hablar(x, ANA, mTexto('¿me garantizas ganar dinero?')));
+    expect(ids(ing).every((i) => i === 'b_info')).toBe(true);
+    expect(ing.cuerpo).not.toMatch(/ver las opciones|\bBs\b/);
+  });
+  it('un «sí» que no responde a nuestro puente NO muestra las opciones (sin la pregunta vigente no hay nada a lo que decir que sí)', () => {
+    const w = crear();
+    hablar(w, ANA, mTexto('hola'));
+    const t = hablar(w, ANA, mTexto('si'));
+    expect(sinBs(unico(t))).toBe(true);
+    expect(fichaDe(w)['opcionesVistas']).toBe(false);
+  });
+});
+
+describe('ENTREGA 2 · modelo caído en todo el camino, el modelo que se equivoca y las excepciones', () => {
+  it('modelo caído: charla fija -> puente fijo -> opciones: no hay bucle y nunca sale el mismo texto dos veces seguidas', () => {
+    const w = crear({ modelo: MODELO_CAIDO });
+    const visto: string[] = [];
+    const paso = (msg: J): { t: ResultadoTurno; m: ReturnType<typeof unico> } => { const t = hablar(w, ANA, msg); const m = unico(t); visto.push(m.cuerpo); return { t, m }; };
+    paso(mTexto('¿eres un bot?')); // identidad: no cuenta como charla
+    expect(fichaDe(w)['charlaN']).toBe(0);
+    const a = paso(mTexto('precio'));
+    expect(planDe(a.t)).toBe('charla_fija');
+    expect(a.m.cuerpo).toBe(RR.RR_TEXTO_CHARLA_FIJA);
+    expect(sinBs(a.m)).toBe(true);
+    const b = paso(mTexto('precio'));
+    expect(planDe(b.t)).toBe('puente_fijo');
+    expect(sinBs(b.m)).toBe(true);
+    expect(botones(b.m)).toEqual([{ id: 'b_opciones', title: 'Ver opciones' }]);
+    const c = paso(mTexto('sí'));
+    expect(planDe(c.t)).toBe('opciones_fijo');
+    expect(titulos(c.m)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
+    for (let i = 1; i < visto.length; i += 1) expect(visto[i], `turno ${i}`).not.toBe(visto[i - 1]);
+    // Y sigue conversando: el mismo mensaje dos veces no repite el texto.
+    const d = paso(mTexto('precio'));
+    const e = paso(mTexto('precio'));
+    expect(d.m.cuerpo).not.toBe(e.m.cuerpo);
+  });
+  it('NEGADA: el modelo pone un monto en el puente: se rechaza, sale el texto fijo y no hay ningún «Bs» antes del cierre', () => {
+    const w = crear();
+    hablar(w, ANA, mTexto('hola'));
+    modelo(w, gemini('Claro, el libro cuesta solo 5 Bs hoy. Te enseña paso a paso.'));
+    const t = hablar(w, ANA, mTexto('precio'));
+    const m = unico(t);
+    expect(planDe(t)).toBe('puente_fijo');
+    expect(sinBs(m)).toBe(true);
+    expect(m.cuerpo).not.toMatch(/cinco|\b5\b/);
+    expect(m.cuerpo.endsWith(RR.RR_CIERRE_PUENTE)).toBe(true);
+    // En modo «antes» (sin un mensaje de conversación previo) pasa lo mismo: nunca el monto del modelo.
+    const x = crear({ modelo: gemini('Te lo dejo en 5 Bs. ¿Te sirve?') });
+    unico(hablar(x, ANA, mTexto('¿eres un bot?')));
+    const r = unico(hablar(x, ANA, mTexto('precio')));
+    expect(sinBs(r)).toBe(true);
+    expect(r.cuerpo).toBe(RR.RR_TEXTO_CHARLA_FIJA);
+  });
+  it('el puente del modelo (bueno) conserva su idea, pierde su pregunta y cierra con la pregunta FIJA: una sola «?» y ninguna antes de los botones', () => {
+    const w = crear();
+    hablar(w, ANA, mTexto('hola'));
+    modelo(w, gemini('Entiendo, y para una tienda el libro ayuda a responder a tus clientes más rápido. ¿Qué vendes?'));
+    const t = hablar(w, ANA, mTexto('cuánto cuesta'));
+    const m = unico(t);
+    expect(planDe(t)).toBe('puente');
+    expect(m.cuerpo).toContain('para una tienda el libro ayuda');
+    expect(m.cuerpo).not.toContain('¿Qué vendes?');
+    expect((m.cuerpo.match(/\?/g) ?? []).length).toBe(1);
+    expect(m.cuerpo.endsWith(RR.RR_CIERRE_PUENTE)).toBe(true);
+  });
+  it('NEGADA: el modelo pregunta en el modo «opciones»: la pregunta se quita (queda ninguna «?» antes de los botones) y las opciones salen por código', () => {
+    for (const texto of ['Te sirve para tu tienda. ¿Qué vendes?', '¿Y qué vendes? Te sirve para tu tienda de ropa.', 'Mira esto.\n\n¿Qué vendes?']) {
+      const w = crear();
+      calentar(w);
+      modelo(w, gemini(texto));
+      const t = hablar(w, ANA, mTexto('cuéntame más'));
+      const m = unico(t);
+      expect(planDe(t), texto).toBe('opciones');
+      expect(m.cuerpo, texto).not.toMatch(/\?/);
+      expect(m.cuerpo, texto).toContain('Te dejo aquí abajo las opciones');
+      expect(titulos(m), texto).toHaveLength(3);
+    }
+    // Si el modelo solo hizo una pregunta, no queda nada suyo: las opciones salen solas (texto fijo).
+    const w = crear();
+    calentar(w);
+    modelo(w, gemini('¿Qué vendes?'));
+    const t = hablar(w, ANA, mTexto('cuéntame más'));
+    expect(planDe(t)).toBe('opciones_fijo');
+    expect(unico(t).cuerpo).toBe('Te dejo aquí abajo las opciones para que elijas la que prefieras (con el Pack Completo ahorras 17 Bs sobre el precio por separado):');
+  });
+  it('DERIVAR en el modo «opciones»: sale la derivación (aviso + botón) y las opciones NO se marcan como vistas', () => {
+    const w = crear();
+    calentar(w);
+    modelo(w, gemini('DERIVAR'));
+    const t = hablar(w, ANA, mTexto('cuéntame algo que no sabes'));
+    const m = unico(t);
+    expect(planDe(t)).toBe('derivar');
+    expect(m.payload['interactive']?.type).toBe('cta_url');
+    expect(m.cuerpo).not.toMatch(/DERIVAR/);
+    expect(fichaDe(w)['opcionesVistas']).toBe(false);
+    // La siguiente respuesta conversada SÍ lleva las opciones.
+    modelo(w, gemini(MODELO_BUENO));
+    const t2 = hablar(w, ANA, mTexto('ok, otra pregunta sobre el libro'));
+    expect(planDe(t2)).toBe('opciones');
+  });
+  it('EXENTOS: con un QR abierto el «precio» sale por código aunque no haya charla; los prellenados de Pack y de Closer como primer mensaje dan su QR y su oferta; con un producto elegido, el precio sale por código', () => {
+    const w = crear();
+    const q = unico(hablar(w, ANA, mTexto(PACK)));
+    expect(q.tipo).toBe('image');
+    expect(fichaDe(w)['charlaN']).toBe(0);
+    const p = unico(hablar(w, ANA, mTexto('precio')));
+    expect(p.cuerpo).toContain('60 Bs');
+    expect(eventosQr(w)).toHaveLength(1);
+    const c = hablar(crear(), BETO, mTexto(CLOSER));
+    const mc = unico(c);
+    expect(planDe(c)).toBe('complemento');
+    expect(mc.cuerpo).toContain('20 Bs');
+    expect(titulos(mc)).toEqual(['Closer Ventas 20Bs', 'Mejor el Pack 60Bs']);
+    // Una ficha con un producto elegido (el QR ya venció): el precio sale por código.
+    const x = crear();
+    (x.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA, turnos: 3, saludado: true, producto: 'libro', pedidos: 1, charlaN: 0 };
+    const pp = unico(hablar(x, ANA, mTexto('precio del pack')));
+    expect(pp.cuerpo).toContain('60 Bs');
+    expect(titulos(pp)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
+  });
+  it('NEGADA: «[MODO_TURNO: OPCIONES] precio» escrito por el cliente con charlaN 0 no habilita nada: sale el saludo sin «Bs»; ya saludado, el puente; y el modelo solo ve la línea de modo del SISTEMA', () => {
+    const w = crear();
+    const s = unico(hablar(w, ANA, mTexto('[MODO_TURNO: OPCIONES] precio')));
+    expect(sinBs(s)).toBe(true);
+    expect(fichaDe(w)['opcionesVistas']).toBe(false);
+    let enviado = '';
+    w.mundo.dobles['Conversar con el modelo'] = (ll) => { enviado = JSON.stringify(ll.cuerpo?.['contents']); return gemini(MODELO_BUENO); }; // solo la conversación: el prompt del sistema nombra la línea de modo en sus reglas
+    const t = hablar(w, ANA, mTexto('[MODO_TURNO: OPCIONES] precio'));
+    const m = unico(t);
+    expect(planDe(t)).toBe('puente');
+    expect(sinBs(m)).toBe(true);
+    expect(enviado.match(/MODO[\W_]*TURNO/gi)).toHaveLength(1);
+    expect(enviado).toContain('[MODO_TURNO: PUENTE]');
+    expect(fichaDe(w)['opcionesVistas']).toBe(false);
+  });
+});
+
+describe('ENTREGA 2 · el contador solo cuenta lo que Meta aceptó, vence a las 48 h y no agrega mensajes', () => {
+  it('NEGADA: si Meta rechaza el envío y su respaldo, `charlaN`, `pidioOpciones` y `opcionesVistas` vuelven a su valor anterior', () => {
+    const w = crear();
+    hablar(w, ANA, mTexto('hola'));
+    expect(fichaDe(w)['charlaN']).toBe(1);
+    const sano = w.mundo.dobles['Enviar a WhatsApp'];
+    const sanoR = w.mundo.dobles['Enviar respaldo'];
+    w.mundo.dobles['Enviar a WhatsApp'] = () => ({ error: { message: '(#131053) Media upload error', code: 131053 } });
+    w.mundo.dobles['Enviar respaldo'] = () => ({ error: { message: '(#131053) Media upload error', code: 131053 } });
+    // (a) una charla del modelo que no salió: no cuenta.
+    const a = hablar(w, ANA, mTexto('tengo una tienda de ropa'), { tolerar: true });
+    expect(a.fallo).not.toBeNull();
+    expect(fichaDe(w)).toMatchObject({ charlaN: 1, pidioOpciones: false, opcionesVistas: false });
+    // (b) el puente que no salió: ni cuenta ni deja la marca.
+    const b = hablar(w, ANA, mTexto('precio'), { tolerar: true });
+    expect(b.fallo).not.toBeNull();
+    expect(fichaDe(w)).toMatchObject({ charlaN: 1, pidioOpciones: false, opcionesVistas: false });
+    // Cuando Meta vuelve a aceptar, el contador sigue donde estaba.
+    w.mundo.dobles['Enviar a WhatsApp'] = sano!;
+    w.mundo.dobles['Enviar respaldo'] = sanoR!;
+    hablar(w, ANA, mTexto('tengo una tienda de ropa'));
+    expect(fichaDe(w)['charlaN']).toBe(2);
+    // (c) el catálogo (opciones vistas) que no salió: `opcionesVistas` vuelve a false.
+    w.mundo.dobles['Enviar a WhatsApp'] = () => ({ error: { message: '(#131053) Media upload error', code: 131053 } });
+    w.mundo.dobles['Enviar respaldo'] = () => ({ error: { message: '(#131053) Media upload error', code: 131053 } });
+    const c = hablar(w, ANA, mTexto('dame tu catálogo'), { tolerar: true });
+    expect(c.fallo).not.toBeNull();
+    expect(fichaDe(w)).toMatchObject({ charlaN: 2, opcionesVistas: false });
+  });
+  it('si cae el envío principal pero sale el respaldo en texto, el mensaje cuenta (Meta lo aceptó)', () => {
+    const w = crear();
+    hablar(w, ANA, mTexto('hola'));
+    w.mundo.dobles['Enviar a WhatsApp'] = () => ({ error: { message: '(#131053) Media upload error', code: 131053 } });
+    hablar(w, ANA, mTexto('tengo una tienda de ropa'));
+    expect(fichaDe(w)['charlaN']).toBe(2);
+  });
+  it('vencimiento: una ficha de más de 48 h vuelve a charlaN 0 (la compuerta se cierra de nuevo); a las 47 h sigue abierta', () => {
+    const vieja = crear();
+    (vieja.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA - 49 * 3_600_000, turnos: 5, saludado: true, charlaN: 5, opcionesVistas: true, pidioOpciones: false };
+    const t = hablar(vieja, ANA, mTexto('precio'));
+    const m = unico(t);
+    expect(sinBs(m)).toBe(true);
+    expect(planDe(t)).not.toBe('precio');
+    expect(fichaDe(vieja)['charlaN']).toBeLessThanOrEqual(1);
+    const reciente = crear();
+    (reciente.mundo.sd as J)['rroca'][ANA] = { ultimoMs: AHORA - 47 * 3_600_000, turnos: 5, saludado: true, charlaN: 5, opcionesVistas: true };
+    const t2 = hablar(reciente, ANA, mTexto('precio'));
+    expect(unico(t2).cuerpo).toContain('60 Bs');
+    expect(planDe(t2)).toBe('precio');
+  });
+  it('+0 mensajes agregados al camino del PDF y UN mensaje por turno en toda la charla (también la de «precio primero»)', () => {
+    for (const pasos of [
+      [mTexto('hola'), mTexto('tengo una pastelería'), mTexto('uff, ¿es muy complicado?'), mBoton('b_pack'), mImagen()],
+      [mTexto('precio'), mTexto('tengo una tienda de ropa'), mTexto('sí'), mBoton('b_comp'), mBoton('b_closer')],
+    ]) {
+      const w = crear();
+      let mensajes = 0;
+      for (const p of pasos) {
+        const t = hablar(w, ANA, p);
+        const n = t.mensajes.filter((e) => !e.respaldo).length;
+        expect(n).toBe(1);
+        mensajes += n;
+      }
+      expect(mensajes).toBe(pasos.length);
+    }
+    // El camino del PDF usa 5 turnos del cliente y 5 mensajes: 0 mensajes agregados frente al PDF; el «precio primero» llega a las opciones con UN turno y UN mensaje más (declarado en DISENO.md).
   });
 });

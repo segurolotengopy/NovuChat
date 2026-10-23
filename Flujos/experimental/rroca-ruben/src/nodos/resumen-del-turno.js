@@ -50,7 +50,9 @@ if (cnNodo('Enviar a WhatsApp')) {
   if (rrHp && typeof rrHp === 'object' && !cnTodos('Enviar a WhatsApp').some(rrId) && !cnTodos('Enviar respaldo').some(rrId)) {
     const rrFichas3 = cnMapaDeFichas(true);
     const rrF3 = cnFichaDe(rrFichas3.mapa, String((items[0] || {}).from || ''));
-    if (rrF3) { rrF3.ultimoHash = String(rrHp.h || ''); rrF3.ultimaFirma = String(rrHp.f || ''); rrF3.ultimaPregunta = String(rrHp.p || ''); rrF3.ultimaPreguntaMs = Number(rrHp.pm) || 0; }
+    if (rrF3) { rrF3.ultimoHash = String(rrHp.h || ''); rrF3.ultimaFirma = String(rrHp.f || ''); rrF3.ultimaPregunta = String(rrHp.p || ''); rrF3.ultimaPreguntaMs = Number(rrHp.pm) || 0;
+      // ENTREGA 2 (23/10/2026): el contador de conversación y las dos marcas de las opciones solo cuentan lo que Meta aceptó: si no salió nada, vuelven a su valor anterior.
+      rrF3.charlaN = Number(rrHp.c) || 0; rrF3.pidioOpciones = rrHp.po === true; rrF3.opcionesVistas = rrHp.ov === true; }
   }
   const rrEsperados = items.filter((i) => i && i.sinMensajes !== true).length;
   const rrEntregados = cnTodos('Enviar a WhatsApp').filter(rrId).length + cnTodos('Enviar respaldo').filter(rrId).length;
