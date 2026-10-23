@@ -69,14 +69,17 @@ describe('la guardia de publicación: la ruta feliz y lo versionado de hoy', () 
     expect(JSON.stringify(flujoDe('rroca-evy'))).toMatch(/\^REEMPLAZAR_|reemplazar_\/i|`REEMPLAZAR_`/);
     expect(hallazgos(listo('rroca-evy'))).toEqual([]);
   });
-  it('el horario de Evy está confirmado (22/10): lo versionado no trae marcador de horario ni lo pide la guardia; un marcador de horario sigue bloqueando', () => {
-    expect(datosDe('rroca-evy').doctora['horario']).toBe('de lunes a viernes de 08:30 a 18:30 y los sábados de 09:00 a 12:00; los domingos no se atiende');
+  it('el horario de Evy sale de la CONSOLA (negocio.horarios): su dato ya no lo trae; sin horario en la consola ni respaldo, la etapa completa falla', () => {
+    expect(datosDe('rroca-evy').doctora).not.toHaveProperty('horario');
+    expect(datosDe('rroca-evy').doctora).not.toHaveProperty('direccion');
     expect(JSON.stringify(negocioDe('rroca-evy'))).not.toMatch(/REEMPLAZAR_HORARIO/);
     const h = hallazgos({ flujo: flujoDe('rroca-evy'), datos: datosDe('rroca-evy'), negocio: negocioDe('rroca-evy') });
     expect(h.join('|')).not.toMatch(/horario/i);
-    // Negada: con el marcador de horario, la etapa completa falla aunque todo lo demás esté listo.
-    const x = listo('rroca-evy'); x.datos.doctora['horario'] = 'REEMPLAZAR_HORARIO_RROCA_EVY';
+    // Negada: sin `negocio.horarios` (y sin respaldo) no se publica; con un día vacío tampoco cuenta como horario.
+    const x = listo('rroca-evy'); delete (x.negocio['negocio'] as Record<string, unknown>)['horarios'];
     expect(hallazgos(x)).toContain('datos: doctora.horario está vacío o es un marcador');
+    const y = listo('rroca-evy'); (y.negocio['negocio'] as Record<string, unknown>)['horarios'] = { lun: '', mar: '  ' };
+    expect(hallazgos(y)).toContain('datos: doctora.horario está vacío o es un marcador');
   });
   it('el horario de Emma está confirmado (22/10): horarioPorConfirmar es false; con true la etapa completa FALLA', () => {
     expect(datosDe('rroca-emma').doctora['horarioPorConfirmar']).toBe(false);
@@ -134,8 +137,8 @@ describe('la guardia de publicación: cada defecto se niega', () => {
       expect(hallazgos(a).join('|'), clave).toMatch(new RegExp(`falta el nombre|falta el idioma`));
     }
   });
-  it('la dirección o el nombre de la doctora vacíos; el negocio sin dirección o con un marcador distinto del número de recepción', () => {
-    for (const campo of ['direccion', 'clinica', 'nombreCorto', 'horario']) {
+  it('el nombre o la clínica de la doctora vacíos; el negocio sin dirección o con un marcador distinto del número de recepción', () => {
+    for (const campo of ['clinica', 'nombreCorto', 'horario']) {
       const a = listo('rroca-emma'); a.datos.doctora[campo] = '';
       expect(hallazgos(a).join('|'), campo).toContain(`datos: doctora.${campo} está vacío o es un marcador`);
     }
@@ -172,7 +175,7 @@ describe('la guardia de publicación: cada defecto se niega', () => {
     }
   });
   it('los mensajes nombran claves y marcadores, NUNCA valores (ni de los datos ni del flujo)', () => {
-    const x = listo('rroca-emma'); x.datos.doctora['direccion'] = '';
+    const x = listo('rroca-emma'); x.datos.doctora['clinica'] = '';
     (x.flujo.nodes.find((n) => n.name === 'Config base')!.parameters as J2).assignments.assignments.find((a: Asignacion) => a.name === 'numeroRecepcion').value = 'valor-secreto-5917';
     expect(hallazgos(x).join('\n')).not.toMatch(/valor-secreto|5917/);
   });
@@ -206,16 +209,12 @@ describe('la línea de comandos: `--publicable` sale 1 hoy, nunca imprime valore
 
 describe('la etapa «crear» (flujo INACTIVO para dar la URL de entrada): tolera solo la plantilla sin APPROVED y el horario pendiente', () => {
   const HORARIO_EVY = 'REEMPLAZAR_HORARIO_RROCA_EVY';
-  /** Todo sustituido, plantilla PENDING y horario pendiente (Evy: marcador; Emma: por confirmar). */
+  /** Todo sustituido, plantilla PENDING y horario pendiente (Emma: por confirmar; Evy no tiene horario pendiente: sale de la consola). */
   function pendiente(t: Tenant): { flujo: Flujo; datos: Datos; negocio: Record<string, unknown> } {
     const x = listo(t);
     const estadoDelFlujo = asignaciones(x.flujo).find((a) => a.name === 'avisoSolicitudEstado')!;
     estadoDelFlujo.value = 'PENDING'; x.datos.configBase['avisoSolicitudEstado'] = 'PENDING';
-    if (t === 'rroca-evy') {
-      x.datos.doctora['horario'] = HORARIO_EVY;
-      const a = asignaciones(x.flujo).find((y) => y.name === 'doctora')!;
-      const d = JSON.parse(String(a.value)) as Record<string, unknown>; d['horario'] = HORARIO_EVY; a.value = JSON.stringify(d);
-    } else {
+    if (t === 'rroca-emma') {
       x.datos.doctora['horarioPorConfirmar'] = true;
       const a = asignaciones(x.flujo).find((y) => y.name === 'doctora')!;
       const d = JSON.parse(String(a.value)) as Record<string, unknown>; d['horarioPorConfirmar'] = true; a.value = JSON.stringify(d);
@@ -229,7 +228,7 @@ describe('la etapa «crear» (flujo INACTIVO para dar la URL de entrada): tolera
       expect(crear(x)).toEqual([]);
       const completa = hallazgos(x).join('|');
       expect(completa).toMatch(/avisoSolicitudEstado/);
-      expect(completa).toMatch(t === 'rroca-evy' ? /horario/ : /horarioPorConfirmar/);
+      if (t === 'rroca-emma') expect(completa).toMatch(/horarioPorConfirmar/);
       expect((guardiaDePublicacion({ ...x, etapa: 'encender' }) as string[]).length).toBeGreaterThan(0);
     });
     it(`${t}: cada defecto por separado se NIEGA en la etapa crear: marcador distinto del horario, medio faltante, sin credencial, identidad cruzada`, () => {
@@ -246,16 +245,13 @@ describe('la etapa «crear» (flujo INACTIVO para dar la URL de entrada): tolera
       expect(crear(i).join('|')).toMatch(/no es el de esta doctora|no coincide con/);
     });
   }
-  it('el marcador del horario de Evy se tolera SOLO en Evy y SOLO en crear: un marcador de horario en Emma, o con otro nombre, se niega', () => {
-    const e = pendiente('rroca-evy'); e.negocio['x'] = 'REEMPLAZAR_HORARIO_OTRA';
-    expect(crear(e).join('|')).toMatch(/REEMPLAZAR_HORARIO_OTRA/);
+  it('ya NO hay marcador de horario tolerado: ni en Evy (su horario sale de la consola) ni en la etapa crear', () => {
     const ne = pendiente('rroca-evy'); ne.negocio['horario'] = HORARIO_EVY;
-    expect(crear(ne)).toEqual([]);
-    expect(hallazgos(ne).join('|')).toMatch(/negocio: marcador sin sustituir: REEMPLAZAR_HORARIO_RROCA_EVY/);
+    expect(crear(ne).join('|')).toMatch(/negocio: marcador sin sustituir: REEMPLAZAR_HORARIO_RROCA_EVY/);
     const nm = pendiente('rroca-emma'); nm.negocio['horario'] = HORARIO_EVY;
     expect(crear(nm).join('|')).toMatch(/negocio: marcador sin sustituir: REEMPLAZAR_HORARIO_RROCA_EVY/);
     const m = pendiente('rroca-emma'); m.datos.doctora['horario'] = HORARIO_EVY;
-    expect(crear(m).join('|')).toMatch(/horario|no coincide/);
+    expect(crear(m).join('|')).toMatch(/horario|no coincide|marcador/);
   });
   it('una etapa desconocida no pasa; por la línea de comandos sale 2', () => {
     expect(guardiaDePublicacion({ ...pendiente('rroca-evy'), etapa: 'x' }).length).toBeGreaterThan(0);

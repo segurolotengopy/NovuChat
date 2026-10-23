@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Flujo, J } from '../../lib/flujo';
+import { horarioAtencion } from '../../../functions/src/core/prompt/prompt';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -68,13 +69,28 @@ export interface Opciones {
   /** Lo que devuelven los medios. */
   medio?: { bytes?: number; url?: string; mime?: string; transcripcion?: string | null; clasificacion?: J | null };
 }
-export const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({
-  statusCode: 200,
-  body: {
-    tenantId: 'rroca-evy', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Dra. Evy Karina Rojas' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, atencion: { estado: 'normal' },
-    ...extra,
-  },
-});
+/**
+ * La consola de CADA doctora, como la devuelve la ingesta: la dirección (`datosDelNegocio.direccion`) y el horario (`operacion.horarioAtencion`, que el SERVIDOR deriva de `negocio.horarios` con la misma
+ * función que usa en producción) salen del archivo de datos que se carga con `cargar-negocio` (`negocio-<tenant>.json`). Emma no trae `horarios` (turno partido): su horario queda vacío en la consola.
+ */
+export const negocioDe = (t: Tenant): J => (JSON.parse(readFileSync(join(CARPETA_DE_DATOS, `negocio-${t}.json`), 'utf8')) as J)['negocio'] as J;
+export const panelOk = (extra: J = {}, tenant: Tenant = 'rroca-evy'): { statusCode: number; body: J } => {
+  const n = negocioDe(tenant);
+  return {
+    statusCode: 200,
+    body: {
+      tenantId: tenant, estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: n['nombreNegocio'], direccion: n['direccion'] },
+      operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'], horarioAtencion: horarioAtencion(n['horarios']) }, atencion: { estado: 'normal' },
+      ...extra,
+    },
+  };
+};
+/** El bloque `doctora` TAL COMO LO VE EL FLUJO: el dato de la doctora + la dirección y el horario que vienen de la consola de ESA doctora (el horario, si la consola no lo tiene, el respaldo del dato). */
+export const doctoraViva = (t: Tenant): J => {
+  const op = panelOk({}, t).body['operacion'] as J;
+  const d = datosDe(t)['doctora'] as J;
+  return { ...d, direccion: negocioDe(t)['direccion'], horario: String(op['horarioAtencion'] || '') || d['horario'] };
+};
 export function crear(o: Opciones = {}): Mundo {
   const envio = o.envio ?? {};
   const m = o.medio ?? {};
@@ -89,7 +105,7 @@ export function crear(o: Opciones = {}): Mundo {
   const clasificar = (): J => (m.clasificacion === null ? { error: { message: 'no se pudo describir' } } : gemini(JSON.stringify(m.clasificacion ?? { categoria: 'otro', texto: '' })));
   const dobles: Record<string, Doble> = {
     'Verificar firma con el receptor': o.verificador ?? ((ll) => ({ valido: true, deliveryId: ll.cuerpo?.['deliveryId'] })),
-    'Traer configuración': () => (o.panel === 'cae' ? { statusCode: 503, body: {} } : (o.panel ?? panelOk())),
+    'Traer configuración': () => (o.panel === 'cae' ? { statusCode: 503, body: {} } : (o.panel ?? panelOk({}, o.tenant ?? 'rroca-evy'))),
     'Reportar mensaje (entrante)': () => o.ingesta ?? { ok: true },
     'Reportar mensaje (saliente)': () => ({ ok: true }),
     'Reportar protección': () => ({ ok: true }),

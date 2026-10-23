@@ -1067,17 +1067,26 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
     expect(conFicha({ planesPendientes: true }, '¿Puedo usar mi número actual?')).toMatchObject({ ruta: 'fijo', fijo: 'numeroActual', extraerDatos: true });
     expect(conFicha({}, '¿Puedo usar mi número actual?')['extraerDatos']).not.toBe(true);
     const t = f('chRespuestaFija')('numeroActual', CFG);
-    expect(t).toBe('Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar. ¿Te gustaría hablar con alguien de nuestro equipo para revisarlo en tu caso? 🤝');
+    expect(t).toBe('Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente.');
+    expect(t).not.toMatch(/hablar con alguien de nuestro equipo|Lo revisamos contigo/i);
     expect(t).not.toMatch(/coexisten|certificad|https?:/i);
-    expect(f('chRespuestaFija')('coexistencia', CFG)).toBe('Meta ofrece un modo en que la app WhatsApp Business y la API conviven, con limitaciones (por ejemplo, sin grupos). Hoy no lo ofrecemos. ¿Te gustaría hablar con alguien de nuestro equipo para ver qué opción te sirve? 🤝');
-    expect(f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'fijo', fijo: 'numeroActual' }, res: null, eventos: [ev('¿Puedo usar mi número actual?')], ficha: fichaBase() }))).toMatchObject({ fila: 'consulta-sin-respuesta', equipo: true, planes: false, ofrecio: 'equipo' });
+    expect(f('chRespuestaFija')('coexistencia', CFG)).toBe('Meta ofrece un modo en que la app WhatsApp Business y la API conviven, con limitaciones (por ejemplo, sin grupos). Hoy no lo ofrecemos.');
+    expect(f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'fijo', fijo: 'numeroActual' }, res: null, eventos: [ev('¿Puedo usar mi número actual?')], ficha: fichaBase() }))).toMatchObject({ fila: 'respuesta-fija', equipo: false, planes: false, ofrecio: 'ninguna' });
   });
-  it('chRespuestaFija: el dato más la invitación al equipo, sin ninguna cifra', () => {
-    for (const id of ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento']) {
+  it('chRespuestaFija: solo costoMeta e integracion invitan al equipo (con botón); banco, consumo, descuento, numeroActual y coexistencia NO invitan ni llevan botón; ninguna con cifras', () => {
+    for (const id of ['costoMeta', 'integracion']) {
       const t = f('chRespuestaFija')(id, CFG);
       expect(t, id).toMatch(/hablar con alguien de nuestro equipo/);
       expect(t, id).not.toMatch(/\d/);
       expect((t.match(/\?/g) ?? []).length, id).toBe(1);
+      expect(f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'fijo', fijo: id }, res: null, eventos: [ev('hola')], ficha: fichaBase() })), id).toMatchObject({ fila: 'consulta-sin-respuesta', equipo: true, planes: false, ofrecio: 'equipo' });
+    }
+    for (const id of ['consumo', 'banco', 'descuento', 'numeroActual', 'coexistencia']) {
+      const t = f('chRespuestaFija')(id, CFG);
+      expect(t, id).not.toMatch(/hablar con alguien de nuestro equipo|Lo revisamos contigo/i);
+      expect(t, id).not.toMatch(/\d/);
+      expect(t, id).not.toMatch(/\?/);
+      expect(f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'fijo', fijo: id }, res: null, eventos: [ev('hola')], ficha: fichaBase() })), id).toMatchObject({ fila: 'respuesta-fija', equipo: false, planes: false, ofrecio: 'ninguna' });
     }
     expect(f('chRespuestaFija')('banco', CFG)).toMatch(/solo revisa visualmente el comprobante/);
   });
@@ -2272,7 +2281,7 @@ function* situaciones(): Generator<J> {
   }
 }
 function tablaEnMarkdown(tabla: J[]): string {
-  const celda = (x: unknown): string => (x === true ? 'sí' : x === 'interes' ? 'solo con interés' : 'no');
+  const celda = (x: unknown): string => (x === true ? 'sí' : x === 'interes' ? 'solo con interés' : x === 'sinPlanes' ? 'solo sin planes' : 'no');
   const oferta = (f: J): string => (f.planes !== false && f.equipo ? 'planes y equipo' : f.planes !== false ? 'planes' : f.equipo ? 'equipo' : 'ninguna');
   return ['| # | Fila | «Ver planes» | «Hablar con el equipo» | Oferta del texto | Cuándo y por qué |', '|---|---|---|---|---|---|', ...tabla.map((f, k) => `| ${k + 1} | \`${f.id}\` | ${celda(f.planes)} | ${celda(f.equipo)} | ${oferta(f)} | ${f.nota} |`)].join('\n');
 }
@@ -2286,6 +2295,14 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
     expect(m![1]).toBe(tablaEnMarkdown(T));
     expect(new Set(T.map((x) => x['id'])).size, 'ids únicos').toBe(T.length);
     expect(T.at(-1)!['id']).toBe('ordinaria'); // la última fila siempre coincide: toda situación tiene fila
+  });
+  it('PLANES sin planes ni imagen que mostrar: SÍ deriva (no hay callejón sin salida); con planes o imagen, no; y lo pulsado no reaparece', () => {
+    const s = (extra: J): J => f('chSituacion')({ plan: { ruta: 'planes', ...extra }, res: null, eventos: [ev('Planes por favor')], ficha: fichaBase() });
+    expect(botones(s({ sinPlanes: true }))).toMatchObject({ fila: 'planes', equipo: true, planes: false });
+    expect(botones(s({ sinPlanes: false }))).toMatchObject({ fila: 'planes', equipo: false, planes: false });
+    expect(botones(s({}))).toMatchObject({ fila: 'planes', equipo: false });
+    const tocado = f('chSituacion')({ plan: { ruta: 'planes', sinPlanes: true }, res: null, eventos: [ev('Planes por favor')], ficha: { ...fichaBase(), equipoTocado: true } });
+    expect(botones(tocado)).toMatchObject({ fila: 'planes', equipo: false });
   });
   it('PROPIEDADES sobre las 6.336 situaciones: lo pulsado no reaparece; «Ver planes» nunca sin interés; el equipo solo si es requerido o se acabaron las preguntas; nunca un callejón sin salida; el pedido de datos no lleva botón de planes', () => {
     const cuenta: Record<string, number> = {};
@@ -2307,19 +2324,20 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
       // (3) el equipo solo si es REQUERIDO o se ACABARON las preguntas (la oferta de planes, el cierre de precios, una consulta sin respuesta, a medida, función no documentada)
       if (r.equipo) {
         const ordinaria = s.ruta === 'modelo' && !sinRespuesta.includes(s.ev) && (!sinOferta.includes(s.ev) || (s.ev === 'datos' && s.interes)) && s.ev !== 'rubro' && s.ev !== 'multiple';
-        const requerido = s.ruta === 'planes' || (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev)))) || (ordinaria && (s.aMedida || s.acabadas));
+        const requerido = s.ruta === 'planes' || (s.ruta === 'fijo' && ['costoMeta', 'integracion'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev)))) || (ordinaria && (s.aMedida || s.acabadas));
         expect(requerido, donde).toBe(true);
       }
       ok('3 equipo si es requerido o se acabaron las preguntas');
       // (4) nunca un callejón sin salida: lo que el chat no resuelve lleva al equipo (si no se pulsó en este ciclo)
-      const noResuelve = (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev))));
+      const noResuelve = (s.ruta === 'fijo' && ['costoMeta', 'integracion'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev))));
       if (noResuelve && !s.equipoTocado) expect(r.equipo, donde).toBe(true);
       ok('4 sin callejón sin salida');
       // (5) el pedido de datos, la lista y el traspaso no llevan botones de la tabla
       if (['pedirNombre', 'lista', 'equipo'].includes(s.ruta)) expect([r.planes, r.equipo], donde).toEqual([false, false]);
       ok('5 pedido de datos, lista y traspaso sin botones');
-      // (6) el cierre de precios: los planes se acaban con la oferta del equipo
-      if (s.ruta === 'planes' && !s.equipoTocado) expect(r.equipo, donde).toBe(true);
+      // (6) los planes ya NO cierran con la oferta del equipo (Andres, 23/10): el botón sale solo al derivar
+      if (s.ruta === 'planes') expect([r.planes, r.equipo], donde).toEqual([false, false]);
+      if (s.ruta === 'fijo' && ['consumo', 'banco', 'descuento', 'numeroActual', 'coexistencia'].includes(s.fijo)) expect([r.planes, r.equipo], donde).toEqual([false, false]);
       // (7) la oferta (`ofrecio`) es exactamente lo que lleva
       expect(r.ofrecio, donde).toBe(r.planes && r.equipo ? 'ambas' : r.planes ? 'planes' : r.equipo ? 'equipo' : 'ninguna');
       ok('7 ofrecio = botones');
