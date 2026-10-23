@@ -712,8 +712,8 @@ const CH_PREGUNTA_EMPRESA = /\b(?:sobre|acerca de|de) (?:la |su |tu )?(?:empresa
 function chPreguntaEmpresa(t) { const n = chNorm(t); return n !== '' && n.split(' ').length <= 14 && CH_PREGUNTA_EMPRESA.test(n); }
 // «¿Atienden también los fines de semana?», «¿responde de noche?», «¿funciona en feriados?»: el documento dice «Atención en segundos 24/7». Una PREGUNTA sobre el servicio (no el horario del propio negocio del cliente).
 const CH_VERBO_HORARIO = '(?:atienden|atiende|responden|responde|contestan|contesta|funcionan|funciona|trabajan|trabaja|estan disponibles|esta disponible|opera|operan|hay atencion)';
-const CH_HORA_HORARIO = '(?:a que hora|fines? de semana|sabados?|domingos?|feriados?|de noche|por la noche|en la noche|madrugada|cualquier hora|toda hora|todo el dia|las 24|24 horas|24 7|todos los dias|7 dias|siete dias|de dia y de noche)';
-const CH_PREGUNTA_HORARIO = new RegExp('\\b' + CH_VERBO_HORARIO + '\\b[^.?]{0,40}\\b' + CH_HORA_HORARIO + '\\b|\\b' + CH_HORA_HORARIO + '\\b[^.?]{0,40}\\b' + CH_VERBO_HORARIO + '\\b');
+const CH_HORA_HORARIO = '(?:fines? de semana|sabados?|domingos?|feriados?|de noche|por la noche|en la noche|madrugada|cualquier hora|toda hora|todo el dia|las 24|24 horas|24 7|todos los dias|7 dias|siete dias|de dia y de noche)';
+const CH_PREGUNTA_HORARIO = new RegExp('\\b' + CH_VERBO_HORARIO + '\\b[^.?]{0,40}\\b' + CH_HORA_HORARIO + '\\b|\\b' + CH_HORA_HORARIO + '\\b[^.?]{0,40}\\b' + CH_VERBO_HORARIO + '\\b|\\ba que hora (?:atienden|abren|cierran|responden|contestan)\\b');
 function chPreguntaHorario(t) {
   const n = chNorm(t);
   const m = CH_PREGUNTA_HORARIO.exec(n);

@@ -1059,7 +1059,8 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
     // lo corregido llega también a la situación (botones): «cuanto cuesa» sin plan es interés
     const s = f('chSituacion')({ plan: { ruta: 'modelo' }, res: null, eventos: [ev('cuanto cuesa el servicio')], ficha: fichaBase() });
     expect(s.interes).toBe(true);
-    // sin la corrección, las mismas frases NO se reconocen (la prueba falla si se quita ctTipeo de los eventos)
+    // (el detector solo NO corrige por sí mismo: que ctTipeo se aplica a los eventos lo prueba la comparación contra la versión bien escrita, arriba)
+    for (const q of ['¿A qué hora funciona el pago?', '¿A qué hora atiende el doctor?', '¿A qué hora llega mi pedido?']) expect([q, decidir2(q, {}).fijo]).not.toEqual([q, 'disponibilidad']);
     expect(f('chPreguntaCostoMeta')('¿Meta cobar por los mensajes?')).toBe(false);
   });
   it('el NÚMERO PROPIO del prospecto: cada variante (acentos, mayúsculas, sin signos, audio transcrito) va a la ruta fija `numeroActual`; los negativos no', () => {
