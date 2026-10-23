@@ -9,6 +9,7 @@
 // Lo ÚNICO que este módulo sabe de un cliente es el catálogo `intenciones` ({ id: { clase, boton } }) que le pasa el consumidor. No contiene texto ni ids de ningún cliente y NO produce texto para el cliente (tuteo, voz y tono son del consumidor).
 // Un texto del MODELO entra siempre como `abierta`: la intención, la clase y el botón los pasa SOLO el código que emitió un texto fijo o un botón; nunca se infieren.
 // «Un sí escrito no confirma nada» (regla de Q'Taco): un «sí» a una confirmación o a una cancelación NUNCA ejecuta; la acción es `mostrar_boton`. Un «no» a una cancelación no cancela nada (`mantener`).
+// Se registra el texto YA ENVIADO al cliente, sin marcas de control: se quitan [MARCA] y [[MARCA]] (mayúsculas); los marcadores propios [enlace] y [precio] van en minúscula.
 // Invariante: respuesta resuelta ⇒ `sinDerivacion` verdadero (no se ofrece el botón de derivación a quien acaba de contestar una pregunta).
 
 const CT_TOPE_PENDIENTES = 3;
@@ -36,6 +37,7 @@ function ctSanearTexto(texto) {
   let t = crudo.slice(-CT_LARGO_MAX_TEXTO)
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029<>«»]+/g, ' ')
     .replace(/\p{Cf}/gu, '')
+    .replace(/\[\[[A-Z_]{3,}\]\]|\[[A-Z_]{3,}\]/g, ' ')
     .replace(/\s+/g, ' ');
   // Cada patrón tiene los cuantificadores acotados y solo corre si el texto trae su señal: sin retroceso cuadrático con una entrada hostil.
   if (/https?:|www\.|wa\.me/i.test(t)) t = t.replace(/https?:\/\/(?:[^\s?]|\?(?=\S))+|www\.(?:[^\s?]|\?(?=\S))+|\bwa\.me\/(?:[^\s?]|\?(?=\S))*/gi, '[enlace]');
@@ -112,6 +114,8 @@ function ctRecordarPreguntas(ficha, texto, ahoraMs, opciones) {
   const previo = { pendientes: ctFichaPendientes(ficha, ahoraMs, o.vigenciaMs) };
   if (typeof ahoraMs !== 'number' || !Number.isFinite(ahoraMs) || ahoraMs <= 0) return previo;
   const preguntas = o.esImagen === true ? [] : ctPreguntasDe(texto);
+  // Una pregunta que acredita un pago o afirma ser (o no ser) una IA no se registra: la cola queda como estaba.
+  if (preguntas.some((p) => /acredit|inteligencia artificial|\b(?:soy|eres|es)\s+(?:un\s+|una\s+)?(?:bot|ia|humano|humana|persona)\b/i.test(p))) return previo;
   if (preguntas.length === 0) ficha.pendientes = [];
   else {
     const nuevos = preguntas.map((p) => ({ p: p, ms: ahoraMs, i: '', c: 'abierta', b: '' }));
@@ -167,6 +171,8 @@ function ctInterpretarSiNo(texto, ficha, ahoraMs, opciones) {
   r.tipo = tipo;
   r.estado = 'sin_pregunta';
   if (!ficha || typeof ficha !== 'object') return r;
+  // Sin una hora válida no se puede saber si la pregunta vive: no se resuelve nada ni se toca la ficha.
+  if (typeof ahoraMs !== 'number' || !Number.isFinite(ahoraMs) || ahoraMs <= 0) return r;
   const sinHora = ctFichaPendientes(ficha, undefined, o.vigenciaMs);
   const vivas = ctFichaPendientes(ficha, ahoraMs, o.vigenciaMs);
   if (vivas.length !== sinHora.length || (Array.isArray(ficha.pendientes) && ficha.pendientes.length !== vivas.length)) ficha.pendientes = vivas.map((x) => ({ p: x.p, ms: x.ms, i: x.i, c: x.c, b: x.b }));
@@ -189,7 +195,10 @@ function ctInterpretarSiNo(texto, ficha, ahoraMs, opciones) {
   r.estado = 'resuelta';
   r.pregunta = ultima.p;
   r.intencion = enCatalogo ? ultima.i : '';
-  r.clase = enCatalogo && CT_CLASES_PREGUNTA.indexOf(catalogo[ultima.i].clase) >= 0 ? catalogo[ultima.i].clase : ultima.c;
+  // El catálogo puede ENDURECER la clase guardada, nunca relajarla: confirmacion y cancelacion mandan sobre oferta y abierta.
+  const delCat = enCatalogo && CT_CLASES_PREGUNTA.indexOf(catalogo[ultima.i].clase) >= 0 ? catalogo[ultima.i].clase : '';
+  const estricta = (c) => c === 'confirmacion' || c === 'cancelacion';
+  r.clase = estricta(ultima.c) ? ultima.c : (delCat !== '' ? delCat : ultima.c);
   r.boton = ultima.b;
   r.sinDerivacion = true;
   if (r.clase === 'confirmacion') r.accion = tipo === 'si' ? 'mostrar_boton' : 'rechazar';
