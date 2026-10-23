@@ -17,18 +17,21 @@ import { fileURLToPath } from 'node:url';
 import { ejecutar, type J } from '../../lib/flujo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const NUEVO = readFileSync(join(aqui, '../../../../Flujos/src/core/medios/preparar-imagen.js'), 'utf8');
+const CARPETA = join(aqui, '../../../../Flujos/src/core/medios');
+// Como en el flujo: el reconocimiento por titular va PRIMERO y `Preparar imagen` despues, en el mismo nodo.
+const NUEVO = readFileSync(join(CARPETA, 'anuncio-por-titular.js'), 'utf8') + '\n'
+  + readFileSync(join(CARPETA, 'preparar-imagen.js'), 'utf8');
 const ANTERIOR = readFileSync(join(aqui, 'preparar-imagen.anterior.js'), 'utf8');
 
 const ENT: J = { from: '5917' + '0000001', userInput: '[imagen]', leyendaDelMedio: 'hola' };
 const gemini = (texto: string): J => ({ content: { parts: [{ text: texto }] } });
-const correr = (codigo: string, salida: J, pagoTarde = false): J => {
-  const cfg: J = pagoTarde ? { senaVencidaHaceMin: '30' } : {};
+const correr = (codigo: string, salida: J, pagoTarde = false, anuncios?: unknown): J => {
+  const cfg: J = { ...(pagoTarde ? { senaVencidaHaceMin: '30' } : {}), ...(anuncios === undefined ? {} : { anuncios }) };
   const r = ejecutar(codigo, [salida], { 'Normalizar entrada': [ENT], 'Config del negocio': [cfg] });
   expect(r).toHaveLength(1);
   return r[0] as J;
 };
-const nuevo = (o: J | string, pagoTarde = false): J => correr(NUEVO, gemini(typeof o === 'string' ? o : JSON.stringify(o)), pagoTarde);
+const nuevo = (o: J | string, pagoTarde = false, anuncios?: unknown): J => correr(NUEVO, gemini(typeof o === 'string' ? o : JSON.stringify(o)), pagoTarde, anuncios);
 const desc = (descripcion: unknown, categoria = 'foto'): J => nuevo({ categoria, descripcion });
 
 describe('compatibilidad con la versión anterior (diferencial)', () => {
@@ -48,7 +51,8 @@ describe('compatibilidad con la versión anterior (diferencial)', () => {
           const a = correr(ANTERIOR, e, pagoTarde);
           const n = correr(NUEVO, e, pagoTarde);
           expect(n['descripcionMedio']).toBe('');
-          const { descripcionMedio: _d, ...resto } = n;
+          expect(n['anuncioMedio']).toBe('');
+          const { descripcionMedio: _d, anuncioMedio: _a, ...resto } = n;
           expect(resto).toEqual(a);
         });
       }
@@ -57,8 +61,9 @@ describe('compatibilidad con la versión anterior (diferencial)', () => {
 
   it('{error}: igual que antes', () => {
     const a = correr(ANTERIOR, { error: 'fallo' });
-    const { descripcionMedio, ...resto } = correr(NUEVO, { error: 'fallo' });
+    const { descripcionMedio, anuncioMedio, ...resto } = correr(NUEVO, { error: 'fallo' });
     expect(descripcionMedio).toBe('');
+    expect(anuncioMedio).toBe('');
     expect(resto).toEqual(a);
     expect(resto['categoriaMedio']).toBe('otro');
   });

@@ -274,8 +274,9 @@ describe('4. Los dos «Preparar …» son el MISMO módulo que en reservas, y en
     const a = JSON.parse(readFileSync(join(CARPETA_FLUJOS, 'manifiestos/demo-a-agendamiento.json'), 'utf8')) as
       { codigo: Record<string, string> };
     for (const n of ['Preparar transcripción', 'Preparar imagen']) {
-      expect(manifiesto.codigo[n]).toBe(a.codigo[n]);
-      expect(codigoDe(f, n) + '\n').toBe(readFileSync(join(CARPETA_FLUJOS, 'src', manifiesto.codigo[n]!), 'utf8'));
+      expect(manifiesto.codigo[n]).toEqual(a.codigo[n]);
+      expect(codigoDe(f, n) + '\n').toBe([manifiesto.codigo[n]!].flat()
+        .map((r) => readFileSync(join(CARPETA_FLUJOS, 'src', r), 'utf8')).join(''));
     }
   });
 
