@@ -447,6 +447,13 @@ function raSinConfiguracion(panel) {
 function raHablaDelCobro(n) {
   return raHablaDePagar(n) || /\b(qr|monto|como (te |lo |le )?(pago|pagar|pagas)|donde (pago|pagar|deposito)|voy a pagar|pagarlo|pagarla|lo pago|la pago|ya pago|pago ahora|pago ahorita|ahorita (lo |la )?pago)\b/.test(String(n || ''));
 }
+// UN PEDIDO DE BAJA («no me escribas más», «ya no me escriban», «no me escribás», «dame de baja», «stop»): la misma expresión acotada a PETICIONES de «Reportar mensaje (entrante)» (revisión de #584; tú, usted, ustedes y voseo; el relato de un tercero y «no me escribiste el precio» no cuentan).
+// Una prueba exige que sea LITERALMENTE la del nodo. Quien pide la baja recibe un texto fijo de confirmación y nada más: ni el modelo, ni la invitación a pagar, ni botones de producto, ni aviso a Antonio. El reporte `no_contactar` ya viaja con el entrante.
+const RA_BAJA = /(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?(?:escrib(?:a|as|an|ais|is)|contact(?:e|es|en)|moleste[sn]?)\b|(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?llam(?:e|es|en)\b(?! la atencion)|(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?(?:mand|envi)(?:e|es|en)\b(?= (?:mas|mensajes|nada mas)\b|\W*$|,? por favor)|(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?vuelv(?:a|as|an) a (?:escribir|llamar|contactar|mandar)(?:me|nos)?\b|\bno quiero (?:que (?:me|nos) (?:escrib|contact|mand|llam|molest)(?:a|as|an|e|es|en)\b|recibir (?:mas )?mensajes\b|mas mensajes\b)|(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?sig(?:a|as|an) escribiendo\b|(?<!\bno )\bdej(?:a|as|e|es|en|ame|eme|enme)\b(?: me)? de (?:escribir|mandar|molestar|llamar|contactar)(?![^]*\b(?:dice|dijo|dicen)\b)|\b(?:dar|darme|dame|deme|denme) de baja\b(?! (?:el|la|los|las|un|una|mi|mis|a)\b)|(?:^|\s)(?:borr|quit|elimin|saqu)(?:a|e|en)(?:me|nos)(?: de (?:la lista|aqui|sus contactos|tu lista|su lista|esta lista)\b|(?: por favor)?\W*$)|^\W*stop(?: por favor)?\W*$/i;
+function raPideBaja(texto) {
+  return RA_BAJA.test(String(texto === undefined || texto === null ? '' : texto).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' '));
+}
+const RA_TEXTO_BAJA = 'Entendido, tomé nota de que no quieres recibir más mensajes. Si más adelante necesitas algo, escríbeme cuando quieras.';
 // Pide un producto («quiero el pack», «dame el libro», «lo compro»): con un QR abierto recibe el recordatorio (un solo QR a la vez; un pedido = un producto).
 function raPideProducto(n) {
   if (/\b(saber|conocer|informacion|entender|preguntar|consultar|curiosear)\b/.test(n)) return false;

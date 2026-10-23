@@ -214,6 +214,9 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
       m.monto = monto;
       pedidoNuevo = { producto: plan.producto };
     }
+  } else if (tipoDePlan === 'baja') {
+    // Un pedido de baja: solo la confirmación (sin invitación a pagar, sin botones, sin aviso).
+    m = texto(RA_TEXTO_BAJA);
   } else if (tipoDePlan === 'qr_pendiente') {
     m = texto(raTextoQrPendiente(plan.producto, plan.monto, fichaAntes.ultimoHash, nom));
   } else if (tipoDePlan === 'cobro_cerrado') {
@@ -250,7 +253,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
 // NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS (PR-D, [D]; core `no-repetir`): si lo que sale es idéntico (por hash) a lo último que se le envió a este teléfono, sale una alternativa fija (con el botón de Antonio). Una derivación por cancelación o sin configuración repetida NO usa la alterna de contenido (no tiene sentido ahí): sale el texto de «Antonio ya recibió tu aviso anterior» y solo si también fuera idéntico, la alterna. Quedan EXENTOS el QR (su pie
 // lleva el pedido), el resultado de un comprobante (cada comprobante es un hecho distinto), la protección ante violencia o miedo (su texto fijo y breve nunca se sustituye), el texto a un número extranjero y lo que
 // contiene la presentación del asistente (qué ES: nunca se sustituye). Es el MISMO mensaje: no agrega ni quita ninguno.
-if (m && puerta.ruta === 'sigue' && m.tipoReporte !== 'image' && ['comprobante', 'riesgo', 'fuera_pais', 'imagen_descrita'].indexOf(tipoDePlan) < 0 && !/asistente virtual/i.test(String(m.texto || '')) && fichaAntes.ultimoHash !== '' && ctHashTexto(m.texto) === fichaAntes.ultimoHash) {
+if (m && puerta.ruta === 'sigue' && m.tipoReporte !== 'image' && ['comprobante', 'riesgo', 'fuera_pais', 'imagen_descrita', 'baja'].indexOf(tipoDePlan) < 0 && !/asistente virtual/i.test(String(m.texto || '')) && fichaAntes.ultimoHash !== '' && ctHashTexto(m.texto) === fichaAntes.ultimoHash) {
   const medio = /^(audio|imagen|otro|archivo)/.test(tipoDePlan);
   const motivoDeriva = tipoDePlan === 'derivar' ? String(plan.motivo || '') : '';
   const repetidoDeriva = motivoDeriva === 'cancelacion' || motivoDeriva === 'sin_configuracion' ? raTextoDerivacion(motivoDeriva, 'repetido', plan.clave, base) : '';

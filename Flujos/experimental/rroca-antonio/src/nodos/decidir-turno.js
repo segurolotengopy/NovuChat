@@ -17,6 +17,7 @@
 //   comprobante    el resultado del cotejo traducido por `cbResultadoVenta`;
 //   derivar        pasa a Antonio (factura, otro medio de pago, garantía, reclamo, una persona; producto agotado; sin QR utilizable; «cancela mi pedido» con un QR abierto: `cancelacion`; SIN CONFIGURACIÓN del negocio: `sin_configuracion`): aviso + botón;
 //   resultado      «¿me garantiza recuperar mi relación?»: frase fija;
+//   baja           «no me escribas más»: texto fijo de confirmación, sin modelo, sin invitación a pagar, sin botones y sin aviso (el `no_contactar` viaja con el entrante);
 //   modelo         una conversación libre: llama al modelo (memoria de 15 mensajes) con un `modo` (`charla` | `antes` | `puente` | `opciones`) que viaja como línea del sistema (`[MODO_TURNO: …]`);
 //   imagen_otra, audio_fijo, otro   respuestas fijas a lo que no es un comprobante ni texto. `audio_fijo` también cubre una nota de voz CORTA o ininteligible (menos de 3 palabras): se pide repetirla; el modelo nunca la contesta.
 //
@@ -114,6 +115,10 @@ if (!(esVisual && categoriaMedio === 'comprobante') && (ficha.riesgo || raEsRies
   // `nuevo`: el riesgo se activa AHORA (no lo traía la ficha) y no lo dijo el texto escrito: «¿Avisar al servidor?» reporta `no_contactar` una sola vez, antes de armar el mensaje (un audio, una imagen o el pie ya viajan por su vía).
   return salir({ tipo: 'riesgo', aviso: null, cat: cat, nuevo: ficha.riesgo !== true });
 }
+
+// 1a. UN PEDIDO DE BAJA («no me escribas más», «ya no me escriban», «no me escribás»), con o sin QR abierto: un texto fijo corto de confirmación y NADA más —ni el modelo, ni la invitación a pagar, ni botones de producto, ni aviso a Antonio—.
+//     El `no_contactar` ya viaja con el reporte del entrante. El QR abierto queda como está (no se cancela solo). Va justo después de la protección y ANTES de la configuración, los medios, los botones y el cobro con el QR abierto: quien pidió la baja no recibe nada más.
+if (raPideBaja(textoCliente)) return salir({ tipo: 'baja', cat: cat });
 
 // 1b. Lo que no necesita la configuración del negocio: una nota de voz que no se pudo usar (o que es corta o ininteligible: se pide repetirla, nunca la contesta el modelo) y lo que este canal no lee.
 //     (La nota de voz corta con una intención clara —«hola», «quiero el pack»— no llega aquí: la atiende el código más abajo.)

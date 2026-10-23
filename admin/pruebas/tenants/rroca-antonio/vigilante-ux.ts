@@ -9,7 +9,7 @@
  *   5. NINGUNA PREGUNTA POR OPCIONES SIN BOTONES: un texto que pregunta por «las opciones», «¿cuál prefieres?» o «¿con cuál…?» sale con al menos un botón o una lista en ese mismo mensaje;
  *   6. LÍMITES DE WHATSAPP: título de botón ≤ 20 caracteres, de fila de lista ≤ 24, a lo más 3 botones; y NINGUNA clave `link` en ningún payload (el QR sale por `id` de medio).
  * PR-D (22/10/2026):
- *   7. NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS a un teléfono (exentos: el QR, el resultado de un comprobante, la protección ante violencia o miedo, el texto a un número extranjero y la presentación);
+ *   7. NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS a un teléfono (exentos: el QR, el resultado de un comprobante, la protección ante violencia o miedo, la confirmación de una baja, el texto a un número extranjero y la presentación);
  *   8. CON UN QR ABIERTO (el servidor dice `cobro.pendiente`) no hay un segundo QR ni botones de producto en ningún mensaje: solo texto plano (el botón de Antonio va solo al derivar, invariante 13);
  *   9. SIN CONFIGURACIÓN (el panel falló o no trae catálogo) no hay montos, ni QR, ni botones de producto, y el modelo no contesta;
  *  10. EL FLUJO NO PROMETE IMÁGENES: ningún texto dice «te envío/muestro/comparto» una foto, imagen, captura o la portada;
@@ -64,7 +64,7 @@ export function violacionesDeParrafos(cuerpo: string): string[] {
 /** ¿Este mensaje contiene la presentación del asistente (la frase de presentación o el saludo largo)? */
 export const esPresentacion = (cuerpo: string): boolean => /soy el asistente virtual|qu[eé] gusto saludarte/i.test(cuerpo);
 /** Los planes que resuelven (no derivan): jamás llevan el botón de contacto de Antonio. El de `comprobante` depende del resultado y no se vigila aquí. */
-export const PLANES_SIN_BOTON = ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo', 'precio', 'catalogo', 'imagenes', 'resultado', 'menu', 'bonos', 'complemento', 'qr', 'qr_pendiente', 'imagen_descrita', 'imagen_otra', 'audio_fijo', 'archivo', 'otro', 'riesgo', 'suspendido'];
+export const PLANES_SIN_BOTON = ['baja', 'saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo', 'precio', 'catalogo', 'imagenes', 'resultado', 'menu', 'bonos', 'complemento', 'qr', 'qr_pendiente', 'imagen_descrita', 'imagen_otra', 'audio_fijo', 'archivo', 'otro', 'riesgo', 'suspendido'];
 /** Los planes que derivan a Antonio: siempre con el botón. */
 export const PLANES_CON_BOTON = ['derivar', 'consulta', 'cancelacion', 'sin_configuracion', 'fuera_pais', 'cobro_cerrado', 'cobro_ya_cerrado', 'uso_extendido'];
 /** ¿El mensaje lleva el botón que abre el chat de Antonio (`cta_url`)? */
@@ -95,7 +95,7 @@ export interface ContextoUx {
   nombresDelCatalogo?: string[];
 }
 /** Los mensajes EXENTOS del invariante 7, POR PLAN (no por palabras): el QR, el resultado del cotejo, la protección ante violencia o miedo y el texto a un número extranjero; y la presentación. */
-const PLANES_EXENTOS = ['qr', 'comprobante', 'riesgo', 'fuera_pais'];
+const PLANES_EXENTOS = ['qr', 'comprobante', 'riesgo', 'fuera_pais', 'baja'];
 const EXENTO_REPETIDO = (m: UxMsg, plan: string): boolean => m.tipo === 'image' || PLANES_EXENTOS.includes(plan) || esPresentacion(m.cuerpo);
 const TRIGGER_DE_OPCIONES = /precio|cu[aá]nto|cuesta|vale\b|cat[aá]logo|vend|lista|opciones|compr|pagar|pago|adquirir|llevo|pack|libro|workbook|calendario|preguntas|bono|^hola, (quiero|me interesa)|garant|resultado|imagen|foto/i;
 export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, transcripcion = '', ctx: ContextoUx = {}): string[] {
