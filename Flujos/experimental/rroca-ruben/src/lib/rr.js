@@ -272,6 +272,10 @@ function rrFichaVigente(f, ahoraMs) {
     // LA ÚLTIMA PREGUNTA (22/10/2026): la última oración interrogativa del último texto enviado y cuándo; sirve para entender un «Sí» o un «No» suelto. Patrón estricto y vigente 30 minutos; si no, se descarta junto con su hora.
     ultimaPregunta: preguntaVale ? f.ultimaPregunta : '',
     ultimaPreguntaMs: preguntaVale ? preguntaMs : 0,
+    // ENTREGA 2 (23/10/2026): cuántos mensajes de CONVERSACIÓN se le enviaron (0 a 1000; lo cuenta «Armar mensajes» y solo cuenta lo que Meta aceptó), si ya pidió precios u opciones y si ya vio el bloque de opciones.
+    charlaN: f && Number.isFinite(f.charlaN) && f.charlaN > 0 ? Math.min(Math.floor(f.charlaN), 1000) : 0,
+    pidioOpciones: !!f && f.pidioOpciones === true,
+    opcionesVistas: !!f && f.opcionesVistas === true,
   };
 }
 // Hash corto (djb2 sobre el texto normalizado) para comparar textos enviados; no es criptográfico ni se usa para nada de seguridad.
@@ -415,7 +419,7 @@ function rrEnmascarar(t) {
     .replace(/\+?\d(?:(?:\s*[.\-]\s*|\s+)?\d){6,}/g, '[número]')
     .replace(/\s+/g, ' ').trim();
 }
-const RR_ETIQUETA_BOTON = { b_pack: 'Pack Completo', b_libro: 'Libro + Bonos', b_comp: 'Ver complementos', b_closer: 'Closer', b_videos: 'Videos', b_precios: 'Ver precios', b_info: 'Más información', b_ruben: 'Hablar con Rubén' };
+const RR_ETIQUETA_BOTON = { b_pack: 'Pack Completo', b_libro: 'Libro + Bonos', b_comp: 'Ver complementos', b_closer: 'Closer', b_videos: 'Videos', b_precios: 'Ver precios', b_info: 'Más información', b_ruben: 'Hablar con Rubén', b_opciones: 'Ver opciones' };
 // La entrada 'u' del turno. `t` = la salida de «Interpretar entrada». Los corchetes del cliente pasan a paréntesis: los [ ] solo los pone el código.
 function rrEntradaCliente(t) {
   const x = t && typeof t === 'object' ? t : {};
@@ -431,10 +435,10 @@ function rrEntradaAsistente(texto) { return rrAcotar(rrEnmascarar(texto)); }
 // El catálogo: 4 productos. El PRECIO sale del catálogo de la consola (documento `catalogo/<catId>`); aquí solo viven el id, el nombre y lo que incluye.
 // =============================================================================
 const RR_PRODUCTOS = {
-  pack: { catId: 'pack-completo', nombre: 'el Pack Completo', incluye: 'libro + 4 bonos + Closer de Ventas + curso de videos con IA', boton: 'b_pack' },
-  libro: { catId: 'libro-bonos', nombre: 'el libro «IA para Emprendedores Independientes» con sus 4 bonos', incluye: '', boton: 'b_libro' },
-  closer: { catId: 'closer-ventas', nombre: 'el Prompt Maestro de Cierre de Ventas (Closer)', incluye: '', boton: 'b_closer' },
-  videos: { catId: 'videos-ia', nombre: 'los videos tutoriales para crear contenido con IA', incluye: '', boton: 'b_videos' },
+  pack: { catId: 'pack-completo', nombre: 'el Pack Completo', incluye: 'libro + 4 bonos + Closer de Ventas + curso de videos con IA', llevas: 'el Pack Completo (Libro + 4 bonos + Closer de Ventas + Curso de Videos con IA)', boton: 'b_pack' },
+  libro: { catId: 'libro-bonos', nombre: 'el libro «IA para Emprendedores Independientes» con sus 4 bonos', incluye: '', llevas: 'el libro «IA para Emprendedores Independientes» con sus 4 bonos', boton: 'b_libro' },
+  closer: { catId: 'closer-ventas', nombre: 'el Prompt Maestro de Cierre de Ventas (Closer)', incluye: '', llevas: 'el Closer de Ventas (Prompt Maestro de Cierre)', boton: 'b_closer' },
+  videos: { catId: 'videos-ia', nombre: 'los videos tutoriales para crear contenido con IA', incluye: '', llevas: 'el curso «Crea videos con IA»', boton: 'b_videos' },
 };
 const RR_BOTON_COMPLEMENTOS = 'b_comp';
 // Los dos botones del saludo: «Ver precios» abre el menú de productos; «Más información» explica por código qué incluye el libro (Silvana, 20/10/2026: Rubén es un recurso solo para casos críticos y NO se ofrece
@@ -442,6 +446,8 @@ const RR_BOTON_COMPLEMENTOS = 'b_comp';
 const RR_BOTON_PRECIOS = 'b_precios';
 const RR_BOTON_INFO = 'b_info';
 const RR_BOTON_HABLAR = 'b_ruben';
+// ENTREGA 2 (23/10/2026): el botón del puente («¿Te muestro las opciones?»): no lleva precio; al tocarlo (o con un «sí» suelto) el código muestra las opciones. DECISIÓN DE UX PENDIENTE (Andres o Silvana): la alternativa es no ponerlo.
+const RR_BOTON_OPCIONES = 'b_opciones';
 const RR_PRODUCTO_DE_BOTON = { b_pack: 'pack', b_libro: 'libro', b_closer: 'closer', b_videos: 'videos' };
 const RR_VENTANA_AVISO_CONSULTA_MS = 30 * 60 * 1000;   // a lo más un aviso de consulta a Rubén por teléfono Y POR MOTIVO en esta ventana
 // La ventana de servicio de Meta es de 24 h desde el último mensaje de Rubén al número; se deja un margen de media hora: dentro va texto libre, fuera va plantilla.
@@ -691,18 +697,27 @@ function rrEsPreguntaLibre(texto, n) {
 // Los menús de botones (máximo 3, título de hasta 20 caracteres). Un botón que el cliente ya pulsó NO reaparece; un producto sin precio en el catálogo no se ofrece.
 // -----------------------------------------------------------------------------
 function rrBoton(id, titulo) { return { id: id, title: cbLinea(titulo, 20) }; }
+// La etiqueta de un botón con precio, como en el PDF modelo: «Pack Completo 60Bs» (sin espacio antes de «Bs», sin emojis). Nunca pasa de 20 caracteres y conserva el «NNBs»: si no cabe, se recortan palabras del nombre.
+function rrEtiquetaConPrecio(nombre, monto) {
+  const sufijo = ' ' + cbMonto(monto) + 'Bs';
+  const palabras = cbLinea(nombre, 40).split(' ').filter((w) => w !== '');
+  while (palabras.length > 1 && (palabras.join(' ') + sufijo).length > 20) palabras.pop();
+  let n = palabras.join(' ');
+  if ((n + sufijo).length > 20) n = n.slice(0, Math.max(0, 20 - sufijo.length)).trimEnd();
+  return (n + sufijo).trim();
+}
 function rrMenu(cual, cat, usados) {
   const u = Array.isArray(usados) ? usados : [];
   const con = (k) => typeof rrPrecio(cat, k) === 'number';
-  const t = (k, pref) => pref + ' ' + rrMontoBs(rrPrecio(cat, k));
+  const t = (k, pref) => rrEtiquetaConPrecio(pref, rrPrecio(cat, k));
   const b = [];
   if (cual === 1) {
     if (con('pack')) b.push(rrBoton('b_pack', t('pack', 'Pack Completo')));
     if (con('libro')) b.push(rrBoton('b_libro', t('libro', 'Libro + Bonos')));
-    if (con('closer') || con('videos')) b.push(rrBoton(RR_BOTON_COMPLEMENTOS, 'Ver complementos'));
+    if (con('closer') || con('videos')) b.push(rrBoton(RR_BOTON_COMPLEMENTOS, 'Ver Complementos'));
   } else {
-    if (con('closer')) b.push(rrBoton('b_closer', t('closer', 'Closer')));
-    if (con('videos')) b.push(rrBoton('b_videos', t('videos', 'Videos')));
+    if (con('closer')) b.push(rrBoton('b_closer', t('closer', 'Closer Ventas')));
+    if (con('videos')) b.push(rrBoton('b_videos', t('videos', 'Videos con IA')));
     if (con('pack')) b.push(rrBoton('b_pack', t('pack', 'Mejor el Pack')));
   }
   return b.filter((x) => u.indexOf(x.id) < 0).slice(0, 3);
@@ -711,8 +726,8 @@ function rrMenu(cual, cat, usados) {
 function rrMenuDeComplemento(producto, cat, usados) {
   const u = Array.isArray(usados) ? usados : [];
   const b = [];
-  if (typeof rrPrecio(cat, producto) === 'number') b.push(rrBoton(RR_PRODUCTOS[producto].boton, (producto === 'closer' ? 'Closer ' : 'Videos ') + rrMontoBs(rrPrecio(cat, producto))));
-  if (typeof rrPrecio(cat, 'pack') === 'number') b.push(rrBoton('b_pack', 'Mejor el Pack ' + rrMontoBs(rrPrecio(cat, 'pack'))));
+  if (typeof rrPrecio(cat, producto) === 'number') b.push(rrBoton(RR_PRODUCTOS[producto].boton, rrEtiquetaConPrecio(producto === 'closer' ? 'Closer Ventas' : 'Videos con IA', rrPrecio(cat, producto))));
+  if (typeof rrPrecio(cat, 'pack') === 'number') b.push(rrBoton('b_pack', rrEtiquetaConPrecio('Mejor el Pack', rrPrecio(cat, 'pack'))));
   return b.filter((x) => u.indexOf(x.id) < 0);
 }
 
@@ -762,12 +777,53 @@ const RR_CAPITULOS = ['La mentalidad del emprendedor aumentado por IA', 'Cómo f
 // `tema`: 'info' (el botón «Más información», o «qué incluye»), 'bonos' o 'capitulos'. `conOpciones === false`: no hay botones que ofrecer, y el texto no cierra con una pregunta por opciones.
 function rrTextoInfo(tema, conOpciones) {
   const bonos = RR_BONOS.map((b, i) => (i + 1) + ') ' + b).join('\n');
-  const cierre = conOpciones === false ? '' : '\n\n¿Qué opción prefieres?';
+  // ENTREGA 2: `conOpciones === 'charla'` (aún no se muestran opciones de compra): cierra con una pregunta de conversación, nunca «¿Qué opción prefieres?» sin botones.
+  const cierre = conOpciones === 'charla' ? '\n\n' + RR_PREGUNTA_INFO_CHARLA : (conOpciones === false ? '' : '\n\n¿Qué opción prefieres?');
   if (tema === 'bonos') return 'Estos son los 4 bonos que trae el libro:\n\n' + bonos + cierre;
   if (tema === 'capitulos') return 'El libro tiene 12 capítulos, paso a paso:\n\n' + RR_CAPITULOS.map((c, i) => (i + 1) + '. ' + c).join('\n') + cierre;
   return 'El libro «IA para Emprendedores Independientes» tiene 12 capítulos y más de 230 páginas, es 100% digital y está pensado para quien no sabe de tecnología.\n\nAdemás trae 4 bonos:\n\n' + bonos + cierre;
 }
 const RR_PREGUNTA_CONSULTA = '¿Qué duda tienes sobre el libro?';
+// ENTREGA 2 (23/10/2026): LA CONVERSACIÓN ANTES DE LAS OPCIONES. Antes de mostrar un precio o un catálogo hay al menos DOS mensajes de conversación (el saludo cuenta como uno); el contador vive en la ficha (`charlaN`).
+// El «puente» es el mensaje que, cuando el cliente pidió precios demasiado pronto, aporta una idea y cierra con una pregunta FIJA del código («¿Te muestro las opciones?») respaldada por el botón «Ver opciones».
+// Los textos fijos del puente y de la charla existen para que un modelo caído no deje al cliente sin opciones para siempre. Ninguno lleva montos.
+const RR_CIERRE_PUENTE = '¿Te muestro las opciones?';
+const RR_TEXTOS_PUENTE = [
+  'Con gusto. Antes, una idea rápida: con el libro y su Biblioteca de 100 Prompts tienes ideas de contenido y respuestas para tus clientes en minutos, sin saber de tecnología.',
+  'Claro. Te cuento algo útil primero: el Checklist «IA en tu negocio en 7 días» te lleva de la mano desde cero, así que no necesitas experiencia previa.',
+];
+const RR_TEXTO_CHARLA_FIJA = 'Con gusto te ayudo a elegir.\n\n¿Me cuentas a qué te dedicas o qué te gustaría mejorar primero en tu negocio?';
+const RR_PREGUNTA_INFO_CHARLA = '¿Qué te gustaría lograr primero con la IA en tu negocio?';
+// El texto fijo del puente: la primera variante cuyo mensaje completo (con el cierre) no sea idéntico a lo último que se envió (`hashUltimo`).
+function rrTextoPuenteFijo(hashUltimo) {
+  return RR_TEXTOS_PUENTE.find((x) => rrHashTexto(x) !== hashUltimo && rrHashTexto(x + '\n\n' + RR_CIERRE_PUENTE) !== hashUltimo) || RR_TEXTOS_PUENTE[0];
+}
+// El bloque de las opciones: el ahorro del Pack lo CALCULA el código con los precios del catálogo y solo sale si el Pack está entre los botones.
+function rrTextoOpciones(cat, usados) {
+  const ahorro = rrAhorro(cat);
+  const hayPack = rrMenu(1, cat, usados).some((b) => b.id === 'b_pack');
+  return 'Te dejo aquí abajo las opciones para que elijas la que prefieras' + (hayPack && ahorro !== null ? ' (con el Pack Completo ahorras ' + rrMontoBs(ahorro) + ' sobre el precio por separado)' : '') + ':';
+}
+// Quita del texto del modelo toda oración interrogativa (la pregunta final, y cualquier otra: el sistema agrega la suya y NUNCA hay dos preguntas ni una pregunta antes de los botones). '' si no queda nada.
+function rrSinPreguntaFinal(texto) {
+  const bloques = rrTexto(texto).split('\n\n').map((bloque) => {
+    if (bloque.indexOf('\n') >= 0) return rrEsPregunta(bloque) ? '' : bloque;
+    return rrOraciones(bloque).filter((o) => o.indexOf('?') < 0).join(' ');
+  }).filter((b) => b.trim() !== '');
+  return bloques.join('\n\n').trim();
+}
+// Quita las oraciones que repiten la descripción del libro («12 capítulos», «230 páginas», «que pases de solo…»): el cliente ya la leyó en el saludo.
+function rrQuitarRepeticionDelLibro(texto) {
+  const bloques = rrTexto(texto).split('\n\n').map((bloque) => {
+    if (bloque.indexOf('\n') >= 0) return bloque;
+    return rrOraciones(bloque).filter((o) => !/\b12 capitulos\b|\b230 paginas\b|\bque pases de solo\b/.test(rrNorm(o))).join(' ');
+  }).filter((b) => b.trim() !== '');
+  return bloques.join('\n\n');
+}
+// «¿Cómo te pago?», «¿dónde pago?», «quiero pagar / comprar»: pide pagar (el QR), que antes de las opciones no existe.
+function rrPreguntaComoPagar(n) {
+  return /\b(como (te |lo |le )?(pago|pagar|pagas|compro|adquiero)|donde (pago|pagar)|quiero (comprar|pagar))\b/.test(n);
+}
 // Los textos que preguntan por «las opciones» salen SOLO con botones (solo se ofrece lo que se cumple): `conOpciones === false` usa la variante SIN esa pregunta.
 function rrTextoModeloCaido(conOpciones) { return conOpciones === false ? 'Gracias por escribir. ¿Quieres que te cuente qué incluye el libro?' : 'Gracias por escribir. ¿Quieres que te cuente qué incluye el libro o prefieres ver las opciones de compra?'; }
 function rrTextoIngresos(conOpciones) {
@@ -857,8 +913,9 @@ function rrPieQr(producto, monto, codigo, conPresentacion, simulado) {
     return (CB_ROTULO_SIMULADO + '\nElegiste ' + p.nombre + '. Total de la prueba: ' + m + (cod ? ' (pedido #' + cod + ')' : '') + '.\n'
       + 'No intentes pagarlo: tu banco lo va a rechazar. Para seguir con la prueba, envíame aquí cualquier foto como comprobante simulado.').slice(0, 1024);
   }
-  return ((conPresentacion ? RR_PRESENTACION + ' ' : '') + 'Elegiste ' + p.nombre + (p.incluye ? ' (' + p.incluye + ')' : '') + ' por ' + m + '. Escanea el QR: es de monto abierto, así que ingresa exactamente ' + m
-    + ' y después mándame aquí la captura del comprobante.' + (cod ? ' Pedido #' + cod + '.' : '')).slice(0, 1024);
+  // ENTREGA 2: el texto del PDF modelo («¡Genial! Te llevas…», «Aquí tienes el QR de pago…»), con «Pedido #X» al final por trazabilidad (Rubén lo ve en la consola).
+  return ((conPresentacion ? RR_PRESENTACION + ' ' : '') + '¡Genial! Te llevas ' + p.llevas + '.\n\nAquí tienes el QR de pago. Está con monto abierto, así que ingresa ' + m + ' en tu aplicación bancaria.\n\nApenas lo realices, envíame la captura del comprobante por aquí mismo 😊'
+    + (cod ? '\n\nPedido #' + cod + '.' : '')).slice(0, 1024);
 }
 function rrTextoQrPendiente(producto, monto) {
   const p = producto && RR_PRODUCTOS[producto] ? RR_PRODUCTOS[producto].nombre : 'tu pedido';

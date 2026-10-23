@@ -359,7 +359,7 @@ describe('SIN CONFIGURACIÓN · no se improvisa: texto honesto, aviso (solo si s
     expect(s.cuerpo).toMatch(/asistente virtual de Rubén/);
     const q = unico(hablar(w, ANA, mTexto(PACK)));
     expect(q.tipo).toBe('image');
-    expect(q.cuerpo).toMatch(/ingresa exactamente 60 Bs/);
+    expect(q.cuerpo).toMatch(/ingresa 60 Bs/);
     expect(eventosQr(w)).toHaveLength(1);
     const c = unico(hablar(w, BETO, mTexto('dame tu catálogo')));
     expect(c.cuerpo).not.toMatch(SIN_CONFIG);

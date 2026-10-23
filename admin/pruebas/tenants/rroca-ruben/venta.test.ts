@@ -256,7 +256,7 @@ describe('los 5 mensajes prellenados de la landing', () => {
     expect(m.payload['image']).toEqual({ id: MEDIA_QR, caption: m.cuerpo });
     expect(m.cuerpo).toMatch(/^Hola, soy el asistente virtual de Rubén\./);
     expect(m.cuerpo).toMatch(/Pack Completo/);
-    expect(m.cuerpo).toMatch(/ingresa exactamente 60 Bs/);
+    expect(m.cuerpo).toMatch(/ingresa 60 Bs/);
     expect(m.cuerpo).toMatch(/captura del comprobante/);
     const ev = eventosQr(w);
     expect(ev).toHaveLength(1);
@@ -268,7 +268,7 @@ describe('los 5 mensajes prellenados de la landing', () => {
   it('2 · Libro + 4 bonos: el QR de 32 Bs', () => {
     const w = crear();
     const m = unico(pedirQr(w, 'libro'));
-    expect(m.cuerpo).toMatch(/ingresa exactamente 32 Bs/);
+    expect(m.cuerpo).toMatch(/ingresa 32 Bs/);
     expect(eventosQr(w)[0]).toMatchObject({ monto: 32, reglaCobro: 2 });
   });
 
@@ -277,7 +277,7 @@ describe('los 5 mensajes prellenados de la landing', () => {
     const t = hablar(w, ANA, mTexto(PRELLENADOS.closer));
     const m = unico(t);
     expect(m.tipo).toBe('interactive');
-    expect(titulos(m)).toEqual(['Closer 20 Bs', 'Mejor el Pack 60 Bs']);
+    expect(titulos(m)).toEqual(['Closer Ventas 20Bs', 'Mejor el Pack 60Bs']);
     expect(m.cuerpo).toMatch(/ahorras 17 Bs/);
     expect(eventosQr(w)).toHaveLength(0);
     // El ahorro es del catálogo: si cambia un precio, cambia el texto.
@@ -287,7 +287,7 @@ describe('los 5 mensajes prellenados de la landing', () => {
 
   it('4 · Videos: dos botones, «Videos 25 Bs» y «Mejor el Pack 60 Bs»', () => {
     const t = hablar(crear(), ANA, mTexto(PRELLENADOS.videos));
-    expect(titulos(unico(t))).toEqual(['Videos 25 Bs', 'Mejor el Pack 60 Bs']);
+    expect(titulos(unico(t))).toEqual(['Videos con IA 25Bs', 'Mejor el Pack 60Bs']);
   });
 
   it('5 · Consulta: el saludo corto del asistente virtual con su pregunta y los dos botones, sin QR y sin modelo', () => {
@@ -314,7 +314,7 @@ describe('los 5 mensajes prellenados de la landing', () => {
       expect(botones(m).length).toBeLessThanOrEqual(3);
       for (const t of titulos(m)) expect(t.length).toBeLessThanOrEqual(20);
     }
-    expect(titulos(ms[0]!)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+    expect(titulos(ms[0]!)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
   });
 });
 
@@ -323,7 +323,7 @@ describe('el QR: el monto es el del catálogo, y solo hay 4 productos', () => {
     for (const monto of ['1 Bs', '999 Bs', '0 Bs']) {
       const w = crear();
       const m = unico(hablar(w, ANA, mTexto(`Hola Rubén, quiero el Pack Completo: libro + 4 bonos (${monto})`)));
-      expect(m.cuerpo).toMatch(/ingresa exactamente 60 Bs/);
+      expect(m.cuerpo).toMatch(/ingresa 60 Bs/);
       expect(m.cuerpo).not.toMatch(new RegExp(`(^|\\D)${monto.replace(' ', ' ')}`));
       expect(eventosQr(w)[0]).toMatchObject({ monto: 60 });
     }
@@ -333,9 +333,9 @@ describe('el QR: el monto es el del catálogo, y solo hay 4 productos', () => {
     const w = crear({ catalogo: CATALOGO.map((i) => (i.id === 'pack-completo' ? { ...i, precio: 65 } : i)) });
     hablar(w, ANA, mTexto('hola'));
     const t = hablar(w, ANA, mTexto('cuéntame del libro'));
-    expect(titulos(unico(t))[0]).toBe('Pack Completo 65 Bs');
+    expect(titulos(unico(t))[0]).toBe('Pack Completo 65Bs');
     const m = unico(hablar(w, ANA, mBoton('b_pack')));
-    expect(m.cuerpo).toMatch(/exactamente 65 Bs/);
+    expect(m.cuerpo).toMatch(/ingresa 65 Bs/);
     expect(eventosQr(w)[0]).toMatchObject({ monto: 65 });
   });
 
@@ -515,7 +515,7 @@ describe('la conversación: el modelo solo conversa', () => {
     const w = crear();
     hablar(w, ANA, mTexto('Hola'));
     const p = unico(hablar(w, ANA, mBoton('b_precios')));
-    expect(titulos(p)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+    expect(titulos(p)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
     expect(ids(p)).not.toContain('b_precios');
     const w2 = crear();
     hablar(w2, BETO, mTexto('Hola'));
@@ -633,16 +633,16 @@ describe('la conversación: el modelo solo conversa', () => {
     const w = crear();
     hablar(w, ANA, mTexto('hola')); // el primer mensaje no lleva montos: el menú de productos va ya saludado
     const m1 = unico(hablar(w, ANA, mTexto('cuéntame del libro')));
-    expect(titulos(m1)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+    expect(titulos(m1)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
     const m2 = unico(hablar(w, ANA, mBoton('b_comp')));
-    expect(titulos(m2)).toEqual(['Closer 20 Bs', 'Videos 25 Bs', 'Mejor el Pack 60 Bs']);
+    expect(titulos(m2)).toEqual(['Closer Ventas 20Bs', 'Videos con IA 25Bs', 'Mejor el Pack 60Bs']);
     const m3 = unico(hablar(w, ANA, mTexto('y qué más trae?')));
-    expect(titulos(m3)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs']);
+    expect(titulos(m3)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs']);
     // El cliente toca «Libro + Bonos»: se abre su QR; cuando venza, el menú ya no lo ofrece.
     expect(unico(hablar(w, ANA, mBoton('b_libro'))).tipo).toBe('image');
     w.cobro.pendiente = false;
     const m4 = unico(hablar(w, ANA, mTexto('gracias, lo pienso'), { avanzarMin: 20 }));
-    expect(titulos(m4)).toEqual(['Pack Completo 60 Bs']);
+    expect(titulos(m4)).toEqual(['Pack Completo 60Bs']);
   });
 
   it('INVARIANTE: en toda una charla larga, ningún botón ya pulsado vuelve a aparecer en un menú', () => {
@@ -1048,7 +1048,7 @@ describe('revisión del PR-2: la guarda del QR se libera al resolverse el compro
       expect(m.cuerpo, siguiente).not.toMatch(qrAbierto);
       if (siguiente === 'boton') {
         expect(m.tipo).toBe('image');
-        expect(m.cuerpo).toMatch(/ingresa exactamente 20 Bs/);
+        expect(m.cuerpo).toMatch(/ingresa 20 Bs/);
       }
     }
   });
@@ -1096,7 +1096,7 @@ describe('revisión del PR-2: la guarda del QR se libera al resolverse el compro
     const w = conQr3();
     w.cobro.pendiente = false;
     const m = unico(hablar(w, ANA, mTexto('gracias, lo pienso'), { avanzarMin: 20 }));
-    expect(titulos(m)).toEqual(['Pack Completo 60 Bs', 'Ver complementos']);
+    expect(titulos(m)).toEqual(['Pack Completo 60Bs', 'Ver Complementos']);
   });
 });
 
@@ -1823,7 +1823,7 @@ describe('PRECIO POR CÓDIGO (20/10/2026): el precio sale del catálogo, nunca d
       const m = unico(hablar(w, ANA, mTexto(pregunta)));
       expect(m.cuerpo).toContain(esperado);
       expect(llamadas()).toBe(0);
-      expect(titulos(m)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+      expect(titulos(m)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
       expect(m.cuerpo).not.toMatch(/p[aá]gina|sitio|\bweb\b|seg[uú]n tu pa[ií]s|var[ií]an/i);
       expect(sinExento(m.cuerpo)).not.toMatch(PROHIBIDAS);
     });
@@ -1849,7 +1849,7 @@ describe('PRECIO POR CÓDIGO (20/10/2026): el precio sale del catálogo, nunca d
     const { w } = sinModelo();
     hablar(w, ANA, mTexto('cuánto cuesta el libro'));
     const precios = unico(hablar(w, ANA, mBoton('b_precios')));
-    expect(titulos(precios)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+    expect(titulos(precios)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
     expect(precios.cuerpo).not.toMatch(/asistente/i);
     for (const [pregunta, esperado] of [['precio', 'Pack Completo 60 Bs'], ['precios', 'Pack Completo 60 Bs'], ['cuánto cuesta', 'Pack Completo 60 Bs'], ['cuánto cuesta el libro', '32 Bs']] as const) {
       // Un mundo por pregunta: el mismo texto no sale dos veces seguidas.
@@ -1868,7 +1868,7 @@ describe('PRECIO POR CÓDIGO (20/10/2026): el precio sale del catálogo, nunca d
     expect(otra.cuerpo).toBe('¿Qué duda tienes sobre el libro?');
     const viejo = unico(hablar(w, ANA, mBoton('b_viejo')));
     expect(viejo.cuerpo).not.toMatch(/asistente|Qué gusto|negocio actualmente/i);
-    expect(titulos(viejo)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+    expect(titulos(viejo)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
     // Un botón desconocido como PRIMER mensaje sí recibe el saludo.
     expect(unico(hablar(crear(), BETO, mBoton('b_viejo'))).cuerpo).toMatch(/asistente virtual/);
   });
@@ -2579,7 +2579,7 @@ describe('RONDA FINAL (20/10/2026) · el primer mensaje nunca lleva montos; nunc
     expect(titulos(m)).toEqual(['Más información']);
     const w2 = crear();
     hablar(w2, ANA, mTexto('hola'));
-    expect(titulos(unico(hablar(w2, ANA, mTexto('¿me garantizas ganar dinero?'))))).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+    expect(titulos(unico(hablar(w2, ANA, mTexto('¿me garantizas ganar dinero?'))))).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
   });
 
   it('un botón «Ver precios» que llega como PRIMER mensaje (un chat viejo) recibe el saludo corto, sin montos', () => {
@@ -2690,7 +2690,7 @@ describe('OBSERVACIONES DE SILVANA (20/10/2026) · el saludo no ofrece a Rubén;
     expect(m.cuerpo).not.toMatch(/\bBs\b|asistente|Qué gusto saludarte/);
     expect(sinExento(m.cuerpo)).not.toMatch(PROHIBIDAS);
     expect(m.cuerpo.length).toBeLessThanOrEqual(1024);
-    expect(titulos(m)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+    expect(titulos(m)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
     expect(ids(m)).not.toContain('b_info');
     expect(t.avisos).toHaveLength(0);
     // Un nuevo saludo ya no ofrece «Más información» (la vio).
@@ -2717,7 +2717,7 @@ describe('OBSERVACIONES DE SILVANA (20/10/2026) · el saludo no ofrece a Rubén;
       expect(llamadas()).toBe(0);
       expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
       expect(m.cuerpo).not.toMatch(/Gracias por escribir|\bBs\b/);
-      expect(titulos(m)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+      expect(titulos(m)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
     });
   }
 
@@ -3069,7 +3069,7 @@ describe('REGLA DURA 4, BARRERA ESTRUCTURAL · la lista de identidad es una mejo
     const w = crear();
     const a = unico(hablar(w, ANA, mBoton('b_precios')));
     expect(titulos(a)).toEqual(['Más información']);
-    expect(titulos(unico(hablar(w, ANA, mBoton('b_precios'))))).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+    expect(titulos(unico(hablar(w, ANA, mBoton('b_precios'))))).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
   });
   it('el vigilante: su lista de identidad es independiente de la del flujo, y detecta que se pierda la respuesta con IA del modelo (prueba negada)', () => {
     for (const x of ['¿eres un bot?', 'hay alguien ahí?', 'are you a bot?', 'dime con quién hablo']) expect(preguntaPorIdentidad(x), x).toBe(true);
@@ -4695,7 +4695,7 @@ describe('ENTREGA 1 · [D] «¿tienes imágenes?» y la promesa de imágenes', (
       expect(m.cuerpo).toMatch(SIN_PROMESA);
       expect(m.cuerpo).toMatch(/capítulos/);
       expect(m.tipo).toBe('interactive');
-      expect(titulos(m)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+      expect(titulos(m)).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
       expect(llamadas).toBe(0);
     });
   }
@@ -4756,7 +4756,7 @@ describe('ENTREGA 1 · [CATÁLOGO] «dame tu catálogo» responde por código lo
           expect(llamadas, donde).toBe(0);
           expect(eventosQr(w), donde).toHaveLength(conQr ? 1 : 0);
           if (conQr) expect(ids(m).filter((i) => i.startsWith('b_')), donde).toEqual([]);
-          else expect(titulos(m), donde).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+          else expect(titulos(m), donde).toEqual(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos']);
         }
       }
     });
