@@ -13,6 +13,14 @@
  *   8. (21/10/2026) CON UN QR ABIERTO, toda pregunta que no habla de pagar recibe una respuesta de contenido: el recordatorio («Ya tienes un QR abierto…») solo sale si el cliente habló de pagar o pidió un producto.
  *   9. (21/10/2026) NINGÚN TEXTO SALIENTE PROMETE ENVIAR imágenes, fotos, capturas, pantallazos o la portada (solo existe el QR como imagen saliente): una oración que dice «no envío imágenes» no cuenta.
  *  10. (21/10/2026) NINGÚN AVISO «TARDÍO» sin un comprobante REGISTRADO: «Guardar comprobante» tiene que haber devuelto la ruta del archivo guardado.
+ *  11. (ENTREGA 2, 23/10/2026) NINGÚN PRECIO ANTES DE TIEMPO: con menos de 2 mensajes de conversación entregados, ningún mensaje lleva «NN Bs» (en el cuerpo o en un botón) ni un botón de producto. Excepciones declaradas: un QR ya visto,
+ *      un cobro abierto, en revisión o vencido en el panel, un prellenado de producto, y los planes `qr`, `qr_pendiente`, `complemento`, `comprobante` y `cancele_como_pago`.
+ *  12. El bloque «Te dejo aquí abajo las opciones» sale a lo más UNA vez por teléfono.
+ *  13. LO QUE SE OFRECE SE CUMPLE: si el último mensaje terminó en «¿Te muestro las opciones?» y el cliente dice «sí» o toca «Ver opciones» sin un QR abierto, la respuesta trae botones con precio.
+ *  14. SIN REPETIR LA DESCRIPCIÓN: si ya salió «230 páginas», ningún mensaje del modelo la repite.
+ *  15. UNA SOLA PREGUNTA: todo mensaje de conversación tiene a lo más un «?»; el bloque de las opciones no termina en «?».
+ *  16. (seguridad, ENTREGA 2) SOLO SE OFRECE LO QUE SE CUMPLE: con la compuerta cerrada (mismas condiciones del 11) ningún mensaje PROMETE mostrar, pasar, dejar o mandar opciones, precios, catálogo o planes
+ *      («en un momento te muestro los precios», «abajo te dejo las opciones»). La pregunta fija del puente («¿Te muestro las opciones?») tiene su botón y su mecanismo: no cuenta.
  *   6. MEDIOS ENTRANTES (audio, imagen, documento; 20/10/2026): la respuesta a un medio SIEMPRE trae texto (nunca vacía ni solo una marca), es UN solo mensaje, nunca un QR, y jamás dice «acreditado», «verificado»,
  *      «recibimos tu pago» (el único texto con «confirmamos / validado» es el fijo de comprobante leído, que exige un pedido abierto). Un medio sin respuesta solo es válido si el plan fue callar a propósito (pausa por persona,
  *      comercio suspendido, número extranjero ya atendido hoy); lo demás es un cliente que mandó un audio y no recibió nada.
@@ -30,7 +38,10 @@ const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../F
 export const LIB = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { rrOraciones, rrEsPresentacion, rrNorm, rrTienePresentacionIA };')() as { rrOraciones: (b: string) => string[]; rrEsPresentacion: (o: string) => boolean; rrNorm: (t: string) => string; rrTienePresentacionIA: (t: string) => boolean };
 
 export interface UxMsg { tipo: string; cuerpo: string; payload: J }
-interface UxEstado { pulsados: Map<string, Set<string>>; presentaciones: Map<string, number>; turnos: number; ultimoTexto: Map<string, string> }
+/** El estado de la CONVERSACIÓN por teléfono (invariantes 11 a 15): lo cuenta el vigilante por su cuenta, sin importar nada del flujo. */
+export interface EstadoCharla { charla: number; qrVisto: boolean; bloques: number; ultimoFuePuente: boolean; descripcionVista: boolean }
+export const estadoCharlaNuevo = (): EstadoCharla => ({ charla: 0, qrVisto: false, bloques: 0, ultimoFuePuente: false, descripcionVista: false });
+interface UxEstado { pulsados: Map<string, Set<string>>; presentaciones: Map<string, number>; turnos: number; ultimoTexto: Map<string, string>; charla: Map<string, EstadoCharla> }
 export const UX_ESTADO = new WeakMap<Mundo, UxEstado>();
 export const UX_CONTADOR = { turnos: 0, mundos: new Set<Mundo>() };
 export const idsDeBotones = (m: { payload: J }): string[] =>
@@ -163,6 +174,78 @@ export function violacionesDeAvisoTardio(avisos: string[], mensajes: UxMsg[], gu
   if (mensajes.some((m) => /despu[eé]s de los 15 minutos del QR[^]*(Ya lo pas[eé]|Le avis[eé])/i.test(m.cuerpo))) v.push('el texto «tardío» dice que se pasó a Rubén sin un comprobante guardado');
   return v;
 }
+// ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// ENTREGA 2 (23/10/2026): invariantes 11 a 15. Constantes PROPIAS (no se importan del flujo: sería tautológico).
+// ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+/** Los planes que cuentan como conversación (`saludo` solo si lleva la presentación). */
+export const PLANES_DE_CHARLA = ['saludo', 'modelo', 'audio_modelo', 'imagen_modelo', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo'];
+/** Los planes exentos de la compuerta: el QR y lo que ya habla de pagar o de un producto elegido. */
+export const PLANES_EXENTOS_DE_COMPUERTA = ['qr', 'qr_pendiente', 'complemento', 'comprobante', 'cancele_como_pago'];
+export const CON_PRECIO_BS = /\b\d+(?:[.,]\d{1,2})?\s?Bs\b/i;
+export const BOTONES_DE_PRODUCTO = ['b_pack', 'b_libro', 'b_comp', 'b_closer', 'b_videos'];
+export const CIERRE_DEL_PUENTE = '¿Te muestro las opciones?';
+export const BLOQUE_DE_OPCIONES = /Te dejo aqu[ií] abajo las opciones/;
+export const esPrellenadoDeProducto = (texto: string): boolean => /^Hola Rubén, quiero (el Pack Completo|el libro IA para Emprendedores|el Prompt Maestro de Cierre de Ventas|los videos tutoriales)/.test(texto);
+const textoEntrante = (entrante: J): string => (entrante['type'] === 'text' ? String((entrante['text'] as J | undefined)?.['body'] ?? '') : '');
+const toqueEntrante = (entrante: J): string => { const inter = entrante['interactive'] as J | undefined; return entrante['type'] === 'interactive' && inter ? String((inter['button_reply'] ?? inter['list_reply'])?.id ?? '') : ''; };
+/** Un «sí» suelto (lista PROPIA del vigilante, independiente de la del flujo). */
+export const esUnSi = (texto: string): boolean => /^(si|claro|dale|ok|okey|okay|bueno|por favor|me interesa|adelante|si quiero|si por favor|claro que si|muestrame)$/.test(LIB.rrNorm(texto));
+const titulosDe = (m: { payload: J }): string[] => ((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => String(b['reply']?.title));
+/** Invariante 11. `panelConCobro` = el panel de «Traer configuración» trae un cobro pendiente, en revisión o vencido. Función pura, probada también con casos negativos. */
+export function violacionesDeCompuerta(est: EstadoCharla, entrante: J, mensajes: UxMsg[], plan: string, panelConCobro: boolean): string[] {
+  const v: string[] = [];
+  if (est.charla >= 2 || est.qrVisto || panelConCobro || esPrellenadoDeProducto(textoEntrante(entrante)) || PLANES_EXENTOS_DE_COMPUERTA.includes(plan)) return v;
+  for (const m of mensajes) {
+    if (CON_PRECIO_BS.test(m.cuerpo) || titulosDe(m).some((t) => CON_PRECIO_BS.test(t))) v.push(`un precio antes de tiempo (con ${est.charla} mensaje(s) de conversación): «${m.cuerpo.slice(0, 40)}…»`);
+    const prod = idsDeBotones(m).filter((i) => BOTONES_DE_PRODUCTO.includes(i));
+    if (prod.length) v.push(`un botón de producto antes de tiempo (con ${est.charla} mensaje(s) de conversación): ${prod.join(', ')}`);
+  }
+  return v;
+}
+/** Invariante 16. Detector PROPIO (por oración): un objeto de precio junto a un verbo de mostrar o a un marcador de lugar o de tiempo, o «te las paso». */
+export function violacionesDePromesaConCompuertaCerrada(est: EstadoCharla, entrante: J, mensajes: UxMsg[], plan: string, panelConCobro: boolean): string[] {
+  const v: string[] = [];
+  if (est.charla >= 2 || est.qrVisto || panelConCobro || esPrellenadoDeProducto(textoEntrante(entrante)) || PLANES_EXENTOS_DE_COMPUERTA.includes(plan)) return v;
+  for (const m of mensajes) {
+    for (const o of m.cuerpo.replace(CIERRE_DEL_PUENTE, ' ').split(/(?<=[.!?…])\s+|\n+/)) {
+      // Contextos que no prometen nada (el negocio del cliente y «sin costo»), medidos en la batería real del 23/10: se retiran antes de mirar el objeto.
+      const n = LIB.rrNorm(o).replace(/\b(preguntan|piden|consultan|cotizan)( por)?( los| las)? (precios?|costos?|tarifas?)\b|\bsin costos?\b|\b(tu|tus|su|sus) (catalogo|precios|tarifas|costos|paquetes|planes)\b/g, ' ');
+      // Detector PROPIO y ancho del vigilante (no el de producción), POR OBJETO: la oración menciona un objeto de precio u opciones (con la compuerta cerrada el modelo no habla de eso), o un marcador de inminencia con «te las paso».
+      const objeto = /\b(precios?|costos?|valor(es)?|montos?|tarifas?|paquetes?|planes|opciones|opcion|alternativas?|catalogo|lista de (precios|opciones|productos)|carta|menu|botones|de abajo|cuanto (cuesta|cuestan|sale|salen|vale|valen|es|seria)|lo que (cuesta|cuestan|sale|vale)|precos?|custos?|opcoes|planos|prices?|costs?|options)\b/.test(n);
+      const marca = /\b(ya te|ahorita|ahora te|enseguida|en seguida|en un momento|luego|mas tarde|proximo mensaje|siguiente mensaje|a continuacion|abajo|ahora mismo|dame un|ya (viene|llega|van)|en breve|ya mismo|al toque|vou|ja te|daqui a pouco)\b/.test(n);
+      const verbo = /\b(muestr\w*|mostr\w*|pas[oae]\w*|doy|dar\w*|envi\w*|mand\w*|dej[oae]\w*|compart\w*|cuento|contare|contar\w*|dig[oa]|dir[eé]|decir\w*|coment\w*|present\w*|ense[nñ]\w*|explic\w*|lleg\w*|vien\w*|mira\w*|adjunt\w*|veras|passo|falo)\b/.test(n);
+      if (objeto || (verbo && marca) || /\bte (las|los|lo|la) (paso|dejo|muestro|mando|envio|comparto|digo)\b/.test(n)) v.push(`con la compuerta cerrada, el mensaje habla de precios u opciones: «${o.slice(0, 50)}»`);
+    }
+  }
+  return v;
+}
+/** Invariante 12: `bloquesPrevios` = cuántas veces salió ya el bloque de las opciones a este teléfono. */
+export function violacionesDeBloqueDeOpciones(bloquesPrevios: number, mensajes: UxMsg[]): string[] {
+  const n = bloquesPrevios + mensajes.filter((m) => BLOQUE_DE_OPCIONES.test(m.cuerpo)).length;
+  return n > 1 ? [`el bloque de las opciones salió ${n} veces a este teléfono`] : [];
+}
+/** Invariante 13: «¿Te muestro las opciones?» siempre tiene detrás un mecanismo: el «sí» o el botón dan botones con precio (sin un QR abierto). */
+export function violacionesDePromesaDeOpciones(ultimoFuePuente: boolean, entrante: J, mensajes: UxMsg[], hayQrAbierto: boolean): string[] {
+  if (!ultimoFuePuente || hayQrAbierto) return [];
+  const acepta = esUnSi(textoEntrante(entrante)) || toqueEntrante(entrante) === 'b_opciones';
+  if (!acepta) return [];
+  return mensajes.some((m) => titulosDe(m).some((t) => CON_PRECIO_BS.test(t))) ? [] : ['se ofreció «¿Te muestro las opciones?» y la respuesta al «sí» o al botón no trae botones con precio'];
+}
+/** Invariante 14: `descripcionVista` = ya salió «230 páginas» a este teléfono; ningún mensaje del modelo la repite. */
+export function violacionesDeDescripcionRepetida(descripcionVista: boolean, mensajes: UxMsg[], plan: string): string[] {
+  if (!descripcionVista || !['modelo', 'audio_modelo', 'imagen_modelo', 'puente', 'opciones'].includes(plan)) return [];
+  return mensajes.filter((m) => /230 p[aá]ginas/i.test(m.cuerpo)).map((m) => `el modelo repite la descripción del libro («230 páginas»): «${m.cuerpo.slice(0, 40)}…»`);
+}
+/** Invariante 15. */
+export function violacionesDeUnaPregunta(mensajes: UxMsg[], plan: string): string[] {
+  const v: string[] = [];
+  if (!PLANES_DE_CHARLA.includes(plan)) return v;
+  for (const m of mensajes) {
+    if ((m.cuerpo.match(/\?/g) ?? []).length > 1) v.push(`más de una pregunta en un mensaje de conversación: «${m.cuerpo.slice(0, 40)}…»`);
+    if (/^opciones(_fijo)?$/.test(plan) && /\?\s*$/.test(m.cuerpo)) v.push('el bloque de las opciones termina en una pregunta');
+  }
+  return v;
+}
 export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, textoModelo = ''): string[] {
   const v: string[] = [];
   const inter = entrante['interactive'] as J | undefined;
@@ -187,7 +270,7 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
   for (const m of mensajes) {
     for (const id of idsDeBotones(m)) if (pulsados.has(id)) v.push(`el botón pulsado «${id}» reapareció`);
     if (m.tipo === 'image' && !eligioProducto) v.push('se ofreció el QR (pagar) sin que el cliente eligiera un producto en este turno');
-    if (m.tipo !== 'image' && /escanea el qr/i.test(m.cuerpo)) v.push('un texto de pago fuera del QR');
+    if (m.tipo !== 'image' && /escanea el qr|este es el qr de pago|aqu[ií] tienes el qr de pago|ingresa \d+(?:[.,]\d+)? ?bs/i.test(m.cuerpo)) v.push('un texto de pago fuera del QR');
     if (m.tipo === 'interactive' && idsDeBotones(m).length && !eligioProducto && /(pagar|\bqr\b)/i.test(((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => String(b['reply']?.title)).join(' '))) v.push('un botón de pago antes de elegir producto');
     if (/opciones|¿cu[aá]l prefieres|¿qu[eé] opci[oó]n|¿con cu[aá]l/i.test(m.cuerpo) && m.tipo !== 'interactive') v.push('el texto pregunta por opciones pero el mensaje no trae ningún botón');
     v.push(...violacionesDeParrafos(m.cuerpo));
@@ -208,7 +291,7 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
 }
 export function vigilarUx(mundo: Mundo): void {
   const original = mundo.turno.bind(mundo);
-  const estado: UxEstado = { pulsados: new Map(), presentaciones: new Map(), turnos: 0, ultimoTexto: new Map() };
+  const estado: UxEstado = { pulsados: new Map(), presentaciones: new Map(), turnos: 0, ultimoTexto: new Map(), charla: new Map() };
   UX_ESTADO.set(mundo, estado);
   mundo.turno = (entrada: J, opciones?: Parameters<Mundo['turno']>[1]) => {
     const t = original(entrada, opciones);
@@ -232,9 +315,37 @@ export function vigilarUx(mundo: Mundo): void {
     v.push(...violacionesDePromesaDeImagen(salida));
     const guardado = t.registro.find((x) => x.nodo === 'Guardar comprobante')?.respuesta as J | undefined;
     v.push(...violacionesDeAvisoTardio(t.avisos.map((a) => a.cuerpo), salida, typeof guardado?.['body']?.['ruta'] === 'string'));
+    // Invariantes 11 a 15 (ENTREGA 2): el estado de la conversación de este teléfono lo cuenta el vigilante.
+    const est = estado.charla.get(from) ?? estadoCharlaNuevo();
+    estado.charla.set(from, est);
+    const cobroDelPanel = (((t.registro.find((x) => x.nodo === 'Traer configuración')?.respuesta as J | undefined)?.['body'] as J | undefined)?.['cobro'] ?? {}) as J;
+    const panelConCobro = cobroDelPanel['pendiente'] === true || cobroDelPanel['enRevision'] === true || (typeof cobroDelPanel['vencidoHaceMin'] === 'number');
+    v.push(...violacionesDeCompuerta(est, msg, salida, plan, panelConCobro));
+    v.push(...violacionesDePromesaConCompuertaCerrada(est, msg, salida, plan, panelConCobro));
+    v.push(...violacionesDeBloqueDeOpciones(est.bloques, salida));
+    v.push(...violacionesDePromesaDeOpciones(est.ultimoFuePuente, msg, salida, est.qrVisto || cobroDelPanel['pendiente'] === true));
+    v.push(...violacionesDeDescripcionRepetida(est.descripcionVista, salida, plan));
+    v.push(...violacionesDeUnaPregunta(salida, plan));
+    for (const m of salida) {
+      if (m.tipo === 'image') est.qrVisto = true;
+      if (PLANES_DE_CHARLA.includes(plan) && (plan !== 'saludo' || esPresentacion(m.cuerpo))) est.charla += 1;
+      if (BLOQUE_DE_OPCIONES.test(m.cuerpo)) est.bloques += 1;
+      if (/230 p[aá]ginas/i.test(m.cuerpo)) est.descripcionVista = true;
+    }
+    const ultimoDeTexto = [...salida].reverse().find((m) => m.tipo !== 'image' && m.cuerpo.trim() !== '');
+    if (salida.length) est.ultimoFuePuente = !!ultimoDeTexto && ultimoDeTexto.cuerpo.trim().endsWith(CIERRE_DEL_PUENTE);
     estado.presentaciones.set(from, pres.n);
     estado.turnos += 1; UX_CONTADOR.turnos += 1; UX_CONTADOR.mundos.add(mundo);
     expect(v, `invariante de UX violado: ${v.join('; ')}`).toEqual([]);
     return t;
   };
+}
+/**
+ * Una ficha SEMBRADA a mano en una prueba (`mundo.sd.rroca[tel] = {…charlaN: 2…}`) no pasó por el vigilante: esta función le dice cuántos mensajes de conversación se le entregaron ya (y si vio un QR) para que los invariantes
+ * 11 a 15 cuenten desde ahí. Solo la usan las pruebas que siembran una ficha ya saludada.
+ */
+export function sembrarCharlaUx(mundo: Mundo, tel: string, parcial: Partial<EstadoCharla> = { charla: 2 }): void {
+  const e = UX_ESTADO.get(mundo);
+  if (!e) throw new Error('el mundo no está vigilado: llame primero a vigilarUx(mundo)');
+  e.charla.set(tel, { ...estadoCharlaNuevo(), ...parcial });
 }

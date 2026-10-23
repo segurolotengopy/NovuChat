@@ -31,7 +31,7 @@
  *    comportamiento del agente.
  */
 import { textoPlano, sinMarcas } from './texto.js';
-import { esVariosTramos, horariosSaneados, tramosEnPalabras, tramosNormalizados } from './horario-tramos.js';
+import { esVariosTramos, horariosSaneados, horarioParaFlujos, tramosEnPalabras, tramosNormalizados } from './horario-tramos.js';
 import { IDS_FLUJOS, documentoDeFlujo, type IdFlujo } from '../../registro.js';
 
 /**
@@ -430,7 +430,7 @@ export function resolverFuncionarios(
       nombre: String(negocio['nombreNegocio'] ?? 'El negocio'),
       especialidad: '',
       calendarioId: String(negocio['calendarioId'] ?? ''),
-      horarioTrabajo: horariosSaneados(negocio['horarios']),
+      horarioTrabajo: horarioParaFlujos(negocio['horarios']),
       servicios: [],           // vacío = atiende todo
       porDefecto: true,
     }];
@@ -446,7 +446,7 @@ export function resolverFuncionarios(
         // Si quedó vacío, hereda el del comercio: un funcionario sin agenda
         // propia no puede quedar sin agenda ninguna.
         || String(negocio['calendarioId'] ?? ''),
-      horarioTrabajo: horariosSaneados(f.datos['horarioTrabajo'] ?? negocio['horarios']),
+      horarioTrabajo: horarioParaFlujos(f.datos['horarioTrabajo'] ?? negocio['horarios']),
       // REFERENCIAS COLGADAS. Las reglas solo pudieron comprobar que `servicios`
       // es una lista de hasta 50 elementos, no que esos identificadores existan.
       // Un servicio borrado del catálogo deja la referencia atrás. Se descartan
