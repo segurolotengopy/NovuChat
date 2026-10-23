@@ -19,6 +19,8 @@
  *  13. LO QUE SE OFRECE SE CUMPLE: si el último mensaje terminó en «¿Te muestro las opciones?» y el cliente dice «sí» o toca «Ver opciones» sin un QR abierto, la respuesta trae botones con precio.
  *  14. SIN REPETIR LA DESCRIPCIÓN: si ya salió «230 páginas», ningún mensaje del modelo la repite.
  *  15. UNA SOLA PREGUNTA: todo mensaje de conversación tiene a lo más un «?»; el bloque de las opciones no termina en «?».
+ *  16. (seguridad, ENTREGA 2) SOLO SE OFRECE LO QUE SE CUMPLE: con la compuerta cerrada (mismas condiciones del 11) ningún mensaje PROMETE mostrar, pasar, dejar o mandar opciones, precios, catálogo o planes
+ *      («en un momento te muestro los precios», «abajo te dejo las opciones»). La pregunta fija del puente («¿Te muestro las opciones?») tiene su botón y su mecanismo: no cuenta.
  *   6. MEDIOS ENTRANTES (audio, imagen, documento; 20/10/2026): la respuesta a un medio SIEMPRE trae texto (nunca vacía ni solo una marca), es UN solo mensaje, nunca un QR, y jamás dice «acreditado», «verificado»,
  *      «recibimos tu pago» (el único texto con «confirmamos / validado» es el fijo de comprobante leído, que exige un pedido abierto). Un medio sin respuesta solo es válido si el plan fue callar a propósito (pausa por persona,
  *      comercio suspendido, número extranjero ya atendido hoy); lo demás es un cliente que mandó un audio y no recibió nada.
@@ -200,6 +202,20 @@ export function violacionesDeCompuerta(est: EstadoCharla, entrante: J, mensajes:
   }
   return v;
 }
+/** Invariante 16. Detector PROPIO (por oración): un objeto de precio junto a un verbo de mostrar o a un marcador de lugar o de tiempo, o «te las paso». */
+export function violacionesDePromesaConCompuertaCerrada(est: EstadoCharla, entrante: J, mensajes: UxMsg[], plan: string, panelConCobro: boolean): string[] {
+  const v: string[] = [];
+  if (est.charla >= 2 || est.qrVisto || panelConCobro || esPrellenadoDeProducto(textoEntrante(entrante)) || PLANES_EXENTOS_DE_COMPUERTA.includes(plan)) return v;
+  for (const m of mensajes) {
+    for (const o of m.cuerpo.replace(CIERRE_DEL_PUENTE, ' ').split(/(?<=[.!?…])\s+|\n+/)) {
+      const n = LIB.rrNorm(o);
+      const objeto = /\b(opciones|opcion|precios?|catalogo|planes|valores|tarifas|lo que cuesta|lo que cuestan|cuanto cuesta)\b/.test(n);
+      const muestra = /\b(muestro|mostrare|paso|pasare|dejo|dejare|mando|mandare|envio|enviare|comparto|cuento|viene|vienen|mira|adjunto|abajo|enseguida|en un momento|ahora mismo|a continuacion|en breve|ya mismo)\b/.test(n);
+      if ((objeto && muestra) || /\bte (las|los|lo|la) (paso|dejo|muestro|mando|envio|comparto)\b/.test(n)) v.push(`con la compuerta cerrada, el mensaje promete opciones o precios: «${o.slice(0, 50)}»`);
+    }
+  }
+  return v;
+}
 /** Invariante 12: `bloquesPrevios` = cuántas veces salió ya el bloque de las opciones a este teléfono. */
 export function violacionesDeBloqueDeOpciones(bloquesPrevios: number, mensajes: UxMsg[]): string[] {
   const n = bloquesPrevios + mensajes.filter((m) => BLOQUE_DE_OPCIONES.test(m.cuerpo)).length;
@@ -302,6 +318,7 @@ export function vigilarUx(mundo: Mundo): void {
     const cobroDelPanel = (((t.registro.find((x) => x.nodo === 'Traer configuración')?.respuesta as J | undefined)?.['body'] as J | undefined)?.['cobro'] ?? {}) as J;
     const panelConCobro = cobroDelPanel['pendiente'] === true || cobroDelPanel['enRevision'] === true || (typeof cobroDelPanel['vencidoHaceMin'] === 'number');
     v.push(...violacionesDeCompuerta(est, msg, salida, plan, panelConCobro));
+    v.push(...violacionesDePromesaConCompuertaCerrada(est, msg, salida, plan, panelConCobro));
     v.push(...violacionesDeBloqueDeOpciones(est.bloques, salida));
     v.push(...violacionesDePromesaDeOpciones(est.ultimoFuePuente, msg, salida, est.qrVisto || cobroDelPanel['pendiente'] === true));
     v.push(...violacionesDeDescripcionRepetida(est.descripcionVista, salida, plan));

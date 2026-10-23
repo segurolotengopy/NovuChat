@@ -128,13 +128,15 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       m = plan.qrAbierto === true ? conRuben(RR_TEXTO_IDENTIDAD) : conBotones(RR_TEXTO_IDENTIDAD, menuAbierto());
     } else {
       const rev = crudo.trim() === '' ? { texto: '', motivo: 'vacio' } : cmRevisarRedaccion(crudo, {
-        maximo: 900, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: plan.textoRevision || t.texto, extra: [rrExtraRedaccion],
+        maximo: 900, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: plan.textoRevision || t.texto, extra: [(tx, nx) => rrExtraRedaccion(tx, nx, { compuertaCerrada: !habil && plan.qrAbierto !== true && plan.modo !== 'puente' })],
       });
       // UNA sola presentación (Silvana, 20/10/2026): ya saludado, el modelo no vuelve a presentarse (se quita de su salida)... PERO la regla dura 4 manda: una oración de presentación que dice qué ES el asistente
       // (virtual, IA, programa, bot…) NUNCA se borra. Como primer mensaje cabe UNA, nunca dos. Si al quitar la presentación no queda nada, cae al texto fijo.
       // ENTREGA 2: ya saludado, el modelo no repite la descripción del libro («12 capítulos», «230 páginas»): esas oraciones se quitan; si no queda nada, cae al texto fijo.
       const sinRepetir = rev.motivo === '' && fichaAntes.saludado ? rrQuitarRepeticionDelLibro(rev.texto) : rev.texto;
-      const limpio = rev.motivo === '' ? rrUnaPresentacion(sinRepetir, !fichaAntes.saludado || rrPreguntaPorIA(rrNorm(plan.textoRevision || t.texto)), true) : '';
+      // SEGURIDAD (solo se ofrece lo que se cumple): en los modos `puente` y `opciones` el código pone las opciones y con la compuerta cerrada no hay botones de producto: toda oración del modelo que prometa opciones o precios se QUITA.
+      const sinPromesa = rev.motivo === '' && plan.qrAbierto !== true && (!habil || plan.modo === 'puente' || plan.modo === 'opciones') ? rrQuitarPromesaDeOpciones(sinRepetir) : sinRepetir;
+      const limpio = rev.motivo === '' ? rrUnaPresentacion(sinPromesa, !fichaAntes.saludado || rrPreguntaPorIA(rrNorm(plan.textoRevision || t.texto)), true) : '';
       let bueno = rev.motivo === '' && limpio.trim() !== '';
       // Los modos `puente` y `opciones`: el código quita la pregunta del modelo y agrega la suya (nunca hay una pregunta antes de los botones ni dos preguntas). Sin nada que conservar, cuenta como no bueno.
       const modoPuente = plan.modo === 'puente' && plan.qrAbierto !== true;

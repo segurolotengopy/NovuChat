@@ -1067,11 +1067,12 @@ function rrQuitarDelimitadores(t, conservarCorchetes) {
     const orig = [];
     x.forEach((ch, i) => {
       let d = ch.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      if (/^\p{Cf}$/u.test(ch) || d === '') return;
+      // Se ignoran también los espacios, la puntuación y los símbolos (emojis) ENTRE las letras: «M O D O _ T U R N O», «M.O.D.O», «M-O-D-O», con ZWSP o con emojis no esquivan el marcador.
+      if (/^\p{Cf}$/u.test(ch) || d === '' || /^[\s\p{P}\p{S}]+$/u.test(d)) return;
       d = Array.from(d).map((e) => (RR_HOMOGLIFOS[e] || e)).join('').replace(/1/g, 'i').replace(/0/g, 'o');
       for (let q = 0; q < d.length; q += 1) { c += d[q]; orig.push(i); }
     });
-    const re = /ANUNCIO[\W_]*DETECTADO|MODO[\W_]*TURNO/gi;
+    const re = /ANUNCIODETECTADO|MODOTURNO/gi;
     const quitar = new Set();
     let m;
     while ((m = re.exec(c)) !== null) { const desde = orig[m.index]; const hasta = orig[m.index + m[0].length - 1]; for (let i = desde; i <= hasta; i += 1) quitar.add(i); }
@@ -1141,10 +1142,48 @@ const RR_REMITE_A_WEB = new RegExp([
   // Ofuscada con separadores («w e b»).
   '\\bw(?:\\W+e\\W*b|\\W*e\\W+b)\\b',
 ].join('|'));
+// ENTREGA 2 (seguridad): «solo se ofrece lo que se cumple». Con la compuerta cerrada (aún no hay dos mensajes de conversación) el modelo NO puede prometer mostrar, pasar, dejar o mandar opciones, precios, catálogo, planes o «lo que cuesta»:
+// no hay ningún botón de producto detrás. Es por ORACIÓN, sobre el texto normalizado: un objeto de precio (opciones, precios, catálogo, planes, valores, tarifas, «lo que cuesta») junto a un verbo de mostrar (muestro, paso, dejo, mando, envío,
+// comparto, cuento, viene, mira, ve, revisa) o a un marcador de lugar o de tiempo (abajo, en un momento, ahora mismo, enseguida, a continuación); o un pronombre («te las paso», «te lo muestro»).
+function rrPrometeOpciones(oracion) {
+  const n = rrNorm(oracion);
+  const objeto = /\b(opciones|opcion|precios?|catalogo|planes|valores|tarifas|lo que cuesta|cuanto cuesta|cuanto cuestan|lo que cuestan|lista de precios)\b/.test(n);
+  const verbo = /\b(muestro|mostrare|mostrar|muestra|paso|pasare|pasar|dejo|dejare|dejar|mando|mandare|mandar|envio|enviare|enviar|comparto|compartire|compartir|cuento|contare|viene|vienen|mira|mire|ve|revisa|adjunto)\b/.test(n);
+  const lugar = /\b(abajo|en un momento|ahora mismo|enseguida|en seguida|a continuacion|mas abajo|en breve|ya mismo)\b/.test(n);
+  const pronombre = /\bte (las|los|lo|la) (paso|dejo|muestro|mando|envio|comparto|pasare|dejare|mostrare|mandare|enviare)\b/.test(n);
+  return (objeto && (verbo || lugar)) || pronombre;
+}
+// Quita del texto del modelo las oraciones que prometen opciones o precios (los párrafos se conservan). '' si no queda nada.
+function rrQuitarPromesaDeOpciones(texto) {
+  const bloques = rrTexto(texto).split('\n\n').map((bloque) => {
+    if (bloque.indexOf('\n') >= 0) return bloque;
+    return rrOraciones(bloque).filter((o) => !rrPrometeOpciones(o)).join(' ');
+  }).filter((b) => b.trim() !== '');
+  return bloques.join('\n\n');
+}
+// ENTREGA 2 (seguridad): montos y promesas comerciales que el modelo no puede decir, en cifras o en palabras. Sobre el texto normalizado (`n`).
+const RR_NUMW = '(?:diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|veinti[a-z]+|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscientos|trescientos|quinientos|mil)(?: y (?:uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve))?';
+const RR_NUMBIG = '(?:\\d{2,}(?: \\d{1,2})?|\\d+ \\d{2}|' + RR_NUMW + ')';
+const RR_UNIDAD = '(?:capitulos?|paginas?|dias?|bonos?|prompts?|ideas?|videos?|minutos?|horas?|pasos?|areas?|semanas?|meses|veces|personas|clientes|herramientas|segundos|modulos?|lecciones|ejemplos?)';
+const RR_RE_MONTO = [
+  new RegExp('\\b(cuesta|cuestan|sale|salen|vale|valen|precio|costo|tarifa|cobro)\\b\\W{0,14}(?:de |en |a |solo |apenas |tan solo )?(?:\\d+(?: \\d+)?|' + RR_NUMW + '|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\\b(?! ' + RR_UNIDAD + ')'),
+  new RegExp('\\b(por|solo|tan solo|apenas)\\s+' + RR_NUMBIG + '\\b(?! ' + RR_UNIDAD + ')'),
+  new RegExp('\\b' + RR_NUMBIG + '\\s+(bolivianos|pesos|dolares|usd|bs|bob)\\b'),
+  new RegExp('\\b(uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\\s+(bolivianos|pesos|dolares)\\b'),
+];
+function rrMontoOPromesa(n) {
+  if (RR_RE_MONTO.some((re) => re.test(n))) return 'monto_en_el_texto';
+  if (/\b(te devuelvo|te devolvemos|devolvemos|devuelvo|devolver|devolvera)\b|\bcuotas?\b|\bde por vida\b|\bmitad de precio\b|\ba la mitad\b/.test(n)) return 'promesa_comercial';
+  return '';
+}
 // Reglas propias del flujo para `cmRevisarRedaccion` (`opciones.extra`): a lo más 7 oraciones (ENTREGA 2; antes 5) y UNA pregunta; nada de «Rubén te…» (promesa), ni la palabra «QR» ni el banco o el titular.
-function rrExtraRedaccion(texto, norm) {
+// `opciones.compuertaCerrada` (ENTREGA 2): aún no hay dos mensajes de conversación; el modelo no promete opciones ni precios (`rrPrometeOpciones`).
+function rrExtraRedaccion(texto, norm, opciones) {
   // Una salida con un marcador del sistema ([precio], [enlace], [número], «pedido [código]») no llega al cliente.
   if (/\[[^\]]{1,40}\]/.test(texto)) return 'marcador_interno';
+  const montoOPromesa = rrMontoOPromesa(norm);
+  if (montoOPromesa !== '') return montoOPromesa;
+  if (opciones && opciones.compuertaCerrada === true && rrOraciones(String(texto).replace(/\n+/g, ' ')).some((o) => rrPrometeOpciones(o))) return 'promete_opciones';
   if ((String(texto).match(/\?/g) || []).length > 1) return 'varias_preguntas';
   if (String(texto).split(/(?<=[.!?…])\s+/).filter((x) => x.trim()).length > 7) return 'largo_en_oraciones';
   if (/\b(qr|banco|titular|mercantil)\b/.test(norm)) return 'datos_de_cobro';
