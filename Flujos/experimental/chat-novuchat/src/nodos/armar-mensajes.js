@@ -75,7 +75,7 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
   // R5: los botones salen según lo ya hecho. Tras el traspaso, la lista de rubros (invita a otro negocio); si el cliente elige un rubro, empieza OTRO ciclo (`ciclo`).
   const ciclo = antes.equipoAhora === true && plan.ruta === 'modelo' && !!(plan.rubroElegido || (res.contexto === 'rubro' && res.rubroId));
   // Los botones y las ofertas los decide la TABLA (`CH_TABLA`, una vez por turno): «Ver planes» con interés y nunca tras pulsarlo; «Hablar con el equipo» cuando hace falta o se acabaron las preguntas y nunca tras pulsarlo.
-  const dec = chBotonesDe(chSituacion({ plan: plan, res: res, eventos: eventos, ficha: antes }));
+  const dec = chBotonesDe(chSituacion({ plan: Object.assign({}, plan, { sinPlanes: plan.ruta === 'planes' && !chFrasesDePrecios(cfg, plan.aMedida === true).length && !chArchivoDePlanes(cfg) }), res: res, eventos: eventos, ficha: antes }));
   fila = dec.fila;
   const est = { botones: ['planes', 'equipo'].filter((b) => dec[b] === true), lista: antes.equipoAhora === true && !ciclo };
   let complemento = false;
