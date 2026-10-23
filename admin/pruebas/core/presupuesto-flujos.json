@@ -41,16 +41,16 @@
     },
     "Flujos/experimental/agenda-minima/agenda-minima.prueba.json": {
       "nodos": 53,
-      "jsCodeKB": 380.6,
+      "jsCodeKB": 389.7,
       "promptKB": 2.8,
-      "porque": "Línea base del 23/10/2026: Agenda mínima (el código calcula, el modelo conversa), incluye los módulos comunes de agenda y medios.",
+      "porque": "Línea base del 23/10/2026: Agenda mínima (el código calcula, el modelo conversa), incluye los módulos comunes de agenda y medios. #619: agenda-minima incluye anuncio-por-titular.js (+9,1 KB de jsCode, 0 nodos, 0 prompt; 380,6 a 389,7 KB).",
       "ultimoAumento": "2026-10-23"
     },
     "Flujos/experimental/agenda-minima/agenda-minima.v0.json": {
       "nodos": 53,
-      "jsCodeKB": 380.6,
+      "jsCodeKB": 389.7,
       "promptKB": 2.8,
-      "porque": "Línea base del 23/10/2026: Agenda mínima (el código calcula, el modelo conversa), incluye los módulos comunes de agenda y medios.",
+      "porque": "Línea base del 23/10/2026: Agenda mínima (el código calcula, el modelo conversa), incluye los módulos comunes de agenda y medios. #619: agenda-minima incluye anuncio-por-titular.js (+9,1 KB de jsCode, 0 nodos, 0 prompt; 380,6 a 389,7 KB).",
       "ultimoAumento": "2026-10-23"
     },
     "Flujos/experimental/captacion-minima/captacion-minima.novuchat.json": {

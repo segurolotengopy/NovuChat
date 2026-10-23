@@ -56,7 +56,7 @@ requiere nada más que el cambio.
 | Doctoras Emma / Evy | 43 | 531,3 | 2,0 |
 | chat-novuchat | 44 | 1.099,1 | 2,0 |
 | Q'Taco (`venta-minima.qtaco`) | 50 | 1.979,7 | 2,0 |
-| Bellido agenda-minima | 53 | 380,6 | 2,8 |
+| Bellido agenda-minima | 53 | 389,7 (380,6 antes de #619) | 2,8 |
 | Captación mínima | 43 | 514,8 | 2,0 |
 | Demo A | 77 | 318,4 | 31,3 |
 | Platinum | 77 | 318,4 | 31,8 |
