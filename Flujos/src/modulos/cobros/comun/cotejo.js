@@ -1,5 +1,5 @@
 // =============================================================================
-// COBROS · VENTA · COTEJO DEL COMPROBANTE (prefijo `cb` / `CB_`)  —  `Flujos/src/modulos/cobros/venta/cotejo.js`
+// COBROS · VENTA · COTEJO DEL COMPROBANTE (prefijo `cb` / `CB_`)  —  `Flujos/src/modulos/cobros/comun/cotejo.js`
 // =============================================================================
 // Segundo archivo del módulo (después de `lectura.js`): el cobro real que declara el servidor, la respuesta del cotejo, su vocabulario y la diferencia que se le dice al cliente.
 // Cada declaración es COPIA BYTE A BYTE del canon (`venta-minima/src/lib/cobro.js` de #519, rama `cartera/qtaco-visor-comprobantes`); lo único nuevo es `cbCobroDelPanel` (al final) y el

@@ -1,5 +1,5 @@
 // =============================================================================
-// COBROS · VENTA · LECTURA DEL COMPROBANTE (prefijo `cb` / `CB_`)  —  `Flujos/src/modulos/cobros/venta/lectura.js`
+// COBROS · VENTA · LECTURA DEL COMPROBANTE (prefijo `cb` / `CB_`)  —  `Flujos/src/modulos/cobros/comun/lectura.js`
 // =============================================================================
 // MÓDULO COMÚN de Cobros para los flujos de venta. Es el PRIMER archivo de los tres (`lectura.js`, `cotejo.js`, `textos.js`) y debe incluirse antes que los otros: trae la BASE
 // compartida (la red de frases prohibidas, `cbCanon`, `cbLinea`, `cbEsObjeto`, `cbMonto`…) y la lectura del comprobante.

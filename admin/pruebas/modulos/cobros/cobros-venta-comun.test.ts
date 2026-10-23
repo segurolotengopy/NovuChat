@@ -1,5 +1,5 @@
 /**
- * Cobros · venta · módulo común (`Flujos/src/modulos/cobros/venta/{lectura,cotejo,textos}.js`).
+ * Cobros · venta · módulo común (`Flujos/src/modulos/cobros/comun/{lectura,cotejo,textos}.js`).
  *
  *  1. EQUIVALENCIA BYTE A BYTE: las 27 declaraciones comunes de #519 (`venta-minima/src/lib/cobro.js`, rama `cartera/qtaco-visor-comprobantes`) son idénticas en el módulo.
  *  2. PRUEBAS NEGADAS sobre la matriz completa de `cbTextoComprobante` (resultado x causa x salio x tratamiento x simulado x quien): ningún cuerpo cae en `CB_PROHIBIDAS`
@@ -18,7 +18,7 @@ import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
-const MOD = join(REPO, 'Flujos/src/modulos/cobros/venta');
+const MOD = join(REPO, 'Flujos/src/modulos/cobros/comun');
 const EXP = join(REPO, 'Flujos/experimental');
 const RAMA = 'origin/cartera/qtaco-visor-comprobantes';
 const ARCHIVOS = ['lectura.js', 'cotejo.js', 'textos.js'];

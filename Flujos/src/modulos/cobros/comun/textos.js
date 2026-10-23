@@ -1,5 +1,5 @@
 // =============================================================================
-// COBROS · VENTA · TEXTOS AL CLIENTE (prefijo `cb` / `CB_`)  —  `Flujos/src/modulos/cobros/venta/textos.js`
+// COBROS · VENTA · TEXTOS AL CLIENTE (prefijo `cb` / `CB_`)  —  `Flujos/src/modulos/cobros/comun/textos.js`
 // =============================================================================
 // Tercer archivo del módulo (después de `lectura.js` y `cotejo.js`, de los que usa `CB_PROHIBIDAS`, `cbCanon`, `cbLinea`, `cbEsObjeto`, `cbMonto`, `cbMoneda`, `cbCodigo`, `cbTotalValido`,
 // `CB_ROTULO_SIMULADO` y `cbDiferencia`). TODO es nuevo (incluida `CB_NIEGA_IA`, copia exacta de la de `procesar-respuesta.js`): unifica el árbol de textos de comprobante de Rubén (`rrTextoComprobante`) y de Antonio (`raTextoComprobante`) con el nombre de quien
