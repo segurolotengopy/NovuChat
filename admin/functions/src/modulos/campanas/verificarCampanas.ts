@@ -46,6 +46,22 @@ export async function contextoDelNegocio(db: Firestore, tenantId: string): Promi
   };
 }
 
+/**
+ * Los ids de producto que las campañas referencian y que existen ACTIVOS en el
+ * catálogo de ESTE tenant (a lo sumo diez lecturas, solo en el disparador y solo
+ * si alguna campaña referencia un producto). El tenant sale de la ruta del
+ * documento, nunca del contenido.
+ */
+export async function productosActivosReferenciados(
+  db: Firestore, tenantId: string, lista: readonly { productoId?: string }[],
+): Promise<Set<string>> {
+  const ids = [...new Set(lista.map((c) => c.productoId)
+    .filter((i): i is string => typeof i === 'string' && i !== '' && i.length <= 100 && !i.includes('/')))];
+  if (ids.length === 0) return new Set();
+  const docs = await db.getAll(...ids.map((i) => db.doc(`tenants/${tenantId}/catalogo/${i}`)));
+  return new Set(docs.filter((d) => d.exists && d.get('activo') === true).map((d) => d.id));
+}
+
 export type ResultadoAplicarCampanas = 'aplicado' | 'obsoleto' | 'sin_documento';
 
 /**
@@ -98,8 +114,9 @@ export async function revisarYAplicarCampanas(
   const previa = despues['revision'];
   const anterior = typeof previa === 'object' && previa !== null
     ? (previa as { porCampana?: Record<string, RevisionCampana> }).porCampana : undefined;
+  const productos = await productosActivosReferenciados(db, tenantId, lista);
   const revision = await revisarCampanas(lista, leerCampanas(antes['lista']), anterior, limite, ahoraMs,
-    contexto, otros, consultar);
+    contexto, otros, consultar, productos);
   const resultado = await aplicarCampanas(db, tenantId, hash, revision, revisadoPor);
   return { hash, resultado, revision };
 }
