@@ -3605,6 +3605,68 @@ describe('Nombre del asistente (config/negocio)', () => {
 });
 
 // ===========================================================================
+// NOMBRE DE QUIEN ATIENDE (config/negocio.nombreQuienAtiende, 23/10/2026)
+// ===========================================================================
+// Texto que llega a clientes finales dentro de frases fijas: se escribe negando.
+describe('Nombre de quien atiende (config/negocio)', () => {
+  const ruta = `tenants/${A}/config/negocio`;
+  const con = (nombreQuienAtiende: unknown) =>
+    setDoc(doc(adminA(), ruta), { ...configValida('u-admin-a'), nombreQuienAtiende });
+
+  it('lo válido pasa: nombre, equipo, vacío y 60 caracteres', async () => {
+    await assertSucceeds(con('Rubén'));
+    await assertSucceeds(con('Antonio y Marta'));
+    await assertSucceeds(con('nuestro equipo'));
+    await assertSucceeds(con(''));
+    await assertSucceeds(con('x'.repeat(60)));
+  });
+
+  it('un documento SIN el campo sigue siendo válido', async () => {
+    await assertSucceeds(setDoc(doc(adminA(), ruta), configValida('u-admin-a')));
+  });
+
+  it('61 caracteres, algo que no es texto, salto, control, bidi o cero ancho, no', async () => {
+    await assertFails(con('x'.repeat(61)));
+    await assertFails(con(7));
+    await assertFails(con(['Rubén']));
+    await assertFails(con('Ru\nbén'));
+    await assertFails(con('Ru\u0000bén'));
+    await assertFails(con('Ru\u202Ebén'));
+    await assertFails(con('Ru\u200Bbén'));
+    await assertFails(con('Ru\u2066bén'));
+    await assertFails(con('Ru<bén>'));
+  });
+
+  it('enlaces, correos y dígitos largos, no', async () => {
+    await assertFails(con('https://malo.example/x'));
+    await assertFails(con('www.malo.bo'));
+    await assertFails(con('escribe a ruben' + '@' + 'malo.bo'));
+    await assertFails(con('malo.com'));
+    await assertFails(con('wa.me/591'));
+    await assertFails(con('Rubén 7000001'));
+    await assertSucceeds(con('Rubén 123'));
+  });
+
+  it('afirmar un pago, hablar del banco o negar ser una IA, no', async () => {
+    await assertFails(con('pago acreditado'));
+    await assertFails(con('Pago Acreditado'));
+    await assertFails(con('el banco'));
+    await assertFails(con('Banco Union'));
+    await assertFails(con('no soy un bot'));
+    await assertFails(con('No soy una IA'));
+    await assertFails(con('soy humano'));
+    await assertFails(con('Robot'));
+    await assertFails(con('pago verificado'));
+    await assertFails(con('recibimos tu pago'));
+  });
+
+  it('el operador no lo escribe y el admin de B no escribe el de A', async () => {
+    await assertFails(setDoc(doc(operA(), ruta), { ...configValida('u-oper-a'), nombreQuienAtiende: 'Rubén' }));
+    await assertFails(setDoc(doc(adminB(), ruta), { ...configValida('u-admin-b'), nombreQuienAtiende: 'Rubén' }));
+  });
+});
+
+// ===========================================================================
 // DÓNDE QUEDA EL LOCAL: enlace de Google Maps y coordenadas del pin
 // (Analisis/34 §2, bloque 1 del plan de Platinum)
 // ===========================================================================

@@ -28,6 +28,9 @@ export type EntradaPayloadNegocio = {
   /** El nombre del asistente ya aplanado y recortado. */
   nombre: string;
   teniaNombreAsistente: boolean;
+  /** «Nombre de quien atiende» ya aplanado y recortado; opcional (sin él, ni se envía). */
+  quienAtiende?: string;
+  teniaQuienAtiende?: boolean;
   /** El horario ya escrito: `{ lun: '09:00-18:00', dom: 'cerrado' }`; un día sin datos no está. */
   horarios?: Record<string, string>;
   catalogoWeb: boolean;
@@ -36,7 +39,7 @@ export type EntradaPayloadNegocio = {
 };
 
 export function payloadNegocio(e: EntradaPayloadNegocio): Record<string, unknown> {
-  const { datos, direccionMaps, ubicacion, teniaUbicacion, nombre, teniaNombreAsistente, horarios, catalogoWeb, uid } = e;
+  const { datos, direccionMaps, ubicacion, teniaUbicacion, nombre, teniaNombreAsistente, horarios, catalogoWeb, uid, quienAtiende = '', teniaQuienAtiende = false } = e;
   return {
     ...datos,
     ...(direccionMaps !== '' || teniaUbicacion.direccionMaps ? { direccionMaps } : {}),
@@ -44,6 +47,9 @@ export function payloadNegocio(e: EntradaPayloadNegocio): Record<string, unknown
     // la regla rechaza, ni un par a medias.
     ...(ubicacion ? { ubicacion } : teniaUbicacion.ubicacion ? { ubicacion: deleteField() } : {}),
     ...(nombre !== '' || teniaNombreAsistente ? { nombreAsistente: nombre } : {}),
+    // Solo si tiene texto o el documento ya lo traía (para poder vaciarlo): un
+    // comercio que no lo usa guarda igual aunque la consola llegue antes que la regla.
+    ...(quienAtiende !== '' || teniaQuienAtiende ? { nombreQuienAtiende: quienAtiende } : {}),
     // El mapa se reemplaza entero: un día que se vació desaparece del
     // documento, en vez de quedar con el horario viejo.
     ...(horarios ? { horarios } : {}),
@@ -81,4 +87,24 @@ export function datosDeNegocio(v: Record<string, unknown>): Record<string, strin
     instruccionesExtra: String(v['instruccionesExtra'] ?? ''),
     paleta: String(v['paleta'] ?? PALETA_POR_DEFECTO),
   };
+}
+
+/**
+ * Validación en el navegador de «Nombre de quien atiende». Es ayuda para decir
+ * POR QUÉ; la autoridad es la regla de Firestore (y `quienAtiende` en el
+ * servidor). Devuelve el motivo, o `null` si es válido (vacío es válido).
+ */
+const RE_QUIEN_CARACTERES = /[\u0000-\u001F\u007F-\u009F\u2028\u2029\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF<>[\]{}]/;
+const RE_QUIEN_ENLACE = /:\/\/|www\.|@|wa\.me|t\.me|\.(com|net|org|bo|me|app|io|gl|ly)\b|[0-9]{6}/i;
+const RE_QUIEN_PROHIBIDO =
+  /\b(banco|bancos|bancaria|bancario|pago|pagos|pagado|comprobante|recibimos|bot|bots|robot|chatbot|humano|humana|ia|ai)\b|acreditad|acreditaci|verificad|persona real|no soy (un|una)\b/i;
+export const TOPE_QUIEN_ATIENDE = 60;
+export function errorQuienAtiende(valor: string): string | null {
+  if (Array.from(valor).length > TOPE_QUIEN_ATIENDE) {
+    return `El nombre de quien atiende puede tener hasta ${TOPE_QUIEN_ATIENDE} caracteres.`;
+  }
+  if (RE_QUIEN_CARACTERES.test(valor)) return 'El nombre de quien atiende tiene caracteres no permitidos.';
+  if (RE_QUIEN_ENLACE.test(valor)) return 'El nombre de quien atiende no puede llevar enlaces, correos ni números largos.';
+  if (RE_QUIEN_PROHIBIDO.test(valor)) return 'El nombre de quien atiende no puede hablar de bancos, pagos ni de ser o no una inteligencia artificial.';
+  return null;
 }

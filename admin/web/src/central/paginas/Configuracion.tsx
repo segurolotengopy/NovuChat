@@ -7,7 +7,7 @@ import { auth, db } from '../../core/lib/firebase';
 import { useFlujos } from '../lib/flujos';
 import { useConsolaOculta } from '../componentes/ConsolaOculta';
 import { esVisible } from '../../../../functions/src/central/consola-oculta';
-import { datosDeNegocio, payloadNegocio } from '../lib/payloadNegocio';
+import { datosDeNegocio, payloadNegocio, errorQuienAtiende, TOPE_QUIEN_ATIENDE } from '../lib/payloadNegocio';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { PALETAS, PALETA_POR_DEFECTO, type PaletaId } from '../lib/paletas';
 import { ErrorDeImagen, mensajeDeErrorDeLogo } from '../lib/errorLogo';
@@ -313,6 +313,9 @@ export function Configuracion() {
   // campo, y no descubre el desfase con un «el servidor rechazó el cambio».
   const [nombreAsistente, setNombreAsistente] = useState('');
   const [teniaNombreAsistente, setTeniaNombreAsistente] = useState(false);
+  // NOMBRE DE QUIEN ATIENDE: mismo criterio de despliegue que el del asistente.
+  const [quienAtiende, setQuienAtiende] = useState('');
+  const [teniaQuienAtiende, setTeniaQuienAtiende] = useState(false);
   const [estado, setEstado] = useState<string | null>(null);
   // COMPORTAMIENTO DEL ASISTENTE. Lo propuesto se edita en `datos` (y se
   // guarda con el resto); lo que sigue es del servidor y NO entra en `datos`:
@@ -340,6 +343,8 @@ export function Configuracion() {
       });
       setNombreAsistente(typeof v['nombreAsistente'] === 'string' ? v['nombreAsistente'] : '');
       setTeniaNombreAsistente(Object.prototype.hasOwnProperty.call(v, 'nombreAsistente'));
+      setQuienAtiende(typeof v['nombreQuienAtiende'] === 'string' ? v['nombreQuienAtiende'] : '');
+      setTeniaQuienAtiende(Object.prototype.hasOwnProperty.call(v, 'nombreQuienAtiende'));
       setInstruccionesGuardadas(String(v['instruccionesExtra'] ?? ''));
       setVigentes(typeof v['instruccionesVigentes'] === 'string' ? v['instruccionesVigentes'] : '');
       setRevision(leerRevision(v['instruccionesRevision']));
@@ -374,6 +379,12 @@ export function Configuracion() {
     const nombre = nombreAsistente.replace(/[\r\n]+/g, ' ').trim();
     if (nombre.length > 40) {
       setEstado('El nombre del asistente puede tener hasta 40 caracteres.');
+      return;
+    }
+    const atiende = quienAtiende.replace(/[\r\n]+/g, ' ').trim();
+    const errorAtiende = errorQuienAtiende(atiende);
+    if (errorAtiende !== null) {
+      setEstado(errorAtiende);
       return;
     }
     // El enlace del mapa: la misma lista de dominios que la regla. El `pattern`
@@ -414,6 +425,7 @@ export function Configuracion() {
       // oculta (consolaOculta) NO se escribe `horarios`: lo que hubiera queda como está.
       await updateDoc(doc(db, 'tenants', tenantId, 'config', 'negocio'), payloadNegocio({
         datos, direccionMaps, ubicacion, teniaUbicacion, nombre, teniaNombreAsistente,
+        quienAtiende: atiende, teniaQuienAtiende,
         horarios: conHorario ? escribirHorarios(horarios) : undefined, catalogoWeb, uid: auth.currentUser?.uid ?? '',
       }));
       setEstado((datos['instruccionesExtra'] ?? '') !== instruccionesGuardadas
@@ -599,6 +611,14 @@ export function Configuracion() {
           de {(datos['nombreNegocio'] ?? '').trim() || 'tu negocio'}». Ponerle
           nombre no lo hace pasar por una persona: el asistente siempre dice que
           es una inteligencia artificial.</>)}
+        {grupo('Nombre de quien atiende (opcional)', (
+          <input value={quienAtiende} maxLength={TOPE_QUIEN_ATIENDE} placeholder="Rubén"
+                 onChange={(e) => setQuienAtiende(e.target.value.replace(/[\r\n]+/g, ' '))} />
+        ), <>Es quien responde a tus clientes cuando el asistente los pasa con
+          una persona, por ejemplo «Rubén te escribe en breve». Si lo dejas
+          vacío, los mensajes dicen «nuestro equipo». Hasta {TOPE_QUIEN_ATIENDE} caracteres
+          ({quienAtiende.length}/{TOPE_QUIEN_ATIENDE}); sin enlaces, números largos
+          ni referencias a bancos, pagos o a ser una persona.</>)}
         {opcion('tratamiento', 'Cómo trata al cliente', [
           ['usted', 'De usted'], ['tu', 'De tú'],
           ['vos', 'De vos (Santa Cruz)'], ['neutro', 'Impersonal'],

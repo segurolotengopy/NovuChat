@@ -214,6 +214,64 @@ export function vozFija(config: Record<string, unknown>): {
   };
 }
 
+/**
+ * EL TRATAMIENTO COMO ENUMERADO PARA TEXTOS FIJOS (`voz.tratamientoClave`).
+ *
+ * `voz.tratamiento` es la FRASE para el prompt; un texto fijo del código
+ * («Cuéntame» / «Cuéntenos») necesita el enumerado. Solo hay dos salidas:
+ * 'usted' y 'tu'. «vos», «neutro», un valor desconocido o la ausencia caen en
+ * 'tu': invariante «sin voseo» de NovuChat (el texto fijo nunca vosea) y, ante
+ * la duda, el trato que no presume jerarquía.
+ */
+export type TratamientoClave = 'tu' | 'usted';
+export function tratamientoClave(config: Record<string, unknown>): TratamientoClave {
+  return config['tratamiento'] === 'usted' ? 'usted' : 'tu';
+}
+
+/** Tope del nombre de quien atiende (igual que la regla de Firestore). */
+export const TOPE_QUIEN_ATIENDE = 60;
+
+/**
+ * ¿Es válido el «nombre de quien atiende»? Es TEXTO QUE LLEGA A CLIENTES FINALES
+ * dentro de frases fijas («Rubén te responde…»), así que se valida por
+ * patrones deterministas, los mismos que la regla de `config/negocio` (dos
+ * barreras: la regla frena el guardado, esto frena un documento escrito por
+ * otro camino, p. ej. un script con el SDK Admin):
+ *  - hasta 60 caracteres, una línea, sin controles, marcas bidi ni cero ancho;
+ *  - sin enlaces, correos ni dígitos largos (6 o más seguidos);
+ *  - sin lo que prohíben las prohibiciones 3 y 4 de CLAUDE.md: hacerse pasar
+ *    por el banco, afirmar un pago o negar ser una IA.
+ * Devuelve el motivo del rechazo, o `null` si es válido (vacío es válido).
+ */
+const RE_QUIEN_CARACTERES = /[\u0000-\u001F\u007F-\u009F\u2028\u2029\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF<>[\]{}]/;
+const RE_QUIEN_ENLACE = /:\/\/|www\.|@|\.(com|net|org|bo|me|app|io|gl|ly)\b|wa\.me|t\.me/i;
+const RE_QUIEN_DIGITOS = /[0-9]{6,}/;
+const RE_QUIEN_PROHIBIDO =
+  /\b(banco|bancos|bancaria|bancario|pago|pagos|pagado|acreditad[oa]s?|acreditaci[oó]n|verificad[oa]s?|comprobante|recibimos|bot|bots|robot|chatbot|humano|humana|persona real)\b|no soy (un|una)\b|\b(ia|ai)\b/i;
+export function motivoQuienAtiendeInvalido(valor: unknown): string | null {
+  if (valor === undefined || valor === null || valor === '') return null;
+  if (typeof valor !== 'string') return 'no es texto';
+  if (Array.from(valor).length > TOPE_QUIEN_ATIENDE) return `supera los ${TOPE_QUIEN_ATIENDE} caracteres`;
+  if (RE_QUIEN_CARACTERES.test(valor)) return 'tiene caracteres no permitidos';
+  if (RE_QUIEN_ENLACE.test(valor)) return 'no puede llevar enlaces ni correos';
+  if (RE_QUIEN_DIGITOS.test(valor)) return 'no puede llevar números largos';
+  if (RE_QUIEN_PROHIBIDO.test(valor)) return 'no puede hablar de bancos, pagos ni de ser o no una IA';
+  return null;
+}
+
+/**
+ * `voz.quienAtiende`: el nombre saneado, o '' si no hay o no pasa la
+ * validación. El flujo decide el respaldo («nuestro equipo»).
+ */
+export function quienAtiende(config: Record<string, unknown>): string {
+  const v = config['nombreQuienAtiende'];
+  if (typeof v !== 'string') return '';
+  // Se valida el texto TAL COMO ESTÁ GUARDADO: limpiarlo antes taparía un
+  // control o una marca bidi que la regla habría negado.
+  if (motivoQuienAtiendeInvalido(v) !== null) return '';
+  return sinMarcas(textoPlano(v, TOPE_QUIEN_ATIENDE));
+}
+
 /** Etiquetas legibles de los datos que el comercio no cargó. */
 const ETIQUETA_FALTANTE: Record<string, string> = {
   direccion: 'la dirección del local',
