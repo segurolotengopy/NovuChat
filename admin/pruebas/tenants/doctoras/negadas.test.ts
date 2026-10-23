@@ -25,7 +25,9 @@ function revisar(t: ResultadoTurno, rotulo: string): void {
   for (const m of t.mensajes) {
     const tx = m.cuerpo.normalize('NFD').replace(/[̀-ͯ]/g, '');
     expect(PROHIBIDO_EN_SALIDA.test(tx), `${rotulo}: «${m.cuerpo.slice(0, 60)}» lleva algo prohibido`).toBe(false);
-    expect(/\d{2,}/.test(tx.replace(/#\s*\d+/g, '')) || /\b(mil|cien|ciento|doscientos|cincuenta)\b.*\b(bolivianos|pesos|dolares)\b/.test(tx), `${rotulo}: una salida lleva una cifra`).toBe(false);
+    // El horario confirmado de la doctora es un dato de ella (público): sus cifras no son un precio.
+    const sinHorario = tx.replace(String(DOC['horario']).normalize('NFD').replace(/[̀-ͯ]/g, ''), '');
+    expect(/\d{2,}/.test(sinHorario.replace(/#\s*\d+/g, '')) || /\b(mil|cien|ciento|doscientos|cincuenta)\b.*\b(bolivianos|pesos|dolares)\b/.test(tx), `${rotulo}: una salida lleva una cifra`).toBe(false);
     expect(LIB.DR_NIEGA_IA.test(LIB.drNorm(m.cuerpo)), `${rotulo}: niega ser una IA`).toBe(false);
     expect(/te conviene|te recomiendo|te corresponde|lo mejor para ti es|tienes (flacidez|arrugas|manchas)/i.test(tx), `${rotulo}: diagnóstico o recomendación`).toBe(false);
     // «te escribirá la recepción» solo con un aviso real en el mismo turno.

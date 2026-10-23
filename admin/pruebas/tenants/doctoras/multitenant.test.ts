@@ -56,13 +56,14 @@ describe('un mismo teléfono escribe a las DOS doctoras', () => {
     });
   }
 
-  it('el horario que se dice es el de CADA doctora: Emma dice el suyo; Evy, mientras no tenga, nunca dice uno', () => {
-    const emma = conversar('rroca-emma');
-    expect(emma.salida.join('\n')).toMatch(/Atendemos de lunes a viernes de 09:00 a 12:00 y de 14:00 a 18:00, y los sábados de 09:00 a 12:00/);
-    const evy = conversar('rroca-evy');
-    expect(evy.salida.join('\n')).not.toMatch(/lunes|sábados|\d{1,2}:\d{2}|Atendemos de/);
-    expect(evy.salida.join('\n')).toMatch(/horario de atención te lo confirma la recepción/);
-    // Aunque el dato de Evy fuera el de Emma por error de carga, sale el dato de SU flujo; y si fuera un marcador, no se dice.
+  it('el horario que se dice es el de CADA doctora: cada una dice el suyo y nunca el de la otra', () => {
+    const emma = conversar('rroca-emma').salida.join('\n');
+    expect(emma).toMatch(/Atendemos de lunes a viernes de 09:00 a 12:00 y de 14:00 a 18:00, y los sábados de 09:00 a 12:00/);
+    expect(emma).not.toMatch(/08:30|18:30/);
+    const evy = conversar('rroca-evy').salida.join('\n');
+    expect(evy).toMatch(/Atendemos de lunes a viernes de 08:30 a 18:30 y los sábados de 09:00 a 12:00; los domingos no se atiende/);
+    expect(evy).not.toMatch(/14:00|18:00/);
+    // Aunque el dato de Evy fuera un marcador, no se dice.
     const marcador = conversar('rroca-evy', ANA, { doctora: JSON.stringify({ ...(datosDe('rroca-evy')['doctora'] as J), horario: 'REEMPLAZAR_HORARIO' }) });
     expect(marcador.salida.join('\n')).not.toMatch(/REEMPLAZAR|Atendemos de/);
   });
