@@ -6,7 +6,7 @@
  *
  *   node Flujos/experimental/doctoras/construir.mjs               escribe doctoras.<tenant>.json y doctoras.<tenant>.prueba.json de cada tenant con datos
  *   node Flujos/experimental/doctoras/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
- *   node Flujos/experimental/doctoras/construir.mjs --publicable [--tenant <t>] [--flujo <json>] [--datos <json>] [--negocio <json>] [--etapa crear|encender]
+ *   node Flujos/experimental/doctoras/construir.mjs --publicable [--tenant <t>] [--flujo <json>] [--datos <json>] [--negocio <json>] [--etapa crear|prueba|encender]
  *                                                       no escribe: sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal (sin --tenant revisa los de todas las doctoras)
  *   (cualquier otro argumento se rechaza: la ayuda no existe como opción, para que nada escriba por error)
  *
@@ -112,6 +112,8 @@ const FORMAS_CONFIG = {
   numeroRecepcion: /^(\d{6,20}|REEMPLAZAR_[A-Z0-9_]+)$/,
   prefijosPermitidos: /^\d{1,4}(,\d{1,4})*$/,
   telefonosDePrueba: /^(\d{6,20}(,\d{6,20})*|REEMPLAZAR_[A-Z0-9_]+)$/,
+  // La etapa de prueba: `si` la enciende; vacío o el marcador la dejan apagada (`Config del negocio` solo reconoce `si`).
+  etapaPrueba: /^(si|REEMPLAZAR_[A-Z0-9_]+)?$/,
   // El ÚNICO modelo de este flujo (decisión de Andres): gemini-3.5-flash-lite.
   modelo: /^gemini-3\.5-flash-lite$/,
   temperatura: /^(0|1|0\.\d{1,2})$/,
@@ -368,12 +370,28 @@ const marcasEn = (v) => (sinComentarios(JSON.stringify(v) || '').match(/reemplaz
 
 // Etapas de la guardia: `encender` (la completa, por defecto) y `crear` (solo para CREAR un flujo INACTIVO: WAM necesita su URL de entrada). La etapa `crear` tolera exactamente dos cosas (el marcador solo en los datos de rroca-evy): el estado de la plantilla distinto
 // de APPROVED y el horario pendiente (el marcador del horario de Evy; `horarioPorConfirmar: true` de Emma). Todo lo demás se exige igual: marcadores, identidad, credenciales y los tres medios.
-export const ETAPAS = ['crear', 'encender'];
+// La etapa `prueba` (flujo ENCENDIDO en modo prueba: solo atiende a `telefonosDePrueba`) tolera lo mismo que `crear` (plantilla sin APPROVED y horario pendiente) PERO exige tres cosas: `etapaPrueba = si`, `telefonosDePrueba` lleno y
+// válido y `numeroRecepcion` dentro de esos teléfonos (el aviso de la prueba nunca llega a la recepción real). Al revés, la etapa completa (`encender`) RECHAZA `etapaPrueba = si`: un flujo en modo prueba ignora a todo cliente.
+export const ETAPAS = ['crear', 'prueba', 'encender'];
+const soloDigitos = (v) => String(v === undefined || v === null ? '' : v).replace(/\D/g, '');
+function hallazgosDeEtapaPrueba(enFlujo, etapa) {
+  const h = [];
+  const enModoPrueba = typeof enFlujo.etapaPrueba === 'string' && enFlujo.etapaPrueba.trim().toLowerCase() === 'si';
+  if (etapa === 'encender' && enModoPrueba) h.push('Config base: etapaPrueba es «si» y la etapa completa no lo admite (el flujo ignoraría a todo cliente que no sea de prueba): use la etapa prueba o vacíe etapaPrueba');
+  if (etapa !== 'prueba') return h;
+  if (!enModoPrueba) h.push('Config base: la etapa prueba exige etapaPrueba igual a «si»');
+  const lista = typeof enFlujo.telefonosDePrueba === 'string' ? enFlujo.telefonosDePrueba.split(',').map((x) => x.trim()) : [];
+  const validos = lista.length > 0 && lista.every((x) => /^\d{6,20}$/.test(x));
+  if (!validos) h.push('Config base: la etapa prueba exige telefonosDePrueba lleno y válido (solo dígitos, sin marcador)');
+  const rec = typeof enFlujo.numeroRecepcion === 'string' ? enFlujo.numeroRecepcion.trim() : '';
+  if (!/^\d{6,20}$/.test(rec) || !lista.some((x) => soloDigitos(x) === rec)) h.push('Config base: la etapa prueba exige que numeroRecepcion esté dentro de telefonosDePrueba');
+  return h;
+}
 
 function hallazgosDeConfig(cb, donde, etapa = 'encender') {
   const h = [];
   if (!cb || typeof cb !== 'object') return [`${donde}: no trae la configuración base`];
-  if (etapa !== 'crear' && cb.avisoSolicitudEstado !== 'APPROVED') h.push(`${donde}: avisoSolicitudEstado es ${cb.avisoSolicitudEstado === undefined ? '«ausente»' : '(distinto de APPROVED)'} y tiene que ser APPROVED (Meta aún no aprobó la plantilla)`);
+  if (etapa === 'encender' && cb.avisoSolicitudEstado !== 'APPROVED') h.push(`${donde}: avisoSolicitudEstado es ${cb.avisoSolicitudEstado === undefined ? '«ausente»' : '(distinto de APPROVED)'} y tiene que ser APPROVED (Meta aún no aprobó la plantilla)`);
   if (!VALOR_LLENO(cb.avisoSolicitudPlantilla)) h.push(`${donde}: falta el nombre de la plantilla (avisoSolicitudPlantilla)`);
   if (!VALOR_LLENO(cb.avisoPlantillaIdioma)) h.push(`${donde}: falta el idioma de la plantilla (avisoPlantillaIdioma)`);
   return h;
@@ -389,7 +407,7 @@ function hallazgosDeLaDoctora(datos, etapa = 'encender', negocio = null) {
   const horarioEnConsola = !!hs && typeof hs === 'object' && Object.values(hs).some((v) => VALOR_LLENO(v));
   for (const c of ['nombreCorto', 'nombreCompleto', 'clinica', 'horario']) if (!VALOR_LLENO(d[c]) && !(c === 'horario' && horarioEnConsola)) h.push(`datos: doctora.${c} está vacío o es un marcador`);
   // Las doctoras atienden público: el horario lo confirma la doctora. Mientras el indicador esté en true (se pone en false cuando lo confirma), no se publica.
-  if (etapa !== 'crear' && d.horarioPorConfirmar === true) h.push('datos: doctora.horarioPorConfirmar es true: el horario aún no lo confirmó la doctora');
+  if (etapa === 'encender' && d.horarioPorConfirmar === true) h.push('datos: doctora.horarioPorConfirmar es true: el horario aún no lo confirmó la doctora');
   if (!Array.isArray(d.tratamientos) || !d.tratamientos.length) h.push('datos: doctora.tratamientos está vacío');
   return h;
 }
@@ -480,6 +498,7 @@ export function guardiaDePublicacion({ flujo, datos, negocio, etapa = 'encender'
   else {
     const enFlujo = Object.fromEntries(lista.map((a) => [a.name, a.value]));
     h.push(...hallazgosDeConfig(enFlujo, 'Config base', etapa));
+    h.push(...hallazgosDeEtapaPrueba(enFlujo, etapa));
     h.push(...hallazgosDeIdentidad(flujo, enFlujo, datos));
   }
   // 3. …en los datos, con lo que cada doctora tiene que traer lleno…
@@ -590,7 +609,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const resto = args.filter((a, i) => a !== '--publicable' && !OPCIONES.includes(a) && !OPCIONES.includes(args[i - 1]));
     const uno = OPCIONES.slice(1, 4).some((n) => args.includes(n));
     if (resto.length || args.includes('--verificar') || OPCIONES.some((n) => args.includes(n) && !opcion(n)) || (uno && !opcion('--tenant'))) {
-      console.error('✗ uso: construir.mjs --publicable [--tenant <t> [--flujo <json>] [--datos <json>] [--negocio <json>]] [--etapa crear|encender]'); process.exit(2);
+      console.error('✗ uso: construir.mjs --publicable [--tenant <t> [--flujo <json>] [--datos <json>] [--negocio <json>]] [--etapa crear|prueba|encender]'); process.exit(2);
     }
     const etapa = opcion('--etapa') || 'encender';
     if (!ETAPAS.includes(etapa)) { console.error(`✗ --etapa: ${ETAPAS.join(' | ')}`); process.exit(2); }
@@ -612,7 +631,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           mal = true;
           console.error(`✗ El flujo de ${tn} NO se puede publicar todavía (etapa ${etapa}):`);
           for (const x of hallazgos) console.error(`  - ${x}`);
-        } else if (etapa === 'crear') console.log(`✓ ${tn}: etapa crear: sin marcadores (salvo el horario pendiente de Evy), con identidad, credenciales y los tres medios: se puede CREAR INACTIVO (no se enciende: falta la plantilla APPROVED y el horario confirmado).`);
+        } else if (etapa === 'prueba') console.log(`✓ ${tn}: etapa prueba: sin marcadores, con etapaPrueba = si, teléfonos de prueba válidos y la recepción dentro de ellos: se puede ENCENDER EN MODO PRUEBA (solo atiende a esos teléfonos).`);
+        else if (etapa === 'crear') console.log(`✓ ${tn}: etapa crear: sin marcadores (salvo el horario pendiente de Evy), con identidad, credenciales y los tres medios: se puede CREAR INACTIVO (no se enciende: falta la plantilla APPROVED y el horario confirmado).`);
         else console.log(`✓ ${tn}: sin marcadores REEMPLAZAR_*, con la plantilla de aviso APPROVED y los medios completos: se puede publicar (con la confirmación de quien publica).`);
       }
       process.exit(mal ? 1 : 0);
