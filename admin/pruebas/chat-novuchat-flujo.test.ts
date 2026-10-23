@@ -1919,7 +1919,7 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
     const t8 = j.texto('¿Atienden también los fines de semana?');
     expect(w.modelo.llamadas).toHaveLength(llamadas8); // es un dato documentado: lo contesta el código, no el modelo
     expect(tipoInter(t8.aMi[0]!)).toBe('list');
-    expect(t8.aMi[0]!.cuerpo).toMatch(/^Sí: NovuChat atiende las 24 horas, todos los días, incluso fuera de tu horario\./);
+    expect(t8.aMi[0]!.cuerpo).toMatch(/^Yo atiendo las 24 horas, todos los días, incluso fuera de tu horario\. El equipo atiende en horario de oficina\./);
     expect(t8.aMi[0]!.cuerpo).not.toMatch(/No estoy seguro de haberte entendido/);
     expect(t8.aMi[0]!.cuerpo).toMatch(/Si tienes otro negocio, cuéntame de qué rubro es y te explico cómo te ayudamos 😊$/);
     expect(idsBotones(t8.aMi[0]!)).toEqual([]);
@@ -2196,7 +2196,7 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
       w.modelo.con = 'ERROR';
       const t = j.texto(q);
       expect(w.modelo.llamadas, q).toHaveLength(0);
-      expect(t.aMi[0]!.cuerpo, q).toMatch(/Sí: NovuChat atiende las 24 horas, todos los días, incluso fuera de tu horario/);
+      expect(t.aMi[0]!.cuerpo, q).toMatch(/Yo atiendo las 24 horas, todos los días, incluso fuera de tu horario\. El equipo atiende en horario de oficina/);
       expect(t.aMi[0]!.cuerpo, q).not.toMatch(/No estoy seguro de haberte entendido/);
     }
     // el horario del PROPIO negocio del cliente no es esta pregunta
@@ -2204,7 +2204,7 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
     const j = jugar(w, MAMA);
     j.texto('Hola');
     w.modelo.con = 'ERROR';
-    expect(j.texto('Mi consultorio atiende los sábados y domingos').aMi[0]!.cuerpo).not.toMatch(/Sí: NovuChat atiende/);
+    expect(j.texto('Mi consultorio atiende los sábados y domingos').aMi[0]!.cuerpo).not.toMatch(/Yo atiendo las 24 horas/);
   });
   it('hotfix 09/10: si el modelo habla de «los 7 días de la semana» la guardia de cifras no lo manda al «no te entendí»; y si igual se rechaza, el respaldo de una pregunta comprensible es «ese dato lo revisa el equipo»', () => {
     const w = crear();

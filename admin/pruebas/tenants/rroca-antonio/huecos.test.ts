@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { J } from '../../lib/flujo';
+import { ejecutar, type J } from '../../lib/flujo';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
@@ -23,8 +23,8 @@ const EXP = join(REPO, 'Flujos/experimental');
 const ANTONIO = join(EXP, 'rroca-antonio');
 const leer = (r: string): string => readFileSync(r, 'utf8');
 const nodoDe = (ruta: string): string => leer(join(ANTONIO, 'src/nodos', ruta));
-const NQUITADAS = 43;
-const HUELLA = '64c6d92c2bf67d58';
+const NQUITADAS = 44;
+const HUELLA = 'c92ff194f2cd0cf6';
 const origenChat = (a: string): string => leer(join(EXP, 'chat-novuchat/src/nodos', a));
 
 /** Reemplaza `de` por `a` exigiendo que aparezca exactamente una vez (si el origen cambia, la sustitución deja de aplicar y la prueba lo dice). */
@@ -102,12 +102,20 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
     // Las líneas de comentario propias y los `Object.assign` sin la oferta se declaran en PROPIO.md; aquí se fija lo que cambia de comportamiento.
     const codigo = propias.filter((l) => !l.trim().startsWith('//'));
     expect(codigo).toEqual([
-      '  cfg = Object.assign({}, deBase, atencion, {',
-      '  cfg = Object.assign({}, deBase, atencion, {',
-      '  cfg = Object.assign({}, deBase, deLaConsola, atencion, {',
+      '  cfg = {',
+      '    ...deBase, ...atencion,',
+      '  };',
+      '  cfg = {',
+      '    ...deBase, ...atencion,',
+      '  };',
+      '  cfg = {',
+      '    ...deBase, ...deLaConsola, ...atencion,',
+      '  };',
       'const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;',
-      'return [{ json: Object.assign({}, cfg, {',
+      'return [{ json: {',
+      '  ...cfg,',
       "  modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/.test(String(base.modelo || '')) ? String(base.modelo) : 'gemini-3.5-flash-lite',",
+      '} }];',
     ]);
   });
 
@@ -116,6 +124,34 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
     expect(t).toContain('permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0');
     expect(t).not.toContain('permitidos.length === 0');
     for (const ajeno of ['limpiarOferta', 'planilla', 'CH_DATOS', 'archivoPlanes', 'cargosUnicos', 'rubros']) expect(t, ajeno).not.toContain(ajeno);
+    // Semgrep `insecure-object-assign`: se arma con propagación de objetos propios, nunca con `Object.assign`.
+    expect(t).not.toContain('Object.assign');
+  });
+});
+
+describe('config-del-negocio.js sin Object.assign: el cuerpo de «Traer configuración» es entrada y no contamina (prueba negada)', () => {
+  const correr = (cuerpo: unknown, codigo = 200): Record<string, unknown> =>
+    ejecutar(`${nodoDe('_comun.js')}\n${nodoDe('config-del-negocio.js')}`, [{ statusCode: codigo, body: cuerpo }], {
+      'Config base': { nombreNegocio: 'Base', numeroRecepcion: '5917123' },
+      'Carga de entrada': { phoneNumberId: 'p1' },
+    })[0];
+
+  it('un cuerpo con __proto__, constructor y prototype no aparece en la salida ni contamina Object.prototype', () => {
+    const cuerpo = JSON.parse('{"tenantId":"t","__proto__":{"contaminado":true},"constructor":{"prototype":{"contaminado2":true}},"prototype":{"x":1},"datosDelNegocio":{"__proto__":{"contaminado3":true},"nombreNegocio":"Panel"},"operacion":{"__proto__":{"contaminado4":true}},"atencion":{"__proto__":{"contaminado5":true},"estado":"operador"}}');
+    const j = correr(cuerpo);
+    for (const k of ['contaminado', 'contaminado2', 'contaminado3', 'contaminado4', 'contaminado5']) {
+      expect(j[k], k).toBeUndefined();
+      expect(({} as Record<string, unknown>)[k], k).toBeUndefined();
+    }
+    expect(Object.keys(j)).not.toContain('constructor');
+    expect(Object.keys(j)).not.toContain('prototype');
+    expect(Object.getPrototypeOf(j)).toBe(Object.prototype);
+    expect(j).toMatchObject({ nombreNegocio: 'Panel', atencionEstado: 'operador', configDeLaConsola: true, estadoComercio: 'operativo' });
+  });
+
+  it('409 y panel sin respuesta siguen igual: suspendido con el texto neutro, y respaldo operativo', () => {
+    expect(correr({ mensajeCortesia: 'Volvemos pronto' }, 409)).toMatchObject({ estadoComercio: 'suspendido', configDeLaConsola: false, mensajeComercioSuspendido: 'Volvemos pronto' });
+    expect(correr({}, 500)).toMatchObject({ estadoComercio: 'operativo', configDeLaConsola: false, panelSinRespuesta: true, codigoDelPanel: 500, nombreNegocio: 'Base' });
   });
 });
 
