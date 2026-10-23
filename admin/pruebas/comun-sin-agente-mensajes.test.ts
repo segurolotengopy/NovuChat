@@ -13,7 +13,7 @@ import { ejecutar } from './lib/flujo';
 
 const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/comun-sin-agente/src/mensajes.js');
 const FUENTE = readFileSync(RUTA, 'utf8');
-const NOMBRES = ['cmRecorte', 'cmTexto', 'cmBotones', 'cmLista', 'cmEnlace', 'cmUrlWa', 'cmMensaje', 'cmSinMencionDelBoton', 'cmContactoConBoton'] as const;
+const NOMBRES = ['cmRecorte', 'cmTexto', 'cmBotones', 'cmLista', 'cmEnlace', 'cmUrlWa', 'cmMensaje', 'cmSinMencionDelBoton', 'cmMotivoAviso', 'cmContactoConBoton'] as const;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Fn = (...a: any[]) => any;
 const M = ejecutar(`${FUENTE}\nreturn [{ json: { ${NOMBRES.join(', ')} } }];`, [{}])[0] as Record<(typeof NOMBRES)[number], Fn>;
@@ -138,7 +138,7 @@ describe('pasar con una persona: el botón, o solo texto', () => {
   it('si al quitar la mención no queda nada, sale el texto por defecto', () => {
     expect(M.cmSinMencionDelBoton('Tócale el botón.', 'Lo coordina una persona.')).toBe('Lo coordina una persona.');
     expect(M.cmSinMencionDelBoton('Hola. Toca el botón de abajo', 'x')).toBe('Hola.');
-    expect(M.cmSinMencionDelBoton('Escríbele tocando el botón de abajo.', 'x')).toBe('Escríbele de abajo.');
+    expect(M.cmSinMencionDelBoton('Escríbele tocando el botón de abajo.', 'x')).toBe('Escríbele.');
   });
   it('un texto sin mención del botón queda igual', () => {
     expect(M.cmSinMencionDelBoton('Gracias por escribirnos.', 'x')).toBe('Gracias por escribirnos.');
@@ -177,5 +177,74 @@ describe('segunda revisión de seguridad (02/10): el saludo largo no rompe el re
     expect(m.respaldo.length).toBeLessThanOrEqual(4000);
     expect(m.respaldo).toMatch(/https:\/\/wa\.me\/71234561\?text=h+(%E2%80%A6)?$/);
     expect(m.payload.interactive.action.parameters.url.length).toBeLessThan(700);
+  });
+});
+
+describe('PROMESA SIN RESPALDO DEL BOTÓN: quien escribe es la recepción', () => {
+  // Todas las plantillas de cuerpo que los flujos le pasan a `cmContactoConBoton`, y algunas variantes de redacción.
+  const CUERPOS = [
+    'Eso lo coordina recepción. Tócale el botón y le escribes directo.',
+    'Ya le avisé a Rubén. Escríbele directo con el botón de abajo.',
+    'Para eso toca el botón y escríbele a recepción.',
+    'Escríbele tocando el botón.',
+    'TOCA EL BOTON para hablar con recepción',
+    'Pasa con recepción: pulsa el botón de arriba.',
+    'Usa el botón y listo.',
+    'Te paso con recepción 👇\n\nEl botón abre su chat.',
+    'Botón de recepción disponible.',
+  ];
+  const base = { numero: '71234561', desde: '71234561', botonTexto: 'Escribir', saludo: 'Hola' };
+  it('NIEGA: desde === recepción nunca produce un texto con «botón» (texto, respaldo y payload), con cualquier cuerpo', () => {
+    for (const cuerpo of CUERPOS) for (const desde of ['71234561', '+7 1234 561', '71234561 ']) {
+      const m = M.cmContactoConBoton({ ...base, desde, cuerpo });
+      expect(m.conBoton).toBe(false);
+      expect(m.payload.type).toBe('text');
+      for (const t of [m.texto, m.respaldo, m.payload.text.body]) {
+        expect(t).not.toMatch(/bot[oó]n/i);
+        expect(t).not.toMatch(/\btoca|t[oó]cale|pulsa|presiona|aprieta/i);
+      }
+    }
+  });
+  it('el texto de ese caso no promete lo que no se cumple (nada de «te escribirán», «te llamamos», «ya avisé», «lo consulto»)', () => {
+    const m = M.cmContactoConBoton({ ...base, cuerpo: CUERPOS[1] });
+    expect(m.texto).not.toMatch(/te (escribir|llam|avis)|ya (le )?avis|lo consulto|luego|enseguida/i);
+    expect(m.texto).toContain('mismo número de recepción');
+  });
+  it('un texto propio del flujo para ese caso (`sinBotonMismoNumero`) también se limpia si nombra el botón', () => {
+    const m = M.cmContactoConBoton({ ...base, cuerpo: 'x', sinBotonMismoNumero: 'Estás en recepción. Toca el botón.' });
+    expect(m.texto).toBe('Estás en recepción.');
+  });
+  it('sin número de recepción, el cuerpo sigue sin mencionar el botón (comportamiento anterior)', () => {
+    for (const cuerpo of CUERPOS) expect(M.cmContactoConBoton({ ...base, numero: '', cuerpo }).texto).not.toMatch(/bot[oó]n/i);
+  });
+  it('con número distinto sí hay botón y el cuerpo queda intacto', () => {
+    const m = M.cmContactoConBoton({ ...base, desde: '71234562', cuerpo: CUERPOS[0] });
+    expect(m.conBoton).toBe(true);
+    expect(m.texto).toBe(CUERPOS[0]);
+  });
+  it('cmSinMencionDelBoton detecta cada variante (con y sin tilde, mayúsculas)', () => {
+    for (const v of ['toca el botón', 'Toca el boton', 'TÓCALE EL BOTÓN', 'tócale el botón de abajo', 'tocando el botón', 'con el botón', 'con el boton de abajo', 'pulsa el botón', 'presiona el botón', 'aprieta el boton', 'usa el botón', 'el botón', 'botón', 'BOTON']) {
+      const s = M.cmSinMencionDelBoton('Hola equipo. ' + v + ' ahora.', 'por defecto') as string;
+      expect(s, v).not.toMatch(/bot[oó]n/i);
+      expect(s, v).toMatch(/^Hola equipo\./);
+    }
+    expect(M.cmSinMencionDelBoton('Escríbele con el botón.', 'D')).toBe('Escríbele.');
+    expect(M.cmSinMencionDelBoton('Toca el botón', 'D')).toBe('D');
+  });
+});
+
+describe('cmMotivoAviso: por qué no salió el aviso', () => {
+  const rec = '71234561';
+  it('tope, mismo número y Meta, cada rama', () => {
+    expect(M.cmMotivoAviso({ aviso: 'no_salio', motivoFallo: 'tope_avisos', planeado: false, desde: '71234562', numeroRecepcion: rec })).toBe('tope');
+    expect(M.cmMotivoAviso({ aviso: 'no_salio', motivoFallo: 'sin_destinatario', planeado: false, desde: '+7 1234 561', numeroRecepcion: rec })).toBe('mismo_numero');
+    expect(M.cmMotivoAviso({ aviso: 'no_salio', motivoFallo: '', planeado: true, desde: '71234562', numeroRecepcion: rec })).toBe('meta');
+  });
+  it('NIEGA: con `salio` o `ninguno` nunca hay motivo; sin datos, vacío; causas que no son las tres, vacío', () => {
+    for (const aviso of ['salio', 'ninguno', undefined, 'otro']) expect(M.cmMotivoAviso({ aviso, motivoFallo: 'tope_avisos', planeado: true, desde: rec, numeroRecepcion: rec })).toBe('');
+    expect(M.cmMotivoAviso(undefined)).toBe('');
+    expect(M.cmMotivoAviso({})).toBe('');
+    expect(M.cmMotivoAviso({ aviso: 'no_salio', motivoFallo: 'plantilla_no_configurada', planeado: false, desde: '71234562', numeroRecepcion: rec })).toBe('');
+    expect(M.cmMotivoAviso({ aviso: 'no_salio', motivoFallo: 'sin_destinatario', planeado: false, desde: '71234562', numeroRecepcion: '' })).toBe('');
   });
 });

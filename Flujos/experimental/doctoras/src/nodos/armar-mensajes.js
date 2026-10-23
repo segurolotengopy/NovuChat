@@ -171,7 +171,8 @@ if (claveOk) {
 }
 
 const llamadas = decision.llamarModelo === true ? 1 : 0;
-const resumen = { plan: plan.tipo === 'nada' ? (puerta.ruta || 'nada') : plan.tipo, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadas, aviso: avisoPlaneado || avisoRepetido ? (avisoSalio ? 'salio' : 'no_salio') : (av.motivoFallo ? 'no_salio' : 'ninguno') };
+const resumen = { plan: plan.tipo === 'nada' ? (puerta.ruta || 'nada') : plan.tipo, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadas, aviso: avisoPlaneado || avisoRepetido ? (avisoSalio ? 'salio' : 'no_salio') : (av.motivoFallo ? 'no_salio' : 'ninguno'), avisoMotivo: '' };
+resumen.avisoMotivo = cmMotivoAviso({ aviso: resumen.aviso, motivoFallo: av.motivoFallo, planeado: avisoPlaneado, desde: from, numeroRecepcion: cnDigitos(cfg.numeroRecepcion) });
 const numero = prueba ? telPrueba : from;
 const sale = ms.length > 0 && numero !== '';
 resumen.mensajes = sale ? ms.length : 0;

@@ -62,11 +62,33 @@ function cmUrlWa(numero, saludo) {
 function cmMensaje(para, payload, texto, respaldo, extra) {
   return Object.assign({ para: para, payload: payload, texto: texto, respaldo: respaldo || texto }, extra || {});
 }
-// Un texto que nombra «el botón» cuando no hay botón queda mal: se le quitan esas frases.
+// Un texto que nombra «el botón» cuando no hay botón queda mal: se le quitan esas frases (con o sin tilde, en cualquier
+// mayúscula): «toca/tócale/tocá el botón…», «con el botón», «tocando el botón», «usa/pulsa/presiona/aprieta el botón»,
+// «el botón de abajo», «botón». Lo que queda se limpia de espacios y signos sueltos.
 function cmSinMencionDelBoton(cuerpo, porDefecto) {
-  const s = String(cuerpo || '').replace(/\s*T[oó]ca(le)? el bot[oó]n[^.!?]*[.!?]?/gi, '')
-    .replace(/\s*tocando el bot[oó]n/gi, '').replace(/\s+([.,])/g, '$1').trim();
-  return s || String(porDefecto || '');
+  const s = String(cuerpo || '')
+    .replace(/\s*\b(?:t[oó]ca(?:le|me)?|toc[aá]|pulsa(?:le)?|presiona(?:le)?|aprieta(?:le)?|usa|us[aá]|oprime)\s+(?:en\s+)?(?:el|ese|este|el\s+siguiente)?\s*bot[oó]n[^.!?\n]*[.!?]?/gi, '')
+    .replace(/\s*\b(?:tocando|pulsando|presionando|apretando|usando|con)\s+(?:el|ese|este)\s+bot[oó]n(?:\s+de\s+(?:abajo|arriba))?/gi, '')
+    .replace(/\s*\b(?:el|ese|este)\s+bot[oó]n(?:\s+de\s+(?:abajo|arriba))?/gi, '')
+    .replace(/\s*\bbot[oó]n(?:es)?\b/gi, '')
+    .replace(/[ \t]+([.,;:!?])/g, '$1').replace(/[ \t]{2,}/g, ' ').replace(/\s+(?=\n)/g, '').trim();
+  return s && !/^[\s.,;:!?¡¿-]*$/.test(s) ? s : String(porDefecto || '');
+}
+// Quien escribe ES la recepción: no hay botón (sería a su propio chat) y tampoco a quién pasarle. Este texto no nombra ningún botón y no
+// promete nada («te escribirán», «te llamamos», «ya avisé»): solo dice la verdad.
+const cmTextoMismoNumero = 'Estás escribiendo desde el mismo número de recepción, así que desde aquí no hay a quién pasarte.';
+// El motivo por el que un aviso a recepción NO salió, para el reporte (`avisoMotivo`). El contrato `aviso` ('salio' | 'no_salio' | 'ninguno')
+// no cambia: este campo solo lo explica. Devuelve 'tope' (se alcanzó el tope de avisos), 'mismo_numero' (quien escribe es la recepción),
+// 'meta' (el aviso se armó y Meta no aceptó el envío) o '' (aviso salió, no hubo aviso, o la causa no es ninguna de las tres).
+//   x = { aviso, motivoFallo, planeado, desde, numeroRecepcion }
+function cmMotivoAviso(x) {
+  if (!x || x.aviso !== 'no_salio') return '';
+  if (x.motivoFallo === 'tope_avisos') return 'tope';
+  const rec = String(x.numeroRecepcion || '').replace(/\D/g, '');
+  const desde = String(x.desde || '').replace(/\D/g, '');
+  if (rec && rec === desde) return 'mismo_numero';
+  if (x.planeado === true && !x.motivoFallo) return 'meta';
+  return '';
 }
 // PASAR CON UNA PERSONA: el mensaje con el botón que abre su chat, o solo texto si no hay a quién mandarlo.
 //   op = { numero, desde, cuerpo, botonTexto, saludo, para?, evento?, textoDelRespaldo?, sinNumero? }
@@ -84,6 +106,9 @@ function cmContactoConBoton(op) {
       cmRecorte(op.cuerpo, 4000 - pie.length) + pie,
       { tipoReporte: 'interactive', evento: op.evento, conBoton: true });
   }
-  const sinBoton = cmSinMencionDelBoton(op.cuerpo, op.sinNumero || 'Eso lo coordina una persona del equipo.');
+  // Mismo número: texto propio, que no nombra botón. Sin número configurado: el cuerpo sin las frases del botón.
+  const sinBoton = numero && numero === desde
+    ? cmSinMencionDelBoton(op.sinBotonMismoNumero || cmTextoMismoNumero, cmTextoMismoNumero)
+    : cmSinMencionDelBoton(op.cuerpo, op.sinNumero || 'Eso lo coordina una persona del equipo.');
   return cmMensaje(para, cmTexto(sinBoton), sinBoton, sinBoton, { tipoReporte: 'text', evento: op.evento, conBoton: false });
 }

@@ -254,7 +254,8 @@ if (claveOk && t.extranjero === true) {
   rrBarrer(fichas.mapa, ahora);
 }
 
-const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, tokensEntrada: 0, aviso: avisoPlaneado || avisoRepetido ? (avisoSalio || avisoRepetido ? 'salio' : 'no_salio') : (av.motivoFallo ? 'no_salio' : 'ninguno') };
+const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, tokensEntrada: 0, aviso: avisoPlaneado || avisoRepetido ? (avisoSalio || avisoRepetido ? 'salio' : 'no_salio') : (av.motivoFallo ? 'no_salio' : 'ninguno'), avisoMotivo: '' };
+resumen.avisoMotivo = cmMotivoAviso({ aviso: resumen.aviso, motivoFallo: av.motivoFallo, planeado: avisoPlaneado, desde: from, numeroRecepcion: cnDigitos(cfg.numeroRecepcion) });
 // Costo real del historial: los tokens de entrada que cobró el modelo en este turno (0 si no hubo llamada).
 const rrUso = decision.llamarModelo === true ? ((cnPrimero('Conversar con el modelo') || {}).usageMetadata || null) : null;
 if (rrUso && Number.isFinite(rrUso.promptTokenCount)) resumen.tokensEntrada = rrUso.promptTokenCount;
