@@ -14,6 +14,9 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import {
+  MAX_TRAMOS as MAX_TRAMOS_CLIENTE, errorDelDia, escribirHorarios, leerHorarios, type DiaHorario,
+} from '../../web/src/central/lib/horarios.ts';
 import { horarioAtencion, resolverFuncionarios } from '../../functions/src/core/prompt/prompt.ts';
 import {
   MAX_TRAMOS, esVariosTramos, horariosSaneados, tramosValidos,
@@ -86,11 +89,17 @@ describe('horarioAtencion con turno partido', () => {
       .toBe('lunes, de 09:00 a 12:00 y de 14:00 a 18:00; martes, de 09:00 a 18:00');
   });
 
-  it('OMITE un día con tramos solapados o desordenados: no anuncia lo que no pudo verificar', () => {
-    expect(horarioAtencion({ lun: '09:00-13:00,12:00-18:00', mar: '09:00-18:00' }))
-      .toBe('martes, de 09:00 a 18:00');
-    expect(horarioAtencion({ lun: '14:00-18:00,09:00-12:00' })).toBe('');
-    expect(horarioAtencion({ lun: '08:00-09:00,10:00-11:00,12:00-13:00,14:00-15:00' })).toBe('');
+  it('NORMALIZA un día solapado, desordenado, con un tramo invertido o con cuatro tramos: anuncia la unión', () => {
+    expect(horarioAtencion({ lun: '09:00-13:00,12:00-18:00' })).toBe('lunes, de 09:00 a 18:00');
+    expect(horarioAtencion({ lun: '14:00-18:00,09:00-12:00' })).toBe('lunes, de 09:00 a 12:00 y de 14:00 a 18:00');
+    expect(horarioAtencion({ lun: '12:00-09:00,14:00-18:00' })).toBe('lunes, de 14:00 a 18:00');
+    expect(horarioAtencion({ lun: '08:00-09:00,10:00-11:00,12:00-13:00,14:00-15:00' }))
+      .toBe('lunes, de 08:00 a 09:00 y de 10:00 a 11:00 y de 12:00 a 13:00 y de 14:00 a 15:00');
+  });
+
+  it('un día totalmente inválido se anuncia «cerrado», nunca como día sin datos ni abierto', () => {
+    expect(horarioAtencion({ lun: '12:00-09:00,18:00-14:00', mar: '09:00-18:00' }))
+      .toBe('lunes: cerrado; martes, de 09:00 a 18:00');
   });
 
   it('el formato viejo da EXACTAMENTE el mismo texto que antes', () => {
@@ -113,9 +122,13 @@ describe('horariosSaneados: lo que reciben los flujos', () => {
     expect(horariosSaneados(h)).toEqual(h);
   });
 
-  it('quita el día partido inválido y conserva el resto', () => {
+  it('normaliza el día partido inválido y conserva el resto', () => {
     expect(horariosSaneados({ lun: '09:00-13:00,12:00-18:00', mar: '09:00-18:00' }))
-      .toEqual({ mar: '09:00-18:00' });
+      .toEqual({ lun: '09:00-18:00', mar: '09:00-18:00' });
+  });
+
+  it('un día partido sin ningún tramo válido queda «cerrado» (falla cerrado)', () => {
+    expect(horariosSaneados({ lun: '12:00-09:00,18:00-14:00' })).toEqual({ lun: 'cerrado' });
   });
 
   it('lo que no es un mapa queda vacío', () => {
@@ -123,12 +136,103 @@ describe('horariosSaneados: lo que reciben los flujos', () => {
     expect(horariosSaneados('lunes')).toEqual({});
   });
 
-  it('el funcionario por defecto y los funcionarios heredan el horario ya saneado', () => {
-    const negocio = { nombreNegocio: 'N', horarios: { lun: '09:00-12:00,14:00-18:00', mar: '14:00-18:00,09:00-12:00' } };
+  it('el funcionario por defecto y los funcionarios heredan el horario normalizado', () => {
+    const negocio = { nombreNegocio: 'N', horarios: { lun: '09:00-12:00,14:00-18:00', mar: '14:00-18:00,09:00-12:00', mie: '12:00-09:00,18:00-14:00' } };
+    const esperado = { lun: '09:00-12:00,14:00-18:00', mar: '09:00-12:00,14:00-18:00', mie: 'cerrado' };
     const [unico] = resolverFuncionarios([], negocio, new Set());
-    expect(unico?.horarioTrabajo).toEqual({ lun: '09:00-12:00,14:00-18:00' });
+    expect(unico?.horarioTrabajo).toEqual(esperado);
     const [conFicha] = resolverFuncionarios([{ id: 'f1', datos: { activo: true, nombre: 'Ana' } }], negocio, new Set());
-    expect(conFicha?.horarioTrabajo).toEqual({ lun: '09:00-12:00,14:00-18:00' });
+    expect(conFicha?.horarioTrabajo).toEqual(esperado);
+    const [propio] = resolverFuncionarios([{ id: 'f2', datos: { activo: true, nombre: 'Luis',
+      horarioTrabajo: { jue: '08:00-09:00,10:00-11:00,12:00-13:00,14:00-15:00', vie: '09:00-13:00,12:00-18:00' } } }], negocio, new Set());
+    expect(propio?.horarioTrabajo).toEqual({ jue: '08:00-09:00,10:00-11:00,12:00-13:00,14:00-15:00', vie: '09:00-18:00' });
+  });
+});
+
+// El candado de los flujos: se EXTRAE del nodo `Comprobar reserva` (no se copia) y se ejecuta con
+// el horario que sale del servidor. Lo que el asistente anuncia tiene que ser lo que el candado hace cumplir.
+describe('el horario normalizado coincide con lo que hace cumplir el candado de los flujos', () => {
+  const fuenteFlujo = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'Flujos', 'src', 'modulos', 'agenda', 'comprobar-reserva.js'), 'utf8');
+  const trozo = fuenteFlujo.slice(fuenteFlujo.indexOf('const aMinutos'), fuenteFlujo.indexOf("// '' si la cita entra"));
+  const tramosDelDia = new Function(`${trozo}; return tramosDelDia;`)() as
+    (h: unknown, dia: string) => Array<{ i: number; f: number }> | null;
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  /** Minutos del día que el candado deja pasar (cita de un minuto que entra completa en un tramo). */
+  const abiertos = (h: unknown) => {
+    const t = tramosDelDia(h, 'lun');
+    if (t === null) return 'sin-dato';
+    return t.length === 0 ? 'cerrado' : t.map((x) => `${hhmm(x.i)}-${hhmm(x.f)}`).join(',');
+  };
+
+  const casos: Array<[string, string]> = [
+    ['solapado', '09:00-13:00,12:00-18:00'],
+    ['desordenado', '14:00-18:00,09:00-12:00'],
+    ['un tramo invertido', '12:00-09:00,14:00-18:00'],
+    ['cuatro tramos', '08:00-09:00,10:00-11:00,12:00-13:00,14:00-15:00'],
+    ['contiguos', '09:00-12:00,12:00-18:00'],
+  ];
+  for (const [nombre, valor] of casos) {
+    it(`${nombre}: el saneado no abre ni un minuto más que la unión y el texto anuncia la misma unión`, () => {
+      const sano = horariosSaneados({ lun: valor });
+      // La unión de los tramos válidos que calcula el candado con el valor CRUDO...
+      const cruda = tramosDelDia({ lun: valor }, 'lun') ?? [];
+      const unidos: Array<{ i: number; f: number }> = [];
+      for (const t of [...cruda].sort((x, y) => x.i - y.i)) {
+        const u = unidos[unidos.length - 1];
+        if (u && t.i <= u.f) u.f = Math.max(u.f, t.f); else unidos.push({ ...t });
+      }
+      // ...es lo que el candado calcula con el valor saneado.
+      const conSano = tramosDelDia(sano, 'lun') ?? [];
+      expect(conSano.map((x) => [x.i, x.f])).toEqual(unidos.map((x) => [x.i, x.f]));
+      // Y el texto anuncia esos mismos tramos.
+      const texto = horarioAtencion({ lun: valor });
+      for (const x of unidos) expect(texto).toContain(`de ${hhmm(x.i)} a ${hhmm(x.f)}`);
+    });
+  }
+
+  it('un día totalmente inválido: el candado recibe «cerrado», nunca un día sin dato (que dejaría pasar la cita)', () => {
+    const crudo = { lun: '12:00-09:00,18:00-14:00' };
+    expect(abiertos(crudo)).toBe('sin-dato'); // lo que pasaría si se omitiera: falla ABIERTO
+    expect(abiertos(horariosSaneados(crudo))).toBe('cerrado');
+    expect(horarioAtencion(crudo)).toBe('lunes: cerrado');
+  });
+});
+
+describe('la validación de la consola (funciones puras de `web/src/central/lib/horarios.ts`)', () => {
+  const dia = (...tramos: Array<[string, string]>): DiaHorario =>
+    ({ cerrado: false, tramos: tramos.map(([desde, hasta]) => ({ desde, hasta })) });
+
+  it('acepta un rango, dos y tres turnos ordenados, y el día sin datos', () => {
+    expect(errorDelDia(dia(['09:00', '18:00']))).toBeNull();
+    expect(errorDelDia(dia(['09:00', '12:00'], ['14:00', '18:00']))).toBeNull();
+    expect(errorDelDia(dia(['08:00', '09:00'], ['10:00', '11:00'], ['12:00', '13:00']))).toBeNull();
+    expect(errorDelDia(dia(['', '']))).toBeNull();
+  });
+
+  it('NIEGA solape, contiguos, desorden, cierre <= apertura, horas faltantes y un turno agregado vacío', () => {
+    expect(errorDelDia(dia(['09:00', '13:00'], ['12:00', '18:00']))).toMatch(/después de que termina/);
+    expect(errorDelDia(dia(['09:00', '12:00'], ['12:00', '18:00']))).toMatch(/después de que termina/);
+    expect(errorDelDia(dia(['14:00', '18:00'], ['09:00', '12:00']))).toMatch(/después de que termina/);
+    expect(errorDelDia(dia(['12:00', '09:00']))).toMatch(/anterior a la de cierre/);
+    expect(errorDelDia(dia(['09:00', '12:00'], ['18:00', '14:00']))).toMatch(/turno 2/);
+    expect(errorDelDia(dia(['09:00', '']))).toMatch(/Falta la hora de cierre/);
+    expect(errorDelDia(dia(['09:00', '12:00'], ['', '']))).toMatch(/Completa el turno 2/);
+  });
+
+  it('escribe el formato viejo para un rango y la lista con coma para el turno partido', () => {
+    const base = leerHorarios({});
+    expect(escribirHorarios({ ...base, lun: dia(['09:00', '19:00']), mar: dia(['09:00', '12:00'], ['14:00', '18:00']), dom: { cerrado: true, tramos: [{ desde: '', hasta: '' }] } }))
+      .toEqual({ lun: '09:00-19:00', mar: '09:00-12:00,14:00-18:00', dom: 'cerrado' });
+  });
+
+  it('lee un documento viejo de un rango igual que siempre, uno partido, y marca lo ilegible', () => {
+    const h = leerHorarios({ lun: '09:00-19:00', mar: '09:00-12:00,14:00-18:00', mie: '9 a 7', jue: '08:00-09:00,10:00-11:00,12:00-13:00,14:00-15:00', vie: 'cerrado' });
+    expect(h['lun']?.tramos).toEqual([{ desde: '09:00', hasta: '19:00' }]);
+    expect(h['mar']?.tramos).toHaveLength(2);
+    expect(h['mie']?.ilegible).toBe('9 a 7');
+    expect(h['jue']?.ilegible).toBeDefined();
+    expect(h['vie']?.cerrado).toBe(true);
+    expect(MAX_TRAMOS_CLIENTE).toBe(MAX_TRAMOS);
   });
 });
 
@@ -137,15 +241,13 @@ describe('la pantalla de horarios (se lee su fuente, como `comportamiento-pantal
     join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'src', 'central', 'paginas', 'Configuracion.tsx'), 'utf8');
 
   it('usa el mismo tope de tramos que el servidor y ofrece «Agregar turno»', () => {
-    expect(fuente).toContain(`const MAX_TRAMOS = ${MAX_TRAMOS};`);
     expect(fuente).toContain('Agregar turno');
     expect(fuente).toContain('Quitar turno');
   });
 
   it('valida en el cliente el orden, el solape y los turnos vacíos antes de guardar', () => {
-    expect(fuente).toContain('tiene que empezar después de que termina el turno');
-    expect(fuente).toContain('Completa el turno');
-    expect(fuente).toContain("completos.map((t) => `${t.desde}-${t.hasta}`).join(',')");
+    expect(fuente).toContain('errorDelDia(horarios[clave] ?? DIA_VACIO) !== null');
+    expect(fuente).toContain('escribirHorarios(horarios)');
   });
 
   it('conserva las etiquetas del primer turno (las usa la prueba de navegador)', () => {

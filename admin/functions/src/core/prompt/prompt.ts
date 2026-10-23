@@ -31,7 +31,7 @@
  *    comportamiento del agente.
  */
 import { textoPlano, sinMarcas } from './texto.js';
-import { horariosSaneados, tramosEnPalabras, tramosValidos } from './horario-tramos.js';
+import { esVariosTramos, horariosSaneados, tramosEnPalabras, tramosNormalizados } from './horario-tramos.js';
 import { IDS_FLUJOS, documentoDeFlujo, type IdFlujo } from '../../registro.js';
 
 /**
@@ -102,8 +102,8 @@ const NOMBRE_DIA: Record<string, string> = {
  */
 export function horarioAtencion(horarios: unknown): string {
   if (typeof horarios !== 'object' || horarios === null) return '';
-  // Un día con varios tramos mal ordenados o solapados se omite (ver
-  // `horario-tramos.ts`); todo lo demás pasa igual que siempre.
+  // Un día con varios tramos se normaliza (ordena, fusiona, `cerrado` si no queda
+  // ninguno; ver `horario-tramos.ts`); todo lo demás pasa igual que siempre.
   const h = horariosSaneados(horarios);
 
   // Se agrupan los días seguidos con el mismo horario. Sin esto sale
@@ -114,7 +114,8 @@ export function horarioAtencion(horarios: unknown): string {
   for (const d of DIAS) {
     const v = h[d];
     if (typeof v !== 'string' || v.trim() === '') continue;
-    const valor = v.trim().slice(0, 40);
+    // Los varios tramos ya normalizados no se recortan (4 tramos miden 47); el resto, a 40 como siempre.
+    const valor = esVariosTramos(v.trim()) ? v.trim() : v.trim().slice(0, 40);
     const ultimo = tramos[tramos.length - 1];
     // Se extiende el tramo solo si el día es CONSECUTIVO al anterior: si el
     // negocio cierra los miércoles, «lunes a viernes» sería mentira.
@@ -131,8 +132,8 @@ export function horarioAtencion(horarios: unknown): string {
       : `${NOMBRE_DIA[desde]} a ${NOMBRE_DIA[hasta]}`;
     if (valor.toLowerCase() === 'cerrado') return `${dias}: cerrado`;
     // Turno partido: «lunes a viernes, de 09:00 a 12:00 y de 14:00 a 18:00».
-    const varios = tramosValidos(valor);
-    if (varios) return `${dias}, ${tramosEnPalabras(varios)}`;
+    const varios = valor.includes(',') ? tramosNormalizados(valor) : null;
+    if (varios && varios.length > 1) return `${dias}, ${tramosEnPalabras(varios)}`;
     // «09:00-19:00» se lee mejor como «de 09:00 a 19:00».
     const rango = /^(\d{1,2}:\d{2})\s*[-–a]\s*(\d{1,2}:\d{2})$/.exec(valor);
     return rango ? `${dias}, de ${rango[1]} a ${rango[2]}` : `${dias}: ${valor}`;

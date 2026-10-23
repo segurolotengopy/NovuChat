@@ -543,11 +543,14 @@ estilo de `ESTADO.md`: el agente alternaba «usted» y «tú» con el mismo clie
   (turno partido). Ordenados, sin solaparse ni tocarse, cierre posterior a la
   apertura, dentro del día, hora de La Paz. La regla de Firestore exige la forma
   y el primer tramo (no cabe más en el presupuesto de 1.000 expresiones de
-  `config/negocio`); el orden y el solape los exigen la consola al guardar, el
-  cargador `cargar-negocio.mjs` y el servidor al leer
-  (`functions/src/core/prompt/horario-tramos.ts`: un día partido inválido se
-  omite, no se anuncia). Los lectores del flujo ya partían por coma. Un documento
-  de un solo rango no cambia.
+  `config/negocio`). LA AUTORIDAD del orden y del solape es la normalización al
+  leer (`functions/src/core/prompt/horario-tramos.ts`): ordena, descarta los
+  tramos con cierre <= apertura, fusiona los solapados o contiguos y, si no queda
+  ninguno, devuelve `cerrado` (falla cerrado: un día ausente lo toman los flujos
+  como «sin dato» y dejarían pasar la cita). Es la unión que ya calculan los
+  flujos, así que el asistente anuncia lo que el candado hace cumplir. La
+  consola y `cargar-negocio.mjs` validan además al guardar; no hay trigger. Los
+  lectores del flujo ya partían por coma. Un documento de un solo rango no cambia.
 
 Las reglas los rechazan por lista blanca **y** `configuracionFlujo` nunca los lee
 de la configuración aunque aparecieran. Dos barreras, a propósito.
