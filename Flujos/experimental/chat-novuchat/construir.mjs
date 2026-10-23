@@ -44,6 +44,7 @@ export const CONFIG_BASE = {
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
     filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
+    tipeo: ['../../src/core/texto/tipeo.js'],
   },
 };
 

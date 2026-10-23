@@ -599,7 +599,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@todo:nodos/armar-turno.js"
+        "jsCode": "@@todo+tipeo:nodos/armar-turno.js"
       },
       "id": "armar-turno",
       "name": "Armar turno",
@@ -759,7 +759,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@todo+mensajes+filtro:nodos/armar-mensajes.js"
+        "jsCode": "@@todo+mensajes+filtro+tipeo:nodos/armar-mensajes.js"
       },
       "id": "armar-mensajes",
       "name": "Armar mensajes",
