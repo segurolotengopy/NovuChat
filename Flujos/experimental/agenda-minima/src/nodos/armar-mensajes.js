@@ -92,23 +92,27 @@ function clavesDeHora(texto) {
   return claves;
 }
 function redaccionValida(texto, huecos, aviso) {
-  const s = String(texto || '').trim();
+  const s = String(texto || '').normalize('NFKC').trim();
   if (!s || s.length > 900 || /^SIN_RESPUESTA/.test(s)) return false;
   const n = cnNorm(s);
+  // Segunda forma: invisibles y braille como ESPACIO (no como nada), para reglas que parten por palabras.
+  const n2 = cnNorm(s.replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]/gu, ' '));
+  const algun = (re) => re.test(n) || re.test(n2);
   // Un invisible pegado a una letra (etiquetas, relleno hangul, braille vacio) es una evasion de las reglas de abajo: la redaccion cae a la ruta de codigo.
   // ZWJ y VS16 dentro de un emoji (familia, corazon) no tocan una letra y siguen pasando.
-  if (/[\p{L}][\p{Cf}\u115F\u1160\u3164\uFFA0\u2800\u17B4\u17B5]|[\p{Cf}\u115F\u1160\u3164\uFFA0\u2800\u17B4\u17B5][\p{L}\s]/u.test(s)) return false;
+  const sAdy = s.replace(/(\p{Extended_Pictographic}[\u{1F3FB}-\u{1F3FF}]?)\uFE0F/gu, '$1').replace(/(\p{Extended_Pictographic}[\u{1F3FB}-\u{1F3FF}]?)\u200D(?=\p{Extended_Pictographic})/gu, '$1');
+  if (/[\p{L}][\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]|[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800][\p{L}\s]/u.test(sAdy)) return false;
   // Un MONTO nunca sale de la redacción: el costo solo lo dice el código, con `respuestaCosto`, y solo si el
   // paciente lo pregunta (Andres, 30/09). Aunque `instruccionesExtra` lo nombre, el modelo no lo repite.
   if (/\b\d[\d.,]*\s*(bs|bolivianos?|usd|dolares)\b|\bbs\.?\s*\d|\$\s*\d/.test(n)) return false;
-  if (/\b168\b/.test(n) || CLINICO.test(n) || PROMESAS.test(n) || AFIRMA.test(n)) return false;
+  if (algun(/\b168\b/) || algun(CLINICO) || algun(PROMESAS) || algun(AFIRMA)) return false;
   // A una pregunta de IDENTIDAD («¿eres el doctor?», «¿quién eres?») no se contesta empezando con «Sí».
   if (/\b(eres|es|sos) (el |la )?(doctor|doctora|dr|dra)\b|\bquien (eres|es)\b/.test(cnNorm(base.texto || '')) && /^\W*si\b/.test(n)) return false;
   if (huecos.length && !aviso && NEGACION.test(n)) return false;
   // R13: un hueco («a las )») nunca sale.
   if (/\(\s*\)|\ba las?\s*[).,;:!?]|\ba las?\s*$|\bde\s*\)|«\s*»|\{\{|undefined|null\b/.test(n)) return false;
   const propios = [String(cfg.direccionMaps || ''), String(cfg.instruccionesExtra || ''), String(cfg.mensajeRedes || '')].join(' ');
-  const enlaces = s.match(/https?:\/\/\S+/gi) || [];
+  const enlaces = String(texto || '').trim().match(/https?:\/\/\S+/gi) || [];
   if (enlaces.some((e) => propios.indexOf(e.replace(/[).,;:!?]+$/, '')) < 0)) return false;
   if (/\bh\|\d{4}/.test(s)) return false;
   // Ninguna hora que no este entre los huecos (ni entre los horarios del negocio).
