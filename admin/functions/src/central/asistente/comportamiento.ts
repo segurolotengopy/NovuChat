@@ -178,17 +178,42 @@ const VERBO_ORDEN = new RegExp(
   + '|pas(?:a|ame|alos|alo|e|en)|copi(?:a|e|ame|alos|alo|en)|compart\\w*|envi\\w*|entreg\\w*|usa|usen|use|uses|usalos|utiliz\\w*'
   + '|sigue|sigan|siga|sigueme|segui|obedec\\w*|desobedec\\w*|ensen\\w*|lee|leelos|escrib\\w*|anul\\w*|sobre?scrib\\w*|reemplaz\\w*'
   + '|lista|listame|listalos|pega|pegalos|eres|actua(?!l)\\w*|act'
-  + '|reveal|show|repeat|ignore|print|tell|say|forget|disregard|override|dump|read|write|output|give|send|share|leak|paste|follow|obey)$', 'u');
-const INFINITIVO_O_PARTICIPIO = /(?:ar|er|ir|ando|iendo|ado|ido)$/u;
+  + '|recit\\w*|enumer\\w*|detall\\w*|transcrib\\w*|reproduc\\w*|reprodu(?:ce|zca)|devuelv\\w*|devolv\\w*|explic\\w*|cuentame|cuentanos|di|suelt\\w*|publica'
+  + '|copiar|pasar|usar|leer|seguir|listar|pegar|actuar'
+  + '|reveal|show|repeat|ignore|print|tell|say|forget|disregard|override|dump|read|write|output|give|send|share|leak|paste|follow|obey'
+  + '|display|recite|list|provide|return|echo|spill|zeig\\w*)$', 'u');
+/** Pronombre pegado al verbo («revélalos», «pásales»): se prueba también el verbo sin él. */
+const PRONOMBRE_PEGADO = /(?:selos|melos|telos|los|las|les|lo|la|le|me|te)$/u;
+/** Antes de estas palabras un infinitivo describe el producto («listos para copiar»), no ordena. */
+const PREVIAS_DESCRIPTIVAS = new Set(['para', 'de', 'sin', 'al']);
 const DETERMINANTE = /(?:^|[^\p{L}\p{N}_])(?:tu|tus|mi|mis|su|sus|el|la|los|las|este|esta|estos|estas|ese|esa|esos|esas|aquel|aquella|aquellos|aquellas|nuestro|nuestros)\s+(?:\p{L}+\s+)?$/u;
 const CORTE_ORACION = /[.!?;:—–#]/u;
 
-const hayVerboDeOrden = (oracion: string): boolean =>
-  (oracion.match(/[\p{L}\p{N}_]+/gu) ?? []).some((w) => VERBO_ORDEN.test(w) && !INFINITIVO_O_PARTICIPIO.test(w));
+/**
+ * ¿Algún verbo de orden en la oración? Una forma conjugada ordena siempre; un
+ * infinitivo ordena salvo detrás de «para», «de», «sin» o «al» («listos para
+ * copiar») y también al abrir la oración o tras una perífrasis («debes seguir»,
+ * «vas a revelar»). Con `soloPronombre`, solo cuentan los verbos con pronombre
+ * pegado («revélalos»): es lo que se busca en las oraciones vecinas.
+ */
+function hayVerboDeOrden(oracion: string, soloPronombre = false): boolean {
+  if (!soloPronombre && /(?<![\p{L}\p{N}_])responde con(?![\p{L}\p{N}_])/u.test(oracion)) return true;
+  const palabras = oracion.match(/[\p{L}\p{N}_]+/gu) ?? [];
+  return palabras.some((w, i) => {
+    const sinPron = w.length > 3 ? w.replace(PRONOMBRE_PEGADO, '') : w;
+    const conPron = sinPron !== w && VERBO_ORDEN.test(sinPron);
+    if (soloPronombre) return conPron && /(?:los|las|les|selos|melos)$/u.test(w);
+    const forma = VERBO_ORDEN.test(w) ? w : conPron ? sinPron : null;
+    if (forma === null || /(?:ando|iendo|ado|ido)$/u.test(forma)) return false;
+    if (!/(?:ar|er|ir)$/u.test(forma)) return true;
+    return !PREVIAS_DESCRIPTIVAS.has(palabras[i - 1] ?? '');
+  });
+}
 
 /** ¿Hay un «prompts» sin el contexto que lo vuelve nombre de producto? */
 export function promptsSinContexto(normalizado: string): boolean {
-  if (normalizado.length > TOPE_INSTRUCCIONES) return true;
+  // Tope de seguridad, no de regla: el del texto crudo está en verificarPatrones y NFKC puede alargar.
+  if (normalizado.length > TOPE_INSTRUCCIONES * 20) return true;
   const base = normalizado.replace(/(\d)[\s.,_-]+(?=\d)/g, '$1');
   PROMPTS_PLURAL.lastIndex = 0;
   for (let m = PROMPTS_PLURAL.exec(base); m !== null; m = PROMPTS_PLURAL.exec(base)) {
@@ -205,8 +230,12 @@ export function promptsSinContexto(normalizado: string): boolean {
     let corte = -1;
     for (let i = antes.length - 1; i >= 0; i--) if (CORTE_ORACION.test(antes[i]!)) { corte = i; break; }
     const oracionAntes = antes.slice(corte + 1);
-    const oracionDespues = despues.split(CORTE_ORACION)[0] ?? '';
+    const trozos = despues.split(CORTE_ORACION);
+    const oracionDespues = trozos[0] ?? '';
     if (hayVerboDeOrden(oracionAntes) || hayVerboDeOrden(oracionDespues)) return true;
+    // Las vecinas solo importan si ordenan SOBRE los prompts: verbo con pronombre pegado.
+    const previa = antes.slice(0, corte < 0 ? 0 : corte).split(CORTE_ORACION).pop() ?? '';
+    if (hayVerboDeOrden(trozos[1] ?? '', true) || hayVerboDeOrden(previa, true)) return true;
     if (/^\s*[:;=>#—–]|^\s+-\s/u.test(despues)) return true;
   }
   return false;
@@ -433,7 +462,8 @@ export function verificarPatrones(
   const fuertes: string[] = [];
   const debiles: string[] = [];
   for (const p of PATRONES) {
-    const dispara = p.prueba !== undefined && !p.crudo ? p.prueba(normalizado) : p.re.test(p.crudo ? texto : normalizado);
+    // La prueba propia solo corre si la expresión general ya disparó: no se evalúa sobre todo texto.
+    const dispara = p.re.test(p.crudo ? texto : normalizado) && (p.prueba === undefined || p.crudo === true || p.prueba(normalizado));
     const lista = p.fuerza === 'fuerte' ? fuertes : debiles;
     if (dispara && !lista.includes(p.nombre)) lista.push(p.nombre);
   }
