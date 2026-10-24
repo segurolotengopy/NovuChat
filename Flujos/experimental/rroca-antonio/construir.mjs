@@ -25,7 +25,7 @@
  * una ruta de webhook real, un teléfono ni un identificador de Meta).
  *
  * LAS GUARDIAS de lo armado (también se aplican al archivo versionado, aunque alguien lo haya tocado a mano):
- *   - ≤ 48 nodos; nunca un WhatsApp Trigger (prohibición 7); nunca `subscriptions` ni `subscribed_apps`; ni agente, ni memoria, ni modelo de chat de n8n;
+ *   - ≤ 46 nodos; nunca un WhatsApp Trigger (prohibición 7); nunca `subscriptions` ni `subscribed_apps`; ni agente, ni memoria, ni modelo de chat de n8n;
  *   - producción: solo el webhook del receptor, sin «Entrada de prueba»; prueba: solo «Entrada de prueba» (con credencial de cabecera) y sin receptor;
  *   - la verificación del receptor: `wabaIdEsperado` FIJO (nunca una expresión), sin «Continue on Fail» ni `onError`, y «Descartar repetidos» entre ejecuciones;
  *   - un nodo HTTP solo habla con Meta, Gemini y las Functions de la consola; `REEMPLAZAR_*` solo donde se declara; ajustes de retención, orden y zona;
@@ -38,14 +38,15 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
+import { problemasDeReferencias } from '../rroca-ruben/construir.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-antonio/rroca-antonio.json');
 export const ARCHIVO_DE_NEGOCIO = join(AQUI, '../../../admin/scripts/datos/rroca-antonio/negocio-rroca-antonio.json');
-export const TOPE_DE_NODOS = 48;
+export const TOPE_DE_NODOS = 46;
 /** Los nodos de la conversación completa (PR-B): el cotejo del comprobante, el modelo y el aviso a Antonio. La guardia los exige. */
 export const NODOS_DEL_AVISO = ['Armar avisos', '¿Hay avisos?', 'Enviar aviso'];
-export const NODOS_DE_LA_CONVERSACION = ['Interpretar lectura', '¿Cotejar?', 'Cotejar en el servidor', '¿Conversar con el modelo?', 'Conversar con el modelo', '¿Falló la protección?', 'Reportar protección', '¿Cancelar cobro?', 'Cancelar cobro en el servidor'];
+export const NODOS_DE_LA_CONVERSACION = ['Interpretar lectura', '¿Cotejar?', 'Cotejar en el servidor', '¿Conversar con el modelo?', 'Conversar con el modelo', '¿Avisar al servidor?', 'Avisar al servidor'];
 
 /**
  * El config del armador genérico. Vive aquí y no en un `construir.config.json`: el saneo del repo público trata todo JSON bajo `Flujos/` como un export de n8n.
@@ -54,7 +55,8 @@ export const NODOS_DE_LA_CONVERSACION = ['Interpretar lectura', '¿Cotejar?', 'C
 export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
-  librerias: ['src/lib/cobro.js', 'src/lib/avisos.js', 'src/lib/ra.js'],
+  // La base común de las ventas digitales (cobro, avisos y el motor de la conversación: prefijos `cb`, `av` y `vd`), los módulos del core de texto (no repetir y pregunta pendiente: prefijo `ct`) y, al final, lo PROPIO de Antonio (`ra.js`: solo datos y textos).
+  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/ra.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
@@ -230,7 +232,7 @@ export function guardias(variante, flujo) {
     for (const n of nodos) {
       for (const [tipo, c] of Object.entries(n.credentials || {})) {
         const nombreCred = String((c || {}).name || '');
-        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && n.name !== 'Cotejar en el servidor' && n.name !== 'Reportar protección' && n.name !== 'Cancelar cobro en el servidor' && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred))) {
+        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && n.name !== 'Cotejar en el servidor' && n.name !== 'Avisar al servidor' && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred))) {
           h.push(`la prueba usa una credencial de producción en «${n.name}» (${tipo})`);
         }
       }
@@ -267,6 +269,21 @@ export function guardias(variante, flujo) {
   for (const n of nodos.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
     const url = String(p(n).url || '');
     if (!anfitrionPermitido(url, n.name)) h.push(`el nodo «${n.name}» llama a un anfitrión fuera de la lista (graph.facebook.com, generativelanguage.googleapis.com, las Functions de la consola)`);
+  }
+  // Las referencias a nodos del task runner de n8n (la lógica es la de Rubén, importada y no copiada): solo literales y antecesores, sin excepciones (desde el corte de nodos de la fase 2 no queda ningún hallazgo conocido).
+  for (const x of problemasDeReferencias(flujo || {})) h.push(x);
+  // «Avisar al servidor» (cancelar el cobro y reportar `no_contactar` ANTES de armar avisos y mensajes): la llamada síncrona de siempre, con el evento en una lista cerrada, y los dos caminos hacia «Armar avisos».
+  const avisar = por('Avisar al servidor');
+  if (avisar) {
+    const cuerpo = String(p(avisar).jsonBody || '');
+    if (!/ingesta$/.test(String(p(avisar).url || '')) || p(avisar).method !== 'POST') h.push('«Avisar al servidor» no hace POST a la ingesta');
+    if (!/cobro_cancelado/.test(cuerpo) || !/no_contactar/.test(cuerpo) || /evento: (?!ev\b)/.test(cuerpo)) h.push('«Avisar al servidor»: el evento tiene que salir de la lista cerrada (`cobro_cancelado` | `no_contactar`)');
+    const opc = p(avisar).options || {};
+    if (opc.timeout !== 8000 || !((opc.response || {}).response || {}).fullResponse || !((opc.response || {}).response || {}).neverError) h.push('«Avisar al servidor» tiene que llevar timeout 8000, fullResponse y neverError (la respuesta decide si se dice «cerré tu pedido»)');
+    if (avisar.onError !== 'continueRegularOutput') h.push('«Avisar al servidor» no lleva `onError: continueRegularOutput`: si la ingesta cae, el turno no puede cortarse');
+    if (!((avisar.credentials || {}).httpHeaderAuth || {}).name) h.push('«Avisar al servidor» no lleva credencial (httpHeaderAuth)');
+    if (!destinosDe('¿Avisar al servidor?', 0).includes('Avisar al servidor') || !destinosDe('¿Avisar al servidor?', 1).includes('Armar avisos') || !destinosDe('Avisar al servidor', 0).includes('Armar avisos')) h.push('«¿Avisar al servidor?» / «Avisar al servidor» no desembocan en «Armar avisos»: la llamada tiene que correr ANTES de armar el aviso y el texto');
+    if (!destinosDe('Conversar con el modelo', 0).includes('¿Avisar al servidor?') || !destinosDe('¿Conversar con el modelo?', 1).includes('¿Avisar al servidor?')) h.push('«¿Avisar al servidor?» tiene que recibir las dos ramas (con y sin modelo): la marca RIESGO del modelo también se reporta');
   }
   // Retención de ejecuciones, orden y zona horaria.
   const st = (flujo && flujo.settings) || {};

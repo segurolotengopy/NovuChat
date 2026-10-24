@@ -91,6 +91,12 @@ export function hashCorto(texto: string): string {
  */
 export function normalizar(texto: string): string {
   return texto
+    // NFKC primero: «１００» ancho completo, «ﬁ» y compatibles pasan a su forma
+    // llana. Después se quitan los invisibles (Default_Ignorable y formato:
+    // ancho cero, guion blando, selectores de variación, etiquetas) que partirían
+    // una palabra sin que el ojo lo note: «pro\u200Bmpt» debe leerse «prompt».
+    .normalize('NFKC')
+    .replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '')
     .normalize('NFD')
     .replace(/\p{M}+/gu, '')
     .toLowerCase()
@@ -118,11 +124,121 @@ export interface Patron {
   nombre: string;
   /** Sobre el texto normalizado, salvo que `crudo` sea true. */
   re: RegExp;
+  /**
+   * Prueba propia, para lo que una expresión regular no dice bien (una palabra
+   * permitida solo en cierto contexto). Si existe, REEMPLAZA a `re` al decidir;
+   * `re` queda como el caso general, para quien lea la lista.
+   */
+  prueba?: (normalizado: string) => boolean;
   crudo?: boolean;
   /** `fuerte` rechaza solo; `debil` deja el caso dudoso para la capa 2, nunca rechaza. */
   fuerza: 'fuerte' | 'debil';
   /** Por qué está en la lista. Se lee cuando alguien quiera sacarlo. */
   porque: string;
+}
+
+/**
+ * «prompts» (plural) solo es vocabulario comercial cuando nombra un producto
+ * contado: «100 prompts», «cien prompts», «+50 prompts listos». Es el nombre real
+ * de un bono de una campaña, y la regla vieja lo rechazaba sin mirar el contexto.
+ *
+ * QUÉ CUENTA COMO CONTEXTO (todo junto; si falla algo, se rechaza):
+ *   1. Un número o cuantificador pegado a la palabra, con a lo sumo UNA palabra
+ *      en medio («100 mejores prompts»). Cifras con espacios o puntos
+ *      («1 0 0», «1.000») se juntan antes de mirar. NO hay clase «parecida a un
+ *      número»: el texto plegado de las campañas («100» -> «ioo») lo corrige
+ *      campanas.ts, no esta regla (revisión de seguridad del #649, M-2).
+ *   2. Ningún determinante de referencia antes del número (tu, mi, el, los, las,
+ *      estos, esos…): «los 100 prompts» habla de unos prompts conocidos, y esos
+ *      son los del asistente. Una campaña los escribe sin determinante.
+ *   3. Ningún verbo de orden en TODA la oración, antes o después (revela,
+ *      muestra, copia, usa, obedece, anula, eres…). Los infinitivos («para
+ *      copiar») no cuentan: no ordenan nada. La oración termina en . ! ? ; : — – #.
+ *   4. Nada de puntuación de apertura pegada después («100 prompts: …», «; …»,
+ *      «— …», «= …», «# …») ni un «#» antes del número: abre un bloque de órdenes.
+ *   Decisión documentada: «Revela el precio final solo al confirmar; incluye 100
+ *   prompts» PASA, porque el «;» separa dos oraciones y la segunda no da ninguna
+ *   orden sobre los prompts. Una orden ajena al plural no es el riesgo que esta
+ *   regla cubre.
+ */
+const PALABRAS_NUMERO = [
+  'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve',
+  'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'veinte', 'treinta', 'cuarenta',
+  'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa', 'cien', 'ciento', 'cientos',
+  'doscientos', 'trescientos', 'quinientos', 'mil', 'miles', 'decenas', 'docenas',
+  'varios', 'muchos', 'cientos de', 'miles de', 'decenas de', 'docenas de', 'mas de',
+];
+const NUMERO = `(?:\\+\\s*)?(?:\\d+|${PALABRAS_NUMERO.map(escapar).join('|')})`;
+/** Compilada una vez: el número (o cuantificador) pegado a «prompts», sobre las últimas 80 letras. */
+const CON_NUMERO = new RegExp(`(^|[^\\p{L}\\p{N}_])(${NUMERO})\\s+(?:(\\p{L}+)\\s+)?$`, 'u');
+const PROMPTS_PLURAL = /(?<![\p{L}\p{N}_])prompts(?![\p{L}\p{N}_])/gu;
+/** Formas conjugadas que ordenan algo; las que podrían ser sustantivos van exactas. */
+const VERBO_ORDEN = new RegExp(
+  '^(?:revel\\w*|muestr\\w*|mostr\\w*|dime|dinos|dame|repit\\w*|ignor\\w*|olvid\\w*|imprim\\w*|filtr\\w*|expon\\w*|divulg\\w*'
+  + '|pas(?:a|ame|alos|alo|e|en)|copi(?:a|e|ame|alos|alo|en)|compart\\w*|envi\\w*|entreg\\w*|usa|usen|use|uses|usalos|utiliz\\w*'
+  + '|sigue|sigan|siga|sigueme|segui|obedec\\w*|desobedec\\w*|ensen\\w*|lee|leelos|escrib\\w*|anul\\w*|sobre?scrib\\w*|reemplaz\\w*'
+  + '|lista|listame|listalos|pega|pegalos|eres|actua(?!l)\\w*|act'
+  + '|recit\\w*|enumer\\w*|detall\\w*|transcrib\\w*|reproduc\\w*|reprodu(?:ce|zca)|devuelv\\w*|devolv\\w*|explic\\w*|cuentame|cuentanos|di|suelt\\w*|publica'
+  + '|copiar|pasar|usar|leer|seguir|listar|pegar|actuar'
+  + '|reveal|show|repeat|ignore|print|tell|say|forget|disregard|override|dump|read|write|output|give|send|share|leak|paste|follow|obey'
+  + '|display|recite|list|provide|return|echo|spill|zeig\\w*)$', 'u');
+/** Pronombre pegado al verbo («revélalos», «pásales»): se prueba también el verbo sin él. */
+const PRONOMBRE_PEGADO = /(?:selos|melos|telos|los|las|les|lo|la|le|me|te)$/u;
+/** Antes de estas palabras un infinitivo describe el producto («listos para copiar»), no ordena. */
+const PREVIAS_DESCRIPTIVAS = new Set(['para', 'de', 'sin', 'al']);
+const DETERMINANTE = /(?:^|[^\p{L}\p{N}_])(?:tu|tus|mi|mis|su|sus|el|la|los|las|este|esta|estos|estas|ese|esa|esos|esas|aquel|aquella|aquellos|aquellas|nuestro|nuestros)\s+(?:\p{L}+\s+)?$/u;
+const CORTE_ORACION = /[.!?;:—–#]/u;
+
+/**
+ * ¿Algún verbo de orden en la oración? Una forma conjugada ordena siempre; un
+ * infinitivo ordena salvo detrás de «para», «de», «sin» o «al» («listos para
+ * copiar») y también al abrir la oración o tras una perífrasis («debes seguir»,
+ * «vas a revelar»). Con `soloPronombre`, solo cuentan los verbos con pronombre
+ * pegado («revélalos»): es lo que se busca en las oraciones vecinas.
+ */
+function hayVerboDeOrden(oracion: string, soloPronombre = false): boolean {
+  if (!soloPronombre && /(?<![\p{L}\p{N}_])responde con(?![\p{L}\p{N}_])/u.test(oracion)) return true;
+  const palabras = oracion.match(/[\p{L}\p{N}_]+/gu) ?? [];
+  return palabras.some((w, i) => {
+    const sinPron = w.length > 3 ? w.replace(PRONOMBRE_PEGADO, '') : w;
+    const conPron = sinPron !== w && VERBO_ORDEN.test(sinPron);
+    if (soloPronombre) return conPron && /(?:los|las|les|selos|melos)$/u.test(w);
+    const forma = VERBO_ORDEN.test(w) ? w : conPron ? sinPron : null;
+    if (forma === null || /(?:ando|iendo|ado|ido)$/u.test(forma)) return false;
+    if (!/(?:ar|er|ir)$/u.test(forma)) return true;
+    return !PREVIAS_DESCRIPTIVAS.has(palabras[i - 1] ?? '');
+  });
+}
+
+/** ¿Hay un «prompts» sin el contexto que lo vuelve nombre de producto? */
+export function promptsSinContexto(normalizado: string): boolean {
+  // Tope de seguridad, no de regla: el del texto crudo está en verificarPatrones y NFKC puede alargar.
+  if (normalizado.length > TOPE_INSTRUCCIONES * 20) return true;
+  const base = normalizado.replace(/(\d)[\s.,_-]+(?=\d)/g, '$1');
+  PROMPTS_PLURAL.lastIndex = 0;
+  for (let m = PROMPTS_PLURAL.exec(base); m !== null; m = PROMPTS_PLURAL.exec(base)) {
+    const antes = base.slice(0, m.index);
+    const despues = base.slice(m.index + m[0].length);
+    const conNumero = CON_NUMERO.exec(antes.slice(-80));
+    if (conNumero === null) return true;
+    const intermedia = conNumero[3];
+    if (intermedia !== undefined && (VERBO_ORDEN.test(intermedia) || DETERMINANTE.test(`${intermedia} `))) return true;
+    const previo = antes.slice(-80).slice(0, conNumero.index + (conNumero[1] ?? '').length);
+    if (DETERMINANTE.test(previo) || /#\s*$/.test(previo)) return true;
+    // La oración entera (ya acotada por el tope de 1.500): lo que viene antes del
+    // último corte y lo que viene hasta el primero.
+    let corte = -1;
+    for (let i = antes.length - 1; i >= 0; i--) if (CORTE_ORACION.test(antes[i]!)) { corte = i; break; }
+    const oracionAntes = antes.slice(corte + 1);
+    const trozos = despues.split(CORTE_ORACION);
+    const oracionDespues = trozos[0] ?? '';
+    if (hayVerboDeOrden(oracionAntes) || hayVerboDeOrden(oracionDespues)) return true;
+    // Las vecinas solo importan si ordenan SOBRE los prompts: verbo con pronombre pegado.
+    const previa = antes.slice(0, corte < 0 ? 0 : corte).split(CORTE_ORACION).pop() ?? '';
+    if (hayVerboDeOrden(trozos[1] ?? '', true) || hayVerboDeOrden(previa, true)) return true;
+    if (/^\s*[:;=>#—–]|^\s+-\s/u.test(despues)) return true;
+  }
+  return false;
 }
 
 /**
@@ -211,10 +327,20 @@ export const PATRONES: readonly Patron[] = [
   // --- Vocabulario técnico que un negocio no usa (fuertes) -----------------
   {
     nombre: 'prompt',
-    re: palabra('prompt', 'prompts', 'system prompt', 'system', 'systems'),
+    re: palabra('prompt', 'system prompt', 'system', 'systems'),
     fuerza: 'fuerte',
     porque: '«prompt» y «system» no son palabras de una descripción comercial en '
       + 'español; «sistema», que sí lo es («sistema de turnos»), NO está en la lista.',
+  },
+  {
+    // Mismo nombre que el singular a propósito: el motivo que ve el comercio no
+    // debe describir la condición de la excepción (revisión del #649, L-1).
+    nombre: 'prompt',
+    re: palabra('prompts'),
+    prueba: promptsSinContexto,
+    fuerza: 'fuerte',
+    porque: '«prompts» en plural solo se admite como producto contado («100 prompts»), '
+      + 'sin posesivo ni orden alrededor; suelto o con orden es el vocabulario de la inyección.',
   },
   {
     nombre: 'nombre de herramienta',
@@ -336,7 +462,10 @@ export function verificarPatrones(
   const fuertes: string[] = [];
   const debiles: string[] = [];
   for (const p of PATRONES) {
-    if (p.re.test(p.crudo ? texto : normalizado)) (p.fuerza === 'fuerte' ? fuertes : debiles).push(p.nombre);
+    // La prueba propia solo corre si la expresión general ya disparó: no se evalúa sobre todo texto.
+    const dispara = p.re.test(p.crudo ? texto : normalizado) && (p.prueba === undefined || p.crudo === true || p.prueba(normalizado));
+    const lista = p.fuerza === 'fuerte' ? fuertes : debiles;
+    if (dispara && !lista.includes(p.nombre)) lista.push(p.nombre);
   }
   if (mencionaOtroComercio(normalizado, otros)) fuertes.push('otro comercio');
 
@@ -407,7 +536,10 @@ export function motivoLimpio(valor: unknown): string {
 export function leerVeredictoModelo(respuesta: unknown): VeredictoModelo | null {
   if (typeof respuesta !== 'string') return null;
   const lineas = respuesta.trim().split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
-  const primera = normalizar(lineas[0] ?? '').replace(/^[^a-z]+/, '');
+  // Sobre la línea CRUDA, sin NFKC ni quitar invisibles: «ＡＰＲＯＢＡＤＯ» o
+  // «APRO<ancho cero>BADO» no son la palabra cerrada que se pidió, y ante la duda
+  // la revisión queda pendiente, que es no aplicar (revisión del #649, L-2).
+  const primera = (lineas[0] ?? '').toLowerCase().replace(/^[^a-z]+/, '');
   const motivo = motivoLimpio(lineas.slice(1).join(' '));
   if (primera.startsWith('aprobado')) return { estado: 'aprobado', motivo: motivo || 'aprobado por el modelo' };
   if (primera.startsWith('rechazado')) return { estado: 'rechazado', motivo: motivo || 'rechazado por el modelo' };

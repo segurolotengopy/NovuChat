@@ -49,31 +49,18 @@ describe('el archivo de los anuncios de Rubén (dato del tenant)', () => {
     for (const retirado of RETIRADOS) expect(validar.armarLista(DATOS, HOY).flatMap((c: { titulares?: string[]; angulo?: string }) => [...(c.titulares ?? []), c.angulo ?? '']).map(servidor.palabrasDeCampana).join('|')).not.toContain(servidor.palabrasDeCampana(retirado));
   });
 
-  // HALLAZGO DEL 23/10/2026 (pendiente de decisión de Andres, Rubén o Silvana): el ángulo APROBADO del anuncio «¿No sabes qué publicar?» dice «el bono de 100 prompts», y la capa de patrones del servidor
-  // (`comportamiento.ts`, patrón «prompt») rechaza esa palabra en cualquier titular o ángulo. El texto aprobado NO se cambia aquí: el archivo lo conserva tal cual y por eso el validador rechaza la carga hasta que
-  // se reescriba (p. ej. «el bono de 100 ejemplos»). Cuando se apruebe otra redacción, estas dos pruebas pasan a exigir cero problemas y cero rechazos.
-  it('los 4 anuncios sin la palabra «prompts» pasan las comprobaciones del archivo y las del SERVIDOR sin modelo; el de «¿No sabes qué publicar?» lo rechaza el servidor por esa palabra (pendiente de reescribir el ángulo aprobado)', () => {
-    const problemas = validar.validarArchivo(DATOS, { productosActivos: PRODUCTOS, limite: 10 });
-    expect(problemas).toHaveLength(1);
-    expect(problemas[0]).toMatch(/que-publicar.*«prompts».*rechaza el servidor/);
+  it('las 5 campañas, con los ángulos aprobados TAL CUAL (incluido «el bono de 100 prompts»), pasan las comprobaciones del archivo y las del SERVIDOR sin modelo (la regla de «prompts» ya se corrigió en el servidor)', () => {
+    expect(validar.validarArchivo(DATOS, { productosActivos: PRODUCTOS, limite: 10 })).toEqual([]);
+    expect(DATOS.anuncios.find((a) => a.id === 'que-publicar')!.angulo).toContain('100 prompts');
     const lista = validar.armarLista(DATOS, HOY) as servidor.Campana[];
     expect(lista).toHaveLength(5);
     const r = servidor.revisarSinModelo(lista, [], 10, AHORA, SIN_OTROS, PRODUCTOS);
-    for (const c of lista.filter((x) => x.id !== 'que-publicar')) expect(r.get(c.id), c.id).toBeNull();
-    expect(r.get('que-publicar')).toMatchObject({ estado: 'rechazada', capa: 'patrones', campo: 'angulo' });
+    for (const c of lista) expect(r.get(c.id), c.id).toBeNull();
     // Las fechas: hoy hasta hoy + 179 días (180 de vigencia), dentro del máximo de un año.
     expect(lista.every((c) => c.inicio === HOY && c.fin === validar.sumarDias(HOY, DATOS.diasDeVigencia - 1))).toBe(true);
     // El producto y el catálogo: sin el producto activo el servidor las rechaza.
     expect(servidorRechaza(lista, new Set())).toBe(true);
     expect(validar.validarArchivo(DATOS, { productosActivos: new Set(), limite: 10 }).join('|')).toMatch(/productoId.*no existe o no está activo/);
-  });
-
-  it('con otra redacción del ángulo de «¿No sabes qué publicar?» (sin la palabra rechazada) el archivo entero pasa las comprobaciones del archivo y las del servidor', () => {
-    const d = copia(DATOS);
-    d.anuncios[2]!.angulo = d.anuncios[2]!.angulo!.replace('100 prompts', '100 ejemplos');
-    expect(validar.validarArchivo(d, { productosActivos: PRODUCTOS, limite: 10 })).toEqual([]);
-    const lista = validar.armarLista(d, HOY) as servidor.Campana[];
-    for (const v of servidor.revisarSinModelo(lista, [], 10, AHORA, SIN_OTROS, PRODUCTOS).values()) expect(v).toBeNull();
   });
 
   it('las cifras del archivo de validación son las del servidor', () => {
@@ -86,8 +73,8 @@ describe('el archivo de los anuncios de Rubén (dato del tenant)', () => {
   });
 
   it('NEGADOS: cada caso malo lo rechazan el validador del archivo Y el servidor (monto en un titular, titular corto o largo, 6 titulares, ángulo largo, titular repetido en otro anuncio, producto inexistente, invisibles)', () => {
-    // Se parte de la redacción que SÍ pasa (sin «prompts»), para que cada rechazo sea atribuible al caso malo y no al hallazgo conocido de arriba.
-    const base = (mod: (d: typeof DATOS) => void): typeof DATOS => { const d = copia(DATOS); d.anuncios[2]!.angulo = d.anuncios[2]!.angulo!.replace('100 prompts', '100 ejemplos'); mod(d); return d; };
+    // Se parte del archivo aprobado, que pasa entero: cada rechazo es atribuible al caso malo.
+    const base = (mod: (d: typeof DATOS) => void): typeof DATOS => { const d = copia(DATOS); mod(d); return d; };
     expect(servidorRechaza(validar.armarLista(base(() => undefined), HOY) as servidor.Campana[])).toBe(false);
     const casos: Array<[string, typeof DATOS]> = [
       ['monto en un titular', base((d) => { d.anuncios[0]!.titulares = ['Desde solo 32 Bs en libros']; })],

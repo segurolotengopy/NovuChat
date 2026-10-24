@@ -272,6 +272,13 @@ if (rrPideCatalogo(norm)) {
 // sale POR CÓDIGO desde el catálogo, sin modelo, con el menú de productos (con un QR abierto, sin botones de producto y sin abrir otro QR). Sin ningún precio en el catálogo no hay nada que decir: se deriva a Rubén.
 const precioPedido = rrPreguntaPorPrecio(norm);
 if (precioPedido) {
+  // 23/10/2026 (Andres): ya saludado, la pregunta de precio sale por código SIN esperar la compuerta (insistir no produce otra charla sin precio): el precio de ESE producto, o el bloque de las opciones (lo que da el «sí» al puente) si es general
+  // o nombra dos. Marca las opciones como vistas igual que ese camino. Nunca abre un QR. El primer mensaje sigue como antes: saludo corto sin montos.
+  if (!habilitado && ficha.saludado && !hayQrAbierto) {
+    if (!Object.keys(cat).length) return salir(sinOpciones(''));
+    if (precioPedido.producto !== '') return salir({ tipo: 'precio', producto: precioPedido.producto, cat: cat });
+    return salir(rrMenu(1, cat, ficha.usados).length ? { tipo: 'opciones_codigo', cat: cat } : sinOpciones(''));
+  }
   if (!habilitado) return pedirOpciones();
   if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
   return salir(Object.keys(cat).length ? { tipo: 'precio', producto: precioPedido.producto, cat: cat, qrAbierto: hayQrAbierto } : sinOpciones(''));

@@ -234,7 +234,10 @@ const LEET: Record<string, string> = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '
 export const plegarParaPatrones = (t: string): string =>
   t.normalize('NFKC').replace(/\p{Cf}/gu, '').toLowerCase()
     .replace(/[\u0370-\u03ff\u0400-\u04ff]/gu, (ch) => HOMOGLIFOS[ch] ?? ch)
-    .replace(/[013457@$]/g, (ch) => LEET[ch] ?? ch);
+    // Solo se pliega la cifra PEGADA a una letra («pr0mpt5», «1gn0r3»): un número puro como «100» queda cifra.
+    .replace(/[013457@$]+/g, (run, i: number, todo: string) =>
+      /\p{L}/u.test(todo[i - 1] ?? '') || /\p{L}/u.test(todo[i + run.length] ?? '')
+        ? [...run].map((c) => LEET[c] ?? c).join('') : run);
 /**
  * Frases que hacen que el asistente niegue ser una IA o se haga pasar por una persona
  * (prohibición 4) o afirme un pago (prohibición 3). `verificarPatrones` no las cubre

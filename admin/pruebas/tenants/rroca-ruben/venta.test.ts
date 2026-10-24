@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import * as servidorCampanas from '../../../functions/src/modulos/campanas/campanas.ts';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { UX_CONTADOR, UX_ESTADO, contarPresentaciones, esPresentacion, preguntaPorIdentidad, seDeclaraIA, sembrarCharlaUx, vigilarUx, violacionesDeAvisoTardio, violacionesDeMedio, violacionesDeParrafos, violacionesDePromesaDeImagen, violacionesDeQrAbierto, violacionesDeRepeticion, violacionesDeUx, type UxMsg } from './vigilante-ux';
@@ -5153,5 +5154,83 @@ describe('CIERRE 2 · la foto que no se mira (tope diario lleno o visión apagad
       expect(tieneBotonRuben(unico(llena)), estado).toBe(true);
       expect(avisosDe(llena), estado).toHaveLength(0);
     }
+  });
+});
+
+// =============================================================================================================================================================================================
+// LAS ARTES REALES DE LAS CAMPAÑAS DE RUBÉN (Silvana, 23/10/2026: «Rubén no reconoce sus propias imágenes»). Solo se usan sus TITULARES como datos (las imágenes son del cliente y no están en el repositorio): la visión
+// simulada devuelve el titular de cada arte, en las variantes que produce un OCR, y el flujo los reconoce contra los anuncios QUE ENTREGA LA CONSOLA (el archivo de campañas de Rubén pasado por `anunciosParaElFlujo`).
+// =============================================================================================================================================================================================
+describe('ARTES REALES de Rubén: cada titular se reconoce contra los anuncios de la Consola y responde con su producto y su ángulo', () => {
+  const DATOS_RR = JSON.parse(readFileSync(join(AQUI, '../../../scripts/datos/rroca-ruben/campanas-rroca-ruben.json'), 'utf8')) as { anuncios: Array<{ id: string; titulares: string[]; productoId: string; angulo: string }> };
+  const HOY_RR = servidorCampanas.diaBolivia(Date.now());
+  const DE_LA_CONSOLA = servidorCampanas.anunciosParaElFlujo(DATOS_RR.anuncios.map((a) => ({ ...a, texto: '', inicio: HOY_RR, fin: HOY_RR })), 10, Date.now(), CATALOGO);
+  const sinTildesRR = (t: string): string => t.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  // Lo que lee la visión de cada arte (los titulares reales, con sus variantes), y el anuncio que debe reconocerse.
+  const ARTES: Array<[string, string, string]> = [
+    ['Convierte la IA… (oscura, 14.15.19 y (1))', 'Convierte la IA en tu asistente de negocio', 'asistente-de-negocio'],
+    ['Convierte la IA… (clara, 09.50.02)', 'Convierte la IA en tu asistente de negocio', 'asistente-de-negocio'],
+    ['¿Estás usando la IA realmente…?', '¿Estás usando la IA realmente para tu negocio?', 'usando-la-ia-realmente'],
+    ['¿Estás usando la IA mal?', '¿Estás usando la IA mal?', 'usando-la-ia-realmente'],
+    ['¿No sabes qué publicar?', '¿No sabes qué publicar?', 'que-publicar'],
+    ['¿Cuánto tiempo pierdes…?', '¿Cuánto tiempo pierdes en tareas que podrías automatizar con IA?', 'tiempo-automatizar'],
+    ['¿Ya tienes ChatGPT…?', '¿Ya tienes ChatGPT… pero no sabes cómo usarlo para tu negocio?', 'chatgpt-sin-saber-usarlo'],
+  ];
+  const variantes = (t: string): Array<[string, string]> => [
+    ['tal cual', t], ['MAYÚSCULAS', t.toUpperCase()], ['sin tildes ni signos', sinTildesRR(t).replace(/[¿?¡!]/g, '')], ['truncado a 100', t.slice(0, 100)],
+    ['con el CTA de la oscura', `${t} Más información en la página`], ['con el CTA de la clara', `${t} Descubre el método`], ['con ruido delante', `iA ${t}`], ['con puntos suspensivos cambiados', t.replace('…', '...')],
+  ];
+
+  it('el servidor entrega los 5 anuncios y cada titular de cada arte, en cada variante de OCR, reconoce SU anuncio: un solo mensaje, el modelo recibe el canónico, el ángulo y el producto, jamás el titular leído ni un precio', () => {
+    expect(DE_LA_CONSOLA).toHaveLength(5);
+    for (const [arte, leido, id] of ARTES) for (const [variante, titular] of variantes(leido)) {
+      const w = crear({ vision: { categoria: 'publicidad', titular_principal: titular }, anuncios: DE_LA_CONSOLA });
+      const cuerpos = cuerposDelModelo(w);
+      const m = unico(hablar(w, ANA, mImagen()));
+      const donde = `${arte} / ${variante}`;
+      expect(cuerpos, donde).toHaveLength(1);
+      const turno = JSON.stringify(JSON.parse(cuerpos[0]!).contents);
+      const esperado = DATOS_RR.anuncios.find((a) => a.id === id)!;
+      expect(turno, donde).toContain(`[ANUNCIO_DETECTADO: «${esperado.titulares[0]!.normalize('NFKC')}» — enfoque del negocio`);
+      expect(turno, donde).toContain(esperado.angulo.normalize('NFKC').slice(0, 40));
+      expect(turno, donde).toContain('producto: «Libro + 4 bonos»');
+      expect(turno, donde).not.toMatch(/\bBs\b|32|60|precio/i);
+      expect(m.cuerpo, donde).not.toMatch(/\bBs\b/);
+    }
+  });
+
+  it('la captura de la landing (con el precio en el título) NO es un anuncio de la Consola: se describe como publicidad, sin modelo y sin repetir el monto', () => {
+    const w = crear({ vision: { categoria: 'publicidad', titular_principal: 'IA para Emprendedores Independientes | Pack Completo 60 Bs' }, anuncios: DE_LA_CONSOLA });
+    const cuerpos = cuerposDelModelo(w);
+    const m = unico(hablar(w, ANA, mImagen()));
+    expect(cuerpos).toHaveLength(0);
+    expect(m.cuerpo).toContain('Veo una imagen publicitaria.');
+    expect(m.cuerpo).not.toMatch(/\bBs\b|60/);
+  });
+
+  it('un titular PARECIDO pero ajeno, uno retirado o una sola palabra no reconocen ninguno de los 5', () => {
+    for (const ajeno of ['La IA es mucho más que escribir textos', '¿Te escriben pero no compran?', '¿Quieres hacer videos pero no sabes cómo?', 'Aprende a vender más', 'IA', '']) {
+      const w = crear({ vision: { categoria: 'publicidad', titular_principal: ajeno }, anuncios: DE_LA_CONSOLA });
+      const cuerpos = cuerposDelModelo(w);
+      unico(hablar(w, ANA, mImagen()));
+      expect(cuerpos, ajeno).toHaveLength(0);
+    }
+  });
+
+  // Los 5 mensajes prellenados de la landing: lo que hace HOY cada uno como PRIMER mensaje. No son preguntas de precio (son pedidos de compra o una consulta).
+  it('los 5 prellenados de la landing se reconocen como entrada: el Pack y el libro van a su QR, el Closer y los videos a su oferta, la consulta a su saludo; ninguno es una pregunta de precio', () => {
+    const esperado: Array<[keyof typeof PRELLENADOS, string]> = [['pack', 'qr'], ['libro', 'qr'], ['closer', 'complemento'], ['videos', 'complemento'], ['consulta', 'saludo']];
+    expect(Object.keys(PRELLENADOS).sort()).toEqual(['closer', 'consulta', 'libro', 'pack', 'videos']);
+    for (const [k, plan] of esperado) {
+      const w = crear();
+      const t = hablar(w, ANA, mTexto(PRELLENADOS[k]));
+      expect(t.fallo, k).toBeNull();
+      expect(String(((t.resumen ?? {})['resumen'] as J | undefined)?.['plan']), k).toBe(plan);
+      expect(t.ejecutados.has('Conversar con el modelo'), k).toBe(false);
+      expect(t.mensajes.filter((e) => !e.respaldo), k).toHaveLength(1);
+    }
+    // Los dos de consulta y de Pack/libro no llevan montos en el texto de apertura; los de complemento SÍ confirman el precio del producto que el cliente pidió (es un pedido, exento de la regla del primer mensaje).
+    const lib = crear();
+    expect(unico(hablar(lib, ANA, mTexto(PRELLENADOS.consulta))).cuerpo).not.toMatch(/\bBs\b/);
   });
 });

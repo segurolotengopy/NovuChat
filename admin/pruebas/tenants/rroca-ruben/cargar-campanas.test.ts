@@ -33,11 +33,10 @@ const TODOS = [T, T_CHICO, T_SUSP, T_SIN_PRODUCTO];
 
 const tmp = mkdtempSync(join(tmpdir(), 'cargar-campanas-'));
 const base = JSON.parse(readFileSync(ARCHIVO, 'utf8')) as { anuncios: Array<Record<string, unknown>>; tenant: string };
-/** El archivo con la redacción del ángulo de «¿No sabes qué publicar?» que el servidor SÍ admite (el aprobado trae «prompts», que rechaza). */
+/** El archivo aprobado (con el tenant pedido): pasa entero las reglas del servidor. */
 const bueno = (tenant: string, mod: (d: { anuncios: Array<Record<string, unknown>>; tenant: string }) => void = () => undefined): { anuncios: Array<Record<string, unknown>>; tenant: string } => {
   const d = JSON.parse(JSON.stringify(base)) as typeof base;
   d.tenant = tenant;
-  d.anuncios[2]!['angulo'] = String(d.anuncios[2]!['angulo']).replace('100 prompts', '100 ejemplos');
   mod(d);
   return d;
 };
@@ -77,14 +76,6 @@ describe('cargar-campanas.mjs (los anuncios de Rubén)', () => {
     const b = correr(T, archivo('ok0', bueno(T)), '--forzar');
     expect(b.codigo).toBe(2);
     expect(b.salida).toMatch(/argumento desconocido/);
-  });
-
-  it('el archivo APROBADO, tal cual, NO se carga: el ángulo de «¿No sabes qué publicar?» trae «prompts», que el servidor rechaza; no se escribe nada ni con --aplicar', async () => {
-    const r = correr(T, archivo('aprobado', { ...base, tenant: T }), '--aplicar');
-    expect(r.codigo, r.salida).toBe(2);
-    expect(r.salida).toMatch(/«prompts» la rechaza el servidor/);
-    expect(r.salida).toMatch(/No se escribió nada/);
-    expect(await lista(T)).toEqual([]);
   });
 
   it('en SECO (por omisión) dice qué cargaría y NO escribe: ni la lista, ni el sello, ni la auditoría', async () => {

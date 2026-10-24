@@ -6,31 +6,46 @@
   "anuncios": [
     {
       "id": "asistente-de-negocio",
-      "titulares": ["Convierte la IA en tu asistente de negocio", "Más ideas · Más clientes · Más tiempo para ti"],
+      "titulares": [
+        "Convierte la IA en tu asistente de negocio",
+        "Más ideas · Más clientes · Más tiempo para ti"
+      ],
       "productoId": "libro-bonos",
       "angulo": "Habla de los capítulos 9 (asistente personal) y 11 (equipo virtual) y pregunta de qué es su emprendimiento."
     },
     {
       "id": "usando-la-ia-realmente",
-      "titulares": ["¿Estás usando la IA realmente para tu negocio?", "La mayoría de emprendedores solo la usa para escribir textos"],
+      "titulares": [
+        "¿Estás usando la IA realmente para tu negocio?",
+        "¿Estás usando la IA mal?",
+        "La mayoría de emprendedores solo la usa para escribir textos"
+      ],
       "productoId": "libro-bonos",
       "angulo": "Reconoce que ya usa IA y no le saca provecho; pregunta para qué la usa hoy y qué quiere lograr."
     },
     {
       "id": "que-publicar",
-      "titulares": ["¿No sabes qué publicar?", "Deja de inventar. Aprende a usar la IA."],
+      "titulares": [
+        "¿No sabes qué publicar?",
+        "Deja de inventar. Aprende a usar la IA."
+      ],
       "productoId": "libro-bonos",
       "angulo": "Habla de contenido: capítulo 6 y el bono de 100 prompts; pregunta a qué se dedica y en qué red publica."
     },
     {
       "id": "tiempo-automatizar",
-      "titulares": ["¿Cuánto tiempo pierdes en tareas que podrías automatizar con IA?"],
+      "titulares": [
+        "¿Cuánto tiempo pierdes en tareas que podrías automatizar con IA?"
+      ],
       "productoId": "libro-bonos",
       "angulo": "Habla del Mapa de automatización y los capítulos 8 y 10; pregunta qué tarea repetitiva le quita más tiempo."
     },
     {
       "id": "chatgpt-sin-saber-usarlo",
-      "titulares": ["¿Ya tienes ChatGPT… pero no sabes cómo usarlo para tu negocio?", "Tener acceso a una herramienta no es lo mismo que saber aplicarla"],
+      "titulares": [
+        "¿Ya tienes ChatGPT… pero no sabes cómo usarlo para tu negocio?",
+        "Tener acceso a una herramienta no es lo mismo que saber aplicarla"
+      ],
       "productoId": "libro-bonos",
       "angulo": "Explica que no es aprender una herramienta sino aplicarla a procesos reales con el Checklist de 7 días; pregunta a qué se dedica."
     }

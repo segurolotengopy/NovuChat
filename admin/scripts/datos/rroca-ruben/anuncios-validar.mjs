@@ -24,8 +24,6 @@ const ID_PRODUCTO = /^[A-Za-z0-9_-]{1,100}$/;
 const MONTO = /(\bbs\.?|\busd|\$)\s*\d|\d\s*(bs|usd|\$)/;
 const INVISIBLES = /[\p{Cf}\p{Cc}]/u;
 const ENLACE = /https?:|www\.|\b\S+\.(?:com|net|org|bo|io|app|me|link|ly)\b/i;
-// Palabras de la capa de patrones del servidor (`comportamiento.ts`, patrón «prompt»): un titular o un ángulo que las trae se RECHAZA al escribirse. Se repite solo esta, la que ya mordió a un ángulo aprobado.
-const PALABRA_RECHAZADA = /(?<![\p{L}\p{N}_])(prompts?|system|systems)(?![\p{L}\p{N}_])/iu;
 const sinTildes = (t) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const palabras = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const colapsar = (t) => [...new Set((t ?? []).map((x) => x.trim().replace(/\s+/g, ' ')))];
@@ -82,7 +80,6 @@ export function validarArchivo(datos, { productosActivos = null, limite = MAX_AN
       if (MONTO.test(sinTildes(t))) p.push(`${donde}.titulares: un titular no lleva montos (el precio sale del catálogo)`);
       if (INVISIBLES.test(t.normalize('NFKC'))) p.push(`${donde}.titulares: caracteres invisibles o de control`);
       if (ENLACE.test(t)) p.push(`${donde}.titulares: un titular no lleva enlaces`);
-      if (PALABRA_RECHAZADA.test(t.normalize('NFKC'))) p.push(`${donde}.titulares: la palabra «${PALABRA_RECHAZADA.exec(t.normalize('NFKC'))[1]}» la rechaza el servidor en un anuncio (patrón «prompt»): reescríbalo`);
       const n = palabras(t);
       const otro = titularesVistos.get(n);
       if (otro !== undefined && otro !== a.id) p.push(`${donde}.titulares: «${t.slice(0, 30)}» ya lo usa el anuncio «${otro}» (el flujo no sabría de cuál viene)`);
@@ -98,7 +95,6 @@ export function validarArchivo(datos, { productosActivos = null, limite = MAX_AN
         if (a.angulo.trim().length > TOPE_ANGULO) p.push(`${donde}.angulo: ${a.angulo.trim().length} caracteres, el máximo es ${TOPE_ANGULO}`);
         if (INVISIBLES.test(a.angulo.normalize('NFKC'))) p.push(`${donde}.angulo: caracteres invisibles o de control`);
         if (ENLACE.test(a.angulo)) p.push(`${donde}.angulo: un ángulo no lleva enlaces`);
-        if (PALABRA_RECHAZADA.test(a.angulo.normalize('NFKC'))) p.push(`${donde}.angulo (${a.id}): la palabra «${PALABRA_RECHAZADA.exec(a.angulo.normalize('NFKC'))[1]}» la rechaza el servidor en un anuncio (patrón «prompt»): el ángulo aprobado necesita otra redacción antes de cargarse`);
         if (/\b\d+(?:[.,]\d+)?\s?(bs|bolivianos|usd|\$)\b|(?:bs\.?|usd|\$)\s?\d/i.test(sinTildes(a.angulo))) p.push(`${donde}.angulo: un ángulo no lleva montos (el precio sale del catálogo)`);
       }
     }
