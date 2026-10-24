@@ -21,6 +21,7 @@
  * que se aplica es siempre la de la segunda pasada, y las 42 aserciones de esta
  * suite verifican justamente esa decisión final.
  */
+import { ARNES_REGLA } from './lib/quien-atiende-arnes.ts';
 import {
   assertFails,
   assertSucceeds,
@@ -3640,6 +3641,55 @@ describe('Nombre del asistente (config/negocio)', () => {
 
   it('el operador no lo escribe', async () => {
     await assertFails(setDoc(doc(operA(), ruta), { ...configValida('u-oper-a'), nombreAsistente: 'Kenji' }));
+  });
+});
+
+// ===========================================================================
+// NOMBRE DE QUIEN ATIENDE (config/negocio.nombreQuienAtiende, 23/10/2026)
+// ===========================================================================
+// Texto que llega a clientes finales dentro de frases fijas: se escribe negando.
+describe('Nombre de quien atiende (config/negocio)', () => {
+  const ruta = `tenants/${A}/config/negocio`;
+  const con = (nombreQuienAtiende: unknown) =>
+    setDoc(doc(adminA(), ruta), { ...configValida('u-admin-a'), nombreQuienAtiende });
+
+  it('lo válido pasa: nombre, equipo, vacío y 60 caracteres', async () => {
+    await assertSucceeds(con('Rubén'));
+    await assertSucceeds(con('Antonio y Marta'));
+    await assertSucceeds(con('nuestro equipo'));
+    await assertSucceeds(con(''));
+    await assertSucceeds(con('x'.repeat(60)));
+  });
+
+  it('un documento SIN el campo sigue siendo válido', async () => {
+    await assertSucceeds(setDoc(doc(adminA(), ruta), configValida('u-admin-a')));
+  });
+
+  it('61 caracteres, algo que no es texto, salto, control, <>[]{}, no', async () => {
+    await assertFails(con('x'.repeat(61)));
+    await assertFails(con(7));
+    await assertFails(con(['Rubén']));
+    await assertFails(con('Ru\nbén'));
+    await assertFails(con('Ru\u0000bén'));
+    await assertFails(con('Ru\u202Ebén'));
+    await assertFails(con('Ru\u200Bbén'));
+    await assertFails(con('Ru<bén>'));
+  });
+
+  it('el arnés del revisor: invisibles, homoglifos, bancos, pagos, teléfonos, enlaces, IA', async () => {
+    for (const [, valor] of ARNES_REGLA) await assertFails(con(valor));
+  });
+
+  it('nombres legítimos con acentos, eñe, puntos y 3 dígitos pasan', async () => {
+    await assertSucceeds(con('Rubén Núñez'));
+    await assertSucceeds(con('María José (recepción)'));
+    await assertSucceeds(con('Clínica Sofía & Equipo'));
+    await assertSucceeds(con('Turno 123'));
+  });
+
+  it('el operador no lo escribe y el admin de B no escribe el de A', async () => {
+    await assertFails(setDoc(doc(operA(), ruta), { ...configValida('u-oper-a'), nombreQuienAtiende: 'Rubén' }));
+    await assertFails(setDoc(doc(adminB(), ruta), { ...configValida('u-admin-b'), nombreQuienAtiende: 'Rubén' }));
   });
 });
 

@@ -131,48 +131,16 @@ seguridad:
       creado: "2026-10-01"
       vence: "2026-12-30"
   # ---------------------------------------------------------------------------
-  # ACTIVA (03/10/2026): braces@3.0.3 en admin/pnpm-lock.yaml (GHSA-vfj7-8cjw-p6xm,
-  # CVE-2026-93687, CVSS 8.7, HIGH). En origin/main desde el 28/08 (f03c258c);
-  # entra por firebase-tools@15.29.0 -> chokidar@3.6.0 -> braces: tooling de
-  # desarrollo y CLI, sin entrada no confiable. osv-scanner no informa version
-  # corregida. El `id` es el CVE porque security-local.sh identifica el hallazgo
-  # de osv-scanner por su primer alias CVE- y compara contra ese valor; un id
-  # propio (osv-braces-GHSA-...) o el GHSA no lo exceptuarian. En CI
-  # osv-scanner es informativo y no lee excepciones: esta entrada surte efecto
-  # en el analisis local (paridad con el umbral bloquear_en).
-  # Al vencer: revisar si salio version corregida de braces o si firebase-tools
-  # ya trae chokidar@4 (que no depende de braces); no se prorroga en silencio.
+  # ✅ CERRADAS el 2026-10-24: las dos excepciones por braces@3.0.3 en
+  # admin/pnpm-lock.yaml (GHSA-vfj7-8cjw-p6xm / CVE-2026-93687, DoS por patrones
+  # anidados, entrada por firebase-tools@15.29.0 -> chokidar@3.6.0): la de
+  # osv-scanner por el CVE (creada 2026-10-03, vencia 2026-12-31) y la de Trivy
+  # por el GHSA (creada 2026-10-21, vencia 2026-11-15). Aviso retirado por
+  # GitHub el 2026-10-23 (withdrawn_at 2026-10-23T12:53:02Z en
+  # /advisories/GHSA-vfj7-8cjw-p6xm). Medido el 2026-10-24 sin excepciones
+  # (ignorefile vacio): Trivy 0.70.0 fs con .github/trivy.yaml, HIGH/CRITICAL,
+  # 0 hallazgos (braces no aparece en ninguna severidad); osv-scanner 2.5.1
+  # sobre admin/pnpm-lock.yaml, 0 hallazgos con CVSS >= 7 y braces ausente.
+  # Si el aviso se reabre, la excepcion se vuelve a pedir con justificacion
+  # nueva; no se repone en silencio.
   # ---------------------------------------------------------------------------
-    - id: CVE-2026-93687
-      herramienta: osv-scanner
-      justificacion: >-
-        DoS por patrones anidados; solo en tooling de desarrollo/CLI, sin
-        entrada no confiable; sin version corregida publicada. braces@3.0.3
-        (GHSA-vfj7-8cjw-p6xm) entra por firebase-tools@15.29.0 ->
-        chokidar@3.6.0 en admin/pnpm-lock.yaml.
-      aprobado_por: Andres Alberdi
-      creado: "2026-10-03"
-      vence: "2026-12-31"
-  # ---------------------------------------------------------------------------
-  # ACTIVA (21/10/2026): Trivy fs (SCA, bloqueante en HIGH/CRITICAL) tambien
-  # informa braces@3.0.3 por su GHSA (la entrada vecina de arriba cubre a
-  # osv-scanner por su CVE; cada escaner identifica el hallazgo con su propio
-  # id). Sin version corregida publicada, un override no la cierra. Camino unico:
-  # firebase-tools@15.29.0 -> chokidar@3.6.0 -> braces (devDependency de admin/).
-  # Alcance: lockfile de admin/ (raiz, web y functions comparten el hallazgo).
-  # Vencimiento corto (25 dias); al vencer: firebase-tools con chokidar@4 o
-  # braces corregido; no se prorroga en silencio.
-  # ---------------------------------------------------------------------------
-    - id: GHSA-vfj7-8cjw-p6xm
-      herramienta: trivy
-      justificacion: >-
-        braces@3.0.3: DoS por agotamiento de pila con patrones anidados; sin
-        version corregida publicada. Solo entra por firebase-tools@15.29.0 ->
-        chokidar@3.6.0, devDependency de admin/ (herramienta de despliegue en
-        CI); no se empaqueta ni corre en las Functions ni en la consola, y el
-        CLI no expande patrones de una entrada no confiable. Alcance: lockfile
-        de admin/. Condicion de cierre: firebase-tools con chokidar@4 (sin
-        braces) o una version corregida de braces.
-      aprobado_por: Andres Alberdi
-      creado: "2026-10-21"
-      vence: "2026-11-15"
