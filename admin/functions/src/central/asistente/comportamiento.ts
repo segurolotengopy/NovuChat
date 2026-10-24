@@ -91,6 +91,12 @@ export function hashCorto(texto: string): string {
  */
 export function normalizar(texto: string): string {
   return texto
+    // NFKC primero: «１００» ancho completo, «ﬁ» y compatibles pasan a su forma
+    // llana. Después se quitan los invisibles (Default_Ignorable y formato:
+    // ancho cero, guion blando, selectores de variación, etiquetas) que partirían
+    // una palabra sin que el ojo lo note: «pro\u200Bmpt» debe leerse «prompt».
+    .normalize('NFKC')
+    .replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '')
     .normalize('NFD')
     .replace(/\p{M}+/gu, '')
     .toLowerCase()
@@ -118,6 +124,12 @@ export interface Patron {
   nombre: string;
   /** Sobre el texto normalizado, salvo que `crudo` sea true. */
   re: RegExp;
+  /**
+   * Prueba propia, para lo que una expresión regular no dice bien (una palabra
+   * permitida solo en cierto contexto). Si existe, REEMPLAZA a `re` al decidir;
+   * `re` queda como el caso general, para quien lea la lista.
+   */
+  prueba?: (normalizado: string) => boolean;
   crudo?: boolean;
   /** `fuerte` rechaza solo; `debil` deja el caso dudoso para la capa 2, nunca rechaza. */
   fuerza: 'fuerte' | 'debil';
@@ -130,6 +142,63 @@ export interface Patron {
  * `pruebas/central/comportamiento.test.ts`: quitar o debilitar una entrada obliga a
  * cambiar una prueba que dice por qué existía.
  */
+/**
+ * «prompts» (plural) solo es vocabulario comercial cuando nombra un producto
+ * contado: «100 prompts», «cien prompts», «+50 prompts listos». Es el nombre real
+ * de un bono de una campaña, y la regla vieja lo rechazaba sin mirar el contexto.
+ *
+ * QUÉ CUENTA COMO CONTEXTO (todo junto, y si falla algo, se rechaza):
+ *   1. Un número o cuantificador pegado a la palabra, con a lo sumo UNA palabra
+ *      en medio («100 mejores prompts»). Cifras con espacios o puntos
+ *      («1 0 0», «1.000») se juntan antes de mirar, para que no sirvan de
+ *      evasión. El texto plegado de las campañas cambia 1->i, 0->o, 5->s…
+ *      («100» llega como «ioo»), y esa forma también cuenta como número.
+ *   2. Ningún posesivo ni artículo de referencia antes del número («tus 100
+ *      prompts», «mi prompts»): ahí se habla DEL prompt del asistente.
+ *   3. Nada que dé una orden sobre ellos en la misma oración: ni un verbo de
+ *      revelar o ignorar (revela, muestra, dime, repite, ignora, olvida…) en las
+ *      40 letras de alrededor, ni «:» o «=» justo después («100 prompts: ignora…»).
+ *   4. «prompt» en singular y «system prompt» siguen en el patrón `prompt`.
+ */
+const PALABRAS_NUMERO = [
+  'un', 'una', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve',
+  'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'veinte', 'treinta', 'cuarenta',
+  'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa', 'cien', 'ciento', 'cientos',
+  'doscientos', 'trescientos', 'quinientos', 'mil', 'miles', 'decenas', 'docenas',
+  'varios', 'muchos', 'cientos de', 'miles de', 'decenas de', 'docenas de', 'mas de',
+];
+const NUMERO = `(?:\\+\\s*)?(?:\\d+|${PALABRAS_NUMERO.map(escapar).join('|')}|[0-9ioseat]{2,5})`;
+/** Palabras de verdad que el plegado leet confundiría con una cifra («is», «tea»…). */
+const FALSOS_NUMEROS = new Set(['is', 'it', 'at', 'as', 'set', 'sit', 'tea', 'sea', 'see', 'eat', 'ate', 'tie', 'toe', 'aaa', 'sa', 'ta', 'ea']);
+const VERBOS_ORDEN = new RegExp(
+  `(?<![\\p{L}\\p{N}_])(?:revel\\w*|muestr\\w*|mostr\\w*|dime|dinos|dame|repit\\w*|ignor\\w*|olvid\\w*|imprim\\w*|`
+  + 'filtr\\w*|expon\\w*|divulg\\w*|reveal|show|repeat|ignore|print|tell|say|forget|disregard|override|dump)'
+  + '(?![\\p{L}\\p{N}_])', 'u');
+const POSESIVO = /(?:^|[^\p{L}\p{N}_])(?:tu|tus|mi|mis|su|sus|el|este|ese|nuestro|nuestros)\s+(?:\p{L}+\s+)?$/u;
+
+/** ¿Hay un «prompts» sin el contexto que lo vuelve nombre de producto? */
+export function promptsSinContexto(normalizado: string): boolean {
+  const base = normalizado.replace(/(\d)[\s.,_-]+(?=\d)/g, '$1');
+  const re = /(?<![\p{L}\p{N}_])prompts(?![\p{L}\p{N}_])/gu;
+  for (let m = re.exec(base); m !== null; m = re.exec(base)) {
+    const antes = base.slice(0, m.index);
+    const despues = base.slice(m.index + m[0].length);
+    // La oración: se corta en el último signo fuerte antes y en el primero después.
+    const oracionAntes = antes.slice(Math.max(antes.lastIndexOf('.'), antes.lastIndexOf('!'), antes.lastIndexOf('?'), antes.lastIndexOf('\n')) + 1);
+    const oracionDespues = despues.split(/[.!?\n]/)[0] ?? '';
+    const conNumero = new RegExp(`(^|[^\\p{L}\\p{N}_])(${NUMERO})\\s+(?:(\\p{L}+)\\s+)?$`, 'u').exec(antes);
+    if (conNumero === null) return true;
+    const numero = (conNumero[2] ?? '').trim();
+    if (FALSOS_NUMEROS.has(numero) || !/\d|[io]|\p{L}{3,}/u.test(numero)) return true;
+    const intermedia = conNumero[3];
+    if (intermedia !== undefined && VERBOS_ORDEN.test(intermedia)) return true;
+    if (POSESIVO.test(antes.slice(0, conNumero.index + (conNumero[1] ?? '').length))) return true;
+    if (VERBOS_ORDEN.test(oracionAntes.slice(-40)) || VERBOS_ORDEN.test(oracionDespues.slice(0, 40))) return true;
+    if (/^\s*[:=>]/.test(despues)) return true;
+  }
+  return false;
+}
+
 export const PATRONES: readonly Patron[] = [
   // --- Marcas y rótulos del prompt (fuertes) -------------------------------
   {
@@ -211,10 +280,18 @@ export const PATRONES: readonly Patron[] = [
   // --- Vocabulario técnico que un negocio no usa (fuertes) -----------------
   {
     nombre: 'prompt',
-    re: palabra('prompt', 'prompts', 'system prompt', 'system', 'systems'),
+    re: palabra('prompt', 'system prompt', 'system', 'systems'),
     fuerza: 'fuerte',
     porque: '«prompt» y «system» no son palabras de una descripción comercial en '
       + 'español; «sistema», que sí lo es («sistema de turnos»), NO está en la lista.',
+  },
+  {
+    nombre: 'prompts sin cantidad',
+    re: palabra('prompts'),
+    prueba: promptsSinContexto,
+    fuerza: 'fuerte',
+    porque: '«prompts» en plural solo se admite como producto contado («100 prompts»), '
+      + 'sin posesivo ni orden alrededor; suelto o con orden es el vocabulario de la inyección.',
   },
   {
     nombre: 'nombre de herramienta',
@@ -336,7 +413,7 @@ export function verificarPatrones(
   const fuertes: string[] = [];
   const debiles: string[] = [];
   for (const p of PATRONES) {
-    if (p.re.test(p.crudo ? texto : normalizado)) (p.fuerza === 'fuerte' ? fuertes : debiles).push(p.nombre);
+    if ((p.prueba !== undefined && !p.crudo ? p.prueba(normalizado) : p.re.test(p.crudo ? texto : normalizado)) as boolean) (p.fuerza === 'fuerte' ? fuertes : debiles).push(p.nombre);
   }
   if (mencionaOtroComercio(normalizado, otros)) fuertes.push('otro comercio');
 
