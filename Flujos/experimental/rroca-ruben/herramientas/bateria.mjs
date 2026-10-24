@@ -105,6 +105,8 @@ export function validarCasos(datos) {
   return casos;
 }
 
+// Los anuncios de la Consola que la batería simula (el flujo no lleva ninguno escrito): solo el del caso C.
+const ANUNCIOS_DE_PRUEBA = [{ id: 'ad-publicar', titulares: ['¿No sabes qué publicar?'], angulo: 'Habla del capítulo 6 y pregunta a qué se dedica y en qué red publica.', producto: { id: 'libro-bonos', nombre: 'Libro + 4 bonos', precio: 32, agotado: false } }];
 // ------------------------------------------------------------------------------------------------------- el mundo de una corrida
 let seq = 0;
 const valorMeta = (msg, from) => ({
@@ -119,7 +121,7 @@ function crearDobles({ tel, seco, turnoActual, credencial, opciones, deps, nodoM
     statusCode: 200,
     body: {
       tenantId: 'rroca-ruben', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Rubén Roca' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, voz: { nombreAsistente: '' }, atencion: { estado: 'normal' },
-      catalogo: CATALOGO, venta: { mediaIdQr: MEDIA_QR },
+      catalogo: CATALOGO, anuncios: ANUNCIOS_DE_PRUEBA, venta: { mediaIdQr: MEDIA_QR },
       cobroReal: { nombreCuenta: 'Titular Ejemplo', banco: 'Banco Ejemplo', cuentas: ['59100000077'], venceEl: '2027-12-31', moneda: 'BOB', montoFijo: null, fichaQr: 'ficha1' },
       cobro: { activo: true, moneda: 'BOB', qr: { url: 'https://us-east1-ejemplo.cloudfunctions.net/imagenDeCobro?f=ficha1', nombreCuenta: 'Titular Ejemplo', banco: 'Banco Ejemplo' }, regla: 2, pendiente: cobro.pendiente, monto: cobro.monto, pedido: cobro.pedido, enRevision: false, vencidoHaceMin: null },
     },

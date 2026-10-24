@@ -45,7 +45,7 @@ function datosAprobados(): { configBase: Record<string, unknown> } {
   if (typeof d.configBase['telefonosDePrueba'] === 'string' && !/\d/.test(d.configBase['telefonosDePrueba'])) d.configBase['telefonosDePrueba'] = '59100000042';
   return d;
 }
-const hallazgos = (flujo: Flujo, datos = datosAprobados()): string[] => guardiaDePublicacion({ flujo, datos }) as string[];
+const hallazgos = (flujo: Flujo, datos = datosAprobados()): string[] => guardiaDePublicacion({ flujo, datos, anuncios: 3 }) as string[];
 
 describe('guardia de publicación: la ruta feliz y el JSON versionado de hoy', () => {
   it('con todo sustituido y las plantillas APPROVED (Config base y datos) no hay hallazgos, en producción y en la prueba', () => {
@@ -54,7 +54,7 @@ describe('guardia de publicación: la ruta feliz y el JSON versionado de hoy', (
   });
 
   it('el JSON versionado de hoy NO es publicable: solo por los marcadores que faltan (las plantillas ya están aprobadas)', () => {
-    const h = guardiaDePublicacion({ flujo: PRODUCCION, datos: DATOS_VERSIONADOS }) as string[];
+    const h = guardiaDePublicacion({ flujo: PRODUCCION, datos: DATOS_VERSIONADOS, anuncios: 3 }) as string[];
     expect(h.filter((x) => /marcador sin sustituir/.test(x)).length).toBeGreaterThan(0);
     expect(h.join('|')).not.toMatch(/APPROVED|plantilla/i);
   });
@@ -239,9 +239,16 @@ describe('construir.mjs --publicable: la línea de comandos', () => {
     const rutaD = join(dir, 'datos.json');
     writeFileSync(rutaF, JSON.stringify(publicable(PRODUCCION)));
     writeFileSync(rutaD, JSON.stringify({ ...JSON.parse(leer(ARCHIVO_DE_DATOS)), configBase: datosAprobados().configBase }));
-    const r = correr('--flujo', rutaF, '--datos', rutaD);
+    const r = correr('--flujo', rutaF, '--datos', rutaD, '--anuncios', '3');
     expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).toMatch(/se puede publicar/);
+    // PRECONDICIÓN (visión por categorías): sin al menos un anuncio leído de la Consola NO se publica, aunque todo lo demás esté en orden.
+    for (const sinAnuncios of [[], ['--anuncios', '0'], ['--anuncios', 'abc'], ['--anuncios', '-1'], ['--anuncios', '1.5']]) {
+      const n = correr('--flujo', rutaF, '--datos', rutaD, ...sinAnuncios);
+      expect(n.status, sinAnuncios.join(' ')).toBe(1);
+      expect(n.stderr, sinAnuncios.join(' ')).toMatch(/anuncios:/);
+    }
+    expect(correr('--flujo', rutaF, '--datos', rutaD, '--anuncios').status).toBe(2);
   });
 
   it('un JSON inválido no filtra su contenido en el mensaje de error', () => {
@@ -554,10 +561,12 @@ describe('guardia de apertura (20/10/2026): abrir al PÚBLICO exige audio, image
       expect(destinos('Transcribir audio')).toEqual(['Preparar transcripción']);
       expect(destinos('Preparar transcripción')).toEqual(['Decidir turno']);
       expect(destinos('¿Es comprobante?', 1)).toEqual(['Ver imagen']);
+      for (const lector of ['Ver imagen', 'Leer comprobante (imagen)', 'Leer comprobante (PDF)']) expect(destinos(lector), lector).toEqual(['Preparar imagen']);
+      expect(destinos('Preparar imagen')).toEqual(['Interpretar lectura']);
       const decidir = String((f.nodes.find((n) => n.name === 'Decidir turno')!.parameters as { jsCode: string }).jsCode);
       expect(decidir).toMatch(/t\.tipo === 'document'/);
       expect(decidir).toMatch(/rrAudioDelTurno/);
-      expect(decidir).toMatch(/rrLecturaImagen/);
+      expect(decidir).toMatch(/rrVistaDeImagen/);
     }
   });
 
@@ -567,7 +576,7 @@ describe('guardia de apertura (20/10/2026): abrir al PÚBLICO exige audio, image
     expect(modoDePublicacion({ flujo: f, datos: datosAprobados() })).toBe('prueba');
     const ruta = join(mkdtempSync(join(tmpdir(), 'rroca-apertura-')), 'vivo.json');
     writeFileSync(ruta, JSON.stringify(f));
-    const r = spawnSync(process.execPath, [join(RROCA, 'construir.mjs'), '--publicable', '--flujo', ruta], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+    const r = spawnSync(process.execPath, [join(RROCA, 'construir.mjs'), '--publicable', '--anuncios', '3', '--flujo', ruta], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/Publicación de PRUEBA con lista restringida/);
     expect(r.stdout).toMatch(/NO se abre al público/);
@@ -651,7 +660,7 @@ describe('CIERRE · la lista de prueba de la guardia de apertura exige al menos 
     const datos = copia(DATOS_VERSIONADOS) as { configBase: Record<string, unknown> };
     datos.configBase['telefonosDePrueba'] = '1';
     datos.configBase['mediosHabilitados'] = 'imagen_comprobante,pdf_comprobante';
-    const h = guardiaDePublicacion({ flujo: copia(PRODUCCION), datos }) as string[];
+    const h = guardiaDePublicacion({ flujo: copia(PRODUCCION), datos, anuncios: 3 }) as string[];
     expect(h.some((x) => /abrir al PÚBLICO exige los tres medios/.test(x))).toBe(true);
   });
 });
