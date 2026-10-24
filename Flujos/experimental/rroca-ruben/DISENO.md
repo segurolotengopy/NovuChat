@@ -282,3 +282,9 @@ Port de `rroca-antonio` (PR-D, #596 y #597) a la copia propia de Rubén: cada fl
 **Límite declarado.** El pie de foto que el cliente escribe junto a una foto cualquiera ya no llega al modelo (la respuesta de foto, captura y otro es del código): solo se usa con un anuncio reconocido.
 
 **Reversión.** Revertir el PR, reconstruir con `construir.mjs`. Las campañas cargadas no afectan a otros flujos.
+
+## Diferencias aceptadas por Andres el 24/10/2026 (equivalentes)
+
+Fuente: la landing de Rubén (libro.dhermacore.com), leída como dato el 24/10/2026. Quedan como están; no se cambia `RR_PROMPT` ni se pregunta a Rubén.
+- **Closer:** la landing y los prellenados dicen «Prompt Maestro de Cierre de Ventas»; el flujo (`RR_PROMPT`, PDF) dice «Closer de Ventas en Tiempo Real».
+- **Herramientas gratuitas:** la landing no asegura que sigan siéndolo; el flujo dice «se empieza con las versiones sin costo de las herramientas de IA».
