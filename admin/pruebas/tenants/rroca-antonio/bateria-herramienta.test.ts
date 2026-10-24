@@ -65,7 +65,7 @@ describe('la batería de Antonio en seco: los 15 turnos corren por el flujo vers
     expect(r.salida).toMatch(/Caso A, corrida 1/);
     expect(r.salida).toMatch(/Soy el asistente virtual del Método Puente\./);
     expect(r.salida).not.toMatch(/Dauber/);
-    expect(r.salida).toMatch(/Asistente \[opciones\]:[^\n]*Te dejo aquí abajo las opciones[^\n]*ahorras 57 Bs[^\n]*Pack completo 49Bs \| Libro 35Bs \| Ver complementos/);
+    expect(r.salida).toMatch(/Asistente \[opciones\]:[^\n]*Te dejo aquí abajo las opciones[^\n]*ahorras 57 Bs[^\n]*💛Pack Completo 49Bs \| 📘 Solo Libro 35Bs \| ➕ Bonos Individuales/);
     expect(r.salida).toMatch(/Asistente \[puente\]:[^\n]*¿Te muestro las opciones\?[^\n]*botones: Ver opciones/);
     expect(r.salida).toMatch(/Asistente \[precio\]:[^\n]*cuesta 35 Bs[^\n]*¿Te muestro las opciones\?/);
     expect(r.salida).toMatch(/Asistente \[modelo\]:[^\n]*tu QR sigue abierto/);

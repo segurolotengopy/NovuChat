@@ -1,7 +1,7 @@
 /**
  * «EL PUENTE DE ANTONIO» (tenant rroca-antonio) — PR-C, LOS DATOS DEL NEGOCIO (`admin/scripts/datos/rroca-antonio/negocio-rroca-antonio.json`).
  *
- * Niega: que el catálogo no sea el que lee el flujo (`raCatalogo`: 6 ids que salen del nombre, precios 49, 35, 20, 19, 17 y 15 Bs, todos activos); que el archivo traiga una sección que
+ * Niega: que el catálogo no sea el que lee el flujo (`raCatalogo`: 6 ids que salen del nombre, precios 49, 35, 20, 18, 15 y 18 Bs (el MD modificado, 24/10/2026), todos activos); que el archivo traiga una sección que
  * `cargar-negocio.mjs` no admite, un secreto, un teléfono o una cuenta; y que sea APLICABLE mientras tenga marcadores `REEMPLAZAR_*` fuera de `numeroRecepcionMarcador`.
  * No toca Firestore: la carga real es del script con «sí» de Andres.
  */
@@ -24,7 +24,7 @@ const idDe = (nombre: string): string => nombre.toLowerCase().normalize('NFD').r
 
 const L = cargarLibrerias('raCatalogo') as { raCatalogo: (c: unknown) => Record<string, number> };
 
-const ESPERADO: Record<string, number> = { 'pack-completo': 49, libro: 35, workbook: 20, 'guia-de-conversaciones': 19, 'calendario-de-conexion': 17, 'preguntas-profundas': 15 };
+const ESPERADO: Record<string, number> = { 'pack-completo': 49, libro: 35, workbook: 20, 'guia-de-conversaciones': 18, 'calendario-de-conexion': 15, 'preguntas-profundas': 18 };
 
 describe('negocio-rroca-antonio.json: el catálogo es el que espera el flujo', () => {
   it('tiene exactamente los 6 productos, con los ids que salen del nombre y los precios del guion', () => {
@@ -37,7 +37,7 @@ describe('negocio-rroca-antonio.json: el catálogo es el que espera el flujo', (
   });
   it('`raCatalogo` lee los 6 productos con esos precios (como los sirve la consola: id + precio)', () => {
     const consola = { catalogo: D.catalogo.map((it) => ({ id: idDe(it.nombre), precio: it.precio })) };
-    expect(L.raCatalogo(consola)).toEqual({ pack: 49, libro: 35, workbook: 20, guia: 19, calendario: 17, preguntas: 15 });
+    expect(L.raCatalogo(consola)).toEqual({ pack: 49, libro: 35, workbook: 20, guia: 18, calendario: 15, preguntas: 18 });
   });
   it('negando: un nombre que cambia deja al producto fuera del catálogo del flujo', () => {
     const consola = { catalogo: D.catalogo.map((it) => ({ id: idDe(it.nombre === 'Pack completo' ? 'Pack total' : it.nombre), precio: it.precio })) };

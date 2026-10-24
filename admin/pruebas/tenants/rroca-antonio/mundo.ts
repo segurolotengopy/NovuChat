@@ -130,7 +130,7 @@ export function crear(o: Opciones = {}): Mundo {
     'Enviar a WhatsApp': enviar('Enviar a WhatsApp'),
     'Enviar respaldo': enviar('Enviar respaldo'),
   };
-  return crearMundo({
+  const mundo = crearMundo({
     flujo: o.flujo ?? PRODUCCION,
     dobles,
     roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Avisar al servidor'] },
@@ -139,10 +139,18 @@ export function crear(o: Opciones = {}): Mundo {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`,
       avisoComprobantePlantilla: 'aviso_comprobante_recibido', avisoComprobanteEstado: 'APPROVED', avisoConsultaPlantilla: 'aviso_consulta_para_antonio', avisoConsultaEstado: 'APPROVED',
       landingFrase: FRASE_LANDING,
+      // Las etiquetas de los botones (nombre con emoji, dato del tenant en «Config base») van VACÍAS por omisión: la mayoría de las suites prueba el camino del catálogo (el nombre de la Consola);
+      // `etiquetas-md.test.ts` prueba las del tenant pasándolas en `base` (las lee del archivo de datos).
+      etiquetaPack: '', etiquetaLibro: '', etiquetaBonos: '', etiquetaWorkbook: '', etiquetaGuia: '', etiquetaPreguntas: '', etiquetaCalendario: '',
       ...(o.base ?? {}),
     },
   });
+  const propias = ['etiquetaPack', 'etiquetaLibro', 'etiquetaBonos', 'etiquetaWorkbook', 'etiquetaGuia', 'etiquetaPreguntas', 'etiquetaCalendario'].map((k) => (o.base ?? {})[k]).filter((x): x is string => typeof x === 'string' && x !== '');
+  ETIQUETAS_DEL_TENANT.set(mundo, propias);
+  return mundo;
 }
+/** Las etiquetas del tenant (con emoji) que una prueba puso en «Config base»: el vigilante de UX las acepta como nombre de botón. */
+export const ETIQUETAS_DEL_TENANT = new WeakMap<object, string[]>();
 export const hablar = (m: Mundo, from: string, msg: J, op: { wamid?: string; entrega?: string; phoneId?: string; toleraFallo?: boolean } = {}): ResultadoTurno =>
   m.turno(entrega(valorMeta(msg, from, op), op.entrega), op.toleraFallo ? { tolerarFallo: true } : {});
 export const textos = (t: ResultadoTurno): string[] => t.mensajes.map((e) => e.cuerpo);

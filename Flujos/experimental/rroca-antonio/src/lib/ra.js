@@ -535,27 +535,80 @@ function raEtiqueta(nombre, monto) {
   const limpia = parte.replace(/(?:\s+(?:de|del|el|la|los|las|y|o|a|en|un|una|para|con))+$/i, '');
   return (limpia + sufijo).trim();
 }
-// El menú principal (estilo Rubén, D2): Pack y Libro con su NOMBRE DEL CATÁLOGO y el precio del catálogo («<nombre> <precio>Bs», a lo más 20 caracteres: `vdEtiquetaConPrecio`) y «Ver complementos», que abre la lista de bonos.
-function raMenu(cat, usados, nom) {
+// LAS ETIQUETAS DEL TENANT (24/10/2026, «MD modificado»): los NOMBRES de los botones y su emoji son dato de «Config base» (`etiquetaPack`, `etiquetaLibro`, `etiquetaBonos`, `etiquetaWorkbook`, `etiquetaGuia`,
+// `etiquetaPreguntas`, `etiquetaCalendario`), sin monto: el monto lo pone SIEMPRE el código desde el catálogo. Sin la clave, la etiqueta cae al nombre del catálogo de la Consola (el comportamiento anterior).
+const RA_CLAVES_ETIQUETA = { pack: 'etiquetaPack', libro: 'etiquetaLibro', bonos: 'etiquetaBonos', workbook: 'etiquetaWorkbook', guia: 'etiquetaGuia', preguntas: 'etiquetaPreguntas', calendario: 'etiquetaCalendario' };
+// La misma forma que exige `construir.mjs`, repetida en tiempo de ejecución: una etiqueta con monto, enlace o caracteres peligrosos se ignora y se usa el nombre del catálogo.
+const RA_ETIQUETA_VALIDA = /^(?!.*(?:\b(?:bs|bob|bolivianos?)\b|\d\s*(?:bs|bob|\$|usd)|(?:bs|bob|\$|usd)\s*\d|:\/\/|www\.|wa\.me|\.\w{2,}\/))[^"{}\r\n<>()\\']{2,30}$/i;
+function raEtiquetas(base) {
+  const e = {};
+  if (!cbEsObjeto(base)) return e;
+  for (const k of Object.keys(RA_CLAVES_ETIQUETA)) {
+    const v = typeof base[RA_CLAVES_ETIQUETA[k]] === 'string' ? cbLinea(base[RA_CLAVES_ETIQUETA[k]], 40) : '';
+    if (v !== '' && RA_ETIQUETA_VALIDA.test(v)) e[k] = v;
+  }
+  return e;
+}
+function raEtiquetaDe(etq, k) { return cbEsObjeto(etq) && Object.prototype.hasOwnProperty.call(etq, k) && typeof etq[k] === 'string' && etq[k] !== '' ? etq[k] : ''; }
+// «<emoji> <nombre>» -> { emoji, nombre } (el emoji puede faltar).
+function raPartirEtiqueta(etiqueta) {
+  const m = /^([^\p{L}\p{N}]*?)\s*([\p{L}\p{N}].*)$/u.exec(etiqueta);
+  return m ? { emoji: m[1], nombre: m[2] } : { emoji: '', nombre: etiqueta };
+}
+// Una etiqueta con emoji y monto cabe en `limite` (WhatsApp: 20 en un botón; `.length` cuenta el emoji como lo cuenta JavaScript). El recorte más pequeño primero: (1) el nombre entero con el espacio tras el emoji;
+// (2) sin ese espacio; (3) quitando palabras del final (sin dejar una preposición ni un número colgando) y repitiendo (1) y (2). `sufijo` es el monto (' 49Bs') o '' si la etiqueta no lleva monto.
+function raAjustarEtiqueta(etiqueta, sufijo, limite) {
+  const p = raPartirEtiqueta(etiqueta);
+  const palabras = p.nombre.split(' ').filter((w) => w !== '');
+  for (let n = palabras.length; n >= 1; n--) {
+    let nombre = palabras.slice(0, n).join(' ');
+    if (n < palabras.length) {
+      const limpio = nombre.replace(/(?:\s+(?:de|del|el|la|los|las|y|o|a|en|un|una|para|con|\d+))+$/i, '');
+      if (limpio !== '') nombre = limpio;
+    }
+    for (const sep of p.emoji === '' ? [''] : [' ', '']) {
+      const c = p.emoji + sep + nombre + sufijo;
+      if (c.length <= limite) return c;
+    }
+  }
+  return cbLinea(p.emoji + p.nombre, Math.max(1, limite - sufijo.length)) + sufijo;
+}
+// El título de una fila de la lista (hasta 24): «<emoji> <nombre> (<monto> Bs)» si cabe; si no, sin el monto (la descripción de la fila lo lleva siempre).
+function raTituloFila(etiqueta, monto) {
+  const p = raPartirEtiqueta(etiqueta);
+  const suf = ' (' + cbMonto(monto) + ' Bs)';
+  for (const s of [suf, '']) for (const sep of p.emoji === '' ? [''] : [' ', '']) {
+    const c = p.emoji + sep + p.nombre + s;
+    if (c.length <= 24) return c;
+  }
+  return cbLinea(etiqueta, 24);
+}
+// La etiqueta de un botón de producto con monto: la del tenant si la hay; si no, el nombre del catálogo (`raEtiqueta`).
+function raEtiquetaProducto(nom, etq, k, monto) {
+  const e = raEtiquetaDe(etq, k);
+  return e !== '' ? raAjustarEtiqueta(e, ' ' + cbMonto(monto) + 'Bs', 20) : raEtiqueta(raTitulo(nom, k), monto);
+}
+// El menú principal (estilo Rubén, D2): Pack y Libro con su etiqueta (la del tenant o el NOMBRE DEL CATÁLOGO) y el precio del catálogo («<nombre> <precio>Bs», a lo más 20 caracteres) y el botón de los bonos, que abre la lista.
+function raMenu(cat, usados, nom, etq) {
   const u = Array.isArray(usados) ? usados : [];
   const b = [];
-  if (typeof raPrecio(cat, 'pack') === 'number') b.push(raBoton('b_pack', raEtiqueta(raTitulo(nom, 'pack'), raPrecio(cat, 'pack'))));
-  if (typeof raPrecio(cat, 'libro') === 'number') b.push(raBoton('b_libro', raEtiqueta(raTitulo(nom, 'libro'), raPrecio(cat, 'libro'))));
-  if (raHayBonos(cat)) b.push(raBoton(RA_BOTON_BONOS, RA_ETIQUETA_COMPLEMENTOS));
+  if (typeof raPrecio(cat, 'pack') === 'number') b.push(raBoton('b_pack', raEtiquetaProducto(nom, etq, 'pack', raPrecio(cat, 'pack'))));
+  if (typeof raPrecio(cat, 'libro') === 'number') b.push(raBoton('b_libro', raEtiquetaProducto(nom, etq, 'libro', raPrecio(cat, 'libro'))));
+  if (raHayBonos(cat)) b.push(raBoton(RA_BOTON_BONOS, raEtiquetaDe(etq, 'bonos') !== '' ? raAjustarEtiqueta(raEtiquetaDe(etq, 'bonos'), '', 20) : RA_ETIQUETA_COMPLEMENTOS));
   return b.filter((x) => u.indexOf(x.id) < 0 && !(x.id === RA_BOTON_BONOS && u.indexOf(RA_BOTON_BONOS_VIEJO) >= 0)).slice(0, 3);
 }
-// Las filas de la lista de bonos: título hasta 24 caracteres (el nombre del catálogo), el precio en la descripción.
-function raFilasBonos(cat, usados, nom) {
+// Las filas de la lista de bonos: título hasta 24 caracteres (la etiqueta del tenant o el nombre del catálogo), el precio en la descripción.
+function raFilasBonos(cat, usados, nom, etq) {
   const u = Array.isArray(usados) ? usados : [];
   return RA_BONOS.filter((k) => typeof raPrecio(cat, k) === 'number' && u.indexOf(RA_PRODUCTOS[k].boton) < 0)
-    .map((k) => ({ id: RA_PRODUCTOS[k].boton, title: cbLinea(raTitulo(nom, k), 24), description: raMontoBs(raPrecio(cat, k)) }));
+    .map((k) => ({ id: RA_PRODUCTOS[k].boton, title: raEtiquetaDe(etq, k) !== '' ? raTituloFila(raEtiquetaDe(etq, k), raPrecio(cat, k)) : cbLinea(raTitulo(nom, k), 24), description: raMontoBs(raPrecio(cat, k)) }));
 }
 // Los botones de un prellenado de bono: el bono pedido y el Pack, si están en el catálogo (los pulsados no reaparecen).
-function raMenuDeBonos(productos, cat, usados, nom) {
+function raMenuDeBonos(productos, cat, usados, nom, etq) {
   const u = Array.isArray(usados) ? usados : [];
   const b = [];
-  for (const k of productos) if (typeof raPrecio(cat, k) === 'number') b.push(raBoton(RA_PRODUCTOS[k].boton, raEtiqueta(raTitulo(nom, k), raPrecio(cat, k))));
-  if (typeof raPrecio(cat, 'pack') === 'number') b.push(raBoton('b_pack', raEtiqueta(raTitulo(nom, 'pack'), raPrecio(cat, 'pack'))));
+  for (const k of productos) if (typeof raPrecio(cat, k) === 'number') b.push(raBoton(RA_PRODUCTOS[k].boton, raEtiquetaProducto(nom, etq, k, raPrecio(cat, k))));
+  if (typeof raPrecio(cat, 'pack') === 'number') b.push(raBoton('b_pack', raEtiquetaProducto(nom, etq, 'pack', raPrecio(cat, 'pack'))));
   return b.filter((x) => u.indexOf(x.id) < 0).slice(0, 3);
 }
 

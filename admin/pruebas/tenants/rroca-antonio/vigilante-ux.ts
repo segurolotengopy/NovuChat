@@ -28,6 +28,7 @@
  */
 import { expect } from 'vitest';
 import type { J } from '../../lib/flujo';
+import { ETIQUETAS_DEL_TENANT } from './mundo';
 import type { Mundo } from '../../lib/n8n-de-mentira';
 import { cargarLibrerias } from './librerias';
 
@@ -93,6 +94,8 @@ export interface ContextoUx {
   esAudio?: boolean;
   /** Los nombres del catálogo de la consola en este momento (el de cada botón con precio sale de ahí). */
   nombresDelCatalogo?: string[];
+  /** Las etiquetas del tenant (dato de «Config base»), con su emoji: también son nombres válidos de botón. */
+  etiquetasDelTenant?: string[];
 }
 /** Los mensajes EXENTOS del invariante 7, POR PLAN (no por palabras): el QR, el resultado del cotejo, la protección ante violencia o miedo y el texto a un número extranjero; y la presentación. */
 const PLANES_EXENTOS = ['qr', 'comprobante', 'riesgo', 'fuera_pais', 'baja'];
@@ -156,8 +159,10 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
         const mm = /^(.*?) (\d+(?:,\d+)?)Bs$/.exec(titulo);
         if (!mm) v.push(`botón con precio que no termina en « <monto>Bs»: «${titulo}»`);
         else {
-          const nombre = mm[1]!;
-          const nombres = [...(ctx.nombresDelCatalogo ?? [])];
+          // El emoji de una etiqueta del tenant no es parte del nombre: se compara el nombre sin él (con o sin el espacio que lo separa).
+          const sinEmoji = (x: string): string => x.replace(/^[^\p{L}\p{N}]+/u, '');
+          const nombre = sinEmoji(mm[1]!);
+          const nombres = [...(ctx.nombresDelCatalogo ?? []), ...(ctx.etiquetasDelTenant ?? []).map(sinEmoji)];
           const esDelCatalogo = nombres.some((n) => n === nombre || n.startsWith(nombre + ' '));
           if (ctx.nombresDelCatalogo && !esDelCatalogo) v.push(`la etiqueta «${titulo}» no usa el nombre del catálogo (${nombres.join(' | ')})`);
           if (/\b(de|del|el|la|y)$/i.test(nombre) && !nombres.includes(nombre)) v.push(`botón con una preposición colgando: «${titulo}»`);
@@ -199,6 +204,7 @@ export function vigilarUx(mundo: Mundo): void {
     const nombresDelCatalogo = Array.isArray(cuerpoPanel['catalogo']) ? (cuerpoPanel['catalogo'] as J[]).map((c) => String(c['nombre'] ?? '')).filter((n) => n !== '') : undefined;
     const v = violacionesDeUx(pulsados, msg, salida, pres, trans, {
       nombresDelCatalogo: nombresDelCatalogo && nombresDelCatalogo.length ? nombresDelCatalogo : undefined,
+      etiquetasDelTenant: ETIQUETAS_DEL_TENANT.get(mundo) ?? [],
       ultimoTexto: estado.ultimo.get(from), respuestasPrevias: estado.respuestas.get(from) ?? 0, qrAbierto, sinConfig: sinConfig && Number(panel?.['statusCode']) !== 409, llamoAlModelo: t.ejecutados.has('Conversar con el modelo'), esAudio: msg['type'] === 'audio', plan: String((t.porNodo['Armar mensajes']?.[0]?.['plan'] ?? '')),
     });
     if (salida.length) { estado.ultimo.set(from, salida[salida.length - 1]!.cuerpo); estado.respuestas.set(from, (estado.respuestas.get(from) ?? 0) + salida.length); }
