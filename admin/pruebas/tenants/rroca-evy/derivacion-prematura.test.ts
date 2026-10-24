@@ -43,17 +43,77 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     const t2 = hablar(m, ANA, mTexto('sí'));
     expect(esBoton(t2)).toBe(true);
   });
-  it('POSITIVA: «dale» tras «¿te paso con recepción?» deriva', () => {
-    const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<dale>>>') ? '[DERIVAR_RECEPCION]' : 'Perfecto. ¿Te paso con recepción para elegir el horario?') });
+  it('POSITIVA: «dale» tras «¿Quieres que agendemos…?» deriva (la oferta «te paso con recepción» la quita la barrera de promesas, así que nunca llega al historial)', () => {
+    const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<dale>>>') ? '[DERIVAR_RECEPCION]' : 'Perfecto. ¿Quieres que agendemos tu valoración?') });
     hablar(m, ANA, mTexto('me interesa'));
     expect(esBoton(hablar(m, ANA, mTexto('dale')))).toBe(true);
   });
-  it('POSITIVA: el nombre tras la oferta (etiqueta con nombre, sin pregunta) deriva', () => {
-    const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<Paola>>>') ? 'Gracias. [DERIVAR_RECEPCION: Paola]' : 'Con gusto. ¿Cómo te llamas para pasarte con recepción?') });
-    hablar(m, ANA, mTexto('quiero información'));
-    const t = hablar(m, ANA, mTexto('Paola'));
-    expect(esBoton(t)).toBe(true);
-    expect(textos(t)[0]).toMatch(/Excelente decisión, Paola/);
+  /** Un asistente que ofrece agendar, pide el nombre al aceptar, y emite la etiqueta cuando el cliente da su nombre. */
+  const guion = () => crear({
+    modeloDice: (ll) => {
+      const c = JSON.stringify(ll.cuerpo);
+      if (c.includes('<<<Paola>>>') && c.includes('cómo te llamas para pasarte')) return 'Gracias. [DERIVAR_RECEPCION: Paola]';
+      if (c.includes('<<<sí>>>') || c.includes('<<<dale>>>')) return '¡Perfecto! Para pasarte con recepción, ¿cómo te llamas para pasarte con ella? [DERIVAR_RECEPCION]'.replace('¿cómo te llamas para pasarte con ella?', '¿cómo te llamas para pasarte?');
+      return 'Te cuento. La valoración es gratuita. ¿Te gustaría agendar tu valoración?';
+    },
+  });
+  it('POSITIVA: «¿Te gustaría agendar?» → «sí» → «¿cómo te llamas?» → «Paola» deriva con el cierre completo UNA vez; en el «sí» ESPERA el nombre (sin botón)', () => {
+    const m = guion();
+    hablar(m, ANA, mTexto('cuéntame de la valoración'));
+    const t2 = hablar(m, ANA, mTexto('sí'));
+    expect(esBoton(t2)).toBe(false);                       // el modelo emitió la etiqueta y pidió el nombre en el mismo turno: espera el nombre
+    expect(textos(t2).join(' ')).toContain('cómo te llamas');
+    const t3 = hablar(m, ANA, mTexto('Paola'));
+    expect(esBoton(t3)).toBe(true);
+    expect(textos(t3)[0]).toMatch(/Excelente decisión, Paola/);
+    expect(avisosARecepcion(t3).length).toBe(1);
+    const t4 = hablar(m, ANA, mTexto('gracias'));
+    expect(textos(t4).join(' ')).not.toMatch(/Excelente decisión/);
+  });
+  it('POSITIVA: «dale» tras la oferta, con la etiqueta SIN pedir nombre, deriva', () => {
+    const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<dale>>>') ? 'Listo. [DERIVAR_RECEPCION]' : 'Con gusto. ¿Quieres que agendemos tu valoración?') });
+    hablar(m, ANA, mTexto('me interesa'));
+    expect(esBoton(hablar(m, ANA, mTexto('dale')))).toBe(true);
+  });
+  for (const nombre of ['Paola', 'Me llamo Paola', 'Paola, quiero mejorar mis ojeras', 'soy diabética', 'de La Paz', 'soy nueva']) {
+    it(`NEGADA: «${nombre}» tras el saludo (que pregunta el nombre) con la etiqueta del modelo no deriva`, () => {
+      const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<hola>>>') ? '¡Hola! Soy el asistente virtual de la Dra. Evy. Tu valoración es gratuita. ¿Cómo te llamas y qué te gustaría mejorar en tu rostro?' : 'Gracias. [DERIVAR_RECEPCION: Paola]') });
+      hablar(m, ANA, mTexto('hola'));
+      expect(esBoton(hablar(m, ANA, mTexto(nombre))), nombre).toBe(false);
+    });
+  }
+  it('NEGADA: «soy diabética» o «de La Paz» tras aceptar la oferta y pedir el nombre tampoco es un nombre', () => {
+    for (const x of ['soy diabética', 'de La Paz', 'soy nueva']) {
+      const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<sí>>>') ? '¿Cómo te llamas para pasarte con recepción?' : (JSON.stringify(ll.cuerpo).includes(`<<<${x}>>>`) ? 'Listo. [DERIVAR_RECEPCION]' : 'Te cuento. ¿Te gustaría agendar tu valoración?')) });
+      hablar(m, ANA, mTexto('cuéntame'));
+      hablar(m, ANA, mTexto('sí'));
+      expect(esBoton(hablar(m, ANA, mTexto(x))), x).toBe(false);
+    }
+  });
+  it('NEGADA: «Soy Paola, quiero ver cómo queda» + ANTES_DESPUES + etiqueta no deriva y SALE la imagen', () => {
+    const t = hablar(crear({ modeloDice: dice('[ENVIAR_ARTE_ANTES_DESPUES] Mira el caso. [DERIVAR_RECEPCION: Paola]') }), ANA, mTexto('Soy Paola, quiero ver cómo queda'));
+    expect(esBoton(t)).toBe(false);
+    expect(imagenes(t)).toEqual([IDS.antes_despues]);
+  });
+  it('con historial real: el saludo corto del prompt → «Quiero ver cómo queda» + etiqueta no deriva y sale el ANTES_DESPUES', () => {
+    const SALUDO = '¡Hola! 👋 Soy el asistente virtual de la Dra. Evy Karina Rojas (Armonización Facial), aplicadora certificada: hacemos armonización facial sin cirugía con bioestimuladores de colágeno para recuperar firmeza y definir el contorno del rostro.\n\nPor escribirnos desde la campaña, tu valoración con la Dra. Evy es 100% gratuita y sin compromiso (su costo habitual es de 250 Bs, hoy bonificado). ¿Cómo te llamas y qué te gustaría mejorar en tu rostro?';
+    const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<Quiero ver cómo queda>>>') ? ANTES : SALUDO) });
+    hablar(m, ANA, mTexto('hola'));
+    const t = hablar(m, ANA, mTexto('Quiero ver cómo queda'));
+    expect(esBoton(t)).toBe(false);
+    expect(imagenes(t)).toEqual([IDS.antes_despues]);
+  });
+  for (const x of ['si pero no ahora', 'si, cuánto cuesta', 'ok pero no ahora', 'ya no', 'bueno no se', 'quiero ver como queda', 'me interesa el Radiesse', 'me gustaria saber el precio']) {
+    it(`NEGADA: «${x}» tras una oferta de agendar no la acepta`, () => {
+      const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes(`<<<${x}>>>`) ? 'Entiendo. [DERIVAR_RECEPCION]' : 'Con gusto. ¿Te gustaría agendar tu valoración?') });
+      hablar(m, ANA, mTexto('cuéntame'));
+      expect(esBoton(hablar(m, ANA, mTexto(x))), x).toBe(false);
+    });
+  }
+  it('NEGADA: el saludo (valoración + «¿Cómo te llamas?») nunca es una oferta: «sí» después del saludo no deriva', () => {
+    const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<sí>>>') ? 'Genial. [DERIVAR_RECEPCION]' : 'Tu valoración con la Dra. es gratuita. ¿Cómo te llamas y qué te gustaría mejorar?') });
+    hablar(m, ANA, mTexto('hola'));
+    expect(esBoton(hablar(m, ANA, mTexto('sí')))).toBe(false);
   });
   it('NEGADA: un «sí» SIN oferta previa de agendar (el asistente preguntó otra cosa) no deriva', () => {
     const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<claro>>>') ? 'Genial. [DERIVAR_RECEPCION]' : 'Radiesse activa el colágeno. ¿Te cuento la diferencia con HArmonyCa?') });
@@ -80,6 +140,24 @@ describe('tope de 700 caracteres por mensaje: recorte por oración, la pregunta 
     // nunca a mitad de oración: cada oración del relleno que queda está completa
     for (const m of t.matchAll(/Esta es la oración de relleno número (\d+)([^.]*)\./g)) expect(m[2]).toBe(' sobre el efecto lifting natural y el contorno del rostro');
     expect(t).not.toMatch(/relleno número \d+ sobre el efecto lifting natural y el contorno del rostro\.\s*Esta es la oración de relleno número \d+ sobre el efecto lifting natural y el contor$/);
+  });
+  it('si el recorte vaciaría el texto o lo dejaría solo con la pregunta, se devuelve el ORIGINAL (decide el filtro común)', () => {
+    const una = 'Esta es una sola oración muy larga ' + 'de relleno sobre el tratamiento '.repeat(28) + 'del rostro.';
+    expect(una.length).toBeGreaterThan(850);
+    expect(textos(hablar(crear({ modeloDice: dice(una) }), ANA, mTexto('hola')))[0]).toBe(una);
+    const sinSignos = 'texto largo sin ningún signo de puntuación '.repeat(22).trim();
+    expect(textos(hablar(crear({ modeloDice: dice(sinSignos) }), ANA, mTexto('hola')))[0]).toBe(sinSignos);
+    const conPregunta = `${una} ¿Cómo te llamas?`;
+    const t = textos(hablar(crear({ modeloDice: dice(conPregunta) }), ANA, mTexto('hola')))[0]!;
+    expect(t).toContain('sola oración muy larga');
+    expect(t.endsWith('¿Cómo te llamas?')).toBe(true);
+  });
+  it('el recorte no quita la aclaración fija ni una pregunta que no va al final', () => {
+    const relleno = Array.from({ length: 10 }, (_, i) => `Esta es la oración de relleno número ${i + 1} sobre el efecto lifting natural.`).join(' ');
+    const t = textos(hablar(crear({ modeloDice: dice(`${relleno} ¿Quieres saber más? No podemos garantizar un resultado idéntico. Tu valoración es gratuita.`) }), ANA, mTexto('hola')))[0]!;
+    expect(t).toContain('Cada rostro responde distinto y no prometemos un resultado idéntico.');
+    expect(t).toContain('¿Quieres saber más?');
+    expect(t.length).toBeLessThanOrEqual(700);
   });
   it('un texto corto no cambia', () => {
     const corto = 'Con gusto. Tu valoración es gratuita y sin compromiso. ¿Cómo te llamas?';

@@ -41,7 +41,14 @@ if (plan.tipo === 'modelo') {
   const quiere = evQuiereAgendar(plan.textoCliente);
   if (quiere && crudo.length <= 20000) et.derivar = true;
   // La etiqueta del modelo se honra solo si el cliente pidió agendar, aceptó una oferta, o el modelo ya capturó su nombre en la etiqueta («[DERIVAR_RECEPCION: Paola]») / el cliente dijo «soy …»; con la etiqueta SOLA y sin texto se conserva (variante corta).
-  if (et.derivar && !quiere && et.texto.trim() !== '' && !(evPideAgendar(plan.textoCliente) || evAceptaOferta(plan.textoCliente, ficha.historial) || (String(plan.textoCliente || '').indexOf('?') < 0 && (et.nombre !== '' || evDioNombre([], plan.textoCliente))))) et.derivar = false;
+  if (et.derivar && !quiere && et.texto.trim() !== '') {
+    const esNombre = evEsNombre(plan.textoCliente);
+    const pidio = evPideAgendar(plan.textoCliente);
+    const acepto = evAceptaOferta(plan.textoCliente, ficha.historial);
+    const nombreOk = esNombre && (evNombreTrasAceptar(ficha.historial) || evNombreTrasPedirAgendar(ficha.historial));
+    // Aceptó la oferta pero el modelo, en el mismo turno, le pide el nombre: la derivación ESPERA el nombre (el cierre no sale con el nombre del perfil antes de que dé el suyo).
+    if (!(pidio || nombreOk || (acepto && !(EV_PIDE_NOMBRE.test(evNorm(et.texto)) && et.nombre === '')))) et.derivar = false;
+  }
   if (crudo.length > 20000) { efectivo = 'fallo'; rechazo = { motivo: 'largo', detalle: 'la salida del modelo supera los 20 000 caracteres' }; }
   else if ((crudo.trim() === '' && !quiere) || (et.texto.trim() === '' && !et.derivar)) { efectivo = 'fallo'; rechazo = { motivo: 'modelo_sin_texto', detalle: (crudo.trim() === '' ? 'el modelo no devolvió texto (caído o vacío)' : 'solo etiquetas, sin texto') + porque }; }
   else if (et.derivar && !(ficha.cierreMs > 0)) efectivo = 'derivar';
