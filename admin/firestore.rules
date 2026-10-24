@@ -871,6 +871,8 @@ service cloud.firestore {
             'datosQueNoTenemos',
             // Voz del asistente (enumerados, y el nombre)
             'tratamiento', 'estiloEmojis', 'nombreAsistente',
+            // Quién atiende, para los textos fijos («Rubén te responde…»).
+            'nombreQuienAtiende',
             // Mensajes fijos
             'mensajes', 'mensajeCierre', 'mensajeErrorTemporal',
             'mensajeReservaNoConfirmada', 'mensajeComercioSuspendido',
@@ -918,10 +920,11 @@ service cloud.firestore {
             && enlaceDeMapaValido(d, 'direccionMaps')
             && ubicacionValida(d)
 
-            && d.get('zonaHoraria', 'America/La_Paz') in ['America/La_Paz']
+            && d.get('zonaHoraria', 'America/La_Paz') == 'America/La_Paz'
             && d.get('moneda', 'BOB') in ['BOB', 'USD']
             // Teléfono en formato E.164 sin '+', igual que lo espera la Cloud API.
-            && numero is string
+            // (Sin `numero is string`: `matches` sobre algo que no es texto da
+            // error y la regla niega, igual que antes; una expresión menos.)
             && numero.matches('^[0-9]{8,15}$')
             // Misma validación estricta que para los funcionarios: un ID mal
             // pegado acá tiene exactamente las mismas consecuencias.
@@ -968,6 +971,23 @@ service cloud.firestore {
             // servidor lo vuelve a sanear antes de mandarlo (`vozFija`).
             && cadena(nombreAsistente, 40)
             && nombreAsistente.matches('[^\\r\\n]*')
+            // NOMBRE DE QUIEN ATIENDE (`nombreQuienAtiende`, 23/10/2026). Opcional,
+            // hasta 60 caracteres. Es TEXTO QUE LLEGA A CLIENTES FINALES dentro de
+            // frases fijas del código: la regla es la primera barrera (el servidor,
+            // `quienAtiende` en prompt.ts, la segunda). LISTA DE PERMITIDOS: la
+            // primera `matches` solo deja letras latinas, dígitos, espacio y
+            // `.,&()-` (y topea el largo), lo que elimina invisibles, homoglifos,
+            // ancho completo y emoji; la segunda busca el vocabulario prohibido
+            // (banco, pago, enlaces, números largos, ser/no ser una IA; prohibiciones
+            // 3 y 4 de CLAUDE.md). Las mismas cadenas están en prompt.ts y en
+            // payloadNegocio.ts (`voz-quien-atiende.test.ts` las compara). Ausente pasa, vacío pasa: los textos usan «nuestro
+            // equipo». Va EN LÍNEA y sin `let` a propósito: el documento completo
+            // de la consola tiene un piso de holgura (`reglas-presupuesto.test.ts`)
+            // y el campo ausente cuesta solo `in`, `!` y `||`.
+            && (!('nombreQuienAtiende' in d)
+                || (d.nombreQuienAtiende.matches('^[A-Za-zÀ-ÖØ-öø-ÿ0-9 .,&()-]{0,60}$')
+                    && !d.nombreQuienAtiende.matches('(?is).*(banc|pag[oóu]|dep[oó]sit|transferenc|tesorer|acreditad|verificad|comprobante|recibimos|\\bbots?\\b|robot|humano|persona real|persona de verdad|soy una persona|\\bi[.]?a\\b|\\ba[.]?i\\b|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][ .-]?){6,}|\\b(bnb|bcp|fie|asfi|sin|jefe)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money|impuestos nacionales|polic[ií]a|sistema|tu jefe|ya pag).*')))
+
 
             && d.get('mensajes', {}) is map
             // Se puede escribir MIENTRAS EL COMERCIO ESTÁ ACTIVO, porque toda

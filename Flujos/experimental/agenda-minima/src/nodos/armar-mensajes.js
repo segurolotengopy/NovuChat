@@ -208,6 +208,44 @@ function respuestaFija(clave) {
   }
   return null;
 }
+// RED DE LA CLASE «promesa de recepcion sin boton» (23/10): si lo que el modelo redacto manda al paciente
+// a recepcion, al consultorio o al doctor, o dice «necesita verse», y la respuesta saldria como texto plano
+// (sin el boton que abre el chat), es una promesa sin respaldo. No es una lista de sintomas: es lo que el
+// TEXTO ofrece. Palabras enteras y normalizado con `cnNorm`.
+const MENCION_DE_RECEPCION = /\brecepcion\b|\bnecesita(n)? verse\b|(?<!\b(se|me|te|lo|le|nos) )\b(comunic(ate|arte|arse|ese)|escrib(e|ele|enos|ir|irle)|llam(a|ale|anos|ar|e|es)|contact(a|ale|anos|ar))\b[^.!?\n]{0,25}\b(con|al|a)\s+(el |la |los |las |tu |su |nuestro |nuestra )?(consultorio|doctor|doctora|dr|dra|pediatra)\b/;
+function prometeRecepcion(texto) {
+  const s = String(texto || '').normalize('NFKC');
+  const n = cnNorm(s);
+  const n2 = cnNorm(s.replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]/gu, ' '));
+  return MENCION_DE_RECEPCION.test(n) || MENCION_DE_RECEPCION.test(n2);
+}
+// El ENCABEZADO de una oferta (frase + servicio + dia) lo pone el codigo cuando la redaccion trae horas sin el (23/10): el modelo escribio
+// solo una carita y las horas. La redaccion «lo trae» si nombra los horarios y el dia de algun hueco.
+function encabezadoDeOferta(o, srvTxt) {
+  const fechas = [];
+  for (const h of o.huecos) { const f = fechaLocal(msDe(h.inicio)); if (fechas.indexOf(f) < 0) fechas.push(f); }
+  let dia = '';
+  if (fechas.length === 1) {
+    const p = fechas[0].split('-').map(Number);
+    dia = ' el ' + diaDeLaSemana(fechas[0]) + ' ' + p[2] + ' de ' + AGM_MESES[p[1] - 1];
+  }
+  return 'Estos son los horarios disponibles para ' + srvTxt + dia + ':';
+}
+function traeEncabezado(redactado, o) {
+  const n = cnNorm(redactado);
+  if (!/\bhorarios?\b|\bdisponibilidad\b|\bdisponibles?\b/.test(n)) return false;
+  const hoy = fechaLocal(ahora);
+  const manana = sumarDias(hoy, 1);
+  return o.huecos.some((h) => {
+    const f = fechaLocal(msDe(h.inicio));
+    const p = f.split('-').map(Number);
+    if (n.indexOf(cnNorm(diaDeLaSemana(f))) >= 0) return true;
+    if (new RegExp('(^|[^0-9])' + p[2] + ' de ' + AGM_MESES[p[1] - 1] + '\\b').test(n)) return true;
+    // «hoy» y «mañana» solo cuentan como DIA si el hueco cae ese dia; «en la mañana» es una franja.
+    if (f === hoy && /\bhoy\b/.test(n)) return true;
+    return f === manana && /(?<!\b(la|de) )\bmanana\b/.test(n);
+  });
+}
 // Los textos fijos, armados con los huecos reales, para cuando la redaccion no sirve.
 function textoFijoDeOferta(o, srvTxt) {
   const intro = {
@@ -239,6 +277,7 @@ const srv = base.estado && base.estado.servicio ? base.estado.servicio : (base.p
 const srvTxt = CN_NOMBRE_SERVICIO[srv] || 'tu consulta';
 const params = base.params || {};
 let deshacerFallo = false;
+let ofertaNoMostrada = false; // se transfirio desde una oferta: el estado no puede quedar «ofreciendo_huecos»
 
 function ofertaConBotones(o, cuerpo, servicio) {
   const botones = botonesDeHuecos(o.huecos, servicio);
@@ -379,7 +418,13 @@ switch (plan) {
         'Esa consulta no la puedo resolver por este chat. Escríbele directo a recepción tocando el botón.');
       break;
     }
+    // Promesa sin respaldo: la redaccion manda a recepcion y saldria sin el boton. Se cumple (aviso + boton).
+    // Solo se evalua si ese texto de verdad sale (23/10).
+    const remiteARecepcion = valida && prometeRecepcion(redactado);
+    const transferirPorRemision = () => { if (plan === 'ofrecer') ofertaNoMostrada = true; transferir('la respuesta redactada remitía a recepción sin botón' + (pregunta ? '; pregunta del paciente: «' + cnRecorte(pregunta, 200) + '»' : ''),
+      'Esa consulta no la puedo resolver por este chat. Escríbele directo a recepción tocando el botón.'); };
     if (plan === 'responder') {
+      if (remiteARecepcion) { transferirPorRemision(); break; }
       agregar('paciente', mTexto(redactado), redactado, redactado, { tipoReporte: 'text' });
       break;
     }
@@ -389,7 +434,16 @@ switch (plan) {
       agregar('paciente', mTexto(cuerpo), cuerpo, cuerpo, { tipoReporte: 'text' });
       break;
     }
-    let cuerpo = valida && !(o.aviso && !pregunta) ? redactado : textoFijoDeOferta(o, srvTxt);
+    let sale = valida && !(o.aviso && !pregunta);
+    if (sale && remiteARecepcion) {
+      // Una oferta con horarios no pierde sus botones por una mencion de paso a recepcion: sale el texto fijo.
+      // Sin horarios, o si dice «necesita verse», se transfiere.
+      if (!o.huecos.length || /\bnecesita(n)? verse\b/.test(cnNorm(redactado))) { transferirPorRemision(); break; }
+      sale = false;
+    }
+    let cuerpo = sale ? redactado : textoFijoDeOferta(o, srvTxt);
+    // Si la redaccion trae horas sin encabezado, el codigo antepone el suyo (frase, servicio y dia).
+    if (cuerpo === redactado && o.huecos.length && clavesDeHora(redactado).length && !traeEncabezado(redactado, o)) cuerpo = encabezadoDeOferta(o, srvTxt) + '\n\n' + redactado;
     // HB3: al mover, el paciente ve cuál es su cita actual y que no la pierde (incidente #7659).
     const mov = base.estado && base.estado.moverId && base.estado.moverInicio ? base.estado : null;
     if (mov) {
@@ -552,6 +606,7 @@ if (estado && cnClaveValida(t.from) && plan !== 'nada') {
   e.ultimaOferta = (e.ultimaOferta || []).slice(0, 10);
   e.primerTexto = String(e.primerTexto || '').slice(0, 300);
   e.moverTitulo = String(e.moverTitulo || '').slice(0, 120);
+  if (ofertaNoMostrada) { e.paso = 'menu'; e.ultimaOferta = []; e.huecoElegido = null; }
   estadoDespues = e;
   let sd = null;
   try { sd = $getWorkflowStaticData('global'); } catch (err) { sd = null; }
@@ -573,7 +628,7 @@ const oferta = base.oferta && Array.isArray(base.oferta.huecos) ? base.oferta.hu
 const borradoOk = (() => { const b = cnPrimero('Borrar evento'); return !!base.borrarId && !!b && !b.error; })();
 const resumen = {
   plan: plan, estadoDespues: estadoDespues, errores: errores,
-  huecosOfrecidos: (plan === 'ofrecer' || plan === 'cruce' || plan === 'pedir_boton') ? oferta.map((h) => h.inicio) : [],
+  huecosOfrecidos: (plan === 'ofrecer' || plan === 'cruce' || plan === 'pedir_boton') && msgs.some((m) => m.evento === 'horarios_ofrecidos') ? oferta.map((h) => h.inicio) : [],
   eventoCreadoId: base.creada ? String(base.eventoCreadoId || '') : '',
   eventoBorradoId: borradoOk ? String(base.borrarId) : (base.deshacerId && !deshacerFallo ? String(base.deshacerId) : ''),
 };

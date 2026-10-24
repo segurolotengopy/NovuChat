@@ -22,7 +22,7 @@ import { logger } from 'firebase-functions';
 import { defineInt } from 'firebase-functions/params';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
 import { sanearCaptacion } from './modulos/captacion/captacion.js';
-import { vozFija } from './core/prompt/prompt.js';
+import { vozFija, tratamientoClave, tratamientoEfectivo, quienAtiende } from './core/prompt/prompt.js';
 import { registrar } from './core/turno/bitacora.js';
 import { atenderSesion } from './core/turno/sesionFirestore.js';
 import { validarSesion } from './core/turno/sesion.js';
@@ -1974,9 +1974,15 @@ export const configuracionFlujo = onRequest(
       // 40 caracteres, '' si no hay) y el enumerado crudo del emoji. Valen
       // para todos los flujos: son de la capa común (`vozFija`, prompt.ts).
       voz: {
-        tratamiento: instruccionesDeVoz(negocio)[0] ?? '',
+        // La frase y la clave salen del MISMO tratamiento efectivo (ausente = 'tu').
+        tratamiento: instruccionesDeVoz({ ...negocio, tratamiento: tratamientoEfectivo(negocio) })[0] ?? '',
         emojis: instruccionesDeVoz(negocio)[1] ?? '',
         ...vozFija(negocio),
+        // Para TEXTOS FIJOS del código: el enumerado ('tu' | 'usted'; «vos» y
+        // lo desconocido caen en 'tu') y el nombre de quien atiende ('' si no
+        // hay: el flujo usa «nuestro equipo»). Ver prompt.ts.
+        tratamientoClave: tratamientoClave(negocio),
+        quienAtiende: quienAtiende(negocio),
       },
 
       // Todo lo que escribió el comercio, junto y rotulado.
