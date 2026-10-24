@@ -51,7 +51,7 @@ const charlar = (w: Mundo, tel = ANA): void => { hablar(w, tel, mTexto('hola'));
 function conCuerpos(o: Opciones & { dice?: string | ((n: number) => string) } = {}): { w: Mundo; cuerpos: string[] } {
   const cuerpos: string[] = [];
   let n = 0;
-  const dice = o.dice ?? ((k: number) => `Entiendo cómo te sientes, y gracias por contármelo (${k}). ¿Desde cuándo notan esa distancia?`);
+  const dice = o.dice ?? ((k: number) => `Entiendo cómo te sientes, y gracias por contármelo (${'abcdefgh'[k % 8]}). ¿Desde cuándo notan esa distancia?`);
   const w = nuevo({ ...o, modeloDice: (ll) => { cuerpos.push(JSON.stringify(ll.cuerpo)); n += 1; return typeof dice === 'function' ? dice(n) : dice; } });
   return { w, cuerpos };
 }
@@ -1257,5 +1257,24 @@ describe('CORRECCIÓN · un pedido de baja recibe una confirmación fija y NADA 
     const j = cuerpo.indexOf('/i.test(', i) + 2;
     const re = LIB['RA_BAJA'] as RegExp;
     expect(`/${re.source}/${re.flags}`).toBe(cuerpo.slice(i, j));
+  });
+  const BAJAS_F2 = ['Para de escribirme', 'basta, no me escriban', 'n0 me escribas', 'ｎｏ　ｍｅ　ｅｓｃｒｉｂａｓ　ｍáｓ', 'No me escribas más', 'dejen de escribirme'];
+  const NO_BAJAS = ['no me escribas el precio, mándame el QR', 'No me escribas con tanta formalidad', 'Mi pareja dice que deje de escribirle', 'Quiero que mi pareja no me deje de escribir'];
+  it('F2 · NEGANDO: las cuatro frases que NO piden la baja no la disparan; y las formas con cifras, ancho completo o «basta» SÍ', () => {
+    const f = LIB['raPideBaja'] as (x: string) => boolean;
+    for (const x of NO_BAJAS) expect(f(x), x).toBe(false);
+    for (const x of BAJAS_F2) expect(f(x), x).toBe(true);
+  });
+  it('F2 · paridad: la expresión de «Reportar mensaje (entrante)» (literal + preprocesado) decide IGUAL que `raPideBaja` en un corpus de frases', () => {
+    const fl = JSON.parse(readFileSync(join(RA, 'flujo.plantilla.json'), 'utf8')) as { nodes: J[] };
+    const cuerpo = String(fl.nodes.find((n) => n['name'] === 'Reportar mensaje (entrante)')!['parameters']['jsonBody']);
+    const i = cuerpo.indexOf('(t.riesgoEscrito === true || ') + '(t.riesgoEscrito === true || '.length;
+    const fin = cuerpo.indexOf(") ? 'no_contactar'", i);
+    const expr = cuerpo.slice(i, fin);
+    const nodo = new Function('t', `return ${expr};`) as (t: { texto: string }) => boolean;
+    const f = LIB['raPideBaja'] as (x: string) => boolean;
+    for (const x of [...BAJAS_F2, ...NO_BAJAS, 'hola', 'quiero el libro', 'stop', 'STOP por favor', 'no me escribiste el precio del libro', 'bórrame de la lista', 'dar de baja', 'le dije que no me escriba más', 'mi ex no deja de escribirme', 'no me llamó la atención']) {
+      expect(nodo({ texto: x }), x).toBe(f(x));
+    }
   });
 });

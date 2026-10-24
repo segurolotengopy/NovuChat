@@ -273,7 +273,7 @@ const BETO_ = '59100000022';
 describe('B. saludo fijo en el primer turno y el menú no antes de tiempo', () => {
   it('un primer mensaje libre recibe el saludo fijo por código (sin modelo, sin montos); la conversación sigue en la segunda y el menú llega en la tercera', () => {
     let n = 0;
-    const w = nuevo({ modeloDice: () => `Te escucho con atención, gracias por contarlo. ¿Desde cuándo pasa esto? (${++n})` });
+    const w = nuevo({ modeloDice: () => `Te escucho con atención, gracias por contarlo. ¿Desde cuándo pasa esto? (${'abcdefgh'[n++]})` });
     const a = hablar(w, ANA, mTexto('estamos discutiendo mucho y no sé qué hacer'));
     expect(a.ejecutados.has('Conversar con el modelo')).toBe(false);
     expect(a.mensajes[0]!.cuerpo).toMatch(/asistente virtual del Puente\./);

@@ -516,3 +516,29 @@ describe('S2 · el modelo no promete consultar ni volver, no afirma un aviso, no
     }
   });
 });
+
+// =============================================================================================================== F1: CRITERIOS ESTRUCTURALES DEL FILTRO (23/10/2026)
+// (a) un solo texto normalizado antes de TODOS los patrones; (b) lista blanca de cifras; (c) el nombre «Antonio» solo en tercera persona; (d) promesa o aviso afirmado; (e) beneficios. Ante la duda, el texto cae al respaldo fijo.
+// Costo conocido (aceptado): «El 80 % de las parejas…» y «Déjame ver si entendí bien» ya no pasan. Estos criterios deberían subir al filtro común del core.
+describe('F1 · criterios estructurales del filtro de redacción', () => {
+  const L = cargarLibrerias('raExtraRedaccion, raNorm') as { raExtraRedaccion: (t: string, n: string, c?: { precios: number[] }) => string; raNorm: (t: string) => string };
+  const motivo = (x: string, precios: number[] = []): string => L.raExtraRedaccion(x, L.raNorm(x), { precios });
+  const MALOS = [
+    'Lo voy a consultar.', 'Averiguo y te digo.', 'D3jame c0nsultarlo.', 'Antonio ya está al tanto.', 'Ya le hice llegar tu consulta.', 'Le comenté a Antonio.',
+    'Dos por uno.', 'Hay 2×1 hoy.', 'Es sin costo.', 'Tiene un precio especial.', 'Sale más barato.', 'A medio precio.',
+    'Está a 120.', 'Son 99 nomás.', 'Por apenas 80.', 'Son 120 bolivianitos.', 'Cuesta 100$.', 'Cuesta noventa y nueve.',
+    'Llama al siete seis nueve ocho ocho seis seis tres.', 'Mi nombre es Antonio.', 'Antonio al habla.', 'Soy el escritor del libro.',
+  ];
+  it('NEGADA · cada texto peligroso se rechaza (con cualquier motivo)', () => {
+    for (const x of MALOS) expect(motivo(x), x).not.toBe('');
+  });
+  it('NEGADA · el precio del catálogo solo pasa EXACTO y con la compuerta abierta', () => {
+    expect(motivo('El libro cuesta 99 Bs.')).not.toBe('');
+    expect(motivo('El libro cuesta 99 Bs.', [99])).toBe('');
+    expect(motivo('El libro cuesta 98 Bs.', [99])).not.toBe('');
+    expect(motivo('Con 15 % menos.', [99])).not.toBe('');
+  });
+  it('POSITIVA · los textos legítimos de la charla pasan', () => {
+    for (const x of ['Te cuento.', 'El libro te ayuda a volver a hablar.', 'Son 14 capítulos.', 'La ruta de 30 días.', '¿Qué parte te gustaría mejorar?', 'Escríbele a Antonio si prefieres.']) expect(motivo(x), x).toBe('');
+  });
+});

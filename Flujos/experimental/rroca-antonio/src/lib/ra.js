@@ -447,11 +447,12 @@ function raSinConfiguracion(panel) {
 function raHablaDelCobro(n) {
   return raHablaDePagar(n) || /\b(qr|monto|como (te |lo |le )?(pago|pagar|pagas)|donde (pago|pagar|deposito)|voy a pagar|pagarlo|pagarla|lo pago|la pago|ya pago|pago ahora|pago ahorita|ahorita (lo |la )?pago)\b/.test(String(n || ''));
 }
-// UN PEDIDO DE BAJA («no me escribas más», «ya no me escriban», «no me escribás», «dame de baja», «stop»): la misma expresión acotada a PETICIONES de «Reportar mensaje (entrante)» (revisión de #584; tú, usted, ustedes y voseo; el relato de un tercero y «no me escribiste el precio» no cuentan).
+// UN PEDIDO DE BAJA («no me escribas más», «ya no me escriban», «no me escribás», «dame de baja», «stop»): la misma expresión acotada a PETICIONES de «Reportar mensaje (entrante)» (revisión de #584; tú, usted, ustedes y voseo). Tiene que ser un pedido A NOSOTROS y sin objeto ni complemento que lo vuelva otra cosa: el relato de un tercero, «no me escribas el precio, mándame el QR», «no me escribas con tanta formalidad» y «no me escribiste el precio» NO cuentan; «para de escribirme», «basta, no me escriban», «n0 me escribas» y el ancho completo SÍ.
 // Una prueba exige que sea LITERALMENTE la del nodo. Quien pide la baja recibe un texto fijo de confirmación y nada más: ni el modelo, ni la invitación a pagar, ni botones de producto, ni aviso a Antonio. El reporte `no_contactar` ya viaja con el entrante.
-const RA_BAJA = /(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?(?:escrib(?:a|as|an|ais|is)|contact(?:e|es|en)|moleste[sn]?)\b|(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?llam(?:e|es|en)\b(?! la atencion)|(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?(?:mand|envi)(?:e|es|en)\b(?= (?:mas|mensajes|nada mas)\b|\W*$|,? por favor)|(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?vuelv(?:a|as|an) a (?:escribir|llamar|contactar|mandar)(?:me|nos)?\b|\bno quiero (?:que (?:me|nos) (?:escrib|contact|mand|llam|molest)(?:a|as|an|e|es|en)\b|recibir (?:mas )?mensajes\b|mas mensajes\b)|(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?sig(?:a|as|an) escribiendo\b|(?<!\bno )\bdej(?:a|as|e|es|en|ame|eme|enme)\b(?: me)? de (?:escribir|mandar|molestar|llamar|contactar)(?![^]*\b(?:dice|dijo|dicen)\b)|\b(?:dar|darme|dame|deme|denme) de baja\b(?! (?:el|la|los|las|un|una|mi|mis|a)\b)|(?:^|\s)(?:borr|quit|elimin|saqu)(?:a|e|en)(?:me|nos)(?: de (?:la lista|aqui|sus contactos|tu lista|su lista|esta lista)\b|(?: por favor)?\W*$)|^\W*stop(?: por favor)?\W*$/i;
+const RA_BAJA = /(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?escrib(?:a|as|an|ais|is)\b(?:(?=(?: (?:mas|ya|nunca|jamas|otra vez|de nuevo|nada mas|mensajes|por favor|porfa|por aqui|por este medio|por whatsapp|gracias))*(?:\W*$|[.,;!?]))|(?= (?:mas|nunca|jamas)\b))|(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?(?:contact(?:e|es|en)|moleste[sn]?)\b|(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?llam(?:e|es|en)\b(?! la atencion)|(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?(?:mand|envi)(?:e|es|en)\b(?= (?:mas|mensajes|nada mas)\b|\W*$|,? por favor)|(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?vuelv(?:a|as|an) a (?:escribir|llamar|contactar|mandar)(?:me|nos)?\b|\bno quiero (?:que (?:me|nos) (?:escrib|contact|mand|llam|molest)(?:a|as|an|e|es|en)\b|recibir (?:mas )?mensajes\b|mas mensajes\b)|(?<!\b(?:dij\w+|dice|dicen|digo) que )\bno (?:me |nos |le |les )?sig(?:a|as|an) escribiendo\b|(?<!\bno (?:me |nos )?)(?<!\b(?:dij\w+|dice|dicen|digo|pide|pidio|pidieron) que (?:\w+ ){0,3})(?<!\bquiero que (?:\w+ ){1,3})\b(?:dej(?:a|as|e|es|en|ame|eme|enme)|par(?:a|as|e|es|en))\b(?: me)? de (?:escribir|mandar|molestar|llamar|contactar)(?:me|nos)?\b(?=(?: (?:mas|ya|nunca|jamas|otra vez|de nuevo|nada mas|mensajes|por favor|porfa|por aqui|por este medio|por whatsapp|gracias))*(?:\W*$|[.,;!?]))(?![^]*\b(?:dice|dijo|dicen)\b)|\b(?:dar|darme|dame|deme|denme) de baja\b(?! (?:el|la|los|las|un|una|mi|mis|a)\b)|(?:^|\s)(?:borr|quit|elimin|saqu)(?:a|e|en)(?:me|nos)(?: de (?:la lista|aqui|sus contactos|tu lista|su lista|esta lista)\b|(?: por favor)?\W*$)|^\W*stop(?: por favor)?\W*$/i;
+// El texto se pliega ANTES (NFKC: ancho completo; sin tildes; minúsculas; cifras que hacen de letras: «n0 me escribas»): la misma cadena que «Reportar mensaje (entrante)».
 function raPideBaja(texto) {
-  return RA_BAJA.test(String(texto === undefined || texto === null ? '' : texto).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' '));
+  return RA_BAJA.test(String(texto === undefined || texto === null ? '' : texto).normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/0/g, 'o').replace(/1/g, 'i').replace(/3/g, 'e').replace(/4/g, 'a').replace(/5/g, 's').replace(/7/g, 't').replace(/@/g, 'a').replace(/\s+/g, ' '));
 }
 const RA_TEXTO_BAJA = 'Entendido, tomé nota de que no quieres recibir más mensajes. Si más adelante necesitas algo, escríbeme cuando quieras.';
 // Pide un producto («quiero el pack», «dame el libro», «lo compro»): con un QR abierto recibe el recordatorio (un solo QR a la vez; un pedido = un producto).
@@ -903,7 +904,17 @@ function raHablaDePagar(n) {
 }
 // Reglas propias del flujo para `cmRevisarRedaccion` (`opciones.extra`): a lo más 4 oraciones y UNA pregunta; sin banco, titular ni QR; sin remitir a una página; sin presentarse otra vez;
 // sin «agendar» ni «cita»; sin ofrecer opciones, paquetes ni bonos (eso lo hacen los botones); nada de psicólogo o terapeuta.
-function raExtraRedaccion(texto, norm) {
+// Criterio (a): el texto se normaliza UNA vez (NFKC, sin tildes, cifras y símbolos plegados a letras, las dos lecturas de la arroba) y TODOS los patrones se prueban sobre cada variante.
+// `ctx` = { precios } (ver `raExtraSolo`). Ante la duda, el texto cae al respaldo fijo.
+function raExtraRedaccion(texto, norm, ctx) {
+  const variantes = [norm, raLeet(texto), raLeet(texto, 'o')];
+  for (const v of variantes) {
+    const r = raExtraBase(texto, v);
+    if (r) return r;
+  }
+  return raExtraSolo(texto, ctx);
+}
+function raExtraBase(texto, norm) {
   if ((String(texto).match(/\?/g) || []).length > 1) return 'varias_preguntas';
   if (String(texto).split(/(?<=[.!?…])\s+/).filter((x) => x.trim()).length > 5) return 'largo_en_oraciones';
   // Una promesa en primera persona («te llamo», «te escribo», «te aviso», «te confirmo»): el flujo solo ofrece lo que cumple (pasar con Antonio: aviso + botón), y el filtro común no cubre estas formas.
@@ -934,7 +945,7 @@ function raExtraRedaccion(texto, norm) {
   if (/\b(material|libro|pdf|pdfs|archivo|archivos|bonos?|guia|enlaces?|link)\b[^.?!]{0,40}\b(llega\w*|llego|enviad\w*|envia\w*|enviar\w*|mand\w*|salio|salieron|sali\w*|listo|lista|listos|recibir\w*|recibid\w*|entreg\w*|descarg\w*|correo|email|mail)\b|\b(llega\w*|enviad\w*|envia\w*|enviar\w*|mand\w*|recibir\w*|entreg\w*)\b[^.?!]{0,40}\b(material|libro|pdf|pdfs|archivo|archivos|bonos?|guia|enlaces?|link)\b|\b(correo|email|mail|gmail)\b/.test(norm)) return 'estado_de_entrega';
   // Plazos: ningún «en unos minutos», «en pocas horas», «en un par de días», «pronto», «enseguida»… (con dígitos o sin ellos): el plazo es un dato del código.
   if (/\ben (unos|unas|pocos|pocas|breve|un par de|algunos|algunas|\d+|una|un|dos|tres|cuatro|cinco|seis|diez|veinte|treinta)\b[^.?!]{0,12}\b(minutos?|horas?|dias?|segundos?|momentos?|instantes?|ratos?|semanas?)\b|\b(pronto|prontito|enseguida|en seguida|ahora mismo|de inmediato|inmediatamente|en breve|muy pronto|dentro de poco|cuanto antes)\b/.test(norm)) return 'plazo';
-  return raExtraSolo(texto, norm);
+  return '';
 }
 // «Solo se ofrece lo que se cumple» (revisión de seguridad S2, 23/10/2026): lo que el modelo NO puede prometer ni afirmar porque ningún mecanismo lo respalda. Son reglas GENERALES (deberían subir al filtro común del core).
 // Ante la duda el texto cae al respaldo fijo: nunca se manda. Cada patrón tiene su prueba negada y su prueba POSITIVA (los textos legítimos de la charla no se rechazan) en `negadas.test.ts`.
@@ -950,21 +961,61 @@ function raDigitos(norm) {
   for (let i = 0; i < 4; i++) s = s.replace(/(\d)[oO]/g, '$10').replace(/[oO](\d)/g, '0$1').replace(/(\d)[lI]\b/g, '$11').replace(/\b[lI](\d)/g, '1$1');
   return s;
 }
-function raExtraSolo(texto, norm) {
-  const n = raDigitos(norm);
-  // Promesas de consultar, revisar o volver con la respuesta: no hay mecanismo detrás (lo único que se ofrece es pasar con Antonio: aviso + botón).
-  if (/\b(dejame|permiteme|dame (un|unos) \w+ (para|y)|deja que|dejame que)\b[^.?!]{0,25}\b(consult|revis|verific|confirm|averigu|chequ|pregunt|hablar|ver)\w*|\b(lo|la|los|las) (reviso|consulto|verifico|confirmo|averiguo|chequeo|pregunto|miro)\b|\b(vuelvo|regreso|retomo) (contigo|con vos|con usted|luego|despues|en un rato)\b|\b(te|le|les) (respondo|contesto|digo|cuento|aviso|confirmo|escribo|doy la respuesta|comento) (luego|despues|mas tarde|apenas|cuando|en cuanto|en seguida|enseguida|manana)\b|\bvoy a (hablar|consultar|preguntar|revisar|verificar|confirmar|averiguar|escribir|llamar|avisar|contactar|ver)\b[^.?!]{0,30}\b(con|a|si|lo|la|que)\b|\bhablar con (antonio|el autor|el equipo|el negocio) y (te|le|les)\b/.test(n)) return 'promesa_de_consulta';
-  // Un aviso AFIRMADO sin respaldo: solo el código dice «le avisé» (y solo si el aviso tiene un wamid real).
-  if (/\b(ya )?(le |se lo |les )?(avise|notifique|informe|comunique|transmiti|reenvie|pase)\b[^.?!]{0,40}\b(antonio|equipo|tu mensaje|tu consulta|tu pedido|lo que dijiste)\b|\bantonio (ya )?(sabe|esta enterado|fue avisado|fue notificado|recibio tu (mensaje|consulta))\b|\bya (esta|queda|quedo) (avisado|notificado)\b/.test(n)) return 'aviso_afirmado';
-  // Descuentos, regalos, garantías y devoluciones: el negocio no los ofrece y el modelo no los inventa.
-  if (/\b\d+ ?x ?\d+\b|\b\d+(?:[.,]\d+)? ?(%|por ciento)|\bpor ciento\b|\bmenos hoy\b|\bde regalo\b|\b(te |les |le )?(regalo|regalamos|obsequio|obsequiamos|incluyo|incluimos|agrego|agregamos|sumo|sumamos|doy|damos|llevas gratis)\b[^.?!]{0,30}\b(calendario|workbook|guia|bono|bonos|libro|preguntas|pack|extra|sorpresa)\b|\b(devolvemos|devuelvo|devolveremos|devolvere|te reintegro|reintegramos|reembolsamos|reembolsare|te devuelvo)\b|\b(rebaja|rebajas|rebajado|liquidacion|promo|2x1|3x2)\b|\bsatisfaccion garantizada\b|\bsi no (te|le|les) (gusta|sirve|convence|funciona)\b/.test(n)) return 'beneficio_inventado';
-  // Un precio o un monto inventado: el modelo no dice cifras de dinero (los precios los pone el código desde el catálogo). Cifras (con 1OO, l00…) o palabras de monto junto a una palabra de dinero o de «cuesta/sale».
-  const NO_DINERO = '(?!\\s?(minutos?|min|horas?|dias?|semanas?|meses|capitulos?|paginas?|ejercicios?|pilares|pasos|veces|partes|segundos|personas|anos|anios|preguntas|retos))';
-  const verboPrecio = new RegExp('\\b(sale|salen|cuesta|cuestan|vale|valen|costaria|costo|precio|tarifa|cobro|cobramos|cobran|pagas|pagar|pagarias|quedan?|queda)\\b\\W{0,14}(?:a |en |de |por |solo |apenas )?\\d+(?:[.,]\\d+)?\\b' + NO_DINERO);
-  const conMoneda = /\b\d+(?:[.,]\d+)?\s?(bs|bob|bolivianos?|bolis|boliviano|pesos?|pesitos|dolares?|usd|lucas|lukas|euros?)\b|\b(bs|bob|usd)\.?\s?\d+/;
-  const palabraMonto = /\b(cien|ciento|doscientos|trescientos|cuatrocientos|quinientos|mil|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|diez|quince)\b[^.?!]{0,16}\b(bs|bob|bolis|bolivianos?|pesos?|dolares?|lucas)\b|\b(sale|salen|cuesta|cuestan|vale|valen|cobro|cobramos|precio)\b[^.?!]{0,16}\b(cien|ciento|doscientos|trescientos|quinientos|mil)\b/;
-  if (verboPrecio.test(n) || conMoneda.test(n) || palabraMonto.test(n)) return 'precio_inventado';
-  // Un teléfono o un número largo (8 o más dígitos, con o sin separadores): el modelo no da números de contacto.
-  if (/(?:\d[\s.\-]?){8,}/.test(n)) return 'telefono';
+// Las unidades de CONTENIDO del libro (dato del tenant): una cifra solo pasa si es la cantidad de una de ellas («14 capítulos», «30 días», «de 10 a 20 minutos», «los capítulos 4, 5 y 8»). Toda otra cifra o número dicho por el modelo rechaza el texto.
+const RA_UNIDADES_DE_CONTENIDO = 'capitulos?|paginas?|dias?|minutos?|horas?|semanas?|meses|pilares|partes|bonos|preguntas|ejercicios|retos|pasos|veces|personas|anos|segundos';
+// La vista NUMÉRICA del texto: NFKC, sin tildes, minúsculas, «1OO»/«l00» → 100, y solo letras, cifras, % $ . , y espacios.
+function raVistaNumerica(texto) {
+  const s = raDigitos(String(texto === undefined || texto === null ? '' : texto).normalize('NFKC').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase());
+  return s.replace(/[^a-z0-9%$.,\s]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+// `ctx` = { precios: [números] }: los precios EXACTOS del catálogo, solo con la compuerta de las opciones abierta (si no, []).
+function raExtraSolo(texto, ctx) {
+  const precios = ctx && Array.isArray(ctx.precios) ? ctx.precios.filter((x) => typeof x === 'number' && Number.isFinite(x)) : [];
+  const esPrecio = (v) => precios.some((p) => Math.abs(p - Number(String(v).replace(',', '.'))) < 1e-9);
+  const U = RA_UNIDADES_DE_CONTENIDO;
+  const num = raVistaNumerica(texto);
+  const bruto = String(texto === undefined || texto === null ? '' : texto).normalize('NFKC').toLowerCase();
+  // Dos lecturas de las letras (la arroba puede ser una «a» o una «o»): cifras y símbolos plegados a letras («D3jame c0nsultarlo», «Ant@nio»).
+  for (const L of [raLeet(texto), raLeet(texto, 'o')]) {
+    // (d) PROMESA o AVISO AFIRMADO: consultar, averiguar, revisar, comentar, avisar, hacer llegar o tener al tanto, con sujeto «yo», «nosotros» o «Antonio», en pasado, presente o futuro. Ningún mecanismo lo respalda.
+    const VERBOS = '(?:consult|averigu|revis|coment|avis|inform|notific|verific|confirm|transmit|trasmit|reenvi|chequ|compart)';
+    const OBJETO = '(?:antonio|equipo|tu consulta|tu mensaje|tu pedido|tu duda|lo que (?:me )?(?:dijiste|contaste|escribiste|pediste))';
+    if (new RegExp('\\b(?:dejame|permiteme|deja que|dejame que|dame (?:un|unos) \\w+ (?:para|y))\\b[^.?!]{0,25}\\b' + VERBOS + '\\w*|\\bdejame (?:ver|pregunt\\w*|hablar)\\b').test(L)) return 'promesa_de_consulta';
+    if (new RegExp('\\b(?:voy|vamos) a (?:' + VERBOS + 'ar|hablar|preguntar|escribir|llamar|contactar|ver|mandar|pasar|enviar|buscar|checar)\\b').test(L)) return 'promesa_de_consulta';
+    if (new RegExp('\\b' + VERBOS + '(?:are|ere|aremos|iremos)\\b|\\b(?:consulto|averiguo|reviso|verifico|chequeo|aviso|notifico|transmito|averiguamos|revisamos|consultamos)\\b|\\b(?:hablare|preguntare|escribire|llamare|contactare|pasare|mandare|enviare|buscare|vere)\\b').test(L)) return 'promesa_de_consulta';
+    if (/\b(?:vuelvo|regreso|retomo) (?:contigo|con vos|con usted|luego|despues|en un rato)\b|\b(?:te|le|les) (?:respondo|contesto|digo|cuento|doy la respuesta) (?:luego|despues|mas tarde|apenas|cuando|en cuanto|en seguida|enseguida|manana)\b|\b(?:averiguo|consulto|reviso|lo vemos) y (?:te|le|les) (?:digo|aviso|cuento|respondo)\b/.test(L)) return 'promesa_de_consulta';
+    if (new RegExp('\\b' + VERBOS + '(?:e|ue|i|amos|emos|imos)\\b[^.?!]{0,25}\\b' + OBJETO + '\\b|\\b(?:pase|pasamos|mande|mandamos|escribi|escribimos|llame|llamamos|hable|hablamos|dije|dejamos)\\b[^.?!]{0,25}\\b' + OBJETO + '\\b').test(L)) return 'aviso_afirmado';
+    if (new RegExp('\\b(?:he|hemos|habia|habiamos) (?:consultado|averiguado|revisado|comentado|avisado|informado|notificado|verificado|confirmado|hablado|escrito|llamado|contactado|pasado|mandado|enviado)\\b').test(L)) return 'aviso_afirmado';
+    if (/\b(?:hice|hicimos|hare|haremos|hago|hacemos|hacerle|hacerte|haciendole)\b[^.?!]{0,12}\b(?:llegar|saber)\b|\b(?:tengo|tenemos|tuve|tuvimos|tendre|tendremos|mantengo|mantenemos) (?:a \w+ )?al tanto\b|\bal tanto\b|\b(?:ya )?(?:esta|queda|quedo|estan) (?:enterad[oa]s?|avisad[oa]s?|notificad[oa]s?|informad[oa]s?)\b/.test(L)) return 'aviso_afirmado';
+    if (/\bantonio (?:ya )?(?:sabe|esta (?:al tanto|enterado)|fue (?:avisado|notificado|informado)|recibio|vio|reviso|consulto|revisara|vera|respondera|contestara|te (?:respondera|escribira|llamara|contactara|contestara)|lo (?:sabe|vera|revisara))\b/.test(L)) return 'aviso_afirmado';
+    // (c) EL NOMBRE PROPIO DEL TITULAR: en primera persona o como presentación («soy Antonio», «mi nombre es Antonio», «Antonio al habla», «aquí Antonio», «el escritor del libro»), nunca. Solo pasa «Antonio» o «Dauber»
+    // detrás de una preposición o un conector (las formas en tercera persona del código: «escríbele a Antonio», «con Antonio», «lo ve Antonio»).
+    if (/\b(?:antonio|dauber)\b/.test(L.replace(/\b(?:a|con|de|del|para|por|que|y|o|e|sobre|segun|desde|ve|revisa|atiende|responde|envia|le toca a)\s+antonio(?:\s+dauber)?\b/g, ' '))) return 'suplanta_al_autor';
+    if (/\b(?:soy|fui|somos|seras?|es|eres|me llamo|mi nombre es|mi nombre|yo soy) (?:el |la |un |una |mismo |propio |mismisimo )*(?:autor|autora|escritor|escritora|creador|creadora|duen[oa]|quien|el que|la que|persona)\b|\b(?:escrib|cre|redact|hic|elabor)\w* (?:yo )?(?:este|el|mi|nuestro) (?:libro|metodo)\b|\bmi (?:libro|metodo)\b|\b(?:yo )?(?:lo )?(?:escribi|cree|redacte)\b/.test(L)) return 'suplanta_al_autor';
+    // (e) BENEFICIOS: descuento, rebaja, oferta, promoción, gratis, sin costo, de regalo, 2x1, dos por uno, medio precio, más barato, precio especial, garantía, devolución. El negocio no los ofrece.
+    if (/\b(?:descuent\w*|rebaj\w*|oferta\w*|promocion\w*|promo|promos|gratis|gratuit\w*|sin (?:costo|cargo|pagar)|regal\w*|obsequi\w*|garantia\w*|garantiz\w*|devoluc\w*|devolv\w*|devolvemos|reembols\w*|reintegr\w*|liquidacion|cupon\w*|bonificacion\w*|barat\w*|dos por uno|tres por dos|medio precio|mitad de precio|precio especial|precio de lanzamiento|dos x uno)\b/.test(L)) return 'beneficio_inventado';
+    if (/\b(?:lo|la|los|las) (?:reviso|consulto|verifico|confirmo|averiguo|chequeo|pregunto|miro)\b|\bhablar con (?:antonio|el autor|el equipo|el negocio) y (?:te|le|les)\b/.test(L)) return 'promesa_de_consulta';
+    if (/\bsatisfaccion garantizada\b|\bsi no (?:te|le|les) (?:gusta|sirve|convence|funciona)\b|\bmenos hoy\b/.test(L)) return 'beneficio_inventado';
+    // Un teléfono dicho en palabras («siete seis nueve ocho…»): seis o más cifras en palabras seguidas.
+    if (/(?:\b(?:cero|uno|un|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\b\s?){6,}/.test(L)) return 'telefono';
+  }
+  if (/\b\d+\s?[x×]\s?\d+\b/.test(bruto)) return 'beneficio_inventado';
+  // (b) CIFRAS: lista blanca. Un teléfono o un número largo (8 o más dígitos, con o sin separadores) y toda cifra que no sea la cantidad de una unidad de contenido del libro rechazan el texto,
+  // salvo el precio EXACTO del catálogo con la compuerta abierta. «%», «$», «Bs», «bolivianos» (y sus diminutivos) con una cifra que no sea un precio del catálogo, también.
+  if (/(?:\d[\s.\-]?){8,}/.test(num)) return 'telefono';
+  if (/%/.test(num) || /\bpor ciento\b/.test(num)) return 'beneficio_inventado';
+  const MONEDA = '(?:bs|bob|bolivianos?|boliviani?tos?|bolis|pesos?|pesitos|dolares?|dolarcitos|usd|lucas|lukas|euros?)';
+  for (const m of num.matchAll(new RegExp('(\\d+(?:[.,]\\d+)?)\\s?' + MONEDA + '\\b|\\b(?:bs|bob|usd)\\.?\\s?(\\d+(?:[.,]\\d+)?)|\\$\\s?(\\d+(?:[.,]\\d+)?)|(\\d+(?:[.,]\\d+)?)\\s?\\$', 'g'))) if (!esPrecio(m[1] || m[2] || m[3] || m[4])) return 'precio_inventado';
+  if (/\$/.test(num)) return 'precio_inventado';
+  if (new RegExp('\\b(?:sale|salen|cuesta|cuestan|vale|valen|costaria|costo|precio|tarifa|cobro|cobramos|cobran|pagas|pagar|pagarias|quedan?)\\b\\W{0,14}(?:a |en |de |por |solo |apenas )?(\\d+(?:[.,]\\d+)?)\\b(?!\\s(?:' + U + ')\\b)').test(num)) { const mp = num.match(new RegExp('\\b(?:sale|salen|cuesta|cuestan|vale|valen|costaria|costo|precio|tarifa|cobro|cobramos|cobran|pagas|pagar|pagarias|quedan?)\\b\\W{0,14}(?:a |en |de |por |solo |apenas )?(\\d+(?:[.,]\\d+)?)\\b(?!\\s(?:' + U + ')\\b)')); if (mp && !esPrecio(mp[1])) return 'precio_inventado'; }
+  if (new RegExp('\\b(?:cien|ciento|doscientos|trescientos|cuatrocientos|quinientos|mil|diez|quince|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)\\b[^.?!]{0,16}\\b' + MONEDA + '\\b').test(num)) return 'precio_inventado';
+  const resto = num
+    .replace(new RegExp('\\bcapitulos?\\s\\d{1,2}(?:(?:\\s?,\\s?|\\s(?:y|e|a|al)\\s)\\d{1,2})*', 'g'), ' ')
+    .replace(new RegExp('\\b\\d{1,3}(?:\\s?(?:a|y|o|-)\\s?\\d{1,3})?\\s(?:' + U + ')\\b', 'g'), ' ');
+  for (const m of resto.matchAll(/\d+(?:[.,]\d+)?/g)) if (!esPrecio(m[0])) return 'cifra_no_permitida';
+  // Los números en PALABRAS: decenas, centenas y miles rechazan el texto (salvo como cantidad de una unidad de contenido: «treinta días»); «uno»…«nueve» solo junto a un verbo de precio o a una moneda.
+  const sinContenido = num.replace(new RegExp('\\b(?:\\w+\\s)?\\w+\\s(?:' + U + ')\\b', 'g'), (s) => (/\b(?:diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cien|ciento|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\s(?:y\s)?\w*\s?(?:[a-z]+)?$/.test(s) ? ' ' : s));
+  if (/\b(?:dieci\w+|veinti\w+|doscientos|trescientos|cuatrocientos|quinientos|seiscientos|setecientos|ochocientos|novecientos|mil|millon|millones|cincuenta|sesenta|setenta|ochenta|noventa)\b/.test(num) || /\b(?:diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cien|ciento)\b(?!\s(?:y\s)?\w*\s?(?:a\s\w+\s)?(?:' + U + ')\b)/.test(sinContenido)) return 'cifra_no_permitida';
+  if (new RegExp('\\b(?:sale|salen|cuesta|cuestan|vale|valen|costaria|costo|precio|tarifa|cobro|cobramos|cobran|pagas|pagar|pagarias)\\b[^.?!]{0,16}\\b(?:uno|un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\\b(?!\\s(?:' + U + ')\\b)|\\b(?:uno|un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\\s' + MONEDA + '\\b').test(num)) return 'precio_inventado';
   return '';
 }
