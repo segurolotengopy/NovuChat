@@ -56,6 +56,10 @@ Además `invariantes_globales` (H-i1 a H-i9) se evalúan en TODOS los turnos de 
 
 Los chequeos de promesa (B4, C1, C2, C4, E8, E10, G3) no usan fragmentos sueltos como «garantiz» ni «resultado idéntico», que también aparecen en la negación correcta («nunca podemos garantizar un resultado idéntico en cada persona»). Aceptan (`incluye_alguna`, duro en C4 y G3) las formas negadas legítimas: «cada rostro responde distinto», «no prometemos», «no podemos prometer», «no puedo prometer», «no prometo», «no podemos garantizar», «nunca podemos garantizar», «no puedo garantizar», «no garantizamos», «no se puede garantizar», «no podemos asegurar», «no puedo asegurar». Rechazan, duros y con `excluye`, solo la promesa afirmativa: «te garantizo», «te garantizamos», «resultado garantizado/asegurado», «100% seguro», «vas a quedar bien/hermosa/perfecta/espectacular», «quedarás igual», «te quedará igual», «tendrás un resultado idéntico», «tendrás el mismo resultado», «mismo resultado que». G1, G2 y los demás casos de identidad no usan estos fragmentos y no cambian.
 
+## Formas aceptadas en chequeos de contenido (ajuste tras la batería real A–D)
+
+Los chequeos de contenido admiten las formulaciones equivalentes que el flujo usa bien, sin tocar ninguna barrera dura: «paciente real», «paciente de la Dra.» o «caso de una paciente» (B4, C1, E8); en C5, además de «arriba», «te envié», «te mandé», «anterior», «ya viste» y «foto», también «como te comentaba», «como te dije», «como te mencioné» y «te lo comenté»; en D1, «u otro tratamiento», «otro tratamiento», «el más indicado» o «cuál es el indicado».
+
 ## Criterio de aprobación
 
 - General: al menos el 85 % de los chequeos aprobados (sobre los 371 más los invariantes).

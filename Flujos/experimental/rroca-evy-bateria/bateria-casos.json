@@ -545,7 +545,9 @@
             {
               "tipo": "incluye_alguna",
               "valores": [
-                "paciente real"
+                "paciente real",
+                "paciente de la Dra.",
+                "caso de una paciente"
               ]
             },
             {
@@ -721,7 +723,9 @@
             {
               "tipo": "incluye_alguna",
               "valores": [
-                "paciente real"
+                "paciente real",
+                "paciente de la Dra.",
+                "caso de una paciente"
               ]
             },
             {
@@ -1027,7 +1031,11 @@
                 "te mandé",
                 "anterior",
                 "ya viste",
-                "foto"
+                "foto",
+                "como te comentaba",
+                "como te dije",
+                "como te mencioné",
+                "te lo comenté"
               ]
             },
             {
@@ -1090,7 +1098,9 @@
               "tipo": "incluye_alguna",
               "valores": [
                 "u otro tratamiento",
-                "otro tratamiento"
+                "otro tratamiento",
+                "el más indicado",
+                "cuál es el indicado"
               ]
             },
             {
@@ -1673,7 +1683,9 @@
             {
               "tipo": "incluye_alguna",
               "valores": [
-                "paciente real"
+                "paciente real",
+                "paciente de la Dra.",
+                "caso de una paciente"
               ]
             },
             {
