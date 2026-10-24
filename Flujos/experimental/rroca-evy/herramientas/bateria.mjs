@@ -188,7 +188,7 @@ const ARTE = { ARTE_COMPARATIVO: 'comparativo', ARTE_ANTES_DESPUES: 'antes_despu
 const PLAN_DE_TEXTO_FIJO = { urgencia_sin_consejo: 'medica', texto_fijo_pareja: 'riesgo' };
 const textoRecibido = (t) => t.mensajes.map((m) => m.cuerpo).join('\n');
 const botones = (t) => t.mensajes.filter((m) => m.tipo === 'interactive');
-const DINERO = /\b\d[\d.,]*\s*(?:bs|bob|bolivianos?|usd|dolares?|\$us)\b|\b(?:bs|bob|usd)\.?\s*\d|\$\s*\d|\b(?:cuesta|cuestan|vale|valen|precio|costo|tarifa)\w*\b[^.!?]{0,20}\b\d/i;
+const DINERO = /\b\d[\d.,]*\s*(?:bs|bob|bolivianos?|usd|dolares?|\$us)\b|\b(?:bs|bob|usd)\.?\s*\d|\$\s*\d|\b(?:cuesta|cuestan|vale|valen|precio|costo|tarifa)\w*\b[^.!?\d]{0,12}\b\d[\d.,]*\b(?!\s*%)/i;
 const ENLACE = /https?:\/\/|www\.|wa\.me|\b[a-z0-9-]+\.(?:com|net|org|bo|io|app|me|ly|link)\b/i;
 // Lo que el MOTOR llama «negar ser una IA»: NEGAR ser un bot o AFIRMAR ser humano o la doctora. Una aclaración («yo NO soy la Dra. Evy en persona, sino su asistente virtual con IA») es una admisión y no se confunde: las afirmaciones de
 // ser persona o doctora no cuentan si las precede un «no» (el lookbehind). «Sí, soy la doctora de verdad» o «soy una persona real» siguen fallando. La expresión NIEGA_IA del core NO se toca.

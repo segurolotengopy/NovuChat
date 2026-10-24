@@ -416,7 +416,7 @@ function evNombreDeEtiqueta(v) {
 }
 /** Devuelve { texto (sin etiquetas ni corchetes), artes (en orden, sin repetir), derivar, nombre }. */
 function evLeerEtiquetas(crudo) {
-  let t = evTexto(crudo).normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '').replace(/\r\n?/g, '\n');
+  let t = evTexto(crudo).normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '').replace(/\r\n?/g, '\n').replace(/HArmonyCaTM/g, 'HArmonyCa™');   // NFKC convierte «™» en «TM»
   const artes = [];
   let derivar = false;
   let nombre = '';
@@ -443,6 +443,7 @@ function evLeerEtiquetas(crudo) {
     t = t.replace(/\(\s*\)|«\s*»|"\s*"|“\s*”|\{\s*\}/g, ' ');
     if (t === antes) break;
   }
+  t = t.replace(/`+/g, ' ');   // restos de un bloque de código del modelo
   t = t.replace(/[ \t]{2,}/g, ' ').replace(/^[ \t]+|[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
   return { texto: t, artes: artes, derivar: derivar, nombre: nombre };
 }
@@ -551,21 +552,43 @@ function evConsejoDeSalud(norm) {
 const EV_PROMETE_SILENCIO = /\bno te (?:volver\w+|escribir\w*|molestar\w*|contactar\w*) (?:a |mas)|\bno te (?:volvere|volveremos|escribire|escribiremos|molestare|molestaremos)\b|\bdejar\w* de (?:escribirte|molestarte|contactarte)\b|\bno (?:te )?escribir\w* mas\b/;
 // LA ADMISIÓN HONESTA: «no soy una persona de carne y hueso, soy el asistente virtual con inteligencia artificial» es la respuesta que manda el guion; la expresión común NIEGA_IA la confundiría con una negación. Se REEMPLAZA esa
 // oración (la que niega ser persona, humano, la doctora o real y NO niega ser una IA) por una admisión fija y breve.
-const EV_NO_SOY_PERSONA = /\bno soy (?:una |un |la |el |su )?(?:persona|humano|humana|doctora|doctor|dra|medico|real)\b(?: de carne y hueso| de verdad| real)?/g;
-// Si, quitada la negación, la oración AFIRMA algo humano («soy alguien real», «atiendo en persona»), no es una admisión: se deja tal cual y la expresión NIEGA_IA la rechaza.
-const EV_AFIRMA_HUMANO = /\b(?:soy|es|somos) (?:una |un )?(?:alguien|persona|humano|humana|real|de verdad|doctora|dra)\b|carne y hueso|personalmente|en persona/;
+// REPARACIÓN DE IDENTIDAD, POR ORACIÓN (no un rechazo total: el modelo siempre inventa otra paráfrasis). NIEGA_IA del core no se toca. Aquí:
+//  - «no soy una persona / no soy humana / no soy la doctora en persona» con una admisión de IA en el texto es una ADMISIÓN: esa oración se reemplaza por una admisión fija y breve (una sola vez);
+//  - una oración que habla de lo «humano» sin ser una afirmación en primera persona («atenderte de forma 100% humana») se BORRA;
+//  - AFIRMAR ser la doctora, una persona real o humana en primera persona («soy la doctora», «sí, soy humana», «soy una persona real») NO se repara: se rechaza el texto entero.
+const EV_NO_SOY_HUMANO = /\b(?:no (?:soy|es|estoy)|no soy)\b (?:\w+ )?(?:una |un |la |el |su )?(?:ser humano|persona|humano|humana|doctora|doctor|dra|medico|medica|real)\b(?: evy| karina| rojas)*(?: de carne y hueso| de verdad| real| en persona)?/g;
+const EV_AFIRMA_HUMANO = /(?<!\bno )(?<!\bno es )\b(?:soy|somos) (?:la |el |una |un )?(?:doctora|doctor|dra|medico|medica|persona|humano|humana|alguien|real|de verdad)\b|carne y hueso|personalmente|\bsoy yo\b/;
 const EV_NIEGA_SER_IA = /\bno soy (?:un |una |el |la )?(?:bot|ia|robot|asistente|programa|maquina|inteligencia|virtual|automatic\w*)\b/;
+const EV_DICE_SER_IA = /\b(?:asistente virtual|inteligencia artificial|asistente con ia|\bia\b|asistente de ia)\b/;
+const EV_PRIMERA_PERSONA = /\b(?:soy|somos|yo|estoy|me llamo|atiendo|mi nombre)\b/;
 const EV_ADMISION = 'Soy un asistente virtual con inteligencia artificial.';
-function evAdmisionHonesta(texto) {
-  let hubo = false;
-  const lista = evPartirEnOraciones(texto).map((o) => {
+function evRepararIdentidad(texto) {
+  const completo = evNorm(texto);
+  const dice = EV_DICE_SER_IA.test(completo);
+  const orac = evPartirEnOraciones(texto);
+  // ¿Ya hay una oración que NO es una negación y dice «soy el asistente virtual…»? Entonces las negaciones se borran; si no, la primera negación se reemplaza por la admisión fija.
+  let hubo = orac.some((o) => o !== '' && evNorm(o).replace(EV_NO_SOY_HUMANO, ' ') === evNorm(o) && /\b(?:soy|es) (?:el |un |una )?(?:asistente virtual|asistente con ia)\b/.test(evNorm(o)));
+  let afirma = '';
+  const lista = orac.map((o) => {
     if (o === '') return o;
     const n = evNorm(o);
-    if (/\bno soy\b/.test(n) && n.replace(EV_NO_SOY_PERSONA, ' ') !== n && !EV_AFIRMA_HUMANO.test(n.replace(EV_NO_SOY_PERSONA, ' ')) && !EV_NIEGA_SER_IA.test(n)) { if (hubo) return null; hubo = true; return EV_ADMISION; }
+    const sinNegacion = n.replace(EV_NO_SOY_HUMANO, ' ');
+    const niega = sinNegacion !== n;
+    if (EV_AFIRMA_HUMANO.test(sinNegacion) && !EV_DICE_SER_IA.test(n)) { afirma = afirma || o.slice(0, 60); return o; }
+    if (niega && dice && !EV_NIEGA_SER_IA.test(n)) {
+      // Admisión: la oración que ya dice «sino el asistente virtual…» se reemplaza por la admisión fija (una vez); si el texto ya la dice en otra oración, esta se borra.
+      if (hubo) return null;
+      hubo = true;
+      return EV_ADMISION;
+    }
+    if (EV_NIEGA_IA.test(n) && !EV_PRIMERA_PERSONA.test(n)) return null;   // menciona lo «humano» sin afirmar nada de sí mismo
     return o;
   }).filter((o) => o !== null);
-  return evUnirOraciones(lista);
+  return { texto: evUnirOraciones(lista), afirma: afirma };
 }
+// GARANTÍAS Y PROMESAS DE RESULTADO, REPARADAS POR ORACIÓN: una oración con «garantiz…», «asegur…», «prometer…», «resultado idéntico/exacto/igual/perfecto» se BORRA (negada o afirmativa: la forma negada que manda el guion
+// la sustituye el CÓDIGO por la aclaración fija «cada rostro responde distinto y no prometemos un resultado idéntico», una sola vez). Nunca deja pasar un «te garantizo / garantizamos». Si no queda texto, cae al fallo.
+const EV_TOCA_GARANTIA = /\bgarant\w*|\basegur\w*|\bpromet\w*|\bprometid\w*|resultados? (?:identic\w*|exact\w*|igual\w*|perfect\w*|asegurad\w*|garantizad\w*)|\b(?:mismo|identico|exacto) resultado/;
 // Promete efecto inmediato (el arte comparativo trae «efecto lifting inmediato»; la clínica no lo promete).
 function evSinInmediato(texto) {
   return evQuitarOraciones(evTexto(texto).replace(/(lifting)\s+inmediat[oa]s?/gi, '$1').replace(/\binmediat[oa]s?\s+(lifting)/gi, '$1'), (n) => /\binmediat\w*/.test(n));
@@ -578,13 +601,19 @@ function evSinInmediato(texto) {
 function evPulirSalida(crudo, ctx) {
   const c = ctx && typeof ctx === 'object' ? ctx : {};
   const enviados = Array.isArray(c.artesEnviados) ? c.artesEnviados : [];
-  let t = evQuitarEnlacesYTelefonos(crudo);
+  // El formato de Markdown del modelo (**negrita**) parte las oraciones («**Dra.») y no se ve bien en WhatsApp: se quita antes de trabajar por oración.
+  let t = evQuitarEnlacesYTelefonos(crudo).replace(/\*+/g, '');
   t = evSinInmediato(t);
   t = evProtegerValor(t);
   if (enviados.length === 0) t = evQuitarOraciones(t, (n) => EV_PROMETE_IMAGEN.test(n));
   if (enviados.indexOf('antes_despues') < 0) t = evQuitarOraciones(t, (n) => EV_PACIENTE_REAL.test(n));
   t = evQuitarOraciones(t, (n) => EV_PROMETE_RECEPCION.test(n) || EV_PROMETE_DESPUES.test(n));
-  t = evAdmisionHonesta(t);
+  const idt = evRepararIdentidad(t);
+  if (idt.afirma) return { texto: '', motivo: 'niega_ia', detalle: 'afirma ser la doctora o una persona («' + idt.afirma + '…»)' };
+  t = idt.texto;
+  let reparada = false;
+  t = evQuitarOraciones(t, (n) => { if (EV_TOCA_GARANTIA.test(n)) { reparada = true; return true; } return false; });
+  if (reparada && t !== '' && !/responde distinto|no prometemos|no podemos prometer/.test(evNorm(t))) t = t + '\n\n' + EV_ACLARACION;
   t = t.trim();
   if (enviados.indexOf('antes_despues') >= 0 && !/responde distinto/.test(evNorm(t))) t = (t ? t + '\n\n' : '') + EV_ACLARACION;
   // Si el cliente pregunta por una GARANTÍA o por si va a quedar bien, la aclaración «cada rostro responde distinto» la pone el CÓDIGO si el modelo no la trajo (no depende del azar del modelo).
