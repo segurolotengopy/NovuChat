@@ -2958,3 +2958,92 @@ describe('Agenda mínima: rama de medios del core', () => {
     });
   }
 });
+
+// =================================================================================================
+// Bellido, 23/10: SOLO dos defectos (carita sin encabezado; transferencia sin botón). Se reproducen con el
+// nodo REAL «Armar mensajes» (el mismo código del JSON), con el modelo simulado.
+describe('Agenda mínima v0: encabezado de la oferta y promesa de recepción sin botón (23/10)', () => {
+  const ENCABEZADO = /Estos son los horarios disponibles para control del niño sano el jueves 8 de octubre:/;
+  const ofertaCon = (redaccion: string): Turno => {
+    const m = mundo({ eventos: [] });
+    m.turno(texto(MAMA, 'quiero cita el jueves en la tarde'));
+    m.gemini.extraer = extraccion({ fechaPreferida: JUEVES, franja: 'tarde' });
+    m.gemini.redactar = redaccion;
+    return m.turno(lista(MAMA, SERV_CNS, 'Control niño sano'));
+  };
+  const preguntar = (pregunta: string, redaccion: string, escrito = pregunta): Turno => {
+    const m = mundo({ eventos: [] });
+    m.turno(texto(MAMA, 'hola'));
+    m.gemini.extraer = extraccion({ intencion: 'consultar', pregunta });
+    m.gemini.redactar = redaccion;
+    return m.turno(texto(MAMA, escrito));
+  };
+  const cuantas = (s: string, re: RegExp): number => (s.match(new RegExp(re.source, 'g')) ?? []).length;
+
+  describe('defecto 1: el encabezado de la oferta lo pone el código', () => {
+    it('una redacción de solo carita y horas sale con el encabezado fijo (frase, servicio y día)', () => {
+      const t = ofertaCon('😊 Jue 14:00, 14:30, 15:00');
+      const cuerpo = t.enviados[0]!.cuerpo;
+      expect(cuerpo).toMatch(ENCABEZADO);
+      expect(cuerpo).toContain('😊 Jue 14:00, 14:30, 15:00');
+      expect(cuerpo.indexOf('Estos son')).toBeLessThan(cuerpo.indexOf('😊'));
+      expect(botonesDe(t.enviados[0]!)).toHaveLength(3);
+      expect(t.enviados).toHaveLength(1); // 0 mensajes agregados
+    });
+    it('NIEGA: una oferta que ya trae encabezado (horarios y el día) no se duplica ni se altera', () => {
+      const propio = 'Estos son los horarios disponibles el jueves: 14:00, 14:30 y 15:00.';
+      const t = ofertaCon(propio);
+      expect(t.enviados[0]!.cuerpo).toBe(propio);
+      expect(cuantas(t.enviados[0]!.cuerpo, /horarios disponibles/)).toBe(1);
+    });
+    it('NIEGA: una redacción con horas ajenas sigue rechazada: sale el texto fijo, una sola vez', () => {
+      const t = ofertaCon('😊 Jue 16:45, 17:10');
+      const cuerpo = t.enviados[0]!.cuerpo;
+      expect(cuerpo).not.toMatch(/16:45|17:10/);
+      expect(cuerpo).toMatch(/Toca el horario que prefieras/);
+      expect(cuantas(cuerpo, /Estos son los horarios/)).toBe(1);
+    });
+  });
+
+  describe('defecto 2: una redacción que manda a recepción sin botón se convierte en transferencia', () => {
+    const FRASES = ['¿qué hago si mi hijo se golpea la cabeza?', 'se golpeó la cabeza', 'le cuesta respirar', 'sangra'];
+    const MODELO = 'Eso necesita verse ya, por favor comunícate de inmediato con recepción.';
+    for (const frase of FRASES) {
+      it(`«${frase}» con «comunícate con recepción» sale con botón y aviso a recepción`, () => {
+        const t = preguntar(frase, MODELO);
+        const p = t.aPaciente(MAMA);
+        expect(p).toHaveLength(1);
+        expect(interactivo(p[0]!)['type']).toBe('cta_url');
+        expect(urlDe(p[0]!)).toContain(`wa.me/${REC}`);
+        expect(t.aRecepcion).toHaveLength(1);
+        expect(textos(t)).not.toMatch(/necesita verse/);
+      });
+    }
+    it('NIEGA: una transferencia ya armada (pregunta sin respuesta) lleva UN solo botón y UN solo aviso', () => {
+      const t = preguntar('atienden seguros', 'SIN_RESPUESTA');
+      expect(t.aPaciente(MAMA)).toHaveLength(1);
+      expect(t.aRecepcion).toHaveLength(1);
+    });
+    for (const [pregunta, respuesta] of [['¿dónde quedan?', 'Estamos en Calle Ejemplo 123, piso 1.'], ['¿atienden los sábados?', 'Sí, los sábados atendemos de 09:00 a 12:00.']] as const) {
+      it(`NIEGA: «${pregunta}» sin mención de recepción sigue igual (un texto, sin aviso)`, () => {
+        const t = preguntar(pregunta, respuesta);
+        expect(t.enviados).toHaveLength(1);
+        expect(t.enviados[0]!.cuerpo).toContain(respuesta.replace(/\.$/, ''));
+        expect(t.enviados[0]!.tipo).toBe('text');
+        expect(t.aRecepcion).toHaveLength(0);
+      });
+    }
+    it('NIEGA: «recepción» dicha por el paciente no dispara la red por sí sola', () => {
+      const t = preguntar('atienden los sábados', 'Sí, los sábados atendemos de 09:00 a 12:00.', '¿atienden los sábados? quiero hablar con recepción');
+      expect(t.aRecepcion).toHaveLength(0);
+      expect(t.enviados[t.enviados.length - 1]!.cuerpo).toBe('Sí, los sábados atendemos de 09:00 a 12:00.');
+    });
+    it('invita a escribir al doctor o al consultorio sin botón: también se convierte', () => {
+      for (const frase of ['Escríbele al doctor cuanto antes.', 'Comunícate con el consultorio ya.']) {
+        const t = preguntar('mi hijo vomita mucho', frase);
+        expect(urlDe(t.aPaciente(MAMA)[0]!)).toContain(`wa.me/${REC}`);
+        expect(t.aRecepcion).toHaveLength(1);
+      }
+    });
+  });
+});

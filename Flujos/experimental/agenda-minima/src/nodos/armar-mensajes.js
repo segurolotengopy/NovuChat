@@ -208,6 +208,37 @@ function respuestaFija(clave) {
   }
   return null;
 }
+// RED DE LA CLASE «promesa de recepcion sin boton» (23/10): si lo que el modelo redacto manda al paciente
+// a recepcion, al consultorio o al doctor, o dice «necesita verse», y la respuesta saldria como texto plano
+// (sin el boton que abre el chat), es una promesa sin respaldo. No es una lista de sintomas: es lo que el
+// TEXTO ofrece. Palabras enteras y normalizado con `cnNorm`.
+const MENCION_DE_RECEPCION = /\brecepcion\b|\bnecesita(n)? verse\b|\b(comunic(ate|arte|arse|ese)|escrib(e|ele|enos|ir|irle)|llam(a|ale|anos|ar)|contact(a|ale|anos|ar))\b[^.!?\n]{0,40}\b(consultorio|doctor|doctora|dr|dra)\b/;
+function prometeRecepcion(texto) {
+  const s = String(texto || '').normalize('NFKC');
+  const n = cnNorm(s);
+  const n2 = cnNorm(s.replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]/gu, ' '));
+  return MENCION_DE_RECEPCION.test(n) || MENCION_DE_RECEPCION.test(n2);
+}
+// El ENCABEZADO de una oferta (frase + servicio + dia) lo pone el codigo cuando la redaccion trae horas sin el (23/10): el modelo escribio
+// solo una carita y las horas. La redaccion «lo trae» si nombra los horarios y el dia de algun hueco.
+function encabezadoDeOferta(o, srvTxt) {
+  const fechas = [];
+  for (const h of o.huecos) { const f = fechaLocal(msDe(h.inicio)); if (fechas.indexOf(f) < 0) fechas.push(f); }
+  let dia = '';
+  if (fechas.length === 1) {
+    const p = fechas[0].split('-').map(Number);
+    dia = ' el ' + diaDeLaSemana(fechas[0]) + ' ' + p[2] + ' de ' + AGM_MESES[p[1] - 1];
+  }
+  return 'Estos son los horarios disponibles para ' + srvTxt + dia + ':';
+}
+function traeEncabezado(redactado, o) {
+  const n = cnNorm(redactado);
+  if (!/\bhorarios?\b|\bdisponibilidad\b|\bdisponibles?\b/.test(n)) return false;
+  return o.huecos.some((h) => {
+    const f = fechaLocal(msDe(h.inicio));
+    return n.indexOf(cnNorm(diaDeLaSemana(f))) >= 0 || /\b(hoy|manana)\b/.test(n);
+  });
+}
 // Los textos fijos, armados con los huecos reales, para cuando la redaccion no sirve.
 function textoFijoDeOferta(o, srvTxt) {
   const intro = {
@@ -373,6 +404,12 @@ switch (plan) {
     const pregunta = params.pregunta || null;
     const redactado = base.redactar ? pulirRedaccion(cnTextoDeGemini(cnPrimero('Redactar'))) : '';
     const valida = redactado !== '' && redaccionValida(redactado, o.huecos, o.aviso);
+    if (valida && prometeRecepcion(redactado)) {
+      // Promesa sin respaldo: el texto manda a recepcion y saldria sin el boton. Se cumple (aviso + boton).
+      transferir('el paciente preguntó algo que el asistente no puede responder: «' + cnRecorte(pregunta || String(base.texto || ''), 200) + '»',
+        'Esa consulta no la puedo resolver por este chat. Escríbele directo a recepción tocando el botón.');
+      break;
+    }
     if (pregunta && !valida) {
       // La respuesta no esta en la configuracion (o el modelo no dio una que sirva): a una persona.
       transferir('el paciente preguntó algo que el asistente no puede responder: «' + cnRecorte(pregunta, 200) + '»',
@@ -390,6 +427,8 @@ switch (plan) {
       break;
     }
     let cuerpo = valida && !(o.aviso && !pregunta) ? redactado : textoFijoDeOferta(o, srvTxt);
+    // El encabezado de la oferta lo pone siempre el codigo; la redaccion del modelo puede ir despues.
+    if (cuerpo === redactado && o.huecos.length && clavesDeHora(redactado).length && !traeEncabezado(redactado, o)) cuerpo = encabezadoDeOferta(o, srvTxt) + '\n\n' + redactado;
     // HB3: al mover, el paciente ve cuál es su cita actual y que no la pierde (incidente #7659).
     const mov = base.estado && base.estado.moverId && base.estado.moverInicio ? base.estado : null;
     if (mov) {
