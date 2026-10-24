@@ -20,8 +20,8 @@ writeFileSync(join(bin, 'curl'), '#!/usr/bin/env bash\necho "$*" >> "$LOG_CURL"\
 chmodSync(join(bin, 'curl'), 0o755);
 const envRel = join(dir, 'env');
 writeFileSync(envRel, 'N8N_API_KEY=clave-de-juguete\nN8N_WORKFLOW_ID=1\nN8N_BASE_URL=http://n8n.invalido\n');
-const nuevo = { name: NOMBRE, nodes: [{ name: 'Armar previos' }, { name: 'Config base' }] };
-const viejo = { name: NOMBRE, active: false, nodes: [{ name: 'Armar avisos' }, { name: 'Config base', parameters: { jsCode: "tenantId: 'rroca-evy'" } }] };
+const nuevo = { name: NOMBRE, nodes: [{ name: 'Armar previos' }, { name: 'Config base' }], connections: {}, settings: {} };
+const viejo = { name: NOMBRE, active: false, connections: {}, settings: {}, nodes: [{ name: 'Armar avisos' }, { name: 'Config base', parameters: { jsCode: "tenantId: 'rroca-evy'" } }] };
 const vivoNuevo = join(dir, 'vivo-nuevo.json'); writeFileSync(vivoNuevo, JSON.stringify({ ...nuevo, active: false }));
 const vivoViejo = join(dir, 'vivo-viejo.json'); writeFileSync(vivoViejo, JSON.stringify(viejo));
 const vivoOtro = join(dir, 'vivo-otro.json'); writeFileSync(vivoOtro, JSON.stringify({ name: 'Otro cliente', active: false, nodes: [] }));
@@ -174,6 +174,7 @@ describe('el flujo nuevo de Evy tiene su guardia, distinta de la de las doctoras
     for (const vivo of [vivoViejo, vivoNuevo]) {
       const sobreEvy = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-evy', '--forzar'], vivo);
       expect(sobreEvy.stderr).not.toMatch(/no puede reemplazar un flujo vivo que no es de Evy/);
+      expect(sobreEvy.curl).toMatch(/-X PUT/);   // llega al PUT (el vivo es de Evy)
     }
   });
   it('el flujo de Emma y el viejo de Evy siguen con la guardia de las doctoras', () => {

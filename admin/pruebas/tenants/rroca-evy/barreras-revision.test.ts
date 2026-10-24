@@ -284,6 +284,7 @@ describe('la pregunta por la gratuidad se contesta con un texto fijo cuando el m
   it('el resumen informa el plan «gratis» cuando el fijo sustituye al texto rechazado del modelo', () => {
     const t = hablar(crear({ modeloDice: dice('Ya pagaste tu reserva.') }), ANA, mTexto('¿es gratis?'));
     expect(textos(t)[0]).toContain('100% gratuita');
+    expect(String((((t.porNodo['Resumen del turno']?.[0]?.['resumen'] ?? {}) as Record<string, unknown>)['plan']))).toBe('gratis');
   });
   it('«quiero agendar pero no ahora» no deriva', () => {
     const t = hablar(crear({ modeloDice: dice('Sin problema, aquí estaré. ¿Cómo te llamas?') }), ANA, mTexto('quiero agendar pero no ahora'));
@@ -356,6 +357,7 @@ describe('Evy NO agenda: ninguna oración del modelo afirma una cita, un cupo o 
   it('POSITIVAS: gratuita esta semana, dirección, horario de atención, invitación, preguntas y condicionales pasan', () => {
     for (const bien of [
       'Te confirmo que la valoración es gratuita esta semana.', 'Te esperamos en la Clínica DentalCor, Calle Sapocó 53.', 'Atendemos de lunes a viernes de 08:30 a 18:30 y sábados de 09:00 a 12:00.',
+      'Justamente para que sepas qué esperar según tu ritmo de vida, la valoración con la Dra. Evy está hoy 100% gratuita y sin compromiso.',
       'Te cuento que la Dra. atiende los lunes y miércoles.', 'Te comento que a las 2 semanas notas el cambio.', 'Tu valoración está bonificada hasta el viernes.',
       'Te recomiendo escribir a recepción para agendar, ellos atienden el lunes.',
       'Puedes agendar cuando quieras.', '¿Te gustaría el lunes?', 'Si quieres el lunes, dímelo.', 'Hoy tu valoración está bonificada al 100%.',
@@ -424,6 +426,16 @@ describe('cuidados y promesas con otras redacciones', () => {
   for (const p of ['Funciona siempre. ¿Cómo te llamas?', 'Quedarás divina. ¿Cómo te llamas?', 'Lucirás perfecta. ¿Cómo te llamas?', 'Te verás 10 años más joven. ¿Cómo te llamas?', 'Los resultados son excelentes y duraderos en todas las pacientes. ¿Cómo te llamas?']) {
     it(`NEGADA: ${p.slice(0, 40)}`, () => { expect(fallo(sale(p))).toBe(true); });
   }
+});
+
+describe('la coletilla interrogativa se evalúa en tiempo lineal', () => {
+  it('120 000 «¿» o espacios no se vuelven cuadráticos', () => {
+    for (const largo of ['Hola ' + '¿'.repeat(120000), 'Hola, ' + ' '.repeat(120000) + '¿verdad?', '¿ '.repeat(60000)]) {
+      const t0 = Date.now();
+      sale(largo);
+      expect(Date.now() - t0).toBeLessThan(3000);
+    }
+  });
 });
 
 describe('el motor de la batería: pausa entre llamadas', () => {

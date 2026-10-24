@@ -516,12 +516,15 @@ const EV_AG_SUJETO = /\b(te|tu|tus|tienes|quedaste|quedo|quedamos|nos vemos|esta
 const EV_AG_FUERTE = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b|\b\d{1,2}[: ]\d{2}\b|\ba las \d{1,2}(?!\s*(?:semanas|dias|meses|horas|minutos))|\b\d{1,2} ?(?:am|pm|hs|hrs)\b/;
 const EV_AG_PARTICIPIO = /\b(apartad\w*|reservad\w*|agendad\w*|anotad\w*|registrad\w*|inscrit\w*)\b/;
 const EV_AG_DEBIL = /\b(hoy|manana|pasado manana)\b/;
-const EV_AG_VISITA = /\b(espera\w*|esperamos|espero|veras|vera|atiende|atendera|nos vemos|vienes|vas|llegas|recibe|recibira)\b/;
+const EV_AG_VISITA = /\b(espera|esperan|esperara|esperaran|esperamos|espero|veras|vera|atiende|atendera|nos vemos|vienes|vas|llegas|recibe|recibira)\b/;
 const EV_AG_REGISTRO = /\b(inscrit\w*|ya (?:te |lo |la )?(?:tiene|tienes|tengo|tenemos) (?:tu |su )?(?:cupo|espacio|turno|lugar)|ya te (?:tiene|tienen)|en su lista|en la lista|quedo (?:tu|su) (?:cita|turno|espacio)|inscrib\w*|apartad\w*|en la agenda|(?:registr|anot|guard|apunt|agend|reserv)(?:e|o|amos|aron|ado|ada|ados|adas)|sabe que vas|ya esta todo hecho)\b/;
 function evAfirmaAgenda(oracion) {
   const o = evTexto(oracion);
   // Una coletilla interrogativa («…, ¿verdad?», «… ¿Te parece?») no anula la afirmación que la precede; una pregunta entera sí está exenta.
-  const sinColetilla = o.replace(/,?\s*[¿][^?]*\?[^\p{L}\p{N}]*$/u, '');
+  // Sin expresiones que busquen hacia atrás sobre todo el texto (con 120 000 «¿» o espacios serían cuadráticas): se mira desde el último «¿».
+  const ini = o.lastIndexOf('¿');
+  let sinColetilla = o;
+  if (ini >= 0 && /^¿[^?]*\?[^\p{L}\p{N}]*$/u.test(o.slice(ini))) { sinColetilla = o.slice(0, ini).trimEnd(); if (sinColetilla.endsWith(',')) sinColetilla = sinColetilla.slice(0, -1); }
   if (sinColetilla.trim() === '') return false;
   if (sinColetilla === o && evEsPregunta(o)) return false;
   let n = evNorm(sinColetilla);
