@@ -160,7 +160,7 @@ export const REGISTRO = [
     dependeDe: [],
     configuracion: [],
     camposEnNegocio: [],
-    colecciones: ['catalogo', 'fotosCatalogo', 'comprobacionesImagen', 'contadores/catalogo'],
+    colecciones: ['catalogo', 'fotosCatalogo', 'comprobacionesImagen', 'terminosProducto', 'contadores/catalogo'],
     coleccionesRaiz: [],
     almacenamiento: [],
     // `limiteProductos()` en las reglas (alta contada contra el contador) y
@@ -174,7 +174,7 @@ export const REGISTRO = [
     // o no. La ranura se llama como el dato que existe hoy.
     tablero: ['items'],
     herramientas: [],
-    functions: ['importarCatalogo', 'comprobarImagenDelCatalogo', 'recomprobarImagen'],
+    functions: ['importarCatalogo', 'comprobarImagenDelCatalogo', 'recomprobarImagen', 'registrarTerminoDeProducto'],
     flujosProgramados: [],
     // El catálogo entero o resumido al prompt (`configuracionFlujo`).
     ganchos: ['antesDelTurno'],

@@ -62,6 +62,7 @@ export { notificarReclamo } from './central/reclamos/reclamos.js';
 // para reintentar cuando la primera vez falló por algo pasajero. El porqué de
 // que avise en vez de bloquear está en `imagenCatalogo.ts`.
 export { comprobarImagenDelCatalogo, recomprobarImagen } from './modulos/productos/imagenCatalogo.js';
+export { registrarTerminoDeProducto } from './modulos/productos/terminoProducto.js';
 // MINI INVENTARIO. El descuento por venta lo hace el checkout; acá van los dos
 // movimientos que pide la consola. El comercio NO escribe `stock` a mano: si
 // pudiera, el saldo y su historial discreparían y el reporte dejaría de servir.
