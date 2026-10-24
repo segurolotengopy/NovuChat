@@ -33,7 +33,7 @@ const avisoPlaneado = av.planeado === true;
 const avisoRepetido = av.repetido === true;
 const avisoEnviado = avisoPlaneado && (cnTodos('Enviar aviso').some(rrId) || (prueba && cfg.enviarDeVerdad !== true));
 // Un aviso suprimido por el límite de 30 minutos trató OTRO contenido en los motivos de texto variable (la consulta que el modelo no supo, el comprobante sin cotejar): ahí NO se dice «le avisé» de esta vez.
-const repetidoVariable = avisoRepetido && (av.clave === 'no_supo' || av.clave === 'comprobante_sin_cotejo' || av.clave === 'sin_configuracion');
+const repetidoVariable = avisoRepetido && (av.clave === 'no_supo' || av.clave === 'comprobante_sin_cotejo' || av.clave === 'sin_configuracion' || av.clave === 'pago_con_problema');
 const avisoSalio = avisoEnviado || (avisoRepetido && !repetidoVariable);
 const estadoAviso = repetidoVariable ? 'repetido' : avisoSalio;
 
@@ -212,6 +212,12 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     // ENTREGA 2: «ya cancelé» (= «ya pagué») está EXENTO de la compuerta: ya saludado, recibe el menú de productos aunque aún no haya habido dos mensajes de conversación.
     const op = fichaAntes.saludado ? menu1() : menuAbierto();
     m = op.length ? conBotones(RR_TEXTO_CANCELE_COMO_PAGO, op) : conRuben(RR_TEXTO_CANCELE_COMO_PAGO_RUBEN);
+  } else if (tipoDePlan === 'imagen_descrita') {
+    // VISIÓN POR CATEGORÍAS: dice lo que ve (la descripción ya saneada por «Preparar imagen» y revisada por `rrDescripcionMostrable`, SOLO mostrada: no viaja al modelo; la entrada del cliente en la memoria guarda solo la categoría) y ofrece lo que sí hace, hablar del libro. Si es el primer mensaje, la presentación
+    // va en el MISMO mensaje. Sin botón, salvo en la ruta del comprobante (hay un cobro): ahí lleva la salida para quien sí enviaba su comprobante. UN solo mensaje.
+    const cuerpoImagen = rrTextoImagenDescrita(plan.descripcion, fichaAntes.ultimoHash, plan.conRuben === true);
+    const conPresentacion = !fichaAntes.saludado ? RR_PRESENTACION + '\n\n' + cuerpoImagen : cuerpoImagen;
+    m = plan.conRuben === true ? conRuben(conPresentacion) : texto(conPresentacion);
   } else if (tipoDePlan === 'imagen_comprobante') {
     // Una foto que parece un comprobante SIN pedido abierto: no se coteja ni se avisa; el cliente puede escribirle a Rubén.
     m = conRuben(RR_TEXTO_IMAGEN_COMPROBANTE);
@@ -235,7 +241,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
 
 // NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS (21/10/2026): si lo que sale es idéntico (por hash) a lo último que se le envió a este teléfono, sale una alternativa fija (con el botón de Rubén). Ni el QR (su pie lleva el
 // pedido) ni el resultado de un comprobante (cada comprobante es un hecho distinto) ni el silencio de un número extranjero entran, ni lo que dice qué ES el asistente (regla dura 4: esa respuesta nunca se sustituye). Es el MISMO mensaje: no agrega ni quita ninguno.
-if (m && puerta.ruta === 'sigue' && t.extranjero !== true && m.tipoReporte !== 'image' && tipoDePlan !== 'comprobante' && tipoDePlan !== 'identidad' && !rrTienePresentacionIA(m.texto) && fichaAntes.ultimoHash !== '' && rrHashTexto(m.texto) === fichaAntes.ultimoHash) {
+if (m && puerta.ruta === 'sigue' && t.extranjero !== true && m.tipoReporte !== 'image' && tipoDePlan !== 'comprobante' && tipoDePlan !== 'identidad' && tipoDePlan !== 'imagen_descrita' && !rrTienePresentacionIA(m.texto) && fichaAntes.ultimoHash !== '' && rrHashTexto(m.texto) === fichaAntes.ultimoHash) {
   const medio = /^(audio|imagen|otro)/.test(tipoDePlan);
   // Una derivación SIN CONFIGURACIÓN repetida no usa la alterna de contenido (no tendría sentido): sale «Rubén ya recibió el aviso anterior» y solo si ese texto también fuera idéntico, la alterna.
   const repetidoDeriva = tipoDePlan === 'derivar' && plan.motivo === 'sin_configuracion' ? rrTextoDerivacion('sin_configuracion', 'repetido', plan.clave) : '';

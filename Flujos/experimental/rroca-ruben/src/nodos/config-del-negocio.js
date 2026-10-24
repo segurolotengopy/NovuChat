@@ -38,6 +38,12 @@ const atencion = {
   atencionVenceEn: util(at.ventanaVenceEn) || '',
 };
 
+// --- LOS ANUNCIOS del negocio (módulo Campañas, 23/10/2026): son DATO de la Consola, ya vigentes y aprobados; el flujo no lleva ninguno escrito. Solo con una respuesta 200 del panel; a lo más 20, cada uno con un id y su lista de titulares.
+// «Preparar imagen» (módulo común) y «Decidir turno» los leen de aquí. Sin anuncios (el panel no responde o el negocio no cargó ninguno) la lista va vacía y el flujo sigue: una imagen de publicidad se describe, sin ángulo.
+const anuncios = (codigo === 200 && Array.isArray(cuerpo.anuncios))
+  ? cuerpo.anuncios.filter((a) => a && typeof a === 'object' && !Array.isArray(a) && typeof a.id === 'string' && a.id.trim() !== '' && Array.isArray(a.titulares)).slice(0, 20)
+  : [];
+
 // --- Lo de `Config base` (respaldo) ---
 const deBase = {
   nombreNegocio: linea(valor(base.nombreNegocio), 60),
@@ -91,6 +97,7 @@ const telefonoDePrueba = prueba ? cnDigitos(prueba.telefonoDePrueba) : '';
 const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;
 
 return [{ json: Object.assign({}, cfg, {
+  anuncios: anuncios,
   waGraphVersion: /^v\d{1,2}\.\d{1,2}$/.test(String(base.waGraphVersion || '')) ? String(base.waGraphVersion) : 'v26.0',
   phoneNumberId: String(carga.phoneNumberId || ''),
   // El modo prueba. Solo lo trae `Carga de entrada` cuando corrió «Entrada de prueba».

@@ -45,8 +45,8 @@
       "nombre": "Anuncio de Meta y salidas de tema",
       "turnos": [
         {
-          "dice": "Vi el anuncio ¿Te escriben pero no compran?",
-          "seco": "Qué buen tema: cuando te escriben y no compran, el capítulo 7 y el Closer de Ventas del Pack Completo te ayudan a responder mejor. ¿Qué vendes por chat?"
+          "dice": "Vi el anuncio ¿No sabes qué publicar?",
+          "seco": "Qué buen tema: para publicar con ideas claras, el capítulo 6 y los 100 Prompts del libro te ayudan. ¿A qué te dedicas y en qué red publicas?"
         },
         {
           "dice": "jaja oye, ¿conviene más Instagram o TikTok para vender ropa?",
