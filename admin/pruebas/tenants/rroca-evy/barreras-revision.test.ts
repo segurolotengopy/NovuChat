@@ -357,7 +357,10 @@ describe('más cuidados y promesas (huecos de la seguridad final)', () => {
       expect(t).toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
     });
   }
-  for (const p of ['Rejuvenecerás 10 años.', 'Vas a salir regia.']) {
+  it('POSITIVAS: «rejuvenecer» descriptivo y «regia» suelta pasan', () => {
+    for (const bien of ['Activa tu colágeno para rejuvenecer la piel.', 'Ayuda a rejuvenecer la piel de forma natural.', 'Ella es una profesional regia.']) expect(fallo(sale(`${bien} ¿Cómo te llamas?`)), bien).toBe(false);
+  });
+  for (const p of ['Rejuvenecerás 10 años.', 'Te rejuvenece al instante.', 'Vas a rejuvenecer 10 años.', 'Vas a salir regia.', 'Quedarás regia.']) {
     it(`NEGADA: «${p}»`, () => { expect(fallo(sale(`${p} ¿Cómo te llamas?`))).toBe(true); });
   }
 });
