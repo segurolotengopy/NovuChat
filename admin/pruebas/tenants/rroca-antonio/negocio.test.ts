@@ -12,20 +12,17 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
+import { cargarLibrerias } from './librerias';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
 const NEGOCIO = join(REPO, 'admin/scripts/datos/rroca-antonio/negocio-rroca-antonio.json');
-const RA = join(REPO, 'Flujos/experimental/rroca-antonio/src/lib');
 const TEXTO = readFileSync(NEGOCIO, 'utf8');
 type Item = { nombre: string; precio: number; moneda: string; activo: boolean };
 const D = JSON.parse(TEXTO) as Record<string, any> & { catalogo: Item[] };
 const idDe = (nombre: string): string => nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-const CODIGO = ['cobro.js', 'avisos.js', 'ra.js'].map((a) => readFileSync(join(RA, a), 'utf8')).join('\n');
-// El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-// nosemgrep: devsecops.js-eval-prohibido
-const L = new Function(CODIGO + '\nreturn { raCatalogo };')() as { raCatalogo: (c: unknown) => Record<string, number> };
+const L = cargarLibrerias('raCatalogo') as { raCatalogo: (c: unknown) => Record<string, number> };
 
 const ESPERADO: Record<string, number> = { 'pack-completo': 49, libro: 35, workbook: 20, 'guia-de-conversaciones': 19, 'calendario-de-conexion': 17, 'preguntas-profundas': 15 };
 

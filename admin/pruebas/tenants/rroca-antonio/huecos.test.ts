@@ -108,8 +108,10 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
       '  cfg = {',
       '    ...deBase, ...atencion,',
       '  };',
+      // Fase 2 del rehecho de Antonio: los anuncios de la Consola (≤ 20), solo en la rama 200.
+      '  const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === \'object\' && !Array.isArray(a)).slice(0, 20) : [];',
       '  cfg = {',
-      '    ...deBase, ...deLaConsola, ...atencion,',
+      '    ...deBase, ...deLaConsola, ...atencion, anuncios,',
       '  };',
       'const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;',
       'return [{ json: {',
@@ -190,7 +192,7 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo 
     const propio = JSON.stringify(sinLibres(de(plantilla, 'Reportar mensaje (entrante)')));
     const viejo = origen.match(/evento: \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\) \? 'no_contactar' : undefined/);
     expect(viejo, 'el origen ya no trae la regex heredada: hay que revisar la declaración').not.toBeNull();
-    const nuevo = propio.match(/evento: \(t\.riesgoEscrito === true \|\| \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\.normalize\('NFD'\)[^]*?\)\) \? 'no_contactar' : undefined/);
+    const nuevo = propio.match(/evento: \(t\.riesgoEscrito === true \|\| \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\.normalize\('NFKC'\)\.normalize\('NFD'\)[^]*?\)\) \? 'no_contactar' : undefined/);
     expect(nuevo, 'el propio no trae el evento declarado').not.toBeNull();
     // Todo lo demás es idéntico al origen.
     expect(propio.replace(nuevo![0], 'EVENTO')).toBe(origen.replace(viejo![0], 'EVENTO'));
