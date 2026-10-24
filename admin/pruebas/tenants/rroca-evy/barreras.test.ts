@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { ANA, REC, tel, avisosARecepcion, crear, dice, hablar, mAudio, mDocumento, mImagen, mSticker, mTexto, textos } from './mundo';
 
-const fallo = (t: string): boolean => /inconveniente para responderte/.test(t);
+const fallo = (t: string): boolean => /inconveniente para responderte/.test(t) || /Eso lo evalúa la Dra\. Evy en persona, durante tu valoración gratuita/.test(t);
 const sale = (modelo: string, msg = 'cuéntame de la valoración'): string => textos(hablar(crear({ modeloDice: dice(modelo) }), ANA, mTexto(msg)))[0] ?? '';
 
 describe('ningún precio, rango ni garantía sale (mutaciones de producción)', () => {

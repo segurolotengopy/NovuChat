@@ -157,6 +157,7 @@ export const SUITES_PURAS = [
   'pruebas/tenants/rroca-evy/armado.test.ts',
   'pruebas/tenants/rroca-evy/artes.test.ts',
   'pruebas/tenants/rroca-evy/barreras.test.ts',
+  'pruebas/tenants/rroca-evy/barreras-modelo.test.ts',
   'pruebas/tenants/rroca-evy/bateria-herramienta.test.ts',
   'pruebas/tenants/rroca-evy/conversacion.test.ts',
   'pruebas/tenants/rroca-evy/derivacion.test.ts',

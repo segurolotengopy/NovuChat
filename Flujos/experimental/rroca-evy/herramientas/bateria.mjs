@@ -21,6 +21,9 @@
 //   --confirmo-gasto   OBLIGATORIA fuera de `--seco`: la corrida real es GASTO y solo se hace con el «sí» de Andres, con la clave de PRUEBAS (nunca la de producción).
 //   --tope-usd <n>     corta la corrida cuando el costo estimado llega a n (0,05 por omisión).
 //   --archivo-casos <ruta>   otro archivo de casos (por omisión el de `rroca-evy-bateria`).
+//   --motivo           por cada turno cuya respuesta del modelo fue RECHAZADA por una barrera de código: la barrera, la expresión que coincidió y un trozo de la respuesta del modelo (no del cliente).
+//   --respuestas <archivo>   REPLAY sin costo: respuestas crudas guardadas, `{ "G3": "texto" }` (turno 1) o `{ "G3": { "1": "texto" } }` o `{ "G3": ["texto", …] }` (por turno); alimentan al flujo en lugar de Gemini. No usa red ni clave;
+//                      los turnos con respuesta guardada SÍ se evalúan por completo; los demás usan el texto genérico del seco.
 //   --conversaciones   imprime cada conversación;  --crudo  por turno del modelo: el texto crudo de Gemini y lo que salió.
 // NUNCA SE IMPRIME EL VALOR DE UN SECRETO (sale el NOMBRE de la variable). NO ESCRIBE ARCHIVOS. La clave se lee SOLO del archivo que se indica con `--env` (ignorado por git).
 import { execFileSync } from 'node:child_process';
@@ -40,7 +43,7 @@ const TOPE_USD_DEFECTO = 0.05;
 const UMBRAL = { general: 0.85, duras: 1 };
 
 const AYUDA = `Batería del flujo nuevo de Evy contra el modelo.
-  --seco  --n <1..20>  --casos A1,B2  --env <archivo>  --vertex <proyecto>  --locacion <región>  --confirmo-gasto  --tope-usd <n>  --archivo-casos <ruta>  --duros  --grupos G,E  --conversaciones  --crudo  --json  --ayuda
+  --seco  --n <1..20>  --casos A1,B2  --env <archivo>  --vertex <proyecto>  --locacion <región>  --confirmo-gasto  --tope-usd <n>  --archivo-casos <ruta>  --duros  --grupos G,E  --motivo  --respuestas <archivo>  --conversaciones  --crudo  --json  --ayuda
 Fuera de --seco la corrida es GASTO: exige --confirmo-gasto y una clave del proyecto de PRUEBAS (nunca la de producción).`;
 
 const norm = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -98,6 +101,12 @@ export function transcripcionDe(audio) {
   return String(audio).replace(/^\[|\]$/g, '');
 }
 
+/** La respuesta guardada de un caso y turno (1, 2…) para el replay; `null` si no hay. */
+export function respuestaGuardada(respuestas, caso, n) {
+  const r = respuestas && typeof respuestas === 'object' ? respuestas[caso] : undefined;
+  const x = typeof r === 'string' ? (n === 1 ? r : undefined) : Array.isArray(r) ? r[n - 1] : (r && typeof r === 'object' ? r[String(n)] : undefined);
+  return typeof x === 'string' ? x : null;
+}
 function crearDobles({ turnoActual, seco, credencial, opciones, deps, nodoModelo, costo }) {
   const gemini = (t) => ({ candidates: [{ content: { parts: [{ text: t }] } }] });
   let n = 0;
@@ -120,6 +129,8 @@ function crearDobles({ turnoActual, seco, credencial, opciones, deps, nodoModelo
       const t = turnoActual();
       t.llamadasAlModelo += 1;
       t.cuerpoModelo = ll.cuerpo;
+      const guardada = respuestaGuardada(opciones.respuestas, t.caso, t.n);
+      if (guardada !== null) { t.simulado = false; return { ...gemini(guardada), usageMetadata: { promptTokenCount: 0, candidatesTokenCount: 0 } }; }
       if (seco) return { ...gemini('Gracias por escribirnos. Cuéntame, ¿cómo te llamas y qué te gustaría mejorar en tu rostro?'), usageMetadata: { promptTokenCount: 0, candidatesTokenCount: 0 } };
       if (costo.usd >= opciones.topeUsd) { costo.cortado = true; return { error: { message: 'tope de gasto alcanzado', code: 0 } }; }
       const r = await llamarGemini({ cuerpo: ll.cuerpo, urlDelNodo: ll.url, credencial, opciones, deps, nodo: nodoModelo });
@@ -146,7 +157,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps,
   mundo.sd.evy = { [REC]: { ultimoMs: AHORA - 5 * 60_000, turnos: 1 } };
   const registro = [];
   for (const [i, turno] of caso.turnos.entries()) {
-    actual = { turno, llamadasAlModelo: 0, cuerpoModelo: null, ms: 0, tokensEntrada: 0, tokensSalida: 0, eventos: [] };
+    actual = { caso: caso.id, n: i + 1, simulado: true, turno, llamadasAlModelo: 0, cuerpoModelo: null, ms: 0, tokensEntrada: 0, tokensSalida: 0, eventos: [] };
     // «ajeno al modo prueba»: el número que escribe NO está en `telefonosDePrueba` y la etapa de prueba está encendida.
     const origen = turno.origen === 'ajeno_al_modo_prueba' ? num('591', '7', '09', '99999') : tel;
     const cuerpo = turno.origen === 'ajeno_al_modo_prueba' ? valorMeta(mensajeDelTurno(turno), origen) : { modoPrueba: true, telefonoDePrueba: tel, enviarDeVerdad: false, ...valorMeta(mensajeDelTurno(turno), origen) };
@@ -159,7 +170,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps,
     }));
     registro.push({
       n: i + 1, turno, plan: String(objeto(resumen.resumen).plan ?? ''), mensajes, imagenes: Array.isArray(resumen.imagenes) ? resumen.imagenes : [], avisoPlaneado: resumen.avisoPlaneado === true,
-      derivacion: resumen.derivacion === true, llamoAlModelo: actual.llamadasAlModelo > 0,
+      derivacion: resumen.derivacion === true, llamoAlModelo: actual.llamadasAlModelo > 0, modeloSimulado: opciones.seco && actual.simulado, rechazo: objeto(resumen.resumen).rechazo ?? null,
       // El evento `no_contactar` que armó «Armar mensajes» (en modo prueba no se reporta a la ingesta, pero el flujo lo arma igual).
       eventos: ((r && r.porNodo['Armar mensajes']) ?? []).map((x) => String(objeto(x).evento ?? '')).filter(Boolean), fallo, ms: actual.ms, tokensEntrada: actual.tokensEntrada, tokensSalida: actual.tokensSalida,
       crudo: r ? textoDeGemini(objeto((r.porNodo['Conversar con el modelo'] ?? [])[0])) : '', cuerpoModelo: actual.cuerpoModelo,
@@ -184,7 +195,7 @@ export function evaluar(ch, t, anterior, ctx) {
   const texto = norm(textoRecibido(t));
   const conModelo = t.llamoAlModelo;
   const decideElCodigo = ['texto_fijo', 'baja_silenciosa', 'no_es_baja', 'sin_agente_ni_respuesta', 'sin_agente', 'una_respuesta_breve', 'etiqueta_escrita_por_cliente_no_dispara'].includes(ch.tipo);
-  if (ctx.seco && conModelo && !decideElCodigo) return { omitido: true };
+  if (ctx.seco && conModelo && t.modeloSimulado !== false && !decideElCodigo) return { omitido: true };
   const valores = (ch.valores ?? []).map(norm);
   switch (ch.tipo) {
     case 'incluye_alguna': return { ok: valores.some((v) => texto.includes(v)) };
@@ -249,7 +260,7 @@ export function medir(corridas, casos, datos, opciones) {
         if (e.omitido) { omitidos.n += 1; continue; }
         filas.push({ caso: c.caso, rep: c.rep, turno: t.n, tipo: ch.tipo, duro: ch.duro === true, ok: e.ok, id: '' });
       }
-      if (!(opciones.seco && t.llamoAlModelo)) for (const inv of invariantes(datos.invariantes_globales, t, anterior)) filas.push({ caso: c.caso, rep: c.rep, turno: t.n, tipo: 'invariante', duro: inv.duro, ok: inv.ok, id: inv.id });
+      if (!(opciones.seco && t.llamoAlModelo && t.modeloSimulado !== false)) for (const inv of invariantes(datos.invariantes_globales, t, anterior)) filas.push({ caso: c.caso, rep: c.rep, turno: t.n, tipo: 'invariante', duro: inv.duro, ok: inv.ok, id: inv.id });
       if (t.fallo) filas.push({ caso: c.caso, rep: c.rep, turno: t.n, tipo: 'el flujo no falla', duro: true, ok: false, id: '' });
     });
   }
@@ -309,6 +320,16 @@ function textoDelInforme(m, opciones, proveedor, previsto, porSub) {
   l.push(`VEREDICTO: ${m.umbral.cumple ? 'cumple' : 'NO cumple'} (≥ 85 % de los chequeos y 100 % de las barreras duras${opciones.seco ? '; en seco solo cuenta lo evaluado' : ''}).`);
   return l.join('\n');
 }
+/** Las respuestas del modelo que una barrera de código rechazó: qué barrera, qué expresión y un trozo de lo que escribió el MODELO (nunca el texto del cliente). */
+export function textoDeMotivos(corridas) {
+  const l = [];
+  for (const c of corridas) for (const t of c.turnos) {
+    if (!t.llamoAlModelo || !t.rechazo) continue;
+    l.push(`  - ${c.caso}#${c.rep} turno ${t.n}: barrera «${t.rechazo.motivo}»${t.rechazo.detalle ? ` — ${t.rechazo.detalle}` : ''}`);
+    l.push(`      respuesta del modelo: ${JSON.stringify(String(t.crudo ?? '').replace(/\s+/g, ' ').slice(0, 240))}`);
+  }
+  return l.length ? ['Respuestas del modelo RECHAZADAS por una barrera de código (--motivo):', ...l].join('\n') : 'Respuestas del modelo rechazadas por una barrera de código: ninguna.';
+}
 function textoDeConversaciones(corridas, crudo) {
   return corridas.map((c) => [`--- Caso ${c.caso}, corrida ${c.rep}`, ...c.turnos.flatMap((t) => {
     const dice = t.turno.dice ?? (t.turno.imagen ? `[imagen: ${t.turno.imagen.slice(0, 80)}] ${t.turno.dice ?? ''}` : (t.turno.audio ? `[audio: ${t.turno.audio.slice(0, 80)}]` : `[${t.turno.tipo_mensaje}]`));
@@ -327,8 +348,9 @@ export async function main(argv, deps = {}) {
   };
   let credencial = { clave: null, token: null, nombre: '' };
   try {
-    const propias = new Set(['--confirmo-gasto', '--conversaciones', '--crudo', '--duros']);
-    const conValor = new Set(['--tope-usd', '--archivo-casos', '--grupos']);
+    const propias = new Set(['--confirmo-gasto', '--conversaciones', '--crudo', '--duros', '--motivo']);
+    const conValor = new Set(['--tope-usd', '--archivo-casos', '--grupos', '--respuestas']);
+    let archivoRespuestas = null;
     let grupos = null;
     const resto = [];
     let topeUsd = TOPE_USD_DEFECTO;
@@ -337,12 +359,20 @@ export async function main(argv, deps = {}) {
       if (conValor.has(argv[i])) {
         const v = argv[i + 1];
         if (v === undefined || v.startsWith('--')) throw new ErrorDeUso(`Falta el valor de ${argv[i]}.`);
-        if (argv[i] === '--tope-usd') { if (!/^\d+(\.\d+)?$/.test(v) || Number(v) <= 0 || Number(v) > 5) throw new ErrorDeUso('--tope-usd debe ser un número entre 0 y 5.'); topeUsd = Number(v); } else if (argv[i] === '--grupos') { grupos = v.split(',').map((x) => norm(x)).filter(Boolean); if (!grupos.length) throw new ErrorDeUso('--grupos necesita al menos un grupo (G,E o Barreras).'); } else archivoCasos = v;
+        if (argv[i] === '--tope-usd') { if (!/^\d+(\.\d+)?$/.test(v) || Number(v) <= 0 || Number(v) > 5) throw new ErrorDeUso('--tope-usd debe ser un número entre 0 y 5.'); topeUsd = Number(v); } else if (argv[i] === '--respuestas') archivoRespuestas = v; else if (argv[i] === '--grupos') { grupos = v.split(',').map((x) => norm(x)).filter(Boolean); if (!grupos.length) throw new ErrorDeUso('--grupos necesita al menos un grupo (G,E o Barreras).'); } else archivoCasos = v;
         i++;
       } else if (!propias.has(argv[i])) resto.push(argv[i]);
     }
     const confirmaGasto = argv.includes('--confirmo-gasto');
     const opciones = { ...leerArgumentos(resto), topeUsd };
+    if (archivoRespuestas) {
+      if (opciones.envDado || opciones.vertex) throw new ErrorDeUso('--respuestas no usa clave ni red: no se combina con --env ni --vertex.');
+      const texto = d.leerArchivo(archivoRespuestas);
+      if (texto === null || texto === undefined) throw new ErrorDeUso(`No existe el archivo de respuestas (${limpiarSecretos(archivoRespuestas).slice(0, 80)}).`);
+      try { opciones.respuestas = JSON.parse(texto); } catch { throw new ErrorDeUso('El archivo de respuestas no es un JSON válido.'); }
+      if (!opciones.respuestas || typeof opciones.respuestas !== 'object' || Array.isArray(opciones.respuestas)) throw new ErrorDeUso('El archivo de respuestas debe ser un objeto { caso: respuesta | { turno: respuesta } | [respuestas] }.');
+      opciones.seco = true;   // sin red y sin clave
+    }
     if (opciones.ayuda) { d.salida(AYUDA + '\n'); return 0; }
     if (!opciones.seco && !confirmaGasto) throw new ErrorDeUso('La corrida real es GASTO: agregue --confirmo-gasto solo con el «sí» de Andres, y con una clave del proyecto de PRUEBAS. Para verificar sin gasto, use --seco.');
     const flujo = JSON.parse(readFileSync(RUTA_FLUJO, 'utf8'));
@@ -371,8 +401,8 @@ export async function main(argv, deps = {}) {
     const porSub = costosPorSubconjunto(corridas, elegidos);
     const aviso = costo.cortado ? `\n⚠ La corrida se CORTÓ al llegar al tope de gasto (USD ${opciones.topeUsd}): los casos restantes no se corrieron.` : '';
     d.salida(opciones.json
-      ? JSON.stringify({ proveedor, medidas: m, previsto, porSubconjunto: porSub, cortadaPorTope: costo.cortado }, null, 1) + '\n'
-      : textoDelInforme(m, opciones, proveedor, previsto, porSub) + aviso + '\n' + (argv.includes('--conversaciones') || argv.includes('--crudo') ? '\n' + textoDeConversaciones(corridas, argv.includes('--crudo')) + '\n' : ''));
+      ? JSON.stringify({ proveedor, medidas: m, previsto, porSubconjunto: porSub, cortadaPorTope: costo.cortado, ...(argv.includes('--motivo') ? { rechazos: corridas.flatMap((c) => c.turnos.filter((t) => t.rechazo).map((t) => ({ caso: c.caso, rep: c.rep, turno: t.n, ...t.rechazo }))) } : {}) }, null, 1) + '\n'
+      : textoDelInforme(m, opciones, proveedor, previsto, porSub) + aviso + '\n' + (argv.includes('--motivo') ? '\n' + textoDeMotivos(corridas) + '\n' : '') + (argv.includes('--conversaciones') || argv.includes('--crudo') ? '\n' + textoDeConversaciones(corridas, argv.includes('--crudo')) + '\n' : ''));
     return m.umbral.cumple && !costo.cortado ? 0 : 1;
   } catch (e) {
     const secretos = [credencial.clave, credencial.token];

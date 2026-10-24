@@ -93,7 +93,8 @@ describe('el núcleo común', () => {
   it('uso extendido: operador responde su aviso fijo y bloqueado no responde nada; ninguno llama al modelo', () => {
     const op = crear({ ingesta: { atencion: { estado: 'operador', mensajeFijo: 'Una persona del equipo continúa.', respuestasEnVentana: 40 } } });
     const t1 = hablar(op, ANA, mTexto('hola'));
-    expect(textos(t1)).toEqual(['Una persona del equipo continúa.']);
+    expect(textos(t1)[0]).toContain('Una persona del equipo continúa.');
+    expect(t1.mensajes[0]!.tipo).toBe('interactive');
     const bl = crear({ ingesta: { atencion: { estado: 'bloqueado', respuestasEnVentana: 60 } } });
     const t2 = hablar(bl, ANA, mTexto('hola'));
     expect(t2.mensajes.length).toBe(0);

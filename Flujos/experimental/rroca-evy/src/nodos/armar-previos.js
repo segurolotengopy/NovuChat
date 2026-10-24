@@ -28,10 +28,11 @@ let efectivo = plan.tipo;
 let et = { texto: '', artes: [], derivar: false, nombre: '' };
 let artesPlan = [];
 let avisoDe = null;   // { clave, solicitud }
+let rechazo = null;   // por qué se descartó la respuesta del modelo: { motivo, detalle } (lo lee la batería con --motivo)
 if (plan.tipo === 'modelo') {
   const crudo = cnTextoDeGemini(cnPrimero('Conversar con el modelo'));
   et = evLeerEtiquetas(crudo);
-  if (crudo.trim() === '' || (et.texto.trim() === '' && !et.derivar)) efectivo = 'fallo';
+  if (crudo.trim() === '' || (et.texto.trim() === '' && !et.derivar)) { efectivo = 'fallo'; rechazo = { motivo: 'modelo_sin_texto', detalle: crudo.trim() === '' ? 'el modelo no devolvió texto (caído o vacío)' : 'solo etiquetas, sin texto' }; }
   else if (et.derivar) efectivo = 'derivar';
   else {
     // Las imágenes que SÍ pueden salir: lista cerrada, id resuelto, una vez, hasta 3, y el comparativo solo con marcas y si el cliente lo pidió.
@@ -45,14 +46,15 @@ if (plan.tipo === 'modelo') {
     }
     // Si el texto no va a pasar la revisión (con las imágenes ya contadas), no se envía ninguna imagen: cae al texto fijo del fallo.
     const rev = evPulirSalida(et.texto, { artesEnviados: artesPlan, textoCliente: plan.textoCliente });
-    if (rev.motivo !== '') { efectivo = 'fallo'; artesPlan = []; }
+    if (rev.motivo === 'salud_sin_remision') { efectivo = 'remision'; artesPlan = []; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
+    else if (rev.motivo !== '') { efectivo = 'fallo'; artesPlan = []; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
   }
 }
 if (efectivo === 'derivar') { avisoDe = { clave: 'solicitud', solicitud: true }; artesPlan = []; }
 else if (efectivo === 'medica') avisoDe = { clave: 'consulta_medica', solicitud: false };
 else if (efectivo === 'fallo') avisoDe = { clave: 'no_supo', solicitud: false };
 
-const res = { efectivo: efectivo, textoModelo: et.texto, nombreDerivacion: et.nombre, artesPlan: artesPlan.slice(), aviso: { planeado: false, repetido: false, clave: avisoDe ? avisoDe.clave : '', motivoFallo: '' } };
+const res = { efectivo: efectivo, textoModelo: et.texto, nombreDerivacion: et.nombre, rechazo: rechazo, artesPlan: artesPlan.slice(), aviso: { planeado: false, repetido: false, clave: avisoDe ? avisoDe.clave : '', motivoFallo: '' } };
 const items = [];
 if (!enviar && artesPlan.length === 0 && !avisoDe) return [{ json: Object.assign({ kind: 'ninguno', res: res }, comun) }];
 

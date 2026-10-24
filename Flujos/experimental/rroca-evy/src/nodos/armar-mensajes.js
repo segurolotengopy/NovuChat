@@ -49,6 +49,7 @@ const avisoSalio = avisoEnviado || avisoRepetido;
 const efectivo = String(res.efectivo || plan.tipo || 'nada');
 let ms = [];
 let silencio = '';        // 'baja' | 'riesgo': el turno activa las 48 h de silencio
+let rechazo = res.rechazo || null;   // por qué se descartó la respuesta del modelo (la batería lo imprime con --motivo)
 let hist = null;          // lo que el asistente dijo y se recuerda si Meta lo acepta
 const nombreNegocio = cfg.nombreNegocio || 'la Dra. Evy';
 const texto = (cuerpo, extra) => {
@@ -69,7 +70,8 @@ if (puerta.ruta === 'fuera_de_prueba') {
 } else if (efectivo === 'nada') {
   ms = [];
 } else if (efectivo === 'puerta') {
-  ms = [texto(String(plan.texto || ''))];
+  // El uso extendido promete que «una persona del equipo» sigue la conversación: se ofrece el botón de la recepción para que la promesa tenga un mecanismo. El comercio suspendido no ofrece nada.
+  ms = [plan.ruta === 'uso_extendido' ? conRecepcion(String(plan.texto || '') + '\n\nSi prefieres, escríbele directo a la recepción con el botón.') : texto(String(plan.texto || ''))];
 } else if (efectivo === 'riesgo') {
   silencio = 'riesgo';
   ms = [texto(EV_TEXTO_RIESGO, { evento: 'no_contactar' })];
@@ -88,11 +90,15 @@ if (puerta.ruta === 'fuera_de_prueba') {
   hist = { a: ms[0].texto, b: ms[0].respaldo };
 } else if (efectivo === 'modelo') {
   const rev = evPulirSalida(res.textoModelo, { artesEnviados: artesSalidos, textoCliente: plan.textoCliente });
-  if (rev.motivo !== '' || rev.texto === '') ms = [fallo()];
+  if (rev.motivo === 'salud_sin_remision') { ms = [conRecepcion(EV_TEXTO_REMISION_SALUD)]; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
+  else if (rev.motivo !== '' || rev.texto === '') { ms = [fallo()]; rechazo = { motivo: rev.motivo || 'vacio', detalle: rev.detalle || '' }; }
   else {
     ms = [texto(rev.texto)];
     hist = { a: rev.texto, b: rev.texto };
   }
+} else if (efectivo === 'remision') {
+  // La respuesta del modelo hablaba de la salud del cliente sin remitir a la valoración: sale el texto fijo de remisión, con el botón.
+  ms = [conRecepcion(EV_TEXTO_REMISION_SALUD)];
 } else if (efectivo === 'fallo') {
   ms = [fallo()];
 } else {
@@ -132,7 +138,7 @@ if (!sinFicha) {
 
 const resumen = { plan: efectivo, mensajes: 0, categoria: t.categoria || '', llamadasModelo: decision.llamarModelo === true ? 1 : 0, imagenes: artesSalidos.length,
   aviso: res.aviso && (res.aviso.planeado === true || avisoRepetido) ? (avisoSalio ? 'salio' : 'no_salio') : (res.aviso && res.aviso.motivoFallo ? 'no_salio' : 'ninguno'),
-  avisoMotivo: res.aviso && !avisoSalio && res.aviso.motivoFallo ? String(res.aviso.motivoFallo) : '' };
+  rechazo: rechazo, avisoMotivo: res.aviso && !avisoSalio && res.aviso.motivoFallo ? String(res.aviso.motivoFallo) : '' };
 const numero = prueba ? telPrueba : from;
 const sale = ms.length > 0 && numero !== '' && !sinFicha;
 resumen.mensajes = sale ? ms.length : 0;

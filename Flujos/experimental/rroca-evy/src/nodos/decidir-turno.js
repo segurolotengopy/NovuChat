@@ -42,6 +42,7 @@ if (t.categoria === 'medio' && t.tipo === 'audio') {
   } else if (url && Number(url.file_size) > EV_AUDIO_MAX_BYTES) au = { estado: 'largo', texto: '', recortado: false };
   else au = { estado: 'no_abierto', texto: '', recortado: false };
 }
+if (au && au.estado === 'ok' && (EV_PARECE_ORDEN_EN_AUDIO.test(evNorm(au.texto)) || /enviar ?arte|derivar ?recepcion/.test(evNorm(au.texto).replace(/ /g, '')))) au = { estado: 'no_entendido', texto: '', recortado: false };
 const deAudio = !!au && au.estado === 'ok';
 // IMAGEN: «Ver imagen» devuelve una descripción; el código la sanea y la rotula. Sin lectura (tope, formato, descarga o Gemini fallidos) el modelo recibe «no se pudo ver bien».
 let lec = null;

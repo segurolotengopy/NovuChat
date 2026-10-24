@@ -82,7 +82,8 @@ function evAlfabetoMixto(texto) {
 // UN SOLO saneo del texto del cliente (turno actual e historial): los [ ] pasan a ( ) (los corchetes los pone solo el código, así nadie fabrica una etiqueta ni un rótulo), sin < > ni controles.
 // Con `conservarCorchetes` (lo ya guardado: rótulos del código) se dejan.
 function evQuitarDelimitadores(t, conservarCorchetes) {
-  const y = evTexto(t).normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '');
+  // Las palabras de etiqueta del sistema (ENVIAR_ARTE_…, DERIVAR_RECEPCION, cualquier PALABRA_EN_MAYÚSCULAS_CON_GUION_BAJO) NO llegan al modelo desde el cliente, una nota de voz o una imagen: no puede repetirlas en texto plano.
+  const y = evTexto(t).normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '').replace(EV_RE_ETIQUETA, ' ').replace(/\b[A-ZÁÉÍÓÚÑ]{2,}(?:_[A-ZÁÉÍÓÚÑ0-9]+)+\b/g, ' ');
   return (conservarCorchetes === true ? y : y.replace(/\[/g, '(').replace(/\]/g, ')')).replace(/<<<|>>>/g, '').replace(/[<>]+/g, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 // Lo que se guarda de un texto en la memoria: sin enlaces, correos, montos ni números largos (el modelo no los necesita; son datos personales).
@@ -401,6 +402,10 @@ function evModeloValido(v) { return /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/.test(Str
 // LAS ETIQUETAS DE CONTROL DEL MODELO. Lista CERRADA: tres de imagen y la de derivación. El código las quita del texto EN CUALQUIER PARTE y de cualquier forma (repetidas, sin corchete, a medias, con
 // otras mayúsculas o acentos); cualquier otra etiqueta o corchete se borra. Solo se leen de la salida del MODELO: el texto del cliente pasa por `evQuitarDelimitadores`, que le quita los corchetes.
 // -----------------------------------------------------------------------------
+// Solo una etiqueta con sus corchetes COMPLETOS dispara una imagen o la derivación; la tolerante (`EV_RE_ETIQUETA`) sirve para BORRAR restos, repetidas, sin corchete o a medias.
+// Lo que, dicho en una nota de voz, parece una orden al sistema (más estricto que el de las imágenes: «sistema» o «prompt» son palabras de la vida diaria): la nota se trata como no entendida.
+const EV_PARECE_ORDEN_EN_AUDIO = /\b(ignora\w*|olvida\w* (?:tus|las|todas)|desobedec\w*|nuevas? (?:instrucciones|ordenes|reglas)|actua como|eres ahora|responde (?:con|que)|enviar arte|derivar recepcion)\b/;
+const EV_RE_ETIQUETA_COMPLETA = /\[\s*(ENVIAR[\s_-]*ARTE[\s_-]*(COMPARATIVO|ANTES[\s_-]*DESPU[EÉ]S|AUTORIDAD)|DERIVAR[\s_-]*RECEPCI[OÓ]N)\b\s*(?::\s*([^\]\n]{0,60}))?\s*\]/gi;
 const EV_RE_ETIQUETA = /\[?\s*(ENVIAR[\s_-]*ARTE[\s_-]*(COMPARATIVO|ANTES[\s_-]*DESPU[EÉ]S|AUTORIDAD)|DERIVAR[\s_-]*RECEPCI[OÓ]N)\b\s*(?::\s*([^\]\n]{0,60}))?\]?/gi;
 const EV_ARTE_DE = { COMPARATIVO: 'comparativo', ANTESDESPUES: 'antes_despues', AUTORIDAD: 'autoridad' };
 function evNombreDeEtiqueta(v) {
@@ -415,7 +420,7 @@ function evLeerEtiquetas(crudo) {
   const artes = [];
   let derivar = false;
   let nombre = '';
-  t = t.replace(EV_RE_ETIQUETA, (m, ident, arte, resto) => {
+  t = t.replace(EV_RE_ETIQUETA_COMPLETA, (m, ident, arte, resto) => {
     const clave = String(ident).toUpperCase().replace(/[^A-ZÉÓ]/g, '');
     if (/^DERIVAR/.test(clave)) {
       derivar = true;
@@ -426,10 +431,18 @@ function evLeerEtiquetas(crudo) {
     }
     return ' ';
   });
+  // Lo que quede de una etiqueta (sin corchete, a medias, repetida): se borra, NO dispara nada.
+  t = t.replace(EV_RE_ETIQUETA, ' ');
   // Todo otro corchete (o un resto de etiqueta a medias) se borra; también las palabras en MAYÚSCULAS con guion bajo (ENVIAR_ARTE_…).
   t = t.replace(/\[[^\]\n]*\]?/g, ' ').replace(/[\[\]]/g, ' ')
     .replace(/\b[A-ZÁÉÍÓÚÑ]{2,}(?:_[A-ZÁÉÍÓÚÑ0-9]+)+\b/g, ' ')
     .replace(/<<<|>>>/g, ' ');
+  // Lo que queda vacío al quitar un rótulo («()», ««»», «""», «( )») es un hueco que el filtro rechazaría: se borra (hasta que no cambie).
+  for (let i = 0; i < 4; i++) {
+    const antes = t;
+    t = t.replace(/\(\s*\)|«\s*»|"\s*"|“\s*”|\{\s*\}/g, ' ');
+    if (t === antes) break;
+  }
   t = t.replace(/[ \t]{2,}/g, ' ').replace(/^[ \t]+|[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
   return { texto: t, artes: artes, derivar: derivar, nombre: nombre };
 }
@@ -488,21 +501,70 @@ function evRestituirValor(texto) {
 const EV_PROMETE_IMAGEN = /\b(te (muestro|envio|mando|comparto|paso|adjunto|enviare|mandare|mostrare|compartire|dejo)|(puedo|podria|podemos|voy a|vamos a) (mostrar|enviar|mandar|compartir|pasar|adjuntar)(te|les|le)?|aqui (tienes|te dejo)|adjunto|mira|observa|fijate|ve|revisa|como (ves|puedes ver|se ve|se aprecia|muestra))\b[^.?!]{0,60}\b(imagen|imagenes|foto|fotos|fotografia|captura|capturas|cuadro|comparativ\w*|arte|grafico|flyer|publicacion|resultado|resultados|caso)\b|\b(imagen|foto|cuadro comparativo|arte|grafico) (adjunt\w*|anterior|de arriba|que (te )?(envie|mande|comparti))\b|\b(en|segun) (la|esta) (imagen|foto)\b/;
 const EV_PACIENTE_REAL = /\bpacientes? (real|reales|de verdad)\b|\bpaciente de la dra\b|\bpaciente del anuncio\b|\bcaso real\b|\bresultado real\b/;
 // Una promesa de pasar con recepción, o del enlace o del botón, sin el mecanismo (la etiqueta de derivación o el botón del turno).
+const EV_PROMETE_DESPUES = /\bte (?:enviare|mandare|paso|pasare|compartire|escribire|llamare|dare|dejare|hare llegar)\b[^.?!]{0,50}\b(?:luego|despues|mas tarde|manana|en un rato|en breve|pronto|mas adelante)\b/;
 const EV_PROMETE_RECEPCION = /\b(te|lo|la|les) (paso|pasamos|derivo|derivamos|comunico|conecto|pongo|transfiero|redirijo)\b[^.?!]{0,40}\b(recepcion|equipo|asesor\w*)\b|\b(escribe|escribele|escribenle|habla|hablale|contacta|contactate|comunicate|toca|pulsa|presiona|usa|haz clic|clic)\b[^.?!]{0,40}\b(recepcion|enlace|link|boton)\b|\b(enlace|link|boton)\b[^.?!]{0,30}\b(recepcion|abajo|debajo|siguiente|a continuacion)\b|\b(boton|enlace|link) (de|para) (recepcion|escribir|hablar)\b/;
 // Garantías, seguridad absoluta, consejo médico y diagnóstico: el código las rechaza (el texto cae al fijo).
 const EV_PROHIBIDO_MEDICO = [
-  /garantiz\w*|garantia\w*|\bgarantiz/,
-  /\b100 ?(%|por ciento)? ?(seguro|segura|efectiv\w*|garantiz\w*|sin riesgo)\b|\bsin (ningun )?riesgos?\b|\blibre de riesgos?\b|\briesgo cero\b|\b(totalmente|completamente|absolutamente) (seguro|segura|inocuo|inocua)\b|\bresultados? (asegurad\w*|garantizad\w*|seguros?)\b|\bno (tiene|tiene ningun|hay|tendras) (ningun )?(riesgo|efecto) ?s?\b/,
-  /\b(ibuprofeno|paracetamol|aspirina|antibiotic\w*|antiinflamatori\w*|corticoid\w*|antihistaminic\w*|analgesic\w*|pomada|dosis|miligramos|\d+ ?mg|medicamento\w*|pastilla\w*)\b/,
-  /\b(tienes|tiene|padeces|sufres|presentas|parece (una?|que tienes)) (una? )?(infeccion|alergia|inflamacion|reaccion|rosacea|acne|dermatitis|cancer|enfermedad|lesion)\b/,
-  /\b(es normal|no es grave|no te preocupes|no pasa nada|es comun)\b[^.!?]{0,40}\b(hinchaz\w*|moret\w*|dolor|enrojec\w*|inflam\w*|sangr\w*|fiebre)\b/,
-  /\bpuedes (hacert\w*|aplicart\w*|ponert\w*|tratart\w*)[^.!?]{0,60}\b(embaraz\w*|lactan\w*|diabet\w*|hipertension|enfermedad\w*)\b/,
-  /\b(deberias|debes|tienes que|te recomiendo|te aconsejo) (tomar|aplicar|usar|ponerte|suspender|dejar de|ir a urgencias|acudir)\b/,
+  ['seguridad_absoluta', /\b100 ?(%|por ciento)? ?(seguro|segura|efectiv\w*|garantiz\w*|sin riesgo)\b|\bsin (ningun )?riesgos?\b|\blibre de riesgos?\b|\briesgo cero\b|\b(totalmente|completamente|absolutamente) (seguro|segura|inocuo|inocua)\b|\bresultados? (asegurad\w*|garantizad\w*|seguros?)\b|\bno (tiene|tiene ningun|hay|tendras) (ningun )?(riesgo|efecto) ?s?\b/],
+  // Una MENCIÓN de un medicamento o de una dosis es del consejo médico (el modelo no tiene por qué nombrar ninguno); «medicamentos» o «anticoagulantes» a secas, repetidos de lo que dijo el cliente, no lo son.
+  ['medicamento_o_dosis', /\b(ibuprofeno|paracetamol|aspirina|antibiotic\w*|antiinflamatori\w*|corticoid\w*|antihistaminic\w*|analgesic\w*|pomada|dosis|miligramos|\d+ ?mg)\b/],
+  ['indica_suspender_o_ajustar', /\b(suspende|suspenda|suspender|suspendas|deja de tomar|dejes de tomar|ajusta|ajustar|cambia|cambiar)\b[^.!?]{0,30}\b(medicamento\w*|anticoagulante\w*|insulina|pastilla\w*|medicacion|tratamiento)\b/],
+  ['diagnostico', /\b(tienes|tiene|padeces|sufres|presentas|parece (una?|que tienes)) (una? )?(infeccion|alergia|inflamacion|reaccion|rosacea|acne|dermatitis|cancer|enfermedad|lesion)\b/],
+  ['minimiza_sintoma', /\b(es normal|no es grave|no te preocupes|no pasa nada|es comun)\b[^.!?]{0,40}\b(hinchaz\w*|moret\w*|dolor|enrojec\w*|inflam\w*|sangr\w*|fiebre)\b/],
+  ['indica_hacer_algo', /\b(deberias|debes|tienes que|te recomiendo|te aconsejo) (tomar|aplicar|usar|ponerte|suspender|dejar de|ir a urgencias|acudir)\b/],
   // Precios y rangos: una cifra junto a una palabra de precio, o un «desde / entre / alrededor de» con cifra. La única cifra permitida (250) ya viene como marca.
-  /\b(desde|entre|a partir de|aproximadamente|aprox|alrededor de|rondan?|ronda|cuesta\w*|vale|valen|precio\w*|costo\w*|tarifa\w*|inversion|sale|salen|pagas?|pagar\w*)\b[^.!?]{0,25}\b\d/,
-  /\b\d[\d.,]*\s*(a|-|y|al)\s*\d[\d.,]*\s*(mil|bs|bob|bolivianos|dolares|usd|\$)/,
-  /\b(mil|millon\w*)\s+(bolivianos|dolares|bs)\b/,
+  ['precio', /\b(desde|entre|a partir de|aproximadamente|aprox|alrededor de|rondan?|ronda|cuesta\w*|vale|valen|precio\w*|costo\w*|tarifa\w*|inversion|sale|salen|pagas?|pagar\w*)\b[^.!?]{0,25}\b\d/],
+  ['rango_de_precio', /\b\d[\d.,]*\s*(a|-|y|al)\s*\d[\d.,]*\s*(mil|bs|bob|bolivianos|dolares|usd|\$)/],
+  ['monto_en_letras', /\b(mil|millon\w*)\s+(bolivianos|dolares|bs)\b/],
 ];
+// Una GARANTÍA afirmativa se rechaza; la NEGADA («nunca podemos garantizar un resultado idéntico», «no prometemos ni garantizamos», «sin garantía de resultado») es lo que manda el guion decir y pasa.
+const EV_GARANTIA = /\bgarant\w*|\basegur\w* (?:el |un |los |tu )?resultados?\b/;
+// La negación gobierna al verbo: dentro de las 3 palabras anteriores y en la misma cláusula («no podemos garantizar», «ni garantizamos», «sin garantía»); «No dudes: te aseguro el resultado» no está negada.
+const EV_NEGADA = /\b(?:no|nunca|jamas|ni|tampoco|sin)\b(?:\s+\S+){0,2}\s*$/;
+function evGarantiaAfirmativa(norm) {
+  for (const o of String(norm).split(/[.!?]+/)) {
+    const m = EV_GARANTIA.exec(o);
+    if (!m) continue;
+    // Negada: una negación antes de la palabra en la misma oración («no podemos garantizar», «ni garantizamos», «sin garantía»).
+    if (EV_NEGADA.test(o.slice(0, m.index).split(/[,:;]/).pop())) continue;
+    return m[0];
+  }
+  return '';
+}
+// Consejo de SALUD sobre el caso del cliente: una oración que habla de su condición (embarazo, diabetes, anticoagulantes, alergia…) y le dice que puede, que no hay problema o que es seguro.
+const EV_CONDICION = /\b(embaraz\w*|lactan\w*|amamant\w*|diabet\w*|hipertens\w*|presion alta|anticoag\w*|medicament\w*|enfermedad\w*|alergi\w*|cancer|autoinmune|lupus|medicacion)\b/;
+const EV_DA_LUZ_VERDE = /\b(no hay (ningun )?(problema|inconveniente)|tambien se puede|es mejor esperar|mejor esperar|conviene esperar|te sugiero esperar|no tienes (ningun )?problema|sin problema alguno|si puedes|puedes (hacert\w*|aplicart\w*|ponert\w*|tratart\w*)|no puedes|es seguro|no tiene contraindicacion\w*|no hay contraindicacion\w*)\b/;
+// La REMISIÓN a la valoración: lo único que el guion manda decir sobre la salud del cliente. Una salida que habla de su condición (o afirma que algo es «seguro») SIN remitir a la valoración de la Dra. no sale.
+const EV_REMISION = /\b(valoracion|la dra|la doctora|doctora evy|dra evy|en persona|evalu\w+)\b/;
+const EV_AFIRMA_SEGURO = /\b(?:es|son|era|resulta|resultan|muy|bastante|super|totalmente|completamente|100 ?%?)\s+(?:muy |bastante |super |totalmente |completamente )?segur[oa]s?\b|\bsegur[oa]s?\s+para\b/;
+function evSaludSinRemision(norm) {
+  const n = String(norm);
+  const condicion = EV_CONDICION.exec(n) || EV_AFIRMA_SEGURO.exec(n);
+  return condicion && !EV_REMISION.test(n) ? condicion[0] : '';
+}
+function evConsejoDeSalud(norm) {
+  for (const o of String(norm).split(/[.!?]+/)) if (EV_CONDICION.test(o) && EV_DA_LUZ_VERDE.test(o)) return o.trim().slice(0, 80);
+  return '';
+}
+// El silencio solo lo promete el CÓDIGO (la baja): el modelo nunca dice que dejará de escribir.
+const EV_PROMETE_SILENCIO = /\bno te (?:volver\w+|escribir\w*|molestar\w*|contactar\w*) (?:a |mas)|\bno te (?:volvere|volveremos|escribire|escribiremos|molestare|molestaremos)\b|\bdejar\w* de (?:escribirte|molestarte|contactarte)\b|\bno (?:te )?escribir\w* mas\b/;
+// LA ADMISIÓN HONESTA: «no soy una persona de carne y hueso, soy el asistente virtual con inteligencia artificial» es la respuesta que manda el guion; la expresión común NIEGA_IA la confundiría con una negación. Se REEMPLAZA esa
+// oración (la que niega ser persona, humano, la doctora o real y NO niega ser una IA) por una admisión fija y breve.
+const EV_NO_SOY_PERSONA = /\bno soy (?:una |un |la |el |su )?(?:persona|humano|humana|doctora|doctor|dra|medico|real)\b(?: de carne y hueso| de verdad| real)?/g;
+// Si, quitada la negación, la oración AFIRMA algo humano («soy alguien real», «atiendo en persona»), no es una admisión: se deja tal cual y la expresión NIEGA_IA la rechaza.
+const EV_AFIRMA_HUMANO = /\b(?:soy|es|somos) (?:una |un )?(?:alguien|persona|humano|humana|real|de verdad|doctora|dra)\b|carne y hueso|personalmente|en persona/;
+const EV_NIEGA_SER_IA = /\bno soy (?:un |una |el |la )?(?:bot|ia|robot|asistente|programa|maquina|inteligencia|virtual|automatic\w*)\b/;
+const EV_ADMISION = 'Soy un asistente virtual con inteligencia artificial.';
+function evAdmisionHonesta(texto) {
+  let hubo = false;
+  const lista = evPartirEnOraciones(texto).map((o) => {
+    if (o === '') return o;
+    const n = evNorm(o);
+    if (/\bno soy\b/.test(n) && n.replace(EV_NO_SOY_PERSONA, ' ') !== n && !EV_AFIRMA_HUMANO.test(n.replace(EV_NO_SOY_PERSONA, ' ')) && !EV_NIEGA_SER_IA.test(n)) { if (hubo) return null; hubo = true; return EV_ADMISION; }
+    return o;
+  }).filter((o) => o !== null);
+  return evUnirOraciones(lista);
+}
 // Promete efecto inmediato (el arte comparativo trae «efecto lifting inmediato»; la clínica no lo promete).
 function evSinInmediato(texto) {
   return evQuitarOraciones(evTexto(texto).replace(/(lifting)\s+inmediat[oa]s?/gi, '$1').replace(/\binmediat[oa]s?\s+(lifting)/gi, '$1'), (n) => /\binmediat\w*/.test(n));
@@ -520,22 +582,33 @@ function evPulirSalida(crudo, ctx) {
   t = evProtegerValor(t);
   if (enviados.length === 0) t = evQuitarOraciones(t, (n) => EV_PROMETE_IMAGEN.test(n));
   if (enviados.indexOf('antes_despues') < 0) t = evQuitarOraciones(t, (n) => EV_PACIENTE_REAL.test(n));
-  t = evQuitarOraciones(t, (n) => EV_PROMETE_RECEPCION.test(n));
+  t = evQuitarOraciones(t, (n) => EV_PROMETE_RECEPCION.test(n) || EV_PROMETE_DESPUES.test(n));
+  t = evAdmisionHonesta(t);
   t = t.trim();
   if (enviados.indexOf('antes_despues') >= 0 && !/responde distinto/.test(evNorm(t))) t = (t ? t + '\n\n' : '') + EV_ACLARACION;
-  if (t === '') return { texto: '', motivo: 'vacio' };
-  if (evAlfabetoMixto(t)) return { texto: '', motivo: 'afirma_un_hecho' };
+  if (t === '') return { texto: '', motivo: 'vacio', detalle: 'no quedó texto tras quitar etiquetas, enlaces y promesas sin respaldo' };
+  if (evAlfabetoMixto(t)) return { texto: '', motivo: 'afirma_un_hecho', detalle: 'alfabeto mixto en una palabra' };
   const marcado = evMarcarValor(t);
   const norm = evNorm(marcado);
-  if (EV_NIEGA_IA.test(norm)) return { texto: '', motivo: 'niega_ia' };
-  if (/\b(derivar|aviso sistema|estado del sistema|imagen recibida|audio transcrito)\b/.test(norm)) return { texto: '', motivo: 'palabra_interna' };
-  for (const re of EV_PROHIBIDO_MEDICO) if (re.test(norm)) return { texto: '', motivo: 'prohibido' };
+  const niega = EV_NIEGA_IA.exec(norm);
+  if (niega) return { texto: '', motivo: 'niega_ia', detalle: 'NIEGA_IA coincidió con «' + niega[0].slice(0, 60) + '»' };
+  const interna = /\b(derivar|aviso sistema|estado del sistema|imagen recibida|audio transcrito)\b/.exec(norm);
+  if (interna) return { texto: '', motivo: 'palabra_interna', detalle: '«' + interna[0] + '»' };
+  const garantia = evGarantiaAfirmativa(evSinTildes(marcado).toLowerCase());   // con la puntuación: la negación vale dentro de su cláusula
+  if (garantia) return { texto: '', motivo: 'prohibido', detalle: 'garantía afirmativa («' + garantia + '»)' };
+  const silencio = EV_PROMETE_SILENCIO.exec(norm);
+  if (silencio) return { texto: '', motivo: 'promete_silencio', detalle: '«' + silencio[0] + '»: el silencio lo promete solo el código (la baja)' };
+  const sinRemision = evSaludSinRemision(norm);
+  if (sinRemision) return { texto: '', motivo: 'salud_sin_remision', detalle: 'habla de salud o afirma seguridad («' + sinRemision.slice(0, 40) + '») sin remitir a la valoración de la Dra.' };
+  const salud = evConsejoDeSalud(norm);
+  if (salud) return { texto: '', motivo: 'prohibido', detalle: 'consejo de salud sobre la condición del cliente («' + salud + '…»)' };
+  for (const [nombre, re] of EV_PROHIBIDO_MEDICO) { const m = re.exec(norm); if (m) return { texto: '', motivo: 'prohibido', detalle: nombre + ' («' + m[0].slice(0, 50) + '»)' }; }
   const motivo = cmMotivoDeRechazo(marcado, {
     maximo: 1500, permitirMontos: false, enlacesPermitidos: [], sinPromesasDeAviso: true, sinImagenes: enviados.length === 0,
     quienPromete: ['recepcion', 'la recepcion', 'el equipo', 'nuestro equipo', 'un asesor', 'una asesora'], textoDelCliente: c.textoCliente || '',
   });
-  if (motivo) return { texto: '', motivo: motivo };
-  return { texto: evParrafos(evRestituirValor(marcado)), motivo: '' };
+  if (motivo) return { texto: '', motivo: motivo, detalle: 'filtro común cmMotivoDeRechazo: ' + motivo };
+  return { texto: evParrafos(evRestituirValor(marcado)), motivo: '', detalle: '' };
 }
 
 // -----------------------------------------------------------------------------
@@ -546,6 +619,7 @@ const EV_TEXTO_MEDICA = 'Eso es una consulta médica y no puedo orientarte desde
 const EV_TEXTO_MEDICA_AVISADA = 'Eso es una consulta médica y no puedo orientarte desde este chat: la ve la doctora en persona.\n\nSi es una urgencia, no esperes: busca atención médica ahora mismo.\n\nYa avisé a la recepción; también puedes escribirle directo con el botón.';
 const EV_TEXTO_FALLO = 'Tuve un inconveniente para responderte en este momento.\n\nPuedes escribirle directo a la recepción con el botón.';
 const EV_TEXTO_FALLO_AVISADA = 'Tuve un inconveniente para responderte en este momento.\n\nYa avisé a la recepción; también puedes escribirle directo con el botón.';
+const EV_TEXTO_REMISION_SALUD = 'Eso lo evalúa la Dra. Evy en persona, durante tu valoración gratuita: desde este chat no puedo orientarte sobre tu salud.\n\nPuedes escribirle a la recepción con el botón.';
 const EV_TEXTO_CORTES = 'Recibí tu mensaje, pero por este chat solo puedo leer texto, notas de voz y fotos.\n\nCuéntame por escrito o con una nota de voz en qué te puedo ayudar.';
 const EV_TEXTO_DOCUMENTO = 'Recibí tu archivo, pero por este chat no puedo leerlo ni interpretarlo: lo revisa la doctora en persona, en la valoración.\n\nCuéntame por escrito o con una nota de voz en qué te puedo ayudar.';
 const EV_TEXTO_AUDIO_NO_ENTENDIDO = 'No pude escuchar bien tu nota de voz. ¿Me la envías de nuevo o me lo escribes?';
