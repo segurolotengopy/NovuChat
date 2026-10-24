@@ -86,7 +86,7 @@ const CM_AFIRMA_LISTA = [
   '\\b(agendad|reservad|registrad|confirmad|anotad|reprogramad|programad|cancelad|acreditad|aprobad|verificad|validad|pagad|separad)[oa]s?\\b',
   '\\b(agende|reserve|registre|confirme|anote|reprograme|programe|cancele|cambie|separe|valide|acredite)\\b',
   '\\b(agend|reserv|registr|confirm|anot|reprogram|program|cancel|acredit|valid|separ)(amos|aron)\\b',
-  '\\b(te|le|lo|la) (agendo|reservo|registro|confirmo|anoto|programo|separo|reprogramo|cancelo|valido|acredito)\\b',
+  '\\b(te|le|lo|la) (agendo|reservo|registro|anoto|programo|separo|reprogramo|cancelo|valido|acredito)\\b',
   '\\bse (agendo|reservo|registro|confirmo|anoto|programo|separo|reprogramo|cancelo|valido|acredito|aprobo|cambio)\\b',
   '\\b(qued[oa]|esta|estan|fue|fueron|ha sido|han sido) (list|hech|fij|recib|ya)[oa]s?\\b',
   '\\bya (se|te|le) (agend|reserv|registr|confirm|anot|program|separ|acredit)',
@@ -147,6 +147,26 @@ const CM_AFIRMA_LISTA = [
   '\\bpersona (real|de verdad)\\b',
   'carne y hueso',
 ];
+// «Te lo confirmo» / «te confirmo que…» ordena POR DEFECTO (se rechaza). Solo se exime lo que se sabe que es INFORMACIÓN:
+//   - la oración, quitado el «confirmo», es relleno («Te lo confirmo con total transparencia») o dice que es gratis / sin costo;
+//   - Y en TODO el mensaje no hay un hecho propio de agenda o pago: «tu cita/consulta/valoración/pago…», un día u hora
+//     (mañana, hoy, «a las diez», 15hs, hh:mm, «para el…») ni un estado (listo, hecho, en orden, agendad-, ya quedó…).
+// La lista de lo que se rechaza es abierta a propósito; la de lo que se exime es cerrada: ante la duda, texto fijo del código.
+const CM_CONFIRMO = cmDuo(['\\b(?:te|le|lo|la) (?:lo |la )?confirmo\\b']);
+const CM_CONFIRMO_INFO = cmDuo(['^(?:\\W|\\b(?:con|total|toda|plena|transparencia|seguridad|gusto|claro|si|que)\\b)*$|\\b(?:gratuit[oa]s?|gratis|sin costo|sin cargo|no tiene (?:ningun )?costo|no (?:hay|tiene) (?:ningun )?(?:costo|cobro))\\b']);
+const CM_HECHO_PROPIO = cmDuo([
+  '\\b(?:tu|tus|su|sus) (?:\\w+ )?(?:citas?|turnos?|reservas?|consultas?|valoracion\\w*|sesion\\w*|pagos?|comprobantes?|depositos?|transferencias?|pedidos?|lugar\\w*|cupos?|horarios?|horas?|plata|dinero|montos?|entregas?|ordenes|orden|inscripcion\\w*|visitas?)\\b',
+  '\\b(?:manana|hoy|pasado manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\\b|\\ba las? \\w+|\\b\\d{1,2}(?::\\d{2})?\\s*(?:am|pm|hs?|hrs?)\\b|\\b\\d{1,2}[/:.h]\\d{2}\\b|\\bpara (?:el|la|manana|hoy)\\b',
+  '\\b(?:listo|lista|hecho|en orden|te esperamos|estas en|ya (?:esta|quedo|fue))\\b|\\b(?:agendad|reservad|acreditad|registrad|anotad|programad|aprobad|verificad|recibid|confirmad)\\w*',
+]);
+function cmConfirmaUnHecho(s) {
+  return cmVariantes(s).some((v, i) => {
+    const d = i > 3 ? 1 : 0;
+    if (!CM_CONFIRMO[d].test(v)) return false;
+    if (CM_HECHO_PROPIO[d].test(v)) return true;
+    return cmOraciones(v).some((x) => CM_CONFIRMO[d].test(x) && !CM_CONFIRMO_INFO[d].test(x.replace(new RegExp(CM_CONFIRMO[d].source, 'g'), ' ')));
+  });
+}
 const CM_AFIRMA = new RegExp(CM_AFIRMA_LISTA.join('|'));
 // Copia SOLO para comparar: el mismo patrón con las letras repetidas colapsadas («llego» → «lego»), para el texto colapsado («paaago» → «pago»).
 // Las barras de escape se respetan (`\\b` + «bot» no es «bb»).
@@ -334,6 +354,7 @@ function cmMotivo1(texto, opciones) {
   const nl = cmJuntoLetras(cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , ')));
   if (CM_AFIRMA.test(n) || CM_AFIRMA.test(nj) || CM_AFIRMA.test(nl)) return 'afirma_un_hecho';
   if (CM_AFIRMA_C.test(cmColapsa(cmJuntoLetras(cmLeet(cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , ')))))) || CM_AFIRMA_C.test(cmColapsa(nl))) return 'afirma_un_hecho';
+  if (cmConfirmaUnHecho(s)) return 'afirma_un_hecho';
   if (CM_HUECO.test(n)) return 'hueco';
   const pregunta = cmNorm(o.textoDelCliente || '');
   if (pregunta && CM_PREGUNTA_DE_IDENTIDAD.test(pregunta) && /^\W*si\b/.test(n)) return 'identidad';
