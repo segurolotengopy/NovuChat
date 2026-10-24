@@ -390,7 +390,7 @@ function evCuerpoModelo(cfg, textoCliente, historial, estado, opciones) {
   const cola = contents[contents.length - 1];
   if (cola && cola.role === 'user') cola.parts.push({ text: actual }); else contents.push({ role: 'user', parts: [{ text: actual }] });
   const t = Number(c_temperatura(cfg));
-  return { systemInstruction: { parts: [{ text: evPromptDe(cfg) }] }, contents: contents, generationConfig: { maxOutputTokens: 600, temperature: t } };
+  return { systemInstruction: { parts: [{ text: evPromptDe(cfg) }] }, contents: contents, generationConfig: { maxOutputTokens: 1500, temperature: t } };
 }
 function c_temperatura(cfg) {
   const t = Number(cfg && cfg.temperatura);
@@ -444,7 +444,8 @@ function evLeerEtiquetas(crudo) {
     if (t === antes) break;
   }
   t = t.replace(/`+/g, ' ');   // restos de un bloque de código del modelo
-  t = t.replace(/[ \t]{2,}/g, ' ').replace(/^[ \t]+|[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+  // Recorte por línea (sin expresiones que busquen espacios al final de línea: con 100 000 espacios seguidos serían cuadráticas).
+  t = t.replace(/[ \t]{2,}/g, ' ').split('\n').map((l) => l.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
   return { texto: t, artes: artes, derivar: derivar, nombre: nombre };
 }
 
@@ -455,29 +456,74 @@ const EV_MARCA_VALOR = 'xvalorhabitualx';
 const EV_PIDE_GARANTIA = /\b(garantiz\w*|garantia\w*|prometes?|aseguras?|aseguran|me aseguras|voy a quedar|vas a dejarme|seguro que (?:me|quedo|queda))\b/;
 const EV_ACLARACION = 'Cada rostro responde distinto y no prometemos un resultado idéntico.';
 function evSinTildes(t) { return evTexto(t).normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+// Corta UNA línea en oraciones, también cuando la siguiente empieza en minúscula («te garantizo el resultado. la dra evy te valora») y antes de una viñeta «•» en medio de la línea.
+// No corta tras una abreviatura («Dra.», «Sr.»), ni tras un número de lista («1.»), ni dentro de «a. m.».
+function evCortarOraciones(linea) {
+  const partes = linea.split(/(?<=[.!?…])\s+(?=[¿¡«"“(\p{L}\p{N}•])|\s+(?=•)/u).filter((p) => p !== '');
+  const out = [];
+  for (const p of partes) {
+    const previa = out.length ? out[out.length - 1] : '';
+    const une = out.length && (/(^|\s)(Sr|Sra|Srta|Dr|Dra|Lic|Ing|etc|Nº|N°|ej|aprox)\.$/i.test(previa)
+      || (/(^|\s)Bs\.$/.test(previa) && /^\d/.test(p))
+      || /(^|\s)\d{1,2}\.$/.test(previa)
+      || (/(^|\s)[ap]\.$/i.test(previa) && /^m\./i.test(p)));
+    if (une) out[out.length - 1] += ' ' + p; else out.push(p);
+  }
+  return out;
+}
+// Lista de unidades: cada oración es un elemento; '' = salto de párrafo; '\n' = salto de línea simple (una lista con viñetas conserva sus líneas y cada ítem es su propia oración).
 function evPartirEnOraciones(texto) {
   const salida = [];
+  let previaConTexto = false;
   for (const linea of evTexto(texto).split('\n')) {
-    if (linea.trim() === '') { salida.push(''); continue; }
-    for (const o of evOraciones(linea)) salida.push(o);
+    if (linea.trim() === '') { salida.push(''); previaConTexto = false; continue; }
+    if (previaConTexto) salida.push('\n');
+    for (const o of evCortarOraciones(linea.trim())) salida.push(o);
+    previaConTexto = true;
   }
   return salida;
 }
 function evUnirOraciones(lista) {
-  // Cada elemento '' es un salto de párrafo; las oraciones de una misma línea se unen con un espacio.
-  const bloques = [];
-  let actual = [];
+  let s = '';
+  let sep = '';
   for (const o of lista) {
-    if (o === '') { if (actual.length) bloques.push(actual.join(' ')); actual = []; } else actual.push(o);
+    if (o === '') { sep = '\n\n'; continue; }
+    if (o === '\n') { if (sep !== '\n\n') sep = '\n'; continue; }
+    s = s === '' ? o : s + (sep || ' ') + o;
+    sep = '';
   }
-  if (actual.length) bloques.push(actual.join(' '));
-  return bloques.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+  return s.replace(/\n{3,}/g, '\n\n').trim();
 }
-// Quita las oraciones (no las palabras sueltas) que cumplen `pred(oracionNormalizada, oracion)`. Los párrafos se conservan.
+// Quita las oraciones (no las palabras sueltas) que cumplen `pred(oracionNormalizada, oracion)`. Los párrafos y los saltos de línea se conservan.
 function evQuitarOraciones(texto, pred) {
+  return evUnirOraciones(evPartirEnOraciones(texto).filter((o) => o === '' || o === '\n' || !pred(evNorm(o), o)));
+}
+// Un texto demasiado largo (el filtro común rechaza más de 1500) se RECORTA por oración en vez de rechazarlo: se quitan, de atrás hacia adelante, las oraciones que no son esenciales hasta que cabe.
+// Esenciales (nunca se quitan): la primera oración, las que hablan de la valoración gratuita o bonificada, la aclaración fija y la pregunta de cierre (nombre y deseo). Si aun así no cabe, no se toca y el filtro rechaza.
+const EV_RECORTE_A = 1400;
+const EV_ESENCIAL = /\b(gratuit\w*|gratis|bonific\w*|sin compromiso|sin costo|valoracion|responde distinto|asistente virtual)\b/;
+function evRecortar(texto, tope) {
+  const t = evTexto(texto);
+  if (t.length > 6000 || evMarcarValor(t).length <= tope) return t;   // más de 6000: no es un texto largo sino un desvarío; el filtro común lo rechaza
+  const lista = evPartirEnOraciones(t);
+  const idx = [];
+  lista.forEach((o, i) => { if (o !== '' && o !== '\n') idx.push(i); });
+  const ultima = idx.length ? idx[idx.length - 1] : -1;
+  const esencial = (i) => i === idx[0] || i === ultima || EV_ESENCIAL.test(evNorm(lista[i])) || (evEsPregunta(lista[i]) && /\b(llam\w*|nombre|mejorar|gustaria|deseas|quieres)\b/.test(evNorm(lista[i])));
+  const quitadas = new Set();
+  const largo = () => evMarcarValor(evUnirOraciones(lista.filter((o, i) => !quitadas.has(i)))).length;
+  for (let k = idx.length - 1; k >= 0 && largo() > tope; k--) { if (!esencial(idx[k])) quitadas.add(idx[k]); }
+  return evUnirOraciones(lista.filter((o, i) => !quitadas.has(i)));
+}
+// La aclaración fija va ANTES de la última oración si esta es la pregunta de cierre (la pregunta debe quedar al final); si no hay pregunta, al final.
+function evConAclaracion(texto) {
   const lista = evPartirEnOraciones(texto);
-  const quedan = lista.filter((o) => o === '' || !pred(evNorm(o), o));
-  return evUnirOraciones(quedan.length ? lista.map((o, i) => (quedan.indexOf(o) >= 0 || o === '' ? o : null)).filter((o) => o !== null) : []);
+  let ult = -1;
+  for (let i = lista.length - 1; i >= 0; i--) { if (lista[i] !== '' && lista[i] !== '\n') { ult = i; break; } }
+  if (ult < 0) return EV_ACLARACION;
+  if (!evEsPregunta(lista[ult])) return evUnirOraciones(lista.concat(['', EV_ACLARACION]));
+  lista.splice(ult, 0, EV_ACLARACION, '');
+  return evUnirOraciones(lista);
 }
 // Enlaces y teléfonos: el modelo no los escribe. Se borran del texto (la recepción llega SOLO como botón, por el cierre).
 function evQuitarEnlacesYTelefonos(texto) {
@@ -520,15 +566,33 @@ const EV_PROHIBIDO_MEDICO = [
   ['monto_en_letras', /\b(mil|millon\w*)\s+(bolivianos|dolares|bs)\b/],
 ];
 // Una GARANTÍA afirmativa se rechaza; la NEGADA («nunca podemos garantizar un resultado idéntico», «no prometemos ni garantizamos», «sin garantía de resultado») es lo que manda el guion decir y pasa.
-const EV_GARANTIA = /\bgarant\w*|\basegur\w* (?:el |un |los |tu )?resultados?\b/;
+const EV_GARANTIA = /\bgarant\w*|\basegur\w* (?:el |un |los |tu )?resultados?\b|\bprometo\b|\bprometemos\b|\bpromete\b/;
 // La negación gobierna al verbo: dentro de las 3 palabras anteriores y en la misma cláusula («no podemos garantizar», «ni garantizamos», «sin garantía»); «No dudes: te aseguro el resultado» no está negada.
-const EV_NEGADA = /\b(?:no|nunca|jamas|ni|tampoco|sin)\b(?:\s+\S+){0,2}\s*$/;
+const EV_NEGADA = /\b(?:no|nunca|jamas|ni|tampoco|sin|nadie|ningun\w*)\b(?:\s+\S+){0,2}\s*$|\b(?:nadie|ningun\w*)\b(?:\s+\S+){0,4}\s+(?:puede|pueden|podria|podrian)\s*$/;   // «ningún médico responsable puede garantizar…»
+// La cláusula donde está la palabra: lo anterior a una coma, dos puntos, punto y coma o un «pero / sino / aunque» no la gobierna («No puedo garantizar nada, pero vas a quedar perfecta»).
+const evClausula = (prefijo) => String(prefijo).split(/[,:;]|\bpero\b|\bsino\b|\baunque\b|\bsin embargo\b/).pop();
+// Garantizar algo que NO es el resultado («te garantizamos un diagnóstico profesional y honesto»): la oración se borra (no se promete eso) pero no tumba el texto entero.
+const EV_GARANTIA_BENIGNA = /^\w+\s+(?:\w+\s+){0,2}(?:diagnostico|atencion|evaluacion|valoracion|trato|honestidad|transparencia|profesionalismo|acompanamiento|etica|seguimiento|calidad|privacidad|confidencialidad|personalizad\w*)\b/;
 function evGarantiaAfirmativa(norm) {
   for (const o of String(norm).split(/[.!?]+/)) {
     const m = EV_GARANTIA.exec(o);
     if (!m) continue;
-    // Negada: una negación antes de la palabra en la misma oración («no podemos garantizar», «ni garantizamos», «sin garantía»).
-    if (EV_NEGADA.test(o.slice(0, m.index).split(/[,:;]/).pop())) continue;
+    // Negada: una negación antes de la palabra en la misma oración («no podemos garantizar», «ni garantizamos», «sin garantía», «ningún médico puede garantizar»).
+    if (EV_NEGADA.test(evClausula(o.slice(0, m.index)))) continue;
+    if (EV_GARANTIA_BENIGNA.test(o.slice(m.index))) continue;
+    return m[0];
+  }
+  return '';
+}
+// PROMESA DE RESULTADO SIN LA PALABRA «garantizar» («vas a quedar hermosa», «quedarás idéntica a la foto», «el resultado será perfecto», «siempre funciona»): el texto entero se rechaza.
+// Se mira por oración y no cuenta si una negación la gobierna en las 6 palabras anteriores y en la misma cláusula («no prometemos que vayas a quedar igual a la foto»).
+const EV_PROMETE_RESULTADO = /\b(?:quedar\w*|vas a (?:quedar|verte)|te veras)\b[^.!?]{0,40}\b(?:perfect\w*|hermos\w*|igual\w*|identic\w*|como (?:la|el) (?:foto|paciente|anuncio))\b|\bresultado (?:sera|va a ser) perfect\w*|\bsiempre funciona\b/;
+const EV_NEGADA_LARGA = /\b(?:no|nunca|jamas|ni|tampoco|sin|nadie|ningun\w*)\b(?:\s+\S+){0,6}\s*$|\b(?:no|nunca|jamas|ni|tampoco|nadie|ningun\w*)\b[^]*\b(?:garantiz\w*|promet\w*|asegur\w*)\b/;
+function evPrometeResultado(norm) {
+  for (const o of String(norm).split(/[.!?]+/)) {
+    const m = EV_PROMETE_RESULTADO.exec(o);
+    if (!m) continue;
+    if (EV_NEGADA_LARGA.test(evClausula(o.slice(0, m.index)))) continue;
     return m[0];
   }
   return '';
@@ -538,7 +602,7 @@ const EV_CONDICION = /\b(embaraz\w*|lactan\w*|amamant\w*|diabet\w*|hipertens\w*|
 const EV_DA_LUZ_VERDE = /\b(no hay (ningun )?(problema|inconveniente)|tambien se puede|es mejor esperar|mejor esperar|conviene esperar|te sugiero esperar|no tienes (ningun )?problema|sin problema alguno|si puedes|puedes (hacert\w*|aplicart\w*|ponert\w*|tratart\w*)|no puedes|es seguro|no tiene contraindicacion\w*|no hay contraindicacion\w*)\b/;
 // La REMISIÓN a la valoración: lo único que el guion manda decir sobre la salud del cliente. Una salida que habla de su condición (o afirma que algo es «seguro») SIN remitir a la valoración de la Dra. no sale.
 const EV_REMISION = /\b(valoracion|la dra|la doctora|doctora evy|dra evy|en persona|evalu\w+)\b/;
-const EV_AFIRMA_SEGURO = /\b(?:es|son|era|resulta|resultan|muy|bastante|super|totalmente|completamente|100 ?%?)\s+(?:muy |bastante |super |totalmente |completamente )?segur[oa]s?\b|\bsegur[oa]s?\s+para\b/;
+const EV_AFIRMA_SEGURO = /\b(?:es|son|era|resulta|resultan|muy|bastante|super|totalmente|completamente|100 ?%?)\s+(?:muy |bastante |super |totalmente |completamente )?segur[oa]s?\b(?!\s+(?:de |que\b))|\bsegur[oa]s?\s+para\b/;   // «es seguro que te va a gustar» y «estoy seguro de» no afirman seguridad médica
 function evSaludSinRemision(norm) {
   const n = String(norm);
   const condicion = EV_CONDICION.exec(n) || EV_AFIRMA_SEGURO.exec(n);
@@ -562,7 +626,16 @@ const EV_NIEGA_SER_IA = /\bno soy (?:un |una |el |la )?(?:bot|ia|robot|asistente
 const EV_DICE_SER_IA = /\b(?:asistente virtual|inteligencia artificial|asistente con ia|\bia\b|asistente de ia)\b/;
 const EV_PRIMERA_PERSONA = /\b(?:soy|somos|yo|estoy|me llamo|atiendo|mi nombre)\b/;
 const EV_ADMISION = 'Soy un asistente virtual con inteligencia artificial.';
-function evRepararIdentidad(texto) {
+// «Soy Evy», «Hola, aquí Evy», «habla la Dra. Evy», «te escribe Karina»: presentarse CON EL NOMBRE del negocio es afirmar ser la persona. El nombre sale de `nombreNegocio` (Consola), nunca escrito a mano.
+const EV_PALABRAS_DE_TITULO = ['dra', 'dr', 'doctora', 'doctor', 'de', 'la', 'el', 'del', 'los', 'las', 'y'];
+function evRegexDeNombre(nombreNegocio) {
+  const base = evTexto(nombreNegocio).split(/[(,]/)[0];
+  const toks = evNorm(base).split(' ').filter((w) => w.length >= 3 && EV_PALABRAS_DE_TITULO.indexOf(w) < 0 && /^[a-z0-9]+$/.test(w));
+  if (!toks.length) return null;
+  return new RegExp('\\b(?:soy|somos|aqui|habla|hablas con|te escribe|le escribe|escribe)\\s+(?:la |el )?(?:dra |dr |doctora |doctor )?(?:' + toks.join('|') + ')\\b');
+}
+function evRepararIdentidad(texto, nombreNegocio) {
+  const nombreRe = evRegexDeNombre(nombreNegocio);
   const completo = evNorm(texto);
   const dice = EV_DICE_SER_IA.test(completo);
   const orac = evPartirEnOraciones(texto);
@@ -576,7 +649,7 @@ function evRepararIdentidad(texto) {
     const sinNegacion = n.replace(EV_NO_SOY_HUMANO, ' ');
     const niega = sinNegacion !== n;
     // AFIRMACIÓN DIRECTA («sí, soy la doctora», «soy humana», «soy una persona real») o NEGAR ser una IA («no soy un bot»): no se repara, el texto entero se cambia por la admisión fija.
-    if (EV_AFIRMA_HUMANO.test(sinNegacion) || EV_NIEGA_SER_IA.test(n)) { afirma = afirma || o.slice(0, 60); return o; }
+    if (EV_AFIRMA_HUMANO.test(sinNegacion) || (nombreRe && nombreRe.test(sinNegacion)) || EV_NIEGA_SER_IA.test(n)) { afirma = afirma || o.slice(0, 60); return o; }
     if (niega && dice) {
       // Admisión: la oración que ya dice «sino el asistente virtual…» se reemplaza por la admisión fija (una vez); si el texto ya la dice en otra oración, esta se borra.
       if (hubo) return null;
@@ -608,23 +681,33 @@ function evPulirSalida(crudo, ctx) {
   const c = ctx && typeof ctx === 'object' ? ctx : {};
   const enviados = Array.isArray(c.artesEnviados) ? c.artesEnviados : [];
   // El formato de Markdown del modelo (**negrita**) parte las oraciones («**Dra.») y no se ve bien en WhatsApp: se quita antes de trabajar por oración.
-  let t = evQuitarEnlacesYTelefonos(crudo).replace(/\*+/g, '');
+  if (evTexto(crudo).length > 20000) return { texto: '', motivo: 'largo', detalle: 'la salida del modelo supera los 20 000 caracteres' };
+  // Espacios repetidos y recorte por línea ANTES de todo lo demás: una salida de 100 000 espacios no debe volver cuadráticas las expresiones siguientes.
+  let t = evTexto(crudo).replace(/\r\n?/g, '\n').replace(/[ \t]{2,}/g, ' ').split('\n').map((l) => l.trim()).join('\n');
+  t = evQuitarEnlacesYTelefonos(t).replace(/\*+/g, '');
   t = evSinInmediato(t);
   t = evProtegerValor(t);
   if (enviados.length === 0) t = evQuitarOraciones(t, (n) => EV_PROMETE_IMAGEN.test(n));
   if (enviados.indexOf('antes_despues') < 0) t = evQuitarOraciones(t, (n) => EV_PACIENTE_REAL.test(n));
   t = evQuitarOraciones(t, (n) => EV_PROMETE_RECEPCION.test(n) || EV_PROMETE_DESPUES.test(n));
-  const idt = evRepararIdentidad(t);
+  const idt = evRepararIdentidad(t, c.nombreNegocio);
   // Una afirmación directa no se repara: sale el texto fijo de admisión (la respuesta del modelo se descarta entera).
   if (idt.afirma) return { texto: evParrafos(EV_TEXTO_ADMISION_FIJA), motivo: '', detalle: 'identidad afirmada («' + idt.afirma + '…»): se cambió por el texto fijo de admisión' };
   t = idt.texto;
+  // SOLO se repara la forma NEGADA («no podemos garantizar…»). Una garantía o promesa AFIRMATIVA, o una promesa de resultado sin la palabra «garantizar», rechaza el texto entero.
+  const minus = evSinTildes(t).toLowerCase();
+  const afirmativa = evGarantiaAfirmativa(minus);
+  if (afirmativa) return { texto: '', motivo: 'prohibido', detalle: 'garantía afirmativa («' + afirmativa + '»)' };
+  const promesa = evPrometeResultado(minus);
+  if (promesa) return { texto: '', motivo: 'prohibido', detalle: 'promesa de resultado («' + promesa.slice(0, 50) + '»)' };
   let reparada = false;
   t = evQuitarOraciones(t, (n) => { if (EV_TOCA_GARANTIA.test(n)) { reparada = true; return true; } return false; });
-  if (reparada && t !== '' && !/responde distinto|no prometemos|no podemos prometer/.test(evNorm(t))) t = t + '\n\n' + EV_ACLARACION;
+  if (reparada && t !== '' && !/responde distinto|no prometemos|no podemos prometer/.test(evNorm(t))) t = evConAclaracion(t);
   t = t.trim();
-  if (enviados.indexOf('antes_despues') >= 0 && !/responde distinto/.test(evNorm(t))) t = (t ? t + '\n\n' : '') + EV_ACLARACION;
+  if (enviados.indexOf('antes_despues') >= 0 && !/responde distinto/.test(evNorm(t))) t = t === '' ? EV_ACLARACION : evConAclaracion(t);
   // Si el cliente pregunta por una GARANTÍA o por si va a quedar bien, la aclaración «cada rostro responde distinto» la pone el CÓDIGO si el modelo no la trajo (no depende del azar del modelo).
-  else if (t !== '' && EV_PIDE_GARANTIA.test(evNorm(c.textoCliente || '')) && !/responde distinto|no prometemos|no podemos prometer|no se puede prometer/.test(evNorm(t))) t = t + '\n\n' + EV_ACLARACION;
+  else if (t !== '' && EV_PIDE_GARANTIA.test(evNorm(c.textoCliente || '')) && !/responde distinto|no prometemos|no podemos prometer|no se puede prometer/.test(evNorm(t))) t = evConAclaracion(t);
+  t = evRecortar(t, EV_RECORTE_A);
   if (t === '') return { texto: '', motivo: 'vacio', detalle: 'no quedó texto tras quitar etiquetas, enlaces y promesas sin respaldo' };
   if (evAlfabetoMixto(t)) return { texto: '', motivo: 'afirma_un_hecho', detalle: 'alfabeto mixto en una palabra' };
   const marcado = evMarcarValor(t);

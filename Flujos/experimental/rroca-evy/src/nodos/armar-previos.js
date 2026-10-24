@@ -30,9 +30,15 @@ let artesPlan = [];
 let avisoDe = null;   // { clave, solicitud }
 let rechazo = null;   // por qué se descartó la respuesta del modelo: { motivo, detalle } (lo lee la batería con --motivo)
 if (plan.tipo === 'modelo') {
-  const crudo = cnTextoDeGemini(cnPrimero('Conversar con el modelo'));
-  et = evLeerEtiquetas(crudo);
-  if (crudo.trim() === '' || (et.texto.trim() === '' && !et.derivar)) { efectivo = 'fallo'; rechazo = { motivo: 'modelo_sin_texto', detalle: crudo.trim() === '' ? 'el modelo no devolvió texto (caído o vacío)' : 'solo etiquetas, sin texto' }; }
+  const respuesta = cnPrimero('Conversar con el modelo');
+  const crudo = cnTextoDeGemini(respuesta);
+  // Una salida de más de 20 000 caracteres no es una respuesta: se descarta sin recorrerla (costo lineal).
+  et = crudo.length > 20000 ? { texto: crudo.slice(0, 50), artes: [], derivar: false, nombre: '' } : evLeerEtiquetas(crudo);
+  // Por qué vino vacía (para el diagnóstico): el motivo de corte y el bloqueo que Gemini informa, sin el texto.
+  const cand = respuesta && Array.isArray(respuesta.candidates) ? respuesta.candidates[0] : null;
+  const porque = (cand && cand.finishReason ? ' finishReason=' + String(cand.finishReason).slice(0, 30) : '') + (respuesta && respuesta.promptFeedback && respuesta.promptFeedback.blockReason ? ' blockReason=' + String(respuesta.promptFeedback.blockReason).slice(0, 30) : '') + (respuesta && respuesta.error ? ' error' : '');
+  if (crudo.length > 20000) { efectivo = 'fallo'; rechazo = { motivo: 'largo', detalle: 'la salida del modelo supera los 20 000 caracteres' }; }
+  else if (crudo.trim() === '' || (et.texto.trim() === '' && !et.derivar)) { efectivo = 'fallo'; rechazo = { motivo: 'modelo_sin_texto', detalle: (crudo.trim() === '' ? 'el modelo no devolvió texto (caído o vacío)' : 'solo etiquetas, sin texto') + porque }; }
   else if (et.derivar) efectivo = 'derivar';
   else {
     // Las imágenes que SÍ pueden salir: lista cerrada, id resuelto, una vez, hasta 3, y el comparativo solo con marcas y si el cliente lo pidió.
@@ -45,7 +51,7 @@ if (plan.tipo === 'modelo') {
       artesPlan.push(k);
     }
     // Si el texto no va a pasar la revisión (con las imágenes ya contadas), no se envía ninguna imagen: cae al texto fijo del fallo.
-    const rev = evPulirSalida(et.texto, { artesEnviados: artesPlan, textoCliente: plan.textoCliente });
+    const rev = evPulirSalida(et.texto, { artesEnviados: artesPlan, textoCliente: plan.textoCliente, nombreNegocio: cfg.nombreNegocio });
     if (rev.motivo === 'salud_sin_remision') { efectivo = 'remision'; artesPlan = []; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
     else if (rev.motivo !== '') { efectivo = 'fallo'; artesPlan = []; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
   }

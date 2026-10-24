@@ -151,6 +151,18 @@ describe('el flujo nuevo de Evy tiene su guardia, distinta de la de las doctoras
     expect(v.status).toBe(1);
     expect(v.stderr).toMatch(/otra doctora/);
   });
+  it('REL_NUEVO sobre el vivo Emma viejo con --forzar: se NIEGA (código 1), sin tocar n8n; sobre el vivo viejo de Evy no', () => {
+    const vivoEmmaViejo = join(dir, 'vivo-emma-viejo.json');
+    writeFileSync(vivoEmmaViejo, JSON.stringify({ name: 'NovuChat — Dra. Emma (rroca-emma)', active: false, nodes: [{ name: 'Armar avisos' }] }));
+    for (const extra of [[], ['--forzar']]) {
+      const r = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-evy', ...extra], vivoEmmaViejo);
+      expect(r.status, extra.join(' ')).toBe(1);
+      expect(r.stderr, extra.join(' ')).toMatch(/NEGADO: el flujo nuevo de Evy no puede reemplazar el flujo vivo de otra doctora \(rroca-emma\)/);
+      expect(r.curl, extra.join(' ')).not.toMatch(/-X (PUT|POST)/);
+    }
+    const sobreEvy = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-evy', '--forzar'], vivoViejo);
+    expect(sobreEvy.stderr).not.toMatch(/no puede reemplazar el flujo vivo de otra doctora/);
+  });
   it('el flujo de Emma y el viejo de Evy siguen con la guardia de las doctoras', () => {
     for (const rel of [REL_VIEJO, REL_EMMA]) {
       const r = correrEn(raiz, ['--flujo', rel, '--aplicar', '--confirmo-doctoras'], vivoOtro);

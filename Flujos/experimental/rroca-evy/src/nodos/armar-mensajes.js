@@ -92,7 +92,7 @@ if (puerta.ruta === 'fuera_de_prueba') {
   ms = [conRecepcion(cierre)];
   hist = { a: ms[0].texto, b: ms[0].respaldo };
 } else if (efectivo === 'modelo') {
-  const rev = evPulirSalida(res.textoModelo, { artesEnviados: artesSalidos, textoCliente: plan.textoCliente });
+  const rev = evPulirSalida(res.textoModelo, { artesEnviados: artesSalidos, textoCliente: plan.textoCliente, nombreNegocio: cfg.nombreNegocio });
   if (rev.motivo === 'salud_sin_remision') { ms = [conRecepcion(EV_TEXTO_REMISION_SALUD)]; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
   else if (rev.motivo !== '' || rev.texto === '') { ms = [fallo()]; rechazo = { motivo: rev.motivo || 'vacio', detalle: rev.detalle || '' }; }
   else {

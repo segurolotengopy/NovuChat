@@ -690,6 +690,9 @@
         }
       },
       "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
       "alwaysOutputData": true,
       "parameters": {
         "method": "POST",
