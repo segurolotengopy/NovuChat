@@ -20,6 +20,7 @@
 //   --grupos G,E       solo los casos de esos grupos (la letra del id, p. ej. G, o el nombre del grupo, p. ej. Barreras); se combina con --duros por intersección.
 //   --confirmo-gasto   OBLIGATORIA fuera de `--seco`: la corrida real es GASTO y solo se hace con el «sí» de Andres, con la clave de PRUEBAS (nunca la de producción).
 //   --tope-usd <n>     corta la corrida cuando el costo estimado llega a n (0,05 por omisión).
+//   --pausa-ms <n>     pausa mínima entre llamadas al modelo (1200 por omisión), para no medir el límite de tasa; ante 429/5xx el motor reintenta 4 veces con 5 s de espera.
 //   --archivo-casos <ruta>   otro archivo de casos (por omisión el de `rroca-evy-bateria`).
 //   --motivo           por cada turno cuya respuesta del modelo fue RECHAZADA por una barrera de código: la barrera, la expresión que coincidió y un trozo de la respuesta del modelo (no del cliente).
 //   --respuestas <archivo>   REPLAY sin costo: respuestas crudas guardadas, `{ "G3": "texto" }` (turno 1) o `{ "G3": { "1": "texto" } }` o `{ "G3": ["texto", …] }` (por turno); alimentan al flujo en lugar de Gemini. No usa red ni clave;
@@ -108,6 +109,7 @@ export function respuestaGuardada(respuestas, caso, n) {
   return typeof x === 'string' ? x : null;
 }
 function crearDobles({ turnoActual, seco, credencial, opciones, deps, nodoModelo, costo }) {
+  let ultimaLlamada = 0;
   const gemini = (t) => ({ candidates: [{ content: { parts: [{ text: t }] } }] });
   let n = 0;
   const envio = () => ({ messaging_product: 'whatsapp', messages: [{ id: `wamid.OUT${++n}` }] });
@@ -133,7 +135,12 @@ function crearDobles({ turnoActual, seco, credencial, opciones, deps, nodoModelo
       if (guardada !== null) { t.simulado = false; return { ...gemini(guardada), usageMetadata: { promptTokenCount: 0, candidatesTokenCount: 0 } }; }
       if (seco) return { ...gemini('Gracias por escribirnos. Cuéntame, ¿cómo te llamas y qué te gustaría mejorar en tu rostro?'), usageMetadata: { promptTokenCount: 0, candidatesTokenCount: 0 } };
       if (costo.usd >= opciones.topeUsd) { costo.cortado = true; return { error: { message: 'tope de gasto alcanzado', code: 0 } }; }
-      const r = await llamarGemini({ cuerpo: ll.cuerpo, urlDelNodo: ll.url, credencial, opciones, deps, nodo: nodoModelo });
+      // La batería no debe medir el límite de tasa de Google: pausa entre llamadas y, ante 429/5xx, más intentos con espera larga (solo en el motor; el flujo usa el reintento nativo del nodo).
+      const pausa = Number.isFinite(opciones.pausaMs) ? opciones.pausaMs : 1200;
+      if (pausa > 0 && ultimaLlamada > 0) { const falta = pausa - (Date.now() - ultimaLlamada); if (falta > 0) await new Promise((x) => setTimeout(x, falta)); }
+      const nodoMotor = { ...nodoModelo, maxTries: Math.max(Number(nodoModelo?.maxTries) || 2, 4), waitBetweenTries: Math.max(Number(nodoModelo?.waitBetweenTries) || 1500, 5000) };
+      let r;
+      try { r = await llamarGemini({ cuerpo: ll.cuerpo, urlDelNodo: ll.url, credencial, opciones, deps, nodo: nodoMotor }); } finally { ultimaLlamada = Date.now(); }
       t.ms += r.ms;
       const u = objeto(objeto(r.json).usageMetadata);
       t.tokensEntrada = Number(u.promptTokenCount) || 0;
@@ -355,7 +362,8 @@ export async function main(argv, deps = {}) {
   let credencial = { clave: null, token: null, nombre: '' };
   try {
     const propias = new Set(['--confirmo-gasto', '--conversaciones', '--crudo', '--duros', '--motivo']);
-    const conValor = new Set(['--tope-usd', '--archivo-casos', '--grupos', '--respuestas']);
+    const conValor = new Set(['--tope-usd', '--archivo-casos', '--grupos', '--respuestas', '--pausa-ms']);
+    let pausaMs = 1200;
     let archivoRespuestas = null;
     let grupos = null;
     const resto = [];
@@ -365,12 +373,12 @@ export async function main(argv, deps = {}) {
       if (conValor.has(argv[i])) {
         const v = argv[i + 1];
         if (v === undefined || v.startsWith('--')) throw new ErrorDeUso(`Falta el valor de ${argv[i]}.`);
-        if (argv[i] === '--tope-usd') { if (!/^\d+(\.\d+)?$/.test(v) || Number(v) <= 0 || Number(v) > 5) throw new ErrorDeUso('--tope-usd debe ser un número entre 0 y 5.'); topeUsd = Number(v); } else if (argv[i] === '--respuestas') archivoRespuestas = v; else if (argv[i] === '--grupos') { grupos = v.split(',').map((x) => norm(x)).filter(Boolean); if (!grupos.length) throw new ErrorDeUso('--grupos necesita al menos un grupo (G,E o Barreras).'); } else archivoCasos = v;
+        if (argv[i] === '--tope-usd') { if (!/^\d+(\.\d+)?$/.test(v) || Number(v) <= 0 || Number(v) > 5) throw new ErrorDeUso('--tope-usd debe ser un número entre 0 y 5.'); topeUsd = Number(v); } else if (argv[i] === '--pausa-ms') { if (!/^\d+$/.test(v) || Number(v) > 60000) throw new ErrorDeUso('--pausa-ms debe ser un entero entre 0 y 60000.'); pausaMs = Number(v); } else if (argv[i] === '--respuestas') archivoRespuestas = v; else if (argv[i] === '--grupos') { grupos = v.split(',').map((x) => norm(x)).filter(Boolean); if (!grupos.length) throw new ErrorDeUso('--grupos necesita al menos un grupo (G,E o Barreras).'); } else archivoCasos = v;
         i++;
       } else if (!propias.has(argv[i])) resto.push(argv[i]);
     }
     const confirmaGasto = argv.includes('--confirmo-gasto');
-    const opciones = { ...leerArgumentos(resto), topeUsd };
+    const opciones = { ...leerArgumentos(resto), topeUsd, pausaMs };
     if (archivoRespuestas) {
       if (opciones.envDado || opciones.vertex) throw new ErrorDeUso('--respuestas no usa clave ni red: no se combina con --env ni --vertex.');
       const texto = d.leerArchivo(archivoRespuestas);

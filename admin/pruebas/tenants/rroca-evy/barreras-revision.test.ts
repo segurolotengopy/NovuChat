@@ -122,6 +122,62 @@ describe('presentarse con el nombre del negocio es afirmar ser la persona', () =
   });
 });
 
+describe('«afirma_un_hecho» se repara por oración cuando no habla de pagos', () => {
+  it('POSITIVA: «Te lo confirmo con total transparencia: la valoración es 100% gratuita. No hay ningún costo escondido…» sale, sin la muletilla', () => {
+    const t = sale('Te lo confirmo con total transparencia: la valoración es 100% gratuita. No hay ningún costo escondido ni compromiso. ¿Cómo te llamas?', '¿de verdad es gratis? ¿hay costo escondido?');
+    expect(fallo(t)).toBe(false);
+    expect(t).toContain('Así es: la valoración es 100% gratuita.');
+    expect(t).toContain('No hay ningún costo escondido ni compromiso.');
+    expect(t).not.toMatch(/Te lo confirmo/);
+  });
+  for (const mala of ['Ya pagaste tu reserva. La valoración es gratuita. ¿Cómo te llamas?', 'Ya te llegó tu pago. La valoración es gratuita. ¿Cómo te llamas?', 'Te confirmo que quedó agendada tu cita. ¿Cómo te llamas?', 'Tu pago fue acreditado. ¿Cómo te llamas?', 'Te lo confirmo: tu cita quedó agendada. ¿Cómo te llamas?']) {
+    it(`NEGADA: sigue rechazada: ${mala.slice(0, 30)}`, () => {
+      expect(fallo(sale(mala))).toBe(true);
+    });
+  }
+});
+
+describe('cuidados posteriores: el modelo no los inventa', () => {
+  it('NEGADA: «evitar ciertas actividades físicas intensas los primeros días» se borra y el código deja la remisión a la Dra.', () => {
+    const t = sale('Es una excelente pregunta. La Dra. Evy te dará recomendaciones sencillas (como evitar ciertas actividades físicas intensas los primeros días) en tu consulta. Tu valoración es 100% gratuita. ¿Cómo te llamas?', '¿cuánto tiempo de recuperación? trabajo todos los días');
+    expect(fallo(t)).toBe(false);
+    expect(t).not.toMatch(/evitar|actividades f/i);
+    expect(t).toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
+    expect(t.endsWith('¿Cómo te llamas?')).toBe(true);
+  });
+  it('POSITIVA: «puedes reincorporarte rápido; la Dra. te explica los cuidados» pasa sin cambios', () => {
+    const t = sale('Puedes reincorporarte rápido a tu trabajo; la Dra. te explica los cuidados en la valoración. ¿Cómo te llamas?');
+    expect(fallo(t)).toBe(false);
+    expect(t).toContain('Puedes reincorporarte rápido');
+    expect(t).not.toMatch(/cuidados posteriores/);
+  });
+});
+
+describe('conectores huérfanos: al borrar una oración, la siguiente pierde su «En cambio»', () => {
+  it('«En cambio, los bioestimuladores…» tras una oración borrada empieza sin el conector', () => {
+    const t = sale('¡Excelente pregunta! Nunca podemos garantizar un resultado idéntico. En cambio, los bioestimuladores activan tu propio colágeno. Sin embargo, Además, la valoración es gratuita. ¿Cómo te llamas?');
+    expect(fallo(t)).toBe(false);
+    expect(t).not.toMatch(/En cambio/);
+    expect(t).toContain('Los bioestimuladores activan tu propio colágeno.');
+  });
+  it('POSITIVA: un conector cuya oración previa no se borró se conserva', () => {
+    const t = sale('Los bioestimuladores activan tu colágeno. En cambio, un relleno solo da volumen. ¿Cómo te llamas?');
+    expect(t).toContain('En cambio, un relleno solo da volumen.');
+  });
+});
+
+describe('el motor de la batería: pausa entre llamadas', () => {
+  it('--pausa-ms acepta un entero y rechaza lo demás', async () => {
+    // @ts-expect-error el motor es un .mjs sin tipos
+    const { main } = await import('../../../../Flujos/experimental/rroca-evy/herramientas/bateria.mjs');
+    const sal: string[] = []; const err: string[] = [];
+    const deps = { salida: (t: string) => sal.push(t), error: (t: string) => err.push(t) };
+    expect(await main(['--seco', '--pausa-ms', 'abc'], deps)).toBe(2);
+    expect(await main(['--seco', '--pausa-ms', '70000'], deps)).toBe(2);
+    expect(err.join('')).toMatch(/--pausa-ms debe ser un entero entre 0 y 60000/);
+  });
+});
+
 describe('«es seguro que…» no es un consejo de salud', () => {
   it('POSITIVA: «es seguro que te va a gustar» pasa', () => {
     expect(fallo(sale('Es seguro que te va a gustar la valoración gratuita. ¿Cómo te llamas?'))).toBe(false);

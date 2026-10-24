@@ -496,7 +496,28 @@ function evUnirOraciones(lista) {
 }
 // Quita las oraciones (no las palabras sueltas) que cumplen `pred(oracionNormalizada, oracion)`. Los párrafos y los saltos de línea se conservan.
 function evQuitarOraciones(texto, pred) {
-  return evUnirOraciones(evPartirEnOraciones(texto).filter((o) => o === '' || o === '\n' || !pred(evNorm(o), o)));
+  const lista = evPartirEnOraciones(texto);
+  return evUnirOraciones(evSinHuerfanos(lista, (o) => pred(evNorm(o), o)));
+}
+// Un conector («En cambio, …», «Sin embargo, …») que dependía de la oración que se borró queda huérfano: se le quita el conector a la oración que sigue.
+const EV_CONECTOR = /^(?:en cambio|sin embargo|por eso|por esto|por ello|por lo tanto|ademas|por otro lado|entonces|pero|asi,|asimismo|de hecho|es decir|por el contrario|aun asi|ahora bien)\b[\s,:;]*/i;
+function evSinConector(o) {
+  const m = EV_CONECTOR.exec(evSinTildes(o));
+  if (!m) return o;
+  const resto = o.slice(m[0].length).trim();
+  return resto === '' ? o : resto.charAt(0).toUpperCase() + resto.slice(1);
+}
+// Devuelve la lista sin las oraciones que `borrar(oracion, indice)` marca; la primera que queda tras una borrada pierde su conector.
+function evSinHuerfanos(lista, borrar) {
+  const out = [];
+  let borro = false;
+  lista.forEach((o, i) => {
+    if (o === '' || o === '\n') { out.push(o); return; }
+    if (borrar(o, i)) { borro = true; return; }
+    out.push(borro ? evSinConector(o) : o);
+    borro = false;
+  });
+  return out;
 }
 // Un texto demasiado largo (el filtro común rechaza más de 1500) se RECORTA por oración en vez de rechazarlo: se quitan, de atrás hacia adelante, las oraciones que no son esenciales hasta que cabe.
 // Esenciales (nunca se quitan): la primera oración, las que hablan de la valoración gratuita o bonificada, la aclaración fija y la pregunta de cierre (nombre y deseo). Si aun así no cabe, no se toca y el filtro rechaza.
@@ -513,18 +534,22 @@ function evRecortar(texto, tope) {
   const quitadas = new Set();
   const largo = () => evMarcarValor(evUnirOraciones(lista.filter((o, i) => !quitadas.has(i)))).length;
   for (let k = idx.length - 1; k >= 0 && largo() > tope; k--) { if (!esencial(idx[k])) quitadas.add(idx[k]); }
-  return evUnirOraciones(lista.filter((o, i) => !quitadas.has(i)));
+  return evUnirOraciones(evSinHuerfanos(lista, (o, i) => quitadas.has(i)));
 }
 // La aclaración fija va ANTES de la última oración si esta es la pregunta de cierre (la pregunta debe quedar al final); si no hay pregunta, al final.
-function evConAclaracion(texto) {
+function evConAclaracion(texto, frase) {
+  const f = frase || EV_ACLARACION;
   const lista = evPartirEnOraciones(texto);
   let ult = -1;
   for (let i = lista.length - 1; i >= 0; i--) { if (lista[i] !== '' && lista[i] !== '\n') { ult = i; break; } }
-  if (ult < 0) return EV_ACLARACION;
-  if (!evEsPregunta(lista[ult])) return evUnirOraciones(lista.concat(['', EV_ACLARACION]));
-  lista.splice(ult, 0, EV_ACLARACION, '');
+  if (ult < 0) return f;
+  if (!evEsPregunta(lista[ult])) return evUnirOraciones(lista.concat(['', f]));
+  lista.splice(ult, 0, f, '');
   return evUnirOraciones(lista);
 }
+// CUIDADOS POSTERIORES / RECUPERACIÓN: el modelo no inventa qué evitar ni por cuánto tiempo (consejo médico). La oración se borra y el código deja la remisión a la valoración.
+const EV_CUIDADOS = /\b(?:evit\w+[^.!?]{0,50}\b(?:activid\w*|ejercicio\w*|esfuerzo\w*|deporte\w*|gimnasio|sol|alcohol|masaje\w*|calor|sauna|maquillaje|dormir|tomar|comer|fumar)\b|no (?:hagas|realices|tomes|expongas|te expongas|consumas|te maquilles|duermas)\b|reposo (?:absoluto|total|relativo)|expon\w+ al sol|exposicion (?:al )?sol|(?:tomar|consumir|consumo de) alcohol|masajes? (?:en|sobre) |por \d+ (?:horas|dias)|durante (?:los|las) (?:primer\w+|proxim\w+) (?:\d+ )?(?:dias|horas|semanas))/;
+const EV_REMISION_CUIDADOS = 'Los cuidados posteriores te los explica la Dra. en la valoración.';
 // Enlaces y teléfonos: el modelo no los escribe. Se borran del texto (la recepción llega SOLO como botón, por el cierre).
 function evQuitarEnlacesYTelefonos(texto) {
   return evTexto(texto)
@@ -690,6 +715,9 @@ function evPulirSalida(crudo, ctx) {
   if (enviados.length === 0) t = evQuitarOraciones(t, (n) => EV_PROMETE_IMAGEN.test(n));
   if (enviados.indexOf('antes_despues') < 0) t = evQuitarOraciones(t, (n) => EV_PACIENTE_REAL.test(n));
   t = evQuitarOraciones(t, (n) => EV_PROMETE_RECEPCION.test(n) || EV_PROMETE_DESPUES.test(n));
+  let cuidados = false;
+  t = evQuitarOraciones(t, (n) => { if (EV_CUIDADOS.test(n)) { cuidados = true; return true; } return false; });
+  if (cuidados && t !== '' && !/cuidados posteriores/.test(evNorm(t))) t = evConAclaracion(t, EV_REMISION_CUIDADOS);
   const idt = evRepararIdentidad(t, c.nombreNegocio);
   // Una afirmación directa no se repara: sale el texto fijo de admisión (la respuesta del modelo se descarta entera).
   if (idt.afirma) return { texto: evParrafos(EV_TEXTO_ADMISION_FIJA), motivo: '', detalle: 'identidad afirmada («' + idt.afirma + '…»): se cambió por el texto fijo de admisión' };
@@ -725,12 +753,34 @@ function evPulirSalida(crudo, ctx) {
   const salud = evConsejoDeSalud(norm);
   if (salud) return { texto: '', motivo: 'prohibido', detalle: 'consejo de salud sobre la condición del cliente («' + salud + '…»)' };
   for (const [nombre, re] of EV_PROHIBIDO_MEDICO) { const m = re.exec(norm); if (m) return { texto: '', motivo: 'prohibido', detalle: nombre + ' («' + m[0].slice(0, 50) + '»)' }; }
-  const motivo = cmMotivoDeRechazo(marcado, {
+  const opcionesFiltro = {
     maximo: 1500, permitirMontos: false, enlacesPermitidos: [], sinPromesasDeAviso: true, sinImagenes: enviados.length === 0,
     quienPromete: ['recepcion', 'la recepcion', 'el equipo', 'nuestro equipo', 'un asesor', 'una asesora'], textoDelCliente: c.textoCliente || '',
-  });
+  };
+  let final = marcado;
+  let motivo = cmMotivoDeRechazo(final, opcionesFiltro);
+  // «afirma_un_hecho» REPARADO POR ORACIÓN: «Te lo confirmo con total transparencia: la valoración es 100% gratuita» no afirma ningún pago, pero «te lo confirmo» se parece a «confirmamos tu pago».
+  // Se examina cada oración: si la marcada habla de pagos, reservas o comprobantes, se rechaza el texto entero; si no, se conserva lo que sigue a los dos puntos o se borra la oración, y se revisa de nuevo todo el texto.
+  if (motivo === 'afirma_un_hecho') {
+    const unidades = evPartirEnOraciones(final);
+    let dinero = false;
+    const arregladas = unidades.map((o) => {
+      if (o === '' || o === '\n' || cmMotivoDeRechazo(o, opcionesFiltro) !== 'afirma_un_hecho') return o;
+      if (/\b(pag\w*|reserv\w*|acredit\w*|comprobante\w*|deposit\w*|transferen\w*|recib\w*|abon\w*|agend\w*|cita|citas|estado|confirmad\w*)\b/.test(evNorm(o))) { dinero = true; return o; }
+      // «Te lo confirmo / Te confirmo que» sin objeto de agenda o pago es solo una muletilla: se cambia por «Así es:» y se vuelve a pasar el filtro.
+      const asi = o.replace(/^\W*(?:te )?(?:lo )?confirmo\b[^:.!?]*:\s*/i, 'Así es: ').replace(/\b(?:te )?(?:lo )?confirmo(?: que)?\b/i, 'Así es:').replace(/:\s*:/g, ':');
+      if (asi !== o && cmMotivoDeRechazo(asi, opcionesFiltro) === '') return asi;
+      const resto = o.indexOf(':') >= 0 ? o.slice(o.indexOf(':') + 1).trim() : '';
+      if (resto !== '' && cmMotivoDeRechazo(resto, opcionesFiltro) === '') return resto.charAt(0).toUpperCase() + resto.slice(1);
+      return null;
+    }).filter((o) => o !== null);
+    if (!dinero) {
+      final = evUnirOraciones(arregladas);
+      motivo = final === '' ? 'vacio' : cmMotivoDeRechazo(final, opcionesFiltro);
+    }
+  }
   if (motivo) return { texto: '', motivo: motivo, detalle: 'filtro común cmMotivoDeRechazo: ' + motivo };
-  return { texto: evParrafos(evRestituirValor(marcado)), motivo: '', detalle: '' };
+  return { texto: evParrafos(evRestituirValor(final)), motivo: '', detalle: '' };
 }
 
 // -----------------------------------------------------------------------------
