@@ -103,7 +103,7 @@ if (avisoDe) {
     if (!destinatarios.length) res.aviso.motivoFallo = 'sin_destinatario';
     else {
       const historia = evHistorialVigente(cnFichaDe(fichas, from), ahora);
-      const nombre = avLimpio(avisoDe.solicitud ? (res.nombreDerivacion || evNombreDelMensaje(plan.textoCliente) || evPrimerNombre(t.nombrePerfil)) : evPrimerNombre(t.nombrePerfil), 60) || 'sin nombre';
+      const nombre = avLimpio(avisoDe.solicitud ? (res.nombreDerivacion || evNombreDelMensaje(plan.textoCliente, ficha.historial) || evPrimerNombre(t.nombrePerfil)) : evPrimerNombre(t.nombrePerfil), 60) || 'sin nombre';
       const interes = avisoDe.solicitud ? avLimpio(evInteres(historia, plan.textoCliente), 40) : (clave === 'consulta_medica' ? 'consulta médica' : 'consulta sin respuesta');
       const horario = avisoDe.solicitud ? (avLimpio(evHorarioPreferido(historia, plan.textoCliente), 100) || 'sin horario indicado') : 'sin horario';
       const parametros = [nombre, interes, horario, '+' + from];

@@ -116,7 +116,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     expect(esBoton(hablar(m, ANA, mTexto('sí')))).toBe(true);
   });
   it('(A-ii) otros verbos de oferta: coordinar, programar, apartar', () => {
-    for (const oferta of ['¿Quieres que coordinemos tu valoración?', '¿Quieres que programemos tu valoración?', '¿Quieres que te aparte un horario?']) {
+    for (const oferta of ['¿Quieres que coordinemos tu valoración?', '¿Quieres que programemos tu valoración?', '¿Quieres que apartemos un horario?']) {
       const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<claro>>>') ? 'Listo. [DERIVAR_RECEPCION]' : `Con gusto. ${oferta}`) });
       hablar(m, ANA, mTexto('cuéntame'));
       expect(esBoton(hablar(m, ANA, mTexto('claro'))), oferta).toBe(true);
@@ -141,6 +141,45 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<sí>>>') ? 'Genial. [DERIVAR_RECEPCION]' : '¡Hola! Soy el asistente virtual. Tu valoración es gratuita. ¿Cómo te llamas y qué te gustaría mejorar?') });
     hablar(m, ANA, mTexto('hola'));
     expect(esBoton(hablar(m, ANA, mTexto('sí')))).toBe(false);
+  });
+  it('(ronda final 1) el nombre del cierre NO sale de frases que no son un nombre: sale el del perfil', () => {
+    for (const x of ['tienen turno el sábado', 'quiero agendar, soy muy nerviosa', 'quiero agendar, soy tu paciente', 'Quiero agendar, soy hipertensa', 'quiero agendar, mejor el lunes', 'Quiero agendar para el lunes, Paola', 'quiero un horario']) {
+      const t = hablar(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto(x), { nombre: 'Ana' });
+      const c = textos(t)[0] ?? '';
+      expect(c, x).toMatch(/Excelente decisión/);
+      expect(c, x).not.toMatch(/Excelente decisión, (Muy|Tu|Mejor|Para|Paola|Hipertensa|Tienen)/);
+    }
+  });
+  it('(ronda final 1) tras oferta + sí + «¿cómo te llamas?», «Botox», «Radiesse» e «Hipertensa» no son un nombre: no derivan', () => {
+    for (const x of ['Botox', 'Radiesse', 'Hipertensa']) {
+      const m = crear({ modeloDice: (ll) => {
+        const c = JSON.stringify(ll.cuerpo);
+        if (c.includes(`<<<${x}>>>`)) return 'Gracias. [DERIVAR_RECEPCION]';
+        if (c.includes('<<<sí>>>')) return '¿Cómo te llamas para pasarte con recepción?';
+        return 'Te cuento. ¿Te gustaría agendar tu valoración?';
+      } });
+      hablar(m, ANA, mTexto('cuéntame'));
+      hablar(m, ANA, mTexto('sí'));
+      expect(esBoton(hablar(m, ANA, mTexto(x))), x).toBe(false);
+    }
+  });
+  it('(ronda final 2) preguntas con forma parecida pero que no ofrecen agendar: «sí» + etiqueta no deriva', () => {
+    for (const pregunta of ['¿Aparte de las ojeras, hay algo más que te gustaría mejorar?', '¿Quieres conocer el programa de cuidados?', '¿Quieres saber cómo se programa el tratamiento por sesiones?', '¿Te explico en un apartado los cuidados posteriores?', '¿Sabías que no se cobra reserva?']) {
+      const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<ok>>>') ? 'Listo. [DERIVAR_RECEPCION]' : `Te cuento. ${pregunta}`) });
+      hablar(m, ANA, mTexto('cuéntame'));
+      expect(esBoton(hablar(m, ANA, mTexto('ok'))), pregunta).toBe(false);
+    }
+  });
+  it('(ronda final 3) con dos preguntas gana la última: «¿Te gustaría agendar? ¿O prefieres que te cuente más del Radiesse?» + «sí» no deriva; con coletilla afirmativa sí', () => {
+    const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<sí>>>') ? 'Listo. [DERIVAR_RECEPCION]' : 'Con gusto. ¿Te gustaría agendar tu valoración? ¿O prefieres que te cuente más del Radiesse?') });
+    hablar(m, ANA, mTexto('cuéntame'));
+    expect(esBoton(hablar(m, ANA, mTexto('sí')))).toBe(false);
+  });
+  it('(ronda final 5) «no tengo tiempo para la cita» y «aparte del botox hacen otra cosa» no derivan con etiqueta ajena', () => {
+    for (const x of ['no tengo tiempo para la cita', 'Aparte del botox ¿hacen otra cosa?', 'aparte del botox hacen otra cosa']) {
+      const t = hablar(crear({ modeloDice: dice('Entiendo. [DERIVAR_RECEPCION]') }), ANA, mTexto(x));
+      expect(esBoton(t), x).toBe(false);
+    }
   });
   it('(B) «no quiero cita todavía» y «¿cuáles son sus horarios?» con la etiqueta del modelo no derivan; «quiero agendar mi valoración» sí', () => {
     for (const x of ['no quiero cita todavía', '¿cuáles son sus horarios?']) {
