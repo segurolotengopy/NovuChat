@@ -147,26 +147,25 @@ const CM_AFIRMA_LISTA = [
   '\\bpersona (real|de verdad)\\b',
   'carne y hueso',
 ];
-// «Te lo confirmo» / «te confirmo que…» NO es siempre una acción del código: «Te lo confirmo: la valoración es gratuita» confirma
-// INFORMACIÓN. Ordena (se rechaza) solo si en la MISMA oración, antes o después de los dos puntos, hay un objeto de agenda o de pago
-// (cita, turno, reserva, pedido, pago, hora, lugar, comprobante…), un verbo de estado (agendad-, quedó, ya está…) o un día/hora.
-// Lo negado o gratuito («no hay pago de reserva», «sin costo») se quita antes de buscar el objeto. Si dudamos, se rechaza.
+// «Te lo confirmo» / «te confirmo que…» ordena POR DEFECTO (se rechaza). Solo se exime lo que se sabe que es INFORMACIÓN:
+//   - la oración, quitado el «confirmo», es relleno («Te lo confirmo con total transparencia») o dice que es gratis / sin costo;
+//   - Y en TODO el mensaje no hay un hecho propio de agenda o pago: «tu cita/consulta/valoración/pago…», un día u hora
+//     (mañana, hoy, «a las diez», 15hs, hh:mm, «para el…») ni un estado (listo, hecho, en orden, agendad-, ya quedó…).
+// La lista de lo que se rechaza es abierta a propósito; la de lo que se exime es cerrada: ante la duda, texto fijo del código.
 const CM_CONFIRMO = cmDuo(['\\b(?:te|le|lo|la) (?:lo |la )?confirmo\\b']);
-const CM_NEGADO = new RegExp(cmDuo(['\\b(?:no hay|sin|ningun\\w*|nada de|no (?:se )?(?:cobra|cobramos|requiere|necesitas|exige|pagas|tienes que pagar))\\b(?:(?!\\b(?:y|e|pero|ademas|tambien)\\b)[^.!?,;:])*'])[0].source, 'g');
-const CM_NEGADO_C = new RegExp(cmDuo(['\\b(?:no hay|sin|ningun\\w*|nada de|no (?:se )?(?:cobra|cobramos|requiere|necesitas|exige|pagas|tienes que pagar))\\b(?:(?!\\b(?:y|e|pero|ademas|tambien)\\b)[^.!?,;:])*'])[1].source, 'g');
-const CM_OBJETO_DE_CONFIRMAR = cmDuo([
-  '\\b(?:citas?|turnos?|reservas?|reserve|pedidos?|pagos?|pagad\\w*|horas?|horarios?|agendas?|asistencia|lugar|espacio|cupos?|comprobantes?|depositos?|transferencias?|compras?|ordenes|orden|inscripcion|visitas?|sesion|sesiones)\\b',
-  '\\bya (?:esta|estan|quedo|queda|fue|fueron|ha sido|se|te|le)\\b',
-  '\\b(?:agendad|reservad|acreditad|registrad|anotad|programad|aprobad|verificad|recibid|reprogramad|cancelad|separad|confirmad)\\w*',
-  '\\b(?:quedo|queda|quedaron)\\b',
-  '\\b(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\\b|\\ba las? \\d|\\b\\d{1,2}[:.]\\d{2}\\b',
+const CM_CONFIRMO_INFO = cmDuo(['^(?:\\W|\\b(?:con|total|toda|plena|transparencia|seguridad|gusto|claro|si|que)\\b)*$|\\b(?:gratuit[oa]s?|gratis|sin costo|sin cargo|no tiene (?:ningun )?costo|no (?:hay|tiene) (?:ningun )?(?:costo|cobro))\\b']);
+const CM_HECHO_PROPIO = cmDuo([
+  '\\b(?:tu|tus|su|sus) (?:\\w+ )?(?:citas?|turnos?|reservas?|consultas?|valoracion\\w*|sesion\\w*|pagos?|comprobantes?|depositos?|transferencias?|pedidos?|lugar\\w*|cupos?|horarios?|horas?|plata|dinero|montos?|entregas?|ordenes|orden|inscripcion\\w*|visitas?)\\b',
+  '\\b(?:manana|hoy|pasado manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\\b|\\ba las? \\w+|\\b\\d{1,2}(?::\\d{2})?\\s*(?:am|pm|hs?|hrs?)\\b|\\b\\d{1,2}[/:.h]\\d{2}\\b|\\bpara (?:el|la|manana|hoy)\\b',
+  '\\b(?:listo|lista|hecho|en orden|te esperamos|estas en|ya (?:esta|quedo|fue))\\b|\\b(?:agendad|reservad|acreditad|registrad|anotad|programad|aprobad|verificad|recibid|confirmad)\\w*',
 ]);
 function cmConfirmaUnHecho(s) {
-  return cmVariantes(s).some((v, i) => cmOraciones(v).some((x) => {
+  return cmVariantes(s).some((v, i) => {
     const d = i > 3 ? 1 : 0;
-    if (!CM_CONFIRMO[d].test(x)) return false;
-    return CM_OBJETO_DE_CONFIRMAR[d].test(x.replace(d ? CM_NEGADO_C : CM_NEGADO, ' '));
-  }));
+    if (!CM_CONFIRMO[d].test(v)) return false;
+    if (CM_HECHO_PROPIO[d].test(v)) return true;
+    return cmOraciones(v).some((x) => CM_CONFIRMO[d].test(x) && !CM_CONFIRMO_INFO[d].test(x.replace(new RegExp(CM_CONFIRMO[d].source, 'g'), ' ')));
+  });
 }
 const CM_AFIRMA = new RegExp(CM_AFIRMA_LISTA.join('|'));
 // Copia SOLO para comparar: el mismo patrón con las letras repetidas colapsadas («llego» → «lego»), para el texto colapsado («paaago» → «pago»).
