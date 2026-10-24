@@ -103,7 +103,7 @@ export const QUIEN_RE_VOCABULARIO =
   + '|inteligencia artificial|\\bi[. ]?a\\b|\\ba[.]?i\\b'
   + '|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][^0-9]{0,3}){6,}'
   + '|\\b(bnb|bcp|fie|asfi|sin|jefe|bcb|bisa|bmsc|qr|meta)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money'
-  + '|prodem|ecofuturo|cobranzas?|\\byape\\b|whatsapp|soporte'
+  + '|prodem|ecofuturo|cobranzas?|\\byape\\b|\\byap[eé](a|o|ame)|whatsapp|soporte'
   + '|impuestos nacionales|polic[ií]a|sistema|tu jefe|ya pag';
 const RE_CARACTERES = new RegExp(QUIEN_RE_CARACTERES);
 const RE_VOCABULARIO = new RegExp(QUIEN_RE_VOCABULARIO, 'i');
@@ -111,7 +111,7 @@ export const COMPACTO_PROHIBIDO = [
   'banc', 'pago', 'pagu', 'deposit', 'transferenc', 'tesorer', 'acreditad', 'verificad',
   'comprobante', 'recibimos', 'robot', 'chatbot', 'humano', 'humana', 'personareal', 'personadeverdad',
   'unapersona', 'asesorareal', 'carneyhueso', 'inteligenciaartificial', 'prodem', 'ecofuturo', 'cobranza',
-  'whatsapp', 'mercantil', 'ganadero', 'economico', 'fassil', 'tigomoney',
+  'whatsapp', 'yapea', 'yapeo', 'mercantil', 'ganadero', 'economico', 'fassil', 'tigomoney',
   'impuestosnacionales', 'policia', 'sistema', 'tujefe', 'yapag',
 ];
 export function compactarQuien(texto: string): string {

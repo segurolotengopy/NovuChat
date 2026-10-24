@@ -986,7 +986,7 @@ service cloud.firestore {
             // y el campo ausente cuesta solo `in`, `!` y `||`.
             && (!('nombreQuienAtiende' in d)
                 || (d.nombreQuienAtiende.matches('^[A-Za-zÀ-ÖØ-öø-ÿ0-9 .,&()-]{0,60}$')
-                    && !d.nombreQuienAtiende.matches('(?is).*(banc|pag[oóu]|dep[oó]sit|transferenc|tesorer|acreditad|verificad|comprobante|recibimos|\\bbots?\\b|robot|human[oa]s?|persona real|persona de verdad|soy una persona|\\breal\\b|carne y hueso|inteligencia artificial|\\bi[. ]?a\\b|\\ba[.]?i\\b|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][^0-9]{0,3}){6,}|\\b(bnb|bcp|fie|asfi|sin|jefe|bcb|bisa|bmsc|qr|meta)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money|prodem|ecofuturo|cobranzas?|\\byape\\b|whatsapp|soporte|impuestos nacionales|polic[ií]a|sistema|tu jefe|ya pag).*')))
+                    && !d.nombreQuienAtiende.matches('(?is).*(banc|pag[oóu]|dep[oó]sit|transferenc|tesorer|acreditad|verificad|comprobante|recibimos|\\bbots?\\b|robot|human[oa]s?|persona real|persona de verdad|soy una persona|\\breal\\b|carne y hueso|inteligencia artificial|\\bi[. ]?a\\b|\\ba[.]?i\\b|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][^0-9]{0,3}){6,}|\\b(bnb|bcp|fie|asfi|sin|jefe|bcb|bisa|bmsc|qr|meta)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money|prodem|ecofuturo|cobranzas?|\\byape\\b|\\byap[eé](a|o|ame)|whatsapp|soporte|impuestos nacionales|polic[ií]a|sistema|tu jefe|ya pag).*')))
 
 
             && d.get('mensajes', {}) is map
