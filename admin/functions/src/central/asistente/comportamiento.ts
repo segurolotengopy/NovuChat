@@ -437,12 +437,16 @@ function excusaCierra(resto: string, excusa: RegExp): boolean {
   return m !== null && !DESPUES_DE_LA_EXCUSA.test(resto.slice(m[0].length));
 }
 /** ¿Esta oración nombra las instrucciones del asistente de forma que un verbo de revelar las alcance? */
+const oracionExtrae = (oracion: string): boolean =>
+  (oracion.match(/[\p{L}\p{N}_]+/gu) ?? []).some((w) => esVerbo(w, VERBO_EXTRAER));
 function nombraInstrucciones(oracion: string, extrae: boolean): boolean {
   // Los patrones que no son «tus + objeto fuerte»: no admiten excusa comercial.
   if (SOBRE_FUERTE.slice(1).some((re) => re.test(oracion))) return true;
   for (const m of oracion.matchAll(new RegExp(POSESIVO_FUERTE_SOLO.source, 'gu'))) {
     // «Lee tus instrucciones de uso»: la excusa vale solo si CIERRA el sintagma.
-    if (!excusaCierra(oracion.slice(m.index + m[0].length), USO_DE)) return true;
+    // Con un verbo de EXTRAER en la oración, ninguna excusa vale para el objeto fuerte: se esquiva
+    // agregando algo después con otro separador o conector («de uso. Y las del sistema»).
+    if (oracionExtrae(oracion) || !excusaCierra(oracion.slice(m.index + m[0].length), USO_DE)) return true;
   }
   if (!extrae) return false;
   for (const d of oracion.matchAll(new RegExp(SOBRE_DEBIL.source, 'gu'))) {
