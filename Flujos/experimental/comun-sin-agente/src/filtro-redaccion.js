@@ -277,7 +277,35 @@ function cmOraciones(t, estricto) {
 
 const CM_INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]/u;
 // Frases críticas SIN espacios ni signos («P a g o v e r i f i c a d o», «Pagoverificado»); un falso positivo cae al texto fijo.
-const CM_JUNTAS = /pago(?:fue)?(?:acreditad|verificad|recibid)|recibimos(?:tu|su)?pago|nosoyun(?:bot|robot|maquina)|soyunapersona|quedoagendad|yaagende|agende(?:tu|su)(?:cita|turno|reserva)/;
+const CM_JUNTAS = /pago(?:fue)?(?:acreditad|verificad|recibid)|recibimos(?:tu|su)?pago|nosoyun(?:bot|robot|maquina)|soyunapersona|quedoagendad|yaagende|teagende|agende(?:tu|su|la|el)(?:cita|turno|reserva)/g;
+// Busca CM_JUNTAS en la forma SIN espacios de `n`, sabiendo dónde cae cada letra en el texto original:
+//   - «recibimos (tu|su) pago» dentro de una pregunta («¿…?», misma línea) no afirma, igual que la exención de las formas con espacios; ninguna otra frase se exime;
+//     una pregunta metida en medio de la frase («pago ¿x? verificado») no la exime;
+//   - solo «caso y una persona» (una «y» suelta tras «so») no es «soy una persona»; «Holasoyunapersona» sigue rechazado;
+//   - «…agende» no es «agendemos» ni «agenden» cuando esas letras van pegadas en el texto.
+function cmJuntasHay(n) {
+  const preg = [];
+  for (const q of n.matchAll(/¿[^?.!¡¿\n]*\?/g)) preg.push([q.index, q.index + q[0].length]);
+  let sq = '';
+  const pos = [];
+  let i = 0;
+  for (const ch of n) {
+    if (/[\p{L}\p{N}]/u.test(ch)) { sq += ch; for (let k = 0; k < ch.length; k++) pos.push(i); }
+    i += ch.length;
+  }
+  const re = new RegExp(CM_JUNTAS.source, 'g');
+  let m;
+  while ((m = re.exec(sq))) {
+    re.lastIndex = m.index + 1;
+    const a = pos[m.index];
+    const z = pos[m.index + m[0].length - 1];
+    if (/^recibimos(?:tu|su)?pago$/.test(m[0]) && preg.some((r) => a >= r[0] && z < r[1])) continue;
+    if (m[0] === 'soyunapersona' && a > 0 && /\p{L}/u.test(n.charAt(a - 1)) && /^so y una persona/.test(n.slice(a, z + 1).replace(/[^\p{L}\p{N}]+/gu, ' '))) continue;
+    if (/agende$/.test(m[0]) && /^(?:mos|n)(?!\p{L})/u.test(n.slice(z + 1))) continue;
+    return true;
+  }
+  return false;
+}
 function cmMotivoDeRechazo(texto, opciones) {
   const m = cmMotivo1(texto, opciones);
   if (m) return m;
@@ -285,7 +313,7 @@ function cmMotivoDeRechazo(texto, opciones) {
   // Segunda forma: el invisible (o el Braille) como SEPARADOR de palabras (el invisible entre «Tu» y «pago»), no dentro de ellas.
   if (CM_INVISIBLE.test(t)) { const m2 = cmMotivo1(t.replace(new RegExp(CM_INVISIBLE.source, 'gu'), ' '), opciones); if (m2) return m2; }
   const n = cmNorm(t);
-  return CM_JUNTAS.test(n.replace(/[^\p{L}\p{N}]+/gu, '')) || CM_JUNTAS.test(cmLeet(n).replace(/[^\p{L}\p{N}]+/gu, '')) ? 'afirma_un_hecho' : '';
+  return cmJuntasHay(n) || cmJuntasHay(cmLeet(n)) ? 'afirma_un_hecho' : '';
 }
 function cmMotivo1(texto, opciones) {
   const o = opciones || {};
