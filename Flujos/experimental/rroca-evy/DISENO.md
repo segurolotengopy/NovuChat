@@ -1,0 +1,51 @@
+# El flujo nuevo de la Dra. Evy (tenant `rroca-evy`): conversación libre, imágenes por etiqueta, barreras en código
+
+Encargo de Andres, 23/10/2026: lo único que Evy hace es (1) mandar todo mensaje a un agente de IA que conversa libre, con memoria de 15 mensajes, y (2) usar como prompt el guion `23102026` (con correcciones). Sin saludo fijo, sin menú, sin botones de consentimiento, sin respuestas fijas de Radiesse, HArmonyCa ni costos. Todo lo que el prompt no puede garantizar lo garantiza el código. **No se publica nada en este PR.**
+Armador: `../comun-sin-agente/construir.mjs`, importado. `node construir.mjs` escribe `rroca-evy.json` y `rroca-evy.prueba.json`; `--verificar` y `--publicable [--etapa crear|prueba|encender]` no escriben.
+
+## Topología (36 nodos en producción, 31 en la prueba; tope duro 36)
+
+```
+Entrega del receptor ► Verificar firma ► ¿Firma válida? ─sí► Aceptar (200) ► Descartar repetidos ┐   (producción)
+Entrada de prueba ───────────────────────────────────────────────────────────────────────────────┤   (prueba)
+ Config base ► Carga de entrada ► Traer configuración ► Config del negocio ► Normalizar entrada ► ¿Reportar? (entrante) ┬► Reportar mensaje (entrante)  (ARRIBA)
+                                                                                                                       └► Puerta del turno ► ¿Bajar medio? ─sí► Obtener URL ► ¿Tamaño aceptable? ─sí► Descargar medio ► ¿Es audio? ─sí► Transcribir audio ► Preparar transcripción ┐
+                                                                                                                                  └─no──────────────────────────────────────────────────────────────────────────────────── └─no► Ver imagen ───────────────────────────────────┤
+ Decidir turno ◄────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ Decidir turno ► ¿Conversar con el modelo? ─sí► Conversar con el modelo ┐
+                                           └─no──────────────────────────┴► Armar previos ► ¿Hay previos? ─sí► Enviar previos ┐
+                                                                                                          └─no──────────────────┴► Armar mensajes ┬► Resumen del turno
+                                                                                                                                                    └► ¿Enviar de verdad? ► Enviar a WhatsApp ► ¿Falló el envío? ► Enviar respaldo ► ¿Reportar? (saliente) ► Reportar mensaje (saliente)
+```
+
+Justificación (28 a 36 nodos; ninguno sobre 36): **receptor 6** (entrada verificada obligatoria: verificador interno, `wabaIdEsperado` fijo, sin «Continue on Fail», repetidos entre ejecuciones) · **cabecera 8** (config base, carga y filtro de eventos, consola, config del negocio, normalizar entrada, reporte del entrante con su condición, puerta del turno: comercio no operativo y uso extendido) · **medios 8** (los tres medios; el documento no se baja, así no hay nodos de PDF) · **cerebro 3** (decidir turno, ¿conversar?, modelo HTTP intercambiable) · **previos 3** (armar, ¿hay?, enviar: las imágenes y el aviso salen ANTES del texto para que el texto diga la verdad) · **salida 2** (armar mensajes, resumen) · **envío 6** (cadena común). Respecto de Rubén (45) y de las doctoras (43) se quitaron el cobro, el catálogo, el cotejo, el PDF, la protección con reporte propio y los dos nodos de «Medio no aceptado» (el tamaño y el formato los resuelve «Decidir turno»).
+
+## Qué hace cada pieza
+- **Conversación libre.** «Decidir turno» arma el cuerpo de Gemini (`gemini-3.5-flash-lite`, dato de «Config base», intercambiable): el prompt `prompts/evy.md` con los marcadores resueltos en cada turno (`{{NEGOCIO}}`, `{{CLINICA}}`, `{{DIRECCION}}`, `{{HORARIO}}`, `{{RECEPCION_LINK}}`, de la Consola), la memoria vigente (15 entradas de 300 caracteres, 48 h, por `messages[0].from`) y el turno actual como DATO entre `<<< >>>`. Los corchetes del cliente pasan a paréntesis: nadie fabrica un rótulo.
+- **Etiquetas** (`[ENVIAR_ARTE_COMPARATIVO]`, `[ENVIAR_ARTE_ANTES_DESPUES]`, `[ENVIAR_ARTE_AUTORIDAD]`, `[DERIVAR_RECEPCION]` o con nombre): el código las lee y las quita de CUALQUIER parte y forma (repetidas, sin corchete, a medias, otras mayúsculas); cualquier otra etiqueta o corchete se borra. La imagen (mensaje `image` con el id de medio) sale ANTES del texto, una vez por imagen y conversación (ficha de 48 h), hasta 3 por conversación; sin el id resuelto, o si Meta rechaza el envío, el texto sale igual sin etiqueta y sin prometer la imagen (barrera por hecho: «Armar mensajes» corre después de «Enviar previos»). «paciente real» solo si el antes y después salió ese turno, y entonces con la aclaración «cada rostro responde distinto». D6: el comparativo exige `usarMarcas` y que el cliente pregunte por la diferencia (ver `PROPIO.md`).
+- **Barreras sobre lo que escribe el modelo** (`evPulirSalida`, que reutiliza `cmMotivoDeRechazo` del filtro común): sin precios ni rangos (el único monto, «250 Bs», solo como valor habitual de una valoración que se presenta bonificada), sin «garantizamos», «100 % seguro» ni «sin riesgo», sin consejo médico ni medicamentos, sin enlaces ni teléfonos, sin promesas sin respaldo («te llamamos», «te escribirán», «te aviso luego», «te paso con recepción» sin el botón), sin «inmediato», y `NIEGA_IA` rechaza cualquier respuesta que niegue ser una IA. Si el texto no pasa, o el modelo cae: UN texto fijo y el botón de la recepción (y el aviso), nunca silencio.
+- **Antes del modelo**: violencia o miedo hacia la pareja (texto fijo sin recursos ni números, silencio 48 h); síntoma, reacción o urgencia (texto fijo sin consejo + aviso a recepción + botón); la baja silenciosa (D1): una confirmación breve y `noContactar` 48 h, después silencio total (sin modelo ni aviso); la expresión es por cláusula y no reconoce «no me escribas más tarde», «para» ni el relato de un tercero.
+- **Cierre.** Con `[DERIVAR_RECEPCION]` el código descarta el texto del modelo y arma el cierre fijo del guion (nombre de la etiqueta o, si falta, del perfil; dirección de la Consola) con UN botón `cta_url` a la recepción (número de la Consola; en la etapa de prueba, el de «Config base»). Aviso a recepción (D4): texto libre dentro de su ventana de 23,5 h, o la plantilla UTILITY `aviso_solicitud_valoracion` (4 variables: nombre, interés, horario preferido, teléfono) si Meta la tiene APPROVED; a lo más uno por teléfono y motivo cada 30 minutos y 30 por hora en todo el flujo. Respaldo en texto si Meta rechaza el interactivo.
+- **Visión.** «Ver imagen» (Gemini) devuelve `{tipo, texto, descripcion}`; el tipo es una lista cerrada (comparativo, blazer blanco, blazer fucsia, antes y después, otra). El código sanea (sin enlaces ni números largos; si parece instrucción se descarta ENTERA) y lo pasa como `[IMAGEN_RECIBIDA: …]` junto con el pie de foto. No hay respuesta fija a una imagen.
+- **Guardia de publicación** (`--publicable`): marcadores sin resolver, etapa `prueba` (exige `etapaPrueba = si`, teléfonos de prueba con prefijo y la recepción dentro de ellos) o completa (la rechaza y exige plantilla APPROVED), audio, imagen y documento declarados, rama de medios completa y los ids de las tres imágenes resueltos.
+
+## Costo (`docs/base-comercial.md` §1)
+- **Mensajes por conversación:** 0 agregados frente a un flujo conversacional simple (1 respuesta por mensaje). Salvo: hasta **+3 imágenes por conversación** (≈ 0,0113 USD cada una, dentro de la ventana) y **+1 aviso a recepción por derivación** (a OTRO destinatario; ≈ 0,0113 USD fuera de la ventana, con la plantilla). Las imágenes no se reportan a la ingesta como conversación.
+- **Escrituras en GitHub y corridas de CI:** un PR; las suites nuevas (`admin/pruebas/tenants/rroca-evy/`, puras, ~2 s). **Escrituras en la nube:** ninguna; no se publica, no se despliega.
+- Modelo: 1 llamada a Gemini por mensaje de texto (flash-lite), más 1 de visión o transcripción por foto o nota de voz (con topes diarios por teléfono: 5 fotos y 10 audios).
+
+## Lo que NO hace
+No cobra, no tiene catálogo, pedidos ni QR; no agenda (lo hace la recepción); no envía respuestas fijas a Radiesse, HArmonyCa ni costos; no ofrece menús, consentimiento por botones ni la frase de baja; no lee documentos (PDF); no responde a números de otro país; no da consejo médico ni precios; no publica nada en n8n ni toca la Consola, Meta o producción.
+
+## Secuencia de publicación (sin hacerla aquí)
+1. Preparar la tabla local en una COPIA: `ETAPA_PRUEBA = si`, `TELEFONOS_DE_PRUEBA`, recepción de prueba, ids de las tres imágenes y los identificadores reales; `node construir.mjs --publicable --etapa prueba --flujo <preparado>`.
+2. Actualizar el flujo vivo (`tg8w…`, inactivo o en prueba) con `publicar-flujo.sh --flujo <preparado> --aplicar` (requiere cablear esta guardia en el script: ver `PROPIO.md`, nota d).
+3. Encender y probar con teléfonos de prueba; después, tabla real con `ETAPA_PRUEBA` vacío, guardia completa y publicación con el «sí» de Andres.
+4. **Restauración:** reimportar el JSON anterior del flujo vivo con `publicar-flujo.sh` (el flujo de las doctoras sigue versionado en `Flujos/experimental/doctoras/`); `usarMarcas` vacío apaga las marcas sin tocar código.
+
+## Desvíos y puntos para el revisor
+- **Documentos sin leer** (3 nodos menos, sin enviar datos de salud a Gemini); si Andres quiere el PDF leído, se agrega la rama de Rubén.
+- **El fallo del modelo avisa a recepción** (política general «aviso + botón»), con tope por teléfono y por hora; el texto solo dice «ya avisé» si el aviso salió.
+- **Cierre:** el texto del modelo se descarta y sale el fijo; el nombre sale de la etiqueta (`[DERIVAR_RECEPCION: Ana]`) o del perfil de WhatsApp saneado.
+- **`cmPulirRedaccion` no se usa** (borraría la presentación del saludo, que el guion manda hacer); sí `cmMotivoDeRechazo`.
+- El «250 Bs» y el antes y después van con su aclaración por código; «inmediato» se quita por código además del prompt.
