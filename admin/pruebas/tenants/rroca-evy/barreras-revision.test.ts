@@ -343,6 +343,8 @@ describe('Evy NO agenda: ninguna oración del modelo afirma una cita, un cupo o 
   const AFIRMAN = [
     'Ya tienes tu espacio con la Dra. el lunes.', 'Ya te tiene en su lista para el lunes.', 'La recepción ya registró tu valoración.', 'Listo, ya está todo hecho, nos vemos el martes.',
     'La Dra. te verá el jueves a las 4 pm.', 'Tu valoración quedó para el viernes.', 'Te esperamos el lunes a las 10:30.', 'Así es: la Dra. te atiende el miércoles.',
+    'Ya tienes tu espacio el lunes, ¿verdad?', 'Ya quedaste inscrita, ¿no?', 'Te esperamos el lunes a las 10:30 con la Dra. ¿Te parece?', 'Ya quedó tu cita.', 'Ya te inscribí.',
+    'Ya estás en la agenda del jueves.', 'Listo, el lunes 10:00 es tuyo.', 'Pasado mañana vienes a las 4.', 'Te espera la Dra. mañana.', 'Perfecto, apartado para el miércoles.',
     'Ya quedaste inscrita.', 'Recepción ya sabe que vas el martes.', 'Ya tiene tu cupo.', 'Te guardé el horario de las 16 hs.', 'Te confirmo al 100%: estás inscrita.',
   ];
   for (const f of AFIRMAN) {

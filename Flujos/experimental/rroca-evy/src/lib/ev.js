@@ -464,7 +464,7 @@ function evCortarOraciones(linea) {
   const out = [];
   for (const p of partes) {
     const previa = out.length ? out[out.length - 1] : '';
-    const une = out.length && (/(^|\s)(Sr|Sra|Srta|Dr|Dra|Lic|Ing|etc|Nº|N°|ej|aprox)\.$/i.test(previa)
+    const une = out.length && (/(^|\s)(Sr|Sra|Srta|Dr|Dra|Lic|Ing|etc|Nº|N°|ej|aprox)\.$/i.test(previa) && !/^[¿¡]/.test(p)
       || (/(^|\s)Bs\.$/.test(previa) && /^\d/.test(p))
       || /^\d{1,2}\.$/.test(previa)
       || (/(^|\s)[ap]\.$/i.test(previa) && /^m\./i.test(p)));
@@ -512,20 +512,25 @@ function evSinConector(o) {
 // Evy NO agenda: ninguna oración del modelo puede afirmar una cita, un cupo, un registro ni una espera («Ya tienes tu espacio el lunes», «La Dra. te verá el jueves», «Ya quedaste inscrita», «Te esperamos a las 10:30»).
 // Una oración la afirma si une un SUJETO dirigido al cliente (te, tu, tienes, quedaste, estás inscrita, nos vemos…) con un día, una hora o un registro. Las preguntas y los condicionales («¿te gustaría el lunes?», «si quieres el lunes…») y la información
 // del horario de atención («atendemos de lunes a viernes de 08:30 a 18:30») no cuentan; «hoy / mañana» solo cuentan junto a un verbo de visita.
-const EV_AG_SUJETO = /\b(te|tu|tus|tienes|quedaste|quedo|quedamos|nos vemos|estas inscrit\w*|sabe que vas|ya esta todo hecho)\b/;
+const EV_AG_SUJETO = /\b(te|tu|tus|tienes|quedaste|quedo|quedamos|nos vemos|estas|es tuyo|vienes|sabe que vas|ya esta todo hecho)\b/;
 const EV_AG_FUERTE = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b|\b\d{1,2}[: ]\d{2}\b|\ba las \d{1,2}(?!\s*(?:semanas|dias|meses|horas|minutos))|\b\d{1,2} ?(?:am|pm|hs|hrs)\b/;
+const EV_AG_PARTICIPIO = /\b(apartad\w*|reservad\w*|agendad\w*|anotad\w*|registrad\w*|inscrit\w*)\b/;
 const EV_AG_DEBIL = /\b(hoy|manana|pasado manana)\b/;
-const EV_AG_VISITA = /\b(esperamos|espero|veras|vera|atiende|atendera|nos vemos|vienes|vas|llegas|recibe|recibira)\b/;
-const EV_AG_REGISTRO = /\b(inscrit\w*|ya (?:te |lo |la )?(?:tiene|tienes|tengo|tenemos) (?:tu |su )?(?:cupo|espacio|turno|lugar)|ya te (?:tiene|tienen)|en su lista|en la lista|(?:registr|anot|guard|apunt|agend|reserv)(?:e|o|amos|aron|ado|ada|ados|adas)|sabe que vas|ya esta todo hecho)\b/;
+const EV_AG_VISITA = /\b(espera\w*|esperamos|espero|veras|vera|atiende|atendera|nos vemos|vienes|vas|llegas|recibe|recibira)\b/;
+const EV_AG_REGISTRO = /\b(inscrit\w*|ya (?:te |lo |la )?(?:tiene|tienes|tengo|tenemos) (?:tu |su )?(?:cupo|espacio|turno|lugar)|ya te (?:tiene|tienen)|en su lista|en la lista|quedo (?:tu|su) (?:cita|turno|espacio)|inscrib\w*|apartad\w*|en la agenda|(?:registr|anot|guard|apunt|agend|reserv)(?:e|o|amos|aron|ado|ada|ados|adas)|sabe que vas|ya esta todo hecho)\b/;
 function evAfirmaAgenda(oracion) {
   const o = evTexto(oracion);
-  if (evEsPregunta(o)) return false;
-  let n = evNorm(o);
+  // Una coletilla interrogativa («…, ¿verdad?», «… ¿Te parece?») no anula la afirmación que la precede; una pregunta entera sí está exenta.
+  const sinColetilla = o.replace(/,?\s*[¿][^?]*\?[^\p{L}\p{N}]*$/u, '');
+  if (sinColetilla.trim() === '') return false;
+  if (sinColetilla === o && evEsPregunta(o)) return false;
+  let n = evNorm(sinColetilla);
   if (/^(si|cuando|en caso|por si)\b/.test(n) || /\bsi (quieres|deseas|prefieres|gustas)\b/.test(n)) return false;
   // El horario de atención es información: «de lunes a viernes», «de 08:30 a 18:30», «sábados de 09:00 a 12:00».
   n = n.replace(/\bde (?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)s? a (?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)s?\b/g, ' ').replace(/\bde \d{1,2}[: ]\d{2} a \d{1,2}[: ]\d{2}\b/g, ' ').replace(/\bde \d{1,2} a \d{1,2} ?(?:hs|hrs|horas)?\b/g, ' ');
   // Las muletillas («te cuento que…», «te recomiendo…») no dirigen nada al cliente, y «hasta el viernes» es un plazo, no una cita.
   n = n.replace(/\bte (?:cuento|comento|recuerdo|recomiendo|explico|aviso|digo|informo)(?: que)?\b/g, ' ').replace(/\bhasta (?:el |la |este |esta )?\w+/g, ' ');
+  if (EV_AG_PARTICIPIO.test(n) && EV_AG_FUERTE.test(n)) return true;   // «apartado para el miércoles»
   if (!EV_AG_SUJETO.test(n)) return false;
   return EV_AG_FUERTE.test(n) || EV_AG_REGISTRO.test(n) || (EV_AG_DEBIL.test(n) && EV_AG_VISITA.test(n));
 }

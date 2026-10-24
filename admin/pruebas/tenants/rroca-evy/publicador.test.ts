@@ -21,7 +21,7 @@ chmodSync(join(bin, 'curl'), 0o755);
 const envRel = join(dir, 'env');
 writeFileSync(envRel, 'N8N_API_KEY=clave-de-juguete\nN8N_WORKFLOW_ID=1\nN8N_BASE_URL=http://n8n.invalido\n');
 const nuevo = { name: NOMBRE, nodes: [{ name: 'Armar previos' }, { name: 'Config base' }] };
-const viejo = { name: NOMBRE, active: false, nodes: [{ name: 'Armar avisos' }] };
+const viejo = { name: NOMBRE, active: false, nodes: [{ name: 'Armar avisos' }, { name: 'Config base', parameters: { jsCode: "tenantId: 'rroca-evy'" } }] };
 const vivoNuevo = join(dir, 'vivo-nuevo.json'); writeFileSync(vivoNuevo, JSON.stringify({ ...nuevo, active: false }));
 const vivoViejo = join(dir, 'vivo-viejo.json'); writeFileSync(vivoViejo, JSON.stringify(viejo));
 const vivoOtro = join(dir, 'vivo-otro.json'); writeFileSync(vivoOtro, JSON.stringify({ name: 'Otro cliente', active: false, nodes: [] }));
@@ -161,7 +161,7 @@ describe('el flujo nuevo de Evy tiene su guardia, distinta de la de las doctoras
       expect(r.curl, extra.join(' ')).not.toMatch(/-X (PUT|POST)/);
     }
     // Un vivo de OTRO cliente (nombre cualquiera) o Emma renombrada: tampoco, ni con --forzar.
-    for (const [nombre, vivo] of [['otro-cliente', { name: "NovuChat — Q'Taco (qtaco)", active: true, nodes: [{ name: 'Armar avisos' }] }], ['emma-renombrada', { name: 'Dra. E. R.', active: false, nodes: [{ name: 'Armar avisos' }] }], ['vacio', { name: 'x', nodes: [] }], ['otro-con-nombre-de-evy', { name: NOMBRE, active: true, nodes: [{ name: 'Otro nodo' }] }]] as const) {
+    for (const [nombre, vivo] of [['otro-cliente', { name: "NovuChat — Q'Taco (qtaco)", active: true, nodes: [{ name: 'Armar avisos' }] }], ['emma-renombrada', { name: 'Dra. E. R.', active: false, nodes: [{ name: 'Armar avisos' }] }], ['vacio', { name: 'x', nodes: [] }], ['emma-con-nombre-de-evy', { name: NOMBRE, active: false, nodes: [{ name: 'Armar avisos' }, { name: 'Config base', parameters: { jsCode: "tenantId: 'rroca-emma'" } }] }], ['otro-con-nombre-de-evy', { name: NOMBRE, active: true, nodes: [{ name: 'Otro nodo' }] }]] as const) {
       const archivo = join(dir, `vivo-${nombre}.json`); writeFileSync(archivo, JSON.stringify(vivo));
       for (const extra of [[], ['--forzar']]) {
         const r = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-evy', ...extra], archivo);
