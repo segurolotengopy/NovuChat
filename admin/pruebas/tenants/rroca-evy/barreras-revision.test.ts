@@ -231,6 +231,56 @@ describe('el cierre completo sale UNA vez por ficha', () => {
   });
 });
 
+describe('la pregunta por la gratuidad se contesta con un texto fijo cuando el modelo falla', () => {
+  const FIJO = 'Sí, la valoración con la Dra. Evy Karina Rojas es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar. (Su valor habitual es de 250 Bs; por la campaña está bonificado).';
+  const PREGUNTAS = ['¿De verdad es gratis?', '¿Hay algún costo escondido o pago de reserva?', '¿tengo que dejar un anticipo?'];
+  for (const q of PREGUNTAS) {
+    it(`POSITIVA: «${q}» con el modelo rechazado o caído: texto fijo, sin botón ni aviso`, () => {
+      for (const modelo of ['cae', 'Te lo confirmo, Paola: ya pagaste tu reserva y tu pago fue acreditado.']) {
+        const m = crear({ modeloDice: modelo === 'cae' ? 'cae' : dice(modelo) });
+        const t = hablar(m, ANA, mTexto(q));
+        expect(textos(t)[0], q).toContain(FIJO);
+        expect(t.mensajes[0]!.tipo, q).toBe('text');
+        expect(avisosARecepcion(t).length, q).toBe(0);
+        expect(textos(t)[0]).toContain('¿Cómo te llamas y qué te gustaría mejorar en tu rostro?');
+      }
+    });
+  }
+  it('con el nombre ya dado no repite la pregunta final', () => {
+    const m = crear({ modeloDice: 'cae' });
+    const t = hablar(m, ANA, mTexto('Soy Paola, ¿es gratis?'));
+    expect(textos(t)[0]).toBe(FIJO);
+  });
+  it('NEGADA: el texto fijo jamás sale si el cliente no preguntó por eso (cae al fallo con botón y aviso); «ya pagaste tu reserva» sigue rechazado', () => {
+    const t = hablar(crear({ modeloDice: 'cae' }), ANA, mTexto('¿y duele?'));
+    expect(textos(t).join(' ')).not.toContain('100% gratuita');
+    expect(fallo(textos(t)[0]!)).toBe(true);
+    const u = sale('Ya pagaste tu reserva. ¿Cómo te llamas?', '¿y duele?');
+    expect(fallo(u)).toBe(true);
+    expect(u).not.toContain('100% gratuita');
+  });
+  it('si el modelo contesta bien, sale lo del modelo y no el fijo', () => {
+    const t = sale('Sí, es gratuita y sin compromiso. ¿Cómo te llamas?', '¿es gratis?');
+    expect(t).toContain('Sí, es gratuita y sin compromiso.');
+    expect(t).not.toContain('por adelantado');
+  });
+});
+
+describe('«Ok, quiero agendar» deriva aunque el modelo no emita la etiqueta (F3 turno 6)', () => {
+  it('sale el cierre con su botón y su aviso; «cómo agendo» (pregunta) no deriva', () => {
+    const t = hablar(crear({ modeloDice: dice('¡Sí, de verdad es gratuita! Me alegra tu decisión.') }), ANA, mTexto('Ok, quiero agendar'));
+    expect(textos(t)[0]).toMatch(/Excelente decisión/);
+    expect(t.mensajes[0]!.tipo).toBe('interactive');
+    expect(avisosARecepcion(t).length).toBe(1);
+    const c = hablar(crear({ modeloDice: dice('Con gusto te cuento. ¿Cómo te llamas?') }), ANA, mTexto('¿cómo se agenda la valoración?'));
+    expect(c.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
+  });
+  it('con el modelo caído y un pedido explícito, igual sale el cierre (no el fallo)', () => {
+    const t = hablar(crear({ modeloDice: 'cae' }), ANA, mTexto('quiero agendar'));
+    expect(textos(t)[0]).toMatch(/Excelente decisión/);
+  });
+});
+
 describe('«Te confirmo» no afirma una cita (Evy no agenda)', () => {
   for (const mala of [
     'Te confirmo que la Dra. te espera mañana a las 10. ¿Cómo te llamas?',

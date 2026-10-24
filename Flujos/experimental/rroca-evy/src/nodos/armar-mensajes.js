@@ -96,9 +96,17 @@ if (puerta.ruta === 'fuera_de_prueba') {
   const ultimoA = evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora).filter((h) => h.r === 'a').slice(-1)[0];
   ms = [conRecepcion(ultimoA && ultimoA.t === EV_TEXTO_DERIVAR_DE_NUEVO ? EV_TEXTO_DERIVAR_DE_NUEVO_2 : EV_TEXTO_DERIVAR_DE_NUEVO)];
   hist = { a: ms[0].texto, b: ms[0].respaldo };
+} else if (efectivo === 'gratis') {
+  ms = [texto(evTextoGratis(cfg, evDioNombre(evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora), plan.textoCliente)))];
+  hist = { a: ms[0].texto, b: ms[0].texto };
 } else if (efectivo === 'modelo') {
   const rev = evPulirSalida(res.textoModelo, { artesEnviados: artesSalidos, textoCliente: plan.textoCliente, nombreNegocio: cfg.nombreNegocio });
   if (rev.motivo === 'salud_sin_remision') { ms = [conRecepcion(EV_TEXTO_REMISION_SALUD)]; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
+  else if ((rev.motivo !== '' || rev.texto === '') && evPreguntaGratis(plan.textoCliente)) {
+    ms = [texto(evTextoGratis(cfg, evDioNombre(evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora), plan.textoCliente)))];
+    hist = { a: ms[0].texto, b: ms[0].texto };
+    rechazo = { motivo: rev.motivo || 'vacio', detalle: rev.detalle || '' };
+  }
   else if (rev.motivo !== '' || rev.texto === '') { ms = [fallo()]; rechazo = { motivo: rev.motivo || 'vacio', detalle: rev.detalle || '' }; }
   else {
     ms = [texto(rev.texto)];
@@ -123,7 +131,7 @@ if (!sinFicha) {
   ficha.turnos += 1;
   ficha.ultimoMs = ahora;
   // La memoria: la entrada del cliente se guarda cuando el turno es una conversación; lo que contó de su salud, su protección o su baja NO se guarda.
-  if ((efectivo === 'modelo' || efectivo === 'fallo' || efectivo === 'derivar' || efectivo === 'derivar_corto' || efectivo === 'fijo') && typeof decision.entradaHistorial === 'string' && decision.entradaHistorial.trim() !== '') {
+  if ((efectivo === 'modelo' || efectivo === 'fallo' || efectivo === 'derivar' || efectivo === 'derivar_corto' || efectivo === 'gratis' || efectivo === 'fijo') && typeof decision.entradaHistorial === 'string' && decision.entradaHistorial.trim() !== '') {
     ficha.historial = evHistorialSaneado(ficha.historial.concat([{ r: 'u', t: decision.entradaHistorial }]));
   }
   if (decision.oyoAudio === true) ficha.audios = evContarMedio(ficha.audios, ahora);

@@ -37,8 +37,11 @@ if (plan.tipo === 'modelo') {
   // Por qué vino vacía (para el diagnóstico): el motivo de corte y el bloqueo que Gemini informa, sin el texto.
   const cand = respuesta && Array.isArray(respuesta.candidates) ? respuesta.candidates[0] : null;
   const porque = (cand && cand.finishReason ? ' finishReason=' + String(cand.finishReason).slice(0, 30) : '') + (respuesta && respuesta.promptFeedback && respuesta.promptFeedback.blockReason ? ' blockReason=' + String(respuesta.promptFeedback.blockReason).slice(0, 30) : '') + (respuesta && respuesta.error ? ' error ' + (respuesta.error && typeof respuesta.error === 'object' ? String(respuesta.error.httpCode || respuesta.error.code || respuesta.error.status || '') + ' ' + String(respuesta.error.message || '').replace(/AIza\S+/g, '[clave]').slice(0, 80) : String(respuesta.error).slice(0, 80)) : '');
+  // Pedido EXPLÍCITO de agendar («Ok, quiero agendar»): el cierre no depende de que el modelo se acuerde de la etiqueta.
+  const quiere = evQuiereAgendar(plan.textoCliente);
+  if (quiere && crudo.length <= 20000) et.derivar = true;
   if (crudo.length > 20000) { efectivo = 'fallo'; rechazo = { motivo: 'largo', detalle: 'la salida del modelo supera los 20 000 caracteres' }; }
-  else if (crudo.trim() === '' || (et.texto.trim() === '' && !et.derivar)) { efectivo = 'fallo'; rechazo = { motivo: 'modelo_sin_texto', detalle: (crudo.trim() === '' ? 'el modelo no devolvió texto (caído o vacío)' : 'solo etiquetas, sin texto') + porque }; }
+  else if ((crudo.trim() === '' && !quiere) || (et.texto.trim() === '' && !et.derivar)) { efectivo = 'fallo'; rechazo = { motivo: 'modelo_sin_texto', detalle: (crudo.trim() === '' ? 'el modelo no devolvió texto (caído o vacío)' : 'solo etiquetas, sin texto') + porque }; }
   else if (et.derivar && !(ficha.cierreMs > 0)) efectivo = 'derivar';
   // El cierre completo ya salió en esta ficha (48 h): si pide agendar de nuevo (o el modelo solo emitió la etiqueta), sale la variante corta con el botón; si sigue conversando, contesta el modelo sin cierre ni botón.
   else if (et.derivar && (evPideAgendar(plan.textoCliente) || et.texto.trim() === '')) efectivo = 'derivar_corto';
@@ -58,6 +61,8 @@ if (plan.tipo === 'modelo') {
     else if (rev.motivo !== '') { efectivo = 'fallo'; artesPlan = []; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
   }
 }
+// La pregunta por la gratuidad («¿es gratis?», «¿hay costo escondido o pago de reserva?») que el modelo no logró contestar (o que una barrera rechazó) la contesta un TEXTO FIJO, sin botón ni aviso.
+if (efectivo === 'fallo' && plan.tipo === 'modelo' && evPreguntaGratis(plan.textoCliente)) { efectivo = 'gratis'; artesPlan = []; }
 if (efectivo === 'derivar' || efectivo === 'derivar_corto') { avisoDe = { clave: 'solicitud', solicitud: true }; artesPlan = []; }
 else if (efectivo === 'medica') avisoDe = { clave: 'consulta_medica', solicitud: false };
 else if (efectivo === 'fallo') avisoDe = { clave: 'no_supo', solicitud: false };

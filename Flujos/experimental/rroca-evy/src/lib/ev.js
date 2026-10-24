@@ -817,6 +817,24 @@ const EV_TEXTO_ARCHIVO_PESADO = 'Tu archivo es demasiado pesado para abrirlo. ¿
 const EV_TEXTO_MINIMO = 'Hola, soy el asistente virtual de la Dra. Evy.';
 // El cierre completo sale UNA vez por ficha (48 h). Si el cliente vuelve a pedir agendar, sale esta variante corta y DISTINTA con el botón (un botón no pulsado puede volver a ofrecerse, nunca el mismo texto) y sin repetir el aviso.
 const EV_TEXTO_DERIVAR_DE_NUEVO = 'Claro, aquí tienes de nuevo el botón para escribirle a recepción.';
+// La pregunta por la gratuidad: texto FIJO cuando el modelo no la pudo contestar (no pasa por el modelo; sin botón ni aviso). El valor habitual (250 Bs) es el único monto que el flujo menciona.
+const EV_PREGUNTA_GRATIS = /\b(gratis|gratuit\w*|costo escondido|costos? ocult\w*|costos? extra|pago de reserva|anticipo|sin costo|cuesta la valoracion|cuanto cuesta la valoracion|tiene costo|hay (?:algun )?costo|tengo que pagar|cobran)\b/;
+function evPreguntaGratis(textoCliente) { return EV_PREGUNTA_GRATIS.test(evNorm(textoCliente)); }
+// Pedido explícito de agendar (no una pregunta sobre cómo se agenda).
+const EV_QUIERE_AGENDAR = /\b(?:quiero|quisiera|queremos|deseo|necesito|me gustaria|voy a|vamos a|puedo|podemos|podria|podrian)\s+(?:\w+\s+){0,2}(?:agendar|reservar|separar)\b|\bagend(?:a|ame|en|enme|arme)\b|\breserva(?:me|nos)\b|\bsi,? quiero (?:la valoracion|mi valoracion|mi cita|agendar)\b/;
+function evQuiereAgendar(textoCliente) {
+  const raw = evTexto(textoCliente);
+  return EV_QUIERE_AGENDAR.test(evNorm(raw)) && !/\bcomo\b/.test(evNorm(raw));
+}
+function evDioNombre(historial, textoCliente) {
+  const re = /\b(?:soy|me llamo|mi nombre es)\s+\p{L}{2,}/iu;
+  return re.test(evTexto(textoCliente)) || (Array.isArray(historial) && historial.some((h) => h && h.r === 'u' && re.test(evTexto(h.t))));
+}
+function evTextoGratis(cfg, dioNombre) {
+  const negocio = evLinea(cfg && cfg.nombreNegocio, 60) || 'Dra. Evy';
+  const cuerpo = 'Sí, la valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar. (Su valor habitual es de 250 Bs; por la campaña está bonificado).';
+  return dioNombre ? cuerpo : cuerpo + '\n\n¿Cómo te llamas y qué te gustaría mejorar en tu rostro?';
+}
 const EV_TEXTO_DERIVAR_DE_NUEVO_2 = 'Con gusto, el botón sigue disponible para escribirle a recepción.';
 const EV_PIDE_AGENDAR = /\b(agend\w*|reserv\w*|cita|citas|turno|apart\w+|quiero (?:ir|asistir|la valoracion|mi valoracion)|cuando (?:puedo|podemos|atienden)|horarios?|disponibilidad|escribir a recepcion|hablar con recepcion|numero de recepcion)\b/;
 function evPideAgendar(textoCliente) { return EV_PIDE_AGENDAR.test(evNorm(textoCliente)); }
