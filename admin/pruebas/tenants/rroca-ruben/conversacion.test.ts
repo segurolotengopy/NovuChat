@@ -774,7 +774,12 @@ describe('ENTREGA 2 · invariantes 11 a 15 del vigilante: negados con casos puro
     expect(violacionesDeCompuerta(charla(1), mTexto('dame tu catálogo'), [precio], 'precio', false)).not.toEqual([]);
     // La excepción declarada (23/10): pregunta directa de precio, ya saludado, SOLO con los planes `precio` y `opciones_fijo`; sin saludar, o con cualquier otro plan, sigue violando.
     expect(violacionesDeCompuerta(charla(1), mTexto('¿cuánto cuesta el libro?'), [precio], 'precio', false)).toEqual([]);
-    expect(violacionesDeCompuerta(charla(1), mTexto('precio'), [menu], 'opciones_fijo', false)).toEqual([]);
+    const bloque = botonesMsg(['Pack Completo 60Bs', 'Libro + Bonos 32Bs', 'Ver Complementos'], 'Te dejo aquí abajo las opciones para que elijas la que prefieras.');
+    expect(violacionesDeCompuerta(charla(1), mTexto('precio'), [bloque], 'opciones_fijo', false)).toEqual([]);
+    // Acotada (seguridad): el respaldo de un modelo caído con el mismo nombre de plan, o una pregunta que no es de precio, siguen violando.
+    expect(violacionesDeCompuerta(charla(1), mTexto('precio'), [menu], 'opciones_fijo', false)).not.toEqual([]);
+    expect(violacionesDeCompuerta(charla(1), mTexto('hola'), [bloque], 'opciones_fijo', false)).not.toEqual([]);
+    expect(violacionesDeCompuerta(charla(1), mTexto('precio'), [txt('Tengo estas ideas, 60 Bs')], 'precio', false)).not.toEqual([]);
     expect(violacionesDeCompuerta(charla(0), mTexto('precio'), [precio], 'precio', false)).not.toEqual([]);
     expect(violacionesDeCompuerta(charla(1), mTexto('precio'), [precio], 'modelo', false)).not.toEqual([]);
     expect(violacionesDeCompuerta(charla(1), mTexto('quiero el pack'), [precio], 'precio', false)).not.toEqual([]);
