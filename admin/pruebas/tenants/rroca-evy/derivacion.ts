@@ -15,5 +15,6 @@ export const TABLA_DE_PLANES: TablaDePlanes = {
   medica: { clase: 'deriva' },            // consulta médica: texto fijo sin consejo + aviso + botón
   remision: { clase: 'deriva' },          // habló de salud sin remitir a la valoración: texto fijo + botón
   fallo: { clase: 'deriva' },             // el modelo cayó o su respuesta no pasó las barreras: texto fijo + botón
+  derivar_corto: { clase: 'deriva' },     // el cierre ya salió (48 h) y el cliente vuelve a pedir agendar: variante corta distinta + botón, sin repetir el aviso
   derivar: { clase: 'deriva' },           // el cliente quiere agendar: cierre fijo + botón
 };

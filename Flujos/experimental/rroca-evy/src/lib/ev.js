@@ -254,6 +254,7 @@ function evFichaVigente(f, ahoraMs) {
     ultimosIds: ids.slice(-EV_TOPE_IDS), turnos: f && Number.isFinite(f.turnos) ? f.turnos : 0, ultimoMs: ultimoMs,
     noContactarMs: ven(f && f.noContactarMs) ? f.noContactarMs : 0, noContactar: ven(f && f.noContactarMs),
     riesgoMs: ven(f && f.riesgoMs) ? f.riesgoMs : 0, riesgo: ven(f && f.riesgoMs),
+    cierreMs: ven(f && f.cierreMs) ? f.cierreMs : 0,
     historial: vencida ? [] : evHistorialSaneado(f && f.historial), artes: artes, avisos: avisos,
     imagenes: evConteoDeFicha(f && f.imagenes), audios: evConteoDeFicha(f && f.audios),
   };
@@ -508,6 +509,8 @@ function evSinConector(o) {
   return resto === '' ? o : resto.charAt(0).toUpperCase() + resto.slice(1);
 }
 // Devuelve la lista sin las oraciones que `borrar(oracion, indice)` marca; la primera que queda tras una borrada pierde su conector.
+// Evy NO agenda: una oración que afirma un día, una hora, un espacio, un turno, un registro o una espera NO se reescribe como «Así es:» (la muletilla «te confirmo» no la salva): el texto entero se rechaza.
+const EV_AFIRMA_AGENDA = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|manana|hoy|pasado manana|semana|a las \d+|\d{1,2} ?(?:am|pm|hs|hrs|horas)|\d{1,2} \d{2}|lista|espacio|turno|registr\w*|anot\w*|espera|esperamos|nos vemos|te tiene|tienes tu|ya esta todo|listo)\b/;
 function evSinHuerfanos(lista, borrar) {
   const out = [];
   let borro = false;
@@ -530,7 +533,7 @@ function evRecortar(texto, tope) {
   const idx = [];
   lista.forEach((o, i) => { if (o !== '' && o !== '\n') idx.push(i); });
   const ultima = idx.length ? idx[idx.length - 1] : -1;
-  const esencial = (i) => i === idx[0] || i === ultima || EV_ESENCIAL.test(evNorm(lista[i])) || (evEsPregunta(lista[i]) && /\b(llam\w*|nombre|mejorar|gustaria|deseas|quieres)\b/.test(evNorm(lista[i])));
+  const esencial = (i) => i === idx[0] || i === ultima || EV_ESENCIAL.test(evNorm(lista[i])) || EV_REMISION.test(evNorm(lista[i])) || EV_CONDICION.test(evNorm(lista[i])) || (evEsPregunta(lista[i]) && /\b(llam\w*|nombre|mejorar|gustaria|deseas|quieres)\b/.test(evNorm(lista[i])));
   const quitadas = new Set();
   const largo = () => evMarcarValor(evUnirOraciones(lista.filter((o, i) => !quitadas.has(i)))).length;
   for (let k = idx.length - 1; k >= 0 && largo() > tope; k--) { if (!esencial(idx[k])) quitadas.add(idx[k]); }
@@ -548,9 +551,9 @@ function evConAclaracion(texto, frase) {
   return evUnirOraciones(lista);
 }
 // CUIDADOS POSTERIORES / RECUPERACIÓN: el modelo no inventa qué evitar ni por cuánto tiempo (consejo médico). La oración se borra y el código deja la remisión a la valoración.
-const EV_CUIDADOS = /\b(?:evit\w+[^.!?]{0,50}\b(?:activid\w*|ejercicio\w*|esfuerzo\w*|deporte\w*|gimnasio|sol|alcohol|masaje\w*|calor|sauna|maquillaje|dormir|tomar|comer|fumar)\b|no (?:hagas|realices|tomes|expongas|te expongas|consumas|te maquilles|duermas)\b|reposo (?:absoluto|total|relativo)|expon\w+ al sol|exposicion (?:al )?sol|(?:tomar|consumir|consumo de) alcohol|masajes? (?:en|sobre) |por \d+ (?:horas|dias)|durante (?:los|las) (?:primer\w+|proxim\w+) (?:\d+ )?(?:dias|horas|semanas))/;
+const EV_CUIDADOS = /\b(?:evit\w+[^.!?]{0,50}\b(?:activid\w*|ejercicio\w*|esfuerzo\w*|deporte\w*|gimnasio|sol|alcohol|masaje\w*|calor|sauna|maquill\w*|dormir|tomar|comer|fumar|recost\w*)\b|no (?:\w+ ){0,2}(?:hagas|hacer|realices|realizar|tomes|tomar|expongas|exponerte|te expongas|consumas|consumir|te maquilles|maquillarte|duermas|dormir|te recuestes|recostarte|fumes|fumar)\b|reposo (?:absoluto|total|relativo)|expon\w+ al sol|exposicion (?:al )?sol|(?:tomar|consumir|consumo de) alcohol|protector solar|filtro solar|hielo|compresas?|masajea\w*|masajes? (?:en|sobre) |maquill\w* (?:la|las|tu)|boca abajo|recost\w*|por \d+ (?:horas|dias)|durante (?:los|las) (?:primer\w+|proxim\w+) (?:\d+ )?(?:dias|horas|semanas)|(?:las )?primeras \d+ (?:horas|dias)|aplica\w* (?:hielo|frio|calor|crema|pomada)|(?:puedes|podras|puede) (?:retomar|reanudar|volver a)\b[^.!?]{0,30}\b(?:rutina|actividad\w*|ejercicio|trabajo)\b[^.!?]{0,30}\b(?:dia siguiente|manana|inmediat\w*|horas|dias))/;
 // Si ya se borró una indicación de cuidados, la que dice cuándo retomar la rutina tampoco tiene respaldo («evita el ejercicio por 2 días. Puedes retomar tu rutina normal»). Sola es legítima («puedes retomar tus actividades rápido»).
-const EV_RETOMA = /\b(?:retomar|volver a|reanudar|retomas|retomes) (?:tu |tus |las |la |el )?(?:rutina|actividad\w*|ejercicio|trabajo)/;
+const EV_RETOMA = /\b(?:retom\w*|volver a|reanud\w*|reincorpor\w*) (?:a |con )?(?:tu |tus |las |la |el )?(?:rutina|actividad\w*|ejercicio|trabajo|vida normal)|\brutina\b/;
 const EV_REMISION_CUIDADOS = 'Los cuidados posteriores te los explica la Dra. en la valoración.';
 // Enlaces y teléfonos: el modelo no los escribe. Se borran del texto (la recepción llega SOLO como botón, por el cierre).
 function evQuitarEnlacesYTelefonos(texto) {
@@ -616,7 +619,7 @@ function evGarantiaAfirmativa(norm) {
 }
 // PROMESA DE RESULTADO SIN LA PALABRA «garantizar» («vas a quedar hermosa», «quedarás idéntica a la foto», «el resultado será perfecto», «siempre funciona»): el texto entero se rechaza.
 // Se mira por oración y no cuenta si una negación la gobierna en las 6 palabras anteriores y en la misma cláusula («no prometemos que vayas a quedar igual a la foto»).
-const EV_PROMETE_RESULTADO = /\b(?:quedar\w*|vas a (?:quedar|verte)|te veras)\b[^.!?]{0,40}\b(?:perfect\w*|hermos\w*|igual\w*|identic\w*|como (?:la|el) (?:foto|paciente|anuncio))\b|\bresultado (?:sera|va a ser) perfect\w*|\bsiempre funciona\b/;
+const EV_PROMETE_RESULTADO = /\b(?:quedar\w*|vas a (?:quedar|verte|lucir)|te veras|lucir\w*|luciras)\b[^.!?]{0,40}\b(?:perfect\w*|hermos\w*|divin\w*|espectacular\w*|igual\w*|identic\w*|como (?:la|el) (?:foto|paciente|anuncio)|\d+ anos? mas joven\w*|mas joven\w*)\b|\bresultados? (?:sera|seran|va a ser|van a ser) (?:perfect\w*|excelent\w*|duradero\w*)|\b(?:excelentes|perfectos|espectaculares)\b[^.!?]{0,30}\b(?:en todas|en todos|siempre)\b|\bsiempre funciona\b|\bfunciona siempre\b|\bfunciona en todas\b|\bquedaras divin\w*/;
 const EV_NEGADA_LARGA = /\b(?:no|nunca|jamas|ni|tampoco|sin|nadie|ningun\w*)\b(?:\s+\S+){0,6}\s*$|\b(?:no|nunca|jamas|ni|tampoco|nadie|ningun\w*)\b[^]*\b(?:garantiz\w*|promet\w*|asegur\w*)\b/;
 function evPrometeResultado(norm) {
   for (const o of String(norm).split(/[.!?]+/)) {
@@ -772,7 +775,7 @@ function evPulirSalida(crudo, ctx) {
     let dinero = false;
     const arregladas = unidades.map((o) => {
       if (o === '' || o === '\n' || cmMotivoDeRechazo(o, opcionesFiltro) !== 'afirma_un_hecho') return o;
-      if (/\b(pag\w*|reserv\w*|acredit\w*|comprobante\w*|deposit\w*|transferen\w*|recib\w*|abon\w*|agend\w*|cita|citas|estado|confirmad\w*)\b/.test(evNorm(o))) { dinero = true; return o; }
+      if (/\b(pag\w*|reserv\w*|acredit\w*|comprobante\w*|deposit\w*|transferen\w*|recib\w*|abon\w*|agend\w*|cita|citas|estado|confirmad\w*)\b/.test(evNorm(o)) || EV_AFIRMA_AGENDA.test(evNorm(o))) { dinero = true; return o; }
       // «Te lo confirmo / Te confirmo que» sin objeto de agenda o pago es solo una muletilla: se cambia por «Así es:» y se vuelve a pasar el filtro.
       // Solo se reescribe cuando lo que sigue es CONTENIDO; si la oración termina ahí («¡Sí! Te lo confirmo.»), se borra.
       const conf = /\b(?:te\s+)?(?:lo\s+)?confirmo(?:\s+que|\s+al\s+\d+\s*%)?\s*:?/i.exec(o);
@@ -812,6 +815,11 @@ const EV_TEXTO_ARCHIVO_NO_ABIERTO = 'No pude abrir tu archivo. ¿Me lo reenvías
 const EV_TEXTO_ARCHIVO_PESADO = 'Tu archivo es demasiado pesado para abrirlo. ¿Me envías uno más liviano o me cuentas por escrito lo que necesitas?';
 // Lo mínimo si, por un cambio mal hecho, un texto fijo cayera en NIEGA_IA: nunca sale un texto que niegue ser una IA.
 const EV_TEXTO_MINIMO = 'Hola, soy el asistente virtual de la Dra. Evy.';
+// El cierre completo sale UNA vez por ficha (48 h). Si el cliente vuelve a pedir agendar, sale esta variante corta y DISTINTA con el botón (un botón no pulsado puede volver a ofrecerse, nunca el mismo texto) y sin repetir el aviso.
+const EV_TEXTO_DERIVAR_DE_NUEVO = 'Claro, aquí tienes de nuevo el botón para escribirle a recepción.';
+const EV_TEXTO_DERIVAR_DE_NUEVO_2 = 'Con gusto, el botón sigue disponible para escribirle a recepción.';
+const EV_PIDE_AGENDAR = /\b(agend\w*|reserv\w*|cita|citas|turno|apart\w+|quiero (?:ir|asistir|la valoracion|mi valoracion)|cuando (?:puedo|podemos|atienden)|horarios?|disponibilidad|escribir a recepcion|hablar con recepcion|numero de recepcion)\b/;
+function evPideAgendar(textoCliente) { return EV_PIDE_AGENDAR.test(evNorm(textoCliente)); }
 const EV_BOTON_RECEPCION = 'Escribir a recepción';
 // El cierre de la derivación: el texto fijo del guion (con las dos frases sin mecanismo cambiadas), con el nombre y la dirección de la Consola. Sin nombre, sin «, Nombre».
 function evTextoCierre(cfg, nombre) {

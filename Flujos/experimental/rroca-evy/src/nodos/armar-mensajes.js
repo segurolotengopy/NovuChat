@@ -91,6 +91,11 @@ if (puerta.ruta === 'fuera_de_prueba') {
   const cierre = evTextoCierre(cfg, nombre);
   ms = [conRecepcion(cierre)];
   hist = { a: ms[0].texto, b: ms[0].respaldo };
+} else if (efectivo === 'derivar_corto') {
+  // Nunca el mismo texto dos veces seguidas: dos variantes que se alternan.
+  const ultimoA = evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora).filter((h) => h.r === 'a').slice(-1)[0];
+  ms = [conRecepcion(ultimoA && ultimoA.t === EV_TEXTO_DERIVAR_DE_NUEVO ? EV_TEXTO_DERIVAR_DE_NUEVO_2 : EV_TEXTO_DERIVAR_DE_NUEVO)];
+  hist = { a: ms[0].texto, b: ms[0].respaldo };
 } else if (efectivo === 'modelo') {
   const rev = evPulirSalida(res.textoModelo, { artesEnviados: artesSalidos, textoCliente: plan.textoCliente, nombreNegocio: cfg.nombreNegocio });
   if (rev.motivo === 'salud_sin_remision') { ms = [conRecepcion(EV_TEXTO_REMISION_SALUD)]; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
@@ -118,12 +123,13 @@ if (!sinFicha) {
   ficha.turnos += 1;
   ficha.ultimoMs = ahora;
   // La memoria: la entrada del cliente se guarda cuando el turno es una conversación; lo que contó de su salud, su protección o su baja NO se guarda.
-  if ((efectivo === 'modelo' || efectivo === 'fallo' || efectivo === 'derivar' || efectivo === 'fijo') && typeof decision.entradaHistorial === 'string' && decision.entradaHistorial.trim() !== '') {
+  if ((efectivo === 'modelo' || efectivo === 'fallo' || efectivo === 'derivar' || efectivo === 'derivar_corto' || efectivo === 'fijo') && typeof decision.entradaHistorial === 'string' && decision.entradaHistorial.trim() !== '') {
     ficha.historial = evHistorialSaneado(ficha.historial.concat([{ r: 'u', t: decision.entradaHistorial }]));
   }
   if (decision.oyoAudio === true) ficha.audios = evContarMedio(ficha.audios, ahora);
   if (decision.vioImagen === true) ficha.imagenes = evContarMedio(ficha.imagenes, ahora);
   for (const k of artesSalidos) if (ficha.artes.indexOf(k) < 0) ficha.artes.push(k);
+  if (efectivo === 'derivar') ficha.cierreMs = ahora;   // el cierre completo sale UNA vez por ficha (48 h)
   if (silencio === 'baja' || silencio === 'riesgo') ficha.noContactarMs = ahora;
   if (silencio === 'riesgo') { ficha.riesgoMs = ahora; ficha.historial = []; }
   if (silencio === 'baja') ficha.historial = [];

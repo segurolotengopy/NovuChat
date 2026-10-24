@@ -157,11 +157,24 @@ describe('el flujo nuevo de Evy tiene su guardia, distinta de la de las doctoras
     for (const extra of [[], ['--forzar']]) {
       const r = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-evy', ...extra], vivoEmmaViejo);
       expect(r.status, extra.join(' ')).toBe(1);
-      expect(r.stderr, extra.join(' ')).toMatch(/NEGADO: el flujo nuevo de Evy no puede reemplazar el flujo vivo de otra doctora \(rroca-emma\)/);
+      expect(r.stderr, extra.join(' ')).toMatch(/NEGADO: el flujo nuevo de Evy no puede reemplazar un flujo vivo que no es de Evy \(vivo: rroca-emma\)/);
       expect(r.curl, extra.join(' ')).not.toMatch(/-X (PUT|POST)/);
     }
-    const sobreEvy = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-evy', '--forzar'], vivoViejo);
-    expect(sobreEvy.stderr).not.toMatch(/no puede reemplazar el flujo vivo de otra doctora/);
+    // Un vivo de OTRO cliente (nombre cualquiera) o Emma renombrada: tampoco, ni con --forzar.
+    for (const [nombre, vivo] of [['otro-cliente', { name: "NovuChat — Q'Taco (qtaco)", active: true, nodes: [{ name: 'Armar avisos' }] }], ['emma-renombrada', { name: 'Dra. E. R.', active: false, nodes: [{ name: 'Armar avisos' }] }], ['vacio', { name: 'x', nodes: [] }]] as const) {
+      const archivo = join(dir, `vivo-${nombre}.json`); writeFileSync(archivo, JSON.stringify(vivo));
+      for (const extra of [[], ['--forzar']]) {
+        const r = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-evy', ...extra], archivo);
+        expect(r.status, `${nombre} ${extra.join(' ')}`).toBe(1);
+        expect(r.stderr, nombre).toMatch(/NEGADO: el flujo nuevo de Evy no puede reemplazar un flujo vivo que no es de Evy/);
+        expect(r.curl, nombre).not.toMatch(/-X (PUT|POST)/);
+      }
+    }
+    // Sobre el vivo de Evy (viejo o nuevo) sí se puede.
+    for (const vivo of [vivoViejo, vivoNuevo]) {
+      const sobreEvy = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-evy', '--forzar'], vivo);
+      expect(sobreEvy.stderr).not.toMatch(/no puede reemplazar un flujo vivo que no es de Evy/);
+    }
   });
   it('el flujo de Emma y el viejo de Evy siguen con la guardia de las doctoras', () => {
     for (const rel of [REL_VIEJO, REL_EMMA]) {

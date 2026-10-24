@@ -455,17 +455,21 @@ fi
 
 TENANT_VIVO_DOCTORAS="$(doctoras_clase "$TMP/vivo.json" "")"
 if [[ -n "$TENANT_VIVO_DOCTORAS" ]]; then
-  # El flujo NUEVO de Evy solo reemplaza al flujo vivo de Evy: NUNCA al de otra doctora (Emma), ni siquiera con --forzar.
-  if [[ $ES_EVY_NUEVO -eq 1 && $CREAR -eq 0 && $APAGAR -eq 0 && "$TENANT_VIVO_DOCTORAS" != "rroca-evy" ]]; then
-    printf '\033[1;31m✗ NEGADO: el flujo nuevo de Evy no puede reemplazar el flujo vivo de otra doctora (%s). Ni con --forzar.\033[0m\n' "$TENANT_VIVO_DOCTORAS" >&2
-    exit 1
-  fi
   if [[ $ENCENDER -eq 1 ]]; then
     doctoras_guardia "encender el flujo vivo" "$TMP/vivo.json" "$TENANT_VIVO_DOCTORAS"
   # Con --crear `vivo.json` es la REFERENCIA de credenciales, no el destino. Si el destino vivo es de una doctora y el origen no lo era (o era la otra), la guardia se corre con el tenant del VIVO.
   # Si el origen es el flujo NUEVO de Evy, el destino viejo (el de las doctoras) lo reemplaza: ya pasó la guardia nueva y la de las doctoras no se aplica al archivo nuevo.
   elif [[ $APAGAR -eq 0 && $CREAR -eq 0 && $ES_EVY_NUEVO -eq 0 && "$TENANT_VIVO_DOCTORAS" != "$TENANT_DOCTORAS" ]]; then
     doctoras_guardia "flujo vivo de destino" "$FLUJO" "$TENANT_VIVO_DOCTORAS"
+  fi
+fi
+
+# El flujo NUEVO de Evy solo reemplaza al flujo vivo de Evy (el nuevo o el viejo), NUNCA a otro: ni a Emma (aunque la renombren), ni a otro cliente (Q'Taco, el chat de NovuChat, Bellido), ni con --forzar.
+if [[ $ES_EVY_NUEVO -eq 1 && $CREAR -eq 0 && $APAGAR -eq 0 ]]; then
+  CLASE_VIVO_PARA_NUEVO="$(evy_clase "$TMP/vivo.json" "")"
+  if [[ "$CLASE_VIVO_PARA_NUEVO" != "nuevo" && "$CLASE_VIVO_PARA_NUEVO" != "emma" && "$TENANT_VIVO_DOCTORAS" != "rroca-evy" ]]; then
+    printf '\033[1;31m✗ NEGADO: el flujo nuevo de Evy no puede reemplazar un flujo vivo que no es de Evy (vivo: %s). Ni con --forzar.\033[0m\n' "${TENANT_VIVO_DOCTORAS:-otro cliente}" >&2
+    exit 1
   fi
 fi
 

@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ANA, crear, dice, hablar, mTexto, textos } from './mundo';
+import { ANA, avisosARecepcion, crear, dice, hablar, mTexto, textos } from './mundo';
 
 /** Cae a un texto fijo: el de fallo del modelo, el de remisión de salud o la admisión de IA. */
 const fallo = (t: string): boolean => /inconveniente para responderte/.test(t) || /un programa con inteligencia artificial/.test(t) || /Eso lo evalúa la Dra\. Evy en persona, durante tu valoración gratuita/.test(t);
@@ -201,6 +201,73 @@ describe('conectores huérfanos: al borrar una oración, la siguiente pierde su 
     const t = sale('Los bioestimuladores activan tu colágeno. En cambio, un relleno solo da volumen. ¿Cómo te llamas?');
     expect(t).toContain('En cambio, un relleno solo da volumen.');
   });
+});
+
+describe('el cierre completo sale UNA vez por ficha', () => {
+  const CIERRE = /Excelente decisión, Paola/;
+  const DERIVA = '¡Perfecto! [DERIVAR_RECEPCION: Paola]';
+  it('F3/F4/H3: tras el primer cierre, seguir escribiendo no lo repite; si pide agendar de nuevo, sale la variante corta con botón y SIN otro aviso; nunca el mismo texto dos veces seguidas', () => {
+    const m = crear({ modeloDice: dice(DERIVA) });
+    const t1 = hablar(m, ANA, mTexto('quiero agendar, soy Paola'));
+    expect(textos(t1)[0]).toMatch(CIERRE);
+    expect(t1.mensajes[0]!.tipo).toBe('interactive');
+    for (const seguir of ['gracias, ¿cuánto dura la sesión?', 'ok y ¿se puede con lentes?', 'perfecto, gracias']) {
+      const t = hablar(m, ANA, mTexto(seguir));
+      expect(textos(t).join(' '), seguir).not.toMatch(CIERRE);
+      expect(t.mensajes.every((e) => e.tipo !== 'interactive'), seguir).toBe(true);
+    }
+    const t4 = hablar(m, ANA, mTexto('quiero agendar de nuevo'));
+    expect(textos(t4)).toEqual(['Claro, aquí tienes de nuevo el botón para escribirle a recepción.']);
+    expect(t4.mensajes[0]!.tipo).toBe('interactive');
+    expect(avisosARecepcion(t4).length).toBe(0);
+    const t5 = hablar(m, ANA, mTexto('quiero agendar otra vez'));
+    expect(textos(t5)).toEqual(['Con gusto, el botón sigue disponible para escribirle a recepción.']);   // nunca el mismo texto dos veces seguidas
+    expect(t5.mensajes[0]!.tipo).toBe('interactive');
+  });
+  it('POSITIVA: el primer cierre sigue saliendo completo con su botón y su aviso', () => {
+    const t = hablar(crear({ modeloDice: dice(DERIVA) }), ANA, mTexto('quiero agendar'));
+    expect(textos(t)[0]).toMatch(CIERRE);
+    expect(t.mensajes[0]!.tipo).toBe('interactive');
+  });
+});
+
+describe('«Te confirmo» no afirma una cita (Evy no agenda)', () => {
+  for (const mala of [
+    'Te confirmo que la Dra. te espera mañana a las 10. ¿Cómo te llamas?',
+    'Te confirmo que ya tienes tu espacio con la Dra. el lunes. ¿Cómo te llamas?',
+    'Te confirmo que la Dra. ya te tiene en su lista para el lunes. ¿Cómo te llamas?',
+    'Te confirmo que la recepción ya registró tu valoración del lunes. ¿Cómo te llamas?',
+    'Te confirmo: listo, ya está todo hecho, nos vemos el martes. ¿Cómo te llamas?',
+  ]) {
+    it(`NEGADA: ${mala.slice(0, 55)}`, () => {
+      const t = sale(mala);
+      expect(fallo(t)).toBe(true);
+      expect(t).not.toMatch(/espera|espacio|lista|registr|martes/i);
+    });
+  }
+});
+
+describe('cuidados y promesas con otras redacciones', () => {
+  const CUIDADOS = [
+    'Evita maquillarte las primeras 24 horas.', 'Aplica hielo en la zona tratada.', 'No te recuestes boca abajo.', 'Lo ideal es no hacer ejercicio intenso unos días.',
+    'Usa protector solar.', 'Masajea la zona suavemente.', 'Puedes retomar tu rutina al día siguiente.', 'No es necesario reposo absoluto.',
+  ];
+  for (const c of CUIDADOS) {
+    it(`NEGADA: «${c}» se borra y queda la remisión`, () => {
+      const t = sale(`La Dra. Evy te atiende en persona. ${c} Tu valoración es gratuita. ¿Cómo te llamas?`, '¿qué cuidados hay después?');
+      expect(fallo(t)).toBe(false);
+      expect(t).not.toMatch(/maquill|hielo|recuest|ejercicio|protector|masajea|rutina|reposo/i);
+      expect(t).toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
+    });
+  }
+  it('POSITIVA: «la Dra. te explica los cuidados» pasa sin la remisión extra', () => {
+    const t = sale('La Dra. te explica los cuidados en la valoración. ¿Cómo te llamas?');
+    expect(fallo(t)).toBe(false);
+    expect(t).not.toContain('Los cuidados posteriores');
+  });
+  for (const p of ['Funciona siempre. ¿Cómo te llamas?', 'Quedarás divina. ¿Cómo te llamas?', 'Lucirás perfecta. ¿Cómo te llamas?', 'Te verás 10 años más joven. ¿Cómo te llamas?', 'Los resultados son excelentes y duraderos en todas las pacientes. ¿Cómo te llamas?']) {
+    it(`NEGADA: ${p.slice(0, 40)}`, () => { expect(fallo(sale(p))).toBe(true); });
+  }
 });
 
 describe('el motor de la batería: pausa entre llamadas', () => {
