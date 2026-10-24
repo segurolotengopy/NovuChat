@@ -548,21 +548,34 @@ function evSinHuerfanos(lista, borrar) {
   });
   return out;
 }
-// Un texto demasiado largo (el filtro común rechaza más de 1500) se RECORTA por oración en vez de rechazarlo: se quitan, de atrás hacia adelante, las oraciones que no son esenciales hasta que cabe.
-// Esenciales (nunca se quitan): la primera oración, las que hablan de la valoración gratuita o bonificada, la aclaración fija y la pregunta de cierre (nombre y deseo). Si aun así no cabe, no se toca y el filtro rechaza.
-const EV_RECORTE_A = 1400;
-const EV_ESENCIAL = /\b(gratuit\w*|gratis|bonific\w*|sin compromiso|sin costo|valoracion|responde distinto|asistente virtual)\b/;
+// TOPE DE CADA MENSAJE: ningún mensaje del modelo pasa de 700 caracteres (ya con los saltos de párrafo). Se RECORTA por oración, nunca a mitad de oración, quitando de atrás hacia adelante primero lo accesorio, luego lo de la
+// valoración y la primera oración, y por último las aclaraciones de seguridad; la pregunta final (si la hay) es lo ÚLTIMO que se conserva. Si aun así no cabe, no se toca (el filtro común rechaza lo que pase de 1500).
+const EV_RECORTE_A = 700;
+const EV_ESENCIAL = /\b(gratuit\w*|gratis|bonific\w*|sin compromiso|sin costo|valoracion|asistente virtual)\b/;
+const EV_SEGURIDAD = /\b(responde distinto|no prometemos|cuidados posteriores)\b/;
 function evRecortar(texto, tope) {
   const t = evTexto(texto);
-  if (t.length > 6000 || evMarcarValor(t).length <= tope) return t;   // más de 6000: no es un texto largo sino un desvarío; el filtro común lo rechaza
+  const medir = (x) => evParrafos(x).length;
+  if (t.length > 6000 || medir(t) <= tope) return t;   // más de 6000: no es un texto largo sino un desvarío; el filtro común lo rechaza
   const lista = evPartirEnOraciones(t);
   const idx = [];
   lista.forEach((o, i) => { if (o !== '' && o !== '\n') idx.push(i); });
   const ultima = idx.length ? idx[idx.length - 1] : -1;
-  const esencial = (i) => i === idx[0] || i === ultima || EV_ESENCIAL.test(evNorm(lista[i])) || EV_REMISION.test(evNorm(lista[i])) || EV_CONDICION.test(evNorm(lista[i])) || (evEsPregunta(lista[i]) && /\b(llam\w*|nombre|mejorar|gustaria|deseas|quieres)\b/.test(evNorm(lista[i])));
+  const finalEsPregunta = ultima >= 0 && evEsPregunta(lista[ultima]);
+  // Nivel de cada oración: 3 accesoria, 2 valoración / primera, 1 seguridad o salud, 0 la pregunta final (no se quita).
+  const nivel = (i) => {
+    const n = evNorm(lista[i]);
+    if (i === ultima && finalEsPregunta) return 0;
+    if (EV_SEGURIDAD.test(n) || EV_CONDICION.test(n) || /\b(en persona|la dra (?:lo )?(?:evalua|explica))\b/.test(n)) return 1;
+    if (i === idx[0] || EV_ESENCIAL.test(n)) return 2;
+    return 3;
+  };
   const quitadas = new Set();
-  const largo = () => evMarcarValor(evUnirOraciones(lista.filter((o, i) => !quitadas.has(i)))).length;
-  for (let k = idx.length - 1; k >= 0 && largo() > tope; k--) { if (!esencial(idx[k])) quitadas.add(idx[k]); }
+  const largo = () => medir(evUnirOraciones(lista.filter((o, i) => !quitadas.has(i))));
+  for (const n of [3, 2, 1]) {
+    for (let k = idx.length - 1; k >= 0 && largo() > tope; k--) { if (nivel(idx[k]) === n && !quitadas.has(idx[k])) quitadas.add(idx[k]); }
+    if (largo() <= tope) break;
+  }
   return evUnirOraciones(evSinHuerfanos(lista, (o, i) => quitadas.has(i)));
 }
 // La aclaración fija va ANTES de la última oración si esta es la pregunta de cierre (la pregunta debe quedar al final); si no hay pregunta, al final.
@@ -858,6 +871,20 @@ function evPreguntaGratis(textoCliente) {
   const n = evNorm(textoCliente);
   if (EV_PREGUNTA_GRATIS.test(n)) return true;
   return EV_PREGUNTA_GRATIS_DEBIL.test(n) && (/\b(valoracion|consulta)\b/.test(n) || !EV_TRATAMIENTO.test(n));
+}
+// DERIVACIÓN PREMATURA: la etiqueta [DERIVAR_RECEPCION] del modelo solo se honra si el cliente pidió agendar o ACEPTÓ una oferta de agendar o de pasar con recepción
+// (una afirmación corta —sí, ok, dale, claro, por favor, quiero…— y el último mensaje del asistente la ofrecía). «Quiero ver cómo queda» o «¿cuánto cuesta?» no son un pedido de agendar.
+const EV_AFIRMA_CORTA = /^(?:si|sii+|ok|okey|okay|dale|daleee?|claro|por supuesto|de acuerdo|por favor|listo|va|vale|bueno|perfecto|quiero|me interesa|me gustaria|adelante|obvio|ya|hagamoslo)(?: \w+){0,3}$/;
+const EV_OFRECE_AGENDAR = /\b(agend\w*|reserv\w*|cita|horarios?|valoracion|recepcion|pasar|paso|pasarte|pasamos)\b/;
+function evAceptaOferta(textoCliente, historial) {
+  const raw = evTexto(textoCliente);
+  if (raw.indexOf('?') >= 0 || !EV_AFIRMA_CORTA.test(evNorm(raw))) return false;
+  const h = Array.isArray(historial) ? historial : [];
+  let ultimo = null;
+  for (let i = h.length - 1; i >= 0; i--) { if (h[i] && h[i].r === 'a') { ultimo = h[i]; break; } }
+  if (!ultimo) return false;
+  const t = evTexto(ultimo.t);
+  return t.indexOf('?') >= 0 && EV_OFRECE_AGENDAR.test(evNorm(t));
 }
 // El cliente dice que NO quiere agendar (ahora): no se deriva.
 function evNegaAgendar(textoCliente) {
