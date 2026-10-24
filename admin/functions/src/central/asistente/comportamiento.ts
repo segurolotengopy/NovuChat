@@ -53,6 +53,7 @@
  * `verificarComportamiento.ts`.
  */
 import { createHash } from 'node:crypto';
+import { afirmaSinRespaldo } from './afirmacionesSinRespaldo.js';
 
 /** El mismo tope que `configNegocioValida()` y `cargar-negocio.mjs`. */
 export const TOPE_INSTRUCCIONES = 1500;
@@ -1064,6 +1065,10 @@ export function verificarPatrones(
   // reabre nada que main rechaza (ver «RESIDUO ACEPTADO»): se aplica la forma cerrada sobre el texto sin sustituir.
   if (terminos.length > 0 && !fuertes.includes('prompt') && analizado !== normalizado
     && marcadorConDeterminanteNeutro(analizado) && promptComoEnMain(normalizado)) fuertes.push('prompt');
+  // PROHIBICIÓN 3 (CLAUDE.md): nunca un pago presentado como acreditado. Se mira el normalizado SIN
+  // sustituir: un término de producto registrado no exime estas frases. Motivo con un nombre ya
+  // existente, para no delatar la regla (ver afirmacionesSinRespaldo.ts).
+  if (!fuertes.includes('anular instrucciones') && afirmaSinRespaldo(normalizado)) fuertes.push('anular instrucciones');
   if (mencionaOtroComercio(normalizado, otros)) fuertes.push('otro comercio');
 
   if (fuertes.length > 0) {
