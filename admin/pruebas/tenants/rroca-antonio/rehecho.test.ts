@@ -1271,6 +1271,8 @@ describe('CORRECCIÓN · un pedido de baja recibe una confirmación fija y NADA 
     const i = cuerpo.indexOf('(t.riesgoEscrito === true || ') + '(t.riesgoEscrito === true || '.length;
     const fin = cuerpo.indexOf(") ? 'no_contactar'", i);
     const expr = cuerpo.slice(i, fin);
+    // La expresión sale del JSON versionado del propio repositorio (no es una entrada externa); es la misma marca que usan las demás suites.
+    // nosemgrep: devsecops.js-eval-prohibido
     const nodo = new Function('t', `return ${expr};`) as (t: { texto: string }) => boolean;
     const f = LIB['raPideBaja'] as (x: string) => boolean;
     for (const x of [...BAJAS_F2, ...NO_BAJAS, 'hola', 'quiero el libro', 'stop', 'STOP por favor', 'no me escribiste el precio del libro', 'bórrame de la lista', 'dar de baja', 'le dije que no me escriba más', 'mi ex no deja de escribirme', 'no me llamó la atención']) {
