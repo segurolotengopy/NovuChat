@@ -242,6 +242,9 @@ if (t.tipo === 'interactive') {
 const pre = raPrellenado(norm);
 if (pre === 'pack' || pre === 'libro') return salir(elegir(pre, ''));
 if (pre === 'info') return salir(hayQrAbierto ? recordatorio('') : saludo());
+// ORIGEN «landing»: quien llega de la landing manda la frase de entrada del tenant (`landingFrase`, igualdad de palabras: ver `raEsEntradaLanding`). Como PRIMER mensaje y sin QR abierto: el saludo fijo (presentación una vez, la pregunta de siempre, sin montos).
+// Ya saludado o con un QR abierto no hace nada especial (no repite la presentación ni reinicia): sigue su camino normal. Una palabra de más no es la frase. Un anuncio reconocido va antes (imagen) o después (su texto tiene su ángulo): este bloque no los desplaza.
+if (!esAudio && !esVisual && !hayQrAbierto && !ficha.saludado && raEsEntradaLanding(norm, base.landingFrase)) return salir(saludo('', { origen: 'landing' }));
 if (pre === 'workbook' || pre === 'calendario_preguntas') {
   const productos = pre === 'workbook' ? ['workbook'] : ['calendario', 'preguntas'];
   if (hayQrAbierto) return salir(elegir(productos[0], ''));
