@@ -2155,7 +2155,7 @@ export const configuracionFlujo = onRequest(
       funcionarios: resolverFuncionarios(
         funcionarios.docs.map((d) => ({ id: d.id, datos: d.data() })),
         negocio,
-        new Set(catalogo.docs.map((d) => d.id)),
+        new Set(catalogoPrompt.docs.map((d) => d.id)),
       ),
 
       // LAS CAMPAÑAS QUE EL FLUJO RECONOCE POR SU TEXTO (Andres, 24/09/2026):

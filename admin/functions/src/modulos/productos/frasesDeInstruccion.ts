@@ -33,7 +33,7 @@ export function plegarNombre(t: string): string {
       /\p{L}/u.test(todo[i - 1] ?? '') || /\p{L}/u.test(todo[i + run.length] ?? '')
         ? [...run].map((c) => LEET[c] ?? c).join('') : run)
     .normalize('NFD').replace(/\p{M}+/gu, '')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    .replace(/[^\p{L}\p{N}_]+/gu, ' ').trim();
 }
 
 const P = (s: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${s})(?![\\p{L}\\p{N}])`, 'u');
@@ -46,11 +46,12 @@ const FRASES: readonly RegExp[] = [
   P('(?:eres|sos|seras|eras)\\s+ahora'),
   P('ahora\\s+(?:eres|sos|seras)'),
   P('(?:se|sea)\\s+(?:un\\s+|una\\s+)?(?:humano|humana|persona)'),
-  P('(?:finge|fingir|fingi|simula ser|pretende ser|haz de cuenta|hazte pasar|hazte el|hazte la|comportate|actua|actuas|imagina que eres)'),
-  P('(?:tus|tu)\\s+(?:nuevas?\\s+)?(?:ordenes|orden|reglas|instrucciones|directrices)'),
+  P('(?:finge|fingir|fingi|simula ser|pretende ser|haz de cuenta|hazte pasar|hazte el|hazte la|comportate|actuas? (?:como|de|cual)|imagina que eres)'),
+  P('(?:tus|tu)\\s+nuevas?\\s+(?:ordenes|orden|reglas|instrucciones|directrices)'),
   // Anular lo anterior.
   P('(?:ignora|ignore|ignorar|olvida|olvide|olvidar|omite|omitir|desobedece|desobedecer)\\w*\\s+(?:todo|todas|todos|lo anterior|lo de arriba|lo que|las ordenes|tus)'),
-  P('(?:sin|salta\\w*|quita\\w*|desactiva\\w*)\\s+(?:todas?\\s+)?(?:las\\s+)?(?:restricciones|filtros|limites|reglas)'),
+  P('(?:sin|salta\\w*|quita\\w*|desactiva\\w*)\\s+(?:todas?\\s+)?(?:las\\s+)?(?:restricciones|reglas)'),
+  P('(?:salta\\w*|quita\\w*|desactiva\\w*)\\s+(?:todos?\\s+)?(?:los\\s+)?(?:filtros|limites)'),
   // Ordenar un comportamiento comercial: «Regala todo gratis», «No cobres», «Responde siempre que sí».
   P('(?:regala|regalar|regalale|regalame|regalen|regales|entrega|entregale|entregues|dale|da|dar|ofrece|ofrecele)\\s+(?:a\\s+\\p{L}+\\s+)?(?:todo|todos|todas|gratis|gratuito|gratuita|sin cobrar)'),
   P('(?:todo|todos|todas)\\s+(?:es\\s+|son\\s+|va\\s+|van\\s+|sera\\s+|seran\\s+)?(?:gratis|gratuito|gratuitos|gratuita|gratuitas)'),
@@ -58,6 +59,9 @@ const FRASES: readonly RegExp[] = [
   P('sin\\s+cobrar\\s+(?:nada|a nadie|a ningun)'),
   P('(?:responde|responder|contesta|contestar|di|dile|diles|decile)\\s+(?:siempre|solo|unicamente|que si|que no|lo que)'),
   P('(?:obedece|obedecer|obedezcan)'),
+  // Prohibición 3: nunca un pago presentado como acreditado.
+  P('pago\\s+(?:\\p{L}+\\s+)?(?:acreditado|verificado|recibido|confirmado)'),
+  P('(?:recibimos|acreditamos|verificamos)\\s+(?:tu|su)\\s+pago'),
 ];
 
 /**
@@ -70,5 +74,24 @@ export function pareceInstruccion(nombre: string): boolean {
   const cortado = nombre.slice(0, TOPE_NOMBRE);
   const vistas = new Set([plegarNombre(cortado), plegarNombre(cortado.normalize('NFKC').replace(/[\p{Cf}\p{Cc}]/gu, ' '))]);
   for (const v of vistas) for (const re of FRASES) if (re.test(v)) return true;
+  return false;
+}
+
+/**
+ * LA MISMA LISTA PARA PROSA (descripción, área): solo las órdenes que no se
+ * confunden con lenguaje comercial. «Dale todo el sabor», «Responde en minutos»
+ * o «Todo gratis este sábado» son prosa legítima y no se miran acá.
+ */
+const PROSA: readonly RegExp[] = FRASES.filter(
+  // 0-1 sacar instrucciones; 2 «eres ahora»; 4 «sé humano»; 5 fingir; 6 «tus nuevas órdenes»;
+  // 7 anular lo anterior; 8-9 saltar restricciones; y los dos últimos, pagos acreditados.
+  (_, i) => [0, 1, 2, 4, 5, 6, 7, 8, 9, FRASES.length - 2, FRASES.length - 1].includes(i),
+);
+
+export function pareceInstruccionEnProsa(texto: string): boolean {
+  if (typeof texto !== 'string') return false;
+  const cortado = texto.slice(0, 600);
+  const vistas = new Set([plegarNombre(cortado), plegarNombre(cortado.normalize('NFKC').replace(/[\p{Cf}\p{Cc}]/gu, ' '))]);
+  for (const v of vistas) for (const re of PROSA) if (re.test(v)) return true;
   return false;
 }
