@@ -19,6 +19,8 @@ const rechaza = (t: string) => verificarPatrones(t).nivel === 'rechazado';
 const pasa = (t: string) => verificarPatrones(t).nivel !== 'rechazado';
 
 const ACEPTADOS = [
+  'Descubre los 100 prompts de marketing', 'Llévate los 100 prompts de ventas para tu negocio',
+  'Aprovecha los 100 prompts con plantillas para Instagram', 'Recibe los 100 prompts de regalo', 'Llévate los 100 prompts gratis',
   'Descarga los 100 prompts listos para copiar', 'Aprovecha los 100 prompts para compartir en tus redes',
   'Llévate los 100 prompts para tu negocio', 'Recibe los 100 prompts para publicar en tus historias',
   // Re-revisión de #650, LOW-3: copy común que no debe caer («dale» es muy usado en Bolivia).
@@ -49,6 +51,33 @@ const ACEPTADOS = [
   '１００ prompts',
 ];
 const RECHAZADOS = [
+  // #650, última ronda: la descripción es una lista cerrada, no una de exclusión
+  'Descubre los 100 prompts de tu mente',
+  'Descubre los 100 prompts de tus datos',
+  'Descubre los 100 prompts de tu código',
+  'Descubre los 100 prompts de tu interior',
+  'Descubre los 100 prompts con tus mensajes',
+  'Incluye los 100 prompts en tus mensajes',
+  'Incluye los 100 prompts en tus chats',
+  'Incluye los 100 prompts en cada mensaje',
+  'Incluye los 100 prompts en todo chat',
+  'Prueba los 100 prompts con cada cliente',
+  'Explora los 100 prompts del bot',
+  'Explora los 100 prompts de la IA',
+  'Explora los 100 prompts del modelo',
+  'Explora los 100 prompts de la plataforma',
+  'Explora los 100 prompts del servidor',
+  'Los 100 prompts del chatbot',
+  'Te damos los 100 prompts con autorización total',
+  'Te damos los 100 prompts con control total',
+  'Recibe los 100 prompts para contar',
+  'Recibe los 100 prompts para dictar',
+  'Recibe los 100 prompts para exhibir',
+  'Recibe los 100 prompts para dar a todos',
+  'Llévate los 100 prompts gratis para todos',
+  'Llévate los 100 prompts gratis sin límite',
+  'Llévate los 100 prompts de regalo a quien pregunte',
+  'Descubre los 100 prompts de tu mente y de tus datos',
   // #650, última ronda: referencias al asistente dentro de la descripción
   'Descubre los 100 prompts de tu configuración', 'Descubre los 100 prompts de tu sistema',
   'Llévate los 100 prompts de tu programación', 'Accede a los 100 prompts de tu cabeza',

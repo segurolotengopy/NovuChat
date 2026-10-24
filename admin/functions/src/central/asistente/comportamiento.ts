@@ -242,7 +242,7 @@ const FORMA_ANTES = new RegExp(
 /** Cómo puede empezar lo que viene después de «prompts»: solo descripción del producto. */
 const INTRODUCE_DESCRIPCION = /^\s*(?:listos|listas|gratis|favoritos|favoritas|destacados|destacadas|exclusivos|exclusivas|nuevos|nuevas|mejores|incluidos|incluidas|de|del|para|con|en|que usan|te ahorran)(?![\p{L}\p{N}_])/u;
 /** Marcas de cláusula verbal o de dirección al asistente que la descripción no puede traer. */
-const CLAUSULA_EN_DESCRIPCION = /(?<![\p{L}\p{N}_])(?:son|es|esta|estan|ser|sera|seran|se|me|nos|lo|le|les|que|y|e|o|u)(?![\p{L}\p{N}_])|(?<!(?:para|en|de|con) )(?<![\p{L}\p{N}_])(?:tu|tus|te|su|sus|mi|mis)(?![\p{L}\p{N}_])/u;
+const CLAUSULA_EN_DESCRIPCION = /(?<![\p{L}\p{N}_])(?:son|es|esta|estan|ser|sera|seran|se|me|nos|lo|le|les|que|y|e|o|u)(?![\p{L}\p{N}_])|(?<!para )(?<!(?:copiar|usar|compartir|publicar|guardar|aprovechar) en )(?<![\p{L}\p{N}_])(?:tu|tus|te|su|sus|mi|mis)(?![\p{L}\p{N}_])/u;
 /** Referencias al asistente o a su configuración: no caben en la descripción de un producto. */
 const DESCRIPCION_PROHIBIDA = /(?<![\p{L}\p{N}_])(?:sistema|configuracion|programacion|cabeza|novuchat|permiso|acceso|respuestas?|directrices|ley)(?![\p{L}\p{N}_])/u;
 /** Infinitivos que un copy común usa («listos para copiar») y lo que puede seguirlos. */
@@ -258,12 +258,29 @@ function infinitivoDeOrdenEnDescripcion(descripcion: string): boolean {
     return !(INFINITIVOS_INOCUOS.has(w) && palabras.slice(i + 1).every((x) => COMPLEMENTO_INOCUO.has(x)));
   });
 }
+/**
+ * LISTA CERRADA de la descripción: cada palabra de lo que sigue a «prompts» debe
+ * estar acá. Las listas de exclusión no cierran la clase (siempre hay un sustantivo
+ * más: mente, bot, modelo, mensajes…). Queda fuera, y falla cerrado, todo copy con
+ * otro vocabulario: «de tus mensajes», «para todos», «gratis sin límite», «para
+ * aumentar tus ventas»; es decisión de producto ampliar la lista, no de seguridad.
+ */
+const PALABRAS_DESCRIPCION = new Set([
+  'de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'para', 'con', 'en', 'tu', 'tus', 'su', 'sus',
+  'listos', 'listas', 'gratis', 'favoritos', 'favoritas', 'destacados', 'destacadas', 'exclusivos', 'exclusivas',
+  'nuevos', 'nuevas', 'mejores', 'incluidos', 'incluidas', 'extra', 'bonus',
+  'marketing', 'ventas', 'redes', 'sociales', 'instagram', 'tiktok', 'facebook', 'whatsapp', 'contenido',
+  'regalo', 'bono', 'curso', 'libro', 'negocio', 'negocios', 'emprendedores', 'marca', 'marcas', 'creadores',
+  'historias', 'posts', 'publicaciones', 'ideas', 'plantillas', 'ahorro', 'horas', 'tiempo', 'clientes',
+  'copiar', 'usar', 'compartir', 'publicar', 'guardar', 'aprovechar',
+]);
 function formaComercialPermitida(oracionAntes: string, oracionDespues: string): boolean {
   if (!FORMA_ANTES.test(oracionAntes)) return false;
   if (oracionDespues.trim() === '') return true;
   if (!INTRODUCE_DESCRIPCION.test(oracionDespues)) return false;
   // «te ahorran» y «que usan» son las introducciones que traen su propio pronombre o «que».
   const resto = oracionDespues.replace(/^\s*(?:que usan|te ahorran)/u, '');
+  if (!(resto.match(/[\p{L}\p{N}_]+/gu) ?? []).every((w) => PALABRAS_DESCRIPCION.has(w))) return false;
   return !CLAUSULA_EN_DESCRIPCION.test(resto) && !DESCRIPCION_PROHIBIDA.test(resto) && !infinitivoDeOrdenEnDescripcion(resto);
 }
 const CORTE_ORACION = /[.!?;:—–#]/u;
