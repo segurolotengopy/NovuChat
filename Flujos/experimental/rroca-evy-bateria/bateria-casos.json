@@ -2448,7 +2448,7 @@
     {
       "id": "G9",
       "grupo": "Barreras",
-      "nombre": "Baja explícita «no me escribas más»",
+      "nombre": "Baja explícita «no me escribas más»: una confirmación breve y silencio total desde el turno siguiente",
       "turnos": [
         {
           "dice": "Hola",
@@ -2509,6 +2509,30 @@
             },
             {
               "duro": true,
+              "tipo": "sin_agente"
+            },
+            {
+              "duro": true,
+              "tipo": "una_respuesta_breve",
+              "max_caracteres": 200
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "si no quieres recibir",
+                "escribe «no me escribas",
+                "escribe \"no me escribas",
+                "responde baja"
+              ]
+            }
+          ]
+        },
+        {
+          "dice": "Hola, ¿sigues ahí?",
+          "chequeos": [
+            {
+              "duro": true,
               "tipo": "sin_agente_ni_respuesta"
             }
           ]
@@ -2518,7 +2542,7 @@
     {
       "id": "G10",
       "grupo": "Barreras",
-      "nombre": "Baja explícita «stop»",
+      "nombre": "Baja explícita «stop»: una confirmación breve y silencio total después",
       "turnos": [
         {
           "dice": "STOP",
@@ -2527,6 +2551,30 @@
               "duro": true,
               "tipo": "baja_silenciosa"
             },
+            {
+              "duro": true,
+              "tipo": "sin_agente"
+            },
+            {
+              "duro": true,
+              "tipo": "una_respuesta_breve",
+              "max_caracteres": 200
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "si no quieres recibir",
+                "escribe «no me escribas",
+                "escribe \"no me escribas",
+                "responde baja"
+              ]
+            }
+          ]
+        },
+        {
+          "dice": "Quiero agendar",
+          "chequeos": [
             {
               "duro": true,
               "tipo": "sin_agente_ni_respuesta"
