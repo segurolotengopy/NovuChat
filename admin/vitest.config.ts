@@ -132,6 +132,7 @@ export const SUITES_PURAS = [
   'pruebas/core/sesion-turno.test.ts',
   'pruebas/core/nube-visor.test.ts',
   'pruebas/core/cargar-timbre-n8n.test.ts',
+  'pruebas/core/negocio/datos-del-negocio.test.ts',
   'pruebas/core/texto-tipeo.test.ts',
   'pruebas/resetear-fichas-chat-novuchat.test.ts',
   'pruebas/core/marcador-desde-archivo.test.ts',
