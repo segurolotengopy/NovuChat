@@ -16,6 +16,8 @@
 //
 // OPCIONES (las de `chat-novuchat` más las propias)
 //   --seco  --n <1..20>  --casos A1,B2  --env <archivo>  --vertex <proyecto>  --locacion <región>  --json  --ayuda
+//   --duros            solo los casos con algún chequeo `duro` (las barreras duras: el grupo G y los demás que llevan `duro`); se corren PRIMERO por costo.
+//   --grupos G,E       solo los casos de esos grupos (la letra del id, p. ej. G, o el nombre del grupo, p. ej. Barreras); se combina con --duros por intersección.
 //   --confirmo-gasto   OBLIGATORIA fuera de `--seco`: la corrida real es GASTO y solo se hace con el «sí» de Andres, con la clave de PRUEBAS (nunca la de producción).
 //   --tope-usd <n>     corta la corrida cuando el costo estimado llega a n (0,05 por omisión).
 //   --archivo-casos <ruta>   otro archivo de casos (por omisión el de `rroca-evy-bateria`).
@@ -38,7 +40,7 @@ const TOPE_USD_DEFECTO = 0.05;
 const UMBRAL = { general: 0.85, duras: 1 };
 
 const AYUDA = `Batería del flujo nuevo de Evy contra el modelo.
-  --seco  --n <1..20>  --casos A1,B2  --env <archivo>  --vertex <proyecto>  --locacion <región>  --confirmo-gasto  --tope-usd <n>  --archivo-casos <ruta>  --conversaciones  --crudo  --json  --ayuda
+  --seco  --n <1..20>  --casos A1,B2  --env <archivo>  --vertex <proyecto>  --locacion <región>  --confirmo-gasto  --tope-usd <n>  --archivo-casos <ruta>  --duros  --grupos G,E  --conversaciones  --crudo  --json  --ayuda
 Fuera de --seco la corrida es GASTO: exige --confirmo-gasto y una clave del proyecto de PRUEBAS (nunca la de producción).`;
 
 const norm = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -268,6 +270,17 @@ export function medir(corridas, casos, datos, opciones) {
     umbral: { general: UMBRAL.general, cumple: filas.length > 0 && general >= UMBRAL.general && durasOk },
   };
 }
+/** Un caso es de barreras duras si algún chequeo de algún turno lleva `duro: true`. */
+export const esDuro = (caso) => caso.turnos.some((t) => (t.chequeos ?? []).some((ch) => ch.duro === true));
+/** Un caso es de un grupo si la letra de su id (G) o el nombre de su grupo (Barreras) está en la lista. */
+export const deGrupo = (caso, grupos) => grupos.includes(norm(String(caso.id).replace(/\d+$/, ''))) || grupos.includes(norm(caso.grupo));
+/** El costo previsto POR SUBCONJUNTO (en seco): todo, las barreras duras y cada grupo. */
+export function costosPorSubconjunto(corridas, casos) {
+  const porId = new Map(casos.map((c) => [c.id, c]));
+  const de = (pred) => costoPrevisto(corridas.filter((c) => pred(porId.get(c.caso))));
+  const grupos = [...new Set(casos.map((c) => String(c.grupo ?? c.id)))];
+  return { todo: costoPrevisto(corridas), duros: de(esDuro), porGrupo: Object.fromEntries(grupos.map((g) => [g, de((c) => String(c.grupo ?? c.id) === g)])) };
+}
 /** El costo previsto de una corrida real (en seco): las llamadas al modelo y los tokens de entrada, a ~3,5 caracteres por token, más ~250 de salida. */
 export function costoPrevisto(corridas) {
   const llamadas = corridas.flatMap((c) => c.turnos).filter((t) => t.llamoAlModelo);
@@ -276,13 +289,16 @@ export function costoPrevisto(corridas) {
   return { llamadas: llamadas.length, tokensEntrada: entrada, tokensSalida: salida, usd: redondear((entrada * TARIFA.entrada + salida * TARIFA.salida) / 1e6, 4) };
 }
 
-function textoDelInforme(m, opciones, proveedor, previsto) {
+function textoDelInforme(m, opciones, proveedor, previsto, porSub) {
   const l = [];
   l.push('BATERÍA DEL FLUJO NUEVO DE EVY');
   l.push(`Proveedor: ${proveedor}. Corridas por caso: ${opciones.n}. Turnos: ${m.turnos} (${m.llamadasAlModelo} con llamada al modelo).`);
   if (opciones.seco) {
     l.push('MODO SECO: el modelo es un texto genérico. Solo se evalúa lo que decide el CÓDIGO y los turnos que no llegan al modelo; los chequeos que dependen de lo que escribe el modelo se omiten.');
     l.push(`Omitidos en seco: ${m.omitidosEnSeco}. Costo PREVISTO de la corrida real con --n ${opciones.n}: ≈ USD ${previsto.usd} (${previsto.llamadas} llamadas, ${previsto.tokensEntrada} tokens de entrada).`);
+  }
+  if (opciones.seco && porSub) {
+    l.push(`Costo previsto por subconjunto (por corrida de cada caso; tope por omisión ${TOPE_USD_DEFECTO}): todo ≈ USD ${porSub.todo.usd} (${porSub.todo.llamadas} llamadas); barreras duras (--duros) ≈ USD ${porSub.duros.usd} (${porSub.duros.llamadas} llamadas); por grupo: ${Object.entries(porSub.porGrupo).map(([g, v]) => `${g} ${v.usd}`).join(', ')}.`);
   }
   l.push(`Chequeos evaluados: ${m.chequeos}; aprobados ${m.aprobados} (${m.pct} %). Umbral general: ${UMBRAL.general * 100} %. Barreras duras: ${m.duras.aprobadas}/${m.duras.n} (se exige el 100 %).`);
   if (!opciones.seco) l.push(`Tokens de entrada ${m.tokensEntrada}, de salida ${m.tokensSalida}; latencia media ${m.latenciaMsMedia} ms; costo ≈ USD ${m.costoUsd} (tarifa ${TARIFA.entrada}/${TARIFA.salida} USD por millón; no es una factura). Tope: ${opciones.topeUsd}.`);
@@ -310,8 +326,9 @@ export async function main(argv, deps = {}) {
   };
   let credencial = { clave: null, token: null, nombre: '' };
   try {
-    const propias = new Set(['--confirmo-gasto', '--conversaciones', '--crudo']);
-    const conValor = new Set(['--tope-usd', '--archivo-casos']);
+    const propias = new Set(['--confirmo-gasto', '--conversaciones', '--crudo', '--duros']);
+    const conValor = new Set(['--tope-usd', '--archivo-casos', '--grupos']);
+    let grupos = null;
     const resto = [];
     let topeUsd = TOPE_USD_DEFECTO;
     let archivoCasos = RUTA_CASOS;
@@ -319,7 +336,7 @@ export async function main(argv, deps = {}) {
       if (conValor.has(argv[i])) {
         const v = argv[i + 1];
         if (v === undefined || v.startsWith('--')) throw new ErrorDeUso(`Falta el valor de ${argv[i]}.`);
-        if (argv[i] === '--tope-usd') { if (!/^\d+(\.\d+)?$/.test(v) || Number(v) <= 0 || Number(v) > 5) throw new ErrorDeUso('--tope-usd debe ser un número entre 0 y 5.'); topeUsd = Number(v); } else archivoCasos = v;
+        if (argv[i] === '--tope-usd') { if (!/^\d+(\.\d+)?$/.test(v) || Number(v) <= 0 || Number(v) > 5) throw new ErrorDeUso('--tope-usd debe ser un número entre 0 y 5.'); topeUsd = Number(v); } else if (argv[i] === '--grupos') { grupos = v.split(',').map((x) => norm(x)).filter(Boolean); if (!grupos.length) throw new ErrorDeUso('--grupos necesita al menos un grupo (G,E o Barreras).'); } else archivoCasos = v;
         i++;
       } else if (!propias.has(argv[i])) resto.push(argv[i]);
     }
@@ -330,7 +347,11 @@ export async function main(argv, deps = {}) {
     const flujo = JSON.parse(readFileSync(RUTA_FLUJO, 'utf8'));
     const datos = JSON.parse(d.leerArchivo(archivoCasos) ?? (() => { throw new ErrorDeUso(`No existe el archivo de casos (${archivoCasos}). Con el PR #638 fusionado está en Flujos/experimental/rroca-evy-bateria/; si no, use --archivo-casos.`); })());
     const todos = validarCasos(datos);
-    const elegidos = opciones.casos ? opciones.casos.map((id) => { const c = todos.find((x) => x.id === id); if (!c) throw new ErrorDeUso(`Caso desconocido: ${id}.`); return c; }) : todos;
+    const soloDuros = argv.includes('--duros');
+    let elegidos = opciones.casos ? opciones.casos.map((id) => { const c = todos.find((x) => x.id === id); if (!c) throw new ErrorDeUso(`Caso desconocido: ${id}.`); return c; }) : todos;
+    if (soloDuros) elegidos = elegidos.filter(esDuro);
+    if (grupos) elegidos = elegidos.filter((c) => deGrupo(c, grupos));
+    if (!elegidos.length) throw new ErrorDeUso('Ningún caso cumple --duros / --grupos / --casos.');
     const info = (t) => (opciones.json ? d.error(t + '\n') : d.salida(t + '\n'));
     if (!opciones.seco) { credencial = leerCredencial(opciones, d); info(`Clave del modelo: ${credencial.nombre} (valor no mostrado)`); }
     const proveedor = opciones.seco ? 'ninguno (seco)' : opciones.vertex ? `Vertex AI (${opciones.vertex}, ${opciones.locacion})` : 'AI Studio';
@@ -346,10 +367,11 @@ export async function main(argv, deps = {}) {
     }
     const m = medir(corridas, elegidos, datos, opciones);
     const previsto = costoPrevisto(corridas);
+    const porSub = costosPorSubconjunto(corridas, elegidos);
     const aviso = costo.cortado ? `\n⚠ La corrida se CORTÓ al llegar al tope de gasto (USD ${opciones.topeUsd}): los casos restantes no se corrieron.` : '';
     d.salida(opciones.json
-      ? JSON.stringify({ proveedor, medidas: m, previsto, cortadaPorTope: costo.cortado }, null, 1) + '\n'
-      : textoDelInforme(m, opciones, proveedor, previsto) + aviso + '\n' + (argv.includes('--conversaciones') || argv.includes('--crudo') ? '\n' + textoDeConversaciones(corridas, argv.includes('--crudo')) + '\n' : ''));
+      ? JSON.stringify({ proveedor, medidas: m, previsto, porSubconjunto: porSub, cortadaPorTope: costo.cortado }, null, 1) + '\n'
+      : textoDelInforme(m, opciones, proveedor, previsto, porSub) + aviso + '\n' + (argv.includes('--conversaciones') || argv.includes('--crudo') ? '\n' + textoDeConversaciones(corridas, argv.includes('--crudo')) + '\n' : ''));
     return m.umbral.cumple && !costo.cortado ? 0 : 1;
   } catch (e) {
     const secretos = [credencial.clave, credencial.token];

@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error el motor es un .mjs sin tipos
-import { evaluar, invariantes, lecturaDeImagen, main, medir, transcripcionDe, validarCasos } from '../../../../Flujos/experimental/rroca-evy/herramientas/bateria.mjs';
+import { costosPorSubconjunto, deGrupo, esDuro, evaluar, invariantes, lecturaDeImagen, main, medir, transcripcionDe, validarCasos } from '../../../../Flujos/experimental/rroca-evy/herramientas/bateria.mjs';
 
 type Turno = { n: number; turno: Record<string, unknown>; plan: string; mensajes: Array<{ tipo: string; cuerpo: string; payload: Record<string, unknown> }>; imagenes: string[]; avisoPlaneado: boolean; llamoAlModelo: boolean; eventos: string[]; fallo: null; ms: number };
 const turno = (o: Partial<Turno> = {}): Turno => ({ n: 1, turno: {}, plan: 'modelo', mensajes: [], imagenes: [], avisoPlaneado: false, llamoAlModelo: true, eventos: [], fallo: null, ms: 0, ...o });
@@ -52,6 +52,31 @@ describe('el motor: argumentos y gasto', () => {
     expect(() => validarCasos({ casos: [{ id: 'X', turnos: [{ chequeos: [] }] }] })).toThrow(/debe traer/);
     expect(() => validarCasos({ casos: [{ id: 'X', turnos: [{ dice: 'a', chequeos: [{ tipo: 'inventado' }] }] }] })).toThrow(/desconocido/);
     expect(() => validarCasos({ casos: [{ id: 'X', turnos: [{ dice: 'a' }] }, { id: 'X', turnos: [{ dice: 'a' }] }] })).toThrow(/repetido/);
+  });
+});
+
+describe('subconjuntos: --grupos, --duros y el costo previsto por subconjunto', () => {
+  const casos = [{ id: 'G1', grupo: 'Barreras', turnos: [{ dice: 'a', chequeos: [{ tipo: 'sin_boton', duro: true }] }] }, { id: 'A1', grupo: 'Bienvenida', turnos: [{ dice: 'a', chequeos: [{ tipo: 'sin_boton' }] }] }];
+  it('esDuro y deGrupo (por la letra del id o por el nombre del grupo, sin tildes ni mayúsculas)', () => {
+    expect(casos.map(esDuro)).toEqual([true, false]);
+    expect(deGrupo(casos[0], ['g'])).toBe(true);
+    expect(deGrupo(casos[0], ['barreras'])).toBe(true);
+    expect(deGrupo(casos[1], ['g'])).toBe(false);
+  });
+  it('el costo previsto sale por subconjunto y suma lo que cada uno llamaría', () => {
+    const t = turno({ cuerpoModelo: { contents: 'x'.repeat(3500) } as never });
+    const c = costosPorSubconjunto([{ caso: 'G1', rep: 1, turnos: [t] }, { caso: 'A1', rep: 1, turnos: [t] }], casos) as { todo: { llamadas: number }; duros: { llamadas: number }; porGrupo: Record<string, { llamadas: number }> };
+    expect(c.todo.llamadas).toBe(2);
+    expect(c.duros.llamadas).toBe(1);
+    expect(c.porGrupo['Barreras']!.llamadas).toBe(1);
+  });
+  it('--grupos y --duros filtran los casos y avisan si no queda ninguno', async () => {
+    const a = salida();
+    expect(await main(['--seco', '--n', '1', '--grupos', 'G', '--archivo-casos', 'casos.json'], { ...a.deps, leerArchivo: archivo({ ...CASOS, casos: [{ ...CASOS.casos[0], grupo: 'Bienvenida' }, { id: 'G1', grupo: 'Barreras', turnos: [{ dice: 'stop', chequeos: [{ tipo: 'baja_silenciosa', duro: true }] }] }] }) })).toBe(0);
+    expect(a.sal.join('')).toMatch(/Turnos: 1 /);
+    const b = salida();
+    expect(await main(['--seco', '--n', '1', '--grupos', 'Z', '--archivo-casos', 'casos.json'], { ...b.deps, leerArchivo: archivo(CASOS) })).toBe(2);
+    expect(b.err.join('')).toMatch(/Ningún caso/);
   });
 });
 

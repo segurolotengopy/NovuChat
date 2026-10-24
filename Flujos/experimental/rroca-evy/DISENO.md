@@ -39,7 +39,7 @@ No cobra, no tiene catálogo, pedidos ni QR; no agenda (lo hace la recepción); 
 
 ## Secuencia de publicación (sin hacerla aquí)
 1. Preparar la tabla local en una COPIA: `ETAPA_PRUEBA = si`, `TELEFONOS_DE_PRUEBA`, recepción de prueba, ids de las tres imágenes y los identificadores reales; `node construir.mjs --publicable --etapa prueba --flujo <preparado>`.
-2. Actualizar el flujo vivo (`tg8w…`, inactivo o en prueba) con `publicar-flujo.sh --flujo <preparado> --aplicar` (requiere cablear esta guardia en el script: ver `PROPIO.md`, nota d).
+2. Actualizar el flujo vivo (`tg8w…`, inactivo o en prueba) con `publicar-flujo.sh --flujo <preparado> --aplicar` (la guardia nueva ya está cableada en el script; `--etapa-prueba` también al actualizar en su lugar y con `--encender`; confirmación `PUBLICAR EVY`).
 3. Encender y probar con teléfonos de prueba; después, tabla real con `ETAPA_PRUEBA` vacío, guardia completa y publicación con el «sí» de Andres.
 4. **Restauración:** reimportar el JSON anterior del flujo vivo con `publicar-flujo.sh` (el flujo de las doctoras sigue versionado en `Flujos/experimental/doctoras/`); `usarMarcas` vacío apaga las marcas sin tocar código.
 
