@@ -330,3 +330,11 @@ Fuente: «MD Antonio modificado 2410206.02» (en `CLIENTES/RUBEN_ROCA/Antonio/`,
 - **Términos registrados** («100 Preguntas Profundas», «Mapa de Transformación de 30 Días», «Checkpoints de Conexión», «Calendario de Conexión de 30 Días»): los hace Rearquitectura; mientras tanto el código usa textos fijos y el filtro no se tocó.
 - **Costo.** Mensajes por conversación +0; nodos 46/41 (sin cambios); `RA_PROMPT` sin cambios (3.588 caracteres, tope 4.670).
 - **Pruebas:** `etiquetas-md.test.ts`, `campanas.test.ts`, `cargar-campanas.test.ts` (emulador). `mundo.ts` pone las etiquetas vacías por omisión (las demás suites prueban el camino del catálogo) y el vigilante de UX acepta las etiquetas del tenant como nombre de botón.
+
+## Identidad por código (24/10/2026, prueba de Andres: el paso 9 «¿eres un bot?» respondía cualquier cosa)
+
+- **Causa.** Antonio no tenía respuesta por código a la pregunta de identidad (Rubén sí: `rrPreguntaPorIA`): caía al modelo y solo se filtraba su salida.
+- **Ahora.** `raPreguntaPorIA(n)` (criterio de la de Rubén, con «antonio»: «¿eres Antonio?», «¿hablo con Antonio?», «¿eres una persona/humano/bot/IA/robot/chatbot/chatgpt?», «¿quién eres?», «¿con quién hablo?»; ante la duda en 2.ª persona o mensaje corto, sí; «yo uso IA», «estoy estudiando inteligencia artificial» o «el libro es sobre ia» no la disparan). «Decidir turno» la atiende justo después de la baja, antes de la configuración, la compuerta de opciones, el precio y el modelo, y también con un QR abierto.
+- **Respuesta.** `raTextoIdentidad`: «Soy el asistente virtual del <nombre de la Consola>: una inteligencia artificial, no una persona (Antonio es el autor del libro). Puedo ayudarte con el libro y sus bonos.» + «¿Qué te gustaría saber del libro?». Solo texto: sin botones, sin QR, sin aviso a Antonio, sin modelo, sin «¡Hola!» ni saludo largo, sin montos; pasa por `raSeguro`.
+- **Costo.** Nodos 46/41 (sin cambios); `RA_PROMPT` sin cambios; mensajes +0 (la pregunta ya no llama al modelo).
+- **Pruebas.** `identidad.test.ts`. El vigilante de UX no cuenta esta respuesta como presentación repetida y la exime de «mismo texto dos veces» (la regla dura 4 prevalece).
