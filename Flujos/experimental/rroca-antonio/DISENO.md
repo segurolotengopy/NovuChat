@@ -277,3 +277,28 @@ Sobre el módulo común de medios (#594). **Nodos: 48 en producción (sin cambio
   **Costo conocido (aceptado):** «El 80 % de las parejas…» y «Déjame ver si entendí bien» ya no pasan, y ningún texto del modelo puede llevar un dígito suelto (las pruebas que numeraban las respuestas del modelo con «(1)» usan letras). Estos criterios son generales y deberían subir al filtro común del core (`cmRevisarRedaccion`).
 - **F2 (baja, 23/10/2026).** `RA_BAJA` y la expresión de «Reportar mensaje (entrante)» siguen IDÉNTICAS (prueba de igualdad literal y de paridad sobre un corpus). Ambas leen el texto con NFKC, sin tildes y con cifras plegadas a letras («n0 me escribas», ancho completo), y aceptan «para de escribirme» y «basta, no me escriban»; no son baja «no me escribas el precio, mándame el QR», «No me escribas con tanta formalidad», «Mi pareja dice que deje de escribirle» ni «Quiero que mi pareja no me deje de escribir».
 - **F1b (falsos positivos de la batería real, 23/10/2026).** La lista blanca de cifras se ata a los DATOS DECLARADOS de `RA_PROMPT` (138 páginas, 14 capítulos en 4 partes, ruta de 30 días, 6 pilares, 10 a 20 minutos al día, «100% digital», capítulos 1 a 14), en dígitos y en palabras; cualquier otra cifra sigue rechazada. «Porcentaje» solo es beneficio junto a «menos», «de descuento», «off»…; `presentacion_repetida` no se aplica si el cliente pregunta quién es, si es un bot o si es terapia (`ctx.textoCliente`); una mención NEGADA de «terapia» o «psicólogo» no es afirmarla; y «elegir» suelto (vocabulario del libro) ya no es una oferta de compra.
+
+## Origen «landing» (decisión de Andres, 24/10/2026)
+
+Antonio tiene una landing nueva (dominio en `landing.dominio` del archivo de datos; **solo documenta el origen: el flujo nunca abre ni lee la URL**). Quien llega de allí manda exactamente «Hola, quiero información del Método PUENTE y sus materiales digitales» (`landing.fraseEntrada`, que viaja a «Config base» como `landingFrase`; sin ese dato no hay origen).
+
+- **Antes.** La frase no se reconocía: un teléfono nuevo recibía el saludo general solo porque el primer turno es siempre el saludo (sin marca de origen); uno ya saludado la mandaba al modelo. No pasaba por precio, catálogo ni derivación.
+- **Ahora.** `raEsEntradaLanding` (en `ra.js`) la reconoce por código en «Decidir turno» y el plan `saludo` lleva `origen: 'landing'`. Se compara por IGUALDAD de palabras sobre el texto normalizado: sin tildes, mayúsculas ni puntuación; sin «hola» ni «el»; «del» = «de». Una palabra de más (una instrucción, un marcador `[MODO_TURNO…]`, un pedido) deja de ser la frase y sigue el camino que le toca. Solo como primer mensaje, sin QR abierto y como texto escrito (un audio no la activa): ya saludado o con un QR abierto no hace nada especial.
+- **Texto.** El del saludo de siempre (presentación una vez, una pregunta, sin montos): no se cambió ni una palabra. Nodos 46/41 (0 nuevos); mensajes por conversación +0; `RA_PROMPT` 3.619 → 3.588 caracteres (tope 4.670).
+- **Prompt.** «Una ruta práctica de 30 días» pasa a «rutas de 30 días y de 14 semanas» (dato de la landing) y se quita la frase repetida «Es un método práctico, no terapia» (la aclaración sigue en el párrafo siguiente); `14 semanas` entra a la lista blanca de cifras. Los nombres de producto y bono del prompt y de `RA_PRODUCTOS` ya coincidían con la landing. Los «6 pilares» del prompt (Pausa, Unidos como equipo, Escucha y empatía, Necesidades, Tono y palabras, Elegirse) no se tocaron: la landing los llama «seis etapas» (Pausar, Unir, Expresar, Negociar, Transformar, Elegirse); alinear esos nombres es una decisión de contenido de Antonio.
+- **Pruebas.** `admin/pruebas/tenants/rroca-antonio/landing.test.ts`.
+
+### Diferencias landing / catálogo (DE LA CONSOLA, no se corrigen en código)
+
+Los precios salen solo del catálogo de la Consola; el flujo no copia cifras de la landing.
+
+| Producto | Landing | Catálogo del repo (`admin/scripts/datos/rroca-antonio`) |
+|---|---|---|
+| Libro | Bs 35 | 35 |
+| Pack | Bs 49 (lanzamiento 30/10 al 05/11/2026) | 49 |
+| Workbook | Bs 20 | 20 |
+| Guía de conversaciones | Bs 18 | 19 |
+| Calendario de conexión | Bs 15 | 17 |
+| Banco de preguntas | Bs 18 | 15 |
+
+El precio del Pack cambia el **06/11/2026** (Bs 69 según la landing): lo cambia la Consola (decisión de Antonio/Andres), no el código. Pendiente de la Consola: igualar Guía, Calendario y Banco con la landing, o corregir la landing.

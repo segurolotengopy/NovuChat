@@ -107,3 +107,5 @@ Lista de 12 funcionalidades y decisiones D1 a D3 aprobadas por Andres el 23/10/2
 | D1. Protección por violencia o miedo | Conservada |
 
 Números: nodos **48/43 → 46/41** (fase 2); `RA_PROMPT` 3.128 → 3.619 caracteres (tope 4.670); `ra.js` 83.527 → 95.538 bytes; prompt de «Describir imagen» 2.442 → 2.638; `decidir-turno.js` 33.886 → 36.710 y `config-del-negocio.js` 5.922 → 6.502 bytes (fase 2); JSON de producción 1.321.050 → 1.324.207 bytes en la fase 2 (4 nodos menos, 2 más y el código con las librerías). Mensajes por conversación: 0 agregados; el puente de «precio primero» en general es el mensaje que antes traía el menú (+1 declarado en el plan, un solo mensaje por turno). Llamadas al modelo: igual que antes (0 o 1 por turno); el puente y el bloque de las opciones usan la misma llamada.
+
+- **Origen «landing» (24/10/2026).** `landing.dominio` y `landing.fraseEntrada` son DATO del tenant (archivo de datos); el flujo solo usa la frase (`landingFrase` de «Config base») y nunca la URL. El reconocimiento es `raEsEntradaLanding` en `ra.js` (propio de Antonio, no sube a venta-digital: la frase y el dominio son de un cliente). Detalle en `DISENO.md`.
