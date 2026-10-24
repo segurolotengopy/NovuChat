@@ -68,6 +68,36 @@ describe('la guardia: la ruta feliz y lo versionado de hoy', () => {
   });
 });
 
+describe('datos versionados = marcadores permitidos; flujo publicado = nada sin resolver', () => {
+  const enPrueba = (): ReturnType<typeof listo> => { const x = listo(); poner(x.flujo, 'etapaPrueba', 'si'); poner(x.flujo, 'telefonosDePrueba', `${ANA},${BETO}`); poner(x.flujo, 'numeroRecepcion', BETO); return x; };
+  it('(a) flujo resuelto + datos VERSIONADOS (con marcadores de ids de medio) pasa en la etapa prueba y en la completa', () => {
+    const x = enPrueba();
+    expect(hallazgos({ flujo: x.flujo, datos: datosV(), negocio: x.negocio }, 'prueba')).toEqual([]);
+    const y = listo();
+    expect(hallazgos({ flujo: y.flujo, datos: datosV(), negocio: y.negocio })).toEqual([]);
+  });
+  it('(a) por el CLI: flujo y negocio resueltos, sin --datos (los versionados), se puede publicar en la etapa prueba', () => {
+    const { flujo, negocio } = enPrueba();
+    const f = join(tmp, 'flujo-prueba.json'); const n = join(tmp, 'negocio-versionado-resuelto.json');
+    writeFileSync(f, JSON.stringify(flujo)); writeFileSync(n, JSON.stringify(negocio));
+    const r = cli('--publicable', '--flujo', f, '--negocio', n, '--etapa', 'prueba');
+    expect(r.out).toMatch(/✓ Evy: etapa prueba/);
+    expect(r.status).toBe(0);
+  });
+  it('(b) un id sin resolver en el FLUJO se niega (nombra «Config base», no los datos)', () => {
+    const x = enPrueba(); poner(x.flujo, 'arteAutoridadMediaId', 'REEMPLAZAR_MEDIA_ID_ARTE_AUTORIDAD');
+    const h = hallazgos({ flujo: x.flujo, datos: datosV(), negocio: x.negocio }, 'prueba').join(' ');
+    expect(h).toMatch(/Config base: arteAutoridadMediaId no está resuelto/);
+    expect(h).not.toMatch(/datos: arte/);
+  });
+  it('(c) un id que no son dígitos se niega en el flujo, y en los datos si ni es dígitos ni marcador', () => {
+    const x = enPrueba(); poner(x.flujo, 'arteComparativoMediaId', 'abc123');
+    expect(hallazgos({ flujo: x.flujo, datos: datosV(), negocio: x.negocio }, 'prueba').join(' ')).toMatch(/Config base: arteComparativoMediaId no está resuelto/);
+    const y = enPrueba(); const d = datosV(); d.configBase['arteComparativoMediaId'] = 'abc123';
+    expect(hallazgos({ flujo: y.flujo, datos: d, negocio: y.negocio }, 'prueba').join(' ')).toMatch(/datos: arteComparativoMediaId no está resuelto/);
+  });
+});
+
 describe('cada defecto se niega por separado', () => {
   it('un marcador sin sustituir en cualquier parte del flujo', () => {
     const x = listo(); x.flujo.nodes.find((n) => n.name === 'Armar mensajes')!.notes = 'REEMPLAZAR_RUTA_X';

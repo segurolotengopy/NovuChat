@@ -430,7 +430,9 @@ function hallazgosDeConfig(cb, donde, etapa) {
   const faltan = MEDIOS_PARA_ABRIR.filter((m) => !medios.has(m));
   if (faltan.length) h.push(`${donde}: mediosHabilitados tiene que declarar audio, imagen y documento y faltan: ${faltan.join(', ')}`);
   // Los ids de medio de las tres imágenes, resueltos (dígitos): un marcador no se publica.
-  for (const c of CLAVES_DE_ARTES) if (!/^\d{6,25}$/.test(String(cb[c] === undefined ? '' : cb[c]))) h.push(`${donde}: ${c} no está resuelto (el id del medio ya subido a Meta; los medios vencen a los 30 días)`);
+  // En el FLUJO que se publica: dígitos (6 a 25). En los DATOS versionados (repo público): dígitos o el marcador REEMPLAZAR_MEDIA_ID_*; la tabla local los resuelve al publicar.
+  const formaDelId = donde === 'datos' ? /^(\d{6,25}|REEMPLAZAR_MEDIA_ID_[A-Z0-9_]+)$/ : /^\d{6,25}$/;
+  for (const c of CLAVES_DE_ARTES) if (!formaDelId.test(String(cb[c] === undefined ? '' : cb[c]))) h.push(`${donde}: ${c} no está resuelto (el id del medio ya subido a Meta; los medios vencen a los 30 días)`);
   return h;
 }
 
