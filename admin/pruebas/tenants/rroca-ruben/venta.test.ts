@@ -4152,6 +4152,21 @@ describe('MEDIOS · IMAGEN o PDF con un cobro VENCIDO, EN REVISIÓN o ABIERTO: e
     }
   });
 
+  it('NEGADO: un pago con problema con un QR abierto NO se salta el tope diario de fotos ni la visión apagada: con tope 0 o lleno sale el texto del tope, sin aviso', () => {
+    const PAGO = { categoria: 'pago_con_problema', descripcion: 'x' };
+    const apagada = crear({ lectura: PAGO, topeImagenes: 0 });
+    pedirQr(apagada, 'pack');
+    const ta = hablar(apagada, ANA, mImagen());
+    expect(avisosDe(ta)).toHaveLength(0);
+    expect(plano(unico(ta).cuerpo)).toContain('por aquí solo puedo leer texto');
+    const w = crear({ lectura: PAGO, topeImagenes: 1 });
+    pedirQr(w, 'pack');
+    expect(avisosDe(hablar(w, ANA, mImagen()))).toHaveLength(1);
+    const llena = hablar(w, ANA, mImagen());
+    expect(avisosDe(llena)).toHaveLength(0);
+    expect(plano(unico(llena).cuerpo)).toContain(plano(T_IMG_TOPE));
+  });
+
   it('un PDF que el lector clasifica como no-comprobante (cobro vencido): el texto fijo de los archivos, sin aviso ni cotejo; un PDF comprobante (o sin clasificar) sigue el camino de siempre', () => {
     const w = vencido();
     w.mundo.dobles['Obtener URL del medio'] = () => ({ url: 'https://lookaside.fbsbx.com/m', mime_type: 'application/pdf', file_size: 1_000_000 });

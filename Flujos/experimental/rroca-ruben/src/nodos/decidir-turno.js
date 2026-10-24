@@ -145,13 +145,16 @@ if (t.esComprobante === true || t.comprobanteSimulado === true) {
   // Lo que NO está registrado no se avisa: se responde como a una imagen vista (o el texto fijo de un documento), sin aviso.
   const comoImagenVista = () => {
     medioExtra.vioImagen = t.tipo !== 'document';
-    // Un pago con problema se avisa a Rubén ANTES de cualquier otra cosa (también con un QR abierto o un documento): nunca se coteja.
+    // El tope diario de fotos y la visión apagada valen PARA TODA imagen, también para un pago con problema con un QR abierto (cada imagen cuesta una respuesta): se miran antes.
+    if (t.tipo !== 'document') {
+      const topeFotos = rrTopeMedio(base.topeImagenesDia, RR_TOPE_IMAGENES_DIA, 20);
+      if (topeFotos === 0) return salir({ tipo: 'imagen_otra', variante: '', conRuben: true, cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
+      if (rrConteoVigente(ficha.imagenes, ahora) >= topeFotos) return salir({ tipo: 'imagen_otra', variante: 'tope', conRuben: true, cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
+    }
+    // Un pago con problema se avisa a Rubén ANTES de lo demás (también con un QR abierto o un documento): nunca se coteja.
     if (delLector && delLector.pagoConProblema === true) return planDeImagenVista(vistaDeImagen(), true);
     if (t.tipo === 'document') return salir({ tipo: 'imagen_otra', variante: hayQrAbierto ? 'archivo_no_aceptado' : 'documento', cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'documento', pieImagen) });
     if (hayQrAbierto) return salir(recordatorio(''));
-    const topeFotos = rrTopeMedio(base.topeImagenesDia, RR_TOPE_IMAGENES_DIA, 20);
-    if (topeFotos === 0) return salir({ tipo: 'imagen_otra', variante: '', conRuben: true, cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
-    if (rrConteoVigente(ficha.imagenes, ahora) >= topeFotos) return salir({ tipo: 'imagen_otra', variante: 'tope', conRuben: true, cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
     return planDeImagenVista(vistaDeImagen(), true);
   };
   if (delLector && delLector.noEsComprobante === true) return comoImagenVista();  // El cotejo corrió solo si hubo medio utilizable; si no (tamaño, descarga, servidor caído), `cbResultadoVenta` lo deja en «sin cotejar» con aviso y botón: nunca «cuadra».
