@@ -77,11 +77,16 @@ export const nombreDeProductoApto = (nombre: unknown): boolean => nombreParaElMo
  */
 export function textoLibreParaElModelo(texto: unknown): string | null {
   if (typeof texto !== 'string') return null;
-  if (texto.length > TOPE_PROSA) return null;
+  if (texto.length > TOPE_PROSA || texto.trim() === '') return null;
   for (const v of vistas(texto)) {
     if (pareceInstruccionEnProsa(v) || rechazaCapa1(v)) return null;
   }
-  const limpio = texto.replace(CF, '').replace(/(?![\n\t])\p{Cc}/gu, ' ').replace(MARCAS, ' ').trim();
+  // Sin nada que quitar por seguridad, el texto sale IGUAL, byte a byte: un comercio sin
+  // hostiles recibe la misma respuesta de siempre.
+  const hayQueQuitar = /[[\]{}<>«»]|\p{Cf}|(?![\n\t\r])\p{Cc}/u.test(texto);
+  if (!hayQueQuitar) return texto;
+  const limpio = texto.replace(CF, '').replace(/(?![\n\t\r])\p{Cc}/gu, ' ').replace(MARCAS, ' ')
+    .replace(/ {2,}/g, ' ').trim();
   return limpio === '' ? null : limpio;
 }
 

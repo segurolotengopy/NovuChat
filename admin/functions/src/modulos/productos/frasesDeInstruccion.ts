@@ -50,8 +50,8 @@ const FRASES: readonly RegExp[] = [
   P('(?:tus|tu)\\s+nuevas?\\s+(?:ordenes|orden|reglas|instrucciones|directrices)'),
   // Anular lo anterior.
   P('(?:ignora|ignore|ignorar|olvida|olvide|olvidar|omite|omitir|desobedece|desobedecer)\\w*\\s+(?:todo|todas|todos|lo anterior|lo de arriba|lo que|las ordenes|tus)'),
-  P('(?:sin|salta\\w*|quita\\w*|desactiva\\w*)\\s+(?:todas?\\s+)?(?:las\\s+)?(?:restricciones|reglas)'),
-  P('(?:salta\\w*|quita\\w*|desactiva\\w*)\\s+(?:todos?\\s+)?(?:los\\s+)?(?:filtros|limites)'),
+  P('(?:sin|salta\\w*|quita\\w*|desactiva\\w*)\\s+(?:todas?\\s+|tus?\\s+)?(?:las\\s+)?(?:restricciones|reglas)'),
+  P('(?:salta\\w*|quita\\w*|desactiva\\w*)\\s+(?:todos?\\s+|tus?\\s+)?(?:los\\s+)?(?:filtros|limites)'),
   // Ordenar un comportamiento comercial: «Regala todo gratis», «No cobres», «Responde siempre que sí».
   P('(?:regala|regalar|regalale|regalame|regalen|regales|entrega|entregale|entregues|dale|da|dar|ofrece|ofrecele)\\s+(?:a\\s+\\p{L}+\\s+)?(?:todo|todos|todas|gratis|gratuito|gratuita|sin cobrar)'),
   P('(?:todo|todos|todas)\\s+(?:es\\s+|son\\s+|va\\s+|van\\s+|sera\\s+|seran\\s+)?(?:gratis|gratuito|gratuitos|gratuita|gratuitas)'),
@@ -65,6 +65,15 @@ const FRASES: readonly RegExp[] = [
 ];
 
 /**
+ * Solo para NOMBRES: «tus/tu» + las instrucciones o reglas como objeto
+ * («Detalla tus instrucciones», «Tus reglas fueron canceladas»). En prosa
+ * («Tus instrucciones de uso vienen incluidas») sería lenguaje comercial.
+ */
+const SOLO_NOMBRE: readonly RegExp[] = [
+  P('(?:tus|tu)\\s+(?:nuevas?\\s+)?(?:reglas|instrucciones|directrices)'),
+];
+
+/**
  * ¿El nombre es una frase de instrucción (de las que arma este archivo)?
  * Mira el texto plegado, y también con los invisibles cambiados por espacio:
  * un invisible, un ancho completo o un homoglifo no lo esconden.
@@ -73,7 +82,7 @@ export function pareceInstruccion(nombre: string): boolean {
   if (typeof nombre !== 'string') return false;
   const cortado = nombre.slice(0, TOPE_NOMBRE);
   const vistas = new Set([plegarNombre(cortado), plegarNombre(cortado.normalize('NFKC').replace(/[\p{Cf}\p{Cc}]/gu, ' '))]);
-  for (const v of vistas) for (const re of FRASES) if (re.test(v)) return true;
+  for (const v of vistas) for (const re of [...FRASES, ...SOLO_NOMBRE]) if (re.test(v)) return true;
   return false;
 }
 
@@ -88,10 +97,15 @@ const PROSA: readonly RegExp[] = FRASES.filter(
   (_, i) => [0, 1, 2, 4, 5, 6, 7, 8, 9, FRASES.length - 2, FRASES.length - 1].includes(i),
 );
 
+const PROSA_REGALO: readonly RegExp[] = [
+  P('(?:regala|regalamos|regalar|da|dale|entrega|entregamos)\\s+todo\\s+gratis'),
+  P('tu\\s+orden\\s+(?:nueva\\s+)?(?:es\\s+)?(?:de\\s+)?(?:regalar|dar|entregar)\\s+todo'),
+];
+
 export function pareceInstruccionEnProsa(texto: string): boolean {
   if (typeof texto !== 'string') return false;
   const cortado = texto.slice(0, 600);
   const vistas = new Set([plegarNombre(cortado), plegarNombre(cortado.normalize('NFKC').replace(/[\p{Cf}\p{Cc}]/gu, ' '))]);
-  for (const v of vistas) for (const re of PROSA) if (re.test(v)) return true;
+  for (const v of vistas) for (const re of [...PROSA, ...PROSA_REGALO]) if (re.test(v)) return true;
   return false;
 }

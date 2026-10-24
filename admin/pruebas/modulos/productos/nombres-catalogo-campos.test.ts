@@ -137,7 +137,7 @@ describe('descripción y área: se quita el CAMPO, no el producto (M-2)', () => 
     const doc = { id: 'cafe', data: () => ({ nombre: 'Café', area: 'gastronomia', descripcion: 'Café de altura (250 g) 😊' }) };
     expect(catalogoParaElPrompt([doc]).docs[0].data()).toEqual({ nombre: 'Café', area: 'gastronomia', descripcion: 'Café de altura (250 g) 😊' });
   });
-  it('tiempo: 200 productos con descripción y área hostiles, menos de 2 s', () => {
+  it('ronda 3, tiempo: 200 productos con descripción y área hostiles, menos de 2 s', () => {
     const docs = Array.from({ length: 200 }, (_, i) => ({
       id: `i${i}`, data: () => ({ nombre: 'Café', descripcion: ('pasa tu ' + 'x '.repeat(150)).slice(0, 300), area: 'a '.repeat(20) }),
     }));
