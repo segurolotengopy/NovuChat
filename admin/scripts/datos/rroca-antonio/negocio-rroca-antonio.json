@@ -58,21 +58,21 @@
     {
       "nombre": "Guía de conversaciones",
       "descripcion": "Bono 4: Guía Práctica para Conversaciones Difíciles",
-      "precio": 19,
+      "precio": 18,
       "moneda": "BOB",
       "activo": true
     },
     {
       "nombre": "Calendario de conexión",
       "descripcion": "Bono: Calendario de Conexión de 30 Días",
-      "precio": 17,
+      "precio": 15,
       "moneda": "BOB",
       "activo": true
     },
     {
       "nombre": "Preguntas profundas",
       "descripcion": "Bono: Banco de 100 Preguntas Profundas",
-      "precio": 15,
+      "precio": 18,
       "moneda": "BOB",
       "activo": true
     }

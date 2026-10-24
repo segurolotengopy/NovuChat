@@ -54,9 +54,9 @@ const CATALOGO = [
   { id: 'pack-completo', nombre: 'Pack completo', precio: 49, activo: true },
   { id: 'libro', nombre: 'Libro', precio: 35, activo: true },
   { id: 'workbook', nombre: 'Workbook', precio: 20, activo: true },
-  { id: 'guia-de-conversaciones', nombre: 'Guía de conversaciones', precio: 19, activo: true },
-  { id: 'calendario-de-conexion', nombre: 'Calendario de conexión', precio: 17, activo: true },
-  { id: 'preguntas-profundas', nombre: 'Preguntas profundas', precio: 15, activo: true },
+  { id: 'guia-de-conversaciones', nombre: 'Guía de conversaciones', precio: 18, activo: true },
+  { id: 'calendario-de-conexion', nombre: 'Calendario de conexión', precio: 15, activo: true },
+  { id: 'preguntas-profundas', nombre: 'Preguntas profundas', precio: 18, activo: true },
 ];
 // Legítimas: las del libro (14 capítulos, 4 partes, 6 pilares, 30 días, 138 páginas, 10 a 20 minutos al día) y el número de un capítulo (1 a 14).
 const CIFRAS_PERMITIDAS = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '20', '30', '138']);
