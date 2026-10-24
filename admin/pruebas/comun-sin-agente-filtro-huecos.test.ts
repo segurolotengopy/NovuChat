@@ -134,6 +134,11 @@ describe('invisibles ENTRE palabras y frases sin espacios (revisión de segurida
   const TODAS = { permitirMontos: true, sinDatosDePago: true, sinAfirmarCompra: true, sinPromesasDeAviso: true };
   for (const sep of SEP) {
     for (const t of OCHO) {
+      it(`prefijo pegado y envuelto en pregunta con U+${sep.codePointAt(0)!.toString(16).toUpperCase()}: «${t}»`, () => {
+        expect(motivo('Hola' + t.split(' ').join(sep)), t).not.toBe('');
+        // «¿Recibimos tu pago?» es una pregunta legítima (misma exención que main con espacios).
+        if (!/^Recibimos/.test(t)) expect(motivo('¿' + t.split(' ').join(sep) + '?'), t).not.toBe('');
+      });
       for (const [nombre, o] of [['sin opciones', undefined], ['con opciones', TODAS]] as Array<[string, object | undefined]>) {
         it(`${nombre}: U+${sep.codePointAt(0)!.toString(16).toUpperCase()} como separador de «${t}»`, () => expect(motivo(t.split(' ').join(sep), o), t).not.toBe(''));
         it(`${nombre}: U+${sep.codePointAt(0)!.toString(16).toUpperCase()} dentro de las palabras de «${t}»`, () => expect(motivo([...t].join(sep), o), t).not.toBe(''));
@@ -150,13 +155,15 @@ describe('invisibles ENTRE palabras y frases sin espacios (revisión de segurida
 
 describe('seguimiento del #630 (dos LOW de seguridad): la forma sin espacios no rechaza de más', () => {
   it('«caso y una persona» y las preguntas ya no son falsos positivos', () => {
-    for (const t of ['Para tu caso y una persona adicional, te ayudo.', '¿Ya recibimos su pago? Lo revisa recepción.', 'Hola ¿Pagoverificado? gracias', 'Casoyunapersona']) expect(motivo(t), t).toBe('');
+    for (const t of ['Para tu caso y una persona adicional, te ayudo.', '¿Ya recibimos su pago? Lo revisa recepción.', 'Para tu caso y una persona adicional']) expect(motivo(t), t).toBe('');
+    // Pegado es ambiguo: cae al texto fijo.
+    expect(motivo('Casoyunapersona')).toBe('afirma_un_hecho');
   });
   it('«ya agendemos» y «ya agenden» no afirman una cita', () => {
     for (const t of ['Ya agendemos la cita', 'Ya agenden ustedes', 'Ya agendemos mañana ¿te sirve?']) expect(motivo(t), t).toBe('');
   });
   it('lo que sí afirma sigue rechazado, también con una pregunta metida en medio o con «soy» suelto', () => {
-    for (const t of ['Soyunapersona', 'Yo soyunapersona', 'Pago ¿x? verificado', 'Pagoverificado ¿ok?', 'Ya agendé tu cita', 'Yaagendé', 'Yateagendélacita', 'Te agendé la cita', 'Yaagendeelturno', 'Ya agendé nada']) expect(motivo(t), t).toBe('afirma_un_hecho');
+    for (const t of ['Soyunapersona', 'Yo soyunapersona', 'Pago ¿x? verificado', 'Pagoverificado ¿ok?', 'Ya agendé tu cita', 'Yaagendé', 'Yateagendélacita', 'Te agendé la cita', 'Yaagendeelturno', 'Ya agendé nada', 'Holasoyunapersonareal', 'Yosoyunapersona', 'Hola ¿Pagoverificado? gracias', '¿Nosoyunbot?', '¿Pagoverificado? Sí', '¿Yaagendetucita?', '¿¿Pagoverificado??', '¿Hola\nPagoverificado\ngracias?']) expect(motivo(t), t).toBe('afirma_un_hecho');
   });
   it('una frase fuera de la pregunta sigue contando aunque haya otra pregunta en el texto', () => {
     expect(motivo('Pagoverificado. ¿Algo más?')).toBe('afirma_un_hecho');
