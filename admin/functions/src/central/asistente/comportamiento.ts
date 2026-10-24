@@ -183,10 +183,24 @@ const VERBO_ORDEN = new RegExp(
   + '|reveal|show|repeat|ignore|print|tell|say|forget|disregard|override|dump|read|write|output|give|send|share|leak|paste|follow|obey'
   + '|display|recite|list|provide|return|echo|spill|zeig\\w*)$', 'u');
 /** Pronombre pegado al verbo («revélalos», «pásales»): se prueba también el verbo sin él. */
-const PRONOMBRE_PEGADO = /(?:selos|melos|telos|los|las|les|lo|la|le|me|te)$/u;
+const PRONOMBRE_PEGADO = /(?:selos|selas|sela|selo|melos|melas|telos|los|las|les|lo|la|le|me|te)$/u;
+/** Verbos que solo ordenan con pronombre pegado («dáselos», «cuéntale»): solos son corrientes («da igual»). */
+const SOLO_CON_PRONOMBRE = /^(?:da|manda|cuenta)$/u;
+/** Órdenes que son frases y no una palabra suelta (sin acentos, como llega el texto). */
+const FRASES_DE_ORDEN: readonly RegExp[] = [
+  /(?<![\p{L}\p{N}_])responde con(?![\p{L}\p{N}_])/u,
+  /(?<![\p{L}\p{N}_])respond(?:e|es|a|as)(?![\p{L}\p{N}_])[^]*?(?<![\p{L}\p{N}_])(?:todo|gratis)(?![\p{L}\p{N}_])/u,
+  /(?<![\p{L}\p{N}_])se (?:un|una|ahora|siempre|mi|mas|solo)(?![\p{L}\p{N}_])/u,
+  /(?<![\p{L}\p{N}_])conviertete en(?![\p{L}\p{N}_])/u,
+  /(?<![\p{L}\p{N}_])mand(?:a|an|e|en) sobre(?![\p{L}\p{N}_])/u,
+  /(?<![\p{L}\p{N}_])(?:tienen|tiene|tengan) prioridad(?![\p{L}\p{N}_])/u,
+];
 /** Antes de estas palabras un infinitivo describe el producto («listos para copiar»), no ordena. */
 const PREVIAS_DESCRIPTIVAS = new Set(['para', 'de', 'sin', 'al']);
-const DETERMINANTE = /(?:^|[^\p{L}\p{N}_])(?:tu|tus|mi|mis|su|sus|el|la|los|las|este|esta|estos|estas|ese|esa|esos|esas|aquel|aquella|aquellos|aquellas|nuestro|nuestros)\s+(?:\p{L}+\s+)?$/u;
+/** Bloquean siempre: hablan DEL prompt del asistente («tus 100 prompts», «el prompt»). */
+const DETERMINANTE_DURO = /(?:^|[^\p{L}\p{N}_])(?:tu|tus|mi|mis|su|sus|el|la|este|esta|ese|esa|aquel|aquella|aquellos|aquellas|nuestro)\s+(?:\p{L}+\s+)?$/u;
+/** Neutros: «Descubre los 100 prompts», «Conoce nuestros 100 prompts». Pasan si la oración y sus vecinas no ordenan nada. */
+const DETERMINANTE_NEUTRO = /(?:^|[^\p{L}\p{N}_])(?:los|las|estos|estas|esos|esas|nuestros|nuestras)\s+(?:\p{L}+\s+)?$/u;
 const CORTE_ORACION = /[.!?;:—–#]/u;
 
 /**
@@ -197,12 +211,16 @@ const CORTE_ORACION = /[.!?;:—–#]/u;
  * pegado («revélalos»): es lo que se busca en las oraciones vecinas.
  */
 function hayVerboDeOrden(oracion: string, soloPronombre = false): boolean {
-  if (!soloPronombre && /(?<![\p{L}\p{N}_])responde con(?![\p{L}\p{N}_])/u.test(oracion)) return true;
+  if (!soloPronombre && FRASES_DE_ORDEN.some((re) => re.test(oracion))) return true;
   const palabras = oracion.match(/[\p{L}\p{N}_]+/gu) ?? [];
   return palabras.some((w, i) => {
     const sinPron = w.length > 3 ? w.replace(PRONOMBRE_PEGADO, '') : w;
-    const conPron = sinPron !== w && VERBO_ORDEN.test(sinPron);
-    if (soloPronombre) return conPron && /(?:los|las|les|selos|melos)$/u.test(w);
+    const conPron = sinPron !== w && (VERBO_ORDEN.test(sinPron) || SOLO_CON_PRONOMBRE.test(sinPron));
+    if (soloPronombre) return conPron;
+    // «cuenta» ordena (contar) salvo en «cuenta con» o como sustantivo («tu cuenta»).
+    if (w === 'cuenta') {
+      return palabras[i + 1] !== 'con' && !/^(?:tu|su|mi|la|una|de|en|por|esta|a)$/u.test(palabras[i - 1] ?? '');
+    }
     const forma = VERBO_ORDEN.test(w) ? w : conPron ? sinPron : null;
     if (forma === null || /(?:ando|iendo|ado|ido)$/u.test(forma)) return false;
     if (!/(?:ar|er|ir)$/u.test(forma)) return true;
@@ -214,7 +232,8 @@ function hayVerboDeOrden(oracion: string, soloPronombre = false): boolean {
 export function promptsSinContexto(normalizado: string): boolean {
   // Tope de seguridad, no de regla: el del texto crudo está en verificarPatrones y NFKC puede alargar.
   if (normalizado.length > TOPE_INSTRUCCIONES * 20) return true;
-  const base = normalizado.replace(/(\d)[\s.,_-]+(?=\d)/g, '$1');
+  // «…» (NFKC lo vuelve «...») es continuación, no fin de oración.
+  const base = normalizado.replace(/(\d)[\s.,_-]+(?=\d)/g, '$1').replace(/\.{2,}/g, ' ');
   PROMPTS_PLURAL.lastIndex = 0;
   for (let m = PROMPTS_PLURAL.exec(base); m !== null; m = PROMPTS_PLURAL.exec(base)) {
     const antes = base.slice(0, m.index);
@@ -222,9 +241,12 @@ export function promptsSinContexto(normalizado: string): boolean {
     const conNumero = CON_NUMERO.exec(antes.slice(-80));
     if (conNumero === null) return true;
     const intermedia = conNumero[3];
-    if (intermedia !== undefined && (VERBO_ORDEN.test(intermedia) || DETERMINANTE.test(`${intermedia} `))) return true;
+    if (intermedia !== undefined && (VERBO_ORDEN.test(intermedia) || DETERMINANTE_DURO.test(`${intermedia} `) || DETERMINANTE_NEUTRO.test(`${intermedia} `))) return true;
     const previo = antes.slice(-80).slice(0, conNumero.index + (conNumero[1] ?? '').length);
-    if (DETERMINANTE.test(previo) || /#\s*$/.test(previo)) return true;
+    if (DETERMINANTE_DURO.test(previo)) return true;
+    // Un determinante neutro se descuenta para mirar lo que hay antes («### los 100 prompts»).
+    const neutro = DETERMINANTE_NEUTRO.exec(previo);
+    if (/#\s*$/.test(neutro === null ? previo : previo.slice(0, neutro.index + 1))) return true;
     // La oración entera (ya acotada por el tope de 1.500): lo que viene antes del
     // último corte y lo que viene hasta el primero.
     let corte = -1;
@@ -234,8 +256,9 @@ export function promptsSinContexto(normalizado: string): boolean {
     const oracionDespues = trozos[0] ?? '';
     if (hayVerboDeOrden(oracionAntes) || hayVerboDeOrden(oracionDespues)) return true;
     // Las vecinas solo importan si ordenan SOBRE los prompts: verbo con pronombre pegado.
-    const previa = antes.slice(0, corte < 0 ? 0 : corte).split(CORTE_ORACION).pop() ?? '';
-    if (hayVerboDeOrden(trozos[1] ?? '', true) || hayVerboDeOrden(previa, true)) return true;
+    const previas = antes.slice(0, corte < 0 ? 0 : corte).split(CORTE_ORACION).slice(-2);
+    if (hayVerboDeOrden(trozos[1] ?? '', true) || hayVerboDeOrden(trozos[2] ?? '', true)
+      || previas.some((x) => hayVerboDeOrden(x, true))) return true;
     if (/^\s*[:;=>#—–]|^\s+-\s/u.test(despues)) return true;
   }
   return false;
