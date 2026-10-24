@@ -243,13 +243,28 @@ const FORMA_ANTES = new RegExp(
 const INTRODUCE_DESCRIPCION = /^\s*(?:listos|listas|gratis|favoritos|favoritas|destacados|destacadas|exclusivos|exclusivas|nuevos|nuevas|mejores|incluidos|incluidas|de|del|para|con|en|que usan|te ahorran)(?![\p{L}\p{N}_])/u;
 /** Marcas de cláusula verbal o de dirección al asistente que la descripción no puede traer. */
 const CLAUSULA_EN_DESCRIPCION = /(?<![\p{L}\p{N}_])(?:son|es|esta|estan|ser|sera|seran|se|me|nos|lo|le|les|que|y|e|o|u)(?![\p{L}\p{N}_])|(?<!(?:para|en|de|con) )(?<![\p{L}\p{N}_])(?:tu|tus|te|su|sus|mi|mis)(?![\p{L}\p{N}_])/u;
+/** Referencias al asistente o a su configuración: no caben en la descripción de un producto. */
+const DESCRIPCION_PROHIBIDA = /(?<![\p{L}\p{N}_])(?:sistema|configuracion|programacion|cabeza|novuchat|permiso|acceso|respuestas?|directrices|ley)(?![\p{L}\p{N}_])/u;
+/** Infinitivos que un copy común usa («listos para copiar») y lo que puede seguirlos. */
+const INFINITIVOS_INOCUOS = new Set(['copiar', 'usar', 'compartir', 'publicar', 'guardar', 'aprovechar']);
+const COMPLEMENTO_INOCUO = new Set(['en', 'tus', 'tu', 'sus', 'las', 'los', 'la', 'el', 'de', 'redes', 'historias', 'posts', 'publicaciones', 'negocio', 'clientes']);
+/** ¿La descripción trae un infinitivo que ordena (revelar, mostrar, responder, hablar, decir, cobrar…)? */
+function infinitivoDeOrdenEnDescripcion(descripcion: string): boolean {
+  const palabras = descripcion.match(/[\p{L}\p{N}_]+/gu) ?? [];
+  return palabras.some((w, i) => {
+    if (!/(?:ar|er|ir)$/u.test(w)) return false;
+    const ordena = VERBO_ORDEN.test(w) || /^(?:responder|hablar|decir|cobrar)$/u.test(w);
+    if (!ordena) return false;
+    return !(INFINITIVOS_INOCUOS.has(w) && palabras.slice(i + 1).every((x) => COMPLEMENTO_INOCUO.has(x)));
+  });
+}
 function formaComercialPermitida(oracionAntes: string, oracionDespues: string): boolean {
   if (!FORMA_ANTES.test(oracionAntes)) return false;
   if (oracionDespues.trim() === '') return true;
   if (!INTRODUCE_DESCRIPCION.test(oracionDespues)) return false;
   // «te ahorran» y «que usan» son las introducciones que traen su propio pronombre o «que».
   const resto = oracionDespues.replace(/^\s*(?:que usan|te ahorran)/u, '');
-  return !CLAUSULA_EN_DESCRIPCION.test(resto);
+  return !CLAUSULA_EN_DESCRIPCION.test(resto) && !DESCRIPCION_PROHIBIDA.test(resto) && !infinitivoDeOrdenEnDescripcion(resto);
 }
 const CORTE_ORACION = /[.!?;:—–#]/u;
 
