@@ -43,7 +43,7 @@ describe('solo las tres permitidas envían imagen, una vez por imagen y por conv
       const t = hablar(m, ANA, mTexto(pregunta));
       expect(imagenes(t)).toEqual([id]);
       // la imagen sale antes que el texto
-      const iImagen = t.registro.findIndex((r) => r.nodo === 'Enviar previos');
+      const iImagen = t.registro.findIndex((r) => r.nodo === 'Enviar aviso');
       const iTexto = t.registro.findIndex((r) => r.nodo === 'Enviar a WhatsApp');
       expect(iImagen).toBeGreaterThanOrEqual(0);
       expect(iImagen).toBeLessThan(iTexto);

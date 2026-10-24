@@ -62,8 +62,9 @@ function evEsBaja(t) {
 }
 
 // URGENCIA, SÍNTOMA, REACCIÓN O PROBLEMA DE SALUD (también tras un tratamiento): el CÓDIGO responde un texto fijo, sin consejo, y avisa a recepción. Antes de llamar al modelo. Un falso positivo solo manda
-// a la persona a la recepción. Variante acotada de `DR_MEDICA` de las doctoras: sin las condiciones de la piel que son el motivo comercial de la consulta (manchas, acné, cicatrices).
-const EV_MEDICA = /\b(urgente|urgencia|emergencia|sangr\w*|hemorragia|infeccion|infectad\w*|fiebre|alergi\w*|reaccion (alergica|adversa)|hinchaz\w*|se me hincho|inflam\w*|moreton\w*|necrosis|no puedo respirar|me falta el aire|desmay\w*|me duele mucho|tengo (mucho )?dolor|complicacion\w*|efectos? secundarios?|me aplique|me inyecte|me puse (el )?(radiesse|harmonyca|harmony ca|relleno|producto)|despues de (la aplicacion|aplicarme|inyectarme|ponerme)|embaraz\w*|lact(?:an\w*|ar|ancia)|amamant\w*|diabet\w*|hipertension|presion alta|cancer|autoinmune|lupus|enfermedad\w*|medicamento\w*|anticoagulante\w*|tomo (pastillas|medicacion)|un bulto|diagnostic\w* (mi|de mi)|es seguro para mi|puedo (hacerme|aplicarme|ponerme)[^.?]{0,40}\b(si|estando|con)\b)\b/;
+// a la persona a la recepción. Variante acotada de `DR_MEDICA` de las doctoras: SOLO urgencia, síntoma, reacción o problema tras un tratamiento. El embarazo, las enfermedades de base y los medicamentos los contesta el modelo
+// remitiendo a la valoración (el guion), con la barrera de «sin consejo médico» de `evPulirSalida`; las condiciones de la piel son el motivo comercial de la consulta.
+const EV_MEDICA = /\b(urgente|urgencia|emergencia|sangr\w*|hemorragia|infeccion|infectad\w*|fiebre|alergi\w*|reaccion (alergica|adversa)|hinchaz\w*|hinchad[oa]s?|se me hincho|enrojecid[oa]s?|inflam\w*|moreton\w*|necrosis|no puedo respirar|me falta el aire|desmay\w*|me duele mucho|tengo (mucho )?dolor|complicacion\w*|efectos? secundarios?|me aplique|me inyecte|me puse (algo|el|la|un|una) |me puse (radiesse|harmonyca|harmony ca|relleno|producto)|despues de (la aplicacion|aplicarme|inyectarme|ponerme)|un bulto|(cara|rostro|zona|mejillas?|labios?) (roja|rojo|hinchada|hinchado|morada|morado))\b/;
 
 // -----------------------------------------------------------------------------
 // BÁSICOS DE TEXTO
@@ -547,7 +548,7 @@ const EV_TEXTO_FALLO = 'Tuve un inconveniente para responderte en este momento.\
 const EV_TEXTO_FALLO_AVISADA = 'Tuve un inconveniente para responderte en este momento.\n\nYa avisé a la recepción; también puedes escribirle directo con el botón.';
 const EV_TEXTO_CORTES = 'Recibí tu mensaje, pero por este chat solo puedo leer texto, notas de voz y fotos.\n\nCuéntame por escrito o con una nota de voz en qué te puedo ayudar.';
 const EV_TEXTO_DOCUMENTO = 'Recibí tu archivo, pero por este chat no puedo leerlo ni interpretarlo: lo revisa la doctora en persona, en la valoración.\n\nCuéntame por escrito o con una nota de voz en qué te puedo ayudar.';
-const EV_TEXTO_AUDIO_NO_ENTENDIDO = 'No pude entender tu nota de voz. ¿Me la envías de nuevo o me cuentas por escrito?';
+const EV_TEXTO_AUDIO_NO_ENTENDIDO = 'No pude escuchar bien tu nota de voz. ¿Me la envías de nuevo o me lo escribes?';
 const EV_TEXTO_AUDIO_LARGO = 'Tu nota de voz es muy larga para escucharla entera. ¿Me cuentas lo esencial por escrito o en un audio más corto?';
 const EV_TEXTO_AUDIO_TOPE = 'Por hoy ya no puedo escuchar más notas de voz por aquí. ¿Me lo cuentas por escrito?';
 const EV_TEXTO_ARCHIVO_NO_ABIERTO = 'No pude abrir tu archivo. ¿Me lo reenvías o me cuentas por escrito lo que necesitas?';

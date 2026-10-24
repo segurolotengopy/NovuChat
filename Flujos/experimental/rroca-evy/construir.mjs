@@ -26,7 +26,7 @@
  *   - producción: solo el webhook del receptor, sin «Entrada de prueba»; prueba: solo «Entrada de prueba» (con credencial de cabecera) y sin receptor;
  *   - la verificación del receptor: `wabaIdEsperado` FIJO (nunca una expresión), sin «Continue on Fail» ni `onError`, y «Descartar repetidos» entre ejecuciones;
  *   - un nodo HTTP solo habla con Meta, Gemini y las Functions de la consola; `REEMPLAZAR_*` solo donde se declara; ajustes de retención, orden y zona;
- *   - «Reportar mensaje (entrante)» va ARRIBA de la rama que responde; «Enviar previos» (imágenes y aviso) corre ANTES de «Armar mensajes»; la prueba nunca usa credenciales de producción.
+ *   - «Reportar mensaje (entrante)» va ARRIBA de la rama que responde; «Enviar aviso» (imágenes y aviso) corre ANTES de «Armar mensajes»; la prueba nunca usa credenciales de producción.
  */
 import { closeSync, constants, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -62,7 +62,7 @@ export const CONFIG = {
 };
 
 /** El flujo: lo que tiene que estar siempre (la guardia lo exige). */
-export const NODOS_DE_LA_CONVERSACION = ['¿Conversar con el modelo?', 'Conversar con el modelo', 'Armar previos', '¿Hay previos?', 'Enviar previos', 'Armar mensajes', 'Resumen del turno'];
+export const NODOS_DE_LA_CONVERSACION = ['¿Conversar con el modelo?', 'Conversar con el modelo', 'Armar previos', '¿Hay previos?', 'Enviar aviso', 'Armar mensajes', 'Resumen del turno'];
 export const NODOS_DE_MEDIOS = ['¿Bajar medio?', 'Obtener URL del medio (general)', '¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', 'Transcribir audio', 'Preparar transcripción', 'Ver imagen'];
 export const ARISTAS_DE_MEDIOS = [
   ['¿Bajar medio?', 'Obtener URL del medio (general)'], ['¿Bajar medio?', 'Decidir turno'], ['Obtener URL del medio (general)', '¿Tamaño aceptable?'],
@@ -287,15 +287,15 @@ export function guardias(variante, flujo) {
   if (/langchain\.(agent|memory\w*|lmChat\w*|chain\w*)$/i.test(nodos.map((n) => n.type).join('\n'))) h.push('lleva un agente, memoria o modelo de chat de n8n: este flujo no los lleva (el modelo es una llamada HTTP intercambiable)');
   for (const n of [...NODOS_DE_LA_CONVERSACION, ...NODOS_DE_MEDIOS]) if (!nombres.has(n)) h.push(`falta el nodo «${n}»`);
   h.push(...problemasDeReferencias(flujo || {}));
-  // Las imágenes y el aviso SALEN antes de armar el texto: «Armar previos» → «¿Hay previos?» → «Enviar previos» → «Armar mensajes»; la rama sin previos también llega a «Armar mensajes».
+  // Las imágenes y el aviso SALEN antes de armar el texto: «Armar previos» → «¿Hay previos?» → «Enviar aviso» → «Armar mensajes»; la rama sin previos también llega a «Armar mensajes».
   if (nombres.has('Armar previos') && !destinosDe('Armar previos', 0).includes('¿Hay previos?')) h.push('«Armar previos» no está conectado a «¿Hay previos?»');
-  if (nombres.has('¿Hay previos?') && !destinosDe('¿Hay previos?', 0).includes('Enviar previos')) h.push('«¿Hay previos?» no envía por «Enviar previos»');
+  if (nombres.has('¿Hay previos?') && !destinosDe('¿Hay previos?', 0).includes('Enviar aviso')) h.push('«¿Hay previos?» no envía por «Enviar aviso»');
   if (nombres.has('¿Hay previos?') && !destinosDe('¿Hay previos?', 1).includes('Armar mensajes')) h.push('«¿Hay previos?» no envía la rama sin previos (salida 1) a «Armar mensajes»');
-  if (nombres.has('Enviar previos') && !destinosDe('Enviar previos', 0).includes('Armar mensajes')) h.push('«Enviar previos» no cuelga de «Armar mensajes»: las imágenes y el aviso tienen que correr ANTES de armar el texto que dice si salieron');
-  const enviarPrevios = por('Enviar previos');
-  if (enviarPrevios && !((enviarPrevios.credentials || {}).httpHeaderAuth || {}).name) h.push('«Enviar previos» no lleva credencial (httpHeaderAuth)');
-  if (enviarPrevios && (enviarPrevios.onError !== 'continueRegularOutput' || enviarPrevios.alwaysOutputData !== true)) h.push('«Enviar previos» no lleva `onError: continueRegularOutput` y `alwaysOutputData`: si Meta rechaza una imagen, el turno se cortaría y el cliente quedaría sin respuesta');
-  if (enviarPrevios && p(enviarPrevios).options && p(enviarPrevios).options.retryOnFail) h.push('«Enviar previos» no reintenta: un aviso repetido llegaría dos veces');
+  if (nombres.has('Enviar aviso') && !destinosDe('Enviar aviso', 0).includes('Armar mensajes')) h.push('«Enviar aviso» no cuelga de «Armar mensajes»: las imágenes y el aviso tienen que correr ANTES de armar el texto que dice si salieron');
+  const enviarPrevios = por('Enviar aviso');
+  if (enviarPrevios && !((enviarPrevios.credentials || {}).httpHeaderAuth || {}).name) h.push('«Enviar aviso» no lleva credencial (httpHeaderAuth)');
+  if (enviarPrevios && (enviarPrevios.onError !== 'continueRegularOutput' || enviarPrevios.alwaysOutputData !== true)) h.push('«Enviar aviso» no lleva `onError: continueRegularOutput` y `alwaysOutputData`: si Meta rechaza una imagen, el turno se cortaría y el cliente quedaría sin respuesta');
+  if (enviarPrevios && p(enviarPrevios).options && p(enviarPrevios).options.retryOnFail) h.push('«Enviar aviso» no reintenta: un aviso repetido llegaría dos veces');
   const modelo = por('Conversar con el modelo');
   if (modelo && !/^=?https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\//.test(String(p(modelo).url || ''))) h.push('«Conversar con el modelo» no llama a Gemini');
   if (modelo && (modelo.onError !== 'continueRegularOutput' || modelo.alwaysOutputData !== true)) h.push('«Conversar con el modelo» tiene que llevar onError continueRegularOutput y alwaysOutputData: si Gemini cae, el cliente recibe el texto fijo y el botón de la recepción');
@@ -553,6 +553,12 @@ export function armarEvy(proyecto, datos, v) {
     entrada: 'Normalizar entrada',
     desde: [5480, 300],
   });
+  // La PUERTA DE LA ENTREGA (I-ENTREGA, regla 3): lo que se reporta como enviado SOLO es lo que Meta aceptó con un `messages[0].id` (el envío principal o su respaldo). Se reemplaza la condición de «¿Reportar? (saliente)»,
+  // que el módulo común arma sin leer el id: sin un nodo nuevo.
+  const puerta = plantilla.nodes.find((n) => n.name === '¿Reportar? (saliente)');
+  const condicion = puerta && puerta.parameters && puerta.parameters.conditions && puerta.parameters.conditions.conditions && puerta.parameters.conditions.conditions[0];
+  if (!condicion || condicion.leftValue !== "={{ $('Armar mensajes').item.json.reportar === true && !($json && $json.error) }}") throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no tiene la condición esperada`);
+  condicion.leftValue = "={{ $('Armar mensajes').item.json.reportar === true && !!($json && !$json.error && Array.isArray($json.messages) && $json.messages[0] && $json.messages[0].id) }}";
   // El reporte saliente de ESTE flujo: igual al común, más el EVENTO `no_contactar` (la baja y la protección), que viaja SIEMPRE, aunque salga el respaldo.
   const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
   if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes('evento: m.evento')) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);

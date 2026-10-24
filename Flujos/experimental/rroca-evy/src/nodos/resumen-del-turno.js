@@ -38,11 +38,16 @@ const mensajes = items.filter((i) => i && i.sinMensajes !== true).map((i) => ({
   para: i.para, destino: i.destino, payload: i.payload, texto: i.texto, respaldo: i.respaldo, reportar: i.reportar === true,
 }));
 const previos = cnTodos('Armar previos').filter((i) => i && (i.kind === 'arte' || i.kind === 'aviso')).map((i) => ({ kind: i.kind, arte: i.arte || '', para: i.para, payload: i.payload }));
+// Lo PLANEADO para este turno (también en modo prueba sin envío, donde `previos` queda vacío): las imágenes por clave y el aviso a recepción. Lo lee la batería.
+const planeado = ((cnTodos('Armar previos')[0] || {}).res) || {};
 const r = primero.resumen || { plan: primero.plan || 'nada', mensajes: 0 };
 return [{ json: {
   ok: true,
   modoPrueba: cfg.modoPrueba === true,
   mensajes: mensajes,
   previos: previos,
+  imagenes: Array.isArray(planeado.artesPlan) ? planeado.artesPlan : [],
+  avisoPlaneado: !!planeado.aviso && planeado.aviso.planeado === true,
+  derivacion: planeado.efectivo === 'derivar',
   resumen: Object.assign({}, r, { mensajesSalientes: mensajes.length }),
 } }];

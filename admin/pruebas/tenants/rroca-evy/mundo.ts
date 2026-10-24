@@ -106,7 +106,7 @@ export function crear(o: Opciones = {}): Mundo {
       if (d === null) return {};
       return gemini(typeof d === 'function' ? d(ll) : d);
     },
-    'Enviar previos': (ll) => {
+    'Enviar aviso': (ll) => {
       const modo = typeof o.previos === 'function' ? o.previos(ll) : (o.previos ?? 'acepta');
       if (modo === 'lanza') throw new Error('fetch failed: red caída');
       if (modo === 'error') return { error: { message: '(#131053) Media upload error', code: 131053 } };
@@ -120,7 +120,7 @@ export function crear(o: Opciones = {}): Mundo {
   return crearMundo({
     flujo: o.flujo ?? PRODUCCION,
     dobles,
-    roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)'], avisos: ['Enviar previos'] },
+    roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)'], avisos: ['Enviar aviso'] },
     ahoraMs: AHORA,
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: `${ANA},${BETO}`, etapaPrueba: '', usarMarcas: 'si',

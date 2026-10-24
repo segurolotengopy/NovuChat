@@ -7,7 +7,7 @@
 //      dentro de la ventana de 23,5 h de la recepción; fuera, la plantilla UTILITY (4 variables: nombre, interés o motivo, horario preferido, teléfono) SOLO si Meta la tiene APPROVED. A lo más UN aviso por teléfono
 //      y por motivo cada 30 minutos, y un tope global por hora.
 //
-// Si no hay ningún previo sale UN ítem `kind: 'ninguno'`. «Armar mensajes» lee los resultados del envío (`Enviar previos`) y recién entonces escribe el texto: BARRERA POR HECHO, si la imagen no salió el texto no la
+// Si no hay ningún previo sale UN ítem `kind: 'ninguno'`. «Armar mensajes» lee los resultados del envío (`Enviar aviso`) y recién entonces escribe el texto: BARRERA POR HECHO, si la imagen no salió el texto no la
 // promete y no habla de «la paciente real». Este nodo NO escribe la ficha ni envía nada. El modo prueba y los números de prueba van al teléfono de prueba, nunca a un cliente ni a la recepción real.
 const cfg = cnCfg();
 const base = cnPrimero('Config base') || {};

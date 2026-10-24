@@ -758,7 +758,7 @@
     },
     {
       "id": "enviar-previos",
-      "name": "Enviar previos",
+      "name": "Enviar aviso",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "credentials": {
@@ -1159,7 +1159,7 @@
       "main": [
         [
           {
-            "node": "Enviar previos",
+            "node": "Enviar aviso",
             "type": "main",
             "index": 0
           }
@@ -1173,7 +1173,7 @@
         ]
       ]
     },
-    "Enviar previos": {
+    "Enviar aviso": {
       "main": [
         [
           {

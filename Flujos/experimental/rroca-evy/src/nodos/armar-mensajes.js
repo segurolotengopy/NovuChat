@@ -29,7 +29,7 @@ const previos = cnTodos('Armar previos');
 const base0 = previos[0] || {};
 const res = base0.res && typeof base0.res === 'object' ? base0.res : { efectivo: plan.tipo, textoModelo: '', nombreDerivacion: '', artesPlan: [], aviso: { planeado: false, repetido: false, clave: '', motivoFallo: '' } };
 const enviados = previos.filter((i) => i && (i.kind === 'arte' || i.kind === 'aviso'));
-const resultados = cnNodo('Enviar previos') ? cnTodos('Enviar previos') : [];
+const resultados = cnNodo('Enviar aviso') ? cnTodos('Enviar aviso') : [];
 const simulado = base0.enviar === false;
 const salio = (i) => (simulado ? true : (resultados.length === enviados.length && evId(resultados[i])));
 const artesSalidos = [];

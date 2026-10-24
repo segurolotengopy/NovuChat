@@ -68,13 +68,13 @@ describe('las guardias se niegan con mutaciones', () => {
     const b = copia(PRUEBA); b.nodes.push({ ...nodo(PRODUCCION, 'Entrega del receptor') });
     expect(g('prueba', b).join(' ')).toMatch(/entrada del receptor/);
   });
-  it('«Enviar previos» corre ANTES de «Armar mensajes», no reintenta y no corta el turno', () => {
-    const a = copia(PRODUCCION); delete (a.connections['Enviar previos'] as Record<string, unknown>)['main'];
-    a.connections['Enviar previos'] = { main: [[]] };
-    expect(g('produccion', a).join(' ')).toMatch(/Enviar previos/);
-    const b = copia(PRODUCCION); delete (nodo(b, 'Enviar previos') as Record<string, unknown>)['onError'];
+  it('«Enviar aviso» corre ANTES de «Armar mensajes», no reintenta y no corta el turno', () => {
+    const a = copia(PRODUCCION); delete (a.connections['Enviar aviso'] as Record<string, unknown>)['main'];
+    a.connections['Enviar aviso'] = { main: [[]] };
+    expect(g('produccion', a).join(' ')).toMatch(/Enviar aviso/);
+    const b = copia(PRODUCCION); delete (nodo(b, 'Enviar aviso') as Record<string, unknown>)['onError'];
     expect(g('produccion', b).join(' ')).toMatch(/onError/);
-    const c = copia(PRODUCCION); a.connections['¿Hay previos?'] = { main: [[{ node: 'Enviar previos', type: 'main', index: 0 }], []] }; c.connections['¿Hay previos?'] = a.connections['¿Hay previos?'];
+    const c = copia(PRODUCCION); a.connections['¿Hay previos?'] = { main: [[{ node: 'Enviar aviso', type: 'main', index: 0 }], []] }; c.connections['¿Hay previos?'] = a.connections['¿Hay previos?'];
     expect(g('produccion', c).join(' ')).toMatch(/sin previos/);
   });
   it('el modelo y los nodos de Gemini no cortan el turno si fallan', () => {

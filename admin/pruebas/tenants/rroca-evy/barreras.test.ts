@@ -199,7 +199,7 @@ describe('lo que no es texto', () => {
     const pesada = hablar(crear({ medio: { bytes: 5_000_000 } }), ANA, mAudio());
     expect(textos(pesada)[0]).toMatch(/muy larga/);
     const ilegible = hablar(crear({ medio: { transcripcion: null } }), ANA, mAudio());
-    expect(textos(ilegible)[0]).toMatch(/No pude entender/);
+    expect(textos(ilegible)[0]).toMatch(/No pude escuchar bien/);
   });
   it('una nota de voz transcrita llega al modelo como dato rotulado', () => {
     let visto = '';
