@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
-import { ANA, crear, hablar, mImagen, mTexto, panelConQr, panelOk } from './mundo';
+import { ANA, ANGULOS, COTEJO_VALIDO, crear, hablar, mImagen, mTexto, panelConQr, panelOk } from './mundo';
 import { cargarLibrerias } from './librerias';
 import { vigilarUx } from './vigilante-ux';
 
@@ -107,5 +107,70 @@ describe('la identidad por código, de punta a punta', () => {
     const texto = (LIB['raTextoIdentidad'] as (n: string) => string)('Método Puente');
     expect(texto).toMatch(/asistente virtual del Método Puente/);
     expect(texto).not.toMatch(/\d|Dauber|persona real|soy una persona|soy Antonio/i);
+  });
+});
+
+// =============================================================================================================== PASO 7: LA IMAGEN DE UN ANUNCIO CON UN QR ABIERTO
+describe('una captura de anuncio con un QR abierto se responde con su ángulo + la invitación a pagar (24/10/2026)', () => {
+  const ARTES: Array<[string, string]> = [
+    ['perder', ANGULOS['perder']!], ['mismo', ANGULOS['mismo']!], ['cuarto', ANGULOS['cuarto']!],
+    ['plan30 con sello del libro', `${ANGULOS['plan30']!} LIBRO DIGITAL Bs 35 Precio de lanzamiento`],
+    ['plan30 con sello del pack', `${ANGULOS['plan30']!} PACK COMPLETO Bs 49 (Antes Bs 106 - Ahorras Bs 57)`],
+  ];
+  const clasif = (texto: string): J => ({ categoria: 'publicidad', texto, titular_principal: '', descripcion: '' });
+  const conImagen = (qr: boolean, medio: J): Mundo => { const w = crear({ panel: qr ? panelConQr(35, NEGOCIO) : panelOk(NEGOCIO), medio: { clasificacion: medio } }); vigilarUx(w); return w; };
+  const plan = (t: ResultadoTurno): string => String(t.porNodo['Armar mensajes']?.[0]?.['plan'] ?? '');
+
+  it('(a) con QR abierto: UN mensaje con la apertura del ángulo y la invitación a pagar con el monto del PEDIDO (no el del sello), sin otro QR, sin derivar, sin botón de Antonio ni de producto', () => {
+    for (const [nombre, texto] of ARTES) {
+      const w = conImagen(true, clasif(texto));
+      hablar(w, ANA, mTexto('hola'));
+      const t = hablar(w, ANA, mImagen());
+      const m = unico(t);
+      expect(m.tipo, nombre).toBe('text');
+      expect(plan(t), nombre).toMatch(/^angulo/);
+      expect(m.cuerpo, nombre).toMatch(/35 Bs/);                       // el monto del pedido abierto (35)
+      expect(m.cuerpo, nombre).not.toMatch(/\b49\b|\b106\b|\b57\b|Dauber/);   // ni el del sello ni el ahorro de la imagen
+      expect(m.cuerpo, nombre).not.toMatch(/¡Hola|Qué gusto saludarte/);
+      expect(t.ejecutados.has('Enviar aviso'), nombre).toBe(false);
+      expect(t.llamadas.ingesta.filter((c) => c['evento'] === 'qr_enviado'), nombre).toHaveLength(0);
+      expect(JSON.stringify(m.payload), nombre).not.toMatch(/cta_url|b_pack|b_libro|b_comp/);
+    }
+  });
+  it('(a) y si el modelo falla, el texto fijo del ángulo + la invitación', () => {
+    const w = crear({ panel: panelConQr(35, NEGOCIO), medio: { clasificacion: clasif(ANGULOS['perder']!) }, modeloDice: 'cae' });
+    vigilarUx(w);
+    hablar(w, ANA, mTexto('hola'));
+    const t = hablar(w, ANA, mImagen());
+    expect(plan(t)).toBe('angulo_fijo');
+    expect(unico(t).cuerpo).toMatch(/35 Bs/);
+    expect(unico(t).tipo).toBe('text');
+  });
+  it('(b) con ficha limpia sigue el comportamiento de siempre: plan `angulo`, con sus botones de compra', () => {
+    for (const [nombre, texto] of ARTES) {
+      const w = conImagen(false, clasif(texto));
+      const t = hablar(w, ANA, mImagen());
+      expect(plan(t), nombre).toMatch(/^angulo/);
+      expect(t.ejecutados.has('Enviar aviso'), nombre).toBe(false);
+    }
+  });
+  it('(c) un comprobante real con QR abierto sigue a comprobante, y un pago con problema sigue derivando', () => {
+    const c = crear({ panel: panelConQr(35, NEGOCIO), medio: { clasificacion: { categoria: 'comprobante', texto: 'Transferencia exitosa', titular_principal: '', descripcion: '' } }, cotejo: COTEJO_VALIDO });
+    vigilarUx(c);
+    hablar(c, ANA, mTexto('hola'));
+    expect(plan(hablar(c, ANA, mImagen()))).toBe('comprobante');
+    const p = crear({ panel: panelConQr(35, NEGOCIO), medio: { clasificacion: { categoria: 'pago_con_problema', texto: 'Pago rechazado', titular_principal: '', descripcion: '' } } });
+    vigilarUx(p);
+    hablar(p, ANA, mTexto('hola'));
+    const t = hablar(p, ANA, mImagen());
+    expect(plan(t)).toBe('derivar');
+    expect(t.ejecutados.has('Enviar aviso')).toBe(true);
+  });
+  it('(d) una publicidad SIN ángulo conocido con QR abierto no cambia: no se inventa un ángulo', () => {
+    const w = conImagen(true, clasif('Ofertas de verano en zapatos'));
+    hablar(w, ANA, mTexto('hola'));
+    const t = hablar(w, ANA, mImagen());
+    expect(plan(t)).toBe('imagen_descrita');
+    expect(unico(t).cuerpo).not.toMatch(/pareja|relación/i);
   });
 });

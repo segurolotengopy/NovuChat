@@ -290,8 +290,10 @@ if (raPreguntaPorResultado(norm)) return salir(Object.assign({ tipo: 'resultado'
 if (hayQrAbierto && raHablaDelCobro(norm)) return salir(recordatorio(''));
 // El ángulo del anuncio: por el texto escrito o por el texto leído de una captura (publicidad). El modelo redacta la apertura con el ángulo como dato; si falla, sale el texto fijo del ángulo.
 const angulo = raAngulo(norm) || (esVisual ? raAngulo(raNorm(leido)) : '');
-if (angulo && !hayQrAbierto) {
-  return salir({ tipo: 'angulo', angulo: angulo, conPresentacion: !ficha.saludado, cat: cat, textoCliente: String(textoCliente || leido).slice(0, 500) }, {
+// Con un QR abierto (24/10/2026): la captura de un anuncio o el texto de un anuncio TAMBIÉN se responde con la apertura de su ángulo, y «Armar mensajes» le suma la invitación a pagar el QR pendiente (monto del pedido, nunca el del sello de la imagen):
+// sin QR nuevo, sin botones de producto y sin derivar. Un comprobante real o un pago con problema no llegan aquí (se resolvieron arriba).
+if (angulo) {
+  return salir(Object.assign({ tipo: 'angulo', angulo: angulo, conPresentacion: !ficha.saludado, cat: cat, textoCliente: String(textoCliente || leido).slice(0, 500) }, abierto()), {
     llamarModelo: true, cuerpoModelo: raCuerpoModelo(textoCliente || leido, ficha.hist, RA_ANGULOS[angulo].tema, base.temperatura, respuestaAPregunta, 'charla', cfg.nombreNegocio),
   });
 }
