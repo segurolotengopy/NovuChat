@@ -15,6 +15,8 @@ import { ANA, BETO, avisosARecepcion, crear, dice, hablar, mTexto, textos } from
 /** Cae a un texto fijo: el de fallo del modelo, el de remisión de salud o la admisión de IA. */
 const fallo = (t: string): boolean => /inconveniente para responderte/.test(t) || /un programa con inteligencia artificial/.test(t) || /Eso lo evalúa la Dra\. Evy en persona, durante tu valoración gratuita/.test(t);
 const sale = (modelo: string, msg = 'cuéntame de la valoración'): string => textos(hablar(crear({ modeloDice: dice(modelo) }), ANA, mTexto(msg)))[0] ?? '';
+/** Ninguna de las palabras aparece en el texto (sin mayúsculas): una comprobación por palabra, sin alternaciones en una sola expresión. */
+const sin = (t: string, ...palabras: string[]): boolean => palabras.every((p) => !t.toLowerCase().includes(p.toLowerCase()));
 const ACLARACION = 'Cada rostro responde distinto y no prometemos un resultado idéntico.';
 
 describe('el modelo vacío: reintento único y margen de salida', () => {
@@ -97,7 +99,7 @@ describe('promesa de resultado sin la palabra «garantizar»: el texto entero se
     it(`NEGADA: ${mala.slice(0, 50)}`, () => {
       const t = sale(mala);
       expect(fallo(t)).toBe(true);
-      expect(t).not.toMatch(/perfecta|hermosa|siempre funciona/i);
+      expect(sin(t, 'perfecta', 'hermosa', 'siempre funciona')).toBe(true);
     });
   }
   it('POSITIVA: «cada rostro responde distinto» y la forma negada pasan', () => {
@@ -112,7 +114,7 @@ describe('presentarse con el nombre del negocio es afirmar ser la persona', () =
     it(`NEGADA: ${mala}`, () => {
       const t = sale(mala, 'eres humana?');
       expect(t).toMatch(/un programa con inteligencia artificial/);
-      expect(t).not.toMatch(/Mentira|aquí Evy|Soy Evy/);
+      expect(sin(t, 'Mentira', 'aquí Evy', 'Soy Evy')).toBe(true);
     });
   }
   it('POSITIVA: «soy el asistente de la Dra. Evy» pasa', () => {
@@ -141,7 +143,8 @@ describe('«Te lo confirmo» suelto o con porcentaje', () => {
   it('«¡Sí! Te lo confirmo. ¿Cómo te llamas?» y «Claro, te confirmo. La valoración…» no dejan «Así es:.» colgando', () => {
     for (const texto of ['¡Sí! Te lo confirmo. ¿Cómo te llamas?', 'Claro, te confirmo. La valoración es gratuita. ¿Cómo te llamas?']) {
       const t = sale(texto);
-      expect(t, texto).not.toMatch(/Así es:\s*[.¿]|Así es:\s*$/);
+      expect(/Así es:\s*[.¿]/.test(t), texto).toBe(false);
+      expect(/Así es:\s*$/.test(t), texto).toBe(false);
       expect(t.endsWith('¿Cómo te llamas?'), texto).toBe(true);
     }
   });
@@ -156,7 +159,7 @@ describe('enlaces y teléfonos: se borra la oración entera', () => {
   it('«Visita www.evy.com o escribe al 70000000.» no deja «Visita o escribe al .»', () => {
     const t = sale('Con gusto te oriento. Visita www.evy.com o escribe al 70000000. Tu valoración es gratuita. ¿Cómo te llamas?');
     expect(fallo(t)).toBe(false);
-    expect(t).not.toMatch(/Visita|escribe al|www|7000/);
+    expect(sin(t, 'Visita', 'escribe al', 'www', '7000')).toBe(true);
     expect(t).toContain('Tu valoración es gratuita.');
   });
 });
@@ -165,7 +168,7 @@ describe('cuidados posteriores: el modelo no los inventa', () => {
   it('«evita el ejercicio por 2 días. Sin embargo, puedes retomar tu rutina normal»: ambas se borran', () => {
     const t = sale('Buena pregunta. Evita el ejercicio por 2 días. Sin embargo, puedes retomar tu rutina normal. Tu valoración es gratuita. ¿Cómo te llamas?');
     expect(fallo(t)).toBe(false);
-    expect(t).not.toMatch(/ejercicio|rutina/i);
+    expect(sin(t, 'ejercicio', 'rutina')).toBe(true);
     expect(t).toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
   });
   it('«Así, …» tras una oración borrada pierde su conector', () => {
@@ -176,7 +179,7 @@ describe('cuidados posteriores: el modelo no los inventa', () => {
   it('NEGADA: «evitar ciertas actividades físicas intensas los primeros días» se borra y el código deja la remisión a la Dra.', () => {
     const t = sale('Es una excelente pregunta. La Dra. Evy te dará recomendaciones sencillas (como evitar ciertas actividades físicas intensas los primeros días) en tu consulta. Tu valoración es 100% gratuita. ¿Cómo te llamas?', '¿cuánto tiempo de recuperación? trabajo todos los días');
     expect(fallo(t)).toBe(false);
-    expect(t).not.toMatch(/evitar|actividades f/i);
+    expect(sin(t, 'evitar', 'actividades f')).toBe(true);
     expect(t).toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
     expect(t.endsWith('¿Cómo te llamas?')).toBe(true);
   });
@@ -378,7 +381,7 @@ describe('más cuidados y promesas (huecos de la seguridad final)', () => {
     it(`NEGADA con pregunta de cuidados: «${c}»`, () => {
       const t = sale(`La Dra. te atiende en persona. ${c} Tu valoración es gratuita. ¿Cómo te llamas?`, '¿qué cuidados tengo que tener después?');
       expect(fallo(t)).toBe(false);
-      expect(t).not.toMatch(/duerme|bebe mucha|sauna/i);
+      expect(sin(t, 'duerme', 'bebe mucha', 'sauna')).toBe(true);
       expect(t).toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
     });
   }
@@ -401,7 +404,7 @@ describe('«Te confirmo» no afirma una cita (Evy no agenda)', () => {
     it(`NEGADA: ${mala.slice(0, 55)}`, () => {
       const t = sale(mala);
       expect(fallo(t)).toBe(true);
-      expect(t).not.toMatch(/espera|espacio|lista|registr|martes/i);
+      expect(sin(t, 'espera', 'espacio', 'lista', 'registr', 'martes')).toBe(true);
     });
   }
 });
@@ -415,7 +418,7 @@ describe('cuidados y promesas con otras redacciones', () => {
     it(`NEGADA: «${c}» se borra y queda la remisión`, () => {
       const t = sale(`La Dra. Evy te atiende en persona. ${c} Tu valoración es gratuita. ¿Cómo te llamas?`, '¿qué cuidados hay después?');
       expect(fallo(t)).toBe(false);
-      expect(t).not.toMatch(/maquill|hielo|recuest|ejercicio|protector|masajea|rutina|reposo/i);
+      expect(sin(t, 'maquill', 'hielo', 'recuest', 'ejercicio', 'protector', 'masajea', 'rutina', 'reposo')).toBe(true);
       expect(t).toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
     });
   }
