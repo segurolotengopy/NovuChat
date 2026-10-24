@@ -18,9 +18,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  SIN_OTROS, TOPE_INSTRUCCIONES, normalizar, verificarPatrones,
+  SIN_OTROS, TOPE_INSTRUCCIONES, afirmaSinRespaldo, normalizar, verificarPatrones,
 } from '../../functions/src/central/asistente/comportamiento.ts';
-import { afirmaSinRespaldo } from '../../functions/src/central/asistente/afirmacionesSinRespaldo.ts';
+
 
 const nivel = (t: string, terminos: readonly string[] = []) => verificarPatrones(t, SIN_OTROS, terminos).nivel;
 const rechaza = (t: string) => nivel(t) === 'rechazado';
