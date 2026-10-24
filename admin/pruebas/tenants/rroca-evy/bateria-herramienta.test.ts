@@ -136,6 +136,13 @@ describe('cada chequeo se evalúa de verdad', () => {
     expect(ev({ tipo: 'texto_fijo', texto: 'urgencia_sin_consejo' }, turno({ plan: 'modelo' })).ok).toBe(false);
     expect(ev({ tipo: 'texto_fijo', texto: 'texto_fijo_pareja' }, turno({ plan: 'riesgo', llamoAlModelo: false })).ok).toBe(true);
   });
+  it('una_respuesta_breve: exactamente un mensaje de a lo más max_caracteres', () => {
+    const baja = turno({ plan: 'baja', llamoAlModelo: false, mensajes: [texto('Listo, no te escribiré más por este chat. Gracias por tu tiempo.')] });
+    expect(ev({ tipo: 'una_respuesta_breve', max_caracteres: 200 }, baja).ok).toBe(true);
+    expect(ev({ tipo: 'una_respuesta_breve', max_caracteres: 20 }, baja).ok).toBe(false);
+    expect(ev({ tipo: 'una_respuesta_breve', max_caracteres: 200 }, turno({ mensajes: [texto('a'), texto('b')] })).ok).toBe(false);
+    expect(ev({ tipo: 'una_respuesta_breve', max_caracteres: 200 }, turno({ mensajes: [] })).ok).toBe(false);
+  });
   it('identidad, nombre y deseo, menú y repetición', () => {
     expect(ev({ tipo: 'admite_ser_ia' }, turno({ mensajes: [texto('Soy el asistente virtual con inteligencia artificial de la Dra.')] })).ok).toBe(true);
     expect(ev({ tipo: 'admite_ser_ia' }, turno({ mensajes: [texto('No soy un bot, soy una persona real.')] })).ok).toBe(false);

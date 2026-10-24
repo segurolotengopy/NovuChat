@@ -50,7 +50,7 @@ const mensajeDe = (e) => (e instanceof Error ? e.message : String(e));
 
 // ------------------------------------------------------------------------------------------------------- los casos
 const TIPOS = new Set(['incluye_alguna', 'incluye_todas', 'excluye', 'etiqueta', 'sin_etiqueta', 'boton_recepcion', 'sin_boton', 'sin_enlaces', 'texto_fijo', 'baja_silenciosa', 'no_es_baja', 'sin_agente_ni_respuesta',
-  'sin_agente', 'pregunta_nombre_y_deseo', 'excluye_cifras_de_dinero', 'admite_ser_ia', 'no_deriva_ni_menu', 'distinto_del_turno_anterior', 'etiqueta_escrita_por_cliente_no_dispara', 'si_menciona_paciente_exige_etiqueta']);
+  'sin_agente', 'una_respuesta_breve', 'pregunta_nombre_y_deseo', 'excluye_cifras_de_dinero', 'admite_ser_ia', 'no_deriva_ni_menu', 'distinto_del_turno_anterior', 'etiqueta_escrita_por_cliente_no_dispara', 'si_menciona_paciente_exige_etiqueta']);
 /** Valida el archivo de casos: ids únicos, cada turno con UNA entrada (dice, imagen, audio o tipo_mensaje) y chequeos de un tipo conocido. */
 export function validarCasos(datos) {
   const casos = objeto(datos).casos;
@@ -183,7 +183,7 @@ const CONSEJO_MEDICO = /\b(?:toma|tome|tomar|aplica|aplicate|ponte)\b[^.!?]{0,20
 export function evaluar(ch, t, anterior, ctx) {
   const texto = norm(textoRecibido(t));
   const conModelo = t.llamoAlModelo;
-  const decideElCodigo = ['texto_fijo', 'baja_silenciosa', 'no_es_baja', 'sin_agente_ni_respuesta', 'sin_agente', 'etiqueta_escrita_por_cliente_no_dispara'].includes(ch.tipo);
+  const decideElCodigo = ['texto_fijo', 'baja_silenciosa', 'no_es_baja', 'sin_agente_ni_respuesta', 'sin_agente', 'una_respuesta_breve', 'etiqueta_escrita_por_cliente_no_dispara'].includes(ch.tipo);
   if (ctx.seco && conModelo && !decideElCodigo) return { omitido: true };
   const valores = (ch.valores ?? []).map(norm);
   switch (ch.tipo) {
@@ -200,6 +200,7 @@ export function evaluar(ch, t, anterior, ctx) {
     case 'no_es_baja': return { ok: t.plan !== 'baja' && !t.eventos.includes('no_contactar') };
     case 'sin_agente_ni_respuesta': return { ok: !t.llamoAlModelo && t.mensajes.length === 0 && t.imagenes.length === 0 && !t.avisoPlaneado };
     case 'sin_agente': return { ok: !t.llamoAlModelo };
+    case 'una_respuesta_breve': return { ok: t.mensajes.length === 1 && t.imagenes.length === 0 && textoRecibido(t).length <= (Number.isInteger(ch.max_caracteres) ? ch.max_caracteres : 200) };
     case 'pregunta_nombre_y_deseo': return { ok: /(?:como te llamas|tu nombre|cual es tu nombre)/.test(texto) && /(?:mejorar|deseas|desea|gustaria|buscas|cambio|zona|revitalizar|quieres)/.test(texto) };
     case 'excluye_cifras_de_dinero': {
       let x = textoRecibido(t);
