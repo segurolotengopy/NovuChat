@@ -109,6 +109,64 @@ Los del bloque de 25 respuestas por conversación y los umbrales de operador y
 bloqueo (`ingesta.ts`, `atencion.ts`). La tabla completa de límites, con su
 estado, está en `limites.md` y en `docs/base-comercial.md` §7.
 
+También el **cupo diario de medios guardados** (1.000 medios o 2 GB por comercio
+y día; `core/medios/guardarMedio.ts`, contador `cuposDeMedios/{día}`), y los
+topes por tipo (imagen 5 MB, audio 16 MB, PDF 10 MB).
+
+## Medios entrantes guardados (H3, PR-1; Andres 20, 22 y 23/10/2026)
+
+Esto **corrige** la nota de «Lo que este bloque NO hace» de §4terdecies («guardar
+el medio para que una persona lo mire»): desde el 20/10 se guardan los medios
+**entrantes** (audio, foto, PDF) 90 días, y la bandera por comercio
+`guardarMedios` (ficha del tenant) está **apagada por defecto**. Se enciende solo
+con el anexo aceptado y el «sí» de Andres, por el script de plataforma (PR-3), no
+por el comercio: la ficha no la escribe ningún navegador.
+
+- **`guardarMedio`** (HTTP, solo el token por número; una firma se rechaza):
+  409 con la bandera apagada; 400 por teléfono o `idMeta` inválidos; 413 por el
+  tope del tipo; 415 por la firma de los bytes (SVG, HTML, docx y xlsx no se
+  guardan); 409 `sin_mensaje` si no hay un mensaje **entrante** del mismo tipo con
+  ese `idMeta` de hace 30 minutos o menos (acota qué se puede guardar, pero no
+  impide por sí solo llenar el depósito con un token robado: **lo que limita es
+  el cupo**); 429 con el cupo del día lleno. Un repetido responde 200 sin
+  reescribir.
+- **Deduplicación y cupo, atómicos** (revisión de seguridad del #617): la misma
+  transacción que reserva el cupo crea el marcador `mediosRecibidos/{hash}` con
+  `estado: 'pendiente'` (vence en 1 día por TTL); se pasa a `guardado` al
+  terminar. Peticiones simultáneas con el mismo `idMeta` gastan un solo cupo; si
+  Storage falla, el cupo vuelve una sola vez y el marcador se borra; un pendiente
+  de más de 5 minutos (instancia muerta) se retoma sin otro cupo, y uno reciente
+  da 409 `en_curso`. El visor (PR-2) debe ignorar los `pendiente`.
+- **Tipos:** solo `ftyp` M4A y M4B cuentan como audio (`isom`, `mp41`, `mp42` e
+  `iso2` también son video MP4: dan 415); un `%PDF-` con `PK\x03\x04` en el
+  primer KB (políglota ZIP/docx/APK) da 415.
+  No es un comprobante: no toca `solicitud`, `cierres`, `comprobantesRecibidos`,
+  `metricas` ni `conteo`.
+- **Datos:** Storage `tenants/{t}/medios/{aaaa-mm-dd La Paz}/{sha256(idMeta)}.{ext}`
+  (sin teléfono en la ruta ni en los metadatos; las reglas niegan todo acceso) y
+  Firestore `tenants/{t}/mediosRecibidos/{sha256(idMeta)}` con TTL sobre `vence`.
+- **`purgarMedios`** (03:45 La Paz): borra las carpetas de más de 90 días y, con
+  la baja del comercio, el prefijo entero y sus colecciones.
+- **Condiciones para el visor (PR-2):** servir con el `Content-Type` fijado por
+  el servidor (el guardado en `mediosRecibidos.mime`, nunca el que pida el
+  cliente), `X-Content-Type-Options: nosniff`, `Content-Disposition: attachment`,
+  y nunca dentro de un iframe del mismo origen de la consola.
+- **Cuenta y alerta de la purga:** `purgarMedios` corre con `sa-functions`, la
+  cuenta compartida de todas las Functions, con `storage.objectUser` sobre el
+  bucket; al entrar el visor conviene una cuenta dedicada con solo lo necesario.
+  Si algún comercio falla, la purga escribe un `console.error` con el texto fijo
+  `PURGA_MEDIOS_CON_ERRORES`: la alerta recomendada es una métrica basada en
+  registros sobre `textPayload:"PURGA_MEDIOS_CON_ERRORES"` (severidad ERROR) que
+  avise a Andres por un canal fuera de la Function. No está creada: es un paso de
+  nube con su «sí».
+- **Despliegue:** `guardarMedio` es HTTP nueva (1 GiB, sin concurrencia): tras
+  desplegar, el invocador sale con `scripts/nube-visor.sh --servicio guardarmedio`
+  (`allUsers` es correcto: la barrera es el token por número).
+- **Quién lo ve:** nadie todavía. El visor (callable auditada que devuelve bytes,
+  con tope, solo admin y operador; soporte no) es el PR-2.
+- `almacen.ts` es copia declarada del de `modulos/cobros/comprobantes.ts` (Core no
+  importa módulos); que Cobros importe de Core es un PR aparte del agente `modulo`.
+
 ## Secciones movidas desde `admin/DISENO.md`
 
 Texto original, sin cambios. Cada bloque dice de qué sección viene.
