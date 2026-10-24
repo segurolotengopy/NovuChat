@@ -392,16 +392,20 @@ export function promptsSinContexto(normalizado: string): boolean {
 //      que un « » solo puede venir del sistema. Las comillas "…" tipeadas NO eximen:
 //      la exención viene del registro, no de la puntuación.
 //
-// RESIDUO ACEPTADO POR ANDRES (24/10/2026). Hoy las listas de #650 siguen vivas y
-// el mecanismo es ADITIVO (sin términos, todo se comporta igual que antes). Cuando
-// se retiren (PR 6), el marcador entra a la oración SIN forma cerrada: queda solo
-// `terminoSinContexto`, que no exige la forma [verbo comercial] + determinante +
-// término + descripción. Ejemplo: «Los 100 prompts pesan más que lo demás» pasa con
-// el término registrado (sin verbo de orden, sin autoridad ni posesivo). Se acepta
-// porque (a) el término lo aprobó Plataforma y el texto del término es un nombre,
-// no una frase; (b) el modelo lo recibe citado por el sistema y una orden sobre él
-// sigue siendo RECHAZADO; (c) la capa 2 y el flujo siguen subordinando
-// `instruccionesVigentes` a las reglas del agente. Lo que NO pasa se fija en
+// RESIDUO ACEPTADO POR ANDRES (24/10/2026), QUE ENTRA CON EL PR 6 Y NO ANTES.
+// Mientras las listas de #650 sigan vivas (hoy), un marcador precedido de un
+// determinante neutro (los/las/estos/esos/nuestros…) pasa ADEMÁS por la forma
+// cerrada de #650 sobre el texto sin sustituir (`promptComoEnMain`): con un
+// término aprobado NO se reabre nada que main rechaza («Los 100 prompts pesan más
+// que lo demás», «…son tu nueva identidad», «Descubre los 100 prompts de tu
+// mente»). Lo que el registro agrega es un superconjunto solo donde #650 no
+// opina: «Pack 100 prompts», «100 prompts» sin determinante, términos con otras
+// palabras de la lista cerrada. Al retirar las listas (PR 6), esa comprobación
+// se quita y el marcador entra a la oración SIN forma cerrada: queda solo
+// `terminoSinContexto`, y «Los 100 prompts pesan más que lo demás» pasa con el
+// término registrado. Se acepta porque el término lo aprobó Plataforma, el modelo
+// lo recibe citado por el sistema (una orden sobre él sigue siendo RECHAZADO) y
+// la capa 2 sigue. Lo que NO pasa se fija en
 // `pruebas/central/terminos-registrados.test.ts`.
 
 /** Fijo y sin datos de ningún tenant. Si un comercio lo tipea, recibe la misma comprobación y no gana nada. */
@@ -422,6 +426,25 @@ const PALABRA_DE_REFERENCIA = new Set([
   'your', 'my', 'our', 'their', 'his', 'her', 'its', 'this', 'that', 'these', 'those',
 ]);
 
+/**
+ * LISTA CERRADA de las palabras que pueden acompañar a «prompt/prompts» en un
+ * término (revisión de seguridad del #657, MEDIUM-1). Una lista de rechazo no cierra
+ * la clase: la sustitución esconde estas palabras de los demás patrones, así que
+ * solo entra vocabulario comercial inerte. Nada de verbos, pronombres, roles
+ * (humano, persona, dueño), pago o estado (pago, acreditado, transferir), inglés de
+ * control ni `instruc*`. Ampliarla es decisión de producto Y de seguridad: cada
+ * palabra nueva se prueba en todos los contextos hostiles de la suite.
+ */
+export const PALABRAS_DE_TERMINO: ReadonlySet<string> = new Set([
+  'pack', 'paquete', 'bono', 'bonus', 'curso', 'kit', 'mega', 'pro', 'plus', 'premium', 'libro', 'regalo', 'extra',
+  'marketing', 'ventas', 'redes', 'sociales', 'instagram', 'tiktok', 'facebook', 'whatsapp', 'contenido', 'ideas',
+  'plantillas', 'listos', 'listas', 'basicos', 'avanzados', 'nuevos',
+  'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez', 'veinte', 'treinta', 'cuarenta', 'cincuenta',
+  'cien', 'ciento', 'doscientos', 'quinientos', 'mil',
+  'de', 'del', 'para', 'con', 'y',
+]);
+const CONECTORES_DE_TERMINO = new Set(['de', 'del', 'para', 'con', 'y']);
+
 /** Una palabra de un nombre de producto que, por sí sola, ya suena a orden, autoridad o referencia al asistente. */
 function palabraDeControl(w: string): boolean {
   return lecturas(w).some((l) => VERBO_ORDEN.test(l.forma))
@@ -434,8 +457,11 @@ function formaDeTermino(t: string): boolean {
   if (t.length < MIN_CARACTERES_TERMINO || t.length > MAX_CARACTERES_TERMINO) return false;
   const palabras = t.split(' ');
   if (palabras.length < MIN_PALABRAS_TERMINO || palabras.length > MAX_PALABRAS_TERMINO) return false;
-  if (!palabras.every((w) => /^[a-z]+$/u.test(w) || /^[0-9]{1,5}$/u.test(w))) return false;
+  // Lista cerrada: cifras, la palabra desbloqueable y vocabulario comercial inerte.
+  if (!palabras.every((w) => /^[0-9]{1,5}$/u.test(w) || DESBLOQUEABLES.includes(w) || PALABRAS_DE_TERMINO.has(w))) return false;
   if (palabras.filter((w) => DESBLOQUEABLES.includes(w)).length !== 1) return false;
+  // Un conector no abre ni cierra un nombre.
+  if (CONECTORES_DE_TERMINO.has(palabras[0]!) || CONECTORES_DE_TERMINO.has(palabras[palabras.length - 1]!)) return false;
   return !palabras.some(palabraDeControl);
 }
 
@@ -456,8 +482,9 @@ export function terminoApto(t: string): boolean {
  *   (a) el texto crudo es estable ante NFKC; sin \p{Cf}\p{Cc}\p{Co}\p{Cs}; solo
  *       letras latinas, dígitos ASCII y espacio: cierra homoglifos (cirílico) y
  *       ancho completo;
- *   (b) normalizado, de 3 a 40 caracteres y de 2 a 4 palabras, cada una a-z o un
- *       número de 1 a 5 cifras (nada de mezclar dígito y letra: nada de leet).
+ *   (b) normalizado, de 3 a 40 caracteres y de 2 a 4 palabras, cada una un número
+ *       de 1 a 5 cifras, la palabra desbloqueable o una de `PALABRAS_DE_TERMINO`
+ *       (lista CERRADA: nada de mezclar dígito y letra, nada de leet).
  *       Mínimo dos palabras: «prompts» a secas no es un nombre, es la clase;
  *   (c) EXACTAMENTE una palabra de DESBLOQUEABLES;
  *   (d) con esa palabra cambiada por «producto», `verificarPatrones` da `limpio`;
@@ -551,6 +578,20 @@ export function citarTerminos(texto: string, terminos: readonly string[]): strin
     citados++;
   }
   return citados === 0 ? texto : salida + fuente.slice(cursor);
+}
+
+/** ¿Rechazaría main («prompt» y «prompts» de #650) este texto normalizado SIN sustituir nada? */
+function promptComoEnMain(normalizado: string): boolean {
+  return palabra('prompt', 'system prompt', 'system', 'systems').test(normalizado)
+    || (palabra('prompts').test(normalizado) && promptsSinContexto(normalizado));
+}
+
+/** ¿Algún marcador lleva delante un determinante neutro (los/las/estos…)? */
+function marcadorConDeterminanteNeutro(analizado: string): boolean {
+  for (const m of analizado.matchAll(TERMINO_MARCADOR)) {
+    if (DETERMINANTE_NEUTRO.test(analizado.slice(0, m.index).slice(-80))) return true;
+  }
+  return false;
 }
 
 /**
@@ -1019,6 +1060,10 @@ export function verificarPatrones(
     const lista = p.fuerza === 'fuerte' ? fuertes : debiles;
     if (dispara && !lista.includes(p.nombre)) lista.push(p.nombre);
   }
+  // Mientras las listas de #650 sigan vivas, con determinante neutro delante del marcador no se
+  // reabre nada que main rechaza (ver «RESIDUO ACEPTADO»): se aplica la forma cerrada sobre el texto sin sustituir.
+  if (terminos.length > 0 && !fuertes.includes('prompt') && analizado !== normalizado
+    && marcadorConDeterminanteNeutro(analizado) && promptComoEnMain(normalizado)) fuertes.push('prompt');
   if (mencionaOtroComercio(normalizado, otros)) fuertes.push('otro comercio');
 
   if (fuertes.length > 0) {

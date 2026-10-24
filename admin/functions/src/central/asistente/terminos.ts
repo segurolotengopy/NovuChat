@@ -31,6 +31,8 @@
  *     editado queda sin efecto, sin que nadie tenga que borrar nada);
  *   - el término está contenido en ese nombre (frontera de palabra): el registro
  *     no puede aprobar una frase que el ítem no dice.
+ *   - el nombre del ítem es apto (capa 1 con su término, y el predicado `nombreApto` que inyecte
+ *     el llamador: Productos pasa `nombreDeProductoApto`; Central no puede importar de modulos/);
  * Con tope de `MAX_TERMINOS_POR_TENANT` (seguridad; más adelante, por plan).
  *
  * COSTO. Casi ningún turno agrega lecturas: solo se consulta Firestore si el
@@ -41,7 +43,7 @@
  * término de un comercio no existe para otro. El marcador no lleva datos.
  */
 import type { Firestore } from 'firebase-admin/firestore';
-import { hashCorto, normalizar, expresionDeTerminos, terminoApto } from './comportamiento.js';
+import { SIN_OTROS, expresionDeTerminos, hashCorto, normalizar, terminoApto, verificarPatrones } from './comportamiento.js';
 
 export {
   MARCADOR_TERMINO, DESBLOQUEABLES, citarTerminos, sustituirTerminos, terminoRegistrable,
@@ -81,6 +83,7 @@ function contenidoEn(termino: string, nombreNormalizado: string): boolean {
  */
 export async function terminosAprobados(
   db: Firestore, tenantId: string, textoAnalizado: string,
+  nombreApto: (nombre: string) => boolean = () => true,
 ): Promise<string[]> {
   if (typeof tenantId !== 'string' || tenantId === '' || tenantId.includes('/')) return [];
   if (!normalizar(textoAnalizado).includes('prompt')) return [];
@@ -106,6 +109,11 @@ export async function terminosAprobados(
     const nombre = normalizar(texto(item.get('nombre')));
     if (nombre === '' || hashCorto(nombre) !== c.nombreHash) return;
     if (!contenidoEn(c.termino, nombre)) return;
+    // El ítem que ancla el término también tiene que ser apto como nombre: el default de Central es que
+    // el nombre, con SU término registrado, no sea rechazado por la capa 1; `nombreApto` (inyectado por
+    // Productos con el filtro de nombres de #654) se suma, nunca lo reemplaza.
+    if (verificarPatrones(texto(item.get('nombre')), SIN_OTROS, [c.termino]).nivel === 'rechazado') return;
+    if (!nombreApto(texto(item.get('nombre')))) return;
     if (!vigentes.includes(c.termino)) vigentes.push(c.termino);
   });
   return vigentes.slice(0, MAX_TERMINOS_POR_TENANT);

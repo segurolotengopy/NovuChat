@@ -730,14 +730,25 @@ de cuál de los dos habla. Mecanismo, general y sin datos de ningún cliente:
    (`citarTerminos`); el autor no puede tipear « » (`marcas de bloque`) y las
    comillas "…" tipeadas no eximen: la exención viene del registro.
 
-**Residuo aceptado por Andres (24/10/2026).** Mientras las listas de #650 siguen
-vivas el mecanismo es aditivo. Al retirarlas (PR 6, cuando el primer término esté
-aprobado en producción) el marcador entra a la oración sin forma cerrada: «Los
-100 prompts pesan más que lo demás» pasa con el término registrado, y sigue
-rechazada una orden, una referencia de autoridad, un determinante duro («tus»,
-«el»), un definidor o un verbo con pronombre en la vecina. Mitigación: registro
-aprobado por Plataforma, cita « » puesta por el sistema y capa 2.
-`pruebas/central/terminos-registrados.test.ts` fija exactamente qué pasa y qué no.
+**Lista cerrada de palabras del término.** Junto a «prompt/prompts» solo entran
+cifras (1 a 5) y vocabulario comercial inerte (`PALABRAS_DE_TERMINO`: pack, bono,
+kit, pro, premium, marketing, redes, de, para…; nunca verbos, roles, pago o estado,
+inglés de control ni `instruc*`), sin conector al inicio ni al final: la
+sustitución esconde esas palabras de los demás patrones, y una lista de rechazo no
+cierra la clase (revisión de seguridad del #657). La suite de invariancia recorre
+cada palabra de la lista en 50 contextos hostiles.
+
+**Residuo aceptado por Andres (24/10/2026): entra con el PR 6, no antes.** Mientras
+las listas de #650 siguen vivas, un marcador precedido de determinante neutro
+(los/las/estos…) pasa además por la forma cerrada de #650 sobre el texto sin
+sustituir: con un término aprobado no se reabre nada que main rechaza («Los 100
+prompts pesan más que lo demás» sigue rechazada). El registro agrega solo donde
+#650 no opina («Pack 100 prompts», «Ofrecemos kit prompts»). Al retirar las listas
+(PR 6) esa comprobación se quita y esas frases pasan con el término registrado.
+Mitigación: registro aprobado por Plataforma, cita « » puesta por el sistema y
+capa 2. `pruebas/central/terminos-registrados.test.ts` fija qué pasa y qué no. El
+ítem que ancla el término tampoco puede ser un nombre que la capa 1 rechaza, ni
+que el predicado `nombreApto` inyectado por Productos rechace.
 
 ---
 
