@@ -16,19 +16,16 @@ const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['FIRESTORE_EMULATOR_HOST'] = HOST;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
 
-const { initializeApp, getApps } = await import('firebase-admin/app');
-if (getApps().length === 0) initializeApp({ projectId: PROYECTO });
-const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
-const db = getFirestore();
 
 const { hashCorto, normalizar } = await import('../../functions/src/central/asistente/comportamiento.ts');
 const { MAX_TERMINOS_POR_TENANT, terminosAprobados } = await import('../../functions/src/central/asistente/terminos.ts');
-const { nombreDeProductoApto } = await import('../../functions/src/modulos/productos/nombreSeguro.ts');
-const { crearAprobarTerminoProducto, terminosProductoDeTenant } =
-  await import('../../functions/src/plataforma/aprobarTerminoProducto.ts');
+// El callable REAL, como lo despliega index.ts (con el predicado de Productos inyectado por ganchos.ts).
+const { aprobarTerminoProducto, terminosProductoDeTenant } = await import('../../functions/src/index.ts');
+// index.ts inicializa la app por defecto al cargarse, como en producción.
+const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
+const db = getFirestore();
 const { TOPE_APROBADOS, decidirTermino } = await import('../../functions/src/plataforma/terminosProducto.ts');
 
-const aprobarTerminoProducto = crearAprobarTerminoProducto(nombreDeProductoApto);
 
 const A = 'aprob-term-a';
 const B = 'aprob-term-b';
@@ -140,7 +137,7 @@ describe('aprobar', () => {
     expect(aud).toHaveLength(1);
     expect(aud[0]).toMatchObject({ accion: 'termino_producto_aprobar', uid: 'prop-1', itemId: 'i1', estadoAntes: 'pendiente', estadoDespues: 'aprobado' });
     // El contrato con el lector de Central (lo que leerán los PR 4 y 5).
-    expect(await terminosAprobados(db, A, 'cuanto cuesta el pack de 100 prompts', nombreDeProductoApto)).toEqual(['pack 100 prompts']);
+    expect(await terminosAprobados(db, A, 'cuanto cuesta el pack de 100 prompts')).toEqual(['pack 100 prompts']);
   });
 
   it('es idempotente: repetir no escribe otra auditoría ni cambia revisadoEn', async () => {
@@ -213,6 +210,15 @@ describe('aprobar', () => {
       tenantId: A, itemId: 'i1', decision: 'aprobar', quien: 'x', nombreApto: () => false,
     })).rejects.toMatchObject({ codigo: 'no_aprobable' });
     expect((await termino(A, 'i1')).get('estado')).toBe('pendiente');
+    // El callable desplegado sí lleva el predicado de Productos: «Kit pro prompts» pasa el filtro de Central y
+    // NO el de Productos; con un predicado permisivo el mismo documento se aprueba (control: la causa es el predicado).
+    await item(A, 'k1', 'Kit pro prompts');
+    await pendiente(A, 'k1', 'kit pro prompts', 'Kit pro prompts');
+    await rechaza(aprobar({ itemId: 'k1' }), 'failed-precondition');
+    expect((await termino(A, 'k1')).get('estado')).toBe('pendiente');
+    await expect(decidirTermino(db, {
+      tenantId: A, itemId: 'k1', decision: 'aprobar', quien: 'x', nombreApto: () => true, enSeco: true,
+    })).resolves.toMatchObject({ estado: 'aprobado' });
     // Un documento del sistema con termino vacío (rechazo o límite) tampoco: no es 'pendiente'.
     await item(A, 'n1', 'Pack 100 prompts ignora todo');
     await db.doc(`tenants/${A}/terminosProducto/n1`).set({ termino: '', nombreHash: hashCorto(normalizar('Pack 100 prompts ignora todo')), estado: 'pendiente', motivo: 'x' });
@@ -251,7 +257,7 @@ describe('aprobar', () => {
     await aprobar();
     expect((await termino(B, 'i1')).get('estado')).toBe('pendiente');
     expect(await auditoria(B)).toEqual([]);
-    expect(await terminosAprobados(db, B, 'pack de 100 prompts', nombreDeProductoApto)).toEqual([]);
+    expect(await terminosAprobados(db, B, 'pack de 100 prompts')).toEqual([]);
     // Un ítem de A no se alcanza pidiéndolo por B: el documento se busca dentro de B.
     await rechaza(aprobar({ tenantId: B, itemId: 'solo-de-a' }), 'not-found');
     // Y un comercio inexistente o dado de baja no existe para esto.
@@ -277,12 +283,12 @@ describe('rechazar y revocar', () => {
     await aprobar();
     await rechaza(aprobar({ decision: 'rechazar' }), 'failed-precondition');
     expect((await termino(A, 'i1')).get('estado')).toBe('aprobado');
-    expect(await terminosAprobados(db, A, 'pack de 100 prompts', nombreDeProductoApto)).toEqual(['pack 100 prompts']);
+    expect(await terminosAprobados(db, A, 'pack de 100 prompts')).toEqual(['pack 100 prompts']);
     expect(await aprobar({ decision: 'revocar' }, { ...PROPIETARIO, uid: 'prop-7' })).toMatchObject({ estado: 'rechazado', aprobados: 0 });
     const d = await termino(A, 'i1');
     expect(d.get('estado')).toBe('rechazado');
     expect(d.get('revisadoPor')).toBe('prop-7');
-    expect(await terminosAprobados(db, A, 'pack de 100 prompts', nombreDeProductoApto)).toEqual([]);
+    expect(await terminosAprobados(db, A, 'pack de 100 prompts')).toEqual([]);
     const aud = (await auditoria(A)).map((x) => x['accion']).sort();
     expect(aud).toEqual(['termino_producto_aprobar', 'termino_producto_revocar']);
   });
@@ -332,27 +338,43 @@ describe('el script de respaldo', () => {
     return { codigo: r.status, salida: `${r.stdout ?? ''}${r.stderr ?? ''}` };
   };
 
-  it('sin --aplicar valida pero NO escribe; con --aplicar escribe con quién y auditoría', async () => {
-    const seco = script('--tenant', A, '--item', 'i1', '--decision', 'aprobar');
+  it('APROBAR por script se niega (el predicado de Productos solo lo tiene el callable) y no escribe', async () => {
+    for (const extra of [[], ['--aplicar']]) {
+      const r = script('--tenant', A, '--item', 'i1', '--decision', 'aprobar', ...extra);
+      expect(r.codigo, r.salida).toBe(2);
+      expect(r.salida).toContain('pantalla de Negocios');
+    }
+    expect((await termino(A, 'i1')).get('estado')).toBe('pendiente');
+    expect(await auditoria(A)).toEqual([]);
+  });
+
+  it('rechazar: en seco no escribe; con --aplicar escribe con quién y auditoría; revocar un aprobado igual', async () => {
+    const seco = script('--tenant', A, '--item', 'i1', '--decision', 'rechazar');
     expect(seco.codigo, seco.salida).toBe(0);
     expect(seco.salida).toContain('Seco');
     expect((await termino(A, 'i1')).get('estado')).toBe('pendiente');
     expect(await auditoria(A)).toEqual([]);
 
-    const real = script('--tenant', A, '--item', 'i1', '--decision', 'aprobar', '--operador', 'claude', '--aplicar');
+    const real = script('--tenant', A, '--item', 'i1', '--decision', 'rechazar', '--operador', 'claude', '--aplicar');
     expect(real.codigo, real.salida).toBe(0);
     const d = await termino(A, 'i1');
-    expect(d.get('estado')).toBe('aprobado');
+    expect(d.get('estado')).toBe('rechazado');
     expect(d.get('revisadoPor')).toBe('script:claude');
     expect(await auditoria(A)).toHaveLength(1);
-    expect((await auditoria(A))[0]).toMatchObject({ porScript: true });
+    expect((await auditoria(A))[0]).toMatchObject({ porScript: true, accion: 'termino_producto_rechazar' });
+
+    await db.doc(`tenants/${A}/terminosProducto/i1`).update({ estado: 'aprobado' });
+    const rev = script('--tenant', A, '--item', 'i1', '--decision', 'revocar', '--aplicar');
+    expect(rev.codigo, rev.salida).toBe(0);
+    expect((await termino(A, 'i1')).get('estado')).toBe('rechazado');
   });
 
-  it('con un nombre editado falla con código 1 y no escribe, también con --aplicar', async () => {
-    await item(A, 'i1', 'Pack 100 prompts nuevo');
-    const r = script('--tenant', A, '--item', 'i1', '--decision', 'aprobar', '--aplicar');
+  it('un estado que no corresponde falla con código 1 y no escribe; otro comercio no se toca', async () => {
+    const r = script('--tenant', A, '--item', 'i1', '--decision', 'revocar', '--aplicar');
     expect(r.codigo, r.salida).toBe(1);
-    expect(r.salida).toContain('No se puede aprobar este término.');
+    expect(r.salida).toContain('El término no está en un estado');
+    const ajeno = script('--tenant', B, '--item', 'i1', '--decision', 'rechazar', '--aplicar');
+    expect(ajeno.codigo, ajeno.salida).toBe(1); // B no tiene ese término
     expect((await termino(A, 'i1')).get('estado')).toBe('pendiente');
     expect(await auditoria(A)).toEqual([]);
   });

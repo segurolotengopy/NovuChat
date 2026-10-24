@@ -8,10 +8,10 @@
  * (`aprobarTerminoProducto`) es el camino normal; esto es el mismo acto por script, revisable y
  * con auditoría, para cuando la consola no está disponible o para dejarlo escrito en una sesión.
  *
+
+ * SOLO RECHAZAR O REVOCAR. Aprobar se hace en la pantalla de Negocios (ver más abajo el porqué).
  * LA MISMA LÓGICA QUE LA CALLABLE. No repite nada: carga `plataforma/terminosProducto.ts` (la
- * transacción con todas las validaciones: filtro estricto con los demás comercios cargados,
- * ítem activo y apto leído en la misma transacción, hash vigente, tope de 10, quién y cuándo,
- * auditoría) y el predicado de Productos `nombreDeProductoApto`. Node no resuelve `.js` → `.ts`
+ * transacción: estado, quién y cuándo, auditoría). Node no resuelve `.js` → `.ts`
  * solo, así que el script registra un resolvedor mínimo (solo para archivos del propio repo).
  *
  *   node scripts/plataforma/aprobar-termino-producto.mjs --proyecto <id> --tenant <id> --item <id> --decision aprobar|rechazar|revocar [--operador <nombre>] [--aplicar]
@@ -41,6 +41,17 @@ if (!PROYECTO || !TENANT || !ITEM || !['aprobar', 'rechazar', 'revocar'].include
   process.exit(2);
 }
 
+// APROBAR NO SE HACE POR ACÁ. La aprobación exige además el predicado de Productos
+// (`nombreDeProductoApto`), y la frontera de zonas (`fronteras.test.ts`) no deja que un script de
+// Plataforma lo importe: lo une `ganchos.ts` (coordinador) y solo lo tiene el callable desplegado.
+// Aprobar con un predicado más flojo que el de la pantalla sería un camino lateral, así que se niega.
+// Rechazar y revocar no lo necesitan y sí funcionan por acá.
+if (DECISION === 'aprobar') {
+  console.error('\n  ✗ Aprobar se hace en la pantalla de Negocios (callable aprobarTerminoProducto), que valida el nombre '
+    + 'con el filtro de Productos. Este script solo rechaza o revoca.\n');
+  process.exit(2);
+}
+
 // `.js` → `.ts` solo cuando el `.js` pedido no existe y el archivo importador es del repo.
 register('data:text/javascript,' + encodeURIComponent(`
 export async function resolve(especificador, contexto, siguiente) {
@@ -54,7 +65,6 @@ export async function resolve(especificador, contexto, siguiente) {
 }`), import.meta.url);
 
 const { decidirTermino, ErrorTermino } = await import('../../functions/src/plataforma/terminosProducto.ts');
-const { nombreDeProductoApto } = await import('../../functions/src/modulos/productos/nombreSeguro.ts');
 const { initializeApp, applicationDefault } = await import('firebase-admin/app');
 const { getFirestore } = await import('firebase-admin/firestore');
 initializeApp({ credential: applicationDefault(), projectId: PROYECTO });
@@ -69,7 +79,8 @@ console.log();
 try {
   const r = await decidirTermino(db, {
     tenantId: TENANT, itemId: ITEM, decision: DECISION, quien: `script:${OPERADOR}`,
-    nombreApto: nombreDeProductoApto, porScript: true, enSeco: !APLICAR,
+    nombreApto: () => false, // nunca se usa: solo se consulta al aprobar, y aprobar se negó arriba
+    porScript: true, enSeco: !APLICAR,
   });
   console.log(`  Término  : ${r.termino}`);
   console.log(`  Queda    : ${r.estado} · aprobados del comercio: ${r.aprobados}`);
