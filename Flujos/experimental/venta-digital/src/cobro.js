@@ -1,10 +1,10 @@
 // =============================================================================
-// COBRO DEL FLUJO DE ANTONIO (prefijo `cb` / `CB_`): HUECO DECLARADO en PROPIO.md
+// COBRO COMÚN DE LAS VENTAS DIGITALES (prefijo `cb` / `CB_`)
 // =============================================================================
-// COPIA, declaración por declaración y BYTE A BYTE, de `Flujos/experimental/venta-minima/src/lib/cobro.js` (rama #519, `cartera/qtaco-visor-comprobantes`): el módulo común de
-// Cobros todavía no existe. Cada declaración tiene su prueba contra el origen en `huecos.test.ts` («HUECOS del cobro»); si el origen cambia, la prueba falla y obliga a decidir.
-// Lo que NO se copia: los textos al cliente de un restaurante (`cbTextoAlCliente`), el QR por dirección (`cbMensajeQr`: aquí el QR sale como `image:{id}`, nunca con `link`)
-// ni el cobro simulado por dirección. JavaScript plano: sin `require`, `URL`, `Buffer` ni `crypto`, sin red y sin reloj.
+// Cuerpo idéntico, byte a byte, al de la copia que ya usan los flujos de venta digital (origen: `cobro.js` de la primera venta digital, commit fb3b8994). Una prueba
+// (`admin/pruebas/venta-digital-base.test.ts`) exige que cada copia sea «su cabecera + este cuerpo»: si el cuerpo cambia aquí, las copias deben migrar.
+// Nada de textos al cliente: los textos, nombres, productos y montos de cada negocio entran por parámetro. JavaScript plano: sin `import`/`export`, `require`, `URL`, `Buffer` ni `crypto`,
+// sin red y sin reloj (el nodo Code de n8n no los tiene).
 
 // La red de palabras de `comun.js` (`VM_PROHIBIDAS`), copiada acá a propósito: esta
 // librería se prueba sola y no puede depender de otro archivo.

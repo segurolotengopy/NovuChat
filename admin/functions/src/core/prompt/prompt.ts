@@ -267,9 +267,11 @@ export const TOPE_QUIEN_ATIENDE = 60;
 export const QUIEN_RE_CARACTERES = '^[A-Za-zÀ-ÖØ-öø-ÿ0-9 .,&()-]{0,60}$';
 export const QUIEN_RE_VOCABULARIO =
   'banc|pag[oóu]|dep[oó]sit|transferenc|tesorer|acreditad|verificad|comprobante|recibimos'
-  + '|\\bbots?\\b|robot|humano|persona real|persona de verdad|soy una persona|\\bi[.]?a\\b|\\ba[.]?i\\b'
-  + '|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][ .-]?){6,}'
-  + '|\\b(bnb|bcp|fie|asfi|sin|jefe)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money'
+  + '|\\bbots?\\b|robot|human[oa]s?|persona real|persona de verdad|soy una persona|\\breal\\b|carne y hueso'
+  + '|inteligencia artificial|\\bi[. ]?a\\b|\\ba[.]?i\\b'
+  + '|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][^0-9]{0,3}){6,}'
+  + '|\\b(bnb|bcp|fie|asfi|sin|jefe|bcb|bisa|bmsc|qr|meta)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money'
+  + '|prodem|ecofuturo|cobranzas?|\\byape\\b|\\byap[eé](a|o|ame)|whatsapp|soporte'
   + '|impuestos nacionales|polic[ií]a|sistema|tu jefe|ya pag';
 const RE_CARACTERES = new RegExp(QUIEN_RE_CARACTERES);
 const RE_VOCABULARIO = new RegExp(QUIEN_RE_VOCABULARIO, 'i');
@@ -280,10 +282,11 @@ const RE_VOCABULARIO = new RegExp(QUIEN_RE_VOCABULARIO, 'i');
  * 7->t, @->a, $->s) y sin ningún separador, para ver «B A N C O», «b.a.n.c.o»
  * o «b4nco».
  */
-const COMPACTO_PROHIBIDO = [
+export const COMPACTO_PROHIBIDO = [
   'banc', 'pago', 'pagu', 'deposit', 'transferenc', 'tesorer', 'acreditad', 'verificad',
-  'comprobante', 'recibimos', 'robot', 'chatbot', 'humano', 'personareal', 'personadeverdad',
-  'unapersona', 'mercantil', 'ganadero', 'economico', 'fassil', 'tigomoney',
+  'comprobante', 'recibimos', 'robot', 'chatbot', 'humano', 'humana', 'personareal', 'personadeverdad',
+  'unapersona', 'asesorareal', 'carneyhueso', 'inteligenciaartificial', 'prodem', 'ecofuturo', 'cobranza',
+  'whatsapp', 'yapea', 'yapeo', 'mercantil', 'ganadero', 'economico', 'fassil', 'tigomoney',
   'impuestosnacionales', 'policia', 'sistema', 'tujefe', 'yapag',
 ];
 export function compactarQuien(texto: string): string {
@@ -304,6 +307,8 @@ export function motivoQuienAtiendeInvalido(valor: unknown): string | null {
   if (Array.from(valor).length > TOPE_QUIEN_ATIENDE) return `supera los ${TOPE_QUIEN_ATIENDE} caracteres`;
   if (!RE_CARACTERES.test(valor)) return 'solo admite letras, números, espacios y . , & ( ) -';
   if (RE_VOCABULARIO.test(valor)) return 'no puede llevar enlaces, números largos ni hablar de bancos, pagos o de ser o no una IA';
+  // Dígitos en total, sin importar los separadores (L1 del #615): 6 o más son un teléfono.
+  if (valor.replace(/[^0-9]/g, '').length >= 6) return 'no puede llevar números largos';
   const compacto = compactarQuien(valor);
   if (COMPACTO_PROHIBIDO.some((t) => compacto.includes(t))) return 'no puede hablar de bancos, pagos o instituciones';
   return null;
