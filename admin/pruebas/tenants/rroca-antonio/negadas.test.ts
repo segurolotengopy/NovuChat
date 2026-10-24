@@ -542,3 +542,31 @@ describe('F1 · criterios estructurales del filtro de redacción', () => {
     for (const x of ['Te cuento.', 'El libro te ayuda a volver a hablar.', 'Son 14 capítulos.', 'La ruta de 30 días.', '¿Qué parte te gustaría mejorar?', 'Escríbele a Antonio si prefieres.']) expect(motivo(x), x).toBe('');
   });
 });
+
+// =============================================================================================================== F1b: FALSOS POSITIVOS DE LA BATERÍA REAL (23/10/2026)
+// Los datos declarados del libro (`RA_PROMPT`: 138 páginas, 14 capítulos en 4 partes, 30 días, 6 pilares, 10 a 20 minutos al día, 100% digital) pasan en dígitos y en palabras; toda otra cifra sigue rechazada.
+describe('F1b · la lista blanca acepta los datos declarados del libro y no lo demás; la identidad de IA no se bloquea', () => {
+  const L = cargarLibrerias('raExtraRedaccion, raNorm') as { raExtraRedaccion: (t: string, n: string, c?: { precios?: number[]; textoCliente?: string }) => string; raNorm: (t: string) => string };
+  const motivo = (x: string, textoCliente = ''): string => L.raExtraRedaccion(x, L.raNorm(x), { precios: [], textoCliente });
+  it('POSITIVA · datos declarados, en dígitos y en palabras, y «100% digital»', () => {
+    for (const x of [
+      'Es una ruta de treinta días con ejercicios.', 'Tiene catorce capítulos en cuatro partes.', 'Es una guía de ciento treinta y ocho páginas en formato PDF.', 'Son 138 páginas y 14 capítulos.',
+      'Se practica de diez a veinte minutos al día.', 'El libro está diseñado 100% en formato digital.', 'Es 100% digital, en PDF.', 'Los seis pilares del método empiezan por la pausa.', 'Los capítulos 4, 5 y 8 ayudan con eso.',
+    ]) expect(motivo(x), x).toBe('');
+  });
+  it('NEGADA · toda otra cifra sigue rechazada, también en palabras', () => {
+    for (const x of ['Son 140 páginas.', 'Tiene doscientas páginas.', 'Dura 45 minutos al día.', 'Es una ruta de 21 días.', 'Ciento treinta páginas.', 'De quince a veinte minutos.', 'El 80 % de las parejas mejora.', 'Tiene 15 capítulos.', 'Es 90% digital.', 'Con un 20 % menos.', 'Hay 20% de descuento.', 'Tiene 2x1.', 'Es gratis.', 'Va de regalo.', 'El capítulo 20 lo explica.']) expect(motivo(x), x).not.toBe('');
+  });
+  it('POSITIVA · si la persona pregunta quién es, si es un bot o si es terapia, el asistente puede decir que es un asistente virtual con IA', () => {
+    const r = 'No soy psicólogo ni terapeuta, soy un asistente virtual con inteligencia artificial. El libro no reemplaza la terapia.';
+    for (const q of ['¿Esto es terapia?', '¿Eres un bot?', '¿Quién eres?', '¿Hablo con una persona real?']) expect(motivo(r, q), q).toBe('');
+  });
+  it('NEGADA · sin esa pregunta, presentarse otra vez sigue rechazado; y afirmar terapia también', () => {
+    expect(motivo('Soy un asistente virtual con IA.', 'cuéntame del libro')).toBe('presentacion_repetida');
+    expect(motivo('Esto es una terapia de pareja.', '¿Esto es terapia?')).toBe('terapia');
+    expect(motivo('Te ofrezco elegir entre el pack y el libro.')).not.toBe('');
+  });
+  it('POSITIVA · «elegir» del vocabulario del libro no es una oferta de compra', () => {
+    expect(motivo('El pilar Tono y palabras es elegir las que acercan.')).toBe('');
+  });
+});

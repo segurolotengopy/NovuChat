@@ -125,7 +125,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     const crudo = raQuitarEcoDeMarcador(cnTextoDeGemini(cnPrimero('Conversar con el modelo')));
     // Los filtros del texto del modelo: SIEMPRE sin datos de pago, sin afirmar una compra y sin promesas de aviso (el aviso a Antonio solo se dice si hubo un `wamid` real); como máximo 3 oraciones SOLO con un QR abierto (la invitación a pagar va debajo).
     const rev = crudo.trim() === '' ? { texto: '', motivo: 'vacio' } : cmRevisarRedaccion(crudo, {
-      maximo: 700, enlacesPermitidos: [], quienPromete: ['antonio', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: t.texto || plan.textoCliente, extra: [(tx, nm) => raExtraRedaccion(tx, nm, { precios: habil ? Object.values(cat).filter((x) => typeof x === 'number' && Number.isFinite(x)) : [] })],
+      maximo: 700, enlacesPermitidos: [], quienPromete: ['antonio', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: t.texto || plan.textoCliente, extra: [(tx, nm) => raExtraRedaccion(tx, nm, { textoCliente: t.texto || plan.textoCliente || '', precios: habil ? Object.values(cat).filter((x) => typeof x === 'number' && Number.isFinite(x)) : [] })],
       sinDatosDePago: true, sinAfirmarCompra: true, sinPromesasDeAviso: true, avisoRespaldado: avisoPlaneado && cnTodos('Enviar aviso').some(raId), maxOraciones: qrAbierto ? 3 : undefined,
     });
     // SEGURIDAD (solo se ofrece lo que se cumple): en los modos `puente` y `opciones` el código pone las opciones, y con la compuerta cerrada no hay botones de producto: toda oración del modelo que prometa opciones o precios se QUITA.

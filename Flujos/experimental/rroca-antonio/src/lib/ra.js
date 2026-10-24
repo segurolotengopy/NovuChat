@@ -909,12 +909,12 @@ function raHablaDePagar(n) {
 function raExtraRedaccion(texto, norm, ctx) {
   const variantes = [norm, raLeet(texto), raLeet(texto, 'o')];
   for (const v of variantes) {
-    const r = raExtraBase(texto, v);
+    const r = raExtraBase(texto, v, ctx);
     if (r) return r;
   }
   return raExtraSolo(texto, ctx);
 }
-function raExtraBase(texto, norm) {
+function raExtraBase(texto, norm, ctx) {
   if ((String(texto).match(/\?/g) || []).length > 1) return 'varias_preguntas';
   if (String(texto).split(/(?<=[.!?…])\s+/).filter((x) => x.trim()).length > 5) return 'largo_en_oraciones';
   // Una promesa en primera persona («te llamo», «te escribo», «te aviso», «te confirmo»): el flujo solo ofrece lo que cumple (pasar con Antonio: aviso + botón), y el filtro común no cubre estas formas.
@@ -922,7 +922,9 @@ function raExtraBase(texto, norm) {
   // PR-D · [F]: el flujo NO envía imágenes (solo existe el QR como imagen saliente): «te muestro / envío / comparto fotos, imágenes, capturas, la portada» es una promesa sin respaldo.
   if (/\b(te (muestro|envio|mando|comparto|paso|adjunto|enviare|mandare|mostrare|compartire)|(puedo|podria|podemos|voy a|vamos a) (mostrar|enviar|mandar|compartir|pasar|adjuntar)(te|les|le)?|aqui (tienes|te dejo)|te dejo|adjunto|enviare|mandare|mostrare|compartire)\b[^.?!]{0,40}\b(imagen|imagenes|foto|fotos|fotografia|fotografias|captura|capturas|pantallazo|pantallazos|screenshot|screenshots|portada|detalles visuales|ejemplos visuales|vista previa)\b/.test(norm)) return 'promete_imagenes';
   if (/\b(qr|banco|titular|mercantil|cuenta bancaria)\b/.test(norm)) return 'datos_de_cobro';
-  if (/\b(asistente virtual|soy el asistente|me presento)\b/.test(norm)) return 'presentacion_repetida';
+  // La identidad como asistente virtual con IA NUNCA se bloquea cuando la persona pregunta quién o qué es, si es un bot, una persona o terapia (regla 4): solo se rechaza la presentación gratuita, que ya hizo el código.
+  const preguntaPorSerAsi = ctx && typeof ctx.textoCliente === 'string' && /\b(?:quien|que|como) (?:eres|sos|es (?:esto|este|usted)|seras)\b|\b(?:eres|sos|es|hablo con|hablando con) (?:un |una )?(?:bot|robot|ia|inteligencia artificial|persona|humano|humana|real|maquina|programa|asistente|alguien|terapeuta|psicolog\w*|terapia|consejero|consejera)\b|\b(?:bot|robot|inteligencia artificial|persona real|humano|terapia|terapeuta|psicolog\w*|ia)\b/.test(raNorm(ctx.textoCliente));
+  if (!preguntaPorSerAsi && /\b(asistente virtual|soy el asistente|me presento)\b/.test(norm)) return 'presentacion_repetida';
   // El modelo no se hace pasar por el autor ni por una persona con nombre (regla 4: se presenta como asistente virtual): «soy Antonio», «te habla Antonio Dauber», «me llamo Antonio».
   if (/\b(soy|me llamo|te habla|te escribe|habla|escribe|aqui esta|aqui|yo soy) (el |la )?(mismo |propio )?(antonio|dauber|autor|autora|creador|creadora)\b/.test(norm)) return 'suplanta_al_autor';
   // Lo mismo con letras cambiadas por cifras o símbolos («S0y Ant0nio», «Ant@nio») y dicho de otra forma («soy quien escribió el libro»).
@@ -931,9 +933,9 @@ function raExtraBase(texto, norm) {
   if (/\b(soy|me llamo|te habla|te escribe|habla|escribe|aqui esta|aqui|yo soy) (el |la )?(mismo |propio )?(antonio|dauber|autor|autora|creador|creadora)\b/.test(leet) || /\b(soy|fui) (quien|el que|la que|el autor|la autora) (escribio|creo|hizo|redacto)?\s?(el|este|del) ?(libro|metodo)\b/.test(leet) || /\b(yo )?(escribi|cree|redacte) (el|este) libro\b/.test(leet)) return 'suplanta_al_autor';
   }
   if (/\b(agend\w*|cita|citas)\b/.test(norm)) return 'agenda';
-  if (/\b(psicolog\w*|terapeuta\w*|terapia)\b/.test(norm) && !/\bno (es|soy|hago|reemplaza|sustituye)\b/.test(norm)) return 'terapia';
+  if (/\b(psicolog\w*|terapeuta\w*|terapia)\b/.test(norm) && !/\b(?:no|ni|tampoco|sin)\b[^.?!]{0,40}\b(?:psicolog\w*|terapeuta\w*|terapia)\b/.test(norm)) return 'terapia';
   if (/\b(garantiz\w*|reconcili\w*|te aseguro|seguro que)\b/.test(norm)) return 'promesa_de_resultado';
-  if (/\b(paquete|pack|bonos?|opciones de compra|botones?|elige|elegir)\b/.test(norm)) return 'oferta_fuera_del_codigo';
+  if (/\b(paquete|pack|bonos?|opciones de compra|botones?)\b|\b(?:elige|eliges|elija)\s(?:entre|uno|una|el|la|tu|cual)\b|\belegir\s(?:entre|un|una|el pack|el paquete|cual)\b/.test(norm)) return 'oferta_fuera_del_codigo';
   if (/\b(testimonio|mariana|daniel)\b/.test(norm)) return 'testimonio';
   if (/\b(visita|visitar|visite|nuestra pagina|nuestro sitio|sitio web|pagina web|en la web|en internet)\b/.test(norm)) return 'remite_a_web';
   if (/\bderivar\b|\briesgo\b/.test(norm)) return 'palabra_interna';
@@ -1003,19 +1005,24 @@ function raExtraSolo(texto, ctx) {
   // (b) CIFRAS: lista blanca. Un teléfono o un número largo (8 o más dígitos, con o sin separadores) y toda cifra que no sea la cantidad de una unidad de contenido del libro rechazan el texto,
   // salvo el precio EXACTO del catálogo con la compuerta abierta. «%», «$», «Bs», «bolivianos» (y sus diminutivos) con una cifra que no sea un precio del catálogo, también.
   if (/(?:\d[\s.\-]?){8,}/.test(num)) return 'telefono';
-  if (/%/.test(num) || /\bpor ciento\b/.test(num)) return 'beneficio_inventado';
+  // Un porcentaje junto a «menos», «de descuento», «de ahorro», «off»… es un beneficio inventado; otro porcentaje («100% digital» es dato del libro, «80 %» no) lo resuelve la lista blanca de cifras.
+  if (/\d\s?(?:%|por ciento)\s?(?:menos|mas barato|de (?:descuento|ahorro|rebaja|desc)|off|dto|desc)\b|\b(?:descuento|ahorr\w*|rebaja\w*|hasta|con un)\s(?:de(?:l)?\s|un\s)?\d+\s?(?:%|por ciento)/.test(num)) return 'beneficio_inventado';
   const MONEDA = '(?:bs|bob|bolivianos?|boliviani?tos?|bolis|pesos?|pesitos|dolares?|dolarcitos|usd|lucas|lukas|euros?)';
   for (const m of num.matchAll(new RegExp('(\\d+(?:[.,]\\d+)?)\\s?' + MONEDA + '\\b|\\b(?:bs|bob|usd)\\.?\\s?(\\d+(?:[.,]\\d+)?)|\\$\\s?(\\d+(?:[.,]\\d+)?)|(\\d+(?:[.,]\\d+)?)\\s?\\$', 'g'))) if (!esPrecio(m[1] || m[2] || m[3] || m[4])) return 'precio_inventado';
   if (/\$/.test(num)) return 'precio_inventado';
   if (new RegExp('\\b(?:sale|salen|cuesta|cuestan|vale|valen|costaria|costo|precio|tarifa|cobro|cobramos|cobran|pagas|pagar|pagarias|quedan?)\\b\\W{0,14}(?:a |en |de |por |solo |apenas )?(\\d+(?:[.,]\\d+)?)\\b(?!\\s(?:' + U + ')\\b)').test(num)) { const mp = num.match(new RegExp('\\b(?:sale|salen|cuesta|cuestan|vale|valen|costaria|costo|precio|tarifa|cobro|cobramos|cobran|pagas|pagar|pagarias|quedan?)\\b\\W{0,14}(?:a |en |de |por |solo |apenas )?(\\d+(?:[.,]\\d+)?)\\b(?!\\s(?:' + U + ')\\b)')); if (mp && !esPrecio(mp[1])) return 'precio_inventado'; }
   if (new RegExp('\\b(?:cien|ciento|doscientos|trescientos|cuatrocientos|quinientos|mil|diez|quince|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)\\b[^.?!]{0,16}\\b' + MONEDA + '\\b').test(num)) return 'precio_inventado';
-  const resto = num
-    .replace(new RegExp('\\bcapitulos?\\s\\d{1,2}(?:(?:\\s?,\\s?|\\s(?:y|e|a|al)\\s)\\d{1,2})*', 'g'), ' ')
-    .replace(new RegExp('\\b\\d{1,3}(?:\\s?(?:a|y|o|-)\\s?\\d{1,3})?\\s(?:' + U + ')\\b', 'g'), ' ');
+  // Los DATOS DECLARADOS del libro (los mismos de `RA_PROMPT`): 138 páginas, 14 capítulos en 4 partes, ruta de 30 días, 6 pilares, 10 a 20 minutos al día, 100% digital y los capítulos 1 a 14. Se aceptan en dígitos Y en palabras;
+  // cualquier otra cifra o número («80 %», «20 páginas», «45 minutos», «21 días») rechaza el texto. Los números en palabras de los datos declarados se pasan antes a dígitos.
+  const nd = num.replace(/\bciento treinta y ocho\b/g, '138').replace(/\btreinta\b/g, '30').replace(/\bcatorce\b/g, '14').replace(/\bdiez\b/g, '10').replace(/\bveinte\b/g, '20')
+    .replace(/\b(cuatro|seis) (partes|pilares)\b/g, (x, w, u) => (w === 'cuatro' ? '4' : '6') + ' ' + u);
+  const resto = nd
+    .replace(/\bcapitulos?\s(?:\d{1,2})(?:(?:\s?,\s?|\s(?:y|e|a|al)\s)\d{1,2})*/g, (x) => ((x.match(/\d+/g) || []).every((k) => Number(k) >= 1 && Number(k) <= 14) ? ' ' : x))
+    .replace(/\b138 paginas\b|\b14 capitulos\b|\b4 partes\b|\b6 pilares\b|\b30 dias\b|\b(?:10|20) minutos\b|\b10 (?:a|y|o|-) 20 minutos\b|\b100 ?% (?=digital|virtual|en (?:formato )?(?:digital|pdf)|pdf)/g, ' ');
   for (const m of resto.matchAll(/\d+(?:[.,]\d+)?/g)) if (!esPrecio(m[0])) return 'cifra_no_permitida';
-  // Los números en PALABRAS: decenas, centenas y miles rechazan el texto (salvo como cantidad de una unidad de contenido: «treinta días»); «uno»…«nueve» solo junto a un verbo de precio o a una moneda.
-  const sinContenido = num.replace(new RegExp('\\b(?:\\w+\\s)?\\w+\\s(?:' + U + ')\\b', 'g'), (s) => (/\b(?:diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cien|ciento|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\s(?:y\s)?\w*\s?(?:[a-z]+)?$/.test(s) ? ' ' : s));
-  if (/\b(?:dieci\w+|veinti\w+|doscientos|trescientos|cuatrocientos|quinientos|seiscientos|setecientos|ochocientos|novecientos|mil|millon|millones|cincuenta|sesenta|setenta|ochenta|noventa)\b/.test(num) || /\b(?:diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cien|ciento)\b(?!\s(?:y\s)?\w*\s?(?:a\s\w+\s)?(?:' + U + ')\b)/.test(sinContenido)) return 'cifra_no_permitida';
+  if (/%/.test(resto) || /\bpor ciento\b/.test(resto)) return 'cifra_no_permitida';
+  // Los números en PALABRAS que no son datos declarados: decenas, centenas y miles; «uno»…«nueve» solo junto a un verbo de precio o a una moneda (más abajo).
+  if (/\b(?:dieci\w+|veinti\w+|(?:dos|tres|cuatro|quin|seis|sete|ocho|nove)cient[oa]s|mil|millon|millones|cincuenta|sesenta|setenta|ochenta|noventa|once|doce|trece|quince|cuarenta|cien|ciento)\b/.test(resto)) return 'cifra_no_permitida';
   if (new RegExp('\\b(?:sale|salen|cuesta|cuestan|vale|valen|costaria|costo|precio|tarifa|cobro|cobramos|cobran|pagas|pagar|pagarias)\\b[^.?!]{0,16}\\b(?:uno|un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\\b(?!\\s(?:' + U + ')\\b)|\\b(?:uno|un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\\s' + MONEDA + '\\b').test(num)) return 'precio_inventado';
   return '';
 }
