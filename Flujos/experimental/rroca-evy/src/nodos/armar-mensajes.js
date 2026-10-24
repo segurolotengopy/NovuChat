@@ -94,7 +94,7 @@ if (puerta.ruta === 'fuera_de_prueba') {
 } else if (efectivo === 'derivar_corto') {
   // Nunca el mismo texto dos veces seguidas: dos variantes que se alternan.
   const ultimoA = evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora).filter((h) => h.r === 'a').slice(-1)[0];
-  ms = [conRecepcion(ultimoA && ultimoA.t === EV_TEXTO_DERIVAR_DE_NUEVO ? EV_TEXTO_DERIVAR_DE_NUEVO_2 : EV_TEXTO_DERIVAR_DE_NUEVO)];
+  ms = [conRecepcion(ultimoA && String(ultimoA.t).indexOf(EV_TEXTO_DERIVAR_DE_NUEVO) === 0 ? EV_TEXTO_DERIVAR_DE_NUEVO_2 : EV_TEXTO_DERIVAR_DE_NUEVO)];
   hist = { a: ms[0].texto, b: ms[0].respaldo };
 } else if (efectivo === 'gratis') {
   ms = [texto(evTextoGratis(cfg, evDioNombre(evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora), plan.textoCliente)))];
@@ -137,7 +137,6 @@ if (!sinFicha) {
   if (decision.oyoAudio === true) ficha.audios = evContarMedio(ficha.audios, ahora);
   if (decision.vioImagen === true) ficha.imagenes = evContarMedio(ficha.imagenes, ahora);
   for (const k of artesSalidos) if (ficha.artes.indexOf(k) < 0) ficha.artes.push(k);
-  if (efectivo === 'derivar') ficha.cierreMs = ahora;   // el cierre completo sale UNA vez por ficha (48 h)
   if (silencio === 'baja' || silencio === 'riesgo') ficha.noContactarMs = ahora;
   if (silencio === 'riesgo') { ficha.riesgoMs = ahora; ficha.historial = []; }
   if (silencio === 'baja') ficha.historial = [];

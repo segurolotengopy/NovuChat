@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ANA, avisosARecepcion, crear, dice, hablar, mTexto, textos } from './mundo';
+import { ANA, BETO, avisosARecepcion, crear, dice, hablar, mTexto, textos } from './mundo';
 
 /** Cae a un texto fijo: el de fallo del modelo, el de remisión de salud o la admisión de IA. */
 const fallo = (t: string): boolean => /inconveniente para responderte/.test(t) || /un programa con inteligencia artificial/.test(t) || /Eso lo evalúa la Dra\. Evy en persona, durante tu valoración gratuita/.test(t);
@@ -224,6 +224,48 @@ describe('el cierre completo sale UNA vez por ficha', () => {
     expect(textos(t5)).toEqual(['Con gusto, el botón sigue disponible para escribirle a recepción.']);   // nunca el mismo texto dos veces seguidas
     expect(t5.mensajes[0]!.tipo).toBe('interactive');
   });
+  it('alternancia A/B/A y aviso: el aviso no se repite dentro de los 30 minutos y sí al vencer la ventana', () => {
+    const m = crear({ modeloDice: dice(DERIVA) });
+    hablar(m, ANA, mTexto('quiero agendar, soy Paola'));
+    expect(textos(hablar(m, ANA, mTexto('quiero agendar'))).join(' ')).toContain('Claro, aquí tienes');
+    expect(textos(hablar(m, ANA, mTexto('quiero agendar'))).join(' ')).toContain('Con gusto, el botón');
+    m.avanzar(40);
+    const t = hablar(m, ANA, mTexto('quiero agendar'));
+    expect(textos(t).join(' ')).toContain('Claro, aquí tienes');
+    expect(avisosARecepcion(t).length).toBe(1);
+  });
+  it('a las 48 h la ficha se olvida y vuelve a salir el cierre completo', () => {
+    const m = crear({ modeloDice: dice(DERIVA) });
+    hablar(m, ANA, mTexto('quiero agendar, soy Paola'));
+    m.avanzar(49 * 60);
+    expect(textos(hablar(m, ANA, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
+  });
+  it('dos teléfonos: el cierre de uno no afecta al otro', () => {
+    const m = crear({ modeloDice: dice(DERIVA) });
+    hablar(m, ANA, mTexto('quiero agendar'));
+    expect(textos(hablar(m, BETO, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
+    expect(textos(hablar(m, ANA, mTexto('quiero agendar'))).join(' ')).toContain('Claro, aquí tienes');
+  });
+  it('NEGADA: si el envío del cierre falla (principal y respaldo), no cuenta como hecho: el siguiente pedido recibe el cierre COMPLETO', () => {
+    const envio: Record<string, string> = { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' };
+    // @ts-expect-error el objeto es mutable a propósito: el doble lo lee en cada envío
+    const m = crear({ modeloDice: dice(DERIVA), envio });
+    hablar(m, ANA, mTexto('quiero agendar'), { toleraFallo: true });
+    envio['Enviar a WhatsApp'] = 'acepta'; envio['Enviar respaldo'] = 'acepta';
+    expect(textos(hablar(m, ANA, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
+  });
+  it('«sigue conversando» va al modelo sin botón; la etiqueta sin texto y un pedido con negación también se tratan bien', () => {
+    const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('cuánto dura') ? '[DERIVAR_RECEPCION]' : DERIVA) });
+    hablar(m, ANA, mTexto('quiero agendar, soy Paola'));
+    const sinTexto = hablar(m, ANA, mTexto('¿cuánto dura la sesión?'));
+    expect(textos(sinTexto)[0]).toContain('botón');   // etiqueta sin texto: variante corta con botón
+    expect(sinTexto.mensajes[0]!.tipo).toBe('interactive');
+    const m2 = crear({ modeloDice: dice('La sesión dura unos 40 minutos. [DERIVAR_RECEPCION]') });
+    hablar(m2, ANA, mTexto('quiero agendar'));
+    const neg = hablar(m2, ANA, mTexto('todavía no quiero agendar, ¿cuánto dura?'));
+    expect(textos(neg).join(' ')).toContain('La sesión dura unos 40 minutos.');
+    expect(neg.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
+  });
   it('POSITIVA: el primer cierre sigue saliendo completo con su botón y su aviso', () => {
     const t = hablar(crear({ modeloDice: dice(DERIVA) }), ANA, mTexto('quiero agendar'));
     expect(textos(t)[0]).toMatch(CIERRE);
@@ -279,6 +321,47 @@ describe('«Ok, quiero agendar» deriva aunque el modelo no emita la etiqueta (F
     const t = hablar(crear({ modeloDice: 'cae' }), ANA, mTexto('quiero agendar'));
     expect(textos(t)[0]).toMatch(/Excelente decisión/);
   });
+});
+
+describe('Evy NO agenda: ninguna oración del modelo afirma una cita, un cupo o un registro (sin la muletilla «Te confirmo»)', () => {
+  const AFIRMAN = [
+    'Ya tienes tu espacio con la Dra. el lunes.', 'Ya te tiene en su lista para el lunes.', 'La recepción ya registró tu valoración.', 'Listo, ya está todo hecho, nos vemos el martes.',
+    'La Dra. te verá el jueves a las 4 pm.', 'Tu valoración quedó para el viernes.', 'Te esperamos el lunes a las 10:30.', 'Así es: la Dra. te atiende el miércoles.',
+    'Ya quedaste inscrita.', 'Recepción ya sabe que vas el martes.', 'Ya tiene tu cupo.', 'Te guardé el horario de las 16 hs.', 'Te confirmo al 100%: estás inscrita.',
+  ];
+  for (const f of AFIRMAN) {
+    it(`NEGADA: «${f}»`, () => {
+      const t = sale(`${f} ¿Cómo te llamas?`);
+      expect(fallo(t), f).toBe(true);
+    });
+  }
+  it('POSITIVAS: gratuita esta semana, dirección, horario de atención, invitación, preguntas y condicionales pasan', () => {
+    for (const bien of [
+      'Te confirmo que la valoración es gratuita esta semana.', 'Te esperamos en la Clínica DentalCor, Calle Sapocó 53.', 'Atendemos de lunes a viernes de 08:30 a 18:30 y sábados de 09:00 a 12:00.',
+      'Puedes agendar cuando quieras.', '¿Te gustaría el lunes?', 'Si quieres el lunes, dímelo.', 'Hoy tu valoración está bonificada al 100%.',
+    ]) {
+      const t = sale(`${bien} ¿Cómo te llamas?`);
+      expect(fallo(t), bien).toBe(false);
+    }
+  });
+  it('el cierre fijo y el texto fijo de gratuidad no son tocados', () => {
+    const t = hablar(crear({ modeloDice: dice('[DERIVAR_RECEPCION: Paola]') }), ANA, mTexto('quiero agendar'));
+    expect(textos(t)[0]).toMatch(/Excelente decisión, Paola/);
+  });
+});
+
+describe('más cuidados y promesas (huecos de la seguridad final)', () => {
+  for (const c of ['Duerme boca arriba esa noche.', 'Bebe mucha agua después.', 'No vayas al sauna una semana.']) {
+    it(`NEGADA con pregunta de cuidados: «${c}»`, () => {
+      const t = sale(`La Dra. te atiende en persona. ${c} Tu valoración es gratuita. ¿Cómo te llamas?`, '¿qué cuidados tengo que tener después?');
+      expect(fallo(t)).toBe(false);
+      expect(t).not.toMatch(/duerme|bebe mucha|sauna/i);
+      expect(t).toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
+    });
+  }
+  for (const p of ['Rejuvenecerás 10 años.', 'Vas a salir regia.']) {
+    it(`NEGADA: «${p}»`, () => { expect(fallo(sale(`${p} ¿Cómo te llamas?`))).toBe(true); });
+  }
 });
 
 describe('«Te confirmo» no afirma una cita (Evy no agenda)', () => {

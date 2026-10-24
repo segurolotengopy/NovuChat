@@ -44,7 +44,7 @@ if (plan.tipo === 'modelo') {
   else if ((crudo.trim() === '' && !quiere) || (et.texto.trim() === '' && !et.derivar)) { efectivo = 'fallo'; rechazo = { motivo: 'modelo_sin_texto', detalle: (crudo.trim() === '' ? 'el modelo no devolvió texto (caído o vacío)' : 'solo etiquetas, sin texto') + porque }; }
   else if (et.derivar && !(ficha.cierreMs > 0)) efectivo = 'derivar';
   // El cierre completo ya salió en esta ficha (48 h): si pide agendar de nuevo (o el modelo solo emitió la etiqueta), sale la variante corta con el botón; si sigue conversando, contesta el modelo sin cierre ni botón.
-  else if (et.derivar && (evPideAgendar(plan.textoCliente) || et.texto.trim() === '')) efectivo = 'derivar_corto';
+  else if (et.derivar && ((evPideAgendar(plan.textoCliente) && !(et.texto.trim() !== '' && /\bno\b[^.?!]{0,20}\b(agend|reserv|cita)/.test(evNorm(plan.textoCliente)))) || et.texto.trim() === '')) efectivo = 'derivar_corto';
   else {
     // Las imágenes que SÍ pueden salir: lista cerrada, id resuelto, una vez, hasta 3, y el comparativo solo con marcas y si el cliente lo pidió.
     const ids = cfg.artesMedia && typeof cfg.artesMedia === 'object' ? cfg.artesMedia : {};

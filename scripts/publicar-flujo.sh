@@ -467,7 +467,9 @@ fi
 # El flujo NUEVO de Evy solo reemplaza al flujo vivo de Evy (el nuevo o el viejo), NUNCA a otro: ni a Emma (aunque la renombren), ni a otro cliente (Q'Taco, el chat de NovuChat, Bellido), ni con --forzar.
 if [[ $ES_EVY_NUEVO -eq 1 && $CREAR -eq 0 && $APAGAR -eq 0 ]]; then
   CLASE_VIVO_PARA_NUEVO="$(evy_clase "$TMP/vivo.json" "")"
-  if [[ "$CLASE_VIVO_PARA_NUEVO" != "nuevo" && "$CLASE_VIVO_PARA_NUEVO" != "emma" && "$TENANT_VIVO_DOCTORAS" != "rroca-evy" ]]; then
+  # El viejo de Evy se reconoce por el nombre (tenant rroca-evy) Y por la huella de los nodos de las doctoras («Armar avisos»): un vivo de otro cliente con «rroca-evy» en el nombre no pasa.
+  HUELLA_DOCTORAS="$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print('si' if any(isinstance(n,dict) and n.get('name')=='Armar avisos' for n in (d.get('nodes') or [])) else 'no')" "$TMP/vivo.json" 2>/dev/null || echo no)"
+  if [[ "$CLASE_VIVO_PARA_NUEVO" != "nuevo" && "$CLASE_VIVO_PARA_NUEVO" != "emma" && ( "$TENANT_VIVO_DOCTORAS" != "rroca-evy" || "$HUELLA_DOCTORAS" != "si" ) ]]; then
     printf '\033[1;31m✗ NEGADO: el flujo nuevo de Evy no puede reemplazar un flujo vivo que no es de Evy (vivo: %s). Ni con --forzar.\033[0m\n' "${TENANT_VIVO_DOCTORAS:-otro cliente}" >&2
     exit 1
   fi

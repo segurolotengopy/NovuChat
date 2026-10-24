@@ -161,7 +161,7 @@ describe('el flujo nuevo de Evy tiene su guardia, distinta de la de las doctoras
       expect(r.curl, extra.join(' ')).not.toMatch(/-X (PUT|POST)/);
     }
     // Un vivo de OTRO cliente (nombre cualquiera) o Emma renombrada: tampoco, ni con --forzar.
-    for (const [nombre, vivo] of [['otro-cliente', { name: "NovuChat — Q'Taco (qtaco)", active: true, nodes: [{ name: 'Armar avisos' }] }], ['emma-renombrada', { name: 'Dra. E. R.', active: false, nodes: [{ name: 'Armar avisos' }] }], ['vacio', { name: 'x', nodes: [] }]] as const) {
+    for (const [nombre, vivo] of [['otro-cliente', { name: "NovuChat — Q'Taco (qtaco)", active: true, nodes: [{ name: 'Armar avisos' }] }], ['emma-renombrada', { name: 'Dra. E. R.', active: false, nodes: [{ name: 'Armar avisos' }] }], ['vacio', { name: 'x', nodes: [] }], ['otro-con-nombre-de-evy', { name: NOMBRE, active: true, nodes: [{ name: 'Otro nodo' }] }]] as const) {
       const archivo = join(dir, `vivo-${nombre}.json`); writeFileSync(archivo, JSON.stringify(vivo));
       for (const extra of [[], ['--forzar']]) {
         const r = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-evy', ...extra], archivo);
