@@ -15,6 +15,10 @@
     "wabaIdEsperado": "REEMPLAZAR_WABA_ID_RROCA_ANTONIO"
   },
   "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA",
+  "landing": {
+    "dominio": "elpuente.dhermacore.com",
+    "fraseEntrada": "Hola, quiero información del Método PUENTE y sus materiales digitales"
+  },
   "configBase": {
     "waGraphVersion": "v26.0",
     "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_ANTONIO",
