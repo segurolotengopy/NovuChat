@@ -932,8 +932,11 @@ function raExtraBase(texto, norm, ctx) {
   for (const leet of [raLeet(texto), raLeet(texto, 'o')]) {
   if (/\b(soy|me llamo|te habla|te escribe|habla|escribe|aqui esta|aqui|yo soy) (el |la )?(mismo |propio )?(antonio|dauber|autor|autora|creador|creadora)\b/.test(leet) || /\b(soy|fui) (quien|el que|la que|el autor|la autora) (escribio|creo|hizo|redacto)?\s?(el|este|del) ?(libro|metodo)\b/.test(leet) || /\b(yo )?(escribi|cree|redacte) (el|este) libro\b/.test(leet)) return 'suplanta_al_autor';
   }
+  // Una persona SIN nombre conocido también es suplantar: «Aquí te atiende Carla», «Habla Marta», «Soy Luis del equipo». Solo el texto fijo del código nombra a quien atiende.
+  if (/\b(?:[Tt]e atiende|[Ll]e atiende|[Tt]e atender[aá]|[Aa]tiende|[Tt]e habla|[Hh]abla|[Tt]e escribe|[Ss]oy|[Mm]e llamo|[Mm]i nombre es|[Aa]qu[ií] est[aá]|[Aa]qu[ií])\s+(?!(?:El|La|Un|Una|Tu|Su|Mi|Lo|Te|Se|Para|Con|Por|Y|O|Que|Como|Asistente|Virtual)\b)[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+/.test(String(texto)) || /\b(?:soy|habla|te atiende|le atiende|te habla|te escribe|aqui)\b[^.?!]{0,30}\bdel equipo\b/.test(norm)) return 'suplanta_al_autor';
   if (/\b(agend\w*|cita|citas)\b/.test(norm)) return 'agenda';
-  if (/\b(psicolog\w*|terapeuta\w*|terapia)\b/.test(norm) && !/\b(?:no|ni|tampoco|sin)\b[^.?!]{0,40}\b(?:psicolog\w*|terapeuta\w*|terapia)\b/.test(norm)) return 'terapia';
+  // Solo una negación PEGADA a la palabra la excusa («no soy psicólogo», «ni brindo terapia», «no reemplaza la terapia»); se quitan esas menciones y, si queda otra, el texto afirma terapia y se rechaza.
+  if (/\b(psicolog\w*|terapeuta\w*|terapia)\b/.test(norm.replace(/\b(?:no|ni|tampoco|sin)\s(?:(?:es|soy|son|hago|hace|brindo|ofrezco|doy|reemplaza\w*|sustituye\w*|sustituyen|esto|esto es|ser|pretende\w*|busca\w*|funciona como)\s){0,3}(?:(?:una|un|la|el|de)\s)?(?:terapia|terapeuta\w*|psicolog\w*)(?:\s(?:psicologica|de pareja|profesional|presencial))?/g, ' '))) return 'terapia';
   if (/\b(garantiz\w*|reconcili\w*|te aseguro|seguro que)\b/.test(norm)) return 'promesa_de_resultado';
   if (/\b(paquete|pack|bonos?|opciones de compra|botones?)\b|\b(?:elige|eliges|elija)\s(?:entre|uno|una|el|la|tu|cual)\b|\belegir\s(?:entre|un|una|el pack|el paquete|cual)\b/.test(norm)) return 'oferta_fuera_del_codigo';
   if (/\b(testimonio|mariana|daniel)\b/.test(norm)) return 'testimonio';

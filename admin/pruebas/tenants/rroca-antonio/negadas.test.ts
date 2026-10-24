@@ -570,3 +570,21 @@ describe('F1b · la lista blanca acepta los datos declarados del libro y no lo d
     expect(motivo('El pilar Tono y palabras es elegir las que acercan.')).toBe('');
   });
 });
+
+// =============================================================================================================== Seguridad (23/10/2026): «terapia» solo con negación pegada; una persona sin nombre conocido tampoco se suplanta
+describe('F1c · terapia afirmada y presentación con nombre propio', () => {
+  const L = cargarLibrerias('raExtraRedaccion, raNorm') as { raExtraRedaccion: (t: string, n: string, c?: { precios?: number[]; textoCliente?: string }) => string; raNorm: (t: string) => string };
+  const motivo = (x: string, textoCliente = ''): string => L.raExtraRedaccion(x, L.raNorm(x), { precios: [], textoCliente });
+  it('NEGADA · afirmar terapia con un «no» lejano se rechaza', () => {
+    for (const x of ['No te lo digo por vender, esto es terapia de verdad.', 'Sin exagerar, es una terapia completa.', 'No lo dudes: funciona como terapia.', 'No soy psicólogo, pero esto es terapia.']) expect(motivo(x), x).toBe('terapia');
+  });
+  it('POSITIVA · negar ser terapia o psicólogo pasa', () => {
+    for (const x of ['No soy psicólogo ni brindo terapia.', 'El libro no reemplaza la terapia.', 'Esto no es terapia psicológica, es una guía práctica.', 'No soy un terapeuta ni esto es terapia psicológica.']) expect(motivo(x, '¿Esto es terapia?'), x).toBe('');
+  });
+  it('NEGADA · «te atiende Carla», «habla Marta», «soy Luis del equipo» se rechazan, también ante «¿eres un bot?»', () => {
+    for (const x of ['Aquí te atiende Carla del equipo.', 'Habla Marta, encantada.', 'Soy Luis del equipo de soporte.', 'Me llamo Sofía y te ayudo.', 'Te atiende Pedro.']) expect(motivo(x, '¿eres un bot?'), x).toBe('suplanta_al_autor');
+  });
+  it('POSITIVA · «soy un asistente virtual con IA» ante la pregunta pasa', () => {
+    expect(motivo('Soy un asistente virtual con inteligencia artificial. ¿Qué te gustaría mejorar?', '¿eres un bot?')).toBe('');
+  });
+});
