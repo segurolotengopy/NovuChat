@@ -21,7 +21,7 @@
  * que se aplica es siempre la de la segunda pasada, y las 42 aserciones de esta
  * suite verifican justamente esa decisión final.
  */
-import { ARNES_REGLA } from './lib/quien-atiende-arnes.ts';
+import { ARNES_REGLA, NOMBRES_QUE_PASAN } from './lib/quien-atiende-arnes.ts';
 import {
   assertFails,
   assertSucceeds,
@@ -3685,6 +3685,10 @@ describe('Nombre de quien atiende (config/negocio)', () => {
     await assertSucceeds(con('María José (recepción)'));
     await assertSucceeds(con('Clínica Sofía & Equipo'));
     await assertSucceeds(con('Turno 123'));
+  });
+
+  it('«Caja» y «Fortaleza» NO están prohibidas (decisión de Andres, opción A) y los nombres legítimos pasan', async () => {
+    for (const valor of NOMBRES_QUE_PASAN) await assertSucceeds(con(valor));
   });
 
   it('el operador no lo escribe y el admin de B no escribe el de A', async () => {
