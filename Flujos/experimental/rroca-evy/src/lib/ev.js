@@ -500,7 +500,7 @@ function evQuitarOraciones(texto, pred) {
   return evUnirOraciones(evSinHuerfanos(lista, (o) => pred(evNorm(o), o)));
 }
 // Un conector («En cambio, …», «Sin embargo, …») que dependía de la oración que se borró queda huérfano: se le quita el conector a la oración que sigue.
-const EV_CONECTOR = /^(?:en cambio|sin embargo|por eso|por esto|por ello|por lo tanto|ademas|por otro lado|entonces|pero|asi,|asimismo|de hecho|es decir|por el contrario|aun asi|ahora bien)\b[\s,:;]*/i;
+const EV_CONECTOR = /^(?:en cambio|sin embargo|por eso|por esto|por ello|por lo tanto|ademas|por otro lado|entonces|pero|asi\b,?|asimismo|de hecho|es decir|por el contrario|aun asi|ahora bien)\b[\s,:;]*/i;
 function evSinConector(o) {
   const m = EV_CONECTOR.exec(evSinTildes(o));
   if (!m) return o;
@@ -549,14 +549,19 @@ function evConAclaracion(texto, frase) {
 }
 // CUIDADOS POSTERIORES / RECUPERACIÓN: el modelo no inventa qué evitar ni por cuánto tiempo (consejo médico). La oración se borra y el código deja la remisión a la valoración.
 const EV_CUIDADOS = /\b(?:evit\w+[^.!?]{0,50}\b(?:activid\w*|ejercicio\w*|esfuerzo\w*|deporte\w*|gimnasio|sol|alcohol|masaje\w*|calor|sauna|maquillaje|dormir|tomar|comer|fumar)\b|no (?:hagas|realices|tomes|expongas|te expongas|consumas|te maquilles|duermas)\b|reposo (?:absoluto|total|relativo)|expon\w+ al sol|exposicion (?:al )?sol|(?:tomar|consumir|consumo de) alcohol|masajes? (?:en|sobre) |por \d+ (?:horas|dias)|durante (?:los|las) (?:primer\w+|proxim\w+) (?:\d+ )?(?:dias|horas|semanas))/;
+// Si ya se borró una indicación de cuidados, la que dice cuándo retomar la rutina tampoco tiene respaldo («evita el ejercicio por 2 días. Puedes retomar tu rutina normal»). Sola es legítima («puedes retomar tus actividades rápido»).
+const EV_RETOMA = /\b(?:retomar|volver a|reanudar|retomas|retomes) (?:tu |tus |las |la |el )?(?:rutina|actividad\w*|ejercicio|trabajo)/;
 const EV_REMISION_CUIDADOS = 'Los cuidados posteriores te los explica la Dra. en la valoración.';
 // Enlaces y teléfonos: el modelo no los escribe. Se borran del texto (la recepción llega SOLO como botón, por el cierre).
 function evQuitarEnlacesYTelefonos(texto) {
-  return evTexto(texto)
-    .replace(/https?:\/\/\S+|www\.\S+|\bwa\.me\/\S*/gi, ' ')
-    .replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|info|biz|bo|io|app|co|me|ly|site|online|store|shop|lat|es)\b(?:\/\S*)?/gi, ' ')
-    .replace(/\+?\d(?:(?:\s*[.\-]\s*|\s+)?\d){6,}/g, ' ')
-    .replace(/[ \t]{2,}/g, ' ');
+  // La oración que llevaba el enlace o el teléfono se borra ENTERA (quitar solo el dato dejaba «Visita o escribe al .»).
+  const marca = '\u0001';
+  const t = evTexto(texto)
+    .replace(/https?:\/\/\S+|www\.\S+|\bwa\.me\/\S*/gi, marca)
+    .replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|info|biz|bo|io|app|co|me|ly|site|online|store|shop|lat|es)\b(?:\/\S*)?/gi, marca)
+    .replace(/\+?\d(?:(?:\s*[.\-]\s*|\s+)?\d){6,}/g, marca);
+  const sin = t.indexOf(marca) < 0 ? t : evUnirOraciones(evSinHuerfanos(evPartirEnOraciones(t), (o) => o.indexOf(marca) >= 0));
+  return sin.replace(/[ \t]{2,}/g, ' ');
 }
 // El anclaje «250 Bs» (la única cifra de dinero): solo como valor habitual de una valoración que se presenta bonificada o gratuita. Una oración con «250» que no cumple se quita ENTERA.
 // El monto permitido se cambia por una marca neutra para que el filtro común no lo vea como un precio; se repone al final (`evRestituirValor`).
@@ -717,6 +722,7 @@ function evPulirSalida(crudo, ctx) {
   t = evQuitarOraciones(t, (n) => EV_PROMETE_RECEPCION.test(n) || EV_PROMETE_DESPUES.test(n));
   let cuidados = false;
   t = evQuitarOraciones(t, (n) => { if (EV_CUIDADOS.test(n)) { cuidados = true; return true; } return false; });
+  if (cuidados) t = evQuitarOraciones(t, (n) => EV_RETOMA.test(n));
   if (cuidados && t !== '' && !/cuidados posteriores/.test(evNorm(t))) t = evConAclaracion(t, EV_REMISION_CUIDADOS);
   const idt = evRepararIdentidad(t, c.nombreNegocio);
   // Una afirmación directa no se repara: sale el texto fijo de admisión (la respuesta del modelo se descarta entera).
@@ -768,8 +774,11 @@ function evPulirSalida(crudo, ctx) {
       if (o === '' || o === '\n' || cmMotivoDeRechazo(o, opcionesFiltro) !== 'afirma_un_hecho') return o;
       if (/\b(pag\w*|reserv\w*|acredit\w*|comprobante\w*|deposit\w*|transferen\w*|recib\w*|abon\w*|agend\w*|cita|citas|estado|confirmad\w*)\b/.test(evNorm(o))) { dinero = true; return o; }
       // «Te lo confirmo / Te confirmo que» sin objeto de agenda o pago es solo una muletilla: se cambia por «Así es:» y se vuelve a pasar el filtro.
-      const asi = o.replace(/^\W*(?:te )?(?:lo )?confirmo\b[^:.!?]*:\s*/i, 'Así es: ').replace(/\b(?:te )?(?:lo )?confirmo(?: que)?\b/i, 'Así es:').replace(/:\s*:/g, ':');
-      if (asi !== o && cmMotivoDeRechazo(asi, opcionesFiltro) === '') return asi;
+      // Solo se reescribe cuando lo que sigue es CONTENIDO; si la oración termina ahí («¡Sí! Te lo confirmo.»), se borra.
+      const conf = /\b(?:te\s+)?(?:lo\s+)?confirmo(?:\s+que|\s+al\s+\d+\s*%)?\s*:?/i.exec(o);
+      if (conf && !/\p{L}/u.test(o.slice(conf.index + conf[0].length))) return null;
+      const asi = o.replace(/^\W*(?:te )?(?:lo )?confirmo\b[^:.!?]*:\s*/i, 'Así es: ').replace(/\b(?:te\s+)?(?:lo\s+)?confirmo(?:\s+que|\s+al\s+\d+\s*%)?\s*:?/i, 'Así es:').replace(/:\s*:/g, ':');
+      if (asi !== o && /\p{L}/u.test(asi.slice(asi.indexOf('Así es:') + 7)) && cmMotivoDeRechazo(asi, opcionesFiltro) === '') return asi;
       const resto = o.indexOf(':') >= 0 ? o.slice(o.indexOf(':') + 1).trim() : '';
       if (resto !== '' && cmMotivoDeRechazo(resto, opcionesFiltro) === '') return resto.charAt(0).toUpperCase() + resto.slice(1);
       return null;

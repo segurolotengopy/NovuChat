@@ -137,7 +137,44 @@ describe('«afirma_un_hecho» se repara por oración cuando no habla de pagos', 
   }
 });
 
+describe('«Te lo confirmo» suelto o con porcentaje', () => {
+  it('«¡Sí! Te lo confirmo. ¿Cómo te llamas?» y «Claro, te confirmo. La valoración…» no dejan «Así es:.» colgando', () => {
+    for (const texto of ['¡Sí! Te lo confirmo. ¿Cómo te llamas?', 'Claro, te confirmo. La valoración es gratuita. ¿Cómo te llamas?']) {
+      const t = sale(texto);
+      expect(t, texto).not.toMatch(/Así es:\s*[.¿]|Así es:\s*$/);
+      expect(t, texto).not.toMatch(/confirmo/i);
+      expect(t.endsWith('¿Cómo te llamas?'), texto).toBe(true);
+    }
+  });
+  it('«Te lo confirmo al 100%: la valoración … es totalmente gratuita» (F3) sale como «Así es: …»', () => {
+    const t = sale('Te lo confirmo al 100%: la valoración con la Dra. Evy es totalmente gratuita y sin compromiso. ¿Cómo te llamas?');
+    expect(fallo(t)).toBe(false);
+    expect(t).toContain('Así es: la valoración con la Dra. Evy es totalmente gratuita');
+    expect(t).not.toMatch(/100%:|confirmo/);
+  });
+});
+
+describe('enlaces y teléfonos: se borra la oración entera', () => {
+  it('«Visita www.evy.com o escribe al 70000000.» no deja «Visita o escribe al .»', () => {
+    const t = sale('Con gusto te oriento. Visita www.evy.com o escribe al 70000000. Tu valoración es gratuita. ¿Cómo te llamas?');
+    expect(fallo(t)).toBe(false);
+    expect(t).not.toMatch(/Visita|escribe al|www|7000/);
+    expect(t).toContain('Tu valoración es gratuita.');
+  });
+});
+
 describe('cuidados posteriores: el modelo no los inventa', () => {
+  it('«evita el ejercicio por 2 días. Sin embargo, puedes retomar tu rutina normal»: ambas se borran', () => {
+    const t = sale('Buena pregunta. Evita el ejercicio por 2 días. Sin embargo, puedes retomar tu rutina normal. Tu valoración es gratuita. ¿Cómo te llamas?');
+    expect(fallo(t)).toBe(false);
+    expect(t).not.toMatch(/ejercicio|rutina/i);
+    expect(t).toContain('Los cuidados posteriores te los explica la Dra. en la valoración.');
+  });
+  it('«Así, …» tras una oración borrada pierde su conector', () => {
+    const t = sale('Nunca podemos garantizar un resultado idéntico. Así, la Dra. evalúa tu caso en persona. ¿Cómo te llamas?');
+    expect(t).toContain('La Dra. evalúa tu caso en persona.');
+    expect(t).not.toMatch(/Así,/);
+  });
   it('NEGADA: «evitar ciertas actividades físicas intensas los primeros días» se borra y el código deja la remisión a la Dra.', () => {
     const t = sale('Es una excelente pregunta. La Dra. Evy te dará recomendaciones sencillas (como evitar ciertas actividades físicas intensas los primeros días) en tu consulta. Tu valoración es 100% gratuita. ¿Cómo te llamas?', '¿cuánto tiempo de recuperación? trabajo todos los días');
     expect(fallo(t)).toBe(false);

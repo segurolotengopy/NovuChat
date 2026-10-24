@@ -20,7 +20,7 @@
 //   --grupos G,E       solo los casos de esos grupos (la letra del id, p. ej. G, o el nombre del grupo, p. ej. Barreras); se combina con --duros por intersección.
 //   --confirmo-gasto   OBLIGATORIA fuera de `--seco`: la corrida real es GASTO y solo se hace con el «sí» de Andres, con la clave de PRUEBAS (nunca la de producción).
 //   --tope-usd <n>     corta la corrida cuando el costo estimado llega a n (0,05 por omisión).
-//   --pausa-ms <n>     pausa mínima entre llamadas al modelo (1200 por omisión), para no medir el límite de tasa; ante 429/5xx el motor reintenta 4 veces con 5 s de espera.
+//   --pausa-ms <n>     pausa mínima entre llamadas al modelo (4500 por omisión: la clave de pruebas tiene pocas peticiones por minuto), para no medir el límite de tasa; ante 429/5xx el motor reintenta hasta 4 veces con 5 s de espera, y no reintenta un tiempo de espera agotado.
 //   --archivo-casos <ruta>   otro archivo de casos (por omisión el de `rroca-evy-bateria`).
 //   --motivo           por cada turno cuya respuesta del modelo fue RECHAZADA por una barrera de código: la barrera, la expresión que coincidió y un trozo de la respuesta del modelo (no del cliente).
 //   --respuestas <archivo>   REPLAY sin costo: respuestas crudas guardadas, `{ "G3": "texto" }` (turno 1) o `{ "G3": { "1": "texto" } }` o `{ "G3": ["texto", …] }` (por turno); alimentan al flujo en lugar de Gemini. No usa red ni clave;
@@ -136,11 +136,22 @@ function crearDobles({ turnoActual, seco, credencial, opciones, deps, nodoModelo
       if (seco) return { ...gemini('Gracias por escribirnos. Cuéntame, ¿cómo te llamas y qué te gustaría mejorar en tu rostro?'), usageMetadata: { promptTokenCount: 0, candidatesTokenCount: 0 } };
       if (costo.usd >= opciones.topeUsd) { costo.cortado = true; return { error: { message: 'tope de gasto alcanzado', code: 0 } }; }
       // La batería no debe medir el límite de tasa de Google: pausa entre llamadas y, ante 429/5xx, más intentos con espera larga (solo en el motor; el flujo usa el reintento nativo del nodo).
-      const pausa = Number.isFinite(opciones.pausaMs) ? opciones.pausaMs : 1200;
+      const pausa = Number.isFinite(opciones.pausaMs) ? opciones.pausaMs : 4500;
       if (pausa > 0 && ultimaLlamada > 0) { const falta = pausa - (Date.now() - ultimaLlamada); if (falta > 0) await new Promise((x) => setTimeout(x, falta)); }
-      const nodoMotor = { ...nodoModelo, maxTries: Math.max(Number(nodoModelo?.maxTries) || 2, 4), waitBetweenTries: Math.max(Number(nodoModelo?.waitBetweenTries) || 1500, 5000) };
+      // Reintento propio del motor (una sola llamada por intento): SOLO ante 429 o 5xx; un tiempo de espera agotado NO se reintenta (Google pudo haberlo cobrado).
+      const nodoUnico = { ...nodoModelo, maxTries: 1 };
       let r;
-      try { r = await llamarGemini({ cuerpo: ll.cuerpo, urlDelNodo: ll.url, credencial, opciones, deps, nodo: nodoMotor }); } finally { ultimaLlamada = Date.now(); }
+      try {
+        for (let intento = 1; intento <= 4; intento++) {
+          r = await llamarGemini({ cuerpo: ll.cuerpo, urlDelNodo: ll.url, credencial, opciones, deps, nodo: nodoUnico });
+          if (!r.fallo) break;
+          const e = objeto(objeto(r.json).error);
+          const http = Number(e.httpCode) || 0;
+          const reintentable = (http === 429 || http >= 500) && !/timeout|aborted/i.test(String(e.message ?? ''));
+          if (!reintentable || intento === 4) break;
+          await new Promise((x) => setTimeout(x, 5000));
+        }
+      } finally { ultimaLlamada = Date.now(); }
       t.ms += r.ms;
       const u = objeto(objeto(r.json).usageMetadata);
       t.tokensEntrada = Number(u.promptTokenCount) || 0;
@@ -363,7 +374,7 @@ export async function main(argv, deps = {}) {
   try {
     const propias = new Set(['--confirmo-gasto', '--conversaciones', '--crudo', '--duros', '--motivo']);
     const conValor = new Set(['--tope-usd', '--archivo-casos', '--grupos', '--respuestas', '--pausa-ms']);
-    let pausaMs = 1200;
+    let pausaMs = 4500;
     let archivoRespuestas = null;
     let grupos = null;
     const resto = [];

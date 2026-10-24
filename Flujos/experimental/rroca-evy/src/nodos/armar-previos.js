@@ -36,7 +36,7 @@ if (plan.tipo === 'modelo') {
   et = crudo.length > 20000 ? { texto: crudo.slice(0, 50), artes: [], derivar: false, nombre: '' } : evLeerEtiquetas(crudo);
   // Por qué vino vacía (para el diagnóstico): el motivo de corte y el bloqueo que Gemini informa, sin el texto.
   const cand = respuesta && Array.isArray(respuesta.candidates) ? respuesta.candidates[0] : null;
-  const porque = (cand && cand.finishReason ? ' finishReason=' + String(cand.finishReason).slice(0, 30) : '') + (respuesta && respuesta.promptFeedback && respuesta.promptFeedback.blockReason ? ' blockReason=' + String(respuesta.promptFeedback.blockReason).slice(0, 30) : '') + (respuesta && respuesta.error ? ' error' : '');
+  const porque = (cand && cand.finishReason ? ' finishReason=' + String(cand.finishReason).slice(0, 30) : '') + (respuesta && respuesta.promptFeedback && respuesta.promptFeedback.blockReason ? ' blockReason=' + String(respuesta.promptFeedback.blockReason).slice(0, 30) : '') + (respuesta && respuesta.error ? ' error ' + (respuesta.error && typeof respuesta.error === 'object' ? String(respuesta.error.httpCode || respuesta.error.code || respuesta.error.status || '') + ' ' + String(respuesta.error.message || '').replace(/AIza\S+/g, '[clave]').slice(0, 80) : String(respuesta.error).slice(0, 80)) : '');
   if (crudo.length > 20000) { efectivo = 'fallo'; rechazo = { motivo: 'largo', detalle: 'la salida del modelo supera los 20 000 caracteres' }; }
   else if (crudo.trim() === '' || (et.texto.trim() === '' && !et.derivar)) { efectivo = 'fallo'; rechazo = { motivo: 'modelo_sin_texto', detalle: (crudo.trim() === '' ? 'el modelo no devolvió texto (caído o vacío)' : 'solo etiquetas, sin texto') + porque }; }
   else if (et.derivar) efectivo = 'derivar';
