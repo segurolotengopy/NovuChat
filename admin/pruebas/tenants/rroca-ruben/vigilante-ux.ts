@@ -39,7 +39,7 @@ export const LIB = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => re
 
 export interface UxMsg { tipo: string; cuerpo: string; payload: J }
 /** El estado de la CONVERSACIÓN por teléfono (invariantes 11 a 15): lo cuenta el vigilante por su cuenta, sin importar nada del flujo. */
-export interface EstadoCharla { charla: number; qrVisto: boolean; bloques: number; ultimoFuePuente: boolean; descripcionVista: boolean }
+export interface EstadoCharla { charla: number; qrVisto: boolean; bloques: number; ultimoFuePuente: boolean; descripcionVista: boolean; saludado?: boolean }
 export const estadoCharlaNuevo = (): EstadoCharla => ({ charla: 0, qrVisto: false, bloques: 0, ultimoFuePuente: false, descripcionVista: false });
 interface UxEstado { pulsados: Map<string, Set<string>>; presentaciones: Map<string, number>; turnos: number; ultimoTexto: Map<string, string>; charla: Map<string, EstadoCharla> }
 export const UX_ESTADO = new WeakMap<Mundo, UxEstado>();
@@ -190,11 +190,19 @@ const textoEntrante = (entrante: J): string => (entrante['type'] === 'text' ? St
 const toqueEntrante = (entrante: J): string => { const inter = entrante['interactive'] as J | undefined; return entrante['type'] === 'interactive' && inter ? String((inter['button_reply'] ?? inter['list_reply'])?.id ?? '') : ''; };
 /** Un «sí» suelto (lista PROPIA del vigilante, independiente de la del flujo). */
 export const esUnSi = (texto: string): boolean => /^(si|claro|dale|ok|okey|okay|bueno|por favor|me interesa|adelante|si quiero|si por favor|claro que si|muestrame)$/.test(LIB.rrNorm(texto));
+/**
+ * EXCEPCIÓN DECLARADA a los invariantes 11 y 16 (23/10/2026, Andres): «pregunta directa de precio, ya saludado». Desde el SEGUNDO mensaje del cliente, «¿cuánto cuesta el libro?» o «precio» se responde por código con el precio del
+ * catálogo (plan `precio`) o con el bloque de las opciones (plan `opciones_fijo`) sin esperar los dos mensajes de conversación. Detector PROPIO y angosto: solo el texto del cliente, solo esos dos planes y solo si ya hubo un mensaje nuestro.
+ * Todo lo demás (el modelo, el puente, el audio, un botón, «dame tu catálogo»…) sigue bajo la compuerta.
+ */
+export const esPreguntaDirectaDePrecio = (est: EstadoCharla, entrante: J, plan: string): boolean =>
+  (est.saludado === true || est.charla >= 1) && ['precio', 'opciones_fijo'].includes(plan)
+  && /\b(cuanto (me |te |nos )?(cuesta|cuestan|vale|valen|sale|salen)|precios?|costos?|valor)\b/.test(LIB.rrNorm(textoEntrante(entrante)));
 const titulosDe = (m: { payload: J }): string[] => ((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => String(b['reply']?.title));
 /** Invariante 11. `panelConCobro` = el panel de «Traer configuración» trae un cobro pendiente, en revisión o vencido. Función pura, probada también con casos negativos. */
 export function violacionesDeCompuerta(est: EstadoCharla, entrante: J, mensajes: UxMsg[], plan: string, panelConCobro: boolean): string[] {
   const v: string[] = [];
-  if (est.charla >= 2 || est.qrVisto || panelConCobro || esPrellenadoDeProducto(textoEntrante(entrante)) || PLANES_EXENTOS_DE_COMPUERTA.includes(plan)) return v;
+  if (est.charla >= 2 || est.qrVisto || panelConCobro || esPrellenadoDeProducto(textoEntrante(entrante)) || PLANES_EXENTOS_DE_COMPUERTA.includes(plan) || esPreguntaDirectaDePrecio(est, entrante, plan)) return v;
   for (const m of mensajes) {
     if (CON_PRECIO_BS.test(m.cuerpo) || titulosDe(m).some((t) => CON_PRECIO_BS.test(t))) v.push(`un precio antes de tiempo (con ${est.charla} mensaje(s) de conversación): «${m.cuerpo.slice(0, 40)}…»`);
     const prod = idsDeBotones(m).filter((i) => BOTONES_DE_PRODUCTO.includes(i));
@@ -205,7 +213,7 @@ export function violacionesDeCompuerta(est: EstadoCharla, entrante: J, mensajes:
 /** Invariante 16. Detector PROPIO (por oración): un objeto de precio junto a un verbo de mostrar o a un marcador de lugar o de tiempo, o «te las paso». */
 export function violacionesDePromesaConCompuertaCerrada(est: EstadoCharla, entrante: J, mensajes: UxMsg[], plan: string, panelConCobro: boolean): string[] {
   const v: string[] = [];
-  if (est.charla >= 2 || est.qrVisto || panelConCobro || esPrellenadoDeProducto(textoEntrante(entrante)) || PLANES_EXENTOS_DE_COMPUERTA.includes(plan)) return v;
+  if (est.charla >= 2 || est.qrVisto || panelConCobro || esPrellenadoDeProducto(textoEntrante(entrante)) || PLANES_EXENTOS_DE_COMPUERTA.includes(plan) || esPreguntaDirectaDePrecio(est, entrante, plan)) return v;
   for (const m of mensajes) {
     for (const o of m.cuerpo.replace(CIERRE_DEL_PUENTE, ' ').split(/(?<=[.!?…])\s+|\n+/)) {
       // Contextos que no prometen nada (el negocio del cliente y «sin costo»), medidos en la batería real del 23/10: se retiran antes de mirar el objeto.
@@ -327,6 +335,7 @@ export function vigilarUx(mundo: Mundo): void {
     v.push(...violacionesDeDescripcionRepetida(est.descripcionVista, salida, plan));
     v.push(...violacionesDeUnaPregunta(salida, plan));
     for (const m of salida) {
+      est.saludado = true;
       if (m.tipo === 'image') est.qrVisto = true;
       if (PLANES_DE_CHARLA.includes(plan) && (plan !== 'saludo' || esPresentacion(m.cuerpo))) est.charla += 1;
       if (BLOQUE_DE_OPCIONES.test(m.cuerpo)) est.bloques += 1;
