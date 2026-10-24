@@ -22,6 +22,7 @@ import { CLAVE_GEMINI } from '../../central/servicios/gemini.js';
 import type { ConsultarModelo } from '../../central/asistente/comportamiento.js';
 import { consultarGemini, otrosComercios } from '../../central/asistente/verificarComportamiento.js';
 import { limiteDeCampanas } from '../../central/cuenta/planes.js';
+import { nombreParaElModelo } from '../productos/nombreSeguro.js';
 import {
   hashLista, leerCampanas, productoIdValido, revisarCampanas,
   type ContextoDelNegocio, type ResultadoCampanas, type RevisionCampana,
@@ -41,7 +42,8 @@ export async function contextoDelNegocio(db: Firestore, tenantId: string): Promi
   return {
     nombreNegocio: texto(negocio.get('nombreNegocio')),
     descripcion: texto(negocio.get('descripcion')),
-    servicios: catalogo.docs.map((d) => texto(d.get('nombre'))).filter((n) => n !== ''),
+    // Un nombre que es una frase de instrucción NO llega al modelo (Productos, `nombreSeguro.ts`).
+    servicios: catalogo.docs.map((d) => nombreParaElModelo(d.get('nombre')) ?? '').filter((n) => n !== ''),
     informacion: texto(negocio.get('instruccionesVigentes')),
   };
 }

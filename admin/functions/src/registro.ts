@@ -357,7 +357,9 @@ export const REGISTRO = [
     modulo: 'campanas',
     nombre: 'Campañas',
     version: 1,
-    dependeDe: [],
+    // Productos: el contexto de la capa 2 lista los nombres del catálogo, y los que son una orden no pasan
+    // (`productos/nombreSeguro.ts`). Las campañas ya referencian el catálogo por `productoId`.
+    dependeDe: ['productos'],
     // `revision` y `vigentes` los escribe solo `verificarCampanas`.
     configuracion: [{ documento: 'config/campanas', campos: ['lista'], camposDelServidor: ['revision', 'vigentes'] }],
     camposEnNegocio: [],

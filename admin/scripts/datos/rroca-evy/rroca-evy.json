@@ -1,0 +1,49 @@
+{
+  "_fuente": "Datos del flujo NUEVO de la Dra. Evy Karina (tenant rroca-evy, cliente08) para Flujos/experimental/rroca-evy/. Zona Tenants: solo datos y marcadores REEMPLAZAR_* (identificadores, rutas, número de recepción, ids de medios), nunca código ni un token. La dirección, el horario, el número de recepción y el nombre del negocio se LEEN de la Consola en cada turno (regla de Andres, 22/10/2026); lo de aquí es solo el respaldo si la Consola no responde. Las claves que empiezan con `_` son notas.",
+  "tenant": "rroca-evy",
+  "nombreFlujo": "NovuChat — Dra. Evy Karina (rroca-evy)",
+  "nombreFlujoPrueba": "NovuChat — Dra. Evy Karina (rroca-evy, prueba)",
+  "credenciales": {
+    "ingesta": "NovuChat ingesta (Evy)",
+    "graph": "Graph WhatsApp Dra. Evy (Bearer)",
+    "graphPrueba": "Graph WhatsApp — pruebas (no producción)",
+    "entradaPrueba": "Entrada de prueba Dra. Evy",
+    "gemini": "Google Gemini(PaLM) Api account",
+    "geminiPrueba": "Gemini — pruebas (no producción)"
+  },
+  "receptor": {
+    "ruta": "REEMPLAZAR_RUTA_RECEPTOR_RROCA_EVY",
+    "urlVerificador": "REEMPLAZAR_URL_VERIFICADOR_RECEPTOR",
+    "wabaIdEsperado": "REEMPLAZAR_WABA_ID_RROCA_EVY"
+  },
+  "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA_RROCA_EVY",
+  "configBase": {
+    "tenantId": "rroca-evy",
+    "waGraphVersion": "v26.0",
+    "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_EVY",
+    "numeroRecepcion": "REEMPLAZAR_NUMERO_RECEPCION_RROCA_EVY",
+    "nombreNegocio": "Dra. Evy Karina Rojas",
+    "clinica": "Clínica DentalCor",
+    "direccionRespaldo": "Avenida Piraí, segundo anillo, Calle Sapocó # 53 (Santa Cruz)",
+    "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
+    "prefijosPermitidos": "591",
+    "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA",
+    "etapaPrueba": "REEMPLAZAR_ETAPA_PRUEBA",
+    "usarMarcas": "si",
+    "modelo": "gemini-3.5-flash-lite",
+    "temperatura": 0.4,
+    "avisoSolicitudPlantilla": "aviso_solicitud_valoracion",
+    "avisoSolicitudEstado": "APPROVED",
+    "avisoPlantillaIdioma": "es",
+    "mediosHabilitados": "audio,imagen,documento",
+    "arteComparativoMediaId": "REEMPLAZAR_MEDIA_ID_ARTE_COMPARATIVO",
+    "arteAntesDespuesMediaId": "REEMPLAZAR_MEDIA_ID_ARTE_ANTES_DESPUES",
+    "arteAutoridadMediaId": "REEMPLAZAR_MEDIA_ID_ARTE_AUTORIDAD"
+  },
+  "_artes": {
+    "_nota": "Las tres imágenes de apoyo ya están subidas a Meta; sus ids de medio están en un archivo local (nunca en el repositorio) y los resuelve la tabla local al preparar el flujo. Los medios de Meta VENCEN a los 30 días de la subida (alrededor del 23/11/2026): hay que resubirlas y actualizar la tabla local.",
+    "comparativo": "WhatsApp Image 2026-10-23 at 19.51.25.jpeg",
+    "antes_despues": "WhatsApp Image 2026-10-23 at 19.51.26.jpeg",
+    "autoridad": "WhatsApp Image 2026-10-23 at 19.51.25 (1).jpeg"
+  }
+}
