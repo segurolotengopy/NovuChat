@@ -122,7 +122,10 @@ if (raPideBaja(textoCliente)) return salir({ tipo: 'baja', cat: cat });
 
 // 1a'. IDENTIDAD POR CÓDIGO (prohibición 4): «¿eres un bot?», «¿quién eres?», «¿hablo con Antonio?»… reciben una frase fija que reconoce ser un asistente virtual con IA; el modelo no interviene. Va antes de la configuración, la compuerta de
 //      las opciones, el precio y el modelo, y también con un QR abierto (esa respuesta no abre otro QR, no deriva y no avisa a Antonio). Solo texto escrito o transcrito: un toque de botón o una imagen no son esta pregunta.
-if (!esVisual && t.tipo !== 'interactive' && raPreguntaPorIA(norm)) return salir({ tipo: 'identidad', cat: cat });
+//      SOLO si el mensaje no trae OTRA intención reconocida (cancelar, pedir un producto, hablar del pago o del comprobante, pedir una persona): «cancela mi pedido, eres un robot» o «quiero el pack, ¿eres un bot?» siguen su camino
+//      —esa intención gana— y el modelo no recibe la pregunta como instrucción. La pregunta sola, con o sin QR abierto, la contesta el código.
+if (!esVisual && t.tipo !== 'interactive' && (raPreguntaPorIA(norm) || raPreguntaPorIAPlegada(textoCliente))
+  && !(raCancelaPedido(norm) || raPideProducto(norm) || raHablaDePagar(norm) || raHablaDelCobro(norm) || raPrellenado(norm) !== '' || raDerivacion(norm, { comprobante: ficha.comprobanteMs > 0 || cobro.enRevision === true, qrAbierto: hayQrAbierto }))) return salir({ tipo: 'identidad', cat: cat });
 
 // 1b. Lo que no necesita la configuración del negocio: una nota de voz que no se pudo usar (o que es corta o ininteligible: se pide repetirla, nunca la contesta el modelo) y lo que este canal no lee.
 //     (La nota de voz corta con una intención clara —«hola», «quiero el pack»— no llega aquí: la atiende el código más abajo.)

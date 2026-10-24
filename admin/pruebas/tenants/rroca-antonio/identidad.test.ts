@@ -12,14 +12,14 @@ import { ANA, crear, hablar, mImagen, mTexto, panelConQr, panelOk } from './mund
 import { cargarLibrerias } from './librerias';
 import { vigilarUx } from './vigilante-ux';
 
-const LIB = cargarLibrerias('raPreguntaPorIA, raNorm, raTextoIdentidad') as J;
-const pregunta = (t: string): boolean => (LIB['raPreguntaPorIA'] as (n: string) => boolean)((LIB['raNorm'] as (t: string) => string)(t));
+const LIB = cargarLibrerias('raPreguntaPorIA, raPreguntaPorIAPlegada, raNorm, raTextoIdentidad') as J;
+const pregunta = (t: string): boolean => (LIB['raPreguntaPorIA'] as (n: string) => boolean)((LIB['raNorm'] as (t: string) => string)(t)) || (LIB['raPreguntaPorIAPlegada'] as (t: string) => boolean)(t);
 const NEGOCIO = { datosDelNegocio: { nombreNegocio: 'Método Puente' } };
 const nuevo = (qr = false): Mundo => { const w = crear({ panel: qr ? panelConQr(49, NEGOCIO) : panelOk(NEGOCIO) }); vigilarUx(w); return w; };
 const PREGUNTAS = [
   '¿Eres un bot?', 'eres un bot', 'ERES UN ROBOT?', '¿Eres una persona?', 'sos un humano?', '¿Eres humano?', '¿Eres una IA?', 'eres inteligencia artificial', '¿Eres chatgpt?', '¿Eres un chatbot?',
   '¿Quién eres?', 'quien eres', '¿Con quién hablo?', 'con quien estoy hablando', '¿Hablo con una persona?', '¿Hablo con Antonio?', '¿Eres Antonio?', 'eres antonio', '¿Eres tú Antonio?', 'bot?', '¿Me responde una persona?',
-  '¿Eres una persona real?', 'esto es automático?', '¿Hay alguien ahí?', 'are you a bot?', 'você é um robô?',
+  '¿Eres una persona real?', 'esto es automático?', '¿Hay alguien ahí?', 'are you a bot?', 'você é um robô?', 'eres un rob0t?', 'eres un b0t', 'eres un bøt?', 'eres un r0b0t', 'rob0t', 'b0t?',
 ];
 const NO_SON = ['yo uso IA en mi trabajo', 'estoy estudiando inteligencia artificial', 'el libro es sobre ia', 'quiero el libro', 'mi pareja es una persona muy callada', 'hola', 'cuánto cuesta el pack', 'usamos chatgpt para escribirnos'];
 const unico = (t: ResultadoTurno): ResultadoTurno['mensajes'][number] => { expect(t.mensajes).toHaveLength(1); return t.mensajes[0]!; };
@@ -69,6 +69,31 @@ describe('la identidad por código, de punta a punta', () => {
       verificar(t, q);
       expect(t.mensajes.map((m) => m.cuerpo).join(' '), q).not.toMatch(/QR|pagar|comprobante/i);
     }
+  });
+  it('NEGANDO: un mensaje MEZCLADO sigue su camino y la intención reconocida gana (cancelar, comprar, pagar): el código no lo toma por la pregunta de identidad', () => {
+    // Cancelar con un QR abierto: se cierra el pedido (pasa con Antonio), no se responde la identidad.
+    const c = nuevo(true);
+    hablar(c, ANA, mTexto('hola'));
+    const cancela = hablar(c, ANA, mTexto('cancela mi pedido eres un robot'));
+    expect(cancela.mensajes.map((m) => m.cuerpo).join(' ')).not.toMatch(/una inteligencia artificial, no una persona/);
+    expect(['cancelar_cobro', 'cobro_cerrado', 'derivar', 'cancelacion']).toContain(String(cancela.porNodo['Armar mensajes']?.[0]?.['plan'] ?? ''));
+    // Pedir un producto: abre su QR.
+    const p = nuevo();
+    hablar(p, ANA, mTexto('hola'));
+    const compra = hablar(p, ANA, mTexto('quiero el pack, eres un bot?'));
+    expect(compra.mensajes.map((m) => m.cuerpo).join(' ')).not.toMatch(/una inteligencia artificial, no una persona/);
+    expect(compra.mensajes[0]!.tipo === 'image' || /pack|opciones|QR/i.test(compra.mensajes[0]!.cuerpo)).toBe(true);
+    // Hablar del pago: sigue el camino del pago.
+    const g = nuevo(true);
+    hablar(g, ANA, mTexto('hola'));
+    const pago = hablar(g, ANA, mTexto('ya pagué eres humano?'));
+    expect(pago.mensajes.map((m) => m.cuerpo).join(' ')).not.toMatch(/una inteligencia artificial, no una persona/);
+    // La pregunta sola, con o sin QR abierto, SÍ la contesta el código.
+    for (const qr of [false, true]) { const w = nuevo(qr); hablar(w, ANA, mTexto('hola')); verificar(hablar(w, ANA, mTexto('eres un bot?')), 'sola'); }
+  });
+  it('NEGANDO: «rob0t», «b0t», «bøt», «r0b0t» (cifras y diacríticos por letras) se detectan; un número suelto no se pliega', () => {
+    for (const q of ['rob0t', 'b0t', 'bøt', 'r0b0t', '¿Eres un rób0t?', 'eres un bøt']) expect(pregunta(q), q).toBe(true);
+    for (const q of ['quiero 100 preguntas', 'son 30 días', 'el capítulo 4']) expect(pregunta(q), q).toBe(false);
   });
   it('NEGANDO: «yo uso IA» sigue su camino (el modelo conversa) y una imagen no es la pregunta', () => {
     const w = nuevo();

@@ -494,6 +494,13 @@ function raPreguntaPorIA(n) {
   const pegado = junto.length <= 16 && n !== junto && /\b\w \w/.test(n) && new RegExp('^(eres|sos|es|esusted|usteres)?(un|una)?(' + BOT + '|maquina|persona|humano|humana)$').test(junto);
   return mas || quien || eres || es || esReal || hablo || responde || hay || real || ingles || portugues || suelta || pegado;
 }
+// La pregunta por la identidad con los disfraces comunes («rob0t», «b0t», «bøt», «r0b0t»): el mismo mapeo de cifras y diacríticos que `raPideBaja`, pero SOLO para las cifras pegadas a una letra (un «100» suelto sigue siendo número).
+function raPreguntaPorIAPlegada(texto) {
+  const t = String(texto === undefined || texto === null ? '' : texto).normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/ø/g, 'o').replace(/ð/g, 'd').replace(/ß/g, 'ss');
+  const LEET = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a' };
+  const plegado = t.replace(/[013457@]+/g, (run, i) => (/\p{L}/u.test(t[i - 1] || '') || /\p{L}/u.test(t[i + run.length] || '') ? Array.from(run).map((c) => LEET[c]).join('') : run));
+  return raPreguntaPorIA(raNorm(plegado));
+}
 // La respuesta FIJA a «¿eres un bot / una persona / Antonio?» (prohibición 4: nunca se niega ser una IA; lo decide el código, no el modelo). El nombre del negocio es el de la Consola (`raDelNegocio`); NO es la presentación repetida:
 // ni «¡Hola!» ni el saludo largo. La pregunta final continúa la charla y no lleva precios. Datos del tenant (los nombres), no del núcleo.
 const RA_IDENTIDAD_ROL = 'una inteligencia artificial, no una persona (Antonio es el autor del libro). Puedo ayudarte con el libro y sus bonos.';
