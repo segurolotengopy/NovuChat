@@ -49,3 +49,9 @@ No cobra, no tiene catálogo, pedidos ni QR; no agenda (lo hace la recepción); 
 - **Cierre:** el texto del modelo se descarta y sale el fijo; el nombre sale de la etiqueta (`[DERIVAR_RECEPCION: Ana]`) o del perfil de WhatsApp saneado.
 - **`cmPulirRedaccion` no se usa** (borraría la presentación del saludo, que el guion manda hacer); sí `cmMotivoDeRechazo`.
 - El «250 Bs» y el antes y después van con su aclaración por código; «inmediato» se quita por código además del prompt.
+
+## Límites conocidos (revisión de código, 24/10/2026)
+- **Ráfagas.** La ficha, la memoria y los contadores viven en `staticData`; dos ejecuciones SIMULTÁNEAS del mismo teléfono leen el mismo estado y gana la última escritura (puede perderse una entrada de la memoria o repetirse un aviso). Es el mismo límite de Rubén y de las doctoras; el servidor cuenta las conversaciones y los avisos tienen su tope por hora.
+- **Errores de entrega.** Si Meta rechaza el envío y su respaldo, «Resumen del turno» lanza un error y la ejecución queda marcada como fallida en la lista de ejecuciones de n8n, pero `saveDataErrorExecution` es `none` (datos de salud) y NO hay Error Workflow: nadie recibe un aviso. Dar un Error Workflow que avise sin datos de la persona queda como mejora.
+- **Uso extendido.** En el estado «operador» el flujo ignora el texto de la Consola («una persona del equipo continuará…», porque no avisa a nadie) y responde un texto propio con el botón de la recepción; no avisa a recepción.
+- **Etapa de prueba.** «Config del negocio» calcula `fueraDePrueba` una sola vez; la leen «Puerta del turno» y «¿Reportar? (entrante)» (que además excluye a los números de otro país).

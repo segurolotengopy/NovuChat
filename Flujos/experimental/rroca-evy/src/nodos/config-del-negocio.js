@@ -100,6 +100,9 @@ const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDe
 // con la etapa encendida el número de recepción es el de `Config base` y se IGNORA el de la Consola. Sin `si` (vacío, marcador o cualquier otro valor) todo queda como siempre.
 const etapaPrueba = valor(base.etapaPrueba).toLowerCase() === 'si';
 if (etapaPrueba) cfg.numeroRecepcion = deBase.numeroRecepcion;
+// UNA SOLA FUENTE de «¿este número está fuera de la etapa de prueba?»: la leen «¿Reportar? (entrante)» y «Puerta del turno».
+const deQuien = cnDigitos(((Array.isArray(carga.messages) ? carga.messages[0] : null) || {}).from);
+const fueraDePrueba = etapaPrueba && (!deQuien || permitidos.indexOf(deQuien) < 0);
 
 // LAS IMÁGENES DE APOYO: el id del medio ya subido a Meta (dígitos). Un marcador `REEMPLAZAR_*` o cualquier otra cosa vale '' y esa imagen no se envía.
 const idArte = (v) => (/^\d{6,25}$/.test(valor(v)) ? valor(v) : '');
@@ -110,6 +113,7 @@ return [{ json: {
   ...cfg,
   etapaPrueba,
   telefonosEtapaPrueba: etapaPrueba ? permitidos : [],
+  fueraDePrueba,
   usarMarcas,
   artesMedia: { comparativo: idArte(base.arteComparativoMediaId), antes_despues: idArte(base.arteAntesDespuesMediaId), autoridad: idArte(base.arteAutoridadMediaId) },
   // El modelo es un dato de `Config base` (solo un id con forma de modelo de Gemini).

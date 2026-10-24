@@ -24,7 +24,7 @@ try {
   }
 } catch (e) { /* la memoria no es crítica: nunca tumba el turno */ }
 // ENTREGA («se entrega lo que se promete»): este nodo corre DESPUÉS de los envíos. Un mensaje a la persona cuenta como entregado SOLO si Meta devolvió un `messages[0].id` no vacío, por el envío principal o por
-// su respaldo en texto. Si hubo mensajes que no salieron ni por uno ni por el otro, la ejecución termina en ERROR (visible en n8n) en vez de en `success`. El error no lleva texto ni número de la persona.
+// su respaldo en texto. Si hubo mensajes que no salieron ni por uno ni por el otro, la ejecución termina en ERROR en vez de en `success`: queda marcada en la lista de ejecuciones de n8n (sin datos: `saveDataErrorExecution` es `none`) y NO hay un Error Workflow que avise a nadie; límite declarado en DISENO.md. El error no lleva texto ni número de la persona.
 if (cnNodo('Enviar a WhatsApp')) {
   const esperados = items.filter((i) => i && i.sinMensajes !== true).length;
   const entregados = cnTodos('Enviar a WhatsApp').filter(evId).length + cnTodos('Enviar respaldo').filter(evId).length;

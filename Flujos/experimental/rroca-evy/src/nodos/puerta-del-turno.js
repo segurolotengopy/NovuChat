@@ -10,11 +10,8 @@
 const FIJO = 'Gracias por tu paciencia. Para atenderte mejor, una persona del equipo va a continuar esta conversación.';
 const cfg = cnCfg();
 const t = cnPrimero('Normalizar entrada') || {};
-if (cfg.etapaPrueba === true) {
-  const permitidos = Array.isArray(cfg.telefonosEtapaPrueba) ? cfg.telefonosEtapaPrueba : [];
-  const quien = cnDigitos(t.from);
-  if (!quien || permitidos.indexOf(quien) < 0) return [{ json: { ruta: 'fuera_de_prueba', texto: '', responder: false, transferir: false, motivo: '', from: t.from } }];
-}
+// `fueraDePrueba` lo calcula «Config del negocio» (una sola fuente; también lo lee «¿Reportar? (entrante)»).
+if (cfg.fueraDePrueba === true) return [{ json: { ruta: 'fuera_de_prueba', texto: '', responder: false, transferir: false, motivo: '', from: t.from } }];
 const previo = cnPrimero('Reportar mensaje (entrante)');
 const cortado = !!(previo && previo.servicio && previo.servicio.estado === 'cortado');
 if (cfg.estadoComercio !== 'operativo' || cortado) {

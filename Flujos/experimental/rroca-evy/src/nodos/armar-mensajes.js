@@ -69,9 +69,12 @@ if (puerta.ruta === 'fuera_de_prueba') {
   ms = [];
 } else if (efectivo === 'nada') {
   ms = [];
-} else if (efectivo === 'puerta') {
-  // El uso extendido promete que «una persona del equipo» sigue la conversación: se ofrece el botón de la recepción para que la promesa tenga un mecanismo. El comercio suspendido no ofrece nada.
-  ms = [plan.ruta === 'uso_extendido' ? conRecepcion(String(plan.texto || '') + '\n\nSi prefieres, escríbele directo a la recepción con el botón.') : texto(String(plan.texto || ''))];
+} else if (efectivo === 'suspendido') {
+  ms = [texto(String(plan.texto || ''))];
+} else if (efectivo === 'uso_extendido') {
+  // «Solo se ofrece lo que se cumple»: el texto que configura la Consola suele decir «una persona del equipo va a continuar esta conversación», y este flujo no avisa a nadie en ese estado. Se IGNORA ese texto y sale uno propio
+  // que no promete nada y ofrece lo único que hay: el botón de la recepción.
+  ms = [conRecepcion(EV_TEXTO_USO_EXTENDIDO)];
 } else if (efectivo === 'riesgo') {
   silencio = 'riesgo';
   ms = [texto(EV_TEXTO_RIESGO, { evento: 'no_contactar' })];

@@ -108,9 +108,9 @@ describe('LOW de seguridad: palabras de etiqueta, promesas de «luego» y uso ex
       expect(t).toContain('¿Cómo te llamas?');
     });
   }
-  it('el uso extendido (operador) ofrece el botón de la recepción: la promesa de «una persona del equipo» tiene un mecanismo', () => {
+  it('el uso extendido (operador) ofrece el botón de la recepción y NO promete que «una persona del equipo» seguirá la conversación', () => {
     const t = hablar(crear({ ingesta: { atencion: { estado: 'operador', respuestasEnVentana: 40 } } }), ANA, mTexto('hola'));
-    expect(textos(t)[0]).toMatch(/una persona del equipo/);
+    expect(textos(t)[0]).not.toMatch(/una persona del equipo/);
     expect(t.mensajes[0]!.tipo).toBe('interactive');
     expect(t.mensajes[0]!.cuerpo).toMatch(/botón/);
   });

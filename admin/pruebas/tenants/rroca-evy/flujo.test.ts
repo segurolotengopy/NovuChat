@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
-import { ANA, BETO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
+import { ANA, BETO, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
 
 describe('topología y tamaño', () => {
   it('producción 36 nodos y prueba 31, con el tope de 36', () => {
@@ -93,7 +93,8 @@ describe('el núcleo común', () => {
   it('uso extendido: operador responde su aviso fijo y bloqueado no responde nada; ninguno llama al modelo', () => {
     const op = crear({ ingesta: { atencion: { estado: 'operador', mensajeFijo: 'Una persona del equipo continúa.', respuestasEnVentana: 40 } } });
     const t1 = hablar(op, ANA, mTexto('hola'));
-    expect(textos(t1)[0]).toContain('Una persona del equipo continúa.');
+    expect(textos(t1)[0]).toMatch(/botón/);
+    expect(textos(t1)[0]).not.toMatch(/persona del equipo/i);
     expect(t1.mensajes[0]!.tipo).toBe('interactive');
     const bl = crear({ ingesta: { atencion: { estado: 'bloqueado', respuestasEnVentana: 60 } } });
     const t2 = hablar(bl, ANA, mTexto('hola'));
@@ -107,6 +108,23 @@ describe('el núcleo común', () => {
     hablar(m, ANA, mTexto('hola'));
     expect(sistema).not.toContain('otra doctora');
     expect(sistema).toContain('Piraí');
+  });
+  it('un número de otro país no recibe respuesta, no llama al modelo y no se reporta a la ingesta', () => {
+    const m = crear();
+    const t = hablar(m, EXTRANJERO, mTexto('hola'));
+    expect(t.mensajes.length).toBe(0);
+    expect(t.llamadas.ingesta.length).toBe(0);
+    expect(t.registro.some((r) => r.nodo === 'Conversar con el modelo')).toBe(false);
+    expect(JSON.stringify(m.sd)).not.toContain(EXTRANJERO);
+  });
+  it('la etapa de prueba tiene UNA fuente: «Config del negocio» calcula `fueraDePrueba` y la leen la puerta y el reporte del entrante', () => {
+    const t = hablar(crear({ base: { etapaPrueba: 'si', telefonosDePrueba: ANA } }), BETO, mTexto('hola'));
+    expect(t.porNodo['Config del negocio']![0]!['fueraDePrueba']).toBe(true);
+    expect(t.porNodo['Puerta del turno']![0]!['ruta']).toBe('fuera_de_prueba');
+    expect(t.llamadas.ingesta.length).toBe(0);
+    const dentro = hablar(crear({ base: { etapaPrueba: 'si', telefonosDePrueba: ANA } }), ANA, mTexto('hola'));
+    expect(dentro.porNodo['Config del negocio']![0]!['fueraDePrueba']).toBe(false);
+    expect(dentro.mensajes.length).toBe(1);
   });
   it('el reporte saliente se hace una vez por mensaje al cliente', () => {
     const m = crear();

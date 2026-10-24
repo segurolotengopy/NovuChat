@@ -23,7 +23,6 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
   'captacion-minima': { desde: '2026-10-23', porque: 'Sin clasificar: usa cmContactoConBoton desde su lib; la tabla la escribe Cartera (D5, chat y captación).' },
   'chat-novuchat': { desde: '2026-10-23', porque: 'Hoy VIOLA: el botón «Hablar con el equipo» sale en respuestas fijas que resuelven; decisión E1 de Andres pendiente. Cartera adopta en D5.' },
   'doctoras': { desde: '2026-10-23', porque: 'Cumple; su tabla la adopta Cartera (D5, doctoras).' },
-  'rroca-evy': { desde: '2026-10-23', porque: 'Cumple: el botón de la recepción sale SOLO en la derivación, la consulta médica y el fallo del modelo (admin/pruebas/tenants/rroca-evy/derivacion.test.ts y conversacion.test.ts); su tabla la adopta Cartera.' },
   'rroca-antonio': { desde: '2026-10-23', porque: 'Cumple (invariante 13 de su vigilante: PLANES_SIN_BOTON / PLANES_CON_BOTON); su tabla la adopta Cartera (D2).' },
   'rroca-ruben': { desde: '2026-10-23', porque: 'Hoy VIOLA: armar-mensajes.js con plan.qrAbierto ? conRuben(...) pone el botón en respuestas resueltas (precio, catálogo, imágenes, info, identidad, ingresos, modelo, qr_pendiente). Cartera adopta en D3.' },
   'venta-minima': { desde: '2026-10-23', porque: 'Hoy VIOLA: «identidad» arma enlace() a wa.me y `ya_cotejado` también; la clasificación sale de resumen.ruta (prefijo antes de «:») y del resultado del cobro. Cartera adopta en D4 (Q\'Taco).' },

@@ -358,7 +358,8 @@ evy_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar
     printf '\033[0;33m  (en seco se sigue; con --aplicar se niega)\033[0m\n\n'
   fi
 }
-# Imprime "nuevo" si el JSON es el flujo nuevo de Evy (nodo «Armar previos» y rroca-evy en el nombre del archivo o del flujo); si no, nada.
+# Imprime "nuevo" si el JSON es el flujo nuevo de Evy: basta el nodo «Armar previos» (el MISMO predicado con que `doctoras_clase` lo suelta: un archivo RENOMBRADO no se escapa de las dos guardias).
+# Imprime "emma" si, además, el nombre del archivo o del flujo dice rroca-emma: el flujo nuevo es solo de Evy y se NIEGA para otra doctora.
 evy_clase() {  # $1 = archivo JSON ; $2 = nombre del archivo en minusculas
   python3 - "$1" "$2" <<'PY' 2>/dev/null || true
 import json, sys
@@ -369,8 +370,8 @@ except Exception:
     sys.exit(0)
 nombre = str(datos.get("name", "")).lower()
 nodos = datos.get("nodes") or []
-if ("rroca-evy" in base or "rroca-evy" in nombre) and any(isinstance(n, dict) and n.get("name") == "Armar previos" for n in nodos):
-    print("nuevo")
+if any(isinstance(n, dict) and n.get("name") == "Armar previos" for n in nodos):
+    print("emma" if ("rroca-emma" in base or "rroca-emma" in nombre) else "nuevo")
 PY
 }
 evy_confirmar() {
@@ -386,7 +387,11 @@ evy_confirmar() {
 }
 ES_EVY_NUEVO=0
 if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
-  if [[ -n "$(evy_clase "$FLUJO" "$(basename "$FLUJO" | tr '[:upper:]' '[:lower:]')")" ]]; then
+  CLASE_EVY="$(evy_clase "$FLUJO" "$(basename "$FLUJO" | tr '[:upper:]' '[:lower:]')")"
+  if [[ "$CLASE_EVY" == "emma" ]]; then
+    printf '\033[1;31m✗ NEGADO: el flujo nuevo de Evy (nodo «Armar previos») no se publica con el nombre de otra doctora (rroca-emma).\033[0m\n' >&2
+    exit 1
+  elif [[ -n "$CLASE_EVY" ]]; then
     ES_EVY_NUEVO=1
     evy_guardia "archivo de origen" "$FLUJO"
   fi
@@ -460,7 +465,12 @@ if [[ -n "$TENANT_VIVO_DOCTORAS" ]]; then
 fi
 
 # El flujo VIVO es el nuevo de Evy: encenderlo revisa el flujo vivo con la guardia nueva; reemplazarlo con un archivo que NO es el nuevo (p. ej. restaurar el viejo) pide la confirmacion.
-if [[ -n "$(evy_clase "$TMP/vivo.json" "")" ]]; then
+CLASE_VIVO_EVY="$(evy_clase "$TMP/vivo.json" "")"
+if [[ "$CLASE_VIVO_EVY" == "emma" && $APAGAR -eq 0 ]]; then
+  printf '\033[1;31m✗ NEGADO: el flujo vivo es el flujo nuevo de Evy con el nombre de otra doctora (rroca-emma).\033[0m\n' >&2
+  exit 1
+fi
+if [[ -n "$CLASE_VIVO_EVY" ]]; then
   if [[ $ENCENDER -eq 1 ]]; then
     evy_guardia "encender el flujo vivo" "$TMP/vivo.json"
   elif [[ $APAGAR -eq 0 && $CREAR -eq 0 && $ES_EVY_NUEVO -eq 0 && $APLICAR -eq 1 ]]; then

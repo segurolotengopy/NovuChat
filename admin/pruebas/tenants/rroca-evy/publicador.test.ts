@@ -28,6 +28,8 @@ const vivoOtro = join(dir, 'vivo-otro.json'); writeFileSync(vivoOtro, JSON.strin
 const REL_NUEVO = 'Flujos/experimental/rroca-evy/rroca-evy.json';
 const REL_VIEJO = 'Flujos/experimental/doctoras/doctoras.rroca-evy.json';
 const REL_EMMA = 'Flujos/experimental/doctoras/doctoras.rroca-emma.json';
+const REL_RENOMBRADO = 'Flujos/experimental/rroca-evy/flujo-renombrado.json';
+const REL_COMO_EMMA = 'Flujos/experimental/rroca-evy/rroca-emma.json';
 
 /** Una raíz de juguete: el script bajo prueba y construir.mjs de juguete (el del flujo nuevo aprueba SOLO la etapa indicada; el de las doctoras aprueba según `doctoras`). Cada uno deja su rastro. */
 function raizCon(nombre: string, script: string, o: { evy?: string; doctoras?: number } = {}): string {
@@ -41,6 +43,8 @@ function raizCon(nombre: string, script: string, o: { evy?: string; doctoras?: n
   writeFileSync(join(raiz, REL_NUEVO), JSON.stringify(nuevo));
   writeFileSync(join(raiz, REL_VIEJO), JSON.stringify({ name: 'doctoras', nodes: [] }));
   writeFileSync(join(raiz, REL_EMMA), JSON.stringify({ name: 'doctoras emma rroca-emma', nodes: [] }));
+  writeFileSync(join(raiz, REL_RENOMBRADO), JSON.stringify({ name: 'Otro nombre cualquiera', nodes: [{ name: 'Armar previos' }] }));
+  writeFileSync(join(raiz, REL_COMO_EMMA), JSON.stringify({ name: 'NovuChat — Dra. Emma (rroca-emma)', nodes: [{ name: 'Armar previos' }] }));
   return raiz;
 }
 const correrEn = (raiz: string, args: string[], vivo: string) => {
@@ -118,6 +122,34 @@ describe('el flujo nuevo de Evy tiene su guardia, distinta de la de las doctoras
     const con = correrEn(raiz, ['--flujo', REL_VIEJO, '--aplicar', '--confirmo-doctoras', '--confirmo-evy'], vivoNuevo);
     expect(con.stderr).not.toMatch(/NEGADO/);
     expect(con.guardias).toMatch(/^doctoras /m);
+  });
+  it('el flujo nuevo RENOMBRADO (sin «rroca-evy») no se escapa: se reconoce por el nodo y pasa por la guardia nueva en seco, con --aplicar y con --crear', () => {
+    const mala = raizCon('renombrado', propio, { evy: 'ninguna' });
+    const aplicar = correrEn(mala, ['--flujo', REL_RENOMBRADO, '--aplicar', '--confirmo-evy'], vivoViejo);
+    expect(aplicar.status).toBe(1);
+    expect(aplicar.stderr).toMatch(/NEGADO: el flujo de Evy/);
+    expect(aplicar.curl).not.toMatch(/-X (PUT|POST)/);
+    const crear = correrEn(mala, ['--flujo', REL_RENOMBRADO, '--crear', '--aplicar', '--confirmo-evy'], vivoViejo);
+    expect(crear.status).toBe(1);
+    expect(crear.guardias).toMatch(/^evy .*--etapa crear/m);
+    const buena = raizCon('renombrado-ok', propio, { evy: 'prueba' });
+    expect(correrEn(buena, ['--flujo', REL_RENOMBRADO, '--etapa-prueba', '--aplicar', '--confirmo-evy'], vivoViejo).guardias).toMatch(/^evy .*--etapa prueba/m);
+  });
+  it('el flujo vivo que es el nuevo (aunque se llame distinto) NO deja pasar un archivo cualquiera sin la confirmación', () => {
+    const vivoRenombrado = join(dir, 'vivo-renombrado.json'); writeFileSync(vivoRenombrado, JSON.stringify({ name: 'Otro nombre cualquiera', active: false, nodes: [{ name: 'Armar previos' }] }));
+    const sin = correrEn(raiz, ['--flujo', REL_VIEJO, '--aplicar', '--confirmo-doctoras'], vivoRenombrado);
+    expect(sin.status).toBe(1);
+    expect(sin.stderr).toMatch(/--confirmo-evy/);
+  });
+  it('el flujo nuevo con el nombre de Emma se NIEGA (archivo y vivo), sin tocar n8n', () => {
+    const r = correrEn(raiz, ['--flujo', REL_COMO_EMMA, '--aplicar', '--confirmo-evy', '--confirmo-doctoras'], vivoViejo);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/otra doctora \(rroca-emma\)/);
+    expect(r.curl).toBe('');
+    const vivoEmma = join(dir, 'vivo-emma.json'); writeFileSync(vivoEmma, JSON.stringify({ name: 'NovuChat — Dra. Emma (rroca-emma)', active: false, nodes: [{ name: 'Armar previos' }] }));
+    const v = correrEn(raiz, ['--flujo', REL_VIEJO, '--aplicar', '--confirmo-doctoras', '--confirmo-evy'], vivoEmma);
+    expect(v.status).toBe(1);
+    expect(v.stderr).toMatch(/otra doctora/);
   });
   it('el flujo de Emma y el viejo de Evy siguen con la guardia de las doctoras', () => {
     for (const rel of [REL_VIEJO, REL_EMMA]) {

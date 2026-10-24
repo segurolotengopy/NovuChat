@@ -620,6 +620,7 @@ const EV_TEXTO_MEDICA_AVISADA = 'Eso es una consulta médica y no puedo orientar
 const EV_TEXTO_FALLO = 'Tuve un inconveniente para responderte en este momento.\n\nPuedes escribirle directo a la recepción con el botón.';
 const EV_TEXTO_FALLO_AVISADA = 'Tuve un inconveniente para responderte en este momento.\n\nYa avisé a la recepción; también puedes escribirle directo con el botón.';
 const EV_TEXTO_REMISION_SALUD = 'Eso lo evalúa la Dra. Evy en persona, durante tu valoración gratuita: desde este chat no puedo orientarte sobre tu salud.\n\nPuedes escribirle a la recepción con el botón.';
+const EV_TEXTO_USO_EXTENDIDO = 'Gracias por tu paciencia: por hoy llegué al límite de respuestas de este chat.\n\nPara seguir con tu consulta, escríbele directo a la recepción con el botón.';
 const EV_TEXTO_CORTES = 'Recibí tu mensaje, pero por este chat solo puedo leer texto, notas de voz y fotos.\n\nCuéntame por escrito o con una nota de voz en qué te puedo ayudar.';
 const EV_TEXTO_DOCUMENTO = 'Recibí tu archivo, pero por este chat no puedo leerlo ni interpretarlo: lo revisa la doctora en persona, en la valoración.\n\nCuéntame por escrito o con una nota de voz en qué te puedo ayudar.';
 const EV_TEXTO_AUDIO_NO_ENTENDIDO = 'No pude escuchar bien tu nota de voz. ¿Me la envías de nuevo o me lo escribes?';

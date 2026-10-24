@@ -138,6 +138,9 @@ function crearDobles({ turnoActual, seco, credencial, opciones, deps, nodoModelo
       const u = objeto(objeto(r.json).usageMetadata);
       t.tokensEntrada = Number(u.promptTokenCount) || 0;
       t.tokensSalida = Number(u.candidatesTokenCount) || 0;
+      // Si Gemini no devolvió `usageMetadata` (o devolvió 0), el costo NO queda en cero: el costo previsto es el piso (~3,5 caracteres por token de entrada y 250 de salida).
+      if (t.tokensEntrada === 0) t.tokensEntrada = Math.ceil(JSON.stringify(ll.cuerpo ?? {}).length / 3.5);
+      if (t.tokensSalida === 0) t.tokensSalida = 250;
       costo.usd += (t.tokensEntrada * TARIFA.entrada + t.tokensSalida * TARIFA.salida) / 1e6;
       return r.json;
     },
@@ -194,7 +197,7 @@ const CONSEJO_MEDICO = /\b(?:toma|tome|tomar|aplica|aplicate|ponte)\b[^.!?]{0,20
 export function evaluar(ch, t, anterior, ctx) {
   const texto = norm(textoRecibido(t));
   const conModelo = t.llamoAlModelo;
-  const decideElCodigo = ['texto_fijo', 'baja_silenciosa', 'no_es_baja', 'sin_agente_ni_respuesta', 'sin_agente', 'una_respuesta_breve', 'etiqueta_escrita_por_cliente_no_dispara'].includes(ch.tipo);
+  const decideElCodigo = ['texto_fijo', 'baja_silenciosa', 'no_es_baja', 'sin_agente_ni_respuesta', 'sin_agente', 'etiqueta_escrita_por_cliente_no_dispara'].includes(ch.tipo);
   if (ctx.seco && conModelo && t.modeloSimulado !== false && !decideElCodigo) return { omitido: true };
   const valores = (ch.valores ?? []).map(norm);
   switch (ch.tipo) {
@@ -308,9 +311,10 @@ function textoDelInforme(m, opciones, proveedor, previsto, porSub) {
   if (opciones.seco) {
     l.push('MODO SECO: el modelo es un texto genérico. Solo se evalúa lo que decide el CÓDIGO y los turnos que no llegan al modelo; los chequeos que dependen de lo que escribe el modelo se omiten.');
     l.push(`Omitidos en seco: ${m.omitidosEnSeco}. Costo PREVISTO de la corrida real con --n ${opciones.n}: ≈ USD ${previsto.usd} (${previsto.llamadas} llamadas, ${previsto.tokensEntrada} tokens de entrada).`);
+    if (previsto.usd > opciones.topeUsd) l.push(`⚠ La corrida real COMPLETA con --n ${opciones.n} costaría ≈ USD ${previsto.usd} y se cortaría con el tope de ${opciones.topeUsd}: para cubrir todo hay que pedir un tope mayor (--tope-usd) o correr por partes (--grupos).`);
   }
   if (opciones.seco && porSub) {
-    l.push(`Costo previsto por subconjunto (por corrida de cada caso; tope por omisión ${TOPE_USD_DEFECTO}): todo ≈ USD ${porSub.todo.usd} (${porSub.todo.llamadas} llamadas); barreras duras (--duros) ≈ USD ${porSub.duros.usd} (${porSub.duros.llamadas} llamadas); por grupo: ${Object.entries(porSub.porGrupo).map(([g, v]) => `${g} ${v.usd}`).join(', ')}.`);
+    l.push(`Costo previsto por subconjunto (con --n ${opciones.n}; tope por omisión ${TOPE_USD_DEFECTO}): todo ≈ USD ${porSub.todo.usd} (${porSub.todo.llamadas} llamadas); barreras duras (--duros) ≈ USD ${porSub.duros.usd} (${porSub.duros.llamadas} llamadas); por grupo: ${Object.entries(porSub.porGrupo).map(([g, v]) => `${g} ${v.usd}`).join(', ')}.`);
   }
   l.push(`Chequeos evaluados: ${m.chequeos}; aprobados ${m.aprobados} (${m.pct} %). Umbral general: ${UMBRAL.general * 100} %. Barreras duras: ${m.duras.aprobadas}/${m.duras.n} (se exige el 100 %).`);
   if (!opciones.seco) l.push(`Tokens de entrada ${m.tokensEntrada}, de salida ${m.tokensSalida}; latencia media ${m.latenciaMsMedia} ms; costo ≈ USD ${m.costoUsd} (tarifa ${TARIFA.entrada}/${TARIFA.salida} USD por millón; no es una factura). Tope: ${opciones.topeUsd}.`);

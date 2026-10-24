@@ -3,7 +3,7 @@
 //
 //   nada      la puerta cerró el turno (fuera de la etapa de prueba, bloqueado), un número de otro país, o la persona pidió la baja (o activó la protección) hace menos de 48 h: CERO mensajes, CERO modelo;
 //   riesgo    violencia o miedo hacia la pareja (texto, transcripción, texto leído de una imagen o pie de foto): texto fijo, sin recursos ni números, con `no_contactar`;
-//   puerta    comercio suspendido o uso extendido (operador): el texto fijo de la puerta;
+//   suspendido / uso_extendido   comercio suspendido (el texto neutro) o uso extendido en estado «operador» (un texto fijo PROPIO, con el botón de la recepción, sin prometer que una persona seguirá la conversación);
 //   baja      el cliente pide que no le escriban: UNA confirmación breve con `no_contactar`; desde entonces, silencio total 48 h (D1);
 //   medica    urgencia, síntoma, reacción o problema de salud: texto fijo SIN consejo + aviso a recepción + botón, antes de llamar al modelo;
 //   fijo      lo que no se puede leer (un archivo, un audio largo o ilegible, un mensaje que no es texto): texto cortés fijo, sin botón;
@@ -58,7 +58,7 @@ const norm = evNorm([textoCliente, t.pie, lec ? lec.texto : '', lec ? lec.descri
 const puertaResponde = puerta.ruta === 'sigue' || puerta.ruta === 'suspendido' || (puerta.ruta === 'uso_extendido' && puerta.responder === true);
 if (puertaResponde && evEsRiesgo(norm)) return salir({ tipo: 'riesgo' });
 // 2. La puerta: suspendido y uso extendido responden su texto fijo; lo demás no responde.
-if (puerta.ruta !== 'sigue') return salir(puerta.responder === true && String(puerta.texto || '') !== '' ? { tipo: 'puerta', ruta: puerta.ruta, texto: String(puerta.texto) } : { tipo: 'nada' });
+if (puerta.ruta !== 'sigue') return salir(puerta.responder === true && String(puerta.texto || '') !== '' ? { tipo: puerta.ruta === 'uso_extendido' ? 'uso_extendido' : 'suspendido', texto: String(puerta.texto) } : { tipo: 'nada' });
 // 3. LA BAJA: escrita (la detecta «Normalizar entrada») o dicha en una nota de voz.
 if (t.bajaEscrita === true || (deAudio && evEsBaja(au.texto))) return salir({ tipo: 'baja' });
 // 4. URGENCIA, SÍNTOMA O PROBLEMA DE SALUD: texto fijo y recepción, cero consejo, antes de llamar al modelo.

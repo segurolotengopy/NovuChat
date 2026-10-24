@@ -288,7 +288,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true && !($('Config del negocio').first().json.etapaPrueba === true && ($('Config del negocio').first().json.telefonosEtapaPrueba || []).indexOf(String($('Normalizar entrada').first().json.from === undefined || $('Normalizar entrada').first().json.from === null ? '' : $('Normalizar entrada').first().json.from).replace(/\\D/g, '')) < 0) }}",
+              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true && $('Config del negocio').first().json.fueraDePrueba !== true && $('Normalizar entrada').first().json.extranjero !== true }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -301,7 +301,7 @@
         },
         "options": {}
       },
-      "notes": "En modo prueba no se llama a la ingesta."
+      "notes": "En modo prueba, para un número fuera de la etapa de prueba (`fueraDePrueba`, que calcula «Config del negocio») y para un número de otro país no se llama a la ingesta: no cuenta conversación ni guarda su texto."
     },
     {
       "id": "reportar-mensaje-entrante",
