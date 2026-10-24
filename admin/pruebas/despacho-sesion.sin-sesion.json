@@ -39,10 +39,12 @@
   "Use como mucho un emoji por mensaje, y solo cuando aporte."
  ],
  "voz": {
-  "tratamiento": "Trate al cliente de USTED en todo momento, sin excepción.",
+  "tratamiento": "Trate al cliente de TÚ en todo momento, sin excepción.",
   "emojis": "Use como mucho un emoji por mensaje, y solo cuando aporte.",
   "nombreAsistente": "",
-  "nivelEmojis": "pocos"
+  "nivelEmojis": "pocos",
+  "tratamientoClave": "tu",
+  "quienAtiende": ""
  },
  "datosDelNegocio": {
   "nombreNegocio": "Despacho A",
