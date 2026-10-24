@@ -3127,7 +3127,7 @@ describe('Agenda mínima v0: la red de la promesa de recepción no rompe lo que 
     expect(t.aRecepcion).toHaveLength(0);
   });
   it('hallazgo 3: sigue transfiriendo «Escríbele al doctor», «Comunícate con el consultorio» y «Llama al consultorio»', () => {
-    for (const frase of ['Escríbele al doctor cuanto antes.', 'Comunícate con el consultorio ya.', 'Llama al consultorio ahora.']) {
+    for (const frase of ['Escríbele al doctor cuanto antes.', 'Comunícate con el consultorio ya.', 'Llama al consultorio ahora.', 'Contacta al doctor cuanto antes.', 'Llama a tu doctor ahora.', 'Te pido que llames al consultorio.', 'Contacta al consultorio.', 'Comunícate con tu pediatra.', 'Escribe a nuestro consultorio.']) {
       expect(preguntar('mi hijo vomita mucho', frase).aRecepcion, frase).toHaveLength(1);
     }
   });
@@ -3151,6 +3151,28 @@ describe('Agenda mínima v0: la red de la promesa de recepción no rompe lo que 
       const dias = new Set(botonesDe(t.enviados[0]!).map((b) => b.id.split('|')[1]!.slice(0, 10)));
       expect(dias.size).toBe(1);
       expect(t.enviados[0]!.cuerpo).toMatch(/Estos son los horarios disponibles para control del niño sano el miércoles 7 de octubre:/);
+    });
+    it('NIEGA: «18 de octubre» no cuenta como «8 de octubre»: se antepone el encabezado', () => {
+      expect(ofertaCon('Horarios para el 18 de octubre: 14:00, 14:30 y 15:00.').enviados[0]!.cuerpo).toMatch(ENC);
+    });
+    it('NIEGA: «horarios de mañana» (franja) no cuenta como el día mañana: se antepone el encabezado', () => {
+      const t = ofertaCon('Horarios de mañana: 12:00, 12:30 y 13:00.', { fecha: '2026-10-06' });
+      expect(t.enviados[0]!.cuerpo).toMatch(ENC);
+    });
+    it('al transferir desde una oferta («necesita verse»), un «sí» posterior no muestra botones que nunca se vieron', () => {
+      const m = mundo({ eventos: [] });
+      m.turno(texto(MAMA, 'quiero cita'));
+      m.gemini.extraer = extraccion({ fechaPreferida: JUEVES, franja: 'tarde' });
+      m.gemini.redactar = 'Eso necesita verse ya; hay horarios el jueves.';
+      const t = m.turno(lista(MAMA, SERV_CNS, 'Control niño sano'));
+      expect(t.aRecepcion).toHaveLength(1);
+      const est = m.sd['agendaMinima'] as J;
+      expect((est[MAMA] as J)['paso']).toBe('menu');
+      expect((est[MAMA] as J)['ultimaOferta']).toEqual([]);
+      m.gemini.extraer = 'ERROR';
+      const t2 = m.turno(texto(MAMA, 'sí'));
+      expect(t2.enviados.some((e) => e.tipo === 'interactive' && interactivo(e)['type'] === 'button')).toBe(false);
+      expect(m.calendario.eventos).toHaveLength(0);
     });
     it('al mover, el aviso de la cita actual va primero y el encabezado de la oferta sigue ahí', () => {
       const m = mundo({ eventos: [citaDe(MAMA, 'vieja', JUEVES, '15:00', '15:30', 'Pérez Gómez, Ana (CNS)')] });

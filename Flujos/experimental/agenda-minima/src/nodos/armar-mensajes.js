@@ -212,7 +212,7 @@ function respuestaFija(clave) {
 // a recepcion, al consultorio o al doctor, o dice «necesita verse», y la respuesta saldria como texto plano
 // (sin el boton que abre el chat), es una promesa sin respaldo. No es una lista de sintomas: es lo que el
 // TEXTO ofrece. Palabras enteras y normalizado con `cnNorm`.
-const MENCION_DE_RECEPCION = /\brecepcion\b|\bnecesita(n)? verse\b|(?<!\b(se|me|te|lo|le|nos) )\b(comunic(ate|arte|arse|ese)|escrib(e|ele|enos|ir|irle)|llam(a|ale|anos|ar))\b[^.!?\n]{0,25}\b(con|al|a)\s+(el |la |los |las )?(consultorio|doctor|doctora|dr|dra)\b/;
+const MENCION_DE_RECEPCION = /\brecepcion\b|\bnecesita(n)? verse\b|(?<!\b(se|me|te|lo|le|nos) )\b(comunic(ate|arte|arse|ese)|escrib(e|ele|enos|ir|irle)|llam(a|ale|anos|ar|e|es)|contact(a|ale|anos|ar))\b[^.!?\n]{0,25}\b(con|al|a)\s+(el |la |los |las |tu |su |nuestro |nuestra )?(consultorio|doctor|doctora|dr|dra|pediatra)\b/;
 function prometeRecepcion(texto) {
   const s = String(texto || '').normalize('NFKC');
   const n = cnNorm(s);
@@ -240,10 +240,10 @@ function traeEncabezado(redactado, o) {
     const f = fechaLocal(msDe(h.inicio));
     const p = f.split('-').map(Number);
     if (n.indexOf(cnNorm(diaDeLaSemana(f))) >= 0) return true;
-    if (n.indexOf(p[2] + ' de ' + AGM_MESES[p[1] - 1]) >= 0) return true;
+    if (new RegExp('(^|[^0-9])' + p[2] + ' de ' + AGM_MESES[p[1] - 1] + '\\b').test(n)) return true;
     // «hoy» y «mañana» solo cuentan como DIA si el hueco cae ese dia; «en la mañana» es una franja.
     if (f === hoy && /\bhoy\b/.test(n)) return true;
-    return f === manana && /(?<!\bla )\bmanana\b/.test(n);
+    return f === manana && /(?<!\b(la|de) )\bmanana\b/.test(n);
   });
 }
 // Los textos fijos, armados con los huecos reales, para cuando la redaccion no sirve.
@@ -277,6 +277,7 @@ const srv = base.estado && base.estado.servicio ? base.estado.servicio : (base.p
 const srvTxt = CN_NOMBRE_SERVICIO[srv] || 'tu consulta';
 const params = base.params || {};
 let deshacerFallo = false;
+let ofertaNoMostrada = false; // se transfirio desde una oferta: el estado no puede quedar «ofreciendo_huecos»
 
 function ofertaConBotones(o, cuerpo, servicio) {
   const botones = botonesDeHuecos(o.huecos, servicio);
@@ -420,8 +421,8 @@ switch (plan) {
     // Promesa sin respaldo: la redaccion manda a recepcion y saldria sin el boton. Se cumple (aviso + boton).
     // Solo se evalua si ese texto de verdad sale (23/10).
     const remiteARecepcion = valida && prometeRecepcion(redactado);
-    const transferirPorRemision = () => transferir('la respuesta redactada remitía a recepción sin botón' + (pregunta ? '; pregunta del paciente: «' + cnRecorte(pregunta, 200) + '»' : ''),
-      'Esa consulta no la puedo resolver por este chat. Escríbele directo a recepción tocando el botón.');
+    const transferirPorRemision = () => { if (plan === 'ofrecer') ofertaNoMostrada = true; transferir('la respuesta redactada remitía a recepción sin botón' + (pregunta ? '; pregunta del paciente: «' + cnRecorte(pregunta, 200) + '»' : ''),
+      'Esa consulta no la puedo resolver por este chat. Escríbele directo a recepción tocando el botón.'); };
     if (plan === 'responder') {
       if (remiteARecepcion) { transferirPorRemision(); break; }
       agregar('paciente', mTexto(redactado), redactado, redactado, { tipoReporte: 'text' });
@@ -605,6 +606,7 @@ if (estado && cnClaveValida(t.from) && plan !== 'nada') {
   e.ultimaOferta = (e.ultimaOferta || []).slice(0, 10);
   e.primerTexto = String(e.primerTexto || '').slice(0, 300);
   e.moverTitulo = String(e.moverTitulo || '').slice(0, 120);
+  if (ofertaNoMostrada) { e.paso = 'menu'; e.ultimaOferta = []; e.huecoElegido = null; }
   estadoDespues = e;
   let sd = null;
   try { sd = $getWorkflowStaticData('global'); } catch (err) { sd = null; }
