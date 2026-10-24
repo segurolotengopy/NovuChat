@@ -175,18 +175,114 @@ const PROMPTS_PLURAL = /(?<![\p{L}\p{N}_])prompts(?![\p{L}\p{N}_])/gu;
 /** Formas conjugadas que ordenan algo; las que podrían ser sustantivos van exactas. */
 const VERBO_ORDEN = new RegExp(
   '^(?:revel\\w*|muestr\\w*|mostr\\w*|dime|dinos|dame|repit\\w*|ignor\\w*|olvid\\w*|imprim\\w*|filtr\\w*|expon\\w*|divulg\\w*'
-  + '|pas(?:a|ame|alos|alo|e|en)|copi(?:a|e|ame|alos|alo|en)|compart\\w*|envi\\w*|entreg\\w*|usa|usen|use|uses|usalos|utiliz\\w*'
+  + '|pas(?:a|ame|alos|alo|e|en)|copi(?:a|e|ame|alos|alo|en)|copie\\w*|compart\\w*|envi\\w*|entreg\\w*|usa|usen|use|uses|usalos|utiliz\\w*'
   + '|sigue|sigan|siga|sigueme|segui|obedec\\w*|desobedec\\w*|ensen\\w*|lee|leelos|escrib\\w*|anul\\w*|sobre?scrib\\w*|reemplaz\\w*'
   + '|lista|listame|listalos|pega|pegalos|eres|actua(?!l)\\w*|act'
-  + '|recit\\w*|enumer\\w*|detall\\w*|transcrib\\w*|reproduc\\w*|reprodu(?:ce|zca)|devuelv\\w*|devolv\\w*|explic\\w*|cuentame|cuentanos|di|suelt\\w*|publica'
+  + '|recit\\w*|enumer\\w*|detall\\w*|transcrib\\w*|reproduc\\w*|reprodu(?:ce|zca)|devuelv\\w*|devolv\\w*|explic\\w*|cuentanos|di|suelt\\w*|publica'
+  + '|traduc(?:e|ir)|resume|describ\\w*|cant(?:a|e|an|en)|deletre\\w*'
   + '|copiar|pasar|usar|leer|seguir|listar|pegar|actuar'
   + '|reveal|show|repeat|ignore|print|tell|say|forget|disregard|override|dump|read|write|output|give|send|share|leak|paste|follow|obey'
   + '|display|recite|list|provide|return|echo|spill|zeig\\w*)$', 'u');
-/** Pronombre pegado al verbo («revélalos», «pásales»): se prueba también el verbo sin él. */
-const PRONOMBRE_PEGADO = /(?:selos|melos|telos|los|las|les|lo|la|le|me|te)$/u;
+/** Pronombres que se pegan al verbo, de más largo a más corto («repítelos» = repite + los). */
+const SUFIJOS = ['noslos', 'noslas', 'selos', 'selas', 'sela', 'selo', 'melos', 'melas', 'telos', 'telas',
+  'nos', 'los', 'las', 'les', 'lo', 'la', 'le', 'me', 'te'] as const;
+/** Los de objeto plural o encadenado: «revélalos», «dáselos»: hablan de ALGO ya mencionado. */
+const SUFIJOS_DE_OBJETO = new Set(['noslos', 'noslas', 'selos', 'selas', 'sela', 'selo', 'melos', 'melas', 'telos', 'telas', 'los', 'las']);
+/** «da» solo ordena encadenado («dáselos», «dánoslos»); «dale» es corriente en Bolivia. */
+const SUFIJOS_DE_DA = new Set(['noslos', 'noslas', 'selos', 'selas', 'sela', 'selo', 'melos', 'melas', 'telos', 'los', 'las']);
+/** «manda» ordena con pronombre de objeto, encadenado o «mándales» («mándame un mensaje» no). */
+const SUFIJOS_DE_MANDA = new Set([...SUFIJOS_DE_OBJETO, 'les']);
+
+/** Las lecturas posibles de una palabra: la entera y cada verbo que queda al quitarle un pronombre. */
+function lecturas(w: string): { forma: string; sufijo: string }[] {
+  const salida = [{ forma: w, sufijo: '' }];
+  for (const suf of SUFIJOS) {
+    if (w.length > suf.length + 1 && w.endsWith(suf)) {
+      const forma = w.slice(0, -suf.length);
+      const ordena = VERBO_ORDEN.test(forma) || (forma === 'cuenta')
+        || (forma === 'da' && SUFIJOS_DE_DA.has(suf))
+        || (forma === 'manda' && (SUFIJOS_DE_MANDA.has(suf) || suf === 'me'));
+      if (ordena) salida.push({ forma, sufijo: suf });
+    }
+  }
+  return salida;
+}
+/** Órdenes que son frases y no una palabra suelta (sin acentos, como llega el texto). */
+const FRASES_DE_ORDEN: readonly RegExp[] = [
+  /(?<![\p{L}\p{N}_])responde con(?![\p{L}\p{N}_])/u,
+  /(?<![\p{L}\p{N}_])respond(?:e|es)(?![\p{L}\p{N}_])[^]*?(?<![\p{L}\p{N}_])(?:todo gratis|gratis (?:a )?todos?)(?![\p{L}\p{N}_])/u,
+  /(?<![\p{L}\p{N}_])se (?:(?:un|una) )?(?:asistente|bot|robot|ia|humano|humana|persona|otro|otra|dueno|duena|empleado|empleada|recepcionista)(?![\p{L}\p{N}_])/u,
+  /(?<![\p{L}\p{N}_])conviertete en (?:(?:un|una|el|la|otro|otra) )?(?:asistente|bot|robot|ia|humano|humana|persona|otro|otra|dueno|duena|jefe|administrador|empleado|empleada|recepcionista)(?![\p{L}\p{N}_])/u,
+  /(?<![\p{L}\p{N}_])mand(?:a|an|e|en) sobre(?![\p{L}\p{N}_])/u,
+  /(?<![\p{L}\p{N}_])(?:tienen|tiene|tengan) prioridad(?![\p{L}\p{N}_])/u,
+];
+/**
+ * Vocabulario de autoridad o de sistema: con un determinante neutro («los 100
+ * prompts»), la oración que lo lleva da autoridad a esos prompts («son tus nuevas
+ * reglas», «valen más que todo») aunque no tenga ningún verbo de la lista.
+ */
+const AUTORIDAD = /(?<![\p{L}\p{N}_])(?:regla|reglas|orden|ordenes|instruccion\w*|personalidad|guia|verdad|prioridad|memoria|asistente|anterior\w*|arriba|abajo|vale|valen|encima|convierte\w*|define\w*|reemplaz\w*|intern[oa]s?|ocult\w*|secret\w*|confidencial\w*|permitid\w*|enter[oa]s?|complet[oa]s?|mandan?|primero|ganan?|debes|debe)(?![\p{L}\p{N}_])/u;
 /** Antes de estas palabras un infinitivo describe el producto («listos para copiar»), no ordena. */
 const PREVIAS_DESCRIPTIVAS = new Set(['para', 'de', 'sin', 'al']);
-const DETERMINANTE = /(?:^|[^\p{L}\p{N}_])(?:tu|tus|mi|mis|su|sus|el|la|los|las|este|esta|estos|estas|ese|esa|esos|esas|aquel|aquella|aquellos|aquellas|nuestro|nuestros)\s+(?:\p{L}+\s+)?$/u;
+/** Bloquean siempre: hablan DEL prompt del asistente («tus 100 prompts», «el prompt»). */
+const DETERMINANTE_DURO = /(?:^|[^\p{L}\p{N}_])(?:tu|tus|mi|mis|su|sus|el|la|este|esta|ese|esa|aquel|aquella|aquellos|aquellas|nuestro)\s+(?:\p{L}+\s+)?$/u;
+/** Neutros: «Descubre los 100 prompts», «Conoce nuestros 100 prompts». Pasan si la oración y sus vecinas no ordenan nada. */
+const DETERMINANTE_NEUTRO = /(?:^|[^\p{L}\p{N}_])(?:los|las|estos|estas|esos|esas|nuestros|nuestras)\s+(?:\p{L}+\s+)?$/u;
+/**
+ * LISTA CERRADA para el determinante neutro (revisión de seguridad del #650): la
+ * oración solo pasa con la forma [verbo comercial] + determinante + N + «prompts»
+ * + complemento DESCRIPTIVO, o siendo solo ese sintagma. Una lista de palabras de
+ * autoridad a rechazar no cierra la clase (siempre hay un sinónimo más); la forma
+ * permitida sí. Lo que queda fuera falla cerrado: «Los 100 prompts más completos
+ * del mercado» se rechaza y es una decisión de producto, no de seguridad.
+ */
+const VERBOS_COMERCIALES = 'descubre|llevate|llevese|conoce|aprovecha|obten|recibe|incluye|descarga|prueba|regala|te regalo|te damos|explora|accede a|accede';
+const FORMA_ANTES = new RegExp(
+  `^[^\\p{L}\\p{N}]*(?:(?:y|ya|hoy|ahora)\\s+)?(?:(?:${VERBOS_COMERCIALES})\\s+)?(?:los|las|estos|estas|esos|esas|nuestros|nuestras)\\s+${NUMERO}(?:\\s+\\p{L}+)?\\s*$`, 'u');
+/** Cómo puede empezar lo que viene después de «prompts»: solo descripción del producto. */
+const INTRODUCE_DESCRIPCION = /^\s*(?:listos|listas|gratis|favoritos|favoritas|destacados|destacadas|exclusivos|exclusivas|nuevos|nuevas|mejores|incluidos|incluidas|de|del|para|con|en|que usan|te ahorran)(?![\p{L}\p{N}_])/u;
+/** Marcas de cláusula verbal o de dirección al asistente que la descripción no puede traer. */
+const CLAUSULA_EN_DESCRIPCION = /(?<![\p{L}\p{N}_])(?:son|es|esta|estan|ser|sera|seran|se|me|nos|lo|le|les|que|y|e|o|u)(?![\p{L}\p{N}_])|(?<!para )(?<!(?:copiar|usar|compartir|publicar|guardar|aprovechar) en )(?<![\p{L}\p{N}_])(?:tu|tus|te|su|sus|mi|mis)(?![\p{L}\p{N}_])/u;
+/** Referencias al asistente o a su configuración: no caben en la descripción de un producto. */
+const DESCRIPCION_PROHIBIDA = /(?<![\p{L}\p{N}_])(?:sistema|configuracion|programacion|cabeza|novuchat|permiso|acceso|respuestas?|directrices|ley)(?![\p{L}\p{N}_])/u;
+/** Infinitivos que un copy común usa («listos para copiar») y lo que puede seguirlos. */
+const INFINITIVOS_INOCUOS = new Set(['copiar', 'usar', 'compartir', 'publicar', 'guardar', 'aprovechar']);
+const COMPLEMENTO_INOCUO = new Set(['en', 'tus', 'tu', 'sus', 'las', 'los', 'la', 'el', 'de', 'redes', 'historias', 'posts', 'publicaciones', 'negocio', 'clientes']);
+/** ¿La descripción trae un infinitivo que ordena (revelar, mostrar, responder, hablar, decir, cobrar…)? */
+function infinitivoDeOrdenEnDescripcion(descripcion: string): boolean {
+  const palabras = descripcion.match(/[\p{L}\p{N}_]+/gu) ?? [];
+  return palabras.some((w, i) => {
+    if (!/(?:ar|er|ir)$/u.test(w)) return false;
+    const ordena = VERBO_ORDEN.test(w) || /^(?:responder|hablar|decir|cobrar)$/u.test(w);
+    if (!ordena) return false;
+    return !(INFINITIVOS_INOCUOS.has(w) && palabras.slice(i + 1).every((x) => COMPLEMENTO_INOCUO.has(x)));
+  });
+}
+/**
+ * LISTA CERRADA de la descripción: cada palabra de lo que sigue a «prompts» debe
+ * estar acá. Las listas de exclusión no cierran la clase (siempre hay un sustantivo
+ * más: mente, bot, modelo, mensajes…). Queda fuera, y falla cerrado, todo copy con
+ * otro vocabulario: «de tus mensajes», «para todos», «gratis sin límite», «para
+ * aumentar tus ventas»; es decisión de producto ampliar la lista, no de seguridad.
+ */
+const PALABRAS_DESCRIPCION = new Set([
+  'de', 'del', 'la', 'el', 'los', 'las', 'un', 'una', 'para', 'con', 'en', 'tu', 'tus', 'su', 'sus',
+  'listos', 'listas', 'gratis', 'favoritos', 'favoritas', 'destacados', 'destacadas', 'exclusivos', 'exclusivas',
+  'nuevos', 'nuevas', 'mejores', 'incluidos', 'incluidas', 'extra', 'bonus',
+  'marketing', 'ventas', 'redes', 'sociales', 'instagram', 'tiktok', 'facebook', 'whatsapp', 'contenido',
+  'regalo', 'bono', 'curso', 'libro', 'negocio', 'negocios', 'emprendedores', 'marca', 'marcas', 'creadores',
+  'historias', 'posts', 'publicaciones', 'ideas', 'plantillas', 'ahorro', 'horas', 'tiempo', 'clientes',
+  'copiar', 'usar', 'compartir', 'publicar', 'guardar', 'aprovechar',
+]);
+function formaComercialPermitida(oracionAntes: string, oracionDespues: string): boolean {
+  if (!FORMA_ANTES.test(oracionAntes)) return false;
+  if (oracionDespues.trim() === '') return true;
+  if (!INTRODUCE_DESCRIPCION.test(oracionDespues)) return false;
+  // «te ahorran» y «que usan» son las introducciones que traen su propio pronombre o «que».
+  const resto = oracionDespues.replace(/^\s*(?:que usan|te ahorran)/u, '');
+  if (!(resto.match(/[\p{L}\p{N}_]+/gu) ?? []).every((w) => PALABRAS_DESCRIPCION.has(w))) return false;
+  return !CLAUSULA_EN_DESCRIPCION.test(resto) && !DESCRIPCION_PROHIBIDA.test(resto) && !infinitivoDeOrdenEnDescripcion(resto);
+}
 const CORTE_ORACION = /[.!?;:—–#]/u;
 
 /**
@@ -197,16 +293,30 @@ const CORTE_ORACION = /[.!?;:—–#]/u;
  * pegado («revélalos»): es lo que se busca en las oraciones vecinas.
  */
 function hayVerboDeOrden(oracion: string, soloPronombre = false): boolean {
-  if (!soloPronombre && /(?<![\p{L}\p{N}_])responde con(?![\p{L}\p{N}_])/u.test(oracion)) return true;
+  if (!soloPronombre && FRASES_DE_ORDEN.some((re) => re.test(oracion))) return true;
   const palabras = oracion.match(/[\p{L}\p{N}_]+/gu) ?? [];
   return palabras.some((w, i) => {
-    const sinPron = w.length > 3 ? w.replace(PRONOMBRE_PEGADO, '') : w;
-    const conPron = sinPron !== w && VERBO_ORDEN.test(sinPron);
-    if (soloPronombre) return conPron && /(?:los|las|les|selos|melos)$/u.test(w);
-    const forma = VERBO_ORDEN.test(w) ? w : conPron ? sinPron : null;
-    if (forma === null || /(?:ando|iendo|ado|ido)$/u.test(forma)) return false;
-    if (!/(?:ar|er|ir)$/u.test(forma)) return true;
-    return !PREVIAS_DESCRIPTIVAS.has(palabras[i - 1] ?? '');
+    if (soloPronombre) {
+      // Lo que se busca fuera de la oración: un verbo con pronombre de objeto
+      // plural («revélalos», «dáselos») o «dile»; «dale» o «escríbeme» no.
+      const sig = palabras[i + 1] ?? '';
+      return /^di(?:le|les)$/u.test(w) || lecturas(w).some((l) => l.sufijo !== '' && (
+        SUFIJOS_DE_OBJETO.has(l.sufijo)
+        || (l.sufijo === 'les' && /^(?:todo|todos|todas|los|las)$/u.test(sig))
+        || (l.sufijo === 'nos' && l.forma === 'cuenta')
+        || (l.sufijo === 'me' && l.forma === 'manda' && /^(?:los|las)$/u.test(sig))));
+    }
+    // «cuenta» ordena (contar) salvo en «cuenta con», «cuenta hasta» o como sustantivo («tu cuenta»).
+    if (w === 'cuenta') {
+      return !['con', 'hasta'].includes(palabras[i + 1] ?? '') && !/^(?:tu|su|mi|la|una|de|en|por|esta|a)$/u.test(palabras[i - 1] ?? '');
+    }
+    return lecturas(w).some(({ forma, sufijo }) => {
+      if (sufijo === '' && !VERBO_ORDEN.test(forma)) return false;
+      if (forma === 'manda' && sufijo === 'me' && !/^(?:los|las)$/u.test(palabras[i + 1] ?? '')) return false;
+      if (/(?:ando|iendo|ado|ido)$/u.test(forma)) return false;
+      if (!/(?:ar|er|ir)$/u.test(forma)) return true;
+      return !PREVIAS_DESCRIPTIVAS.has(palabras[i - 1] ?? '');
+    });
   });
 }
 
@@ -214,7 +324,8 @@ function hayVerboDeOrden(oracion: string, soloPronombre = false): boolean {
 export function promptsSinContexto(normalizado: string): boolean {
   // Tope de seguridad, no de regla: el del texto crudo está en verificarPatrones y NFKC puede alargar.
   if (normalizado.length > TOPE_INSTRUCCIONES * 20) return true;
-  const base = normalizado.replace(/(\d)[\s.,_-]+(?=\d)/g, '$1');
+  // «…» (NFKC lo vuelve «...») es continuación, no fin de oración.
+  const base = normalizado.replace(/(\d)[\s.,_-]+(?=\d)/g, '$1').replace(/\.{2,}/g, ' ');
   PROMPTS_PLURAL.lastIndex = 0;
   for (let m = PROMPTS_PLURAL.exec(base); m !== null; m = PROMPTS_PLURAL.exec(base)) {
     const antes = base.slice(0, m.index);
@@ -222,9 +333,12 @@ export function promptsSinContexto(normalizado: string): boolean {
     const conNumero = CON_NUMERO.exec(antes.slice(-80));
     if (conNumero === null) return true;
     const intermedia = conNumero[3];
-    if (intermedia !== undefined && (VERBO_ORDEN.test(intermedia) || DETERMINANTE.test(`${intermedia} `))) return true;
+    if (intermedia !== undefined && (VERBO_ORDEN.test(intermedia) || DETERMINANTE_DURO.test(`${intermedia} `) || DETERMINANTE_NEUTRO.test(`${intermedia} `))) return true;
     const previo = antes.slice(-80).slice(0, conNumero.index + (conNumero[1] ?? '').length);
-    if (DETERMINANTE.test(previo) || /#\s*$/.test(previo)) return true;
+    if (DETERMINANTE_DURO.test(previo)) return true;
+    // Un determinante neutro se descuenta para mirar lo que hay antes («### los 100 prompts»).
+    const neutro = DETERMINANTE_NEUTRO.exec(previo);
+    if (/#\s*$/.test(neutro === null ? previo : previo.slice(0, neutro.index + 1))) return true;
     // La oración entera (ya acotada por el tope de 1.500): lo que viene antes del
     // último corte y lo que viene hasta el primero.
     let corte = -1;
@@ -233,9 +347,16 @@ export function promptsSinContexto(normalizado: string): boolean {
     const trozos = despues.split(CORTE_ORACION);
     const oracionDespues = trozos[0] ?? '';
     if (hayVerboDeOrden(oracionAntes) || hayVerboDeOrden(oracionDespues)) return true;
-    // Las vecinas solo importan si ordenan SOBRE los prompts: verbo con pronombre pegado.
-    const previa = antes.slice(0, corte < 0 ? 0 : corte).split(CORTE_ORACION).pop() ?? '';
-    if (hayVerboDeOrden(trozos[1] ?? '', true) || hayVerboDeOrden(previa, true)) return true;
+    // Las vecinas solo importan si ordenan SOBRE los prompts: verbo con pronombre de
+    // objeto plural. Dos oraciones a cada lado; con un determinante neutro («los 100
+    // prompts») el texto entero, porque unas frases de relleno no deben esquivar la ventana.
+    const previas = antes.slice(0, corte < 0 ? 0 : corte).split(CORTE_ORACION).slice(-2);
+    if (neutro !== null) {
+      if (hayVerboDeOrden(base, true)) return true;
+      if (!formaComercialPermitida(oracionAntes, oracionDespues)) return true;
+      if (AUTORIDAD.test(oracionAntes) || AUTORIDAD.test(oracionDespues)) return true;
+    } else if (hayVerboDeOrden(trozos[1] ?? '', true) || hayVerboDeOrden(trozos[2] ?? '', true)
+      || previas.some((x) => hayVerboDeOrden(x, true))) return true;
     if (/^\s*[:;=>#—–]|^\s+-\s/u.test(despues)) return true;
   }
   return false;
