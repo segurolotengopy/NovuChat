@@ -3047,3 +3047,133 @@ describe('Agenda mínima v0: encabezado de la oferta y promesa de recepción sin
     });
   });
 });
+
+// Revisión del PR #640 (23/10): la red solo actúa si la redacción de verdad sale, una oferta con horarios no
+// pierde sus botones por una mención de paso, y «se llama» no es una invitación a comunicarse.
+describe('Agenda mínima v0: la red de la promesa de recepción no rompe lo que hoy funciona (23/10)', () => {
+  const ofertaCon = (redaccion: string, op: { fecha?: string; eventos?: J[]; pregunta?: string } = {}): Turno => {
+    const m = mundo({ eventos: op.eventos ?? [] });
+    m.turno(texto(MAMA, 'quiero cita'));
+    m.gemini.extraer = extraccion({ fechaPreferida: op.fecha ?? JUEVES, franja: 'tarde', ...(op.pregunta ? { pregunta: op.pregunta } : {}) });
+    m.gemini.redactar = redaccion;
+    return m.turno(lista(MAMA, SERV_CNS, 'Control niño sano'));
+  };
+  const preguntar = (pregunta: string, redaccion: string): Turno => {
+    const m = mundo({ eventos: [] });
+    m.turno(texto(MAMA, 'hola'));
+    m.gemini.extraer = extraccion({ intencion: 'consultar', pregunta });
+    m.gemini.redactar = redaccion;
+    return m.turno(texto(MAMA, pregunta));
+  };
+  const ofrecidos = (t: Turno): unknown => (t.resumen!['resumen'] as J)['huecosOfrecidos'];
+  const MENCION = 'Hay horarios el jueves; al llegar anúnciate en recepción.';
+
+  it('hallazgo 1: con aviso (día cerrado) la redacción se descarta igual: texto fijo con botones, sin transferir', () => {
+    const t = ofertaCon(MENCION, { fecha: '2026-10-11' });
+    expect(t.enviados).toHaveLength(1);
+    expect(botonesDe(t.enviados[0]!).length).toBeGreaterThan(0);
+    expect(t.enviados[0]!.cuerpo).toMatch(/no atendemos/);
+    expect(t.aRecepcion).toHaveLength(0);
+  });
+  it('hallazgo 1: fuera de rango sigue diciendo el límite, sin transferir', () => {
+    const t = ofertaCon(MENCION, { fecha: '2027-03-01' });
+    expect(t.enviados).toHaveLength(1);
+    expect(t.enviados[0]!.cuerpo).toMatch(/hasta \d+ días de anticipación/);
+    expect(t.aRecepcion).toHaveLength(0);
+  });
+  it('hallazgo 2: una oferta con horarios que menciona recepción de paso conserva los botones y huecosOfrecidos es coherente', () => {
+    const t = ofertaCon(MENCION);
+    expect(t.enviados).toHaveLength(1);
+    expect(interactivo(t.enviados[0]!)['type']).toBe('button');
+    const bs = botonesDe(t.enviados[0]!);
+    expect(bs).toHaveLength(3);
+    expect(t.enviados[0]!.cuerpo).toMatch(/Toca el horario que prefieras/);
+    expect(t.enviados[0]!.cuerpo).not.toMatch(/recepci/i);
+    expect(t.aRecepcion).toHaveLength(0);
+    expect(ofrecidos(t)).toEqual(bs.map((b) => b.id.split('|')[1]));
+  });
+  it('hallazgo 2 NIEGA: con «necesita verse» sí se transfiere aunque haya horarios, y entonces NO se registran horarios ofrecidos', () => {
+    const t = ofertaCon('Eso necesita verse ya; hay horarios el jueves.');
+    expect(urlDe(t.aPaciente(MAMA)[0]!)).toContain(`wa.me/${REC}`);
+    expect(t.aRecepcion).toHaveLength(1);
+    expect(ofrecidos(t)).toEqual([]);
+  });
+  it('hallazgo 2 NIEGA: un responder (pregunta) que menciona recepción sí se transfiere, con motivo propio', () => {
+    const t = preguntar('¿qué hago si se golpea la cabeza?', 'Por favor pasa por recepción.');
+    expect(t.aRecepcion).toHaveLength(1);
+    expect(t.aRecepcion[0]!.cuerpo).toMatch(/remitía a recepción sin botón/);
+    expect(t.aRecepcion[0]!.cuerpo).not.toContain('Por favor pasa');
+  });
+  for (const [pregunta, respuesta] of [
+    ['¿cómo se llama el doctor?', 'Se llama Dr. Ejemplo y atiende en el consultorio.'],
+    ['¿quién atiende a mi hijo?', 'Los lunes atiende el doctor. Escribe aquí si necesitas otra hora.'],
+    ['¿quién me llama?', 'Te llama la asistente del consultorio.'],
+  ] as const) {
+    it(`hallazgo 3 NIEGA: «${pregunta}» no se vuelve transferencia`, () => {
+      const t = preguntar(pregunta, respuesta);
+      expect(t.enviados[t.enviados.length - 1]!.cuerpo.toLowerCase()).toBe(respuesta.toLowerCase());
+      expect(t.aRecepcion).toHaveLength(0);
+      expect(t.aPaciente(MAMA).some((e) => e.tipo === 'interactive')).toBe(false);
+    });
+  }
+  it('hallazgo 3 NIEGA: «te espero en recepción» tras agendar (confirmación por código) no dispara nada', () => {
+    const m = mundo({ eventos: [] });
+    hastaPedirNombre(m);
+    m.gemini.redactar = 'Te espero en recepción.';
+    m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+    const t = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
+    expect(m.calendario.eventos).toHaveLength(1);
+    expect(t.enviados[0]!.cuerpo).toMatch(CONFIRMA);
+    expect(t.aRecepcion).toHaveLength(0);
+  });
+  it('hallazgo 3: sigue transfiriendo «Escríbele al doctor», «Comunícate con el consultorio» y «Llama al consultorio»', () => {
+    for (const frase of ['Escríbele al doctor cuanto antes.', 'Comunícate con el consultorio ya.', 'Llama al consultorio ahora.']) {
+      expect(preguntar('mi hijo vomita mucho', frase).aRecepcion, frase).toHaveLength(1);
+    }
+  });
+
+  describe('encabezado de la oferta: casos de borde', () => {
+    const ENC = /Estos son los horarios disponibles para control del niño sano/;
+    it('«en la mañana» (franja) no cuenta como día: se antepone el encabezado', () => {
+      const t = ofertaCon('😊 Estos horarios en la mañana: 14:00, 14:30 y 15:00');
+      expect(t.enviados[0]!.cuerpo).toMatch(ENC);
+    });
+    it('«8 de octubre» de un hueco cuenta como día: no se repite el encabezado', () => {
+      const propio = 'Horarios para el 8 de octubre: 14:00, 14:30 y 15:00.';
+      expect(ofertaCon(propio).enviados[0]!.cuerpo).toBe(propio);
+    });
+    it('sin fecha pedida y con los primeros días llenos, el encabezado nombra el día que de verdad se ofrece (la oferta es de un solo día)', () => {
+      const m = mundo({ eventos: [evento('o1', '2026-10-05', '12:00', '18:00', 'Otro'), evento('o2', '2026-10-06', '11:00', '18:00', 'Otro')] });
+      m.turno(texto(MAMA, 'quiero cita'));
+      m.gemini.extraer = extraccion();
+      m.gemini.redactar = '😊 11:00, 11:30 y 12:00';
+      const t = m.turno(lista(MAMA, SERV_CNS, 'Control niño sano'));
+      const dias = new Set(botonesDe(t.enviados[0]!).map((b) => b.id.split('|')[1]!.slice(0, 10)));
+      expect(dias.size).toBe(1);
+      expect(t.enviados[0]!.cuerpo).toMatch(/Estos son los horarios disponibles para control del niño sano el miércoles 7 de octubre:/);
+    });
+    it('al mover, el aviso de la cita actual va primero y el encabezado de la oferta sigue ahí', () => {
+      const m = mundo({ eventos: [citaDe(MAMA, 'vieja', JUEVES, '15:00', '15:30', 'Pérez Gómez, Ana (CNS)')] });
+      m.gemini.extraer = extraccion({ intencion: 'mover' });
+      m.gemini.redactar = '😊 12:00';
+      const t = m.turno(texto(MAMA, 'quiero reagendar mi cita'));
+      expect(t.enviados[0]!.cuerpo).toMatch(/^Tu cita actual es el /);
+      expect(t.enviados[0]!.cuerpo).toMatch(ENC);
+    });
+    it('con aviso más pregunta no se transfiere y los botones salen', () => {
+      const redaccion = '😊 Los domingos no atendemos; estos son otros días.';
+      const t = ofertaCon(redaccion, { fecha: '2026-10-11', pregunta: '¿atienden los domingos?' });
+      expect(t.enviados).toHaveLength(1);
+      expect(t.enviados[0]!.cuerpo).toBe(redaccion);
+      expect(botonesDe(t.enviados[0]!).length).toBeGreaterThan(0);
+      expect(t.aRecepcion).toHaveLength(0);
+    });
+    it('NIEGA: horas ajenas siguen rechazadas y el texto fijo trae su encabezado una sola vez', () => {
+      const cuerpo = ofertaCon('😊 Jue 16:45, 17:10').enviados[0]!.cuerpo;
+      expect(cuerpo).not.toMatch(/16:45|17:10|😊/);
+      expect((cuerpo.match(/Estos son los horarios/g) ?? []).length).toBe(1);
+      expect(cuerpo).toMatch(/Toca el horario que prefieras/);
+      expect(cuerpo).toContain('• jueves 8 de octubre a las 14:00');
+    });
+  });
+});
