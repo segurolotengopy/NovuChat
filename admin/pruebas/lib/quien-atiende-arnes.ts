@@ -21,8 +21,12 @@ export const ARNES_REGLA: [string, string][] = [
   ['I A', 'I A'], ['inteligencia artificial', 'inteligencia artificial'],
   // L3 (opción A de Andres): instituciones y marcas.
   ['BCB', 'BCB'], ['BISA', 'BISA'], ['BMSC', 'BMSC'], ['Prodem', 'Prodem'], ['Ecofuturo', 'Ecofuturo'],
-  ['QR', 'QR'], ['Cobranzas', 'Cobranzas'], ['Yape', 'Yape'], ['WhatsApp', 'WhatsApp'], ['Meta', 'Meta'],
+  ['QR', 'QR'], ['Cobranzas', 'Cobranzas'], ['Yape', 'Yape'], ['yape', 'yape'], ['WhatsApp', 'WhatsApp'], ['Meta', 'Meta'],
   ['Soporte', 'Soporte'],
+  // RECHAZOS INTENCIONALES (opción A de Andres; costo de la prohibición 4): la lista es por palabra y no distingue
+  // el cargo del nombre. Si un comercio se llama así, usa «nuestro equipo» o su nombre de pila.
+  ['Soporte Técnico Ruiz', 'Soporte Técnico Ruiz'], ['Farmacia Real', 'Farmacia Real'],
+  ['Recursos Humanos', 'Recursos Humanos'], ['Clínica Meta', 'Clínica Meta'],
   ['correo', 'ruben' + '@' + 'malo.bo'], ['enlace', 'https://malo.example'], ['dominio', 'malo.com'], ['www', 'www.malo.bo'],
 ];
 // Solo el servidor y la consola pueden verlos (normalizan; la regla no).
@@ -34,5 +38,10 @@ export const ARNES_SOLO_NORMALIZADO: [string, string][] = [
 // Decisión de Andres (opción A): «Caja» y «Fortaleza» quedan FUERA de la lista prohibida y siguen pasando,
 // igual que los nombres con tildes, `&` y puntos de la lista de permitidos.
 export const NOMBRES_QUE_PASAN: string[] = [
-  'Caja', 'Fortaleza', 'Rubén Núñez', 'María José (recepción)', 'Clínica Sofía & Equipo', 'Dr. Pérez', 'Turno 123', 'nuestro equipo',
+  'Caja', 'Fortaleza', 'Maya Pérez', 'Celaya Pedraza', 'Luiso Porte', 'Rubén Núñez', 'María José (recepción)', 'Clínica Sofía & Equipo', 'Dr. Pérez', 'Turno 123', 'nuestro equipo',
 ];
+
+// Lo que NO se detecta a propósito: las formas compactas de `yape` y `soporte` se quitaron porque rechazaban
+// nombres de pila comunes («Maya Pérez», «Celaya Pedraza», «Luiso Porte»). Quedan solo por palabra completa
+// (regla, servidor y consola), así que «Y A P E» y «S o p o r t e» pasan.
+export const PASAN_POR_DISENO: string[] = ['Y A P E', 'S o p o r t e'];

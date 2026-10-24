@@ -15,7 +15,7 @@ import {
 import {
   motivoQuienAtiendeInvalido, QUIEN_RE_CARACTERES, QUIEN_RE_VOCABULARIO, COMPACTO_PROHIBIDO, compactarQuien,
 } from '../../functions/src/core/prompt/prompt.ts';
-import { ARNES_REGLA, ARNES_SOLO_NORMALIZADO, NOMBRES_QUE_PASAN } from '../lib/quien-atiende-arnes.ts';
+import { ARNES_REGLA, ARNES_SOLO_NORMALIZADO, NOMBRES_QUE_PASAN, PASAN_POR_DISENO } from '../lib/quien-atiende-arnes.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const regla = readFileSync(join(aqui, '..', '..', 'firestore.rules'), 'utf8');
@@ -44,7 +44,7 @@ describe('consola: nombre de quien atiende', () => {
       expect(errorQuienAtiende(valor)).not.toBeNull();
       expect(motivoQuienAtiendeInvalido(valor)).not.toBeNull();
     });
-  it.each(['', ...NOMBRES_QUE_PASAN])('«%s» pasa', (valor) => {
+  it.each(['', ...NOMBRES_QUE_PASAN, ...PASAN_POR_DISENO])('«%s» pasa', (valor) => {
     expect(errorQuienAtiende(valor)).toBeNull();
     expect(motivoQuienAtiendeInvalido(valor)).toBeNull();
   });

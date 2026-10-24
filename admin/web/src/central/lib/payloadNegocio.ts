@@ -111,7 +111,7 @@ export const COMPACTO_PROHIBIDO = [
   'banc', 'pago', 'pagu', 'deposit', 'transferenc', 'tesorer', 'acreditad', 'verificad',
   'comprobante', 'recibimos', 'robot', 'chatbot', 'humano', 'humana', 'personareal', 'personadeverdad',
   'unapersona', 'asesorareal', 'carneyhueso', 'inteligenciaartificial', 'prodem', 'ecofuturo', 'cobranza',
-  'whatsapp', 'soporte', 'yape', 'mercantil', 'ganadero', 'economico', 'fassil', 'tigomoney',
+  'whatsapp', 'mercantil', 'ganadero', 'economico', 'fassil', 'tigomoney',
   'impuestosnacionales', 'policia', 'sistema', 'tujefe', 'yapag',
 ];
 export function compactarQuien(texto: string): string {
