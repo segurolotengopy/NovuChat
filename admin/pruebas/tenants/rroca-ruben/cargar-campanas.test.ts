@@ -33,11 +33,10 @@ const TODOS = [T, T_CHICO, T_SUSP, T_SIN_PRODUCTO];
 
 const tmp = mkdtempSync(join(tmpdir(), 'cargar-campanas-'));
 const base = JSON.parse(readFileSync(ARCHIVO, 'utf8')) as { anuncios: Array<Record<string, unknown>>; tenant: string };
-/** El archivo aprobado con el tenant pedido y la coma en lugar del «;» tras «100 prompts» (el servidor rechaza ese «;»: ver campanas.test.ts). */
+/** El archivo aprobado con el tenant pedido: pasa entero las reglas del servidor. */
 const bueno = (tenant: string, mod: (d: { anuncios: Array<Record<string, unknown>>; tenant: string }) => void = () => undefined): { anuncios: Array<Record<string, unknown>>; tenant: string } => {
   const d = JSON.parse(JSON.stringify(base)) as typeof base;
   d.tenant = tenant;
-  d.anuncios[2]!['angulo'] = String(d.anuncios[2]!['angulo']).replace('100 prompts; pregunta', '100 prompts. Pregunta');
   mod(d);
   return d;
 };
