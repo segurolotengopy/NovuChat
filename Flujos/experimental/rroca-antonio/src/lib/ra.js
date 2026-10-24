@@ -464,6 +464,44 @@ function raPideBaja(texto) {
   return RA_BAJA.test(String(texto === undefined || texto === null ? '' : texto).normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/0/g, 'o').replace(/1/g, 'i').replace(/3/g, 'e').replace(/4/g, 'a').replace(/5/g, 's').replace(/7/g, 't').replace(/@/g, 'a').replace(/\s+/g, ' '));
 }
 const RA_TEXTO_BAJA = 'Entendido, tomé nota de que no quieres recibir más mensajes. Si más adelante necesitas algo, escríbeme cuando quieras.';
+// «¿Eres un robot?», «¿hablo con una IA?», «¿eres una persona?», «¿eres Antonio?»: el cliente pregunta qué es el asistente (prohibición 4: se reconoce con naturalidad; nunca se quita esa respuesta).
+function raPreguntaPorIA(n) {
+  const palabras = n === '' ? 0 : n.split(' ').length;
+  const junto = n.replace(/ /g, '');
+  const BOT = 'bot|bott|b0t|vot|r0bot|robot|robo|chatbot|chatgpt|gpt|gemini';
+  const BASE = BOT + '|antonio|ia|ai|inteligencia artificial|inteligencia|maquina|programa|persona|pessoa|humano|humana|human|ser humano|gente|de verdad|asistente';
+  const QUE = BASE + '|real|automatic\\w*|automatizad\\w*';
+  const defin = /\bque (es|son)\b|\bcomo (uso|usar|usa)\b/.test(n);
+  // Ante la duda NO se captura (la barrera estructural —no borrar la presentación con IA— es la protección real): solo preguntas en 2.ª persona o cortas.
+  const quien = /\bquien (eres|sos|me (responde|atiende|contesta|escribe))\b|\bcon quien (hablo|estoy hablando|estoy conversando|me comunico|converso|chateo)\b|\bantonio eres\b|\bwho (are you|is this)\b/.test(n);
+  const eres = new RegExp('\\b(eres|sos|seras|eres usted|usted es|es usted) (usted |un |una |el |la |tu )?(' + QUE + ')\\b').test(n);
+  const es = palabras <= 4 && !defin && !/^quien es\b/.test(n) && new RegExp('\\bes (usted )?(un |una )?(' + BASE.replace('|antonio|', '|') + ')\\b').test(n);
+  const esReal = palabras <= 3 && !defin && /\bes real\b/.test(n);
+  // «¿hablo con una IA?»: solo al comienzo del mensaje y corto («yo ya escribo con IA», «estoy hablando con IA todos los días» no son preguntas por la identidad).
+  const hablo = palabras <= 6 && /^(estoy )?(hablo|hablando|conversando|chateando) con (usted |un |una |el |la )?(antonio|robot|bot|chatbot|ia|inteligencia|maquina|persona|humano|humana|alguien|programa)( ahi| real)?$/.test(n);
+  const responde = /\bme (responde|atiende|contesta|escribe)n? (una |un |el )?(persona|alguien|humano|humana|robot|bot|ia|maquina|programa|inteligencia artificial)\b/.test(n) || (palabras <= 4 && /^(responde|atiende|contesta) (una |un )?(persona|humano|maquina|robot|bot|ia)\b/.test(n));
+  // «¿quién me está respondiendo?», «¿quién contesta?», «¿esto lo responde una IA?», «¿las respuestas son automáticas?», «¿me está respondiendo un robot?», «¿estás respondiendo tú o una IA?».
+  const mas = /\bquien me (esta )?(respondiendo|atendiendo|contestando|escribiendo)\b/.test(n) || (palabras <= 4 && /\bquien (contesta|responde|atiende)\b/.test(n)) || (palabras <= 7 && /\b(lo )?responde(n)? (una |un )?(ia|robot|bot|persona|maquina|humano)\b/.test(n) && /\besto\b/.test(n))
+    || (palabras <= 5 && /^(las )?respuestas (son )?automatic\w*$|^son automatic\w*$/.test(n) && /\bson\b/.test(n)) || /\bme esta respondiendo (una |un )?(persona|robot|bot|ia|maquina|humano)\b/.test(n) || (palabras <= 8 && /\bestas (respondiendo|contestando|escribiendo)\b/.test(n) && /\b(tu|usted) o (una |un )?(ia|robot|bot|persona|maquina)\b/.test(n));
+  const hay = palabras <= 5 && /\bhay (alguien|una persona|algun humano|alguna persona)\b/.test(n);
+  // «Automático» solo con sujeto del chat («esto es automático», «tu respuesta es automática», «¿es un mensaje automático?»).
+  const real = palabras <= 8 && (/\balguien (real|de verdad)\b|\bpersona (real|de verdad)\b|\breal person\b|\bhumano real\b|\b(esto|esta|este|este chat|tu respuesta|la respuesta|tu mensaje) (es |son )?(un |una )?(mensaje |respuesta |chat )?automatic[a-z]*(?![a-z])(?! (al|despues|luego|cuando|si|para)\b)|\bes (un |una )?(mensaje|respuesta|chat) automatic\w*|\bes automatic\w* (este|ese|el|tu) (chat|mensaje|numero)\b|\b(es|esto es|esta es|este es) (un |una )?(contestador|bot|robot|chatbot)\b/.test(n));
+  const ingles = /\bare you (a |an )?(bot|robot|human|real|ai|person|chatbot)\b|\bis this (a |an )?(bot|robot|ai|human|real|automated|person)\b|\bam i (talking|speaking|chatting) (to|with)\b|\breal (human|person)\b/.test(n);
+  const portugues = /\bvoce e (um |uma )?(robo|bot|pessoa|humano|humana|ia|maquina|real|chatbot)\b|\bestou (falando|conversando) com (um |uma )?(robo|bot|pessoa|humano|humana|ia|maquina|alguem)\b|^e (um |uma )?(robo|pessoa|bot)\b/.test(n);
+  // «bot?», «robot», «b0t», «vot», «contestador?»: la palabra de máquina es CASI TODO el mensaje (no «chatbot para whatsapp», «ok gracias robot»).
+  const suelta = new RegExp('^((eres|es|sos|un|una|esto es|es un|eres un) )?(' + BOT + '|contestador)$').test(n);
+  // Letras separadas («b o t», «e r e s u n b o t»): se compara el texto «junto».
+  const pegado = junto.length <= 16 && n !== junto && /\b\w \w/.test(n) && new RegExp('^(eres|sos|es|esusted|usteres)?(un|una)?(' + BOT + '|maquina|persona|humano|humana)$').test(junto);
+  return mas || quien || eres || es || esReal || hablo || responde || hay || real || ingles || portugues || suelta || pegado;
+}
+// La respuesta FIJA a «¿eres un bot / una persona / Antonio?» (prohibición 4: nunca se niega ser una IA; lo decide el código, no el modelo). El nombre del negocio es el de la Consola (`raDelNegocio`); NO es la presentación repetida:
+// ni «¡Hola!» ni el saludo largo. La pregunta final continúa la charla y no lleva precios. Datos del tenant (los nombres), no del núcleo.
+const RA_IDENTIDAD_ROL = 'una inteligencia artificial, no una persona (Antonio es el autor del libro). Puedo ayudarte con el libro y sus bonos.';
+const RA_IDENTIDAD_PREGUNTA = '¿Qué te gustaría saber del libro?';
+function raTextoIdentidad(nombre) {
+  const d = raDelNegocio(nombre);
+  return 'Soy el asistente virtual' + (d !== '' ? ' ' + d : '') + ': ' + RA_IDENTIDAD_ROL + '\n\n' + RA_IDENTIDAD_PREGUNTA;
+}
 // Pide un producto («quiero el pack», «dame el libro», «lo compro»): con un QR abierto recibe el recordatorio (un solo QR a la vez; un pedido = un producto).
 function raPideProducto(n) {
   if (/\b(saber|conocer|informacion|entender|preguntar|consultar|curiosear)\b/.test(n)) return false;
