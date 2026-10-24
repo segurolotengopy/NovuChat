@@ -451,6 +451,7 @@ function evLeerEtiquetas(crudo) {
 // LO QUE SALE AL CLIENTE: la revisión del texto del modelo. Todo en CÓDIGO.
 // -----------------------------------------------------------------------------
 const EV_MARCA_VALOR = 'xvalorhabitualx';
+const EV_PIDE_GARANTIA = /\b(garantiz\w*|garantia\w*|prometes?|aseguras?|aseguran|me aseguras|voy a quedar|vas a dejarme|seguro que (?:me|quedo|queda))\b/;
 const EV_ACLARACION = 'Cada rostro responde distinto y no prometemos un resultado idéntico.';
 function evSinTildes(t) { return evTexto(t).normalize('NFD').replace(/[̀-ͯ]/g, ''); }
 function evPartirEnOraciones(texto) {
@@ -586,6 +587,8 @@ function evPulirSalida(crudo, ctx) {
   t = evAdmisionHonesta(t);
   t = t.trim();
   if (enviados.indexOf('antes_despues') >= 0 && !/responde distinto/.test(evNorm(t))) t = (t ? t + '\n\n' : '') + EV_ACLARACION;
+  // Si el cliente pregunta por una GARANTÍA o por si va a quedar bien, la aclaración «cada rostro responde distinto» la pone el CÓDIGO si el modelo no la trajo (no depende del azar del modelo).
+  else if (t !== '' && EV_PIDE_GARANTIA.test(evNorm(c.textoCliente || '')) && !/responde distinto|no prometemos|no podemos prometer|no se puede prometer/.test(evNorm(t))) t = t + '\n\n' + EV_ACLARACION;
   if (t === '') return { texto: '', motivo: 'vacio', detalle: 'no quedó texto tras quitar etiquetas, enlaces y promesas sin respaldo' };
   if (evAlfabetoMixto(t)) return { texto: '', motivo: 'afirma_un_hecho', detalle: 'alfabeto mixto en una palabra' };
   const marcado = evMarcarValor(t);
