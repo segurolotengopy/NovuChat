@@ -10,6 +10,11 @@ import { httpsCallable } from 'firebase/functions';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { capacidadesDeConsola, useModulos } from '../../central/lib/flujos';
 import { mensajeDeFalla, prepararFoto } from './foto';
+import { pareceInstruccion } from '../../../../functions/src/modulos/productos/frasesDeInstruccion';
+
+/** Aviso fijo: no dice qué palabra lo dispara, solo que el asistente no mencionará el producto. */
+const AVISO_NOMBRE = 'Ese nombre se lee como una orden para el asistente, no como un producto. '
+  + 'Escribe solo el nombre del producto o servicio, tal como lo ve tu cliente.';
 import {
   aCsv, idDeNombre, partirCsv, validarFilas, type FilaCatalogo, type FilaConProblemas,
 } from '../../central/lib/csv';
@@ -559,6 +564,7 @@ export function Catalogo() {
         + 'Arriba de la tabla está cómo hacer lugar.'); return;
     }
     if (!nuevo.nombre.trim()) { setEstadoAlta('El nombre es obligatorio.'); return; }
+    if (pareceInstruccion(nuevo.nombre)) { setEstadoAlta(AVISO_NOMBRE); return; }
     if (!sinPrecio && (!Number.isFinite(precio) || precio < 0)) {
       setEstadoAlta('El precio tiene que ser un número de cero para arriba, o quedar vacío.'); return;
     }
@@ -853,6 +859,11 @@ export function Catalogo() {
                     <Miniatura url={fotos[it.id] || it.imagenUrl} />
                     <div>
                       <TextoSeguro valor={it.nombre} maxLargo={80} />
+                      {pareceInstruccion(String(it.nombre ?? '')) && (
+                        <div className="text-muted" role="note">
+                          El asistente no menciona este producto: su nombre se lee como una orden. Cambia el nombre (dalo de baja y cárgalo de nuevo).
+                        </div>
+                      )}
                       {typeof it.descripcion === 'string' && it.descripcion !== '' && (
                         <div className="text-muted"><TextoSeguro valor={it.descripcion} maxLargo={300} /></div>
                       )}
@@ -1511,8 +1522,8 @@ function ImportarCatalogo({ tenantId, conAgenda, items, usados, limite, unidad }
               motivo: motivo === 'sin_respuesta'
                 ? 'el servidor no respondió a la importación. Inténtalo de nuevo en un '
                   + 'momento; si sigue, avísanos desde Reclamos.'
-                : 'el servidor no aceptó esta fila. Revisa el precio, la duración y la '
-                  + 'dirección de la foto.',
+                : 'el servidor no aceptó esta fila. Revisa el nombre (que sea solo el nombre del '
+                  + 'producto), el precio, la duración y la dirección de la foto.',
             });
           }
         }

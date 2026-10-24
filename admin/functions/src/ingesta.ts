@@ -64,6 +64,8 @@ import {
 // El enlace de la carta para «Venta mínima v0» (`catalogoCompleto: true`). Sale
 // de `catalogoWeb.ts`, que no importa nada de acá: no hay ciclo.
 import { enlaceParaElFlujo, sePuedeComprar, type EnlaceEmitido } from './modulos/catalogo-web/catalogoWeb.js';
+// Los nombres de producto que son frases de instrucción no llegan al modelo (Productos).
+import { catalogoParaElPrompt } from './modulos/productos/nombreSeguro.js';
 
 /**
  * =========================================================================
@@ -1686,11 +1688,14 @@ export const configuracionFlujo = onRequest(
     // que este turno YA trajo (cero lecturas nuevas). El tenant sale de la ruta
     // autenticada. Va en la respuesta solo si hay alguno: un comercio sin anuncios
     // recibe la respuesta de siempre, byte a byte (`despacho-sesion.test.ts`).
+    // Lo que el modelo lee del catálogo: sin los nombres que son órdenes (`nombreSeguro.ts`).
+    const catalogoPrompt = catalogoParaElPrompt(catalogo.docs);
+    if (catalogoPrompt.omitidos > 0) console.info(`catálogo: ${catalogoPrompt.omitidos} nombre(s) fuera del prompt`);
     const anunciosDeHoy = anunciosParaElFlujo(
       campanas.exists ? campanas.get('vigentes') : [],
       limiteDeCampanas(cuenta.exists ? cuenta.data() as Record<string, unknown> : null),
       ahoraMs,
-      catalogo.docs.map((d) => {
+      catalogoPrompt.docs.map((d) => {
         const datos = d.data();
         const quedan = existencias(datos);
         return { id: d.id, nombre: datos['nombre'], precio: datos['precio'],
@@ -2005,7 +2010,7 @@ export const configuracionFlujo = onRequest(
         ? {
             catalogo: [],
             catalogoResumen: resumirCatalogo(
-              catalogo.docs.map((d) => d.data() as Record<string, unknown>)),
+              catalogoPrompt.docs.map((d) => d.data() as Record<string, unknown>)),
             // Con esto el flujo sabe que tiene que derivar al sitio en vez de
             // intentar recitar una lista que no recibió.
             catalogoWeb: { activo: true, derivar: true },
@@ -2016,7 +2021,7 @@ export const configuracionFlujo = onRequest(
             // una venta para mañana y lo segundo es un cliente que se va. Los
             // ítems SIN control de existencias nunca salen agotados: no saber
             // cuántos hay no es saber que hay cero.
-            catalogo: catalogo.docs.map((d) => {
+            catalogo: catalogoPrompt.docs.map((d) => {
               const datos = d.data();
               const quedan = existencias(datos);
               return {
@@ -2150,7 +2155,7 @@ export const configuracionFlujo = onRequest(
       funcionarios: resolverFuncionarios(
         funcionarios.docs.map((d) => ({ id: d.id, datos: d.data() })),
         negocio,
-        new Set(catalogo.docs.map((d) => d.id)),
+        new Set(catalogoPrompt.docs.map((d) => d.id)),
       ),
 
       // LAS CAMPAÑAS QUE EL FLUJO RECONOCE POR SU TEXTO (Andres, 24/09/2026):

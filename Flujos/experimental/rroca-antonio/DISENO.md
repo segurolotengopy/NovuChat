@@ -297,8 +297,36 @@ Los precios salen solo del catálogo de la Consola; el flujo no copia cifras de 
 | Libro | Bs 35 | 35 |
 | Pack | Bs 49 (lanzamiento 30/10 al 05/11/2026) | 49 |
 | Workbook | Bs 20 | 20 |
-| Guía de conversaciones | Bs 18 | 19 |
-| Calendario de conexión | Bs 15 | 17 |
-| Banco de preguntas | Bs 18 | 15 |
+| Guía de conversaciones | Bs 18 | 18 (alineado en el PR «MD modificado») |
+| Calendario de conexión | Bs 15 | 15 (alineado) |
+| Banco de preguntas | Bs 18 | 18 (alineado) |
 
 El precio del Pack cambia el **06/11/2026** (Bs 69 según la landing): lo cambia la Consola (decisión de Antonio/Andres), no el código. Pendiente de la Consola: igualar Guía, Calendario y Banco con la landing, o corregir la landing.
+
+## PR «Antonio: MD modificado» (24/10/2026, decisiones de Andres)
+
+Fuente: «MD Antonio modificado 2410206.02» (en `CLIENTES/RUBEN_ROCA/Antonio/`, solo lectura). Decisiones de Andres del 24/10/2026, únicas fuentes de verdad de este PR.
+
+- **Presentación.** Se queda «asistente virtual del Método Puente» (`nombreNegocio` de la Consola); donde el MD dice «de Antonio Dauber» prevalece «Método Puente». «Antonio Dauber» no aparece en ningún texto (salvo en los filtros que lo prohíben).
+- **Precios del MD, solo del catálogo.** Libro 35, Pack 49, Workbook 20, Calendario 15, 100 Preguntas 18, Guía 18. El archivo de datos `negocio-rroca-antonio.json` se alinea (Guía 18, Calendario 15, Preguntas 18) para que una recarga no revierta la Consola; **el cambio de la Consola lo aplica el coordinador con botón y no es parte de este PR**. Ninguna cifra se escribió en el código ni en las etiquetas: los montos los pone el código desde el catálogo.
+- **Promoción del Pack (decisión de Andres, 24/10/2026).** 49 Bs vigente desde la publicación de Antonio (24/10) hasta el 05/11; pasa a 69 el 06/11, con un botón de Andres sobre el catálogo (la landing dice promoción del 30/10 al 05/11; antes del 30/10 el Pack ya cuesta 49 en el bot porque Andres fijó los precios del MD). El recordatorio del 05/11 por la tarde lo lleva Principal; el flujo no agenda nada. El bot dice SOLO el precio vigente (49 hasta el 05/11/2026). El Pack pasa a 69 **en el catálogo** la noche del 05/11 con un botón de Andres; el bot no menciona el 69 ni agenda nada. **Consecuencia:** el ahorro que calcula el código (`raAhorro` = suma de los precios separados, 106, menos el Pack) **baja de 57 a 37 al pasar el Pack a 69**; el texto que lo dice se actualiza solo. Prueba: `etiquetas-md.test.ts` («con el Pack a 49 el ahorro es 57…; con el Pack a 69 baja a 37»).
+- **Promesas sin respaldo del MD, NO implementadas.** «La validación demorará solo unos minutos y enseguida se enviarán los enlaces» y «pasé tu mensaje al equipo y te responderán en unos minutos» quedan fuera: se mantiene lo del rehecho (sin plazo; aviso + botón), regla de «solo se ofrece lo que se cumple» del 21/09.
+- **Etiquetas (dato del tenant).** Los nombres con su emoji viven en «Config base» (`etiquetaPack`, `etiquetaLibro`, `etiquetaBonos`, `etiquetaWorkbook`, `etiquetaGuia`, `etiquetaPreguntas`, `etiquetaCalendario`, en `rroca-antonio.json`), SIN monto; el monto lo agrega `raAjustarEtiqueta` / `raTituloFila` desde el catálogo. Sin la clave, la etiqueta cae al nombre del catálogo (comportamiento anterior; las demás suites lo usan). Los ids de botón no cambian (`b_pack`, `b_libro`, `b_comp`, `b_bonos` viejo, `b_workbook`, `b_guia`, `b_preguntas`, `b_calendario`).
+  Límites de WhatsApp contados con `.length` (el emoji cuenta 2; «🗣️» cuenta 3): botón ≤ 20, fila ≤ 24. Recorte más pequeño primero: (1) quitar el espacio tras el emoji, (2) quitar palabras del final (sin dejar preposición ni número colgando), en filas (3) pasar el monto a la descripción de la fila (que siempre lo lleva).
+
+  | Lugar | Etiqueta del MD | Etiqueta final (catálogo del MD) | Largo | Recorte |
+  |---|---|---|---|---|
+  | Botón | 💛 Pack Completo 49Bs | 💛Pack Completo 49Bs | 20 | sin el espacio tras el emoji (con él serían 21) |
+  | Botón | 📘 Solo Libro 35Bs | 📘 Solo Libro 35Bs | 18 | ninguno |
+  | Botón | ➕ Bonos Individuales | ➕ Bonos Individuales | 20 | ninguno |
+  | Fila | 📓 Workbook (20 Bs) | 📓 Workbook (20 Bs) | 19 | ninguno |
+  | Fila | 🗣️ Guía Conversaciones (18 Bs) | 🗣️ Guía Conversaciones | 23 | el «(18 Bs)» sale del título (serían 31); queda en la descripción de la fila |
+  | Fila | 💬 100 Preguntas (18 Bs) | 💬 100 Preguntas (18 Bs) | 24 | ninguno |
+  | Fila | 📅 Calendario 30 Días (15 Bs) | 📅 Calendario 30 Días | 21 | el «(15 Bs)» sale del título (serían 29); queda en la descripción |
+
+  Con precios de tres cifras (prueba): «💛 Pack 149Bs», «📘 Solo Libro 135Bs»; las filas pasan el monto a la descripción cuando no cabe. Los botones de un prellenado de bono (el bono y el Pack) usan las mismas etiquetas: «📅 Calendario 15Bs», «💬100 Preguntas 18Bs», «🗣️ Guía 18Bs».
+- **Campañas como dato** (`admin/scripts/datos/rroca-antonio/campanas-rroca-antonio.json`, `cargar-campanas.mjs` en seco por defecto y `anuncios-validar.mjs`, copia del de Rubén): una campaña POR TITULAR, 9 en el lote (4 de los artes reales: los artes 4 y 5 comparten titular y son UNA con las dos variantes del sello, sin monto, como secundarios; 5 titulares extra del MD). «100 preguntas para salir del piloto automático» (lleva número) **pasa** `revisarSinModelo`, por eso va en el lote. **Cupo necesario: 9 campañas a la vez** (tope del servidor: 10). El plan `crecimiento` admite 3: Antonio necesita `pro` (10) o un `limites.campanas` propio de 9 o más; si su plan no llega, el script se niega sin recortar en silencio. `--aplicar` no se ejecutó.
+- **`RA_ANGULOS` (reconocimiento por código) NO se quita en este PR**: sigue como respaldo hasta que las campañas estén cargadas y verificadas.
+- **Términos registrados** («100 Preguntas Profundas», «Mapa de Transformación de 30 Días», «Checkpoints de Conexión», «Calendario de Conexión de 30 Días»): los hace Rearquitectura; mientras tanto el código usa textos fijos y el filtro no se tocó.
+- **Costo.** Mensajes por conversación +0; nodos 46/41 (sin cambios); `RA_PROMPT` sin cambios (3.588 caracteres, tope 4.670).
+- **Pruebas:** `etiquetas-md.test.ts`, `campanas.test.ts`, `cargar-campanas.test.ts` (emulador). `mundo.ts` pone las etiquetas vacías por omisión (las demás suites prueban el camino del catálogo) y el vigilante de UX acepta las etiquetas del tenant como nombre de botón.

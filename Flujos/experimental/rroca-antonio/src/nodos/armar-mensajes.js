@@ -30,6 +30,8 @@ const fichaAntes = raFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), a
 // El nombre del negocio (la Consola manda, `Config base` respalda: lo resuelve «Config del negocio») y los NOMBRES del catálogo de la consola, que son los que dicen las etiquetas de los botones.
 const negocio = String(cfg.nombreNegocio || '');
 const nom = raNombres(raPanelDe(cnPrimero('Traer configuración')).cuerpo);
+// Las etiquetas de los botones (nombre y emoji) son dato del tenant en «Config base»; el monto lo pone el código desde el catálogo.
+const etq = raEtiquetas(base);
 // Las opciones (precios, catálogo, menú) solo con la compuerta abierta; la calcula «Decidir turno».
 const habil = decision.opcionesHabilitadas === true;
 const qrAbierto = plan.qrAbierto === true;
@@ -78,7 +80,7 @@ const conAntonio = (cuerpo, extra) => {
 const usadosHoy = () => fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
 // REGLA (P7): un saludo SIN producto decidido no lleva botones con montos. Mientras no esté saludado, o la compuerta esté cerrada, no hay menú en las respuestas libres; ya saludado y habilitado, el menú principal sin los botones que ya pulsó.
 // Un prellenado con producto ya decidido (Workbook, Calendario/Preguntas) SÍ muestra el precio y los botones con montos desde el primer mensaje, y el Pack o el Libro van directo al QR con su monto.
-const menu1 = () => raMenu(cat, usadosHoy(), nom);
+const menu1 = () => raMenu(cat, usadosHoy(), nom, etq);
 const menuAbierto = () => (fichaAntes.saludado && habil ? menu1() : []);
 const presentacion = !fichaAntes.saludado;
 const textoPresentacion = raPresentacion(negocio);
@@ -187,12 +189,12 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     tipoDePlan = 'opciones_fijo';
     m = op.length ? conBotones(raTextoOpciones(cat, usadosHoy(), nom), op) : texto(raTextoModeloCaido(false));
   } else if (tipoDePlan === 'bonos') {
-    const filas = raFilasBonos(cat, usadosHoy(), nom);
+    const filas = raFilasBonos(cat, usadosHoy(), nom, etq);
     if (filas.length) m = conLista(RA_TEXTO_BONOS, filas);
     else { tipoDePlan = 'derivar'; m = conAntonio('Por ahora no puedo mostrarte los bonos. Escríbele directo a Antonio con el botón.'); }
   } else if (tipoDePlan === 'complemento') {
     const productos = Array.isArray(plan.productos) ? plan.productos.filter((k) => Object.prototype.hasOwnProperty.call(RA_PRODUCTOS, k)) : [];
-    m = conBotones(raTextoBonos(productos, cat, plan.conPresentacion === true, negocio, nom), raMenuDeBonos(productos, cat, fichaAntes.usados, nom));
+    m = conBotones(raTextoBonos(productos, cat, plan.conPresentacion === true, negocio, nom), raMenuDeBonos(productos, cat, fichaAntes.usados, nom, etq));
   } else if (tipoDePlan === 'resultado') {
     const op = qrAbierto ? [] : menuAbierto();
     m = qrAbierto ? texto(invitar(conPresentacion(raTextoResultado(false)))) : conBotones(conPresentacion(raTextoResultado(op.length > 0)), op);

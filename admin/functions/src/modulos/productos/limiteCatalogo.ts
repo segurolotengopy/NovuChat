@@ -32,6 +32,7 @@ import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { REGION } from '../../core/region.js';
 import { PLANES, PLAN_POR_DEFECTO, limitesDeCuenta } from '../../central/cuenta/planes.js';
+import { nombreDeProductoApto } from './nombreSeguro.js';
 
 const db = () => getFirestore();
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
@@ -172,7 +173,7 @@ const CAMPOS_ENTRADA = new Set([
 ]);
 const BORRABLES = new Set(['descripcion', 'area', 'precio', 'imagenUrl']);
 
-export type MotivoRechazo = 'forma' | 'id_invalido' | 'duplicado' | 'limite_plan';
+export type MotivoRechazo = 'forma' | 'id_invalido' | 'duplicado' | 'limite_plan' | 'nombre_no_permitido';
 
 export interface Rechazo {
   /** Posición en `items` de la llamada: con eso la consola vuelve a su fila. */
@@ -217,6 +218,10 @@ export function prepararItem(crudo: unknown, indice: number): Preparado | Rechaz
   // Lo que la regla no deja escribir, tampoco entra por acá: `stock` va por
   // `ajustarStock`, y un campo que no está en la lista blanca no existe.
   if (Object.keys(e).some((k) => !CAMPOS_ENTRADA.has(k))) return { indice, id, motivo: 'forma' };
+
+  // El nombre llega al prompt de todos los flujos: una frase de instrucción no se importa.
+  // El motivo es el mismo para cualquier patrón (no se delata cuál).
+  if (nombre !== '' && !nombreDeProductoApto(nombre)) return { indice, id, motivo: 'nombre_no_permitido' };
 
   const cambios: Record<string, unknown> = { nombre };
   for (const campo of ['descripcion', 'area', 'precio', 'moneda', 'duracionMin', 'imagenUrl', 'activo']) {
