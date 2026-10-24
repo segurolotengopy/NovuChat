@@ -129,7 +129,7 @@ describe('invisibles Default_Ignorable y Braille (re-revisión): no evaden las p
 });
 
 describe('invisibles ENTRE palabras y frases sin espacios (revisión de seguridad del #630)', () => {
-  const OCHO = ['Tu pago fue acreditado', 'Recibimos tu pago', 'Pago verificado', 'No soy un bot', 'Soy una persona real', 'Quedó agendada tu cita', 'Pago verificado, gracias', 'Soy una persona real, no un bot', 'Ya agendé tu cita'];
+  const OCHO = ['Tu pago fue acreditado', 'Recibimos tu pago', 'Pago verificado', 'No soy un bot', 'Soy una persona real', 'Quedó agendada tu cita', 'Pago verificado, gracias', 'Soy una persona real, no un bot', 'Ya agendé tu cita', 'Yateagendélacita'];
   const SEP = ['\u2800', '\u3164', '\u115F', '\u17B4', '\u17B5', '\u180B', '\u180E', '\u034F', '\u200B', '\u00AD', '\u2800\u2800'];
   const TODAS = { permitirMontos: true, sinDatosDePago: true, sinAfirmarCompra: true, sinPromesasDeAviso: true };
   for (const sep of SEP) {
@@ -145,6 +145,21 @@ describe('invisibles ENTRE palabras y frases sin espacios (revisión de segurida
   });
   it('un texto honesto con invisibles de emoji sigue pasando', () => {
     for (const e of ['👨‍⚕️', '❤️', '👩‍👩‍👧', '1️⃣', '👋🏽']) expect(motivo(`Hola ${e} ¿en qué te ayudo con el libro?`, { permitirMontos: true }), e).toBe('');
+  });
+});
+
+describe('seguimiento del #630 (dos LOW de seguridad): la forma sin espacios no rechaza de más', () => {
+  it('«caso y una persona» y las preguntas ya no son falsos positivos', () => {
+    for (const t of ['Para tu caso y una persona adicional, te ayudo.', '¿Ya recibimos su pago? Lo revisa recepción.', 'Hola ¿Pagoverificado? gracias', 'Casoyunapersona']) expect(motivo(t), t).toBe('');
+  });
+  it('«ya agendemos» y «ya agenden» no afirman una cita', () => {
+    for (const t of ['Ya agendemos la cita', 'Ya agenden ustedes', 'Ya agendemos mañana ¿te sirve?']) expect(motivo(t), t).toBe('');
+  });
+  it('lo que sí afirma sigue rechazado, también con una pregunta metida en medio o con «soy» suelto', () => {
+    for (const t of ['Soyunapersona', 'Yo soyunapersona', 'Pago ¿x? verificado', 'Pagoverificado ¿ok?', 'Ya agendé tu cita', 'Yaagendé', 'Yateagendélacita', 'Te agendé la cita', 'Yaagendeelturno', 'Ya agendé nada']) expect(motivo(t), t).toBe('afirma_un_hecho');
+  });
+  it('una frase fuera de la pregunta sigue contando aunque haya otra pregunta en el texto', () => {
+    expect(motivo('Pagoverificado. ¿Algo más?')).toBe('afirma_un_hecho');
   });
 });
 
