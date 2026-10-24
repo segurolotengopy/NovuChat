@@ -29,9 +29,10 @@ import { logger } from 'firebase-functions';
 import { REGION } from '../../core/region.js';
 import { CLAVE_GEMINI, claveGemini } from '../servicios/gemini.js';
 import {
-  REVISOR_FUNCTION, hashCorto, revisarTexto,
+  MOTIVO_SIN_VERIFICAR, REVISOR_FUNCTION, hashCorto, revisarTexto,
   type ConsultarModelo, type OtrosComercios, type Revision,
 } from './comportamiento.js';
+import { terminosAprobados } from './terminos.js';
 
 /** El mismo modelo que la comprobación de fotos; temperatura 0 y salida corta. */
 const MODELO = 'gemini-3.5-flash-lite';
@@ -129,7 +130,19 @@ export async function revisarYAplicar(
   revisadoPor: string = REVISOR_FUNCTION,
 ): Promise<{ revision: Revision; resultado: ResultadoAplicar }> {
   const otros = texto.trim() === '' ? { ids: [], nombres: [] } : await otrosComercios(db, tenantId);
-  const revision = await revisarTexto(texto, otros, consultar);
+  // Los términos de producto aprobados de ESTE comercio (la ruta sale del disparador autenticado).
+  // Sin leer nada si el texto no contiene «prompt». Si la lectura falla, ante la duda no se aplica.
+  let terminos: string[] = [];
+  let sinTerminos = false;
+  try {
+    terminos = texto.trim() === '' ? [] : await terminosAprobados(db, tenantId, texto);
+  } catch (e) {
+    sinTerminos = true;
+    logger.warn('verificarComportamiento: no se pudieron leer los términos de producto', { tenantId, error: String(e) });
+  }
+  const revision: Revision = sinTerminos
+    ? { estado: 'pendiente', motivo: MOTIVO_SIN_VERIFICAR, hash: hashCorto(texto), capa: 'modelo' }
+    : await revisarTexto(texto, otros, consultar, terminos);
   const resultado = await aplicarRevision(db, tenantId, texto, revision, revisadoPor);
   return { revision, resultado };
 }

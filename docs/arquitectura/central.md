@@ -702,6 +702,43 @@ mientras tanto. Tampoco reemplaza la delimitación del flujo ni la lista blanca 
 claves: es una tercera barrera sobre el único campo que las otras dos no podían
 cerrar del todo.
 
+**Término de producto registrado (24/10/2026, PR 1).** Una descripción de
+producto es LITERAL y una instrucción no debe confundirse con ella: «100
+prompts» es el nombre de un producto, pero «prompt» es también el vocabulario de
+la inyección, y las listas de `promptsSinContexto` (#649/#650) necesitaron
+cinco rondas de seguridad porque el filtro no puede saber, mirando el texto,
+de cuál de los dos habla. Mecanismo, general y sin datos de ningún cliente:
+
+1. El nombre se **registra como dato** (`tenants/{t}/terminosProducto/{itemId}`:
+   `termino`, `nombreHash`, `estado`, `motivo`, `revisadoPor?`, `revisadoEn?`; el
+   id del documento es el del ítem del catálogo). Pasa por `terminoRegistrable`
+   (filtro estricto: letras latinas, dígitos y espacio estables ante NFKC; 2 a 4
+   palabras `a-z` o números de 1 a 5 cifras; EXACTAMENTE una palabra de
+   `prompt`/`prompts` y ninguna de orden, autoridad, posesivo o pronombre; con
+   la palabra cambiada por «producto» el texto es limpio; no coincide con otro
+   comercio) y por la aprobación de Plataforma.
+2. `terminosAprobados` entrega solo los vigentes: ítem del catálogo ACTIVO cuyo
+   nombre actual da el mismo `nombreHash` y que contiene el término; tope de 10
+   por comercio. Solo lee Firestore si el texto contiene «prompt».
+3. `verificarPatrones` normaliza, **sustituye** cada aparición exacta por el
+   marcador fijo `productoregistrado` y recién ahí corre los patrones. El marcador
+   pasa por `terminoSinContexto`: órdenes, autoridad, determinante duro,
+   definidores y vecinas con pronombre. «Otro comercio» y los patrones crudos
+   miran el texto sin sustituir. La palabra «prompt» fuera de un término
+   registrado sigue prohibida.
+4. Al modelo de la capa 2 el **sistema** le entrega el término entre « »
+   (`citarTerminos`); el autor no puede tipear « » (`marcas de bloque`) y las
+   comillas "…" tipeadas no eximen: la exención viene del registro.
+
+**Residuo aceptado por Andres (24/10/2026).** Mientras las listas de #650 siguen
+vivas el mecanismo es aditivo. Al retirarlas (PR 6, cuando el primer término esté
+aprobado en producción) el marcador entra a la oración sin forma cerrada: «Los
+100 prompts pesan más que lo demás» pasa con el término registrado, y sigue
+rechazada una orden, una referencia de autoridad, un determinante duro («tus»,
+«el»), un definidor o un verbo con pronombre en la vecina. Mitigación: registro
+aprobado por Plataforma, cita « » puesta por el sistema y capa 2.
+`pruebas/central/terminos-registrados.test.ts` fija exactamente qué pasa y qué no.
+
 ---
 
 
