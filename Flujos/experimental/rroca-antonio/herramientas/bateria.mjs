@@ -196,7 +196,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       llamoAlModelo: decision.llamarModelo === true || actual.llamadasAlModelo > 0, crudo,
       finishReason: String(objeto(objeto((objeto(respuestaModelo).candidates ?? [])[0])).finishReason ?? ''),
       tokensEntrada: Number(objeto(objeto(respuestaModelo).usageMetadata).promptTokenCount) || 0, tokensSalida: Number(objeto(objeto(respuestaModelo).usageMetadata).candidatesTokenCount) || 0,
-      ms: actual.ms, reintentos: actual.reintentos, marcas: turno,
+      ms: actual.ms, reintentos: actual.reintentos, marcas: turno, entrega: datosDeEntrega(respuestaModelo, actual.reintentos),
     };
     const planDec = objeto(decision.plan);
     t.diagnostico = t.llamoAlModelo ? diagnosticar(lib, crudo, { modo: String(planDec.modo ?? ''), habil: decision.opcionesHabilitadas === true, qrAbierto: planDec.qrAbierto === true, textoCliente: String(planDec.textoCliente ?? turno.dice ?? '') }) : null;
@@ -214,6 +214,23 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
  * quita de promesas de opciones, pregunta final del puente y de las opciones) y devuelve `{ motivo, pasos }`: `motivo` es el NOMBRE de la regla que rechazó (o «vacio_tras_<etapa>» si una quita dejó el texto vacío; '' si pasa)
  * y `pasos` el texto que quedó tras cada barrera. `ctx` = { modo, habil, qrAbierto, textoCliente }.
  */
+/** Lo que Gemini dijo de una respuesta VACÍA o bloqueada (sin secretos): código HTTP (2xx si hubo JSON; el real si falló), finishReason, `promptFeedback.blockReason`, `safetyRatings` (del candidato y del prompt) y reintentos. */
+export function datosDeEntrega(respuesta, reintentos) {
+  const r = objeto(respuesta);
+  const cand = objeto((Array.isArray(r.candidates) ? r.candidates : [])[0]);
+  const pf = objeto(r.promptFeedback);
+  const err = objeto(r.error);
+  const ratings = (v) => (Array.isArray(v) ? v.map((x) => `${String(objeto(x).category ?? '?').replace('HARM_CATEGORY_', '')}=${String(objeto(x).probability ?? '?')}${objeto(x).blocked === true ? '(BLOQUEADA)' : ''}`) : []);
+  return {
+    http: r.error !== undefined ? String(err.httpCode ?? err.code ?? '?') : '2xx',
+    error: r.error !== undefined ? String(err.message ?? '').slice(0, 140) : '',
+    finishReason: String(cand.finishReason ?? ''), blockReason: String(pf.blockReason ?? ''),
+    safetyRatings: [...ratings(cand.safetyRatings), ...ratings(pf.safetyRatings)], candidatos: Array.isArray(r.candidates) ? r.candidates.length : 0, reintentos: Number(reintentos) || 0,
+  };
+}
+export function lineaDeEntrega(e) {
+  return `  [entrega de Gemini] HTTP ${e.http}${e.error ? ` («${e.error}»)` : ''} · candidatos ${e.candidatos} · finishReason ${e.finishReason || '-'} · blockReason ${e.blockReason || '-'} · safetyRatings ${e.safetyRatings.length ? e.safetyRatings.join(', ') : '-'} · reintentos ${e.reintentos}`;
+}
 export function diagnosticar(lib, crudo, ctx) {
   const pasos = [{ etapa: 'crudo', texto: String(crudo ?? '') }];
   const sinEco = lib.raQuitarEcoDeMarcador(String(crudo ?? ''));
@@ -342,6 +359,7 @@ function textoDelCrudo(corridas) {
   for (const c of corridas) for (const t of c.turnos.filter((x) => x.llamoAlModelo)) {
     l.push(`--- ${c.caso}#${c.rep} turno ${t.n} · modo ${t.modo || '-'} · plan final «${t.plan}» · motivo exacto: ${t.motivo || '(pasa las barreras)'} · finishReason ${t.finishReason || '-'}`);
     l.push(`Cliente: ${t.dice}`);
+    if (t.motivo === 'vacio' || t.entrega.blockReason || t.entrega.http !== '2xx') l.push(lineaDeEntrega(t.entrega));
     for (const p of t.diagnostico.pasos) l.push(`  [${p.etapa}]${p.motivo ? ` RECHAZA «${p.motivo}»` : ''} ${JSON.stringify(String(p.texto).slice(0, 1200))}`);
     l.push(`  Cliente recibió: ${t.mensajes.map((m) => JSON.stringify(m.cuerpo.slice(0, 600))).join(' | ') || '(nada)'}`);
   }
@@ -383,7 +401,7 @@ export async function main(argv, deps = {}) {
       }
     }
     const m = medir(corridas);
-    d.salida(opciones.json ? JSON.stringify({ proveedor, medidas: m, ...(conversaciones ? { conversaciones: corridas } : {}), ...(crudo ? { crudo: corridas.flatMap((c) => c.turnos.filter((x) => x.llamoAlModelo).map((x) => ({ caso: c.caso, rep: c.rep, turno: x.n, modo: x.modo, motivo: x.motivo, pasos: x.diagnostico.pasos }))) } : {}) }) + '\n' : textoDelInforme(m, proveedor, opciones) + (conversaciones ? '\n\n' + textoDeConversaciones(corridas) : '') + (crudo ? '\n\n' + textoDelCrudo(corridas) : '') + '\n');
+    d.salida(opciones.json ? JSON.stringify({ proveedor, medidas: m, ...(conversaciones ? { conversaciones: corridas } : {}), ...(crudo ? { crudo: corridas.flatMap((c) => c.turnos.filter((x) => x.llamoAlModelo).map((x) => ({ caso: c.caso, rep: c.rep, turno: x.n, modo: x.modo, motivo: x.motivo, entrega: x.entrega, pasos: x.diagnostico.pasos }))) } : {}) }) + '\n' : textoDelInforme(m, proveedor, opciones) + (conversaciones ? '\n\n' + textoDeConversaciones(corridas) : '') + (crudo ? '\n\n' + textoDelCrudo(corridas) : '') + '\n');
     return m.violaciones.length === 0 ? 0 : 1;
   } catch (e) {
     const secretos = [credencial.clave, credencial.token];

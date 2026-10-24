@@ -192,3 +192,29 @@ describe('la batería de Antonio REUTILIZA el motor de chat-novuchat (no copia u
     expect(FUENTE).toMatch(/--confirmo-gasto/);
   });
 });
+
+describe('la batería de Antonio: la entrega de Gemini cuando la respuesta sale VACÍA o bloqueada (`--crudo`)', () => {
+  const CLAVE = 'AI' + 'zaFAKE_clave_de_prueba_' + 'ABCDEFGHIJKLMNOP';
+  const respuesta = (json: J, status = 200): J => ({ ok: status < 400, status, text: async () => JSON.stringify(json) });
+  const conRed = (resp: () => J): J => ({ fetch: async () => resp(), leerArchivo: () => `GEMINI_API_KEY=${CLAVE}\n`, gcloudToken: () => { throw new Error('sin gcloud'); } });
+  const ARGS = ['--n', '1', '--casos', 'D', '--env', '.env.x', '--confirmo-gasto', '--crudo'];
+
+  it('una respuesta SIN candidatos y con `promptFeedback.blockReason` y `safetyRatings` los imprime: HTTP, candidatos, finishReason, blockReason, ratings y reintentos', async () => {
+    const r = await correr(ARGS, conRed(() => respuesta({ promptFeedback: { blockReason: 'PROHIBITED_CONTENT', safetyRatings: [{ category: 'HARM_CATEGORY_HARASSMENT', probability: 'HIGH', blocked: true }] } })));
+    expect(r.salida).toMatch(/motivo exacto: vacio/);
+    expect(r.salida).toMatch(/\[entrega de Gemini\] HTTP 2xx · candidatos 0 · finishReason - · blockReason PROHIBITED_CONTENT · safetyRatings HARASSMENT=HIGH\(BLOQUEADA\) · reintentos 0/);
+    expect(r.salida + r.error).not.toContain(CLAVE);
+  });
+  it('una respuesta con candidato VACÍO (sin texto, finishReason SAFETY) imprime sus safetyRatings; y un HTTP 500 imprime el código y los reintentos', async () => {
+    const a = await correr(ARGS, conRed(() => respuesta({ candidates: [{ finishReason: 'SAFETY', safetyRatings: [{ category: 'HARM_CATEGORY_DANGEROUS_CONTENT', probability: 'MEDIUM' }] }] })));
+    expect(a.salida).toMatch(/\[entrega de Gemini\] HTTP 2xx · candidatos 1 · finishReason SAFETY · blockReason - · safetyRatings DANGEROUS_CONTENT=MEDIUM/);
+    const b = await correr(ARGS, conRed(() => respuesta({ error: { message: 'boom' } }, 500)));
+    expect(b.salida).toMatch(/\[entrega de Gemini\] HTTP 500 /);
+    expect(b.salida).toMatch(/reintentos [1-9]/);
+    expect(b.salida + b.error).not.toContain(CLAVE);
+  });
+  it('NEGADA: una respuesta normal con texto NO imprime la línea de entrega', async () => {
+    const r = await correr(ARGS, conRed(() => respuesta({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Entiendo lo difícil que es esto. ¿Qué te gustaría mejorar primero?' }] } }] })));
+    expect(r.salida).not.toMatch(/\[entrega de Gemini\]/);
+  });
+});
