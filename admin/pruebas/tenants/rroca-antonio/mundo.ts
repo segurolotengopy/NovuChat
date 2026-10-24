@@ -71,6 +71,8 @@ export const CATALOGO = [
   { id: 'pack-completo', nombre: 'Pack completo', precio: 49 }, { id: 'libro', nombre: 'Libro', precio: 35 }, { id: 'workbook', nombre: 'Workbook', precio: 20 },
   { id: 'guia-de-conversaciones', nombre: 'Guía de conversaciones', precio: 19 }, { id: 'calendario-de-conexion', nombre: 'Calendario de conexión', precio: 17 }, { id: 'preguntas-profundas', nombre: 'Preguntas profundas', precio: 15 },
 ];
+/** La frase de entrada de la landing (dato del tenant: `landing.fraseEntrada` del archivo de datos; llega a «Config base» como `landingFrase`). */
+export const FRASE_LANDING = 'Hola, quiero información del Método PUENTE y sus materiales digitales';
 export const MEDIA_QR = 'media-qr-1';
 export const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({
   statusCode: 200,
@@ -136,6 +138,7 @@ export function crear(o: Opciones = {}): Mundo {
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`,
       avisoComprobantePlantilla: 'aviso_comprobante_recibido', avisoComprobanteEstado: 'APPROVED', avisoConsultaPlantilla: 'aviso_consulta_para_antonio', avisoConsultaEstado: 'APPROVED',
+      landingFrase: FRASE_LANDING,
       ...(o.base ?? {}),
     },
   });
