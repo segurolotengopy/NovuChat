@@ -666,6 +666,60 @@
       "notes": "Baja el archivo CON el token y lo deja como binario `data`, sin seguir redirecciones (A3: el token no sigue a otro anfitrión). No se guarda en ningún lado y no se reenvía a nadie."
     },
     {
+      "id": "guardar-comprobante",
+      "name": "Guardar comprobante",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3560,
+        500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/guardarComprobante",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ (() => { const c = $('Config del negocio').first().json; return c.modoPrueba === true ? String(c.phoneNumberIdEsperado || '') : String($('Interpretar entrada').first().json.phoneNumberId || ''); })() }}"
+            },
+            {
+              "name": "X-NovuChat-Telefono",
+              "value": "={{ String($('Interpretar entrada').first().json.from || '') }}"
+            },
+            {
+              "name": "X-NovuChat-IdMeta",
+              "value": "={{ String($('Interpretar entrada').first().json.mensajeId || '') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Guarda la IMAGEN del comprobante (los bytes que bajó `Descargar medio`) para el visor de la consola: `POST guardarComprobante`, solo con el token del número (una firma no cubre una imagen), con el teléfono y el id del mensaje en cabeceras; el tipo lo comprueba el servidor por los bytes. Rama TERMINAL y sin salidas: no toca el binario que lee Gemini, y va ARRIBA de `¿Es PDF?` para correr antes (orden del lienzo). Si falla (409 sin cobro abierto, 413, 415, 502 o un corte), `Interpretar lectura` manda `ruta: null` y el cotejo corre igual: guardar la imagen nunca bloquea la respuesta al cliente. Se guarda 90 días y solo la ve quien abre el visor."
+    },
+    {
       "id": "es-audio",
       "name": "¿Es audio?",
       "type": "n8n-nodes-base.if",
@@ -861,7 +915,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/cotejarComprobante",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/cotejarComprobanteVenta",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -875,7 +929,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ telefono: $json.telefono, legible: $json.legible === true, leido: ($json.leido && typeof $json.leido === 'object') ? $json.leido : {}, idMeta: $json.idMeta || '' }) }}",
+        "jsonBody": "={{ JSON.stringify({ telefono: $json.telefono, legible: $json.legible === true, leido: ($json.leido && typeof $json.leido === 'object') ? $json.leido : {}, idMeta: $json.idMeta || '', ruta: typeof $json.ruta === 'string' ? $json.ruta : null }) }}",
         "options": {
           "timeout": 8000,
           "response": {
@@ -893,7 +947,7 @@
         }
       },
       "onError": "continueRegularOutput",
-      "notes": "Copia del Demo B (mismo cuerpo). El servidor coteja contra el monto del `qr_enviado` y las cuentas del QR, y dice cuadra, no_cuadra o ilegible. «Cuadra» NO es una acreditación bancaria."
+      "notes": "`POST cotejarComprobanteVenta` (regla 2: 15 minutos, 3 intentos; el QR real abre ese cobro con `reglaCobro: 2`). Manda lo que leyó el modelo y la `ruta` de la imagen guardada (null si no se guardó). El servidor califica y responde `estado` (valido, aproximado, reintentar, en_revision, tardio, ya_resuelto) o un 409; `cbResultadoVenta` lo traduce con listas cerradas y todo lo demás es `sin_cotejo` (aviso al local + botón). «Los datos coinciden» NO es una acreditación bancaria: quien confirma que entró la plata es el banco, y el negocio."
     },
     {
       "id": "decidir",
@@ -1439,7 +1493,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const m = $('Armar mensajes').item.json; const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (typeof m.evento === 'string' && m.evento) { r.evento = m.evento; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; } return JSON.stringify(r); })() }}",
+        "jsonBody": "={{ (() => { const m = $('Armar mensajes').item.json; const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (typeof m.evento === 'string' && m.evento) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; } return JSON.stringify(r); })() }}",
         "options": {
           "timeout": 4000
         }
@@ -1455,7 +1509,7 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000,
-      "notes": "Una llamada por cada mensaje enviado al cliente. El reporte se guía por el EVENTO: `evento`, `referencia` y `monto` viajan solo cuando el mensaje trae evento. El QR lleva `evento: qr_enviado`, `referencia` (el pedido) y `monto` (el total calculado por el código): contra ese número coteja el servidor. El reenvío del QR lleva monto y referencia SIN evento y por eso no reabre el cobro."
+      "notes": "Una llamada por cada mensaje enviado al cliente. El reporte se guía por el EVENTO: `evento`, `referencia` y `monto` viajan solo cuando el mensaje trae evento. El QR lleva `evento: qr_enviado`, `reglaCobro: 2` (solo el QR REAL: abre el cobro de 15 minutos; el simulado no lo lleva), `referencia` (el pedido) y `monto` (el total calculado por el código): contra ese número coteja el servidor. El reenvío del QR lleva monto y referencia SIN evento y por eso no reabre el cobro."
     },
     {
       "id": "cierre-si",
@@ -1870,6 +1924,11 @@
           }
         ],
         [
+          {
+            "node": "Guardar comprobante",
+            "type": "main",
+            "index": 0
+          },
           {
             "node": "¿Es PDF?",
             "type": "main",

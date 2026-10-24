@@ -256,7 +256,11 @@ function amQr(m, cuerpo) {
   };
   // El evento `qr_enviado` (abre el cobro en el servidor) solo lo lleva el QR que el plan pidió como evento: «Reenviar QR»
   // lleva monto y referencia pero NO el evento, porque el servidor ya abrió ese cobro.
-  if (m.evento === 'qr_enviado') salida.evento = 'qr_enviado';
+  if (m.evento === 'qr_enviado') {
+    salida.evento = 'qr_enviado';
+    // El QR REAL abre un cobro de regla 2 (15 minutos, 3 intentos, imagen guardada). El simulado nunca: no se coteja nada.
+    if (!simulado) salida.reglaCobro = 2;
+  }
   return salida;
 }
 function amArmarUno(m) {
@@ -356,6 +360,7 @@ for (const d of AM_lista) {
     waGraphVersion: AM_CFG.waGraphVersion || 'v26.0', from: AM_FROM, sinMensajes: false,
   };
   if (d.evento) j.evento = d.evento;
+  if (d.reglaCobro === 2) j.reglaCobro = 2;
   if (d.referencia) j.referencia = d.referencia;
   if (d.monto !== undefined) j.monto = d.monto;
   AM_salida.push(j);

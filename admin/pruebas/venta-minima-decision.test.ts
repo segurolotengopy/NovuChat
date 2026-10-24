@@ -17,7 +17,7 @@
  *     opciones: [itemOrden, itemUnidad]}; `pdResolverForma` devuelve {carrito}.
  *   - `pdTotal` suma en centavos y devuelve Bs; `pdResumen` devuelve el texto completo del resumen.
  *   - `rsValidar`: el campo inválido queda vacío y va en `faltan`; `error` es solo el primero.
- *   - `cbTextoAlCliente` devuelve {cuerpo, enlace, aviso}; `cbResultado(resp, previo)` como `cobro.js`.
+ *   - `cbTextoAlCliente` devuelve {cuerpo, enlace, aviso}; `cbResultadoVenta(resp)` es el REAL de `cobro.js` (no un doble).
  *   - `vmLeerEstado` devuelve el estado guardado por teléfono (60 min; 24 h en `esperando_comprobante`).
  * Lo que `Armar mensajes` (T7b) hace con el plan se simula en `turno()`: guarda `estadoNuevo`, guarda `pedido` y,
  * si `aviso.tipo === 'reserva'`, llama `rsAnotar` (sin ese llamado el tope diario no funciona: hay una prueba).
@@ -42,7 +42,7 @@ type J = Record<string, any>;
 const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\s+tu\s+pago|ya lo (est[aá]n )?prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
 
 // --- Los dobles de las librerías --------------------------------------------------------------
-const DOBLES = String.raw`
+const DOBLES_BASE = String.raw`
 function vmNodo(n){ try { const x = $(n); return x && x.isExecuted ? x : null; } catch (e) { return null; } }
 function vmPrimero(n){ const x = vmNodo(n); if (!x) return null; const i = x.first(); return i && i.json ? i.json : null; }
 function vmCfg(){ return vmPrimero('Config del negocio') || {}; }
@@ -113,12 +113,21 @@ function cbCodigo(c){ return String(c === undefined || c === null ? '' : c).repl
 function cbHayQr(c){ c = c || {}; if (!/^https:\/\//i.test(String(c.qrUrl || ''))) return false; if (c.modo === 'real') return c.activo === true; if (c.modo === 'simulado') return c.activo !== true; return false; }
 function cbQrVencido(c, ahora){ c = c || {}; if (c.modo !== 'real') return false; const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(typeof c.venceEl === 'string' ? c.venceEl : ''); if (!m) return false; const f = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59) + 4 * 3600000; return Number.isFinite(f) && Number.isFinite(Number(ahora)) && f <= Number(ahora); }
 function cbCaption(p, o){ if (o.simulado === true) return 'PRUEBA · COBRO SIMULADO: este QR es de demostración, no cobra ni mueve dinero.\nPedido #' + p.codigo + '. Total de la prueba: ' + p.total + ' Bs (solo la comida' + (o.delivery === true ? '; el delivery se paga aparte' : '') + ').\nNo intentes pagarlo. Envíame aquí cualquier foto como comprobante simulado.'; return 'Pedido #' + p.codigo + '. Total a pagar con este QR: ' + p.total + ' Bs (solo la comida' + (o.delivery === true ? '; el delivery se paga aparte, al repartidor' : '') + ').\nEscanéalo con la app de tu banco.'; }
-function cbResultado(resp, previo){ const r = resp || {}; const b = r.body || {}; let res = 'sin_cotejo'; if (r.statusCode === 200 && ['cuadra', 'no_cuadra', 'ilegible'].indexOf(b.resultado) >= 0) res = b.resultado; else if (r.statusCode === 409 && b.error === 'sin_sena_pendiente' && (previo === undefined || previo === 'cuadra')) res = 'ya_cotejado'; return { resultado: res, diferencias: res === 'no_cuadra' && Array.isArray(b.diferencias) ? b.diferencias : [], importe: null, cierreId: b.cierreId || '' }; }
 function cbEstadoParaAviso(r){ const e = { cuadra: 'comprobante: datos coinciden', no_cuadra: 'comprobante: NO coinciden', ilegible: 'comprobante ilegible', sin_cotejo: 'comprobante sin cotejar', ya_cotejado: null, simulado: 'PRUEBA: cobro SIMULADO, sin dinero', qr_vencido: 'QR vencido: coordinar el pago' }; return e[r] === undefined ? 'sin QR: cobrar al entregar' : e[r]; }
-function cbTextoAlCliente(r, o){ const ped = 'tu pedido #' + o.codigo; const salio = o.avisoSalio === true; const sin = 'No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.'; if (r === 'cuadra') return salio ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con ' + ped + '. Ya lo pasé a nuestro equipo.', enlace: false, aviso: true } : { cuerpo: 'Recibí tu comprobante y los datos coinciden con ' + ped + '. ' + sin, enlace: true, aviso: true }; if (r === 'no_cuadra') return { cuerpo: 'Recibí tu comprobante, pero algunos datos no coinciden con ' + ped + '. ' + (salio ? 'Ya lo pasé a nuestro equipo.' : sin), enlace: true, aviso: true }; if (r === 'ilegible') { if (!(Number(o.ilegibles) >= 2)) return { cuerpo: 'Recibí tu comprobante, pero no pude leerlo bien. ¿Me lo envías de nuevo?', enlace: false, aviso: false }; return { cuerpo: 'Recibí tu comprobante, pero no pude leerlo bien para revisar ' + ped + '. ' + (salio ? 'Ya lo pasé a nuestro equipo.' : sin), enlace: true, aviso: true }; } if (r === 'sin_cotejo') return { cuerpo: 'Recibí tu comprobante, pero no pude revisarlo contra ' + ped + '. ' + (salio ? 'Ya lo pasé a nuestro equipo.' : sin), enlace: true, aviso: true }; if (r === 'simulado') { const cab = 'Recibí tu comprobante SIMULADO de ' + ped + '. Es una prueba: no se movió dinero.'; return salio ? { cuerpo: cab + ' Ya lo pasé a nuestro equipo como pedido de PRUEBA.', enlace: false, aviso: true } : { cuerpo: cab + ' ' + sin, enlace: true, aviso: true }; } if (r === 'ya_cotejado') return { cuerpo: 'Ya tengo el comprobante de ' + ped + '. Si necesitas algo más, toca el botón.', enlace: true, aviso: false }; if (r === 'sin_qr') return salio ? { cuerpo: 'Listo: pasé ' + ped + ' al restaurante. El pago lo coordinas con ellos ' + (o.entrega === 'delivery' ? 'al recibir' : 'al recoger') + '.', enlace: false, aviso: true } : { cuerpo: sin, enlace: true, aviso: true }; return { cuerpo: 'Eso lo ve directamente nuestro equipo.', enlace: true, aviso: false }; }
+function cbTextoAlCliente(r, o){ const ped = 'tu pedido #' + o.codigo; const salio = o.avisoSalio === true; const sin = 'No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.'; if (r === 'cuadra') return salio ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con ' + ped + '. Ya lo pasé a nuestro equipo.', enlace: false, aviso: true } : { cuerpo: 'Recibí tu comprobante y los datos coinciden con ' + ped + '. ' + sin, enlace: true, aviso: true }; if (r === 'no_cuadra') return { cuerpo: 'Recibí tu comprobante, pero algunos datos no coinciden con ' + ped + '. ' + (salio ? 'Ya lo pasé a nuestro equipo.' : sin), enlace: true, aviso: true }; if (r === 'ilegible') { if (!(Number(o.ilegibles) >= 2)) return { cuerpo: 'Recibí tu comprobante, pero no pude leerlo bien. ¿Me lo envías de nuevo?', enlace: false, aviso: false }; return { cuerpo: 'Recibí tu comprobante, pero no pude leerlo bien para revisar ' + ped + '. ' + (salio ? 'Ya lo pasé a nuestro equipo.' : sin), enlace: true, aviso: true }; } if (r === 'reintentar') return { cuerpo: 'Veo una diferencia con ' + ped + '. Envíame de nuevo el comprobante correcto.', enlace: true, aviso: false }; if (r === 'sin_cotejo') return { cuerpo: 'Recibí tu comprobante, pero no pude revisarlo contra ' + ped + '. ' + (salio ? 'Ya lo pasé a nuestro equipo.' : sin), enlace: true, aviso: true }; if (r === 'simulado') { const cab = 'Recibí tu comprobante SIMULADO de ' + ped + '. Es una prueba: no se movió dinero.'; return salio ? { cuerpo: cab + ' Ya lo pasé a nuestro equipo como pedido de PRUEBA.', enlace: false, aviso: true } : { cuerpo: cab + ' ' + sin, enlace: true, aviso: true }; } if (r === 'ya_cotejado') return { cuerpo: 'Ya tengo el comprobante de ' + ped + '. Si necesitas algo más, toca el botón.', enlace: true, aviso: false }; if (r === 'sin_qr') return salio ? { cuerpo: 'Listo: pasé ' + ped + ' al restaurante. El pago lo coordinas con ellos ' + (o.entrega === 'delivery' ? 'al recibir' : 'al recoger') + '.', enlace: false, aviso: true } : { cuerpo: sin, enlace: true, aviso: true }; return { cuerpo: 'Eso lo ve directamente nuestro equipo.', enlace: true, aviso: false }; }
 function cbResumenCorto(l, m){ return ''; }
 const AV_ENLACE = /(?:https?:\/\/|www\.)\S+|\b(?:wa\.me|t\.me|bit\.ly|goo\.gl|tinyurl\.com)\/\S*|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|bo|me|io|co|app|ly|link|info|biz|xyz|site|online)\b(?:\/\S*)?/gi;
 `;
+
+// `cbResultadoVenta` (y lo que usa) es el REAL de `cobro.js`, no un doble: la traducción de la respuesta de `/cotejarComprobanteVenta` es lo que esta suite debe ejercitar.
+const COBRO_JS = readFileSync(join(NODOS, '../lib/cobro.js'), 'utf8');
+const funcionDe = (nombre: string): string => {
+  const m = new RegExp(`^function ${nombre}\\([^]*?\\n\\}\\n`, 'm').exec(COBRO_JS);
+  if (!m) throw new Error(`no está ${nombre} en cobro.js`);
+  return m[0];
+};
+const BLOQUE_VENTA = COBRO_JS.slice(COBRO_JS.indexOf('// La respuesta completa de un HTTP'), COBRO_JS.indexOf('// Qué se le dice al cliente y qué se le avisa'));
+const DOBLES = `${DOBLES_BASE}\n${funcionDe('cbEsObjeto')}\n${funcionDe('cbLinea')}\n${BLOQUE_VENTA}`;
 
 // --- El mundo de las pruebas -------------------------------------------------------------------
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026 10:00 La Paz
@@ -222,7 +231,7 @@ describe('Decidir turno: el orden de §4.5, sin modelo', () => {
 
   it('1. el resultado del cotejo gana sobre todo lo demás; sin cotejo ni QR pendiente una imagen no es un pago', () => {
     const m = crearMundo(CFG_QR);
-    expect(turno(m, { tipo: 'image', esComprobante: true, texto: 'hola', cotejo: { statusCode: 200, body: { resultado: 'cuadra' } } }).d['accion']).toBe('comprobante');
+    expect(turno(m, { tipo: 'image', esComprobante: true, texto: 'hola', cotejo: cotejoValido() }).d['accion']).toBe('comprobante');
     expect(turno(m, { tipo: 'image', esComprobante: true }).d['accion']).toBe('comprobante');
     // Negativo: la misma imagen sin `esComprobante` (no hay QR pendiente) NO es un comprobante.
     expect(turno(crearMundo(), { tipo: 'image' }).d['accion']).toBe('imagen_sin_pendiente');
@@ -927,6 +936,12 @@ describe('Plan del turno: derivar a una persona (solo se ofrece lo que se cumple
   });
 });
 
+
+// Las respuestas de `/cotejarComprobanteVenta` (regla 2) que usan estas suites. Nunca el vocabulario viejo de la seña.
+const RESPUESTA_VALIDA = { estado: 'valido', motivo: 'ok', intentos: 0, intentosRestantes: 3, importe: 55, moneda: 'BOB', montoLeido: 55, montoDistinto: false, cierreId: 'venta_x', avisarComercio: true, repetido: false };
+const cotejoValido = (extra: J = {}) => ({ statusCode: 200, body: { ...RESPUESTA_VALIDA, ...extra } });
+const cotejoIlegible = () => ({ statusCode: 200, body: { ...RESPUESTA_VALIDA, estado: 'reintentar', motivo: 'ilegible', cierreId: null, avisarComercio: false, intentos: 1, intentosRestantes: 2, montoLeido: null } });
+
 describe('Plan del turno: el comprobante', () => {
   const enEspera = (extra: J = {}): Mundo => {
     const m = crearMundo({ ...CFG_QR, ...extra });
@@ -934,7 +949,7 @@ describe('Plan del turno: el comprobante', () => {
     turno(m, { boton: 'p|confirmar' });
     return m;
   };
-  const cotejo = (resultado: string, extra: J = {}) => ({ statusCode: 200, body: { resultado, ...extra } });
+  const cotejo = (resultado: string, extra: J = {}) => (resultado === 'ilegible' ? cotejoIlegible() : cotejoValido(extra));
 
   it('cuadra: aviso de comprobante; «ya pasé» solo si el aviso salió, y si no, «no pude» con botón', () => {
     const m = enEspera();
@@ -958,25 +973,32 @@ describe('Plan del turno: el comprobante', () => {
     expect(estadoDe(m)['pedido']).toBeNull();
   });
 
-  it('no cuadra: el aviso lleva las diferencias y el estado «NO coinciden»; ambos textos con botón', () => {
+  it('un comprobante que no coincide y todavía admite otro (`reintentar`): se dice la diferencia y se pide el correcto, SIN aviso; sigue esperando', () => {
     const m = enEspera();
-    const p = registrar(turno(m, { tipo: 'image', esComprobante: true, mediaId: 'media-2', cotejo: cotejo('no_cuadra', { diferencias: ['El comprobante dice 50 y el pedido es de 55'] }) })).p!;
-    expect(p['aviso']['datos']).toMatchObject({ resultado: 'no_cuadra', estado: 'comprobante: NO coinciden', diferencias: ['El comprobante dice 50 y el pedido es de 55'] });
-    expect(p['condicionados']['siSalio'][0]['tipo']).toBe('enlace');
-    expect(p['condicionados']['siNoSalio'][0]['tipo']).toBe('enlace');
+    const cot = { statusCode: 200, body: { ...RESPUESTA_VALIDA, estado: 'reintentar', motivo: 'monto_menor', montoLeido: 50, importe: 55, cierreId: null, avisarComercio: false, intentos: 1, intentosRestantes: 2 } };
+    const p = registrar(turno(m, { tipo: 'image', esComprobante: true, mediaId: 'media-2', cotejo: cot })).p!;
+    expect(p['aviso']).toBeNull();
+    expect(p['mensajes'][0]['cuerpo']).toContain('Veo una diferencia');
+    expect(p['mensajes'][0]['tipo']).toBe('enlace');
+    expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
+    expect(estadoDe(m)['pedido']).not.toBeNull();
+    expect(p['pedido']).toBeNull();
   });
 
-  it('ilegible: la primera vez se pide de nuevo (sin aviso, sigue esperando); la segunda se avisa', () => {
+  it('ilegible: NUNCA avisa por su cuenta (ni la primera, ni la segunda, ni la décima): pide otro y sigue esperando; solo `en_revision` del servidor avisa', () => {
     const m = enEspera();
-    const a = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: cotejo('ilegible') }));
-    expect(a.p!['aviso']).toBeNull();
-    expect(a.p!['mensajes'][0]['cuerpo']).toContain('no pude leerlo bien');
-    expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
-    expect(estadoDe(m)['ilegibles']).toBe(1);
-    expect(estadoDe(m)['pedido']).not.toBeNull();
-    const b = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: cotejo('ilegible') }));
-    expect(b.p!['aviso']['datos']).toMatchObject({ resultado: 'ilegible', estado: 'comprobante ilegible' });
-    expect(b.p!['condicionados']['siSalio'][0]['cuerpo']).toContain('Ya lo pasé a nuestro equipo');
+    for (let i = 0; i < 4; i++) {
+      const a = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: cotejoIlegible() }));
+      expect(a.p!['aviso'], `intento ${i + 1}`).toBeNull();
+      expect(a.p!['condicionados'], `intento ${i + 1}`).toBeNull();
+      expect(a.p!['mensajes'][0]['cuerpo']).toContain('no pude leerlo bien');
+      expect(a.p!['mensajes'][0]['cuerpo']).not.toMatch(/ya (lo |la )?pas[eé]/i);
+      expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
+      expect(estadoDe(m)['pedido']).not.toBeNull();
+    }
+    // El servidor decide: al tercer inválido contesta `en_revision` y ESE turno avisa (uno solo).
+    const b = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: { statusCode: 200, body: { ...RESPUESTA_VALIDA, estado: 'en_revision', motivo: 'ilegible', cierreId: null, avisarComercio: true } } }));
+    expect(b.p!['aviso']['datos']).toMatchObject({ resultado: 'sin_cotejo', estado: 'comprobante sin cotejar' });
     expect(estadoDe(m)['paso']).toBe('menu');
   });
 
@@ -987,30 +1009,32 @@ describe('Plan del turno: el comprobante', () => {
     const n = enEspera();
     const q = turno(n, { tipo: 'image', esComprobante: true }).p!; // ni lectura ni cotejo corrieron
     expect(q['aviso']['datos']['resultado']).toBe('sin_cotejo');
-    // Una lectura ilegible sin cotejo es «ilegible»: la primera vez se pide de nuevo, la segunda se avisa.
+    // Una lectura ilegible sin cotejo es «ilegible»: se pide de nuevo, sin aviso (no hay servidor que cuente intentos ni derive).
     const l = enEspera();
-    const r = turno(l, { tipo: 'image', esComprobante: true, lectura: { legible: false } }).p!;
-    expect(r['aviso']).toBeNull();
-    expect(r['mensajes'][0]['cuerpo']).toContain('no pude leerlo bien');
-    const r2 = turno(l, { tipo: 'image', esComprobante: true, lectura: { legible: false } }).p!;
-    expect(r2['aviso']['datos']['resultado']).toBe('ilegible');
+    for (let i = 0; i < 3; i++) {
+      const r = turno(l, { tipo: 'image', esComprobante: true, lectura: { legible: false } }).p!;
+      expect(r['aviso']).toBeNull();
+      expect(r['mensajes'][0]['cuerpo']).toContain('no pude leerlo bien');
+    }
   });
 
-  it('409 después de `cuadra` (ya cotejado): «Ya tengo el comprobante», sin aviso nuevo', () => {
+  it('`ya_resuelto` (ya cotejado): «Ya tengo el comprobante», sin aviso nuevo; y cualquier 409 es «sin cotejar», nunca «ya cotejado»', () => {
     const m = enEspera();
     turno(m, { tipo: 'image', esComprobante: true, mediaId: 'm1', cotejo: cotejo('cuadra') });
-    // El pedido quedó guardado con su resultado; el servidor todavía lo ve como pendiente y devuelve 409.
+    // El pedido quedó guardado; el servidor todavía lo ve como pendiente y contesta `ya_resuelto`.
     const ref = Object.keys(sdDe(m)['pedidos'])[0]!;
     m.cfg['cobro'] = { ...CFG_QR.cobro, pedidoRef: ref, pendiente: true };
-    const s = registrar(turno(m, { tipo: 'image', esComprobante: true, mediaId: 'm2', cotejo: { statusCode: 409, body: { error: 'sin_sena_pendiente' } } }));
+    const s = registrar(turno(m, { tipo: 'image', esComprobante: true, mediaId: 'm2', cotejo: { statusCode: 200, body: { ...RESPUESTA_VALIDA, estado: 'ya_resuelto', motivo: 'ya_resuelto', avisarComercio: false } } }));
     expect(s.p!['aviso']).toBeNull();
     expect(s.p!['pedido']).toBeNull();
     expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^Ya tengo el comprobante de tu pedido #/);
     expect(s.p!['mensajes'][0]['tipo']).toBe('enlace');
-    // Negativo: el 409 de un pedido que NO cuadró (QR vencido) es «sin cotejar», no «ya cotejado».
-    const v = enEspera();
-    const sin = turno(v, { tipo: 'image', esComprobante: true, cotejo: { statusCode: 409, body: { error: 'sin_sena_pendiente' } } });
-    expect(sin.p!['aviso']['datos']['resultado']).toBe('sin_cotejo');
+    // Negativo: un 409 (incluido el viejo `sin_sena_pendiente` o `sin_cobro_pendiente`) es «sin cotejar», con aviso.
+    for (const error of ['sin_sena_pendiente', 'sin_cobro_pendiente', 'regla_1', 'cobro_cancelado', 'sin_total', 'cobro_simulado']) {
+      const v = enEspera();
+      const sin = turno(v, { tipo: 'image', esComprobante: true, cotejo: { statusCode: 409, body: { error } } });
+      expect(sin.p!['aviso']['datos']['resultado'], error).toBe('sin_cotejo');
+    }
   });
 
   it('el pedido se busca por la referencia del servidor; sin pedido en ningún lado, se deriva', () => {
@@ -1298,7 +1322,7 @@ describe('Vigencia, botones de promoción y costo en mensajes', () => {
     n += contar(turno(m, { texto: '1 queso fundido', extraccion: extPedido({ lineas: [linea('queso fundido', 1)] }) }));
     n += contar(turno(m, { boton: 'e|recojo' }));
     n += contar(turno(m, { boton: 'p|confirmar' }));
-    n += contar(turno(m, { tipo: 'image', esComprobante: true, cotejo: { statusCode: 200, body: { resultado: 'cuadra' } } }));
+    n += contar(turno(m, { tipo: 'image', esComprobante: true, cotejo: cotejoValido() }));
     expect(n).toBe(6);
   });
 
@@ -1632,7 +1656,7 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     const m = enEsperaReal();
     const ref = String(estadoDe(m)['pedido']['pedidoId']);
     m.cfg['cobro'] = { ...CFG_QR.cobro, pedidoRef: ref, pendiente: true };
-    const s = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: { statusCode: 200, body: { resultado: 'cuadra', cierreId: 'c1' } } }));
+    const s = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: cotejoValido({ cierreId: 'c1' }) }));
     expect(s.p!['ruta']).toBe('comprobante:cuadra');
     expect(s.p!['aviso']['datos']['resultado']).toBe('cuadra');
   });
@@ -1641,7 +1665,7 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     const m = enEsperaSim();
     const ref = String(estadoDe(m)['pedido']['pedidoId']);
     m.cfg['cobro'] = { ...CFG_QR.cobro, pedidoRef: ref, pendiente: true };
-    const s = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: { statusCode: 200, body: { resultado: 'cuadra', cierreId: 'c1' } } }));
+    const s = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: cotejoValido({ cierreId: 'c1' }) }));
     expect(s.p!['aviso']['tipo']).toBe('transferencia');
     expect(s.p!['cierre']).toBeNull();
     expect(s.p!['pedido']).toBeNull();
@@ -1715,7 +1739,7 @@ describe('Todo texto al cliente es seguro (PROHIBICIÓN 3)', () => {
     const m = crearMundo(CFG_QR);
     const salidas = [
       hastaResumen(m), turno(m, { boton: 'p|confirmar' }),
-      turno(m, { tipo: 'image', esComprobante: true, cotejo: { statusCode: 200, body: { resultado: 'cuadra' } } }),
+      turno(m, { tipo: 'image', esComprobante: true, cotejo: cotejoValido() }),
     ];
     const r = crearMundo();
     turno(r, { boton: 'm|reserva' });
@@ -1740,7 +1764,7 @@ describe('Plan del turno: correcciones de la revisión', () => {
     turno(m, { boton: 'p|confirmar' });
     return m;
   };
-  const cotejo = (resultado: string) => ({ statusCode: 200, body: { resultado } });
+  const cotejo = (_resultado: string) => cotejoValido();
 
   it('R7: la ubicación compartida pasa a `entrega.ubicacion` {lat, lng} en un pedido con delivery', () => {
     const m = crearMundo();

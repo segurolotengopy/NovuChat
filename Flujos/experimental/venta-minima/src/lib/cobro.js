@@ -159,7 +159,7 @@ function cbCobroReal(cuerpoPanel) {
   if (!activo) {
     return {
       activo: false, qrUrl: '', titular: '', banco: '', pendiente: false, monto: null,
-      pedidoRef: '', vencidoHaceMin: null, venceEl: '',
+      pedidoRef: '', vencidoHaceMin: null, venceEl: '', regla: 1, enRevision: false,
     };
   }
   const monto = cbTotalValido(cb.monto);
@@ -178,6 +178,10 @@ function cbCobroReal(cuerpoPanel) {
     // El último día de vigencia del QR (`aaaa-mm-dd`, el que registró el comercio). Solo se copia; `cbQrVencido` lo interpreta.
     // Tal cual, sin recortar a 10 ni limpiar: el servidor exige el formato exacto, y un valor ilegible aquí debe seguir siendo ilegible.
     venceEl: typeof cr.venceEl === 'string' ? cr.venceEl.slice(0, 40) : '',
+    // Regla 2 del cobro (15 minutos, 3 intentos): solo el número 2 la enciende. `enRevision` = el cobro ya está con una persona (tercer intento inválido):
+    // una foto más se manda igual al servidor, que la anota sin avisar de nuevo. Con la regla 1 nada de esto cambia.
+    regla: cb.regla === 2 ? 2 : 1,
+    enRevision: cb.regla === 2 && cb.enRevision === true,
   };
 }
 
@@ -306,6 +310,7 @@ function cbMensajeQr(pedido, cobro, opciones) {
     // El respaldo, si Meta no acepta la imagen: el mismo pie y el enlace.
     respaldo: cuerpo + '\n\nAbre el QR aquí: ' + url,
     evento: 'qr_enviado',
+    reglaCobro: 2,
     referencia: id,
     monto: total,
   };
@@ -438,6 +443,85 @@ function cbResultado(respCotejo, previo) {
 }
 
 // ---------------------------------------------------------------------------
+// Regla 2: guardar la imagen y cotejar con `/cotejarComprobanteVenta`
+// ---------------------------------------------------------------------------
+
+// La respuesta completa de un HTTP (`{statusCode, body}`) con el cuerpo ya como objeto ({} si no se pudo leer).
+function cbCuerpoDe(resp) {
+  const r = cbEsObjeto(resp) ? resp : {};
+  let cuerpo = r.body;
+  if (typeof cuerpo === 'string') {
+    try { cuerpo = JSON.parse(cuerpo); } catch (e) { cuerpo = {}; }
+  }
+  return { codigo: Number(r.statusCode), cuerpo: cbEsObjeto(cuerpo) ? cuerpo : {} };
+}
+
+// La ruta que devolvió `guardarComprobante` (200 `{ruta}`), o null: cualquier otra cosa (409, 413, 415, 502, un error de red, una ruta que no tiene la forma
+// `tenants/<comercio>/comprobantes/<aaaa-mm-dd>/<nombre>.<jpg|png|webp|pdf>`) es «no se guardó». El cotejo corre igual, con `ruta: null`.
+function cbRutaGuardada(resp) {
+  const c = cbCuerpoDe(resp);
+  if (c.codigo !== 200 || typeof c.cuerpo.ruta !== 'string') return null;
+  const ruta = c.cuerpo.ruta;
+  return ruta.length <= 300 && /^tenants\/[A-Za-z0-9_-]{1,60}\/comprobantes\/\d{4}-\d{2}-\d{2}\/[A-Za-z0-9_-]{1,100}\.(?:jpg|png|webp|pdf)$/.test(ruta) ? ruta : null;
+}
+
+// Listas CERRADAS. Todo lo que no está aquí es «sin_cotejo» (aviso al local + botón): nunca se adivina.
+const CB_ESTADOS_VENTA = ['valido', 'aproximado', 'reintentar', 'en_revision', 'tardio', 'ya_resuelto'];
+// Motivos de un comprobante que no se pudo leer: se pide uno más nítido (no hay una «diferencia» que decir).
+const CB_MOTIVOS_NO_LEGIBLE = ['ilegible', 'falta_monto', 'falta_fecha', 'falta_destino'];
+// Motivo del servidor -> frase en la forma que reconoce `cbDiferencia` (ahí se vuelve el texto fijo para el cliente).
+const CB_FRASE_DEL_MOTIVO = {
+  fecha_anterior: 'El comprobante es anterior al pedido',
+  fecha_posterior: 'El comprobante tiene una fecha posterior',
+  cuenta_distinta: 'El depósito fue a la cuenta',
+  destino_no_coincide: 'El depósito fue a la cuenta',
+  nombre_distinto: 'El depósito figura a',
+  destino_no_verificable: 'El comprobante no muestra a qué cuenta',
+};
+
+// `respCotejo` = la respuesta completa de `Cotejar en el servidor` (`/cotejarComprobanteVenta`). Devuelve
+//   {resultado, diferencias, importe, cierreId, causa}
+// con `resultado` en el vocabulario que ya entiende el resto del flujo:
+//   valido                     -> cuadra       (los datos coinciden; el local confirma en su banco)
+//   aproximado                 -> aproximado   (al cliente, el mismo texto; al local, «datos casi coinciden, revisar»)
+//   reintentar, no se lee      -> ilegible     (se pide uno más nítido)
+//   reintentar, otro motivo    -> reintentar   (se dice la diferencia y se pide el correcto)
+//   tardio | en_revision       -> sin_cotejo   con `causa` (aviso al local + botón)
+//   ya_resuelto, repetido, o un estado que ya avisó -> ya_cotejado (sin segundo aviso)
+//   TODO LO DEMÁS (cualquier 409, 4xx, 5xx, timeout, cuerpo ilegible, estado desconocido) -> sin_cotejo.
+function cbResultadoVenta(respCotejo) {
+  const c = cbCuerpoDe(respCotejo);
+  const cuerpo = c.cuerpo;
+  const salida = { resultado: 'sin_cotejo', diferencias: [], importe: null, cierreId: '', causa: '' };
+  if (c.codigo !== 200) return salida;
+  const estado = typeof cuerpo.estado === 'string' ? cuerpo.estado : '';
+  if (CB_ESTADOS_VENTA.indexOf(estado) < 0) return salida;
+  salida.importe = typeof cuerpo.importe === 'number' && Number.isFinite(cuerpo.importe) && cuerpo.importe > 0 ? cuerpo.importe : null;
+  salida.cierreId = typeof cuerpo.cierreId === 'string' ? cbLinea(cuerpo.cierreId, 160) : '';
+  const motivo = typeof cuerpo.motivo === 'string' ? cuerpo.motivo : '';
+  if (estado === 'ya_resuelto') { salida.resultado = 'ya_cotejado'; return salida; }
+  if (estado === 'reintentar') {
+    if (CB_MOTIVOS_NO_LEGIBLE.indexOf(motivo) >= 0) { salida.resultado = 'ilegible'; return salida; }
+    salida.resultado = 'reintentar';
+    const leido = typeof cuerpo.montoLeido === 'number' && Number.isFinite(cuerpo.montoLeido) && cuerpo.montoLeido > 0 ? cuerpo.montoLeido : null;
+    if (motivo === 'monto_menor' || motivo === 'monto_mayor' || motivo === 'monto_distinto') {
+      if (leido !== null && salida.importe !== null) salida.diferencias = ['El comprobante dice ' + leido + ' y el pedido es de ' + salida.importe];
+    } else if (Object.prototype.hasOwnProperty.call(CB_FRASE_DEL_MOTIVO, motivo)) {
+      salida.diferencias = [CB_FRASE_DEL_MOTIVO[motivo]];
+    }
+    return salida;
+  }
+  // valido, aproximado, tardio, en_revision: el aviso al local sale UNA vez (lo dice el servidor); el mismo comprobante otra vez, o un estado que
+  // el servidor ya avisó, no manda un segundo aviso.
+  if (cuerpo.repetido === true || cuerpo.avisarComercio !== true) { salida.resultado = 'ya_cotejado'; return salida; }
+  if (estado === 'valido') { salida.resultado = 'cuadra'; return salida; }
+  if (estado === 'aproximado') { salida.resultado = 'aproximado'; return salida; }
+  salida.resultado = 'sin_cotejo';
+  salida.causa = estado;
+  return salida;
+}
+
+// ---------------------------------------------------------------------------
 // Qué se le dice al cliente y qué se le avisa al restaurante
 // ---------------------------------------------------------------------------
 
@@ -445,6 +529,7 @@ function cbResultado(respCotejo, previo) {
 // (`ya_cotejado`). Sin resultado de cotejo (`sin_qr` o vacío) es el plan B.
 function cbEstadoParaAviso(resultado) {
   if (resultado === 'cuadra') return 'comprobante: datos coinciden';
+  if (resultado === 'aproximado') return 'comprobante: datos casi coinciden, revisar';
   if (resultado === 'no_cuadra') return 'comprobante: NO coinciden';
   if (resultado === 'ilegible') return 'comprobante ilegible';
   if (resultado === 'sin_cotejo') return 'comprobante sin cotejar';
@@ -490,15 +575,16 @@ function cbDiferencia(diferencias, moneda) {
 //   codigo      el código corto del pedido;
 //   avisoSalio  true SOLO si Meta devolvió un `wamid` para al menos un aviso;
 //   diferencia  la diferencia (texto o lista) que dio el servidor;
-//   ilegibles   cuántos comprobantes ilegibles lleva el pedido, contando este;
 //   entrega     'delivery' o 'recojo' (para `sin_qr`);
-//   moneda      la moneda del negocio («Bs») para decir los montos de una diferencia.
+//   moneda      la moneda del negocio («Bs») para decir los montos de una diferencia;
+//   causa       con `sin_cotejo`: 'tardio' (llegó pasados los 15 minutos) o 'en_revision' (varios intentos); otro valor = el texto general.
 // Devuelve {cuerpo, enlace, aviso}: `enlace` = lleva el botón «Escribir al local»;
 // `aviso` = hay que avisar a nuestro equipo (y de ahí depende `avisoSalio`).
 // «Ya lo pasé a nuestro equipo» solo sale con `avisoSalio === true`: nunca se promete lo que no se cumplió (`AM_PASE` lo atrapa si no). El texto nunca llama
 // «pago» a un comprobante que no es el banco (prohibición 3): se agradece el COMPROBANTE («Gracias por enviar tu comprobante»), nunca «gracias por tu pago».
 // Voz 05/10: el restaurante habla en «nosotros / nuestro equipo»; nada de «ellos», «escríbeles» ni «con los datos que leí».
 function cbTextoAlCliente(resultado, opciones) {
+  if (resultado === 'aproximado') resultado = 'cuadra'; // al cliente se le dice lo mismo; la diferencia es del aviso al local
   const o = cbEsObjeto(opciones) ? opciones : {};
   const cod = cbCodigo(o.codigo);
   const pedido = cod ? 'tu pedido #' + cod : 'tu pedido';
@@ -532,17 +618,35 @@ function cbTextoAlCliente(resultado, opciones) {
     };
   }
   if (resultado === 'ilegible') {
-    const n = Number(o.ilegibles);
-    if (!(n >= 2)) {
-      return {
-        cuerpo: 'Gracias por enviarlo. No pude leer bien tu comprobante: ¿me lo envías de nuevo, más nítido o en PDF desde la app de tu banco?',
-        enlace: false, aviso: false,
-      };
-    }
+    // Un comprobante que no se lee NUNCA avisa al local ni dice «ya lo pasé»: solo pide otro. Quién lo deriva a una persona es el servidor (`en_revision`, al tercer inválido).
+    return {
+      cuerpo: 'Gracias por enviarlo. No pude leer bien tu comprobante: ¿me lo envías de nuevo, más nítido o en PDF desde la app de tu banco?',
+      enlace: false, aviso: false,
+    };
+  }
+  if (resultado === 'reintentar') {
+    // Un comprobante que no coincide y el servidor todavía admite otro: se dice la diferencia y se pide el correcto. No avisa al local (todavía no hay nada que revisar).
+    const dif = cbDiferencia(o.diferencia, o.moneda);
+    return {
+      cuerpo: gracias + ' Veo una diferencia con ' + pedido + (dif ? ': ' + dif : '') + '. Si te equivocaste, envíame de nuevo el comprobante correcto (en foto o en PDF desde la app de tu banco). Si prefieres escribirnos directamente, toca el botón.',
+      enlace: true, aviso: false,
+    };
+  }
+  if (resultado === 'sin_cotejo' && o.causa === 'tardio') {
+    const tarde = 'Gracias por enviar el comprobante de ' + pedido + '. Llegó después de los 15 minutos del QR';
     return {
       cuerpo: salio
-        ? 'Gracias por enviarlo de nuevo. Como no se lee bien, ya lo pasé a nuestro equipo para que revise ' + pedido + ' directamente; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.'
-        : 'Gracias por enviarlo de nuevo. Como no se lee bien, ' + sinAviso.charAt(0).toLowerCase() + sinAviso.slice(1) + ' ' + guardar,
+        ? tarde + ', así que ya lo pasé a nuestro equipo para que lo revise directamente; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.'
+        : tarde + '. ' + sinAviso + ' ' + guardar,
+      enlace: true, aviso: true,
+    };
+  }
+  if (resultado === 'sin_cotejo' && o.causa === 'en_revision') {
+    const varios = 'Gracias por enviar tu comprobante. Como ya van varios intentos con ' + pedido;
+    return {
+      cuerpo: salio
+        ? varios + ', ya lo pasé a nuestro equipo para que lo revise directamente; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.'
+        : varios + ', ' + sinAviso.charAt(0).toLowerCase() + sinAviso.slice(1) + ' ' + guardar,
       enlace: true, aviso: true,
     };
   }

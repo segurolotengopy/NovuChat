@@ -143,7 +143,13 @@ const pedidoDeLaRef = (() => {
   return !ref || String(enEstado.pedidoId) === ref ? enEstado : null;
 })();
 const pedidoSimulado = !!pedidoDeLaRef && pedidoDeLaRef.simulado === true;
-const llegaComoComprobanteReal = (tipo === 'image' || tipo === 'document') && cobro.activo === true && cobro.modo !== 'simulado' && cobro.pendiente === true;
+// REGLA 2 (15 minutos, 3 intentos): además del QR pendiente, la foto de un cobro que ya venció hace menos de 24 h (`vencidoHaceMin`, un número) o que está
+// con una persona (`enRevision`) también se manda al servidor, que decide `tardio` o `en_revision` y avisa al local una sola vez. Con la regla 1 nada cambia.
+// `enRevision` solo cuenta si el flujo TODAVÍA tiene el pedido (el del estado o uno guardado de este teléfono, de menos de 72 h): sin pedido no hay a qué atribuir la foto y el servidor
+// no limita ese estado en el tiempo (seguimiento de Core-Functions); entonces la foto es una imagen cualquiera y no se baja.
+const pedidoVigente = !!pedidoDeLaRef && !(Number(pedidoDeLaRef.guardadoMs) > 0 && !(ahoraMs - Number(pedidoDeLaRef.guardadoMs) < 72 * 3600000));
+const cobroTardioOEnRevision = cobro.regla === 2 && ((cobro.enRevision === true && pedidoVigente) || (typeof cobro.vencidoHaceMin === 'number' && cobro.vencidoHaceMin >= 0));
+const llegaComoComprobanteReal = (tipo === 'image' || tipo === 'document') && cobro.activo === true && cobro.modo !== 'simulado' && (cobro.pendiente === true || cobroTardioOEnRevision);
 
 return [{ json: {
   from: from,

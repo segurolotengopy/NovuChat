@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { cotejo409, cotejoEnRevision, cotejoIlegible, cotejoReintentar, cotejoTardio, cotejoValido } from './lib/cotejo-venta';
 import { ejecutar, type J, type Referencias } from './lib/flujo';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src');
@@ -610,7 +611,7 @@ describe('comprobante: cuadra, no cuadra e ilegible, de punta a punta', () => {
   it('cuadra: el cliente lee que los datos coinciden (nunca «pagado»), y el aviso lleva el estado y la imagen con ventana abierta', () => {
     const { m } = pagando();
     turno(m, { from: AV1, texto: 'hola' });
-    const s = comprobante(m, { statusCode: 200, body: { resultado: 'cuadra', cierreId: 'cierre-1' } });
+    const s = comprobante(m, cotejoValido({ cierreId: 'cierre-1' }));
     expect(s.d['accion']).toBe('comprobante');
     const texto = cuerpos(s).join('\n');
     expect(texto).toContain('Gracias por enviar tu comprobante. Los datos coinciden');
@@ -635,7 +636,7 @@ describe('comprobante: cuadra, no cuadra e ilegible, de punta a punta', () => {
       const ref = String(clientes(c)[0]!['referencia']);
       m.panel = conCobro({ pedido: ref, monto: 55 }, { catalogo });
       turno(m, { from: AV1, texto: 'hola' });
-      return cuerpos(comprobante(m, { statusCode: 200, body: { resultado: 'cuadra', cierreId: 'cierre-1' } })).join('\n');
+      return cuerpos(comprobante(m, cotejoValido({ cierreId: 'cierre-1' }))).join('\n');
     };
     const normal = conNombre('Orden de 3 tacos de birria');
     expect(normal).toMatch(/Los datos coinciden con tu pedido #\w+ \(1 × Orden de 3 tacos de birria, recojo en el local\)\./);
@@ -646,29 +647,45 @@ describe('comprobante: cuadra, no cuadra e ilegible, de punta a punta', () => {
     }
   });
 
-  it('no cuadra: el cliente lee que algunos datos no coinciden; completo ve las diferencias y cocina no', () => {
+  it('reintentar: el cliente lee la diferencia y que envíe el comprobante correcto, SIN aviso al local; sigue esperando', () => {
     const { m } = pagando();
     turno(m, { from: AV1, texto: 'hola' });
-    turno(m, { from: AV2, texto: 'hola' });
-    const s = comprobante(m, { statusCode: 200, body: { resultado: 'no_cuadra', diferencias: ['El comprobante dice 50 y el pedido es de 55'] } });
+    const s = comprobante(m, cotejoReintentar('monto_menor', { montoLeido: 50, importe: 55 }));
     expect(cuerpos(s).join('\n')).toContain('Veo una diferencia con tu pedido');
+    expect(cuerpos(s).join('\n')).toContain('el comprobante dice 50 Bs y tu pedido es de 55 Bs');
     expect(cuerpos(s).join('\n')).not.toMatch(PROHIBIDAS);
-    expect(params(plantillas(s)[0]!)[3]).toBe('comprobante: NO coinciden los datos');
-    const detalleCompleto = cuerpoDe(s.armados.find((a) => a['para'] === AV1 && a['clase'] === 'detalle')!);
-    const detalleCocina = cuerpoDe(s.armados.find((a) => a['para'] === AV2 && a['clase'] === 'detalle')!);
-    expect(detalleCompleto).toContain('Diferencias:');
-    expect(detalleCocina).not.toContain('Diferencias');
+    expect(s.armados).toEqual([]);
+    expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
   });
 
-  it('ilegible: la primera vez se pide de nuevo sin avisar; la segunda se avisa', () => {
+  it('en_revision y tardio: aviso «sin cotejar» al local (completo con detalle e imagen); el cliente lee que lo pasamos a nuestro equipo', () => {
+    for (const cot of [cotejoEnRevision(), cotejoTardio()]) {
+      const { m } = pagando();
+      turno(m, { from: AV1, texto: 'hola' });
+      turno(m, { from: AV2, texto: 'hola' });
+      const s = comprobante(m, cot);
+      expect(params(plantillas(s)[0]!)[3]).toBe('comprobante sin cotejar');
+      expect(cuerpos(s).join('\n')).toMatch(/ya lo pasé a nuestro equipo para que lo revise directamente/);
+      expect(cuerpos(s).join('\n')).not.toMatch(PROHIBIDAS);
+      expect(s.armados.filter((a) => a['para'] === AV2).map((a) => a['clase'])).toEqual(['plantilla', 'detalle']); // la cocina no recibe la imagen del comprobante
+      expect(estadoDe(m)['paso']).toBe('menu');
+    }
+  });
+
+  it('ilegible: ni la primera ni la segunda avisan (el servidor cuenta 1 y 2 intentos); el aviso sale UNA vez, con `en_revision`', () => {
     const { m } = pagando();
-    const a = comprobante(m, { statusCode: 200, body: { resultado: 'ilegible' } });
+    turno(m, { from: AV1, texto: 'hola' });
+    const a = comprobante(m, cotejoIlegible({ intentos: 1, intentosRestantes: 2 }));
     expect(a.armados).toEqual([]);
     expect(cuerpos(a).join('\n')).toContain('No pude leer bien tu comprobante');
     expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
-    const b = comprobante(m, { statusCode: 200, body: { resultado: 'ilegible' } });
-    expect(b.armados.length).toBeGreaterThan(0);
-    expect(params(plantillas(b)[0]!)[3]).toBe('comprobante ilegible');
+    const b = comprobante(m, cotejoIlegible({ intentos: 2, intentosRestantes: 1 }));
+    expect(b.armados).toEqual([]);
+    expect(cuerpos(b).join('\n')).not.toMatch(/ya lo pas[ée]/i);
+    expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
+    const c = comprobante(m, cotejoEnRevision({ motivo: 'ilegible' }));
+    expect(c.armados.filter((x) => x['para'] === AV1 && x['clase'] === 'plantilla')).toHaveLength(1);
+    expect(params(plantillas(c)[0]!)[3]).toBe('comprobante sin cotejar');
     expect(estadoDe(m)['paso']).toBe('menu');
   });
 
@@ -684,13 +701,13 @@ describe('comprobante: cuadra, no cuadra e ilegible, de punta a punta', () => {
     // Un pedido guardado de OTRO teléfono; el servidor (o alguien) manda su referencia para este teléfono.
     sdDe(m)['pedidos']['ped-ajeno'] = { pedidoId: 'ped-ajeno', from: OTRO, codigo: 'ZZZZ', total: 10, lineas: [], modalidad: 'recojo' };
     m.panel = conCobro({ pedido: 'ped-ajeno', monto: 10 });
-    const s = comprobante(m, { statusCode: 200, body: { resultado: 'cuadra' } });
+    const s = comprobante(m, cotejoValido());
     expect(s.p['ruta']).toContain('comprobante sin pedido en el flujo');
     expect(s.p['aviso'].tipo).toBe('transferencia');
     for (const ref of ['__proto__', 'constructor']) {
       const n = pagando().m;
       n.panel = conCobro({ pedido: ref, monto: 55 });
-      expect(comprobante(n, { statusCode: 200, body: { resultado: 'cuadra' } }).p['aviso'].tipo, ref).toBe('transferencia');
+      expect(comprobante(n, cotejoValido()).p['aviso'].tipo, ref).toBe('transferencia');
     }
   });
 });
@@ -1591,7 +1608,7 @@ describe('cobro SIMULADO: QR de prueba, cualquier foto como comprobante, aviso d
     // y su comprobante SÍ se coteja (la rama simulada no se toma)
     const ref = String(clientes(c)[0]!['referencia']);
     m.panel = { ...conCobro({ pedido: ref, monto: 55 }), cobroSimulado: {} };
-    const f = foto(m, { cotejo: { statusCode: 200, body: { resultado: 'cuadra' } } });
+    const f = foto(m, { cotejo: cotejoValido() });
     expect(f.t['esComprobante']).toBe(true);
     expect(f.p['ruta']).toBe('comprobante:cuadra');
   });
