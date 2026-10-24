@@ -25,11 +25,8 @@ const { getFirestore } = await import('firebase-admin/firestore');
 const app = getApps().find((a) => a.name === 'cargar-campanas-antonio') ?? initializeApp({ projectId: PROYECTO }, 'cargar-campanas-antonio');
 const db = getFirestore(app);
 
-const T = 'camp-antonio';             // plan pro (10)
-const T_CHICO = 'camp-antonio-3';     // plan crecimiento (3)
-const T_SUSP = 'camp-antonio-susp';
-const T_SIN_PRODUCTO = 'camp-antonio-sinprod';
-const TODOS = [T, T_CHICO, T_SUSP, T_SIN_PRODUCTO];
+// El script solo carga el archivo de 'rroca-antonio' y solo en ese comercio: cada prueba deja el comercio del emulador en el estado que necesita.
+const T = 'rroca-antonio';
 const PRODUCTOS = ['pack-completo', 'libro'];
 
 const tmp = mkdtempSync(join(tmpdir(), 'cargar-campanas-antonio-'));
@@ -43,19 +40,15 @@ function correr(tenant: string, ruta: string, ...extra: string[]): { codigo: num
 }
 const lista = async (t: string): Promise<Array<Record<string, unknown>>> => ((await db.doc(`tenants/${t}/config/campanas`).get()).get('lista') ?? []) as Array<Record<string, unknown>>;
 
-beforeAll(async () => {
-  for (const t of TODOS) {
-    await db.doc(`tenants/${t}/config/campanas`).delete();
-    for (const p of PRODUCTOS) await db.doc(`tenants/${t}/catalogo/${p}`).delete();
-  }
-  const sembrar = async (t: string, plan: string, estado = 'activo', conProducto = true): Promise<void> => {
-    await db.doc(`tenants/${t}`).set({ nombre: t, estado, vertical: 'venta', flujos: ['venta'] });
-    await db.doc(`tenants/${t}/cuenta/estado`).set({ plan });
-    if (conProducto) for (const p of PRODUCTOS) await db.doc(`tenants/${t}/catalogo/${p}`).set({ nombre: p, precio: 10, activo: true });
-  };
-  // El catálogo de prueba lleva los productos que usan las campañas (el pack y el libro); sus precios no importan: el archivo no lleva ninguno.
-  await sembrar(T, 'pro'); await sembrar(T_CHICO, 'crecimiento'); await sembrar(T_SUSP, 'pro', 'suspendido'); await sembrar(T_SIN_PRODUCTO, 'pro', 'activo', false);
-});
+/** Deja el comercio del emulador como se pide: sin campañas, con el plan y el estado dados y con (o sin) los productos del catálogo. */
+async function sembrar(plan: string, estado = 'activo', conProducto = true): Promise<void> {
+  await db.doc(`tenants/${T}/config/campanas`).delete();
+  for (const p of PRODUCTOS) await db.doc(`tenants/${T}/catalogo/${p}`).delete();
+  await db.doc(`tenants/${T}`).set({ nombre: T, estado, vertical: 'venta', flujos: ['venta'] });
+  await db.doc(`tenants/${T}/cuenta/estado`).set({ plan });
+  if (conProducto) for (const p of PRODUCTOS) await db.doc(`tenants/${T}/catalogo/${p}`).set({ nombre: p, precio: 10, activo: true });
+}
+beforeAll(() => sembrar('pro'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 describe('cargar-campanas.mjs (las campañas de Antonio)', () => {
@@ -66,6 +59,7 @@ describe('cargar-campanas.mjs (las campañas de Antonio)', () => {
     expect(correr(T, archivo('ok0', bueno(T)), '--forzar').codigo).toBe(2);
   });
   it('en SECO (por omisión) dice qué cargaría y NO escribe: ni la lista, ni el sello, ni la auditoría', async () => {
+    await sembrar('pro');
     const r = correr(T, archivo('seco', bueno(T)));
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toMatch(/Seco: no se escribió nada/);
@@ -81,6 +75,7 @@ describe('cargar-campanas.mjs (las campañas de Antonio)', () => {
     expect(r.salida).not.toMatch(/nuevo\s+cien-preguntas/);
   });
   it('con --aplicar (en el emulador) escribe la lista con fechas de hoy, el sello y la auditoría; NO escribe `revision` ni `vigentes`', async () => {
+    await sembrar('pro');
     const r = correr(T, archivo('aplicar', bueno(T)), '--aplicar');
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toMatch(/✓ Verificación por relectura/);
@@ -93,32 +88,45 @@ describe('cargar-campanas.mjs (las campañas de Antonio)', () => {
     expect(doc['vigentes']).toBeUndefined();
   });
   it('NEGADO: más campañas de las que admite el plan (crecimiento = 3) no se cargan ni se recortan en silencio', async () => {
-    const r = correr(T_CHICO, archivo('chico', bueno(T_CHICO)), '--aplicar');
+    await sembrar('crecimiento');
+    const r = correr(T, archivo('chico', bueno(T)), '--aplicar');
     expect(r.codigo, r.salida).toBe(1);
     expect(r.salida).toMatch(/plan del comercio admite 3/);
-    expect(await lista(T_CHICO)).toEqual([]);
+    expect(await lista(T)).toEqual([]);
   });
-  it('NEGADO: un producto que no es un documento ACTIVO del catálogo, un comercio suspendido o inexistente, y un archivo de otro comercio', async () => {
-    const sinProducto = correr(T_SIN_PRODUCTO, archivo('sinprod', bueno(T_SIN_PRODUCTO)), '--aplicar');
+  it('NEGADO: un producto que no es un documento ACTIVO del catálogo, un comercio suspendido o inexistente, un archivo de otro comercio y un archivo SIN campo `tenant`', async () => {
+    await sembrar('pro', 'activo', false);
+    const sinProducto = correr(T, archivo('sinprod', bueno(T)), '--aplicar');
     expect(sinProducto.codigo).toBe(1);
     expect(sinProducto.salida).toMatch(/no existe o no está activo/);
-    expect(await lista(T_SIN_PRODUCTO)).toEqual([]);
-    expect(correr(T_SUSP, archivo('susp', bueno(T_SUSP)), '--aplicar').salida).toMatch(/no está activo/);
-    expect(correr('camp-antonio-fantasma', archivo('fantasma', bueno('camp-antonio-fantasma')), '--aplicar').salida).toMatch(/No existe el comercio/);
+    expect(await lista(T)).toEqual([]);
+    await sembrar('pro', 'suspendido');
+    expect(correr(T, archivo('susp', bueno(T)), '--aplicar').salida).toMatch(/no está activo/);
+    await db.doc(`tenants/${T}`).delete();
+    expect(correr(T, archivo('fantasma', bueno(T)), '--aplicar').salida).toMatch(/No existe el comercio/);
+    await sembrar('pro');
     const ajeno = correr(T, archivo('ajeno', bueno('otro-comercio')), '--aplicar');
     expect(ajeno.codigo).toBe(2);
     expect(ajeno.salida).toMatch(/es del comercio «otro-comercio»/);
+    // Un archivo sin `tenant` tampoco se carga; ni uno cuyo `--tenant` pedido es otro comercio.
+    const sinTenant = bueno(T) as Partial<Datos>; delete sinTenant.tenant;
+    const st = correr(T, archivo('sintenant', sinTenant), '--aplicar');
+    expect(st.codigo).toBe(2);
+    expect(st.salida).toMatch(/sin campo tenant/);
+    const otroPedido = correr('otro-comercio', archivo('otropedido', bueno(T)), '--aplicar');
+    expect(otroPedido.codigo).toBe(2);
+    expect(await lista(T)).toEqual([]);
   });
   it('NEGADO: un titular con monto y un ángulo de más de 300 caracteres se rechazan antes de escribir', async () => {
     for (const [nombre, mod, esperado] of [
       ['monto', (d: Datos) => { d.anuncios[0]!['titulares'] = ['Libro digital Bs 35']; }, /no lleva montos/],
       ['angulo-largo', (d: Datos) => { d.anuncios[0]!['angulo'] = 'a'.repeat(301); }, /el máximo es 300/],
     ] as Array<[string, (d: Datos) => void, RegExp]>) {
-      const antes = await lista(T_SIN_PRODUCTO);
-      const r = correr(T_SIN_PRODUCTO, archivo(nombre, bueno(T_SIN_PRODUCTO, mod)), '--aplicar');
+      const antes = await lista(T);
+      const r = correr(T, archivo(nombre, bueno(T, mod)), '--aplicar');
       expect(r.codigo, nombre).toBe(2);
       expect(r.salida, nombre).toMatch(esperado);
-      expect(await lista(T_SIN_PRODUCTO), nombre).toEqual(antes);
+      expect(await lista(T), nombre).toEqual(antes);
     }
   });
 });

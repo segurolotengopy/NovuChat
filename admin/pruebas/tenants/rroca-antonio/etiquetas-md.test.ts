@@ -4,7 +4,8 @@
  * Las etiquetas (nombre con su emoji, SIN monto) son DATO del tenant en «Config base» (`etiquetaPack`…, archivo `rroca-antonio.json`); el monto lo pone el código desde el catálogo de la Consola.
  * WhatsApp admite 20 caracteres en un botón y 24 en una fila; el largo se cuenta con `.length` (el emoji ocupa 2 unidades UTF-16). Aquí se fija el largo máximo para el catálogo del MD y para uno de tres cifras.
  */
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -13,6 +14,8 @@ import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { ANA, crear, hablar, mBoton, mLista, mTexto, panelOk } from './mundo';
 import { cargarLibrerias } from './librerias';
 import { vigilarUx } from './vigilante-ux';
+// @ts-expect-error el armador es un .mjs sin tipos
+import { cargarDatos } from '../../../../Flujos/experimental/rroca-antonio/construir.mjs';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const DATOS = JSON.parse(readFileSync(join(RAIZ, 'admin/scripts/datos/rroca-antonio/rroca-antonio.json'), 'utf8')) as { configBase: Record<string, string> };
@@ -149,5 +152,29 @@ describe('MD modificado · el ahorro lo calcula el código desde el catálogo (l
     const texto = t.mensajes.map((m) => m.cuerpo).join(' ');
     expect(texto).toMatch(/49 Bs/);
     expect(texto).not.toMatch(/\b69\b|hasta el|desde el|05\/11|06\/11|promoci/i);
+  });
+});
+
+describe('MD modificado · una etiqueta con monto o enlace no entra: ni al construir ni en tiempo de ejecución', () => {
+  const MALAS = ['Pack 49Bs', 'Pack $49', 'Pack 49 USD', 'wa.me/59100000011', 'https://x.com/pack', 'www.pack.com', 'pack.com/oferta'];
+  const construir = (etiqueta: string): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'etiqueta-'));
+    try {
+      const d = JSON.parse(JSON.stringify(DATOS)) as { configBase: Record<string, string> };
+      d.configBase['etiquetaPack'] = etiqueta;
+      const ruta = join(dir, 'rroca-antonio.json');
+      writeFileSync(ruta, JSON.stringify(Object.assign(JSON.parse(readFileSync(join(RAIZ, 'admin/scripts/datos/rroca-antonio/rroca-antonio.json'), 'utf8')), { configBase: d.configBase })));
+      try { cargarDatos(ruta); return ''; } catch (e) { return String((e as Error).message); }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  };
+  it('construir.mjs rechaza cada etiqueta mala y acepta las del MD', () => {
+    for (const mala of MALAS) expect(construir(mala), mala).toMatch(/etiquetaPack/);
+    for (const buena of Object.values(ETIQUETAS)) expect(construir(buena), buena).toBe('');
+  });
+  it('en tiempo de ejecución `raEtiquetas` ignora la mala (se usa el nombre del catálogo) y conserva las buenas', () => {
+    const et = LIB['raEtiquetas'] as (b: J) => Record<string, string>;
+    for (const mala of MALAS) expect(et({ etiquetaPack: mala, etiquetaLibro: '📘 Solo Libro' }), mala).toEqual({ libro: '📘 Solo Libro' });
+    const w = crear({ base: { ...ETIQUETAS, etiquetaPack: 'Pack 49Bs' }, panel: panelOk() });
+    expect(botones(menu(w))[0]!.title).toBe('Pack completo 49Bs');   // el del catálogo
   });
 });

@@ -50,8 +50,8 @@ try { datos = JSON.parse(readFileSync(ARCHIVO, 'utf8')); } catch (e) {
   console.error(`\n  ✗ No se pudo leer ${ARCHIVO} como JSON: ${e.message}\n`);
   process.exit(2);
 }
-if (typeof datos.tenant === 'string' && datos.tenant !== TENANT) {
-  console.error(`\n  ✗ El archivo es del comercio «${datos.tenant}» y se pidió «${TENANT}»: no se escribe nada.\n`);
+if (datos.tenant !== 'rroca-antonio' || datos.tenant !== TENANT) {
+  console.error(`\n  ✗ El archivo es del comercio «${String(datos.tenant ?? '(sin campo tenant)').slice(0, 60)}» (tiene que decir «rroca-antonio») y se pidió «${TENANT}»: no se escribe nada.\n`);
   process.exit(2);
 }
 // Un anuncio marcado `pendiente_de_termino_registrado` (su titular lleva un término que el servidor aún no admite) NO viaja en el lote: se informa y se deja fuera.

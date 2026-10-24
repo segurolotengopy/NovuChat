@@ -105,7 +105,8 @@ function escribirSinSeguirEnlaces(ruta, texto, nombre) {
 
 // ----------------------------------------------------------------- los datos
 const MARCADOR = /^REEMPLAZAR_[A-Z0-9_]+$/;
-const ETIQUETA = /^(?!.*\b(bs|bob|bolivianos?)\b)[^"{}\r\n<>()\\']{2,30}$/i;
+// Sin monto (ni «49Bs», «$49», «49 USD»), sin enlaces (`://`, `www.`, `wa.me`, `dominio.xx/`) y sin los caracteres peligrosos.
+const ETIQUETA = /^(?!.*(?:\b(?:bs|bob|bolivianos?)\b|\d\s*(?:bs|bob|\$|usd)|(?:bs|bob|\$|usd)\s*\d|:\/\/|www\.|wa\.me|\.\w{2,}\/))[^"{}\r\n<>()\\']{2,30}$/i;
 const FORMAS_CONFIG = {
   waGraphVersion: /^v\d{1,2}\.\d{1,2}$/,
   phoneNumberIdEsperado: /^(\d{6,25}|REEMPLAZAR_[A-Z0-9_]+)$/,

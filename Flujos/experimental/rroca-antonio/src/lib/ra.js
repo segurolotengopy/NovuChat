@@ -538,12 +538,14 @@ function raEtiqueta(nombre, monto) {
 // LAS ETIQUETAS DEL TENANT (24/10/2026, «MD modificado»): los NOMBRES de los botones y su emoji son dato de «Config base» (`etiquetaPack`, `etiquetaLibro`, `etiquetaBonos`, `etiquetaWorkbook`, `etiquetaGuia`,
 // `etiquetaPreguntas`, `etiquetaCalendario`), sin monto: el monto lo pone SIEMPRE el código desde el catálogo. Sin la clave, la etiqueta cae al nombre del catálogo de la Consola (el comportamiento anterior).
 const RA_CLAVES_ETIQUETA = { pack: 'etiquetaPack', libro: 'etiquetaLibro', bonos: 'etiquetaBonos', workbook: 'etiquetaWorkbook', guia: 'etiquetaGuia', preguntas: 'etiquetaPreguntas', calendario: 'etiquetaCalendario' };
+// La misma forma que exige `construir.mjs`, repetida en tiempo de ejecución: una etiqueta con monto, enlace o caracteres peligrosos se ignora y se usa el nombre del catálogo.
+const RA_ETIQUETA_VALIDA = /^(?!.*(?:\b(?:bs|bob|bolivianos?)\b|\d\s*(?:bs|bob|\$|usd)|(?:bs|bob|\$|usd)\s*\d|:\/\/|www\.|wa\.me|\.\w{2,}\/))[^"{}\r\n<>()\\']{2,30}$/i;
 function raEtiquetas(base) {
   const e = {};
   if (!cbEsObjeto(base)) return e;
   for (const k of Object.keys(RA_CLAVES_ETIQUETA)) {
     const v = typeof base[RA_CLAVES_ETIQUETA[k]] === 'string' ? cbLinea(base[RA_CLAVES_ETIQUETA[k]], 40) : '';
-    if (v !== '') e[k] = v;
+    if (v !== '' && RA_ETIQUETA_VALIDA.test(v)) e[k] = v;
   }
   return e;
 }
