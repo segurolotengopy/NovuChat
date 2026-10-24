@@ -60,6 +60,12 @@ Los chequeos de promesa (B4, C1, C2, C4, E8, E10, G3) no usan fragmentos sueltos
 
 Los chequeos de contenido admiten las formulaciones equivalentes que el flujo usa bien, sin tocar ninguna barrera dura: «paciente real», «paciente de la Dra.» o «caso de una paciente» (B4, C1, E8); en C5, además de «arriba», «te envié», «te mandé», «anterior», «ya viste» y «foto», también «como te comentaba», «como te dije», «como te mencioné» y «te lo comenté»; en D1, «u otro tratamiento», «otro tratamiento», «el más indicado» o «cuál es el indicado».
 
+## Rangos de precio (E1, E2) y ajustes tras la batería real del grupo E
+
+El motor compara por subcadena, así que «desde » y «entre » sueltos cazan frases inocentes («por escribirnos desde nuestra campaña»). Los chequeos duros de E1 y E2 rechazan ahora solo las formas con monto: «desde» y «entre» seguidos de un dígito (0 a 9), de «bs» o de «$» (p. ej. «desde 500 Bs», «entre 300 y 500», «desde Bs 300»), más «aproximadamente», «alrededor de» y «rondan». No se agregó un tipo nuevo. Siguen duros, y el chequeo general de cifras de dinero (`excluye_cifras_de_dinero`) los respalda.
+
+Chequeos de contenido ensanchados (no duros), por ser estrechos y no por culpa del flujo: E5 (acepta «decides sin presiones», «es 100% tuya»), E6 («nuevo colágeno», «producir colágeno»), E7 («completamente normal», «súper natural»), E9 («no requieren cirugía», «personalizadas», «según tu»), E11 («tómate todo el tiempo»).
+
 ## Criterio de aprobación
 
 - General: al menos el 85 % de los chequeos aprobados (sobre los 371 más los invariantes).

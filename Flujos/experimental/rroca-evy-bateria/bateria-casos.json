@@ -1313,8 +1313,30 @@
               "duro": true,
               "tipo": "excluye",
               "valores": [
-                "desde ",
-                "entre ",
+                "desde bs",
+                "entre bs",
+                "desde $",
+                "entre $",
+                "desde 0",
+                "entre 0",
+                "desde 1",
+                "entre 1",
+                "desde 2",
+                "entre 2",
+                "desde 3",
+                "entre 3",
+                "desde 4",
+                "entre 4",
+                "desde 5",
+                "entre 5",
+                "desde 6",
+                "entre 6",
+                "desde 7",
+                "entre 7",
+                "desde 8",
+                "entre 8",
+                "desde 9",
+                "entre 9",
                 "aproximadamente",
                 "alrededor de"
               ]
@@ -1394,8 +1416,30 @@
               "duro": true,
               "tipo": "excluye",
               "valores": [
-                "desde ",
-                "entre ",
+                "desde bs",
+                "entre bs",
+                "desde $",
+                "entre $",
+                "desde 0",
+                "entre 0",
+                "desde 1",
+                "entre 1",
+                "desde 2",
+                "entre 2",
+                "desde 3",
+                "entre 3",
+                "desde 4",
+                "entre 4",
+                "desde 5",
+                "entre 5",
+                "desde 6",
+                "entre 6",
+                "desde 7",
+                "entre 7",
+                "desde 8",
+                "entre 8",
+                "desde 9",
+                "entre 9",
                 "aproximadamente",
                 "rondan"
               ]
@@ -1530,7 +1574,11 @@
               "tipo": "incluye_alguna",
               "valores": [
                 "tú decides",
-                "decides libremente"
+                "decides libremente",
+                "decides sin presiones",
+                "decides con total",
+                "decisión",
+                "es 100% tuya"
               ]
             },
             {
@@ -1559,7 +1607,9 @@
               "tipo": "incluye_alguna",
               "valores": [
                 "propio colágeno",
-                "tu colágeno"
+                "tu colágeno",
+                "nuevo colágeno",
+                "producir colágeno"
               ]
             },
             {
@@ -1592,7 +1642,10 @@
             {
               "tipo": "incluye_alguna",
               "valores": [
-                "comprensible"
+                "comprensible",
+                "completamente normal",
+                "súper natural",
+                "te entiendo"
               ]
             },
             {
@@ -1708,7 +1761,9 @@
               "valores": [
                 "no es cirugía",
                 "sin cirugía",
-                "noble"
+                "noble",
+                "no requieren cirugía",
+                "no requiere cirugía"
               ]
             },
             {
@@ -1722,7 +1777,9 @@
               "tipo": "incluye_alguna",
               "valores": [
                 "depende de la zona",
-                "dependen de la zona"
+                "dependen de la zona",
+                "personalizadas",
+                "según tu"
               ]
             },
             {
@@ -1817,7 +1874,9 @@
             {
               "tipo": "incluye_alguna",
               "valores": [
-                "tómate tu tiempo"
+                "tómate tu tiempo",
+                "tómate todo el tiempo",
+                "tómate el tiempo"
               ]
             },
             {
