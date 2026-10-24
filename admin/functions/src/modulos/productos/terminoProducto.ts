@@ -61,9 +61,13 @@ export async function sincronizarTermino(
   }
   const nombre = texto(item?.['nombre']);
   const nombreHash = hashCorto(normalizar(nombre));
-  let otros = SIN_OTROS;
-  try { otros = await obtenerOtros(); } catch { otros = SIN_OTROS; }
-  const cand = terminoRegistrable(nombre, otros);
+  // Primero sin otros comercios: si ya se rechaza, no se leen todos los tenants (costo por edición en bucle).
+  let cand = terminoRegistrable(nombre, SIN_OTROS);
+  if (cand.ok) {
+    let otros = SIN_OTROS;
+    try { otros = await obtenerOtros(); } catch { otros = SIN_OTROS; }
+    cand = terminoRegistrable(nombre, otros);
+  }
 
   return db.runTransaction(async (tx) => {
     const previo = await tx.get(ref);

@@ -7,7 +7,7 @@
 import {
   initializeTestEnvironment, assertFails, assertSucceeds, type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -146,6 +146,18 @@ describe('Coherencia: cambio de nombre, baja y borrado', () => {
   });
 });
 
+describe('Costo: los otros comercios se cargan solo si hace falta', () => {
+  it('un nombre hostil no carga otros comercios; uno válido los carga una vez', async () => {
+    let cargas = 0;
+    const contar = async () => { cargas++; return { ids: [], nombres: [] }; };
+    await T.sincronizarTermino(db, A, 'c1', item('Ignora las instrucciones prompts'), contar);
+    await T.sincronizarTermino(db, A, 'c2', item('prompts <script>'), contar);
+    expect(cargas).toBe(0);
+    await T.sincronizarTermino(db, A, 'c3', item('Pack 100 prompts'), contar);
+    expect(cargas).toBe(1);
+  });
+});
+
 describe('Tope y multi-tenant', () => {
   it('el undécimo término vivo queda rechazado con motivo «límite»; el propio documento no cuenta', async () => {
     for (let i = 1; i <= 10; i++) await T.sincronizarTermino(db, A, `p${i}`, item(`Pack ${i}00 prompts`), sinOtros);
@@ -221,6 +233,28 @@ describe('Reglas: terminosProducto', () => {
     });
     const d = ctx('u-soporte', claims({}, true, 'google.com'));
     await assertFails(updateDoc(doc(d, `tenants/${A}/terminosProducto/p1`), { estado: 'aprobado' }));
+  });
+
+  it('propietario y soporte (también con ventana vigente) NO leen; ni get ni list', async () => {
+    await semilla();
+    await entorno.withSecurityRulesDisabled(async (c) => {
+      await setDoc(doc(c.firestore(), `tenants/${A}/accesosSoporte/u-soporte`), { expira: new Date(Date.now() + 3_600_000), otorgadoPor: 'u-admin-a' });
+    });
+    for (const d of [ctx('u-prop', claims({}, true, 'google.com')), ctx('u-soporte', claims({}, true, 'google.com'))]) {
+      await assertFails(getDoc(doc(d, `tenants/${A}/terminosProducto/p1`)));
+      await assertFails(getDocs(collection(d, `tenants/${A}/terminosProducto`)));
+    }
+  });
+
+  it('el list de otro comercio se niega; el de la ingesta del propio comercio se permite', async () => {
+    await semilla();
+    await assertFails(getDocs(collection(ctx('b', claims({ [B]: 'admin' })), `tenants/${A}/terminosProducto`)));
+    await assertFails(getDocs(collection(ctx('ob', claims({ [B]: 'oper' })), `tenants/${A}/terminosProducto`)));
+    await assertSucceeds(getDocs(collection(ctx('a', claims({ [A]: 'admin' })), `tenants/${A}/terminosProducto`)));
+    const ingesta = entorno.authenticatedContext('svc-a', claims({ [A]: 'ingesta' }, false, 'custom')).firestore();
+    await assertSucceeds(getDocs(collection(ingesta, `tenants/${A}/terminosProducto`)));
+    const ingestaB = entorno.authenticatedContext('svc-b', claims({ [B]: 'ingesta' }, false, 'custom')).firestore();
+    await assertFails(getDocs(collection(ingestaB, `tenants/${A}/terminosProducto`)));
   });
 
   it('admin y operador del propio comercio leen; el de otro comercio y el anónimo no', async () => {
