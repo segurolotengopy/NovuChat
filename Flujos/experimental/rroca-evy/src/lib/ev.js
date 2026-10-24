@@ -516,7 +516,7 @@ const EV_AG_SUJETO = /\b(te|tu|tus|tienes|quedaste|quedo|quedamos|nos vemos|esta
 const EV_AG_FUERTE = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b|\b\d{1,2}[: ]\d{2}\b|\ba las \d{1,2}(?!\s*(?:semanas|dias|meses|horas|minutos))|\b\d{1,2} ?(?:am|pm|hs|hrs)\b/;
 const EV_AG_PARTICIPIO = /\b(apartad\w*|reservad\w*|agendad\w*|anotad\w*|registrad\w*|inscrit\w*)\b/;
 const EV_AG_DEBIL = /\b(hoy|manana|pasado manana)\b/;
-const EV_AG_VISITA = /\b(espera|esperan|esperara|esperaran|esperamos|espero|veras|vera|atiende|atendera|nos vemos|vienes|vas|llegas|recibe|recibira)\b/;
+const EV_AG_VISITA = /\b(espera(?!r\b)\w*|espero|veras|vera|atiende|atendera|nos vemos|vienes|vas|llegas|recibe|recibira)\b/;
 const EV_AG_REGISTRO = /\b(inscrit\w*|ya (?:te |lo |la )?(?:tiene|tienes|tengo|tenemos) (?:tu |su )?(?:cupo|espacio|turno|lugar)|ya te (?:tiene|tienen)|en su lista|en la lista|quedo (?:tu|su) (?:cita|turno|espacio)|inscrib\w*|apartad\w*|en la agenda|(?:registr|anot|guard|apunt|agend|reserv)(?:e|o|amos|aron|ado|ada|ados|adas)|sabe que vas|ya esta todo hecho)\b/;
 function evAfirmaAgenda(oracion) {
   const o = evTexto(oracion);
