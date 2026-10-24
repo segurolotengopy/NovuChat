@@ -884,7 +884,7 @@ function evPreguntaGratis(textoCliente) {
 // «Quiero ver cómo queda», «¿cuánto cuesta?» o un saludo con su pregunta de nombre no son un pedido de agendar.
 const EV_AFIRMA_CORTA = /^(?:si|sii+|ok|okey|okay|dale|daleee?|claro|por supuesto|de acuerdo|por favor|porfa|listo|va|vale|bueno|perfecto|adelante|obvio|hagamoslo|quiero)(?: (?:por favor|porfa|gracias|dale|claro|si|quiero|adelante|ok|vale|perfecto|listo))?$/;
 // La OFERTA es la ÚLTIMA oración del último mensaje del asistente, una pregunta con un verbo de oferta (el saludo nombra la valoración y pregunta el nombre: nunca es una oferta).
-const EV_OFRECE_AGENDAR = /\b(agend(?:ar|arte|emos|amos|o|a)|reserv(?:ar|arte|emos|amos)|coordin(?:ar|arte|emos|amos)|program(?:ar|arte|emos|amos)|apart(?:ar|arte|emos)|te paso|pasarte con recepcion|te comunico|separar|elegir (?:el|tu) horario)\b/;
+const EV_OFRECE_AGENDAR = /\b(?:agend\w*|reserv(?!a\b|as\b|ado\b)\w*|coordin\w*|separ(?:ar|arte|arla|emos|e|o)\b|apart(?!e\b|ado|ados|ada)\w*|te aparte\b|program(?:ar|arte|arla|emos|e|o)\b|te paso con recepcion|pasarte con recepcion|te comunico|elegir (?:el|tu) horario)/;   // raíces de verbo con exclusiones de sustantivo o giro («aparte de», «el programa», «un apartado», «no se cobra reserva»)
 const EV_PIDE_NOMBRE = /\b(como te llamas|tu nombre|cual es tu nombre|con quien hablo)\b/;
 function evUltimaOracion(texto) {
   const l = evPartirEnOraciones(evTexto(texto)).filter((o) => o !== '' && o !== '\n');
@@ -915,7 +915,7 @@ function evAceptaOferta(textoCliente, historial) {
   return a >= 0 && evOfreceAgendar(h[a].t);
 }
 // ¿Es esto un nombre? «Paola», «Paola Rojas», «Soy Paola», «Me llamo Paola»; no «soy alérgica», «de La Paz», «soy nueva», ni una frase.
-const EV_NO_NOMBRE = new RegExp('^(?:de|del|la|el|los|las|un|una|nuevo|nueva|alergico|alergica|diabetico|diabetica|embarazada|paciente|cliente|mama|casada|soltera|doctor|doctora|medico|medica|enfermera|enfermero|interesad[oa]|curios[oa]|quiero|necesito|busco|tengo|vengo|estoy|si|no|hola|ok|gracias|bueno|claro|dale|buenas|buenos|muy|tu|su|mi|mejor|para|pero|cita|turno|horario|horarios|tienen|hipertens\\w*|nervios\\w*|sensible|mayor|botox|radiesse|harmonyca|sculptra|acido|hialuronico|bioestimulador\\w*|gratis|gratuita)$');
+const EV_NO_NOMBRE = new RegExp('^(?:de|del|la|el|los|las|un|una|nuevo|nueva|alergico|alergica|diabetico|diabetica|embarazada|paciente|cliente|mama|casada|soltera|doctor|doctora|medico|medica|enfermera|enfermero|interesad[oa]|curios[oa]|quiero|necesito|busco|tengo|vengo|estoy|si|no|hola|ok|gracias|bueno|claro|dale|buenas|buenos|clienta|estudiante|senora|senor|madre|ella|yo|usuaria|muy|tu|su|mi|mejor|para|pero|cita|turno|horario|horarios|tienen|hipertens\\w*|nervios\\w*|sensible|mayor|botox|radiesse|harmonyca|sculptra|acido|hialuronico|bioestimulador\\w*|gratis|gratuita)$');
 function evEsNombre(textoCliente) {
   const raw = evTexto(textoCliente).trim();
   if (raw === '' || raw.indexOf('?') >= 0 || raw.indexOf('¿') >= 0) return false;
@@ -954,8 +954,11 @@ function evNombreTrasPedirAgendar(historial) {
 }
 // El cliente dice que NO quiere agendar (ahora): no se deriva.
 function evNegaAgendar(textoCliente) {
-  const n = evNorm(textoCliente);
-  return /\bno\b[^.?!]{0,40}\b(agend|reserv|separ|cita)/.test(n) || /\b(pero no|todavia no|aun no|mas adelante|no ahora|ahora no|ahorita no|lo pienso|lo voy a pensar)\b/.test(n);
+  // Por cláusula (coma, punto y coma, «pero», «aunque», «igual»): la negación NO gana si una cláusula POSTERIOR dice «quiero agendar» en positivo («Hola, no sé mucho, quiero agendar una cita»).
+  const claus = evTexto(textoCliente).split(/[,;]|\bpero\b|\baunque\b|\bigual\b/i).map((c) => evNorm(c)).filter((c) => c !== '');
+  const neg = (c) => /\bno\b[^.?!]{0,40}\b(agend|reserv|separ|cita)/.test(c) || /\b(todavia no|aun no|mas adelante|no ahora|ahora no|ahorita no|lo pienso|lo voy a pensar)\b/.test(c);
+  const pos = (c) => EV_QUIERE_AGENDAR.test(c) && !neg(c);
+  return claus.some((c, i) => neg(c) && !claus.slice(i + 1).some(pos));
 }
 // Pedido explícito de agendar (no una pregunta sobre cómo se agenda).
 const EV_QUIERE_AGENDAR = /\b(?:quiero|quisiera|queremos|deseo|necesito|me gustaria|voy a|vamos a|puedo|podemos|podria|podrian)\s+(?:\w+\s+){0,2}(?:agendar|reservar|separar)\b|\bagend(?:a|ame|en|enme|arme)\b|\breserva(?:me|nos)\b|\bsi,? quiero (?:la valoracion|mi valoracion|mi cita|agendar)\b/;

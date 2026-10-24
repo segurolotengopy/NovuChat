@@ -3,11 +3,27 @@
  * La etiqueta del modelo solo se honra si el cliente pidió agendar, aceptó una oferta de agendar o de pasar con recepción, o dio su nombre; si no, se ignora, se conserva el texto y salen las imágenes.
  * Y ningún mensaje del modelo pasa de 700 caracteres: se recorta por oración, nunca a mitad de oración, y la pregunta final es lo último que se conserva.
  */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { runInNewContext } from 'node:vm';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ANA, IDS, avisosARecepcion, crear, dice, hablar, imagenes, mTexto, textos } from './mundo';
 
 const ANTES = '[ENVIAR_ARTE_ANTES_DESPUES] Mira el caso real de una paciente de la Dra. Evy. [DERIVAR_RECEPCION]';
 const esBoton = (t: ReturnType<typeof hablar>): boolean => t.mensajes.some((e) => e.tipo === 'interactive');
+
+const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental');
+const lib = runInNewContext(`const EV_PROMPT='';\n${readFileSync(join(RAIZ, 'comun-sin-agente/src/filtro-redaccion.js'), 'utf8')}\n${readFileSync(join(RAIZ, 'rroca-evy/src/lib/ev.js'), 'utf8')}\n({ evOfreceAgendar })`, {}) as { evOfreceAgendar: (t: string) => boolean };
+
+describe('la oferta de agendar: raíces de verbo con exclusiones (la función sola)', () => {
+  it('son ofertas', () => {
+    for (const q of ['¿Te gustaría agendarla?', '¿Quieres que te agende?', '¿Quieres que te reserve un horario?', '¿Te reservo un espacio?', '¿Te coordino la valoración?', '¿Quieres que te aparte un horario?']) expect(lib.evOfreceAgendar(q), q).toBe(true);
+  });
+  it('NO son ofertas', () => {
+    for (const q of ['¿Aparte de las ojeras, hay algo más?', '¿Quieres conocer el programa de cuidados?', '¿Quieres saber cómo se programa el tratamiento?', '¿Te explico en un apartado los cuidados?', '¿Sabías que no se cobra reserva?', '¿Quieres un tratamiento progresivo?', '¿Cómo te llamas y qué te gustaría mejorar?']) expect(lib.evOfreceAgendar(q), q).toBe(false);
+  });
+});
 
 describe('la etiqueta de derivación del modelo no se honra sin que el cliente pida agendar', () => {
   it('NEGADA: «Quiero ver cómo queda» con la etiqueta del modelo no deriva y envía el ANTES_DESPUES', () => {
@@ -116,10 +132,55 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     expect(esBoton(hablar(m, ANA, mTexto('sí')))).toBe(true);
   });
   it('(A-ii) otros verbos de oferta: coordinar, programar, apartar', () => {
-    for (const oferta of ['¿Quieres que coordinemos tu valoración?', '¿Quieres que programemos tu valoración?', '¿Quieres que apartemos un horario?']) {
+    for (const oferta of ['¿Quieres que coordinemos tu valoración?', '¿Quieres que programemos tu valoración?', '¿Quieres que te aparte un horario?']) {
       const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<claro>>>') ? 'Listo. [DERIVAR_RECEPCION]' : `Con gusto. ${oferta}`) });
       hablar(m, ANA, mTexto('cuéntame'));
       expect(esBoton(hablar(m, ANA, mTexto('claro'))), oferta).toBe(true);
+    }
+  });
+  it('(ronda final 1) más ofertas por raíz: «agendarla» y «te coordino» (más «te aparte», arriba) + sí + nombre derivan. «Te agende / te reserve / te reservo» el filtro común (core) los rechaza antes: nunca llegan al cliente', () => {
+    for (const oferta of ['¿Te gustaría agendarla?', '¿Te coordino la valoración?']) {
+      const m = crear({ modeloDice: (ll) => {
+        const c = JSON.stringify(ll.cuerpo);
+        if (c.includes('<<<Paola>>>')) return 'Gracias. [DERIVAR_RECEPCION: Paola]';
+        if (c.includes('<<<sí>>>')) return '¿Cómo te llamas para pasarte con recepción?';
+        return `Con gusto. ${oferta}`;
+      } });
+      hablar(m, ANA, mTexto('cuéntame'));
+      hablar(m, ANA, mTexto('sí'));
+      expect(esBoton(hablar(m, ANA, mTexto('Paola'))), oferta).toBe(true);
+    }
+  });
+  it('(ronda final 1) «progresivo» y el saludo no son ofertas', () => {
+    for (const pregunta of ['¿Quieres un tratamiento progresivo?', '¿Cómo te llamas y qué te gustaría mejorar?']) {
+      const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<ok>>>') ? 'Listo. [DERIVAR_RECEPCION]' : `Te cuento. ${pregunta}`) });
+      hablar(m, ANA, mTexto('cuéntame'));
+      expect(esBoton(hablar(m, ANA, mTexto('ok'))), pregunta).toBe(false);
+    }
+  });
+  it('(ronda final 2) una negación no gana si después viene un «quiero agendar» positivo: derivan con etiqueta', () => {
+    for (const x of ['Hola, no sé mucho del tema, quiero agendar una cita', 'si no es molestia, quiero agendar mi valoración', 'no vivo en Santa Cruz pero quiero agendar']) {
+      const t = hablar(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto(x));
+      expect(esBoton(t), x).toBe(true);
+    }
+  });
+  it('(ronda final 2) siguen sin derivar: «no quiero cita todavía», «quiero agendar pero no ahora», «no tengo tiempo para la cita»', () => {
+    for (const x of ['no quiero cita todavía', 'quiero agendar pero no ahora', 'no tengo tiempo para la cita']) {
+      const t = hablar(crear({ modeloDice: dice('Entiendo. [DERIVAR_RECEPCION]') }), ANA, mTexto(x));
+      expect(esBoton(t), x).toBe(false);
+    }
+  });
+  it('(ronda final 3) «clienta», «señora», «madre», «yo», «estudiante» no son nombres tras pedirlos', () => {
+    for (const x of ['clienta', 'señora', 'madre', 'yo', 'estudiante', 'usuaria']) {
+      const m = crear({ modeloDice: (ll) => {
+        const c = JSON.stringify(ll.cuerpo);
+        if (c.includes(`<<<${x}>>>`)) return 'Gracias. [DERIVAR_RECEPCION]';
+        if (c.includes('<<<sí>>>')) return '¿Cómo te llamas para pasarte con recepción?';
+        return 'Te cuento. ¿Te gustaría agendar tu valoración?';
+      } });
+      hablar(m, ANA, mTexto('cuéntame'));
+      hablar(m, ANA, mTexto('sí'));
+      expect(esBoton(hablar(m, ANA, mTexto(x))), x).toBe(false);
     }
   });
   it('(A-iii) el nombre con preferencia («Paola, mejor el jueves») y de 4 palabras deriva tras aceptar y pedir el nombre; el cierre lleva el nombre del CLIENTE', () => {
