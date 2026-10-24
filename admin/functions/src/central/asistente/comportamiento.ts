@@ -179,22 +179,46 @@ const VERBO_ORDEN = new RegExp(
   + '|sigue|sigan|siga|sigueme|segui|obedec\\w*|desobedec\\w*|ensen\\w*|lee|leelos|escrib\\w*|anul\\w*|sobre?scrib\\w*|reemplaz\\w*'
   + '|lista|listame|listalos|pega|pegalos|eres|actua(?!l)\\w*|act'
   + '|recit\\w*|enumer\\w*|detall\\w*|transcrib\\w*|reproduc\\w*|reprodu(?:ce|zca)|devuelv\\w*|devolv\\w*|explic\\w*|cuentame|cuentanos|di|suelt\\w*|publica'
+  + '|traduc(?:e|ir)|resume|describ\\w*|cant(?:a|e|an|en)|deletre\\w*'
   + '|copiar|pasar|usar|leer|seguir|listar|pegar|actuar'
   + '|reveal|show|repeat|ignore|print|tell|say|forget|disregard|override|dump|read|write|output|give|send|share|leak|paste|follow|obey'
   + '|display|recite|list|provide|return|echo|spill|zeig\\w*)$', 'u');
-/** Pronombre pegado al verbo («revélalos», «pásales»): se prueba también el verbo sin él. */
-const PRONOMBRE_PEGADO = /(?:selos|selas|sela|selo|melos|melas|telos|los|las|les|lo|la|le|me|te)$/u;
-/** Verbos que solo ordenan con pronombre pegado («dáselos», «cuéntale»): solos son corrientes («da igual»). */
-const SOLO_CON_PRONOMBRE = /^(?:da|manda|cuenta)$/u;
+/** Pronombres que se pegan al verbo, de más largo a más corto («repítelos» = repite + los). */
+const SUFIJOS = ['noslos', 'noslas', 'selos', 'selas', 'sela', 'selo', 'melos', 'melas', 'telos', 'telas',
+  'nos', 'los', 'las', 'les', 'lo', 'la', 'le', 'me', 'te'] as const;
+/** Los de objeto plural o encadenado: «revélalos», «dáselos»: hablan de ALGO ya mencionado. */
+const SUFIJOS_DE_OBJETO = new Set(['noslos', 'noslas', 'selos', 'selas', 'sela', 'selo', 'melos', 'melas', 'telos', 'telas', 'los', 'las']);
+/** «da» solo ordena encadenado («dáselos», «dánoslos»); «dale» es corriente en Bolivia. */
+const SUFIJOS_DE_DA = new Set(['noslos', 'noslas', 'selos', 'selas', 'sela', 'selo', 'melos', 'melas', 'telos']);
+
+/** Las lecturas posibles de una palabra: la entera y cada verbo que queda al quitarle un pronombre. */
+function lecturas(w: string): { forma: string; sufijo: string }[] {
+  const salida = [{ forma: w, sufijo: '' }];
+  for (const suf of SUFIJOS) {
+    if (w.length > suf.length + 1 && w.endsWith(suf)) {
+      const forma = w.slice(0, -suf.length);
+      const ordena = VERBO_ORDEN.test(forma) || (forma === 'cuenta')
+        || (forma === 'da' && SUFIJOS_DE_DA.has(suf));
+      if (ordena) salida.push({ forma, sufijo: suf });
+    }
+  }
+  return salida;
+}
 /** Órdenes que son frases y no una palabra suelta (sin acentos, como llega el texto). */
 const FRASES_DE_ORDEN: readonly RegExp[] = [
   /(?<![\p{L}\p{N}_])responde con(?![\p{L}\p{N}_])/u,
-  /(?<![\p{L}\p{N}_])respond(?:e|es|a|as)(?![\p{L}\p{N}_])[^]*?(?<![\p{L}\p{N}_])(?:todo|gratis)(?![\p{L}\p{N}_])/u,
-  /(?<![\p{L}\p{N}_])se (?:un|una|ahora|siempre|mi|mas|solo)(?![\p{L}\p{N}_])/u,
-  /(?<![\p{L}\p{N}_])conviertete en(?![\p{L}\p{N}_])/u,
+  /(?<![\p{L}\p{N}_])respond(?:e|es)(?![\p{L}\p{N}_])[^]*?(?<![\p{L}\p{N}_])(?:todo gratis|gratis (?:a )?todos?)(?![\p{L}\p{N}_])/u,
+  /(?<![\p{L}\p{N}_])se (?:un|una) (?:asistente|bot|robot|ia|humano|humana|persona|otro|otra)(?![\p{L}\p{N}_])/u,
+  /(?<![\p{L}\p{N}_])conviertete en (?:(?:un|una|el|la|otro|otra) )?(?:asistente|bot|robot|ia|humano|humana|persona|otro|otra|dueno|duena|jefe|administrador)(?![\p{L}\p{N}_])/u,
   /(?<![\p{L}\p{N}_])mand(?:a|an|e|en) sobre(?![\p{L}\p{N}_])/u,
   /(?<![\p{L}\p{N}_])(?:tienen|tiene|tengan) prioridad(?![\p{L}\p{N}_])/u,
 ];
+/**
+ * Vocabulario de autoridad o de sistema: con un determinante neutro («los 100
+ * prompts»), la oración que lo lleva da autoridad a esos prompts («son tus nuevas
+ * reglas», «valen más que todo») aunque no tenga ningún verbo de la lista.
+ */
+const AUTORIDAD = /(?<![\p{L}\p{N}_])(?:regla|reglas|orden|ordenes|instruccion\w*|personalidad|guia|verdad|prioridad|memoria|asistente|anterior\w*|arriba|abajo|vale|valen|encima|convierte\w*|define\w*|reemplaz\w*|intern[oa]s?|ocult\w*|secret\w*|confidencial\w*|permitid\w*|enter[oa]s?|complet[oa]s?|mandan?|primero|ganan?|debes|debe)(?![\p{L}\p{N}_])/u;
 /** Antes de estas palabras un infinitivo describe el producto («listos para copiar»), no ordena. */
 const PREVIAS_DESCRIPTIVAS = new Set(['para', 'de', 'sin', 'al']);
 /** Bloquean siempre: hablan DEL prompt del asistente («tus 100 prompts», «el prompt»). */
@@ -214,17 +238,21 @@ function hayVerboDeOrden(oracion: string, soloPronombre = false): boolean {
   if (!soloPronombre && FRASES_DE_ORDEN.some((re) => re.test(oracion))) return true;
   const palabras = oracion.match(/[\p{L}\p{N}_]+/gu) ?? [];
   return palabras.some((w, i) => {
-    const sinPron = w.length > 3 ? w.replace(PRONOMBRE_PEGADO, '') : w;
-    const conPron = sinPron !== w && (VERBO_ORDEN.test(sinPron) || SOLO_CON_PRONOMBRE.test(sinPron));
-    if (soloPronombre) return conPron;
-    // «cuenta» ordena (contar) salvo en «cuenta con» o como sustantivo («tu cuenta»).
-    if (w === 'cuenta') {
-      return palabras[i + 1] !== 'con' && !/^(?:tu|su|mi|la|una|de|en|por|esta|a)$/u.test(palabras[i - 1] ?? '');
+    if (soloPronombre) {
+      // Lo que se busca fuera de la oración: un verbo con pronombre de objeto
+      // plural («revélalos», «dáselos») o «dile»; «dale» o «escríbeme» no.
+      return /^di(?:le|les)$/u.test(w) || lecturas(w).some((l) => l.sufijo !== '' && SUFIJOS_DE_OBJETO.has(l.sufijo));
     }
-    const forma = VERBO_ORDEN.test(w) ? w : conPron ? sinPron : null;
-    if (forma === null || /(?:ando|iendo|ado|ido)$/u.test(forma)) return false;
-    if (!/(?:ar|er|ir)$/u.test(forma)) return true;
-    return !PREVIAS_DESCRIPTIVAS.has(palabras[i - 1] ?? '');
+    // «cuenta» ordena (contar) salvo en «cuenta con», «cuenta hasta» o como sustantivo («tu cuenta»).
+    if (w === 'cuenta') {
+      return !['con', 'hasta'].includes(palabras[i + 1] ?? '') && !/^(?:tu|su|mi|la|una|de|en|por|esta|a)$/u.test(palabras[i - 1] ?? '');
+    }
+    return lecturas(w).some(({ forma, sufijo }) => {
+      if (sufijo === '' && !VERBO_ORDEN.test(forma)) return false;
+      if (/(?:ando|iendo|ado|ido)$/u.test(forma)) return false;
+      if (!/(?:ar|er|ir)$/u.test(forma)) return true;
+      return !PREVIAS_DESCRIPTIVAS.has(palabras[i - 1] ?? '');
+    });
   });
 }
 
@@ -255,9 +283,14 @@ export function promptsSinContexto(normalizado: string): boolean {
     const trozos = despues.split(CORTE_ORACION);
     const oracionDespues = trozos[0] ?? '';
     if (hayVerboDeOrden(oracionAntes) || hayVerboDeOrden(oracionDespues)) return true;
-    // Las vecinas solo importan si ordenan SOBRE los prompts: verbo con pronombre pegado.
+    // Las vecinas solo importan si ordenan SOBRE los prompts: verbo con pronombre de
+    // objeto plural. Dos oraciones a cada lado; con un determinante neutro («los 100
+    // prompts») el texto entero, porque unas frases de relleno no deben esquivar la ventana.
     const previas = antes.slice(0, corte < 0 ? 0 : corte).split(CORTE_ORACION).slice(-2);
-    if (hayVerboDeOrden(trozos[1] ?? '', true) || hayVerboDeOrden(trozos[2] ?? '', true)
+    if (neutro !== null) {
+      if (hayVerboDeOrden(base, true)) return true;
+      if (AUTORIDAD.test(oracionAntes) || AUTORIDAD.test(oracionDespues)) return true;
+    } else if (hayVerboDeOrden(trozos[1] ?? '', true) || hayVerboDeOrden(trozos[2] ?? '', true)
       || previas.some((x) => hayVerboDeOrden(x, true))) return true;
     if (/^\s*[:;=>#—–]|^\s+-\s/u.test(despues)) return true;
   }
