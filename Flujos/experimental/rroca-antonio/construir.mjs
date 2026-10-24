@@ -105,6 +105,7 @@ function escribirSinSeguirEnlaces(ruta, texto, nombre) {
 
 // ----------------------------------------------------------------- los datos
 const MARCADOR = /^REEMPLAZAR_[A-Z0-9_]+$/;
+const ETIQUETA = /^(?!.*\b(bs|bob|bolivianos?)\b)[^"{}\r\n<>()\\']{2,30}$/i;
 const FORMAS_CONFIG = {
   waGraphVersion: /^v\d{1,2}\.\d{1,2}$/,
   phoneNumberIdEsperado: /^(\d{6,25}|REEMPLAZAR_[A-Z0-9_]+)$/,
@@ -122,6 +123,8 @@ const FORMAS_CONFIG = {
   avisoComprobanteEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
   avisoConsultaEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
   avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
+  // Las etiquetas de los botones y de las filas: nombre con su emoji, SIN monto (el monto lo pone el código desde el catálogo): ni «Bs» ni «Bolivianos» ni paréntesis.
+  etiquetaPack: ETIQUETA, etiquetaLibro: ETIQUETA, etiquetaBonos: ETIQUETA, etiquetaWorkbook: ETIQUETA, etiquetaGuia: ETIQUETA, etiquetaCalendario: ETIQUETA, etiquetaPreguntas: ETIQUETA,
   // Textos que ve el cliente: una frase, sin comillas dobles ni llaves ni saltos.
   garantiaTexto: /^[^"{}\r\n<>]{10,300}$/,
 };

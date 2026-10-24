@@ -1,0 +1,82 @@
+{
+  "_fuente": "Los titulares de los 5 artes reales de Meta (los artes 4 y 5 comparten titular: UNA campaña con las dos variantes del sello, sin el monto) y los titulares extra del MD modificado de Antonio (24/10/2026), con ángulos reescritos de su §3 B (guía de entradas): sin montos, sin enlaces, sin promesas. Son DATO del negocio (módulo Campañas de la consola). El precio sale siempre del catálogo (productoId).",
+  "_uso": "node admin/scripts/datos/rroca-antonio/cargar-campanas.mjs --proyecto <id> --tenant rroca-antonio [--archivo <json>]   (en SECO por defecto; --aplicar escribe y lo hace el coordinador con la autorización de Andres)",
+  "tenant": "rroca-antonio",
+  "diasDeVigencia": 180,
+  "anuncios": [
+    {
+      "id": "miedo-a-perder",
+      "titulares": [
+        "¿Tienes miedo de perder tu relación?"
+      ],
+      "productoId": "pack-completo",
+      "angulo": "Reconoce con empatía el temor a perder la relación cuando todavía hay cariño. Explica que el Método Puente propone un camino práctico de 30 días para frenar el desgaste y reconectar paso a paso, y pregunta si hoy sienten más distancia o más discusiones."
+    },
+    {
+      "id": "discuten-por-lo-mismo",
+      "titulares": [
+        "¿Siempre terminan discutiendo por lo mismo?"
+      ],
+      "productoId": "pack-completo",
+      "angulo": "Conecta con lo agotador de repetir el ciclo de pelea y silencio. Habla de las etapas Pausar y Negociar del libro (capítulos 5 y 8) y de la guía de conversaciones difíciles; pregunta qué suele pasar cuando intentan hablar de un desacuerdo."
+    },
+    {
+      "id": "companeros-de-cuarto",
+      "titulares": [
+        "¿Sientes que viven como compañeros de cuarto?"
+      ],
+      "productoId": "pack-completo",
+      "angulo": "Conecta con la idea de que muchas veces no dejamos de amarnos, dejamos de entendernos. Habla de la ruta de 30 días, el calendario de conexión y el banco de preguntas para salir de la rutina; pregunta qué extrañan más de su comunicación."
+    },
+    {
+      "id": "plan-de-30-dias",
+      "titulares": [
+        "¿Ya no hablan como antes? Un plan de 30 días para volver a conectar en pareja",
+        "Libro digital · Precio de lanzamiento",
+        "Pack completo · Ahorras frente al precio por separado"
+      ],
+      "productoId": "pack-completo",
+      "angulo": "Reconoce el anuncio que envió y explica cómo funciona el plan de 30 días. Aclara con amabilidad las dos opciones, el libro solo o el pack con los bonos, y pregunta cuál sienten que les ayudaría más."
+    },
+    {
+      "id": "se-aman-no-se-entienden",
+      "titulares": [
+        "¿Se aman, pero ya no se entienden?"
+      ],
+      "productoId": "libro",
+      "angulo": "Destaca el pilar Unir (capítulo 2): escuchar para comprender, no para responder. Pregunta si hoy les cuesta más escucharse con calma o expresar lo que sienten."
+    },
+    {
+      "id": "hablar-sin-herir",
+      "titulares": [
+        "Aprende a hablar sin herir ni callarte"
+      ],
+      "productoId": "libro",
+      "angulo": "Destaca el pilar Expresar (capítulos 3, 4 y 6): decir lo que necesitan sin reproches. Pregunta si suelen callarse para evitar peleas o hablar cuando ya están molestos."
+    },
+    {
+      "id": "cien-preguntas",
+      "titulares": [
+        "100 preguntas para salir del piloto automático"
+      ],
+      "productoId": "pack-completo",
+      "angulo": "Relaciónalo con el banco de preguntas profundas y los ejercicios prácticos del libro, que vienen con los bonos del pack. Pregunta qué conversación les gustaría recuperar primero."
+    },
+    {
+      "id": "treinta-dias-conversar",
+      "titulares": [
+        "30 días para volver a conversar de verdad"
+      ],
+      "productoId": "pack-completo",
+      "angulo": "Relaciónalo con la ruta práctica de 30 días y el calendario de conexión del pack. Pregunta qué momento del día les gustaría volver a compartir."
+    },
+    {
+      "id": "volver-a-elegirse",
+      "titulares": [
+        "Volver a elegirse también se practica"
+      ],
+      "productoId": "pack-completo",
+      "angulo": "Relaciónalo con el pilar Elegirse (capítulos 13 y 14) y con los ejercicios del libro y los bonos del pack. Pregunta qué les gustaría volver a construir juntos."
+    }
+  ]
+}
