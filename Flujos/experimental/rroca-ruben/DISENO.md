@@ -277,7 +277,7 @@ Port de `rroca-antonio` (PR-D, #596 y #597) a la copia propia de Rubén: cada fl
 
 **Cifras.** Nodos: producción 45 -> 46, prueba 40 -> 41 (tope 48). `RR_PROMPT`: 4.670 -> 4.225 caracteres (4.780 -> 4.331 bytes UTF-8): se quitaron del prompt los 8 ángulos cableados. Mensajes por conversación: 0 agregados o quitados (un mensaje por imagen, como antes); +1 aviso a Rubén como máximo por `pago_con_problema` (por teléfono cada 30 minutos). Llamadas al modelo: bajan (foto, captura, otro y publicidad sin anuncio ya no llaman al modelo). Gemini: la misma clasificación por archivo, con `maxOutputTokens` 400 en «Ver imagen» (antes 200).
 
-**Ángulo con «prompts» (resuelto).** El ángulo aprobado de «¿No sabes qué publicar?» dice «el bono de 100 prompts». La capa de patrones del servidor rechazaba esa palabra; #649 corrigió la regla del servidor y el texto aprobado se conserva tal cual: las 5 campañas pasan `revisarSinModelo` (`campanas.test.ts`).
+**Ángulo con «prompts» (pendiente de decisión).** El ángulo aprobado de «¿No sabes qué publicar?» dice «el bono de 100 prompts; pregunta a qué se dedica…». Tras #649 el servidor admite «100 prompts» como producto contado, pero su regla 4 rechaza un «;» pegado justo después: ese anuncio queda `rechazada` y no viaja al flujo. El texto aprobado NO se cambió; con un punto en lugar del «;» pasa (una coma no basta: «publica» al final de la misma oración cuenta como verbo de orden) (`campanas.test.ts`). Las otras 4 campañas pasan.
 
 **Límite declarado.** El pie de foto que el cliente escribe junto a una foto cualquiera ya no llega al modelo (la respuesta de foto, captura y otro es del código): solo se usa con un anuncio reconocido.
 

@@ -49,18 +49,29 @@ describe('el archivo de los anuncios de Rubén (dato del tenant)', () => {
     for (const retirado of RETIRADOS) expect(validar.armarLista(DATOS, HOY).flatMap((c: { titulares?: string[]; angulo?: string }) => [...(c.titulares ?? []), c.angulo ?? '']).map(servidor.palabrasDeCampana).join('|')).not.toContain(servidor.palabrasDeCampana(retirado));
   });
 
-  it('las 5 campañas, con los ángulos aprobados TAL CUAL (incluido «el bono de 100 prompts»), pasan las comprobaciones del archivo y las del SERVIDOR sin modelo (la regla de «prompts» ya se corrigió en el servidor)', () => {
+  // HALLAZGO (24/10/2026, pendiente de decisión): tras #649 el servidor admite «100 prompts» como producto contado, pero su regla 4 («puntuación de apertura pegada después») rechaza un «;» justo detrás:
+  // el ángulo APROBADO de «¿No sabes qué publicar?» dice «el bono de 100 prompts; pregunta a qué se dedica…» y por ese «;» queda `rechazada`. El texto aprobado NO se cambia: el archivo lo conserva tal cual.
+  // Con un punto en su lugar («100 prompts. Pregunta…») pasa. Cuando el servidor o el texto cambien, estas pruebas pasan a exigir las 5 aprobadas.
+  it('las 5 campañas pasan las comprobaciones del archivo; el servidor deja pasar 4 y rechaza «¿No sabes qué publicar?» por el «;» pegado a «100 prompts» (regla 4 de #649)', () => {
     expect(validar.validarArchivo(DATOS, { productosActivos: PRODUCTOS, limite: 10 })).toEqual([]);
-    expect(DATOS.anuncios.find((a) => a.id === 'que-publicar')!.angulo).toContain('100 prompts');
+    expect(DATOS.anuncios.find((a) => a.id === 'que-publicar')!.angulo).toContain('100 prompts; pregunta');
     const lista = validar.armarLista(DATOS, HOY) as servidor.Campana[];
     expect(lista).toHaveLength(5);
     const r = servidor.revisarSinModelo(lista, [], 10, AHORA, SIN_OTROS, PRODUCTOS);
-    for (const c of lista) expect(r.get(c.id), c.id).toBeNull();
+    for (const c of lista.filter((x) => x.id !== 'que-publicar')) expect(r.get(c.id), c.id).toBeNull();
+    expect(r.get('que-publicar')).toMatchObject({ estado: 'rechazada', capa: 'patrones', campo: 'angulo' });
     // Las fechas: hoy hasta hoy + 179 días (180 de vigencia), dentro del máximo de un año.
     expect(lista.every((c) => c.inicio === HOY && c.fin === validar.sumarDias(HOY, DATOS.diasDeVigencia - 1))).toBe(true);
     // El producto y el catálogo: sin el producto activo el servidor las rechaza.
     expect(servidorRechaza(lista, new Set())).toBe(true);
     expect(validar.validarArchivo(DATOS, { productosActivos: new Set(), limite: 10 }).join('|')).toMatch(/productoId.*no existe o no está activo/);
+  });
+
+  it('con un punto en lugar del «;» («100 prompts. Pregunta…») las 5 pasan el servidor sin modelo: lo único que separa al archivo aprobado de cargarse entero es esa puntuación (con una coma no basta: «publica» al final de la misma oración cuenta como verbo de orden)', () => {
+    const d = copia(DATOS);
+    d.anuncios[2]!.angulo = d.anuncios[2]!.angulo!.replace('100 prompts; pregunta', '100 prompts. Pregunta');
+    const lista = validar.armarLista(d, HOY) as servidor.Campana[];
+    for (const v of servidor.revisarSinModelo(lista, [], 10, AHORA, SIN_OTROS, PRODUCTOS).values()) expect(v).toBeNull();
   });
 
   it('las cifras del archivo de validación son las del servidor', () => {
@@ -73,8 +84,8 @@ describe('el archivo de los anuncios de Rubén (dato del tenant)', () => {
   });
 
   it('NEGADOS: cada caso malo lo rechazan el validador del archivo Y el servidor (monto en un titular, titular corto o largo, 6 titulares, ángulo largo, titular repetido en otro anuncio, producto inexistente, invisibles)', () => {
-    // Se parte del archivo aprobado, que pasa entero: cada rechazo es atribuible al caso malo.
-    const base = (mod: (d: typeof DATOS) => void): typeof DATOS => { const d = copia(DATOS); mod(d); return d; };
+    // Se parte del archivo con un punto en lugar del «;» (ver el hallazgo de arriba): cada rechazo es atribuible al caso malo.
+    const base = (mod: (d: typeof DATOS) => void): typeof DATOS => { const d = copia(DATOS); d.anuncios[2]!.angulo = d.anuncios[2]!.angulo!.replace('100 prompts; pregunta', '100 prompts. Pregunta'); mod(d); return d; };
     expect(servidorRechaza(validar.armarLista(base(() => undefined), HOY) as servidor.Campana[])).toBe(false);
     const casos: Array<[string, typeof DATOS]> = [
       ['monto en un titular', base((d) => { d.anuncios[0]!.titulares = ['Desde solo 32 Bs en libros']; })],
