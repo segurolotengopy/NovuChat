@@ -557,7 +557,7 @@ const EV_PROMETE_SILENCIO = /\bno te (?:volver\w+|escribir\w*|molestar\w*|contac
 //  - una oración que habla de lo «humano» sin ser una afirmación en primera persona («atenderte de forma 100% humana») se BORRA;
 //  - AFIRMAR ser la doctora, una persona real o humana en primera persona («soy la doctora», «sí, soy humana», «soy una persona real») NO se repara: se rechaza el texto entero.
 const EV_NO_SOY_HUMANO = /\b(?:no (?:soy|es|estoy)|no soy)\b (?:\w+ )?(?:una |un |la |el |su )?(?:ser humano|persona|humano|humana|doctora|doctor|dra|medico|medica|real)\b(?: evy| karina| rojas)*(?: de carne y hueso| de verdad| real| en persona)?/g;
-const EV_AFIRMA_HUMANO = /(?<!\bno )(?<!\bno es )\b(?:soy|somos) (?:la |el |una |un )?(?:doctora|doctor|dra|medico|medica|persona|humano|humana|alguien|real|de verdad)\b|carne y hueso|personalmente|\bsoy yo\b/;
+const EV_AFIRMA_HUMANO = /(?<!\bno )(?<!\bno es )\b(?:soy|somos) (?:la |el |una |un )?(?:doctora|doctor|dra|medico|medica|persona|humano|humana|alguien|real|de verdad)\b|\bsoy yo\b/;
 const EV_NIEGA_SER_IA = /\bno soy (?:un |una |el |la )?(?:bot|ia|robot|asistente|programa|maquina|inteligencia|virtual|automatic\w*)\b/;
 const EV_DICE_SER_IA = /\b(?:asistente virtual|inteligencia artificial|asistente con ia|\bia\b|asistente de ia)\b/;
 const EV_PRIMERA_PERSONA = /\b(?:soy|somos|yo|estoy|me llamo|atiendo|mi nombre)\b/;
@@ -569,22 +569,28 @@ function evRepararIdentidad(texto) {
   // ¿Ya hay una oración que NO es una negación y dice «soy el asistente virtual…»? Entonces las negaciones se borran; si no, la primera negación se reemplaza por la admisión fija.
   let hubo = orac.some((o) => o !== '' && evNorm(o).replace(EV_NO_SOY_HUMANO, ' ') === evNorm(o) && /\b(?:soy|es) (?:el |un |una )?(?:asistente virtual|asistente con ia)\b/.test(evNorm(o)));
   let afirma = '';
+  let borradas = 0;
   const lista = orac.map((o) => {
     if (o === '') return o;
     const n = evNorm(o);
     const sinNegacion = n.replace(EV_NO_SOY_HUMANO, ' ');
     const niega = sinNegacion !== n;
-    if (EV_AFIRMA_HUMANO.test(sinNegacion) && !EV_DICE_SER_IA.test(n)) { afirma = afirma || o.slice(0, 60); return o; }
-    if (niega && dice && !EV_NIEGA_SER_IA.test(n)) {
+    // AFIRMACIÓN DIRECTA («sí, soy la doctora», «soy humana», «soy una persona real») o NEGAR ser una IA («no soy un bot»): no se repara, el texto entero se cambia por la admisión fija.
+    if (EV_AFIRMA_HUMANO.test(sinNegacion) || EV_NIEGA_SER_IA.test(n)) { afirma = afirma || o.slice(0, 60); return o; }
+    if (niega && dice) {
       // Admisión: la oración que ya dice «sino el asistente virtual…» se reemplaza por la admisión fija (una vez); si el texto ya la dice en otra oración, esta se borra.
       if (hubo) return null;
       hubo = true;
       return EV_ADMISION;
     }
-    if (EV_NIEGA_IA.test(n) && !EV_PRIMERA_PERSONA.test(n)) return null;   // menciona lo «humano» sin afirmar nada de sí mismo
+    // Una oración AMBIGUA que la expresión NIEGA_IA caza («la Dra. está lista para atenderte personalmente», «lo humano»): se borra.
+    if (EV_NIEGA_IA.test(n)) { borradas += 1; return null; }
     return o;
   }).filter((o) => o !== null);
-  return { texto: evUnirOraciones(lista), afirma: afirma };
+  let t = evUnirOraciones(lista);
+  // Si se borró algo y el texto ya no admite ser una IA, el código lo dice UNA vez.
+  if (borradas > 0 && t !== '' && !EV_DICE_SER_IA.test(evNorm(t))) t = EV_ADMISION + '\n\n' + t;
+  return { texto: t, afirma: afirma };
 }
 // GARANTÍAS Y PROMESAS DE RESULTADO, REPARADAS POR ORACIÓN: una oración con «garantiz…», «asegur…», «prometer…», «resultado idéntico/exacto/igual/perfecto» se BORRA (negada o afirmativa: la forma negada que manda el guion
 // la sustituye el CÓDIGO por la aclaración fija «cada rostro responde distinto y no prometemos un resultado idéntico», una sola vez). Nunca deja pasar un «te garantizo / garantizamos». Si no queda texto, cae al fallo.
@@ -609,7 +615,8 @@ function evPulirSalida(crudo, ctx) {
   if (enviados.indexOf('antes_despues') < 0) t = evQuitarOraciones(t, (n) => EV_PACIENTE_REAL.test(n));
   t = evQuitarOraciones(t, (n) => EV_PROMETE_RECEPCION.test(n) || EV_PROMETE_DESPUES.test(n));
   const idt = evRepararIdentidad(t);
-  if (idt.afirma) return { texto: '', motivo: 'niega_ia', detalle: 'afirma ser la doctora o una persona («' + idt.afirma + '…»)' };
+  // Una afirmación directa no se repara: sale el texto fijo de admisión (la respuesta del modelo se descarta entera).
+  if (idt.afirma) return { texto: evParrafos(EV_TEXTO_ADMISION_FIJA), motivo: '', detalle: 'identidad afirmada («' + idt.afirma + '…»): se cambió por el texto fijo de admisión' };
   t = idt.texto;
   let reparada = false;
   t = evQuitarOraciones(t, (n) => { if (EV_TOCA_GARANTIA.test(n)) { reparada = true; return true; } return false; });
@@ -653,6 +660,7 @@ const EV_TEXTO_FALLO = 'Tuve un inconveniente para responderte en este momento.\
 const EV_TEXTO_FALLO_AVISADA = 'Tuve un inconveniente para responderte en este momento.\n\nYa avisé a la recepción; también puedes escribirle directo con el botón.';
 const EV_TEXTO_REMISION_SALUD = 'Eso lo evalúa la Dra. Evy en persona, durante tu valoración gratuita: desde este chat no puedo orientarte sobre tu salud.\n\nPuedes escribirle a la recepción con el botón.';
 const EV_TEXTO_USO_EXTENDIDO = 'Gracias por tu paciencia: por hoy llegué al límite de respuestas de este chat.\n\nPara seguir con tu consulta, escríbele directo a la recepción con el botón.';
+const EV_TEXTO_ADMISION_FIJA = 'Soy el asistente virtual de la Dra. Evy, un programa con inteligencia artificial.\n\nCon gusto te oriento sobre tu valoración gratuita. ¿Cómo te llamas?';
 const EV_TEXTO_CORTES = 'Recibí tu mensaje, pero por este chat solo puedo leer texto, notas de voz y fotos.\n\nCuéntame por escrito o con una nota de voz en qué te puedo ayudar.';
 const EV_TEXTO_DOCUMENTO = 'Recibí tu archivo, pero por este chat no puedo leerlo ni interpretarlo: lo revisa la doctora en persona, en la valoración.\n\nCuéntame por escrito o con una nota de voz en qué te puedo ayudar.';
 const EV_TEXTO_AUDIO_NO_ENTENDIDO = 'No pude escuchar bien tu nota de voz. ¿Me la envías de nuevo o me lo escribes?';
