@@ -155,6 +155,15 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
     }
     for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
   }
+  // La landing (dato del tenant, 24/10/2026): `dominio` solo documenta el origen (el flujo NUNCA abre ni lee la URL); `fraseEntrada` es el mensaje que manda quien llega de allí y viaja a «Config base» como `landingFrase`.
+  if (d.landing !== undefined) {
+    const l = d.landing && typeof d.landing === 'object' && !Array.isArray(d.landing) ? d.landing : null;
+    if (!l) errores.push('landing: tiene que ser un objeto');
+    else {
+      if (typeof l.dominio !== 'string' || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(l.dominio)) errores.push('landing.dominio: tiene que ser un nombre de dominio, sin https:// ni ruta');
+      if (typeof l.fraseEntrada !== 'string' || !/^[^"{}\r\n<>\\\[\]]{20,200}$/.test(l.fraseEntrada)) errores.push('landing.fraseEntrada: una frase de 20 a 200 caracteres, sin comillas dobles, llaves, corchetes ni saltos');
+    }
+  }
   if (errores.length) throw new Error(`rroca-antonio.json: datos no válidos: ${errores.join('; ')}`);
   return d;
 }
@@ -433,7 +442,7 @@ export function armarAntonio(proyecto, datos, v) {
       const clave = prueba && m && m[1] === 'graph' ? 'graphPrueba' : (prueba && m && m[1] === 'gemini' ? 'geminiPrueba' : (m ? m[1] : ''));
       if (m) c.name = dato(datos, `credenciales.${clave}`, `${donde} · ${n.name}`);
     }
-    if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
+    if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(Object.assign({}, datos.configBase || {}, datos.landing && datos.landing.fraseEntrada ? { landingFrase: datos.landing.fraseEntrada } : {}));
     // Los módulos comunes de medios se INCLUYEN desde su fuente (ya leída por el armador genérico, dentro de la raíz): el código queda tal cual, sin una sola edición.
     const js = n.parameters && n.parameters.jsCode;
     const m = typeof js === 'string' ? /^@@medio:([a-z0-9-]+)$/.exec(js) : null;
