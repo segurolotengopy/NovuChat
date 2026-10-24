@@ -110,6 +110,50 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
       expect(esBoton(hablar(m, ANA, mTexto(x))), x).toBe(false);
     });
   }
+  it('(A-i) la oferta puede llevar una coletilla después de la pregunta: «¿Te gustaría agendar? Es sin compromiso.» → «sí» deriva', () => {
+    const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<sí>>>') ? 'Listo. [DERIVAR_RECEPCION]' : 'Te cuento. ¿Te gustaría agendar tu valoración? Es sin compromiso.') });
+    hablar(m, ANA, mTexto('cuéntame'));
+    expect(esBoton(hablar(m, ANA, mTexto('sí')))).toBe(true);
+  });
+  it('(A-ii) otros verbos de oferta: coordinar, programar, apartar', () => {
+    for (const oferta of ['¿Quieres que coordinemos tu valoración?', '¿Quieres que programemos tu valoración?', '¿Quieres que te aparte un horario?']) {
+      const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<claro>>>') ? 'Listo. [DERIVAR_RECEPCION]' : `Con gusto. ${oferta}`) });
+      hablar(m, ANA, mTexto('cuéntame'));
+      expect(esBoton(hablar(m, ANA, mTexto('claro'))), oferta).toBe(true);
+    }
+  });
+  it('(A-iii) el nombre con preferencia («Paola, mejor el jueves») y de 4 palabras deriva tras aceptar y pedir el nombre; el cierre lleva el nombre del CLIENTE', () => {
+    for (const [dicho, esperado] of [['Paola, mejor el jueves', 'Paola'], ['María José Fernández López', 'María']] as const) {
+      const m = crear({ modeloDice: (ll) => {
+        const c = JSON.stringify(ll.cuerpo);
+        if (c.includes(`<<<${dicho}>>>`)) return 'Gracias. [DERIVAR_RECEPCION]';
+        if (c.includes('<<<sí>>>')) return '¿Cómo te llamas para pasarte con recepción?';
+        return 'Te cuento. ¿Te gustaría agendar tu valoración?';
+      } });
+      hablar(m, ANA, mTexto('cuéntame'));
+      hablar(m, ANA, mTexto('sí'));
+      const t = hablar(m, ANA, mTexto(dicho));
+      expect(esBoton(t), dicho).toBe(true);
+      expect(textos(t)[0], dicho).toContain(`Excelente decisión, ${esperado}`);
+    }
+  });
+  it('(A) «¿Cómo te llamas y qué te gustaría mejorar?» del saludo NO es una oferta', () => {
+    const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<sí>>>') ? 'Genial. [DERIVAR_RECEPCION]' : '¡Hola! Soy el asistente virtual. Tu valoración es gratuita. ¿Cómo te llamas y qué te gustaría mejorar?') });
+    hablar(m, ANA, mTexto('hola'));
+    expect(esBoton(hablar(m, ANA, mTexto('sí')))).toBe(false);
+  });
+  it('(B) «no quiero cita todavía» y «¿cuáles son sus horarios?» con la etiqueta del modelo no derivan; «quiero agendar mi valoración» sí', () => {
+    for (const x of ['no quiero cita todavía', '¿cuáles son sus horarios?']) {
+      const t = hablar(crear({ modeloDice: dice('Entiendo, aquí estoy. [DERIVAR_RECEPCION]') }), ANA, mTexto(x));
+      expect(esBoton(t), x).toBe(false);
+    }
+    expect(esBoton(hablar(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto('quiero agendar mi valoración')))).toBe(true);
+  });
+  it('(D) el cierre usa el nombre que el cliente dio en su mensaje, antes que el del perfil', () => {
+    const t = hablar(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto('Hola, soy Paola y quiero agendar'), { nombre: 'Ana' });
+    expect(textos(t)[0]).toContain('Excelente decisión, Paola');
+    expect(textos(t)[0]).not.toContain('Ana');
+  });
   it('NEGADA: el saludo (valoración + «¿Cómo te llamas?») nunca es una oferta: «sí» después del saludo no deriva', () => {
     const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<sí>>>') ? 'Genial. [DERIVAR_RECEPCION]' : 'Tu valoración con la Dra. es gratuita. ¿Cómo te llamas y qué te gustaría mejorar?') });
     hablar(m, ANA, mTexto('hola'));
@@ -158,6 +202,16 @@ describe('tope de 700 caracteres por mensaje: recorte por oración, la pregunta 
     expect(t).toContain('Cada rostro responde distinto y no prometemos un resultado idéntico.');
     expect(t).toContain('¿Quieres saber más?');
     expect(t.length).toBeLessThanOrEqual(700);
+  });
+  it('(C) «Hola. <1200 caracteres>. ¿Cómo te llamas?» sale ENTERO (el recorte lo dejaría casi vacío)', () => {
+    const larga = 'Esta es una oración larga ' + 'sobre el tratamiento de armonización facial '.repeat(25) + 'del rostro.';
+    const texto = `Hola. ${larga} ¿Cómo te llamas?`;
+    expect(texto.length).toBeGreaterThan(1000);
+    expect(texto.length).toBeLessThan(1500);
+    const t = textos(hablar(crear({ modeloDice: dice(texto) }), ANA, mTexto('hola')))[0]!;
+    expect(t).toContain(larga);
+    expect(t.startsWith('Hola.')).toBe(true);
+    expect(t.endsWith('¿Cómo te llamas?')).toBe(true);
   });
   it('un texto corto no cambia', () => {
     const corto = 'Con gusto. Tu valoración es gratuita y sin compromiso. ¿Cómo te llamas?';

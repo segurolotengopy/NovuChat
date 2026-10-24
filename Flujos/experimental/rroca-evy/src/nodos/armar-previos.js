@@ -43,7 +43,7 @@ if (plan.tipo === 'modelo') {
   // La etiqueta del modelo se honra solo si el cliente pidió agendar, aceptó una oferta, o el modelo ya capturó su nombre en la etiqueta («[DERIVAR_RECEPCION: Paola]») / el cliente dijo «soy …»; con la etiqueta SOLA y sin texto se conserva (variante corta).
   if (et.derivar && !quiere && et.texto.trim() !== '') {
     const esNombre = evEsNombre(plan.textoCliente);
-    const pidio = evPideAgendar(plan.textoCliente);
+    const pidio = evPideAgendar(plan.textoCliente) && !evNegaAgendar(plan.textoCliente) && String(plan.textoCliente || '').indexOf('?') < 0;   // la etiqueta ajena no se honra con «?» ni con una negación («no quiero cita todavía», «¿cuáles son sus horarios?»)
     const acepto = evAceptaOferta(plan.textoCliente, ficha.historial);
     const nombreOk = esNombre && (evNombreTrasAceptar(ficha.historial) || evNombreTrasPedirAgendar(ficha.historial));
     // Aceptó la oferta pero el modelo, en el mismo turno, le pide el nombre: la derivación ESPERA el nombre (el cierre no sale con el nombre del perfil antes de que dé el suyo).
@@ -103,7 +103,7 @@ if (avisoDe) {
     if (!destinatarios.length) res.aviso.motivoFallo = 'sin_destinatario';
     else {
       const historia = evHistorialVigente(cnFichaDe(fichas, from), ahora);
-      const nombre = avLimpio(avisoDe.solicitud ? (res.nombreDerivacion || evPrimerNombre(t.nombrePerfil)) : evPrimerNombre(t.nombrePerfil), 60) || 'sin nombre';
+      const nombre = avLimpio(avisoDe.solicitud ? (res.nombreDerivacion || evNombreDelMensaje(plan.textoCliente) || evPrimerNombre(t.nombrePerfil)) : evPrimerNombre(t.nombrePerfil), 60) || 'sin nombre';
       const interes = avisoDe.solicitud ? avLimpio(evInteres(historia, plan.textoCliente), 40) : (clave === 'consulta_medica' ? 'consulta médica' : 'consulta sin respuesta');
       const horario = avisoDe.solicitud ? (avLimpio(evHorarioPreferido(historia, plan.textoCliente), 100) || 'sin horario indicado') : 'sin horario';
       const parametros = [nombre, interes, horario, '+' + from];
