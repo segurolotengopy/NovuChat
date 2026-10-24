@@ -513,7 +513,7 @@ function evSinConector(o) {
 // Una oración la afirma si une un SUJETO dirigido al cliente (te, tu, tienes, quedaste, estás inscrita, nos vemos…) con un día, una hora o un registro. Las preguntas y los condicionales («¿te gustaría el lunes?», «si quieres el lunes…») y la información
 // del horario de atención («atendemos de lunes a viernes de 08:30 a 18:30») no cuentan; «hoy / mañana» solo cuentan junto a un verbo de visita.
 const EV_AG_SUJETO = /\b(te|tu|tus|tienes|quedaste|quedo|quedamos|nos vemos|estas inscrit\w*|sabe que vas|ya esta todo hecho)\b/;
-const EV_AG_FUERTE = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b|\b\d{1,2}[: ]\d{2}\b|\ba las \d|\b\d{1,2} ?(?:am|pm|hs|hrs)\b/;
+const EV_AG_FUERTE = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b|\b\d{1,2}[: ]\d{2}\b|\ba las \d{1,2}(?!\s*(?:semanas|dias|meses|horas|minutos))|\b\d{1,2} ?(?:am|pm|hs|hrs)\b/;
 const EV_AG_DEBIL = /\b(hoy|manana|pasado manana)\b/;
 const EV_AG_VISITA = /\b(esperamos|espero|veras|vera|atiende|atendera|nos vemos|vienes|vas|llegas|recibe|recibira)\b/;
 const EV_AG_REGISTRO = /\b(inscrit\w*|ya (?:te |lo |la )?(?:tiene|tienes|tengo|tenemos) (?:tu |su )?(?:cupo|espacio|turno|lugar)|ya te (?:tiene|tienen)|en su lista|en la lista|(?:registr|anot|guard|apunt|agend|reserv)(?:e|o|amos|aron|ado|ada|ados|adas)|sabe que vas|ya esta todo hecho)\b/;
@@ -524,6 +524,8 @@ function evAfirmaAgenda(oracion) {
   if (/^(si|cuando|en caso|por si)\b/.test(n) || /\bsi (quieres|deseas|prefieres|gustas)\b/.test(n)) return false;
   // El horario de atención es información: «de lunes a viernes», «de 08:30 a 18:30», «sábados de 09:00 a 12:00».
   n = n.replace(/\bde (?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)s? a (?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)s?\b/g, ' ').replace(/\bde \d{1,2}[: ]\d{2} a \d{1,2}[: ]\d{2}\b/g, ' ').replace(/\bde \d{1,2} a \d{1,2} ?(?:hs|hrs|horas)?\b/g, ' ');
+  // Las muletillas («te cuento que…», «te recomiendo…») no dirigen nada al cliente, y «hasta el viernes» es un plazo, no una cita.
+  n = n.replace(/\bte (?:cuento|comento|recuerdo|recomiendo|explico|aviso|digo|informo)(?: que)?\b/g, ' ').replace(/\bhasta (?:el |la |este |esta )?\w+/g, ' ');
   if (!EV_AG_SUJETO.test(n)) return false;
   return EV_AG_FUERTE.test(n) || EV_AG_REGISTRO.test(n) || (EV_AG_DEBIL.test(n) && EV_AG_VISITA.test(n));
 }
@@ -840,14 +842,26 @@ const EV_TEXTO_MINIMO = 'Hola, soy el asistente virtual de la Dra. Evy.';
 // El cierre completo sale UNA vez por ficha (48 h). Si el cliente vuelve a pedir agendar, sale esta variante corta y DISTINTA con el botón (un botón no pulsado puede volver a ofrecerse, nunca el mismo texto) y sin repetir el aviso.
 const EV_TEXTO_DERIVAR_DE_NUEVO = 'Claro, aquí tienes de nuevo el botón para escribirle a recepción.';
 // La pregunta por la gratuidad: texto FIJO cuando el modelo no la pudo contestar (no pasa por el modelo; sin botón ni aviso). El valor habitual (250 Bs) es el único monto que el flujo menciona.
-const EV_PREGUNTA_GRATIS = /\b(gratis|gratuit\w*|costo escondido|costos? ocult\w*|costos? extra|pago de reserva|anticipo|sin costo|cuesta la valoracion|cuanto cuesta la valoracion|tiene costo|hay (?:algun )?costo|tengo que pagar|cobran)\b/;
-function evPreguntaGratis(textoCliente) { return EV_PREGUNTA_GRATIS.test(evNorm(textoCliente)); }
+const EV_PREGUNTA_GRATIS = /\b(gratis|gratuit\w*|costo escondido|costos? ocult\w*|costos? extra|pago de reserva|anticipo|sin costo|cuesta la valoracion|cuanto cuesta la valoracion)\b/;
+// «cobran», «tiene costo» y «hay costo» son ambiguos (el costo del tratamiento no es el de la valoración): cuentan solo si no nombran un tratamiento o si nombran la valoración o la consulta.
+const EV_PREGUNTA_GRATIS_DEBIL = /\b(cobran|tiene costo|hay (?:algun )?costo|tengo que pagar)\b/;
+const EV_TRATAMIENTO = /\b(tratamientos?|radiesse|harmonyca|sesion|sesiones|aplicacion|precios?|bioestimulador\w*)\b/;
+function evPreguntaGratis(textoCliente) {
+  const n = evNorm(textoCliente);
+  if (EV_PREGUNTA_GRATIS.test(n)) return true;
+  return EV_PREGUNTA_GRATIS_DEBIL.test(n) && (/\b(valoracion|consulta)\b/.test(n) || !EV_TRATAMIENTO.test(n));
+}
+// El cliente dice que NO quiere agendar (ahora): no se deriva.
+function evNegaAgendar(textoCliente) {
+  const n = evNorm(textoCliente);
+  return /\bno\b[^.?!]{0,20}\b(agend|reserv|separ|cita)/.test(n) || /\b(pero no|todavia no|aun no|mas adelante|no ahora|ahora no|ahorita no|lo pienso|lo voy a pensar)\b/.test(n);
+}
 // Pedido explícito de agendar (no una pregunta sobre cómo se agenda).
 const EV_QUIERE_AGENDAR = /\b(?:quiero|quisiera|queremos|deseo|necesito|me gustaria|voy a|vamos a|puedo|podemos|podria|podrian)\s+(?:\w+\s+){0,2}(?:agendar|reservar|separar)\b|\bagend(?:a|ame|en|enme|arme)\b|\breserva(?:me|nos)\b|\bsi,? quiero (?:la valoracion|mi valoracion|mi cita|agendar)\b/;
 function evQuiereAgendar(textoCliente) {
   const raw = evTexto(textoCliente);
   const n = evNorm(raw);
-  return EV_QUIERE_AGENDAR.test(n) && !/\bcomo\b/.test(n) && !/\bno\b[^.?!]{0,20}\b(agend|reserv|separ|cita)/.test(n);
+  return EV_QUIERE_AGENDAR.test(n) && !/\bcomo\b/.test(n) && !evNegaAgendar(raw);
 }
 function evDioNombre(historial, textoCliente) {
   const re = /\b(?:soy|me llamo|mi nombre es)\s+\p{L}{2,}/iu;

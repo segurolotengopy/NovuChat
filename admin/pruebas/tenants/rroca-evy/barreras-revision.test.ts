@@ -272,6 +272,24 @@ describe('el cierre completo sale UNA vez por ficha', () => {
 });
 
 describe('la pregunta por la gratuidad se contesta con un texto fijo cuando el modelo falla', () => {
+  it('NEGADA: las preguntas por el costo del TRATAMIENTO no reciben el texto de gratuidad: van al fallo con botón', () => {
+    for (const q of ['¿cuánto cobran por el Radiesse?', '¿el tratamiento tiene costo alto?']) {
+      const t = hablar(crear({ modeloDice: 'cae' }), ANA, mTexto(q));
+      expect(textos(t).join(' '), q).not.toContain('100% gratuita');
+      expect(fallo(textos(t)[0]!), q).toBe(true);
+      expect(t.mensajes[0]!.tipo, q).toBe('interactive');
+    }
+    expect(textos(hablar(crear({ modeloDice: 'cae' }), ANA, mTexto('¿cuánto cobran por la valoración?')))[0]).toContain('100% gratuita');
+  });
+  it('el resumen informa el plan «gratis» cuando el fijo sustituye al texto rechazado del modelo', () => {
+    const t = hablar(crear({ modeloDice: dice('Ya pagaste tu reserva.') }), ANA, mTexto('¿es gratis?'));
+    expect(textos(t)[0]).toContain('100% gratuita');
+  });
+  it('«quiero agendar pero no ahora» no deriva', () => {
+    const t = hablar(crear({ modeloDice: dice('Sin problema, aquí estaré. ¿Cómo te llamas?') }), ANA, mTexto('quiero agendar pero no ahora'));
+    expect(t.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
+    expect(avisosARecepcion(t).length).toBe(0);
+  });
   const FIJO = 'Sí, la valoración con la Dra. Evy Karina Rojas es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar. (Su valor habitual es de 250 Bs; por la campaña está bonificado).';
   const PREGUNTAS = ['¿De verdad es gratis?', '¿Hay algún costo escondido o pago de reserva?', '¿tengo que dejar un anticipo?'];
   for (const q of PREGUNTAS) {
@@ -336,6 +354,8 @@ describe('Evy NO agenda: ninguna oración del modelo afirma una cita, un cupo o 
   it('POSITIVAS: gratuita esta semana, dirección, horario de atención, invitación, preguntas y condicionales pasan', () => {
     for (const bien of [
       'Te confirmo que la valoración es gratuita esta semana.', 'Te esperamos en la Clínica DentalCor, Calle Sapocó 53.', 'Atendemos de lunes a viernes de 08:30 a 18:30 y sábados de 09:00 a 12:00.',
+      'Te cuento que la Dra. atiende los lunes y miércoles.', 'Te comento que a las 2 semanas notas el cambio.', 'Tu valoración está bonificada hasta el viernes.',
+      'Te recomiendo escribir a recepción para agendar, ellos atienden el lunes.',
       'Puedes agendar cuando quieras.', '¿Te gustaría el lunes?', 'Si quieres el lunes, dímelo.', 'Hoy tu valoración está bonificada al 100%.',
     ]) {
       const t = sale(`${bien} ¿Cómo te llamas?`);

@@ -47,6 +47,7 @@ const avisoRepetido = !!res.aviso && res.aviso.repetido === true;
 const avisoSalio = avisoEnviado || avisoRepetido;
 
 const efectivo = String(res.efectivo || plan.tipo || 'nada');
+let planFinal = efectivo;   // el plan que se informa en el resumen (cambia a 'gratis' si el texto fijo de gratuidad sustituye al del modelo)
 let ms = [];
 let silencio = '';        // 'baja' | 'riesgo': el turno activa las 48 h de silencio
 let rechazo = res.rechazo || null;   // por qué se descartó la respuesta del modelo (la batería lo imprime con --motivo)
@@ -106,6 +107,7 @@ if (puerta.ruta === 'fuera_de_prueba') {
     ms = [texto(evTextoGratis(cfg, evDioNombre(evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora), plan.textoCliente)))];
     hist = { a: ms[0].texto, b: ms[0].texto };
     rechazo = { motivo: rev.motivo || 'vacio', detalle: rev.detalle || '' };
+    planFinal = 'gratis';
   }
   else if (rev.motivo !== '' || rev.texto === '') { ms = [fallo()]; rechazo = { motivo: rev.motivo || 'vacio', detalle: rev.detalle || '' }; }
   else {
@@ -152,7 +154,7 @@ if (!sinFicha) {
   evBarrer(fichas.mapa, ahora);
 }
 
-const resumen = { plan: efectivo, mensajes: 0, categoria: t.categoria || '', llamadasModelo: decision.llamarModelo === true ? 1 : 0, imagenes: artesSalidos.length,
+const resumen = { plan: planFinal, mensajes: 0, categoria: t.categoria || '', llamadasModelo: decision.llamarModelo === true ? 1 : 0, imagenes: artesSalidos.length,
   aviso: res.aviso && (res.aviso.planeado === true || avisoRepetido) ? (avisoSalio ? 'salio' : 'no_salio') : (res.aviso && res.aviso.motivoFallo ? 'no_salio' : 'ninguno'),
   rechazo: rechazo, avisoMotivo: res.aviso && !avisoSalio && res.aviso.motivoFallo ? String(res.aviso.motivoFallo) : '' };
 const numero = prueba ? telPrueba : from;
