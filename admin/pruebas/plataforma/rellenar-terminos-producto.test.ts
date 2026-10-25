@@ -166,6 +166,41 @@ describe('el relleno deja los mismos documentos que el disparador real de Produc
   });
 });
 
+describe('aprobado + tope lleno: relleno y disparador real dejan lo mismo', () => {
+  it('el aprobado vigente se conserva idéntico (con revisadoPor) y la alta nueva queda rechazado/límite en ambos', async () => {
+    const correrDisparador = (t: string, id: string, nombre: string) =>
+      (registrarTerminoDeProducto as unknown as { run: (e: unknown) => Promise<unknown> }).run({
+        params: { tenantId: t, itemId: id },
+        data: { before: { data: () => undefined }, after: { data: () => ({ nombre, activo: true }) } },
+      });
+    for (const t of [A, B]) {
+      // 10 vivos de otros ítems (aprobados por una persona) y el aprobado `z1` con su nombre vigente.
+      for (let k = 0; k < 10; k++) {
+        const n = `Pack ${k + 1} prompts`;
+        await item(t, `k${String(k).padStart(2, '0')}`, n);
+        await col(t).doc(`k${String(k).padStart(2, '0')}`).set({
+          termino: normalizar(n), nombreHash: hashCorto(normalizar(n)), estado: 'aprobado', motivo: 'aprobado por NovuChat', revisadoPor: 'prop-1',
+        });
+      }
+      await item(t, 'z1', 'Pack 50 prompts');
+      await col(t).doc('z1').set({
+        termino: 'pack 50 prompts', nombreHash: hashCorto(normalizar('Pack 50 prompts')), estado: 'aprobado', motivo: 'aprobado por NovuChat', revisadoPor: 'prop-1',
+      });
+      await item(t, 'z2', 'Pack 60 prompts'); // alta nueva
+    }
+    await correrDisparador(A, 'z1', 'Pack 50 prompts');
+    await correrDisparador(A, 'z2', 'Pack 60 prompts');
+    await rellenarTerminos(db, B, opc);
+    const sinTiempo = (m: Record<string, Record<string, unknown>>) => m;
+    const a = sinTiempo(await todos(A));
+    const b = sinTiempo(await todos(B));
+    expect(a['z1']).toMatchObject({ estado: 'aprobado', revisadoPor: 'prop-1', termino: 'pack 50 prompts' });
+    expect(a['z2']).toMatchObject({ estado: 'rechazado', motivo: 'límite', termino: '' });
+    expect(b).toEqual(a);
+    expect(Object.values(b).filter((d) => d['estado'] === 'aprobado')).toHaveLength(11);
+  });
+});
+
 describe('rellenar-terminos-producto.mjs', () => {
   const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'scripts', 'plataforma', 'rellenar-terminos-producto.mjs');
   const script = (...args: string[]) => {
