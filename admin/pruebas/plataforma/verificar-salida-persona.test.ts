@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -50,7 +51,7 @@ const cfgBase = (extra: Record<string, unknown> = {}) => ({
 // ---- dobles ----
 type Over = {
   ruta?: Record<string, unknown> | null; rutas?: number; ficha?: Record<string, unknown> | null; dbFalla?: boolean;
-  funciones?: Record<string, string>; gcloudFalla?: boolean; versionSecreto?: string; mapa?: string; mapaLatest?: string; logs?: string;
+  funciones?: Record<string, string>; gcloudFalla?: boolean; versionSecreto?: string; mapa?: string; mapaLatest?: string; logs?: string; totales?: string;
   workflow?: Record<string, unknown>; n8nCaido?: boolean; ejecuciones?: unknown; n8nEntorno?: { base: string; clave: string };
   timbre?: number; encenderCodigo?: number;
 };
@@ -93,7 +94,7 @@ function mundo(o: Over = {}) {
       return { code: 0, stdout: JSON.stringify(j) };
     }
     if (args[0] === 'secrets') return { code: 0, stdout: args[3] === 'latest' ? (o.mapaLatest ?? o.mapa ?? MAPA) : (o.mapa ?? MAPA) };
-    if (args[0] === 'logging') return { code: 0, stdout: o.logs ?? '[]' };
+    if (args[0] === 'logging') return { code: 0, stdout: args[2]!.includes('status=401') ? (o.logs ?? '[]') : (o.totales ?? '[{},{}]') };
     return { code: 1, stdout: '' };
   };
   const n8n = async (ruta: string) => {
@@ -346,6 +347,30 @@ describe('4 · n8n', () => {
     for (const id of ['4a', '4b', '4c', '4d', '4e', '5a']) expect(r.estado(id), id).toBe('NO SE PUDO');
     expect(r.codigo).not.toBe(0);
   });
+  describe('la clave de la API solo viaja a un host apto', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'verif-env-'));
+    const archivo = (txt: string) => { const f = join(dir, `e${Math.random().toString(36).slice(2)}`); writeFileSync(f, txt, { mode: 0o600 }); return f; };
+    it('--env hostil + clave del entorno: no se mezclan (vacío por falta de clave en el archivo)', () => {
+      const f = archivo('N8N_BASE_URL=https://hostil.ejemplo.test\n');
+      expect(mod.leerEntornoN8n(f, { N8N_API_KEY: 'CLAVE-REAL-DEL-ENTORNO', N8N_BASE_URL: `https://${M.host}` })).toEqual({ base: '', clave: '' });
+    });
+    it('--env con base y clave propias: se usan juntas; sin --env, ambas del entorno', () => {
+      const f = archivo('N8N_BASE_URL=https://a.ejemplo.test\nN8N_API_KEY=clave-del-archivo\n');
+      expect(mod.leerEntornoN8n(f, { N8N_API_KEY: 'otra', N8N_BASE_URL: 'https://b.ejemplo.test' })).toEqual({ base: 'https://a.ejemplo.test', clave: 'clave-del-archivo' });
+      expect(mod.leerEntornoN8n(null, { N8N_API_KEY: 'otra', N8N_BASE_URL: 'https://b.ejemplo.test' })).toEqual({ base: 'https://b.ejemplo.test', clave: 'otra' });
+    });
+    it.each(['https://127.0.0.1', 'https://10.0.0.5:5678', 'https://2130706433', 'https://localhost', 'https://x.localhost', 'https://[::1]', 'http://n8n.ejemplo.test'])('host no apto: %s', (base) => {
+      expect(mod.leerEntornoN8n(null, { N8N_BASE_URL: base, N8N_API_KEY: 'abc' })).toEqual({ base: '', clave: '' });
+    });
+    it('el host de N8N_BASE_URL distinto del de la ruta del secreto: no se llama a n8n (NO SE PUDO)', async () => {
+      const r = await corre({ n8nEntorno: { base: 'https://hostil.ejemplo.test', clave: M.claveN8n } });
+      expect(r.llamadas.n8n).toHaveLength(0);
+      for (const id of ['4a', '4b', '4c', '4d', '4e', '5a']) expect(r.estado(id), id).toBe('NO SE PUDO');
+      expect(r.estado('2')).toBe('FALLA');
+      sinSecretos(r.texto);
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
   it('sin credenciales de n8n: NO SE PUDO sin llamar', async () => {
     const r = await corre({ n8nEntorno: { base: '', clave: '' } });
     for (const id of ['4a', '4b', '4c', '4d', '4e', '5a']) expect(r.estado(id), id).toBe('NO SE PUDO');
@@ -433,6 +458,14 @@ describe('5 · barrido vivo', () => {
     expect(r.texto).toContain('2 respuestas 401');
     sinSecretos(r.texto);
   });
+  it('cero solicitudes totales: el filtro no sirve, NO SE PUDO y nunca OK', async () => {
+    const r = await corre({ totales: '[]', logs: '[]' });
+    expect(r.estado('5b')).toBe('NO SE PUDO');
+    expect(r.codigo).not.toBe(0);
+  });
+  it('con solicitudes totales y cero 401: OK', async () => {
+    expect((await corre({ totales: '[{},{},{}]', logs: '[]' })).estado('5b')).toBe('OK');
+  });
   it('Cloud Logging inaccesible: 5b NO SE PUDO', async () => {
     const m = mundo();
     const g = m.deps.gcloud;
@@ -466,7 +499,7 @@ describe('6 · prueba de timbre', () => {
   });
   it('la clave falsa nunca es la real', async () => {
     let enviada = '';
-    await mod.chequeoTimbre(RUTA, async (_u, c) => { enviada = c; return 403; }, M.clave);
+    await mod.chequeoTimbre(RUTA, async (_u, c) => { enviada = c; return 403; });
     expect(enviada).not.toBe(M.clave);
   });
 });

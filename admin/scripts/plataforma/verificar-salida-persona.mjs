@@ -122,19 +122,39 @@ export function analizarArgumentos(argv, env = process.env) {
   };
 }
 
-/** Lee SOLO N8N_BASE_URL y N8N_API_KEY por nombre (sin ejecutar el archivo); el entorno del proceso es el respaldo. */
+/** ¿El host es apto para recibir la clave de la API? https, ni IP literal ni localhost. */
+export function hostAptoParaClave(base) {
+  let u;
+  try { u = new URL(base); } catch { return false; }
+  if (u.protocol !== 'https:') return false;
+  const h = u.hostname.toLowerCase();
+  if (h === 'localhost' || h.endsWith('.localhost')) return false;
+  if (h.includes(':') || h.startsWith('[')) return false; // IPv6 literal
+  if (/^[0-9.]+$/.test(h) || /^0x[0-9a-f]+$/i.test(h)) return false; // IPv4 literal (decimal, octal o hex)
+  return true;
+}
+
+/**
+ * Lee SOLO N8N_BASE_URL y N8N_API_KEY por nombre (sin ejecutar el archivo). Los DOS valores salen de la MISMA
+ * fuente: el archivo `--env` si se pasó, o el entorno del proceso si no; nunca mezclados (si no, un `--env`
+ * ajeno mandaría la clave real del entorno a otro host). Si falta uno o el host no es apto, devuelve vacíos.
+ */
 export function leerEntornoN8n(archivo, env = process.env) {
-  const salida = { base: (env['N8N_BASE_URL'] ?? '').trim(), clave: (env['N8N_API_KEY'] ?? '').trim() };
+  let base = (env['N8N_BASE_URL'] ?? '').trim();
+  let clave = (env['N8N_API_KEY'] ?? '').trim();
   if (archivo) {
+    base = '';
+    clave = '';
     const texto = readFileSync(archivo, 'utf8');
-    for (const [k, campo] of [['N8N_BASE_URL', 'base'], ['N8N_API_KEY', 'clave']]) {
-      const linea = texto.split('\n').filter((l) => l.startsWith(`${k}=`)).pop();
-      if (linea !== undefined) salida[campo] = linea.slice(k.length + 1).trim().replace(/^["']|["']$/g, '');
-    }
+    const ultimo = (k) => texto.split('\n').filter((l) => l.startsWith(`${k}=`)).pop();
+    const lb = ultimo('N8N_BASE_URL');
+    const lc = ultimo('N8N_API_KEY');
+    if (lb !== undefined) base = lb.slice('N8N_BASE_URL='.length).trim().replace(/^["']|["']$/g, '');
+    if (lc !== undefined) clave = lc.slice('N8N_API_KEY='.length).trim().replace(/^["']|["']$/g, '');
   }
-  const baseOk = /^https:\/\/[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{2,5})?$/.test(salida.base);
-  const claveOk = /^[A-Za-z0-9._-]+$/.test(salida.clave);
-  return { base: baseOk ? salida.base : '', clave: claveOk ? salida.clave : '' };
+  const baseOk = /^https:\/\/[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{2,5})?$/.test(base) && hostAptoParaClave(base);
+  const claveOk = /^[A-Za-z0-9._-]+$/.test(clave);
+  return baseOk && claveOk ? { base, clave } : { base: '', clave: '' };
 }
 
 // ===========================================================================
@@ -232,7 +252,7 @@ function entradaDelAlias(texto, alias) {
 
 /** 2. El secreto de la versión fijada. Devuelve la ruta (en memoria) para 4d y 6; nunca se imprime. */
 export function chequeoSecreto(cfg, deps, versionFijada, base) {
-  const salida = { resultado: null, ruta: null };
+  const salida = { resultado: null, ruta: null, hostAjeno: false };
   if (versionFijada === null) {
     salida.resultado = noSePudo('2', 'Secreto del timbre', 'no pude saber qué versión del secreto tiene fijada enviarComoPersona');
     return salida;
@@ -248,7 +268,7 @@ export function chequeoSecreto(cfg, deps, versionFijada, base) {
   if (!url || url.protocol !== 'https:') fallas.push('la ruta no es https');
   if (typeof e.clave !== 'string' || e.clave.length < CLAVE_MINIMA) fallas.push(`la clave tiene menos de ${CLAVE_MINIMA} caracteres`);
   let hostOk = null;
-  if (url && base) { hostOk = url.host === new URL(base).host; if (!hostOk) fallas.push('el host de la ruta no es el de N8N_BASE_URL'); }
+  if (url && base) { hostOk = url.host === new URL(base).host; if (!hostOk) { fallas.push('el host de la ruta no es el de N8N_BASE_URL'); salida.hostAjeno = true; } }
   if (fallas.length) { salida.resultado = res('2', 'Secreto del timbre', FALLA, fallas.join('; ')); return salida; }
   salida.ruta = url.toString();
   const avisos = [];
@@ -388,24 +408,29 @@ const TITULOS_N8N = {
   '4d': 'Timbre = ruta del secreto', '4e': 'phoneNumberId del flujo = ruta', '5a': 'Ejecuciones recientes sin error',
 };
 
-/** 5b. Solo un conteo. */
+/** 5b. Solo conteos. Primero las solicitudes TOTALES (el barrido corre cada minuto): con 0 el filtro no sirve. */
 export function chequeoLogs(cfg, deps) {
-  const filtro = 'resource.type="cloud_run_revision" AND resource.labels.service_name="reclamarsalidapersona" AND httpRequest.status=401';
-  const r = ejecutarGcloud(deps, ['logging', 'read', filtro, '--project', cfg.proyecto, '--freshness=10m', '--limit=100', '--format=json']);
-  if (!r.ok) return noSePudo('5b', 'Sin 401 de reclamarSalidaPersona (10 min)', 'Cloud Logging no es accesible');
-  let n;
-  try { const j = JSON.parse(r.stdout || '[]'); n = Array.isArray(j) ? j.length : NaN; } catch { n = NaN; }
-  if (!Number.isFinite(n)) return noSePudo('5b', 'Sin 401 de reclamarSalidaPersona (10 min)', 'la respuesta de Cloud Logging no se entendió');
-  return n === 0 ? res('5b', 'Sin 401 de reclamarSalidaPersona (10 min)', OK, 'cero 401 en los últimos 10 minutos')
-    : res('5b', 'Sin 401 de reclamarSalidaPersona (10 min)', FALLA, `${n} respuestas 401 en los últimos 10 minutos (la ingesta del flujo no autentica)`);
+  const T = 'Sin 401 de reclamarSalidaPersona (10 min)';
+  const base = 'resource.type="cloud_run_revision" AND resource.labels.service_name="reclamarsalidapersona" AND httpRequest.status>=100';
+  const contar = (filtro) => {
+    const r = ejecutarGcloud(deps, ['logging', 'read', filtro, '--project', cfg.proyecto, '--freshness=10m', '--limit=1000', '--format=json']);
+    if (!r.ok) return null;
+    try { const j = JSON.parse(r.stdout || '[]'); return Array.isArray(j) ? j.length : null; } catch { return null; }
+  };
+  const total = contar(base);
+  if (total === null) return noSePudo('5b', T, 'Cloud Logging no es accesible o su respuesta no se entendió');
+  if (total === 0) return noSePudo('5b', T, 'cero solicitudes totales en 10 minutos: el filtro o el servicio no coinciden (no se puede afirmar que no hay 401)');
+  const n = contar(`${base} AND httpRequest.status=401`);
+  if (n === null) return noSePudo('5b', T, 'no pude contar los 401');
+  return n === 0 ? res('5b', T, OK, `cero 401 de ${total} solicitudes en los últimos 10 minutos`)
+    : res('5b', T, FALLA, `${n} respuestas 401 de ${total} solicitudes en los últimos 10 minutos (la ingesta del flujo no autentica)`);
 }
 
 /** 6. Clave EQUIVOCADA => 403. Nunca la correcta. */
-export async function chequeoTimbre(rutaDelSecreto, post, claveReal = '') {
+export async function chequeoTimbre(rutaDelSecreto, post) {
   const t = 'Timbre rechaza la clave equivocada';
   if (rutaDelSecreto === null) return noSePudo('6', t, 'sin la ruta del secreto (ver 2)');
-  let falsa = `incorrecta-${randomBytes(12).toString('hex')}`;
-  if (falsa === claveReal) falsa += 'x';
+  const falsa = `incorrecta-${randomBytes(12).toString('hex')}`;
   try {
     const status = await post(rutaDelSecreto, falsa);
     if (status === 403) return res('6', t, OK, 'respondió 403 a una clave equivocada');
@@ -439,6 +464,8 @@ export async function verificar(cfg, deps) {
   let rN8n;
   if (!deps.n8nEntorno?.base || !deps.n8nEntorno?.clave) {
     rN8n = { resultados: ['4a', '4b', '4c', '4d', '4e', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], 'faltan N8N_BASE_URL o N8N_API_KEY válidas')) };
+  } else if (sec.hostAjeno === true || (sec.ruta !== null && new URL(sec.ruta).host !== new URL(deps.n8nEntorno.base).host)) {
+    rN8n = { resultados: ['4a', '4b', '4c', '4d', '4e', '5a'].map((id) => noSePudo(id, TITULOS_N8N[id], 'el host de N8N_BASE_URL no es el de la ruta del secreto: no se envía la clave de la API')) };
   } else {
     rN8n = await chequeoN8n(cfg, deps.n8n, sec.ruta, fs.phoneId, deps.ahora ?? Date.now());
   }
