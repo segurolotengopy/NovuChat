@@ -219,6 +219,8 @@ export interface PropsDetalle {
   esPropietario?: boolean;
   /** El comercio está `activo`: con otro estado las reglas niegan toda escritura y el control se deshabilita. */
   comercioActivo: boolean;
+  /** El comercio tiene activa la intervención (`usePersonaPuedeIntervenir`); falso mientras carga o si falla. */
+  puedeIntervenir: boolean;
   /** H2: el uid de quien mira (para saber si la conversación la tiene «usted»); `null` sin sesión. */
   miUid: string | null;
   /** H2: quien mira es admin del negocio (puede devolver la conversación de otra persona). */
@@ -305,7 +307,7 @@ export function DetalleConversacion(p: PropsDetalle) {
   const turno = turnoDeFicha(ficha, p.ahora);
   const situacion = situacionDeTurno(turno, p.miUid);
   const acciones = accionesDeTurno({
-    situacion, puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo,
+    situacion, puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo, puedeIntervenir: p.puedeIntervenir,
     ventanaAbierta: ventanaAbiertaParaTomar(ficha.ultimoEntranteEn, p.ahora),
   });
 

@@ -63,9 +63,10 @@ export function violacionesDeParrafos(cuerpo: string): string[] {
   return v;
 }
 /** ¿Este mensaje contiene la presentación del asistente (la frase de presentación o el saludo largo)? */
-export const esPresentacion = (cuerpo: string): boolean => /soy el asistente virtual|qu[eé] gusto saludarte/i.test(cuerpo);
+// La respuesta de identidad («¿eres un bot?») dice qué ES el asistente por la regla dura 4 y NO cuenta como la presentación gratuita.
+export const esPresentacion = (cuerpo: string): boolean => !/una inteligencia artificial, no una persona/i.test(cuerpo) && /soy el asistente virtual|qu[eé] gusto saludarte/i.test(cuerpo);
 /** Los planes que resuelven (no derivan): jamás llevan el botón de contacto de Antonio. El de `comprobante` depende del resultado y no se vigila aquí. */
-export const PLANES_SIN_BOTON = ['baja', 'saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo', 'precio', 'catalogo', 'imagenes', 'resultado', 'menu', 'bonos', 'complemento', 'qr', 'qr_pendiente', 'imagen_descrita', 'imagen_otra', 'audio_fijo', 'archivo', 'otro', 'riesgo', 'suspendido'];
+export const PLANES_SIN_BOTON = ['baja', 'identidad', 'saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo', 'precio', 'catalogo', 'imagenes', 'resultado', 'menu', 'bonos', 'complemento', 'qr', 'qr_pendiente', 'imagen_descrita', 'imagen_otra', 'audio_fijo', 'archivo', 'otro', 'riesgo', 'suspendido'];
 /** Los planes que derivan a Antonio: siempre con el botón. */
 export const PLANES_CON_BOTON = ['derivar', 'consulta', 'cancelacion', 'sin_configuracion', 'fuera_pais', 'cobro_cerrado', 'cobro_ya_cerrado', 'uso_extendido'];
 /** ¿El mensaje lleva el botón que abre el chat de Antonio (`cta_url`)? */
@@ -98,7 +99,7 @@ export interface ContextoUx {
   etiquetasDelTenant?: string[];
 }
 /** Los mensajes EXENTOS del invariante 7, POR PLAN (no por palabras): el QR, el resultado del cotejo, la protección ante violencia o miedo y el texto a un número extranjero; y la presentación. */
-const PLANES_EXENTOS = ['qr', 'comprobante', 'riesgo', 'fuera_pais', 'baja'];
+const PLANES_EXENTOS = ['identidad', 'qr', 'comprobante', 'riesgo', 'fuera_pais', 'baja'];
 const EXENTO_REPETIDO = (m: UxMsg, plan: string): boolean => m.tipo === 'image' || PLANES_EXENTOS.includes(plan) || esPresentacion(m.cuerpo);
 const TRIGGER_DE_OPCIONES = /precio|cu[aá]nto|cuesta|vale\b|cat[aá]logo|vend|lista|opciones|compr|pagar|pago|adquirir|llevo|pack|libro|workbook|calendario|preguntas|bono|^hola, (quiero|me interesa)|garant|resultado|imagen|foto/i;
 export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, transcripcion = '', ctx: ContextoUx = {}): string[] {

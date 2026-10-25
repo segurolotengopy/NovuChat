@@ -38,8 +38,22 @@ if (plan.tipo === 'modelo') {
   const cand = respuesta && Array.isArray(respuesta.candidates) ? respuesta.candidates[0] : null;
   const porque = (cand && cand.finishReason ? ' finishReason=' + String(cand.finishReason).slice(0, 30) : '') + (respuesta && respuesta.promptFeedback && respuesta.promptFeedback.blockReason ? ' blockReason=' + String(respuesta.promptFeedback.blockReason).slice(0, 30) : '') + (respuesta && respuesta.error ? ' error ' + (respuesta.error && typeof respuesta.error === 'object' ? String(respuesta.error.httpCode || respuesta.error.code || respuesta.error.status || '') + ' ' + String(respuesta.error.message || '').replace(/AIza\S+/g, '[clave]').slice(0, 80) : String(respuesta.error).slice(0, 80)) : '');
   // Pedido EXPLÍCITO de agendar («Ok, quiero agendar»): el cierre no depende de que el modelo se acuerde de la etiqueta.
-  const quiere = evQuiereAgendar(plan.textoCliente);
+  // En el PRIMER contacto «quiero agendar mi valoración» (el texto prellenado del anuncio) no cierra de golpe con el nombre del perfil: primero el saludo, que pide el nombre y qué desea mejorar.
+  // El cierre automático solo aplica si ya hubo conversación o el cliente dio su nombre en ese mensaje («Soy Rosa. Quiero agendar»).
+  const puedeCerrar = ficha.historial.length > 0 || evNombreDelMensaje(plan.textoCliente, ficha.historial) !== '';
+  const quiere = evQuiereAgendar(plan.textoCliente) && puedeCerrar;
   if (quiere && crudo.length <= 20000) et.derivar = true;
+  // La etiqueta del modelo se honra solo si el cliente pidió agendar, aceptó una oferta, o el modelo ya capturó su nombre en la etiqueta («[DERIVAR_RECEPCION: Paola]») / el cliente dijo «soy …»; con la etiqueta SOLA y sin texto se conserva (variante corta).
+  // PRIMER CONTACTO (sin historial y sin nombre dado en el mensaje): la etiqueta del modelo se IGNORA, sola o con texto. Se conserva el texto (el saludo pide nombre y deseo); si venía sola, sale el fallo conocido, no el cierre.
+  if (et.derivar && !puedeCerrar) et.derivar = false;
+  if (et.derivar && !quiere && et.texto.trim() !== '') {
+    const esNombre = evEsNombre(plan.textoCliente);
+    const pidio = evPideAgendar(plan.textoCliente) && !evNegaAgendar(plan.textoCliente) && String(plan.textoCliente || '').indexOf('?') < 0;   // la etiqueta ajena no se honra con «?» ni con una negación («no quiero cita todavía», «¿cuáles son sus horarios?»)
+    const acepto = evAceptaOferta(plan.textoCliente, ficha.historial);
+    const nombreOk = esNombre && (evNombreTrasAceptar(ficha.historial) || evNombreTrasPedirAgendar(ficha.historial));
+    // Aceptó la oferta pero el modelo, en el mismo turno, le pide el nombre: la derivación ESPERA el nombre (el cierre no sale con el nombre del perfil antes de que dé el suyo).
+    if (!(pidio || nombreOk || (acepto && !(EV_PIDE_NOMBRE.test(evNorm(et.texto)) && et.nombre === '')))) et.derivar = false;
+  }
   if (crudo.length > 20000) { efectivo = 'fallo'; rechazo = { motivo: 'largo', detalle: 'la salida del modelo supera los 20 000 caracteres' }; }
   else if ((crudo.trim() === '' && !quiere) || (et.texto.trim() === '' && !et.derivar)) { efectivo = 'fallo'; rechazo = { motivo: 'modelo_sin_texto', detalle: (crudo.trim() === '' ? 'el modelo no devolvió texto (caído o vacío)' : 'solo etiquetas, sin texto') + porque }; }
   else if (et.derivar && !(ficha.cierreMs > 0)) efectivo = 'derivar';
@@ -94,7 +108,7 @@ if (avisoDe) {
     if (!destinatarios.length) res.aviso.motivoFallo = 'sin_destinatario';
     else {
       const historia = evHistorialVigente(cnFichaDe(fichas, from), ahora);
-      const nombre = avLimpio(avisoDe.solicitud ? (res.nombreDerivacion || evPrimerNombre(t.nombrePerfil)) : evPrimerNombre(t.nombrePerfil), 60) || 'sin nombre';
+      const nombre = avLimpio(avisoDe.solicitud ? (res.nombreDerivacion || evNombreDelMensaje(plan.textoCliente, ficha.historial) || evPrimerNombre(t.nombrePerfil)) : evPrimerNombre(t.nombrePerfil), 60) || 'sin nombre';
       const interes = avisoDe.solicitud ? avLimpio(evInteres(historia, plan.textoCliente), 40) : (clave === 'consulta_medica' ? 'consulta médica' : 'consulta sin respuesta');
       const horario = avisoDe.solicitud ? (avLimpio(evHorarioPreferido(historia, plan.textoCliente), 100) || 'sin horario indicado') : 'sin horario';
       const parametros = [nombre, interes, horario, '+' + from];

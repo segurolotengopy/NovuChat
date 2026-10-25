@@ -30,3 +30,10 @@ Este flujo se rehízo **desde cero** (23/10/2026) y no hereda nada del asistente
 - (b) Producción completa: la tabla local necesita `REEMPLAZAR_ETAPA_PRUEBA` vacío (la etapa completa rechaza `si`).
 - (c) En la prueba, el marcador de recepción se resuelve con un teléfono de prueba SOLO en una COPIA de la tabla, usada para preparar el flujo; el botón y el aviso van entonces al número de prueba, nunca a la recepción real.
 - (d) `scripts/publicar-flujo.sh` tiene la guardia de este flujo, ADITIVA: lo reconoce por su CONTENIDO (el nodo «Armar previos»), no por el nombre (conserva el nombre y el id vivo del flujo viejo de las doctoras). Con `--aplicar` ejecuta `rroca-evy/construir.mjs --publicable --etapa <e>` (`--etapa-prueba` → prueba; `--crear` sin `--activar` → crear; si no, la completa), también con `--encender` sobre el flujo vivo, y pide `PUBLICAR EVY` (o `--confirmo-evy`). El flujo viejo de Evy y el de Emma siguen con la guardia de las doctoras; la prueba de aditividad contra `origin/main` está en `publicador.test.ts`.
+
+## Verificación en modo prueba (24/10/2026)
+La derivación + el aviso a la recepción + el botón quedaron verificados desde el teléfono …1250 el 24/10/2026 en modo prueba: el aviso de texto libre llegó a la recepción de prueba y Andres lo confirmó.
+
+## Primer contacto (24-25/10/2026)
+El texto prellenado del anuncio («…quiero agendar mi valoración gratuita») en el PRIMER contacto (sin historial y sin nombre dado en el mensaje) no cierra de golpe con el nombre del perfil: el saludo pide nombre y qué desea mejorar. El cierre ante «quiero agendar» solo aplica si ya hubo conversación o el cliente dio su nombre («Soy Rosa. Quiero agendar»), y la etiqueta `[DERIVAR_RECEPCION]` del modelo se IGNORA en ese primer contacto (sola o con texto; sola, sale el fallo conocido con su aviso). Mismo mecanismo que Emma (`armar-previos.js`). 0 mensajes agregados.
+- **Ficha vencida (48 h):** quien responde «sí, quiero agendar» después de que su ficha venció recibe primero el saludo (vuelve a ser primer contacto) y el cierre sale en el mensaje siguiente.

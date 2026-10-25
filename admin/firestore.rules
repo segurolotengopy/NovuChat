@@ -1290,6 +1290,14 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // TÉRMINOS DE PRODUCTO REGISTRADOS (módulo Productos). Los propone el disparador y los aprueba
+      // Plataforma, ambos con el SDK Admin: ningún rol del navegador escribe, o el comercio se
+      // aprobaría a sí mismo. El comercio solo lee el estado.
+      match /terminosProducto/{itemId} {
+        allow get, list: if esMiembro(tenantId);
+        allow write: if false;
+      }
+
       // -----------------------------------------------------------------------
       // LÍMITE DE PRODUCTOS DEL CATÁLOGO POR PLAN (decisión del 15/09/2026).
       //

@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ANA, BETO, avisosARecepcion, crear, dice, hablar, mTexto, textos } from './mundo';
+import { ANA, BETO, avisosARecepcion, crear, dice, hablar, hablarYa, mTexto, textos } from './mundo';
 
 /** Cae a un texto fijo: el de fallo del modelo, el de remisión de salud o la admisión de IA. */
 const fallo = (t: string): boolean => /inconveniente para responderte/.test(t) || /un programa con inteligencia artificial/.test(t) || /Eso lo evalúa la Dra\. Evy en persona, durante tu valoración gratuita/.test(t);
@@ -239,12 +239,12 @@ describe('el cierre completo sale UNA vez por ficha', () => {
     const m = crear({ modeloDice: dice(DERIVA) });
     hablar(m, ANA, mTexto('quiero agendar, soy Paola'));
     m.avanzar(49 * 60);
-    expect(textos(hablar(m, ANA, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
+    expect(textos(hablarYa(m, ANA, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
   });
   it('dos teléfonos: el cierre de uno no afecta al otro', () => {
     const m = crear({ modeloDice: dice(DERIVA) });
-    hablar(m, ANA, mTexto('quiero agendar'));
-    expect(textos(hablar(m, BETO, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
+    hablarYa(m, ANA, mTexto('quiero agendar'));
+    expect(textos(hablarYa(m, BETO, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
     expect(textos(hablar(m, ANA, mTexto('quiero agendar'))).join(' ')).toContain('Claro, aquí tienes');
   });
   it('NEGADA: si el envío del cierre falla (principal y respaldo), no cuenta como hecho: el siguiente pedido recibe el cierre COMPLETO', () => {
@@ -268,7 +268,7 @@ describe('el cierre completo sale UNA vez por ficha', () => {
     expect(neg.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
   });
   it('POSITIVA: el primer cierre sigue saliendo completo con su botón y su aviso', () => {
-    const t = hablar(crear({ modeloDice: dice(DERIVA) }), ANA, mTexto('quiero agendar'));
+    const t = hablarYa(crear({ modeloDice: dice(DERIVA) }), ANA, mTexto('quiero agendar'));
     expect(textos(t)[0]).toMatch(CIERRE);
     expect(t.mensajes[0]!.tipo).toBe('interactive');
   });
@@ -294,7 +294,7 @@ describe('la pregunta por la gratuidad se contesta con un texto fijo cuando el m
     expect(t.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
     expect(avisosARecepcion(t).length).toBe(0);
   });
-  const FIJO = 'Sí, la valoración con la Dra. Evy Karina Rojas es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar. (Su valor habitual es de 250 Bs; por la campaña está bonificado).';
+  const FIJO = 'Sí, la valoración con la Dra. Evy Karina Rojas es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar. (Su valor habitual es de 250 Bs; hoy está bonificado).';
   const PREGUNTAS = ['¿De verdad es gratis?', '¿Hay algún costo escondido o pago de reserva?', '¿tengo que dejar un anticipo?'];
   for (const q of PREGUNTAS) {
     it(`POSITIVA: «${q}» con el modelo rechazado o caído: texto fijo, sin botón ni aviso`, () => {
@@ -330,7 +330,10 @@ describe('la pregunta por la gratuidad se contesta con un texto fijo cuando el m
 
 describe('«Ok, quiero agendar» deriva aunque el modelo no emita la etiqueta (F3 turno 6)', () => {
   it('sale el cierre con su botón y su aviso; «cómo agendo» (pregunta) no deriva', () => {
-    const t = hablar(crear({ modeloDice: dice('¡Sí, de verdad es gratuita! Me alegra tu decisión.') }), ANA, mTexto('Ok, quiero agendar'));
+    // ya en conversación (en el primer contacto sin nombre el saludo pide el nombre antes de cerrar)
+    const m = crear({ modeloDice: dice('¡Sí, de verdad es gratuita! Me alegra tu decisión.') });
+    hablar(m, ANA, mTexto('hola'));
+    const t = hablar(m, ANA, mTexto('Ok, quiero agendar'));
     expect(textos(t)[0]).toMatch(/Excelente decisión/);
     expect(t.mensajes[0]!.tipo).toBe('interactive');
     expect(avisosARecepcion(t).length).toBe(1);
@@ -338,7 +341,9 @@ describe('«Ok, quiero agendar» deriva aunque el modelo no emita la etiqueta (F
     expect(c.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
   });
   it('con el modelo caído y un pedido explícito, igual sale el cierre (no el fallo)', () => {
-    const t = hablar(crear({ modeloDice: 'cae' }), ANA, mTexto('quiero agendar'));
+    const m = crear({ modeloDice: 'cae' });
+    hablar(m, ANA, mTexto('hola'));
+    const t = hablar(m, ANA, mTexto('quiero agendar'));
     expect(textos(t)[0]).toMatch(/Excelente decisión/);
   });
 });
@@ -371,7 +376,7 @@ describe('Evy NO agenda: ninguna oración del modelo afirma una cita, un cupo o 
     }
   });
   it('el cierre fijo y el texto fijo de gratuidad no son tocados', () => {
-    const t = hablar(crear({ modeloDice: dice('[DERIVAR_RECEPCION: Paola]') }), ANA, mTexto('quiero agendar'));
+    const t = hablarYa(crear({ modeloDice: dice('[DERIVAR_RECEPCION: Paola]') }), ANA, mTexto('quiero agendar'));
     expect(textos(t)[0]).toMatch(/Excelente decisión, Paola/);
   });
 });
@@ -465,7 +470,8 @@ describe('«es seguro que…» no es un consejo de salud', () => {
 });
 
 describe('un texto largo se recorta por oración; uno desmesurado se descarta en tiempo lineal', () => {
-  const RELLENO = Array.from({ length: 40 }, (_, i) => `Esta es la oración de relleno número ${i + 1} sobre el efecto lifting natural y el contorno del rostro.`).join(' ');
+  // 14 oraciones de relleno: el original pasa de 1000 y el recorte pierde menos del 70 %. Con 40 se perdería más del 70 % y el texto se devuelve ENTERO (el filtro común lo rechaza: fallo con botón, mejor que un texto mutilado).
+  const RELLENO = Array.from({ length: 14 }, (_, i) => `Esta es la oración de relleno número ${i + 1} sobre el efecto lifting natural y el contorno del rostro.`).join(' ');
   it('POSITIVA: el recorte conserva la primera oración, la valoración gratuita y la pregunta de nombre y deseo', () => {
     const t = sale(`¡Hola! Soy el asistente virtual de la Dra. Evy. ${RELLENO} Tu valoración con la Dra. Evy es 100% gratuita y sin compromiso. ¿Cómo te llamas y qué te gustaría mejorar en tu rostro?`);
     expect(fallo(t)).toBe(false);
@@ -473,6 +479,10 @@ describe('un texto largo se recorta por oración; uno desmesurado se descarta en
     expect(t).toContain('Soy el asistente virtual de la Dra. Evy.');
     expect(t).toContain('100% gratuita y sin compromiso');
     expect(t.endsWith('¿Cómo te llamas y qué te gustaría mejorar en tu rostro?')).toBe(true);
+  });
+  it('un original de 40 oraciones (se perdería más del 70 %) no se mutila: cae al fallo con botón', () => {
+    const enorme = Array.from({ length: 40 }, (_, i) => `Esta es la oración de relleno número ${i + 1} sobre el efecto lifting natural y el contorno del rostro.`).join(' ');
+    expect(fallo(sale(`¡Hola! ${enorme} ¿Cómo te llamas?`))).toBe(true);
   });
   it('NEGADA: lo que se recorta no deja pasar una garantía escondida entre las oraciones', () => {
     expect(fallo(sale(`¡Hola! ${RELLENO} Te garantizo el resultado. ¿Cómo te llamas?`))).toBe(true);

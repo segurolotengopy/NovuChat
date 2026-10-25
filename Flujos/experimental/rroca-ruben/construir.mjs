@@ -6,9 +6,9 @@
  *
  *   node Flujos/experimental/rroca-ruben/construir.mjs               escribe rroca-ruben.json y rroca-ruben.prueba.json
  *   node Flujos/experimental/rroca-ruben/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
- *   node Flujos/experimental/rroca-ruben/construir.mjs --publicable [--flujo <json>] [--datos <json>]
+ *   node Flujos/experimental/rroca-ruben/construir.mjs --publicable --anuncios <N> [--flujo <json>] [--datos <json>]
  *                                                                    GUARDIA DE PUBLICACIÓN (PR-5): no escribe; sale 1 si el flujo trae un `REEMPLAZAR_*` sin sustituir, si las plantillas
- *                                                                    de aviso no están APPROVED (con nombre e idioma) o si se abre al PÚBLICO sin los tres medios (audio, imagen, documento). Sin `--flujo`, revisa `rroca-ruben.json`; `publicar-flujo.sh` la corre sobre lo que va a escribir
+ *                                                                    de aviso no están APPROVED (con nombre e idioma), si se abre al PÚBLICO sin los tres medios (audio, imagen, documento) o si la Consola no entrega al menos un anuncio (`--anuncios <N>`: la cantidad leída en seco). Sin `--flujo`, revisa `rroca-ruben.json`; `publicar-flujo.sh` la corre sobre lo que va a escribir
  *   (cualquier otro argumento se rechaza: la ayuda no existe como opción, para que nada escriba por error)
  *
  * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código y sin los datos. El código de los nodos lo arma el armador genérico
@@ -104,14 +104,26 @@ export const MARCA_NUCLEO = '@@nucleo:preparar-transcripcion';
  * La ÚNICA traducción: los nombres de nodo del núcleo se reemplazan de forma TEXTUAL (comillas simples o dobles) por los de este flujo. El task runner de n8n precarga los datos de los nodos que el código
  * nombra con `$('Nombre')` LITERAL: un `$` redefinido que traduce el nombre en tiempo de ejecución deja a «Interpretar entrada» sin cargar («hasn't been executed»). El JSON final solo contiene nombres de nodos REALES.
  */
-export function traducirNucleo(fuente) {
+export function traducirNucleo(fuente, nombres = NOMBRES_DEL_NUCLEO) {
   let t = fuente;
-  for (const [de, a] of Object.entries(NOMBRES_DEL_NUCLEO)) t = t.split(`$('${de}')`).join(`$('${a}')`).split(`$("${de}")`).join(`$("${a}")`);
+  for (const [de, a] of Object.entries(nombres)) t = t.split(`$('${de}')`).join(`$('${a}')`).split(`$("${de}")`).join(`$("${a}")`);
   return t;
 }
 export function fuenteDelNucleo() {
   const f = leerSiExiste(NUCLEO_TRANSCRIPCION, 'preparar-transcripcion.js');
   return f === null ? null : traducirNucleo(f.trimEnd());
+}
+/**
+ * «Preparar imagen» (23/10/2026, visión por categorías) es la pieza común `Flujos/src/core/medios/preparar-imagen.js` PRECEDIDA por `anuncio-por-titular.js` (el reconocimiento del anuncio por su titular contra la lista `anuncios` de «Config del negocio»),
+ * en ese orden y tal cual, con UNA traducción textual: `$('Normalizar entrada')` por `$('Interpretar entrada')`. Es lo mismo que hace rroca-antonio con `@@medio:m-imagen`, salvo esa traducción de nombre. «Config del negocio» ya se llama así aquí.
+ * El nodo queda solo con literales `$('X')`, sin helpers `cn*`.
+ */
+export const NUCLEO_IMAGEN = ['anuncio-por-titular.js', 'preparar-imagen.js'].map((a) => join(AQUI, '../../src/core/medios', a));
+export const NOMBRES_DEL_NUCLEO_IMAGEN = { 'Normalizar entrada': 'Interpretar entrada' };
+export const MARCA_NUCLEO_IMAGEN = '@@nucleo:preparar-imagen';
+export function fuenteDelNucleoImagen() {
+  const partes = NUCLEO_IMAGEN.map((ruta) => leerSiExiste(ruta, ruta.split('/').pop()));
+  return partes.some((x) => x === null) ? null : partes.map((x) => traducirNucleo(x.trimEnd(), NOMBRES_DEL_NUCLEO_IMAGEN)).join('\n\n') + '\n';
 }
 export function codigoConNucleo() {
   const fuente = fuenteDelNucleo();
@@ -297,7 +309,17 @@ export function guardias(variante, flujo) {
     if (destinosDe('Preparar transcripción', 0).join('|') !== 'Decidir turno') h.push('«Preparar transcripción» tiene que conectarse solo a «Decidir turno»');
   }
   if (nombres.has('Transcribir audio') && destinosDe('Transcribir audio', 0).join('|') !== 'Preparar transcripción') h.push('«Transcribir audio» tiene que conectarse solo a «Preparar transcripción»');
-  if (nombres.has('Ver imagen') && destinosDe('Ver imagen', 0).join('|') !== 'Decidir turno') h.push('«Ver imagen» tiene que conectarse solo a «Decidir turno»');
+  // VISIÓN POR CATEGORÍAS: «Preparar imagen» incluye los módulos comunes TAL CUAL (salvo la traducción declarada de un nombre de nodo) y es el ÚNICO destino de los tres lectores de Gemini; después va «Interpretar lectura».
+  const prepararImagen = por('Preparar imagen');
+  if (!prepararImagen) h.push('falta el nodo «Preparar imagen» (visión por categorías)');
+  else {
+    const fuenteImagen = fuenteDelNucleoImagen();
+    if (fuenteImagen === null || !String(p(prepararImagen).jsCode || '').includes(fuenteImagen.trimEnd())) h.push('«Preparar imagen» no incluye los módulos comunes (anuncio-por-titular.js y preparar-imagen.js, tal cual, salvo la traducción declarada de un nombre de nodo): rearme con «node construir.mjs»');
+    if (destinosDe('Preparar imagen', 0).join('|') !== 'Interpretar lectura') h.push('«Preparar imagen» tiene que conectarse solo a «Interpretar lectura»');
+  }
+  for (const lector of ['Ver imagen', 'Leer comprobante (imagen)', 'Leer comprobante (PDF)']) {
+    if (nombres.has(lector) && destinosDe(lector, 0).join('|') !== 'Preparar imagen') h.push(`«${lector}» tiene que conectarse solo a «Preparar imagen»`);
+  }
   for (const nombre of ['Transcribir audio', 'Ver imagen']) {
     const g = por(nombre);
     if (!g) continue;
@@ -423,7 +445,17 @@ export function modoDePublicacion({ flujo, datos }) {
   return modoDeApertura(cbFlujo) === 'publico' || modoDeApertura(datos && datos.configBase) === 'publico' ? 'publico' : 'prueba';
 }
 
-export function guardiaDePublicacion({ flujo, datos }) {
+/**
+ * PRECONDICIÓN DE PUBLICACIÓN (visión por categorías, 23/10/2026): los anuncios dejaron de estar escritos en el código y vienen de la Consola (`anuncios` de «Traer configuración»). Publicar este flujo SIN al menos un anuncio leído de la
+ * Consola le quitaría a Rubén los ángulos que hoy tiene cableados (una regresión silenciosa). Esta guardia no puede leer la Consola (solo lee archivos): exige que quien publica le pase la CANTIDAD de anuncios que la Consola devolvió en seco
+ * (`--anuncios <N>`); sin el dato, o con 0, no se puede publicar.
+ */
+export function hallazgosDeAnuncios(anuncios) {
+  if (anuncios === undefined || anuncios === null) return ['anuncios: falta comprobar que la Consola entrega al menos un anuncio (pase --anuncios <cantidad leída en seco>); sin anuncios, Rubén perdería sus ángulos'];
+  return Number.isInteger(anuncios) && anuncios >= 1 ? [] : [`anuncios: la Consola entrega ${Number.isInteger(anuncios) ? anuncios : 'un valor no válido'} anuncio(s) y se necesita al menos uno: cárguelos antes de publicar`];
+}
+
+export function guardiaDePublicacion({ flujo, datos, anuncios }) {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   // 1. Marcadores sin sustituir, en cualquier parte del flujo (parámetros, credenciales, rutas). `REEMPLAZAR_…` con puntos suspensivos o `REEMPLAZAR_*` es texto de un comentario, no un marcador.
@@ -448,6 +480,8 @@ export function guardiaDePublicacion({ flujo, datos }) {
   // 3. …y en los datos.
   h.push(...hallazgosDePlantillas(datos && datos.configBase, 'datos'));
   h.push(...hallazgosDeApertura(datos && datos.configBase, 'datos'));
+  // 4. …y los anuncios que la Consola entrega.
+  h.push(...hallazgosDeAnuncios(anuncios));
   return h;
 }
 
@@ -471,6 +505,11 @@ export function armarRroca(proyecto, datos, v) {
     n.parameters = reemplazarTextos(n.parameters, datos, `${donde} · ${n.name}`);
     // Antes de `armarVariante`, que rechaza una marca `@@` que no conoce.
     if (n.parameters && n.parameters.jsCode === MARCA_NUCLEO) n.parameters.jsCode = codigoConNucleo();
+    if (n.parameters && n.parameters.jsCode === MARCA_NUCLEO_IMAGEN) {
+      const fuenteImagen = fuenteDelNucleoImagen();
+      if (fuenteImagen === null) throw new Error(`${donde}: faltan los módulos comunes de la imagen (Flujos/src/core/medios/)`);
+      n.parameters.jsCode = fuenteImagen;
+    }
     for (const c of Object.values(n.credentials || {})) {
       const m = /^@@cred:(ingesta|graph|entradaPrueba|medios|gemini)$/.exec(String(c.name));
       if (m) c.name = dato(datos, `credenciales.${m[1]}`, `${donde} · ${n.name}`);
@@ -537,24 +576,28 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (args.includes('--publicable')) {
     // --publicable [--flujo <json>] [--datos <json>]: solo lee. Sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal.
     const opcion = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
-    const resto = args.filter((a, i) => a !== '--publicable' && a !== '--flujo' && a !== '--datos' && args[i - 1] !== '--flujo' && args[i - 1] !== '--datos');
-    if (resto.length || args.includes('--verificar') || ['--flujo', '--datos'].some((n) => args.includes(n) && !opcion(n))) {
-      console.error('✗ uso: construir.mjs --publicable [--flujo <json>] [--datos <json>]'); process.exit(2);
+    const conValor = ['--flujo', '--datos', '--anuncios'];
+    const resto = args.filter((a, i) => a !== '--publicable' && !conValor.includes(a) && !conValor.includes(args[i - 1]));
+    if (resto.length || args.includes('--verificar') || conValor.some((n) => args.includes(n) && !opcion(n))) {
+      console.error('✗ uso: construir.mjs --publicable --anuncios <cantidad> [--flujo <json>] [--datos <json>]'); process.exit(2);
     }
+    // La cantidad de anuncios que la Consola devolvió en seco: solo dígitos (sin ella, `hallazgosDeAnuncios` rechaza la publicación).
+    const crudoAnuncios = opcion('--anuncios');
+    const nAnuncios = crudoAnuncios === undefined ? undefined : (/^\d{1,4}$/.test(crudoAnuncios) ? Number(crudoAnuncios) : NaN);
     try {
       const rutaFlujo = opcion('--flujo') || join(AQUI, 'rroca-ruben.json');
       const textoFlujo = leerSiExiste(rutaFlujo, 'el flujo');
       if (textoFlujo === null) throw new Error(`no existe el flujo ${rutaFlujo}`);
       let flujoJson;
       try { flujoJson = JSON.parse(textoFlujo); } catch { throw new Error(`JSON inválido en ${rutaFlujo}`); }
-      const hallazgos = guardiaDePublicacion({ flujo: flujoJson, datos: cargarDatos(opcion('--datos') || ARCHIVO_DE_DATOS) });
+      const hallazgos = guardiaDePublicacion({ flujo: flujoJson, datos: cargarDatos(opcion('--datos') || ARCHIVO_DE_DATOS), anuncios: nAnuncios });
       if (hallazgos.length) {
         console.error('✗ El flujo de Rubén NO se puede publicar todavía:');
         for (const x of hallazgos) console.error(`  - ${x}`);
         process.exit(1);
       }
       const datosCli = cargarDatos(opcion('--datos') || ARCHIVO_DE_DATOS);
-      console.log('✓ Sin marcadores REEMPLAZAR_* y con las plantillas de aviso APPROVED: se puede publicar (con la confirmación de publicar-flujo.sh).');
+      console.log('✓ Sin marcadores REEMPLAZAR_*, con las plantillas de aviso APPROVED y con anuncios en la Consola: se puede publicar (con la confirmación de publicar-flujo.sh).');
       console.log(modoDePublicacion({ flujo: flujoJson, datos: datosCli }) === 'prueba'
         ? '  Publicación de PRUEBA con lista restringida (telefonosDePrueba): NO se abre al público; abrirlo exige mediosHabilitados con audio, imagen y documento.'
         : '  Apertura al PÚBLICO: los tres medios (audio, imagen, documento) están habilitados.');

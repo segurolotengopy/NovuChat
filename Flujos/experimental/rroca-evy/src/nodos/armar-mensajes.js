@@ -88,7 +88,7 @@ if (puerta.ruta === 'fuera_de_prueba') {
   const fijos = { cortes: EV_TEXTO_CORTES, documento: EV_TEXTO_DOCUMENTO, audio_no_entendido: EV_TEXTO_AUDIO_NO_ENTENDIDO, audio_largo: EV_TEXTO_AUDIO_LARGO, audio_tope: EV_TEXTO_AUDIO_TOPE, archivo_no_abierto: EV_TEXTO_ARCHIVO_NO_ABIERTO, archivo_pesado: EV_TEXTO_ARCHIVO_PESADO };
   ms = [texto(fijos[plan.clave] || EV_TEXTO_CORTES)];
 } else if (efectivo === 'derivar') {
-  const nombre = res.nombreDerivacion || evPrimerNombre(t.nombrePerfil);
+  const nombre = res.nombreDerivacion || evNombreDelMensaje(plan.textoCliente, evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora)) || evPrimerNombre(t.nombrePerfil);
   const cierre = evTextoCierre(cfg, nombre);
   ms = [conRecepcion(cierre)];
   hist = { a: ms[0].texto, b: ms[0].respaldo };

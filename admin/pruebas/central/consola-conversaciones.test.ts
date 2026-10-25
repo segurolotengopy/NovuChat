@@ -6,12 +6,12 @@
  * `react-dom/server` (el hook que lee la ficha y las dos pantallas se sustituyen por
  * marcas), igual que `consola-oculta.test.ts`.
  *
- *   A. La lectura: ausente, desconocida o de otro tipo es 'clasica'. SOLO un 'nueva'
- *      exacto enciende la pantalla nueva.
+ *   A. La lectura (24/10/2026): la NUEVA es la de por defecto. Ausente, desconocida o de otro
+ *      tipo es 'nueva'; SOLO un 'clasica' exacto da la de siempre. Y el default NO habilita Tomar.
  *   B. La validación del script que la escribe: lo desconocido se rechaza.
- *   C. El selector: con 'nueva' pinta la nueva, con cualquier otra cosa la clásica,
+ *   C. El selector: con 'clasica' pinta la clásica, con cualquier otra cosa la nueva,
  *      y mientras carga no pinta ninguna.
- *   D. El hook: error de lectura = 'clasica'; lee la ficha del negocio y nada más.
+ *   D. El hook: error de lectura = el default compartido ('nueva'); lee la ficha del negocio y nada más.
  *   E. El servidor: ningún navegador escribe `tenants/{id}` (la bandera no la edita el comercio).
  *
  * ES SOLO PRESENTACIÓN: la bandera no es un límite; lo que el servidor permite no cambia con ella.
@@ -21,8 +21,9 @@ import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { habilitadoParaPersona } from '../../functions/src/core/conversacion/accesoPersona';
 import {
-  PANTALLAS_CONVERSACIONES, esPantallaConversaciones, pantallaConversacionesDeFicha, validarPantallaConversaciones,
+  PANTALLA_POR_DEFECTO, PANTALLAS_CONVERSACIONES, esPantallaConversaciones, pantallaConversacionesDeFicha, validarPantallaConversaciones,
 } from '../../functions/src/central/consola-conversaciones';
 
 // --- Sustitutos: sin red, sin router real, con una pantalla fija. ------------------------------------
@@ -60,24 +61,44 @@ describe('A. la lectura de la bandera', () => {
     for (const v of ['', 'Nueva', 'NUEVA', ' nueva', 'antigua', null, undefined, 1, true, {}, ['nueva']]) expect(esPantallaConversaciones(v)).toBe(false);
   });
 
-  it('SOLO un «nueva» exacto enciende la pantalla nueva', () => {
+  it('el default es «nueva» y es la única constante', () => {
+    expect(PANTALLA_POR_DEFECTO).toBe('nueva');
     expect(pantallaConversacionesDeFicha({ consolaConversaciones: 'nueva' })).toBe('nueva');
+  });
+
+  it('SOLO un «clasica» exacto (emergencia) da la pantalla de siempre', () => {
     expect(pantallaConversacionesDeFicha({ consolaConversaciones: 'clasica' })).toBe('clasica');
   });
 
-  it('NEGATIVA: ausente, ficha vacía o ausente, desconocida o de otro tipo → «clasica»', () => {
-    expect(pantallaConversacionesDeFicha({})).toBe('clasica');
-    expect(pantallaConversacionesDeFicha(null)).toBe('clasica');
-    expect(pantallaConversacionesDeFicha(undefined)).toBe('clasica');
-    expect(pantallaConversacionesDeFicha({ flujos: ['venta'] })).toBe('clasica');
-    for (const v of ['Nueva', 'NUEVA', ' nueva', 'nueva ', 'antigua', '', null, undefined, 0, 1, true, false, {}, ['nueva'], { nueva: true }]) {
-      expect(pantallaConversacionesDeFicha({ consolaConversaciones: v }), JSON.stringify(v)).toBe('clasica');
+  it('SIN BANDERA: ausente, ficha vacía o ausente, desconocida o de otro tipo → «nueva»', () => {
+    expect(pantallaConversacionesDeFicha({})).toBe('nueva');
+    expect(pantallaConversacionesDeFicha(null)).toBe('nueva');
+    expect(pantallaConversacionesDeFicha(undefined)).toBe('nueva');
+    expect(pantallaConversacionesDeFicha({ flujos: ['venta'] })).toBe('nueva');
+    for (const v of ['Clasica', 'CLASICA', ' clasica', 'clasica ', 'antigua', '', null, undefined, 0, 1, true, false, {}, ['clasica'], { clasica: true }]) {
+      expect(pantallaConversacionesDeFicha({ consolaConversaciones: v }), JSON.stringify(v)).toBe('nueva');
     }
   });
 
   it('NEGATIVA: una clave heredada del prototipo de objetos no cuenta (solo la propia de la ficha)', () => {
-    const heredada = Object.create({ consolaConversaciones: 'nueva' }) as { consolaConversaciones?: unknown };
-    expect(pantallaConversacionesDeFicha(heredada)).toBe('clasica');
+    const heredada = Object.create({ consolaConversaciones: 'clasica' }) as { consolaConversaciones?: unknown };
+    expect(pantallaConversacionesDeFicha(heredada)).toBe('nueva');
+  });
+
+  it('NEGATIVA: el default implícito NO habilita Tomar ni escribir como persona (exigen «nueva» explícito)', () => {
+    // Sin bandera: pantalla nueva en lectura, pero el servidor deniega la intervención.
+    const sinBandera = { nombre: 'Tienda A', estado: 'activo' };
+    expect(pantallaConversacionesDeFicha(sinBandera)).toBe('nueva');
+    expect(habilitadoParaPersona('tienda-a', sinBandera)).toBe(false);
+    // Bellido con bandera «nueva»: pantalla nueva, y Tomar sigue denegado (por id y por nombre).
+    const bellido = { nombre: 'Consultorio Bellido', estado: 'activo', consolaConversaciones: 'nueva' };
+    expect(pantallaConversacionesDeFicha(bellido)).toBe('nueva');
+    expect(habilitadoParaPersona('bellido', bellido)).toBe(false);
+    expect(habilitadoParaPersona('tienda-a', bellido)).toBe(false);
+    // Un comercio común con «nueva» explícito sí queda habilitado (control positivo).
+    expect(habilitadoParaPersona('tienda-a', { ...sinBandera, consolaConversaciones: 'nueva' })).toBe(true);
+    // «clasica» explícito: pantalla clásica y sin intervención.
+    expect(habilitadoParaPersona('tienda-a', { ...sinBandera, consolaConversaciones: 'clasica' })).toBe(false);
   });
 });
 
@@ -101,7 +122,7 @@ describe('B. la validación del valor que escribe el script de plataforma', () =
 
 // ===========================================================================
 describe('C. el selector', () => {
-  it('con «nueva» pinta la pantalla nueva y NO la de siempre', () => {
+  it('con «nueva» (o sin bandera) pinta la pantalla nueva y NO la de siempre', () => {
     const html = pintar('nueva');
     expect(html).toContain('PANTALLA-NUEVA');
     expect(html).not.toContain('PANTALLA-DE-SIEMPRE');
@@ -120,9 +141,9 @@ describe('C. el selector', () => {
     expect(html).not.toContain('PANTALLA-DE-SIEMPRE');
   });
 
-  it('todo lo que no es «nueva» cae en la de siempre (la elección es una sola comparación)', () => {
+  it('todo lo que no es «clasica» cae en la nueva (la elección es una sola comparación)', () => {
     const f = sinComentarios(leer('web/src/central/paginas/Conversaciones.tsx'));
-    expect(f).toContain("return pantalla === 'nueva' ? <ConversacionesNueva /> : <ConversacionesClasica />;");
+    expect(f).toContain("return pantalla === 'clasica' ? <ConversacionesClasica /> : <ConversacionesNueva />;");
     expect(f).toContain('if (pantalla === null) return <p>Cargando…</p>;');
     // `key`: al cambiar de negocio la elección empieza de cero.
     expect(f).toContain('<ConversacionesSegunBandera key={tenantId} tenantId={tenantId} />');
@@ -138,9 +159,10 @@ describe('D. el hook que lee la bandera', () => {
     expect(hook).toContain('(d) => setPantalla(pantallaConversacionesDeFicha(d.data())),');
   });
 
-  it('NEGATIVA: si la lectura falla, la pantalla es la de siempre (nunca la nueva)', () => {
-    expect(hook).toContain("() => setPantalla('clasica'));");
-    expect(hook).not.toContain("() => setPantalla('nueva')");
+  it('si la lectura falla, usa el MISMO default que el servidor (una sola constante, sin literal propio)', () => {
+    expect(hook).toContain('() => setPantalla(PANTALLA_POR_DEFECTO));');
+    expect(hook).not.toContain("setPantalla('clasica')");
+    expect(hook).not.toContain("setPantalla('nueva')");
   });
 
   it('mientras carga es `null`, y al cambiar de negocio vuelve a `null` antes de leer', () => {

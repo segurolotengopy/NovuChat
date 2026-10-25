@@ -260,7 +260,7 @@ describe('la normalización de entrada: ningún tipo rompe el flujo ni se queda 
     ['toque de lista', mLista('opcion:uno'), 'conversacion', SALUDO],
     ['toque de botón', mBoton('boton:uno'), 'conversacion', SALUDO],
     ['botón de plantilla', { type: 'button', button: { text: 'Hola', payload: 'p' } }, 'conversacion', SALUDO_O_MODELO],
-    ['imagen', mImagen(), 'medio', /^Recibí tu imagen/],
+    ['imagen', mImagen(), 'medio', /^Hola, soy el asistente virtual de Rubén\.\n\nRecibí tu imagen\./],
     ['audio', mAudio(), 'medio', /^Recibí tu nota de voz, pero no se escuchó bien/],
     ['nota de voz', { type: 'voice', voice: { id: 'media-voz' } }, 'medio', /^Recibí tu nota de voz, pero no se escuchó bien/],
     ['documento', mDocumento(), 'medio', /^Recibí tu archivo/],

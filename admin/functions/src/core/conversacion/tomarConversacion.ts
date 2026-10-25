@@ -16,7 +16,8 @@
  * LO QUE GARANTIZA, cada línea con una prueba que la niega (`pruebas/core/turno-conversacion.test.ts`):
  *
  *  - Quién llama: administrador u operador de ESE comercio, comercio activo, habilitado en el
- *    servidor (bandera `nueva`, no Bellido). El soporte no. Ver `accesoPersona.ts`.
+ *    servidor (bandera `nueva`, no Bellido) y con `personaPuedeEscribir === true` (la salida del número está
+ *    publicada; se vuelve a leer dentro de la transacción). El soporte no. Ver `accesoPersona.ts`.
  *  - UNA transacción lee la conversación, decide y escribe el turno y la auditoría `conversacion_tomada`
  *    (falla cerrada y atómica: ver `turnoServidor.ts`). Dos personas que toman a la vez: gana una; la
  *    otra recibe `failed-precondition` y, en `details.tomadoPor`, el uid de quien la tiene.
@@ -47,13 +48,16 @@ import {
   atenderTurno, auditarEnTransaccion, errorDeTurno, opcionesDeTurno, persistirVencimiento, turnoAFirestore,
   type ContextoDeTurno, type SalidaDeTurno,
 } from './turnoServidor.js';
-import { turnoEfectivo, ventanaDeMetaAbierta, type Turno } from './turno.js';
+import { personaPuedeEscribirDeFicha, turnoEfectivo, ventanaDeMetaAbierta, type Turno } from './turno.js';
 
 /** La transacción de la toma (exportada para las pruebas). */
 export async function tomar(c: ContextoDeTurno): Promise<SalidaDeTurno> {
   const r = await c.db.runTransaction<SalidaDeTurno & { cerrada?: true }>(async (tx) => {
-    const snap = await tx.get(c.ref);
-    if (!snap.exists) throw errorDeTurno('noExiste');
+    // La bandera de salida se lee DENTRO de la transacción (además de la lectura previa de `atenderTurno`): si
+    // se apaga entre las dos, la toma no se escribe. Antes de cualquier escritura.
+    const [snap, fichaComercio] = await tx.getAll(c.ref, c.db.doc(`tenants/${c.tenantId}`));
+    if (!personaPuedeEscribirDeFicha(fichaComercio?.data())) throw errorDeTurno('sinSalida');
+    if (!snap || !snap.exists) throw errorDeTurno('noExiste');
     const ultimoEntranteEn: unknown = snap.get('ultimoEntranteEn');
     const { veredicto, turno } = turnoEfectivo(snap.get('turno'), { ultimoEntranteEn }, c.ahoraMs);
 

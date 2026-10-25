@@ -21,6 +21,7 @@
 //   audio          una nota de voz que no se pudo usar (`variante`: largo, no_entendido, no_abierto, tope, apagado): texto fijo; `no_entendido` también cubre una nota DUDOSA (menos de 3 palabras, muletillas o «no se oye»), que nunca llega al modelo; una que SÍ se transcribió sigue la cadena del TEXTO (con `origen: 'audio'` si llega al modelo);
 //   audio_pago     «ya pagué / transferí / te mando el comprobante» dicho por audio, sin QR abierto: texto fijo con el botón de Rubén, sin aviso (el pago nunca lo redacta el modelo);
 //   imagen_comprobante   una foto que PARECE un comprobante pero no hay pedido abierto: texto fijo con el botón; no se coteja ni se avisa;
+//   imagen_descrita  VISIÓN POR CATEGORÍAS: una foto, una captura, `otro` o una publicidad sin anuncio reconocido: una frase del CÓDIGO con lo que se ve (saneado) y la oferta de hablar del libro; sin modelo;
 //   imagen_otra    un documento o una imagen que no se mira (`variante`: documento, archivo_no_aceptado, tope, no_vista, '' = visión apagada o formato no soportado): texto fijo; una imagen que SÍ se miró llega al modelo (`modelo` con `origen: 'imagen'`);
 //   extranjero     un número de otro país: UN texto fijo con el botón de Rubén por número y por día (sin QR, sin descarga, sin aviso); `extranjero_repetido` dentro del día: ningún mensaje;
 //   otro           respuesta fija a lo que no es texto ni medio.
@@ -32,6 +33,8 @@
 // EL MONTO NUNCA SALE DEL CLIENTE NI DEL MODELO: es el precio del catálogo del producto (`rrPrecio`). Un producto que no sea uno de los 4 no genera QR. Un botón es un botón solo si llegó como
 // `interactive` (un texto que diga «b_pack» no lo es). El estado de si hay un QR abierto lo manda el SERVIDOR (`cobro.pendiente`); `ficha.qrHastaMs` evita abrir dos seguidos mientras la consola se entera (se libera al resolverse el comprobante).
 const cfg = cnCfg();
+// Los anuncios del negocio (DATO de la Consola, vía «Config del negocio»): el flujo no lleva ninguno escrito. Sin anuncios, una imagen de publicidad se describe y un texto con un titular se conversa, sin enfoque.
+const anuncios = Array.isArray(cfg.anuncios) ? cfg.anuncios : [];
 const t = cnPrimero('Interpretar entrada') || {};
 const puerta = cnPrimero('Puerta del turno') || {};
 const base = cnPrimero('Config base') || {};
@@ -82,17 +85,24 @@ const sinOpciones = (boton) => ({ tipo: 'derivar', motivo: 'sin_opciones', aviso
 // El plan de «mostrar las opciones»: el menú de productos si queda algún botón; si no, el de complementos si queda alguno; si ninguno, Rubén (nunca «¿cuál prefieres?» sin opciones).
 const opcionesDe = (usados, boton) => (rrMenu(1, cat, usados).length ? { tipo: 'precios', cat: cat, boton: boton } : (rrMenu(2, cat, usados).length ? { tipo: 'menu2', cat: cat, boton: boton } : sinOpciones(boton)));
 
-// Lo que se mira de una imagen (la clasificación de «Ver imagen» o la del lector del comprobante, que es la misma forma): anuncio / otra llegan al modelo como DATO rotulado, un comprobante sin pedido pasa con Rubén sin aviso.
+// Lo que se mira de una imagen (VISIÓN POR CATEGORÍAS, 23/10/2026): «Ver imagen» o el lector del comprobante clasifican POR SU TEXTO (una sola llamada) y «Preparar imagen» (módulo común) valida la categoría, sanea la descripción y reconoce el anuncio
+// por su titular contra los `anuncios` de la Consola. Aquí solo se decide, por CÓDIGO: pago con problema -> Rubén (aviso y botón, nunca se coteja); parece un comprobante sin pedido -> texto fijo; anuncio reconocido -> el modelo con su enfoque
+// como dato; todo lo demás (foto, captura, otro, publicidad sin anuncio) -> `imagen_descrita`, una frase del código con lo que se ve (ya saneado) y la oferta de hablar del libro.
 const pieImagen = String(t.pie || '');
-const planDeImagenVista = (lec) => {
-  const h = (v) => ({ entradaHistorial: rrHistorialImagen(lec, v, pieImagen) });
-  if (lec.tipo === 'comprobante') return salir({ tipo: 'imagen_comprobante', cat: cat }, h(''));
-  if (lec.tipo === 'anuncio' && lec.anuncio && lec.anuncio.clave === 'desde_32' && !ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat }, h(''));
-  if (lec.tipo === 'anuncio' || (lec.tipo === 'otra' && lec.descripcion !== '')) {
-    return salir({ tipo: 'modelo', origen: 'imagen', caso: lec.tipo, cat: cat, textoCliente: pieImagen.slice(0, 500) },
-      Object.assign(h(''), { llamarModelo: true, cuerpoModelo: rrCuerpoModelo(rrEtiquetaImagen(lec, pieImagen), rrHistorialVigente(ficha, ahora), { rotulado: true }) }));
+const prepImagen = cnNodo('Preparar imagen') ? cnPrimero('Preparar imagen') : null;
+const crudaImagen = cnNodo('Leer comprobante (PDF)') ? cnPrimero('Leer comprobante (PDF)') : (cnNodo('Leer comprobante (imagen)') ? cnPrimero('Leer comprobante (imagen)') : (cnNodo('Ver imagen') ? cnPrimero('Ver imagen') : null));
+const vistaDeImagen = () => rrVistaDeImagen(prepImagen, crudaImagen, anuncios);
+const avisoPagoConProblema = { tipo: 'consulta', clave: 'pago_con_problema', motivo: 'envió la captura de un pago que parece no haberse completado', mensaje: '' };
+const planDeImagenVista = (vista, conRuben) => {
+  const h = (v) => ({ entradaHistorial: rrHistorialImagen(vista, v, pieImagen) });
+  if (vista.categoria === 'pago_con_problema') return salir({ tipo: 'derivar', motivo: 'pago_con_problema', clave: 'pago_con_problema', aviso: avisoPagoConProblema, cat: cat }, h(''));
+  if (vista.categoria === 'comprobante') return salir({ tipo: 'imagen_comprobante', cat: cat }, h(''));
+  if (vista.categoria === 'publicidad' && vista.insignia && !ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat }, h(''));
+  if (vista.categoria === 'publicidad' && vista.anuncio) {
+    return salir({ tipo: 'modelo', origen: 'imagen', caso: 'anuncio', cat: cat, textoCliente: pieImagen.slice(0, 500) },
+      Object.assign(h(''), { llamarModelo: true, cuerpoModelo: rrCuerpoModelo(rrEtiquetaImagen(vista, pieImagen), rrHistorialVigente(ficha, ahora), { rotulado: true, anuncio: vista.anuncio }) }));
   }
-  return salir({ tipo: 'imagen_otra', variante: 'no_vista', cat: cat }, h('no_vista'));
+  return salir({ tipo: 'imagen_descrita', descripcion: vista.categoria === 'publicidad' ? 'una imagen publicitaria' : vista.descripcion, conRuben: conRuben === true, cat: cat }, h(''));
 };
 
 // El plan del modelo para el turno de texto, de un toque o de un audio transcrito: el cuerpo lleva el `modo` del turno. `boton`: el id del botón tocado (sin texto): el modelo recibe el rótulo de CÓDIGO «[Tocó el botón «…»]»
@@ -100,9 +110,11 @@ const planDeImagenVista = (lec) => {
 const modeloDelTurno = (modo, extra, boton) => {
   const rotuloToque = boton ? '[Tocó el botón «' + (Object.prototype.hasOwnProperty.call(RR_ETIQUETA_BOTON, boton) ? RR_ETIQUETA_BOTON[boton] : 'otro botón') + '»]' : '';
   const historia = rrHistorialVigente(ficha, ahora);
+  // Un texto o un audio que trae el titular de un anuncio de la Consola: el CÓDIGO lo reconoce y el modelo recibe su enfoque como dato (un toque de botón nunca).
+  const anuncioDelTurno = rotuloToque !== '' ? null : rrAnuncioDe(deAudio ? au.texto : textoTurno, anuncios);
   const cuerpo = rotuloToque !== '' ? rrCuerpoModelo(rotuloToque, historia, { rotulado: true, respuesta: respuestaAPregunta, modo: modo })
-    : (deAudio ? rrCuerpoModelo(rrEtiquetaAudio(au), historia, { rotulado: true, tope: RR_TOPE_AUDIO_MODELO + 100, respuesta: respuestaAPregunta, modo: modo })
-      : rrCuerpoModelo(t.texto, historia, { respuesta: respuestaAPregunta, modo: modo }));
+    : (deAudio ? rrCuerpoModelo(rrEtiquetaAudio(au), historia, { rotulado: true, tope: RR_TOPE_AUDIO_MODELO + 100, respuesta: respuestaAPregunta, modo: modo, anuncio: anuncioDelTurno })
+      : rrCuerpoModelo(t.texto, historia, { respuesta: respuestaAPregunta, modo: modo, anuncio: anuncioDelTurno }));
   const plan = Object.assign({ tipo: 'modelo', origen: deAudio ? 'audio' : '', cat: cat, modo: modo, textoCliente: (rotuloToque !== '' ? rotuloToque : (deAudio ? '(audio) ' + rrEnmascarar(textoTurno) : textoTurno)).slice(0, 500), textoRevision: rotuloToque !== '' ? '' : textoTurno.slice(0, 500) }, extra || {});
   return salir(plan, { llamarModelo: true, cuerpoModelo: cuerpo });
 };
@@ -133,13 +145,17 @@ if (t.esComprobante === true || t.comprobanteSimulado === true) {
   // Lo que NO está registrado no se avisa: se responde como a una imagen vista (o el texto fijo de un documento), sin aviso.
   const comoImagenVista = () => {
     medioExtra.vioImagen = t.tipo !== 'document';
-    const lecL = delLector && delLector.lec && typeof delLector.lec === 'object' ? delLector.lec : { tipo: '', titular: '', descripcion: '', anuncio: null };
+    // El tope diario de fotos y la visión apagada valen PARA TODA imagen, también para un pago con problema con un QR abierto (cada imagen cuesta una respuesta): se miran antes.
+    if (t.tipo !== 'document') {
+      const topeFotos = rrTopeMedio(base.topeImagenesDia, RR_TOPE_IMAGENES_DIA, 20);
+      if (topeFotos === 0) return salir({ tipo: 'imagen_otra', variante: '', conRuben: true, cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
+      if (rrConteoVigente(ficha.imagenes, ahora) >= topeFotos) return salir({ tipo: 'imagen_otra', variante: 'tope', conRuben: true, cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
+    }
+    // Un pago con problema se avisa a Rubén ANTES de lo demás (también con un QR abierto o un documento): nunca se coteja.
+    if (delLector && delLector.pagoConProblema === true) return planDeImagenVista(vistaDeImagen(), true);
     if (t.tipo === 'document') return salir({ tipo: 'imagen_otra', variante: hayQrAbierto ? 'archivo_no_aceptado' : 'documento', cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'documento', pieImagen) });
     if (hayQrAbierto) return salir(recordatorio(''));
-    const topeFotos = rrTopeMedio(base.topeImagenesDia, RR_TOPE_IMAGENES_DIA, 20);
-    if (topeFotos === 0) return salir({ tipo: 'imagen_otra', variante: '', conRuben: true, cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
-    if (rrConteoVigente(ficha.imagenes, ahora) >= topeFotos) return salir({ tipo: 'imagen_otra', variante: 'tope', conRuben: true, cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
-    return planDeImagenVista(lecL);
+    return planDeImagenVista(vistaDeImagen(), true);
   };
   if (delLector && delLector.noEsComprobante === true) return comoImagenVista();  // El cotejo corrió solo si hubo medio utilizable; si no (tamaño, descarga, servidor caído), `cbResultadoVenta` lo deja en «sin cotejar» con aviso y botón: nunca «cuadra».
   const r = cbResultadoVenta(cnNodo('Cotejar en el servidor') ? cnPrimero('Cotejar en el servidor') : null);
@@ -168,7 +184,7 @@ if (t.categoria === 'medio' && !deAudio) {
   if (t.visionApagada === true) return salir({ tipo: 'imagen_otra', variante: '', cat: cat }, h(null, 'no_vista'));
   if (t.imagenTope === true) return salir({ tipo: 'imagen_otra', variante: 'tope', cat: cat }, h(null, 'no_vista'));
   if (t.verImagen !== true || !cnNodo('Ver imagen')) return salir({ tipo: 'imagen_otra', variante: t.verImagen === true ? 'no_vista' : '', cat: cat }, h(null, 'no_vista'));
-  return planDeImagenVista(rrLecturaImagen(cnPrimero('Ver imagen')));
+  return planDeImagenVista(vistaDeImagen(), false);
 }
 if (t.categoria === 'otro') return salir({ tipo: 'otro', cat: cat });
 
@@ -291,8 +307,7 @@ if (hayQrAbierto) {
 }
 if (!ficha.saludado && rrEsSoloSaludo(norm)) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
 // «Desde solo 32 Bs» (la captura del anuncio general) sigue el camino fijo, sin modelo: primero el saludo corto; ya saludado, los precios por código.
-const anuncio = rrAnuncioDe(textoTurno);
-if (anuncio && anuncio.clave === 'desde_32') {
+if (rrEsInsigniaDePrecio(norm)) {
   if (!habilitado) return pedirOpciones();
   if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
   return salir(Object.keys(cat).length ? { tipo: 'precio', producto: '', cat: cat } : sinOpciones(''));
