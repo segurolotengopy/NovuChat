@@ -1409,6 +1409,120 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
     expect(escrituras()).toEqual([]);
   });
 
+  describe('rol envío con httpHeaderAuth o whatsAppApi', () => {
+    const conEnvioComo = (tipo: string) => {
+      instanciaReal();
+      writeFileSync(join(dir, 'creds.json'), JSON.stringify(creds().map((c) => (c.id === 'qg' ? { ...c, type: tipo } : c))));
+      writeFlujosVivos([flujoVivo('wv', 'Venta del cliente', [
+        nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta), nodoVivo('Enviar', tipo, 'qg', NOM.envio),
+      ], PHONE)]);
+    };
+    const graph = () => propio().nodes.find((x) => x.name === 'Enviar por Graph')!;
+
+    it('envío httpHeaderAuth: se acepta y el nodo pasa a autenticación genérica, con el mismo cuerpo y URL', () => {
+      conEnvioComo('httpHeaderAuth');
+      const r = correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]);
+      expect(r.codigo).toBe(0);
+      const g = graph();
+      expect(g.credentials).toEqual({ httpHeaderAuth: { id: 'qg', name: NOM.envio } });
+      expect(g.parameters?.authentication).toBe('genericCredentialType');
+      expect(g.parameters?.genericAuthType).toBe('httpHeaderAuth');
+      expect(g.parameters).not.toHaveProperty('nodeCredentialType');
+      const plantilla = JSON.parse(readFileSync(join(RAIZ, 'Flujos', 'salida-de-persona.json'), 'utf8')).nodes.find((x: Nodo) => x.name === 'Enviar por Graph');
+      expect(g.parameters?.url).toBe(plantilla.parameters.url);
+      expect(g.parameters?.jsonBody).toBe(plantilla.parameters.jsonBody);
+      expect(g.parameters?.options).toEqual(plantilla.parameters.options);
+    });
+
+    it('envío whatsAppApi: se acepta y el nodo queda como la plantilla (sin cambio de comportamiento)', () => {
+      conEnvioComo('whatsAppApi');
+      expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0);
+      const g = graph();
+      expect(g.credentials).toEqual({ whatsAppApi: { id: 'qg', name: NOM.envio } });
+      expect(g.parameters?.authentication).toBe('predefinedCredentialType');
+      expect(g.parameters?.nodeCredentialType).toBe('whatsAppApi');
+    });
+
+    it('envío de otro tipo (oAuth2Api): rechazado sin escribir', () => {
+      conEnvioComo('oAuth2Api');
+      const r = correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+    });
+
+    it.each(['httpHeaderAuth', 'whatsAppApi'])('ingesta = envío (mismo nombre) con envío %s: rechazado sin escribir', (tipo) => {
+      conEnvioComo(tipo);
+      const r = correr([...R, envFile, '--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.ingesta, '--cred-rele', NOM.rele, ...INERTE, ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+    });
+
+    it('relé = envío (mismo nombre): rechazado sin escribir', () => {
+      conEnvioComo('httpHeaderAuth');
+      expect(correr([...R, envFile, '--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.rele, '--cred-rele', NOM.rele, ...INERTE, ...APLICAR]).codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+    });
+
+    it('envío con el nombre de otra credencial (que sí existe): rechazado, porque no está atada al número del alias', () => {
+      conEnvioComo('httpHeaderAuth');
+      writeFileSync(join(dir, 'creds.json'), JSON.stringify([...creds(), { id: 'zz', name: 'Graph WhatsApp de otro (Bearer)', type: 'httpHeaderAuth' }]));
+      const r = correr([...R, envFile, '--cred-ingesta', NOM.ingesta, '--cred-envio', 'Graph WhatsApp de otro (Bearer)', '--cred-rele', NOM.rele, ...INERTE, ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+    });
+
+    describe('cruce relé/envío y URL de los nodos', () => {
+      const vivoConNodos = (extra: Nodo[]) => writeFlujosVivos([flujoVivo('wv', 'Venta del cliente', [
+        nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta), nodoVivo('Enviar', 'httpHeaderAuth', 'qg', NOM.envio), ...extra,
+      ], PHONE)]);
+      const rechaza = (args: string[] = [...AR(), ...MAPA]) => {
+        const r = correr([...args, ...INERTE, ...APLICAR]);
+        expect(r.codigo).toBe(2);
+        expect(escrituras()).toEqual([]);
+        return r;
+      };
+      it.each(['Graph WhatsApp Comercio (Bearer)', 'Réle con BEARER', 'GRÁPH'.replace('Á', 'A')])('relé con nombre «%s»: rechazado', (nombre) => {
+        conEnvioComo('httpHeaderAuth');
+        writeFileSync(join(dir, 'creds.json'), JSON.stringify([...creds(), { id: 'rx', name: nombre, type: 'httpHeaderAuth' }]));
+        rechaza([...R, envFile, '--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.envio, '--cred-rele', nombre]);
+      });
+      it('relé citado por un nodo «Enviar por Graph» de otro flujo: rechazado', () => {
+        conEnvioComo('httpHeaderAuth');
+        vivoConNodos([nodoVivo('Enviar por Graph', 'httpHeaderAuth', 'qr', NOM.rele)]);
+        rechaza();
+      });
+      it('envío citado por un nodo «Enviar por el relé» de otro flujo: rechazado', () => {
+        conEnvioComo('httpHeaderAuth');
+        vivoConNodos([nodoVivo('Enviar por el relé', 'httpHeaderAuth', 'qg', NOM.envio)]);
+        rechaza();
+      });
+      const conUrl = (nodo: string, url: string) => {
+        const f = JSON.parse(readFileSync(join(RAIZ, 'Flujos', 'salida-de-persona.json'), 'utf8'));
+        f.nodes.find((x: Nodo) => x.name === nodo).parameters.url = url;
+        const ruta = join(dir, 'url.json');
+        writeFileSync(ruta, JSON.stringify(f));
+        return ruta;
+      };
+      it.each(['Enviar por Graph', 'Enviar por el relé'])('URL editada a otro host en «%s»: rechazado', (nodo) => {
+        conEnvioComo('httpHeaderAuth');
+        rechaza([...AR(), ...MAPA, '--flujo', conUrl(nodo, '=https://otro-host.example/v1/messages')]);
+      });
+      it('con las URL de la plantilla se carga (caso positivo, httpHeaderAuth y whatsAppApi)', () => {
+        for (const tipo of ['httpHeaderAuth', 'whatsAppApi']) {
+          conEnvioComo(tipo); entregaReal(); SIN_RELE();
+          expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0);
+        }
+      });
+    });
+
+    it('el mismo nombre de envío en los dos tipos: aborta sin escribir (no se elige)', () => {
+      conEnvioComo('httpHeaderAuth');
+      writeFileSync(join(dir, 'creds.json'), JSON.stringify([...creds(), { id: 'qg2', name: NOM.envio, type: 'whatsAppApi' }]));
+      expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+    });
+  });
+
   const ajenoNum = '555000111';
   describe('atadura de las credenciales al número del alias', () => {
     const ajeno = ajenoNum;
