@@ -87,11 +87,20 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { MAX_PALABRAS_CONSULTA, palabrasDe, trozosDeTelefono } from '../../functions/src/core/conversacion/normalizacion.ts';
 import {
-  ID_TENANT, comprobarProyecto, comprobarRespaldo, esTenantExcluido, guardarRespaldo, leerRespaldoGenerico, mensajeDeInterrupcion,
-  nombreExcluido, rutaDelRespaldoSigueIgual,
+  ID_TENANT, TENANTS_EXCLUIDOS, comprobarProyecto, comprobarRespaldo, excluidos, guardarRespaldo, leerRespaldoGenerico, mensajeDeInterrupcion, sinTildes,
+  rutaDelRespaldoSigueIgual,
 } from './aplicar-consola-conversaciones.mjs';
 
-export { comprobarProyecto, comprobarRespaldo, esTenantExcluido, guardarRespaldo, mensajeDeInterrupcion };
+export { comprobarProyecto, comprobarRespaldo, guardarRespaldo, mensajeDeInterrupcion };
+
+/** La lista de exclusión (la de `aplicar-consola-conversaciones.mjs` más la variable de entorno) SIN los ids que esta corrida levanta. */
+const listaVigente = (env, levantados) => excluidos(env, TENANTS_EXCLUIDOS.filter((x) => !levantados.includes(x)));
+/** Misma regla de coincidencia que el script de la bandera: el id ES uno de la lista o LO CONTIENE. */
+export const esTenantExcluido = (tenant, env = process.env, levantados = []) => typeof tenant === 'string'
+  && listaVigente(env, levantados).some((x) => sinTildes(tenant) === x || sinTildes(tenant).includes(x));
+/** El NOMBRE de la ficha solo CONTIENE. */
+export const nombreExcluido = (nombre, env = process.env, levantados = []) => typeof nombre === 'string'
+  && listaVigente(env, levantados).some((x) => sinTildes(nombre).includes(x));
 
 /** Los ÚNICOS campos que este script puede escribir. */
 export const CAMPOS_DERIVADOS = Object.freeze(['telefonoTrozos', 'nombrePalabras']);

@@ -100,7 +100,7 @@ export const USO = '  node scripts/plataforma/aplicar-consola-conversaciones.mjs
 // ===========================================================================
 // BELLIDO Y LA LISTA DE EXCLUSIÓN (puras)
 // ===========================================================================
-const sinTildes = (s) => String(s).normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase();
+export const sinTildes = (s) => String(s).normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase();
 
 /** Los ids excluidos: la lista fija más la variable de entorno (solo AGREGA, nunca quita). */
 export function excluidos(env = process.env, base = TENANTS_EXCLUIDOS) {
@@ -114,17 +114,17 @@ export function excluidos(env = process.env, base = TENANTS_EXCLUIDOS) {
  * ¿Es un comercio de la lista de exclusión? Coincide si el id ES uno de la lista o LO CONTIENE
  * (`bellido`, `consultorio-bellido`, `bellido2`): ante la duda se niega, nunca se deja pasar.
  */
-export function esTenantExcluido(tenant, env = process.env, permitidos = []) {
+export function esTenantExcluido(tenant, env = process.env) {
   if (typeof tenant !== 'string') return false;
   const t = sinTildes(tenant);
-  return excluidos(env, TENANTS_EXCLUIDOS.filter((x) => !permitidos.includes(x))).some((x) => t === x || t.includes(x));
+  return excluidos(env).some((x) => t === x || t.includes(x));
 }
 
 /** ¿El NOMBRE de la ficha nombra a un comercio excluido? Segunda barrera, por si el id no fuera el esperado. */
-export function nombreExcluido(nombre, env = process.env, permitidos = []) {
+export function nombreExcluido(nombre, env = process.env) {
   if (typeof nombre !== 'string') return false;
   const n = sinTildes(nombre);
-  return excluidos(env, TENANTS_EXCLUIDOS.filter((x) => !permitidos.includes(x))).some((x) => n.includes(x));
+  return excluidos(env).some((x) => n.includes(x));
 }
 
 /** Igual que `esTenantExcluido`, pero con la lista de la bandera de pantalla (sin Bellido). */

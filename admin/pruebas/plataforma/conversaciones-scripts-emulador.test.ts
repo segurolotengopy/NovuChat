@@ -11,7 +11,7 @@
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, fstatSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
@@ -336,8 +336,14 @@ describe('B. el relleno de conversaciones, como proceso contra el emulador', () 
     const ap = hijo(RELLENO, args(t, [...permitir, '--aplicar', '--respaldo', ruta]));
     expect(ap.status, ap.stdout + ap.stderr).toBe(0);
     expect(ap.stdout).toContain('Escritas: 30 · saltadas por precondición (cambiaron durante la corrida): 0 · relectura que no coincide: 0');
-    expect((statSync(ruta).mode & 0o777).toString(8)).toBe('600');
-    const rsp = JSON.parse(readFileSync(ruta, 'utf8')) as { items: { conversacionId: string; camposAgregados: string[] }[] };
+    // Se abre UNA vez: modo y contenido salen del mismo descriptor (sin carrera entre comprobar y leer).
+    const fd = openSync(ruta, 'r');
+    let contenido: string;
+    try {
+      expect((fstatSync(fd).mode & 0o777).toString(8)).toBe('600');
+      contenido = readFileSync(fd, 'utf8');
+    } finally { closeSync(fd); }
+    const rsp = JSON.parse(contenido) as { items: { conversacionId: string; camposAgregados: string[] }[] };
     expect(rsp.items).toHaveLength(30);
 
     // Campo por campo: solo se agregaron telefonoTrozos / nombrePalabras; lo demás idéntico.
