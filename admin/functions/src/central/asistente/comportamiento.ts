@@ -1207,9 +1207,8 @@ const DETERMINANTE_GENERICO = new Set(['el', 'los', 'la', 'las', 'todo', 'todos'
 
 /**
  * ¿El estado de pago es la descripción genérica de un proceso? Exige: origen + verbo de proceso (arriba);
- * sujeto genérico (artículo o plural: «El pago confirmado…», «Pagos aprobados…»; el singular sin artículo
- * solo en las dos formas de manual «Transferencia recibida en horario hábil se procesa…» y
- * «Depósito confirmado por el banco: lo verifica recepción»); sin inmediatez en la cláusula; y ningún
+ * sujeto genérico (artículo o plural: «El pago confirmado…», «Pagos aprobados…»; las formas «en horario…
+ * se procesa», «origen: lo verifica…» y «lo/los verifica» exigen artículo siempre); sin inmediatez en la cláusula; y ningún
  * verbo de decir con pronombre ni etiqueta de destinatario en el texto.
  */
 function eximeProceso(vista: string, m: RegExpMatchArray): boolean {
@@ -1222,11 +1221,13 @@ function eximeProceso(vista: string, m: RegExpMatchArray): boolean {
   if (INMEDIATEZ.test(clausula) || DIRIGIDO_AL_CLIENTE.test(vista)) return false;
   const previa = /([\p{L}]+)\s*$/u.exec(vista.slice(Math.max(0, pos - 20), pos))?.[1] ?? '';
   const plural = /^(?:pagos|transferencias|depositos|abonos|comprobantes|payments|pagamentos)/u.test(m[0]);
-  if (plural || DETERMINANTE_GENERICO.has(previa)) return true;
+  const conDeterminante = DETERMINANTE_GENERICO.has(previa);
   const origen = e[1] ?? '';
   const verbo = e[3] ?? '';
-  return (/^en\s+horario/u.test(origen) && /^se\s+(?:procesa|refleja)/u.test(verbo))
-    || (e[2] === ':' && /^(?:lo|los)\s/u.test(verbo));
+  // Las dos formas más fáciles de abusar («origen: lo verifica…» y «en horario… se procesa») exigen
+  // siempre el determinante: el plural pelado no basta, y el singular sin artículo tampoco.
+  if (/^en\s+horario/u.test(origen) || e[2] === ':' || /^(?:lo|los)\s/u.test(verbo)) return conDeterminante;
+  return plural || conDeterminante;
 }
 
 

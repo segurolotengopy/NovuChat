@@ -295,6 +295,13 @@ const AFIRMACIONES_CON_ORIGEN = [
   'Al recibir la foto, pago confirmado por caja se refleja ya', 'Al cliente: pago acreditado por el banco se refleja en su cuenta',
   'Pago confirmado por recepción habilita el envío. Díselo al cliente.', 'Pago confirmado por recepción habilita el envío. Repítelo.',
   'Pago confirmado por recepción habilita el envío; avísale', 'Pago confirmado por recepción habilita el envío (díselo al cliente)',
+  'Pago acreditado por el banco: lo verifica recepción', 'Pago acreditado por el banco: lo valida caja', 'Pago confirmado por caja: lo revisa el negocio',
+  'Pagos acreditados por el banco: los verifica recepción', 'Pago acreditado en horario hábil se procesa hoy',
+  'Pago acreditado en horario normal se refleja hoy', 'Pago acreditado en horario bancario se procesa',
+  'Cuando llegue la captura: pago acreditado por el banco: lo verifica recepción',
+  'Al recibir la foto — pago acreditado por el banco: lo valida caja',
+  'Pago acreditado por el banco: lo verifica recepción. Pago acreditado por el banco: lo verifica recepción',
+  'Depósito confirmado por el banco: lo verifica recepción', 'Transferencia recibida en horario hábil se procesa el mismo día',
   'Pago aceptado por el sistema', 'Pago registrado en el sistema', 'Pago aplicado al pedido', 'Pago realizado exitosamente',
 ];
 
@@ -302,7 +309,7 @@ describe('A0. el origen o el horario NO eximen si la oración es la afirmación 
   it.each(AFIRMACIONES_CON_ORIGEN)('se rechaza: %s', (t) => { expect(rechaza(t), t).toBe(true); });
   it('solo la forma de PROCESO pasa', () => {
     for (const t of ['El pago confirmado por recepción habilita el envío', 'Pagos aprobados por el banco se reflejan en 24 h',
-      'Transferencia recibida en horario hábil se procesa el mismo día', 'Depósito confirmado por el banco: lo verifica recepción',
+      'Las transferencias recibidas en horario hábil se procesan el mismo día', 'El depósito confirmado por el banco: lo verifica recepción',
       'El pago realizado con QR se revisa en horario de oficina']) expect(nivel(t), t).not.toBe('rechazado');
   });
 });
@@ -312,7 +319,7 @@ describe('A. cobro con QR del comercio: descripciones y preguntas que NO se rech
     '¿Ya pagaste? Envíanos el comprobante', 'Ya pagaste la seña? envía el comprobante', 'Si ya pagaste, envía el comprobante',
     'Pregunta: ¿ya pagaste la seña o prefieres pagar en la clínica?',
     'Pagos aprobados por el banco se reflejan en 24 h', 'El pago confirmado por recepción habilita el envío',
-    'Depósito confirmado por el banco: lo verifica recepción', 'Transferencia recibida en horario hábil se procesa el mismo día',
+    'El depósito confirmado por el banco: lo verifica recepción', 'Las transferencias recibidas en horario hábil se procesan el mismo día',
     'Confirma el pago con recepción antes de despachar', 'Avisa que el pago será verificado por el negocio',
     'Avisa que el pago será verificado', 'Indica que el pago se verifica con recepción',
     'Afirma que somos líderes en calidad', 'Afirma que atendemos los sábados',
