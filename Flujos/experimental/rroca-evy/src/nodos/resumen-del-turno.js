@@ -22,6 +22,8 @@ try {
       f.historial = (Array.isArray(f.historial) ? f.historial : []).concat([{ r: 'a', t: evEntradaAsistente(dicho) }]).slice(-EV_TOPE_HISTORIAL);
       // El cierre completo cuenta como hecho SOLO si Meta lo aceptó (el principal o su respaldo): si el envío falla, la próxima vez vuelve a salir completo.
       if ((items[0] || {}).plan === 'derivar') f.cierreMs = Number((cnPrimero('Normalizar entrada') || {}).ahoraMs) || Date.now();
+      // La comparación fija cuenta como mostrada SOLO si Meta la aceptó: habilita la ubicación en el cierre que sigue.
+      if ((items[0] || {}).plan === 'comparacion') f.comparacionMs = Number((cnPrimero('Normalizar entrada') || {}).ahoraMs) || Date.now();
     }
   }
 } catch (e) { /* la memoria no es crítica: nunca tumba el turno */ }

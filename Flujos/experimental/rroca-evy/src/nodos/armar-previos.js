@@ -75,6 +75,11 @@ if (plan.tipo === 'modelo') {
     else if (rev.motivo !== '') { efectivo = 'fallo'; artesPlan = []; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
   }
 }
+// La COMPARACIÓN fija (la pidió el cliente y `usarMarcas` está encendida): la imagen comparativa sale como siempre (una vez, id resuelto, antes del texto, con el tope de imágenes); el texto lo pone `Armar mensajes`.
+if (efectivo === 'comparacion') {
+  const idComp = cfg.artesMedia && typeof cfg.artesMedia === 'object' ? cfg.artesMedia.comparativo : '';
+  if (cfg.usarMarcas === true && evMediaIdValido(idComp) && ficha.artes.indexOf('comparativo') < 0 && ficha.artes.length < EV_TOPE_ARTES) artesPlan.push('comparativo');
+}
 // La pregunta por la gratuidad («¿es gratis?», «¿hay costo escondido o pago de reserva?») que el modelo no logró contestar (o que una barrera rechazó) la contesta un TEXTO FIJO, sin botón ni aviso.
 if (efectivo === 'fallo' && plan.tipo === 'modelo' && evPreguntaGratis(plan.textoCliente)) { efectivo = 'gratis'; artesPlan = []; }
 if (efectivo === 'derivar' || efectivo === 'derivar_corto') { avisoDe = { clave: 'solicitud', solicitud: true }; artesPlan = []; }

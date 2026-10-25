@@ -17,7 +17,7 @@ const RESPUESTAS_DEL_GUION: Array<[string, string]> = [
   ['ya probé otros', 'Es comprensible. Por eso la Dra. Evy (aplicadora certificada) no usa recetas genéricas, sino que analiza la anatomía de tu rostro en la valoración gratuita para indicarte solo lo que realmente te dará resultados.'],
   ['lo voy a pensar', '¡Claro, tómate tu tiempo! Solo recuerda que la valoración no tiene ningún costo hoy (te ahorras los 250 Bs) ni te compromete a nada, así que no arriesgas nada viniendo a conocer tu diagnóstico.'],
   ['¿dónde están?', 'Atendemos en la Clínica DentalCor, ubicada en la Avenida Piraí, segundo anillo, Calle Sapocó # 53 (Santa Cruz).'],
-  ['¿Radiesse o HArmonyCa?', 'Ambos activan tu colágeno natural. Radiesse® da firmeza y contorno preventivo, y HArmonyCa™ da efecto lifting en flacidez más marcada. La valoración de 250 Bs es 100% gratis hoy para que la Dra. defina cuál te corresponde. ¿Cómo te llamas y qué deseas mejorar?'],
+  // «¿Radiesse o HArmonyCa?» ya no lo contesta el modelo: es la comparación fija por código (comparacion.test.ts).
 ];
 
 describe('lo que el guion manda decir PASA las barreras', () => {

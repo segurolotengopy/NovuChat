@@ -26,6 +26,9 @@ const valor = (v) => (typeof v === 'string' && !/^REEMPLAZAR_/.test(v.trim())) ?
 const linea = (v, max) => String(v === undefined || v === null ? '' : v)
   .replace(/<<<|>>>/g, '').replace(/[\[\]{}]/g, '')
   .replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, max);
+// El enlace de Google Maps de la Consola (`datosDelNegocio.direccionMaps`): LA MISMA regla que el servidor (https, dominio de mapas, hasta 200 caracteres, sin espacios). Es el ÚNICO enlace que pasa; los demás se descartan.
+const ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+const enlaceDeMapa = (v) => (typeof v === 'string' && v.trim().length <= 200 && ENLACE_DE_MAPA.test(v.trim()) ? v.trim() : '');
 // Un texto de la Consola que sea (o lleve) un enlace no es una dirección ni un horario.
 const sinEnlace = (v) => (/https?:|www\.|wa\.me|maps|goo\.gl/i.test(String(v)) ? '' : v);
 
@@ -79,6 +82,7 @@ if (codigo === 409) {
     prefijosPermitidos: Array.isArray(op.prefijosPermitidos) && op.prefijosPermitidos.length ? op.prefijosPermitidos.join(',') : undefined,
     direccion: linea(sinEnlace(util(dn.direccion) || ''), 160) || undefined,
     horario: linea(sinEnlace(util(op.horarioAtencion) || ''), 200) || undefined,
+    direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,
   });
   const estadoDeLaConsola = util(cuerpo.estadoComercio);
   cfg = {

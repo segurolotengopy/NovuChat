@@ -255,6 +255,7 @@ function evFichaVigente(f, ahoraMs) {
     noContactarMs: ven(f && f.noContactarMs) ? f.noContactarMs : 0, noContactar: ven(f && f.noContactarMs),
     riesgoMs: ven(f && f.riesgoMs) ? f.riesgoMs : 0, riesgo: ven(f && f.riesgoMs),
     cierreMs: ven(f && f.cierreMs) ? f.cierreMs : 0,
+    comparacionMs: ven(f && f.comparacionMs) ? f.comparacionMs : 0, comparacionMostrada: ven(f && f.comparacionMs),
     historial: vencida ? [] : evHistorialSaneado(f && f.historial), artes: artes, avisos: avisos,
     imagenes: evConteoDeFicha(f && f.imagenes), audios: evConteoDeFicha(f && f.audios),
   };
@@ -981,7 +982,7 @@ const EV_PIDE_AGENDAR = /\b(agend\w*|reserv\w*|cita|citas|turno|apart(?:ar|arme|
 function evPideAgendar(textoCliente) { return EV_PIDE_AGENDAR.test(evNorm(textoCliente)); }
 const EV_BOTON_RECEPCION = 'Escribir a recepción';
 // El cierre de la derivación: el texto fijo del guion (con las dos frases sin mecanismo cambiadas), con el nombre y la dirección de la Consola. Sin nombre, sin «, Nombre».
-function evTextoCierre(cfg, nombre) {
+function evTextoCierre(cfg, nombre, conMaps) {
   const c = cfg && typeof cfg === 'object' ? cfg : {};
   const n = evTexto(nombre).trim();
   const negocio = evLinea(c.nombreNegocio, 60) || 'la Dra. Evy';
@@ -990,7 +991,45 @@ function evTextoCierre(cfg, nombre) {
   const donde = clinica && dir ? 'La consulta es en la ' + clinica + ' (' + dir + ').' : (clinica ? 'La consulta es en la ' + clinica + '.' : (dir ? 'La consulta es en ' + dir + '.' : ''));
   return ['¡Excelente decisión' + (n ? ', ' + n : '') + '! Recuerda que tu valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' está 100% bonificada (sin costo ni pago de reserva).',
     donde,
+    conMaps === true && evEnlaceDeMapa(c.direccionMaps) !== '' ? '📍 Ubicación: ' + evEnlaceDeMapa(c.direccionMaps) : '',
     'Para elegir el día y horario que mejor te queden, la recepción te ayudará: usa el botón para hablar directo con ella.'].filter((x) => x !== '').join('\n\n');
+}
+// EL ENLACE DE GOOGLE MAPS del negocio (`direccionMaps`, de la Consola): LA MISMA regla que `enlaceDeMapaValido` del servidor (https, uno de los dominios de mapas, hasta 200 caracteres, sin espacios). Se comprueba en
+// `Config del negocio` y otra vez aquí. Inválido, ausente o de otro dominio = '' (el cierre queda como siempre). Es el ÚNICO enlace que este flujo deja pasar; el enlace nunca va en código, prompt ni datos versionados.
+const EV_ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+function evEnlaceDeMapa(v) {
+  if (typeof v !== 'string') return '';
+  const t = v.trim();
+  return t.length <= 200 && EV_ENLACE_DE_MAPA.test(t) ? t : '';
+}
+// LA COMPARACIÓN FIJA «Radiesse® o HArmonyCa®» (texto de Andres, 25/10/2026, por CÓDIGO: no pasa por el modelo ni por el recorte de 700). Solo con `usarMarcas`. Dispara cuando el cliente pregunta cuál de los dos es mejor,
+// cuál le conviene o la diferencia, y el mensaje (o lo último que dijo el asistente) nombra alguno de los dos productos; si además pregunta por el precio, contesta el modelo con sus barreras.
+const EV_PRODUCTO_DE_LA_COMPARACION = /\b(radiesse|harmony ?ca)\b/;
+const EV_PREGUNTA_DE_PRECIO_COMPARACION = /\b(cuanto|cuesta\w*|precio\w*|costo\w*|vale|valen|valor|cobran|cobras|tarifa\w*|presupuesto)\b/;
+function evPideComparacion(textoCliente, historial) {
+  const n = evNorm(textoCliente);
+  if (!EV_PIDE_COMPARATIVO.test(n) || EV_PREGUNTA_DE_PRECIO_COMPARACION.test(n)) return false;
+  if (EV_PRODUCTO_DE_LA_COMPARACION.test(n)) return true;
+  const h = Array.isArray(historial) ? historial : [];
+  const a = evUltimoDe(h, 'a');
+  return a >= 0 && EV_PRODUCTO_DE_LA_COMPARACION.test(evNorm(h[a].t));
+}
+// El nombre que el paciente DIO en esta conversación (jamás el del perfil de WhatsApp): el de su mensaje actual o el de alguno de sus mensajes anteriores en la ficha.
+function evNombreDeLaFicha(historial, textoCliente) {
+  const h = Array.isArray(historial) ? historial : [];
+  const actual = evNombreDelMensaje(textoCliente, h);
+  if (actual) return actual;
+  for (let i = h.length - 1; i >= 0; i--) {
+    if (h[i] && h[i].r === 'u') { const n = evNombreDelMensaje(h[i].t, h.slice(0, i)); if (n) return n; }
+  }
+  return '';
+}
+function evTextoComparacion(nombre) {
+  const n = evPrimerNombre(nombre);
+  return ['Buena pregunta' + (n ? ', ' + n : '') + '. Los dos son bioestimuladores que activan tu propio colágeno, con un resultado natural y sin cirugía. Ninguno es “mejor”: cada uno se indica según lo que necesita tu rostro.',
+    '✨ Radiesse®: hidroxiapatita de calcio. Define el contorno de pómulos, mentón y mandíbula, y estimula colágeno y elastina, por eso tu piel va ganando firmeza de forma progresiva. Suele indicarse para firmeza y prevención.',
+    '✨ HArmonyCa®: combina ácido hialurónico e hidroxiapatita de calcio. El ácido hialurónico da un efecto lifting desde la aplicación y la hidroxiapatita sigue estimulando tu colágeno con el tiempo. Suele indicarse para flacidez más marcada.',
+    'La Dra. Evy analiza tu rostro en la valoración gratuita y te dice cuál es el ideal para ti. ¿Te ayudo a agendarla?'].join('\n\n');
 }
 // Una palabra de nombre propio: solo letras, 2 a 20, sin mezcla de alfabetos. Para el nombre del perfil de WhatsApp (el nombre que da el cliente llega por la etiqueta).
 function evPrimerNombre(n) {

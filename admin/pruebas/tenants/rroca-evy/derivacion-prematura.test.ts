@@ -33,7 +33,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     expect(imagenes(t)).toEqual([IDS.antes_despues]);
     expect(textos(t).join(' ')).toContain('Mira el caso real');
   });
-  for (const q of ['¿Cuánto cuesta?', '¿Qué diferencia hay entre Radiesse y HArmonyCa?', 'Hola', 'Cuéntame más']) {
+  for (const q of ['¿Cuánto cuesta?', '¿Qué diferencia hay entre el botox y el relleno?', 'Hola', 'Cuéntame más']) {
     it(`NEGADA: «${q}» con la etiqueta del modelo no deriva`, () => {
       const t = hablar(crear({ modeloDice: dice('Con gusto te cuento sobre la valoración. [DERIVAR_RECEPCION]') }), ANA, mTexto(q));
       expect(esBoton(t), q).toBe(false);
