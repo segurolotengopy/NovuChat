@@ -53,3 +53,4 @@ Resultado: 1196/1225 (97,6 %), duras 663/665. Las 2 duras: **B2** (la barrera co
 - **M-5:** más de un nodo «Config base» se NIEGA en el armador y en el publicador.
 - **Saludo neutro (decisión de Andres, 24/10/2026, opción B):** ni el saludo ni la respuesta de gratuidad dicen «campaña»; dicen «Hoy tu valoración con la Dra. Emma es 100% gratuita…». La campaña solo se mencionará cuando el flujo reconozca el texto de entrada de la campaña (todavía no está cableado).
 - **Cifra de la dirección:** solo se perdona tras «#», «Nº», «nro», «Av.» o un nombre de la dirección de la Consola, sin palabra de precio, oferta ni cobro, y se compara sin separador de miles («2.055»).
+- **Ficha vencida (48 h):** quien responde «sí, quiero agendar» después de que su ficha venció recibe primero el saludo (vuelve a ser primer contacto) y el cierre sale en el mensaje siguiente.
