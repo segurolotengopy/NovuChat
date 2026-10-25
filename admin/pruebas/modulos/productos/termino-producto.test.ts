@@ -168,6 +168,23 @@ describe('Tope y multi-tenant', () => {
     expect(await T.sincronizarTermino(db, A, 'p10', item('Pack 999 prompts'), sinOtros)).toBe('pendiente');
   });
 
+  it('con el tope lleno, un aprobado que se reescribe sin cambio real de nombre conserva su aprobación', async () => {
+    await T.sincronizarTermino(db, A, 'ap', item('Pack 1 prompts'), sinOtros);
+    await ref(A, 'ap').update({ estado: 'aprobado', revisadoPor: 'plataforma' });
+    for (let i = 2; i <= 11; i++) await T.sincronizarTermino(db, A, `p${i}`, item(`Pack ${i}00 prompts`), sinOtros);
+    expect(await T.sincronizarTermino(db, A, 'ap', item('PACK 1 PROMPTS'), sinOtros)).toBe('sin_cambio');
+    const d = (await ref(A, 'ap').get()).data()!;
+    expect(d['estado']).toBe('aprobado');
+    expect(d['termino']).toBe('pack 1 prompts');
+    expect(d['revisadoPor']).toBe('plataforma');
+  });
+
+  it('control: con el tope lleno, un alta nueva sigue yendo a rechazado/límite', async () => {
+    for (let i = 1; i <= 10; i++) await T.sincronizarTermino(db, A, `p${i}`, item(`Pack ${i}00 prompts`), sinOtros);
+    expect(await T.sincronizarTermino(db, A, 'nuevo', item('Pack 777 prompts'), sinOtros)).toBe('rechazado');
+    expect((await ref(A, 'nuevo').get()).get('motivo')).toBe(T.MOTIVO_LIMITE);
+  });
+
   it('el tope es por comercio: B no lo siente', async () => {
     for (let i = 1; i <= 10; i++) await T.sincronizarTermino(db, A, `p${i}`, item(`Pack ${i}00 prompts`), sinOtros);
     expect(await T.sincronizarTermino(db, B, 'p1', item('Pack 100 prompts'), sinOtros)).toBe('pendiente');
