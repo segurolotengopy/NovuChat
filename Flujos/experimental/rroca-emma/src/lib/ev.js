@@ -821,7 +821,8 @@ function evNumeroDePrecio(texto, textoCliente) {
   for (const o of evPartirEnOraciones(evTexto(texto))) {
     if (o === '' || o === '\n') continue;
     const n = evNorm(o);
-    const sinDireccion = o.replace(/\d{1,2}\s?:\s?\d{2}/g, ' ').replace(EV_NUMERO_DE_DIRECCION, ' ');
+    // («Nº» llega aquí ya normalizado como «No» por `evLeerEtiquetas`: solo con mayúscula inicial y pegado a la cifra se toma por «número».)
+    const sinDireccion = o.replace(/\d{1,2}\s?:\s?\d{2}/g, ' ').replace(EV_NUMERO_DE_DIRECCION, ' ').replace(/\bNo\.?\s*\d[\d.,]*/g, ' ');
     const numero = EV_CIFRA_GRANDE.test(sinDireccion) || EV_CIFRA_EN_PALABRAS.test(n);
     if (numero && (EV_PALABRA_DE_PRECIO.test(n) || preguntoPrecio)) return o.slice(0, 60);
     if (EV_CIFRA_APROXIMADA.test(evNorm(sinDireccion)) && EV_HABLA_DE_TRATAMIENTO.test(n) && !EV_HABLA_DE_HORARIO.test(n)) return o.slice(0, 60);

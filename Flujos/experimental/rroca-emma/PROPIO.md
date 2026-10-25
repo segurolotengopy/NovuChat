@@ -45,3 +45,9 @@ Este flujo se construyó el 24/10/2026 **adaptando el flujo nuevo de la Dra. Evy
 Resultado: 1196/1225 (97,6 %), duras 663/665. Las 2 duras: **B2** (la barrera común «identidad» tomaba «¿esto es real?» sobre la foto por «¿eres real?»: ver *Identidad* arriba) y **C4** (variación del modelo: ahora la aclaración la inserta el código). Las 24 blandas se clasificaron con el crudo guardado (`respuestas-reales.json`, replay gratuito en `emma.test.ts`):
 - *(b) Defecto real del prompt o del código, corregido:* A2 (cerraba de golpe con el nombre del perfil: primer contacto); A3, D1, D3, D3b, E6 (el modelo escribía «inmediato / de forma inmediata» y la barrera quitaba la oración entera con el contenido, o el recorte de 700 se llevaba un producto: frase quitada en vez de oración, productos nivel 2,5, y el prompt ahora prohíbe esas palabras y exige mensajes de menos de 600 caracteres); B3 (el Caso B no se presentaba como asistente virtual: ahora lo exige); C5 (ofrecía «otra paciente» que no existe: el prompt lo explica); E9 (el modelo daba cuidados y tiempos: el prompt ya no dice «puedes retomar tus actividades rápido»).
 - *(a) Chequeo demasiado estrecho para Emma, ajustado:* A3 (exigía los dos productos), D3b y E8 (frases de Evy), E9 (exigía «retomar» y «sin cirugía»).
+
+## Ajustes 2 (24/10/2026)
+- **I-1:** un número precedido de «#», «Nº» (llega como «No»), «nro», «Av./Avenida/calle» o «km» no es un precio; la dirección de la Consola también se protege sin el «(Santa Cruz)» final. Una cifra de precio real en la misma oración SIGUE rechazada.
+- **M-1:** el recorte mide la dirección con su texto real (no con la marca). **M-3:** al quitar «inmediatamente» del comienzo de una oración, la primera letra queda en mayúscula.
+- **M-2:** «unos / alrededor de / más o menos / serían + cifra» sobre valoración, tratamiento, sesión o zona se rechaza (no en oraciones de horario).
+- **M-5:** más de un nodo «Config base» se NIEGA en el armador y en el publicador.

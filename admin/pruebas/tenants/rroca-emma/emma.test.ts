@@ -82,9 +82,10 @@ describe('el horario y la dirección salen de la Consola, no del flujo', () => {
     const t1 = sale('Atendemos en Emma Spa Medic, ubicada en Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055 (Santa Cruz).', '¿dónde están?');
     expect(fallo(t1)).toBe(false);
     expect(t1).toContain('Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055 (Santa Cruz)');
+    // la dirección SIN el «(Santa Cruz)» final también se protege: sale tal cual
     const t2 = sale('Estamos en Emma Spa Medic: Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055.', '¿dónde están?');
     expect(fallo(t2)).toBe(false);
-    expect(t2).toContain('entre segundo y tercer anillo');
+    expect(t2).toContain('Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055');
     expect(t2).toContain('2055');
   });
   it('NEGADA: un rango de precio con «entre» y cifras sigue cayendo al fallo', () => {
@@ -239,7 +240,7 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
     const sinCiudad = sale('Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055. ¿Cómo te llamas?', '¿cuánto cuesta y dónde están?');
     expect(fallo(sinCiudad)).toBe(false);
     expect(sinCiudad).toMatch(/Av\. Pauserna # 2055/);
-    for (const par of ['Nos ubicamos en Nº 2055 de la Av. Pauserna.', 'Estamos en el nro 2055 de la avenida.']) expect(fallo(sale(par, '¿cuánto cuesta y dónde están?')), par).toBe(false);
+    for (const par of ['Nos ubicamos en Nº 2055 de la Av. Pauserna.', 'Estamos en el nro 2055 de la avenida.']) { const r2 = sale(par, '¿cuánto cuesta y dónde están?'); expect(fallo(r2), par + ' => ' + r2).toBe(false); }
     // NEGADA: la dirección no abre la puerta a una cifra de precio
     expect(fallo(sale('Estamos en la Av. Pauserna # 2055 y la valoración vale 700. ¿Cómo te llamas?', '¿cuánto cuesta y dónde están?'))).toBe(true);
     expect(fallo(sale('Estamos en la Av. Pauserna # 2055. El tratamiento cuesta 700. ¿Cómo te llamas?', '¿cuánto cuesta y dónde están?'))).toBe(true);
@@ -260,7 +261,7 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
   });
   it('M-2: «unos / alrededor de / más o menos / serían + cifra» sobre valoración, tratamiento o zona se rechaza; un horario no', () => {
     for (const m of ['La valoración serían unos 700 en total. ¿Cómo te llamas?', 'Cada sesión ronda alrededor de 900. ¿Cómo te llamas?', 'El tratamiento de la zona sale más o menos 1500. ¿Cómo te llamas?', 'La sesión serían 800 aproximadamente. ¿Cómo te llamas?', 'Por zona, unos 600. ¿Cómo te llamas?']) expect(fallo(sale(m)), m).toBe(true);
-    expect(fallo(sale('Atendemos alrededor de 8 horas al día, de lunes a viernes. ¿Cómo te llamas?'))).toBe(false);
+    expect(fallo(sale('La valoración dura unos 100 minutos y atendemos de lunes a viernes. ¿Cómo te llamas?'))).toBe(false);
   });
   it('A2: el texto prellenado del anuncio («…quiero agendar mi valoración gratuita») NO cierra de golpe con el nombre del perfil: el saludo pide nombre y deseo; «Soy Rosa. Quiero agendar» sí cierra', () => {
     const saludo = '¡Hola! 👋 Soy el asistente virtual de la Dra. Emma. Tu valoración es 100% gratuita y sin compromiso. ¿Cómo te llamas y qué te gustaría mejorar?';
