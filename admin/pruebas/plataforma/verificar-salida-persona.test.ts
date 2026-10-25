@@ -359,7 +359,7 @@ describe('4 · n8n', () => {
       expect(mod.leerEntornoN8n(f, { N8N_API_KEY: 'otra', N8N_BASE_URL: 'https://b.ejemplo.test' })).toEqual({ base: 'https://a.ejemplo.test', clave: 'clave-del-archivo' });
       expect(mod.leerEntornoN8n(null, { N8N_API_KEY: 'otra', N8N_BASE_URL: 'https://b.ejemplo.test' })).toEqual({ base: 'https://b.ejemplo.test', clave: 'otra' });
     });
-    it.each(['https://127.0.0.1', 'https://10.0.0.5:5678', 'https://2130706433', 'https://localhost', 'https://x.localhost', 'https://[::1]', 'http://n8n.ejemplo.test'])('host no apto: %s', (base) => {
+    it.each(['https://127.0.0.1', 'https://10.0.0.5:5678', 'https://0x7f000001', 'https://localhost', 'https://x.localhost', 'https://[::1]', 'http://n8n.ejemplo.test'])('host no apto: %s', (base) => {
       expect(mod.leerEntornoN8n(null, { N8N_BASE_URL: base, N8N_API_KEY: 'abc' })).toEqual({ base: '', clave: '' });
     });
     it('el host de N8N_BASE_URL distinto del de la ruta del secreto: no se llama a n8n (NO SE PUDO)', async () => {
