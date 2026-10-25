@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ANA, BETO, avisosARecepcion, crear, dice, hablar, mTexto, textos } from './mundo';
+import { ANA, BETO, avisosARecepcion, crear, dice, hablar, hablarYa, mTexto, textos } from './mundo';
 
 /** Cae a un texto fijo: el de fallo del modelo, el de remisión de salud o la admisión de IA. */
 const fallo = (t: string): boolean => /inconveniente para responderte/.test(t) || /un programa con inteligencia artificial/.test(t) || /Eso lo evalúa la Dra\. Evy en persona, durante tu valoración gratuita/.test(t);
@@ -239,12 +239,12 @@ describe('el cierre completo sale UNA vez por ficha', () => {
     const m = crear({ modeloDice: dice(DERIVA) });
     hablar(m, ANA, mTexto('quiero agendar, soy Paola'));
     m.avanzar(49 * 60);
-    expect(textos(hablar(m, ANA, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
+    expect(textos(hablarYa(m, ANA, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
   });
   it('dos teléfonos: el cierre de uno no afecta al otro', () => {
     const m = crear({ modeloDice: dice(DERIVA) });
-    hablar(m, ANA, mTexto('quiero agendar'));
-    expect(textos(hablar(m, BETO, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
+    hablarYa(m, ANA, mTexto('quiero agendar'));
+    expect(textos(hablarYa(m, BETO, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
     expect(textos(hablar(m, ANA, mTexto('quiero agendar'))).join(' ')).toContain('Claro, aquí tienes');
   });
   it('NEGADA: si el envío del cierre falla (principal y respaldo), no cuenta como hecho: el siguiente pedido recibe el cierre COMPLETO', () => {
@@ -268,7 +268,7 @@ describe('el cierre completo sale UNA vez por ficha', () => {
     expect(neg.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
   });
   it('POSITIVA: el primer cierre sigue saliendo completo con su botón y su aviso', () => {
-    const t = hablar(crear({ modeloDice: dice(DERIVA) }), ANA, mTexto('quiero agendar'));
+    const t = hablarYa(crear({ modeloDice: dice(DERIVA) }), ANA, mTexto('quiero agendar'));
     expect(textos(t)[0]).toMatch(CIERRE);
     expect(t.mensajes[0]!.tipo).toBe('interactive');
   });
@@ -376,7 +376,7 @@ describe('Evy NO agenda: ninguna oración del modelo afirma una cita, un cupo o 
     }
   });
   it('el cierre fijo y el texto fijo de gratuidad no son tocados', () => {
-    const t = hablar(crear({ modeloDice: dice('[DERIVAR_RECEPCION: Paola]') }), ANA, mTexto('quiero agendar'));
+    const t = hablarYa(crear({ modeloDice: dice('[DERIVAR_RECEPCION: Paola]') }), ANA, mTexto('quiero agendar'));
     expect(textos(t)[0]).toMatch(/Excelente decisión, Paola/);
   });
 });

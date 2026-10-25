@@ -40,9 +40,12 @@ if (plan.tipo === 'modelo') {
   // Pedido EXPLÍCITO de agendar («Ok, quiero agendar»): el cierre no depende de que el modelo se acuerde de la etiqueta.
   // En el PRIMER contacto «quiero agendar mi valoración» (el texto prellenado del anuncio) no cierra de golpe con el nombre del perfil: primero el saludo, que pide el nombre y qué desea mejorar.
   // El cierre automático solo aplica si ya hubo conversación o el cliente dio su nombre en ese mensaje («Soy Rosa. Quiero agendar»).
-  const quiere = evQuiereAgendar(plan.textoCliente) && (ficha.historial.length > 0 || evNombreDelMensaje(plan.textoCliente, ficha.historial) !== '');
+  const puedeCerrar = ficha.historial.length > 0 || evNombreDelMensaje(plan.textoCliente, ficha.historial) !== '';
+  const quiere = evQuiereAgendar(plan.textoCliente) && puedeCerrar;
   if (quiere && crudo.length <= 20000) et.derivar = true;
   // La etiqueta del modelo se honra solo si el cliente pidió agendar, aceptó una oferta, o el modelo ya capturó su nombre en la etiqueta («[DERIVAR_RECEPCION: Paola]») / el cliente dijo «soy …»; con la etiqueta SOLA y sin texto se conserva (variante corta).
+  // PRIMER CONTACTO (sin historial y sin nombre dado en el mensaje): la etiqueta del modelo se IGNORA, sola o con texto. Se conserva el texto (el saludo pide nombre y deseo); si venía sola, sale el fallo conocido, no el cierre.
+  if (et.derivar && !puedeCerrar) et.derivar = false;
   if (et.derivar && !quiere && et.texto.trim() !== '') {
     const esNombre = evEsNombre(plan.textoCliente);
     const pidio = evPideAgendar(plan.textoCliente) && !evNegaAgendar(plan.textoCliente) && String(plan.textoCliente || '').indexOf('?') < 0;   // la etiqueta ajena no se honra con «?» ni con una negación («no quiero cita todavía», «¿cuáles son sus horarios?»)

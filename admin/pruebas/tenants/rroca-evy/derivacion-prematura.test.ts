@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ANA, IDS, avisosARecepcion, crear, dice, hablar, imagenes, mTexto, textos } from './mundo';
+import { ANA, IDS, avisosARecepcion, crear, dice, hablar, hablarYa, imagenes, mTexto, textos } from './mundo';
 
 const ANTES = '[ENVIAR_ARTE_ANTES_DESPUES] Mira el caso real de una paciente de la Dra. Evy. [DERIVAR_RECEPCION]';
 const esBoton = (t: ReturnType<typeof hablar>): boolean => t.mensajes.some((e) => e.tipo === 'interactive');
@@ -49,8 +49,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     // En el PRIMER contacto sin etiqueta del modelo ni nombre el saludo pide el nombre antes de cerrar (ver flujo.test.ts); con la etiqueta, o ya en conversación, cierra.
     for (const modelo of ['[DERIVAR_RECEPCION: Ana]', 'Perfecto.']) {
       const m = crear({ modeloDice: dice(modelo) });
-      if (modelo === 'Perfecto.') hablar(m, ANA, mTexto('hola'));
-      const t = hablar(m, ANA, mTexto('Quiero agendar mi valoración'));
+      const t = hablarYa(m, ANA, mTexto('Quiero agendar mi valoración'));
       expect(esBoton(t), modelo).toBe(true);
       expect(textos(t)[0]).toMatch(/Excelente decisión/);
     }
@@ -115,7 +114,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     expect(imagenes(t)).toEqual([IDS.antes_despues]);
   });
   it('con historial real: el saludo corto del prompt → «Quiero ver cómo queda» + etiqueta no deriva y sale el ANTES_DESPUES', () => {
-    const SALUDO = '¡Hola! 👋 Soy el asistente virtual de la Dra. Evy Karina Rojas (Armonización Facial), aplicadora certificada: hacemos armonización facial sin cirugía con bioestimuladores de colágeno para recuperar firmeza y definir el contorno del rostro.\n\nHoy tu valoración con la Dra. Evy es 100% gratuita y sin compromiso (su costo habitual es de 250 Bs, hoy bonificado). ¿Cómo te llamas y qué te gustaría mejorar en tu rostro?';
+  const SALUDO = '¡Hola! 👋 Soy el asistente virtual de la Dra. Evy Karina Rojas (Armonización Facial), aplicadora certificada: hacemos armonización facial sin cirugía con bioestimuladores de colágeno para recuperar firmeza y definir el contorno del rostro.\n\nHoy tu valoración con la Dra. Evy es 100% gratuita y sin compromiso (su costo habitual es de 250 Bs, hoy bonificado). ¿Cómo te llamas y qué te gustaría mejorar en tu rostro?';
     const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<Quiero ver cómo queda>>>') ? ANTES : SALUDO) });
     hablar(m, ANA, mTexto('hola'));
     const t = hablar(m, ANA, mTexto('Quiero ver cómo queda'));
@@ -163,7 +162,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
   });
   it('(ronda final 2) una negación no gana si después viene un «quiero agendar» positivo: derivan con etiqueta', () => {
     for (const x of ['Hola, no sé mucho del tema, quiero agendar una cita', 'si no es molestia, quiero agendar mi valoración', 'no vivo en Santa Cruz pero quiero agendar']) {
-      const t = hablar(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto(x));
+      const t = hablarYa(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto(x));
       expect(esBoton(t), x).toBe(true);
     }
   });
@@ -208,7 +207,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
   });
   it('(ronda final 1) el nombre del cierre NO sale de frases que no son un nombre: sale el del perfil', () => {
     for (const x of ['tienen turno el sábado', 'quiero agendar, soy muy nerviosa', 'quiero agendar, soy tu paciente', 'Quiero agendar, soy hipertensa', 'quiero agendar, mejor el lunes', 'Quiero agendar para el lunes, Paola', 'quiero un horario']) {
-      const t = hablar(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto(x), { nombre: 'Ana' });
+      const t = hablarYa(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto(x), { nombre: 'Ana' });
       const c = textos(t)[0] ?? '';
       expect(c, x).toMatch(/Excelente decisión/);
       expect(c, x).not.toMatch(/Excelente decisión, (Muy|Tu|Mejor|Para|Paola|Hipertensa|Tienen)/);
@@ -250,7 +249,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
       const t = hablar(crear({ modeloDice: dice('Entiendo, aquí estoy. [DERIVAR_RECEPCION]') }), ANA, mTexto(x));
       expect(esBoton(t), x).toBe(false);
     }
-    expect(esBoton(hablar(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto('quiero agendar mi valoración')))).toBe(true);
+    expect(esBoton(hablarYa(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto('quiero agendar mi valoración')))).toBe(true);
   });
   it('(D) el cierre usa el nombre que el cliente dio en su mensaje, antes que el del perfil', () => {
     const t = hablar(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto('Hola, soy Paola y quiero agendar'), { nombre: 'Ana' });
@@ -269,7 +268,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
   });
   it('no rompe la etiqueta sin texto (variante corta) ni el cierre completo único', () => {
     const m = crear({ modeloDice: dice('[DERIVAR_RECEPCION: Paola]') });
-    expect(textos(hablar(m, ANA, mTexto('quiero agendar')))[0]).toMatch(/Excelente decisión, Paola/);
+    expect(textos(hablarYa(m, ANA, mTexto('quiero agendar')))[0]).toMatch(/Excelente decisión, Paola/);
     expect(textos(hablar(m, ANA, mTexto('quiero agendar de nuevo')))[0]).toContain('Claro, aquí tienes');
   });
 });
@@ -326,5 +325,41 @@ describe('tope de 700 caracteres por mensaje: recorte por oración, la pregunta 
     const gratis = textos(hablar(crear({ modeloDice: 'cae' }), ANA, mTexto('¿es gratis?')))[0]!;
     expect(gratis.length).toBeLessThanOrEqual(700);
     expect(gratis).toContain('100% gratuita');
+  });
+});
+
+describe('PRIMER CONTACTO: la etiqueta del modelo se ignora sin historial y sin nombre dado', () => {
+  const SIN_GRATUITA = 'Hola, vi su anuncio y quiero agendar mi valoración';
+  const PRELLENADO = 'Hola Dra. Evy, vi su anuncio y quiero agendar mi valoración gratuita 🙌';
+  const SALUDO = '¡Hola! 👋 Soy el asistente virtual de la Dra. Evy. Tu valoración es 100% gratuita y sin compromiso. ¿Cómo te llamas y qué te gustaría mejorar?';
+  it('NEGADA: con el texto prellenado, ni la etiqueta con texto, ni la etiqueta sola, ni la etiqueta con nombre cierran: sin botón ni aviso', () => {
+    for (const modelo of [SALUDO + ' [DERIVAR_RECEPCION]', SALUDO + ' [DERIVAR_RECEPCION: Ana]']) {
+      const t = hablar(crear({ modeloDice: dice(modelo) }), ANA, mTexto(PRELLENADO));
+      expect(esBoton(t), modelo).toBe(false);
+      expect(avisosARecepcion(t).length, modelo).toBe(0);
+      expect(textos(t).join(' '), modelo).toContain('¿Cómo te llamas');
+      expect(textos(t).join(' '), modelo).not.toMatch(/Excelente decisión|DERIVAR/);
+    }
+    // la etiqueta SOLA, sin texto: sale el fallo conocido con su aviso, no el cierre
+    const sola = hablar(crear({ modeloDice: dice('[DERIVAR_RECEPCION]') }), ANA, mTexto(SIN_GRATUITA));
+    expect(textos(sola).join(' ')).toMatch(/inconveniente para responderte/);
+    expect(textos(sola).join(' ')).not.toMatch(/Excelente decisión/);
+    expect(avisosARecepcion(sola).length).toBe(1);
+  });
+  it('NEGADA: primer contacto «quiero agendar» con el modelo caído: fallo con aviso a recepción (no_supo), no el cierre', () => {
+    const t = hablar(crear({ modeloDice: 'cae' }), ANA, mTexto(SIN_GRATUITA));
+    expect(textos(t).join(' ')).toMatch(/inconveniente para responderte/);
+    expect(textos(t).join(' ')).not.toMatch(/Excelente decisión/);
+    expect(avisosARecepcion(t).length).toBe(1);
+  });
+  it('POSITIVAS: con nombre en el mensaje cierra; con historial (segundo mensaje «quiero agendar») cierra, con o sin etiqueta', () => {
+    expect(esBoton(hablar(crear({ modeloDice: dice(SALUDO + ' [DERIVAR_RECEPCION]') }), ANA, mTexto('Soy Rosa. Quiero agendar mi valoración')))).toBe(true);
+    for (const modelo of ['Perfecto.', '[DERIVAR_RECEPCION: Ana]']) {
+      const m = crear({ modeloDice: dice(modelo) });
+      hablar(m, ANA, mTexto('hola'));
+      const t = hablar(m, ANA, mTexto('Ok, quiero agendar'));
+      expect(esBoton(t), modelo).toBe(true);
+      expect(textos(t)[0], modelo).toMatch(/Excelente decisión/);
+    }
   });
 });
