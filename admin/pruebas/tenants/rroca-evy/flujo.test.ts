@@ -2,9 +2,11 @@
  * EL FLUJO NUEVO DE EVY — la ruta feliz y el núcleo común: entrada verificada del receptor, sesión por `messages[0].from`, filtro de eventos, conversación libre con memoria de 15 entradas (48 h),
  * conteo (reporta entrante y saliente), uso extendido, comercio no operativo, topología y tamaño. Corre los JSON VERSIONADOS con el n8n de mentira.
  */
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
-import { ANA, BETO, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
+import { ANA, BETO, CARPETA, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
 
 describe('topología y tamaño', () => {
   it('producción 36 nodos y prueba 31, con el tope de 36', () => {
@@ -137,5 +139,13 @@ describe('el núcleo común', () => {
     const m = crear({ modeloDice: '[DERIVAR_RECEPCION]' });
     const t = hablar(m, REC, mTexto('quiero agendar'));
     expect(t.mensajes[0]!.tipo).toBe('text');
+  });
+});
+
+describe('saludo neutro (decisión de Andres, 24/10/2026): la campaña no se menciona hasta que el flujo reconozca su texto de entrada', () => {
+  it('ni el prompt, ni el código, ni los textos fijos, ni los dos JSON dicen «campaña»; el saludo dice «Hoy tu valoración…»', () => {
+    const archivos = ['prompts/evy.md', 'src/lib/ev.js', 'flujo.plantilla.json', 'rroca-evy.json', 'rroca-evy.prueba.json', ...readdirSync(join(CARPETA, 'src/nodos')).map((f) => `src/nodos/${f}`)];
+    for (const a of archivos) expect(readFileSync(join(CARPETA, a), 'utf8'), a).not.toMatch(/campa[ñn]a/i);
+    expect(readFileSync(join(CARPETA, 'prompts/evy.md'), 'utf8')).toContain('Hoy tu valoración con la Dra. Evy es **100% gratuita y sin compromiso** (su costo habitual es de 250 Bs, hoy bonificado)');
   });
 });

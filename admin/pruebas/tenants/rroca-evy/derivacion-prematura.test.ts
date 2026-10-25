@@ -112,7 +112,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     expect(imagenes(t)).toEqual([IDS.antes_despues]);
   });
   it('con historial real: el saludo corto del prompt → «Quiero ver cómo queda» + etiqueta no deriva y sale el ANTES_DESPUES', () => {
-    const SALUDO = '¡Hola! 👋 Soy el asistente virtual de la Dra. Evy Karina Rojas (Armonización Facial), aplicadora certificada: hacemos armonización facial sin cirugía con bioestimuladores de colágeno para recuperar firmeza y definir el contorno del rostro.\n\nPor escribirnos desde la campaña, tu valoración con la Dra. Evy es 100% gratuita y sin compromiso (su costo habitual es de 250 Bs, hoy bonificado). ¿Cómo te llamas y qué te gustaría mejorar en tu rostro?';
+    const SALUDO = '¡Hola! 👋 Soy el asistente virtual de la Dra. Evy Karina Rojas (Armonización Facial), aplicadora certificada: hacemos armonización facial sin cirugía con bioestimuladores de colágeno para recuperar firmeza y definir el contorno del rostro.\n\nHoy tu valoración con la Dra. Evy es 100% gratuita y sin compromiso (su costo habitual es de 250 Bs, hoy bonificado). ¿Cómo te llamas y qué te gustaría mejorar en tu rostro?';
     const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<Quiero ver cómo queda>>>') ? ANTES : SALUDO) });
     hablar(m, ANA, mTexto('hola'));
     const t = hablar(m, ANA, mTexto('Quiero ver cómo queda'));
