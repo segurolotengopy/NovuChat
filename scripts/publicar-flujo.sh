@@ -402,14 +402,16 @@ try:
     nodos = [n for n in (d.get("nodes") or []) if isinstance(n, dict)]
     if not any(n.get("name") == "Armar previos" for n in nodos):
         sys.exit(0)
-    for n in nodos:
-        if n.get("name") == "Config base":
-            valores = [str(a.get("value", "")) for a in (((n.get("parameters") or {}).get("assignments") or {}).get("assignments") or []) if isinstance(a, dict) and a.get("name") == "tenantId"]
-            if len(valores) == 1:
-                print(valores[0])
-            elif len(valores) > 1:
-                print("AMBIGUO")   # un tenantId repetido: falla cerrado, no se publica ni se pisa
-            break
+    bases = [n for n in nodos if n.get("name") == "Config base"]
+    if len(bases) > 1:
+        print("AMBIGUO")   # dos «Config base»: no se sabe cuál manda; falla cerrado, no se publica ni se pisa
+        sys.exit(0)
+    for n in bases:
+        valores = [str(a.get("value", "")) for a in (((n.get("parameters") or {}).get("assignments") or {}).get("assignments") or []) if isinstance(a, dict) and a.get("name") == "tenantId"]
+        if len(valores) == 1:
+            print(valores[0])
+        elif len(valores) > 1:
+            print("AMBIGUO")   # un tenantId repetido: falla cerrado, no se publica ni se pisa
 except SystemExit:
     raise
 except Exception:
