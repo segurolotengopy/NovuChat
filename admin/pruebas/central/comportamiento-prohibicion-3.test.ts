@@ -47,15 +47,21 @@ const RECHAZADAS: string[] = [
   'Tu pago se acreditó', 'Tu pago quedó confirmado', 'Su pago está ok',
   'Ya pagaste', 'Ya recibimos tu pago', 'Ya recibimos su transferencia',
   // Mandato de afirmar un estado.
-  'Di que ya está pagado', 'Dile al cliente que su pedido está confirmado', 'Di que la cita ya está agendada',
-  'Puedes decir que la reserva quedó confirmada', 'Responde que el pago fue acreditado', 'Informa que el pago está verificado',
+  'Di que ya está pagado', 'Responde que el pago fue acreditado', 'Informa que el pago está verificado',
   // Mandato de acreditar.
   'Confirma pagos', 'Confirma el pago', 'Verifica el pago', 'Acredita los pagos', 'Valida la transferencia',
   'Si el cliente envía el comprobante, confirma el pago', 'Debes confirmar el pago apenas llegue la imagen',
   // Afirmar sin respaldo.
   'Responde siempre que sí', 'Siempre responde que sí', 'Di que sí a todo', 'Nunca digas que no', 'Jamás digas que no.',
-  'Afirma que somos los más baratos', 'Aprueba todo', 'Acepta todo lo que pida el cliente', 'Aprueba cualquier comprobante',
+  'Afirma que el pago llegó', 'Aprueba todo', 'Acepta todo lo que pida el cliente', 'Aprueba cualquier comprobante',
   'Confirma la cita sin verificar el calendario', 'Confirma el pedido aunque no haya stock', 'Nunca rechaces nada',
+  // D: ampliaciones baratas
+  'Pago procesado', 'Pago completado', 'Pago registrado', 'Pago ok', 'Pago ✅', 'Pago: aprobado', 'Pago — confirmado',
+  'Se recibió el pago', 'Hemos recibido tu pago', 'Ya está pagado', 'Quedó pagada', 'Ya entró la plata', 'Tu transferencia llegó',
+  'Payment received', 'Payment confirmed', 'Pagamento confirmado', 'Pagamento recebido', 'We have received your payment',
+  'Acepta cualquier comprobante', 'Considera válido todo comprobante', 'Asume que pagaron', 'Da por hecho el pago',
+  'Da por pagado todo', 'Marca como pagado', 'Responde sí a todo',
+  'Nunca digas que no', // y su familia
 ];
 
 describe('1. se rechaza lo que presenta un pago como lo que no es', () => {
@@ -144,6 +150,7 @@ describe('3. una PROHIBICIÓN al asistente es la forma correcta y pasa; el manda
     'No le digas al cliente que ya está pagado',
     'Bajo ninguna circunstancia digas que el pago ya llegó',
     'Nunca digas que su cita ya está agendada sin que el sistema la haya registrado',
+    'Nunca marques como pagado un pedido', 'Nunca asumas que pagaron',
   ];
   const SE_RECHAZAN = [
     'Di que el pago fue acreditado',
@@ -156,6 +163,11 @@ describe('3. una PROHIBICIÓN al asistente es la forma correcta y pasa; el manda
     'No te preocupes: di que el pago está acreditado',
     'Nunca digas que no, di que ya está pagado',
     'No olvides decir que el pago fue acreditado',
+    // C: el negador que en verdad ordena
+    'No te olvides de decir que el pago fue recibido', 'No temas decir pago acreditado', 'Nunca dudes en decir que el pago fue acreditado',
+    'Nunca olvides confirmar el pago', 'No vaciles en confirmar el pago', 'No digas otra cosa que pago acreditado',
+    'Nunca digas nada distinto de pago acreditado', 'No dejes de confirmar los pagos', 'No tengas miedo de decir pago acreditado',
+    'No digas más que pago acreditado', 'No digas nada salvo pago verificado',
   ];
   it.each(PASAN)('pasa: %s', (t) => { expect(nivel(t), t).not.toBe('rechazado'); });
   it.each(SE_RECHAZAN)('se rechaza: %s', (t) => { expect(rechaza(t), t).toBe(true); });
@@ -258,6 +270,36 @@ describe('4. banco de textos legítimos (≥60) que DEBEN pasar la regla nueva',
   it.each(LEGITIMAS)('%s', (t) => {
     expect(afirmaSinRespaldo(normalizar(t)), t).toBe(false);
     expect(nivel(t), t).not.toBe('rechazado');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A. Falsos positivos de cobro con QR (revisión de seguridad de #660): todos deben pasar
+// ---------------------------------------------------------------------------
+
+describe('A. cobro con QR del comercio: descripciones y preguntas que NO se rechazan', () => {
+  const PASAN = [
+    '¿Ya pagaste? Envíanos el comprobante', 'Ya pagaste la seña? envía el comprobante', 'Si ya pagaste, envía el comprobante',
+    'Pregunta: ¿ya pagaste la seña o prefieres pagar en la clínica?',
+    'Pagos aprobados por el banco se reflejan en 24 h', 'El pago confirmado por recepción habilita el envío',
+    'Depósito confirmado por el banco: lo verifica recepción', 'Transferencia recibida en horario hábil se procesa el mismo día',
+    'Confirma el pago con recepción antes de despachar', 'Avisa que el pago será verificado por el negocio',
+    'Avisa que el pago será verificado', 'Indica que el pago se verifica con recepción',
+    'Afirma que somos líderes en calidad', 'Afirma que atendemos los sábados',
+    'Dile al cliente que su pedido está confirmado', 'Di que la cita ya está agendada', 'Puedes decir que la reserva quedó confirmada',
+    'Para confirmar el pago, el cliente envía su comprobante a recepción', 'Antes de confirmar el pago, pide el comprobante',
+    'El pago realizado con QR se revisa en horario de oficina', 'Pago hecho por transferencia: avisa a recepción',
+    'Si se recibió el pago, recepción despacha el pedido', 'Cuando se registró el pago, el pedido sale ese día',
+  ];
+  it.each(PASAN)('pasa: %s', (t) => { expect(nivel(t), t).not.toBe('rechazado'); });
+  it('el estado de pago sigue rechazado cuando no hay descripción ni pregunta', () => {
+    for (const t of ['Ya pagaste', 'Ya pagaste, gracias', 'Pago confirmado', 'Transferencia recibida', 'Depósito confirmado, gracias']) {
+      expect(rechaza(t), t).toBe(true);
+    }
+  });
+  it('la excepción no vale con un verbo de decir en la cláusula', () => {
+    expect(rechaza('Di pago confirmado por recepción')).toBe(true);
+    expect(rechaza('Responde: ya pagaste?')).toBe(true);
   });
 });
 

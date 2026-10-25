@@ -1163,36 +1163,59 @@ export function plegarVista(n: string): string {
 /** Separador entre palabras: 0 a 3 caracteres de blanco o adorno (0 cubre «pagoacreditado»). */
 const S = '(?:[\\s_\\-*·|/+"\'()]|\\.{2,3}){0,3}';
 /** Separador obligatorio (≥1) donde dos palabras pegadas serían otra palabra. */
+/** Como S, con «:» y rayas: «Pago: confirmado». Sin coma, que separa cláusulas («por su pago, aprobado o no»). */
+const SE = '(?:[\\s_\\-*·|/+"\'():—–]|\\.{2,3}){0,3}';
 const S1 = '[\\s_\\-*·|/+"\'()]{1,3}';
 const ANTES = '(?<![\\p{L}\\p{N}])';
 const DESPUES = '(?![\\p{L}\\p{N}])';
 const frase = (cuerpo: string): RegExp => new RegExp(`${ANTES}(?:${cuerpo})${DESPUES}`, 'gu');
 
-const ESTADO_PAGO = '(?:acreditad|verificad|recibid|confirmad|aprobad|exitos|validad|cobrad|efectuad)[oa]s?';
+const ESTADO_PAGO = '(?:(?:acreditad|verificad|recibid|confirmad|aprobad|exitos|validad|cobrad|efectuad)[oa]s?|ok|✅|☑|✔|👍)';
+/** Estados más flojos («pago realizado con QR» describe un medio): se eximen también si siguen «por|con|en…». */
+const ESTADO_PAGO_FLOJO = '(?:procesad|completad|realizad|aceptad|registrad|ingresad|aplicad|abonad|hech)[oa]s?';
 const DET = '(?:tu|su|el|este|vuestro|mi|nuestro)';
 const VERBOS_PAGO_1P = '(?:recibimos|acreditamos|verificamos|confirmamos|registramos|validamos|aprobamos|cobramos)';
 
 /** Familia 1, sustantivo: el estado pegado al nombre del pago. */
 const FRASES_SUSTANTIVO: readonly RegExp[] = [
-  frase(`pagos?${S}${ESTADO_PAGO}`),
-  frase(`comprobantes?${S}(?:verificad|aprobad|valid|confirmad|autentic|legitim|acreditad)[oa]s?`),
-  frase(`transferencias?${S}(?:recibid|confirmad|acreditad|exitos|aprobad|verificad)[oa]s?`),
-  frase(`depositos?${S}(?:recibid|confirmad|acreditad|aprobad|verificad)[oa]s?`),
-  frase(`abonos?${S}(?:recibid|confirmad|acreditad|aprobad|verificad)[oa]s?`),
+  frase(`pagos?${SE}${ESTADO_PAGO}`),
+  frase(`comprobantes?${SE}(?:verificad|aprobad|valid|confirmad|autentic|legitim|acreditad)[oa]s?`),
+  frase(`transferencias?${SE}(?:recibid|confirmad|acreditad|exitos|aprobad|verificad)[oa]s?`),
+  frase(`depositos?${SE}(?:recibid|confirmad|acreditad|aprobad|verificad)[oa]s?`),
+  frase(`abonos?${SE}(?:recibid|confirmad|acreditad|aprobad|verificad)[oa]s?`),
+  frase(`pagamentos?${SE}(?:confirmad|recebid|aprovad|efetuad|creditad)[oa]s?`),
+  frase(`payments?${S1}(?:received|confirmed|verified|approved|accredited|successful|completed)`),
 ];
+const FRASES_SUSTANTIVO_FLOJAS: readonly RegExp[] = [
+  frase(`pagos?${SE}${ESTADO_PAGO_FLOJO}`),
+];
+/** Lo que sigue al estado y lo vuelve descripción: «confirmado por recepción», «recibida en horario hábil», «se refleja…». */
+const EXENTO_FUERTE = /^\s*(?:por\s+(?:el\s+|la\s+|nuestro\s+|su\s+)?(?:banco|recepcion|negocio|caja|comercio|administracion|contabilidad|tesoreria|dueno|duena|encargad[oa])|en\s+(?:horario|dias?|un\s+plazo|hasta|menos|las?\s+\d|\d)|(?:se|sera|seran)\s|habilita|(?:despues|antes|luego|fuera|dentro|durante|hasta|desde)(?![\p{L}]))/u;
+const EXENTO_FLOJO = /^\s*(?:por|con|mediante|via|en|al|contra|a\s+traves)(?![\p{L}])/u;
+
 
 /** Familia 1, hecho dicho por el asistente o en su nombre. */
 const FRASES_ESTADO: readonly RegExp[] = [
   frase(`${VERBOS_PAGO_1P}${S}(?:tu|su|el|los|sus|vuestro)${S}pagos?`),
   frase(`ya${S1}(?:${VERBOS_PAGO_1P}|recibimos)${S}(?:tu|su|el|los|sus)${S}(?:pagos?|dinero|plata|depositos?|transferencias?|abonos?)`),
   frase(`ya${S}pagaste`),
-  frase(`${DET}${S}pagos?${S}(?:ya${S1})?(?:llego|entro|se${S1}(?:acredito|recibio|registro|confirmo|verifico|aprobo|proceso|valido))`),
+  frase(`hemos${S1}(?:recibido|acreditado|verificado|confirmado|registrado)${S1}(?:tu|su|el|los)${S}pagos?`),
+  frase(`se${S1}(?:acredito|recibio|registro|confirmo|verifico|aprobo|valido)${S1}(?:\\p{L}+${S1}){0,2}(?:tu|su|el)${S}pagos?`),
+  frase(`(?:ya${S1})?(?:esta|queda|quedo|quedaron|estan)${S1}(?:ya${S1})?(?:pagad|acreditad|cobrad)[oa]s?`),
+  frase(`ya${S1}(?:entro|llego)${S1}(?:la|el|tu|su)${S1}(?:plata|dinero|pago|transferencia|deposito)`),
+  frase(`(?:we${S1}(?:have${S1})?(?:received|confirmed)|we${S1}confirm\\w*)${S1}your${S1}payment`),
+  frase(`${DET}${S}(?:pagos?|transferencias?|depositos?|abonos?)${S}(?:ya${S1})?(?:llego|entro|se${S1}(?:acredito|recibio|registro|confirmo|verifico|aprobo|proceso|valido))`),
   frase(`${DET}${S}pagos?${S}(?:ya${S1})?(?:fue|esta|quedo|ha${S1}sido|ya${S1}esta)${S}(?:ya${S1})?(?:correctamente${S1})?(?:(?:acreditad|aprobad|recibid|verificad|confirmad|registrad|procesad|exitos|validad)[oa]s?|listo|ok)`),
 ];
 
 /** Estados que se cuelgan de un verbo de decir: «di que ya está pagado». */
-const ESTADO_DICHO = /^(?:pagad|agendad|reservad|acreditad|aprobad|verificad|confirmad|cobrad)[oa]s?$/u;
-const ANTES_DEL_ESTADO = new Set(['esta', 'estan', 'queda', 'quedo', 'quedaron', 'fue', 'fueron', 'sido', 'ya', 'estara', 'sera']);
+// Solo pago, acreditación y cobro. Agenda y pedidos («di que la cita está agendada») quedan fuera de esta
+// regla a propósito: es una decisión de producto pendiente (seguimiento aparte).
+const ESTADO_DICHO = /^(?:pagad|acreditad|cobrad)[oa]s?$/u;
+const ESTADO_DICHO_DE_PAGO = /^(?:verificad|aprobad|confirmad|recibid)[oa]s?$/u;
+const DE_PAGO = /^(?:pagos?|comprobantes?|transferencias?|depositos?|abonos?|cobros?|dinero|plata)$/u;
+// Sin «sera» ni «estara»: «el pago será verificado por el negocio» es futuro, no afirmación.
+const ANTES_DEL_ESTADO = new Set(['esta', 'estan', 'queda', 'quedo', 'quedaron', 'fue', 'fueron', 'sido', 'ya']);
 
 /** Familia 4: mandatos de afirmar sin respaldo, fijos. */
 const FRASES_ABSOLUTAS: readonly RegExp[] = [
@@ -1201,9 +1224,14 @@ const FRASES_ABSOLUTAS: readonly RegExp[] = [
   frase(`(?:responde|contesta|di|dile|diles|decile|afirma)${S1}que${S1}si${S1}a${S1}(?:todo|todos|todas|cualquier\\w*|lo${S1}que)`),
   frase(`(?:nunca|jamas|no)${S1}(?:le${S1}|les${S1})?(?:digas|diga|respondas|contestes)${S1}(?:nunca${S1})?que${S1}no(?=${S1}a${S1}(?:nada|nadie|todo|ningun)|\\s*(?:[.,;:!?]|$))`),
   frase(`(?:nunca|jamas|no)${S1}(?:rechaces|niegues|rehuses)${S1}(?:nada|a${S1}nadie|ninguna?)`),
-  frase(`(?:afirma|afirmale|afirmar|afirmes)${S1}que`),
+  frase(`(?:afirma|afirmale|afirmar|afirmes)${S1}que${S1}(?:\\p{L}+${S1}){0,4}(?:pagos?|pagad[oa]s?|comprobantes?|transferencias?|depositos?|cobros?|dinero|plata|acreditad[oa]s?)`),
   frase(`(?:acepta|aprueba|valida|acredita|autoriza)${S1}(?:siempre${S1})?(?:todo|lo${S1}que${S1}(?:pida|diga|envie|mande|digan|pidan))`),
-  frase(`(?:aprueba|valida|acredita|verifica)${S1}(?:siempre${S1})?(?:cualquier|todo)${S1}(?:comprobante|pago|transferencia|deposito)\\w*`),
+  frase(`(?:acepta|aceptes|aprueba|valida|acredita|verifica|autoriza)${S1}(?:siempre${S1})?(?:cualquier|todo)\\w*${S1}(?:comprobante|pago|transferencia|deposito|captura|foto)\\w*`),
+  frase(`considera\\w*${S1}(?:como${S1})?(?:valid|pagad|acreditad|aprobad|verificad)\\w*${S1}(?:todo|cualquier|cada)\\w*`),
+  frase(`asum\\w*${S1}que${S1}(?:ya${S1})?(?:pago|pagaron|pagaste|pagado|pague)`),
+  frase(`da${S1}por${S1}(?:hecho${S1}el${S1}pago|pagado|pagada|acreditado|cobrado)`),
+  frase(`marc\\w*${S1}(?:como${S1})?(?:pagad|cobrad|acreditad|verificad)[oa]s?`),
+  frase(`(?:responde|contesta|di|dile|diles|decile)${S1}si${S1}a${S1}(?:todo|todos|todas|cualquier\\w*)`),
   frase(`da${S1}por${S1}(?:bueno|valido|pagado|acreditado)${S1}(?:todo|cualquier)`),
 ];
 
@@ -1226,8 +1254,11 @@ const VERBOS_DE_ACREDITAR = new Set([
 /** Sujeto o verbo auxiliar que NO hace de imperativo («recepción verifica el pago»). */
 const PREVIAS_DE_ORDEN = new Set([
   'y', 'luego', 'despues', 'entonces', 'siempre', 'tambien', 'ya', 'ahora', 'solo', 'debes', 'puedes', 'podes', 'deberas',
-  'podras', 'tienes', 'tenes', 'quiero', 'hay', 'automaticamente', 'inmediatamente', 'que', 'para', 'de', 'el', 'asistente', 'bot',
+  'podras', 'tienes', 'tenes', 'quiero', 'automaticamente', 'inmediatamente', 'que', 'asistente', 'bot',
+  // «No dudes en / No olvides confirmar el pago»: el disuasivo no cambia que es una orden.
+  'olvides', 'dudes', 'temas', 'vaciles', 'dejes', 'olvida', 'duda', 'tema',
 ]);
+const DISUASIVOS = /^(?:olvid|dud|tem|vacil|dej)[\p{L}]*$/u;
 const OBJETOS_DE_RESERVA = new Set(['cita', 'citas', 'reserva', 'reservas', 'turno', 'turnos', 'pedido', 'pedidos', 'compra', 'compras', 'orden', 'ordenes', 'hora', 'pago', 'pagos', 'cobro']);
 const SIN_RESPALDO = /(?:^|\s)(?:sin\s+(?:verificar|revisar|consultar|comprobar|validar|chequear|esperar|preguntar|importar|mirar|buscar)|aunque|pase\s+lo\s+que\s+pase|a\s+pesar\s+de|igual\s+(?:si|aunque|con))(?![\p{L}\p{N}])/u;
 
@@ -1253,12 +1284,18 @@ function mandatosConVentana(fichas: Ficha[]): number[] {
       ventana.push(fichas[j]!.t);
     }
     // Familia 2: «di que ya está pagado».
-    let dispara = ventana.some((w, j) => ESTADO_DICHO.test(w) && j > 0 && ANTES_DEL_ESTADO.has(ventana[j - 1]!));
+    const hablaDePago = ventana.some((w) => DE_PAGO.test(w));
+    let dispara = ventana.some((w, j) => (ESTADO_DICHO.test(w) || (hablaDePago && ESTADO_DICHO_DE_PAGO.test(w))) && j > 0 && ANTES_DEL_ESTADO.has(ventana[j - 1]!));
     // Familia 3: «confirma pagos» como orden (no «recepción verifica el pago»).
     if (!dispara && VERBOS_DE_ACREDITAR.has(verbo.t)) {
       const previa = k === 0 || fichas[k - 1]!.ruptura ? '' : fichas[k - 1]!.t;
-      const comoOrden = previa === '' || PREVIAS_DE_ORDEN.has(previa);
-      dispara = comoOrden && ventana.slice(0, 4).some((w) => /^(?:pagos?|transferencias?|depositos?)$/u.test(w));
+      const previa2 = k < 2 || fichas[k - 2]!.ruptura ? '' : fichas[k - 2]!.t;
+      const comoOrden = previa === '' || PREVIAS_DE_ORDEN.has(previa) || (/^(?:de|en)$/u.test(previa) && DISUASIVOS.test(previa2));
+      const j = ventana.slice(0, 4).findIndex((w) => /^(?:pagos?|transferencias?|depositos?)$/u.test(w));
+      // «Confirma el pago con recepción antes de despachar»: se confirma CON quien lo verifica, no se da por acreditado.
+      const conQuien = j >= 0 && /^(?:con|por|ante)$/u.test(ventana[j + 1] ?? '')
+        && /^(?:recepcion|el|la|caja|banco|negocio|comercio|administracion|contabilidad|tesoreria)$/u.test(ventana[j + 2] ?? '');
+      dispara = comoOrden && j >= 0 && !conQuien;
     }
     // Familia 4: «confirma la cita sin verificar nada».
     if (!dispara) {
@@ -1285,6 +1322,8 @@ const AFIRMATIVOS = new Set([
   'informa', 'informale', 'avisa', 'escribe', 'comunica', 'menciona', 'anuncia', 'notifica', 'aclara', 'repite', 'acredita', 'verifica', 'valida',
   'aprueba', 'registra', 'certifica', 'garantiza',
 ]);
+/** «No te olvides de…», «No temas…», «Nunca dudes en…», «No digas otra cosa que…»: negador que en verdad ordena. */
+const ABUSA_DEL_NEGADOR = /^(?:olvid[\p{L}]*|tem[\p{L}]*|dud[\p{L}]*|vacil[\p{L}]*|dej[\p{L}]*|tengas|miedo|otra|otro|otras|otros|distint[\p{L}]*|mas|salvo|excepto|menos)$/u;
 const CORTES = new Set(['y', 'e', 'pero', 'sino', 'excepto', 'salvo', 'aunque', 'menos', 'solo', 'solamente', 'unicamente', 'cuando', 'si', 'entonces']);
 const SUBJUNTIVOS = new Set([
   ...VERBOS_DE_DECIR, 'escribas', 'escriba', 'informes', 'menciones', 'comuniques', 'prometas', 'presentes', 'insinues', 'sugieras',
@@ -1303,7 +1342,7 @@ function prohibido(previas: Ficha[], empiezaConVerbo: boolean): boolean {
   for (let k = previas.length - 1; k >= 0; k--) {
     if (!NEGADORES.has(previas[k]!.t)) continue;
     const resto = previas.slice(k + 1).map((f) => f.t);
-    if (resto.length > 8 || resto.some((w) => AFIRMATIVOS.has(w) || CORTES.has(w))) continue;
+    if (resto.length > 8 || resto.some((w) => AFIRMATIVOS.has(w) || CORTES.has(w) || ABUSA_DEL_NEGADOR.test(w))) continue;
     if (empiezaConVerbo ? resto.length <= 5 && resto.every((w) => RELLENO.has(w)) : resto.some((w) => SUBJUNTIVOS.has(w))) return true;
   }
   return false;
@@ -1328,19 +1367,32 @@ function hallazgosEnVista(vista: string): boolean {
   const textoPrevio = (pos: number): string => previas(pos).map((f) => f.t).join(' ');
   const hayVerboDeDecir = (pos: number): boolean => previas(pos).some((f) => VERBOS_DE_DECIR.has(f.t) || AFIRMATIVOS.has(f.t));
 
-  for (const re of FRASES_SUSTANTIVO) {
-    for (const m of vista.matchAll(re)) {
-      const pos = m.index ?? 0;
-      if (prohibido(previas(pos), false)) continue;
-      if (!hayVerboDeDecir(pos) && COND_ANTES.test(textoPrevio(pos))) continue;
-      return true;
+  const despues = (m: RegExpMatchArray): string => vista.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 60);
+  // ¿Una pregunta? «¿Ya pagaste? Envíanos el comprobante», «Ya pagaste la seña? envía…».
+  const esPregunta = (m: RegExpMatchArray): boolean => {
+    const pos = m.index ?? 0;
+    const antes = vista.slice(0, pos);
+    const ap = Math.max(antes.lastIndexOf('¿'), -1);
+    if (ap >= 0 && !/[.!?]/u.test(antes.slice(ap + 1))) return true;
+    const fin = despues(m).search(/[.!?¿]/u);
+    return fin >= 0 && despues(m)[fin] === '?';
+  };
+  const sustantivos: [readonly RegExp[], RegExp][] = [[FRASES_SUSTANTIVO, EXENTO_FUERTE], [FRASES_SUSTANTIVO_FLOJAS, new RegExp(`${EXENTO_FUERTE.source}|${EXENTO_FLOJO.source}`, 'u')]];
+  for (const [lista, exento] of sustantivos) {
+    for (const re of lista) {
+      for (const m of vista.matchAll(re)) {
+        const pos = m.index ?? 0;
+        if (prohibido(previas(pos), false)) continue;
+        if (!hayVerboDeDecir(pos) && (COND_ANTES.test(textoPrevio(pos)) || COND_ESTADO.test(textoPrevio(pos)) || exento.test(despues(m)) || esPregunta(m))) continue;
+        return true;
+      }
     }
   }
   for (const re of FRASES_ESTADO) {
     for (const m of vista.matchAll(re)) {
       const pos = m.index ?? 0;
       if (prohibido(previas(pos), false)) continue;
-      if (!hayVerboDeDecir(pos) && COND_ESTADO.test(textoPrevio(pos))) continue;
+      if (!hayVerboDeDecir(pos) && (COND_ESTADO.test(textoPrevio(pos)) || esPregunta(m))) continue;
       return true;
     }
   }
