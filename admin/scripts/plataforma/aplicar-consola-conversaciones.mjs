@@ -100,7 +100,7 @@ export const USO = '  node scripts/plataforma/aplicar-consola-conversaciones.mjs
 // ===========================================================================
 // BELLIDO Y LA LISTA DE EXCLUSIÓN (puras)
 // ===========================================================================
-const sinTildes = (s) => String(s).normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase();
+export const sinTildes = (s) => String(s).normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase();
 
 /** Los ids excluidos: la lista fija más la variable de entorno (solo AGREGA, nunca quita). */
 export function excluidos(env = process.env, base = TENANTS_EXCLUIDOS) {
