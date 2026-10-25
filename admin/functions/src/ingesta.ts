@@ -1765,8 +1765,8 @@ export const configuracionFlujo = onRequest(
     // autenticada. Va en la respuesta solo si hay alguno: un comercio sin anuncios
     // recibe la respuesta de siempre, byte a byte (`despacho-sesion.test.ts`).
     // Lo que el modelo lee del catálogo: sin los nombres que son órdenes (`nombreSeguro.ts`).
-    const catalogoPrompt = catalogoParaElPrompt(catalogo.docs);
-    if (catalogoPrompt.omitidos > 0) console.info(`catálogo: ${catalogoPrompt.omitidos} nombre(s) fuera del prompt`);
+    const catalogoFiltrado = catalogoParaElPrompt(catalogo.docs);
+    if (catalogoFiltrado.omitidos > 0) console.info(`catálogo: ${catalogoFiltrado.omitidos} nombre(s) fuera del prompt`);
     // -------------------------------------------------------------------------
     // EL CORTE DEL PREPAGO REUTILIZA EL 409 (`DISENO.md` §4undecies.3). Los tres
     // flujos ya tratan un 409 de acá como «no operativo» y mandan la cortesía
@@ -1803,7 +1803,7 @@ export const configuracionFlujo = onRequest(
     // corte del prepago: un turno cortado no lee nada. Una lectura como máximo, ninguna sin «prompt».
     const vigentesCrudas = campanas.exists ? campanas.get('vigentes') : [];
     const vigentesDelTurno = await vigentesParaElPrompt(db, comercio.tenantId, {
-      nombresDeCatalogo: catalogoPrompt.docs.map((d) => String(d.data()['nombre'] ?? '')),
+      nombresDeCatalogo: catalogoFiltrado.docs.map((d) => String(d.data()['nombre'] ?? '')),
       instrucciones: typeof negocio['instruccionesVigentes'] === 'string' ? negocio['instruccionesVigentes'] : '',
       campanas: vigentesCrudas,
     });
@@ -1811,15 +1811,15 @@ export const configuracionFlujo = onRequest(
     const cita = (t: string): string => citarTerminos(t, terminosDelTurno);
     // El catálogo como lo ve el modelo, con el término citado por el sistema en el nombre. Sin términos,
     // son los mismos documentos de siempre.
-    const catalogoDocs = terminosDelTurno.length === 0 ? catalogoPrompt.docs : catalogoPrompt.docs.map((d) => {
+    const catalogoPrompt = { docs: terminosDelTurno.length === 0 ? catalogoFiltrado.docs : catalogoFiltrado.docs.map((d) => {
       const datos = d.data();
       return { id: d.id, data: (): Record<string, unknown> => ({ ...datos, nombre: cita(String(datos['nombre'] ?? '')) }) };
-    });
+    }) };
     const anunciosDeHoy = anunciosParaElFlujo(
       vigentesDelTurno.campanas,
       limiteDeCampanas(cuenta.exists ? cuenta.data() as Record<string, unknown> : null),
       ahoraMs,
-      catalogoDocs.map((d) => {
+      catalogoPrompt.docs.map((d) => {
         const datos = d.data();
         const quedan = existencias(datos);
         return { id: d.id, nombre: datos['nombre'], precio: datos['precio'],
@@ -2103,7 +2103,7 @@ export const configuracionFlujo = onRequest(
         ? {
             catalogo: [],
             catalogoResumen: resumirCatalogo(
-              catalogoDocs.map((d) => d.data() as Record<string, unknown>)),
+              catalogoPrompt.docs.map((d) => d.data() as Record<string, unknown>)),
             // Con esto el flujo sabe que tiene que derivar al sitio en vez de
             // intentar recitar una lista que no recibió.
             catalogoWeb: { activo: true, derivar: true },
@@ -2114,7 +2114,7 @@ export const configuracionFlujo = onRequest(
             // una venta para mañana y lo segundo es un cliente que se va. Los
             // ítems SIN control de existencias nunca salen agotados: no saber
             // cuántos hay no es saber que hay cero.
-            catalogo: catalogoDocs.map((d) => {
+            catalogo: catalogoPrompt.docs.map((d) => {
               const datos = d.data();
               const quedan = existencias(datos);
               return {

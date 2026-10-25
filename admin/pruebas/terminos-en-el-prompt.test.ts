@@ -25,9 +25,9 @@ const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
 const { getFirestore, Query } = await import('firebase-admin/firestore');
 const db = getFirestore();
-const { configuracionFlujo, sigueVigente } = await import('../../functions/src/ingesta.ts');
-const { hashCorto, normalizar } = await import('../../functions/src/central/asistente/comportamiento.ts');
-const { nombreDeProductoApto } = await import('../../functions/src/modulos/productos/nombreSeguro.ts');
+const { configuracionFlujo, sigueVigente } = await import('../functions/src/ingesta.ts');
+const { hashCorto, normalizar } = await import('../functions/src/central/asistente/comportamiento.ts');
+const { nombreDeProductoApto } = await import('../functions/src/modulos/productos/nombreSeguro.ts');
 
 interface Comercio { t: string; numero: string; alias: string; token: string }
 const A: Comercio = { t: 'terminos-prompt-a', numero: '1000000731', alias: 'cliente20', token: TOKEN };
