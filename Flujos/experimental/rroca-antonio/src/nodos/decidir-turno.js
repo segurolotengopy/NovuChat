@@ -120,6 +120,13 @@ if (!(esVisual && categoriaMedio === 'comprobante') && (ficha.riesgo || raEsRies
 //     El `no_contactar` ya viaja con el reporte del entrante. El QR abierto queda como está (no se cancela solo). Va justo después de la protección y ANTES de la configuración, los medios, los botones y el cobro con el QR abierto: quien pidió la baja no recibe nada más.
 if (raPideBaja(textoCliente)) return salir({ tipo: 'baja', cat: cat });
 
+// 1a'. IDENTIDAD POR CÓDIGO (prohibición 4): «¿eres un bot?», «¿quién eres?», «¿hablo con Antonio?»… reciben una frase fija que reconoce ser un asistente virtual con IA; el modelo no interviene. Va antes de la configuración, la compuerta de
+//      las opciones, el precio y el modelo, y también con un QR abierto (esa respuesta no abre otro QR, no deriva y no avisa a Antonio). Solo texto escrito o transcrito: un toque de botón o una imagen no son esta pregunta.
+//      SOLO si el mensaje no trae OTRA intención reconocida (cancelar, pedir un producto, hablar del pago o del comprobante, pedir una persona): «cancela mi pedido, eres un robot» o «quiero el pack, ¿eres un bot?» siguen su camino
+//      —esa intención gana— y el modelo no recibe la pregunta como instrucción. La pregunta sola, con o sin QR abierto, la contesta el código.
+if (!esVisual && t.tipo !== 'interactive' && (raPreguntaPorIA(norm) || raPreguntaPorIAPlegada(textoCliente))
+  && !(raCancelaPedido(norm) || raPideProducto(norm) || raHablaDePagar(norm) || raHablaDelCobro(norm) || raPrellenado(norm) !== '' || raDerivacion(norm, { comprobante: ficha.comprobanteMs > 0 || cobro.enRevision === true, qrAbierto: hayQrAbierto }))) return salir({ tipo: 'identidad', cat: cat });
+
 // 1b. Lo que no necesita la configuración del negocio: una nota de voz que no se pudo usar (o que es corta o ininteligible: se pide repetirla, nunca la contesta el modelo) y lo que este canal no lee.
 //     (La nota de voz corta con una intención clara —«hola», «quiero el pack»— no llega aquí: la atiende el código más abajo.)
 if (esAudio && falloAudio) return salir({ tipo: 'audio_fijo', causa: falloAudio, cat: cat });
@@ -283,8 +290,10 @@ if (raPreguntaPorResultado(norm)) return salir(Object.assign({ tipo: 'resultado'
 if (hayQrAbierto && raHablaDelCobro(norm)) return salir(recordatorio(''));
 // El ángulo del anuncio: por el texto escrito o por el texto leído de una captura (publicidad). El modelo redacta la apertura con el ángulo como dato; si falla, sale el texto fijo del ángulo.
 const angulo = raAngulo(norm) || (esVisual ? raAngulo(raNorm(leido)) : '');
-if (angulo && !hayQrAbierto) {
-  return salir({ tipo: 'angulo', angulo: angulo, conPresentacion: !ficha.saludado, cat: cat, textoCliente: String(textoCliente || leido).slice(0, 500) }, {
+// Con un QR abierto (24/10/2026): la captura de un anuncio o el texto de un anuncio TAMBIÉN se responde con la apertura de su ángulo, y «Armar mensajes» le suma la invitación a pagar el QR pendiente (monto del pedido, nunca el del sello de la imagen):
+// sin QR nuevo, sin botones de producto y sin derivar. Un comprobante real o un pago con problema no llegan aquí (se resolvieron arriba).
+if (angulo) {
+  return salir(Object.assign({ tipo: 'angulo', angulo: angulo, conPresentacion: !ficha.saludado, cat: cat, textoCliente: String(textoCliente || leido).slice(0, 500) }, abierto()), {
     llamarModelo: true, cuerpoModelo: raCuerpoModelo(textoCliente || leido, ficha.hist, RA_ANGULOS[angulo].tema, base.temperatura, respuestaAPregunta, 'charla', cfg.nombreNegocio),
   });
 }
