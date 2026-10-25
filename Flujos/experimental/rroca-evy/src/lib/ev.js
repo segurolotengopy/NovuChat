@@ -1004,19 +1004,23 @@ function evEnlaceDeMapa(v) {
 }
 // LA COMPARACIÓN FIJA «Radiesse® o HArmonyCa®» (texto de Andres, 25/10/2026, por CÓDIGO: no pasa por el modelo ni por el recorte de 700). Solo con `usarMarcas`. Dispara cuando el cliente pregunta cuál de los dos es mejor,
 // cuál le conviene o la diferencia, y el mensaje (o lo último que dijo el asistente) nombra alguno de los dos productos; si además pregunta por el precio, contesta el modelo con sus barreras.
-const EV_PRODUCTO_DE_LA_COMPARACION = /\b(radiesse|harmony ?ca)\b/;
+const EV_PRODUCTO_DE_LA_COMPARACION = /\b(radiesse|harmony ?ca|harmonica)\b/;
+const EV_O_ENTRE_PRODUCTOS = /\b(radiesse|harmony ?ca|harmonica)\s+(o|vs|versus)\s+(radiesse|harmony ?ca|harmonica)\b/;
 const EV_PREGUNTA_DE_PRECIO_COMPARACION = /\b(cuant[oa]s?|cuesta\w*|precio\w*|costo\w*|vale|valen|valor|cobran|cobras|tarifa\w*|presupuesto|caro\w*|barat\w*|sale|salen|bs|bolivianos?|pago\w*|financ\w*|descuento\w*|promo\w*)\b/;
 // Lo que NO es esta comparación: salud, seguridad o riesgo (gana el modelo con su barrera de remisión a la valoración), otro tratamiento, la duración, y un pedido de agendar que ya puede cerrar.
-const EV_SEGURIDAD_COMPARACION = /\b(segur\w*|riesgo\w*|duele|dolor\w*|contraindic\w*|efectos? secundari\w*)\b/;
+const EV_SEGURIDAD_COMPARACION = /\b(segur\w*|riesgo\w*|duele|dolor\w*|contraindic\w*|efectos? secundari\w*|adverso\w*|complicacion\w*|reaccion\w*|alergi\w*)\b/;
+// Condiciones de salud que se suman a `EV_CONDICION` SOLO para decidir si el mensaje del paciente puede recibir la comparación fija (criterio conservador: ante la duda contesta el modelo, con sus barreras). No se agregan a `EV_CONDICION`:
+// esa la lee también la barrera del texto del modelo, donde «sin cirugía» (frase normal del guion) daría falsos positivos.
+const EV_CONDICION_COMPARACION = /\b(lactar|lactancia|dando pecho|dando de lactar|tiroid\w*|hipotiroid\w*|operad\w*|me opere|cirugi\w*|pastilla\w*|herpes|tratamiento medico|medicament\w*)\b/;
 const EV_OTRO_TRATAMIENTO = /\b(botox|toxina|sculptra|acido hialuronico|hialuronico|relleno\w*|hilos?|ultherapy|plasma|peeling|laser)\b/;
 const EV_DURACION_COMPARACION = /\b(dura|duran|duracion|cuanto tiempo|cuantas sesiones|cuantas veces)\b/;
 // Con UN solo producto (o ninguno en el mensaje) se exige un comparativo explícito, no «diferente / diferencia» a secas.
 const EV_COMPARATIVO_EXPLICITO = /\b(cual (es )?(mejor|me conviene|me recomiendas|me sirve|elijo)|cual de (los|las) dos|que (es )?mejor|me conviene|mejor (opcion|producto))\b/;
 function evPideComparacion(textoCliente, historial) {
   const n = evNorm(textoCliente);
-  if (!EV_PIDE_COMPARATIVO.test(n) || EV_PREGUNTA_DE_PRECIO_COMPARACION.test(n)) return false;
-  if (EV_CONDICION.test(n) || EV_SEGURIDAD_COMPARACION.test(n) || EV_OTRO_TRATAMIENTO.test(n) || EV_DURACION_COMPARACION.test(n)) return false;
-  const nombrados = ['radiesse', 'harmony ?ca'].filter((p) => new RegExp('\\b' + p + '\\b').test(n)).length;
+  if (!(EV_PIDE_COMPARATIVO.test(n) || EV_O_ENTRE_PRODUCTOS.test(n)) || EV_PREGUNTA_DE_PRECIO_COMPARACION.test(n)) return false;
+  if (EV_CONDICION.test(n) || EV_CONDICION_COMPARACION.test(n) || EV_SEGURIDAD_COMPARACION.test(n) || EV_OTRO_TRATAMIENTO.test(n) || EV_DURACION_COMPARACION.test(n)) return false;
+  const nombrados = [/\bradiesse\b/, /\b(?:harmony ?ca|harmonica)\b/].filter((re) => re.test(n)).length;
   if (nombrados >= 2) return true;
   if (!EV_COMPARATIVO_EXPLICITO.test(n)) return false;
   if (nombrados === 1) return true;

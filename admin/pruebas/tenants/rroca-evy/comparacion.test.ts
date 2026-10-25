@@ -55,7 +55,9 @@ describe('la comparación fija', () => {
   it('NEGADAS (revisión): salud, seguridad, otro tratamiento, duración, precio extendido y un solo producto sin comparativo explícito no disparan; contesta el modelo', () => {
     for (const p of ['Tomo anticoagulantes, ¿cuál me conviene, Radiesse o HArmonyCa?', 'Estoy embarazada, ¿qué es mejor Radiesse o HArmonyCa?', 'Tengo diabetes, ¿me conviene Radiesse?', '¿Es seguro Radiesse o HArmonyCa?',
       '¿Radiesse es diferente al botox?', 'Radiesse vs ácido hialurónico', 'No quiero Radiesse, ¿qué diferencia tiene con el botox?', '¿Cuál dura más, Radiesse o HArmonyCa?',
-      'Radiesse o HArmonyCa, cuantos bs', '¿Cuál es más caro, Radiesse o HArmonyCa?', '¿Qué diferencia tiene Radiesse?']) {
+      'Radiesse o HArmonyCa, cuantos bs', '¿Cuál es más caro, Radiesse o HArmonyCa?', '¿Qué diferencia tiene Radiesse?',
+      'Estoy dando de lactar, ¿cuál es mejor, Radiesse o HArmonyCa?', 'Tengo hipotiroidismo, ¿cuál me conviene?', 'Me operé hace un mes, ¿cuál es mejor Radiesse o HArmonyCa?', 'Tomo pastillas, ¿cuál me conviene?', 'Tengo herpes, ¿Radiesse o HArmonyCa?',
+      '¿Qué efectos adversos tienen Radiesse y HArmonyCa?', '¿Hay complicaciones con Radiesse o HArmonyCa?']) {
       const t = hablar(crear({ modeloDice: dice('Respuesta del modelo.') }), ANA, mTexto(p));
       expect(textos(t).join(' '), p).not.toContain('Ninguno es');
     }
@@ -69,6 +71,10 @@ describe('la comparación fija', () => {
       expect(textos(t)[0], p).toMatch(/Excelente decisión/);
       expect(textos(t).join(' '), p).not.toContain('Ninguno es');
     }
+  });
+  it('«Harmónica» (sin «y») cuenta como HArmonyCa; «tomo agua» no es una condición de salud', () => {
+    expect(textos(hablar(crear({ modeloDice: 'x' }), ANA, mTexto('¿Radiesse o Harmónica?')))[0]).toBe(SIN_NOMBRE);
+    expect(textos(hablar(crear({ modeloDice: 'x' }), ANA, mTexto('Tomo agua con limón. ¿Cuál es mejor, Radiesse o HArmonyCa?')))[0]).toBe(SIN_NOMBRE);
   });
   it('la imagen comparativa sale como hoy: una vez, antes del texto; la segunda vez solo el texto', () => {
     const m = crear({ modeloDice: 'x' });
