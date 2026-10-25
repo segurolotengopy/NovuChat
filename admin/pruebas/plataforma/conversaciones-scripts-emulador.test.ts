@@ -118,10 +118,11 @@ describe('A. la bandera consolaConversaciones, como proceso contra el emulador',
     expect((await db.doc(`tenants/${t}`).get()).data()).toMatchObject({ consolaConversaciones: 'clasica', editadoDespues: 'intacto' });
   });
 
-  it('BELLIDO: el proceso se niega y la ficha queda como estaba (por id y por nombre)', async () => {
+  it('BELLIDO (24/10/2026): recibe la bandera; con la variable de exclusión el proceso se niega (por id y por nombre)', async () => {
     await db.doc('tenants/bellido').set({ nombre: 'Consultorio Sintetico', estado: 'activo' });
     const antes = (await db.doc('tenants/bellido').get()).updateTime.toMillis();
-    const r = hijo(BANDERA, args('bellido', 'nueva', ['--aplicar', '--respaldo', rutaRespaldo()]));
+    const excl = { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' };
+    const r = hijo(BANDERA, args('bellido', 'nueva', ['--aplicar', '--respaldo', rutaRespaldo()]), excl);
     expect(r.status).toBe(2);
     expect(r.stderr).toContain('EXCLUIDO');
     const d = await db.doc('tenants/bellido').get();
@@ -130,10 +131,15 @@ describe('A. la bandera consolaConversaciones, como proceso contra el emulador',
 
     const t = nuevoTenant();
     await db.doc(`tenants/${t}`).set({ nombre: 'Consultorio del Dr. Bellido', estado: 'activo' });
-    const porNombre = hijo(BANDERA, args(t, 'nueva', ['--aplicar', '--respaldo', rutaRespaldo()]));
+    const porNombre = hijo(BANDERA, args(t, 'nueva', ['--aplicar', '--respaldo', rutaRespaldo()]), excl);
     expect(porNombre.status).toBe(2);
     expect(porNombre.stdout).toContain('EXCLUIDO');
     expect((await db.doc(`tenants/${t}`).get()).data()).not.toHaveProperty('consolaConversaciones');
+
+    // Sin la variable: la bandera de Bellido se escribe, y solo ese campo.
+    const ok = hijo(BANDERA, args('bellido', 'nueva', ['--aplicar', '--respaldo', rutaRespaldo()]));
+    expect(ok.status, ok.stdout + ok.stderr).toBe(0);
+    expect((await db.doc('tenants/bellido').get()).data()).toEqual({ nombre: 'Consultorio Sintetico', estado: 'activo', consolaConversaciones: 'nueva' });
   });
 
   it('un proyecto real con el emulador heredado se rechaza antes de abrir nada (y no imprime el proyecto)', () => {

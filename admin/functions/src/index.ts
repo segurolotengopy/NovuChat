@@ -93,7 +93,7 @@ export { importarCatalogo } from './modulos/productos/limiteCatalogo.js'; // lí
 // BÚSQUEDA EN CONVERSACIONES (H1-6). Callable del Core: busca una palabra en los
 // mensajes de UN comercio con los campos derivados que escribe la ingesta. Va
 // DESPUÉS de las opciones globales (región y cuenta sa-functions, primer import
-// de este archivo). Sin la bandera `consolaConversaciones` nadie la llama; el
+// de este archivo). Desde el 24/10/2026 la pantalla nueva es la de todos; el
 // orden de puesta en producción (índices, etiqueta, invocador, bandera) está en el PR.
 export { buscarConversaciones } from './core/conversacion/buscarConversaciones.js';
 // INTERVENCIÓN DE UNA PERSONA (H2-1). Tomar y devolver una conversación: el turno que pausa al
