@@ -418,7 +418,11 @@ PY
 }
 emma_vieja_clase() {  # $1 = flujo VIVO ; $2 = archivo que se publica. Imprime "si" si el vivo es el flujo VIEJO de Emma (doctoras): nombre con rroca-emma, nodo «Armar avisos», UN solo «Config base», sin mencionar rroca-evy y con el MISMO phoneNumberIdEsperado que el archivo (solo dígitos; el valor nunca se imprime)
   python3 - "$1" "$2" <<'PY' 2>/dev/null || true
-import json, re, sys
+import json, re, sys, unicodedata
+def normal(t):
+    # NFKC + guiones Unicode a «-» + minúsculas: «rroca‑evy» con otro guion no escapa a la búsqueda
+    t = unicodedata.normalize("NFKC", str(t))
+    return re.sub("[\u2010-\u2015\u2212\ufe58\ufe63\uff0d\u00ad]", "-", t).lower()
 def asignaciones(nodo):
     lista = ((nodo.get("parameters") or {}).get("assignments") or {}).get("assignments") or []
     return [(str(a.get("name", "")), str(a.get("value", ""))) for a in lista if isinstance(a, dict)]
@@ -437,10 +441,10 @@ try:
     po = [v for k, v in ao if k == "phoneNumberIdEsperado"]
     tenants = [v for k, v in av if k == "tenantId"]
     ok = (
-        "rroca-emma" in str(vivo.get("name", "")).lower()
+        "rroca-emma" in normal(vivo.get("name", ""))
         and any(n.get("name") == "Armar avisos" for n in nodos)
-        and "rroca-evy" not in json.dumps(vivo).lower()
-        and len(pv) == 1 and len(po) == 1 and re.fullmatch(r"\d{6,25}", pv[0]) is not None and pv[0] == po[0]
+        and "rroca-evy" not in normal(json.dumps(vivo, ensure_ascii=False))
+        and len(pv) == 1 and len(po) == 1 and re.fullmatch(r"[0-9]{6,25}", pv[0], re.ASCII) is not None and pv[0] == po[0]
         and all(t == "rroca-emma" for t in tenants)
     )
     if ok:

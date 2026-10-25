@@ -199,7 +199,8 @@ const FORMAS_CONFIG = {
   avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
   mediosHabilitados: /^[a-z_]{1,40}(,[a-z_]{1,40})*$/,
   // Los ids de medio de Meta de las tres imágenes: un marcador hasta que la tabla local los resuelva (dígitos).
-  arteComparativoMediaId: /^(\d{6,25}|REEMPLAZAR_MEDIA_ID_[A-Z0-9_]+)$/,
+  // EMMA: la imagen comparativa NO existe. Su id es siempre una cadena VACÍA (id vacío = imagen inactiva); ni dígitos ni marcador.
+  arteComparativoMediaId: /^$/,
   arteAntesDespuesMediaId: /^(\d{6,25}|REEMPLAZAR_MEDIA_ID_[A-Z0-9_]+)$/,
   arteAutoridadMediaId: /^(\d{6,25}|REEMPLAZAR_MEDIA_ID_[A-Z0-9_]+)$/,
   topeImagenesDia: /^([0-9]|1[0-9]|20)$/,
@@ -238,7 +239,8 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
       if (!['string', 'number', 'boolean'].includes(typeof v)) errores.push(`configBase.${c}: solo texto, número o booleano`);
       if (FORMAS_CONFIG[c] && !FORMAS_CONFIG[c].test(String(v))) errores.push(`configBase.${c}: forma no válida`);
     }
-    for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio', 'tenantId', 'clinica', 'arteComparativoMediaId', 'arteAntesDespuesMediaId', 'arteAutoridadMediaId']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
+    for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio', 'tenantId', 'clinica', 'arteAntesDespuesMediaId', 'arteAutoridadMediaId']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
+    if (cb.arteComparativoMediaId !== '') errores.push('configBase.arteComparativoMediaId: en Emma tiene que ser una cadena vacía (la comparativa no existe)');
     if (cb.tenantId !== undefined && cb.tenantId !== d.tenant) errores.push('configBase.tenantId: tiene que ser el tenant de este archivo');
     for (const c of TEXTOS_LIBRES) if (typeof cb[c] === 'string' && (/https?:|www\.|wa\.me|[<>{}\[\]]/i.test(cb[c]))) errores.push(`configBase.${c}: no puede llevar enlaces, llaves ni corchetes`);
     if (typeof cb.direccionRespaldo === 'string' && /\d{7,}/.test(cb.direccionRespaldo.replace(/\s/g, ''))) errores.push('configBase.direccionRespaldo: no puede llevar un número largo');
@@ -493,10 +495,11 @@ export function guardiaDePublicacion({ flujo, datos, negocio, etapa = 'encender'
   const base = nodos.find((n) => n.name === 'Config base');
   const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
   const enFlujo = Array.isArray(lista) ? Object.fromEntries(lista.map((a) => [a.name, a.value])) : {};
-  // 1. Marcadores sin sustituir en CUALQUIER parte del JSON completo. EMMA: la imagen comparativa «¿Sculptra® o Radiesse®?» NO existe todavía (falta el archivo): su id puede quedar como marcador y esa imagen queda INACTIVA
-  // (sin id resuelto el flujo no la envía). Las otras dos (bata y antes y después) sí se exigen resueltas.
-  const marcasComparativo = ['REEMPLAZAR_MEDIA_ID_ARTE_COMPARATIVO'];
-  for (const m of new Set(marcasEn(flujo).map((x) => x.toUpperCase()))) if (!marcasComparativo.includes(m)) h.push(`marcador sin sustituir: ${m}`);
+  // 1. Marcadores sin sustituir en CUALQUIER parte del JSON completo. EMMA: la imagen comparativa «¿Sculptra® o Radiesse®?» NO existe: su id es una cadena VACÍA (sin marcador, sin dígitos) y esa imagen queda INACTIVA.
+  // Las otras dos (bata y antes y después) sí se exigen resueltas.
+  for (const m of new Set(marcasEn(flujo).map((x) => x.toUpperCase()))) h.push(`marcador sin sustituir: ${m}`);
+  if (enFlujo.arteComparativoMediaId !== '') h.push('Config base: arteComparativoMediaId tiene que ser una cadena vacía en Emma (la comparativa no existe)');
+  if (datos && datos.configBase && datos.configBase.arteComparativoMediaId !== '') h.push('datos: arteComparativoMediaId tiene que ser una cadena vacía en Emma (la comparativa no existe)');
   // El tenantId aparece UNA vez en «Config base» (falla cerrado): un duplicado haría que quien lea el último y quien lea el primero vean tenants distintos.
   if (Array.isArray(lista) && lista.filter((x) => x && x.name === 'tenantId').length !== 1) h.push('Config base: tenantId tiene que aparecer exactamente una vez');
   if (!Array.isArray(lista)) h.push('el flujo no trae «Config base»: no se puede comprobar el estado de la plantilla');
