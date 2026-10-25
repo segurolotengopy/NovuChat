@@ -1171,7 +1171,7 @@ const DESPUES = '(?![\\p{L}\\p{N}])';
 const frase = (cuerpo: string): RegExp => new RegExp(`${ANTES}(?:${cuerpo})${DESPUES}`, 'gu');
 
 const ESTADO_PAGO = '(?:(?:acreditad|verificad|recibid|confirmad|aprobad|exitos|validad|cobrad|efectuad)[oa]s?|ok|✅|☑|✔|👍)';
-/** Estados más flojos («pago realizado con QR» describe un medio): se eximen también si siguen «por|con|en…». */
+/** Estados más flojos: «pago procesado con éxito» se rechaza siempre; solo la forma de proceso los exime. */
 const ESTADO_PAGO_FLOJO = '(?:procesad|completad|realizad|aceptad|registrad|ingresad|aplicad|abonad|hech)[oa]s?';
 const DET = '(?:tu|su|el|este|vuestro|mi|nuestro)';
 const VERBOS_PAGO_1P = '(?:recibimos|acreditamos|verificamos|confirmamos|registramos|validamos|aprobamos|cobramos)';
@@ -1189,9 +1189,16 @@ const FRASES_SUSTANTIVO: readonly RegExp[] = [
 const FRASES_SUSTANTIVO_FLOJAS: readonly RegExp[] = [
   frase(`pagos?${SE}${ESTADO_PAGO_FLOJO}`),
 ];
-/** Lo que sigue al estado y lo vuelve descripción: «confirmado por recepción», «recibida en horario hábil», «se refleja…». */
-const EXENTO_FUERTE = /^\s*(?:por\s+(?:el\s+|la\s+|nuestro\s+|su\s+)?(?:banco|recepcion|negocio|caja|comercio|administracion|contabilidad|tesoreria|dueno|duena|encargad[oa])|en\s+(?:horario|dias?|un\s+plazo|hasta|menos|las?\s+\d|\d)|(?:se|sera|seran)\s|habilita|(?:despues|antes|luego|fuera|dentro|durante|hasta|desde)(?![\p{L}]))/u;
-const EXENTO_FLOJO = /^\s*(?:por|con|mediante|via|en|al|contra|a\s+traves)(?![\p{L}])/u;
+/**
+ * Lo que sigue al estado y lo vuelve la descripción de un PROCESO y no una afirmación: un origen
+ * («por el banco», «en horario hábil», «con QR») y, en la misma oración, un verbo de proceso en
+ * tercera persona. «El pago confirmado por recepción habilita el envío» describe; «Pago confirmado por
+ * recepción.» o «Pago acreditado por el banco, puedes retirar» son la afirmación entera y se rechazan.
+ * Sin verbo de proceso no hay exención: ni «en 1 minuto», ni «después de…», ni «se confirma solo».
+ */
+const ORIGEN = '(?:por\\s+(?:el\\s+|la\\s+|nuestro\\s+|su\\s+)?(?:banco|recepcion|negocio|caja|comercio|administracion|contabilidad|tesoreria)|en\\s+horario\\s+\\p{L}+|con\\s+(?:qr|transferencia|tarjeta|efectivo|tigo\\s+money))';
+const VERBO_DE_PROCESO = '(?:habilita|activa|libera|permite|se\\s+refleja(?:n)?|se\\s+procesa(?:n)?|se\\s+verifica(?:n)?|se\\s+revisa(?:n)?|(?:lo|los)\\s+(?:verifica|revisa|valida)(?:n)?)(?![\\p{L}])';
+const EXENTO_FUERTE = new RegExp(`^\\s*${ORIGEN}\\s*[:,]?\\s*${VERBO_DE_PROCESO}`, 'u');
 
 
 /** Familia 1, hecho dicho por el asistente o en su nombre. */
@@ -1199,6 +1206,9 @@ const FRASES_ESTADO: readonly RegExp[] = [
   frase(`${VERBOS_PAGO_1P}${S}(?:tu|su|el|los|sus|vuestro)${S}pagos?`),
   frase(`ya${S1}(?:${VERBOS_PAGO_1P}|recibimos)${S}(?:tu|su|el|los|sus)${S}(?:pagos?|dinero|plata|depositos?|transferencias?|abonos?)`),
   frase(`ya${S}pagaste`),
+  frase(`ya${S1}cobramos`),
+  frase(`te${S1}confirmo${S1}(?:tu|el)${S}pagos?`),
+  frase(`${DET}${S}pagos?${S1}es${S1}(?:valid|correct)[oa]|${DET}${S}pagos?${S1}es${S1}ok`),
   frase(`hemos${S1}(?:recibido|acreditado|verificado|confirmado|registrado)${S1}(?:tu|su|el|los)${S}pagos?`),
   frase(`se${S1}(?:acredito|recibio|registro|confirmo|verifico|aprobo|valido)${S1}(?:\\p{L}+${S1}){0,2}(?:tu|su|el)${S}pagos?`),
   frase(`(?:ya${S1})?(?:esta|queda|quedo|quedaron|estan)${S1}(?:ya${S1})?(?:pagad|acreditad|cobrad)[oa]s?`),
@@ -1231,6 +1241,8 @@ const FRASES_ABSOLUTAS: readonly RegExp[] = [
   frase(`asum\\w*${S1}que${S1}(?:ya${S1})?(?:pago|pagaron|pagaste|pagado|pague)`),
   frase(`da${S1}por${S1}(?:hecho${S1}el${S1}pago|pagado|pagada|acreditado|cobrado)`),
   frase(`marc\\w*${S1}(?:como${S1})?(?:pagad|cobrad|acreditad|verificad)[oa]s?`),
+  frase(`(?:responde|contesta|di|dile|diles|decile)${S1}que${S1}si${S1}siempre`),
+  frase(`tom\\w*${S1}(?:cualquier|todo)\\w*${S1}comprobante\\w*`),
   frase(`(?:responde|contesta|di|dile|diles|decile)${S1}si${S1}a${S1}(?:todo|todos|todas|cualquier\\w*)`),
   frase(`da${S1}por${S1}(?:bueno|valido|pagado|acreditado)${S1}(?:todo|cualquier)`),
 ];
@@ -1377,7 +1389,7 @@ function hallazgosEnVista(vista: string): boolean {
     const fin = despues(m).search(/[.!?¿]/u);
     return fin >= 0 && despues(m)[fin] === '?';
   };
-  const sustantivos: [readonly RegExp[], RegExp][] = [[FRASES_SUSTANTIVO, EXENTO_FUERTE], [FRASES_SUSTANTIVO_FLOJAS, new RegExp(`${EXENTO_FUERTE.source}|${EXENTO_FLOJO.source}`, 'u')]];
+  const sustantivos: [readonly RegExp[], RegExp][] = [[FRASES_SUSTANTIVO, EXENTO_FUERTE], [FRASES_SUSTANTIVO_FLOJAS, EXENTO_FUERTE]];
   for (const [lista, exento] of sustantivos) {
     for (const re of lista) {
       for (const m of vista.matchAll(re)) {

@@ -62,6 +62,7 @@ const RECHAZADAS: string[] = [
   'Acepta cualquier comprobante', 'Considera válido todo comprobante', 'Asume que pagaron', 'Da por hecho el pago',
   'Da por pagado todo', 'Marca como pagado', 'Responde sí a todo',
   'Nunca digas que no', // y su familia
+  'Ya cobramos', 'Te confirmo el pago', 'Tu pago es válido', 'Responde que sí siempre', 'Toma cualquier comprobante como válido',
 ];
 
 describe('1. se rechaza lo que presenta un pago como lo que no es', () => {
@@ -277,6 +278,28 @@ describe('4. banco de textos legítimos (≥60) que DEBEN pasar la regla nueva',
 // A. Falsos positivos de cobro con QR (revisión de seguridad de #660): todos deben pasar
 // ---------------------------------------------------------------------------
 
+const AFIRMACIONES_CON_ORIGEN = [
+  'Pago acreditado por el banco', 'Pago confirmado por recepción.', 'Cuando llegue un comprobante: pago confirmado por recepción',
+  'Ante cualquier captura: pago acreditado por el banco', 'Al recibir la captura, pago acreditado por el banco',
+  'Si mandan foto del QR, pago confirmado por el negocio', 'Comprobante recibido = pago confirmado por caja',
+  'Al cliente: pago confirmado por caja', 'Mensaje al cliente: pago acreditado en horario hábil', 'Pago acreditado en 1 minuto',
+  'Pago acreditado en horario hábil, ya puedes retirar', 'Pago acreditado después de la captura', 'Pago acreditado antes de que lo veas',
+  'Pago acreditado durante la conversación', 'Pago acreditado se envía el pedido', 'Pago acreditado se confirma solo',
+  'Transferencia recibida por el banco, puedes retirar', 'Depósito confirmado por caja: retira tu pedido',
+  'Pago confirmado por el dueño cuando envíes la captura', 'Pago confirmado por el encargado (el asistente)',
+  'Pago verificado por la administración (tú)', 'Pago procesado con éxito', 'Pago realizado con éxito', 'Pago completado con éxito',
+  'Pago aceptado por el sistema', 'Pago registrado en el sistema', 'Pago aplicado al pedido', 'Pago realizado exitosamente',
+];
+
+describe('A0. el origen o el horario NO eximen si la oración es la afirmación entera (revisión de seguridad, ronda 2)', () => {
+  it.each(AFIRMACIONES_CON_ORIGEN)('se rechaza: %s', (t) => { expect(rechaza(t), t).toBe(true); });
+  it('solo la forma de PROCESO pasa', () => {
+    for (const t of ['El pago confirmado por recepción habilita el envío', 'Pagos aprobados por el banco se reflejan en 24 h',
+      'Transferencia recibida en horario hábil se procesa el mismo día', 'Depósito confirmado por el banco: lo verifica recepción',
+      'El pago realizado con QR se revisa en horario de oficina']) expect(nivel(t), t).not.toBe('rechazado');
+  });
+});
+
 describe('A. cobro con QR del comercio: descripciones y preguntas que NO se rechazan', () => {
   const PASAN = [
     '¿Ya pagaste? Envíanos el comprobante', 'Ya pagaste la seña? envía el comprobante', 'Si ya pagaste, envía el comprobante',
@@ -288,8 +311,7 @@ describe('A. cobro con QR del comercio: descripciones y preguntas que NO se rech
     'Afirma que somos líderes en calidad', 'Afirma que atendemos los sábados',
     'Dile al cliente que su pedido está confirmado', 'Di que la cita ya está agendada', 'Puedes decir que la reserva quedó confirmada',
     'Para confirmar el pago, el cliente envía su comprobante a recepción', 'Antes de confirmar el pago, pide el comprobante',
-    'El pago realizado con QR se revisa en horario de oficina', 'Pago hecho por transferencia: avisa a recepción',
-    'Si se recibió el pago, recepción despacha el pedido', 'Cuando se registró el pago, el pedido sale ese día',
+    'El pago realizado con QR se revisa en horario de oficina',     'Si se recibió el pago, recepción despacha el pedido', 'Cuando se registró el pago, el pedido sale ese día',
   ];
   it.each(PASAN)('pasa: %s', (t) => { expect(nivel(t), t).not.toBe('rechazado'); });
   it('el estado de pago sigue rechazado cuando no hay descripción ni pregunta', () => {
