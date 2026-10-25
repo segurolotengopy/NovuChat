@@ -373,6 +373,41 @@ describe('4. la clave de idempotencia', () => {
   });
 });
 
+describe('5b. la espera tras un entrante se distingue del failed-precondition general', () => {
+  const t = (d?: Record<string, unknown>, a: 'enviar' | 'tomar' | 'devolver' = 'enviar') => textoErrorTurno(a, 'failed-precondition', d);
+  const GENERAL = textoErrorTurno('enviar', 'failed-precondition');
+
+  it('con motivo espera y segundos válidos dice cuántos', () => {
+    expect(t({ motivo: 'espera', esperaSegundos: 20 })).toBe('Espere 20 segundos: el asistente puede estar respondiendo. Después vuelva a pulsar Enviar.');
+    expect(t({ motivo: 'espera', esperaSegundos: 1 })).toMatch(/^Espere 1 segundo:/);
+  });
+
+  it('sin segundos válidos (ausente, negativo, cero, NaN, texto, fracción, enorme) dice «unos segundos»', () => {
+    for (const v of [undefined, -5, 0, NaN, '20', 1.5, 99999, null, Infinity]) {
+      const x = t({ motivo: 'espera', esperaSegundos: v });
+      expect(x, String(v)).toMatch(/^Espere unos segundos: el asistente/);
+      expect(x).not.toBe(GENERAL);
+    }
+    expect(t({ motivo: 'espera' })).toMatch(/^Espere unos segundos/);
+  });
+
+  it('sin motivo, o con otro motivo, sigue el texto general; el texto del servidor nunca se muestra', () => {
+    expect(t()).toBe(GENERAL);
+    expect(t({})).toBe(GENERAL);
+    expect(t({ esperaSegundos: 20 })).toBe(GENERAL);
+    expect(t({ motivo: 'otra', esperaSegundos: 20 })).toBe(GENERAL);
+    expect(t({ motivo: 'Espera <b>x</b>' })).toBe(GENERAL);
+    expect(GENERAL).toMatch(/ventana de 24 h/);
+  });
+
+  it('tomar y devolver no cambian aunque lleguen esos detalles', () => {
+    for (const a of ['tomar', 'devolver'] as const) {
+      expect(t({ motivo: 'espera', esperaSegundos: 20 }, a)).toBe(t(undefined, a));
+      expect(t({ motivo: 'espera', esperaSegundos: 20 }, a)).not.toMatch(/Espere/);
+    }
+  });
+});
+
 describe('5. los errores salen de `e.code`, nunca de `e.message`', () => {
   it('el código se lee con o sin el prefijo `functions/` y nunca lanza', () => {
     expect(codigoDeError({ code: 'functions/permission-denied' })).toBe('permission-denied');
