@@ -17,13 +17,14 @@ const RESPUESTAS_DEL_GUION: Array<[string, string]> = [
   ['ya probé otros', 'Es comprensible. Por eso la Dra. Evy (aplicadora certificada) no usa recetas genéricas, sino que analiza la anatomía de tu rostro en la valoración gratuita para indicarte solo lo que realmente te dará resultados.'],
   ['lo voy a pensar', '¡Claro, tómate tu tiempo! Solo recuerda que la valoración no tiene ningún costo hoy (te ahorras los 250 Bs) ni te compromete a nada, así que no arriesgas nada viniendo a conocer tu diagnóstico.'],
   ['¿dónde están?', 'Atendemos en la Clínica DentalCor, ubicada en la Avenida Piraí, segundo anillo, Calle Sapocó # 53 (Santa Cruz).'],
-  // «¿Radiesse o HArmonyCa?» ya no lo contesta el modelo: es la comparación fija por código (comparacion.test.ts).
+  // «¿Radiesse o HArmonyCa?» con las marcas encendidas ya no llega al modelo (comparación fija, comparacion.test.ts); este caso conserva el camino que aún lo contesta: usarMarcas APAGADO (ver el bucle, que lo corre con las marcas apagadas).
+  ['¿Radiesse o HArmonyCa?', 'Ambos activan tu colágeno natural. Radiesse da firmeza y contorno preventivo, y HArmonyCa da efecto lifting en flacidez más marcada. La valoración es gratuita para que la Dra. defina cuál te corresponde. ¿Cómo te llamas?'],
 ];
 
 describe('lo que el guion manda decir PASA las barreras', () => {
   for (const [msg, salida] of RESPUESTAS_DEL_GUION) {
     it(`«${msg}»`, () => {
-      const t = hablar(crear({ modeloDice: () => salida }), ANA, mTexto(msg));
+      const t = hablar(crear({ modeloDice: () => salida, base: msg.includes('Radiesse o HArmonyCa') ? { usarMarcas: '' } : undefined }), ANA, mTexto(msg));
       const txt = textos(t)[0]!;
       expect(txt).not.toMatch(/inconveniente para responderte/);
       // sin cambios de fondo: las cifras del guion y los nombres se conservan

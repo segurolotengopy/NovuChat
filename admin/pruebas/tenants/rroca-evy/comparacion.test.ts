@@ -52,6 +52,24 @@ describe('la comparación fija', () => {
       expect(textos(t).join(' '), p).not.toContain('Ninguno es');
     }
   });
+  it('NEGADAS (revisión): salud, seguridad, otro tratamiento, duración, precio extendido y un solo producto sin comparativo explícito no disparan; contesta el modelo', () => {
+    for (const p of ['Tomo anticoagulantes, ¿cuál me conviene, Radiesse o HArmonyCa?', 'Estoy embarazada, ¿qué es mejor Radiesse o HArmonyCa?', 'Tengo diabetes, ¿me conviene Radiesse?', '¿Es seguro Radiesse o HArmonyCa?',
+      '¿Radiesse es diferente al botox?', 'Radiesse vs ácido hialurónico', 'No quiero Radiesse, ¿qué diferencia tiene con el botox?', '¿Cuál dura más, Radiesse o HArmonyCa?',
+      'Radiesse o HArmonyCa, cuantos bs', '¿Cuál es más caro, Radiesse o HArmonyCa?', '¿Qué diferencia tiene Radiesse?']) {
+      const t = hablar(crear({ modeloDice: dice('Respuesta del modelo.') }), ANA, mTexto(p));
+      expect(textos(t).join(' '), p).not.toContain('Ninguno es');
+    }
+  });
+  it('un pedido explícito de agendar que ya puede cerrar gana: sale el cierre, no la comparación', () => {
+    for (const p of ['Quiero agendar mi valoración. ¿Cuál me conviene, Radiesse o HArmonyCa?', 'Sí, quiero agendar. Pero ¿qué diferencia hay entre Radiesse y HArmonyCa?']) {
+      const m = crear({ modeloDice: dice('Perfecto.') });
+      hablar(m, ANA, mTexto('hola'));
+      const t = hablar(m, ANA, mTexto(p));
+      expect(esBoton(t), p).toBe(true);
+      expect(textos(t)[0], p).toMatch(/Excelente decisión/);
+      expect(textos(t).join(' '), p).not.toContain('Ninguno es');
+    }
+  });
   it('la imagen comparativa sale como hoy: una vez, antes del texto; la segunda vez solo el texto', () => {
     const m = crear({ modeloDice: 'x' });
     const t1 = hablar(m, ANA, mTexto(PREGUNTAS[0]!));

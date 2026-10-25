@@ -1005,11 +1005,21 @@ function evEnlaceDeMapa(v) {
 // LA COMPARACIÓN FIJA «Radiesse® o HArmonyCa®» (texto de Andres, 25/10/2026, por CÓDIGO: no pasa por el modelo ni por el recorte de 700). Solo con `usarMarcas`. Dispara cuando el cliente pregunta cuál de los dos es mejor,
 // cuál le conviene o la diferencia, y el mensaje (o lo último que dijo el asistente) nombra alguno de los dos productos; si además pregunta por el precio, contesta el modelo con sus barreras.
 const EV_PRODUCTO_DE_LA_COMPARACION = /\b(radiesse|harmony ?ca)\b/;
-const EV_PREGUNTA_DE_PRECIO_COMPARACION = /\b(cuanto|cuesta\w*|precio\w*|costo\w*|vale|valen|valor|cobran|cobras|tarifa\w*|presupuesto)\b/;
+const EV_PREGUNTA_DE_PRECIO_COMPARACION = /\b(cuant[oa]s?|cuesta\w*|precio\w*|costo\w*|vale|valen|valor|cobran|cobras|tarifa\w*|presupuesto|caro\w*|barat\w*|sale|salen|bs|bolivianos?|pago\w*|financ\w*|descuento\w*|promo\w*)\b/;
+// Lo que NO es esta comparación: salud, seguridad o riesgo (gana el modelo con su barrera de remisión a la valoración), otro tratamiento, la duración, y un pedido de agendar que ya puede cerrar.
+const EV_SEGURIDAD_COMPARACION = /\b(segur\w*|riesgo\w*|duele|dolor\w*|contraindic\w*|efectos? secundari\w*)\b/;
+const EV_OTRO_TRATAMIENTO = /\b(botox|toxina|sculptra|acido hialuronico|hialuronico|relleno\w*|hilos?|ultherapy|plasma|peeling|laser)\b/;
+const EV_DURACION_COMPARACION = /\b(dura|duran|duracion|cuanto tiempo|cuantas sesiones|cuantas veces)\b/;
+// Con UN solo producto (o ninguno en el mensaje) se exige un comparativo explícito, no «diferente / diferencia» a secas.
+const EV_COMPARATIVO_EXPLICITO = /\b(cual (es )?(mejor|me conviene|me recomiendas|me sirve|elijo)|cual de (los|las) dos|que (es )?mejor|me conviene|mejor (opcion|producto))\b/;
 function evPideComparacion(textoCliente, historial) {
   const n = evNorm(textoCliente);
   if (!EV_PIDE_COMPARATIVO.test(n) || EV_PREGUNTA_DE_PRECIO_COMPARACION.test(n)) return false;
-  if (EV_PRODUCTO_DE_LA_COMPARACION.test(n)) return true;
+  if (EV_CONDICION.test(n) || EV_SEGURIDAD_COMPARACION.test(n) || EV_OTRO_TRATAMIENTO.test(n) || EV_DURACION_COMPARACION.test(n)) return false;
+  const nombrados = ['radiesse', 'harmony ?ca'].filter((p) => new RegExp('\\b' + p + '\\b').test(n)).length;
+  if (nombrados >= 2) return true;
+  if (!EV_COMPARATIVO_EXPLICITO.test(n)) return false;
+  if (nombrados === 1) return true;
   const h = Array.isArray(historial) ? historial : [];
   const a = evUltimoDe(h, 'a');
   return a >= 0 && EV_PRODUCTO_DE_LA_COMPARACION.test(evNorm(h[a].t));
