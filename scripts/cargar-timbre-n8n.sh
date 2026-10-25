@@ -64,7 +64,7 @@
 # carga con ellas en lugar de las de ensayo (cargar, --activar y --quitar; el timbre sigue siendo
 # `Salida de persona (timbre <alias>)`, que crea este script):
 #     --cred-ingesta <nombre>  rol ingesta, httpHeaderAuth (Reclamar y Confirmar)
-#     --cred-envio   <nombre>  rol envío por Graph, whatsAppApi (Enviar por Graph)
+#     --cred-envio   <nombre>  rol envío por Graph, whatsAppApi o httpHeaderAuth (Enviar por Graph; el script ajusta el nodo al tipo hallado)
 #     --cred-rele    <nombre>  rol relé, httpHeaderAuth (Enviar por el relé)
 # Van LAS TRES o ninguna. El nombre se busca por nombre Y tipo exactos y tiene que haber exactamente una;
 # si falta o está repetida se aborta sin escribir. No se crea ni se modifica ninguna de las tres (no hay
@@ -433,6 +433,36 @@ def recorrer(x, f, clave=None):
     return x
 
 
+TIPOS_ENVIO = ("whatsAppApi", "httpHeaderAuth")  # los dos tipos que puede tener la credencial del rol envío
+
+
+def tipo_envio(indice, n):
+    """Tipo de la credencial del rol envío: el de la ÚNICA que lleva ese nombre entre TIPOS_ENVIO.
+    Sin ninguna (o con una de otro tipo) devuelve whatsAppApi: el plan falla después con «0 credenciales».
+    Con el mismo nombre en los dos tipos aborta: no se elige."""
+    hay = [t for t in TIPOS_ENVIO if indice.get((t, n["graph"]))]
+    if len(hay) > 1:
+        salir(4, "hay credenciales de envío con el mismo nombre en más de un tipo: no se elige una")
+    return hay[0] if hay else "whatsAppApi"
+
+
+def ajustar_envio(nodo, tipo):
+    """El nodo «Enviar por Graph» de la plantilla viene en whatsAppApi (forma vigente). Con una credencial
+    httpHeaderAuth (Authorization: Bearer) pasa a autenticación genérica; el resto del nodo no cambia."""
+    ps = nodo.setdefault("parameters", {})
+    refs = nodo.get("credentials") or {}
+    ref = next(iter(refs.values()), {})
+    if tipo == "httpHeaderAuth":
+        ps["authentication"] = "genericCredentialType"
+        ps["genericAuthType"] = "httpHeaderAuth"
+        ps.pop("nodeCredentialType", None)
+    else:
+        ps["authentication"] = "predefinedCredentialType"
+        ps["nodeCredentialType"] = "whatsAppApi"
+        ps.pop("genericAuthType", None)
+    nodo["credentials"] = {tipo: ref}
+
+
 def revisar_roles(nodos, alias):
     """El nodo que manda a Meta o al relé nunca lleva la credencial de ingesta."""
     n = nombres(alias)
@@ -442,15 +472,25 @@ def revisar_roles(nodos, alias):
         "Reclamar": ("httpHeaderAuth", n["ingesta"]),
         "Confirmar": ("httpHeaderAuth", n["ingesta"]),
         "Enviar por el relé": ("httpHeaderAuth", n["rele"]),
-        "Enviar por Graph": ("whatsAppApi", n["graph"]),
+        "Enviar por Graph": (None, n["graph"]),  # whatsAppApi o httpHeaderAuth (TIPOS_ENVIO)
     }
     por_nombre = {x.get("name"): x for x in nodos}
+    if len({n["ingesta"], n["rele"], n["graph"]}) != 3:
+        errores.append("ingesta, relé y envío tienen que ser tres credenciales distintas")
     for nom, (tipo, cred) in esperado.items():
         x = por_nombre.get(nom)
         if x is None:
             errores.append("falta el nodo %s" % nom)
             continue
         c = x.get("credentials") or {}
+        if tipo is None:
+            tipo = next(iter(c), "")
+            ps = x.get("parameters") or {}
+            coherente = (tipo == "whatsAppApi" and ps.get("authentication") == "predefinedCredentialType" and ps.get("nodeCredentialType") == "whatsAppApi") \
+                or (tipo == "httpHeaderAuth" and ps.get("authentication") == "genericCredentialType" and ps.get("genericAuthType") == "httpHeaderAuth")
+            if tipo not in TIPOS_ENVIO or not coherente:
+                errores.append("%s debe llevar una credencial whatsAppApi o httpHeaderAuth con su autenticación coherente" % nom)
+                continue
         if set(c) != {tipo} or (c[tipo] or {}).get("name") != cred:
             errores.append("%s debe llevar exactamente la credencial %s «%s»" % (nom, tipo, cred))
     t = por_nombre.get("Timbre")
@@ -629,7 +669,7 @@ def vincular_al_alias(wfs, indice, n, phone):
     la cita y en el que no se encuentra NINGÚN número es INDETERMINADO (Indeterminado): no se adivina de quién es.
     Devuelve [(rol, vinculada)] sin nombres ni valores."""
     resultado = []
-    for rol, tipo, etiqueta in (("ingesta", "httpHeaderAuth", "ingesta"), ("graph", "whatsAppApi", "envío")):
+    for rol, tipo, etiqueta in (("ingesta", "httpHeaderAuth", "ingesta"), ("graph", tipo_envio(indice, n), "envío")):
         nom = n[rol]
         ids = {c.get("id") for c in indice.get((tipo, nom), [])}
         propios, ajenos = 0, 0
@@ -704,6 +744,12 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
     indice = {}
     for c in creds:
         indice.setdefault((c.get("type"), c.get("name")), []).append(c)
+    # El rol envío acepta whatsAppApi (forma de la plantilla) o httpHeaderAuth; el tipo lo dice la credencial
+    # que existe con ese nombre. Solo con credenciales EXISTENTES (mapa): en ensayo la crea este script, whatsAppApi.
+    if credenciales_existentes():
+        for nodo in flujo["nodes"]:
+            if nodo.get("name") == "Enviar por Graph":
+                ajustar_envio(nodo, tipo_envio(indice, n))
     errores = []
     for nodo in flujo["nodes"]:
         for tipo, ref in list((nodo.get("credentials") or {}).items()):
