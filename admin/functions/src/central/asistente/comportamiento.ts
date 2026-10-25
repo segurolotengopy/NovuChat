@@ -1198,7 +1198,36 @@ const FRASES_SUSTANTIVO_FLOJAS: readonly RegExp[] = [
  */
 const ORIGEN = '(?:por\\s+(?:el\\s+|la\\s+|nuestro\\s+|su\\s+)?(?:banco|recepcion|negocio|caja|comercio|administracion|contabilidad|tesoreria)|en\\s+horario\\s+\\p{L}+|con\\s+(?:qr|transferencia|tarjeta|efectivo|tigo\\s+money))';
 const VERBO_DE_PROCESO = '(?:habilita|activa|libera|permite|se\\s+refleja(?:n)?|se\\s+procesa(?:n)?|se\\s+verifica(?:n)?|se\\s+revisa(?:n)?|(?:lo|los)\\s+(?:verifica|revisa|valida)(?:n)?)(?![\\p{L}])';
-const EXENTO_FUERTE = new RegExp(`^\\s*${ORIGEN}\\s*[:,]?\\s*${VERBO_DE_PROCESO}`, 'u');
+const EXENTO_FUERTE = new RegExp(`^\\s*(${ORIGEN})\\s*([:,])?\\s*(${VERBO_DE_PROCESO})`, 'u');
+/** Inmediatez en la cláusula exenta: «se refleja ya», «al instante». Un proceso que se promete al instante es una afirmación. */
+const INMEDIATEZ = /(?:^|\s)(?:ya|al\s+instante|al\s+momento|inmediat[\p{L}]*|ahora|de\s+una\s+vez)(?![\p{L}\p{N}])/u;
+/** Verbo de decir con pronombre pegado, o etiqueta de destinatario: la oración se le dice al cliente. */
+const DIRIGIDO_AL_CLIENTE = /(?<![\p{L}\p{N}])(?:dis?e?lo|diselos|diselas|digaselo|dile|diles|decile|avisale|avisaselo|informale|informaselo|comunicale|comunicaselo|repitelo|repitela|respondele|contestale|escribele|mandale)(?![\p{L}\p{N}])|(?:^|[\s.;:!?(])(?:al\s+cliente|mensaje|respuesta|responde)\s*:/u;
+const DETERMINANTE_GENERICO = new Set(['el', 'los', 'la', 'las', 'todo', 'todos', 'toda', 'todas', 'cada', 'este', 'estos', 'esta', 'estas']);
+
+/**
+ * ¿El estado de pago es la descripción genérica de un proceso? Exige: origen + verbo de proceso (arriba);
+ * sujeto genérico (artículo o plural: «El pago confirmado…», «Pagos aprobados…»; el singular sin artículo
+ * solo en las dos formas de manual «Transferencia recibida en horario hábil se procesa…» y
+ * «Depósito confirmado por el banco: lo verifica recepción»); sin inmediatez en la cláusula; y ningún
+ * verbo de decir con pronombre ni etiqueta de destinatario en el texto.
+ */
+function eximeProceso(vista: string, m: RegExpMatchArray): boolean {
+  const pos = m.index ?? 0;
+  const fin = pos + m[0].length;
+  const resto = vista.slice(fin, fin + 160);
+  const e = EXENTO_FUERTE.exec(resto);
+  if (e === null) return false;
+  const clausula = resto.split(/[.;!?\n]/u)[0] ?? '';
+  if (INMEDIATEZ.test(clausula) || DIRIGIDO_AL_CLIENTE.test(vista)) return false;
+  const previa = /([\p{L}]+)\s*$/u.exec(vista.slice(Math.max(0, pos - 20), pos))?.[1] ?? '';
+  const plural = /^(?:pagos|transferencias|depositos|abonos|comprobantes|payments|pagamentos)/u.test(m[0]);
+  if (plural || DETERMINANTE_GENERICO.has(previa)) return true;
+  const origen = e[1] ?? '';
+  const verbo = e[3] ?? '';
+  return (/^en\s+horario/u.test(origen) && /^se\s+(?:procesa|refleja)/u.test(verbo))
+    || (e[2] === ':' && /^(?:lo|los)\s/u.test(verbo));
+}
 
 
 /** Familia 1, hecho dicho por el asistente o en su nombre. */
@@ -1389,13 +1418,13 @@ function hallazgosEnVista(vista: string): boolean {
     const fin = despues(m).search(/[.!?¿]/u);
     return fin >= 0 && despues(m)[fin] === '?';
   };
-  const sustantivos: [readonly RegExp[], RegExp][] = [[FRASES_SUSTANTIVO, EXENTO_FUERTE], [FRASES_SUSTANTIVO_FLOJAS, EXENTO_FUERTE]];
+  const sustantivos: [readonly RegExp[], typeof eximeProceso][] = [[FRASES_SUSTANTIVO, eximeProceso], [FRASES_SUSTANTIVO_FLOJAS, eximeProceso]];
   for (const [lista, exento] of sustantivos) {
     for (const re of lista) {
       for (const m of vista.matchAll(re)) {
         const pos = m.index ?? 0;
         if (prohibido(previas(pos), false)) continue;
-        if (!hayVerboDeDecir(pos) && (COND_ANTES.test(textoPrevio(pos)) || COND_ESTADO.test(textoPrevio(pos)) || exento.test(despues(m)) || esPregunta(m))) continue;
+        if (!hayVerboDeDecir(pos) && (COND_ANTES.test(textoPrevio(pos)) || COND_ESTADO.test(textoPrevio(pos)) || exento(vista, m) || esPregunta(m))) continue;
         return true;
       }
     }

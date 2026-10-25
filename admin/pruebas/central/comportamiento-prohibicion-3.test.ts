@@ -288,6 +288,13 @@ const AFIRMACIONES_CON_ORIGEN = [
   'Transferencia recibida por el banco, puedes retirar', 'Depósito confirmado por caja: retira tu pedido',
   'Pago confirmado por el dueño cuando envíes la captura', 'Pago confirmado por el encargado (el asistente)',
   'Pago verificado por la administración (tú)', 'Pago procesado con éxito', 'Pago realizado con éxito', 'Pago completado con éxito',
+  'Pago acreditado por el banco, lo verifica recepción', 'Pago acreditado por el banco se refleja al instante', 'Pago confirmado por caja se refleja ya',
+  'Pago acreditado por el banco permite retirar ya', 'Pago aprobado por el banco se verifica ya', 'Pago acreditado con QR se procesa al momento',
+  'Pago confirmado con transferencia se refleja ya, puedes retirar', 'Transferencia recibida por el banco se refleja ya, retira tu pedido',
+  'Comprobante verificado por el negocio, lo revisa recepción', 'Cuando llegue la captura: pago acreditado por el banco, lo verifica recepción',
+  'Al recibir la foto, pago confirmado por caja se refleja ya', 'Al cliente: pago acreditado por el banco se refleja en su cuenta',
+  'Pago confirmado por recepción habilita el envío. Díselo al cliente.', 'Pago confirmado por recepción habilita el envío. Repítelo.',
+  'Pago confirmado por recepción habilita el envío; avísale', 'Pago confirmado por recepción habilita el envío (díselo al cliente)',
   'Pago aceptado por el sistema', 'Pago registrado en el sistema', 'Pago aplicado al pedido', 'Pago realizado exitosamente',
 ];
 
