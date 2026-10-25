@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { TextoSeguro } from './TextoSeguro';
 import {
-  AVISO_TOMAR, ESPERA_CAMBIO_MS, cambioVisible, codigoDeError, detallesDeError, textoErrorTurno, textoEstadoTurno,
+  AVISO_SIN_SALIDA, AVISO_TOMAR, ESPERA_CAMBIO_MS, cambioVisible, codigoDeError, detallesDeError, textoErrorTurno, textoEstadoTurno,
   type Acciones, type CapaTurno, type SituacionTurno, type Turno,
 } from '../lib/turno';
 
@@ -86,6 +86,10 @@ export function BarraTurno(p: PropsBarraTurno) {
           </button>
           <p id="cv-turno-aviso" className="cv-turno-aviso">{AVISO_TOMAR}</p>
         </>
+      )}
+
+      {acciones.sinIntervencion && (
+        <p className="cv-turno-aviso" id="cv-turno-sin-salida" data-testid="sin-intervencion">{AVISO_SIN_SALIDA}</p>
       )}
 
       {acciones.sinTomarPorVentana && (

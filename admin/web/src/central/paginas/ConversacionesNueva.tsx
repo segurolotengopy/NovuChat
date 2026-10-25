@@ -7,7 +7,7 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { db, funciones } from '../../core/lib/firebase';
 import { useSesion } from '../../core/lib/contexto';
-import { useEstadoComercio } from '../componentes/ConsolaConversaciones';
+import { useEstadoComercio, usePersonaPuedeIntervenir } from '../componentes/ConsolaConversaciones';
 import { rolEn } from '../../core/lib/sesion';
 import { ListaConversaciones, type Renglon } from '../componentes/ListaConversaciones';
 import { DetalleConversacion } from '../componentes/DetalleConversacion';
@@ -383,6 +383,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
   // persona) y, si una marca FALLA (rol revocado, red), `fallidas` recuerda el `noLeidos` de entonces y no se vuelve a
   // intentar hasta que crezca: es decir, hasta que haya algo nuevo que marcar.
   const estadoComercio = useEstadoComercio(tenantId);
+  const puedeIntervenir = usePersonaPuedeIntervenir(tenantId);
   const fallidas = useRef<Map<string, number>>(new Map());
   const marcar = fichaAbierta !== null && debeMarcarLeida({
     rol, propietario: permisos.propietario, comercioActivo: estadoComercio === 'activo', visible,
@@ -675,7 +676,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
             hrefLista={hrefLista} hrefUltimo={hrefUltimo}
             onAnterior={vecina(claves, claveActiva, -1) ? () => irA(-1) : null}
             onSiguiente={vecina(claves, claveActiva, 1) ? () => irA(1) : null}
-            posicion={posicion} puedeGestionar={puedeGestionar} esPropietario={permisos.propietario} comercioActivo={estadoComercio === 'activo'}
+            posicion={posicion} puedeGestionar={puedeGestionar} esPropietario={permisos.propietario} comercioActivo={estadoComercio === 'activo'} puedeIntervenir={puedeIntervenir}
             miUid={miUid} esAdmin={rol === 'admin' && !permisos.propietario} capa={capa}
           />
         ) : (

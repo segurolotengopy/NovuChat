@@ -399,6 +399,21 @@ documento no lo duplica. En una línea por tema:
 - **Callables** (Core, `us-east1`): `tomarConversacion`, `devolverConversacion` y
   `enviarComoPersona`; las tres exigen en el servidor que el comercio tenga
   `consolaConversaciones === 'nueva'` y que no sea Bellido.
+- **Salida publicada (25/10/2026)**: además, **tomar** y **escribir como persona**
+  exigen `tenants/{id}.personaPuedeEscribir === true` (booleano exacto; ausente,
+  `false` o `'true'` = denegado, con el mensaje fijo «Esta función todavía no está
+  activa para su negocio.»). Motivo: lo escrito sale por el flujo n8n «Salida de
+  persona» de cada número y no todo comercio con la pantalla nueva lo tiene
+  publicado; sin él, «Tomar» silenciaba al asistente y lo escrito caducaba. La
+  comprobación va antes de cualquier escritura (también del tope por usuario) y se
+  repite dentro de la transacción. **Devolver no la exige**: devolver es la
+  dirección segura y un comercio que ya tenía una conversación tomada no puede
+  quedar con el asistente callado (sigue exigiendo activo, `nueva` y no Bellido; el
+  turno, además, vence solo a los 30 minutos). La consola oculta «Tomar» y el campo
+  sin la bandera y falla cerrada. La enciende NovuChat comercio por comercio con
+  `scripts/plataforma/aplicar-persona-puede-escribir.mjs` (seco por omisión,
+  respaldo, solo si `consolaConversaciones === 'nueva'`, nunca Bellido); ningún
+  navegador la escribe (`firestore.rules` no admite escribir `tenants/{id}`).
 - **Pausa**: con `turno.responde === 'persona'`, la ingesta y `configuracionFlujo`
   devuelven `atencion: { estado: 'bloqueado' }` y aviso vacío, sin escribir
   `bloqueado` en `atencionEstado`.
