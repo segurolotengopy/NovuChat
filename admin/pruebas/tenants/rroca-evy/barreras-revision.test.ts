@@ -465,7 +465,8 @@ describe('«es seguro que…» no es un consejo de salud', () => {
 });
 
 describe('un texto largo se recorta por oración; uno desmesurado se descarta en tiempo lineal', () => {
-  const RELLENO = Array.from({ length: 40 }, (_, i) => `Esta es la oración de relleno número ${i + 1} sobre el efecto lifting natural y el contorno del rostro.`).join(' ');
+  // 14 oraciones de relleno: el original pasa de 1000 y el recorte pierde menos del 70 %. Con 40 se perdería más del 70 % y el texto se devuelve ENTERO (el filtro común lo rechaza: fallo con botón, mejor que un texto mutilado).
+  const RELLENO = Array.from({ length: 14 }, (_, i) => `Esta es la oración de relleno número ${i + 1} sobre el efecto lifting natural y el contorno del rostro.`).join(' ');
   it('POSITIVA: el recorte conserva la primera oración, la valoración gratuita y la pregunta de nombre y deseo', () => {
     const t = sale(`¡Hola! Soy el asistente virtual de la Dra. Evy. ${RELLENO} Tu valoración con la Dra. Evy es 100% gratuita y sin compromiso. ¿Cómo te llamas y qué te gustaría mejorar en tu rostro?`);
     expect(fallo(t)).toBe(false);
@@ -473,6 +474,10 @@ describe('un texto largo se recorta por oración; uno desmesurado se descarta en
     expect(t).toContain('Soy el asistente virtual de la Dra. Evy.');
     expect(t).toContain('100% gratuita y sin compromiso');
     expect(t.endsWith('¿Cómo te llamas y qué te gustaría mejorar en tu rostro?')).toBe(true);
+  });
+  it('un original de 40 oraciones (se perdería más del 70 %) no se mutila: cae al fallo con botón', () => {
+    const enorme = Array.from({ length: 40 }, (_, i) => `Esta es la oración de relleno número ${i + 1} sobre el efecto lifting natural y el contorno del rostro.`).join(' ');
+    expect(fallo(sale(`¡Hola! ${enorme} ¿Cómo te llamas?`))).toBe(true);
   });
   it('NEGADA: lo que se recorta no deja pasar una garantía escondida entre las oraciones', () => {
     expect(fallo(sale(`¡Hola! ${RELLENO} Te garantizo el resultado. ¿Cómo te llamas?`))).toBe(true);
