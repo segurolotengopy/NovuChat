@@ -77,7 +77,10 @@ const correrEn = (raiz: string, args: string[], vivo: string) => {
     env: entornoDelEmulador(undefined, { PATH: `${bin}:${process.env['PATH'] ?? ''}`, VIVO_SIMULADO: vivo, LOG_CURL: log, LOG_GUARDIAS: guardias }),
   });
   const sinRaiz = (t: string): string => t.split(raiz).join('<raiz>').replace(/\/tmp\/tmp\.[A-Za-z0-9]+/g, '<tmp>').replace(/(respaldo-[^-\s]*-)\d{8}-\d{6}/g, '$1<fecha>');
-  return { status: r.status, stdout: sinRaiz(r.stdout), stderr: sinRaiz(r.stderr), curl: sinRaiz(readFileSync(log, 'utf8')), guardias: sinRaiz(readFileSync(guardias, 'utf8')) };
+  const salida = { status: r.status, stdout: sinRaiz(r.stdout), stderr: sinRaiz(r.stderr), curl: sinRaiz(readFileSync(log, 'utf8')), guardias: sinRaiz(readFileSync(guardias, 'utf8')) };
+  // El phone id nunca se imprime ni se anota en las guardias (ni en los casos NEGADO ni en los que llegan al PUT).
+  for (const phone of [PHONE_EMMA, PHONE_EVY, PHONE_AJENO]) for (const canal of [salida.stdout, salida.stderr, salida.guardias]) expect(canal).not.toContain(phone);
+  return salida;
 };
 const propio = readFileSync(join(REPO, 'scripts/publicar-flujo.sh'), 'utf8');
 const sinEscritura = (curl: string): void => { expect(curl).not.toMatch(/-X (PUT|POST)/); };
@@ -158,6 +161,8 @@ describe('NEGADAS: el flujo nuevo de Emma NUNCA reemplaza un flujo vivo que no e
     ['el viejo de Emma con OTRO phone id (otro número: no es el de este archivo)', escribir('vivo-emma-otro-phone.json', viejoDe(NOMBRE, 'rroca-emma', PHONE_AJENO))],
     ['el viejo de Emma que menciona rroca-evy en un parámetro', escribir('vivo-emma-con-evy.json', { ...viejoDe(NOMBRE, 'rroca-emma'), nodes: [{ name: 'Armar avisos' }, configBaseViejo(PHONE_EMMA, [par('nota', 'copiado de rroca-evy')])] })],
     ['un viejo de Emma con DOS nodos «Config base»', escribir('vivo-emma-dos-config.json', { ...viejoDe(NOMBRE, 'rroca-emma'), nodes: [{ name: 'Armar avisos' }, configBaseViejo(PHONE_EMMA), configBaseViejo(PHONE_EMMA)] })],
+    ['el viejo de Emma que menciona rroca\u2011evy con otro guion Unicode', escribir('vivo-emma-guion.json', { ...viejoDe(NOMBRE, 'rroca-emma'), nodes: [{ name: 'Armar avisos' }, configBaseViejo(PHONE_EMMA, [par('nota', 'copiado de rroca\u2011evy')])] })],
+    ['un viejo de Emma con un phone id de dígitos de ancho completo (no ASCII)', escribir('vivo-emma-phone-ancho.json', viejoDe(NOMBRE, 'rroca-emma', PHONE_EMMA.replace(/[0-9]/g, (d) => String.fromCharCode(0xff10 + Number(d)))))],
     ['un viejo de Emma con el phone id vacío', escribir('vivo-emma-phone-vacio.json', viejoDe(NOMBRE, 'rroca-emma', ''))],
     ['un viejo de Emma con un phone id que no son dígitos (marcador)', escribir('vivo-emma-phone-marcador.json', viejoDe(NOMBRE, 'rroca-emma', 'REEMPLAZAR_PHONE_NUMBER_ID_RROCA_EMMA'))],
     ['un flujo con el nombre de Emma pero sin su huella', escribir('vivo-nombre-de-emma.json', { name: NOMBRE, active: false, nodes: [{ name: 'Otro nodo' }] })],

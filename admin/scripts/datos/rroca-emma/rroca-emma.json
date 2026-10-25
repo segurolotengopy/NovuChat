@@ -36,7 +36,7 @@
     "avisoSolicitudEstado": "APPROVED",
     "avisoPlantillaIdioma": "es",
     "mediosHabilitados": "audio,imagen,documento",
-    "arteComparativoMediaId": "REEMPLAZAR_MEDIA_ID_ARTE_COMPARATIVO",
+    "arteComparativoMediaId": "",
     "arteAntesDespuesMediaId": "REEMPLAZAR_MEDIA_ID_ARTE_ANTES_DESPUES",
     "arteAutoridadMediaId": "REEMPLAZAR_MEDIA_ID_ARTE_AUTORIDAD"
   },
