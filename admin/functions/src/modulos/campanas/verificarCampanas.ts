@@ -105,7 +105,7 @@ export async function aplicarCampanas(
  * Los términos de producto aprobados de ESTE comercio para los textos de la lista:
  * UNA sola lectura por verificación (los campos van juntos, no uno por uno) y
  * ninguna si ningún campo contiene «prompt». Si Firestore falla, la excepción
- * sube: ante la duda no se aplica nada (el disparador reintenta con la próxima escritura).
+ * sube; `revisarYAplicarCampanas` la atrapa y falla cerrado (sin términos).
  */
 export async function terminosDeLaLista(
   db: Firestore, tenantId: string, lista: readonly Campana[],
@@ -131,7 +131,14 @@ export async function revisarYAplicarCampanas(
   const anterior = typeof previa === 'object' && previa !== null
     ? (previa as { porCampana?: Record<string, RevisionCampana> }).porCampana : undefined;
   const productos = await productosActivosReferenciados(db, tenantId, lista);
-  const terminos = await terminosDeLaLista(db, tenantId, lista);
+  // Falla cerrado: si no se pueden leer los términos, ninguno vale (las campañas con «prompts» las
+  // rechaza la capa 1) y el resto de la lista se aplica normal, sin dejar vigente lo anterior.
+  let terminos: string[] = [];
+  try {
+    terminos = await terminosDeLaLista(db, tenantId, lista);
+  } catch {
+    logger.warn('verificarCampanas: no se pudieron leer los términos de producto');
+  }
   const revision = await revisarCampanas(lista, leerCampanas(antes['lista']), anterior, limite, ahoraMs,
     contexto, otros, consultar, productos, terminos);
   const resultado = await aplicarCampanas(db, tenantId, hash, revision, revisadoPor);

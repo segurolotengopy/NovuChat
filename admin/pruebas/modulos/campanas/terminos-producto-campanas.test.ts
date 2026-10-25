@@ -165,6 +165,24 @@ describe('«prompt» fuera del término sigue prohibido', () => {
   });
 });
 
+describe('falla cerrado', () => {
+  it('si la lectura de términos falla: «prompts» rechazada, el resto vigente, nada de lo anterior queda', async () => {
+    await sembrar(A);
+    await ref(A).set({ lista: [campana('vieja', 'Corte de pelo barato')], vigentes: [campana('vieja', 'Corte de pelo barato')] });
+    const original = Query.prototype.get;
+    Query.prototype.get = function (this: { _queryOptions?: { collectionId?: string } }) {
+      if (this._queryOptions?.collectionId === 'terminosProducto') throw new Error('falla simulada');
+      return original.call(this as never);
+    } as typeof original;
+    try {
+      const { por, vigentes } = await correr(A, [campana('r', 'Pack 100 prompts por Bs 49, mira mi prompt'), campana('s', 'Corte de pelo hoy')]);
+      expect(por['r']!).toMatchObject({ estado: 'rechazada', capa: 'patrones' });
+      expect(por['s']!.estado).toBe('aprobada');
+      expect(vigentes.map((c) => c.id)).toEqual(['s']);
+    } finally { Query.prototype.get = original; }
+  });
+});
+
 describe('costo y forma', () => {
   it('una sola lectura de la colección por verificación, y ninguna sin «prompt»', async () => {
     await sembrar(A);
