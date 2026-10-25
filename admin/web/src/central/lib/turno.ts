@@ -403,6 +403,12 @@ export function textoErrorTurno(accion: AccionTurno, codigo: string, detalles: R
     case 'permission-denied':
       return 'No tiene permiso para intervenir en esta conversación, o esta función no está habilitada para su comercio.';
     case 'failed-precondition': {
+      // El bloqueo de 45 s tras un mensaje entrante (contrato §9): el servidor manda `motivo: 'espera'`. Es la única
+      // causa de failed-precondition que hoy trae un motivo distinguible; las demás se quedan con el texto general.
+      if (accion === 'enviar' && detalles['motivo'] === 'espera') {
+        const n = segundosDe(detalles['esperaSegundos']);
+        return `Espere${n === null ? ' unos segundos' : ` ${n} ${n === 1 ? 'segundo' : 'segundos'}`}: el asistente puede estar respondiendo. Después vuelva a pulsar Enviar.`;
+      }
       const otra = typeof detalles['tomadoPor'] === 'string' && detalles['tomadoPor'] !== ''
         ? ` (${etiquetaUid(detalles['tomadoPor'], null)})` : '';
       return accion === 'tomar'
