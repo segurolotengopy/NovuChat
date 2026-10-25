@@ -7,6 +7,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error el motor es un .mjs sin tipos
 import { main } from '../../../../Flujos/experimental/rroca-emma/herramientas/bateria.mjs';
@@ -232,7 +233,7 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
     expect(fallo(sale('El tratamiento cuesta entre 500 y 800 Bs. ¿Cómo te llamas?'))).toBe(true);
   });
   it('I-1: un número de calle, de avenida, de «#», «Nº», «nro» o «km» no es un precio; combinado con una cifra de precio real SIGUE rechazado', () => {
-    const dir = 'Estamos en la Av. Pauserna # 2055, cerca del km 4 de la ruta, calle Los Pinos 350.';
+    const dir = 'Estamos en la Av. Pauserna # 2055, cerca del km 4 de la ruta.';
     const r = sale(dir, '¿cuánto cuesta y dónde están?');
     expect(fallo(r)).toBe(false);
     expect(r).toContain('2055');
@@ -250,6 +251,27 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
     // NEGADA: la dirección no abre la puerta a una cifra de precio
     expect(fallo(sale('Estamos en la Av. Pauserna # 2055 y la valoración vale 700. ¿Cómo te llamas?', '¿cuánto cuesta y dónde están?'))).toBe(true);
     expect(fallo(sale('Estamos en la Av. Pauserna # 2055. El tratamiento cuesta 700. ¿Cómo te llamas?', '¿cuánto cuesta y dónde están?'))).toBe(true);
+  });
+  it('I-2 / I-3 / B-1: solo se perdona la cifra de la dirección de la Consola; «Estamos con promoción: # 1500» es un precio; la dirección junto a «valoración gratuita» sale bien', () => {
+    for (const cli of ['¿cuánto cuesta y dónde están?', '¿dónde están?', 'hola']) {
+      for (const okDir of ['Estamos en la Av. Pauserna # 2055.', 'Nuestra dirección: Av. Pauserna # 2055, Canal Cotoca.', 'Estamos en Canal Cotoca, Av. Pauserna # 2055. La valoración es gratuita.']) {
+        expect(fallo(sale(`${okDir} ¿Cómo te llamas?`, cli)), `${cli} / ${okDir}`).toBe(false);
+      }
+      for (const precio of ['Estamos con promoción: # 1500 por todo.', 'Estamos en promo, nro 1500 por las dos.', 'Estamos ofreciendo Nº 1500 por paquete.', 'Te queda en 900.', 'Te hacemos 500 de descuento.', 'Te sale 900 la sesión.']) {
+        expect(fallo(sale(`${precio} ¿Cómo te llamas?`, cli)), `${cli} / ${precio}`).toBe(true);
+      }
+    }
+    // legítimos: un año, una cantidad de personas, una duración
+    expect(fallo(sale('En 2026 incorporamos Radiesse. ¿Cómo te llamas?'))).toBe(false);
+    expect(fallo(sale('Hemos atendido a más de 1000 pacientes. ¿Cómo te llamas?'))).toBe(false);
+  });
+  it('M-c: evNumeroDePrecio no es cuadrática con salidas de 200 000 caracteres (≤ 100 ms)', () => {
+    const lib = runInNewContext(`const EV_PROMPT='';\n${leer('../comun-sin-agente/src/filtro-redaccion.js')}\n${leer('src/lib/ev.js')}\n({ evNumeroDePrecio })`, {}) as { evNumeroDePrecio: (t: string, c: string, d: string) => string };
+    for (const t of ['9'.repeat(200000), '1,'.repeat(100000), 'unos ' + '1.000'.repeat(40000), 'unos ' + '1'.repeat(200000) + ' minutos', '1.0001.000'.repeat(20000)]) {
+      const ini = Date.now();
+      lib.evNumeroDePrecio(t, '¿cuánto cuesta?', 'Av. Pauserna # 2055');
+      expect(Date.now() - ini, t.slice(0, 12)).toBeLessThanOrEqual(100);
+    }
   });
   it('M-1: el recorte mide la dirección con su texto real: el resultado no pasa de 700 caracteres', () => {
     const dir = 'Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055 (Santa Cruz)';
