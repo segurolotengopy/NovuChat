@@ -243,6 +243,21 @@ export function turnoEfectivo(
 }
 
 // ---------------------------------------------------------------------------
+// SALIDA PUBLICADA: la bandera por comercio (`tenants/{id}.personaPuedeEscribir`)
+// ---------------------------------------------------------------------------
+
+/**
+ * ¿Puede una persona del comercio tomar y escribir? SOLO si la ficha tiene `personaPuedeEscribir === true` (booleano
+ * exacto: ausente, `false`, `'true'`, `1` o ficha ilegible = no). Qué significa: lo escrito como persona sale por el flujo
+ * n8n «Salida de persona» DE ESE NÚMERO; si ese flujo no está publicado, tomar silencia al asistente y lo escrito caduca
+ * sin enviarse. NovuChat enciende la bandera (script de plataforma) solo cuando la salida existe. Pura y sin `import`:
+ * la misma función la usan el servidor (`accesoPersona.ts`) y la consola, para que no haya dos defaults.
+ */
+export function personaPuedeEscribirDeFicha(ficha: { readonly personaPuedeEscribir?: unknown } | null | undefined): boolean {
+  return !!ficha && ficha.personaPuedeEscribir === true;
+}
+
+// ---------------------------------------------------------------------------
 // ERRORES: códigos y mensajes fijos, sin detalle
 // ---------------------------------------------------------------------------
 
@@ -255,6 +270,8 @@ export const ErroresDeTurno = {
   sinSesion: { code: 'unauthenticated', message: 'Inicie sesión.' },
   sinPermiso: { code: 'permission-denied', message: 'No tiene permiso para atender esta conversación.' },
   noHabilitado: { code: 'permission-denied', message: 'Esta función no está habilitada para su comercio.' },
+  /** La bandera `personaPuedeEscribir` no está en `true`: el mensaje no nombra la bandera ni el flujo de salida. */
+  sinSalida: { code: 'permission-denied', message: 'Esta función todavía no está activa para su negocio.' },
   solicitudInvalida: { code: 'invalid-argument', message: 'Solicitud inválida.' },
   noExiste: { code: 'not-found', message: 'La conversación no existe.' },
   ocupada: { code: 'failed-precondition', message: 'Esta conversación la atiende otra persona.' },

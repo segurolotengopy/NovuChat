@@ -99,7 +99,7 @@ export { importarCatalogo } from './modulos/productos/limiteCatalogo.js'; // lí
 export { buscarConversaciones } from './core/conversacion/buscarConversaciones.js';
 // INTERVENCIÓN DE UNA PERSONA (H2-1). Tomar y devolver una conversación: el turno que pausa al
 // asistente. Core, autorización admin u oper del comercio (el soporte no), y solo con la bandera
-// `consolaConversaciones: 'nueva'` y sin ser Bellido (comprobado en el servidor). Agregan
+// `consolaConversaciones: 'nueva'`, sin ser Bellido y (tomar/escribir) con `personaPuedeEscribir === true` (comprobado en el servidor). Agregan
 // Functions: la etiqueta que las lleve exige rama de reversión hacia adelante lista.
 export { tomarConversacion } from './core/conversacion/tomarConversacion.js';
 export { devolverConversacion } from './core/conversacion/devolverConversacion.js';

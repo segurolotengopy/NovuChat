@@ -4101,6 +4101,17 @@ describe('H1 de Conversaciones: marcar leída, campos derivados y búsqueda', ()
     await assertFails(updateDoc(doc(adminA(), 'tenants', A), { consolaConversaciones: 'nueva' }));
     await assertFails(updateDoc(doc(operA(), 'tenants', A), { consolaConversaciones: 'nueva' }));
   });
+
+  it('nadie del navegador escribe `personaPuedeEscribir` (la salida publicada la enciende solo NovuChat con el SDK Admin)', async () => {
+    for (const valor of [true, false, 'true']) {
+      await assertFails(updateDoc(doc(adminA(), 'tenants', A), { personaPuedeEscribir: valor }));
+      await assertFails(updateDoc(doc(operA(), 'tenants', A), { personaPuedeEscribir: valor }));
+      await assertFails(updateDoc(doc(propietario(), 'tenants', A), { personaPuedeEscribir: valor }));
+      await assertFails(updateDoc(doc(propietarioConSoporte(), 'tenants', A), { personaPuedeEscribir: valor }));
+      await assertFails(updateDoc(doc(adminB(), 'tenants', A), { personaPuedeEscribir: valor })); // ni el admin de OTRO comercio
+    }
+    await assertFails(setDoc(doc(adminA(), 'tenants', A), { personaPuedeEscribir: true }, { merge: true }));
+  });
 });
 
 // ===========================================================================

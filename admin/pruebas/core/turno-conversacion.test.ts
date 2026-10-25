@@ -116,6 +116,7 @@ const FIJOS = {
   sinSesion: 'Inicie sesión.',
   sinPermiso: 'No tiene permiso para atender esta conversación.',
   noHabilitado: 'Esta función no está habilitada para su comercio.',
+  sinSalida: 'Esta función todavía no está activa para su negocio.',
   invalida: 'Solicitud inválida.',
   noExiste: 'La conversación no existe.',
   ocupada: 'Esta conversación la atiende otra persona.',
@@ -127,7 +128,7 @@ const FIJOS = {
 
 /** La ficha del comercio: activo y con la pantalla nueva, salvo que se diga otra cosa. */
 async function ficha(t: string, o: Record<string, unknown> = {}) {
-  await db.doc(`tenants/${t}`).set({ nombre: t, estado: 'activo', consolaConversaciones: 'nueva', ...o });
+  await db.doc(`tenants/${t}`).set({ nombre: t, estado: 'activo', consolaConversaciones: 'nueva', personaPuedeEscribir: true, ...o });
 }
 
 /** Una conversación como la deja la ingesta: el cliente escribió hace 1 h, salvo que se diga otra cosa. */
@@ -275,6 +276,104 @@ describe('devolver: el camino feliz', () => {
 });
 
 // ===========================================================================
+// SALIDA PUBLICADA (25/10/2026): `personaPuedeEscribir === true` exacto para TOMAR; devolver no la exige.
+// ===========================================================================
+describe('tomar: exige `personaPuedeEscribir === true` (salida publicada), antes de cualquier escritura', () => {
+  const datos = { tenantId: A, conversacionId: CONV1 };
+  const sinNada = async () => {
+    expect((await leerConv(A, CONV1))['turno']).toBeUndefined(); // el asistente NO queda pausado
+    expect(await hayEscrituras()).toEqual({ tope: 0, aud: 0 });   // ni cupo, ni auditoría
+  };
+
+  it('sin la bandera (ausente, false, null, \'true\', 1, {}, [true]): denegado con el mensaje fijo, sin pausar ni escribir nada', async () => {
+    for (const valor of [undefined, false, null, 'true', 'TRUE', 1, 0, {}, [true]]) {
+      await db.doc(`tenants/${A}`).set({ nombre: A, estado: 'activo', consolaConversaciones: 'nueva', ...(valor === undefined ? {} : { personaPuedeEscribir: valor }) });
+      expect(cm(await rechazo(tomar(datos, ANA(A)))), String(valor)).toEqual({ code: 'permission-denied', message: FIJOS.sinSalida });
+      await sinNada();
+    }
+  });
+
+  it('el mensaje no nombra la bandera, el flujo ni la salida', () => {
+    expect(FIJOS.sinSalida).not.toMatch(/personaPuedeEscribir|flujo|n8n|salida/i);
+  });
+
+  it('con la bandera y `nueva` explícito: toma como siempre (positivo)', async () => {
+    expect(await turnoDe(datos, ANA(A))).toMatchObject({ responde: 'persona', tomadoPor: 'u-ana' });
+  });
+
+  it('bandera en true pero `consolaConversaciones` ausente o `clasica`: denegado por habilitación, sin escribir', async () => {
+    for (const consola of [undefined, 'clasica']) {
+      await db.doc(`tenants/${A}`).set({ nombre: A, estado: 'activo', personaPuedeEscribir: true, ...(consola === undefined ? {} : { consolaConversaciones: consola }) });
+      expect(cm(await rechazo(tomar(datos, ANA(A)))), String(consola)).toEqual({ code: 'permission-denied', message: FIJOS.noHabilitado });
+      await sinNada();
+    }
+  });
+
+  it('Bellido con ambas banderas: denegado', async () => {
+    await ficha('bellido'); await conversacion('bellido', CONV1);
+    expect(cm(await rechazo(tomar({ tenantId: 'bellido', conversacionId: CONV1 }, oper('bellido'))))).toEqual({ code: 'permission-denied', message: FIJOS.noHabilitado });
+    expect((await leerConv('bellido', CONV1))['turno']).toBeUndefined();
+    expect(await hayEscrituras()).toEqual({ tope: 0, aud: 0 });
+  });
+
+  it('la bandera de A no habilita a B', async () => {
+    await db.doc(`tenants/${OTRO}`).set({ nombre: OTRO, estado: 'activo', consolaConversaciones: 'nueva' }); // B sin bandera, A con ella
+    await conversacion(OTRO, CONV1);
+    const dos = actor('u-dos', { t: { [A]: 'oper', [OTRO]: 'oper' } });
+    expect(cm(await rechazo(tomar({ tenantId: OTRO, conversacionId: CONV1 }, dos)))).toEqual({ code: 'permission-denied', message: FIJOS.sinSalida });
+    expect((await leerConv(OTRO, CONV1))['turno']).toBeUndefined();
+    expect(await turnoDe(datos, dos)).toMatchObject({ tomadoPor: 'u-dos' }); // A sí
+  });
+
+  it('un operador de otro comercio no toma ni con la bandera en true', async () => {
+    expect(cm(await rechazo(tomar(datos, ANA(OTRO))))).toEqual({ code: 'permission-denied', message: FIJOS.sinPermiso });
+    await sinNada();
+  });
+
+  it('CONCURRENCIA: si la bandera se apaga entre la lectura previa y la transacción, la toma no se escribe', async () => {
+    const real = db.runTransaction.bind(db);
+    let n = 0;
+    vi.spyOn(db, 'runTransaction').mockImplementation(((f: never, o?: never) => {
+      n += 1;
+      // 1.ª transacción: el tope (ya pasó la lectura previa). Antes de la 2.ª (la toma) se apaga la bandera.
+      if (n === 2) return db.doc(`tenants/${A}`).update({ personaPuedeEscribir: false }).then(() => real(f, o));
+      return real(f, o);
+    }) as never);
+    expect(cm(await rechazo(tomar(datos, ANA(A))))).toEqual({ code: 'permission-denied', message: FIJOS.sinSalida });
+    expect((await leerConv(A, CONV1))['turno']).toBeUndefined();
+    expect((await auditorias(A))).toEqual([]);
+  });
+});
+
+describe('devolver: NO exige la bandera de salida (liberar un turno ya tomado es la dirección segura)', () => {
+  const datos = { tenantId: A, conversacionId: CONV1 };
+
+  it('el comercio perdió la bandera con una conversación tomada: devolver sigue permitido y deja al asistente', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ turno: turnoGuardado() });
+    await db.doc(`tenants/${A}`).update({ personaPuedeEscribir: FieldValue.delete() });
+    const t = await turnoDe(datos, ANA(A), CALLABLES.devolver);
+    expect(t).toMatchObject({ responde: 'asistente', tomadoPor: 'u-ana', motivoDevolucion: 'manual' });
+    expect((await leerConv(A, CONV1))['turno']).toMatchObject({ responde: 'asistente' });
+  });
+
+  it('con la bandera en false o \'true\' (texto) también devuelve; y el administrador libera el turno de otra persona', async () => {
+    for (const valor of [false, 'true']) {
+      await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ turno: turnoGuardado() });
+      await db.doc(`tenants/${A}`).update({ personaPuedeEscribir: valor });
+      expect(await turnoDe(datos, admin(A), CALLABLES.devolver), String(valor)).toMatchObject({ responde: 'asistente' });
+    }
+  });
+
+  it('pero devolver sigue exigiendo estar activo, habilitado (`nueva`) y no ser Bellido', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ turno: turnoGuardado() });
+    await db.doc(`tenants/${A}`).update({ personaPuedeEscribir: false, consolaConversaciones: 'clasica' });
+    expect(cm(await rechazo(devolver(datos, ANA(A))))).toEqual({ code: 'permission-denied', message: FIJOS.noHabilitado });
+    await db.doc(`tenants/${A}`).update({ consolaConversaciones: 'nueva', estado: 'suspendido' });
+    expect(cm(await rechazo(devolver(datos, ANA(A))))).toEqual({ code: 'permission-denied', message: FIJOS.sinPermiso });
+  });
+});
+
+// ===========================================================================
 for (const [clave, nombre] of Object.entries(NOMBRES) as Array<[keyof typeof NOMBRES, string]>) {
   const llamar = (data: unknown, a?: Actor) => llamarA(CALLABLES[clave], data, a);
 
@@ -409,16 +508,11 @@ for (const [clave, nombre] of Object.entries(NOMBRES) as Array<[keyof typeof NOM
       expect(cm(await rechazaHabilitacion('tienda-clasica', { nombre: 'Consultorio Béllido' }))).toEqual({ code: 'permission-denied', message: FIJOS.noHabilitado });
     });
 
-    it('un rechazo por habilitación no deja turno ni auditoría, pero GASTA cupo: una cuenta con rol en un comercio no habilitado no fuerza lecturas sin tope', async () => {
+    it('un rechazo por habilitación no deja turno, auditoría NI cupo gastado: la ficha se lee ANTES del tope', async () => {
       await rechazaHabilitacion('bellido');
       await rechazaHabilitacion('tienda-clasica', { consolaConversaciones: 'clasica' });
       expect((await leerConv('bellido', CONV1))['turno']).toBeUndefined();
-      expect(await hayEscrituras()).toEqual({ tope: 2, aud: 0 });
-      // y con el tope agotado ni siquiera se lee la ficha
-      await db.doc('topesDeTurno/' + 'u-oper-bellido').set({ hora: '2026-10-16T11', dia: '2026-10-16', cambiosHora: 60, cambiosDia: 60 });
-      const espia = vi.spyOn(db, 'doc');
-      expect(await rechazo(llamar({ tenantId: 'bellido', conversacionId: CONV1 }, oper('bellido')))).toMatchObject({ code: 'resource-exhausted' });
-      expect(espia.mock.calls.map((c) => c[0])).not.toContain('tenants/bellido');
+      expect(await hayEscrituras()).toEqual({ tope: 0, aud: 0 });
     });
 
     it('la bandera es la del comercio PEDIDO: tener la pantalla nueva en B no habilita A', async () => {
@@ -801,9 +895,13 @@ describe('el tope por usuario: 60 por hora y 300 por día, contado en el servido
     await rechazo(tomar({ tenantId: A, conversacionId: 'mal' }, ANA(A))); // id mal formado
     await rechazo(tomar(datos, propietario())); // soporte
     expect(await db.collection('topesDeTurno').listDocuments()).toEqual([]);
-    // En cambio, quien tiene rol válido pero el comercio no está habilitado SÍ gasta cupo (el tope va antes de leer la ficha).
+    // Tampoco gasta cupo quien tiene rol válido pero el comercio no está habilitado (la ficha se lee antes del tope).
     await ficha(A, { consolaConversaciones: 'clasica' });
     await rechazo(tomar(datos, ANA(A)));
+    expect(await db.collection('topesDeTurno').listDocuments()).toEqual([]);
+    // En cambio, la llamada que SÍ pasa la ficha gasta su cupo.
+    await ficha(A);
+    await tomar(datos, ANA(A));
     expect((await db.collection('topesDeTurno').listDocuments()).map((d) => d.id)).toEqual(['u-ana']);
   });
 
@@ -972,7 +1070,7 @@ describe('las reglas de Firestore cierran lo que escribe el servidor (la negaci�
     vi.useRealTimers();
     await entorno.withSecurityRulesDisabled(async (ctx) => {
       await escribirDoc(docCliente(ctx.firestore(), 'topesDeTurno/u-oper-tienda-a'), { hora: 'x', cambiosHora: 1, cambiosDia: 1 });
-      await escribirDoc(docCliente(ctx.firestore(), 'tenants/tienda-a'), { nombre: 'A', estado: 'activo', consolaConversaciones: 'nueva' });
+      await escribirDoc(docCliente(ctx.firestore(), 'tenants/tienda-a'), { nombre: 'A', estado: 'activo', consolaConversaciones: 'nueva', personaPuedeEscribir: true });
       await escribirDoc(docCliente(ctx.firestore(), `tenants/tienda-a/conversaciones/${CONV1}`), {
         telefono: TEL1, canal: 'whatsapp', notaInterna: '', turno: { responde: 'persona', tomadoPor: 'u-ana' },
       });

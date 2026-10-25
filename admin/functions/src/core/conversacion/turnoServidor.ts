@@ -8,9 +8,11 @@
  *   1. sesión                      -> `unauthenticated`
  *   2. el rol de la persona en el comercio PEDIDO, del token (`exigirRolDePersona`)
  *   3. la forma del id de conversación (`wa_` y 8 a 15 dígitos) -> `invalid-argument`
- *   4. EL TOPE por usuario (60 por hora y 300 por día) -> `resource-exhausted`; y DESPUÉS la ficha:
- *      comercio activo y habilitado (`exigirComercioHabilitado`). El tope va primero a propósito: una
- *      cuenta con rol en un comercio no habilitado no fuerza lecturas sin freno (gasta cupo).
+ *   4. la ficha: comercio activo y habilitado y, salvo al devolver, con `personaPuedeEscribir === true`
+ *      (`exigirComercioHabilitado`); y DESPUÉS EL TOPE por usuario (60 por hora y 300 por día) ->
+ *      `resource-exhausted`. La ficha va primero (25/10/2026) para que un rechazo por falta de salida no
+ *      escriba NADA (el tope escribe su contador); quien tiene rol en un comercio no habilitado solo
+ *      puede forzar lecturas de una ficha.
  *   5. la transacción de la callable (lee la conversación, decide, escribe el turno Y la auditoría)
  *
  * AUDITORÍA FALLA-CERRADA Y ATÓMICA. `conversacion_tomada` / `conversacion_devuelta` se escriben en
@@ -294,19 +296,20 @@ export async function atenderTurno(
       registrar(funcion, 'invalid-argument', { tenantId: t, uid, rol, motivo: 'conversacion' });
       throw errorDeTurno('solicitudInvalida');
     }
-    // 4. EL TOPE por usuario, ANTES de leer la ficha: quien tiene rol en un comercio no habilitado
-    //    tampoco puede forzar lecturas sin freno.
+    // 4. El comercio: activo, habilitado y —salvo al devolver— con la salida publicada (`personaPuedeEscribir`).
+    //    VA ANTES DEL TOPE (25/10/2026): un rechazo por falta de salida no debe escribir nada, y el tope escribe
+    //    su contador. Costo: quien tiene rol en un comercio no habilitado puede forzar lecturas de UNA ficha.
+    try {
+      await exigirComercioHabilitado(t, db, { exigirSalida: funcion !== 'devolverConversacion' });
+    } catch (e) {
+      registrar(funcion, e instanceof HttpsError ? e.code : 'unavailable', { tenantId: t, uid, rol });
+      throw e;
+    }
+    // 4b. EL TOPE por usuario.
     const motivoDeTope = await consumirCupoDeTurno(db, uid, ahoraMs);
     if (motivoDeTope !== null) {
       registrar(funcion, 'resource-exhausted', { tenantId: t, uid, rol, conversacionId, motivo: motivoDeTope });
       throw errorDeTurno('tope');
-    }
-    // 4b. El comercio: activo y habilitado.
-    try {
-      await exigirComercioHabilitado(t, db);
-    } catch (e) {
-      registrar(funcion, e instanceof HttpsError ? e.code : 'unavailable', { tenantId: t, uid, rol });
-      throw e;
     }
     // 5. La transacción de la callable. Sus rechazos (no existe, ocupada…) se registran acá.
     const ref = db.doc(`tenants/${t}/conversaciones/${conversacionId}`);
