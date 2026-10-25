@@ -26,7 +26,8 @@ export const MOTIVO_RECHAZO = 'no se puede registrar como nombre de producto';
 export const MOTIVO_LIMITE = 'límite';
 
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
-const ID_ITEM = /^[A-Za-z0-9_-]{1,128}$/;
+// Los ids `__x__` están reservados por Firestore (error `internal`): no son ids de ítem.
+const ID_ITEM = /^(?!__.*__$)[A-Za-z0-9_-]{1,128}$/;
 const texto = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 export interface ResultadoRelleno {
@@ -64,6 +65,12 @@ export async function rellenarTerminos(
         tx.get(ref), tx.get(col.where('estado', 'in', ['pendiente', 'aprobado']).limit(TOPE_APROBADOS + 1)),
       ]);
       const otrosVivos = vivos.docs.filter((d) => d.id !== it.id).length;
+      // PRESERVAR ANTES DEL TOPE: un aprobado vigente (mismo nombre, término que sigue siendo el registrable) es
+      // de una persona y ya ocupa su lugar; el tope solo vale para altas y reinicios hacia pendiente.
+      if (previo.exists) {
+        const p0 = previo.data() ?? {};
+        if (p0['estado'] === 'aprobado' && p0['nombreHash'] === nombreHash && cand.ok && p0['termino'] === cand.termino) return null;
+      }
       let nuevo: { termino: string; estado: 'pendiente' | 'rechazado'; motivo: string };
       if (!cand.ok) nuevo = { termino: '', estado: 'rechazado', motivo: MOTIVO_RECHAZO };
       else if (otrosVivos >= TOPE_APROBADOS) nuevo = { termino: '', estado: 'rechazado', motivo: MOTIVO_LIMITE };

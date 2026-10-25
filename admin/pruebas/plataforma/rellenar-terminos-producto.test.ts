@@ -95,6 +95,34 @@ describe('rellenarTerminos', () => {
     expect(d['t11']).toMatchObject({ estado: 'rechazado' }); // el orden por id ya lo cubrió: t01 recupera su lugar, t11 sigue sin
   });
 
+  it('aprobados + tope lleno: los 10 aprobados se conservan con revisadoPor intacto y los pendientes no pasan', async () => {
+    // Repro de seguridad: 14 ítems, 10 aprobados por una persona y 4 pendientes.
+    for (let k = 0; k < 14; k++) {
+      const id = `i${String(k).padStart(2, '0')}`;
+      const nombre = `Pack ${k + 1} prompts`;
+      await item(A, id, nombre);
+      await col(A).doc(id).set(k < 10
+        ? { termino: normalizar(nombre), nombreHash: hashCorto(normalizar(nombre)), estado: 'aprobado', motivo: 'aprobado por NovuChat', revisadoPor: 'prop-1' }
+        : { termino: normalizar(nombre), nombreHash: hashCorto(normalizar(nombre)), estado: 'pendiente', motivo: 'pendiente de revisión' });
+    }
+    const antes = await todos(A);
+    const r = await rellenarTerminos(db, A, opc);
+    // Solo los 4 pendientes (que ya no caben) pasan a rechazado/límite; ningún aprobado se escribe.
+    expect(r.escritos.map((e) => e.itemId)).toEqual(['i10', 'i11', 'i12', 'i13']);
+    const d = await todos(A);
+    for (let k = 0; k < 10; k++) expect(d[`i${String(k).padStart(2, '0')}`]).toEqual(antes[`i${String(k).padStart(2, '0')}`]);
+    expect(['i10', 'i11', 'i12', 'i13'].every((i) => d[i]?.['motivo'] === 'límite')).toBe(true);
+    expect(Object.values(d).filter((x) => x['estado'] === 'aprobado')).toHaveLength(10);
+    expect(Object.values(d).filter((x) => x['estado'] === 'aprobado').every((x) => x['revisadoPor'] === 'prop-1')).toBe(true);
+  });
+
+  it('un ítem con id reservado de Firestore (__x__) no se procesa ni rompe el recorrido', async () => {
+    await item(A, '__x__', 'Pack 100 prompts').catch(() => undefined);
+    await item(A, 'ok1', 'Pack 7 prompts');
+    const r = await rellenarTerminos(db, A, opc);
+    expect(r.escritos.map((e) => e.itemId)).toEqual(['ok1']);
+  });
+
   it('multi-tenant: cada comercio con lo suyo; el otro queda intacto; baja o inexistente falla', async () => {
     await item(A, 'a1', 'Pack 100 prompts');
     await item(B, 'b1', 'Pack 7 prompts');

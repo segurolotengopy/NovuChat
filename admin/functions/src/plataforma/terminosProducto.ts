@@ -45,7 +45,8 @@ export const DECISIONES = ['aprobar', 'rechazar', 'revocar'] as const;
 export type Decision = (typeof DECISIONES)[number];
 
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
-const ID_ITEM = /^[A-Za-z0-9_-]{1,128}$/;
+// Los ids `__x__` están reservados por Firestore (error `internal`): no son ids de ítem.
+const ID_ITEM = /^(?!__.*__$)[A-Za-z0-9_-]{1,128}$/;
 export const esDecision = (v: unknown): v is Decision => typeof v === 'string' && (DECISIONES as readonly string[]).includes(v);
 
 export type CodigoError =
