@@ -34,18 +34,18 @@ export const sumarDias = (fecha, n) => new Date(Date.parse(`${fecha}T00:00:00Z`)
 
 /**
  * Las campañas que se escribirían en `config/campanas.lista`: el anuncio más las fechas (hoy hasta hoy + `diasDeVigencia` - 1).
- * Una campaña sin `texto` es válida si tiene titulares. No inventa claves: solo `id`, `texto`, `inicio`, `fin`, `titulares`, `productoId`, `angulo`.
+ * Una campaña sin `texto` es válida si tiene titulares (el `texto` es TEMPORAL y opcional: ver `_advertenciaTexto` del archivo). No inventa claves: solo `id`, `texto`, `inicio`, `fin`, `titulares`, `productoId`, `angulo`.
  */
 export function armarLista(datos, hoy) {
   const dias = datos && Number.isInteger(datos.diasDeVigencia) ? datos.diasDeVigencia : 180;
   const fin = sumarDias(hoy, Math.max(1, Math.min(dias, MAX_DIAS_DE_DURACION)) - 1);
   return (Array.isArray(datos?.anuncios) ? datos.anuncios : []).map((a) => ({
-    id: a.id, texto: '', inicio: hoy, fin,
+    id: a.id, texto: typeof a.texto === 'string' ? a.texto : '', inicio: hoy, fin,
     titulares: a.titulares, ...(a.productoId !== undefined ? { productoId: a.productoId } : {}), ...(a.angulo !== undefined ? { angulo: a.angulo } : {}),
   }));
 }
 
-const CLAVES_ANUNCIO = new Set(['id', 'titulares', 'productoId', 'angulo']);
+const CLAVES_ANUNCIO = new Set(['id', 'texto', 'titulares', 'productoId', 'angulo']);
 const CLAVES_ARCHIVO = new Set(['tenant', 'diasDeVigencia', 'anuncios']);
 
 /**
@@ -65,6 +65,7 @@ export function validarArchivo(datos, { productosActivos = null, limite = MAX_AN
   if (lista.length > limite) p.push(`anuncios: ${lista.length}, y el plan del comercio admite ${limite} campaña(s) a la vez (decisión comercial: no se recorta en silencio)`);
   const ids = new Set();
   const titularesVistos = new Map();
+  const textosVistos = new Map();
   lista.forEach((a, i) => {
     const donde = `anuncios[${i}]`;
     if (!a || typeof a !== 'object' || Array.isArray(a)) { p.push(`${donde}: tiene que ser un objeto`); return; }
@@ -72,6 +73,17 @@ export function validarArchivo(datos, { productosActivos = null, limite = MAX_AN
     if (typeof a.id !== 'string' || !ID.test(a.id)) p.push(`${donde}.id: minúsculas, dígitos y guiones, 1 a 40`);
     else if (ids.has(a.id)) p.push(`${donde}.id: «${a.id}» repetido`);
     else ids.add(a.id);
+    if (a.texto !== undefined) {
+      if (typeof a.texto !== 'string' || a.texto.trim() === '') p.push(`${donde}.texto: un texto con palabras (o quite la clave)`);
+      else {
+        if (INVISIBLES.test(a.texto.normalize('NFKC'))) p.push(`${donde}.texto: caracteres invisibles o de control`);
+        if (ENLACE.test(a.texto)) p.push(`${donde}.texto: un texto no lleva enlaces`);
+        const n = palabras(a.texto);
+        const otro = textosVistos.get(n);
+        if (otro !== undefined) p.push(`${donde}.texto: ya lo usa el anuncio «${otro}» (dos campañas con el mismo texto)`);
+        textosVistos.set(n, a.id);
+      }
+    }
     if (!Array.isArray(a.titulares) || a.titulares.some((x) => typeof x !== 'string')) { p.push(`${donde}.titulares: una lista de textos`); return; }
     const titulares = colapsar(a.titulares);
     if (titulares.length < 1 || titulares.length > MAX_TITULARES) p.push(`${donde}.titulares: de 1 a ${MAX_TITULARES} titulares distintos`);

@@ -106,7 +106,7 @@ try {
     }
     plan = {
       limite, creaDocumento: !camp.exists,
-      filas: nuevos.map((c) => ({ id: c.id, titular: c.titulares[0], estado: !porId.has(c.id) ? 'nuevo' : canonico({ t: c.titulares, p: c.productoId, a: c.angulo }) === canonico({ t: porId.get(c.id).titulares, p: porId.get(c.id).productoId, a: porId.get(c.id).angulo }) ? 'igual' : 'cambia' })),
+      filas: nuevos.map((c) => ({ id: c.id, titular: c.titulares[0], estado: !porId.has(c.id) ? 'nuevo' : canonico({ x: c.texto ?? '', t: c.titulares, p: c.productoId, a: c.angulo }) === canonico({ x: porId.get(c.id).texto ?? '', t: porId.get(c.id).titulares, p: porId.get(c.id).productoId, a: porId.get(c.id).angulo }) ? 'igual' : 'cambia' })),
       conservadas: lista.length - nuevos.length,
     };
     if (!APLICAR) return;

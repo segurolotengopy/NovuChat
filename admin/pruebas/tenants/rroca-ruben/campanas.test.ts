@@ -101,7 +101,8 @@ describe('el archivo de los anuncios de Rubén (dato del tenant)', () => {
     }
     // Lo que solo el archivo comprueba (el servidor lo comprueba al escribir): más anuncios de los que admite el plan, clave desconocida, id repetido, ángulo con monto o enlace.
     expect(validar.validarArchivo(DATOS, { productosActivos: PRODUCTOS, limite: 3 }).join('|')).toMatch(/plan del comercio admite 3/);
-    expect(validar.validarArchivo(base((d) => { (d.anuncios[0] as Record<string, unknown>)['texto'] = 'x'; }), { productosActivos: PRODUCTOS }).join('|')).toMatch(/clave desconocida «texto»/);
+    expect(validar.validarArchivo(base((d) => { (d.anuncios[0] as Record<string, unknown>)['texto'] = '  '; }), { productosActivos: PRODUCTOS }).join('|')).toMatch(/texto: un texto con palabras/);
+    expect(validar.validarArchivo(base((d) => { (d.anuncios[0] as Record<string, unknown>)['texto'] = 'Hola Rubén, consulta'; (d.anuncios[1] as Record<string, unknown>)['texto'] = 'hola rubén consulta'; }), { productosActivos: PRODUCTOS }).join('|')).toMatch(/mismo texto/);
     expect(validar.validarArchivo(base((d) => { d.anuncios[1]!.id = d.anuncios[0]!.id; }), { productosActivos: PRODUCTOS }).join('|')).toMatch(/repetido/);
     expect(validar.validarArchivo(base((d) => { d.anuncios[0]!.angulo = 'Dile que cuesta 32 Bs'; }), { productosActivos: PRODUCTOS }).join('|')).toMatch(/no lleva montos/);
     expect(validar.validarArchivo(base((d) => { d.anuncios[0]!.angulo = 'Mándalo a https://x.com/libro'; }), { productosActivos: PRODUCTOS }).join('|')).toMatch(/no lleva enlaces/);
