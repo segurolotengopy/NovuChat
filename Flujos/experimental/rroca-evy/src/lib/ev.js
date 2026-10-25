@@ -548,21 +548,41 @@ function evSinHuerfanos(lista, borrar) {
   });
   return out;
 }
-// Un texto demasiado largo (el filtro común rechaza más de 1500) se RECORTA por oración en vez de rechazarlo: se quitan, de atrás hacia adelante, las oraciones que no son esenciales hasta que cabe.
-// Esenciales (nunca se quitan): la primera oración, las que hablan de la valoración gratuita o bonificada, la aclaración fija y la pregunta de cierre (nombre y deseo). Si aun así no cabe, no se toca y el filtro rechaza.
-const EV_RECORTE_A = 1400;
-const EV_ESENCIAL = /\b(gratuit\w*|gratis|bonific\w*|sin compromiso|sin costo|valoracion|responde distinto|asistente virtual)\b/;
+// TOPE DE CADA MENSAJE: se intenta que ningún mensaje del modelo pase de 700 caracteres (ya con los saltos de párrafo). Se RECORTA por oración, nunca a mitad de oración, quitando de atrás hacia adelante primero lo accesorio,
+// luego la valoración y la primera oración, luego «asistente virtual» y las aclaraciones de salud; NO se quitan nunca las preguntas ni las aclaraciones fijas de resultado y cuidados. Si el recorte dejaría el texto vacío o
+// solo con la pregunta, o aun así no cabe, se devuelve el ORIGINAL sin tocar y decide el filtro común (1500): el código garantiza «recortar por oración o no tocar», no «700 siempre».
+const EV_RECORTE_A = 700;
+const EV_SEGURIDAD = /\b(responde distinto|no prometemos|cuidados posteriores)\b/;
+const EV_ESENCIAL = /\b(gratuit\w*|gratis|bonific\w*|sin compromiso|sin costo|valoracion)\b/;
 function evRecortar(texto, tope) {
   const t = evTexto(texto);
-  if (t.length > 6000 || evMarcarValor(t).length <= tope) return t;   // más de 6000: no es un texto largo sino un desvarío; el filtro común lo rechaza
+  const medir = (x) => evParrafos(x).length;
+  const fijas = [evNorm(EV_ACLARACION), evNorm(EV_REMISION_CUIDADOS)];
+  if (t.length > 6000 || medir(t) <= tope) return t;   // más de 6000: no es un texto largo sino un desvarío; el filtro común lo rechaza
   const lista = evPartirEnOraciones(t);
   const idx = [];
   lista.forEach((o, i) => { if (o !== '' && o !== '\n') idx.push(i); });
-  const ultima = idx.length ? idx[idx.length - 1] : -1;
-  const esencial = (i) => i === idx[0] || i === ultima || EV_ESENCIAL.test(evNorm(lista[i])) || EV_REMISION.test(evNorm(lista[i])) || EV_CONDICION.test(evNorm(lista[i])) || (evEsPregunta(lista[i]) && /\b(llam\w*|nombre|mejorar|gustaria|deseas|quieres)\b/.test(evNorm(lista[i])));
+  // Nivel de cada oración: 3 accesoria, 2 valoración / primera, 1 seguridad o salud, 0 no se quita (preguntas y aclaraciones fijas).
+  const nivel = (i) => {
+    const o = lista[i];
+    const n = evNorm(o);
+    if (evEsPregunta(o) || fijas.indexOf(n) >= 0) return 0;
+    if (EV_SEGURIDAD.test(n) || EV_CONDICION.test(n) || /\b(en persona|la dra (?:lo )?(?:evalua|explica)|asistente virtual)\b/.test(n)) return 1;
+    if (i === idx[0] || EV_ESENCIAL.test(n)) return 2;
+    return 3;
+  };
   const quitadas = new Set();
-  const largo = () => evMarcarValor(evUnirOraciones(lista.filter((o, i) => !quitadas.has(i)))).length;
-  for (let k = idx.length - 1; k >= 0 && largo() > tope; k--) { if (!esencial(idx[k])) quitadas.add(idx[k]); }
+  const largo = () => medir(evUnirOraciones(lista.filter((o, i) => !quitadas.has(i))));
+  for (const n of [3, 2, 1]) {
+    for (let k = idx.length - 1; k >= 0 && largo() > tope; k--) { if (nivel(idx[k]) === n && !quitadas.has(idx[k])) quitadas.add(idx[k]); }
+    if (largo() <= tope) break;
+  }
+  const quedan = idx.filter((i) => !quitadas.has(i));
+  const soloPreguntas = quedan.every((i) => evEsPregunta(lista[i]));
+  // Tampoco se toca cuando se perdería más del 70 % del texto o lo que queda (sin las preguntas ni un saludo trivial) tiene menos de 40 caracteres.
+  const resto = quedan.filter((i) => !evEsPregunta(lista[i])).map((i) => lista[i]).join(' ').replace(/^¡?hola\W*/i, '').trim();
+  const perdido = 1 - medir(evUnirOraciones(lista.filter((o, i) => !quitadas.has(i)))) / Math.max(1, medir(t));
+  if (quedan.length === 0 || (soloPreguntas && quedan.length < idx.length) || largo() > tope || perdido > 0.7 || (quitadas.size > 0 && resto.length < 40)) return t;   // (si el original pasa de 1500 el filtro común lo rechaza: fallo con botón, mejor que un texto mutilado)   // no cabe sin vaciarlo: no se toca
   return evUnirOraciones(evSinHuerfanos(lista, (o, i) => quitadas.has(i)));
 }
 // La aclaración fija va ANTES de la última oración si esta es la pregunta de cierre (la pregunta debe quedar al final); si no hay pregunta, al final.
@@ -775,6 +795,7 @@ function evPulirSalida(crudo, ctx) {
   // Si el cliente pregunta por una GARANTÍA o por si va a quedar bien, la aclaración «cada rostro responde distinto» la pone el CÓDIGO si el modelo no la trajo (no depende del azar del modelo).
   else if (t !== '' && EV_PIDE_GARANTIA.test(evNorm(c.textoCliente || '')) && !/responde distinto|no prometemos|no podemos prometer|no se puede prometer/.test(evNorm(t))) t = evConAclaracion(t);
   t = evRecortar(t, EV_RECORTE_A);
+  if (enviados.indexOf('antes_despues') >= 0 && t !== '' && !/responde distinto/.test(evNorm(t))) t = evConAclaracion(t);
   if (t === '') return { texto: '', motivo: 'vacio', detalle: 'no quedó texto tras quitar etiquetas, enlaces y promesas sin respaldo' };
   if (evAlfabetoMixto(t)) return { texto: '', motivo: 'afirma_un_hecho', detalle: 'alfabeto mixto en una palabra' };
   // Evy no agenda: ninguna oración puede afirmar una cita, un cupo o un registro (aunque no lleve «te confirmo»).
@@ -859,10 +880,85 @@ function evPreguntaGratis(textoCliente) {
   if (EV_PREGUNTA_GRATIS.test(n)) return true;
   return EV_PREGUNTA_GRATIS_DEBIL.test(n) && (/\b(valoracion|consulta)\b/.test(n) || !EV_TRATAMIENTO.test(n));
 }
+// DERIVACIÓN PREMATURA: la etiqueta [DERIVAR_RECEPCION] del modelo solo se honra si el cliente pidió agendar, ACEPTÓ una oferta de agendar o de pasar con recepción, o dio su nombre cuando se le pidió PARA pasar con recepción.
+// «Quiero ver cómo queda», «¿cuánto cuesta?» o un saludo con su pregunta de nombre no son un pedido de agendar.
+const EV_AFIRMA_CORTA = /^(?:si|sii+|ok|okey|okay|dale|daleee?|claro|por supuesto|de acuerdo|por favor|porfa|listo|va|vale|bueno|perfecto|adelante|obvio|hagamoslo|quiero)(?: (?:por favor|porfa|gracias|dale|claro|si|quiero|adelante|ok|vale|perfecto|listo))?$/;
+// La OFERTA es la ÚLTIMA oración del último mensaje del asistente, una pregunta con un verbo de oferta (el saludo nombra la valoración y pregunta el nombre: nunca es una oferta).
+const EV_OFRECE_AGENDAR = /\b(?:agend\w*|reserv(?!a\b|as\b|ado\b)\w*|coordin\w*|separ(?:ar|arte|arla|emos|e|o)\b|apart(?!e\b|ado|ados|ada)\w*|te aparte\b|program(?:ar|arte|arla|emos|e|o)\b|te paso con recepcion|pasarte con recepcion|te comunico|elegir (?:el|tu) horario)/;   // raíces de verbo con exclusiones de sustantivo o giro («aparte de», «el programa», «un apartado», «no se cobra reserva»)
+const EV_PIDE_NOMBRE = /\b(como te llamas|tu nombre|cual es tu nombre|con quien hablo)\b/;
+function evUltimaOracion(texto) {
+  const l = evPartirEnOraciones(evTexto(texto)).filter((o) => o !== '' && o !== '\n');
+  return l.length ? l[l.length - 1] : '';
+}
+function evUltimoDe(historial, rol, desde) {
+  const h = Array.isArray(historial) ? historial : [];
+  for (let i = (desde === undefined ? h.length : desde) - 1; i >= 0; i--) if (h[i] && h[i].r === rol) return i;
+  return -1;
+}
+// La oferta puede ser CUALQUIER pregunta del último mensaje del asistente (una coletilla como «Es sin compromiso.» puede ir después); el saludo no tiene ningún verbo de oferta.
+// Con dos preguntas gana la ÚLTIMA: la oferta vale solo si no hay otra pregunta DESPUÉS de ella (una coletilla afirmativa sí puede ir después).
+function evOfreceAgendar(textoAsistente) {
+  const preguntas = evPartirEnOraciones(evTexto(textoAsistente)).filter((o) => o !== '' && o !== '\n' && evEsPregunta(o));
+  return preguntas.length > 0 && EV_OFRECE_AGENDAR.test(evNorm(preguntas[preguntas.length - 1]));
+}
+// Una afirmación corta y limpia: sin pregunta, sin negación, sin interrogativos («si pero no ahora», «si, cuánto cuesta», «quiero ver cómo queda», «me interesa el Radiesse» no aceptan nada).
+function evAfirmaCorto(textoCliente) {
+  const raw = evTexto(textoCliente);
+  const n = evNorm(raw);
+  if (raw.indexOf('?') >= 0 || evNegaAgendar(raw) || /\bno\b/.test(n) || /\b(cuanto|como|que|cual|donde|cuando|porque)\b/.test(n)) return false;
+  return EV_AFIRMA_CORTA.test(n);
+}
+function evAceptaOferta(textoCliente, historial) {
+  if (!evAfirmaCorto(textoCliente)) return false;
+  const h = Array.isArray(historial) ? historial : [];
+  const a = evUltimoDe(h, 'a');
+  return a >= 0 && evOfreceAgendar(h[a].t);
+}
+// ¿Es esto un nombre? «Paola», «Paola Rojas», «Soy Paola», «Me llamo Paola»; no «soy alérgica», «de La Paz», «soy nueva», ni una frase.
+const EV_NO_NOMBRE = new RegExp('^(?:de|del|la|el|los|las|un|una|nuevo|nueva|alergico|alergica|diabetico|diabetica|embarazada|paciente|cliente|mama|casada|soltera|doctor|doctora|medico|medica|enfermera|enfermero|interesad[oa]|curios[oa]|quiero|necesito|busco|tengo|vengo|estoy|si|no|hola|ok|gracias|bueno|claro|dale|buenas|buenos|clienta|estudiante|senora|senor|madre|ella|yo|usuaria|muy|tu|su|mi|mejor|para|pero|cita|turno|horario|horarios|tienen|hipertens\\w*|nervios\\w*|sensible|mayor|botox|radiesse|harmonyca|sculptra|acido|hialuronico|bioestimulador\\w*|gratis|gratuita)$');
+function evEsNombre(textoCliente) {
+  const raw = evTexto(textoCliente).trim();
+  if (raw === '' || raw.indexOf('?') >= 0 || raw.indexOf('¿') >= 0) return false;
+  // Solo cuenta el segmento antes de la primera coma o de «mejor / pero / para» («Paola, mejor el jueves»).
+  const seg = raw.split(/[,;:]|\s(?:mejor|pero|para)\s/i)[0].trim().replace(/\.$/, '');
+  if (seg === '' || /[!¡\d.]/.test(seg)) return false;
+  const sin = evNorm(seg).replace(/^(?:soy|me llamo|mi nombre es)\s+/, '');
+  const pal = sin.split(' ').filter(Boolean);
+  if (pal.length < 1 || pal.length > 4) return false;
+  return pal.every((w) => /^[a-z]{2,20}$/.test(w)) && !EV_NO_NOMBRE.test(pal[0]);
+}
+// El nombre que dio el cliente en SU mensaje; '' si no dio uno. Solo cuenta (a) cuando el asistente se lo pidió PARA pasar con recepción, o (b) con «soy / me llamo / mi nombre es X» y X EMPIEZA CON MAYÚSCULA y no está en la lista negativa.
+// Ante la duda se devuelve '' y el cierre usa el nombre del perfil.
+function evNombreDelMensaje(textoCliente, historial) {
+  const raw = evTexto(textoCliente);
+  if (evEsNombre(raw) && (evNombreTrasAceptar(historial) || evNombreTrasPedirAgendar(historial))) {
+    return evPrimerNombre(raw.split(/[,;:]|\s(?:mejor|pero|para)\s/i)[0].trim().replace(/^(?:soy|me llamo|mi nombre es)\s+/i, '').split(/\s+/)[0]);
+  }
+  const m = /(?:[Ss]oy|[Mm]e llamo|[Mm]i nombre es)\s+(\p{Lu}\p{L}{1,19})/u.exec(raw);
+  if (m && !EV_NO_NOMBRE.test(evNorm(m[1]))) return evPrimerNombre(m[1]);
+  return '';
+}
+// Aceptó la oferta de agendar y el asistente le pidió el nombre PARA pasar con recepción: [oferta del asistente, afirmación del cliente, «¿cómo te llamas?» del asistente] al final del historial.
+function evNombreTrasAceptar(historial) {
+  const h = Array.isArray(historial) ? historial : [];
+  const n = h.length;
+  if (n < 3 || !(h[n - 1] && h[n - 1].r === 'a' && h[n - 2] && h[n - 2].r === 'u' && h[n - 3] && h[n - 3].r === 'a')) return false;
+  return EV_PIDE_NOMBRE.test(evNorm(evUltimaOracion(h[n - 1].t))) && evAfirmaCorto(h[n - 2].t) && evOfreceAgendar(h[n - 3].t);
+}
+// Pidió agendar antes (cualquier mensaje suyo) y el último mensaje del asistente le pide el nombre.
+function evNombreTrasPedirAgendar(historial) {
+  const h = Array.isArray(historial) ? historial : [];
+  const a = evUltimoDe(h, 'a');
+  if (a !== h.length - 1 || a < 0) return false;
+  return EV_PIDE_NOMBRE.test(evNorm(evUltimaOracion(h[a].t))) && h.some((x) => x && x.r === 'u' && (evQuiereAgendar(x.t) || evPideAgendar(x.t)));
+}
 // El cliente dice que NO quiere agendar (ahora): no se deriva.
 function evNegaAgendar(textoCliente) {
-  const n = evNorm(textoCliente);
-  return /\bno\b[^.?!]{0,20}\b(agend|reserv|separ|cita)/.test(n) || /\b(pero no|todavia no|aun no|mas adelante|no ahora|ahora no|ahorita no|lo pienso|lo voy a pensar)\b/.test(n);
+  // Por cláusula (coma, punto y coma, «pero», «aunque», «igual»): la negación NO gana si una cláusula POSTERIOR dice «quiero agendar» en positivo («Hola, no sé mucho, quiero agendar una cita»).
+  const claus = evTexto(textoCliente).split(/[,;]|\bpero\b|\baunque\b|\bigual\b/i).map((c) => evNorm(c)).filter((c) => c !== '');
+  const neg = (c) => /\bno\b[^.?!]{0,40}\b(agend|reserv|separ|cita)/.test(c) || /\b(todavia no|aun no|mas adelante|no ahora|ahora no|ahorita no|lo pienso|lo voy a pensar)\b/.test(c);
+  const pos = (c) => EV_QUIERE_AGENDAR.test(c) && !neg(c);
+  return claus.some((c, i) => neg(c) && !claus.slice(i + 1).some(pos));
 }
 // Pedido explícito de agendar (no una pregunta sobre cómo se agenda).
 const EV_QUIERE_AGENDAR = /\b(?:quiero|quisiera|queremos|deseo|necesito|me gustaria|voy a|vamos a|puedo|podemos|podria|podrian)\s+(?:\w+\s+){0,2}(?:agendar|reservar|separar)\b|\bagend(?:a|ame|en|enme|arme)\b|\breserva(?:me|nos)\b|\bsi,? quiero (?:la valoracion|mi valoracion|mi cita|agendar)\b/;
@@ -881,7 +977,7 @@ function evTextoGratis(cfg, dioNombre) {
   return dioNombre ? cuerpo : cuerpo + '\n\n¿Cómo te llamas y qué te gustaría mejorar en tu rostro?';
 }
 const EV_TEXTO_DERIVAR_DE_NUEVO_2 = 'Con gusto, el botón sigue disponible para escribirle a recepción.';
-const EV_PIDE_AGENDAR = /\b(agend\w*|reserv\w*|cita|citas|turno|apart\w+|quiero (?:ir|asistir|la valoracion|mi valoracion)|cuando (?:puedo|podemos|atienden)|horarios?|disponibilidad|escribir a recepcion|hablar con recepcion|numero de recepcion)\b/;
+const EV_PIDE_AGENDAR = /\b(agend\w*|reserv\w*|cita|citas|turno|apart(?:ar|arme|en)|quiero (?:ir|asistir|la valoracion|mi valoracion)|cuando (?:puedo|podemos|atienden)|horarios?|disponibilidad|escribir a recepcion|hablar con recepcion|numero de recepcion)\b/;
 function evPideAgendar(textoCliente) { return EV_PIDE_AGENDAR.test(evNorm(textoCliente)); }
 const EV_BOTON_RECEPCION = 'Escribir a recepción';
 // El cierre de la derivación: el texto fijo del guion (con las dos frases sin mecanismo cambiadas), con el nombre y la dirección de la Consola. Sin nombre, sin «, Nombre».
