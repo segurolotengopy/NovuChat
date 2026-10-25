@@ -33,8 +33,8 @@ import '../estilos/conversaciones.css';
  * dirección (`/negocio/:t/conversaciones/:c`, con `?m=<mensaje>` si viene de una
  * búsqueda), así que se puede copiar, volver con «atrás» y compartir.
  *
- * SE MUESTRA SOLO CON LA BANDERA `tenants/{id}.consolaConversaciones = 'nueva'`
- * (ver `Conversaciones.tsx`, el selector). La pantalla de siempre queda intacta.
+ * ES LA POR DEFECTO (24/10/2026): se muestra salvo que la ficha tenga `consolaConversaciones = 'clasica'`
+ * explícito (ver `Conversaciones.tsx`, el selector). La pantalla de siempre queda intacta.
  *
  * QUÉ ESCRIBE DIRECTO EN FIRESTORE: dos cosas, y nada más. «No contactar» (en el detalle) y la marca de
  * leída: `{ noLeidos: 0, sinLeer: false }`, que las reglas solo aceptan hacia cero
