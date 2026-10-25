@@ -11,7 +11,7 @@
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, closeSync, fstatSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
@@ -122,10 +122,16 @@ describe('contra el emulador, como proceso', () => {
     const ap = hijo(args(t, 'true', ['--aplicar', '--respaldo', ruta]));
     expect(ap.status, ap.stdout + ap.stderr).toBe(0);
     expect((await hoy(t)).data()).toEqual({ ...FICHA, personaPuedeEscribir: true });
-    expect((statSync(ruta).mode & 0o777).toString(8)).toBe('600');
-    expect((statSync(dirname(ruta)).mode & 0o777).toString(8)).toBe('700');
+    // Se abre UNA vez: modo y contenido salen del mismo descriptor (sin comprobar y luego abrir la misma ruta).
+    const fd = openSync(ruta, 'r');
+    let modo: number;
+    let texto: string;
+    try { modo = fstatSync(fd).mode & 0o777; texto = readFileSync(fd, 'utf8'); } finally { closeSync(fd); }
+    expect(modo.toString(8)).toBe('600');
+    const fdDir = openSync(dirname(ruta), 'r');
+    try { expect((fstatSync(fdDir).mode & 0o777).toString(8)).toBe('700'); } finally { closeSync(fdDir); }
     expect(ap.stdout + ap.stderr).not.toContain(PROYECTO);
-    const resp = JSON.parse(readFileSync(ruta, 'utf8'));
+    const resp = JSON.parse(texto);
     expect(resp).toMatchObject({ campo: 'personaPuedeEscribir', previo: { presente: false, valor: null }, escrito: true });
     expect(JSON.stringify(resp)).not.toContain('Sintetica'); // el respaldo no guarda nada del comercio
 
@@ -189,7 +195,7 @@ describe('contra el emulador, como proceso', () => {
     expect(r.status).toBe(2);
     expect(r.stdout).toContain('no existe la ficha');
     expect((await hoy(t)).exists).toBe(false);
-    expect(() => statSync(ruta)).toThrow(); // ni siquiera el respaldo
+    expect(() => openSync(ruta, 'r')).toThrow(); // ni siquiera el respaldo
   });
 
   it('NEGATIVA al encender: consolaConversaciones ausente, clasica, mayúscula o de otro tipo; comercio no activo', async () => {
