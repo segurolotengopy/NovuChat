@@ -191,6 +191,17 @@ describe('NEGADAS: el flujo nuevo de Emma NUNCA reemplaza un flujo vivo que no e
       sinEscritura(r.curl);
     }
   });
+  it('M-5: más de un nodo «Config base» en el archivo o en el vivo nuevo se NIEGA (falla cerrado), también con --forzar', () => {
+    const dos = (n: string) => ({ ...nuevoDe(n, 'rroca-emma'), nodes: [{ name: 'Armar previos' }, configBase('rroca-emma'), configBase('rroca-emma')] });
+    const archivoDos = join(raiz, 'Flujos/experimental/rroca-emma/dos-config.json'); writeFileSync(archivoDos, JSON.stringify(dos(NOMBRE)));
+    const vivoDos = escribir('vivo-nuevo-dos-config.json', dos(NOMBRE));
+    for (const extra of [[], ['--forzar']]) {
+      const a = correrEn(raiz, ['--flujo', 'Flujos/experimental/rroca-emma/dos-config.json', '--aplicar', '--etapa-prueba', '--confirmo-emma', ...extra], vivoEmmaViejo);
+      expect(a.status, 'archivo con dos Config base').toBe(1); sinEscritura(a.curl);
+      const v = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-emma', ...extra], vivoDos);
+      expect(v.status, 'vivo con dos Config base').toBe(1); sinEscritura(v.curl);
+    }
+  });
   it('un archivo con el nombre de Emma pero el tenant de EVY en su «Config base» NO es de Emma: va por la guardia de Evy y nunca por la de Emma', () => {
     const r = correrEn(raiz, ['--flujo', REL_CON_TENANT_DE_EVY, '--aplicar', '--etapa-prueba', '--confirmo-evy', '--confirmo-emma'], vivoEmmaViejo);
     expect(r.guardias).not.toMatch(/^emma/m);

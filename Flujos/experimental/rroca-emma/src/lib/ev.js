@@ -554,9 +554,10 @@ const EV_SEGURIDAD = /\b(responde distinto|no prometemos|cuidados posteriores)\b
 const EV_ESENCIAL = /\b(gratuit\w*|gratis|bonific\w*|sin compromiso|sin costo|valoracion)\b/;
 // EMMA (declarado en PROPIO.md): una oración que nombra un producto (nivel 2,5) se recorta DESPUÉS de lo accesorio y ANTES de la valoración gratuita: la diferencia entre ambos no pierde los dos productos por una frase de relleno.
 const EV_PRODUCTOS = /\b(sculptra|radiesse)\b/;
-function evRecortar(texto, tope) {
+function evRecortar(texto, tope, direccion) {
   const t = evTexto(texto);
-  const medir = (x) => evParrafos(x).length;
+  // La dirección viaja como marca corta: se mide con su texto real (si no, el recorte contaría de menos y el texto final pasaría de 700).
+  const medir = (x) => evParrafos(evRestituirDireccion(x, direccion)).length;
   const fijas = [evNorm(EV_ACLARACION), evNorm(EV_REMISION_CUIDADOS)];
   if (t.length > 6000 || medir(t) <= tope) return t;   // más de 6000: no es un texto largo sino un desvarío; el filtro común lo rechaza
   const lista = evPartirEnOraciones(t);
@@ -745,6 +746,12 @@ const EV_TOCA_GARANTIA = /\bgarant\w*|\basegur\w*|\bpromet\w*|\bprometid\w*|resu
 // Promete un efecto inmediato o «desde la primera sesión / aplicación» (la clínica no lo promete): «efecto lifting inmediato» pierde la palabra y «de inmediato / de forma inmediata / al instante» pierde la frase (la oración conserva su contenido); cualquier otra oración con «inmediato» o con «desde la primera
 // sesión/aplicación» se quita entera. EMMA (declarado en PROPIO.md): «desde la primera sesión» es la SEGUNDA adición a las barreras (el MD de la doctora la traía y se corrigió el 24/10/2026).
 function evSinInmediato(texto) {
+  const original = evTexto(texto);
+  const limpio = evSinInmediatoCrudo(original);
+  // Si se quitó «inmediatamente» del comienzo de una oración, la primera letra que queda se pone en mayúscula.
+  return limpio === original ? limpio : limpio.replace(/(^|[.!?]\s+|\n)([a-záéíóúñ])/g, (m, a, b) => a + b.toUpperCase());
+}
+function evSinInmediatoCrudo(texto) {
   return evQuitarOraciones(evTexto(texto).replace(/(lifting)\s+inmediat[oa]s?/gi, '$1').replace(/\binmediat[oa]s?\s+(lifting)/gi, '$1').replace(/\s*,?\s*(?:de (?:forma|manera) inmediat[oa]|de inmediato|inmediatamente|al instante)\b/gi, ''), (n) => /\binmediat\w*/.test(n) || /\bdesde la primera (?:sesion|aplicacion)\b/.test(n));
 }
 // EMMA (declarado en PROPIO.md): su dirección dice «entre 2do y 3er anillo», y la regla de precios (`entre … <cifra>`) la tomaba por un rango de precio: preguntar «¿dónde están?» caía al fallo. Dos defensas ANTES de las barreras:
@@ -753,14 +760,27 @@ function evSinInmediato(texto) {
 const EV_ORDINAL_M = ['', 'primer', 'segundo', 'tercer', 'cuarto', 'quinto', 'sexto', 'séptimo', 'octavo', 'noveno', 'décimo'];
 const EV_ORDINAL_F = ['', 'primera', 'segunda', 'tercera', 'cuarta', 'quinta', 'sexta', 'séptima', 'octava', 'novena', 'décima'];
 const EV_MARCA_DIRECCION = 'xdireccionx';
+const EV_MARCA_DIRECCION_CORTA = 'xdireccioncortax';
+// La dirección de la Consola puede cerrar con «(Santa Cruz)»: el modelo a veces la escribe sin ese final. Se neutralizan las dos formas (la completa primero); cada marca repone su propia forma.
+function evDireccionCorta(direccion) {
+  const d = evTexto(direccion).trim();
+  const corta = d.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  return corta.length >= 8 && corta !== d ? corta : '';
+}
+function evPatronDeDireccion(d) { return new RegExp(d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'), 'gi'); }
 function evProtegerDireccion(texto, direccion) {
   const d = evTexto(direccion).trim();
   if (d.length < 8) return evTexto(texto);
-  return evTexto(texto).replace(new RegExp(d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'), 'gi'), EV_MARCA_DIRECCION);
+  let t = evTexto(texto).replace(evPatronDeDireccion(d), EV_MARCA_DIRECCION);
+  const corta = evDireccionCorta(direccion);
+  if (corta) t = t.replace(evPatronDeDireccion(corta), EV_MARCA_DIRECCION_CORTA);
+  return t;
 }
 function evRestituirDireccion(texto, direccion) {
   const d = evTexto(direccion).trim();
-  return d.length < 8 ? evTexto(texto) : evTexto(texto).replace(new RegExp(EV_MARCA_DIRECCION, 'gi'), () => d);
+  if (d.length < 8) return evTexto(texto);
+  const corta = evDireccionCorta(direccion);
+  return evTexto(texto).replace(new RegExp(EV_MARCA_DIRECCION_CORTA, 'gi'), () => corta || d).replace(new RegExp(EV_MARCA_DIRECCION, 'gi'), () => d);
 }
 // Una palabra de PRECIO (verbo o sustantivo): con ella en el mensaje los ordinales NO se tocan (el rango «entre 2 y 3 …» que la regla de precios debe ver sigue a la vista).
 const EV_PALABRA_DE_PRECIO = /\b(cuesta\w*|cuestan|vale|valen|valor|valores|sale|salen|precio\w*|inversion|ronda\w*|cobra\w*|cobro\w*|costo\w*|tarifa\w*|presupuesto|bs|bolivianos?|dolares?|usd|pesos)\b/;
@@ -790,13 +810,21 @@ function evOrdinalesDeDireccion(texto) {
 const EV_CIFRA_GRANDE = /(?<![\d.,:])\d{1,3}(?:[.,]\d{3})+(?![\d%])|(?<![\d.,:])\d{3,}(?![\d%:]|\s?%)/;
 const EV_CIFRA_EN_PALABRAS = /\b(cien|ciento|doscientos|doscientas|trescientos|trescientas|cuatrocientos|cuatrocientas|quinientos|quinientas|seiscientos|seiscientas|setecientos|setecientas|ochocientos|ochocientas|novecientos|novecientas|mil|millon|millones)\b/;
 const EV_PREGUNTA_PRECIO = /\b(cuanto|cuesta\w*|cuestan|precio\w*|costo\w*|vale|valen|valor|cobran|cobras|inversion|tarifa\w*|presupuesto)\b/;
+// Números que NO son un precio: los que siguen a «#», «Nº», «nro», «número», «km», o a «Av./Avenida/calle» (con hasta cuatro palabras de nombre en medio). Se quitan de la oración antes de buscar la cifra.
+const EV_NUMERO_DE_DIRECCION = /(?:#|\bn(?:[º°]|o\.)|\bnro\.?|\bnumero|\bkm\.?)\s*\d[\d.,]*|\b(?:av\.?|avenida|calle)\s+(?:[\p{L}.]+\s+){0,4}?#?\s*\d[\d.,]*/giu;
+// M-2: «unos / alrededor de / más o menos / serían + cifra de 3 o más dígitos» cuando la oración habla de valoración, tratamiento, sesión o zona (no de horarios).
+const EV_CIFRA_APROXIMADA = /\b(?:unos|unas|alrededor de|aproximadamente|mas o menos|serian|seran)\s+(?:de\s+)?\d[\d.,]*\d\b/;
+const EV_HABLA_DE_TRATAMIENTO = /\b(valoracion|tratamiento\w*|sesion\w*|zona\w*|aplicacion\w*)\b/;
+const EV_HABLA_DE_HORARIO = /\b(hora\w*|hs|horario\w*|atend\w*|abrim\w*|cerram\w*|minutos?)\b/;
 function evNumeroDePrecio(texto, textoCliente) {
   const preguntoPrecio = EV_PREGUNTA_PRECIO.test(evNorm(textoCliente));
   for (const o of evPartirEnOraciones(evTexto(texto))) {
     if (o === '' || o === '\n') continue;
     const n = evNorm(o);
-    const numero = EV_CIFRA_GRANDE.test(o.replace(/\d{1,2}\s?:\s?\d{2}/g, ' ')) || EV_CIFRA_EN_PALABRAS.test(n);
+    const sinDireccion = o.replace(/\d{1,2}\s?:\s?\d{2}/g, ' ').replace(EV_NUMERO_DE_DIRECCION, ' ');
+    const numero = EV_CIFRA_GRANDE.test(sinDireccion) || EV_CIFRA_EN_PALABRAS.test(n);
     if (numero && (EV_PALABRA_DE_PRECIO.test(n) || preguntoPrecio)) return o.slice(0, 60);
+    if (EV_CIFRA_APROXIMADA.test(evNorm(sinDireccion)) && EV_HABLA_DE_TRATAMIENTO.test(n) && !EV_HABLA_DE_HORARIO.test(n)) return o.slice(0, 60);
   }
   return '';
 }
@@ -849,7 +877,7 @@ function evPulirSalida(crudo, ctx) {
   if (enviados.indexOf('antes_despues') >= 0 && !/responde distinto/.test(evNorm(t))) t = t === '' ? EV_ACLARACION : evConAclaracion(t);
   // Si el cliente pregunta por una GARANTÍA o por si va a quedar bien, la aclaración «cada rostro responde distinto» la pone el CÓDIGO si el modelo no la trajo (no depende del azar del modelo).
   else if (t !== '' && EV_PIDE_GARANTIA.test(evNorm(c.textoCliente || '')) && !/responde distinto|no prometemos|no podemos prometer|no se puede prometer/.test(evNorm(t))) t = evConAclaracion(t);
-  t = evRecortar(t, EV_RECORTE_A);
+  t = evRecortar(t, EV_RECORTE_A, c.direccion);
   if (enviados.indexOf('antes_despues') >= 0 && t !== '' && !/responde distinto/.test(evNorm(t))) t = evConAclaracion(t);
   if (t === '') return { texto: '', motivo: 'vacio', detalle: 'no quedó texto tras quitar etiquetas, enlaces y promesas sin respaldo' };
   if (evAlfabetoMixto(t)) return { texto: '', motivo: 'afirma_un_hecho', detalle: 'alfabeto mixto en una palabra' };

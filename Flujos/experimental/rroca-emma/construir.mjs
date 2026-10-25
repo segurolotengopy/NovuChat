@@ -490,6 +490,8 @@ export function guardiaDePublicacion({ flujo, datos, negocio, etapa = 'encender'
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   if (!nodos.length) h.push('el flujo no trae nodos');
+  // Un solo «Config base» (falla cerrado): con dos, quien lea el primero y quien lea el último verían configuraciones distintas.
+  if (nodos.filter((n) => n.name === 'Config base').length > 1) h.push('el flujo trae más de un nodo «Config base»: tiene que haber exactamente uno');
   const base = nodos.find((n) => n.name === 'Config base');
   const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
   const enFlujo = Array.isArray(lista) ? Object.fromEntries(lista.map((a) => [a.name, a.value])) : {};

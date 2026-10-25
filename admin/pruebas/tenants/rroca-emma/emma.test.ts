@@ -230,6 +230,38 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
     expect(fallo(sale('Sale entre 2 y 3 mil bolivianos. ¿Cómo te llamas?'))).toBe(true);
     expect(fallo(sale('El tratamiento cuesta entre 500 y 800 Bs. ¿Cómo te llamas?'))).toBe(true);
   });
+  it('I-1: un número de calle, de avenida, de «#», «Nº», «nro» o «km» no es un precio; combinado con una cifra de precio real SIGUE rechazado', () => {
+    const dir = 'Estamos en la Av. Pauserna # 2055, cerca del km 4 de la ruta, calle Los Pinos 350.';
+    const r = sale(dir, '¿cuánto cuesta y dónde están?');
+    expect(fallo(r)).toBe(false);
+    expect(r).toContain('2055');
+    // la dirección de la Consola SIN el «(Santa Cruz)» final también se protege
+    const sinCiudad = sale('Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055. ¿Cómo te llamas?', '¿cuánto cuesta y dónde están?');
+    expect(fallo(sinCiudad)).toBe(false);
+    expect(sinCiudad).toMatch(/Av\. Pauserna # 2055/);
+    for (const par of ['Nos ubicamos en Nº 2055 de la Av. Pauserna.', 'Estamos en el nro 2055 de la avenida.']) expect(fallo(sale(par, '¿cuánto cuesta y dónde están?')), par).toBe(false);
+    // NEGADA: la dirección no abre la puerta a una cifra de precio
+    expect(fallo(sale('Estamos en la Av. Pauserna # 2055 y la valoración vale 700. ¿Cómo te llamas?', '¿cuánto cuesta y dónde están?'))).toBe(true);
+    expect(fallo(sale('Estamos en la Av. Pauserna # 2055. El tratamiento cuesta 700. ¿Cómo te llamas?', '¿cuánto cuesta y dónde están?'))).toBe(true);
+  });
+  it('M-1: el recorte mide la dirección con su texto real: el resultado no pasa de 700 caracteres', () => {
+    const dir = 'Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055 (Santa Cruz)';
+    const relleno = 'Trabajamos con técnica cuidadosa y productos de calidad para acompañarte en cada paso. ';
+    const modelo = `Atendemos en ${dir}. ${relleno.repeat(7)}Radiesse define el contorno y da firmeza. La valoración es gratuita. ¿Cómo te llamas?`;
+    const t = sale(modelo, '¿dónde están?');
+    expect(fallo(t)).toBe(false);
+    expect(t).toContain(dir);
+    expect(t.length).toBeLessThanOrEqual(700);
+  });
+  it('M-3: al quitar «inmediatamente» del comienzo de una oración, la primera letra queda en mayúscula', () => {
+    const t = sale('Inmediatamente te cuento cómo funciona la valoración, que es gratuita. ¿Cómo te llamas?');
+    expect(t).not.toMatch(/inmediat/i);
+    expect(t).toMatch(/^Te cuento/);
+  });
+  it('M-2: «unos / alrededor de / más o menos / serían + cifra» sobre valoración, tratamiento o zona se rechaza; un horario no', () => {
+    for (const m of ['La valoración serían unos 700 en total. ¿Cómo te llamas?', 'Cada sesión ronda alrededor de 900. ¿Cómo te llamas?', 'El tratamiento de la zona sale más o menos 1500. ¿Cómo te llamas?', 'La sesión serían 800 aproximadamente. ¿Cómo te llamas?', 'Por zona, unos 600. ¿Cómo te llamas?']) expect(fallo(sale(m)), m).toBe(true);
+    expect(fallo(sale('Atendemos alrededor de 8 horas al día, de lunes a viernes. ¿Cómo te llamas?'))).toBe(false);
+  });
   it('A2: el texto prellenado del anuncio («…quiero agendar mi valoración gratuita») NO cierra de golpe con el nombre del perfil: el saludo pide nombre y deseo; «Soy Rosa. Quiero agendar» sí cierra', () => {
     const saludo = '¡Hola! 👋 Soy el asistente virtual de la Dra. Emma. Tu valoración es 100% gratuita y sin compromiso. ¿Cómo te llamas y qué te gustaría mejorar?';
     const t = hablar(crear({ modeloDice: dice(saludo) }), ANA, mTexto('Hola Dra. Emma, vi su anuncio de bioestimuladores y quiero agendar mi valoración gratuita 🙌'));
