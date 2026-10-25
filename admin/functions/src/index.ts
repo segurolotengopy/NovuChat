@@ -10,6 +10,7 @@ initializeApp();
 // desplegada, y su lista es el inventario de despliegue.
 
 export { altaTenant, bajaTenant, suspenderTenant, reactivarTenant, asignarNumero, liberarNumero, actualizarEstadoCuenta, fijarCortePrepago, otorgarAccesoSoporte, revocarAccesoSoporte } from './plataforma/tenants.js';
+export { terminosProductoDeTenant } from './plataforma/aprobarTerminoProducto.js';
 export { invitarUsuario, quitarUsuario } from './central/usuarios.js';
 export { moverReclamo } from './central/reclamos/moverReclamo.js';
 export { registrarCambioConfig } from './central/registrarCambioConfig.js';
@@ -17,7 +18,7 @@ export { configuracionParaFlujo } from './central/negocio/configuracionParaFlujo
 
 export { ingesta, configuracionFlujo } from './ingesta.js';
 // F3b-1b: el endpoint lo arma `ganchos.ts` con los ganchos de Cobros y de Agenda sobre el contrato de Core.
-export { registrarCierre } from './ganchos.js';
+export { registrarCierre, aprobarTerminoProducto } from './ganchos.js';
 export { registrarQrDeCobro, imagenDeCobro } from './modulos/cobros/cobro.js';
 // COMPROBANTE DE PAGO DE VENTA, REGLA 2 (C1b, `cobros.md` §4duodecies.6): el
 // cotejo por plazo e intentos, la imagen guardada en Storage y la purga diaria.
