@@ -223,6 +223,23 @@ describe('rellenar-terminos-producto.mjs', () => {
     expect(todo.codigo, todo.salida).toBe(0);
     expect((await todos(B))['b1']).toMatchObject({ estado: 'pendiente' });
   });
+  it('--todos omite, informando, un documento tenants/ con id inválido (ej. «q») y sigue con los demás sin fallar', async () => {
+    await db.doc('tenants/q').set({ nombre: 'Ajeno', estado: 'activo' });
+    await db.doc('tenants/q/catalogo/x1').set({ nombre: 'Pack 1 prompts', activo: true });
+    try {
+      await item(A, 'a1', 'Pack 100 prompts');
+      const r = script('--todos', '--aplicar');
+      expect(r.codigo, r.salida).toBe(0);
+      expect(r.salida).toContain('q: omitido');
+      expect((await todos(A))['a1']).toMatchObject({ estado: 'pendiente' });
+      expect(await todos('q')).toEqual({});
+      // Pedido explícito de un id inválido: sí es un error.
+      expect(script('--tenant', 'q', '--aplicar').codigo).toBe(1);
+    } finally {
+      await db.doc('tenants/q/catalogo/x1').delete();
+      await db.doc('tenants/q').delete();
+    }
+  });
   it('sin alcance, o con los dos: código 2 y no escribe', async () => {
     await item(A, 'a1', 'Pack 100 prompts');
     expect(script('--aplicar').codigo).toBe(2);

@@ -48,7 +48,7 @@ export async function resolve(especificador, contexto, siguiente) {
 }`), import.meta.url);
 
 const { rellenarTerminos } = await import('../../functions/src/plataforma/rellenarTerminos.ts');
-const { ErrorTermino } = await import('../../functions/src/plataforma/terminosProducto.ts');
+const { ErrorTermino, esIdDeComercio } = await import('../../functions/src/plataforma/terminosProducto.ts');
 const { initializeApp, applicationDefault } = await import('firebase-admin/app');
 const { getFirestore } = await import('firebase-admin/firestore');
 initializeApp({ credential: applicationDefault(), projectId: PROYECTO });
@@ -62,6 +62,9 @@ try {
     : [TENANT];
   let total = 0;
   for (const t of ids) {
+    // Un documento de `tenants/` con un id que no es de la forma de NovuChat (datos ajenos o de prueba):
+    // se informa y se sigue con los demás; no falla el proceso. Con `--tenant` explícito sí es un error.
+    if (TODOS && !esIdDeComercio(t)) { gris(`  ${t}: omitido (id que no es de la forma de un comercio)`); continue; }
     try {
       const r = await rellenarTerminos(db, t, { quien: `script:${OPERADOR}`, enSeco: !APLICAR });
       if (r.conPrompt === 0 && r.huerfanos === 0) continue;
