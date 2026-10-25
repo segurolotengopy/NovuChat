@@ -71,6 +71,14 @@ export async function sincronizarTermino(
 
   return db.runTransaction(async (tx) => {
     const previo = await tx.get(ref);
+    // Una aprobación humana del mismo nombre y del mismo término se preserva ANTES de mirar el tope:
+    // el tope solo vale para altas y reinicios hacia pendiente, nunca para quitar una aprobación.
+    if (previo.exists) {
+      const p0 = previo.data() ?? {};
+      if (p0['estado'] === 'aprobado' && p0['nombreHash'] === nombreHash && cand.ok && p0['termino'] === cand.termino) {
+        return 'sin_cambio' as const;
+      }
+    }
     // Cuántos hay vivos en el comercio, sin contar este ítem.
     const vivos = await tx.get(
       db.collection('tenants').doc(tenantId).collection(COLECCION_TERMINOS)
