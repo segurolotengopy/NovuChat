@@ -16,7 +16,7 @@ export { cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo } from './modulos/
 export { MINUTOS_RETENCION_POR_DEFECTO };
 export { milisegundosDe };
 import { existencias } from './modulos/inventario/inventario.js';
-import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { defineInt } from 'firebase-functions/params';
@@ -40,7 +40,9 @@ import {
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
 // El aviso de consumo al 80 % se decide en `planes.ts`, también puro.
 import { avisoConsumoPendiente, avisoDeConsumo, limiteDeCampanas, periodoDe } from './central/cuenta/planes.js';
-import { anunciosParaElFlujo, campanasParaElFlujo } from './modulos/campanas/campanas.js';
+import {
+  anunciosParaElFlujo, campanasParaElFlujo, leerCampanas, plegarParaPatrones, type Campana,
+} from './modulos/campanas/campanas.js';
 // EL PREPAGO se decide en `prepago.ts`, puro: cobertura del mes, gracia,
 // saldo de conversaciones y si el corte SE APLICA o solo se observa. Acá se
 // aplica lo que decidió, dentro de la transacción que ya existía.
@@ -65,7 +67,11 @@ import {
 // de `catalogoWeb.ts`, que no importa nada de acá: no hay ciclo.
 import { enlaceParaElFlujo, sePuedeComprar, type EnlaceEmitido } from './modulos/catalogo-web/catalogoWeb.js';
 // Los nombres de producto que son frases de instrucción no llegan al modelo (Productos).
-import { catalogoParaElPrompt } from './modulos/productos/nombreSeguro.js';
+import { catalogoParaElPrompt, nombreDeProductoApto } from './modulos/productos/nombreSeguro.js';
+// Términos de producto registrados (Andres, 24/10/2026): se leen una vez por turno, y solo si lo que
+// va al prompt contiene «prompt»; el sistema los cita entre « » y revalida lo ya aprobado.
+import { SIN_OTROS, normalizar as normalizarTexto, verificarPatrones } from './central/asistente/comportamiento.js';
+import { citarTerminos, terminosAprobados } from './central/asistente/terminos.js';
 
 /**
  * =========================================================================
@@ -1539,6 +1545,76 @@ export const ingesta = onRequest(
  *    comercial y tiene que surtir efecto ya. Un caché largo la vuelve inútil.
  */
 /**
+ * =========================================================================
+ * TÉRMINOS DE PRODUCTO REGISTRADOS EN EL PROMPT (Andres, 24/10/2026; PR 5)
+ * =========================================================================
+ *
+ * Un nombre de producto con «prompt/prompts» («100 prompts») es un DATO LITERAL
+ * si el comercio lo registró y Plataforma lo aprobó. Este turno hace dos cosas
+ * con eso, y ninguna toca el texto del cliente:
+ *
+ *  1. CITA: el SISTEMA entrecomilla « » el término donde aparece en lo que viaja
+ *     al prompt (nombres del catálogo, instrucciones vigentes, campañas vigentes).
+ *     El marcador interno nunca sale de `verificarPatrones`.
+ *  2. REVALIDA lo ya aprobado. `instruccionesVigentes` y `vigentes` se aprobaron
+ *     con los términos de ENTONCES; si el término se revocó (o su ítem se
+ *     renombró o desactivó), lo aprobado gracias a él no puede seguir llegando al
+ *     modelo. Se vuelve a pasar por la capa 1 con los términos de AHORA y lo que
+ *     ya no pasa NO entra al prompt (la base no se toca: es solo no mostrarlo).
+ *
+ * COSTO: una sola lectura de términos por turno, y NINGUNA si ningún texto
+ * candidato contiene «prompt» (`terminosAprobados` lo decide). Fallar cerrado:
+ * si la lectura falla, términos vacíos; lo que necesita un término queda fuera.
+ */
+const contienePrompt = (t: string): boolean => normalizarTexto(t).includes('prompt');
+
+/** Los campos de una campaña que viajan al modelo: texto, titulares y ángulo. */
+const camposDeCampana = (c: Campana): string[] => [c.texto, ...(c.titulares ?? []), c.angulo ?? ''];
+
+/** ¿Este texto aprobado sigue pasando la capa 1 con los términos de hoy? Sin «prompt» no se revisa nada. */
+export function sigueVigente(valor: string, terminos: readonly string[]): boolean {
+  const vistas = [valor, valor.normalize('NFKC'), plegarParaPatrones(valor)];
+  if (!vistas.some(contienePrompt)) return true;
+  return vistas.every((v) => verificarPatrones(v, SIN_OTROS, terminos).nivel !== 'rechazado');
+}
+
+export interface VigentesDelTurno {
+  terminos: string[];
+  instrucciones: string;
+  /** Las campañas `vigentes` tal como las leyó el turno, o la lista filtrada si alguna dejó de pasar. */
+  campanas: unknown;
+  /** Cuántas cosas ya aprobadas se dejaron fuera de este prompt. */
+  descartadas: number;
+}
+
+/** Lee los términos (a lo sumo una vez), revalida lo vigente y devuelve lo que puede entrar al prompt. */
+export async function vigentesParaElPrompt(
+  db: Firestore, tenantId: string, entrada: {
+    nombresDeCatalogo: readonly string[]; instrucciones: string; campanas: unknown;
+  },
+): Promise<VigentesDelTurno> {
+  const lista = leerCampanas(entrada.campanas);
+  const candidatos = [...entrada.nombresDeCatalogo, entrada.instrucciones, ...lista.flatMap(camposDeCampana)];
+  let terminos: string[] = [];
+  try {
+    terminos = await terminosAprobados(db, tenantId, candidatos.join('\n'), nombreDeProductoApto);
+  } catch {
+    // Sin datos del comercio en el registro: ni el término ni el texto.
+    logger.warn('configuracionFlujo: no se pudieron leer los términos de producto');
+  }
+  let descartadas = 0;
+  const instrucciones = entrada.instrucciones !== '' && !sigueVigente(entrada.instrucciones, terminos)
+    ? (descartadas++, '') : entrada.instrucciones;
+  const buenas = lista.filter((c) => camposDeCampana(c).every((v) => v === '' || sigueVigente(v, terminos)));
+  descartadas += lista.length - buenas.length;
+  if (descartadas > 0) logger.info('configuracionFlujo: vigentes fuera del prompt por término', { descartadas });
+  return {
+    terminos, instrucciones, descartadas,
+    campanas: buenas.length === lista.length ? entrada.campanas : buenas,
+  };
+}
+
+/**
  * Registro estructurado de lo anómalo del estado de la conversación: una sesión `corrupta`
  * (puede venir en cualquier acción), un `datos_invalidos` o un fallo del servidor. Nunca lleva el
  * teléfono ni el cuerpo: solo el comercio, la acción y el resultado.
@@ -1689,20 +1765,8 @@ export const configuracionFlujo = onRequest(
     // autenticada. Va en la respuesta solo si hay alguno: un comercio sin anuncios
     // recibe la respuesta de siempre, byte a byte (`despacho-sesion.test.ts`).
     // Lo que el modelo lee del catálogo: sin los nombres que son órdenes (`nombreSeguro.ts`).
-    const catalogoPrompt = catalogoParaElPrompt(catalogo.docs);
-    if (catalogoPrompt.omitidos > 0) console.info(`catálogo: ${catalogoPrompt.omitidos} nombre(s) fuera del prompt`);
-    const anunciosDeHoy = anunciosParaElFlujo(
-      campanas.exists ? campanas.get('vigentes') : [],
-      limiteDeCampanas(cuenta.exists ? cuenta.data() as Record<string, unknown> : null),
-      ahoraMs,
-      catalogoPrompt.docs.map((d) => {
-        const datos = d.data();
-        const quedan = existencias(datos);
-        return { id: d.id, nombre: datos['nombre'], precio: datos['precio'],
-          ...(quedan !== null ? { agotado: quedan === 0 } : {}) };
-      }),
-    );
-
+    const catalogoFiltrado = catalogoParaElPrompt(catalogo.docs);
+    if (catalogoFiltrado.omitidos > 0) console.info(`catálogo: ${catalogoFiltrado.omitidos} nombre(s) fuera del prompt`);
     // -------------------------------------------------------------------------
     // EL CORTE DEL PREPAGO REUTILIZA EL 409 (`DISENO.md` §4undecies.3). Los tres
     // flujos ya tratan un 409 de acá como «no operativo» y mandan la cortesía
@@ -1734,6 +1798,35 @@ export const configuracionFlujo = onRequest(
       respuesta.status(409).json({ estado: servicio.motivo, mensajeCortesia: cortesia });
       return;
     }
+
+    // TÉRMINOS DE PRODUCTO REGISTRADOS Y LO VIGENTE REVALIDADO (ver `vigentesParaElPrompt`). Va DESPUÉS del
+    // corte del prepago: un turno cortado no lee nada. Una lectura como máximo, ninguna sin «prompt».
+    const vigentesCrudas = campanas.exists ? campanas.get('vigentes') : [];
+    const vigentesDelTurno = await vigentesParaElPrompt(db, comercio.tenantId, {
+      nombresDeCatalogo: catalogoFiltrado.docs.map((d) => String(d.data()['nombre'] ?? '')),
+      instrucciones: typeof negocio['instruccionesVigentes'] === 'string' ? negocio['instruccionesVigentes'] : '',
+      campanas: vigentesCrudas,
+    });
+    const terminosDelTurno = vigentesDelTurno.terminos;
+    const cita = (t: string): string => citarTerminos(t, terminosDelTurno);
+    // El catálogo como lo ve el modelo, con el término citado por el sistema en el nombre. Sin términos,
+    // son los mismos documentos de siempre.
+    const catalogoPrompt = { docs: terminosDelTurno.length === 0 ? catalogoFiltrado.docs : catalogoFiltrado.docs.map((d) => {
+      const datos = d.data();
+      return { id: d.id, data: (): Record<string, unknown> => ({ ...datos, nombre: cita(String(datos['nombre'] ?? '')) }) };
+    }) };
+    const anunciosDeHoy = anunciosParaElFlujo(
+      vigentesDelTurno.campanas,
+      limiteDeCampanas(cuenta.exists ? cuenta.data() as Record<string, unknown> : null),
+      ahoraMs,
+      catalogoPrompt.docs.map((d) => {
+        const datos = d.data();
+        const quedan = existencias(datos);
+        return { id: d.id, nombre: datos['nombre'], precio: datos['precio'],
+          ...(quedan !== null ? { agotado: quedan === 0 } : {}) };
+      }),
+    ).map((a) => (terminosDelTurno.length === 0 ? a
+      : { ...a, titulares: a.titulares.map(cita), angulo: cita(a.angulo) }));
 
     // EL ESTADO DE ATENCIÓN DEL TELÉFONO, si vino. Se calcula con la misma
     // función que la ingesta, sobre lo que la ingesta dejó guardado con el
@@ -1873,8 +1966,8 @@ export const configuracionFlujo = onRequest(
     // lo propuesto tenga texto. Es la segunda barrera, igual que con los campos
     // derivados: las reglas impiden que el navegador escriba lo vigente, y acá
     // no se lee lo propuesto ni por accidente.
-    datosDelNegocio['instruccionesExtra'] = typeof negocio['instruccionesVigentes'] === 'string'
-      ? negocio['instruccionesVigentes'] : '';
+    // Revalidado con los términos de hoy y con los términos citados por el sistema (`vigentesParaElPrompt`).
+    datosDelNegocio['instruccionesExtra'] = cita(vigentesDelTurno.instrucciones);
 
     // El renglón de este turno, con el comercio adentro. Ver el bloque
     // «REGISTRO DE EJECUCIÓN CON EL COMERCIO ADENTRO» más arriba: el flujo
@@ -2163,10 +2256,10 @@ export const configuracionFlujo = onRequest(
       // tope del plan de HOY. Lo propuesto (`lista`) nunca viaja: una campaña
       // sin revisar no salta ningún menú. `campanas.ts` explica el contrato.
       campanas: campanasParaElFlujo(
-        campanas.exists ? campanas.get('vigentes') : [],
+        vigentesDelTurno.campanas,
         limiteDeCampanas(cuenta.exists ? cuenta.data() as Record<string, unknown> : null),
         ahoraMs,
-      ),
+      ).map((c) => (terminosDelTurno.length === 0 ? c : { ...c, texto: cita(c.texto) })),
 
       // LOS ANUNCIOS COMO DATO DEL TENANT (PR-1 de Campañas): las mismas campañas
       // vigentes, pero las que traen titulares, con el producto y su precio leídos
