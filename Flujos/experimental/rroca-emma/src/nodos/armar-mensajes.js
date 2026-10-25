@@ -101,7 +101,7 @@ if (puerta.ruta === 'fuera_de_prueba') {
   ms = [texto(evTextoGratis(cfg, evDioNombre(evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora), plan.textoCliente)))];
   hist = { a: ms[0].texto, b: ms[0].texto };
 } else if (efectivo === 'modelo') {
-  const rev = evPulirSalida(res.textoModelo, { artesEnviados: artesSalidos, textoCliente: plan.textoCliente, nombreNegocio: cfg.nombreNegocio });
+  const rev = evPulirSalida(res.textoModelo, { artesEnviados: artesSalidos, textoCliente: plan.textoCliente, nombreNegocio: cfg.nombreNegocio, direccion: cfg.direccion });
   if (rev.motivo === 'salud_sin_remision') { ms = [conRecepcion(EV_TEXTO_REMISION_SALUD)]; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
   else if ((rev.motivo !== '' || rev.texto === '') && evPreguntaGratis(plan.textoCliente)) {
     ms = [texto(evTextoGratis(cfg, evDioNombre(evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora), plan.textoCliente)))];

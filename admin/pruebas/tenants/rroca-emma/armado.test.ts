@@ -126,7 +126,8 @@ describe('el prompt versionado', () => {
     expect((hallazgosDelPrompt(md.replace('{{/MARCAS}}', '')) as string[]).join(' ')).toMatch(/MARCAS/);
   });
   it('las correcciones obligatorias sobre el guion: sin «inmediato», sin las dos frases sin mecanismo, sin la frase de baja', () => {
-    const plano = md.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    // la regla 11 del prompt de Emma es la que PROHÍBE «inmediato»: se excluye de la comprobación
+    const plano = md.split('\n').filter((l) => !l.startsWith('11. ')).join('\n').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
     expect(plano).not.toContain('inmediato');
     expect(plano).not.toContain('de inmediato');
     expect(plano).not.toContain('ubicacion exacta en google maps');

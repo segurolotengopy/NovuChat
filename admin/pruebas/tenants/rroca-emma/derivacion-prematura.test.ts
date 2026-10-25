@@ -46,8 +46,11 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     expect(esBoton(t)).toBe(false);
   });
   it('POSITIVA: «Quiero agendar mi valoración» deriva (con o sin la etiqueta)', () => {
+    // EMMA: en el PRIMER contacto sin etiqueta del modelo ni nombre el saludo pide el nombre antes de cerrar (ver emma.test.ts); con la etiqueta, o ya en conversación, cierra.
     for (const modelo of ['[DERIVAR_RECEPCION: Ana]', 'Perfecto.']) {
-      const t = hablar(crear({ modeloDice: dice(modelo) }), ANA, mTexto('Quiero agendar mi valoración'));
+      const m = crear({ modeloDice: dice(modelo) });
+      if (modelo === 'Perfecto.') hablar(m, ANA, mTexto('hola'));
+      const t = hablar(m, ANA, mTexto('Quiero agendar mi valoración'));
       expect(esBoton(t), modelo).toBe(true);
       expect(textos(t)[0]).toMatch(/Excelente decisión/);
     }

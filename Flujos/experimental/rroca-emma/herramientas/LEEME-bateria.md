@@ -1,6 +1,6 @@
 # Batería de casos del asistente nuevo de la Dra. Emma (`rroca-emma`)
 
-`bateria-casos.json` son DATOS (64 casos, unos 400 chequeos), adaptados de los de Evy (`Flujos/experimental/rroca-evy-bateria/`, mismo vocabulario de chequeos: ver su `LEEME.md`) y puestos al día con lo propio de Emma:
+`bateria-casos.json` son DATOS (64 casos, 403 chequeos), adaptados de los de Evy (`Flujos/experimental/rroca-evy-bateria/`, mismo vocabulario de chequeos: ver su `LEEME.md`) y puestos al día con lo propio de Emma:
 
 | Grupo | Qué cubre |
 |---|---|
@@ -17,7 +17,7 @@
 ## Cómo correrla (la corre Andres o la coordinación, con clave de PRUEBAS y gasto autorizado)
 
 ```
-node Flujos/experimental/rroca-emma/herramientas/bateria.mjs --seco                  # sin costo: 372 chequeos del código, 0 fallos
+node Flujos/experimental/rroca-emma/herramientas/bateria.mjs --seco                  # sin costo: chequeos del código, 0 fallos
 node Flujos/experimental/rroca-emma/herramientas/bateria.mjs --env <archivo> --n 1 --confirmo-gasto --motivo [--grupos G,E] [--duros]
 ```
 

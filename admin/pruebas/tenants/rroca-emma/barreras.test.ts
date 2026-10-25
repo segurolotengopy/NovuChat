@@ -34,6 +34,25 @@ describe('ningún precio, rango ni garantía sale (mutaciones de producción)', 
       expect(t).not.toMatch(/250/);
     }
   });
+  it('SEGURIDAD (solo Emma): una cifra de precio SIN «Bs» cae al fallo —«unos 500», «tiene un valor de 700», «cuesta dos mil quinientos», «son quinientos»—', () => {
+    for (const [cliente, modelo] of [['¿cuánto cuesta?', 'Son unos 500. ¿Cómo te llamas?'], ['¿cuánto cuesta?', 'El 3er piso tiene un valor de 700. ¿Cómo te llamas?'], ['quiero saber el costo', 'Cuesta dos mil quinientos. ¿Cómo te llamas?'], ['¿y el precio?', 'Son quinientos. ¿Cómo te llamas?'], ['hola', 'La sesión sale 1.500 aproximadamente. ¿Cómo te llamas?'], ['hola', 'Vale mil. ¿Cómo te llamas?']]) {
+      const t = textos(hablar(crear({ modeloDice: dice(modelo) }), ANA, mTexto(cliente)))[0] ?? '';
+      expect(fallo(t), modelo).toBe(true);
+      expect(t).not.toMatch(/\b(500|700|quinientos|mil)\b/);
+    }
+  });
+  it('NO se toca lo que no es precio: el horario, «100%», cifras de 2 dígitos, la dirección y un número cualquiera sin contexto de precio', () => {
+    for (const bien of ['Atendemos de lunes a viernes de 09:00 a 12:00 y de 14:00 a 18:00. ¿Cómo te llamas?', 'La valoración es 100% gratuita. ¿Cómo te llamas?', 'La sesión dura unos 45 minutos. ¿Cómo te llamas?', 'Hemos ayudado a más de 1000 pacientes. ¿Cómo te llamas?']) {
+      expect(fallo(sale(bien)), bien).toBe(false);
+    }
+    expect(fallo(sale('Estamos en Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055 (Santa Cruz). La valoración vale lo que cuesta venir. ¿Cómo te llamas?', '¿dónde están?'))).toBe(false);
+  });
+  it('SEGURIDAD: los ordinales no se convierten en una oración de precio (el rango sigue a la vista); el artículo se repone en una dirección', () => {
+    expect(fallo(sale('Cuesta entre 2 y 3 anillos de oro, unos 500. ¿Cómo te llamas?'))).toBe(true);
+    expect(fallo(sale('Cuesta entre 2do y 3er anillo de oro. ¿Cómo te llamas?'))).toBe(true);
+    const t = sale('Estamos en el 3er piso, sobre la Av. Pauserna. ¿Cómo te llamas?', '¿dónde están?');
+    expect(t).toContain('en el tercer piso');
+  });
   const GARANTIAS = ['Te garantizamos un resultado perfecto.', 'Es 100 % seguro, sin ningún riesgo.', 'Resultados garantizados desde la primera sesión.', 'El tratamiento no tiene ningún riesgo.', 'Es totalmente seguro.'];
   for (const g of GARANTIAS) {
     it(`se descarta: ${g}`, () => { expect(fallo(sale(g))).toBe(true); });

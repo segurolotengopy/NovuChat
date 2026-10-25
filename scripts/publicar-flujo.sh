@@ -404,10 +404,11 @@ try:
         sys.exit(0)
     for n in nodos:
         if n.get("name") == "Config base":
-            for a in (((n.get("parameters") or {}).get("assignments") or {}).get("assignments") or []):
-                if isinstance(a, dict) and a.get("name") == "tenantId":
-                    print(str(a.get("value", "")))
-                    break
+            valores = [str(a.get("value", "")) for a in (((n.get("parameters") or {}).get("assignments") or {}).get("assignments") or []) if isinstance(a, dict) and a.get("name") == "tenantId"]
+            if len(valores) == 1:
+                print(valores[0])
+            elif len(valores) > 1:
+                print("AMBIGUO")   # un tenantId repetido: falla cerrado, no se publica ni se pisa
             break
 except SystemExit:
     raise
@@ -415,15 +416,15 @@ except Exception:
     pass
 PY
 }
-emma_vieja_clase() {  # $1 = archivo JSON ; imprime "si" si es el flujo VIEJO de Emma (doctoras): nombre rroca-emma, nodo «Armar avisos» y un «Config base» con rroca-emma y sin rroca-evy
+emma_vieja_clase() {  # $1 = archivo JSON ; imprime "si" si es el flujo VIEJO de Emma (doctoras): nombre rroca-emma, nodo «Armar avisos» y UN «Config base» cuyo tenantId es exactamente rroca-emma (una sola vez)
   python3 - "$1" <<'PY' 2>/dev/null || true
 import json, sys
 try:
     d = json.load(open(sys.argv[1], encoding="utf-8"))
     ns = [n for n in (d.get("nodes") or []) if isinstance(n, dict)]
-    cb = json.dumps([n.get("parameters", {}) for n in ns if n.get("name") == "Config base"])
+    tenants = [str(a.get("value", "")) for n in ns if n.get("name") == "Config base" for a in (((n.get("parameters") or {}).get("assignments") or {}).get("assignments") or []) if isinstance(a, dict) and a.get("name") == "tenantId"]
     nombre = str(d.get("name", "")).lower()
-    if "rroca-emma" in nombre and "rroca-evy" not in nombre and any(n.get("name") == "Armar avisos" for n in ns) and "rroca-emma" in cb and "rroca-evy" not in cb:
+    if "rroca-emma" in nombre and "rroca-evy" not in nombre and any(n.get("name") == "Armar avisos" for n in ns) and tenants == ["rroca-emma"]:
         print("si")
 except Exception:
     pass
@@ -464,6 +465,10 @@ ES_EMMA_NUEVO=0
 ES_EVY_NUEVO=0
 if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
   TENANT_ARCHIVO_NUEVO="$(tenant_nuevo "$FLUJO")"
+  if [[ "$TENANT_ARCHIVO_NUEVO" == "AMBIGUO" ]]; then
+    printf '\033[1;31m✗ NEGADO: el archivo trae el tenantId repetido en «Config base»: no se sabe de quién es.\033[0m\n' >&2
+    exit 1
+  fi
   if [[ "$TENANT_ARCHIVO_NUEVO" == "rroca-emma" ]]; then
     ES_EMMA_NUEVO=1
     emma_guardia "archivo de origen" "$FLUJO"
@@ -548,6 +553,10 @@ if [[ -n "$TENANT_VIVO_DOCTORAS" ]]; then
   fi
 fi
 
+if [[ "$VIVO_TENANT_NUEVO" == "AMBIGUO" && $CREAR -eq 0 && $APAGAR -eq 0 ]]; then
+  printf '\033[1;31m✗ NEGADO: el flujo vivo trae el tenantId repetido en «Config base»: no se sabe de quién es y no se pisa.\033[0m\n' >&2
+  exit 1
+fi
 # El flujo NUEVO de Emma solo reemplaza al flujo vivo de Emma: el nuevo (tenantId rroca-emma) o el viejo de las doctoras (nombre rroca-emma + «Armar avisos» + «Config base» con rroca-emma). NUNCA a Evy ni a otro cliente, ni con --forzar.
 if [[ $ES_EMMA_NUEVO -eq 1 && $CREAR -eq 0 && $APAGAR -eq 0 ]]; then
   if [[ "$VIVO_TENANT_NUEVO" != "rroca-emma" && "$(emma_vieja_clase "$TMP/vivo.json")" != "si" ]]; then

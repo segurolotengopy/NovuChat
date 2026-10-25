@@ -64,7 +64,7 @@ function evEsBaja(t) {
 // URGENCIA, SÍNTOMA, REACCIÓN O PROBLEMA DE SALUD (también tras un tratamiento): el CÓDIGO responde un texto fijo, sin consejo, y avisa a recepción. Antes de llamar al modelo. Un falso positivo solo manda
 // a la persona a la recepción. Variante acotada de `DR_MEDICA` de las doctoras: SOLO urgencia, síntoma, reacción o problema tras un tratamiento. El embarazo, las enfermedades de base y los medicamentos los contesta el modelo
 // remitiendo a la valoración (el guion), con la barrera de «sin consejo médico» de `evPulirSalida`; las condiciones de la piel son el motivo comercial de la consulta.
-const EV_MEDICA = /\b(urgente|urgencia|emergencia|sangr\w*|hemorragia|infeccion|infectad\w*|fiebre|alergi\w*|reaccion (alergica|adversa)|hinchaz\w*|hinchad[oa]s?|se me hincho|enrojecid[oa]s?|inflam\w*|moreton\w*|necrosis|no puedo respirar|me falta el aire|desmay\w*|me duele mucho|tengo (mucho )?dolor|complicacion\w*|efectos? secundarios?|me aplique|me inyecte|me puse (algo|el|la|un|una) |me puse (radiesse|harmonyca|harmony ca|relleno|producto)|despues de (la aplicacion|aplicarme|inyectarme|ponerme)|un bulto|(cara|rostro|zona|mejillas?|labios?) (roja|rojo|hinchada|hinchado|morada|morado))\b/;
+const EV_MEDICA = /\b(urgente|urgencia|emergencia|sangr\w*|hemorragia|infeccion|infectad\w*|fiebre|alergi\w*|reaccion (alergica|adversa)|hinchaz\w*|hinchad[oa]s?|se me hincho|enrojecid[oa]s?|inflam\w*|moreton\w*|necrosis|no puedo respirar|me falta el aire|desmay\w*|me duele mucho|tengo (mucho )?dolor|complicacion\w*|efectos? secundarios?|me aplique|me inyecte|me puse (algo|el|la|un|una) |me puse (radiesse|sculptra|relleno|producto)|despues de (la aplicacion|aplicarme|inyectarme|ponerme)|un bulto|(cara|rostro|zona|mejillas?|labios?) (roja|rojo|hinchada|hinchado|morada|morado))\b/;
 
 // -----------------------------------------------------------------------------
 // BÁSICOS DE TEXTO
@@ -452,7 +452,7 @@ function evLeerEtiquetas(crudo) {
 // -----------------------------------------------------------------------------
 // LO QUE SALE AL CLIENTE: la revisión del texto del modelo. Todo en CÓDIGO.
 // -----------------------------------------------------------------------------
-const EV_PIDE_GARANTIA = /\b(garantiz\w*|garantia\w*|prometes?|aseguras?|aseguran|me aseguras|voy a quedar|vas a dejarme|seguro que (?:me|quedo|queda))\b/;
+const EV_PIDE_GARANTIA = /\b(garantiz\w*|garantia\w*|prometes?|aseguras?|aseguran|me aseguras|voy a quedar|vas a dejarme|seguro que (?:me|quedo|queda))\b|\b(?:me va a quedar|va a quedar|me quedara|quedare|quedar)\b[^.?!]{0,25}\b(?:igual|identic\w*|asi|como (?:ella|la foto|la paciente|el anuncio))\b|\bigual que (?:ella|la foto|la paciente|el anuncio)\b|\bel mismo resultado\b/;   // EMMA: también «¿me va a quedar igual que a ella?» (la aclaración la pone el CÓDIGO)
 const EV_ACLARACION = 'Cada rostro responde distinto y no prometemos un resultado idéntico.';
 function evSinTildes(t) { return evTexto(t).normalize('NFD').replace(/[̀-ͯ]/g, ''); }
 // Corta UNA línea en oraciones, también cuando la siguiente empieza en minúscula («te garantizo el resultado. la dra emma te valora») y antes de una viñeta «•» en medio de la línea.
@@ -552,6 +552,8 @@ function evSinHuerfanos(lista, borrar) {
 const EV_RECORTE_A = 700;
 const EV_SEGURIDAD = /\b(responde distinto|no prometemos|cuidados posteriores)\b/;
 const EV_ESENCIAL = /\b(gratuit\w*|gratis|bonific\w*|sin compromiso|sin costo|valoracion)\b/;
+// EMMA (declarado en PROPIO.md): una oración que nombra un producto (nivel 2,5) se recorta DESPUÉS de lo accesorio y ANTES de la valoración gratuita: la diferencia entre ambos no pierde los dos productos por una frase de relleno.
+const EV_PRODUCTOS = /\b(sculptra|radiesse)\b/;
 function evRecortar(texto, tope) {
   const t = evTexto(texto);
   const medir = (x) => evParrafos(x).length;
@@ -567,11 +569,12 @@ function evRecortar(texto, tope) {
     if (evEsPregunta(o) || fijas.indexOf(n) >= 0) return 0;
     if (EV_SEGURIDAD.test(n) || EV_CONDICION.test(n) || /\b(en persona|la dra (?:lo )?(?:evalua|explica)|asistente virtual)\b/.test(n)) return 1;
     if (i === idx[0] || EV_ESENCIAL.test(n)) return 2;
+    if (EV_PRODUCTOS.test(n)) return 2.5;
     return 3;
   };
   const quitadas = new Set();
   const largo = () => medir(evUnirOraciones(lista.filter((o, i) => !quitadas.has(i))));
-  for (const n of [3, 2, 1]) {
+  for (const n of [3, 2.5, 2, 1]) {
     for (let k = idx.length - 1; k >= 0 && largo() > tope; k--) { if (nivel(idx[k]) === n && !quitadas.has(idx[k])) quitadas.add(idx[k]); }
     if (largo() <= tope) break;
   }
@@ -739,29 +742,72 @@ function evRepararIdentidad(texto, nombreNegocio) {
 // GARANTÍAS Y PROMESAS DE RESULTADO, REPARADAS POR ORACIÓN: una oración con «garantiz…», «asegur…», «prometer…», «resultado idéntico/exacto/igual/perfecto» se BORRA (negada o afirmativa: la forma negada que manda el guion
 // la sustituye el CÓDIGO por la aclaración fija «cada rostro responde distinto y no prometemos un resultado idéntico», una sola vez). Nunca deja pasar un «te garantizo / garantizamos». Si no queda texto, cae al fallo.
 const EV_TOCA_GARANTIA = /\bgarant\w*|\basegur\w*|\bpromet\w*|\bprometid\w*|resultados? (?:identic\w*|exact\w*|igual\w*|perfect\w*|asegurad\w*|garantizad\w*)|\b(?:mismo|identico|exacto) resultado/;
-// Promete efecto inmediato (el arte comparativo trae «efecto lifting inmediato»; la clínica no lo promete).
+// Promete un efecto inmediato o «desde la primera sesión / aplicación» (la clínica no lo promete): «efecto lifting inmediato» pierde la palabra y «de inmediato / de forma inmediata / al instante» pierde la frase (la oración conserva su contenido); cualquier otra oración con «inmediato» o con «desde la primera
+// sesión/aplicación» se quita entera. EMMA (declarado en PROPIO.md): «desde la primera sesión» es la SEGUNDA adición a las barreras (el MD de la doctora la traía y se corrigió el 24/10/2026).
 function evSinInmediato(texto) {
-  return evQuitarOraciones(evTexto(texto).replace(/(lifting)\s+inmediat[oa]s?/gi, '$1').replace(/\binmediat[oa]s?\s+(lifting)/gi, '$1'), (n) => /\binmediat\w*/.test(n));
+  return evQuitarOraciones(evTexto(texto).replace(/(lifting)\s+inmediat[oa]s?/gi, '$1').replace(/\binmediat[oa]s?\s+(lifting)/gi, '$1').replace(/\s*,?\s*(?:de (?:forma|manera) inmediat[oa]|de inmediato|inmediatamente|al instante)\b/gi, ''), (n) => /\binmediat\w*/.test(n) || /\bdesde la primera (?:sesion|aplicacion)\b/.test(n));
 }
-// EMMA (declarado en PROPIO.md): su dirección dice «entre 2do y 3er anillo», y la regla de precios (`entre … <cifra>`) la tomaba por un rango de precio: preguntar «¿dónde están?» caía al fallo. Los ordinales de una dirección
-// («2do anillo», «3ra calle») se escriben con palabras ANTES de las barreras; el significado no cambia y el texto del cliente sale igual de claro. Los textos fijos no pasan por aquí.
+// EMMA (declarado en PROPIO.md): su dirección dice «entre 2do y 3er anillo», y la regla de precios (`entre … <cifra>`) la tomaba por un rango de precio: preguntar «¿dónde están?» caía al fallo. Dos defensas ANTES de las barreras:
+//  1. la cadena EXACTA de la dirección de la Consola (`ctx.direccion`) se neutraliza con una marca y se repone al final, tal cual;
+//  2. los ordinales de una dirección («2do anillo», «el 2do. y el 3er. anillo», «entre 2 y 3 anillo», «3ra calle») se escriben con palabras. El significado no cambia. Los textos fijos no pasan por aquí.
 const EV_ORDINAL_M = ['', 'primer', 'segundo', 'tercer', 'cuarto', 'quinto', 'sexto', 'séptimo', 'octavo', 'noveno', 'décimo'];
 const EV_ORDINAL_F = ['', 'primera', 'segunda', 'tercera', 'cuarta', 'quinta', 'sexta', 'séptima', 'octava', 'novena', 'décima'];
+const EV_MARCA_DIRECCION = 'xdireccionx';
+function evProtegerDireccion(texto, direccion) {
+  const d = evTexto(direccion).trim();
+  if (d.length < 8) return evTexto(texto);
+  return evTexto(texto).replace(new RegExp(d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'), 'gi'), EV_MARCA_DIRECCION);
+}
+function evRestituirDireccion(texto, direccion) {
+  const d = evTexto(direccion).trim();
+  return d.length < 8 ? evTexto(texto) : evTexto(texto).replace(new RegExp(EV_MARCA_DIRECCION, 'gi'), () => d);
+}
+// Una palabra de PRECIO (verbo o sustantivo): con ella en el mensaje los ordinales NO se tocan (el rango «entre 2 y 3 …» que la regla de precios debe ver sigue a la vista).
+const EV_PALABRA_DE_PRECIO = /\b(cuesta\w*|cuestan|vale|valen|valor|valores|sale|salen|precio\w*|inversion|ronda\w*|cobra\w*|cobro\w*|costo\w*|tarifa\w*|presupuesto|bs|bolivianos?|dolares?|usd|pesos)\b/;
 function evOrdinalesDeDireccion(texto) {
   const palabra = (n, tabla) => (Number(n) >= 1 && Number(n) <= 10 ? tabla[Number(n)] : null);
-  // «2do y 3er anillo», «1ra y 2da calle», «3er anillo»: uno o dos ordinales seguidos del sustantivo.
-  const conv = (re, tabla) => (t) => t.replace(re, (m, a, b, sust) => {
-    const x = palabra(a, tabla);
-    const y = b === undefined ? '' : palabra(b, tabla);
+  const sufM = '(?:er|ro|do|to|vo|mo|º|°)\\.?';
+  const sufF = '(?:ra|da|ta|va|ma|ª)\\.?';
+  const art = '((?:el|la|los|las)\\s+)?';
+  // «2do y 3er anillo», «el 2do. y el 3er. anillo», «El 3er piso», «1ra y 2da calle»: uno o dos ordinales seguidos del sustantivo; el artículo se repone.
+  const conv = (re, tabla) => (t) => t.replace(re, (m, a1, n1, conj, a2, n2, sust) => {
+    const x = palabra(n1, tabla);
+    const y = n2 === undefined ? '' : palabra(n2, tabla);
     if (x === null || y === null) return m;
-    return x + (b === undefined ? '' : ' y ' + y) + ' ' + sust;
+    return (a1 || '') + x + (n2 === undefined ? '' : ' ' + conj + ' ' + (a2 || '') + y) + ' ' + sust;
   });
-  const masc = conv(/\b(\d{1,2})\s?(?:er|ro|do|to|vo|mo|º|°)(?:\s+(?:y|o)\s+(\d{1,2})\s?(?:er|ro|do|to|vo|mo|º|°))?\s+(anillo|piso)\b/gi, EV_ORDINAL_M);
-  const fem = conv(/\b(\d{1,2})\s?(?:ra|da|ta|va|ma|ª)(?:\s+(?:y|o)\s+(\d{1,2})\s?(?:ra|da|ta|va|ma|ª))?\s+(calle|avenida|planta)\b/gi, EV_ORDINAL_F);
-  return fem(masc(evTexto(texto)));
+  const masc = conv(new RegExp('\\b' + art + '(\\d{1,2})\\s?' + sufM + '(?:\\s+(y|o)\\s+' + art + '(\\d{1,2})\\s?' + sufM + ')?\\s+(anillos?|pisos?)\\b', 'gi'), EV_ORDINAL_M);
+  const fem = conv(new RegExp('\\b' + art + '(\\d{1,2})\\s?' + sufF + '(?:\\s+(y|o)\\s+' + art + '(\\d{1,2})\\s?' + sufF + ')?\\s+(calles?|avenidas?|plantas?)\\b', 'gi'), EV_ORDINAL_F);
+  // «entre 2 y 3 anillo» (sin sufijo)
+  const sinSufijo = (t) => t.replace(/\b(entre)\s+(?:el\s+)?(\d{1,2})\s+y\s+(?:el\s+)?(\d{1,2})\s+(anillos?)\b/gi, (m, e, a, b, sust) => (palabra(a, EV_ORDINAL_M) && palabra(b, EV_ORDINAL_M) ? e + ' ' + palabra(a, EV_ORDINAL_M) + ' y ' + palabra(b, EV_ORDINAL_M) + ' ' + sust : m));
+  // Conservador: si el mensaje trae CUALQUIER palabra de precio no se convierte nada (un ordinal con punto, «2do.», parte la oración, así que no se decide oración por oración).
+  const t = evTexto(texto);
+  return EV_PALABRA_DE_PRECIO.test(evNorm(t)) ? t : sinSufijo(fem(masc(t)));
+}
+// UN NÚMERO DE PRECIO SIN «Bs» (decisión de seguridad del 24/10/2026, solo Emma): una cifra de 3 o más dígitos, o una cifra en palabras (cien, quinientos, mil, dos mil quinientos…), en una oración con un verbo o sustantivo de
+// precio —o en cualquier oración si el cliente acaba de preguntar por el precio— se rechaza («unos 500», «tiene un valor de 700», «cuesta dos mil quinientos», «son quinientos»). Quedan fuera: «100%», el horario (horas con dos puntos,
+// cifras de 2 dígitos), la dirección de la Consola (protegida con una marca) y los ordinales.
+const EV_CIFRA_GRANDE = /(?<![\d.,:])\d{1,3}(?:[.,]\d{3})+(?![\d%])|(?<![\d.,:])\d{3,}(?![\d%:]|\s?%)/;
+const EV_CIFRA_EN_PALABRAS = /\b(cien|ciento|doscientos|doscientas|trescientos|trescientas|cuatrocientos|cuatrocientas|quinientos|quinientas|seiscientos|seiscientas|setecientos|setecientas|ochocientos|ochocientas|novecientos|novecientas|mil|millon|millones)\b/;
+const EV_PREGUNTA_PRECIO = /\b(cuanto|cuesta\w*|cuestan|precio\w*|costo\w*|vale|valen|valor|cobran|cobras|inversion|tarifa\w*|presupuesto)\b/;
+function evNumeroDePrecio(texto, textoCliente) {
+  const preguntoPrecio = EV_PREGUNTA_PRECIO.test(evNorm(textoCliente));
+  for (const o of evPartirEnOraciones(evTexto(texto))) {
+    if (o === '' || o === '\n') continue;
+    const n = evNorm(o);
+    const numero = EV_CIFRA_GRANDE.test(o.replace(/\d{1,2}\s?:\s?\d{2}/g, ' ')) || EV_CIFRA_EN_PALABRAS.test(n);
+    if (numero && (EV_PALABRA_DE_PRECIO.test(n) || preguntoPrecio)) return o.slice(0, 60);
+  }
+  return '';
+}
+// «¿esto es real?» sobre una FOTO no es la pregunta «¿eres real?» sobre la identidad: al filtro común (que no se toca) se le pasa «es verdad». «¿Eres real?», «¿eres un bot?» siguen intactas.
+function evTextoParaIdentidad(textoCliente) {
+  return evTexto(textoCliente)
+    .replace(/\b(esto|eso|esta (?:foto|imagen|paciente)|esa (?:foto|imagen|paciente)|la (?:foto|imagen|paciente)|este (?:caso|resultado|antes y despues)|ese (?:caso|resultado)|el (?:caso|resultado|antes y despues))\s+(es|son)\s+(real|reales)\b/gi, '$1 $2 verdad')
+    .replace(/\b(es|son)\s+(real|reales)\s+(esto|eso|la foto|la imagen|la paciente|el caso|el resultado|los resultados)\b/gi, '$1 verdad $3');
 }
 /**
- * Pule el texto del modelo y lo revisa. `ctx` = { artesEnviados: ['antes_despues', …] (los que SALIERON este turno), textoCliente, nombreNegocio }.
+ * Pule el texto del modelo y lo revisa. `ctx` = { artesEnviados: ['antes_despues', …] (los que SALIERON este turno), textoCliente, nombreNegocio, direccion }.
  * Devuelve { texto, motivo }: si `motivo` no es '', el texto se descarta y se usa el fijo del fallo. Orden: etiquetas fuera (hecho por quien llama), enlaces y teléfonos fuera, sin ancla de monto,
  * lo que promete una imagen que no salió fuera, «paciente real» solo con el antes y después, la aclaración, y el filtro común `cmMotivoDeRechazo`.
  */
@@ -772,7 +818,7 @@ function evPulirSalida(crudo, ctx) {
   if (evTexto(crudo).length > 20000) return { texto: '', motivo: 'largo', detalle: 'la salida del modelo supera los 20 000 caracteres' };
   // Espacios repetidos y recorte por línea ANTES de todo lo demás: una salida de 100 000 espacios no debe volver cuadráticas las expresiones siguientes.
   let t = evTexto(crudo).replace(/\r\n?/g, '\n').replace(/[ \t]{2,}/g, ' ').split('\n').map((l) => l.trim()).join('\n');
-  t = evOrdinalesDeDireccion(evQuitarEnlacesYTelefonos(t)).replace(/\*+/g, '');
+  t = evOrdinalesDeDireccion(evProtegerDireccion(evQuitarEnlacesYTelefonos(t), c.direccion)).replace(/\*+/g, '');
   t = evSinInmediato(t);
   t = evProtegerValor(t);
   if (enviados.length === 0) t = evQuitarOraciones(t, (n) => EV_PROMETE_IMAGEN.test(n));
@@ -809,6 +855,9 @@ function evPulirSalida(crudo, ctx) {
   if (evAlfabetoMixto(t)) return { texto: '', motivo: 'afirma_un_hecho', detalle: 'alfabeto mixto en una palabra' };
   // Emma no agenda: ninguna oración puede afirmar una cita, un cupo o un registro (aunque no lleve «te confirmo»).
   for (const o of evPartirEnOraciones(t)) if (o !== '' && o !== '\n' && evAfirmaAgenda(o)) return { texto: '', motivo: 'prohibido', detalle: 'afirma una cita, un cupo o un registro («' + o.slice(0, 50) + '»)' };
+  // Una cifra de precio SIN moneda («unos 500», «tiene un valor de 700», «cuesta dos mil quinientos»): Emma no menciona montos.
+  const cifra = evNumeroDePrecio(t, c.textoCliente);
+  if (cifra) return { texto: '', motivo: 'prohibido', detalle: 'cifra de precio sin moneda («' + cifra + '…»)' };
   const marcado = evMarcarValor(t);
   const norm = evNorm(marcado);
   const niega = EV_NIEGA_IA.exec(norm);
@@ -826,7 +875,7 @@ function evPulirSalida(crudo, ctx) {
   for (const [nombre, re] of EV_PROHIBIDO_MEDICO) { const m = re.exec(norm); if (m) return { texto: '', motivo: 'prohibido', detalle: nombre + ' («' + m[0].slice(0, 50) + '»)' }; }
   const opcionesFiltro = {
     maximo: 1500, permitirMontos: false, enlacesPermitidos: [], sinPromesasDeAviso: true, sinImagenes: enviados.length === 0,
-    quienPromete: ['recepcion', 'la recepcion', 'el equipo', 'nuestro equipo', 'un asesor', 'una asesora'], textoDelCliente: c.textoCliente || '',
+    quienPromete: ['recepcion', 'la recepcion', 'el equipo', 'nuestro equipo', 'un asesor', 'una asesora'], textoDelCliente: evTextoParaIdentidad(c.textoCliente || ''),
   };
   let final = marcado;
   let motivo = cmMotivoDeRechazo(final, opcionesFiltro);
@@ -854,7 +903,7 @@ function evPulirSalida(crudo, ctx) {
     }
   }
   if (motivo) return { texto: '', motivo: motivo, detalle: 'filtro común cmMotivoDeRechazo: ' + motivo };
-  return { texto: evParrafos(evRestituirValor(final)), motivo: '', detalle: '' };
+  return { texto: evParrafos(evRestituirDireccion(evRestituirValor(final), c.direccion)), motivo: '', detalle: '' };
 }
 
 // -----------------------------------------------------------------------------
@@ -924,7 +973,7 @@ function evAceptaOferta(textoCliente, historial) {
   return a >= 0 && evOfreceAgendar(h[a].t);
 }
 // ¿Es esto un nombre? «Paola», «Paola Rojas», «Soy Paola», «Me llamo Paola»; no «soy alérgica», «de La Paz», «soy nueva», ni una frase.
-const EV_NO_NOMBRE = new RegExp('^(?:de|del|la|el|los|las|un|una|nuevo|nueva|alergico|alergica|diabetico|diabetica|embarazada|paciente|cliente|mama|casada|soltera|doctor|doctora|medico|medica|enfermera|enfermero|interesad[oa]|curios[oa]|quiero|necesito|busco|tengo|vengo|estoy|si|no|hola|ok|gracias|bueno|claro|dale|buenas|buenos|clienta|estudiante|senora|senor|madre|ella|yo|usuaria|muy|tu|su|mi|mejor|para|pero|cita|turno|horario|horarios|tienen|hipertens\\w*|nervios\\w*|sensible|mayor|botox|radiesse|harmonyca|sculptra|acido|hialuronico|bioestimulador\\w*|gratis|gratuita)$');
+const EV_NO_NOMBRE = new RegExp('^(?:de|del|la|el|los|las|un|una|nuevo|nueva|alergico|alergica|diabetico|diabetica|embarazada|paciente|cliente|mama|casada|soltera|doctor|doctora|medico|medica|enfermera|enfermero|interesad[oa]|curios[oa]|quiero|necesito|busco|tengo|vengo|estoy|si|no|hola|ok|gracias|bueno|claro|dale|buenas|buenos|clienta|estudiante|senora|senor|madre|ella|yo|usuaria|muy|tu|su|mi|mejor|para|pero|cita|turno|horario|horarios|tienen|hipertens\\w*|nervios\\w*|sensible|mayor|botox|radiesse|sculptra|acido|hialuronico|bioestimulador\\w*|gratis|gratuita)$');
 function evEsNombre(textoCliente) {
   const raw = evTexto(textoCliente).trim();
   if (raw === '' || raw.indexOf('?') >= 0 || raw.indexOf('¿') >= 0) return false;
@@ -1044,7 +1093,7 @@ function evMediaIdValido(v) { return /^\d{6,25}$/.test(evTexto(v).trim()); }
 
 // D6: el comparativo (el cuadro con las dos marcas) se envía SOLO si `usarMarcas` está encendida Y el mensaje del cliente pregunta por la diferencia entre los productos o cuál le conviene. Lo decide el CÓDIGO sobre
 // el texto del cliente, no el modelo: un saludo, un «hola, vi su anuncio» o cualquier otra cosa nunca lo envía.
-const EV_PIDE_COMPARATIVO = /\b(diferencia|diferencias|diferente|diferentes|comparar|comparacion|cual (es )?(mejor|me conviene|me recomiendas|me sirve|elijo)|cual de (los|las) dos|mejor (opcion|producto)|me conviene|radiesse o harmony ?ca|harmony ?ca o radiesse|radiesse (vs|versus) harmony ?ca|que (es )?mejor)\b/;
+const EV_PIDE_COMPARATIVO = /\b(diferencia|diferencias|diferente|diferentes|comparar|comparacion|cual (es )?(mejor|me conviene|me recomiendas|me sirve|elijo)|cual de (los|las) dos|mejor (opcion|producto)|me conviene|sculptra o radiesse|radiesse o sculptra|sculptra (vs|versus) radiesse|radiesse (vs|versus) sculptra|que (es )?mejor)\b/;
 function evPideComparativo(texto) {
   return EV_PIDE_COMPARATIVO.test(evNorm(texto));
 }

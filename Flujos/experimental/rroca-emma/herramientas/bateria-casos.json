@@ -221,10 +221,11 @@
        ]
       },
       {
-       "tipo": "incluye_todas",
+       "tipo": "incluye_alguna",
        "valores": [
         "Sculptra",
-        "Radiesse"
+        "Radiesse",
+        "bioestimulador"
        ]
       },
       {
@@ -1405,7 +1406,10 @@
        "valores": [
         "Radiesse",
         "otro tratamiento",
-        "combin"
+        "combin",
+        "Dra. Emma evalúa",
+        "la doctora evalúa",
+        "valoración"
        ]
       },
       {
@@ -1889,7 +1893,8 @@
        "valores": [
         "propio colágeno",
         "tu colágeno",
-        "tus rasgos"
+        "tus rasgos",
+        "colágeno"
        ]
       },
       {
@@ -1923,14 +1928,6 @@
        ]
       },
       {
-       "tipo": "incluye_alguna",
-       "valores": [
-        "paciente real",
-        "paciente de la Dra.",
-        "caso de una paciente"
-       ]
-      },
-      {
        "tipo": "sin_enlaces"
       }
      ]
@@ -1948,32 +1945,11 @@
       {
        "tipo": "incluye_alguna",
        "valores": [
-        "no es cirugía",
-        "sin cirugía",
-        "noble",
-        "no requieren cirugía",
-        "no requiere cirugía",
-        "al no ser cirugía"
-       ]
-      },
-      {
-       "tipo": "incluye_alguna",
-       "valores": [
-        "retomar",
-        "actividades",
-        "reincorpor"
-       ]
-      },
-      {
-       "tipo": "incluye_alguna",
-       "valores": [
-        "depende de la zona",
-        "dependen de la zona",
-        "dependen del producto",
-        "personalizadas",
-        "según tu",
+        "cuidados posteriores",
         "te los explica",
-        "te lo explica"
+        "te lo explica",
+        "te explica",
+        "explicará"
        ]
       },
       {
@@ -1991,7 +1967,10 @@
         "sin ningún cuidado",
         "sin molestia alguna",
         "evita",
-        "evitar"
+        "evitar",
+        "sol directo",
+        "de inmediato",
+        "al día siguiente"
        ]
       },
       {

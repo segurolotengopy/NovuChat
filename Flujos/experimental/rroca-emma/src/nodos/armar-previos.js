@@ -38,7 +38,9 @@ if (plan.tipo === 'modelo') {
   const cand = respuesta && Array.isArray(respuesta.candidates) ? respuesta.candidates[0] : null;
   const porque = (cand && cand.finishReason ? ' finishReason=' + String(cand.finishReason).slice(0, 30) : '') + (respuesta && respuesta.promptFeedback && respuesta.promptFeedback.blockReason ? ' blockReason=' + String(respuesta.promptFeedback.blockReason).slice(0, 30) : '') + (respuesta && respuesta.error ? ' error ' + (respuesta.error && typeof respuesta.error === 'object' ? String(respuesta.error.httpCode || respuesta.error.code || respuesta.error.status || '') + ' ' + String(respuesta.error.message || '').replace(/AIza\S+/g, '[clave]').slice(0, 80) : String(respuesta.error).slice(0, 80)) : '');
   // Pedido EXPLÍCITO de agendar («Ok, quiero agendar»): el cierre no depende de que el modelo se acuerde de la etiqueta.
-  const quiere = evQuiereAgendar(plan.textoCliente);
+  // EMMA (declarado en PROPIO.md): en el PRIMER contacto «quiero agendar mi valoración» (el texto prellenado del anuncio) no cierra de golpe con el nombre del perfil: primero el saludo, que pide el nombre y qué desea mejorar,
+  // como manda el MD. El cierre automático solo aplica si ya hubo conversación o el cliente dio su nombre en ese mensaje («Soy Rosa. Quiero agendar»).
+  const quiere = evQuiereAgendar(plan.textoCliente) && (ficha.historial.length > 0 || evNombreDelMensaje(plan.textoCliente, ficha.historial) !== '');
   if (quiere && crudo.length <= 20000) et.derivar = true;
   // La etiqueta del modelo se honra solo si el cliente pidió agendar, aceptó una oferta, o el modelo ya capturó su nombre en la etiqueta («[DERIVAR_RECEPCION: Paola]») / el cliente dijo «soy …»; con la etiqueta SOLA y sin texto se conserva (variante corta).
   if (et.derivar && !quiere && et.texto.trim() !== '') {
@@ -65,7 +67,7 @@ if (plan.tipo === 'modelo') {
       artesPlan.push(k);
     }
     // Si el texto no va a pasar la revisión (con las imágenes ya contadas), no se envía ninguna imagen: cae al texto fijo del fallo.
-    const rev = evPulirSalida(et.texto, { artesEnviados: artesPlan, textoCliente: plan.textoCliente, nombreNegocio: cfg.nombreNegocio });
+    const rev = evPulirSalida(et.texto, { artesEnviados: artesPlan, textoCliente: plan.textoCliente, nombreNegocio: cfg.nombreNegocio, direccion: cfg.direccion });
     if (rev.motivo === 'salud_sin_remision') { efectivo = 'remision'; artesPlan = []; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
     else if (rev.motivo !== '') { efectivo = 'fallo'; artesPlan = []; rechazo = { motivo: rev.motivo, detalle: rev.detalle || '' }; }
   }

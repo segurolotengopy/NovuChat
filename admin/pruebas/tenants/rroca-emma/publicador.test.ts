@@ -157,6 +157,25 @@ describe('NEGADAS: el flujo nuevo de Emma NUNCA reemplaza un flujo vivo que no e
       }
     });
   }
+  it('SEGURIDAD: un tenantId repetido en el archivo o en el vivo se NIEGA (falla cerrado), también con --forzar; y un flujo de otro cliente con las tres condiciones débiles del viejo de Emma NO se reconoce', () => {
+    const repetido = (n: string, t1: string, t2: string) => ({ ...nuevoDe(n, t1), nodes: [{ name: 'Armar previos' }, { name: 'Config base', parameters: { assignments: { assignments: [{ name: 'tenantId', value: t1 }, { name: 'tenantId', value: t2 }] } } }] });
+    const archivoRepetido = join(raiz, 'Flujos/experimental/rroca-emma/repetido.json'); writeFileSync(archivoRepetido, JSON.stringify(repetido(NOMBRE, 'rroca-emma', 'rroca-evy')));
+    const vivoRepetido = escribir('vivo-repetido.json', repetido(NOMBRE, 'rroca-emma', 'rroca-emma'));
+    for (const extra of [[], ['--forzar']]) {
+      const a = correrEn(raiz, ['--flujo', 'Flujos/experimental/rroca-emma/repetido.json', '--aplicar', '--etapa-prueba', '--confirmo-emma', ...extra], vivoEmmaViejo);
+      expect(a.status, 'archivo repetido').toBe(1); expect(a.stderr).toMatch(/NEGADO: el archivo trae el tenantId repetido/); sinEscritura(a.curl);
+      const v = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-emma', ...extra], vivoRepetido);
+      expect(v.status, 'vivo repetido').toBe(1); expect(v.stderr).toMatch(/NEGADO: el flujo vivo trae el tenantId repetido/); sinEscritura(v.curl);
+    }
+    // otro cliente: nombre con rroca-emma + nodo «Armar avisos» + «rroca-emma» mencionado en un parámetro de «Config base», pero su tenantId es otro
+    const debil = escribir('vivo-debil.json', { name: NOMBRE, active: false, connections: {}, settings: {}, nodes: [{ name: 'Armar avisos' }, { name: 'Config base', parameters: { assignments: { assignments: [{ name: 'tenantId', value: 'qtaco' }, { name: 'nota', value: 'copiado de rroca-emma' }] } } }] });
+    for (const extra of [[], ['--forzar']]) {
+      const r = correrEn(raiz, ['--flujo', REL_NUEVO, '--aplicar', '--etapa-prueba', '--confirmo-emma', ...extra], debil);
+      expect(r.status, extra.join(' ')).toBe(1);
+      expect(r.stderr).toMatch(/NEGADO: el flujo nuevo de Emma no puede reemplazar un flujo vivo que no es de Emma/);
+      sinEscritura(r.curl);
+    }
+  });
   it('un archivo con el nombre de Emma pero el tenant de EVY en su «Config base» NO es de Emma: va por la guardia de Evy y nunca por la de Emma', () => {
     const r = correrEn(raiz, ['--flujo', REL_CON_TENANT_DE_EVY, '--aplicar', '--etapa-prueba', '--confirmo-evy', '--confirmo-emma'], vivoEmmaViejo);
     expect(r.guardias).not.toMatch(/^emma/m);

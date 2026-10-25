@@ -117,6 +117,12 @@ describe('cada defecto se niega por separado', () => {
     poner(x.flujo, 'usarMarcas', ''); x.datos.configBase['usarMarcas'] = '';
     expect(hallazgos(x)).toEqual([]);
   });
+  it('un tenantId repetido en «Config base» se niega (falla cerrado)', () => {
+    const x = listo(); asignaciones(x.flujo).push({ name: 'tenantId', value: 'rroca-evy' });
+    expect(hallazgos(x).join(' ')).toMatch(/tenantId tiene que aparecer exactamente una vez/);
+    const y = listo(); asignaciones(y.flujo).splice(asignaciones(y.flujo).findIndex((a) => a.name === 'tenantId'), 1);
+    expect(hallazgos(y).join(' ')).toMatch(/tenantId tiene que aparecer exactamente una vez/);
+  });
   it('la plantilla sin APPROVED (etapa completa) y sin nombre o idioma', () => {
     const x = listo(); poner(x.flujo, 'avisoSolicitudEstado', 'PENDING'); x.datos.configBase['avisoSolicitudEstado'] = 'PENDING';
     expect(hallazgos(x).join(' ')).toMatch(/avisoSolicitudEstado .* APPROVED/);

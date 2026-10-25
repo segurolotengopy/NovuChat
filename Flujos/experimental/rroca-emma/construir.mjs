@@ -497,6 +497,8 @@ export function guardiaDePublicacion({ flujo, datos, negocio, etapa = 'encender'
   // (sin id resuelto el flujo no la envía). Las otras dos (bata y antes y después) sí se exigen resueltas.
   const marcasComparativo = ['REEMPLAZAR_MEDIA_ID_ARTE_COMPARATIVO'];
   for (const m of new Set(marcasEn(flujo).map((x) => x.toUpperCase()))) if (!marcasComparativo.includes(m)) h.push(`marcador sin sustituir: ${m}`);
+  // El tenantId aparece UNA vez en «Config base» (falla cerrado): un duplicado haría que quien lea el último y quien lea el primero vean tenants distintos.
+  if (Array.isArray(lista) && lista.filter((x) => x && x.name === 'tenantId').length !== 1) h.push('Config base: tenantId tiene que aparecer exactamente una vez');
   if (!Array.isArray(lista)) h.push('el flujo no trae «Config base»: no se puede comprobar el estado de la plantilla');
   else {
     h.push(...hallazgosDeConfig(enFlujo, 'Config base', etapa).filter((x) => !/arteComparativoMediaId/.test(x)));
