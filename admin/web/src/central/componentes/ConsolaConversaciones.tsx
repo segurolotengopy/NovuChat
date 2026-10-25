@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../core/lib/firebase';
 import {
-  pantallaConversacionesDeFicha, type PantallaConversaciones,
+  pantallaConversacionesDeFicha, PANTALLA_POR_DEFECTO, type PantallaConversaciones,
 } from '../../../../functions/src/central/consola-conversaciones';
 
 /**
@@ -13,8 +13,9 @@ import {
  * para que no aparezca medio segundo la pantalla equivocada y se cambie por la
  * otra (con el estado de una montado y desmontado en medio).
  *
- * ERROR DE LECTURA = 'clasica': si la ficha no se puede leer (permisos, red), se
- * muestra la pantalla de siempre. La nueva solo se enciende con un 'nueva' leído.
+ * ERROR DE LECTURA = la de por defecto ('nueva', 24/10/2026): si la ficha no se puede
+ * leer (permisos, red), se usa el mismo default del servidor (`PANTALLA_POR_DEFECTO`),
+ * no un valor propio.
  *
  * ES SOLO PRESENTACIÓN: la bandera la escribe NovuChat con un script (ningún
  * navegador escribe `tenants/{id}`) y lo que el servidor permite no cambia con ella.
@@ -26,7 +27,7 @@ export function useConsolaConversaciones(tenantId: string | undefined): Pantalla
     if (!tenantId) return;
     return onSnapshot(doc(db, 'tenants', tenantId),
       (d) => setPantalla(pantallaConversacionesDeFicha(d.data())),
-      () => setPantalla('clasica'));
+      () => setPantalla(PANTALLA_POR_DEFECTO));
   }, [tenantId]);
   return pantalla;
 }

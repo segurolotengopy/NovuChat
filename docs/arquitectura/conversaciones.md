@@ -250,15 +250,19 @@ permiso **sobre el comercio pedido**, nunca «el primero del token»:
 
 - **La bandera** es `tenants/{id}.consolaConversaciones`, con dos valores:
   `'clasica'` y `'nueva'` (`admin/functions/src/central/consola-conversaciones.ts:28`).
-  Cualquier otra cosa —ausente, desconocida, de otro tipo, ficha ausente— es
-  `'clasica'` (`:43`): ante la duda se muestra lo que ya funcionaba.
+  **Desde el 24/10/2026 la nueva es la de por defecto** (`PANTALLA_POR_DEFECTO`):
+  ausente, desconocida, de otro tipo, ficha ausente o error de lectura es `'nueva'`;
+  solo un `'clasica'` explícito (válvula de emergencia, escrito por el script) da la
+  de siempre. Tomar y escribir como persona NO siguen al default: exigen `'nueva'`
+  explícito y excluyen a Bellido (`accesoPersona.ts`). El script ya no excluye a
+  Bellido para la bandera (sí el relleno, y lo que agregue `NOVUCHAT_TENANTS_EXCLUIDOS`).
 - **Es solo presentación.** Elige qué se pinta; lo que el servidor permite no cambia
   con ella. La escribe NovuChat, nunca el comercio: `firestore.rules` no deja a
   ningún navegador escribir `tenants/{id}`; el único camino es el script (§8).
 - **El selector** (`web/src/central/paginas/Conversaciones.tsx:25-29`) lee la
   bandera en vivo con `useConsolaConversaciones`
   (`web/src/central/componentes/ConsolaConversaciones.tsx:22`): mientras carga no
-  pinta ninguna de las dos, y un error de lectura es `'clasica'`. La pantalla de
+  pinta ninguna de las dos, y un error de lectura es el default (`'nueva'`). La pantalla de
   siempre sigue intacta en `ConversacionesClasica.tsx`. La ruta es
   `/negocio/:tenantId/conversaciones/:conversacionId?` (`web/src/App.tsx:258`), con
   `?m=<mensaje>` si se llega desde una búsqueda.
