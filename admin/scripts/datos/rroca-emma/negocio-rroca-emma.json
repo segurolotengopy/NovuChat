@@ -1,0 +1,29 @@
+{
+  "_fuente": "Datos del negocio de la Dra. Emma (tenant rroca-emma, flujo Flujos/experimental/rroca-emma/). Se carga con admin/scripts/datos/cargar-negocio.mjs, que solo admite las secciones negocio, agendamiento, catalogo y funcionarios: aquí va solo negocio (la recepción agenda y la valoración es gratuita: no hay catálogo, agenda ni cobro). El flujo LEE de la Consola la dirección, el horario, el número de recepción y el nombre; los horarios de aquí son los que ya están cargados en la Consola de rroca-emma (24/10/2026) y el repositorio solo los refleja. Las claves que empiezan con `_` son notas y no se escriben.",
+  "_pendiente": {
+    "_nota": "El horario de Emma es de turno partido (confirmado por Andres el 22/10/2026) y ya está cargado en la Consola; el flujo NO lo repite en el prompt ni en el código (regla «datos de la Consola no se repiten»): lo lee de la Consola en cada turno. El número de recepción es un marcador de la tabla local; el número real no va en el repositorio. Nombre: el MD de la doctora escribe «Enma» en su nombre completo; la decisión de Andres (24/10/2026) es «la Dra. Emma»."
+  },
+  "negocio": {
+    "nombreNegocio": "Dra. Emma",
+    "descripcion": "Emma Spa Medic: valoración gratuita de armonización facial con bioestimuladores con la Dra. Emma. El asistente conversa con inteligencia artificial, no agenda, no cobra y no da consejo médico; pasa a la recepción cuando la persona quiere agendar.",
+    "direccion": "Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055 (Santa Cruz)",
+    "numeroRecepcionMarcador": "REEMPLAZAR_NUMERO_RECEPCION_RROCA_EMMA",
+    "zonaHoraria": "America/La_Paz",
+    "tratamiento": "tu",
+    "estiloEmojis": "pocos",
+    "horarios": {
+      "lun": "09:00-12:00,14:00-18:00",
+      "mar": "09:00-12:00,14:00-18:00",
+      "mie": "09:00-12:00,14:00-18:00",
+      "jue": "09:00-12:00,14:00-18:00",
+      "vie": "09:00-12:00,14:00-18:00",
+      "sab": "09:00-12:00",
+      "dom": "cerrado"
+    },
+    "prefijosPermitidos": ["591"],
+    "datosQueNoTenemos": [
+      "precio del tratamiento (lo da la doctora en la valoración)",
+      "consejo médico o diagnóstico"
+    ]
+  }
+}
