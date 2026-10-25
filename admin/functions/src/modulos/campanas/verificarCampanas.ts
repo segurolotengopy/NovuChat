@@ -22,9 +22,10 @@ import { CLAVE_GEMINI } from '../../central/servicios/gemini.js';
 import type { ConsultarModelo } from '../../central/asistente/comportamiento.js';
 import { consultarGemini, otrosComercios } from '../../central/asistente/verificarComportamiento.js';
 import { limiteDeCampanas } from '../../central/cuenta/planes.js';
-import { nombreParaElModelo } from '../productos/nombreSeguro.js';
+import { terminosAprobados } from '../../central/asistente/terminos.js';
+import { nombreDeProductoApto, nombreParaElModelo } from '../productos/nombreSeguro.js';
 import {
-  hashLista, leerCampanas, productoIdValido, revisarCampanas,
+  hashLista, leerCampanas, type Campana, productoIdValido, revisarCampanas,
   type ContextoDelNegocio, type ResultadoCampanas, type RevisionCampana,
 } from './campanas.js';
 
@@ -100,6 +101,19 @@ export async function aplicarCampanas(
   return resultado;
 }
 
+/**
+ * Los términos de producto aprobados de ESTE comercio para los textos de la lista:
+ * UNA sola lectura por verificación (los campos van juntos, no uno por uno) y
+ * ninguna si ningún campo contiene «prompt». Si Firestore falla, la excepción
+ * sube; `revisarYAplicarCampanas` la atrapa y falla cerrado (sin términos).
+ */
+export async function terminosDeLaLista(
+  db: Firestore, tenantId: string, lista: readonly Campana[],
+): Promise<string[]> {
+  const campos = lista.flatMap((c) => [c.texto, ...(c.titulares ?? []), c.angulo ?? '']);
+  return terminosAprobados(db, tenantId, campos.join('\n'), nombreDeProductoApto);
+}
+
 /** La revisión y la escritura juntas: lo que corre el disparador y lo que prueban las suites. */
 export async function revisarYAplicarCampanas(
   db: Firestore, tenantId: string, antes: Record<string, unknown>, despues: Record<string, unknown>,
@@ -117,8 +131,16 @@ export async function revisarYAplicarCampanas(
   const anterior = typeof previa === 'object' && previa !== null
     ? (previa as { porCampana?: Record<string, RevisionCampana> }).porCampana : undefined;
   const productos = await productosActivosReferenciados(db, tenantId, lista);
+  // Falla cerrado: si no se pueden leer los términos, ninguno vale (las campañas con «prompts» las
+  // rechaza la capa 1) y el resto de la lista se aplica normal, sin dejar vigente lo anterior.
+  let terminos: string[] = [];
+  try {
+    terminos = await terminosDeLaLista(db, tenantId, lista);
+  } catch {
+    logger.warn('verificarCampanas: no se pudieron leer los términos de producto');
+  }
   const revision = await revisarCampanas(lista, leerCampanas(antes['lista']), anterior, limite, ahoraMs,
-    contexto, otros, consultar, productos);
+    contexto, otros, consultar, productos, terminos);
   const resultado = await aplicarCampanas(db, tenantId, hash, revision, revisadoPor);
   return { hash, resultado, revision };
 }
