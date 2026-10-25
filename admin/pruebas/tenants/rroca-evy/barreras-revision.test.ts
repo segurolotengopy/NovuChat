@@ -330,7 +330,10 @@ describe('la pregunta por la gratuidad se contesta con un texto fijo cuando el m
 
 describe('«Ok, quiero agendar» deriva aunque el modelo no emita la etiqueta (F3 turno 6)', () => {
   it('sale el cierre con su botón y su aviso; «cómo agendo» (pregunta) no deriva', () => {
-    const t = hablar(crear({ modeloDice: dice('¡Sí, de verdad es gratuita! Me alegra tu decisión.') }), ANA, mTexto('Ok, quiero agendar'));
+    // ya en conversación (en el primer contacto sin nombre el saludo pide el nombre antes de cerrar)
+    const m = crear({ modeloDice: dice('¡Sí, de verdad es gratuita! Me alegra tu decisión.') });
+    hablar(m, ANA, mTexto('hola'));
+    const t = hablar(m, ANA, mTexto('Ok, quiero agendar'));
     expect(textos(t)[0]).toMatch(/Excelente decisión/);
     expect(t.mensajes[0]!.tipo).toBe('interactive');
     expect(avisosARecepcion(t).length).toBe(1);
@@ -338,7 +341,9 @@ describe('«Ok, quiero agendar» deriva aunque el modelo no emita la etiqueta (F
     expect(c.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
   });
   it('con el modelo caído y un pedido explícito, igual sale el cierre (no el fallo)', () => {
-    const t = hablar(crear({ modeloDice: 'cae' }), ANA, mTexto('quiero agendar'));
+    const m = crear({ modeloDice: 'cae' });
+    hablar(m, ANA, mTexto('hola'));
+    const t = hablar(m, ANA, mTexto('quiero agendar'));
     expect(textos(t)[0]).toMatch(/Excelente decisión/);
   });
 });

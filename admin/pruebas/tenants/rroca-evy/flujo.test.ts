@@ -149,3 +149,19 @@ describe('saludo neutro (decisión de Andres, 24/10/2026): la campaña no se men
     expect(readFileSync(join(CARPETA, 'prompts/evy.md'), 'utf8')).toContain('Hoy tu valoración con la Dra. Evy es **100% gratuita y sin compromiso** (su costo habitual es de 250 Bs, hoy bonificado)');
   });
 });
+
+describe('el texto prellenado del anuncio en el primer contacto', () => {
+  const saludo = '¡Hola! 👋 Soy el asistente virtual de la Dra. Evy. Tu valoración es 100% gratuita y sin compromiso. ¿Cómo te llamas y qué te gustaría mejorar?';
+  it('NO cierra de golpe (ni botón ni aviso a recepción): el saludo pide nombre y deseo', () => {
+    const t = hablar(crear({ modeloDice: saludo }), ANA, mTexto('Hola Dra. Evy, vi su anuncio de armonización facial y quiero agendar mi valoración gratuita 🙌'));
+    expect(t.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
+    expect(t.avisos.length).toBe(0);
+    expect(textos(t).join(' ')).toContain('¿Cómo te llamas');
+  });
+  it('con el nombre en el mensaje («Soy Rosa. Quiero agendar») sí cierra, y con conversación previa («Ok, quiero agendar») también', () => {
+    expect(hablar(crear({ modeloDice: saludo }), ANA, mTexto('Soy Rosa. Quiero agendar mi valoración')).mensajes.some((e) => e.tipo === 'interactive')).toBe(true);
+    const m = crear({ modeloDice: saludo });
+    hablar(m, ANA, mTexto('hola'));
+    expect(hablar(m, ANA, mTexto('Ok, quiero agendar')).mensajes.some((e) => e.tipo === 'interactive')).toBe(true);
+  });
+});
