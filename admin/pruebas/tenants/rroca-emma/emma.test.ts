@@ -241,6 +241,12 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
     expect(fallo(sinCiudad)).toBe(false);
     expect(sinCiudad).toMatch(/Av\. Pauserna # 2055/);
     for (const par of ['Nos ubicamos en Nº 2055 de la Av. Pauserna.', 'Estamos en el nro 2055 de la avenida.']) { const r2 = sale(par, '¿cuánto cuesta y dónde están?'); expect(fallo(r2), par + ' => ' + r2).toBe(false); }
+    // NEGADAS (revisión de código): un «#», «Nº», «nro», «calle» o «km» delante de una cifra de precio NO la deja pasar, ni tras «¿cuánto cuesta?» ni tras «hola»
+    for (const cli of ['¿cuánto cuesta?', 'hola']) {
+      for (const precio of ['El valor de la sesión es Nº 1500.', 'Sculptra Nº 1500, Radiesse Nº 2000.', 'Sculptra #1500.', 'La sesión es de # 1500.', 'La sesión sale nro 1500.', 'El tratamiento queda en calle 1500.', 'La sesión es km 1500.', 'Serían No 700 por sesión.', 'La sesión queda en No 1.275.']) {
+        expect(fallo(sale(`${precio} ¿Cómo te llamas?`, cli)), `${cli} / ${precio}`).toBe(true);
+      }
+    }
     // NEGADA: la dirección no abre la puerta a una cifra de precio
     expect(fallo(sale('Estamos en la Av. Pauserna # 2055 y la valoración vale 700. ¿Cómo te llamas?', '¿cuánto cuesta y dónde están?'))).toBe(true);
     expect(fallo(sale('Estamos en la Av. Pauserna # 2055. El tratamiento cuesta 700. ¿Cómo te llamas?', '¿cuánto cuesta y dónde están?'))).toBe(true);
@@ -261,6 +267,9 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
   });
   it('M-2: «unos / alrededor de / más o menos / serían + cifra» sobre valoración, tratamiento o zona se rechaza; un horario no', () => {
     for (const m of ['La valoración serían unos 700 en total. ¿Cómo te llamas?', 'Cada sesión ronda alrededor de 900. ¿Cómo te llamas?', 'El tratamiento de la zona sale más o menos 1500. ¿Cómo te llamas?', 'La sesión serían 800 aproximadamente. ¿Cómo te llamas?', 'Por zona, unos 600. ¿Cómo te llamas?']) expect(fallo(sale(m)), m).toBe(true);
+    // el número aproximado también se rechaza si el que habla de tratamiento es el CLIENTE, y una palabra de horario en la oración no lo exime
+    expect(fallo(sale('Serían unos 900 en total. ¿Cómo te llamas?', '¿y las dos zonas?'))).toBe(true);
+    expect(fallo(sale('La sesión dura una hora y serían unos 1.500. ¿Cómo te llamas?'))).toBe(true);
     expect(fallo(sale('La valoración dura unos 100 minutos y atendemos de lunes a viernes. ¿Cómo te llamas?'))).toBe(false);
   });
   it('A2: el texto prellenado del anuncio («…quiero agendar mi valoración gratuita») NO cierra de golpe con el nombre del perfil: el saludo pide nombre y deseo; «Soy Rosa. Quiero agendar» sí cierra', () => {

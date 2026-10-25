@@ -47,7 +47,7 @@ Resultado: 1196/1225 (97,6 %), duras 663/665. Las 2 duras: **B2** (la barrera co
 - *(a) Chequeo demasiado estrecho para Emma, ajustado:* A3 (exigía los dos productos), D3b y E8 (frases de Evy), E9 (exigía «retomar» y «sin cirugía»).
 
 ## Ajustes 2 (24/10/2026)
-- **I-1:** un número precedido de «#», «Nº» (llega como «No»), «nro», «Av./Avenida/calle» o «km» no es un precio; la dirección de la Consola también se protege sin el «(Santa Cruz)» final. Una cifra de precio real en la misma oración SIGUE rechazada.
+- **I-1 (solo en oraciones con señal de dirección y sin palabra de precio, producto ni tratamiento):** un número precedido de «#», «Nº» (llega como «No»), «nro», «Av./Avenida/calle» o «km» no es un precio; la dirección de la Consola también se protege sin el «(Santa Cruz)» final. Una cifra de precio real en la misma oración SIGUE rechazada.
 - **M-1:** el recorte mide la dirección con su texto real (no con la marca). **M-3:** al quitar «inmediatamente» del comienzo de una oración, la primera letra queda en mayúscula.
 - **M-2:** «unos / alrededor de / más o menos / serían + cifra» sobre valoración, tratamiento, sesión o zona se rechaza (no en oraciones de horario).
 - **M-5:** más de un nodo «Config base» se NIEGA en el armador y en el publicador.

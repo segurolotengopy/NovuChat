@@ -810,22 +810,29 @@ function evOrdinalesDeDireccion(texto) {
 const EV_CIFRA_GRANDE = /(?<![\d.,:])\d{1,3}(?:[.,]\d{3})+(?![\d%])|(?<![\d.,:])\d{3,}(?![\d%:]|\s?%)/;
 const EV_CIFRA_EN_PALABRAS = /\b(cien|ciento|doscientos|doscientas|trescientos|trescientas|cuatrocientos|cuatrocientas|quinientos|quinientas|seiscientos|seiscientas|setecientos|setecientas|ochocientos|ochocientas|novecientos|novecientas|mil|millon|millones)\b/;
 const EV_PREGUNTA_PRECIO = /\b(cuanto|cuesta\w*|cuestan|precio\w*|costo\w*|vale|valen|valor|cobran|cobras|inversion|tarifa\w*|presupuesto)\b/;
-// Números que NO son un precio: los que siguen a «#», «Nº», «nro», «número», «km», o a «Av./Avenida/calle» (con hasta cuatro palabras de nombre en medio). Se quitan de la oración antes de buscar la cifra.
-const EV_NUMERO_DE_DIRECCION = /(?:#|\bn(?:[º°]|o\.)|\bnro\.?|\bnumero|\bkm\.?)\s*\d[\d.,]*|\b(?:av\.?|avenida|calle)\s+(?:[\p{L}.]+\s+){0,4}?#?\s*\d[\d.,]*/giu;
-// M-2: «unos / alrededor de / más o menos / serían + cifra de 3 o más dígitos» cuando la oración habla de valoración, tratamiento, sesión o zona (no de horarios).
-const EV_CIFRA_APROXIMADA = /\b(?:unos|unas|alrededor de|aproximadamente|mas o menos|serian|seran)\s+(?:de\s+)?\d[\d.,]*\d\b/;
+// Números de DIRECCIÓN parafraseada por el modelo (la exacta de la Consola ya va protegida con su marca): los que siguen a «#», «Nº» (llega como «No»), «nro», «número», «km», o a «Av./Avenida/calle» (con hasta cuatro palabras de nombre en medio).
+// Se quitan SOLO en una oración con señal de dirección y SIN palabra de precio, producto ni tratamiento: «El valor de la sesión es Nº 1500» o «Sculptra #1500» siguen siendo un precio.
+const EV_NUMERO_DE_DIRECCION = /(?:#|\bnro\.?|\bnumero|\bno\.?|\bkm\.?)\s*\d[\d.,]*|\b(?:av\.?|avenida|calle)\s+(?:[\p{L}.]+\s+){0,4}?#?\s*\d[\d.,]*/giu;
+const EV_SENAL_DE_DIRECCION = /\b(estamos|ubicad\w*|ubicamos|direccion|queda en la|anillo|calle|av|avenida)\b/;
+// M-2: «unos / alrededor de / más o menos / serían + cifra de 3 o más dígitos» cuando la oración O la pregunta del cliente hablan de valoración, tratamiento, sesión, zona o aplicación. Solo se exime si la cifra va seguida de minutos u horas.
+const EV_CIFRA_APROXIMADA = /\b(?:unos|unas|alrededor de|aproximadamente|mas o menos|serian|seran)\s+(?:de\s+)?(?:\d{1,3}(?:[.,]\d{3})+|\d{3,})(?![\d.,]*\d)(?!\s*(?:minutos?|min|horas?|hs)\b)/;
 const EV_HABLA_DE_TRATAMIENTO = /\b(valoracion|tratamiento\w*|sesion\w*|zona\w*|aplicacion\w*)\b/;
-const EV_HABLA_DE_HORARIO = /\b(hora\w*|hs|horario\w*|atend\w*|abrim\w*|cerram\w*|minutos?)\b/;
 function evNumeroDePrecio(texto, textoCliente) {
   const preguntoPrecio = EV_PREGUNTA_PRECIO.test(evNorm(textoCliente));
+  const clienteHablaDeTratamiento = EV_HABLA_DE_TRATAMIENTO.test(evNorm(textoCliente));
   for (const o of evPartirEnOraciones(evTexto(texto))) {
     if (o === '' || o === '\n') continue;
     const n = evNorm(o);
-    // («Nº» llega aquí ya normalizado como «No» por `evLeerEtiquetas`: solo con mayúscula inicial y pegado a la cifra se toma por «número».)
-    const sinDireccion = o.replace(/\d{1,2}\s?:\s?\d{2}/g, ' ').replace(EV_NUMERO_DE_DIRECCION, ' ').replace(/\bNo\.?\s*\d[\d.,]*/g, ' ');
+    // Minúsculas sin tildes pero CON puntuación (evNorm la pierde y «1.500» quedaría partido); «Nº» pasa a «no» por NFKC.
+    const crudo = evTexto(o).normalize('NFKC').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    let sinDireccion = crudo.replace(/\d{1,2}\s?:\s?\d{2}/g, ' ');
+    if (EV_SENAL_DE_DIRECCION.test(n) && !EV_PALABRA_DE_PRECIO.test(n) && !EV_PRODUCTOS.test(n) && !EV_HABLA_DE_TRATAMIENTO.test(n)) sinDireccion = sinDireccion.replace(EV_NUMERO_DE_DIRECCION, ' ');
+    // Una duración («100 minutos», «2 horas») no es un precio.
+    sinDireccion = sinDireccion.replace(/\d[\d.,]*\s*(?:minutos?|min|horas?|hs)\b/g, ' ');
     const numero = EV_CIFRA_GRANDE.test(sinDireccion) || EV_CIFRA_EN_PALABRAS.test(n);
-    if (numero && (EV_PALABRA_DE_PRECIO.test(n) || preguntoPrecio)) return o.slice(0, 60);
-    if (EV_CIFRA_APROXIMADA.test(evNorm(sinDireccion)) && EV_HABLA_DE_TRATAMIENTO.test(n) && !EV_HABLA_DE_HORARIO.test(n)) return o.slice(0, 60);
+    // Una cifra grande junto a un producto, una sesión, una zona o un tratamiento es un precio aunque la oración no diga «cuesta»: «Sculptra #1500».
+    if (numero && (EV_PALABRA_DE_PRECIO.test(n) || preguntoPrecio || EV_PRODUCTOS.test(n) || EV_HABLA_DE_TRATAMIENTO.test(n))) return o.slice(0, 60);
+    if (EV_CIFRA_APROXIMADA.test(sinDireccion) && (EV_HABLA_DE_TRATAMIENTO.test(n) || clienteHablaDeTratamiento)) return o.slice(0, 60);
   }
   return '';
 }
