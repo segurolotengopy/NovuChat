@@ -416,15 +416,34 @@ except Exception:
     pass
 PY
 }
-emma_vieja_clase() {  # $1 = archivo JSON ; imprime "si" si es el flujo VIEJO de Emma (doctoras): nombre rroca-emma, nodo «Armar avisos» y UN «Config base» cuyo tenantId es exactamente rroca-emma (una sola vez)
-  python3 - "$1" <<'PY' 2>/dev/null || true
-import json, sys
+emma_vieja_clase() {  # $1 = flujo VIVO ; $2 = archivo que se publica. Imprime "si" si el vivo es el flujo VIEJO de Emma (doctoras): nombre con rroca-emma, nodo «Armar avisos», UN solo «Config base», sin mencionar rroca-evy y con el MISMO phoneNumberIdEsperado que el archivo (solo dígitos; el valor nunca se imprime)
+  python3 - "$1" "$2" <<'PY' 2>/dev/null || true
+import json, re, sys
+def asignaciones(nodo):
+    lista = ((nodo.get("parameters") or {}).get("assignments") or {}).get("assignments") or []
+    return [(str(a.get("name", "")), str(a.get("value", ""))) for a in lista if isinstance(a, dict)]
+def unico(d, nombre):
+    cbs = [n for n in (d.get("nodes") or []) if isinstance(n, dict) and n.get("name") == nombre]
+    return cbs[0] if len(cbs) == 1 else None
 try:
-    d = json.load(open(sys.argv[1], encoding="utf-8"))
-    ns = [n for n in (d.get("nodes") or []) if isinstance(n, dict)]
-    tenants = [str(a.get("value", "")) for n in ns if n.get("name") == "Config base" for a in (((n.get("parameters") or {}).get("assignments") or {}).get("assignments") or []) if isinstance(a, dict) and a.get("name") == "tenantId"]
-    nombre = str(d.get("name", "")).lower()
-    if "rroca-emma" in nombre and "rroca-evy" not in nombre and any(n.get("name") == "Armar avisos" for n in ns) and tenants == ["rroca-emma"]:
+    vivo = json.load(open(sys.argv[1], encoding="utf-8"))
+    origen = json.load(open(sys.argv[2], encoding="utf-8"))
+    nodos = [n for n in (vivo.get("nodes") or []) if isinstance(n, dict)]
+    cv, co = unico(vivo, "Config base"), unico(origen, "Config base")
+    if cv is None or co is None:
+        sys.exit(0)
+    av, ao = asignaciones(cv), asignaciones(co)
+    pv = [v for k, v in av if k == "phoneNumberIdEsperado"]
+    po = [v for k, v in ao if k == "phoneNumberIdEsperado"]
+    tenants = [v for k, v in av if k == "tenantId"]
+    ok = (
+        "rroca-emma" in str(vivo.get("name", "")).lower()
+        and any(n.get("name") == "Armar avisos" for n in nodos)
+        and "rroca-evy" not in json.dumps(vivo).lower()
+        and len(pv) == 1 and len(po) == 1 and re.fullmatch(r"\d{6,25}", pv[0]) is not None and pv[0] == po[0]
+        and all(t == "rroca-emma" for t in tenants)
+    )
+    if ok:
         print("si")
 except Exception:
     pass
@@ -557,9 +576,9 @@ if [[ "$VIVO_TENANT_NUEVO" == "AMBIGUO" && $CREAR -eq 0 && $APAGAR -eq 0 ]]; the
   printf '\033[1;31m✗ NEGADO: el flujo vivo trae el tenantId repetido en «Config base»: no se sabe de quién es y no se pisa.\033[0m\n' >&2
   exit 1
 fi
-# El flujo NUEVO de Emma solo reemplaza al flujo vivo de Emma: el nuevo (tenantId rroca-emma) o el viejo de las doctoras (nombre rroca-emma + «Armar avisos» + «Config base» con rroca-emma). NUNCA a Evy ni a otro cliente, ni con --forzar.
+# El flujo NUEVO de Emma solo reemplaza al flujo vivo de Emma: el nuevo (tenantId rroca-emma) o el viejo de las doctoras (nombre rroca-emma + «Armar avisos» + UN «Config base» + el MISMO phoneNumberIdEsperado que el archivo + sin rroca-evy). NUNCA a Evy ni a otro cliente, ni con --forzar.
 if [[ $ES_EMMA_NUEVO -eq 1 && $CREAR -eq 0 && $APAGAR -eq 0 ]]; then
-  if [[ "$VIVO_TENANT_NUEVO" != "rroca-emma" && "$(emma_vieja_clase "$TMP/vivo.json")" != "si" ]]; then
+  if [[ "$VIVO_TENANT_NUEVO" != "rroca-emma" && "$(emma_vieja_clase "$TMP/vivo.json" "$FLUJO")" != "si" ]]; then
     printf '\033[1;31m✗ NEGADO: el flujo nuevo de Emma no puede reemplazar un flujo vivo que no es de Emma (vivo: %s). Ni con --forzar.\033[0m\n' "${VIVO_TENANT_NUEVO:-${TENANT_VIVO_DOCTORAS:-otro cliente}}" >&2
     exit 1
   fi

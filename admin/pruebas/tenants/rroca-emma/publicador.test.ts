@@ -23,16 +23,26 @@ chmodSync(join(bin, 'curl'), 0o755);
 const envRel = join(dir, 'env');
 writeFileSync(envRel, 'N8N_API_KEY=clave-de-juguete\nN8N_WORKFLOW_ID=1\nN8N_BASE_URL=http://n8n.invalido\n');
 
-/** «Config base» como lo arma el construir: una lista de asignaciones con el tenantId. */
-const configBase = (tenant: string) => ({ name: 'Config base', parameters: { assignments: { assignments: [{ name: 'tenantId', value: tenant }] } } });
-const nuevoDe = (nombre: string, tenant: string) => ({ name: nombre, nodes: [{ name: 'Armar previos' }, configBase(tenant)], connections: {}, settings: {} });
-const viejoDe = (nombre: string, tenant: string) => ({ name: nombre, active: false, connections: {}, settings: {}, nodes: [{ name: 'Armar avisos' }, configBase(tenant)] });
+// Teléfonos ficticios armados en la ejecución (el repo público no admite números largos escritos): el phone id de Emma, el de Evy y uno ajeno.
+const PHONE_EMMA = ['5917', '1', '2345', '6'].join('');
+const PHONE_EVY = ['5917', '1', '9876', '5'].join('');
+const PHONE_AJENO = ['5917', '1', '5555', '5'].join('');
+const par = (name: string, value: string) => ({ name, value });
+/** «Config base» como lo arma el construir NUEVO: tenantId + phoneNumberIdEsperado. */
+const configBase = (tenant: string, phone: string = PHONE_EMMA) => ({ name: 'Config base', parameters: { assignments: { assignments: [par('tenantId', tenant), par('phoneNumberIdEsperado', phone)] } } });
+/** «Config base» del flujo VIEJO de las doctoras, con la forma REAL del vivo de Emma: SIN tenantId y con estas claves exactas (valores sintéticos). */
+const configBaseViejo = (phone: string = PHONE_EMMA, extra: Array<{ name: string; value: string }> = []) => ({ name: 'Config base', parameters: { assignments: { assignments: [
+  par('waGraphVersion', 'v26.0'), par('phoneNumberIdEsperado', phone), par('numeroRecepcion', 'x'), par('nombreNegocio', 'Dra. X'), par('mensajeComercioSuspendido', 'x'), par('prefijosPermitidos', '591'),
+  par('telefonosDePrueba', 'x'), par('modelo', 'gemini'), par('temperatura', '0.3'), par('avisoSolicitudPlantilla', 'x'), par('avisoSolicitudEstado', 'APPROVED'), par('avisoPlantillaIdioma', 'es'), par('doctora', '{}'), ...extra] } } });
+const nuevoDe = (nombre: string, tenant: string, phone: string = PHONE_EMMA) => ({ name: nombre, nodes: [{ name: 'Armar previos' }, configBase(tenant, phone)], connections: {}, settings: {} });
+/** El flujo viejo de las doctoras (nodo «Armar avisos»). Evy lleva su tenantId; el de Emma, como el real, no. */
+const viejoDe = (nombre: string, tenant: string, phone: string = PHONE_EMMA) => ({ name: nombre, active: false, connections: {}, settings: {}, nodes: [{ name: 'Armar avisos' }, tenant === 'rroca-emma' ? configBaseViejo(phone) : configBase(tenant, phone)] });
 const escribir = (nombre: string, json: unknown): string => { const a = join(dir, nombre); writeFileSync(a, JSON.stringify(json)); return a; };
 
 const vivoEmmaNuevo = escribir('vivo-emma-nuevo.json', { ...nuevoDe(NOMBRE, 'rroca-emma'), active: false });
 const vivoEmmaViejo = escribir('vivo-emma-viejo.json', viejoDe(NOMBRE, 'rroca-emma'));
-const vivoEvyNuevo = escribir('vivo-evy-nuevo.json', { ...nuevoDe(NOMBRE_EVY, 'rroca-evy'), active: false });
-const vivoEvyViejo = escribir('vivo-evy-viejo.json', viejoDe(NOMBRE_EVY, 'rroca-evy'));
+const vivoEvyNuevo = escribir('vivo-evy-nuevo.json', { ...nuevoDe(NOMBRE_EVY, 'rroca-evy', PHONE_EVY), active: false });
+const vivoEvyViejo = escribir('vivo-evy-viejo.json', viejoDe(NOMBRE_EVY, 'rroca-evy', PHONE_EVY));
 const vivoOtro = escribir('vivo-otro.json', { name: 'Otro cliente', active: false, nodes: [] });
 
 const REL_NUEVO = 'Flujos/experimental/rroca-emma/rroca-emma.json';
@@ -52,9 +62,9 @@ function raizCon(nombre: string, script: string, o: { emma?: string; evy?: strin
   writeFileSync(join(raiz, 'Flujos/experimental/rroca-emma/construir.mjs'), guardia('emma', o.emma ?? 'prueba'));
   writeFileSync(join(raiz, 'Flujos/experimental/rroca-evy/construir.mjs'), guardia('evy', o.evy ?? 'prueba'));
   writeFileSync(join(raiz, REL_NUEVO), JSON.stringify(nuevoDe(NOMBRE, 'rroca-emma')));
-  writeFileSync(join(raiz, REL_EVY_NUEVO), JSON.stringify(nuevoDe(NOMBRE_EVY, 'rroca-evy')));
+  writeFileSync(join(raiz, REL_EVY_NUEVO), JSON.stringify(nuevoDe(NOMBRE_EVY, 'rroca-evy', PHONE_EVY)));
   writeFileSync(join(raiz, REL_EMMA_VIEJO), JSON.stringify(viejoDe(NOMBRE, 'rroca-emma')));
-  writeFileSync(join(raiz, REL_EVY_VIEJO), JSON.stringify(viejoDe(NOMBRE_EVY, 'rroca-evy')));
+  writeFileSync(join(raiz, REL_EVY_VIEJO), JSON.stringify(viejoDe(NOMBRE_EVY, 'rroca-evy', PHONE_EVY)));
   writeFileSync(join(raiz, REL_RENOMBRADO), JSON.stringify(nuevoDe('Otro nombre cualquiera', 'rroca-emma')));
   writeFileSync(join(raiz, REL_CON_TENANT_DE_EVY), JSON.stringify(nuevoDe(NOMBRE, 'rroca-evy')));
   return raiz;
@@ -142,9 +152,14 @@ describe('NEGADAS: el flujo nuevo de Emma NUNCA reemplaza un flujo vivo que no e
     ['el flujo VIEJO de Evy', vivoEvyViejo],
     ['otro cliente (nombre cualquiera)', escribir('vivo-qtaco.json', { name: "NovuChat — Q'Taco (qtaco)", active: true, nodes: [{ name: 'Armar avisos' }] })],
     ['un vivo vacío', escribir('vivo-vacio.json', { name: 'x', nodes: [] })],
-    ['el nuevo de Evy RENOMBRADO (sin rroca-evy en el nombre)', escribir('vivo-evy-renombrado.json', { ...nuevoDe('Dra. E. K.', 'rroca-evy'), active: false })],
-    ['el viejo de Evy con el nombre de Emma (el tenant de su Config base lo delata)', escribir('vivo-evy-con-nombre-de-emma.json', viejoDe(NOMBRE, 'rroca-evy'))],
+    ['el nuevo de Evy RENOMBRADO (sin rroca-evy en el nombre)', escribir('vivo-evy-renombrado.json', { ...nuevoDe('Dra. E. K.', 'rroca-evy', PHONE_EVY), active: false })],
+    ['el viejo de Evy con el nombre de Emma (el tenant de su Config base lo delata)', escribir('vivo-evy-con-nombre-de-emma.json', viejoDe(NOMBRE, 'rroca-evy', PHONE_EVY))],
     ['el viejo de Emma RENOMBRADO (conservador: sin el nombre no se reconoce)', escribir('vivo-emma-renombrado.json', viejoDe('Dra. E. A.', 'rroca-emma'))],
+    ['el viejo de Emma con OTRO phone id (otro número: no es el de este archivo)', escribir('vivo-emma-otro-phone.json', viejoDe(NOMBRE, 'rroca-emma', PHONE_AJENO))],
+    ['el viejo de Emma que menciona rroca-evy en un parámetro', escribir('vivo-emma-con-evy.json', { ...viejoDe(NOMBRE, 'rroca-emma'), nodes: [{ name: 'Armar avisos' }, configBaseViejo(PHONE_EMMA, [par('nota', 'copiado de rroca-evy')])] })],
+    ['un viejo de Emma con DOS nodos «Config base»', escribir('vivo-emma-dos-config.json', { ...viejoDe(NOMBRE, 'rroca-emma'), nodes: [{ name: 'Armar avisos' }, configBaseViejo(PHONE_EMMA), configBaseViejo(PHONE_EMMA)] })],
+    ['un viejo de Emma con el phone id vacío', escribir('vivo-emma-phone-vacio.json', viejoDe(NOMBRE, 'rroca-emma', ''))],
+    ['un viejo de Emma con un phone id que no son dígitos (marcador)', escribir('vivo-emma-phone-marcador.json', viejoDe(NOMBRE, 'rroca-emma', 'REEMPLAZAR_PHONE_NUMBER_ID_RROCA_EMMA'))],
     ['un flujo con el nombre de Emma pero sin su huella', escribir('vivo-nombre-de-emma.json', { name: NOMBRE, active: false, nodes: [{ name: 'Otro nodo' }] })],
   ];
   for (const [que, vivo] of vivos) {
