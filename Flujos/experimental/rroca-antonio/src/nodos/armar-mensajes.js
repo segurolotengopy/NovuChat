@@ -216,6 +216,9 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
       m.monto = monto;
       pedidoNuevo = { producto: plan.producto };
     }
+  } else if (tipoDePlan === 'identidad') {
+    // La identidad fija (prohibición 4): solo texto, sin botones, sin QR, sin aviso, sin modelo.
+    m = texto(raTextoIdentidad(negocio));
   } else if (tipoDePlan === 'baja') {
     // Un pedido de baja: solo la confirmación (sin invitación a pagar, sin botones, sin aviso).
     m = texto(RA_TEXTO_BAJA);
