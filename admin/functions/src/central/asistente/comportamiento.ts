@@ -1060,6 +1060,18 @@ export function verificarPatrones(
     const lista = p.fuerza === 'fuerte' ? fuertes : debiles;
     if (dispara && !lista.includes(p.nombre)) lista.push(p.nombre);
   }
+  // EL TÉRMINO SOLO RELAJA (invariante): para todo texto T, si el filtro SIN términos lo acepta, CON términos
+  // también. `terminoSinContexto` es más estricto que las listas de #650 en la oración del marcador (AUTORIDAD
+  // trae «guía»), así que sin esto aprobar un término rechazaba «Pack 100 prompts con plantillas y guía», que
+  // sin término pasa. Cuando hubo sustitución, lo que el filtro sin términos no marca no cuenta: el término
+  // abre lo que #650 cierra y nunca cierra lo que #650 deja abierto. Lo que main rechaza (órdenes, identidad,
+  // pago, otro comercio, «tus prompts», «prompt» suelto) lo marca también sin términos y sigue rechazado.
+  if (analizado !== normalizado) {
+    const sinTerminos = verificarPatrones(texto, otros).coincidencias;
+    for (const lista of [fuertes, debiles]) {
+      for (let i = lista.length - 1; i >= 0; i--) if (!sinTerminos.includes(lista[i]!)) lista.splice(i, 1);
+    }
+  }
   // Mientras las listas de #650 sigan vivas, con determinante neutro delante del marcador no se
   // reabre nada que main rechaza (ver «RESIDUO ACEPTADO»): se aplica la forma cerrada sobre el texto sin sustituir.
   if (terminos.length > 0 && !fuertes.includes('prompt') && analizado !== normalizado
