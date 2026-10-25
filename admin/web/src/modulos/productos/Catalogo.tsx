@@ -410,6 +410,7 @@ export function Catalogo() {
   const conVenta = capacidades.conVistaPrevia;
   const [items, setItems] = useState<Item[] | null>(null);
   const [veredictos, setVeredictos] = useState<Record<string, Veredicto>>({});
+  const [terminos, setTerminos] = useState<Record<string, unknown>>({});
   const [nuevo, setNuevo] = useState(NUEVO);
   /** Lo que pasó con una acción sobre la tabla. Se pinta ARRIBA de la tabla. */
   const [estado, setEstado] = useState<string | null>(null);
@@ -514,6 +515,15 @@ export function Catalogo() {
     if (!tenantId) return;
     return onSnapshot(collection(db, 'tenants', tenantId, 'comprobacionesImagen'),
       (s) => setVeredictos(Object.fromEntries(s.docs.map((d) => [d.id, d.data() as Veredicto]))),
+      () => {});
+  }, [tenantId]);
+
+  // Estado del término de producto registrado (solo lectura; lo escribe el servidor y lo aprueba
+  // Plataforma). Del documento se lee ÚNICAMENTE `estado`: ni el término ni el motivo llegan a la pantalla.
+  useEffect(() => {
+    if (!tenantId) return;
+    return onSnapshot(collection(db, 'tenants', tenantId, 'terminosProducto'),
+      (s) => setTerminos(Object.fromEntries(s.docs.map((d) => [d.id, d.get('estado')]))),
       () => {});
   }, [tenantId]);
 
@@ -867,6 +877,7 @@ export function Catalogo() {
                       {typeof it.descripcion === 'string' && it.descripcion !== '' && (
                         <div className="text-muted"><TextoSeguro valor={it.descripcion} maxLargo={300} /></div>
                       )}
+                      <EstadoTermino nombre={String(it.nombre ?? '')} estado={terminos[it.id]} />
                       <EstadoFoto v={veredictos[it.id]} onRevisar={() => void revisarFoto(it.id)} />
                       <SubirFoto tenantId={tenantId} itemId={it.id}
                                  tieneFoto={Boolean(fotos[it.id])} onEstado={setEstado} />
@@ -1040,6 +1051,24 @@ const FALLAS: Record<string, string> = {
 interface Veredicto {
   cargable?: unknown; falla?: unknown;
   parecido?: { coincide?: unknown; motivo?: unknown } | undefined;
+}
+
+/**
+ * Estado del término de producto registrado. Solo aparece si el nombre dice «prompt/prompts».
+ * El mensaje de rechazo es fijo: no dice qué palabras sí se aceptan ni por qué se rechazó.
+ */
+function EstadoTermino({ nombre, estado }: { nombre: string; estado: unknown }) {
+  if (!/prompt/i.test(nombre)) return null;
+  if (estado === 'aprobado') return <p className="ayuda" role="note">Término aprobado por NovuChat.</p>;
+  if (estado === 'rechazado') {
+    return (
+      <p className="ayuda foto-dudosa" role="note">
+        Este nombre no puede registrarse como término de producto. Puedes usarlo, pero el texto de tus campañas con esta palabra podría ser rechazado.
+      </p>
+    );
+  }
+  if (estado === 'pendiente') return <p className="ayuda" role="note">En revisión por NovuChat.</p>;
+  return null;
 }
 
 function EstadoFoto({ v, onRevisar }: { v: Veredicto | undefined; onRevisar: () => void }) {
