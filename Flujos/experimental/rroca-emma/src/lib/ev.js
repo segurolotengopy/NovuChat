@@ -829,20 +829,27 @@ function evNumeroDePrecio(texto, textoCliente, direccion) {
   const preguntoPrecio = EV_PREGUNTA_PRECIO.test(evNorm(textoCliente));
   const clienteHablaDeTratamiento = EV_HABLA_DE_TRATAMIENTO.test(evNorm(textoCliente));
   const deLaDireccion = new Set((evTexto(direccion).match(/\d{3,}/g) || []).slice(0, 20));
+  // Una cifra de la dirección se perdona SOLO si va justo después de «#», «Nº», «nro», «Av.», «avenida» o de un nombre de la dirección de la Consola («Pauserna»), y la oración no habla de precio, oferta ni cobro.
+  const nombresDeLaDireccion = evNorm(direccion).split(' ').filter((w) => w.length >= 4 && !/^\d+$/.test(w)).slice(0, 20);
+  const antesDeLaCifra = new RegExp('(?:#|\\bno\\.?|\\bnro\\.?|\\bav\\.?|\\bavenida' + nombresDeLaDireccion.map((w) => '|\\b' + w).join('') + ')\\s*#?\\s*$');
   for (const o of evPartirEnOraciones(evTexto(texto))) {
     if (o === '' || o === '\n') continue;
     const n = evNorm(o);
     // Minúsculas sin tildes pero CON puntuación (evNorm la pierde y «1.500» quedaría partido); «Nº» pasa a «no» por NFKC.
     const crudo = evTexto(o).normalize('NFKC').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
     let sinDireccion = crudo.replace(/\d{1,2}\s?:\s?\d{2}/g, ' ').replace(EV_DURACION, ' ');
-    if (deLaDireccion.size > 0) sinDireccion = sinDireccion.replace(/(?<![\d.,])\d{3,}(?![\d.,]\d)/g, (m) => (deLaDireccion.has(m) ? ' ' : m));
+    if (deLaDireccion.size > 0 && !EV_PALABRA_DE_PRECIO.test(n) && !EV_PALABRA_DE_OFERTA.test(n) && !EV_CIFRA_DE_COBRO.test(crudo)) {
+      const base = sinDireccion;
+      sinDireccion = base.replace(new RegExp(EV_CIFRA_ARABIGA + '(?![\\d.,]\\d)', 'g'), (m, off) => (deLaDireccion.has(m.replace(/[.,]/g, '')) && antesDeLaCifra.test(base.slice(Math.max(0, off - 30), off)) ? ' ' : m));
+    }
     const numero = EV_CIFRA_GRANDE.test(sinDireccion) || EV_CIFRA_EN_PALABRAS.test(n);
     if (numero && (EV_PALABRA_DE_PRECIO.test(n) || preguntoPrecio)) return o.slice(0, 60);
     // Una cifra grande junto a un producto, una sesión, una zona o un tratamiento es un precio aunque la oración no diga «cuesta» («Sculptra #1500»), salvo un año o una cantidad de personas.
-    const sinAnio = sinDireccion.replace(EV_ANIO, ' ').replace(EV_PERSONAS, ' ');
+    const sinPersonas = sinDireccion.replace(EV_PERSONAS, ' ');
+    const sinAnio = sinPersonas.replace(EV_ANIO, ' ');
     if ((EV_CIFRA_GRANDE.test(sinAnio) || EV_CIFRA_EN_PALABRAS.test(n)) && (EV_PRODUCTOS.test(n) || EV_HABLA_DE_TRATAMIENTO.test(n) || EV_PALABRA_DE_OFERTA.test(n))) return o.slice(0, 60);
-    if (EV_CIFRA_DE_COBRO.test(sinDireccion)) return o.slice(0, 60);
-    if (EV_CIFRA_APROXIMADA.test(sinDireccion) && (EV_HABLA_DE_TRATAMIENTO.test(n) || clienteHablaDeTratamiento)) return o.slice(0, 60);
+    if (EV_CIFRA_DE_COBRO.test(sinPersonas)) return o.slice(0, 60);
+    if (EV_CIFRA_APROXIMADA.test(sinAnio) && (EV_HABLA_DE_TRATAMIENTO.test(n) || clienteHablaDeTratamiento)) return o.slice(0, 60);
   }
   return '';
 }

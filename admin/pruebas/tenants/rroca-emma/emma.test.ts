@@ -265,6 +265,20 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
     expect(fallo(sale('En 2026 incorporamos Radiesse. ¿Cómo te llamas?'))).toBe(false);
     expect(fallo(sale('Hemos atendido a más de 1000 pacientes. ¿Cómo te llamas?'))).toBe(false);
   });
+  it('el precio que repite el número de la dirección NO pasa; la cifra de la dirección solo se perdona tras «#», «Nº», «Av.» o un nombre de la dirección; con separador de miles también', () => {
+    for (const cli of ['¿cuánto cuesta y dónde están?', 'hola']) {
+      for (const precio of ['Estamos en Av. Pauserna 2055, la promo es 2055 por todo.', 'Te queda en 2055.', 'Sculptra 2055.', 'Estamos en Av. Pauserna 2055 y la sesión sale 2055.']) {
+        expect(fallo(sale(`${precio} ¿Cómo te llamas?`, cli)), `${cli} / ${precio}`).toBe(true);
+      }
+      for (const ok of ['Estamos en Av. Pauserna 2055.', 'Estamos en Av. Pauserna 2.055.', 'Nuestra dirección: Pauserna # 2055.']) expect(fallo(sale(`${ok} ¿Cómo te llamas?`, cli)), `${cli} / ${ok}`).toBe(false);
+    }
+    // «unos 700 pacientes por zona» es una cantidad de personas, no un precio
+    expect(fallo(sale('Atendemos unos 700 pacientes por zona. ¿Cómo te llamas?'))).toBe(false);
+  });
+  it('B (Andres, 24/10): ningún saludo ni texto fijo de Emma menciona «campaña» (la campaña solo se menciona cuando el flujo reconozca su texto de entrada)', () => {
+    for (const a of ['prompts/emma.md', 'src/lib/ev.js', 'flujo.plantilla.json', 'rroca-emma.json', 'rroca-emma.prueba.json', ...readdirSync(join(CARPETA, 'src/nodos')).map((f) => `src/nodos/${f}`)]) expect(leer(a), a).not.toMatch(/campa[ñn]a/i);
+    expect(leer('prompts/emma.md')).toContain('Hoy tu valoración con la Dra. Emma es **100% gratuita y sin compromiso**');
+  });
   it('M-c: evNumeroDePrecio no es cuadrática con salidas de 200 000 caracteres (≤ 100 ms)', () => {
     const lib = runInNewContext(`const EV_PROMPT='';\n${leer('../comun-sin-agente/src/filtro-redaccion.js')}\n${leer('src/lib/ev.js')}\n({ evNumeroDePrecio })`, {}) as { evNumeroDePrecio: (t: string, c: string, d: string) => string };
     for (const t of ['9'.repeat(200000), '1,'.repeat(100000), 'unos ' + '1.000'.repeat(40000), 'unos ' + '1'.repeat(200000) + ' minutos', '1.0001.000'.repeat(20000)]) {

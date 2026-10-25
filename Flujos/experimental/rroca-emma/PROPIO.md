@@ -51,3 +51,5 @@ Resultado: 1196/1225 (97,6 %), duras 663/665. Las 2 duras: **B2** (la barrera co
 - **M-1:** el recorte mide la dirección con su texto real (no con la marca). **M-3:** al quitar «inmediatamente» del comienzo de una oración, la primera letra queda en mayúscula.
 - **M-2:** «unos / alrededor de / más o menos / serían + cifra» sobre valoración, tratamiento, sesión o zona se rechaza (no en oraciones de horario).
 - **M-5:** más de un nodo «Config base» se NIEGA en el armador y en el publicador.
+- **Saludo neutro (decisión de Andres, 24/10/2026, opción B):** ni el saludo ni la respuesta de gratuidad dicen «campaña»; dicen «Hoy tu valoración con la Dra. Emma es 100% gratuita…». La campaña solo se mencionará cuando el flujo reconozca el texto de entrada de la campaña (todavía no está cableado).
+- **Cifra de la dirección:** solo se perdona tras «#», «Nº», «nro», «Av.» o un nombre de la dirección de la Consola, sin palabra de precio, oferta ni cobro, y se compara sin separador de miles («2.055»).
