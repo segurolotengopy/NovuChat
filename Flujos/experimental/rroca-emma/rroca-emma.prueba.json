@@ -159,7 +159,7 @@
               "id": "cb_arteComparativoMediaId",
               "name": "arteComparativoMediaId",
               "type": "string",
-              "value": "REEMPLAZAR_MEDIA_ID_ARTE_COMPARATIVO"
+              "value": ""
             },
             {
               "id": "cb_arteAntesDespuesMediaId",

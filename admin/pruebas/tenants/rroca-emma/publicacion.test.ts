@@ -26,7 +26,7 @@ const negocioV = (): J => JSON.parse(readFileSync(ARCHIVO_DE_NEGOCIO, 'utf8')) a
 
 /** El flujo, los datos y el negocio como quedarían con todos los marcadores sustituidos (ids de imagen y recepción reales, plantilla aprobada). */
 function listo(prueba = false): { flujo: Flujo; datos: ReturnType<typeof datosV>; negocio: J } {
-  const llenar = (s: string): string => s.replace(MARCADORES, (m) => (/MEDIA_ID_ARTE_COMPARATIVO/.test(m) ? m : /MEDIA_ID_ARTE_ANTES/.test(m) ? IDS.antes_despues : /MEDIA_ID_ARTE_AUTORIDAD/.test(m) ? IDS.autoridad : /ETAPA_PRUEBA/.test(m) ? '' : /RECEPCION/.test(m) ? REC : /TELEFONOS/.test(m) ? `${ANA},${BETO}` : /PHONE_NUMBER_ID|WABA_ID/.test(m) ? REC : 'valorsustituido'));
+  const llenar = (s: string): string => s.replace(MARCADORES, (m) => (/MEDIA_ID_ARTE_ANTES/.test(m) ? IDS.antes_despues : /MEDIA_ID_ARTE_AUTORIDAD/.test(m) ? IDS.autoridad : /ETAPA_PRUEBA/.test(m) ? '' : /RECEPCION/.test(m) ? REC : /TELEFONOS/.test(m) ? `${ANA},${BETO}` : /PHONE_NUMBER_ID|WABA_ID/.test(m) ? REC : 'valorsustituido'));
   const flujo = JSON.parse(llenar(JSON.stringify(prueba ? PRUEBA : PRODUCCION))) as Flujo;
   const datos = datosV(); datos.configBase = JSON.parse(llenar(JSON.stringify(datos.configBase))) as Record<string, unknown>;
   const negocio = JSON.parse(JSON.stringify(negocioV()).replace(MARCADORES, 'dato-real')) as J;
@@ -110,9 +110,16 @@ describe('cada defecto se niega por separado', () => {
       expect(h).toMatch(new RegExp(`${c} no está resuelto`));
     });
   }
-  it('la comparativa «¿Sculptra® o Radiesse®?» no existe como archivo: su id puede quedar como marcador, con o sin usarMarcas (imagen INACTIVA)', () => {
+  it('la comparativa «¿Sculptra® o Radiesse®?» no existe como archivo: su id es una cadena VACÍA (ni marcador ni dígitos), con o sin usarMarcas (imagen INACTIVA); cualquier otro valor se NIEGA', () => {
     const x = listo();
-    expect(asignaciones(x.flujo).find((a) => a.name === 'arteComparativoMediaId')!.value).toBe('REEMPLAZAR_MEDIA_ID_ARTE_COMPARATIVO');
+    expect(asignaciones(x.flujo).find((a) => a.name === 'arteComparativoMediaId')!.value).toBe('');
+    expect(JSON.stringify(x.flujo)).not.toMatch(/ARTE_COMPARATIVO"/);
+    for (const malo of ['REEMPLAZAR_MEDIA_ID_ARTE_COMPARATIVO', IDS.autoridad]) {
+      const y = listo(); poner(y.flujo, 'arteComparativoMediaId', malo);
+      expect(hallazgos(y).join(' '), malo).toMatch(/arteComparativoMediaId tiene que ser una cadena vacía|marcador sin sustituir/);
+      const z = listo(); z.datos.configBase['arteComparativoMediaId'] = malo;
+      expect(hallazgos(z).join(' '), 'datos ' + malo).toMatch(/arteComparativoMediaId tiene que ser una cadena vacía|marcador sin sustituir/);
+    }
     expect(hallazgos(x)).toEqual([]);
     poner(x.flujo, 'usarMarcas', ''); x.datos.configBase['usarMarcas'] = '';
     expect(hallazgos(x)).toEqual([]);

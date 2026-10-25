@@ -127,7 +127,7 @@ describe('la comparativa «¿Sculptra® o Radiesse®?» está INACTIVA (no exist
   const COMP = '[ENVIAR_ARTE_COMPARATIVO] Te explico la diferencia entre ambos.';
   it('sin id resuelto NUNCA se envía, ni con la pregunta de la diferencia, y la etiqueta no llega al cliente', () => {
     for (const msg of [PIDE_DIFERENCIA, '¿Cuál me conviene más?', 'Sculptra o Radiesse, ¿cuál es mejor?', 'hola']) {
-      const t = hablar(crear({ modeloDice: dice(COMP) }), ANA, mTexto(msg));
+      const t = hablar(crear({ modeloDice: dice(COMP), base: { arteComparativoMediaId: '' } }), ANA, mTexto(msg));
       expect(imagenes(t), msg).toEqual([]);
       expect(textos(t)[0]).not.toMatch(ETIQUETAS);
     }
