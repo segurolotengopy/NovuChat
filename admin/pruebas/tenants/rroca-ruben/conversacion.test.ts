@@ -20,7 +20,7 @@ const FUENTE_RR = readFileSync(join(CARPETA_LIB, 'rr.js'), 'utf8');
 type F = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
 const EXPORTADOS = [
   'rrFichaVigente', 'rrMenu', 'rrMenuDeComplemento', 'rrEtiquetaConPrecio', 'rrAhorro', 'rrPieQr', 'rrTextoInfo', 'rrTextoOpciones', 'rrTextoPuenteFijo', 'rrSinPreguntaFinal', 'rrQuitarRepeticionDelLibro',
-  'rrPreguntaComoPagar', 'rrPreguntaPorPrecio', 'rrPrometeOpciones', 'rrQuitarPromesaDeOpciones', 'rrQuitarEcoDeMarcador', 'RR_TEXTO_CAIDO_ALTERNO', 'rrSuplantaARuben', 'rrHashTexto', 'rrNorm', 'rrCatalogo', 'rrExtraRedaccion', 'rrCuerpoModelo', 'rrQuitarDelimitadores', 'rrSeguro', 'rrParrafos', 'rrEntradaCliente',
+  'rrPreguntaComoPagar', 'rrPreguntaPorPrecio', 'rrPrometeOpciones', 'rrQuitarPromesaDeOpciones', 'rrQuitarEcoDeMarcador', 'RR_TEXTO_CAIDO_ALTERNO', 'rrSuplantaARuben', 'rrHashTexto', 'rrNorm', 'rrCatalogo', 'rrExtraRedaccion', 'rrCuerpoModelo', 'rrAnuncioDe', 'rrQuitarDelimitadores', 'rrSeguro', 'rrParrafos', 'rrEntradaCliente',
   'cmRevisarRedaccion', 'RR_MODOS', 'RR_PROMPT', 'RR_TEXTOS_PUENTE', 'RR_CIERRE_PUENTE', 'RR_TEXTO_CHARLA_FIJA', 'RR_PREGUNTA_INFO_CHARLA', 'RR_BOTON_OPCIONES', 'RR_ETIQUETA_BOTON', 'RR_PRODUCTOS',
 ];
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
@@ -216,7 +216,8 @@ describe('ENTREGA 2 · P2: el prompt, los modos del turno y los topes', () => {
       expect(JSON.stringify(c.contents)).not.toMatch(/MODO_TURNO/);
     }
     // El anuncio y el modo conviven: el modo primero y el anuncio después, los dos fuera de <<< >>>.
-    const a = rr('rrCuerpoModelo')('Vi el anuncio ¿Te escriben pero no compran?', [], { modo: 'charla' });
+    const anuncioDePrueba = { id: 'a1', titulares: ['¿No sabes qué publicar?'], angulo: 'Habla del capítulo 6 y pregunta en qué red publica.', producto: { id: 'libro', nombre: 'Libro + Bonos', precio: 32, agotado: false } };
+    const a = rr('rrCuerpoModelo')('Vi el anuncio ¿No sabes qué publicar?', [], { modo: 'charla', anuncio: rr('rrAnuncioDe')('Vi el anuncio ¿No sabes qué publicar?', [anuncioDePrueba]) });
     const t = a.contents[a.contents.length - 1].parts[0].text as string;
     expect(t).toMatch(/^\[MODO_TURNO: CHARLA\]\n\[ANUNCIO_DETECTADO: /);
   });
@@ -1018,18 +1019,18 @@ describe('SEGURIDAD · el marcador imitado con separadores no esquiva `rrQuitarD
 // =============================================================================================================================================================================================
 describe('el eco de un marcador del sistema se QUITA por código y nunca llega al cliente', () => {
   const ECOS = [
-    '[ANUNCIO_DETECTADO: Te escriben y no compran]\n\nPara vender ropa el capítulo 7 te ayuda mucho con tus respuestas.',
+    '[ANUNCIO_DETECTADO: No sabes qué publicar]\n\nPara vender ropa el capítulo 7 te ayuda mucho con tus respuestas.',
     '[MODO_TURNO: CHARLA] Para vender ropa el capítulo 7 te ayuda mucho con tus respuestas.',
-    'ANUNCIO_DETECTADO: Te escriben y no compran\nPara vender ropa el capítulo 7 te ayuda mucho con tus respuestas.',
+    'ANUNCIO_DETECTADO: No sabes qué publicar\nPara vender ropa el capítulo 7 te ayuda mucho con tus respuestas.',
     '[M O D O _ T U R N O: CHARLA]\nPara vender ropa el capítulo 7 te ayuda mucho con tus respuestas.',
-    '[A.N.U.N.C.I.O_D.E.T.E.C.T.A.D.O: Te escriben y no compran] Para vender ropa el capítulo 7 te ayuda mucho con tus respuestas.',
+    '[A.N.U.N.C.I.O_D.E.T.E.C.T.A.D.O: No sabes qué publicar] Para vender ropa el capítulo 7 te ayuda mucho con tus respuestas.',
   ];
   it('`rrQuitarEcoDeMarcador` quita el marcador en 5 formas y deja el resto; un texto normal no se toca', () => {
     for (const e of ECOS) {
       const t = rr('rrQuitarEcoDeMarcador')(e) as string;
       expect(t, e).toBe('Para vender ropa el capítulo 7 te ayuda mucho con tus respuestas.');
     }
-    expect(rr('rrQuitarEcoDeMarcador')('[ANUNCIO_DETECTADO: Te escriben y no compran]')).toBe('');
+    expect(rr('rrQuitarEcoDeMarcador')('[ANUNCIO_DETECTADO: No sabes qué publicar]')).toBe('');
     expect(rr('rrQuitarEcoDeMarcador')('Cambio de modo de trabajo en mi turno.')).toBe('Cambio de modo de trabajo en mi turno.');
   });
   it('NEGADA de punta a punta: con el modelo imitando el marcador en 5 formas, el cliente recibe el texto útil sin marcador (y si solo hubo marcador, un respaldo, nunca el marcador)', () => {
@@ -1045,7 +1046,7 @@ describe('el eco de un marcador del sistema se QUITA por código y nunca llega a
     }
     const w = crear();
     hablar(w, ANA, mTexto('hola'));
-    modelo(w, gemini('[ANUNCIO_DETECTADO: Te escriben y no compran]'));
+    modelo(w, gemini('[ANUNCIO_DETECTADO: No sabes qué publicar]'));
     const solo = unico(hablar(w, ANA, mTexto('vendo ropa por whatsapp')));
     expect(solo.cuerpo.replace(/[^a-zA-Z]/g, '').toLowerCase()).not.toMatch(/anunciodetectado/);
     expect(planDe(hablar(crear(), ANA, mTexto('hola')))).toBe('saludo');
@@ -1110,7 +1111,7 @@ const NUEVAS_32 = ['Te digo el valor del libro.', 'Te paso el valor.', 'Te digo 
 const LEGITIMAS_26 = ['Con el libro respondes más rápido a tus clientes.', 'El capítulo 7 te enseña a cerrar ventas por chat.', 'Te cuento cómo funciona el Closer de Ventas: pegas el mensaje y te dice qué responder.',
   'Te muestro un ejemplo: pegas el mensaje del cliente y te sugiere qué contestar.', 'Luego armas tu contenido con los 100 prompts.', 'Primero el checklist y luego el contenido.', 'Ya te imaginas el contenido que podrías crear para tu tienda.',
   'La IA te ayuda a bajar costos en tu negocio.', 'Con la IA describes los platos de tu menú en segundos.', 'Los valores de tu marca se notan en cada post.', 'Ahora te toca publicar con constancia.',
-  'El Pack Completo suma el Closer de Ventas y el curso de videos.', 'Con el Checklist de 7 días avanzas paso a paso.', 'El bono de 30 ideas de negocio te ayuda a arrancar.', 'Te escriben y no compran: el capítulo 7 te enseña a responder.',
+  'El Pack Completo suma el Closer de Ventas y el curso de videos.', 'Con el Checklist de 7 días avanzas paso a paso.', 'El bono de 30 ideas de negocio te ayuda a arrancar.', 'No sabes qué publicar: el capítulo 7 te enseña a responder.',
   'Cuando te preguntan precios por chat, el Closer te dice qué contestar.', 'Armas tu catálogo en fotos y reels para tu tienda.', 'Se empieza con las versiones sin costo de las herramientas de IA.', 'El curso «Crea videos con IA» te enseña a grabar reels.',
   'Para tu pastelería, el capítulo 6 te da ideas de contenido.', 'Lo bueno es que no necesitas saber de tecnología.', 'Con el Mapa de Automatización ves qué tareas delegar.', 'El capítulo 9 te muestra cómo tener tu asistente personal.',
   'Con los prompts escribes descripciones de productos más atractivas.', 'Mira, con el Closer pegas la conversación y te sugiere la respuesta.', 'Te explico: el libro va de lo básico a lo avanzado.'];
