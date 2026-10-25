@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
-import { ANA, AJENO, BETO, REC, avisosARecepcion, crear, dice, hablar, mTexto, panelOk, tel, textos } from './mundo';
+import { ANA, AJENO, BETO, REC, avisosARecepcion, crear, dice, hablar, hablarYa, mTexto, panelOk, tel, textos } from './mundo';
 
 const DERIVA = '[DERIVAR_RECEPCION: Ana] ¡Qué bien! Te paso con recepción y te llamamos pronto.';
 const urlDe = (p: J): string => String((((p['interactive'] as J)['action'] as J)['parameters'] as J)['url']);
@@ -28,7 +28,7 @@ describe('la derivación', () => {
     expect(e.cuerpo).not.toMatch(/\[|\]|DERIVAR/);
   });
   it('sin el nombre en la etiqueta no inventa uno', () => {
-    const t = hablar(crear({ modeloDice: dice('[DERIVAR_RECEPCION]') }), ANA, mTexto('quiero agendar'), { nombre: '😀' });
+    const t = hablarYa(crear({ modeloDice: dice('[DERIVAR_RECEPCION]') }), ANA, mTexto('quiero agendar'), { nombre: '😀' });
     expect(textos(t)[0]).toMatch(/^¡Excelente decisión!/);
   });
   it('un nombre que parece una instrucción se descarta', () => {
@@ -50,7 +50,7 @@ describe('la derivación', () => {
     expect(av[0]!.cuerpo).toContain(`+${ANA}`);
   });
   it('fuera de la ventana: la plantilla UTILITY aprobada con las 4 variables', () => {
-    const t = hablar(crear({ modeloDice: dice(DERIVA) }), ANA, mTexto('quiero agendar'));
+    const t = hablarYa(crear({ modeloDice: dice(DERIVA) }), ANA, mTexto('quiero agendar'));
     const av = avisosARecepcion(t);
     expect(av.length).toBe(1);
     expect(av[0]!.tipo).toBe('template');
@@ -59,19 +59,19 @@ describe('la derivación', () => {
     expect((((tpl['components'] as J[])[0]!['parameters']) as J[]).length).toBe(4);
   });
   it('con la plantilla sin aprobar no sale el aviso y el cierre sigue con el botón', () => {
-    const t = hablar(crear({ modeloDice: dice(DERIVA), base: { avisoSolicitudEstado: 'PENDING' } }), ANA, mTexto('quiero agendar'));
+    const t = hablarYa(crear({ modeloDice: dice(DERIVA), base: { avisoSolicitudEstado: 'PENDING' } }), ANA, mTexto('quiero agendar'));
     expect(avisosARecepcion(t).length).toBe(0);
     expect(t.mensajes[0]!.tipo).toBe('interactive');
   });
   it('a lo más un aviso por teléfono y por motivo cada 30 minutos', () => {
     const m = crear({ modeloDice: dice(DERIVA) });
-    expect(avisosARecepcion(hablar(m, ANA, mTexto('quiero agendar'))).length).toBe(1);
+    expect(avisosARecepcion(hablarYa(m, ANA, mTexto('quiero agendar'))).length).toBe(1);
     expect(avisosARecepcion(hablar(m, ANA, mTexto('sí, agéndame'))).length).toBe(0);
     m.avanzar(40);
     expect(avisosARecepcion(hablar(m, ANA, mTexto('agéndame por favor'))).length).toBe(1);
   });
   it('si Meta rechaza el interactivo, sale el cierre en texto con el enlace como respaldo', () => {
-    const t = hablar(crear({ modeloDice: dice(DERIVA), envio: { 'Enviar a WhatsApp': 'error' } }), ANA, mTexto('quiero agendar'));
+    const t = hablarYa(crear({ modeloDice: dice(DERIVA), envio: { 'Enviar a WhatsApp': 'error' } }), ANA, mTexto('quiero agendar'));
     const r = t.mensajes.find((e) => e.respaldo)!;
     expect(r.ok).toBe(true);
     expect(r.cuerpo).toContain(`wa.me/${REC}`);
@@ -107,17 +107,17 @@ describe('la ETAPA DE PRUEBA (`etapaPrueba = si`)', () => {
   it('el botón y el aviso apuntan al número de prueba (el de «Config base»), nunca al de la Consola', () => {
     const recPrueba = BETO;
     const m = crear({ base: { ...PRUEBA, numeroRecepcion: recPrueba }, modeloDice: dice(DERIVA) });
-    const t = hablar(m, ANA, mTexto('quiero agendar'));
+    const t = hablarYa(m, ANA, mTexto('quiero agendar'));
     expect(urlDe(t.mensajes[0]!.payload)).toContain(`wa.me/${recPrueba}`);
     expect(urlDe(t.mensajes[0]!.payload)).not.toContain(REC);
     expect(avisosARecepcion(t)[0]!.a).toBe(recPrueba);
   });
   it('sin la etapa, la Consola manda el número de recepción', () => {
-    const t = hablar(crear({ modeloDice: dice(DERIVA), base: { numeroRecepcion: tel(55) } }), ANA, mTexto('quiero agendar'));
+    const t = hablarYa(crear({ modeloDice: dice(DERIVA), base: { numeroRecepcion: tel(55) } }), ANA, mTexto('quiero agendar'));
     expect(urlDe(t.mensajes[0]!.payload)).toContain(`wa.me/${REC}`);
   });
   it('la Consola caída: rige el número de «Config base» y la dirección de respaldo', () => {
-    const t = hablar(crear({ modeloDice: dice(DERIVA), panel: 'cae', base: { numeroRecepcion: tel(55) } }), ANA, mTexto('quiero agendar'));
+    const t = hablarYa(crear({ modeloDice: dice(DERIVA), panel: 'cae', base: { numeroRecepcion: tel(55) } }), ANA, mTexto('quiero agendar'));
     expect(urlDe(t.mensajes[0]!.payload)).toContain(`wa.me/${tel(55)}`);
     expect(t.mensajes[0]!.cuerpo).toContain('Pauserna');
   });

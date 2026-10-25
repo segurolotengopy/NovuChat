@@ -33,3 +33,7 @@ Este flujo se rehízo **desde cero** (23/10/2026) y no hereda nada del asistente
 
 ## Verificación en modo prueba (24/10/2026)
 La derivación + el aviso a la recepción + el botón quedaron verificados desde el teléfono …1250 el 24/10/2026 en modo prueba: el aviso de texto libre llegó a la recepción de prueba y Andres lo confirmó.
+
+## Primer contacto (24-25/10/2026)
+El texto prellenado del anuncio («…quiero agendar mi valoración gratuita») en el PRIMER contacto (sin historial y sin nombre dado en el mensaje) no cierra de golpe con el nombre del perfil: el saludo pide nombre y qué desea mejorar. El cierre ante «quiero agendar» solo aplica si ya hubo conversación o el cliente dio su nombre («Soy Rosa. Quiero agendar»), y la etiqueta `[DERIVAR_RECEPCION]` del modelo se IGNORA en ese primer contacto (sola o con texto; sola, sale el fallo conocido con su aviso). Mismo mecanismo que Emma (`armar-previos.js`). 0 mensajes agregados.
+- **Ficha vencida (48 h):** quien responde «sí, quiero agendar» después de que su ficha venció recibe primero el saludo (vuelve a ser primer contacto) y el cierre sale en el mensaje siguiente.

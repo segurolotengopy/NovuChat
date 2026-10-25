@@ -132,6 +132,11 @@ export function crear(o: Opciones = {}): Mundo {
 }
 export const hablar = (mu: Mundo, from: string, msg: J, op: { wamid?: string; entrega?: string; phoneId?: string; nombre?: string; toleraFallo?: boolean } = {}): ResultadoTurno =>
   mu.turno(entrega(valorMeta(msg, from, op), op.entrega), op.toleraFallo ? { tolerarFallo: true } : {});
+/** Habla con el flujo YA EN CONVERSACIÓN: primero un «hola» (el primer contacto sin nombre no cierra, ni siquiera con la etiqueta del modelo) y devuelve el turno siguiente. */
+export const hablarYa = (mu: Mundo, from: string, msg: J, op: { wamid?: string; entrega?: string; phoneId?: string; nombre?: string; toleraFallo?: boolean } = {}): ResultadoTurno => {
+  hablar(mu, from, mTexto('hola'), { toleraFallo: true });
+  return hablar(mu, from, msg, op);
+};
 export const textos = (t: ResultadoTurno): string[] => t.mensajes.map((e) => e.cuerpo);
 /** Las imágenes que salieron como previos, por el id de medio de cada una. */
 export const imagenes = (t: ResultadoTurno): string[] => t.avisos.filter((a) => a.tipo === 'image').map((a) => String(((a.payload['image'] ?? {}) as J)['id']));

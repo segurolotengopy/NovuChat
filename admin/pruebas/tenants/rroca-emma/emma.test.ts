@@ -11,7 +11,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error el motor es un .mjs sin tipos
 import { main } from '../../../../Flujos/experimental/rroca-emma/herramientas/bateria.mjs';
-import { ANA, CARPETA, HORARIO_DE_LA_CONSOLA, IDS, PRODUCCION, PRUEBA, REC, avisosARecepcion, crear, dice, hablar, imagenes, mImagen, mTexto, panelOk, textos } from './mundo';
+import { ANA, CARPETA, HORARIO_DE_LA_CONSOLA, IDS, PRODUCCION, PRUEBA, REC, avisosARecepcion, crear, dice, hablar, hablarYa, imagenes, mImagen, mTexto, panelOk, textos } from './mundo';
 
 const sin = (t: string, ...palabras: string[]): boolean => palabras.every((p) => !t.toLowerCase().includes(p.toLowerCase()));
 const fallo = (t: string): boolean => /inconveniente para responderte/.test(t);
@@ -51,7 +51,7 @@ describe('SIN ancla de monto: Emma nunca menciona una cifra de dinero', () => {
     });
   }
   it('los textos fijos (cierre y gratuidad) dicen «100% gratuita» y «sin pago de reserva», sin «bonificada» ni cifras', () => {
-    const cierre = textos(hablar(crear({ modeloDice: dice('[DERIVAR_RECEPCION: Ana]') }), ANA, mTexto('quiero agendar')))[0]!;
+    const cierre = textos(hablarYa(crear({ modeloDice: dice('[DERIVAR_RECEPCION: Ana]') }), ANA, mTexto('quiero agendar')))[0]!;
     expect(cierre).toContain('100% gratuita');
     expect(cierre).toContain('sin pago de reserva');
     const gratis = textos(hablar(crear({ modeloDice: 'cae' }), ANA, mTexto('¿es gratis?')))[0]!;
@@ -173,7 +173,7 @@ describe('Emma NO agenda: el cierre es el botón a recepción más el aviso, y n
   it('«quiero agendar» → cierre con UN botón y UN aviso a la recepción; el cierre no promete que alguien llame', () => {
     const m = crear({ modeloDice: dice('[DERIVAR_RECEPCION: Ana] Listo.') });
     hablar(m, REC, mTexto('hola, soy recepción'));
-    const t = hablar(m, ANA, mTexto('quiero agendar mi valoración'));
+    const t = hablarYa(m, ANA, mTexto('quiero agendar mi valoración'));
     expect(t.mensajes.filter((e) => e.tipo === 'interactive').length).toBe(1);
     expect(avisosARecepcion(t).length).toBe(1);
     expect(textos(t)[0]).not.toMatch(/te llamamos|te escribir[aá]n|de inmediato|tu cita quedó/i);
