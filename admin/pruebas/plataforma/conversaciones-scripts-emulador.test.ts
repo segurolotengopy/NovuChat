@@ -11,7 +11,7 @@
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
@@ -302,6 +302,76 @@ describe('B. el relleno de conversaciones, como proceso contra el emulador', () 
     const despues = await leerTodas('bellido');
     for (const [id, v] of antes) expect(despues.get(id)).toEqual(v);
   });
+
+  it('BELLIDO con --permitir-excluido bellido: seco no escribe; --aplicar solo agrega los 2 campos, con respaldo; idempotente; otro comercio no se levanta', async () => {
+    const t = 'bellido';
+    await sembrar(t, 30, { nombre: 'Consultorio Sintetico Bellido', estado: 'activo' });
+    await db.doc(`tenants/${t}/conversaciones/wa_${tel(1)}/mensajes/m1`).set({ texto: 'hola sintetico', direccion: 'entrante', ts: 1 });
+    await db.doc(`tenants/${t}/turno/estado`).set({ valor: 'sintetico' });
+    const antes = await leerTodas(t);
+    const msg = await db.doc(`tenants/${t}/conversaciones/wa_${tel(1)}/mensajes/m1`).get();
+    const turno = await db.doc(`tenants/${t}/turno/estado`).get();
+    const permitir = ['--permitir-excluido', 'bellido'];
+
+    // La bandera con OTRO comercio no levanta nada; --todos no existe.
+    const otro = nuevoTenant();
+    await sembrar(otro, 3);
+    const conOtro = hijo(RELLENO, args(otro, ['--permitir-excluido', 'bellido']));
+    expect(conOtro.status).toBe(2);
+    const todos = hijo(RELLENO, [...args(t), ...permitir, '--todos']);
+    expect(todos.status).toBe(2);
+    expect(todos.stderr).toContain('opción desconocida: --todos');
+    expect(hijo(RELLENO, args(t)).status).toBe(2); // sin la bandera sigue denegado
+
+    // Seco: sale 1 y no escribe nada (datos y hora intactos).
+    const seco = hijo(RELLENO, args(t, permitir));
+    expect(seco.status, seco.stdout + seco.stderr).toBe(1);
+    expect(seco.stdout).toMatch(/se tocarían \(campos que agregar\)\s*: 30\b/);
+    for (const [id, v] of await leerTodas(t)) expect(v).toEqual(antes.get(id));
+
+    // Aplicar sin respaldo: se niega.
+    expect(hijo(RELLENO, args(t, [...permitir, '--aplicar'])).status).toBe(2);
+
+    const ruta = rutaRespaldo();
+    const ap = hijo(RELLENO, args(t, [...permitir, '--aplicar', '--respaldo', ruta]));
+    expect(ap.status, ap.stdout + ap.stderr).toBe(0);
+    expect(ap.stdout).toContain('Escritas: 30 · saltadas por precondición (cambiaron durante la corrida): 0 · relectura que no coincide: 0');
+    expect((statSync(ruta).mode & 0o777).toString(8)).toBe('600');
+    const rsp = JSON.parse(readFileSync(ruta, 'utf8')) as { items: { conversacionId: string; camposAgregados: string[] }[] };
+    expect(rsp.items).toHaveLength(30);
+
+    // Campo por campo: solo se agregaron telefonoTrozos / nombrePalabras; lo demás idéntico.
+    const despues = await leerTodas(t);
+    for (const [id, v] of antes) {
+      const hoy = despues.get(id)!.data;
+      const nuevos = Object.keys(hoy).filter((c) => !(c in v.data));
+      expect(nuevos.every((c) => c === 'telefonoTrozos' || c === 'nombrePalabras'), id).toBe(true);
+      expect(nuevos).toContain('telefonoTrozos');
+      for (const [c, valor] of Object.entries(v.data)) expect(hoy[c], `${id}.${c}`).toEqual(valor);
+    }
+    const msgDespues = await db.doc(`tenants/${t}/conversaciones/wa_${tel(1)}/mensajes/m1`).get();
+    expect(msgDespues.data()).toEqual(msg.data());
+    expect(msgDespues.updateTime.toMillis()).toBe(msg.updateTime.toMillis());
+    const turnoDespues = await db.doc(`tenants/${t}/turno/estado`).get();
+    expect(turnoDespues.updateTime.toMillis()).toBe(turno.updateTime.toMillis());
+    expect(turnoDespues.data()).toEqual(turno.data());
+
+    // Idempotente: la segunda corrida no escribe ni crea respaldo.
+    const horas = new Map([...despues].map(([id, v]) => [id, v.hora]));
+    const otraRuta = rutaRespaldo();
+    const otra = hijo(RELLENO, args(t, [...permitir, '--aplicar', '--respaldo', otraRuta]));
+    expect(otra.status, otra.stdout + otra.stderr).toBe(0);
+    expect(() => statSync(otraRuta)).toThrow();
+    for (const [id, v] of await leerTodas(t)) expect(v.hora).toBe(horas.get(id));
+
+    // Vuelta atrás con la misma bandera: deja la conversación como estaba.
+    const rev = hijo(RELLENO, ['--revertir', '--aplicar', '--respaldo', ruta, ...args(t, permitir)]);
+    expect(rev.status, rev.stdout + rev.stderr).toBe(0);
+    for (const [id, v] of await leerTodas(t)) expect(v.data).toEqual(antes.get(id)!.data);
+    // El otro comercio no se tocó.
+    expect((await leerTodas(otro)).size).toBe(3);
+    for (const [, v] of await leerTodas(otro)) expect(v.data).not.toHaveProperty('telefonoTrozos');
+  }, 120_000);
 
   it('BELLIDO por el nombre de la ficha: se niega aunque el id sea otro', async () => {
     const t = nuevoTenant();
