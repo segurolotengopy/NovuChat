@@ -463,6 +463,39 @@ def ajustar_envio(nodo, tipo):
     nodo["credentials"] = {tipo: ref}
 
 
+URL_GRAPH = "=https://graph.facebook.com/"
+URL_RELE = "={{ $('Config base').first().json.releBaseUrl }}"
+
+
+def sin_tildes(s):
+    t = unicodedata.normalize("NFKD", str(s)).casefold()
+    return "".join(c for c in t if not unicodedata.combining(c) and unicodedata.category(c) != "Cf")
+
+
+def revisar_cruce_rele_envio(wfs, indice, n, propio):
+    """Con httpHeaderAuth el relé y el envío no se distinguen por tipo: un Bearer de Graph no puede viajar al relé
+    ni al revés. El relé no puede llamarse «Graph»/«Bearer» ni estar citado por un nodo «Enviar por Graph»;
+    el envío no puede estar citado por un nodo «Enviar por el relé» (en ningún flujo, salvo el propio del alias)."""
+    errores = []
+    nom = sin_tildes(n["rele"])
+    if "graph" in nom or "bearer" in nom:
+        errores.append("la credencial del rol relé tiene nombre de Graph o de Bearer: no se usa como relé")
+    for rol, tipos, nodo_ajeno, msg in (
+            ("rele", ("httpHeaderAuth",), "Enviar por Graph", "la credencial del rol relé la cita un nodo «Enviar por Graph»"),
+            ("graph", TIPOS_ENVIO, "Enviar por el relé", "la credencial del rol envío la cita un nodo «Enviar por el relé»")):
+        ids = {c.get("id") for t in tipos for c in indice.get((t, n[rol]), [])}
+        for w in wfs:
+            if w.get("name") == propio:
+                continue
+            for nodo in w.get("nodes") or []:
+                if nodo.get("name") != nodo_ajeno:
+                    continue
+                for ctipo, ref in (nodo.get("credentials") or {}).items():
+                    if isinstance(ref, dict) and ((ref.get("id") and ref.get("id") in ids) or (ctipo in tipos and ref.get("name") == n[rol])):
+                        errores.append(msg)
+    return sorted(set(errores))
+
+
 def revisar_roles(nodos, alias):
     """El nodo que manda a Meta o al relé nunca lleva la credencial de ingesta."""
     n = nombres(alias)
@@ -493,6 +526,10 @@ def revisar_roles(nodos, alias):
                 continue
         if set(c) != {tipo} or (c[tipo] or {}).get("name") != cred:
             errores.append("%s debe llevar exactamente la credencial %s «%s»" % (nom, tipo, cred))
+    for nom, previo in (("Enviar por Graph", URL_GRAPH), ("Enviar por el relé", URL_RELE)):
+        x = por_nombre.get(nom)
+        if x is not None and not str((x.get("parameters") or {}).get("url", "")).startswith(previo):
+            errores.append("%s tiene una URL que no es la de la plantilla: el Bearer podría ir a otro host" % nom)
     t = por_nombre.get("Timbre")
     if t is not None and (t.get("parameters") or {}).get("authentication") != "headerAuth":
         errores.append("el nodo Timbre no exige authentication=headerAuth: quedaría abierto")
@@ -775,6 +812,10 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
             errores.append("el nodo Timbre no quedó con el path de la entrega")
     if errores:
         salir(4, "\n".join("    " + e for e in errores))
+    if credenciales_existentes():
+        cruce = revisar_cruce_rele_envio(wfs, indice, n, n["flujo"])
+        if cruce:
+            salir(4, "\n".join("    " + e for e in cruce) + "\n    no se escribe nada")
     vinculos = exigir_atadura(wfs, indice, n, t["phone"]) if credenciales_existentes() else []
     w, c = buscar(wfs, creds, alias)
     if len(w) > 1 or len(c) > 1:
