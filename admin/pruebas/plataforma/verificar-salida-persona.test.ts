@@ -11,6 +11,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const ADMIN = join(aqui, '..', '..');
@@ -36,6 +37,8 @@ const M = {
   proyStg: 'proyecto-stg-marcador',
   host: 'n8n.ejemplo.test',
 };
+const HOST_EMU = '127.0.0.1:1';
+const PROY_DEMO = 'demo-novuchat-pruebas';
 const ALIAS = 'cliente09';
 const TENANT = 'tienda-prueba';
 const PHONE = 'PHONEID-MARCADOR-777';
@@ -178,10 +181,11 @@ describe('argumentos hostiles', () => {
 });
 
 describe('el proceso (sin red: los argumentos malos salen antes de tocar nada)', () => {
-  const corrida = (args: string[]) => spawnSync(process.execPath, [SCRIPT, ...args], { env: { PATH: process.env['PATH'] ?? '', ...ENV }, encoding: 'utf8' });
+  const corrida = (args: string[]) => spawnSync(process.execPath, [SCRIPT, ...args], { env: entornoDelEmulador(HOST_EMU), encoding: 'utf8' });
   it('Bellido: salida 2 y sin id de proyecto', () => {
-    const r = corrida(['--proyecto', M.proyProd, '--alias', ALIAS, '--tenant', 'bellido']);
+    const r = corrida(['--proyecto', PROY_DEMO, '--alias', ALIAS, '--tenant', 'bellido']);
     expect(r.status).toBe(2);
+    expect(r.stderr).toContain('EXCLUIDO');
     sinSecretos(r.stdout + r.stderr);
   });
   it('proyecto fuera de la lista blanca: salida 2', () => {
@@ -550,19 +554,19 @@ describe('--encender', () => {
 
 describe('envoltorio .sh', () => {
   it('bash -n pasa', () => {
-    expect(spawnSync('bash', ['-n', ENVOLTORIO], { encoding: 'utf8' }).status).toBe(0);
+    expect(spawnSync('bash', ['-n', ENVOLTORIO], { encoding: 'utf8', env: entornoDelEmulador(undefined) }).status).toBe(0);
   });
   it('shellcheck pasa (si está instalado)', () => {
-    const hay = spawnSync('shellcheck', ['--version'], { encoding: 'utf8' });
+    const hay = spawnSync('shellcheck', ['--version'], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
     if (hay.status !== 0) return;
-    expect(spawnSync('shellcheck', [ENVOLTORIO], { encoding: 'utf8' }).status).toBe(0);
+    expect(spawnSync('shellcheck', [ENVOLTORIO], { encoding: 'utf8', env: entornoDelEmulador(undefined) }).status).toBe(0);
   });
   it('sin credenciales de gcloud y sin --proyecto: salida 2', () => {
-    const r = spawnSync('bash', [ENVOLTORIO, '--alias', ALIAS, '--tenant', TENANT], { encoding: 'utf8', env: { PATH: process.env['PATH'] ?? '', CLOUDSDK_CONFIG: '/nonexistent-dir-xyz' } });
+    const r = spawnSync('bash', [ENVOLTORIO, '--alias', ALIAS, '--tenant', TENANT], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
     expect(r.status).toBe(2);
   });
   it('un Bellido por el envoltorio: salida 2', () => {
-    const r = spawnSync('bash', [ENVOLTORIO, '--proyecto', M.proyProd, '--alias', ALIAS, '--tenant', 'bellido'], { encoding: 'utf8', env: { PATH: process.env['PATH'] ?? '', HOME: '/nonexistent', ...ENV } });
+    const r = spawnSync('bash', [ENVOLTORIO, '--proyecto', PROY_DEMO, '--alias', ALIAS, '--tenant', 'bellido'], { encoding: 'utf8', env: entornoDelEmulador(HOST_EMU) });
     expect(r.status).toBe(2);
     sinSecretos(r.stdout + r.stderr);
   });
