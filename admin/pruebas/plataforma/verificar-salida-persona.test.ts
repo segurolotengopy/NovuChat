@@ -26,6 +26,7 @@ const mod = await import('../../scripts/plataforma/verificar-salida-persona.mjs'
   chequeoTimbre: (ruta: string | null, post: (u: string, c: string) => Promise<number>, real?: string) => Promise<R>;
   leerEntornoN8n: (a: string | null, e?: Record<string, string>) => { base: string; clave: string };
   nombreDelFlujo: (a: string) => string;
+  crearLectorN8n: (e: { base: string; clave: string }, f: typeof fetch, esperas?: { corta: number; lista: number }) => (ruta: string) => Promise<{ status: number; json: unknown }>;
 };
 
 // ---- marcadores: NINGUNO debe aparecer en la salida ----
@@ -569,5 +570,61 @@ describe('envoltorio .sh', () => {
     const r = spawnSync('bash', [ENVOLTORIO, '--proyecto', PROY_DEMO, '--alias', ALIAS, '--tenant', 'bellido'], { encoding: 'utf8', env: entornoDelEmulador(HOST_EMU) });
     expect(r.status).toBe(2);
     sinSecretos(r.stdout + r.stderr);
+  });
+});
+
+describe('lector de n8n: la lista de flujos espera más y se repite una vez', () => {
+  const ENT = { base: 'https://n8n.ejemplo.test', clave: 'k' };
+  const respuesta = (status: number) => ({ status, json: async () => ({ data: [] }) }) as unknown as Response;
+  const armar = (pasos: Array<'caida' | number>) => {
+    const pedidos: Array<{ url: string; metodo: string }> = [];
+    const f = (async (url: string, init: RequestInit) => {
+      pedidos.push({ url, metodo: String(init.method) });
+      const p = pasos[pedidos.length - 1];
+      if (p === undefined || p === 'caida') throw new Error('timeout');
+      return respuesta(p);
+    }) as unknown as typeof fetch;
+    return { pedidos, lector: mod.crearLectorN8n(ENT, f) };
+  };
+  it('un timeout en la lista se repite UNA vez y el segundo intento vale', async () => {
+    const t = armar(['caida', 200]);
+    expect((await t.lector('/workflows?limit=250')).status).toBe(200);
+    expect(t.pedidos).toHaveLength(2);
+  });
+  it('dos caídas seguidas: sin respuesta (status 0), nunca más de dos pedidos', async () => {
+    const t = armar(['caida', 'caida', 200]);
+    expect((await t.lector('/workflows?limit=250')).status).toBe(0);
+    expect(t.pedidos).toHaveLength(2);
+  });
+  it.each([401, 404, 500, 503])('HTTP %i en la lista: un solo pedido, sin reintento', async (c) => {
+    const t = armar([c, 200]);
+    expect((await t.lector('/workflows?limit=250')).status).toBe(c);
+    expect(t.pedidos).toHaveLength(1);
+  });
+  it('los demás pedidos no se repiten ante una caída', async () => {
+    for (const ruta of ['/workflows/w1', '/executions?workflowId=w1&limit=50']) {
+      const t = armar(['caida', 200]);
+      expect((await t.lector(ruta)).status).toBe(0);
+      expect(t.pedidos).toHaveLength(1);
+    }
+  });
+  it('los plazos: 300 s la lista y 30 s el resto, y siempre GET', async () => {
+    const plazos: number[] = [];
+    const orig = AbortSignal.timeout;
+    AbortSignal.timeout = ((ms: number) => { plazos.push(ms); return orig.call(AbortSignal, ms); }) as typeof AbortSignal.timeout;
+    try {
+      const t = armar([200, 200]);
+      await t.lector('/workflows?limit=250');
+      await t.lector('/workflows/w1');
+      expect(plazos).toEqual([300_000, 30_000]);
+      expect(t.pedidos.every((x) => x.metodo === 'GET')).toBe(true);
+    } finally { AbortSignal.timeout = orig; }
+  });
+  it('con la lista caída dos veces, el bloque 4 sigue siendo NO SE PUDO (nunca OK)', async () => {
+    const t = armar(['caida', 'caida']);
+    const r = await (await import('../../scripts/plataforma/verificar-salida-persona.mjs') as unknown as { chequeoN8n: (c: unknown, n: unknown, r: string | null, p: string | null) => Promise<{ resultados: R[] }> })
+      .chequeoN8n({ alias: 'demoA' }, t.lector, null, null);
+    expect(r.resultados.every((x) => x.estado !== 'OK')).toBe(true);
+    expect(r.resultados.length).toBe(6);
   });
 });

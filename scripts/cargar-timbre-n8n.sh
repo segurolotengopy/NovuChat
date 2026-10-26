@@ -1063,12 +1063,25 @@ fi
 
 # --- n8n por la API: la clave va por stdin (-H @-), nunca por argumentos ---------------
 CODIGO=000
+LISTA_VIGENTE=0 # 1 si flujos.json se descargó y desde entonces no se escribió nada en n8n
 api() { # <método> <ruta> [archivo-cuerpo]
-  local m="$1" r="$2" b="${3:-}" cod
+  local m="$1" r="$2" b="${3:-}" cod rc intento=0 espera=60 lista=0
   if [[ "$m" != GET ]] && (( ! APLICAR )); then falla "BUG: escritura (${m}) sin --aplicar; se detiene"; exit 3; fi
-  local args=(-sS --max-time 60 --proto '=https' -o "$WORK/rta.json" -w '%{http_code}' -X "$m" -H @-)
+  # La lista de flujos pesa decenas de MB y tarda hasta minutos: solo ese pedido (GET) espera 300 s,
+  # con conexión corta y UN reintento ante fallo de red (curl 28, 7, 52, 56). Nada más se reintenta.
+  if [[ "$m" == GET && "$r" == /workflows\?* ]]; then lista=1; espera=300; fi
+  [[ "$m" == GET ]] || LISTA_VIGENTE=0
+  local args=(-sS --max-time "$espera" --proto '=https' -o "$WORK/rta.json" -w '%{http_code}' -X "$m" -H @-)
+  (( ! lista )) || args+=(--connect-timeout 10)
   [[ -z "$b" ]] || args+=(-H "Content-Type: application/json" --data-binary "@$b")
-  cod="$(curl "${args[@]}" "${API}${r}" 2>"$ERR" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")" || cod=000
+  while :; do
+    rc=0
+    cod="$(curl "${args[@]}" "${API}${r}" 2>"$ERR" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")" || rc=$?
+    (( rc )) || break
+    cod=000
+    if (( lista && intento == 0 )) && [[ "$rc" =~ ^(28|7|52|56)$ ]]; then intento=1; continue; fi
+    break
+  done
   CODIGO="$cod"
 }
 exigir() { # <códigos aceptados separados por |> <qué se hacía>
@@ -1083,8 +1096,12 @@ exigir() { # <códigos aceptados separados por |> <qué se hacía>
 leer_estado() { # deja credenciales.json y flujos.json, enteros
   api GET "/credentials?limit=250"; exigir 200 "no pude leer las credenciales" || exit 3
   cp "$WORK/rta.json" "$WORK/credenciales.json"; py lista "$WORK/credenciales.json" || { falla "lista de credenciales incompleta"; exit 3; }
-  api GET "/workflows?limit=250"; exigir 200 "no pude leer los flujos" || exit 3
-  cp "$WORK/rta.json" "$WORK/flujos.json"; py lista "$WORK/flujos.json" || { falla "lista de flujos incompleta"; exit 3; }
+  # La lista se descarga una vez y se reutiliza mientras no se haya escrito nada en n8n (api() la invalida).
+  if (( ! LISTA_VIGENTE )); then
+    api GET "/workflows?limit=250"; exigir 200 "no pude leer los flujos" || exit 3
+    cp "$WORK/rta.json" "$WORK/flujos.json"; py lista "$WORK/flujos.json" || { falla "lista de flujos incompleta"; exit 3; }
+    LISTA_VIGENTE=1
+  fi
 }
 
 if (( APLICAR )); then ESTADO="APLICANDO"; else ESTADO="seco (no escribe)"; fi

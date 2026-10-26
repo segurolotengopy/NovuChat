@@ -52,7 +52,8 @@ const CURL_FALSO = `#!/usr/bin/env python3
 import json, os, sys
 E = os.environ["FAKE_DIR"]
 a = sys.argv[1:]
-con_valor = {"-o", "-w", "-X", "-H", "--data-binary", "--max-time", "--proto"}
+con_valor = {"-o", "-w", "-X", "-H", "--data-binary", "--max-time", "--proto", "--connect-timeout"}
+max_t, con_t = None, None
 metodo, salida, cabeza, cuerpo_f, url = "GET", None, None, None, None
 i = 0
 while i < len(a):
@@ -63,6 +64,8 @@ while i < len(a):
         elif x == "-X": metodo = v
         elif x == "-H" and v == "@-": cabeza = sys.stdin.read().strip()
         elif x == "--data-binary": cuerpo_f = v[1:]
+        elif x == "--max-time": max_t = v
+        elif x == "--connect-timeout": con_t = v
         i += 2
     else:
         if x.startswith("https://"): url = x
@@ -77,6 +80,13 @@ if "graph.facebook.com" in url:
 ruta = url.split("/api/v1", 1)[1]
 limpia = ruta.split("?")[0]
 open(os.path.join(E, "llamadas"), "a").write(metodo + " " + limpia + "\\n")
+open(os.path.join(E, "pedidos"), "a").write("%s %s max=%s conn=%s\\n" % (metodo, limpia, max_t, con_t))
+# Caídas de red simuladas en la lista de flujos: archivo "caer-lista" = "<código curl> <cuántas veces>"
+_caer = os.path.join(E, "caer-lista")
+if metodo == "GET" and limpia == "/workflows" and os.path.exists(_caer):
+    rc, veces = open(_caer).read().split()
+    if int(veces) > 0:
+        open(_caer, "w").write(rc + " " + str(int(veces) - 1)); print("000"); sys.exit(int(rc))
 def sin_versiones(x):
     if isinstance(x, dict): return {k: sin_versiones(v) for k, v in x.items() if k not in ("versionId", "activeVersionId")}
     if isinstance(x, list): return [sin_versiones(i) for i in x]
@@ -156,6 +166,7 @@ const creds = () => estado<Cred[]>('creds.json', []);
 const flujos = () => estado<Flujo[]>('wfs.json', []);
 const llamadas = () => leerTxt(join(dir, 'llamadas')).split('\n').filter(Boolean);
 const escrituras = () => llamadas().filter((l) => !l.startsWith('GET '));
+const pedidos = () => leerTxt(join(dir, 'pedidos')).split('\n').filter(Boolean);
 const entregaRuta = () => join(runtime, `novuchat-salida-persona-${ALIAS}.json`);
 
 function instancia(extra: Cred[] = []) {
@@ -1936,5 +1947,80 @@ print("\\n".join(errs))`;
     const r = correr(['--help']);
     expect(r.codigo).toBe(0);
     for (const t of ['--cred-ingesta', '--cred-envio', '--cred-rele', 'CLIENTES REALES', 'VALOR INERTE DEL RELÉ']) expect(r.salida).toContain(t);
+  });
+});
+
+describe('cargar-timbre-n8n.sh: la lista de flujos (grande y lenta)', () => {
+  const lecturasDeLista = () => llamadas().filter((l) => l === 'GET /workflows').length;
+  const caer = (rc: number, veces: number) => writeFileSync(join(dir, 'caer-lista'), `${rc} ${veces}`);
+
+  it('el pedido de la lista espera 300 s con conexión de 10 s; los demás, 60 s', () => {
+    const r = correr([...A(), ...APLICAR]);
+    expect(r.codigo).toBe(0);
+    const ps = pedidos();
+    const listas = ps.filter((p) => p.startsWith('GET /workflows max='));
+    expect(listas.length).toBeGreaterThan(0);
+    for (const p of listas) expect(p).toContain('max=300 conn=10');
+    for (const p of ps.filter((x) => !x.startsWith('GET /workflows max='))) expect(p).toContain('max=60 conn=None');
+  });
+
+  it.each([28, 7, 52, 56])('curl %i en la lista: UN reintento y el comando sigue', (rc) => {
+    caer(rc, 1);
+    const r = correr(A());
+    expect(r.codigo).not.toBe(3);
+    expect(lecturasDeLista()).toBe(2); // el fallo y el reintento
+  });
+
+  it('dos caídas seguidas: sin respuesta de n8n, salida 3, solo dos intentos', () => {
+    caer(28, 5);
+    const r = correr(A());
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('sin respuesta de n8n');
+    expect(lecturasDeLista()).toBe(2);
+  });
+
+  it('un código de curl que no es de red (6) no se reintenta', () => {
+    caer(6, 5);
+    const r = correr(A());
+    expect(r.codigo).toBe(3);
+    expect(lecturasDeLista()).toBe(1);
+  });
+
+  it('HTTP 500 en la lista no se reintenta', () => {
+    writeFileSync(join(dir, 'falla-GET-workflows'), '');
+    const r = correr(A());
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('HTTP 500');
+    expect(lecturasDeLista()).toBe(1);
+  });
+
+  it('seco: la lista se lee UNA vez por corrida', () => {
+    correr(A());
+    expect(lecturasDeLista()).toBe(1);
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('aplicar: la relectura posterior a escribir es nueva (credencial y flujo), no la caché', () => {
+    const r = correr([...A(), ...APLICAR]);
+    expect(r.codigo).toBe(0);
+    const ll = llamadas();
+    // 1 inicial + 1 tras escribir la credencial + 1 tras escribir el flujo
+    expect(lecturasDeLista()).toBe(3);
+    const iCred = ll.findIndex((l) => l.startsWith('POST /credentials') || l.startsWith('PATCH /credentials'));
+    const iFlujo = ll.findIndex((l) => l.startsWith('POST /workflows') || l.startsWith('PUT /workflows'));
+    const listas = ll.map((l, i) => (l === 'GET /workflows' ? i : -1)).filter((i) => i >= 0);
+    expect(listas[0]).toBeLessThan(iCred);
+    expect(listas[1]).toBeGreaterThan(iCred);
+    expect(listas[1]).toBeLessThan(iFlujo);
+    expect(listas[2]).toBeGreaterThan(iFlujo);
+  });
+
+  it('un reintento tras una escritura no cambia nada: las escrituras nunca se repiten', () => {
+    caer(28, 1);
+    correr([...A(), ...APLICAR]);
+    const e = escrituras();
+    expect(e.length).toBeGreaterThan(0);
+    expect(e.filter((l) => l === 'POST /workflows').length).toBe(1);
+    expect(e.filter((l) => l === 'POST /credentials').length).toBe(1);
   });
 });
