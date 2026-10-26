@@ -160,7 +160,7 @@ export const SUITES_PURAS = [
   'pruebas/tenants/rroca-evy/barreras.test.ts',
   'pruebas/tenants/rroca-evy/barreras-modelo.test.ts', 'pruebas/tenants/rroca-evy/barreras-revision.test.ts', 'pruebas/tenants/rroca-evy/derivacion-prematura.test.ts',
   'pruebas/tenants/rroca-evy/bateria-herramienta.test.ts',
-  'pruebas/tenants/rroca-evy/conversacion.test.ts',
+  'pruebas/tenants/rroca-evy/comparacion.test.ts', 'pruebas/tenants/rroca-evy/conversacion.test.ts',
   'pruebas/tenants/rroca-evy/derivacion.test.ts',
   'pruebas/tenants/rroca-evy/derivacion-tabla.test.ts',
   'pruebas/tenants/rroca-evy/flujo.test.ts',

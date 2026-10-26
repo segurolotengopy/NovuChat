@@ -89,7 +89,8 @@ if (puerta.ruta === 'fuera_de_prueba') {
   ms = [texto(fijos[plan.clave] || EV_TEXTO_CORTES)];
 } else if (efectivo === 'derivar') {
   const nombre = res.nombreDerivacion || evNombreDelMensaje(plan.textoCliente, evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora)) || evPrimerNombre(t.nombrePerfil);
-  const cierre = evTextoCierre(cfg, nombre);
+  // Con la comparación mostrada en esta conversación (el paciente aceptó la oferta de agendar) el cierre COMPLETO lleva la ubicación; sin ella, o sin enlace válido, queda exactamente como siempre.
+  const cierre = evTextoCierre(cfg, nombre, evFichaVigente(fichaBruta, ahora).comparacionMostrada === true);
   ms = [conRecepcion(cierre)];
   hist = { a: ms[0].texto, b: ms[0].respaldo };
 } else if (efectivo === 'derivar_corto') {
@@ -97,6 +98,11 @@ if (puerta.ruta === 'fuera_de_prueba') {
   const ultimoA = evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora).filter((h) => h.r === 'a').slice(-1)[0];
   ms = [conRecepcion(ultimoA && String(ultimoA.t).indexOf(EV_TEXTO_DERIVAR_DE_NUEVO) === 0 ? EV_TEXTO_DERIVAR_DE_NUEVO_2 : EV_TEXTO_DERIVAR_DE_NUEVO)];
   hist = { a: ms[0].texto, b: ms[0].respaldo };
+} else if (efectivo === 'comparacion') {
+  // Texto de Andres, tal cual: no pasa por `evParrafos` (que lo reordenaría) ni por el recorte de 700. Sin pie de botón ni aviso.
+  const c = evTextoComparacion(evNombreDeLaFicha(evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora), plan.textoCliente));
+  ms = [cmMensaje('cliente', cmTexto(c), c, c, { tipoReporte: 'text' })];
+  hist = { a: ms[0].texto, b: ms[0].texto };
 } else if (efectivo === 'gratis') {
   ms = [texto(evTextoGratis(cfg, evDioNombre(evHistorialVigente(evFichaVigente(fichaBruta, ahora), ahora), plan.textoCliente)))];
   hist = { a: ms[0].texto, b: ms[0].texto };
@@ -133,7 +139,7 @@ if (!sinFicha) {
   ficha.turnos += 1;
   ficha.ultimoMs = ahora;
   // La memoria: la entrada del cliente se guarda cuando el turno es una conversación; lo que contó de su salud, su protección o su baja NO se guarda.
-  if ((efectivo === 'modelo' || efectivo === 'fallo' || efectivo === 'derivar' || efectivo === 'derivar_corto' || efectivo === 'gratis' || efectivo === 'fijo') && typeof decision.entradaHistorial === 'string' && decision.entradaHistorial.trim() !== '') {
+  if ((efectivo === 'modelo' || efectivo === 'fallo' || efectivo === 'derivar' || efectivo === 'derivar_corto' || efectivo === 'gratis' || efectivo === 'comparacion' || efectivo === 'fijo') && typeof decision.entradaHistorial === 'string' && decision.entradaHistorial.trim() !== '') {
     ficha.historial = evHistorialSaneado(ficha.historial.concat([{ r: 'u', t: decision.entradaHistorial }]));
   }
   if (decision.oyoAudio === true) ficha.audios = evContarMedio(ficha.audios, ahora);
@@ -149,7 +155,7 @@ if (!sinFicha) {
     topes.mapa.avisos = evHoraContar(topes.mapa.avisos, ahora);
   }
   // Se guardan solo los campos vigentes (sin los derivados `noContactar` y `riesgo`, que se calculan al leer).
-  const { noContactar, riesgo, ...paraGuardar } = ficha;
+  const { noContactar, riesgo, comparacionMostrada, ...paraGuardar } = ficha;
   fichas.mapa[from] = paraGuardar;
   evBarrer(fichas.mapa, ahora);
 }
