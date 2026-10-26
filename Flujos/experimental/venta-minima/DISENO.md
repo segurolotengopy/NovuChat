@@ -58,7 +58,7 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
   - en producción, ningún webhook con ruta de prueba y solo dos entradas: la del receptor y `Carrito del catálogo` (con su forma
     exacta: POST, `headerAuth` con la credencial de la ingesta, `onReceived`, ruta como `REEMPLAZAR_RUTA_CARRITO_QTACO`, conectado solo a
     `Carga de entrada`, solo en la variante del receptor);
-  - presupuesto de nodos: los JSON de producción tienen **50 nodos como máximo** (49 + el webhook del carrito);
+  - presupuesto de nodos: los JSON de producción tienen **51 nodos como máximo** (50 + el webhook del carrito; el tope subió de 50 a 51 el 26/10/2026 por «Guardar comprobante», ver «Guardar el comprobante antes de leerlo»);
   - «se entrega lo que se promete» (R1, R3, R5; ver «Entrega de lo prometido»);
   - cada `venta-minima.*.json` versionado tiene su archivo de datos (si no, queda huérfano); un `*.local.json` (lo que deja
     `preparar-import.sh`, con valores reales) no cuenta como huérfano;
@@ -112,7 +112,7 @@ de Q'Taco pasa de 49 a **50 como máximo**, y `--verificar` falla si crece. El �
   `Carga de entrada`, que valida el carrito SOLO si ese nodo corrió. Su ruta es el marcador propio `REEMPLAZAR_RUTA_CARRITO_QTACO` (no el del Demo B).
 - Pruebas: `venta-minima-entrega.test.ts` (negando) y `venta-minima-catalogo-topologia.test.ts`.
 
-## El grafo (50 nodos en producción de Q'Taco; 46 en la prueba)
+## El grafo (51 nodos en producción de Q'Taco; 47 en la prueba; «Guardar comprobante» cuelga de `¿Es audio?`, sin salidas, arriba de `¿Es PDF?`)
 
 ```
 Entrega del receptor → Verificar firma con el receptor → ¿Firma válida? ─sí→ Aceptar (200) → Descartar repetidos ─┐
@@ -334,7 +334,7 @@ vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («ex
   parámetro. La suite calcula el peor caso de un turno de comprobante **desde los parámetros de los nodos**: la cadena (receptor,
   consola, reporte, medio, OCR, cotejo, 5 avisos, 3 mensajes, 3 reportes) con una latencia típica de 1 s por llamada y **un**
   nodo degradado a su peor caso (intentos × timeout + esperas), y exige que quepa en el `executionTimeout` (60 s cuando se escribió esto; hoy 120 s en Q'Taco). Para esos dos nodos supone 15 s
-  por intento (el de `Extraer`); el peor caso hoy es 57 s con «Obtener URL del medio» degradado. **El supuesto no lo hace cumplir
+  por intento (el de `Extraer`); el peor caso hoy es 58 s (57 en la prueba) con «Obtener URL del medio» degradado; «Guardar comprobante» entra a la cadena con 1 s típico y 15 s si se degrada. **El supuesto no lo hace cumplir
   n8n**: medir la latencia real del OCR es un pendiente del ensayo. Para que cupiera, `Descargar medio` pasó de 20 a 12 s y
   los reportes saliente y de cierre tienen 4 s explícitos.
 - **Límites del arnés `n8n-de-mentira.ts`** (declarados en su cabecera): `$('Nodo').all()` y `.first()` devuelven las salidas de
@@ -403,7 +403,7 @@ vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («ex
   comprobante coinciden, el cotejo **crea un cierre real** en el servidor (por eso el teléfono de prueba tiene que ser uno del
   equipo y el ensayo no debe mandar comprobantes que cuadren con un pedido real). Y la credencial «Graph WhatsApp — pruebas»
   puede tener o no acceso al número de Q'Taco: **se verifica en el ensayo**.
-- **Peor caso del comprobante: 57 s contra 120 s** (`executionTimeout` de Q'Taco desde el 04/10/2026; antes eran 60 s y el margen era de 3 s). Sigue saliendo de supuestos (15 s por intento
+- **Peor caso del comprobante: 58 s contra 120 s** (57 s hasta el 25/10; «Guardar comprobante» suma 1 s típico y, degradado, 15 s sin reintentos, menos que «Obtener URL del medio») (`executionTimeout` de Q'Taco desde el 04/10/2026; antes eran 60 s y el margen era de 3 s). Sigue saliendo de supuestos (15 s por intento
   para los dos nodos sin timeout, 1 s típico por llamada): **medir el OCR y las Functions en frío es lo primero del ensayo.**
 - **Reportes repetidos (B5).** `ingesta` **no deduplica por `idMeta`**: guarda el `idMeta` en el mensaje, pero crea un documento
   nuevo por cada llamada y suma `respuestasDelPeriodo` y `mensajesVentana` en cada saliente. Si `Reportar mensaje (saliente)`
@@ -732,6 +732,17 @@ Un audio transcrito, «quiero cuatro tacos de birria», caía al menú sin llama
 - **Privacidad:** la ubicación vive en el estado por teléfono (60 min, o 24 h con un comprobante en espera), en `sd.pedidos` (72 h / 500), en el aviso al rol `completo` y en los datos de ejecución de n8n. No va a la consola ni a la ingesta (el reporte dice solo «el cliente compartió una ubicación») ni al cierre.
 - **Pruebas:** `venta-minima-integracion` («PR-A»: botón, respaldo, negados por paso, ubicación inválida, dirección + ubicación, aviso con y sin ventana, texto de terceros, privacidad, carrito de la página), `venta-minima-catalogo-punta-a-punta` (`Carga de entrada`), `venta-minima-avisos` (enlace), `venta-minima-pedido` ((0, 0), 5 decimales, resumen) y la batería U5m (ventana cerrada: sin enlace), U6 y U6b.
 - **Costo:** 0 mensajes agregados o quitados por conversación (el pedido de dirección reemplaza al texto que ya salía; el aviso al local no cambia de cantidad).
+
+## Guardar el comprobante antes de leerlo (26/10/2026; pedido de Andres: que no se pierda ningún comprobante)
+
+Q'Taco no puede depender de la ventana de 24 h del dueño: antes el archivo solo vivía en memoria durante el turno (se bajaba, se leía con Gemini y se descartaba; el aviso al local reenviaba la imagen solo con la ventana abierta). Ahora se guarda en Storage con el mismo patrón que `rroca-ruben` (`rr-guardar-comprobante`, `cbRutaGuardada`, `Interpretar lectura`).
+
+- **Un nodo nuevo**, `Guardar comprobante` (`POST guardarComprobante`, bytes del binario `data`): cuelga de la salida «no es audio» de `¿Es audio?` (solo llegan comprobantes esperados: `¿Bajar medio?` ya filtra) y va ARRIBA de `¿Es PDF?` (orden del lienzo, `executionOrder: v1`: la rama terminal corre entera antes de la que lee). Sin salidas: no toca el binario que leen los dos Gemini. `onError: continueRegularOutput`, `neverError`, `fullResponse`, 15 s, sin reintentos. Credencial `@@cred:ingesta` (solo el token del número: una firma no cubre una imagen), cabeceras `X-NovuChat-Numero` (patrón `modoPrueba`/`phoneNumberId`), `X-NovuChat-Telefono` y `X-NovuChat-IdMeta`; el teléfono no va en la URL ni en la ruta; el tipo lo decide el servidor por los bytes.
+- **`cbRutaGuardada`** (en `cobro.js`, igual a la de Rubén) deja pasar solo `tenants/<comercio>/comprobantes/<aaaa-mm-dd>/<nombre>.<jpg|png|webp|pdf>` de un 200; todo lo demás (409 sin cobro de regla 2 abierto, 413, 415, 502, un corte, el nodo que no corrió) es `ruta: null`. `Interpretar lectura` la agrega al item y `Cotejar en el servidor` la manda en el cuerpo (`ruta: string | null`). Si falla, el cotejo y la respuesta al cliente son los de siempre.
+- **Mensajes por conversación: 0** (el nodo no envía nada a nadie; la suite lo comprueba). **Peor caso del comprobante: 58 s contra 120 s** (57 en la prueba contra 60); la suite M-OCR incluye el nodo.
+- **Presupuesto de nodos: 50 a 51.** El tope de Andres (03/10) estaba agotado; este cambio lo sube en uno (`TOPE_DE_NODOS` en `construir.mjs`, y las pruebas que lo cuentan). Declarado para que Andres lo confirme al revisar el PR.
+- **Qué NO hace todavía (para la sesión Ventas / el servidor):** `Cotejar en el servidor` de Q'Taco llama a `cotejarComprobante` (`sena.ts`), que **no lee `ruta` ni registra `comprobantesRecibidos`**; quien lo hace es `cotejarComprobanteVenta` (regla 2), el que usa Rubén. Mientras Q'Taco siga en `cotejarComprobante`, el archivo queda guardado (90 días, y el visor lo encuentra por `idMeta`: `verComprobante` reconstruye la ruta candidata y la valida con `rutaValidaDe`) pero **sin enlace en el registro de recibidos**. Además `guardarComprobante` responde 409 `sin_cobro_pendiente` si el cobro no es de regla 2 abierto/en revisión/vencido hace menos de 24 h (`puedeSubir`): con cobro simulado, regla 1 o sin QR, no se guarda nada (y el simulado ni siquiera llega aquí: T6).
+- **Vuelta atrás:** republicar el JSON anterior de Q'Taco desde el respaldo exacto con `publicar-flujo.sh`. Los archivos ya guardados siguen su purga normal de 90 días.
 
 ## Lo que falta para publicar (pendientes de la persona)
 
