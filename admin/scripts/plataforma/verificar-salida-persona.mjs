@@ -56,6 +56,8 @@ const ALIAS = /^[A-Za-z][A-Za-z0-9]{1,29}$/;
 const CLAVE_MINIMA = 8;
 const VENTANA_EJECUCIONES_MS = 60 * 60_000;
 const ESPERA_MS = 30_000;
+// La lista de flujos pesa decenas de MB y tarda hasta minutos según la carga de la VM.
+const ESPERA_LISTA_MS = 300_000;
 const CON_VALOR = ['proyecto', 'alias', 'tenant', 'env', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['probar-timbre', 'encender', 'aplicar'];
 
@@ -502,6 +504,27 @@ export async function verificar(cfg, deps) {
 // ===========================================================================
 // PROCESO
 // ===========================================================================
+/**
+ * GET de solo lectura a n8n. El pedido que LISTA los flujos espera 300 s y se repite UNA vez si no hubo
+ * respuesta (timeout o fallo de red); jamás ante un HTTP distinto de 200 ni en otras rutas.
+ * `fetchFn` y los plazos se inyectan para probarlo sin red.
+ */
+export function crearLectorN8n(entorno, fetchFn = fetch, esperas = { corta: ESPERA_MS, lista: ESPERA_LISTA_MS }) {
+  return async (ruta) => {
+    const esLista = ruta.startsWith('/workflows?');
+    const intentos = esLista ? 2 : 1;
+    for (let i = 0; i < intentos; i++) {
+      try {
+        const r = await fetchFn(`${entorno.base}/api/v1${ruta}`, { method: 'GET', headers: { 'X-N8N-API-KEY': entorno.clave, Accept: 'application/json' }, redirect: 'manual', signal: AbortSignal.timeout(esLista ? esperas.lista : esperas.corta) });
+        let json = null;
+        try { json = await r.json(); } catch { json = null; }
+        return { status: r.status, json };
+      } catch { /* sin respuesta: se reintenta solo la lista, una vez */ }
+    }
+    return { status: 0, json: null };
+  };
+}
+
 async function principal() {
   const analisis = analizarArgumentos(process.argv.slice(2));
   if (!analisis.ok) {
@@ -522,14 +545,7 @@ async function principal() {
       const r = spawnSync('gcloud', [...args, '--quiet'], { encoding: 'utf8', timeout: 60_000, maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
       return { code: r.status ?? 1, stdout: r.stdout ?? '' };
     },
-    n8n: async (ruta) => {
-      try {
-        const r = await fetch(`${n8nEntorno.base}/api/v1${ruta}`, { method: 'GET', headers: { 'X-N8N-API-KEY': n8nEntorno.clave, Accept: 'application/json' }, redirect: 'manual', signal: AbortSignal.timeout(ESPERA_MS) });
-        let json = null;
-        try { json = await r.json(); } catch { json = null; }
-        return { status: r.status, json };
-      } catch { return { status: 0, json: null }; }
-    },
+    n8n: crearLectorN8n(n8nEntorno),
     postTimbre: async (url, clave) => {
       const r = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${clave}` }, redirect: 'manual', signal: AbortSignal.timeout(ESPERA_MS) });
       return r.status;
