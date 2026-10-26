@@ -82,6 +82,7 @@ export function crear(envios: Partial<Record<'Enviar a WhatsApp' | 'Enviar respa
     'Registrar cierre': () => ({ ok: true }),
     'Obtener URL del medio': () => ({ url: 'https://medios.ejemplo.invalid/m', mime_type: 'image/jpeg', file_size: 100_000 }),
     'Descargar medio': () => ({}),
+    'Guardar comprobante': (ll) => ({ statusCode: 200, body: { ruta: `tenants/qtaco/comprobantes/2026-10-26/${String(ll.encabezados['X-NovuChat-IdMeta'] ?? 'x').replace(/[^A-Za-z0-9_-]/g, '_')}.jpg` } }),
     'Transcribir audio': () => ({ content: { parts: [{ text: 'quiero 4 tacos de birria' }] } }),
     'Leer comprobante (imagen)': () => ({}),
     'Leer comprobante (PDF)': () => ({}),
