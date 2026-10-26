@@ -77,7 +77,7 @@ const CLINICO = /dosis|\bmg\b|\bml\b|gotas|paracetamol|ibuprofeno|amoxicilina|an
 const PROMESAS = /lo consulto|lo consultar[eé]|te aviso|te avisar[eé]|te avisamos|te llamamos|te llamar[eé]|te escribir[aá]n|te escribiremos|te contactar[eé]|nos comunicaremos|te confirmo luego|recepcion te|el doctor te/;
 // Lo que el modelo NO puede afirmar (revisión de seguridad): que una cita quedó agendada, confirmada
 // o reservada —eso solo lo dice el código después del candado—, ni negar ser una IA (prohibición 4).
-const AFIRMA = /\b(qued[oa]|esta|estan) (agendad|confirmad|reservad|registrad|list|hech|fij)|\bagende\b|\breserve\b|\bte (agende|reserve)\b|confirm(o|ada|ado) (tu|la|su) cita|tu cita (ya )?(esta|quedo|queda)|no soy (una |un )?(ia|inteligencia|bot|robot|asistente virtual)|soy (una |un )?(persona|humana|humano)\b|soy (el |la )?(doctor|doctora|dr|dra)\b/;
+const AFIRMA = /pago (fue )?(acreditad|verificad|confirmad)|recibimos (tu|su) pago|\b(qued[oa]|esta|estan) (agendad|confirmad|reservad|registrad|list|hech|fij)|\bagende\b|\breserve\b|\bte (agende|reserve)\b|confirm(o|ada|ado) (tu|la|su) cita|tu cita (ya )?(esta|quedo|queda)|no soy (una |un )?(ia|inteligencia|bot|robot|asistente virtual)|soy (una |un )?(persona|humana|humano)\b|soy (el |la )?(doctor|doctora|dr|dra)\b/;
 const NEGACION = /no (nos )?(quedan?|hay) (mas )?(horarios?|espacios?|turnos?|citas?|disponibilidad)|sin horarios|no tenemos (horarios|espacio|disponibilidad)|agenda (llena|completa)/;
 function clavesDeHora(texto) {
   const claves = [];
@@ -92,20 +92,27 @@ function clavesDeHora(texto) {
   return claves;
 }
 function redaccionValida(texto, huecos, aviso) {
-  const s = String(texto || '').trim();
+  const s = String(texto || '').normalize('NFKC').trim();
   if (!s || s.length > 900 || /^SIN_RESPUESTA/.test(s)) return false;
   const n = cnNorm(s);
+  // Segunda forma: invisibles y braille como ESPACIO (no como nada), para reglas que parten por palabras.
+  const n2 = cnNorm(s.replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]/gu, ' '));
+  const algun = (re) => re.test(n) || re.test(n2);
+  // Un invisible pegado a una letra (etiquetas, relleno hangul, braille vacio) es una evasion de las reglas de abajo: la redaccion cae a la ruta de codigo.
+  // ZWJ y VS16 dentro de un emoji (familia, corazon) no tocan una letra y siguen pasando.
+  const sAdy = s.replace(/(\p{Extended_Pictographic}[\u{1F3FB}-\u{1F3FF}]?)\uFE0F/gu, '$1').replace(/(\p{Extended_Pictographic}[\u{1F3FB}-\u{1F3FF}]?)\u200D(?=\p{Extended_Pictographic})/gu, '$1');
+  if (/[\p{L}][\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]|[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800][\p{L}\s]/u.test(sAdy)) return false;
   // Un MONTO nunca sale de la redacción: el costo solo lo dice el código, con `respuestaCosto`, y solo si el
   // paciente lo pregunta (Andres, 30/09). Aunque `instruccionesExtra` lo nombre, el modelo no lo repite.
   if (/\b\d[\d.,]*\s*(bs|bolivianos?|usd|dolares)\b|\bbs\.?\s*\d|\$\s*\d/.test(n)) return false;
-  if (/\b168\b/.test(n) || CLINICO.test(n) || PROMESAS.test(n) || AFIRMA.test(n)) return false;
+  if (algun(/\b168\b/) || algun(CLINICO) || algun(PROMESAS) || algun(AFIRMA)) return false;
   // A una pregunta de IDENTIDAD («¿eres el doctor?», «¿quién eres?») no se contesta empezando con «Sí».
   if (/\b(eres|es|sos) (el |la )?(doctor|doctora|dr|dra)\b|\bquien (eres|es)\b/.test(cnNorm(base.texto || '')) && /^\W*si\b/.test(n)) return false;
   if (huecos.length && !aviso && NEGACION.test(n)) return false;
   // R13: un hueco («a las )») nunca sale.
   if (/\(\s*\)|\ba las?\s*[).,;:!?]|\ba las?\s*$|\bde\s*\)|«\s*»|\{\{|undefined|null\b/.test(n)) return false;
   const propios = [String(cfg.direccionMaps || ''), String(cfg.instruccionesExtra || ''), String(cfg.mensajeRedes || '')].join(' ');
-  const enlaces = s.match(/https?:\/\/\S+/gi) || [];
+  const enlaces = String(texto || '').trim().match(/https?:\/\/\S+/gi) || [];
   if (enlaces.some((e) => propios.indexOf(e.replace(/[).,;:!?]+$/, '')) < 0)) return false;
   if (/\bh\|\d{4}/.test(s)) return false;
   // Ninguna hora que no este entre los huecos (ni entre los horarios del negocio).
@@ -201,6 +208,44 @@ function respuestaFija(clave) {
   }
   return null;
 }
+// RED DE LA CLASE «promesa de recepcion sin boton» (23/10): si lo que el modelo redacto manda al paciente
+// a recepcion, al consultorio o al doctor, o dice «necesita verse», y la respuesta saldria como texto plano
+// (sin el boton que abre el chat), es una promesa sin respaldo. No es una lista de sintomas: es lo que el
+// TEXTO ofrece. Palabras enteras y normalizado con `cnNorm`.
+const MENCION_DE_RECEPCION = /\brecepcion\b|\bnecesita(n)? verse\b|(?<!\b(se|me|te|lo|le|nos) )\b(comunic(ate|arte|arse|ese)|escrib(e|ele|enos|ir|irle)|llam(a|ale|anos|ar|e|es)|contact(a|ale|anos|ar))\b[^.!?\n]{0,25}\b(con|al|a)\s+(el |la |los |las |tu |su |nuestro |nuestra )?(consultorio|doctor|doctora|dr|dra|pediatra)\b/;
+function prometeRecepcion(texto) {
+  const s = String(texto || '').normalize('NFKC');
+  const n = cnNorm(s);
+  const n2 = cnNorm(s.replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]/gu, ' '));
+  return MENCION_DE_RECEPCION.test(n) || MENCION_DE_RECEPCION.test(n2);
+}
+// El ENCABEZADO de una oferta (frase + servicio + dia) lo pone el codigo cuando la redaccion trae horas sin el (23/10): el modelo escribio
+// solo una carita y las horas. La redaccion «lo trae» si nombra los horarios y el dia de algun hueco.
+function encabezadoDeOferta(o, srvTxt) {
+  const fechas = [];
+  for (const h of o.huecos) { const f = fechaLocal(msDe(h.inicio)); if (fechas.indexOf(f) < 0) fechas.push(f); }
+  let dia = '';
+  if (fechas.length === 1) {
+    const p = fechas[0].split('-').map(Number);
+    dia = ' el ' + diaDeLaSemana(fechas[0]) + ' ' + p[2] + ' de ' + AGM_MESES[p[1] - 1];
+  }
+  return 'Estos son los horarios disponibles para ' + srvTxt + dia + ':';
+}
+function traeEncabezado(redactado, o) {
+  const n = cnNorm(redactado);
+  if (!/\bhorarios?\b|\bdisponibilidad\b|\bdisponibles?\b/.test(n)) return false;
+  const hoy = fechaLocal(ahora);
+  const manana = sumarDias(hoy, 1);
+  return o.huecos.some((h) => {
+    const f = fechaLocal(msDe(h.inicio));
+    const p = f.split('-').map(Number);
+    if (n.indexOf(cnNorm(diaDeLaSemana(f))) >= 0) return true;
+    if (new RegExp('(^|[^0-9])' + p[2] + ' de ' + AGM_MESES[p[1] - 1] + '\\b').test(n)) return true;
+    // «hoy» y «mañana» solo cuentan como DIA si el hueco cae ese dia; «en la mañana» es una franja.
+    if (f === hoy && /\bhoy\b/.test(n)) return true;
+    return f === manana && /(?<!\b(la|de) )\bmanana\b/.test(n);
+  });
+}
 // Los textos fijos, armados con los huecos reales, para cuando la redaccion no sirve.
 function textoFijoDeOferta(o, srvTxt) {
   const intro = {
@@ -232,6 +277,7 @@ const srv = base.estado && base.estado.servicio ? base.estado.servicio : (base.p
 const srvTxt = CN_NOMBRE_SERVICIO[srv] || 'tu consulta';
 const params = base.params || {};
 let deshacerFallo = false;
+let ofertaNoMostrada = false; // se transfirio desde una oferta: el estado no puede quedar «ofreciendo_huecos»
 
 function ofertaConBotones(o, cuerpo, servicio) {
   const botones = botonesDeHuecos(o.huecos, servicio);
@@ -271,9 +317,17 @@ switch (plan) {
     break;
   }
 
-  case 'imagen_sin_texto':
-    menu('Recibí tu imagen. ¿Qué necesitas?');
+  case 'imagen_sin_texto': {
+    // El módulo común de medios clasifica la imagen. Consultorio pediátrico: de una FOTO o un documento de salud no se
+    // repite ningún detalle (puede ser clínico); solo se dice qué tipo de cosa se recibió y que por este chat no se valora.
+    // La frase de lo que se ve solo se usa en una captura de pantalla. No se ofrece nada que el flujo no cumpla.
+    const cat = String(base.categoriaMedio || '');
+    const ve = cat === 'captura_de_pantalla' ? String(base.descripcionMedio || '').trim() : '';
+    if (cat === 'foto') menu('Recibí tu foto. Por este chat no puedo valorarla. ¿Qué necesitas?');
+    else if (cat === 'captura_de_pantalla') menu('Recibí tu captura' + (ve ? ': ' + ve : '') + '. Por este chat no puedo valorarla. ¿Qué necesitas?');
+    else menu('Recibí tu imagen. ¿Qué necesitas?');
     break;
+  }
 
   case 'emergencia': {
     // P3: solo el boton a recepcion y «ya le avise al doctor», con el texto de la configuracion.
@@ -321,7 +375,8 @@ switch (plan) {
 
   case 'derivar_medio':
     transferir('el paciente envió un mensaje que este canal no lee (foto, archivo u otro)',
-      'Por este chat solo puedo ayudarte a agendar, cancelar o mover citas. Para otra cosa, escríbele directo a recepción tocando el botón.');
+      (t.tipo === 'document' ? 'Recibí tu archivo. ' : '')
+      + 'Por este chat solo puedo ayudarte a agendar, cancelar o mover citas. Para otra cosa, escríbele directo a recepción tocando el botón.');
     break;
 
   case 'audio_ilegible': {
@@ -363,7 +418,13 @@ switch (plan) {
         'Esa consulta no la puedo resolver por este chat. Escríbele directo a recepción tocando el botón.');
       break;
     }
+    // Promesa sin respaldo: la redaccion manda a recepcion y saldria sin el boton. Se cumple (aviso + boton).
+    // Solo se evalua si ese texto de verdad sale (23/10).
+    const remiteARecepcion = valida && prometeRecepcion(redactado);
+    const transferirPorRemision = () => { if (plan === 'ofrecer') ofertaNoMostrada = true; transferir('la respuesta redactada remitía a recepción sin botón' + (pregunta ? '; pregunta del paciente: «' + cnRecorte(pregunta, 200) + '»' : ''),
+      'Esa consulta no la puedo resolver por este chat. Escríbele directo a recepción tocando el botón.'); };
     if (plan === 'responder') {
+      if (remiteARecepcion) { transferirPorRemision(); break; }
       agregar('paciente', mTexto(redactado), redactado, redactado, { tipoReporte: 'text' });
       break;
     }
@@ -373,7 +434,16 @@ switch (plan) {
       agregar('paciente', mTexto(cuerpo), cuerpo, cuerpo, { tipoReporte: 'text' });
       break;
     }
-    let cuerpo = valida && !(o.aviso && !pregunta) ? redactado : textoFijoDeOferta(o, srvTxt);
+    let sale = valida && !(o.aviso && !pregunta);
+    if (sale && remiteARecepcion) {
+      // Una oferta con horarios no pierde sus botones por una mencion de paso a recepcion: sale el texto fijo.
+      // Sin horarios, o si dice «necesita verse», se transfiere.
+      if (!o.huecos.length || /\bnecesita(n)? verse\b/.test(cnNorm(redactado))) { transferirPorRemision(); break; }
+      sale = false;
+    }
+    let cuerpo = sale ? redactado : textoFijoDeOferta(o, srvTxt);
+    // Si la redaccion trae horas sin encabezado, el codigo antepone el suyo (frase, servicio y dia).
+    if (cuerpo === redactado && o.huecos.length && clavesDeHora(redactado).length && !traeEncabezado(redactado, o)) cuerpo = encabezadoDeOferta(o, srvTxt) + '\n\n' + redactado;
     // HB3: al mover, el paciente ve cuál es su cita actual y que no la pierde (incidente #7659).
     const mov = base.estado && base.estado.moverId && base.estado.moverInicio ? base.estado : null;
     if (mov) {
@@ -536,6 +606,7 @@ if (estado && cnClaveValida(t.from) && plan !== 'nada') {
   e.ultimaOferta = (e.ultimaOferta || []).slice(0, 10);
   e.primerTexto = String(e.primerTexto || '').slice(0, 300);
   e.moverTitulo = String(e.moverTitulo || '').slice(0, 120);
+  if (ofertaNoMostrada) { e.paso = 'menu'; e.ultimaOferta = []; e.huecoElegido = null; }
   estadoDespues = e;
   let sd = null;
   try { sd = $getWorkflowStaticData('global'); } catch (err) { sd = null; }
@@ -557,7 +628,7 @@ const oferta = base.oferta && Array.isArray(base.oferta.huecos) ? base.oferta.hu
 const borradoOk = (() => { const b = cnPrimero('Borrar evento'); return !!base.borrarId && !!b && !b.error; })();
 const resumen = {
   plan: plan, estadoDespues: estadoDespues, errores: errores,
-  huecosOfrecidos: (plan === 'ofrecer' || plan === 'cruce' || plan === 'pedir_boton') ? oferta.map((h) => h.inicio) : [],
+  huecosOfrecidos: (plan === 'ofrecer' || plan === 'cruce' || plan === 'pedir_boton') && msgs.some((m) => m.evento === 'horarios_ofrecidos') ? oferta.map((h) => h.inicio) : [],
   eventoCreadoId: base.creada ? String(base.eventoCreadoId || '') : '',
   eventoBorradoId: borradoOk ? String(base.borrarId) : (base.deshacerId && !deshacerFallo ? String(base.deshacerId) : ''),
 };

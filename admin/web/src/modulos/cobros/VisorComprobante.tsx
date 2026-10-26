@@ -29,7 +29,17 @@ type Estado =
   | { tipo: 'pdf' }
   | { tipo: 'error'; texto: string };
 
-export function VisorComprobante({ tenantId, cierreId }: { tenantId: string; cierreId: string }) {
+/**
+ * Dos formas de pedir, excluyentes (las dos las valida la callable): por cierre, o por la conversación y el
+ * `idMeta` de un comprobante que no creó cierre (lista «Comprobantes recibidos»).
+ */
+export type OrigenDelComprobante = { cierreId: string } | { conversacionId: string; idMeta: string };
+
+export function VisorComprobante({ tenantId, origen, etiqueta = 'Ver comprobante' }: {
+  tenantId: string; origen: OrigenDelComprobante; etiqueta?: string;
+}) {
+  // La clave de la consulta: al cambiar de comprobante se invalida la respuesta en camino.
+  const clave = 'cierreId' in origen ? `c:${origen.cierreId}` : `m:${origen.conversacionId}:${origen.idMeta}`;
   const [estado, setEstado] = useState<Estado>({ tipo: 'reposo' });
   // Un cambio de cobro, o cerrar el detalle, invalida la respuesta que venga en camino.
   const vuelta = useRef(0);
@@ -47,7 +57,7 @@ export function VisorComprobante({ tenantId, cierreId }: { tenantId: string; cie
       vuelta.current += 1;
       setEstado({ tipo: 'reposo' });
     };
-  }, [tenantId, cierreId]);
+  }, [tenantId, clave]);
 
   useEffect(() => {
     if (estado.tipo === 'imagen' || estado.tipo === 'pdf' || estado.tipo === 'error') aviso.current?.focus();
@@ -59,8 +69,9 @@ export function VisorComprobante({ tenantId, cierreId }: { tenantId: string; cie
     const mia = ++vuelta.current;
     setEstado({ tipo: 'cargando' });
     try {
-      const r = await httpsCallable<{ tenantId: string; cierreId: string }, { mime: string; base64: string }>(
-        funciones, 'verComprobante')({ tenantId, cierreId });
+      const r = await httpsCallable<
+        { tenantId: string } & OrigenDelComprobante, { mime: string; base64: string }
+      >(funciones, 'verComprobante')({ tenantId, ...origen });
       if (mia !== vuelta.current) return;
       const { mime, base64 } = r.data;
       const clase = claseDeRespuesta(mime);
@@ -93,7 +104,7 @@ export function VisorComprobante({ tenantId, cierreId }: { tenantId: string; cie
     } catch (e) {
       if (mia !== vuelta.current) return;
       // Solo el code: el mensaje de una librería puede traer rutas o datos.
-      setEstado({ tipo: 'error', texto: textoDeError((e as { code?: unknown } | null)?.code) });
+      setEstado({ tipo: 'error', texto: textoDeError((e as { code?: unknown } | null)?.code, !('cierreId' in origen)) });
     }
   };
 
@@ -108,7 +119,7 @@ export function VisorComprobante({ tenantId, cierreId }: { tenantId: string; cie
       <div role="status" ref={aviso} tabIndex={-1}>{mensaje}</div>
       {(estado.tipo === 'reposo' || estado.tipo === 'error') && (
         <button type="button" ref={boton} className="btn btn-secondary btn-chico" onClick={() => void ver()}>
-          Ver comprobante
+          {etiqueta}
         </button>
       )}
       {estado.tipo === 'imagen' && (

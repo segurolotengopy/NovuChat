@@ -230,6 +230,7 @@ const ops: Op[] = [
   { id: 'update cuenta/estado', correr: (fs, t) => updateDoc(doc(fs, P(t, 'cuenta/estado')), { plan: 'pro' }) },
   { id: 'update conversaciones/c1', correr: (fs, t) => updateDoc(doc(fs, P(t, 'conversaciones/c1')), { ultimoMensaje: 'x' }) },
   { id: 'update tenants/{t} (ficha)', correr: (fs, t) => updateDoc(doc(fs, `tenants/${t}`), { modulos: ['agenda'] }) },
+  { id: 'update tenants/{t} (personaPuedeEscribir)', correr: (fs, t) => updateDoc(doc(fs, `tenants/${t}`), { personaPuedeEscribir: true }) },
   // Borrados, al final.
   { id: 'delete fotosCatalogo/item1', correr: (fs, t) => deleteDoc(doc(fs, P(t, 'fotosCatalogo/item1'))) },
   { id: 'delete catalogo/item1 + contador', correr: (fs, t) => {

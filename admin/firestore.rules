@@ -276,7 +276,7 @@ service cloud.firestore {
     // completo con 6 días de horario y catálogo web llegaba al tope (margen 0 en
     // la base anterior; tras el recorte, el documento «tope» de 7 días con
     // ubicación deja margen 22 términos, ~60 expresiones, y la variante más
-    // ajustada medida deja 20, según `reglas-presupuesto.test.ts`); por eso la
+    // ajustada medida deja 16 tras H2b-1, según `reglas-presupuesto.test.ts`); por eso la
     // ficha se lee UNA vez (`let`), sin mapa ni `exists`: una ficha inexistente hace fallar el
     // `get` y la regla deniega, igual que antes. Medido en
     // `pruebas/plataforma/reglas-presupuesto.test.ts`.
@@ -288,6 +288,19 @@ service cloud.firestore {
            : m == 'captacion' ? tieneFlujo(tenantId, 'onboarding')
            : (m == 'pedidos' || m == 'catalogo-web' || m == 'inventario') ? tieneFlujo(tenantId, 'venta')
            : false);
+    }
+
+    // `tieneModulo(tenantId, 'catalogo-web')` con solo su rama: misma semántica y
+    // mismo respaldo (sin lista `modulos`, el flujo `venta`; deja de regir cuando la migración de H2b-3 escriba
+    // `modulos` en todas las fichas), pero
+    // sin la cadena de ternarios de las demás ramas. Existe porque `config/negocio`
+    // completo está a pocos términos del tope de expresiones y la cadena entera le
+    // costaba 10 términos de margen (medido en `reglas-presupuesto.test.ts`).
+    function tieneCatalogoWeb(tenantId) {
+      let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
+      return ficha.get('modulos', null) is list
+        ? 'catalogo-web' in ficha.modulos
+        : tieneFlujo(tenantId, 'venta');
     }
 
     // Los módulos COMUNES (`productos`, `campanas`) los tiene todo comercio hoy:
@@ -606,18 +619,22 @@ service cloud.firestore {
                 .get(cuenta.get('plan', ''), 0);
         }
 
-        // LA FORMA MÍNIMA DE UNA CAMPAÑA: un mapa de cuatro claves con un texto
-        // de hasta 300 caracteres. Nada más, y a propósito: una petición tiene
+        // LA FORMA MÍNIMA DE UNA CAMPAÑA: un mapa de cuatro a siete claves (las
+        // cuatro de siempre más `titulares`, `productoId` y `angulo`, opcionales)
+        // con un texto de hasta 300 caracteres. Nada más, y a propósito: una petición tiene
         // un tope de 1.000 expresiones evaluadas, y validar campo por campo diez
         // campañas lo agotaba desde la quinta (claves) o la séptima (formato);
         // medido en el emulador el 24/09. El formato del id y de las fechas, el
         // orden de las fechas, que no sean pasadas ni muy futuras, los
         // duplicados y el contenido los decide el SERVIDOR (`campanas.ts`) antes
         // de aplicar: una campaña mal escrita queda cargada y NUNCA viaja al
-        // flujo. Lo que la regla sí tiene que hacer cumplir, que es el tope del
+        // flujo. EL ÁNGULO (<= 300) TAMPOCO SE MIRA ACÁ: medido en el emulador, con
+        // diez campañas de siete claves ese chequeo agota el tope; lo decide el
+        // servidor (`revisarSinModelo`) y lo verifica el revisor de seguridad.
+        // Lo que la regla sí tiene que hacer cumplir, que es el tope del
         // plan, lo hace con el tamaño de la lista.
         function unaCampanaValida(c) {
-          return c is map && c.size() == 4 && c.get('texto', 0) is string && c.texto.size() <= 300;
+          return c is map && c.size() >= 4 && c.size() <= 7 && c.get('texto', '').size() <= 300;
         }
 
         function campanaValida(lista, i) {
@@ -752,10 +769,33 @@ service cloud.firestore {
         // `split('-')`. Es lo mismo: una vez que `matches` pasó, el texto mide
         // exactamente 11 caracteres, `HH:MM-HH:MM`. Siete días × (un `get` más
         // dos `split`) era lo que más pesaba en `config/negocio` completo.
+        //
+        // VARIOS TRAMOS POR DÍA (23/10/2026, Andres: turno partido). Un día
+        // sigue siendo UN texto: `HH:MM-HH:MM` (un tramo, el formato de siempre)
+        // o hasta TRES tramos separados por coma sin espacios,
+        // `09:00-12:00,14:00-18:00`. Se conserva el texto porque los lectores del
+        // flujo (`agTramos`, `tramosDelDia`) ya parten por coma.
+        //
+        // LO QUE LA REGLA EXIGE Y LO QUE NO. La regex fija la FORMA (de uno a
+        // tres tramos, horas reales, sin espacios ni texto de más) y la
+        // comparación exige que el PRIMER tramo abra antes de cerrar, como antes.
+        // El orden entre tramos, el solape y el cierre > apertura del segundo y
+        // el tercero NO caben acá: se midió que una sola comparación más por día
+        // (siete días) deja `config/negocio` sin presupuesto de expresiones al
+        // denegar (`reglas-diferencial-config-negocio.test.ts`, parte B, rótulo
+        // LIMITE en vez de rechazo). Esos controles los hacen la consola al
+        // guardar y el servidor al LEER (`horario-tramos.ts`: un día mal ordenado
+        // o solapado se omite y no llega al asistente ni a los flujos). Lo que
+        // pasa por la regla sin esos controles solo puede ser una cadena con la
+        // forma `HH:MM-HH:MM` repetida hasta tres veces: no es texto libre ni una
+        // puerta de inyección al prompt.
+        //
+        // Sin `v is string`: `matches` sobre un valor que no es texto da error y
+        // la regla deniega, igual que antes; se ahorran dos expresiones por día
+        // de las que este cambio necesita.
         function horarioDiaValido(v) {
           return v == 'cerrado'
-            || (v is string
-                && v.matches('^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$')
+            || (v.matches('^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9](,([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]){0,2}$')
                 && v[0:5] < v[6:11]);
         }
 
@@ -831,6 +871,8 @@ service cloud.firestore {
             'datosQueNoTenemos',
             // Voz del asistente (enumerados, y el nombre)
             'tratamiento', 'estiloEmojis', 'nombreAsistente',
+            // Quién atiende, para los textos fijos («Rubén te responde…»).
+            'nombreQuienAtiende',
             // Mensajes fijos
             'mensajes', 'mensajeCierre', 'mensajeErrorTemporal',
             'mensajeReservaNoConfirmada', 'mensajeComercioSuspendido',
@@ -878,10 +920,11 @@ service cloud.firestore {
             && enlaceDeMapaValido(d, 'direccionMaps')
             && ubicacionValida(d)
 
-            && d.get('zonaHoraria', 'America/La_Paz') in ['America/La_Paz']
+            && d.get('zonaHoraria', 'America/La_Paz') == 'America/La_Paz'
             && d.get('moneda', 'BOB') in ['BOB', 'USD']
             // Teléfono en formato E.164 sin '+', igual que lo espera la Cloud API.
-            && numero is string
+            // (Sin `numero is string`: `matches` sobre algo que no es texto da
+            // error y la regla niega, igual que antes; una expresión menos.)
             && numero.matches('^[0-9]{8,15}$')
             // Misma validación estricta que para los funcionarios: un ID mal
             // pegado acá tiene exactamente las mismas consecuencias.
@@ -928,6 +971,23 @@ service cloud.firestore {
             // servidor lo vuelve a sanear antes de mandarlo (`vozFija`).
             && cadena(nombreAsistente, 40)
             && nombreAsistente.matches('[^\\r\\n]*')
+            // NOMBRE DE QUIEN ATIENDE (`nombreQuienAtiende`, 23/10/2026). Opcional,
+            // hasta 60 caracteres. Es TEXTO QUE LLEGA A CLIENTES FINALES dentro de
+            // frases fijas del código: la regla es la primera barrera (el servidor,
+            // `quienAtiende` en prompt.ts, la segunda). LISTA DE PERMITIDOS: la
+            // primera `matches` solo deja letras latinas, dígitos, espacio y
+            // `.,&()-` (y topea el largo), lo que elimina invisibles, homoglifos,
+            // ancho completo y emoji; la segunda busca el vocabulario prohibido
+            // (banco, pago, enlaces, números largos, ser/no ser una IA; prohibiciones
+            // 3 y 4 de CLAUDE.md). Las mismas cadenas están en prompt.ts y en
+            // payloadNegocio.ts (`voz-quien-atiende.test.ts` las compara). Ausente pasa, vacío pasa: los textos usan «nuestro
+            // equipo». Va EN LÍNEA y sin `let` a propósito: el documento completo
+            // de la consola tiene un piso de holgura (`reglas-presupuesto.test.ts`)
+            // y el campo ausente cuesta solo `in`, `!` y `||`.
+            && (!('nombreQuienAtiende' in d)
+                || (d.nombreQuienAtiende.matches('^[A-Za-zÀ-ÖØ-öø-ÿ0-9 .,&()-]{0,60}$')
+                    && !d.nombreQuienAtiende.matches('(?is).*(banc|pag[oóu]|dep[oó]sit|transferenc|tesorer|acreditad|verificad|comprobante|recibimos|\\bbots?\\b|robot|human[oa]s?|persona real|persona de verdad|soy una persona|\\breal\\b|carne y hueso|inteligencia artificial|\\bi[. ]?a\\b|\\ba[.]?i\\b|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][^0-9]{0,3}){6,}|\\b(bnb|bcp|fie|asfi|sin|jefe|bcb|bisa|bmsc|qr|meta)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money|prodem|ecofuturo|cobranzas?|\\byape\\b|\\byap[eé](a|o|ame)|whatsapp|soporte|impuestos nacionales|polic[ií]a|sistema|tu jefe|ya pag).*')))
+
 
             && d.get('mensajes', {}) is map
             // Se puede escribir MIENTRAS EL COMERCIO ESTÁ ACTIVO, porque toda
@@ -954,18 +1014,16 @@ service cloud.firestore {
             // para que un salón pueda seguir guardando su configuración con el
             // campo en falso, en vez de que la regla le rechace la pantalla
             // entera por un campo que no le corresponde.
-            // TODO(H2b, PR que escriba `modulos`): aquí va
-            // `tieneModulo(tenantId, 'catalogo-web')`; hay que volver a medir el
-            // margen antes de hacerlo (`config/negocio` completo, con 6 días de
-            // horario y catálogo web, llegaba al tope de 1.000 expresiones: margen
-            // 0 en la base anterior; tras el recorte el documento «tope» de 7 días
-            // con ubicación deja margen 22 términos, ~60 expresiones, y la variante
-            // más ajustada medida deja 20; medido en
-            // `reglas-presupuesto.test.ts`). Mientras tanto se conserva el costo
-            // de la base (`tieneFlujo`) y esta línea NO mira `modulos`: la
-            // prueba `it.fails` de `reglas-modulos.test.ts` obliga a voltearla.
+            // La puerta del catálogo web es el MÓDULO `catalogo-web` de la ficha, no el
+            // flujo `venta` (H2b-1): un comercio con `venta` pero sin el módulo no lo
+            // enciende, y uno con el módulo lo enciende con cualquier flujo. OJO: sin
+            // la lista `modulos` en la ficha rige el respaldo de `tieneModulo` (el
+            // flujo `venta`), que deja de regir cuando la migración de H2b-3 escriba `modulos`
+            // en todas las fichas; hasta entonces ese comercio
+            // sigue pudiendo encenderlo. `tieneCatalogoWeb` es esa misma decisión con
+            // menos costo en expresiones (margen medido en `reglas-presupuesto.test.ts`).
             && (catalogoWeb == false
-                || tieneFlujo(tenantId, 'venta'))
+                || tieneCatalogoWeb(tenantId))
             // PALETA: una de cinco, y NADA más.
             //
             // Antes esto era un `colorMarca` en `#rrggbb`. Aun con esa
@@ -1228,6 +1286,14 @@ service cloud.firestore {
       }
 
       match /comprobacionesImagen/{itemId} {
+        allow get, list: if esMiembro(tenantId);
+        allow write: if false;
+      }
+
+      // TÉRMINOS DE PRODUCTO REGISTRADOS (módulo Productos). Los propone el disparador y los aprueba
+      // Plataforma, ambos con el SDK Admin: ningún rol del navegador escribe, o el comercio se
+      // aprobaría a sí mismo. El comercio solo lee el estado.
+      match /terminosProducto/{itemId} {
         allow get, list: if esMiembro(tenantId);
         allow write: if false;
       }
@@ -1817,6 +1883,22 @@ service cloud.firestore {
       // -----------------------------------------------------------------------
       match /invitaciones/{invitacionId} {
         allow get, list: if esAdmin(tenantId) || esPropietario();
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // /comprobantesRecibidos/{objeto} — los comprobantes que el cotejo de un cobro
+      // de venta con regla 2 anotó, con o sin cierre (lista de la pestaña Cobros).
+      // NO se registran los `ya_resuelto` ni los rechazos 409 (sin cobro pendiente,
+      // cobro cancelado, regla 1, sin total): quedaron fuera de esta fase.
+      // Lo escribe SOLO el servidor (`cotejarComprobanteVenta`, en la misma
+      // transacción del cotejo). Lo lee quien puede leer conversaciones: el
+      // documento nombra la conversación del cliente (`wa_<teléfono>`) y no
+      // lleva el teléfono ni nada de lo leído de la imagen. Lo borra el TTL
+      // (`vence`) o la purga de baja, ambos del servidor.
+      // -----------------------------------------------------------------------
+      match /comprobantesRecibidos/{objeto} {
+        allow get, list: if puedeLeerConversaciones(tenantId);
         allow create, update, delete: if false;
       }
 

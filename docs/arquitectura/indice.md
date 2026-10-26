@@ -17,6 +17,7 @@
 | `modulos.md` | La zona de módulos y el esquema del manifiesto |
 | `modulos/<m>.md` | Un manifiesto en prosa por módulo: productos, agenda, pedidos, cobros, inventario, campanas, catalogo-web, captacion, menu-interactivo |
 | `tenants.md` | Datos de un cliente, nunca código; y la regla del flujo propio de cada cliente (`Flujos/clientes/<tenant>/` más el núcleo común obligatorio) |
+| `submodulos.md` | Lo general sube a core o a un módulo común, lo específico es dato del tenant, y el sub-módulo del anfitrión: declaración, manifiesto, consumo y seguridad (la prueba `submodulos.test.ts` aún no existe) |
 | `coordinador.md` | El coordinador de turno: las dos llamadas y los ganchos |
 | `registro.md` | El registro de módulos, la frontera de zonas, cómo se mueven archivos entre zonas y la política de capas que reemplaza |
 | `limites.md` | La tabla de límites comerciales y dónde se hace cumplir cada uno (copia del §7 de la base comercial) |
@@ -153,3 +154,7 @@ cita sigue resolviéndose.
   está en `main` (búsqueda por palabra, no leídos, ventana de 24 h, índices, bandera,
   relleno y reversión) y, al final, el resumen de H2 que apunta a su contrato.
   Es documento nuevo: no mueve ninguna sección de `admin/DISENO.md`.
+- `docs/arquitectura/core.md`, «Medios guardados (H3)» (23/10/2026): decisiones de
+  Andres sobre guardar los medios entrantes 90 días, los 6 PR del plan y la
+  advertencia previa a la bandera. Enmienda la regla 2 de §4terdecies; no mueve
+  ninguna sección de `admin/DISENO.md`.

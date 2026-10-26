@@ -29,6 +29,30 @@
 #       escribe un .env igual al de --env con el id nuevo, sin mostrar valores.
 #       Se niega si ya hay un flujo con ese nombre (--forzar lo permite).
 #
+# EL FLUJO DE RUBEN (tenant rroca-ruben) TIENE UNA GUARDIA PROPIA (PR-5): con --aplicar
+# se NIEGA si el archivo trae un marcador REEMPLAZAR_* o si una plantilla de aviso no
+# esta APPROVED (Flujos/experimental/rroca-ruben/construir.mjs --publicable), y despues
+# pide confirmacion explicita (escribir PUBLICAR RUBEN; sin terminal, solo con
+# --confirmo-ruben; la guardia exige además --anuncios <N>, la cantidad de anuncios VIGENTES que la Consola entrega, leída en seco). En seco informa lo que falta, sin abortar. La guardia estricta es del
+# flujo CONVERSACIONAL («NovuChat — Venta digital de Rubén…» o rroca-ruben[.prueba][.local].json);
+# cualquier otro flujo con rroca-ruben en el nombre exige solo la confirmacion. Con --crear el
+# flujo vivo es la referencia de credenciales y no se evalua como destino; --encender revisa el
+# flujo VIVO con la guardia. Los demas flujos no cambian.
+#
+# LOS FLUJOS DE LAS DOCTORAS (tenants rroca-evy y rroca-emma) TIENEN SU GUARDIA: con --aplicar
+# (y con ello --crear o --encender) se NIEGAN si `Flujos/experimental/doctoras/construir.mjs
+# --publicable --tenant <t>` no aprueba el archivo Y el flujo VIVO de destino, y piden
+# confirmacion explicita (escribir PUBLICAR DOCTORAS; sin terminal, solo con --confirmo-doctoras).
+# --forzar no salta nada de esto; --apagar nunca pide confirmacion.
+#
+# EL FLUJO NUEVO DE EVY (tenant rroca-evy, Flujos/experimental/rroca-evy/) TIENE SU GUARDIA, ADITIVA: se reconoce por su CONTENIDO (un nodo «Armar previos»), no por el nombre, porque conserva
+# el nombre y el id vivo del flujo viejo de las doctoras. Con --aplicar (y con ello --crear o --encender) se NIEGA si `Flujos/experimental/rroca-evy/construir.mjs --publicable` no aprueba el
+# archivo (o el flujo VIVO al encenderlo) y pide escribir PUBLICAR EVY (o --confirmo-evy sin terminal). `--etapa-prueba` pide la etapa prueba. El flujo viejo de Evy y el de Emma siguen
+# con la guardia de las doctoras, sin cambios.
+#
+# EL FLUJO NUEVO DE EMMA (tenant rroca-emma, Flujos/experimental/rroca-emma/) TIENE SU GUARDIA, ADITIVA: se reconoce por su CONTENIDO (nodo «Armar previos» y «Config base» con tenantId rroca-emma). Con --aplicar se NIEGA si
+# `Flujos/experimental/rroca-emma/construir.mjs --publicable` no lo aprueba y pide PUBLICAR EMMA (o --confirmo-emma). SOLO puede reemplazar al flujo vivo de Emma; al de Evy o al de otro cliente, nunca, ni con --forzar.
+#
 # EL ARCHIVO Y EL FLUJO VIVO TIENEN QUE SER EL MISMO FLUJO, y el script lo
 # comprueba por el nombre antes de escribir: el id sale de `--env` y el archivo
 # de `--flujo`, que son dos fuentes distintas. Cada demo tiene su propio env:
@@ -53,6 +77,13 @@ ENCENDER=0
 APAGAR=0
 ENV_NUEVO=""
 ENV_FILE=".env"
+CONFIRMO_RUBEN=0
+ANUNCIOS=""
+CONFIRMO_ANTONIO=0
+CONFIRMO_DOCTORAS=0
+CONFIRMO_EVY=0
+CONFIRMO_EMMA=0
+ETAPA_PRUEBA=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -67,12 +98,23 @@ while [[ $# -gt 0 ]]; do
     --env-nuevo) ENV_NUEVO="${2:?--env-nuevo necesita una ruta}"; shift 2 ;;
     --env-nuevo=*) ENV_NUEVO="${1#*=}"; shift ;;
     --forzar)  FORZAR=1; shift ;;
+    --confirmo-ruben) CONFIRMO_RUBEN=1; shift ;;
+    --anuncios) ANUNCIOS="${2:?--anuncios necesita la cantidad de anuncios vigentes que la Consola entrega}"; shift 2 ;;
+    --confirmo-antonio) CONFIRMO_ANTONIO=1; shift ;;
+    --confirmo-doctoras) CONFIRMO_DOCTORAS=1; shift ;;
+    --confirmo-evy) CONFIRMO_EVY=1; shift ;;
+    --confirmo-emma) CONFIRMO_EMMA=1; shift ;;
+    --etapa-prueba) ETAPA_PRUEBA=1; shift ;;
     --env)     ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
     --env=*)   ENV_FILE="${1#*=}"; shift ;;
-    -h|--help) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opcion desconocida: $1" >&2; exit 2 ;;
   esac
 done
+
+if [[ $ETAPA_PRUEBA -eq 1 && ( $CREAR -eq 1 || $ACTIVAR -eq 1 || $APAGAR -eq 1 ) ]]; then
+  echo "✗ --etapa-prueba va con --encender o con la actualización en su lugar (--aplicar), nunca con --crear, --activar ni --apagar." >&2; exit 2
+fi
 
 # Si existe el archivo preparado (con los valores reales ya puestos por
 # preparar-import.sh), se usa ESE y no el versionado. Empujar el versionado
@@ -83,6 +125,391 @@ if [[ "$FLUJO" != *.local.json && -f "$PREPARADO" ]]; then
   echo "  $PREPARADO"
   echo
   FLUJO="$PREPARADO"
+fi
+
+# --- LA GUARDIA DEL FLUJO DE RUBEN (tenant rroca-ruben, PR-5) ------------------
+# Se reconoce por el nombre del archivo o por el nombre del flujo de ORIGEN, sin
+# distinguir mayusculas, antes de leer el .env y de hablar con n8n; y se REPITE
+# despues de leer el flujo VIVO (destino): si el vivo es el de Ruben, la guardia
+# y la confirmacion valen aunque el archivo se llame de otra forma, con --forzar
+# o con --env. El JSON versionado lleva marcadores REEMPLAZAR_* y las plantillas
+# de aviso en PENDING: publicarlo asi deja el aviso a Rubén sin salir fuera de su
+# ventana, o la entrada del receptor con una ruta falsa.
+# `--apagar` no escribe contenido y es seguro: nunca pide confirmacion.
+ruben_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = estricto | confirmar
+  if [[ "$3" != "estricto" ]]; then
+    # Otro flujo del tenant (p. ej. el de rescate): no lleva la Config base con las plantillas,
+    # asi que `--publicable` no aplica; solo se exige la confirmacion.
+    echo "Flujo del tenant rroca-ruben que no es el conversacional ($1): solo se pide la confirmacion."
+    if [[ $APLICAR -eq 1 ]]; then ruben_confirmar; fi
+    return 0
+  fi
+  echo "Flujo de Rubén (rroca-ruben): se revisa la guardia de publicación ($1)."
+  if node Flujos/experimental/rroca-ruben/construir.mjs --publicable ${ANUNCIOS:+--anuncios "$ANUNCIOS"} --flujo "$2"; then
+    GUARDIA_OK=1
+  else
+    GUARDIA_OK=0
+  fi
+  if [[ $APLICAR -eq 1 ]]; then
+    if [[ $GUARDIA_OK -ne 1 ]]; then
+      printf '\033[1;31m✗ NEGADO: el flujo de Rubén no se publica con marcadores sin sustituir ni con plantillas sin aprobar.\033[0m\n' >&2
+      exit 1
+    fi
+    ruben_confirmar
+  elif [[ $GUARDIA_OK -ne 1 ]]; then
+    printf '\033[0;33m  (en seco se sigue; con --aplicar se niega)\033[0m\n\n'
+  fi
+}
+# Clasifica un flujo del tenant: vacio (no es de Ruben) | confirmar (cualquier flujo con rroca-ruben
+# en el nombre del archivo o del flujo) | estricto (el CONVERSACIONAL: el que genera construir.mjs,
+# «NovuChat — Venta digital de Rubén (rroca-ruben…)», o sus archivos rroca-ruben[.prueba][.local].json).
+ruben_clase() {  # $1 = archivo JSON ; $2 = nombre del archivo en minusculas
+  python3 - "$1" "$2" <<'PY' 2>/dev/null || true
+import json, re, sys
+ruta, base = sys.argv[1], sys.argv[2]
+try:
+    nombre = str(json.load(open(ruta, encoding="utf-8")).get("name", "")).lower()
+except Exception:
+    nombre = ""
+if re.fullmatch(r"rroca-ruben(\.prueba)?(\.local)?\.json", base) or nombre.startswith("novuchat — venta digital de rub"):
+    print("estricto")
+elif base.startswith("rroca-ruben") or "rroca-ruben" in nombre:
+    print("confirmar")
+PY
+}
+ruben_confirmar() {
+  if [[ $CONFIRMO_RUBEN -ne 1 ]]; then
+    if [[ -t 0 ]]; then
+      read -r -p "Va a escribir el flujo de Rubén en n8n. Escriba PUBLICAR RUBEN para confirmar: " RESPUESTA
+      [[ "$RESPUESTA" == "PUBLICAR RUBEN" ]] || { echo "✗ Sin confirmación: no se publica." >&2; exit 1; }
+    else
+      echo "✗ NEGADO: sin terminal, el flujo de Rubén solo se publica con --confirmo-ruben." >&2
+      exit 1
+    fi
+  fi
+}
+ES_RUBEN=0
+if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
+  CLASE_RUBEN="$(ruben_clase "$FLUJO" "$(basename "$FLUJO" | tr '[:upper:]' '[:lower:]')")"
+  if [[ -n "$CLASE_RUBEN" ]]; then
+    ES_RUBEN=1
+    ruben_guardia "archivo de origen" "$FLUJO" "$CLASE_RUBEN"
+  fi
+fi
+
+# --- LA GUARDIA DEL FLUJO DE ANTONIO (tenant rroca-antonio, PR-C) --------------
+# Mismo diseno que la de Ruben, y aparte: no cambia nada para los demas flujos. Se
+# reconoce por el nombre del archivo o del flujo de ORIGEN que contenga rroca-antonio
+# (sin distinguir mayusculas) y se REPITE sobre el flujo VIVO (destino). Con --aplicar,
+# --crear o --encender exige (1) que `construir.mjs --publicable` apruebe el flujo (sin
+# marcadores REEMPLAZAR_*, plantillas de aviso APPROVED y catalogo
+# cargados) y (2) la confirmacion explicita: escribir PUBLICAR ANTONIO, o --confirmo-antonio
+# sin terminal. --forzar NO salta nada de esto. `--apagar` nunca pide confirmacion.
+antonio_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = estricto | confirmar
+  if [[ "$3" != "estricto" ]]; then
+    echo "Flujo del tenant rroca-antonio que no es el conversacional ($1): solo se pide la confirmacion."
+    if [[ $APLICAR -eq 1 ]]; then antonio_confirmar; fi
+    return 0
+  fi
+  echo "Flujo de Antonio (rroca-antonio): se revisa la guardia de publicación ($1)."
+  if node Flujos/experimental/rroca-antonio/construir.mjs --publicable --flujo "$2"; then
+    GUARDIA_ANTONIO_OK=1
+  else
+    GUARDIA_ANTONIO_OK=0
+  fi
+  if [[ $APLICAR -eq 1 ]]; then
+    if [[ $GUARDIA_ANTONIO_OK -ne 1 ]]; then
+      printf '\033[1;31m✗ NEGADO: el flujo de Antonio no se publica con marcadores sin sustituir, plantillas sin aprobar o con el catálogo sin cargar.\033[0m\n' >&2
+      exit 1
+    fi
+    antonio_confirmar
+  elif [[ $GUARDIA_ANTONIO_OK -ne 1 ]]; then
+    printf '\033[0;33m  (en seco se sigue; con --aplicar se niega)\033[0m\n\n'
+  fi
+}
+# vacio (no es de Antonio) | confirmar (cualquier flujo con rroca-antonio en el nombre del archivo o
+# del flujo) | estricto (el CONVERSACIONAL: «NovuChat — El Puente de Antonio (rroca-antonio…)» o sus
+# archivos rroca-antonio[.prueba][.local].json).
+antonio_clase() {  # $1 = archivo JSON ; $2 = nombre del archivo en minusculas
+  python3 - "$1" "$2" <<'PY' 2>/dev/null || true
+import json, re, sys
+ruta, base = sys.argv[1], sys.argv[2]
+try:
+    nombre = str(json.load(open(ruta, encoding="utf-8")).get("name", "")).lower()
+except Exception:
+    nombre = ""
+if re.fullmatch(r"rroca-antonio(\.prueba)?(\.local)?\.json", base) or nombre.startswith("novuchat — el puente de antonio"):
+    print("estricto")
+elif "rroca-antonio" in base or "rroca-antonio" in nombre:
+    print("confirmar")
+PY
+}
+antonio_confirmar() {
+  if [[ $CONFIRMO_ANTONIO -ne 1 ]]; then
+    if [[ -t 0 ]]; then
+      read -r -p "Va a escribir el flujo de Antonio en n8n. Escriba PUBLICAR ANTONIO para confirmar: " RESPUESTA
+      [[ "$RESPUESTA" == "PUBLICAR ANTONIO" ]] || { echo "✗ Sin confirmación: no se publica." >&2; exit 1; }
+    else
+      echo "✗ NEGADO: sin terminal, el flujo de Antonio solo se publica con --confirmo-antonio." >&2
+      exit 1
+    fi
+  fi
+}
+ES_ANTONIO=0
+if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
+  CLASE_ANTONIO="$(antonio_clase "$FLUJO" "$(basename "$FLUJO" | tr '[:upper:]' '[:lower:]')")"
+  if [[ -n "$CLASE_ANTONIO" ]]; then
+    ES_ANTONIO=1
+    antonio_guardia "archivo de origen" "$FLUJO" "$CLASE_ANTONIO"
+  fi
+fi
+
+# --- LA GUARDIA DE LOS FLUJOS DE LAS DOCTORAS (tenants rroca-evy y rroca-emma) -----
+# Mismo diseno que la de Antonio, y aparte: no cambia nada para los demas flujos. Se
+# reconoce por el nombre del archivo o del flujo de ORIGEN que contenga rroca-evy o
+# rroca-emma (sin distinguir mayusculas) y se REPITE sobre el flujo VIVO (destino). Con
+# --aplicar (y con ello --crear o --encender) exige (1) que
+# `Flujos/experimental/doctoras/construir.mjs --publicable --tenant <t> --flujo <json>`
+# apruebe el flujo (sin marcadores REEMPLAZAR_*, plantilla de aviso APPROVED, horario
+# confirmado, y que el flujo sea el de ESA doctora) y (2) la confirmacion explicita: escribir
+# PUBLICAR DOCTORAS, o --confirmo-doctoras sin terminal. --forzar NO salta nada de esto.
+# `--apagar` nunca pide confirmacion. Si el nombre menciona a las dos doctoras, se NIEGA.
+# ETAPA PRUEBA: `--etapa-prueba` (con --encender o con la actualización en su lugar --aplicar) usa la etapa `prueba` EN TODOS los casos: archivo de origen, flujo vivo de destino y encendido
+# (etapaPrueba = si, solo teléfonos de prueba, recepción dentro de ellos). Sin `--etapa-prueba` rige la completa, que RECHAZA etapaPrueba = si. Con --crear, --activar o --apagar se NIEGA (2).
+# ETAPA: `--crear` SIN `--activar` usa `--etapa crear` (tolera plantilla sin APPROVED y horario pendiente);
+# --encender, --aplicar sobre un flujo activo y --crear --activar usan la completa, salvo con --etapa-prueba.
+doctoras_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = tenant (rroca-evy | rroca-emma | ambos)
+  # Etapa `crear`: SOLO al crear un flujo INACTIVO (--crear sin --activar ni --encender); todo lo demás exige la etapa completa (o la `prueba`, con --etapa-prueba).
+  local etapa=encender
+  [[ $CREAR -eq 1 && $ACTIVAR -eq 0 && $ENCENDER -eq 0 ]] && etapa=crear
+  [[ $ETAPA_PRUEBA -eq 1 ]] && etapa=prueba
+  echo "Flujo de las doctoras ($3): se revisa la guardia de publicación ($1; etapa $etapa)."
+  if [[ "$3" == "rroca-evy" || "$3" == "rroca-emma" ]] \
+     && node Flujos/experimental/doctoras/construir.mjs --publicable --tenant "$3" --flujo "$2" --etapa "$etapa"; then
+    GUARDIA_DOCTORAS_OK=1
+  else
+    GUARDIA_DOCTORAS_OK=0
+  fi
+  if [[ $APLICAR -eq 1 ]]; then
+    if [[ $GUARDIA_DOCTORAS_OK -ne 1 ]]; then
+      printf '\033[1;31m✗ NEGADO: el flujo de las doctoras no se publica con marcadores sin sustituir, plantillas sin aprobar, horario sin confirmar o con los datos de otra doctora.\033[0m\n' >&2
+      exit 1
+    fi
+    doctoras_confirmar
+  elif [[ $GUARDIA_DOCTORAS_OK -ne 1 ]]; then
+    printf '\033[0;33m  (en seco se sigue; con --aplicar se niega)\033[0m\n\n'
+  fi
+}
+# Imprime el tenant (rroca-evy | rroca-emma), "ambos" o nada (no es de las doctoras).
+doctoras_clase() {  # $1 = archivo JSON ; $2 = nombre del archivo en minusculas
+  python3 - "$1" "$2" <<'PY' 2>/dev/null || true
+import json, sys
+ruta, base = sys.argv[1], sys.argv[2]
+try:
+    datos = json.load(open(ruta, encoding="utf-8"))
+    nombre = str(datos.get("name", "")).lower()
+    # El flujo NUEVO de Evy (nodo «Armar previos») tiene su propia guardia: la de las doctoras no lo reclama.
+    if any(isinstance(n, dict) and n.get("name") == "Armar previos" for n in (datos.get("nodes") or [])):
+        sys.exit(0)
+except SystemExit:
+    raise
+except Exception:
+    nombre = ""
+t = [x for x in ("rroca-evy", "rroca-emma") if x in base or x in nombre]
+if len(t) == 1:
+    print(t[0])
+elif len(t) == 2:
+    print("ambos")
+PY
+}
+doctoras_confirmar() {
+  if [[ $CONFIRMO_DOCTORAS -ne 1 ]]; then
+    if [[ -t 0 ]]; then
+      read -r -p "Va a escribir un flujo de las doctoras en n8n. Escriba PUBLICAR DOCTORAS para confirmar: " RESPUESTA
+      [[ "$RESPUESTA" == "PUBLICAR DOCTORAS" ]] || { echo "✗ Sin confirmación: no se publica." >&2; exit 1; }
+    else
+      echo "✗ NEGADO: sin terminal, los flujos de las doctoras solo se publican con --confirmo-doctoras." >&2
+      exit 1
+    fi
+  fi
+}
+TENANT_DOCTORAS=""
+if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
+  TENANT_DOCTORAS="$(doctoras_clase "$FLUJO" "$(basename "$FLUJO" | tr '[:upper:]' '[:lower:]')")"
+  if [[ -n "$TENANT_DOCTORAS" ]]; then
+    doctoras_guardia "archivo de origen" "$FLUJO" "$TENANT_DOCTORAS"
+  fi
+fi
+
+# --- LA GUARDIA DEL FLUJO NUEVO DE EVY (tenant rroca-evy, Flujos/experimental/rroca-evy/) ---
+# Aditiva: no cambia nada para los demas flujos. Se reconoce por el CONTENIDO (un nodo «Armar previos») y no por el nombre. Con --aplicar (y con ello --crear o --encender) exige que
+# `Flujos/experimental/rroca-evy/construir.mjs --publicable --flujo <json> --etapa <e>` apruebe el flujo, y la confirmacion explicita (PUBLICAR EVY, o --confirmo-evy sin terminal).
+# --forzar NO salta nada de esto; `--apagar` nunca pide confirmacion. Etapas: `crear` (--crear sin --activar ni --encender), `prueba` (--etapa-prueba) y `encender` (la completa).
+evy_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar
+  local etapa=encender
+  [[ $CREAR -eq 1 && $ACTIVAR -eq 0 && $ENCENDER -eq 0 ]] && etapa=crear
+  [[ $ETAPA_PRUEBA -eq 1 ]] && etapa=prueba
+  echo "Flujo nuevo de Evy (rroca-evy): se revisa la guardia de publicación ($1; etapa $etapa)."
+  if node Flujos/experimental/rroca-evy/construir.mjs --publicable --flujo "$2" --etapa "$etapa"; then
+    GUARDIA_EVY_OK=1
+  else
+    GUARDIA_EVY_OK=0
+  fi
+  if [[ $APLICAR -eq 1 ]]; then
+    if [[ $GUARDIA_EVY_OK -ne 1 ]]; then
+      printf '\033[1;31m✗ NEGADO: el flujo de Evy no se publica con marcadores sin sustituir, ids de imagen sin resolver, plantilla sin aprobar (etapa completa) o la etapa de prueba mal armada.\033[0m\n' >&2
+      exit 1
+    fi
+    evy_confirmar
+  elif [[ $GUARDIA_EVY_OK -ne 1 ]]; then
+    printf '\033[0;33m  (en seco se sigue; con --aplicar se niega)\033[0m\n\n'
+  fi
+}
+# Imprime "nuevo" si el JSON es el flujo nuevo de Evy: basta el nodo «Armar previos» (el MISMO predicado con que `doctoras_clase` lo suelta: un archivo RENOMBRADO no se escapa de las dos guardias).
+# Imprime "emma" si, además, el nombre del archivo o del flujo dice rroca-emma: el flujo nuevo es solo de Evy y se NIEGA para otra doctora.
+evy_clase() {  # $1 = archivo JSON ; $2 = nombre del archivo en minusculas
+  python3 - "$1" "$2" <<'PY' 2>/dev/null || true
+import json, sys
+ruta, base = sys.argv[1], sys.argv[2]
+try:
+    datos = json.load(open(ruta, encoding="utf-8"))
+except Exception:
+    sys.exit(0)
+nombre = str(datos.get("name", "")).lower()
+nodos = datos.get("nodes") or []
+if any(isinstance(n, dict) and n.get("name") == "Armar previos" for n in nodos):
+    print("emma" if ("rroca-emma" in base or "rroca-emma" in nombre) else "nuevo")
+PY
+}
+evy_confirmar() {
+  if [[ $CONFIRMO_EVY -ne 1 ]]; then
+    if [[ -t 0 ]]; then
+      read -r -p "Va a escribir el flujo de Evy en n8n. Escriba PUBLICAR EVY para confirmar: " RESPUESTA
+      [[ "$RESPUESTA" == "PUBLICAR EVY" ]] || { echo "✗ Sin confirmación: no se publica." >&2; exit 1; }
+    else
+      echo "✗ NEGADO: sin terminal, el flujo de Evy solo se publica con --confirmo-evy." >&2
+      exit 1
+    fi
+  fi
+}
+# --- LA GUARDIA DEL FLUJO NUEVO DE EMMA (tenant rroca-emma, Flujos/experimental/rroca-emma/) ---
+# Misma forma que la de Evy y ADITIVA. Se reconoce por el CONTENIDO: el nodo «Armar previos» Y un «Config base» cuyo tenantId es rroca-emma (el nombre no cuenta: se puede renombrar). Con --aplicar exige
+# `Flujos/experimental/rroca-emma/construir.mjs --publicable --flujo <json> --etapa <e>` y la confirmacion explicita (PUBLICAR EMMA, o --confirmo-emma sin terminal). --forzar NO salta nada de esto.
+# El flujo nuevo de Emma SOLO puede reemplazar al flujo vivo de Emma (el nuevo o el viejo de las doctoras); el de Evy y el de otro cliente, nunca, ni con --forzar; y el de Evy nunca puede pisar el de Emma.
+tenant_nuevo() {  # $1 = archivo JSON ; imprime el tenantId de «Config base» SOLO si el flujo tiene el nodo «Armar previos» (flujos nuevos de clinica); nada en otro caso
+  python3 - "$1" <<'PY' 2>/dev/null || true
+import json, sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+    nodos = [n for n in (d.get("nodes") or []) if isinstance(n, dict)]
+    if not any(n.get("name") == "Armar previos" for n in nodos):
+        sys.exit(0)
+    bases = [n for n in nodos if n.get("name") == "Config base"]
+    if len(bases) > 1:
+        print("AMBIGUO")   # dos «Config base»: no se sabe cuál manda; falla cerrado, no se publica ni se pisa
+        sys.exit(0)
+    for n in bases:
+        valores = [str(a.get("value", "")) for a in (((n.get("parameters") or {}).get("assignments") or {}).get("assignments") or []) if isinstance(a, dict) and a.get("name") == "tenantId"]
+        if len(valores) == 1:
+            print(valores[0])
+        elif len(valores) > 1:
+            print("AMBIGUO")   # un tenantId repetido: falla cerrado, no se publica ni se pisa
+except SystemExit:
+    raise
+except Exception:
+    pass
+PY
+}
+emma_vieja_clase() {  # $1 = flujo VIVO ; $2 = archivo que se publica. Imprime "si" si el vivo es el flujo VIEJO de Emma (doctoras): nombre con rroca-emma, nodo «Armar avisos», UN solo «Config base», sin mencionar rroca-evy y con el MISMO phoneNumberIdEsperado que el archivo (solo dígitos; el valor nunca se imprime)
+  python3 - "$1" "$2" <<'PY' 2>/dev/null || true
+import json, re, sys, unicodedata
+def normal(t):
+    # NFKC + guiones Unicode a «-» + minúsculas: «rroca‑evy» con otro guion no escapa a la búsqueda
+    t = unicodedata.normalize("NFKC", str(t))
+    return re.sub("[\u2010-\u2015\u2212\ufe58\ufe63\uff0d\u00ad]", "-", t).lower()
+def asignaciones(nodo):
+    lista = ((nodo.get("parameters") or {}).get("assignments") or {}).get("assignments") or []
+    return [(str(a.get("name", "")), str(a.get("value", ""))) for a in lista if isinstance(a, dict)]
+def unico(d, nombre):
+    cbs = [n for n in (d.get("nodes") or []) if isinstance(n, dict) and n.get("name") == nombre]
+    return cbs[0] if len(cbs) == 1 else None
+try:
+    vivo = json.load(open(sys.argv[1], encoding="utf-8"))
+    origen = json.load(open(sys.argv[2], encoding="utf-8"))
+    nodos = [n for n in (vivo.get("nodes") or []) if isinstance(n, dict)]
+    cv, co = unico(vivo, "Config base"), unico(origen, "Config base")
+    if cv is None or co is None:
+        sys.exit(0)
+    av, ao = asignaciones(cv), asignaciones(co)
+    pv = [v for k, v in av if k == "phoneNumberIdEsperado"]
+    po = [v for k, v in ao if k == "phoneNumberIdEsperado"]
+    tenants = [v for k, v in av if k == "tenantId"]
+    ok = (
+        "rroca-emma" in normal(vivo.get("name", ""))
+        and any(n.get("name") == "Armar avisos" for n in nodos)
+        and "rroca-evy" not in normal(json.dumps(vivo, ensure_ascii=False))
+        and len(pv) == 1 and len(po) == 1 and re.fullmatch(r"[0-9]{6,25}", pv[0], re.ASCII) is not None and pv[0] == po[0]
+        and all(t == "rroca-emma" for t in tenants)
+    )
+    if ok:
+        print("si")
+except Exception:
+    pass
+PY
+}
+emma_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar
+  local etapa=encender
+  [[ $CREAR -eq 1 && $ACTIVAR -eq 0 && $ENCENDER -eq 0 ]] && etapa=crear
+  [[ $ETAPA_PRUEBA -eq 1 ]] && etapa=prueba
+  echo "Flujo nuevo de Emma (rroca-emma): se revisa la guardia de publicación ($1; etapa $etapa)."
+  if node Flujos/experimental/rroca-emma/construir.mjs --publicable --flujo "$2" --etapa "$etapa"; then
+    GUARDIA_EMMA_OK=1
+  else
+    GUARDIA_EMMA_OK=0
+  fi
+  if [[ $APLICAR -eq 1 ]]; then
+    if [[ $GUARDIA_EMMA_OK -ne 1 ]]; then
+      printf '\033[1;31m✗ NEGADO: el flujo de Emma no se publica con marcadores sin sustituir, ids de imagen sin resolver, plantilla sin aprobar (etapa completa) o la etapa de prueba mal armada.\033[0m\n' >&2
+      exit 1
+    fi
+    emma_confirmar
+  elif [[ $GUARDIA_EMMA_OK -ne 1 ]]; then
+    printf '\033[0;33m  (en seco se sigue; con --aplicar se niega)\033[0m\n\n'
+  fi
+}
+emma_confirmar() {
+  if [[ $CONFIRMO_EMMA -ne 1 ]]; then
+    if [[ -t 0 ]]; then
+      read -r -p "Va a escribir el flujo de Emma en n8n. Escriba PUBLICAR EMMA para confirmar: " RESPUESTA
+      [[ "$RESPUESTA" == "PUBLICAR EMMA" ]] || { echo "✗ Sin confirmación: no se publica." >&2; exit 1; }
+    else
+      echo "✗ NEGADO: sin terminal, el flujo de Emma solo se publica con --confirmo-emma." >&2
+      exit 1
+    fi
+  fi
+}
+ES_EMMA_NUEVO=0
+ES_EVY_NUEVO=0
+if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
+  TENANT_ARCHIVO_NUEVO="$(tenant_nuevo "$FLUJO")"
+  if [[ "$TENANT_ARCHIVO_NUEVO" == "AMBIGUO" ]]; then
+    printf '\033[1;31m✗ NEGADO: el archivo trae el tenantId repetido en «Config base»: no se sabe de quién es.\033[0m\n' >&2
+    exit 1
+  fi
+  if [[ "$TENANT_ARCHIVO_NUEVO" == "rroca-emma" ]]; then
+    ES_EMMA_NUEVO=1
+    emma_guardia "archivo de origen" "$FLUJO"
+  fi
+fi
+if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && $ES_EMMA_NUEVO -eq 0 && -f "$FLUJO" ]]; then
+  CLASE_EVY="$(evy_clase "$FLUJO" "$(basename "$FLUJO" | tr '[:upper:]' '[:lower:]')")"
+  if [[ "$CLASE_EVY" == "emma" ]]; then
+    printf '\033[1;31m✗ NEGADO: el flujo nuevo de Evy (nodo «Armar previos») no se publica con el nombre de otra doctora (rroca-emma).\033[0m\n' >&2
+    exit 1
+  elif [[ -n "$CLASE_EVY" ]]; then
+    ES_EVY_NUEVO=1
+    evy_guardia "archivo de origen" "$FLUJO"
+  fi
 fi
 
 [[ -f "$ENV_FILE" ]] || { echo "✗ Falta $ENV_FILE"; exit 1; }
@@ -112,6 +539,104 @@ if [[ "$COD" != "200" ]]; then
   esac
   head -c 300 "$TMP/vivo.json" 2>/dev/null || true
   exit 1
+fi
+
+# --- la guardia, repetida sobre el flujo VIVO (destino) ------------------------
+# El nombre del archivo de origen no prueba nada sobre el destino: el id sale de
+# N8N_WORKFLOW_ID. Si el flujo vivo es el de Rubén, se exige lo mismo que arriba.
+CLASE_VIVO="$(ruben_clase "$TMP/vivo.json" "")"
+if [[ -n "$CLASE_VIVO" ]]; then
+  if [[ $ENCENDER -eq 1 ]]; then
+    # Activar = publicar: se revisa el flujo VIVO con la guardia (si es el conversacional) y despues
+    # pide la confirmacion (no hay contenido nuevo que revisar).
+    ruben_guardia "encender el flujo vivo" "$TMP/vivo.json" "$CLASE_VIVO"
+  elif [[ $APAGAR -eq 0 && $ES_RUBEN -eq 0 && $CREAR -eq 0 ]]; then
+    # Con --crear `vivo.json` es la REFERENCIA de credenciales, no el destino: no se evalua.
+    ES_RUBEN=1
+    ruben_guardia "flujo vivo de destino" "$FLUJO" "$CLASE_VIVO"
+  fi
+fi
+
+CLASE_VIVO_ANTONIO="$(antonio_clase "$TMP/vivo.json" "")"
+if [[ -n "$CLASE_VIVO_ANTONIO" ]]; then
+  if [[ $ENCENDER -eq 1 ]]; then
+    antonio_guardia "encender el flujo vivo" "$TMP/vivo.json" "$CLASE_VIVO_ANTONIO"
+  # Si el destino vivo es el estricto y el origen no lo era (p. ej. un archivo «confirmar» con --forzar), la guardia estricta se vuelve a correr.
+  elif [[ $APAGAR -eq 0 && $CREAR -eq 0 && ( $ES_ANTONIO -eq 0 || ( "$CLASE_VIVO_ANTONIO" == estricto && "${CLASE_ANTONIO:-}" != estricto ) ) ]]; then
+    ES_ANTONIO=1
+    antonio_guardia "flujo vivo de destino" "$FLUJO" "$CLASE_VIVO_ANTONIO"
+  fi
+fi
+
+VIVO_TENANT_NUEVO="$(tenant_nuevo "$TMP/vivo.json")"   # tenant del flujo vivo si es un flujo nuevo de clinica (nodo «Armar previos»); vacio si no
+TENANT_VIVO_DOCTORAS="$(doctoras_clase "$TMP/vivo.json" "")"
+if [[ -n "$TENANT_VIVO_DOCTORAS" ]]; then
+  if [[ $ENCENDER -eq 1 ]]; then
+    doctoras_guardia "encender el flujo vivo" "$TMP/vivo.json" "$TENANT_VIVO_DOCTORAS"
+  # Con --crear `vivo.json` es la REFERENCIA de credenciales, no el destino. Si el destino vivo es de una doctora y el origen no lo era (o era la otra), la guardia se corre con el tenant del VIVO.
+  # Si el origen es el flujo NUEVO de Evy, el destino viejo (el de las doctoras) lo reemplaza: ya pasó la guardia nueva y la de las doctoras no se aplica al archivo nuevo.
+  elif [[ $APAGAR -eq 0 && $CREAR -eq 0 && $ES_EVY_NUEVO -eq 0 && $ES_EMMA_NUEVO -eq 0 && "$TENANT_VIVO_DOCTORAS" != "$TENANT_DOCTORAS" ]]; then
+    doctoras_guardia "flujo vivo de destino" "$FLUJO" "$TENANT_VIVO_DOCTORAS"
+  fi
+fi
+
+if [[ "$VIVO_TENANT_NUEVO" == "AMBIGUO" && $CREAR -eq 0 && $APAGAR -eq 0 ]]; then
+  printf '\033[1;31m✗ NEGADO: el flujo vivo trae el tenantId repetido en «Config base»: no se sabe de quién es y no se pisa.\033[0m\n' >&2
+  exit 1
+fi
+# El flujo NUEVO de Emma solo reemplaza al flujo vivo de Emma: el nuevo (tenantId rroca-emma) o el viejo de las doctoras (nombre rroca-emma + «Armar avisos» + UN «Config base» + el MISMO phoneNumberIdEsperado que el archivo + sin rroca-evy). NUNCA a Evy ni a otro cliente, ni con --forzar.
+if [[ $ES_EMMA_NUEVO -eq 1 && $CREAR -eq 0 && $APAGAR -eq 0 ]]; then
+  if [[ "$VIVO_TENANT_NUEVO" != "rroca-emma" && "$(emma_vieja_clase "$TMP/vivo.json" "$FLUJO")" != "si" ]]; then
+    printf '\033[1;31m✗ NEGADO: el flujo nuevo de Emma no puede reemplazar un flujo vivo que no es de Emma (vivo: %s). Ni con --forzar.\033[0m\n' "${VIVO_TENANT_NUEVO:-${TENANT_VIVO_DOCTORAS:-otro cliente}}" >&2
+    exit 1
+  fi
+fi
+# El flujo nuevo de Evy nunca pisa un flujo nuevo de otra clinica (p. ej. el de Emma, aunque lo hayan renombrado).
+if [[ $ES_EVY_NUEVO -eq 1 && $CREAR -eq 0 && $APAGAR -eq 0 && -n "$VIVO_TENANT_NUEVO" && "$VIVO_TENANT_NUEVO" != "rroca-evy" ]]; then
+  printf '\033[1;31m✗ NEGADO: el flujo nuevo de Evy no puede reemplazar el flujo nuevo de otra clinica (%s). Ni con --forzar.\033[0m\n' "$VIVO_TENANT_NUEVO" >&2
+  exit 1
+fi
+
+# El flujo NUEVO de Evy solo reemplaza al flujo vivo de Evy (el nuevo o el viejo), NUNCA a otro: ni a Emma (aunque la renombren), ni a otro cliente (Q'Taco, el chat de NovuChat, Bellido), ni con --forzar.
+if [[ $ES_EVY_NUEVO -eq 1 && $CREAR -eq 0 && $APAGAR -eq 0 ]]; then
+  CLASE_VIVO_PARA_NUEVO="$(evy_clase "$TMP/vivo.json" "")"
+  # El viejo de Evy se reconoce por el nombre (tenant rroca-evy) Y por la huella de los nodos de las doctoras («Armar avisos») y el tenant de su «Config base» (rroca-evy, nunca rroca-emma): un vivo de otro cliente con «rroca-evy» en el nombre no pasa.
+  HUELLA_DOCTORAS="$(python3 -c "
+import json,sys
+d=json.load(open(sys.argv[1]))
+ns=[n for n in (d.get('nodes') or []) if isinstance(n,dict)]
+cb=json.dumps([n.get('parameters',{}) for n in ns if n.get('name')=='Config base'])
+print('si' if any(n.get('name')=='Armar avisos' for n in ns) and 'rroca-evy' in cb and 'rroca-emma' not in cb else 'no')" "$TMP/vivo.json" 2>/dev/null || echo no)"
+  if [[ "$CLASE_VIVO_PARA_NUEVO" != "nuevo" && "$CLASE_VIVO_PARA_NUEVO" != "emma" && ( "$TENANT_VIVO_DOCTORAS" != "rroca-evy" || "$HUELLA_DOCTORAS" != "si" ) ]]; then
+    printf '\033[1;31m✗ NEGADO: el flujo nuevo de Evy no puede reemplazar un flujo vivo que no es de Evy (vivo: %s). Ni con --forzar.\033[0m\n' "${TENANT_VIVO_DOCTORAS:-otro cliente}" >&2
+    exit 1
+  fi
+fi
+
+# El flujo VIVO es el nuevo de Emma: encenderlo revisa el flujo vivo con la guardia de Emma; reemplazarlo con un archivo que NO es el nuevo de Emma (restaurar) pide la confirmacion de Emma.
+if [[ "$VIVO_TENANT_NUEVO" == "rroca-emma" ]]; then
+  if [[ $ENCENDER -eq 1 ]]; then
+    emma_guardia "encender el flujo vivo" "$TMP/vivo.json"
+  elif [[ $APAGAR -eq 0 && $CREAR -eq 0 && $ES_EMMA_NUEVO -eq 0 && $APLICAR -eq 1 ]]; then
+    echo "El flujo vivo es el flujo NUEVO de Emma y el archivo no lo es (restauración): se pide la confirmación."
+    emma_confirmar
+  fi
+fi
+
+# El flujo VIVO es el nuevo de Evy: encenderlo revisa el flujo vivo con la guardia nueva; reemplazarlo con un archivo que NO es el nuevo (p. ej. restaurar el viejo) pide la confirmacion.
+CLASE_VIVO_EVY="$(evy_clase "$TMP/vivo.json" "")"
+[[ "$VIVO_TENANT_NUEVO" == "rroca-emma" ]] && CLASE_VIVO_EVY=""   # el flujo nuevo de Emma ya pasó por su propia guardia arriba
+if [[ "$CLASE_VIVO_EVY" == "emma" && $APAGAR -eq 0 ]]; then
+  printf '\033[1;31m✗ NEGADO: el flujo vivo es el flujo nuevo de Evy con el nombre de otra doctora (rroca-emma).\033[0m\n' >&2
+  exit 1
+fi
+if [[ -n "$CLASE_VIVO_EVY" ]]; then
+  if [[ $ENCENDER -eq 1 ]]; then
+    evy_guardia "encender el flujo vivo" "$TMP/vivo.json"
+  elif [[ $APAGAR -eq 0 && $CREAR -eq 0 && $ES_EVY_NUEVO -eq 0 && $APLICAR -eq 1 ]]; then
+    echo "El flujo vivo es el flujo NUEVO de Evy y el archivo no lo es (restauración): se pide la confirmación."
+    evy_confirmar
+  fi
 fi
 
 # --- ENCENDER O APAGAR UN FLUJO QUE YA EXISTE ---------------------------------

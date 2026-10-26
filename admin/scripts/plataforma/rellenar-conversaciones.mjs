@@ -50,6 +50,14 @@
  * (salida 2, sin abrir Firebase) si el id es de Bellido o está en la lista de exclusión (la misma de
  * `aplicar-consola-conversaciones.mjs`), y de nuevo si el NOMBRE de la ficha lo nombra.
  *
+ * EXCEPCIÓN EXPLÍCITA (Andres, 24/10/2026: la pantalla nueva es la de todos): `--permitir-excluido bellido` levanta la
+ * exclusión SOLO de Bellido y SOLO para esa corrida. Exige `--tenant bellido` (el mismo id; con otro comercio la bandera
+ * se rechaza y no levanta nada), no existe `--todos` (un comercio por corrida), y NO levanta lo que agregue
+ * `NOVUCHAT_TENANTS_EXCLUIDOS`. Todo lo demás sigue igual: seco por omisión (sale 1), `--aplicar` con respaldo previo
+ * (que para este script son los ids y la huella de los DOS campos que se agregan; antes no existían, por eso no hay valor
+ * anterior que guardar), relectura, precondición por documento, solo AGREGA los dos campos, idempotente. Vuelta atrás:
+ * `--revertir` con la misma bandera. En producción corre la coordinadora con el botón de Andres.
+ *
  * SALVAGUARDA DE PROYECTO y RESPALDO: las mismas de `aplicar-consola-conversaciones.mjs` (lista blanca por
  * `GCP_PROJECT_ID_STAGING` / `GCP_PROJECT_ID_PROD`; en producción `--aplicar` exige `--confirmo-produccion
  * <tenant>`; el id del proyecto real NUNCA se imprime). El respaldo (0600, carpeta 0700, nunca se pisa) va en el
@@ -79,11 +87,20 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { MAX_PALABRAS_CONSULTA, palabrasDe, trozosDeTelefono } from '../../functions/src/core/conversacion/normalizacion.ts';
 import {
-  ID_TENANT, comprobarProyecto, comprobarRespaldo, esTenantExcluido, guardarRespaldo, leerRespaldoGenerico, mensajeDeInterrupcion,
-  nombreExcluido, rutaDelRespaldoSigueIgual,
+  ID_TENANT, TENANTS_EXCLUIDOS, comprobarProyecto, comprobarRespaldo, excluidos, guardarRespaldo, leerRespaldoGenerico, mensajeDeInterrupcion, sinTildes,
+  rutaDelRespaldoSigueIgual,
 } from './aplicar-consola-conversaciones.mjs';
 
-export { comprobarProyecto, comprobarRespaldo, esTenantExcluido, guardarRespaldo, mensajeDeInterrupcion };
+export { comprobarProyecto, comprobarRespaldo, guardarRespaldo, mensajeDeInterrupcion };
+
+/** La lista de exclusión (la de `aplicar-consola-conversaciones.mjs` más la variable de entorno) SIN los ids que esta corrida levanta. */
+const listaVigente = (env, levantados) => excluidos(env, TENANTS_EXCLUIDOS.filter((x) => !levantados.includes(x)));
+/** Misma regla de coincidencia que el script de la bandera: el id ES uno de la lista o LO CONTIENE. */
+export const esTenantExcluido = (tenant, env = process.env, levantados = []) => typeof tenant === 'string'
+  && listaVigente(env, levantados).some((x) => sinTildes(tenant) === x || sinTildes(tenant).includes(x));
+/** El NOMBRE de la ficha solo CONTIENE. */
+export const nombreExcluido = (nombre, env = process.env, levantados = []) => typeof nombre === 'string'
+  && listaVigente(env, levantados).some((x) => sinTildes(nombre).includes(x));
 
 /** Los ÚNICOS campos que este script puede escribir. */
 export const CAMPOS_DERIVADOS = Object.freeze(['telefonoTrozos', 'nombrePalabras']);
@@ -91,7 +108,13 @@ export const TAMANO_PAGINA = 300;
 export const TAMANO_LOTE = 400;
 const MAXIMO_RESPALDO = 64 * 1024 * 1024;
 export const ID_CONVERSACION = /^[A-Za-z0-9_-]{1,100}$/;
-const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion'];
+const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion', 'permitir-excluido'];
+
+/** El ÚNICO comercio excluido que una bandera explícita puede levantar para UNA corrida (Andres, 24/10/2026). */
+export const PERMITIBLES = Object.freeze(['bellido']);
+
+/** Los ids de la lista fija que ESTA corrida levanta: solo si la bandera y el tenant son exactamente el mismo permitible. */
+export const levantadosDe = (cfg) => (cfg && PERMITIBLES.includes(cfg.permitirExcluido) && cfg.tenant === cfg.permitirExcluido ? [cfg.permitirExcluido] : []);
 const BANDERAS = ['aplicar', 'revertir'];
 
 export const AVISO_REVERTIR = 'AVISO: se borra el campo si su valor sigue siendo el que escribió este script, aunque la ingesta lo haya reescrito '
@@ -101,7 +124,7 @@ export const LIMITACION = 'LIMITACIÓN: los mensajes antiguos no se rellenan (no
   + 'solo hallará mensajes NUEVOS. Teléfono y nombre sí se hallan en las conversaciones rellenadas.';
 
 export const USO = '  node scripts/plataforma/rellenar-conversaciones.mjs --proyecto <id> --tenant <id> '
-  + '[--aplicar --respaldo <ruta> [--confirmo-produccion <tenant>]]\n'
+  + '[--permitir-excluido bellido] [--aplicar --respaldo <ruta> [--confirmo-produccion <tenant>]]\n'
   + '  node scripts/plataforma/rellenar-conversaciones.mjs --revertir --respaldo <ruta> --tenant <id> --proyecto <id> '
   + '[--aplicar] [--confirmo-produccion <tenant>]';
 
@@ -132,6 +155,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   const aplicar = banderas.includes('aplicar');
   const revertir = banderas.includes('revertir');
   const { proyecto, tenant, respaldo } = valores;
+  const permitir = valores['permitir-excluido'];
   const confirmo = valores['confirmo-produccion'];
 
   if (proyecto === undefined) problemas.push('falta --proyecto');
@@ -141,8 +165,12 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   if (tenant === undefined) problemas.push('falta --tenant');
   else if (tenant.includes(',')) problemas.push('--tenant admite UN solo comercio por corrida (sin comas)');
   else if (!ID_TENANT.test(tenant)) problemas.push('--tenant inválido (minúsculas, dígitos y guiones, de 3 a 60)');
-  else if (esTenantExcluido(tenant, env)) {
-    problemas.push('este comercio está EXCLUIDO: a Bellido no se le corre el relleno de Conversaciones (decisión del 09/10/2026)');
+  else if (esTenantExcluido(tenant, env, permitir !== undefined && permitir === tenant && PERMITIBLES.includes(permitir) ? [permitir] : [])) {
+    problemas.push('este comercio está EXCLUIDO: a Bellido no se le corre el relleno de Conversaciones sin --permitir-excluido bellido (decisión del 09/10/2026)');
+  }
+  if (permitir !== undefined) {
+    if (!PERMITIBLES.includes(permitir)) problemas.push('--permitir-excluido solo admite un comercio de la lista de permitibles (bellido)');
+    else if (tenant !== permitir) problemas.push('--permitir-excluido exige --tenant con el MISMO id (la bandera con otro comercio no levanta nada)');
   }
 
   if (confirmo !== undefined) {
@@ -164,7 +192,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     if (r.ok) { respaldoReal = respaldo; respaldoResuelto = r.real; } else problemas.push(r.motivo);
   }
   if (problemas.length) return { ok: false, problemas };
-  return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, aplicar, revertir, respaldo: respaldoReal, respaldoResuelto } };
+  return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, aplicar, revertir, respaldo: respaldoReal, respaldoResuelto, ...(permitir !== undefined ? { permitirExcluido: permitir } : {}) } };
 }
 
 // ===========================================================================
@@ -346,12 +374,13 @@ export async function ejecutar(cfg, deps) {
   const marcar = deps.marcarEscritura ?? (() => {});
   const pagina = deps.pagina ?? TAMANO_PAGINA;
   const tamLote = Math.min(deps.lote ?? TAMANO_LOTE, TAMANO_LOTE);
-  const rotulo = `${cfg.entorno} · tenant ${cfg.tenant}`;
+  const rotulo = `${cfg.entorno} · tenant ${cfg.tenant}${levantadosDe(cfg).length ? ' · EXCLUSIÓN LEVANTADA SOLO PARA ESTA CORRIDA (--permitir-excluido)' : ''}`;
 
-  if (esTenantExcluido(cfg.tenant, deps.env)) { log('\n  ✗ Este comercio está EXCLUIDO (Bellido): no se toca.\n'); return 2; }
+  const levantados = levantadosDe(cfg);
+  if (esTenantExcluido(cfg.tenant, deps.env, levantados)) { log('\n  ✗ Este comercio está EXCLUIDO (Bellido): no se toca.\n'); return 2; }
   const ficha = await leerFicha(db, cfg.tenant);
   if (!ficha.exists) { log(`\n  ✗ ${cfg.tenant}: no existe la ficha (${cfg.entorno})\n`); return 1; }
-  if (nombreExcluido((ficha.data() ?? {}).nombre, deps.env)) {
+  if (nombreExcluido((ficha.data() ?? {}).nombre, deps.env, levantados)) {
     log('\n  ✗ El nombre de la ficha corresponde a un comercio EXCLUIDO (Bellido): no se toca. No se escribió nada.\n');
     return 2;
   }

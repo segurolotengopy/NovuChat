@@ -160,7 +160,7 @@ export const REGISTRO = [
     dependeDe: [],
     configuracion: [],
     camposEnNegocio: [],
-    colecciones: ['catalogo', 'fotosCatalogo', 'comprobacionesImagen', 'contadores/catalogo'],
+    colecciones: ['catalogo', 'fotosCatalogo', 'comprobacionesImagen', 'terminosProducto', 'contadores/catalogo'],
     coleccionesRaiz: [],
     almacenamiento: [],
     // `limiteProductos()` en las reglas (alta contada contra el contador) y
@@ -174,7 +174,7 @@ export const REGISTRO = [
     // o no. La ranura se llama como el dato que existe hoy.
     tablero: ['items'],
     herramientas: [],
-    functions: ['importarCatalogo', 'comprobarImagenDelCatalogo', 'recomprobarImagen'],
+    functions: ['importarCatalogo', 'comprobarImagenDelCatalogo', 'recomprobarImagen', 'registrarTerminoDeProducto'],
     flujosProgramados: [],
     // El catálogo entero o resumido al prompt (`configuracionFlujo`).
     ganchos: ['antesDelTurno'],
@@ -201,7 +201,7 @@ export const REGISTRO = [
       { documento: 'config/agendamiento', campos: [], camposDelServidor: ['cobroReal'], compartidoCon: ['agenda'] },
     ],
     camposEnNegocio: [],
-    colecciones: [],
+    colecciones: ['comprobantesRecibidos'],
     coleccionesRaiz: ['topesDelVisor'],  // contador por uid del visor de comprobantes (solo el servidor)
     // Las imágenes de comprobantes de venta (regla 2); las reglas niegan todo acceso.
     almacenamiento: ['comprobantes'],
@@ -357,7 +357,9 @@ export const REGISTRO = [
     modulo: 'campanas',
     nombre: 'Campañas',
     version: 1,
-    dependeDe: [],
+    // Productos: el contexto de la capa 2 lista los nombres del catálogo, y los que son una orden no pasan
+    // (`productos/nombreSeguro.ts`). Las campañas ya referencian el catálogo por `productoId`.
+    dependeDe: ['productos'],
     // `revision` y `vigentes` los escribe solo `verificarCampanas`.
     configuracion: [{ documento: 'config/campanas', campos: ['lista'], camposDelServidor: ['revision', 'vigentes'] }],
     camposEnNegocio: [],

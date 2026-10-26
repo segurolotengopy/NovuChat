@@ -133,6 +133,9 @@ export function Ingresar() {
         puerta no la protege, y quien la busque la encuentra igual— pero deja de
         competir con lo que la mayoría vino a hacer.
       */}
+      <p className="text-muted">
+        Administro o atiendo un negocio (correo y contraseña): ingrese con este formulario.
+      </p>
       <form onSubmit={conClave}>
         <label className="field">Correo
           <input className="input" type="email" required autoComplete="username" maxLength={254}
@@ -174,7 +177,9 @@ export function Ingresar() {
 
       {modo === 'novuchat' ? (
         <section className="interno">
-          <p className="text-muted">Acceso del equipo de NovuChat.</p>
+          <p className="text-muted">
+            Soy propietario de NovuChat (Google): entro con mi cuenta de Google y miro los negocios en solo lectura.
+          </p>
           <button type="button" className="btn btn-secondary" onClick={conGoogle} disabled={ocupado}>
             Continuar con Google
           </button>
@@ -182,7 +187,7 @@ export function Ingresar() {
       ) : (
         <button type="button" className="enlace-interno"
                 onClick={() => { setModo('novuchat'); setError(null); setAviso(null); }}>
-          Ingreso interno
+          Soy propietario de NovuChat (Google)
         </button>
       )}
 

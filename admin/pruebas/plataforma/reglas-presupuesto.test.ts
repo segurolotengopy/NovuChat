@@ -170,13 +170,14 @@ pruebas.push({
 type Catalogo = 'apagado' | 'enciende' | 'ya';
 const nombreCatalogo: Record<Catalogo, string> = { apagado: 'catálogo web apagado (sin cambios)', enciende: 'ENCIENDE catálogo web', ya: 'catálogo web ya encendido' };
 const guardadoCompleto = (forma: Forma, dias: number, catalogo: Catalogo, ubicacion: boolean,
-  extra: { calendario?: Calendario; ficha?: string } = {}): Prueba => {
+  extra: { calendario?: Calendario; ficha?: string; tramosYQuienAtiende?: boolean } = {}): Prueba => {
   const almacenado = documentoAlmacenado(forma, {
     dias, ubicacion, ...(extra.calendario ? { calendario: extra.calendario } : {}), catalogoWebGuardado: catalogo === 'ya',
+    ...(extra.tramosYQuienAtiende ? { tramosYQuienAtiende: true } : {}),
   });
   return {
     id: `guardado completo ${forma}, ${dias} días, ${nombreCatalogo[catalogo]}, ${ubicacion ? 'con' : 'sin'} ubicación`
-      + `${extra.calendario ? `, calendario ${extra.calendario}` : ''}${extra.ficha ? `, ficha ${extra.ficha}` : ''}`,
+      + `${extra.calendario ? `, calendario ${extra.calendario}` : ''}${extra.ficha ? `, ficha ${extra.ficha}` : ''}${extra.tramosYQuienAtiende ? ', 3 tramos por día y nombreQuienAtiende presente' : ''}`,
     ficha: extra.ficha ?? 'qtaco',
     seed: (db) => setDoc(doc(db, P('config/negocio')), almacenado),
     correr: (fs) => updateDoc(doc(fs, P('config/negocio')), payloadDeLaConsola(almacenado, UA, catalogo !== 'apagado')),
@@ -193,6 +194,10 @@ for (const forma of ['sembrado', 'tope'] as const) {
 for (const calendario of ['vacio', 'correo'] as const) completos.push(guardadoCompleto('tope', 7, 'enciende', true, { calendario }));
 completos.push(guardadoCompleto('tope', 7, 'enciende', true, { ficha: 'qtacoViejo' }));
 completos.push(guardadoCompleto('sembrado', 7, 'enciende', true, { ficha: 'qtacoViejo' }));
+// El peor caso de HOY: siete días con TRES tramos y el nombre de quien atiende presente (60 caracteres).
+for (const catalogo of ['enciende', 'ya', 'apagado'] as const) {
+  completos.push(guardadoCompleto('tope', 7, catalogo, true, { tramosYQuienAtiende: true }));
+}
 /** El peor documento: 7 días, todo en su tope, catálogo web que se enciende, con ubicación. */
 const PEOR = guardadoCompleto('tope', 7, 'enciende', true);
 
@@ -354,7 +359,7 @@ describe('reglas: presupuesto de expresiones contra las reglas de origin/main', 
   }, 1_800_000);
 
   it('control: una exigencia cara dentro de config/negocio SÍ la detecta el criterio', async () => {
-    const trozo = "|| tieneFlujo(tenantId, 'venta'))";
+    const trozo = "|| tieneCatalogoWeb(tenantId))";
     expect(AHORA.split(trozo).length - 1, 'el trozo a mutar está una vez').toBe(1);
     // Desde el recorte de `configNegocioValida` el documento sobra ~25 términos más de lo que sobraba: una sola exigencia
     // de módulo común ya no alcanza a bajarlo del criterio de estas filas, así que la mutación son diez (cada una lee la
@@ -380,7 +385,7 @@ describe('reglas: presupuesto de expresiones contra las reglas de origin/main', 
   }, 600_000);
 
   it('control: una exigencia cara dentro de config/negocio SÍ la detecta el criterio del documento completo', async () => {
-    const trozo = "|| tieneFlujo(tenantId, 'venta'))";
+    const trozo = "|| tieneCatalogoWeb(tenantId))";
     expect(AHORA.split(trozo).length - 1, 'el trozo a mutar está una vez').toBe(1);
     // Diez exigencias de módulo común: cada una lee la ficha y compara una lista.
     const caras = Array.from({ length: 10 }, () => "&& tieneModuloComun(tenantId, 'productos')").join('\n            ');

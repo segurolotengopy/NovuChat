@@ -537,6 +537,20 @@ estilo de `ESTADO.md`: el agente alternaba «usted» y «tú» con el mismo clie
 - `horarioAtencion` se calcula desde `horarios`. Guardarlo además invitaría a que
   los dos valores se separaran y a que el agente anunciara un horario que la
   pantalla no muestra.
+- **Horario con varios tramos por día (23/10/2026).** El valor de un día de
+  `horarios` sigue siendo un texto: `cerrado`, `HH:MM-HH:MM` (como siempre) o de
+  dos a tres tramos separados por coma sin espacios, `09:00-12:00,14:00-18:00`
+  (turno partido). Ordenados, sin solaparse ni tocarse, cierre posterior a la
+  apertura, dentro del día, hora de La Paz. La regla de Firestore exige la forma
+  y el primer tramo (no cabe más en el presupuesto de 1.000 expresiones de
+  `config/negocio`). LA AUTORIDAD del orden y del solape es la normalización al
+  leer (`functions/src/core/prompt/horario-tramos.ts`): ordena, descarta los
+  tramos con cierre <= apertura, fusiona los solapados o contiguos y, si no queda
+  ninguno, devuelve `cerrado` (falla cerrado: un día ausente lo toman los flujos
+  como «sin dato» y dejarían pasar la cita). Es la unión que ya calculan los
+  flujos, así que el asistente anuncia lo que el candado hace cumplir. La
+  consola y `cargar-negocio.mjs` validan además al guardar; no hay trigger. Los
+  lectores del flujo ya partían por coma. Un documento de un solo rango no cambia.
 
 Las reglas los rechazan por lista blanca **y** `configuracionFlujo` nunca los lee
 de la configuración aunque aparecieran. Dos barreras, a propósito.
@@ -688,6 +702,54 @@ mientras tanto. Tampoco reemplaza la delimitación del flujo ni la lista blanca 
 claves: es una tercera barrera sobre el único campo que las otras dos no podían
 cerrar del todo.
 
+**Término de producto registrado (24/10/2026, PR 1).** Una descripción de
+producto es LITERAL y una instrucción no debe confundirse con ella: «100
+prompts» es el nombre de un producto, pero «prompt» es también el vocabulario de
+la inyección, y las listas de `promptsSinContexto` (#649/#650) necesitaron
+cinco rondas de seguridad porque el filtro no puede saber, mirando el texto,
+de cuál de los dos habla. Mecanismo, general y sin datos de ningún cliente:
+
+1. El nombre se **registra como dato** (`tenants/{t}/terminosProducto/{itemId}`:
+   `termino`, `nombreHash`, `estado`, `motivo`, `revisadoPor?`, `revisadoEn?`; el
+   id del documento es el del ítem del catálogo). Pasa por `terminoRegistrable`
+   (filtro estricto: letras latinas, dígitos y espacio estables ante NFKC; 2 a 4
+   palabras `a-z` o números de 1 a 5 cifras; EXACTAMENTE una palabra de
+   `prompt`/`prompts` y ninguna de orden, autoridad, posesivo o pronombre; con
+   la palabra cambiada por «producto» el texto es limpio; no coincide con otro
+   comercio) y por la aprobación de Plataforma.
+2. `terminosAprobados` entrega solo los vigentes: ítem del catálogo ACTIVO cuyo
+   nombre actual da el mismo `nombreHash` y que contiene el término; tope de 10
+   por comercio. Solo lee Firestore si el texto contiene «prompt».
+3. `verificarPatrones` normaliza, **sustituye** cada aparición exacta por el
+   marcador fijo `productoregistrado` y recién ahí corre los patrones. El marcador
+   pasa por `terminoSinContexto`: órdenes, autoridad, determinante duro,
+   definidores y vecinas con pronombre. «Otro comercio» y los patrones crudos
+   miran el texto sin sustituir. La palabra «prompt» fuera de un término
+   registrado sigue prohibida.
+4. Al modelo de la capa 2 el **sistema** le entrega el término entre « »
+   (`citarTerminos`); el autor no puede tipear « » (`marcas de bloque`) y las
+   comillas "…" tipeadas no eximen: la exención viene del registro.
+
+**Lista cerrada de palabras del término.** Junto a «prompt/prompts» solo entran
+cifras (1 a 5) y vocabulario comercial inerte (`PALABRAS_DE_TERMINO`: pack, bono,
+kit, pro, premium, marketing, redes, de, para…; nunca verbos, roles, pago o estado,
+inglés de control ni `instruc*`), sin conector al inicio ni al final: la
+sustitución esconde esas palabras de los demás patrones, y una lista de rechazo no
+cierra la clase (revisión de seguridad del #657). La suite de invariancia recorre
+cada palabra de la lista en 50 contextos hostiles.
+
+**Residuo aceptado por Andres (24/10/2026): entra con el PR 6, no antes.** Mientras
+las listas de #650 siguen vivas, un marcador precedido de determinante neutro
+(los/las/estos…) pasa además por la forma cerrada de #650 sobre el texto sin
+sustituir: con un término aprobado no se reabre nada que main rechaza («Los 100
+prompts pesan más que lo demás» sigue rechazada). El registro agrega solo donde
+#650 no opina («Pack 100 prompts», «Ofrecemos kit prompts»). Al retirar las listas
+(PR 6) esa comprobación se quita y esas frases pasan con el término registrado.
+Mitigación: registro aprobado por Plataforma, cita « » puesta por el sistema y
+capa 2. `pruebas/central/terminos-registrados.test.ts` fija qué pasa y qué no. El
+ítem que ancla el término tampoco puede ser un nombre que la capa 1 rechaza, ni
+que el predicado `nombreApto` inyectado por Productos rechace.
+
 ---
 
 
@@ -830,11 +892,11 @@ de caracteres que el cobrador admite (`[A-Za-z0-9:_.-]`, hasta 120).
 
 | Campo | Tipo | Quién lo escribe | Por qué |
 |---|---|---|---|
-| `tipo` | `'mensualidad' \| 'bolsa' \| 'instalacion'` | Functions | `instalacion` es el agregado de `Analisis/29` §2.5: hoy los USD 65 no tienen dónde registrarse. No suma meses ni bolsas |
+| `tipo` | `'mensualidad' \| 'bolsa' \| 'bolsaConversaciones' \| 'bolsaSalientes' \| 'instalacion'` | Functions | `instalacion` es el agregado de `Analisis/29` §2.5: hoy los USD 65 no tienen dónde registrarse. No suma meses ni bolsas |
 | `plan` | `IdPlanVendible` (`planes.ts:42`) | Functions | Solo en `mensualidad`. Del catálogo, nunca texto libre |
 | `meses` | entero 1..6 | Functions | Solo en `mensualidad`. El tope 6 se hace cumplir acá (`MESES_MAXIMO = 6` en `prepago.ts`), no en la pantalla |
 | `cantidad` | entero 1..12 | Functions | Solo en `bolsa` |
-| `montoUsd` | número | Functions | El de la lista (`PLANES[plan].precioUsd × meses`, `BOLSA.precioUsd × cantidad`, `INSTALACION_USD`). Pendiente (`docs/base-comercial.md` §3): las bolsas BYOC de 300 conversaciones por 15 y de 300 mensajes de seguimiento por 10, con la de 30 por 10 solo para Meta incluido |
+| `montoUsd` | número | Functions | El de la lista (`PLANES[plan].precioUsd × meses`, `BOLSA.precioUsd × cantidad`, `INSTALACION_USD`). Las bolsas BYOC de 300 conversaciones por 15 y de 300 mensajes de seguimiento por 10 (esta apagada) y la de 30 por 10 solo para Meta incluido: ver «Tarifa y bolsas por cuenta», al final de este documento |
 | `monto` | entero | Functions | Bolivianos, redondeados con `importeBs`. Es lo que va al QR |
 | `moneda` / `monedaLista` | `'BOB'` / `'USD'` | Functions | Constantes, para que el documento se explique solo |
 | `tcoAplicado` | número 5..40 | Functions | El TCO del BCB del **día de emisión**. Sin él, `importeBs` lanza y el pago no se crea |
@@ -1503,3 +1565,41 @@ deducir**. Las coordenadas del pin se pedían en dos campos, con la instrucción
 de hacer clic derecho en Google Maps; nadie iba a hacerlo. Se sacan del enlace
 que el comercio ya pega (`functions/src/central/negocio/mapa.ts`), y la pantalla solo informa
 si quedaron detectadas.
+
+## Tarifa y bolsas por cuenta (Bloque 1 «planes y bolsas», 17/10/2026)
+
+En `main`; sale a producción con la etiqueta del Bloque 1 (PR-2, PR-3 y PR-5
+juntos), aparte de la de H2. Hasta entonces producción corta en 100 / 220 / 500
+y vende solo la bolsa de 30 por USD 10. El dinero está en
+`docs/base-comercial.md` §3; acá, dónde vive cada pieza.
+
+- **La tarifa** es un campo de `cuenta/estado`: `estandar` (el comercio paga su
+  Meta) o `meta_incluido`. `tarifaDe` (`central/cuenta/planes.ts`) devuelve
+  `meta_incluido` si el campo falta o no es válido, el límite menor, así que
+  Bellido, Platinum y los demos no cambian sin escribir sus cuentas. Las altas
+  nuevas nacen `estandar` (`TARIFA_DE_ALTA`). `limitesDe(plan, tarifa)` exige la
+  tarifa en la firma y elige entre `CONVERSACIONES_META_INCLUIDO` y las
+  conversaciones del plan.
+- **Tres tipos de pago de bolsa** (`tipo` de `/pagos`, `TIPOS_DE_BOLSA` en
+  `prepago.ts`): `bolsa` (30 por USD 10, `BOLSA_META_INCLUIDO`; `BOLSA` queda
+  como alias hasta un PR de Functions que lo quite), `bolsaConversaciones` (300
+  por USD 15) y `bolsaSalientes` (300 mensajes de seguimiento por USD 10).
+- **`bolsaPermitida(cuenta, pago, titularidades)`** (pura, `prepago.ts`) decide
+  si la cuenta puede comprar esa bolsa y devuelve `null` o el motivo (`tarifa`,
+  `titularidad`, `no_habilitada`). `pagos.ts` la aplica en el servidor al emitir
+  el QR y en el pago manual, con el texto fijo `MENSAJE_BOLSA_NO_PERMITIDA`; la
+  pantalla solo ofrece lo que el servidor aceptaría. Se acredita lo **pagado**
+  (el tipo del pago), no lo que la consola pidió.
+- **`VENTA_BOLSA_SALIENTES`** (`prepago.ts`) está en `false`: `bolsaSalientes`
+  se rechaza con `no_habilitada`. Se enciende en el PR del Bloque 2 que
+  construya el conteo. Ya existen los saldos `bolsaSalientes`,
+  `bolsaSalientesCompra` y `bolsaSalientesBase`; el corte propio
+  (`corteSalientes`) y `salientesFueraDe48h` son del Bloque 2.
+- **La plantilla `conversaciones_agotadas`** promete la bolsa de 30 por 10: no
+  se emite a una cuenta `estandar` (`recordatoriosDebidos`), porque le
+  presentaría un cobro como lo que no es.
+- **Cuentas existentes:** `asignar-plan --tarifa` y
+  `admin/scripts/plataforma/migrar-tarifa.mjs` (en seco por defecto; `--aplicar`
+  con el «sí» de Andres y en la ventana de mantenimiento si hay clientes en
+  producción). El formulario de pago manual de Plataforma ofrece la bolsa de la
+  tarifa de la cuenta.

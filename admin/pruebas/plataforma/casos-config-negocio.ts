@@ -146,9 +146,22 @@ function livianos(): Caso[] {
     mapa: { lun: { desde: '09:00', hasta: '19:00' } }, nulo: { lun: null }, lista: { lun: ['09:00-18:00'] }, feriado: { lun: '09:00-19:00', feriado: 'cerrado' },
     lunes: { lunes: '09:00-19:00' }, tilde: { 'mié': '09:00-19:00' }, semana: { ...hor(6), dom: 'cerrado' }, semana7: hor(7),
     semana7MalDom: { ...hor(6), dom: '9 a 7' }, semana7InvSab: { ...hor(5), sab: '18:00-09:00', dom: '09:00-12:00' }, todosCerrados: hor(7, 'cerrado'),
-    separadorRaro: { lun: '09:00–18:00' }, dobleRango: { lun: '09:00-12:00,14:00-18:00' },
+    separadorRaro: { lun: '09:00–18:00' },
   };
   for (const [r, v] of Object.entries(H)) add(`hor=${r}`, { horarios: v });
+  // VARIOS TRAMOS POR DÍA (23/10/2026): lo único que cambia respecto de la base anterior. Eran rechazos y ahora son
+  // válidos (hasta tres tramos); `esperado: 'P'` es el árbitro porque la base anterior los rotula LIMITE al denegar.
+  add('hor=dobleRango', { horarios: { lun: '09:00-12:00,14:00-18:00' } }, { esperado: 'P' });
+  add('hor=tripleRango', { horarios: { lun: '09:00-12:00,13:00-15:00,16:00-18:00' } }, { esperado: 'P' });
+  add('hor=semanaPartida', { horarios: { ...hor(5, '09:00-12:00,14:00-18:00'), sab: '09:00-13:00', dom: 'cerrado' } }, { esperado: 'P' });
+  // Y lo que sigue rechazado en las dos bases: cuatro tramos, espacios, coma suelta, primer tramo invertido.
+  add('hor=cuatroRangos', { horarios: { lun: '08:00-09:00,10:00-11:00,12:00-13:00,14:00-15:00' } });
+  add('hor=comaConEspacio', { horarios: { lun: '09:00-12:00, 14:00-18:00' } });
+  add('hor=comaFinal', { horarios: { lun: '09:00-12:00,' } });
+  add('hor=comaInicial', { horarios: { lun: ',09:00-12:00' } });
+  add('hor=primeroInvertido', { horarios: { lun: '12:00-09:00,14:00-18:00' } });
+  add('hor=segundoHoraImposible', { horarios: { lun: '09:00-12:00,25:00-26:00' } });
+  add('hor=separadorPuntoYComa', { horarios: { lun: '09:00-12:00;14:00-18:00' } });
   for (const [r, v] of Object.entries(raros)) add(`hor=${r}`, { horarios: v });
   add('hor=borrar', { horarios: BORRAR }, { semilla: { ...MIN, horarios: H['uno'] as Record<string, unknown> } });
 
@@ -184,7 +197,13 @@ function livianos(): Caso[] {
     modulosMapa: { estado: 'activo', flujos: ['venta'], modulos: { agenda: true } },
   };
   for (const [f, ficha] of Object.entries(FICHAS)) {
-    for (const cw of [true, false, 'true', 1, null]) add(`cw=${JSON.stringify(cw)}|ficha=${f}`, { catalogoWebActivo: cw }, { ficha });
+    for (const cw of [true, false, 'true', 1, null]) {
+      // CAMBIO INTENCIONAL DE H2b-1: la ficha con la lista `modulos` que trae `catalogo-web` (aunque su flujo sea solo
+      // `agendamiento`) ahora SÍ enciende el catálogo web; la base anterior lo decidía por el flujo `venta` y lo negaba
+      // (el emulador rotula esa denegación con el texto del límite). Es el único caso de esta tabla declarado válido a mano.
+      const esperado = f === 'modulosLista' && cw === true ? ({ esperado: 'P' } as const) : {};
+      add(`cw=${JSON.stringify(cw)}|ficha=${f}`, { catalogoWebActivo: cw }, { ficha, ...esperado });
+    }
   }
   add('ficha=inexistente', { direccion: 'y' }, { ficha: null });
 

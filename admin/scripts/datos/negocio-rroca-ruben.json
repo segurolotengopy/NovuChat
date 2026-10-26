@@ -1,0 +1,68 @@
+{
+  "_fuente": "Datos del negocio de la «Venta digital de Rubén» (tenant rroca-ruben, flujo Flujos/experimental/rroca-ruben/). Se carga con admin/scripts/datos/cargar-negocio.mjs. Las claves que empiezan con `_` son notas y no se escriben. Los precios y los ids del catálogo son los que lee el flujo (rrCatalogo): el monto de un QR sale de aquí y de ningún otro lado.",
+  "_pendiente": {
+    "_nota": "NO SE APLICA mientras quede algún valor REEMPLAZAR_… en este archivo, notas incluidas, fuera de los campos *Marcador (`cargar-negocio.mjs --aplicar` lo NIEGA y lo prueban pruebas/tenants/rroca-ruben/negocio.test.ts y la guardia de publicación). Rubén todavía debe dar estos datos; al llegar, se reemplaza cada marcador por el dato real y se agrega al negocio donde corresponde (el resto en negocio.instruccionesExtra). El horario de atención ya no es un dato pendiente: es abierto siempre (24/7), decisión de Andres del 19/10/2026 (negocio.horarios). NovuChat no entrega enlaces: el autor los envía a mano (no hay dato de enlaces).",
+    "horarioDeRecepcion": "Abierto siempre (24/7)",
+    "nombreDeRecepcion": "REEMPLAZAR_NOMBRE_RECEPCION_RUBEN"
+  },
+  "negocio": {
+    "nombreNegocio": "REEMPLAZAR_NOMBRE_VISIBLE_RUBEN",
+    "descripcion": "Venta digital de Rubén Roca: un libro con bonos, un prompt de cierre de ventas y videos para crear contenido con IA, solos o en un pack. Rubén (el autor) revisa el pago y envía los enlaces por este mismo WhatsApp en cuanto lo revise; el asistente no entrega enlaces.",
+    "numeroRecepcionMarcador": "REEMPLAZAR_NUMERO_RECEPCION_RUBEN",
+    "zonaHoraria": "America/La_Paz",
+    "moneda": "BOB",
+    "tratamiento": "tu",
+    "estiloEmojis": "pocos",
+    "politicaCancelacion": "Factura, garantía y devolución las ve directamente el autor: el asistente no las promete ni promete resultados; pasa con el autor (aviso más botón para escribirle a su WhatsApp).",
+    "prefijosPermitidos": [
+      "591"
+    ],
+    "datosQueNoTenemos": [
+      "garantía y devolución",
+      "factura",
+      "otros medios de pago",
+      "un plazo de entrega exacto (solo «en cuanto Rubén revise»)"
+    ],
+    "instruccionesExtra": "ENTREGA: la hace Rubén (el autor) a mano por este chat, en cuanto revisa el pago (sin prometer una hora exacta). El asistente nunca entrega ni envía enlaces, ni dice que algo ya se envió.\nPAGO: solo por el QR del comercio. No inventes otros medios de pago, factura, garantía ni devoluciones: Rubén lo conversa directamente con el cliente; ofrece pasar con él.\nNo prometas garantía, devolución ni resultados.\nNo digas que un pago está acreditado ni verificado: Rubén revisa el comprobante.",
+    "horarios": {
+      "_nota": "Abierto siempre (24/7), decisión de Andres del 19/10/2026. Con 24/7 el asistente no promete respuesta humana inmediata: el material se envía en cuanto Rubén revisa el pago, sin plazo exacto.",
+      "lun": "00:00-23:59",
+      "mar": "00:00-23:59",
+      "mie": "00:00-23:59",
+      "jue": "00:00-23:59",
+      "vie": "00:00-23:59",
+      "sab": "00:00-23:59",
+      "dom": "00:00-23:59"
+    }
+  },
+  "catalogo": [
+    {
+      "nombre": "Pack completo",
+      "descripcion": "Libro con 4 bonos, Closer de Ventas y curso de videos con IA",
+      "precio": 60,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Libro + bonos",
+      "descripcion": "Libro «IA para Emprendedores Independientes» con sus 4 bonos",
+      "precio": 32,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Closer: ventas",
+      "descripcion": "Prompt Maestro de Cierre de Ventas (Closer)",
+      "precio": 20,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Videos IA",
+      "descripcion": "Videos tutoriales para crear contenido con IA",
+      "precio": 25,
+      "moneda": "BOB",
+      "activo": true
+    }
+  ]
+}

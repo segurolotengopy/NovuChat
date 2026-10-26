@@ -1,0 +1,84 @@
+{
+ "tenantId": "despacho-a",
+ "flujo": "agendamiento",
+ "estadoComercio": "activo",
+ "phoneNumberId": "1000000711",
+ "atencion": {
+  "estado": "normal",
+  "respuestasEnVentana": 0,
+  "bloque": 1,
+  "restanDelBloque": 25,
+  "ventanaVenceEn": null,
+  "umbrales": {
+   "operador": 50,
+   "bloqueo": 100,
+   "origen": "estandar"
+  },
+  "mensajeFijo": null,
+  "avisarRecepcion": null
+ },
+ "prepago": {
+  "modalidad": "demostracion",
+  "fase": "cubierto",
+  "motivo": null,
+  "graciaHasta": null,
+  "disponibles": null,
+  "corteAplicado": false
+ },
+ "operacion": {
+  "zonaHoraria": "America/La_Paz",
+  "moneda": "BOB",
+  "numeroRecepcion": "70000001",
+  "calendarioId": "",
+  "horarioAtencion": "",
+  "prefijosPermitidos": [],
+  "ubicacion": null
+ },
+ "instruccionesDeVoz": [
+  "Trate al cliente de USTED en todo momento, sin excepción.",
+  "Use como mucho un emoji por mensaje, y solo cuando aporte."
+ ],
+ "voz": {
+  "tratamiento": "Trate al cliente de TÚ en todo momento, sin excepción.",
+  "emojis": "Use como mucho un emoji por mensaje, y solo cuando aporte.",
+  "nombreAsistente": "",
+  "nivelEmojis": "pocos",
+  "tratamientoClave": "tu",
+  "quienAtiende": ""
+ },
+ "datosDelNegocio": {
+  "nombreNegocio": "Despacho A",
+  "datosQueNoTenemos": [
+   "la dirección del local",
+   "la agenda de citas",
+   "los horarios de atención",
+   "la política de cancelación"
+  ],
+  "instruccionesExtra": ""
+ },
+ "catalogo": [],
+ "sena": {
+  "activa": false,
+  "importe": 0,
+  "moneda": "BOB",
+  "minutosRetencion": 30,
+  "qr": null,
+  "pendiente": false,
+  "evento": null,
+  "qrEnviadoEn": null,
+  "vencidaHaceMin": null,
+  "aFavor": null
+ },
+ "funcionarios": [
+  {
+   "id": "_comercio",
+   "nombre": "Despacho A",
+   "especialidad": "",
+   "calendarioId": "",
+   "horarioTrabajo": {},
+   "servicios": [],
+   "porDefecto": true
+  }
+ ],
+ "campanas": []
+}

@@ -1,0 +1,35 @@
+{
+  "nombreFlujo": "NovuChat — Venta digital de Rubén (rroca-ruben)",
+  "nombreFlujoPrueba": "NovuChat — Venta digital de Rubén (rroca-ruben, prueba)",
+  "credenciales": {
+    "ingesta": "NovuChat ingesta (Ruben)",
+    "graph": "Graph WhatsApp Ruben (Bearer)",
+    "graphPrueba": "Graph WhatsApp — pruebas (no producción)",
+    "entradaPrueba": "Entrada de prueba Ruben",
+    "medios": "WhatsApp Ruben (envío)",
+    "gemini": "Google Gemini(PaLM) Api account"
+  },
+  "receptor": {
+    "ruta": "REEMPLAZAR_RUTA_RECEPTOR_RROCA_RUBEN",
+    "urlVerificador": "REEMPLAZAR_URL_VERIFICADOR_RECEPTOR",
+    "wabaIdEsperado": "REEMPLAZAR_WABA_ID_RROCA_RUBEN"
+  },
+  "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA",
+  "configBase": {
+    "waGraphVersion": "v26.0",
+    "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_RUBEN",
+    "numeroRecepcion": "REEMPLAZAR_NUMERO_RECEPCION_RUBEN",
+    "nombreNegocio": "Rubén Roca",
+    "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
+    "prefijosPermitidos": "591",
+    "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA",
+    "modelo": "gemini-3.5-flash-lite",
+    "cobroSimuladoActivo": false,
+    "avisoComprobantePlantilla": "aviso_comprobante_recibido",
+    "avisoComprobanteEstado": "APPROVED",
+    "avisoConsultaPlantilla": "aviso_consulta_para_ruben",
+    "avisoConsultaEstado": "APPROVED",
+    "avisoPlantillaIdioma": "es",
+    "mediosHabilitados": "imagen_comprobante,pdf_comprobante,audio,imagen,documento"
+  }
+}

@@ -38,13 +38,13 @@ const OTRA = 'uidDeOtraPersonaAbCdEfGhIjKlM';
 const CAPA: CapaTurno = { tomar: async () => ({}), devolver: async () => ({}), enviar: async () => ({}) };
 
 /** BarraTurno tal como la arma el Detalle: la situación y las acciones salen de la lógica. */
-function barra(o: { turno?: unknown; rol: string | null; propietario?: boolean; activo?: boolean; ventanaAbierta?: boolean }): string {
+function barra(o: { turno?: unknown; rol: string | null; propietario?: boolean; activo?: boolean; intervenir?: boolean; ventanaAbierta?: boolean }): string {
   const turno = turnoDeDocumento(o.turno);
   const propietario = o.propietario ?? false;
   const situacion = situacionDeTurno(turno, YO);
   const acciones = accionesDeTurno({
     situacion, puedeGestionar: puedeGestionarConversaciones(o.rol, propietario),
-    esAdmin: o.rol === 'admin' && !propietario, comercioActivo: o.activo ?? true, ventanaAbierta: o.ventanaAbierta ?? true,
+    esAdmin: o.rol === 'admin' && !propietario, comercioActivo: o.activo ?? true, puedeIntervenir: o.intervenir ?? true, ventanaAbierta: o.ventanaAbierta ?? true,
   });
   return renderToStaticMarkup(createElement(BarraTurno, {
     tenantId: 'comercio-x', conversacionId: 'wa_59100000047', turno, situacion, acciones, miUid: YO, capa: CAPA,
@@ -63,6 +63,16 @@ const MIO = { responde: 'persona', tomadoPor: YO };
 const AJENO = { responde: 'persona', tomadoPor: OTRA };
 
 describe('A. quién responde y los botones', () => {
+  it('SIN la salida publicada (`puedeIntervenir` falso): no se ve «Tomar conversación» y se explica en una frase corta', () => {
+    for (const rol of ['admin', 'oper']) {
+      const h = barra({ rol, intervenir: false });
+      expect(h, rol).not.toContain('Tomar conversación');
+      expect(h, rol).toContain('todavía no está activo para su negocio');
+    }
+    // una conversación ya tomada antes de perder la bandera: sigue pudiendo devolverse
+    expect(barra({ rol: 'oper', turno: MIO, intervenir: false })).toContain('Devolver');
+  });
+
   it('responde el asistente + admin/oper: estado, «Tomar conversación» y el aviso de que el asistente deja de responder', () => {
     for (const rol of ['admin', 'oper']) {
       const h = barra({ rol });
@@ -280,7 +290,7 @@ describe('D. el Detalle junta las piezas', () => {
     expect(d).toContain('situacionDeTurno(turno, p.miUid)');
     expect(d).toContain('const turno = turnoDeFicha(ficha, p.ahora);');
     expect(d).toContain('ventanaAbierta: ventanaAbiertaParaTomar(ficha.ultimoEntranteEn, p.ahora)');
-    expect(d).toContain('puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo');
+    expect(d).toContain('puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo, puedeIntervenir: p.puedeIntervenir');
   });
 
   it('el mensaje de una persona se pinta distinto del del asistente, con su rótulo abreviado y su estado de envío', () => {

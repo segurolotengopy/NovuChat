@@ -17,6 +17,7 @@ import {
   ErroresDeTurno, ID_CONVERSACION, INACTIVIDAD_MS, MARGEN_ENVIO_MS, MARGEN_RELOJ_MS, UID_DE_PERSONA, VENTANA_META_MS,
   leerTurno, milisegundosDeMomento, turnoEfectivo, turnoVigente, ventanaDeMetaAbierta,
 } from '../../functions/src/core/conversacion/turno.ts';
+import { personaPuedeEscribirDeFicha } from '../../functions/src/core/conversacion/turno.ts';
 import {
   TENANTS_EXCLUIDOS, esTenantExcluido, habilitadoParaPersona, nombreExcluido,
 } from '../../functions/src/core/conversacion/accesoPersona.ts';
@@ -291,12 +292,26 @@ describe('ventanaDeMetaAbierta', () => {
 });
 
 // ===========================================================================
+describe('personaPuedeEscribirDeFicha: solo `true` exacto', () => {
+  it('true habilita; todo lo demás (ausente, false, texto, número, objeto, ficha ausente) no', () => {
+    expect(personaPuedeEscribirDeFicha({ personaPuedeEscribir: true })).toBe(true);
+    for (const v of [false, 'true', 'TRUE', 1, 0, null, undefined, {}, [true]]) {
+      expect(personaPuedeEscribirDeFicha({ personaPuedeEscribir: v }), String(v)).toBe(false);
+    }
+    expect(personaPuedeEscribirDeFicha({})).toBe(false);
+    expect(personaPuedeEscribirDeFicha(null)).toBe(false);
+    expect(personaPuedeEscribirDeFicha(undefined)).toBe(false);
+  });
+});
+
+// ===========================================================================
 describe('los errores fijos', () => {
   it('la lista cerrada de códigos y mensajes (el contrato con la consola)', () => {
     expect(ErroresDeTurno).toEqual({
       sinSesion: { code: 'unauthenticated', message: 'Inicie sesión.' },
       sinPermiso: { code: 'permission-denied', message: 'No tiene permiso para atender esta conversación.' },
       noHabilitado: { code: 'permission-denied', message: 'Esta función no está habilitada para su comercio.' },
+      sinSalida: { code: 'permission-denied', message: 'Esta función todavía no está activa para su negocio.' },
       solicitudInvalida: { code: 'invalid-argument', message: 'Solicitud inválida.' },
       noExiste: { code: 'not-found', message: 'La conversación no existe.' },
       ocupada: { code: 'failed-precondition', message: 'Esta conversación la atiende otra persona.' },

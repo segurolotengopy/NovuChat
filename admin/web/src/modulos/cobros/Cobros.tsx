@@ -7,6 +7,8 @@ import { rolEn } from '../../core/lib/sesion';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { descargarCsv } from '../../central/lib/exportar';
 import { capacidadesDeConsola, useModulos } from '../../central/lib/flujos';
+import { ComprobantesRecibidos } from './ComprobantesRecibidos';
+import { filasDeRecibidos, type ComprobanteRecibido } from './comprobantesRecibidos';
 import { ContadoresDeCobro } from './ContadoresDeCobro';
 import { VisorComprobante } from './VisorComprobante';
 import { puedeVerComprobante, textosDelVisor } from './visorComprobante';
@@ -121,6 +123,8 @@ function CobrosDelNegocio() {
   const { tenantId = '' } = useParams();
   const [cobros, setCobros] = useState<Cobro[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [recibidos, setRecibidos] = useState<ComprobanteRecibido[] | null>(null);
+  const [errorRecibidos, setErrorRecibidos] = useState(false);
   const [rango, setRango] = useState<Rango>('semana');
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
@@ -140,6 +144,19 @@ function CobrosDelNegocio() {
       query(collection(db, 'tenants', tenantId, 'cierres'), orderBy('ocurridoEn', 'desc'), limit(300)),
       (s) => setCobros(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
       () => setError('No se pudieron leer los cobros.'));
+  }, [tenantId]);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    setRecibidos(null);
+    setErrorRecibidos(false);
+    // Todo comprobante que llegó (también los que no coincidieron y no crean cobro) queda en
+    // `comprobantesRecibidos`, que escribe el servidor. `orderBy('en')` usa el índice simple
+    // automático: no pide índice compuesto.
+    return onSnapshot(
+      query(collection(db, 'tenants', tenantId, 'comprobantesRecibidos'), orderBy('en', 'desc'), limit(100)),
+      (s) => setRecibidos(filasDeRecibidos(s.docs.map((d) => ({ ...d.data(), id: d.id })))),
+      () => setErrorRecibidos(true));
   }, [tenantId]);
 
   const visibles = useMemo(() => {
@@ -226,6 +243,8 @@ function CobrosDelNegocio() {
       </div>
 
       <ContadoresDeCobro tenantId={tenantId} />
+
+      <ComprobantesRecibidos tenantId={tenantId} filas={recibidos} error={errorRecibidos} />
 
       {error && <p role="alert">{error}</p>}
       {cobros === null && <p>Cargando…</p>}
@@ -409,7 +428,7 @@ function DetalleCobro({ cobro, tenantId, soyAdmin, cerrar }: {
           {verComprobante ? (
             <div className="aviso-datos">
               {textosDelVisor(cobro.cotejo?.calidad, soyAdmin).map((t) => <p key={t} className="ayuda">{t}</p>)}
-              <VisorComprobante tenantId={tenantId} cierreId={cobro.id} />
+              <VisorComprobante tenantId={tenantId} origen={{ cierreId: cobro.id }} />
             </div>
           ) : (
             <p className="ayuda aviso-datos">

@@ -1,0 +1,59 @@
+{
+  "_fuente": "Los 5 anuncios de la parte 1 de «Anuncios de Rubén: lo que el asistente dirá según el anuncio» (23/10/2026), con los ángulos APROBADOS tal cual. Son DATO del negocio (módulo Campañas de la consola): el flujo no lleva ninguno escrito. Sin montos, sin enlaces: el precio sale siempre del catálogo (productoId). Tres anuncios del código anterior se RETIRARON (no están aquí).",
+  "_uso": "node admin/scripts/datos/rroca-ruben/cargar-campanas.mjs --proyecto <id> --tenant rroca-ruben [--archivo <json>]   (en SECO por defecto; --aplicar escribe y lo hace el coordinador con la autorización de Andres)",
+  "tenant": "rroca-ruben",
+  "diasDeVigencia": 180,
+  "anuncios": [
+    {
+      "id": "asistente-de-negocio",
+      "texto": "Hola Rubén, tengo una consulta sobre el libro IA para Emprendedores",
+      "titulares": [
+        "Convierte la IA en tu asistente de negocio",
+        "Más ideas · Más clientes · Más tiempo para ti"
+      ],
+      "productoId": "libro-bonos",
+      "angulo": "Habla de los capítulos 9 (asistente personal) y 11 (equipo virtual) y pregunta de qué es su emprendimiento."
+    },
+    {
+      "id": "usando-la-ia-realmente",
+      "texto": "Hola Rubén, tengo una consulta sobre los bonos del libro IA para Emprendedores",
+      "titulares": [
+        "¿Estás usando la IA realmente para tu negocio?",
+        "¿Estás usando la IA mal?",
+        "La mayoría de emprendedores solo la usa para escribir textos"
+      ],
+      "productoId": "libro-bonos",
+      "angulo": "Reconoce que ya usa IA y no le saca provecho; pregunta para qué la usa hoy y qué quiere lograr."
+    },
+    {
+      "id": "que-publicar",
+      "texto": "Hola Rubén, tengo una consulta sobre el contenido para redes del libro IA para Emprendedores",
+      "titulares": [
+        "¿No sabes qué publicar?",
+        "Deja de inventar. Aprende a usar la IA."
+      ],
+      "productoId": "libro-bonos",
+      "angulo": "Habla de contenido: capítulo 6 y el bono de 100 prompts. Pregunta a qué se dedica y en qué red publica."
+    },
+    {
+      "id": "tiempo-automatizar",
+      "texto": "Hola Rubén, tengo una consulta sobre los capítulos del libro IA para Emprendedores",
+      "titulares": [
+        "¿Cuánto tiempo pierdes en tareas que podrías automatizar con IA?"
+      ],
+      "productoId": "libro-bonos",
+      "angulo": "Habla del Mapa de automatización y los capítulos 8 y 10; pregunta qué tarea repetitiva le quita más tiempo."
+    },
+    {
+      "id": "chatgpt-sin-saber-usarlo",
+      "texto": "Hola Rubén, tengo una consulta sobre cómo aplicar la IA a mi negocio con el libro IA para Emprendedores",
+      "titulares": [
+        "¿Ya tienes ChatGPT… pero no sabes cómo usarlo para tu negocio?",
+        "Tener acceso a una herramienta no es lo mismo que saber aplicarla"
+      ],
+      "productoId": "libro-bonos",
+      "angulo": "Explica que no es aprender una herramienta sino aplicarla a procesos reales con el Checklist de 7 días; pregunta a qué se dedica."
+    }
+  ],
+  "_advertenciaTexto": "TEMPORAL (25/10/2026): el `texto` de cada anuncio es una CONSULTA SOBRE EL LIBRO (la del primero es el prellenado real de la landing; las otras cuatro son variantes naturales de esa consulta, sin precios), puesta SOLO para que el revisor de modelo del servidor no rechace el anuncio por texto vacío; el servidor rechazó los prellenados del Pack, los videos y el Closer por traer precios que no respalda o la palabra «Prompt». Los anuncios de Rubén se reconocen por TITULAR de imagen: el texto NO reconoce nada porque el flujo no cablea campanasActivas. AL CABLEAR campanasActivas POR TEXTO DE ENTRADA HAY QUE REVISAR ESTOS TEXTOS: un anuncio podría activarse con un mensaje que no es suyo. Se quitan cuando el servidor acepte anuncios solo con titulares."
+}

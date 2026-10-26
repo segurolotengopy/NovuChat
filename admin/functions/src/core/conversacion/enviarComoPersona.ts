@@ -82,7 +82,7 @@ import {
   huellaDeEnvio, tocarTimbre as tocarTimbreReal, type TocarTimbre,
 } from './salidaPersona.js';
 import {
-  ID_CONVERSACION, MARGEN_ENVIO_MS, VENTANA_META_MS, milisegundosDeMomento, turnoEfectivo, ventanaDeMetaAbierta,
+  ID_CONVERSACION, MARGEN_ENVIO_MS, personaPuedeEscribirDeFicha, VENTANA_META_MS, milisegundosDeMomento, turnoEfectivo, ventanaDeMetaAbierta,
 } from './turno.js';
 import {
   auditarEnTransaccion, codigoDe, errorDeTurno, opcionesDeTurno, registrar, type ContextoDeTurno,
@@ -168,7 +168,12 @@ export async function crearMensajeDePersona(
   const refComercio = db.doc(`topesDeEnvio/t_${tenantId}`);
 
   return db.runTransaction<Creado>(async (tx) => {
-    const [conv, previo, tUsuario, tComercio] = await tx.getAll(ref, refMensaje, refUsuario, refComercio);
+    const [conv, previo, tUsuario, tComercio, fichaComercio] = await tx.getAll(
+      ref, refMensaje, refUsuario, refComercio, db.doc(`tenants/${tenantId}`),
+    );
+    // La salida publicada se vuelve a comprobar DENTRO de la transacción (si se apagó tras la lectura previa, no se
+    // escribe nada). Va antes que la clave ya usada: un reintento tampoco sale por una salida que ya no existe.
+    if (!personaPuedeEscribirDeFicha(fichaComercio?.data())) throw errorDeTurno('sinSalida');
     if (!conv || !conv.exists) throw errorDeTurno('noExiste');
 
     // 1. LA CLAVE YA USADA. Con los mismos datos es un reintento: lo guardado, sin tocar nada ni volver

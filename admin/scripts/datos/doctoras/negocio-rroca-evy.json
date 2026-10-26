@@ -1,0 +1,30 @@
+{
+  "_fuente": "Datos del negocio de la Dra. Evy Karina (tenant rroca-evy, flujo Flujos/experimental/doctoras/). Se carga con admin/scripts/datos/cargar-negocio.mjs, que solo admite las secciones negocio, agendamiento, catalogo y funcionarios: aquí va solo negocio (la recepción agenda y la valoración es gratuita: no hay catálogo, agenda ni cobro). Las claves que empiezan con `_` son notas y no se escriben.",
+  "_pendiente": {
+    "_nota": "Horario de la Clínica DentalCor confirmado por Andres el 22/10/2026 (L–V 8:30–18:30 continuo, sáb 9:00–12:00, domingo cerrado). El número de recepción es un marcador de la tabla local (CONFIGURACION.local.md); el número real no va en el repositorio.",
+    "horarioDeRecepcion": "de lunes a viernes de 08:30 a 18:30 y los sábados de 09:00 a 12:00; los domingos no se atiende"
+  },
+  "negocio": {
+    "nombreNegocio": "Dra. Evy Karina Rojas",
+    "descripcion": "Clínica DentalCor: valoración gratuita de armonización facial con la Dra. Evy Karina Rojas. El asistente responde con textos aprobados por la doctora y pasa la solicitud a la recepción; no agenda, no cobra y no da consejo médico.",
+    "direccion": "Avenida Piraí, segundo anillo, Calle Sapocó # 53 (Santa Cruz)",
+    "numeroRecepcionMarcador": "REEMPLAZAR_NUMERO_RECEPCION_RROCA_EVY",
+    "zonaHoraria": "America/La_Paz",
+    "tratamiento": "tu",
+    "estiloEmojis": "pocos",
+    "horarios": {
+      "lun": "08:30-18:30",
+      "mar": "08:30-18:30",
+      "mie": "08:30-18:30",
+      "jue": "08:30-18:30",
+      "vie": "08:30-18:30",
+      "sab": "09:00-12:00",
+      "dom": "cerrado"
+    },
+    "prefijosPermitidos": ["591"],
+    "datosQueNoTenemos": [
+      "precio del tratamiento (lo da la doctora en la valoración)",
+      "consejo médico o diagnóstico"
+    ]
+  }
+}

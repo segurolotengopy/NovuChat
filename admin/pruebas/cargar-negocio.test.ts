@@ -156,6 +156,18 @@ describe('cargar-negocio.mjs', () => {
     expect(r.salida).toMatch(/No se escribió nada/);
   });
 
+  it('acepta el turno partido (hasta tres tramos) y niega solape, desorden, cuatro tramos y espacios', () => {
+    const ok = correr(T, archivo('partido', con((d) => { d.negocio.horarios.lun = '09:00-12:00,14:00-18:00'; d.negocio.horarios.mar = '08:00-09:00,10:00-11:00,12:00-13:00'; })));
+    expect(ok.codigo, ok.salida).toBe(0);
+    for (const malo of ['09:00-13:00,12:00-18:00', '09:00-12:00,12:00-18:00', '14:00-18:00,09:00-12:00',
+      '08:00-09:00,10:00-11:00,12:00-13:00,14:00-15:00', '09:00-12:00, 14:00-18:00', '09:00-12:00,18:00-14:00', '09:00-12:00,']) {
+      const r = correr(T, archivo('partido-malo', con((d) => { d.negocio.horarios.lun = malo; })), '--aplicar');
+      expect(r.codigo, malo).toBe(2);
+      expect(r.salida, malo).toMatch(/negocio\.horarios\.lun: «cerrado» o HH:MM-HH:MM/);
+      expect(r.salida, malo).toMatch(/No se escribió nada/);
+    }
+  });
+
   it('NO acepta un tratamiento fuera del enumerado', () => {
     const r = correr(T, archivo('trato', con((d) => { d.negocio.tratamiento = 'che'; d.negocio.estiloEmojis = 'todos'; })), '--aplicar');
     expect(r.codigo).toBe(2);

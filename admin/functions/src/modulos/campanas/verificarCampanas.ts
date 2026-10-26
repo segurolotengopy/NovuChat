@@ -22,8 +22,10 @@ import { CLAVE_GEMINI } from '../../central/servicios/gemini.js';
 import type { ConsultarModelo } from '../../central/asistente/comportamiento.js';
 import { consultarGemini, otrosComercios } from '../../central/asistente/verificarComportamiento.js';
 import { limiteDeCampanas } from '../../central/cuenta/planes.js';
+import { terminosAprobados } from '../../central/asistente/terminos.js';
+import { nombreDeProductoApto, nombreParaElModelo } from '../productos/nombreSeguro.js';
 import {
-  hashLista, leerCampanas, revisarCampanas,
+  hashLista, leerCampanas, type Campana, productoIdValido, revisarCampanas,
   type ContextoDelNegocio, type ResultadoCampanas, type RevisionCampana,
 } from './campanas.js';
 
@@ -41,9 +43,26 @@ export async function contextoDelNegocio(db: Firestore, tenantId: string): Promi
   return {
     nombreNegocio: texto(negocio.get('nombreNegocio')),
     descripcion: texto(negocio.get('descripcion')),
-    servicios: catalogo.docs.map((d) => texto(d.get('nombre'))).filter((n) => n !== ''),
+    // Un nombre que es una frase de instrucción NO llega al modelo (Productos, `nombreSeguro.ts`).
+    servicios: catalogo.docs.map((d) => nombreParaElModelo(d.get('nombre')) ?? '').filter((n) => n !== ''),
     informacion: texto(negocio.get('instruccionesVigentes')),
   };
+}
+
+/**
+ * Los ids de producto que las campañas referencian y que existen ACTIVOS en el
+ * catálogo de ESTE tenant (a lo sumo diez lecturas, solo en el disparador y solo
+ * si alguna campaña referencia un producto). El tenant sale de la ruta del
+ * documento, nunca del contenido.
+ */
+export async function productosActivosReferenciados(
+  db: Firestore, tenantId: string, lista: readonly { productoId?: string }[],
+): Promise<Set<string>> {
+  const ids = [...new Set(lista.map((c) => c.productoId)
+    .filter(productoIdValido))];
+  if (ids.length === 0) return new Set();
+  const docs = await db.getAll(...ids.map((i) => db.doc(`tenants/${tenantId}/catalogo/${i}`)));
+  return new Set(docs.filter((d) => d.exists && d.get('activo') === true).map((d) => d.id));
 }
 
 export type ResultadoAplicarCampanas = 'aplicado' | 'obsoleto' | 'sin_documento';
@@ -82,6 +101,19 @@ export async function aplicarCampanas(
   return resultado;
 }
 
+/**
+ * Los términos de producto aprobados de ESTE comercio para los textos de la lista:
+ * UNA sola lectura por verificación (los campos van juntos, no uno por uno) y
+ * ninguna si ningún campo contiene «prompt». Si Firestore falla, la excepción
+ * sube; `revisarYAplicarCampanas` la atrapa y falla cerrado (sin términos).
+ */
+export async function terminosDeLaLista(
+  db: Firestore, tenantId: string, lista: readonly Campana[],
+): Promise<string[]> {
+  const campos = lista.flatMap((c) => [c.texto, ...(c.titulares ?? []), c.angulo ?? '']);
+  return terminosAprobados(db, tenantId, campos.join('\n'), nombreDeProductoApto);
+}
+
 /** La revisión y la escritura juntas: lo que corre el disparador y lo que prueban las suites. */
 export async function revisarYAplicarCampanas(
   db: Firestore, tenantId: string, antes: Record<string, unknown>, despues: Record<string, unknown>,
@@ -98,8 +130,17 @@ export async function revisarYAplicarCampanas(
   const previa = despues['revision'];
   const anterior = typeof previa === 'object' && previa !== null
     ? (previa as { porCampana?: Record<string, RevisionCampana> }).porCampana : undefined;
+  const productos = await productosActivosReferenciados(db, tenantId, lista);
+  // Falla cerrado: si no se pueden leer los términos, ninguno vale (las campañas con «prompts» las
+  // rechaza la capa 1) y el resto de la lista se aplica normal, sin dejar vigente lo anterior.
+  let terminos: string[] = [];
+  try {
+    terminos = await terminosDeLaLista(db, tenantId, lista);
+  } catch {
+    logger.warn('verificarCampanas: no se pudieron leer los términos de producto');
+  }
   const revision = await revisarCampanas(lista, leerCampanas(antes['lista']), anterior, limite, ahoraMs,
-    contexto, otros, consultar);
+    contexto, otros, consultar, productos, terminos);
   const resultado = await aplicarCampanas(db, tenantId, hash, revision, revisadoPor);
   return { hash, resultado, revision };
 }
