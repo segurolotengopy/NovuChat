@@ -112,7 +112,7 @@ describe('las guardias: cada una rechaza su violación', () => {
     for (let i = (f['nodes'] as J[]).length; i < 48; i++) (f['nodes'] as J[]).push({ name: `Relleno ${i}`, type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] });
     expect(hallazgos('produccion', f)).toMatch(/48 nodos y el tope es 47/);
     (f['nodes'] as J[]).pop();
-    expect(hallazgos('produccion', f)).not.toMatch(/el tope es 46/);
+    expect(hallazgos('produccion', f)).not.toMatch(/nodos y el tope es/);
   });
   it('la marca `meta.noPublicable` de PR-A ya no va (la conversación está completa); la guardia de publicación es del PR-C', () => {
     const f = clon(PRODUCCION); f['meta'] = { noPublicable: 'x' };
