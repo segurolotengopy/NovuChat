@@ -59,13 +59,25 @@ valor_de() { # valor_de <archivo> <NOMBRE>: ultima asignacion, sin comillas ni e
   v="${v#*=}"; v="${v%$'\r'}"; v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"
   printf '%s' "$v"
 }
+# Una sola asignacion N8N_API_KEY=, sin `export`, valor simple (sin « # comentario» ni espacios): lo ambiguo se rechaza.
+validar_asignacion() { # validar_asignacion <archivo> <obligatoria 0|1>
+  local n linea val
+  n="$(grep -cE "^[[:space:]]*(export[[:space:]]+)?N8N_API_KEY=" "$1")" || n=0
+  if [[ "$n" -eq 0 ]]; then [[ "$2" -eq 0 ]] || die "$1 no trae una linea N8N_API_KEY= que reponer"; return 0; fi
+  [[ "$n" -eq 1 ]] || die "$1 trae $n asignaciones de N8N_API_KEY (debe ser una sola)"
+  linea="$(grep -E "^[[:space:]]*(export[[:space:]]+)?N8N_API_KEY=" "$1")"
+  [[ "$linea" =~ ^[[:space:]]*N8N_API_KEY= ]] || die "$1 usa export en N8N_API_KEY (no soportado)"
+  val="${linea#*=}"; val="${val%$'\r'}"
+  [[ "$val" =~ ^[\"\']?[A-Za-z0-9._~+/=-]*[\"\']?$ ]] || die "$1: el valor de N8N_API_KEY no es simple (comentario o espacios)"
+}
+sin_enlace() { [[ ! -L "$1" ]] || die "$1 es un enlace simbolico: pase la ruta real"; }
+[[ -z "$DESDE" ]] || { sin_enlace "$DESDE"; [[ -f "$DESDE" ]] && validar_asignacion "$DESDE" 1; }
 for f in "${ENVS[@]}"; do
+  sin_enlace "$f"
   [[ -f "$f" ]] || die "No existe $f"
   [[ -n "$(valor_de "$f" N8N_BASE_URL)" ]] || die "$f no trae N8N_BASE_URL"
   [[ "$(valor_de "$f" N8N_BASE_URL)" == https://* ]] || die "$f: N8N_BASE_URL debe ser https"
-  if [[ "$MODO" != "sonda" ]]; then
-    grep -qE "^[[:space:]]*N8N_API_KEY=" "$f" || die "$f no trae una linea N8N_API_KEY= que reponer"
-  fi
+  if [[ "$MODO" != "sonda" ]]; then validar_asignacion "$f" 1; else validar_asignacion "$f" 0; fi
 done
 
 # UNA peticion minima; la clave viaja a curl por la entrada estandar (-H @-), nunca por argumentos.
@@ -117,6 +129,8 @@ if [[ $APLICAR -eq 0 ]]; then
 fi
 
 mal=0
+tmp=""
+trap 'rm -f "${tmp:-}"' EXIT INT TERM
 SELLO="$(date +%Y%m%d-%H%M%S)"
 for f in "${ENVS[@]}"; do
   dir="$(dirname "$f")"
@@ -135,7 +149,7 @@ for f in "${ENVS[@]}"; do
     fi
   done <"$f"
   if [[ $hecho -eq 1 ]] && chmod 600 "$tmp" && mv -f "$tmp" "$f"; then
-    chmod 600 "$f"
+    chmod 600 "$f"; tmp=""
     echo "$f: clave repuesta (respaldo: $f.respaldo-$SELLO)"
   else
     rm -f "$tmp"; echo "$f: NO se pudo escribir (queda como estaba)"; mal=1; continue

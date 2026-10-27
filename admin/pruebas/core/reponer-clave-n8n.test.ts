@@ -12,7 +12,7 @@
  *  - la sonda solo lee y dice solo el código HTTP; copiar toma la clave de otro .env.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -154,5 +154,35 @@ describe('reponer-clave-n8n.sh: copiar', () => {
   it('exige --desde y rechaza --stdin', () => {
     expect(correr(['copiar', '--env', envA()]).codigo).toBe(2);
     expect(correr(['copiar', '--stdin', '--desde', envOk(), '--env', envA()]).codigo).toBe(2);
+  });
+});
+
+describe('reponer-clave-n8n.sh: .env ambiguos o raros se rechazan sin escribir', () => {
+  const casos: Array<[string, string]> = [
+    ['dos asignaciones de N8N_API_KEY', `N8N_BASE_URL=${BASE}\nN8N_API_KEY=${VIEJA}\nN8N_API_KEY=${VIEJA}\n`],
+    ['export en la clave', `N8N_BASE_URL=${BASE}\nexport N8N_API_KEY=${VIEJA}\n`],
+    ['comentario al final del valor', `N8N_BASE_URL=${BASE}\nN8N_API_KEY=${VIEJA} # vence pronto\n`],
+  ];
+  for (const [nombre, contenido] of casos) {
+    it(`${nombre}: aborta (2) sin llamar a n8n ni escribir`, () => {
+      const raro = join(dir, '.env.raro');
+      writeFileSync(raro, contenido, { mode: 0o600 });
+      const r = correr(['reponer', '--stdin', '--aplicar', '--env', envA(), '--env', raro], `${VALIDA}\n`);
+      expect(r.codigo).toBe(2);
+      expect(llamadas()).toBe('');
+      expect(readFileSync(raro, 'utf8')).toBe(contenido);
+      expect(claveDe(envA())).toBe(VIEJA);
+    });
+  }
+  it('un enlace simbólico se rechaza (también como --desde)', () => {
+    const enlace = join(dir, '.env.enlace');
+    symlinkSync(envA(), enlace);
+    expect(correr(['reponer', '--stdin', '--aplicar', '--env', enlace], `${VALIDA}\n`).codigo).toBe(2);
+    expect(correr(['copiar', '--desde', enlace, '--env', envB()]).codigo).toBe(2);
+    expect(claveDe(envA())).toBe(VIEJA);
+  });
+  it('no deja temporales .reponer-clave.* tras escribir', () => {
+    correr(['reponer', '--stdin', '--aplicar', '--env', envA()], `${VALIDA}\n`);
+    expect(readdirSync(dir).filter((n) => n.startsWith('.reponer-clave.'))).toEqual([]);
   });
 });
