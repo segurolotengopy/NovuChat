@@ -135,7 +135,7 @@ SELLO="$(date +%Y%m%d-%H%M%S)"
 for f in "${ENVS[@]}"; do
   dir="$(dirname "$f")"
   # Respaldo 600 ANTES de escribir (conserva la clave vieja por si hubiera que volver atras).
-  if ! cp -p "$f" "$f.respaldo-$SELLO" || ! chmod 600 "$f.respaldo-$SELLO"; then
+  if ! cp "$f" "$f.respaldo-$SELLO" || ! chmod 600 "$f.respaldo-$SELLO"; then
     echo "$f: no se pudo respaldar (queda como estaba)"; mal=1; continue
   fi
   tmp="$(mktemp "$dir/.reponer-clave.XXXXXX")" || { echo "$f: no se pudo crear el temporal"; mal=1; continue; }
