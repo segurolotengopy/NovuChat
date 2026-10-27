@@ -8,11 +8,11 @@
  * Lo que cierra cada grupo:
  *  - la clave nunca sale por pantalla, ni en éxito ni en error, ni llega a curl por argumentos;
  *  - el seco no escribe nada; la clave que n8n rechaza o con mala forma no escribe nada;
- *  - con --aplicar se reemplaza solo la línea N8N_API_KEY, el resto del .env queda intacto y en 600;
+ *  - con --aplicar se respalda (600) y se reemplaza solo la línea N8N_API_KEY, el resto queda intacto y en 600;
  *  - la sonda solo lee y dice solo el código HTTP; copiar toma la clave de otro .env.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -103,6 +103,11 @@ describe('reponer-clave-n8n.sh: reponer', () => {
     expect(statSync(envA()).mode & 0o777).toBe(0o600);
     expect(statSync(envB()).mode & 0o777).toBe(0o600);
     expect(r.salida).toContain(`${envB()}: HTTP 200`);
+    // respaldo 600 con la clave vieja, hecho antes de escribir
+    const resp = readdirSync(dir).filter((n) => n.startsWith('.env.a.respaldo-'));
+    expect(resp).toHaveLength(1);
+    expect(readFileSync(join(dir, resp[0]), 'utf8')).toContain(VIEJA);
+    expect(statSync(join(dir, resp[0])).mode & 0o777).toBe(0o600);
   });
 
   it('una clave que n8n rechaza NO escribe nada', () => {

@@ -23,13 +23,14 @@
 #       hoy sirve: no hace falta emitir una clave nueva. Misma comprobacion previa (200),
 #       mismo seco por omisión, misma escritura atomica y misma confirmacion.
 #
+# Antes de escribir deja un respaldo 600 `<env>.respaldo-AAAAMMDD-HHMMSS` con la clave vieja.
 # Nunca imprime la clave, ni siquiera su largo, ni en los errores. Tampoco las URL ni
 # los nombres de host: los .env se nombran por su ruta. Salida: 0 todo bien; 1 algun
 # .env quedo sin comprobar o con 401; 2 mal uso o mal entorno (no se escribe nada).
 set -uo pipefail
 umask 077
 
-uso() { sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; }
+uso() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "✗ $*" >&2; exit 2; }
 
 MODO="${1:-}"; [[ -n "$MODO" ]] && shift
@@ -116,8 +117,13 @@ if [[ $APLICAR -eq 0 ]]; then
 fi
 
 mal=0
+SELLO="$(date +%Y%m%d-%H%M%S)"
 for f in "${ENVS[@]}"; do
   dir="$(dirname "$f")"
+  # Respaldo 600 ANTES de escribir (conserva la clave vieja por si hubiera que volver atras).
+  if ! cp -p "$f" "$f.respaldo-$SELLO" || ! chmod 600 "$f.respaldo-$SELLO"; then
+    echo "$f: no se pudo respaldar (queda como estaba)"; mal=1; continue
+  fi
   tmp="$(mktemp "$dir/.reponer-clave.XXXXXX")" || { echo "$f: no se pudo crear el temporal"; mal=1; continue; }
   # El valor entra al temporal por el builtin printf (no por argumentos de un proceso).
   hecho=0
@@ -130,7 +136,7 @@ for f in "${ENVS[@]}"; do
   done <"$f"
   if [[ $hecho -eq 1 ]] && chmod 600 "$tmp" && mv -f "$tmp" "$f"; then
     chmod 600 "$f"
-    echo "$f: clave repuesta"
+    echo "$f: clave repuesta (respaldo: $f.respaldo-$SELLO)"
   else
     rm -f "$tmp"; echo "$f: NO se pudo escribir (queda como estaba)"; mal=1; continue
   fi
