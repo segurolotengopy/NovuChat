@@ -559,6 +559,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
     'Registrar cierre': (ll) => { captura.cierre.push(ll.cuerpo ?? {}); return { ok: true }; },
     'Obtener URL del medio': () => ({ id: 'm', url: 'https://medios.ejemplo.invalid/m', mime_type: 'image/jpeg', file_size: 100_000 }),
     'Descargar medio': () => ({}),
+    'Guardar comprobante': () => ({ statusCode: 409, body: { error: 'sin_cobro_pendiente' } }), // la batería no guarda nada: el cotejo sigue con `ruta: null`
     'Transcribir audio': () => ({ content: { parts: [{ text: String(turnoActual.t?.cliente?.transcripcion ?? '') }] } }),
     'Leer comprobante (imagen)': () => lecturaDe(turnoActual.t, captura),
     'Leer comprobante (PDF)': () => lecturaDe(turnoActual.t, captura),

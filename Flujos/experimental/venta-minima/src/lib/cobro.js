@@ -437,6 +437,20 @@ function cbResultado(respCotejo, previo) {
   };
 }
 
+// La ruta que devolvió `guardarComprobante` (200 `{ruta}`), o null: cualquier otra cosa (409 sin cobro de regla 2 abierto, 413, 415, 502, un error de red, una
+// ruta que no tiene la forma `tenants/<comercio>/comprobantes/<aaaa-mm-dd>/<nombre>.<jpg|png|webp|pdf>`) es «no se guardó». El cotejo corre igual, con `ruta: null`.
+// (Misma función que la de `rroca-ruben`; el servidor la vuelve a validar con `rutaValidaDe`: este patrón no es el límite, es la primera defensa.)
+function cbRutaGuardada(resp) {
+  const r = cbEsObjeto(resp) ? resp : {};
+  let cuerpo = r.body;
+  if (typeof cuerpo === 'string') {
+    try { cuerpo = JSON.parse(cuerpo); } catch (e) { cuerpo = {}; }
+  }
+  if (Number(r.statusCode) !== 200 || !cbEsObjeto(cuerpo) || typeof cuerpo.ruta !== 'string') return null;
+  const ruta = cuerpo.ruta;
+  return ruta.length <= 300 && /^tenants\/[A-Za-z0-9_-]{1,60}\/comprobantes\/\d{4}-\d{2}-\d{2}\/[A-Za-z0-9_-]{1,100}\.(?:jpg|png|webp|pdf)$/.test(ruta) ? ruta : null;
+}
+
 // ---------------------------------------------------------------------------
 // Qué se le dice al cliente y qué se le avisa al restaurante
 // ---------------------------------------------------------------------------

@@ -137,6 +137,7 @@ function crear(op: OpcionesDeLaPrueba = {}) {
     'Registrar cierre': () => ({ ok: true }),
     'Obtener URL del medio': () => ({ url: 'https://medios.ejemplo.invalid/m', mime_type: 'image/jpeg', file_size: 100_000 }),
     'Descargar medio': () => ({}),
+    'Guardar comprobante': (ll) => ({ statusCode: 200, body: { ruta: `tenants/qtaco/comprobantes/2026-10-26/${String(ll.encabezados['X-NovuChat-IdMeta'] ?? 'x').replace(/[^A-Za-z0-9_-]/g, '_')}.jpg` } }),
     'Transcribir audio': () => ({ content: { parts: [{ text: 'quiero 4 tacos de birria' }] } }),
     'Leer comprobante (imagen)': () => lecturaCorrecta('63.00'),
     'Leer comprobante (PDF)': () => lecturaCorrecta('63.00'),
@@ -1053,7 +1054,8 @@ describe('la entrada del receptor: verificada, sin Trigger, sin repetidos', () =
   it('todo cuerpo HTTP se arma con JSON.stringify (o con la forma del Demo B), nunca interpolando texto en una cadena JSON', () => {
     let httpConCuerpo = 0;
     for (const f of [QTACO, PRUEBA]) {
-      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters['sendBody'] === true)) {
+      // «Guardar comprobante» manda los BYTES del archivo (`contentType: binaryData`), no un JSON: no hay cuerpo que interpolar.
+      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters['sendBody'] === true && x.parameters['contentType'] !== 'binaryData')) {
         httpConCuerpo++;
         const jb = String(n.parameters['jsonBody']);
         expect(n.parameters['specifyBody'], n.name).toBe('json');
@@ -2891,8 +2893,8 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(50); // 49 + el webhook del carrito: el tope de producción (`construir.mjs` lo impone)
-    expect(PRUEBA.nodes).toHaveLength(46);
+    expect(QTACO.nodes).toHaveLength(51); // 50 + el webhook del carrito: el tope de producción (`construir.mjs` lo impone)
+    expect(PRUEBA.nodes).toHaveLength(47);
   });
 
   it('L2: en producción un `wamid.SIMULADO-…` NO cuenta como aviso salido: el cliente no lee «pasé tu pedido» y el cierre no lo toma de referencia', () => {
@@ -3170,7 +3172,7 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
     for (const n of [
       'Carga de entrada', '¿Es un mensaje?', 'Config base', 'Traer configuración', 'Config del negocio', 'Interpretar entrada', '¿Reportar? (entrante)',
       'Reportar mensaje (entrante)', '¿Comercio operativo?', 'Comercio no operativo', '¿Atención normal?', 'Uso extendido', '¿Bajar medio?',
-      'Obtener URL del medio', '¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', 'Transcribir audio', '¿Es PDF?', 'Leer comprobante (PDF)',
+      'Obtener URL del medio', '¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', 'Guardar comprobante', 'Transcribir audio', '¿Es PDF?', 'Leer comprobante (PDF)',
       'Leer comprobante (imagen)', 'Interpretar lectura', 'Cotejar en el servidor', 'Decidir turno', '¿Extraer?', 'Extraer', 'Plan del turno',
       'Armar avisos', '¿Hay avisos?', 'Enviar aviso', '¿Falló el aviso?', 'Aviso de respaldo', 'Armar mensajes', '¿Enviar de verdad?',
       'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)', 'Reportar mensaje (saliente)', '¿Registrar cierre?',
@@ -3194,7 +3196,9 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
       expect(String(deB(n)['text']), `${n} del Demo B no trae la frase`).not.toContain(FRASE_DATO);
     }
     expect(mio('Transcribir audio')).toEqual(deB('Transcribir audio'));
-    expect(mio('Cotejar en el servidor')['jsonBody']).toBe(deB('Cotejar en el servidor')['jsonBody']);
+    // El cuerpo es el del Demo B MÁS `ruta` (la imagen guardada por «Guardar comprobante», 26/10): quitándola, es idéntico.
+    expect(String(mio('Cotejar en el servidor')['jsonBody']).replace(", ruta: typeof $json.ruta === 'string' ? $json.ruta : null", '')).toBe(deB('Cotejar en el servidor')['jsonBody']);
+    expect(String(mio('Cotejar en el servidor')['jsonBody'])).toContain("ruta: typeof $json.ruta === 'string' ? $json.ruta : null");
     expect(mio('Cotejar en el servidor')['url']).toBe(deB('Cotejar en el servidor')['url']);
     // Negativo: un texto cualquiera no es el de Demo B.
     expect(mio('Leer comprobante (PDF)')['text']).not.toBe('otro texto');
@@ -3220,7 +3224,7 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
   const SUPUESTO_SIN_TIMEOUT_S = 15;
   const CADENA_DE_COMPROBANTE: [string, number][] = [
     ['Verificar firma con el receptor', 1], ['Traer configuración', 1], ['Reportar mensaje (entrante)', 1], ['Obtener URL del medio', 1],
-    ['Descargar medio', 1], ['Leer comprobante (imagen)', 1], ['Cotejar en el servidor', 1],
+    ['Descargar medio', 1], ['Guardar comprobante', 1], ['Leer comprobante (imagen)', 1], ['Cotejar en el servidor', 1],
     ['Enviar aviso', 5], ['Enviar a WhatsApp', 3], ['Reportar mensaje (saliente)', 3],
   ];
   function peorCasoDeComprobante(f: Flujo): { total: number; degradado: string; detalle: Record<string, { tipico: number; peor: number }> } {
@@ -4722,7 +4726,7 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
   });
 
   it('el JSON de Q\'Taco sigue en 50 nodos o menos y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(50);
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(51);
     const base = configBase(QTACO);
     expect(base['cobroSimuladoActivo']).toBe(true);
     expect(base['qrSimuladoUrl']).toBe(URL_SIMULADO);

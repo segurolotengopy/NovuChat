@@ -69,10 +69,10 @@ const SOLO_PRUEBA = ['Simular aviso', '¿Avisar de verdad?'];
 const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 
 // PRESUPUESTO DE NODOS (Andres, 03/10/2026): la complejidad de los nodos de n8n ya impidió salir otras veces. El JSON de producción
-// de Q'Taco tiene como MÁXIMO 50 nodos (49 + el webhook del carrito). Todo lo demás se hace dentro de los nodos que ya existen
+// de Q'Taco tiene como MÁXIMO 51 nodos (50 + el webhook del carrito; el 51 es «Guardar comprobante», por el pedido del 26/10 de que ningún comprobante se pierda; ver DISENO.md). Todo lo demás se hace dentro de los nodos que ya existen
 // (el código vive en `src/lib` y `src/nodos`). `--verificar` falla si un JSON de producción (todo el que no es la variante de
 // prueba) pasa de este tope.
-const TOPE_DE_NODOS = 50;
+const TOPE_DE_NODOS = 51;
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,
 // su credencial de cabecera (la de la ingesta), `responseMode: onReceived` y la ruta como marcador (una URL de capacidad que
