@@ -851,7 +851,8 @@ function avVariablesLineas(d, dest, resultado, tamano) {
     else if (k < cuantos) vars.push(avParametro(avPiezaItem(lineas[k], opc), 200, opc));
     else vars.push('—');
   }
-  vars.push(avParametro(avCotejoTexto(resultado), 80));
+  // El cuerpo de la plantilla ya dice «Comprobante: {{N+3}}.»: sin la palabra repetida («Comprobante: comprobante: datos coinciden»).
+  vars.push(avParametro(avCotejoTexto(resultado).replace(/^comprobante:?\s+/i, ''), 80));
   return vars;
 }
 

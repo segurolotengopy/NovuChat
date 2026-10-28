@@ -56,7 +56,7 @@ describe('aviso por líneas: la plantilla de tamaño 2, 4 o 6 y sus variables', 
       expect(p.length, `n=${n}`).toBe(tam + 3);
       expect(p.slice(2, 2 + tam), `n=${n}`).toEqual(lineas);
       expect(p[0]).toMatch(/^N\.º K7P2 de \d+ ítems?\. Total de la comida: Bs 110/);
-      expect(p[tam + 2]).toBe('comprobante: datos coinciden');
+      expect(p[tam + 2]).toBe('datos coinciden');
     }
   });
 
