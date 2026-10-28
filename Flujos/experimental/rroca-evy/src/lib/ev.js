@@ -957,16 +957,18 @@ function evNombreTrasPedirAgendar(historial) {
 function evNegaAgendar(textoCliente) {
   // Por cláusula (coma, punto y coma, «pero», «aunque», «igual»): la negación NO gana si una cláusula POSTERIOR dice «quiero agendar» en positivo («Hola, no sé mucho, quiero agendar una cita»).
   const claus = evTexto(textoCliente).split(/[,;]|\bpero\b|\baunque\b|\bigual\b/i).map((c) => evNorm(c)).filter((c) => c !== '');
-  const neg = (c) => /\bno\b[^.?!]{0,40}\b(agend|reserv|separ|cita)/.test(c) || /\b(todavia no|aun no|mas adelante|no ahora|ahora no|ahorita no|lo pienso|lo voy a pensar)\b/.test(c);
+  const neg = (c) => /\bno\b[^.?!]{0,40}\b(agend|reserv|separ|cita|recepcion|secretari)/.test(c) || /\b(todavia no|aun no|mas adelante|no ahora|ahora no|ahorita no|lo pienso|lo voy a pensar)\b/.test(c);
   const pos = (c) => EV_QUIERE_AGENDAR.test(c) && !neg(c);
   return claus.some((c, i) => neg(c) && !claus.slice(i + 1).some(pos));
 }
 // Pedido explícito de agendar (no una pregunta sobre cómo se agenda).
 const EV_QUIERE_AGENDAR = /\b(?:quiero|quisiera|queremos|deseo|necesito|me gustaria|voy a|vamos a|puedo|podemos|podria|podrian)\s+(?:\w+\s+){0,2}(?:agendar|reservar|separar)\b|\bagend(?:a|ame|en|enme|arme)\b|\breserva(?:me|nos)\b|\bsi,? quiero (?:la valoracion|mi valoracion|mi cita|agendar)\b/;
+// Pedido explícito de hablar con una PERSONA del negocio («Me gustaría chatear con la secretaria», 28/10/2026: el asistente contestó «¡Por supuesto!» y el filtro de promesas sin respaldo borró el resto, sin botón). Es lo mismo que pedir recepción: deriva.
+const EV_QUIERE_PERSONA = /\b(?:quiero|quisiera|queremos|deseo|necesito|necesitamos|me gustaria|puedo|podemos|podria|podrian|prefiero|preferiria)\s+(?:\w+\s+){0,2}(?:chatear|hablar|escribir|escribirle|conversar|comunicarme|contactar|contactarme|comunicarnos)\s+(?:\w+\s+){0,2}(?:con|a)\s+(?:\w+\s+){0,2}(?:secretaria|secretario|recepcionista|recepcion|alguien del equipo|alguien de la clinica|una persona|un asesor|una asesora|un humano)\b/;
 function evQuiereAgendar(textoCliente) {
   const raw = evTexto(textoCliente);
   const n = evNorm(raw);
-  return EV_QUIERE_AGENDAR.test(n) && !/\bcomo\b/.test(n) && !evNegaAgendar(raw);
+  return (EV_QUIERE_AGENDAR.test(n) || EV_QUIERE_PERSONA.test(n)) && !/\bcomo\b/.test(n) && !evNegaAgendar(raw);
 }
 function evDioNombre(historial, textoCliente) {
   const re = /\b(?:soy|me llamo|mi nombre es)\s+\p{L}{2,}/iu;
