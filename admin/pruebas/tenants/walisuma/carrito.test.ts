@@ -240,14 +240,86 @@ describe('arreglos de la revisión', () => {
   });
 });
 
+describe('arreglos del informe de seguridad', () => {
+  const L = (crudas: unknown, o?: unknown, v: unknown = V) => vc('vcLineas')(crudas, v, o) as { lineas: any[]; descartadas: any[] }; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const ms = (f: () => void): number => { const t = performance.now(); f(); return performance.now() - t; };
+  const ADVERSARIAS = ['a'.repeat(200000), 'a.'.repeat(100000), 'a-'.repeat(100000) + '!', '1.'.repeat(100000), ('a'.repeat(60) + '.').repeat(3000) + '!'];
+
+  it('MEDIUM NEGADO: ninguna entrada adversaria tarda 200 ms en el detalle, el id, el nombre o la descripción', () => {
+    for (const a of ADVERSARIAS) {
+      expect(ms(() => L([{ id: 'a1', cantidad: 1, detalle: a }])), 'detalle').toBeLessThan(200);
+      expect(ms(() => L([{ id: a, cantidad: 1 }])), 'id').toBeLessThan(200);
+      expect(ms(() => vc('vcVendibles')([{ id: 'x', nombre: a, descripcion: a, area: a, precio: 1, activo: true }])), 'catálogo').toBeLessThan(200);
+      expect(ms(() => vc('vcLineaAviso')([{ cantidad: 1, nombre: a }])), 'aviso').toBeLessThan(200);
+    }
+  });
+  it('MEDIUM: el id descartado y el detalle salen recortados aunque la entrada mida 200.000', () => {
+    const r = L([{ id: 'a'.repeat(200000), cantidad: 1 }]);
+    expect(r.descartadas[0].id.length).toBeLessThanOrEqual(100);
+    expect(L([{ id: 'a1', cantidad: 1, detalle: 'a'.repeat(200000) }]).lineas[0].detalle.length).toBeLessThanOrEqual(120);
+  });
+  it('LOW 1 NEGADO: el detalle sin formato de WhatsApp, sin «Bs» ni «total», y con vocabulario de cobro se descarta entero', () => {
+    const d = (t: string) => L([{ id: 'a1', cantidad: 1, detalle: t }]).lineas[0].detalle as string;
+    expect(d('*Total: Bs 1* pago acreditado ~')).toBe('');
+    for (const cobro of ['pago acreditado', 'ya verificado', 'está pagado', 'recibimos tu pago', 'confirmado']) expect(d('talla M ' + cobro), cobro).toBe('');
+    const limpio = d('*Total: Bs 1* `talla` _M_ ~x~');
+    expect(limpio).not.toMatch(/[*_~`]/);
+    expect(limpio).not.toMatch(/\bbs\b|total/i);
+    expect(limpio).toContain('talla');
+    expect(d('talla M')).toBe('talla M');
+  });
+  it('LOW 2 NEGADO: el total y el resumen recalculan cantidad × precio y no creen en `subtotalCentavos`', () => {
+    const mentira = [{ id: 'a1', nombre: 'Pieza A', cantidad: 3, precioCentavos: 1250, subtotalCentavos: 1 }];
+    expect(vc('vcTotalCentavos')(mentira)).toBe(3750);
+    expect(vc('vcResumen')(mentira)).toBe('3 × Pieza A — Bs 37,50\nTotal: Bs 37,50');
+  });
+  it('LOW 2 NEGADO: una suma que no es entero seguro da null y vcMonto(null) da cadena vacía', () => {
+    const enorme = [{ cantidad: 1, precioCentavos: Number.MAX_SAFE_INTEGER }, { cantidad: 1, precioCentavos: 5 }];
+    expect(vc('vcTotalCentavos')(enorme)).toBeNull();
+    expect(vc('vcTotalCentavos')([{ cantidad: 2, precioCentavos: Number.MAX_SAFE_INTEGER }])).toBeNull();
+    expect(vc('vcMonto')(null)).toBe('');
+  });
+  it('LOW 2: un carrito vacío da resumen vacío, no «Total: Bs 0»', () => {
+    expect(vc('vcResumen')([])).toBe('');
+    expect(vc('vcResumen')(null)).toBe('');
+    expect(vc('vcResumen')([null, 'x'])).toBe('');
+    expect(vc('vcTotalCentavos')([])).toBe(0);
+  });
+  it('LOW 3 NEGADO: 30 líneas del mismo id con detalles distintos no pasan de 50 unidades en total', () => {
+    const r = L(Array.from({ length: 30 }, (_, i) => ({ id: 'a1', cantidad: 10, detalle: 'v' + i })));
+    const unidades = r.lineas.reduce((s, l) => s + l.cantidad, 0);
+    expect(unidades).toBe(50);
+    expect(r.lineas).toHaveLength(5);
+    expect(r.descartadas.length).toBe(25);
+    expect(r.descartadas.every((x) => x.motivo === 'tope')).toBe(true);
+    const parcial = L([{ id: 'a1', cantidad: 45, detalle: 'a' }, { id: 'a1', cantidad: 10, detalle: 'b' }]);
+    expect(parcial.lineas.map((l) => l.cantidad)).toEqual([45, 5]);
+    expect(parcial.descartadas).toEqual([{ id: 'a1', motivo: 'tope' }]);
+    expect(L([{ id: 'a1', cantidad: 50 }, { id: 'b2', cantidad: 50 }]).lineas).toHaveLength(2);
+  });
+  it('LOW 4 NEGADO: puntos ideográficos, dominios con letras no latinas e IPv4 no sobreviven', () => {
+    const d = (t: string) => L([{ id: 'a1', cantidad: 1, detalle: t }]).lineas[0].detalle as string;
+    expect(d('visita malo。shop ya')).toBe('visita ya');
+    expect(d('visita malo｡shop ya')).toBe('visita ya');
+    expect(d('visita malo﹒shop ya')).toBe('visita ya');
+    expect(d('visita malo.рф ya')).toBe('visita ya');
+    expect(d('ve a 192.168.0.1 ya')).toBe('ve a ya');
+    expect(d('ve a 1.2.3.4/ruta/x ya')).toBe('ve a ya');
+  });
+  it('LOW 4: «12.5cm» y «1.5 kg» siguen intactos', () => {
+    const d = (t: string) => L([{ id: 'a1', cantidad: 1, detalle: t }]).lineas[0].detalle as string;
+    expect(d('12.5cm y 1.5 kg y 3.20')).toBe('12.5cm y 1.5 kg y 3.20');
+  });
+});
+
 describe('vcTotalCentavos y vcMonto', () => {
   it('el total es un entero y no suma envío ni descuentos', () => {
-    const lineas = [{ id: 'a1', subtotalCentavos: 10000, envio: 5000, descuento: 3000 }, { id: 'b2', subtotalCentavos: 1250 }];
+    const lineas = [{ id: 'a1', cantidad: 1, precioCentavos: 10000, subtotalCentavos: 10000, envio: 5000, descuento: 3000 }, { id: 'b2', cantidad: 1, precioCentavos: 1250, subtotalCentavos: 1250 }];
     const t = vc('vcTotalCentavos')(lineas);
     expect(t).toBe(11250);
     expect(Number.isInteger(t)).toBe(true);
     expect(vc('vcTotalCentavos')({ envio: 100 } as unknown)).toBe(0);
-    expect(vc('vcTotalCentavos')([null, 'x', { subtotalCentavos: 1.5 }, { subtotalCentavos: '9' }])).toBe(0);
+    expect(vc('vcTotalCentavos')([null, 'x', { subtotalCentavos: 1.5 }, { subtotalCentavos: 9 }, { cantidad: 1.5, precioCentavos: 100 }])).toBe(0);
   });
   it('vcMonto recibe centavos: 450, 1234.5, 0, 7795, y los montos redondos y con miles', () => {
     expect(vc('vcMonto')(0)).toBe('Bs 0');

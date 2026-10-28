@@ -22,14 +22,28 @@ function vcObjeto(x) { return x !== null && typeof x === 'object' && !Array.isAr
 // Un entero positivo de `opciones` o, si no lo es, el valor por defecto.
 function vcTope(v, defecto) { return Number.isInteger(v) && v > 0 ? v : defecto; }
 
-// Texto libre del cliente o del modelo, limpio para guardarlo y para enviarlo: en NFKC (los signos de ancho completo pasan a su forma normal), sin invisibles (\p{Cf} y los rellenos que parecen vacíos: U+115F, U+1160, U+3164, U+FFA0, U+2800),
-// sin caracteres de control ni saltos de línea (\p{Cc}, que pasan a espacio), sin enlaces (con esquema, con «www.» o con forma de dominio) y con los espacios colapsados. El recorte `max` cuenta caracteres, no mitades de un emoji.
+// Texto libre del cliente o del modelo, limpio para guardarlo y para enviarlo. Primero se RECORTA a `max * 4` caracteres (2000 si no hay `max`) y solo después se filtra: así el tiempo de los filtros no depende de lo largo que sea lo recibido.
+// Luego: NFKC (los signos de ancho completo pasan a su forma normal) y los puntos ideográficos (U+3002, U+FF61, U+FE52) pasan a «.»; sin invisibles (\p{Cf} y los rellenos que parecen vacíos: U+115F, U+1160, U+3164, U+FFA0, U+2800);
+// sin caracteres de control ni saltos de línea (\p{Cc}, que pasan a espacio); sin enlaces (con esquema, con «www.», con forma de dominio —etiquetas de a lo más 63 caracteres y a lo más 6, de modo que el costo es lineal— o una IPv4) y con los espacios colapsados.
+// El recorte final a `max` cuenta caracteres, no mitades de un emoji. Límite conocido: «Sr.Lopez» o «Av.Banzer» (sin espacio tras el punto) parecen un dominio y se borran.
 function vcLimpiar(t, max) {
-  let s = vcTexto(t).normalize('NFKC').replace(/[\p{Cf}\u115F\u1160\u3164\uFFA0\u2800]/gu, '').replace(/\p{Cc}/gu, ' ');
+  const tope = typeof max === 'number' ? max * 4 : 2000;
+  let s = Array.from(vcTexto(t)).slice(0, tope).join('').normalize('NFKC').replace(/[\u3002\uFF61\uFE52]/g, '.')
+    .replace(/[\p{Cf}\u115F\u1160\u3164\uFFA0\u2800]/gu, '').replace(/\p{Cc}/gu, ' ');
   s = s.replace(/(?:https?|ftp):\/\/\S*|www\.\S*/gi, ' ')
-    .replace(/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b\S*/gi, ' ');
+    .replace(/(?:[\p{L}\p{N}-]{1,63}\.){1,6}\p{L}{2,}\S*/gu, ' ')
+    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b\S*/g, ' ');
   s = s.replace(/\s+/g, ' ').trim();
   return typeof max === 'number' ? Array.from(s).slice(0, max).join('').trim() : s;
+}
+
+// El detalle libre de una línea (talla, color, nota): además de `vcLimpiar`, sin los caracteres de formato de WhatsApp (* _ ~ `), sin «Bs» ni «total» (no puede pasar por una cifra de cobro) y, si habla de cobro
+// (acreditado, verificado, pagado, recibimos, confirmado), se descarta ENTERO: lo que el cliente escribe como detalle nunca afirma un pago.
+function vcLimpiarDetalle(t, max) {
+  const s = vcLimpiar(t);
+  if (/acreditad|verificad|pagad|recibimos|confirmad/.test(vcNorm(s))) return '';
+  const limpio = s.replace(/[*_~`]/g, ' ').replace(/\bbs\b\.?/gi, ' ').replace(/\btotal\b/gi, ' ').replace(/\s+/g, ' ').trim();
+  return Array.from(limpio).slice(0, max).join('').trim();
 }
 
 // -----------------------------------------------------------------------------
@@ -127,7 +141,7 @@ function vcSeleccion(vendibles, texto, ficha, opciones) {
 // `crudas` = lo que devuelve el modelo (se procesan a lo más 100 elementos). De cada elemento SOLO se leen `id`, `cantidad` y `detalle`: cualquier `precio`, `total`, `subtotal` o `descuento` se IGNORA. El nombre y el precio salen de `vendibles`.
 // `cantidad` es un número entero > 0 o un texto de solo dígitos («3»); «1.5», «abc», «0» y «-1» se descartan.
 // Descartes (en `descartadas`, como { id, motivo }; el id se limpia y se recorta a 100): 'desconocido' (id que no es vendible, o elemento sin forma), 'cantidad' (no es un entero mayor que cero), 'exceso' (más de `maxLineas` líneas distintas),
-// 'monto' (el subtotal no sería un entero seguro). 'tope' AVISA que una cantidad se recortó a `maxCantidad` (al pedirla o al sumar): la línea se conserva. El mismo id con el MISMO detalle (comparado sin tildes ni mayúsculas) se suma en
+// 'monto' (el subtotal no sería un entero seguro). 'tope' AVISA que una cantidad se recortó porque `maxCantidad` es POR PRODUCTO (suma de todas las líneas del mismo id): si algo cupo, la línea se conserva; si no cupo nada, no se crea. El mismo id con el MISMO detalle (comparado sin tildes ni mayúsculas) se suma en
 // una sola línea; con otro detalle es otra línea. Nunca lanza.
 function vcLineas(crudas, vendibles, opciones) {
   const o = vcObjeto(opciones) ? opciones : {};
@@ -140,6 +154,7 @@ function vcLineas(crudas, vendibles, opciones) {
   }
   const lineas = [];
   const claves = new Map();
+  const acumulado = new Map();
   const descartadas = [];
   const descarta = (id, motivo) => descartadas.push({ id: vcLimpiar(id, 100), motivo: motivo });
   for (const c of (Array.isArray(crudas) ? crudas : []).slice(0, 100)) {
@@ -149,32 +164,52 @@ function vcLineas(crudas, vendibles, opciones) {
     if (v === undefined) { descarta(id, 'desconocido'); continue; }
     const pedida = typeof x.cantidad === 'string' && /^\s*[1-9]\d{0,5}\s*$/.test(x.cantidad) ? Number(x.cantidad) : x.cantidad;
     if (typeof pedida !== 'number' || !Number.isInteger(pedida) || pedida <= 0) { descarta(id, 'cantidad'); continue; }
-    const cantidad = Math.min(pedida, maxCantidad);
-    const detalle = typeof x.detalle === 'string' ? vcLimpiar(x.detalle, maxDetalle) : '';
+    const detalle = typeof x.detalle === 'string' ? vcLimpiarDetalle(x.detalle, maxDetalle) : '';
     const clave = id + '\u0000' + vcNorm(detalle);
     const previa = claves.get(clave);
-    if (previa !== undefined) {
-      const suma = previa.cantidad + cantidad;
-      const total = Math.min(suma, maxCantidad);
-      if (!Number.isSafeInteger(total * previa.precioCentavos)) { descarta(id, 'monto'); continue; }
-      previa.cantidad = total;
-      previa.subtotalCentavos = total * previa.precioCentavos;
-      if (pedida > maxCantidad || suma > maxCantidad) descarta(id, 'tope');
-      continue;
+    // El tope es POR PRODUCTO: se aplica a lo acumulado de ese id en todas sus líneas (con distintos detalles).
+    const cabe = maxCantidad - (acumulado.get(id) || 0);
+    const cantidad = Math.min(pedida, cabe);
+    if (cantidad <= 0) { descarta(id, 'tope'); continue; }
+    if (previa === undefined && lineas.length >= maxLineas) { descarta(id, 'exceso'); continue; }
+    const base = previa === undefined ? 0 : previa.cantidad;
+    if (!Number.isSafeInteger((base + cantidad) * v.precioCentavos)) { descarta(id, 'monto'); continue; }
+    acumulado.set(id, (acumulado.get(id) || 0) + cantidad);
+    if (previa === undefined) {
+      const linea = { id: id, nombre: v.nombre, cantidad: cantidad, precioCentavos: v.precioCentavos, subtotalCentavos: cantidad * v.precioCentavos, detalle: detalle };
+      lineas.push(linea);
+      claves.set(clave, linea);
+    } else {
+      previa.cantidad += cantidad;
+      previa.subtotalCentavos = previa.cantidad * previa.precioCentavos;
     }
-    if (lineas.length >= maxLineas) { descarta(id, 'exceso'); continue; }
-    if (!Number.isSafeInteger(cantidad * v.precioCentavos)) { descarta(id, 'monto'); continue; }
-    const linea = { id: id, nombre: v.nombre, cantidad: cantidad, precioCentavos: v.precioCentavos, subtotalCentavos: cantidad * v.precioCentavos, detalle: detalle };
-    lineas.push(linea);
-    claves.set(clave, linea);
-    if (pedida > maxCantidad) descarta(id, 'tope');
+    if (pedida > cantidad) descarta(id, 'tope');
   }
   return { lineas: lineas, descartadas: descartadas };
 }
 
-// El total del carrito: la suma de los subtotales, en centavos enteros. Nunca suma envío ni descuentos.
+// El subtotal de UNA línea, recalculado: cantidad × precioCentavos. El `subtotalCentavos` que traiga la línea NO se cree. null si falta algo o el producto no es un entero seguro.
+function vcSubtotal(l) {
+  if (!vcObjeto(l) || !Number.isSafeInteger(l.cantidad) || l.cantidad <= 0 || !Number.isSafeInteger(l.precioCentavos) || l.precioCentavos <= 0) return null;
+  const m = l.cantidad * l.precioCentavos;
+  return Number.isSafeInteger(m) ? m : null;
+}
+
+// El total del carrito: la suma de cantidad × precioCentavos de cada línea (no se cree `subtotalCentavos`), en centavos enteros. Nunca suma envío ni descuentos. null si algún subtotal o la suma no es un entero seguro
+// (y `vcMonto(null)` da ''); una línea sin cantidad o precio válidos no suma. Sin líneas, 0.
 function vcTotalCentavos(lineas) {
-  return (Array.isArray(lineas) ? lineas : []).reduce((s, l) => s + (vcObjeto(l) && Number.isSafeInteger(l.subtotalCentavos) ? l.subtotalCentavos : 0), 0);
+  let total = 0;
+  for (const l of Array.isArray(lineas) ? lineas : []) {
+    if (!vcObjeto(l)) continue;
+    const m = vcSubtotal(l);
+    if (m === null) {
+      if (Number.isSafeInteger(l.cantidad) && l.cantidad > 0 && Number.isSafeInteger(l.precioCentavos) && l.precioCentavos > 0) return null;
+      continue;
+    }
+    total += m;
+    if (!Number.isSafeInteger(total)) return null;
+  }
+  return total;
 }
 
 // -----------------------------------------------------------------------------
@@ -189,12 +224,13 @@ function vcMonto(centavos) {
   return (centavos < 0 ? '-' : '') + 'Bs ' + enteros + (d === 0 ? '' : ',' + (d < 10 ? '0' : '') + d);
 }
 
-// El resumen: una línea por ítem, `cantidad × nombre (detalle) — subtotal` (el paréntesis solo si hay detalle), y el total al final. Sin emojis.
+// El resumen (subtotales recalculados; '' si el carrito está vacío): una línea por ítem, `cantidad × nombre (detalle) — subtotal` (el paréntesis solo si hay detalle), y el total al final. Sin emojis.
 function vcResumen(lineas) {
   const ls = (Array.isArray(lineas) ? lineas : []).filter(vcObjeto);
+  if (ls.length === 0) return '';
   const filas = ls.map((l) => {
     const detalle = vcLimpiar(l.detalle);
-    return vcTexto(l.cantidad) + ' × ' + vcLimpiar(l.nombre) + (detalle === '' ? '' : ' (' + detalle + ')') + ' — ' + vcMonto(l.subtotalCentavos);
+    return vcTexto(l.cantidad) + ' × ' + vcLimpiar(l.nombre) + (detalle === '' ? '' : ' (' + detalle + ')') + ' — ' + vcMonto(vcSubtotal(l));
   });
   filas.push('Total: ' + vcMonto(vcTotalCentavos(ls)));
   return filas.join('\n');
