@@ -1093,6 +1093,19 @@ const EV_TEXTO_DERIVAR_DE_NUEVO_2 = 'Con gusto, el botón sigue disponible para 
 const EV_PIDE_AGENDAR = /\b(agend\w*|reserv\w*|cita|citas|turno|apart(?:ar|arme|en)|quiero (?:ir|asistir|la valoracion|mi valoracion)|cuando (?:puedo|podemos|atienden)|horarios?|disponibilidad|escribir a recepcion|hablar con recepcion|numero de recepcion)\b/;
 function evPideAgendar(textoCliente) { return EV_PIDE_AGENDAR.test(evNorm(textoCliente)); }
 const EV_BOTON_RECEPCION = 'Escribir a recepción';
+// «¿Cuál es la ubicación?» / «Me das la ubicación exacta?» (28/10/2026): el prompt prohíbe enlaces, así que el modelo da la dirección en texto y nunca el mapa. El enlace de la Consola lo agrega el CÓDIGO a la respuesta del modelo.
+const EV_PIDE_UBICACION = /\b(ubicacion|ubicados|ubicadas|ubicarlos|direccion|mapa|maps|como (?:llego|llegar|llegamos)|donde (?:estan|estamos|queda|quedan|atienden|se encuentran|se ubican|es la clinica|esta la clinica))\b/;
+function evPideUbicacion(textoCliente) { return EV_PIDE_UBICACION.test(evNorm(textoCliente)); }
+
+// EL ENLACE DE GOOGLE MAPS del negocio (`direccionMaps`, de la Consola): LA MISMA regla que `enlaceDeMapaValido` del servidor (https, uno de los dominios de mapas, hasta 200 caracteres, sin espacios). Se comprueba en
+// `Config del negocio` y otra vez aquí. Inválido, ausente o de otro dominio = '' (el cierre queda como siempre). Es el ÚNICO enlace que este flujo deja pasar; el enlace nunca va en código, prompt ni datos versionados.
+const EV_ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+function evEnlaceDeMapa(v) {
+  if (typeof v !== 'string') return '';
+  const t = v.trim();
+  return t.length <= 200 && EV_ENLACE_DE_MAPA.test(t) ? t : '';
+}
+
 // El cierre de la derivación: el texto fijo del guion (con las dos frases sin mecanismo cambiadas), con el nombre y la dirección de la Consola. Sin nombre, sin «, Nombre».
 function evTextoCierre(cfg, nombre) {
   const c = cfg && typeof cfg === 'object' ? cfg : {};

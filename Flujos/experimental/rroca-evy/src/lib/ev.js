@@ -983,6 +983,10 @@ const EV_TEXTO_DERIVAR_DE_NUEVO_2 = 'Con gusto, el botón sigue disponible para 
 const EV_PIDE_AGENDAR = /\b(agend\w*|reserv\w*|cita|citas|turno|apart(?:ar|arme|en)|quiero (?:ir|asistir|la valoracion|mi valoracion)|cuando (?:puedo|podemos|atienden)|horarios?|disponibilidad|escribir a recepcion|hablar con recepcion|numero de recepcion)\b/;
 function evPideAgendar(textoCliente) { return EV_PIDE_AGENDAR.test(evNorm(textoCliente)); }
 const EV_BOTON_RECEPCION = 'Escribir a recepción';
+// «¿Cuál es la ubicación?» / «Me das la ubicación exacta?» (28/10/2026): el prompt prohíbe enlaces, así que el modelo da la dirección en texto y nunca el mapa. El enlace de la Consola lo agrega el CÓDIGO a la respuesta del modelo.
+const EV_PIDE_UBICACION = /\b(ubicacion|ubicados|ubicadas|ubicarlos|direccion|mapa|maps|como (?:llego|llegar|llegamos)|donde (?:estan|estamos|queda|quedan|atienden|se encuentran|se ubican|es la clinica|esta la clinica))\b/;
+function evPideUbicacion(textoCliente) { return EV_PIDE_UBICACION.test(evNorm(textoCliente)); }
+
 // El cierre de la derivación: el texto fijo del guion (con las dos frases sin mecanismo cambiadas), con el nombre y la dirección de la Consola. Sin nombre, sin «, Nombre».
 function evTextoCierre(cfg, nombre, conMaps) {
   const c = cfg && typeof cfg === 'object' ? cfg : {};
