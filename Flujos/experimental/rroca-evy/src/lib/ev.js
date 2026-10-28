@@ -957,16 +957,18 @@ function evNombreTrasPedirAgendar(historial) {
 function evNegaAgendar(textoCliente) {
   // Por cláusula (coma, punto y coma, «pero», «aunque», «igual»): la negación NO gana si una cláusula POSTERIOR dice «quiero agendar» en positivo («Hola, no sé mucho, quiero agendar una cita»).
   const claus = evTexto(textoCliente).split(/[,;]|\bpero\b|\baunque\b|\bigual\b/i).map((c) => evNorm(c)).filter((c) => c !== '');
-  const neg = (c) => /\bno\b[^.?!]{0,40}\b(agend|reserv|separ|cita)/.test(c) || /\b(todavia no|aun no|mas adelante|no ahora|ahora no|ahorita no|lo pienso|lo voy a pensar)\b/.test(c);
+  const neg = (c) => /\bno\b[^.?!]{0,40}\b(agend|reserv|separ|cita|recepcion|secretari)/.test(c) || /\b(todavia no|aun no|mas adelante|no ahora|ahora no|ahorita no|lo pienso|lo voy a pensar)\b/.test(c);
   const pos = (c) => EV_QUIERE_AGENDAR.test(c) && !neg(c);
   return claus.some((c, i) => neg(c) && !claus.slice(i + 1).some(pos));
 }
 // Pedido explícito de agendar (no una pregunta sobre cómo se agenda).
 const EV_QUIERE_AGENDAR = /\b(?:quiero|quisiera|queremos|deseo|necesito|me gustaria|voy a|vamos a|puedo|podemos|podria|podrian)\s+(?:\w+\s+){0,2}(?:agendar|reservar|separar)\b|\bagend(?:a|ame|en|enme|arme)\b|\breserva(?:me|nos)\b|\bsi,? quiero (?:la valoracion|mi valoracion|mi cita|agendar)\b/;
+// Pedido explícito de hablar con una PERSONA del negocio («Me gustaría chatear con la secretaria», 28/10/2026: el asistente contestó «¡Por supuesto!» y el filtro de promesas sin respaldo borró el resto, sin botón). Es lo mismo que pedir recepción: deriva.
+const EV_QUIERE_PERSONA = /\b(?:quiero|quisiera|queremos|deseo|necesito|necesitamos|me gustaria|puedo|podemos|podria|podrian|prefiero|preferiria)\s+(?:\w+\s+){0,2}(?:chatear|hablar|escribir|escribirle|conversar|comunicarme|contactar|contactarme|comunicarnos)\s+(?:\w+\s+){0,2}(?:con|a)\s+(?:\w+\s+){0,2}(?:secretaria|secretario|recepcionista|recepcion|alguien del equipo|alguien de la clinica|una persona|un asesor|una asesora|un humano)\b/;
 function evQuiereAgendar(textoCliente) {
   const raw = evTexto(textoCliente);
   const n = evNorm(raw);
-  return EV_QUIERE_AGENDAR.test(n) && !/\bcomo\b/.test(n) && !evNegaAgendar(raw);
+  return (EV_QUIERE_AGENDAR.test(n) || EV_QUIERE_PERSONA.test(n)) && !/\bcomo\b/.test(n) && !evNegaAgendar(raw);
 }
 function evDioNombre(historial, textoCliente) {
   const re = /\b(?:soy|me llamo|mi nombre es)\s+\p{L}{2,}/iu;
@@ -981,6 +983,10 @@ const EV_TEXTO_DERIVAR_DE_NUEVO_2 = 'Con gusto, el botón sigue disponible para 
 const EV_PIDE_AGENDAR = /\b(agend\w*|reserv\w*|cita|citas|turno|apart(?:ar|arme|en)|quiero (?:ir|asistir|la valoracion|mi valoracion)|cuando (?:puedo|podemos|atienden)|horarios?|disponibilidad|escribir a recepcion|hablar con recepcion|numero de recepcion)\b/;
 function evPideAgendar(textoCliente) { return EV_PIDE_AGENDAR.test(evNorm(textoCliente)); }
 const EV_BOTON_RECEPCION = 'Escribir a recepción';
+// «¿Cuál es la ubicación?» / «Me das la ubicación exacta?» (28/10/2026): el prompt prohíbe enlaces, así que el modelo da la dirección en texto y nunca el mapa. El enlace de la Consola lo agrega el CÓDIGO a la respuesta del modelo.
+const EV_PIDE_UBICACION = /\b(ubicacion|ubicados|ubicadas|ubicarlos|direccion|mapa|maps|como (?:llego|llegar|llegamos)|donde (?:estan|estamos|queda|quedan|atienden|se encuentran|se ubican|es la clinica|esta la clinica))\b/;
+function evPideUbicacion(textoCliente) { return EV_PIDE_UBICACION.test(evNorm(textoCliente)); }
+
 // El cierre de la derivación: el texto fijo del guion (con las dos frases sin mecanismo cambiadas), con el nombre y la dirección de la Consola. Sin nombre, sin «, Nombre».
 function evTextoCierre(cfg, nombre, conMaps) {
   const c = cfg && typeof cfg === 'object' ? cfg : {};
