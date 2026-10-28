@@ -65,3 +65,6 @@ No cobra, no tiene catálogo, pedidos ni QR; no agenda (lo hace la recepción); 
 - **Errores de entrega.** Si Meta rechaza el envío y su respaldo, «Resumen del turno» lanza un error y la ejecución queda marcada como fallida en la lista de ejecuciones de n8n, pero `saveDataErrorExecution` es `none` (datos de salud) y NO hay Error Workflow: nadie recibe un aviso. Dar un Error Workflow que avise sin datos de la persona queda como mejora.
 - **Uso extendido.** En el estado «operador» el flujo ignora el texto de la Consola («una persona del equipo continuará…», porque no avisa a nadie) y responde un texto propio con el botón de la recepción; no avisa a recepción.
 - **Etapa de prueba.** «Config del negocio» calcula `fueraDePrueba` una sola vez; la leen «Puerta del turno» y «¿Reportar? (entrante)» (que además excluye a los números de otro país).
+
+## Plan `comparacion` y ubicación (25/10/2026)
+Nuevo plan del turno `comparacion` (texto fijo por código, sin modelo, sin botón ni aviso) y la línea «📍 Ubicación» en el cierre completo cuando la ficha tiene `comparacionMs` y la Consola trae `direccionMaps` válido. Detalle en PROPIO.md. Sin mensajes agregados.

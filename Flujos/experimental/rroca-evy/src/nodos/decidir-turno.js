@@ -72,6 +72,13 @@ if (t.tipo === 'audio' && !deAudio) {
 }
 if ((t.tipo === 'audio' || t.tipo === 'image') && t.mediaId === '') return salir({ tipo: 'fijo', clave: 'archivo_no_abierto' });
 
+// 5b. LA COMPARACIÓN «Radiesse® o HArmonyCa®»: texto fijo por código (solo con `usarMarcas`), sin llamar al modelo.
+// Un pedido explícito de agendar que ya puede cerrar (nombre dado o conversación previa) gana: sale el cierre, no la comparación.
+const historiaDeLaComparacion = evHistorialVigente(fichaBruta, ahora);
+const yaPuedeCerrar = historiaDeLaComparacion.length > 0 || evNombreDelMensaje(textoCliente, historiaDeLaComparacion) !== '';
+if (!deAudio && !lec && cfg.usarMarcas === true && !(evQuiereAgendar(textoCliente) && yaPuedeCerrar) && evPideComparacion(textoCliente, historiaDeLaComparacion)) {
+  return salir({ tipo: 'comparacion', textoCliente: textoCliente.slice(0, 500) }, { entradaHistorial: evEntradaCliente(t) });
+}
 // 6. LA CONVERSACIÓN LIBRE. El cliente nunca fabrica un rótulo del sistema: sus corchetes pasan a paréntesis; los rótulos los pone solo el código.
 const historia = evHistorialVigente(fichaBruta, ahora);
 let turno = textoCliente;

@@ -33,7 +33,7 @@
 # se NIEGA si el archivo trae un marcador REEMPLAZAR_* o si una plantilla de aviso no
 # esta APPROVED (Flujos/experimental/rroca-ruben/construir.mjs --publicable), y despues
 # pide confirmacion explicita (escribir PUBLICAR RUBEN; sin terminal, solo con
-# --confirmo-ruben). En seco informa lo que falta, sin abortar. La guardia estricta es del
+# --confirmo-ruben; la guardia exige además --anuncios <N>, la cantidad de anuncios VIGENTES que la Consola entrega, leída en seco). En seco informa lo que falta, sin abortar. La guardia estricta es del
 # flujo CONVERSACIONAL («NovuChat — Venta digital de Rubén…» o rroca-ruben[.prueba][.local].json);
 # cualquier otro flujo con rroca-ruben en el nombre exige solo la confirmacion. Con --crear el
 # flujo vivo es la referencia de credenciales y no se evalua como destino; --encender revisa el
@@ -78,6 +78,7 @@ APAGAR=0
 ENV_NUEVO=""
 ENV_FILE=".env"
 CONFIRMO_RUBEN=0
+ANUNCIOS=""
 CONFIRMO_ANTONIO=0
 CONFIRMO_DOCTORAS=0
 CONFIRMO_EVY=0
@@ -98,6 +99,7 @@ while [[ $# -gt 0 ]]; do
     --env-nuevo=*) ENV_NUEVO="${1#*=}"; shift ;;
     --forzar)  FORZAR=1; shift ;;
     --confirmo-ruben) CONFIRMO_RUBEN=1; shift ;;
+    --anuncios) ANUNCIOS="${2:?--anuncios necesita la cantidad de anuncios vigentes que la Consola entrega}"; shift 2 ;;
     --confirmo-antonio) CONFIRMO_ANTONIO=1; shift ;;
     --confirmo-doctoras) CONFIRMO_DOCTORAS=1; shift ;;
     --confirmo-evy) CONFIRMO_EVY=1; shift ;;
@@ -143,7 +145,7 @@ ruben_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = estricto | c
     return 0
   fi
   echo "Flujo de Rubén (rroca-ruben): se revisa la guardia de publicación ($1)."
-  if node Flujos/experimental/rroca-ruben/construir.mjs --publicable --flujo "$2"; then
+  if node Flujos/experimental/rroca-ruben/construir.mjs --publicable ${ANUNCIOS:+--anuncios "$ANUNCIOS"} --flujo "$2"; then
     GUARDIA_OK=1
   else
     GUARDIA_OK=0

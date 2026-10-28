@@ -11,6 +11,23 @@ const DERIVA = '[DERIVAR_RECEPCION: Ana] ¡Qué bien! Te paso con recepción y t
 const urlDe = (p: J): string => String((((p['interactive'] as J)['action'] as J)['parameters'] as J)['url']);
 
 describe('la derivación', () => {
+  // 28/10/2026: «Me gustaría chatear con la secretaria» recibió solo «¡Por supuesto!», sin botón (el filtro de promesas sin respaldo borró el resto).
+  for (const q of ['Me gustaría chatear con la secretaria', 'quiero hablar con recepción', 'Necesito escribirle a la recepcionista', 'prefiero hablar con una persona']) {
+    it(`POSITIVA: «${q}» deriva con el botón aunque el modelo conteste sin etiqueta`, () => {
+      const m = crear({ modeloDice: dice('¡Por supuesto! Te paso con la secretaria.') });
+      hablar(m, ANA, mTexto('Hola'));
+      const t = hablar(m, ANA, mTexto(q));
+      expect(t.mensajes.some((e) => e.tipo === 'interactive'), q).toBe(true);
+    });
+  }
+  for (const q of ['¿Cómo hablo con la secretaria?', 'no quiero hablar con recepción todavía', '¿Cuánto cuesta?']) {
+    it(`NEGADA: «${q}» no deriva por sí sola`, () => {
+      const m = crear({ modeloDice: dice('Con gusto te cuento más.') });
+      hablar(m, ANA, mTexto('Hola'));
+      const t = hablar(m, ANA, mTexto(q));
+      expect(t.mensajes.some((e) => e.tipo === 'interactive'), q).toBe(false);
+    });
+  }
   it('el cierre fijo con el nombre y la dirección de la Consola + UN botón a la recepción; el texto del modelo no sale', () => {
     const t = hablar(crear({ modeloDice: dice(DERIVA) }), ANA, mTexto('quiero agendar, soy Ana'));
     expect(t.mensajes.length).toBe(1);

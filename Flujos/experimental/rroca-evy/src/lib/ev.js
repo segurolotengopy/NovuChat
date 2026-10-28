@@ -255,6 +255,7 @@ function evFichaVigente(f, ahoraMs) {
     noContactarMs: ven(f && f.noContactarMs) ? f.noContactarMs : 0, noContactar: ven(f && f.noContactarMs),
     riesgoMs: ven(f && f.riesgoMs) ? f.riesgoMs : 0, riesgo: ven(f && f.riesgoMs),
     cierreMs: ven(f && f.cierreMs) ? f.cierreMs : 0,
+    comparacionMs: ven(f && f.comparacionMs) ? f.comparacionMs : 0, comparacionMostrada: ven(f && f.comparacionMs),
     historial: vencida ? [] : evHistorialSaneado(f && f.historial), artes: artes, avisos: avisos,
     imagenes: evConteoDeFicha(f && f.imagenes), audios: evConteoDeFicha(f && f.audios),
   };
@@ -956,16 +957,18 @@ function evNombreTrasPedirAgendar(historial) {
 function evNegaAgendar(textoCliente) {
   // Por cláusula (coma, punto y coma, «pero», «aunque», «igual»): la negación NO gana si una cláusula POSTERIOR dice «quiero agendar» en positivo («Hola, no sé mucho, quiero agendar una cita»).
   const claus = evTexto(textoCliente).split(/[,;]|\bpero\b|\baunque\b|\bigual\b/i).map((c) => evNorm(c)).filter((c) => c !== '');
-  const neg = (c) => /\bno\b[^.?!]{0,40}\b(agend|reserv|separ|cita)/.test(c) || /\b(todavia no|aun no|mas adelante|no ahora|ahora no|ahorita no|lo pienso|lo voy a pensar)\b/.test(c);
+  const neg = (c) => /\bno\b[^.?!]{0,40}\b(agend|reserv|separ|cita|recepcion|secretari)/.test(c) || /\b(todavia no|aun no|mas adelante|no ahora|ahora no|ahorita no|lo pienso|lo voy a pensar)\b/.test(c);
   const pos = (c) => EV_QUIERE_AGENDAR.test(c) && !neg(c);
   return claus.some((c, i) => neg(c) && !claus.slice(i + 1).some(pos));
 }
 // Pedido explícito de agendar (no una pregunta sobre cómo se agenda).
 const EV_QUIERE_AGENDAR = /\b(?:quiero|quisiera|queremos|deseo|necesito|me gustaria|voy a|vamos a|puedo|podemos|podria|podrian)\s+(?:\w+\s+){0,2}(?:agendar|reservar|separar)\b|\bagend(?:a|ame|en|enme|arme)\b|\breserva(?:me|nos)\b|\bsi,? quiero (?:la valoracion|mi valoracion|mi cita|agendar)\b/;
+// Pedido explícito de hablar con una PERSONA del negocio («Me gustaría chatear con la secretaria», 28/10/2026: el asistente contestó «¡Por supuesto!» y el filtro de promesas sin respaldo borró el resto, sin botón). Es lo mismo que pedir recepción: deriva.
+const EV_QUIERE_PERSONA = /\b(?:quiero|quisiera|queremos|deseo|necesito|necesitamos|me gustaria|puedo|podemos|podria|podrian|prefiero|preferiria)\s+(?:\w+\s+){0,2}(?:chatear|hablar|escribir|escribirle|conversar|comunicarme|contactar|contactarme|comunicarnos)\s+(?:\w+\s+){0,2}(?:con|a)\s+(?:\w+\s+){0,2}(?:secretaria|secretario|recepcionista|recepcion|alguien del equipo|alguien de la clinica|una persona|un asesor|una asesora|un humano)\b/;
 function evQuiereAgendar(textoCliente) {
   const raw = evTexto(textoCliente);
   const n = evNorm(raw);
-  return EV_QUIERE_AGENDAR.test(n) && !/\bcomo\b/.test(n) && !evNegaAgendar(raw);
+  return (EV_QUIERE_AGENDAR.test(n) || EV_QUIERE_PERSONA.test(n)) && !/\bcomo\b/.test(n) && !evNegaAgendar(raw);
 }
 function evDioNombre(historial, textoCliente) {
   const re = /\b(?:soy|me llamo|mi nombre es)\s+\p{L}{2,}/iu;
@@ -980,8 +983,12 @@ const EV_TEXTO_DERIVAR_DE_NUEVO_2 = 'Con gusto, el botón sigue disponible para 
 const EV_PIDE_AGENDAR = /\b(agend\w*|reserv\w*|cita|citas|turno|apart(?:ar|arme|en)|quiero (?:ir|asistir|la valoracion|mi valoracion)|cuando (?:puedo|podemos|atienden)|horarios?|disponibilidad|escribir a recepcion|hablar con recepcion|numero de recepcion)\b/;
 function evPideAgendar(textoCliente) { return EV_PIDE_AGENDAR.test(evNorm(textoCliente)); }
 const EV_BOTON_RECEPCION = 'Escribir a recepción';
+// «¿Cuál es la ubicación?» / «Me das la ubicación exacta?» (28/10/2026): el prompt prohíbe enlaces, así que el modelo da la dirección en texto y nunca el mapa. El enlace de la Consola lo agrega el CÓDIGO a la respuesta del modelo.
+const EV_PIDE_UBICACION = /\b(ubicacion|ubicados|ubicadas|ubicarlos|direccion|mapa|maps|como (?:llego|llegar|llegamos)|donde (?:estan|estamos|queda|quedan|atienden|se encuentran|se ubican|es la clinica|esta la clinica))\b/;
+function evPideUbicacion(textoCliente) { return EV_PIDE_UBICACION.test(evNorm(textoCliente)); }
+
 // El cierre de la derivación: el texto fijo del guion (con las dos frases sin mecanismo cambiadas), con el nombre y la dirección de la Consola. Sin nombre, sin «, Nombre».
-function evTextoCierre(cfg, nombre) {
+function evTextoCierre(cfg, nombre, conMaps) {
   const c = cfg && typeof cfg === 'object' ? cfg : {};
   const n = evTexto(nombre).trim();
   const negocio = evLinea(c.nombreNegocio, 60) || 'la Dra. Evy';
@@ -990,7 +997,59 @@ function evTextoCierre(cfg, nombre) {
   const donde = clinica && dir ? 'La consulta es en la ' + clinica + ' (' + dir + ').' : (clinica ? 'La consulta es en la ' + clinica + '.' : (dir ? 'La consulta es en ' + dir + '.' : ''));
   return ['¡Excelente decisión' + (n ? ', ' + n : '') + '! Recuerda que tu valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' está 100% bonificada (sin costo ni pago de reserva).',
     donde,
+    conMaps === true && evEnlaceDeMapa(c.direccionMaps) !== '' ? '📍 Ubicación: ' + evEnlaceDeMapa(c.direccionMaps) : '',
     'Para elegir el día y horario que mejor te queden, la recepción te ayudará: usa el botón para hablar directo con ella.'].filter((x) => x !== '').join('\n\n');
+}
+// EL ENLACE DE GOOGLE MAPS del negocio (`direccionMaps`, de la Consola): LA MISMA regla que `enlaceDeMapaValido` del servidor (https, uno de los dominios de mapas, hasta 200 caracteres, sin espacios). Se comprueba en
+// `Config del negocio` y otra vez aquí. Inválido, ausente o de otro dominio = '' (el cierre queda como siempre). Es el ÚNICO enlace que este flujo deja pasar; el enlace nunca va en código, prompt ni datos versionados.
+const EV_ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+function evEnlaceDeMapa(v) {
+  if (typeof v !== 'string') return '';
+  const t = v.trim();
+  return t.length <= 200 && EV_ENLACE_DE_MAPA.test(t) ? t : '';
+}
+// LA COMPARACIÓN FIJA «Radiesse® o HArmonyCa®» (texto de Andres, 25/10/2026, por CÓDIGO: no pasa por el modelo ni por el recorte de 700). Solo con `usarMarcas`. Dispara cuando el cliente pregunta cuál de los dos es mejor,
+// cuál le conviene o la diferencia, y el mensaje (o lo último que dijo el asistente) nombra alguno de los dos productos; si además pregunta por el precio, contesta el modelo con sus barreras.
+const EV_PRODUCTO_DE_LA_COMPARACION = /\b(radiesse|harmony ?ca|harmonica)\b/;
+const EV_O_ENTRE_PRODUCTOS = /\b(radiesse|harmony ?ca|harmonica)\s+(o|vs|versus)\s+(radiesse|harmony ?ca|harmonica)\b/;
+const EV_PREGUNTA_DE_PRECIO_COMPARACION = /\b(cuant[oa]s?|cuesta\w*|precio\w*|costo\w*|vale|valen|valor|cobran|cobras|tarifa\w*|presupuesto|caro\w*|barat\w*|sale|salen|bs|bolivianos?|pago\w*|financ\w*|descuento\w*|promo\w*)\b/;
+// Lo que NO es esta comparación: salud, seguridad o riesgo (gana el modelo con su barrera de remisión a la valoración), otro tratamiento, la duración, y un pedido de agendar que ya puede cerrar.
+const EV_SEGURIDAD_COMPARACION = /\b(segur\w*|riesgo\w*|duele|dolor\w*|contraindic\w*|efectos? secundari\w*|adverso\w*|complicacion\w*|reaccion\w*|alergi\w*)\b/;
+// Condiciones de salud que se suman a `EV_CONDICION` SOLO para decidir si el mensaje del paciente puede recibir la comparación fija (criterio conservador: ante la duda contesta el modelo, con sus barreras). No se agregan a `EV_CONDICION`:
+// esa la lee también la barrera del texto del modelo, donde «sin cirugía» (frase normal del guion) daría falsos positivos.
+const EV_CONDICION_COMPARACION = /\b(lactar|lactancia|dando pecho|dando de lactar|tiroid\w*|hipotiroid\w*|operad\w*|me opere|cirugi\w*|pastilla\w*|herpes|tratamiento medico|medicament\w*)\b/;
+const EV_OTRO_TRATAMIENTO = /\b(botox|toxina|sculptra|acido hialuronico|hialuronico|relleno\w*|hilos?|ultherapy|plasma|peeling|laser)\b/;
+const EV_DURACION_COMPARACION = /\b(dura|duran|duracion|cuanto tiempo|cuantas sesiones|cuantas veces)\b/;
+// Con UN solo producto (o ninguno en el mensaje) se exige un comparativo explícito, no «diferente / diferencia» a secas.
+const EV_COMPARATIVO_EXPLICITO = /\b(cual (es )?(mejor|me conviene|me recomiendas|me sirve|elijo)|cual de (los|las) dos|que (es )?mejor|me conviene|mejor (opcion|producto))\b/;
+function evPideComparacion(textoCliente, historial) {
+  const n = evNorm(textoCliente);
+  if (!(EV_PIDE_COMPARATIVO.test(n) || EV_O_ENTRE_PRODUCTOS.test(n)) || EV_PREGUNTA_DE_PRECIO_COMPARACION.test(n)) return false;
+  if (EV_CONDICION.test(n) || EV_CONDICION_COMPARACION.test(n) || EV_SEGURIDAD_COMPARACION.test(n) || EV_OTRO_TRATAMIENTO.test(n) || EV_DURACION_COMPARACION.test(n)) return false;
+  const nombrados = [/\bradiesse\b/, /\b(?:harmony ?ca|harmonica)\b/].filter((re) => re.test(n)).length;
+  if (nombrados >= 2) return true;
+  if (!EV_COMPARATIVO_EXPLICITO.test(n)) return false;
+  if (nombrados === 1) return true;
+  const h = Array.isArray(historial) ? historial : [];
+  const a = evUltimoDe(h, 'a');
+  return a >= 0 && EV_PRODUCTO_DE_LA_COMPARACION.test(evNorm(h[a].t));
+}
+// El nombre que el paciente DIO en esta conversación (jamás el del perfil de WhatsApp): el de su mensaje actual o el de alguno de sus mensajes anteriores en la ficha.
+function evNombreDeLaFicha(historial, textoCliente) {
+  const h = Array.isArray(historial) ? historial : [];
+  const actual = evNombreDelMensaje(textoCliente, h);
+  if (actual) return actual;
+  for (let i = h.length - 1; i >= 0; i--) {
+    if (h[i] && h[i].r === 'u') { const n = evNombreDelMensaje(h[i].t, h.slice(0, i)); if (n) return n; }
+  }
+  return '';
+}
+function evTextoComparacion(nombre) {
+  const n = evPrimerNombre(nombre);
+  return ['Buena pregunta' + (n ? ', ' + n : '') + '. Los dos son bioestimuladores que activan tu propio colágeno, con un resultado natural y sin cirugía. Ninguno es “mejor”: cada uno se indica según lo que necesita tu rostro.',
+    '✨ Radiesse®: hidroxiapatita de calcio. Define el contorno de pómulos, mentón y mandíbula, y estimula colágeno y elastina, por eso tu piel va ganando firmeza de forma progresiva. Suele indicarse para firmeza y prevención.',
+    '✨ HArmonyCa®: combina ácido hialurónico e hidroxiapatita de calcio. El ácido hialurónico da un efecto lifting desde la aplicación y la hidroxiapatita sigue estimulando tu colágeno con el tiempo. Suele indicarse para flacidez más marcada.',
+    'La Dra. Evy analiza tu rostro en la valoración gratuita y te dice cuál es el ideal para ti. ¿Te ayudo a agendarla?'].join('\n\n');
 }
 // Una palabra de nombre propio: solo letras, 2 a 20, sin mezcla de alfabetos. Para el nombre del perfil de WhatsApp (el nombre que da el cliente llega por la etiqueta).
 function evPrimerNombre(n) {

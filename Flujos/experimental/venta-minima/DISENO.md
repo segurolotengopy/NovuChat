@@ -184,9 +184,8 @@ en la prueba (L2): son 51 menos esos dos.
 
    **Aviso de pedido por líneas (24/10/2026, aditivo).** La variable de una plantilla no admite saltos, así que el aviso de
    `pedido_registrado` salía como un bloque continuo (« · »). Se agrega una familia de tres plantillas UTILITY (es) de 2, 4 y 6
-   productos, con el salto de línea FIJO en el cuerpo y una variable por línea: «Se registró un pedido en Q' Taco.⏎Pedido: {{1}}⏎
-   Modalidad: {{2}}⏎Detalle pedido:⏎- {{3}}⏎… (una línea «- {{k}}» por producto, hasta N)⏎Comprobante: {{N+3}}⏎Revise el pedido
-   en la consola antes de despachar.» Variables: {{1}} «N.º <código> de <n> ítems. Total de la comida: Bs <total>»; {{2}} modalidad
+   productos, con el salto de línea FIJO en el cuerpo y una variable por línea: «Se registró un pedido en Q'Taco.⏎Pedido: {{1}}. Modalidad: {{2}}⏎Detalle pedido:⏎- {{3}}⏎… (una línea «- {{k}}» por producto, hasta N)⏎Comprobante: {{N+3}}. Revise el pedido
+   en la consola antes de despachar.» (estructura pedida por el cliente el 28/10) Variables: {{1}} «N.º <código> de <n> ítems. Total de la comida: Bs <total>»; {{2}} modalidad
    por rol SIN los ítems; {{3}}…{{N+2}} «<cant> × <producto> (<nota>)», una por variable, «—» en las sobrantes y, si hay más
    productos que N, «… y K más» en la última (nunca a mitad de producto); {{N+3}} el cotejo. **Configuración:** `plantillasPedidoLineas`
    = «2:nombre,4:nombre,6:nombre» e `idiomaPlantillaPedidoLineas` en `Config base` (los nombres reales viven allí; `pedido_registrado_l2`,

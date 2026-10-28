@@ -1,0 +1,1059 @@
+{
+  "_fuente": "Catálogo Corporativo 2026 de Walisuma (PDF recibido el 28/10/2026). TODOS los precios están en bolivianos (Bs), tal como los imprime el PDF: no hay conversión ni tipo de cambio. Los ítems sin precio en el PDF quedan «a consultar» (sin precio) hasta que el cliente los confirme.",
+  "_sku": "El SKU «WAL-<familia>-<nnn>» es una propuesta de NovuChat que el cliente valida; va al final de la descripción como «Cód.». El identificador del ítem sale del nombre (idDe de cargar-negocio.mjs).",
+  "_fotos": "No van en este repositorio (son de un tercero): una por ítem, en CLIENTES/WALISUMA/fotos-catalogo/<id>.webp, y se suben con cargar-fotos-catalogo.mjs con el OK de Andres.",
+  "_alcohol": "Licor de coca (3 presentaciones) y Montecito (singani) quedan activo=false: la política de comercio de Meta restringe las bebidas alcohólicas y la WABA es compartida. Encenderlos es decisión de Andres, tras verificar la política vigente.",
+  "_stock": "Sin control de stock: el catálogo no trae existencias y el campo stock no se escribe.",
+  "catalogo": [
+    {
+      "nombre": "Bufanda de vicuña",
+      "descripcion": "Punto diagonal, 100 % vicuña. Cód. WAL-BUF-001.",
+      "area": "Accesorios · Bufandas y chales",
+      "precio": 7795,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Estola simple",
+      "descripcion": "Color vicuña. 70 % baby alpaca y 30 % seda. Cód. WAL-BUF-002.",
+      "area": "Accesorios · Bufandas y chales",
+      "precio": 911,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Chal telar premium",
+      "descripcion": "Color crudo. 100 % baby alpaca. Cód. WAL-BUF-003.",
+      "area": "Accesorios · Bufandas y chales",
+      "precio": 910,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Chal simple tejido",
+      "descripcion": "Color vicuña. 100 % alpaca superfina. Cód. WAL-BUF-004.",
+      "area": "Accesorios · Bufandas y chales",
+      "precio": 1125,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Chal bicolor tejido",
+      "descripcion": "Colores varios. 100 % alpaca superfina. Cód. WAL-BUF-005.",
+      "area": "Accesorios · Bufandas y chales",
+      "precio": 1150,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda Dennis",
+      "descripcion": "Color naranja. Tela de baby alpaca. Cód. WAL-BUF-006.",
+      "area": "Accesorios · Bufandas y chales",
+      "precio": 850,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda peinada",
+      "descripcion": "Color gris claro. 100 % baby alpaca. Cód. WAL-BUF-007.",
+      "area": "Accesorios · Bufandas y chales",
+      "precio": 545,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda bicolor tejida",
+      "descripcion": "Colores varios. 100 % alpaca superfina. Cód. WAL-BUF-008.",
+      "area": "Accesorios · Bufandas y chales",
+      "precio": 510,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda simple tejida",
+      "descripcion": "Color gris claro. 100 % alpaca superfina. Cód. WAL-BUF-009.",
+      "area": "Accesorios · Bufandas y chales",
+      "precio": 510,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda premium",
+      "descripcion": "Color negro. 100 % baby alpaca. Cód. WAL-BUF-010.",
+      "area": "Accesorios · Bufandas y chales",
+      "precio": 410,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda cuadros",
+      "descripcion": "Colores varios. 100 % baby alpaca. Cód. WAL-BUF-011.",
+      "area": "Accesorios · Bufandas y chales",
+      "precio": 410,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda bouclé",
+      "descripcion": "Colores varios. 70 % baby alpaca y 30 % seda. Cód. WAL-BUF-012.",
+      "area": "Accesorios · Bufandas y chales",
+      "precio": 591,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Cuello Carolina",
+      "descripcion": "Bufanda circular, colores varios. 100 % baby alpaca. Cód. WAL-BUF-013.",
+      "area": "Accesorios · Bufandas y chales",
+      "precio": 250,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Gorro Esperanza",
+      "descripcion": "100 % baby llama. Cód. WAL-GOR-001.",
+      "area": "Accesorios · Gorros, guantes y mitones",
+      "precio": 350,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Cuello Esperanza",
+      "descripcion": "100 % baby llama. Cód. WAL-GOR-002.",
+      "area": "Accesorios · Gorros, guantes y mitones",
+      "precio": 700,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Mitón Esperanza",
+      "descripcion": "100 % baby llama. Cód. WAL-GOR-003.",
+      "area": "Accesorios · Gorros, guantes y mitones",
+      "precio": 290,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Gorro punto inglés",
+      "descripcion": "100 % alpaca superfina. Cód. WAL-GOR-004.",
+      "area": "Accesorios · Gorros, guantes y mitones",
+      "precio": 215,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Gorro varón",
+      "descripcion": "100 % alpaca superfina. Cód. WAL-GOR-005.",
+      "area": "Accesorios · Gorros, guantes y mitones",
+      "precio": 267,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Guantes varón",
+      "descripcion": "100 % alpaca superfina. Cód. WAL-GOR-006.",
+      "area": "Accesorios · Gorros, guantes y mitones",
+      "precio": 217,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Mitón moña",
+      "descripcion": "100 % alpaca superfina. Cód. WAL-GOR-007.",
+      "area": "Accesorios · Gorros, guantes y mitones",
+      "precio": 180,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Mitón trenza",
+      "descripcion": "100 % alpaca superfina. Cód. WAL-GOR-008.",
+      "area": "Accesorios · Gorros, guantes y mitones",
+      "precio": 190,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Mitón trenza largo",
+      "descripcion": "100 % alpaca superfina. Cód. WAL-GOR-009.",
+      "area": "Accesorios · Gorros, guantes y mitones",
+      "precio": 230,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Porta laptop Petite Flora",
+      "descripcion": "100 % cuero vacuno. Cód. WAL-BOL-001.",
+      "area": "Accesorios · Bolsos y mochilas",
+      "precio": 670,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Maletín 007",
+      "descripcion": "100 % cuero vacuno. Cód. WAL-BOL-002.",
+      "area": "Accesorios · Bolsos y mochilas",
+      "precio": 1270,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Laptop Gamma",
+      "descripcion": "100 % cuero vacuno gamuzado. Cód. WAL-BOL-003.",
+      "area": "Accesorios · Bolsos y mochilas",
+      "precio": 610,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Bolso Gamma",
+      "descripcion": "100 % cuero vacuno gamuzado. El catálogo lo muestra junto al estuche Gamma. Cód. WAL-BOL-004.",
+      "area": "Accesorios · Bolsos y mochilas",
+      "precio": 450,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Estuche Gamma gamuzado",
+      "descripcion": "100 % cuero vacuno gamuzado. El catálogo lo muestra junto al bolso Gamma. Cód. WAL-EST-001.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 250,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Puriq backpack",
+      "descripcion": "Aguayo y cuero vacuno. Se convierte en cartera. Cód. WAL-BOL-005.",
+      "area": "Accesorios · Bolsos y mochilas",
+      "precio": 450,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Belt bag",
+      "descripcion": "Riñonera. 100 % cuero vacuno, tiro tejido. Cód. WAL-BOL-006.",
+      "area": "Accesorios · Bolsos y mochilas",
+      "precio": 435,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Journey backpack",
+      "descripcion": "100 % cuero napa. Cód. WAL-BOL-007.",
+      "area": "Accesorios · Bolsos y mochilas",
+      "precio": 870,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Sling crossbody",
+      "descripcion": "100 % cuero vacuno. Cód. WAL-BOL-008.",
+      "area": "Accesorios · Bolsos y mochilas",
+      "precio": 590,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera tipo III lagarto",
+      "descripcion": "Cuero de lagarto. Cód. WAL-BIL-001.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 1100,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera tipo III paiche",
+      "descripcion": "Cuero de paiche. Cód. WAL-BIL-002.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 990,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera tipo III iguana",
+      "descripcion": "Cuero de iguana. Cód. WAL-BIL-003.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 1050,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera tipo II lagarto",
+      "descripcion": "Cuero de lagarto. Cód. WAL-BIL-004.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 1600,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera tipo II paiche",
+      "descripcion": "Cuero de paiche. Cód. WAL-BIL-005.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 1050,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera tipo II iguana",
+      "descripcion": "Cuero de iguana. Cód. WAL-BIL-006.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 1090,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera tipo IV lagarto",
+      "descripcion": "Cuero de lagarto. Cód. WAL-BIL-007.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 750,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera tipo IV paiche",
+      "descripcion": "Cuero de paiche. Cód. WAL-BIL-008.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 690,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera tipo IV iguana",
+      "descripcion": "Cuero de iguana. Cód. WAL-BIL-009.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 690,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Porta tarjetas clásico negro",
+      "descripcion": "Negro. Cuero de lagarto. Cód. WAL-BIL-010.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 290,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Porta tarjetas clásico marrón",
+      "descripcion": "Marrón. Cuero de lagarto. Cód. WAL-BIL-011.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 290,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Porta tarjetas clásico caramelo",
+      "descripcion": "Caramelo. Cuero de lagarto. Cód. WAL-BIL-012.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 290,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Porta tarjetas tipo VI lagarto",
+      "descripcion": "Cuero de lagarto. Cód. WAL-BIL-013.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 410,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Porta tarjetas tipo VI iguana",
+      "descripcion": "Cuero de iguana. Cód. WAL-BIL-014.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 350,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Porta tarjetas tipo VI paiche",
+      "descripcion": "Cuero de paiche. Cód. WAL-BIL-015.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 320,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Porta pasaporte familiar",
+      "descripcion": "Cuero vacuno. Cód. WAL-PAS-001.",
+      "area": "Accesorios · Porta pasaportes",
+      "precio": 577,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Porta pasaporte 2 u",
+      "descripcion": "Cuero vacuno. Cód. WAL-PAS-002.",
+      "area": "Accesorios · Porta pasaportes",
+      "precio": 313,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Porta pasaporte",
+      "descripcion": "Cuero vacuno. Cód. WAL-PAS-003.",
+      "area": "Accesorios · Porta pasaportes",
+      "precio": 570,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera clásica varón negra",
+      "descripcion": "Negro. Cuero de lagarto. Cód. WAL-BIL-016.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 830,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera clásica varón marrón",
+      "descripcion": "Marrón. Cuero de lagarto. Cód. WAL-BIL-017.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 830,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera clásica varón caramelo",
+      "descripcion": "Caramelo. Cuero de lagarto. Cód. WAL-BIL-018.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 830,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera clásica",
+      "descripcion": "Cuero vacuno. Cód. WAL-BIL-019.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 480,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera trifold",
+      "descripcion": "Cuero vacuno. Cód. WAL-BIL-020.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 369,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Llavero de lagarto",
+      "descripcion": "Cuero de lagarto. Cód. WAL-CIN-001.",
+      "area": "Accesorios · Cinturones y llaveros",
+      "precio": 195,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Cinturón varón negro",
+      "descripcion": "Negro. Cuero de lagarto. Cód. WAL-CIN-002.",
+      "area": "Accesorios · Cinturones y llaveros",
+      "precio": 850,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Cinturón varón testa di moro",
+      "descripcion": "Testa di moro. Cuero de lagarto. Cód. WAL-CIN-003.",
+      "area": "Accesorios · Cinturones y llaveros",
+      "precio": 850,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Cinturón varón leño",
+      "descripcion": "Leño. Cuero de lagarto. Cód. WAL-CIN-004.",
+      "area": "Accesorios · Cinturones y llaveros",
+      "precio": 850,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Estuche para lentes con tejido Tacana",
+      "descripcion": "Cuero revuelto con tejido Tacana. Cód. WAL-EST-002.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 257,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Estuche para lentes de aguayo",
+      "descripcion": "Aguayo con tintes naturales. Cód. WAL-EST-003.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 285,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Porta lentes de aguayo",
+      "descripcion": "Aguayo con tintes naturales. Cód. WAL-EST-004.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 285,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera con cierre de aguayo",
+      "descripcion": "Aguayo con tintes naturales. Cód. WAL-BIL-021.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 510,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera sobre de aguayo",
+      "descripcion": "Aguayo con tintes naturales. Cód. WAL-BIL-022.",
+      "area": "Accesorios · Billeteras y porta tarjetas",
+      "precio": 377,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Necesser de aguayo",
+      "descripcion": "Tintes naturales. Cód. WAL-EST-005.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 410,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Chuspa de lana de oveja",
+      "descripcion": "Aguayo con tintes naturales. Cód. WAL-BOL-009.",
+      "area": "Accesorios · Bolsos y mochilas",
+      "precio": 453,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Bandolera Peki",
+      "descripcion": "Aguayo con tintes naturales y cuero. Cód. WAL-BOL-010.",
+      "area": "Accesorios · Bolsos y mochilas",
+      "precio": 480,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Cartera sobre de aguayo",
+      "descripcion": "Aguayo con tintes naturales y cuero. Cód. WAL-BOL-011.",
+      "area": "Accesorios · Bolsos y mochilas",
+      "precio": 759,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Estuche Gamma",
+      "descripcion": "Cuero revuelto. Cód. WAL-EST-006.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 250,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Wristlet wallet",
+      "descripcion": "Cuero vacuno. Cód. WAL-EST-007.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 190,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Wristlet wallet cholitas",
+      "descripcion": "Cuero vacuno. Cód. WAL-EST-008.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 230,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Makeup pouch",
+      "descripcion": "Aguayo moderno. Cód. WAL-EST-009.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 165,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Sunrise makeup pouch",
+      "descripcion": "100 % cuero vacuno. Cód. WAL-EST-010.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 165,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Necesser Moon",
+      "descripcion": "Cuero vacuno. Cód. WAL-EST-011.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 450,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Dopp kit Walnut",
+      "descripcion": "Walnut. Cuero vacuno. Cód. WAL-EST-012.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 325,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Dopp kit Black",
+      "descripcion": "Black. Cuero vacuno. Cód. WAL-EST-013.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 325,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Dopp kit Sage",
+      "descripcion": "Sage. Cuero vacuno. Cód. WAL-EST-014.",
+      "area": "Accesorios · Estuches y necesers",
+      "precio": 325,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Tapiz hombre 83 x 52 cm",
+      "descripcion": "83 x 52 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria, Chuquisaca. Cód. WAL-TAP-001.",
+      "area": "Hogar y oficina · Tapices",
+      "activo": true
+    },
+    {
+      "nombre": "Tapiz mujer río 66 x 31 cm",
+      "descripcion": "66 x 31 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria, Chuquisaca. Cód. WAL-TAP-002.",
+      "area": "Hogar y oficina · Tapices",
+      "activo": true
+    },
+    {
+      "nombre": "Tapiz hombre 55 x 34 cm",
+      "descripcion": "55 x 34 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria. Cód. WAL-TAP-003.",
+      "area": "Hogar y oficina · Tapices",
+      "activo": true
+    },
+    {
+      "nombre": "Tapiz carnaval 67 x 32 cm",
+      "descripcion": "67 x 32 cm. Tejido a mano en telar rústico. Pieza única. Comunidad La Candelaria. Cód. WAL-TAP-004.",
+      "area": "Hogar y oficina · Tapices",
+      "precio": 3750,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Tapiz matrimonio 71 x 38 cm",
+      "descripcion": "71 x 38 cm. Tejido a mano en telar rústico. Comunidades Candelaria y Tarabuco. Cód. WAL-TAP-005.",
+      "area": "Hogar y oficina · Tapices",
+      "precio": 2300,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Tapiz Jalq 61 x 34 cm",
+      "descripcion": "61 x 34 cm. Tejido a mano en telar rústico. Comunidades Candelaria y Tarabuco. Cód. WAL-TAP-006.",
+      "area": "Hogar y oficina · Tapices",
+      "precio": 3080,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Corredor de mesa",
+      "descripcion": "Aguayo con tintes naturales, tejido en telar de pie. Comunidades Chuñu Chuñuni y Aramasí. Cód. WAL-MES-001.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 1700,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Individuales de aguayo",
+      "descripcion": "Aguayo con tintes naturales, tejido en telar de pie. Comunidades Chuñu Chuñuni y Aramasí. Precio por unidad. Cód. WAL-MES-002.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 495,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Individuales Tacana",
+      "descripcion": "100 % algodón. Tejidos a mano por mujeres de la comunidad Tacana. Precio por unidad. Cód. WAL-MES-003.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 230,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Posavasos Tacana",
+      "descripcion": "100 % algodón. Tejidos a mano por mujeres de la comunidad Tacana. Set de 4. Cód. WAL-MES-004.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 230,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Figura tallada Michiq",
+      "descripcion": "15 x 8 x 8 cm. Tallada y pintada a mano en una sola pieza. Madera balsa. Cód. WAL-DEC-001.",
+      "area": "Hogar y oficina · Decoración",
+      "precio": 870,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Figura tallada Sisa",
+      "descripcion": "20 x 12 x 13 cm. Tallada y pintada a mano en una sola pieza. Madera balsa. Cód. WAL-DEC-002.",
+      "area": "Hogar y oficina · Decoración",
+      "precio": 1495,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Figura tallada Ita",
+      "descripcion": "29 x 11 x 12 cm. Tallada y pintada a mano en una sola pieza. Madera balsa. Cód. WAL-DEC-003.",
+      "area": "Hogar y oficina · Decoración",
+      "precio": 1080,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Figura tallada Chandei (Rosita Pochi)",
+      "descripcion": "30 x 12 x 8 cm. Tallada y pintada a mano en una sola pieza. Madera balsa. Cód. WAL-DEC-004.",
+      "area": "Hogar y oficina · Decoración",
+      "precio": 1080,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Posavasos Sol",
+      "descripcion": "Elaborados a mano en jipijapa por la comunidad Galilea, San Borja. Set de 4. Cód. WAL-MES-005.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 270,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Posavasos Sol (segundo diseño)",
+      "descripcion": "Elaborados a mano en jipijapa por la comunidad Galilea, San Borja. Set de 4. Cód. WAL-MES-006.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 270,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Posavasos Luna",
+      "descripcion": "Elaborados a mano en jipijapa por la comunidad Galilea, San Borja. Set de 4. Cód. WAL-MES-007.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 270,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Abanico",
+      "descripcion": "Elaborado a mano en jipijapa por la comunidad Galilea, San Borja. Cód. WAL-DEC-005.",
+      "area": "Hogar y oficina · Decoración",
+      "precio": 140,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Ensaladeras Llama 090",
+      "descripcion": "Tallado a mano, madera de palo santo. Chaco boliviano. Cód. WAL-MES-008.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 270,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Ensaladeras Tucán 090",
+      "descripcion": "Tallado a mano, madera de palo santo. Chaco boliviano. Cód. WAL-MES-009.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 270,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Ensaladeras Ondas",
+      "descripcion": "Tallado a mano, madera de palo santo. Chaco boliviano. Cód. WAL-MES-010.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 270,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Pinchos base torre",
+      "descripcion": "Tallado a mano, madera de palo santo. Chaco boliviano. Cód. WAL-MES-011.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 135,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Pinchos base llama",
+      "descripcion": "Tallado a mano, madera de palo santo. Chaco boliviano. Cód. WAL-MES-012.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 135,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Pinchos 12 u llama",
+      "descripcion": "Tallado a mano, madera de palo santo. Chaco boliviano. Cód. WAL-MES-013.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 187,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Fuente de madera 20 cm",
+      "descripcion": "Con incrustaciones de madera y plata alpaca. Chaco boliviano. Cód. WAL-MES-014.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 398,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Fuente de madera 30 cm",
+      "descripcion": "Con incrustaciones de madera y plata alpaca. Chaco boliviano. Cód. WAL-MES-015.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 480,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Fuente de madera 35 cm",
+      "descripcion": "Con incrustaciones de madera y plata alpaca. Chaco boliviano. Cód. WAL-MES-016.",
+      "area": "Hogar y oficina · Mesa y cocina",
+      "precio": 510,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Marcalibros Tacana",
+      "descripcion": "100 % algodón. Cód. WAL-PAP-001.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 70,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Marcalibros Candelaria",
+      "descripcion": "100 % lana de oveja. Cód. WAL-PAP-002.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 105,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Book cover",
+      "descripcion": "Cuero vacuno. Cód. WAL-PAP-003.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 85,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Llavero Tacana",
+      "descripcion": "Algodón y cuero. Cód. WAL-PAP-004.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 119,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Llavero salteña",
+      "descripcion": "Fieltro de oveja. Cód. WAL-PAP-005.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 90,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Llavero cholita",
+      "descripcion": "Fieltro de oveja. Cód. WAL-PAP-006.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 90,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Sal spa eucalipto",
+      "descripcion": "Sal de Uyuni. Cód. WAL-GOU-001.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 35,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Sal spa romero",
+      "descripcion": "Sal de Uyuni. Cód. WAL-GOU-002.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 35,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Sal spa lavanda",
+      "descripcion": "Sal de Uyuni. Cód. WAL-GOU-003.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 35,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Licor de coca 50 ml",
+      "descripcion": "Cód. WAL-GOU-004.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 70,
+      "moneda": "BOB",
+      "activo": false
+    },
+    {
+      "nombre": "Licor de coca 250 ml",
+      "descripcion": "Cód. WAL-GOU-005.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 120,
+      "moneda": "BOB",
+      "activo": false
+    },
+    {
+      "nombre": "Licor de coca 750 ml",
+      "descripcion": "Cód. WAL-GOU-006.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 175,
+      "moneda": "BOB",
+      "activo": false
+    },
+    {
+      "nombre": "Montecito 750 ml",
+      "descripcion": "Singani premium. Cód. WAL-GOU-007.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 174,
+      "moneda": "BOB",
+      "activo": false
+    },
+    {
+      "nombre": "Pastillas de coca en yute",
+      "descripcion": "Yute, 20 unidades. Cód. WAL-GOU-008.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 65,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Pastillas de coca en ziplock",
+      "descripcion": "Ziplock, 20 unidades. Cód. WAL-GOU-009.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 65,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Pastillas de coca en lata, 15 unidades",
+      "descripcion": "Lata de 15 unidades. Cód. WAL-GOU-010.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 65,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Pastillas de coca en lata, 30 unidades",
+      "descripcion": "Lata de 30 unidades. Cód. WAL-GOU-011.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 105,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Sales gourmet frasco grande",
+      "descripcion": "Diferentes sabores. Frasco grande. Cód. WAL-GOU-012.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 50,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Sales gourmet frasco pequeño",
+      "descripcion": "Diferentes sabores. Frasco pequeño. Cód. WAL-GOU-013.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 35,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Sales gourmet en yute",
+      "descripcion": "Diferentes sabores. Cód. WAL-GOU-014.",
+      "area": "Hogar y oficina · Gourmet y spa",
+      "precio": 35,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Postal cholita con máscara",
+      "descripcion": "Cód. WAL-PAP-007.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 15,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Postal cholita con chicle",
+      "descripcion": "Cód. WAL-PAP-008.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 15,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Postal cholita con cámara",
+      "descripcion": "Cód. WAL-PAP-009.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 15,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Postal cholitas amigas",
+      "descripcion": "Cód. WAL-PAP-010.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 15,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Postal cholita leyendo",
+      "descripcion": "Cód. WAL-PAP-011.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 15,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Postal cholita presidente",
+      "descripcion": "Cód. WAL-PAP-012.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 15,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Postal cholita policía",
+      "descripcion": "Cód. WAL-PAP-013.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 15,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Postal cholita con charango",
+      "descripcion": "Cód. WAL-PAP-014.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 15,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Postal cholita con motocicleta",
+      "descripcion": "Cód. WAL-PAP-015.",
+      "area": "Hogar y oficina · Papelería y llaveros",
+      "precio": 15,
+      "moneda": "BOB",
+      "activo": true
+    }
+  ]
+}
