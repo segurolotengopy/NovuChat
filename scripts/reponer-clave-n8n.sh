@@ -83,9 +83,9 @@ done
 # UNA peticion minima; la clave viaja a curl por la entrada estandar (-H @-), nunca por argumentos.
 # Imprime solo el codigo HTTP (000 si no hubo respuesta). El cuerpo se descarta y los errores de curl se silencian.
 sondear() { # sondear <base> <clave>
-  local cod
+  local cod N8N_API_KEY="$2"
   cod="$(curl -sS --max-time 90 --connect-timeout 15 --proto '=https' -o /dev/null -w '%{http_code}' \
-    -H @- "${1%/}/api/v1/executions?limit=1" 2>/dev/null <<<"X-N8N-API-KEY: $2")" || cod="000"
+    -H @- "${1%/}/api/v1/executions?limit=1" 2>/dev/null <<<"X-N8N-API-KEY: $N8N_API_KEY")" || cod="000"
   [[ "$cod" =~ ^[0-9]{3}$ ]] || cod="000"
   printf '%s' "$cod"
 }
@@ -130,7 +130,9 @@ fi
 
 mal=0
 tmp=""
-trap 'rm -f "${tmp:-}"' EXIT INT TERM
+trap 'rm -f "${tmp:-}"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 SELLO="$(date +%Y%m%d-%H%M%S)"
 for f in "${ENVS[@]}"; do
   dir="$(dirname "$f")"
@@ -139,6 +141,7 @@ for f in "${ENVS[@]}"; do
     echo "$f: no se pudo respaldar (queda como estaba)"; mal=1; continue
   fi
   tmp="$(mktemp "$dir/.reponer-clave.XXXXXX")" || { echo "$f: no se pudo crear el temporal"; mal=1; continue; }
+  chmod 600 "$tmp"
   # El valor entra al temporal por el builtin printf (no por argumentos de un proceso).
   hecho=0
   while IFS= read -r linea || [[ -n "$linea" ]]; do
