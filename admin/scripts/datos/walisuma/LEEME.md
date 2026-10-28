@@ -10,7 +10,8 @@
 - **Sin precio (a consultar):** 3 tapices que el PDF no valora. Se piden al cliente; no se inventan.
 - **Sin control de stock:** el PDF no trae existencias, así que el campo `stock` no se escribe.
 - **SKU:** `WAL-<familia>-<nnn>` es una propuesta de NovuChat que el cliente valida. Va al final de la descripción como «Cód.»; el identificador del ítem sale del nombre (`idDe`).
-- **Bebidas alcohólicas apagadas** (`activo: false`): licor de coca y Montecito, por la política de comercio de Meta. Encenderlas es decisión de Andres.
+- **Bebidas alcohólicas apagadas** (`activo: false`): licor de coca y Montecito, por la política de comercio de Meta. Quedan apagadas por decisión de Andres (28/10/2026); se encienden con un campo (`activo: true`) cuando se confirme la política de Meta.
+- **Pastillas de coca** (4 ítems): quedan activas, pero se revisan con la política de comercio de Meta antes de salir a producción.
 - **Fotos:** no van en el repositorio (son de un tercero). Una por ítem, `<id>.webp`, recortadas del PDF; se suben con `cargar-fotos-catalogo.mjs` y el OK de Andres.
 - **Cargar** (solo con el comercio dado de alta y el botón de Andres): `cargar-negocio.mjs --proyecto <id> --tenant walisuma --archivo scripts/datos/walisuma/catalogo.json` en seco y luego con `--aplicar`.
 - **Prueba:** `pruebas/tenants/walisuma/catalogo.test.ts` pasa cada ítem por el normalizador del servidor y niega los casos malos.
