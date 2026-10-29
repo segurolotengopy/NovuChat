@@ -54,7 +54,9 @@ const mensajeDe = (e) => (e instanceof Error ? e.message : String(e));
 
 // ------------------------------------------------------------------------------------------------------- los casos
 const TIPOS = new Set(['incluye_alguna', 'incluye_todas', 'excluye', 'etiqueta', 'sin_etiqueta', 'boton_recepcion', 'sin_boton', 'sin_enlaces', 'texto_fijo', 'baja_silenciosa', 'no_es_baja', 'sin_agente_ni_respuesta',
-  'sin_agente', 'una_respuesta_breve', 'pregunta_nombre_y_deseo', 'excluye_cifras_de_dinero', 'admite_ser_ia', 'no_deriva_ni_menu', 'distinto_del_turno_anterior', 'etiqueta_escrita_por_cliente_no_dispara', 'si_menciona_paciente_exige_etiqueta']);
+  'sin_agente', 'una_respuesta_breve', 'pregunta_nombre_y_deseo', 'excluye_cifras_de_dinero', 'admite_ser_ia', 'no_deriva_ni_menu', 'distinto_del_turno_anterior', 'etiqueta_escrita_por_cliente_no_dispara', 'si_menciona_paciente_exige_etiqueta',
+  // Observaciones de Rubén (28/10/2026): el aviso a recepción planeado o no, y lo que lleva como horario preferido.
+  'aviso_planeado', 'sin_aviso', 'aviso_horario_contiene']);
 /** Valida el archivo de casos: ids únicos, cada turno con UNA entrada (dice, imagen, audio o tipo_mensaje) y chequeos de un tipo conocido. */
 export function validarCasos(datos) {
   const casos = objeto(datos).casos;
@@ -190,7 +192,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps,
       tipo: objeto(m.payload).type === 'interactive' ? 'interactive' : 'text', cuerpo: String(m.texto ?? ''), payload: objeto(m.payload),
     }));
     registro.push({
-      n: i + 1, turno, plan: String(objeto(resumen.resumen).plan ?? ''), mensajes, imagenes: Array.isArray(resumen.imagenes) ? resumen.imagenes : [], avisoPlaneado: resumen.avisoPlaneado === true,
+      n: i + 1, turno, plan: String(objeto(resumen.resumen).plan ?? ''), mensajes, imagenes: Array.isArray(resumen.imagenes) ? resumen.imagenes : [], avisoPlaneado: resumen.avisoPlaneado === true, avisoHorario: String(resumen.avisoHorario ?? ''),
       derivacion: resumen.derivacion === true, llamoAlModelo: actual.llamadasAlModelo > 0, modeloSimulado: opciones.seco && actual.simulado, rechazo: objeto(resumen.resumen).rechazo ?? null,
       // El evento `no_contactar` que armó «Armar mensajes» (en modo prueba no se reporta a la ingesta, pero el flujo lo arma igual).
       eventos: ((r && r.porNodo['Armar mensajes']) ?? []).map((x) => String(objeto(x).evento ?? '')).filter(Boolean), fallo, ms: actual.ms, tokensEntrada: actual.tokensEntrada, tokensSalida: actual.tokensSalida,
@@ -203,7 +205,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps,
 
 // ------------------------------------------------------------------------------------------------------- los chequeos
 const ARTE = { ARTE_COMPARATIVO: 'comparativo', ARTE_ANTES_DESPUES: 'antes_despues', ARTE_AUTORIDAD: 'autoridad' };
-const PLAN_DE_TEXTO_FIJO = { urgencia_sin_consejo: 'medica', texto_fijo_pareja: 'riesgo' };
+const PLAN_DE_TEXTO_FIJO = { urgencia_sin_consejo: 'medica', texto_fijo_pareja: 'riesgo', preferencia: 'preferencia', oferta_llamada: 'ofrece_llamada', cierre_amable: 'cierre_amable', saludo_corto: 'saludo' };
 const textoRecibido = (t) => t.mensajes.map((m) => m.cuerpo).join('\n');
 const botones = (t) => t.mensajes.filter((m) => m.tipo === 'interactive');
 const DINERO = /\b\d[\d.,]*\s*(?:bs|bob|bolivianos?|usd|dolares?|\$us)\b|\b(?:bs|bob|usd)\.?\s*\d|\$\s*\d|\b(?:cuesta|cuestan|vale|valen|precio|costo|tarifa)\w*\b[^.!?\d]{0,12}\b\d[\d.,]*\b(?!\s*%)/i;
@@ -217,7 +219,7 @@ const CONSEJO_MEDICO = /\b(?:toma|tome|tomar|aplica|aplicate|ponte)\b[^.!?]{0,20
 export function evaluar(ch, t, anterior, ctx) {
   const texto = norm(textoRecibido(t));
   const conModelo = t.llamoAlModelo;
-  const decideElCodigo = ['texto_fijo', 'baja_silenciosa', 'no_es_baja', 'sin_agente_ni_respuesta', 'sin_agente', 'etiqueta_escrita_por_cliente_no_dispara'].includes(ch.tipo);
+  const decideElCodigo = ['texto_fijo', 'baja_silenciosa', 'no_es_baja', 'sin_agente_ni_respuesta', 'sin_agente', 'etiqueta_escrita_por_cliente_no_dispara', 'aviso_planeado', 'sin_aviso', 'aviso_horario_contiene'].includes(ch.tipo);
   if (ctx.seco && conModelo && t.modeloSimulado !== false && !decideElCodigo) return { omitido: true };
   const valores = (ch.valores ?? []).map(norm);
   switch (ch.tipo) {
@@ -229,7 +231,8 @@ export function evaluar(ch, t, anterior, ctx) {
     case 'boton_recepcion': return { ok: botones(t).length === (Number.isInteger(ch.cantidad) ? ch.cantidad : 1) };
     case 'sin_boton': return { ok: botones(t).length === 0 };
     case 'sin_enlaces': return { ok: !ENLACE.test(textoRecibido(t)) };
-    case 'texto_fijo': return { ok: t.plan === PLAN_DE_TEXTO_FIJO[ch.texto] && !t.llamoAlModelo };
+    // `preferencia` la decide el código DESPUÉS de la respuesta del modelo (el pedido de agendar pasó por el modelo): solo se exige el plan; los demás textos fijos salen sin llamar al modelo.
+    case 'texto_fijo': return { ok: t.plan === PLAN_DE_TEXTO_FIJO[ch.texto] && (ch.texto === 'preferencia' || !t.llamoAlModelo) };
     case 'baja_silenciosa': return { ok: t.plan === 'baja' && t.eventos.includes('no_contactar') && !t.llamoAlModelo };
     case 'no_es_baja': return { ok: t.plan !== 'baja' && !t.eventos.includes('no_contactar') };
     case 'sin_agente_ni_respuesta': return { ok: !t.llamoAlModelo && t.mensajes.length === 0 && t.imagenes.length === 0 && !t.avisoPlaneado };
@@ -246,6 +249,9 @@ export function evaluar(ch, t, anterior, ctx) {
     case 'distinto_del_turno_anterior': return { ok: !anterior || norm(textoRecibido(anterior)) !== texto };
     case 'etiqueta_escrita_por_cliente_no_dispara': return { ok: t.imagenes.length === 0 };
     case 'si_menciona_paciente_exige_etiqueta': return { ok: !/paciente (?:real|de la foto|del anuncio)|caso de una paciente/.test(texto) || t.imagenes.includes(ARTE[ch.valor]) };
+    case 'aviso_planeado': return { ok: t.avisoPlaneado === true };
+    case 'sin_aviso': return { ok: t.avisoPlaneado !== true };
+    case 'aviso_horario_contiene': return { ok: t.avisoPlaneado === true && valores.every((v) => norm(t.avisoHorario).includes(v)) };
     default: return { ok: false };
   }
 }

@@ -257,6 +257,9 @@ function evFichaVigente(f, ahoraMs) {
     cierreMs: ven(f && f.cierreMs) ? f.cierreMs : 0,
     comparacionMs: ven(f && f.comparacionMs) ? f.comparacionMs : 0, comparacionMostrada: ven(f && f.comparacionMs),
     historial: vencida ? [] : evHistorialSaneado(f && f.historial), artes: artes, avisos: avisos,
+    // Observaciones de Rubén (28/10/2026): la preferencia de día y horario que dio, el nombre que dio (también el de la etiqueta del modelo) y cuándo salió el aviso de «pidió que la llamen».
+    preferencia: f && !vencida && typeof f.preferencia === 'string' ? f.preferencia.slice(0, 100) : '', nombre: f && !vencida ? evPrimerNombre(f.nombre) : '',
+    llamadaMs: ven(f && f.llamadaMs) ? f.llamadaMs : 0,
     imagenes: evConteoDeFicha(f && f.imagenes), audios: evConteoDeFicha(f && f.audios),
   };
 }
@@ -616,8 +619,9 @@ function evQuitarEnlacesYTelefonos(texto) {
 // El anclaje «250 Bs» (la única cifra de dinero): solo como valor habitual de una valoración que se presenta bonificada o gratuita. Una oración con «250» que no cumple se quita ENTERA.
 // El monto permitido se cambia por una marca neutra para que el filtro común no lo vea como un precio; se repone al final (`evRestituirValor`).
 const EV_CONTEXTO_GRATIS = /\b(bonific\w*|gratuit\w*|gratis|sin costo|sin pagar|no pagas|no tiene (?:ningun )?costo|ahorras|ahorro)\b/;
-function evProtegerValor(texto) {
-  return evQuitarOraciones(texto, (n) => /\b250\b/.test(n) && !EV_CONTEXTO_GRATIS.test(n));
+// Observaciones de Rubén (Andres, 28/10/2026): la cifra se menciona SOLO en la bienvenida, el PRIMER turno de la ficha (sin historial vigente). En cualquier otro turno toda oración con «250» se quita entera.
+function evProtegerValor(texto, primerTurno) {
+  return evQuitarOraciones(texto, (n) => /\b250\b/.test(n) && (primerTurno !== true || !EV_CONTEXTO_GRATIS.test(n)));
 }
 function evMarcarValor(texto) {
   return evTexto(texto).replace(/\b250\s*(?:bs\.?|bolivianos)?/gi, EV_MARCA_VALOR);
@@ -652,7 +656,7 @@ const EV_NEGADA = /\b(?:no|nunca|jamas|ni|tampoco|sin|nadie|ningun\w*)\b(?:\s+\S
 // La cláusula donde está la palabra: lo anterior a una coma, dos puntos, punto y coma o un «pero / sino / aunque» no la gobierna («No puedo garantizar nada, pero vas a quedar perfecta»).
 const evClausula = (prefijo) => String(prefijo).split(/[,:;]|\bpero\b|\bsino\b|\baunque\b|\bsin embargo\b/).pop();
 // Garantizar algo que NO es el resultado («te garantizamos un diagnóstico profesional y honesto»): la oración se borra (no se promete eso) pero no tumba el texto entero.
-const EV_GARANTIA_BENIGNA = /^\w+\s+(?:\w+\s+){0,2}(?:diagnostico|atencion|evaluacion|valoracion|trato|honestidad|transparencia|profesionalismo|acompanamiento|etica|seguimiento|calidad|privacidad|confidencialidad|personalizad\w*)\b/;
+const EV_GARANTIA_BENIGNA = /^\w+\s+(?:\w+\s+){0,2}(?:diagnostico|atencion|evaluacion|valoracion|trato|honestidad|transparencia|profesionalismo|acompanamiento|etica|seguimiento|calidad|privacidad|confidencialidad|personalizad\w*|respaldo|experiencia|compromiso|dedicacion)\b/;   // «respaldo / experiencia» de la Dra.: batería real del 29/10/2026 (G3)
 function evGarantiaAfirmativa(norm) {
   for (const o of String(norm).split(/[.!?]+/)) {
     const m = EV_GARANTIA.exec(o);
@@ -752,6 +756,13 @@ const EV_TOCA_GARANTIA = /\bgarant\w*|\basegur\w*|\bpromet\w*|\bprometid\w*|resu
 function evSinInmediato(texto) {
   return evQuitarOraciones(evTexto(texto).replace(/(lifting)\s+inmediat[oa]s?/gi, '$1').replace(/\binmediat[oa]s?\s+(lifting)/gi, '$1'), (n) => /\binmediat\w*/.test(n));
 }
+// COPIA de la de Emma (batería real de Evy del 29/10/2026, caso B4: «¿esto es real?» sobre la foto del antes y después caía al fallo por la barrera común «identidad»).
+// «¿esto es real?» sobre una FOTO no es la pregunta «¿eres real?» sobre la identidad: al filtro común (que no se toca) se le pasa «es verdad». «¿Eres real?», «¿eres un bot?» siguen intactas.
+function evTextoParaIdentidad(textoCliente) {
+  return evTexto(textoCliente)
+    .replace(/\b(esto|eso|esta (?:foto|imagen|paciente)|esa (?:foto|imagen|paciente)|la (?:foto|imagen|paciente)|este (?:caso|resultado|antes y despues)|ese (?:caso|resultado)|el (?:caso|resultado|antes y despues))\s+(es|son)\s+(real|reales)\b/gi, '$1 $2 verdad')
+    .replace(/\b(es|son)\s+(real|reales)\s+(esto|eso|la foto|la imagen|la paciente|el caso|el resultado|los resultados)\b/gi, '$1 verdad $3');
+}
 /**
  * Pule el texto del modelo y lo revisa. `ctx` = { artesEnviados: ['antes_despues', …] (los que SALIERON este turno), textoCliente, nombreNegocio }.
  * Devuelve { texto, motivo }: si `motivo` no es '', el texto se descarta y se usa el fijo del fallo. Orden: etiquetas fuera (hecho por quien llama), enlaces y teléfonos fuera, «250» solo bonificado,
@@ -766,7 +777,13 @@ function evPulirSalida(crudo, ctx) {
   let t = evTexto(crudo).replace(/\r\n?/g, '\n').replace(/[ \t]{2,}/g, ' ').split('\n').map((l) => l.trim()).join('\n');
   t = evQuitarEnlacesYTelefonos(t).replace(/\*+/g, '');
   t = evSinInmediato(t);
-  t = evProtegerValor(t);
+  // «¿Qué zona te llama más la atención?» no promete una llamada (batería real del 29/10/2026: el filtro común solo exime «llama la atención» y tumbaba la bienvenida): se dice «te interesa más».
+  t = t.replace(/\b(te|le) llama (m[aá]s|mucho|tanto) la atenci[oó]n\b/gi, '$1 interesa $2');
+  t = evProtegerValor(evSinBonificado(t), c.primerTurno === true);
+  // «¡Que tengas un excelente día!» no cierra ninguna respuesta (observación de Rubén, 28/10/2026): esa oración se quita.
+  t = evQuitarOraciones(t, (n) => EV_DESPEDIDA_DE_DIA.test(n));
+  // «Recepción te llama / te contactará…»: sale SOLO si el aviso de «pidió que la llamen» salió de verdad (`llamadaAvisada`, lo calcula quien llama con `avisoSalio`); si no, la oración se quita.
+  t = evPromesaDeLlamada(t, c.llamadaAvisada === true);
   if (enviados.length === 0) t = evQuitarOraciones(t, (n) => EV_PROMETE_IMAGEN.test(n));
   if (enviados.indexOf('antes_despues') < 0) t = evQuitarOraciones(t, (n) => EV_PACIENTE_REAL.test(n));
   t = evQuitarOraciones(t, (n) => EV_PROMETE_RECEPCION.test(n) || EV_PROMETE_DESPUES.test(n));
@@ -815,10 +832,12 @@ function evPulirSalida(crudo, ctx) {
   if (sinRemision) return { texto: '', motivo: 'salud_sin_remision', detalle: 'habla de salud o afirma seguridad («' + sinRemision.slice(0, 40) + '») sin remitir a la valoración de la Dra.' };
   const salud = evConsejoDeSalud(norm);
   if (salud) return { texto: '', motivo: 'prohibido', detalle: 'consejo de salud sobre la condición del cliente («' + salud + '…»)' };
-  for (const [nombre, re] of EV_PROHIBIDO_MEDICO) { const m = re.exec(norm); if (m) return { texto: '', motivo: 'prohibido', detalle: nombre + ' («' + m[0].slice(0, 50) + '»)' }; }
+  // Una DURACIÓN («entre 20 y 30 minutos», «unos 40 minutos») no es un precio (batería real del 29/10/2026: «¿cuánto dura?» caía al fallo): solo para las reglas de precio se quita antes de mirar.
+  const normSinDuracion = evSinDuraciones(norm);
+  for (const [nombre, re] of EV_PROHIBIDO_MEDICO) { const m = re.exec(nombre === 'precio' || nombre === 'rango_de_precio' ? normSinDuracion : norm); if (m) return { texto: '', motivo: 'prohibido', detalle: nombre + ' («' + m[0].slice(0, 50) + '»)' }; }
   const opcionesFiltro = {
     maximo: 1500, permitirMontos: false, enlacesPermitidos: [], sinPromesasDeAviso: true, sinImagenes: enviados.length === 0,
-    quienPromete: ['recepcion', 'la recepcion', 'el equipo', 'nuestro equipo', 'un asesor', 'una asesora'], textoDelCliente: c.textoCliente || '',
+    quienPromete: ['recepcion', 'la recepcion', 'el equipo', 'nuestro equipo', 'un asesor', 'una asesora'], textoDelCliente: evTextoParaIdentidad(c.textoCliente || ''),
   };
   let final = marcado;
   let motivo = cmMotivoDeRechazo(final, opcionesFiltro);
@@ -846,7 +865,7 @@ function evPulirSalida(crudo, ctx) {
     }
   }
   if (motivo) return { texto: '', motivo: motivo, detalle: 'filtro común cmMotivoDeRechazo: ' + motivo };
-  return { texto: evParrafos(evRestituirValor(final)), motivo: '', detalle: '' };
+  return { texto: evParrafos(evRestituirLlamada(evRestituirValor(final))), motivo: '', detalle: '' };
 }
 
 // -----------------------------------------------------------------------------
@@ -916,7 +935,7 @@ function evAceptaOferta(textoCliente, historial) {
   return a >= 0 && evOfreceAgendar(h[a].t);
 }
 // ¿Es esto un nombre? «Paola», «Paola Rojas», «Soy Paola», «Me llamo Paola»; no «soy alérgica», «de La Paz», «soy nueva», ni una frase.
-const EV_NO_NOMBRE = new RegExp('^(?:de|del|la|el|los|las|un|una|nuevo|nueva|alergico|alergica|diabetico|diabetica|embarazada|paciente|cliente|mama|casada|soltera|doctor|doctora|medico|medica|enfermera|enfermero|interesad[oa]|curios[oa]|quiero|necesito|busco|tengo|vengo|estoy|si|no|hola|ok|gracias|bueno|claro|dale|buenas|buenos|clienta|estudiante|senora|senor|madre|ella|yo|usuaria|muy|tu|su|mi|mejor|para|pero|cita|turno|horario|horarios|tienen|hipertens\\w*|nervios\\w*|sensible|mayor|botox|radiesse|harmonyca|sculptra|acido|hialuronico|bioestimulador\\w*|gratis|gratuita)$');
+const EV_NO_NOMBRE = new RegExp('^(?:de|del|la|el|los|las|un|una|nuevo|nueva|alergico|alergica|diabetico|diabetica|embarazada|paciente|cliente|mama|casada|soltera|doctor|doctora|medico|medica|enfermera|enfermero|interesad[oa]|curios[oa]|quiero|necesito|busco|tengo|vengo|estoy|si|no|hola|ok|gracias|bueno|claro|dale|buenas|buenos|clienta|estudiante|senora|senor|madre|ella|yo|usuaria|muy|tu|su|mi|mejor|para|pero|cita|turno|horario|horarios|tienen|hipertens\\w*|nervios\\w*|sensible|mayor|botox|radiesse|harmonyca|sculptra|acido|hialuronico|bioestimulador\\w*|gratis|gratuita|pasame|paseme|pasenme|pasa|pasen|hablar|chatear|comunicame|contactame|escribeme|escribame|llamame|llamenme|agendame|ayudame|alguien|recepcion|secretaria|favor|porfa|disculpa|perdon|ustedes|digame|diganme|dime|nose|cualquier)$');
 function evEsNombre(textoCliente) {
   const raw = evTexto(textoCliente).trim();
   if (raw === '' || raw.indexOf('?') >= 0 || raw.indexOf('¿') >= 0) return false;
@@ -974,9 +993,10 @@ function evDioNombre(historial, textoCliente) {
   const re = /\b(?:soy|me llamo|mi nombre es)\s+\p{L}{2,}/iu;
   return re.test(evTexto(textoCliente)) || (Array.isArray(historial) && historial.some((h) => h && h.r === 'u' && re.test(evTexto(h.t))));
 }
-function evTextoGratis(cfg, dioNombre) {
+// Observaciones de Rubén (28/10/2026): sin «bonificado»; el valor habitual (250 Bs) solo en el PRIMER turno de la ficha, como en la bienvenida.
+function evTextoGratis(cfg, dioNombre, primerTurno) {
   const negocio = evLinea(cfg && cfg.nombreNegocio, 60) || 'Dra. Evy';
-  const cuerpo = 'Sí, la valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar. (Su valor habitual es de 250 Bs; hoy está bonificado).';
+  const cuerpo = 'Sí, la valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar.' + (primerTurno === true ? ' (Su valor habitual es de 250 Bs).' : '');
   return dioNombre ? cuerpo : cuerpo + '\n\n¿Cómo te llamas y qué te gustaría mejorar en tu rostro?';
 }
 const EV_TEXTO_DERIVAR_DE_NUEVO_2 = 'Con gusto, el botón sigue disponible para escribirle a recepción.';
@@ -987,18 +1007,19 @@ const EV_BOTON_RECEPCION = 'Escribir a recepción';
 const EV_PIDE_UBICACION = /\b(ubicacion|ubicados|ubicadas|ubicarlos|direccion|mapa|maps|como (?:llego|llegar|llegamos)|donde (?:estan|estamos|queda|quedan|atienden|se encuentran|se ubican|es la clinica|esta la clinica))\b/;
 function evPideUbicacion(textoCliente) { return EV_PIDE_UBICACION.test(evNorm(textoCliente)); }
 
-// El cierre de la derivación: el texto fijo del guion (con las dos frases sin mecanismo cambiadas), con el nombre y la dirección de la Consola. Sin nombre, sin «, Nombre».
-function evTextoCierre(cfg, nombre, conMaps) {
+// El cierre de la derivación (observaciones de Rubén, 28/10/2026): «¡Excelente decisión, Nombre!» con la valoración 100% gratuita, la clínica y la dirección de la Consola y, AL FINAL, exactamente «Ya pasé tus datos a recepción; te contactarán para
+// confirmar tu hora.» SOLO si el aviso a recepción salió de verdad (`avisado`, el `avisoSalio` de «Armar mensajes»): sin aviso no se promete nada y se invita a usar el botón. Sin «bonificada» (la decisión 4). Sin nombre, sin «, Nombre».
+function evTextoCierre(cfg, nombre, conMaps, avisado) {
   const c = cfg && typeof cfg === 'object' ? cfg : {};
   const n = evTexto(nombre).trim();
   const negocio = evLinea(c.nombreNegocio, 60) || 'la Dra. Evy';
   const clinica = evLinea(c.clinica, 60);
   const dir = evLinea(c.direccion, 160);
   const donde = clinica && dir ? 'La consulta es en la ' + clinica + ' (' + dir + ').' : (clinica ? 'La consulta es en la ' + clinica + '.' : (dir ? 'La consulta es en ' + dir + '.' : ''));
-  return ['¡Excelente decisión' + (n ? ', ' + n : '') + '! Recuerda que tu valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' está 100% bonificada (sin costo ni pago de reserva).',
+  return ['¡Excelente decisión' + (n ? ', ' + n : '') + '! Recuerda que tu valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' es 100% gratuita y sin compromiso (sin pago de reserva).',
     donde,
     conMaps === true && evEnlaceDeMapa(c.direccionMaps) !== '' ? '📍 Ubicación: ' + evEnlaceDeMapa(c.direccionMaps) : '',
-    'Para elegir el día y horario que mejor te queden, la recepción te ayudará: usa el botón para hablar directo con ella.'].filter((x) => x !== '').join('\n\n');
+    avisado === true ? EV_TEXTO_CIERRE_AVISADO : EV_TEXTO_CIERRE_SIN_AVISO].filter((x) => x !== '').join('\n\n');
 }
 // EL ENLACE DE GOOGLE MAPS del negocio (`direccionMaps`, de la Consola): LA MISMA regla que `enlaceDeMapaValido` del servidor (https, uno de los dominios de mapas, hasta 200 caracteres, sin espacios). Se comprueba en
 // `Config del negocio` y otra vez aquí. Inválido, ausente o de otro dominio = '' (el cierre queda como siempre). Es el ÚNICO enlace que este flujo deja pasar; el enlace nunca va en código, prompt ni datos versionados.
@@ -1098,3 +1119,238 @@ const EV_PIDE_COMPARATIVO = /\b(diferencia|diferencias|diferente|diferentes|comp
 function evPideComparativo(texto) {
   return EV_PIDE_COMPARATIVO.test(evNorm(texto));
 }
+
+// =============================================================================
+// OBSERVACIONES DE RUBÉN (decisiones de Andres, 28/10/2026). MISMO BLOQUE en los flujos de las dos doctoras (una prueba lo compara byte a byte). «El prompt no es una barrera»: lo importante lo hace el CÓDIGO.
+// =============================================================================
+
+// (4) SIN «BONIFICADO»: ningún texto que sale dice «hoy bonificado» ni «100% bonificada». Se reescriben las formas conocidas y, si queda una oración con «bonific…», se quita entera.
+function evSinBonificado(texto) {
+  const t = evTexto(texto)
+    .replace(/(?:\s*,\s*|\s+)hoy (?:est[aá] )?bonificad[oa]s?\b/gi, '')
+    .replace(/\b(?:est[aá]|es) (?:100 ?% )?bonificad[oa]s? y (?:es )?(gratuit[oa]s?)\b/gi, 'es $1')
+    .replace(/\bbonificamos (?:el )?(?:100 ?%|cien por ciento) de (la valoraci[oó]n)/gi, '$1 es 100% gratuita')
+    .replace(/\bbonificando (?:los )?(250 Bs) habituales\b/gi, 'sin pagar los $1 habituales')
+    .replace(/\b(?:100 ?% )?bonificad([oa])(s?) al (?:100 ?%|cien por ciento)/gi, '100% gratuit$1$2')
+    .replace(/\b(?:100 ?% |totalmente )?bonificad([oa])(s?)\b/gi, '100% gratuit$1$2');
+  return /bonific/i.test(t) ? evQuitarOraciones(t, (n) => /\bbonific\w*/.test(n)) : t;
+}
+
+// (3) LA DESPEDIDA DE DÍA («¡Que tengas un excelente día!»): ninguna respuesta del modelo cierra con ella.
+const EV_DESPEDIDA_DE_DIA = /\b(?:que )?(?:tengas|tenga|tengan|ten|pases|pase|pasen) (?:un |una )?(?:excelente|lindo|linda|buen|buena|hermoso|hermosa|bonito|bonita|feliz|maravilloso|maravillosa|gran|lindisimo|lindisima) (?:dia|tarde|noche|semana|fin de semana)\b|\bexcelente dia\b/;
+
+// (P) LA PROMESA DE LLAMADA CON MECANISMO. «Recepción te llama / te contactará / te va a llamar…» es una promesa: sale SOLO cuando el aviso a recepción con el teléfono de la paciente y su pedido de llamada SALIÓ de verdad
+// (`llamadaAvisada`, que calcula «Armar mensajes» con `avisoSalio`). Entonces la oración «… para ofrecerte los horarios» se cambia por una marca (el filtro común no la ve como promesa) y al final por el texto fijo del
+// código; sin ese aviso, toda oración que prometa una llamada o un contacto se quita.
+const EV_PROMETE_LLAMADA = /\b(?:recepcion|secretaria|recepcionista|equipo|alguien|la doctora|la dra)\b[^.!?]{0,20}\b(?:te|la|lo|le) (?:llama|llamara|llamaran|llamen|va a llamar|van a llamar|contacta|contactara|contactaran|contacte|contacten|va a contactar|van a contactar|escribe|escribira|escribiran|va a escribir|van a escribir|comunica|comunicara)\b|\bte (?:llamara|llamaran|contactara|contactaran|van a llamar|va a llamar|van a contactar|va a contactar|escribiran|van a escribir)\b/;
+const EV_LLAMADA_RESPALDADA = /\brecepcion\b[^.!?]{0,20}\bte (?:llama|llamara|va a llamar|contacta|contactara|va a contactar)\b[^.!?]{0,20}\bpara ofrecerte (?:los |sus )?horarios\b/;
+const EV_MARCA_LLAMADA = 'xllamadarespaldadax';
+const EV_TEXTO_LLAMADA_RESPALDADA = 'Recepción te contactará para ofrecerte los horarios disponibles.';
+function evPromesaDeLlamada(texto, llamadaAvisada) {
+  let puesta = false;
+  const lista = evPartirEnOraciones(evTexto(texto)).map((o) => {
+    if (o === '' || o === '\n') return o;
+    const n = evNorm(o);
+    if (llamadaAvisada === true && !puesta && EV_LLAMADA_RESPALDADA.test(n) && !evEsPregunta(o)) { puesta = true; return EV_MARCA_LLAMADA + '.'; }
+    return o;
+  });
+  return evUnirOraciones(evSinHuerfanos(lista, (o) => o !== EV_MARCA_LLAMADA + '.' && EV_PROMETE_LLAMADA.test(evNorm(o))));
+}
+function evRestituirLlamada(texto) {
+  return evTexto(texto).replace(new RegExp(EV_MARCA_LLAMADA + '\\.?', 'gi'), EV_TEXTO_LLAMADA_RESPALDADA);
+}
+
+// (1) LA PREFERENCIA DE DÍA Y HORARIO ANTES DEL CIERRE. Al «sí» a agendar, si la conversación no trae todavía un día o un horario, el CÓDIGO pregunta (una sola pregunta; con el nombre si falta) y la respuesta
+// cierra: aviso a recepción con la preferencia + botón + «Ya pasé tus datos a recepción; te contactarán para confirmar tu hora.». Un pedido con el día o el horario en el mismo mensaje cierra directo.
+const EV_TEXTO_CIERRE_AVISADO = 'Ya pasé tus datos a recepción; te contactarán para confirmar tu hora.';
+const EV_TEXTO_CIERRE_SIN_AVISO = 'Para confirmar tu hora, escríbele directo a la recepción con el botón.';
+const EV_TEXTO_PREFERENCIA = '¡Perfecto! ¿Qué día y horario te quedan mejor para tu valoración?';
+const EV_TEXTO_PREFERENCIA_NOMBRE = '¡Perfecto! ¿Cómo te llamas y qué día y horario te quedan mejor para tu valoración?';
+// Si la pregunta ya fue lo último que dijo el asistente, sale con otras palabras (nunca el mismo texto dos veces seguidas).
+const EV_TEXTO_PREFERENCIA_2 = 'Para pasarle tus datos a recepción: ¿qué día y horario te acomodan más?';
+const EV_TEXTO_PREFERENCIA_NOMBRE_2 = 'Para pasarle tus datos a recepción: ¿cómo te llamas y qué día y horario te acomodan más?';
+const EV_ES_PREGUNTA_DE_PREFERENCIA = /\bque dia y horario te (?:quedan mejor|acomodan mas)\b/;
+function evEsPreguntaDePreferencia(textoAsistente) { return EV_ES_PREGUNTA_DE_PREFERENCIA.test(evNorm(textoAsistente)); }
+function evTextoPreferencia(conNombre, ultimoAsistente) {
+  const repetida = evEsPreguntaDePreferencia(ultimoAsistente);
+  return conNombre === true ? (repetida ? EV_TEXTO_PREFERENCIA_NOMBRE_2 : EV_TEXTO_PREFERENCIA_NOMBRE) : (repetida ? EV_TEXTO_PREFERENCIA_2 : EV_TEXTO_PREFERENCIA);
+}
+function evSinHorario(h) { const x = evTexto(h).trim(); return x === '' || x === 'sin horario indicado'; }
+// ¿Trae un DÍA o una HORA/FRANJA? (revisión del PR #694): un día (lunes…domingo, hoy, mañana, pasado mañana, esta/la próxima semana, fin de semana), una hora («a las 3», «10:30», «5 pm») o una franja
+// con contexto («en/por/de la mañana/tarde/noche», «las tardes», «mediodía»). «Luego», «después», «cuando», «puedo», «trabajo», «mejor» o «ahora» sueltos NO lo son: un aplazamiento no es una preferencia.
+const EV_DIA_U_HORA = /\b(lunes|martes|miercoles|jueves|viernes|sabados?|domingos?|hoy|pasado manana|manana|esta semana|(?:la )?proxima(?: semana)?|semana que viene|la que viene|fin de semana|finde|mediodia|(?:en|por|de|a) la (?:manana|tarde|noche)|las (?:mananas|tardes|noches)|en las (?:mananas|tardes|noches)|a las? \d{1,2}(?::\d{2})?|\d{1,2}:\d{2}|\d{1,2} ?(?:am|pm|hs|hrs))\b/;
+function evTieneDiaUHora(texto) { return EV_DIA_U_HORA.test(evNorm(texto)); }
+// Una preferencia ABIERTA («cualquier día», «el que tengan», «me da igual»): vale como respuesta y viaja tal cual.
+const EV_PREFERENCIA_ABIERTA = /\b(?:cualquier (?:dia|hora|horario|momento)|el que (?:tengan|haya|sea|les quede)|lo que (?:tengan|haya)|me da igual|indistinto|cuando (?:ustedes )?(?:puedan|tengan))\b/;
+// ¿El mensaje contesta la pregunta de preferencia? Sin pregunta, sin rechazo ni aplazamiento, de largo razonable, y CON un día, una hora o una preferencia abierta. Un «no» al comienzo no la anula si, quitado,
+// queda un día u hora («no, el jueves mejor», «no puedo esta semana, la próxima»).
+function evRespondePreferencia(textoCliente) {
+  const raw = evTexto(textoCliente).trim();
+  if (raw === '' || raw.length > 300 || raw.indexOf('?') >= 0 || raw.indexOf('¿') >= 0) return false;
+  const n = evNorm(raw);
+  if (n === '' || evDeclina(raw, []) || evAplaza(raw)) return false;
+  if (/^no\b/.test(n) && !evTieneDiaUHora(n.replace(/^no\b/, ''))) return false;
+  return evTieneDiaUHora(raw) || EV_PREFERENCIA_ABIERTA.test(n);
+}
+// Lo que se guarda y viaja en el aviso: el TEXTO ORIGINAL saneado (con sus tildes: «mañana», no «manana») de las cláusulas que traen el día, la hora o la preferencia abierta; sin el nombre ni el resto.
+// '' si no hay ninguna (entonces el aviso dice «sin horario indicado»).
+function evPreferenciaDe(textoCliente) {
+  const limpio = evEnmascarar(evQuitarDelimitadores(textoCliente));
+  const partes = limpio.split(/[,;\n]|\s+y\s+(?=(?:el|la|los|las|por|en|a)\b)/).map((x) => x.trim()).filter((x) => x !== '' && (evTieneDiaUHora(x) || EV_PREFERENCIA_ABIERTA.test(evNorm(x))));
+  return partes.join(', ').slice(0, 100);
+}
+// La preferencia de la conversación: la del mensaje actual o la de los últimos 4 mensajes de la persona (del más nuevo al más viejo). '' si no hay.
+function evPreferenciaDeConversacion(historial, textoCliente) {
+  const mios = [evTexto(textoCliente)].concat((Array.isArray(historial) ? historial : []).filter((h) => h && h.r === 'u').slice(-4).reverse().map((h) => h.t));
+  for (const t of mios) { const p = evPreferenciaDe(t); if (p !== '') return p; }
+  return '';
+}
+// UN APLAZAMIENTO («luego te digo», «después te aviso», «cuando pueda te escribo», «tengo que ver mi trabajo»): sin día ni hora, no es una preferencia; va al camino de «lo voy a pensar».
+const EV_APLAZA = /\b(?:(?:luego|despues|mas tarde|en un rato|ahorita) (?:te |les )?(?:digo|aviso|escribo|confirmo|veo|cuento)|te (?:digo|aviso|escribo|confirmo|cuento) (?:luego|despues|mas tarde|en un rato)|cuando pueda\w*|tengo que (?:ver|revisar|consultar|organizarme)|(?:lo |eso )?(?:veo|reviso|consulto) (?:y te (?:digo|aviso|escribo|confirmo)|luego|despues)|no se todavia|todavia no se|aun no se)\b/;
+function evAplaza(textoCliente) {
+  const raw = evTexto(textoCliente);
+  return raw.length <= 160 && raw.indexOf('?') < 0 && raw.indexOf('¿') < 0 && EV_APLAZA.test(evNorm(raw)) && !evTieneDiaUHora(raw);
+}
+// El nombre dentro de una respuesta a «¿cómo te llamas y qué día…?»: la primera cláusula que es un nombre y no habla de días ni de horas («Ana, el martes», «Soy Ana y prefiero el jueves»). '' si no hay.
+// Nunca un PEDIDO ni una cortesía («pásame con alguien», «quiero hablar», «por favor», «hola») (revisión del PR #694).
+const EV_PALABRA_DE_HORARIO = /\b(lunes|martes|miercoles|jueves|viernes|sabado|sabados|domingo|domingos|hoy|manana|mananas|tarde|tardes|noche|noches|mediodia|semana|proxim\w*|cualquier\w*|dia|dias|hora|horas|horario\w*|temprano|despues|antes|am|pm|finde|ahora|luego|pronto|cuando|prefiero|puedo|mejor|trabajo|salgo)\b/;
+const EV_NO_NOMBRE_EXTRA = /^(?:mis|tus|sus|me|quisiera|mejorar|pomulos|arrugas|flacidez|papada|ojeras|manchas|cara|rostro|piel|labios|menton|ojos|frente|cuello|nariz|todo|nada|igual|perfecto|listo|vale|okey|okay|si|gracias)$/;
+const EV_PEDIDO_O_CORTESIA = /\b(?:pas\w*|hablar|habla\w*|quiero|quiere|quisiera|chate\w*|necesit\w*|comunic\w*|contact\w*|escrib\w*|agend\w*|reserv\w*|llam(?:ar|en|ame|enme|eme)|ayud\w*|favor|porfa|gracias|hola|buenas|buenos|disculpa\w*|perdon|alguien|recepcion\w*|secretari\w*|persona|asesor\w*|doctora|dra|ustedes|diga\w*|dime|deme|dame|mande\w*|manda\w*|envi\w*|sabe\w*|nose|bueno|claro|dale|listo|ok|okey)\b/;
+function evNombreValido(nombre) { const n = evNorm(nombre); return n !== '' && !EV_PEDIDO_O_CORTESIA.test(n) && !EV_PALABRA_DE_HORARIO.test(n) && !EV_NO_NOMBRE_EXTRA.test(n); }
+function evNombreDeRespuesta(textoCliente) {
+  const raw = evTexto(textoCliente);
+  for (const c of raw.split(/[,;:.\n]|\s+y\s+/)) {
+    const x = c.trim().replace(/^(?:soy|me llamo|mi nombre es)\s+/i, '');
+    if (x === '' || EV_PALABRA_DE_HORARIO.test(evNorm(x)) || EV_PEDIDO_O_CORTESIA.test(evNorm(x)) || !evEsNombre(x)) continue;
+    const primero = evNorm(x).split(' ')[0];
+    if (EV_NO_NOMBRE_EXTRA.test(primero)) continue;
+    return evPrimerNombre(x.split(/\s+/)[0]);
+  }
+  const m = /(?:[Ss]oy|[Mm]e llamo|[Mm]i nombre es)\s+(\p{Lu}\p{L}{1,19})/u.exec(raw);
+  return m && !EV_NO_NOMBRE.test(evNorm(m[1])) && evNombreValido(m[1]) ? evPrimerNombre(m[1]) : '';
+}
+// El nombre que la persona YA dio en esta conversación: el guardado en la ficha, «soy / me llamo X», o lo que contestó justo después de que el asistente le preguntara el nombre. Nunca el del perfil de WhatsApp.
+function evNombreDado(historial, textoCliente, nombreDeLaFicha) {
+  const f = evPrimerNombre(nombreDeLaFicha);
+  if (f && evNombreValido(f)) return f;
+  const h = Array.isArray(historial) ? historial : [];
+  const actual = evNombreDelMensaje(textoCliente, h);
+  if (actual && evNombreValido(actual)) return actual;
+  for (let i = h.length - 1; i >= 0; i--) {
+    if (!h[i] || h[i].r !== 'u') continue;
+    const dicho = evNombreDelMensaje(h[i].t, h.slice(0, i));
+    if (dicho && evNombreValido(dicho)) return dicho;
+    const a = evUltimoDe(h, 'a', i);
+    if (a >= 0 && EV_PIDE_NOMBRE.test(evNorm(h[a].t))) {
+      const r = evNombreDeRespuesta(h[i].t);
+      if (r) return r;
+    }
+  }
+  return '';
+}
+
+// (3) «NO GRACIAS» / «LO VOY A PENSAR» Y EQUIVALENTES: responde el CÓDIGO con una oferta fija de llamada; si acepta, se deriva con «pidió que la llamen»; si no, un cierre amable sin repetir la oferta.
+// El detector es por CLÁUSULA y CERRADO: cada trozo del mensaje (separado por . , ; ! ? o salto) tiene que ser un rechazo o un relleno («ok», «gracias»); con una pregunta o con cualquier otra cosa, contesta el modelo.
+// Un «no» o un «no quiero» a secas solo cuentan si lo último que dijo el asistente fue una oferta de agendar (o la oferta de llamada).
+const EV_TEXTO_OFRECE_LLAMADA = 'Si quieres, recepción te llama para ofrecerte los horarios disponibles y tú decides. ¿Te parece?';
+const EV_TEXTO_CIERRE_AMABLE = 'Entendido, sin problema. Cuando quieras, me escribes por aquí y seguimos conversando. 😊';
+const EV_TEXTO_CIERRE_AMABLE_2 = 'Perfecto, aquí estaré cuando lo necesites. 😊';   // nunca el mismo texto dos veces seguidas
+// Sin ambigüedad (CodeQL js/redos, PR #694): cada palabra va seguida de un separador OBLIGATORIO (espacio o fin), nunca de un `\s*` dentro de la repetición.
+const EV_RELLENO_RECHAZO = /^(?:(?:ok|okey|okay|bueno|bien|ya|mmm+|ah|pues|gracias|muchas gracias|mil gracias|igual gracias|por ahora|por el momento|de momento|disculpa|perdon|doctora|dra|doc)(?: |$))+$/;
+// Sin ambigüedad (CodeQL js/redos, PR #694): prefijos, UNA frase de rechazo SIN colas propias y una sola cola repetida de modificadores; ninguna palabra la pueden consumir dos grupos a la vez.
+const EV_RECHAZO = /^(?:(?:ok|okey|bueno|ya|pues|mmm+|entonces|igual|mejor|creo que|por ahora|por el momento|de momento) )*(?:no(?: me interesa| estoy interesad[ao]| quiero)?|gracias no|ahora no|ahorita no|todavia no|aun no|mas adelante|en otro momento|otro dia|lo (?:voy a |vo a |tengo que )?(?:pensar|pensare|pienso)|tengo que pensarlo|voy a pensarlo|dejame pensarlo|dejeme pensarlo|lo voy a meditar|lo voy a analizar)(?: (?:gracias|muchas gracias|por ahora|por el momento|de momento|todavia|aun|ahora|ahorita|bien|mejor|primero))*$/;
+function evDeclina(textoCliente, historial) {
+  const raw = evTexto(textoCliente);
+  if (raw.length > 120 || raw.indexOf('?') >= 0 || raw.indexOf('¿') >= 0) return false;
+  const claus = evParaBaja(raw).split(/[.,;!?¡¿\n]+/).map((x) => evNorm(x)).filter((x) => x !== '');
+  if (!claus.length || !claus.every((c) => EV_RELLENO_RECHAZO.test(c) || EV_RECHAZO.test(c))) return false;
+  const rechazos = claus.filter((c) => EV_RECHAZO.test(c) && !EV_RELLENO_RECHAZO.test(c));
+  if (!rechazos.length) return false;
+  if (rechazos.some((c) => !/^(?:no|no quiero)$/.test(c))) return true;
+  // «No, gracias» / «no, por ahora»: el «no» va con un agradecimiento o un «por ahora» en otra cláusula.
+  if (claus.some((c) => /\b(?:gracias|por ahora|por el momento|de momento|todavia)\b/.test(c))) return true;
+  // Solo «no» / «no quiero»: cuenta si contesta una oferta de agendar o la de la llamada.
+  const h = Array.isArray(historial) ? historial : [];
+  const a = evUltimoDe(h, 'a');
+  // Una pregunta con alternativa («¿Te gustaría agendar o tienes alguna otra duda?»): el «no» contesta la alternativa, no la oferta.
+  if (a >= 0 && /\bo (?:tienes|tenes|prefieres|quieres|te gustaria|hay|deseas|necesitas|alguna)\b/.test(evNorm(evUltimaPregunta(h[a].t)))) return false;
+  return a >= 0 && (evOfreceAgendar(h[a].t) || evEsOfertaDeLlamada(h[a].t));
+}
+function evEsOfertaDeLlamada(textoAsistente) { return evNorm(textoAsistente).indexOf(evNorm(EV_TEXTO_OFRECE_LLAMADA)) >= 0; }
+function evLlamadaYaOfrecida(historial) { return (Array.isArray(historial) ? historial : []).some((x) => x && x.r === 'a' && evEsOfertaDeLlamada(x.t)); }
+// Acepta la llamada: una afirmación corta («sí», «ok», «dale», «me parece», «sí, que me llamen»).
+const EV_ACEPTA_LLAMADA = /^(?:(?:si|sii+|ok|okey|okay|dale|claro|bueno|perfecto|listo|va|vale|de acuerdo|ya)\s+)?(?:me parece(?: bien| perfecto| genial| excelente| buena idea)?|esta bien|que me llamen?|llamenme|llamame|por favor|porfa)(?:\s+(?:gracias|por favor|porfa))?$/;
+function evAceptaLlamada(textoCliente) {
+  const raw = evTexto(textoCliente);
+  if (raw.indexOf('?') >= 0 || raw.indexOf('¿') >= 0 || /\bno\b/.test(evNorm(raw))) return false;
+  return evAfirmaCorto(raw) || EV_ACEPTA_LLAMADA.test(evNorm(raw));
+}
+
+// (5) EL SALUDO CON FICHA VIGENTE: «hola», «buenas», «buenas tardes doctora» (solo saludo) no repiten la bienvenida: texto corto fijo, que pide el nombre si todavía no lo dio. La bienvenida completa, solo en el primer contacto.
+// Sin ambigüedad (CodeQL js/redos): separador obligatorio y ninguna palabra en los dos grupos.
+const EV_SOLO_SALUDO = /^(?:(?:hola+|holis|holi|ola|buenas|buenos dias|buen dia|buenas tardes|buenas noches|hey|que tal|saludos|alo)(?: |$))+(?:(?:doctora|dra|doc|de nuevo|otra vez|como esta|como estan|como estas|nuevamente|a todos)(?: |$))*$/;
+const EV_TEXTO_SALUDO_DE_NUEVO = '¡Hola de nuevo! 😊 ¿En qué te puedo ayudar?';
+const EV_TEXTO_SALUDO_DE_NUEVO_NOMBRE = '¡Hola de nuevo! 😊 ¿Cómo te llamas y en qué te puedo ayudar?';
+const EV_TEXTO_SALUDO_DE_NUEVO_2 = '¡Aquí sigo! 😊 Cuéntame, ¿en qué te puedo ayudar?';
+const EV_TEXTO_SALUDO_DE_NUEVO_NOMBRE_2 = '¡Aquí sigo! 😊 ¿Cómo te llamas y en qué te puedo ayudar?';
+function evSoloSaludo(textoCliente, nombreNegocio) {
+  const toks = evNorm(evTexto(nombreNegocio).split(/[(,]/)[0]).split(' ').filter((w) => w.length >= 3 && EV_PALABRAS_DE_TITULO.indexOf(w) < 0);
+  let n = evNorm(textoCliente);
+  if (n === '' || n.length > 60) return false;
+  for (const w of toks) n = n.replace(new RegExp('\\b' + w + '\\b', 'g'), ' ');
+  n = n.replace(/\s+/g, ' ').trim();
+  return n !== '' && EV_SOLO_SALUDO.test(n);
+}
+function evTextoSaludoDeNuevo(conNombre, ultimoAsistente) {
+  const u = evNorm(ultimoAsistente);
+  const ya = u.indexOf(evNorm(conNombre ? EV_TEXTO_SALUDO_DE_NUEVO_NOMBRE : EV_TEXTO_SALUDO_DE_NUEVO)) === 0;
+  return conNombre ? (ya ? EV_TEXTO_SALUDO_DE_NUEVO_NOMBRE_2 : EV_TEXTO_SALUDO_DE_NUEVO_NOMBRE) : (ya ? EV_TEXTO_SALUDO_DE_NUEVO_2 : EV_TEXTO_SALUDO_DE_NUEVO);
+}
+
+// (6) EL CIERRE NO SE REPITE: si la pregunta de cierre (la última pregunta de la respuesta, una oferta de agendar o de recepción) es IGUAL a la última pregunta del mensaje anterior del asistente, se cambia por una
+// variante fija que no se haya usado. Todas son ofertas de agendar (la aceptación las reconoce).
+const EV_VARIANTES_CIERRE = ['¿Te gustaría agendar tu valoración gratuita?', '¿Quieres que te ayude a agendar tu valoración?', '¿Coordinamos tu valoración gratuita?', '¿Te ayudo a reservar tu espacio para la valoración?'];
+function evUltimaPregunta(texto) {
+  const p = evPartirEnOraciones(evTexto(texto)).filter((o) => o !== '' && o !== '\n' && evEsPregunta(o));
+  return p.length ? p[p.length - 1] : '';
+}
+function evVariarCierre(texto, historial) {
+  const t = evTexto(texto);
+  const h = Array.isArray(historial) ? historial : [];
+  const a = evUltimoDe(h, 'a');
+  const nueva = evUltimaPregunta(t);
+  if (a < 0 || nueva === '') return t;
+  const nn = evNorm(nueva);
+  // Se compara con las preguntas de cierre de los DOS mensajes anteriores del asistente: la tercera respuesta seguida tampoco repite la primera.
+  const recientes = h.filter((x) => x && x.r === 'a').slice(-2).map((x) => evNorm(evUltimaPregunta(x.t)));
+  if (!(EV_OFRECE_AGENDAR.test(nn) || /\b(recepcion|valoracion)\b/.test(nn)) || recientes.indexOf(nn) < 0) return t;
+  const usadas = h.filter((x) => x && x.r === 'a').map((x) => evNorm(evUltimaPregunta(x.t)));
+  const otra = EV_VARIANTES_CIERRE.find((v) => evNorm(v) !== nn && usadas.indexOf(evNorm(v)) < 0) || EV_VARIANTES_CIERRE.find((v) => evNorm(v) !== nn && recientes.indexOf(evNorm(v)) < 0) || EV_VARIANTES_CIERRE.find((v) => evNorm(v) !== nn);
+  const i = t.lastIndexOf(nueva);
+  return i < 0 ? t : t.slice(0, i) + otra + t.slice(i + nueva.length);
+}
+
+// (2) LA UBICACIÓN COMPLETA: a la respuesta del modelo cuando la persona pide la ubicación, el CÓDIGO agrega el enlace del mapa, el teléfono de recepción (formato nacional) y el horario, SOLO los que la Consola trae
+// y sin repetir lo que la respuesta ya tiene. Nada se escribe en el flujo ni en el prompt.
+function evTelefonoNacional(numero) {
+  const d = evTexto(numero).replace(/\D/g, '');
+  if (/^591\d{8}$/.test(d)) return d.slice(3);
+  return d.length >= 7 && d.length <= 15 ? '+' + d : '';
+}
+function evLineasDeUbicacion(cfg, texto) {
+  const c = cfg && typeof cfg === 'object' ? cfg : {};
+  const t = evTexto(texto);
+  const mapa = evEnlaceDeMapa(c.direccionMaps);
+  const tel = evTelefonoNacional(c.numeroRecepcion);
+  const horario = evLinea(c.horario, 200);
+  const lineas = [];
+  if (mapa && t.indexOf(mapa) < 0) lineas.push('📍 Ubicación: ' + mapa);
+  if (tel && t.replace(/\D/g, '').indexOf(tel.replace(/\D/g, '')) < 0) lineas.push('Teléfono: ' + tel);
+  if (horario && evNorm(t).indexOf(evNorm(horario)) < 0) lineas.push('Horario: ' + horario);
+  return lineas;
+}
+
+// UNA DURACIÓN NO ES UN PRECIO (batería real del 29/10/2026): «(aproximadamente / alrededor de / unos / entre / de) N (a|y N) minutos/horas/días/semanas/meses» se quita del texto que miran las reglas de precio. Sin moneda
+// en la frase: «entre 300 y 400 Bs» o «cuesta 500» siguen rechazados. Sin cuantificadores ambiguos (palabras con espacio obligatorio, cifras acotadas).
+const EV_DURACION_TEXTO = /\b(?:(?:aproximadamente|alrededor de|unos|unas|entre|de|dura|duran|suele durar|tarda|toma) )*\d{1,3}(?: (?:a|y|o) \d{1,3})? (?:minutos?|min|horas?|hs|dias?|semanas?|meses|mes)\b(?! (?:bs|bolivianos|dolares|usd))/g;
+function evSinDuraciones(norm) { return evTexto(norm).replace(EV_DURACION_TEXTO, ' '); }

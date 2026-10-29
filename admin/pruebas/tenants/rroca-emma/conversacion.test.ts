@@ -15,7 +15,7 @@ const RESPUESTAS_DEL_GUION: Array<[string, string]> = [
   ['no quiero verme operada', 'El lema de la Dra. Emma es "Resultados reales, sigues siendo tú". Como trabajamos estimulando tu propio colágeno, se respetan tus rasgos. La foto es de una paciente real de la Dra. Emma, pero cada piel responde distinto y en la valoración gratuita sabrás qué es realista para ti.'],
   ['¿cuánto tiempo de recuperación?', 'Al no ser cirugía, es muy noble y puedes retomar tus actividades rápido. Los cuidados específicos dependen del producto y de la zona, y la Dra. Emma te los explica en la valoración para que lo coordines con tu trabajo.'],
   ['ya probé otros', 'Es muy comprensible. Por eso la Dra. Emma no usa tratamientos iguales para todos: personaliza el procedimiento según el análisis anatómico de tu rostro. ¡No pierdes nada escuchando su opinión en la valoración gratuita!'],
-  ['lo voy a pensar', '¡Claro, tómate tu tiempo! Solo recuerda que la valoración es gratuita, sin pago de reserva y sin compromiso, así que no arriesgas nada viniendo a conocer el estado de tu piel.'],
+  // AJUSTE (observaciones de Rubén, 28/10/2026): «lo voy a pensar» ya no lo contesta el modelo sino el CÓDIGO (oferta fija de llamada; observaciones-ruben.test.ts): salió de esta lista.
   ['¿dónde están?', 'Atendemos en Emma Spa Medic, ubicada en Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055 (Santa Cruz).'],
   ['¿Sculptra o Radiesse?', 'Sculptra® estimula tu propio colágeno de forma progresiva y mejora la firmeza y la calidad de la piel; Radiesse® da un efecto lifting y define contornos. En la valoración gratuita la Dra. Emma evalúa tu rostro y decide cuál es el indicado, o si se combinan ambos. ¿Cómo te llamas y qué deseas mejorar?'],
 ];

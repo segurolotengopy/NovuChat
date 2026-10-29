@@ -18,4 +18,9 @@ export const TABLA_DE_PLANES: TablaDePlanes = {
   gratis: { clase: 'resuelve' },          // la pregunta por la gratuidad que el modelo no pudo contestar: texto fijo, sin botón ni aviso
   derivar_corto: { clase: 'deriva' },     // el cierre ya salió (48 h) y el cliente vuelve a pedir agendar: variante corta distinta + botón, sin repetir el aviso
   derivar: { clase: 'deriva' },           // el cliente quiere agendar: cierre fijo + botón
+  // Observaciones de Rubén (28/10/2026): textos fijos del código, sin botón.
+  preferencia: { clase: 'resuelve' },     // el «sí» a agendar sin día ni horario: el código los pregunta (con el nombre si falta); la respuesta cierra (`derivar`)
+  ofrece_llamada: { clase: 'resuelve' },  // «no gracias» / «lo voy a pensar»: la oferta fija de que recepción la llame
+  cierre_amable: { clase: 'resuelve' },   // rechazó la oferta de llamada (o ya se le hizo): cierre amable sin repetirla
+  saludo: { clase: 'resuelve' },          // un saludo con la ficha vigente: texto corto, sin repetir la bienvenida
 };

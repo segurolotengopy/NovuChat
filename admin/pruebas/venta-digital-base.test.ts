@@ -64,7 +64,7 @@ describe('la carpeta común no tiene nombres de cliente ni montos', () => {
   const MONTO = /\b\d+(?:[.,]\d+)?\s?Bs\b/;
   const lista = archivos(COMUN);
   it('hay archivos que revisar', () => {
-    expect(lista.map((r) => r.slice(COMUN.length + 1)).sort()).toEqual(['LEEME.md', 'src/avisos.js', 'src/cobro.js', 'src/conversacion.js']);
+    expect(lista.map((r) => r.slice(COMUN.length + 1)).sort()).toEqual(['LEEME.md', 'src/avisos.js', 'src/carrito.js', 'src/cobro.js', 'src/conversacion.js']);
   });
   for (const r of lista) {
     it(`${r.slice(COMUN.length + 1)}: sin nombres de cliente ni montos`, () => {
