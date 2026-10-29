@@ -320,7 +320,7 @@ En el carril de lógica, cada agente en su carpeta: conectar el registro (fuera
 las siete copias de la lista de flujos), `tieneModulo`, el límite de agendas,
 los chequeos de inventario y catálogo. `tenants.modulos` en ventana y **en dos
 pasos** (escribir `modulos` conservando `flujos`, desplegar, recién después
-quitar `flujos`), con Bellido y Platinum en prueba.
+quitar `flujos`), con Bellido en prueba.
 
 ## La política de capas del 06/09, que el registro reemplaza
 
