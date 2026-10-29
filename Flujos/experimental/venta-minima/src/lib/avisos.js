@@ -51,9 +51,9 @@
 //                 tamaño no tiene plantilla, cae a la de siempre y anota `lineas_sin_plantilla_<N>`. Reserva y derivación no cambian.
 //                 TEXTO FIJO de las tres plantillas (UTILITY, es; los nombres reales —`pedido_registrado_l2`, `_l4`, `_l6`—
 //                 viven en la configuración, no aquí; ⏎ = salto de línea FIJO del cuerpo, lo único que Meta admite):
-//                 «Se registró un pedido en Q'Taco.⏎Pedido: {{1}}. Modalidad: {{2}}⏎Detalle pedido:⏎- {{3}}⏎- {{4}}⏎… (una línea
-//                 «- {{k}}» por producto, hasta N)⏎Comprobante: {{N+3}}. Revise el pedido en la consola antes de despachar.» (estructura pedida por el
-//                 cliente, 28/10: «Pedido… Modalidad» en una línea, productos uno bajo otro, «Comprobante… Revise…» en una línea)
+//                 «Se registró un pedido en Q' Taco.⏎Pedido: {{1}}⏎Modalidad: {{2}}⏎Detalle pedido:⏎- {{3}}⏎- {{4}}⏎… (una línea
+//                 «- {{k}}» por producto, hasta N)⏎Comprobante: {{N+3}}⏎Revise el pedido en la consola antes de despachar.» (así están APROBADAS en la WABA
+//                 de Q'Taco, 28/10: l2 = 5 variables, l4 = 7, l6 = 9; solo BODY, UTILITY, es; el total va dentro de {{1}})
 //                 Variables: {{1}} «N.º <código> de <n> ítems. Total de la comida: Bs <total>» · {{2}} modalidad por rol, SIN los
 //                 ítems (`avModalidadVariable(…, true)`; cocina sin teléfono, dirección, nombre completo ni coordenadas) ·
 //                 {{3}}…{{N+2}} «<cant> × <producto> (<nota>)», una por variable; las sobrantes llevan «—»; si hay más productos

@@ -106,6 +106,20 @@ describe('aviso por líneas: la plantilla de tamaño 2, 4 o 6 y sus variables', 
     }
   });
 
+  it('(1b) un {{2}} LARGO (dirección, referencia, quien recibe, celular, coordenadas y nota con saltos) sale en UNA línea separada por « · », sin saltos, tabuladores ni 4+ espacios (Meta lo rechaza)', () => {
+    const d = pedido(4, {
+      direccion: 'Avenida Banzer\n esquina 4to anillo,\t\tcondominio Los Pinos   bloque B  piso 3 departamento 12 detrás del supermercado grande de la zona norte de la ciudad de Santa Cruz de la Sierra',
+      referencia: 'portón verde\r\ncon timbre    roto y un perro grande en la entrada de la casa', nombre: 'Ana María\nPérez Mamani',
+      coordenadas: 'ubicación compartida -17.783300, -63.182100', notaPedido: 'sin cebolla\n\nsin picante      por favor',
+    });
+    for (const it of plantillas(arm(d))) {
+      const v = params(it)[1] as string;
+      expect(v.length).toBeLessThanOrEqual(500);
+      expect(v).not.toMatch(/[\n\r\t\u2028\u2029]/);
+      expect(v).not.toMatch(/ {4,}/);
+      if (it.para === COMPLETO) expect(v.split(' · ').length).toBeGreaterThanOrEqual(4);
+    }
+  });
   it('(4) sin la clave (ausente, vacía o solo espacios) el payload es idéntico byte a byte al de hoy', () => {
     for (const n of [1, 3, 8]) {
       const hoy = JSON.stringify(arm(pedido(n), BASE));
