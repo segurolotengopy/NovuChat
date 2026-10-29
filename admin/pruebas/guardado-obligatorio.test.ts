@@ -54,9 +54,6 @@ export const EXCEPCIONES: Record<string, string> = {
   'novuchat-onboarding.json': 'histórico: el chat de NovuChat corre chat-novuchat (que sí lo trae); queda sin fila en versiones-por-cliente',
   'platinum-agendamiento.json': 'histórico del ensamblador, sin cliente; lo cierra retirarlo',
   'bellido-agendamiento.json': 'flujo A de Bellido, descartado desde el 01/10 (corre agenda-minima); Andres ordenó no tocarlo',
-  // BELLIDO va en su commit aparte y es lo último (decisión de Andres): este par se quita de aquí en ese commit.
-  'experimental/agenda-minima/agenda-minima.v0.json': 'Bellido (Agenda mínima v0): el guardado entra en su commit aparte, el último',
-  'experimental/agenda-minima/agenda-minima.prueba.json': 'Bellido (Agenda mínima v0, prueba): el guardado entra en su commit aparte, el último',
 };
 
 /** Revisa una lista de flujos y devuelve, por archivo, lo que falla. La usa la prueba sobre el repositorio y la prueba negada. */
@@ -84,6 +81,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
       'experimental/rroca-antonio/rroca-antonio.json', 'experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.ensayo-demo-a.json',
       'experimental/venta-minima/venta-minima.prueba.json', 'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-emma.json',
       'experimental/chat-novuchat/chat-novuchat.novuchat.json', 'experimental/captacion-minima/captacion-minima.novuchat.json',
+      'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/agenda-minima/agenda-minima.prueba.json',
     ]) expect(CUBIERTOS, a).toContain(a);
   });
 
