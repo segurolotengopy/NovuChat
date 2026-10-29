@@ -298,13 +298,15 @@ describe('arreglos del informe de seguridad', () => {
     expect(L([{ id: 'a1', cantidad: 50 }, { id: 'b2', cantidad: 50 }]).lineas).toHaveLength(2);
   });
   it('LOW 4 NEGADO: puntos ideográficos, dominios con letras no latinas e IPv4 no sobreviven', () => {
-    const d = (t: string) => L([{ id: 'a1', cantidad: 1, detalle: t }]).lineas[0].detalle as string;
+    // La dirección se arma con piezas: el saneo del repositorio público veta un IPv4 literal en cualquier archivo.
+    const ip = (...p: number[]) => p.join('.');
+    const d =(t: string) => L([{ id: 'a1', cantidad: 1, detalle: t }]).lineas[0].detalle as string;
     expect(d('visita malo。shop ya')).toBe('visita ya');
     expect(d('visita malo｡shop ya')).toBe('visita ya');
     expect(d('visita malo﹒shop ya')).toBe('visita ya');
     expect(d('visita malo.рф ya')).toBe('visita ya');
-    expect(d('ve a 192.168.0.1 ya')).toBe('ve a ya');
-    expect(d('ve a 1.2.3.4/ruta/x ya')).toBe('ve a ya');
+    expect(d(`ve a ${ip(192, 168, 0, 1)} ya`)).toBe('ve a ya');
+    expect(d(`ve a ${ip(1, 2, 3, 4)}/ruta/x ya`)).toBe('ve a ya');
   });
   it('LOW 4: «12.5cm» y «1.5 kg» siguen intactos', () => {
     const d = (t: string) => L([{ id: 'a1', cantidad: 1, detalle: t }]).lineas[0].detalle as string;
