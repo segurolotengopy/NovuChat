@@ -376,6 +376,21 @@ service firebase.storage {
     }
 
     // =========================================================================
+    // MEDIOS ENTRANTES (Core): imágenes, PDF y audio que los clientes mandan,
+    // guardados por `guardarMedio` ANTES de que el modelo los interprete.
+    //
+    // Lo escribe y lo lee SOLO el servidor (SDK Admin, que no pasa por estas
+    // reglas). Se niega a todo cliente, también al administrador y al
+    // propietario, por la misma razón que los comprobantes: son archivos de un
+    // TERCERO (el cliente final del comercio) y no hay URL de descarga que se
+    // pueda reenviar. Para verlos habrá una callable auditada (`verMedio`, PR
+    // posterior). Prueba negativa: `pruebas/core/medios/` y `storage-reglas.test.ts`.
+    // =========================================================================
+    match /tenants/{tenantId}/medios/{resto=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
     // NEGACIÓN FINAL. Todo lo que no coincidió arriba queda prohibido: otros
     // caminos, otros nombres, carpetas ajenas del mismo comercio, rutas con
     // `..`. Es la red de seguridad del archivo. No borrarla.

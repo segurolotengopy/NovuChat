@@ -4145,6 +4145,7 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
     const rutas = () => [
       'topesDeTurno/u-admin-a', 'topesDeTurno/u-nuevo',
       'topesDeBusqueda/u-admin-a', 'topesDeBusqueda/u-nuevo',
+      `topesDeMedios/${A}_2026-10-29`,
       `tenants/${A}/salida/clave-0000000000001`, `tenants/${A}/salida/clave-nueva-0000001`,
     ];
     const quienes: Array<[string, () => ReturnType<typeof adminA>]> = [

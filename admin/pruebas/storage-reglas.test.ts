@@ -559,4 +559,51 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
       await assertFails(getMetadata(ref(adminD(), rc(D))));
     });
   });
+
+  // ===========================================================================
+  // MEDIOS ENTRANTES (storage.rules, /tenants/{t}/medios/**; Core). Los guarda
+  // `guardarMedio` con el SDK Admin y los lee solo el servidor: ninguna persona
+  // los lee, los escribe, los borra ni los lista desde el navegador. Se escribe
+  // negando, con el mismo patrón de los comprobantes.
+  // ===========================================================================
+  describe('Medios entrantes (Core)', () => {
+    const rm = (t: string, dia = '2026-10-29', nombre = 'hashX.jpg') => `tenants/${t}/medios/${dia}/${nombre}`;
+    beforeEach(async () => { await sembrarArchivo(rm(A), 'image/jpeg'); });
+
+    it('ni el administrador, ni el operador, ni el propietario, ni la ingesta, ni un anónimo leen un medio', async () => {
+      for (const quien of [adminA(), operA(), propietario(), ingestaA(), anonimo()]) {
+        await assertFails(getMetadata(ref(quien, rm(A))));
+        await assertFails(getDownloadURL(ref(quien, rm(A))));
+      }
+    });
+
+    it('nadie lo escribe: ni una imagen, ni un PDF, ni un audio, ni reemplazar el existente', async () => {
+      for (const quien of [adminA(), operA(), propietario(), ingestaA(), anonimo()]) {
+        await assertFails(subir(quien, rm(A, '2026-10-30', 'nuevo.jpg'), 1024, 'image/jpeg'));
+        await assertFails(subir(quien, rm(A), 1024, 'image/jpeg'));
+        await assertFails(subir(quien, rm(A, '2026-10-30', 'doc.pdf'), 1024, 'application/pdf'));
+        await assertFails(subir(quien, rm(A, '2026-10-30', 'voz.ogg'), 1024, 'audio/ogg'));
+      }
+    });
+
+    it('nadie lo borra ni lo lista, ni siquiera el propietario', async () => {
+      for (const quien of [adminA(), operA(), propietario(), ingestaA(), anonimo()]) {
+        await assertFails(deleteObject(ref(quien, rm(A))));
+        await assertFails(listAll(ref(quien, `tenants/${A}/medios`)));
+        await assertFails(listAll(ref(quien, `tenants/${A}/medios/2026-10-29`)));
+      }
+    });
+
+    it('el administrador de otro comercio tampoco, ni con una ruta de su propio comercio', async () => {
+      await assertFails(getMetadata(ref(adminB(), rm(A))));
+      await assertFails(subir(adminB(), rm(B), 1024, 'image/jpeg'));
+      await assertFails(subir(adminB(), `tenants/${B}/medios/x.jpg`, 1024, 'image/jpeg'));
+    });
+
+    it('un comercio dado de baja o suspendido tampoco', async () => {
+      await sembrarArchivo(rm(X), 'image/jpeg');
+      await assertFails(getMetadata(ref(adminX(), rm(X))));
+      await assertFails(getMetadata(ref(adminD(), rm(D))));
+    });
+  });
 });

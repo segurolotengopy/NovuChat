@@ -28,17 +28,24 @@
  * inyectable, porque el emulador de Firestore no trae Storage).
  */
 
-import { createHash } from 'node:crypto';
 import { onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { getFirestore } from 'firebase-admin/firestore';
-import { getStorage } from 'firebase-admin/storage';
 import { REGION } from '../../core/region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../../core/seguridad/firma.js';
-import { diaDeLaPaz } from './cotejo.js';
+import {
+  ID_TENANT, MB, almacenDeStorage, crearAlmacenDeStorage, diaDeLaPaz, idMetaCrudo, nombreDeObjeto, purgarPorRetencion, tipoDeMedioPorFirma,
+  type Almacen, type BucketMinimo, type ResultadoDePurga,
+} from '../../core/medios/almacen.js';
 import { MAX_COMPROBANTES, esReglaDos, limiteDe } from './cobroVenta.js';
 
-export const MB = 1024 * 1024;
+// Las piezas genéricas (Almacen, nombre del objeto, tipo por firma, día de La
+// Paz, recorrido de la purga) viven ahora en el Core (`core/medios/almacen.ts`):
+// el guardado de medios entrantes las comparte y el Core no importa de módulos.
+// Se reexportan para que nada de Cobros ni de sus pruebas cambie.
+export { MB, crearAlmacenDeStorage, idMetaCrudo, nombreDeObjeto };
+export type { Almacen, BucketMinimo, ResultadoDePurga };
+
 /** Tope de una imagen (el de WhatsApp Cloud API) y de un PDF. */
 export const MAXIMO_IMAGEN = 5 * MB;
 export const MAXIMO_PDF = 10 * MB;
@@ -46,108 +53,6 @@ export const MAXIMO_PDF = 10 * MB;
 export const DIAS_DE_RETENCION = 90;
 
 const TELEFONO = /^[0-9]{8,15}$/;
-const ID_TENANT = /^[a-zA-Z0-9_-]{1,60}$/;
-const CARPETA_DE_DIA = /^\d{4}-\d{2}-\d{2}$/;
-
-// ---------------------------------------------------------------------------
-// STORAGE, inyectable
-// ---------------------------------------------------------------------------
-
-export interface Almacen {
-  /**
-   * Guarda SOLO si no existe (`ifGenerationMatch: 0`): una evidencia nunca se
-   * sobrescribe. Devuelve `existe` si ya estaba, y no la toca.
-   */
-  guardar(ruta: string, bytes: Buffer, contentType: string): Promise<'creado' | 'existe'>;
-  /** ¿Ya hay un objeto en esa ruta? */
-  existe(ruta: string): Promise<boolean>;
-  /** Los nombres de las subcarpetas inmediatas de un prefijo que termina en «/». */
-  subcarpetas(prefijo: string): Promise<string[]>;
-  /** Borra todo lo que cuelga del prefijo. Devuelve cuántos objetos había. */
-  borrarPrefijo(prefijo: string): Promise<number>;
-  /**
-   * El tamaño del objeto SIN descargarlo, o `null` si no existe (404). Lo usa el
-   * visor para rechazar un archivo demasiado grande antes de traerlo.
-   */
-  metadatos(ruta: string): Promise<{ tamano: number } | null>;
-  /** Los bytes del objeto, o `null` si no existe (404). Cualquier otro error se relanza. */
-  leer(ruta: string): Promise<Buffer | null>;
-}
-
-/** Lo mínimo que se usa de un bucket de Storage (así se puede probar sin Storage). */
-export interface BucketMinimo {
-  file(ruta: string): {
-    save(bytes: Buffer, opciones: Record<string, unknown>): Promise<unknown>;
-    exists(): Promise<[boolean]>;
-    download(): Promise<[Buffer]>;
-    getMetadata(): Promise<[Record<string, unknown>, ...unknown[]]>;
-  };
-  getFiles(opciones: Record<string, unknown>): Promise<unknown[]>;
-  deleteFiles(opciones: Record<string, unknown>): Promise<unknown>;
-}
-
-/** ¿Es un 404 del SDK de Storage? (el código llega como número o como cadena). */
-const esNoEncontrado = (e: unknown): boolean => {
-  const codigo = (e as { code?: unknown } | null)?.code;
-  return codigo === 404 || codigo === '404';
-};
-
-export function crearAlmacenDeStorage(bucket: () => BucketMinimo): Almacen {
-  return {
-  async guardar(ruta, bytes, contentType) {
-    try {
-      await bucket().file(ruta).save(bytes, {
-        contentType, resumable: false, metadata: { cacheControl: 'private, max-age=0' },
-        preconditionOpts: { ifGenerationMatch: 0 },
-      });
-      return 'creado';
-    } catch (e) {
-      // 412: la precondición falló, o sea que el objeto ya existía.
-      const codigo = (e as { code?: unknown }).code;
-      if (codigo === 412 || codigo === '412') return 'existe';
-      throw e;
-    }
-  },
-  async existe(ruta) {
-    const [hay] = await bucket().file(ruta).exists();
-    return hay;
-  },
-  async metadatos(ruta) {
-    try {
-      const [meta] = await bucket().file(ruta).getMetadata();
-      // `size` llega como cadena en la API JSON de Storage.
-      const tamano = Number(meta['size']);
-      return { tamano: Number.isFinite(tamano) && tamano >= 0 ? tamano : Number.POSITIVE_INFINITY };
-    } catch (e) {
-      if (esNoEncontrado(e)) return null;
-      throw e;
-    }
-  },
-  async leer(ruta) {
-    try {
-      const [bytes] = await bucket().file(ruta).download();
-      return bytes;
-    } catch (e) {
-      if (esNoEncontrado(e)) return null;
-      throw e;
-    }
-  },
-  async subcarpetas(prefijo) {
-    const [, , api] = await bucket()
-      .getFiles({ prefix: prefijo, delimiter: '/', autoPaginate: false }) as [unknown, unknown, unknown];
-    const prefijos = ((api as { prefixes?: string[] } | undefined)?.prefixes ?? []);
-    return prefijos.map((p) => p.slice(prefijo.length).replace(/\/$/, '')).filter((n) => n !== '');
-  },
-  async borrarPrefijo(prefijo) {
-    const b = bucket();
-    const [archivos] = await b.getFiles({ prefix: prefijo }) as [unknown[]];
-    await b.deleteFiles({ prefix: prefijo, force: true });
-    return archivos.length;
-  },
-  };
-}
-
-const almacenDeStorage: Almacen = crearAlmacenDeStorage(() => getStorage().bucket() as unknown as BucketMinimo);
 
 let almacenDePrueba: Almacen | null = null;
 /** Solo con `COMPROBANTES_DOBLE` en el entorno: en producción no hay cómo sustituirlo. */
@@ -163,19 +68,6 @@ export const almacenDeComprobantes = (): Almacen => almacenDePrueba ?? almacenDe
 // ---------------------------------------------------------------------------
 // LA RUTA Y EL TIPO
 // ---------------------------------------------------------------------------
-
-/** El id de Meta tal como llega: recortado, sin espacios en los bordes. */
-export const idMetaCrudo = (idMeta: unknown): string => String(idMeta ?? '').trim().slice(0, 120);
-
-/**
- * El NOMBRE del objeto: sha256 del idMeta CRUDO en base64url (43 caracteres).
- * El saneo con pérdida de antes hacía chocar a `wamid.a+b` con `wamid.a/b`, y un
- * choque con `ifGenerationMatch: 0` es una evidencia que no se puede guardar.
- * El hash no es reversible a un teléfono ni a nada: es solo un nombre.
- */
-export function nombreDeObjeto(idMeta: string): string {
-  return createHash('sha256').update(idMetaCrudo(idMeta)).digest('base64url');
-}
 
 export type ExtensionDeComprobante = 'jpg' | 'png' | 'webp' | 'pdf';
 
@@ -197,22 +89,14 @@ export function rutaValidaDe(ruta: unknown, tenantId: string, idMeta: string): s
   return patron.test(ruta) ? ruta : null;
 }
 
-/** El tipo real por los PRIMEROS BYTES. Lo que declare quien sube no cuenta. */
+/**
+ * El tipo real por los PRIMEROS BYTES. Lo que declare quien sube no cuenta.
+ * Un comprobante es imagen o PDF: el audio que el Core sí reconoce aquí no se admite.
+ */
 export function tipoPorFirma(bytes: Buffer): { ext: ExtensionDeComprobante; mime: string } | null {
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return { ext: 'jpg', mime: 'image/jpeg' };
-  }
-  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
-    return { ext: 'png', mime: 'image/png' };
-  }
-  if (bytes.length >= 12 && bytes.subarray(0, 4).toString('latin1') === 'RIFF'
-    && bytes.subarray(8, 12).toString('latin1') === 'WEBP') {
-    return { ext: 'webp', mime: 'image/webp' };
-  }
-  if (bytes.length >= 5 && bytes.subarray(0, 5).toString('latin1') === '%PDF-') {
-    return { ext: 'pdf', mime: 'application/pdf' };
-  }
-  return null;
+  const t = tipoDeMedioPorFirma(bytes);
+  if (!t || t.tipo === 'audio') return null;
+  return { ext: t.ext as ExtensionDeComprobante, mime: t.mime };
 }
 
 export type ResultadoDeGuardar =
@@ -387,64 +271,19 @@ export function puedeSubir(s: Record<string, unknown> | undefined, ahoraMs: numb
 // LA PURGA DIARIA
 // ---------------------------------------------------------------------------
 
-export interface ResultadoDePurga {
-  tenantsRevisados: number;
-  carpetasBorradas: number;
-  objetosBorrados: number;
-  tenantsDeBajaBorrados: number;
-  /** Comercios cuya purga falló: se sigue con los demás. */
-  errores: number;
-}
-
-/** Días enteros entre dos días `aaaa-mm-dd`. */
-function diasEntre(hoy: string, otro: string): number {
-  return Math.round((Date.parse(`${hoy}T00:00:00Z`) - Date.parse(`${otro}T00:00:00Z`)) / 86_400_000);
-}
-
 /**
  * Borra las carpetas de comprobantes con MÁS de 90 días (91 se borra; 90 y 89 se
  * conservan) y la carpeta ENTERA de los comercios dados de baja. Por eso el
- * borrado por baja ocurre dentro de las 24 h siguientes (decisión P4).
- * Costo: una lectura por comercio (`select('estado')`) más un listado por
- * comercio activo.
+ * borrado por baja ocurre dentro de las 24 h siguientes (decisión P4). El
+ * recorrido es el del Core (`purgarPorRetencion`), el mismo de los medios.
  */
 export async function purgarComprobantesDe(
   deps: { almacen?: Almacen; ahoraMs?: number } = {},
 ): Promise<ResultadoDePurga> {
-  const a = deps.almacen ?? almacenDeComprobantes();
-  const hoy = diaDeLaPaz(deps.ahoraMs ?? Date.now());
-  const fichas = await getFirestore().collection('tenants').select('estado').get();
-  const r: ResultadoDePurga = { tenantsRevisados: 0, carpetasBorradas: 0, objetosBorrados: 0, tenantsDeBajaBorrados: 0, errores: 0 };
-  for (const ficha of fichas.docs) {
-    if (!ID_TENANT.test(ficha.id)) continue;
-    r.tenantsRevisados++;
-    try {
-      const base = `tenants/${ficha.id}/comprobantes/`;
-      if (ficha.get('estado') === 'dado_de_baja') {
-        const n = await a.borrarPrefijo(base);
-        if (n > 0) r.tenantsDeBajaBorrados++;
-        r.objetosBorrados += n;
-        // El registro de comprobantes recibidos del comercio también se va con la baja:
-        // sin las fotos, sus filas ya no sirven y guardan un id de conversación.
-        await getFirestore().recursiveDelete(getFirestore().collection(`tenants/${ficha.id}/comprobantesRecibidos`));
-        continue;
-      }
-      for (const nombre of await a.subcarpetas(base)) {
-        if (!CARPETA_DE_DIA.test(nombre)) continue;
-        if (diasEntre(hoy, nombre) > DIAS_DE_RETENCION) {
-          r.objetosBorrados += await a.borrarPrefijo(`${base}${nombre}/`);
-          r.carpetasBorradas++;
-        }
-      }
-    } catch (error) {
-      // Un comercio que falla no detiene la purga de los demás. Solo el código,
-      // nunca el mensaje (puede traer rutas) ni datos personales.
-      r.errores++;
-      const codigo = (error as { code?: unknown } | null)?.code;
-      console.error(`purga de comprobantes: falló un comercio (código ${typeof codigo === 'string' || typeof codigo === 'number' ? codigo : 'desconocido'})`);
-    }
-  }
-  return r;
+  return purgarPorRetencion({
+    almacen: deps.almacen ?? almacenDeComprobantes(), ahoraMs: deps.ahoraMs ?? Date.now(),
+    carpeta: 'comprobantes', coleccionRecibidos: 'comprobantesRecibidos', dias: DIAS_DE_RETENCION, etiqueta: 'comprobantes',
+  });
 }
 
 /** Todos los días a las 03:30 de La Paz, después de la ventana de mantenimiento (23:30 a 01:30). */

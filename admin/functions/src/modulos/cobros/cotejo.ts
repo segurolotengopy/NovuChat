@@ -31,6 +31,8 @@
  *    reciclado— y ANTERIOR al momento en que llegó la imagen.
  */
 
+import { diaDeLaPaz } from '../../core/medios/almacen.js';
+
 /** Palabras que no distinguen a nadie y solo agregan ruido al comparar. */
 const RELLENO = new Set([
   'DE', 'DEL', 'LA', 'LAS', 'EL', 'LOS', 'Y', 'E',
@@ -442,10 +444,9 @@ export function distanciaDeEdicion(a: string, b: string): number {
   return previa[b.length] as number;
 }
 
-/** El día calendario de La Paz (`aaaa-mm-dd`) de un instante. */
-export function diaDeLaPaz(ms: number): string {
-  return new Date(ms + OFFSET_LA_PAZ_HORAS * 3_600_000).toISOString().slice(0, 10);
-}
+// El día de La Paz es del Core (`core/medios/almacen.ts`, mismo UTC−4 de arriba);
+// se reexporta para que `import { diaDeLaPaz } from './cotejo.js'` siga igual.
+export { diaDeLaPaz };
 
 /**
  * El instante del comprobante y si traía HORA. Sin hora, `parsearFechaHora`

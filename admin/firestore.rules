@@ -1903,6 +1903,19 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // /mediosRecibidos/{objeto} — el metadato de cada medio entrante (imagen,
+      // PDF, audio) que `guardarMedio` (Core) guardó, anotó o no pudo guardar.
+      // Mismo modelo que `comprobantesRecibidos`: nombra la conversación
+      // (`wa_<teléfono>`) y NO lleva el teléfono suelto ni el contenido. Lo
+      // escribe SOLO el servidor; lo lee quien puede leer conversaciones; lo
+      // borra el TTL (`vence`, 90 días) o la purga de baja.
+      // -----------------------------------------------------------------------
+      match /mediosRecibidos/{objeto} {
+        allow get, list: if puedeLeerConversaciones(tenantId);
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
       // /conversaciones/{conversacionId} — visor de conversaciones.
       // Es el dato más sensible del sistema: mensajes de clientes finales.
       // -----------------------------------------------------------------------
@@ -2806,6 +2819,14 @@ service cloud.firestore {
     // escribe SOLO esa callable, con el SDK Admin, dentro de la transacción que crea el mensaje. Ni la
     // persona, ni la ingesta, ni el propietario: quien pudiera borrar su contador se quitaría el tope.
     match /topesDeEnvio/{contador} {
+      allow read, write: if false;
+    }
+
+    // /topesDeMedios/{comercio}_{día} — el contador diario de medios entrantes de
+    // `guardarMedio` (Core): frena un token filtrado que intente llenar el depósito.
+    // Lo lee y lo escribe SOLO la Function, dentro de una transacción. Ni el
+    // navegador ni el propietario: quien pudiera borrar su contador se quitaría el tope.
+    match /topesDeMedios/{contador} {
       allow read, write: if false;
     }
 

@@ -451,7 +451,7 @@ export const REGISTRO = [
  * manifiesto.
  */
 export const COLECCIONES_CERRADAS_DEL_CORE = {
-  raiz: ['topesDeBusqueda', 'topesDeTurno'],
+  raiz: ['topesDeBusqueda', 'topesDeTurno', 'topesDeMedios'],
   tenant: ['salida'],
 } as const;
 
