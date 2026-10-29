@@ -1429,7 +1429,8 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     const r = CONSTRUIR.construir({ verificar: true });
     expect(r.resultado.map((x) => [x.archivo, x.alDia, x.versionado])).toEqual([['chat-novuchat.prueba.json', true, []], ['chat-novuchat.novuchat.json', true, []]]);
     expect(r.huerfanos).toEqual([]);
-    expect(r.resultado.map((x) => x.nodos)).toEqual([44, 44]);
+    // 44 + los 8 de la rama común del guardado de medios.
+    expect(r.resultado.map((x) => x.nodos)).toEqual([52, 52]);
   });
   it('un dato cambiado, un archivo borrado a mano o una guardia violada a mano hacen fallar `--verificar` en una copia temporal; un JSON sin datos es un huérfano', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chat-novuchat-'));

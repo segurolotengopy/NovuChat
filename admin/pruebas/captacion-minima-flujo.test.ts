@@ -45,6 +45,7 @@ import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import type { Flujo, J } from './lib/flujo';
 import { crearMundo, type Doble, type Enviado, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
+import { copiarModuloDelGuardado, doblesDelGuardado } from './lib/doble-guardado';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../Flujos/experimental/captacion-minima');
@@ -336,6 +337,8 @@ function crear(op: OpcionesDelMundo = {}): W {
   const celdas = (f: string[]): J => Object.fromEntries(ENC.map((h, c) => [h, f[c] ?? '']));
 
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Traer configuración': (ll) => {
       w.config.push({ numero: ll.encabezados['X-NovuChat-Numero'], cuerpo: ll.cuerpo });
       if (ll.encabezados['X-NovuChat-Numero'] !== PID) w.malFormado.push('Traer configuración: falta X-NovuChat-Numero');
@@ -758,7 +761,8 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
         expect(f.settings?.['errorWorkflow']).toBeUndefined();
         expect(f.settings?.['saveExecutionProgress']).toBe(false);
         const urlsPorExpresion = f.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && /^=\{\{[^}]*\}\}$/.test(String(n.parameters['url'] ?? ''))).map((n) => n.name).sort();
-        expect(urlsPorExpresion).toEqual(['Descargar medio', 'Guardar prospecto']);
+        // Y la descarga PROPIA del guardado de medios (módulo común), con la URL de Meta solo si el tamaño cabe.
+        expect(urlsPorExpresion).toEqual(['Descargar medio', 'Descargar medio (guardado)', 'Guardar prospecto']);
       }
     });
     it('Planilla: rangos A3:J y A3:A; «Agregar fila» en USER_ENTERED y «Actualizar fila» en RAW', () => {
@@ -2146,6 +2150,7 @@ describe('construir.mjs: el flujo armado es el que sale de la plantilla y los da
       const datos = join(tmp, 'admin/scripts/datos/captacion-minima');
       mkdirSync(exp, { recursive: true });
       mkdirSync(datos, { recursive: true });
+      copiarModuloDelGuardado(tmp);
       const sinLocal = (src: string): boolean => !src.endsWith('.local.json'); // un `.local.json` lleva valores reales: nunca a un temporal
       cpSync(CARPETA, cm, { recursive: true, filter: sinLocal });
       cpSync(join(CARPETA, '../comun-sin-agente'), join(exp, 'comun-sin-agente'), { recursive: true, filter: sinLocal });
@@ -3072,9 +3077,9 @@ describe('§16: el documento comercial de Kenji, de punta a punta (los JSON vers
   const EXPLICACION_VALIDA = '¡Qué bien! 🍔 En horas pico ya no pierdes pedidos: NovuChat muestra tu menú, toma cada pedido registrando las notas especiales y realiza el cobro con QR para que pase directo a cocina.';
   const modeloPara = (w: W, extra: J): void => modelo(w, { tipo: 'respuesta', ...extra });
 
-  it('el flujo versionado es el del documento comercial: 43 nodos por variante, los datos con «pocos» y sin pregunta de dolor ni nombre de persona', () => {
-    expect(PRODUCCION_REAL.nodes).toHaveLength(43);
-    expect(PRUEBA_REAL.nodes).toHaveLength(43);
+  it('el flujo versionado es el del documento comercial: 51 nodos por variante (43 más los 8 del guardado de medios), los datos con «pocos» y sin pregunta de dolor ni nombre de persona', () => {
+    expect(PRODUCCION_REAL.nodes).toHaveLength(51);
+    expect(PRUEBA_REAL.nodes).toHaveLength(51);
     const guion = JSON.stringify(GUION_NUEVO);
     expect(guion).not.toMatch(/silvana|asesora/i);
     for (const [id, r] of Object.entries(GUION_NUEVO.rubros)) if (id !== 'otro') expect(r['dolor'], id).toBeUndefined();

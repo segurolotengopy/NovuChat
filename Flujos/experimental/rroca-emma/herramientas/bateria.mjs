@@ -32,6 +32,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ErrorDeUso, TARIFA, crearMundo, leerArgumentos, leerCredencial, limpiarSecretos, llamarGemini, textoDeGemini } from '../../chat-novuchat/herramientas/bateria.mjs';
+import { doblesDeBateriaDelGuardado } from '../../comun-sin-agente/src/guardado-dobles.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RUTA_FLUJO = join(AQUI, '../rroca-emma.prueba.json');
@@ -126,6 +127,8 @@ function crearDobles({ turnoActual, seco, credencial, opciones, deps, nodoModelo
     'Enviar aviso': envio, 'Enviar a WhatsApp': envio, 'Enviar respaldo': envio,
     'Obtener URL del medio (general)': () => ({ url: 'https://lookaside.fbsbx.com/m', mime_type: 'image/jpeg', file_size: 100_000 }),
     'Descargar medio': () => ({}),
+    // La rama común del GUARDADO de medios: sin red, el servidor responde «guardado_apagado» (la bandera por defecto).
+    ...doblesDeBateriaDelGuardado(),
     'Transcribir audio': () => gemini(transcripcionDe(String(turnoActual().turno.audio ?? ''))),
     'Ver imagen': () => gemini(JSON.stringify(lecturaDeImagen(String(turnoActual().turno.imagen ?? '')))),
     // LO ÚNICO QUE SALE A LA RED (y solo fuera de --seco): el cuerpo exacto que arma el flujo.

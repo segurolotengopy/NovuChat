@@ -316,18 +316,19 @@ describe('las guardias de entrega de `construir.mjs --verificar` (sobre los JSON
 // =====================================================================================================
 // 5. El presupuesto de nodos: la regla de entrega NO sumó ningún nodo
 // =====================================================================================================
-describe('presupuesto de nodos de producción (Andres, 03/10/2026): 50 como máximo', () => {
-  it('el JSON de Q\'Taco tiene como máximo 50 nodos y NO tiene un nodo «Entrega fallida» (R3 va dentro de «Resumen del turno»)', () => {
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(50);
+describe('presupuesto de nodos de producción (Andres, 03/10/2026: 50; 29/10/2026: 58 con el guardado de medios)', () => {
+  it('el JSON de Q\'Taco tiene como máximo 58 nodos y NO tiene un nodo «Entrega fallida» (R3 va dentro de «Resumen del turno»)', () => {
+    // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 58: los 8 de la rama común del GUARDADO de medios (se declara en el PR y lo decide Andres con el OK de fusión).
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(58);
     expect(QTACO.nodes.map((n) => n.name)).not.toContain('Entrega fallida');
   });
 
-  it('`--verificar` FALLA si un JSON de producción crece por encima de 50 nodos', () => {
+  it('`--verificar` FALLA si un JSON de producción crece por encima de 58 nodos (50 más los 8 del guardado de medios)', () => {
     const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => {
       f.nodes.push({ id: 'uno-de-mas', name: 'Uno de más', type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
     }));
     expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(/tiene 51 nodos y el tope de producción es 50/);
+    expect(r.stderr).toMatch(/tiene 59 nodos y el tope de producción es 58/);
   });
 
   it('el error de entrega es de verdad un error de n8n: `FalloDeNodo` (y no un `success` con un aviso adentro)', () => {

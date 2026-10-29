@@ -1450,6 +1450,292 @@
         "jsCode": "// =============================================================================\n// UTILIDADES COMUNES DE LOS NODOS DE «CAPTACION MINIMA v0» (prefijo `cn`)\n// =============================================================================\n// El constructor las pega entre las librerias (`captacion.js`, y las `cm*` en los nodos que las piden) y el codigo de cada\n// nodo (salvo en los marcados «@@solo:»). Copia ADAPTADA de las de Agenda minima: solo lo que este flujo usa. JavaScript\n// plano: sin `require`, `URL`, `Buffer` ni `crypto`, y nada de red. Lo que lee de otros nodos lo lee POR NOMBRE y solo si\n// corrieron (`isExecuted`): un nodo que no corrio no se lee con `$('X').item`.\n\n// El nodo `nombre` si existe Y corrio en esta ejecucion; si no, null. En un JSON que no lo trae (el de produccion no tiene\n// «Entrada de prueba») `$()` lanza.\nfunction cnNodo(nombre) {\n  try {\n    const n = $(nombre);\n    return n && n.isExecuted ? n : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnPrimero(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return null;\n  try {\n    const i = n.first();\n    return i && i.json ? i.json : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnTodos(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return [];\n  try {\n    return n.all().map((i) => (i && i.json) || {});\n  } catch (e) {\n    return [];\n  }\n}\nfunction cnCfg() {\n  return cnPrimero('Config del negocio') || {};\n}\nfunction cnDigitos(v) {\n  return String(v === undefined || v === null ? '' : v).replace(/\\D/g, '');\n}\nfunction cnRecorte(t, max) {\n  const s = String(t === undefined || t === null ? '' : t);\n  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;\n}\n// El texto de una respuesta de Gemini (generateContent, o el nodo de LangChain con `simplify`). '' si vino un error o algo que\n// no se reconoce.\nfunction cnTextoDeGemini(j) {\n  if (!j || typeof j !== 'object' || j.error) return '';\n  const partes = (c) => (c && Array.isArray(c.parts))\n    ? c.parts.map((p) => (p && typeof p.text === 'string') ? p.text : '').join('\\n') : '';\n  if (typeof j.content === 'string') return j.content;\n  const c1 = partes(j.content);\n  if (c1) return c1;\n  const cand = Array.isArray(j.candidates) ? j.candidates[0] : null;\n  const c2 = cand ? partes(cand.content) : '';\n  if (c2) return c2;\n  for (const k of ['text', 'transcription', 'output', 'response']) {\n    if (typeof j[k] === 'string' && j[k].trim()) return j[k];\n  }\n  return '';\n}\n// El objeto JSON que Gemini devolvio como texto; null si no es un objeto.\nfunction cnJsonDeGemini(j) {\n  const t = cnTextoDeGemini(j).trim().replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\n  if (!t) return null;\n  const m = /\\{[\\s\\S]*\\}/.exec(t);\n  try {\n    const o = JSON.parse(m ? m[0] : t);\n    return o && typeof o === 'object' && !Array.isArray(o) ? o : null;\n  } catch (e) {\n    return null;\n  }\n}\n// La clave de la ficha es el telefono de origen y solo digitos: nunca un nombre que toque el prototipo.\nfunction cnClaveValida(from) {\n  return /^\\d{6,20}$/.test(String(from || ''));\n}\n// Las fichas de los telefonos (`staticData.global.captacionMinima`, §4). Un nodo que SOLO LEE no escribe nada en los datos\n// estaticos: con `escribir` falso, un mapa que no existe (o no es un objeto) se vuelve vacio solo en memoria. Los dos nodos que\n// escriben —«Armar mensajes» y «Confirmar envío»— lo piden con `escribir` verdadero.\nfunction cnMapaDeFichas(escribir) {\n  let sd = null;\n  try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }\n  if (!sd) return { sd: null, mapa: {} };\n  const valido = sd.captacionMinima && typeof sd.captacionMinima === 'object' && !Array.isArray(sd.captacionMinima);\n  if (!valido) {\n    if (escribir !== true) return { sd: sd, mapa: {} };\n    sd.captacionMinima = {};\n  }\n  return { sd: sd, mapa: sd.captacionMinima };\n}\n// ¿Meta ya entrego este mensaje? (lee los ultimos ids de la ficha del telefono; nunca la toca)\nfunction cnYaVisto(ficha, id) {\n  const x = String(id === undefined || id === null ? '' : id);\n  return x !== '' && !!ficha && typeof ficha === 'object' && Array.isArray(ficha.ultimosIds) && ficha.ultimosIds.indexOf(x) >= 0;\n}\n// La atencion del telefono: lo que devolvio la ingesta del entrante si lo trae, y si no, lo que dijo `configuracionFlujo`.\n// Ante la duda, normal.\nfunction cnAtencion(rIngesta, cfg) {\n  const a = rIngesta && typeof rIngesta === 'object' && rIngesta.atencion && typeof rIngesta.atencion === 'object'\n    ? rIngesta.atencion : null;\n  const estados = ['normal', 'operador', 'bloqueado'];\n  const estado = a && estados.indexOf(a.estado) >= 0 ? a.estado\n    : (estados.indexOf(cfg.atencionEstado) >= 0 ? cfg.atencionEstado : 'normal');\n  const avisarIngesta = rIngesta && typeof rIngesta === 'object' ? rIngesta.avisarRecepcion : '';\n  const avisarCfg = a && a.avisarRecepcion !== undefined ? a.avisarRecepcion : cfg.atencionAvisarRecepcion;\n  const avisar = ['operador', 'bloqueado'].indexOf(avisarIngesta || avisarCfg) >= 0 ? (avisarIngesta || avisarCfg) : '';\n  return {\n    estado: estado,\n    avisar: avisar,\n    mensajeFijo: String((a && a.mensajeFijo) || cfg.atencionMensajeFijo || '').trim(),\n    // `a` puede ser null (la ingesta no trajo `atencion`): sin `a &&` delante, `a.respuestasEnVentana` lanzaba un TypeError.\n    respuestas: Number(a && a.respuestasEnVentana !== undefined ? a.respuestasEnVentana : cfg.atencionRespuestas) || 0,\n    venceEn: String((a && a.ventanaVenceEn) || cfg.atencionVenceEn || ''),\n  };\n}\n\n// RESUMEN DEL TURNO: el ultimo nodo. En produccion no hace nada visible. En la variante de prueba, «Entrada de prueba» responde\n// con lo que devuelve este nodo (modo `lastNode`): los mensajes del turno y un resumen, para que un corredor externo evalue cada\n// turno sin depender de WhatsApp.\n//\n// Lee TODO por nombre de «Armar mensajes» y no de lo que devolvieron los nodos de envio ni de reporte (un nodo desactivado deja\n// pasar su entrada). Cuelga de «Armar mensajes» por debajo de todo el lienzo, asi que con `executionOrder: v1` corre despues de\n// los envios y del cierre.\nconst items = cnTodos('Armar mensajes');\nconst cfg = cnCfg();\nconst primero = items[0] || {};\nconst mensajes = items.filter((i) => i && i.sinMensajes !== true).map((i) => ({\n  para: i.para, destino: i.destino, payload: i.payload, texto: i.texto, respaldo: i.respaldo, reportar: i.reportar === true,\n}));\nconst r = primero.resumen || { plan: primero.plan || 'nada', estadoDespues: null, mensajes: 0 };\nreturn [{ json: {\n  ok: true,\n  modoPrueba: cfg.modoPrueba === true,\n  mensajes: mensajes,\n  resumen: Object.assign({}, r, { mensajesSalientes: mensajes.length }),\n} }];\n"
       },
       "notes": "Ultima rama de «Armar mensajes». En la variante de prueba, «Entrada de prueba» responde con esto."
+    },
+    {
+      "id": "gm-preparar",
+      "name": "Preparar guardado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1880,
+        1500
+      ],
+      "parameters": {
+        "jsCode": "// FUENTES DEL GUARDADO: las arma Flujos/experimental/comun-sin-agente/src/guardado.mjs para este flujo (nombres de nodo literales, para que n8n los precargue).\nconst GM_FUENTES = {\n  carga: $('Carga de entrada').isExecuted ? $('Carga de entrada').first().json : {},\n  config: $('Config del negocio').isExecuted ? $('Config del negocio').first().json : {},\n};\n\n// PREPARAR GUARDADO (módulo común de medios, contrato M1↔M2 del 29/10/2026 §1 y §4): decide si el medio de ESTE mensaje entrante se guarda y cómo.\n//\n// Corre en su PROPIA rama, colgada de «Reportar mensaje (entrante)» (el servidor exige el entrante ya registrado por la ingesta) y DEBAJO de la rama que\n// responde en el lienzo: con `executionOrder: v1` corre DESPUÉS de que el cliente recibió su respuesta, y nada de lo que pase acá corta el turno.\n// Devuelve [] (la rama termina en silencio) si el mensaje no es imagen, audio o documento, o si le falta un dato que el servidor exige.\n// Si devuelve un item, `modo` es:\n//   - `anotar`: docx y xlsx (solo se ANOTAN, nunca se bajan bytes) y cualquier otro documento que no sea PDF (el servidor responde 415 y no se baja nada);\n//   - `descargar`: imagen (hasta 5 MB), audio (hasta 16 MB) y PDF (hasta 10 MB), con SU PROPIA descarga de Meta (no gasta el tope diario de ver u oír).\n// También anota, en el estado estático del flujo (clave `guardadoDeMedios`), cuándo escribió por última vez la RECEPCIÓN: es la ventana de 24 h que\n// decide si el aviso de falla puede salir como texto libre. Ningún dato del cliente se guarda ahí.\n//\n// `GM_FUENTES` la define la cabecera que arma `guardado.mjs` para cada flujo (`carga`: el nodo con `messages`; `config`: «Config del negocio»).\n// JavaScript plano del nodo Code de n8n: sin require, URL, Buffer ni crypto.\nconst gmCarga = (GM_FUENTES && GM_FUENTES.carga && typeof GM_FUENTES.carga === 'object') ? GM_FUENTES.carga : {};\nconst gmCfg = (GM_FUENTES && GM_FUENTES.config && typeof GM_FUENTES.config === 'object') ? GM_FUENTES.config : {};\nconst gmMsg = Array.isArray(gmCarga.messages) && gmCarga.messages[0] && typeof gmCarga.messages[0] === 'object' ? gmCarga.messages[0] : null;\nconst gmAhora = Number(gmCarga.ahoraMs) > 0 ? Number(gmCarga.ahoraMs) : Date.now();\nconst gmSd = $getWorkflowStaticData('global');\nif (!gmSd.guardadoDeMedios || typeof gmSd.guardadoDeMedios !== 'object' || Array.isArray(gmSd.guardadoDeMedios)) gmSd.guardadoDeMedios = {};\nconst gmEstado = gmSd.guardadoDeMedios;\nif (!gmMsg) return [];\n\nconst gmTelefono = String(gmMsg.from || '');\nconst gmRecepcion = String(gmCfg.numeroRecepcionDigitos || gmCfg.numeroRecepcion || '').replace(/\\D/g, '');\n// La ventana de la recepción: su último mensaje a este número (de cualquier tipo).\nif (gmRecepcion && gmTelefono === gmRecepcion) gmEstado.recepcionMs = gmAhora;\n\nconst GM_TIPOS = { image: 'image', audio: 'audio', voice: 'audio', document: 'document' };\nconst gmTipo = Object.prototype.hasOwnProperty.call(GM_TIPOS, String(gmMsg.type || '')) ? GM_TIPOS[String(gmMsg.type)] : '';\nif (!gmTipo) return [];\nconst gmMedio = gmTipo === 'audio' ? (gmMsg.audio || gmMsg.voice) : gmMsg[gmTipo];\nif (!gmMedio || typeof gmMedio !== 'object') return [];\nconst gmMediaId = String(gmMedio.id || '');\nconst gmIdMeta = String(gmMsg.id || '');\n// Lo que el servidor exige (§1): teléfono de 8 a 15 dígitos y el id del MENSAJE. Lo que viaja en una cabecera, sin espacios ni controles.\nif (!/^\\d{8,15}$/.test(gmTelefono) || !/^[\\x21-\\x7e]{1,200}$/.test(gmIdMeta) || !/^[A-Za-z0-9_-]{1,100}$/.test(gmMediaId)) return [];\nconst gmMimeCrudo = String(gmMedio.mime_type || '').toLowerCase().split(';')[0].trim();\nconst gmMime = /^[a-z0-9.+-]{1,40}\\/[a-z0-9.+-]{1,100}$/.test(gmMimeCrudo) ? gmMimeCrudo : 'application/octet-stream';\n\n// docx y xlsx: solo se anotan. Otro documento que no sea PDF también va por Anotar: el servidor responde 415 sin que se baje un byte.\nconst GM_SOLO_ANOTAR = ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];\nconst GM_LIMITES = { image: 5000000, audio: 16000000, pdf: 10000000 };\nconst gmModo = gmTipo === 'document' && gmMime !== 'application/pdf' ? 'anotar' : 'descargar';\nconst gmLimite = gmModo === 'anotar' ? 0 : (gmTipo === 'document' ? GM_LIMITES.pdf : GM_LIMITES[gmTipo]);\n\nreturn [{ json: {\n  modo: gmModo,\n  telefono: gmTelefono,\n  idMeta: gmIdMeta,\n  tipo: gmTipo,\n  mime: gmMime,\n  mediaId: gmMediaId,\n  limite: gmLimite,\n  soloAnotar: GM_SOLO_ANOTAR.indexOf(gmMime) >= 0,\n  // A quién iría el aviso de falla (el número del NEGOCIO, no del cliente).\n  recepcion: gmRecepcion,\n  ahoraMs: gmAhora,\n} }];\n"
+      },
+      "notes": "Rama del GUARDADO de medios (módulo común Flujos/src/core/medios/): decide si el medio de este mensaje se guarda (imagen, audio, PDF) o solo se anota (docx, xlsx). Corre después de la respuesta al cliente y nunca la frena."
+    },
+    {
+      "id": "gm-si-anotar",
+      "name": "¿Anotar medio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2120,
+        1500
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.modo === 'anotar' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "docx, xlsx y todo documento que no sea PDF: se anotan sin bajar un byte. Lo demás se baja de Meta y se guarda."
+    },
+    {
+      "id": "gm-anotar",
+      "name": "Anotar medio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2360,
+        1500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Interpretar entrada').first().json.phoneNumberId }}"
+            },
+            {
+              "name": "X-NovuChat-Telefono",
+              "value": "={{ $('Preparar guardado').first().json.telefono }}"
+            },
+            {
+              "name": "X-NovuChat-IdMeta",
+              "value": "={{ $('Preparar guardado').first().json.idMeta }}"
+            },
+            {
+              "name": "X-NovuChat-Tipo",
+              "value": "={{ $('Preparar guardado').first().json.tipo }}"
+            },
+            {
+              "name": "X-NovuChat-Anotar",
+              "value": "1"
+            },
+            {
+              "name": "X-NovuChat-Mime",
+              "value": "={{ $('Preparar guardado').first().json.mime }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (alias del número)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "POST guardarMedio en modo ANOTAR: cuerpo vacío, solo el token de ingesta del número. El servidor deja el metadato «anotado» (sin bytes) o responde 415."
+    },
+    {
+      "id": "gm-url",
+      "name": "Pedir el medio a Meta (guardado)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2360,
+        1700
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ (/^v\\d+\\.\\d$/.test(String($('Config del negocio').first().json.waGraphVersion)) ? $('Config del negocio').first().json.waGraphVersion : 'v26.0') }}/{{ String($json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp NovuChat (Bearer)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "GET /{media-id} con la credencial de WhatsApp: devuelve url, mime_type y file_size. Llamada PROPIA del guardado (doble descarga): no gasta el tope de ver u oír."
+    },
+    {
+      "id": "gm-descargar",
+      "name": "Descargar medio (guardado)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2600,
+        1700
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ (String($json.url || '').startsWith('https://lookaside.fbsbx.com/') && Number($json.file_size) > 0 && Number($json.file_size) <= Number($('Preparar guardado').first().json.limite)) ? $json.url : '' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 20000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp NovuChat (Bearer)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "Baja el archivo del CDN de Meta con el token, sin seguir redirecciones, SOLO si Meta informó un tamaño dentro del límite (imagen 5 MB, PDF 10 MB, audio 16 MB). Si no, la URL queda vacía y no se baja nada."
+    },
+    {
+      "id": "gm-guardar",
+      "name": "Guardar medio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2840,
+        1700
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Interpretar entrada').first().json.phoneNumberId }}"
+            },
+            {
+              "name": "X-NovuChat-Telefono",
+              "value": "={{ $('Preparar guardado').first().json.telefono }}"
+            },
+            {
+              "name": "X-NovuChat-IdMeta",
+              "value": "={{ $('Preparar guardado').first().json.idMeta }}"
+            },
+            {
+              "name": "X-NovuChat-Tipo",
+              "value": "={{ $('Preparar guardado').first().json.tipo }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (alias del número)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "POST guardarMedio con los BYTES del medio en el cuerpo (Content-Type el del medio), solo el token de ingesta del número, nunca firma. Sin reintentos: el servidor reconoce el repetido por el id del mensaje."
+    },
+    {
+      "id": "gm-resultado",
+      "name": "Resultado del guardado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        1500
+      ],
+      "parameters": {
+        "jsCode": "// RESULTADO DEL GUARDADO (módulo común de medios, contrato M1↔M2 del 29/10/2026 §2 y §4): lee la respuesta de `guardarMedio` y decide el AVISO DE FALLA.\n//\n// Toda respuesta del §2 termina acá y NINGUNA corta el turno (el cliente ya recibió su respuesta: esta rama corre después).\n//   200 {ruta, repetido} · 200 {anotado:true} · 400 · 401 · 405 · 409 (guardado_apagado, sin_mensaje, en_curso, {estado}) → silencio (devuelve []).\n//   413 demasiado_grande · 415 tipo_no_admitido · 429 cupo_diario_lleno · 502 no_se_guardo|no_se_registro → aviso a la recepción, si se puede.\n//   Un medio que Meta informó más grande que el límite NO se baja: cuenta como 413 sin llamar al servidor.\n//   Un corte de red, un error de Meta o una respuesta que no se entiende → silencio (no hay motivo cierto que decirle a la recepción).\n// EL AVISO: texto libre a la recepción del negocio SOLO si su ventana de 24 h está abierta (escribió hace menos de 23 h 30 min: lo anota «Preparar guardado»),\n// a lo más UNO por día de La Paz (UTC-4 fijo) y por comercio (el estado estático es del flujo, que es de un solo comercio), y SIN datos del paciente:\n// ni teléfono, ni nombre, ni el archivo, ni el id del mensaje. Solo el motivo. El día se marca ANTES de enviar: si Meta lo rechaza, ese día no se reintenta.\n// Si Meta rechaza el aviso, la ejecución termina en ERROR (el envío no traga el fallo); la rama corre al final, cuando el cliente ya recibió su respuesta.\n// JavaScript plano del nodo Code de n8n: sin require, URL, Buffer ni crypto.\nconst grPrep = $('Preparar guardado').first().json || {};\nconst grUrl = $('Pedir el medio a Meta (guardado)').isExecuted ? ($('Pedir el medio a Meta (guardado)').first().json || {}) : {};\nconst grR = ($input.first() && $input.first().json) || {};\nconst grCodigo = Number(grR.statusCode) || 0;\nconst GR_MOTIVOS = {\n  413: 'el archivo supera el tamaño permitido',\n  415: 'el tipo de archivo no se admite',\n  429: 'se llenó el cupo diario de archivos del comercio',\n  502: 'el servidor no pudo guardarlo',\n};\nlet grMotivo = Object.prototype.hasOwnProperty.call(GR_MOTIVOS, grCodigo) ? GR_MOTIVOS[grCodigo] : '';\n// El medio que no se bajó por tamaño (Meta lo informó por encima del límite): es un 413 aunque el servidor no lo haya visto.\nconst grTamano = Number(grUrl.file_size);\nif (!grMotivo && grPrep.modo === 'descargar' && Number(grPrep.limite) > 0 && grTamano > Number(grPrep.limite)) grMotivo = GR_MOTIVOS[413];\nif (!grMotivo) return [];\n\nconst grSd = $getWorkflowStaticData('global');\nif (!grSd.guardadoDeMedios || typeof grSd.guardadoDeMedios !== 'object' || Array.isArray(grSd.guardadoDeMedios)) grSd.guardadoDeMedios = {};\nconst grEstado = grSd.guardadoDeMedios;\nconst grAhora = Number(grPrep.ahoraMs) > 0 ? Number(grPrep.ahoraMs) : Date.now();\nconst grHoy = new Date(grAhora - 4 * 3600 * 1000).toISOString().slice(0, 10);\nconst GR_VENTANA_MS = 23 * 3600 * 1000 + 30 * 60 * 1000;\nconst grRecepcionMs = Number(grEstado.recepcionMs) || 0;\nconst grVentanaAbierta = grRecepcionMs > 0 && grAhora >= grRecepcionMs && grAhora - grRecepcionMs < GR_VENTANA_MS;\nif (grEstado.avisoDia === grHoy || !grVentanaAbierta) return [];\nconst grRecepcion = String(grPrep.recepcion || '').replace(/\\D/g, '');\nif (!/^\\d{6,20}$/.test(grRecepcion)) return [];\ngrEstado.avisoDia = grHoy;\nreturn [{ json: {\n  numeroRecepcion: grRecepcion,\n  texto: 'No se pudo guardar un archivo de una conversación (' + grMotivo + '). Revísala en la Consola.',\n} }];\n"
+      },
+      "notes": "Toda respuesta de guardarMedio termina acá sin cortar nada. Solo 413, 415, 429 y 502 arman el aviso a la recepción: con su ventana de 24 h abierta, uno por día y sin datos del paciente."
+    },
+    {
+      "id": "gm-avisar",
+      "name": "Avisar falla del guardado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3320,
+        1500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ (/^v\\d+\\.\\d$/.test(String($('Config del negocio').first().json.waGraphVersion)) ? $('Config del negocio').first().json.waGraphVersion : 'v26.0') }}/{{ String($('Interpretar entrada').first().json.phoneNumberId).replace(/\\D/g, '') }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $json.numeroRecepcion, type: 'text', text: { preview_url: false, body: String($json.texto || '').slice(0, 500) } }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp NovuChat (Bearer)"
+        }
+      },
+      "notes": "El aviso de falla a la recepción del negocio, en texto libre (su ventana está abierta). Sin reintentos: un aviso repetido llegaría dos veces. Sin onError: si falla, la ejecución termina en error (corre al final, el cliente ya tiene su respuesta). +1 mensaje solo cuando falla el guardado, a lo más uno por día."
     }
   ],
   "connections": {
@@ -1553,6 +1839,11 @@
         [
           {
             "node": "¿Comercio operativo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preparar guardado",
             "type": "main",
             "index": 0
           }
@@ -1937,6 +2228,90 @@
         [
           {
             "node": "Reportar mensaje (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar guardado": {
+      "main": [
+        [
+          {
+            "node": "¿Anotar medio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Anotar medio?": {
+      "main": [
+        [
+          {
+            "node": "Anotar medio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pedir el medio a Meta (guardado)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedir el medio a Meta (guardado)": {
+      "main": [
+        [
+          {
+            "node": "Descargar medio (guardado)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar medio (guardado)": {
+      "main": [
+        [
+          {
+            "node": "Guardar medio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anotar medio": {
+      "main": [
+        [
+          {
+            "node": "Resultado del guardado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar medio": {
+      "main": [
+        [
+          {
+            "node": "Resultado del guardado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado del guardado": {
+      "main": [
+        [
+          {
+            "node": "Avisar falla del guardado",
             "type": "main",
             "index": 0
           }
