@@ -40,5 +40,9 @@ El carrito que propone el modelo y valida el código. Sin dependencias (ni de `c
 | `vcLineaAviso(lineas, { max = 4 })` | `cantidad × nombre, …` y `y N más`; sin saltos ni espacios repetidos (variable de plantilla), a lo más 200 caracteres; sin líneas, `sin ítems` (la variable no puede ir vacía). |
 | `vcMismoCarrito(a, b)` | `true` si coinciden en id, cantidad, precio y detalle, sin importar el orden. Lo que no es arreglo, o trae elementos sin forma, nunca es igual. |
 
+## `src/nodos/` (nodos Code neutros)
+
+Los nodos comunes de la entrada y la salida de un flujo de venta digital: `carga-de-entrada.js`, `config-del-negocio.js`, `normalizar-entrada.js`, `puerta-del-turno.js`, `resumen-del-turno.js` y `_comun.js` (prefijo `cn`). Subidos desde la versión del primer flujo de venta digital con estas diferencias (cada una probada en `admin/pruebas/tenants/walisuma/neutros.test.ts`): la clave de la ficha y las funciones propias del tenant entran por el objeto `CN_TENANT`, que la librería del tenant declara ANTES de `_comun.js` y que trae `claveFicha`, `ventanaFueraDePaisMs`, `fichaVigente`, `yaVisto`, `lineaCliente`, `norm` y `esRiesgo`; y `resumen-del-turno.js` revierte la ficha con `revertirFicha` / `revertirSiFalloElPrincipal` en vez de la lógica de un negocio. Orden de pegado: `cobro.js`, `avisos.js`, `conversacion.js`, la librería del tenant, `_comun.js` y el nodo. Sin texto ni nombre de cliente.
+
 ## Qué de `rr.js` no se portó
 `rrQuitarEcoDeMarcador`, `rrQuitarDelimitadores`, `rrMenu`, `rrMenuDeComplemento`, `rrTextoOpciones`, `rrSaludo`, `rrTexto*`, `RR_PRODUCTOS`, `RR_PROMPT`, `rrCatalogo` y la ficha completa: llevan textos, productos o nombres de un negocio, o salen del alcance de la base. Cada flujo los define con sus datos.
