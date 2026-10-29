@@ -2546,3 +2546,51 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
     expect(c('Respuesta útil. Puedo mostrarte los planes.', CFG, 'x', { lista: true, botones: [] }).payload.interactive.type).toBe('list');
   });
 });
+
+describe('bucle del paso de los datos (29/10): «Engels» no puede repetir cinco veces «¿Y cómo se llama tu negocio?»', () => {
+  const DATOS = NOVUCHAT['respaldos'] as J;
+  const turnoDatos = (ficha: J, texto: string, nombre = '', empresa = ''): J => {
+    const eventos = [ev(texto)];
+    const plan = { ruta: 'modelo', fijo: '', contexto: 'datos', rubroElegido: '', temas: [], hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false } };
+    const lectura = f('chLeerModelo')({ candidates: [{ content: { parts: [{ text: JSON.stringify({ mensaje: 'Gracias por contarme, seguimos con lo que necesitas.', accion: 'ninguna', rubro: 'ninguno', necesidad: '', nombre, empresa, descarte: 'ninguno' }) }] } }] }, { cfg: CFG, textos: [texto] });
+    const res = f('chResolver')({ plan, intentos: [{ lectura, causa: 'formato' }], cfg: CFG, ficha, eventos });
+    const nueva = f('chAplicarTurno')({ ficha, eventos, hasta: 1, plan, res, mensaje: res.texto, cfg: CFG, pidioDatos: false });
+    return { res, nueva };
+  };
+  const pedido = (extra: J = {}): J => ({ ...fichaBase(), preguntaDatos: true, nombrePedido: true, explicado: true, historial: [{ r: 'a', t: '¿Cómo te llamas y cómo se llama tu negocio?' }], ...extra });
+  it('la captura: nombre «Juan», luego «Engels» → «Engels» es el NEGOCIO y Juan sigue siendo el nombre', () => {
+    const uno = turnoDatos(pedido(), 'Juan', 'Juan');
+    expect(uno.res.texto).toBe(DATOS.datosSoloNombre);
+    for (const modelo of [['Engels', ''], ['Engels', 'Engels'], ['', 'Engels'], ['', '']]) {
+      const dos = turnoDatos(uno.nueva, 'Engels', modelo[0], modelo[1]);
+      expect(dos.nueva).toMatchObject({ nombre: 'Juan', empresa: 'Engels' });
+      expect(dos.res.texto).toBe(DATOS.datosAmbos);
+    }
+  });
+  it('si la ficha ya quedó con nombre «Engels» y sin negocio (el estado del bucle), repetir «Engels» lo anota como negocio', () => {
+    const r = turnoDatos(pedido({ nombre: 'Engels' }), 'Engels', 'Engels');
+    expect(r.nueva).toMatchObject({ nombre: 'Engels', empresa: 'Engels' });
+    expect(r.res.texto).toBe(DATOS.datosAmbos);
+  });
+  it('NIEGA: lo que no es un negocio no se anota como tal (corrección de nombre, evasiva, pedido)', () => {
+    const base = pedido({ nombre: 'Juan' });
+    expect(turnoDatos(base, 'me llamo Pedro', 'Pedro').nueva.empresa).toBe('');
+    expect(turnoDatos(base, 'soy Pedro', 'Pedro').nueva.empresa).toBe('');
+    expect(turnoDatos(base, 'después te cuento').nueva.empresa).toBe('');
+    expect(turnoDatos(base, 'precios').nueva.empresa).toBe('');
+  });
+  it('anti-bucle general: la misma pregunta de datos NUNCA sale dos veces seguidas, diga lo que diga el cliente', () => {
+    for (const dice of ['soy Juan', 'me llamo Juan', 'después te cuento', '???']) {
+      let fi = pedido({ nombre: 'Juan' });
+      let anterior = '';
+      for (let i = 0; i < 5; i++) {
+        const r = turnoDatos(fi, dice, i === 0 ? 'Juan' : '', '');
+        if (anterior !== '') expect(r.res.texto).not.toBe(anterior);
+        // mientras falte el negocio, nunca se dice que quedó anotado todo
+        if (r.nueva.empresa === '') expect(r.res.texto).not.toBe(DATOS.datosAmbos);
+        anterior = r.res.texto;
+        fi = r.nueva;
+      }
+    }
+  });
+});

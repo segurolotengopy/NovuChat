@@ -1277,9 +1277,9 @@ function chRespaldo(a) {
     case 'datos': {
       const nombre = lec.nombre || a.ficha.nombre;
       const empresa = lec.empresa || a.ficha.empresa;
-      // Si no dijo ni el nombre ni el negocio, NO se vuelve a pedir (una sola vez): «después te cuento» recibe la cortesía; otra cosa que el modelo no pudo contestar, «ese dato lo revisa el equipo».
-      if (!nombre && !empresa) return { texto: sub(CH_EVASIVA.test(chTexto(a.dijo).trim()) || chEsAcuse(a.dijo) || chEsAgradecimiento(a.dijo) ? r.cortesia : r.sinDato), evento: 'datos' };
-      return { texto: sub(nombre && empresa ? r.datosAmbos : (nombre ? r.datosSoloNombre : r.datosSoloEmpresa)), evento: 'datos' };
+      const rep = (x) => a.ficha.historial.slice(-4).some((m) => m.r === 'a' && chNorm(m.t) === chNorm(x)), salir = (c) => { const t = c.map(sub); return { texto: t.find((x) => !rep(x)) || t.find((x) => chNorm(x) !== antes), evento: 'datos' }; }; // un mensaje idéntico a uno de los últimos del asistente no se repite: `salir` pasa a la salida que sí se cumple (nunca «Quedó anotado» si falta un dato)
+      if (!nombre && !empresa) return salir([CH_EVASIVA.test(chTexto(a.dijo).trim()) || chEsAcuse(a.dijo) || chEsAgradecimiento(a.dijo) ? r.cortesia : r.sinDato, r.generico]);
+      return salir(nombre && empresa ? [r.datosAmbos, r.cortesia] : [nombre ? r.datosSoloNombre : r.datosSoloEmpresa, r.generico]);
     }
     case 'ambiguo': return { texto: sub(/creo que tu caso es super particular/.test(antes) ? r.generico : r.equipo), evento: 'equipo' };
     case 'fuera':
@@ -1304,11 +1304,11 @@ function chResolver(a) {
     let del = { nombre: '', empresa: '' };
     for (const t of textos) { const r = chNombreYEmpresaDelTexto(t); if (r.nombre || r.empresa) { del = r; break; } }
     lectura = Object.assign({}, lectura, { nombre: lectura.nombre || del.nombre, empresa: lectura.empresa || del.empresa });
-    // Se pidió UNA sola cosa (el negocio o el nombre, porque la otra ya se sabe): la respuesta corta es esa cosa, siempre como texto literal del cliente.
+    // Se pidió UNA sola cosa (el negocio o el nombre, porque la otra ya se sabe): la respuesta corta es esa cosa, siempre como texto literal del cliente. Un negocio puede llamarse igual que la persona («Engels»): sin más, es el negocio y el nombre anotado no se pisa.
     const f0 = a.ficha || {};
     const corto = (t) => t.split(/\s+/).length <= 5 && !/[?¿]/.test(t);
     if (!lectura.empresa && f0.nombre && !f0.empresa) {
-      for (const t of textos) { const e = corto(t) ? chNombreDeEmpresa(t, true) : ''; if (e && chNorm(e) !== chNorm(f0.nombre)) { lectura = Object.assign({}, lectura, { empresa: e }); break; } }
+      for (const t of textos) { const e = corto(t) && !/^\s*(?:me llamo|soy|mi nombre es)\s/i.test(t) ? chNombreDeEmpresa(t, true) : ''; if (e) { lectura = Object.assign({}, lectura, { empresa: e, nombre: chNorm(lectura.nombre) === chNorm(e) ? '' : lectura.nombre }); break; } }
     }
     if (!lectura.nombre && f0.empresa && !f0.nombre) {
       for (const t of textos) { const n = corto(t) ? (chNombreDePersonaValido(t.replace(/^(?:me llamo|soy|mi nombre es)\s+/i, '')) || chNombreDePila(t.replace(/^(?:me llamo|soy|mi nombre es)\s+/i, ''))) : ''; if (n) { lectura = Object.assign({}, lectura, { nombre: n }); break; } }
