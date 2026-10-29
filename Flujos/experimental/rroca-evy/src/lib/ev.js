@@ -924,7 +924,7 @@ function evAceptaOferta(textoCliente, historial) {
   return a >= 0 && evOfreceAgendar(h[a].t);
 }
 // ¿Es esto un nombre? «Paola», «Paola Rojas», «Soy Paola», «Me llamo Paola»; no «soy alérgica», «de La Paz», «soy nueva», ni una frase.
-const EV_NO_NOMBRE = new RegExp('^(?:de|del|la|el|los|las|un|una|nuevo|nueva|alergico|alergica|diabetico|diabetica|embarazada|paciente|cliente|mama|casada|soltera|doctor|doctora|medico|medica|enfermera|enfermero|interesad[oa]|curios[oa]|quiero|necesito|busco|tengo|vengo|estoy|si|no|hola|ok|gracias|bueno|claro|dale|buenas|buenos|clienta|estudiante|senora|senor|madre|ella|yo|usuaria|muy|tu|su|mi|mejor|para|pero|cita|turno|horario|horarios|tienen|hipertens\\w*|nervios\\w*|sensible|mayor|botox|radiesse|harmonyca|sculptra|acido|hialuronico|bioestimulador\\w*|gratis|gratuita)$');
+const EV_NO_NOMBRE = new RegExp('^(?:de|del|la|el|los|las|un|una|nuevo|nueva|alergico|alergica|diabetico|diabetica|embarazada|paciente|cliente|mama|casada|soltera|doctor|doctora|medico|medica|enfermera|enfermero|interesad[oa]|curios[oa]|quiero|necesito|busco|tengo|vengo|estoy|si|no|hola|ok|gracias|bueno|claro|dale|buenas|buenos|clienta|estudiante|senora|senor|madre|ella|yo|usuaria|muy|tu|su|mi|mejor|para|pero|cita|turno|horario|horarios|tienen|hipertens\\w*|nervios\\w*|sensible|mayor|botox|radiesse|harmonyca|sculptra|acido|hialuronico|bioestimulador\\w*|gratis|gratuita|pasame|paseme|pasenme|pasa|pasen|hablar|chatear|comunicame|contactame|escribeme|escribame|llamame|llamenme|agendame|ayudame|alguien|recepcion|secretaria|favor|porfa|disculpa|perdon|ustedes|digame|diganme|dime|nose|cualquier)$');
 function evEsNombre(textoCliente) {
   const raw = evTexto(textoCliente).trim();
   if (raw === '' || raw.indexOf('?') >= 0 || raw.indexOf('¿') >= 0) return false;
@@ -1165,46 +1165,70 @@ function evTextoPreferencia(conNombre, ultimoAsistente) {
   return conNombre === true ? (repetida ? EV_TEXTO_PREFERENCIA_NOMBRE_2 : EV_TEXTO_PREFERENCIA_NOMBRE) : (repetida ? EV_TEXTO_PREFERENCIA_2 : EV_TEXTO_PREFERENCIA);
 }
 function evSinHorario(h) { const x = evTexto(h).trim(); return x === '' || x === 'sin horario indicado'; }
-// ¿El mensaje contesta la pregunta de preferencia? Sin pregunta, sin negación ni rechazo, de largo razonable, y CON algo de día u horario («el martes en la tarde», «Ana, cualquier día después de las 5»,
-// «cuando puedan», «me da igual»). Sin eso («soy diabética», «sí») no es una preferencia: contesta el modelo y el cierre no sale.
+// ¿Trae un DÍA o una HORA/FRANJA? (revisión del PR #694): un día (lunes…domingo, hoy, mañana, pasado mañana, esta/la próxima semana, fin de semana), una hora («a las 3», «10:30», «5 pm») o una franja
+// con contexto («en/por/de la mañana/tarde/noche», «las tardes», «mediodía»). «Luego», «después», «cuando», «puedo», «trabajo», «mejor» o «ahora» sueltos NO lo son: un aplazamiento no es una preferencia.
+const EV_DIA_U_HORA = /\b(lunes|martes|miercoles|jueves|viernes|sabados?|domingos?|hoy|pasado manana|manana|esta semana|(?:la )?proxima(?: semana)?|semana que viene|la que viene|fin de semana|finde|mediodia|(?:en|por|de|a) la (?:manana|tarde|noche)|las (?:mananas|tardes|noches)|en las (?:mananas|tardes|noches)|a las? \d{1,2}(?::\d{2})?|\d{1,2}:\d{2}|\d{1,2} ?(?:am|pm|hs|hrs))\b/;
+function evTieneDiaUHora(texto) { return EV_DIA_U_HORA.test(evNorm(texto)); }
+// Una preferencia ABIERTA («cualquier día», «el que tengan», «me da igual»): vale como respuesta y viaja tal cual.
+const EV_PREFERENCIA_ABIERTA = /\b(?:cualquier (?:dia|hora|horario|momento)|el que (?:tengan|haya|sea|les quede)|lo que (?:tengan|haya)|me da igual|indistinto|cuando (?:ustedes )?(?:puedan|tengan))\b/;
+// ¿El mensaje contesta la pregunta de preferencia? Sin pregunta, sin rechazo ni aplazamiento, de largo razonable, y CON un día, una hora o una preferencia abierta. Un «no» al comienzo no la anula si, quitado,
+// queda un día u hora («no, el jueves mejor», «no puedo esta semana, la próxima»).
 function evRespondePreferencia(textoCliente) {
   const raw = evTexto(textoCliente).trim();
   if (raw === '' || raw.length > 300 || raw.indexOf('?') >= 0 || raw.indexOf('¿') >= 0) return false;
   const n = evNorm(raw);
-  if (n === '' || /^no\b/.test(n) || evNegaAgendar(raw) || evDeclina(raw, [])) return false;
-  return !evSinHorario(evHorarioPreferido([], raw)) || EV_PALABRA_DE_HORARIO.test(n) || /\b(?:igual|indistinto|el que (?:tengan|haya|sea)|lo que (?:tengan|haya))\b/.test(n);
+  if (n === '' || evDeclina(raw, []) || evAplaza(raw)) return false;
+  if (/^no\b/.test(n) && !evTieneDiaUHora(n.replace(/^no\b/, ''))) return false;
+  return evTieneDiaUHora(raw) || EV_PREFERENCIA_ABIERTA.test(n);
 }
-// Lo que se guarda y viaja en el aviso: el día y la hora reconocidos o, si no hay ninguno, lo que respondió (sin números largos ni enlaces).
+// Lo que se guarda y viaja en el aviso: el TEXTO ORIGINAL saneado (con sus tildes: «mañana», no «manana») de las cláusulas que traen el día, la hora o la preferencia abierta; sin el nombre ni el resto.
+// '' si no hay ninguna (entonces el aviso dice «sin horario indicado»).
 function evPreferenciaDe(textoCliente) {
-  const h = evHorarioPreferido([], textoCliente);
-  return evSinHorario(h) ? evEnmascarar(evQuitarDelimitadores(textoCliente)).slice(0, 100) : h;
+  const limpio = evEnmascarar(evQuitarDelimitadores(textoCliente));
+  const partes = limpio.split(/[,;\n]|\s+y\s+(?=(?:el|la|los|las|por|en|a)\b)/).map((x) => x.trim()).filter((x) => x !== '' && (evTieneDiaUHora(x) || EV_PREFERENCIA_ABIERTA.test(evNorm(x))));
+  return partes.join(', ').slice(0, 100);
+}
+// La preferencia de la conversación: la del mensaje actual o la de los últimos 4 mensajes de la persona (del más nuevo al más viejo). '' si no hay.
+function evPreferenciaDeConversacion(historial, textoCliente) {
+  const mios = [evTexto(textoCliente)].concat((Array.isArray(historial) ? historial : []).filter((h) => h && h.r === 'u').slice(-4).reverse().map((h) => h.t));
+  for (const t of mios) { const p = evPreferenciaDe(t); if (p !== '') return p; }
+  return '';
+}
+// UN APLAZAMIENTO («luego te digo», «después te aviso», «cuando pueda te escribo», «tengo que ver mi trabajo»): sin día ni hora, no es una preferencia; va al camino de «lo voy a pensar».
+const EV_APLAZA = /\b(?:(?:luego|despues|mas tarde|en un rato|ahorita) (?:te |les )?(?:digo|aviso|escribo|confirmo|veo|cuento)|te (?:digo|aviso|escribo|confirmo|cuento) (?:luego|despues|mas tarde|en un rato)|cuando pueda\w*|tengo que (?:ver|revisar|consultar|organizarme)|(?:lo |eso )?(?:veo|reviso|consulto) (?:y te (?:digo|aviso|escribo|confirmo)|luego|despues)|no se todavia|todavia no se|aun no se)\b/;
+function evAplaza(textoCliente) {
+  const raw = evTexto(textoCliente);
+  return raw.length <= 160 && raw.indexOf('?') < 0 && raw.indexOf('¿') < 0 && EV_APLAZA.test(evNorm(raw)) && !evTieneDiaUHora(raw);
 }
 // El nombre dentro de una respuesta a «¿cómo te llamas y qué día…?»: la primera cláusula que es un nombre y no habla de días ni de horas («Ana, el martes», «Soy Ana y prefiero el jueves»). '' si no hay.
+// Nunca un PEDIDO ni una cortesía («pásame con alguien», «quiero hablar», «por favor», «hola») (revisión del PR #694).
 const EV_PALABRA_DE_HORARIO = /\b(lunes|martes|miercoles|jueves|viernes|sabado|sabados|domingo|domingos|hoy|manana|mananas|tarde|tardes|noche|noches|mediodia|semana|proxim\w*|cualquier\w*|dia|dias|hora|horas|horario\w*|temprano|despues|antes|am|pm|finde|ahora|luego|pronto|cuando|prefiero|puedo|mejor|trabajo|salgo)\b/;
 const EV_NO_NOMBRE_EXTRA = /^(?:mis|tus|sus|me|quisiera|mejorar|pomulos|arrugas|flacidez|papada|ojeras|manchas|cara|rostro|piel|labios|menton|ojos|frente|cuello|nariz|todo|nada|igual|perfecto|listo|vale|okey|okay|si|gracias)$/;
+const EV_PEDIDO_O_CORTESIA = /\b(?:pas\w*|hablar|habla\w*|quiero|quiere|quisiera|chate\w*|necesit\w*|comunic\w*|contact\w*|escrib\w*|agend\w*|reserv\w*|llam(?:ar|en|ame|enme|eme)|ayud\w*|favor|porfa|gracias|hola|buenas|buenos|disculpa\w*|perdon|alguien|recepcion\w*|secretari\w*|persona|asesor\w*|doctora|dra|ustedes|diga\w*|dime|deme|dame|mande\w*|manda\w*|envi\w*|sabe\w*|nose|bueno|claro|dale|listo|ok|okey)\b/;
+function evNombreValido(nombre) { const n = evNorm(nombre); return n !== '' && !EV_PEDIDO_O_CORTESIA.test(n) && !EV_PALABRA_DE_HORARIO.test(n) && !EV_NO_NOMBRE_EXTRA.test(n); }
 function evNombreDeRespuesta(textoCliente) {
   const raw = evTexto(textoCliente);
   for (const c of raw.split(/[,;:.\n]|\s+y\s+/)) {
     const x = c.trim().replace(/^(?:soy|me llamo|mi nombre es)\s+/i, '');
-    if (x === '' || EV_PALABRA_DE_HORARIO.test(evNorm(x)) || !evEsNombre(x)) continue;
+    if (x === '' || EV_PALABRA_DE_HORARIO.test(evNorm(x)) || EV_PEDIDO_O_CORTESIA.test(evNorm(x)) || !evEsNombre(x)) continue;
     const primero = evNorm(x).split(' ')[0];
     if (EV_NO_NOMBRE_EXTRA.test(primero)) continue;
     return evPrimerNombre(x.split(/\s+/)[0]);
   }
   const m = /(?:[Ss]oy|[Mm]e llamo|[Mm]i nombre es)\s+(\p{Lu}\p{L}{1,19})/u.exec(raw);
-  return m && !EV_NO_NOMBRE.test(evNorm(m[1])) && !EV_PALABRA_DE_HORARIO.test(evNorm(m[1])) ? evPrimerNombre(m[1]) : '';
+  return m && !EV_NO_NOMBRE.test(evNorm(m[1])) && evNombreValido(m[1]) ? evPrimerNombre(m[1]) : '';
 }
 // El nombre que la persona YA dio en esta conversación: el guardado en la ficha, «soy / me llamo X», o lo que contestó justo después de que el asistente le preguntara el nombre. Nunca el del perfil de WhatsApp.
 function evNombreDado(historial, textoCliente, nombreDeLaFicha) {
   const f = evPrimerNombre(nombreDeLaFicha);
-  if (f) return f;
+  if (f && evNombreValido(f)) return f;
   const h = Array.isArray(historial) ? historial : [];
   const actual = evNombreDelMensaje(textoCliente, h);
-  if (actual) return actual;
+  if (actual && evNombreValido(actual)) return actual;
   for (let i = h.length - 1; i >= 0; i--) {
     if (!h[i] || h[i].r !== 'u') continue;
     const dicho = evNombreDelMensaje(h[i].t, h.slice(0, i));
-    if (dicho) return dicho;
+    if (dicho && evNombreValido(dicho)) return dicho;
     const a = evUltimoDe(h, 'a', i);
     if (a >= 0 && EV_PIDE_NOMBRE.test(evNorm(h[a].t))) {
       const r = evNombreDeRespuesta(h[i].t);
@@ -1219,7 +1243,7 @@ function evNombreDado(historial, textoCliente, nombreDeLaFicha) {
 // Un «no» o un «no quiero» a secas solo cuentan si lo último que dijo el asistente fue una oferta de agendar (o la oferta de llamada).
 const EV_TEXTO_OFRECE_LLAMADA = 'Si quieres, recepción te llama para ofrecerte los horarios disponibles y tú decides. ¿Te parece?';
 const EV_TEXTO_CIERRE_AMABLE = 'Entendido, sin problema. Cuando quieras, me escribes por aquí y seguimos conversando. 😊';
-const EV_RELLENO_RECHAZO = /^(?:ok|okey|okay|bueno|bien|ya|mmm+|ah|pues|gracias|muchas gracias|mil gracias|igual gracias|por ahora|por el momento|de momento|disculpa|perdon|doctora|dra)$/;
+const EV_RELLENO_RECHAZO = /^(?:(?:ok|okey|okay|bueno|bien|ya|mmm+|ah|pues|gracias|muchas gracias|mil gracias|igual gracias|por ahora|por el momento|de momento|disculpa|perdon|doctora|dra|doc)\s*)+$/;
 const EV_RECHAZO = /^(?:(?:ok|okey|bueno|ya|pues|mmm+|entonces|igual|mejor|creo que|por ahora|por el momento)\s+)*(?:no(?: (?:gracias|muchas gracias|por ahora|por el momento|todavia|aun|ahora|ahorita|de momento|me interesa|estoy interesad[ao]|quiero(?: por ahora| todavia| gracias)?))*|gracias no|ahora no|ahorita no|por ahora no|por el momento no|de momento no|todavia no|aun no|mas adelante|en otro momento|otro dia|lo (?:voy a |vo a |tengo que )?(?:pensar|pensare|pienso)(?: bien)?|tengo que pensarlo|voy a pensarlo|dejame pensarlo|dejeme pensarlo|lo voy a meditar|lo voy a analizar)(?: (?:gracias|muchas gracias|por ahora|por el momento|todavia|bien|mejor|de momento|primero))*$/;
 function evDeclina(textoCliente, historial) {
   const raw = evTexto(textoCliente);
@@ -1229,11 +1253,13 @@ function evDeclina(textoCliente, historial) {
   const rechazos = claus.filter((c) => EV_RECHAZO.test(c) && !EV_RELLENO_RECHAZO.test(c));
   if (!rechazos.length) return false;
   if (rechazos.some((c) => !/^(?:no|no quiero)$/.test(c))) return true;
-  // «No, gracias»: el «no» va con un agradecimiento en otra cláusula.
-  if (claus.some((c) => /\bgracias\b/.test(c))) return true;
+  // «No, gracias» / «no, por ahora»: el «no» va con un agradecimiento o un «por ahora» en otra cláusula.
+  if (claus.some((c) => /\b(?:gracias|por ahora|por el momento|de momento|todavia)\b/.test(c))) return true;
   // Solo «no» / «no quiero»: cuenta si contesta una oferta de agendar o la de la llamada.
   const h = Array.isArray(historial) ? historial : [];
   const a = evUltimoDe(h, 'a');
+  // Una pregunta con alternativa («¿Te gustaría agendar o tienes alguna otra duda?»): el «no» contesta la alternativa, no la oferta.
+  if (a >= 0 && /\bo (?:tienes|tenes|prefieres|quieres|te gustaria|hay|deseas|necesitas|alguna)\b/.test(evNorm(evUltimaPregunta(h[a].t)))) return false;
   return a >= 0 && (evOfreceAgendar(h[a].t) || evEsOfertaDeLlamada(h[a].t));
 }
 function evEsOfertaDeLlamada(textoAsistente) { return evNorm(textoAsistente).indexOf(evNorm(EV_TEXTO_OFRECE_LLAMADA)) >= 0; }
@@ -1280,9 +1306,11 @@ function evVariarCierre(texto, historial) {
   const nueva = evUltimaPregunta(t);
   if (a < 0 || nueva === '') return t;
   const nn = evNorm(nueva);
-  if (!(EV_OFRECE_AGENDAR.test(nn) || /\b(recepcion|valoracion)\b/.test(nn)) || evNorm(evUltimaPregunta(h[a].t)) !== nn) return t;
+  // Se compara con las preguntas de cierre de los DOS mensajes anteriores del asistente: la tercera respuesta seguida tampoco repite la primera.
+  const recientes = h.filter((x) => x && x.r === 'a').slice(-2).map((x) => evNorm(evUltimaPregunta(x.t)));
+  if (!(EV_OFRECE_AGENDAR.test(nn) || /\b(recepcion|valoracion)\b/.test(nn)) || recientes.indexOf(nn) < 0) return t;
   const usadas = h.filter((x) => x && x.r === 'a').map((x) => evNorm(evUltimaPregunta(x.t)));
-  const otra = EV_VARIANTES_CIERRE.find((v) => evNorm(v) !== nn && usadas.indexOf(evNorm(v)) < 0) || EV_VARIANTES_CIERRE.find((v) => evNorm(v) !== nn);
+  const otra = EV_VARIANTES_CIERRE.find((v) => evNorm(v) !== nn && usadas.indexOf(evNorm(v)) < 0) || EV_VARIANTES_CIERRE.find((v) => evNorm(v) !== nn && recientes.indexOf(evNorm(v)) < 0) || EV_VARIANTES_CIERRE.find((v) => evNorm(v) !== nn);
   const i = t.lastIndexOf(nueva);
   return i < 0 ? t : t.slice(0, i) + otra + t.slice(i + nueva.length);
 }

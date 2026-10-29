@@ -65,14 +65,16 @@ if (plan.tipo === 'modelo') {
   // (1) Aceptó la oferta de agendar y el modelo le pide el nombre (con la etiqueta o sin ella): si además falta el día o el horario, el CÓDIGO pregunta las dos cosas en UNA sola pregunta (más abajo);
   // si el día o el horario ya estaban, el modelo pide el nombre como siempre.
   if (!et.derivar && puedeCerrar && crudo.length <= 20000 && !(ficha.cierreMs > 0) && et.nombre === '' && EV_PIDE_NOMBRE.test(evNorm(et.texto)) && evAceptaOferta(plan.textoCliente, ficha.historial)
-    && evSinHorario(evHorarioPreferido(historiaDeLaFicha, plan.textoCliente))) { et.derivar = true; et.texto = ''; }
+    && evPreferenciaDeConversacion(historiaDeLaFicha, plan.textoCliente) === '') { et.derivar = true; et.texto = ''; }
   if (crudo.length > 20000) { efectivo = 'fallo'; rechazo = { motivo: 'largo', detalle: 'la salida del modelo supera los 20 000 caracteres' }; }
   else if ((crudo.trim() === '' && !quiere) || (et.texto.trim() === '' && !et.derivar)) { efectivo = 'fallo'; rechazo = { motivo: 'modelo_sin_texto', detalle: (crudo.trim() === '' ? 'el modelo no devolvió texto (caído o vacío)' : 'solo etiquetas, sin texto') + porque }; }
   else if (et.derivar && !(ficha.cierreMs > 0)) {
     // (1) ANTES del cierre, el día y el horario: si la conversación no los trae, el CÓDIGO los pregunta (con el nombre si falta) y la respuesta cierra (`Decidir turno`). Un pedido de hablar con una persona
     // («quiero chatear con la secretaria») no es un pedido de agendar: cierra directo.
     const soloPersona = EV_QUIERE_PERSONA.test(evNorm(plan.textoCliente)) && !EV_QUIERE_AGENDAR.test(evNorm(plan.textoCliente));
-    if (!soloPersona && evSinHorario(evHorarioPreferido(historiaDeLaFicha, plan.textoCliente))) {
+    // Nunca dos veces: si la pregunta ya fue lo último que dijo el asistente (p. ej. una imagen como respuesta), se cierra con «sin horario indicado».
+    const yaPreguntada = evEsPreguntaDePreferencia((historiaDeLaFicha.filter((h) => h.r === 'a').slice(-1)[0] || {}).t || '');
+    if (!soloPersona && !yaPreguntada && evPreferenciaDeConversacion(historiaDeLaFicha, plan.textoCliente) === '') {
       efectivo = 'preferencia';
       preguntaNombre = et.nombre === '' && evNombreDado(historiaDeLaFicha, plan.textoCliente, ficha.nombre) === '';
     } else efectivo = 'derivar';
@@ -132,7 +134,7 @@ if (avisoDe) {
       const nombre = avLimpio(avisoDe.solicitud ? (res.nombreDerivacion || (plan.tipo === 'derivar' ? '' : evNombreDelMensaje(plan.textoCliente, ficha.historial)) || ficha.nombre || evPrimerNombre(t.nombrePerfil)) : evPrimerNombre(t.nombrePerfil), 60) || 'sin nombre';
       const interes = avisoDe.solicitud ? avLimpio(evInteres(historia, plan.textoCliente), 40) : (clave === 'consulta_medica' ? 'consulta médica' : 'consulta sin respuesta');
       // La preferencia: «pidió que la llamen» (aceptó la oferta de llamada), la que respondió a la pregunta del código, o la que trae la conversación.
-      const horario = avisoDe.solicitud ? (avLimpio(res.llamada ? 'pidió que la llamen' : (plan.tipo === 'derivar' && !evSinHorario(plan.preferencia) ? String(plan.preferencia) : evHorarioPreferido(historia, plan.textoCliente)), 100) || 'sin horario indicado') : 'sin horario';
+      const horario = avisoDe.solicitud ? (avLimpio(res.llamada ? 'pidió que la llamen' : (plan.tipo === 'derivar' ? (evSinHorario(plan.preferencia) ? '' : String(plan.preferencia)) : evPreferenciaDeConversacion(historia, plan.textoCliente)), 100) || 'sin horario indicado') : 'sin horario';
       if (avisoDe.solicitud) res.preferencia = horario;
       const parametros = [nombre, interes, horario, '+' + from];
       const texto = avLimpio(avisoDe.solicitud

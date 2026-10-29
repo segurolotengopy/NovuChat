@@ -50,9 +50,9 @@ describe('(1) el día y el horario ANTES del cierre', () => {
     const av = avisosARecepcion(t2);
     expect(av.length).toBe(1);
     expect(av[0]!.cuerpo).toMatch(/Nombre: Rosa/);
-    expect(av[0]!.cuerpo).toMatch(/Horario preferido: martes, en la tarde/);
+    expect(av[0]!.cuerpo).toMatch(/Horario preferido: el martes en la tarde\./);   // el texto original, sin el nombre
     expect(av[0]!.cuerpo).toContain(`+${ANA}`);
-    expect(JSON.stringify(m.sd)).toMatch(/"preferencia":"martes, en la tarde"/);   // la preferencia queda en la ficha
+    expect(JSON.stringify(m.sd)).toMatch(/"preferencia":"el martes en la tarde"/);   // la preferencia queda en la ficha
   });
   it('POSITIVA: con el nombre ya dado, la pregunta es solo el día y el horario (+1 mensaje aceptado por Andres)', () => {
     const m = crear({ modeloDice: dice('Con gusto te cuento.') });
@@ -68,16 +68,16 @@ describe('(1) el día y el horario ANTES del cierre', () => {
     expect(esBoton(t)).toBe(true);
     expect(textos(t)[0]!.endsWith(CIERRE_AVISADO)).toBe(true);
   });
-  it('POSITIVA: si contesta solo el nombre, se guarda y se pregunta el día con otras palabras (nunca el mismo texto dos veces seguidas); el día cierra con ese nombre', () => {
+  it('POSITIVA: si contesta solo el nombre, la pregunta NO se repite: cierra con ese nombre y «sin horario indicado»', () => {
     const m = crear({ modeloDice: dice('Con gusto te cuento.') });
+    hablar(m, REC, mTexto('hola, soy recepción'));
     hablar(m, ANA, mTexto('hola'));
     hablar(m, ANA, mTexto('quiero agendar'));
     const t = hablar(m, ANA, mTexto('Lucía'));
-    expect(esBoton(t)).toBe(false);
-    expect(esPreguntaDePreferencia(t)).toBe(true);
-    expect(todo(t)).toMatch(/acomodan más/);
-    const c = hablar(m, ANA, mTexto('el jueves en la mañana'));
-    expect(textos(c)[0]).toMatch(/^¡Excelente decisión, Lucía!/);
+    expect(esPreguntaDePreferencia(t)).toBe(false);
+    expect(esBoton(t)).toBe(true);
+    expect(textos(t)[0]).toMatch(/^¡Excelente decisión, Lucía!/);
+    expect(avisosARecepcion(t)[0]!.cuerpo).toContain('Horario preferido: sin horario indicado.');
   });
   it('POSITIVA: un pedido de hablar con una persona («quiero chatear con la secretaria») no es un pedido de agendar: deriva directo', () => {
     const m = crear({ modeloDice: dice('¡Por supuesto!') });
@@ -94,14 +94,77 @@ describe('(1) el día y el horario ANTES del cierre', () => {
       expect(avisosARecepcion(t).length, modelo).toBe(0);
     }
   });
-  it('NEGADA: una respuesta sin día ni horario («soy diabética», «sí») no cierra; una pregunta tampoco', () => {
-    for (const r of ['soy diabética', 'sí', '¿tienen sábados?']) {
+  it('NEGADA (bucle): la pregunta se hace UNA sola vez: cualquier respuesta que no sea día u hora cierra en el turno siguiente con «sin horario indicado», también si insiste 3 veces', () => {
+    for (const r of ['¿qué horarios tienen?', 'ustedes díganme', 'no sé', 'sí', 'quiero agendar', 'soy diabética']) {
+      for (const modelo of ['Con gusto te cuento.', '¡Claro! [DERIVAR_RECEPCION]']) {
+        const m = crear({ modeloDice: dice(modelo) });
+        hablar(m, REC, mTexto('hola, soy recepción'));
+        hablar(m, ANA, mTexto('hola'));
+        expect(esPreguntaDePreferencia(hablar(m, ANA, mTexto('quiero agendar'))), r).toBe(true);
+        const t2 = hablar(m, ANA, mTexto(r));
+        expect(esPreguntaDePreferencia(t2), r).toBe(false);
+        expect(esBoton(t2), r).toBe(true);
+        expect(avisosARecepcion(t2).length, r).toBe(1);
+        expect(avisosARecepcion(t2)[0]!.cuerpo, r).toContain('Horario preferido: sin horario indicado.');
+        const t3 = hablar(m, ANA, mTexto(r));
+        expect(esPreguntaDePreferencia(t3), r).toBe(false);
+        expect(esPreguntaDePreferencia(hablar(m, ANA, mTexto('quiero agendar'))), r).toBe(false);
+      }
+    }
+  });
+  it('NEGADA: un aplazamiento («luego te digo», «después te aviso», «cuando pueda te escribo», «tengo que ver mi trabajo») no es preferencia: va a la oferta de llamada, sin cierre', () => {
+    for (const r of ['luego te digo', 'después te aviso', 'cuando pueda te escribo', 'tengo que ver mi trabajo']) {
       const m = crear({ modeloDice: dice('Con gusto te cuento.') });
       hablar(m, ANA, mTexto('hola'));
       hablar(m, ANA, mTexto('quiero agendar'));
       const t = hablar(m, ANA, mTexto(r));
       expect(todo(t), r).not.toMatch(/Excelente decisión|Ya pasé tus datos/);
       expect(avisosARecepcion(t).length, r).toBe(0);
+      expect(todo(t), r).toContain('recepción te llama para ofrecerte');
+    }
+  });
+  it('POSITIVA: «no, el jueves mejor» y «no puedo esta semana, la próxima» son preferencias (un «no» inicial no las anula)', () => {
+    for (const [r, esperado] of [['no, el jueves mejor', 'el jueves mejor'], ['no puedo esta semana, la próxima', 'no puedo esta semana, la próxima']] as const) {
+      const m = crear({ modeloDice: dice('Con gusto te cuento.') });
+      hablar(m, REC, mTexto('hola, soy recepción'));
+      hablar(m, ANA, mTexto('hola'));
+      hablar(m, ANA, mTexto('quiero agendar'));
+      const t = hablar(m, ANA, mTexto(r));
+      expect(esBoton(t), r).toBe(true);
+      expect(avisosARecepcion(t)[0]!.cuerpo, r).toContain(`Horario preferido: ${esperado}`);
+    }
+  });
+  it('NEGADA: el aviso lleva el texto original con tildes («mañana»), nunca el normalizado («manana»)', () => {
+    const m = crear({ modeloDice: dice('Con gusto te cuento.') });
+    hablar(m, REC, mTexto('hola, soy recepción'));
+    hablar(m, ANA, mTexto('hola'));
+    hablar(m, ANA, mTexto('quiero agendar'));
+    const c = avisosARecepcion(hablar(m, ANA, mTexto('mañana en la mañana')))[0]!.cuerpo;
+    expect(c).toContain('Horario preferido: mañana en la mañana');
+    expect(c).not.toMatch(/manana/);
+  });
+  it('POSITIVA: un «hola» con la pregunta pendiente saluda y la repite; la respuesta siguiente cierra', () => {
+    const m = crear({ modeloDice: dice('Con gusto te cuento.') });
+    hablar(m, ANA, mTexto('hola'));
+    hablar(m, ANA, mTexto('quiero agendar'));
+    const t = hablar(m, ANA, mTexto('hola'));
+    expect(textos(t)[0]).toMatch(/^¡Hola de nuevo! 😊/);
+    expect(esPreguntaDePreferencia(t)).toBe(true);
+    expect(esBoton(t)).toBe(false);
+    expect(esBoton(hablar(m, ANA, mTexto('el viernes a las 10')))).toBe(true);
+  });
+  it('NEGADA (nombre falso): «pásame con alguien» → «quiero hablar con recepción» nunca deja «pásame» como nombre en el cierre ni en el aviso', () => {
+    for (const modelo of ['¡Claro! [DERIVAR_RECEPCION]', 'Con gusto.']) {
+      const m = crear({ modeloDice: dice(modelo) });
+      hablar(m, REC, mTexto('hola, soy recepción'));
+      hablar(m, ANA, mTexto('hola'));
+      hablar(m, ANA, mTexto('quiero agendar'));
+      const t1 = hablar(m, ANA, mTexto('pásame con alguien'));
+      const t2 = hablar(m, ANA, mTexto('quiero hablar con recepción'));
+      for (const t of [t1, t2]) {
+        expect(todo(t), modelo).not.toMatch(/pásame|pasame/i);
+        for (const a of avisosARecepcion(t)) expect(a.cuerpo, modelo).not.toMatch(/Nombre: p[áa]same/i);
+      }
     }
   });
   it('NEGADA: el día de la respuesta no se toma por un nombre («martes en la tarde» cierra con el nombre del perfil, nunca «Martes»)', () => {
@@ -200,7 +263,7 @@ describe('(2) la ubicación: enlace, teléfono y horario de la Consola', () => {
 });
 
 describe('(3) «no gracias» / «lo voy a pensar»: la oferta fija de llamada', () => {
-  for (const q of ['No gracias', 'no, gracias', 'Lo voy a pensar', 'lo pienso', 'más adelante', 'por ahora no, gracias', 'Ok, lo voy a pensar. Gracias', 'todavía no', 'no me interesa']) {
+  for (const q of ['No gracias', 'no, gracias', 'no, gracias doctora', 'no, por ahora', 'Lo voy a pensar', 'lo pienso', 'más adelante', 'por ahora no, gracias', 'Ok, lo voy a pensar. Gracias', 'todavía no', 'no me interesa']) {
     it(`POSITIVA: «${q}» → la oferta fija, sin botón, sin aviso y sin llamar al modelo`, () => {
       const m = crear({ modeloDice: dice('¡Claro! ¡Que tengas un excelente día!') });
       hablar(m, ANA, mTexto('hola'));
@@ -251,6 +314,33 @@ describe('(3) «no gracias» / «lo voy a pensar»: la oferta fija de llamada', 
       expect(todo(t), q).not.toContain(OFERTA_LLAMADA);
       expect(llamoAlModelo(t), q).toBe(true);
     }
+  });
+  it('NEGADA: un «no» a una pregunta con alternativa («¿…o tienes alguna otra duda?») no dispara la oferta de llamada', () => {
+    const m = crear({ modeloDice: dice('Te cuento. ¿Te gustaría agendar tu valoración gratuita o tienes alguna otra duda?') });
+    hablar(m, ANA, mTexto('cuéntame'));
+    expect(todo(hablar(m, ANA, mTexto('no')))).not.toContain('recepción te llama para ofrecerte');
+  });
+  it('aviso repetido y tope de avisos al aceptar la llamada: no sale un segundo aviso; con aviso repetido el cierre dice «Ya pasé…», con el tope no', () => {
+    // El aviso de solicitud sale pero Meta rechaza el cierre (no cuenta como hecho): la ficha no tiene cierre y el aviso queda reciente.
+    const envio: Record<string, string> = { 'Enviar a WhatsApp': 'acepta', 'Enviar respaldo': 'acepta' };
+    // @ts-expect-error el objeto es mutable a propósito: el doble lo lee en cada envío
+    const m = crear({ modeloDice: dice('Con gusto.'), envio });
+    hablar(m, ANA, mTexto('hola'));
+    envio['Enviar a WhatsApp'] = 'error'; envio['Enviar respaldo'] = 'error';
+    expect(avisosARecepcion(hablar(m, ANA, mTexto('quiero agendar el martes en la tarde'), { toleraFallo: true })).length).toBe(1);
+    envio['Enviar a WhatsApp'] = 'acepta'; envio['Enviar respaldo'] = 'acepta';
+    expect(todo(hablar(m, ANA, mTexto('lo voy a pensar')))).toContain('recepción te llama para ofrecerte');
+    const rep = hablar(m, ANA, mTexto('sí'));
+    expect(avisosARecepcion(rep).length).toBe(0);                   // aviso de solicitud ya salió hace menos de 30 minutos: repetido
+    expect(esBoton(rep)).toBe(true);
+    expect(textos(rep)[0]).toContain('Ya pasé tus datos');           // el aviso repetido cuenta como salido
+    const tope = crear({ modeloDice: dice('Con gusto.'), base: { topeAvisosHora: 0 } });
+    hablar(tope, ANA, mTexto('hola'));
+    hablar(tope, ANA, mTexto('no gracias'));
+    const t = hablar(tope, ANA, mTexto('sí'));
+    expect(avisosARecepcion(t).length).toBe(0);
+    expect(esBoton(t)).toBe(true);
+    expect(textos(t)[0]).not.toContain('Ya pasé tus datos');
   });
   it('POSITIVA: un «no» a secas cuenta solo si contesta una oferta de agendar', () => {
     const m = crear({ modeloDice: dice('Te cuento. ¿Te gustaría agendar tu valoración gratuita?') });
@@ -349,6 +439,7 @@ describe('(6) la pregunta de cierre no se repite dos veces seguidas', () => {
     const t3 = todo(hablar(m, ANA, mTexto('¿y duele?')));
     expect(t3).toMatch(/\?$/);
     expect(t3.split('\n\n').pop()).not.toBe(t2.split('\n\n').pop());
+    expect(t3.split('\n\n').pop()).not.toBe(t1.split('\n\n').pop());   // la tercera seguida tampoco repite la primera
   });
   it('POSITIVA: la variante sigue siendo una oferta: el «sí» siguiente pasa a la pregunta del día', () => {
     const m = crear({ modeloDice: dice(`La valoración es gratuita. ${REPETIDA}`) });

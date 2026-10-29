@@ -78,16 +78,16 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     },
   });
   it('POSITIVA: «¿Te gustaría agendar?» → «sí» → «¿cómo te llamas?» → «Paola» deriva con el cierre completo UNA vez; en el «sí» ESPERA el nombre (sin botón)', () => {
+    // (la pregunta del «sí» es ahora la del código: nombre y día juntos)
     const m = guion();
     hablar(m, ANA, mTexto('cuéntame de la valoración'));
     const t2 = hablar(m, ANA, mTexto('sí'));
     expect(esBoton(t2)).toBe(false);                       // el modelo emitió la etiqueta y pidió el nombre en el mismo turno: espera el nombre
     // AJUSTE (28/10/2026): el código pregunta el nombre Y el día en UNA sola pregunta; «Paola» (solo el nombre) recibe la pregunta del día, y el día cierra.
     expect(textos(t2).join(' ')).toMatch(/[Cc]ómo te llamas y qué día y horario/);
-    const t3p = hablar(m, ANA, mTexto('Paola'));
-    expect(esBoton(t3p)).toBe(false);
-    expect(esPreguntaDePreferencia(t3p)).toBe(true);
-    const t3 = conPreferencia(m, ANA, t3p);
+    // AJUSTE 2 (revisión del PR #694): la pregunta se hace UNA vez; «Paola» (sin día) cierra con «sin horario indicado».
+    const t3 = hablar(m, ANA, mTexto('Paola'));
+    expect(esPreguntaDePreferencia(t3)).toBe(false);
     expect(esBoton(t3)).toBe(true);
     expect(textos(t3)[0]).toMatch(/Excelente decisión, Paola/);
     expect(avisosARecepcion(t3).length).toBe(1);
@@ -111,7 +111,10 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
       const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<sí>>>') ? '¿Cómo te llamas para pasarte con recepción?' : (JSON.stringify(ll.cuerpo).includes(`<<<${x}>>>`) ? 'Listo. [DERIVAR_RECEPCION]' : 'Te cuento. ¿Te gustaría agendar tu valoración?')) });
       hablar(m, ANA, mTexto('cuéntame'));
       hablar(m, ANA, mTexto('sí'));
-      expect(esBoton(hablar(m, ANA, mTexto(x))), x).toBe(false);
+      // AJUSTE 2 (revisión del PR #694): la respuesta a la pregunta de nombre y día CIERRA (una sola pregunta, «sin horario indicado»), pero nunca con eso como nombre.
+      const t = hablar(m, ANA, mTexto(x));
+      expect(esBoton(t), x).toBe(true);
+      expect(textos(t)[0], x).not.toMatch(/Excelente decisión, (Soy|Diab|De|La|Nueva)/);
     }
   });
   it('NEGADA: «Soy Paola, quiero ver cómo queda» + ANTES_DESPUES + etiqueta no deriva y SALE la imagen', () => {
@@ -189,7 +192,11 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
       } });
       hablar(m, ANA, mTexto('cuéntame'));
       hablar(m, ANA, mTexto('sí'));
-      expect(esBoton(hablar(m, ANA, mTexto(x))), x).toBe(false);
+      // AJUSTE 2 (revisión del PR #694): la respuesta a la pregunta de nombre y día CIERRA (una sola pregunta), pero esa palabra nunca es el nombre del cierre ni del aviso.
+      const t = hablar(m, ANA, mTexto(x));
+      expect(esBoton(t), x).toBe(true);
+      expect(textos(t)[0], x).not.toContain(`Excelente decisión, ${x.charAt(0).toUpperCase()}${x.slice(1)}`);
+      expect(avisosARecepcion(t)[0]?.cuerpo ?? '', x).not.toMatch(new RegExp(`Nombre: ${x}`, 'i'));
     }
   });
   it('(A-iii) el nombre con preferencia («Paola, mejor el jueves») y de 4 palabras deriva tras aceptar y pedir el nombre; el cierre lleva el nombre del CLIENTE', () => {
@@ -231,7 +238,11 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
       } });
       hablar(m, ANA, mTexto('cuéntame'));
       hablar(m, ANA, mTexto('sí'));
-      expect(esBoton(hablar(m, ANA, mTexto(x))), x).toBe(false);
+      // AJUSTE 2 (revisión del PR #694): la respuesta a la pregunta de nombre y día CIERRA (una sola pregunta), pero esa palabra nunca es el nombre del cierre ni del aviso.
+      const t = hablar(m, ANA, mTexto(x));
+      expect(esBoton(t), x).toBe(true);
+      expect(textos(t)[0], x).not.toContain(`Excelente decisión, ${x.charAt(0).toUpperCase()}${x.slice(1)}`);
+      expect(avisosARecepcion(t)[0]?.cuerpo ?? '', x).not.toMatch(new RegExp(`Nombre: ${x}`, 'i'));
     }
   });
   it('(ronda final 2) preguntas con forma parecida pero que no ofrecen agendar: «sí» + etiqueta no deriva', () => {

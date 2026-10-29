@@ -139,7 +139,8 @@ if (puerta.ruta === 'fuera_de_prueba') {
   hist = { a: ms[0].texto, b: ms[0].texto };
 } else if (efectivo === 'saludo') {
   // (5) Un saludo con la ficha vigente: no se repite la bienvenida; si aún no dio su nombre, se le pide.
-  ms = [texto(evTextoSaludoDeNuevo(plan.pedirNombre === true, ultimoAsistente))];
+  // Con la pregunta de día y horario pendiente, el saludo la repite (no se pierde; la respuesta sigue cerrando).
+  ms = [texto(plan.preguntaPendiente === 'nombre' || plan.preguntaPendiente === 'dia' ? '¡Hola de nuevo! 😊 ' + (plan.preguntaPendiente === 'nombre' ? EV_TEXTO_PREFERENCIA_NOMBRE : EV_TEXTO_PREFERENCIA).replace(/^¡Perfecto! /, '') : evTextoSaludoDeNuevo(plan.pedirNombre === true, ultimoAsistente))];
   hist = { a: ms[0].texto, b: ms[0].texto };
 } else if (efectivo === 'remision') {
   // La respuesta del modelo hablaba de la salud del cliente sin remitir a la valoración: sale el texto fijo de remisión, con el botón.
