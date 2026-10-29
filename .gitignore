@@ -75,3 +75,6 @@ Flujos/ensayo-*.json
 # La zona de escritura de un agente: la escribe quien lanza al agente al crear
 # su worktree, nunca se versiona (.claude/hooks/zona-de-escritura.sh).
 .claude/zona
+
+# Temporales del script reponer-clave-n8n.sh
+.reponer-clave.*

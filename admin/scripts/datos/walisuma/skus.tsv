@@ -1,0 +1,133 @@
+sku	id	nombre	precio_bs	área	página del PDF
+WAL-BUF-001	bufanda-de-vicuna	Bufanda de vicuña	7795	Accesorios · Bufandas y chales	2
+WAL-BUF-002	estola-simple	Estola simple	911	Accesorios · Bufandas y chales	3
+WAL-BUF-003	chal-telar-premium	Chal telar premium	910	Accesorios · Bufandas y chales	3
+WAL-BUF-004	chal-simple-tejido	Chal simple tejido	1125	Accesorios · Bufandas y chales	3
+WAL-BUF-005	chal-bicolor-tejido	Chal bicolor tejido	1150	Accesorios · Bufandas y chales	3
+WAL-BUF-006	bufanda-dennis	Bufanda Dennis	850	Accesorios · Bufandas y chales	4
+WAL-BUF-007	bufanda-peinada	Bufanda peinada	545	Accesorios · Bufandas y chales	4
+WAL-BUF-008	bufanda-bicolor-tejida	Bufanda bicolor tejida	510	Accesorios · Bufandas y chales	4
+WAL-BUF-009	bufanda-simple-tejida	Bufanda simple tejida	510	Accesorios · Bufandas y chales	4
+WAL-BUF-010	bufanda-premium	Bufanda premium	410	Accesorios · Bufandas y chales	5
+WAL-BUF-011	bufanda-cuadros	Bufanda cuadros	410	Accesorios · Bufandas y chales	5
+WAL-BUF-012	bufanda-boucle	Bufanda bouclé	591	Accesorios · Bufandas y chales	5
+WAL-BUF-013	cuello-carolina	Cuello Carolina	250	Accesorios · Bufandas y chales	5
+WAL-GOR-001	gorro-esperanza	Gorro Esperanza	350	Accesorios · Gorros, guantes y mitones	6
+WAL-GOR-002	cuello-esperanza	Cuello Esperanza	700	Accesorios · Gorros, guantes y mitones	6
+WAL-GOR-003	miton-esperanza	Mitón Esperanza	290	Accesorios · Gorros, guantes y mitones	6
+WAL-GOR-004	gorro-punto-ingles	Gorro punto inglés	215	Accesorios · Gorros, guantes y mitones	6
+WAL-GOR-005	gorro-varon	Gorro varón	267	Accesorios · Gorros, guantes y mitones	6
+WAL-GOR-006	guantes-varon	Guantes varón	217	Accesorios · Gorros, guantes y mitones	6
+WAL-GOR-007	miton-mona	Mitón moña	180	Accesorios · Gorros, guantes y mitones	6
+WAL-GOR-008	miton-trenza	Mitón trenza	190	Accesorios · Gorros, guantes y mitones	6
+WAL-GOR-009	miton-trenza-largo	Mitón trenza largo	230	Accesorios · Gorros, guantes y mitones	6
+WAL-BOL-001	porta-laptop-petite-flora	Porta laptop Petite Flora	670	Accesorios · Bolsos y mochilas	7
+WAL-BOL-002	maletin-007	Maletín 007	1270	Accesorios · Bolsos y mochilas	7
+WAL-BOL-003	laptop-gamma	Laptop Gamma	610	Accesorios · Bolsos y mochilas	7
+WAL-BOL-004	bolso-gamma	Bolso Gamma	450	Accesorios · Bolsos y mochilas	7
+WAL-EST-001	estuche-gamma-gamuzado	Estuche Gamma gamuzado	250	Accesorios · Estuches y necesers	7
+WAL-BOL-005	puriq-backpack	Puriq backpack	450	Accesorios · Bolsos y mochilas	8
+WAL-BOL-006	belt-bag	Belt bag	435	Accesorios · Bolsos y mochilas	8
+WAL-BOL-007	journey-backpack	Journey backpack	870	Accesorios · Bolsos y mochilas	8
+WAL-BOL-008	sling-crossbody	Sling crossbody	590	Accesorios · Bolsos y mochilas	8
+WAL-BIL-001	billetera-tipo-iii-lagarto	Billetera tipo III lagarto	1100	Accesorios · Billeteras y porta tarjetas	9
+WAL-BIL-002	billetera-tipo-iii-paiche	Billetera tipo III paiche	990	Accesorios · Billeteras y porta tarjetas	9
+WAL-BIL-003	billetera-tipo-iii-iguana	Billetera tipo III iguana	1050	Accesorios · Billeteras y porta tarjetas	9
+WAL-BIL-004	billetera-tipo-ii-lagarto	Billetera tipo II lagarto	1600	Accesorios · Billeteras y porta tarjetas	9
+WAL-BIL-005	billetera-tipo-ii-paiche	Billetera tipo II paiche	1050	Accesorios · Billeteras y porta tarjetas	9
+WAL-BIL-006	billetera-tipo-ii-iguana	Billetera tipo II iguana	1090	Accesorios · Billeteras y porta tarjetas	9
+WAL-BIL-007	billetera-tipo-iv-lagarto	Billetera tipo IV lagarto	750	Accesorios · Billeteras y porta tarjetas	9
+WAL-BIL-008	billetera-tipo-iv-paiche	Billetera tipo IV paiche	690	Accesorios · Billeteras y porta tarjetas	9
+WAL-BIL-009	billetera-tipo-iv-iguana	Billetera tipo IV iguana	690	Accesorios · Billeteras y porta tarjetas	9
+WAL-BIL-010	porta-tarjetas-clasico-negro	Porta tarjetas clásico negro	290	Accesorios · Billeteras y porta tarjetas	10
+WAL-BIL-011	porta-tarjetas-clasico-marron	Porta tarjetas clásico marrón	290	Accesorios · Billeteras y porta tarjetas	10
+WAL-BIL-012	porta-tarjetas-clasico-caramelo	Porta tarjetas clásico caramelo	290	Accesorios · Billeteras y porta tarjetas	10
+WAL-BIL-013	porta-tarjetas-tipo-vi-lagarto	Porta tarjetas tipo VI lagarto	410	Accesorios · Billeteras y porta tarjetas	10
+WAL-BIL-014	porta-tarjetas-tipo-vi-iguana	Porta tarjetas tipo VI iguana	350	Accesorios · Billeteras y porta tarjetas	10
+WAL-BIL-015	porta-tarjetas-tipo-vi-paiche	Porta tarjetas tipo VI paiche	320	Accesorios · Billeteras y porta tarjetas	10
+WAL-PAS-001	porta-pasaporte-familiar	Porta pasaporte familiar	577	Accesorios · Porta pasaportes	10
+WAL-PAS-002	porta-pasaporte-2-u	Porta pasaporte 2 u	313	Accesorios · Porta pasaportes	10
+WAL-PAS-003	porta-pasaporte	Porta pasaporte	570	Accesorios · Porta pasaportes	10
+WAL-BIL-016	billetera-clasica-varon-negra	Billetera clásica varón negra	830	Accesorios · Billeteras y porta tarjetas	11
+WAL-BIL-017	billetera-clasica-varon-marron	Billetera clásica varón marrón	830	Accesorios · Billeteras y porta tarjetas	11
+WAL-BIL-018	billetera-clasica-varon-caramelo	Billetera clásica varón caramelo	830	Accesorios · Billeteras y porta tarjetas	11
+WAL-BIL-019	billetera-clasica	Billetera clásica	480	Accesorios · Billeteras y porta tarjetas	11
+WAL-BIL-020	billetera-trifold	Billetera trifold	369	Accesorios · Billeteras y porta tarjetas	11
+WAL-CIN-001	llavero-de-lagarto	Llavero de lagarto	195	Accesorios · Cinturones y llaveros	11
+WAL-CIN-002	cinturon-varon-negro	Cinturón varón negro	850	Accesorios · Cinturones y llaveros	11
+WAL-CIN-003	cinturon-varon-testa-di-moro	Cinturón varón testa di moro	850	Accesorios · Cinturones y llaveros	11
+WAL-CIN-004	cinturon-varon-leno	Cinturón varón leño	850	Accesorios · Cinturones y llaveros	11
+WAL-EST-002	estuche-para-lentes-con-tejido-tacana	Estuche para lentes con tejido Tacana	257	Accesorios · Estuches y necesers	12
+WAL-EST-003	estuche-para-lentes-de-aguayo	Estuche para lentes de aguayo	285	Accesorios · Estuches y necesers	12
+WAL-EST-004	porta-lentes-de-aguayo	Porta lentes de aguayo	285	Accesorios · Estuches y necesers	12
+WAL-BIL-021	billetera-con-cierre-de-aguayo	Billetera con cierre de aguayo	510	Accesorios · Billeteras y porta tarjetas	12
+WAL-BIL-022	billetera-sobre-de-aguayo	Billetera sobre de aguayo	377	Accesorios · Billeteras y porta tarjetas	12
+WAL-EST-005	necesser-de-aguayo	Necesser de aguayo	410	Accesorios · Estuches y necesers	12
+WAL-BOL-009	chuspa-de-lana-de-oveja	Chuspa de lana de oveja	453	Accesorios · Bolsos y mochilas	12
+WAL-BOL-010	bandolera-peki	Bandolera Peki	480	Accesorios · Bolsos y mochilas	12
+WAL-BOL-011	cartera-sobre-de-aguayo	Cartera sobre de aguayo	759	Accesorios · Bolsos y mochilas	12
+WAL-EST-006	estuche-gamma	Estuche Gamma	250	Accesorios · Estuches y necesers	13
+WAL-EST-007	wristlet-wallet	Wristlet wallet	190	Accesorios · Estuches y necesers	13
+WAL-EST-008	wristlet-wallet-cholitas	Wristlet wallet cholitas	230	Accesorios · Estuches y necesers	13
+WAL-EST-009	makeup-pouch	Makeup pouch	165	Accesorios · Estuches y necesers	13
+WAL-EST-010	sunrise-makeup-pouch	Sunrise makeup pouch	165	Accesorios · Estuches y necesers	13
+WAL-EST-011	necesser-moon	Necesser Moon	450	Accesorios · Estuches y necesers	13
+WAL-EST-012	dopp-kit-walnut	Dopp kit Walnut	325	Accesorios · Estuches y necesers	13
+WAL-EST-013	dopp-kit-black	Dopp kit Black	325	Accesorios · Estuches y necesers	13
+WAL-EST-014	dopp-kit-sage	Dopp kit Sage	325	Accesorios · Estuches y necesers	13
+WAL-TAP-001	tapiz-hombre-83-x-52-cm	Tapiz hombre 83 x 52 cm		Hogar y oficina · Tapices	14
+WAL-TAP-002	tapiz-mujer-rio-66-x-31-cm	Tapiz mujer río 66 x 31 cm		Hogar y oficina · Tapices	14
+WAL-TAP-003	tapiz-hombre-55-x-34-cm	Tapiz hombre 55 x 34 cm		Hogar y oficina · Tapices	15
+WAL-TAP-004	tapiz-carnaval-67-x-32-cm	Tapiz carnaval 67 x 32 cm	3750	Hogar y oficina · Tapices	15
+WAL-TAP-005	tapiz-matrimonio-71-x-38-cm	Tapiz matrimonio 71 x 38 cm	2300	Hogar y oficina · Tapices	15
+WAL-TAP-006	tapiz-jalq-61-x-34-cm	Tapiz Jalq 61 x 34 cm	3080	Hogar y oficina · Tapices	15
+WAL-MES-001	corredor-de-mesa	Corredor de mesa	1700	Hogar y oficina · Mesa y cocina	16
+WAL-MES-002	individuales-de-aguayo	Individuales de aguayo	495	Hogar y oficina · Mesa y cocina	16
+WAL-MES-003	individuales-tacana	Individuales Tacana	230	Hogar y oficina · Mesa y cocina	16
+WAL-MES-004	posavasos-tacana	Posavasos Tacana	230	Hogar y oficina · Mesa y cocina	16
+WAL-DEC-001	figura-tallada-michiq	Figura tallada Michiq	870	Hogar y oficina · Decoración	17
+WAL-DEC-002	figura-tallada-sisa	Figura tallada Sisa	1495	Hogar y oficina · Decoración	17
+WAL-DEC-003	figura-tallada-ita	Figura tallada Ita	1080	Hogar y oficina · Decoración	17
+WAL-DEC-004	figura-tallada-chandei-rosita-pochi	Figura tallada Chandei (Rosita Pochi)	1080	Hogar y oficina · Decoración	17
+WAL-MES-005	posavasos-sol	Posavasos Sol	270	Hogar y oficina · Mesa y cocina	18
+WAL-MES-006	posavasos-sol-segundo-diseno	Posavasos Sol (segundo diseño)	270	Hogar y oficina · Mesa y cocina	18
+WAL-MES-007	posavasos-luna	Posavasos Luna	270	Hogar y oficina · Mesa y cocina	18
+WAL-DEC-005	abanico	Abanico	140	Hogar y oficina · Decoración	18
+WAL-MES-008	ensaladeras-llama-090	Ensaladeras Llama 090	270	Hogar y oficina · Mesa y cocina	19
+WAL-MES-009	ensaladeras-tucan-090	Ensaladeras Tucán 090	270	Hogar y oficina · Mesa y cocina	19
+WAL-MES-010	ensaladeras-ondas	Ensaladeras Ondas	270	Hogar y oficina · Mesa y cocina	19
+WAL-MES-011	pinchos-base-torre	Pinchos base torre	135	Hogar y oficina · Mesa y cocina	19
+WAL-MES-012	pinchos-base-llama	Pinchos base llama	135	Hogar y oficina · Mesa y cocina	19
+WAL-MES-013	pinchos-12-u-llama	Pinchos 12 u llama	187	Hogar y oficina · Mesa y cocina	19
+WAL-MES-014	fuente-de-madera-20-cm	Fuente de madera 20 cm	398	Hogar y oficina · Mesa y cocina	19
+WAL-MES-015	fuente-de-madera-30-cm	Fuente de madera 30 cm	480	Hogar y oficina · Mesa y cocina	19
+WAL-MES-016	fuente-de-madera-35-cm	Fuente de madera 35 cm	510	Hogar y oficina · Mesa y cocina	19
+WAL-PAP-001	marcalibros-tacana	Marcalibros Tacana	70	Hogar y oficina · Papelería y llaveros	20
+WAL-PAP-002	marcalibros-candelaria	Marcalibros Candelaria	105	Hogar y oficina · Papelería y llaveros	20
+WAL-PAP-003	book-cover	Book cover	85	Hogar y oficina · Papelería y llaveros	20
+WAL-PAP-004	llavero-tacana	Llavero Tacana	119	Hogar y oficina · Papelería y llaveros	20
+WAL-PAP-005	llavero-saltena	Llavero salteña	90	Hogar y oficina · Papelería y llaveros	20
+WAL-PAP-006	llavero-cholita	Llavero cholita	90	Hogar y oficina · Papelería y llaveros	20
+WAL-GOU-001	sal-spa-eucalipto	Sal spa eucalipto	35	Hogar y oficina · Gourmet y spa	20
+WAL-GOU-002	sal-spa-romero	Sal spa romero	35	Hogar y oficina · Gourmet y spa	20
+WAL-GOU-003	sal-spa-lavanda	Sal spa lavanda	35	Hogar y oficina · Gourmet y spa	20
+WAL-GOU-004	licor-de-coca-50-ml	Licor de coca 50 ml	70	Hogar y oficina · Gourmet y spa	21
+WAL-GOU-005	licor-de-coca-250-ml	Licor de coca 250 ml	120	Hogar y oficina · Gourmet y spa	21
+WAL-GOU-006	licor-de-coca-750-ml	Licor de coca 750 ml	175	Hogar y oficina · Gourmet y spa	21
+WAL-GOU-007	montecito-750-ml	Montecito 750 ml	174	Hogar y oficina · Gourmet y spa	21
+WAL-GOU-008	pastillas-de-coca-en-yute	Pastillas de coca en yute	65	Hogar y oficina · Gourmet y spa	21
+WAL-GOU-009	pastillas-de-coca-en-ziplock	Pastillas de coca en ziplock	65	Hogar y oficina · Gourmet y spa	21
+WAL-GOU-010	pastillas-de-coca-en-lata-15-unidades	Pastillas de coca en lata, 15 unidades	65	Hogar y oficina · Gourmet y spa	21
+WAL-GOU-011	pastillas-de-coca-en-lata-30-unidades	Pastillas de coca en lata, 30 unidades	105	Hogar y oficina · Gourmet y spa	21
+WAL-GOU-012	sales-gourmet-frasco-grande	Sales gourmet frasco grande	50	Hogar y oficina · Gourmet y spa	21
+WAL-GOU-013	sales-gourmet-frasco-pequeno	Sales gourmet frasco pequeño	35	Hogar y oficina · Gourmet y spa	21
+WAL-GOU-014	sales-gourmet-en-yute	Sales gourmet en yute	35	Hogar y oficina · Gourmet y spa	21
+WAL-PAP-007	postal-cholita-con-mascara	Postal cholita con máscara	15	Hogar y oficina · Papelería y llaveros	22
+WAL-PAP-008	postal-cholita-con-chicle	Postal cholita con chicle	15	Hogar y oficina · Papelería y llaveros	22
+WAL-PAP-009	postal-cholita-con-camara	Postal cholita con cámara	15	Hogar y oficina · Papelería y llaveros	22
+WAL-PAP-010	postal-cholitas-amigas	Postal cholitas amigas	15	Hogar y oficina · Papelería y llaveros	22
+WAL-PAP-011	postal-cholita-leyendo	Postal cholita leyendo	15	Hogar y oficina · Papelería y llaveros	22
+WAL-PAP-012	postal-cholita-presidente	Postal cholita presidente	15	Hogar y oficina · Papelería y llaveros	22
+WAL-PAP-013	postal-cholita-policia	Postal cholita policía	15	Hogar y oficina · Papelería y llaveros	22
+WAL-PAP-014	postal-cholita-con-charango	Postal cholita con charango	15	Hogar y oficina · Papelería y llaveros	22
+WAL-PAP-015	postal-cholita-con-motocicleta	Postal cholita con motocicleta	15	Hogar y oficina · Papelería y llaveros	22

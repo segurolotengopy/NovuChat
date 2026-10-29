@@ -111,7 +111,9 @@ if (puerta.ruta === 'fuera_de_prueba') {
   }
   else if (rev.motivo !== '' || rev.texto === '') { ms = [fallo()]; rechazo = { motivo: rev.motivo || 'vacio', detalle: rev.detalle || '' }; }
   else {
-    ms = [texto(rev.texto)];
+    // Si el cliente pidió la ubicación y la Consola tiene el enlace de mapa, lo agrega el código (el prompt prohíbe enlaces al modelo).
+    const mapa = evPideUbicacion(plan.textoCliente) ? evEnlaceDeMapa(cfg.direccionMaps) : '';
+    ms = [texto(mapa && rev.texto.indexOf(mapa) < 0 ? rev.texto + '\n\n📍 Ubicación: ' + mapa : rev.texto)];
     hist = { a: rev.texto, b: rev.texto };
   }
 } else if (efectivo === 'remision') {

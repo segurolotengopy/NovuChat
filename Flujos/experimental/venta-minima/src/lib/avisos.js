@@ -44,6 +44,20 @@
 //                 de la ubicación compartida (su propio segmento) y los ítems compactos;
 //                 `cocina`: «<modalidad> · <ítems compactos con sus notas>», sin teléfono, dirección, nombre completo
 //                 ni coordenadas. Los ítems se cortan por ítem y terminan en «… y N más» si no caben en las 500 de la variable.
+//                 PLANTILLAS POR LÍNEAS (aditivo, 24/10; el aviso de despachos en bloque continuo): clave `plantillasPedidoLineas`
+//                 = CSV «2:nombre,4:nombre,6:nombre» e idioma `idiomaPlantillaPedidoLineas` (def. el de la plantilla de pedido).
+//                 Con la clave vacía o ausente TODO sale como arriba (`plantillaPedido`, `ordenPedido`). Con la clave, un pedido o
+//                 comprobante usa la plantilla del MENOR tamaño N (2, 4 o 6) que cabe sus productos (más de 6: la de 6); si ese
+//                 tamaño no tiene plantilla, cae a la de siempre y anota `lineas_sin_plantilla_<N>`. Reserva y derivación no cambian.
+//                 TEXTO FIJO de las tres plantillas (UTILITY, es; los nombres reales —`pedido_registrado_l2`, `_l4`, `_l6`—
+//                 viven en la configuración, no aquí; ⏎ = salto de línea FIJO del cuerpo, lo único que Meta admite):
+//                 «Se registró un pedido en Q' Taco.⏎Pedido: {{1}}⏎Modalidad: {{2}}⏎Detalle pedido:⏎- {{3}}⏎- {{4}}⏎… (una línea
+//                 «- {{k}}» por producto, hasta N)⏎Comprobante: {{N+3}}⏎Revise el pedido en la consola antes de despachar.» (así están APROBADAS en la WABA
+//                 de Q'Taco, 28/10: l2 = 5 variables, l4 = 7, l6 = 9; solo BODY, UTILITY, es; el total va dentro de {{1}})
+//                 Variables: {{1}} «N.º <código> de <n> ítems. Total de la comida: Bs <total>» · {{2}} modalidad por rol, SIN los
+//                 ítems (`avModalidadVariable(…, true)`; cocina sin teléfono, dirección, nombre completo ni coordenadas) ·
+//                 {{3}}…{{N+2}} «<cant> × <producto> (<nota>)», una por variable; las sobrantes llevan «—»; si hay más productos
+//                 que N, la última es «… y K más» (nunca a mitad de producto) · {{N+3}} el cotejo. Misma cuenta de mensajes.
 //   reserva     → `plantillaReserva`, `idiomaPlantillaReserva`, `ordenReserva` y la FORMA `formaPlantillaReserva`:
 //                 · `cita` (def.; p. ej. `appointment_confirmed`, de la biblioteca de Meta, texto fijo; NO se edita):
 //                   orden def. `destinatario,cuando,detalle,codigo` — destinatario = nombre de quien recibe el aviso
@@ -636,13 +650,16 @@ function avConfigPlantilla(tipo, c, errores, rol) {
   return { nombre: valida ? nombre : '', configurada: nombre !== '', evento, idioma, forma, orden: o.orden };
 }
 
+// Un ítem compacto: «2 × Taco (sin cebolla)». Lo usan `avItemsCompactos` y las líneas de la plantilla por líneas.
+function avPiezaItem(l, opc) {
+  const nota = avLimpio(l.detalle, 80, opc);
+  return l.cantidad + ' × ' + (avLimpio(l.nombre, 60, opc) || 'ítem') + (nota ? ' (' + nota + ')' : '');
+}
+
 // Los ítems compactos («2 × Taco (sin cebolla), 1 × Queso») que caben en `presupuesto` caracteres. Se corta POR ÍTEM: si no
 // entran todos, la lista termina en «… y N más» (como `avDetalle`), nunca a mitad de un ítem. '' si ni la marca cabe.
 function avItemsCompactos(lineas, opc, presupuesto) {
-  const piezas = lineas.map((l) => {
-    const nota = avLimpio(l.detalle, 80, opc);
-    return l.cantidad + ' × ' + (avLimpio(l.nombre, 60, opc) || 'ítem') + (nota ? ' (' + nota + ')' : '');
-  });
+  const piezas = lineas.map((l) => avPiezaItem(l, opc));
   for (let k = piezas.length; k >= 0; k--) {
     const resto = piezas.length - k;
     const texto = piezas.slice(0, k).join(', ') + (resto > 0 ? (k > 0 ? ', ' : '') + '… y ' + resto + ' más' : '');
@@ -658,7 +675,7 @@ function avItemsCompactos(lineas, opc, presupuesto) {
 //  - `cocina`: modalidad + los ítems compactos con sus notas; SIN teléfono, dirección, nombre completo ni coordenadas.
 // Sigue siendo UNA variable: sin saltos de línea, saneada como las demás y con el tope de la variable (500). Los segmentos
 // del cliente van primero y los ítems ocupan lo que sobra (cortados por ítem, con «… y N más»).
-function avModalidadVariable(d, dest, opc) {
+function avModalidadVariable(d, dest, opc, sinItems) {
   const tope = 500;
   const base = avModalidadTexto(d.modalidad);
   const delivery = d.modalidad === 'delivery';
@@ -681,6 +698,7 @@ function avModalidadVariable(d, dest, opc) {
   const nota = typeof d.notaPedido === 'string' ? avLimpio(d.notaPedido, 100, opc) : '';
   if (nota) segmentos.push('nota: ' + nota);
   const fijo = segmentos.join(' · ');
+  if (sinItems === true) return fijo;
   const items = avItemsCompactos(avLineas(d.lineas), opc, tope - fijo.length - 3);
   return items ? fijo + ' · ' + items : fijo;
 }
@@ -792,6 +810,51 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
     detalle: avParametro([d.comprobante === true ? 'Comprobante de cliente (no se pudo revisar)' : 'Consulta de cliente', nombreDe(d.nombre), motivo ? 'Nota del cliente: ' + motivo : ''].filter(Boolean).join(' · '), 200),
     codigo: avParametro(avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs), 20),
   };
+}
+
+// PLANTILLAS POR LÍNEAS (aditivo, 24/10): `plantillasPedidoLineas` = CSV «2:nombre,4:nombre,6:nombre». Cada plantilla trae el
+// salto de línea FIJO en su cuerpo y UNA variable por línea de producto; las variables nunca llevan saltos. Sin la clave (vacía o
+// ausente) el pedido sale como siempre. Devuelve `{ 2: 'nombre', 4: …, 6: … }` solo con los tamaños válidos.
+const AV_TAMANOS_LINEAS = [2, 4, 6];
+function avPlantillasLineas(valor) {
+  const out = {};
+  const partes = String(valor === undefined || valor === null ? '' : valor).split(/[,;]+/);
+  for (const tok of partes) {
+    const i = tok.indexOf(':');
+    if (i < 0) continue;
+    const k = Number(tok.slice(0, i).trim());
+    const nombre = tok.slice(i + 1).trim();
+    if (AV_TAMANOS_LINEAS.indexOf(k) >= 0 && /^[a-z0-9_]{1,512}$/.test(nombre)) out[k] = nombre;
+  }
+  return out;
+}
+
+/** El menor tamaño (2, 4 o 6) que cabe `n` productos; con más de 6 productos, 6 (la última línea dice «… y K más»). */
+function avTamanoLineas(n) {
+  for (const t of AV_TAMANOS_LINEAS) if (n <= t) return t;
+  return AV_TAMANOS_LINEAS[AV_TAMANOS_LINEAS.length - 1];
+}
+
+// Las variables de la plantilla por líneas, en su orden fijo: {{1}} pedido y total · {{2}} modalidad por rol (sin ítems) ·
+// {{3}}…{{N+2}} un producto por variable («—» en las sobrantes; si sobran productos, la última dice «… y K más») · {{N+3}} cotejo.
+function avVariablesLineas(d, dest, resultado, tamano) {
+  const opc = { cocina: dest.rol === 'cocina' };
+  const lineas = avLineas(d.lineas);
+  const n = lineas.reduce((a, l) => a + l.cantidad, 0);
+  const cod = avLimpio(d.codigo, 20) || '—';
+  const primera = avParametro(
+    (resultado === 'simulado' ? 'PRUEBA · ' : '') + 'N.º ' + cod + (n > 0 ? ' de ' + n + (n === 1 ? ' ítem' : ' ítems') : '')
+    + '. Total de la comida: Bs ' + avMonto(d.total) + (resultado === 'simulado' ? ' (SIMULADO)' : ''), 120);
+  const vars = [primera, avParametro(avModalidadVariable(d, dest, opc, true), 500, opc)];
+  const cuantos = lineas.length;
+  for (let k = 0; k < tamano; k++) {
+    if (cuantos > tamano && k === tamano - 1) vars.push(avParametro('… y ' + (cuantos - (tamano - 1)) + ' más', 40));
+    else if (k < cuantos) vars.push(avParametro(avPiezaItem(lineas[k], opc), 200, opc));
+    else vars.push('—');
+  }
+  // El cuerpo de la plantilla ya dice «Comprobante: {{N+3}}.»: sin la palabra repetida («Comprobante: comprobante: datos coinciden»).
+  vars.push(avParametro(avCotejoTexto(resultado).replace(/^comprobante:?\s+/i, ''), 80));
+  return vars;
 }
 
 // El enlace al mapa de la ubicación compartida (PR-A 05/10). Se arma SOLO con dos números —nunca con texto del cliente— y por eso NO pasa por
@@ -936,8 +999,25 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
         if (!pl.configurada && errores.indexOf('plantilla_no_configurada_' + pl.evento) < 0) errores.push('plantilla_no_configurada_' + pl.evento);
         return false;
       }
-      const vars = avVariables(tipo, d, dest, resultado, ahoraMs, pl.forma);
-      const payload = avPlantilla(dest.tel, pl.nombre, pl.idioma, pl.orden.map((k) => vars[k]));
+      // Pedido con la plantilla por líneas (solo si `plantillasPedidoLineas` trae algo): el menor tamaño que cabe; si ese tamaño
+      // no tiene plantilla, cae a la de siempre y lo anota.
+      let nombreFinal = pl.nombre;
+      let params = null;
+      if (esPedido && String(c.plantillasPedidoLineas === undefined || c.plantillasPedidoLineas === null ? '' : c.plantillasPedidoLineas).trim() !== '') {
+        const tamano = avTamanoLineas(avLineas(d.lineas).length);
+        const porTamano = avPlantillasLineas(c.plantillasPedidoLineas);
+        if (porTamano[tamano]) {
+          nombreFinal = porTamano[tamano];
+          params = avVariablesLineas(d, dest, resultado, tamano);
+        } else if (errores.indexOf('lineas_sin_plantilla_' + tamano) < 0) errores.push('lineas_sin_plantilla_' + tamano);
+      }
+      let idiomaFinal = pl.idioma;
+      if (params) idiomaFinal = String(c.idiomaPlantillaPedidoLineas === undefined || c.idiomaPlantillaPedidoLineas === null ? '' : c.idiomaPlantillaPedidoLineas).trim() || pl.idioma;
+      if (!params) {
+        const vars = avVariables(tipo, d, dest, resultado, ahoraMs, pl.forma);
+        params = pl.orden.map((k) => vars[k]);
+      }
+      const payload = avPlantilla(dest.tel, nombreFinal, idiomaFinal, params);
       if (!payload) return false;
       items.push({ para: dest.tel, rol: dest.rol, payload, respaldo: null, esPlantilla: true, clase: 'plantilla' });
       return true;

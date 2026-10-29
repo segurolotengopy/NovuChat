@@ -160,6 +160,8 @@ function crear(op: OpcionesDeLaPrueba = {}) {
       destinatariosAviso: `completo:${AV1},cocina:${AV2}`,
       respaldoNumeroRecepcion: REC, // el de «Config base»: lo usa el flujo si la consola no responde
       horario: HORARIO_TODOS,
+      // Estas pruebas cubren la plantilla `pedido_registrado` de siempre; el aviso por líneas de Q'Taco (dato del 28/10) se prueba en venta-minima-avisos-lineas.test.ts.
+      plantillasPedidoLineas: '',
       ...(op.config ?? {}),
     },
   });

@@ -1,0 +1,135 @@
+# Fuente del catálogo de Walisuma: «Catálogo Corporativo 2026» (PDF del cliente, 28/10/2026). TODOS los precios están en bolivianos, tal como los imprime el PDF.
+# Columnas separadas por «|»: página | primera línea del pie de foto en el PDF (exacta; «=» = comparte la foto del ítem anterior) | familia del SKU | nombre | descripción | precio en Bs («-» = el PDF no lo trae: a consultar) | área
+# El SKU es WAL-<familia>-<nnn> en el orden de este archivo; es una PROPUESTA que el cliente valida. Una línea que no es de un ítem empieza con «#».
+2|BUFANDA DE VICUÑA|BUF|Bufanda de vicuña|Punto diagonal, 100 % vicuña.|7795|BUF
+3|ESTOLA SIMPLE|BUF|Estola simple|Color vicuña. 70 % baby alpaca y 30 % seda.|911|BUF
+3|CHAL TELAR PREMIUM|BUF|Chal telar premium|Color crudo. 100 % baby alpaca.|910|BUF
+3|CHAL SIMPLE TEJIDO|BUF|Chal simple tejido|Color vicuña. 100 % alpaca superfina.|1125|BUF
+3|CHAL BICOLOR TEJIDO|BUF|Chal bicolor tejido|Colores varios. 100 % alpaca superfina.|1150|BUF
+4|BUFANDA DENNIS|BUF|Bufanda Dennis|Color naranja. Tela de baby alpaca.|850|BUF
+4|BUFANDA PEINADA|BUF|Bufanda peinada|Color gris claro. 100 % baby alpaca.|545|BUF
+4|BUFANDA BICOLOR TEJIDA|BUF|Bufanda bicolor tejida|Colores varios. 100 % alpaca superfina.|510|BUF
+4|BUFANDA SIMPLE TEJIDA|BUF|Bufanda simple tejida|Color gris claro. 100 % alpaca superfina.|510|BUF
+5|BUFANDA PREMIUM|BUF|Bufanda premium|Color negro. 100 % baby alpaca.|410|BUF
+5|BUFANDA CUADROS|BUF|Bufanda cuadros|Colores varios. 100 % baby alpaca.|410|BUF
+5|BUFANDA BOUCLE|BUF|Bufanda bouclé|Colores varios. 70 % baby alpaca y 30 % seda.|591|BUF
+5|CUELLO CAROLINA|BUF|Cuello Carolina|Bufanda circular, colores varios. 100 % baby alpaca.|250|BUF
+6|GORRO ESPERANZA|GOR|Gorro Esperanza|100 % baby llama.|350|GOR
+6|CUELLO ESPERANZA|GOR|Cuello Esperanza|100 % baby llama.|700|GOR
+6|MITON ESPERANZA|GOR|Mitón Esperanza|100 % baby llama.|290|GOR
+6|GORRO PUNTO INGLES|GOR|Gorro punto inglés|100 % alpaca superfina.|215|GOR
+6|GORRO VARON|GOR|Gorro varón|100 % alpaca superfina.|267|GOR
+6|GUANTES VARON|GOR|Guantes varón|100 % alpaca superfina.|217|GOR
+6|MITON MOÑA|GOR|Mitón moña|100 % alpaca superfina.|180|GOR
+6|MITON TRENZA|GOR|Mitón trenza|100 % alpaca superfina.|190|GOR
+6|MITON TRENZA LARGO|GOR|Mitón trenza largo|100 % alpaca superfina.|230|GOR
+7|PORTA LAPTOP Petite FLORA|BOL|Porta laptop Petite Flora|100 % cuero vacuno.|670|BOL
+7|MALETIN 007|BOL|Maletín 007|100 % cuero vacuno.|1270|BOL
+7|LAPTOP GAMMA|BOL|Laptop Gamma|100 % cuero vacuno gamuzado.|610|BOL
+7|BOLSO Y ESTUCHE GAMMA|BOL|Bolso Gamma|100 % cuero vacuno gamuzado. El catálogo lo muestra junto al estuche Gamma.|450|BOL
+7|=|EST|Estuche Gamma gamuzado|100 % cuero vacuno gamuzado. El catálogo lo muestra junto al bolso Gamma.|250|EST
+8|PURIQ BACKPACK|BOL|Puriq backpack|Aguayo y cuero vacuno. Se convierte en cartera.|450|BOL
+8|BELT BAG|BOL|Belt bag|Riñonera. 100 % cuero vacuno, tiro tejido.|435|BOL
+8|JOURNEY BACKPACK|BOL|Journey backpack|100 % cuero napa.|870|BOL
+8|SLING CROSSBODY|BOL|Sling crossbody|100 % cuero vacuno.|590|BOL
+9|BILLETERA TIPO III LAGARTO|BIL|Billetera tipo III lagarto|Cuero de lagarto.|1100|BIL
+9|BILLETERA TIPO III PAICHE|BIL|Billetera tipo III paiche|Cuero de paiche.|990|BIL
+9|BILLETERA TIPO III IGUANA|BIL|Billetera tipo III iguana|Cuero de iguana.|1050|BIL
+9|BILLETERA TIPO II LAGARTO|BIL|Billetera tipo II lagarto|Cuero de lagarto.|1600|BIL
+9|BILLETERA TIPO II PAICHE|BIL|Billetera tipo II paiche|Cuero de paiche.|1050|BIL
+9|BILLETERA TIPO II IGUANA|BIL|Billetera tipo II iguana|Cuero de iguana.|1090|BIL
+9|BILLETERA TIPO IV LAGARTO|BIL|Billetera tipo IV lagarto|Cuero de lagarto.|750|BIL
+9|BILLETERA TIPO IV PAICHE|BIL|Billetera tipo IV paiche|Cuero de paiche.|690|BIL
+9|BILLETERA TIPO IV IGUANA|BIL|Billetera tipo IV iguana|Cuero de iguana.|690|BIL
+10|PORTA TARJETAS CLÁSICO|BIL|Porta tarjetas clásico negro|Negro. Cuero de lagarto.|290|BIL
+10|PORTA TARJETAS CLÁSICO|BIL|Porta tarjetas clásico marrón|Marrón. Cuero de lagarto.|290|BIL
+10|PORTA TARJETAS CLÁSICO|BIL|Porta tarjetas clásico caramelo|Caramelo. Cuero de lagarto.|290|BIL
+10|PORTA TARJETAS TIPO VI|BIL|Porta tarjetas tipo VI lagarto|Cuero de lagarto.|410|BIL
+10|PORTA TARJETAS TIPO VI|BIL|Porta tarjetas tipo VI iguana|Cuero de iguana.|350|BIL
+10|PORTA TARJETAS TIPO VI|BIL|Porta tarjetas tipo VI paiche|Cuero de paiche.|320|BIL
+10|PORTA PASAPORTE FAMILIAR Cuero|PAS|Porta pasaporte familiar|Cuero vacuno.|577|PAS
+10|PORTA PASAPORTE 2 U|PAS|Porta pasaporte 2 u|Cuero vacuno.|313|PAS
+10|PORTA PASAPORTE|PAS|Porta pasaporte|Cuero vacuno.|570|PAS
+11|BILLETERA CLÁSICA VARON|BIL|Billetera clásica varón negra|Negro. Cuero de lagarto.|830|BIL
+11|BILLETERA CLÁSICA VARON|BIL|Billetera clásica varón marrón|Marrón. Cuero de lagarto.|830|BIL
+11|BILLETERA CLÁSICA VARON|BIL|Billetera clásica varón caramelo|Caramelo. Cuero de lagarto.|830|BIL
+11|BILLETERA CLÁSICA|BIL|Billetera clásica|Cuero vacuno.|480|BIL
+11|BILLETERAS TRIFOLD|BIL|Billetera trifold|Cuero vacuno.|369|BIL
+11|LLAVERO DE LAGARTO|CIN|Llavero de lagarto|Cuero de lagarto.|195|CIN
+11|CINTURÓN VARÓN|CIN|Cinturón varón negro|Negro. Cuero de lagarto.|850|CIN
+11|CINTURÓN VARÓN|CIN|Cinturón varón testa di moro|Testa di moro. Cuero de lagarto.|850|CIN
+11|CINTURÓN VARÓN|CIN|Cinturón varón leño|Leño. Cuero de lagarto.|850|CIN
+12|ESTUCHE PARA LENTES|EST|Estuche para lentes con tejido Tacana|Cuero revuelto con tejido Tacana.|257|EST
+12|ESTUCHE PARA LENTES|EST|Estuche para lentes de aguayo|Aguayo con tintes naturales.|285|EST
+12|PORTA LENTES|EST|Porta lentes de aguayo|Aguayo con tintes naturales.|285|EST
+12|BILLETERA CON CIERRE|BIL|Billetera con cierre de aguayo|Aguayo con tintes naturales.|510|BIL
+12|BILLETERA SOBRE|BIL|Billetera sobre de aguayo|Aguayo con tintes naturales.|377|BIL
+12|NECESSER AGUAYO|EST|Necesser de aguayo|Tintes naturales.|410|EST
+12|CHUSPA DE LANA DE OVEJA|BOL|Chuspa de lana de oveja|Aguayo con tintes naturales.|453|BOL
+12|BANDOLERA PEKI|BOL|Bandolera Peki|Aguayo con tintes naturales y cuero.|480|BOL
+12|CARTERA SOBRE Aguayo Tintes|BOL|Cartera sobre de aguayo|Aguayo con tintes naturales y cuero.|759|BOL
+13|ESTUCHE GAMMA|EST|Estuche Gamma|Cuero revuelto.|250|EST
+13|WRISLET WALLET|EST|Wristlet wallet|Cuero vacuno.|190|EST
+13|WRISLET WALLET CHOLITAS|EST|Wristlet wallet cholitas|Cuero vacuno.|230|EST
+13|MAKEUP POUCH|EST|Makeup pouch|Aguayo moderno.|165|EST
+13|SUNRISE MAKEUP POUCH|EST|Sunrise makeup pouch|100 % cuero vacuno.|165|EST
+13|NECESSER MOON|EST|Necesser Moon|Cuero vacuno.|450|EST
+13|DOPP KIT|EST|Dopp kit Walnut|Walnut. Cuero vacuno.|325|EST
+13|DOPP KIT|EST|Dopp kit Black|Black. Cuero vacuno.|325|EST
+13|DOPP KIT|EST|Dopp kit Sage|Sage. Cuero vacuno.|325|EST
+14|TAPIZ HOMBRE|TAP|Tapiz hombre 83 x 52 cm|83 x 52 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria, Chuquisaca.|-|TAP
+14|TAPIZ MUJER RIO|TAP|Tapiz mujer río 66 x 31 cm|66 x 31 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria, Chuquisaca.|-|TAP
+15|TAPIZ HOMBRE|TAP|Tapiz hombre 55 x 34 cm|55 x 34 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria.|-|TAP
+15|TAPIZ CARNAVAL|TAP|Tapiz carnaval 67 x 32 cm|67 x 32 cm. Tejido a mano en telar rústico. Pieza única. Comunidad La Candelaria.|3750|TAP
+15|TAPIZ MATRIMONIO|TAP|Tapiz matrimonio 71 x 38 cm|71 x 38 cm. Tejido a mano en telar rústico. Comunidades Candelaria y Tarabuco.|2300|TAP
+15|TAPIZ JALQ|TAP|Tapiz Jalq 61 x 34 cm|61 x 34 cm. Tejido a mano en telar rústico. Comunidades Candelaria y Tarabuco.|3080|TAP
+16|CORREDOR DE MESA|MES|Corredor de mesa|Aguayo con tintes naturales, tejido en telar de pie. Comunidades Chuñu Chuñuni y Aramasí.|1700|MES
+16|INDIVIDUALES DE AGUAYO|MES|Individuales de aguayo|Aguayo con tintes naturales, tejido en telar de pie. Comunidades Chuñu Chuñuni y Aramasí. Precio por unidad.|495|MES
+16|INDIVIDUALES TACANA|MES|Individuales Tacana|100 % algodón. Tejidos a mano por mujeres de la comunidad Tacana. Precio por unidad.|230|MES
+16|POSAVASOS TACANA|MES|Posavasos Tacana|100 % algodón. Tejidos a mano por mujeres de la comunidad Tacana. Set de 4.|230|MES
+17|FIGURA TALLADA MICHIQ|DEC|Figura tallada Michiq|15 x 8 x 8 cm. Tallada y pintada a mano en una sola pieza. Madera balsa.|870|DEC
+17|FIGURA TALLADA SISA|DEC|Figura tallada Sisa|20 x 12 x 13 cm. Tallada y pintada a mano en una sola pieza. Madera balsa.|1495|DEC
+17|FIGURA TALLADA ITA|DEC|Figura tallada Ita|29 x 11 x 12 cm. Tallada y pintada a mano en una sola pieza. Madera balsa.|1080|DEC
+17|FIGURA TALLADA CHANDEI (ROSITA|DEC|Figura tallada Chandei (Rosita Pochi)|30 x 12 x 8 cm. Tallada y pintada a mano en una sola pieza. Madera balsa.|1080|DEC
+18|POSAVASOS SOL|MES|Posavasos Sol|Elaborados a mano en jipijapa por la comunidad Galilea, San Borja. Set de 4.|270|MES
+18|POSAVASOS SOL|MES|Posavasos Sol (segundo diseño)|Elaborados a mano en jipijapa por la comunidad Galilea, San Borja. Set de 4.|270|MES
+18|POSAVASOS LUNA|MES|Posavasos Luna|Elaborados a mano en jipijapa por la comunidad Galilea, San Borja. Set de 4.|270|MES
+18|ABANICO|DEC|Abanico|Elaborado a mano en jipijapa por la comunidad Galilea, San Borja.|140|DEC
+19|ENSALADERAS LLAMA 090|MES|Ensaladeras Llama 090|Tallado a mano, madera de palo santo. Chaco boliviano.|270|MES
+19|ENSALADERAS TUCAN 090|MES|Ensaladeras Tucán 090|Tallado a mano, madera de palo santo. Chaco boliviano.|270|MES
+19|ENSALADERAS ONDAS|MES|Ensaladeras Ondas|Tallado a mano, madera de palo santo. Chaco boliviano.|270|MES
+19|PINCHOS BASE TORRE|MES|Pinchos base torre|Tallado a mano, madera de palo santo. Chaco boliviano.|135|MES
+19|PINCHOS BASE LLAMA|MES|Pinchos base llama|Tallado a mano, madera de palo santo. Chaco boliviano.|135|MES
+19|PINCHOS 12 U LLAMA|MES|Pinchos 12 u llama|Tallado a mano, madera de palo santo. Chaco boliviano.|187|MES
+19|FUENTE DE MADERA 20 CM|MES|Fuente de madera 20 cm|Con incrustaciones de madera y plata alpaca. Chaco boliviano.|398|MES
+19|FUENTE DE MADERA 30 CM|MES|Fuente de madera 30 cm|Con incrustaciones de madera y plata alpaca. Chaco boliviano.|480|MES
+19|FUENTE DE MADERA 35 CM|MES|Fuente de madera 35 cm|Con incrustaciones de madera y plata alpaca. Chaco boliviano.|510|MES
+20|MARCALIBROS TACANA|PAP|Marcalibros Tacana|100 % algodón.|70|PAP
+20|MARCALIBROS CANDELARIA|PAP|Marcalibros Candelaria|100 % lana de oveja.|105|PAP
+20|BOOK COVER|PAP|Book cover|Cuero vacuno.|85|PAP
+20|LLAVERO TACANA|PAP|Llavero Tacana|Algodón y cuero.|119|PAP
+20|LLAVERO SALTEÑA|PAP|Llavero salteña|Fieltro de oveja.|90|PAP
+20|LLAVERO CHOLITA|PAP|Llavero cholita|Fieltro de oveja.|90|PAP
+20|SAL SPA EUCALIPTO|GOU|Sal spa eucalipto|Sal de Uyuni.|35|GOU
+20|SAL SPA ROMERO|GOU|Sal spa romero|Sal de Uyuni.|35|GOU
+20|SAL SPA LAVANDA|GOU|Sal spa lavanda|Sal de Uyuni.|35|GOU
+21|LICOR DE COCA 50 ML|GOU|Licor de coca 50 ml||70|GOU
+21|LICOR DE COCA 250ML Y|GOU|Licor de coca 250 ml||120|GOU
+21|=|GOU|Licor de coca 750 ml||175|GOU
+21|MONTECITO DE 750ML|GOU|Montecito 750 ml|Singani premium.|174|GOU
+21|PASTILLAS DE COCA|GOU|Pastillas de coca en yute|Yute, 20 unidades.|65|GOU
+21|PASTILLAS DE COCA|GOU|Pastillas de coca en ziplock|Ziplock, 20 unidades.|65|GOU
+21|PASTILLAS DE COCA|GOU|Pastillas de coca en lata, 15 unidades|Lata de 15 unidades.|65|GOU
+21|=|GOU|Pastillas de coca en lata, 30 unidades|Lata de 30 unidades.|105|GOU
+21|SALES GOURMET FRASCO|GOU|Sales gourmet frasco grande|Diferentes sabores. Frasco grande.|50|GOU
+21|SALES GOURMET FRASCO|GOU|Sales gourmet frasco pequeño|Diferentes sabores. Frasco pequeño.|35|GOU
+21|SALES GOURMET YUTE|GOU|Sales gourmet en yute|Diferentes sabores.|35|GOU
+22|POSTAL CHOLITA CON|PAP|Postal cholita con máscara||15|PAP
+22|POSTAL CHOLITA CON|PAP|Postal cholita con chicle||15|PAP
+22|POSTAL CHOLITA CON|PAP|Postal cholita con cámara||15|PAP
+22|POSTAL CHOLITAS AMIGAS|PAP|Postal cholitas amigas||15|PAP
+22|POSTAL CHOLITA LEYENDO|PAP|Postal cholita leyendo||15|PAP
+22|POSTAL CHOLITA|PAP|Postal cholita presidente||15|PAP
+22|POSTAL CHOLITA POLICIA|PAP|Postal cholita policía||15|PAP
+22|POSTAL CHOLITA CON|PAP|Postal cholita con charango||15|PAP
+22|POSTAL CHOLITA CON|PAP|Postal cholita con motocicleta||15|PAP
