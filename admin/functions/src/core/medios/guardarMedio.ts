@@ -22,10 +22,14 @@
  * a más de 64 KB: un audio no puede firmarse. n8n usa el token por número. Una
  * petición que trae `X-NovuChat-Signature` se rechaza antes de mirar nada más.
  *
- * POR QUÉ EXIGE UN MENSAJE. Con un token robado se podría llenar el depósito de
- * cualquier cosa. Por eso solo se guarda un medio que corresponde a un mensaje
+ * POR QUÉ EXIGE UN MENSAJE. Solo se guarda un medio que corresponde a un mensaje
  * ENTRANTE ya registrado por la ingesta (mismo `idMeta`, mismo tipo, de hace
- * 30 minutos o menos). El flujo llama a `ingesta` antes que a esta Function.
+ * 30 minutos o menos); el flujo llama a `ingesta` antes que a esta Function. Eso
+ * ata cada medio a una conversación, pero NO FRENA UN TOKEN ROBADO: con el mismo
+ * token, la ingesta acepta un `idMeta` cualquiera, así que quien lo tenga puede
+ * registrar el mensaje y luego el medio. La barrera real contra llenar el
+ * depósito es el TOPE DIARIO (3.000 medios y 15 GiB por comercio), y la alerta
+ * sobre `cuposDeMedios.bytes` (docs/arquitectura/core.md).
  *
  * NO ES UN COMPROBANTE. No importa nada de Cobros y no escribe `solicitud`,
  * `cierres`, `comprobantesRecibidos`, `metricas` ni `conteo`: un medio guardado
@@ -50,7 +54,7 @@ import { Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../seguridad/firma.js';
 import {
-  DIAS_DE_RETENCION, DIA_MS, ID_TENANT, almacenDeMedios, diaDeLaPaz, idMetaCrudo, nombreDeObjeto, type Almacen,
+  CARPETA_DE_DIA, DIAS_DE_RETENCION, DIA_MS, ID_TENANT, almacenDeMedios, diaDeLaPaz, idMetaCrudo, nombreDeObjeto, type Almacen,
 } from './almacen.js';
 import {
   esTipoDeMedio, veredictoDe, veredictoDeAnotar, type ExtensionDeMedio,
@@ -96,21 +100,52 @@ const milis = (v: unknown): number | null => {
 /** Máximo que un marcador `pendiente` se considera «en vuelo»; pasado, se retoma. */
 const PENDIENTE_MAXIMO_MS = 5 * 60_000;
 
+/** El día (`aaaa-mm-dd`) de una ruta `tenants/{t}/medios/{día}/...` de ESTE comercio, o `null`. */
+export function diaDeRuta(ruta: unknown, tenantId: string): string | null {
+  const prefijo = `tenants/${tenantId}/medios/`;
+  if (typeof ruta !== 'string' || !ruta.startsWith(prefijo)) return null;
+  const dia = ruta.slice(prefijo.length).split('/')[0] ?? '';
+  return CARPETA_DE_DIA.test(dia) ? dia : null;
+}
+
+/** Solo el código del error de Firestore o Storage: nunca el mensaje, que puede traer la ruta con el teléfono. */
+const codigoDe = (error: unknown): string => {
+  const c = (error as { code?: unknown } | null)?.code;
+  return typeof c === 'string' || typeof c === 'number' ? String(c) : 'desconocido';
+};
+/** ABORTED (10): la transacción perdió contra otra, aun tras los reintentos del SDK. */
+const esContencion = (error: unknown): boolean => {
+  const c = codigoDe(error).toLowerCase();
+  return c === '10' || c === 'aborted';
+};
+function avisarFallo(etapa: string, error: unknown): void {
+  console.error(`guardarMedio: falló ${etapa} (código ${codigoDe(error)})`);
+}
+
 /**
  * Si Storage falló: borra el marcador pendiente y devuelve el cupo, en UNA transacción y solo si el
- * marcador sigue pendiente (así el cupo vuelve exactamente una vez). Mejor esfuerzo, nunca lanza.
+ * marcador sigue pendiente (así el cupo vuelve exactamente una vez). El cupo vuelve al contador del DÍA
+ * EN QUE SE RESERVÓ (la carpeta de la ruta del marcador), no al de hoy: un pendiente retomado pasada la
+ * medianoche de La Paz no debe descontar del día nuevo. Y vuelve lo que se reservó (el `tamano` del
+ * marcador). Mejor esfuerzo, nunca lanza.
  */
 async function deshacerReserva(
-  refMedio: FirebaseFirestore.DocumentReference, refCupo: FirebaseFirestore.DocumentReference, tamano: number,
+  db: FirebaseFirestore.Firestore, tenantId: string, refMedio: FirebaseFirestore.DocumentReference,
 ): Promise<void> {
   try {
-    await getFirestore().runTransaction(async (tx) => {
-      const [m, c] = await Promise.all([tx.get(refMedio), tx.get(refCupo)]);
+    await db.runTransaction(async (tx) => {
+      const m = await tx.get(refMedio);
       if (!m.exists || m.get('estado') !== 'pendiente') return;
+      const dia = diaDeRuta(m.get('ruta'), tenantId);
+      const refCupo = dia ? db.doc(`tenants/${tenantId}/cuposDeMedios/${dia}`) : null;
+      const c = refCupo ? await tx.get(refCupo) : null;
+      const reservado = Math.max(0, Number(m.get('tamano') ?? 0) || 0);
       tx.delete(refMedio);
-      if (c.exists) tx.update(refCupo, { n: Math.max(0, Number(c.get('n') ?? 0) - 1), bytes: Math.max(0, Number(c.get('bytes') ?? 0) - tamano) });
+      if (refCupo && c?.exists) {
+        tx.update(refCupo, { n: Math.max(0, Number(c.get('n') ?? 0) - 1), bytes: Math.max(0, Number(c.get('bytes') ?? 0) - reservado) });
+      }
     });
-  } catch { /* el marcador caduca por TTL y el cupo se corrige al día siguiente */ }
+  } catch (error) { avisarFallo('al devolver el cupo', error); /* el marcador caduca por TTL en un día */ }
 }
 
 export interface EntradaDeGuardar {
@@ -129,7 +164,7 @@ export interface EntradaDeGuardar {
 
 /** Valida y guarda. Todo lo posterior a la autenticación y a la bandera. Nunca escribe el teléfono en Storage. */
 export async function guardarMedioDe(
-  e: EntradaDeGuardar, deps: { almacen?: Almacen; ahoraMs?: number } = {},
+  e: EntradaDeGuardar, deps: { almacen?: Almacen; ahoraMs?: number; db?: FirebaseFirestore.Firestore } = {},
 ): Promise<ResultadoDeGuardar> {
   const ahoraMs = deps.ahoraMs ?? Date.now();
   const almacen = deps.almacen ?? almacenDeMedios();
@@ -152,11 +187,17 @@ export async function guardarMedioDe(
     medio = { estado: 'guardado', ext: v.firma.ext, mime: v.firma.mime };
   }
 
-  const db = getFirestore();
-  const refConversacion = db.doc(`tenants/${e.tenantId}/conversaciones/wa_${e.telefono}`);
+  const db = deps.db ?? getFirestore();
 
   // Solo se guarda lo que corresponde a un mensaje ENTRANTE reciente del mismo tipo.
-  const candidatos = await refConversacion.collection('mensajes').where('idMeta', '==', idMeta).limit(10).get();
+  let candidatos: FirebaseFirestore.QuerySnapshot;
+  try {
+    candidatos = await db.collection(`tenants/${e.tenantId}/conversaciones/wa_${e.telefono}/mensajes`)
+      .where('idMeta', '==', idMeta).limit(10).get();
+  } catch (error) {
+    avisarFallo('la consulta del mensaje', error);
+    return { codigo: 502, cuerpo: { error: 'no_se_registro' } };
+  }
   const mensaje = candidatos.docs.find((d) => {
     const ts = milis(d.get('ts'));
     return d.get('direccion') === 'entrante' && d.get('tipo') === tipo
@@ -178,7 +219,9 @@ export async function guardarMedioDe(
   type Decision =
     | { t: 'repetido'; ruta: string } | { t: 'repetido_anotado' } | { t: 'en_curso' } | { t: 'lleno' }
     | { t: 'reservado' } | { t: 'tomar'; ruta: string } | { t: 'anotado' };
-  const decision = await db.runTransaction(async (tx): Promise<Decision> => {
+  let decision: Decision;
+  try {
+  decision = await db.runTransaction(async (tx): Promise<Decision> => {
     const [previo, cupo] = await Promise.all([tx.get(refMedio), tx.get(refCupo)]);
     if (previo.exists) {
       const estadoPrevio = previo.get('estado');
@@ -224,16 +267,26 @@ export async function guardarMedioDe(
     });
     return { t: 'reservado' };
   });
+  } catch (error) {
+    // Nada quedó escrito: la transacción es atómica (tampoco el cupo). Si fue contención, el reintento
+    // del flujo lo resuelve; si fue otra cosa (incluido el mensaje borrado a medio camino en un
+    // anotado: NOT_FOUND al marcarlo), 502.
+    avisarFallo(medio.estado === 'anotado' ? 'la transacción del anotado' : 'la reserva', error);
+    return esContencion(error) ? { codigo: 409, cuerpo: { error: 'en_curso' } } : { codigo: 502, cuerpo: { error: 'no_se_registro' } };
+  }
   if (decision.t === 'repetido') return { codigo: 200, cuerpo: { ruta: decision.ruta, repetido: true } };
   if (decision.t === 'repetido_anotado') return { codigo: 200, cuerpo: { anotado: true, repetido: true } };
   if (decision.t === 'anotado') return { codigo: 200, cuerpo: { anotado: true, repetido: false } };
   if (decision.t === 'en_curso') return { codigo: 409, cuerpo: { error: 'en_curso' } };
   if (decision.t === 'lleno') return { codigo: 429, cuerpo: { error: 'cupo_diario_lleno' } };
   if (medio.estado !== 'guardado') return { codigo: 502, cuerpo: { error: 'no_se_registro' } }; // inalcanzable
-  // Un pendiente retomado conserva SU ruta (la del día en que se reservó), si es de este comercio.
-  const rutaPrevia = decision.t === 'tomar' ? decision.ruta : '';
-  const ruta = rutaPrevia.startsWith(`tenants/${e.tenantId}/medios/`) && rutaPrevia.endsWith(`.${medio.ext}`)
-    ? rutaPrevia : rutaDeMedio(e.tenantId, dia, idMeta, medio.ext);
+  // Un pendiente retomado se guarda en la carpeta del DÍA EN QUE SE RESERVÓ (donde está su cupo). Si
+  // el reintento trae otro formato (otra extensión: el intento anterior pudo descargar otro archivo),
+  // NO se rechaza —el medio quedaría sin guardar hasta que caduque el marcador—: se guarda con la
+  // extensión de los bytes que llegaron, y el cierre reescribe `ruta`, `ext`, `mime` y `tamano` para
+  // que el metadato describa el objeto real. El cupo no se ajusta por la diferencia de tamaño.
+  const diaReservado = decision.t === 'tomar' ? diaDeRuta(decision.ruta, e.tenantId) : null;
+  const ruta = rutaDeMedio(e.tenantId, diaReservado ?? dia, idMeta, medio.ext);
   const firma = medio;
 
   try {
@@ -241,7 +294,7 @@ export async function guardarMedioDe(
     // que no alcanzó a terminar), se sigue a finalizar el registro; el cupo ya estaba reservado.
     await almacen.guardar(ruta, e.bytes, firma.mime);
   } catch {
-    await deshacerReserva(refMedio, refCupo, tamano);
+    await deshacerReserva(db, e.tenantId, refMedio);
     return { codigo: 502, cuerpo: { error: 'no_se_guardo' } };
   }
 
@@ -249,12 +302,16 @@ export async function guardarMedioDe(
     await db.runTransaction(async (tx) => {
       tx.update(refMedio, {
         estado: 'guardado', sha256: createHash('sha256').update(e.bytes).digest('hex'), vence,
+        ruta, ext: firma.ext, mime: firma.mime, tamano,
       });
       tx.update(mensaje.ref, { medio: { estado: 'guardado', mime: firma.mime, tamano, vence } });
     });
     return { codigo: 200, cuerpo: { ruta, repetido: false } };
-  } catch {
-    // El marcador queda `pendiente`: un reintento pasados 5 minutos lo retoma sin gastar otro cupo.
+  } catch (error) {
+    // El marcador queda `pendiente`: un reintento pasados 5 minutos lo retoma sin gastar otro cupo. Si
+    // no hay reintento, el cupo queda gastado y el objeto huérfano hasta la purga (decisión de diseño:
+    // el flujo avisa con el aviso de falla).
+    avisarFallo('el cierre del registro', error);
     return { codigo: 502, cuerpo: { error: 'no_se_registro' } };
   }
 }
@@ -264,16 +321,34 @@ export async function guardarMedioDe(
  * `X-NovuChat-Tipo` (image|audio|document) y `Content-Type`. Solo el token.
  * Modo anotar (docx/xlsx): cuerpo vacío, `X-NovuChat-Anotar: 1` y `X-NovuChat-Mime`.
  */
-export const guardarMedio = onRequest(
-  {
+/** Peticiones a la vez por instancia FUERA de staging (revisión de seguridad del #617). */
+export const CONCURRENCIA_DE_GUARDAR_MEDIO = 4;
+
+/**
+ * Las opciones de `guardarMedio`, puras para probarlas.
+ *
+ * CONCURRENCIA EXPLÍCITA. En producción (gen2, 1 vCPU) el valor por defecto es 80 peticiones a la vez
+ * por instancia, y el cuerpo se lee ENTERO antes de autenticar: 80 cuerpos de 16 MB copiados varias
+ * veces agotan 1 GiB con peticiones anónimas. Con 4, el peor caso cabe. En staging
+ * (`CPU_FRACCIONARIA === 'si'`, menos de 1 vCPU) firebase-tools rechaza una concurrencia mayor que 1
+ * y la baja sola a 1 si no se declara, así que ahí no se escribe (mismo patrón que
+ * `buscarConversaciones.ts` y `turnoServidor.ts`). La idea de «no hay concurrencia» solo vale ahí.
+ */
+export function opcionesDeGuardarMedio(env: Record<string, string | undefined> = process.env) {
+  const staging = env['CPU_FRACCIONARIA'] === 'si';
+  return {
     region: REGION,
     secrets: Object.values(SECRETOS_POR_ALIAS),
     cors: false,
     maxInstances: 10,
-    // Hasta 16 MB de audio más el sobre HTTP.
-    // 1 GiB (revisión de seguridad): el cuerpo de un audio de 16 MB se copia varias veces y no hay concurrencia.
-    memory: '1GiB',
-  },
+    // Hasta 16 MB de audio más el sobre HTTP; el cuerpo se copia varias veces (revisión de seguridad).
+    memory: '1GiB' as const,
+    ...(staging ? {} : { concurrency: CONCURRENCIA_DE_GUARDAR_MEDIO }),
+  };
+}
+
+export const guardarMedio = onRequest(
+  opcionesDeGuardarMedio(),
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }
     if (peticion.get('X-NovuChat-Signature')) { respuesta.status(401).send('no autorizado'); return; }

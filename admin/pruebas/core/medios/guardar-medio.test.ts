@@ -8,7 +8,7 @@
  * cierres, comprobantes, métricas y solicitud queden intactos. La purga: 89, 90 y 91 días, la baja y un
  * comercio que falla.
  */
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -614,5 +614,113 @@ describe('la purga diaria', () => {
     expect(hay(T, diaHace(91))).toBe(false);
     expect(hay(T_FALLA, diaHace(91))).toBe(true);
     expect(avisos.join('\n')).not.toMatch(/tenants\/|boom|\d{10,}/);
+  });
+});
+
+describe('fallas de Firestore y pendientes retomados (revisión del #617)', () => {
+  type Db = typeof db;
+  /** El mismo Firestore con algunos métodos reemplazados. */
+  const envuelto = (cambios: Record<string, unknown>): Db => new Proxy(db, {
+    get(t, k) {
+      if (typeof k === 'string' && k in cambios) return cambios[k];
+      const v = Reflect.get(t, k, t);
+      return typeof v === 'function' ? v.bind(t) : v;
+    },
+  });
+  const falla = (code: number | string) => Object.assign(new Error(`falla con tenants/${T}/conversaciones/wa_${TEL}`), { code });
+  const entrada = (id: string, extra: Record<string, unknown> = {}) =>
+    ({ tenantId: T, telefono: TEL, idMeta: id, tipo: 'audio', bytes: OGG(), contentType: 'audio/ogg', ...extra });
+  const regDe = (id: string) => db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`);
+  const ayer = () => al.diaDeLaPaz(Date.now() - DIA_MS);
+  const cupoDe = (dia: string) => db.doc(`tenants/${T}/cuposDeMedios/${dia}`);
+  const sinTelefonoEnLogs = (espia: ReturnType<typeof vi.spyOn>) => {
+    const texto = JSON.stringify(espia.mock.calls);
+    expect(texto).not.toContain(TEL);
+    expect(texto).not.toContain('wamid');
+    expect(texto).toMatch(/código \d+/);
+  };
+
+  it('NIEGA: falla la CONSULTA del mensaje: 502 no_se_registro, nada escrito, y el log solo lleva el código', async () => {
+    const espia = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const id = idNuevo(); await mensaje(id);
+      const r = await gm.guardarMedioDe(entrada(id), { almacen, db: envuelto({ collection: () => { throw falla(14); } }) });
+      expect(r).toEqual({ codigo: 502, cuerpo: { error: 'no_se_registro' } });
+      expect((await regDe(id).get()).exists).toBe(false);
+      expect((await cupoRef().get()).exists).toBe(false);
+      expect(almacen.objetos.size).toBe(0);
+      sinTelefonoEnLogs(espia);
+    } finally { espia.mockRestore(); }
+  });
+
+  it('NIEGA: falla la RESERVA: 502 no_se_registro (o 409 en_curso si es ABORTED), sin cupo gastado ni marcador', async () => {
+    const espia = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      for (const [code, esperado] of [[14, { codigo: 502, cuerpo: { error: 'no_se_registro' } }], [10, { codigo: 409, cuerpo: { error: 'en_curso' } }], ['aborted', { codigo: 409, cuerpo: { error: 'en_curso' } }]] as const) {
+        const id = idNuevo(); await mensaje(id);
+        const r = await gm.guardarMedioDe(entrada(id), { almacen, db: envuelto({ runTransaction: async () => { throw falla(code); } }) });
+        expect(r, String(code)).toEqual(esperado);
+        expect((await regDe(id).get()).exists).toBe(false);
+      }
+      expect((await cupoRef().get()).exists).toBe(false);
+      expect(almacen.objetos.size).toBe(0);
+      sinTelefonoEnLogs(espia);
+    } finally { espia.mockRestore(); }
+  });
+
+  it('NIEGA: ANOTADO con el mensaje borrado a medio camino: 502, sin metadato y sin gastar cupo', async () => {
+    const espia = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const id = idNuevo(); const m = await mensaje(id, { tipo: 'document' });
+      const borrarYSeguir = async (f: Parameters<Db['runTransaction']>[0]) => { await m.delete(); return db.runTransaction(f); };
+      const r = await gm.guardarMedioDe(
+        { tenantId: T, telefono: TEL, idMeta: id, tipo: 'document', bytes: Buffer.alloc(0), contentType: '', anotar: true, mime: DOCX_MIME },
+        { almacen, db: envuelto({ runTransaction: borrarYSeguir }) });
+      expect(r).toEqual({ codigo: 502, cuerpo: { error: 'no_se_registro' } });
+      expect((await regDe(id).get()).exists).toBe(false);
+      expect((await cupoRef().get()).exists).toBe(false);
+      sinTelefonoEnLogs(espia);
+    } finally { espia.mockRestore(); }
+  });
+
+  it('un pendiente VIEJO retomado con OTRO formato se guarda en la carpeta de su día y el cierre reescribe ruta, ext, mime y tamano', async () => {
+    const id = idNuevo(); await mensaje(id);
+    const viejaRuta = gm.rutaDeMedio(T, ayer(), id, 'ogg');
+    await cupoDe(ayer()).set({ n: 1, bytes: 2048, vence: Timestamp.now() });
+    await regDe(id).set({ idMeta: id, estado: 'pendiente', ext: 'ogg', mime: 'audio/ogg', tamano: 2048, ruta: viejaRuta, en: Timestamp.fromMillis(Date.now() - 6 * MIN), vence: Timestamp.now() });
+    const r = await peticion(M4A(), buenas(id, 'audio', 'audio/mp4'));
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo.ruta).toBe(gm.rutaDeMedio(T, ayer(), id, 'm4a'));
+    expect((await regDe(id).get()).data()).toMatchObject({ estado: 'guardado', ruta: r.cuerpo.ruta, ext: 'm4a', mime: 'audio/mp4', tamano: M4A().length });
+    expect(almacen.objetos.has(r.cuerpo.ruta)).toBe(true);
+    expect((await cupoRef().get()).exists).toBe(false); // no se cobró otra vez, ni hoy
+    expect((await cupoDe(ayer()).get()).get('n')).toBe(1);
+  });
+
+  it('CRUCE DE MEDIANOCHE: si Storage falla al retomar un pendiente de ayer, el cupo vuelve al contador de AYER, no al de hoy', async () => {
+    const id = idNuevo(); await mensaje(id);
+    await cupoDe(ayer()).set({ n: 1, bytes: 2048, vence: Timestamp.now() });
+    await cupoRef().set({ n: 5, bytes: 500, vence: Timestamp.now() });
+    await regDe(id).set({ idMeta: id, estado: 'pendiente', ext: 'ogg', mime: 'audio/ogg', tamano: 2048, ruta: gm.rutaDeMedio(T, ayer(), id, 'ogg'), en: Timestamp.fromMillis(Date.now() - 6 * MIN), vence: Timestamp.now() });
+    almacen.falla = true;
+    const espia = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect((await peticion(OGG(4096), buenas(id, 'audio', 'audio/ogg'))).codigo).toBe(502);
+    } finally { espia.mockRestore(); almacen.falla = false; }
+    expect((await cupoDe(ayer()).get()).data()).toMatchObject({ n: 0, bytes: 0 });
+    expect((await cupoRef().get()).data()).toMatchObject({ n: 5, bytes: 500 });
+    expect((await regDe(id).get()).exists).toBe(false);
+  });
+
+  it('ANOTAR sobre un pendiente (reciente o viejo) de bytes: 409 en_curso, no lo pisa ni gasta cupo', async () => {
+    for (const hace of [1 * MIN, 6 * MIN]) {
+      const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+      const marcador = { idMeta: id, estado: 'pendiente', ext: 'pdf', mime: 'application/pdf', tamano: 1024, ruta: gm.rutaDeMedio(T, hoy(), id, 'pdf'), en: Timestamp.fromMillis(Date.now() - hace), vence: Timestamp.now() };
+      await regDe(id).set(marcador);
+      const r = await peticion(Buffer.alloc(0), anotar(id, DOCX_MIME));
+      expect(r.cuerpo, `hace ${hace / MIN} min`).toEqual({ error: 'en_curso' });
+      expect((await regDe(id).get()).data()).toMatchObject({ estado: 'pendiente', ext: 'pdf' });
+    }
+    expect((await cupoRef().get()).exists).toBe(false);
   });
 });

@@ -128,9 +128,9 @@ por el comercio: la ficha no la escribe ningún navegador.
   tope del tipo; 415 por la firma de los bytes (SVG, HTML, docx y xlsx no se
   guardan; los alias `image/jpg`, `application/ogg`, `audio/aac` en m4a y
   `audio/3gpp` en amr se aceptan porque los bytes siguen decidiendo); 409 `sin_mensaje` si no hay un mensaje **entrante** del mismo tipo con
-  ese `idMeta` de hace 30 minutos o menos (acota qué se puede guardar, pero no
-  impide por sí solo llenar el depósito con un token robado: **lo que limita es
-  el cupo**); 429 `cupo_diario_lleno` con el tope del día lleno. Un repetido
+  ese `idMeta` de hace 30 minutos o menos (ata el medio a una conversación, pero
+  **no frena un token robado**: con el mismo token la ingesta acepta un `idMeta`
+  cualquiera; **lo que limita es el tope diario**); 429 `cupo_diario_lleno` con el tope del día lleno. Un repetido
   responde 200 sin reescribir ni gastar cupo.
 - **Tope superado, constancia acotada:** el 429 deja constancia en el propio
   contador (`rechazados`, `ultimoRechazo`) a lo sumo 50 veces por comercio y día;
@@ -144,6 +144,31 @@ por el comercio: la ficha no la escribe ningún navegador.
   o tipo, 415; Anotar **con** cuerpo, 400 `anotar_con_cuerpo` (anotar no es una
   puerta para guardar sin pasar por la firma). Un docx con bytes y sin Anotar
   sigue en 415.
+  Un Anotar sobre un `idMeta` ya **guardado** responde la forma del guardado,
+  `{ruta, repetido:true}`, no la anotada (M2 lo tolera); sobre un `pendiente` de
+  bytes, reciente o viejo, responde 409 `en_curso` y no lo pisa.
+- **Riesgo del token robado y alerta recomendada:** el token por número es la
+  única credencial; quien lo tenga puede registrar mensajes y medios hasta el
+  tope (3.000 medios y 15 GiB por comercio y día). Se recomienda una alerta de
+  monitoreo sobre `cuposDeMedios/{día}.bytes` mayor que 2 GiB (o `rechazados`
+  mayor que 0), que un comercio real no alcanza: es la señal de abuso.
+- **Fallas de Firestore:** la consulta del mensaje, la reserva y la transacción
+  del anotado van en try/catch: 502 `no_se_registro` (409 `en_curso` si fue
+  contención, ABORTED), sin escribir nada, y el log lleva solo el código del
+  error, nunca la ruta con el teléfono.
+- **Cupo gastado y objeto huérfano (decisión de diseño):** si el objeto se guardó
+  pero el cierre falla (`no_se_registro`), el cupo queda gastado y el objeto
+  huérfano hasta que un reintento pasados 5 minutos lo retome o hasta la purga
+  de 90 días; el flujo lo avisa con el aviso de falla. Con `no_se_guardo` el cupo
+  vuelve una vez, al contador **del día en que se reservó** (la carpeta de la
+  ruta del marcador), aunque la medianoche de La Paz haya pasado.
+- **Pendiente retomado con otro formato:** se guarda en la carpeta del día de su
+  reserva con la extensión de los bytes que llegaron, y el cierre reescribe
+  `ruta`, `ext`, `mime` y `tamano` (rechazarlo dejaría el medio sin guardar hasta
+  que caduque el marcador). El cupo no se ajusta por la diferencia de tamaño.
+- **Concurrencia:** `concurrency: 4` fuera de staging (en gen2 con 1 vCPU el
+  valor por defecto es 80, y el cuerpo se lee entero antes de autenticar: 80
+  cuerpos de 16 MB agotan 1 GiB). En staging (CPU fraccionaria) no se declara.
 - **Deduplicación y cupo, atómicos** (revisión de seguridad del #617): la misma
   transacción que reserva el cupo crea el marcador `mediosRecibidos/{hash}` con
   `estado: 'pendiente'` (vence en 1 día por TTL); se pasa a `guardado` al

@@ -1044,7 +1044,7 @@
     "minInstances": null,
     "maxInstances": 10,
     "ingressSettings": null,
-    "concurrency": null,
+    "concurrency": 4,
     "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
     "vpc": null,
     "platform": "gcfv2",

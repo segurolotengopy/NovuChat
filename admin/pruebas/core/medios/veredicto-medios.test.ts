@@ -112,3 +112,18 @@ describe('revisión del código de guardarMedio', () => {
     expect(fuente).not.toMatch(/CUPO_MEDIOS_POR_DIA|CUPO_BYTES_POR_DIA/);
   });
 });
+
+describe('guardarMedio: concurrencia explícita (revisión de seguridad del #617)', () => {
+  it('fuera de staging, 4 peticiones a la vez con 1 GiB; en staging (CPU fraccionaria) no se declara', async () => {
+    const gm = await import('../../../functions/src/core/medios/guardarMedio.ts');
+    expect(gm.CONCURRENCIA_DE_GUARDAR_MEDIO).toBe(4);
+    expect(gm.opcionesDeGuardarMedio({})).toMatchObject({ concurrency: 4, memory: '1GiB', maxInstances: 10, cors: false });
+    expect(gm.opcionesDeGuardarMedio({ CPU_FRACCIONARIA: 'si' })).not.toHaveProperty('concurrency');
+  });
+  it('despliegue.json declara concurrency 4 para guardarMedio (no el 80 por defecto)', () => {
+    const aqui = dirname(fileURLToPath(import.meta.url));
+    const d = JSON.parse(readFileSync(join(aqui, '../../frontera/despliegue.json'), 'utf8')) as Record<string, Record<string, unknown>>;
+    expect(d['guardarMedio']?.['concurrency']).toBe(4);
+    expect(d['guardarMedio']?.['availableMemoryMb']).toBe(1024);
+  });
+});
