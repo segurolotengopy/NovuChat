@@ -294,7 +294,8 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
     const relleno = 'Trabajamos con técnica cuidadosa y productos de calidad para acompañarte en cada paso. ';
     const modelo = `Atendemos en ${dir}. ${relleno.repeat(7)}Radiesse define el contorno y da firmeza. La valoración es gratuita. ¿Cómo te llamas?`;
     // AJUSTE (28/10/2026): a la respuesta de ubicación el CÓDIGO le agrega el teléfono y el horario de la Consola; el tope de 700 es del texto del MODELO, que se mide sin esas líneas.
-    const t = sale(modelo, '¿dónde están?').replace(/\n\n(?:(?:📍 Ubicación|Teléfono|Horario): [^\n]*\n?)+$/, '');
+    // Sin regex repetida (CodeQL js/redos): se quitan por línea las que agrega el código y el salto que las separa.
+    const t = sale(modelo, '¿dónde están?').split('\n').filter((l) => !/^(?:📍 Ubicación|Teléfono|Horario): /.test(l)).join('\n').trimEnd();
     expect(fallo(t)).toBe(false);
     expect(t).toContain(dir);
     expect(t.length).toBeLessThanOrEqual(700);

@@ -1118,7 +1118,7 @@ function evPideComparativo(texto) {
 // (4) SIN «BONIFICADO»: ningún texto que sale dice «hoy bonificado» ni «100% bonificada». Se reescriben las formas conocidas y, si queda una oración con «bonific…», se quita entera.
 function evSinBonificado(texto) {
   const t = evTexto(texto)
-    .replace(/\s*,?\s*hoy (?:est[aá] )?bonificad[oa]s?\b/gi, '')
+    .replace(/(?:\s*,\s*|\s+)hoy (?:est[aá] )?bonificad[oa]s?\b/gi, '')
     .replace(/\b(?:est[aá]|es) (?:100 ?% )?bonificad[oa]s? y (?:es )?(gratuit[oa]s?)\b/gi, 'es $1')
     .replace(/\bbonificamos (?:el )?(?:100 ?%|cien por ciento) de (la valoraci[oó]n)/gi, '$1 es 100% gratuita')
     .replace(/\bbonificando (?:los )?(250 Bs) habituales\b/gi, 'sin pagar los $1 habituales')
@@ -1246,8 +1246,10 @@ function evNombreDado(historial, textoCliente, nombreDeLaFicha) {
 const EV_TEXTO_OFRECE_LLAMADA = 'Si quieres, recepción te llama para ofrecerte los horarios disponibles y tú decides. ¿Te parece?';
 const EV_TEXTO_CIERRE_AMABLE = 'Entendido, sin problema. Cuando quieras, me escribes por aquí y seguimos conversando. 😊';
 const EV_TEXTO_CIERRE_AMABLE_2 = 'Perfecto, aquí estaré cuando lo necesites. 😊';   // nunca el mismo texto dos veces seguidas
-const EV_RELLENO_RECHAZO = /^(?:(?:ok|okey|okay|bueno|bien|ya|mmm+|ah|pues|gracias|muchas gracias|mil gracias|igual gracias|por ahora|por el momento|de momento|disculpa|perdon|doctora|dra|doc)\s*)+$/;
-const EV_RECHAZO = /^(?:(?:ok|okey|bueno|ya|pues|mmm+|entonces|igual|mejor|creo que|por ahora|por el momento)\s+)*(?:no(?: (?:gracias|muchas gracias|por ahora|por el momento|todavia|aun|ahora|ahorita|de momento|me interesa|estoy interesad[ao]|quiero(?: por ahora| todavia| gracias)?))*|gracias no|ahora no|ahorita no|por ahora no|por el momento no|de momento no|todavia no|aun no|mas adelante|en otro momento|otro dia|lo (?:voy a |vo a |tengo que )?(?:pensar|pensare|pienso)(?: bien)?|tengo que pensarlo|voy a pensarlo|dejame pensarlo|dejeme pensarlo|lo voy a meditar|lo voy a analizar)(?: (?:gracias|muchas gracias|por ahora|por el momento|todavia|bien|mejor|de momento|primero))*$/;
+// Sin ambigüedad (CodeQL js/redos, PR #694): cada palabra va seguida de un separador OBLIGATORIO (espacio o fin), nunca de un `\s*` dentro de la repetición.
+const EV_RELLENO_RECHAZO = /^(?:(?:ok|okey|okay|bueno|bien|ya|mmm+|ah|pues|gracias|muchas gracias|mil gracias|igual gracias|por ahora|por el momento|de momento|disculpa|perdon|doctora|dra|doc)(?: |$))+$/;
+// Sin ambigüedad (CodeQL js/redos, PR #694): prefijos, UNA frase de rechazo SIN colas propias y una sola cola repetida de modificadores; ninguna palabra la pueden consumir dos grupos a la vez.
+const EV_RECHAZO = /^(?:(?:ok|okey|bueno|ya|pues|mmm+|entonces|igual|mejor|creo que|por ahora|por el momento|de momento) )*(?:no(?: me interesa| estoy interesad[ao]| quiero)?|gracias no|ahora no|ahorita no|todavia no|aun no|mas adelante|en otro momento|otro dia|lo (?:voy a |vo a |tengo que )?(?:pensar|pensare|pienso)|tengo que pensarlo|voy a pensarlo|dejame pensarlo|dejeme pensarlo|lo voy a meditar|lo voy a analizar)(?: (?:gracias|muchas gracias|por ahora|por el momento|de momento|todavia|aun|ahora|ahorita|bien|mejor|primero))*$/;
 function evDeclina(textoCliente, historial) {
   const raw = evTexto(textoCliente);
   if (raw.length > 120 || raw.indexOf('?') >= 0 || raw.indexOf('¿') >= 0) return false;
@@ -1276,7 +1278,8 @@ function evAceptaLlamada(textoCliente) {
 }
 
 // (5) EL SALUDO CON FICHA VIGENTE: «hola», «buenas», «buenas tardes doctora» (solo saludo) no repiten la bienvenida: texto corto fijo, que pide el nombre si todavía no lo dio. La bienvenida completa, solo en el primer contacto.
-const EV_SOLO_SALUDO = /^(?:(?:hola+|holis|holi|ola|buenas|buenos dias|buen dia|buenas tardes|buenas noches|hey|que tal|saludos|alo)\s*)+(?:(?:doctora|dra|doc|de nuevo|otra vez|como esta|como estan|como estas|que tal|nuevamente|a todos)\s*)*$/;
+// Sin ambigüedad (CodeQL js/redos): separador obligatorio y ninguna palabra en los dos grupos.
+const EV_SOLO_SALUDO = /^(?:(?:hola+|holis|holi|ola|buenas|buenos dias|buen dia|buenas tardes|buenas noches|hey|que tal|saludos|alo)(?: |$))+(?:(?:doctora|dra|doc|de nuevo|otra vez|como esta|como estan|como estas|nuevamente|a todos)(?: |$))*$/;
 const EV_TEXTO_SALUDO_DE_NUEVO = '¡Hola de nuevo! 😊 ¿En qué te puedo ayudar?';
 const EV_TEXTO_SALUDO_DE_NUEVO_NOMBRE = '¡Hola de nuevo! 😊 ¿Cómo te llamas y en qué te puedo ayudar?';
 const EV_TEXTO_SALUDO_DE_NUEVO_2 = '¡Aquí sigo! 😊 Cuéntame, ¿en qué te puedo ayudar?';

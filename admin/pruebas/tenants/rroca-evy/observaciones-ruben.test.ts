@@ -242,7 +242,8 @@ describe('(2) la ubicación: enlace, teléfono y horario de la Consola', () => {
   it('NEGADA: sin enlace, sin teléfono y sin horario en la Consola (ni en «Config base»): ninguna línea, ni vacía', () => {
     const t = pregunta(panel({ direccionMaps: '' }, { horarioAtencion: '', numeroRecepcion: '' }), '¿Dónde están ubicados?', { numeroRecepcion: '' });
     expect(t).toBe(MODELO);
-    expect(t).not.toMatch(/Teléfono|Horario|📍|\n\s*\n\s*$/);
+    expect(t).not.toMatch(/Teléfono|Horario|📍/);
+    expect(t.trimEnd()).toBe(t);
   });
   it('NEGADA: solo el que falta no sale (sin horario: mapa y teléfono)', () => {
     const t = pregunta(panel({ direccionMaps: MAPS }, { horarioAtencion: '' }));
@@ -476,6 +477,19 @@ describe('batería real del 29/10/2026', () => {
     const b = textos(hablar(m, ANA, mTexto('no gracias')))[0];
     expect(b).not.toBe(a);
   });
+});
+
+describe('rendimiento de las expresiones nuevas (CodeQL js/redos)', () => {
+  const lento = (f: () => unknown) => { const ini = Date.now(); f(); return Date.now() - ini; };
+  for (const [nombre, x] of [['ok', 'ok '.repeat(1700)], ['no quiero por ahora', 'no quiero por ahora '.repeat(250)], ['hola', 'hola '.repeat(1000)], ['gracias', 'no gracias '.repeat(500) + 'x'], ['espacios', ' '.repeat(5000) + 'hoy bonificado x']] as const) {
+    it(`«${nombre}» × 5 000 caracteres resuelve en menos de 50 ms`, () => {
+      expect(x.length).toBeGreaterThanOrEqual(4999);
+      expect(lento(() => lib.evDeclina(x + '!', []))).toBeLessThan(50);
+      expect(lento(() => lib.evDeclina(x.trim(), []))).toBeLessThan(50);
+      expect(lento(() => lib.evSoloSaludo(x + '!', ''))).toBeLessThan(50);
+      expect(lento(() => lib.evPulirSalida(x, { textoCliente: 'ok' }))).toBeLessThan(50);
+    });
+  }
 });
 
 describe('la copia es la misma en las dos doctoras', () => {
