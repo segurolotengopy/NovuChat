@@ -11,7 +11,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error el motor es un .mjs sin tipos
 import { main } from '../../../../Flujos/experimental/rroca-emma/herramientas/bateria.mjs';
-import { ANA, CARPETA, HORARIO_DE_LA_CONSOLA, IDS, PRODUCCION, PRUEBA, REC, avisosARecepcion, crear, dice, hablar, hablarYa, imagenes, mImagen, mTexto, panelOk, textos } from './mundo';
+import { ANA, CARPETA, HORARIO_DE_LA_CONSOLA, IDS, PRODUCCION, PRUEBA, REC, avisosARecepcion, conPreferencia, crear, esPreguntaDePreferencia, dice, hablar, hablarYa, imagenes, mImagen, mTexto, panelOk, textos } from './mundo';
 
 const sin = (t: string, ...palabras: string[]): boolean => palabras.every((p) => !t.toLowerCase().includes(p.toLowerCase()));
 const fallo = (t: string): boolean => /inconveniente para responderte/.test(t);
@@ -51,7 +51,9 @@ describe('SIN ancla de monto: Emma nunca menciona una cifra de dinero', () => {
     });
   }
   it('los textos fijos (cierre y gratuidad) dicen «100% gratuita» y «sin pago de reserva», sin «bonificada» ni cifras', () => {
-    const cierre = textos(hablarYa(crear({ modeloDice: dice('[DERIVAR_RECEPCION: Ana]') }), ANA, mTexto('quiero agendar')))[0]!;
+    // AJUSTE (28/10/2026): antes del cierre el código pregunta el día y el horario (`conPreferencia` contesta).
+    const mc = crear({ modeloDice: dice('[DERIVAR_RECEPCION: Ana]') });
+    const cierre = textos(conPreferencia(mc, ANA, hablarYa(mc, ANA, mTexto('quiero agendar'))))[0]!;
     expect(cierre).toContain('100% gratuita');
     expect(cierre).toContain('sin pago de reserva');
     const gratis = textos(hablar(crear({ modeloDice: 'cae' }), ANA, mTexto('¿es gratis?')))[0]!;
@@ -173,7 +175,7 @@ describe('Emma NO agenda: el cierre es el botón a recepción más el aviso, y n
   it('«quiero agendar» → cierre con UN botón y UN aviso a la recepción; el cierre no promete que alguien llame', () => {
     const m = crear({ modeloDice: dice('[DERIVAR_RECEPCION: Ana] Listo.') });
     hablar(m, REC, mTexto('hola, soy recepción'));
-    const t = hablarYa(m, ANA, mTexto('quiero agendar mi valoración'));
+    const t = conPreferencia(m, ANA, hablarYa(m, ANA, mTexto('quiero agendar mi valoración')));
     expect(t.mensajes.filter((e) => e.tipo === 'interactive').length).toBe(1);
     expect(avisosARecepcion(t).length).toBe(1);
     expect(textos(t)[0]).not.toMatch(/te llamamos|te escribir[aá]n|de inmediato|tu cita quedó/i);
@@ -291,7 +293,8 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
     const dir = 'Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055 (Santa Cruz)';
     const relleno = 'Trabajamos con técnica cuidadosa y productos de calidad para acompañarte en cada paso. ';
     const modelo = `Atendemos en ${dir}. ${relleno.repeat(7)}Radiesse define el contorno y da firmeza. La valoración es gratuita. ¿Cómo te llamas?`;
-    const t = sale(modelo, '¿dónde están?');
+    // AJUSTE (28/10/2026): a la respuesta de ubicación el CÓDIGO le agrega el teléfono y el horario de la Consola; el tope de 700 es del texto del MODELO, que se mide sin esas líneas.
+    const t = sale(modelo, '¿dónde están?').replace(/\n\n(?:(?:📍 Ubicación|Teléfono|Horario): [^\n]*\n?)+$/, '');
     expect(fallo(t)).toBe(false);
     expect(t).toContain(dir);
     expect(t.length).toBeLessThanOrEqual(700);
@@ -314,10 +317,11 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
     expect(t.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
     expect(textos(t).join(' ')).toContain('¿Cómo te llamas');
     const rosa = hablar(crear({ modeloDice: dice(saludo) }), ANA, mTexto('Soy Rosa. Quiero agendar mi valoración'));
-    expect(rosa.mensajes.some((e) => e.tipo === 'interactive')).toBe(true);
+    // AJUSTE (28/10/2026): con el pedido sin día, el código pregunta el día y la respuesta cierra.
+    expect(esPreguntaDePreferencia(rosa)).toBe(true);
     const m = crear({ modeloDice: dice(saludo) });
     hablar(m, ANA, mTexto('hola'));
-    expect(hablar(m, ANA, mTexto('Ok, quiero agendar')).mensajes.some((e) => e.tipo === 'interactive')).toBe(true);
+    expect(conPreferencia(m, ANA, hablar(m, ANA, mTexto('Ok, quiero agendar'))).mensajes.some((e) => e.tipo === 'interactive')).toBe(true);
   });
   it('la diferencia entre productos recortada a 700 conserva la valoración gratuita (dura) y no pierde los dos productos por una frase de relleno', () => {
     const largo = 'Te cuento que ambos son excelentes bioestimuladores de colágeno, pero actúan de formas distintas en tu piel y por eso conviene entenderlos bien antes de decidir nada. Sculptra® es a base de ácido poli-L-láctico y estimula tu propio colágeno de forma progresiva, mejorando la firmeza y la calidad de la piel. Radiesse® es a base de hidroxiapatita de calcio y define contornos como pómulos, mentón y mandíbula. Es muy común que las personas se pregunten cuál de los dos necesitan y por eso es una duda excelente que muchas pacientes plantean cada semana en la clínica. Además es normal sentir curiosidad por conocer todos los detalles técnicos de cada uno de ellos antes de decidir cualquier cosa sobre tu rostro con tranquilidad. En tu valoración con la Dra. Emma, que es 100% gratuita y sin compromiso, ella evalúa tu rostro y te dice cuál es el indicado. ¿Cómo te llamas?';

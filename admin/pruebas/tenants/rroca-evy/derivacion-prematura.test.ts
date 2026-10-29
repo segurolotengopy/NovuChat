@@ -8,7 +8,9 @@ import { dirname, join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ANA, IDS, avisosARecepcion, crear, dice, hablar, hablarYa, imagenes, mTexto, textos } from './mundo';
+import { ANA, IDS, avisosARecepcion, conPreferencia, crear, dice, esPreguntaDePreferencia, hablar, hablarYa, imagenes, mTexto, textos } from './mundo';
+
+// AJUSTE (observaciones de Rubén, 28/10/2026): antes del cierre el código pregunta el día y el horario; donde estas pruebas esperan el cierre, la persona contesta «el martes en la tarde» (`conPreferencia`).
 
 const ANTES = '[ENVIAR_ARTE_ANTES_DESPUES] Mira el caso real de una paciente de la Dra. Evy. [DERIVAR_RECEPCION]';
 const esBoton = (t: ReturnType<typeof hablar>): boolean => t.mensajes.some((e) => e.tipo === 'interactive');
@@ -49,7 +51,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     // En el PRIMER contacto sin etiqueta del modelo ni nombre el saludo pide el nombre antes de cerrar (ver flujo.test.ts); con la etiqueta, o ya en conversación, cierra.
     for (const modelo of ['[DERIVAR_RECEPCION: Ana]', 'Perfecto.']) {
       const m = crear({ modeloDice: dice(modelo) });
-      const t = hablarYa(m, ANA, mTexto('Quiero agendar mi valoración'));
+      const t = conPreferencia(m, ANA, hablarYa(m, ANA, mTexto('Quiero agendar mi valoración')));
       expect(esBoton(t), modelo).toBe(true);
       expect(textos(t)[0]).toMatch(/Excelente decisión/);
     }
@@ -58,13 +60,13 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<sí>>>') ? 'Excelente. [DERIVAR_RECEPCION]' : 'Te cuento: la valoración es gratuita. ¿Te gustaría agendar tu valoración?') });
     const t1 = hablar(m, ANA, mTexto('cuéntame de la valoración'));
     expect(esBoton(t1)).toBe(false);
-    const t2 = hablar(m, ANA, mTexto('sí'));
+    const t2 = conPreferencia(m, ANA, hablar(m, ANA, mTexto('sí')));
     expect(esBoton(t2)).toBe(true);
   });
   it('POSITIVA: «dale» tras «¿Quieres que agendemos…?» deriva (la oferta «te paso con recepción» la quita la barrera de promesas, así que nunca llega al historial)', () => {
     const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<dale>>>') ? '[DERIVAR_RECEPCION]' : 'Perfecto. ¿Quieres que agendemos tu valoración?') });
     hablar(m, ANA, mTexto('me interesa'));
-    expect(esBoton(hablar(m, ANA, mTexto('dale')))).toBe(true);
+    expect(esBoton(conPreferencia(m, ANA, hablar(m, ANA, mTexto('dale'))))).toBe(true);
   });
   /** Un asistente que ofrece agendar, pide el nombre al aceptar, y emite la etiqueta cuando el cliente da su nombre. */
   const guion = () => crear({
@@ -80,8 +82,12 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     hablar(m, ANA, mTexto('cuéntame de la valoración'));
     const t2 = hablar(m, ANA, mTexto('sí'));
     expect(esBoton(t2)).toBe(false);                       // el modelo emitió la etiqueta y pidió el nombre en el mismo turno: espera el nombre
-    expect(textos(t2).join(' ')).toContain('cómo te llamas');
-    const t3 = hablar(m, ANA, mTexto('Paola'));
+    // AJUSTE (28/10/2026): el código pregunta el nombre Y el día en UNA sola pregunta; «Paola» (solo el nombre) recibe la pregunta del día, y el día cierra.
+    expect(textos(t2).join(' ')).toMatch(/[Cc]ómo te llamas y qué día y horario/);
+    const t3p = hablar(m, ANA, mTexto('Paola'));
+    expect(esBoton(t3p)).toBe(false);
+    expect(esPreguntaDePreferencia(t3p)).toBe(true);
+    const t3 = conPreferencia(m, ANA, t3p);
     expect(esBoton(t3)).toBe(true);
     expect(textos(t3)[0]).toMatch(/Excelente decisión, Paola/);
     expect(avisosARecepcion(t3).length).toBe(1);
@@ -91,7 +97,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
   it('POSITIVA: «dale» tras la oferta, con la etiqueta SIN pedir nombre, deriva', () => {
     const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<dale>>>') ? 'Listo. [DERIVAR_RECEPCION]' : 'Con gusto. ¿Quieres que agendemos tu valoración?') });
     hablar(m, ANA, mTexto('me interesa'));
-    expect(esBoton(hablar(m, ANA, mTexto('dale')))).toBe(true);
+    expect(esBoton(conPreferencia(m, ANA, hablar(m, ANA, mTexto('dale'))))).toBe(true);
   });
   for (const nombre of ['Paola', 'Me llamo Paola', 'Paola, quiero mejorar mis ojeras', 'soy diabética', 'de La Paz', 'soy nueva']) {
     it(`NEGADA: «${nombre}» tras el saludo (que pregunta el nombre) con la etiqueta del modelo no deriva`, () => {
@@ -114,7 +120,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
     expect(imagenes(t)).toEqual([IDS.antes_despues]);
   });
   it('con historial real: el saludo corto del prompt → «Quiero ver cómo queda» + etiqueta no deriva y sale el ANTES_DESPUES', () => {
-    const SALUDO = '¡Hola! 👋 Soy el asistente virtual de la Dra. Evy Karina Rojas (Armonización Facial), aplicadora certificada: hacemos armonización facial sin cirugía con bioestimuladores de colágeno para recuperar firmeza y definir el contorno del rostro.\n\nHoy tu valoración con la Dra. Evy es 100% gratuita y sin compromiso (su costo habitual es de 250 Bs, hoy bonificado). ¿Cómo te llamas y qué te gustaría mejorar en tu rostro?';
+    const SALUDO = '¡Hola! 👋 Soy el asistente virtual de la Dra. Evy Karina Rojas (Armonización Facial), aplicadora certificada: hacemos armonización facial sin cirugía con bioestimuladores de colágeno para recuperar firmeza y definir el contorno del rostro.\n\nHoy tu valoración con la Dra. Evy es 100% gratuita y sin compromiso (su costo habitual es de 250 Bs). ¿Cómo te llamas y qué te gustaría mejorar en tu rostro?';
     const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<Quiero ver cómo queda>>>') ? ANTES : SALUDO) });
     hablar(m, ANA, mTexto('hola'));
     const t = hablar(m, ANA, mTexto('Quiero ver cómo queda'));
@@ -131,13 +137,13 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
   it('(A-i) la oferta puede llevar una coletilla después de la pregunta: «¿Te gustaría agendar? Es sin compromiso.» → «sí» deriva', () => {
     const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<sí>>>') ? 'Listo. [DERIVAR_RECEPCION]' : 'Te cuento. ¿Te gustaría agendar tu valoración? Es sin compromiso.') });
     hablar(m, ANA, mTexto('cuéntame'));
-    expect(esBoton(hablar(m, ANA, mTexto('sí')))).toBe(true);
+    expect(esBoton(conPreferencia(m, ANA, hablar(m, ANA, mTexto('sí'))))).toBe(true);
   });
   it('(A-ii) otros verbos de oferta: coordinar, programar, apartar', () => {
     for (const oferta of ['¿Quieres que coordinemos tu valoración?', '¿Quieres que programemos tu valoración?', '¿Quieres que te aparte un horario?']) {
       const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<claro>>>') ? 'Listo. [DERIVAR_RECEPCION]' : `Con gusto. ${oferta}`) });
       hablar(m, ANA, mTexto('cuéntame'));
-      expect(esBoton(hablar(m, ANA, mTexto('claro'))), oferta).toBe(true);
+      expect(esBoton(conPreferencia(m, ANA, hablar(m, ANA, mTexto('claro')))), oferta).toBe(true);
     }
   });
   it('(ronda final 1) más ofertas por raíz: «agendarla» y «te coordino» (más «te aparte», arriba) + sí + nombre derivan. «Te agende / te reserve / te reservo» el filtro común (core) los rechaza antes: nunca llegan al cliente', () => {
@@ -150,7 +156,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
       } });
       hablar(m, ANA, mTexto('cuéntame'));
       hablar(m, ANA, mTexto('sí'));
-      expect(esBoton(hablar(m, ANA, mTexto('Paola'))), oferta).toBe(true);
+      expect(esBoton(conPreferencia(m, ANA, conPreferencia(m, ANA, hablar(m, ANA, mTexto('Paola'))))), oferta).toBe(true);
     }
   });
   it('(ronda final 1) «progresivo» y el saludo no son ofertas', () => {
@@ -162,7 +168,8 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
   });
   it('(ronda final 2) una negación no gana si después viene un «quiero agendar» positivo: derivan con etiqueta', () => {
     for (const x of ['Hola, no sé mucho del tema, quiero agendar una cita', 'si no es molestia, quiero agendar mi valoración', 'no vivo en Santa Cruz pero quiero agendar']) {
-      const t = hablarYa(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto(x));
+      const m = crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') });
+      const t = conPreferencia(m, ANA, hablarYa(m, ANA, mTexto(x)));
       expect(esBoton(t), x).toBe(true);
     }
   });
@@ -195,7 +202,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
       } });
       hablar(m, ANA, mTexto('cuéntame'));
       hablar(m, ANA, mTexto('sí'));
-      const t = hablar(m, ANA, mTexto(dicho));
+      const t = conPreferencia(m, ANA, hablar(m, ANA, mTexto(dicho)));
       expect(esBoton(t), dicho).toBe(true);
       expect(textos(t)[0], dicho).toContain(`Excelente decisión, ${esperado}`);
     }
@@ -207,7 +214,8 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
   });
   it('(ronda final 1) el nombre del cierre NO sale de frases que no son un nombre: sale el del perfil', () => {
     for (const x of ['tienen turno el sábado', 'quiero agendar, soy muy nerviosa', 'quiero agendar, soy tu paciente', 'Quiero agendar, soy hipertensa', 'quiero agendar, mejor el lunes', 'Quiero agendar para el lunes, Paola', 'quiero un horario']) {
-      const t = hablarYa(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto(x), { nombre: 'Ana' });
+      const m = crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') });
+      const t = conPreferencia(m, ANA, hablarYa(m, ANA, mTexto(x), { nombre: 'Ana' }), { nombre: 'Ana' });
       const c = textos(t)[0] ?? '';
       expect(c, x).toMatch(/Excelente decisión/);
       expect(c, x).not.toMatch(/Excelente decisión, (Muy|Tu|Mejor|Para|Paola|Hipertensa|Tienen)/);
@@ -249,10 +257,12 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
       const t = hablar(crear({ modeloDice: dice('Entiendo, aquí estoy. [DERIVAR_RECEPCION]') }), ANA, mTexto(x));
       expect(esBoton(t), x).toBe(false);
     }
-    expect(esBoton(hablarYa(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto('quiero agendar mi valoración')))).toBe(true);
+    const mb = crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') });
+    expect(esBoton(conPreferencia(mb, ANA, hablarYa(mb, ANA, mTexto('quiero agendar mi valoración'))))).toBe(true);
   });
   it('(D) el cierre usa el nombre que el cliente dio en su mensaje, antes que el del perfil', () => {
-    const t = hablar(crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') }), ANA, mTexto('Hola, soy Paola y quiero agendar'), { nombre: 'Ana' });
+    const m = crear({ modeloDice: dice('Perfecto. [DERIVAR_RECEPCION]') });
+    const t = conPreferencia(m, ANA, hablar(m, ANA, mTexto('Hola, soy Paola y quiero agendar'), { nombre: 'Ana' }), { nombre: 'Ana' });
     expect(textos(t)[0]).toContain('Excelente decisión, Paola');
     expect(textos(t)[0]).not.toContain('Ana');
   });
@@ -268,7 +278,7 @@ describe('la etiqueta de derivación del modelo no se honra sin que el cliente p
   });
   it('no rompe la etiqueta sin texto (variante corta) ni el cierre completo único', () => {
     const m = crear({ modeloDice: dice('[DERIVAR_RECEPCION: Paola]') });
-    expect(textos(hablarYa(m, ANA, mTexto('quiero agendar')))[0]).toMatch(/Excelente decisión, Paola/);
+    expect(textos(conPreferencia(m, ANA, hablarYa(m, ANA, mTexto('quiero agendar'))))[0]).toMatch(/Excelente decisión, Paola/);
     expect(textos(hablar(m, ANA, mTexto('quiero agendar de nuevo')))[0]).toContain('Claro, aquí tienes');
   });
 });
@@ -353,11 +363,12 @@ describe('PRIMER CONTACTO: la etiqueta del modelo se ignora sin historial y sin 
     expect(avisosARecepcion(t).length).toBe(1);
   });
   it('POSITIVAS: con nombre en el mensaje cierra; con historial (segundo mensaje «quiero agendar») cierra, con o sin etiqueta', () => {
-    expect(esBoton(hablar(crear({ modeloDice: dice(SALUDO + ' [DERIVAR_RECEPCION]') }), ANA, mTexto('Soy Rosa. Quiero agendar mi valoración')))).toBe(true);
+    const mr = crear({ modeloDice: dice(SALUDO + ' [DERIVAR_RECEPCION]') });
+    expect(esBoton(conPreferencia(mr, ANA, hablar(mr, ANA, mTexto('Soy Rosa. Quiero agendar mi valoración'))))).toBe(true);
     for (const modelo of ['Perfecto.', '[DERIVAR_RECEPCION: Ana]']) {
       const m = crear({ modeloDice: dice(modelo) });
       hablar(m, ANA, mTexto('hola'));
-      const t = hablar(m, ANA, mTexto('Ok, quiero agendar'));
+      const t = conPreferencia(m, ANA, hablar(m, ANA, mTexto('Ok, quiero agendar')));
       expect(esBoton(t), modelo).toBe(true);
       expect(textos(t)[0], modelo).toMatch(/Excelente decisión/);
     }

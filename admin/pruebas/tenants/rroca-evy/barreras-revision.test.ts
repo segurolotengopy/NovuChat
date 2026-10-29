@@ -10,7 +10,10 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ANA, BETO, avisosARecepcion, crear, dice, hablar, hablarYa, mTexto, textos } from './mundo';
+import { ANA, BETO, avisosARecepcion, conPreferencia, crear, dice, hablar, hablarYa, mTexto, textos } from './mundo';
+
+// AJUSTE (observaciones de Rubén, 28/10/2026): antes del cierre el código pregunta el día y el horario. Donde estas pruebas esperan el cierre, el pedido trae el día («quiero agendar el martes en la tarde, soy Paola»,
+// que cierra directo) o la persona contesta la pregunta (`conPreferencia`).
 
 /** Cae a un texto fijo: el de fallo del modelo, el de remisión de salud o la admisión de IA. */
 const fallo = (t: string): boolean => /inconveniente para responderte/.test(t) || /un programa con inteligencia artificial/.test(t) || /Eso lo evalúa la Dra\. Evy en persona, durante tu valoración gratuita/.test(t);
@@ -209,7 +212,7 @@ describe('el cierre completo sale UNA vez por ficha', () => {
   const DERIVA = '¡Perfecto! [DERIVAR_RECEPCION: Paola]';
   it('F3/F4/H3: tras el primer cierre, seguir escribiendo no lo repite; si pide agendar de nuevo, sale la variante corta con botón y SIN otro aviso; nunca el mismo texto dos veces seguidas', () => {
     const m = crear({ modeloDice: dice(DERIVA) });
-    const t1 = hablar(m, ANA, mTexto('quiero agendar, soy Paola'));
+    const t1 = hablar(m, ANA, mTexto('quiero agendar el martes en la tarde, soy Paola'));
     expect(textos(t1)[0]).toMatch(CIERRE);
     expect(t1.mensajes[0]!.tipo).toBe('interactive');
     for (const seguir of ['gracias, ¿cuánto dura la sesión?', 'ok y ¿se puede con lentes?', 'perfecto, gracias']) {
@@ -227,7 +230,7 @@ describe('el cierre completo sale UNA vez por ficha', () => {
   });
   it('alternancia A/B/A y aviso: el aviso no se repite dentro de los 30 minutos y sí al vencer la ventana', () => {
     const m = crear({ modeloDice: dice(DERIVA) });
-    hablar(m, ANA, mTexto('quiero agendar, soy Paola'));
+    hablar(m, ANA, mTexto('quiero agendar el martes en la tarde, soy Paola'));
     expect(textos(hablar(m, ANA, mTexto('quiero agendar'))).join(' ')).toContain('Claro, aquí tienes');
     expect(textos(hablar(m, ANA, mTexto('quiero agendar'))).join(' ')).toContain('Con gusto, el botón');
     m.avanzar(40);
@@ -237,14 +240,14 @@ describe('el cierre completo sale UNA vez por ficha', () => {
   });
   it('a las 48 h la ficha se olvida y vuelve a salir el cierre completo', () => {
     const m = crear({ modeloDice: dice(DERIVA) });
-    hablar(m, ANA, mTexto('quiero agendar, soy Paola'));
+    hablar(m, ANA, mTexto('quiero agendar el martes en la tarde, soy Paola'));
     m.avanzar(49 * 60);
-    expect(textos(hablarYa(m, ANA, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
+    expect(textos(conPreferencia(m, ANA, hablarYa(m, ANA, mTexto('quiero agendar')))).join(' ')).toMatch(/Excelente decisión/);
   });
   it('dos teléfonos: el cierre de uno no afecta al otro', () => {
     const m = crear({ modeloDice: dice(DERIVA) });
-    hablarYa(m, ANA, mTexto('quiero agendar'));
-    expect(textos(hablarYa(m, BETO, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
+    conPreferencia(m, ANA, hablarYa(m, ANA, mTexto('quiero agendar')));
+    expect(textos(conPreferencia(m, BETO, hablarYa(m, BETO, mTexto('quiero agendar')))).join(' ')).toMatch(/Excelente decisión/);
     expect(textos(hablar(m, ANA, mTexto('quiero agendar'))).join(' ')).toContain('Claro, aquí tienes');
   });
   it('NEGADA: si el envío del cierre falla (principal y respaldo), no cuenta como hecho: el siguiente pedido recibe el cierre COMPLETO', () => {
@@ -253,11 +256,11 @@ describe('el cierre completo sale UNA vez por ficha', () => {
     const m = crear({ modeloDice: dice(DERIVA), envio });
     hablar(m, ANA, mTexto('quiero agendar'), { toleraFallo: true });
     envio['Enviar a WhatsApp'] = 'acepta'; envio['Enviar respaldo'] = 'acepta';
-    expect(textos(hablar(m, ANA, mTexto('quiero agendar'))).join(' ')).toMatch(/Excelente decisión/);
+    expect(textos(conPreferencia(m, ANA, hablar(m, ANA, mTexto('quiero agendar')))).join(' ')).toMatch(/Excelente decisión/);
   });
   it('«sigue conversando» va al modelo sin botón; la etiqueta sin texto y un pedido con negación también se tratan bien', () => {
     const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('cuánto dura') ? '[DERIVAR_RECEPCION]' : DERIVA) });
-    hablar(m, ANA, mTexto('quiero agendar, soy Paola'));
+    hablar(m, ANA, mTexto('quiero agendar el martes en la tarde, soy Paola'));
     const sinTexto = hablar(m, ANA, mTexto('¿cuánto dura la sesión?'));
     expect(textos(sinTexto)[0]).toContain('botón');   // etiqueta sin texto: variante corta con botón
     expect(sinTexto.mensajes[0]!.tipo).toBe('interactive');
@@ -268,7 +271,8 @@ describe('el cierre completo sale UNA vez por ficha', () => {
     expect(neg.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
   });
   it('POSITIVA: el primer cierre sigue saliendo completo con su botón y su aviso', () => {
-    const t = hablarYa(crear({ modeloDice: dice(DERIVA) }), ANA, mTexto('quiero agendar'));
+    const m = crear({ modeloDice: dice(DERIVA) });
+    const t = conPreferencia(m, ANA, hablarYa(m, ANA, mTexto('quiero agendar')));
     expect(textos(t)[0]).toMatch(CIERRE);
     expect(t.mensajes[0]!.tipo).toBe('interactive');
   });
@@ -294,7 +298,8 @@ describe('la pregunta por la gratuidad se contesta con un texto fijo cuando el m
     expect(t.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
     expect(avisosARecepcion(t).length).toBe(0);
   });
-  const FIJO = 'Sí, la valoración con la Dra. Evy Karina Rojas es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar. (Su valor habitual es de 250 Bs; hoy está bonificado).';
+  // AJUSTE (28/10/2026): sin «hoy está bonificado»; el valor habitual, solo en el primer turno de la ficha (estas pruebas son el primer turno; el turno siguiente se prueba en observaciones-ruben.test.ts).
+  const FIJO = 'Sí, la valoración con la Dra. Evy Karina Rojas es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar. (Su valor habitual es de 250 Bs).';
   const PREGUNTAS = ['¿De verdad es gratis?', '¿Hay algún costo escondido o pago de reserva?', '¿tengo que dejar un anticipo?'];
   for (const q of PREGUNTAS) {
     it(`POSITIVA: «${q}» con el modelo rechazado o caído: texto fijo, sin botón ni aviso`, () => {
@@ -333,7 +338,7 @@ describe('«Ok, quiero agendar» deriva aunque el modelo no emita la etiqueta (F
     // ya en conversación (en el primer contacto sin nombre el saludo pide el nombre antes de cerrar)
     const m = crear({ modeloDice: dice('¡Sí, de verdad es gratuita! Me alegra tu decisión.') });
     hablar(m, ANA, mTexto('hola'));
-    const t = hablar(m, ANA, mTexto('Ok, quiero agendar'));
+    const t = conPreferencia(m, ANA, hablar(m, ANA, mTexto('Ok, quiero agendar')));
     expect(textos(t)[0]).toMatch(/Excelente decisión/);
     expect(t.mensajes[0]!.tipo).toBe('interactive');
     expect(avisosARecepcion(t).length).toBe(1);
@@ -343,7 +348,7 @@ describe('«Ok, quiero agendar» deriva aunque el modelo no emita la etiqueta (F
   it('con el modelo caído y un pedido explícito, igual sale el cierre (no el fallo)', () => {
     const m = crear({ modeloDice: 'cae' });
     hablar(m, ANA, mTexto('hola'));
-    const t = hablar(m, ANA, mTexto('quiero agendar'));
+    const t = conPreferencia(m, ANA, hablar(m, ANA, mTexto('quiero agendar')));
     expect(textos(t)[0]).toMatch(/Excelente decisión/);
   });
 });
@@ -376,7 +381,8 @@ describe('Evy NO agenda: ninguna oración del modelo afirma una cita, un cupo o 
     }
   });
   it('el cierre fijo y el texto fijo de gratuidad no son tocados', () => {
-    const t = hablarYa(crear({ modeloDice: dice('[DERIVAR_RECEPCION: Paola]') }), ANA, mTexto('quiero agendar'));
+    const m = crear({ modeloDice: dice('[DERIVAR_RECEPCION: Paola]') });
+    const t = conPreferencia(m, ANA, hablarYa(m, ANA, mTexto('quiero agendar')));
     expect(textos(t)[0]).toMatch(/Excelente decisión, Paola/);
   });
 });
