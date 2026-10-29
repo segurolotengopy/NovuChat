@@ -469,6 +469,32 @@ describe('batería real del 29/10/2026', () => {
   it('NEGADA: una promesa de llamada real sigue rechazada o quitada', () => {
     expect(lib.evPulirSalida('Recepción te llama mañana. ¿Algo más?', { textoCliente: 'ok' }).texto).not.toMatch(/te llama/);
   });
+  it('O2-4 / O6-2: una DURACIÓN («entre 20 y 30 minutos») no es un precio: la respuesta sale', () => {
+    for (const x of ['La valoración suele durar aproximadamente entre 20 y 30 minutos. ¿Te gustaría agendar?', 'La aplicación toma entre 30 y 45 minutos. ¿Algo más?']) {
+      const r = lib.evPulirSalida(x, { textoCliente: '¿cuánto dura?' });
+      expect(r.motivo, x).toBe('');
+      expect(r.texto, x).toMatch(/minutos/);
+    }
+  });
+  it('NEGADA: un rango o una cifra de PRECIO sigue rechazado, aunque la frase también hable de minutos', () => {
+    for (const x of ['El tratamiento cuesta entre 300 y 400 Bs. ¿Agendamos?', 'La sesión dura 40 minutos y cuesta desde 1500. ¿Agendamos?', 'Sale aproximadamente entre 2 y 3 mil. ¿Agendamos?']) {
+      expect(lib.evPulirSalida(x, { textoCliente: '¿cuánto cuesta?' }).motivo, x).not.toBe('');
+    }
+  });
+  it('G3: «lo que sí te garantizo es el respaldo y la experiencia de la Dra.» no tumba la respuesta: la oración se quita y queda la aclaración', () => {
+    const r = lib.evPulirSalida('No podemos garantizar resultados exactos. Lo que sí te garantizo es el respaldo y la experiencia de la Dra. La valoración es gratuita. ¿Te gustaría agendar tu valoración?', { textoCliente: '¿me garantizas el resultado?' });
+    expect(r.motivo).toBe('');
+    expect(r.texto).not.toMatch(/garantiz/i);
+    expect(r.texto).toContain('Cada rostro responde distinto');
+  });
+  it('NEGADA: garantizar el RESULTADO sigue rechazado', () => {
+    expect(lib.evPulirSalida('Te garantizo el resultado. ¿Agendamos?', { textoCliente: 'ok' }).motivo).toBe('prohibido');
+  });
+  it('B4: «¿esto es real?» sobre la foto no es la pregunta de identidad (respuesta real de la batería, que antes caía al fallo); «¿eres un bot?» sigue siéndolo', () => {
+    const r = lib.evPulirSalida('¡Hola! Así es: se trata de una paciente real de la Dra., a quien le devolvimos la firmeza del perfil sin cirugía. Cada rostro responde distinto y no prometemos un resultado idéntico. ¿Cómo te llamas?', { textoCliente: '¿esto es real?', artesEnviados: ['antes_despues'] });
+    expect(r.motivo).toBe('');
+    expect(lib.evPulirSalida('No. ¿Cómo te llamas?', { textoCliente: '¿eres un bot?' }).motivo).not.toBe('');
+  });
   it('NEGADA: el cierre amable no sale dos veces seguidas con el mismo texto', () => {
     const m = crear({ modeloDice: dice('Con gusto.') });
     hablar(m, ANA, mTexto('hola'));

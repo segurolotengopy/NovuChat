@@ -650,7 +650,7 @@ const EV_NEGADA = /\b(?:no|nunca|jamas|ni|tampoco|sin|nadie|ningun\w*)\b(?:\s+\S
 // La cláusula donde está la palabra: lo anterior a una coma, dos puntos, punto y coma o un «pero / sino / aunque» no la gobierna («No puedo garantizar nada, pero vas a quedar perfecta»).
 const evClausula = (prefijo) => String(prefijo).split(/[,:;]|\bpero\b|\bsino\b|\baunque\b|\bsin embargo\b/).pop();
 // Garantizar algo que NO es el resultado («te garantizamos un diagnóstico profesional y honesto»): la oración se borra (no se promete eso) pero no tumba el texto entero.
-const EV_GARANTIA_BENIGNA = /^\w+\s+(?:\w+\s+){0,2}(?:diagnostico|atencion|evaluacion|valoracion|trato|honestidad|transparencia|profesionalismo|acompanamiento|etica|seguimiento|calidad|privacidad|confidencialidad|personalizad\w*)\b/;
+const EV_GARANTIA_BENIGNA = /^\w+\s+(?:\w+\s+){0,2}(?:diagnostico|atencion|evaluacion|valoracion|trato|honestidad|transparencia|profesionalismo|acompanamiento|etica|seguimiento|calidad|privacidad|confidencialidad|personalizad\w*|respaldo|experiencia|compromiso|dedicacion)\b/;   // «respaldo / experiencia» de la Dra.: batería real del 29/10/2026 (G3)
 function evGarantiaAfirmativa(norm) {
   for (const o of String(norm).split(/[.!?]+/)) {
     const m = EV_GARANTIA.exec(o);
@@ -934,7 +934,9 @@ function evPulirSalida(crudo, ctx) {
   if (sinRemision) return { texto: '', motivo: 'salud_sin_remision', detalle: 'habla de salud o afirma seguridad («' + sinRemision.slice(0, 40) + '») sin remitir a la valoración de la Dra.' };
   const salud = evConsejoDeSalud(norm);
   if (salud) return { texto: '', motivo: 'prohibido', detalle: 'consejo de salud sobre la condición del cliente («' + salud + '…»)' };
-  for (const [nombre, re] of EV_PROHIBIDO_MEDICO) { const m = re.exec(norm); if (m) return { texto: '', motivo: 'prohibido', detalle: nombre + ' («' + m[0].slice(0, 50) + '»)' }; }
+  // Una DURACIÓN («entre 20 y 30 minutos», «unos 40 minutos») no es un precio (batería real del 29/10/2026: «¿cuánto dura?» caía al fallo): solo para las reglas de precio se quita antes de mirar.
+  const normSinDuracion = evSinDuraciones(norm);
+  for (const [nombre, re] of EV_PROHIBIDO_MEDICO) { const m = re.exec(nombre === 'precio' || nombre === 'rango_de_precio' ? normSinDuracion : norm); if (m) return { texto: '', motivo: 'prohibido', detalle: nombre + ' («' + m[0].slice(0, 50) + '»)' }; }
   const opcionesFiltro = {
     maximo: 1500, permitirMontos: false, enlacesPermitidos: [], sinPromesasDeAviso: true, sinImagenes: enviados.length === 0,
     quienPromete: ['recepcion', 'la recepcion', 'el equipo', 'nuestro equipo', 'un asesor', 'una asesora'], textoDelCliente: evTextoParaIdentidad(c.textoCliente || ''),
@@ -1405,3 +1407,8 @@ function evLineasDeUbicacion(cfg, texto) {
   if (horario && evNorm(t).indexOf(evNorm(horario)) < 0) lineas.push('Horario: ' + horario);
   return lineas;
 }
+
+// UNA DURACIÓN NO ES UN PRECIO (batería real del 29/10/2026): «(aproximadamente / alrededor de / unos / entre / de) N (a|y N) minutos/horas/días/semanas/meses» se quita del texto que miran las reglas de precio. Sin moneda
+// en la frase: «entre 300 y 400 Bs» o «cuesta 500» siguen rechazados. Sin cuantificadores ambiguos (palabras con espacio obligatorio, cifras acotadas).
+const EV_DURACION_TEXTO = /\b(?:(?:aproximadamente|alrededor de|unos|unas|entre|de|dura|duran|suele durar|tarda|toma) )*\d{1,3}(?: (?:a|y|o) \d{1,3})? (?:minutos?|min|horas?|hs|dias?|semanas?|meses|mes)\b(?! (?:bs|bolivianos|dolares|usd))/g;
+function evSinDuraciones(norm) { return evTexto(norm).replace(EV_DURACION_TEXTO, ' '); }
