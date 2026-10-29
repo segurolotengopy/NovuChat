@@ -459,6 +459,25 @@ describe('(6) la pregunta de cierre no se repite dos veces seguidas', () => {
   });
 });
 
+describe('batería real del 29/10/2026', () => {
+  it('O1-3: «¿qué zona de tu rostro te llama más la atención?» no es una promesa de llamada (la bienvenida ya no cae al fallo)', () => {
+    const r = lib.evPulirSalida('Hoy tu valoración es gratuita. Cuéntame, ¿qué zona de tu rostro te llama más la atención?', { textoCliente: 'Hola, me llamo Paola', primerTurno: true });
+    expect(r.motivo).toBe('');
+    expect(r.texto).toContain('te interesa más');
+  });
+  it('NEGADA: una promesa de llamada real sigue rechazada o quitada', () => {
+    expect(lib.evPulirSalida('Recepción te llama mañana. ¿Algo más?', { textoCliente: 'ok' }).texto).not.toMatch(/te llama/);
+  });
+  it('NEGADA: el cierre amable no sale dos veces seguidas con el mismo texto', () => {
+    const m = crear({ modeloDice: dice('Con gusto.') });
+    hablar(m, ANA, mTexto('hola'));
+    hablar(m, ANA, mTexto('no gracias'));
+    const a = textos(hablar(m, ANA, mTexto('no')))[0];
+    const b = textos(hablar(m, ANA, mTexto('no gracias')))[0];
+    expect(b).not.toBe(a);
+  });
+});
+
 describe('la copia es la misma en las dos doctoras', () => {
   it('el bloque de las observaciones es idéntico byte a byte en los dos flujos', () => {
     const bloque = (c: string) => { const t = readFileSync(join(RAIZ, `${c}/src/lib/ev.js`), 'utf8'); return t.slice(t.indexOf('// OBSERVACIONES DE RUBÉN (decisiones de Andres, 28/10/2026)')); };

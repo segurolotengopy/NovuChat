@@ -135,7 +135,7 @@ if (puerta.ruta === 'fuera_de_prueba') {
   hist = { a: ms[0].texto, b: ms[0].texto };
 } else if (efectivo === 'cierre_amable') {
   // (3) Rechazó la oferta (o ya se le hizo): un cierre amable, sin repetir la oferta y sin «excelente día».
-  ms = [texto(EV_TEXTO_CIERRE_AMABLE)];
+  ms = [texto(evNorm(ultimoAsistente) === evNorm(EV_TEXTO_CIERRE_AMABLE) ? EV_TEXTO_CIERRE_AMABLE_2 : EV_TEXTO_CIERRE_AMABLE)];
   hist = { a: ms[0].texto, b: ms[0].texto };
 } else if (efectivo === 'saludo') {
   // (5) Un saludo con la ficha vigente: no se repite la bienvenida; si aún no dio su nombre, se le pide.

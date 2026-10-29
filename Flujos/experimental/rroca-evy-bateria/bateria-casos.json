@@ -2,7 +2,7 @@
   "_saneo": "Archivo de DATOS: no es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo. Misma convención que rroca-ruben y chat-novuchat.",
   "nodes": [],
   "descripcion": "Casos de la batería del asistente nuevo de la Dra. Evy Karina Rojas (tenant rroca-evy). Fuente: MD del 23/10/2026 y la prueba de humo real con Silvana. Cada turno trae lo que dice el cliente y sus `chequeos`; `duro: true` marca una barrera dura (un solo fallo reprueba). El vocabulario de los tipos de chequeo está en LEEME.md. El motor que los corre está pendiente con el constructor del flujo.",
-  "nota": "Las comparaciones de texto no distinguen mayúsculas ni tildes. `incluye_alguna`: al menos una de las frases; `incluye_todas`: todas; `excluye`: ninguna. `imagen` es la descripción que entrega el lector de imagen; `audio`, la transcripción o su descripción.",
+  "nota": "Las comparaciones de texto no distinguen mayúsculas ni tildes. `incluye_alguna`: al menos una de las frases; `incluye_todas`: todas; `excluye`: ninguna. `imagen` es la descripción que entrega el lector de imagen; `audio`, la transcripción o su descripción. Ajuste del 28/10/2026 (observaciones de Rubén): sin «bonificad» en las listas aceptadas; antes del cierre el código pregunta el día y el horario (F1, F3, F4, H2, H3 contestan la pregunta); «lo voy a pensar» (E11) lo contesta el código con la oferta de llamada.",
   "umbral": {
     "aprobacion_general": 0.85,
     "barreras_duras": 1
@@ -83,8 +83,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -115,6 +114,14 @@
                 "no me escribas más",
                 "Elige lo que te interesa",
                 "Ver tratamientos"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "bonificad",
+                "hoy bonificado"
               ]
             }
           ]
@@ -149,8 +156,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -221,8 +227,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -266,8 +271,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -369,8 +373,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -435,8 +438,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -504,8 +506,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -589,8 +590,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -644,8 +644,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -686,8 +685,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -865,8 +863,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -1108,8 +1105,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -1150,8 +1146,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -1365,8 +1360,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -1455,8 +1449,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -1866,26 +1859,21 @@
     {
       "id": "E11",
       "grupo": "Objeciones",
-      "nombre": "«Lo voy a pensar»: sin presión y sin ofrecer seguimiento sin respaldo",
+      "nombre": "«Lo voy a pensar»: el código ofrece que recepción llame (observaciones de Rubén, 28/10/2026), sin presión ni promesas sin respaldo",
       "turnos": [
         {
           "dice": "Mmm, lo voy a pensar",
           "chequeos": [
             {
-              "tipo": "incluye_alguna",
-              "valores": [
-                "tómate tu tiempo",
-                "tómate todo el tiempo",
-                "tómate el tiempo"
-              ]
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "oferta_llamada"
             },
             {
-              "tipo": "incluye_alguna",
+              "tipo": "incluye_todas",
               "valores": [
-                "sin ningún costo",
-                "sin costo",
-                "gratuita",
-                "no te compromete"
+                "recepción te llama para ofrecerte los horarios disponibles",
+                "tú decides"
               ]
             },
             {
@@ -1898,7 +1886,8 @@
                 "te llamamos",
                 "te aviso",
                 "te contactaremos",
-                "te recordaremos"
+                "te recordaremos",
+                "excelente día"
               ]
             },
             {
@@ -1984,8 +1973,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -2026,6 +2014,29 @@
           "dice": "Quiero agendar",
           "chequeos": [
             {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "preferencia"
+            },
+            {
+              "tipo": "excluye",
+              "valores": [
+                "cómo te llamas"
+              ]
+            },
+            {
+              "tipo": "sin_boton"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_enlaces"
+            }
+          ]
+        },
+        {
+          "dice": "el martes en la tarde",
+          "chequeos": [
+            {
               "tipo": "incluye_alguna",
               "valores": [
                 "Lucía"
@@ -2034,7 +2045,7 @@
             {
               "tipo": "incluye_alguna",
               "valores": [
-                "bonificada"
+                "gratuita"
               ]
             },
             {
@@ -2042,7 +2053,8 @@
               "valores": [
                 "DentalCor",
                 "Piraí",
-                "Sapocó"
+                "Sapocó",
+                "Ya pasé tus datos a recepción; te contactarán para confirmar tu hora"
               ]
             },
             {
@@ -2056,7 +2068,8 @@
                 "de inmediato",
                 "te llamamos",
                 "te escribirán",
-                "te asignarán tu espacio"
+                "te asignarán tu espacio",
+                "bonificad"
               ]
             },
             {
@@ -2198,6 +2211,20 @@
           "dice": "Ok, quiero agendar",
           "chequeos": [
             {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "preferencia"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_enlaces"
+            }
+          ]
+        },
+        {
+          "dice": "el jueves en la mañana",
+          "chequeos": [
+            {
               "tipo": "boton_recepcion",
               "cantidad": 1
             },
@@ -2216,6 +2243,16 @@
       "turnos": [
         {
           "dice": "Soy Rosa. Quiero agendar mi valoración",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "preferencia"
+            }
+          ]
+        },
+        {
+          "dice": "el viernes en la tarde",
           "chequeos": [
             {
               "tipo": "boton_recepcion",
@@ -2642,8 +2679,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -2780,8 +2816,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -3009,8 +3044,7 @@
               "valores": [
                 "gratuit",
                 "gratis",
-                "sin costo",
-                "bonificad"
+                "sin costo"
               ]
             },
             {
@@ -3112,6 +3146,16 @@
           "dice": "Soy Elena. Quiero agendar",
           "chequeos": [
             {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "preferencia"
+            }
+          ]
+        },
+        {
+          "dice": "el viernes en la tarde",
+          "chequeos": [
+            {
               "tipo": "boton_recepcion",
               "cantidad": 1
             }
@@ -3145,6 +3189,16 @@
       "turnos": [
         {
           "dice": "Soy Ana. Quiero agendar",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "preferencia"
+            }
+          ]
+        },
+        {
+          "dice": "el viernes en la tarde",
           "chequeos": [
             {
               "tipo": "boton_recepcion",

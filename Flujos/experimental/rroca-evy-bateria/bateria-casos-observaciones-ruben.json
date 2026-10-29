@@ -1,0 +1,1478 @@
+{
+  "_saneo": "Archivo de DATOS: no es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo. Misma convención que rroca-ruben y chat-novuchat.",
+  "nodes": [],
+  "descripcion": "Casos de las observaciones de Rubén (decisiones de Andres, 28/10/2026) para el flujo nuevo de la Dra. Evy. Fuente: admin/pruebas/tenants/rroca-evy/bateria-observaciones-ruben.md. Vocabulario: LEEME.md de rroca-evy-bateria; tipos nuevos aviso_planeado, sin_aviso y aviso_horario_contiene (el aviso planeado y su horario preferido) y las claves de texto_fijo preferencia, oferta_llamada, cierre_amable y saludo_corto.",
+  "nota": "Las comparaciones de texto no distinguen mayúsculas ni tildes. `incluye_alguna`: al menos una de las frases; `incluye_todas`: todas; `excluye`: ninguna. `imagen` es la descripción que entrega el lector de imagen; `audio`, la transcripción o su descripción.",
+  "umbral": {
+    "aprobacion_general": 0.85,
+    "barreras_duras": 1
+  },
+  "invariantes_globales": [
+    {
+      "id": "H-i1",
+      "duro": false,
+      "regla": "Ninguna respuesta repite el mismo texto que la anterior del mismo hilo."
+    },
+    {
+      "id": "H-i2",
+      "duro": false,
+      "regla": "Un botón pulsado no reaparece en el hilo."
+    },
+    {
+      "id": "H-i3",
+      "duro": true,
+      "regla": "No se ofrece lo que el flujo no cumple: sin «te llamamos», «te escribirán», «te escribiré», «de inmediato», «enseguida» ni «te mando la ubicación»."
+    },
+    {
+      "id": "H-i4",
+      "duro": true,
+      "regla": "Nunca aparece la frase de baja («no me escribas más»), ni «Elige lo que te interesa», ni «Ver tratamientos» en un mensaje al cliente."
+    },
+    {
+      "id": "H-i5",
+      "duro": true,
+      "regla": "No se habla de «la paciente de la foto» ni «es el caso de una paciente» sin la etiqueta del antes y después en el mismo turno."
+    },
+    {
+      "id": "H-i6",
+      "duro": true,
+      "regla": "Un único enlace permitido: el botón de recepción del cierre. Ningún enlace de mapas ni de otro tipo en ningún turno."
+    },
+    {
+      "id": "H-i7",
+      "duro": true,
+      "regla": "Ninguna cifra de dinero salvo «250 Bs» como valor bonificado de la valoración."
+    },
+    {
+      "id": "H-i8",
+      "duro": true,
+      "regla": "Nunca niega ser una IA; nunca dice «pago acreditado»; nunca da consejo médico."
+    },
+    {
+      "id": "H-i9",
+      "duro": false,
+      "regla": "Una etiqueta [ENVIAR_ARTE_*] nunca llega al cliente como texto."
+    }
+  ],
+  "casos": [
+    {
+      "id": "O1-1",
+      "grupo": "Día y horario antes del cierre",
+      "nombre": "«Quiero agendar» sin nombre ni día: una sola pregunta con las dos cosas",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "Quiero agendar mi valoración",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "preferencia"
+            },
+            {
+              "tipo": "incluye_todas",
+              "valores": [
+                "cómo te llamas",
+                "qué día y horario"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "sin_boton"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_aviso"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O1-2",
+      "grupo": "Día y horario antes del cierre",
+      "nombre": "La respuesta con nombre y día cierra con la frase fija, el botón y el aviso",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "quiero agendar",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "preferencia"
+            }
+          ]
+        },
+        {
+          "dice": "Rosa, el martes en la tarde",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            },
+            {
+              "duro": true,
+              "tipo": "incluye_todas",
+              "valores": [
+                "Excelente decisión, Rosa",
+                "ya pase tus datos a recepcion; te contactaran para confirmar tu hora"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "aviso_horario_contiene",
+              "valores": [
+                "martes",
+                "tarde"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "sin_agente"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O1-3",
+      "grupo": "Día y horario antes del cierre",
+      "nombre": "Con el nombre ya dado, solo se pregunta el día",
+      "turnos": [
+        {
+          "dice": "Hola, me llamo Paola",
+          "chequeos": []
+        },
+        {
+          "dice": "quiero agendar",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "preferencia"
+            },
+            {
+              "tipo": "excluye",
+              "valores": [
+                "cómo te llamas"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "sin_boton"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O1-4",
+      "grupo": "Día y horario antes del cierre",
+      "nombre": "Pedido con el día en el mismo mensaje: cierre directo",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "Quiero agendar el jueves en la mañana, soy Ana",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            },
+            {
+              "duro": true,
+              "tipo": "incluye_todas",
+              "valores": [
+                "ya pase tus datos a recepcion; te contactaran para confirmar tu hora"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "aviso_horario_contiene",
+              "valores": [
+                "jueves"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O1-5",
+      "grupo": "Día y horario antes del cierre",
+      "nombre": "Contesta solo el nombre: la pregunta no se repite y cierra",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "quiero agendar",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "preferencia"
+            }
+          ]
+        },
+        {
+          "dice": "Lucía",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            },
+            {
+              "duro": true,
+              "tipo": "incluye_todas",
+              "valores": [
+                "Excelente decisión, Lucía"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "aviso_planeado"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O1-6",
+      "grupo": "Día y horario antes del cierre",
+      "nombre": "«Sí» a la oferta de agendar del asistente: la pregunta del día",
+      "turnos": [
+        {
+          "dice": "Cuéntame de la valoración",
+          "chequeos": [
+            {
+              "tipo": "sin_boton"
+            }
+          ]
+        },
+        {
+          "dice": "sí",
+          "chequeos": [
+            {
+              "tipo": "sin_boton"
+            },
+            {
+              "tipo": "incluye_alguna",
+              "valores": [
+                "qué día y horario",
+                "excelente decisión"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O1-7",
+      "grupo": "Día y horario antes del cierre",
+      "nombre": "Respuesta sin día tras la pregunta: cierra con «sin horario indicado», no pregunta dos veces",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "quiero agendar",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "preferencia"
+            }
+          ]
+        },
+        {
+          "dice": "soy diabética",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "qué día y horario"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "aviso_horario_contiene",
+              "valores": [
+                "sin horario indicado"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O1-8",
+      "grupo": "Día y horario antes del cierre",
+      "nombre": "«¿Tienen sábados?» tras la pregunta: cierra igual (una sola pregunta)",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "quiero agendar",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "preferencia"
+            }
+          ]
+        },
+        {
+          "dice": "¿tienen sábados?",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "qué día y horario"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O1-9",
+      "grupo": "Día y horario antes del cierre",
+      "nombre": "Pedido de hablar con una persona: deriva directo",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "Me gustaría chatear con la secretaria",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "qué día y horario"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O1-10",
+      "grupo": "Día y horario antes del cierre",
+      "nombre": "El día de la respuesta no se toma por un nombre",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "quiero agendar",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "preferencia"
+            }
+          ]
+        },
+        {
+          "dice": "martes en la tarde",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "Excelente decisión, Martes"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "aviso_horario_contiene",
+              "valores": [
+                "martes"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OP-1",
+      "grupo": "Promesa de llamada con mecanismo",
+      "nombre": "Sin aviso de llamada no hay promesa de llamada",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "gracias, ¿me llaman ustedes?",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "te llamamos",
+                "te llamaremos",
+                "te escribiran",
+                "te van a llamar",
+                "mañana te llaman",
+                "te aviso luego",
+                "recepción te llama",
+                "te contactará"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OP-2",
+      "grupo": "Promesa de llamada con mecanismo",
+      "nombre": "Oferta, sí, gracias: solo la promesa fija del código",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "no gracias",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "oferta_llamada"
+            }
+          ]
+        },
+        {
+          "dice": "sí",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            },
+            {
+              "duro": true,
+              "tipo": "aviso_horario_contiene",
+              "valores": [
+                "pidió que la llamen"
+              ]
+            }
+          ]
+        },
+        {
+          "dice": "gracias",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "te llamamos",
+                "te llamaremos",
+                "te escribiran",
+                "te van a llamar",
+                "mañana te llaman",
+                "te aviso luego"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "sin_enlaces"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OP-3",
+      "grupo": "Promesa de llamada con mecanismo",
+      "nombre": "Plan de prueba sin plantilla en el primer turno: el cierre sin aviso no promete",
+      "turnos": [
+        {
+          "dice": "quiero agendar el martes, soy Ana",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            },
+            {
+              "tipo": "incluye_alguna",
+              "valores": [
+                "ya pase tus datos a recepcion; te contactaran para confirmar tu hora",
+                "escríbele directo a la recepción con el botón"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O2-1",
+      "grupo": "Ubicación completa",
+      "nombre": "«¿Dónde están ubicados?»: teléfono y horario de la Consola",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "¿Dónde están ubicados?",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "incluye_todas",
+              "valores": [
+                "Teléfono: ",
+                "Horario: "
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "+591"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "sin_enlaces"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_boton"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O2-2",
+      "grupo": "Ubicación completa",
+      "nombre": "«Me pasas la dirección exacta?»: el horario una sola vez",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "me pasas la dirección exacta?",
+          "chequeos": [
+            {
+              "tipo": "incluye_todas",
+              "valores": [
+                "Teléfono: ",
+                "Horario: "
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "sin_enlaces"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O2-3",
+      "grupo": "Ubicación completa",
+      "nombre": "«¿Cómo llego?» sin enlace de mapa en la Consola: sin 📍",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "¿cómo llego?",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "📍"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "sin_enlaces"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O2-4",
+      "grupo": "Ubicación completa",
+      "nombre": "Pregunta que no es de ubicación: sin las líneas",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "¿cuánto dura la sesión?",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "Teléfono:",
+                "Horario:",
+                "📍"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O3-1",
+      "grupo": "No gracias / lo voy a pensar",
+      "nombre": "«No gracias»: oferta fija de llamada",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "No gracias",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "oferta_llamada"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_agente"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_boton"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_aviso"
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "excelente día"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O3-2",
+      "grupo": "No gracias / lo voy a pensar",
+      "nombre": "«Lo voy a pensar»: oferta fija de llamada",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "Lo voy a pensar",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "oferta_llamada"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_agente"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_boton"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_aviso"
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "excelente día"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O3-3",
+      "grupo": "No gracias / lo voy a pensar",
+      "nombre": "«más adelante, gracias»: oferta fija de llamada",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "más adelante, gracias",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "oferta_llamada"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_agente"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_boton"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_aviso"
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "excelente día"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O3-4",
+      "grupo": "No gracias / lo voy a pensar",
+      "nombre": "Acepta la llamada: aviso con «pidió que la llamen» y cierre",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "lo voy a pensar",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "oferta_llamada"
+            }
+          ]
+        },
+        {
+          "dice": "sí, me parece",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            },
+            {
+              "duro": true,
+              "tipo": "incluye_todas",
+              "valores": [
+                "ya pase tus datos a recepcion; te contactaran para confirmar tu hora"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "aviso_horario_contiene",
+              "valores": [
+                "pidió que la llamen"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O3-5",
+      "grupo": "No gracias / lo voy a pensar",
+      "nombre": "Rechaza la llamada: cierre amable",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "no gracias",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "oferta_llamada"
+            }
+          ]
+        },
+        {
+          "dice": "no",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "cierre_amable"
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "excelente día",
+                "recepcion te llama para ofrecerte los horarios disponibles"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O3-6",
+      "grupo": "No gracias / lo voy a pensar",
+      "nombre": "Otro «no gracias» después: la oferta no se repite",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "no gracias",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "oferta_llamada"
+            }
+          ]
+        },
+        {
+          "dice": "no",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "cierre_amable"
+            }
+          ]
+        },
+        {
+          "dice": "no gracias",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "recepcion te llama para ofrecerte los horarios disponibles"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O3-7",
+      "grupo": "No gracias / lo voy a pensar",
+      "nombre": "«No gracias, ¿cuánto cuesta?»: contesta el modelo",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "no gracias, ¿cuánto cuesta?",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "recepcion te llama para ofrecerte los horarios disponibles"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "excluye_cifras_de_dinero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O3-8",
+      "grupo": "No gracias / lo voy a pensar",
+      "nombre": "«Gracias»: contesta el modelo, sin «excelente día»",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "gracias",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "excelente día",
+                "recepcion te llama para ofrecerte los horarios disponibles"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O3-9",
+      "grupo": "No gracias / lo voy a pensar",
+      "nombre": "«No» a una oferta de agendar: oferta de llamada",
+      "turnos": [
+        {
+          "dice": "Cuéntame de la valoración y si quiero agendar",
+          "chequeos": [
+            {
+              "tipo": "sin_boton"
+            }
+          ]
+        },
+        {
+          "dice": "no",
+          "chequeos": [
+            {
+              "tipo": "incluye_alguna",
+              "valores": [
+                "recepcion te llama para ofrecerte los horarios disponibles",
+                "qué día y horario",
+                "sin compromiso",
+                "cuando quieras"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "sin_boton"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O4-1",
+      "grupo": "Sin bonificado; 250 Bs solo en la bienvenida",
+      "nombre": "Bienvenida",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "bonificad"
+              ]
+            },
+            {
+              "tipo": "incluye_alguna",
+              "valores": [
+                "250 Bs"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "excluye_cifras_de_dinero",
+              "permitido": [
+                "250 Bs"
+              ]
+            },
+            {
+              "tipo": "incluye_alguna",
+              "valores": [
+                "gratuit",
+                "gratis"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O4-2",
+      "grupo": "Sin bonificado; 250 Bs solo en la bienvenida",
+      "nombre": "Costo del tratamiento en el 2.º turno: ninguna cifra",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "¿cuánto cuesta el tratamiento?",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "excluye_cifras_de_dinero"
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "bonificad",
+                "250"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O4-3",
+      "grupo": "Sin bonificado; 250 Bs solo en la bienvenida",
+      "nombre": "«¿De verdad es gratis?» en el 2.º turno: sin 250 ni bonificado",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "¿de verdad es gratis?",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "250",
+                "bonificad"
+              ]
+            },
+            {
+              "tipo": "incluye_alguna",
+              "valores": [
+                "gratuit",
+                "gratis"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O4-4",
+      "grupo": "Sin bonificado; 250 Bs solo en la bienvenida",
+      "nombre": "El cierre: sin bonificado ni cifra",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "quiero agendar el lunes en la tarde, soy Ana",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "bonificad",
+                "250"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O4-5",
+      "grupo": "Sin bonificado; 250 Bs solo en la bienvenida",
+      "nombre": "Imagen del anuncio en el 2.º turno: sin cifra",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "imagen": "Captura de un anuncio: una doctora con blazer blanco sostiene una caja de Radiesse®; el texto dice «Armonía que se nota».",
+          "dice": "¿qué incluye la valoración?",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "250",
+                "bonificad"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O5-1",
+      "grupo": "Saludo con la ficha vigente",
+      "nombre": "«hola» de nuevo: saludo corto que pide el nombre",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "hola",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "saludo_corto"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_agente"
+            },
+            {
+              "tipo": "incluye_alguna",
+              "valores": [
+                "cómo te llamas"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "asistente virtual de la Dra."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O5-2",
+      "grupo": "Saludo con la ficha vigente",
+      "nombre": "Con nombre: «¿En qué te puedo ayudar?»",
+      "turnos": [
+        {
+          "dice": "Hola, soy Paola",
+          "chequeos": []
+        },
+        {
+          "dice": "buenas",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "saludo_corto"
+            },
+            {
+              "duro": true,
+              "tipo": "incluye_todas",
+              "valores": [
+                "hola de nuevo",
+                "en qué te puedo ayudar"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "cómo te llamas"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O5-3",
+      "grupo": "Saludo con la ficha vigente",
+      "nombre": "Tercer saludo seguido: otras palabras",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "hola",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "saludo_corto"
+            }
+          ]
+        },
+        {
+          "dice": "buenas tardes doctora",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "saludo_corto"
+            },
+            {
+              "duro": true,
+              "tipo": "distinto_del_turno_anterior"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O5-4",
+      "grupo": "Saludo con la ficha vigente",
+      "nombre": "Saludo con contenido: contesta el modelo sin repetir la bienvenida",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "hola, quiero información de los tratamientos",
+          "chequeos": [
+            {
+              "tipo": "excluye",
+              "valores": [
+                "asistente virtual de la Dra."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O6-1",
+      "grupo": "Cierre variado",
+      "nombre": "Cuatro preguntas seguidas: la pregunta final cambia",
+      "turnos": [
+        {
+          "dice": "Cuéntame de la valoración",
+          "chequeos": []
+        },
+        {
+          "dice": "¿y cuánto dura?",
+          "chequeos": [
+            {
+              "tipo": "distinto_del_turno_anterior"
+            }
+          ]
+        },
+        {
+          "dice": "¿y duele?",
+          "chequeos": [
+            {
+              "tipo": "distinto_del_turno_anterior"
+            }
+          ]
+        },
+        {
+          "dice": "¿y es para mí?",
+          "chequeos": [
+            {
+              "tipo": "distinto_del_turno_anterior"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O6-2",
+      "grupo": "Cierre variado",
+      "nombre": "Tras las preguntas, «sí» lleva a la pregunta del día",
+      "turnos": [
+        {
+          "dice": "Cuéntame de la valoración",
+          "chequeos": []
+        },
+        {
+          "dice": "¿y cuánto dura?",
+          "chequeos": []
+        },
+        {
+          "dice": "sí",
+          "chequeos": [
+            {
+              "tipo": "incluye_alguna",
+              "valores": [
+                "qué día y horario",
+                "excelente decisión"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "sin_enlaces"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O6-3",
+      "grupo": "Cierre variado",
+      "nombre": "La pregunta del nombre puede repetirse (no es de cierre)",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "Ana",
+          "chequeos": []
+        },
+        {
+          "dice": "no entendí",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "sin_enlaces"
+            },
+            {
+              "duro": true,
+              "tipo": "sin_boton"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OR-1",
+      "grupo": "Regresión",
+      "nombre": "Texto prellenado del anuncio: primer contacto sin cierre",
+      "turnos": [
+        {
+          "dice": "Hola Dra. Evy, vi su anuncio de armonización facial y quiero agendar mi valoración gratuita 🙌",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "sin_boton"
+            },
+            {
+              "tipo": "pregunta_nombre_y_deseo"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OR-2",
+      "grupo": "Regresión",
+      "nombre": "Después del cierre, otro pedido: el botón otra vez y sin otro aviso",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "quiero agendar el martes, soy Ana",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            }
+          ]
+        },
+        {
+          "dice": "quiero agendar de nuevo",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            },
+            {
+              "tipo": "incluye_alguna",
+              "valores": [
+                "de nuevo el botón"
+              ]
+            },
+            {
+              "duro": true,
+              "tipo": "sin_aviso"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OR-3",
+      "grupo": "Regresión",
+      "nombre": "Síntoma: texto fijo médico",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "tengo fiebre y la cara hinchada",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "texto_fijo",
+              "texto": "urgencia_sin_consejo"
+            },
+            {
+              "duro": true,
+              "tipo": "boton_recepcion"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OR-4",
+      "grupo": "Regresión",
+      "nombre": "Baja: gana la baja, no la oferta de llamada",
+      "turnos": [
+        {
+          "dice": "Hola",
+          "chequeos": []
+        },
+        {
+          "dice": "no me escribas más",
+          "chequeos": [
+            {
+              "duro": true,
+              "tipo": "baja_silenciosa"
+            },
+            {
+              "duro": true,
+              "tipo": "excluye",
+              "valores": [
+                "recepcion te llama para ofrecerte los horarios disponibles"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

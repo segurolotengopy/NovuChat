@@ -52,6 +52,8 @@ return [{ json: {
   previos: previos,
   imagenes: Array.isArray(planeado.artesPlan) ? planeado.artesPlan : [],
   avisoPlaneado: !!planeado.aviso && planeado.aviso.planeado === true,
+  // La preferencia de día y horario que llevó el aviso de solicitud (o «pidió que la llamen»): la lee la batería (`aviso_horario_contiene`).
+  avisoHorario: typeof planeado.preferencia === 'string' ? planeado.preferencia : '',
   derivacion: planeado.efectivo === 'derivar' || planeado.efectivo === 'derivar_corto',
   resumen: Object.assign({}, r, { mensajesSalientes: mensajes.length }),
 } }];

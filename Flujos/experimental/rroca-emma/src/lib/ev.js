@@ -876,6 +876,8 @@ function evPulirSalida(crudo, ctx) {
   let t = evTexto(crudo).replace(/\r\n?/g, '\n').replace(/[ \t]{2,}/g, ' ').split('\n').map((l) => l.trim()).join('\n');
   t = evOrdinalesDeDireccion(evProtegerDireccion(evQuitarEnlacesYTelefonos(t), c.direccion)).replace(/\*+/g, '');
   t = evSinInmediato(t);
+  // «¿Qué zona te llama más la atención?» no promete una llamada (batería real del 29/10/2026: el filtro común solo exime «llama la atención» y tumbaba la bienvenida): se dice «te interesa más».
+  t = t.replace(/\b(te|le) llama (m[aá]s|mucho|tanto) la atenci[oó]n\b/gi, '$1 interesa $2');
   t = evProtegerValor(evSinBonificado(t), c.primerTurno === true);
   // «¡Que tengas un excelente día!» no cierra ninguna respuesta (observación de Rubén, 28/10/2026): esa oración se quita.
   t = evQuitarOraciones(t, (n) => EV_DESPEDIDA_DE_DIA.test(n));
@@ -1308,6 +1310,7 @@ function evNombreDado(historial, textoCliente, nombreDeLaFicha) {
 // Un «no» o un «no quiero» a secas solo cuentan si lo último que dijo el asistente fue una oferta de agendar (o la oferta de llamada).
 const EV_TEXTO_OFRECE_LLAMADA = 'Si quieres, recepción te llama para ofrecerte los horarios disponibles y tú decides. ¿Te parece?';
 const EV_TEXTO_CIERRE_AMABLE = 'Entendido, sin problema. Cuando quieras, me escribes por aquí y seguimos conversando. 😊';
+const EV_TEXTO_CIERRE_AMABLE_2 = 'Perfecto, aquí estaré cuando lo necesites. 😊';   // nunca el mismo texto dos veces seguidas
 const EV_RELLENO_RECHAZO = /^(?:(?:ok|okey|okay|bueno|bien|ya|mmm+|ah|pues|gracias|muchas gracias|mil gracias|igual gracias|por ahora|por el momento|de momento|disculpa|perdon|doctora|dra|doc)\s*)+$/;
 const EV_RECHAZO = /^(?:(?:ok|okey|bueno|ya|pues|mmm+|entonces|igual|mejor|creo que|por ahora|por el momento)\s+)*(?:no(?: (?:gracias|muchas gracias|por ahora|por el momento|todavia|aun|ahora|ahorita|de momento|me interesa|estoy interesad[ao]|quiero(?: por ahora| todavia| gracias)?))*|gracias no|ahora no|ahorita no|por ahora no|por el momento no|de momento no|todavia no|aun no|mas adelante|en otro momento|otro dia|lo (?:voy a |vo a |tengo que )?(?:pensar|pensare|pienso)(?: bien)?|tengo que pensarlo|voy a pensarlo|dejame pensarlo|dejeme pensarlo|lo voy a meditar|lo voy a analizar)(?: (?:gracias|muchas gracias|por ahora|por el momento|todavia|bien|mejor|de momento|primero))*$/;
 function evDeclina(textoCliente, historial) {
