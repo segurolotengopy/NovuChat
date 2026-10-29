@@ -537,6 +537,20 @@ estilo de `ESTADO.md`: el agente alternaba «usted» y «tú» con el mismo clie
 - `horarioAtencion` se calcula desde `horarios`. Guardarlo además invitaría a que
   los dos valores se separaran y a que el agente anunciara un horario que la
   pantalla no muestra.
+- **Horario con varios tramos por día (23/10/2026).** El valor de un día de
+  `horarios` sigue siendo un texto: `cerrado`, `HH:MM-HH:MM` (como siempre) o de
+  dos a tres tramos separados por coma sin espacios, `09:00-12:00,14:00-18:00`
+  (turno partido). Ordenados, sin solaparse ni tocarse, cierre posterior a la
+  apertura, dentro del día, hora de La Paz. La regla de Firestore exige la forma
+  y el primer tramo (no cabe más en el presupuesto de 1.000 expresiones de
+  `config/negocio`). LA AUTORIDAD del orden y del solape es la normalización al
+  leer (`functions/src/core/prompt/horario-tramos.ts`): ordena, descarta los
+  tramos con cierre <= apertura, fusiona los solapados o contiguos y, si no queda
+  ninguno, devuelve `cerrado` (falla cerrado: un día ausente lo toman los flujos
+  como «sin dato» y dejarían pasar la cita). Es la unión que ya calculan los
+  flujos, así que el asistente anuncia lo que el candado hace cumplir. La
+  consola y `cargar-negocio.mjs` validan además al guardar; no hay trigger. Los
+  lectores del flujo ya partían por coma. Un documento de un solo rango no cambia.
 
 Las reglas los rechazan por lista blanca **y** `configuracionFlujo` nunca los lee
 de la configuración aunque aparecieran. Dos barreras, a propósito.
@@ -687,6 +701,54 @@ vuelve al comercio con el motivo, y la consola le muestra qué está vigente
 mientras tanto. Tampoco reemplaza la delimitación del flujo ni la lista blanca de
 claves: es una tercera barrera sobre el único campo que las otras dos no podían
 cerrar del todo.
+
+**Término de producto registrado (24/10/2026, PR 1).** Una descripción de
+producto es LITERAL y una instrucción no debe confundirse con ella: «100
+prompts» es el nombre de un producto, pero «prompt» es también el vocabulario de
+la inyección, y las listas de `promptsSinContexto` (#649/#650) necesitaron
+cinco rondas de seguridad porque el filtro no puede saber, mirando el texto,
+de cuál de los dos habla. Mecanismo, general y sin datos de ningún cliente:
+
+1. El nombre se **registra como dato** (`tenants/{t}/terminosProducto/{itemId}`:
+   `termino`, `nombreHash`, `estado`, `motivo`, `revisadoPor?`, `revisadoEn?`; el
+   id del documento es el del ítem del catálogo). Pasa por `terminoRegistrable`
+   (filtro estricto: letras latinas, dígitos y espacio estables ante NFKC; 2 a 4
+   palabras `a-z` o números de 1 a 5 cifras; EXACTAMENTE una palabra de
+   `prompt`/`prompts` y ninguna de orden, autoridad, posesivo o pronombre; con
+   la palabra cambiada por «producto» el texto es limpio; no coincide con otro
+   comercio) y por la aprobación de Plataforma.
+2. `terminosAprobados` entrega solo los vigentes: ítem del catálogo ACTIVO cuyo
+   nombre actual da el mismo `nombreHash` y que contiene el término; tope de 10
+   por comercio. Solo lee Firestore si el texto contiene «prompt».
+3. `verificarPatrones` normaliza, **sustituye** cada aparición exacta por el
+   marcador fijo `productoregistrado` y recién ahí corre los patrones. El marcador
+   pasa por `terminoSinContexto`: órdenes, autoridad, determinante duro,
+   definidores y vecinas con pronombre. «Otro comercio» y los patrones crudos
+   miran el texto sin sustituir. La palabra «prompt» fuera de un término
+   registrado sigue prohibida.
+4. Al modelo de la capa 2 el **sistema** le entrega el término entre « »
+   (`citarTerminos`); el autor no puede tipear « » (`marcas de bloque`) y las
+   comillas "…" tipeadas no eximen: la exención viene del registro.
+
+**Lista cerrada de palabras del término.** Junto a «prompt/prompts» solo entran
+cifras (1 a 5) y vocabulario comercial inerte (`PALABRAS_DE_TERMINO`: pack, bono,
+kit, pro, premium, marketing, redes, de, para…; nunca verbos, roles, pago o estado,
+inglés de control ni `instruc*`), sin conector al inicio ni al final: la
+sustitución esconde esas palabras de los demás patrones, y una lista de rechazo no
+cierra la clase (revisión de seguridad del #657). La suite de invariancia recorre
+cada palabra de la lista en 50 contextos hostiles.
+
+**Residuo aceptado por Andres (24/10/2026): entra con el PR 6, no antes.** Mientras
+las listas de #650 siguen vivas, un marcador precedido de determinante neutro
+(los/las/estos…) pasa además por la forma cerrada de #650 sobre el texto sin
+sustituir: con un término aprobado no se reabre nada que main rechaza («Los 100
+prompts pesan más que lo demás» sigue rechazada). El registro agrega solo donde
+#650 no opina («Pack 100 prompts», «Ofrecemos kit prompts»). Al retirar las listas
+(PR 6) esa comprobación se quita y esas frases pasan con el término registrado.
+Mitigación: registro aprobado por Plataforma, cita « » puesta por el sistema y
+capa 2. `pruebas/central/terminos-registrados.test.ts` fija qué pasa y qué no. El
+ítem que ancla el término tampoco puede ser un nombre que la capa 1 rechaza, ni
+que el predicado `nombreApto` inyectado por Productos rechace.
 
 ---
 

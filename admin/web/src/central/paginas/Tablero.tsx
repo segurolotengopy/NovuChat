@@ -72,7 +72,9 @@ function horarioDeHoy(horarios: unknown): string {
   if (typeof horarios !== 'object' || horarios === null) return '';
   const clave = DIAS[new Date().getDay()] as string;
   const valor = (horarios as Record<string, unknown>)[clave];
-  return typeof valor === 'string' ? valor : '';
+  // Turno partido («09:00-12:00,14:00-18:00») se lee «09:00-12:00 y 14:00-18:00»;
+  // un solo rango y «cerrado» salen igual que siempre.
+  return typeof valor === 'string' ? valor.replace(/,/g, ' y ') : '';
 }
 
 /**

@@ -769,10 +769,33 @@ service cloud.firestore {
         // `split('-')`. Es lo mismo: una vez que `matches` pasó, el texto mide
         // exactamente 11 caracteres, `HH:MM-HH:MM`. Siete días × (un `get` más
         // dos `split`) era lo que más pesaba en `config/negocio` completo.
+        //
+        // VARIOS TRAMOS POR DÍA (23/10/2026, Andres: turno partido). Un día
+        // sigue siendo UN texto: `HH:MM-HH:MM` (un tramo, el formato de siempre)
+        // o hasta TRES tramos separados por coma sin espacios,
+        // `09:00-12:00,14:00-18:00`. Se conserva el texto porque los lectores del
+        // flujo (`agTramos`, `tramosDelDia`) ya parten por coma.
+        //
+        // LO QUE LA REGLA EXIGE Y LO QUE NO. La regex fija la FORMA (de uno a
+        // tres tramos, horas reales, sin espacios ni texto de más) y la
+        // comparación exige que el PRIMER tramo abra antes de cerrar, como antes.
+        // El orden entre tramos, el solape y el cierre > apertura del segundo y
+        // el tercero NO caben acá: se midió que una sola comparación más por día
+        // (siete días) deja `config/negocio` sin presupuesto de expresiones al
+        // denegar (`reglas-diferencial-config-negocio.test.ts`, parte B, rótulo
+        // LIMITE en vez de rechazo). Esos controles los hacen la consola al
+        // guardar y el servidor al LEER (`horario-tramos.ts`: un día mal ordenado
+        // o solapado se omite y no llega al asistente ni a los flujos). Lo que
+        // pasa por la regla sin esos controles solo puede ser una cadena con la
+        // forma `HH:MM-HH:MM` repetida hasta tres veces: no es texto libre ni una
+        // puerta de inyección al prompt.
+        //
+        // Sin `v is string`: `matches` sobre un valor que no es texto da error y
+        // la regla deniega, igual que antes; se ahorran dos expresiones por día
+        // de las que este cambio necesita.
         function horarioDiaValido(v) {
           return v == 'cerrado'
-            || (v is string
-                && v.matches('^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$')
+            || (v.matches('^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9](,([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]){0,2}$')
                 && v[0:5] < v[6:11]);
         }
 
@@ -848,6 +871,8 @@ service cloud.firestore {
             'datosQueNoTenemos',
             // Voz del asistente (enumerados, y el nombre)
             'tratamiento', 'estiloEmojis', 'nombreAsistente',
+            // Quién atiende, para los textos fijos («Rubén te responde…»).
+            'nombreQuienAtiende',
             // Mensajes fijos
             'mensajes', 'mensajeCierre', 'mensajeErrorTemporal',
             'mensajeReservaNoConfirmada', 'mensajeComercioSuspendido',
@@ -895,10 +920,11 @@ service cloud.firestore {
             && enlaceDeMapaValido(d, 'direccionMaps')
             && ubicacionValida(d)
 
-            && d.get('zonaHoraria', 'America/La_Paz') in ['America/La_Paz']
+            && d.get('zonaHoraria', 'America/La_Paz') == 'America/La_Paz'
             && d.get('moneda', 'BOB') in ['BOB', 'USD']
             // Teléfono en formato E.164 sin '+', igual que lo espera la Cloud API.
-            && numero is string
+            // (Sin `numero is string`: `matches` sobre algo que no es texto da
+            // error y la regla niega, igual que antes; una expresión menos.)
             && numero.matches('^[0-9]{8,15}$')
             // Misma validación estricta que para los funcionarios: un ID mal
             // pegado acá tiene exactamente las mismas consecuencias.
@@ -945,6 +971,23 @@ service cloud.firestore {
             // servidor lo vuelve a sanear antes de mandarlo (`vozFija`).
             && cadena(nombreAsistente, 40)
             && nombreAsistente.matches('[^\\r\\n]*')
+            // NOMBRE DE QUIEN ATIENDE (`nombreQuienAtiende`, 23/10/2026). Opcional,
+            // hasta 60 caracteres. Es TEXTO QUE LLEGA A CLIENTES FINALES dentro de
+            // frases fijas del código: la regla es la primera barrera (el servidor,
+            // `quienAtiende` en prompt.ts, la segunda). LISTA DE PERMITIDOS: la
+            // primera `matches` solo deja letras latinas, dígitos, espacio y
+            // `.,&()-` (y topea el largo), lo que elimina invisibles, homoglifos,
+            // ancho completo y emoji; la segunda busca el vocabulario prohibido
+            // (banco, pago, enlaces, números largos, ser/no ser una IA; prohibiciones
+            // 3 y 4 de CLAUDE.md). Las mismas cadenas están en prompt.ts y en
+            // payloadNegocio.ts (`voz-quien-atiende.test.ts` las compara). Ausente pasa, vacío pasa: los textos usan «nuestro
+            // equipo». Va EN LÍNEA y sin `let` a propósito: el documento completo
+            // de la consola tiene un piso de holgura (`reglas-presupuesto.test.ts`)
+            // y el campo ausente cuesta solo `in`, `!` y `||`.
+            && (!('nombreQuienAtiende' in d)
+                || (d.nombreQuienAtiende.matches('^[A-Za-zÀ-ÖØ-öø-ÿ0-9 .,&()-]{0,60}$')
+                    && !d.nombreQuienAtiende.matches('(?is).*(banc|pag[oóu]|dep[oó]sit|transferenc|tesorer|acreditad|verificad|comprobante|recibimos|\\bbots?\\b|robot|human[oa]s?|persona real|persona de verdad|soy una persona|\\breal\\b|carne y hueso|inteligencia artificial|\\bi[. ]?a\\b|\\ba[.]?i\\b|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][^0-9]{0,3}){6,}|\\b(bnb|bcp|fie|asfi|sin|jefe|bcb|bisa|bmsc|qr|meta)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money|prodem|ecofuturo|cobranzas?|\\byape\\b|\\byap[eé](a|o|ame)|whatsapp|soporte|impuestos nacionales|polic[ií]a|sistema|tu jefe|ya pag).*')))
+
 
             && d.get('mensajes', {}) is map
             // Se puede escribir MIENTRAS EL COMERCIO ESTÁ ACTIVO, porque toda
@@ -1243,6 +1286,14 @@ service cloud.firestore {
       }
 
       match /comprobacionesImagen/{itemId} {
+        allow get, list: if esMiembro(tenantId);
+        allow write: if false;
+      }
+
+      // TÉRMINOS DE PRODUCTO REGISTRADOS (módulo Productos). Los propone el disparador y los aprueba
+      // Plataforma, ambos con el SDK Admin: ningún rol del navegador escribe, o el comercio se
+      // aprobaría a sí mismo. El comercio solo lee el estado.
+      match /terminosProducto/{itemId} {
         allow get, list: if esMiembro(tenantId);
         allow write: if false;
       }

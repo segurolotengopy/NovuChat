@@ -9,12 +9,12 @@
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
-import { ANA, BETO, REC, crear, datosDe, hablar, mAudio, mBoton, mImagen, mTexto, textos, type Opciones } from './mundo';
+import { ANA, BETO, REC, crear, datosDe, doctoraViva, negocioDe, panelOk, hablar, mAudio, mBoton, mImagen, mTexto, textos, type Opciones } from './mundo';
 import { LIB, PROHIBIDO_EN_SALIDA, idsDeBotones, UX_CONTADOR, violacionesDeParrafos, violacionesDeUx, vigilarUx } from './vigilante-ux';
 
 const AP = { avisoSolicitudEstado: 'APPROVED' };
 const mundo = (o: Opciones = {}): Mundo => { const w = crear({ ...o, base: { ...AP, ...(o.base ?? {}) } }); vigilarUx(w); return w; };
-const DOC = datosDe('rroca-evy')['doctora'] as J;
+const DOC = doctoraViva('rroca-evy');
 const T = (c: string): string => LIB.drParrafos(LIB.drTextoDe(DOC, c));
 const saludada = (o: Opciones = {}): Mundo => { const w = mundo(o); hablar(w, ANA, mTexto('hola')); return w; };
 const consintio = (w: Mundo, tel = ANA): void => { hablar(w, tel, mBoton('a_agendar')); hablar(w, tel, mBoton('c_si1')); };

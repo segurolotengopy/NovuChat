@@ -9,6 +9,8 @@
 //
 // «SOLO SE OFRECE LO QUE SE CUMPLE»: «ya pasé tu comprobante» / «le avisé» salen SOLO si «Enviar aviso» devolvió un `wamid` real (`avisoSalio`); si no, el texto dice que no se pudo avisar y trae el botón.
 // En modo prueba sin `enviarDeVerdad` el aviso no se envía y cuenta como salido (igual que los mensajes al cliente: la prueba no gasta mensajes).
+// ENTREGA 2 (23/10/2026): las opciones (precios, catálogo, menú de productos) salen SOLO si «Decidir turno» las habilitó (`opcionesHabilitadas`: dos mensajes de conversación o una excepción); este nodo no lo recalcula.
+// El contador de conversación `charlaN` de la ficha lo suma este nodo (solo lo que cuenta como charla) y «Resumen del turno» lo restaura si Meta no aceptó el envío. Sigue siendo UN mensaje por turno (+0 mensajes).
 // Todo texto pasa por `rrSeguro` (NIEGA_IA y `CB_PROHIBIDAS`). La ficha del teléfono (`rroca[<messages[0].from>]`) se escribe AQUÍ, una sola vez por turno (y la entrada `a` del historial, en «Resumen del turno»).
 const cfg = cnCfg();
 const t = cnPrimero('Interpretar entrada') || {};
@@ -31,7 +33,7 @@ const avisoPlaneado = av.planeado === true;
 const avisoRepetido = av.repetido === true;
 const avisoEnviado = avisoPlaneado && (cnTodos('Enviar aviso').some(rrId) || (prueba && cfg.enviarDeVerdad !== true));
 // Un aviso suprimido por el límite de 30 minutos trató OTRO contenido en los motivos de texto variable (la consulta que el modelo no supo, el comprobante sin cotejar): ahí NO se dice «le avisé» de esta vez.
-const repetidoVariable = avisoRepetido && (av.clave === 'no_supo' || av.clave === 'comprobante_sin_cotejo' || av.clave === 'sin_configuracion');
+const repetidoVariable = avisoRepetido && (av.clave === 'no_supo' || av.clave === 'comprobante_sin_cotejo' || av.clave === 'sin_configuracion' || av.clave === 'pago_con_problema');
 const avisoSalio = avisoEnviado || (avisoRepetido && !repetidoVariable);
 const estadoAviso = repetidoVariable ? 'repetido' : avisoSalio;
 
@@ -46,10 +48,10 @@ let qrLiberado = null;      // la guarda de QR abierto que este turno de comprob
 
 // `fijo` = true SOLO para un texto fijo del código (la constante de «comprobante leído»): habilita la exención exacta de `rrSeguro`. Nada de lo que redacta el modelo lo pasa.
 const texto = (cuerpo, extra, fijo) => { const c = rrSeguro(cuerpo, fijo === true); return cmMensaje('cliente', cmTexto(c), c, c, Object.assign({ tipoReporte: 'text' }, extra || {})); };
-const conBotones = (cuerpo, botones, extra) => {
+const conBotones = (cuerpo, botones, extra, respaldoPropio) => {
   const c = rrSeguro(cuerpo);
   if (!botones.length) return texto(c, extra);
-  const respaldo = c + '\n\nEscríbeme cuál prefieres: ' + botones.map((b) => b.title).join(', ') + '.';
+  const respaldo = respaldoPropio === true ? c : c + '\n\nEscríbeme cuál prefieres: ' + botones.map((b) => b.title).join(', ') + '.';
   return cmMensaje('cliente', cmBotones(c, botones), c, respaldo, Object.assign({ tipoReporte: 'interactive' }, extra || {}));
 };
 const conRuben = (cuerpo) => {
@@ -60,7 +62,9 @@ const conRuben = (cuerpo) => {
 const menu1 = () => rrMenu(1, cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []));
 // REGLA DE ANDRES (20/10/2026): el PRIMER mensaje a un teléfono NO lleva botones con montos. Mientras no esté saludado, todo mensaje que ofrece opciones (ingresos, modelo, respaldos) usa los dos
 // botones del saludo (sin precios); ya saludado, el menú de productos.
-const menuAbierto = () => (fichaAntes.saludado ? menu1() : rrMenuSaludo(cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : [])));
+// ENTREGA 2: el menú de productos solo con las opciones habilitadas (`habil`, lo calcula «Decidir turno»); antes, el botón del saludo.
+const habil = decision.opcionesHabilitadas === true;
+const menuAbierto = () => (fichaAntes.saludado && habil ? menu1() : rrMenuSaludo(cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : [])));
 
 if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   if (puerta.ruta === 'uso_extendido' && puerta.responder === true && String(puerta.texto || '').trim() !== '') {
@@ -70,7 +74,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
 } else if (puerta.ruta === 'sigue') {
   // El botón «usado» sale del PRODUCTO del QR (también si el producto se eligió por texto prellenado, sin botón) o, si no, del botón pulsado.
   if (tipoDePlan === 'qr' && RR_PRODUCTOS[plan.producto]) usadoNuevo = RR_PRODUCTOS[plan.producto].boton;
-  else usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS || plan.boton === RR_BOTON_PRECIOS || plan.boton === RR_BOTON_INFO || plan.boton === RR_BOTON_HABLAR ? String(plan.boton) : '';
+  else usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS || plan.boton === RR_BOTON_PRECIOS || plan.boton === RR_BOTON_INFO || plan.boton === RR_BOTON_HABLAR || plan.boton === RR_BOTON_OPCIONES ? String(plan.boton) : '';
   if (tipoDePlan === 'saludo') {
     // Saludo corto con UNA presentación por teléfono y, en el MISMO mensaje, «Más información» (sin «Ver precios» desde el 21/10/2026; sin el que ya pulsó; el saludo NUNCA ofrece a Rubén). Ya saludado, el prellenado de consulta recibe SOLO su pregunta.
     const usadosYa = fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
@@ -90,8 +94,9 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   } else if (tipoDePlan === 'info') {
     // Datos fijos del guion, sin modelo. Quien vio la información no la ve reofrecida en el saludo; debajo, el menú de productos (ya saludado, es seguro).
     usadoNuevo = RR_BOTON_INFO;
-    const op = menu1();
-    m = plan.qrAbierto === true ? conRuben(rrTextoInfo(plan.tema, false)) : conBotones(rrTextoInfo(plan.tema, op.length > 0), op);
+    // ENTREGA 2: sin las opciones habilitadas, la información NO lleva el menú de productos y cierra con una pregunta de conversación.
+    const op = habil ? menu1() : [];
+    m = plan.qrAbierto === true ? conRuben(rrTextoInfo(plan.tema, false)) : (habil ? conBotones(rrTextoInfo(plan.tema, op.length > 0), op) : texto(rrTextoInfo(plan.tema, 'charla')));
   } else if (tipoDePlan === 'identidad') {
     // Con un QR abierto no se ofrecen botones de producto (solo el de Rubén); si no, los botones normales.
     if (plan.qrAbierto === true) m = conRuben(RR_TEXTO_IDENTIDAD);
@@ -105,10 +110,15 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     m = conBotones(rrTextoComplementos(cat), rrMenu(2, cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : [])));
   } else if (tipoDePlan === 'ingresos') {
     const op = menuAbierto();
-    m = plan.qrAbierto === true ? conRuben(rrTextoIngresos(false)) : conBotones(rrTextoIngresos(op.length > 0), op);
+    m = plan.qrAbierto === true ? conRuben(rrTextoIngresos(false)) : conBotones(rrTextoIngresos(habil && menu1().length > 0), op);
+  } else if (tipoDePlan === 'opciones_codigo') {
+    // ENTREGA 2: el bloque de las opciones por código (un «sí» al puente o el botón «Ver opciones»): el texto fijo con el ahorro CALCULADO y el menú de productos. Sin botones que ofrecer, nunca una promesa de opciones.
+    const op = menu1();
+    tipoDePlan = 'opciones_fijo';
+    m = op.length ? conBotones(rrTextoOpciones(cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : [])), op) : texto(rrTextoModeloCaido(false));
   } else if (tipoDePlan === 'modelo') {
     // LO QUE REDACTA EL MODELO: se revisa y se pule; un rechazo (monto, promesa, enlace, negar ser IA, varias preguntas…), un error del servicio o un texto vacío caen al texto fijo.
-    const crudo = cnTextoDeGemini(cnPrimero('Conversar con el modelo'));
+    const crudo = rrQuitarEcoDeMarcador(cnTextoDeGemini(cnPrimero('Conversar con el modelo')));
     if (rrEsDerivar(crudo)) {
       // DERIVAR: el modelo no supo responder. La palabra jamás llega al cliente: aviso a Rubén (lo armó «Armar avisos», salvo en una imagen) y el botón.
       if (plan.origen === 'imagen') { tipoDePlan = 'imagen_derivar'; m = conRuben(RR_TEXTO_IMAGEN_DERIVAR); } else { tipoDePlan = 'derivar'; m = conRuben(rrTextoDerivacion('consulta', estadoAviso)); }
@@ -118,15 +128,27 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       m = plan.qrAbierto === true ? conRuben(RR_TEXTO_IDENTIDAD) : conBotones(RR_TEXTO_IDENTIDAD, menuAbierto());
     } else {
       const rev = crudo.trim() === '' ? { texto: '', motivo: 'vacio' } : cmRevisarRedaccion(crudo, {
-        maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: plan.textoRevision || t.texto, extra: [rrExtraRedaccion],
+        maximo: 900, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: plan.textoRevision || t.texto, extra: [rrExtraRedaccion],
       });
       // UNA sola presentación (Silvana, 20/10/2026): ya saludado, el modelo no vuelve a presentarse (se quita de su salida)... PERO la regla dura 4 manda: una oración de presentación que dice qué ES el asistente
       // (virtual, IA, programa, bot…) NUNCA se borra. Como primer mensaje cabe UNA, nunca dos. Si al quitar la presentación no queda nada, cae al texto fijo.
-      const limpio = rev.motivo === '' ? rrUnaPresentacion(rev.texto, !fichaAntes.saludado || rrPreguntaPorIA(rrNorm(plan.textoRevision || t.texto)), true) : '';
-      const bueno = rev.motivo === '' && limpio.trim() !== '';
+      // ENTREGA 2: ya saludado, el modelo no repite la descripción del libro («12 capítulos», «230 páginas»): esas oraciones se quitan; si no queda nada, cae al texto fijo.
+      const sinRepetir = rev.motivo === '' && fichaAntes.saludado ? rrQuitarRepeticionDelLibro(rev.texto) : rev.texto;
+      // SEGURIDAD (solo se ofrece lo que se cumple): en los modos `puente` y `opciones` el código pone las opciones y con la compuerta cerrada no hay botones de producto: toda oración del modelo que prometa opciones o precios se QUITA.
+      const sinPromesa = rev.motivo === '' && plan.qrAbierto !== true && (!habil || plan.modo === 'puente' || plan.modo === 'opciones') ? rrQuitarPromesaDeOpciones(sinRepetir) : sinRepetir;
+      const limpio = rev.motivo === '' ? rrUnaPresentacion(sinPromesa, !fichaAntes.saludado || rrPreguntaPorIA(rrNorm(plan.textoRevision || t.texto)), true) : '';
+      let bueno = rev.motivo === '' && limpio.trim() !== '';
+      // RED DOBLE (seguridad): con la compuerta cerrada, si tras quitar las promesas aún queda una (el detector la ve en el texto entero), el turno completo cae al texto fijo.
+      if (bueno && !habil && plan.qrAbierto !== true && plan.modo !== 'puente' && rrExtraRedaccion(limpio, rrNorm(limpio), { compuertaCerrada: true }) === 'promete_opciones') bueno = false;
+      // Los modos `puente` y `opciones`: el código quita la pregunta del modelo y agrega la suya (nunca hay una pregunta antes de los botones ni dos preguntas). Sin nada que conservar, cuenta como no bueno.
+      const modoPuente = plan.modo === 'puente' && plan.qrAbierto !== true;
+      const modoOpciones = plan.modo === 'opciones' && plan.qrAbierto !== true && menu1().length > 0;
+      const sinPregunta = bueno && (modoPuente || modoOpciones) ? rrSinPreguntaFinal(limpio) : limpio;
+      if (bueno && (modoPuente || modoOpciones) && sinPregunta.trim() === '') bueno = false;
       // Con un QR abierto el modelo NO abre otro (un `[ENVIAR_QR…]` o cualquier marcador es un rechazo del filtro y cae al texto fijo) y no se ofrecen botones de producto: solo el de Rubén.
       const op = plan.qrAbierto === true ? [] : menuAbierto();
-      let cuerpo = bueno ? limpio : (plan.origen === 'imagen' ? RR_TEXTO_IMAGEN_CAIDO : rrTextoModeloCaido(op.length > 0));
+      const modoAntes = plan.modo === 'antes' && plan.qrAbierto !== true;
+      let cuerpo = bueno ? limpio : (plan.origen === 'imagen' ? RR_TEXTO_IMAGEN_CAIDO : (modoAntes ? RR_TEXTO_CHARLA_FIJA : rrTextoModeloCaido(habil && op.length > 0 && menu1().length > 0)));
       // Una imagen o un audio puede ser el PRIMER mensaje del teléfono: si el texto no se presenta, se antepone la presentación fija (regla dura 4, nunca una oración cruda del modelo).
       if ((plan.origen === 'imagen' || plan.origen === 'audio') && !fichaAntes.saludado && !/asistente virtual/i.test(cuerpo)) cuerpo = RR_PRESENTACION + ' ' + cuerpo;
       // PRESENTACIÓN GARANTIZADA: (a) el pulido común quita la presentación inicial del modelo: si el modelo dijo QUÉ ES (IA, virtual…) y eso no sobrevivió, se antepone la presentación fija (regla dura 4: jamás sale
@@ -134,10 +156,21 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       const modeloDijoIA = rrTienePresentacionIA(crudo);
       const falta = !fichaAntes.saludado ? !rrTienePresentacionIA(cuerpo) : (modeloDijoIA && !rrTienePresentacionIA(cuerpo));
       // Se antepone SIEMPRE la constante fija (nunca una oración cruda del modelo: no pasó por la revisión de enlaces, cuentas, montos ni promesas).
+      if (modoPuente) {
+        // EL PUENTE: una idea (del modelo, sin pregunta, o el texto fijo) + la pregunta FIJA «¿Te muestro las opciones?» + el botón «Ver opciones» (sin precio). Un «sí» o el botón dan las opciones por código.
+        cuerpo = (bueno ? sinPregunta : rrTextoPuenteFijo(fichaAntes.ultimoHash)) + '\n\n' + RR_CIERRE_PUENTE;
+      } else if (modoOpciones) {
+        // LAS OPCIONES: la respuesta del modelo a su duda o su objeción (sin pregunta) y debajo el bloque de código con el ahorro calculado y el menú de productos.
+        cuerpo = (bueno ? sinPregunta + '\n\n' : '') + rrTextoOpciones(cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []));
+      }
+      // Si el texto de respaldo del modelo caído es idéntico a lo último que se le envió, sale el alterno (no «Eso ya te lo conté…»).
+      if (!bueno && !modoPuente && !modoOpciones && !modoAntes && plan.origen !== 'imagen' && fichaAntes.ultimoHash !== '' && rrHashTexto(rrSeguro(cuerpo)) === fichaAntes.ultimoHash) cuerpo = RR_TEXTO_CAIDO_ALTERNO;
       const conPresentacion = falta ? RR_PRESENTACION + '\n\n' + cuerpo : cuerpo;
-      m = plan.qrAbierto === true ? conRuben(conPresentacion) : conBotones(conPresentacion, op);
+      if (modoPuente) m = conBotones(conPresentacion, [rrBoton(RR_BOTON_OPCIONES, 'Ver opciones')], undefined, true);
+      else if (modoOpciones) m = conBotones(conPresentacion, menu1());
+      else m = plan.qrAbierto === true ? conRuben(conPresentacion) : conBotones(conPresentacion, op);
       // La memoria (`rrHist`) guarda `m.texto`, el texto DESPUÉS de las barreras (`rrSeguro`, identidad): si se sustituyó lo que dijo el modelo, eso no se recuerda.
-      tipoDePlan = (plan.origen ? plan.origen + '_' : '') + (bueno ? 'modelo' : 'modelo_caido');
+      tipoDePlan = modoPuente ? (bueno ? 'puente' : 'puente_fijo') : (modoOpciones ? (bueno ? 'opciones' : 'opciones_fijo') : (modoAntes && !bueno && plan.origen !== 'imagen' ? 'charla_fija' : (plan.origen ? plan.origen + '_' : '') + (bueno ? 'modelo' : 'modelo_caido')));
     }
   } else if (tipoDePlan === 'qr') {
     const monto = rrPrecio(cat, plan.producto);
@@ -176,8 +209,15 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     }
   } else if (tipoDePlan === 'cancele_como_pago') {
     // «Ya cancelé» sin QR abierto = «ya pagué»: se pide el comprobante de un pedido; sin aviso a Rubén y sin afirmar que se recibió nada. Con opciones de compra, el menú; sin ellas, el botón de Rubén.
-    const op = menuAbierto();
+    // ENTREGA 2: «ya cancelé» (= «ya pagué») está EXENTO de la compuerta: ya saludado, recibe el menú de productos aunque aún no haya habido dos mensajes de conversación.
+    const op = fichaAntes.saludado ? menu1() : menuAbierto();
     m = op.length ? conBotones(RR_TEXTO_CANCELE_COMO_PAGO, op) : conRuben(RR_TEXTO_CANCELE_COMO_PAGO_RUBEN);
+  } else if (tipoDePlan === 'imagen_descrita') {
+    // VISIÓN POR CATEGORÍAS: dice lo que ve (la descripción ya saneada por «Preparar imagen» y revisada por `rrDescripcionMostrable`, SOLO mostrada: no viaja al modelo; la entrada del cliente en la memoria guarda solo la categoría) y ofrece lo que sí hace, hablar del libro. Si es el primer mensaje, la presentación
+    // va en el MISMO mensaje. Sin botón, salvo en la ruta del comprobante (hay un cobro): ahí lleva la salida para quien sí enviaba su comprobante. UN solo mensaje.
+    const cuerpoImagen = rrTextoImagenDescrita(plan.descripcion, fichaAntes.ultimoHash, plan.conRuben === true);
+    const conPresentacion = !fichaAntes.saludado ? RR_PRESENTACION + '\n\n' + cuerpoImagen : cuerpoImagen;
+    m = plan.conRuben === true ? conRuben(conPresentacion) : texto(conPresentacion);
   } else if (tipoDePlan === 'imagen_comprobante') {
     // Una foto que parece un comprobante SIN pedido abierto: no se coteja ni se avisa; el cliente puede escribirle a Rubén.
     m = conRuben(RR_TEXTO_IMAGEN_COMPROBANTE);
@@ -201,7 +241,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
 
 // NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS (21/10/2026): si lo que sale es idéntico (por hash) a lo último que se le envió a este teléfono, sale una alternativa fija (con el botón de Rubén). Ni el QR (su pie lleva el
 // pedido) ni el resultado de un comprobante (cada comprobante es un hecho distinto) ni el silencio de un número extranjero entran, ni lo que dice qué ES el asistente (regla dura 4: esa respuesta nunca se sustituye). Es el MISMO mensaje: no agrega ni quita ninguno.
-if (m && puerta.ruta === 'sigue' && t.extranjero !== true && m.tipoReporte !== 'image' && tipoDePlan !== 'comprobante' && tipoDePlan !== 'identidad' && !rrTienePresentacionIA(m.texto) && fichaAntes.ultimoHash !== '' && rrHashTexto(m.texto) === fichaAntes.ultimoHash) {
+if (m && puerta.ruta === 'sigue' && t.extranjero !== true && m.tipoReporte !== 'image' && tipoDePlan !== 'comprobante' && tipoDePlan !== 'identidad' && tipoDePlan !== 'imagen_descrita' && !rrTienePresentacionIA(m.texto) && fichaAntes.ultimoHash !== '' && rrHashTexto(m.texto) === fichaAntes.ultimoHash) {
   const medio = /^(audio|imagen|otro)/.test(tipoDePlan);
   // Una derivación SIN CONFIGURACIÓN repetida no usa la alterna de contenido (no tendría sentido): sale «Rubén ya recibió el aviso anterior» y solo si ese texto también fuera idéntico, la alterna.
   const repetidoDeriva = tipoDePlan === 'derivar' && plan.motivo === 'sin_configuracion' ? rrTextoDerivacion('sin_configuracion', 'repetido', plan.clave) : '';
@@ -234,7 +274,16 @@ if (claveOk && t.extranjero === true) {
   ficha.ultimoMs = ahora;
   if (m) ficha.saludado = true;
   // Lo último que se le dijo (hash del texto y tipo de plan): el recordatorio del QR no se repite dos veces seguidas y ningún texto sale idéntico dos veces seguidas. Solo cuenta el turno que contesta de verdad.
-  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma, p: ficha.ultimaPregunta, pm: ficha.ultimaPreguntaMs };
+  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma, p: ficha.ultimaPregunta, pm: ficha.ultimaPreguntaMs, c: ficha.charlaN, po: ficha.pidioOpciones, ov: ficha.opcionesVistas };
+  // ENTREGA 2: el contador de conversación. Cuenta el mensaje que salió (el saludo solo si lleva presentación, es decir, si la ficha no estaba saludada) y los de la charla: respuestas buenas del modelo, el puente y la charla fija, las opciones.
+  // NO cuentan los textos fijos que no son conversación (modelo caído, repetido, identidad, información, ingresos, imágenes, derivaciones). Si Meta no acepta el envío, «Resumen del turno» lo restaura con `hashPrevio`.
+  if (m && puerta.ruta === 'sigue') {
+    const rrCuenta = ['modelo', 'audio_modelo', 'imagen_modelo', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo'].indexOf(tipoDePlan) >= 0 || (tipoDePlan === 'saludo' && !fichaAntes.saludado);
+    if (rrCuenta) ficha.charlaN = Math.min(ficha.charlaN + 1, 1000);
+    if (plan.pideOpciones === true) ficha.pidioOpciones = true;
+    // Quien ya vio las opciones (el bloque, el catálogo, el precio, los precios o los complementos) no vuelve a recibir el bloque ni el puente.
+    if (['opciones', 'opciones_fijo', 'catalogo', 'precio', 'precios', 'menu2'].indexOf(tipoDePlan) >= 0) { ficha.opcionesVistas = true; ficha.pidioOpciones = false; }
+  }
   if (m && puerta.ruta === 'sigue') { ficha.ultimoHash = m.tipoReporte === 'image' ? '' : rrHashTexto(m.texto); ficha.ultimaFirma = /^[a-z_]{1,30}$/.test(tipoDePlan) ? tipoDePlan : ''; }
   // La última pregunta que se le hizo (para entender un «Sí» o un «No» suelto): sale del texto que de verdad se envía, enmascarado como el historial; si ese texto no termina en pregunta (o es un QR), se borra. Vuelve si Meta no aceptó el envío.
   if (m && puerta.ruta === 'sigue') { ficha.ultimaPregunta = m.tipoReporte === 'image' ? '' : rrUltimaPregunta(m.texto); ficha.ultimaPreguntaMs = ficha.ultimaPregunta !== '' ? ahora : 0; }

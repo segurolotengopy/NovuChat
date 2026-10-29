@@ -5,7 +5,7 @@
 //   409            -> SUSPENDIDO: es una respuesta válida, no un error;
 //   otra           -> no se pudo saber -> respaldo de `Config base`.
 //
-// DE LA CONSOLA salen SOLO: el nombre del negocio, el número de recepción, los prefijos permitidos y la atención (los umbrales de uso extendido). El catálogo y el cobro NO pasan por este nodo.
+// DE LA CONSOLA salen SOLO: el nombre del negocio, el número de recepción, los prefijos permitidos, la atención (los umbrales de uso extendido) y los ANUNCIOS (a lo más 20, solo en la rama 200). El catálogo y el cobro NO pasan por este nodo.
 
 const base = cnPrimero('Config base') || {};
 const carga = cnPrimero('Carga de entrada') || {};
@@ -47,16 +47,18 @@ const deBase = {
 
 let cfg;
 if (codigo === 409) {
-  cfg = Object.assign({}, deBase, atencion, {
+  cfg = {
+    ...deBase, ...atencion,
     estadoComercio: 'suspendido',
     // Texto neutro del panel: no menciona pagos ni deudas.
     mensajeComercioSuspendido: linea(util(cuerpo.mensajeCortesia), 300) || deBase.mensajeComercioSuspendido,
     configDeLaConsola: false, panelDice: 'no operativo',
-  });
+  };
 } else if (!(codigo === 200 && typeof cuerpo.tenantId === 'string')) {
-  cfg = Object.assign({}, deBase, atencion, {
+  cfg = {
+    ...deBase, ...atencion,
     estadoComercio: 'operativo', configDeLaConsola: false, panelSinRespuesta: true, codigoDelPanel: Number.isFinite(codigo) ? codigo : 0,
-  });
+  };
 } else {
   const dn = cuerpo.datosDelNegocio && typeof cuerpo.datosDelNegocio === 'object' ? cuerpo.datosDelNegocio : {};
   const op = cuerpo.operacion && typeof cuerpo.operacion === 'object' ? cuerpo.operacion : {};
@@ -68,10 +70,14 @@ if (codigo === 409) {
     prefijosPermitidos: Array.isArray(op.prefijosPermitidos) && op.prefijosPermitidos.length ? op.prefijosPermitidos.join(',') : undefined,
   });
   const estadoDeLaConsola = util(cuerpo.estadoComercio);
-  cfg = Object.assign({}, deBase, deLaConsola, atencion, {
+  // LOS ANUNCIOS (campañas vigentes de la Consola, con sus titulares, su ángulo y su producto): el módulo común `anuncio-por-titular.js` (en «Preparar imagen») decide por CÓDIGO si la imagen de un cliente es de uno de ellos.
+  // A lo más 20; solo objetos (lo que no lo es se descarta). Sin anuncios en la respuesta, la lista va vacía y todo queda como antes.
+  const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === 'object' && !Array.isArray(a)).slice(0, 20) : [];
+  cfg = {
+    ...deBase, ...deLaConsola, ...atencion, anuncios,
     estadoComercio: estadoDeLaConsola === 'activo' ? 'operativo' : (estadoDeLaConsola ? 'suspendido' : 'operativo'),
     configDeLaConsola: true,
-  });
+  };
 }
 
 // --- EL MODELO y el MODO PRUEBA ---
@@ -82,7 +88,8 @@ const permitidos = valor(base.telefonosDePrueba).split(',').map((x) => cnDigitos
 const telefonoDePrueba = prueba ? cnDigitos(prueba.telefonoDePrueba) : '';
 const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;
 
-return [{ json: Object.assign({}, cfg, {
+return [{ json: {
+  ...cfg,
   // El modelo es un dato de `Config base` (solo un id con forma de modelo de Gemini).
   modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/.test(String(base.modelo || '')) ? String(base.modelo) : 'gemini-3.5-flash-lite',
   waGraphVersion: /^v\d{1,2}\.\d{1,2}$/.test(String(base.waGraphVersion || '')) ? String(base.waGraphVersion) : 'v26.0',
@@ -91,4 +98,4 @@ return [{ json: Object.assign({}, cfg, {
   modoPrueba: prueba !== null,
   telefonoDePrueba: prueba && telefonoPermitido ? telefonoDePrueba : '',
   enviarDeVerdad: prueba ? prueba.enviarDeVerdad === true && telefonoPermitido : true,
-}) }];
+} }];

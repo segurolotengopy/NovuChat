@@ -43,6 +43,8 @@
     "destinatariosAviso": "completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO , cocina:REEMPLAZAR_NUMERO_AVISO_2_QTACO",
     "plantillaPedido": "pedido_registrado",
     "idiomaPlantillaPedido": "es",
+    "plantillasPedidoLineas": "2:pedido_registrado_l2,4:pedido_registrado_l4,6:pedido_registrado_l6",
+    "idiomaPlantillaPedidoLineas": "es",
     "plantillaReserva": "pedido_registrado",
     "idiomaPlantillaReserva": "es",
     "formaPlantillaReserva": "pedido",

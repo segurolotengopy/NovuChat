@@ -57,7 +57,9 @@ export interface Opciones {
   base?: Record<string, unknown>;
   /** Lo que contesta `cotejarComprobanteVenta`: un código y un cuerpo, o 'cae'. */
   cotejo?: { statusCode: number; body: J } | 'cae';
-  /** Lo que contesta `ingesta` al evento `cobro_cancelado` (nodo «Cancelar cobro en el servidor»): un código y un cuerpo, o 'cae'. Por omisión, 200. */
+  /** Lo que contesta `guardarComprobante` (nodo «Guardar comprobante»): un código y un cuerpo, o 'cae'. Por omisión, 200 con la ruta guardada. */
+  guardado?: { statusCode: number; body: J } | 'cae';
+  /** Lo que contesta `ingesta` al evento `cobro_cancelado` (nodo «Avisar al servidor»): un código y un cuerpo, o 'cae'. Por omisión, 200. */
   cancelar?: { statusCode: number; body: J } | 'cae';
   /** Lo que escribe el modelo de conversación: un texto, null (sin texto), 'cae' (error de servicio) o una función. */
   modeloDice?: string | null | 'cae' | ((ll: LlamadaDoble) => string);
@@ -66,11 +68,13 @@ export interface Opciones {
   /** Lo que devuelven los medios. */
   medio?: { bytes?: number; url?: string; mime?: string; transcripcion?: string | null; clasificacion?: J | null };
 }
-/** El catálogo de la consola de Antonio: ids que salen de `idDe(nombre)`; los precios son del catálogo, nunca del flujo. */
+/** El catálogo de la consola de Antonio: ids que salen de `idDe(nombre)`; los NOMBRES y los precios son del catálogo, nunca del flujo (las etiquetas de los botones dicen «<nombre> <precio>Bs»). */
 export const CATALOGO = [
-  { id: 'pack-completo', precio: 49 }, { id: 'libro', precio: 35 }, { id: 'workbook', precio: 20 },
-  { id: 'guia-de-conversaciones', precio: 19 }, { id: 'calendario-de-conexion', precio: 17 }, { id: 'preguntas-profundas', precio: 15 },
+  { id: 'pack-completo', nombre: 'Pack completo', precio: 49 }, { id: 'libro', nombre: 'Libro', precio: 35 }, { id: 'workbook', nombre: 'Workbook', precio: 20 },
+  { id: 'guia-de-conversaciones', nombre: 'Guía de conversaciones', precio: 19 }, { id: 'calendario-de-conexion', nombre: 'Calendario de conexión', precio: 17 }, { id: 'preguntas-profundas', nombre: 'Preguntas profundas', precio: 15 },
 ];
+/** La frase de entrada de la landing (dato del tenant: `landing.fraseEntrada` del archivo de datos; llega a «Config base» como `landingFrase`). */
+export const FRASE_LANDING = 'Hola, quiero información del Método PUENTE y sus materiales digitales';
 export const MEDIA_QR = 'media-qr-1';
 export const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({
   statusCode: 200,
@@ -87,6 +91,7 @@ export const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({
 export const panelConQr = (monto = 49, extra: J = {}): { statusCode: number; body: J } => panelOk({ cobro: { activo: true, qr: { url: 'https://qr.example.com/q.png' }, pendiente: true, monto, pedido: 'AN1', regla: 2 }, ...extra });
 /** El panel con productos marcados `agotado` (dato conmutable de la consola). */
 export const panelConAgotados = (...ids: string[]): { statusCode: number; body: J } => panelOk({ catalogo: CATALOGO.map((c) => ({ ...c, ...(ids.includes(c.id) ? { agotado: true } : {}) })) });
+export const RUTA_GUARDADA = { statusCode: 200, body: { ruta: 'tenants/rroca-antonio/comprobantes/2026-10-26/abc_1.jpg' } };
 export const COTEJO_VALIDO = { statusCode: 200, body: { estado: 'valido', importe: 49, avisarComercio: true } };
 export const COMPROBANTE = { categoria: 'comprobante', texto: 'Transferencia', monto: '49.00', cuentaDestino: '1*****9', nombreCuenta: 'ANTONIO', fecha: '05/10/2026', hora: '10:00', banco: 'Banco' };
 export function crear(o: Opciones = {}): Mundo {
@@ -106,11 +111,12 @@ export function crear(o: Opciones = {}): Mundo {
     'Traer configuración': () => (o.panel === 'cae' ? { statusCode: 503, body: {} } : (o.panel ?? panelOk())),
     'Reportar mensaje (entrante)': () => o.ingesta ?? { ok: true },
     'Reportar mensaje (saliente)': () => ({ ok: true }),
-    'Reportar protección': () => ({ ok: true }),
     'Obtener URL del medio (general)': () => ({ id: 'm', url: m.url ?? 'https://lookaside.fbsbx.com/whatsapp_business/attachments/medio-1', mime_type: m.mime ?? 'image/jpeg', file_size: m.bytes ?? 100_000 }),
     'Descargar medio': () => ({ descargado: true }),
+    'Guardar comprobante': () => (o.guardado === 'cae' ? { statusCode: 503, body: {} } : (o.guardado ?? RUTA_GUARDADA)),
     'Cotejar en el servidor': () => (o.cotejo === 'cae' ? { statusCode: 503, body: {} } : (o.cotejo ?? COTEJO_VALIDO)),
-    'Cancelar cobro en el servidor': () => (o.cancelar === 'cae' ? { statusCode: 503, body: {} } : (o.cancelar ?? { statusCode: 200, body: { atencion: { estado: 'normal' } } })),
+    // «Avisar al servidor»: `cobro_cancelado` (lo que contesta `o.cancelar`) o `no_contactar` (siempre 200).
+    'Avisar al servidor': (ll) => (ll.cuerpo?.['evento'] !== 'cobro_cancelado' ? { statusCode: 200, body: { ok: true } } : (o.cancelar === 'cae' ? { statusCode: 503, body: {} } : (o.cancelar ?? { statusCode: 200, body: { atencion: { estado: 'normal' } } }))),
     'Conversar con el modelo': (ll) => {
       const d = o.modeloDice === undefined ? 'Gracias por contármelo. Se nota que es importante para ti. ¿Desde cuándo sienten esa distancia?' : o.modeloDice;
       if (d === 'cae') return { error: { message: 'servicio no disponible', code: 503 } };
@@ -128,18 +134,27 @@ export function crear(o: Opciones = {}): Mundo {
     'Enviar a WhatsApp': enviar('Enviar a WhatsApp'),
     'Enviar respaldo': enviar('Enviar respaldo'),
   };
-  return crearMundo({
+  const mundo = crearMundo({
     flujo: o.flujo ?? PRODUCCION,
     dobles,
-    roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Reportar protección'] },
+    roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Avisar al servidor'] },
     ahoraMs: AHORA,
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`,
       avisoComprobantePlantilla: 'aviso_comprobante_recibido', avisoComprobanteEstado: 'APPROVED', avisoConsultaPlantilla: 'aviso_consulta_para_antonio', avisoConsultaEstado: 'APPROVED',
+      landingFrase: FRASE_LANDING,
+      // Las etiquetas de los botones (nombre con emoji, dato del tenant en «Config base») van VACÍAS por omisión: la mayoría de las suites prueba el camino del catálogo (el nombre de la Consola);
+      // `etiquetas-md.test.ts` prueba las del tenant pasándolas en `base` (las lee del archivo de datos).
+      etiquetaPack: '', etiquetaLibro: '', etiquetaBonos: '', etiquetaWorkbook: '', etiquetaGuia: '', etiquetaPreguntas: '', etiquetaCalendario: '',
       ...(o.base ?? {}),
     },
   });
+  const propias = ['etiquetaPack', 'etiquetaLibro', 'etiquetaBonos', 'etiquetaWorkbook', 'etiquetaGuia', 'etiquetaPreguntas', 'etiquetaCalendario'].map((k) => (o.base ?? {})[k]).filter((x): x is string => typeof x === 'string' && x !== '');
+  ETIQUETAS_DEL_TENANT.set(mundo, propias);
+  return mundo;
 }
+/** Las etiquetas del tenant (con emoji) que una prueba puso en «Config base»: el vigilante de UX las acepta como nombre de botón. */
+export const ETIQUETAS_DEL_TENANT = new WeakMap<object, string[]>();
 export const hablar = (m: Mundo, from: string, msg: J, op: { wamid?: string; entrega?: string; phoneId?: string; toleraFallo?: boolean } = {}): ResultadoTurno =>
   m.turno(entrega(valorMeta(msg, from, op), op.entrega), op.toleraFallo ? { tolerarFallo: true } : {});
 export const textos = (t: ResultadoTurno): string[] => t.mensajes.map((e) => e.cuerpo);

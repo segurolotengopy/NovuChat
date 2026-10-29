@@ -1,0 +1,49 @@
+{
+  "_fuente": "Datos del flujo NUEVO de la Dra. Emma (tenant rroca-emma, cliente07, Emma Spa Medic) para Flujos/experimental/rroca-emma/. Zona Tenants: solo datos y marcadores REEMPLAZAR_* (identificadores, rutas, número de recepción, ids de medios), nunca código ni un token. La dirección, el horario, el número de recepción y el nombre del negocio se LEEN de la Consola en cada turno (regla de Andres, 22/10/2026); lo de aquí es solo el respaldo si la Consola no responde. Las claves que empiezan con `_` son notas. El nombre visible es «la Dra. Emma» (decisión de Andres, 24/10/2026).",
+  "tenant": "rroca-emma",
+  "nombreFlujo": "NovuChat — Dra. Emma (rroca-emma)",
+  "nombreFlujoPrueba": "NovuChat — Dra. Emma (rroca-emma, prueba)",
+  "credenciales": {
+    "ingesta": "NovuChat ingesta (Emma)",
+    "graph": "Graph WhatsApp Dra. Emma (Bearer)",
+    "graphPrueba": "Graph WhatsApp — pruebas (no producción)",
+    "entradaPrueba": "Entrada de prueba Dra. Emma",
+    "gemini": "Google Gemini(PaLM) Api account",
+    "geminiPrueba": "Gemini — pruebas (no producción)"
+  },
+  "receptor": {
+    "ruta": "REEMPLAZAR_RUTA_RECEPTOR_RROCA_EMMA",
+    "urlVerificador": "REEMPLAZAR_URL_VERIFICADOR_RECEPTOR",
+    "wabaIdEsperado": "REEMPLAZAR_WABA_ID_RROCA_EMMA"
+  },
+  "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA_RROCA_EMMA",
+  "configBase": {
+    "tenantId": "rroca-emma",
+    "waGraphVersion": "v26.0",
+    "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_EMMA",
+    "numeroRecepcion": "REEMPLAZAR_NUMERO_RECEPCION_RROCA_EMMA",
+    "nombreNegocio": "Dra. Emma",
+    "clinica": "Emma Spa Medic",
+    "direccionRespaldo": "Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055 (Santa Cruz)",
+    "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
+    "prefijosPermitidos": "591",
+    "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA",
+    "etapaPrueba": "REEMPLAZAR_ETAPA_PRUEBA",
+    "usarMarcas": "si",
+    "modelo": "gemini-3.5-flash-lite",
+    "temperatura": 0.4,
+    "avisoSolicitudPlantilla": "aviso_solicitud_valoracion",
+    "avisoSolicitudEstado": "APPROVED",
+    "avisoPlantillaIdioma": "es",
+    "mediosHabilitados": "audio,imagen,documento",
+    "arteComparativoMediaId": "",
+    "arteAntesDespuesMediaId": "REEMPLAZAR_MEDIA_ID_ARTE_ANTES_DESPUES",
+    "arteAutoridadMediaId": "REEMPLAZAR_MEDIA_ID_ARTE_AUTORIDAD"
+  },
+  "_artes": {
+    "_nota": "Dos imágenes de apoyo activas (bata = autoridad, y antes y después); sus ids de medio de Meta están en un archivo local (nunca en el repositorio) y los resuelve la tabla local al preparar el flujo. Los medios de Meta VENCEN a los 30 días de la subida: hay que resubirlas y actualizar la tabla local. La comparativa «¿Sculptra® o Radiesse®?» NO existe como archivo: su id queda como marcador y esa imagen INACTIVA. La imagen del espejo solo se RECONOCE (visión) cuando el cliente la manda; el flujo no la envía.",
+    "comparativo": "(falta el archivo: inactiva)",
+    "antes_despues": "WhatsApp Image 2026-10-16 at 09.28.47.jpeg",
+    "autoridad": "WhatsApp Image 2026-10-16 at 09.17.56.jpeg"
+  }
+}

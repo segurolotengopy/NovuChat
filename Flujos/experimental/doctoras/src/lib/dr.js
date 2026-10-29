@@ -147,6 +147,33 @@ function drDatos(base) {
   if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { d = null; } }
   return d && typeof d === 'object' && !Array.isArray(d) ? d : {};
 }
+// LO VIVO MANDA (regla de Andres, 22/10/2026): la dirección y el horario que ya viven en la Consola NO se incrustan en el flujo; se leen de la respuesta de «Traer configuración» (`/config/negocio`), la MISMA
+// que ya interpreta «Config del negocio» (que no se toca: es idéntico al de Antonio).
+//   - Dirección: SOLO de la Consola (`datosDelNegocio.direccion`). El bloque `doctora` ya no la trae; si trajera una (un JSON viejo), se IGNORA: nunca se da la dirección de otra doctora ni una inventada.
+//   - Horario: el de la Consola (`operacion.horarioAtencion`, derivado de `negocio.horarios`) si existe; si no, el respaldo `doctora.horario` (hoy solo la doctora de turno partido, que el contrato de la
+//     Consola aún no admite: un rango por día). Cuando la Consola admita varios tramos por día, el respaldo se quita y se lee solo de la Consola (ver DISENO.md).
+//   - Con la Consola caída, suspendida o sin el dato: la dirección queda vacía (se pasa a recepción con el botón) y el horario cae al respaldo, si lo hay.
+//   - Un valor con una palabra prohibida (enlace, mapas, monto…) o un marcador cuenta como VACÍO: la persona nunca lo lee.
+function drLimpioVivo(v) {
+  const s = drDatoLleno(typeof v === 'string' ? v : '').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 200);
+  return s !== '' && !DR_PROHIBIDAS.test(drSinAcentos(s)) ? s : '';
+}
+function drDeLaConsola(traer, tenantId) {
+  const r = traer && typeof traer === 'object' ? traer : {};
+  let cuerpo = r.body === undefined ? {} : r.body;
+  if (typeof cuerpo === 'string') { try { cuerpo = JSON.parse(cuerpo); } catch (e) { cuerpo = {}; } }
+  if (Number(r.statusCode) !== 200 || !cuerpo || typeof cuerpo !== 'object' || typeof cuerpo.tenantId !== 'string') return { direccion: '', horario: '' };
+  // La Consola responde por OTRO tenant (o el flujo no sabe cuál es el suyo): nada de eso se dice. Falla cerrado.
+  if (typeof tenantId !== 'string' || tenantId === '' || cuerpo.tenantId !== tenantId) return { direccion: '', horario: '' };
+  const dn = cuerpo.datosDelNegocio && typeof cuerpo.datosDelNegocio === 'object' ? cuerpo.datosDelNegocio : {};
+  const op = cuerpo.operacion && typeof cuerpo.operacion === 'object' ? cuerpo.operacion : {};
+  return { direccion: drLimpioVivo(dn.direccion), horario: drLimpioVivo(op.horarioAtencion) };
+}
+function drDatosVivos(base, traer) {
+  const d = drDatos(base);
+  const vivo = drDeLaConsola(traer, base && base.tenantId);
+  return Object.assign({}, d, { direccion: vivo.direccion, horario: vivo.horario || drLimpioVivo(d.horario) });
+}
 
 // -----------------------------------------------------------------------------
 // PÁRRAFOS (regla de Andres, 20/10/2026): el texto a la persona nunca va en un bloque corrido. Cada párrafo lleva a lo más DOS oraciones y, con dos, a lo más DR_PARRAFO_MAX caracteres; la pregunta
@@ -230,6 +257,7 @@ const DR_TEXTOS_COMUNES = {
   gracias: '¡Con gusto! Si quieres, puedo ayudarte con tu solicitud de valoración.',
   duda: 'Claro, cuéntame tu duda.',
   horario_con: 'Atendemos {horario}.\n\nDime qué día y horario te quedan mejor.',
+  donde_sin: 'La dirección exacta te la confirma la recepción.\n\nPuedes escribirle con el botón.',
   horario_sin: 'El horario de atención te lo confirma la recepción.\n\nPuedes escribirle con el botón.',
   cancelar_ok: 'Listo, lo dejamos aquí. Si quieres retomar tu solicitud, escríbeme.',
 };
@@ -238,7 +266,10 @@ const DR_BOTON_RECEPCION = 'Escribir a recepción';
 function drTextoDe(datos, clave, extra) {
   const d = datos && typeof datos === 'object' ? datos : {};
   const propios = d.textos && typeof d.textos === 'object' ? d.textos : {};
-  const crudo = drDatoLleno(propios[clave]) || drDatoLleno(DR_TEXTOS_COMUNES[clave]);
+  let crudo = drDatoLleno(propios[clave]) || drDatoLleno(DR_TEXTOS_COMUNES[clave]);
+  // Sin dirección en la Consola no se inventa ni se da la de otra doctora: «dónde» pasa a recepción; en los demás textos se quita el párrafo que la lleva.
+  if (clave === 'donde' && drDatoLleno(d.direccion) === '') crudo = DR_TEXTOS_COMUNES.donde_sin;
+  crudo = crudo.split('\n\n').filter((p) => !(/\{direccion\}/.test(p) && drDatoLleno(d.direccion) === '') && !(/\{horario\}/.test(p) && drDatoLleno(d.horario) === '')).join('\n\n');
   const v = Object.assign({ doctora: drDatoLleno(d.nombreCorto) || 'la doctora', clinica: drDatoLleno(d.clinica), direccion: drDatoLleno(d.direccion), horario: drDatoLleno(d.horario), nombre: '' }, extra || {});
   // Sin nombre, «Gracias, {nombre}.» queda «Gracias.» (la coma sobrante se va).
   return crudo.replace(/\{(doctora|clinica|direccion|horario|nombre)\}/g, (m, k) => String(v[k] === undefined ? '' : v[k])).replace(/,\s+(?=[.!?:])/g, '');

@@ -10,6 +10,11 @@ import { httpsCallable } from 'firebase/functions';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { capacidadesDeConsola, useModulos } from '../../central/lib/flujos';
 import { mensajeDeFalla, prepararFoto } from './foto';
+import { pareceInstruccion } from '../../../../functions/src/modulos/productos/frasesDeInstruccion';
+
+/** Aviso fijo: no dice qué palabra lo dispara, solo que el asistente no mencionará el producto. */
+const AVISO_NOMBRE = 'Ese nombre se lee como una orden para el asistente, no como un producto. '
+  + 'Escribe solo el nombre del producto o servicio, tal como lo ve tu cliente.';
 import {
   aCsv, idDeNombre, partirCsv, validarFilas, type FilaCatalogo, type FilaConProblemas,
 } from '../../central/lib/csv';
@@ -405,6 +410,7 @@ export function Catalogo() {
   const conVenta = capacidades.conVistaPrevia;
   const [items, setItems] = useState<Item[] | null>(null);
   const [veredictos, setVeredictos] = useState<Record<string, Veredicto>>({});
+  const [terminos, setTerminos] = useState<Record<string, unknown>>({});
   const [nuevo, setNuevo] = useState(NUEVO);
   /** Lo que pasó con una acción sobre la tabla. Se pinta ARRIBA de la tabla. */
   const [estado, setEstado] = useState<string | null>(null);
@@ -512,6 +518,15 @@ export function Catalogo() {
       () => {});
   }, [tenantId]);
 
+  // Estado del término de producto registrado (solo lectura; lo escribe el servidor y lo aprueba
+  // Plataforma). Del documento se lee ÚNICAMENTE `estado`: ni el término ni el motivo llegan a la pantalla.
+  useEffect(() => {
+    if (!tenantId) return;
+    return onSnapshot(collection(db, 'tenants', tenantId, 'terminosProducto'),
+      (s) => setTerminos(Object.fromEntries(s.docs.map((d) => [d.id, d.get('estado')]))),
+      () => {});
+  }, [tenantId]);
+
   /**
    * Volver a comprobar una foto. Existe porque la primera comprobación puede
    * fallar por algo pasajero —el servidor de la foto caído un minuto— y sin
@@ -559,6 +574,7 @@ export function Catalogo() {
         + 'Arriba de la tabla está cómo hacer lugar.'); return;
     }
     if (!nuevo.nombre.trim()) { setEstadoAlta('El nombre es obligatorio.'); return; }
+    if (pareceInstruccion(nuevo.nombre)) { setEstadoAlta(AVISO_NOMBRE); return; }
     if (!sinPrecio && (!Number.isFinite(precio) || precio < 0)) {
       setEstadoAlta('El precio tiene que ser un número de cero para arriba, o quedar vacío.'); return;
     }
@@ -853,9 +869,15 @@ export function Catalogo() {
                     <Miniatura url={fotos[it.id] || it.imagenUrl} />
                     <div>
                       <TextoSeguro valor={it.nombre} maxLargo={80} />
+                      {pareceInstruccion(String(it.nombre ?? '')) && (
+                        <div className="text-muted" role="note">
+                          El asistente no menciona este producto: su nombre se lee como una orden. Cambia el nombre (dalo de baja y cárgalo de nuevo).
+                        </div>
+                      )}
                       {typeof it.descripcion === 'string' && it.descripcion !== '' && (
                         <div className="text-muted"><TextoSeguro valor={it.descripcion} maxLargo={300} /></div>
                       )}
+                      <EstadoTermino nombre={String(it.nombre ?? '')} estado={terminos[it.id]} />
                       <EstadoFoto v={veredictos[it.id]} onRevisar={() => void revisarFoto(it.id)} />
                       <SubirFoto tenantId={tenantId} itemId={it.id}
                                  tieneFoto={Boolean(fotos[it.id])} onEstado={setEstado} />
@@ -1029,6 +1051,24 @@ const FALLAS: Record<string, string> = {
 interface Veredicto {
   cargable?: unknown; falla?: unknown;
   parecido?: { coincide?: unknown; motivo?: unknown } | undefined;
+}
+
+/**
+ * Estado del término de producto registrado. Solo aparece si el nombre dice «prompt/prompts».
+ * El mensaje de rechazo es fijo: no dice qué palabras sí se aceptan ni por qué se rechazó.
+ */
+function EstadoTermino({ nombre, estado }: { nombre: string; estado: unknown }) {
+  if (!/prompt/i.test(nombre)) return null;
+  if (estado === 'aprobado') return <p className="ayuda" role="note">Término aprobado por NovuChat.</p>;
+  if (estado === 'rechazado') {
+    return (
+      <p className="ayuda foto-dudosa" role="note">
+        Este nombre no puede registrarse como término de producto. Puedes usarlo, pero el texto de tus campañas con esta palabra podría ser rechazado.
+      </p>
+    );
+  }
+  if (estado === 'pendiente') return <p className="ayuda" role="note">En revisión por NovuChat.</p>;
+  return null;
 }
 
 function EstadoFoto({ v, onRevisar }: { v: Veredicto | undefined; onRevisar: () => void }) {
@@ -1511,8 +1551,8 @@ function ImportarCatalogo({ tenantId, conAgenda, items, usados, limite, unidad }
               motivo: motivo === 'sin_respuesta'
                 ? 'el servidor no respondió a la importación. Inténtalo de nuevo en un '
                   + 'momento; si sigue, avísanos desde Reclamos.'
-                : 'el servidor no aceptó esta fila. Revisa el precio, la duración y la '
-                  + 'dirección de la foto.',
+                : 'el servidor no aceptó esta fila. Revisa el nombre (que sea solo el nombre del '
+                  + 'producto), el precio, la duración y la dirección de la foto.',
             });
           }
         }

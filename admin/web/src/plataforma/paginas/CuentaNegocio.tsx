@@ -17,6 +17,8 @@ import { SuspensionNegocio } from '../componentes/SuspensionNegocio';
 import { FormularioPagoManual, type PedidoDePagoManual } from '../componentes/FormularioPagoManual';
 import { CortePrepago } from '../componentes/CortePrepago';
 import { PagosEnRevision } from '../componentes/PagosEnRevision';
+import { TerminosProducto } from '../componentes/TerminosProducto';
+import { AVISO_DE_DECISION, CALLABLES_TERMINOS, listaDeTerminos, type DecisionTermino, type ListaDeTerminos } from '../lib/terminos';
 import {
   esIdTenant, mensajeDeError, motivoDeRechazoPrevio, nombreEvidencia, nuevoPagoId, pagosEnRevision, pideSesionReciente,
   rutaEvidencia, validarComprobante, type PagoEnRevision,
@@ -115,6 +117,22 @@ export function CuentaNegocio() {
       () => setEnRevision([]));
   }, [tenantId]);
 
+  // LOS NOMBRES DE PRODUCTO REGISTRADOS: los lee la callable del propietario (el navegador no lee la
+  // colección) y se vuelven a pedir tras cada decisión.
+  const [terminos, setTerminos] = useState<ListaDeTerminos | null>(null);
+  const [cargandoTerminos, setCargandoTerminos] = useState(true);
+  const [versionTerminos, setVersionTerminos] = useState(0);
+  useEffect(() => {
+    if (!esIdTenant(tenantId)) return;
+    let vigente = true;
+    setCargandoTerminos(true);
+    httpsCallable(funciones, CALLABLES_TERMINOS.listar)({ tenantId })
+      .then((r) => { if (vigente) setTerminos(listaDeTerminos(r.data)); })
+      .catch(() => { if (vigente) setTerminos(null); })
+      .finally(() => { if (vigente) setCargandoTerminos(false); });
+    return () => { vigente = false; };
+  }, [tenantId, versionTerminos]);
+
   /**
    * Llama a una callable y muestra el resultado real: el error del servidor,
    * tal cual. GUARDIA DEL `tenantId` (revisión de seguridad de #203, LOW 2):
@@ -170,6 +188,13 @@ export function CuentaNegocio() {
       setOcupado(false);
     }
   }, [tenantId, pagoId]);
+
+  const decidirTermino = useCallback(async (itemId: string, decision: DecisionTermino) => {
+    const ok = await operar(CALLABLES_TERMINOS.decidir, { itemId, decision }, AVISO_DE_DECISION[decision]);
+    // Con o sin éxito se vuelve a leer: otra decisión o una edición del nombre pudo cambiar la lista.
+    setVersionTerminos((n) => n + 1);
+    return ok;
+  }, [operar]);
 
   const volverAEntrar = async () => {
     const pendiente = reautenticar;
@@ -275,6 +300,10 @@ export function CuentaNegocio() {
         onConfirmar={(confirmarPendiente, montoRecibidoBs, motivoDiferencia) => void operar(CALLABLES.pagoManual,
           { confirmarPendiente, montoRecibidoBs, motivoDiferencia },
           'Pago registrado: el cobro que el banco había confirmado quedó aplicado.')} />
+
+      <TerminosProducto filas={terminos?.filas ?? null} aprobados={terminos?.aprobados ?? 0} tope={terminos?.tope ?? 10}
+        cargando={cargandoTerminos} ocupado={ocupado}
+        onDecidir={(itemId, decision) => void decidirTermino(itemId, decision)} />
 
       <FormularioPagoManual key={pagoId} cuenta={cuenta} tipoCambio={tipoCambio} ahoraMs={ahoraMs} ocupado={ocupado}
         onRegistrar={(pedido) => void registrarPago(pedido)} />

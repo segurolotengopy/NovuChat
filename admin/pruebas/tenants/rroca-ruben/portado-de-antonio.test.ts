@@ -173,6 +173,7 @@ describe('AUDIO DUDOSO · una nota de voz de menos de 3 palabras, muletillas o �
     for (const voz of ['precio pack', 'catálogo']) {
       const w = crear({ transcripcion: voz });
       hablar(w, ANA, mTexto('hola'));
+      hablar(w, ANA, mTexto('tengo una tienda de ropa')); // ENTREGA 2: la segunda charla abre las opciones
       const t = hablar(w, ANA, mAudio());
       const m = unico(t);
       expect(m.cuerpo, voz).not.toContain(NO_ENTENDIDO);
@@ -359,7 +360,7 @@ describe('SIN CONFIGURACIÓN · no se improvisa: texto honesto, aviso (solo si s
     expect(s.cuerpo).toMatch(/asistente virtual de Rubén/);
     const q = unico(hablar(w, ANA, mTexto(PACK)));
     expect(q.tipo).toBe('image');
-    expect(q.cuerpo).toMatch(/ingresa exactamente 60 Bs/);
+    expect(q.cuerpo).toMatch(/ingresa 60 Bs/);
     expect(eventosQr(w)).toHaveLength(1);
     const c = unico(hablar(w, BETO, mTexto('dame tu catálogo')));
     expect(c.cuerpo).not.toMatch(SIN_CONFIG);

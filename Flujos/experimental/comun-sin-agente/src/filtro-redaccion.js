@@ -22,15 +22,24 @@
 //   textoDelCliente   lo que preguntó el cliente: a una pregunta de IDENTIDAD no se contesta empezando con «Sí»
 //   sinImagenes       true: el flujo NO envía imágenes; «te muestro / envío fotos, capturas, la portada…» es una promesa sin respaldo
 //                     y se rechaza con el motivo `promete_imagenes`. Apagado por defecto (hay flujos que sí envían imágenes)
+//   maxOraciones      tope de oraciones (apagado): motivo `largo_en_oraciones`; pulir recorta y conserva la pregunta final
+//   sinDatosDePago    true: ningún dato de pago lo escribe el modelo (cuenta, banco, Tigo Money, Yape, QR, «deposita/paga…»): `datos_de_pago`
+//   sinAfirmarCompra  true: no afirma compra ni entrega («ya compraste», «ya te llegó», «te lo enviamos»); una pregunta no afirma: `afirma_compra`
+//   sinPromesasDeAviso true: «un asesor se comunicará», «te avisaremos/llamaremos…»: `promete_aviso`. `avisoRespaldado: true` (el flujo SÍ avisa) permite
+//                     «le avisamos al equipo/recepción/asesor» solo si cierra la oración y no promete contactar al cliente
 //   extra             funciones (texto, normalizado) => motivo ('' si pasa): las reglas propias del flujo (horas, etc.)
 // Las promesas sin respaldo, afirmar un hecho que solo el código puede afirmar (quedó agendado, pago acreditado…),
 // negar ser una IA y los huecos de plantilla se revisan SIEMPRE, y no se pueden apagar.
 
+// Texto sin invisibles (Default_Ignorable y Cf) y con Braille como espacio, ANTES de partir por espacios: un separador invisible no esconde la frase.
+function cmPre(s) {
+  return String(s).normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '').replace(/\u2800/g, ' ');
+}
 function cmNorm(t) {
-  // NFKC junta las formas de ancho completo («ｑｕｅｄó» → «quedó»); se quitan los caracteres invisibles (U+200B a U+200D,
-  // U+2060, U+FEFF) y el guion blando, que partían una palabra sin que se viera («agen​dé»).
-  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/[​-‍⁠﻿­]/g, '').replace(/[。｡]/g, '.')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  // NFKC junta el ancho completo; se quitan los invisibles (Default_Ignorable y Cf: U+200B, U+00AD, U+17B4, U+180B…, selectores, tags) que partían
+  // una palabra sin verse, y Braille U+2800 vale como ESPACIO. Todo en copias para comparar.
+  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '').replace(/\u2800/g, ' ').replace(/[。｡]/g, '.')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 // El texto SIN los guiones, puntos y asteriscos que parten una palabra para esconderla («agen-dada», «a.gen.dé»).
 function cmJunto(n) {
@@ -59,7 +68,8 @@ const CM_PROMESAS = /lo consulto|lo consultar[eé]|consultar[eé]|\b(te|le) avis
 // Y negar ser una IA (prohibición 4: NUNCA): «no soy un bot / una máquina / un asistente», «soy una persona»,
 // «hablas con una persona», «persona real», «de carne y hueso».
 // Medios y sustantivos del pago. Medios que existen en Bolivia: QR simple, transferencia, Tigo Money, tarjeta, efectivo y depósito.
-// (Yape, Nequi, PIX… no existen aquí y no se listan.)
+// (Nequi y PIX no existen aquí y no se listan. Yape SÍ existe y es una de las billeteras más grandes y difundidas de Bolivia: la lista de abajo no la
+// nombra porque es solo para AFIRMAR un pago, pero la opción `sinDatosDePago` la bloquea.)
 // Formas EXPLÍCITAS (nunca `pag\w*`: «página» no es un pago) y sin `cancel*` (cancelar una suscripción no es pagar; «cancelaste/cancelamos/cancelaron» tienen su regla).
 // «abono» (también fertilizante) y «cobro» solo cuentan junto a un estado o verbo de recepción.
 const CM_PAGO = '(?:pagos?|pag|pagad[oa]s?|pagar|pagas?|pagan|pague|pagaste|pagamos|pagaron|comprobantes?|abonos?|abonad[oa]s?|abonar|abonaste|abonamos|abonaron|cobros?|cobrad[oa]s?|cobrar|cobramos|cobraron|plata|dinero|depositos?|transferencias?|qr|tigo ?money|tarjeta|efectivo|vouchers?|bs|bolivianos)';
@@ -76,7 +86,7 @@ const CM_AFIRMA_LISTA = [
   '\\b(agendad|reservad|registrad|confirmad|anotad|reprogramad|programad|cancelad|acreditad|aprobad|verificad|validad|pagad|separad)[oa]s?\\b',
   '\\b(agende|reserve|registre|confirme|anote|reprograme|programe|cancele|cambie|separe|valide|acredite)\\b',
   '\\b(agend|reserv|registr|confirm|anot|reprogram|program|cancel|acredit|valid|separ)(amos|aron)\\b',
-  '\\b(te|le|lo|la) (agendo|reservo|registro|confirmo|anoto|programo|separo|reprogramo|cancelo|valido|acredito)\\b',
+  '\\b(te|le|lo|la) (agendo|reservo|registro|anoto|programo|separo|reprogramo|cancelo|valido|acredito)\\b',
   '\\bse (agendo|reservo|registro|confirmo|anoto|programo|separo|reprogramo|cancelo|valido|acredito|aprobo|cambio)\\b',
   '\\b(qued[oa]|esta|estan|fue|fueron|ha sido|han sido) (list|hech|fij|recib|ya)[oa]s?\\b',
   '\\bya (se|te|le) (agend|reserv|registr|confirm|anot|program|separ|acredit)',
@@ -137,6 +147,26 @@ const CM_AFIRMA_LISTA = [
   '\\bpersona (real|de verdad)\\b',
   'carne y hueso',
 ];
+// «Te lo confirmo» / «te confirmo que…» ordena POR DEFECTO (se rechaza). Solo se exime lo que se sabe que es INFORMACIÓN:
+//   - la oración, quitado el «confirmo», es relleno («Te lo confirmo con total transparencia») o dice que es gratis / sin costo;
+//   - Y en TODO el mensaje no hay un hecho propio de agenda o pago: «tu cita/consulta/valoración/pago…», un día u hora
+//     (mañana, hoy, «a las diez», 15hs, hh:mm, «para el…») ni un estado (listo, hecho, en orden, agendad-, ya quedó…).
+// La lista de lo que se rechaza es abierta a propósito; la de lo que se exime es cerrada: ante la duda, texto fijo del código.
+const CM_CONFIRMO = cmDuo(['\\b(?:te|le|lo|la) (?:lo |la )?confirmo\\b']);
+const CM_CONFIRMO_INFO = cmDuo(['^(?:\\W|\\b(?:con|total|toda|plena|transparencia|seguridad|gusto|claro|si|que)\\b)*$|\\b(?:gratuit[oa]s?|gratis|sin costo|sin cargo|no tiene (?:ningun )?costo|no (?:hay|tiene) (?:ningun )?(?:costo|cobro))\\b']);
+const CM_HECHO_PROPIO = cmDuo([
+  '\\b(?:tu|tus|su|sus) (?:\\w+ )?(?:citas?|turnos?|reservas?|consultas?|valoracion\\w*|sesion\\w*|pagos?|comprobantes?|depositos?|transferencias?|pedidos?|lugar\\w*|cupos?|horarios?|horas?|plata|dinero|montos?|entregas?|ordenes|orden|inscripcion\\w*|visitas?)\\b',
+  '\\b(?:manana|hoy|pasado manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\\b|\\ba las? \\w+|\\b\\d{1,2}(?::\\d{2})?\\s*(?:am|pm|hs?|hrs?)\\b|\\b\\d{1,2}[/:.h]\\d{2}\\b|\\bpara (?:el|la|manana|hoy)\\b',
+  '\\b(?:listo|lista|hecho|en orden|te esperamos|estas en|ya (?:esta|quedo|fue))\\b|\\b(?:agendad|reservad|acreditad|registrad|anotad|programad|aprobad|verificad|recibid|confirmad)\\w*',
+]);
+function cmConfirmaUnHecho(s) {
+  return cmVariantes(s).some((v, i) => {
+    const d = i > 3 ? 1 : 0;
+    if (!CM_CONFIRMO[d].test(v)) return false;
+    if (CM_HECHO_PROPIO[d].test(v)) return true;
+    return cmOraciones(v).some((x) => CM_CONFIRMO[d].test(x) && !CM_CONFIRMO_INFO[d].test(x.replace(new RegExp(CM_CONFIRMO[d].source, 'g'), ' ')));
+  });
+}
 const CM_AFIRMA = new RegExp(CM_AFIRMA_LISTA.join('|'));
 // Copia SOLO para comparar: el mismo patrón con las letras repetidas colapsadas («llego» → «lego»), para el texto colapsado («paaago» → «pago»).
 // Las barras de escape se respetan (`\\b` + «bot» no es «bb»).
@@ -154,6 +184,88 @@ const CM_MONTO = new RegExp('\\b\\d[\\d.,]*\\s*(bs|bob|bolivianos?|usd|usdt|dola
 // Promesa de IMÁGENES sin respaldo (opción `sinImagenes`): «te muestro / envío / comparto…» o «puedo mostrar…», «aquí tienes», «te dejo»,
 // «adjunto» cerca de una foto, captura, portada, vista previa o ejemplo visual. Se prueba sobre el texto normalizado.
 const CM_PROMETE_IMAGENES = /\b(te (muestro|envio|mando|comparto|paso|adjunto|enviare|mandare|mostrare|compartire)|(puedo|podria|podemos|voy a|vamos a) (mostrar|enviar|mandar|compartir|pasar|adjuntar)(te|les|le)?|aqui (tienes|te dejo)|te dejo|adjunto|enviare|mandare|mostrare|compartire)\b[^.?!]{0,40}\b(imagen|imagenes|foto|fotos|fotografia|fotografias|captura|capturas|pantallazo|pantallazos|screenshot|screenshots|portada|detalles visuales|ejemplos visuales|vista previa)\b/;
+// ---- Reglas OPT-IN (apagadas por defecto), sobre cuatro formas del texto y su copia colapsada.
+function cmDuo(fuentes) { const f = fuentes.join('|'); return [new RegExp(f), new RegExp(cmColapsa(f))]; }
+function cmVariantes(s) {
+  const base = cmNorm(s);
+  const sp = cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , '));
+  const nlc = cmJuntoLetras(cmLeet(sp));
+  return [base, cmJunto(base), cmJuntoLetras(sp), nlc, cmJunto(cmColapsa(base)), cmColapsa(nlc)];
+}
+function cmHay(duo, vars, sinPreguntas) {
+  return vars.some((v, i) => (sinPreguntas ? cmOraciones(v).filter((x) => x.indexOf('?') < 0) : [v]).some((x) => duo[i > 3 ? 1 : 0].test(x)));
+}
+const CM_VERBO_PAGO = '(?:pag(?:ar(?:lo|la|me|nos)?|a(?:lo|la|me)?(?! (?:dividendos|intereses|beneficios))|as|ues?|uen|uelo)|abon(?:ar|a|as|an|e|es|en)\\w*|deposit(?:ar|a|e|en)\\w*|transfi(?:ere|eres|era|eran)\\w*|transferir\\w*)';
+const CM_MEDIO_PAGO = '(?:bancos?|cuentas?|tarjetas?|efectivo|depositos?|bnb|bcp|bisa|fassil|mercantil|union|ganadero|fie|prodem|economico)';
+const CM_DATOS_PAGO = cmDuo([
+  '\\b' + CM_VERBO_PAGO + '\\b',
+  '\\b(?:tigo[ ,]{0,3}money|billeteras?|alias|transferencias?|codigos? qr|qr|bcp|bnb|fassil|prodem|ecofuturo|yap(?:e|ea)\\w*)\\b',
+  '\\b(?:por|via|mediante|con) (?:un )?giros?\\b|\\bgiros? (?:bancario|postal|de dinero|de plata)\\b|\\b(?:hacer|haz|haga|realiza\\w*|envia\\w*|manda\\w*) (?:un |el |tu )?giros?\\b',
+  '\\bgir(?:a|ar|e|alo)\\w* (?:el |tu |la |un |lo |su )?(?:dinero|plata|pago|monto|saldo)\\b',
+  '\\bcuentas? (?:bancarias?|corrientes?|de ahorros?|de banco)\\b|\\bcuentas?\\b[^.!?]{0,15}\\bbancos?\\b',
+  '\\b(?:numero|nro|num) (?:de )?cuenta\\b',
+  '\\b(?:formas?|metodos?|medios?|datos|link|enlace) de pago\\b|\\bdatos (?:bancarios|para (?:el |la |tu )?(?:pago|deposito|transferencia|abono)|del? (?:pago|deposito|cuenta))\\b',
+  '\\bcuenta\\b[^.!?]{0,20}\\d{4,}|(?<!\\d)\\d{4,}[^.!?]{0,15}\\bcuenta\\b',
+  '\\b' + CM_MEDIO_PAGO + '\\b[^.!?]{0,30}\\b' + CM_VERBO_PAGO + '\\b',
+  '\\bcancel\\w*\\b[^.!?]{0,25}\\b(?:efectivo|transferencia|tarjeta|qr|banco|cuenta|deposito|tigo|yape)\\b',
+  '\\b(?:envia|manda|pas)\\w* (?:me |nos )?(?:el |tu |la |un |lo |su )?(?:dinero|plata|pago|monto|saldo)\\b',
+  '\\b(?:haz|hacer|realiza|realizar|haga|realice|hacen) (?:el |tu |la |un |una |su )?(?:pago|deposito|transferencia|abono)\\b',
+  '\\bescane\\w* (?:el |este |ese |mi )?(?:codigo|qr)\\b',
+]);
+const CM_AFIRMA_COMPRA = cmDuo([
+  '\\bya (?:compraste|adquiriste|pediste|pidio|ordenaste|recibiste)\\b',
+  '\\bya (?:hiciste|hizo|realizaste|realizo|hicimos) (?:tu |el |su |un |la )?(?:pedido|compra|orden)\\b',
+  '\\bya (?:te|le|se) (?:llego|llegaron|enviamos|mandamos|entregamos|despachamos|envio|mando|entrego|despacho|enviaron|mandaron|entregaron)\\b',
+  '\\bya (?:despachamos|enviamos|mandamos|entregamos|envie|mande|despache|entregue)\\b',
+  '\\bya (?:tienes|tiene|tenes) (?:tu |el |su |la |los |las )?(?:\\w+ )?(?:libros?|pedido|compra|producto|paquete|acceso)\\b',
+  '\\bya (?:lo|la|los|las) (?:tienes|tiene|recibiste|recibio)\\b',
+  '\\bya (?:fue|esta|estan|quedo|ha sido|salio)\\b[^.!?]{0,12}\\b(?:enviad|entregad|despachad|mandad|camino|salio)',
+  '\\b(?:tu|su|el|la) (?:pedido|compra|orden|libro|paquete)\\b[^.!?]{0,10}\\bya salio\\b',
+  '\\b(?:te|le) (?:envie|mande|entregue|despache)\\b',
+  '\\b(?:acabo|acabamos) de (?:enviar|mandar|entregar|despachar)',
+  '\\b(?:te|le|se) (?:lo|la|los|las) (?:enviamos|mandamos|entregamos|despachamos|enviaron|mandaron|entregaron|enviare|enviaremos|mandaremos|entregaremos|hacemos llegar|haremos llegar)\\b',
+  '\\b(?:te|le) (?:enviamos|mandamos|entregamos|despachamos|enviaremos|mandaremos|entregaremos) (?:tu |el |su |la |los |las )',
+  '\\b(?:tu|su|el|la) (?:pedido|compra|orden|libro|envio|paquete|encomienda|entrega)\\b[^.!?]{0,25}\\b(?:fue|esta|estan|ha sido|quedo|ya)\\b[^.!?]{0,15}\\b(?:entregad|enviad|mandad|despachad|confirmad|procesad|completad|recibid|realizad|list|camino|aprobad|registrad|exitos)',
+  '\\b(?:tu|su|el|la) (?:pedido|compra|libro|paquete|envio)\\b[^.!?]{0,15}\\b(?:llego|llegaron|va en camino|viene en camino)\\b',
+  '\\b(?:vas a|va a|vamos a) recibir\\b[^.!?]{0,20}\\b(?:libro|pedido|compra|paquete|material|pdf|bonos?)\\b|\\brecibiras?\\b[^.!?]{0,20}\\b(?:libro|pedido|compra|paquete|material|pdf|bonos?)\\b',
+  '\\b(?:te|le) llegara\\b|\\b(?:pedido|libro|paquete|compra|material) llegara\\b',
+  '\\bcompra (?:confirmada|exitosa|realizada|completada|aprobada|registrada|procesada)\\b',
+  '\\bgracias por (?:comprar|haber comprado|adquirir)\\b',
+  '\\b(?:gracias|felicidades|felicitaciones)\\b[^.!?]{0,15}\\b(?:por|de) (?:tu|su|la|haber)\\b[^.!?]{0,15}\\b(?:compra|comprado|adquirido|pedido)\\b',
+]);
+const CM_PROMETE_AVISO = cmDuo([
+  '\\bse (?:comunicara|comunicaran|contactara|contactaran|pondra|pondran)\\b',
+  '\\b(?:te|le|les|lo|la) (?:llamara|llamaran|escribira|escribiran|contactara|contactaran|respondera|responderan|avisara|avisaran|buscara|buscaran|marcara)\\b',
+  '\\b(?:te|le|les) (?:llamare|llamaremos|escribire|escribiremos|avisare|avisaremos|contactare|contactaremos|buscare|buscaremos|respondere|responderemos|marcare|hare llegar|haremos llegar)\\b',
+  '\\b(?:te|le|les) (?:informar|notificar|mantendr|dar)(?:e|emos|a|an) (?:al tanto|informad\\w+|seguimiento)\\b|\\b(?:te|le|les) (?:informar|notificar)(?:e|emos|a|an)\\b|\\bdar\\w* seguimiento\\b',
+  '\\b(?:te|le|les) (?:escribe|escribo|escribimos|escriben|contacta|contacto|contactamos|contactan|responde|respondo|respondemos|responden|llama(?! la atencion)|llamo|llamamos|llaman|busca|busco|buscamos|buscan)\\b',
+  '\\b(?:recibiras|recibira) (?:una |un )?(?:llamada|mensaje|correo|respuesta|whatsapp)\\b',
+  '\\b(?:quedamos|seguimos) en contacto\\b',
+  '\\bpara que (?:te|le|lo) (?:llame|escriba|contacte|responda|busque|atienda|llamen|escriban|contacten)\\b',
+  '\\bya (?:le|les) (?:pase|pasamos|di|dimos) (?:tu|su) (?:numero|contacto|telefono|whatsapp)\\b',
+  '\\b(?:nos|me) (?:pondremos|pondre|comunicaremos|contactaremos)\\b',
+  '\\b(?:te|le|les) (?:vamos|voy|van|va) a (?:llamar|escribir|avisar|contactar|responder|buscar)\\b',
+  '\\bestaremos en contacto\\b',
+  '\\b(?:comunicara|comunicaran|contactara|contactaran|llamara|llamaran|escribira|escribiran)\\b[^.!?]{0,15}\\bcontigo\\b',
+  '\\b(?:te|le) (?:aviso|avisamos)\\b',
+]);
+// Aviso AL EQUIPO permitido (avisoRespaldado): solo si cierra la oración y no promete contactar al cliente.
+const CM_AVISO_AL_EQUIPO = /\b(?:le|les) avis\w+ (?:al|a la|a los|a las|a) (?:equipo|negocio|recepcion|asesor\w*|doctor\w*|encargad\w*)(?=[\s.!?]*$)/;
+const CM_PROMETE_RESTO = /\b(?:te|le|lo|la)\s+(?:llam|escrib|contact|respond|busc|atiend)\w*|\bpara que\b|\bque te\b/;
+function cmSinAvisoAlEquipo(n) {
+  return cmOraciones(n).map((x) => {
+    const q = x.replace(CM_AVISO_AL_EQUIPO, '');
+    return q !== x && !CM_PROMETE_RESTO.test(q) ? q : x;
+  }).join(' ');
+}
+function cmReglasOptIn(s, o) {
+  if (!(o.sinDatosDePago || o.sinAfirmarCompra || o.sinPromesasDeAviso)) return '';
+  const vars = cmVariantes(s);
+  if (o.sinDatosDePago && cmHay(CM_DATOS_PAGO, vars, false)) return 'datos_de_pago';
+  if (o.sinAfirmarCompra && cmHay(CM_AFIRMA_COMPRA, vars, true)) return 'afirma_compra';
+  if (o.sinPromesasDeAviso && cmHay(CM_PROMETE_AVISO, o.avisoRespaldado ? vars.map(cmSinAvisoAlEquipo) : vars, false)) return 'promete_aviso';
+  return '';
+}
 // Un hueco de plantilla («a las )», «{{x}}», «undefined») nunca sale.
 const CM_HUECO = /\(\s*\)|\ba las?\s*[).,;:!?]|\ba las?\s*$|\bde\s*\)|«\s*»|\{\{|undefined|null\b/;
 // El cliente pregunta si habla con un bot / una IA / una persona: ahí una NEGACIÓN en la respuesta («Claro que no, soy Rubén») es negar ser una IA.
@@ -165,14 +277,65 @@ const CM_PREGUNTA_DE_IDENTIDAD = /\b(eres|es|sos) (el |la )?(doctor|doctora|dr|d
 const CM_ENLACE = new RegExp('(?:[a-z][a-z0-9+.-]*:\\/\\/|www\\.)\\S+|\\b\\d{1,3}(?:\\.\\d{1,3}){3}(?::\\d+)?(?:\\/\\S*)?|\\b[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.[a-z]{2,}(?![a-z0-9-])(?::\\d+)?(?:\\/\\S*)?', 'gi');
 function cmEnlacesDe(texto) {
   // Primero se normaliza igual que el resto (ancho completo, invisibles, «。») y se junta lo que un salto o un espacio parte antes de la terminación.
-  const t = String(texto || '').normalize('NFKC').replace(/[​-‍⁠﻿­]/g, '').replace(/[。｡]/g, '.').replace(/\s+(?=\.[a-z]{2,}\b)/gi, '');
+  const t = String(texto || '').normalize('NFKC').replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, '').replace(/\u2800/g, ' ').replace(/[。｡]/g, '.').replace(/\s+(?=\.[a-z]{2,}\b)/gi, '');
   return (t.match(CM_ENLACE) || []).map((e) => e.replace(/[).,;:!?»”"'\]]+$/, ''));
 }
 function cmNormEnlace(e) {
   return String(e || '').normalize('NFKC').trim().replace(/[).,;:!?»”"'\]]+$/, '').replace(/^https?:\/\//i, '').replace(/^www\./i, '').toLowerCase();
 }
 
+function cmOraciones(t, estricto) {
+  // `estricto` (maxOraciones): el salto de línea y un emoji cierran oración; «1.» no.
+  const ABREV = estricto ? /(?:\b(?:Dr|Dra|Sr|Sra|Srta|Lic|Ing|Prof|Esp|Av|Edif|Of|No|Nro)|(?:^|\s)\d{1,2})\.$/i : /\b(Dr|Dra|Sr|Sra|Srta|Lic|Ing|Prof|Esp|Av|Edif|Of|No|Nro)\.$/i;
+  const oraciones = [];
+  for (const x of String(t).split(estricto ? /(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic})\s+|\s*\n+\s*/u : /(?<=[.!?…])\s+/)) {
+    if (oraciones.length && ABREV.test(oraciones[oraciones.length - 1])) oraciones[oraciones.length - 1] += ' ' + x;
+    else oraciones.push(x);
+  }
+  return oraciones;
+}
+
+const CM_INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\u2800]/u;
+// Frases críticas SIN espacios ni signos («P a g o v e r i f i c a d o», «Pagoverificado»); un falso positivo cae al texto fijo.
+const CM_JUNTAS = /pago(?:fue)?(?:acreditad|verificad|recibid)|recibimos(?:tu|su)?pago|nosoyun(?:bot|robot|maquina)|soyunapersona|quedoagendad|yaagende|teagende|agende(?:tu|su|la|el)(?:cita|turno|reserva)/g;
+// Busca CM_JUNTAS en la forma SIN espacios de `n`, sabiendo dónde cae cada letra en el texto original:
+//   - «recibimos (tu|su) pago» dentro de una pregunta («¿…?», misma línea) no afirma, igual que la exención de las formas con espacios; ninguna otra frase se exime;
+//     una pregunta metida en medio de la frase («pago ¿x? verificado») no la exime;
+//   - solo «caso y una persona» (una «y» suelta tras «so») no es «soy una persona»; «Holasoyunapersona» sigue rechazado;
+//   - «…agende» no es «agendemos» ni «agenden» cuando esas letras van pegadas en el texto.
+function cmJuntasHay(n) {
+  const preg = [];
+  for (const q of n.matchAll(/¿[^?.!¡¿\n]*\?/g)) preg.push([q.index, q.index + q[0].length]);
+  let sq = '';
+  const pos = [];
+  let i = 0;
+  for (const ch of n) {
+    if (/[\p{L}\p{N}]/u.test(ch)) { sq += ch; for (let k = 0; k < ch.length; k++) pos.push(i); }
+    i += ch.length;
+  }
+  const re = new RegExp(CM_JUNTAS.source, 'g');
+  let m;
+  while ((m = re.exec(sq))) {
+    re.lastIndex = m.index + 1;
+    const a = pos[m.index];
+    const z = pos[m.index + m[0].length - 1];
+    if (/^recibimos(?:tu|su)?pago$/.test(m[0]) && preg.some((r) => a >= r[0] && z < r[1])) continue;
+    if (m[0] === 'soyunapersona' && a > 0 && /\p{L}/u.test(n.charAt(a - 1)) && /^so y una persona/.test(n.slice(a, z + 1).replace(/[^\p{L}\p{N}]+/gu, ' '))) continue;
+    if (/agende$/.test(m[0]) && /^(?:mos|n)(?!\p{L})/u.test(n.slice(z + 1))) continue;
+    return true;
+  }
+  return false;
+}
 function cmMotivoDeRechazo(texto, opciones) {
+  const m = cmMotivo1(texto, opciones);
+  if (m) return m;
+  const t = String(texto === undefined || texto === null ? '' : texto);
+  // Segunda forma: el invisible (o el Braille) como SEPARADOR de palabras (el invisible entre «Tu» y «pago»), no dentro de ellas.
+  if (CM_INVISIBLE.test(t)) { const m2 = cmMotivo1(t.replace(new RegExp(CM_INVISIBLE.source, 'gu'), ' '), opciones); if (m2) return m2; }
+  const n = cmNorm(t);
+  return cmJuntasHay(n) || cmJuntasHay(cmLeet(n)) ? 'afirma_un_hecho' : '';
+}
+function cmMotivo1(texto, opciones) {
   const o = opciones || {};
   const s = String(texto || '').trim();
   if (!s) return 'vacio';
@@ -182,22 +345,27 @@ function cmMotivoDeRechazo(texto, opciones) {
   const n = cmNorm(s);
   if (!o.permitirMontos && (CM_MONTO.test(n) || CM_MONTO.test(cmJunto(n)))) return 'monto';
   const nj = cmJunto(n);
-  if (CM_PROMESAS.test(n) || CM_PROMESAS.test(nj) || CM_PROMESAS.test(cmJuntoLetras(n))) return 'promesa';
+  const pn = o.avisoRespaldado && o.sinPromesasDeAviso ? cmSinAvisoAlEquipo(n) : n;
+  if (CM_PROMESAS.test(pn) || CM_PROMESAS.test(cmJunto(pn)) || CM_PROMESAS.test(cmJuntoLetras(pn))) return 'promesa';
   const sujetos = (o.quienPromete || []).map((x) => String(x).replace(/[.*+?^${}()[\]\\|]/g, '\\$&'));
   if (sujetos.length && new RegExp('\\b(?:' + sujetos.join('|') + ') te\\b').test(n)) return 'promesa';
   if (cmAlfabetoMixto(s)) return 'afirma_un_hecho';
   // Dos o más espacios (o un salto) separan palabras aunque las letras vayan sueltas: «P a g o   r e c i b i d o».
-  const nl = cmJuntoLetras(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , ')));
+  const nl = cmJuntoLetras(cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , ')));
   if (CM_AFIRMA.test(n) || CM_AFIRMA.test(nj) || CM_AFIRMA.test(nl)) return 'afirma_un_hecho';
-  if (CM_AFIRMA_C.test(cmColapsa(cmJuntoLetras(cmLeet(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , ')))))) || CM_AFIRMA_C.test(cmColapsa(nl))) return 'afirma_un_hecho';
+  if (CM_AFIRMA_C.test(cmColapsa(cmJuntoLetras(cmLeet(cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , ')))))) || CM_AFIRMA_C.test(cmColapsa(nl))) return 'afirma_un_hecho';
+  if (cmConfirmaUnHecho(s)) return 'afirma_un_hecho';
   if (CM_HUECO.test(n)) return 'hueco';
   const pregunta = cmNorm(o.textoDelCliente || '');
   if (pregunta && CM_PREGUNTA_DE_IDENTIDAD.test(pregunta) && /^\W*si\b/.test(n)) return 'identidad';
   if (pregunta && CM_PREGUNTA_DE_BOT.test(pregunta) && /\b(no|nop|nel|para nada)\b/.test(n) && !/\b(asistente|virtual)\b/.test(n)) return 'identidad';
   if (o.sinImagenes) {
-    const nlc = cmJuntoLetras(cmLeet(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , '))));
+    const nlc = cmJuntoLetras(cmLeet(cmNorm(cmPre(s).replace(/[^\S\n]{2,}|\n+/g, ' , '))));
     if (CM_PROMETE_IMAGENES.test(n) || CM_PROMETE_IMAGENES.test(nj) || CM_PROMETE_IMAGENES.test(nl) || CM_PROMETE_IMAGENES.test(nlc)) return 'promete_imagenes';
   }
+  if (o.maxOraciones >= 1 && cmOraciones(s, true).filter((x) => /[\p{L}\p{N}]/u.test(x)).length > o.maxOraciones) return 'largo_en_oraciones';
+  const optIn = cmReglasOptIn(s, o);
+  if (optIn) return optIn;
   for (const re of (o.prohibidos || [])) if (re.test(n)) return 'prohibido';
   // ENLACES: por defecto NINGUNO sale. `enlacesPermitidos` es la lista de enlaces COMPLETOS del negocio (mapa, redes,
   // wa.me). Se detectan `https?://…`, `www.…` y los dominios sueltos más comunes (wa.me/…, bit.ly/…, algo.com); un
@@ -235,21 +403,24 @@ function cmRedaccionValida(texto, opciones) {
 // opciones: { nombreNegocio }
 function cmPulirRedaccion(texto, opciones) {
   const o = opciones || {};
-  const ABREV = /\b(Dr|Dra|Sr|Sra|Srta|Lic|Ing|Prof|Esp|Av|Edif|Of|No|Nro)\.$/i;
   // Tope de largo: el pulido parte por oraciones y un texto enorme lo volvía cuadrático. Una redacción válida mide ≤ 900.
-  const trozos = String(texto || '').slice(0, 5000).trim().split(/(?<=[.!?…])\s+/);
-  const oraciones = [];
-  for (const t of trozos) {
-    if (oraciones.length && ABREV.test(oraciones[oraciones.length - 1])) oraciones[oraciones.length - 1] += ' ' + t;
-    else oraciones.push(t);
-  }
+  const oraciones = cmOraciones(String(texto || '').slice(0, 5000).trim(), o.maxOraciones >= 1);
   const SALUDO = /^[¡!]?\s*(hola|buen[oa]s?\s+(d[ií]as|tardes|noches)|qu[eé] tal)\b/i;
   const PRESENTA = /\b(soy|somos)\s+(la|el|una|un|tu)\s+(asistente|secretaria|recepcionista)\b|\bestoy aqu[ií] para\b|\best(oy|amos) para (ayudarte|servirte)\b/i;
   while (oraciones.length > 1 && (SALUDO.test(oraciones[0]) || PRESENTA.test(oraciones[0]))) oraciones.shift();
   if (oraciones.length) oraciones[0] = oraciones[0].replace(/^[¡!]?\s*(claro que s[ií]|claro|por supuesto|con gusto|perfecto|listo|dale|genial)\s*[!,.:]+\s*/i, '');
   if (oraciones.length) oraciones[0] = oraciones[0].replace(/^[¡!]?\s*hola\s*[!.,]\s*/i, '');
+  // Tope de oraciones (opt-in): se conservan las primeras y, si la última era una pregunta, esa pregunta.
+  const tope = Number(o.maxOraciones);
+  if (tope >= 1 && oraciones.length > tope) {
+    const ultima = oraciones[oraciones.length - 1];
+    const corte = oraciones.slice(0, tope);
+    if (/\?[^\p{L}\p{N}]*$/u.test(ultima) && !/\?[^\p{L}\p{N}]*$/u.test(corte[tope - 1])) corte[tope - 1] = ultima;
+    oraciones.length = 0;
+    oraciones.push(...corte);
+  }
   let t = oraciones.join(' ').trim();
-  const sinTilde = (w) => w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const sinTilde = (w) => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const palabras = String(o.nombreNegocio || '').split(/[^A-Za-zÀ-ÿ]+/).filter((w) => w.length >= 4);
   for (const w of palabras) {
     t = t.replace(/[A-Za-zÀ-ÿ]+/g, (x) => (x !== w && sinTilde(x) === sinTilde(w)) ? w : x);
