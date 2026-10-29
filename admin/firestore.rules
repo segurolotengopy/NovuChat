@@ -1916,9 +1916,10 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
-      // /cuposDeMedios/{dia} — el contador de medios y bytes del día (tope de 1.000 o
-      // 2 GB por comercio). Lo lee y lo escribe SOLO `guardarMedio`, con el SDK Admin;
-      // si el comercio pudiera borrarlo, el cupo no sería un cupo. Caduca por TTL.
+      // /cuposDeMedios/{dia} — el contador de medios y bytes del día (tope de 3.000
+      // medios y 15 GiB por comercio; constancia de tope superado, máx. 50). Lo lee y
+      // lo escribe SOLO `guardarMedio`, con el SDK Admin; si el comercio pudiera
+      // borrarlo, el cupo no sería un cupo. Caduca por TTL a los 2 días.
       match /cuposDeMedios/{dia} {
         allow read, write: if false;
       }

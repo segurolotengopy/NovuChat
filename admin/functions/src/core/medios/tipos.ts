@@ -2,7 +2,9 @@
  * El TIPO de un medio se decide por los PRIMEROS BYTES, nunca por lo que declara
  * quien sube. SVG, HTML, docx, xlsx y todo lo que no esté en la lista cerrada
  * dan `null` (415): un SVG o un HTML guardado y servido después es un vector
- * de script, y docx/xlsx quedaron fuera por decisión de Andres (23/10/2026, D6).
+ * de script. docx y xlsx NO se guardan (Andres, 23 y 29/10/2026): con la
+ * cabecera `X-NovuChat-Anotar: 1` y el cuerpo vacío solo se ANOTA que llegaron
+ * (`veredictoDeAnotar`); con bytes dan 415 como cualquier otro tipo fuera de la lista.
  */
 
 export const MB = 1024 * 1024;
@@ -26,14 +28,17 @@ export interface FirmaDeMedio { ext: ExtensionDeMedio; tipo: TipoDeMedio; mime: 
 
 /** Los Content-Type que se aceptan como declaración de cada extensión. */
 export const MIMES_ACEPTADOS: Record<ExtensionDeMedio, readonly string[]> = {
-  jpg: ['image/jpeg'],
+  // Alias rescatados de la rama `core/guardar-medio-servidor` (29/10/2026): los bytes siguen
+  // decidiendo el tipo; el alias solo evita un 415 a un medio legítimo rotulado con la variante.
+  jpg: ['image/jpeg', 'image/jpg'],
   png: ['image/png'],
   webp: ['image/webp'],
-  ogg: ['audio/ogg'],
-  m4a: ['audio/mp4', 'audio/x-m4a', 'audio/m4a'],
+  ogg: ['audio/ogg', 'application/ogg'],
+  // Un audio AAC de un iPhone viaja en contenedor MP4 y Meta puede rotularlo `audio/aac`.
+  m4a: ['audio/mp4', 'audio/x-m4a', 'audio/m4a', 'audio/aac'],
   mp3: ['audio/mpeg', 'audio/mp3'],
   aac: ['audio/aac'],
-  amr: ['audio/amr'],
+  amr: ['audio/amr', 'audio/3gpp'],
   pdf: ['application/pdf'],
 };
 
@@ -67,4 +72,51 @@ export function tipoPorFirma(bytes: Buffer): FirmaDeMedio | null {
   // Un PDF que a la vez es un ZIP (docx, APK, jar) en sus primeros bytes es un políglota: se rechaza.
   if (n >= 5 && texto(bytes, 0, 5) === '%PDF-' && !bytes.subarray(0, 1024).includes(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) return { ext: 'pdf', tipo: 'document', mime: 'application/pdf' };
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// EL VEREDICTO (puro: se prueba sin Firestore)
+// ---------------------------------------------------------------------------
+
+/** El mime declarado, sin parámetros (`audio/ogg; codecs=opus` → `audio/ogg`). */
+export const mimeDeclarado = (v: unknown): string =>
+  (String(v ?? '').split(';')[0] ?? '').trim().toLowerCase().slice(0, 120);
+
+export type Rechazo = { codigo: 400 | 413 | 415; cuerpo: { error: string } };
+export type VeredictoDeGuardar = { ok: true; firma: FirmaDeMedio } | ({ ok: false } & Rechazo);
+
+/**
+ * Decide, sin tocar nada, si estos bytes se guardan: 400 `vacio`, 413 `demasiado_grande`
+ * (por el tope del tipo DECLARADO, antes de mirar los bytes) o 415 `tipo_no_admitido` si la
+ * firma no está en la lista o no coincide con la cabecera de tipo o con el Content-Type.
+ */
+export function veredictoDe(bytes: Buffer, tipo: TipoDeMedio, contentType: unknown): VeredictoDeGuardar {
+  if (bytes.length === 0) return { ok: false, codigo: 400, cuerpo: { error: 'vacio' } };
+  if (bytes.length > TOPE_POR_TIPO[tipo]) return { ok: false, codigo: 413, cuerpo: { error: 'demasiado_grande' } };
+  const firma = tipoPorFirma(bytes);
+  if (!firma || firma.tipo !== tipo || !MIMES_ACEPTADOS[firma.ext].includes(mimeDeclarado(contentType))) {
+    return { ok: false, codigo: 415, cuerpo: { error: 'tipo_no_admitido' } };
+  }
+  return { ok: true, firma };
+}
+
+/** Lo único que se ANOTA sin bytes (contrato M1-M2 §1): Word y Excel modernos. */
+export const MIMES_ANOTABLES: Readonly<Record<string, 'docx' | 'xlsx'>> = {
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+};
+
+export type VeredictoDeAnotar = { ok: true; mime: string; ext: 'docx' | 'xlsx' } | ({ ok: false } & Rechazo);
+
+/**
+ * El modo ANOTAR (`X-NovuChat-Anotar: 1`): el flujo no descargó los bytes. Exige cuerpo VACÍO
+ * (con cuerpo: 400 `anotar_con_cuerpo`, porque anotar con bytes sería una puerta para guardar
+ * sin pasar por la firma), tipo `document` y un mime de docx o xlsx; cualquier otro, 415.
+ */
+export function veredictoDeAnotar(bytes: Buffer, tipo: TipoDeMedio, mime: unknown): VeredictoDeAnotar {
+  if (bytes.length !== 0) return { ok: false, codigo: 400, cuerpo: { error: 'anotar_con_cuerpo' } };
+  const m = mimeDeclarado(mime);
+  const ext = Object.prototype.hasOwnProperty.call(MIMES_ANOTABLES, m) ? MIMES_ANOTABLES[m] : undefined;
+  if (tipo !== 'document' || !ext) return { ok: false, codigo: 415, cuerpo: { error: 'tipo_no_admitido' } };
+  return { ok: true, mime: m, ext };
 }

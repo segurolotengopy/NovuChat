@@ -3,7 +3,8 @@
  *
  * Con un `Almacen` de mentira (el emulador de Firestore no trae Storage). Se escribe negando: sin token,
  * con firma, token de otro número, bandera apagada, sin mensaje, mensaje saliente, HTML rotulado jpeg,
- * SVG, docx, cada tope +1 byte, cupo lleno por conteo y por bytes, repetido sin reescritura, y que
+ * SVG, docx, cada tope +1 byte, tope diario de 3.000 (el 3.001 da 429) y por bytes, constancia de tope
+ * acotada a 50, el modo anotar (solo docx/xlsx), repetido sin reescritura, y que
  * cierres, comprobantes, métricas y solicitud queden intactos. La purga: 89, 90 y 91 días, la baja y un
  * comercio que falla.
  */
@@ -79,6 +80,8 @@ const PDF = (n = 1024) => Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc
 const HTML = () => Buffer.from('<html><script>alert(1)</script></html>');
 const SVG = () => Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
 const DOCX = () => Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(100)]);
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 describe('el tipo se decide por los bytes', () => {
   it('reconoce jpeg, png, webp, ogg, m4a, mp3 (ID3 y trama), aac, amr y pdf', () => {
@@ -135,6 +138,10 @@ const idNuevo = () => `wamid.medios.${Date.now()}.${contador++}`;
 const buenas = (idMeta: string, tipo: string, contentType: string, extra: Record<string, string> = {}) => ({
   'x-novuchat-telefono': TEL, 'x-novuchat-idmeta': idMeta, 'x-novuchat-tipo': tipo, 'content-type': contentType, ...extra,
 });
+const anotar = (idMeta: string, mime: string, extra: Record<string, string> = {}) => ({
+  'x-novuchat-telefono': TEL, 'x-novuchat-idmeta': idMeta, 'x-novuchat-tipo': 'document',
+  'x-novuchat-anotar': '1', 'x-novuchat-mime': mime, ...extra,
+});
 async function mensaje(idMeta: string, extra: Record<string, unknown> = {}, tel = TEL, tenant = T) {
   const ref = db.collection(`tenants/${tenant}/conversaciones/wa_${tel}/mensajes`).doc();
   await ref.set({ direccion: 'entrante', tipo: 'audio', idMeta, texto: '', ts: Timestamp.now(), ...extra });
@@ -182,7 +189,9 @@ describe('POST guardarMedio: lo que entra', () => {
     expect(marca.vence.toMillis()).toBe(reg.get('vence').toMillis());
     // El cupo del día se anotó, con vence para el TTL.
     expect((await cupoRef().get()).data()).toMatchObject({ n: 1, bytes: bytes().length });
-    expect((await cupoRef().get()).get('vence')).toBeDefined();
+    // El contador caduca por TTL a los 2 días (contrato M1-M2 §3).
+    const venceCupo = (await cupoRef().get()).get('vence').toMillis();
+    expect(Math.round((venceCupo - reg.get('en').toMillis()) / DIA_MS)).toBe(2);
   });
 
   it('exactamente en cada tope entra: imagen 5 MB, audio 16 MB, PDF 10 MB', async () => {
@@ -327,36 +336,152 @@ describe('POST guardarMedio: lo que NO entra', () => {
     nada();
   });
 
-  it('cupo lleno POR CONTEO (1.000 medios): 429, antes de tocar Storage, y sin registro', async () => {
-    await cupoRef().set({ n: gm.CUPO_MEDIOS_POR_DIA, bytes: 0, vence: Timestamp.now() });
+  it('TOPE DIARIO de 3.000: el 3.000 entra, el 3.001 da 429 antes de tocar Storage y sin registro', async () => {
+    expect(gm.TOPE_DIARIO_DE_MEDIOS).toBe(3000);
+    await cupoRef().set({ n: gm.TOPE_DIARIO_DE_MEDIOS - 1, bytes: 0, vence: Timestamp.now() });
+    const ultimo = idNuevo(); await mensaje(ultimo);
+    expect((await peticion(OGG(), buenas(ultimo, 'audio', 'audio/ogg'))).codigo).toBe(200);
+    expect((await cupoRef().get()).get('n')).toBe(3000);
+    almacen = new AlmacenDeMentira(); al.fijarAlmacenDeMediosDePrueba(almacen);
     const id = idNuevo(); await mensaje(id);
     const r = await peticion(OGG(), buenas(id, 'audio', 'audio/ogg'));
-    expect(r.codigo).toBe(429);
+    expect(r).toMatchObject({ codigo: 429, cuerpo: { error: 'cupo_diario_lleno' } });
     nada();
     expect((await db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`).get()).exists).toBe(false);
-    expect((await cupoRef().get()).get('n')).toBe(gm.CUPO_MEDIOS_POR_DIA);
+    expect((await cupoRef().get()).get('n')).toBe(3000);
+    // Tampoco se anota un docx con el tope lleno.
+    const doc = idNuevo(); await mensaje(doc, { tipo: 'document' });
+    expect((await peticion(Buffer.alloc(0), anotar(doc, DOCX_MIME))).codigo).toBe(429);
+    expect((await db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(doc)}`).get()).exists).toBe(false);
   });
 
-  it('cupo lleno POR BYTES (2 GB): 429; con un medio que cabe justo, 200', async () => {
+  it('la constancia de «tope superado» NO pasa de 50 por día: después el 429 no escribe nada', async () => {
+    expect(gm.MAX_ANOTACIONES_DE_TOPE).toBe(50);
+    await cupoRef().set({ n: gm.TOPE_DIARIO_DE_MEDIOS, bytes: 0, vence: Timestamp.now() });
+    const id = idNuevo(); await mensaje(id);
+    for (let i = 0; i < 53; i++) {
+      // Un idMeta distinto por vez, como haría un abusador: el repetido no es lo que se cuenta.
+      const otro = `${id}.${i}`; await mensaje(otro);
+      expect((await peticion(OGG(), buenas(otro, 'audio', 'audio/ogg'))).codigo).toBe(429);
+    }
+    const c = await cupoRef().get();
+    expect(c.get('rechazados')).toBe(50);
+    expect(c.get('n')).toBe(3000);
+    expect(c.get('ultimoRechazo')).toBeDefined();
+    const tiempo = c.updateTime;
+    const ultimo = `${id}.final`; await mensaje(ultimo);
+    expect((await peticion(OGG(), buenas(ultimo, 'audio', 'audio/ogg'))).codigo).toBe(429);
+    expect((await cupoRef().get()).updateTime.isEqual(tiempo)).toBe(true);
+    expect((await db.collection(`tenants/${T}/mediosRecibidos`).where('idMeta', '>=', id).where('idMeta', '<', `${id}~`).get()).size).toBe(0);
+    nada();
+  });
+
+  it('tope de BYTES amplio (15 GiB): 429 si no cabe; con un medio que cabe justo, 200', async () => {
+    expect(gm.TOPE_DIARIO_DE_BYTES).toBeGreaterThanOrEqual(15 * 1024 * 1024 * 1024);
     const bytes = OGG(2048);
-    await cupoRef().set({ n: 5, bytes: gm.CUPO_BYTES_POR_DIA - 2047, vence: Timestamp.now() });
+    await cupoRef().set({ n: 5, bytes: gm.TOPE_DIARIO_DE_BYTES - 2047, vence: Timestamp.now() });
     const id = idNuevo(); await mensaje(id);
     expect((await peticion(bytes, buenas(id, 'audio', 'audio/ogg'))).codigo).toBe(429);
     nada();
-    await cupoRef().set({ n: 5, bytes: gm.CUPO_BYTES_POR_DIA - 2048, vence: Timestamp.now() });
+    await cupoRef().set({ n: 5, bytes: gm.TOPE_DIARIO_DE_BYTES - 2048, vence: Timestamp.now() });
     expect((await peticion(bytes, buenas(id, 'audio', 'audio/ogg'))).codigo).toBe(200);
-    expect((await cupoRef().get()).get('bytes')).toBe(gm.CUPO_BYTES_POR_DIA);
+    expect((await cupoRef().get()).get('bytes')).toBe(gm.TOPE_DIARIO_DE_BYTES);
   });
 
-  it('si Storage falla: 502, el cupo se devuelve y no queda registro ni marca', async () => {
+  it('si Storage falla: 502, el cupo se devuelve UNA vez y no queda registro ni marca', async () => {
+    await cupoRef().set({ n: 7, bytes: 100, vence: Timestamp.now() });
     const id = idNuevo(); const m = await mensaje(id);
     almacen.falla = true;
     expect((await peticion(OGG(), buenas(id, 'audio', 'audio/ogg'))).codigo).toBe(502);
-    expect((await cupoRef().get()).get('n')).toBe(0);
+    expect((await cupoRef().get()).data()).toMatchObject({ n: 7, bytes: 100 });
+    // Un segundo intento que también falla no devuelve de más: el cupo no baja de lo que había.
+    expect((await peticion(OGG(), buenas(id, 'audio', 'audio/ogg'))).codigo).toBe(502);
+    expect((await cupoRef().get()).data()).toMatchObject({ n: 7, bytes: 100 });
     expect((await db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`).get()).exists).toBe(false);
     expect((await m.get()).get('medio')).toBeUndefined();
     almacen.falla = false;
     expect((await peticion(OGG(), buenas(id, 'audio', 'audio/ogg'))).codigo).toBe(200);
+    expect((await cupoRef().get()).get('n')).toBe(8);
+  });
+});
+
+describe('POST guardarMedio: modo ANOTAR (docx y xlsx, sin bytes)', () => {
+  const regDe = (id: string) => db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`);
+  const nada = () => expect(almacen.objetos.size).toBe(0);
+
+  it.each([['docx', DOCX_MIME], ['xlsx', XLSX_MIME]])('%s: 200 {anotado:true}, metadato anotado sin ruta ni bytes, marca y UN cupo', async (ext, mime) => {
+    const id = idNuevo(); const m = await mensaje(id, { tipo: 'document' });
+    const r = await peticion(Buffer.alloc(0), anotar(id, mime));
+    expect(r).toEqual({ codigo: 200, cuerpo: { anotado: true, repetido: false } });
+    expect(almacen.objetos.size).toBe(0);
+    const reg = await regDe(id).get();
+    expect(reg.data()).toMatchObject({ idMeta: id, conversacionId: `wa_${TEL}`, tipo: 'document', mime, ext, estado: 'anotado', ruta: null, tamano: null, sha256: null });
+    expect((reg.get('vence').toMillis() - reg.get('en').toMillis()) / DIA_MS).toBe(90);
+    expect((await m.get()).get('medio')).toMatchObject({ estado: 'anotado', mime, tamano: null });
+    expect((await cupoRef().get()).data()).toMatchObject({ n: 1, bytes: 0 });
+    // Repetido: 200 anotado, sin gastar otro cupo ni reescribir.
+    const antes = reg.updateTime;
+    expect(await peticion(Buffer.alloc(0), anotar(id, mime))).toEqual({ codigo: 200, cuerpo: { anotado: true, repetido: true } });
+    expect((await regDe(id).get()).updateTime.isEqual(antes)).toBe(true);
+    expect((await cupoRef().get()).get('n')).toBe(1);
+  });
+
+  it('NIEGA: con Anotar, un mime que no es docx/xlsx da 415 (pdf, jpeg, doc viejo, html, vacío) y nada se escribe', async () => {
+    for (const mime of ['application/pdf', 'image/jpeg', 'application/msword', 'application/vnd.ms-excel', 'text/html', 'image/svg+xml', 'application/zip', '', '__proto__', 'constructor']) {
+      const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+      const r = await peticion(Buffer.alloc(0), anotar(id, mime));
+      expect(r, mime).toMatchObject({ codigo: 415, cuerpo: { error: 'tipo_no_admitido' } });
+      expect((await regDe(id).get()).exists, mime).toBe(false);
+    }
+    expect((await cupoRef().get()).exists).toBe(false);
+    nada();
+  });
+
+  it('NIEGA: Anotar con tipo image o audio da 415; Anotar CON BYTES da 400 anotar_con_cuerpo y no guarda los bytes', async () => {
+    for (const tipo of ['image', 'audio']) {
+      const id = idNuevo(); await mensaje(id, { tipo });
+      expect((await peticion(Buffer.alloc(0), anotar(id, DOCX_MIME, { 'x-novuchat-tipo': tipo }))).codigo, tipo).toBe(415);
+    }
+    for (const bytes of [DOCX(), PDF(), JPG()]) {
+      const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+      expect(await peticion(bytes, anotar(id, DOCX_MIME))).toMatchObject({ codigo: 400, cuerpo: { error: 'anotar_con_cuerpo' } });
+      expect((await regDe(id).get()).exists).toBe(false);
+    }
+    // Un Anotar distinto de «1» no activa el modo: un cuerpo vacío sigue siendo 400 vacio.
+    const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+    expect((await peticion(Buffer.alloc(0), anotar(id, DOCX_MIME, { 'x-novuchat-anotar': 'si' }))).cuerpo).toEqual({ error: 'vacio' });
+    expect((await cupoRef().get()).exists).toBe(false);
+    nada();
+  });
+
+  it('NIEGA: Anotar sin mensaje entrante del tipo document da 409 sin_mensaje; con la bandera apagada, 409 guardado_apagado', async () => {
+    const solo = idNuevo();
+    expect((await peticion(Buffer.alloc(0), anotar(solo, DOCX_MIME))).cuerpo).toEqual({ error: 'sin_mensaje' });
+    const deImagen = idNuevo(); await mensaje(deImagen, { tipo: 'image' });
+    expect((await peticion(Buffer.alloc(0), anotar(deImagen, DOCX_MIME))).codigo).toBe(409);
+    const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+    await db.doc(`tenants/${T}`).update({ guardarMedios: false });
+    try {
+      expect((await peticion(Buffer.alloc(0), anotar(id, DOCX_MIME))).cuerpo).toEqual({ error: 'guardado_apagado' });
+    } finally { await db.doc(`tenants/${T}`).update({ guardarMedios: true }); }
+    expect((await regDe(id).get()).exists).toBe(false);
+    expect((await cupoRef().get()).exists).toBe(false);
+  });
+
+  it('NIEGA: un docx con bytes y SIN Anotar sigue siendo 415 (no se guarda)', async () => {
+    const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+    expect((await peticion(DOCX(), buenas(id, 'document', DOCX_MIME))).codigo).toBe(415);
+    nada();
+  });
+
+  it('un medio ya GUARDADO al que luego llega un Anotar con su idMeta responde el repetido, sin tocar nada', async () => {
+    const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+    const a = await peticion(PDF(), buenas(id, 'document', 'application/pdf'));
+    expect(a.codigo).toBe(200);
+    const b = await peticion(Buffer.alloc(0), anotar(id, DOCX_MIME));
+    expect(b).toEqual({ codigo: 200, cuerpo: { ruta: a.cuerpo.ruta, repetido: true } });
+    expect((await regDe(id).get()).get('estado')).toBe('guardado');
+    expect((await cupoRef().get()).get('n')).toBe(1);
   });
 });
 

@@ -109,9 +109,10 @@ Los del bloque de 25 respuestas por conversación y los umbrales de operador y
 bloqueo (`ingesta.ts`, `atencion.ts`). La tabla completa de límites, con su
 estado, está en `limites.md` y en `docs/base-comercial.md` §7.
 
-También el **cupo diario de medios guardados** (1.000 medios o 2 GB por comercio
-y día; `core/medios/guardarMedio.ts`, contador `cuposDeMedios/{día}`), y los
-topes por tipo (imagen 5 MB, audio 16 MB, PDF 10 MB).
+También el **tope diario de medios** (3.000 medios guardados o anotados por
+comercio y día, más un tope de bytes amplio de 15 GiB por día; Andres, 29/10/2026;
+`core/medios/guardarMedio.ts`, contador `cuposDeMedios/{día}` con TTL de 2 días),
+y los topes por tipo (imagen 5 MB, audio 16 MB, PDF 10 MB).
 
 ## Medios entrantes guardados (H3, PR-1; Andres 20, 22 y 23/10/2026)
 
@@ -125,11 +126,24 @@ por el comercio: la ficha no la escribe ningún navegador.
 - **`guardarMedio`** (HTTP, solo el token por número; una firma se rechaza):
   409 con la bandera apagada; 400 por teléfono o `idMeta` inválidos; 413 por el
   tope del tipo; 415 por la firma de los bytes (SVG, HTML, docx y xlsx no se
-  guardan); 409 `sin_mensaje` si no hay un mensaje **entrante** del mismo tipo con
+  guardan; los alias `image/jpg`, `application/ogg`, `audio/aac` en m4a y
+  `audio/3gpp` en amr se aceptan porque los bytes siguen decidiendo); 409 `sin_mensaje` si no hay un mensaje **entrante** del mismo tipo con
   ese `idMeta` de hace 30 minutos o menos (acota qué se puede guardar, pero no
   impide por sí solo llenar el depósito con un token robado: **lo que limita es
-  el cupo**); 429 con el cupo del día lleno. Un repetido responde 200 sin
-  reescribir.
+  el cupo**); 429 `cupo_diario_lleno` con el tope del día lleno. Un repetido
+  responde 200 sin reescribir ni gastar cupo.
+- **Tope superado, constancia acotada:** el 429 deja constancia en el propio
+  contador (`rechazados`, `ultimoRechazo`) a lo sumo 50 veces por comercio y día;
+  pasadas esas, el 429 sale sin escribir nada, para que un token robado no se
+  convierta en escrituras sin freno.
+- **Modo ANOTAR (docx y xlsx, 29/10/2026):** el flujo no descarga los bytes;
+  manda cuerpo vacío con `X-NovuChat-Anotar: 1`, `X-NovuChat-Tipo: document` y
+  `X-NovuChat-Mime`. Con un mime de Word o Excel modernos, la misma transacción
+  gasta un cupo, crea `mediosRecibidos/{hash}` con `estado: 'anotado'` (sin ruta,
+  tamaño ni sha256) y marca el mensaje; responde `200 {anotado:true}`. Otro mime
+  o tipo, 415; Anotar **con** cuerpo, 400 `anotar_con_cuerpo` (anotar no es una
+  puerta para guardar sin pasar por la firma). Un docx con bytes y sin Anotar
+  sigue en 415.
 - **Deduplicación y cupo, atómicos** (revisión de seguridad del #617): la misma
   transacción que reserva el cupo crea el marcador `mediosRecibidos/{hash}` con
   `estado: 'pendiente'` (vence en 1 día por TTL); se pasa a `guardado` al
@@ -604,7 +618,10 @@ retención).
   (`Analisis/38`) pasa a ser el anexo aceptado por el comercio.
 - **D4:** soporte no ve los medios.
 - **D5:** cupo de guardado por comercio y día: 1.000 medios o 2 GB.
-- **D6:** docx, xlsx y otros documentos **no** se guardan.
+  **Reemplazada el 29/10/2026:** tope de 3.000 medios por comercio y día (más
+  15 GiB de bytes como freno de costo).
+- **D6:** docx, xlsx y otros documentos **no** se guardan. Desde el 29/10/2026,
+  docx y xlsx se **anotan** (metadato sin bytes).
 - **Rutas:** Storage `tenants/{t}/medios/{fecha La Paz}/{objeto}.{ext}`;
   Firestore `tenants/{t}/mediosRecibidos` con el campo `vence` y política TTL.
 - **Functions:** `guardarMedio` (la sube el flujo, porque la ingesta no tiene el
