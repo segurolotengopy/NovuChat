@@ -172,3 +172,17 @@ describe('aviso por líneas: la plantilla de tamaño 2, 4 o 6 y sus variables', 
     for (const it of plantillas(items)) for (const v of params(it)) expect(v.length).toBeLessThanOrEqual(500);
   });
 });
+
+describe('el dato de Q\'Taco (28/10): las tres plantillas aprobadas, vigentes en su flujo versionado', () => {
+  const datosQtaco = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../scripts/datos/venta-minima/qtaco.json'), 'utf8')) as J;
+  const flujoQtaco = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/venta-minima.qtaco.json'), 'utf8')) as J;
+  it('qtaco.json trae las tres, en español, y el flujo construido las lleva en «Config base»', () => {
+    expect((datosQtaco['configBase'] as J)['plantillasPedidoLineas']).toBe('2:pedido_registrado_l2,4:pedido_registrado_l4,6:pedido_registrado_l6');
+    expect((datosQtaco['configBase'] as J)['idiomaPlantillaPedidoLineas']).toBe('es');
+    expect(JSON.stringify(flujoQtaco)).toContain('pedido_registrado_l6');
+  });
+  it('NEGADA: con la clave vacía el payload es el de siempre (vuelta atrás = vaciar la clave)', () => {
+    const plan = L.avPlan('pedido', pedido(3), CSV, { ...BASE, plantillasPedidoLineas: '' }, sd(), AHORA);
+    expect(JSON.stringify(plan)).not.toContain('pedido_registrado_l');
+  });
+});
