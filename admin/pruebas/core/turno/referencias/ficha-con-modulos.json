@@ -44,7 +44,14 @@
     ],
     "instruccionesExtra": ""
   },
-  "catalogo": [],
+  "catalogo": [
+    {
+      "id": "p1",
+      "nombre": "Producto uno",
+      "precio": 10,
+      "activo": true
+    }
+  ],
   "agendamiento": {
     "senaImporte": 50
   },
@@ -75,5 +82,27 @@
       "porDefecto": true
     }
   ],
-  "campanas": []
+  "campanas": [
+    {
+      "id": "c1",
+      "texto": "Promo de prueba para todos",
+      "inicio": "2020-01-01T04:00:00.000Z",
+      "fin": "2100-01-01T04:00:00.000Z"
+    }
+  ],
+  "anuncios": [
+    {
+      "id": "c1",
+      "titulares": [
+        "Titular de la promo uno"
+      ],
+      "angulo": "Habla de la promo del catalogo",
+      "producto": {
+        "id": "p1",
+        "nombre": "Producto uno",
+        "precio": 10,
+        "agotado": false
+      }
+    }
+  ]
 }

@@ -99,9 +99,14 @@ export type NombreDeGancho = keyof GanchosDelTurno;
 
 /**
  * A que modulo pertenece cada gancho. `cobroDeVenta` y `sena` son los dos de
- * Cobros: que corran en el numero correcto lo decide el flujo del numero, no el
- * modulo (ver `modulosDelTurno`). `satisfies` hace que olvidar un gancho nuevo
- * no compile.
+ * Cobros, asi que `modulosDelTurno` habilita AMBOS en cualquier numero con
+ * Cobros (en uno de agendamiento tambien `cobroDeVenta`). Que cada uno corra
+ * solo en su numero NO lo decide el modulo: cada gancho debe seguir mirando
+ * `contexto.flujo` (`cobroDeVenta` solo en `venta`, `sena` solo en
+ * `agendamiento`) o el coordinador filtrar por gancho y flujo con
+ * `ganchosDelTurno` / `FLUJO_DEL_GANCHO`. Hoy `ingesta.ts` lo hace con
+ * `comercio.flujo`; F3b-2d/2e no pueden perderlo. `satisfies` hace que olvidar
+ * un gancho nuevo no compile.
  */
 export const MODULO_DE_GANCHO = {
   campanas: 'campanas',
@@ -110,6 +115,25 @@ export const MODULO_DE_GANCHO = {
   cobroDeVenta: 'cobros',
   sena: 'cobros',
 } as const satisfies Record<NombreDeGancho, IdModulo>;
+
+/**
+ * El flujo del numero en el que corre cada gancho, cuando no es el de todos.
+ * Lo que `modulosDelTurno` no distingue (dos ganchos del mismo modulo) se
+ * distingue aqui; un gancho que no figura corre en cualquier flujo del modulo.
+ * Es el comportamiento de hoy de `ingesta.ts` (`comercio.flujo === ...`).
+ */
+export const FLUJO_DEL_GANCHO: Readonly<Partial<Record<NombreDeGancho, string>>> = {
+  cobroDeVenta: 'venta',
+  sena: 'agendamiento',
+  captacion: 'onboarding',
+};
+
+/** Los ganchos que corren en este turno: modulo encendido en el numero Y flujo propio del gancho. */
+export function ganchosDelTurno(ficha: FichaDelTurno, flujoRuta: string): readonly NombreDeGancho[] {
+  const modulos = new Set<IdModulo>(modulosDelTurno(ficha, flujoRuta));
+  return (Object.keys(MODULO_DE_GANCHO) as NombreDeGancho[]).filter((g) =>
+    modulos.has(MODULO_DE_GANCHO[g]) && (FLUJO_DEL_GANCHO[g] === undefined || FLUJO_DEL_GANCHO[g] === flujoRuta));
+}
 
 /** Lo minimo de la ficha del tenant que mira `modulosDelTurno`. */
 export type FichaDelTurno = Readonly<Record<string, unknown>> | null | undefined;

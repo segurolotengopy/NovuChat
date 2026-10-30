@@ -14,6 +14,7 @@
  * Sin telefono en la peticion: la respuesta no depende del reloj. Los datos
  * son de prueba (sin secretos ni numeros reales).
  */
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,8 +39,20 @@ const COBRO_REAL = {
   activo: true, cargaUtil: 'carga-de-prueba', ficha: 'ficha-de-prueba-0001',
   nombreCuenta: 'Titular de Prueba', banco: 'Banco de Prueba', cuentas: ['0001'], venceEl: '2099-12-31',
 };
+// Una campaña que SÍ pasa la lectura y la revalidación: id válido, vigente hoy, con texto, titulares y
+// producto del catálogo (así sale en `campanas` Y en `anuncios`). Sin esto la red no vería a Campañas.
+// Ojo: `campanas` es 0 en el plan por defecto; las fichas con campaña llevan `limites.campanas` en su cuenta.
 const CAMPANA = {
-  id: 'c1', texto: 'Promo de prueba', inicio: '2020-01-01', fin: '2099-12-31', estado: 'aprobada',
+  id: 'c1', texto: 'Promo de prueba para todos', inicio: '2020-01-01', fin: '2099-12-31',
+  titulares: ['Titular de la promo uno'], productoId: 'p1', angulo: 'Habla de la promo del catalogo',
+};
+// El caso del término de producto aprobado: el nombre trae «prompt» y el sistema lo CITA entre « ».
+const NOMBRE_TERMINO = 'Pack 100 prompts';
+const TERMINO = 'pack 100 prompts';
+const hashCorto = (t: string): string => createHash('sha256').update(t, 'utf8').digest('hex').slice(0, 16);
+const CAMPANA_CON_TERMINO = {
+  id: 'c2', texto: 'Descuento en pack 100 prompts hasta el viernes', inicio: '2020-01-01', fin: '2099-12-31',
+  titulares: ['Pack 100 prompts con descuento'], angulo: 'Habla del pack 100 prompts del catalogo', productoId: 'pack-100-prompts',
 };
 
 interface Ficha {
@@ -47,6 +60,8 @@ interface Ficha {
   numero: string;
   flujo: string;
   tenant: Record<string, unknown>;
+  /** Campos extra de `cuenta/estado` (p. ej. el límite de campañas). */
+  cuenta?: Record<string, unknown>;
   docs: Record<string, Record<string, unknown>>;
 }
 
@@ -89,17 +104,36 @@ const FICHAS: Ficha[] = [
     docs: {
       'config/venta': { cobroReal: COBRO_REAL },
       'config/agendamiento': { senaImporte: 30, cobroReal: COBRO_REAL },
-      'catalogo/p1': { nombre: 'Producto uno', precio: 10, activo: true },
-      'config/campanas': { vigentes: [CAMPANA] },
+      'catalogo/p1': { nombre: 'Producto uno', precio: 10, activo: true, stock: 3 },
+      'catalogo/pack-100-prompts': { nombre: NOMBRE_TERMINO, precio: 49, activo: true },
+      'terminosProducto/pack-100-prompts': {
+        termino: TERMINO, nombreHash: hashCorto(TERMINO), estado: 'aprobado', motivo: 'prueba',
+      },
+      'config/campanas': { vigentes: [CAMPANA, CAMPANA_CON_TERMINO] },
     },
+    cuenta: { limites: { campanas: 3 } },
   },
   {
     nombre: 'ficha-con-modulos', numero: '900007', flujo: 'agendamiento',
     tenant: { flujos: ['agendamiento'], modulos: ['productos', 'cobros', 'agenda', 'campanas'] },
     docs: {
       'config/agendamiento': { senaImporte: 50, cobroReal: COBRO_REAL },
+      'catalogo/p1': { nombre: 'Producto uno', precio: 10, activo: true },
       'config/campanas': { vigentes: [CAMPANA] },
     },
+    cuenta: { limites: { campanas: 3 } },
+  },
+  {
+    // `agotado` sale en catalogo y anuncios de TODO flujo, aunque Inventario solo se encienda en venta.
+    nombre: 'agendamiento-con-item-agotado', numero: '900008', flujo: 'agendamiento',
+    tenant: { flujos: ['agendamiento'] },
+    docs: {
+      'config/agendamiento': { duracionCita: 30 },
+      'catalogo/p1': { nombre: 'Producto uno', precio: 10, activo: true, stock: 0 },
+      'catalogo/p2': { nombre: 'Producto dos', precio: 20, activo: true, stock: 5 },
+      'config/campanas': { vigentes: [CAMPANA] },
+    },
+    cuenta: { limites: { campanas: 3 } },
   },
 ];
 
@@ -128,7 +162,7 @@ async function llamar(numero: string): Promise<{ codigo: number; cuerpo: unknown
 }
 
 async function vaciar(tenantId: string): Promise<void> {
-  for (const c of ['catalogo', 'config', 'cuenta', 'metricas', 'funcionarios', 'conversaciones']) {
+  for (const c of ['catalogo', 'config', 'cuenta', 'metricas', 'funcionarios', 'conversaciones', 'terminosProducto']) {
     for (const d of (await db.collection(`tenants/${tenantId}/${c}`).get()).docs) await d.ref.delete();
   }
 }
@@ -141,7 +175,7 @@ beforeAll(async () => {
       tenantId: t, flujo: f.flujo, aliasSecreto: 'cliente18', estado: 'activo',
     });
     await db.doc(`tenants/${t}`).set({ nombre: f.nombre, estado: 'activo', ...f.tenant });
-    await db.doc(`tenants/${t}/cuenta/estado`).set({ plan: 'impulso', estadoPago: 'al_dia' });
+    await db.doc(`tenants/${t}/cuenta/estado`).set({ plan: 'impulso', estadoPago: 'al_dia', ...f.cuenta });
     await db.doc(`tenants/${t}/config/negocio`).set({
       nombreNegocio: `Negocio ${f.nombre}`, zonaHoraria: 'America/La_Paz', moneda: 'BOB',
     });
@@ -163,9 +197,30 @@ describe('configuracionFlujo: la respuesta no varia con el corte en ganchos', ()
     });
   }
 
+  it('la red ve a Campañas, el entrecomillado y Inventario (no es una red vacía)', () => {
+    const ref = (n: string): Record<string, any> =>
+      JSON.parse(readFileSync(join(AQUI, 'referencias', `${n}.json`), 'utf8'));
+    const rica = ref('varios-flujos-ruta-venta');
+    expect(rica.campanas.length).toBeGreaterThan(1);
+    expect(rica.anuncios.length).toBeGreaterThan(1);
+    expect(JSON.stringify(rica)).toContain('«Pack 100 prompts»');
+    const agenda = ref('agendamiento-con-item-agotado');
+    expect(JSON.stringify(agenda.catalogo)).toContain('"agotado":true');
+    expect(agenda.anuncios[0].producto).toBeDefined();
+  });
+
   it('las referencias distinguen las fichas (no son todas la misma respuesta)', () => {
-    const distintas = new Set(FICHAS.map((f) =>
-      readFileSync(join(AQUI, 'referencias', `${f.nombre}.json`), 'utf8')));
+    // Sin las tres claves que ya difieren por construcción (comercio, numero y nombre): si no, la
+    // comparación se cumpliría siempre aunque dos fichas dieran lo mismo.
+    const sinIdentidad = (nombre: string): string => {
+      const r = JSON.parse(readFileSync(join(AQUI, 'referencias', `${nombre}.json`), 'utf8'));
+      const negocio = { ...(r.negocio ?? {}) };
+      delete negocio.nombreNegocio;
+      delete r.tenantId;
+      delete r.phoneNumberId;
+      return JSON.stringify({ ...r, negocio });
+    };
+    const distintas = new Set(FICHAS.map((f) => sinIdentidad(f.nombre)));
     expect(distintas.size).toBe(FICHAS.length);
   });
 });

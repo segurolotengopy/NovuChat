@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { IDS_MODULOS, MODULOS_COMUNES_HOY } from '../../../functions/src/registro.ts';
 import {
-  MODULO_DE_GANCHO, modulosDelTurno,
+  MODULO_DE_GANCHO, ganchosDelTurno, modulosDelTurno,
 } from '../../../functions/src/core/turno/ganchosDelTurno.ts';
 
 const TODOS = [...IDS_MODULOS];
@@ -113,5 +113,39 @@ describe('modulosDelTurno: fichas sin lista de modulos (anteriores a la migracio
 describe('MODULO_DE_GANCHO', () => {
   it('cada gancho apunta a un modulo del registro', () => {
     for (const m of Object.values(MODULO_DE_GANCHO)) expect(IDS_MODULOS).toContain(m);
+  });
+});
+
+describe('ganchosDelTurno: dos ganchos de Cobros no corren en el numero equivocado', () => {
+  const ficha = { modulos: TODOS };
+
+  it('modulosDelTurno por si solo habilita Cobros en agendamiento Y en venta (por eso hace falta el filtro)', () => {
+    expect(modulosDelTurno(ficha, 'agendamiento')).toContain('cobros');
+    expect(modulosDelTurno(ficha, 'venta')).toContain('cobros');
+  });
+
+  it('en un numero de agendamiento corre la sena y NO el cobro de venta', () => {
+    const g = ganchosDelTurno(ficha, 'agendamiento');
+    expect(g).toContain('sena');
+    expect(g).not.toContain('cobroDeVenta');
+  });
+
+  it('en un numero de venta corre el cobro de venta y NO la sena', () => {
+    const g = ganchosDelTurno(ficha, 'venta');
+    expect(g).toContain('cobroDeVenta');
+    expect(g).not.toContain('sena');
+    expect(g).toContain('inventario');
+  });
+
+  it('captacion solo en onboarding; campañas (comun) en todos', () => {
+    expect(ganchosDelTurno(ficha, 'onboarding')).toContain('captacion');
+    for (const f of ['agendamiento', 'venta']) expect(ganchosDelTurno(ficha, f)).not.toContain('captacion');
+    for (const f of ['agendamiento', 'venta', 'onboarding']) expect(ganchosDelTurno(ficha, f)).toContain('campanas');
+  });
+
+  it('con Cobros apagado no corre ninguno de los dos', () => {
+    const g = ganchosDelTurno({ modulos: ['productos', 'agenda'] }, 'agendamiento');
+    expect(g).not.toContain('sena');
+    expect(g).not.toContain('cobroDeVenta');
   });
 });
