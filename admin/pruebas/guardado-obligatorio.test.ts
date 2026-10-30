@@ -261,6 +261,10 @@ describe('guardado obligatorio, NEGANDO: cada regla tiene la mutación que la ro
     expect(conBase((f) => { const h = ((nodoDe(f, 'Guardar medio').parameters as J)['headerParameters'] as J); (h['parameters'] as J[]).find((x) => x['name'] === 'Content-Type')!['value'] = "={{ $binary.data.mimeType }}"; })).toMatch(/«Guardar medio» manda el Content-Type saneado/);
     expect(conBase((f) => { (nodoDe(f, 'Guardar medio').parameters as J)['sendBody'] = false; })).toMatch(/«Guardar medio» manda los bytes/);
   });
+  it('«Guardar medio» o su reintento sin X-NovuChat-Mime (revisión de #709)', () => {
+    expect(conBase((f) => { const h = ((nodoDe(f, 'Guardar medio').parameters as J)['headerParameters'] as J); h['parameters'] = (h['parameters'] as J[]).filter((x) => x['name'] !== 'X-NovuChat-Mime'); })).toMatch(/«Guardar medio» manda X-NovuChat-Mime/);
+    expect(conBase((f) => { const p = nodoDe(f, 'Reintentar el guardado').parameters as J; p['jsonHeaders'] = String(p['jsonHeaders']).replace(", 'X-NovuChat-Mime': $json.mime", ''); })).toMatch(/«Reintentar el guardado» manda X-NovuChat-Mime/);
+  });
   it('VUELVEN «¿Anotar medio?» o «Anotar medio» (el contrato v2 los quitó)', () => {
     expect(conBase((f) => { f.nodes.push({ ...nodoDe(f, 'Guardar medio'), id: 'gm-anotar', name: 'Anotar medio' }); })).toMatch(/sobra «Anotar medio»/);
     expect(conBase((f) => { f.nodes.push({ ...nodoDe(f, '¿Reintentar el guardado?'), id: 'gm-si-anotar', name: '¿Anotar medio?' }); })).toMatch(/sobra «¿Anotar medio\?»/);

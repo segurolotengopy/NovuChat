@@ -54,36 +54,45 @@ describe('el pedido a guardarMedio: cabeceras, cuerpo y credenciales (§1)', () 
     const ll = g.llamadas.servidor[0]!;
     expect(ll.nodo).toBe('Guardar medio');
     expect(ll.url).toBe('https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio');
-    expect(ll.encabezados).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.IMG1', 'X-NovuChat-Tipo': 'image', 'Content-Type': 'image/jpeg' });
+    expect(ll.encabezados).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.IMG1', 'X-NovuChat-Tipo': 'image', 'Content-Type': 'image/jpeg', 'X-NovuChat-Mime': 'image/jpeg' });
     expect(ll.parametros['contentType']).toBe('binaryData');
     expect(ll.parametros['inputDataFieldName']).toBe('data');
     expect(g.llamadas.avisos).toHaveLength(0);
   });
   it('TODOS LOS TIPOS se bajan y se guardan con su categoría y el Content-Type saneado (contrato v2 §1 y §4)', () => {
     const { mu, g } = mundo({ respuesta: r(200, { ruta: 'x', repetido: false }) });
-    const casos: [string, J, string, string][] = [
-      ['nota de voz', mAudio(), 'audio', 'audio/ogg'],
-      ['PDF', mDocumento(), 'document', 'application/pdf'],
-      ['docx', mDocumento({ mime_type: DOCX, filename: 'a.docx' }), 'document', DOCX],
-      ['xlsx', mDocumento({ mime_type: XLSX, filename: 'a.xlsx' }), 'document', XLSX],
-      ['zip', mDocumento({ mime_type: 'application/zip', filename: 'a.zip' }), 'document', 'application/zip'],
-      ['ejecutable (mime fuera de la lista)', mDocumento({ mime_type: 'application/x-msdownload', filename: 'a.exe' }), 'document', 'application/octet-stream'],
-      ['html disfrazado de documento', mDocumento({ mime_type: 'text/html', filename: 'a.html' }), 'document', 'application/octet-stream'],
-      ['documento sin mime', mDocumento({ mime_type: '', filename: 'a' }), 'document', 'application/octet-stream'],
-      ['video', mVideo(), 'video', 'video/mp4'],
-      ['video 3gp', mVideo({ mime_type: 'video/3gpp' }), 'video', 'video/3gpp'],
-      ['sticker (como imagen webp)', mSticker(), 'image', 'image/webp'],
-      ['imagen con mime de otra categoría', mImagen({ mime_type: 'video/mp4' }), 'image', 'application/octet-stream'],
-      ['imagen svg (fuera de la lista)', mImagen({ mime_type: 'image/svg+xml' }), 'image', 'application/octet-stream'],
+    // [rótulo, mensaje, X-NovuChat-Tipo, Content-Type (transporte), X-NovuChat-Mime (lo declarado por Meta, saneado)]
+    const OCT = 'application/octet-stream';
+    const casos: [string, J, string, string, string][] = [
+      ['nota de voz', mAudio(), 'audio', 'audio/ogg', 'audio/ogg'],
+      ['PDF', mDocumento(), 'document', OCT, 'application/pdf'],
+      ['docx', mDocumento({ mime_type: DOCX, filename: 'a.docx' }), 'document', OCT, DOCX],
+      ['xlsx', mDocumento({ mime_type: XLSX, filename: 'a.xlsx' }), 'document', OCT, XLSX],
+      ['zip', mDocumento({ mime_type: 'application/zip', filename: 'a.zip' }), 'document', OCT, 'application/zip'],
+      ['ejecutable (mime fuera de la lista)', mDocumento({ mime_type: 'application/x-msdownload', filename: 'a.exe' }), 'document', OCT, OCT],
+      ['html disfrazado de documento', mDocumento({ mime_type: 'text/html', filename: 'a.html' }), 'document', OCT, OCT],
+      // Revisión de #709: un documento que se declara JSON, form o multipart NUNCA sale con ese Content-Type (el framework parsearía el cuerpo).
+      ['documento declarado application/json', mDocumento({ mime_type: 'application/json', filename: 'a.json' }), 'document', OCT, OCT],
+      ['documento declarado form', mDocumento({ mime_type: 'application/x-www-form-urlencoded', filename: 'a' }), 'document', OCT, OCT],
+      ['documento declarado multipart', mDocumento({ mime_type: 'multipart/form-data; boundary=x', filename: 'a' }), 'document', OCT, OCT],
+      ['mime con CRLF (inyección de cabecera)', mDocumento({ mime_type: 'application/pdf\r\nX-Otra: 1', filename: 'a' }), 'document', OCT, OCT],
+      ['documento sin mime', mDocumento({ mime_type: '', filename: 'a' }), 'document', OCT, OCT],
+      ['video', mVideo(), 'video', OCT, 'video/mp4'],
+      ['video 3gp', mVideo({ mime_type: 'video/3gpp' }), 'video', OCT, 'video/3gpp'],
+      ['sticker (como imagen webp)', mSticker(), 'image', 'image/webp', 'image/webp'],
+      ['imagen con mime de otra categoría', mImagen({ mime_type: 'video/mp4' }), 'image', OCT, OCT],
+      ['imagen svg (fuera de la lista)', mImagen({ mime_type: 'image/svg+xml' }), 'image', OCT, OCT],
+      ['imagen declarada application/json', mImagen({ mime_type: 'application/json' }), 'image', OCT, OCT],
     ];
     casos.forEach(([, m], i) => hablar(mu, ANA, m, { wamid: `wamid.T${i}`, toleraFallo: true }));
-    expect(g.llamadas.servidor.map((x) => [x.nodo, x.encabezados['X-NovuChat-IdMeta'], x.encabezados['X-NovuChat-Tipo'], x.encabezados['Content-Type']]))
-      .toEqual(casos.map(([, , tipo, ct], i) => ['Guardar medio', `wamid.T${i}`, tipo, ct]));
+    expect(g.llamadas.servidor.map((x) => [x.nodo, x.encabezados['X-NovuChat-IdMeta'], x.encabezados['X-NovuChat-Tipo'], x.encabezados['Content-Type'], x.encabezados['X-NovuChat-Mime']]))
+      .toEqual(casos.map(([, , tipo, ct, mime], i) => ['Guardar medio', `wamid.T${i}`, tipo, ct, mime]));
+    // Ninguna cabecera lleva un salto de línea ni un control.
+    for (const ll of g.llamadas.servidor) for (const [k, v] of Object.entries(ll.encabezados)) expect(String(v), k).not.toMatch(/[\r\n\x00-\x1f]/);
     expect(g.llamadas.descargar).toHaveLength(casos.length);
     // Ningún pedido lleva las cabeceras del modo Anotar que el contrato v2 quitó.
     for (const ll of g.llamadas.servidor) {
       expect(ll.encabezados['X-NovuChat-Anotar'], ll.nodo).toBeUndefined();
-      expect(ll.encabezados['X-NovuChat-Mime'], ll.nodo).toBeUndefined();
       expect(ll.parametros['contentType']).toBe('binaryData');
     }
   });
@@ -188,7 +197,7 @@ describe('el ÚNICO reintento ante un 5xx (revisión del integrador)', () => {
     expect(g.llamadas.reintentos).toHaveLength(1);
     const ll = g.llamadas.reintentos[0]!;
     expect(ll.parametros['sendBody']).toBe(true);
-    expect(JSON.parse(String(ll.parametros['jsonHeaders']))).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.R1', 'X-NovuChat-Tipo': 'image', 'Content-Type': 'image/jpeg' });
+    expect(JSON.parse(String(ll.parametros['jsonHeaders']))).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.R1', 'X-NovuChat-Tipo': 'image', 'Content-Type': 'image/jpeg', 'X-NovuChat-Mime': 'image/jpeg' });
     expect(g.llamadas.descargar).toHaveLength(1); // el reintento NO vuelve a pedir el medio a Meta
     expect(g.llamadas.avisos).toHaveLength(0);
   });
@@ -199,13 +208,13 @@ describe('el ÚNICO reintento ante un 5xx (revisión del integrador)', () => {
     expect(g.llamadas.servidor).toHaveLength(2);
     expect(g.llamadas.avisos.map((x) => x.cuerpo?.['text']?.['body'])).toEqual([AVISO('el servidor no pudo guardarlo')]);
   });
-  it('un documento cualquiera (xlsx) también se reintenta CON sus bytes y su Content-Type (ya no hay Anotar)', () => {
+  it('un documento cualquiera (xlsx) también se reintenta CON sus bytes, Content-Type octet-stream y su X-NovuChat-Mime (ya no hay Anotar)', () => {
     const { mu, g } = mundo({ respuesta: secuencia(r(503, {}), r(200, { ruta: 'x', repetido: false })) });
     hablar(mu, ANA, mDocumento({ mime_type: XLSX }), { wamid: 'wamid.R2' });
     const ll = g.llamadas.reintentos[0]!;
     expect(ll.parametros['sendBody']).toBe(true);
     expect(ll.parametros['contentType']).toBe('binaryData');
-    expect(JSON.parse(String(ll.parametros['jsonHeaders']))).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.R2', 'X-NovuChat-Tipo': 'document', 'Content-Type': XLSX });
+    expect(JSON.parse(String(ll.parametros['jsonHeaders']))).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.R2', 'X-NovuChat-Tipo': 'document', 'Content-Type': 'application/octet-stream', 'X-NovuChat-Mime': XLSX });
     expect(g.llamadas.servidor.map((x) => x.nodo)).toEqual(['Guardar medio', 'Reintentar el guardado']);
   });
   it('NIEGA: un 4xx, un 409 o un 200 no se reintentan', () => {

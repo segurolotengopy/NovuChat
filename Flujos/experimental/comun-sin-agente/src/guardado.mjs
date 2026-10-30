@@ -190,6 +190,8 @@ export function nodosDelGuardado(opciones) {
   // El Content-Type saneado de «Preparar guardado» (contrato v2 §4). n8n arma primero el del binario y DESPUÉS mezcla estas cabeceras (en minúsculas),
   // así que esta manda sobre el mime que trajo el CDN de Meta (n8n-nodes-base 2.36.5, HttpRequestV3).
   const tipoDeContenido = { name: 'Content-Type', value: `={{ ${P}.contentType }}` };
+  // El mime declarado por Meta, saneado contra la lista cerrada (revisión de #709): en video y documento el Content-Type es siempre octet-stream.
+  const mimeDeclarado = { name: 'X-NovuChat-Mime', value: `={{ ${P}.mime }}` };
   return [
     {
       id: 'gm-preparar', name: 'Preparar guardado', type: 'n8n-nodes-base.code', typeVersion: 2, position: [x, y],
@@ -219,7 +221,7 @@ export function nodosDelGuardado(opciones) {
       id: 'gm-guardar', name: 'Guardar medio', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + 720, y + 200],
       parameters: {
         method: 'POST', url: o.guardarUrl, ...ingesta, sendHeaders: true,
-        headerParameters: { parameters: [...cabecerasComunes, tipoDeContenido] },
+        headerParameters: { parameters: [...cabecerasComunes, tipoDeContenido, mimeDeclarado] },
         sendBody: true, contentType: 'binaryData', inputDataFieldName: 'data',
         options: { timeout: 60000, ...RESPUESTA_COMPLETA },
       },
@@ -240,7 +242,7 @@ export function nodosDelGuardado(opciones) {
       id: 'gm-reintentar', name: 'Reintentar el guardado', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + 1440, y + 200],
       parameters: {
         method: 'POST', url: o.guardarUrl, ...ingesta, sendHeaders: true, specifyHeaders: 'json',
-        jsonHeaders: `={{ JSON.stringify({ 'X-NovuChat-Numero': String(${numero}), 'X-NovuChat-Telefono': $json.telefono, 'X-NovuChat-IdMeta': $json.idMeta, 'X-NovuChat-Tipo': $json.tipo, 'Content-Type': $json.contentType }) }}`,
+        jsonHeaders: `={{ JSON.stringify({ 'X-NovuChat-Numero': String(${numero}), 'X-NovuChat-Telefono': $json.telefono, 'X-NovuChat-IdMeta': $json.idMeta, 'X-NovuChat-Tipo': $json.tipo, 'Content-Type': $json.contentType, 'X-NovuChat-Mime': $json.mime }) }}`,
         sendBody: true, contentType: 'binaryData', inputDataFieldName: 'data',
         options: { timeout: 60000, ...RESPUESTA_COMPLETA },
       },
@@ -365,9 +367,12 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
   const reintento = por('Reintentar el guardado').parameters || {};
   if (reintento.sendBody !== true || reintento.contentType !== 'binaryData' || reintento.inputDataFieldName !== 'data') h.push('guardado: «Reintentar el guardado» manda los mismos bytes (binaryData, campo data)');
   if (!/'Content-Type': \$json\.contentType/.test(String(reintento.jsonHeaders || ''))) h.push('guardado: «Reintentar el guardado» manda el Content-Type saneado');
+  if (!/'X-NovuChat-Mime': \$json\.mime\b/.test(String(reintento.jsonHeaders || ''))) h.push('guardado: «Reintentar el guardado» manda X-NovuChat-Mime');
   const guardarP = por('Guardar medio').parameters || {};
   const ctGuardar = (((guardarP.headerParameters || {}).parameters) || []).find((x) => x && String(x.name).toLowerCase() === 'content-type');
   if (!ctGuardar || ctGuardar.value !== "={{ $('Preparar guardado').first().json.contentType }}") h.push('guardado: «Guardar medio» manda el Content-Type saneado de «Preparar guardado»');
+  const mimeGuardar = (((guardarP.headerParameters || {}).parameters) || []).find((x) => x && x.name === 'X-NovuChat-Mime');
+  if (!mimeGuardar || mimeGuardar.value !== "={{ $('Preparar guardado').first().json.mime }}") h.push('guardado: «Guardar medio» manda X-NovuChat-Mime (el mime saneado de «Preparar guardado»)');
   if (guardarP.sendBody !== true || guardarP.contentType !== 'binaryData' || guardarP.inputDataFieldName !== 'data') h.push('guardado: «Guardar medio» manda los bytes (binaryData, campo data)');
   if (!String(((por('¿Reintentar el guardado?') || {}).parameters || {}).conditions ? JSON.stringify(por('¿Reintentar el guardado?').parameters.conditions) : '').includes('>= 500')) h.push('guardado: «¿Reintentar el guardado?» reintenta solo un 5xx');
   if (!String(((por('Resultado del guardado') || {}).parameters || {}).jsCode || '').includes(FUENTE_RESULTADO)) h.push('guardado: «Resultado del guardado» no incluye guardado-resultado.js tal cual');

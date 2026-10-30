@@ -7,7 +7,9 @@
 // TODO medio se guarda (decisión de Andres, 30/10): imagen, audio (y nota de voz), video, documento de CUALQUIER tipo y sticker (va como `image`, webp).
 // Ya no hay modo Anotar. Cada uno se baja con SU PROPIA descarga de Meta (no gasta el tope diario de ver u oír). El flujo NO se adelanta al tope por tipo
 // del servidor (imagen 5 MB, audio, video y documento 16 MB): solo deja de bajar lo que Meta informa por encima de 16 MiB (`limite`), que cuenta como 413.
-// `contentType` es el mime que declara Meta SOLO si está en la lista cerrada de abajo; si no, `application/octet-stream` (el servidor decide por los bytes).
+// `mime` es el que declara Meta SOLO si está en la lista cerrada de abajo; si no, `application/octet-stream` (el servidor decide por los bytes). Viaja en
+// `X-NovuChat-Mime`. `contentType` (el transporte): imagen y audio, ese mismo mime; video y documento SIEMPRE `application/octet-stream`, para que el
+// framework de la Function no intente parsear el cuerpo (un documento declarado application/json, form o multipart daría 400 antes del handler).
 // También anota, en el estado estático del flujo (clave `guardadoDeMedios`), cuándo escribió por última vez la RECEPCIÓN: es la ventana de 24 h que
 // decide si el aviso de falla puede salir como texto libre. Ningún dato del cliente se guarda ahí.
 // Este nodo NO toca el binario: no lo hay todavía (se baja después) y nunca lo lee.
@@ -53,7 +55,8 @@ const GM_MIMES = {
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   ],
 };
-const gmContentType = GM_MIMES[gmTipo].indexOf(gmMimeCrudo) >= 0 ? gmMimeCrudo : 'application/octet-stream';
+const gmMime = GM_MIMES[gmTipo].indexOf(gmMimeCrudo) >= 0 ? gmMimeCrudo : 'application/octet-stream';
+const gmContentType = gmTipo === 'image' || gmTipo === 'audio' ? gmMime : 'application/octet-stream';
 // 16 MiB: lo más grande que el flujo baja (Meta permite documentos de 100 MB; manda el tope de Andres). El tope por tipo lo impone el servidor.
 const GM_LIMITE = 16 * 1024 * 1024;
 // Video y documento pueden pesar hasta 100 MB en WhatsApp: sin un tamaño informado por Meta NO se bajan (revisión de seguridad de #713). Imagen, audio y
@@ -65,6 +68,7 @@ return [{ json: {
   idMeta: gmIdMeta,
   tipo: gmTipo,
   contentType: gmContentType,
+  mime: gmMime,
   mediaId: gmMediaId,
   limite: GM_LIMITE,
   exigeTamano: GM_EXIGE_TAMANO,
