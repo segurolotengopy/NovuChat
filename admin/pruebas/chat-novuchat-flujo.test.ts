@@ -209,8 +209,9 @@ function crear(op: OpcionesDelMundo = {}): W {
       registrarHoja(ll);
       if (w.hoja.falla) return errorDeGoogle();
       const valores = (((ll.parametros['filtersUI'] ?? {})['values'] ?? []) as J[]).map((v) => String(v['lookupValue'] ?? ''));
-      const k = w.hoja.filas.findIndex((f) => valores.includes(String(f[4] ?? '')));
-      return k < 0 ? {} : Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, w.hoja.filas[k]![c] ?? ''])));
+      // (como Google: TODAS las filas con ese teléfono, no solo la primera)
+      const hallazgos = w.hoja.filas.map((f, k) => ({ f, k })).filter(({ f }) => valores.includes(String(f[4] ?? '')));
+      return hallazgos.length === 0 ? {} : hallazgos.map(({ f, k }) => Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, f[c] ?? ''])))) as unknown as J;
     },
     'Leer IDs de la planilla': (ll) => {
       registrarHoja(ll);
@@ -1144,6 +1145,48 @@ describe('nombre y empresa: «Nombre, Empresa» en un mensaje, solo nombre, solo
 });
 
 describe('la hoja Leads_CRM: fila, nombre, empresa, rubro, necesidad y calificación por hechos', () => {
+  it('FILA NUEVA tras 48 h (29/10): quien vuelve es un registro nuevo, y la conversación nueva actualiza SU fila, no la vieja', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Ana Pérez' });
+    j.texto('Hola');
+    w.modelo.con = 'ERROR';
+    j.lista('rubro:salud');
+    expect(w.hoja.filas).toHaveLength(1);
+    expect(filaDe(w, MAMA)![COL.id]).toBe('LEAD-1001');
+    j.texto('Hola de nuevo', 49 * 60); // pasan 49 h: la ficha se olvida
+    expect(w.hoja.filas).toHaveLength(2);
+    expect(w.hoja.filas.map((f) => f[0])).toEqual(['LEAD-1001', 'LEAD-1002']);
+    const vieja = [...w.hoja.filas[0]!];
+    j.lista('rubro:belleza');
+    expect(w.hoja.filas).toHaveLength(2);
+    expect(w.hoja.filas[0]).toEqual(vieja); // la fila vieja no se toca
+    expect(w.hoja.filas[1]![5]).toBe('Belleza');
+  });
+  it('NIEGA: antes de 48 h NO hay fila nueva (actualiza la misma), y varias filas viejas del mismo teléfono: se actualiza la MÁS RECIENTE', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Ana Pérez' });
+    j.texto('Hola');
+    w.modelo.con = 'ERROR';
+    j.lista('rubro:salud');
+    j.texto('Hola otra vez', 47 * 60);
+    j.lista('rubro:belleza');
+    expect(w.hoja.filas).toHaveLength(1);
+    // una hoja con dos filas viejas del mismo teléfono (de antes de este cambio): la ficha es de una conversación nueva → fila nueva; y después actualiza la última
+    const w2 = crear();
+    const tel = digitos(MAMA);
+    const vieja = (id: string, rubro: string): string[] => ENC.map((h, c) => (c === 0 ? id : c === 4 ? tel : c === 5 ? rubro : ''));
+    w2.hoja.filas.push(vieja('LEAD-1001', 'Salud'), vieja('LEAD-1002', 'Comercio'));
+    const j2 = jugar(w2, MAMA, { perfil: 'Ana Pérez' });
+    j2.texto('Hola');
+    expect(w2.hoja.filas).toHaveLength(3);
+    expect(w2.hoja.filas[2]![0]).toBe('LEAD-1003');
+    w2.modelo.con = 'ERROR';
+    j2.lista('rubro:salud');
+    expect(w2.hoja.filas).toHaveLength(3);
+    expect(w2.hoja.filas[0]![5]).toBe('Salud');
+    expect(w2.hoja.filas[1]![5]).toBe('Comercio');
+    expect(w2.hoja.filas[2]![5]).toBe('Salud');
+  });
   it('Baja → Media → Alta, en UNA fila (no se duplica): elige rubro; interactúa con algo sustantivo; pide los planes; habla con el equipo', () => {
     const w = crear();
     const j = jugar(w, MAMA, { perfil: 'Ana Pérez' });

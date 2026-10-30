@@ -161,6 +161,8 @@ const despues = conversacion ? chProspecto(nueva, cfg, datosDe) : null;
 const primeraVez = antes.historial.length === 0;
 const cambio = despues !== null && (primeraVez || JSON.stringify(despues) !== JSON.stringify(chProspecto(antes, cfg, datosDe)));
 const guardarPlanilla = cambio && planillaOk;
+// una ficha nueva (primer mensaje, o vuelve tras 48 h) es un contacto NUEVO: la planilla le crea su propia fila (29/10)
+const prospectoSalida = guardarPlanilla ? Object.assign({}, despues, { nuevoContacto: primeraVez }) : null;
 
 // R8: la ficha de ANTES de este turno (con su cola de eventos sin responder) viaja en el primer ítem: si Meta rechaza el mensaje y su respaldo, «Confirmar envío» la restaura.
 const fichaAntes = claveOk ? chClon(antes) : null;
@@ -171,11 +173,11 @@ const resumen = {
 };
 if (!salida.length) {
   return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: accion, resumen: resumen, fichaAntes: fichaAntes,
-    guardarPlanilla: guardarPlanilla, prospectoPlanilla: guardarPlanilla ? despues : null } }];
+    guardarPlanilla: guardarPlanilla, prospectoPlanilla: prospectoSalida } }];
 }
 const primero = salida[0].json;
 primero.resumen = resumen;
 primero.fichaAntes = fichaAntes;
 primero.guardarPlanilla = guardarPlanilla;
-primero.prospectoPlanilla = guardarPlanilla ? despues : null;
+primero.prospectoPlanilla = prospectoSalida;
 return salida;
