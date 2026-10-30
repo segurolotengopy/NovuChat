@@ -19,7 +19,7 @@
 | **Nodos (lo que queda en n8n)** | `Flujos/src/modulos/agenda/*.js` (7 módulos desde FL1; la seña está en Cobros y los medios en `core/medios/`); Google Calendar por credencial de n8n |
 | **Ganchos** | `antesDelTurno`, `despuesDelTurno` (seña: retención), `alCierre` (cita), `programado` (recordatorios, seguimientos, señas vencidas: `agendamiento-seguimientos`, `agendamiento-senas-vencidas`, `demo-a-recordatorios`) |
 | **Mensajes por conversación** | 0 en la conversación; el recordatorio de solicitud pendiente y los recordatorios de cita son mensajes fuera de la ventana y se declaran en su sección |
-| **Pruebas** | `candado-agenda.test.ts`, `seguimientos.test.ts`, `senas-vencidas.test.ts`, `agendamiento-seguimientos.test.ts`, `sena-servidor.test.ts`, `citas-a-calendario.test.ts`, `direccion-maps.test.ts`; las suites de flujo de reservas (Demo A, Platinum, Bellido) hasta que F5 las reparta |
+| **Pruebas** | `candado-agenda.test.ts`, `seguimientos.test.ts`, `senas-vencidas.test.ts`, `agendamiento-seguimientos.test.ts`, `sena-servidor.test.ts`, `citas-a-calendario.test.ts`, `direccion-maps.test.ts`; las suites de flujo de reservas (Demo A, Bellido) hasta que F5 las reparta |
 
 **Observación:** es el módulo más grande. Hoy se llama vertical `agendamiento`. `preparar-sena`, `respuesta-de-la-sena`, `mensaje-de-la-sena` e `interpretar-lectura` van a Cobros con dependencia de Agenda. El techo de agendas por plan no es el número de personas: es que el candado hace una llamada a Google Calendar por cada calendario configurado (`Analisis/24`)
 

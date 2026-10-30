@@ -229,8 +229,8 @@ node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --operado
   crear nada, también en seco. `asignar-rol.mjs` hace lo mismo con
   `enlace-<rol>-<tenant>.txt` cuando crea la cuenta de un operador.
   - **Hasta el 28/09/2026 iba a `~/enlace-admin-<tenant>.txt`.** Ese día había
-    dos olvidados en el directorio personal, del 16 y del 17/09 (Bellido y
-    Platinum), y `~/` es solo para proyectos. Por eso ahora queda junto al
+    dos olvidados en el directorio personal, del 16 y del 17/09 (de dos
+    clientes), y `~/` es solo para proyectos. Por eso ahora queda junto al
     resto del cliente, donde se ve al cerrar su alta.
   - **No va por la salida estándar** porque este paso lo corre también el
     agente `plataforma`, y lo que imprime un comando que corre un agente entra
@@ -276,8 +276,8 @@ node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --operado
   carga de una vez desde un JSON versionado**, después de `alta-comercio.mjs` y
   antes de entrar a la consola (la consola no tiene pantalla para el horario, y
   cargar tres pestañas a mano no se puede repetir). El archivo es
-  `admin/scripts/datos/negocio-<id>.json` (el de Clínica Platinum,
-  `negocio-platinum.json`, sale de `CLIENTES/PLATINUM/conocimiento-asistente.md`
+  `admin/scripts/datos/negocio-<id>.json` (el ejemplo
+  `negocio-platinum.json` sale de un `conocimiento-asistente.md`
   §2 y §4) y **no lleva el número de recepción ni los calendarios**: lleva
   marcadores (`numeroRecepcionMarcador`, `calendarioMarcador`) que el script
   resuelve desde la tabla de `CONFIGURACION.local.md`. Esa tabla la completa
