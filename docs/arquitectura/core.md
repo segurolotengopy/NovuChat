@@ -109,6 +109,103 @@ Los del bloque de 25 respuestas por conversación y los umbrales de operador y
 bloqueo (`ingesta.ts`, `atencion.ts`). La tabla completa de límites, con su
 estado, está en `limites.md` y en `docs/base-comercial.md` §7.
 
+También el **tope diario de medios** (3.000 medios guardados o anotados por
+comercio y día, más un tope de bytes amplio de 15 GiB por día; Andres, 29/10/2026;
+`core/medios/guardarMedio.ts`, contador `cuposDeMedios/{día}` con TTL de 2 días),
+y los topes por tipo (imagen 5 MB, audio 16 MB, PDF 10 MB).
+
+## Medios entrantes guardados (H3, PR-1; Andres 20, 22 y 23/10/2026)
+
+Esto **corrige** la nota de «Lo que este bloque NO hace» de §4terdecies («guardar
+el medio para que una persona lo mire»): desde el 20/10 se guardan los medios
+**entrantes** (audio, foto, PDF) 90 días, y la bandera por comercio
+`guardarMedios` (ficha del tenant) está **apagada por defecto**. Se enciende solo
+con el anexo aceptado y el «sí» de Andres, por el script de plataforma (PR-3), no
+por el comercio: la ficha no la escribe ningún navegador.
+
+- **`guardarMedio`** (HTTP, solo el token por número; una firma se rechaza):
+  409 con la bandera apagada; 400 por teléfono o `idMeta` inválidos; 413 por el
+  tope del tipo; 415 por la firma de los bytes (SVG, HTML, docx y xlsx no se
+  guardan; los alias `image/jpg`, `application/ogg`, `audio/aac` en m4a y
+  `audio/3gpp` en amr se aceptan porque los bytes siguen decidiendo); 409 `sin_mensaje` si no hay un mensaje **entrante** del mismo tipo con
+  ese `idMeta` de hace 30 minutos o menos (ata el medio a una conversación, pero
+  **no frena un token robado**: con el mismo token la ingesta acepta un `idMeta`
+  cualquiera; **lo que limita es el tope diario**); 429 `cupo_diario_lleno` con el tope del día lleno. Un repetido
+  responde 200 sin reescribir ni gastar cupo.
+- **Tope superado, constancia acotada:** el 429 deja constancia en el propio
+  contador (`rechazados`, `ultimoRechazo`) a lo sumo 50 veces por comercio y día;
+  pasadas esas, el 429 sale sin escribir nada, para que un token robado no se
+  convierta en escrituras sin freno.
+- **Modo ANOTAR (docx y xlsx, 29/10/2026):** el flujo no descarga los bytes;
+  manda cuerpo vacío con `X-NovuChat-Anotar: 1`, `X-NovuChat-Tipo: document` y
+  `X-NovuChat-Mime`. Con un mime de Word o Excel modernos, la misma transacción
+  gasta un cupo, crea `mediosRecibidos/{hash}` con `estado: 'anotado'` (sin ruta,
+  tamaño ni sha256) y marca el mensaje; responde `200 {anotado:true}`. Otro mime
+  o tipo, 415; Anotar **con** cuerpo, 400 `anotar_con_cuerpo` (anotar no es una
+  puerta para guardar sin pasar por la firma). Un docx con bytes y sin Anotar
+  sigue en 415.
+  Un Anotar sobre un `idMeta` ya **guardado** responde la forma del guardado,
+  `{ruta, repetido:true}`, no la anotada (M2 lo tolera); sobre un `pendiente` de
+  bytes, reciente o viejo, responde 409 `en_curso` y no lo pisa.
+- **Riesgo del token robado y alerta recomendada:** el token por número es la
+  única credencial; quien lo tenga puede registrar mensajes y medios hasta el
+  tope (3.000 medios y 15 GiB por comercio y día). Se recomienda una alerta de
+  monitoreo sobre `cuposDeMedios/{día}.bytes` mayor que 2 GiB (o `rechazados`
+  mayor que 0), que un comercio real no alcanza: es la señal de abuso.
+- **Fallas de Firestore:** la consulta del mensaje, la reserva y la transacción
+  del anotado van en try/catch: 502 `no_se_registro` (409 `en_curso` si fue
+  contención, ABORTED), sin escribir nada, y el log lleva solo el código del
+  error, nunca la ruta con el teléfono.
+- **Cupo gastado y objeto huérfano (decisión de diseño):** si el objeto se guardó
+  pero el cierre falla (`no_se_registro`), el cupo queda gastado y el objeto
+  huérfano hasta que un reintento pasados 5 minutos lo retome o hasta la purga
+  de 90 días; el flujo lo avisa con el aviso de falla. Con `no_se_guardo` el cupo
+  vuelve una vez, al contador **del día en que se reservó** (la carpeta de la
+  ruta del marcador), aunque la medianoche de La Paz haya pasado.
+- **Pendiente retomado con otro formato:** se guarda en la carpeta del día de su
+  reserva con la extensión de los bytes que llegaron, y el cierre reescribe
+  `ruta`, `ext`, `mime` y `tamano` (rechazarlo dejaría el medio sin guardar hasta
+  que caduque el marcador). El cupo no se ajusta por la diferencia de tamaño.
+- **Concurrencia:** `concurrency: 4` fuera de staging (en gen2 con 1 vCPU el
+  valor por defecto es 80, y el cuerpo se lee entero antes de autenticar: 80
+  cuerpos de 16 MB agotan 1 GiB). En staging (CPU fraccionaria) no se declara.
+- **Deduplicación y cupo, atómicos** (revisión de seguridad del #617): la misma
+  transacción que reserva el cupo crea el marcador `mediosRecibidos/{hash}` con
+  `estado: 'pendiente'` (vence en 1 día por TTL); se pasa a `guardado` al
+  terminar. Peticiones simultáneas con el mismo `idMeta` gastan un solo cupo; si
+  Storage falla, el cupo vuelve una sola vez y el marcador se borra; un pendiente
+  de más de 5 minutos (instancia muerta) se retoma sin otro cupo, y uno reciente
+  da 409 `en_curso`. El visor (PR-2) debe ignorar los `pendiente`.
+- **Tipos:** solo `ftyp` M4A y M4B cuentan como audio (`isom`, `mp41`, `mp42` e
+  `iso2` también son video MP4: dan 415); un `%PDF-` con `PK\x03\x04` en el
+  primer KB (políglota ZIP/docx/APK) da 415.
+  No es un comprobante: no toca `solicitud`, `cierres`, `comprobantesRecibidos`,
+  `metricas` ni `conteo`.
+- **Datos:** Storage `tenants/{t}/medios/{aaaa-mm-dd La Paz}/{sha256(idMeta)}.{ext}`
+  (sin teléfono en la ruta ni en los metadatos; las reglas niegan todo acceso) y
+  Firestore `tenants/{t}/mediosRecibidos/{sha256(idMeta)}` con TTL sobre `vence`.
+- **`purgarMedios`** (03:45 La Paz): borra las carpetas de más de 90 días y, con
+  la baja del comercio, el prefijo entero y sus colecciones.
+- **Condiciones para el visor (PR-2):** servir con el `Content-Type` fijado por
+  el servidor (el guardado en `mediosRecibidos.mime`, nunca el que pida el
+  cliente), `X-Content-Type-Options: nosniff`, `Content-Disposition: attachment`,
+  y nunca dentro de un iframe del mismo origen de la consola.
+- **Cuenta y alerta de la purga:** `purgarMedios` corre con `sa-functions`, la
+  cuenta compartida de todas las Functions, con `storage.objectUser` sobre el
+  bucket; al entrar el visor conviene una cuenta dedicada con solo lo necesario.
+  Si algún comercio falla, la purga escribe un `console.error` con el texto fijo
+  `PURGA_MEDIOS_CON_ERRORES`: la alerta recomendada es una métrica basada en
+  registros sobre `textPayload:"PURGA_MEDIOS_CON_ERRORES"` (severidad ERROR) que
+  avise a Andres por un canal fuera de la Function. No está creada: es un paso de
+  nube con su «sí».
+- **Despliegue:** `guardarMedio` es HTTP nueva (1 GiB, sin concurrencia): tras
+  desplegar, el invocador sale con `scripts/nube-visor.sh --servicio guardarmedio`
+  (`allUsers` es correcto: la barrera es el token por número).
+- **Quién lo ve:** nadie todavía. El visor (callable auditada que devuelve bytes,
+  con tope, solo admin y operador; soporte no) es el PR-2.
+- `almacen.ts` es copia declarada del de `modulos/cobros/comprobantes.ts` (Core no
+  importa módulos); que Cobros importe de Core es un PR aparte del agente `modulo`.
+
 ## Secciones movidas desde `admin/DISENO.md`
 
 Texto original, sin cambios. Cada bloque dice de qué sección viene.
@@ -546,7 +643,10 @@ retención).
   (`Analisis/38`) pasa a ser el anexo aceptado por el comercio.
 - **D4:** soporte no ve los medios.
 - **D5:** cupo de guardado por comercio y día: 1.000 medios o 2 GB.
-- **D6:** docx, xlsx y otros documentos **no** se guardan.
+  **Reemplazada el 29/10/2026:** tope de 3.000 medios por comercio y día (más
+  15 GiB de bytes como freno de costo).
+- **D6:** docx, xlsx y otros documentos **no** se guardan. Desde el 29/10/2026,
+  docx y xlsx se **anotan** (metadato sin bytes).
 - **Rutas:** Storage `tenants/{t}/medios/{fecha La Paz}/{objeto}.{ext}`;
   Firestore `tenants/{t}/mediosRecibidos` con el campo `vence` y política TTL.
 - **Functions:** `guardarMedio` (la sube el flujo, porque la ingesta no tiene el

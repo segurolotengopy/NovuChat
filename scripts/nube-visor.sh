@@ -8,6 +8,7 @@
 #   reclamarsalidapersona   → `reclamarSalidaPersona` (HTTP; la llama el flujo n8n con la credencial de la
 #                              ingesta del número, Core, H2-3)
 #   confirmarsalidapersona  → `confirmarSalidaPersona` (HTTP; ídem)
+#   guardarmedio            → `guardarMedio` (HTTP; la llama el flujo n8n con el token del número, Core, H3)
 #
 # POR QUÉ EXISTE. Una Function HTTP o callable nueva no nace invocable si su
 # creación no salió limpia: sin `roles/run.invoker` para `allUsers`, Google
@@ -87,7 +88,9 @@ readonly SERVICIO_RECLAMAR="reclamarsalidapersona"
 readonly FUNCION_RECLAMAR="reclamarSalidaPersona"
 readonly SERVICIO_CONFIRMAR="confirmarsalidapersona"
 readonly FUNCION_CONFIRMAR="confirmarSalidaPersona"
-readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_TOMAR}|${SERVICIO_DEVOLVER}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}"
+readonly SERVICIO_GUARDAR="guardarmedio"
+readonly FUNCION_GUARDAR="guardarMedio"
+readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_TOMAR}|${SERVICIO_DEVOLVER}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}|${SERVICIO_GUARDAR}"
 readonly ROL="roles/run.invoker"
 readonly MIEMBRO="allUsers"
 readonly REPO="segurolotengopy/NovuChat"
@@ -124,6 +127,7 @@ case "$PEDIDO" in
   "$SERVICIO_DEVOLVER")  SERVICIO="$SERVICIO_DEVOLVER";  FUNCION="$FUNCION_DEVOLVER";  TIPO="callable" ;;
   "$SERVICIO_RECLAMAR")  SERVICIO="$SERVICIO_RECLAMAR";  FUNCION="$FUNCION_RECLAMAR";  TIPO="http" ;;
   "$SERVICIO_CONFIRMAR") SERVICIO="$SERVICIO_CONFIRMAR"; FUNCION="$FUNCION_CONFIRMAR"; TIPO="http" ;;
+  "$SERVICIO_GUARDAR")   SERVICIO="$SERVICIO_GUARDAR";   FUNCION="$FUNCION_GUARDAR";   TIPO="http" ;;
   "") echo "✗ Falta --servicio ${LISTA_SERVICIOS} (no hay servicio por omisión)" >&2; exit 2 ;;
   *)  echo "✗ --servicio tiene que ser uno de ${LISTA_SERVICIOS}, escrito así (lista cerrada)" >&2; exit 2 ;;
 esac

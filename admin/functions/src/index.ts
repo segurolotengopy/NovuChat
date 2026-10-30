@@ -114,3 +114,10 @@ export { devolverConversacion } from './core/conversacion/devolverConversacion.j
 export { enviarComoPersona } from './central/cuenta/enviarComoPersona.js';
 export { reclamarSalidaPersona } from './core/conversacion/reclamarSalidaPersona.js';
 export { confirmarSalidaPersona } from './core/conversacion/confirmarSalidaPersona.js';
+// MEDIOS ENTRANTES GUARDADOS (H3, PR-1; Andres 20 a 23/10/2026). `guardarMedio` (HTTP, solo token, exige un
+// mensaje entrante reciente) y `purgarMedios` (03:45 La Paz, 90 días y baja). Con la bandera `guardarMedios`
+// APAGADA por defecto no guarda nada. Agregan DOS Functions: la HTTP nueva no nace invocable (paso de
+// invocador tras el despliegue en staging) y la purga necesita `storage.objectUser` de sa-functions, que ya
+// tiene por `purgarComprobantes`.
+export { guardarMedio } from './core/medios/guardarMedio.js';
+export { purgarMedios } from './core/medios/purgarMedios.js';
