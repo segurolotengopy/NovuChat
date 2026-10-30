@@ -2270,6 +2270,22 @@
     "labels": {},
     "callableTrigger": {}
   },
+  "verMedio": {
+    "availableMemoryMb": 1024,
+    "timeoutSeconds": 60,
+    "minInstances": null,
+    "maxInstances": 3,
+    "ingressSettings": null,
+    "concurrency": 4,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
   "verificarCampanas": {
     "availableMemoryMb": null,
     "timeoutSeconds": 120,

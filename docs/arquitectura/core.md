@@ -201,8 +201,22 @@ por el comercio: la ficha no la escribe ningún navegador.
 - **Despliegue:** `guardarMedio` es HTTP nueva (1 GiB, sin concurrencia): tras
   desplegar, el invocador sale con `scripts/nube-visor.sh --servicio guardarmedio`
   (`allUsers` es correcto: la barrera es el token por número).
-- **Quién lo ve:** nadie todavía. El visor (callable auditada que devuelve bytes,
-  con tope, solo admin y operador; soporte no) es el PR-2.
+- **Quién lo ve (M3a, 30/10/2026; reemplaza a «nadie todavía»):** la callable
+  `verMedio` (`core/medios/verMedio.ts`). Entrada exacta `{tenantId, conversacionId,
+  idMeta}` (otra clave: `invalid-argument`); el servidor lee
+  `mediosRecibidos/{sha256(idMeta)}`, exige la misma conversación, `estado:
+  'guardado'` y `vence` futuro, valida la ruta (este comercio, este medio, sin `..`)
+  y devuelve `{tipo, mime, tamano, base64}` tras comprobar por los bytes la
+  extensión, el tipo, el `mime` y el `sha256` guardados. Roles: admin y operador
+  del comercio y soporte con ventana vigente (contrato M3: «los mismos roles que
+  ven comprobantes»; **contradice la D4 de abajo y lo confirma Andres**). Anotado
+  y pendiente: `failed-precondition` con `details` `'anotado'`/`'pendiente'`;
+  baja o inexistente: `not-found`. Auditoría fail-closed `medio_visto` con
+  `objeto` (el hash), sin teléfono ni `idMeta`; tope 30/h y 100/día en
+  `topesDeMedios/{uid}`. 1 GiB, 60 s, concurrencia 4 fuera de staging, App Check
+  en producción. El audio de 16 MiB son ~21,3 MiB en base64: cabe en los 32 MiB
+  de respuesta de gen2 (no en los 10 MB de gen1). Tras desplegar:
+  `scripts/nube-visor.sh --servicio vermedio`.
 - `almacen.ts` es copia declarada del de `modulos/cobros/comprobantes.ts` (Core no
   importa módulos); que Cobros importe de Core es un PR aparte del agente `modulo`.
 
