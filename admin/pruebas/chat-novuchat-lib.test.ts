@@ -1567,7 +1567,7 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
     expect(flujoJs('Decidir fila de la planilla')).toContain(modulo('captacion/crm-captacion.js'));
     expect(flujoJs('Prospecto para la planilla')).toContain(modulo('crm/nodo-prospecto.js'));
   });
-  it('L2: la calificación y el resumen (adaptador) quitan TODOS los bloques de signos de fórmula del comienzo; el módulo crm, también (revertir la línea hace fallar esta prueba)', () => {
+  it('L2: el módulo crm (`crmSeguro`) quita TODOS los bloques de signos de fórmula del comienzo (revertir la línea hace fallar esta prueba)', () => {
     for (const ruta of ['crm/crm.js']) {
       const js = readFileSync(join(CARPETA, '../../src/modulos', ruta), 'utf8');
       const linea = js.split('\n').find((l) => l.startsWith('const crmSeguro'))!;

@@ -63,7 +63,7 @@ function crmValidarMapa(m) {
   const e = [];
   if (m === null || typeof m !== 'object' || Array.isArray(m)) return ['el mapa no es un objeto'];
   if (!Number.isInteger(m.filaEncabezados) || m.filaEncabezados < 1 || m.filaEncabezados > 20) e.push('filaEncabezados debe ser un entero de 1 a 20');
-  if (typeof m.prefijoId !== 'string' || !/^[A-Za-z0-9_-]{1,10}$/.test(m.prefijoId)) e.push('prefijoId no es valido');
+  if (typeof m.prefijoId !== 'string' || !/^[A-Za-z0-9_][A-Za-z0-9_-]{0,9}$/.test(m.prefijoId)) e.push('prefijoId no es valido');
   if (!Number.isInteger(m.primerId) || m.primerId < 1) e.push('primerId debe ser un entero mayor que 0');
   const letras = new Map();
   const titulos = new Set();
@@ -130,7 +130,7 @@ function crmFilaMasReciente(coincidencias) {
 }
 
 // Quita invisibles y marcas de direccion (U+00AD, U+061C, U+200B a U+200F, U+202A a U+202E, U+2060 a U+2069, BOM): nada que el cliente no ve llega a la hoja.
-const crmLimpio = (v) => String(v ?? '').replace(/[­؜​-‏‪-‮⁠-⁩﻿]/g, '').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+const crmLimpio = (v) => String(v ?? '').replace(/[\u00ad\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, '').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
 const crmDigitos = (v) => String(v ?? '').replace(/\D/g, '');
 // Quita TODOS los bloques de signos de formula del comienzo («= =1» no queda «=1»).
 const crmSeguro = (v) => crmLimpio(v).replace(/^(?:[=+\-@]\s*)+/, '');
@@ -158,11 +158,12 @@ function crmEncabezadosEsperados(mapa) {
   for (const k of Object.keys(mapa.columnas)) porLetra[mapa.columnas[k].letra] = mapa.columnas[k].titulo;
   return Object.keys(porLetra).sort().map((l) => porLetra[l]);
 }
+const CRM_COLUMNAS_DE_MAS = '\u0000columnas de mas';
 // Primer encabezado leido que no es el esperado (letra por letra: orden y sin sobrantes), o '' si coinciden. Una fila leida lleva `row_number` aparte.
 function crmPrimerEncabezadoDistinto(fila, esperados) {
   const claves = Object.keys(fila).filter((k) => k !== 'row_number');
   for (let i = 0; i < esperados.length; i++) if (claves[i] !== esperados[i]) return esperados[i];
-  return claves.length > esperados.length ? '(columnas de mas)' : '';
+  return claves.length > esperados.length ? CRM_COLUMNAS_DE_MAS : '';
 }
 
 // La decision de la fila. `adaptador` = { calificar(prospecto), resumir(prospecto, conEstado, calificacionFinal), prioridad: [de menor a mayor] }.
@@ -185,7 +186,7 @@ function crmDecidirFila(a) {
   const esperados = crmEncabezadosEsperados(mapa);
   // Letra por letra, antes de escribir: A en la lectura de IDs; A hasta la ultima del bot en la fila encontrada.
   const faltan = [];
-  if (ids.length && crmPrimerEncabezadoDistinto(ids[0], [T('id')])) faltan.push(T('id'));
+  if (ids.length && crmPrimerEncabezadoDistinto(ids[0], [T('id')])) faltan.push(crmPrimerEncabezadoDistinto(ids[0], [T('id')]) === CRM_COLUMNAS_DE_MAS ? CRM_COLUMNAS_DE_MAS : T('id'));
   if (coincidencias.length) { const d = crmPrimerEncabezadoDistinto(coincidencias[0], esperados); if (d) faltan.push(d); }
   const prioridad = (v) => adaptador.prioridad.indexOf(crmLimpio(v));
   const idRe = new RegExp('^\\s*' + mapa.prefijoId.replace(/[^A-Za-z0-9]/g, '\\$&') + '(\\d+)\\s*$', 'i');
@@ -194,7 +195,8 @@ function crmDecidirFila(a) {
     const p = it.json;
     if (!p || !p.telefono) return nada(i, 'sin_telefono');
     if (fallo) return nada(i, 'no_leida: ' + crmPorque(fallo.error ?? fallo.json.error));
-    if (faltan.length) return nada(i, 'encabezados_distintos: la fila ' + mapa.filaEncabezados + ' no tiene «' + faltan[0] + '»');
+    if (faltan.length) return nada(i, faltan[0] === CRM_COLUMNAS_DE_MAS ? 'encabezados_distintos: columnas de más en la fila ' + mapa.filaEncabezados
+      : 'encabezados_distintos: la fila ' + mapa.filaEncabezados + ' no tiene «' + faltan[0] + '»');
     // Una persona que vuelve tras 48 h (ficha nueva: `nuevoContacto`) es un registro NUEVO; si no, se actualiza SIEMPRE la fila mas reciente de ese telefono.
     const actual = p.nuevoContacto === true ? undefined : crmFilaMasReciente(coincidencias.filter((f) => crmDigitos(f[T('telefono')]) === p.telefono));
     // Los hechos viajan dentro del prospecto; `cerrado` sigue siendo un pedido de una persona.

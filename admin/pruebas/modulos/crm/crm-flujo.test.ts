@@ -163,8 +163,10 @@ describe('lo que se NIEGA: filas, encabezados y mapa', () => {
     const conSobra = { json: { ...fila(5, TEL).json, 'Notas del equipo': 'x' } };
     const [s] = M.crmDecidirFila({ prospectos: [{ json: p }], busqueda: [conSobra], lecturaIds: [], mapa: MAPA, adaptador, ahoraMs: AHORA });
     expect(s.json.accionPlanilla).toBe('nada');
+    expect(s.json.veredictoPlanilla).toBe('encabezados_distintos: columnas de más en la fila 3');
     const [t] = M.crmDecidirFila({ prospectos: [{ json: p }], busqueda: [], lecturaIds: [{ json: { row_number: 2, 'ID Lead': 'LEAD-1', 'Fecha Registro': 'x' } }], mapa: MAPA, adaptador, ahoraMs: AHORA });
     expect(t.json.accionPlanilla).toBe('nada');
+    expect(t.json.veredictoPlanilla).toBe('encabezados_distintos: columnas de más en la fila 3');
   });
   it('las columnas del equipo no se escriben: al actualizar solo salen las 5 del bot; al crear, solo el estado inicial', () => {
     const [a] = M.crmDecidirFila({ prospectos: [{ json: { ...p, hechos: { pidioAsesor: true } } }], busqueda: [fila(5, TEL)], lecturaIds: [], mapa: MAPA, adaptador, ahoraMs: AHORA });
@@ -201,6 +203,7 @@ describe('lo que se NIEGA: filas, encabezados y mapa', () => {
     ['hueco en el rango leído', (m: typeof MAPA) => { m.columnas.resumen.letra = 'L'; m.extrasDelEquipo = {} as never; }],
     ['falta telefono', (m: typeof MAPA) => { delete (m.columnas as J).telefono; }],
     ['campo del bot desconocido', (m: typeof MAPA) => { (m.columnas as J).raro = { letra: 'K', titulo: 'Raro' }; }],
+    ['prefijoId que empieza con «-»', (m: typeof MAPA) => { m.prefijoId = '-LEAD'; }],
     ['filaEncabezados 0', (m: typeof MAPA) => { m.filaEncabezados = 0; }],
     ['filaEncabezados 21', (m: typeof MAPA) => { m.filaEncabezados = 21; }],
     ['alCrear sin origen', (m: typeof MAPA) => { delete (m.alCrear as J).origen; }],
@@ -282,7 +285,7 @@ describe('paridad TypeScript / JavaScript de neutralizar y del contrato', () => 
 });
 
 describe('el código que corre en n8n', () => {
-  const paq = paquetesCrm() as Record<string, string[]>;
+  const paq = paquetesCrm(join(FLUJOS, 'captacion', 'crm-captacion.js')) as Record<string, string[]>;
   const textos = Object.values(paq).flat().join('\n');
   it('se arma de los archivos del módulo, sin copias: crm.js primero, el adaptador de captación en el decidir', () => {
     expect(paq['crm-prospecto']).toEqual([CRM.trimEnd(), NODO_PROSPECTO.trimEnd()]);

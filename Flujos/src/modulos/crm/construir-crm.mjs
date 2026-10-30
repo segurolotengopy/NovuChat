@@ -2,7 +2,7 @@
 // columnas del tenant (dato, no codigo). Lo usan los `construir.mjs` de los flujos que llevan miniCRM.
 //
 //   paquetes.crm-prospecto = [crm.js, nodo-prospecto.js]
-//   paquetes.crm-decidir   = [crm.js, ../captacion/crm-captacion.js, nodo-decidir-fila.js]
+//   paquetes.crm-decidir   = [crm.js, <adaptador que pasa el flujo>, nodo-decidir-fila.js]
 //   plantilla: "jsCode": "@@medio:crm-prospecto"  /  "@@medio:crm-decidir"
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
@@ -10,15 +10,22 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-export const RUTAS_PAQUETES = {
-  'crm-prospecto': [join(AQUI, 'crm.js'), join(AQUI, 'nodo-prospecto.js')],
-  'crm-decidir': [join(AQUI, 'crm.js'), join(AQUI, '..', 'captacion', 'crm-captacion.js'), join(AQUI, 'nodo-decidir-fila.js')],
-};
+/**
+ * Las rutas de cada paquete. El ADAPTADOR de captacion (como se califica y se resume) lo pasa quien construye el flujo: el modulo `crm` no sabe
+ * donde vive ni lo importa por su cuenta.
+ */
+export function rutasPaquetesCrm(rutaAdaptador) {
+  if (typeof rutaAdaptador !== 'string' || !rutaAdaptador) throw new Error('crm: falta la ruta del adaptador (calificar y resumir)');
+  return {
+    'crm-prospecto': [join(AQUI, 'crm.js'), join(AQUI, 'nodo-prospecto.js')],
+    'crm-decidir': [join(AQUI, 'crm.js'), rutaAdaptador, join(AQUI, 'nodo-decidir-fila.js')],
+  };
+}
 export const MARCA_MAPA = 'const CRM_MAPA = null; // @@crm-mapa';
 
 /** El texto de cada paquete (archivos unidos). */
-export function paquetesCrm() {
-  return Object.fromEntries(Object.entries(RUTAS_PAQUETES).map(([k, rutas]) => [k, rutas.map((r) => readFileSync(r, 'utf8').trimEnd())]));
+export function paquetesCrm(rutaAdaptador) {
+  return Object.fromEntries(Object.entries(rutasPaquetesCrm(rutaAdaptador)).map(([k, rutas]) => [k, rutas.map((r) => readFileSync(r, 'utf8').trimEnd())]));
 }
 
 /** Valida el mapa con el MISMO `crmValidarMapa` que corre en n8n. Devuelve la lista de errores. */
