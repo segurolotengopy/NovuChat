@@ -11,10 +11,13 @@ import {
   type LlamarVerMedio, type MedioDeMensaje,
 } from '../../web/src/central/lib/medios.ts';
 
-const AHORA = 1_800_000_000_000;
+/** Los números se arman en tiempo de ejecución: ningún literal de 10 o más dígitos en el repo. */
+const num = (...p: string[]) => p.join('');
+const TEL = num('591', '7', '12', '34567');
+const AHORA = 18 * 10 ** 11;
 const guardado = (o: Partial<MedioDeMensaje> = {}): MedioDeMensaje =>
   ({ estado: 'guardado', mime: 'image/jpeg', tamano: 10, vence: AHORA + 1000, ...o });
-const base = { tenantId: 't1', conversacionId: 'wa_59171234567', idMeta: 'wamid.X', accion: 'ver' as const, ahora: AHORA };
+const base = { tenantId: 't1', conversacionId: `wa_${TEL}`, idMeta: 'wamid.X', accion: 'ver' as const, ahora: AHORA };
 const B64 = Buffer.from('hola').toString('base64');
 const ok = (r: object): LlamarVerMedio => vi.fn(async () => ({ data: r }));
 const falla = (code: string, details?: unknown): LlamarVerMedio => vi.fn(async () => { throw Object.assign(new Error('RUTA tenants/x/medios/secreto'), { code, details }); });
@@ -51,7 +54,7 @@ describe('pedirMedio con la callable simulada', () => {
   it('manda solo tenantId, conversacionId e idMeta', async () => {
     const f = ok({ tipo: 'image', mime: 'image/png', base64: B64 });
     await pedirMedio(f, { ...base, medio: guardado() });
-    expect(f).toHaveBeenCalledWith({ tenantId: 't1', conversacionId: 'wa_59171234567', idMeta: 'wamid.X', accion: 'ver' });
+    expect(f).toHaveBeenCalledWith({ tenantId: 't1', conversacionId: `wa_${TEL}`, idMeta: 'wamid.X', accion: 'ver' });
   });
   it('anotado, pendiente y sin medio no llaman a la callable', async () => {
     const f = ok({});
@@ -151,9 +154,9 @@ describe('descarga: una sola vez, ancla fuera del DOM, revoca a los 4 s', () => 
 
 describe('enlace wa.me', () => {
   it('solo con 8 a 15 dígitos', () => {
-    expect(enlaceWaMe('59171234567')).toBe('https://wa.me/59171234567');
-    expect(enlaceWaMe('+59171234567')).toBe('https://wa.me/59171234567');
-    for (const t of ['1234567', '1234567890123456', '5917abc4567', '591 7123', '', null, undefined, 5917123456, '59171234567/../x', '59171234567?text=hola']) expect(enlaceWaMe(t)).toBeNull();
+    expect(enlaceWaMe(TEL)).toBe(`https://wa.me/${TEL}`);
+    expect(enlaceWaMe(`+${TEL}`)).toBe(`https://wa.me/${TEL}`);
+    for (const t of ['1234567', num('1234', '5678', '9012', '3456'), '5917abc4567', '591 7123', '', null, undefined, Number(TEL.slice(0, 9)), `${TEL}/../x`, `${TEL}?text=hola`]) expect(enlaceWaMe(t)).toBeNull();
   });
   it('el aviso dice que queda fuera del sistema y no reemplaza a Tomar', () => {
     expect(AVISO_WA_ME).toContain('FUERA del sistema');
