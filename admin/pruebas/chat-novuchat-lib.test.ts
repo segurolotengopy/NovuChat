@@ -2595,26 +2595,41 @@ describe('bucle del paso de los datos (29/10): «Engels» no puede repetir cinco
   });
 });
 
-describe('«Otro / a medida» no ofrece al equipo en el primer mensaje (29/10): primero se le consulta', () => {
-  const botonesOtro = (previos: string[], texto: string, ev = 'otroRespuesta', rubroElegido = ''): J => {
-    const historial = previos.map((t) => ({ r: 'u', t }));
-    const ficha = { ...fichaBase(), rubro: 'otro', historial };
-    const eventos = texto === '' ? [ev === 'otro' ? { ...f('chEventoToque')('otro', CFG.datos.rubros), seq: 1, id: '', ms: 0 } : ev] : [{ ...f('chEventoTexto')(texto), seq: 1, id: '', ms: 0 }];
-    const s = f('chSituacion')({ plan: { ruta: 'modelo', rubroElegido, hechos: {} }, res: { origen: 'respaldo', evento: ev, causas: [] }, eventos, ficha });
-    return f('chBotonesDe')(s);
+describe('«Otro / a medida» no ofrece al equipo hasta dos respuestas del cliente (29/10): primero se le consulta', () => {
+  const sit = (o: { otroResp?: number; rubro?: string; texto?: string; ev?: string; rubroElegido?: string; res?: J; ficha?: J }): J => {
+    const ficha = { ...fichaBase(), rubro: o.rubro ?? 'otro', otroResp: o.otroResp ?? 0, historial: [], ...(o.ficha ?? {}) };
+    const eventos = o.texto === undefined ? [] : [{ ...f('chEventoTexto')(o.texto), seq: 1, id: '', ms: 0 }];
+    return f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'modelo', rubroElegido: o.rubroElegido ?? '', hechos: {} }, res: { origen: 'respaldo', evento: o.ev ?? 'otro', causas: [], ...(o.res ?? {}) }, eventos, ficha }));
   };
-  it('al elegir «Otro» y tras la primera respuesta, SIN botón del equipo; con dos respuestas ya, sí', () => {
-    expect(botonesOtro([], '', 'otro', 'otro')).toMatchObject({ equipo: false, fila: 'otro-temprano' });
-    expect(botonesOtro(['[Eligió el rubro: Otro / a medida]'], 'Vendo software y licencias')).toMatchObject({ equipo: false, fila: 'otro-temprano' });
-    expect(botonesOtro(['[Eligió el rubro: Otro / a medida]', 'Vendo software y licencias'], 'Me cuesta responder rápido')).toMatchObject({ equipo: true });
+  it('al elegir «Otro» (botón o escrito) y tras la 1.ª respuesta, SIN botón del equipo; desde la 2.ª, sí', () => {
+    expect(sit({ rubroElegido: 'otro' })).toMatchObject({ equipo: false, fila: 'otro-temprano' });
+    expect(sit({ rubroElegido: 'otro', texto: 'Otro' })).toMatchObject({ equipo: false, fila: 'otro-temprano' }); // escribir «Otro» no cuenta como respuesta
+    expect(sit({ otroResp: 0, texto: 'Vendo software y licencias', ev: 'otroRespuesta' })).toMatchObject({ equipo: false, fila: 'otro-temprano' });
+    expect(sit({ otroResp: 1, texto: 'Me cuesta responder rápido', ev: 'otroRespuesta' })).toMatchObject({ equipo: true });
   });
-  it('NIEGA: si el cliente PIDE algo a medida, o ya habló con el equipo, la regla no lo calla', () => {
-    expect(botonesOtro(['[Eligió el rubro: Otro / a medida]'], 'Necesito algo personalizado a medida').equipo).toBe(true);
-    expect(botonesOtro(['[Eligió el rubro: Otro / a medida]'], 'Vendo software', 'sin_dato').fila).not.toBe('otro-temprano');
+  it('el conteo es de la FICHA: no lo borra un historial largo ni cambia por responder con audio', () => {
+    const largo = Array.from({ length: 8 }, (_, k) => ({ r: k % 2 ? 'a' : 'u', t: k % 2 ? 'respuesta del asistente' : '[Envió una imagen]' }));
+    expect(sit({ otroResp: 2, texto: 'otra cosa', ficha: { historial: largo } })).toMatchObject({ equipo: true });
+    const audio = f('chEventoTexto')('[Nota de voz] vendo licencias');
+    const fi = { ...fichaBase(), rubro: 'otro', otroResp: 0, historial: [] };
+    const sitAudio = f('chSituacion')({ plan: { ruta: 'modelo', rubroElegido: '', hechos: {} }, res: { origen: 'respaldo', evento: 'otro', causas: [] }, eventos: [{ k: 'audio', c: 'vendo licencias', t: audio.t, seq: 1, id: '', ms: 0 }], ficha: fi });
+    expect(f('chBotonesDe')(sitAudio)).toMatchObject({ equipo: false });
+    const aplicada = f('chAplicarTurno')({ ficha: fi, eventos: [{ k: 'audio', c: 'vendo licencias', t: audio.t, seq: 1, id: '', ms: 0 }], hasta: 1, plan: { ruta: 'modelo', rubroElegido: '', hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false }, temas: [] }, res: { lectura: {} }, mensaje: 'hola', cfg: CFG });
+    expect(aplicada.otroResp).toBe(1);
+    const eleccion = f('chAplicarTurno')({ ficha: { ...fichaBase() }, eventos: [{ ...f('chEventoTexto')('Otro'), seq: 1, id: '', ms: 0 }], hasta: 1, plan: { ruta: 'modelo', rubroElegido: 'otro', hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: true }, temas: [] }, res: { lectura: {} }, mensaje: 'hola', cfg: CFG });
+    expect(eleccion.otroResp).toBe(0);
+  });
+  it('NIEGA: pedir algo a medida, que el modelo declina u ofrezca al equipo, sin dato o ya habló con el equipo LIBERAN el botón', () => {
+    expect(sit({ texto: 'Necesito algo personalizado a medida', ev: 'otroRespuesta' }).equipo).toBe(true);
+    expect(sit({ texto: 'vendo software', ev: 'otroRespuesta', res: { origen: 'modelo', contexto: 'otroRespuesta', texto: 'Eso lo vemos mejor. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝' } }).equipo).toBe(true);
+    expect(sit({ texto: 'vendo software', ev: 'sin_dato' }).equipo).toBe(true);
+    expect(sit({ texto: 'vendo software', ev: 'otroRespuesta', ficha: { equipoAhora: true } }).fila).not.toBe('otro-temprano');
+  });
+  it('NIEGA: fuera de contexto, cortesía o identidad en esa etapa NO muestran «Ver planes» (siguen sin botones)', () => {
+    for (const ev of ['fuera', 'cortesia', 'identidad', 'medio']) expect(sit({ texto: 'cuánto cuesta', ev })).toMatchObject({ equipo: false, planes: false });
   });
   it('NIEGA: un rubro estándar no cambia (la regla es solo de «Otro»)', () => {
-    const ficha = { ...fichaBase(), rubro: 'salud', historial: [] };
-    const s = f('chSituacion')({ plan: { ruta: 'modelo', rubroElegido: '', hechos: {} }, res: { origen: 'respaldo', evento: 'sin_dato', causas: [] }, eventos: [{ ...f('chEventoTexto')('hola'), seq: 1, id: '', ms: 0 }], ficha });
-    expect(f('chBotonesDe')(s)).toMatchObject({ equipo: true });
+    expect(sit({ rubro: 'salud', texto: 'hola', ev: 'general' }).fila).not.toBe('otro-temprano');
+    expect(sit({ rubro: 'salud', texto: 'hola', ev: 'sin_dato' }).equipo).toBe(true);
   });
 });
