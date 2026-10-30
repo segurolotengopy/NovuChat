@@ -659,6 +659,40 @@ service cloud.firestore {
             && campanaValida(lista, 9);
         }
 
+        // =====================================================================
+        // /config/crm — miniCRM (PR-A, 28/10/2026). No es módulo común; activo por
+        // defecto, con UN solo interruptor (`activo`, ausente = encendido): la regla
+        // no mira `tenants.modulos`. El comercio escribe SOLO `activo`,
+        // `moneda` y `listas`. `hoja`, `filaEncabezados`, `mapaColumnas`,
+        // `cuentaServicio` y `recordatorios` los escribe el servidor: aquí se
+        // mira el DIFF, no las claves, porque en una edición el documento
+        // resultante los trae aunque el parche no (mismo contrato que
+        // `config/campanas`). Las listas no se recorren elemento por elemento
+        // (tope de expresiones): se acota su tamaño y el servidor sanea.
+        // =====================================================================
+        allow create, update: if documento == 'crm'
+                              && esAdmin(tenantId)
+                              && tenantOperativo(tenantId)
+                              && configCrmValida();
+
+        function configCrmValida() {
+          let d = request.resource.data;
+          return (resource == null
+                    ? d.keys().hasOnly(['activo', 'moneda', 'listas', 'actualizadoPor', 'actualizadoEn'])
+                    : d.diff(resource.data).affectedKeys()
+                        .hasOnly(['activo', 'moneda', 'listas', 'actualizadoPor', 'actualizadoEn']))
+            && selloValido(d)
+            && d.get('activo', true) is bool
+            && d.get('moneda', 'Bs') is string
+            && d.get('moneda', 'Bs').size() >= 1 && d.get('moneda', 'Bs').size() <= 5
+            && d.get('listas', {}) is map
+            && d.get('listas', {}).keys().hasOnly(['etapas', 'origenes'])
+            && d.get('listas', {}).get('etapas', []) is list
+            && d.get('listas', {}).get('etapas', []).size() <= 20
+            && d.get('listas', {}).get('origenes', []) is list
+            && d.get('listas', {}).get('origenes', []).size() <= 20;
+        }
+
         // EL DOCUMENTO DEL FLUJO DE CAPTACIÓN, POR EL PROPIETARIO. Además del
         // administrador (arriba, solo `update`, como todo documento de flujo),
         // lo escribe el propietario. El alta lo crea vacío, pero el propietario
