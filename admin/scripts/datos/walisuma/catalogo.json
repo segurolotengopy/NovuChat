@@ -2,7 +2,7 @@
   "_fuente": "Catálogo Corporativo 2026 de Walisuma (PDF recibido el 28/10/2026). TODOS los precios están en bolivianos (Bs), tal como los imprime el PDF: no hay conversión ni tipo de cambio. Los ítems sin precio en el PDF quedan «a consultar» (sin precio) hasta que el cliente los confirme.",
   "_sku": "El SKU «WAL-<familia>-<nnn>» es una propuesta de NovuChat que el cliente valida; va al final de la descripción como «Cód.». El identificador del ítem sale del nombre (idDe de cargar-negocio.mjs).",
   "_fotos": "No van en este repositorio (son de un tercero): una por ítem, en CLIENTES/WALISUMA/fotos-catalogo/<id>.webp, y se suben con cargar-fotos-catalogo.mjs con el OK de Andres.",
-  "_alcohol": "Licor de coca (3 presentaciones) y Montecito (singani) quedan activo=false: la política de comercio de Meta restringe las bebidas alcohólicas y la WABA es compartida. Encenderlos es decisión de Andres, tras verificar la política vigente.",
+  "_alcohol": "Licor de coca (3 presentaciones), Montecito (singani) y las pastillas de coca (4 ítems) quedan activo=false: la política de comercio de Meta restringe el alcohol, la WABA es compartida y la Gerente General pidió no ofrecerlos (30/10/2026). Encenderlos es decisión de Andres.",
   "_stock": "Sin control de stock: el catálogo no trae existencias y el campo stock no se escribe.",
   "catalogo": [
     {
@@ -933,7 +933,7 @@
       "area": "Hogar y oficina · Gourmet y spa",
       "precio": 65,
       "moneda": "BOB",
-      "activo": true
+      "activo": false
     },
     {
       "nombre": "Pastillas de coca en ziplock",
@@ -941,7 +941,7 @@
       "area": "Hogar y oficina · Gourmet y spa",
       "precio": 65,
       "moneda": "BOB",
-      "activo": true
+      "activo": false
     },
     {
       "nombre": "Pastillas de coca en lata, 15 unidades",
@@ -949,7 +949,7 @@
       "area": "Hogar y oficina · Gourmet y spa",
       "precio": 65,
       "moneda": "BOB",
-      "activo": true
+      "activo": false
     },
     {
       "nombre": "Pastillas de coca en lata, 30 unidades",
@@ -957,7 +957,7 @@
       "area": "Hogar y oficina · Gourmet y spa",
       "precio": 105,
       "moneda": "BOB",
-      "activo": true
+      "activo": false
     },
     {
       "nombre": "Sales gourmet frasco grande",

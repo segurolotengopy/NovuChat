@@ -54,9 +54,12 @@ describe('Walisuma: el catálogo importable', () => {
     ]);
   });
 
-  it('las bebidas alcohólicas quedan cargadas pero apagadas, y nada más lo está', () => {
+  it('las bebidas alcohólicas y las pastillas de coca quedan cargadas pero apagadas, y nada más lo está', () => {
     const apagados = items.filter((it) => !it.activo).map((it) => it.nombre).sort();
-    expect(apagados).toEqual(['Licor de coca 250 ml', 'Licor de coca 50 ml', 'Licor de coca 750 ml', 'Montecito 750 ml']);
+    expect(apagados).toEqual([
+      'Licor de coca 250 ml', 'Licor de coca 50 ml', 'Licor de coca 750 ml', 'Montecito 750 ml',
+      'Pastillas de coca en lata, 15 unidades', 'Pastillas de coca en lata, 30 unidades', 'Pastillas de coca en yute', 'Pastillas de coca en ziplock',
+    ]);
   });
 
   it('cada ítem lleva un SKU propuesto único en su descripción', () => {
