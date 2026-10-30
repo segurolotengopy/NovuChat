@@ -206,3 +206,10 @@
   .cv-hilo { padding-inline: var(--space-2); }
 }
 @media (prefers-reduced-motion: reduce) { .cv-burbuja--buscada { animation: none; } }
+
+/* Visor de medios (M3b) y enlace wa.me */
+.cv-medio { display: inline-block; margin: 4px 0; }
+.cv-medio-texto { display: block; font-size: 12.5px; font-style: italic; margin: 2px 0; }
+.cv-medio-fondo { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: flex; align-items: center; justify-content: center; z-index: 50; }
+.cv-medio-dialogo { background: var(--fondo, #fff); color: inherit; padding: 16px; border-radius: 8px; max-width: min(92vw, 720px); max-height: 90vh; overflow: auto; }
+.cv-wame-aviso { display: block; font-size: 12px; }
