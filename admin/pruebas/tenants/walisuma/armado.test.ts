@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error — el armador es un módulo .mjs sin tipos
 import * as C from '../../../../Flujos/experimental/walisuma/construir.mjs';
+// @ts-expect-error — el módulo común es un .mjs
+import { NODOS_DEL_GUARDADO as GUARDADO } from '../../../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 import type { Flujo, J } from '../../lib/flujo';
 import { PRODUCCION, PRUEBA } from './mundo';
 
@@ -25,20 +27,19 @@ const nombres = (f: Flujo): string[] => (f.nodes as J[]).map((x) => String(x['na
 const corrida = (...args: string[]) => spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador({}) });
 
 describe('tamaño y composición', () => {
-  it('como máximo 47 nodos (PR-2 + PR-3 juntos): producción 36, prueba 31', () => {
-    expect(PRODUCCION.nodes.length).toBe(36);
-    expect(PRUEBA.nodes.length).toBe(31);
-    expect(PRODUCCION.nodes.length + C.NODOS_DEL_PR3.length).toBeLessThanOrEqual(47);
-    expect(C.TOPE_DE_NODOS).toBe(47);
+  it('como máximo 58 nodos (47 + los 11 del guardado de medios, excepción de Andres del 29/10/2026): producción 58 exactos, prueba 53', () => {
+    expect(PRODUCCION.nodes.length).toBe(58);
+    expect(PRUEBA.nodes.length).toBe(53);
+    expect(C.TOPE_DE_NODOS).toBe(58);
   });
-  it('los 11 nodos del PR-3 no están todavía, y no se repiten ni chocan con los del esqueleto', () => {
-    for (const n of C.NODOS_DEL_PR3 as string[]) expect(nombres(PRODUCCION)).not.toContain(n);
+  it('los 11 nodos del PR-3 están (el esqueleto de 36 más 11), sin repetirse', () => {
+    for (const n of C.NODOS_DEL_PR3 as string[]) { expect(nombres(PRODUCCION)).toContain(n); expect(nombres(PRUEBA)).toContain(n); }
     expect(new Set(C.NODOS_DEL_PR3).size).toBe(11);
   });
-  it('NEGADO: un flujo con más de 47 nodos viola la guardia', () => {
+  it('NEGADO: un flujo con más de 58 nodos viola la guardia', () => {
     const f = clonar(PRODUCCION);
-    for (let i = 0; i < 12; i++) f.nodes.push({ id: `extra-${i}`, name: `Extra ${i}`, type: 'n8n-nodes-base.noOp', typeVersion: 1, position: [0, 0], parameters: {} } as never);
-    expect(C.guardias('produccion', f).join(' ')).toMatch(/tiene 48 nodos y el tope es 47/);
+    for (let i = 0; i < 1; i++) f.nodes.push({ id: `extra-${i}`, name: `Extra ${i}`, type: 'n8n-nodes-base.noOp', typeVersion: 1, position: [0, 0], parameters: {} } as never);
+    expect(C.guardias('produccion', f).join(' ')).toMatch(/tiene 59 nodos y el tope es 58/);
   });
   it('los id de nodo son nombres cortos (nunca UUID) y los nombres y los id no se repiten', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
@@ -53,12 +54,12 @@ describe('tamaño y composición', () => {
     expect(nombres(PRUEBA)).toContain('Entrada de prueba');
     for (const n of C.NODOS_DEL_RECEPTOR as string[]) { expect(nombres(PRODUCCION)).toContain(n); expect(nombres(PRUEBA)).not.toContain(n); }
   });
-  it('las medidas del Resumen: 13 nodos de medios, 7 de entrada, 1 de puerta y 9 de salida', () => {
+  it('las medidas: 6 del receptor, 7 de entrada, 1 de puerta, 13 de medios, 9 de salida, 11 de la venta y 11 del guardado', () => {
     const MEDIOS = ['¿Bajar medio?', 'Obtener URL del medio (general)', '¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', 'Transcribir audio', 'Preparar transcripción', 'Guardar comprobante', '¿Es un documento?', 'Describir documento', 'Describir imagen', 'Preparar imagen', 'Medio no aceptado'];
     const ENTRADA = ['Config base', 'Carga de entrada', 'Traer configuración', 'Config del negocio', 'Normalizar entrada', '¿Reportar? (entrante)', 'Reportar mensaje (entrante)'];
     const SALIDA = ['Armar mensajes', '¿Meta aceptó?', '¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)', 'Reportar mensaje (saliente)', 'Resumen del turno'];
-    const todos = [...C.NODOS_DEL_RECEPTOR, ...ENTRADA, 'Puerta del turno', ...MEDIOS, ...SALIDA];
-    expect(new Set(todos).size).toBe(36);
+    const todos = [...C.NODOS_DEL_RECEPTOR, ...ENTRADA, 'Puerta del turno', ...MEDIOS, ...SALIDA, ...C.NODOS_DEL_PR3, ...GUARDADO];
+    expect(new Set(todos).size).toBe(58);
     expect([...nombres(PRODUCCION)].sort()).toEqual([...todos].sort());
   });
 });
@@ -130,6 +131,48 @@ describe('la entrada verificada del receptor: INCLUIDA, no copiada', () => {
   });
 });
 
+describe('el flujo completo: conexiones y guardias de la venta', () => {
+  const c = PRODUCCION.connections as J;
+  it('cada empalme del PR-3 existe (EMPALMES_DEL_PR3) y la guardia lo exige (NEGADO si se corta)', () => {
+    expect(C.EMPALMES_DEL_PR3.length).toBeGreaterThanOrEqual(19);
+    for (const [de, a] of C.EMPALMES_DEL_PR3 as [string, string][]) expect(JSON.stringify(c[de]), `${de} → ${a}`).toContain(`"${a}"`);
+    for (const [de, a] of C.EMPALMES_DEL_PR3 as [string, string][]) {
+      const f = clonar(PRODUCCION);
+      for (const o of ((f.connections as J)[de].main as J[][])) { const i = o.findIndex((x: J) => x['node'] === a); if (i >= 0) o.splice(i, 1); }
+      expect(C.guardias('produccion', f).join(' '), `${de} → ${a}`).toMatch(new RegExp(`«${de.replace(/[?¿()]/g, '.')}» no está conectado a «${a.replace(/[?¿()]/g, '.')}»|tiene que ir a «Decidir turno»|único nodo sin entradas`));
+    }
+  });
+  it('todas las ramas de medios terminan en «Armar mensajes» (que escribe la ficha): sin nodo suelto salvo «Guardar comprobante»', () => {
+    const alcanzan = new Set<string>(['Armar mensajes']);
+    let crecio = true;
+    while (crecio) {
+      crecio = false;
+      for (const [de, s] of Object.entries(c)) if (!alcanzan.has(de) && ((s as J).main as J[][]).some((o) => (o ?? []).some((x: J) => alcanzan.has(String(x['node']))))) { alcanzan.add(de); crecio = true; }
+    }
+    const sueltos = nombres(PRODUCCION).filter((n) => !alcanzan.has(n) && !(GUARDADO as string[]).includes(n) && !['Rechazar (401)', 'Guardar comprobante', 'Resumen del turno', 'Reportar mensaje (saliente)', '¿Meta aceptó?', 'Armar mensajes', '¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)'].includes(n));
+    expect(sueltos).toEqual([]);
+  });
+  it('el único nodo sin entradas es el receptor (producción) o «Entrada de prueba» (prueba); NEGADO: un disparador o un nodo huérfano', () => {
+    expect(C.guardias('produccion', PRODUCCION)).toEqual([]);
+    expect(C.guardias('prueba', PRUEBA)).toEqual([]);
+    const a = clonar(PRODUCCION); a.nodes.push({ id: 'huerfano', name: 'Huérfano', type: 'n8n-nodes-base.noOp', typeVersion: 1, position: [0, 9999], parameters: {} } as never);
+    expect(C.guardias('produccion', a).join(' ')).toMatch(/único nodo sin entradas/);
+    const b = clonar(PRODUCCION); b.nodes.push({ id: 'disparo', name: 'Disparo', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1, position: [0, 9999], parameters: {} } as never);
+    expect(C.guardias('produccion', b).join(' ')).toMatch(/nodo disparador/);
+    const d = clonar(PRUEBA); (d.nodes as J[]).push({ id: 'dos', name: 'Entrada dos', type: 'n8n-nodes-base.webhook', typeVersion: 2, position: [0, 9999], parameters: {} });
+    expect(C.guardias('prueba', d).join(' ')).toMatch(/único nodo sin entradas/);
+  });
+  it('«Avisar al servidor»: solo `cobro_cancelado`, sin reintentos; «Enviar aviso»: sin reintentos y sin cortar el turno (NEGADO si se cambia)', () => {
+    const a = clonar(PRODUCCION); const p = nodo(a, 'Avisar al servidor')['parameters'] as J;
+    p['jsonBody'] = String(p['jsonBody']).replace("evento: 'cobro_cancelado'", "evento: 'otro_evento'");
+    expect(C.guardias('produccion', a).join(' ')).toMatch(/único evento permitido/);
+    const b = clonar(PRODUCCION); nodo(b, 'Avisar al servidor')['retryOnFail'] = true;
+    expect(C.guardias('produccion', b).join(' ')).toMatch(/no puede reintentar/);
+    const e = clonar(PRODUCCION); nodo(e, 'Enviar aviso')['retryOnFail'] = true; delete e.nodes.find((x: J) => x['name'] === 'Enviar aviso')!['onError'];
+    expect(C.guardias('produccion', e).join(' ')).toMatch(/Enviar aviso/);
+  });
+});
+
 describe('prohibición 7 y rutas de webhook', () => {
   it('ningún WhatsApp Trigger, `subscriptions` ni `subscribed_apps` en ninguna variante ni en el código fuente del flujo', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
@@ -164,6 +207,7 @@ describe('prohibición 7 y rutas de webhook', () => {
 describe('lo incluido es byte a byte igual a su fuente', () => {
   const codigo = (f: Flujo, n: string): string => String((nodo(f, n)['parameters'] as J)['jsCode']);
   const fuente = (r: string): string => leer(join(FLUJOS, r)).trimEnd();
+  const LIBS = ['venta-digital/src/cobro.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'walisuma/src/lib/wl.js', 'walisuma/src/lib/wl-venta.js'];
   it('los módulos comunes de medios, tal cual de Flujos/src/core/medios', () => {
     const medios = join(RAIZ, 'Flujos/src/core/medios');
     expect(codigo(PRODUCCION, 'Preparar transcripción')).toBe(leer(join(medios, 'preparar-transcripcion.js')).trimEnd() + '\n');
@@ -171,7 +215,7 @@ describe('lo incluido es byte a byte igual a su fuente', () => {
     expect(codigo(PRODUCCION, 'Preparar imagen')).toBe([leer(join(medios, 'anuncio-por-titular.js')).trimEnd(), leer(join(medios, 'preparar-imagen.js')).trimEnd()].join('\n\n') + '\n');
   });
   it('los nodos comunes neutros: librerías + _comun + el nodo de venta-digital/src/nodos, sin una edición', () => {
-    const libs = ['venta-digital/src/cobro.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'walisuma/src/lib/wl.js'].map(fuente);
+    const libs = LIBS.map(fuente);
     const comun = fuente('venta-digital/src/nodos/_comun.js');
     const pares: [string, string][] = [['Carga de entrada', 'carga-de-entrada'], ['Config del negocio', 'config-del-negocio'], ['Normalizar entrada', 'normalizar-entrada'], ['Puerta del turno', 'puerta-del-turno'], ['Resumen del turno', 'resumen-del-turno']];
     for (const f of [PRODUCCION, PRUEBA]) {
@@ -179,9 +223,12 @@ describe('lo incluido es byte a byte igual a su fuente', () => {
     }
   });
   it('«Armar mensajes»: librerías + _comun + los constructores de mensajes comunes + su código', () => {
-    const libs = ['venta-digital/src/cobro.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'walisuma/src/lib/wl.js'].map(fuente);
-    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('comun-sin-agente/src/mensajes.js'), fuente('walisuma/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
+    const libs = LIBS.map(fuente);
+    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('comun-sin-agente/src/mensajes.js'), fuente('comun-sin-agente/src/filtro-redaccion.js'), fuente('walisuma/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar mensajes')).toBe(esperado);
+    const avisos = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('comun-sin-agente/src/filtro-redaccion.js'), fuente('walisuma/src/nodos/armar-avisos.js')].join('\n\n') + '\n';
+    expect(codigo(PRODUCCION, 'Armar avisos')).toBe(avisos);
+    for (const [n, a] of [['Decidir turno', 'decidir-turno'], ['Interpretar lectura', 'interpretar-lectura']]) expect(codigo(PRODUCCION, n), n).toBe([...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente(`walisuma/src/nodos/${a}.js`)].join('\n\n') + '\n');
   });
   it('«Guardar comprobante» es el de Antonio (commit 7188637c), tal cual: huella fijada del nodo entero', () => {
     // La plantilla lleva la credencial como `@@cred:ingesta`; el armado la sustituye por el nombre del dato. Se vuelve a la forma de la plantilla antes de la huella.
@@ -214,25 +261,24 @@ describe('versionado, no publicable y datos', () => {
   it('`--verificar` sale 0: los dos JSON versionados son lo que arma la plantilla', () => {
     const r = corrida('--verificar');
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toMatch(/walisuma\.json al día \(36 nodos\)/);
-    expect(r.stdout).toMatch(/walisuma\.prueba\.json al día \(31 nodos\)/);
+    expect(r.stdout).toMatch(/walisuma\.json al día \(58 nodos\)/);
+    expect(r.stdout).toMatch(/walisuma\.prueba\.json al día \(53 nodos\)/);
   });
-  it('`--publicable` FALLA hoy, con un mensaje claro: es un esqueleto, faltan los 11 nodos del PR-3 y quedan marcadores', () => {
+  it('`--publicable` FALLA hoy, con un mensaje claro: quedan marcadores REEMPLAZAR_*, la plantilla sin aprobar y el costo de entrega sin declarar', () => {
     const r = corrida('--publicable');
     expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(/ESQUELETO \(PR-2\)/);
-    expect(r.stderr).toMatch(/faltan 11 nodos/);
+    expect(r.stderr).toMatch(/NO se puede publicar todavía/);
     expect(r.stderr).toMatch(/marcador sin sustituir: REEMPLAZAR_/);
+    expect(r.stderr).toMatch(/avisoPedidoEstado tiene que ser APPROVED/);
     expect(r.stderr).toMatch(/costoDeEntrega sin declarar/);
+    expect(r.stderr).not.toMatch(/ESQUELETO/);
     // Los mensajes nombran marcadores, nunca valores de los datos.
     expect(r.stdout).toBe('');
   });
   it('ningún `REEMPLAZAR_` en la variante publicable: las dos variantes los traen hoy, y la guardia los detecta uno por uno (NEGADO)', () => {
     for (const f of [PRODUCCION, PRUEBA]) expect(C.guardiaDePublicacion({ flujo: f, datos: DATOS }).filter((x: string) => /marcador sin sustituir/.test(x)).length).toBeGreaterThan(5);
-    // Un flujo completo y sin marcadores pasa; basta UN marcador, una plantilla sin aprobar o un costo vacío para que falle.
-    const listo = clonar(PRODUCCION);
-    for (const n of C.NODOS_DEL_PR3 as string[]) listo.nodes.push({ id: n, name: n, type: 'n8n-nodes-base.noOp', typeVersion: 1, position: [0, 0], parameters: {} } as never);
-    const flujoListo = JSON.parse(JSON.stringify(listo).replace(/REEMPLAZAR_[A-Z0-9_]+/g, 'valor')) as Flujo;
+    // Un flujo completo y sin marcadores pasa; basta UN marcador, una plantilla sin aprobar, un costo vacío o un nodo menos para que falle.
+    const flujoListo = JSON.parse(JSON.stringify(PRODUCCION).replace(/REEMPLAZAR_[A-Z0-9_]+/g, 'valor')) as Flujo;
     const ponerBase = (f: Flujo, nombre: string, valor: string): void => {
       for (const a of (((nodo(f, 'Config base')['parameters'] as J)['assignments'] as J)['assignments']) as J[]) if (a['name'] === nombre) a['value'] = valor;
     };
@@ -247,6 +293,8 @@ describe('versionado, no publicable y datos', () => {
     const sinCosto = clonar(flujoListo);
     ponerBase(sinCosto, 'costoDeEntrega', '');
     expect(C.guardiaDePublicacion({ flujo: sinCosto, datos: DATOS }).join(' ')).toMatch(/costoDeEntrega/);
+    const sinNodo = clonar(flujoListo); sinNodo.nodes = (sinNodo.nodes as J[]).filter((x) => x['name'] !== 'Armar avisos') as never;
+    expect(C.guardiaDePublicacion({ flujo: sinNodo, datos: DATOS }).join(' ')).toMatch(/faltan 1 nodos/);
   });
   it('`--publicable` rechaza argumentos de más (sale 2) y `construir.mjs` solo acepta --verificar y --publicable', () => {
     expect(corrida('--publicable', '--otro').status).toBe(2);

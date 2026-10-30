@@ -67,12 +67,12 @@ describe('receptor: solo `messages`', () => {
 });
 
 describe('receptor: camino feliz del esqueleto', () => {
-  it('un tipo que el canal no lee recibe UN texto cortés; un texto común no recibe nada todavía (la conversación es del PR-3)', () => {
+  it('un tipo que el canal no lee recibe UN texto cortés; un texto común recibe UNA respuesta de la conversación', () => {
     const m = crear();
     const t = hablar(m, ANA, mSticker());
     expect(t.mensajes).toHaveLength(1);
     expect(t.mensajes[0]?.cuerpo).toMatch(/solo puedo leer texto/);
-    expect(hablar(m, ANA, mTexto('hola, ¿tienen mantas?')).mensajes).toHaveLength(0);
+    expect(hablar(m, ANA, mTexto('hola, ¿tienen mantas?')).mensajes).toHaveLength(1);
   });
   it('un número de otro país recibe el texto fijo UNA vez en 24 horas', () => {
     const m = crear();

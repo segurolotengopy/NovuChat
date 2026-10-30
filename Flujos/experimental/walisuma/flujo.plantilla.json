@@ -637,7 +637,7 @@
         3560,
         640
       ],
-      "notes": "MÓDULO COMÚN, incluido desde `Flujos/src/core/medios/anuncio-por-titular.js` y `preparar-imagen.js` (no se copia). Convierte la categoría en UNO de sus textos fijos y reconoce la campaña por el titular de la imagen. Empalme del PR-3: hacia «Interpretar lectura»."
+      "notes": "MÓDULO COMÚN, incluido desde `Flujos/src/core/medios/anuncio-por-titular.js` y `preparar-imagen.js` (no se copia). Convierte la categoría en UNO de sus textos fijos y reconoce la campaña por el titular de la imagen."
     },
     {
       "parameters": {
@@ -659,7 +659,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@todo+mensajes:nodos/armar-mensajes.js"
+        "jsCode": "@@todo+mensajes+filtro:nodos/armar-mensajes.js"
       },
       "id": "armar-mensajes",
       "name": "Armar mensajes",
@@ -669,7 +669,7 @@
         5960,
         300
       ],
-      "notes": "ESQUELETO (PR-2): un mensaje por turno o ninguno. Hoy arma la puerta (comercio suspendido, uso extendido, pausa por Tomar), el texto de otro país y el texto cortés. Armado por código, sin modelo. Escribe la ficha del teléfono con la clave `messages[0].from`. El PR-3 agrega la venta."
+      "notes": "UN mensaje por turno (el QR agrega su resumen y su imagen) o ninguno. Armado por código; el modelo solo redacta la conversación y su texto se revisa. Escribe la ficha del teléfono con la clave `messages[0].from`. El botón de recepción va solo al derivar."
     },
     {
       "id": "meta-acepto",
@@ -721,6 +721,352 @@
         900
       ],
       "notes": "Última rama de «Armar mensajes». Verifica la entrega (regla I-ENTREGA) y devuelve a la ficha lo que no salió. En la variante de prueba, «Entrada de prueba» responde con esto."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@todo:nodos/decidir-turno.js"
+      },
+      "id": "decidir-turno",
+      "name": "Decidir turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4520,
+        300
+      ],
+      "notes": "El código decide el turno (puerta, medios, derivación, identidad, anuncio por titular, comprobante) y solo llama al modelo en la conversación libre: UNA llamada que conversa y propone el pedido. Pausa por Tomar = cero llamadas."
+    },
+    {
+      "id": "interpretar-lectura",
+      "name": "Interpretar lectura",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3800,
+        640
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@todo:nodos/interpretar-lectura.js"
+      },
+      "notes": "Arma lo que necesita el cotejo desde la MISMA llamada a Gemini que clasificó la imagen (`cbLectura`: seis campos y `legible`). El teléfono y el id del mensaje salen de «Normalizar entrada», nunca del JSON del modelo. `cotejar` solo es verdadero si es un comprobante y el servidor dice que hay un cobro real de este teléfono."
+    },
+    {
+      "id": "cotejar-si",
+      "name": "¿Cotejar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4040,
+        640
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.cotejar === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Solo se coteja un comprobante cuando el servidor dice que hay un cobro REAL de este teléfono. Sin cobro, «Decidir turno» deriva a Antonio (aviso y botón) y no se coteja nada."
+    },
+    {
+      "id": "cotejar",
+      "name": "Cotejar en el servidor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4280,
+        640
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/cotejarComprobanteVenta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ (() => { const c = $('Config del negocio').first().json; return c.modoPrueba === true ? String(c.phoneNumberIdEsperado || '') : String($('Normalizar entrada').first().json.phoneNumberId || ''); })() }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $json.telefono, legible: $json.legible === true, leido: ($json.leido && typeof $json.leido === 'object') ? $json.leido : {}, idMeta: $json.idMeta || '', ruta: typeof $json.ruta === 'string' ? $json.ruta : null }) }}",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "`POST cotejarComprobanteVenta` (regla 2: 15 minutos, 3 intentos; el QR real abre ese cobro con `reglaCobro: 2`). Manda lo que leyó el modelo (la imagen la guarda `Guardar comprobante` y su `ruta` viaja aquí (null si no se guardó)). El servidor califica y responde `estado` (valido, aproximado, reintentar, en_revision, tardio, ya_resuelto) o un 409; `cbResultadoVenta` lo traduce con listas cerradas y todo lo demás es `sin_cotejo` (aviso al local + botón). «Los datos coinciden» NO es una acreditación bancaria: quien confirma que entró la plata es el banco, y el negocio."
+    },
+    {
+      "id": "conversar-si",
+      "name": "¿Conversar con el modelo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4760,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.llamarModelo === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Solo hay llamada al modelo en una conversación libre con la puerta abierta: pausa por persona = CERO llamadas."
+    },
+    {
+      "id": "conversar",
+      "name": "Conversar con el modelo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5000,
+        200
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": "@@cred:gemini"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $json.modelo }}:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.cuerpoModelo) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "notes": "generateContent de Gemini con el cuerpo que armó «Decidir turno» (salida JSON: texto, líneas del pedido, entrega, quiereHablar). El modelo (`modelo`, gemini-3.5-flash-lite) es un DATO de «Config base». Solo conversa y propone: el código valida los ids contra el catálogo, calcula el total y revisa la redacción en «Armar avisos» y «Armar mensajes»."
+    },
+    {
+      "id": "armar-avisos",
+      "name": "Armar avisos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5000,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@todo+filtro:nodos/armar-avisos.js"
+      },
+      "notes": "El aviso al comercio (un destinatario designado): texto libre dentro de su ventana de 23,5 h; fuera de ella, la plantilla UTILITY `pedido_registrado` (4 variables). Sin plantilla APPROVED no sale nada y «Armar mensajes» le dice la verdad al cliente. Decide también si hay que cerrar el cobro abierto antes de emitir otro QR."
+    },
+    {
+      "id": "avisar-servidor-si",
+      "name": "¿Avisar al servidor?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5240,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Armar avisos').first().json.cancelarCobro === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Un solo caso (lista cerrada de eventos): el cliente cambió el pedido con un QR abierto y «Armar avisos» pidió cerrar el cobro (`cobro_cancelado`). La llamada va ANTES de armar el mensaje, para no emitir otro QR si no se pudo cerrar el anterior. Cualquier otro turno pasa de largo (cero llamadas)."
+    },
+    {
+      "id": "avisar-servidor",
+      "name": "Avisar al servidor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5480,
+        440
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ (() => { const c = $('Config del negocio').first().json; return c.modoPrueba === true ? String(c.phoneNumberIdEsperado || '') : String($('Normalizar entrada').first().json.phoneNumberId || ''); })() }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $('Normalizar entrada').first().json.from, direccion: 'entrante', tipo: 'text', texto: '(el cliente cambió su pedido)', idMeta: '', evento: 'cobro_cancelado' }) }}",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "`POST ingesta` con el evento `cobro_cancelado` (el servidor cierra SOLO un cobro abierto de regla 2; responde 200 si lo recibió). Es síncrono: «Armar mensajes» lee la respuesta (200 = se cerró; cualquier otra cosa, o un error de red, pasa con recepción sin emitir otro QR). Va como entrante con idMeta vacío: no es un mensaje de WhatsApp. SIN reintentos: no es idempotente."
+    },
+    {
+      "id": "hay-avisos-si",
+      "name": "¿Hay avisos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5720,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Armar avisos').first().json.sinAviso !== true && ($('Config del negocio').first().json.modoPrueba !== true || $('Config del negocio').first().json.enviarDeVerdad === true) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "En modo prueba sin `enviarDeVerdad` el aviso no se envía."
+    },
+    {
+      "id": "enviar-aviso",
+      "name": "Enviar aviso",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5960,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ /^v\\d+\\.\\d$/.test(String($('Armar avisos').first().json.waGraphVersion)) ? $('Armar avisos').first().json.waGraphVersion : 'v26.0' }}/{{ String($('Armar avisos').first().json.phoneNumberId).replace(/\\D/g, '') }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Armar avisos').first().json.payload) }}",
+        "options": {
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:graph"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "El aviso al comercio (texto libre dentro de su ventana, o la plantilla), nunca al propio número de quien escribe. Sin reintentos: un aviso repetido llegaría dos veces. El resultado (un `wamid` real o un error) lo lee «Armar mensajes» para decirle al cliente la verdad."
     }
   ],
   "connections": {
@@ -841,7 +1187,7 @@
         ],
         [
           {
-            "node": "Armar mensajes",
+            "node": "Decidir turno",
             "type": "main",
             "index": 0
           }
@@ -964,17 +1310,35 @@
     },
     "Preparar transcripción": {
       "main": [
-        []
+        [
+          {
+            "node": "Decidir turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Preparar imagen": {
       "main": [
-        []
+        [
+          {
+            "node": "Interpretar lectura",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Medio no aceptado": {
       "main": [
-        []
+        [
+          {
+            "node": "Decidir turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Armar mensajes": {
@@ -998,6 +1362,155 @@
           }
         ],
         []
+      ]
+    },
+    "Interpretar lectura": {
+      "main": [
+        [
+          {
+            "node": "¿Cotejar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Cotejar?": {
+      "main": [
+        [
+          {
+            "node": "Cotejar en el servidor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decidir turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cotejar en el servidor": {
+      "main": [
+        [
+          {
+            "node": "Decidir turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decidir turno": {
+      "main": [
+        [
+          {
+            "node": "¿Conversar con el modelo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Conversar con el modelo?": {
+      "main": [
+        [
+          {
+            "node": "Conversar con el modelo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Armar avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conversar con el modelo": {
+      "main": [
+        [
+          {
+            "node": "Armar avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar avisos": {
+      "main": [
+        [
+          {
+            "node": "¿Avisar al servidor?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Avisar al servidor?": {
+      "main": [
+        [
+          {
+            "node": "Avisar al servidor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Hay avisos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisar al servidor": {
+      "main": [
+        [
+          {
+            "node": "¿Hay avisos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay avisos?": {
+      "main": [
+        [
+          {
+            "node": "Enviar aviso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar aviso": {
+      "main": [
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   }
