@@ -112,6 +112,8 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
     'experimental/chat-novuchat/chat-novuchat.novuchat.json': ['none', 'all'], 'experimental/chat-novuchat/chat-novuchat.prueba.json': ['none', 'all'],
     'experimental/captacion-minima/captacion-minima.novuchat.json': ['none', 'all'], 'experimental/captacion-minima/captacion-minima.prueba.json': ['none', 'all'],
     'experimental/agenda-minima/agenda-minima.v0.json': [undefined, undefined], 'experimental/agenda-minima/agenda-minima.prueba.json': [undefined, undefined],
+    // Walisuma (30/10/2026): como Rubén y Antonio, el éxito no se guarda (el binario del medio no queda en la ejecución) y el error sí (para diagnosticar).
+    'experimental/walisuma/walisuma.json': ['none', 'all'], 'experimental/walisuma/walisuma.prueba.json': ['none', 'all'],
   };
   it('la retención de ejecuciones de cada flujo cubierto es la de la tabla cerrada (el binario del medio queda en la ejecución guardada)', () => {
     expect(Object.keys(RETENCION).sort()).toEqual([...CUBIERTOS].sort());

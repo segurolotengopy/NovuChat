@@ -102,7 +102,7 @@ if (puerta.ruta === 'sigue') {
       msgs = [conRecepcion(conSaludo(WL_INTROS.monto_invalido + ' Escríbele a recepción con el botón.'))];
     } else {
       const resumen = (d.cambioDePedido ? 'Actualicé tu pedido.\n\n' : '') + 'Este es el resumen de tu pedido:\n\n' + vcResumen(lineas)
-        + '\n\nEntrega: ' + wlEntregaTexto(d.entrega) + '. El total no incluye el costo de entrega.\n\nTe envío el QR para pagar a continuación.';
+        + '\n\nEntrega: ' + wlEntregaTexto(d.entrega) + '. El total no incluye el costo de entrega.\n\nAbajo va el QR para pagar.';
       const pie = wlSeguro('QR para pagar ' + vcMonto(d.total) + ' (pedido ' + d.pedidoId + '). Cuando pagues, envíame la foto del comprobante por este chat.');
       const respaldo = 'No pude mostrarte el QR en este momento. Escríbeme de nuevo en unos minutos para intentarlo otra vez.';
       const imagen = cmMensaje('cliente', Object.assign(cmBase('image'), { image: { id: d.mediaId, caption: pie } }), pie, respaldo, { tipoReporte: 'image' });

@@ -44,7 +44,11 @@ El «lector del panel» (`raPanelDe` de Antonio) NO lo usa ninguno de estos cinc
 - `src/lib/wl-venta.js` (la decisión de la venta: catálogo vendible, cobro, entrega, intenciones por código, revisión de la redacción, cuerpo de la llamada al modelo y `wlResolver`) y los nodos `decidir-turno.js`, `interpretar-lectura.js`, `armar-avisos.js` y `armar-mensajes.js`. «Armar mensajes» escribe la ficha con la clave `messages[0].from` y deja en el primer ítem lo que «Resumen del turno» devuelve si el envío no sale (`revertirFicha` y, para el QR, `revertirSiFalloElPrincipal`).
 - `flujo.plantilla.json`, `construir.mjs` (guardias, datos, inclusión del receptor) y los datos `admin/scripts/datos/walisuma/walisuma.json` (solo marcadores `REEMPLAZAR_*`; costo de entrega VACÍO a propósito: el comercio todavía no lo declaró).
 
-## Los 11 nodos del PR-3 (47 en total, tope exacto)
+## El guardado de medios (11 nodos más: tope 58)
+
+La rama común `comun-sin-agente/src/guardado.mjs` (Preparar guardado, ¿Anotar medio?, Anotar medio, Pedir el medio a Meta (guardado), Descargar medio (guardado), Guardar medio, ¿Reintentar el guardado?, Preparar reintento, Reintentar el guardado, Resultado del guardado, Avisar falla del guardado) se INCLUYE con `injertarGuardado()` y cuelga de «Reportar mensaje (entrante)», debajo de todo en el lienzo. Tope de nodos: **58 = 47 + 11**, excepción declarada por Andres el 29/10/2026 para el guardado de medios (`docs/versiones-por-cliente.md`). Producción 58, prueba 53. El guardado **no manda mensajes al cliente** (0 mensajes por conversación); sus escrituras en la nube son las de `guardarMedio`: un archivo en Storage y un registro por medio guardado, y, si falla con 413, 415, 429 o 502, a lo más un aviso a recepción por día (el único envío de la rama, con la ventana abierta).
+
+## Los 11 nodos del PR-3 (47 sin el guardado, tope exacto)
 
 Decidir turno, Interpretar lectura, ¿Cotejar?, Cotejar en el servidor, ¿Conversar con el modelo?, Conversar con el modelo, ¿Avisar al servidor?, Avisar al servidor, Armar avisos, ¿Hay avisos?, Enviar aviso. Son 36 + 11 = **47**, sin margen: cualquier nodo extra exige quitar otro. Producción 47, prueba 42.
 
