@@ -75,7 +75,7 @@ function panel(extra: J = {}, oferta: J = {}): J {
   };
 }
 
-// La hoja «Leads_CRM»: encabezados en la fila 3 (A3:N3). Es el esquema de `decidir-fila-de-la-planilla.js` (copia del flujo anterior).
+// La hoja «Leads_CRM»: encabezados en la fila 3 (A3:N3). Es el esquema de `decidir-fila-de-la-planilla.js` (módulo crm, mapa de NovuChat).
 const ENC = ['ID Lead', 'Fecha Registro', 'Nombre y Apellido', 'Empresa / Cliente', 'Teléfono WhatsApp', 'Rubro', 'Etapa Funnel', 'Origen / Canal', 'Calificación IA', 'Resumen Chatbot IA',
   'Próxima acción', 'Notas del equipo', 'Estado Comercial', 'Responsable'];
 const COL = { empresa: 'Empresa / Cliente', nombre: 'Nombre y Apellido', rubro: 'Rubro', origen: 'Origen / Canal', calificacion: 'Calificación IA', resumen: 'Resumen Chatbot IA', id: 'ID Lead' };
