@@ -309,6 +309,14 @@ function mundo(op: Opciones = {}) {
         ultimoResumen = salida[0] ?? null;
         return [salida.map((json) => ({ json, pair: {} }))];
       }
+      // La rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs): sin red; el servidor responde «guardado_apagado»
+      // (la bandera por defecto), así que la rama termina en silencio. Su comportamiento se prueba en `guardado-medios.test.ts`.
+      case 'Pedir el medio a Meta (guardado)': return [cada(() => [{ id: 'm', url: 'https://lookaside.fbsbx.com/guardado', mime_type: 'image/jpeg', file_size: 1000 }])];
+      case 'Descargar medio (guardado)': return [cada(() => [{ descargado: true }])];
+      case 'Anotar medio':
+      case 'Guardar medio':
+      case 'Reintentar el guardado': return [cada(() => [{ statusCode: 409, headers: {}, body: { error: 'guardado_apagado' } }])];
+      case 'Avisar falla del guardado': return [cada(() => [{ messaging_product: 'whatsapp', messages: [{ id: 'wamid.GUARDADO' }] }])];
       default:
         throw new Error(`el n8n de mentira no sabe correr el nodo «${n.name}» (${n.type})`);
     }

@@ -20,6 +20,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from './lib/flujo';
 import { crearMundo, type Doble, type Enviado, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
+import { doblesDelGuardado } from './lib/doble-guardado';
+import { URL_DESCARGA_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../Flujos/experimental/chat-novuchat');
@@ -188,6 +190,8 @@ function crear(op: OpcionesDelMundo = {}): W {
   };
   const descripcion = (): J => (w.medio.categoria === null ? { error: { message: 'no se pudo describir' } } : { content: { parts: [{ text: JSON.stringify({ categoria: w.medio.categoria, texto: w.medio.texto }) }] } });
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Traer configuración': (ll) => {
       w.config.push({ numero: ll.encabezados['X-NovuChat-Numero'], cuerpo: ll.cuerpo });
       if (w.respuestaPanel) return w.respuestaPanel;
@@ -1715,9 +1719,9 @@ describe('la variante de prueba: «Entrada de prueba», todo al teléfono de pru
 
 describe('la topología y las guardias del JSON versionado', () => {
   const nombres = (f: Flujo): string[] => f.nodes.map((n) => n.name);
-  it('tiene 44 nodos por variante: la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
-    expect(PRODUCCION.nodes).toHaveLength(44);
-    expect(PRUEBA.nodes).toHaveLength(44);
+  it('tiene 55 nodos por variante (44 más los 11 del guardado de medios): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
+    expect(PRODUCCION.nodes).toHaveLength(55);
+    expect(PRUEBA.nodes).toHaveLength(55);
     expect(nombres(PRODUCCION)).not.toContain('Entrada de prueba');
     expect(nombres(PRUEBA)).not.toContain('WhatsApp Trigger');
     expect(nombres(PRODUCCION).filter((x) => !nombres(PRUEBA).includes(x))).toEqual(['WhatsApp Trigger']);
@@ -1743,6 +1747,8 @@ describe('la topología y las guardias del JSON versionado', () => {
           const url = String(n.parameters['url']);
           // la descarga del medio usa la URL que devuelve Meta (la guardia de «¿Tamaño aceptable?» exige lookaside.fbsbx.com)
           if (n.name === 'Descargar medio') { expect(url).toBe('={{ $json.url }}'); continue; }
+          // la descarga PROPIA del guardado de medios (módulo común): la URL de Meta solo si el tamaño que informó cabe
+          if (n.name === 'Descargar medio (guardado)') { expect(url).toBe(URL_DESCARGA_GUARDADO); continue; }
           expect(url, `«${n.name}»`).toMatch(/^=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|us-east1-novuchat-demo\.cloudfunctions\.net)\//);
         }
       }
@@ -1793,7 +1799,8 @@ describe('la topología y las guardias del JSON versionado', () => {
       alcanzables.add(n);
     };
     visitar('WhatsApp Trigger', []);
-    expect(alcanzables.size).toBe(44);
+    // 44 + los 11 de la rama común del guardado de medios.
+    expect(alcanzables.size).toBe(55);
   });
   it('«Llamar al modelo» y «Reintentar el modelo» apuntan a generateContent con el modelo de los datos (gemini-3.5-flash-lite) por expresión', () => {
     for (const nombre of ['Llamar al modelo', 'Reintentar el modelo']) {

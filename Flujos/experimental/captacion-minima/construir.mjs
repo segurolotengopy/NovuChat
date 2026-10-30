@@ -44,6 +44,7 @@ import { runInNewContext } from 'node:vm';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
+import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const DATOS = join(AQUI, '../../../admin/scripts/datos/captacion-minima');
@@ -564,7 +565,7 @@ export function inyectar(flujo, marca, nombre, valor) {
 const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
 const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', ANFITRION_CONSOLA];
 // Una URL por expresión (`={{ … }}`) solo vale para dos nodos: la descarga del medio (la URL que devuelve Meta) y el CRM.
-const URL_POR_EXPRESION = { 'Descargar medio': '={{ $json.url }}', 'Guardar prospecto': '={{ $json.crmUrl }}' };
+const URL_POR_EXPRESION = { 'Descargar medio': '={{ $json.url }}', 'Descargar medio (guardado)': URL_DESCARGA_GUARDADO, 'Guardar prospecto': '={{ $json.crmUrl }}' };
 export function anfitrionPermitido(nombreDelNodo, url) {
   if (/^REEMPLAZAR_[A-Z0-9_]+$/.test(url)) return true;
   if (URL_POR_EXPRESION[nombreDelNodo] === url) return true;
@@ -584,6 +585,8 @@ export function guardias(entrada, flujo, datos = {}) {
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   const nombres = new Set(nodos.map((n) => n.name));
   const parametros = (n) => (n && n.parameters) || {};
+  // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
+  if (nodos.length) h.push(...hallazgosDelGuardado(flujo));
   // «Entrada de prueba» nunca en producción: es el único nodo que activa el modo prueba. «WhatsApp Trigger» nunca en la prueba.
   if (entrada !== 'prueba' && nombres.has(NODO_PRUEBA)) h.push(`contiene el nodo «${NODO_PRUEBA}» (activa el modo prueba): solo va en el JSON de prueba`);
   if (entrada === 'prueba' && nombres.has(NODO_TRIGGER)) h.push(`contiene el nodo «${NODO_TRIGGER}» en la prueba: activarlo registra el webhook en Meta y se lo quita al flujo vivo`);
@@ -662,6 +665,8 @@ export function armarTenant(proyecto, datos, archivo) {
     }
     if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
   }
+  // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
+  injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: salidaDe(archivo), nombre: dato(datos, 'nombreFlujo', archivo), quitar: [] });
   const flujo = JSON.parse(texto);
   inyectar(flujo, MARCA_GUION, 'CM_GUION', datos.guion);

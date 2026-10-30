@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo } from '../../lib/n8n-de-mentira';
+import { doblesDelGuardado } from '../../lib/doble-guardado';
 
 const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-ruben');
 const PRODUCCION = JSON.parse(readFileSync(join(CARPETA, 'rroca-ruben.json'), 'utf8')) as Flujo;
@@ -46,6 +47,8 @@ const entrega = (texto: string, from = ANA): J => ({
 });
 function crear(modelo: Doble, anuncios: unknown = ANUNCIOS_DE_PRUEBA): Mundo {
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Verificar firma con el receptor': (ll: LlamadaDoble) => ({ valido: true, deliveryId: ll.cuerpo?.['deliveryId'] }),
     'Traer configuración': () => ({ statusCode: 200, body: { tenantId: 'rroca-ruben', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Rubén Roca' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, voz: { nombreAsistente: '' }, atencion: { estado: 'normal' }, catalogo: [{ id: 'pack-completo', precio: 60, agotado: true }, { id: 'libro-bonos', precio: 32, agotado: true }, { id: 'closer-ventas', precio: 20, agotado: true }, { id: 'videos-ia', precio: 25, agotado: true }], anuncios, venta: {} } }),
     'Reportar mensaje (entrante)': () => ({ ok: true }),

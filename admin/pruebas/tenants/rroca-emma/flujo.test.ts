@@ -7,9 +7,9 @@ import type { J } from '../../lib/flujo';
 import { ANA, BETO, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
 
 describe('topología y tamaño', () => {
-  it('producción 36 nodos y prueba 31, con el tope de 36', () => {
-    expect(PRODUCCION.nodes.length).toBe(36);
-    expect(PRUEBA.nodes.length).toBe(31);
+  it('producción 47 nodos y prueba 42 (36 y 31 más los 11 del guardado de medios), con el tope de 47', () => {
+    expect(PRODUCCION.nodes.length).toBe(47);
+    expect(PRUEBA.nodes.length).toBe(42);
   });
   it('sin agente, memoria ni modelo de chat de n8n, y sin WhatsApp Trigger', () => {
     for (const f of [PRODUCCION, PRUEBA]) {

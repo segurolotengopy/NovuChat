@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { BLOQUE_DE_OPCIONES, CIERRE_DEL_PUENTE, CON_PRECIO_BS, PLANES_DE_CHARLA, estadoCharlaNuevo, esUnSi, sembrarCharlaUx, vigilarUx, violacionesDeBloqueDeOpciones, violacionesDeCompuerta, violacionesDeDescripcionRepetida, violacionesDePromesaConCompuertaCerrada, violacionesDePromesaDeOpciones, violacionesDeUnaPregunta, type UxMsg } from './vigilante-ux';
+import { doblesDelGuardado } from '../../lib/doble-guardado';
 
 const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-ruben/src/lib');
 const FUENTE_RR = readFileSync(join(CARPETA_LIB, 'rr.js'), 'utf8');
@@ -296,6 +297,8 @@ function crear(o: Opc = {}) {
   let nEnvios = 0;
   const enviar = (): Doble => (ll: LlamadaDoble) => ({ messaging_product: 'whatsapp', messages: [{ id: `wamid.OUT${++nEnvios}${ll.n}` }] });
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Verificar firma con el receptor': (ll) => ({ valido: true, deliveryId: ll.cuerpo?.['deliveryId'] }),
     'Traer configuración': (ll) => panel(String(ll.cuerpo?.['telefono'] ?? '')),
     'Reportar mensaje (entrante)': () => ({ ok: true }),

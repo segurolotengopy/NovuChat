@@ -2112,10 +2112,10 @@ describe('el flujo armado: lo que se versiona', () => {
   const nodosDe = (fl: J): J[] => fl['nodes'] as J[];
   const y = (fl: J, n: string): number => nodosDe(fl).find((x) => x['name'] === n)!['position'][1];
 
-  it('la plantilla trae los 44 nodos del §3 y cada variante 43', () => {
+  it('la plantilla trae los 44 nodos del §3 y cada variante 54 (43 más los 11 del guardado de medios, que se injertan al armar)', () => {
     const p = JSON.parse(readFileSync(join(CARPETA, 'flujo.plantilla.json'), 'utf8')) as J;
     expect(nodosDe(p)).toHaveLength(44);
-    for (const a of archivos) expect(nodosDe(leer(a)), a).toHaveLength(43);
+    for (const a of archivos) expect(nodosDe(leer(a)), a).toHaveLength(54);
   });
   it('cada Code compila, sin los globales que n8n no tiene (URL, Buffer, crypto, process, require)', () => {
     for (const a of archivos) {
@@ -2140,7 +2140,8 @@ describe('el flujo armado: lo que se versiona', () => {
       const fl = leer(a);
       const hijos = (n: string): string[] => ((fl['connections'][n]?.['main'] ?? []) as J[][]).flat().map((c) => c['node']);
       expect(hijos('¿Reportar? (entrante)')).toEqual(['Reportar mensaje (entrante)', '¿Comercio operativo?']);
-      expect(hijos('Reportar mensaje (entrante)')).toEqual(['¿Comercio operativo?']);
+      // Más la rama común del GUARDADO de medios, que cuelga del reporte y va debajo de todo (corre después de la que responde).
+      expect(hijos('Reportar mensaje (entrante)')).toEqual(['¿Comercio operativo?', 'Preparar guardado']);
       expect(y(fl, 'Reportar mensaje (entrante)')).toBeLessThan(y(fl, 'Llamar al modelo'));
       expect(y(fl, 'Reportar mensaje (entrante)')).toBeLessThan(y(fl, 'Armar mensajes'));
       const del = hijos('Armar mensajes');

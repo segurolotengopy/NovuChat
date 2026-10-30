@@ -29,6 +29,8 @@ import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import { configBase, destinos, type Flujo, type J } from './lib/flujo';
 import { crearMundo, ROLES_POR_OMISION, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
+import { copiarModuloDelGuardado, doblesDelGuardado } from './lib/doble-guardado';
+import { NODOS_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA_VM = join(AQUI, '../../Flujos/experimental/venta-minima');
@@ -130,6 +132,8 @@ function crear(op: OpcionesDeLaPrueba = {}) {
     ? { error: { message: 'Meta rechazó el envío', code: 131000 } }
     : aceptado(nombre, ll.n));
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Verificar firma con el receptor': (ll) => ({ valido: !String(ll.cuerpo?.['firma'] ?? '').includes('mala'), deliveryId: ll.cuerpo?.['deliveryId'] }),
     'Traer configuración': () => ({ statusCode: 200, body: estado.panel }),
     'Reportar mensaje (entrante)': () => ({ ok: true }),
@@ -448,6 +452,7 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
       const datos = join(tmp, 'admin/scripts/datos/venta-minima');
       mkdirSync(vm, { recursive: true });
       mkdirSync(datos, { recursive: true });
+      copiarModuloDelGuardado(tmp);
       cpSync(CARPETA_VM, vm, { recursive: true, filter: (src) => !src.endsWith('.local.json') }); // un `.local.json` lleva valores reales: nunca a un temporal
       cpSync(join(AQUI, '../scripts/datos/venta-minima'), datos, { recursive: true });
       modifica(vm, datos);
@@ -620,6 +625,8 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
     // Y los JSON reales cumplen: todo nodo HTTP tiene un anfitrión permitido.
     for (const f of [QTACO, PRUEBA]) {
       for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
+        // La descarga PROPIA del guardado de medios (módulo común): la URL de Meta solo si el tamaño que informó cabe.
+        if (n.name === 'Descargar medio (guardado)') { expect(n.parameters['url']).toBe(URL_DESCARGA_GUARDADO); continue; }
         expect(String(n.parameters['url']), n.name).toMatch(/^(=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|us-east1-novuchat-demo\.cloudfunctions\.net)\/|REEMPLAZAR_[A-Z0-9_]+$|=\{\{ \$json\.url \}\}$)/);
       }
     }
@@ -1055,7 +1062,8 @@ describe('la entrada del receptor: verificada, sin Trigger, sin repetidos', () =
   it('todo cuerpo HTTP se arma con JSON.stringify (o con la forma del Demo B), nunca interpolando texto en una cadena JSON', () => {
     let httpConCuerpo = 0;
     for (const f of [QTACO, PRUEBA]) {
-      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters['sendBody'] === true)) {
+      // «Guardar medio» (guardado de medios, módulo común) manda los BYTES del medio (`binaryData`), no un JSON: no hay texto que interpolar.
+      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters['sendBody'] === true && !(x.name === 'Guardar medio' && x.parameters['contentType'] === 'binaryData'))) {
         httpConCuerpo++;
         const jb = String(n.parameters['jsonBody']);
         expect(n.parameters['specifyBody'], n.name).toBe('json');
@@ -2776,7 +2784,8 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
   /** Espía las llamadas de red que importan: la URL y las cabeceras de cada envío y de las llamadas al servidor. */
   function espiar(panelActual: () => J = () => panel()): { dobles: Record<string, Doble>; llamadas: { nodo: string; url: string; encabezados: Record<string, string> }[] } {
     const llamadas: { nodo: string; url: string; encabezados: Record<string, string> }[] = [];
-    const dobles: Record<string, Doble> = {};
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    const dobles: Record<string, Doble> = { ...doblesDelGuardado().dobles };
     for (const nodo of ['Enviar a WhatsApp', 'Enviar aviso', 'Traer configuración', 'Cotejar en el servidor']) {
       dobles[nodo] = (ll: LlamadaDoble) => {
         llamadas.push({ nodo, url: ll.url, encabezados: ll.encabezados });
@@ -2893,8 +2902,8 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(50); // 49 + el webhook del carrito: el tope de producción (`construir.mjs` lo impone)
-    expect(PRUEBA.nodes).toHaveLength(46);
+    expect(QTACO.nodes).toHaveLength(61); // 49 + el webhook del carrito + los 11 del guardado de medios: el tope de producción (`construir.mjs` lo impone)
+    expect(PRUEBA.nodes).toHaveLength(57);
   });
 
   it('L2: en producción un `wamid.SIMULADO-…` NO cuenta como aviso salido: el cliente no lee «pasé tu pedido» y el cierre no lo toma de referencia', () => {
@@ -3150,7 +3159,9 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
     expect(t.orden.filter((n) => n === 'Armar mensajes')).toHaveLength(1);
     expect(t.orden.filter((n) => n === 'Registrar cierre')).toHaveLength(1);
     expect(t.orden.filter((n) => n === 'Resumen del turno')).toHaveLength(1);
-    expect(t.orden[t.orden.length - 1]).toBe('Resumen del turno'); // y es el último nodo
+    // y es el último nodo de la rama que responde (después solo corre la rama común del guardado de medios, que va debajo de todo)
+    const sinGuardado = t.orden.filter((n) => !NODOS_DEL_GUARDADO.includes(n));
+    expect(sinGuardado[sinGuardado.length - 1]).toBe('Resumen del turno');
     // Negativo: sin cierre (un menú con 2 ítems) tampoco corre dos veces.
     const menu = con(crear({ flujo: DOS })).escribe('hola');
     expect(menu.orden.filter((n) => n === 'Resumen del turno')).toHaveLength(1);
@@ -3870,6 +3881,7 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
       const datos = join(tmp, 'admin/scripts/datos/venta-minima');
       mkdirSync(vm, { recursive: true });
       mkdirSync(datos, { recursive: true });
+      copiarModuloDelGuardado(tmp);
       cpSync(CARPETA_VM, vm, { recursive: true, filter: (src) => !src.endsWith('.local.json') }); // un `.local.json` lleva valores reales: nunca a un temporal
       cpSync(join(AQUI, '../scripts/datos/venta-minima'), datos, { recursive: true });
       modifica(vm, datos);
@@ -3911,7 +3923,8 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     expect(herramienta).toContain("'Cierres NovuChat A (auto)': 'Cierres NovuChat A (auto)'");
     expect(herramienta).toContain("whatsAppApi: 'WhatsApp account'");
     expect(herramienta).toContain('const GRAPH_BEARER = /^Graph WhatsApp .+ \\(Bearer\\)$/;');
-    const ENVIOS = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo'];
+    // Y el aviso de falla del guardado de medios (módulo común), que sale con la credencial de envío del flujo.
+    const ENVIOS = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo', 'Avisar falla del guardado'];
     for (const c of credencialesDe(DEMO_A)) {
       if (c.tipo === 'httpHeaderAuth') {
         // El nombre de los envíos es solo la ETIQUETA que la herramienta reconoce: esa credencial NO existe en el Demo A ni se crea.
@@ -3971,6 +3984,8 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
 
   it('ningún nodo HTTP habla con otro anfitrión que Meta, Gemini o la consola', () => {
     for (const n of DEMO_A.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
+      // La descarga PROPIA del guardado de medios (módulo común): la URL de Meta solo si el tamaño que informó cabe.
+      if (n.name === 'Descargar medio (guardado)') { expect(n.parameters['url']).toBe(URL_DESCARGA_GUARDADO); continue; }
       expect(String(n.parameters['url']), n.name).toMatch(/^(=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|us-east1-novuchat-demo\.cloudfunctions\.net)\/|REEMPLAZAR_[A-Z0-9_]+$|=\{\{ \$json\.url \}\}$)/);
     }
   });
@@ -4723,13 +4738,14 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
     expect(sim.qr.mensajes[0]?.payload['image']?.link).toBe(URL_SIMULADO); // es el QR de prueba, no el plan B que también da 3
   });
 
-  it('el JSON de Q\'Taco sigue en 50 nodos o menos y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(50);
+  it('el JSON de Q\'Taco sigue en 61 nodos o menos (50 más los 11 del guardado de medios) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
+    // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61: los 11 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +11 nodos: docs/versiones-por-cliente.md).
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(61);
     const base = configBase(QTACO);
     expect(base['cobroSimuladoActivo']).toBe(true);
     expect(base['qrSimuladoUrl']).toBe(URL_SIMULADO);
-    // La plantilla no se toca: ningún nodo nuevo, y todo nombre del JSON de producción sale de ella.
-    const deLaPlantilla = new Set(nombresDeLaPlantilla(PLANTILLA));
+    // La plantilla no se toca: ningún nodo nuevo, y todo nombre del JSON de producción sale de ella (o de la rama común del guardado, que se injerta al armar).
+    const deLaPlantilla = new Set([...nombresDeLaPlantilla(PLANTILLA), ...NODOS_DEL_GUARDADO]);
     for (const n of QTACO.nodes) expect(deLaPlantilla.has(n.name), n.name).toBe(true);
     expect(QTACO.nodes.some((n) => /simulad/i.test(n.name))).toBe(false); // el simulado no agrega nodos
   });

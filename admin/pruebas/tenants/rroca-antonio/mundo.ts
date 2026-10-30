@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
+import { doblesDelGuardado } from '../../lib/doble-guardado';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 export const CARPETA = join(AQUI, '../../../../Flujos/experimental/rroca-antonio');
@@ -107,6 +108,8 @@ export function crear(o: Opciones = {}): Mundo {
   const gemini = (t: string): J => ({ content: { parts: [{ text: t }] } });
   const clasificar = (): J => (m.clasificacion === null ? { error: { message: 'no se pudo describir' } } : gemini(JSON.stringify(m.clasificacion ?? { categoria: 'otro', texto: '' })));
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Verificar firma con el receptor': o.verificador ?? ((ll) => ({ valido: true, deliveryId: ll.cuerpo?.['deliveryId'] })),
     'Traer configuración': () => (o.panel === 'cae' ? { statusCode: 503, body: {} } : (o.panel ?? panelOk())),
     'Reportar mensaje (entrante)': () => o.ingesta ?? { ok: true },

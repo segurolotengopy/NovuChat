@@ -17,6 +17,8 @@
  *   `"@@comun:nodos/<archivo>.js"`  utilidades comunes + el archivo (sin la librería de agenda);
  *   `"@@solo:nodos/<archivo>.js"`   solo el archivo.
  *   `"@@medio:<paquete>"`           un módulo común de medios (`Flujos/src/core/medios/`), tal cual, sin edición.
+ * Y la rama común del GUARDADO de medios (`../comun-sin-agente/src/guardado.mjs`, contrato M1↔M2 del 29/10/2026): se INJERTA al armar, colgada de
+ * «Reportar mensaje (entrante)» y debajo de todo (corre después de la respuesta); la plantilla, el prompt y los nodos propios no se tocan.
  *
  * DOS VARIANTES, de la misma plantilla:
  *   - agenda-minima.v0.json      PRODUCCIÓN: con «WhatsApp Trigger», SIN «Entrada de prueba».
@@ -30,6 +32,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { injertarGuardado } from '../comun-sin-agente/src/guardado.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const verificar = process.argv.includes('--verificar');
@@ -81,6 +84,8 @@ function armar(v) {
     conexiones[de] = { main: (salidas.main || []).map((s) => (s || []).filter((c) => vivos.has(c.node))) };
   }
   flujo.connections = conexiones;
+  // El GUARDADO de medios (módulo común, nunca copiado): credenciales tomadas por nombre del flujo ya armado (ingesta del reporte, WhatsApp de «Descargar medio»).
+  injertarGuardado(flujo, { guardarUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio' });
   const texto = JSON.stringify(flujo, null, 2) + '\n';
   if (texto.includes('"@@')) throw new Error(`${v.archivo}: quedó una marca @@ sin reemplazar`);
   const ids = flujo.nodes.map((n) => n.id);
