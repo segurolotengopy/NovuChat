@@ -21,6 +21,7 @@ export const MIMES_DE_AUDIO = [
   'audio/mpeg', 'audio/mp3', 'audio/amr', 'audio/3gpp',
 ] as const;
 
+export const TEXTO_PENDIENTE = 'Todavía se está guardando el archivo.';
 export const TEXTO_VENCIDO = 'El archivo ya no está disponible (se guarda 90 días).';
 export const AVISO_WA_ME =
   'Lo que escribas por aquí queda FUERA del sistema (no aparece en la conversación ni cuenta como conversación del asistente) y no reemplaza a «Tomar».';
@@ -29,8 +30,8 @@ export const AVISO_DESCARGA = 'Archivo enviado por un cliente: no lo abra si no 
 /** Tipo del Blob de una descarga: nunca el mime del archivo, para que no se pueda abrir inline. */
 export const MIME_DE_DESCARGA = 'application/octet-stream';
 
-/** Lista cerrada de extensiones de descarga (contrato v2 §7.8); lo desconocido es `bin`. */
-export const EXTENSIONES = ['pdf', 'docx', 'xlsx', 'pptx', 'zip', 'doc', 'xls', 'ppt', 'txt', 'csv', 'bin'] as const;
+/** Lista cerrada de extensiones de descarga (contrato v2 §7.8; mp4 y 3gp son los videos); lo desconocido es `bin`. */
+export const EXTENSIONES = ['pdf', 'docx', 'xlsx', 'pptx', 'zip', 'doc', 'xls', 'ppt', 'txt', 'csv', 'mp4', '3gp', 'bin'] as const;
 export function extensionSegura(ext: unknown): string {
   return typeof ext === 'string' && (EXTENSIONES as readonly string[]).includes(ext) ? ext : 'bin';
 }
@@ -76,12 +77,13 @@ export function medioDeDatos(x: unknown): MedioDeMensaje | null {
   };
 }
 
-export type AccionDeMedio = 'ninguna' | 'ver' | 'vencido' | 'anotado';
+export type AccionDeMedio = 'ninguna' | 'ver' | 'vencido' | 'anotado' | 'pendiente';
 
 /** Qué dibuja la burbuja: sin `medio`, nada; `guardado` vigente, botón; `guardado` vencido, texto; `anotado`, texto. */
 export function accionDeMedio(medio: MedioDeMensaje | null, ahora: number): AccionDeMedio {
   if (!medio) return 'ninguna';
   if (medio.estado === 'anotado') return 'anotado';
+  if (medio.estado === 'pendiente') return 'pendiente';
   if (medio.estado !== 'guardado') return 'ninguna';
   if (medio.vence !== null && medio.vence <= ahora) return 'vencido';
   return 'ver';
@@ -194,8 +196,38 @@ export async function pedirMedio(
  * Enlace `wa.me` del teléfono de la conversación. Solo con 8 a 15 dígitos y solo para quien ve
  * conversaciones; si no cumple, `null` y no se pinta nada. No envía ni registra nada.
  */
-export function enlaceWaMe(telefono: unknown, puedeVer = true): string | null {
-  if (!puedeVer || typeof telefono !== 'string') return null;
+export function enlaceWaMe(telefono: unknown): string | null {
+  if (typeof telefono !== 'string') return null;
   const d = telefono.replace(/^\+/, '');
   return /^[0-9]{8,15}$/.test(d) ? `https://wa.me/${d}` : null;
+}
+
+/** Dependencias de una descarga; las pruebas pasan unas simuladas. */
+export interface DepsDescarga {
+  crearUrl: (b: Blob) => string;
+  revocar: (u: string) => void;
+  /** Un ancla que NUNCA se inserta en el DOM. */
+  ancla: () => { href: string; download: string; click: () => void };
+  esperar: (f: () => void, ms: number) => unknown;
+}
+export const MS_REVOCAR = 4000;
+
+/**
+ * Descargador de UNA sola vez (un doble clic no baja dos archivos): arma la URL del Blob (ya de tipo
+ * octet-stream), hace `click()` en un ancla fuera del DOM y revoca la URL 4 s después (Safari y Firefox
+ * pueden cortar la descarga si se revoca al instante).
+ */
+export function descargadorUnico(d: DepsDescarga) {
+  let hecho = false;
+  return (blob: Blob, extension: unknown, ahora: number): boolean => {
+    if (hecho) return false;
+    hecho = true;
+    const url = d.crearUrl(blob);
+    const a = d.ancla();
+    a.href = url;
+    a.download = nombreDeDescarga(extension, ahora);
+    a.click();
+    d.esperar(() => d.revocar(url), MS_REVOCAR);
+    return true;
+  };
 }

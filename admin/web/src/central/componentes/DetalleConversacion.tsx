@@ -8,7 +8,7 @@ import { db } from '../../core/lib/firebase';
 import { TextoSeguro } from './TextoSeguro';
 import { BarraTurno } from './BarraTurno';
 import { VisorMedio } from './VisorMedio';
-import { accionDeMedio, enlaceWaMe, textoAnotado, AVISO_WA_ME, TEXTO_VENCIDO, medioDeDatos, type MedioDeMensaje } from '../lib/medios';
+import { accionDeMedio, enlaceWaMe, textoAnotado, AVISO_WA_ME, TEXTO_VENCIDO, TEXTO_PENDIENTE, medioDeDatos, type MedioDeMensaje } from '../lib/medios';
 import { EscribirComoPersona } from './EscribirComoPersona';
 import {
   etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, turnoDeFicha, ventanaDeFicha, type Ficha,
@@ -430,6 +430,7 @@ export function DetalleConversacion(p: PropsDetalle) {
                     <VisorMedio tenantId={tenantId} conversacionId={ficha.id} idMeta={x.idMeta} medio={x.medio} />
                   )}
                   {accionDeMedio(x.medio, p.ahora) === 'vencido' && <span className="cv-medio-texto">{TEXTO_VENCIDO}</span>}
+                  {accionDeMedio(x.medio, p.ahora) === 'pendiente' && <span className="cv-medio-texto">{TEXTO_PENDIENTE}</span>}
                   {accionDeMedio(x.medio, p.ahora) === 'anotado' && x.medio && (
                     <span className="cv-medio-texto">{textoAnotado(x.medio.mime)}</span>
                   )}

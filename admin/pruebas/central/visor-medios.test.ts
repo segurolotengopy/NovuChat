@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  AVISO_DESCARGA, AVISO_WA_ME, MIME_DE_DESCARGA, TEXTO_VENCIDO, nombreDeDescarga, avisoExtraDe, modoDeMedio, extensionSegura, AVISO_MACROS, accionDeMedio, enlaceWaMe, medioDeDatos, pedirMedio, textoAnotado, textoDeErrorMedio,
+  AVISO_DESCARGA, AVISO_WA_ME, TEXTO_PENDIENTE, descargadorUnico, MS_REVOCAR, MIME_DE_DESCARGA, TEXTO_VENCIDO, nombreDeDescarga, avisoExtraDe, modoDeMedio, extensionSegura, AVISO_MACROS, accionDeMedio, enlaceWaMe, medioDeDatos, pedirMedio, textoAnotado, textoDeErrorMedio,
   type LlamarVerMedio, type MedioDeMensaje,
 } from '../../web/src/central/lib/medios.ts';
 
@@ -26,7 +26,9 @@ describe('qué dibuja cada mensaje', () => {
     expect(accionDeMedio(guardado(), AHORA)).toBe('ver');
     expect(accionDeMedio(guardado({ vence: AHORA - 1 }), AHORA)).toBe('vencido');
     expect(accionDeMedio(guardado({ estado: 'anotado' }), AHORA)).toBe('anotado');
-    expect(accionDeMedio(guardado({ estado: 'pendiente' }), AHORA)).toBe('ninguna');
+    expect(accionDeMedio(guardado({ estado: 'pendiente' }), AHORA)).toBe('pendiente');
+    expect(accionDeMedio(guardado({ estado: 'otro' }), AHORA)).toBe('ninguna');
+    expect(TEXTO_PENDIENTE).toBe('Todavía se está guardando el archivo.');
   });
   it('lee vence de un Timestamp', () => {
     expect(medioDeDatos({ estado: 'guardado', mime: 'audio/ogg', vence: { toMillis: () => 5 } })?.vence).toBe(5);
@@ -51,11 +53,12 @@ describe('pedirMedio con la callable simulada', () => {
     await pedirMedio(f, { ...base, medio: guardado() });
     expect(f).toHaveBeenCalledWith({ tenantId: 't1', conversacionId: 'wa_59171234567', idMeta: 'wamid.X', accion: 'ver' });
   });
-  it('anotado y pendiente no llaman a la callable', async () => {
+  it('anotado, pendiente y sin medio no llaman a la callable', async () => {
     const f = ok({});
     const r = await pedirMedio(f, { ...base, medio: guardado({ estado: 'anotado' }) });
     expect(r.ok).toBe(false);
     expect((await pedirMedio(f, { ...base, medio: null })).ok).toBe(false);
+    expect((await pedirMedio(f, { ...base, medio: guardado({ estado: 'pendiente' }) })).ok).toBe(false);
     expect(f).not.toHaveBeenCalled();
   });
   it('vencido: texto fijo y sin llamada', async () => {
@@ -101,7 +104,7 @@ describe('documentos: solo descarga', () => {
     expect((await pedirMedio(ok({ tipo: 'audio', mime: 'audio/ogg', base64: B64 }), { ...desc })).ok).toBe(false);
   });
   it('extensión validada contra la lista cerrada; desconocida → bin', () => {
-    for (const e of ['pdf', 'docx', 'xlsx', 'pptx', 'zip', 'doc', 'xls', 'ppt', 'txt', 'csv', 'bin']) expect(extensionSegura(e)).toBe(e);
+    for (const e of ['pdf', 'docx', 'xlsx', 'pptx', 'zip', 'doc', 'xls', 'ppt', 'txt', 'csv', 'mp4', '3gp', 'bin']) expect(extensionSegura(e)).toBe(e);
     for (const e of ['exe', 'html', '../x', 'PDF', undefined, 5, 'pdf.exe']) expect(extensionSegura(e)).toBe('bin');
     expect(nombreDeDescarga('docx', AHORA)).toMatch(/^archivo-\d{4}-\d{2}-\d{2}\.docx$/);
     expect(nombreDeDescarga('exe', AHORA)).toMatch(/\.bin$/);
@@ -122,13 +125,36 @@ describe('documentos: solo descarga', () => {
   });
 });
 
+describe('descarga: una sola vez, ancla fuera del DOM, revoca a los 4 s', () => {
+  it('ejecuta el flujo con temporizador simulado', () => {
+    vi.useFakeTimers();
+    try {
+      const reg: string[] = [];
+      const ancla = { href: '', download: '', click: () => reg.push(`click:${ancla.href}:${ancla.download}`) };
+      const bajar = descargadorUnico({
+        crearUrl: () => 'blob:u1', revocar: (u) => reg.push(`revoca:${u}`), ancla: () => ancla,
+        esperar: (f, ms) => setTimeout(f, ms),
+      });
+      const blob = new Blob(['x'], { type: MIME_DE_DESCARGA });
+      expect(bajar(blob, 'mp4', AHORA)).toBe(true);
+      expect(bajar(blob, 'mp4', AHORA)).toBe(false); // doble clic
+      expect(reg).toEqual([expect.stringMatching(/^click:blob:u1:archivo-\d{4}-\d{2}-\d{2}\.mp4$/)]);
+      vi.advanceTimersByTime(MS_REVOCAR - 1);
+      expect(reg).toHaveLength(1); // no se revoca al instante
+      vi.advanceTimersByTime(1);
+      expect(reg).toHaveLength(2);
+      expect(reg[1]).toBe('revoca:blob:u1');
+      expect(MS_REVOCAR).toBe(4000);
+    } finally { vi.useRealTimers(); }
+  });
+});
+
 describe('enlace wa.me', () => {
   it('solo con 8 a 15 dígitos', () => {
     expect(enlaceWaMe('59171234567')).toBe('https://wa.me/59171234567');
     expect(enlaceWaMe('+59171234567')).toBe('https://wa.me/59171234567');
     for (const t of ['1234567', '1234567890123456', '5917abc4567', '591 7123', '', null, undefined, 5917123456, '59171234567/../x', '59171234567?text=hola']) expect(enlaceWaMe(t)).toBeNull();
   });
-  it('no sale para quien no ve conversaciones', () => expect(enlaceWaMe('59171234567', false)).toBeNull());
   it('el aviso dice que queda fuera del sistema y no reemplaza a Tomar', () => {
     expect(AVISO_WA_ME).toContain('FUERA del sistema');
     expect(AVISO_WA_ME).toContain('«Tomar»');
@@ -157,16 +183,17 @@ describe('la pantalla (lectura del fuente)', () => {
     expect(v).not.toMatch(/window\.open|<iframe|<embed|<object/);
     // el ancla nunca entra al DOM y el blob se revoca justo tras el click
     expect(v).not.toMatch(/appendChild|append\(|insertAdjacent|\.body\./);
-    expect(v).toMatch(/a\.click\(\);\n\s*URL\.revokeObjectURL\(url\)/);
     expect(v).toMatch(/avisoExtraDe/);
     expect(v).not.toMatch(/esSoporte|esPropietario/);
+    expect(v).toMatch(/descargadorUnico/);
+    expect(v).not.toMatch(/bytes: /); // el estado no retiene los bytes
   });
   it('CSP: media-src blob: y NINGÚN blob: en frame-src', () => {
     const fb = JSON.parse(readFileSync(join(aqui, '../../firebase.json'), 'utf8'));
     const sitios = Array.isArray(fb.hosting) ? fb.hosting : [fb.hosting];
     const csps: string[] = [];
-    for (const h of sitios.flatMap((x: { headers?: { headers: { key: string; value: string }[] }[] }) => x.headers ?? [])) for (const k of h.headers) if (k.key === 'Content-Security-Policy') csps.push(k.value);
-    const csp = csps.find((c) => c.includes('script-src'))!;
+    for (const h of sitios.filter((x: { target?: string }) => x.target === 'consola').flatMap((x: { headers?: { headers: { key: string; value: string }[] }[] }) => x.headers ?? [])) for (const k of h.headers) if (k.key === 'Content-Security-Policy') csps.push(k.value);
+    const csp = csps[0]!;
     expect(csp).toMatch(/media-src blob:;/);
     expect(csp).not.toMatch(/frame-src[^;]*blob:/);
     expect(csp).not.toMatch(/(default|img|script|object)-src[^;]*blob:/);
