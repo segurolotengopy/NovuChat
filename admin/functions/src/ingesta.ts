@@ -199,8 +199,16 @@ interface Entrante {
   nueva?: string;
 }
 
+/**
+ * LISTA CERRADA de tipos del mensaje. `video` y `sticker` entran el 30/10/2026
+ * (contrato de medios v2): `guardarMedio` exige un mensaje entrante del MISMO
+ * tipo, y con ambos en `otro` un video o un sticker nunca se podían guardar.
+ * Las mismas dos listas de `firestore.rules` (tipo del mensaje y claves de
+ * `entrantesPorTipo`) llevan exactamente estos valores: si cambia una, cambian
+ * las tres. Un tipo fuera de la lista sigue cayendo en `otro`.
+ */
 const TIPOS = new Set([
-  'text', 'interactive', 'image', 'audio', 'document', 'order', 'location', 'otro',
+  'text', 'interactive', 'image', 'audio', 'video', 'sticker', 'document', 'order', 'location', 'otro',
 ]);
 
 /**
