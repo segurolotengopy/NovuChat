@@ -76,15 +76,15 @@ describe('completar-flujos.mjs usa el documento del registro', () => {
     const T = 'alta-flujos-onb';
     await db.recursiveDelete(db.doc(`tenants/${T}`));
     await db.doc(`tenants/${T}`).set({ nombre: 'Captación', estado: 'activo', vertical: 'onboarding' });
-    // OJO: el script recorre TODA la colección `tenants` del emulador (no tiene `--tenant` ni seco).
+    // Se acota con `--tenant`: sin él recorre TODA la colección y tropieza con fichas de otras suites.
     try {
-      const r = correr('completar-flujos.mjs', '--proyecto', PROYECTO);
+      const r = correr('completar-flujos.mjs', '--proyecto', PROYECTO, '--tenant', T);
       expect(r.codigo, r.salida).toBe(0);
       expect((await db.doc(`tenants/${T}/config/onboarding`).get()).exists).toBe(true);
       expect((await db.doc(`tenants/${T}`).get()).get('flujos')).toEqual(['onboarding']);
       // Segunda corrida: `create` no pisa lo que ya existe y el script no falla.
       await db.doc(`tenants/${T}/config/onboarding`).set({ actualizadoPor: 'otro', marca: 'intacta' });
-      const r2 = correr('completar-flujos.mjs', '--proyecto', PROYECTO);
+      const r2 = correr('completar-flujos.mjs', '--proyecto', PROYECTO, '--tenant', T);
       expect(r2.codigo, r2.salida).toBe(0);
       expect((await db.doc(`tenants/${T}/config/onboarding`).get()).get('marca')).toBe('intacta');
     } finally {
