@@ -32,7 +32,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { injertarGuardado } from '../comun-sin-agente/src/guardado.mjs';
+import { hallazgosDelGuardado, injertarGuardado } from '../comun-sin-agente/src/guardado.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const verificar = process.argv.includes('--verificar');
@@ -86,6 +86,9 @@ function armar(v) {
   flujo.connections = conexiones;
   // El GUARDADO de medios (módulo común, nunca copiado): credenciales tomadas por nombre del flujo ya armado (ingesta del reporte, WhatsApp de «Descargar medio»).
   injertarGuardado(flujo, { guardarUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio' });
+  // La misma guardia que la prueba de CI «guardado obligatorio»: nueve nodos, ningún Code que lea el binario, retención en «none» (contrato v2 del 30/10).
+  const hallazgosGuardado = hallazgosDelGuardado(flujo, { exigir: true });
+  if (hallazgosGuardado.length) throw new Error(`${v.archivo}: ${hallazgosGuardado.join('; ')}`);
   const texto = JSON.stringify(flujo, null, 2) + '\n';
   if (texto.includes('"@@')) throw new Error(`${v.archivo}: quedó una marca @@ sin reemplazar`);
   const ids = flujo.nodes.map((n) => n.id);
