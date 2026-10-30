@@ -21,6 +21,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { ejecutar as ejecutarNodo } from './lib/flujo';
@@ -106,8 +107,7 @@ function comprobarTodo(
   // importable, y envolverlo cambiaría el texto que va al JSON. Ver la
   // cabecera de `lib/flujo.ts`.
   //
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$input', '$', 'Date', codigo as string) as
+  const fn = vm.compileFunction(codigo as string, ['$input', '$', 'Date']) as
     (i: unknown, c: unknown, d: unknown) => { json: Record<string, unknown> }[];
   return fn(entrada, contexto, Reloj).map((i) => i.json);
 }
@@ -131,8 +131,7 @@ function calendariosARevisar(
     first: () => ({ json: nombre === 'Config del negocio' ? config : previa }),
     all: () => [{ json: nombre === 'Config del negocio' ? config : previa }],
   });
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$input', '$', codigoCalendarios as string) as
+  const fn = vm.compileFunction(codigoCalendarios as string, ['$input', '$']) as
     (i: unknown, c: unknown) => { json: Record<string, unknown> }[];
   const items = fn(entrada, contexto).map((i) => i.json);
   return { calendarios: items.map((i) => String(i['calendarioARevisar'])), items };

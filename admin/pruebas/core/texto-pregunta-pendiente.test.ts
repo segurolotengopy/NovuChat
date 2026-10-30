@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { cargarFuente } from './fuente-vm';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../Flujos/src/core/texto');
 const FUENTE_BASE = readFileSync(join(RAIZ, 'no-repetir.js'), 'utf8');
@@ -16,9 +17,7 @@ interface Ficha { pendientes?: unknown; ultimaPregunta?: unknown; ultimaPregunta
 interface Res { tipo: string; estado: string; pregunta: string; preguntas: string[]; intencion: string; clase: string; accion: string; boton: string; sinDerivacion: boolean }
 type Cat = Record<string, { clase: string; boton: string }>;
 interface Previo { pendientes: P[] }
-// El código evaluado es el de archivos del propio repositorio: solo prueba.
-// nosemgrep: devsecops.js-eval-prohibido
-const L = new Function(FUENTE_BASE + '\n' + FUENTE + '\nreturn { ctFichaPendientes, ctPreguntasDe, ctRecordarPreguntas, ctRestaurarPreguntas, ctConsumirPorBoton, ctEsSiNoSuelto, ctInterpretarSiNo, ctNotaRespuesta, CT_TOPE_PENDIENTES, CT_VIGENCIA_PREGUNTA_MS, CT_RE_PREGUNTA };')() as {
+const L = cargarFuente<{
   ctFichaPendientes: (f: unknown, ahora?: number, vig?: unknown) => P[];
   ctPreguntasDe: (t: unknown) => string[];
   ctRecordarPreguntas: (f: Ficha, t: string, ahora: number, o?: Record<string, unknown>) => Previo | null;
@@ -28,7 +27,7 @@ const L = new Function(FUENTE_BASE + '\n' + FUENTE + '\nreturn { ctFichaPendient
   ctInterpretarSiNo: (t: string, f: Ficha, ahora: number, o?: Record<string, unknown>) => Res;
   ctNotaRespuesta: (r: unknown) => string;
   CT_TOPE_PENDIENTES: number; CT_VIGENCIA_PREGUNTA_MS: number; CT_RE_PREGUNTA: RegExp;
-};
+}>(['Flujos/src/core/texto/no-repetir.js', 'Flujos/src/core/texto/pregunta-pendiente.js'], ['ctFichaPendientes', 'ctPreguntasDe', 'ctRecordarPreguntas', 'ctRestaurarPreguntas', 'ctConsumirPorBoton', 'ctEsSiNoSuelto', 'ctInterpretarSiNo', 'ctNotaRespuesta', 'CT_TOPE_PENDIENTES', 'CT_VIGENCIA_PREGUNTA_MS', 'CT_RE_PREGUNTA']);
 
 const T0 = 1_760_000_000_000;
 const MIN = 60 * 1000;
@@ -305,8 +304,7 @@ describe('core/texto/pregunta-pendiente: pureza (se incluye byte a byte en un Co
     expect(FUENTE).not.toMatch(/bellido|platinum|dhermacore|antonio_|b_pack|b_conf/i);
   });
   it('se evalúa en un Function sin globales de Node y corre en un vm vacío', () => {
-    // nosemgrep: devsecops.js-eval-prohibido
-    expect(() => new Function('URL', 'Buffer', 'crypto', 'require', FUENTE_BASE + '\n' + FUENTE)).not.toThrow();
+    expect(() => vm.compileFunction(FUENTE_BASE + '\n' + FUENTE, ['URL', 'Buffer', 'crypto', 'require'])).not.toThrow();
     const ctx = vm.createContext(Object.create(null));
     const r = vm.runInContext(`${FUENTE_BASE}\n${FUENTE}\nJSON.stringify([ctEsSiNoSuelto('Sí'), ctPreguntasDe('Hola. ¿Cómo estás?'), ctInterpretarSiNo('sí', { pendientes: [{ p: '¿Quieres?', ms: 5, i: '', c: 'oferta', b: '' }] }, 6).accion])`, ctx) as string;
     expect(JSON.parse(r)).toEqual(['si', ['¿Cómo estás?'], 'continuar']);
