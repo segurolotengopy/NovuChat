@@ -49,6 +49,14 @@
       "id": "p1",
       "nombre": "Producto uno",
       "precio": 10,
+      "activo": true,
+      "stock": 3,
+      "agotado": false
+    },
+    {
+      "id": "pack-100-prompts",
+      "nombre": "«Pack 100 prompts»",
+      "precio": 49,
       "activo": true
     }
   ],
@@ -97,5 +105,46 @@
       "porDefecto": true
     }
   ],
-  "campanas": []
+  "campanas": [
+    {
+      "id": "c1",
+      "texto": "Promo de prueba para todos",
+      "inicio": "2020-01-01T04:00:00.000Z",
+      "fin": "2100-01-01T04:00:00.000Z"
+    },
+    {
+      "id": "c2",
+      "texto": "Descuento en «pack 100 prompts» hasta el viernes",
+      "inicio": "2020-01-01T04:00:00.000Z",
+      "fin": "2100-01-01T04:00:00.000Z"
+    }
+  ],
+  "anuncios": [
+    {
+      "id": "c1",
+      "titulares": [
+        "Titular de la promo uno"
+      ],
+      "angulo": "Habla de la promo del catalogo",
+      "producto": {
+        "id": "p1",
+        "nombre": "Producto uno",
+        "precio": 10,
+        "agotado": false
+      }
+    },
+    {
+      "id": "c2",
+      "titulares": [
+        "«Pack 100 prompts» con descuento"
+      ],
+      "angulo": "Habla del «pack 100 prompts» del catalogo",
+      "producto": {
+        "id": "pack-100-prompts",
+        "nombre": "«Pack 100 prompts»",
+        "precio": 49,
+        "agotado": false
+      }
+    }
+  ]
 }
