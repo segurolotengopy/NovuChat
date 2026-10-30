@@ -1,11 +1,12 @@
 /** `borrar-medios-conversacion`: lógica con dobles de Firestore y de Storage; nada toca la nube. Se prueba negando. */
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ejecutar, rutaValida, ultimos4 } from '../../scripts/plataforma/borrar-medios-conversacion-logica.mjs';
+import { ejecutar, limpiarError, rutaValida, ultimos4 } from '../../scripts/plataforma/borrar-medios-conversacion-logica.mjs';
 
-const H = (n: number) => String(n).padStart(64, '0').replace(/0/g, 'a').slice(0, 63) + String(n % 10);
+const H = (n: number) => createHash('sha256').update(`wamid.${n}`).digest('hex');
 const CONV = 'wa_59171234567';
 const OTRA = 'wa_59179998888';
 const ruta = (t: string, n: number) => `tenants/${t}/medios/2026-10-30/${H(n)}.jpg`;
@@ -16,12 +17,16 @@ function crear(datos: Record<string, any>, opts: { fallaAuditoria?: boolean } = 
     path: p,
     get: async () => ({ exists: docs.has(p) }),
     set: async (v: any) => { if (opts.fallaAuditoria) throw new Error('no'); docs.set(p, v); },
-    update: async (v: any) => { docs.set(p, { ...docs.get(p), ...v }); },
+    update: async (v: any) => {
+      const x = { ...docs.get(p) };
+      for (const [k, val] of Object.entries(v)) { const [a, b] = k.split('.'); if (b) x[a] = { ...x[a], [b]: val }; else x[a] = val; }
+      docs.set(p, x);
+    },
     delete: async () => { docs.delete(p); },
   });
   const snap = (p: string) => ({ id: p.split('/').pop(), ref: ref(p), data: () => docs.get(p), get: (k: string) => docs.get(p)[k] });
   const db: any = {
-    doc: (p: string) => ({ ...ref(p), get: async () => ({ exists: docs.has(p) }) }),
+    doc: (p: string) => ({ ...ref(p), get: async () => ({ exists: docs.has(p), data: () => docs.get(p) }) }),
     collection: (col: string) => ({
       doc: () => ref(`${col}/${docs.size}-${Math.random()}`),
       where: (campo: string, _op: string, valor: unknown) => ({
@@ -35,20 +40,21 @@ function crear(datos: Record<string, any>, opts: { fallaAuditoria?: boolean } = 
   };
   return { db, docs };
 }
-function almacenDoble(objetos: string[]) {
+function almacenDoble(objetos: string[], o: { ciego?: boolean; sinBucket?: boolean } = {}) {
   const set = new Set(objetos); const llamadas: string[] = [];
   return {
     llamadas, set,
-    existe: async (r: string) => set.has(r),
-    borrar: async (r: string) => { llamadas.push(r); return set.delete(r); },
-  };
+    verificar: async () => { if (o.sinBucket) throw new Error('sin bucket'); },
+    estado: async (r: string) => { if (o.ciego) throw new Error('403'); return set.has(r) ? 'existe' : 'ausente'; },
+    borrar: async (r: string) => { llamadas.push(r); set.delete(r); },
+  } as any;
 }
 const medio = (t: string, n: number, conv: string, extra: Record<string, unknown> = {}) => ({
   idMeta: `wamid.${n}`, conversacionId: conv, tipo: 'image', mime: 'image/jpeg', ext: 'jpg', estado: 'guardado', ruta: ruta(t, n), ...extra,
 });
 const escenario = () => {
   const datos: Record<string, any> = {
-    'tenants/clinica-uno': { nombre: 'x' }, 'tenants/clinica-dos': { nombre: 'y' },
+    'tenants/clinica-uno': { nombre: 'Clínica Uno' }, 'tenants/clinica-dos': { nombre: 'Clínica Dos' },
     [`tenants/clinica-uno/mediosRecibidos/m1`]: medio('clinica-uno', 1, CONV),
     [`tenants/clinica-uno/mediosRecibidos/m2`]: medio('clinica-uno', 2, CONV, { estado: 'pendiente', tipo: 'audio' }),
     [`tenants/clinica-uno/mediosRecibidos/m3`]: medio('clinica-uno', 3, CONV, { estado: 'anotado', ruta: null, tipo: 'document' }),
@@ -60,7 +66,7 @@ const escenario = () => {
   return datos;
 };
 const carpeta = () => mkdtempSync(join(tmpdir(), 'resp-'));
-const base = (o: Record<string, unknown>) => ({ tenant: 'clinica-uno', conversacion: CONV, motivo: 'pedido del titular', respaldoEn: carpeta(), ...o });
+const base = (o: Record<string, unknown>) => ({ tenant: 'clinica-uno', conversacion: CONV, motivo: 'pedido del titular', proyecto: 'p1', proyectosPermitidos: ['p1'], confirmarComercio: 'Clínica Uno', respaldoEn: carpeta(), ...o });
 const objetosDe = () => [ruta('clinica-uno', 1), ruta('clinica-uno', 2), ruta('clinica-uno', 4), ruta('clinica-dos', 5)];
 
 describe('borrar-medios-conversacion', () => {
@@ -86,20 +92,71 @@ describe('borrar-medios-conversacion', () => {
     expect(docs.get(`tenants/clinica-uno/conversaciones/${OTRA}/mensajes/o4`).medio.estado).toBe('guardado');
   });
 
-  it('NEGACIÓN: rutas con .., de otro comercio o fuera del prefijo no llegan al almacén', async () => {
-    const d = escenario();
-    d['tenants/clinica-uno/mediosRecibidos/m1'].ruta = `tenants/clinica-uno/medios/../../clinica-dos/medios/2026-10-30/${H(5)}.jpg`;
-    d['tenants/clinica-uno/mediosRecibidos/m2'].ruta = ruta('clinica-dos', 5);
-    d['tenants/clinica-uno/mediosRecibidos/m3'].ruta = `otra/${H(3)}.jpg`;
-    const { db } = crear(d); const al = almacenDoble(objetosDe());
-    const r = await ejecutar({ db, almacen: al, ...base({ aplicar: true }) }) as any;
-    expect(al.llamadas).toEqual([]);
-    expect(al.set.has(ruta('clinica-dos', 5))).toBe(true);
-    expect(r.omitidos).toBe(3);
+  it('NEGACIÓN: una ruta fuera de formato (.., otro comercio, otro nombre) no se omite en silencio: aborta sin escribir y conserva el documento', async () => {
+    for (const mala of [
+      `tenants/clinica-uno/medios/../../clinica-dos/medios/2026-10-30/${H(1)}.jpg`, ruta('clinica-dos', 1), `otra/${H(1)}.jpg`,
+      `tenants/clinica-uno/medios/2026-10-30/${H(9)}.jpg`, `tenants/clinica-uno/medios/2026-10-30/${H(1)}.exe`,
+    ]) {
+      const d = escenario(); d['tenants/clinica-uno/mediosRecibidos/m1'].ruta = mala;
+      const { db, docs } = crear(d); const al = almacenDoble(objetosDe()); const antes = new Map(docs);
+      const r = await ejecutar({ db, almacen: al, ...base({ aplicar: true }) }) as any;
+      expect(r.ok).toBe(false);
+      expect(al.llamadas).toEqual([]);
+      expect(docs).toEqual(antes);
+    }
     for (const mala of ['tenants/a/medios/../x', 'tenants/clinica-uno/medios/2026-10-30/x.jpg', 'tenants/clinica-uno/otro/2026-10-30/' + H(1) + '.jpg', 'tenants/clinica-uno/medios//2026-10-30/' + H(1) + '.jpg']) {
       expect(rutaValida(mala, 'clinica-uno')).toBe(false);
     }
-    expect(rutaValida(ruta('clinica-uno', 1), 'clinica-uno')).toBe(true);
+    expect(rutaValida(ruta('clinica-uno', 1), 'clinica-uno', 'wamid.1')).toBe(true);
+    for (const e of ['mp4', '3gp', 'bin', 'docx', 'xlsx', 'pptx', 'zip', 'txt', 'csv']) expect(rutaValida(`tenants/t-uno/medios/2026-10-30/${H(1)}.${e}`, 't-uno')).toBe(true);
+  });
+
+  it('NEGACIÓN: bucket equivocado (ningún objeto hallado) o inalcanzable no borra metadatos', async () => {
+    for (const al of [almacenDoble([]), almacenDoble(objetosDe(), { sinBucket: true }), almacenDoble(objetosDe(), { ciego: true })]) {
+      const { db, docs } = crear(escenario()); const antes = new Map(docs);
+      const r = await ejecutar({ db, almacen: al, ...base({ aplicar: true }) }) as any;
+      expect(r.ok).toBe(false);
+      expect(al.llamadas).toEqual([]);
+      expect(docs).toEqual(antes);
+    }
+  });
+
+  it('NEGACIÓN: --confirmar-comercio incorrecto o proyecto no permitido aborta', async () => {
+    for (const o of [{ confirmarComercio: 'Clínica Dos' }, { confirmarComercio: null }, { proyecto: 'otro' }, { proyectosPermitidos: [] }]) {
+      const { db, docs } = crear(escenario()); const al = almacenDoble(objetosDe()); const antes = new Map(docs);
+      expect((await ejecutar({ db, almacen: al, ...base({ aplicar: true, ...o }) }) as any).ok).toBe(false);
+      expect(al.llamadas).toEqual([]);
+      expect(docs).toEqual(antes);
+    }
+  });
+
+  it('corte intermedio: la auditoría queda fallida, los metadatos siguen y la reejecución termina', async () => {
+    const { db, docs } = crear(escenario()); const al = almacenDoble(objetosDe());
+    const original = al.borrar; let n = 0;
+    al.borrar = async (r: string) => { if (++n === 2) throw new Error(`falla en ${CONV} 59171234567`); return original(r); };
+    const r1 = await ejecutar({ db, almacen: al, ...base({ aplicar: true }) }) as any;
+    expect(r1.ok).toBe(false);
+    expect(r1.error).not.toContain('59171234567');
+    expect([...docs.keys()].filter((k) => k.startsWith('tenants/clinica-uno/mediosRecibidos') && docs.get(k).conversacionId === CONV)).toHaveLength(3);
+    expect([...docs.entries()].find(([k]) => k.includes('/auditoria/'))![1].estado).toBe('fallida');
+    al.borrar = original;
+    const r2 = await ejecutar({ db, almacen: al, ...base({ aplicar: true }) }) as any;
+    expect(r2.ok).toBe(true);
+    expect(r2.despues.medios).toBe(0);
+  });
+
+  it('la auditoría se anota ANTES del primer borrado y termina completada, con hash y sin datos personales', async () => {
+    const { db, docs } = crear(escenario()); const al = almacenDoble(objetosDe());
+    let audAntes = false; const original = al.borrar;
+    al.borrar = async (r: string) => { audAntes ||= [...docs.entries()].some(([k, v]) => k.includes('/auditoria/') && v.estado === 'iniciada'); return original(r); };
+    await ejecutar({ db, almacen: al, ...base({ aplicar: true }) });
+    expect(audAntes).toBe(true);
+    const aud = [...docs.entries()].find(([k]) => k.includes('/auditoria/'))![1];
+    expect(aud).toMatchObject({ estado: 'completada', conversacionHash: createHash('sha256').update(CONV).digest('hex') });
+  });
+
+  it('limpiarError quita teléfonos, conversaciones y rutas', () => {
+    expect(limpiarError(new Error(`x wa_59171234567 59171234567 tenants/clinica-uno/medios/a`))).not.toMatch(/59171234567|clinica-uno/);
   });
 
   it('NEGACIÓN: conversación mal formada, tenant mal formado y comercio inexistente', async () => {
@@ -131,6 +188,7 @@ describe('borrar-medios-conversacion', () => {
     expect(respaldoAntes).toBe(true);
     const [f] = readdirSync(dir);
     expect(statSync(join(dir, f)).mode & 0o777).toBe(0o600);
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
     expect(JSON.parse(readFileSync(join(dir, f), 'utf8')).medios).toHaveLength(3);
     const salida = logs.join('\n');
     expect(salida).not.toContain('59171234567');
@@ -138,7 +196,7 @@ describe('borrar-medios-conversacion', () => {
     expect(salida).not.toContain('wamid');
     expect(salida).toContain(ultimos4(CONV));
     const aud = [...docs.entries()].find(([k]) => k.includes('/auditoria/'))![1];
-    expect(aud).toMatchObject({ accion: 'borrar_medios_conversacion', motivo: 'pedido del titular', medios: 3, estado: 'terminada' });
+    expect(aud).toMatchObject({ accion: 'borrar_medios_conversacion', motivo: 'pedido del titular', medios: 3, estado: 'completada' });
     expect(JSON.stringify(aud)).not.toMatch(/59171234567|wamid|tenants\//);
   });
 
@@ -153,7 +211,7 @@ describe('borrar-medios-conversacion', () => {
 
   it('reanuda: si los objetos ya se borraron pero los metadatos quedaron, termina', async () => {
     const { db } = crear(escenario()); const al = almacenDoble([ruta('clinica-uno', 4)]);
-    const r = await ejecutar({ db, almacen: al, ...base({ aplicar: true }) }) as any;
+    const r = await ejecutar({ db, almacen: al, ...base({ aplicar: true, objetosYaBorrados: true }) }) as any;
     expect(r.ok).toBe(true);
     expect(r.despues.medios).toBe(0);
   });

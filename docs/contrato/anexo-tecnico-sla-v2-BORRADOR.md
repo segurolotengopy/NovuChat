@@ -47,6 +47,8 @@ Con H3 eso deja de ser cierto **para los comercios que activen la función**.
   **90 días**. Pueden contener **datos personales y de salud**; el Cliente responde por informar a sus pacientes.
 - El titular de los datos puede pedir el **borrado de los medios de una conversación**; NovuChat lo ejecuta con un
   procedimiento auditado (`admin/scripts/plataforma/borrar-medios-conversacion.mjs`). El texto de los mensajes queda.
+- Los 90 días los sostiene la purga diaria `purgarMedios` (`admin/functions/src/core/medios/purgarMedios.ts`, programada 03:45 hora de La Paz; borra las carpetas de más de 90 días) más el TTL de los documentos `mediosRecibidos`. El borrado en Storage y Firestore **no es instantáneo en las copias**: el borrado lógico de Storage (si el bucket lo tiene activado) y los respaldos o la recuperación a un punto en el tiempo de Firestore conservan el dato un tiempo adicional. `[PENDIENTE: confirmar y declarar esos plazos.]`
+- Al borrar por pedido del titular, NovuChat conserva un respaldo del **metadato** (sin los archivos, con el teléfono) para poder acreditar qué se borró; se destruye a los **30 días**.
 - Los archivos que el Cliente **descargue** salen del control de la retención de NovuChat: su custodia y su borrado
   pasan a ser del Cliente. `[PENDIENTE de revisión legal y de Andres: plazo de respuesta y constancia del borrado.]`
 
