@@ -2190,6 +2190,7 @@ service cloud.firestore {
               && (!d.keys().hasAny(['palabras'])
                   || (d.palabras is list && d.palabras.size() <= 30))
               && d.get('tipo', '') in ['text', 'interactive', 'image', 'audio',
+                                       'video', 'sticker',
                                        'document', 'order', 'location', 'otro']
               // Tope de tamaño del texto. El contenido es DATO NO CONFIABLE:
               // lo escribe un cliente final de WhatsApp. Se guarda tal cual y se
@@ -2308,6 +2309,7 @@ service cloud.firestore {
             || (request.resource.data.entrantesPorTipo is map
                 && request.resource.data.entrantesPorTipo.keys().hasOnly([
                      'text', 'interactive', 'image', 'audio',
+                     'video', 'sticker',
                      'document', 'order', 'location', 'otro'
                    ]));
         }
