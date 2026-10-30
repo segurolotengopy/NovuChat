@@ -3923,7 +3923,8 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     expect(herramienta).toContain("'Cierres NovuChat A (auto)': 'Cierres NovuChat A (auto)'");
     expect(herramienta).toContain("whatsAppApi: 'WhatsApp account'");
     expect(herramienta).toContain('const GRAPH_BEARER = /^Graph WhatsApp .+ \\(Bearer\\)$/;');
-    const ENVIOS = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo'];
+    // Y el aviso de falla del guardado de medios (módulo común), que sale con la credencial de envío del flujo.
+    const ENVIOS = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo', 'Avisar falla del guardado'];
     for (const c of credencialesDe(DEMO_A)) {
       if (c.tipo === 'httpHeaderAuth') {
         // El nombre de los envíos es solo la ETIQUETA que la herramienta reconoce: esa credencial NO existe en el Demo A ni se crea.

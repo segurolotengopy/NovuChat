@@ -40,7 +40,7 @@
  *   carga          nodo cuyo primer item trae `messages` y `ahoraMs` (por defecto «Carga de entrada»)
  *   config         nodo con `waGraphVersion` y `numeroRecepcion` (por defecto «Config del negocio»)
  *   ancla          nodo del que cuelga (por defecto «Reportar mensaje (entrante)»)
- * Devuelve el mismo flujo, con los ocho nodos y sus conexiones agregados. Lanza si falta algo: un flujo con medios no se arma sin guardado.
+ * Devuelve el mismo flujo, con los once nodos y sus conexiones agregados. Lanza si falta algo: un flujo con medios no se arma sin guardado.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -54,9 +54,12 @@ export const NODOS_DEL_GUARDADO = [
   'Guardar medio', '¿Reintentar el guardado?', 'Preparar reintento', 'Reintentar el guardado', 'Resultado del guardado', 'Avisar falla del guardado',
 ];
 /**
- * ¿El flujo baja medios entrantes de Meta? Un nodo conectado (fuera de esta rama) que pide la URL del medio o lo descarga. Es lo que vuelve OBLIGATORIO el
+ * ¿El flujo baja medios entrantes de Meta? Un nodo conectado (fuera de esta rama) que pide la URL del medio o lo descarga: por su nombre, por ser un nodo
+ * de medios de WhatsApp, o por su URL (Graph con un id de medio, o el CDN `lookaside.fbsbx.com`), así que renombrar el nodo no lo esconde. La prueba de CI
+ * exige además la rama a TODO flujo con «Reportar mensaje (entrante)», salvo su lista cerrada. Es lo que vuelve OBLIGATORIO el
  * guardado: un flujo así sin la rama no se arma (`hallazgosDelGuardado`), y uno sin medios no la lleva.
  */
+const esPedidoDeMedio = (url) => /lookaside\.fbsbx\.com/i.test(url) || (/graph\.facebook\.com/i.test(url) && /media/i.test(url) && !/\/messages\b/.test(url));
 export function manejaMedios(flujo) {
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   // Solo cuenta un nodo CONECTADO (alguien le entrega ítems): uno suelto no baja nada.
@@ -65,6 +68,8 @@ export function manejaMedios(flujo) {
   return nodos.some((n) => !NODOS_DEL_GUARDADO.includes(n.name) && conEntrada.has(n.name) && (
     /^(Obtener URL del medio|Descargar medio)/.test(String(n.name))
     || (n.type === 'n8n-nodes-base.whatsApp' && (n.parameters || {}).resource === 'media')
+    // Por lo que HACE, no por cómo se llama: un HTTP a Graph que nombra un medio (`/{media-id}`) o que baja del CDN de Meta.
+    || (n.type === 'n8n-nodes-base.httpRequest' && esPedidoDeMedio(String((n.parameters || {}).url || '')))
   ));
 }
 /** Los nodos que hablan con Meta (credencial de Graph) y los que hablan con `guardarMedio` (credencial de ingesta). */
@@ -79,7 +84,9 @@ export const ARISTAS_DEL_GUARDADO = [
   ['Resultado del guardado', 0, 'Avisar falla del guardado'],
 ];
 /** La URL de la descarga: la del CDN de Meta solo si Meta informó un tamaño dentro del límite; si no, vacía (no se baja nada). */
-export const URL_DESCARGA_GUARDADO = "={{ (String($json.url || '').startsWith('https://lookaside.fbsbx.com/') && Number($json.file_size) > 0 && Number($json.file_size) <= Number($('Preparar guardado').first().json.limite)) ? $json.url : '' }}";
+// Si Meta NO informa el tamaño (0 o ausente) se baja igual: perder el medio en silencio es peor, el servidor impone el tope por tipo (413) y el tiempo
+// límite de la descarga (20 s) acota lo que se baja.
+export const URL_DESCARGA_GUARDADO = "={{ (String($json.url || '').startsWith('https://lookaside.fbsbx.com/') && !(Number($json.file_size) > Number($('Preparar guardado').first().json.limite))) ? $json.url : '' }}";
 
 export const FUENTE_PREPARAR = readFileSync(join(AQUI, '../../../src/core/medios/guardado-preparar.js'), 'utf8').trimEnd();
 export const FUENTE_REINTENTO = readFileSync(join(AQUI, '../../../src/core/medios/guardado-reintento.js'), 'utf8').trimEnd();
@@ -127,7 +134,7 @@ function autenticacionDeGraph(credenciales) {
   throw new Error(`guardado: credenciales.graphTipo desconocido: ${String(tipo).slice(0, 30)}`);
 }
 
-/** Los ocho nodos de la rama, sin conectar al flujo. `desde` es [x, y] del primero. */
+/** Los once nodos de la rama, sin conectar al flujo. `desde` es [x, y] del primero. */
 export function nodosDelGuardado(opciones) {
   const o = opciones || {};
   const c = o.credenciales || {};
@@ -140,6 +147,8 @@ export function nodosDelGuardado(opciones) {
   if (!numero) throw new Error('guardado: falta la expresión del número del negocio (numero)');
   const [x, y] = o.desde || [0, 0];
   const graph = autenticacionDeGraph(c);
+  // El aviso sale con la credencial de ENVÍO del flujo («Enviar a WhatsApp»), la que corresponde a su variante (prueba o producción), no con la de descarga.
+  const graphAviso = autenticacionDeGraph({ graph: c.graphAviso || c.graph, graphTipo: c.graphAvisoTipo || c.graphTipo });
   const ingesta = { authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth' };
   const credIngesta = { httpHeaderAuth: { id: '', name: c.ingesta } };
   const P = "$('Preparar guardado').first().json";
@@ -186,7 +195,8 @@ export function nodosDelGuardado(opciones) {
         method: 'GET', url: URL_DESCARGA_GUARDADO, ...graph.parametros,
         options: { timeout: 20000, redirect: { redirect: { followRedirects: false } }, response: { response: { responseFormat: 'file', outputPropertyName: 'data' } } },
       },
-      credentials: graph.credentials, ...SIN_CORTAR, retryOnFail: true, maxTries: 2, waitBetweenTries: 1000,
+      // Sin reintento: con la URL vacía (medio demasiado grande) no hay nada que reintentar. Una descarga fallida la registra «Resultado del guardado».
+      credentials: graph.credentials, ...SIN_CORTAR,
       notes: 'Baja el archivo del CDN de Meta con el token, sin seguir redirecciones, SOLO si Meta informó un tamaño dentro del límite (imagen 5 MB, PDF 10 MB, audio 16 MB). Si no, la URL queda vacía y no se baja nada.',
     },
     {
@@ -230,12 +240,12 @@ export function nodosDelGuardado(opciones) {
       id: 'gm-avisar', name: 'Avisar falla del guardado', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + 2160, y],
       parameters: {
         method: 'POST', url: `=https://graph.facebook.com/{{ ${version} }}/{{ String(${numero}).replace(/\\D/g, '') }}/messages`,
-        ...graph.parametros, sendBody: true, specifyBody: 'json',
+        ...graphAviso.parametros, sendBody: true, specifyBody: 'json',
         jsonBody: "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $json.numeroRecepcion, type: 'text', text: { preview_url: false, body: String($json.texto || '').slice(0, 500) } }) }}",
         options: { timeout: 10000 },
       },
       // SIN onError: si Meta rechaza el aviso, la ejecución termina en error (ningún fallo tragado). Corre al final, cuando el cliente ya tiene su respuesta.
-      credentials: graph.credentials,
+      credentials: graphAviso.credentials,
       notes: 'El aviso de falla a la recepción del negocio, en texto libre (su ventana está abierta). Sin reintentos: un aviso repetido llegaría dos veces. Sin onError: si falla, la ejecución termina en error (corre al final, el cliente ya tiene su respuesta). +1 mensaje solo cuando falla el guardado, a lo más uno por día.',
     },
   ];
@@ -254,7 +264,12 @@ export function credencialesDelFlujo(flujo, ancla, graphDe) {
   if (tipos.length !== 1 || !['httpHeaderAuth', 'whatsAppApi'].includes(tipos[0])) throw new Error(`guardado: «${graphDe}» no lleva una sola credencial de WhatsApp`);
   const graph = String(ref.credentials[tipos[0]].name || '');
   if (!graph || graph === String(ing)) throw new Error(`guardado: «${graphDe}» no lleva una credencial de WhatsApp distinta de la de ingesta`);
-  return { ingesta: String(ing), graph, graphTipo: tipos[0] };
+  // La del aviso: la del nodo de envío del flujo, si existe.
+  const envio = (flujo.nodes || []).find((n) => n.name === 'Enviar a WhatsApp');
+  const tiposEnvio = envio ? Object.keys(envio.credentials || {}) : [];
+  const aviso = tiposEnvio.length === 1 && ['httpHeaderAuth', 'whatsAppApi'].includes(tiposEnvio[0]) ? { graphAviso: String(envio.credentials[tiposEnvio[0]].name || ''), graphAvisoTipo: tiposEnvio[0] } : {};
+  if (aviso.graphAviso !== undefined && (!aviso.graphAviso || aviso.graphAviso === String(ing))) throw new Error('guardado: «Enviar a WhatsApp» no lleva una credencial de WhatsApp distinta de la de ingesta');
+  return { ingesta: String(ing), graph, graphTipo: tipos[0], ...aviso };
 }
 
 /** Agrega la rama al flujo (lo modifica y lo devuelve). */
@@ -289,9 +304,9 @@ const destinosDe = (flujo, de, salida) => ((((flujo.connections || {})[de] || {}
 const credDe = (n) => Object.entries((n && n.credentials) || {}).map(([tipo, c]) => ({ tipo, nombre: String((c || {}).name || '') }));
 
 /** Lo que le falta o le sobra a la rama del guardado en un flujo armado que maneja medios. Vacío si está bien (o si el flujo no baja medios). */
-export function hallazgosDelGuardado(flujo) {
+export function hallazgosDelGuardado(flujo, opciones = {}) {
   const h = [];
-  if (!manejaMedios(flujo)) return h;
+  if (!manejaMedios(flujo) && !(opciones && opciones.exigir)) return h;
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   const por = (nombre) => nodos.find((n) => n.name === nombre);
   for (const n of NODOS_DEL_GUARDADO) if (!por(n)) h.push(`guardado: falta el nodo «${n}»`);
@@ -351,6 +366,9 @@ export function hallazgosDelGuardado(flujo) {
   const anotarP = por('Anotar medio').parameters || {};
   if (anotarP.sendBody !== undefined || anotarP.contentType !== undefined || anotarP.jsonBody !== undefined || anotarP.body !== undefined) h.push('guardado: «Anotar medio» no lleva cuerpo (modo Anotar: cuerpo vacío)');
   const aviso = por('Avisar falla del guardado');
+  const envioDelFlujo = por('Enviar a WhatsApp');
+  if (envioDelFlujo && JSON.stringify(aviso.credentials || {}) !== JSON.stringify(envioDelFlujo.credentials || {})) h.push('guardado: «Avisar falla del guardado» tiene que llevar la MISMA credencial que «Enviar a WhatsApp» (la de envío de su variante)');
+  if (por('Descargar medio (guardado)').retryOnFail) h.push('guardado: «Descargar medio (guardado)» no reintenta (con la URL vacía no hay qué reintentar)');
   if (aviso.onError !== undefined || aviso.continueOnFail !== undefined) h.push('guardado: «Avisar falla del guardado» no lleva onError: si Meta lo rechaza, la ejecución termina en error (ningún fallo tragado)');
   if (!/to:\s*\$json\.numeroRecepcion\b/.test(String((aviso.parameters || {}).jsonBody || ''))) h.push('guardado: «Avisar falla del guardado» va SOLO al número de recepción del negocio');
   if (aviso.retryOnFail || por('Guardar medio').retryOnFail) h.push('guardado: el aviso y el guardado no reintentan');

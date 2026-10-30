@@ -18,6 +18,10 @@ import { doblesDelGuardado, type OpcionesDelGuardado, type RespuestaDelServidor 
 import type { Doble } from './lib/n8n-de-mentira';
 import type { Flujo, J } from './lib/flujo';
 import { ANA, PID, PRUEBA, REC, crear, hablar, mAudio, mDocumento, mImagen, mTexto, textos } from './tenants/rroca-evy/mundo';
+import * as EMMA from './tenants/rroca-emma/mundo';
+import * as DOCTORAS from './tenants/doctoras/mundo';
+import * as ANTONIO from './tenants/rroca-antonio/mundo';
+import * as VM from './lib/venta-minima-mundo';
 
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -251,7 +255,7 @@ describe('el aviso de falla: ventana de la recepción, uno por día y por comerc
     hablar(mu, ANA, mImagen());
     expect(g.llamadas.avisos).toHaveLength(1);
   });
-  it('a lo más UNO por día de La Paz, aunque fallen muchos; al día siguiente, otro', () => {
+  it('a lo más UNO por ejecución y día de La Paz con ejecuciones SECUENCIALES (con concurrentes pueden salir varios: n8n no da un candado); al día siguiente, otro', () => {
     const { mu, g } = mundo({ respuesta: falla });
     abrirVentana(mu);
     for (let i = 0; i < 5; i++) hablar(mu, ANA, mImagen());
@@ -330,6 +334,7 @@ describe('en cada flujo cubierto la rama se arma igual (mismo código, mismas ca
     'rroca-evy/rroca-evy.json', 'rroca-emma/rroca-emma.json', 'rroca-ruben/rroca-ruben.json', 'rroca-antonio/rroca-antonio.json',
     'venta-minima/venta-minima.qtaco.json', 'venta-minima/venta-minima.ensayo-demo-a.json', 'venta-minima/venta-minima.prueba.json',
     'doctoras/doctoras.rroca-evy.json', 'doctoras/doctoras.rroca-emma.json', 'chat-novuchat/chat-novuchat.novuchat.json', 'captacion-minima/captacion-minima.novuchat.json',
+    'rroca-ruben/rroca-ruben.prueba.json', 'agenda-minima/agenda-minima.v0.json',
   ];
   const nodo = (f: Flujo, n: string) => f.nodes.find((x) => x.name === n)!;
   it.each(CUBIERTOS)('%s', (archivo) => {
@@ -337,11 +342,69 @@ describe('en cada flujo cubierto la rama se arma igual (mismo código, mismas ca
     const ingesta = (nodo(f, 'Reportar mensaje (entrante)').credentials as J)['httpHeaderAuth']['name'];
     const descarga = nodo(f, 'Descargar medio').credentials as J;
     for (const n of ['Anotar medio', 'Guardar medio']) expect(nodo(f, n).credentials, `${archivo} · ${n}`).toEqual({ httpHeaderAuth: { id: '', name: ingesta } });
-    for (const n of ['Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)', 'Avisar falla del guardado']) expect(nodo(f, n).credentials, `${archivo} · ${n}`).toEqual(descarga);
+    for (const n of ['Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)']) expect(nodo(f, n).credentials, `${archivo} · ${n}`).toEqual(descarga);
+    // El aviso sale con la credencial de ENVÍO de su variante (prueba o producción), no con la de descarga.
+    expect(nodo(f, 'Avisar falla del guardado').credentials, `${archivo} · aviso`).toEqual(nodo(f, 'Enviar a WhatsApp').credentials);
     // El número del negocio: la misma expresión que el reporte del entrante (misma ruta del token).
     const numero = ((nodo(f, 'Reportar mensaje (entrante)').parameters as J)['headerParameters']['parameters'] as J[]).find((h) => h['name'] === 'X-NovuChat-Numero')!['value'];
     for (const n of ['Anotar medio', 'Guardar medio']) {
       expect(((nodo(f, n).parameters as J)['headerParameters']['parameters'] as J[]).find((h) => h['name'] === 'X-NovuChat-Numero')!['value'], `${archivo} · ${n}`).toBe(numero);
     }
   });
+});
+
+describe('revisión de código de #699: lo que falla sin aviso queda REGISTRADO (sin datos del paciente)', () => {
+  it('401 (token rotado o número equivocado) → guardadoDeMedios.sinAcceso, sin aviso', () => {
+    const { mu, g } = mundo({ respuesta: r(401, 'no autorizado') });
+    abrirVentana(mu);
+    hablar(mu, ANA, mImagen());
+    hablar(mu, ANA, mAudio());
+    expect(g.llamadas.avisos).toHaveLength(0);
+    expect((mu.sd['guardadoDeMedios'] as J)['sinAcceso']).toEqual({ dia: '2026-10-05', n: 2 });
+  });
+  it.each(['telefono_invalido', 'falta_idmeta', 'tipo_invalido', 'vacio'])('400 %s → guardadoDeMedios.pedidoInvalido, sin aviso', (error) => {
+    const { mu, g } = mundo({ respuesta: r(400, { error }) });
+    abrirVentana(mu);
+    hablar(mu, ANA, mImagen());
+    expect(g.llamadas.avisos).toHaveLength(0);
+    const estado = mu.sd['guardadoDeMedios'] as J;
+    expect(estado['pedidoInvalido']).toEqual({ dia: '2026-10-05', n: 1 });
+    expect(estado['anotarConCuerpo']).toBeUndefined();
+  });
+  it('una descarga de Meta que falla → guardadoDeMedios.sinDescarga, sin llamar al servidor y sin aviso', () => {
+    const { mu, g } = mundo({ respuesta: r(200, { ruta: 'x', repetido: false }) });
+    mu.dobles['Descargar medio (guardado)'] = () => { throw new Error('403'); };
+    abrirVentana(mu);
+    hablar(mu, ANA, mImagen());
+    expect(g.llamadas.servidor).toHaveLength(0);
+    expect(g.llamadas.avisos).toHaveLength(0);
+    expect((mu.sd['guardadoDeMedios'] as J)['sinDescarga']).toEqual({ dia: '2026-10-05', n: 1 });
+  });
+  it.each([0, undefined])('si Meta NO informa el tamaño (%s), el medio se baja igual y llega al servidor (que impone el tope por tipo)', (bytes) => {
+    const { mu, g } = mundo({ respuesta: r(200, { ruta: 'x', repetido: false }) });
+    mu.dobles['Pedir el medio a Meta (guardado)'] = () => ({ id: 'm', url: 'https://lookaside.fbsbx.com/whatsapp_business/attachments/g', mime_type: 'image/jpeg', ...(bytes === undefined ? {} : { file_size: bytes }) });
+    hablar(mu, ANA, mImagen());
+    expect(g.llamadas.descargar.map((x) => x.url)).toEqual(['https://lookaside.fbsbx.com/whatsapp_business/attachments/g']);
+    expect(g.llamadas.servidor).toHaveLength(1);
+  });
+  it('NIEGA: una URL que no es del CDN de Meta no se baja, con o sin tamaño', () => {
+    const { mu, g } = mundo({ url: 'https://otro.ejemplo.invalid/x' });
+    hablar(mu, ANA, mImagen());
+    expect(g.llamadas.descargar.map((x) => x.url)).toEqual(['']);
+    expect(g.llamadas.servidor).toHaveLength(0);
+  });
+  it('la descarga del guardado no reintenta (con la URL vacía no hay qué reintentar)', () => {
+    const { mu } = mundo();
+    const n = mu.flujo.nodes.find((x) => x.name === 'Descargar medio (guardado)')!;
+    expect((n as J)['retryOnFail']).toBeUndefined();
+  });
+});
+
+describe('el mensaje de la RECEPCIÓN (los comandos del operador) llega a «Preparar guardado» y abre su ventana, en cada flujo', () => {
+  const ventana = (sd: J): unknown => (sd['guardadoDeMedios'] as J | undefined)?.['recepcionMs'];
+  it('Evy', () => { const { mu } = mundo(); abrirVentana(mu); expect(ventana(mu.sd)).toBeGreaterThan(0); });
+  it('Emma', () => { const mu = EMMA.crear(); EMMA.hablar(mu, EMMA.REC, EMMA.mTexto('hola'), { toleraFallo: true }); expect(ventana(mu.sd)).toBeGreaterThan(0); });
+  it('doctoras', () => { const mu = DOCTORAS.crear(); DOCTORAS.hablar(mu, DOCTORAS.REC, DOCTORAS.mTexto('hola'), { toleraFallo: true }); expect(ventana(mu.sd)).toBeGreaterThan(0); });
+  it('Antonio', () => { const mu = ANTONIO.crear(); ANTONIO.hablar(mu, ANTONIO.REC, ANTONIO.mTexto('hola'), { toleraFallo: true }); expect(ventana(mu.sd)).toBeGreaterThan(0); });
+  it('Q\'Taco (venta-minima)', () => { const w = VM.crear(); w.mundo.turno(VM.entrega(VM.REC, VM.texto('hola')), { tolerarFallo: true }); expect(ventana(w.mundo.sd)).toBeGreaterThan(0); });
 });
