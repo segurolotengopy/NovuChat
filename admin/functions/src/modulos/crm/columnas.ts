@@ -35,6 +35,8 @@ export const COLUMNAS_V1: readonly ColumnaCrm[] = [
   { campo: 'origen', titulo: 'Origen', dueno: 'bot' },
   { campo: 'calificacion', titulo: 'Calificación', dueno: 'bot' },
   { campo: 'resumen', titulo: 'Resumen', dueno: 'bot' },
+  // El rubro o interés que el prospecto registró (PR-B). Nueva en v1: el flujo vivo de NovuChat ya la escribe (columna F).
+  { campo: 'interes', titulo: 'Interés', dueno: 'bot', nueva: true },
   { campo: 'valor', titulo: 'Valor', dueno: 'equipo' },
   { campo: 'responsable', titulo: 'Responsable', dueno: 'equipo' },
   { campo: 'estado', titulo: 'Estado', dueno: 'equipo' },
