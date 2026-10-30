@@ -2594,3 +2594,27 @@ describe('bucle del paso de los datos (29/10): «Engels» no puede repetir cinco
     }
   });
 });
+
+describe('«Otro / a medida» no ofrece al equipo en el primer mensaje (29/10): primero se le consulta', () => {
+  const botonesOtro = (previos: string[], texto: string, ev = 'otroRespuesta', rubroElegido = ''): J => {
+    const historial = previos.map((t) => ({ r: 'u', t }));
+    const ficha = { ...fichaBase(), rubro: 'otro', historial };
+    const eventos = texto === '' ? [ev === 'otro' ? { ...f('chEventoToque')('otro', CFG.datos.rubros), seq: 1, id: '', ms: 0 } : ev] : [{ ...f('chEventoTexto')(texto), seq: 1, id: '', ms: 0 }];
+    const s = f('chSituacion')({ plan: { ruta: 'modelo', rubroElegido, hechos: {} }, res: { origen: 'respaldo', evento: ev, causas: [] }, eventos, ficha });
+    return f('chBotonesDe')(s);
+  };
+  it('al elegir «Otro» y tras la primera respuesta, SIN botón del equipo; con dos respuestas ya, sí', () => {
+    expect(botonesOtro([], '', 'otro', 'otro')).toMatchObject({ equipo: false, fila: 'otro-temprano' });
+    expect(botonesOtro(['[Eligió el rubro: Otro / a medida]'], 'Vendo software y licencias')).toMatchObject({ equipo: false, fila: 'otro-temprano' });
+    expect(botonesOtro(['[Eligió el rubro: Otro / a medida]', 'Vendo software y licencias'], 'Me cuesta responder rápido')).toMatchObject({ equipo: true });
+  });
+  it('NIEGA: si el cliente PIDE algo a medida, o ya habló con el equipo, la regla no lo calla', () => {
+    expect(botonesOtro(['[Eligió el rubro: Otro / a medida]'], 'Necesito algo personalizado a medida').equipo).toBe(true);
+    expect(botonesOtro(['[Eligió el rubro: Otro / a medida]'], 'Vendo software', 'sin_dato').fila).not.toBe('otro-temprano');
+  });
+  it('NIEGA: un rubro estándar no cambia (la regla es solo de «Otro»)', () => {
+    const ficha = { ...fichaBase(), rubro: 'salud', historial: [] };
+    const s = f('chSituacion')({ plan: { ruta: 'modelo', rubroElegido: '', hechos: {} }, res: { origen: 'respaldo', evento: 'sin_dato', causas: [] }, eventos: [{ ...f('chEventoTexto')('hola'), seq: 1, id: '', ms: 0 }], ficha });
+    expect(f('chBotonesDe')(s)).toMatchObject({ equipo: true });
+  });
+});

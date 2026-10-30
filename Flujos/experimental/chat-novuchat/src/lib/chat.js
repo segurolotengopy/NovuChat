@@ -823,7 +823,6 @@ const CH_CONTEXTOS = {
   ambiguo: 'La conversación sigue difusa: aplica el cierre hacia el equipo.',
   general: 'Responde con tu razonamiento natural usando la conversación, el rubro conocido y las reglas.',
 };
-
 // ------------------------------------------------------------------ DECIDIR: lo que se resuelve SIN el modelo, y si hace falta el modelo, con qué contexto
 //   a = { eventos, ficha (vigente), cfg, from }   ->   plan = { ruta, fijo, contexto, rubroElegido, hechos, temas, aMedida, soporte, tope }
 // ruta: 'lista' | 'planes' | 'equipo' | 'fijo' | 'modelo'. Un toque de botón o un detector del CÓDIGO decide; la etiqueta de un modelo nunca basta. ¿Hay que pedir el nombre y el negocio antes de los planes? Antes de la PRIMERA muestra de planes, siempre (decisión del 10/10), si todavía no se pidió, falta alguno de los dos y los planes no se mostraron.
@@ -888,7 +887,6 @@ function chDecidir(a) {
   if (plan.contexto === 'abierta' && f.historial.length === 0 && chPlano(f.rubro) === '' && ev.every((e) => e.k === 'texto' && (chEsSaludoInicial(e.c) || chSoloPideInfo(e.c)))) { plan.ruta = 'lista'; plan.pitch = true; plan.contexto = ''; }
   return plan;
 }
-
 // ------------------------------------------------------------------ el modelo
 function chPreciosParaElModelo(cfg) {
   const est = chCargo(cfg, false);
@@ -1406,6 +1404,7 @@ function chSituacion(a) {
     // declina = el cliente propone una función no documentada para su rubro, o el modelo no la puede resolver (declina o la inventó)
     declina: p.ruta === 'modelo' && ((rub !== '' && !CH_RUBROS_CON_COBRO.includes(rub) && CH_FUNCION_CLIENTE.test(t)) || chDeclinaTexto(r.texto) || (r.causas || []).includes('funcion_inventada') || modeloOfreceEq),
     modeloOfreceEq: modeloOfreceEq, planesTocado: f.planesTocado === true, planesVistos: f.planesMostrados === true, equipoTocado: f.equipoTocado === true,
+    otroTemprano: rub === 'otro' && f.equipoAhora !== true && !textos.some(chPideAMedida) && (f.historial || []).filter((x) => x.r === 'u' && !/^\[/.test(chTexto(x.t))).length + textos.length < 2,
   };
 }
 // LA TABLA: la primera fila que coincide gana. `planes` y `equipo` dicen qué botones corresponden a esa situación (true, false o 'interes': solo si el cliente mostró interés); las COMPUERTAS de `chBotonesDe` (1) los apagan si ya se pulsaron o ya se vieron.
@@ -1416,6 +1415,7 @@ const CH_TABLA = [
   { id: 'planes', cuando: (s) => s.ruta === 'planes', planes: false, equipo: 'sinPlanes', nota: 'Los planes (o su tope y complemento): respuesta completa, sin botón del equipo; el botón sale solo al derivar, y deriva cuando no hay planes ni imagen que mostrar (si no, sería un callejón sin salida).' },
   { id: 'consulta-sin-respuesta', cuando: (s) => s.ruta === 'fijo' && CH_FIJO_SIN_RESPUESTA.includes(s.fijo), planes: false, equipo: true, nota: 'Integración o costo de Meta: el chat no lo resuelve, deriva al equipo (el botón sale solo al derivar).' },
   { id: 'respuesta-fija', cuando: (s) => s.ruta === 'fijo', planes: false, equipo: false, nota: 'Identidad, disponibilidad, banco, consumo, descuento, número propio y coexistencia: se contestan completas, sin invitaciones ni botón.' },
+  { id: 'otro-temprano', cuando: (s) => s.otroTemprano && !s.declina && !['sin_dato', 'no_documentado', 'equipo', 'generico', 'ambiguo', 'complemento'].includes(s.ev), planes: 'interes', equipo: false, nota: '«Otro / a medida» con menos de dos respuestas del cliente: se le consulta, sin botón del equipo (salvo que no haya dato o el modelo no pueda).' },
   { id: 'sin-respuesta', cuando: (s) => CH_SIN_RESPUESTA.includes(s.ev), planes: false, equipo: true, nota: 'Sin dato, no documentado, a medida («Otro»), cierre hacia el equipo o error del modelo: requiere al equipo.' },
   { id: 'rubro-declina', cuando: (s) => s.declina && (s.ev === 'rubro' || s.ev === 'multiple'), planes: true, equipo: true, nota: 'Eligió rubro y además propone una función no documentada: «Ver planes» y la salida al equipo.' },
   { id: 'declina-ofrece-equipo', cuando: (s) => s.declina && s.modeloOfreceEq && !['identidad', 'cortesia'].includes(s.ev), planes: false, equipo: true, nota: 'El modelo no pudo resolver y su pregunta final ofrece hablar con el equipo: se conserva esa oferta con su botón (aunque la pregunta traiga una palabra de interés).' },
