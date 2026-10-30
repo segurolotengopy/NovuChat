@@ -9,7 +9,10 @@
  * Que Cobros pase a importar de aquí es un PR aparte del agente `modulo`; hasta
  * entonces, si cambia una de las dos, cambia la otra.
  *
- * Los medios entrantes (audio, foto, PDF) se guardan 90 días en
+ * La copia difiere en una cosa a propósito: aquí `guardar` graba
+ * `contentDisposition: 'attachment'` (contrato de medios v2, adenda §7.3).
+ *
+ * Los medios entrantes (imagen, audio, video y documentos de cualquier tipo) se guardan 90 días en
  * `tenants/{t}/medios/{aaaa-mm-dd}/{nombreDeObjeto(idMeta)}.{ext}`: la fecha en
  * la ruta permite borrar por carpeta sin leer cada objeto, y el nombre es un
  * hash del id de Meta, de modo que NI el teléfono NI el id de Meta aparecen en
@@ -54,8 +57,12 @@ export function crearAlmacenDeStorage(bucket: () => BucketMinimo): Almacen {
   return {
     async guardar(ruta, bytes, contentType) {
       try {
+        // `contentDisposition: 'attachment'` en TODOS los objetos (adenda §7.3 del contrato de medios v2):
+        // si alguna vez un objeto llegara a servirse por URL, el navegador lo descarga, no lo abre ni lo
+        // ejecuta en línea. El `contentType` lo decide quien llama (`contentTypeDeObjeto`).
         await bucket().file(ruta).save(bytes, {
-          contentType, resumable: false, metadata: { cacheControl: 'private, max-age=0' },
+          contentType, resumable: false,
+          metadata: { cacheControl: 'private, max-age=0', contentDisposition: 'attachment' },
           preconditionOpts: { ifGenerationMatch: 0 },
         });
         return 'creado';

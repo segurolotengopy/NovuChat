@@ -1,17 +1,20 @@
 /**
  * =============================================================================
- * GUARDAR UN MEDIO ENTRANTE (audio, foto, PDF) — 90 días, solo con la bandera
+ * GUARDAR UN MEDIO ENTRANTE (imagen, audio, video, documento) — 90 días, con bandera
  * =============================================================================
  *
  * DECISIONES DE ANDRES (20, 22 y 23/10/2026):
  *  - Se guardan los medios ENTRANTES 90 días con TTL, también con la
  *    conversación tomada por una persona (D1).
- *  - Topes: imagen 5 MB, audio 16 MB, PDF 10 MB. Con bytes, docx, xlsx y otros: 415 (D6).
- *  - docx y xlsx SOLO SE ANOTAN (29/10/2026): con `X-NovuChat-Anotar: 1`, cuerpo vacío y
- *    `X-NovuChat-Mime` de Word o Excel, se crea el metadato `estado: 'anotado'` sin ruta ni bytes.
- *  - TOPE de 3.000 medios por comercio y día (29/10/2026, reemplaza a D5: 1.000 o 2 GB), más un
- *    tope de bytes AMPLIO de 15 GiB por día que solo frena el costo de un token robado. Pasado el
- *    tope, se deja constancia en el contador a lo sumo 50 veces por día; después, ni eso.
+ *  - GUARDAR TODO (contrato de medios v2, 30/10/2026): imagen ≤5 MB, audio ≤16 MB, video ≤16 MB
+ *    y documentos de CUALQUIER tipo ≤16 MB. Imagen, audio y video se verifican por firma (415 si
+ *    los bytes contradicen la categoría); un documento se guarda siempre, con la extensión y el
+ *    mime de `documentoPorFirma` (lista cerrada; lo desconocido es `bin`/octet-stream).
+ *  - El modo ANOTAR (docx/xlsx sin bytes, 29/10/2026) se MANTIENE por compatibilidad con los
+ *    flujos publicados; se quita en un PR aparte cuando se republiquen.
+ *  - TOPES DIARIOS (aprobados por Andres el 30/10/2026; bloque «TOPES» de abajo): por comercio
+ *    3.000 medios y 3 GiB; por teléfono 100 medios y 500 MiB. Pasado un tope, se deja constancia
+ *    en el contador a lo sumo 50 veces por día; después, ni eso.
  *  - La bandera `guardarMedios` de la ficha se enciende SOLO con el anexo
  *    aceptado y el «sí» de Andres (D3): APAGADA por defecto, y con ella
  *    apagada esta Function no guarda NADA (409).
@@ -28,7 +31,7 @@
  * ata cada medio a una conversación, pero NO FRENA UN TOKEN ROBADO: con el mismo
  * token, la ingesta acepta un `idMeta` cualquiera, así que quien lo tenga puede
  * registrar el mensaje y luego el medio. La barrera real contra llenar el
- * depósito es el TOPE DIARIO (3.000 medios y 15 GiB por comercio), y la alerta
+ * depósito son los TOPES DIARIOS (por comercio y por teléfono), y la alerta
  * sobre `cuposDeMedios.bytes` (docs/arquitectura/core.md).
  *
  * NO ES UN COMPROBANTE. No importa nada de Cobros y no escribe `solicitud`,
@@ -50,31 +53,43 @@
 
 import { createHash } from 'node:crypto';
 import { onRequest } from 'firebase-functions/v2/https';
-import { Timestamp, getFirestore } from 'firebase-admin/firestore';
+import { FieldPath, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../seguridad/firma.js';
 import {
   CARPETA_DE_DIA, DIAS_DE_RETENCION, DIA_MS, ID_TENANT, almacenDeMedios, diaDeLaPaz, idMetaCrudo, nombreDeObjeto, type Almacen,
 } from './almacen.js';
 import {
-  esTipoDeMedio, veredictoDe, veredictoDeAnotar, type ExtensionDeMedio,
+  MB, TIPOS_DE_MENSAJE, contentTypeDeObjeto, esTipoDeMedio, veredictoDe, veredictoDeAnotar, type ExtensionDeMedio,
 } from './tipos.js';
 
 const TELEFONO = /^[0-9]{8,15}$/;
 /** El mensaje al que pertenece el medio tiene que ser de hace 30 minutos o menos. */
 export const VENTANA_DEL_MENSAJE_MS = 30 * 60_000;
+// ---------------------------------------------------------------------------
+// TOPES DIARIOS — EL ÚNICO LUGAR donde viven (aprobados por Andres el 30/10/2026, contrato de
+// medios v2 §7.4 y §8). Son constantes de SEGURIDAD y de costo de almacenamiento, NO límites
+// comerciales de plan: no se venden ni cambian por plan, existen para que un token filtrado o un
+// cliente que manda archivos sin parar no llenen el depósito (docs/arquitectura/limites.md).
+// Se cuentan por día de La Paz, en el contador `cuposDeMedios/{día}`, en la MISMA transacción.
+// ---------------------------------------------------------------------------
+const GiB = 1024 * MB;
 /**
- * Cuántos medios (guardados o anotados) acepta POR DÍA de La Paz un mismo comercio (Andres,
- * 29/10/2026). Es una barrera CONTRA ABUSO —un token filtrado no debe servir para llenar el
- * depósito—, no un límite comercial: un comercio muy ocupado recibe cientos de medios al día, y
- * rechazar a un cliente real por un tope apretado es peor que tolerar un abuso acotado.
+ * Medios (guardados o anotados) por comercio y día. Barrera CONTRA ABUSO, no límite comercial: un
+ * comercio muy ocupado recibe cientos de medios al día, y rechazar a un cliente real por un tope
+ * apretado es peor que tolerar un abuso acotado.
  */
 export const TOPE_DIARIO_DE_MEDIOS = 3000;
 /**
- * Tope de BYTES por día, AMPLIO a propósito (15 GiB): 3.000 audios de 16 MB serían 48 GB en un
- * día y 4 TB en los 90 de retención. Un comercio real no se acerca; un token robado sí.
+ * Bytes por comercio y día: 3 GiB (bajó de 15 GiB el 30/10/2026, adenda §7.4). Con documentos y
+ * videos de 16 MB, 3 GiB son ~190 archivos máximos al día; 270 GiB en los 90 días de retención como
+ * peor caso por comercio.
  */
-export const TOPE_DIARIO_DE_BYTES = 15 * 1024 * 1024 * 1024;
+export const TOPE_DIARIO_DE_BYTES = 3 * GiB;
+/** Medios por TELÉFONO y día: 100. Frena a un solo cliente (o a un token) que manda sin parar. */
+export const TOPE_DIARIO_POR_TELEFONO = 100;
+/** Bytes por TELÉFONO y día: 500 MiB. */
+export const TOPE_DIARIO_DE_BYTES_POR_TELEFONO = 500 * MB;
 /**
  * Cuántas veces por comercio y día se deja constancia de «tope superado» (en el propio contador,
  * campos `rechazados` y `ultimoRechazo`). Sin este freno, un abusador que ya pasó el tope seguiría
@@ -83,6 +98,13 @@ export const TOPE_DIARIO_DE_BYTES = 15 * 1024 * 1024 * 1024;
 export const MAX_ANOTACIONES_DE_TOPE = 50;
 /** El contador del día se borra solo (TTL) a los 2 días: alcanza para cubrir el cambio de día. */
 export const DIAS_DEL_CONTADOR = 2;
+
+/**
+ * La clave del teléfono en el contador del día (`cuposDeMedios/{día}.telefonos.{clave}`): un hash, no el
+ * número, para que el contador no sea una lista de teléfonos. Empieza con `t` (nunca con un dígito).
+ */
+export const claveDeTelefono = (telefono: string): string =>
+  `t${createHash('sha256').update(`telefono:${telefono}`).digest('base64url').slice(0, 22)}`;
 
 export const rutaDeMedio = (tenantId: string, dia: string, idMeta: string, ext: ExtensionDeMedio): string =>
   `tenants/${tenantId}/medios/${dia}/${nombreDeObjeto(idMeta)}.${ext}`;
@@ -142,7 +164,21 @@ async function deshacerReserva(
       const reservado = Math.max(0, Number(m.get('tamano') ?? 0) || 0);
       tx.delete(refMedio);
       if (refCupo && c?.exists) {
-        tx.update(refCupo, { n: Math.max(0, Number(c.get('n') ?? 0) - 1), bytes: Math.max(0, Number(c.get('bytes') ?? 0) - reservado) });
+        const cambios: Record<string, number> = {
+          n: Math.max(0, Number(c.get('n') ?? 0) - 1), bytes: Math.max(0, Number(c.get('bytes') ?? 0) - reservado),
+        };
+        // El cupo del teléfono vuelve solo si el contador lo tiene (un marcador anterior a los topes por
+        // teléfono no lo reservó): nunca se crea una entrada negativa.
+        const conversacion = String(m.get('conversacionId') ?? '');
+        const clave = conversacion.startsWith('wa_') ? claveDeTelefono(conversacion.slice(3)) : null;
+        const delTel = clave ? c.get(new FieldPath('telefonos', clave)) as { n?: unknown; bytes?: unknown } | undefined : undefined;
+        if (clave && delTel && typeof delTel === 'object') {
+          tx.update(refCupo, 'n', cambios['n'], 'bytes', cambios['bytes'], new FieldPath('telefonos', clave), {
+            n: Math.max(0, Number(delTel.n ?? 0) - 1), bytes: Math.max(0, Number(delTel.bytes ?? 0) - reservado),
+          });
+        } else {
+          tx.update(refCupo, cambios);
+        }
       }
     });
   } catch (error) { avisarFallo('al devolver el cupo', error); /* el marcador caduca por TTL en un día */ }
@@ -176,6 +212,8 @@ export async function guardarMedioDe(
 
   // Qué se hace con esto, sin tocar nada todavía: guardar (los bytes deciden el tipo, y tiene que
   // coincidir con la cabecera y con el Content-Type) o anotar (docx/xlsx, sin bytes).
+  // `mime` es el VERIFICADO (el de la firma, o el de `documentoPorFirma` para un documento); el objeto de
+  // Storage de un documento se escribe igual con `application/octet-stream` (`contentTypeDeObjeto`).
   let medio: { estado: 'guardado'; ext: ExtensionDeMedio; mime: string } | { estado: 'anotado'; ext: 'docx' | 'xlsx'; mime: string };
   if (e.anotar) {
     const v = veredictoDeAnotar(e.bytes, tipo, e.mime);
@@ -189,7 +227,8 @@ export async function guardarMedioDe(
 
   const db = deps.db ?? getFirestore();
 
-  // Solo se guarda lo que corresponde a un mensaje ENTRANTE reciente del mismo tipo.
+  // Solo se guarda lo que corresponde a un mensaje ENTRANTE reciente del mismo tipo (un sticker
+  // registrado como `sticker` corresponde a `image`: `TIPOS_DE_MENSAJE`).
   let candidatos: FirebaseFirestore.QuerySnapshot;
   try {
     candidatos = await db.collection(`tenants/${e.tenantId}/conversaciones/wa_${e.telefono}/mensajes`)
@@ -200,7 +239,7 @@ export async function guardarMedioDe(
   }
   const mensaje = candidatos.docs.find((d) => {
     const ts = milis(d.get('ts'));
-    return d.get('direccion') === 'entrante' && d.get('tipo') === tipo
+    return d.get('direccion') === 'entrante' && TIPOS_DE_MENSAJE[tipo].includes(String(d.get('tipo')))
       && ts !== null && ahoraMs - ts <= VENTANA_DEL_MENSAJE_MS && ts <= ahoraMs + 5 * 60_000;
   });
   if (!mensaje) return { codigo: 409, cuerpo: { error: 'sin_mensaje' } };
@@ -211,13 +250,14 @@ export async function guardarMedioDe(
   const vence = Timestamp.fromMillis(ahoraMs + DIAS_DE_RETENCION * DIA_MS);
   const venceContador = Timestamp.fromMillis(ahoraMs + DIAS_DEL_CONTADOR * DIA_MS);
   const tamano = e.bytes.length;
+  const clave = claveDeTelefono(e.telefono);
 
   // LA DEDUPLICACIÓN Y EL CUPO SON UNA SOLA TRANSACCIÓN (revisión de seguridad del #617). El marcador
   // `mediosRecibidos/{hash}` nace `pendiente` en la MISMA transacción que reserva el cupo: de varias
   // peticiones simultáneas con el mismo idMeta solo UNA lo crea y gasta cupo; las demás ven el marcador.
   // El cupo se devuelve a lo sumo UNA vez, y solo por la petición que lo reservó.
   type Decision =
-    | { t: 'repetido'; ruta: string } | { t: 'repetido_anotado' } | { t: 'en_curso' } | { t: 'lleno' }
+    | { t: 'repetido'; ruta: string } | { t: 'repetido_anotado' } | { t: 'en_curso' } | { t: 'lleno' } | { t: 'lleno_telefono' }
     | { t: 'reservado' } | { t: 'tomar'; ruta: string } | { t: 'anotado' };
   let decision: Decision;
   try {
@@ -237,30 +277,38 @@ export async function guardarMedioDe(
     }
     const n = Number(cupo.get('n') ?? 0);
     const bytes = Number(cupo.get('bytes') ?? 0);
-    if (n + 1 > TOPE_DIARIO_DE_MEDIOS || bytes + tamano > TOPE_DIARIO_DE_BYTES) {
+    const delTel = (cupo.get(new FieldPath('telefonos', clave)) ?? {}) as { n?: unknown; bytes?: unknown };
+    const nTel = Number(delTel.n ?? 0) || 0;
+    const bytesTel = Number(delTel.bytes ?? 0) || 0;
+    const llenoComercio = n + 1 > TOPE_DIARIO_DE_MEDIOS || bytes + tamano > TOPE_DIARIO_DE_BYTES;
+    const llenoTelefono = nTel + 1 > TOPE_DIARIO_POR_TELEFONO || bytesTel + tamano > TOPE_DIARIO_DE_BYTES_POR_TELEFONO;
+    if (llenoComercio || llenoTelefono) {
       // La constancia de «tope superado» va en el propio contador y está acotada: pasadas
-      // MAX_ANOTACIONES_DE_TOPE, el 429 sale sin escribir nada.
+      // MAX_ANOTACIONES_DE_TOPE, el 429 sale sin escribir nada. Un rechazo no gasta cupo.
       const rechazados = Number(cupo.get('rechazados') ?? 0);
       if (rechazados < MAX_ANOTACIONES_DE_TOPE) {
         tx.set(refCupo, {
           n, bytes, rechazados: rechazados + 1, ultimoRechazo: Timestamp.fromMillis(ahoraMs), vence: venceContador,
         }, { merge: true });
       }
-      return { t: 'lleno' };
+      return llenoComercio ? { t: 'lleno' } : { t: 'lleno_telefono' };
     }
-    tx.set(refCupo, { n: n + 1, bytes: bytes + tamano, vence: venceContador }, { merge: true });
+    tx.set(refCupo, {
+      n: n + 1, bytes: bytes + tamano, vence: venceContador,
+      telefonos: { [clave]: { n: nTel + 1, bytes: bytesTel + tamano } },
+    }, { merge: true });
     if (medio.estado === 'anotado') {
       // Anotado: sin Storage, el metadato nace TERMINADO en la misma transacción que gasta el cupo y
       // marca el mensaje. Sin ruta, sin tamaño (no hay bytes) y sin sha256.
       tx.create(refMedio, {
-        idMeta, conversacionId: `wa_${e.telefono}`, tipo, mime: medio.mime, ext: medio.ext, estado: 'anotado',
+        idMeta, conversacionId: `wa_${e.telefono}`, tipo, categoria: tipo, mime: medio.mime, ext: medio.ext, estado: 'anotado',
         tamano: null, ruta: null, sha256: null, en: Timestamp.fromMillis(ahoraMs), vence,
       });
       tx.update(mensaje.ref, { medio: { estado: 'anotado', mime: medio.mime, tamano: null, vence } });
       return { t: 'anotado' };
     }
     tx.create(refMedio, {
-      idMeta, conversacionId: `wa_${e.telefono}`, tipo, mime: medio.mime, ext: medio.ext, estado: 'pendiente',
+      idMeta, conversacionId: `wa_${e.telefono}`, tipo, categoria: tipo, mime: medio.mime, ext: medio.ext, estado: 'pendiente',
       tamano, ruta: rutaDeMedio(e.tenantId, dia, idMeta, medio.ext), en: Timestamp.fromMillis(ahoraMs),
       // Un pendiente huérfano caduca solo por el TTL en un día.
       vence: Timestamp.fromMillis(ahoraMs + DIA_MS),
@@ -279,6 +327,7 @@ export async function guardarMedioDe(
   if (decision.t === 'anotado') return { codigo: 200, cuerpo: { anotado: true, repetido: false } };
   if (decision.t === 'en_curso') return { codigo: 409, cuerpo: { error: 'en_curso' } };
   if (decision.t === 'lleno') return { codigo: 429, cuerpo: { error: 'cupo_diario_lleno' } };
+  if (decision.t === 'lleno_telefono') return { codigo: 429, cuerpo: { error: 'cupo_telefono_lleno' } };
   if (medio.estado !== 'guardado') return { codigo: 502, cuerpo: { error: 'no_se_registro' } }; // inalcanzable
   // Un pendiente retomado se guarda en la carpeta del DÍA EN QUE SE RESERVÓ (donde está su cupo). Si
   // el reintento trae otro formato (otra extensión: el intento anterior pudo descargar otro archivo),
@@ -292,7 +341,7 @@ export async function guardarMedioDe(
   try {
     // `ifGenerationMatch: 0`: un medio nunca se sobrescribe. Si el objeto ya estaba (un intento anterior
     // que no alcanzó a terminar), se sigue a finalizar el registro; el cupo ya estaba reservado.
-    await almacen.guardar(ruta, e.bytes, firma.mime);
+    await almacen.guardar(ruta, e.bytes, contentTypeDeObjeto({ tipo, mime: firma.mime }));
   } catch {
     await deshacerReserva(db, e.tenantId, refMedio);
     return { codigo: 502, cuerpo: { error: 'no_se_guardo' } };
@@ -302,7 +351,7 @@ export async function guardarMedioDe(
     await db.runTransaction(async (tx) => {
       tx.update(refMedio, {
         estado: 'guardado', sha256: createHash('sha256').update(e.bytes).digest('hex'), vence,
-        ruta, ext: firma.ext, mime: firma.mime, tamano,
+        ruta, ext: firma.ext, mime: firma.mime, tamano, categoria: tipo,
       });
       tx.update(mensaje.ref, { medio: { estado: 'guardado', mime: firma.mime, tamano, vence } });
     });
@@ -318,7 +367,7 @@ export async function guardarMedioDe(
 
 /**
  * Binario en el cuerpo; cabeceras `X-NovuChat-Telefono`, `X-NovuChat-IdMeta`,
- * `X-NovuChat-Tipo` (image|audio|document) y `Content-Type`. Solo el token.
+ * `X-NovuChat-Tipo` (image|audio|video|document) y `Content-Type`. Solo el token.
  * Modo anotar (docx/xlsx): cuerpo vacío, `X-NovuChat-Anotar: 1` y `X-NovuChat-Mime`.
  */
 /** Peticiones a la vez por instancia FUERA de staging (revisión de seguridad del #617). */
