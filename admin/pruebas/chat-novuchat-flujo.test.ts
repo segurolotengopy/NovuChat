@@ -1162,6 +1162,19 @@ describe('la hoja Leads_CRM: fila, nombre, empresa, rubro, necesidad y calificac
     expect(w.hoja.filas[0]).toEqual(vieja); // la fila vieja no se toca
     expect(w.hoja.filas[1]![5]).toBe('Belleza');
   });
+  it('NIEGA (revisión de #701): si Meta rechaza el primer mensaje (la ficha se restaura vacía) o se resetea la ficha dentro de las 48 h, NO se crea una segunda fila', () => {
+    const w = crear();
+    w.graph.falla = () => true;
+    const r = w.mundo.turno(valorMeta(mTexto('Hola'), MAMA), { tolerarFallo: true });
+    expect(r.fallo?.nodo).toBe('Confirmar envío');
+    expect(w.hoja.filas).toHaveLength(1);          // la fila ya se guardó
+    w.graph.falla = () => false;
+    jugar(w, MAMA).texto('Hola otra vez');
+    expect(w.hoja.filas).toHaveLength(1);          // el reintento actualiza esa fila
+    delete (w.mundo.sd['chatNovuchat'] as J)[MAMA]; // «reset» de la ficha de prueba
+    jugar(w, MAMA).texto('Hola');
+    expect(w.hoja.filas).toHaveLength(1);
+  });
   it('NIEGA: antes de 48 h NO hay fila nueva (actualiza la misma), y varias filas viejas del mismo teléfono: se actualiza la MÁS RECIENTE', () => {
     const w = crear();
     const j = jugar(w, MAMA, { perfil: 'Ana Pérez' });

@@ -26,7 +26,7 @@ WhatsApp Trigger | Entrada de prueba → Config base → Carga de entrada (filtr
   → ¿Reintentar? → Reintentar el modelo → Armar mensajes ─┬→ ¿Enviar de verdad? → Enviar a WhatsApp → ¿Falló el envío? → Enviar respaldo → ¿Reportar? (saliente) → ¿Meta aceptó? → Reportar mensaje (saliente)   [cadena COMÚN; «¿Meta aceptó?» es la puerta PROPIA]
                                                           ├→ Prospecto para la planilla → Buscar teléfono → Leer IDs → Decidir fila → ¿Agregar? → Agregar fila | ¿Actualizar? → Actualizar fila
 
-- **Una fila por contacto (Andres, 29/10)**: quien escribe por primera vez, o vuelve tras 48 h sin mensajes (la ficha se olvida), es un registro NUEVO en la hoja (`nuevoContacto`, lo marca `Armar mensajes`); mientras dure la conversación se actualiza SIEMPRE la fila más reciente de ese teléfono (nunca las anteriores ni las columnas del equipo). Un negocio por fila. Costo: 0 mensajes.
+- **Una fila por contacto (Andres, 29/10)**: quien escribe por primera vez, o vuelve tras 48 h sin mensajes (la ficha se olvida), es un registro NUEVO en la hoja (`nuevoContacto`, lo marca `Armar mensajes` con el último mensaje por teléfono, `chatNovuchatCrm` en `staticData`, aparte de la ficha: la ficha se restaura si Meta rechaza el envío y se resetea en las pruebas, y eso no crea filas); mientras dure la conversación se actualiza SIEMPRE la fila más reciente de ese teléfono (nunca las anteriores ni las columnas del equipo). Un negocio por fila. Costo: 0 mensajes.
                                                           ├→ Confirmar envío (propio: ficha)
                                                           └→ Resumen del turno
 ```

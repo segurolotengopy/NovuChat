@@ -161,8 +161,14 @@ const despues = conversacion ? chProspecto(nueva, cfg, datosDe) : null;
 const primeraVez = antes.historial.length === 0;
 const cambio = despues !== null && (primeraVez || JSON.stringify(despues) !== JSON.stringify(chProspecto(antes, cfg, datosDe)));
 const guardarPlanilla = cambio && planillaOk;
-// una ficha nueva (primer mensaje, o vuelve tras 48 h) es un contacto NUEVO: la planilla le crea su propia fila (29/10)
-const prospectoSalida = guardarPlanilla ? Object.assign({}, despues, { nuevoContacto: primeraVez }) : null;
+// Un contacto NUEVO (primer mensaje, o vuelve tras 48 h sin mensajes) tiene su propia fila en la planilla (29/10). Se lleva aparte de la ficha, en `chatNovuchatCrm` (último mensaje por teléfono): la ficha se restaura si Meta rechaza el envío y la fila ya está guardada, así que no sirve para decidirlo. Una ficha con historial es una conversación en curso.
+const crm = fichas.sd ? (fichas.sd.chatNovuchatCrm && typeof fichas.sd.chatNovuchatCrm === 'object' && !Array.isArray(fichas.sd.chatNovuchatCrm) ? fichas.sd.chatNovuchatCrm : (fichas.sd.chatNovuchatCrm = {})) : {};
+const contactoNuevo = primeraVez && !(Number.isFinite(crm[from]) && ahora - crm[from] < CH_OLVIDO_MS);
+if (claveOk && conversacion) {
+  crm[from] = ahora;
+  for (const k of Object.keys(crm)) if (!Number.isFinite(crm[k]) || ahora - crm[k] >= CH_OLVIDO_MS) delete crm[k];
+}
+const prospectoSalida = guardarPlanilla ? Object.assign({}, despues, { nuevoContacto: contactoNuevo }) : null;
 
 // R8: la ficha de ANTES de este turno (con su cola de eventos sin responder) viaja en el primer ítem: si Meta rechaza el mensaje y su respaldo, «Confirmar envío» la restaura.
 const fichaAntes = claveOk ? chClon(antes) : null;
