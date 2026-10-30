@@ -792,10 +792,10 @@ describe('REHECHO · el armado: la base común, el core de texto y solo lo propi
     expect(codigoDe(leerFlujo('rroca-antonio.json'), 'Resumen del turno')).toMatch(/ctRestaurarEnviado\(raF3/);
     expect(codigoDe(leerFlujo('rroca-antonio.json'), 'Resumen del turno')).toMatch(/function ctRestaurarPreguntas/);
   });
-  it('los nodos: 58 en producción y 53 en prueba (47 y 42 más los 11 del guardado de medios; antes 48 y 43; +1 por «Guardar comprobante») y las guardias de referencias DEL TASK RUNNER corren en las dos variantes, sin excepciones', () => {
-    expect(TOPE_DE_NODOS).toBe(58);
-    expect(leerFlujo('rroca-antonio.json')['nodes']).toHaveLength(58);
-    expect(leerFlujo('rroca-antonio.prueba.json')['nodes']).toHaveLength(53);
+  it('los nodos: 56 en producción y 51 en prueba (47 y 42 más los 9 del guardado de medios; antes 48 y 43; +1 por «Guardar comprobante») y las guardias de referencias DEL TASK RUNNER corren en las dos variantes, sin excepciones', () => {
+    expect(TOPE_DE_NODOS).toBe(56);
+    expect(leerFlujo('rroca-antonio.json')['nodes']).toHaveLength(56);
+    expect(leerFlujo('rroca-antonio.prueba.json')['nodes']).toHaveLength(51);
     for (const [archivo, variante] of [['rroca-antonio.json', 'produccion'], ['rroca-antonio.prueba.json', 'prueba']] as const) {
       expect(guardias(variante, leerFlujo(archivo)), archivo).toEqual([]);
       expect(problemasDeReferencias(leerFlujo(archivo)), archivo).toEqual([]);
