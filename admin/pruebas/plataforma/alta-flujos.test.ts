@@ -51,7 +51,7 @@ describe('alta con un flujo desconocido', () => {
   it('el alta por la consola (tenants.ts) deriva VERTICALES del registro y escribe `modulos` derivada (H2b-7)', () => {
     const t = readFileSync(join(aqui, '..', '..', 'functions', 'src', 'plataforma', 'tenants.ts'), 'utf8');
     expect(t).toMatch(/const VERTICALES = new Set<string>\(IDS_FLUJOS\);/);
-    expect(t).toMatch(/import \{ IDS_FLUJOS, PUENTE_DE_FLUJOS, esFlujo, modulosDeFlujos, type IdFlujo \} from '\.\.\/registro\.js';/);
+    expect(t).toMatch(/import \{ IDS_FLUJOS, PUENTE_DE_FLUJOS, esFlujo, flujosDeFicha, modulosDeFlujos, type IdFlujo \} from '\.\.\/registro\.js';/);
     expect(t).not.toMatch(/new Set\(\[\s*'agendamiento'/);
     // El alta sigue escribiendo vertical y flujos…
     expect(sinComentarios(t)).toMatch(/vertical = flujos\[0\]/);

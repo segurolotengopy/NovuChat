@@ -58,6 +58,8 @@ const correr = (f: { run: (p: Peticion) => Promise<unknown> }, data: Record<stri
 const MIGRADA = 'dobl-migrada';
 const SIN_LISTA = 'dobl-sin-lista';
 const CADENA = 'dobl-cadena';
+const CERRADA = 'dobl-cerrada';
+const NULA = 'dobl-nula';
 const ALTA = 'dobl-alta';
 const NUM = '7310001';
 const WABA = '7310002';
@@ -71,10 +73,13 @@ const tiempo = async (t: string) => (await db.doc(`tenants/${t}`).get()).updateT
 const asignar = (tenantId: string, numero = NUM) => correr(asignarNumero, { tenantId, phoneNumberId: numero, wabaId: WABA, flujo: 'venta' });
 
 beforeEach(async () => {
-  for (const t of [MIGRADA, SIN_LISTA, CADENA, ALTA, 'ensayo']) await db.recursiveDelete(db.doc(`tenants/${t}`));
+  for (const t of [MIGRADA, SIN_LISTA, CADENA, CERRADA, NULA, ALTA, 'ensayo']) await db.recursiveDelete(db.doc(`tenants/${t}`));
   for (const n of [NUM, NUM_S, NUM_C]) await db.doc(`rutasWhatsApp/${n}`).delete();
   await db.doc(`tenants/${MIGRADA}`).set({ nombre: 'M', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: ['productos', 'campanas', 'cobros', 'agenda'] });
   await db.doc(`tenants/${SIN_LISTA}`).set({ nombre: 'S', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'] });
+  // «venta» sin inventario a propósito (como un comercio con un módulo cerrado a mano).
+  await db.doc(`tenants/${CERRADA}`).set({ nombre: 'X', estado: 'activo', vertical: 'venta', flujos: ['venta'], modulos: ['productos', 'cobros', 'pedidos', 'catalogo-web'] });
+  await db.doc(`tenants/${NULA}`).set({ nombre: 'N', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: null });
   await db.doc(`tenants/${CADENA}`).set({ nombre: 'C', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: 'agenda' });
 });
 
@@ -119,6 +124,31 @@ describe('asignarNumero (callable) suma los módulos del flujo', () => {
     expect(f['modulos']).toBe('agenda');
     expect(f['flujos']).toEqual(['agendamiento']);
     expect((await db.doc(`rutasWhatsApp/${NUM_C}`).get()).exists).toBe(false);
+  });
+});
+
+describe('el flujo que la ficha ya tiene no reabre módulos cerrados; modulos null es «sin lista»', () => {
+  it('NEGACIÓN (callable): reasignar un número con «venta» a una ficha que ya la tiene NO devuelve inventario', async () => {
+    await asignar(CERRADA);
+    const f = await ficha(CERRADA);
+    expect(f['flujos']).toEqual(['venta']);
+    expect(f['modulos']).not.toContain('inventario');
+    expect(f['modulos']).toEqual(['productos', 'cobros', 'pedidos', 'catalogo-web']);
+  });
+  it('NEGACIÓN (script): lo mismo, y lo dice', () => {
+    const r = script('asignar-numero.mjs', '--tenant', CERRADA, '--numero', NUM, '--alias', 'cliente18', ...BASE);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toContain('el flujo ya estaba, no se suman módulos');
+    return ficha(CERRADA).then((f) => expect(f['modulos']).not.toContain('inventario'));
+  });
+  it('`modulos: null` se trata como ausente: no se rechaza y no se crea la lista (callable y script)', async () => {
+    await asignar(NULA, NUM_S);
+    expect((await ficha(NULA))['modulos']).toBeNull();
+    expect((await ficha(NULA))['flujos']).toEqual(['agendamiento', 'venta']);
+    await db.doc(`tenants/${NULA}`).update({ flujos: ['agendamiento'] });
+    const r = script('asignar-numero.mjs', '--tenant', NULA, '--numero', NUM_C, '--alias', 'cliente19', ...BASE);
+    expect(r.codigo, r.salida).toBe(0);
+    expect((await ficha(NULA))['modulos']).toBeNull();
   });
 });
 
