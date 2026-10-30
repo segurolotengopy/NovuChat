@@ -25,11 +25,11 @@ process.env['GCLOUD_PROJECT'] = PROYECTO;
 const TOKEN = 'valor-de-prueba-de-la-red-diferencial';
 process.env['INGESTA_CLIENTE18'] = TOKEN;
 
-const { initializeApp, getApps } = await import('firebase-admin/app');
-if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
+// Por index.ts, como el resto de las pruebas de Core (una prueba de Core no importa el coordinador a mano).
+// index.ts inicializa la app por defecto al cargarse, como en producción.
+const { configuracionFlujo } = await import('../../../functions/src/index.ts');
 const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
-const { configuracionFlujo } = await import('../../../functions/src/ingesta.ts');
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const ACTUALIZAR = process.env['ACTUALIZAR_REFERENCIAS'] === '1';

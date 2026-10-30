@@ -99,6 +99,17 @@ reexporta ese `registrarCierre` (mismo nombre, mismas opciones y secretos).
   módulo importa de `ingesta.ts`. Lo que falta del corte es mover los ganchos
   de seña, inventario, captación, campañas y cobro de venta que siguen dentro de
   `ingesta.ts`, y recorrer los módulos encendidos por el registro (F3b-2).
+- **F3b-2a (30/10/2026): el contrato y la red, sin mover lógica.**
+  `core/turno/ganchosDelTurno.ts` define `GanchosDelTurno` (campañas, captación,
+  inventario, cobro de venta, seña) y `modulosDelTurno(ficha, flujoRuta)`:
+  encendidos ∩ (módulos del flujo del número ∪ comunes), en el orden de
+  `IDS_MODULOS`. Se intersecta con el flujo del número y no se usa solo
+  `tenants.modulos` porque un comercio con dos números recibiría la seña en el
+  de venta. Sin `modulos` la ficha se deriva de sus `flujos` por el puente más
+  los comunes de hoy. `estadoDelComercio` devuelve además la ficha (cero
+  lecturas nuevas). La red es `pruebas/core/turno/configuracion-diferencial.test.ts`
+  con sus referencias JSON (generadas con el código anterior); F3b-2b..2e no
+  pueden variarlas.
 - **De la solicitud, no del registro de eventos:** `solicitudTras`,
   `ETAPAS_PENDIENTES` y el tipo `Solicitud` viven desde F3b-1a en
   `modulos/agenda/solicitud.ts`, `MINUTOS_RETENCION_POR_DEFECTO` en
