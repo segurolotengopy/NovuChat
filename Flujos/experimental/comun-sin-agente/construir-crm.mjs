@@ -9,7 +9,7 @@ import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const AQUI = dirname(fileURLToPath(import.meta.url));
+const AQUI = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'modulos', 'crm');
 /**
  * Las rutas de cada paquete. El ADAPTADOR de captacion (como se califica y se resume) lo pasa quien construye el flujo: el modulo `crm` no sabe
  * donde vive ni lo importa por su cuenta.

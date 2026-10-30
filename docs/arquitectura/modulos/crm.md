@@ -65,7 +65,7 @@ PR-D (recordatorios, apagados por defecto).
 
 ## El flujo (PR-B, 30/10/2026): mapa de columnas y limitaciones
 
-**Código.** `Flujos/src/modulos/crm/{crm.js,nodo-prospecto.js,nodo-decidir-fila.js,construir-crm.mjs}`
+**Código.** `Flujos/src/modulos/crm/{crm.js,nodo-prospecto.js,nodo-decidir-fila.js}` y el armador `Flujos/experimental/comun-sin-agente/construir-crm.mjs` (fuera de `Flujos/src`: el ensamblador solo admite js, md y json allí)
 se INCLUYEN en los flujos por paquetes (`crm-prospecto`, `crm-decidir`), nunca se
 copian. Cómo se califica y se resume lo pone el flujo como adaptador (hoy
 `Flujos/src/modulos/captacion/crm-captacion.js`): el módulo no lo importa, su

@@ -12,11 +12,12 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext, Script } from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAMPOS_DEL_BOT, CAMPOS_DEL_EQUIPO, neutralizarTexto } from '../../../functions/src/modulos/crm/columnas.js';
 import { GLOBALES_FUERA_DEL_SANDBOX } from '../../lib/flujo.ts';
 // @ts-expect-error módulo .mjs sin tipos
-import { injertarCrm, inyectarMapa, MARCA_MAPA, paquetesCrm, validarMapaCrm } from '../../../../Flujos/src/modulos/crm/construir-crm.mjs';
+import { injertarCrm, inyectarMapa, MARCA_MAPA, paquetesCrm, validarMapaCrm } from '../../../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FLUJOS = join(AQUI, '..', '..', '..', '..', 'Flujos', 'src', 'modulos');
@@ -51,8 +52,8 @@ function correr(codigo: string, entrada: Item[], nodos: Record<string, Item[]> =
   };
   const $input = { all: () => entrada, first: () => entrada[0] };
   const vacios = GLOBALES_FUERA_DEL_SANDBOX;
-  // eslint-disable-next-line no-new-func
-  return new Function('$input', '$', ...vacios, codigo)(entrada.length ? $input : $input, $, ...vacios.map(() => undefined));
+  const nodo = runInNewContext(`(function ($input, $, ${vacios.join(', ')}) {\n${codigo}\n})`, {});
+  return nodo(entrada.length ? $input : $input, $, ...vacios.map(() => undefined));
 }
 
 const CRM = leer('crm/crm.js');
@@ -61,8 +62,8 @@ const NODO_DECIDIR = leer('crm/nodo-decidir-fila.js');
 const NODO_PROSPECTO = leer('crm/nodo-prospecto.js');
 const conMapa = (c: string, m: unknown = MAPA) => inyectarMapa(c, m);
 const FUNCIONES = 'return { crmNeutralizarTexto, crmElemento, crmSanearConfig, crmActivo, crmValidarMapa, crmFilaMasReciente, crmDecidirFila, capCalificar, capResumir, CAP_PRIORIDAD, CRM_CAMPOS_BOT, CRM_CAMPOS_EQUIPO };';
-// eslint-disable-next-line no-new-func, @typescript-eslint/no-explicit-any
-const M: any = new Function(`${conMapa(CRM)}\n${ADAPTADOR}\n${FUNCIONES}`)();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const M: any = runInNewContext(`(function () {\n${conMapa(CRM)}\n${ADAPTADOR}\n${FUNCIONES}\n})()`, {});
 const adaptador = { calificar: M.capCalificar, resumir: M.capResumir, prioridad: M.CAP_PRIORIDAD };
 
 const AHORA = Date.UTC(2026, 9, 30, 15, 0, 0);
@@ -293,14 +294,13 @@ describe('el código que corre en n8n', () => {
   });
   it('compila como cuerpo de un nodo Code y no usa globales fuera del sandbox', () => {
     for (const [k, partes] of Object.entries(paq)) {
-      // eslint-disable-next-line no-new-func
-      expect(() => new Function('$input', '$', conMapa(partes.join('\n'))), k).not.toThrow();
+      expect(() => new Script(`(function ($input, $) {\n${conMapa(partes.join('\n'))}\n})`), k).not.toThrow();
       for (const g of GLOBALES_FUERA_DEL_SANDBOX) expect(new RegExp(`(^|[^\\w$.'"«])${g.replace(/[$]/g, '\\$')}\\b(?!['"»])`).test(partes.join('\n').replace(/\/\/.*$/gm, '')), `${k} usa «${g}»`).toBe(false);
     }
     expect(textos).not.toMatch(/\brequire\(|\bnew URL\(|\bBuffer\.|\bcrypto\./);
   });
   it('el módulo común no nombra clientes (el vocabulario de captación vive solo en el adaptador)', () => {
-    const comun = `${CRM}\n${NODO_PROSPECTO}\n${NODO_DECIDIR}\n${leer('crm/construir-crm.mjs')}`;
+    const comun = `${CRM}\n${NODO_PROSPECTO}\n${NODO_DECIDIR}\n${readFileSync(join(AQUI, '..', '..', '..', '..', 'Flujos', 'experimental', 'comun-sin-agente', 'construir-crm.mjs'), 'utf8')}`;
     expect(comun).not.toMatch(/novuchat|q'?taco|bellido|ruben|rubén|antonio|walisuma|\bevy\b|\bemma\b/i);
     expect(comun).not.toMatch(/Chatbot WhatsApp|Campaña Meta|Nuevo Lead|Leads_CRM|Descalificado|Rubro/);
   });

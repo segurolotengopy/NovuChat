@@ -33,7 +33,7 @@ import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '.
 // LA CADENA DE ENVÍO ES COMÚN (no se copia): se injerta desde `comun-sin-agente/src/envio.mjs` (enviar, respaldo en texto, reporte saliente).
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
 // EL miniCRM ES UN MÓDULO (no se copia): los paquetes `crm-prospecto` y `crm-decidir`, y el injerto del mapa de columnas del tenant (dato `crm`).
-import { injertarCrm, rutasPaquetesCrm, validarMapaCrm } from '../../src/modulos/crm/construir-crm.mjs';
+import { injertarCrm, rutasPaquetesCrm, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const DATOS = join(AQUI, '../../../admin/scripts/datos/chat-novuchat');
