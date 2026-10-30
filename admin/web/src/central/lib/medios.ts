@@ -24,8 +24,18 @@ export const MIMES_DE_AUDIO = [
 export const TEXTO_VENCIDO = 'El archivo ya no está disponible (se guarda 90 días).';
 export const AVISO_WA_ME =
   'Lo que escribas por aquí queda FUERA del sistema (no aparece en la conversación ni cuenta como conversación del asistente) y no reemplaza a «Tomar».';
-export const AVISO_PDF = 'Archivo enviado por el cliente; ábralo con un lector actualizado.';
-export const NOMBRE_DEL_PDF = 'documento.pdf';
+/** Alerta obligatoria ANTES de descargar un documento (nunca se abre en la consola). */
+export const AVISO_DESCARGA = 'Archivo enviado por un cliente: no lo abra si no confía; puede contener virus.';
+/** Tipo del Blob de una descarga: nunca el mime del archivo, para que no se pueda abrir inline. */
+export const MIME_DE_DESCARGA = 'application/octet-stream';
+
+const EXTENSION_SEGURA: Record<string, string> = { 'application/pdf': 'pdf' };
+
+/** `archivo-<fecha>.<ext>`: nombre generado por la consola; `.bin` si el mime no es de los conocidos. */
+export function nombreDeDescarga(mime: unknown, ahora: number): string {
+  const ext = typeof mime === 'string' ? EXTENSION_SEGURA[mime] ?? 'bin' : 'bin';
+  return `archivo-${new Date(ahora).toISOString().slice(0, 10)}.${ext}`;
+}
 
 export interface MedioDeMensaje {
   estado: 'guardado' | 'anotado' | 'pendiente' | 'otro';
@@ -89,12 +99,12 @@ export function bytesDeBase64(base64: unknown): Uint8Array | null {
 }
 
 /** `tipo` y `mime` tienen que ir de acuerdo y estar en la lista cerrada; si no, el visor no dibuja nada. */
-export function claseDeMedio(tipo: unknown, mime: unknown): 'imagen' | 'pdf' | 'audio' | 'invalida' {
+export function claseDeMedio(tipo: unknown, mime: unknown): 'imagen' | 'descarga' | 'audio' | 'invalida' {
   if (typeof mime !== 'string') return 'invalida';
   if (tipo === 'image' && (MIMES_DE_IMAGEN as readonly string[]).includes(mime)) return 'imagen';
-  if (tipo === 'document' && mime === MIME_DE_PDF) return 'pdf';
   if (tipo === 'audio' && (MIMES_DE_AUDIO as readonly string[]).includes(mime)) return 'audio';
-  return 'invalida';
+  // Lo demás (PDF y todo documento) no se incrusta: se ofrece descarga con alerta.
+  return tipo === 'document' || tipo === 'image' || tipo === 'audio' ? 'descarga' : 'invalida';
 }
 
 const GENERICO = 'No se pudo abrir el archivo. Intente de nuevo en unos minutos.';
@@ -129,7 +139,7 @@ export type LlamarVerMedio = (a: { tenantId: string; conversacionId: string; idM
 
 export type ResultadoMedio =
   | { ok: true; clase: 'imagen'; src: string }
-  | { ok: true; clase: 'audio' | 'pdf'; bytes: Uint8Array; mime: string }
+  | { ok: true; clase: 'audio' | 'descarga'; bytes: Uint8Array; mime: string }
   | { ok: false; texto: string };
 
 /**

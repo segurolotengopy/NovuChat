@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  AVISO_WA_ME, TEXTO_VENCIDO, accionDeMedio, enlaceWaMe, medioDeDatos, pedirMedio, textoAnotado, textoDeErrorMedio,
+  AVISO_DESCARGA, AVISO_WA_ME, MIME_DE_DESCARGA, TEXTO_VENCIDO, nombreDeDescarga, accionDeMedio, enlaceWaMe, medioDeDatos, pedirMedio, textoAnotado, textoDeErrorMedio,
   type LlamarVerMedio, type MedioDeMensaje,
 } from '../../web/src/central/lib/medios.ts';
 
@@ -44,7 +44,7 @@ describe('pedirMedio con la callable simulada', () => {
     const a = await pedirMedio(ok({ tipo: 'audio', mime: 'audio/ogg', tamano: 4, base64: B64 }), { ...base, medio: guardado({ mime: 'audio/ogg' }) });
     expect(a).toMatchObject({ ok: true, clase: 'audio', mime: 'audio/ogg' });
     const p = await pedirMedio(ok({ tipo: 'document', mime: 'application/pdf', tamano: 4, base64: B64 }), { ...base, medio: guardado({ mime: 'application/pdf' }) });
-    expect(p).toMatchObject({ ok: true, clase: 'pdf' });
+    expect(p).toMatchObject({ ok: true, clase: 'descarga' });
   });
   it('manda solo tenantId, conversacionId e idMeta', async () => {
     const f = ok({ tipo: 'image', mime: 'image/png', base64: B64 });
@@ -80,10 +80,25 @@ describe('pedirMedio con la callable simulada', () => {
   });
   it('rechaza tipo/mime incoherentes, mime fuera de lista y base64 roto', async () => {
     for (const r of [
-      { tipo: 'image', mime: 'image/svg+xml', base64: B64 }, { tipo: 'audio', mime: 'image/png', base64: B64 },
-      { tipo: 'document', mime: 'text/html', base64: B64 }, { tipo: 'image', mime: 'image/png', base64: '<x>' },
+            { tipo: 'video', mime: 'video/mp4', base64: B64 }, { tipo: 'image', mime: 'image/png', base64: '<x>' },
       { tipo: 'audio', mime: 'audio/ogg', base64: 5 }, {},
     ]) expect((await pedirMedio(ok(r), { ...base, medio: guardado() })).ok).toBe(false);
+  });
+});
+
+describe('documentos: solo descarga', () => {
+  it('cualquier documento (incluido html) va a descarga, nunca a vista; imagen fuera de lista también', async () => {
+    for (const [tipo, mime] of [['document', 'text/html'], ['document', 'application/pdf'], ['image', 'image/svg+xml']]) {
+      const r = await pedirMedio(ok({ tipo, mime, base64: B64 }), { ...base, medio: guardado() });
+      expect(r).toMatchObject({ ok: true, clase: 'descarga' });
+    }
+  });
+  it('nombre generado: fecha y extensión segura o .bin', () => {
+    expect(nombreDeDescarga('application/pdf', AHORA)).toMatch(/^archivo-\d{4}-\d{2}-\d{2}\.pdf$/);
+    expect(nombreDeDescarga('text/html', AHORA)).toMatch(/\.bin$/);
+    expect(nombreDeDescarga(undefined, AHORA)).toMatch(/\.bin$/);
+    expect(AVISO_DESCARGA).toBe('Archivo enviado por un cliente: no lo abra si no confía; puede contener virus.');
+    expect(MIME_DE_DESCARGA).toBe('application/octet-stream');
   });
 });
 
@@ -115,5 +130,20 @@ describe('la pantalla (lectura del fuente)', () => {
     expect(v).toMatch(/revokeObjectURL/);
     expect(v).toMatch(/role="dialog"/);
     expect(v).not.toMatch(/\.message/);
+    // descarga: alerta obligatoria, octet-stream, sin abrir inline
+    expect(v).toMatch(/AVISO_DESCARGA/);
+    expect(v).toMatch(/Descargar de todos modos/);
+    expect(v).toMatch(/MIME_DE_DESCARGA/);
+    expect(v).not.toMatch(/window\.open|<iframe|<embed|<object/);
+  });
+  it('CSP: media-src blob: y NINGÚN blob: en frame-src', () => {
+    const fb = JSON.parse(readFileSync(join(aqui, '../../firebase.json'), 'utf8'));
+    const sitios = Array.isArray(fb.hosting) ? fb.hosting : [fb.hosting];
+    const csps: string[] = [];
+    for (const h of sitios.flatMap((x: { headers?: { headers: { key: string; value: string }[] }[] }) => x.headers ?? [])) for (const k of h.headers) if (k.key === 'Content-Security-Policy') csps.push(k.value);
+    const csp = csps.find((c) => c.includes('script-src'))!;
+    expect(csp).toMatch(/media-src blob:;/);
+    expect(csp).not.toMatch(/frame-src[^;]*blob:/);
+    expect(csp).not.toMatch(/(default|img|script|object)-src[^;]*blob:/);
   });
 });

@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { funciones } from '../../core/lib/firebase';
-import { AVISO_PDF, NOMBRE_DEL_PDF, pedirMedio, type LlamarVerMedio, type MedioDeMensaje, type ResultadoMedio } from '../lib/medios';
+import { AVISO_DESCARGA, MIME_DE_DESCARGA, nombreDeDescarga, pedirMedio, type LlamarVerMedio, type MedioDeMensaje, type ResultadoMedio } from '../lib/medios';
 
 /**
  * VER UN MEDIO guardado de la conversación (foto, PDF o audio). Pide los bytes a `verMedio` (auditada, con tope)
  * y los muestra en un diálogo accesible. Solo lectura: no envía nada, y nada se baja al disco salvo el PDF,
- * que el usuario guarda con un botón explícito (la CSP no permite incrustarlo).
+ * que el usuario descarga tras una alerta y un botón explícito. Todo documento se baja como adjunto (Blob
+ * `application/octet-stream`, nombre generado por la consola); nunca se abre inline ni en otra ventana.
  *
  *  - Imagen: `<img>` con `data:` (la CSP lo permite).
  *  - Audio: `<audio controls>` con una URL `blob:`; se revoca al cerrar o desmontar.
- *  - PDF: Blob en memoria; «Guardar PDF» lo baja; se revoca después.
+ *  - Documento (PDF y demás): Blob octet-stream; «Descargar» pide confirmación; se revoca al cerrar.
  * Los bytes viven solo en el estado de este componente. El error se muestra por su `code`.
  */
 const llamarReal: LlamarVerMedio = (a) => httpsCallable(funciones, 'verMedio')(a) as ReturnType<LlamarVerMedio>;
@@ -19,7 +20,7 @@ type Estado =
   | { t: 'reposo' }
   | { t: 'cargando' }
   | { t: 'error'; texto: string }
-  | { t: 'listo'; r: Extract<ResultadoMedio, { ok: true }>; url: string | null };
+  | { t: 'listo'; r: Extract<ResultadoMedio, { ok: true }>; url: string | null; confirmando: boolean; mimeOriginal: string };
 
 export function VisorMedio({ tenantId, conversacionId, idMeta, medio, llamar = llamarReal }: {
   tenantId: string; conversacionId: string; idMeta: string; medio: MedioDeMensaje; llamar?: LlamarVerMedio;
@@ -52,17 +53,20 @@ export function VisorMedio({ tenantId, conversacionId, idMeta, medio, llamar = l
     if (!r.ok) { setEstado({ t: 'error', texto: r.texto }); return; }
     let url: string | null = null;
     if (r.clase !== 'imagen') {
-      url = URL.createObjectURL(new Blob([r.bytes as BlobPart], { type: r.mime }));
+      // El audio necesita su tipo para reproducirse; el documento NUNCA lleva el suyo.
+      const tipoBlob = r.clase === 'audio' ? r.mime : MIME_DE_DESCARGA;
+      url = URL.createObjectURL(new Blob([r.bytes as BlobPart], { type: tipoBlob }));
       urlViva.current = url;
     }
-    setEstado({ t: 'listo', r, url });
+    setEstado({ t: 'listo', r, url, confirmando: false, mimeOriginal: r.clase === 'imagen' ? '' : r.mime });
   };
 
-  const guardarPdf = (url: string) => {
+  const descargar = (url: string, mime: string) => {
     const a = document.createElement('a');
     a.href = url;
-    a.download = NOMBRE_DEL_PDF;
+    a.download = nombreDeDescarga(mime, Date.now());
     a.click();
+    setEstado((e) => (e.t === 'listo' ? { ...e, confirmando: false } : e));
   };
 
   return (
@@ -85,13 +89,19 @@ export function VisorMedio({ tenantId, conversacionId, idMeta, medio, llamar = l
             {estado.t === 'listo' && estado.r.clase === 'audio' && estado.url && (
               <audio controls controlsList="nodownload noplaybackrate" src={estado.url} aria-label="Audio que mandó el cliente" />
             )}
-            {estado.t === 'listo' && estado.r.clase === 'pdf' && estado.url && (
-              <>
-                <p>{AVISO_PDF}</p>
-                <button type="button" className="btn btn-secondary btn-chico" onClick={() => guardarPdf(estado.url!)}>
-                  Guardar PDF
-                </button>
-              </>
+            {estado.t === 'listo' && estado.r.clase === 'descarga' && estado.url && (
+              estado.confirmando ? (
+                <div role="alertdialog" aria-label="Confirmar descarga">
+                  <p><strong>{AVISO_DESCARGA}</strong></p>
+                  <button type="button" className="btn btn-secondary btn-chico"
+                          onClick={() => setEstado({ ...estado, confirmando: false })}>Cancelar</button>{' '}
+                  <button type="button" className="btn btn-secondary btn-chico"
+                          onClick={() => descargar(estado.url!, estado.mimeOriginal)}>Descargar de todos modos</button>
+                </div>
+              ) : (
+                <button type="button" className="btn btn-secondary btn-chico"
+                        onClick={() => setEstado({ ...estado, confirmando: true })}>Descargar</button>
+              )
             )}
             <p><button type="button" ref={cerrar} className="btn btn-secondary btn-chico" onClick={cerrarVisor}>Cerrar</button></p>
           </div>
