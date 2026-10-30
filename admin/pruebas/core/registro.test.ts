@@ -434,11 +434,13 @@ describe('3. configuración: el registro contra las listas blancas de firestore.
     'config/venta': 'configVentaValida',
     'config/onboarding': 'configOnboardingValida',
     'config/campanas': 'configCampanasValida',
+    'config/crm': 'configCrmValida',
     'config/marca': 'logoValido',
   };
   /** Documentos de un módulo COMÚN (no de un flujo): la regla exige `tieneModuloComun(tenantId, '<módulo>')` (H2b-6). */
   const DOCUMENTOS_DE_MODULO_COMUN = [
     'config/campanas', // Campañas es común hoy (App.tsx y la regla).
+    'config/crm', // miniCRM es común: activo por defecto.
   ];
   const SELLO = ['actualizadoPor', 'actualizadoEn'];
   const documentos = ordenado(new Set(MANIFIESTOS.flatMap((m) => m.configuracion.map((c) => c.documento))));
@@ -1115,7 +1117,7 @@ describe('9. derivaciones equivalentes: el registro calcula lo que las copias ca
     expect(modulosDeFicha({ flujos: ['venta'] })).toEqual(modulosDeFlujos(['venta']));
     expect(modulosDeFicha(undefined)).toEqual([]);
     expect(modulosDeFicha(null)).toEqual([]);
-    expect(modulosDeFicha({})).toEqual(['productos', 'campanas']);
+    expect(modulosDeFicha({})).toEqual(['productos', 'campanas', 'crm']);
   });
 
   it.each(subconjuntos.map((s) => [nombre(s), s] as const))(

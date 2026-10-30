@@ -50,7 +50,7 @@
  */
 export const IDS_MODULOS = [
   'productos', 'cobros', 'agenda', 'inventario', 'pedidos', 'catalogo-web',
-  'campanas', 'captacion', 'menu-interactivo',
+  'campanas', 'captacion', 'menu-interactivo', 'crm',
 ] as const;
 export type IdModulo = (typeof IDS_MODULOS)[number];
 
@@ -432,6 +432,37 @@ export const REGISTRO = [
     ganchos: [],
     mensajes: 0,
   },
+  {
+    // miniCRM (PR-A del plan del 28/10/2026): módulo NUEVO del core, opcional,
+    // ACTIVO POR DEFECTO y apagable por tenant. Es común como Productos y
+    // Campañas: sin `tenants.modulos` está encendido; la regla usa
+    // `tieneModuloComun`. Apagar = `config/crm.activo: false` (el flujo no
+    // escribe y Google ni se consulta). Costo en mensajes: 0. El flujo (PR-B),
+    // la cuenta de servicio (PR-C) y los recordatorios (PR-D) llegan después.
+    modulo: 'crm',
+    nombre: 'miniCRM',
+    version: 1,
+    dependeDe: [],
+    configuracion: [
+      {
+        documento: 'config/crm',
+        campos: ['activo', 'moneda', 'listas'],
+        camposDelServidor: ['hoja', 'filaEncabezados', 'mapaColumnas', 'cuentaServicio', 'recordatorios'],
+      },
+    ],
+    camposEnNegocio: [],
+    colecciones: [],
+    coleccionesRaiz: [],
+    almacenamiento: [],
+    limites: [],
+    pestanas: [],
+    tablero: [],
+    herramientas: [],
+    functions: [],
+    flujosProgramados: [],
+    ganchos: [],
+    mensajes: 0,
+  },
 ] as const satisfies readonly Manifiesto[];
 
 /**
@@ -513,7 +544,7 @@ export const PUENTE_DE_FLUJOS = {
  * `tenants.modulos`, Productos queda en todo plan y Campañas se apaga con
  * límite 0 (`Analisis/41` §3.2).
  */
-export const MODULOS_COMUNES_HOY = ['productos', 'campanas'] as const satisfies readonly IdModulo[];
+export const MODULOS_COMUNES_HOY = ['productos', 'campanas', 'crm'] as const satisfies readonly IdModulo[];
 
 // ============================================================================
 // DERIVACIONES (H2b-1): lo que las copias de la lista de flujos calculan hoy,

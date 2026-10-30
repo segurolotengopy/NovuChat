@@ -10,7 +10,8 @@
 puede combinar.** Lo cambia NovuChat, un módulo a la vez, con una versión.
 
 Los módulos: Productos, Agenda, Pedidos, Cobros, Inventario, Campañas,
-Catálogo web, Captación, Menú interactivo.
+Catálogo web, Captación, Menú interactivo, miniCRM (`crm`, común: activo por
+defecto, apagable por tenant).
 
 **La prueba de ubicación** (`Analisis/41` §1.3): es módulo lo que «se enciende
 o apaga por tenant, o tiene un límite por plan».
@@ -67,6 +68,7 @@ es hoy.
 | Catálogo web | `modulos/catalogo-web.md` | Productos, Pedidos | — |
 | Captación | `modulos/captacion.md` | — | — |
 | Menú interactivo | `modulos/menu-interactivo.md` | — | — |
+| miniCRM | `modulos/crm.md` | — | — |
 
 Lo que **no** es módulo aunque se parezca: medios entrantes (core); tipo de
 cambio, saneo, firma, dibujo de QR, cotejo de texto (servicios: tipo de cambio y
