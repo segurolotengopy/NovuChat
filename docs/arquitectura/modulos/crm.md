@@ -8,9 +8,11 @@
 
 La ficha de cada contacto en una Hoja de Google NATIVA del cliente. **Opcional,
 activo por defecto, apagable por tenant.** Es un módulo común (como Productos y
-Campañas): sin la lista `tenants.modulos` está encendido; con lista, solo si
-`crm` está en ella. Además, `config/crm.activo: false` lo apaga: el flujo no
-escribe y Google ni se consulta. Documento ausente o sin `activo` = encendido.
+Campañas), **ni depende de la lista `tenants.modulos`**: tiene UN SOLO
+interruptor, `config/crm.activo`. `activo: false` lo apaga: el flujo no escribe y
+Google ni se consulta. Documento ausente o sin `activo` = encendido. No está en
+`MODULOS_COMUNES_HOY` y la regla de escritura solo exige admin del tenant
+operativo.
 
 ## Manifiesto
 
@@ -33,8 +35,12 @@ escribe y Google ni se consulta. Documento ausente o sin `activo` = encendido.
 - **Columnas del equipo, que el bot NUNCA pisa**: Valor, Responsable, Estado,
   Próxima acción. `columnasEscribibles(mapa)` devuelve solo las del bot.
 - **config/crm**: el comercio (admin) escribe lo suyo; lo demás, solo el servidor.
-- Un texto del cliente final que empiece con `= + - @` se neutraliza
-  (`neutralizarTexto`). **Sin datos de salud ni comprobantes en la hoja.**
+- Un texto del cliente final que empiece con `= + - @` (tras quitar controles,
+  caracteres de formato como U+200B y espacios, NBSP incluido) se neutraliza
+  (`neutralizarTexto`) **anteponiendo un apóstrofo `'`**. Consecuencia para el
+  PR-B: escribir con `valueInputOption: USER_ENTERED` (el apóstrofo queda como
+  prefijo de texto y no se ve); con RAW el apóstrofo sería visible, y en
+  teléfonos (que empiezan con `+`) habría que quitarlo o guardarlos como texto. **Sin datos de salud ni comprobantes en la hoja.**
 
 ## Reglas de negocio para el PR-B (contrato fijado por Andres)
 

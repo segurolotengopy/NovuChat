@@ -79,7 +79,12 @@ export function columnasEscribibles(mapa: Readonly<Record<string, unknown>> | nu
  */
 export function neutralizarTexto(valor: unknown, largoMax = 500): string {
   if (typeof valor !== 'string') return '';
-  // eslint-disable-next-line no-control-regex
-  const limpio = valor.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '').slice(0, largoMax);
-  return /^[\s\u0009\u000A\u000D]*[=+\-@]/.test(limpio) ? `'${limpio}` : limpio;
+  const limpio = valor
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '')
+    // Caracteres de formato (\u200B, BOM, marcas bidi…): invisibles, pueden esconder el primer carácter.
+    .replace(/\p{Cf}/gu, '')
+    .slice(0, largoMax);
+  // Espacios de cualquier tipo (incluido NBSP) antes del primer carácter no lo salvan.
+  return /^[\s\u00A0]*[=+\-@]/.test(limpio) ? `'${limpio}` : limpio;
 }

@@ -434,10 +434,11 @@ export const REGISTRO = [
   },
   {
     // miniCRM (PR-A del plan del 28/10/2026): módulo NUEVO del core, opcional,
-    // ACTIVO POR DEFECTO y apagable por tenant. Es común como Productos y
-    // Campañas: sin `tenants.modulos` está encendido; la regla usa
-    // `tieneModuloComun`. Apagar = `config/crm.activo: false` (el flujo no
-    // escribe y Google ni se consulta). Costo en mensajes: 0. El flujo (PR-B),
+    // ACTIVO POR DEFECTO y apagable por tenant. NO es común ni depende de la
+    // lista `tenants.modulos`: su ÚNICO interruptor es `config/crm.activo`
+    // (ausente = encendido). Apagar = `activo: false` (el flujo no escribe y
+    // Google ni se consulta). Por eso no está en `MODULOS_COMUNES_HOY` ni en
+    // `PUENTE_DE_FLUJOS`, y la regla de escritura no exige `tieneModulo*`. Costo en mensajes: 0. El flujo (PR-B),
     // la cuenta de servicio (PR-C) y los recordatorios (PR-D) llegan después.
     modulo: 'crm',
     nombre: 'miniCRM',
@@ -544,7 +545,7 @@ export const PUENTE_DE_FLUJOS = {
  * `tenants.modulos`, Productos queda en todo plan y Campañas se apaga con
  * límite 0 (`Analisis/41` §3.2).
  */
-export const MODULOS_COMUNES_HOY = ['productos', 'campanas', 'crm'] as const satisfies readonly IdModulo[];
+export const MODULOS_COMUNES_HOY = ['productos', 'campanas'] as const satisfies readonly IdModulo[];
 
 // ============================================================================
 // DERIVACIONES (H2b-1): lo que las copias de la lista de flujos calculan hoy,

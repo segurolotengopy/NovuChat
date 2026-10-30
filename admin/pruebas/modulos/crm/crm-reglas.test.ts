@@ -50,7 +50,7 @@ beforeEach(async () => {
     for (const [t, estado] of [[A, 'activo'], [B, 'activo'], [S, 'suspendido']] as const) {
       await setDoc(doc(fs, 'tenants', t), { nombre: t, estado, plan: 'crecimiento', flujos: ['agendamiento'] });
     }
-    // Con lista `modulos` que no incluye crm: el módulo está apagado para este comercio.
+    // Con lista `modulos` que no incluye crm: no importa, el único interruptor es `config/crm.activo`.
     await setDoc(doc(fs, 'tenants', SIN), { nombre: SIN, estado: 'activo', plan: 'crecimiento', flujos: ['agendamiento'], modulos: ['agenda'] });
     await setDoc(doc(fs, ruta(A)), {
       activo: true, hoja: 'hoja-1', filaEncabezados: 1, mapaColumnas: { nombre: 'C' },
@@ -81,9 +81,14 @@ describe('config/crm: quién escribe', () => {
     await assertFails(getDoc(doc(anon, ruta(A))));
     await assertFails(updateDoc(doc(anon, ruta(A)), { moneda: 'USD' }));
   });
-  it('NIEGA: comercio suspendido y comercio sin el módulo no escriben', async () => {
+  it('NIEGA: comercio suspendido no escribe', async () => {
     await assertFails(setDoc(doc(adminS(), ruta(S)), valido2('u-admin-s')));
-    await assertFails(setDoc(doc(adminSin(), ruta(SIN)), valido2('u-admin-sin')));
+  });
+  it('un admin cuya lista de módulos NO incluye crm escribe igual (un solo interruptor)', async () => {
+    await assertSucceeds(setDoc(doc(adminSin(), ruta(SIN)), valido2('u-admin-sin')));
+  });
+  it('create con activo:false entra (apagar es un dato)', async () => {
+    await assertSucceeds(setDoc(doc(adminSin(), ruta(SIN)), { activo: false, ...sello('u-admin-sin') }));
   });
 });
 

@@ -44,7 +44,7 @@ describe('crm: el bot nunca escribe lo del equipo', () => {
 });
 
 describe('crm: un texto del cliente nunca es una fórmula', () => {
-  it.each(['=SUMA(A1)', '+591', '-1', '@usuario', '  =1+1', '\t=cmd'])('%s se neutraliza', (t) => {
+  it.each(['=SUMA(A1)', '+591', '-1', '@usuario', '  =1+1', '\t=cmd', '\n=1', '\r\n=1', '\u00A0=1', '\uFEFF=1', '\u200B=1', '\u200B\u00A0@x'])('%s se neutraliza', (t) => {
     expect(neutralizarTexto(t).startsWith("'")).toBe(true);
   });
   it('un texto normal queda igual, lo no textual da vacío y se acota el largo', () => {

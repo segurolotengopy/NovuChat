@@ -661,7 +661,8 @@ service cloud.firestore {
 
         // =====================================================================
         // /config/crm — miniCRM (PR-A, 28/10/2026). Módulo común, activo por
-        // defecto (`tieneModuloComun`). El comercio escribe SOLO `activo`,
+        // defecto, con UN solo interruptor (`activo`, ausente = encendido): la regla
+        // no mira `tenants.modulos`. El comercio escribe SOLO `activo`,
         // `moneda` y `listas`. `hoja`, `filaEncabezados`, `mapaColumnas`,
         // `cuentaServicio` y `recordatorios` los escribe el servidor: aquí se
         // mira el DIFF, no las claves, porque en una edición el documento
@@ -672,7 +673,6 @@ service cloud.firestore {
         allow create, update: if documento == 'crm'
                               && esAdmin(tenantId)
                               && tenantOperativo(tenantId)
-                              && tieneModuloComun(tenantId, 'crm')
                               && configCrmValida();
 
         function configCrmValida() {

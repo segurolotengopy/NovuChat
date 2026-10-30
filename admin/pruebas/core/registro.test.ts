@@ -440,8 +440,9 @@ describe('3. configuración: el registro contra las listas blancas de firestore.
   /** Documentos de un módulo COMÚN (no de un flujo): la regla exige `tieneModuloComun(tenantId, '<módulo>')` (H2b-6). */
   const DOCUMENTOS_DE_MODULO_COMUN = [
     'config/campanas', // Campañas es común hoy (App.tsx y la regla).
-    'config/crm', // miniCRM es común: activo por defecto.
   ];
+  /** Documentos de un módulo que no es de un flujo ni común: su interruptor vive en el propio documento. */
+  const DOCUMENTOS_DE_MODULO_SIN_LISTA: string[] = ['config/crm'];
   const SELLO = ['actualizadoPor', 'actualizadoEn'];
   const documentos = ordenado(new Set(MANIFIESTOS.flatMap((m) => m.configuracion.map((c) => c.documento))));
 
@@ -474,6 +475,16 @@ describe('3. configuración: el registro contra las listas blancas de firestore.
       ...[...r.matchAll(/\b(tiene\w+)\(tenantId\)/g)].map((m) => m[1] as string),
       ...[...r.matchAll(MODULO_EN_REGLAS)].map((m) => `tieneModulo:${m[1]}`),
     ]));
+    if (flujos.length === 0 && DOCUMENTOS_DE_MODULO_SIN_LISTA.includes(documento)) {
+      // miniCRM: un solo interruptor (`config/crm.activo`); la regla no exige ninguna capacidad ni lista de módulos.
+      expect([...capacidades], `${documento}: no exige capacidad de flujo`).toEqual([]);
+      for (const r of ramas) {
+        expect(r, `${documento}: no usa tieneModuloComun`).not.toMatch(/tieneModuloComun\(/);
+        expect(r, `${documento}: exige esAdmin`).toMatch(/esAdmin\(tenantId\)/);
+        expect(r, `${documento}: exige tenantOperativo`).toMatch(/tenantOperativo\(tenantId\)/);
+      }
+      return;
+    }
     if (flujos.length === 0) {
       expect(DOCUMENTOS_DE_MODULO_COMUN, `${documento} no es de ningún flujo y la lista no lo dice`).toContain(documento);
       expect([...capacidades], `${documento}: un documento común no exige la capacidad de un flujo`).toEqual([]);
@@ -1117,7 +1128,7 @@ describe('9. derivaciones equivalentes: el registro calcula lo que las copias ca
     expect(modulosDeFicha({ flujos: ['venta'] })).toEqual(modulosDeFlujos(['venta']));
     expect(modulosDeFicha(undefined)).toEqual([]);
     expect(modulosDeFicha(null)).toEqual([]);
-    expect(modulosDeFicha({})).toEqual(['productos', 'campanas', 'crm']);
+    expect(modulosDeFicha({})).toEqual(['productos', 'campanas']);
   });
 
   it.each(subconjuntos.map((s) => [nombre(s), s] as const))(
