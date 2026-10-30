@@ -635,28 +635,28 @@ describe('el tope por usuario, en topesDeMedios', () => {
   const hora = () => new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 13);
   const dia = () => hora().slice(0, 10);
 
-  it('con 30 vistas en la hora: resource-exhausted auditado «tope», sin almacén ni lectura del metadato; otro usuario sigue pudiendo', async () => {
+  it('con el tope de la hora lleno (60): resource-exhausted auditado «tope», sin almacén ni lectura del metadato; otro usuario sigue pudiendo', async () => {
     const e = await escena();
     const a = admin(T);
-    await db.doc(`topesDeMedios/${a.uid}`).set({ hora: hora(), vistasHora: 30, dia: dia(), vistasDia: 30 });
+    await db.doc(`topesDeMedios/${a.uid}`).set({ hora: hora(), vistasHora: V.TOPE_POR_HORA, dia: dia(), vistasDia: V.TOPE_POR_HORA });
     await expect(llamar(pedir(e), a)).rejects.toMatchObject(falla('resource-exhausted', FIJOS.tope));
     expect(almacen.llamadas).toBe(0);
-    expect((await db.doc(`topesDeMedios/${a.uid}`).get()).get('vistasHora')).toBe(30);
+    expect((await db.doc(`topesDeMedios/${a.uid}`).get()).get('vistasHora')).toBe(V.TOPE_POR_HORA);
     expect((await auditoria(T))[0]).toMatchObject({ motivo: 'tope', resultado: 'rechazado' });
     expect(await llamar(pedir(e), oper(T))).toMatchObject({ tipo: 'image' });
   });
-  it('la vista 29→30 pasa; un pedido que termina en not-found también consume el cupo', async () => {
+  it('la última vista de la hora pasa; un pedido que termina en not-found también consume el cupo', async () => {
     const e = await escena();
     const a = admin(T);
-    await db.doc(`topesDeMedios/${a.uid}`).set({ hora: hora(), vistasHora: 28, dia: dia(), vistasDia: 28 });
+    await db.doc(`topesDeMedios/${a.uid}`).set({ hora: hora(), vistasHora: V.TOPE_POR_HORA - 2, dia: dia(), vistasDia: V.TOPE_POR_HORA - 2 });
     await expect(llamar({ ...pedir(e), idMeta: 'wamid.no' }, a)).rejects.toMatchObject({ code: 'not-found' });
     expect(await llamar(pedir(e), a)).toMatchObject({ tipo: 'image' });
     await expect(llamar(pedir(e), a)).rejects.toMatchObject({ code: 'resource-exhausted' });
   });
-  it('100 en el día con la hora renovada: la 101 no pasa', async () => {
+  it('el tope del día (300) con la hora renovada: la última pasa y la siguiente no', async () => {
     const e = await escena();
     const a = admin(T);
-    await db.doc(`topesDeMedios/${a.uid}`).set({ hora: '1999-01-01T00', vistasHora: 3, dia: dia(), vistasDia: 99 });
+    await db.doc(`topesDeMedios/${a.uid}`).set({ hora: '1999-01-01T00', vistasHora: 3, dia: dia(), vistasDia: V.TOPE_POR_DIA - 1 });
     expect(await llamar(pedir(e), a)).toMatchObject({ tipo: 'image' });
     await expect(llamar(pedir(e), a)).rejects.toMatchObject({ code: 'resource-exhausted' });
   });
@@ -679,13 +679,33 @@ describe('el tope por usuario, en topesDeMedios', () => {
   });
   it('dos pedidos simultáneos con un solo cupo: solo uno lo consigue; un uid con forma de ruta lanza', async () => {
     const uid = 'u-carrera';
-    await db.doc(`topesDeMedios/${uid}`).set({ hora: hora(), vistasHora: 29, dia: dia(), vistasDia: 29 });
+    await db.doc(`topesDeMedios/${uid}`).set({ hora: hora(), vistasHora: V.TOPE_POR_HORA - 1, dia: dia(), vistasDia: V.TOPE_POR_HORA - 1 });
     const r = await Promise.all([1, 2, 3].map(() => V.consumirCupoDeMedios(uid, Date.now())));
     expect(r.filter(Boolean)).toHaveLength(1);
     await expect(V.consumirCupoDeMedios('../tenants/x', Date.now())).rejects.toThrow();
   });
-  it('el tope declarado es 30 por hora y 100 por día', () => {
-    expect([V.TOPE_POR_HORA, V.TOPE_POR_DIA]).toEqual([30, 100]);
+  it('el tope declarado es 60 por hora y 300 por día (cifras del integrador)', () => {
+    expect([V.TOPE_POR_HORA, V.TOPE_POR_DIA]).toEqual([60, 300]);
+    expect(CODIGO.match(/TOPE_POR_HORA = \d+/g)).toHaveLength(1);
+    expect(CODIGO.match(/TOPE_POR_DIA = \d+/g)).toHaveLength(1);
+  });
+  it('el caso que motivó el ajuste: un operador revisa las 31 fotos de un paciente sin quedarse sin cuota', async () => {
+    const a = oper(T);
+    for (let i = 0; i < 31; i++) {
+      const e = await escena(T, { idMeta: `wamid.foto${i}` });
+      expect(await llamar(pedir(e), a), String(i)).toMatchObject({ categoria: 'image' });
+    }
+    expect((await db.doc(`topesDeMedios/${a.uid}`).get()).data()).toMatchObject({ vistasHora: 31, vistasDia: 31 });
+  }, 120_000);
+  it('consumirCupoDeMedios: 60 en la hora y la 61 no; con la hora nueva sigue hasta 300 en el día', async () => {
+    const uid = 'u-cifras';
+    const t0 = Date.UTC(2026, 9, 9, 14, 0);
+    await db.doc(`topesDeMedios/${uid}`).set({ hora: '2026-10-09T10', vistasHora: 59, dia: '2026-10-09', vistasDia: 59 });
+    expect(await V.consumirCupoDeMedios(uid, t0)).toBe(true);
+    expect(await V.consumirCupoDeMedios(uid, t0 + 1)).toBe(false);
+    await db.doc(`topesDeMedios/${uid}`).set({ hora: '2026-10-09T10', vistasHora: 60, dia: '2026-10-09', vistasDia: 299 });
+    expect(await V.consumirCupoDeMedios(uid, Date.UTC(2026, 9, 9, 15, 0))).toBe(true);
+    expect(await V.consumirCupoDeMedios(uid, Date.UTC(2026, 9, 9, 16, 0))).toBe(false);
   });
 });
 

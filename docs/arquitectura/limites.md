@@ -20,7 +20,7 @@
 | Aviso de consumo al 80 % | Central (cuenta) |
 | Cambios de configuración incluidos al mes (`cambiosIncluidos`, F1) | Central (cuenta) |
 | Medios guardados o anotados: 3.000 por comercio y día (y 15 GiB de bytes); constancia de tope superado a lo sumo 50 por día; topes por tipo (imagen 5 MB, audio 16 MB, PDF 10 MB). Constantes de seguridad y de costo de almacenamiento, no de plan | Core (`guardarMedio`, contador `cuposDeMedios`) |
-| Visor de medios: 30 vistas por hora y 100 por día por usuario (global, propio de los medios, no comparte cupo con el de comprobantes). Freno contra abuso, no límite de plan | Core (`verMedio`, contador `topesDeMedios/{uid}`) |
+| Visor de medios: 60 vistas por hora y 300 por día por usuario (global, propio de los medios, no comparte cupo con el de comprobantes; cifras del integrador del 30/10/2026, ajustables, en `TOPE_POR_HORA`/`TOPE_POR_DIA` de `verMedio.ts`). Freno contra abuso, no límite de plan | Core (`verMedio`, contador `topesDeMedios/{uid}`) |
 
 ### 7. Todo límite comercial se hace cumplir en el SERVIDOR
 

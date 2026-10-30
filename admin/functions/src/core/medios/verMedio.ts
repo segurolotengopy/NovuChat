@@ -55,7 +55,8 @@
  *    `idMeta` ni la conversación) ANTES de devolver los bytes; si no se pudo
  *    anotar, `unavailable` y sin bytes. Un rechazo se audita solo si quien llama
  *    tiene rol válido; los demás no dejan NADA en Firestore.
- *  - **Tope por usuario: 30 por hora y 100 por día** en `topesDeMedios/{uid}`
+ *  - **Tope por usuario: 60 por hora y 300 por día** (cifras del integrador, ajustables:
+ *    30/100 dejaba sin cuota a quien revisa las 31 fotos de un paciente) en `topesDeMedios/{uid}`
  *    (transaccional, global, propio de los medios: no comparte cupo con el visor
  *    de comprobantes). Cuenta todo intento autorizado antes de leer el metadato.
  *  - **Un comercio suspendido SÍ puede ver**; dado de baja o inexistente es
@@ -116,8 +117,13 @@ export function opcionesDeVerMedio(env: Record<string, string | undefined>): Cal
 // CONSTANTES DEL CONTRATO
 // ---------------------------------------------------------------------------
 
-export const TOPE_POR_HORA = 30;
-export const TOPE_POR_DIA = 100;
+/**
+ * EL TOPE, EN UN SOLO LUGAR. Cifras del integrador (30/10/2026), AJUSTABLES: con 30/100 (las del visor de
+ * comprobantes) un operador que revisa las 31 fotos de un paciente se quedaba sin cuota. Es un freno contra
+ * abuso de una cuenta robada, no un límite de plan.
+ */
+export const TOPE_POR_HORA = 60;
+export const TOPE_POR_DIA = 300;
 /** La única colección del tope (cerrada en `firestore.rules`, declarada en el registro). */
 export const COLECCION_DEL_TOPE = 'topesDeMedios';
 
