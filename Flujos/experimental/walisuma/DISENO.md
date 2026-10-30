@@ -1,4 +1,4 @@
-# Walisuma: diseño del esqueleto (PR-2)
+# Walisuma: diseño (PR-2 esqueleto, PR-3 flujo completo)
 
 **Qué es.** Un flujo de venta por WhatsApp para un comercio con catálogo grande (132 ítems en `admin/scripts/datos/walisuma/catalogo.json`). El código calcula (carrito, montos, cobro); el modelo conversa. Este PR-2 construye todo lo que NO es la conversación, el carrito, el cobro ni los avisos.
 
@@ -17,3 +17,7 @@
 **Decisiones abiertas** (no se tomaron aquí): guía de voz y prompt; texto definitivo para números de otro país y si se atienden; modos de entrega y su costo; contacto designado del aviso; estado de la plantilla `pedido_registrado` en Meta.
 
 **Precondiciones para publicar** (además de completar el PR-3): sustituir todos los `REEMPLAZAR_*`, plantilla aprobada, costo de entrega declarado, el candado de la doble reserva no aplica (no hay agenda), prueba contra un teléfono real y el «sí» de Andres por acción.
+
+## PR-3: la venta
+
+El modelo conversa y propone en UNA llamada (JSON); el código valida contra el catálogo, calcula y decide (ver `PROPIO.md`). Cobro real con el QR del comercio; cotejo en el servidor; un aviso por pedido y uno por derivación al contacto designado; solo se ofrece pasar con recepción (aviso más botón). Las ambigüedades que se resolvieron al construir están listadas en `PROPIO.md`; las decisiones abiertas siguen siendo: modos y costo de entrega, contacto designado, plantilla `pedido_registrado` aprobada en Meta, y si Walisuma atiende números de otro país.

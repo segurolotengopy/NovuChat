@@ -52,13 +52,49 @@ export interface Opciones {
   envio?: Partial<Record<'Enviar a WhatsApp' | 'Enviar respaldo', 'acepta' | 'error' | 'lanza'>>;
   verificador?: (ll: LlamadaDoble) => J;
   telefonosDePrueba?: string;
+  /** Lo que escribe el modelo de conversación: el JSON de salida, un texto crudo, null (sin texto), 'cae' (error de servicio) o una función. */
+  modeloDice?: J | string | null | 'cae' | ((ll: LlamadaDoble) => J | string);
+  /** Lo que contesta `cotejarComprobanteVenta`, `guardarComprobante` y la ingesta al evento `cobro_cancelado`: un código y un cuerpo, o 'cae'. */
+  cotejo?: { statusCode: number; body: J } | 'cae';
+  guardado?: { statusCode: number; body: J } | 'cae';
+  cancelar?: { statusCode: number; body: J } | 'cae';
+  /** Cómo contesta Meta al aviso al comercio: 'acepta' (por omisión), 'error' o 'lanza'. */
+  aviso?: 'acepta' | 'error' | 'lanza';
+  /** Valores de «Config base» que la prueba quiera cambiar. */
+  base?: Record<string, unknown>;
   /** Lo que devuelven los medios. */
   medio?: { bytes?: number; url?: string; mime?: string; transcripcion?: string | null; clasificacion?: J | null };
 }
+/** El catálogo de PRUEBA (no es el real): piezas con precio, un tapiz SIN precio (a consultar) y un licor apagado. */
+export const CATALOGO = [
+  { id: 'bufanda-vicuna', nombre: 'Bufanda de vicuña', descripcion: 'Punto diagonal, 100 % vicuña.', area: 'Accesorios · Bufandas y chales', precio: 7795, moneda: 'BOB', activo: true },
+  { id: 'billetera-cuero', nombre: 'Billetera de cuero', descripcion: 'Cuero curtido, tres compartimentos.', area: 'Accesorios · Billeteras', precio: 450, moneda: 'BOB', activo: true },
+  { id: 'llavero-llama', nombre: 'Llavero de llama', descripcion: 'Hilo de alpaca.', area: 'Hogar y oficina · Llaveros', precio: 35.5, moneda: 'BOB', activo: true },
+  { id: 'tapiz-mujer-rio', nombre: 'Tapiz mujer río 66 x 31 cm', descripcion: 'Tapiz tejido a mano.', area: 'Hogar y oficina · Tapices', activo: true },
+  { id: 'licor-de-coca', nombre: 'Licor de coca 50 ml', descripcion: 'Licor.', area: 'Hogar y oficina · Gourmet', precio: 60, moneda: 'BOB', activo: false },
+];
+export const MEDIA_QR = 'media-qr-1';
 export const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({
   statusCode: 200,
-  body: { tenantId: 'walisuma', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Tienda de prueba' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, atencion: { estado: 'normal' }, ...extra },
+  body: {
+    tenantId: 'walisuma', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Tienda de prueba' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, atencion: { estado: 'normal' },
+    catalogo: CATALOGO.map((c) => ({ ...c })),
+    venta: { mediaIdQr: MEDIA_QR },
+    cobroReal: { nombreCuenta: 'Cuenta del comercio', banco: 'Banco' },
+    cobro: { activo: true, qr: { url: 'https://qr.example.com/q.png' }, pendiente: false, regla: 2 },
+    ...extra,
+  },
 });
+/** El panel con un QR abierto (lo dice el servidor): monto del pedido y regla 2. */
+export const panelConQr = (monto: number, extra: J = {}): { statusCode: number; body: J } => panelOk({ cobro: { activo: true, qr: { url: 'https://qr.example.com/q.png' }, pendiente: true, monto, pedido: 'WL1', regla: 2 }, ...extra });
+/** El panel sin cobro real (sin `cobroReal`): no hay QR utilizable. */
+export const panelSinCobro = (): { statusCode: number; body: J } => { const p = panelOk(); const { cobroReal: _c, cobro: _o, ...resto } = p.body as J; return { statusCode: 200, body: resto }; };
+export const RUTA_GUARDADA = { statusCode: 200, body: { ruta: 'tenants/walisuma/comprobantes/2026-10-05/abc_1.jpg' } };
+export const COTEJO_VALIDO = { statusCode: 200, body: { estado: 'valido', importe: 45, avisarComercio: true } };
+export const COMPROBANTE = { categoria: 'comprobante', texto: 'Transferencia', monto: '450.00', cuentaDestino: '1*****9', nombreCuenta: 'WALISUMA', fecha: '05/10/2026', hora: '10:00', banco: 'Banco' };
+/** Lo que contesta el modelo (JSON de salida): texto, líneas, entrega y quiereHablar. */
+export const modelo = (texto: string, extra: J = {}): J => ({ texto, lineas: [], entrega: {}, facturacion: {}, quiereHablar: false, ...extra });
+export const ENTREGA = { modo: 'Retiro en tienda', ciudad: 'La Paz', direccion: '', nombre: 'Ana Pérez' };
 export function crear(o: Opciones = {}): Mundo {
   const envio = o.envio ?? {};
   const m = o.medio ?? {};
@@ -78,7 +114,21 @@ export function crear(o: Opciones = {}): Mundo {
     'Reportar mensaje (saliente)': () => ({ ok: true }),
     'Obtener URL del medio (general)': () => ({ id: 'm', url: m.url ?? 'https://lookaside.fbsbx.com/whatsapp_business/attachments/medio-1', mime_type: m.mime ?? 'image/jpeg', file_size: m.bytes ?? 100_000 }),
     'Descargar medio': () => ({ descargado: true }),
-    'Guardar comprobante': () => ({ statusCode: 200, body: { ruta: 'tenants/walisuma/comprobantes/2026-10-05/abc_1.jpg' } }),
+    'Guardar comprobante': () => (o.guardado === 'cae' ? { statusCode: 503, body: {} } : (o.guardado ?? RUTA_GUARDADA)),
+    'Cotejar en el servidor': () => (o.cotejo === 'cae' ? { statusCode: 503, body: {} } : (o.cotejo ?? COTEJO_VALIDO)),
+    'Avisar al servidor': () => (o.cancelar === 'cae' ? { statusCode: 503, body: {} } : (o.cancelar ?? { statusCode: 200, body: { atencion: { estado: 'normal' } } })),
+    'Conversar con el modelo': (ll) => {
+      const d = o.modeloDice === undefined ? modelo('Con gusto. ¿Qué pieza te interesa?') : o.modeloDice;
+      if (d === 'cae') return { error: { message: 'servicio no disponible', code: 503 } };
+      if (d === null) return {};
+      const v = typeof d === 'function' ? d(ll) : d;
+      return gemini(typeof v === 'string' ? v : JSON.stringify(v));
+    },
+    'Enviar aviso': (ll) => {
+      if (o.aviso === 'lanza') throw new Error('fetch failed: red caída');
+      if (o.aviso === 'error') return { error: { message: '(#131047) fuera de la ventana', code: 131047 } };
+      return { messaging_product: 'whatsapp', messages: [{ id: `wamid.AVISO${ll.n}` }] };
+    },
     'Transcribir audio': () => (m.transcripcion === null ? { error: { message: 'sin transcripción' } } : gemini(m.transcripcion ?? 'hola, quiero una manta')),
     'Describir imagen': clasificar,
     'Describir documento': clasificar,
@@ -88,9 +138,13 @@ export function crear(o: Opciones = {}): Mundo {
   return crearMundo({
     flujo: o.flujo ?? PRODUCCION,
     dobles,
-    roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)'] },
+    roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Avisar al servidor'] },
     ahoraMs: AHORA,
-    configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`, nombreNegocio: 'Tienda de prueba' },
+    configBase: {
+      phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`, nombreNegocio: 'Tienda de prueba',
+      contactoAviso: REC, avisoPedidoPlantilla: 'pedido_registrado', avisoPedidoEstado: 'APPROVED', avisoPlantillaIdioma: 'es', modosDeEntrega: 'Retiro en tienda, Envío', costoDeEntrega: '',
+      ...(o.base ?? {}),
+    },
   });
 }
 export const hablar = (m: Mundo, from: string, msg: J, op: { wamid?: string; entrega?: string; phoneId?: string; contacto?: string; toleraFallo?: boolean } = {}): ResultadoTurno =>

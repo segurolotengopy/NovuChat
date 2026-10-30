@@ -15,7 +15,7 @@ const entregado = (j) => {
 };
 if (cnNodo('Enviar a WhatsApp')) {
   // REVERSIÓN DE LA FICHA (parámetro del flujo, no lógica de un negocio): «Armar mensajes» escribe la ficha ANTES de enviar y deja en el ítem 0 lo que hay que devolver si el mensaje no salió.
-  //   revertirSiFalloElPrincipal  se aplica si el envío PRINCIPAL no devolvió `messages[0].id` (aunque el respaldo en texto haya salido): lo que solo vale si salió el mensaje bueno (p. ej. un cobro abierto);
+  //   revertirSiFalloElPrincipal  se aplica si ALGÚN envío PRINCIPAL no devolvió `messages[0].id` (aunque el respaldo en texto haya salido): lo que solo vale si salió el mensaje bueno (p. ej. un cobro abierto);
   //   revertirFicha               se aplica si no salió nada al cliente (ni el envío ni su respaldo).
   // Cada una es un objeto plano `{ campo: valorAnterior }`; solo se copian campos con nombre simple. La ficha se busca por `from` (nunca por otro dato).
   const desde = String((items[0] || {}).from || '');
@@ -28,7 +28,9 @@ if (cnNodo('Enviar a WhatsApp')) {
       if (/^[A-Za-z][A-Za-z0-9]{0,40}$/.test(k) && k !== 'constructor' && k !== 'prototype') ficha[k] = rev[k];
     }
   };
-  if (!cnTodos('Enviar a WhatsApp').some(entregado)) copiar((items[0] || {}).revertirSiFalloElPrincipal);
+  // Con varios mensajes (un resumen y un QR), «el principal falló» es que ALGUNO no devolvió id: uno bueno no tapa al que falló.
+  const esperadosPrincipal = items.filter((i) => i && i.sinMensajes !== true).length;
+  if (cnTodos('Enviar a WhatsApp').filter(entregado).length < esperadosPrincipal) copiar((items[0] || {}).revertirSiFalloElPrincipal);
   if (!cnTodos('Enviar a WhatsApp').some(entregado) && !cnTodos('Enviar respaldo').some(entregado)) copiar((items[0] || {}).revertirFicha);
   const esperados = items.filter((i) => i && i.sinMensajes !== true).length;
   const entregados = cnTodos('Enviar a WhatsApp').filter(entregado).length + cnTodos('Enviar respaldo').filter(entregado).length;
