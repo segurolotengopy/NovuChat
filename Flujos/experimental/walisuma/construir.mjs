@@ -7,11 +7,12 @@
  *   node Flujos/experimental/walisuma/construir.mjs               escribe walisuma.json y walisuma.prueba.json
  *   node Flujos/experimental/walisuma/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
  *   node Flujos/experimental/walisuma/construir.mjs --publicable [--flujo <json>] [--datos <json>]
- *                                                       no escribe: sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal. HOY SALE 1: es un ESQUELETO (PR-2)
+ *                                                       no escribe: sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal. HOY SALE 1: quedan marcadores REEMPLAZAR_*
  *   (cualquier otro argumento se rechaza)
  *
- * ESTADO: ESQUELETO (PR-2). Trae todo lo que no es la conversación: la entrada verificada del receptor, la entrada y la configuración, la puerta del turno (comercio no operativo, uso extendido y pausa por Tomar),
- * los medios y la salida. La conversación con el modelo, el carrito, el cobro y los avisos son del PR-3 (11 nodos, con los que el flujo llega a 47). `--publicable` falla con un mensaje claro hasta entonces.
+ * ESTADO: flujo completo (PR-3), 47 nodos: la entrada verificada del receptor, la entrada y la configuración, la puerta del turno (comercio no operativo, uso extendido y pausa por Tomar), los medios, la conversación
+ * (una llamada al modelo que conversa y propone el pedido; el código valida contra el catálogo y calcula el total), el cobro REAL con el QR del comercio y su cotejo, los avisos al comercio y la salida.
+ * `--publicable` sigue fallando mientras queden marcadores `REEMPLAZAR_*`, la plantilla `pedido_registrado` sin aprobar o el costo de entrega sin declarar.
  *
  * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código, sin los datos y sin la entrada del receptor. El código de los nodos lo arma el armador genérico `../comun-sin-agente/construir.mjs` (importado, no copiado):
  *   - `@@dato:a.b.c@@` por ese dato; `@@cred:ingesta|graph|entradaPrueba|gemini` por el nombre de credencial del archivo de datos;
@@ -28,36 +29,53 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
+import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
 import { problemasDeReferencias } from '../rroca-ruben/construir.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/walisuma/walisuma.json');
 export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../venta-minima/flujo.plantilla.json');
-export const TOPE_DE_NODOS = 47;
+// 47 + los 9 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026 y v2 del 30/10):
+// excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
+export const TOPE_DE_NODOS = 56;
 export const FLUJO_PRODUCCION = 'walisuma.json';
 export const FLUJO_PRUEBA = 'walisuma.prueba.json';
 
 /** Los nodos que completa el PR-3 (conversación, cotejo del comprobante, derivación y avisos). Con ellos el flujo llega a 47. `--publicable` los exige. */
 export const NODOS_DEL_PR3 = ['Decidir turno', 'Interpretar lectura', '¿Cotejar?', 'Cotejar en el servidor', '¿Conversar con el modelo?', 'Conversar con el modelo', '¿Avisar al servidor?', 'Avisar al servidor', 'Armar avisos', '¿Hay avisos?', 'Enviar aviso'];
-/** Los empalmes que el PR-3 conecta (documentados en PROPIO.md): de qué nodo sale y adónde llega. */
+/** Los empalmes del esqueleto que el PR-3 conectó (la guardia exige que cada arista exista): de qué nodo sale y adónde llega. */
 export const EMPALMES_DEL_PR3 = [
-  ['¿Bajar medio?', 'Decidir turno', 'hoy va a «Armar mensajes» (salida «no es un medio»)'],
-  ['Preparar transcripción', 'Decidir turno', 'hoy termina'],
-  ['Medio no aceptado', 'Decidir turno', 'hoy termina'],
-  ['Preparar imagen', 'Interpretar lectura', 'hoy termina'],
-  ['Decidir turno', 'Armar mensajes', 'por el modelo, el aviso al servidor y los avisos'],
-  ['Puerta del turno', 'Armar avisos', 'con la atención en operador, el uso extendido ofrece una persona (transferir): PR-3 debe avisar a recepción y poner el botón para escribirle directo (solo se ofrece lo que se cumple); hoy no sale ningún aviso'],
+  ['¿Bajar medio?', 'Decidir turno', 'la salida «no es un medio» (antes iba a «Armar mensajes»)'],
+  ['Preparar transcripción', 'Decidir turno', 'la nota de voz es texto'],
+  ['Medio no aceptado', 'Decidir turno', 'demasiado pesado o ilegible'],
+  ['Preparar imagen', 'Interpretar lectura', 'la lectura del comprobante'],
+  ['Interpretar lectura', '¿Cotejar?', ''],
+  ['¿Cotejar?', 'Cotejar en el servidor', 'solo con un cobro real abierto'],
+  ['¿Cotejar?', 'Decidir turno', 'sin cobro abierto'],
+  ['Cotejar en el servidor', 'Decidir turno', ''],
+  ['Decidir turno', '¿Conversar con el modelo?', ''],
+  ['¿Conversar con el modelo?', 'Conversar con el modelo', 'solo la conversación libre con la puerta abierta'],
+  ['¿Conversar con el modelo?', 'Armar avisos', 'sin modelo'],
+  ['Conversar con el modelo', 'Armar avisos', ''],
+  ['Armar avisos', '¿Avisar al servidor?', 'también la puerta en «operador» (uso extendido): avisa a recepción y «Armar mensajes» pone el botón'],
+  ['¿Avisar al servidor?', 'Avisar al servidor', 'cerrar el cobro abierto antes de emitir otro QR'],
+  ['¿Avisar al servidor?', '¿Hay avisos?', ''],
+  ['Avisar al servidor', '¿Hay avisos?', ''],
+  ['¿Hay avisos?', 'Enviar aviso', ''],
+  ['¿Hay avisos?', 'Armar mensajes', 'sin aviso'],
+  ['Enviar aviso', 'Armar mensajes', 'el aviso corre ANTES de armar el mensaje que dice si salió'],
 ];
 
 /** El config del armador genérico. Vive aquí y no en un `construir.config.json`: el saneo del repo público trata todo JSON bajo `Flujos/` como un export de n8n. */
 export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
-  // La base común de las ventas digitales (cobro, avisos y el motor de la conversación: prefijos `cb`, `av` y `vd`) y, al final, lo PROPIO de Walisuma (`wl.js`: solo datos y textos, y `CN_TENANT`).
-  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', 'src/lib/wl.js'],
+  // La base común de las ventas digitales (cobro, avisos, el motor de la conversación y el carrito: prefijos `cb`, `av`, `vd` y `vc`) y, al final, lo PROPIO de Walisuma (`wl.js`: datos, textos y `CN_TENANT`; `wl-venta.js`: la decisión de la venta).
+  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../venta-digital/src/carrito.js', 'src/lib/wl.js', 'src/lib/wl-venta.js'],
   comun: ['../venta-digital/src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
+    filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
@@ -221,6 +239,8 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
   if (MARCADOR.test(url)) return true;
   // La única excepción: «Descargar medio» baja el medio de la URL que le devuelve Meta (la anterior, «¿Tamaño aceptable?», exige https://lookaside.fbsbx.com/ y un tamaño).
   if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
+  // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
+  if (nombreDelNodo === 'Descargar medio (guardado)' && url === URL_DESCARGA_GUARDADO) return true;
   const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
   if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
   return ANFITRIONES.includes(m[1].toLowerCase());
@@ -234,7 +254,9 @@ export function guardias(variante, flujo, opciones = {}) {
   const por = (nombre) => nodos.find((n) => n.name === nombre);
   const p = (n) => (n && n.parameters) || {};
   const tope = opciones.tope ?? TOPE_DE_NODOS;
-  if (nodos.length > tope) h.push(`tiene ${nodos.length} nodos y el tope es ${tope}: si pasa, se rehace`);
+  if (nodos.length > tope) h.push(`tiene ${nodos.length} nodos y el tope es ${tope}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md)`);
+  // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
+  h.push(...hallazgosDelGuardado(flujo || {}));
   if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
   if (/subscriptions|subscribed_apps/i.test(JSON.stringify(flujo))) h.push('menciona «subscriptions» o «subscribed_apps» (prohibición 7)');
   if (/langchain\.(agent|memory\w*|lmChat\w*|chain\w*)$/i.test(nodos.map((n) => n.type).join('\n'))) h.push('lleva un agente, memoria o modelo de chat de n8n: este flujo no los lleva');
@@ -263,7 +285,7 @@ export function guardias(variante, flujo, opciones = {}) {
   if (bajar && !/ruta === 'sigue'/.test(JSON.stringify(p(bajar)))) h.push('«¿Bajar medio?» no exige que la puerta diga «sigue» (un cliente bloqueado no descarga medios)');
   // La variante de PRUEBA nunca usa credenciales de producción: ni la de Graph ni la de Gemini.
   if (variante === 'prueba') {
-    const libres = new Set([NODO_PRUEBA, 'Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Guardar comprobante', 'Cotejar en el servidor', 'Avisar al servidor']);
+    const libres = new Set([NODO_PRUEBA, 'Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Guardar comprobante', 'Cotejar en el servidor', 'Avisar al servidor', ...NODOS_DE_INGESTA_DEL_GUARDADO]);
     for (const n of nodos) {
       for (const [tipo, c] of Object.entries(n.credentials || {})) {
         const nombreCred = String((c || {}).name || '');
@@ -312,6 +334,46 @@ export function guardias(variante, flujo, opciones = {}) {
     if (!destinosDe('¿Firma válida?', 1).includes('Rechazar (401)')) h.push('«¿Firma válida?» no manda la firma inválida a «Rechazar (401)»');
     if (destinosDe('Rechazar (401)', 0).length) h.push('«Rechazar (401)» no puede tener salidas: una firma inválida corta ahí');
   }
+  // ----- El flujo completo (PR-3): los nodos de la conversación, el cotejo y los avisos, y sus conexiones. -----
+  if (nodos.some((n) => /Trigger$/i.test(String(n.type)))) h.push('contiene un nodo disparador (tipo «…Trigger»): la única entrada es el receptor (producción) o «Entrada de prueba»');
+  // El ÚNICO nodo sin entradas es la entrada de la variante.
+  const conEntrada = new Set();
+  for (const s of Object.values(conex)) for (const o of ((s && s.main) || [])) for (const x of (o || [])) conEntrada.add(x.node);
+  const sinEntradas = nodos.filter((n) => !conEntrada.has(n.name)).map((n) => n.name);
+  const unica = variante === 'produccion' ? NODO_RECEPTOR : NODO_PRUEBA;
+  if (sinEntradas.length !== 1 || sinEntradas[0] !== unica) h.push(`el único nodo sin entradas tiene que ser «${unica}» (hoy: ${sinEntradas.join(', ') || 'ninguno'})`);
+  for (const n of NODOS_DEL_PR3) if (!nombres.has(n)) h.push(`falta el nodo «${n}» de la conversación, el cotejo y los avisos`);
+  for (const [de, a] of EMPALMES_DEL_PR3) {
+    if (nombres.has(de) && nombres.has(a) && !(((conex[de] || {}).main) || []).some((o) => (o || []).some((x) => x.node === a))) h.push(`«${de}» no está conectado a «${a}»`);
+  }
+  const hay = (n) => nombres.has(n);
+  if (hay('Armar mensajes') && hay('Decidir turno') && !destinosDe('¿Bajar medio?', 1).includes('Decidir turno')) h.push('«¿Bajar medio?» (salida «no es un medio») tiene que ir a «Decidir turno»');
+  if (hay('Enviar aviso') && !destinosDe('Enviar aviso', 0).includes('Armar mensajes')) h.push('«Enviar aviso» no cuelga de «Armar mensajes»: el aviso tiene que correr ANTES de armar el mensaje que dice si salió');
+  const enviarAviso = por('Enviar aviso');
+  if (enviarAviso && !((enviarAviso.credentials || {}).httpHeaderAuth || {}).name) h.push('«Enviar aviso» no lleva credencial (httpHeaderAuth)');
+  if (enviarAviso && enviarAviso.onError !== 'continueRegularOutput') h.push('«Enviar aviso» no lleva `onError: continueRegularOutput`: si Meta lo rechaza, el turno se cortaría y el cliente quedaría sin respuesta');
+  if (enviarAviso && enviarAviso.retryOnFail) h.push('«Enviar aviso» no puede reintentar: un aviso repetido llegaría dos veces');
+  const codigoAvisos = String(p(por('Armar avisos')).jsCode || '');
+  if (hay('Armar avisos') && !(/wlResolver\(/.test(codigoAvisos) && /wlPlantilla\(/.test(codigoAvisos) && /avPlantilla\(/.test(codigoAvisos))) h.push('«Armar avisos» no lleva la decisión ni la plantilla: el aviso fuera de la ventana no saldría');
+  const cotejar = por('Cotejar en el servidor');
+  if (cotejar && !/cotejarComprobanteVenta$/.test(String(p(cotejar).url || ''))) h.push('«Cotejar en el servidor» no llama a cotejarComprobanteVenta');
+  const modelo = por('Conversar con el modelo');
+  if (modelo && !/^=?https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\//.test(String(p(modelo).url || ''))) h.push('«Conversar con el modelo» no llama a Gemini');
+  const avisar = por('Avisar al servidor');
+  if (avisar) {
+    const cuerpo = String(p(avisar).jsonBody || '');
+    if (!/ingesta$/.test(String(p(avisar).url || '')) || p(avisar).method !== 'POST') h.push('«Avisar al servidor» no hace POST a la ingesta');
+    if (!/evento: 'cobro_cancelado'/.test(cuerpo) || /evento: (?!'cobro_cancelado')/.test(cuerpo)) h.push('«Avisar al servidor»: el único evento permitido es `cobro_cancelado`');
+    const opc = p(avisar).options || {};
+    if (opc.timeout !== 8000 || !((opc.response || {}).response || {}).fullResponse || !((opc.response || {}).response || {}).neverError) h.push('«Avisar al servidor» tiene que llevar timeout 8000, fullResponse y neverError (la respuesta decide si se emite otro QR)');
+    if (avisar.onError !== 'continueRegularOutput') h.push('«Avisar al servidor» no lleva `onError: continueRegularOutput`: si la ingesta cae, el turno no puede cortarse');
+    if (avisar.retryOnFail) h.push('«Avisar al servidor» no puede reintentar: no es idempotente');
+    if (!((avisar.credentials || {}).httpHeaderAuth || {}).name) h.push('«Avisar al servidor» no lleva credencial (httpHeaderAuth)');
+    if (!destinosDe('¿Avisar al servidor?', 0).includes('Avisar al servidor') || !destinosDe('¿Avisar al servidor?', 1).includes('¿Hay avisos?') || !destinosDe('Avisar al servidor', 0).includes('¿Hay avisos?')) h.push('«¿Avisar al servidor?» / «Avisar al servidor» no desembocan en «¿Hay avisos?»: la llamada tiene que correr ANTES del aviso y del mensaje');
+  }
+  // El reporte saliente lleva el evento del QR (`qr_enviado` con la regla 2, el pedido y el monto) y el de protección.
+  const repSal = por('Reportar mensaje (saliente)');
+  if (repSal && !(/no_contactar/.test(String(p(repSal).jsonBody || '')) && /reglaCobro/.test(String(p(repSal).jsonBody || '')))) h.push('«Reportar mensaje (saliente)» no reporta el evento del QR (`reglaCobro`, `referencia`, `monto`) ni `no_contactar`');
   // Un nodo HTTP solo habla con Meta, con Gemini y con las Functions de la consola.
   for (const n of nodos.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
     const url = String(p(n).url || '');
@@ -321,7 +383,7 @@ export function guardias(variante, flujo, opciones = {}) {
   for (const x of problemasDeReferencias(flujo || {})) h.push(x);
   // Retención de ejecuciones, orden y zona horaria.
   const st = (flujo && flujo.settings) || {};
-  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'all' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «all» y saveExecutionProgress false');
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» y saveExecutionProgress false (con la rama del guardado de medios el binario quedaría en la ejecución: decisión de Andres del 30/10, contrato v2 §8.1)');
   if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow`');
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
@@ -422,6 +484,13 @@ export function armarWalisuma(proyecto, datos, v, origenReceptor = leerReceptorD
   const reporta = plantilla.connections['¿Reportar? (saliente)'];
   if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);
   reporta.main[0] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
+  // El reporte saliente de ESTE flujo (propio): igual al común, más el EVENTO. `qr_enviado` lleva `reglaCobro: 2` (QR REAL: abre el cobro de 15 minutos, 3 intentos), `referencia` (el pedido) y `monto` (el del carrito):
+  // contra ese número coteja el servidor, y solo viaja si el envío de la imagen fue aceptado. `no_contactar` viaja SIEMPRE.
+  const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
+  if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes('evento: m.evento')) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
+  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; } return JSON.stringify(r); })() }}";
+  // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
+  injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);

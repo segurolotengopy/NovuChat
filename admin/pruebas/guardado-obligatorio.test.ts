@@ -59,10 +59,6 @@ export const EXCEPCIONES: Record<string, string> = {
   'novuchat-onboarding.json': 'histórico: el chat de NovuChat corre chat-novuchat (que sí lo trae); queda sin fila en versiones-por-cliente',
   'platinum-agendamiento.json': 'histórico del ensamblador, sin cliente; lo cierra retirarlo',
   'bellido-agendamiento.json': 'flujo A de Bellido, descartado desde el 01/10 (corre agenda-minima); Andres ordenó no tocarlo',
-  // Walisuma entró a main (#696) DESPUÉS de #699 sin la rama y sin estar en esta lista: la prueba quedó en rojo en main. Es un esqueleto sin publicar
-  // (36 nodos, tope 47 con su PR-3); la rama (+9 nodos) la decide su PR-3 junto con su tope. Lo cierra `injertarGuardado` en walisuma/construir.mjs.
-  'experimental/walisuma/walisuma.json': 'Walisuma: esqueleto sin publicar (PR-3 pendiente); la rama del guardado entra con su PR-3 y su tope de nodos',
-  'experimental/walisuma/walisuma.prueba.json': 'Walisuma (variante de prueba): esqueleto sin publicar; la rama entra con su PR-3, como la de producción',
 };
 
 /**
@@ -121,6 +117,8 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
     'experimental/chat-novuchat/chat-novuchat.novuchat.json', 'experimental/chat-novuchat/chat-novuchat.prueba.json',
     'experimental/captacion-minima/captacion-minima.novuchat.json', 'experimental/captacion-minima/captacion-minima.prueba.json',
     'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/agenda-minima/agenda-minima.prueba.json',
+    // Walisuma (#713, 30/10): main la traía con «none»/«all»; pasa a «none» como todos.
+    'experimental/walisuma/walisuma.json', 'experimental/walisuma/walisuma.prueba.json',
   ].map((a) => [a, NADA]));
   it('la retención de ejecuciones de cada flujo cubierto es la de la tabla cerrada: nada guardado (el binario del medio quedaría en la ejecución)', () => {
     expect(Object.keys(RETENCION).sort()).toEqual([...CUBIERTOS].sort());
