@@ -18,7 +18,7 @@ export { milisegundosDe };
 import { alTurnoCampanas } from './modulos/campanas/alTurno.js';
 import { alTurnoCaptacion } from './modulos/captacion/alTurno.js';
 import { modulosDelTurno, type ContextoDelTurno } from './core/turno/ganchosDelTurno.js';
-import { existencias } from './modulos/inventario/inventario.js';
+import { alTurnoInventario } from './modulos/inventario/alTurno.js';
 import { getFirestore, FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
@@ -1825,13 +1825,20 @@ export const configuracionFlujo = onRequest(
       return { id: d.id, data: (): Record<string, unknown> => ({ ...datos, nombre: cita(String(datos['nombre'] ?? '')) }) };
     }) };
     // El catálogo activo que el turno YA trajo, como lo ve un gancho: nombre (citado), precio y, si lleva
-    // control de existencias, `agotado`. Lo calcula el coordinador con Inventario para que Campañas
-    // no dependa de él. Cero lecturas nuevas.
+    // control de existencias, `agotado`. Lo calcula el gancho de Inventario (F3b-2c) y corre SIEMPRE:
+    // hoy `agotado` sale en el catálogo de todo flujo, no solo en el de venta, y no se pierde. Campañas
+    // no depende de Inventario: recibe el dato ya puesto. Cero lecturas nuevas.
+    const agotadosDelTurno = (alTurnoInventario({
+      tenantId: comercio.tenantId, flujo: comercio.flujo, telefono, ahoraMs, negocio: {}, cuenta: null,
+      especifica: undefined, vigentesDeCampanas: undefined, solicitud: undefined, cobroRealActivo: false,
+      moneda: '', urlDelQr: () => '', citar: (t) => t,
+      catalogo: catalogoPrompt.docs.map((d) => ({ id: d.id, datos: d.data() })),
+    })['agotados'] ?? {}) as Record<string, boolean>;
     const catalogoDelTurno = catalogoPrompt.docs.map((d) => {
       const datos = d.data();
-      const quedan = existencias(datos);
+      const agotado = agotadosDelTurno[d.id];
       return { id: d.id, datos: { nombre: datos['nombre'], precio: datos['precio'],
-        ...(quedan !== null ? { agotado: quedan === 0 } : {}) } };
+        ...(agotado !== undefined ? { agotado } : {}) } };
     });
 
     // EL ESTADO DE ATENCIÓN DEL TELÉFONO, si vino. Se calcula con la misma
@@ -2138,11 +2145,10 @@ export const configuracionFlujo = onRequest(
             // ítems SIN control de existencias nunca salen agotados: no saber
             // cuántos hay no es saber que hay cero.
             catalogo: catalogoPrompt.docs.map((d) => {
-              const datos = d.data();
-              const quedan = existencias(datos);
+              const agotado = agotadosDelTurno[d.id];
               return {
-                id: d.id, ...datos,
-                ...(quedan !== null ? { agotado: quedan === 0 } : {}),
+                id: d.id, ...d.data(),
+                ...(agotado !== undefined ? { agotado } : {}),
               };
             }),
             ...(catalogoWebActivo
