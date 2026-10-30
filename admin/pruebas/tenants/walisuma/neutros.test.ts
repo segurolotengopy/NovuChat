@@ -26,7 +26,7 @@ const HUELLAS: [string, string, string][] = [
   ['config-del-negocio.js', '4f36336734d741cb', '4f36336734d741cb'],
   ['normalizar-entrada.js', 'ad54b5d57c48e022', '03a6bdc856c0e0ff'],
   ['puerta-del-turno.js', '3f8a837a3912eb78', '3f8a837a3912eb78'],
-  ['resumen-del-turno.js', '56e4bdf011a18b83', 'e5d5e116b6931d28'],
+  ['resumen-del-turno.js', '56e4bdf011a18b83', '08eea9fd84116169'],
 ];
 
 describe('huellas: lo que se subió y de dónde', () => {
@@ -107,6 +107,8 @@ describe('normalizar-entrada y resumen-del-turno: lo que cambió respecto del or
   it('resumen: solo copia campos de nombre simple y solo si no salió nada (o el principal, según el campo)', () => {
     const r = leer(join(NEUTROS, 'resumen-del-turno.js'));
     expect(r).toMatch(/revertirSiFalloElPrincipal/);
+    // Con varios mensajes (un resumen y un QR), un principal bueno no tapa al que falló.
+    expect(r).toMatch(/it\.revertirSiFalloElPrincipal && !entregado\(principales\[k\]\)/);
     expect(r).toMatch(/revertirFicha/);
     expect(r).toMatch(/\^\[A-Za-z\]\[A-Za-z0-9\]\{0,40\}\$/);
     expect(r).not.toMatch(/qrPrevio|qrLiberado|hashPrevio|ctRestaurar/);
