@@ -72,6 +72,37 @@ if (t.tipo === 'audio' && !deAudio) {
 }
 if ((t.tipo === 'audio' || t.tipo === 'image') && t.mediaId === '') return salir({ tipo: 'fijo', clave: 'archivo_no_abierto' });
 
+// 5c. OBSERVACIONES DE RUBÉN (Andres, 28/10/2026), por CÓDIGO y sin llamar al modelo (solo texto o nota de voz; una imagen la ve el modelo):
+//   - la respuesta a «¿qué día y horario te quedan mejor?» CIERRA: deriva con la preferencia (y el nombre si lo dio) — `derivar`;
+//   - tras la oferta de llamada, un «sí» deriva con «pidió que la llamen» y un «no» cierra amable — `derivar` con `llamada` / `cierre_amable`;
+//   - «no gracias», «lo voy a pensar» y equivalentes: la oferta fija de llamada (una sola vez por ficha; después, el cierre amable) — `ofrece_llamada`;
+//   - un saludo solo («hola», «buenas») con la ficha vigente: un texto corto, sin repetir la bienvenida — `saludo`.
+const historiaDelTurno = evHistorialVigente(fichaBruta, ahora);
+const ultimoDelAsistente = (historiaDelTurno.filter((h) => h.r === 'a').slice(-1)[0] || {}).t || '';
+const entradaDelTurno = deAudio ? ('[Audio] ' + evEnmascarar(evQuitarDelimitadores(au.texto))).slice(0, EV_TOPE_TEXTO_HIST) : evEntradaCliente(t);
+if (!lec && textoCliente.trim() !== '') {
+  // LA PREGUNTA DE DÍA Y HORARIO SE HACE UNA SOLA VEZ (revisión del PR #694): si fue lo último que dijo el asistente, lo que conteste la persona CIERRA (aviso + botón + cierre), con la preferencia si la dio o
+  // «sin horario indicado» si no («¿qué horarios tienen?», «ustedes díganme», «no sé», «sí», otro pedido de agendar). Solo no cierran: un saludo solo (se saluda y se repite la pregunta pendiente), un rechazo
+  // o un aplazamiento («lo voy a pensar», «luego te digo»: van a la oferta de llamada, abajo) y una negación de agendar.
+  const preferenciaPendiente = !!ultimoDelAsistente && evEsPreguntaDePreferencia(ultimoDelAsistente) && !(ficha.cierreMs > 0);
+  if (preferenciaPendiente && evSoloSaludo(textoCliente, cfg.nombreNegocio)) {
+    return salir({ tipo: 'saludo', pedirNombre: false, preguntaPendiente: EV_PIDE_NOMBRE.test(evNorm(ultimoDelAsistente)) ? 'nombre' : 'dia' }, { entradaHistorial: entradaDelTurno });
+  }
+  if (preferenciaPendiente && !evDeclina(textoCliente, historiaDelTurno) && !evAplaza(textoCliente) && !evNegaAgendar(textoCliente)) {
+    return salir({ tipo: 'derivar', textoCliente: textoCliente.slice(0, 500), preferencia: evRespondePreferencia(textoCliente) ? evPreferenciaDe(textoCliente) : '',
+      nombre: evNombreDeRespuesta(textoCliente) || evNombreDado(historiaDelTurno, '', ficha.nombre) }, { entradaHistorial: entradaDelTurno });
+  }
+  if (ultimoDelAsistente && evEsOfertaDeLlamada(ultimoDelAsistente)) {
+    if (evAceptaLlamada(textoCliente)) return salir({ tipo: 'derivar', llamada: true, textoCliente: textoCliente.slice(0, 500), nombre: evNombreDado(historiaDelTurno, '', ficha.nombre) }, { entradaHistorial: entradaDelTurno });
+    if (evDeclina(textoCliente, historiaDelTurno)) return salir({ tipo: 'cierre_amable' }, { entradaHistorial: entradaDelTurno });
+  }
+  if (evDeclina(textoCliente, historiaDelTurno) || evAplaza(textoCliente) || (preferenciaPendiente && evNegaAgendar(textoCliente))) {
+    return salir({ tipo: evLlamadaYaOfrecida(historiaDelTurno) || ficha.cierreMs > 0 ? 'cierre_amable' : 'ofrece_llamada' }, { entradaHistorial: entradaDelTurno });
+  }
+  if (historiaDelTurno.length > 0 && evSoloSaludo(textoCliente, cfg.nombreNegocio)) {
+    return salir({ tipo: 'saludo', pedirNombre: evNombreDado(historiaDelTurno, '', ficha.nombre) === '' }, { entradaHistorial: entradaDelTurno });
+  }
+}
 // 6. LA CONVERSACIÓN LIBRE. El cliente nunca fabrica un rótulo del sistema: sus corchetes pasan a paréntesis; los rótulos los pone solo el código.
 const historia = evHistorialVigente(fichaBruta, ahora);
 let turno = textoCliente;

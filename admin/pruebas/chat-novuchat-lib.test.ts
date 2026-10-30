@@ -1429,7 +1429,8 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     const r = CONSTRUIR.construir({ verificar: true });
     expect(r.resultado.map((x) => [x.archivo, x.alDia, x.versionado])).toEqual([['chat-novuchat.prueba.json', true, []], ['chat-novuchat.novuchat.json', true, []]]);
     expect(r.huerfanos).toEqual([]);
-    expect(r.resultado.map((x) => x.nodos)).toEqual([44, 44]);
+    // 44 + los 11 de la rama común del guardado de medios.
+    expect(r.resultado.map((x) => x.nodos)).toEqual([55, 55]);
   });
   it('un dato cambiado, un archivo borrado a mano o una guardia violada a mano hacen fallar `--verificar` en una copia temporal; un JSON sin datos es un huérfano', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chat-novuchat-'));
@@ -1549,8 +1550,8 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
     const leer = (base: string, n: string): string => readFileSync(join(base, 'src/nodos', n), 'utf8');
     expect(leer(CARPETA, 'prospecto-para-la-planilla.js')).toBe(leer(join(EXPERIMENTAL, 'captacion-minima'), 'prospecto-para-la-planilla.js'));
     // `decidir-fila` diverge en UNA línea a propósito (L2 de la revisión de seguridad del PR #464: quitar TODOS los bloques de signos de fórmula del comienzo, «= =1»). Todo lo demás, idéntico.
-    // (y en el bloque «otros negocios» del resumen J: R5, ajustes del 09/10)
-    const mia = leer(CARPETA, 'decidir-fila-de-la-planilla.js').replace(/ *\/\/ >>> otros negocios[\s\S]*?\/\/ <<< otros negocios\n/, '').split('\n');
+    // (y en el bloque «otros negocios» del resumen J: R5, ajustes del 09/10; y en el bloque «filas nuevas»: fila nueva tras 48 h, 29/10 — se compara con la línea original de `actual`)
+    const mia = leer(CARPETA, 'decidir-fila-de-la-planilla.js').replace(/ *\/\/ >>> otros negocios[\s\S]*?\/\/ <<< otros negocios\n/, '').replace(/ *\/\/ >>> filas nuevas[\s\S]*?\/\/ <<< filas nuevas\n/, "  const actual = coincidencias.find((f) => digitos(f[H.E]) === p.telefono);\n").split('\n');
     const orig = leer(join(EXPERIMENTAL, 'captacion-minima'), 'decidir-fila-de-la-planilla.js').split('\n');
     const distintas = mia.filter((l) => !orig.includes(l));
     expect(distintas.filter((l) => !l.trimStart().startsWith('//'))).toEqual(["const seguro = (v) => limpio(v).replace(/^(?:[=+\\-@]\\s*)+/, '');"]);
@@ -2544,5 +2545,92 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
     expect(c('Hola, te cuento algo.', CFG, 'x', { botones: ['planes', 'equipo'] }).botones).toEqual(['planes', 'equipo']);
     expect(c('Hola, te cuento algo.', CFG, 'x').payload.type).toBe('text');
     expect(c('Respuesta útil. Puedo mostrarte los planes.', CFG, 'x', { lista: true, botones: [] }).payload.interactive.type).toBe('list');
+  });
+});
+
+describe('bucle del paso de los datos (29/10): «Engels» no puede repetir cinco veces «¿Y cómo se llama tu negocio?»', () => {
+  const DATOS = NOVUCHAT['respaldos'] as J;
+  const turnoDatos = (ficha: J, texto: string, nombre = '', empresa = ''): J => {
+    const eventos = [ev(texto)];
+    const plan = { ruta: 'modelo', fijo: '', contexto: 'datos', rubroElegido: '', temas: [], hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false } };
+    const lectura = f('chLeerModelo')({ candidates: [{ content: { parts: [{ text: JSON.stringify({ mensaje: 'Gracias por contarme, seguimos con lo que necesitas.', accion: 'ninguna', rubro: 'ninguno', necesidad: '', nombre, empresa, descarte: 'ninguno' }) }] } }] }, { cfg: CFG, textos: [texto] });
+    const res = f('chResolver')({ plan, intentos: [{ lectura, causa: 'formato' }], cfg: CFG, ficha, eventos });
+    const nueva = f('chAplicarTurno')({ ficha, eventos, hasta: 1, plan, res, mensaje: res.texto, cfg: CFG, pidioDatos: false });
+    return { res, nueva };
+  };
+  const pedido = (extra: J = {}): J => ({ ...fichaBase(), preguntaDatos: true, nombrePedido: true, explicado: true, historial: [{ r: 'a', t: '¿Cómo te llamas y cómo se llama tu negocio?' }], ...extra });
+  it('la captura: nombre «Juan», luego «Engels» → «Engels» es el NEGOCIO y Juan sigue siendo el nombre', () => {
+    const uno = turnoDatos(pedido(), 'Juan', 'Juan');
+    expect(uno.res.texto).toBe(DATOS.datosSoloNombre);
+    for (const modelo of [['Engels', ''], ['Engels', 'Engels'], ['', 'Engels'], ['', '']]) {
+      const dos = turnoDatos(uno.nueva, 'Engels', modelo[0], modelo[1]);
+      expect(dos.nueva).toMatchObject({ nombre: 'Juan', empresa: 'Engels' });
+      expect(dos.res.texto).toBe(DATOS.datosAmbos);
+    }
+  });
+  it('si la ficha ya quedó con nombre «Engels» y sin negocio (el estado del bucle), repetir «Engels» lo anota como negocio', () => {
+    const r = turnoDatos(pedido({ nombre: 'Engels' }), 'Engels', 'Engels');
+    expect(r.nueva).toMatchObject({ nombre: 'Engels', empresa: 'Engels' });
+    expect(r.res.texto).toBe(DATOS.datosAmbos);
+  });
+  it('NIEGA: lo que no es un negocio no se anota como tal (corrección de nombre, evasiva, pedido)', () => {
+    const base = pedido({ nombre: 'Juan' });
+    expect(turnoDatos(base, 'me llamo Pedro', 'Pedro').nueva.empresa).toBe('');
+    expect(turnoDatos(base, 'soy Pedro', 'Pedro').nueva.empresa).toBe('');
+    expect(turnoDatos(base, 'después te cuento').nueva.empresa).toBe('');
+    expect(turnoDatos(base, 'precios').nueva.empresa).toBe('');
+  });
+  it('anti-bucle general: la misma pregunta de datos NUNCA sale dos veces seguidas, diga lo que diga el cliente', () => {
+    for (const dice of ['soy Juan', 'me llamo Juan', 'después te cuento', '???']) {
+      let fi = pedido({ nombre: 'Juan' });
+      let anterior = '';
+      for (let i = 0; i < 5; i++) {
+        const r = turnoDatos(fi, dice, i === 0 ? 'Juan' : '', '');
+        if (anterior !== '') expect(r.res.texto).not.toBe(anterior);
+        // mientras falte el negocio, nunca se dice que quedó anotado todo
+        if (r.nueva.empresa === '') expect(r.res.texto).not.toBe(DATOS.datosAmbos);
+        anterior = r.res.texto;
+        fi = r.nueva;
+      }
+    }
+  });
+});
+
+describe('«Otro / a medida» no ofrece al equipo hasta dos respuestas del cliente (29/10): primero se le consulta', () => {
+  const sit = (o: { otroResp?: number; rubro?: string; texto?: string; ev?: string; rubroElegido?: string; res?: J; ficha?: J }): J => {
+    const ficha = { ...fichaBase(), rubro: o.rubro ?? 'otro', otroResp: o.otroResp ?? 0, historial: [], ...(o.ficha ?? {}) };
+    const eventos = o.texto === undefined ? [] : [{ ...f('chEventoTexto')(o.texto), seq: 1, id: '', ms: 0 }];
+    return f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'modelo', rubroElegido: o.rubroElegido ?? '', hechos: {} }, res: { origen: 'respaldo', evento: o.ev ?? 'otro', causas: [], ...(o.res ?? {}) }, eventos, ficha }));
+  };
+  it('al elegir «Otro» (botón o escrito) y tras la 1.ª respuesta, SIN botón del equipo; desde la 2.ª, sí', () => {
+    expect(sit({ rubroElegido: 'otro' })).toMatchObject({ equipo: false, fila: 'otro-temprano' });
+    expect(sit({ rubroElegido: 'otro', texto: 'Otro' })).toMatchObject({ equipo: false, fila: 'otro-temprano' }); // escribir «Otro» no cuenta como respuesta
+    expect(sit({ otroResp: 0, texto: 'Vendo software y licencias', ev: 'otroRespuesta' })).toMatchObject({ equipo: false, fila: 'otro-temprano' });
+    expect(sit({ otroResp: 1, texto: 'Me cuesta responder rápido', ev: 'otroRespuesta' })).toMatchObject({ equipo: true });
+  });
+  it('el conteo es de la FICHA: no lo borra un historial largo ni cambia por responder con audio', () => {
+    const largo = Array.from({ length: 8 }, (_, k) => ({ r: k % 2 ? 'a' : 'u', t: k % 2 ? 'respuesta del asistente' : '[Envió una imagen]' }));
+    expect(sit({ otroResp: 2, texto: 'otra cosa', ficha: { historial: largo } })).toMatchObject({ equipo: true });
+    const audio = f('chEventoTexto')('[Nota de voz] vendo licencias');
+    const fi = { ...fichaBase(), rubro: 'otro', otroResp: 0, historial: [] };
+    const sitAudio = f('chSituacion')({ plan: { ruta: 'modelo', rubroElegido: '', hechos: {} }, res: { origen: 'respaldo', evento: 'otro', causas: [] }, eventos: [{ k: 'audio', c: 'vendo licencias', t: audio.t, seq: 1, id: '', ms: 0 }], ficha: fi });
+    expect(f('chBotonesDe')(sitAudio)).toMatchObject({ equipo: false });
+    const aplicada = f('chAplicarTurno')({ ficha: fi, eventos: [{ k: 'audio', c: 'vendo licencias', t: audio.t, seq: 1, id: '', ms: 0 }], hasta: 1, plan: { ruta: 'modelo', rubroElegido: '', hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false }, temas: [] }, res: { lectura: {} }, mensaje: 'hola', cfg: CFG });
+    expect(aplicada.otroResp).toBe(1);
+    const eleccion = f('chAplicarTurno')({ ficha: { ...fichaBase() }, eventos: [{ ...f('chEventoTexto')('Otro'), seq: 1, id: '', ms: 0 }], hasta: 1, plan: { ruta: 'modelo', rubroElegido: 'otro', hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: true }, temas: [] }, res: { lectura: {} }, mensaje: 'hola', cfg: CFG });
+    expect(eleccion.otroResp).toBe(0);
+  });
+  it('NIEGA: pedir algo a medida, que el modelo declina u ofrezca al equipo, sin dato o ya habló con el equipo LIBERAN el botón', () => {
+    expect(sit({ texto: 'Necesito algo personalizado a medida', ev: 'otroRespuesta' }).equipo).toBe(true);
+    expect(sit({ texto: 'vendo software', ev: 'otroRespuesta', res: { origen: 'modelo', contexto: 'otroRespuesta', texto: 'Eso lo vemos mejor. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝' } }).equipo).toBe(true);
+    expect(sit({ texto: 'vendo software', ev: 'sin_dato' }).equipo).toBe(true);
+    expect(sit({ texto: 'vendo software', ev: 'otroRespuesta', ficha: { equipoAhora: true } }).fila).not.toBe('otro-temprano');
+  });
+  it('NIEGA: fuera de contexto, cortesía o identidad en esa etapa NO muestran «Ver planes» (siguen sin botones)', () => {
+    for (const ev of ['fuera', 'cortesia', 'identidad', 'medio']) expect(sit({ texto: 'cuánto cuesta', ev })).toMatchObject({ equipo: false, planes: false });
+  });
+  it('NIEGA: un rubro estándar no cambia (la regla es solo de «Otro»)', () => {
+    expect(sit({ rubro: 'salud', texto: 'hola', ev: 'general' }).fila).not.toBe('otro-temprano');
+    expect(sit({ rubro: 'salud', texto: 'hola', ev: 'sin_dato' }).equipo).toBe(true);
   });
 });

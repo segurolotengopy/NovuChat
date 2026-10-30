@@ -195,7 +195,10 @@ prospectos.forEach((it, i) => {
   if (faltan.length) return nada('encabezados_distintos: la fila ' + PLANILLA.filaEncabezados + ' no tiene «' +
     faltan[0] + '»');
 
-  const actual = coincidencias.find((f) => digitos(f[H.E]) === p.telefono);
+  // >>> filas nuevas (29/10): diverge a propósito de la copia de Captación mínima; la prueba lo declara.
+  // Una persona que vuelve tras 48 h (ficha nueva: `nuevoContacto`) es un registro NUEVO; dentro de la conversación se actualiza SIEMPRE la fila más reciente de ese teléfono.
+  const actual = p.nuevoContacto === true ? undefined : coincidencias.filter((f) => digitos(f[H.E]) === p.telefono).reduce((m, f) => (!m || Number(f.row_number) > Number(m.row_number) ? f : m), undefined);
+  // <<< filas nuevas
   // Los hechos viajan dentro del prospecto (`Salida`); un item de antes de ese
   // cambio no los trae, y `cerrado` sigue siendo un pedido de una persona.
   const prospecto = { ...p, ...(p.hechos && typeof p.hechos === 'object' ? p.hechos : {}),

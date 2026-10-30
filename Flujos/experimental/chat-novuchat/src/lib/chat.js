@@ -586,7 +586,7 @@ function chFichaBase() {
     hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false, interactuo: false, descarte: '' },
     avisado: false, avisoFalla: '', planesMostrados: false, planesTocado: false, equipoTocado: false, respondidas: 0, soporte: false, anuncio: false,
     // Ajustes del 09/10: el ciclo de un negocio (explicado, nombre pedido, planes pendientes, equipo ya pedido), el primer negocio y los otros para la hoja.
-    explicado: false, nombrePedido: false, preguntaDatos: false, ofrecio: '', planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, sitiosVentana: 0, sitioUltimo: false, primero: null, otros: [], complementos: 0,
+    otroResp: 0, explicado: false, nombrePedido: false, preguntaDatos: false, ofrecio: '', planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, sitiosVentana: 0, sitioUltimo: false, primero: null, otros: [], complementos: 0,
     seq: 0, hasta: 0, cola: [], historial: [], ultimosIds: [],
   };
 }
@@ -618,7 +618,7 @@ function chFichaVigente(e, ahoraMs) {
       pidioEquipo: h.pidioEquipo === true, pidioPlanes: h.pidioPlanes === true, eligioOtro: h.eligioOtro === true, interactuo: h.interactuo === true,
       descarte: CH_DESCARTES.includes(h.descarte) ? h.descarte : '',
     },
-    avisado: e.avisado === true, avisoFalla: chPlano(e.avisoFalla, 200), planesMostrados: e.planesMostrados === true, planesTocado: e.planesTocado === true, equipoTocado: e.equipoTocado === true, respondidas: Math.max(0, Math.min(3, Math.floor(Number(e.respondidas)) || 0)), soporte: e.soporte === true, anuncio: e.anuncio === true,
+    avisado: e.avisado === true, avisoFalla: chPlano(e.avisoFalla, 200), planesMostrados: e.planesMostrados === true, planesTocado: e.planesTocado === true, equipoTocado: e.equipoTocado === true, otroResp: Math.max(0, Math.min(3, Math.floor(Number(e.otroResp) || 0))), respondidas: Math.max(0, Math.min(3, Math.floor(Number(e.respondidas)) || 0)), soporte: e.soporte === true, anuncio: e.anuncio === true,
     explicado: e.explicado === true, nombrePedido: e.nombrePedido === true, preguntaDatos: e.preguntaDatos === true, ofrecio: ['planes', 'equipo', 'ambas', 'ninguna'].includes(e.ofrecio) ? e.ofrecio : (e.ofreceEquipo === true ? (e.ofrecePlanes === true ? 'ambas' : 'equipo') : (e.ofrecePlanes === true ? 'planes' : '')), planesPendientes: e.planesPendientes === true, equipoAhora: e.equipoAhora === true,
     // Las empresas por las que ya se avisó a recepción en la ventana (a lo más 3, normalizadas) y cuántos avisos van: el tope (3) acota la plantilla por segunda empresa.
     empresasAvisadas: Array.from(new Set((Array.isArray(e.empresasAvisadas) ? e.empresasAvisadas : []).concat(typeof e.empresaAvisada === 'string' ? [e.empresaAvisada] : []).filter((x) => typeof x === 'string').map((x) => chNorm(chPlano(x, 60))).filter((x) => x !== ''))).slice(0, CH_TOPE_AVISOS),
@@ -823,7 +823,6 @@ const CH_CONTEXTOS = {
   ambiguo: 'La conversación sigue difusa: aplica el cierre hacia el equipo.',
   general: 'Responde con tu razonamiento natural usando la conversación, el rubro conocido y las reglas.',
 };
-
 // ------------------------------------------------------------------ DECIDIR: lo que se resuelve SIN el modelo, y si hace falta el modelo, con qué contexto
 //   a = { eventos, ficha (vigente), cfg, from }   ->   plan = { ruta, fijo, contexto, rubroElegido, hechos, temas, aMedida, soporte, tope }
 // ruta: 'lista' | 'planes' | 'equipo' | 'fijo' | 'modelo'. Un toque de botón o un detector del CÓDIGO decide; la etiqueta de un modelo nunca basta. ¿Hay que pedir el nombre y el negocio antes de los planes? Antes de la PRIMERA muestra de planes, siempre (decisión del 10/10), si todavía no se pidió, falta alguno de los dos y los planes no se mostraron.
@@ -888,7 +887,6 @@ function chDecidir(a) {
   if (plan.contexto === 'abierta' && f.historial.length === 0 && chPlano(f.rubro) === '' && ev.every((e) => e.k === 'texto' && (chEsSaludoInicial(e.c) || chSoloPideInfo(e.c)))) { plan.ruta = 'lista'; plan.pitch = true; plan.contexto = ''; }
   return plan;
 }
-
 // ------------------------------------------------------------------ el modelo
 function chPreciosParaElModelo(cfg) {
   const est = chCargo(cfg, false);
@@ -1277,9 +1275,9 @@ function chRespaldo(a) {
     case 'datos': {
       const nombre = lec.nombre || a.ficha.nombre;
       const empresa = lec.empresa || a.ficha.empresa;
-      // Si no dijo ni el nombre ni el negocio, NO se vuelve a pedir (una sola vez): «después te cuento» recibe la cortesía; otra cosa que el modelo no pudo contestar, «ese dato lo revisa el equipo».
-      if (!nombre && !empresa) return { texto: sub(CH_EVASIVA.test(chTexto(a.dijo).trim()) || chEsAcuse(a.dijo) || chEsAgradecimiento(a.dijo) ? r.cortesia : r.sinDato), evento: 'datos' };
-      return { texto: sub(nombre && empresa ? r.datosAmbos : (nombre ? r.datosSoloNombre : r.datosSoloEmpresa)), evento: 'datos' };
+      const rep = (x) => a.ficha.historial.slice(-4).some((m) => m.r === 'a' && chNorm(m.t) === chNorm(x)), salir = (c) => { const t = c.map(sub); return { texto: t.find((x) => !rep(x)) || t.find((x) => chNorm(x) !== antes), evento: 'datos' }; }; // un mensaje idéntico a uno de los últimos del asistente no se repite: `salir` pasa a la salida que sí se cumple (nunca «Quedó anotado» si falta un dato)
+      if (!nombre && !empresa) return salir([CH_EVASIVA.test(chTexto(a.dijo).trim()) || chEsAcuse(a.dijo) || chEsAgradecimiento(a.dijo) ? r.cortesia : r.sinDato, r.generico]);
+      return salir(nombre && empresa ? [r.datosAmbos, r.cortesia] : [nombre ? r.datosSoloNombre : r.datosSoloEmpresa, r.generico]);
     }
     case 'ambiguo': return { texto: sub(/creo que tu caso es super particular/.test(antes) ? r.generico : r.equipo), evento: 'equipo' };
     case 'fuera':
@@ -1304,11 +1302,11 @@ function chResolver(a) {
     let del = { nombre: '', empresa: '' };
     for (const t of textos) { const r = chNombreYEmpresaDelTexto(t); if (r.nombre || r.empresa) { del = r; break; } }
     lectura = Object.assign({}, lectura, { nombre: lectura.nombre || del.nombre, empresa: lectura.empresa || del.empresa });
-    // Se pidió UNA sola cosa (el negocio o el nombre, porque la otra ya se sabe): la respuesta corta es esa cosa, siempre como texto literal del cliente.
+    // Se pidió UNA sola cosa (el negocio o el nombre, porque la otra ya se sabe): la respuesta corta es esa cosa, siempre como texto literal del cliente. Un negocio puede llamarse igual que la persona («Engels»): sin más, es el negocio y el nombre anotado no se pisa.
     const f0 = a.ficha || {};
     const corto = (t) => t.split(/\s+/).length <= 5 && !/[?¿]/.test(t);
     if (!lectura.empresa && f0.nombre && !f0.empresa) {
-      for (const t of textos) { const e = corto(t) ? chNombreDeEmpresa(t, true) : ''; if (e && chNorm(e) !== chNorm(f0.nombre)) { lectura = Object.assign({}, lectura, { empresa: e }); break; } }
+      for (const t of textos) { const e = corto(t) && !/^\s*(?:me llamo|soy|mi nombre es)\s/i.test(t) ? chNombreDeEmpresa(t, true) : ''; if (e) { lectura = Object.assign({}, lectura, { empresa: e, nombre: chNorm(lectura.nombre) === chNorm(e) ? '' : lectura.nombre }); break; } }
     }
     if (!lectura.nombre && f0.empresa && !f0.nombre) {
       for (const t of textos) { const n = corto(t) ? (chNombreDePersonaValido(t.replace(/^(?:me llamo|soy|mi nombre es)\s+/i, '')) || chNombreDePila(t.replace(/^(?:me llamo|soy|mi nombre es)\s+/i, ''))) : ''; if (n) { lectura = Object.assign({}, lectura, { nombre: n }); break; } }
@@ -1406,6 +1404,7 @@ function chSituacion(a) {
     // declina = el cliente propone una función no documentada para su rubro, o el modelo no la puede resolver (declina o la inventó)
     declina: p.ruta === 'modelo' && ((rub !== '' && !CH_RUBROS_CON_COBRO.includes(rub) && CH_FUNCION_CLIENTE.test(t)) || chDeclinaTexto(r.texto) || (r.causas || []).includes('funcion_inventada') || modeloOfreceEq),
     modeloOfreceEq: modeloOfreceEq, planesTocado: f.planesTocado === true, planesVistos: f.planesMostrados === true, equipoTocado: f.equipoTocado === true,
+    otroTemprano: rub === 'otro' && f.equipoAhora !== true && !textos.some(chPideAMedida) && (f.otroResp || 0) + (p.rubroElegido ? 0 : textos.length) < 2,
   };
 }
 // LA TABLA: la primera fila que coincide gana. `planes` y `equipo` dicen qué botones corresponden a esa situación (true, false o 'interes': solo si el cliente mostró interés); las COMPUERTAS de `chBotonesDe` (1) los apagan si ya se pulsaron o ya se vieron.
@@ -1416,6 +1415,7 @@ const CH_TABLA = [
   { id: 'planes', cuando: (s) => s.ruta === 'planes', planes: false, equipo: 'sinPlanes', nota: 'Los planes (o su tope y complemento): respuesta completa, sin botón del equipo; el botón sale solo al derivar, y deriva cuando no hay planes ni imagen que mostrar (si no, sería un callejón sin salida).' },
   { id: 'consulta-sin-respuesta', cuando: (s) => s.ruta === 'fijo' && CH_FIJO_SIN_RESPUESTA.includes(s.fijo), planes: false, equipo: true, nota: 'Integración o costo de Meta: el chat no lo resuelve, deriva al equipo (el botón sale solo al derivar).' },
   { id: 'respuesta-fija', cuando: (s) => s.ruta === 'fijo', planes: false, equipo: false, nota: 'Identidad, disponibilidad, banco, consumo, descuento, número propio y coexistencia: se contestan completas, sin invitaciones ni botón.' },
+  { id: 'otro-temprano', cuando: (s) => s.otroTemprano && !s.declina && !CH_SIN_OFERTA.includes(s.ev) && !['sin_dato', 'no_documentado', 'equipo', 'generico', 'ambiguo', 'complemento'].includes(s.ev), planes: 'interes', equipo: false, nota: '«Otro / a medida» con menos de dos respuestas del cliente: se le consulta, sin botón del equipo (salvo que no haya dato o el modelo no pueda).' },
   { id: 'sin-respuesta', cuando: (s) => CH_SIN_RESPUESTA.includes(s.ev), planes: false, equipo: true, nota: 'Sin dato, no documentado, a medida («Otro»), cierre hacia el equipo o error del modelo: requiere al equipo.' },
   { id: 'rubro-declina', cuando: (s) => s.declina && (s.ev === 'rubro' || s.ev === 'multiple'), planes: true, equipo: true, nota: 'Eligió rubro y además propone una función no documentada: «Ver planes» y la salida al equipo.' },
   { id: 'declina-ofrece-equipo', cuando: (s) => s.declina && s.modeloOfreceEq && !['identidad', 'cortesia'].includes(s.ev), planes: false, equipo: true, nota: 'El modelo no pudo resolver y su pregunta final ofrece hablar con el equipo: se conserva esa oferta con su botón (aunque la pregunta traiga una palabra de interés).' },
@@ -1731,7 +1731,7 @@ function chAplicarTurno(a) {
   if (a.pidioDatos === true) f.nombrePedido = true;
   f.preguntaDatos = a.pidioDatos === true || a.plan.ruta === 'pedirNombre' || /como te llamas|como se llama tu (?:negocio|empresa)/.test(chNorm(a.mensaje));
   chActualizarBanderas(f, a);
-  if (a.explicacion === true) f.explicado = true;
+  if (a.explicacion === true) f.explicado = true; if (f.rubro === 'otro' && !a.plan.rubroElegido) f.otroResp = Math.min(3, f.otroResp + ev.filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').length);
   if (a.complemento === true) f.complementos = Math.min(3, f.complementos + 1);
   f.sitioUltimo = a.sitio === true; if (a.sitio === true) f.sitiosVentana = Math.min(CH_TOPE_SITIO, f.sitiosVentana + 1); // el sitio NO va en dos mensajes seguidos (la similitud con el anterior cruzaría 0,75)
   if (a.plan.soporte === true) f.soporte = true;

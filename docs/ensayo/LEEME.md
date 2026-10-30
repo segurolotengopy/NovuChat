@@ -1,6 +1,6 @@
 # El ensayo: probar el cambio de un cliente antes de que llegue a su número
 
-> Decisión de Andres, 21/09/2026: con Platinum en producción en su propio
+> Decisión de Andres, 21/09/2026: con un cliente en producción en su propio
 > portafolio de Meta, **ningún cambio que pida un cliente se prueba en su
 > número**. Se prueba primero en el número del Demo A, que por un rato responde
 > *como* ese cliente, con su flujo y su configuración propuestos, pero con
@@ -21,8 +21,7 @@
 | **Lo que se escribe** (conversaciones, conteos) | En `ensayo` | — | Se queda ahí; el próximo ensayo lo vacía |
 | El número, la agenda, la recepción y la configuración **del cliente** | **Nada** | — | — |
 
-**Por qué el Demo A y no el Demo B:** todos los clientes de hoy (Platinum,
-Bellido) son de agendamiento, y el Demo A es el flujo del que salieron. El
+**Por qué el Demo A y no el Demo B:** los clientes de reservas de hoy (Bellido) son de agendamiento, y el Demo A es el flujo del que salieron. El
 Demo B sirve para un cliente de venta y cobro cuando lo haya. Cada script recibe
 lo suyo: `ensayo.mjs` recibe `--proyecto` y `--numero` (el phone id del número
 que se desvía), y `ensayo-flujo.sh` recibe `--env` (el entorno de n8n del
@@ -41,7 +40,7 @@ pantalla):
 
 | Marcador | Copia de | Qué es |
 |---|---|---|
-| `REEMPLAZAR_NUMERO_RECEPCION_ENSAYO` | la recepción del demo de Platinum | El teléfono de quien prueba (hoy, Andres): recibe los avisos y el botón «Escribir a recepción» |
+| `REEMPLAZAR_NUMERO_RECEPCION_ENSAYO` | la recepción del demo | El teléfono de quien prueba (hoy, Andres): recibe los avisos y el botón «Escribir a recepción» |
 | `REEMPLAZAR_CALENDARIO_ENSAYO_1` a `_3` | los tres calendarios del Demo A | Las agendas donde el ensayo crea y borra citas |
 
 Los dos scripts traducen los marcadores del cliente a estos:
@@ -121,7 +120,7 @@ Y borrar de las agendas del demo las citas de la prueba.
   recepción del cliente, restaura solo al comercio de origen).
 - `scripts/ensayo-flujo.sh` — n8n. Sus dos cerrojos (credenciales del Demo A
   nodo por nodo y marcadores del ensayo) se probaron en seco el 21/09: con
-  Platinum genera el flujo con las credenciales del Demo A en 29 nodos; con
+  el flujo de ejemplo `platinum-agendamiento.json` se genera con las credenciales del Demo A en 29 nodos; con
   Bellido se niega por sus 6 nodos propios.
 - `scripts/marcador-local.sh --copiar-de` — las filas del ensayo, sin mostrar
   valores.

@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
+import { doblesDelGuardado } from '../../lib/doble-guardado';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 export const CARPETA = join(AQUI, '../../../../Flujos/experimental/rroca-emma');
@@ -95,6 +96,8 @@ export function crear(o: Opciones = {}): Mundo {
   };
   const gemini = (t: string): J => ({ content: { parts: [{ text: t }] } });
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Verificar firma con el receptor': o.verificador ?? ((ll) => ({ valido: true, deliveryId: ll.cuerpo?.['deliveryId'] })),
     'Traer configuración': () => (o.panel === 'cae' ? { statusCode: 503, body: {} } : (o.panel ?? panelOk())),
     'Reportar mensaje (entrante)': () => o.ingesta ?? { ok: true },
@@ -144,3 +147,11 @@ export const imagenes = (t: ResultadoTurno): string[] => t.avisos.filter((a) => 
 export const avisosARecepcion = (t: ResultadoTurno): ResultadoTurno['avisos'] => t.avisos.filter((a) => a.tipo !== 'image');
 /** Un modelo que dice lo mismo siempre. */
 export const dice = (t: string): ((ll: LlamadaDoble) => string) => () => t;
+/**
+ * Observaciones de Rubén (28/10/2026): antes del cierre el CÓDIGO pregunta qué día y horario le quedan mejor (con el nombre si falta). Si el turno es esa pregunta, la persona contesta `PREFERENCIA`
+ * (y, si solo se le pidió el nombre y el día y contestó el nombre, el día en el turno siguiente) y se devuelve el turno del cierre. Si el turno no es la pregunta, se devuelve tal cual.
+ */
+export const PREFERENCIA = 'el martes en la tarde';
+export const esPreguntaDePreferencia = (t: ResultadoTurno): boolean => textos(t).some((x) => /qué día y horario te (?:quedan mejor|acomodan más)/i.test(x));
+export const conPreferencia = (mu: Mundo, from: string, t: ResultadoTurno, op: { wamid?: string; entrega?: string; phoneId?: string; nombre?: string; toleraFallo?: boolean } = {}): ResultadoTurno =>
+  (esPreguntaDePreferencia(t) ? hablar(mu, from, mTexto(PREFERENCIA), op) : t);

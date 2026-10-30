@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 import { type Flujo, type J } from './flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type ResultadoTurno } from './n8n-de-mentira';
+import { copiarModuloDelGuardado, doblesDelGuardado } from './doble-guardado';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 export const CARPETA_PRUEBAS = join(AQUI, '..');
@@ -75,6 +76,8 @@ export function crear(envios: Partial<Record<'Enviar a WhatsApp' | 'Enviar respa
     return r(ll);
   };
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Verificar firma con el receptor': (ll) => ({ valido: true, deliveryId: ll.cuerpo?.['deliveryId'] }),
     'Traer configuración': () => ({ statusCode: 200, body: panel() }),
     'Reportar mensaje (entrante)': () => ({ ok: true }),
@@ -153,6 +156,7 @@ export function verificarEnCopia(modifica: (vm: string) => void, args: string[] 
     const datos = join(tmp, 'admin/scripts/datos/venta-minima');
     mkdirSync(vm, { recursive: true });
     mkdirSync(datos, { recursive: true });
+    copiarModuloDelGuardado(tmp);
     cpSync(CARPETA_VM, vm, { recursive: true, filter: (src) => !src.endsWith('.local.json') }); // un `.local.json` lleva valores reales: nunca a un temporal
     cpSync(join(AQUI, '../../scripts/datos/venta-minima'), datos, { recursive: true });
     modifica(vm);

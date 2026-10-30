@@ -20,6 +20,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from './lib/flujo';
 import { crearMundo, type Doble, type Enviado, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
+import { doblesDelGuardado } from './lib/doble-guardado';
+import { URL_DESCARGA_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../Flujos/experimental/chat-novuchat');
@@ -188,6 +190,8 @@ function crear(op: OpcionesDelMundo = {}): W {
   };
   const descripcion = (): J => (w.medio.categoria === null ? { error: { message: 'no se pudo describir' } } : { content: { parts: [{ text: JSON.stringify({ categoria: w.medio.categoria, texto: w.medio.texto }) }] } });
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Traer configuración': (ll) => {
       w.config.push({ numero: ll.encabezados['X-NovuChat-Numero'], cuerpo: ll.cuerpo });
       if (w.respuestaPanel) return w.respuestaPanel;
@@ -209,8 +213,9 @@ function crear(op: OpcionesDelMundo = {}): W {
       registrarHoja(ll);
       if (w.hoja.falla) return errorDeGoogle();
       const valores = (((ll.parametros['filtersUI'] ?? {})['values'] ?? []) as J[]).map((v) => String(v['lookupValue'] ?? ''));
-      const k = w.hoja.filas.findIndex((f) => valores.includes(String(f[4] ?? '')));
-      return k < 0 ? {} : Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, w.hoja.filas[k]![c] ?? ''])));
+      // (como Google: TODAS las filas con ese teléfono, no solo la primera)
+      const hallazgos = w.hoja.filas.map((f, k) => ({ f, k })).filter(({ f }) => valores.includes(String(f[4] ?? '')));
+      return hallazgos.length === 0 ? {} : hallazgos.map(({ f, k }) => Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, f[c] ?? ''])))) as unknown as J;
     },
     'Leer IDs de la planilla': (ll) => {
       registrarHoja(ll);
@@ -1144,6 +1149,61 @@ describe('nombre y empresa: «Nombre, Empresa» en un mensaje, solo nombre, solo
 });
 
 describe('la hoja Leads_CRM: fila, nombre, empresa, rubro, necesidad y calificación por hechos', () => {
+  it('FILA NUEVA tras 48 h (29/10): quien vuelve es un registro nuevo, y la conversación nueva actualiza SU fila, no la vieja', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Ana Pérez' });
+    j.texto('Hola');
+    w.modelo.con = 'ERROR';
+    j.lista('rubro:salud');
+    expect(w.hoja.filas).toHaveLength(1);
+    expect(filaDe(w, MAMA)![COL.id]).toBe('LEAD-1001');
+    j.texto('Hola de nuevo', 49 * 60); // pasan 49 h: la ficha se olvida
+    expect(w.hoja.filas).toHaveLength(2);
+    expect(w.hoja.filas.map((f) => f[0])).toEqual(['LEAD-1001', 'LEAD-1002']);
+    const vieja = [...w.hoja.filas[0]!];
+    j.lista('rubro:belleza');
+    expect(w.hoja.filas).toHaveLength(2);
+    expect(w.hoja.filas[0]).toEqual(vieja); // la fila vieja no se toca
+    expect(w.hoja.filas[1]![5]).toBe('Belleza');
+  });
+  it('NIEGA (revisión de #701): si Meta rechaza el primer mensaje (la ficha se restaura vacía) o se resetea la ficha dentro de las 48 h, NO se crea una segunda fila', () => {
+    const w = crear();
+    w.graph.falla = () => true;
+    const r = w.mundo.turno(valorMeta(mTexto('Hola'), MAMA), { tolerarFallo: true });
+    expect(r.fallo?.nodo).toBe('Confirmar envío');
+    expect(w.hoja.filas).toHaveLength(1);          // la fila ya se guardó
+    w.graph.falla = () => false;
+    jugar(w, MAMA).texto('Hola otra vez');
+    expect(w.hoja.filas).toHaveLength(1);          // el reintento actualiza esa fila
+    delete (w.mundo.sd['chatNovuchat'] as J)[MAMA]; // «reset» de la ficha de prueba
+    jugar(w, MAMA).texto('Hola');
+    expect(w.hoja.filas).toHaveLength(1);
+  });
+  it('NIEGA: antes de 48 h NO hay fila nueva (actualiza la misma), y varias filas viejas del mismo teléfono: se actualiza la MÁS RECIENTE', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Ana Pérez' });
+    j.texto('Hola');
+    w.modelo.con = 'ERROR';
+    j.lista('rubro:salud');
+    j.texto('Hola otra vez', 47 * 60);
+    j.lista('rubro:belleza');
+    expect(w.hoja.filas).toHaveLength(1);
+    // una hoja con dos filas viejas del mismo teléfono (de antes de este cambio): la ficha es de una conversación nueva → fila nueva; y después actualiza la última
+    const w2 = crear();
+    const tel = digitos(MAMA);
+    const vieja = (id: string, rubro: string): string[] => ENC.map((h, c) => (c === 0 ? id : c === 4 ? tel : c === 5 ? rubro : ''));
+    w2.hoja.filas.push(vieja('LEAD-1001', 'Salud'), vieja('LEAD-1002', 'Comercio'));
+    const j2 = jugar(w2, MAMA, { perfil: 'Ana Pérez' });
+    j2.texto('Hola');
+    expect(w2.hoja.filas).toHaveLength(3);
+    expect(w2.hoja.filas[2]![0]).toBe('LEAD-1003');
+    w2.modelo.con = 'ERROR';
+    j2.lista('rubro:salud');
+    expect(w2.hoja.filas).toHaveLength(3);
+    expect(w2.hoja.filas[0]![5]).toBe('Salud');
+    expect(w2.hoja.filas[1]![5]).toBe('Comercio');
+    expect(w2.hoja.filas[2]![5]).toBe('Salud');
+  });
   it('Baja → Media → Alta, en UNA fila (no se duplica): elige rubro; interactúa con algo sustantivo; pide los planes; habla con el equipo', () => {
     const w = crear();
     const j = jugar(w, MAMA, { perfil: 'Ana Pérez' });
@@ -1659,9 +1719,9 @@ describe('la variante de prueba: «Entrada de prueba», todo al teléfono de pru
 
 describe('la topología y las guardias del JSON versionado', () => {
   const nombres = (f: Flujo): string[] => f.nodes.map((n) => n.name);
-  it('tiene 44 nodos por variante: la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
-    expect(PRODUCCION.nodes).toHaveLength(44);
-    expect(PRUEBA.nodes).toHaveLength(44);
+  it('tiene 55 nodos por variante (44 más los 11 del guardado de medios): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
+    expect(PRODUCCION.nodes).toHaveLength(55);
+    expect(PRUEBA.nodes).toHaveLength(55);
     expect(nombres(PRODUCCION)).not.toContain('Entrada de prueba');
     expect(nombres(PRUEBA)).not.toContain('WhatsApp Trigger');
     expect(nombres(PRODUCCION).filter((x) => !nombres(PRUEBA).includes(x))).toEqual(['WhatsApp Trigger']);
@@ -1687,6 +1747,8 @@ describe('la topología y las guardias del JSON versionado', () => {
           const url = String(n.parameters['url']);
           // la descarga del medio usa la URL que devuelve Meta (la guardia de «¿Tamaño aceptable?» exige lookaside.fbsbx.com)
           if (n.name === 'Descargar medio') { expect(url).toBe('={{ $json.url }}'); continue; }
+          // la descarga PROPIA del guardado de medios (módulo común): la URL de Meta solo si el tamaño que informó cabe
+          if (n.name === 'Descargar medio (guardado)') { expect(url).toBe(URL_DESCARGA_GUARDADO); continue; }
           expect(url, `«${n.name}»`).toMatch(/^=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|us-east1-novuchat-demo\.cloudfunctions\.net)\//);
         }
       }
@@ -1737,7 +1799,8 @@ describe('la topología y las guardias del JSON versionado', () => {
       alcanzables.add(n);
     };
     visitar('WhatsApp Trigger', []);
-    expect(alcanzables.size).toBe(44);
+    // 44 + los 11 de la rama común del guardado de medios.
+    expect(alcanzables.size).toBe(55);
   });
   it('«Llamar al modelo» y «Reintentar el modelo» apuntan a generateContent con el modelo de los datos (gemini-3.5-flash-lite) por expresión', () => {
     for (const nombre of ['Llamar al modelo', 'Reintentar el modelo']) {

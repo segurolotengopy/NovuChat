@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { vigilarUx } from './vigilante-ux';
+import { doblesDelGuardado } from '../../lib/doble-guardado';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../../../Flujos/experimental/rroca-ruben');
@@ -89,6 +90,8 @@ function crear(o: Opciones = {}) {
   let n = 0;
   let nModelo = 0;
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Verificar firma con el receptor': (ll) => ({ valido: true, deliveryId: ll.cuerpo?.['deliveryId'] }),
     'Traer configuración': traer,
     'Reportar mensaje (entrante)': () => ({ ok: true }),

@@ -45,6 +45,7 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const DATOS = join(AQUI, '../../../admin/scripts/datos/venta-minima');
@@ -72,7 +73,9 @@ const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 // de Q'Taco tiene como MÁXIMO 50 nodos (49 + el webhook del carrito). Todo lo demás se hace dentro de los nodos que ya existen
 // (el código vive en `src/lib` y `src/nodos`). `--verificar` falla si un JSON de producción (todo el que no es la variante de
 // prueba) pasa de este tope.
-const TOPE_DE_NODOS = 50;
+// 50 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
+// excepción declarada por Andres el 29/10/2026 para el guardado de medios, +11 nodos: docs/versiones-por-cliente.md.
+const TOPE_DE_NODOS = 61;
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,
 // su credencial de cabecera (la de la ingesta), `responseMode: onReceived` y la ruta como marcador (una URL de capacidad que
@@ -245,6 +248,8 @@ function armar(datos, archivo) {
     conexiones[de] = { main: (salidas.main || []).map((s) => (s || []).filter((c) => vivos.has(c.node))) };
   }
   flujo.connections = conexiones;
+  // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
+  injertarGuardado(flujo, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = JSON.stringify(flujo, null, 2) + '\n';
   // Una marca sin reemplazar: en cualquier texto salvo el código de los nodos (las librerías mencionan
   // «@@solo:» en un comentario) o, en el código, al principio del `jsCode`.
@@ -457,6 +462,8 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   const traer = flujo.nodes.find((n) => n.name === 'Traer configuración');
   if (!traer || !/catalogoCompleto:\s*true/.test(String((traer.parameters || {}).jsonBody || ''))) hallazgos.push('«Traer configuración» no pide `catalogoCompleto: true` (sin eso no llega el enlace del catálogo web)');
   hallazgos.push(...guardiasDeEntrega(flujo));
+  // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
+  hallazgos.push(...hallazgosDelGuardado(flujo));
   // L1. Un WhatsApp Trigger (camino A) exige su credencial explícita, y nunca la de AAB1-WA-Prod (prohibición 7).
   for (const n of flujo.nodes.filter((x) => x.type === 'n8n-nodes-base.whatsAppTrigger')) {
     const nombre = String(((n.credentials || {}).whatsAppTriggerApi || {}).name || '');
@@ -476,6 +483,8 @@ const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', 
 function anfitrionPermitido(nombreDelNodo, url) {
   if (/^REEMPLAZAR_[A-Z0-9_]+$/.test(url)) return true;
   if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
+  // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
+  if (nombreDelNodo === 'Descargar medio (guardado)' && url === URL_DESCARGA_GUARDADO) return true;
   const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
   if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
   return ANFITRIONES.includes(m[1].toLowerCase());

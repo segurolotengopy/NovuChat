@@ -765,24 +765,25 @@ describe('nube-visor.sh: la fuente', () => {
     expect(codigo).not.toMatch(/python3(?! -I )/);
   });
 
-  it('la lista cerrada: siete servicios con sus constantes, sin variable que agregue otro', () => {
+  it('la lista cerrada: ocho servicios con sus constantes, sin variable que agregue otro', () => {
     for (const [c, v] of [
       ['SERVICIO_ENVIAR', 'enviarcomopersona'], ['FUNCION_ENVIAR', 'enviarComoPersona'],
       ['SERVICIO_TOMAR', 'tomarconversacion'], ['FUNCION_TOMAR', 'tomarConversacion'],
       ['SERVICIO_DEVOLVER', 'devolverconversacion'], ['FUNCION_DEVOLVER', 'devolverConversacion'],
       ['SERVICIO_RECLAMAR', 'reclamarsalidapersona'], ['FUNCION_RECLAMAR', 'reclamarSalidaPersona'],
       ['SERVICIO_CONFIRMAR', 'confirmarsalidapersona'], ['FUNCION_CONFIRMAR', 'confirmarSalidaPersona'],
+      ['SERVICIO_GUARDAR', 'guardarmedio'], ['FUNCION_GUARDAR', 'guardarMedio'],
     ] as const) expect(codigo).toContain(`readonly ${c}="${v}"`);
     expect(codigo).toContain('readonly SERVICIO_VISOR="vercomprobante"');
     expect(codigo).toContain('readonly FUNCION_VISOR="verComprobante"');
     expect(codigo).toContain('readonly SERVICIO_BUSCADOR="buscarconversaciones"');
     expect(codigo).toContain('readonly FUNCION_BUSCADOR="buscarConversaciones"');
     expect(codigo).toContain('readonly SERVICIO FUNCION');
-    // Solo siete asignaciones de SERVICIO, y desde las constantes.
+    // Solo ocho asignaciones de SERVICIO, y desde las constantes.
     expect([...codigo.matchAll(/\bSERVICIO="([^"]*)"/g)].map((m) => m[1])).toEqual([
-      '$SERVICIO_VISOR', '$SERVICIO_BUSCADOR', '$SERVICIO_ENVIAR', '$SERVICIO_TOMAR', '$SERVICIO_DEVOLVER', '$SERVICIO_RECLAMAR', '$SERVICIO_CONFIRMAR']);
-    // Solo las dos HTTP son de tipo http.
-    expect([...codigo.matchAll(/TIPO="http"/g)]).toHaveLength(2);
+      '$SERVICIO_VISOR', '$SERVICIO_BUSCADOR', '$SERVICIO_ENVIAR', '$SERVICIO_TOMAR', '$SERVICIO_DEVOLVER', '$SERVICIO_RECLAMAR', '$SERVICIO_CONFIRMAR', '$SERVICIO_GUARDAR']);
+    // Solo las tres HTTP son de tipo http.
+    expect([...codigo.matchAll(/TIPO="http"/g)]).toHaveLength(3);
     expect(codigo).not.toMatch(/NUBE_VISOR_(SERVICIO|ADC)/);
   });
 

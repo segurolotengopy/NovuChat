@@ -1529,6 +1529,378 @@
         "options": {}
       },
       "notes": "Una llamada por cada mensaje enviado al cliente. Lee el texto del nodo que arma los mensajes, no de la respuesta del envio."
+    },
+    {
+      "id": "gm-preparar",
+      "name": "Preparar guardado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1640,
+        1300
+      ],
+      "parameters": {
+        "jsCode": "// FUENTES DEL GUARDADO: las arma Flujos/experimental/comun-sin-agente/src/guardado.mjs para este flujo (nombres de nodo literales, para que n8n los precargue).\nconst GM_FUENTES = {\n  carga: $('Carga de entrada').isExecuted ? $('Carga de entrada').first().json : {},\n  config: $('Config del negocio').isExecuted ? $('Config del negocio').first().json : {},\n};\n\n// PREPARAR GUARDADO (módulo común de medios, contrato M1↔M2 del 29/10/2026 §1 y §4): decide si el medio de ESTE mensaje entrante se guarda y cómo.\n//\n// Corre en su PROPIA rama, colgada de «Reportar mensaje (entrante)» (el servidor exige el entrante ya registrado por la ingesta) y DEBAJO de la rama que\n// responde en el lienzo: con `executionOrder: v1` corre DESPUÉS de que el cliente recibió su respuesta, y nada de lo que pase acá corta el turno.\n// Devuelve [] (la rama termina en silencio) si el mensaje no es imagen, audio o documento, o si le falta un dato que el servidor exige.\n// Si devuelve un item, `modo` es:\n//   - `anotar`: docx y xlsx (solo se ANOTAN, nunca se bajan bytes) y cualquier otro documento que no sea PDF (el servidor responde 415 y no se baja nada);\n//   - `descargar`: imagen (hasta 5 MB), audio (hasta 16 MB) y PDF (hasta 10 MB), con SU PROPIA descarga de Meta (no gasta el tope diario de ver u oír).\n// También anota, en el estado estático del flujo (clave `guardadoDeMedios`), cuándo escribió por última vez la RECEPCIÓN: es la ventana de 24 h que\n// decide si el aviso de falla puede salir como texto libre. Ningún dato del cliente se guarda ahí.\n//\n// `GM_FUENTES` la define la cabecera que arma `guardado.mjs` para cada flujo (`carga`: el nodo con `messages`; `config`: «Config del negocio»).\n// JavaScript plano del nodo Code de n8n: sin require, URL, Buffer ni crypto.\nconst gmCarga = (GM_FUENTES && GM_FUENTES.carga && typeof GM_FUENTES.carga === 'object') ? GM_FUENTES.carga : {};\nconst gmCfg = (GM_FUENTES && GM_FUENTES.config && typeof GM_FUENTES.config === 'object') ? GM_FUENTES.config : {};\nconst gmMsg = Array.isArray(gmCarga.messages) && gmCarga.messages[0] && typeof gmCarga.messages[0] === 'object' ? gmCarga.messages[0] : null;\nconst gmAhora = Number(gmCarga.ahoraMs) > 0 ? Number(gmCarga.ahoraMs) : Date.now();\nconst gmSd = $getWorkflowStaticData('global');\nif (!gmSd.guardadoDeMedios || typeof gmSd.guardadoDeMedios !== 'object' || Array.isArray(gmSd.guardadoDeMedios)) gmSd.guardadoDeMedios = {};\nconst gmEstado = gmSd.guardadoDeMedios;\nif (!gmMsg) return [];\n\nconst gmTelefono = String(gmMsg.from || '');\nconst gmRecepcion = String(gmCfg.numeroRecepcionDigitos || gmCfg.numeroRecepcion || '').replace(/\\D/g, '');\n// La ventana de la recepción: su último mensaje a este número (de cualquier tipo).\nif (gmRecepcion && gmTelefono === gmRecepcion) gmEstado.recepcionMs = gmAhora;\n\nconst GM_TIPOS = { image: 'image', audio: 'audio', voice: 'audio', document: 'document' };\nconst gmTipo = Object.prototype.hasOwnProperty.call(GM_TIPOS, String(gmMsg.type || '')) ? GM_TIPOS[String(gmMsg.type)] : '';\nif (!gmTipo) return [];\nconst gmMedio = gmTipo === 'audio' ? (gmMsg.audio || gmMsg.voice) : gmMsg[gmTipo];\nif (!gmMedio || typeof gmMedio !== 'object') return [];\nconst gmMediaId = String(gmMedio.id || '');\nconst gmIdMeta = String(gmMsg.id || '');\n// Lo que el servidor exige (§1): teléfono de 8 a 15 dígitos y el id del MENSAJE. Lo que viaja en una cabecera, sin espacios ni controles.\nif (!/^\\d{8,15}$/.test(gmTelefono) || !/^[\\x21-\\x7e]{1,200}$/.test(gmIdMeta) || !/^[A-Za-z0-9_-]{1,100}$/.test(gmMediaId)) return [];\nconst gmMimeCrudo = String(gmMedio.mime_type || '').toLowerCase().split(';')[0].trim();\nconst gmMime = /^[a-z0-9.+-]{1,40}\\/[a-z0-9.+-]{1,100}$/.test(gmMimeCrudo) ? gmMimeCrudo : 'application/octet-stream';\n\n// docx y xlsx: solo se anotan. Otro documento que no sea PDF también va por Anotar: el servidor responde 415 sin que se baje un byte.\nconst GM_SOLO_ANOTAR = ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];\nconst GM_LIMITES = { image: 5000000, audio: 16000000, pdf: 10000000 };\nconst gmModo = gmTipo === 'document' && gmMime !== 'application/pdf' ? 'anotar' : 'descargar';\nconst gmLimite = gmModo === 'anotar' ? 0 : (gmTipo === 'document' ? GM_LIMITES.pdf : GM_LIMITES[gmTipo]);\n\nreturn [{ json: {\n  modo: gmModo,\n  telefono: gmTelefono,\n  idMeta: gmIdMeta,\n  tipo: gmTipo,\n  mime: gmMime,\n  mediaId: gmMediaId,\n  limite: gmLimite,\n  soloAnotar: GM_SOLO_ANOTAR.indexOf(gmMime) >= 0,\n  // A quién iría el aviso de falla (el número del NEGOCIO, no del cliente).\n  recepcion: gmRecepcion,\n  ahoraMs: gmAhora,\n} }];\n"
+      },
+      "notes": "Rama del GUARDADO de medios (módulo común Flujos/src/core/medios/): decide si el medio de este mensaje se guarda (imagen, audio, PDF) o solo se anota (docx, xlsx). Corre después de la respuesta al cliente y nunca la frena."
+    },
+    {
+      "id": "gm-si-anotar",
+      "name": "¿Anotar medio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1880,
+        1300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.modo === 'anotar' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "docx, xlsx y todo documento que no sea PDF: se anotan sin bajar un byte. Lo demás se baja de Meta y se guarda."
+    },
+    {
+      "id": "gm-anotar",
+      "name": "Anotar medio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2120,
+        1300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Normalizar entrada').first().json.phoneNumberId }}"
+            },
+            {
+              "name": "X-NovuChat-Telefono",
+              "value": "={{ $('Preparar guardado').first().json.telefono }}"
+            },
+            {
+              "name": "X-NovuChat-IdMeta",
+              "value": "={{ $('Preparar guardado').first().json.idMeta }}"
+            },
+            {
+              "name": "X-NovuChat-Tipo",
+              "value": "={{ $('Preparar guardado').first().json.tipo }}"
+            },
+            {
+              "name": "X-NovuChat-Anotar",
+              "value": "1"
+            },
+            {
+              "name": "X-NovuChat-Mime",
+              "value": "={{ $('Preparar guardado').first().json.mime }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Antonio)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "POST guardarMedio en modo ANOTAR: cuerpo vacío, solo el token de ingesta del número. El servidor deja el metadato «anotado» (sin bytes) o responde 415."
+    },
+    {
+      "id": "gm-url",
+      "name": "Pedir el medio a Meta (guardado)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2120,
+        1500
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ (/^v\\d+\\.\\d$/.test(String($('Config del negocio').first().json.waGraphVersion)) ? $('Config del negocio').first().json.waGraphVersion : 'v26.0') }}/{{ String($json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp Antonio (Bearer)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "GET /{media-id} con la credencial de WhatsApp: devuelve url, mime_type y file_size. Llamada PROPIA del guardado (doble descarga): no gasta el tope de ver u oír."
+    },
+    {
+      "id": "gm-descargar",
+      "name": "Descargar medio (guardado)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2360,
+        1500
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ (String($json.url || '').startsWith('https://lookaside.fbsbx.com/') && !(Number($json.file_size) > Number($('Preparar guardado').first().json.limite))) ? $json.url : '' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 20000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp Antonio (Bearer)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Baja el archivo del CDN de Meta con el token, sin seguir redirecciones, SOLO si Meta informó un tamaño dentro del límite (imagen 5 MB, PDF 10 MB, audio 16 MB). Si no, la URL queda vacía y no se baja nada."
+    },
+    {
+      "id": "gm-guardar",
+      "name": "Guardar medio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2600,
+        1500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Normalizar entrada').first().json.phoneNumberId }}"
+            },
+            {
+              "name": "X-NovuChat-Telefono",
+              "value": "={{ $('Preparar guardado').first().json.telefono }}"
+            },
+            {
+              "name": "X-NovuChat-IdMeta",
+              "value": "={{ $('Preparar guardado').first().json.idMeta }}"
+            },
+            {
+              "name": "X-NovuChat-Tipo",
+              "value": "={{ $('Preparar guardado').first().json.tipo }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Antonio)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "POST guardarMedio con los BYTES del medio en el cuerpo (Content-Type el del medio), solo el token de ingesta del número, nunca firma. Sin reintentos: el servidor reconoce el repetido por el id del mensaje."
+    },
+    {
+      "id": "gm-si-reintentar",
+      "name": "¿Reintentar el guardado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2840,
+        1300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ Number($json.statusCode) >= 500 && Number($json.statusCode) <= 599 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Un 5xx de guardarMedio (502 no_se_guardo, no_se_registro u otro) se reintenta UNA vez; lo demás va directo a «Resultado del guardado»."
+    },
+    {
+      "id": "gm-reintento",
+      "name": "Preparar reintento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        1500
+      ],
+      "parameters": {
+        "jsCode": "// PREPARAR REINTENTO (módulo común de medios, contrato M1↔M2 del 29/10/2026, revisión del integrador): `guardarMedio` respondió un 5xx (502 no_se_guardo,\n// no_se_registro u otro): se reintenta UNA vez, con el mismo pedido. El servidor reconoce el repetido por el id del mensaje.\n// Arma el ítem del reintento: los datos de «Preparar guardado» y, si el medio se bajó, el MISMO binario `data` de «Descargar medio (guardado)» (no se vuelve a\n// pedir a Meta). En modo Anotar no lleva binario: el reintento va sin cuerpo. Un medio a la vez: un solo ítem.\n// JavaScript plano del nodo Code de n8n: sin require, ni los globales de Node.\nconst rpPrep = $('Preparar guardado').first().json || {};\nconst rpItem = { json: Object.assign({}, rpPrep, { intento: 2 }) };\nif (rpPrep.modo === 'descargar' && $('Descargar medio (guardado)').isExecuted) {\n  const rpBajado = $('Descargar medio (guardado)').first();\n  if (rpBajado && rpBajado.binary && rpBajado.binary.data) rpItem.binary = { data: rpBajado.binary.data };\n}\nreturn [rpItem];\n"
+      },
+      "notes": "Arma el reintento con el mismo pedido: los datos de «Preparar guardado» y el mismo binario ya bajado (no se vuelve a pedir a Meta). En Anotar, sin cuerpo."
+    },
+    {
+      "id": "gm-reintentar",
+      "name": "Reintentar el guardado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3320,
+        1500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "={{ JSON.stringify(Object.assign({ 'X-NovuChat-Numero': String($('Normalizar entrada').first().json.phoneNumberId), 'X-NovuChat-Telefono': $json.telefono, 'X-NovuChat-IdMeta': $json.idMeta, 'X-NovuChat-Tipo': $json.tipo }, $json.modo === 'anotar' ? { 'X-NovuChat-Anotar': '1', 'X-NovuChat-Mime': $json.mime } : {})) }}",
+        "sendBody": "={{ $json.modo === 'descargar' }}",
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Antonio)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "El ÚNICO reintento ante un 5xx: mismo pedido (en Anotar, sin cuerpo y con X-NovuChat-Anotar). Si vuelve a fallar, «Resultado del guardado» aplica el aviso de falla (uno por día)."
+    },
+    {
+      "id": "gm-resultado",
+      "name": "Resultado del guardado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3560,
+        1300
+      ],
+      "parameters": {
+        "jsCode": "// RESULTADO DEL GUARDADO (módulo común de medios, contrato M1↔M2 del 29/10/2026 §2 y §4): lee la respuesta de `guardarMedio` y decide el AVISO DE FALLA.\n//\n// Toda respuesta del §2 termina acá y NINGUNA corta el turno (el cliente ya recibió su respuesta: esta rama corre después).\n//   200 {ruta, repetido} · 200 {anotado:true, repetido} · 400 · 401 · 405 · 409 (guardado_apagado, sin_mensaje, en_curso, {estado}) → silencio (devuelve []).\n//   400 anotar_con_cuerpo es un DEFECTO DEL FLUJO (en modo Anotar nunca se manda cuerpo): sin aviso a la recepción, se REGISTRA en el estado estático\n//   (`guardadoDeMedios.anotarConCuerpo = {dia, n}`, sin datos del paciente) para que se vea al revisar el flujo.\n//   Igual, en silencio y registrados: 401 (token rotado o número equivocado) → `sinAcceso`; los demás 400 (telefono_invalido, falta_idmeta, tipo_invalido,\n//   vacio) → `pedidoInvalido`; una descarga de Meta que falló (sin respuesta del servidor, tamaño dentro del límite) → `sinDescarga`. Todos `{dia, n}`.\n//   413 demasiado_grande · 415 tipo_no_admitido · 429 cupo_diario_lleno · 502 no_se_guardo|no_se_registro (o cualquier 5xx), YA REINTENTADO una vez →\n//   aviso a la recepción, si se puede. Un 200 {ruta, repetido:true} en modo Anotar (el medio ya estaba guardado) también es éxito.\n//   Un medio que Meta informó más grande que el límite NO se baja: cuenta como 413 sin llamar al servidor.\n//   Un corte de red, un error de Meta o una respuesta que no se entiende → silencio (no hay motivo cierto que decirle a la recepción).\n// EL AVISO: texto libre a la recepción del negocio SOLO si su ventana de 24 h está abierta (escribió hace menos de 23 h 30 min: lo anota «Preparar guardado»),\n// a lo más UNO por ejecución y día de La Paz (UTC-4 fijo) y por comercio (el estado estático es del flujo, que es de un solo comercio): con ejecuciones\n// CONCURRENTES (un álbum de 3 fotos son 3 ejecuciones que leen el estado a la vez) pueden salir varios el mismo día. n8n no da un candado real; queda\n// acotado porque el aviso no lleva datos del paciente y solo sale con la ventana de la recepción abierta. Y SIN datos del paciente:\n// ni teléfono, ni nombre, ni el archivo, ni el id del mensaje. Solo el motivo. El día se marca ANTES de enviar: si Meta lo rechaza, ese día no se reintenta.\n// Si Meta rechaza el aviso, la ejecución termina en ERROR (el envío no traga el fallo); la rama corre al final, cuando el cliente ya recibió su respuesta.\n// JavaScript plano del nodo Code de n8n: sin require, URL, Buffer ni crypto.\nconst grPrep = $('Preparar guardado').first().json || {};\nconst grUrl = $('Pedir el medio a Meta (guardado)').isExecuted ? ($('Pedir el medio a Meta (guardado)').first().json || {}) : {};\nconst grR = ($input.first() && $input.first().json) || {};\nconst grCodigo = Number(grR.statusCode) || 0;\nconst grCuerpo = grR.body && typeof grR.body === 'object' ? grR.body : {};\nconst grSd = $getWorkflowStaticData('global');\nif (!grSd.guardadoDeMedios || typeof grSd.guardadoDeMedios !== 'object' || Array.isArray(grSd.guardadoDeMedios)) grSd.guardadoDeMedios = {};\nconst grEstado = grSd.guardadoDeMedios;\nconst grAhora = Number(grPrep.ahoraMs) > 0 ? Number(grPrep.ahoraMs) : Date.now();\nconst grHoy = new Date(grAhora - 4 * 3600 * 1000).toISOString().slice(0, 10);\nconst grRegistrar = (clave) => {\n  const previo = grEstado[clave] && grEstado[clave].dia === grHoy ? Number(grEstado[clave].n) || 0 : 0;\n  grEstado[clave] = { dia: grHoy, n: Math.min(previo + 1, 1000) };\n};\nif (grCodigo === 400) { grRegistrar(grCuerpo.error === 'anotar_con_cuerpo' ? 'anotarConCuerpo' : 'pedidoInvalido'); return []; }\nif (grCodigo === 401) { grRegistrar('sinAcceso'); return []; }\nconst GR_MOTIVOS = {\n  413: 'el archivo supera el tamaño permitido',\n  415: 'el tipo de archivo no se admite',\n  429: 'se llenó el cupo diario de archivos del comercio',\n  502: 'el servidor no pudo guardarlo',\n};\n// Un 5xx llega acá DESPUÉS del único reintento («Reintentar el guardado»): si sigue fallando, es «el servidor no pudo guardarlo».\nlet grMotivo = Object.prototype.hasOwnProperty.call(GR_MOTIVOS, grCodigo) ? GR_MOTIVOS[grCodigo] : (grCodigo >= 500 && grCodigo <= 599 ? GR_MOTIVOS[502] : '');\n// El medio que no se bajó por tamaño (Meta lo informó por encima del límite): es un 413 aunque el servidor no lo haya visto.\nconst grTamano = Number(grUrl.file_size);\nif (!grMotivo && grPrep.modo === 'descargar' && Number(grPrep.limite) > 0 && grTamano > Number(grPrep.limite)) grMotivo = GR_MOTIVOS[413];\n// Sin respuesta del servidor en modo descargar (Meta no dio la URL o no dejó bajar el archivo): no se sabe más, se registra sin aviso.\nif (!grMotivo && grCodigo === 0 && grPrep.modo === 'descargar') { grRegistrar('sinDescarga'); return []; }\nif (!grMotivo) return [];\n\nconst GR_VENTANA_MS = 23 * 3600 * 1000 + 30 * 60 * 1000;\nconst grRecepcionMs = Number(grEstado.recepcionMs) || 0;\nconst grVentanaAbierta = grRecepcionMs > 0 && grAhora >= grRecepcionMs && grAhora - grRecepcionMs < GR_VENTANA_MS;\nif (grEstado.avisoDia === grHoy || !grVentanaAbierta) return [];\nconst grRecepcion = String(grPrep.recepcion || '').replace(/\\D/g, '');\nif (!/^\\d{6,20}$/.test(grRecepcion)) return [];\ngrEstado.avisoDia = grHoy;\nreturn [{ json: {\n  numeroRecepcion: grRecepcion,\n  texto: 'No se pudo guardar un archivo de una conversación (' + grMotivo + '). Revísala en la Consola.',\n} }];\n"
+      },
+      "notes": "Toda respuesta de guardarMedio termina acá sin cortar nada. Solo 413, 415, 429 y 502 arman el aviso a la recepción: con su ventana de 24 h abierta, uno por día y sin datos del paciente."
+    },
+    {
+      "id": "gm-avisar",
+      "name": "Avisar falla del guardado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3800,
+        1300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ (/^v\\d+\\.\\d$/.test(String($('Config del negocio').first().json.waGraphVersion)) ? $('Config del negocio').first().json.waGraphVersion : 'v26.0') }}/{{ String($('Normalizar entrada').first().json.phoneNumberId).replace(/\\D/g, '') }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $json.numeroRecepcion, type: 'text', text: { preview_url: false, body: String($json.texto || '').slice(0, 500) } }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp Antonio (Bearer)"
+        }
+      },
+      "notes": "El aviso de falla a la recepción del negocio, en texto libre (su ventana está abierta). Sin reintentos: un aviso repetido llegaría dos veces. Sin onError: si falla, la ejecución termina en error (corre al final, el cliente ya tiene su respuesta). +1 mensaje solo cuando falla el guardado, a lo más uno por día."
     }
   ],
   "connections": {
@@ -1672,6 +2044,11 @@
         [
           {
             "node": "Puerta del turno",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preparar guardado",
             "type": "main",
             "index": 0
           }
@@ -2104,6 +2481,130 @@
     "Reportar mensaje (saliente)": {
       "main": [
         []
+      ]
+    },
+    "Preparar guardado": {
+      "main": [
+        [
+          {
+            "node": "¿Anotar medio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Anotar medio?": {
+      "main": [
+        [
+          {
+            "node": "Anotar medio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pedir el medio a Meta (guardado)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedir el medio a Meta (guardado)": {
+      "main": [
+        [
+          {
+            "node": "Descargar medio (guardado)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar medio (guardado)": {
+      "main": [
+        [
+          {
+            "node": "Guardar medio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anotar medio": {
+      "main": [
+        [
+          {
+            "node": "¿Reintentar el guardado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar medio": {
+      "main": [
+        [
+          {
+            "node": "¿Reintentar el guardado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reintentar el guardado?": {
+      "main": [
+        [
+          {
+            "node": "Preparar reintento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resultado del guardado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar reintento": {
+      "main": [
+        [
+          {
+            "node": "Reintentar el guardado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reintentar el guardado": {
+      "main": [
+        [
+          {
+            "node": "Resultado del guardado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado del guardado": {
+      "main": [
+        [
+          {
+            "node": "Avisar falla del guardado",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   }

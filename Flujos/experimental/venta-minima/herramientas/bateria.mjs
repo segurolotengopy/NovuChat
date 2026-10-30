@@ -136,6 +136,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { crearMundo, ErrorDeUso, leerCredencial, limpiarSecretos, llamarGemini, TARIFA } from '../../captacion-minima/herramientas/bateria.mjs';
+import { doblesDeBateriaDelGuardado } from '../../comun-sin-agente/src/guardado-dobles.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RUTA_FLUJO = join(AQUI, '..', 'venta-minima.qtaco.json');
@@ -559,6 +560,8 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
     'Registrar cierre': (ll) => { captura.cierre.push(ll.cuerpo ?? {}); return { ok: true }; },
     'Obtener URL del medio': () => ({ id: 'm', url: 'https://medios.ejemplo.invalid/m', mime_type: 'image/jpeg', file_size: 100_000 }),
     'Descargar medio': () => ({}),
+    // La rama común del GUARDADO de medios: sin red, el servidor responde «guardado_apagado» (la bandera por defecto).
+    ...doblesDeBateriaDelGuardado(),
     'Transcribir audio': () => ({ content: { parts: [{ text: String(turnoActual.t?.cliente?.transcripcion ?? '') }] } }),
     'Leer comprobante (imagen)': () => lecturaDe(turnoActual.t, captura),
     'Leer comprobante (PDF)': () => lecturaDe(turnoActual.t, captura),
