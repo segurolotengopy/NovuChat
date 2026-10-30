@@ -299,3 +299,26 @@ describe('4. H2b-7: los scripts escriben `modulos` junto a `flujos` (lectura de 
     expect(t).toMatch(/failed-precondition/);
   });
 });
+
+// ======================================================================= 5
+describe('5. H2b-11: ningún script decide la capacidad leyendo `flujos` a mano (lectura de código)', () => {
+  const texto = (r: string) => sinComentarios(leer(r));
+
+  it('escribir-qr-comercio.mjs decide por el registro (documentoDeCobro/modulosDeFicha), no por flujosDeFicha', () => {
+    const t = texto('datos/escribir-qr-comercio.mjs');
+    expect(t).toMatch(/documentoDeCobro\(modulosDeFicha\(/);
+    expect(t).not.toMatch(/flujosDeFicha/);
+  });
+  it('ensayo.mjs: con la lista `modulos` manda `tieneModulo`', () => {
+    expect(texto('plataforma/ensayo.mjs')).toMatch(/tieneModulo\(fichaEnsayo\.data\(\), 'pedidos'\)/);
+  });
+  it.each(['datos/cargar-negocio.mjs', 'datos/cargar-captacion.mjs', 'plataforma/fijar-webhook-carrito.mjs'])(
+    '%s decide con tieneModulo y no con `flujosDeFicha(...).includes`', (ruta) => {
+      const t = texto(ruta);
+      expect(t).toMatch(/tieneModulo\(/);
+      expect(t).not.toMatch(/flujosDeFicha\([^)]*\)[^;\n]*\.includes\(/);
+    });
+  it('activar-cobro-real.mjs decide con modulosDeFicha', () => {
+    expect(texto('plataforma/activar-cobro-real.mjs')).toMatch(/documentoDeCobro\(modulosDeFicha\(ficha\)\)/);
+  });
+});

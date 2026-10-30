@@ -28,6 +28,9 @@ const db = getFirestore(app);
 const REAL = 'comercio-real';
 const SIN_VENTA = 'comercio-agenda';
 const DEMO = 'demo-venta';
+// Fichas migradas (con la lista `modulos`): manda ella aunque `flujos` diga lo contrario.
+const MIG_SIN_PEDIDOS = 'migrada-sin-pedidos';
+const MIG_CON_PEDIDOS = 'migrada-con-pedidos';
 const marcDe = (t: string) => `REEMPLAZAR_MEDIA_ID_QR_${t.toUpperCase().replace(/-/g, '_')}`;
 const MARC = marcDe(REAL);
 const COBRO = { activo: true, ficha: 'f-x', cargaUtil: 'c-x', banco: 'x' };
@@ -64,6 +67,8 @@ beforeEach(async () => {
     [REAL]: { flujos: ['venta'], vertical: 'venta' },
     [SIN_VENTA]: { flujos: ['agendamiento'], vertical: 'agendamiento' },
     [DEMO]: { flujos: ['venta'], vertical: 'venta', creadoPor: 'sembrar-demos' },
+    [MIG_SIN_PEDIDOS]: { flujos: ['venta'], vertical: 'venta', modulos: ['productos', 'campanas', 'cobros', 'agenda'] },
+    [MIG_CON_PEDIDOS]: { flujos: ['agendamiento'], vertical: 'agendamiento', modulos: ['productos', 'campanas', 'cobros', 'pedidos'] },
   };
   for (const [t, f] of Object.entries(fichas)) {
     await db.doc(`tenants/${t}`).set({ nombre: t, estado: 'activo', ...f });
@@ -184,6 +189,23 @@ describe('escribir-qr-comercio.mjs', () => {
     expect(r.salida).toMatch(/NEGADO.*venta habilitada/s);
     expect(await mediaId(SIN_VENTA)).toBe(VIEJO);
   }, 60_000);
+
+  it('H2b-11 ficha migrada SIN pedidos: NEGADO en seco y en aplicar aunque `flujos` incluya venta; no escribe', async () => {
+    for (const extra of [[], ['--aplicar']]) {
+      const r = correr(base(MIG_SIN_PEDIDOS, extra));
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/NEGADO.*venta habilitada/s);
+    }
+    expect(await mediaId(MIG_SIN_PEDIDOS)).toBe(VIEJO);
+    expect((await db.collection(`tenants/${MIG_SIN_PEDIDOS}/auditoria`).get()).size).toBe(0);
+  }, 60_000);
+
+  it('H2b-11 ficha migrada CON pedidos y cobros: pasa aunque `flujos` no incluya venta', async () => {
+    const r = correr(base(MIG_CON_PEDIDOS, ['--aplicar']));
+    expect(r.codigo, r.salida).toBe(0);
+    expect(await mediaId(MIG_CON_PEDIDOS)).toBe(LOCAL);
+  }, 60_000);
+
 
   it('cobro real ausente, apagado o incompleto: NEGADO en seco y en aplicar, sin escribir', async () => {
     const casos: Array<Record<string, unknown>> = [

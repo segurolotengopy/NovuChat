@@ -61,7 +61,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { registerHooks } from 'node:module';
 // `registro.ts` no tiene `import`: Node lo carga quitando los tipos.
-import { modulosDeFlujos } from '../../functions/src/registro.ts';
+import { modulosDeFlujos, tieneModulo } from '../../functions/src/registro.ts';
 
 const ENSAYO = 'ensayo';
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -234,8 +234,12 @@ const colecciones = ['catalogo', 'funcionarios'];
 const aBorrar = [];
 // Los restos de venta se vacían si el ensayo es de venta O si la ficha traía venta
 // (un ensayo de agendamiento después de uno de venta no hereda pedidos viejos).
-const fichaTraiaVenta = fichaEnsayo.exists && (fichaEnsayo.get('vertical') === 'venta'
-  || (Array.isArray(fichaEnsayo.get('flujos')) && fichaEnsayo.get('flujos').includes('venta')));
+// Ficha migrada (con la lista `modulos`): manda el registro (`pedidos`, el módulo de la venta); sin lista, lo de
+// siempre (`vertical` o `flujos`).
+const fichaTraiaVenta = fichaEnsayo.exists && (Array.isArray(fichaEnsayo.get('modulos'))
+  ? tieneModulo(fichaEnsayo.data(), 'pedidos')
+  : (fichaEnsayo.get('vertical') === 'venta'
+    || (Array.isArray(fichaEnsayo.get('flujos')) && fichaEnsayo.get('flujos').includes('venta'))));
 const vaciarVenta = fichaEnsayo.exists && (flujoCliente === 'venta' || fichaTraiaVenta);
 /** Cuenta documentos (y los de sus subcolecciones) de una colección. */
 async function contar(col) {

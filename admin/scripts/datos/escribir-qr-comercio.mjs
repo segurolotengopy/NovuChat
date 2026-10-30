@@ -32,8 +32,9 @@
  *   - Valor: solo dígitos, 10 a 20. Fila repetida, vacía o «pendiente»: aborta.
  *   - `--tenant` con la forma de un id (`/^[a-z0-9][a-z0-9-]{2,59}$/`).
  *   - El marcador lleva el id del tenant: `rroca-ruben` -> `..._RROCA_RUBEN`.
- *   - El tenant debe EXISTIR y `flujosDeFicha` (la misma lectura de `flujos`
- *     que usan el registro y `activar-cobro-real`) debe incluir `venta`.
+ *   - El tenant debe EXISTIR y `documentoDeCobro(modulosDeFicha(ficha))` (el
+ *     registro, como `activar-cobro-real`: manda la lista `modulos` si la hay,
+ *     si no los `flujos`) debe ser `venta`.
  *   - El cobro real debe estar ACTIVO (criterio de ingesta.ts: activo === true
  *     con ficha y carga útil). Si no, ingesta copia mediaIdQr al cobro simulado.
  *     Orden operativo: cobro real activo, luego mediaIdQr.
@@ -122,7 +123,7 @@ try {
 
 const { initializeApp } = await import('firebase-admin/app');
 const { getFirestore, FieldValue, Timestamp } = await import('firebase-admin/firestore');
-const { flujosDeFicha } = await import('../../functions/src/registro.ts');
+const { documentoDeCobro, modulosDeFicha } = await import('../../functions/src/registro.ts');
 initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 const ref = db.doc(`tenants/${TENANT}/config/venta`);
@@ -133,7 +134,9 @@ if (tenant.get('creadoPor') === 'sembrar-demos' || DEMOS_VENTA.includes(TENANT))
   niega(`el tenant ${TENANT} es un demo; para los demos está renovar-qr-demo.mjs.`);
 }
 const docVenta = await ref.get();
-if (!flujosDeFicha(tenant.data()).includes('venta')) {
+// Como `activar-cobro-real`: cobra por config/venta el comercio cuyos MÓDULOS lo dicen (con la lista `modulos,
+// manda ella; sin lista, los de sus flujos). Misma función del registro que decide el servidor.
+if (documentoDeCobro(modulosDeFicha(tenant.data())) !== 'venta') {
   niega(`el tenant ${TENANT} no tiene la venta habilitada (su ficha no incluye el flujo venta).`);
 }
 // Mismo criterio que ingesta.ts (cobroRealActivo): encendido Y con ficha y carga útil.
