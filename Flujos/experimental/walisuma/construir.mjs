@@ -46,6 +46,7 @@ export const EMPALMES_DEL_PR3 = [
   ['Medio no aceptado', 'Decidir turno', 'hoy termina'],
   ['Preparar imagen', 'Interpretar lectura', 'hoy termina'],
   ['Decidir turno', 'Armar mensajes', 'por el modelo, el aviso al servidor y los avisos'],
+  ['Puerta del turno', 'Armar avisos', 'con la atención en operador, el uso extendido ofrece una persona (transferir): PR-3 debe avisar a recepción y poner el botón para escribirle directo (solo se ofrece lo que se cumple); hoy no sale ningún aviso'],
 ];
 
 /** El config del armador genérico. Vive aquí y no en un `construir.config.json`: el saneo del repo público trata todo JSON bajo `Flujos/` como un export de n8n. */
@@ -207,6 +208,11 @@ export function hallazgosDelReceptor(flujo, datos, origen = leerReceptorDeOrigen
     const igual = JSON.stringify(reemplazarTextos(esperado, datos, nombre));
     if (JSON.stringify(real) !== igual) h.push(`el nodo «${nombre}» difiere de su origen (venta-minima/flujo.plantilla.json): la entrada verificada del receptor se incluye, no se edita`);
   }
+  // Las CONEXIONES de los nodos del receptor (menos «Descartar repetidos», cuyo destino fija este flujo) también son las de su origen: un atajo no pasa.
+  const conex = (flujo && flujo.connections) || {};
+  for (const [nombre, esperadas] of Object.entries(origen.conexiones)) {
+    if (JSON.stringify(conex[nombre]) !== JSON.stringify(esperadas)) h.push(`las conexiones de «${nombre}» difieren de su origen (venta-minima/flujo.plantilla.json): la entrada verificada del receptor se incluye, no se edita`);
+  }
   return h;
 }
 
@@ -298,6 +304,11 @@ export function guardias(variante, flujo, opciones = {}) {
     const d = por('Descartar repetidos');
     if (d && (p(d).operation !== 'removeItemsSeenInPreviousExecutions' || p(d).logic !== 'removeItemsWithAlreadySeenKeyValues')) h.push('«Descartar repetidos» tiene que descartar entre ejecuciones (removeItemsSeenInPreviousExecutions)');
     if (!destinosDe('Descartar repetidos', 0).includes('Config base')) h.push('«Descartar repetidos» no sigue a «Config base»');
+    // «Config base» solo se alcanza después de verificar la firma y descartar repetidos; «Entrega del receptor» solo sale hacia el verificador.
+    const entradasDeConfigBase = Object.entries(conex).filter(([, s]) => ((s && s.main) || []).some((o) => (o || []).some((x) => x.node === 'Config base'))).map(([de]) => de);
+    if (entradasDeConfigBase.length !== 1 || entradasDeConfigBase[0] !== 'Descartar repetidos') h.push(`«Config base» tiene que tener como única entrada a «Descartar repetidos» (hoy: ${entradasDeConfigBase.join(', ') || 'ninguna'})`);
+    const salidasDeEntrega = [...new Set((((conex[NODO_RECEPTOR] || {}).main) || []).flat().map((x) => x.node))];
+    if (salidasDeEntrega.length !== 1 || salidasDeEntrega[0] !== 'Verificar firma con el receptor') h.push('«Entrega del receptor» tiene que salir solo hacia «Verificar firma con el receptor»');
     if (!destinosDe('¿Firma válida?', 1).includes('Rechazar (401)')) h.push('«¿Firma válida?» no manda la firma inválida a «Rechazar (401)»');
     if (destinosDe('Rechazar (401)', 0).length) h.push('«Rechazar (401)» no puede tener salidas: una firma inválida corta ahí');
   }

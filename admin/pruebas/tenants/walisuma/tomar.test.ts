@@ -43,6 +43,11 @@ describe('pausa por Tomar (la ingesta del entrante dice «bloqueado»)', () => {
   });
 });
 
+describe('pendiente de PR-3: atención en «operador»', () => {
+  // Hoy el esqueleto ofrece «una persona del equipo va a continuar» sin avisar a recepción (no existe «Armar avisos»): promesa sin respaldo. PR-3 debe avisar y poner el botón.
+  it.todo('NEGADO (PR-3): con la atención en «operador» el turno no se cierra sin aviso a recepción con el botón para escribirle directo');
+});
+
 describe('comercio no operativo', () => {
   it('suspendido (409 de la consola): UN texto neutro, sin revelar el motivo, y sin medios ni modelo', () => {
     const m = crear({ panel: { statusCode: 409, body: { mensajeCortesia: SUSPENDIDO } } });

@@ -57,6 +57,7 @@ PR-2 (hoy): **36** en producción (6 del receptor + 7 de entrada y configuració
 | Medio no aceptado | Decidir turno | termina |
 | Preparar imagen | Interpretar lectura | termina |
 | Decidir turno | Armar mensajes | por el modelo, el aviso al servidor y los avisos |
+| Puerta del turno (transferir) | Armar avisos | con la atención en operador, el uso extendido ofrece una persona: PR-3 debe avisar a recepción y poner el botón para escribirle directo (solo se ofrece lo que se cumple). Hoy no sale ningún aviso; la prueba pendiente está en `tomar.test.ts` |
 
 Las posiciones del lienzo ya reservan los lugares de esos nodos (las de la versión de Antonio). En «Armar mensajes» el PR-3 agrega la lectura del plan de «Decidir turno» y el estado de los avisos; la forma del ítem de salida ya es la definitiva. «Resumen del turno» recibe `revertirFicha` / `revertirSiFalloElPrincipal` de ese ítem para devolver a la ficha lo que no salió.
 

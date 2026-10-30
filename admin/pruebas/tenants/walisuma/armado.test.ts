@@ -82,6 +82,16 @@ describe('la entrada verificada del receptor: INCLUIDA, no copiada', () => {
     sin.nodes = (sin.nodes as J[]).filter((x) => x['name'] !== 'Aceptar (200)') as never;
     expect(C.hallazgosDelReceptor(sin, DATOS).join(' ')).toMatch(/falta el nodo «Aceptar \(200\)»/);
   });
+  it('NEGADO: un atajo «Entrega del receptor → Config base» (o cambiar las conexiones del receptor) se detecta, sobre una copia en memoria', () => {
+    const f = clonar(PRODUCCION);
+    const c = f.connections as J;
+    c['Entrega del receptor'].main[0].push({ node: 'Config base', type: 'main', index: 0 });
+    expect(C.hallazgosDelReceptor(f, DATOS).join(' ')).toMatch(/conexiones de «Entrega del receptor» difieren/);
+    const g = C.guardias('produccion', f).join(' ');
+    expect(g).toMatch(/única entrada a «Descartar repetidos»/);
+    expect(g).toMatch(/salir solo hacia «Verificar firma con el receptor»/);
+    expect(C.guardias('produccion', PRODUCCION)).toEqual([]);
+  });
   it('la firma inválida corta en «Rechazar (401)» y la válida sigue por «Aceptar (200)» → «Descartar repetidos» → «Config base»', () => {
     const c = PRODUCCION.connections as J;
     expect(c['¿Firma válida?'].main[1][0].node).toBe('Rechazar (401)');
