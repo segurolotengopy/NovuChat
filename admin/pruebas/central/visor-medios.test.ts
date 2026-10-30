@@ -7,14 +7,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  AVISO_DESCARGA, AVISO_WA_ME, MIME_DE_DESCARGA, TEXTO_VENCIDO, nombreDeDescarga, accionDeMedio, enlaceWaMe, medioDeDatos, pedirMedio, textoAnotado, textoDeErrorMedio,
+  AVISO_DESCARGA, AVISO_WA_ME, MIME_DE_DESCARGA, TEXTO_VENCIDO, nombreDeDescarga, avisoExtraDe, modoDeMedio, extensionSegura, AVISO_MACROS, accionDeMedio, enlaceWaMe, medioDeDatos, pedirMedio, textoAnotado, textoDeErrorMedio,
   type LlamarVerMedio, type MedioDeMensaje,
 } from '../../web/src/central/lib/medios.ts';
 
 const AHORA = 1_800_000_000_000;
 const guardado = (o: Partial<MedioDeMensaje> = {}): MedioDeMensaje =>
   ({ estado: 'guardado', mime: 'image/jpeg', tamano: 10, vence: AHORA + 1000, ...o });
-const base = { tenantId: 't1', conversacionId: 'wa_59171234567', idMeta: 'wamid.X', ahora: AHORA };
+const base = { tenantId: 't1', conversacionId: 'wa_59171234567', idMeta: 'wamid.X', accion: 'ver' as const, ahora: AHORA };
 const B64 = Buffer.from('hola').toString('base64');
 const ok = (r: object): LlamarVerMedio => vi.fn(async () => ({ data: r }));
 const falla = (code: string, details?: unknown): LlamarVerMedio => vi.fn(async () => { throw Object.assign(new Error('RUTA tenants/x/medios/secreto'), { code, details }); });
@@ -43,13 +43,13 @@ describe('pedirMedio con la callable simulada', () => {
     expect(i).toMatchObject({ ok: true, clase: 'imagen', src: `data:image/png;base64,${B64}` });
     const a = await pedirMedio(ok({ tipo: 'audio', mime: 'audio/ogg', tamano: 4, base64: B64 }), { ...base, medio: guardado({ mime: 'audio/ogg' }) });
     expect(a).toMatchObject({ ok: true, clase: 'audio', mime: 'audio/ogg' });
-    const p = await pedirMedio(ok({ tipo: 'document', mime: 'application/pdf', tamano: 4, base64: B64 }), { ...base, medio: guardado({ mime: 'application/pdf' }) });
+    const p = await pedirMedio(ok({ tipo: 'document', mime: 'application/pdf', tamano: 4, base64: B64 }), { ...base, accion: 'descargar', medio: guardado({ mime: 'application/pdf' }) });
     expect(p).toMatchObject({ ok: true, clase: 'descarga' });
   });
   it('manda solo tenantId, conversacionId e idMeta', async () => {
     const f = ok({ tipo: 'image', mime: 'image/png', base64: B64 });
     await pedirMedio(f, { ...base, medio: guardado() });
-    expect(f).toHaveBeenCalledWith({ tenantId: 't1', conversacionId: 'wa_59171234567', idMeta: 'wamid.X' });
+    expect(f).toHaveBeenCalledWith({ tenantId: 't1', conversacionId: 'wa_59171234567', idMeta: 'wamid.X', accion: 'ver' });
   });
   it('anotado y pendiente no llaman a la callable', async () => {
     const f = ok({});
@@ -87,18 +87,40 @@ describe('pedirMedio con la callable simulada', () => {
 });
 
 describe('documentos: solo descarga', () => {
-  it('cualquier documento (incluido html) va a descarga, nunca a vista; imagen fuera de lista también', async () => {
-    for (const [tipo, mime] of [['document', 'text/html'], ['document', 'application/pdf'], ['image', 'image/svg+xml']]) {
-      const r = await pedirMedio(ok({ tipo, mime, base64: B64 }), { ...base, medio: guardado() });
-      expect(r).toMatchObject({ ok: true, clase: 'descarga' });
+  const desc = { ...base, accion: 'descargar' as const, medio: guardado({ mime: 'application/pdf' }) };
+  it('documento y video van a descarga con la extensión de la respuesta; envía accion descargar', async () => {
+    for (const [tipo, mime] of [['document', 'text/html'], ['document', 'application/pdf'], ['video', 'video/mp4']]) {
+      const f = ok({ tipo, mime, extension: 'pdf', base64: B64 });
+      const r = await pedirMedio(f, { ...desc });
+      expect(r).toMatchObject({ ok: true, clase: 'descarga', extension: 'pdf' });
+      expect(f).toHaveBeenCalledWith(expect.objectContaining({ accion: 'descargar' }));
     }
   });
-  it('nombre generado: fecha y extensión segura o .bin', () => {
-    expect(nombreDeDescarga('application/pdf', AHORA)).toMatch(/^archivo-\d{4}-\d{2}-\d{2}\.pdf$/);
-    expect(nombreDeDescarga('text/html', AHORA)).toMatch(/\.bin$/);
-    expect(nombreDeDescarga(undefined, AHORA)).toMatch(/\.bin$/);
+  it('lo pedido para ver no devuelve descarga y al revés (imagen con accion descargar no se dibuja)', async () => {
+    expect((await pedirMedio(ok({ tipo: 'image', mime: 'image/png', base64: B64 }), { ...desc })).ok).toBe(false);
+    expect((await pedirMedio(ok({ tipo: 'audio', mime: 'audio/ogg', base64: B64 }), { ...desc })).ok).toBe(false);
+  });
+  it('extensión validada contra la lista cerrada; desconocida → bin', () => {
+    for (const e of ['pdf', 'docx', 'xlsx', 'pptx', 'zip', 'doc', 'xls', 'ppt', 'txt', 'csv', 'bin']) expect(extensionSegura(e)).toBe(e);
+    for (const e of ['exe', 'html', '../x', 'PDF', undefined, 5, 'pdf.exe']) expect(extensionSegura(e)).toBe('bin');
+    expect(nombreDeDescarga('docx', AHORA)).toMatch(/^archivo-\d{4}-\d{2}-\d{2}\.docx$/);
+    expect(nombreDeDescarga('exe', AHORA)).toMatch(/\.bin$/);
     expect(AVISO_DESCARGA).toBe('Archivo enviado por un cliente: no lo abra si no confía; puede contener virus.');
     expect(MIME_DE_DESCARGA).toBe('application/octet-stream');
+  });
+  it('alerta extra para doc/xls/ppt/csv/zip y no para pdf/txt/bin', () => {
+    for (const e of ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'zip']) expect(avisoExtraDe(e)).toBe(AVISO_MACROS);
+    for (const e of ['pdf', 'txt', 'bin', 'exe']) expect(avisoExtraDe(e)).toBeNull();
+    expect(AVISO_MACROS).toBe('Puede contener macros o fórmulas; no habilite contenido.');
+  });
+  it('modo: imagen/audio ver; lo demás descargar; soporte no descarga', () => {
+    expect(modoDeMedio('image/png', false)).toBe('ver');
+    expect(modoDeMedio('audio/ogg', true)).toBe('ver');
+    expect(modoDeMedio('application/pdf', false)).toBe('descargar');
+    expect(modoDeMedio('video/mp4', false)).toBe('descargar');
+    expect(modoDeMedio('', false)).toBe('descargar');
+    expect(modoDeMedio('application/pdf', true)).toBe('ninguno');
+    expect(modoDeMedio('video/mp4', true)).toBe('ninguno');
   });
 });
 
@@ -135,6 +157,11 @@ describe('la pantalla (lectura del fuente)', () => {
     expect(v).toMatch(/Descargar de todos modos/);
     expect(v).toMatch(/MIME_DE_DESCARGA/);
     expect(v).not.toMatch(/window\.open|<iframe|<embed|<object/);
+    // el ancla nunca entra al DOM y el blob se revoca justo tras el click
+    expect(v).not.toMatch(/appendChild|append\(|insertAdjacent|\.body\./);
+    expect(v).toMatch(/a\.click\(\);\n\s*URL\.revokeObjectURL\(url\)/);
+    expect(v).toMatch(/avisoExtraDe/);
+    expect(v).toMatch(/esSoporte/);
   });
   it('CSP: media-src blob: y NINGÚN blob: en frame-src', () => {
     const fb = JSON.parse(readFileSync(join(aqui, '../../firebase.json'), 'utf8'));

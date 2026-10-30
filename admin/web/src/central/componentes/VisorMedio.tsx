@@ -1,30 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { funciones } from '../../core/lib/firebase';
-import { AVISO_DESCARGA, MIME_DE_DESCARGA, nombreDeDescarga, pedirMedio, type LlamarVerMedio, type MedioDeMensaje, type ResultadoMedio } from '../lib/medios';
+import {
+  AVISO_DESCARGA, MIME_DE_DESCARGA, avisoExtraDe, modoDeMedio, nombreDeDescarga, pedirMedio,
+  type LlamarVerMedio, type MedioDeMensaje, type ResultadoMedio,
+} from '../lib/medios';
 
 /**
- * VER UN MEDIO guardado de la conversación (foto, PDF o audio). Pide los bytes a `verMedio` (auditada, con tope)
- * y los muestra en un diálogo accesible. Solo lectura: no envía nada, y nada se baja al disco salvo el PDF,
- * que el usuario descarga tras una alerta y un botón explícito. Todo documento se baja como adjunto (Blob
- * `application/octet-stream`, nombre generado por la consola); nunca se abre inline ni en otra ventana.
+ * VER O DESCARGAR un medio guardado de la conversación. Pide los bytes a `verMedio` (auditada, con tope) con
+ * `accion: 'ver'` (imagen y audio de lista segura) o `accion: 'descargar'` (todo lo demás: documentos, video).
+ * Solo lectura: no envía nada.
  *
- *  - Imagen: `<img>` con `data:` (la CSP lo permite).
- *  - Audio: `<audio controls>` con una URL `blob:`; se revoca al cerrar o desmontar.
- *  - Documento (PDF y demás): Blob octet-stream; «Descargar» pide confirmación; se revoca al cerrar.
+ *  - Imagen: `<img>` con `data:`. Audio: `<audio controls>` con URL `blob:`, revocada al cerrar o desmontar.
+ *  - Documento o video: nunca se abre. Tras una alerta obligatoria («Descargar de todos modos») se arma un Blob
+ *    `application/octet-stream`, un ancla que NUNCA entra al DOM, se hace `click()` y el blob se revoca de inmediato.
+ *    El nombre lo genera la consola con la extensión validada de la respuesta.
  * Los bytes viven solo en el estado de este componente. El error se muestra por su `code`.
+ * Soporte de NovuChat: no se ofrece «Descargar» (el servidor decide igual).
  */
 const llamarReal: LlamarVerMedio = (a) => httpsCallable(funciones, 'verMedio')(a) as ReturnType<LlamarVerMedio>;
 
+type Listo = Extract<ResultadoMedio, { ok: true }>;
 type Estado =
   | { t: 'reposo' }
   | { t: 'cargando' }
   | { t: 'error'; texto: string }
-  | { t: 'listo'; r: Extract<ResultadoMedio, { ok: true }>; url: string | null; confirmando: boolean; mimeOriginal: string };
+  | { t: 'listo'; r: Listo; url: string | null };
 
-export function VisorMedio({ tenantId, conversacionId, idMeta, medio, llamar = llamarReal }: {
-  tenantId: string; conversacionId: string; idMeta: string; medio: MedioDeMensaje; llamar?: LlamarVerMedio;
+export function VisorMedio({ tenantId, conversacionId, idMeta, medio, esSoporte = false, llamar = llamarReal }: {
+  tenantId: string; conversacionId: string; idMeta: string; medio: MedioDeMensaje; esSoporte?: boolean; llamar?: LlamarVerMedio;
 }) {
+  const modo = modoDeMedio(medio.mime, esSoporte);
   const [estado, setEstado] = useState<Estado>({ t: 'reposo' });
   const vuelta = useRef(0);
   const urlViva = useRef<string | null>(null);
@@ -41,39 +47,40 @@ export function VisorMedio({ tenantId, conversacionId, idMeta, medio, llamar = l
     boton.current?.focus();
   };
 
-  // Al cambiar de mensaje o desmontar: se invalida la respuesta en camino y se libera el blob.
   useEffect(() => () => { vuelta.current += 1; soltar(); }, [tenantId, conversacionId, idMeta]);
   useEffect(() => { if (estado.t !== 'reposo') cerrar.current?.focus(); }, [estado.t]);
 
-  const ver = async () => {
+  if (modo === 'ninguno') return null;
+
+  const pedir = async () => {
     const mia = ++vuelta.current;
     setEstado({ t: 'cargando' });
-    const r = await pedirMedio(llamar, { tenantId, conversacionId, idMeta, medio, ahora: Date.now() });
+    const r = await pedirMedio(llamar, { tenantId, conversacionId, idMeta, accion: modo, medio, ahora: Date.now() });
     if (mia !== vuelta.current) return;
     if (!r.ok) { setEstado({ t: 'error', texto: r.texto }); return; }
     let url: string | null = null;
-    if (r.clase !== 'imagen') {
-      // El audio necesita su tipo para reproducirse; el documento NUNCA lleva el suyo.
-      const tipoBlob = r.clase === 'audio' ? r.mime : MIME_DE_DESCARGA;
-      url = URL.createObjectURL(new Blob([r.bytes as BlobPart], { type: tipoBlob }));
+    if (r.clase === 'audio') {
+      url = URL.createObjectURL(new Blob([r.bytes as BlobPart], { type: r.mime }));
       urlViva.current = url;
     }
-    setEstado({ t: 'listo', r, url, confirmando: false, mimeOriginal: r.clase === 'imagen' ? '' : r.mime });
+    setEstado({ t: 'listo', r, url });
   };
 
-  const descargar = (url: string, mime: string) => {
-    const a = document.createElement('a');
+  const descargar = (r: Extract<Listo, { clase: 'descarga' }>) => {
+    const url = URL.createObjectURL(new Blob([r.bytes as BlobPart], { type: MIME_DE_DESCARGA }));
+    const a = document.createElement('a'); // nunca se inserta en el DOM
     a.href = url;
-    a.download = nombreDeDescarga(mime, Date.now());
+    a.download = nombreDeDescarga(r.extension, Date.now());
     a.click();
-    setEstado((e) => (e.t === 'listo' ? { ...e, confirmando: false } : e));
+    URL.revokeObjectURL(url);
+    cerrarVisor();
   };
 
   return (
     <span className="cv-medio">
-      <button type="button" ref={boton} className="btn btn-secondary btn-chico" onClick={() => void ver()}
+      <button type="button" ref={boton} className="btn btn-secondary btn-chico" onClick={() => void pedir()}
               disabled={estado.t === 'cargando'}>
-        {estado.t === 'cargando' ? 'Abriendo…' : 'Ver'}
+        {estado.t === 'cargando' ? 'Abriendo…' : modo === 'ver' ? 'Ver' : 'Descargar'}
       </button>
       {estado.t !== 'reposo' && (
         <div className="cv-medio-fondo">
@@ -89,19 +96,14 @@ export function VisorMedio({ tenantId, conversacionId, idMeta, medio, llamar = l
             {estado.t === 'listo' && estado.r.clase === 'audio' && estado.url && (
               <audio controls controlsList="nodownload noplaybackrate" src={estado.url} aria-label="Audio que mandó el cliente" />
             )}
-            {estado.t === 'listo' && estado.r.clase === 'descarga' && estado.url && (
-              estado.confirmando ? (
-                <div role="alertdialog" aria-label="Confirmar descarga">
-                  <p><strong>{AVISO_DESCARGA}</strong></p>
-                  <button type="button" className="btn btn-secondary btn-chico"
-                          onClick={() => setEstado({ ...estado, confirmando: false })}>Cancelar</button>{' '}
-                  <button type="button" className="btn btn-secondary btn-chico"
-                          onClick={() => descargar(estado.url!, estado.mimeOriginal)}>Descargar de todos modos</button>
-                </div>
-              ) : (
+            {estado.t === 'listo' && estado.r.clase === 'descarga' && (
+              <div role="alertdialog" aria-label="Confirmar descarga">
+                <p><strong>{AVISO_DESCARGA}</strong></p>
+                {avisoExtraDe(estado.r.extension) && <p><strong>{avisoExtraDe(estado.r.extension)}</strong></p>}
+                <button type="button" className="btn btn-secondary btn-chico" onClick={cerrarVisor}>Cancelar</button>{' '}
                 <button type="button" className="btn btn-secondary btn-chico"
-                        onClick={() => setEstado({ ...estado, confirmando: true })}>Descargar</button>
-              )
+                        onClick={() => descargar(estado.r as Extract<Listo, { clase: 'descarga' }>)}>Descargar de todos modos</button>
+              </div>
             )}
             <p><button type="button" ref={cerrar} className="btn btn-secondary btn-chico" onClick={cerrarVisor}>Cerrar</button></p>
           </div>

@@ -29,12 +29,27 @@ export const AVISO_DESCARGA = 'Archivo enviado por un cliente: no lo abra si no 
 /** Tipo del Blob de una descarga: nunca el mime del archivo, para que no se pueda abrir inline. */
 export const MIME_DE_DESCARGA = 'application/octet-stream';
 
-const EXTENSION_SEGURA: Record<string, string> = { 'application/pdf': 'pdf' };
+/** Lista cerrada de extensiones de descarga (contrato v2 §7.8); lo desconocido es `bin`. */
+export const EXTENSIONES = ['pdf', 'docx', 'xlsx', 'pptx', 'zip', 'doc', 'xls', 'ppt', 'txt', 'csv', 'bin'] as const;
+export function extensionSegura(ext: unknown): string {
+  return typeof ext === 'string' && (EXTENSIONES as readonly string[]).includes(ext) ? ext : 'bin';
+}
+/** `archivo-<fecha>.<ext>`: nombre generado por la consola; la extensión sale de la respuesta de `verMedio`. */
+export function nombreDeDescarga(extension: unknown, ahora: number): string {
+  return `archivo-${new Date(ahora).toISOString().slice(0, 10)}.${extensionSegura(extension)}`;
+}
+export const AVISO_MACROS = 'Puede contener macros o fórmulas; no habilite contenido.';
+const CON_MACROS = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'zip'];
+/** Alerta extra (además de la base) para ofimática, csv y zip. */
+export const avisoExtraDe = (ext: unknown): string | null => (CON_MACROS.includes(extensionSegura(ext)) ? AVISO_MACROS : null);
 
-/** `archivo-<fecha>.<ext>`: nombre generado por la consola; `.bin` si el mime no es de los conocidos. */
-export function nombreDeDescarga(mime: unknown, ahora: number): string {
-  const ext = typeof mime === 'string' ? EXTENSION_SEGURA[mime] ?? 'bin' : 'bin';
-  return `archivo-${new Date(ahora).toISOString().slice(0, 10)}.${ext}`;
+/**
+ * Qué se ofrece: imagen/audio de lista segura → «Ver»; todo lo demás (documento, video, desconocido) → «Descargar»,
+ * salvo para soporte de NovuChat, que no descarga documentos (no se ofrece nada).
+ */
+export function modoDeMedio(mime: string, esSoporte: boolean): 'ver' | 'descargar' | 'ninguno' {
+  if ((MIMES_DE_IMAGEN as readonly string[]).includes(mime) || (MIMES_DE_AUDIO as readonly string[]).includes(mime)) return 'ver';
+  return esSoporte ? 'ninguno' : 'descargar';
 }
 
 export interface MedioDeMensaje {
@@ -104,7 +119,7 @@ export function claseDeMedio(tipo: unknown, mime: unknown): 'imagen' | 'descarga
   if (tipo === 'image' && (MIMES_DE_IMAGEN as readonly string[]).includes(mime)) return 'imagen';
   if (tipo === 'audio' && (MIMES_DE_AUDIO as readonly string[]).includes(mime)) return 'audio';
   // Lo demás (PDF y todo documento) no se incrusta: se ofrece descarga con alerta.
-  return tipo === 'document' || tipo === 'image' || tipo === 'audio' ? 'descarga' : 'invalida';
+  return tipo === 'document' || tipo === 'video' || tipo === 'image' || tipo === 'audio' ? 'descarga' : 'invalida';
 }
 
 const GENERICO = 'No se pudo abrir el archivo. Intente de nuevo en unos minutos.';
@@ -133,13 +148,14 @@ export function textoDeErrorMedio(code: unknown, details?: unknown): string {
   }
 }
 
-export type RespuestaVerMedio = { tipo?: unknown; mime?: unknown; tamano?: unknown; base64?: unknown };
+export type RespuestaVerMedio = { tipo?: unknown; extension?: unknown; mime?: unknown; tamano?: unknown; base64?: unknown };
 /** La callable, inyectada: la pantalla pasa `httpsCallable(funciones, 'verMedio')`; las pruebas, una simulada. */
-export type LlamarVerMedio = (a: { tenantId: string; conversacionId: string; idMeta: string }) => Promise<{ data: RespuestaVerMedio }>;
+export type LlamarVerMedio = (a: { tenantId: string; conversacionId: string; idMeta: string; accion: 'ver' | 'descargar' }) => Promise<{ data: RespuestaVerMedio }>;
 
 export type ResultadoMedio =
   | { ok: true; clase: 'imagen'; src: string }
-  | { ok: true; clase: 'audio' | 'descarga'; bytes: Uint8Array; mime: string }
+  | { ok: true; clase: 'audio'; bytes: Uint8Array; mime: string }
+  | { ok: true; clase: 'descarga'; bytes: Uint8Array; mime: string; extension: string }
   | { ok: false; texto: string };
 
 /**
@@ -148,22 +164,26 @@ export type ResultadoMedio =
  */
 export async function pedirMedio(
   llamar: LlamarVerMedio,
-  a: { tenantId: string; conversacionId: string; idMeta: string; medio: MedioDeMensaje | null; ahora: number },
+  a: { tenantId: string; conversacionId: string; idMeta: string; accion: 'ver' | 'descargar'; medio: MedioDeMensaje | null; ahora: number },
 ): Promise<ResultadoMedio> {
   const accion = accionDeMedio(a.medio, a.ahora);
   if (accion === 'vencido') return { ok: false, texto: TEXTO_VENCIDO };
   if (accion !== 'ver') return { ok: false, texto: textoDeErrorMedio('functions/failed-precondition', 'anotado') };
   try {
-    const r = (await llamar({ tenantId: a.tenantId, conversacionId: a.conversacionId, idMeta: a.idMeta })).data;
+    const r = (await llamar({ tenantId: a.tenantId, conversacionId: a.conversacionId, idMeta: a.idMeta, accion: a.accion })).data;
     const clase = claseDeMedio(r.tipo, r.mime);
     const mal = { ok: false as const, texto: textoDeErrorMedio('functions/failed-precondition') };
     if (clase === 'invalida') return mal;
     if (clase === 'imagen') {
       const src = srcDeImagen(r.mime, r.base64);
-      return src ? { ok: true, clase, src } : mal;
+      return src && a.accion === 'ver' ? { ok: true, clase, src } : mal;
     }
     const bytes = bytesDeBase64(r.base64);
-    return bytes ? { ok: true, clase, bytes, mime: r.mime as string } : mal;
+    if (!bytes) return mal;
+    // Descargar pide descarga y ver pide vista: si el servidor devuelve otra clase de la pedida, no se dibuja.
+    if (clase === 'audio') return a.accion === 'ver' ? { ok: true, clase, bytes, mime: r.mime as string } : mal;
+    if (a.accion !== 'descargar') return mal;
+    return { ok: true, clase, bytes, mime: r.mime as string, extension: extensionSegura(r.extension) };
   } catch (e) {
     const x = e as { code?: unknown; details?: unknown } | null;
     return { ok: false, texto: textoDeErrorMedio(x?.code, x?.details) };
