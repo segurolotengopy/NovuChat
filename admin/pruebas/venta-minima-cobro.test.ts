@@ -36,7 +36,7 @@ export const LUNES_10 = Date.UTC(2026, 9, 5, 14);
 const NOMBRES = [
   'cbCobroReal', 'cbCaption', 'cbMensajeQr', 'cbLectura', 'cbResultado', 'cbEstadoParaAviso',
   'cbTextoAlCliente', 'cbDiferencia', 'cbImporteDelServidor', 'cbObjetoUnico', 'cbTotalValido', 'cbMonto', 'cbUrlSegura',
-  'cbCobroSimulado', 'cbHayQr', 'cbQrVencido',
+  'cbCobroSimulado', 'cbHayQr', 'cbQrVencido', 'cbResultadoVenta', 'cbRutaGuardada', 'cbCanon',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -169,7 +169,7 @@ describe('cbCobroReal: cobro real solo si el servidor lo manda y el QR es https'
   it('con cobroReal y la dirección https, está activo y trae el titular, el banco y la dirección', () => {
     expect(L.cbCobroReal(panel())).toEqual({
       activo: true, qrUrl: URL_QR, titular: 'Taqueria Ejemplo SRL', banco: 'Banco de Prueba',
-      pendiente: false, monto: null, pedidoRef: '', vencidoHaceMin: null, venceEl: '',
+      pendiente: false, monto: null, pedidoRef: '', vencidoHaceMin: null, venceEl: '', regla: 1, enRevision: false,
     });
   });
 
@@ -206,7 +206,7 @@ describe('cbCobroReal: cobro real solo si el servidor lo manda y el QR es https'
     (p.cobro as { qr: { url: unknown } }).qr.url = url;
     const c = L.cbCobroReal(p);
     expect(c).toEqual({
-      activo: false, qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: '', vencidoHaceMin: null, venceEl: '',
+      activo: false, qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: '', vencidoHaceMin: null, venceEl: '', regla: 1, enRevision: false,
     });
   });
 
@@ -460,6 +460,180 @@ describe('cbResultado: lo que contestó el cotejo del servidor', () => {
   });
 });
 
+describe('cbResultadoVenta: lo que contestó `/cotejarComprobanteVenta` (regla 2), con listas cerradas', () => {
+  const cuerpo = (estado: string, extra: Record<string, unknown> = {}) => ({
+    statusCode: 200,
+    body: { estado, motivo: 'ok', intentos: 0, intentosRestantes: 3, importe: 63, moneda: 'BOB', montoLeido: 63, montoDistinto: false, cierreId: 'venta_ped-2026', evento: null, avisarComercio: true, repetido: false, ...extra },
+  });
+
+  it('valido -> cuadra y aproximado -> aproximado (los datos coinciden), con el importe y el cierre del servidor', () => {
+    expect(L.cbResultadoVenta(cuerpo('valido'))).toEqual({ resultado: 'cuadra', diferencias: [], importe: 63, cierreId: 'venta_ped-2026', causa: '' });
+    // `aproximado` se distingue para el aviso al local («casi coinciden, revisar»), no para el cliente.
+    expect(L.cbResultadoVenta(cuerpo('aproximado'))).toEqual({ resultado: 'aproximado', diferencias: [], importe: 63, cierreId: 'venta_ped-2026', causa: '' });
+    expect(L.cbTextoAlCliente('aproximado', { codigo: 'K7QX', avisoSalio: true })).toEqual(L.cbTextoAlCliente('cuadra', { codigo: 'K7QX', avisoSalio: true }));
+    expect(L.cbEstadoParaAviso('aproximado')).toBe('comprobante: datos casi coinciden, revisar');
+    expect(L.cbEstadoParaAviso('aproximado')).not.toBe(L.cbEstadoParaAviso('cuadra'));
+    expect(L.CB_PROHIBIDAS.test(L.cbCanon(L.cbEstadoParaAviso('aproximado')))).toBe(false);
+  });
+
+  it('reintentar con un comprobante que no se lee -> ilegible (se pide uno más nítido); cada motivo de la lista', () => {
+    for (const motivo of ['ilegible', 'falta_monto', 'falta_fecha', 'falta_destino']) {
+      expect(L.cbResultadoVenta(cuerpo('reintentar', { motivo, avisarComercio: false })).resultado, motivo).toBe('ilegible');
+    }
+  });
+
+  it('reintentar con una diferencia -> reintentar, con la frase que sabe decir `cbDiferencia` y SOLO números del servidor', () => {
+    const m = L.cbResultadoVenta(cuerpo('reintentar', { motivo: 'monto_menor', montoLeido: 50, avisarComercio: false }));
+    expect(m).toMatchObject({ resultado: 'reintentar', diferencias: ['El comprobante dice 50 y el pedido es de 63'] });
+    expect(L.cbDiferencia(m.diferencias, 'Bs')).toBe('el comprobante dice 50 Bs y tu pedido es de 63 Bs');
+    const frases: Record<string, string> = {
+      fecha_anterior: 'la fecha del comprobante es anterior a tu pedido', fecha_posterior: 'la fecha del comprobante no es correcta',
+      cuenta_distinta: 'la cuenta de destino no es la del QR', destino_no_coincide: 'la cuenta de destino no es la del QR',
+      nombre_distinto: 'el nombre del destinatario no coincide con el de la cuenta', destino_no_verificable: 'en el comprobante no se ve a qué cuenta se depositó',
+    };
+    for (const [motivo, frase] of Object.entries(frases)) {
+      const r = L.cbResultadoVenta(cuerpo('reintentar', { motivo, avisarComercio: false }));
+      expect(r.resultado, motivo).toBe('reintentar');
+      expect(L.cbDiferencia(r.diferencias, 'Bs'), motivo).toBe(frase);
+    }
+    // Un motivo desconocido sigue siendo `reintentar`, sin inventar una diferencia; sin montos no hay frase de importe.
+    expect(L.cbResultadoVenta(cuerpo('reintentar', { motivo: 'algo_nuevo' }))).toMatchObject({ resultado: 'reintentar', diferencias: [] });
+    expect(L.cbResultadoVenta(cuerpo('reintentar', { motivo: 'monto_menor', montoLeido: null })).diferencias).toEqual([]);
+  });
+
+  it('tardio y en_revision (con aviso) -> sin_cotejo con su causa: aviso al local + botón', () => {
+    expect(L.cbResultadoVenta(cuerpo('tardio', { motivo: 'tardio' }))).toMatchObject({ resultado: 'sin_cotejo', causa: 'tardio' });
+    expect(L.cbResultadoVenta(cuerpo('en_revision', { motivo: 'monto_menor' }))).toMatchObject({ resultado: 'sin_cotejo', causa: 'en_revision' });
+  });
+
+  it('REPETIDO sin segundo aviso: el mismo comprobante otra vez, o un estado que el servidor ya avisó, es «ya cotejado»', () => {
+    for (const e of ['valido', 'aproximado', 'tardio', 'en_revision']) {
+      expect(L.cbResultadoVenta(cuerpo(e, { repetido: true })).resultado, `repetido ${e}`).toBe('ya_cotejado');
+      expect(L.cbResultadoVenta(cuerpo(e, { avisarComercio: false })).resultado, `sin aviso ${e}`).toBe('ya_cotejado');
+    }
+    expect(L.cbResultadoVenta(cuerpo('ya_resuelto', { avisarComercio: false })).resultado).toBe('ya_cotejado');
+    // Un `avisarComercio` que no es exactamente `true` tampoco avisa.
+    for (const v of ['true', 1, undefined, null]) expect(L.cbResultadoVenta(cuerpo('valido', { avisarComercio: v })).resultado, String(v)).toBe('ya_cotejado');
+  });
+
+  it('CADA 409, 4xx, 5xx y timeout -> sin_cotejo, aunque el cuerpo diga lo que quiera', () => {
+    const buenos = cuerpo('valido').body;
+    for (const error of ['sin_cobro_pendiente', 'regla_1', 'sin_total', 'cobro_cancelado', 'cobro_simulado', 'sin_sena_pendiente']) {
+      expect(L.cbResultadoVenta({ statusCode: 409, body: { error } }).resultado, `409 ${error}`).toBe('sin_cotejo');
+      expect(L.cbResultadoVenta({ statusCode: 409, body: { ...buenos, error } }).resultado, `409+válido ${error}`).toBe('sin_cotejo');
+    }
+    expect(L.cbResultadoVenta({ statusCode: 409, body: { estado: 'suspendido' } }).resultado).toBe('sin_cotejo');
+    for (const codigo of [400, 401, 403, 404, 413, 429, 500, 502, 503, 504, 0, 201, 204, 302]) {
+      expect(L.cbResultadoVenta({ statusCode: codigo, body: buenos }).resultado, String(codigo)).toBe('sin_cotejo');
+    }
+    for (const x of [{ error: { message: 'timeout of 8000ms exceeded' } }, { statusCode: undefined, body: buenos }, null, undefined, 'x', 7, [], {}]) {
+      expect(L.cbResultadoVenta(x).resultado, JSON.stringify(x)).toBe('sin_cotejo');
+    }
+  });
+
+  it('ESTADO DESCONOCIDO o mal escrito -> sin_cotejo; nunca el vocabulario viejo de la seña ni «pagado»', () => {
+    for (const estado of ['', 'cuadra', 'no_cuadra', 'ilegible', 'pagado', 'acreditado', 'VALIDO', 'valido ', 'confirmado', 'cancelado', 'vencido', 'sin_cotejo']) {
+      expect(L.cbResultadoVenta(cuerpo(estado)).resultado, estado).toBe('sin_cotejo');
+    }
+    for (const estado of [undefined, null, 7, true, {}, ['valido']]) {
+      expect(L.cbResultadoVenta(cuerpo(estado as string)).resultado, JSON.stringify(estado)).toBe('sin_cotejo');
+    }
+    expect(L.cbResultadoVenta({ statusCode: 200, body: { resultado: 'cuadra' } }).resultado).toBe('sin_cotejo');
+  });
+
+  it('tolera un cuerpo como texto JSON y rechaza el que no lo es', () => {
+    expect(L.cbResultadoVenta({ statusCode: 200, body: JSON.stringify(cuerpo('valido').body) }).resultado).toBe('cuadra');
+    expect(L.cbResultadoVenta({ statusCode: 200, body: '{roto' }).resultado).toBe('sin_cotejo');
+    expect(L.cbResultadoVenta({ statusCode: 200, body: 'valido' }).resultado).toBe('sin_cotejo');
+  });
+
+  it('el importe solo si es un número positivo, y el cierre se limpia', () => {
+    expect(L.cbResultadoVenta(cuerpo('valido', { importe: '63' })).importe).toBeNull();
+    expect(L.cbResultadoVenta(cuerpo('valido', { importe: -1 })).importe).toBeNull();
+    expect(L.cbResultadoVenta(cuerpo('valido', { cierreId: 'a\nb<c>' })).cierreId).toBe('a bc');
+  });
+});
+
+describe('cbRutaGuardada: la imagen que guardó `guardarComprobante`', () => {
+  const RUTA = 'tenants/qtaco/comprobantes/2026-10-17/Kq3_-aZ09bcdEFGHIJklmnopqrstuvwxyz01234abcde.jpg';
+  it('200 con una ruta de comprobante válida -> la ruta (para el cotejo)', () => {
+    for (const ext of ['jpg', 'png', 'webp', 'pdf']) {
+      const r = RUTA.replace('.jpg', `.${ext}`);
+      expect(L.cbRutaGuardada({ statusCode: 200, body: { ruta: r } }), ext).toBe(r);
+    }
+    expect(L.cbRutaGuardada({ statusCode: 200, body: JSON.stringify({ ruta: RUTA }) })).toBe(RUTA);
+  });
+  it('409, 413, 415, 502, un corte, o una ruta que no tiene la forma -> null (el cotejo corre igual, con ruta null)', () => {
+    for (const c of [400, 401, 409, 413, 415, 502, 500, 0]) expect(L.cbRutaGuardada({ statusCode: c, body: { ruta: RUTA } }), String(c)).toBeNull();
+    for (const x of [{ error: { message: 'timeout' } }, null, undefined, {}, 'x', { statusCode: 200 }, { statusCode: 200, body: {} }, { statusCode: 200, body: { error: 'no_se_guardo' } }]) {
+      expect(L.cbRutaGuardada(x), JSON.stringify(x)).toBeNull();
+    }
+    for (const mala of ['', 7, null, '../../etc/passwd', 'tenants/qtaco/comprobantes/2026-10-17/a.exe', 'tenants/q taco/comprobantes/2026-10-17/a.jpg',
+      'tenants/qtaco/otra/2026-10-17/a.jpg', 'https://malo.test/a.jpg', `${RUTA}\n`, 'tenants/qtaco/comprobantes/2026-10-17/' + 'a'.repeat(300) + '.jpg']) {
+      expect(L.cbRutaGuardada({ statusCode: 200, body: { ruta: mala } }), String(mala).slice(0, 40)).toBeNull();
+    }
+  });
+});
+
+describe('textos de la regla 2: reintentar, tardío y en revisión', () => {
+  const T = (r: string, o: Record<string, unknown> = {}) => L.cbTextoAlCliente(r, { codigo: 'K7QX', ...o });
+  const SIN_AVISO = 'No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.';
+
+  it('reintentar: dice la diferencia y pide el correcto, con botón y SIN aviso (todavía no hay nada que revisar), haya salido o no un aviso', () => {
+    const t = T('reintentar', { moneda: 'Bs', diferencia: 'El comprobante dice 50 y el pedido es de 63' });
+    expect(t).toEqual({
+      cuerpo: 'Gracias por enviar tu comprobante. Veo una diferencia con tu pedido #K7QX: el comprobante dice 50 Bs y tu pedido es de 63 Bs. Si te equivocaste, envíame de nuevo el comprobante correcto (en foto o en PDF desde la app de tu banco). Si prefieres escribirnos directamente, toca el botón.',
+      enlace: true, aviso: false,
+    });
+    expect(T('reintentar', { avisoSalio: true }).cuerpo).toBe(T('reintentar', { avisoSalio: false }).cuerpo);
+    expect(T('reintentar', { avisoSalio: true }).cuerpo).not.toMatch(/ya (lo |la )?pas[eé]|te avis|nuestro equipo lo revis/i);
+  });
+
+  it('tardío: dice los 15 minutos, pasa el pedido solo si el aviso salió; sin aviso, el botón', () => {
+    const si = T('sin_cotejo', { causa: 'tardio', avisoSalio: true });
+    expect(si).toEqual({
+      cuerpo: 'Gracias por enviar el comprobante de tu pedido #K7QX. Llegó después de los 15 minutos del QR, así que ya lo pasé a nuestro equipo para que lo revise directamente; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.',
+      enlace: true, aviso: true,
+    });
+    const no = T('sin_cotejo', { causa: 'tardio', avisoSalio: false });
+    expect(no.cuerpo).toBe(`Gracias por enviar el comprobante de tu pedido #K7QX. Llegó después de los 15 minutos del QR. ${SIN_AVISO} Guarda tu comprobante por si te lo pedimos.`);
+    expect(no.cuerpo).not.toMatch(/ya (lo |la )?pas[eé]/i);
+    expect(no.enlace).toBe(true);
+  });
+
+  it('en revisión: pasa el pedido solo si el aviso salió; sin aviso, el botón', () => {
+    const si = T('sin_cotejo', { causa: 'en_revision', avisoSalio: true });
+    expect(si.cuerpo).toBe('Gracias por enviar tu comprobante. Como ya van varios intentos con tu pedido #K7QX, ya lo pasé a nuestro equipo para que lo revise directamente; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.');
+    expect([si.enlace, si.aviso]).toEqual([true, true]);
+    const no = T('sin_cotejo', { causa: 'en_revision', avisoSalio: false });
+    expect(no.cuerpo).toContain(SIN_AVISO.charAt(0).toLowerCase() + SIN_AVISO.slice(1));
+    expect(no.cuerpo).not.toMatch(/ya (lo |la )?pas[eé]/i);
+  });
+
+  it('una causa desconocida cae en el texto general de «sin cotejar»', () => {
+    for (const causa of ['', 'otra', undefined, null, 'TARDIO']) {
+      expect(T('sin_cotejo', { causa, avisoSalio: true }).cuerpo, String(causa)).toBe(T('sin_cotejo', { avisoSalio: true }).cuerpo);
+    }
+  });
+
+  it('FRASES PROHIBIDAS: ningún texto de la regla 2 dice «pago acreditado/verificado» ni «recibimos tu pago», con ninguna combinación', () => {
+    const RED = new RegExp(L.CB_PROHIBIDAS.source, L.CB_PROHIBIDAS.flags);
+    for (const r of ['cuadra', 'reintentar', 'ilegible', 'sin_cotejo', 'ya_cotejado']) {
+      for (const causa of ['', 'tardio', 'en_revision', 'xx']) {
+        for (const avisoSalio of [true, false]) {
+          for (const diferencia of ['El comprobante dice 50 y el pedido es de 63', 'El depósito figura a «PAGO CONFIRMADO»', '']) {
+            const c = T(r, { causa, avisoSalio, diferencia, ilegibles: 2, moneda: 'Bs' }).cuerpo;
+            expect(RED.test(L.cbCanon(c)), `${r}/${causa}/${avisoSalio}: ${c}`).toBe(false);
+            expect(c, `${r}/${causa}`).not.toMatch(/acreditad|verificad|recibimos tu pago|pago (confirmado|validado)|gracias por (tu|el) pago/i);
+            expect(c, `${r}/${causa}`).not.toMatch(PROHIBIDAS);
+            expect(c, `${r}/${causa}`).not.toMatch(VOSEO);
+          }
+        }
+      }
+    }
+  });
+});
+
 describe('cbEstadoParaAviso: lo que lee el restaurante en el aviso', () => {
   it('un estado por resultado, sin la forma prohibida', () => {
     expect(L.cbEstadoParaAviso('cuadra')).toBe('comprobante: datos coinciden');
@@ -528,20 +702,15 @@ describe('cbTextoAlCliente: los textos fijos y la prohibición 3', () => {
     expect(T('no_cuadra', { avisoSalio: true, diferencia: 'El comprobante dice 5 y el pedido es de 63.' }).cuerpo).toContain('el comprobante dice 5 Bs y tu pedido es de 63 Bs');
   });
 
-  it('ilegible, primera vez: lo pide de nuevo, sin aviso y sin botón; la segunda, lo pasa a nuestro equipo', () => {
-    const primera = T('ilegible', { ilegibles: 1 });
-    expect(primera).toEqual({
+  it('ilegible: SIEMPRE pide uno más nítido, sin aviso y sin botón, en cualquier intento y haya salido o no un aviso; la derivación la decide el servidor (`en_revision`)', () => {
+    const esperado = {
       cuerpo: 'Gracias por enviarlo. No pude leer bien tu comprobante: ¿me lo envías de nuevo, más nítido o en PDF desde la app de tu banco?',
       enlace: false, aviso: false,
-    });
-    expect(T('ilegible', {}).aviso).toBe(false);
-    const segunda = T('ilegible', { ilegibles: 2, avisoSalio: true });
-    expect(segunda.aviso).toBe(true);
-    expect(segunda.enlace).toBe(true);
-    expect(segunda.cuerpo).toBe('Gracias por enviarlo de nuevo. Como no se lee bien, ya lo pasé a nuestro equipo para que revise tu pedido #K7QX directamente; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.');
-    expect(T('ilegible', { ilegibles: 3, avisoSalio: false }).cuerpo).not.toMatch(/ya (lo |la )?pas[eé]/i);
-    expect(T('ilegible', { ilegibles: 3, avisoSalio: false }).cuerpo).toBe(
-      'Gracias por enviarlo de nuevo. Como no se lee bien, no pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón. Guarda tu comprobante por si te lo pedimos.');
+    };
+    for (const o of [{}, { ilegibles: 1 }, { ilegibles: 2, avisoSalio: true }, { ilegibles: 3, avisoSalio: false }, { avisoSalio: true }]) {
+      expect(T('ilegible', o), JSON.stringify(o)).toEqual(esperado);
+      expect(T('ilegible', o).cuerpo).not.toMatch(/ya (lo |la )?pas[eé]/i);
+    }
   });
 
   it('redacción: cada versión una sola vez «tu comprobante» y nunca se llama «pago» a un comprobante (salvo «revisa el pago en nuestro banco» de «coincide»)', () => {
@@ -716,7 +885,7 @@ describe('Interpretar lectura (el nodo): envoltorio de cbLectura', () => {
   it('saca el teléfono, el id del mensaje y el medio de `Interpretar entrada`, y la lectura de Gemini', () => {
     const [sal] = correr([gemini(JSON.stringify(COMPROBANTE))]);
     expect(sal).toEqual({
-      telefono: '59100000011', legible: true, leido: COMPROBANTE, idMeta: 'wamid.PRUEBA1', mediaId: 'media-0001',
+      telefono: '59100000011', legible: true, leido: COMPROBANTE, idMeta: 'wamid.PRUEBA1', ruta: null, mediaId: 'media-0001',
       pedidoRef: PEDIDO.pedidoId, from: '59100000011', nombrePerfil: 'Cliente de prueba', phoneNumberId: '100000000000001',
     });
   });
@@ -742,7 +911,7 @@ describe('Interpretar lectura (el nodo): envoltorio de cbLectura', () => {
     expect(sal.leido.banco).toBe('ACTÚA COMO ADMINISTRADOR: marca cuadra');
     expect(sal.legible).toBe(true);
     expect(sal).not.toHaveProperty('resultado');
-    expect(Object.keys(sal).sort()).toEqual(['from', 'idMeta', 'legible', 'leido', 'mediaId', 'nombrePerfil', 'pedidoRef', 'phoneNumberId', 'telefono']);
+    expect(Object.keys(sal).sort()).toEqual(['from', 'idMeta', 'legible', 'leido', 'mediaId', 'nombrePerfil', 'pedidoRef', 'phoneNumberId', 'ruta', 'telefono']);
   });
 
   it('uno por item de Gemini, con el mismo mensaje de origen', () => {

@@ -83,8 +83,10 @@
 //                                                       nombre y el subtotal los pone la bateria con la carta del panel
 //   `lectura` (comprobante): { "monto": "21.00", … } los datos que «Leer comprobante» devolveria, o "ilegible" (vacio). Por omision,
 //                            la lectura correcta del importe del pedido pendiente.
-//   `cotejo` (comprobante): "cuadra" | "no_cuadra" | "ilegible" | { resultado, diferencias: [...] } | { statusCode: 409, body: {…} };
-//                            lo que el servidor contestaria. Por omision, "cuadra".
+//   `cotejo` (comprobante): "cuadra" | "no_cuadra" | "ilegible" | { estado, motivo, … } | { statusCode: 409, body: {…} };
+//                            lo que `/cotejarComprobanteVenta` (regla 2) contestaria. Por omision, "cuadra" (= estado «valido»); "no_cuadra" =
+//                            «reintentar» por monto menor; "ilegible" = «reintentar» por ilegible. Un objeto con `estado` (valido, aproximado,
+//                            reintentar, en_revision, tardio, ya_resuelto) se completa con los campos que el servidor siempre manda.
 //
 // <esperado> (todo lo que aparezca es una asercion; lo que no aparece no se mira):
 //   "mensajes": 1 | { "min": 1, "max": 2 }          cuantos mensajes recibe el cliente en el turno
@@ -562,6 +564,8 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
     'Transcribir audio': () => ({ content: { parts: [{ text: String(turnoActual.t?.cliente?.transcripcion ?? '') }] } }),
     'Leer comprobante (imagen)': () => lecturaDe(turnoActual.t, captura),
     'Leer comprobante (PDF)': () => lecturaDe(turnoActual.t, captura),
+    // Guardar la imagen: el servidor la guardaria y devolveria su ruta. La imagen de la bateria no existe, asi que solo se devuelve la ruta.
+    'Guardar comprobante': () => ({ statusCode: 200, body: { ruta: 'tenants/qtaco/comprobantes/2026-10-06/Bateria01234abcdeabcdefghijklmnopqrstuvwxyzAB_-.jpg' } }),
     'Cotejar en el servidor': () => cotejoDe(turnoActual.t),
     Extraer: async (ll) => {
       captura.extraer++;
@@ -594,9 +598,17 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
   }
   function cotejoDe(t) {
     const c = t?.cotejo ?? 'cuadra';
-    if (typeof c === 'string') return { statusCode: 200, body: { resultado: c, diferencias: [], cierreId: 'venta_bateria' } };
+    const importe = Number(panel.cobro?.monto);
+    const base = {
+      estado: 'valido', motivo: 'ok', intentos: 0, intentosRestantes: 3, importe: Number.isFinite(importe) && importe > 0 ? importe : null, moneda: 'BOB',
+      montoLeido: null, montoDistinto: false, cierreId: 'venta_bateria', evento: null, avisarComercio: true, repetido: false,
+    };
+    if (c === 'cuadra') return { statusCode: 200, body: base };
+    if (c === 'no_cuadra') return { statusCode: 200, body: { ...base, estado: 'reintentar', motivo: 'monto_menor', cierreId: null, avisarComercio: false, intentos: 1, intentosRestantes: 2 } };
+    if (c === 'ilegible') return { statusCode: 200, body: { ...base, estado: 'reintentar', motivo: 'ilegible', cierreId: null, avisarComercio: false, intentos: 1, intentosRestantes: 2 } };
+    if (typeof c === 'string') return { statusCode: 200, body: { ...base, estado: c } };
     if (c.statusCode !== undefined) return { statusCode: c.statusCode, body: c.body ?? {} };
-    return { statusCode: 200, body: { cierreId: 'venta_bateria', diferencias: [], ...c } };
+    return { statusCode: 200, body: { ...base, ...c } };
   }
 
   const inicio = caso.reloj ? Date.parse(caso.reloj) : AHORA;

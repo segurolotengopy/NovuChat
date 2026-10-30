@@ -111,7 +111,7 @@
 //     lineas:[{cantidad, nombre, detalle}]   total: número en Bs (nunca el delivery)
 //     notaPedido (opcional): la nota del cliente desde la página del catálogo; la ven `completo` y `cocina`
 //     modalidad: 'delivery' | 'recojo'       codigo: código corto del pedido
-//     resultado: 'cuadra'|'no_cuadra'|'ilegible'|'sin_cotejo'|'sin_qr'|'qr_vencido'|'ya_cotejado'|'simulado'
+//     resultado: 'cuadra'|'aproximado'|'no_cuadra'|'ilegible'|'sin_cotejo'|'sin_qr'|'qr_vencido'|'ya_cotejado'|'simulado'
 //       (`simulado` = pedido de PRUEBA con cobro simulado: se rotula PRUEBA y SIMULADO, su cierre no habla del banco
 //        y NUNCA lleva la imagen del comprobante, aunque `mediaId` venga)
 //       (por defecto: `sin_qr` en `pedido`, `sin_cotejo` en `comprobante`; con
@@ -553,6 +553,7 @@ function avCodigoCorto(ms) {
 function avCotejoTexto(resultado) {
   if (resultado === 'simulado') return 'PRUEBA: cobro SIMULADO, no se movió dinero';
   if (resultado === 'cuadra') return 'comprobante: datos coinciden';
+  if (resultado === 'aproximado') return 'comprobante: datos casi coinciden, revisar';
   if (resultado === 'no_cuadra') return 'comprobante: NO coinciden los datos';
   if (resultado === 'ilegible') return 'comprobante ilegible';
   if (resultado === 'sin_qr') return 'sin QR: se cobra al entregar o al recoger';
@@ -568,7 +569,7 @@ function avModalidadTexto(m) {
 
 function avResultado(tipo, r) {
   const v = String(r === undefined || r === null ? '' : r);
-  if (['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_qr', 'qr_vencido', 'ya_cotejado', 'simulado'].indexOf(v) >= 0) return v;
+  if (['cuadra', 'aproximado', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_qr', 'qr_vencido', 'ya_cotejado', 'simulado'].indexOf(v) >= 0) return v;
   return tipo === 'pedido' ? 'sin_qr' : 'sin_cotejo';
 }
 
