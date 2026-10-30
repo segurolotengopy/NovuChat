@@ -168,6 +168,13 @@ describe('guardado obligatorio, NEGANDO: cada regla tiene la mutación que la ro
     expect(conBase((f) => { (nodoDe(f, 'Avisar falla del guardado') as J)['onError'] = 'continueRegularOutput'; })).toMatch(/no lleva onError/);
     expect(conBase((f) => { const p = nodoDe(f, 'Avisar falla del guardado').parameters as J; p['jsonBody'] = String(p['jsonBody']).replace('$json.numeroRecepcion', '$json.telefono'); })).toMatch(/SOLO al número de recepción/);
   });
+  it('el reintento que manda cuerpo en Anotar, o que reintenta algo que no es un 5xx', () => {
+    expect(conBase((f) => { (nodoDe(f, 'Reintentar el guardado').parameters as J)['sendBody'] = true; })).toMatch(/SOLO en modo descargar/);
+    expect(conBase((f) => { const c = (nodoDe(f, '¿Reintentar el guardado?').parameters as J)['conditions']['conditions'][0]; c['leftValue'] = '={{ Number($json.statusCode) >= 400 }}'; })).toMatch(/reintenta solo un 5xx/);
+  });
+  it('Anotar con cuerpo (el servidor respondería 400 anotar_con_cuerpo)', () => {
+    expect(conBase((f) => { Object.assign(nodoDe(f, 'Anotar medio').parameters as J, { sendBody: true, contentType: 'binaryData', inputDataFieldName: 'data' }); })).toMatch(/«Anotar medio» no lleva cuerpo/);
+  });
   it('el aviso o el guardado con reintentos (un aviso repetido llegaría dos veces)', () => {
     expect(conBase((f) => { (nodoDe(f, 'Avisar falla del guardado') as J)['retryOnFail'] = true; })).toMatch(/no reintentan/);
   });

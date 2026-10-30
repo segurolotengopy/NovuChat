@@ -2,6 +2,7 @@
  * EL DOBLE DEL GUARDADO DE MEDIOS: el servidor `guardarMedio` (contrato M1↔M2 del 29/10/2026, §1 y §2) y la descarga PROPIA de Meta de la rama común
  * (`Flujos/experimental/comun-sin-agente/src/guardado.mjs`). Se prueba contra el CONTRATO, no contra el código de M1.
  *
+ * Contrato con los ajustes del integrador del 29/10 (17:xx): `200 {anotado:true, repetido}` y `400 anotar_con_cuerpo` (Anotar con bytes en el cuerpo).
  * Por omisión responde como un comercio con la bandera APAGADA (`409 guardado_apagado`): es el estado por defecto (decisión de Andres) y deja a
  * todas las suites de cada flujo como estaban, sin un mensaje de más. Una prueba cambia la respuesta con `respuesta` (un código y un cuerpo, o una
  * función por llamada), el tamaño que informa Meta con `bytes`, o hace caer la red con `'lanza'`. `llamadas` junta lo que el flujo mandó.
@@ -29,6 +30,8 @@ export interface RegistroDelGuardado {
   obtener: LlamadaDoble[];
   descargar: LlamadaDoble[];
   avisos: LlamadaDoble[];
+  /** Las llamadas de «Reintentar el guardado» (el único reintento ante un 5xx). */
+  reintentos: LlamadaDoble[];
   /** Las llamadas que LLEGARON a `guardarMedio` (las de «Anotar medio» y las de «Guardar medio» con binario). */
   servidor: LlamadaDoble[];
 }
@@ -37,7 +40,7 @@ export const APAGADO: RespuestaDelServidor = { statusCode: 409, body: { error: '
 
 /** Los dobles de los cinco nodos de red de la rama, y el registro de llamadas. */
 export function doblesDelGuardado(o: OpcionesDelGuardado = {}): { dobles: Record<string, Doble>; llamadas: RegistroDelGuardado } {
-  const llamadas: RegistroDelGuardado = { anotar: [], guardar: [], obtener: [], descargar: [], avisos: [], servidor: [] };
+  const llamadas: RegistroDelGuardado = { anotar: [], guardar: [], obtener: [], descargar: [], avisos: [], reintentos: [], servidor: [] };
   const servidor = (ll: LlamadaDoble): J => {
     llamadas.servidor.push(ll);
     const r = typeof o.respuesta === 'function' ? o.respuesta(ll) : (o.respuesta ?? APAGADO);
@@ -45,11 +48,22 @@ export function doblesDelGuardado(o: OpcionesDelGuardado = {}): { dobles: Record
     return { statusCode: r.statusCode, headers: {}, body: r.body };
   };
   const dobles: Record<string, Doble> = {
-    'Anotar medio': (ll) => { llamadas.anotar.push(ll); return servidor(ll); },
+    'Anotar medio': (ll) => {
+      llamadas.anotar.push(ll);
+      // Como el servidor (§2): Anotar con bytes en el cuerpo es `400 anotar_con_cuerpo`, sin importar lo demás.
+      if (ll.parametros['sendBody'] === true || ll.cuerpo !== undefined) { llamadas.servidor.push(ll); return { statusCode: 400, headers: {}, body: { error: 'anotar_con_cuerpo' } }; }
+      return servidor(ll);
+    },
     'Guardar medio': (ll) => {
       llamadas.guardar.push(ll);
       // Como en n8n: si la descarga falló, el ítem no trae el binario `data` y el nodo falla ANTES de llamar al servidor.
       if (ll.item && ll.item['error'] !== undefined) throw new Error('This operation expects the node\'s input data to contain a binary file \'data\'');
+      return servidor(ll);
+    },
+    'Reintentar el guardado': (ll) => {
+      llamadas.reintentos.push(ll);
+      // En modo Anotar el reintento nunca lleva cuerpo; si lo llevara, el servidor respondería 400 anotar_con_cuerpo.
+      if (ll.item['modo'] === 'anotar' && ll.parametros['sendBody'] === true) { llamadas.servidor.push(ll); return { statusCode: 400, headers: {}, body: { error: 'anotar_con_cuerpo' } }; }
       return servidor(ll);
     },
     'Pedir el medio a Meta (guardado)': (ll) => {
@@ -80,7 +94,7 @@ export function doblesDelGuardado(o: OpcionesDelGuardado = {}): { dobles: Record
  */
 const FLUJOS_REALES = join(dirname(fileURLToPath(import.meta.url)), '../../../Flujos');
 export function copiarModuloDelGuardado(raiz: string): void {
-  for (const rel of ['experimental/comun-sin-agente/src/guardado.mjs', 'src/core/medios/guardado-preparar.js', 'src/core/medios/guardado-resultado.js']) {
+  for (const rel of ['experimental/comun-sin-agente/src/guardado.mjs', 'src/core/medios/guardado-preparar.js', 'src/core/medios/guardado-resultado.js', 'src/core/medios/guardado-reintento.js']) {
     const destino = join(raiz, 'Flujos', rel);
     mkdirSync(dirname(destino), { recursive: true });
     cpSync(join(FLUJOS_REALES, rel), destino);

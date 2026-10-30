@@ -70,9 +70,9 @@ describe('el webhook del carrito: la segunda y última entrada de producción', 
     }
   });
 
-  it('el JSON de producción tiene como máximo 58 nodos (50 más los 8 del guardado de medios) y ninguno de los nodos que el diseño descartó', () => {
-    // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 58: los 8 de la rama común del GUARDADO de medios (se declara en el PR y lo decide Andres con el OK de fusión).
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(58);
+  it('el JSON de producción tiene como máximo 61 nodos (50 más los 11 del guardado de medios) y ninguno de los nodos que el diseño descartó', () => {
+    // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61: los 11 de la rama común del GUARDADO de medios (se declara en el PR y lo decide Andres con el OK de fusión).
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(61);
     const nombres = QTACO.nodes.map((n) => n.name);
     for (const n of NOMBRES_QUE_NO_VAN) expect(nombres, n).not.toContain(n);
     // Dos webhooks, ninguno más; ningún WhatsApp Trigger (prohibición 7).
@@ -155,18 +155,18 @@ describe('`--verificar` impone la forma del webhook del carrito y el presupuesto
     const n = nodoDe(f, 'Traer configuración');
     n.parameters['jsonBody'] = String(n.parameters['jsonBody']).replace(', catalogoCompleto: true', '');
   }, /«Traer configuración» no pide `catalogoCompleto: true`/);
-  rompe('el JSON de producción pasa de 58 nodos (50 más los 8 del guardado de medios) (se agregó uno)', (f) => {
+  rompe('el JSON de producción pasa de 61 nodos (50 más los 11 del guardado de medios) (se agregó uno)', (f) => {
     f.nodes.push({ id: 'uno-mas', name: 'Uno más', type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
-  }, /tiene 59 nodos y el tope de producción es 58/);
-  rompe('el JSON de producción pasa de 58 nodos por MUCHO (se reintrodujeron los nodos del diseño descartado)', (f) => {
+  }, /tiene 62 nodos y el tope de producción es 61/);
+  rompe('el JSON de producción pasa de 61 nodos por MUCHO (se reintrodujeron los nodos del diseño descartado)', (f) => {
     for (const nombre of ['¿Pedir enlace?', 'Pedir enlace del catálogo', 'Validar carrito', 'Carga del carrito']) {
       f.nodes.push({ id: nombre.toLowerCase().replace(/\W+/g, '-'), name: nombre, type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
     }
-  }, /tiene 62 nodos y el tope de producción es 58/);
+  }, /tiene 65 nodos y el tope de producción es 61/);
 
   it('la guardia existe en `construir.mjs` (si alguien la borra, esta prueba lo dice aunque los JSON sigan limpios)', () => {
     const fuente = readFileSync(join(CARPETA_VM, 'construir.mjs'), 'utf8');
-    for (const pieza of ['const TOPE_DE_NODOS = 58', 'function guardiaDelCarrito', 'function guardiasDeEntrega', "const WEBHOOK_DEL_CARRITO = 'Carrito del catálogo'", `const MARCADOR_DEL_CARRITO = '${MARCADOR}'`, 'MARCADORES_FIJOS']) {
+    for (const pieza of ['const TOPE_DE_NODOS = 61', 'function guardiaDelCarrito', 'function guardiasDeEntrega', "const WEBHOOK_DEL_CARRITO = 'Carrito del catálogo'", `const MARCADOR_DEL_CARRITO = '${MARCADOR}'`, 'MARCADORES_FIJOS']) {
       expect(fuente, pieza).toContain(pieza);
     }
     // El marcador está declarado con su formato.

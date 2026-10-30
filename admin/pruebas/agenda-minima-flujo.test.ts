@@ -314,7 +314,8 @@ function mundo(op: Opciones = {}) {
       case 'Pedir el medio a Meta (guardado)': return [cada(() => [{ id: 'm', url: 'https://lookaside.fbsbx.com/guardado', mime_type: 'image/jpeg', file_size: 1000 }])];
       case 'Descargar medio (guardado)': return [cada(() => [{ descargado: true }])];
       case 'Anotar medio':
-      case 'Guardar medio': return [cada(() => [{ statusCode: 409, headers: {}, body: { error: 'guardado_apagado' } }])];
+      case 'Guardar medio':
+      case 'Reintentar el guardado': return [cada(() => [{ statusCode: 409, headers: {}, body: { error: 'guardado_apagado' } }])];
       case 'Avisar falla del guardado': return [cada(() => [{ messaging_product: 'whatsapp', messages: [{ id: 'wamid.GUARDADO' }] }])];
       default:
         throw new Error(`el n8n de mentira no sabe correr el nodo «${n.name}» (${n.type})`);

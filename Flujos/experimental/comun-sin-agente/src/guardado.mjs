@@ -51,7 +51,7 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ANCLA_DEL_GUARDADO = 'Reportar mensaje (entrante)';
 export const NODOS_DEL_GUARDADO = [
   'Preparar guardado', '¿Anotar medio?', 'Anotar medio', 'Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)',
-  'Guardar medio', 'Resultado del guardado', 'Avisar falla del guardado',
+  'Guardar medio', '¿Reintentar el guardado?', 'Preparar reintento', 'Reintentar el guardado', 'Resultado del guardado', 'Avisar falla del guardado',
 ];
 /**
  * ¿El flujo baja medios entrantes de Meta? Un nodo conectado (fuera de esta rama) que pide la URL del medio o lo descarga. Es lo que vuelve OBLIGATORIO el
@@ -69,16 +69,20 @@ export function manejaMedios(flujo) {
 }
 /** Los nodos que hablan con Meta (credencial de Graph) y los que hablan con `guardarMedio` (credencial de ingesta). */
 export const NODOS_DE_META_DEL_GUARDADO = ['Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)', 'Avisar falla del guardado'];
-export const NODOS_DE_INGESTA_DEL_GUARDADO = ['Anotar medio', 'Guardar medio'];
+export const NODOS_DE_INGESTA_DEL_GUARDADO = ['Anotar medio', 'Guardar medio', 'Reintentar el guardado'];
 export const ARISTAS_DEL_GUARDADO = [
   ['Preparar guardado', 0, '¿Anotar medio?'], ['¿Anotar medio?', 0, 'Anotar medio'], ['¿Anotar medio?', 1, 'Pedir el medio a Meta (guardado)'],
   ['Pedir el medio a Meta (guardado)', 0, 'Descargar medio (guardado)'], ['Descargar medio (guardado)', 0, 'Guardar medio'],
-  ['Anotar medio', 0, 'Resultado del guardado'], ['Guardar medio', 0, 'Resultado del guardado'], ['Resultado del guardado', 0, 'Avisar falla del guardado'],
+  ['Anotar medio', 0, '¿Reintentar el guardado?'], ['Guardar medio', 0, '¿Reintentar el guardado?'],
+  ['¿Reintentar el guardado?', 0, 'Preparar reintento'], ['¿Reintentar el guardado?', 1, 'Resultado del guardado'],
+  ['Preparar reintento', 0, 'Reintentar el guardado'], ['Reintentar el guardado', 0, 'Resultado del guardado'],
+  ['Resultado del guardado', 0, 'Avisar falla del guardado'],
 ];
 /** La URL de la descarga: la del CDN de Meta solo si Meta informó un tamaño dentro del límite; si no, vacía (no se baja nada). */
 export const URL_DESCARGA_GUARDADO = "={{ (String($json.url || '').startsWith('https://lookaside.fbsbx.com/') && Number($json.file_size) > 0 && Number($json.file_size) <= Number($('Preparar guardado').first().json.limite)) ? $json.url : '' }}";
 
 export const FUENTE_PREPARAR = readFileSync(join(AQUI, '../../../src/core/medios/guardado-preparar.js'), 'utf8').trimEnd();
+export const FUENTE_REINTENTO = readFileSync(join(AQUI, '../../../src/core/medios/guardado-reintento.js'), 'utf8').trimEnd();
 export const FUENTE_RESULTADO = readFileSync(join(AQUI, '../../../src/core/medios/guardado-resultado.js'), 'utf8').trimEnd();
 
 const NOMBRE_DE_NODO = /^[^'"\\\r\n`$]{1,80}$/;
@@ -197,12 +201,33 @@ export function nodosDelGuardado(opciones) {
       notes: 'POST guardarMedio con los BYTES del medio en el cuerpo (Content-Type el del medio), solo el token de ingesta del número, nunca firma. Sin reintentos: el servidor reconoce el repetido por el id del mensaje.',
     },
     {
-      id: 'gm-resultado', name: 'Resultado del guardado', type: 'n8n-nodes-base.code', typeVersion: 2, position: [x + 1200, y],
+      id: 'gm-si-reintentar', name: '¿Reintentar el guardado?', type: 'n8n-nodes-base.if', typeVersion: 2.2, position: [x + 1200, y],
+      parameters: condicion('={{ Number($json.statusCode) >= 500 && Number($json.statusCode) <= 599 }}'),
+      notes: 'Un 5xx de guardarMedio (502 no_se_guardo, no_se_registro u otro) se reintenta UNA vez; lo demás va directo a «Resultado del guardado».',
+    },
+    {
+      id: 'gm-reintento', name: 'Preparar reintento', type: 'n8n-nodes-base.code', typeVersion: 2, position: [x + 1440, y + 200],
+      parameters: { jsCode: `${FUENTE_REINTENTO}\n` },
+      notes: 'Arma el reintento con el mismo pedido: los datos de «Preparar guardado» y el mismo binario ya bajado (no se vuelve a pedir a Meta). En Anotar, sin cuerpo.',
+    },
+    {
+      id: 'gm-reintentar', name: 'Reintentar el guardado', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + 1680, y + 200],
+      parameters: {
+        method: 'POST', url: o.guardarUrl, ...ingesta, sendHeaders: true, specifyHeaders: 'json',
+        jsonHeaders: `={{ JSON.stringify(Object.assign({ 'X-NovuChat-Numero': String(${numero}), 'X-NovuChat-Telefono': $json.telefono, 'X-NovuChat-IdMeta': $json.idMeta, 'X-NovuChat-Tipo': $json.tipo }, $json.modo === 'anotar' ? { 'X-NovuChat-Anotar': '1', 'X-NovuChat-Mime': $json.mime } : {})) }}`,
+        sendBody: "={{ $json.modo === 'descargar' }}", contentType: 'binaryData', inputDataFieldName: 'data',
+        options: { timeout: 30000, ...RESPUESTA_COMPLETA },
+      },
+      credentials: credIngesta, ...SIN_CORTAR,
+      notes: 'El ÚNICO reintento ante un 5xx: mismo pedido (en Anotar, sin cuerpo y con X-NovuChat-Anotar). Si vuelve a fallar, «Resultado del guardado» aplica el aviso de falla (uno por día).',
+    },
+    {
+      id: 'gm-resultado', name: 'Resultado del guardado', type: 'n8n-nodes-base.code', typeVersion: 2, position: [x + 1920, y],
       parameters: { jsCode: `${FUENTE_RESULTADO}\n` },
       notes: 'Toda respuesta de guardarMedio termina acá sin cortar nada. Solo 413, 415, 429 y 502 arman el aviso a la recepción: con su ventana de 24 h abierta, uno por día y sin datos del paciente.',
     },
     {
-      id: 'gm-avisar', name: 'Avisar falla del guardado', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + 1440, y],
+      id: 'gm-avisar', name: 'Avisar falla del guardado', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + 2160, y],
       parameters: {
         method: 'POST', url: `=https://graph.facebook.com/{{ ${version} }}/{{ String(${numero}).replace(/\\D/g, '') }}/messages`,
         ...graph.parametros, sendBody: true, specifyBody: 'json',
@@ -287,6 +312,10 @@ export function hallazgosDelGuardado(flujo) {
   for (const [de, salida, a] of ARISTAS_DEL_GUARDADO) if (!destinosDe(flujo, de, salida).includes(a)) h.push(`guardado: «${de}» (salida ${salida}) no está conectado a «${a}»`);
   // El código común, tal cual.
   if (!String((prep.parameters || {}).jsCode || '').includes(FUENTE_PREPARAR)) h.push('guardado: «Preparar guardado» no incluye guardado-preparar.js tal cual');
+  if (!String(((por('Preparar reintento') || {}).parameters || {}).jsCode || '').includes(FUENTE_REINTENTO)) h.push('guardado: «Preparar reintento» no incluye guardado-reintento.js tal cual');
+  const reintento = por('Reintentar el guardado').parameters || {};
+  if (reintento.sendBody !== "={{ $json.modo === 'descargar' }}") h.push('guardado: «Reintentar el guardado» manda cuerpo SOLO en modo descargar (en Anotar, nunca)');
+  if (!String(((por('¿Reintentar el guardado?') || {}).parameters || {}).conditions ? JSON.stringify(por('¿Reintentar el guardado?').parameters.conditions) : '').includes('>= 500')) h.push('guardado: «¿Reintentar el guardado?» reintenta solo un 5xx');
   if (!String(((por('Resultado del guardado') || {}).parameters || {}).jsCode || '').includes(FUENTE_RESULTADO)) h.push('guardado: «Resultado del guardado» no incluye guardado-resultado.js tal cual');
   // Credenciales por nombre: hacia guardarMedio, la MISMA de ingesta de «Reportar mensaje (entrante)»; hacia Meta, una de WhatsApp que NO es
   // esa ni se llama «ingesta» (la trampa del 15/09: el token de ingesta nunca sale hacia graph.facebook.com).
@@ -318,6 +347,9 @@ export function hallazgosDelGuardado(flujo) {
     const r = ((((por(nombre).parameters || {}).options || {}).response || {}).response) || {};
     if (r.fullResponse !== true || r.neverError !== true) h.push(`guardado: «${nombre}» tiene que pedir la respuesta completa sin error (fullResponse, neverError)`);
   }
+  // En modo Anotar NUNCA se manda cuerpo (el servidor respondería 400 anotar_con_cuerpo).
+  const anotarP = por('Anotar medio').parameters || {};
+  if (anotarP.sendBody !== undefined || anotarP.contentType !== undefined || anotarP.jsonBody !== undefined || anotarP.body !== undefined) h.push('guardado: «Anotar medio» no lleva cuerpo (modo Anotar: cuerpo vacío)');
   const aviso = por('Avisar falla del guardado');
   if (aviso.onError !== undefined || aviso.continueOnFail !== undefined) h.push('guardado: «Avisar falla del guardado» no lleva onError: si Meta lo rechaza, la ejecución termina en error (ningún fallo tragado)');
   if (!/to:\s*\$json\.numeroRecepcion\b/.test(String((aviso.parameters || {}).jsonBody || ''))) h.push('guardado: «Avisar falla del guardado» va SOLO al número de recepción del negocio');

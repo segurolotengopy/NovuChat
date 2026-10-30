@@ -20,20 +20,20 @@ const copia = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const g = (v: 'produccion' | 'prueba', f: Flujo): string[] => guardias(v, f) as string[];
 
 describe('lo versionado es lo que arma construir.mjs', () => {
-  it('--verificar sale 0 (los dos JSON al día, 44 y 39 nodos: 36 y 31 más los 8 del guardado de medios)', () => {
+  it('--verificar sale 0 (los dos JSON al día, 47 y 42 nodos: 36 y 31 más los 11 del guardado de medios)', () => {
     const r = spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), '--verificar'], { encoding: 'utf8', env: entornoDelEmulador({}) });
-    expect(`${r.stdout}${r.stderr}`).toContain('rroca-evy.json al día (44 nodos)');
-    expect(`${r.stdout}${r.stderr}`).toContain('rroca-evy.prueba.json al día (39 nodos)');
+    expect(`${r.stdout}${r.stderr}`).toContain('rroca-evy.json al día (47 nodos)');
+    expect(`${r.stdout}${r.stderr}`).toContain('rroca-evy.prueba.json al día (42 nodos)');
     expect(r.status).toBe(0);
   });
   it('un argumento desconocido se rechaza y no escribe', () => {
     const r = spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), '--ayuda'], { encoding: 'utf8', env: entornoDelEmulador({}) });
     expect(r.status).toBe(2);
   });
-  it('lo armado no viola ninguna guardia y el tope es de 44 nodos (36 más los 8 del guardado de medios)', () => {
+  it('lo armado no viola ninguna guardia y el tope es de 47 nodos (36 más los 11 del guardado de medios)', () => {
     expect(g('produccion', PRODUCCION)).toEqual([]);
     expect(g('prueba', PRUEBA)).toEqual([]);
-    expect(TOPE_DE_NODOS).toBe(44);
+    expect(TOPE_DE_NODOS).toBe(47);
     expect(CONFIG.variantes.length).toBe(2);
   });
 });
@@ -49,9 +49,9 @@ describe('las guardias se niegan con mutaciones', () => {
     const c = copia(PRODUCCION); c.nodes.push({ ...nodo(c, 'Config base'), name: 'Agente', type: '@n8n/n8n-nodes-langchain.agent' });
     expect(g('produccion', c).join(' ')).toMatch(/agente/);
   });
-  it('más de 44 nodos', () => {
+  it('más de 47 nodos', () => {
     const f = copia(PRODUCCION); f.nodes.push({ ...nodo(f, 'Config base'), name: 'Nodo de más' });
-    expect(g('produccion', f).join(' ')).toMatch(/tope es 44/);
+    expect(g('produccion', f).join(' ')).toMatch(/tope es 47/);
   });
   it('la entrada del receptor: sin «Continue on Fail», con wabaIdEsperado fijo y repetidos entre ejecuciones', () => {
     const a = copia(PRODUCCION); (nodo(a, 'Verificar firma con el receptor') as Record<string, unknown>)['onError'] = 'continueRegularOutput';

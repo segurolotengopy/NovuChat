@@ -2,7 +2,7 @@
  * «EL PUENTE» DE ANTONIO (tenant rroca-antonio) — PR-A: EL ARMADO. Los JSON versionados salen de `construir.mjs` (plantilla + código + datos), nunca a mano.
  *
  * Qué prueba, negando:
- *   1. los dos JSON están AL DÍA con lo que arma la plantilla (`--verificar`), y se cuentan: ≤ 55 nodos (producción 55, prueba 50: 47 y 42 más los 8 del guardado de medios);
+ *   1. los dos JSON están AL DÍA con lo que arma la plantilla (`--verificar`), y se cuentan: ≤ 58 nodos (producción 58, prueba 53: 47 y 42 más los 11 del guardado de medios);
  *   2. cada GUARDIA rechaza su violación (una prueba por guardia, con el caso límite): WhatsApp Trigger, `subscriptions`, receptor con «Continue on Fail», `wabaIdEsperado` como expresión, sin descartar repetidos
  *      entre ejecuciones, entrada de prueba en producción, receptor en la prueba, anfitrión fuera de la lista, retención, orden, zona, marcadores `REEMPLAZAR_` fuera de su lugar, el reporte del entrante abajo en el lienzo;
  *   3. los DATOS solo traen marcadores `REEMPLAZAR_*` para identificadores y rutas, y rechazan formas inválidas;
@@ -44,10 +44,10 @@ describe('el armado: lo versionado es lo que arma la plantilla', () => {
     }
   });
 
-  it('nodos: producción 55 y prueba 50 (≤ 55; antes 47 y 42, +8 por el guardado de medios; antes 48 y 43; +1 por «Guardar comprobante»); la prueba cambia el receptor (6) por la «Entrada de prueba» (1)', () => {
-    expect((PRODUCCION['nodes'] as J[]).length).toBe(55);
-    expect((PRUEBA['nodes'] as J[]).length).toBe(50);
-    expect(mod.TOPE_DE_NODOS).toBe(55);
+  it('nodos: producción 58 y prueba 53 (≤ 58; antes 47 y 42, +11 por el guardado de medios; antes 48 y 43; +1 por «Guardar comprobante»); la prueba cambia el receptor (6) por la «Entrada de prueba» (1)', () => {
+    expect((PRODUCCION['nodes'] as J[]).length).toBe(58);
+    expect((PRUEBA['nodes'] as J[]).length).toBe(53);
+    expect(mod.TOPE_DE_NODOS).toBe(58);
   });
 
   it('el núcleo: Config base, Carga de entrada, Traer configuración, Config del negocio, Normalizar entrada, ¿Reportar? y Reportar (entrante), Puerta del turno', () => {
@@ -107,10 +107,10 @@ describe('las guardias: cada una rechaza su violación', () => {
       expect(hallazgos('produccion', f), t).toMatch(/agente, memoria o modelo/);
     }
   });
-  it('más de 55 nodos', () => {
+  it('más de 58 nodos', () => {
     const f = clon(PRODUCCION);
-    for (let i = (f['nodes'] as J[]).length; i < 56; i++) (f['nodes'] as J[]).push({ name: `Relleno ${i}`, type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] });
-    expect(hallazgos('produccion', f)).toMatch(/56 nodos y el tope es 55/);
+    for (let i = (f['nodes'] as J[]).length; i < 59; i++) (f['nodes'] as J[]).push({ name: `Relleno ${i}`, type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] });
+    expect(hallazgos('produccion', f)).toMatch(/59 nodos y el tope es 58/);
     (f['nodes'] as J[]).pop();
     expect(hallazgos('produccion', f)).not.toMatch(/nodos y el tope es/);
   });

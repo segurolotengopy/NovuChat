@@ -1663,9 +1663,9 @@ describe('la variante de prueba: «Entrada de prueba», todo al teléfono de pru
 
 describe('la topología y las guardias del JSON versionado', () => {
   const nombres = (f: Flujo): string[] => f.nodes.map((n) => n.name);
-  it('tiene 52 nodos por variante (44 más los 8 del guardado de medios): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
-    expect(PRODUCCION.nodes).toHaveLength(52);
-    expect(PRUEBA.nodes).toHaveLength(52);
+  it('tiene 55 nodos por variante (44 más los 11 del guardado de medios): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
+    expect(PRODUCCION.nodes).toHaveLength(55);
+    expect(PRUEBA.nodes).toHaveLength(55);
     expect(nombres(PRODUCCION)).not.toContain('Entrada de prueba');
     expect(nombres(PRUEBA)).not.toContain('WhatsApp Trigger');
     expect(nombres(PRODUCCION).filter((x) => !nombres(PRUEBA).includes(x))).toEqual(['WhatsApp Trigger']);
@@ -1743,8 +1743,8 @@ describe('la topología y las guardias del JSON versionado', () => {
       alcanzables.add(n);
     };
     visitar('WhatsApp Trigger', []);
-    // 44 + los 8 de la rama común del guardado de medios.
-    expect(alcanzables.size).toBe(52);
+    // 44 + los 11 de la rama común del guardado de medios.
+    expect(alcanzables.size).toBe(55);
   });
   it('«Llamar al modelo» y «Reintentar el modelo» apuntan a generateContent con el modelo de los datos (gemini-3.5-flash-lite) por expresión', () => {
     for (const nombre of ['Llamar al modelo', 'Reintentar el modelo']) {

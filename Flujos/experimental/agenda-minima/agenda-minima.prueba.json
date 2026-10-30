@@ -1994,16 +1994,105 @@
       "notes": "POST guardarMedio con los BYTES del medio en el cuerpo (Content-Type el del medio), solo el token de ingesta del número, nunca firma. Sin reintentos: el servidor reconoce el repetido por el id del mensaje."
     },
     {
-      "id": "gm-resultado",
-      "name": "Resultado del guardado",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "id": "gm-si-reintentar",
+      "name": "¿Reintentar el guardado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
       "position": [
         3080,
         1120
       ],
       "parameters": {
-        "jsCode": "// RESULTADO DEL GUARDADO (módulo común de medios, contrato M1↔M2 del 29/10/2026 §2 y §4): lee la respuesta de `guardarMedio` y decide el AVISO DE FALLA.\n//\n// Toda respuesta del §2 termina acá y NINGUNA corta el turno (el cliente ya recibió su respuesta: esta rama corre después).\n//   200 {ruta, repetido} · 200 {anotado:true} · 400 · 401 · 405 · 409 (guardado_apagado, sin_mensaje, en_curso, {estado}) → silencio (devuelve []).\n//   413 demasiado_grande · 415 tipo_no_admitido · 429 cupo_diario_lleno · 502 no_se_guardo|no_se_registro → aviso a la recepción, si se puede.\n//   Un medio que Meta informó más grande que el límite NO se baja: cuenta como 413 sin llamar al servidor.\n//   Un corte de red, un error de Meta o una respuesta que no se entiende → silencio (no hay motivo cierto que decirle a la recepción).\n// EL AVISO: texto libre a la recepción del negocio SOLO si su ventana de 24 h está abierta (escribió hace menos de 23 h 30 min: lo anota «Preparar guardado»),\n// a lo más UNO por día de La Paz (UTC-4 fijo) y por comercio (el estado estático es del flujo, que es de un solo comercio), y SIN datos del paciente:\n// ni teléfono, ni nombre, ni el archivo, ni el id del mensaje. Solo el motivo. El día se marca ANTES de enviar: si Meta lo rechaza, ese día no se reintenta.\n// Si Meta rechaza el aviso, la ejecución termina en ERROR (el envío no traga el fallo); la rama corre al final, cuando el cliente ya recibió su respuesta.\n// JavaScript plano del nodo Code de n8n: sin require, URL, Buffer ni crypto.\nconst grPrep = $('Preparar guardado').first().json || {};\nconst grUrl = $('Pedir el medio a Meta (guardado)').isExecuted ? ($('Pedir el medio a Meta (guardado)').first().json || {}) : {};\nconst grR = ($input.first() && $input.first().json) || {};\nconst grCodigo = Number(grR.statusCode) || 0;\nconst GR_MOTIVOS = {\n  413: 'el archivo supera el tamaño permitido',\n  415: 'el tipo de archivo no se admite',\n  429: 'se llenó el cupo diario de archivos del comercio',\n  502: 'el servidor no pudo guardarlo',\n};\nlet grMotivo = Object.prototype.hasOwnProperty.call(GR_MOTIVOS, grCodigo) ? GR_MOTIVOS[grCodigo] : '';\n// El medio que no se bajó por tamaño (Meta lo informó por encima del límite): es un 413 aunque el servidor no lo haya visto.\nconst grTamano = Number(grUrl.file_size);\nif (!grMotivo && grPrep.modo === 'descargar' && Number(grPrep.limite) > 0 && grTamano > Number(grPrep.limite)) grMotivo = GR_MOTIVOS[413];\nif (!grMotivo) return [];\n\nconst grSd = $getWorkflowStaticData('global');\nif (!grSd.guardadoDeMedios || typeof grSd.guardadoDeMedios !== 'object' || Array.isArray(grSd.guardadoDeMedios)) grSd.guardadoDeMedios = {};\nconst grEstado = grSd.guardadoDeMedios;\nconst grAhora = Number(grPrep.ahoraMs) > 0 ? Number(grPrep.ahoraMs) : Date.now();\nconst grHoy = new Date(grAhora - 4 * 3600 * 1000).toISOString().slice(0, 10);\nconst GR_VENTANA_MS = 23 * 3600 * 1000 + 30 * 60 * 1000;\nconst grRecepcionMs = Number(grEstado.recepcionMs) || 0;\nconst grVentanaAbierta = grRecepcionMs > 0 && grAhora >= grRecepcionMs && grAhora - grRecepcionMs < GR_VENTANA_MS;\nif (grEstado.avisoDia === grHoy || !grVentanaAbierta) return [];\nconst grRecepcion = String(grPrep.recepcion || '').replace(/\\D/g, '');\nif (!/^\\d{6,20}$/.test(grRecepcion)) return [];\ngrEstado.avisoDia = grHoy;\nreturn [{ json: {\n  numeroRecepcion: grRecepcion,\n  texto: 'No se pudo guardar un archivo de una conversación (' + grMotivo + '). Revísala en la Consola.',\n} }];\n"
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ Number($json.statusCode) >= 500 && Number($json.statusCode) <= 599 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Un 5xx de guardarMedio (502 no_se_guardo, no_se_registro u otro) se reintenta UNA vez; lo demás va directo a «Resultado del guardado»."
+    },
+    {
+      "id": "gm-reintento",
+      "name": "Preparar reintento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3320,
+        1320
+      ],
+      "parameters": {
+        "jsCode": "// PREPARAR REINTENTO (módulo común de medios, contrato M1↔M2 del 29/10/2026, revisión del integrador): `guardarMedio` respondió un 5xx (502 no_se_guardo,\n// no_se_registro u otro): se reintenta UNA vez, con el mismo pedido. El servidor reconoce el repetido por el id del mensaje.\n// Arma el ítem del reintento: los datos de «Preparar guardado» y, si el medio se bajó, el MISMO binario `data` de «Descargar medio (guardado)» (no se vuelve a\n// pedir a Meta). En modo Anotar no lleva binario: el reintento va sin cuerpo. Un medio a la vez: un solo ítem.\n// JavaScript plano del nodo Code de n8n: sin require, ni los globales de Node.\nconst rpPrep = $('Preparar guardado').first().json || {};\nconst rpItem = { json: Object.assign({}, rpPrep, { intento: 2 }) };\nif (rpPrep.modo === 'descargar' && $('Descargar medio (guardado)').isExecuted) {\n  const rpBajado = $('Descargar medio (guardado)').first();\n  if (rpBajado && rpBajado.binary && rpBajado.binary.data) rpItem.binary = { data: rpBajado.binary.data };\n}\nreturn [rpItem];\n"
+      },
+      "notes": "Arma el reintento con el mismo pedido: los datos de «Preparar guardado» y el mismo binario ya bajado (no se vuelve a pedir a Meta). En Anotar, sin cuerpo."
+    },
+    {
+      "id": "gm-reintentar",
+      "name": "Reintentar el guardado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3560,
+        1320
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "={{ JSON.stringify(Object.assign({ 'X-NovuChat-Numero': String($('Interpretar entrada').first().json.phoneNumberId), 'X-NovuChat-Telefono': $json.telefono, 'X-NovuChat-IdMeta': $json.idMeta, 'X-NovuChat-Tipo': $json.tipo }, $json.modo === 'anotar' ? { 'X-NovuChat-Anotar': '1', 'X-NovuChat-Mime': $json.mime } : {})) }}",
+        "sendBody": "={{ $json.modo === 'descargar' }}",
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Bellido)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "El ÚNICO reintento ante un 5xx: mismo pedido (en Anotar, sin cuerpo y con X-NovuChat-Anotar). Si vuelve a fallar, «Resultado del guardado» aplica el aviso de falla (uno por día)."
+    },
+    {
+      "id": "gm-resultado",
+      "name": "Resultado del guardado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3800,
+        1120
+      ],
+      "parameters": {
+        "jsCode": "// RESULTADO DEL GUARDADO (módulo común de medios, contrato M1↔M2 del 29/10/2026 §2 y §4): lee la respuesta de `guardarMedio` y decide el AVISO DE FALLA.\n//\n// Toda respuesta del §2 termina acá y NINGUNA corta el turno (el cliente ya recibió su respuesta: esta rama corre después).\n//   200 {ruta, repetido} · 200 {anotado:true, repetido} · 400 · 401 · 405 · 409 (guardado_apagado, sin_mensaje, en_curso, {estado}) → silencio (devuelve []).\n//   400 anotar_con_cuerpo es un DEFECTO DEL FLUJO (en modo Anotar nunca se manda cuerpo): sin aviso a la recepción, se REGISTRA en el estado estático\n//   (`guardadoDeMedios.anotarConCuerpo = {dia, n}`, sin datos del paciente) para que se vea al revisar el flujo.\n//   413 demasiado_grande · 415 tipo_no_admitido · 429 cupo_diario_lleno · 502 no_se_guardo|no_se_registro (o cualquier 5xx), YA REINTENTADO una vez →\n//   aviso a la recepción, si se puede. Un 200 {ruta, repetido:true} en modo Anotar (el medio ya estaba guardado) también es éxito.\n//   Un medio que Meta informó más grande que el límite NO se baja: cuenta como 413 sin llamar al servidor.\n//   Un corte de red, un error de Meta o una respuesta que no se entiende → silencio (no hay motivo cierto que decirle a la recepción).\n// EL AVISO: texto libre a la recepción del negocio SOLO si su ventana de 24 h está abierta (escribió hace menos de 23 h 30 min: lo anota «Preparar guardado»),\n// a lo más UNO por día de La Paz (UTC-4 fijo) y por comercio (el estado estático es del flujo, que es de un solo comercio), y SIN datos del paciente:\n// ni teléfono, ni nombre, ni el archivo, ni el id del mensaje. Solo el motivo. El día se marca ANTES de enviar: si Meta lo rechaza, ese día no se reintenta.\n// Si Meta rechaza el aviso, la ejecución termina en ERROR (el envío no traga el fallo); la rama corre al final, cuando el cliente ya recibió su respuesta.\n// JavaScript plano del nodo Code de n8n: sin require, URL, Buffer ni crypto.\nconst grPrep = $('Preparar guardado').first().json || {};\nconst grUrl = $('Pedir el medio a Meta (guardado)').isExecuted ? ($('Pedir el medio a Meta (guardado)').first().json || {}) : {};\nconst grR = ($input.first() && $input.first().json) || {};\nconst grCodigo = Number(grR.statusCode) || 0;\nconst grCuerpo = grR.body && typeof grR.body === 'object' ? grR.body : {};\nconst grSd = $getWorkflowStaticData('global');\nif (!grSd.guardadoDeMedios || typeof grSd.guardadoDeMedios !== 'object' || Array.isArray(grSd.guardadoDeMedios)) grSd.guardadoDeMedios = {};\nconst grEstado = grSd.guardadoDeMedios;\nconst grAhora = Number(grPrep.ahoraMs) > 0 ? Number(grPrep.ahoraMs) : Date.now();\nconst grHoy = new Date(grAhora - 4 * 3600 * 1000).toISOString().slice(0, 10);\nif (grCodigo === 400 && grCuerpo.error === 'anotar_con_cuerpo') {\n  const grPrevio = grEstado.anotarConCuerpo && grEstado.anotarConCuerpo.dia === grHoy ? Number(grEstado.anotarConCuerpo.n) || 0 : 0;\n  grEstado.anotarConCuerpo = { dia: grHoy, n: Math.min(grPrevio + 1, 1000) };\n  return [];\n}\nconst GR_MOTIVOS = {\n  413: 'el archivo supera el tamaño permitido',\n  415: 'el tipo de archivo no se admite',\n  429: 'se llenó el cupo diario de archivos del comercio',\n  502: 'el servidor no pudo guardarlo',\n};\n// Un 5xx llega acá DESPUÉS del único reintento («Reintentar el guardado»): si sigue fallando, es «el servidor no pudo guardarlo».\nlet grMotivo = Object.prototype.hasOwnProperty.call(GR_MOTIVOS, grCodigo) ? GR_MOTIVOS[grCodigo] : (grCodigo >= 500 && grCodigo <= 599 ? GR_MOTIVOS[502] : '');\n// El medio que no se bajó por tamaño (Meta lo informó por encima del límite): es un 413 aunque el servidor no lo haya visto.\nconst grTamano = Number(grUrl.file_size);\nif (!grMotivo && grPrep.modo === 'descargar' && Number(grPrep.limite) > 0 && grTamano > Number(grPrep.limite)) grMotivo = GR_MOTIVOS[413];\nif (!grMotivo) return [];\n\nconst GR_VENTANA_MS = 23 * 3600 * 1000 + 30 * 60 * 1000;\nconst grRecepcionMs = Number(grEstado.recepcionMs) || 0;\nconst grVentanaAbierta = grRecepcionMs > 0 && grAhora >= grRecepcionMs && grAhora - grRecepcionMs < GR_VENTANA_MS;\nif (grEstado.avisoDia === grHoy || !grVentanaAbierta) return [];\nconst grRecepcion = String(grPrep.recepcion || '').replace(/\\D/g, '');\nif (!/^\\d{6,20}$/.test(grRecepcion)) return [];\ngrEstado.avisoDia = grHoy;\nreturn [{ json: {\n  numeroRecepcion: grRecepcion,\n  texto: 'No se pudo guardar un archivo de una conversación (' + grMotivo + '). Revísala en la Consola.',\n} }];\n"
       },
       "notes": "Toda respuesta de guardarMedio termina acá sin cortar nada. Solo 413, 415, 429 y 502 arman el aviso a la recepción: con su ventana de 24 h abierta, uno por día y sin datos del paciente."
     },
@@ -2013,7 +2102,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3320,
+        4040,
         1120
       ],
       "parameters": {
@@ -2789,7 +2878,7 @@
       "main": [
         [
           {
-            "node": "Resultado del guardado",
+            "node": "¿Reintentar el guardado?",
             "type": "main",
             "index": 0
           }
@@ -2797,6 +2886,46 @@
       ]
     },
     "Guardar medio": {
+      "main": [
+        [
+          {
+            "node": "¿Reintentar el guardado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reintentar el guardado?": {
+      "main": [
+        [
+          {
+            "node": "Preparar reintento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resultado del guardado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar reintento": {
+      "main": [
+        [
+          {
+            "node": "Reintentar el guardado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reintentar el guardado": {
       "main": [
         [
           {

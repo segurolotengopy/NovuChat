@@ -10,6 +10,7 @@ export function doblesDeBateriaDelGuardado() {
     'Descargar medio (guardado)': () => ({ descargado: true }),
     'Anotar medio': APAGADO,
     'Guardar medio': APAGADO,
+    'Reintentar el guardado': APAGADO,
     'Avisar falla del guardado': () => ({ messaging_product: 'whatsapp', messages: [{ id: 'wamid.GUARDADO' }] }),
   };
 }

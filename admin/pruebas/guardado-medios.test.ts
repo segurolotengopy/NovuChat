@@ -61,7 +61,7 @@ describe('el pedido a guardarMedio: cabeceras, cuerpo y credenciales (§1)', () 
     expect(g.llamadas.descargar).toHaveLength(2);
   });
   it.each([['docx', DOCX], ['xlsx', XLSX]])('un %s se ANOTA: cuerpo vacío, `X-NovuChat-Anotar: 1` y el mime de Meta, sin pedir la URL ni bajar un byte', (_, mime) => {
-    const { mu, g } = mundo({ respuesta: r(200, { anotado: true }) });
+    const { mu, g } = mundo({ respuesta: r(200, { anotado: true, repetido: false }) });
     hablar(mu, ANA, mDocumento({ mime_type: mime, filename: 'a' }), { wamid: 'wamid.DOC1' });
     expect(g.llamadas.obtener).toHaveLength(0);
     expect(g.llamadas.descargar).toHaveLength(0);
@@ -110,13 +110,13 @@ describe('el pedido a guardarMedio: cabeceras, cuerpo y credenciales (§1)', () 
 
 describe('cada respuesta del §2 se trata, y ninguna rompe el turno', () => {
   const SILENCIO: [string, RespuestaDelServidor][] = [
-    ['200 guardado', r(200, { ruta: 'x', repetido: false })], ['200 repetido', r(200, { ruta: 'x', repetido: true })], ['200 anotado', r(200, { anotado: true })],
+    ['200 guardado', r(200, { ruta: 'x', repetido: false })], ['200 repetido', r(200, { ruta: 'x', repetido: true })], ['200 anotado', r(200, { anotado: true, repetido: false })], ['200 anotado repetido', r(200, { anotado: true, repetido: true })],
     ['400 telefono_invalido', r(400, { error: 'telefono_invalido' })], ['400 falta_idmeta', r(400, { error: 'falta_idmeta' })],
     ['400 tipo_invalido', r(400, { error: 'tipo_invalido' })], ['400 vacio', r(400, { error: 'vacio' })],
     ['401', r(401, 'no autorizado')], ['405', r(405, 'metodo')],
     ['409 guardado_apagado', r(409, { error: 'guardado_apagado' })], ['409 sin_mensaje', r(409, { error: 'sin_mensaje' })],
     ['409 en_curso', r(409, { error: 'en_curso' })], ['409 {estado}', r(409, { estado: 'suspendido' })],
-    ['500 inesperado', r(500, {})], ['cuerpo ilegible', r(200, '<html>')],
+    ['cuerpo ilegible', r(200, '<html>')],
   ];
   const AVISAN: [string, RespuestaDelServidor, string][] = [
     ['413 demasiado_grande', r(413, { error: 'demasiado_grande' }), 'el archivo supera el tamaño permitido'],
@@ -124,6 +124,7 @@ describe('cada respuesta del §2 se trata, y ninguna rompe el turno', () => {
     ['429 cupo_diario_lleno', r(429, { error: 'cupo_diario_lleno' }), 'se llenó el cupo diario de archivos del comercio'],
     ['502 no_se_guardo', r(502, { error: 'no_se_guardo' }), 'el servidor no pudo guardarlo'],
     ['502 no_se_registro', r(502, { error: 'no_se_registro' }), 'el servidor no pudo guardarlo'],
+    ['500 inesperado', r(500, {}), 'el servidor no pudo guardarlo'],
   ];
   // Lo que el cliente recibe sin guardado de por medio (la bandera apagada): la referencia de cada caso.
   const referencia = (() => { const { mu } = mundo(); abrirVentana(mu); return textos(hablar(mu, ANA, mImagen())); })();
@@ -151,6 +152,33 @@ describe('cada respuesta del §2 se trata, y ninguna rompe el turno', () => {
     const todo = JSON.stringify(aviso.cuerpo);
     for (const dato of [ANA, 'Ana', 'wamid.PACIENTE1', 'mi foto', 'media-img']) expect(todo, dato).not.toContain(dato);
   });
+  it('Anotar sobre un medio ya guardado: 200 {ruta, repetido:true} también es éxito (silencio)', () => {
+    const { mu, g } = mundo({ respuesta: r(200, { ruta: 'tenants/x/medios/2026-10-05/abc.docx', repetido: true }) });
+    abrirVentana(mu);
+    hablar(mu, ANA, mDocumento({ mime_type: DOCX }));
+    expect(g.llamadas.anotar).toHaveLength(1);
+    expect(g.llamadas.reintentos).toHaveLength(0);
+    expect(g.llamadas.avisos).toHaveLength(0);
+  });
+  it('400 anotar_con_cuerpo es un DEFECTO DEL FLUJO: sin aviso a la recepción, queda registrado en el estado (sin datos del paciente)', () => {
+    const { mu, g } = mundo({ respuesta: r(400, { error: 'anotar_con_cuerpo' }) });
+    abrirVentana(mu);
+    const t1 = hablar(mu, ANA, mDocumento({ mime_type: DOCX }), { wamid: 'wamid.DOCX1' });
+    hablar(mu, ANA, mDocumento({ mime_type: XLSX }));
+    expect(t1.fallo).toBeNull();
+    expect(g.llamadas.anotar).toHaveLength(2);
+    expect(g.llamadas.avisos).toHaveLength(0);
+    const estado = mu.sd['guardadoDeMedios'] as J;
+    expect(estado['anotarConCuerpo']).toEqual({ dia: '2026-10-05', n: 2 });
+    expect(estado['avisoDia']).toBeUndefined();
+    expect(JSON.stringify(estado)).not.toContain(ANA);
+    expect(JSON.stringify(estado)).not.toContain('wamid.DOCX1');
+  });
+  it('NIEGA: otro 400 (falta_idmeta) no se registra como anotar_con_cuerpo', () => {
+    const { mu } = mundo({ respuesta: r(400, { error: 'falta_idmeta' }) });
+    hablar(mu, ANA, mDocumento({ mime_type: DOCX }));
+    expect((mu.sd['guardadoDeMedios'] as J)['anotarConCuerpo']).toBeUndefined();
+  });
   it('guardado_apagado (la bandera por defecto) es SILENCIO TOTAL: ni aviso, ni marca del día', () => {
     const { mu, g } = mundo();
     abrirVentana(mu);
@@ -161,12 +189,56 @@ describe('cada respuesta del §2 se trata, y ninguna rompe el turno', () => {
   });
 });
 
+describe('el ÚNICO reintento ante un 5xx (revisión del integrador)', () => {
+  const secuencia = (...rs: RespuestaDelServidor[]) => { let i = 0; return () => rs[Math.min(i++, rs.length - 1)]!; };
+  it('502 y después 200: un reintento con el MISMO pedido, sin aviso', () => {
+    const { mu, g } = mundo({ respuesta: secuencia(r(502, { error: 'no_se_guardo' }), r(200, { ruta: 'x', repetido: false })) });
+    abrirVentana(mu);
+    hablar(mu, ANA, mImagen(), { wamid: 'wamid.R1' });
+    expect(g.llamadas.guardar).toHaveLength(1);
+    expect(g.llamadas.reintentos).toHaveLength(1);
+    const ll = g.llamadas.reintentos[0]!;
+    expect(ll.parametros['sendBody']).toBe(true);
+    expect(JSON.parse(String(ll.parametros['jsonHeaders']))).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.R1', 'X-NovuChat-Tipo': 'image' });
+    expect(g.llamadas.descargar).toHaveLength(1); // el reintento NO vuelve a pedir el medio a Meta
+    expect(g.llamadas.avisos).toHaveLength(0);
+  });
+  it('502 dos veces: UN solo reintento y después el aviso de falla', () => {
+    const { mu, g } = mundo({ respuesta: r(502, { error: 'no_se_registro' }) });
+    abrirVentana(mu);
+    hablar(mu, ANA, mImagen());
+    expect(g.llamadas.servidor).toHaveLength(2);
+    expect(g.llamadas.avisos.map((x) => x.cuerpo?.['text']?.['body'])).toEqual([AVISO('el servidor no pudo guardarlo')]);
+  });
+  it('en modo Anotar el reintento va SIN cuerpo y con X-NovuChat-Anotar y el mime', () => {
+    const { mu, g } = mundo({ respuesta: secuencia(r(503, {}), r(200, { anotado: true, repetido: false })) });
+    hablar(mu, ANA, mDocumento({ mime_type: XLSX }), { wamid: 'wamid.R2' });
+    const ll = g.llamadas.reintentos[0]!;
+    expect(ll.parametros['sendBody']).toBe(false);
+    expect(JSON.parse(String(ll.parametros['jsonHeaders']))).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.R2', 'X-NovuChat-Tipo': 'document', 'X-NovuChat-Anotar': '1', 'X-NovuChat-Mime': XLSX });
+    expect(g.llamadas.servidor.map((x) => x.nodo)).toEqual(['Anotar medio', 'Reintentar el guardado']);
+  });
+  it('NIEGA: un 4xx, un 409 o un 200 no se reintentan', () => {
+    for (const resp of [r(413, { error: 'demasiado_grande' }), r(409, { error: 'guardado_apagado' }), r(429, { error: 'cupo_diario_lleno' }), r(200, { ruta: 'x', repetido: false })]) {
+      const { mu, g } = mundo({ respuesta: resp });
+      hablar(mu, ANA, mImagen());
+      expect(g.llamadas.reintentos, JSON.stringify(resp)).toHaveLength(0);
+    }
+  });
+  it('un medio a la vez: un solo pedido por mensaje (nunca una ráfaga en paralelo)', () => {
+    const { mu, g } = mundo({ respuesta: r(200, { ruta: 'x', repetido: false }) });
+    const t = hablar(mu, ANA, mImagen());
+    expect(g.llamadas.servidor).toHaveLength(1);
+    expect(t.orden.filter((n) => n === 'Guardar medio')).toHaveLength(1);
+  });
+});
+
 describe('el aviso de falla: ventana de la recepción, uno por día y por comercio', () => {
   const falla = r(502, { error: 'no_se_guardo' });
   it('sin ventana abierta (la recepción no escribió) no sale', () => {
     const { mu, g } = mundo({ respuesta: falla });
     hablar(mu, ANA, mImagen());
-    expect(g.llamadas.servidor).toHaveLength(1);
+    expect(g.llamadas.servidor).toHaveLength(2); // el pedido y su único reintento (502)
     expect(g.llamadas.avisos).toHaveLength(0);
   });
   it('con la ventana vencida (23 h 30 min) no sale; con la ventana recién abierta, sí', () => {

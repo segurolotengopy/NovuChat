@@ -19,6 +19,7 @@ export const ARISTAS_DEL_GUARDADO: Array<[string, number, string]>;
 export const URL_DESCARGA_GUARDADO: string;
 export const FUENTE_PREPARAR: string;
 export const FUENTE_RESULTADO: string;
+export const FUENTE_REINTENTO: string;
 export function cabeceraDeFuentes(carga: string, config: string): string;
 export function numeroDelAncla(ancla: { name?: string; parameters?: Record<string, any> }): string;
 export function nodosDelGuardado(opciones: OpcionesDelGuardado & { credenciales: CredencialesDelGuardado; numero: string }): NodoDelGuardado[];

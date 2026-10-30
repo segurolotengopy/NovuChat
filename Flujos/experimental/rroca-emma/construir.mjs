@@ -39,8 +39,8 @@ export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-emma/rroca-emma.json');
 export const ARCHIVO_DE_NEGOCIO = join(AQUI, '../../../admin/scripts/datos/rroca-emma/negocio-rroca-emma.json');
 export const ARCHIVO_DEL_PROMPT = join(AQUI, 'prompts/emma.md');
-// 36 + los 8 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026).
-export const TOPE_DE_NODOS = 44;
+// 36 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026).
+export const TOPE_DE_NODOS = 47;
 export const ARCHIVO_PRODUCCION = 'rroca-emma.json';
 export const ARCHIVO_PRUEBA = 'rroca-emma.prueba.json';
 

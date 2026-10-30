@@ -38,8 +38,8 @@ import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, 
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-ruben/rroca-ruben.json');
-// 48 + los 8 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026).
-export const TOPE_DE_NODOS = 56;
+// 48 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026).
+export const TOPE_DE_NODOS = 59;
 /**
  * «Solo se ofrece lo que se cumple»: el aviso a recepción (PR-3) existe, así que el JSON de producción ya NO lleva `meta.noPublicable`. La guardia de `--verificar` ahora exige lo contrario: que el aviso
  * esté (los nodos «Armar avisos», «¿Hay avisos?» y «Enviar aviso», conectados antes de «Armar mensajes», y la lógica de plantilla y de ventana en «Armar avisos»), y que no quede la marca vieja.

@@ -44,8 +44,8 @@ import { problemasDeReferencias } from '../rroca-ruben/construir.mjs';
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-antonio/rroca-antonio.json');
 export const ARCHIVO_DE_NEGOCIO = join(AQUI, '../../../admin/scripts/datos/rroca-antonio/negocio-rroca-antonio.json');
-// 47 + los 8 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026).
-export const TOPE_DE_NODOS = 55;
+// 47 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026).
+export const TOPE_DE_NODOS = 58;
 /** Los nodos de la conversación completa (PR-B): el cotejo del comprobante, el modelo y el aviso a Antonio. La guardia los exige. */
 export const NODOS_DEL_AVISO = ['Armar avisos', '¿Hay avisos?', 'Enviar aviso'];
 export const NODOS_DE_LA_CONVERSACION = ['Interpretar lectura', '¿Cotejar?', 'Cotejar en el servidor', '¿Conversar con el modelo?', 'Conversar con el modelo', '¿Avisar al servidor?', 'Avisar al servidor'];

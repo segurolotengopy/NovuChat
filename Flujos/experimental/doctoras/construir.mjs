@@ -36,8 +36,8 @@ import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, 
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const CARPETA_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/doctoras');
-// 48 + los 8 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026).
-export const TOPE_DE_NODOS = 56;
+// 48 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026).
+export const TOPE_DE_NODOS = 59;
 /** Los tenants con archivo de datos (`<tenant>.json`, sin los `negocio-*.json`): hoy las dos doctoras. */
 export function tenantsConDatos(carpeta = CARPETA_DE_DATOS) {
   return readdirSync(carpeta).filter((a) => /^rroca-[a-z0-9-]+\.json$/.test(a)).map((a) => a.replace(/\.json$/, '')).sort();

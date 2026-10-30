@@ -2902,8 +2902,8 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(58); // 49 + el webhook del carrito + los 8 del guardado de medios: el tope de producción (`construir.mjs` lo impone)
-    expect(PRUEBA.nodes).toHaveLength(54);
+    expect(QTACO.nodes).toHaveLength(61); // 49 + el webhook del carrito + los 11 del guardado de medios: el tope de producción (`construir.mjs` lo impone)
+    expect(PRUEBA.nodes).toHaveLength(57);
   });
 
   it('L2: en producción un `wamid.SIMULADO-…` NO cuenta como aviso salido: el cliente no lee «pasé tu pedido» y el cierre no lo toma de referencia', () => {
@@ -4737,9 +4737,9 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
     expect(sim.qr.mensajes[0]?.payload['image']?.link).toBe(URL_SIMULADO); // es el QR de prueba, no el plan B que también da 3
   });
 
-  it('el JSON de Q\'Taco sigue en 58 nodos o menos (50 más los 8 del guardado de medios) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
-    // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 58: los 8 de la rama común del GUARDADO de medios (se declara en el PR y lo decide Andres con el OK de fusión).
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(58);
+  it('el JSON de Q\'Taco sigue en 61 nodos o menos (50 más los 11 del guardado de medios) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
+    // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61: los 11 de la rama común del GUARDADO de medios (se declara en el PR y lo decide Andres con el OK de fusión).
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(61);
     const base = configBase(QTACO);
     expect(base['cobroSimuladoActivo']).toBe(true);
     expect(base['qrSimuladoUrl']).toBe(URL_SIMULADO);
