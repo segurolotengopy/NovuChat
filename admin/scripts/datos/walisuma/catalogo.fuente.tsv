@@ -2,18 +2,18 @@
 # Columnas separadas por «|»: página | primera línea del pie de foto en el PDF (exacta; «=» = comparte la foto del ítem anterior) | familia del SKU | nombre | descripción | precio en Bs («-» = el PDF no lo trae: a consultar) | área
 # El SKU es WAL-<familia>-<nnn> en el orden de este archivo; es una PROPUESTA que el cliente valida. Una línea que no es de un ítem empieza con «#».
 2|BUFANDA DE VICUÑA|BUF|Bufanda de vicuña|Punto diagonal, 100 % vicuña.|7795|BUF
-3|ESTOLA SIMPLE|BUF|Estola simple|Color vicuña. 70 % baby alpaca y 30 % seda.|911|BUF
+3|ESTOLA SIMPLE|BUF|Estola simple|De color vicuña. 70 % baby alpaca y 30 % seda.|911|BUF
 3|CHAL TELAR PREMIUM|BUF|Chal telar premium|Color crudo. 100 % baby alpaca.|910|BUF
-3|CHAL SIMPLE TEJIDO|BUF|Chal simple tejido|Color vicuña. 100 % alpaca superfina.|1125|BUF
-3|CHAL BICOLOR TEJIDO|BUF|Chal bicolor tejido|Colores varios. 100 % alpaca superfina.|1150|BUF
+3|CHAL SIMPLE TEJIDO|BUF|Chal simple tejido|De color vicuña. 100 % alpaca superfina.|1125|BUF
+3|CHAL BICOLOR TEJIDO|BUF|Chal bicolor tejido|Colores variables: se consulta la disponibilidad del momento. 100 % alpaca superfina.|1150|BUF
 4|BUFANDA DENNIS|BUF|Bufanda Dennis|Color naranja. Tela de baby alpaca.|850|BUF
 4|BUFANDA PEINADA|BUF|Bufanda peinada|Color gris claro. 100 % baby alpaca.|545|BUF
-4|BUFANDA BICOLOR TEJIDA|BUF|Bufanda bicolor tejida|Colores varios. 100 % alpaca superfina.|510|BUF
+4|BUFANDA BICOLOR TEJIDA|BUF|Bufanda bicolor tejida|Colores variables: se consulta la disponibilidad del momento. 100 % alpaca superfina.|510|BUF
 4|BUFANDA SIMPLE TEJIDA|BUF|Bufanda simple tejida|Color gris claro. 100 % alpaca superfina.|510|BUF
 5|BUFANDA PREMIUM|BUF|Bufanda premium|Color negro. 100 % baby alpaca.|410|BUF
-5|BUFANDA CUADROS|BUF|Bufanda cuadros|Colores varios. 100 % baby alpaca.|410|BUF
-5|BUFANDA BOUCLE|BUF|Bufanda bouclé|Colores varios. 70 % baby alpaca y 30 % seda.|591|BUF
-5|CUELLO CAROLINA|BUF|Cuello Carolina|Bufanda circular, colores varios. 100 % baby alpaca.|250|BUF
+5|BUFANDA CUADROS|BUF|Bufanda cuadros|Colores variables: se consulta la disponibilidad del momento. 100 % baby alpaca.|410|BUF
+5|BUFANDA BOUCLE|BUF|Bufanda bouclé|Colores variables: se consulta la disponibilidad del momento. 70 % baby alpaca y 30 % seda.|591|BUF
+5|CUELLO CAROLINA|BUF|Cuello Carolina|Bufanda circular. Colores variables: se consulta la disponibilidad del momento. 100 % baby alpaca.|250|BUF
 6|GORRO ESPERANZA|GOR|Gorro Esperanza|100 % baby llama.|350|GOR
 6|CUELLO ESPERANZA|GOR|Cuello Esperanza|100 % baby llama.|700|GOR
 6|MITON ESPERANZA|GOR|Mitón Esperanza|100 % baby llama.|290|GOR
@@ -47,9 +47,9 @@
 10|PORTA TARJETAS TIPO VI|BIL|Porta tarjetas tipo VI lagarto|Cuero de lagarto.|410|BIL
 10|PORTA TARJETAS TIPO VI|BIL|Porta tarjetas tipo VI iguana|Cuero de iguana.|350|BIL
 10|PORTA TARJETAS TIPO VI|BIL|Porta tarjetas tipo VI paiche|Cuero de paiche.|320|BIL
-10|PORTA PASAPORTE FAMILIAR Cuero|PAS|Porta pasaporte familiar|Cuero vacuno.|577|PAS
+10|PORTA PASAPORTE FAMILIAR Cuero|PAS|Porta pasaporte familiar|Cuero vacuno. Para toda la familia.|577|PAS
 10|PORTA PASAPORTE 2 U|PAS|Porta pasaporte 2 u|Cuero vacuno.|313|PAS
-10|PORTA PASAPORTE|PAS|Porta pasaporte|Cuero vacuno.|570|PAS
+10|PORTA PASAPORTE|PAS|Porta pasaporte|Cuero vacuno. De otra línea de productores, con más detalle de marroquinería.|570|PAS
 11|BILLETERA CLÁSICA VARON|BIL|Billetera clásica varón negra|Negro. Cuero de lagarto.|830|BIL
 11|BILLETERA CLÁSICA VARON|BIL|Billetera clásica varón marrón|Marrón. Cuero de lagarto.|830|BIL
 11|BILLETERA CLÁSICA VARON|BIL|Billetera clásica varón caramelo|Caramelo. Cuero de lagarto.|830|BIL
@@ -77,9 +77,9 @@
 13|DOPP KIT|EST|Dopp kit Walnut|Walnut. Cuero vacuno.|325|EST
 13|DOPP KIT|EST|Dopp kit Black|Black. Cuero vacuno.|325|EST
 13|DOPP KIT|EST|Dopp kit Sage|Sage. Cuero vacuno.|325|EST
-14|TAPIZ HOMBRE|TAP|Tapiz hombre 83 x 52 cm|83 x 52 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria, Chuquisaca.|-|TAP
-14|TAPIZ MUJER RIO|TAP|Tapiz mujer río 66 x 31 cm|66 x 31 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria, Chuquisaca.|-|TAP
-15|TAPIZ HOMBRE|TAP|Tapiz hombre 55 x 34 cm|55 x 34 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria.|-|TAP
+14|TAPIZ HOMBRE|TAP|Tapiz hombre 83 x 52 cm|83 x 52 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria, Chuquisaca. Precio a consultar: son piezas únicas, pueden estar vendidas o variar en tamaño o precio.|-|TAP
+14|TAPIZ MUJER RIO|TAP|Tapiz mujer río 66 x 31 cm|66 x 31 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria, Chuquisaca. Precio a consultar: son piezas únicas, pueden estar vendidas o variar en tamaño o precio.|-|TAP
+15|TAPIZ HOMBRE|TAP|Tapiz hombre 55 x 34 cm|55 x 34 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria. Precio a consultar: son piezas únicas, pueden estar vendidas o variar en tamaño o precio.|-|TAP
 15|TAPIZ CARNAVAL|TAP|Tapiz carnaval 67 x 32 cm|67 x 32 cm. Tejido a mano en telar rústico. Pieza única. Comunidad La Candelaria.|3750|TAP
 15|TAPIZ MATRIMONIO|TAP|Tapiz matrimonio 71 x 38 cm|71 x 38 cm. Tejido a mano en telar rústico. Comunidades Candelaria y Tarabuco.|2300|TAP
 15|TAPIZ JALQ|TAP|Tapiz Jalq 61 x 34 cm|61 x 34 cm. Tejido a mano en telar rústico. Comunidades Candelaria y Tarabuco.|3080|TAP
@@ -92,7 +92,7 @@
 17|FIGURA TALLADA ITA|DEC|Figura tallada Ita|29 x 11 x 12 cm. Tallada y pintada a mano en una sola pieza. Madera balsa.|1080|DEC
 17|FIGURA TALLADA CHANDEI (ROSITA|DEC|Figura tallada Chandei (Rosita Pochi)|30 x 12 x 8 cm. Tallada y pintada a mano en una sola pieza. Madera balsa.|1080|DEC
 18|POSAVASOS SOL|MES|Posavasos Sol|Elaborados a mano en jipijapa por la comunidad Galilea, San Borja. Set de 4.|270|MES
-18|POSAVASOS SOL|MES|Posavasos Sol (segundo diseño)|Elaborados a mano en jipijapa por la comunidad Galilea, San Borja. Set de 4.|270|MES
+18|POSAVASOS SOL|MES|Posavasos Rombo|Diseño rombo. Elaborados a mano en jipijapa por la comunidad Galilea, San Borja. Set de 4.|270|MES
 18|POSAVASOS LUNA|MES|Posavasos Luna|Elaborados a mano en jipijapa por la comunidad Galilea, San Borja. Set de 4.|270|MES
 18|ABANICO|DEC|Abanico|Elaborado a mano en jipijapa por la comunidad Galilea, San Borja.|140|DEC
 19|ENSALADERAS LLAMA 090|MES|Ensaladeras Llama 090|Tallado a mano, madera de palo santo. Chaco boliviano.|270|MES

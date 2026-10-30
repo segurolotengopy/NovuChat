@@ -43,9 +43,42 @@ describe('pausa por Tomar (la ingesta del entrante dice «bloqueado»)', () => {
   });
 });
 
-describe('pendiente de PR-3: atención en «operador»', () => {
-  // Hoy el esqueleto ofrece «una persona del equipo va a continuar» sin avisar a recepción (no existe «Armar avisos»): promesa sin respaldo. PR-3 debe avisar y poner el botón.
-  it.todo('NEGADO (PR-3): con la atención en «operador» el turno no se cierra sin aviso a recepción con el botón para escribirle directo');
+describe('atención en «operador» (uso extendido)', () => {
+  // El texto fijo ofrece «una persona del equipo va a continuar»: tiene que haber un mecanismo detrás. Lo hay: el aviso al comercio MÁS el botón para escribirle directo.
+  it('NEGADO: con la atención en «operador» el turno NO se cierra sin el aviso a recepción y sin el botón para escribirle directo', () => {
+    const m = crear({ ingesta: { atencion: { estado: 'operador', avisarRecepcion: 'operador' } } });
+    const t = hablar(m, ANA, mTexto('hola'));
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.avisos).toHaveLength(1);
+    expect(((t.mensajes[0]?.payload['interactive'] ?? {}) as { type?: string }).type).toBe('cta_url');
+    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/pedido_registrado/);
+    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/uso extendido/);
+    expect(nodosQueCorrieron(t)).not.toContain('Conversar con el modelo');
+  });
+  it('NEGADO: dos turnos seguidos en «operador» mandan UN solo aviso (no uno por mensaje); el botón va en los dos', () => {
+    const m = crear({ ingesta: { atencion: { estado: 'operador', avisarRecepcion: 'operador' } } });
+    const t1 = hablar(m, ANA, mTexto('hola'));
+    const t2 = hablar(m, ANA, mTexto('¿hay alguien?'));
+    expect(t1.avisos).toHaveLength(1);
+    expect(t2.avisos).toHaveLength(0);
+    for (const t of [t1, t2]) expect(((t.mensajes[0]?.payload['interactive'] ?? {}) as { type?: string }).type).toBe('cta_url');
+  });
+  it('NEGADO: si el aviso no sale, el botón igual va (el cliente puede escribirle directo) y no hay modelo', () => {
+    const m = crear({ ingesta: { atencion: { estado: 'operador' } }, aviso: 'error' });
+    const t = hablar(m, ANA, mTexto('hola'));
+    expect(((t.mensajes[0]?.payload['interactive'] ?? {}) as { type?: string }).type).toBe('cta_url');
+    expect(nodosQueCorrieron(t)).not.toContain('Conversar con el modelo');
+  });
+  it('NEGADO: la pausa por Tomar («bloqueado») no avisa a nadie: cero avisos', () => {
+    const t = hablar(crear({ ingesta: BLOQUEADO }), ANA, mTexto('hola'));
+    expect(t.avisos).toHaveLength(0);
+    expect(t.mensajes).toHaveLength(0);
+  });
+  it('con la pausa por Tomar un mensaje de TEXTO tampoco llama al modelo (cero llamadas)', () => {
+    const t = hablar(crear({ ingesta: BLOQUEADO }), ANA, mTexto('quiero una billetera y quiero pagar'));
+    expect(nodosQueCorrieron(t)).not.toContain('Conversar con el modelo');
+    expect(nodosQueCorrieron(t)).not.toContain('Cotejar en el servidor');
+  });
 });
 
 describe('comercio no operativo', () => {
