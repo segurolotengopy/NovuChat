@@ -427,7 +427,7 @@ export function DetalleConversacion(p: PropsDetalle) {
                   {ADJUNTOS[x.tipo] && <span className="adjunto">{ADJUNTOS[x.tipo]}</span>}
                   <TextoSeguro valor={x.texto} />
                   {accionDeMedio(x.medio, p.ahora) === 'ver' && x.idMeta && x.medio && (
-                    <VisorMedio tenantId={tenantId} conversacionId={ficha.id} idMeta={x.idMeta} medio={x.medio} esSoporte={p.esPropietario === true} />
+                    <VisorMedio tenantId={tenantId} conversacionId={ficha.id} idMeta={x.idMeta} medio={x.medio} />
                   )}
                   {accionDeMedio(x.medio, p.ahora) === 'vencido' && <span className="cv-medio-texto">{TEXTO_VENCIDO}</span>}
                   {accionDeMedio(x.medio, p.ahora) === 'anotado' && x.medio && (

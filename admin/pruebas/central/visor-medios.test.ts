@@ -113,14 +113,12 @@ describe('documentos: solo descarga', () => {
     for (const e of ['pdf', 'txt', 'bin', 'exe']) expect(avisoExtraDe(e)).toBeNull();
     expect(AVISO_MACROS).toBe('Puede contener macros o fórmulas; no habilite contenido.');
   });
-  it('modo: imagen/audio ver; lo demás descargar; soporte no descarga', () => {
-    expect(modoDeMedio('image/png', false)).toBe('ver');
-    expect(modoDeMedio('audio/ogg', true)).toBe('ver');
-    expect(modoDeMedio('application/pdf', false)).toBe('descargar');
-    expect(modoDeMedio('video/mp4', false)).toBe('descargar');
-    expect(modoDeMedio('', false)).toBe('descargar');
-    expect(modoDeMedio('application/pdf', true)).toBe('ninguno');
-    expect(modoDeMedio('video/mp4', true)).toBe('ninguno');
+  it('modo: imagen/audio ver; lo demás descargar, igual para todos los roles', () => {
+    expect(modoDeMedio('image/png')).toBe('ver');
+    expect(modoDeMedio('audio/ogg')).toBe('ver');
+    expect(modoDeMedio('application/pdf')).toBe('descargar');
+    expect(modoDeMedio('video/mp4')).toBe('descargar');
+    expect(modoDeMedio('')).toBe('descargar');
   });
 });
 
@@ -161,7 +159,7 @@ describe('la pantalla (lectura del fuente)', () => {
     expect(v).not.toMatch(/appendChild|append\(|insertAdjacent|\.body\./);
     expect(v).toMatch(/a\.click\(\);\n\s*URL\.revokeObjectURL\(url\)/);
     expect(v).toMatch(/avisoExtraDe/);
-    expect(v).toMatch(/esSoporte/);
+    expect(v).not.toMatch(/esSoporte|esPropietario/);
   });
   it('CSP: media-src blob: y NINGÚN blob: en frame-src', () => {
     const fb = JSON.parse(readFileSync(join(aqui, '../../firebase.json'), 'utf8'));

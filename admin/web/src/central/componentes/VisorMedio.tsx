@@ -16,7 +16,7 @@ import {
  *    `application/octet-stream`, un ancla que NUNCA entra al DOM, se hace `click()` y el blob se revoca de inmediato.
  *    El nombre lo genera la consola con la extensión validada de la respuesta.
  * Los bytes viven solo en el estado de este componente. El error se muestra por su `code`.
- * Soporte de NovuChat: no se ofrece «Descargar» (el servidor decide igual).
+ * La UI es la misma para todos los roles; el servidor decide el permiso.
  */
 const llamarReal: LlamarVerMedio = (a) => httpsCallable(funciones, 'verMedio')(a) as ReturnType<LlamarVerMedio>;
 
@@ -27,10 +27,10 @@ type Estado =
   | { t: 'error'; texto: string }
   | { t: 'listo'; r: Listo; url: string | null };
 
-export function VisorMedio({ tenantId, conversacionId, idMeta, medio, esSoporte = false, llamar = llamarReal }: {
-  tenantId: string; conversacionId: string; idMeta: string; medio: MedioDeMensaje; esSoporte?: boolean; llamar?: LlamarVerMedio;
+export function VisorMedio({ tenantId, conversacionId, idMeta, medio, llamar = llamarReal }: {
+  tenantId: string; conversacionId: string; idMeta: string; medio: MedioDeMensaje; llamar?: LlamarVerMedio;
 }) {
-  const modo = modoDeMedio(medio.mime, esSoporte);
+  const modo = modoDeMedio(medio.mime);
   const [estado, setEstado] = useState<Estado>({ t: 'reposo' });
   const vuelta = useRef(0);
   const urlViva = useRef<string | null>(null);
@@ -49,8 +49,6 @@ export function VisorMedio({ tenantId, conversacionId, idMeta, medio, esSoporte 
 
   useEffect(() => () => { vuelta.current += 1; soltar(); }, [tenantId, conversacionId, idMeta]);
   useEffect(() => { if (estado.t !== 'reposo') cerrar.current?.focus(); }, [estado.t]);
-
-  if (modo === 'ninguno') return null;
 
   const pedir = async () => {
     const mia = ++vuelta.current;

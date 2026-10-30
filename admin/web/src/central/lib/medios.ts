@@ -45,11 +45,11 @@ export const avisoExtraDe = (ext: unknown): string | null => (CON_MACROS.include
 
 /**
  * Qué se ofrece: imagen/audio de lista segura → «Ver»; todo lo demás (documento, video, desconocido) → «Descargar»,
- * salvo para soporte de NovuChat, que no descarga documentos (no se ofrece nada).
+ * La UI es la misma para admin, operador y soporte (contrato v2 §8.3): el servidor decide con su error fijo.
  */
-export function modoDeMedio(mime: string, esSoporte: boolean): 'ver' | 'descargar' | 'ninguno' {
+export function modoDeMedio(mime: string): 'ver' | 'descargar' {
   if ((MIMES_DE_IMAGEN as readonly string[]).includes(mime) || (MIMES_DE_AUDIO as readonly string[]).includes(mime)) return 'ver';
-  return esSoporte ? 'ninguno' : 'descargar';
+  return 'descargar';
 }
 
 export interface MedioDeMensaje {
