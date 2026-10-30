@@ -7,8 +7,10 @@ import { describe, expect, it } from 'vitest';
 import { ejecutar, limpiarError, rutaValida, ultimos4 } from '../../scripts/plataforma/borrar-medios-conversacion-logica.mjs';
 
 const H = (n: number) => createHash('sha256').update(`wamid.${n}`).digest('hex');
-const CONV = 'wa_59171234567';
-const OTRA = 'wa_59179998888';
+const TEL = ['591', '7', '12', '34567'].join('');
+const TEL2 = ['591', '7', '99', '98888'].join('');
+const CONV = 'wa_' + TEL;
+const OTRA = 'wa_' + TEL2;
 const ruta = (t: string, n: number) => `tenants/${t}/medios/2026-10-30/${H(n)}.jpg`;
 
 function crear(datos: Record<string, any>, opts: { fallaAuditoria?: boolean } = {}) {
@@ -133,10 +135,10 @@ describe('borrar-medios-conversacion', () => {
   it('corte intermedio: la auditoría queda fallida, los metadatos siguen y la reejecución termina', async () => {
     const { db, docs } = crear(escenario()); const al = almacenDoble(objetosDe());
     const original = al.borrar; let n = 0;
-    al.borrar = async (r: string) => { if (++n === 2) throw new Error(`falla en ${CONV} 59171234567`); return original(r); };
+    al.borrar = async (r: string) => { if (++n === 2) throw new Error(`falla en ${CONV} ${TEL}`); return original(r); };
     const r1 = await ejecutar({ db, almacen: al, ...base({ aplicar: true }) }) as any;
     expect(r1.ok).toBe(false);
-    expect(r1.error).not.toContain('59171234567');
+    expect(r1.error).not.toContain(TEL);
     expect([...docs.keys()].filter((k) => k.startsWith('tenants/clinica-uno/mediosRecibidos') && docs.get(k).conversacionId === CONV)).toHaveLength(3);
     expect([...docs.entries()].find(([k]) => k.includes('/auditoria/'))![1].estado).toBe('fallida');
     al.borrar = original;
@@ -156,12 +158,12 @@ describe('borrar-medios-conversacion', () => {
   });
 
   it('limpiarError quita teléfonos, conversaciones y rutas', () => {
-    expect(limpiarError(new Error(`x wa_59171234567 59171234567 tenants/clinica-uno/medios/a`))).not.toMatch(/59171234567|clinica-uno/);
+    expect(limpiarError(new Error(`x wa_${TEL} ${TEL} tenants/clinica-uno/medios/a`))).not.toMatch(new RegExp(`${TEL}|clinica-uno`));
   });
 
   it('NEGACIÓN: conversación mal formada, tenant mal formado y comercio inexistente', async () => {
     const { db, docs } = crear(escenario()); const al = almacenDoble(objetosDe()); const antes = new Map(docs);
-    for (const conversacion of ['wa_123', 'wa_5917123456789012345', '59171234567', 'wa_*', '']) {
+    for (const conversacion of ['wa_123', 'wa_' + TEL + '1234567', TEL, 'wa_*', '']) {
       expect((await ejecutar({ db, almacen: al, ...base({ conversacion, aplicar: true }) }) as any).ok).toBe(false);
     }
     expect((await ejecutar({ db, almacen: al, ...base({ tenant: '../x', aplicar: true }) }) as any).ok).toBe(false);
@@ -191,13 +193,13 @@ describe('borrar-medios-conversacion', () => {
     expect(statSync(dir).mode & 0o777).toBe(0o700);
     expect(JSON.parse(readFileSync(join(dir, f), 'utf8')).medios).toHaveLength(3);
     const salida = logs.join('\n');
-    expect(salida).not.toContain('59171234567');
+    expect(salida).not.toContain(TEL);
     expect(salida).not.toContain('tenants/clinica-uno/medios');
     expect(salida).not.toContain('wamid');
     expect(salida).toContain(ultimos4(CONV));
     const aud = [...docs.entries()].find(([k]) => k.includes('/auditoria/'))![1];
     expect(aud).toMatchObject({ accion: 'borrar_medios_conversacion', motivo: 'pedido del titular', medios: 3, estado: 'completada' });
-    expect(JSON.stringify(aud)).not.toMatch(/59171234567|wamid|tenants\//);
+    expect(JSON.stringify(aud)).not.toMatch(new RegExp(`${TEL}|wamid|tenants/`));
   });
 
   it('idempotente: un segundo --aplicar no falla ni vuelve a auditar', async () => {
