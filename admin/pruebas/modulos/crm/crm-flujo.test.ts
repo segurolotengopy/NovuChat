@@ -105,7 +105,7 @@ describe('misma salida que hoy: tabla de 40 casos', () => {
 });
 
 describe('misma salida que hoy: 300 casos con semilla fija', () => {
-  function azar(semilla: number) { let a = semilla; return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  function azar(semilla: number) { let a = semilla; return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32; }; }
   const R = azar(20261030);
   const elige = <T,>(l: T[]): T => l[Math.floor(R() * l.length)];
   const textos = ['', 'Ana', 'Ana Pérez', '=1+1', ' +591', '@ana', '- -x', '​=A1', 'a­=b', 'Tienda  de   ropa', '= =1', 'x'.repeat(200), 'Taller\nSol'];
