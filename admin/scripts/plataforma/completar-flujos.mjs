@@ -14,7 +14,9 @@
  * registro y por eso también crea `config/onboarding` en las fichas de captación
  * que no lo tengan (antes las ignoraba). Seguimiento: darle `--aplicar`.
  *
- *   node scripts/plataforma/completar-flujos.mjs --proyecto <id-del-proyecto>
+ *   node scripts/plataforma/completar-flujos.mjs --proyecto <id-del-proyecto> [--tenant <id>]
+ *
+ * `--tenant` limita la corrida a una sola ficha (sin él recorre todas).
  */
 import { IDS_FLUJOS, documentoDeFlujo } from '../../functions/src/registro.ts';
 
@@ -34,7 +36,13 @@ const db = getFirestore();
 // El documento de cada flujo sale del registro (antes faltaba `onboarding`).
 const DOCUMENTO = Object.fromEntries(IDS_FLUJOS.map((f) => [f, documentoDeFlujo(f)]));
 
-const fichas = await db.collection('tenants').get();
+const iTen = args.indexOf('--tenant');
+const SOLO = iTen >= 0 ? args[iTen + 1] : null;
+if (iTen >= 0 && !SOLO) { console.error('--tenant necesita un id'); process.exit(2); }
+const fichas = SOLO
+  ? { docs: (await db.doc(`tenants/${SOLO}`).get()).exists ? [await db.doc(`tenants/${SOLO}`).get()] : [], size: 0 }
+  : await db.collection('tenants').get();
+fichas.size = fichas.docs.length;
 // Doble escritura (H2b-7): antes de escribir nada, una ficha que necesita completarse y ya tiene `modulos`
 // corta todo con código 2 (la lista `modulos` manda en las reglas; completar `flujos` a mano la dejaría incoherente).
 for (const f of fichas.docs) {
