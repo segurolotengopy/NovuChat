@@ -375,6 +375,32 @@ describe('revisión de código de #699: lo que falla sin aviso queda REGISTRADO 
     expect(g.llamadas.descargar.map((x) => x.url)).toEqual(['https://lookaside.fbsbx.com/whatsapp_business/attachments/g']);
     expect(g.llamadas.servidor).toHaveLength(1);
   });
+  // Revisión de seguridad de #713: video y documento pueden pesar 100 MB; sin tamaño informado NO se bajan. Imagen, audio y sticker sí (el servidor los acota).
+  it.each([
+    ['video sin file_size', mVideo(), undefined], ['video con file_size 0', mVideo(), 0],
+    ['documento sin file_size', mDocumento(), undefined], ['documento con file_size 0', mDocumento(), 0],
+  ] as const)('NIEGA: %s NO se baja ni llega al servidor; queda en guardadoDeMedios.sinTamano y avisa como falla de tamaño', (_, m, bytes) => {
+    const { mu, g } = mundo({ respuesta: r(200, { ruta: 'x', repetido: false }) });
+    mu.dobles['Pedir el medio a Meta (guardado)'] = () => ({ id: 'm', url: 'https://lookaside.fbsbx.com/whatsapp_business/attachments/g', mime_type: 'video/mp4', ...(bytes === undefined ? {} : { file_size: bytes }) });
+    abrirVentana(mu);
+    const t = hablar(mu, ANA, m, { wamid: 'wamid.SINTAM', toleraFallo: true });
+    expect(g.llamadas.descargar.map((x) => x.url)).toEqual(['']);
+    expect(g.llamadas.servidor).toHaveLength(0);
+    const estado = mu.sd['guardadoDeMedios'] as J;
+    expect(estado['sinTamano']).toEqual({ dia: '2026-10-05', n: 1 });
+    expect(estado['sinDescarga']).toBeUndefined();
+    expect(g.llamadas.avisos.map((x) => x.cuerpo?.['text']?.['body'])).toEqual([AVISO('no se pudo comprobar su tamaño')]);
+    expect(JSON.stringify(estado)).not.toContain('wamid.SINTAM');
+    expect(t.mensajes.length).toBeGreaterThan(0);
+  });
+  it.each([['imagen', mImagen()], ['nota de voz', mAudio()], ['sticker', mSticker()]] as const)('%s SIN file_size SÍ se baja (el servidor la acota por tipo)', (_, m) => {
+    const { mu, g } = mundo({ respuesta: r(200, { ruta: 'x', repetido: false }) });
+    mu.dobles['Pedir el medio a Meta (guardado)'] = () => ({ id: 'm', url: 'https://lookaside.fbsbx.com/whatsapp_business/attachments/g', mime_type: 'image/jpeg' });
+    hablar(mu, ANA, m, { toleraFallo: true });
+    expect(g.llamadas.descargar.map((x) => x.url)).toEqual(['https://lookaside.fbsbx.com/whatsapp_business/attachments/g']);
+    expect(g.llamadas.servidor).toHaveLength(1);
+    expect((mu.sd['guardadoDeMedios'] as J)['sinTamano']).toBeUndefined();
+  });
   it('NIEGA: una URL que no es del CDN de Meta no se baja, con o sin tamaño', () => {
     const { mu, g } = mundo({ url: 'https://otro.ejemplo.invalid/x' });
     hablar(mu, ANA, mImagen());

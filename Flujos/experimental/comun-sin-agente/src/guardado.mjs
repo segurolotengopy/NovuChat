@@ -112,9 +112,9 @@ export const ARISTAS_DEL_GUARDADO = [
   ['Resultado del guardado', 0, 'Avisar falla del guardado'],
 ];
 /** La URL de la descarga: la del CDN de Meta solo si Meta informó un tamaño dentro de 16 MiB (`limite`); si no, vacía (no se baja nada). */
-// Si Meta NO informa el tamaño (0 o ausente) se baja igual: perder el medio en silencio es peor, el servidor impone el tope por tipo (413) y el tiempo
-// límite de la descarga (20 s) acota lo que se baja.
-export const URL_DESCARGA_GUARDADO = "={{ (String($json.url || '').startsWith('https://lookaside.fbsbx.com/') && !(Number($json.file_size) > Number($('Preparar guardado').first().json.limite))) ? $json.url : '' }}";
+// Si Meta NO informa el tamaño (0 o ausente): imagen, audio y sticker se bajan igual (el servidor impone el tope por tipo, 413, y el tiempo límite de la
+// descarga, 60 s, acota lo que se baja); video y documento NO se bajan (`exigeTamano`: pueden pesar 100 MB) y cuentan como falla de tamaño (`sinTamano`).
+export const URL_DESCARGA_GUARDADO = "={{ (String($json.url || '').startsWith('https://lookaside.fbsbx.com/') && !(Number($json.file_size) > Number($('Preparar guardado').first().json.limite)) && !($('Preparar guardado').first().json.exigeTamano === true && !(Number($json.file_size) > 0))) ? $json.url : '' }}";
 
 export const FUENTE_PREPARAR = readFileSync(join(AQUI, '../../../src/core/medios/guardado-preparar.js'), 'utf8').trimEnd();
 export const FUENTE_REINTENTO = readFileSync(join(AQUI, '../../../src/core/medios/guardado-reintento.js'), 'utf8').trimEnd();

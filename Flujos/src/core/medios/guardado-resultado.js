@@ -9,6 +9,7 @@
 //   413 demasiado_grande · 415 tipo_no_admitido · 429 cupo_diario_lleno | cupo_telefono_lleno · 502 no_se_guardo|no_se_registro (o cualquier 5xx), YA
 //   REINTENTADO una vez → aviso a la recepción, si se puede.
 //   Un medio que Meta informó más grande que 16 MiB NO se baja: cuenta como 413 sin llamar al servidor.
+//   Un video o documento sin tamaño informado por Meta (ausente o 0) tampoco se baja: se registra en `sinTamano` y avisa como falla de tamaño.
 //   Un corte de red, un error de Meta o una respuesta que no se entiende → silencio (no hay motivo cierto que decirle a la recepción).
 // EL AVISO: texto libre a la recepción del negocio SOLO si su ventana de 24 h está abierta (escribió hace menos de 23 h 30 min: lo anota «Preparar guardado»),
 // a lo más UNO por ejecución y día de La Paz (UTC-4 fijo) y por comercio (el estado estático es del flujo, que es de un solo comercio): con ejecuciones
@@ -39,6 +40,7 @@ const GR_MOTIVOS = {
   415: 'el tipo de archivo no se admite',
   429: 'se llenó el cupo diario de archivos del comercio',
   '429t': 'se llenó el cupo diario de archivos de una conversación',
+  '413s': 'no se pudo comprobar su tamaño',
   502: 'el servidor no pudo guardarlo',
 };
 // Un 5xx llega acá DESPUÉS del único reintento («Reintentar el guardado»): si sigue fallando, es «el servidor no pudo guardarlo».
@@ -48,6 +50,8 @@ if (grCodigo === 429 && grCuerpo.error === 'cupo_telefono_lleno') grMotivo = GR_
 // El medio que no se bajó por tamaño (Meta lo informó por encima de 16 MiB): es un 413 aunque el servidor no lo haya visto.
 const grTamano = Number(grUrl.file_size);
 if (!grMotivo && grCodigo === 0 && Number(grPrep.limite) > 0 && grTamano > Number(grPrep.limite)) grMotivo = GR_MOTIVOS[413];
+// Video o documento sin tamaño informado (Meta sí respondió con su URL): no se bajó a propósito; se registra y avisa como falla de tamaño.
+if (!grMotivo && grCodigo === 0 && grPrep.exigeTamano === true && grUrl.url && !(grTamano > 0)) { grRegistrar('sinTamano'); grMotivo = GR_MOTIVOS['413s']; }
 // Sin respuesta del servidor (Meta no dio la URL o no dejó bajar el archivo): no se sabe más, se registra sin aviso.
 if (!grMotivo && grCodigo === 0) { grRegistrar('sinDescarga'); return []; }
 if (!grMotivo) return [];

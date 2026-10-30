@@ -56,6 +56,9 @@ const GM_MIMES = {
 const gmContentType = GM_MIMES[gmTipo].indexOf(gmMimeCrudo) >= 0 ? gmMimeCrudo : 'application/octet-stream';
 // 16 MiB: lo más grande que el flujo baja (Meta permite documentos de 100 MB; manda el tope de Andres). El tope por tipo lo impone el servidor.
 const GM_LIMITE = 16 * 1024 * 1024;
+// Video y documento pueden pesar hasta 100 MB en WhatsApp: sin un tamaño informado por Meta NO se bajan (revisión de seguridad de #713). Imagen, audio y
+// sticker se bajan igual: el servidor ya los acota por tipo.
+const GM_EXIGE_TAMANO = gmTipoMeta === 'video' || gmTipoMeta === 'document';
 
 return [{ json: {
   telefono: gmTelefono,
@@ -64,6 +67,7 @@ return [{ json: {
   contentType: gmContentType,
   mediaId: gmMediaId,
   limite: GM_LIMITE,
+  exigeTamano: GM_EXIGE_TAMANO,
   // A quién iría el aviso de falla (el número del NEGOCIO, no del cliente).
   recepcion: gmRecepcion,
   ahoraMs: gmAhora,
