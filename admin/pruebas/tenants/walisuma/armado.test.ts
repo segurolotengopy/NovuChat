@@ -2,6 +2,7 @@
  * EL ARMADO del esqueleto de Walisuma (`Flujos/experimental/walisuma/construir.mjs`): lo que el JSON versionado tiene y lo que NO puede tener. Se prueba NEGANDO: cada guardia se prueba contra un JSON dañado a propósito.
  */
 import { spawnSync } from 'node:child_process';
+import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -21,7 +22,7 @@ const DATOS = JSON.parse(leer(join(RAIZ, 'admin/scripts/datos/walisuma/walisuma.
 const clonar = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const nodo = (f: Flujo, n: string): J => (f.nodes as J[]).find((x) => x['name'] === n) as J;
 const nombres = (f: Flujo): string[] => (f.nodes as J[]).map((x) => String(x['name']));
-const corrida = (...args: string[]) => spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), ...args], { encoding: 'utf8' });
+const corrida = (...args: string[]) => spawnSync(process.execPath, [join(CARPETA, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador({}) });
 
 describe('tamaño y composición', () => {
   it('como máximo 47 nodos (PR-2 + PR-3 juntos): producción 36, prueba 31', () => {
