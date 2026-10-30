@@ -3,7 +3,7 @@
  *
  * - `alta-comercio.mjs` y `asignar-numero.mjs` rechazan `interno` con código 2, antes de abrir Firebase.
  * - `tenants.ts` (el alta por la consola) deriva `VERTICALES` del registro, y el alta SIGUE escribiendo
- *   `vertical` y `flujos`, NUNCA `modulos` (lo escribe solo la migración, otro PR).
+ *   `vertical` y `flujos` y, desde H2b-7, también `modulos` derivada del registro (doble escritura).
  * - `completar-flujos.mjs` ya crea `config/onboarding` (su `DOCUMENTO` propio no la tenía).
  */
 import { describe, expect, it } from 'vitest';
@@ -48,22 +48,22 @@ describe('alta con un flujo desconocido', () => {
     expect(r.salida).toContain('--flujo desconocido: interno');
   });
 
-  it('el alta por la consola (tenants.ts) deriva VERTICALES del registro y no escribe `modulos`', () => {
+  it('el alta por la consola (tenants.ts) deriva VERTICALES del registro y escribe `modulos` derivada (H2b-7)', () => {
     const t = readFileSync(join(aqui, '..', '..', 'functions', 'src', 'plataforma', 'tenants.ts'), 'utf8');
     expect(t).toMatch(/const VERTICALES = new Set<string>\(IDS_FLUJOS\);/);
-    expect(t).toMatch(/import \{ IDS_FLUJOS \} from '\.\.\/registro\.js';/);
+    expect(t).toMatch(/import \{ IDS_FLUJOS, PUENTE_DE_FLUJOS, esFlujo, modulosDeFlujos, type IdFlujo \} from '\.\.\/registro\.js';/);
     expect(t).not.toMatch(/new Set\(\[\s*'agendamiento'/);
     // El alta sigue escribiendo vertical y flujos…
     expect(sinComentarios(t)).toMatch(/vertical = flujos\[0\]/);
     expect(sinComentarios(t)).toMatch(/vertical, flujos,/);
-    // …y ninguna escritura de `modulos` en el código del archivo.
-    expect(sinComentarios(t)).not.toMatch(/\bmodulos\b/);
+    // …y, desde H2b-7, `modulos` derivada de los flujos (el detalle se prueba en doble-escritura-modulos.test.ts).
+    expect(sinComentarios(t)).toMatch(/modulos: modulosDeFlujos\(/);
   });
 
-  it('los scripts de alta no escriben `modulos`', () => {
-    for (const s of ['alta-comercio.mjs', 'asignar-numero.mjs', 'completar-flujos.mjs']) {
-      expect(sinComentarios(readFileSync(join(SCRIPTS, s), 'utf8')), s).not.toMatch(/\bmodulos\b/);
-    }
+  it('los scripts de alta escriben `modulos` derivada del registro; completar-flujos no la escribe nunca', () => {
+    expect(sinComentarios(readFileSync(join(SCRIPTS, 'alta-comercio.mjs'), 'utf8'))).toMatch(/modulos: modulosDeFlujos\(FLUJOS\)/);
+    expect(sinComentarios(readFileSync(join(SCRIPTS, 'asignar-numero.mjs'), 'utf8'))).toMatch(/modulos: FieldValue\.arrayUnion/);
+    expect(sinComentarios(readFileSync(join(SCRIPTS, 'completar-flujos.mjs'), 'utf8'))).not.toMatch(/[{,]\s*modulos\s*:/);
   });
 });
 

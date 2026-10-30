@@ -24,7 +24,7 @@ import {
 // es `asignarEjes`, y contar los cambios operados es `registrarCambioOperado`,
 // los dos en `central/`. El plan, la modalidad y los umbrales siguen en
 // `actualizarEstadoCuenta`, más abajo.
-import { IDS_FLUJOS } from '../registro.js';
+import { IDS_FLUJOS, PUENTE_DE_FLUJOS, esFlujo, modulosDeFlujos, type IdFlujo } from '../registro.js';
 import { MODELO_POR_DEFECTO, TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } from '../central/ejes.js';
 // PREPAGO (bloque A-0, `DISENO.md` §4undecies): la modalidad de la cuenta y los
 // campos derivados de la situación de pago, que se recalculan y nunca se
@@ -52,8 +52,10 @@ import { documentoDeVertical } from '../core/prompt/prompt.js';
 // use como parte de una ruta de Firestore un valor con barras o puntos.
 const ID_NUMERO = /^[0-9]{6,25}$/;
 // Un flujo por vertical. Ver DISENO.md §Varios flujos y varios números.
-// La lista sale del registro (`PUENTE_DE_FLUJOS`): no se repite aquí. El alta SIGUE
-// escribiendo `vertical` y `flujos`; `modulos` lo escribe solo la migración (H2b).
+// La lista sale del registro (`PUENTE_DE_FLUJOS`): no se repite aquí. El alta escribe
+// `vertical`, `flujos` y `modulos` (derivado de los flujos con `modulosDeFlujos`), y
+// agregar un flujo a una ficha que ya tiene `modulos` suma también sus módulos: las
+// reglas leen `modulos` y, si la lista no se suma, la capacidad queda cerrada en silencio.
 const VERTICALES = new Set<string>(IDS_FLUJOS);
 
 // ---------------------------------------------------------------------------
@@ -111,6 +113,8 @@ export const altaTenant = onCall(async (peticion) => {
   });
   lote.create(ref, {
     nombre, estado: 'activo', plan: cuenta.plan, vertical, flujos,
+    // Doble escritura (H2b-7): `modulos` nace coherente con `flujos`.
+    modulos: modulosDeFlujos(flujos.filter(esFlujo) as IdFlujo[]),
     // El modelo de IA es una decisión de NovuChat por tenant (`central/ejes.ts`):
     // nace con el que corre en todos los flujos y se cambia con
     // `asignarEjes`, nunca desde el navegador.
@@ -342,6 +346,16 @@ export const asignarNumero = onCall(async (peticion) => {
     }
     const tenant = await tx.get(db().doc(`tenants/${tenantId}`));
     if (!tenant.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
+    // DOBLE ESCRITURA (H2b-7): con `modulos` lista se suman los del flujo; ausente,
+    // no se crea; existente pero no lista, se rechaza sin escribir.
+    const datosFicha = tenant.data() ?? {};
+    let modulosPorSumar: string[] | null = null;
+    if (Object.prototype.hasOwnProperty.call(datosFicha, 'modulos') && datosFicha['modulos'] !== undefined) {
+      if (!Array.isArray(datosFicha['modulos'])) {
+        throw new HttpsError('failed-precondition', 'La ficha tiene `modulos` y no es una lista: corríjala antes de agregar el flujo.');
+      }
+      modulosPorSumar = [...PUENTE_DE_FLUJOS[flujo as IdFlujo].modulos];
+    }
 
     // Asignar un número con un flujo SUMA ese flujo al negocio; no reemplaza
     // los que ya tenía. Antes se sobreescribía `vertical`, y un negocio con
@@ -372,6 +386,7 @@ export const asignarNumero = onCall(async (peticion) => {
       waPhoneNumberId: phoneNumberId, waWabaId: wabaId,
       vertical: tenant.get('vertical') ?? flujo,
       flujos: FieldValue.arrayUnion(flujo),
+      ...(modulosPorSumar ? { modulos: FieldValue.arrayUnion(...modulosPorSumar) } : {}),
     });
     if (refConfig && config && !config.exists) {
       tx.set(refConfig, { actualizadoPor: uid, actualizadoEn: Timestamp.now() });

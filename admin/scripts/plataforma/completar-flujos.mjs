@@ -35,6 +35,15 @@ const db = getFirestore();
 const DOCUMENTO = Object.fromEntries(IDS_FLUJOS.map((f) => [f, documentoDeFlujo(f)]));
 
 const fichas = await db.collection('tenants').get();
+// Doble escritura (H2b-7): antes de escribir nada, una ficha que necesita completarse y ya tiene `modulos`
+// corta todo con código 2 (la lista `modulos` manda en las reglas; completar `flujos` a mano la dejaría incoherente).
+for (const f of fichas.docs) {
+  const d = f.data();
+  if (!Array.isArray(d.flujos) && d.modulos !== undefined && d.modulos !== null) {
+    console.error(`  ✗ ${f.id}: la ficha ya tiene modulos: use aplicar-modulos-tenant.mjs`);
+    process.exit(2);
+  }
+}
 let completadas = 0, creados = 0;
 for (const ficha of fichas.docs) {
   const datos = ficha.data();

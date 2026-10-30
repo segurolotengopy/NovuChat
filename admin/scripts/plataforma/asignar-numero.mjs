@@ -45,7 +45,7 @@ import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 // EL FLUJO VÁLIDO Y SU DOCUMENTO DE CONFIGURACIÓN SALEN DEL REGISTRO (H2b-4e), no de
 // una lista propia: `registro.ts` no tiene `import`, así que no necesita el gancho de abajo.
-import { documentoDeFlujo, esFlujo } from '../../functions/src/registro.ts';
+import { documentoDeFlujo, esFlujo, PUENTE_DE_FLUJOS } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -205,7 +205,15 @@ try {
       };
     }
 
+    // Doble escritura (H2b-7): con `modulos` lista se suman los del flujo; ausente, no se
+    // crea; existente pero no lista, se rechaza sin escribir.
+    const datosFicha = tenant.data() ?? {};
+    const tieneModulos = Object.prototype.hasOwnProperty.call(datosFicha, 'modulos') && datosFicha.modulos !== undefined;
+    if (tieneModulos && !Array.isArray(datosFicha.modulos)) {
+      return { error: 'La ficha tiene `modulos` y no es una lista: corríjala antes de agregar el flujo.' };
+    }
     const resumen = {
+      modulosAntes: tieneModulos ? datosFicha.modulos : null,
       reemplazada: Boolean(vieja && vieja.exists),
       rutaNueva: !ruta.exists,
       configNueva: Boolean(refConfig && config && !config.exists),
@@ -224,6 +232,7 @@ try {
       waPhoneNumberId: NUMERO, waWabaId: WABA,
       vertical: tenant.get('vertical') ?? FLUJO,
       flujos: FieldValue.arrayUnion(FLUJO),
+      ...(tieneModulos ? { modulos: FieldValue.arrayUnion(...PUENTE_DE_FLUJOS[FLUJO].modulos) } : {}),
     });
     if (resumen.configNueva) {
       tx.set(refConfig, { actualizadoPor: OPERADOR, actualizadoEn: Timestamp.now() });
@@ -248,6 +257,7 @@ if (plan.error) {
 console.log(`  Ruta      : ${plan.rutaNueva ? 'se crea' : 'ya existía, se actualiza'}`);
 if (REEMPLAZA) console.log(`  Ruta vieja: ${cola(REEMPLAZA)} se borra`);
 console.log(`  Ficha     : flujos ${JSON.stringify(plan.flujosAntes)} + ${FLUJO} · estado ${plan.estado}`);
+console.log(`  Módulos   : ${plan.modulosAntes === null ? 'la ficha no tiene modulos (no se crea)' : `antes ${JSON.stringify(plan.modulosAntes)} + los de ${FLUJO}`}`);
 console.log(`  Config    : ${documento ? (plan.configNueva ? `se crea config/${documento}` : `config/${documento} ya existe`) : 'sin documento propio'}`);
 
 if (!APLICAR) {
