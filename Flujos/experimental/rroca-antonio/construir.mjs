@@ -45,8 +45,8 @@ export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-antonio/rroca-antonio.json');
 export const ARCHIVO_DE_NEGOCIO = join(AQUI, '../../../admin/scripts/datos/rroca-antonio/negocio-rroca-antonio.json');
 // 47 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
-// excepción declarada por Andres el 29/10/2026 para el guardado de medios, +11 nodos: docs/versiones-por-cliente.md.
-export const TOPE_DE_NODOS = 58;
+// excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
+export const TOPE_DE_NODOS = 56;
 /** Los nodos de la conversación completa (PR-B): el cotejo del comprobante, el modelo y el aviso a Antonio. La guardia los exige. */
 export const NODOS_DEL_AVISO = ['Armar avisos', '¿Hay avisos?', 'Enviar aviso'];
 export const NODOS_DE_LA_CONVERSACION = ['Interpretar lectura', '¿Cotejar?', 'Cotejar en el servidor', '¿Conversar con el modelo?', 'Conversar con el modelo', '¿Avisar al servidor?', 'Avisar al servidor'];
@@ -209,7 +209,7 @@ export function guardias(variante, flujo) {
   const nombres = new Set(nodos.map((n) => n.name));
   const por = (nombre) => nodos.find((n) => n.name === nombre);
   const p = (n) => (n && n.parameters) || {};
-  if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace (el tope ya incluye los 11 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +11 nodos: docs/versiones-por-cliente.md)`);
+  if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md)`);
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
   if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
@@ -307,7 +307,7 @@ export function guardias(variante, flujo) {
   }
   // Retención de ejecuciones, orden y zona horaria.
   const st = (flujo && flujo.settings) || {};
-  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'all' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «all» y saveExecutionProgress false');
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» y saveExecutionProgress false (con la rama del guardado de medios el binario quedaría en la ejecución: decisión de Andres del 30/10, contrato v2 §8.1)');
   if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow`');
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');

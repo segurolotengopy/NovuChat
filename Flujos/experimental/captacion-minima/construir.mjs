@@ -616,7 +616,7 @@ export function guardias(entrada, flujo, datos = {}) {
   }
   // Retención de ejecuciones, orden y zona horaria (decisión de Andres, 03/10/2026: se guardan solo las ejecuciones que fallan).
   const st = (flujo && flujo.settings) || {};
-  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'all' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «all» y saveExecutionProgress false (solo se guardan las ejecuciones que fallan; llevan el texto del turno)');
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» y saveExecutionProgress false (con la rama del guardado de medios el binario quedaría en la ejecución: decisión de Andres del 30/10, contrato v2 §8.1)');
   if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow` (D13)');
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');

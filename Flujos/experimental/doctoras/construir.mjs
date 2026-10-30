@@ -37,8 +37,8 @@ import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const CARPETA_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/doctoras');
 // 48 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
-// excepción declarada por Andres el 29/10/2026 para el guardado de medios, +11 nodos: docs/versiones-por-cliente.md.
-export const TOPE_DE_NODOS = 59;
+// excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
+export const TOPE_DE_NODOS = 57;
 /** Los tenants con archivo de datos (`<tenant>.json`, sin los `negocio-*.json`): hoy las dos doctoras. */
 export function tenantsConDatos(carpeta = CARPETA_DE_DATOS) {
   return readdirSync(carpeta).filter((a) => /^rroca-[a-z0-9-]+\.json$/.test(a)).map((a) => a.replace(/\.json$/, '')).sort();
@@ -266,7 +266,7 @@ export function guardias(variante, flujo) {
   const nombres = new Set(nodos.map((n) => n.name));
   const por = (nombre) => nodos.find((n) => n.name === nombre);
   const p = (n) => (n && n.parameters) || {};
-  if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace (el tope ya incluye los 11 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +11 nodos: docs/versiones-por-cliente.md)`);
+  if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md)`);
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
   if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');

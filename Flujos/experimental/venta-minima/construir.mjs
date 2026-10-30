@@ -74,8 +74,8 @@ const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 // (el código vive en `src/lib` y `src/nodos`). `--verificar` falla si un JSON de producción (todo el que no es la variante de
 // prueba) pasa de este tope.
 // 50 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
-// excepción declarada por Andres el 29/10/2026 para el guardado de medios, +11 nodos: docs/versiones-por-cliente.md.
-const TOPE_DE_NODOS = 61;
+// excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
+const TOPE_DE_NODOS = 59;
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,
 // su credencial de cabecera (la de la ingesta), `responseMode: onReceived` y la ruta como marcador (una URL de capacidad que
@@ -91,8 +91,10 @@ const MARCADOR_DEL_CARRITO = 'REEMPLAZAR_RUTA_CARRITO_QTACO';
 // declarado en DISENO.md (sección «Retención de ejecuciones»): n8n guardará en su base el encabezado `Authorization` del webhook del carrito, los enlaces, la
 // URL del QR y datos de clientes. Es la excepción de UN solo archivo: las variantes de prueba y de ensayo y cualquier otro tenant conservan `none` en todo
 // (llevan texto de clientes) y no pueden guardar nada sin declararlo aquí. Cambiar esta entrada exige la decisión de Andres y una revisión de `seguridad`.
-const RETENCION_POR_SALIDA = { 'venta-minima.qtaco.json': { exito: 'all', error: 'all' } };
-const RETENCION_DECLARADA = new Set(['venta-minima.qtaco.json']);
+// DECISIÓN DE ANDRES (30/10/2026, contrato v2 de medios §8.1) que REEMPLAZA la del 04/10: con la rama del guardado de medios, el BINARIO del medio quedaría
+// en los datos de la ejecución; Q'Taco deja de guardar ejecuciones (`none`/`none`), como todo flujo con medios. Se pierde diagnóstico, por privacidad.
+const RETENCION_POR_SALIDA = {};
+const RETENCION_DECLARADA = new Set();
 const RETENCION_POR_OMISION = { exito: 'none', error: 'none' };
 const retencionDe = (destino) => RETENCION_POR_SALIDA[destino] || RETENCION_POR_OMISION;
 
@@ -416,7 +418,7 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
     if (entrada !== 'prueba' && nombres.has(solo)) hallazgos.push(`contiene el nodo «${solo}» (inventa avisos «salidos»): solo va en el JSON de prueba`);
   }
   // Retención de ejecuciones: por omisión NADA se guarda (las ejecuciones llevan texto de clientes) y el progreso y las ejecuciones manuales nunca se guardan. La UNICA excepción
-  // declarada es el JSON de Q'Taco, que guarda todo (`all`/`all`) por decisión de Andres (04/10/2026): ver `RETENCION_POR_SALIDA`.
+  // declarada era el JSON de Q'Taco (04/10/2026); desde el 30/10 tampoco guarda (guardado de medios, contrato v2 §8.1): ver `RETENCION_POR_SALIDA`.
   const st = flujo.settings || {};
   const ret = retencionDe(destino);
   if (st.saveDataSuccessExecution !== ret.exito || st.saveDataErrorExecution !== ret.error || st.saveExecutionProgress !== false || st.saveManualExecutions !== false) {
