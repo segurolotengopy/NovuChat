@@ -15,13 +15,15 @@ export {
 export { cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo } from './modulos/cobros/alCierre.js';
 export { MINUTOS_RETENCION_POR_DEFECTO };
 export { milisegundosDe };
+import { alTurnoCampanas } from './modulos/campanas/alTurno.js';
+import { alTurnoCaptacion } from './modulos/captacion/alTurno.js';
+import { modulosDelTurno, type ContextoDelTurno } from './core/turno/ganchosDelTurno.js';
 import { existencias } from './modulos/inventario/inventario.js';
 import { getFirestore, FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { defineInt } from 'firebase-functions/params';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
-import { sanearCaptacion } from './modulos/captacion/captacion.js';
 import { vozFija, tratamientoClave, tratamientoEfectivo, quienAtiende } from './core/prompt/prompt.js';
 import { registrar } from './core/turno/bitacora.js';
 import { atenderSesion } from './core/turno/sesionFirestore.js';
@@ -39,9 +41,9 @@ import {
 // consola). Se reexportan para que quien ya los importaba de acá no cambie.
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
 // El aviso de consumo al 80 % se decide en `planes.ts`, también puro.
-import { avisoConsumoPendiente, avisoDeConsumo, limiteDeCampanas, periodoDe } from './central/cuenta/planes.js';
+import { avisoConsumoPendiente, avisoDeConsumo, periodoDe } from './central/cuenta/planes.js';
 import {
-  anunciosParaElFlujo, campanasParaElFlujo, leerCampanas, plegarParaPatrones, type Campana,
+  leerCampanas, plegarParaPatrones, type Campana,
 } from './modulos/campanas/campanas.js';
 // EL PREPAGO se decide en `prepago.ts`, puro: cobertura del mes, gracia,
 // saldo de conversaciones y si el corte SE APLICA o solo se observa. Acá se
@@ -1822,18 +1824,15 @@ export const configuracionFlujo = onRequest(
       const datos = d.data();
       return { id: d.id, data: (): Record<string, unknown> => ({ ...datos, nombre: cita(String(datos['nombre'] ?? '')) }) };
     }) };
-    const anunciosDeHoy = anunciosParaElFlujo(
-      vigentesDelTurno.campanas,
-      limiteDeCampanas(cuenta.exists ? cuenta.data() as Record<string, unknown> : null),
-      ahoraMs,
-      catalogoPrompt.docs.map((d) => {
-        const datos = d.data();
-        const quedan = existencias(datos);
-        return { id: d.id, nombre: datos['nombre'], precio: datos['precio'],
-          ...(quedan !== null ? { agotado: quedan === 0 } : {}) };
-      }),
-    ).map((a) => (terminosDelTurno.length === 0 ? a
-      : { ...a, titulares: a.titulares.map(cita), angulo: cita(a.angulo) }));
+    // El catálogo activo que el turno YA trajo, como lo ve un gancho: nombre (citado), precio y, si lleva
+    // control de existencias, `agotado`. Lo calcula el coordinador con Inventario para que Campañas
+    // no dependa de él. Cero lecturas nuevas.
+    const catalogoDelTurno = catalogoPrompt.docs.map((d) => {
+      const datos = d.data();
+      const quedan = existencias(datos);
+      return { id: d.id, datos: { nombre: datos['nombre'], precio: datos['precio'],
+        ...(quedan !== null ? { agotado: quedan === 0 } : {}) } };
+    });
 
     // EL ESTADO DE ATENCIÓN DEL TELÉFONO, si vino. Se calcula con la misma
     // función que la ingesta, sobre lo que la ingesta dejó guardado con el
@@ -2013,6 +2012,23 @@ export const configuracionFlujo = onRequest(
       ...(motivoSinEnlace ? { catalogoEnlaceMotivo: motivoSinEnlace } : {}),
     });
 
+    // LOS GANCHOS DE CAMPAÑAS Y CAPTACIÓN (F3b-2b): el coordinador llama a los de los módulos que corren
+    // en ESTE turno (encendidos en la ficha y propios del flujo del número, `modulosDelTurno`).
+    const modulosDeHoy = modulosDelTurno(comercio.ficha, comercio.flujo);
+    const contextoDelTurno: ContextoDelTurno = {
+      tenantId: comercio.tenantId, flujo: comercio.flujo, telefono, ahoraMs, negocio,
+      cuenta: cuenta.exists ? cuenta.data() as Record<string, unknown> : null,
+      especifica: especifica?.exists ? especifica.data() : undefined,
+      vigentesDeCampanas: vigentesDelTurno.campanas, catalogo: catalogoDelTurno,
+      solicitud: docConversacion?.get('solicitud'), cobroRealActivo,
+      moneda: String(negocio['moneda'] ?? 'BOB'),
+      urlDelQr: (ficha) => `https://${REGION}-${process.env['GCLOUD_PROJECT'] ?? ''}`
+        + `.cloudfunctions.net/imagenDeCobro?f=${ficha}`,
+      citar: cita,
+    };
+    const aporteDeCampanas = modulosDeHoy.includes('campanas') ? alTurnoCampanas(contextoDelTurno) : {};
+    const aporteDeCaptacion = modulosDeHoy.includes('captacion') ? alTurnoCaptacion(contextoDelTurno) : {};
+
     respuesta.status(200).json({
       ...sesionLeida,
       tenantId: comercio.tenantId,
@@ -2164,9 +2180,10 @@ export const configuracionFlujo = onRequest(
       //
       // Afectaba a los DOS verticales que cobran, venta y agendamiento, y
       // estaba en producción desde que existe el cobro real.
-      ...(docVertical === 'onboarding'
-        ? { onboarding: sanearCaptacion(especifica?.exists ? especifica.data() : {}) }
-        : docVertical && especifica?.exists
+      // (F3b-2b) La captación saneada la aporta su gancho (`modulos/captacion/alTurno.ts`);
+      // el documento `onboarding` nunca sale crudo por la rama genérica.
+      ...aporteDeCaptacion,
+      ...(docVertical !== 'onboarding' && docVertical && especifica?.exists
           ? { [docVertical]: (() => {
               const { cobroReal: _fuera, ...resto } = especifica.data() as Record<string, unknown>;
               return resto;
@@ -2258,21 +2275,11 @@ export const configuracionFlujo = onRequest(
         new Set(catalogoPrompt.docs.map((d) => d.id)),
       ),
 
-      // LAS CAMPAÑAS QUE EL FLUJO RECONOCE POR SU TEXTO (Andres, 24/09/2026):
-      // SOLO las aprobadas por `verificarCampanas`, en curso hoy y dentro del
-      // tope del plan de HOY. Lo propuesto (`lista`) nunca viaja: una campaña
-      // sin revisar no salta ningún menú. `campanas.ts` explica el contrato.
-      campanas: campanasParaElFlujo(
-        vigentesDelTurno.campanas,
-        limiteDeCampanas(cuenta.exists ? cuenta.data() as Record<string, unknown> : null),
-        ahoraMs,
-      ).map((c) => (terminosDelTurno.length === 0 ? c : { ...c, texto: cita(c.texto) })),
-
-      // LOS ANUNCIOS COMO DATO DEL TENANT (PR-1 de Campañas): las mismas campañas
-      // vigentes, pero las que traen titulares, con el producto y su precio leídos
-      // del catálogo activo que este turno YA trajo (cero lecturas nuevas). El
-      // tenant sale de la ruta autenticada. `campanas` (arriba) no cambia.
-      ...(anunciosDeHoy.length > 0 ? { anuncios: anunciosDeHoy } : {}),
+      // LAS CAMPAÑAS Y LOS ANUNCIOS (F3b-2b): `campanas` y `anuncios` los aporta el
+      // gancho de Campañas (`modulos/campanas/alTurno.ts`) cuando el módulo corre
+      // en este turno. Apagado, la respuesta conserva la forma de siempre: `campanas: []`.
+      campanas: [],
+      ...aporteDeCampanas,
     });
   },
 );

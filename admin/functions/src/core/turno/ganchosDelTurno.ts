@@ -66,6 +66,12 @@ export interface ContextoDelTurno {
   readonly moneda: string;
   /** Arma la direccion publica de la imagen del QR a partir de su ficha. */
   readonly urlDelQr: (ficha: string) => string;
+  /**
+   * Cita el termino de producto registrado en un texto que viaja al modelo (el
+   * sistema pone las comillas, nunca el comercio). Sin terminos devuelve el
+   * mismo texto. Lo usa Campañas para sus textos y titulares (F3b-2b).
+   */
+  readonly citar: (texto: string) => string;
 }
 
 /**
