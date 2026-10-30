@@ -137,7 +137,7 @@ const docVenta = await ref.get();
 // Como `activar-cobro-real`: cobra por config/venta el comercio cuyos MÓDULOS lo dicen (con la lista `modulos,
 // manda ella; sin lista, los de sus flujos). Misma función del registro que decide el servidor.
 if (documentoDeCobro(modulosDeFicha(tenant.data())) !== 'venta') {
-  niega(`el tenant ${TENANT} no tiene la venta habilitada (su ficha no incluye el flujo venta).`);
+  niega(`el tenant ${TENANT} no tiene la venta habilitada (sus módulos no incluyen cobros y pedidos, es decir, venta).`);
 }
 // Mismo criterio que ingesta.ts (cobroRealActivo): encendido Y con ficha y carga útil.
 // Con el cobro real apagado, ingesta copia mediaIdQr a cobroSimulado.mediaIdQr y

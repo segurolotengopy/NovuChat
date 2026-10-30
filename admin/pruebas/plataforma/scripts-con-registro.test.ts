@@ -309,8 +309,10 @@ describe('5. H2b-11: ningún script decide la capacidad leyendo `flujos` a mano 
     expect(t).toMatch(/documentoDeCobro\(modulosDeFicha\(/);
     expect(t).not.toMatch(/flujosDeFicha/);
   });
-  it('ensayo.mjs: con la lista `modulos` manda `tieneModulo`', () => {
-    expect(texto('plataforma/ensayo.mjs')).toMatch(/tieneModulo\(fichaEnsayo\.data\(\), 'pedidos'\)/);
+  it('ensayo.mjs vacía los restos de venta siempre que exista el comercio ensayo, sin leer `flujos` ni `vertical`', () => {
+    const t = texto('plataforma/ensayo.mjs');
+    expect(t).toMatch(/const vaciarVenta = fichaEnsayo\.exists;/);
+    expect(t).not.toMatch(/fichaEnsayo\.get\('flujos'\)/);
   });
   it.each(['datos/cargar-negocio.mjs', 'datos/cargar-captacion.mjs', 'plataforma/fijar-webhook-carrito.mjs'])(
     '%s decide con tieneModulo y no con `flujosDeFicha(...).includes`', (ruta) => {

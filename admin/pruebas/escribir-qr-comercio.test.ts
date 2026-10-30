@@ -206,7 +206,6 @@ describe('escribir-qr-comercio.mjs', () => {
     expect(await mediaId(MIG_CON_PEDIDOS)).toBe(LOCAL);
   }, 60_000);
 
-
   it('cobro real ausente, apagado o incompleto: NEGADO en seco y en aplicar, sin escribir', async () => {
     const casos: Array<Record<string, unknown>> = [
       { mediaIdQr: VIEJO },

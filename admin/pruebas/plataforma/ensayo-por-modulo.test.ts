@@ -53,22 +53,15 @@ async function seco(ficha: Record<string, unknown>) {
   return { codigo: r.status, salida, venta: /\(\d+ de venta/.test(salida) };
 }
 
-describe('ensayo.mjs: los restos de venta los decide el registro con la ficha migrada', () => {
-  it('NEGATIVA: ficha migrada sin pedidos NO vacía venta aunque `flujos` y `vertical` digan venta', async () => {
-    const r = await seco({ vertical: 'venta', flujos: ['venta'], modulos: ['productos', 'campanas', 'cobros', 'agenda'] });
+describe('ensayo.mjs: los restos de venta se vacían siempre, sea cual sea la ficha del comercio ensayo', () => {
+  it.each([
+    ['migrada sin pedidos, con `flujos` venta', { vertical: 'venta', flujos: ['venta'], modulos: ['productos', 'campanas', 'cobros', 'agenda'] }],
+    ['migrada con pedidos, con `flujos` agendamiento', { vertical: 'agendamiento', flujos: ['agendamiento'], modulos: ['productos', 'campanas', 'cobros', 'pedidos'] }],
+    ['sin lista, de venta', { vertical: 'venta', flujos: ['venta'] }],
+    ['sin lista, de agendamiento (un ensayo anterior pudo dejar pedidos)', { vertical: 'agendamiento', flujos: ['agendamiento'] }],
+  ])('ficha %s: cuenta el pedido viejo y en seco no escribe', async (_n, ficha) => {
+    const r = await seco(ficha);
     expect(r.codigo, r.salida).toBe(0);
-    expect(r.venta, r.salida).toBe(false);
-  }, 60_000);
-
-  it('ficha migrada con pedidos vacía venta aunque `flujos` no incluya venta', async () => {
-    const r = await seco({ vertical: 'agendamiento', flujos: ['agendamiento'], modulos: ['productos', 'campanas', 'cobros', 'pedidos'] });
-    expect(r.codigo, r.salida).toBe(0);
-    expect(r.venta, r.salida).toBe(true);
-  }, 60_000);
-
-  it('ficha sin lista: igual que hoy (por `flujos` o por `vertical`)', async () => {
-    expect((await seco({ vertical: 'venta', flujos: ['venta'] })).venta).toBe(true);
-    expect((await seco({ vertical: 'venta' })).venta).toBe(true);
-    expect((await seco({ vertical: 'agendamiento', flujos: ['agendamiento'] })).venta).toBe(false);
+    expect(r.salida, r.salida).toMatch(/\(1 de venta/);
   }, 60_000);
 });
