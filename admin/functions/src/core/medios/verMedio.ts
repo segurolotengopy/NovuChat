@@ -8,7 +8,7 @@
  * administrador. Esta callable es la ÚNICA puerta para verlos u oírlos en la
  * consola: la piden el administrador y el operador de ESE comercio y el soporte
  * de NovuChat mientras el comercio le conserve una ventana vigente (contrato M3
- * del 30/10/2026, «los mismos roles que ven comprobantes»; reemplaza a la D4 de
+ * y contrato v2 §8.3 del 30/10/2026, decisión de Andres; reemplaza a la D4 de
  * `docs/arquitectura/core.md`, «soporte no ve los medios»). Devuelve los bytes,
  * nunca una URL: una URL firmada se copia, se reenvía y vive hasta que vence.
  *
@@ -24,7 +24,8 @@
  * (`pruebas/core/medios/ver-medio.test.ts`):
  *
  *  - **El cliente nunca manda una ruta.** Manda EXACTAMENTE
- *    `{tenantId, conversacionId, idMeta}`; cualquier otra clave es
+ *    `{tenantId, conversacionId, idMeta, accion}` (`accion`: `'ver'` o `'descargar'`,
+ *    adenda de seguridad §7.7; se audita como `medio_visto` o `medio_descargado`); cualquier otra clave es
  *    `invalid-argument`. La ruta sale de `tenants/{t}/mediosRecibidos/{sha256(idMeta)}`
  *    y pasa por `rutaValidaDeMedio` (ESTE comercio, ESTE medio, día con forma de
  *    fecha, extensión de la lista, sin `..`). Una ruta ajena no llega al almacén.
@@ -34,12 +35,21 @@
  *    (`vence` en el pasado, aunque el TTL no lo haya borrado aún) es `not-found`.
  *  - **Autoriza sobre el comercio pedido**: `esAdminDe`/`esOperDe` (rol +
  *    contraseña + correo verificado) y, para el soporte, `esPropietario` más una
- *    ventana vigente en `accesosSoporte`. Y vuelve a leer la cuenta
+ *    ventana vigente en `accesosSoporte`. Los tres roles ven y descargan todo, sin
+ *    distinción de acción por rol (decisión de Andres, 30/10/2026, contrato v2 §8.3;
+ *    reemplaza a la D4 «soporte no ve los medios»). Y vuelve a leer la cuenta
  *    (`cuentaVigenteDe`).
- *  - **El tipo se decide por los bytes** (`tipoPorFirma`): debe coincidir con la
- *    extensión de la ruta, con el `tipo` y con el `mime` del metadato (el que fijó
- *    el servidor al guardar, nunca el que pida nadie), y el sha256 de los bytes
- *    con el guardado. Un `.jpg` que trae HTML no sale.
+ *  - **El mime que sale es SEGURO** (contrato v2, 30/10/2026: se guarda y se
+ *    descarga TODO tipo que WhatsApp permite). Imagen y audio: el de su firma
+ *    (`tipoPorFirma`), que tiene que coincidir con la extensión, la categoría y el
+ *    `mime` del metadato; un `.jpg` que trae HTML no sale. Video y documento (de
+ *    cualquier byte): siempre `application/octet-stream`, y la extensión de la
+ *    lista cerrada RECALCULADA DESDE LOS BYTES (`documentoPorFirma`, `videoPorFirma`;
+ *    provisionales hasta que M1b publique los suyos en `tipos.ts`), que tiene que ser
+ *    la de la ruta. Nunca el mime declarado por el cliente. El sha256 de los bytes tiene que ser el guardado.
+ *  - **Salida:** `{tipo, categoria, mime, extension, tamano, base64}` (`tipo` =
+ *    `categoria`). Si el metadato aún no trae `categoria`/`ext` (los agrega M1b),
+ *    se deducen de la ruta; si los trae, tienen que coincidir con ella.
  *  - **Auditoría FAIL-CLOSED**: la vista se anota en `tenants/{t}/auditoria`
  *    (`accion: 'medio_visto'`, con `objeto` = el hash, nunca el teléfono, el
  *    `idMeta` ni la conversación) ANTES de devolver los bytes; si no se pudo
@@ -64,7 +74,7 @@
  * al enviarlo (~21 MiB), más los trozos de la descarga: ~100 MiB en el peor
  * caso. Con la concurrencia por defecto de gen2 (80) eso agota cualquier memoria;
  * con 4 y 1 GiB, cabe (mismo hallazgo y mismo valor que `guardarMedio`, #617).
- * `timeoutSeconds: 60` explícito. En staging (`CPU_FRACCIONARIA`), sin
+ * `timeoutSeconds: 120` explícito (adenda de seguridad §7.7). En staging (`CPU_FRACCIONARIA`), sin
  * `concurrency` (firebase-tools la rechaza con menos de 1 vCPU).
  *
  * Costo por vista: lecturas de ficha, tope y metadato (más la de soporte, si es
@@ -78,7 +88,7 @@ import { REGION } from '../region.js';
 import { esAdminDe, esOperDe, esPropietario, exigirAutenticado } from '../seguridad/autorizacion.js';
 import { cuentaVigenteDe, soporteVigenteDe, type RolVerificado } from '../seguridad/vigencia.js';
 import { CARPETA_DE_DIA, almacenDeMedios, nombreDeObjeto } from './almacen.js';
-import { TOPE_POR_TIPO, tipoPorFirma, type ExtensionDeMedio, type TipoDeMedio } from './tipos.js';
+import { MB, tipoPorFirma } from './tipos.js';
 
 // ---------------------------------------------------------------------------
 // OPCIONES (copia declarada de `opcionesDeVerComprobante`, con 1 GiB y 60 s)
@@ -95,7 +105,7 @@ export function opcionesDeVerMedio(env: Record<string, string | undefined>): Cal
   return {
     region: REGION,
     memory: '1GiB',
-    timeoutSeconds: 60,
+    timeoutSeconds: 120,
     maxInstances: 3,
     ...(staging ? {} : { concurrency: CONCURRENCIA_DE_VER_MEDIO }),
     enforceAppCheck: emulador ? false : staging ? APP_CHECK_DE_VER_MEDIO.staging : APP_CHECK_DE_VER_MEDIO.produccion,
@@ -118,15 +128,95 @@ const ID_CONVERSACION = /^wa_[0-9]{8,15}$/;
 /** La forma de un wamid de Meta: sin espacios, saltos de línea ni caracteres de control. */
 const ID_META = /^[A-Za-z0-9._=:+/-]{1,120}$/;
 const UID_SEGURO = /^[A-Za-z0-9_-]{1,128}$/;
-const CLAVES_DE_ENTRADA = new Set(['tenantId', 'conversacionId', 'idMeta']);
+const CLAVES_DE_ENTRADA = new Set(['tenantId', 'conversacionId', 'idMeta', 'accion']);
+/** Lo que la persona hace con el medio (adenda §7.7): mirarlo u oírlo en la consola, o bajarlo. */
+export type AccionSobreMedio = 'ver' | 'descargar';
+/** Cómo queda cada una en la auditoría. */
+export const ACCION_AUDITADA: Record<AccionSobreMedio, string> = { ver: 'medio_visto', descargar: 'medio_descargado' };
+const esAccion = (v: unknown): v is AccionSobreMedio => v === 'ver' || v === 'descargar';
 
-/** Qué tipo corresponde a cada extensión que `guardarMedio` puede escribir. */
-const TIPO_DE_EXTENSION: Record<ExtensionDeMedio, TipoDeMedio> = {
+/**
+ * CONTRATO v2 (30/10/2026, «guardar y descargar TODO»). Cuatro categorías; imagen y audio se
+ * muestran en la consola, video y documentos solo se descargan como adjunto.
+ */
+export type CategoriaDeMedio = 'image' | 'audio' | 'video' | 'document';
+const CATEGORIAS: readonly CategoriaDeMedio[] = ['image', 'audio', 'video', 'document'];
+const esCategoria = (v: unknown): v is CategoriaDeMedio => typeof v === 'string' && (CATEGORIAS as readonly string[]).includes(v);
+
+/**
+ * LA LISTA CERRADA de extensiones y la categoría que cada una implica. Es propia de la lectura (no
+ * importa la de `tipos.ts`, que es de M1b y crece con v2): una extensión fuera de esta lista en la
+ * ruta es `ruta_invalida`. `bin` es «documento no reconocido».
+ */
+export const CATEGORIA_DE_EXTENSION = {
   jpg: 'image', png: 'image', webp: 'image',
   ogg: 'audio', m4a: 'audio', mp3: 'audio', aac: 'audio', amr: 'audio',
-  pdf: 'document',
+  mp4: 'video', '3gp': 'video',
+  pdf: 'document', docx: 'document', xlsx: 'document', pptx: 'document', zip: 'document',
+  doc: 'document', xls: 'document', ppt: 'document', txt: 'document', csv: 'document', bin: 'document',
+} as const satisfies Record<string, CategoriaDeMedio>;
+export type ExtensionLeida = keyof typeof CATEGORIA_DE_EXTENSION;
+const esExtension = (v: string): v is ExtensionLeida => Object.prototype.hasOwnProperty.call(CATEGORIA_DE_EXTENSION, v);
+
+/**
+ * Topes de LECTURA por categoría (contrato v2 §1: imagen 5 MB; audio, video y documento 16 MB). El
+ * de guardado lo hace cumplir `guardarMedio`; este es el techo de lo que la callable descarga.
+ */
+export const TOPE_DE_LECTURA: Record<CategoriaDeMedio, number> = { image: 5 * MB, audio: 16 * MB, video: 16 * MB, document: 16 * MB };
+
+/** El mime que sale para todo lo que no es imagen ni audio verificados: nunca el declarado. */
+export const MIME_DE_DESCARGA = 'application/octet-stream';
+
+const PK = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+const OLE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+const MIMES_PK: Readonly<Record<string, ExtensionLeida>> = {
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'application/zip': 'zip', 'application/x-zip-compressed': 'zip',
 };
-const esExtension = (v: string): v is ExtensionDeMedio => Object.prototype.hasOwnProperty.call(TIPO_DE_EXTENSION, v);
+const MIMES_OLE: Readonly<Record<string, ExtensionLeida>> = {
+  'application/msword': 'doc', 'application/vnd.ms-excel': 'xls', 'application/vnd.ms-powerpoint': 'ppt',
+};
+const MIMES_TEXTO: Readonly<Record<string, ExtensionLeida>> = { 'text/plain': 'txt', 'text/csv': 'csv' };
+const de = (tabla: Readonly<Record<string, ExtensionLeida>>, m: string): ExtensionLeida | undefined =>
+  Object.prototype.hasOwnProperty.call(tabla, m) ? tabla[m] : undefined;
+
+/**
+ * TODO(M1b, adenda §7.1): REEMPLAZAR por `documentoPorFirma` de `tipos.ts` (rama
+ * core/medios-todos-los-tipos), la función ÚNICA que comparten `guardarMedio` y `verMedio`. Esto es
+ * un PROVISIONAL local con las mismas reglas de la adenda, para no esperar a M1b; el integrador lo
+ * cambia por el import y la prueba «documentoPorFirma provisional» pasa a probar la de M1b.
+ * La extensión sale de los BYTES (y del mime declarado solo si coincide con una lista cerrada y con
+ * la firma): pdf (`%PDF-` sin ZIP en el primer KB); docx/xlsx/pptx/zip (`PK\x03\x04` + su mime);
+ * doc/xls/ppt (OLE + su mime); txt/csv (su mime, sin NUL y UTF-8 válido); todo lo demás —incluidos
+ * los mimes con macros (docm, xlsm)— `bin`. El mime que devuelve es siempre `application/octet-stream`.
+ */
+export function documentoPorFirma(bytes: Buffer, mimeDeclarado: unknown): { ext: ExtensionLeida; mime: string } {
+  const m = (String(mimeDeclarado ?? '').split(';')[0] ?? '').trim().toLowerCase();
+  const empieza = (b: Buffer) => bytes.length >= b.length && bytes.subarray(0, b.length).equals(b);
+  const salida = (ext: ExtensionLeida | undefined) => ({ ext: ext ?? 'bin', mime: MIME_DE_DESCARGA });
+  if (empieza(Buffer.from('%PDF-'))) return salida(bytes.subarray(0, 1024).includes(PK) ? 'bin' : 'pdf');
+  if (empieza(PK)) return salida(de(MIMES_PK, m));
+  if (empieza(OLE)) return salida(de(MIMES_OLE, m));
+  const texto = de(MIMES_TEXTO, m);
+  if (texto && !bytes.includes(0)) {
+    try { new TextDecoder('utf-8', { fatal: true }).decode(bytes); return salida(texto); } catch { return salida('bin'); }
+  }
+  return salida('bin');
+}
+
+/**
+ * TODO(M1b, adenda §7.2): reemplazar por la firma de video de `tipos.ts`. Caja `ftyp` (tamaño ≥ 8)
+ * con una marca de VIDEO, disjunta de las de audio (`M4A `, `M4B `, `M4P ` no están): mp4 o 3gp.
+ */
+const MARCAS_MP4 = new Set(['isom', 'iso2', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'avc1', 'M4V ', 'MSNV', 'dash']);
+const MARCAS_3GP = new Set(['3gp4', '3gp5', '3gp6', '3gg6', '3g2a']);
+export function videoPorFirma(bytes: Buffer): ExtensionLeida | null {
+  if (bytes.length < 12 || bytes.subarray(4, 8).toString('latin1') !== 'ftyp' || bytes.readUInt32BE(0) < 8) return null;
+  const marca = bytes.subarray(8, 12).toString('latin1');
+  return MARCAS_MP4.has(marca) ? 'mp4' : MARCAS_3GP.has(marca) ? '3gp' : null;
+}
 
 export type MotivoDeRechazo =
   | 'tope' | 'sin_medio' | 'anotado' | 'pendiente' | 'caducado' | 'ruta_invalida'
@@ -165,7 +255,7 @@ export function rutaValidaDeMedio(ruta: unknown, tenantId: string, idMeta: strin
   return ruta;
 }
 
-const extensionDe = (ruta: string): ExtensionDeMedio => ruta.slice(ruta.lastIndexOf('.') + 1) as ExtensionDeMedio;
+const extensionDe = (ruta: string): ExtensionLeida => ruta.slice(ruta.lastIndexOf('.') + 1) as ExtensionLeida;
 
 // ---------------------------------------------------------------------------
 // EL TOPE POR USUARIO (copia declarada de `consumirCupoDelVisor`, sobre `topesDeMedios`)
@@ -204,12 +294,12 @@ export async function consumirCupoDeMedios(uid: string, ahoraMs: number): Promis
 // LA AUDITORÍA (copia declarada de `auditar` de `central/comunes.ts`)
 // ---------------------------------------------------------------------------
 
-export type AuditorDeMedios = (tenantId: string, uid: string, detalle: Record<string, unknown>) => Promise<unknown>;
+export type AuditorDeMedios = (tenantId: string, uid: string, accion: string, detalle: Record<string, unknown>) => Promise<unknown>;
 
 /** Escribe y FALLA EN VOZ ALTA (no es la bitácora, que se traga los errores). */
-export const auditarEnFirestore: AuditorDeMedios = (tenantId, uid, detalle) =>
+export const auditarEnFirestore: AuditorDeMedios = (tenantId, uid, accion, detalle) =>
   getFirestore().collection(`tenants/${tenantId}/auditoria`).add({
-    accion: 'medio_visto', uid, en: Timestamp.now(), ...detalle,
+    ...detalle, accion, uid, en: Timestamp.now(),
   });
 
 let auditorDePrueba: AuditorDeMedios | null = null;
@@ -218,7 +308,7 @@ export function fijarAuditorDeMediosDePrueba(a: AuditorDeMedios | null): void {
   if (!process.env['MEDIOS_DOBLE']) throw new Error('fijarAuditorDeMediosDePrueba exige MEDIOS_DOBLE en el entorno');
   auditorDePrueba = a;
 }
-const auditarVista: AuditorDeMedios = (tenantId, uid, detalle) => (auditorDePrueba ?? auditarEnFirestore)(tenantId, uid, detalle);
+const auditarVista: AuditorDeMedios = (tenantId, uid, accion, detalle) => (auditorDePrueba ?? auditarEnFirestore)(tenantId, uid, accion, detalle);
 
 // ---------------------------------------------------------------------------
 // LA CALLABLE
@@ -241,7 +331,10 @@ function codigoDe(e: unknown): string {
 const esObjeto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const milis = (v: unknown): number | null => (v instanceof Timestamp ? v.toMillis() : null);
 
-export interface MedioVisto { tipo: TipoDeMedio; mime: string; tamano: number; base64: string }
+/** `tipo` y `categoria` son iguales (el contrato v2 pide los dos nombres). */
+export interface MedioVisto {
+  tipo: CategoriaDeMedio; categoria: CategoriaDeMedio; mime: string; extension: ExtensionLeida; tamano: number; base64: string;
+}
 
 export const verMedio = onCall(opcionesDeVerMedio(process.env), async (p: CallableRequest) => {
   try {
@@ -257,12 +350,13 @@ async function atender(p: CallableRequest): Promise<MedioVisto> {
   // 1. Identidad. Sin sesión: nada que auditar.
   const uid = exigirAutenticado(p);
 
-  // 2. Forma de la entrada: exactamente tres claves, cada una con su forma.
+  // 2. Forma de la entrada: exactamente cuatro claves, cada una con su forma.
   const datos = esObjeto(p.data) ? p.data : null;
   const tenantId = datos?.['tenantId'];
   const conversacionId = datos?.['conversacionId'];
   const idMeta = datos?.['idMeta'];
-  if (datos === null || Object.keys(datos).some((k) => !CLAVES_DE_ENTRADA.has(k))
+  const accion = datos?.['accion'];
+  if (datos === null || !esAccion(accion) || Object.keys(datos).some((k) => !CLAVES_DE_ENTRADA.has(k))
     || typeof tenantId !== 'string' || !ID_TENANT.test(tenantId)
     || typeof conversacionId !== 'string' || !ID_CONVERSACION.test(conversacionId)
     || typeof idMeta !== 'string' || !ID_META.test(idMeta)) {
@@ -312,11 +406,11 @@ async function atender(p: CallableRequest): Promise<MedioVisto> {
   // Desde acá quien llama TIENE rol en este comercio: sus rechazos se auditan.
   const rechazar = async (
     motivo: MotivoDeRechazo,
-    codigo: 'resource-exhausted' | 'failed-precondition' | 'not-found' | 'unavailable',
+    codigo: 'permission-denied' | 'resource-exhausted' | 'failed-precondition' | 'not-found' | 'unavailable',
     mensaje: string, detalle?: 'anotado' | 'pendiente',
   ): Promise<never> => {
     try {
-      await auditarVista(tenantId, uid, { rol, objeto, resultado: 'rechazado', motivo });
+      await auditarVista(tenantId, uid, ACCION_AUDITADA[accion], { rol, objeto, resultado: 'rechazado', motivo });
     } catch (e) {
       registrarRechazo('unavailable', uid, `auditoria_${codigoDe(e)}`);
       throw new HttpsError('unavailable', MENSAJES.noDisponible);
@@ -341,12 +435,21 @@ async function atender(p: CallableRequest): Promise<MedioVisto> {
   const vence = milis(meta.get('vence'));
   if (vence === null || vence <= ahoraMs) return rechazar('caducado', 'not-found', MENSAJES.noHay);
 
-  // 9. La ruta, validada contra ESTE comercio y ESTE medio, y con la extensión del metadato.
+  // 9. La ruta, validada contra ESTE comercio y ESTE medio. La extensión y la categoría salen de la
+  // ruta; si el metadato trae `ext`, `categoria` o `tipo` (M1b los escribe), tienen que coincidir.
   const ruta = rutaValidaDeMedio(meta.get('ruta'), tenantId, idMeta);
-  if (ruta === null || meta.get('ext') !== extensionDe(ruta)) return rechazar('ruta_invalida', 'not-found', MENSAJES.noHay);
-  const tipoEsperado = TIPO_DE_EXTENSION[extensionDe(ruta)];
-  if (meta.get('tipo') !== tipoEsperado) return rechazar('tipo_no_coincide', 'failed-precondition', MENSAJES.noElegible);
-  const maximo = TOPE_POR_TIPO[tipoEsperado];
+  const extMeta = meta.get('ext');
+  if (ruta === null || (extMeta !== undefined && extMeta !== null && extMeta !== extensionDe(ruta))) {
+    return rechazar('ruta_invalida', 'not-found', MENSAJES.noHay);
+  }
+  const extRuta = extensionDe(ruta);
+  const categoria: CategoriaDeMedio = CATEGORIA_DE_EXTENSION[extRuta];
+  for (const declarada of [meta.get('categoria'), meta.get('tipo')]) {
+    if (declarada !== undefined && declarada !== null && (!esCategoria(declarada) || declarada !== categoria)) {
+      return rechazar('tipo_no_coincide', 'failed-precondition', MENSAJES.noElegible);
+    }
+  }
+  const maximo = TOPE_DE_LECTURA[categoria];
 
   // 10. El tamaño, SIN descargar.
   const almacen = almacenDeMedios();
@@ -369,23 +472,35 @@ async function atender(p: CallableRequest): Promise<MedioVisto> {
   if (bytes === null) return rechazar('sin_medio', 'not-found', MENSAJES.noHay);
   if (bytes.length > maximo) return rechazar('demasiado_grande', 'failed-precondition', MENSAJES.noElegible);
 
-  // 12. El tipo, por los bytes: extensión, tipo y mime del metadato. Y la huella, la del guardado.
-  const firma = tipoPorFirma(bytes);
-  if (firma === null || firma.ext !== extensionDe(ruta) || firma.tipo !== tipoEsperado || firma.mime !== meta.get('mime')) {
-    return rechazar('tipo_no_coincide', 'failed-precondition', MENSAJES.noElegible);
-  }
+  // 12. La huella, la del guardado. Después, la EXTENSIÓN RECALCULADA DESDE LOS BYTES (no se confía en
+  // `ext` de Firestore), que tiene que ser la de la ruta; y el mime SEGURO: imagen y audio, el de su
+  // firma; video y documento, siempre octet-stream. Nunca el mime que declaró nadie.
   if (createHash('sha256').update(bytes).digest('hex') !== meta.get('sha256')) {
     return rechazar('integridad', 'failed-precondition', MENSAJES.noElegible);
   }
+  let mime: string = MIME_DE_DESCARGA;
+  if (categoria === 'image' || categoria === 'audio') {
+    const firma = tipoPorFirma(bytes);
+    const mimeMeta = meta.get('mime');
+    if (firma === null || firma.tipo !== categoria || firma.ext !== extRuta
+      || (mimeMeta !== undefined && mimeMeta !== null && mimeMeta !== firma.mime)) {
+      return rechazar('tipo_no_coincide', 'failed-precondition', MENSAJES.noElegible);
+    }
+    mime = firma.mime;
+  } else {
+    const deLosBytes = categoria === 'video' ? videoPorFirma(bytes) : documentoPorFirma(bytes, meta.get('mime')).ext;
+    if (deLosBytes !== extRuta) return rechazar('tipo_no_coincide', 'failed-precondition', MENSAJES.noElegible);
+  }
+  const extension: ExtensionLeida = extRuta;
 
   // 13. FAIL-CLOSED: si la vista no quedó anotada, no sale ningún byte.
   try {
-    await auditarVista(tenantId, uid, { rol, objeto, resultado: 'ok' });
+    await auditarVista(tenantId, uid, ACCION_AUDITADA[accion], { rol, objeto, resultado: 'ok' });
   } catch (e) {
     registrarRechazo('unavailable', uid, `auditoria_${codigoDe(e)}`);
     throw new HttpsError('unavailable', MENSAJES.noDisponible);
   }
 
   // 14. Exactamente esto y nada más.
-  return { tipo: firma.tipo, mime: firma.mime, tamano: bytes.length, base64: bytes.toString('base64') };
+  return { tipo: categoria, categoria, mime, extension, tamano: bytes.length, base64: bytes.toString('base64') };
 }

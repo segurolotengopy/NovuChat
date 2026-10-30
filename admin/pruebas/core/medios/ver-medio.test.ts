@@ -1,8 +1,9 @@
 /**
  * `verMedio`: LOS BYTES DE UN MEDIO ENTRANTE POR UNA CALLABLE, ESCRITO NEGANDO
  *
- * Contrato M3 (30/10/2026) §1: entrada EXACTA `{tenantId, conversacionId, idMeta}`, salida exacta
- * `{tipo, mime, tamano, base64}`. Cada guarda de `core/medios/verMedio.ts` tiene acá una prueba que
+ * Contrato M3 (30/10/2026) §1 y contrato v2 §2 («guardar y descargar TODO»): entrada EXACTA
+ * `{tenantId, conversacionId, idMeta}`, salida exacta `{tipo, categoria, mime, extension, tamano, base64}`
+ * con mime SEGURO (imagen y audio por firma; video y documento, `application/octet-stream`). Cada guarda de `core/medios/verMedio.ts` tiene acá una prueba que
  * falla si se quita. Adaptadas de `pruebas/modulos/cobros/ver-comprobante.test.ts` (T1 a T23).
  *
  * CÓMO SE PRUEBA SIN NUBE:
@@ -76,6 +77,10 @@ const JPG = (n = 64) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Bu
 const PNG = () => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40, 3)]);
 const PDF = () => Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(40, 9)]);
 const OGG = (n = 40) => Buffer.concat([Buffer.from('OggS'), Buffer.alloc(n, 1)]);
+const MP4 = (marca = 'isom') => Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from(`ftyp${marca}`), Buffer.alloc(40, 4)]);
+const ZIP = () => Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(20, 1)]);
+const OLE = () => Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0]);
+const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const M4A = () => Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from('ftypM4A '), Buffer.alloc(40, 2)]);
 
 // ---------------------------------------------------------------------------
@@ -119,27 +124,27 @@ async function ficha(t: string, extra: Record<string, unknown> = {}) {
 }
 /** Un medio guardado hoy: el metadato como lo deja `guardarMedio` y el objeto en el almacén. */
 async function escena(t = T, o: {
-  idMeta?: string; conversacionId?: string; bytes?: Buffer; ext?: TI.ExtensionDeMedio; fichaExtra?: Record<string, unknown>;
+  idMeta?: string; conversacionId?: string; bytes?: Buffer; ext?: V.ExtensionLeida; fichaExtra?: Record<string, unknown>;
   meta?: Record<string, unknown>; sinObjeto?: boolean;
 } = {}): Promise<Escena> {
   const idMeta = o.idMeta ?? `wamid.${t}.1`;
   const conversacionId = o.conversacionId ?? CONV;
   const bytes = o.bytes ?? JPG();
   const firma = TI.tipoPorFirma(bytes);
-  const ext = o.ext ?? firma?.ext ?? 'jpg';
-  const tipo = firma?.tipo ?? 'image';
-  const mime = firma?.mime ?? 'image/jpeg';
+  const ext: V.ExtensionLeida = o.ext ?? firma?.ext ?? 'bin';
+  const tipo = V.CATEGORIA_DE_EXTENSION[ext];
+  const mime = firma && firma.ext === ext ? firma.mime : V.MIME_DE_DESCARGA;
   await ficha(t, o.fichaExtra);
   const ruta = `tenants/${t}/medios/${AL.diaDeLaPaz(Date.now())}/${AL.nombreDeObjeto(idMeta)}.${ext}`;
   await db.doc(`tenants/${t}/mediosRecibidos/${AL.nombreDeObjeto(idMeta)}`).set({
-    idMeta, conversacionId, tipo, mime, ext, estado: 'guardado', tamano: bytes.length, ruta,
+    idMeta, conversacionId, tipo, categoria: tipo, mime, ext, estado: 'guardado', tamano: bytes.length, ruta,
     sha256: createHash('sha256').update(bytes).digest('hex'),
     en: Timestamp.now(), vence: Timestamp.fromMillis(Date.now() + 90 * DIA_MS), ...o.meta,
   });
   if (!o.sinObjeto) almacen.objetos.set(ruta, bytes);
   return { t, conversacionId, idMeta, ruta, bytes };
 }
-const pedir = (e: Escena) => ({ tenantId: e.t, conversacionId: e.conversacionId, idMeta: e.idMeta });
+const pedir = (e: Escena, accion: 'ver' | 'descargar' = 'ver') => ({ tenantId: e.t, conversacionId: e.conversacionId, idMeta: e.idMeta, accion });
 const refMeta = (e: Escena) => db.doc(`tenants/${e.t}/mediosRecibidos/${AL.nombreDeObjeto(e.idMeta)}`);
 
 async function documentosDe(t: string): Promise<string[]> {
@@ -185,7 +190,7 @@ describe('el camino feliz: administrador, operador, soporte con ventana y comerc
   it('el administrador ve la imagen: {tipo, mime, tamano, base64} exactos y UN asiento «admin» con el objeto', async () => {
     const e = await escena();
     const r = await llamar(pedir(e), admin(T));
-    expect(r).toEqual({ tipo: 'image', mime: 'image/jpeg', tamano: e.bytes.length, base64: e.bytes.toString('base64') });
+    expect(r).toEqual({ tipo: 'image', categoria: 'image', mime: 'image/jpeg', extension: 'jpg', tamano: e.bytes.length, base64: e.bytes.toString('base64') });
     const a = await auditoria(T);
     expect(a).toHaveLength(1);
     expect(a[0]).toMatchObject({ accion: 'medio_visto', uid: `u-admin-${T}`, rol: 'admin', objeto: AL.nombreDeObjeto(e.idMeta), resultado: 'ok' });
@@ -206,15 +211,18 @@ describe('el camino feliz: administrador, operador, soporte con ventana y comerc
     const e = await escena('medio-suspendido', { fichaExtra: { estado: 'suspendido' } });
     expect(await llamar(pedir(e), admin(e.t))).toMatchObject({ tipo: 'image' });
   });
-  it('cada tipo sale con su tipo y su mime por los bytes: jpg, png, pdf, ogg y m4a', async () => {
-    const casos: Array<[Buffer, string, string]> = [
-      [JPG(), 'image', 'image/jpeg'], [PNG(), 'image', 'image/png'], [PDF(), 'document', 'application/pdf'],
-      [OGG(), 'audio', 'audio/ogg'], [M4A(), 'audio', 'audio/mp4'],
+  it('imagen y audio salen con el mime de su firma; PDF, video y documentos SIEMPRE como octet-stream', async () => {
+    const casos: Array<[Buffer, V.ExtensionLeida | undefined, string, string, string]> = [
+      [JPG(), undefined, 'image', 'image/jpeg', 'jpg'], [PNG(), undefined, 'image', 'image/png', 'png'],
+      [OGG(), undefined, 'audio', 'audio/ogg', 'ogg'], [M4A(), undefined, 'audio', 'audio/mp4', 'm4a'],
+      [PDF(), 'pdf', 'document', V.MIME_DE_DESCARGA, 'pdf'],
+      [MP4(), 'mp4', 'video', V.MIME_DE_DESCARGA, 'mp4'], [MP4('3gp4'), '3gp', 'video', V.MIME_DE_DESCARGA, '3gp'],
+      [Buffer.from('MZ\x90ejecutable'), 'bin', 'document', V.MIME_DE_DESCARGA, 'bin'],
     ];
-    for (const [i, [bytes, tipo, mime]] of casos.entries()) {
-      const e = await escena(T, { idMeta: `wamid.tipo${i}`, bytes });
+    for (const [i, [bytes, ext, tipo, mime, extension]] of casos.entries()) {
+      const e = await escena(T, { idMeta: `wamid.tipo${i}`, bytes, ...(ext ? { ext } : {}) });
       const r = await llamar(pedir(e), admin(T)) as V.MedioVisto;
-      expect([r.tipo, r.mime]).toEqual([tipo, mime]);
+      expect([r.tipo, r.categoria, r.mime, r.extension], String(i)).toEqual([tipo, tipo, mime, extension]);
       expect(Buffer.from(r.base64, 'base64').equals(bytes)).toBe(true);
     }
   });
@@ -225,7 +233,7 @@ describe('el camino feliz: administrador, operador, soporte con ventana y comerc
     expect(almacen.leerRutas).toEqual([e.ruta]);
   });
   it('el audio de 16 MiB (el tope de WhatsApp) sale entero y su respuesta cabe en los 32 MiB de una callable gen2', async () => {
-    const bytes = Buffer.concat([Buffer.from('OggS'), Buffer.alloc(TI.TOPE_POR_TIPO.audio - 4, 1)]);
+    const bytes = Buffer.concat([Buffer.from('OggS'), Buffer.alloc(V.TOPE_DE_LECTURA.audio - 4, 1)]);
     const e = await escena(T, { idMeta: 'wamid.audio16', bytes });
     const r = await llamar(pedir(e), admin(T)) as V.MedioVisto;
     expect(r.tamano).toBe(16 * 1024 * 1024);
@@ -310,7 +318,7 @@ describe('quién NO pasa (y no deja nada escrito)', () => {
       expect(await documentosDe(e.t)).toEqual(antes);
     }
     const t = 'medio-fantasma';
-    await expect(llamar({ tenantId: t, conversacionId: CONV, idMeta: 'wamid.x' }, admin(t))).rejects.toMatchObject({ code: 'not-found' });
+    await expect(llamar({ tenantId: t, conversacionId: CONV, idMeta: 'wamid.x', accion: 'ver' }, admin(t))).rejects.toMatchObject({ code: 'not-found' });
     expect(await documentosDe(t)).toEqual([]);
     expect(almacen.llamadas).toBe(0);
     expect(await topes()).toEqual([]);
@@ -338,6 +346,8 @@ describe('la forma de la entrada', () => {
       { ...pedir(e), conversacionId: 'wa_59170000123/mensajes' },
       { ...pedir(e), idMeta: '' }, { ...pedir(e), idMeta: 'con espacio' }, { ...pedir(e), idMeta: 'x'.repeat(121) }, { ...pedir(e), idMeta: 7 },
       { tenantId: T, conversacionId: CONV }, { tenantId: T, idMeta: e.idMeta },
+      { ...pedir(e), accion: undefined }, { ...pedir(e), accion: 'borrar' }, { ...pedir(e), accion: 'VER' }, { ...pedir(e), accion: ['ver'] },
+      { tenantId: T, conversacionId: CONV, idMeta: e.idMeta },
       undefined, null, 'texto', ['x'], 7,
     ];
     for (const data of malos) await expect(llamar(data, admin(T)), JSON.stringify(data)).rejects.toMatchObject(falla('invalid-argument', FIJOS.invalido));
@@ -366,7 +376,7 @@ describe('el metadato: de ESTA conversación, guardado y vigente', () => {
   });
   it('un medio que no existe: not-found', async () => {
     await escena();
-    await expect(llamar({ tenantId: T, conversacionId: CONV, idMeta: 'wamid.no-existe' }, admin(T))).rejects.toMatchObject(falla('not-found', FIJOS.noHay));
+    await expect(llamar({ tenantId: T, conversacionId: CONV, idMeta: 'wamid.no-existe', accion: 'ver' }, admin(T))).rejects.toMatchObject(falla('not-found', FIJOS.noHay));
     expect(almacen.llamadas).toBe(0);
   });
   it('ANOTADO (docx/xlsx sin bytes): failed-precondition con detalle «anotado», sin tocar el almacén', async () => {
@@ -443,7 +453,8 @@ describe('una ruta que no es de ESTE comercio y ESTE medio no llega al almacén'
     expect(V.rutaValidaDeMedio(ok, T, 'wamid.z')).toBe(ok);
     expect(V.rutaValidaDeMedio(ok, OTRO, 'wamid.z')).toBeNull();
     expect(V.rutaValidaDeMedio(ok, T, 'wamid.y')).toBeNull();
-    expect(V.rutaValidaDeMedio(ok.replace('.ogg', '.docx'), T, 'wamid.z')).toBeNull();
+    expect(V.rutaValidaDeMedio(ok.replace('.ogg', '.docx'), T, 'wamid.z')).toBe(ok.replace('.ogg', '.docx'));
+    for (const mala of ['.exe', '.html', '.svg', '.js', '.EXE', '']) expect(V.rutaValidaDeMedio(ok.replace('.ogg', mala), T, 'wamid.z'), mala).toBeNull();
     expect(V.rutaValidaDeMedio(`${ok}\\..`, T, 'wamid.z')).toBeNull();
   });
 });
@@ -462,15 +473,55 @@ describe('el tipo se decide por los bytes; la huella, por el guardado', () => {
     }
     expect((await auditoria(T)).every((x) => x['motivo'] === 'tipo_no_coincide')).toBe(true);
   });
-  it('bytes de un tipo bajo la extensión de otro (png en .jpg, ogg en .pdf, jpg en .ogg): sin bytes', async () => {
-    const casos: Array<[TI.ExtensionDeMedio, Buffer]> = [['jpg', PNG()], ['pdf', OGG()], ['ogg', JPG()]];
+  it('imagen o audio con bytes de otra cosa (png en .jpg, jpg en .ogg, ogg en .m4a, HTML en .webp): sin bytes', async () => {
+    const casos: Array<[V.ExtensionLeida, Buffer]> = [['jpg', PNG()], ['ogg', JPG()], ['m4a', OGG()], ['webp', Buffer.from('<html/>')]];
     for (const [i, [ext, bytes]] of casos.entries()) {
       const e = await escena(T, { idMeta: `wamid.x${i}`, bytes: JPG(), ext });
-      await refMeta(e).update({ ext, tipo: ext === 'pdf' ? 'document' : ext === 'ogg' ? 'audio' : 'image' });
       almacen.objetos.set(e.ruta, bytes);
       await refMeta(e).update({ sha256: createHash('sha256').update(bytes).digest('hex') });
       await sinBytes(e);
     }
+  });
+  it('la extensión se RECALCULA desde los bytes y tiene que ser la de la ruta: si no, sin bytes', async () => {
+    const malos: Array<[V.ExtensionLeida, Buffer, string | undefined]> = [
+      ['pdf', Buffer.from('MZ no es pdf'), undefined], ['docx', Buffer.from('no es zip'), DOCX], ['doc', ZIP(), 'application/msword'],
+      ['txt', Buffer.from([0x41, 0, 0x42]), 'text/plain'], ['docx', ZIP(), 'application/vnd.ms-word.document.macroEnabled.12'],
+      ['mp4', MP4('M4A '), undefined], ['mp4', Buffer.from('video falso'), undefined], ['3gp', MP4('isom'), undefined],
+      ['bin', PDF(), undefined],
+    ];
+    for (const [i, [ext, bytes, mime]] of malos.entries()) {
+      const e = await escena(T, { idMeta: `wamid.dm${i}`, bytes, ext, ...(mime ? { meta: { mime } } : {}) });
+      await expect(llamar(pedir(e, 'descargar'), admin(T)), `${ext} ${i}`).rejects.toMatchObject(falla('failed-precondition', FIJOS.noElegible));
+    }
+    expect((await auditoria(T)).every((x) => x['motivo'] === 'tipo_no_coincide')).toBe(true);
+  });
+  it('documentos que sí se sostienen: docx (PK + su mime), xls (OLE), csv (texto UTF-8), todos como octet-stream', async () => {
+    const buenos: Array<[V.ExtensionLeida, Buffer, string]> = [
+      ['docx', ZIP(), DOCX], ['xls', OLE(), 'application/vnd.ms-excel'], ['csv', Buffer.from('a,b\nñ,2'), 'text/csv'], ['zip', ZIP(), 'application/zip'],
+    ];
+    for (const [i, [ext, bytes, mime]] of buenos.entries()) {
+      const e = await escena(T, { idMeta: `wamid.db${i}`, bytes, ext, meta: { mime } });
+      const r = await llamar(pedir(e, 'descargar'), admin(T)) as V.MedioVisto;
+      expect([r.extension, r.mime, r.categoria], ext).toEqual([ext, V.MIME_DE_DESCARGA, 'document']);
+    }
+  });
+  it('NUNCA el mime declarado: un «bin» con metadato «text/html» o un video «video/mp4» salen como octet-stream', async () => {
+    const d = await escena(T, { idMeta: 'wamid.html', bytes: Buffer.from('<html><script>x</script></html>'), ext: 'bin', meta: { mime: 'text/html' } });
+    expect(await llamar(pedir(d, 'descargar'), admin(T))).toMatchObject({ mime: V.MIME_DE_DESCARGA, extension: 'bin' });
+    const v = await escena(T, { idMeta: 'wamid.vid', bytes: MP4(), ext: 'mp4', meta: { mime: 'video/mp4' } });
+    expect(await llamar(pedir(v, 'descargar'), admin(T))).toMatchObject({ mime: V.MIME_DE_DESCARGA, categoria: 'video' });
+  });
+  it('sin categoria, ext, tipo ni mime en el metadato (anterior a M1b): se deducen de la ruta', async () => {
+    const e = await escena();
+    await refMeta(e).update({ categoria: FieldValue.delete(), ext: FieldValue.delete(), tipo: FieldValue.delete(), mime: FieldValue.delete() });
+    expect(await llamar(pedir(e), admin(T))).toMatchObject({ categoria: 'image', mime: 'image/jpeg', extension: 'jpg' });
+  });
+  it('una categoria del metadato que contradice la ruta (video en un .jpg, o desconocida): sin tocar el almacén', async () => {
+    for (const [i, categoria] of (['video', 'sticker', 'IMAGE'] as const).entries()) {
+      const e = await escena(T, { idMeta: `wamid.c${i}`, meta: { categoria } });
+      await expect(llamar(pedir(e), admin(T))).rejects.toMatchObject(falla('failed-precondition', FIJOS.noElegible));
+    }
+    expect(almacen.llamadas).toBe(0);
   });
   it('el mime del metadato manda: unos bytes png con metadato «image/jpeg» no salen', async () => {
     const e = await escena(T, { bytes: PNG() });
@@ -507,15 +558,18 @@ describe('lo que no está y lo demasiado grande', () => {
     almacen.leer = async (ruta: string) => { almacen.leerRutas.push(ruta); return null; };
     await expect(llamar(pedir(e), admin(T))).rejects.toMatchObject({ code: 'not-found' });
   });
-  it('imagen > 5 MB, PDF > 10 MB y audio > 16 MB según getMetadata: failed-precondition SIN descargar', async () => {
-    const casos: Array<[Buffer, number]> = [[JPG(), TI.TOPE_POR_TIPO.image + 1], [PDF(), TI.TOPE_POR_TIPO.document + 1], [OGG(), TI.TOPE_POR_TIPO.audio + 1]];
-    for (const [i, [bytes, tamano]] of casos.entries()) {
-      const e = await escena(T, { idMeta: `wamid.g${i}`, bytes });
+  it('imagen > 5 MB, y documento, video y audio > 16 MB según getMetadata: failed-precondition SIN descargar', async () => {
+    const casos: Array<[Buffer, V.ExtensionLeida | undefined, number]> = [
+      [JPG(), undefined, 5 * TI.MB + 1], [PDF(), 'pdf', 16 * TI.MB + 1], [OGG(), undefined, 16 * TI.MB + 1], [MP4(), 'mp4', 16 * TI.MB + 1],
+    ];
+    for (const [i, [bytes, ext, tamano]] of casos.entries()) {
+      const e = await escena(T, { idMeta: `wamid.g${i}`, bytes, ...(ext ? { ext } : {}) });
       almacen.tamanoFalso.set(e.ruta, tamano);
       await expect(llamar(pedir(e), admin(T))).rejects.toMatchObject(falla('failed-precondition', FIJOS.noElegible));
     }
     expect(almacen.leerRutas).toEqual([]);
-    expect((await auditoria(T)).map((x) => x['motivo'])).toEqual(['demasiado_grande', 'demasiado_grande', 'demasiado_grande']);
+    expect((await auditoria(T)).map((x) => x['motivo'])).toEqual(['demasiado_grande', 'demasiado_grande', 'demasiado_grande', 'demasiado_grande']);
+    expect(V.TOPE_DE_LECTURA).toEqual({ image: 5 * TI.MB, audio: 16 * TI.MB, video: 16 * TI.MB, document: 16 * TI.MB });
   });
   it('un audio de 6 MB pasa el tamaño; una imagen de 6 MB no', async () => {
     const a = await escena(T, { idMeta: 'wamid.a6', bytes: OGG() });
@@ -526,7 +580,7 @@ describe('lo que no está y lo demasiado grande', () => {
     await expect(llamar(pedir(i), admin(T))).rejects.toMatchObject({ code: 'failed-precondition' });
   });
   it('getMetadata dice poco pero llegan más bytes que el tope: rechazado; un tamaño infinito, también', async () => {
-    const e = await escena(T, { bytes: Buffer.concat([JPG(), Buffer.alloc(TI.TOPE_POR_TIPO.image + 10)]) });
+    const e = await escena(T, { bytes: Buffer.concat([JPG(), Buffer.alloc(V.TOPE_DE_LECTURA.image + 10)]) });
     almacen.tamanoFalso.set(e.ruta, 100);
     await expect(llamar(pedir(e), admin(T))).rejects.toMatchObject(falla('failed-precondition', FIJOS.noElegible));
     const e2 = await escena(T, { idMeta: 'wamid.inf' });
@@ -556,7 +610,7 @@ describe('auditoría fail-closed y lo que queda escrito', () => {
     const llamadas: unknown[][] = [];
     V.fijarAuditorDeMediosDePrueba(async (...a) => { llamadas.push(a); return V.auditarEnFirestore(...a); });
     await llamar(pedir(e), admin(T));
-    expect(llamadas).toEqual([[T, `u-admin-${T}`, { rol: 'admin', objeto: AL.nombreDeObjeto(e.idMeta), resultado: 'ok' }]]);
+    expect(llamadas).toEqual([[T, `u-admin-${T}`, 'medio_visto', { rol: 'admin', objeto: AL.nombreDeObjeto(e.idMeta), resultado: 'ok' }]]);
     expect((await db.collection(`tenants/${T}/bitacora`).get()).size).toBe(0);
     expect(CODIGO).not.toMatch(/\bregistrar\s*\(/);
     expect(CODIGO).not.toMatch(/bitacora/i);
@@ -682,15 +736,15 @@ describe('ninguna salida de console trae teléfono, idMeta, ruta, hash ni comerc
 
 // ===========================================================================
 describe('la respuesta y las opciones de la función', () => {
-  it('la respuesta es exactamente {tipo, mime, tamano, base64}, sin nada del metadato', async () => {
+  it('la respuesta es exactamente {tipo, categoria, mime, extension, tamano, base64}, sin nada del metadato', async () => {
     const e = await escena();
     const r = await llamar(pedir(e), admin(T)) as Record<string, unknown>;
-    expect(Object.keys(r).sort()).toEqual(['base64', 'mime', 'tamano', 'tipo']);
+    expect(Object.keys(r).sort()).toEqual(['base64', 'categoria', 'extension', 'mime', 'tamano', 'tipo']);
     const crudo = JSON.stringify({ ...r, base64: '' });
     for (const prohibido of [TEL, CONV, e.idMeta, e.ruta, 'tenants/', 'wamid', AL.nombreDeObjeto(e.idMeta)]) expect(crudo).not.toContain(prohibido);
   });
-  it('producción: 1 GiB, 60 s, 3 instancias, concurrencia 4 explícita, App Check exigido', () => {
-    expect(V.opcionesDeVerMedio({})).toMatchObject({ memory: '1GiB', timeoutSeconds: 60, maxInstances: 3, concurrency: 4, enforceAppCheck: true, region: 'us-east1' });
+  it('producción: 1 GiB, 120 s, 3 instancias, concurrencia 4 explícita, App Check exigido', () => {
+    expect(V.opcionesDeVerMedio({})).toMatchObject({ memory: '1GiB', timeoutSeconds: 120, maxInstances: 3, concurrency: 4, enforceAppCheck: true, region: 'us-east1' });
   });
   it('staging (CPU fraccionaria): SIN concurrencia y sin App Check; emulador sin App Check', () => {
     const o = V.opcionesDeVerMedio({ CPU_FRACCIONARIA: 'si' });
@@ -699,15 +753,81 @@ describe('la respuesta y las opciones de la función', () => {
     expect(V.opcionesDeVerMedio({ FUNCTIONS_EMULATOR: 'true' }).enforceAppCheck).toBe(false);
     expect(V.opcionesDeVerMedio({ CPU_FRACCIONARIA: 'no' })).toMatchObject({ concurrency: 4, enforceAppCheck: true });
   });
-  it('la callable real usa esas opciones (callable, 1024 MB, 60 s, 3 instancias, concurrencia 4)', () => {
+  it('la callable real usa esas opciones (callable, 1024 MB, 120 s, 3 instancias, concurrencia 4)', () => {
     expect(CODIGO).toContain('onCall(opcionesDeVerMedio(process.env)');
     const ep = (V.verMedio as unknown as { __endpoint: Record<string, unknown> }).__endpoint;
     expect(ep['callableTrigger']).toBeDefined();
-    expect([ep['availableMemoryMb'], ep['timeoutSeconds'], ep['maxInstances'], ep['concurrency']]).toEqual([1024, 60, 3, 4]);
+    expect([ep['availableMemoryMb'], ep['timeoutSeconds'], ep['maxInstances'], ep['concurrency']]).toEqual([1024, 120, 3, 4]);
   });
   it('fijar el auditor de prueba sin MEDIOS_DOBLE lanza', () => {
     const previo = process.env['MEDIOS_DOBLE'];
     delete process.env['MEDIOS_DOBLE'];
     try { expect(() => V.fijarAuditorDeMediosDePrueba(null)).toThrow(); } finally { process.env['MEDIOS_DOBLE'] = previo; }
+  });
+});
+
+// ===========================================================================
+describe('la acción (adenda §7.7): ver o descargar, y lo que puede el soporte', () => {
+  const ventana = () => db.doc(`tenants/${T}/accesosSoporte/u-soporte`).set({ expira: Timestamp.fromMillis(Date.now() + 3_600_000) });
+  it('descargar queda auditado como «medio_descargado», y ver como «medio_visto»', async () => {
+    const e = await escena();
+    await llamar(pedir(e, 'descargar'), admin(T));
+    await llamar(pedir(e, 'ver'), oper(T));
+    expect((await auditoria(T)).map((x) => [x['accion'], x['rol']]).sort()).toEqual([['medio_descargado', 'admin'], ['medio_visto', 'oper']]);
+  });
+  it('la auditoría caída en una descarga: unavailable y sin bytes', async () => {
+    const e = await escena(T, { bytes: PDF(), ext: 'pdf' });
+    V.fijarAuditorDeMediosDePrueba(async () => { throw new Error('caída'); });
+    await expect(llamar(pedir(e, 'descargar'), admin(T))).rejects.toMatchObject(falla('unavailable', FIJOS.noDisponible));
+  });
+  it('admin y operador descargan un documento', async () => {
+    const e = await escena(T, { bytes: PDF(), ext: 'pdf' });
+    for (const quien of [admin(T), oper(T)]) expect(await llamar(pedir(e, 'descargar'), quien)).toMatchObject({ extension: 'pdf' });
+  });
+  it('el soporte con ventana TAMBIÉN descarga y ve todo (contrato v2 §8.3), auditado con su acción', async () => {
+    await ventana();
+    const d = await escena(T, { idMeta: 'wamid.sd', bytes: PDF(), ext: 'pdf' });
+    const v = await escena(T, { idMeta: 'wamid.sv', bytes: MP4(), ext: 'mp4' });
+    const a = await escena(T, { idMeta: 'wamid.sa', bytes: OGG() });
+    expect(await llamar(pedir(d, 'descargar'), soporte())).toMatchObject({ extension: 'pdf', mime: V.MIME_DE_DESCARGA });
+    expect(await llamar(pedir(v, 'descargar'), soporte())).toMatchObject({ categoria: 'video' });
+    expect(await llamar(pedir(a, 'ver'), soporte())).toMatchObject({ categoria: 'audio', mime: 'audio/ogg' });
+    expect((await auditoria(T)).map((x) => [x['accion'], x['rol'], x['resultado']]).sort()).toEqual([
+      ['medio_descargado', 'soporte', 'ok'], ['medio_descargado', 'soporte', 'ok'], ['medio_visto', 'soporte', 'ok'],
+    ]);
+  });
+  it('el soporte SIN ventana no descarga ni ve, y no deja nada escrito', async () => {
+    const e = await escena(T, { bytes: PDF(), ext: 'pdf' });
+    const antes = await documentosDe(T);
+    for (const accion of ['ver', 'descargar'] as const) {
+      await expect(llamar(pedir(e, accion), soporte())).rejects.toMatchObject(falla('permission-denied', FIJOS.sinPermiso));
+    }
+    expect(almacen.llamadas).toBe(0);
+    expect(await documentosDe(T)).toEqual(antes);
+    expect(await topes()).toEqual([]);
+  });
+});
+
+// ===========================================================================
+describe('documentoPorFirma y videoPorFirma PROVISIONALES (TODO M1b: se reemplazan por los de tipos.ts)', () => {
+  it('documentoPorFirma: la extensión sale de los bytes; el mime solo desempata dentro de la firma; siempre octet-stream', () => {
+    const casos: Array<[Buffer, string | undefined, string]> = [
+      [PDF(), undefined, 'pdf'], [Buffer.concat([Buffer.from('%PDF-1.4 '), ZIP()]), 'application/pdf', 'bin'],
+      [ZIP(), DOCX, 'docx'], [ZIP(), 'application/zip', 'zip'], [ZIP(), undefined, 'bin'], [ZIP(), 'application/vnd.ms-excel.sheet.macroEnabled.12', 'bin'],
+      [OLE(), 'application/msword', 'doc'], [OLE(), DOCX, 'bin'],
+      [Buffer.from('hola'), 'text/plain; charset=utf-8', 'txt'], [Buffer.from([0xff, 0xfe, 0x41]), 'text/plain', 'bin'], [Buffer.from('a\0b'), 'text/csv', 'bin'],
+      [Buffer.from('<svg/>'), 'image/svg+xml', 'bin'], [Buffer.from('MZ'), 'application/x-msdownload', 'bin'], [Buffer.from('hola'), DOCX, 'bin'],
+    ];
+    for (const [i, [bytes, mime, ext]] of casos.entries()) {
+      expect(V.documentoPorFirma(bytes, mime), String(i)).toEqual({ ext, mime: V.MIME_DE_DESCARGA });
+    }
+  });
+  it('videoPorFirma: marcas de video (mp4/3gp), nunca las de audio; caja de tamaño menor que 8, no', () => {
+    expect(V.videoPorFirma(MP4('isom'))).toBe('mp4');
+    expect(V.videoPorFirma(MP4('mp42'))).toBe('mp4');
+    expect(V.videoPorFirma(MP4('3gp6'))).toBe('3gp');
+    for (const marca of ['M4A ', 'M4B ', 'M4P ', 'qt  ']) expect(V.videoPorFirma(MP4(marca)), marca).toBeNull();
+    expect(V.videoPorFirma(Buffer.concat([Buffer.from([0, 0, 0, 4]), Buffer.from('ftypisom')]))).toBeNull();
+    expect(V.videoPorFirma(Buffer.from('ftyp'))).toBeNull();
   });
 });

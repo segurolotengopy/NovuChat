@@ -202,21 +202,27 @@ por el comercio: la ficha no la escribe ningún navegador.
   desplegar, el invocador sale con `scripts/nube-visor.sh --servicio guardarmedio`
   (`allUsers` es correcto: la barrera es el token por número).
 - **Quién lo ve (M3a, 30/10/2026; reemplaza a «nadie todavía»):** la callable
-  `verMedio` (`core/medios/verMedio.ts`). Entrada exacta `{tenantId, conversacionId,
-  idMeta}` (otra clave: `invalid-argument`); el servidor lee
+  `verMedio` (`core/medios/verMedio.ts`; contrato M3 y contrato v2 «guardar y
+  descargar TODO» con su adenda de seguridad §7.7 y §8.3). Entrada exacta
+  `{tenantId, conversacionId, idMeta, accion}` con `accion` `'ver'` o
+  `'descargar'` (otra clave: `invalid-argument`). El servidor lee
   `mediosRecibidos/{sha256(idMeta)}`, exige la misma conversación, `estado:
-  'guardado'` y `vence` futuro, valida la ruta (este comercio, este medio, sin `..`)
-  y devuelve `{tipo, mime, tamano, base64}` tras comprobar por los bytes la
-  extensión, el tipo, el `mime` y el `sha256` guardados. Roles: admin y operador
-  del comercio y soporte con ventana vigente (contrato M3: «los mismos roles que
-  ven comprobantes»; **contradice la D4 de abajo y lo confirma Andres**). Anotado
-  y pendiente: `failed-precondition` con `details` `'anotado'`/`'pendiente'`;
-  baja o inexistente: `not-found`. Auditoría fail-closed `medio_visto` con
-  `objeto` (el hash), sin teléfono ni `idMeta`; tope 30/h y 100/día en
-  `topesDeMedios/{uid}`. 1 GiB, 60 s, concurrencia 4 fuera de staging, App Check
-  en producción. El audio de 16 MiB son ~21,3 MiB en base64: cabe en los 32 MiB
-  de respuesta de gen2 (no en los 10 MB de gen1). Tras desplegar:
-  `scripts/nube-visor.sh --servicio vermedio`.
+  'guardado'` y `vence` futuro, valida la ruta (este comercio, este medio, lista
+  cerrada de extensiones, sin `..`), RECALCULA la extensión desde los bytes y exige
+  que sea la de la ruta, y comprueba el `sha256` guardado. Salida `{tipo,
+  categoria, mime, extension, tamano, base64}` con mime SEGURO: imagen y audio, el
+  de su firma; video y documento, siempre `application/octet-stream`; nunca el
+  declarado. Roles: admin y operador del comercio y soporte con ventana vigente,
+  todos ven y descargan (decisión de Andres del 30/10, §8.3: **reemplaza a la D4**
+  de abajo). Anotado y pendiente: `failed-precondition` con `details`
+  `'anotado'`/`'pendiente'`; baja o inexistente: `not-found`. Auditoría fail-closed
+  `medio_visto` o `medio_descargado` con `objeto` (el hash), sin teléfono ni
+  `idMeta`; tope 30/h y 100/día en `topesDeMedios/{uid}`. 1 GiB, 120 s, 3
+  instancias, concurrencia 4 fuera de staging, App Check en producción. El mayor
+  archivo (16 MiB) son ~21,3 MiB en base64: cabe en los 32 MiB de respuesta de gen2
+  (no en los 10 MB de gen1). `documentoPorFirma` y `videoPorFirma` son
+  PROVISIONALES en `verMedio.ts` hasta que M1b publique las suyas en `tipos.ts`.
+  Tras desplegar: `scripts/nube-visor.sh --servicio vermedio`.
 - `almacen.ts` es copia declarada del de `modulos/cobros/comprobantes.ts` (Core no
   importa módulos); que Cobros importe de Core es un PR aparte del agente `modulo`.
 

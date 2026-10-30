@@ -2272,7 +2272,7 @@
   },
   "verMedio": {
     "availableMemoryMb": 1024,
-    "timeoutSeconds": 60,
+    "timeoutSeconds": 120,
     "minInstances": null,
     "maxInstances": 3,
     "ingressSettings": null,
