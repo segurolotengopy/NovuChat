@@ -42,7 +42,7 @@ describe('armado: --verificar y el tope de nodos', () => {
     expect(r.status).toBe(2);
   });
 
-  it(`ninguna variante pasa de ${TOPE_DE_NODOS} nodos (59 es el tope duro: 48 más los 11 del guardado de medios; si pasa, se rehace)`, () => {
+  it(`ninguna variante pasa de ${TOPE_DE_NODOS} nodos (59 es el tope duro: 48 más los 11 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +11 nodos: docs/versiones-por-cliente.md; si pasa, se rehace)`, () => {
     expect(TOPE_DE_NODOS).toBe(59);
     expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(59);
     expect(PRUEBA.nodes.length).toBeLessThanOrEqual(59);

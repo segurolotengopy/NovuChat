@@ -169,3 +169,19 @@ leído entero y las siete credenciales por tipo revisadas. `estado-de-versiones.
 Ningún comercio está en modalidad `produccion` todavía, así que la
 [ventana de mantenimiento de 23:30 a 01:30](contrato/anexo-tecnico-sla.md) no
 condiciona cuándo se publica.
+
+## Estado al 29/10/2026 (guardado de medios, PR #699): excepción declarada al tope de nodos
+
+La rama común del **guardado de medios** (`Flujos/experimental/comun-sin-agente/src/guardado.mjs`, contrato M1↔M2 del 29/10/2026) agrega **11 nodos** a cada flujo con medios. **Andres la aprobó el 29/10/2026 como excepción declarada a la regla del tope de nodos del 03/10/2026** («máximo 50» de Q'Taco, «48 es el tope duro» de Rubén). La nota va acá y no en la columna de la tabla: esa columna es para los atrasos, y un texto ahí haría que `estado-de-versiones.sh` tomara por declarado un atraso real.
+
+- **Q'Taco** (`venta-minima.qtaco.json`): 50 → **61** nodos y tope 50 → 61. **Por qué:** guardado de medios, +11 nodos. **Aprobado por:** Andres, el 29/10/2026.
+- **Rubén** (`rroca-ruben.json`): 46 → **57** nodos y tope «duro» 48 → 59. **Por qué:** guardado de medios, +11 nodos. **Aprobado por:** Andres, el 29/10/2026.
+- **Bellido** (`agenda-minima.v0.json`, sin tope en su constructor): 53 → **64** nodos. **Por qué:** guardado de medios, +11 nodos. **Aprobado por:** Andres, el 29/10/2026. Se publica el último.
+- **Mismo motivo y misma fecha, +11 cada uno:**
+  - Evy y Emma: 36 → 47, tope 36 → 47.
+  - doctoras: 43 → 54, tope 48 → 59.
+  - Antonio: 47 → 58, tope 47 → 58.
+  - Chat NovuChat: 44 → 55.
+  - captacion-minima: 43 → 54.
+
+**Lo cierra:** nada; la excepción es permanente mientras la rama tenga 11 nodos. Una alternativa de 7 a 8 nodos quedó propuesta en el PR para que Andres la decida. Cada flujo se publica aparte, con su botón; hasta que se publiquen, `estado-de-versiones.sh` los mostrará atrasados, y es correcto que lo haga.

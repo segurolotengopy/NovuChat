@@ -73,7 +73,8 @@ const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 // de Q'Taco tiene como MÁXIMO 50 nodos (49 + el webhook del carrito). Todo lo demás se hace dentro de los nodos que ya existen
 // (el código vive en `src/lib` y `src/nodos`). `--verificar` falla si un JSON de producción (todo el que no es la variante de
 // prueba) pasa de este tope.
-// 50 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026).
+// 50 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
+// excepción declarada por Andres el 29/10/2026 para el guardado de medios, +11 nodos: docs/versiones-por-cliente.md.
 const TOPE_DE_NODOS = 61;
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,

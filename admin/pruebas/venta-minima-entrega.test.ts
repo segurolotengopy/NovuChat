@@ -318,7 +318,7 @@ describe('las guardias de entrega de `construir.mjs --verificar` (sobre los JSON
 // =====================================================================================================
 describe('presupuesto de nodos de producción (Andres, 03/10/2026: 50; 29/10/2026: 61 con el guardado de medios)', () => {
   it('el JSON de Q\'Taco tiene como máximo 61 nodos y NO tiene un nodo «Entrega fallida» (R3 va dentro de «Resumen del turno»)', () => {
-    // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61: los 11 de la rama común del GUARDADO de medios (se declara en el PR y lo decide Andres con el OK de fusión).
+    // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61: los 11 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +11 nodos: docs/versiones-por-cliente.md).
     expect(QTACO.nodes.length).toBeLessThanOrEqual(61);
     expect(QTACO.nodes.map((n) => n.name)).not.toContain('Entrega fallida');
   });

@@ -4739,7 +4739,7 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
   });
 
   it('el JSON de Q\'Taco sigue en 61 nodos o menos (50 más los 11 del guardado de medios) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
-    // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61: los 11 de la rama común del GUARDADO de medios (se declara en el PR y lo decide Andres con el OK de fusión).
+    // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61: los 11 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +11 nodos: docs/versiones-por-cliente.md).
     expect(QTACO.nodes.length).toBeLessThanOrEqual(61);
     const base = configBase(QTACO);
     expect(base['cobroSimuladoActivo']).toBe(true);
