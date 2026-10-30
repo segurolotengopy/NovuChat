@@ -457,9 +457,9 @@ describe('prueba de humo con el catálogo real de Walisuma', () => {
     expect(esperados.length).toBeGreaterThan(100);
     expect(ids(vend)).toEqual(esperados);
   });
-  it('NEGADO: los 4 licores apagados y los ítems sin precio no son vendibles', () => {
+  it('NEGADO: los 8 ítems apagados (licores y pastillas de coca) y los ítems sin precio no son vendibles', () => {
     const apagados = conId.filter((it) => !it.activo);
-    expect(apagados).toHaveLength(4);
+    expect(apagados).toHaveLength(8);
     for (const it of apagados) expect(ids(vend)).not.toContain(it.id);
     for (const it of conId.filter((x) => x.precio === undefined)) expect(ids(vend)).not.toContain(it.id);
   });
