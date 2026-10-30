@@ -15,7 +15,7 @@
  *   - todo nodo de red con `continueRegularOutput` y `alwaysOutputData`; las llamadas a `guardarMedio` con la respuesta completa sin error.
  * Y se prueba NEGANDO: cada regla tiene su mutación que la rompe.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -29,10 +29,13 @@ const FLUJOS = join(aqui, '../../Flujos');
 function flujosVersionados(): string[] {
   const salida: string[] = [];
   const recorrer = (dir: string): void => {
-    for (const nombre of readdirSync(dir)) {
+    // El tipo sale de la misma lectura del directorio (sin comprobar y después leer: CodeQL js/file-system-race); el JSON se lee una vez, con try/catch.
+    for (const entrada of readdirSync(dir, { withFileTypes: true })) {
+      const nombre = entrada.name;
       if (nombre === 'node_modules' || nombre.startsWith('.')) continue;
       const ruta = join(dir, nombre);
-      if (statSync(ruta).isDirectory()) { recorrer(ruta); continue; }
+      if (entrada.isDirectory()) { recorrer(ruta); continue; }
+      if (!entrada.isFile()) continue;
       if (!nombre.endsWith('.json') || nombre.endsWith('.plantilla.json') || nombre.endsWith('.local.json')) continue;
       let j: J;
       try { j = JSON.parse(readFileSync(ruta, 'utf8')) as J; } catch { continue; }
@@ -134,6 +137,8 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
 });
 
 // ------------------------------------------------------------------------------------------------ NEGANDO
+/** Escapa TODO lo que es especial en una expresión regular (barra invertida incluida). */
+const escaparRegex = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const copia = (f: Flujo): Flujo => JSON.parse(JSON.stringify(f)) as Flujo;
 const BASE = 'experimental/rroca-evy/rroca-evy.json';
 const conBase = (cambio: (f: Flujo) => void): string => { const f = copia(leer(BASE)); cambio(f); return (hallazgosDelGuardado(f) as string[]).join(' | '); };
@@ -193,7 +198,7 @@ describe('guardado obligatorio, NEGANDO: cada regla tiene la mutación que la ro
     expect(conBase((f) => { (nodoDe(f, 'Descargar medio (guardado)') as J)['retryOnFail'] = true; })).toMatch(/no reintenta/);
   });
   it('sin un nodo de la rama', () => {
-    for (const n of NODOS_DEL_GUARDADO) expect(conBase((f) => { f.nodes = f.nodes.filter((x) => x.name !== n); }), n).toMatch(new RegExp(`falta el nodo «${n.replace(/[()?¿]/g, '\\$&')}»`));
+    for (const n of NODOS_DEL_GUARDADO) expect(conBase((f) => { f.nodes = f.nodes.filter((x) => x.name !== n); }), n).toMatch(new RegExp(`falta el nodo «${escaparRegex(n)}»`));
   });
   it('la rama ARRIBA de la que responde (correría antes y demoraría la respuesta)', () => {
     expect(conBase((f) => { nodoDe(f, 'Preparar guardado').position = [nodoDe(f, 'Preparar guardado').position![0], 100]; })).toMatch(/DEBAJO de «Puerta del turno»/);

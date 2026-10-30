@@ -59,7 +59,17 @@ export const NODOS_DEL_GUARDADO = [
  * exige además la rama a TODO flujo con «Reportar mensaje (entrante)», salvo su lista cerrada. Es lo que vuelve OBLIGATORIO el
  * guardado: un flujo así sin la rama no se arma (`hallazgosDelGuardado`), y uno sin medios no la lleva.
  */
-const esPedidoDeMedio = (url) => /lookaside\.fbsbx\.com/i.test(url) || (/graph\.facebook\.com/i.test(url) && /media/i.test(url) && !/\/messages\b/.test(url));
+// El anfitrión va ANCLADO al inicio de la URL (con o sin el `=` de una expresión de n8n) y termina en `/`, `?`, `#` o el final: un texto que solo lo
+// nombra en otra parte (`https://otro.dominio/?x=graph.facebook.com`) no cuenta.
+const ANFITRION_DE_MEDIO = /^=?\s*https:\/\/(graph\.facebook\.com|lookaside\.fbsbx\.com)(?=[/?#]|$)/i;
+const esPedidoDeMedio = (url) => {
+  const texto = String(url || '').trim();
+  const m = ANFITRION_DE_MEDIO.exec(texto);
+  if (!m) return false;
+  if (m[1].toLowerCase() === 'lookaside.fbsbx.com') return true;
+  const ruta = texto.slice(m[0].length);
+  return /media/i.test(ruta) && !/\/messages\b/.test(ruta);
+};
 export function manejaMedios(flujo) {
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   // Solo cuenta un nodo CONECTADO (alguien le entrega ítems): uno suelto no baja nada.
