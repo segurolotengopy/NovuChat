@@ -25,7 +25,7 @@ process.env['INGESTA_CLIENTE14'] = TOKEN_AJENO;
 
 const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
-const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
+const { getFirestore, Timestamp, FieldPath } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const al = await import('../../../functions/src/core/medios/almacen.ts');
 const gm = await import('../../../functions/src/core/medios/guardarMedio.ts');
@@ -864,6 +864,72 @@ describe('contrato v2: documentos de cualquier tipo, video, sticker y topes por 
       expect((await regDe(id, T_APAGADO).get()).exists).toBe(false);
     } finally {
       await db.doc(`tenants/${T_APAGADO}`).update({ guardarMedios: (await import('firebase-admin/firestore')).FieldValue.delete() });
+    }
+  });
+});
+
+describe('revisión de seguridad de #709: X-NovuChat-Mime y el reintento que trae más bytes', () => {
+  const regDe = (id: string) => db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`);
+  const ayer = () => al.diaDeLaPaz(Date.now() - DIA_MS);
+  const cupoDe = (dia: string) => db.doc(`tenants/${T}/cuposDeMedios/${dia}`);
+
+  it('con Content-Type octet-stream, X-NovuChat-Mime decide el mime declarado del documento', async () => {
+    const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+    const r = await peticion(DOCX(), buenas(id, 'document', 'application/octet-stream', { 'x-novuchat-mime': 'application/zip' }));
+    expect(r.codigo).toBe(200);
+    expect((await regDe(id).get()).data()).toMatchObject({ ext: 'zip', mime: 'application/zip' });
+    expect(almacen.objetos.get(r.cuerpo.ruta)?.contentType).toBe('application/octet-stream');
+  });
+
+  it('NIEGA: X-NovuChat-Mime ausente, con CRLF o fuera de lista → se usa el Content-Type o queda bin', async () => {
+    for (const [mime, ext] of [[undefined, 'bin'], ['application/zip\r\nX: 1', 'bin'], ['application/x-loquesea', 'bin'], ['', 'bin']] as const) {
+      const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+      const extra: Record<string, string> = mime === undefined ? {} : { 'x-novuchat-mime': mime };
+      const r = await peticion(DOCX(), buenas(id, 'document', 'application/octet-stream', extra));
+      expect(r.codigo, String(mime)).toBe(200);
+      expect((await regDe(id).get()).get('ext'), String(mime)).toBe(ext);
+    }
+    // Sin X-NovuChat-Mime, el Content-Type sigue sirviendo (flujos ya publicados).
+    const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+    await peticion(DOCX(), buenas(id, 'document', 'application/zip'));
+    expect((await regDe(id).get()).get('ext')).toBe('zip');
+  });
+
+  it('una imagen con X-NovuChat-Mime falso sigue en 415: la firma manda', async () => {
+    const id = idNuevo(); await mensaje(id, { tipo: 'image' });
+    expect((await peticion(HTML(), buenas(id, 'image', 'application/octet-stream', { 'x-novuchat-mime': 'image/jpeg' }))).codigo).toBe(415);
+    const ok = idNuevo(); await mensaje(ok, { tipo: 'image' });
+    expect((await peticion(JPG(), buenas(ok, 'image', 'application/octet-stream', { 'x-novuchat-mime': 'image/jpeg' }))).codigo).toBe(200);
+  });
+
+  it('un pendiente VIEJO retomado con MÁS bytes cobra la diferencia (comercio y teléfono) en el contador de su día', async () => {
+    const id = idNuevo(); await mensaje(id);
+    const clave = gm.claveDeTelefono(TEL);
+    await cupoDe(ayer()).set({ n: 1, bytes: 10, vence: Timestamp.now(), telefonos: { [clave]: { n: 1, bytes: 10 } } });
+    await regDe(id).set({ idMeta: id, conversacionId: `wa_${TEL}`, estado: 'pendiente', ext: 'ogg', mime: 'audio/ogg', tamano: 10, ruta: gm.rutaDeMedio(T, ayer(), id, 'ogg'), en: Timestamp.fromMillis(Date.now() - 6 * MIN), vence: Timestamp.now() });
+    expect((await peticion(OGG(4096), buenas(id, 'audio', 'audio/ogg'))).codigo).toBe(200);
+    const c = await cupoDe(ayer()).get();
+    expect(c.get('n')).toBe(1);
+    expect(c.get('bytes')).toBe(4096);
+    expect(c.get(new FieldPath('telefonos', clave))).toEqual({ n: 1, bytes: 4096 });
+    expect((await cupoRef().get()).exists).toBe(false);
+  });
+
+  it('NIEGA: si la diferencia no cabe en el tope del comercio o del teléfono, 429 y nada cambia', async () => {
+    const clave = gm.claveDeTelefono(TEL);
+    for (const [cupo, error] of [
+      [{ n: 1, bytes: gm.TOPE_DIARIO_DE_BYTES - 100, telefonos: { [clave]: { n: 1, bytes: 10 } } }, 'cupo_diario_lleno'],
+      [{ n: 1, bytes: 10, telefonos: { [clave]: { n: 1, bytes: gm.TOPE_DIARIO_DE_BYTES_POR_TELEFONO - 100 } } }, 'cupo_telefono_lleno'],
+    ] as const) {
+      const id = idNuevo(); await mensaje(id);
+      await cupoRef().set({ ...cupo, vence: Timestamp.now() });
+      const marcador = { idMeta: id, conversacionId: `wa_${TEL}`, estado: 'pendiente', ext: 'ogg', mime: 'audio/ogg', tamano: 10, ruta: gm.rutaDeMedio(T, hoy(), id, 'ogg'), en: Timestamp.fromMillis(Date.now() - 6 * MIN), vence: Timestamp.now() };
+      await regDe(id).set(marcador);
+      const antes = (await cupoRef().get()).data();
+      expect((await peticion(OGG(4096), buenas(id, 'audio', 'audio/ogg'))).cuerpo, error).toEqual({ error });
+      expect((await cupoRef().get()).data()).toEqual(antes);
+      expect((await regDe(id).get()).get('tamano')).toBe(10);
+      expect(almacen.objetos.size).toBe(0);
     }
   });
 });

@@ -7,6 +7,7 @@
  * código: el tope diario es una constante con nombre, y ningún `console` menciona teléfono ni idMeta.
  */
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -303,5 +304,66 @@ describe('almacen.guardar (adenda §7.3)', () => {
       metadata: { contentDisposition: 'attachment', cacheControl: 'private, max-age=0' },
     });
     expect(JSON.stringify(llamadas[0]?.opciones)).not.toMatch(/telefono|idMeta|wamid/i);
+  });
+});
+
+describe('índices de cuposDeMedios (revisión de seguridad de #709)', () => {
+  it('el mapa `telefonos` está exento de índice (hasta 3.000 subcampos por documento) y `vence` conserva TTL e índice', () => {
+    const aqui = dirname(fileURLToPath(import.meta.url));
+    const { fieldOverrides } = JSON.parse(readFileSync(join(aqui, '../../../firestore.indexes.json'), 'utf8')) as {
+      fieldOverrides: { collectionGroup: string; fieldPath: string; ttl?: boolean; indexes: unknown[] }[];
+    };
+    const tel = fieldOverrides.filter((x) => x.collectionGroup === 'cuposDeMedios' && x.fieldPath === 'telefonos');
+    expect(tel).toHaveLength(1);
+    expect(tel[0]?.indexes).toEqual([]);
+    const vence = fieldOverrides.find((x) => x.collectionGroup === 'cuposDeMedios' && x.fieldPath === 'vence');
+    expect(vence?.ttl).toBe(true);
+    expect(vence?.indexes.length).toBeGreaterThan(0);
+  });
+});
+
+describe('el mime declarado: X-NovuChat-Mime manda sobre el Content-Type de transporte', () => {
+  it('mimeDeclarado: CR/LF, espacios internos, comillas, sin barra o vacío dan cadena vacía', () => {
+    for (const v of ['application/pdf\r\nX-Otro: 1', 'application/pdf\n', 'application /pdf', '"application/pdf"', 'pdf', '', '/', 'a/']) {
+      expect(mimeDeclarado(v), JSON.stringify(v)).toBe('');
+    }
+    expect(mimeDeclarado('Application/PDF; charset=binary')).toBe('application/pdf');
+  });
+});
+
+describe('el parser del framework (functions-framework: body-parser json, text, urlencoded y raw */*)', () => {
+  // Réplica de la cadena de `@google-cloud/functions-framework` 5.0.5 (`build/src/server.js`), con el
+  // `express` que trae firebase-functions. Documenta qué llega al handler según el Content-Type.
+  it('octet-stream y multipart llegan intactos; json inválido da 400, urlencoded de >1000 parámetros 413 y charset raro 415 ANTES del handler', async () => {
+    const desdeAqui = createRequire(import.meta.url);
+    const rutaDeFunctions = desdeAqui.resolve('firebase-functions', { paths: [join(dirname(fileURLToPath(import.meta.url)), '../../../functions')] });
+    const desdeFunctions = createRequire(rutaDeFunctions);
+    const express = desdeFunctions('express') as any;
+    const app = express();
+    const guardar = (q: any, _r: unknown, b: Buffer) => { q.rawBody = b; };
+    const opc = { limit: '1024mb', verify: guardar };
+    app.use(express.json({ type: 'application/cloudevents+json', ...opc }));
+    app.use(express.json(opc));
+    app.use(express.text(opc));
+    app.use(express.urlencoded({ ...opc, extended: true }));
+    app.use(express.raw({ ...opc, type: '*/*' }));
+    app.post('/', (q: any, r: any) => r.status(200).json({ llego: Buffer.isBuffer(q.rawBody) ? q.rawBody.length : -1 }));
+    const servidor = await new Promise<any>((ok) => { const s = app.listen(0, '127.0.0.1', () => ok(s)); });
+    try {
+      const url = `http://127.0.0.1:${servidor.address().port}/`;
+      const pdf = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(500, 0x41)]);
+      const enviar = async (ct: string, cuerpo: Buffer) => {
+        const r = await fetch(url, { method: 'POST', headers: { 'content-type': ct }, body: cuerpo });
+        return [r.status, r.status === 200 ? (await r.json() as { llego: number }).llego : null];
+      };
+      expect(await enviar('application/octet-stream', pdf)).toEqual([200, pdf.length]);
+      expect(await enviar('multipart/form-data; boundary=x', pdf)).toEqual([200, pdf.length]);
+      expect(await enviar('application/pdf', pdf)).toEqual([200, pdf.length]);
+      expect(await enviar('text/plain', Buffer.from('hola'))).toEqual([200, 4]);
+      // Lo que NUNCA llega al handler: por eso el flujo debe mandar octet-stream + X-NovuChat-Mime.
+      expect((await enviar('application/json', pdf))[0]).toBe(400);
+      expect((await enviar('application/x-www-form-urlencoded', Buffer.from(Array.from({ length: 1100 }, (_, i) => `a${i}=1`).join('&'))))[0]).toBe(413);
+      expect((await enviar('text/plain; charset=no-existe', Buffer.from('hola')))[0]).toBe(415);
+    } finally { await new Promise((ok) => servidor.close(ok)); }
   });
 });

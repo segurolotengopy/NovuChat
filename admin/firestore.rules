@@ -1937,7 +1937,7 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
-      // /mediosRecibidos/{objeto} — los medios ENTRANTES (audio, foto, PDF) que
+      // /mediosRecibidos/{objeto} — los medios ENTRANTES (imagen, audio, video y documentos) que
       // `guardarMedio` guardó 90 días (Core; Andres, 20 a 23/10/2026). Los escribe
       // SOLO el servidor, en la misma transacción que marca el mensaje. Lo lee
       // quien puede leer conversaciones; el documento nombra la conversación
@@ -1951,7 +1951,9 @@ service cloud.firestore {
       }
 
       // /cuposDeMedios/{dia} — el contador de medios y bytes del día (tope de 3.000
-      // medios y 15 GiB por comercio; constancia de tope superado, máx. 50). Lo lee y
+      // medios y 3 GiB por comercio; por teléfono 100 medios y 500 MiB en el mapa
+      // `telefonos`, cuya clave es un seudónimo del número; constancia de tope
+      // superado, máx. 50). Lo lee y
       // lo escribe SOLO `guardarMedio`, con el SDK Admin; si el comercio pudiera
       // borrarlo, el cupo no sería un cupo. Caduca por TTL a los 2 días.
       match /cuposDeMedios/{dia} {

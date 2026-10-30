@@ -44,10 +44,9 @@ export const esTipoDeMedio = (v: unknown): v is TipoDeMedio =>
 /**
  * Qué `tipo` del mensaje ENTRANTE registrado por la ingesta corresponde a cada
  * `X-NovuChat-Tipo`. El sticker de WhatsApp llega como `image` webp; si la ingesta
- * lo registra como `sticker`, igual corresponde. HOY la ingesta no tiene `video` ni
- * `sticker` en su lista cerrada (`TIPOS` de `ingesta.ts`) y los registra como `otro`:
- * hasta que la ingesta los agregue, un video o un sticker da 409 `sin_mensaje`.
- * `otro` NO se acepta a propósito: abriría el guardado a cualquier mensaje no clasificado.
+ * lo registra como `sticker`, igual corresponde. La ingesta tiene `video` y `sticker`
+ * en su lista cerrada (`TIPOS` de `ingesta.ts`) desde el 30/10/2026. `otro` NO se
+ * acepta a propósito: abriría el guardado a cualquier mensaje no clasificado.
  */
 export const TIPOS_DE_MENSAJE: Readonly<Record<TipoDeMedio, readonly string[]>> = {
   image: ['image', 'sticker'],
@@ -143,9 +142,18 @@ export function tipoPorFirma(bytes: Buffer): FirmaDeMedio | null {
 // DOCUMENTOS: extensión y mime guardados, de una lista cerrada (adenda §7.1)
 // ---------------------------------------------------------------------------
 
-/** El mime declarado, sin parámetros (`audio/ogg; codecs=opus` → `audio/ogg`). */
-export const mimeDeclarado = (v: unknown): string =>
-  (String(v ?? '').split(';')[0] ?? '').trim().toLowerCase().slice(0, 120);
+const FORMA_DE_MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/;
+
+/**
+ * El mime declarado, sin parámetros (`audio/ogg; codecs=opus` → `audio/ogg`). Lo que no tiene forma
+ * de mime (CR/LF, espacios internos, comillas, vacío) da `''`: nunca coincide con una lista cerrada.
+ */
+export const mimeDeclarado = (v: unknown): string => {
+  const crudo = String(v ?? '');
+  if (/[\r\n\0]/.test(crudo)) return '';
+  const m = (crudo.split(';')[0] ?? '').trim().toLowerCase().slice(0, 129);
+  return FORMA_DE_MIME.test(m) ? m : '';
+};
 
 export const MIME_BINARIO = 'application/octet-stream';
 

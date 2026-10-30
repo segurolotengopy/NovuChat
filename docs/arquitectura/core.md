@@ -141,8 +141,29 @@ por tipo (imagen 5 MB, audio 16 MB, video 16 MB, documento 16 MB).
 > republicar los flujos. **Ingesta:** hoy registra `video` y `sticker` como
 > `otro` (lista cerrada `TIPOS` de `ingesta.ts`), así que un video o un sticker
 > da 409 `sin_mensaje` hasta que la ingesta los agregue; `guardarMedio` ya acepta
-> un mensaje `sticker` para `image` y nunca acepta `otro`. Lo que sigue de esta
-> sección vale salvo donde esta nota lo cambia.
+> un mensaje `sticker` para `image` y nunca acepta `otro` (la ingesta registra
+> `video` y `sticker` con su tipo desde el 30/10/2026).
+>
+> **Revisión de seguridad de #709 (30/10/2026).** (1) La clave del mapa
+> `cuposDeMedios/{día}.telefonos` es `t` + sha256 truncado del número: un
+> **seudónimo reversible por fuerza bruta**, no un secreto; alcanza porque el
+> documento está cerrado a todo cliente, y si alguna vez se abre su lectura pasa
+> a ser un HMAC con secreto. El mapa está exento de índice
+> (`firestore.indexes.json`). (2) Un pendiente retomado con **más** bytes que los
+> reservados cobra la diferencia (comercio y teléfono) en el contador del día de
+> la reserva, con los mismos topes (429 si no cabe). (3) **El framework parsea el
+> cuerpo antes del handler** (functions-framework: `body-parser` json, text,
+> urlencoded y raw, límite 1024 MB): con `application/json` y bytes no JSON
+> responde 400; con `application/x-www-form-urlencoded` de más de 1000
+> parámetros, 413; con un `charset` desconocido en `text/*`, 415; `multipart/*` y
+> `application/octet-stream` llegan intactos. Por eso el mime declarado es
+> `X-NovuChat-Mime` si viene con forma de mime (sin CR/LF), y si no el
+> Content-Type; el flujo debe mandar `application/octet-stream` como Content-Type
+> de transporte y el mime de Meta en `X-NovuChat-Mime`. Riesgo abierto, fuera del
+> handler: el mismo parser descomprime `Content-Encoding: gzip` antes de
+> autenticar.
+>
+> Lo que sigue de esta sección vale salvo donde estas notas lo cambian.
 
 Esto **corrige** la nota de «Lo que este bloque NO hace» de §4terdecies («guardar
 el medio para que una persona lo mire»): desde el 20/10 se guardan los medios

@@ -53,14 +53,14 @@
 
 import { createHash } from 'node:crypto';
 import { onRequest } from 'firebase-functions/v2/https';
-import { FieldPath, Timestamp, getFirestore } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../seguridad/firma.js';
 import {
   CARPETA_DE_DIA, DIAS_DE_RETENCION, DIA_MS, ID_TENANT, almacenDeMedios, diaDeLaPaz, idMetaCrudo, nombreDeObjeto, type Almacen,
 } from './almacen.js';
 import {
-  MB, TIPOS_DE_MENSAJE, contentTypeDeObjeto, esTipoDeMedio, veredictoDe, veredictoDeAnotar, type ExtensionDeMedio,
+  MB, TIPOS_DE_MENSAJE, contentTypeDeObjeto, esTipoDeMedio, mimeDeclarado, veredictoDe, veredictoDeAnotar, type ExtensionDeMedio,
 } from './tipos.js';
 
 const TELEFONO = /^[0-9]{8,15}$/;
@@ -101,7 +101,11 @@ export const DIAS_DEL_CONTADOR = 2;
 
 /**
  * La clave del teléfono en el contador del día (`cuposDeMedios/{día}.telefonos.{clave}`): un hash, no el
- * número, para que el contador no sea una lista de teléfonos. Empieza con `t` (nunca con un dígito).
+ * número, para que el contador no sea una lista de teléfonos a simple vista. Empieza con `t` (nunca con
+ * un dígito). Es un SEUDÓNIMO, no un secreto: un número de teléfono tiene pocas cifras y el sha256
+ * truncado se revierte por fuerza bruta. Alcanza porque `cuposDeMedios` está cerrado a todo cliente
+ * (`allow read, write: if false`); si alguna vez se abre su lectura, la clave pasa a ser un HMAC con
+ * un secreto del servidor.
  */
 export const claveDeTelefono = (telefono: string): string =>
   `t${createHash('sha256').update(`telefono:${telefono}`).digest('base64url').slice(0, 22)}`;
@@ -194,7 +198,7 @@ export interface EntradaDeGuardar {
   contentType: string;
   /** `X-NovuChat-Anotar: 1`: docx/xlsx, sin bytes. */
   anotar?: boolean;
-  /** `X-NovuChat-Mime`: el mime que declara Meta (solo en modo anotar). */
+  /** `X-NovuChat-Mime`: el mime que declara Meta (en modo anotar, obligatorio; al guardar, manda sobre el Content-Type). */
   mime?: string;
 }
 
@@ -220,7 +224,12 @@ export async function guardarMedioDe(
     if (!v.ok) return { codigo: v.codigo, cuerpo: v.cuerpo };
     medio = { estado: 'anotado', ext: v.ext, mime: v.mime };
   } else {
-    const v = veredictoDe(e.bytes, tipo, e.contentType);
+    // El mime DECLARADO es `X-NovuChat-Mime` (el que declara Meta) si viene con forma de mime; si no, el
+    // Content-Type. Así n8n puede mandar `application/octet-stream` como Content-Type de TRANSPORTE
+    // (el framework parsea JSON, texto y formularios ANTES de este código; ver `opcionesDeGuardarMedio`)
+    // sin perder el mime para `documentoPorFirma`.
+    const declarado = mimeDeclarado(e.mime) !== '' ? e.mime : e.contentType;
+    const v = veredictoDe(e.bytes, tipo, declarado);
     if (!v.ok) return { codigo: v.codigo, cuerpo: v.cuerpo };
     medio = { estado: 'guardado', ext: v.firma.ext, mime: v.firma.mime };
   }
@@ -272,7 +281,27 @@ export async function guardarMedioDe(
       const desde = milis(previo.get('en'));
       if (desde !== null && ahoraMs - desde < PENDIENTE_MAXIMO_MS) return { t: 'en_curso' };
       if (medio.estado === 'anotado') return { t: 'en_curso' };
-      tx.update(refMedio, { en: Timestamp.fromMillis(ahoraMs) });
+      // Si el reintento trae MÁS bytes que los reservados, la diferencia se cobra aquí, en el contador
+      // del día de la reserva (comercio y teléfono) y con los mismos topes (revisión de seguridad de
+      // #709): si no, un pendiente viejo sería una puerta para guardar 16 MB habiendo reservado 1 byte.
+      // Si trae menos, no se devuelve nada (el contador sigue sobrestimando, que es el lado seguro).
+      const reservado = Math.max(0, Number(previo.get('tamano') ?? 0) || 0);
+      const diferencia = tamano - reservado;
+      if (diferencia > 0) {
+        const diaR = diaDeRuta(previo.get('ruta'), e.tenantId) ?? dia;
+        const refR = db.doc(`tenants/${e.tenantId}/cuposDeMedios/${diaR}`);
+        const cR = diaR === dia ? cupo : await tx.get(refR);
+        const telR = (cR.get(new FieldPath('telefonos', clave)) ?? {}) as { bytes?: unknown };
+        if (Number(cR.get('bytes') ?? 0) + diferencia > TOPE_DIARIO_DE_BYTES) return { t: 'lleno' };
+        if ((Number(telR.bytes ?? 0) || 0) + diferencia > TOPE_DIARIO_DE_BYTES_POR_TELEFONO) return { t: 'lleno_telefono' };
+        tx.set(refR, {
+          bytes: FieldValue.increment(diferencia), telefonos: { [clave]: { bytes: FieldValue.increment(diferencia) } },
+          ...(cR.exists ? {} : { vence: venceContador }),
+        }, { merge: true });
+        tx.update(refMedio, { en: Timestamp.fromMillis(ahoraMs), tamano });
+      } else {
+        tx.update(refMedio, { en: Timestamp.fromMillis(ahoraMs) });
+      }
       return { t: 'tomar', ruta: String(previo.get('ruta') ?? '') };
     }
     const n = Number(cupo.get('n') ?? 0);
@@ -369,6 +398,13 @@ export async function guardarMedioDe(
  * Binario en el cuerpo; cabeceras `X-NovuChat-Telefono`, `X-NovuChat-IdMeta`,
  * `X-NovuChat-Tipo` (image|audio|video|document) y `Content-Type`. Solo el token.
  * Modo anotar (docx/xlsx): cuerpo vacío, `X-NovuChat-Anotar: 1` y `X-NovuChat-Mime`.
+ *
+ * EL CUERPO LO PARSEA EL FRAMEWORK ANTES DE ESTE CÓDIGO (functions-framework: `body-parser` json, text,
+ * urlencoded y raw, con límite de 1024 MB). Con `Content-Type: application/json` y bytes que no son JSON,
+ * responde 400 sin llegar aquí; con `application/x-www-form-urlencoded` de más de 1000 parámetros, 413;
+ * con un `charset` desconocido en `text/*`, 415. `multipart/*` y `application/octet-stream` llegan
+ * intactos en `rawBody`. Por eso el flujo manda los medios con `Content-Type: application/octet-stream`
+ * y el mime real en `X-NovuChat-Mime`. Lo prueba `veredicto-medios.test.ts` («el parser del framework»).
  */
 /** Peticiones a la vez por instancia FUERA de staging (revisión de seguridad del #617). */
 export const CONCURRENCIA_DE_GUARDAR_MEDIO = 4;
