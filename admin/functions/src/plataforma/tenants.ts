@@ -24,7 +24,7 @@ import {
 // es `asignarEjes`, y contar los cambios operados es `registrarCambioOperado`,
 // los dos en `central/`. El plan, la modalidad y los umbrales siguen en
 // `actualizarEstadoCuenta`, más abajo.
-import { IDS_FLUJOS, PUENTE_DE_FLUJOS, esFlujo, modulosDeFlujos, type IdFlujo } from '../registro.js';
+import { IDS_FLUJOS, PUENTE_DE_FLUJOS, esFlujo, flujosDeFicha, modulosDeFlujos, type IdFlujo } from '../registro.js';
 import { MODELO_POR_DEFECTO, TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } from '../central/ejes.js';
 // PREPAGO (bloque A-0, `DISENO.md` §4undecies): la modalidad de la cuenta y los
 // campos derivados de la situación de pago, que se recalculan y nunca se
@@ -350,11 +350,13 @@ export const asignarNumero = onCall(async (peticion) => {
     // no se crea; existente pero no lista, se rechaza sin escribir.
     const datosFicha = tenant.data() ?? {};
     let modulosPorSumar: string[] | null = null;
-    if (Object.prototype.hasOwnProperty.call(datosFicha, 'modulos') && datosFicha['modulos'] !== undefined) {
+    if (Object.prototype.hasOwnProperty.call(datosFicha, 'modulos') && datosFicha['modulos'] !== undefined && datosFicha['modulos'] !== null) {
       if (!Array.isArray(datosFicha['modulos'])) {
         throw new HttpsError('failed-precondition', 'La ficha tiene `modulos` y no es una lista: corríjala antes de agregar el flujo.');
       }
-      modulosPorSumar = [...PUENTE_DE_FLUJOS[flujo as IdFlujo].modulos];
+      // Si el flujo YA estaba, no se suma nada: un módulo cerrado a propósito no se reabre al reasignar un número.
+      const yaTiene = flujosDeFicha(datosFicha).includes(flujo as IdFlujo);
+      modulosPorSumar = yaTiene ? null : [...PUENTE_DE_FLUJOS[flujo as IdFlujo].modulos];
     }
 
     // Asignar un número con un flujo SUMA ese flujo al negocio; no reemplaza

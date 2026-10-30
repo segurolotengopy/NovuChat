@@ -273,7 +273,7 @@ describe('4. H2b-7: los scripts escriben `modulos` junto a `flujos` (lectura de 
   it('asignar-numero.mjs suma con arrayUnion solo si la ficha ya tiene `modulos`, y lo guarda en el respaldo', () => {
     const t = texto('plataforma/asignar-numero.mjs');
     expect(t).toMatch(/modulos:\s*FieldValue\.arrayUnion\(\.\.\.PUENTE_DE_FLUJOS\[FLUJO\]\.modulos\)/);
-    expect(t).toMatch(/tieneModulos\s*\?/);
+    expect(t).toMatch(/sumaModulos\s*\?/);
     expect(t).toMatch(/modulosAntes/);
   });
   it('ensayo.mjs ya no borra `modulos`', () => {
