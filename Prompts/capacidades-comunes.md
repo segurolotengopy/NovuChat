@@ -42,7 +42,7 @@ después:
    nodos de medios. Su `Normalizar entrada` ni siquiera extrae el `mediaId` de
    un audio (solo `image` y `document`), y no calcula `esMedioAudio` ni
    `esMedioVisual`.
-3. **Quién la tiene:** Platinum, Bellido y Demo A (reservas) tienen la rama
+3. **Quién la tiene:** Bellido, Demo A y el flujo de ejemplo de la clínica (reservas) tienen la rama
    general: `¿Es un comprobante?`[falso] → `¿Trae un medio?` → `Obtener URL del
    medio (general)` → `Descargar medio` → `¿Es audio?` → `Transcribir audio` →
    `Preparar transcripción` → agente; o `¿Es un documento?` → `Describir
@@ -167,7 +167,7 @@ Por orden de impacto para un cliente real, un PR por brecha.
 - **Un flujo único para todos los clientes:** `Analisis/20`; lo cierra Tech
   Provider, no este frente.
 - **Que el agente vea el medio directamente:** decisión de `Analisis/34`.
-- **Cambiar los textos de reservas:** Platinum y Bellido están probados con
+- **Cambiar los textos de reservas:** Bellido y el flujo de ejemplo de la clínica están probados con
   ellos; moverlos de carpeta no es cambiarlos.
 
 ## Pendiente heredado de la sesión del 24-25/09 (no perderlo)

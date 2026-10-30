@@ -38,7 +38,7 @@ línea de base contra la que se mide si el proceso funciona.
 
 | Cifra | Valor |
 |---|---|
-| Clientes con número real atendiendo | 3 (Bellido, Platinum, NovuChat) |
+| Clientes con número real atendiendo | 2 (Bellido, NovuChat) |
 | Filas de aceptación llenas en los dos clientes con pacientes reales | **0 de 91** |
 | Incidentes en que un cliente afectó a otro, quedó atrás del vertical o se confundió con otro | **23** (tabla completa en el relevamiento del 25/09) |
 | Reclamos reales que pasaron por la pantalla «Reclamos» | 0; la callable que mueve estados no tiene ningún llamador |
@@ -112,7 +112,7 @@ citas a mano. Las opciones se juzgan contra la necesidad, no contra la frase.
 | «Suspensión automática por falta de pago» | El corte del prepago está en observación | Se promete cuando `corteActivo` esté encendido |
 | «Recordatorio 24 h antes» sin plantilla aprobada | Fuera de 24 h solo llega una plantilla de utilidad aprobada | Se promete cuando la plantilla esté aprobada en la WABA del cliente |
 | «Tres flujos simultáneos» | Es un flujo con tres intenciones | Decirlo así en el contrato; el lenguaje comercial puede quedar |
-| Cualquier afirmación clínica, médica o financiera del asistente | El asistente informa; no diagnostica ni garantiza | Lista de afirmaciones prohibidas por cliente, como Platinum |
+| Cualquier afirmación clínica, médica o financiera del asistente | El asistente informa; no diagnostica ni garantiza | Lista de afirmaciones prohibidas por cliente |
 | «Seguimiento de solicitudes pendientes» en Messenger o Instagram | Sin etiqueta para eso fuera de 24 h (`Analisis/35`) | Solo en WhatsApp y Telegram |
 
 ### 12.4 El análisis de solicitud: reutilizar, crear, dónde reside, cuánto cuesta
@@ -151,7 +151,7 @@ código común o el dinero; lo que parece difícil ya existe. Casos reales:
 | «Andres sin acento» en el nombre visible | Trivial | Difícil | El nombre visible de Meta tiene cupo mensual de cambios y la pantalla no dice la verdad; se pide una vez, por API |
 | Menú de 3 botones a lista de 4 filas | Trivial | Medio | Cambia la topología de nodos propios del cliente; títulos de 20 caracteres; el botón no guardaba su elección desde el 18/09 |
 | Emergencia sin el 168 ni «si no respira» | Trivial | Trivial, pero **decisión clínica del doctor**: queda escrita con su nombre | Texto de configuración; el riesgo es de responsabilidad, no de código |
-| Siete agendas en Platinum | Configuración | Difícil | El candado hace una llamada a Calendar por agenda: con siete se rompe la latencia (`Analisis/24`) |
+| Siete agendas en un solo flujo | Configuración | Difícil | El candado hace una llamada a Calendar por agenda: con siete se rompe la latencia (`Analisis/24`) |
 | Recordatorio 24 h antes | Trivial, «ya está en el demo» | Medio | Exige plantilla de utilidad aprobada en la WABA del cliente y el flujo programado; se decidió no prometerlo a Bellido |
 | Citas de octubre desde un `.ics` | Difícil | Trivial | Existe `citas-a-calendario.mjs` |
 | Fotos de antes y después (Dhermacore) | Difícil | Medio | El módulo de medios guardados ya está diseñado (`Analisis/38`) |
@@ -193,7 +193,7 @@ en `admin/scripts/`.
 
 | Tipo | Ejemplos del 25/09 | Salida |
 |---|---|---|
-| **Tenant contra vertical (deriva)** | Platinum atrás de #170 y #171; Demo A sin el bloque de Platinum; Demo B atrás de #165 | Versión de módulo por tenant y excepción declarada (`docs/versiones-por-cliente.md`). Falta la comparación del JSON del cliente contra el módulo del que salió: `estado-de-versiones.sh` hoy solo compara el flujo vivo con su propio JSON. Con el JSON generado (F2, F5) la deriva desaparece por construcción |
+| **Tenant contra vertical (deriva)** | Demo B atrás de #165 | Versión de módulo por tenant y excepción declarada (`docs/versiones-por-cliente.md`). Falta la comparación del JSON del cliente contra el módulo del que salió: `estado-de-versiones.sh` hoy solo compara el flujo vivo con su propio JSON. Con el JSON generado (F2, F5) la deriva desaparece por construcción |
 | **Pedido de un tenant sobre código común** | Corrector de día de semana; constante de audio; nombre de la clínica en un comentario del vertical | Prueba de ubicación: lo que pide un cliente sobre el código común no se mete ahí: es una pieza propia de su flujo (`Flujos/clientes/<tenant>/`) la primera vez, y la segunda vez que otro cliente la pide pasa a módulo con bandera, encendido en quien lo pidió y apagado en los demás. Nunca texto ni nombre de un cliente en código común. Las correcciones de seguridad y de protección van a todos, sin excepción (SLA §8) |
 | **Tenants compitiendo por un recurso** | Credencial de Calendar `invalid_client` en tres a la vez; portafolio al tope; umbrales bajados para probar que degradaron a otros teléfonos; un solo número de ensayo | Inventario de recursos compartidos (§12.9) con una decisión por recurso: por tenant, por número, o compartido con cola |
 
@@ -232,7 +232,7 @@ La carpeta está ignorada por git y vive en la copia base, no en un worktree.
 
 | Recurso | Compartido entre | Decisión |
 |---|---|---|
-| Credencial OAuth de Google Calendar | Demo A, Platinum, Bellido | Por tenant; o calendarios compartidos a una cuenta de NovuChat con credencial propia por tenant. Un `invalid_client` no puede tumbar a tres |
+| Credencial OAuth de Google Calendar | Demo A, Bellido | Por tenant; o calendarios compartidos a una cuenta de NovuChat con credencial propia por tenant. Un `invalid_client` no puede tumbar a varios |
 | Portafolios de Meta creados por Andres | Tope de 2 por persona; 2 números por portafolio sin verificar | Verificar «NovuChat Produccion» es lo que destraba (20 números, apps fuera del tope de 15). Hasta entonces, cliente nuevo = portafolio del cliente |
 | Número de ensayo (Demo A) | Todos los clientes de reservas | Un ensayo a la vez, con cola escrita en `COORDINACION.md`; segundo número de ensayo antes del quinto cliente; para clientes con nodos propios el ensayo no sirve hasta F5 |
 | Umbrales de atención | Todos los teléfonos del comercio | Nunca bajarlos en un comercio que atiende; umbral por teléfono de prueba como arreglo de fondo |
@@ -255,5 +255,5 @@ el pase de un cliente ya no espera a F3 (H4 se parte por cliente).
 
 De los pedidos abiertos al 25/09: los siete del audio de Bellido son
 configuración o decisión del doctor salvo la lista de cuatro filas (topología,
-espera F3); las decisiones de Platinum son comerciales y de Meta; Q'Taco y
+espera F3); Q'Taco y
 Dhermacore pasan por el §12.3 antes de retomarse.

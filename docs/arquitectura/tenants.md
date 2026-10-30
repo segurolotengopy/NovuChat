@@ -64,7 +64,7 @@ una zona aparte de la de los datos (fila «Flujo de cliente» de `CLAUDE.md`).
 | `Flujos/prompts/reservas/demo-a.md`, `platinum.md` (201 y 202 líneas, 23 distintas) | Core + Agenda + Tenant | El tenant solo aporta variables (nombres, ejemplos del rubro, duración) en `prompts/tenants/<t>.vars` |
 | `Flujos/<tenant>.json` | Salida de construcción | Generado del registro, los módulos encendidos, las piezas propias de `Flujos/clientes/<tenant>/` y el núcleo común incluido |
 | `cargar-negocio`, `cargar-captacion`, `cargar-fotos-catalogo`, `citas-a-calendario`, `catalogo-demo` | Scripts que cargan datos | `admin/scripts/datos/` bajo `tenants/` |
-| `pruebas/tenants/<t>/` | Pruebas de instancia | «Este tenant tiene estos módulos con esta configuración»; `platinum-flujo` y `bellido-flujo` se reparten entre módulos (F5) |
+| `pruebas/tenants/<t>/` | Pruebas de instancia | «Este tenant tiene estos módulos con esta configuración»; `bellido-flujo` se reparte entre módulos (F5) |
 
 ## Los tres ejes de la cuenta son datos del tenant
 
