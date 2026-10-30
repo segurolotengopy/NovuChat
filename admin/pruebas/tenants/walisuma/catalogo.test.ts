@@ -73,6 +73,22 @@ describe('Walisuma: el catálogo importable', () => {
     }
   });
 
+  // --- Respuestas de la Gerente General de Walisuma (30/10/2026) ---
+  it('las respuestas del cliente están aplicadas: sin «jipilapa», posavasos rombo, color vicuña y colores a consultar', () => {
+    const todo = items.map((it) => `${it.nombre} ${it.descripcion ?? ''}`).join('\n');
+    expect(/jipilapa/i.test(todo)).toBe(false);
+    expect(items.some((it) => it.nombre === 'Posavasos Rombo')).toBe(true);
+    expect(items.some((it) => /segundo dise/i.test(it.nombre))).toBe(false);
+    // No hay chal ni estola de vicuña: «vicuña» es un color; solo las bufandas son de vicuña.
+    for (const it of items.filter((x) => /^(Chal|Estola)/.test(x.nombre))) expect(/\bde color vicu|^(?!.*vicu)/is.test(it.descripcion ?? ''), it.nombre).toBe(true);
+    for (const it of items.filter((x) => /Colores variables/.test(x.descripcion ?? ''))) expect(it.descripcion, it.nombre).toMatch(/disponibilidad del momento/);
+    expect(items.filter((x) => /Colores varios/i.test(x.descripcion ?? '')).length).toBe(0);
+  });
+
+  it('los tres tapices sin precio dicen que son piezas únicas a consultar', () => {
+    for (const it of items.filter((x) => x.precio === undefined)) expect(it.descripcion, it.nombre).toMatch(/Precio a consultar: son piezas únicas/);
+  });
+
   // --- Negaciones: lo que el servidor rechaza, rechazado también aquí ---
   it('rechaza un precio negativo, un área de más de 40 caracteres y un stock a mano', () => {
     const base = copia(items[0]!);

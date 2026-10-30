@@ -15,7 +15,7 @@
     },
     {
       "nombre": "Estola simple",
-      "descripcion": "Color vicuña. 70 % baby alpaca y 30 % seda. Cód. WAL-BUF-002.",
+      "descripcion": "De color vicuña. 70 % baby alpaca y 30 % seda. Cód. WAL-BUF-002.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 911,
       "moneda": "BOB",
@@ -31,7 +31,7 @@
     },
     {
       "nombre": "Chal simple tejido",
-      "descripcion": "Color vicuña. 100 % alpaca superfina. Cód. WAL-BUF-004.",
+      "descripcion": "De color vicuña. 100 % alpaca superfina. Cód. WAL-BUF-004.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 1125,
       "moneda": "BOB",
@@ -39,7 +39,7 @@
     },
     {
       "nombre": "Chal bicolor tejido",
-      "descripcion": "Colores varios. 100 % alpaca superfina. Cód. WAL-BUF-005.",
+      "descripcion": "Colores variables: se consulta la disponibilidad del momento. 100 % alpaca superfina. Cód. WAL-BUF-005.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 1150,
       "moneda": "BOB",
@@ -63,7 +63,7 @@
     },
     {
       "nombre": "Bufanda bicolor tejida",
-      "descripcion": "Colores varios. 100 % alpaca superfina. Cód. WAL-BUF-008.",
+      "descripcion": "Colores variables: se consulta la disponibilidad del momento. 100 % alpaca superfina. Cód. WAL-BUF-008.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 510,
       "moneda": "BOB",
@@ -87,7 +87,7 @@
     },
     {
       "nombre": "Bufanda cuadros",
-      "descripcion": "Colores varios. 100 % baby alpaca. Cód. WAL-BUF-011.",
+      "descripcion": "Colores variables: se consulta la disponibilidad del momento. 100 % baby alpaca. Cód. WAL-BUF-011.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 410,
       "moneda": "BOB",
@@ -95,7 +95,7 @@
     },
     {
       "nombre": "Bufanda bouclé",
-      "descripcion": "Colores varios. 70 % baby alpaca y 30 % seda. Cód. WAL-BUF-012.",
+      "descripcion": "Colores variables: se consulta la disponibilidad del momento. 70 % baby alpaca y 30 % seda. Cód. WAL-BUF-012.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 591,
       "moneda": "BOB",
@@ -103,7 +103,7 @@
     },
     {
       "nombre": "Cuello Carolina",
-      "descripcion": "Bufanda circular, colores varios. 100 % baby alpaca. Cód. WAL-BUF-013.",
+      "descripcion": "Bufanda circular. Colores variables: se consulta la disponibilidad del momento. 100 % baby alpaca. Cód. WAL-BUF-013.",
       "area": "Accesorios · Bufandas y chales",
       "precio": 250,
       "moneda": "BOB",
@@ -375,7 +375,7 @@
     },
     {
       "nombre": "Porta pasaporte familiar",
-      "descripcion": "Cuero vacuno. Cód. WAL-PAS-001.",
+      "descripcion": "Cuero vacuno. Para toda la familia. Cód. WAL-PAS-001.",
       "area": "Accesorios · Porta pasaportes",
       "precio": 577,
       "moneda": "BOB",
@@ -391,7 +391,7 @@
     },
     {
       "nombre": "Porta pasaporte",
-      "descripcion": "Cuero vacuno. Cód. WAL-PAS-003.",
+      "descripcion": "Cuero vacuno. De otra línea de productores, con más detalle de marroquinería. Cód. WAL-PAS-003.",
       "area": "Accesorios · Porta pasaportes",
       "precio": 570,
       "moneda": "BOB",
@@ -615,19 +615,19 @@
     },
     {
       "nombre": "Tapiz hombre 83 x 52 cm",
-      "descripcion": "83 x 52 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria, Chuquisaca. Cód. WAL-TAP-001.",
+      "descripcion": "83 x 52 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria, Chuquisaca. Precio a consultar: son piezas únicas, pueden estar vendidas o variar en tamaño o precio. Cód. WAL-TAP-001.",
       "area": "Hogar y oficina · Tapices",
       "activo": true
     },
     {
       "nombre": "Tapiz mujer río 66 x 31 cm",
-      "descripcion": "66 x 31 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria, Chuquisaca. Cód. WAL-TAP-002.",
+      "descripcion": "66 x 31 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria, Chuquisaca. Precio a consultar: son piezas únicas, pueden estar vendidas o variar en tamaño o precio. Cód. WAL-TAP-002.",
       "area": "Hogar y oficina · Tapices",
       "activo": true
     },
     {
       "nombre": "Tapiz hombre 55 x 34 cm",
-      "descripcion": "55 x 34 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria. Cód. WAL-TAP-003.",
+      "descripcion": "55 x 34 cm. Tejido a mano en telar rústico. Pieza única. Comunidad Candelaria. Precio a consultar: son piezas únicas, pueden estar vendidas o variar en tamaño o precio. Cód. WAL-TAP-003.",
       "area": "Hogar y oficina · Tapices",
       "activo": true
     },
@@ -728,8 +728,8 @@
       "activo": true
     },
     {
-      "nombre": "Posavasos Sol (segundo diseño)",
-      "descripcion": "Elaborados a mano en jipijapa por la comunidad Galilea, San Borja. Set de 4. Cód. WAL-MES-006.",
+      "nombre": "Posavasos Rombo",
+      "descripcion": "Diseño rombo. Elaborados a mano en jipijapa por la comunidad Galilea, San Borja. Set de 4. Cód. WAL-MES-006.",
       "area": "Hogar y oficina · Mesa y cocina",
       "precio": 270,
       "moneda": "BOB",
