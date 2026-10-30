@@ -55,6 +55,14 @@ describe('atención en «operador» (uso extendido)', () => {
     expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/uso extendido/);
     expect(nodosQueCorrieron(t)).not.toContain('Conversar con el modelo');
   });
+  it('NEGADO: dos turnos seguidos en «operador» mandan UN solo aviso (no uno por mensaje); el botón va en los dos', () => {
+    const m = crear({ ingesta: { atencion: { estado: 'operador', avisarRecepcion: 'operador' } } });
+    const t1 = hablar(m, ANA, mTexto('hola'));
+    const t2 = hablar(m, ANA, mTexto('¿hay alguien?'));
+    expect(t1.avisos).toHaveLength(1);
+    expect(t2.avisos).toHaveLength(0);
+    for (const t of [t1, t2]) expect(((t.mensajes[0]?.payload['interactive'] ?? {}) as { type?: string }).type).toBe('cta_url');
+  });
   it('NEGADO: si el aviso no sale, el botón igual va (el cliente puede escribirle directo) y no hay modelo', () => {
     const m = crear({ ingesta: { atencion: { estado: 'operador' } }, aviso: 'error' });
     const t = hablar(m, ANA, mTexto('hola'));

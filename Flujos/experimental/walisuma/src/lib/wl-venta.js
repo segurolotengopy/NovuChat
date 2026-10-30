@@ -66,7 +66,8 @@ function wlModos(base) {
 function wlMezclarEntrega(antes, nueva, modos) {
   const a = wlEntregaDeFicha(antes);
   const n = cbEsObjeto(nueva) ? nueva : {};
-  const campo = (v, max) => (typeof v === 'string' ? cbLinea(v, max) : '');
+  // Nombre y dirección pasan por el mismo enmascarado de números largos que la memoria de la charla: un NIT o un CI no entra a la ficha.
+  const campo = (v, max) => (typeof v === 'string' ? wlParaMemoria(cbLinea(v, max)).slice(0, max) : '');
   const salida = { modo: a.modo, ciudad: a.ciudad, direccion: a.direccion, nombre: a.nombre };
   const modo = campo(n.modo, 40);
   if (modo !== '') {
@@ -96,10 +97,11 @@ function wlEntregaTexto(e) {
 // -----------------------------------------------------------------------------
 // Intenciones que decide el CÓDIGO sobre el texto del cliente (normalizado con `wlNorm`)
 // -----------------------------------------------------------------------------
+// Una ORDEN de pagar o de cerrar el pedido; «confirmo que es para La Paz» no lo es.
 function wlQuierePagar(n) {
   const t = String(n || '');
   if (/\b(no|aun no|todavia no)\s+(quiero\s+)?(pagar|confirmar|cerrar)\b/.test(t)) return false;
-  return /\b(pagar|pagare|pagamos|quiero pagar|el qr|envia(me)? el qr|manda(me)? el qr|confirmo|confirmar (el )?pedido|cerrar (el )?pedido|cerremos|me los? llevo|lo llevo|los llevo|procede|proceder)\b/.test(t);
+  return /\b(pagar|pagare|pagamos|el qr|confirmo (el|mi|la) (pedido|compra)|confirmar (el|mi) pedido|cerrar (el|mi) pedido|cerremos (el|mi) pedido|me los? llevo|lo llevo|los llevo|proceder? (con )?(el|mi|la) (pedido|pago|compra))\b/.test(t);
 }
 function wlPideIdentidad(n) {
   return /\b(eres|sos|es|seras)\s+(un |una )?(bot|robot|ia|inteligencia artificial|maquina|programa|persona|humano|humana|real)\b|\b(hablo|estoy hablando|hablando) con (un |una )?(bot|robot|ia|persona|humano|humana|maquina)\b|\bpersona real\b|\bes un bot\b|\bquien eres\b|\bcon quien hablo\b/.test(String(n || ''));
@@ -135,6 +137,8 @@ function wlCentavos(s) {
 }
 // Todo importe del texto tiene que ser el PRECIO de una pieza vendible: el modelo no dice totales, descuentos ni cifras inventadas.
 function wlMontosValidos(texto, vendibles) {
+  // Un total, un descuento o «queda en / sería» con un número, aunque no diga la moneda, es una cifra que solo dice el código.
+  if (/\b(total|subtotal|descuento|rebaja|ahorro|queda(?:ria|n)? en|ser(?:ia|ian)|saldria|en total)\b[^.!?\d]{0,20}\d/.test(wlNorm(texto))) return false;
   const permitidos = new Set((Array.isArray(vendibles) ? vendibles : []).map((v) => v.precioCentavos));
   const t = String(texto);
   const re = /(?:\bbs\.?\s*|\bbob\s*)(\d[\d.,]*)|(\d[\d.,]*)\s*(?:bs\b\.?|bob\b|bolivianos?)/gi;
@@ -242,6 +246,7 @@ const WL_MOTIVOS_AVISO = {
   comprobante_sin_cobro: 'envió un comprobante sin un pedido con QR abierto',
   pago_con_problema: 'envió la captura de un pago que parece no haberse completado',
   comprobante_sin_cotejo: 'comprobante recibido que no se pudo cotejar',
+  comprobante_ya_visto: 'el cliente envió otra vez un comprobante que ya estaba registrado',
   monto_invalido: 'el monto del pedido no se pudo calcular',
   atencion_humana: 'uso extendido: se le dijo que una persona continúa la conversación',
 };
@@ -273,7 +278,7 @@ function wlResolverComprobante(c) {
   if (r.resultado === 'cuadra') { d.tipo = 'comprobante'; d.aviso = pedido('llegó y los datos coinciden'); }
   else if (r.resultado === 'aproximado') { d.tipo = 'comprobante'; d.aviso = pedido('llegó; los datos casi coinciden, revisar'); }
   else if (r.resultado === 'reintentar' || r.resultado === 'ilegible') { d.tipo = 'comprobante_pedir'; }
-  else if (r.resultado === 'ya_cotejado') { d.tipo = 'derivar'; d.motivo = 'comprobante_ya_visto'; }
+  else if (r.resultado === 'ya_cotejado') { d.tipo = 'derivar'; d.motivo = 'comprobante_ya_visto'; d.aviso = wlAvisoConsulta(c, 'comprobante_ya_visto'); }
   else { d.tipo = 'derivar'; d.motivo = 'comprobante_sin_cotejo'; d.aviso = pedido('llegó; no se pudo cotejar, revisar'); }
   d.patch = (r.resultado === 'reintentar' || r.resultado === 'ilegible' || r.resultado === 'ya_cotejado') ? {} : { comprobanteMs: c.ahora, qrHastaMs: 0, carrito: [], entrega: wlEntregaBase(), cierre: false, qrCarrito: [], mostrados: [] };
   return d;
@@ -291,7 +296,13 @@ function wlResolverModelo(c) {
   const cierre = f.cierre || wlQuierePagar(wlNorm(p.textoCliente));
   const cambio = !vcMismoCarrito(antes, lineas);
   const base = { lineas: lineas, entrega: entrega, cierre: cierre, cambio: cambio, aviso: null, cancelarCobro: false };
-  if (lineas.length > 0 && cierre && wlEntregaCompleta(entrega)) {
+  // Un QR abierto cuyo pedido ya no es el del cliente: SE CIERRA el cobro (aunque no diga «pagar») para que no pague un carrito viejo.
+  const abierto = c.cobro.modo === 'real' && (c.cobro.pendiente || f.qrHastaMs > c.ahora);
+  const qrViejo = wlConNombres(f.qrCarrito, c.vendibles);
+  const cambioConQr = abierto && !vcMismoCarrito(qrViejo, lineas);
+  if (cambioConQr && c.cancelo === false) return Object.assign(base, { tipo: 'derivar', motivo: 'no_cancelo', aviso: null, cancelarCobro: true });
+  const completa = wlEntregaCompleta(entrega);
+  if (lineas.length > 0 && completa && (cierre || cambioConQr)) {
     const total = vcTotalCentavos(lineas);
     const monto = total === null || total <= 0 ? null : cbTotalValido(total / 100);
     if (monto === null) return Object.assign(wlDerivar(c, 'monto_invalido'), { lineas: lineas, entrega: entrega, cierre: cierre });
@@ -299,14 +310,18 @@ function wlResolverModelo(c) {
       // Sin QR de cobro real: el pedido queda anotado y lo coordina recepción (aviso + botón). El aviso lo manda «Armar avisos» con «sin comprobante aún».
       return Object.assign(base, { tipo: 'pedido_sin_cobro', total: total, resumen: vcResumen(lineas), cierre: false, aviso: { tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: entrega, cotejo: 'sin comprobante aún', repetido: false }, patch: { carrito: [], entrega: wlEntregaBase(), cierre: false, qrCarrito: [], mostrados: [] } });
     }
-    const abierto = c.cobro.pendiente || f.qrHastaMs > c.ahora;
-    if (abierto && vcMismoCarrito(wlConNombres(f.qrCarrito, c.vendibles), lineas)) return Object.assign(base, { tipo: 'qr_pendiente', total: total });
-    const cancelar = abierto;
-    if (cancelar && c.cancelo === false) return Object.assign(base, { tipo: 'derivar', motivo: 'no_cancelo', aviso: null, cancelarCobro: true });
+    if (abierto && !cambioConQr) return Object.assign(base, { tipo: 'qr_pendiente', total: total });
     return Object.assign(base, {
-      tipo: 'qr', total: total, monto: monto, pedidoId: wlIdPedido(c.ahora, f.pedidos + 1), mediaId: c.cobro.mediaId, resumen: vcResumen(lineas), cambioDePedido: cancelar,
-      cancelarCobro: cancelar, cierre: false,
+      tipo: 'qr', total: total, monto: monto, pedidoId: wlIdPedido(c.ahora, f.pedidos + 1), mediaId: c.cobro.mediaId, resumen: vcResumen(lineas), cambioDePedido: cambioConQr,
+      cancelarCobro: cambioConQr, cierre: false,
     });
+  }
+  // El pedido cambió con un QR abierto pero todavía no se puede emitir otro (falta la entrega o se vació el carrito): se cierra el cobro y se avisa que el QR anterior quedó anulado.
+  if (cambioConQr) {
+    let texto0 = wlRedaccion(j.texto, p.textoCliente, c.vendibles);
+    const sinRed = texto0 === '';
+    if (sinRed) texto0 = WL_TEXTO_MODELO_SIN_REDACCION;
+    return Object.assign(base, { tipo: 'modelo', texto: texto0, sinRedaccion: sinRed, resumen: lineas.length ? vcResumen(lineas) : '', cancelarCobro: true, qrAnulado: true, patch: { qrHastaMs: 0, qrCarrito: [] } });
   }
   // Conversación: el texto del modelo, revisado; si no pasa, el fijo. El resumen del pedido (calculado por el código) acompaña cada cambio.
   let texto = wlRedaccion(j.texto, p.textoCliente, c.vendibles);

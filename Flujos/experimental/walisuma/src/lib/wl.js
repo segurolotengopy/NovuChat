@@ -223,7 +223,9 @@ function wlTextoDerivacion(motivo, salio) {
 // El texto de un comprobante según el resultado del cotejo (`cbResultadoVenta`). «Llegó y los datos coinciden» NO es una acreditación bancaria: quien confirma que entró el dinero es el banco, y el negocio.
 function wlTextoComprobante(resultado, diferencia, totalTexto, salio) {
   if (resultado === 'cuadra' || resultado === 'aproximado') {
-    const base = 'Tu comprobante llegó y los datos coinciden con tu pedido' + (totalTexto ? ' de ' + totalTexto : '') + '.';
+    // «Aproximado»: los datos NO coinciden del todo; nunca se dice «coinciden».
+    const base = resultado === 'aproximado' ? 'Tu comprobante llegó; recepción revisará una pequeña diferencia con tu pedido' + (totalTexto ? ' de ' + totalTexto : '') + '.'
+      : 'Tu comprobante llegó y los datos coinciden con tu pedido' + (totalTexto ? ' de ' + totalTexto : '') + '.';
     return salio === true ? base + ' Ya avisé a recepción para que lo revise en su cuenta; también puedes escribirle directo con el botón.' : base + ' No pude avisar a recepción; escríbele directo con el botón.';
   }
   if (resultado === 'reintentar') {

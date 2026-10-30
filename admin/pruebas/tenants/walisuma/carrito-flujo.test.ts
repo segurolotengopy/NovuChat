@@ -54,6 +54,29 @@ describe('lo que propone el modelo se valida contra el catálogo', () => {
   });
 });
 
+describe('lo que dice el cliente y lo que se guarda', () => {
+  it('NEGADO: «confirmo que es para La Paz» NO es una orden de pagar (no emite el QR); «confirmo el pedido» sí', () => {
+    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) });
+    hablar(m, ANA, mTexto('una billetera'));
+    const t1 = hablar(m, ANA, mTexto('confirmo que es para La Paz'));
+    expect(t1.mensajes.every((x) => x.tipo !== 'image')).toBe(true);
+    const t2 = hablar(m, ANA, mTexto('confirmo el pedido'));
+    expect(t2.mensajes.some((x) => x.tipo === 'image')).toBe(true);
+  });
+  it('NEGADO: un NIT o CI en el nombre o la dirección de entrega no entra a la ficha', () => {
+    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: { ...ENTREGA, nombre: 'Ana Pérez CI 4455667', direccion: 'Calle 5 NIT 987654321' } }) });
+    hablar(m, ANA, mTexto('una billetera'));
+    expect(JSON.stringify(fichas(m)[ANA])).not.toMatch(/4455667|987654321/);
+    expect(fichas(m)[ANA].entrega.nombre).toMatch(/Ana Pérez/);
+  });
+  it('NEGADO: el modelo no dice totales ni descuentos aunque no escriba la moneda', () => {
+    for (const falso of ['El total sería 900 con tu pedido.', 'Con descuento queda en 400, ¿te animas?', 'En total son 1200.']) {
+      const t = hablar(crear({ modeloDice: modelo(falso) }), ANA, mTexto('hola'));
+      expect(textos(t).join(' ')).not.toMatch(/900|400|1200/);
+    }
+  });
+});
+
 describe('del pedido al QR', () => {
   const confirmar = (m: ReturnType<typeof crear>, tel = ANA) => {
     hablar(m, tel, mTexto('quiero una billetera'));
@@ -106,6 +129,29 @@ describe('del pedido al QR', () => {
     expect(t.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado')).toMatchObject({ monto: 900 });
     expect(fichas(m)[ANA].pedidos).toBe(2);
   });
+  it('NEGADO: el cambio SIN decir «pagar» con un QR abierto también cierra el cobro y emite el QR nuevo con el carrito nuevo (nadie paga un carrito viejo)', () => {
+    const m = crear({ modeloDice: (ll) => pide([{ id: BIL, cantidad: /mejor dos/.test(ultimo(ll)) ? 2 : 1 }], { entrega: ENTREGA }) });
+    hablar(m, ANA, mTexto('una billetera'));
+    hablar(m, ANA, mTexto('quiero pagar'));
+    m.dobles['Traer configuración'] = () => panelConQr(450);
+    const t = hablar(m, ANA, mTexto('mejor dos'));
+    expect(t.llamadas.ingesta.find((x) => x['evento'] === 'cobro_cancelado')).toBeTruthy();
+    expect(t.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado')).toMatchObject({ monto: 900 });
+    expect(t.mensajes.filter((x) => x.tipo === 'image')).toHaveLength(1);
+    expect(fichas(m)[ANA].carrito).toEqual([{ id: BIL, cantidad: 2, detalle: '' }]);
+    expect(fichas(m)[ANA].qrCarrito[0].cantidad).toBe(2);
+  });
+  it('NEGADO: si vacía el pedido con un QR abierto, se cierra el cobro y se le dice que el QR anterior quedó anulado (sin QR nuevo)', () => {
+    const m = crear({ modeloDice: (ll) => pide(/vacío|quita todo/.test(ultimo(ll)) ? [] : [{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) });
+    hablar(m, ANA, mTexto('una billetera'));
+    hablar(m, ANA, mTexto('quiero pagar'));
+    m.dobles['Traer configuración'] = () => panelConQr(450);
+    const t = hablar(m, ANA, mTexto('quita todo, mejor no'));
+    expect(t.llamadas.ingesta.find((x) => x['evento'] === 'cobro_cancelado')).toBeTruthy();
+    expect(t.mensajes.every((x) => x.tipo !== 'image')).toBe(true);
+    expect(textos(t).join(' ')).toMatch(/QR anterior quedó anulado/);
+    expect(fichas(m)[ANA].qrHastaMs).toBe(0);
+  });
   it('NEGADO: si el servidor no pudo cerrar el cobro, NO se emite otro QR: se pasa con recepción con el botón y sin decir que se avisó', () => {
     const m = crear({ cancelar: 'cae', modeloDice: (ll) => pide([{ id: BIL, cantidad: /mejor dos/.test(ultimo(ll)) ? 2 : 1 }], { entrega: ENTREGA }) });
     hablar(m, ANA, mTexto('una billetera'));
@@ -117,6 +163,8 @@ describe('del pedido al QR', () => {
     expect(t.mensajes[0]?.payload['interactive']).toBeTruthy();
     expect(t.mensajes[0]?.cuerpo).toMatch(/no pagues con ese QR/i);
     expect(t.mensajes[0]?.cuerpo).not.toMatch(/ya avis/i);
+    // El pedido nuevo se conserva en la ficha (no se pierde por la falla del cierre).
+    expect(fichas(m)[ANA].carrito[0].cantidad).toBe(2);
   });
   it('con el mismo carrito y un QR abierto, un recordatorio sin otro QR', () => {
     const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) });

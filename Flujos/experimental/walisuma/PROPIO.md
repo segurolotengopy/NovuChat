@@ -59,6 +59,12 @@ Decidir turno, Interpretar lectura, ¿Cotejar?, Cotejar en el servidor, ¿Conver
 - **Aviso al comercio**: la plantilla `pedido_registrado` con 4 variables (`{{1}}` ítems por `vcLineaAviso`, `{{2}}` total por `vcMonto`, `{{3}}` ciudad y modalidad, `{{4}}` el cotejo), o texto libre dentro de la ventana de 23,5 h del destinatario; un solo destinatario (`contactoAviso`), nunca el propio número de quien escribe. «Ya avisé» solo con un `wamid` real; si no, «no pude avisar» y el botón.
 - **NIT y CI**: la ficha de 48 h no tiene dónde guardarlos, la memoria de la charla enmascara los números largos y el aviso no los lleva. Si el cliente pide factura, se pasa con recepción.
 
+## Excepción declarada a «toda derivación es aviso Y botón»
+
+`no_cancelo` (el cliente cambió el pedido, pero el servidor no pudo cerrar el cobro anterior) lleva el botón y NO lleva aviso: lo decide «Armar mensajes» DESPUÉS de «Armar avisos» (la respuesta de «Avisar al servidor» no existe antes), y el texto no dice que se avisó («no pagues con ese QR; escríbele a recepción con el botón»). El resto de las derivaciones (`monto_invalido` y `comprobante_ya_visto` incluidas) arman su aviso en el resolver. La rama de «Armar mensajes» que deriva por un QR inválido es defensiva: el resolver ya valida monto, medio y pedido.
+
+Un QR abierto cuyo pedido cambia (diga o no «pagar») cierra el cobro (`cobro_cancelado`) y, con la entrega completa, emite el QR nuevo con el carrito nuevo; si falta algo, avisa que el QR anterior quedó anulado. En «operador» el aviso de «una persona continúa» sale a lo más una vez cada 30 minutos por teléfono. Un comprobante «aproximado» dice «recepción revisará una pequeña diferencia», nunca «coinciden». «Resumen del turno» revierte el cobro solo si falló el envío del ítem del QR.
+
 ## Ambigüedades del encargo que se resolvieron así (para revisar)
 
 1. **Cuándo sale el aviso del pedido**: el encargo dice «1 por pedido» y a la vez un valor «sin comprobante aún». Se resolvió con UN aviso por pedido, cuando el comprobante llega y se coteja (`llegó y los datos coinciden`, `llegó; los datos casi coinciden, revisar` o `llegó; no se pudo cotejar, revisar`), y el valor «sin comprobante aún» solo en el pedido sin QR de cobro real (recepción coordina el pago). Un pedido con QR cuyo cliente nunca manda el comprobante NO avisa. Si el comercio quiere el aviso al emitir el QR, serían 2 por pedido.

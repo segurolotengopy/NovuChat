@@ -48,7 +48,11 @@ if (puerta.ruta === 'suspendido') {
 } else if (puerta.ruta === 'uso_extendido') {
   // «bloqueado» (pausa por Tomar) no responde nada; «operador» responde el aviso fijo CON el botón (el texto promete que una persona continúa y «Armar avisos» avisó).
   tipoDePlan = puerta.responder === true && String(puerta.texto || '').trim() !== '' ? 'uso_extendido' : 'bloqueado';
-  if (tipoDePlan === 'uso_extendido') msgs = [conRecepcion(puerta.texto)];
+  if (tipoDePlan === 'uso_extendido') {
+    msgs = [conRecepcion(puerta.texto)];
+    // A lo más UN aviso de «una persona continúa» cada 30 minutos por teléfono: si salió, se anota (y se devuelve si el envío no sale).
+    if (salio === true) { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
+  }
 } else if (puerta.ruta === 'sigue') {
   if (tipoDePlan === 'nada') tipoDePlan = 'nada';
   else if (tipoDePlan === 'fuera_pais') tipoDePlan = 'fuera_de_pais';
@@ -80,7 +84,7 @@ if (puerta.ruta === 'sigue') {
     }
   } else if (tipoDePlan === 'modelo') {
     llamadasModelo = 1;
-    msgs = [texto(conSaludo(d.texto + (d.resumen ? '\n\n' + d.resumen : '')))];
+    msgs = [texto(conSaludo(d.texto + (d.resumen ? '\n\n' + d.resumen : '') + (d.qrAnulado === true ? '\n\nTu pedido cambió, así que el QR anterior quedó anulado: no pagues con él. Cuando confirmes tu pedido te envío uno nuevo.' : '')))];
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
     nuevos.entrega = d.entrega;
     nuevos.cierre = d.cierre === true;
@@ -88,7 +92,8 @@ if (puerta.ruta === 'sigue') {
     // La memoria de la charla: sin números largos (NIT, CI, teléfonos).
     const hist = fichaAntes.hist.concat([{ r: 'u', t: wlParaMemoria(c.plan.textoCliente) }, { r: 'm', t: wlParaMemoria(d.texto) }]).filter((x) => x.t !== '');
     nuevos.hist = hist.slice(-WL_RECUERDOS);
-    for (const k of ['carrito', 'entrega', 'cierre', 'mostrados', 'hist']) ev[k] = fichaAntes[k];
+    if (d.patch) Object.assign(nuevos, d.patch);
+    for (const k of ['carrito', 'entrega', 'cierre', 'mostrados', 'hist', 'qrHastaMs', 'qrCarrito']) ev[k] = fichaAntes[k];
   } else if (tipoDePlan === 'qr') {
     // Nunca un QR sin monto del carrito, sin id de medio o sin un id de pedido válido: se pasa con recepción (sin decir que se avisó: aquí no hay aviso).
     const lineas = wlConNombres(d.lineas, c.vendibles);
@@ -126,9 +131,11 @@ if (puerta.ruta === 'sigue') {
   } else if (tipoDePlan === 'derivar') {
     // Pasar con recepción: el aviso MÁS el botón. «Ya avisé» solo con un `wamid` real; un motivo sin aviso nunca lo dice.
     const cuerpo = d.motivo === 'no_cancelo' ? WL_INTROS.no_cancelo + ' Escríbele a recepción con el botón.'
-      : (d.motivo === 'comprobante_ya_visto' ? wlTextoDerivacion(d.motivo, 'repetido') : wlTextoDerivacion(d.motivo, salio));
+      : wlTextoDerivacion(d.motivo, salio);
     msgs = [conRecepcion(conSaludo(cuerpo))];
     if (salio === true && d.aviso && d.aviso.tipo === 'consulta') { nuevos.avisoConsultaMs = ahora; ev.avisoConsultaMs = fichaAntes.avisoConsultaMs; }
+    // Un pedido cambiado cuyo cobro no se pudo cerrar: el pedido nuevo se conserva (el QR viejo sigue abierto y el cliente ya sabe que no pague con él).
+    if (d.motivo === 'no_cancelo' && Array.isArray(d.lineas)) { nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega; }
     if (d.motivo === 'comprobante_sin_cotejo' && d.patch) { /* sin cotejo: el comprobante llegó; recepción lo ve */ }
     if (d.patch && typeof d.patch === 'object') { Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k]; }
   } else if (tipoDePlan !== 'nada') {
@@ -171,10 +178,9 @@ const salida = msgs.map((m, i) => {
   if (m.referencia) item.referencia = m.referencia;
   if (m.monto !== undefined) item.monto = m.monto;
   // «Resumen del turno» lee esto del primer ítem: lo que no salió vuelve a su valor anterior.
-  if (i === 0 && Object.keys(ev).length) {
-    item.revertirFicha = ev;
-    if (tipoDePlan === 'qr') item.revertirSiFalloElPrincipal = { qrHastaMs: ev.qrHastaMs, pedidos: ev.pedidos, qrCarrito: ev.qrCarrito };
-  }
+  if (i === 0 && Object.keys(ev).length) item.revertirFicha = ev;
+  // Solo el ítem del QR (`qr_enviado`) devuelve el cobro a como estaba si SU envío falla: el texto del resumen puede fallar y el QR salir (el servidor ya abrió el cobro).
+  if (tipoDePlan === 'qr' && m.evento === 'qr_enviado') item.revertirSiFalloElPrincipal = { qrHastaMs: ev.qrHastaMs, pedidos: ev.pedidos, qrCarrito: ev.qrCarrito };
   return { json: item };
 });
 return salida;

@@ -82,6 +82,19 @@ describe('el carrito, la ficha y el QR no se comparten entre teléfonos', () => 
   });
 });
 
+describe('«Resumen del turno»: solo el ítem del QR revierte el cobro', () => {
+  it('NEGADO: el texto del resumen falla (sale el respaldo) y el QR SALE: el servidor ya abrió el cobro, así que `qrHastaMs`, `pedidos` y `qrCarrito` NO se revierten', () => {
+    const m = crear({ modeloDice: modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: ENTREGA }) });
+    hablar(m, ANA, mTexto('una billetera'));
+    m.dobles['Enviar a WhatsApp'] = (ll) => (ll.cuerpo?.['type'] === 'text' ? { error: { message: '(#131053) error', code: 131053 } } : { messaging_product: 'whatsapp', messages: [{ id: `wamid.OUT${ll.n}` }] });
+    const t = hablar(m, ANA, mTexto('quiero pagar'));
+    expect(t.mensajes.some((x) => x.tipo === 'image' && x.ok)).toBe(true);
+    expect(fichas(m)[ANA].pedidos).toBe(1);
+    expect(fichas(m)[ANA].qrHastaMs).toBeGreaterThan(0);
+    expect(fichas(m)[ANA].qrCarrito).toHaveLength(1);
+  });
+});
+
 describe('«Resumen del turno»: si el principal falla y el respaldo sale, el QR no queda abierto', () => {
   it('con un QR abierto, un pedido cambiado cuyo envío principal falla (y el respaldo sale): `qrHastaMs`, `pedidos` y `qrCarrito` vuelven a su valor anterior', () => {
     const m = crear({ modeloDice: (ll) => modelo('Con gusto.', { lineas: [{ id: 'billetera-cuero', cantidad: /mejor dos/.test(String(ll.cuerpo?.['contents']).slice(-120)) ? 2 : 1 }], entrega: ENTREGA }) });

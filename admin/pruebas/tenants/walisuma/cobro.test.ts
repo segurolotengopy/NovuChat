@@ -59,6 +59,23 @@ describe('NUNCA «pago acreditado» ni «simulado»', () => {
   });
 });
 
+describe('un comprobante aproximado no dice «coinciden»', () => {
+  it('NEGADO: «aproximado» dice que recepción revisará una pequeña diferencia; el aviso al comercio dice «casi coinciden, revisar»', () => {
+    const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, cotejo: { statusCode: 200, body: { estado: 'aproximado', importe: 450, avisarComercio: true } } });
+    const t = comprobante(m);
+    expect(t.mensajes[0]?.cuerpo).toMatch(/recepción revisará una pequeña diferencia/);
+    expect(t.mensajes[0]?.cuerpo).not.toMatch(/coinciden/);
+    expect(JSON.stringify(t.avisos[0]?.payload)).toMatch(/casi coinciden, revisar/);
+  });
+  it('NEGADO: un comprobante ya registrado pasa con recepción como toda derivación: aviso Y botón', () => {
+    const m = conQrAbierto({ medio: { clasificacion: COMPROBANTE }, cotejo: { statusCode: 200, body: { estado: 'ya_resuelto' } } });
+    const t = comprobante(m);
+    expect(t.avisos).toHaveLength(1);
+    expect(t.mensajes[0]?.payload['interactive']).toBeTruthy();
+    expect(t.mensajes[0]?.cuerpo).toMatch(/Ya avisé a recepción/);
+  });
+});
+
 describe('el cotejo corre aunque el servidor no guarde el comprobante', () => {
   for (const [nombre, guardado] of [
     ['409 (sin cobro abierto para guardar)', { statusCode: 409, body: {} }],
