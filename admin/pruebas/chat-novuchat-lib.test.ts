@@ -1549,8 +1549,8 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
     const leer = (base: string, n: string): string => readFileSync(join(base, 'src/nodos', n), 'utf8');
     expect(leer(CARPETA, 'prospecto-para-la-planilla.js')).toBe(leer(join(EXPERIMENTAL, 'captacion-minima'), 'prospecto-para-la-planilla.js'));
     // `decidir-fila` diverge en UNA línea a propósito (L2 de la revisión de seguridad del PR #464: quitar TODOS los bloques de signos de fórmula del comienzo, «= =1»). Todo lo demás, idéntico.
-    // (y en el bloque «otros negocios» del resumen J: R5, ajustes del 09/10)
-    const mia = leer(CARPETA, 'decidir-fila-de-la-planilla.js').replace(/ *\/\/ >>> otros negocios[\s\S]*?\/\/ <<< otros negocios\n/, '').split('\n');
+    // (y en el bloque «otros negocios» del resumen J: R5, ajustes del 09/10; y en el bloque «filas nuevas»: fila nueva tras 48 h, 29/10 — se compara con la línea original de `actual`)
+    const mia = leer(CARPETA, 'decidir-fila-de-la-planilla.js').replace(/ *\/\/ >>> otros negocios[\s\S]*?\/\/ <<< otros negocios\n/, '').replace(/ *\/\/ >>> filas nuevas[\s\S]*?\/\/ <<< filas nuevas\n/, "  const actual = coincidencias.find((f) => digitos(f[H.E]) === p.telefono);\n").split('\n');
     const orig = leer(join(EXPERIMENTAL, 'captacion-minima'), 'decidir-fila-de-la-planilla.js').split('\n');
     const distintas = mia.filter((l) => !orig.includes(l));
     expect(distintas.filter((l) => !l.trimStart().startsWith('//'))).toEqual(["const seguro = (v) => limpio(v).replace(/^(?:[=+\\-@]\\s*)+/, '');"]);
