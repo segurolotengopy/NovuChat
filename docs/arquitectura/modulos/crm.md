@@ -7,8 +7,8 @@
 ## Qué es
 
 La ficha de cada contacto en una Hoja de Google NATIVA del cliente. **Opcional,
-activo por defecto, apagable por tenant.** Es un módulo común (como Productos y
-Campañas), **ni depende de la lista `tenants.modulos`**: tiene UN SOLO
+activo por defecto, apagable por tenant.** No es un módulo común y **no depende de la
+lista `tenants.modulos`**: tiene UN SOLO
 interruptor, `config/crm.activo`. `activo: false` lo apaga: el flujo no escribe y
 Google ni se consulta. Documento ausente o sin `activo` = encendido. No está en
 `MODULOS_COMUNES_HOY` y la regla de escritura solo exige admin del tenant

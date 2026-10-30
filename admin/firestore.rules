@@ -660,7 +660,7 @@ service cloud.firestore {
         }
 
         // =====================================================================
-        // /config/crm — miniCRM (PR-A, 28/10/2026). Módulo común, activo por
+        // /config/crm — miniCRM (PR-A, 28/10/2026). No es módulo común; activo por
         // defecto, con UN solo interruptor (`activo`, ausente = encendido): la regla
         // no mira `tenants.modulos`. El comercio escribe SOLO `activo`,
         // `moneda` y `listas`. `hoja`, `filaEncabezados`, `mapaColumnas`,
