@@ -8,6 +8,7 @@ import { registrar } from '../../core/turno/bitacora.js';
 import { documentoDeVertical } from '../../core/prompt/prompt.js';
 import { periodoDe } from '../../central/cuenta/planes.js';
 import { limiteDe } from '../cobros/cobroVenta.js';
+import { estaBloqueada } from '../../core/conversacion/pausa.js';
 
 /**
  * =============================================================================
@@ -92,6 +93,8 @@ export type ModoSeguimiento = 'texto' | 'plantilla';
 export interface ConversacionParaSeguimiento {
   solicitud?: unknown;
   noContactar?: unknown;
+  /** Contacto bloqueado por una persona del comercio (`bloquearContacto.ts`, core). */
+  bloqueada?: unknown;
   atencionEstado?: unknown;
   ultimoEn?: unknown;
 }
@@ -111,6 +114,7 @@ export interface ConversacionParaSeguimiento {
  *   · ya salió un seguimiento para esta solicitud (`seguimientos` distinto de 0,
  *     y también si el campo viniera con basura: ante la duda, no se escribe);
  *   · `noContactar === true`;
+ *   · `bloqueada === true` (el contacto fue bloqueado por el comercio);
  *   · la solicitud está en `qr_enviado`, es de COBRO de regla 2 y su límite
  *     (`venceEn` o la prórroga, el mayor) ya pasó por reloj, aunque la etapa
  *     siga escrita así (los restos de regla 2 en `horarios` no cuentan);
@@ -124,6 +128,8 @@ export function esPendienteDeSeguimiento(
 ): ModoSeguimiento | null {
   if (!conversacion || typeof conversacion !== 'object') return null;
   if (conversacion.noContactar === true) return null;
+  // CONTACTO BLOQUEADO (31/10/2026): fuera de todo envío automático. Solo el `true` exacto.
+  if (estaBloqueada(conversacion.bloqueada)) return null;
   const estado = typeof conversacion.atencionEstado === 'string' ? conversacion.atencionEstado : '';
   if (estado === 'operador' || estado === 'bloqueado') return null;
 
@@ -285,6 +291,11 @@ export const seguimientoEnviado = onRequest(
       const solicitud = typeof s === 'object' && s !== null ? (s as Partial<Solicitud>) : null;
       if (!conversacion.exists || !solicitud) {
         return { marcado: false, repetido: false, motivo: 'sin_solicitud' as const };
+      }
+      // Segunda compuerta, al momento de enviar: se pudo bloquear entre el armado de la lista y
+      // este aviso. El flujo manda solo si `marcado === true`; bloqueado no se marca ni se manda.
+      if (estaBloqueada(conversacion.get('bloqueada'))) {
+        return { marcado: false, repetido: false, motivo: 'bloqueado' as const };
       }
       const previos = typeof solicitud.seguimientos === 'number' ? solicitud.seguimientos : 0;
       if (previos !== 0) return { marcado: false, repetido: true };
