@@ -1,0 +1,230 @@
+/**
+ * miniCRM, PR-E: la planilla de las subcuentas (plantilla NOVUCHAT_miniCRM_IA, 31/10/2026).
+ *   · clasificación, prioridad y cierre de ventana POR CODIGO: tabla con los 6 leads del plan.
+ *   · el mapa con columnas del bot NO contiguas (A a I y N a T), el equipo en medio (J a M) y al final (U).
+ *   · se NIEGA: el bot nunca escribe J, K, L (salvo el estado al crear), M, U ni F (salvo al crear).
+ *   · paridad del contrato de Functions con el módulo que corre en n8n.
+ * Mensajes por conversación: 0 (ninguna de estas piezas envía).
+ */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { compileFunction } from 'node:vm';
+import { describe, expect, it } from 'vitest';
+import { CAMPOS_DEL_BOT, CAMPOS_DEL_EQUIPO } from '../../../functions/src/modulos/crm/columnas.js';
+// @ts-expect-error módulo .mjs sin tipos
+import { inyectarMapa } from '../../../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
+
+const AQUI = dirname(fileURLToPath(import.meta.url));
+const FLUJOS = join(AQUI, '..', '..', '..', '..', 'Flujos', 'src', 'modulos');
+const leer = (r: string) => readFileSync(join(FLUJOS, r), 'utf8');
+type J = Record<string, unknown>;
+
+const T = {
+  id: 'ID Lead', fecha: 'Fecha', nombre: 'Nombre y Apellido', empresa: 'Empresa', telefono: 'Teléfono', etapa: 'Etapa Funnel', origen: 'Origen',
+  calif: 'Calificación IA', resumen: 'Resumen', valor: 'Valor', resp: 'Responsable', estado: 'Estado Comercial', prox: 'Próxima Acción',
+  clasif: 'Clasificación', quePidio: 'Qué pidió', dia: 'Día preferido', horario: 'Horario preferido', deriv: 'Derivación a recepción',
+  ultima: 'Última interacción', ventana: 'Se cierra la ventana de 24 h', diag: 'Diagnóstico del equipo',
+};
+const MAPA = {
+  filaEncabezados: 3, prefijoId: 'L-', primerId: 1,
+  columnas: {
+    id: { letra: 'A', titulo: T.id }, fecha: { letra: 'B', titulo: T.fecha }, nombre: { letra: 'C', titulo: T.nombre }, empresa: { letra: 'D', titulo: T.empresa },
+    telefono: { letra: 'E', titulo: T.telefono }, etapaInicial: { letra: 'F', titulo: T.etapa }, origen: { letra: 'G', titulo: T.origen },
+    calificacion: { letra: 'H', titulo: T.calif }, resumen: { letra: 'I', titulo: T.resumen },
+    clasificacion: { letra: 'N', titulo: T.clasif }, quePidio: { letra: 'O', titulo: T.quePidio }, diaPreferido: { letra: 'P', titulo: T.dia },
+    horarioPreferido: { letra: 'Q', titulo: T.horario }, derivacion: { letra: 'R', titulo: T.deriv }, ultimaInteraccion: { letra: 'S', titulo: T.ultima },
+    ventana24h: { letra: 'T', titulo: T.ventana },
+  } as Record<string, { letra: string; titulo: string }>,
+  equipo: {
+    valor: { letra: 'J', titulo: T.valor }, responsable: { letra: 'K', titulo: T.resp }, estado: { letra: 'L', titulo: T.estado },
+    proximaAccion: { letra: 'M', titulo: T.prox }, diagnostico: { letra: 'U', titulo: T.diag },
+  } as Record<string, { letra: string; titulo: string } | null>,
+  extrasDelEquipo: {} as Record<string, string>,
+  alCrear: { etapaInicial: '1. Nuevo', origen: 'Chatbot', origenAnuncio: 'Anuncio', estado: 'Activo' } as J,
+};
+const clonar = <T,>(o: T): T => JSON.parse(JSON.stringify(o));
+const TITULOS_LEIDOS = [T.id, T.fecha, T.nombre, T.empresa, T.telefono, T.etapa, T.origen, T.calif, T.resumen, T.valor, T.resp, T.estado, T.prox,
+  T.clasif, T.quePidio, T.dia, T.horario, T.deriv, T.ultima, T.ventana, T.diag];
+
+const FUNCIONES = 'return { crmClasificar, crmPrioridad, crmVentana24h, crmValidarMapa, crmDecidirFila, capCalificar, capResumir, CAP_PRIORIDAD, CRM_CAMPOS_BOT, CRM_CAMPOS_EQUIPO };';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const M: any = compileFunction(`${inyectarMapa(leer('crm/crm.js'), MAPA)}\n${leer('captacion/crm-captacion.js')}\n${FUNCIONES}`, [])();
+const adaptador = { calificar: M.capCalificar, resumir: M.capResumir, prioridad: M.CAP_PRIORIDAD };
+const AHORA = Date.UTC(2026, 9, 31, 15, 0, 0);
+const TEL = ['59', '17', '000', '010'].join('');
+
+const fila = (n: number, tel: string, extra: J = {}): { json: J } => ({ json: { row_number: n, ...Object.fromEntries(TITULOS_LEIDOS.map((t) => [t, ''])), [T.telefono]: tel, ...extra } });
+const decidir = (p: J, busqueda: Array<{ json: J }> = [], mapa: unknown = MAPA, ids: Array<{ json: J }> = [{ json: { row_number: 4, [T.id]: 'L-7' } }]) =>
+  M.crmDecidirFila({ prospectos: [{ json: p }], busqueda, lecturaIds: ids, mapa: clonar(mapa), adaptador, ahoraMs: AHORA })[0].json as J;
+const claves = (j: J) => Object.keys(j).filter((k) => !['accionPlanilla', 'veredictoPlanilla', 'row_number'].includes(k));
+
+// Los 6 leads del plan: lo que HIZO cada uno y lo que la planilla debe decir.
+const LEADS: Array<[string, J, string, string]> = [
+  ['Maria Eugenia: aceptó agendar', { aceptoAgendar: true, llegoPorAnuncio: true }, 'Caliente', 'Alta'],
+  ['Rosarito: pidió la ubicación', { pidioUbicacion: true }, 'Caliente', 'Alta'],
+  ['Dunia: llegó por anuncio', { llegoPorAnuncio: true }, 'Tibio', 'Media'],
+  ['Yeimy: escribió y no avanzó', {}, 'Tibio', 'Media'],
+  ['Roxi: preguntó el precio y cerró', { preguntoPrecioYCerro: true, llegoPorAnuncio: true }, 'Frío', 'Baja'],
+  ['Moira: no es paciente', { noEsPaciente: true, pidioUbicacion: true }, 'No es lead', 'N/A'],
+];
+
+describe('clasificación, prioridad y cierre de ventana (por código)', () => {
+  it.each(LEADS)('%s', (_n, senales, clasif, prio) => {
+    expect(M.crmClasificar(senales)).toBe(clasif);
+    expect(M.crmPrioridad(clasif)).toBe(prio);
+  });
+  it('pidió que lo llamen = Caliente; solo `=== true` cuenta', () => {
+    expect(M.crmClasificar({ pidioLlamada: true })).toBe('Caliente');
+    expect(M.crmClasificar({ aceptoAgendar: 'true', pidioUbicacion: 1, pidioLlamada: 'si' })).toBe('Tibio');
+    for (const raro of [null, undefined, 'x', 5, [], {}]) expect(M.crmClasificar(raro)).toBe('Tibio');
+  });
+  it('prioridad: un valor desconocido no inventa una prioridad', () => {
+    for (const raro of ['', 'caliente', 'Hot', 'toString', '__proto__', null, undefined, 7]) expect(M.crmPrioridad(raro)).toBe('N/A');
+  });
+  it('la ventana se cierra 24 h después de la última interacción, sin modelo', () => {
+    expect(M.crmVentana24h(AHORA)).toBe(AHORA + 24 * 3600 * 1000);
+    expect(M.crmVentana24h(0)).toBe(24 * 3600 * 1000);
+    for (const raro of [null, undefined, '1', NaN, Infinity]) expect(M.crmVentana24h(raro)).toBeNull();
+  });
+  it('la fila nueva de cada uno de los 6 leads lleva su clasificación y su cierre de ventana en hora de La Paz', () => {
+    for (const [, senales, clasif] of LEADS) {
+      const f = decidir({ telefono: TEL, nombre: 'Ana', senales, ultimaInteraccionMs: AHORA });
+      expect(f.accionPlanilla).toBe('agregar');
+      expect(f[T.clasif]).toBe(clasif);
+      expect(f[T.ultima]).toBe('2026-10-31 11:00');
+      expect(f[T.ventana]).toBe('2026-11-01 11:00');
+    }
+  });
+});
+
+describe('mapa con columnas del bot no contiguas', () => {
+  it('el mapa de la plantilla es válido', () => expect(M.crmValidarMapa(MAPA)).toEqual([]));
+  it('sin los campos nuevos, un mapa con solo A a I (y el equipo después) sigue siendo válido', () => {
+    const m = clonar(MAPA);
+    for (const k of ['clasificacion', 'quePidio', 'diaPreferido', 'horarioPreferido', 'derivacion', 'ultimaInteraccion', 'ventana24h']) delete m.columnas[k];
+    delete m.equipo.diagnostico;
+    expect(M.crmValidarMapa(m)).toEqual([]);
+  });
+  const invalido = (cambia: (m: typeof MAPA) => void) => { const m = clonar(MAPA); cambia(m); return M.crmValidarMapa(m) as string[]; };
+  it.each([
+    ['un campo del bot en la letra de una columna del equipo (J)', (m: typeof MAPA) => { m.columnas.clasificacion.letra = 'J'; }],
+    ['un campo del bot en la letra del diagnóstico (U)', (m: typeof MAPA) => { m.columnas.ventana24h.letra = 'U'; }],
+    ['el bot en el estado (L)', (m: typeof MAPA) => { m.columnas.derivacion.letra = 'L'; }],
+    ['el bot en la próxima acción (M)', (m: typeof MAPA) => { m.columnas.quePidio.letra = 'M'; }],
+    ['el bot en el responsable (K)', (m: typeof MAPA) => { m.columnas.diaPreferido.letra = 'K'; }],
+    ['una columna del equipo sin declarar dentro del rango leído (hueco en K)', (m: typeof MAPA) => { m.equipo.responsable = null; }],
+    ['letra repetida entre dos del bot', (m: typeof MAPA) => { m.columnas.horarioPreferido.letra = 'N'; }],
+    ['campo del bot desconocido', (m: typeof MAPA) => { m.columnas.raro = { letra: 'V', titulo: 'Raro' }; }],
+    ['el diagnóstico como campo del bot', (m: typeof MAPA) => { m.columnas.diagnostico = { letra: 'V', titulo: 'Otro' }; }],
+    ['título repetido con una del equipo', (m: typeof MAPA) => { m.columnas.quePidio.titulo = T.valor; }],
+  ])('NIEGA: %s', (_n, cambia) => {
+    expect(invalido(cambia as never).length).toBeGreaterThan(0);
+  });
+  it('un mapa inválido que llegue al nodo no escribe nada', () => {
+    const malo = clonar(MAPA); malo.columnas.clasificacion.letra = 'J';
+    expect(decidir({ telefono: TEL, nombre: 'Ana' }, [], malo)).toEqual({ accionPlanilla: 'nada', veredictoPlanilla: 'mapa_invalido' });
+  });
+});
+
+describe('encabezados letra por letra, también con el equipo en medio', () => {
+  const p = { telefono: TEL, nombre: 'Ana', senales: { pidioUbicacion: true } };
+  it('la fila leída completa (A a U) coincide: se actualiza', () => {
+    const r = decidir(p, [fila(8, TEL)]);
+    expect(r.accionPlanilla).toBe('actualizar');
+    expect(r.row_number).toBe(10);
+  });
+  it('un encabezado del equipo movido de lugar (Valor y Responsable cambiados) = no escribe', () => {
+    const f = fila(8, TEL).json;
+    const cambiada: J = { row_number: 8 };
+    for (const t of TITULOS_LEIDOS) cambiada[t === T.valor ? T.resp : t === T.resp ? T.valor : t] = '';
+    cambiada[T.telefono] = f[T.telefono];
+    const r = decidir(p, [{ json: cambiada }]);
+    expect(r.accionPlanilla).toBe('nada');
+    expect(String(r.veredictoPlanilla)).toMatch(/^encabezados_distintos/);
+  });
+  it('un encabezado del bot movido (Qué pidió en lugar de Clasificación) = no escribe', () => {
+    const cambiada: J = { row_number: 8 };
+    for (const t of TITULOS_LEIDOS) cambiada[t === T.clasif ? T.quePidio : t === T.quePidio ? T.clasif : t] = '';
+    cambiada[T.telefono] = TEL;
+    expect(decidir(p, [{ json: cambiada }]).accionPlanilla).toBe('nada');
+  });
+  it('una columna de más al final de la lectura = no escribe; una del bot que falta también', () => {
+    expect(decidir(p, [fila(8, TEL, { 'Notas sueltas': 'x' })]).accionPlanilla).toBe('nada');
+    const sin = fila(8, TEL).json; delete sin[T.ventana];
+    expect(decidir(p, [{ json: sin }]).accionPlanilla).toBe('nada');
+  });
+});
+
+describe('se NIEGA: el bot nunca escribe lo del equipo', () => {
+  const EQUIPO_TITULOS = [T.valor, T.resp, T.prox, T.diag];
+  const completo = {
+    telefono: TEL, nombre: 'Ana', empresa: 'Taller', rubro: 'Ropa', senales: { aceptoAgendar: true }, quePidio: 'Cita de limpieza', diaPreferido: 'martes',
+    horarioPreferido: 'tarde', derivacion: true, ultimaInteraccionMs: AHORA, anuncio: true,
+  };
+  it('al ACTUALIZAR, solo salen columnas del bot y nunca F, J, K, L, M ni U', () => {
+    const r = decidir(completo, [fila(8, TEL, { [T.calif]: 'Baja' })]);
+    expect(r.accionPlanilla).toBe('actualizar');
+    const ok = [T.nombre, T.empresa, T.calif, T.resumen, T.clasif, T.quePidio, T.dia, T.horario, T.deriv, T.ultima, T.ventana];
+    for (const k of claves(r)) expect(ok, k).toContain(k);
+    for (const t of [...EQUIPO_TITULOS, T.estado, T.etapa]) expect(r).not.toHaveProperty(t);
+    expect(r[T.clasif]).toBe('Caliente');
+    expect(r[T.deriv]).toBe('Sí');
+  });
+  it('al CREAR, solo la etapa (F) y el estado (L) del equipo, y nunca J, K, M ni U', () => {
+    const r = decidir(completo);
+    expect(r.accionPlanilla).toBe('agregar');
+    expect(r[T.etapa]).toBe('1. Nuevo');
+    expect(r[T.estado]).toBe('Activo');
+    for (const t of EQUIPO_TITULOS) expect(r).not.toHaveProperty(t);
+    const permitidas = new Set(TITULOS_LEIDOS.filter((t) => !EQUIPO_TITULOS.includes(t)));
+    for (const k of claves(r)) expect(permitidas.has(k), k).toBe(true);
+  });
+  it('aunque el prospecto traiga claves con el título de una columna del equipo, no se copian', () => {
+    const r = decidir({ ...completo, [T.valor]: '1000', [T.diag]: 'x', diagnostico: 'x', valor: 5, estado: 'cerrado' }, [fila(8, TEL)]);
+    for (const t of EQUIPO_TITULOS) expect(r).not.toHaveProperty(t);
+    expect(r).not.toHaveProperty(T.estado);
+  });
+  it('el contrato de Functions y el módulo de n8n tienen los mismos campos del bot y del equipo (paridad TS/JS)', () => {
+    expect([...M.CRM_CAMPOS_BOT].sort()).toEqual([...CAMPOS_DEL_BOT].sort());
+    expect([...M.CRM_CAMPOS_EQUIPO]).toEqual([...CAMPOS_DEL_EQUIPO]);
+  });
+});
+
+describe('reglas de la fila con los campos nuevos', () => {
+  it('sin los campos nuevos en el prospecto, la fila nueva no los trae', () => {
+    const r = decidir({ telefono: TEL, nombre: 'Ana' });
+    for (const t of [T.clasif, T.quePidio, T.dia, T.horario, T.deriv, T.ultima, T.ventana]) expect(r).not.toHaveProperty(t);
+  });
+  it('el texto del cliente nunca es fórmula: día, horario y qué pidió quedan como texto', () => {
+    const r = decidir({ telefono: TEL, nombre: 'Ana', quePidio: '=HYPERLINK("x")', diaPreferido: '+lunes', horarioPreferido: '@tarde', derivacion: '=1' });
+    for (const t of [T.quePidio, T.dia, T.horario, T.deriv]) expect(String(r[t])).toMatch(/^'[^=+\-@]/);
+    const u = decidir({ telefono: TEL, nombre: 'Ana', quePidio: '=HYPERLINK("x")', diaPreferido: '+lunes' }, [fila(8, TEL)]);
+    expect(String(u[T.quePidio])).not.toMatch(/^[=+\-@]/);
+    expect(String(u[T.dia])).not.toMatch(/^[=+\-@]/);
+  });
+  it('los textos largos se acotan', () => {
+    const r = decidir({ telefono: TEL, nombre: 'Ana', quePidio: 'x'.repeat(900), diaPreferido: 'y'.repeat(900) });
+    expect(String(r[T.quePidio]).length).toBeLessThanOrEqual(201);
+    expect(String(r[T.dia]).length).toBeLessThanOrEqual(61);
+  });
+  it('la clasificación sube y no baja al actualizar', () => {
+    const baja = decidir({ telefono: TEL, nombre: 'Ana', senales: { preguntoPrecioYCerro: true } }, [fila(8, TEL, { [T.clasif]: 'Caliente' })]);
+    expect(baja).not.toHaveProperty(T.clasif);
+    const sube = decidir({ telefono: TEL, nombre: 'Ana', senales: { aceptoAgendar: true } }, [fila(8, TEL, { [T.clasif]: 'Tibio' })]);
+    expect(sube[T.clasif]).toBe('Caliente');
+  });
+  it('el nombre ya dado no se pisa con el del perfil de WhatsApp; uno vacío sí se completa', () => {
+    const dado = decidir({ telefono: TEL, nombre: 'Perfil WA', nombreDePerfil: true, empresa: 'Taller' }, [fila(8, TEL, { [T.nombre]: 'Ana Pérez' })]);
+    expect(dado).not.toHaveProperty(T.nombre);
+    const vacio = decidir({ telefono: TEL, nombre: 'Perfil WA', nombreDePerfil: true }, [fila(8, TEL)]);
+    expect(vacio[T.nombre]).toBe('Perfil WA');
+  });
+  it('teléfono con dos filas: se actualiza la más reciente', () => {
+    const r = decidir({ telefono: TEL, nombre: 'Nueva' }, [fila(4, TEL), fila(30, TEL)]);
+    expect(r.row_number).toBe(32);
+  });
+  it('contacto tras 48 h (nuevoContacto) = fila nueva', () => {
+    expect(decidir({ telefono: TEL, nombre: 'Ana', nuevoContacto: true }, [fila(8, TEL)]).accionPlanilla).toBe('agregar');
+  });
+});
