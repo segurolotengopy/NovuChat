@@ -37,8 +37,8 @@ const clon = <T>(f: T): T => JSON.parse(JSON.stringify(f)) as T;
 const nodo = (f: J, n: string): J => (f['nodes'] as J[]).find((x) => x['name'] === n) as J;
 const PRODUCCION = flujoDe('rroca-evy') as unknown as J;
 const PRUEBA = flujoDe('rroca-evy', true) as unknown as J;
-/** Los nodos de cada variante en esta etapa (cambia con la conversación; el tope es 59: 48 más los 11 del guardado de medios). */
-const NODOS = { produccion: 54, prueba: 49 };
+/** Los nodos de cada variante en esta etapa (cambia con la conversación; el tope es 57: 48 más los 9 del guardado de medios, contrato v2 del 30/10). */
+const NODOS = { produccion: 52, prueba: 47 };
 
 describe('el armado: lo versionado es lo que arma la plantilla', () => {
   it('hay un archivo de datos por doctora y cada uno arma sus DOS JSON', () => {
@@ -56,11 +56,11 @@ describe('el armado: lo versionado es lo que arma la plantilla', () => {
     }
   });
 
-  it('nodos: la producción y la prueba cuentan lo esperado (≤ 59, con los 11 del guardado de medios); la prueba cambia el receptor (6) por la «Entrada de prueba» (1)', () => {
+  it('nodos: la producción y la prueba cuentan lo esperado (≤ 57, con los 9 del guardado de medios); la prueba cambia el receptor (6) por la «Entrada de prueba» (1)', () => {
     expect((PRODUCCION['nodes'] as J[]).length).toBe(NODOS.produccion);
     expect((PRUEBA['nodes'] as J[]).length).toBe(NODOS.prueba);
     expect(NODOS.produccion - NODOS.prueba).toBe(5);
-    expect(mod.TOPE_DE_NODOS).toBe(59);
+    expect(mod.TOPE_DE_NODOS).toBe(57);
   });
 
   it('el núcleo: Config base, Carga de entrada, Traer configuración, Config del negocio, Normalizar entrada, ¿Reportar? y Reportar (entrante), Puerta del turno', () => {
@@ -125,12 +125,12 @@ describe('las guardias: cada una rechaza su violación', () => {
       expect(hallazgos('produccion', f), t).toMatch(/agente, memoria o modelo/);
     }
   });
-  it('más de 59 nodos', () => {
+  it('más de 57 nodos', () => {
     const f = clon(PRODUCCION);
-    for (let i = (f['nodes'] as J[]).length; i < 60; i++) (f['nodes'] as J[]).push({ name: `Relleno ${i}`, type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] });
-    expect(hallazgos('produccion', f)).toMatch(/60 nodos y el tope es 59/);
+    for (let i = (f['nodes'] as J[]).length; i < 58; i++) (f['nodes'] as J[]).push({ name: `Relleno ${i}`, type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] });
+    expect(hallazgos('produccion', f)).toMatch(/58 nodos y el tope es 57/);
     (f['nodes'] as J[]).pop();
-    expect(hallazgos('produccion', f)).not.toMatch(/el tope es 59/);
+    expect(hallazgos('produccion', f)).not.toMatch(/el tope es 57/);
   });
   it('falta un nodo del contrato con los módulos comunes de medios', () => {
     for (const n of ['Normalizar entrada', 'Config del negocio', 'Obtener URL del medio (general)', 'Preparar transcripción', 'Preparar imagen', 'Medio no aceptado']) {

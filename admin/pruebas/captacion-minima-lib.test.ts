@@ -1436,7 +1436,7 @@ describe('inyectar: cada línea marcadora se reemplaza exactamente una vez', () 
 const nodo = (name: string, type: string, parameters: J = {}, extra: J = {}): J => ({
   id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, type, typeVersion: 1, position: [0, 0], parameters, ...extra,
 });
-const AJUSTES = { executionOrder: 'v1', timezone: 'America/La_Paz', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'all', saveExecutionProgress: false };
+const AJUSTES = { executionOrder: 'v1', timezone: 'America/La_Paz', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false };
 const cred = (clave: string, name: string): J => ({ [clave]: { id: '', name } });
 const plantillaDeEjemplo = (): J => ({
   name: 'Plantilla de ejemplo',
@@ -1547,7 +1547,7 @@ describe('guardias de --verificar', () => {
   });
   it('retención (éxito `none`, error `all`, D13), sin errorWorkflow, executionOrder v1 y zona de La Paz', () => {
     const cambios: [string, unknown, RegExp][] = [
-      ['saveDataSuccessExecution', 'all', /retención/], ['saveDataErrorExecution', 'none', /retención/], ['saveExecutionProgress', true, /retención/], ['errorWorkflow', 'x', /errorWorkflow/],
+      ['saveDataSuccessExecution', 'all', /retención/], ['saveDataErrorExecution', 'all', /retención/], ['saveExecutionProgress', true, /retención/], ['errorWorkflow', 'x', /errorWorkflow/],
       ['executionOrder', 'v0', /executionOrder/], ['timezone', 'UTC', /timezone/],
     ];
     for (const [campo, valor, patron] of cambios) {
@@ -2112,10 +2112,10 @@ describe('el flujo armado: lo que se versiona', () => {
   const nodosDe = (fl: J): J[] => fl['nodes'] as J[];
   const y = (fl: J, n: string): number => nodosDe(fl).find((x) => x['name'] === n)!['position'][1];
 
-  it('la plantilla trae los 44 nodos del §3 y cada variante 54 (43 más los 11 del guardado de medios, que se injertan al armar)', () => {
+  it('la plantilla trae los 44 nodos del §3 y cada variante 52 (43 más los 9 del guardado de medios, que se injertan al armar)', () => {
     const p = JSON.parse(readFileSync(join(CARPETA, 'flujo.plantilla.json'), 'utf8')) as J;
     expect(nodosDe(p)).toHaveLength(44);
-    for (const a of archivos) expect(nodosDe(leer(a)), a).toHaveLength(54);
+    for (const a of archivos) expect(nodosDe(leer(a)), a).toHaveLength(52);
   });
   it('cada Code compila, sin los globales que n8n no tiene (URL, Buffer, crypto, process, require)', () => {
     for (const a of archivos) {
@@ -2148,7 +2148,7 @@ describe('el flujo armado: lo que se versiona', () => {
       expect(del).toContain('Confirmar envío');
       for (const h of del.filter((x) => x !== 'Confirmar envío' && x !== 'Resumen del turno')) expect(y(fl, 'Confirmar envío'), h).toBeGreaterThanOrEqual(y(fl, h));
       expect(del.at(-1)).toBe('Resumen del turno');
-      expect(fl['settings']).toMatchObject({ executionOrder: 'v1', timezone: 'America/La_Paz', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'all', saveExecutionProgress: false });
+      expect(fl['settings']).toMatchObject({ executionOrder: 'v1', timezone: 'America/La_Paz', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false });
     }
   });
   it('«Decidir fila de la planilla» es copia TAL CUAL del archivo de la cantera y el flujo lo lleva sin cambios', () => {

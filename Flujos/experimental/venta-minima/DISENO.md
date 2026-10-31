@@ -65,7 +65,8 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
   - la clave `avisarAlPropioNumero` (interruptor solo de ensayo) solo puede estar en `ensayo-demo-a.json` y en su salida (ver «La variante
     de ensayo en el Demo A»);
   - retención de ejecuciones (ver abajo).
-- **Retención de ejecuciones (decisión de Andres, 04/10/2026; reemplaza las del 02/10 y el 03/10).** Por omisión (plantilla, prueba, ensayo en el Demo A y cualquier otro
+- **Retención de ejecuciones: desde el 30/10/2026 `none` en TODO, Q'Taco incluido** (decisión de Andres en el contrato v2 de medios, §8.1: con la rama del guardado de medios el binario del medio quedaría en los datos de la ejecución; se pierde diagnóstico, por privacidad). Lo que sigue es la decisión del 04/10, REEMPLAZADA en lo que dice de Q'Taco.
+- **(Histórico) Retención de ejecuciones (decisión de Andres, 04/10/2026; reemplaza las del 02/10 y el 03/10).** Por omisión (plantilla, prueba, ensayo en el Demo A y cualquier otro
   tenant) nada se guarda: `saveDataSuccessExecution: "none"`, `saveDataErrorExecution: "none"` y `saveExecutionProgress: false`, porque las ejecuciones llevan
   texto de clientes. **La excepción es UN solo archivo, `venta-minima.qtaco.json`: guarda TODO, las fallas y los éxitos (`all`/`all`), por lo menos 24 horas, para poder
   diagnosticar** (el progreso sigue sin guardarse; las ejecuciones manuales tampoco: `saveManualExecutions: false` en todos los JSON). Decisión de Andres, 04/10:
@@ -762,7 +763,7 @@ Un audio transcrito, «quiero cuatro tacos de birria», caía al menú sin llama
   Andres prefiere una plantilla propia para reservas y consultas (ver el punto 5).
 - **Consola de Q'Taco**: `catalogoWebActivo` en `false` (con más de 40 ítems la ingesta manda `catalogo: []` y el flujo
   deriva todo pedido), carta, campañas y QR; `numeroRecepcion` y `venta.aceptaDelivery`/`aceptaRetiroEnLocal`.
-- **Retención de ejecuciones (P6)**: `none` en todo, salvo `venta-minima.qtaco.json`, que guarda todo (`all`/`all`, por lo menos 24 h; decisión de Andres del 04/10; riesgo M-1 aceptado: ver «Cómo se arma»).
+- **Retención de ejecuciones (P6)**: `none` en todo desde el 30/10 (contrato v2 de medios §8.1); antes, salvo `venta-minima.qtaco.json`, que guarda todo (`all`/`all`, por lo menos 24 h; decisión de Andres del 04/10; riesgo M-1 aceptado: ver «Cómo se arma»).
 - **Marcador nuevo en el alta**: `REEMPLAZAR_RUTA_CARRITO_QTACO` (la ruta del webhook del carrito) entra a la tabla local del alta de Q'Taco.
 - Importar con `./scripts/preparar-import.sh Flujos/experimental/venta-minima/venta-minima.qtaco.json .env.qtaco`
   (el patrón de marcadores corta en comillas, barras y espacios: **no pegar dos marcadores con una coma**; la suite lo

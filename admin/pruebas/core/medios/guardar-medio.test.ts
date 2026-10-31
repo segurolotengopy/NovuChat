@@ -7,6 +7,10 @@
  * acotada a 50, el modo anotar (solo docx/xlsx), repetido sin reescritura, y que
  * cierres, comprobantes, métricas y solicitud queden intactos. La purga: 89, 90 y 91 días, la baja y un
  * comercio que falla.
+ *
+ * Contrato v2 (30/10/2026, «guardar TODO»): video nuevo, documentos de cualquier tipo (16 MB, lo
+ * desconocido como `bin`/octet-stream), objeto con octet-stream para documentos, sticker como image,
+ * topes por teléfono (100 medios y 500 MiB, `cupo_telefono_lleno`) y 3 GiB por comercio.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -21,7 +25,7 @@ process.env['INGESTA_CLIENTE14'] = TOKEN_AJENO;
 
 const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
-const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
+const { getFirestore, Timestamp, FieldPath } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const al = await import('../../../functions/src/core/medios/almacen.ts');
 const gm = await import('../../../functions/src/core/medios/guardarMedio.ts');
@@ -80,6 +84,14 @@ const PDF = (n = 1024) => Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc
 const HTML = () => Buffer.from('<html><script>alert(1)</script></html>');
 const SVG = () => Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
 const DOCX = () => Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(100)]);
+const MP4 = (marca = 'isom', n = 256) => {
+  const b = Buffer.alloc(Math.max(n, 24));
+  b.writeUInt32BE(24, 0); b.write('ftyp', 4, 'latin1'); b.write(marca, 8, 'latin1');
+  return b;
+};
+const MZ = () => Buffer.concat([Buffer.from('MZ'), Buffer.alloc(200)]);
+const OOXML_DOCX = () => Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(26), Buffer.from('[Content_Types].xml'),
+  Buffer.from('word/document.xml'), Buffer.alloc(64)]);
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -111,7 +123,7 @@ describe('la ruta', () => {
   it('es tenants/{t}/medios/{día de La Paz}/{sha256(idMeta)}.{ext}, sin teléfono', () => {
     const r = gm.rutaDeMedio(T, '2026-10-23', 'wamid.HBg=Lw==', 'ogg');
     expect(r).toBe(`tenants/${T}/medios/2026-10-23/${al.nombreDeObjeto('wamid.HBg=Lw==')}.ogg`);
-    expect(r).toMatch(/^tenants\/[\w-]+\/medios\/\d{4}-\d{2}-\d{2}\/[A-Za-z0-9_-]{43}\.(jpg|png|webp|ogg|m4a|mp3|aac|amr|pdf)$/);
+    expect(r).toMatch(/^tenants\/[\w-]+\/medios\/\d{4}-\d{2}-\d{2}\/[A-Za-z0-9_-]{43}\.(jpg|png|webp|ogg|m4a|mp3|aac|amr|mp4|3gp|pdf|docx|xlsx|pptx|zip|doc|xls|ppt|txt|csv|bin)$/);
   });
   it('el día es el de La Paz: 23:30 del 3 en La Paz es el 4 en UTC y cae en la carpeta del 3', () => {
     expect(al.diaDeLaPaz(Date.UTC(2026, 9, 4, 3, 30))).toBe('2026-10-03');
@@ -169,6 +181,9 @@ describe('POST guardarMedio: lo que entra', () => {
     ['webp', WEBP, 'image', 'image/webp', 'webp'], ['ogg con codecs', () => OGG(), 'audio', 'audio/ogg; codecs=opus', 'ogg'],
     ['m4a', M4A, 'audio', 'audio/mp4', 'm4a'], ['mp3', MP3_ID3, 'audio', 'audio/mpeg', 'mp3'],
     ['aac', AAC, 'audio', 'audio/aac', 'aac'], ['amr', AMR, 'audio', 'audio/amr', 'amr'], ['pdf', () => PDF(), 'document', 'application/pdf', 'pdf'],
+    ['mp4', () => MP4('isom'), 'video', 'video/mp4', 'mp4'], ['3gp', () => MP4('3gp4'), 'video', 'video/3gpp', '3gp'],
+    ['docx', OOXML_DOCX, 'document', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx'],
+    ['zip', DOCX, 'document', 'application/zip', 'zip'], ['exe como documento', MZ, 'document', 'application/x-msdownload', 'bin'],
   ];
   it.each(formatos)('%s: 200, ruta sin teléfono, registro, marca en el mensaje y vence a 90 días', async (_n, bytes, tipo, ct, ext) => {
     const id = idNuevo();
@@ -180,7 +195,12 @@ describe('POST guardarMedio: lo que entra', () => {
     expect(r.cuerpo.ruta).not.toContain(TEL);
     expect([...almacen.objetos.keys()].join()).not.toContain(TEL);
     const reg = await db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`).get();
-    expect(reg.data()).toMatchObject({ idMeta: id, conversacionId: `wa_${TEL}`, tipo, ext, tamano: bytes().length, ruta: r.cuerpo.ruta, estado: 'guardado' });
+    expect(reg.data()).toMatchObject({ idMeta: id, conversacionId: `wa_${TEL}`, tipo, categoria: tipo, ext, tamano: bytes().length, ruta: r.cuerpo.ruta, estado: 'guardado' });
+    // El objeto: octet-stream si es documento; el mime verificado si es imagen, audio o video.
+    const objeto = almacen.objetos.get(r.cuerpo.ruta);
+    if (tipo === 'document') expect(objeto?.contentType).toBe('application/octet-stream');
+    else expect(objeto?.contentType).toBe(reg.get('mime'));
+    if (ext === 'bin') expect(reg.get('mime')).toBe('application/octet-stream');
     expect(reg.get('sha256')).toMatch(/^[0-9a-f]{64}$/);
     const dias = (reg.get('vence').toMillis() - reg.get('en').toMillis()) / DIA_MS;
     expect(dias).toBe(90);
@@ -194,8 +214,9 @@ describe('POST guardarMedio: lo que entra', () => {
     expect(Math.round((venceCupo - reg.get('en').toMillis()) / DIA_MS)).toBe(2);
   });
 
-  it('exactamente en cada tope entra: imagen 5 MB, audio 16 MB, PDF 10 MB', async () => {
-    for (const [tipo, bytes, ct] of [['image', JPG(5 * ti.MB), 'image/jpeg'], ['audio', OGG(16 * ti.MB), 'audio/ogg'], ['document', PDF(10 * ti.MB), 'application/pdf']] as const) {
+  it('exactamente en cada tope entra: imagen 5 MB, audio 16 MB, video 16 MB, documento 16 MB', async () => {
+    for (const [tipo, bytes, ct] of [['image', JPG(5 * ti.MB), 'image/jpeg'], ['audio', OGG(16 * ti.MB), 'audio/ogg'],
+      ['video', MP4('isom', 16 * ti.MB), 'video/mp4'], ['document', PDF(16 * ti.MB), 'application/pdf']] as const) {
       const id = idNuevo();
       await mensaje(id, { tipo });
       expect((await peticion(bytes, buenas(id, tipo, ct))).codigo, tipo).toBe(200);
@@ -282,7 +303,8 @@ describe('POST guardarMedio: lo que NO entra', () => {
     expect((await peticion(OGG(), buenas(id, 'audio', 'audio/ogg', { 'x-novuchat-telefono': '1234567' }))).codigo).toBe(400);
     expect((await peticion(OGG(), buenas('', 'audio', 'audio/ogg'))).codigo).toBe(400);
     expect((await peticion(OGG(), buenas(id, '', 'audio/ogg'))).codigo).toBe(400);
-    expect((await peticion(OGG(), buenas(id, 'video', 'audio/ogg'))).codigo).toBe(400);
+    // `video` ya es un tipo (contrato v2); `sticker` no: llega como image.
+    expect((await peticion(OGG(), buenas(id, 'sticker', 'audio/ogg'))).codigo).toBe(400);
     expect((await peticion(Buffer.alloc(0), buenas(id, 'audio', 'audio/ogg'))).codigo).toBe(400);
     nada();
   });
@@ -304,11 +326,11 @@ describe('POST guardarMedio: lo que NO entra', () => {
     expect((await peticion(OGG(), buenas(reciente, 'audio', 'audio/ogg'))).codigo).toBe(200);
   });
 
-  it('un HTML rotulado jpeg, un SVG, un docx: 415, y no se guarda nada', async () => {
+  it('un HTML rotulado jpeg, un SVG o un exe como imagen, un video falso: 415, y no se guarda nada', async () => {
+    // CAMBIO del contrato v2: docx/HTML como DOCUMENTO ya no son 415 (se guardan como bin): ver abajo.
     for (const [bytes, tipo, ct] of [
-      [HTML(), 'image', 'image/jpeg'], [SVG(), 'image', 'image/svg+xml'], [SVG(), 'image', 'image/jpeg'],
-      [DOCX(), 'document', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'], [DOCX(), 'document', 'application/pdf'],
-      [HTML(), 'document', 'application/pdf'], [HTML(), 'audio', 'audio/ogg'],
+      [HTML(), 'image', 'image/jpeg'], [SVG(), 'image', 'image/svg+xml'], [SVG(), 'image', 'image/jpeg'], [MZ(), 'image', 'image/png'],
+      [HTML(), 'audio', 'audio/ogg'], [HTML(), 'video', 'video/mp4'], [M4A(), 'video', 'video/mp4'], [MP4('isom'), 'audio', 'audio/mp4'],
     ] as const) {
       const id = idNuevo(); await mensaje(id, { tipo });
       const r = await peticion(bytes, buenas(id, tipo, ct));
@@ -322,13 +344,13 @@ describe('POST guardarMedio: lo que NO entra', () => {
     expect((await peticion(JPG(), buenas(id, 'audio', 'image/jpeg'))).codigo).toBe(415);
     expect((await peticion(OGG(), buenas(id, 'audio', 'image/jpeg'))).codigo).toBe(415);
     expect((await peticion(OGG(), buenas(id, 'audio', ''))).codigo).toBe(415);
-    expect((await peticion(OGG(), buenas(id, 'document', 'audio/ogg'))).codigo).toBe(415);
     nada();
   });
 
-  it('cada tope + 1 byte: imagen 5 MB, audio 16 MB, PDF 10 MB dan 413', async () => {
+  it('cada tope + 1 byte: imagen 5 MB, audio, video y documento (cualquiera) 16 MB dan 413', async () => {
     for (const [tipo, bytes, ct] of [
-      ['image', JPG(5 * ti.MB + 1), 'image/jpeg'], ['audio', OGG(16 * ti.MB + 1), 'audio/ogg'], ['document', PDF(10 * ti.MB + 1), 'application/pdf'],
+      ['image', JPG(5 * ti.MB + 1), 'image/jpeg'], ['audio', OGG(16 * ti.MB + 1), 'audio/ogg'], ['video', MP4('isom', 16 * ti.MB + 1), 'video/mp4'],
+      ['document', PDF(16 * ti.MB + 1), 'application/pdf'], ['document', Buffer.alloc(16 * ti.MB + 1, 0x41), 'application/octet-stream'],
     ] as const) {
       const id = idNuevo(); await mensaje(id, { tipo });
       expect((await peticion(bytes, buenas(id, tipo, ct))).codigo, tipo).toBe(413);
@@ -376,8 +398,8 @@ describe('POST guardarMedio: lo que NO entra', () => {
     nada();
   });
 
-  it('tope de BYTES amplio (15 GiB): 429 si no cabe; con un medio que cabe justo, 200', async () => {
-    expect(gm.TOPE_DIARIO_DE_BYTES).toBeGreaterThanOrEqual(15 * 1024 * 1024 * 1024);
+  it('tope de BYTES por comercio (3 GiB, bajó de 15 el 30/10): 429 si no cabe; con un medio que cabe justo, 200', async () => {
+    expect(gm.TOPE_DIARIO_DE_BYTES).toBe(3 * 1024 * 1024 * 1024);
     const bytes = OGG(2048);
     await cupoRef().set({ n: 5, bytes: gm.TOPE_DIARIO_DE_BYTES - 2047, vence: Timestamp.now() });
     const id = idNuevo(); await mensaje(id);
@@ -468,10 +490,12 @@ describe('POST guardarMedio: modo ANOTAR (docx y xlsx, sin bytes)', () => {
     expect((await cupoRef().get()).exists).toBe(false);
   });
 
-  it('NIEGA: un docx con bytes y SIN Anotar sigue siendo 415 (no se guarda)', async () => {
+  it('CAMBIO v2: un docx con bytes y SIN Anotar ahora se GUARDA (docx si la estructura coincide; bin si no)', async () => {
     const id = idNuevo(); await mensaje(id, { tipo: 'document' });
-    expect((await peticion(DOCX(), buenas(id, 'document', DOCX_MIME))).codigo).toBe(415);
-    nada();
+    const r = await peticion(DOCX(), buenas(id, 'document', DOCX_MIME));
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo.ruta).toMatch(/\.bin$/);
+    expect(almacen.objetos.get(r.cuerpo.ruta)?.contentType).toBe('application/octet-stream');
   });
 
   it('un medio ya GUARDADO al que luego llega un Anotar con su idMeta responde el repetido, sin tocar nada', async () => {
@@ -722,5 +746,190 @@ describe('fallas de Firestore y pendientes retomados (revisión del #617)', () =
       expect((await regDe(id).get()).data()).toMatchObject({ estado: 'pendiente', ext: 'pdf' });
     }
     expect((await cupoRef().get()).exists).toBe(false);
+  });
+});
+
+describe('contrato v2: documentos de cualquier tipo, video, sticker y topes por teléfono', () => {
+  const regDe = (id: string, t = T) => db.doc(`tenants/${t}/mediosRecibidos/${al.nombreDeObjeto(id)}`);
+  const nada = () => expect(almacen.objetos.size).toBe(0);
+  const telDe = async (tel = TEL) => (await cupoRef().get()).get(new (await import('firebase-admin/firestore')).FieldPath('telefonos', gm.claveDeTelefono(tel)));
+
+  it('ejecutable, HTML, SVG, ZIP, script, PDF-ZIP, docm, xlsm y txt con NUL como DOCUMENTO: 200, bin y octet-stream', async () => {
+    const pdfZip = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(50)]);
+    for (const [b, m] of [
+      [MZ(), 'application/x-msdownload'], [HTML(), 'text/html'], [SVG(), 'image/svg+xml'], [DOCX(), 'application/octet-stream'],
+      [Buffer.from('#!/bin/sh\necho\n'), 'application/x-sh'], [pdfZip, 'application/pdf'],
+      [OOXML_DOCX(), 'application/vnd.ms-word.document.macroenabled.12'], [DOCX(), 'application/vnd.ms-excel.sheet.macroenabled.12'],
+      [Buffer.from('a\u0000b'), 'text/plain'],
+    ] as const) {
+      const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+      const r = await peticion(b, buenas(id, 'document', m));
+      expect(r.codigo, m).toBe(200);
+      expect(r.cuerpo.ruta, m).toMatch(/\.bin$/);
+      expect(almacen.objetos.get(r.cuerpo.ruta)?.contentType, m).toBe('application/octet-stream');
+      expect((await regDe(id).get()).data(), m).toMatchObject({ ext: 'bin', mime: 'application/octet-stream', categoria: 'document' });
+    }
+  });
+
+  it('un PDF real se registra pdf/application/pdf, pero el OBJETO se escribe octet-stream', async () => {
+    const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+    const r = await peticion(PDF(), buenas(id, 'document', 'application/pdf'));
+    expect((await regDe(id).get()).data()).toMatchObject({ ext: 'pdf', mime: 'application/pdf' });
+    expect(almacen.objetos.get(r.cuerpo.ruta)?.contentType).toBe('application/octet-stream');
+  });
+
+  it('un sticker registrado como `sticker` corresponde a image webp; un mensaje `otro` (video de la ingesta de hoy) no', async () => {
+    const st = idNuevo(); await mensaje(st, { tipo: 'sticker' });
+    expect((await peticion(WEBP(), buenas(st, 'image', 'image/webp'))).codigo).toBe(200);
+    const vid = idNuevo(); await mensaje(vid, { tipo: 'otro' });
+    expect((await peticion(MP4('mp42'), buenas(vid, 'video', 'video/mp4'))).cuerpo).toEqual({ error: 'sin_mensaje' });
+    const conVideo = idNuevo(); await mensaje(conVideo, { tipo: 'video' });
+    expect((await peticion(MP4('mp42'), buenas(conVideo, 'video', 'video/mp4'))).codigo).toBe(200);
+  });
+
+  it('TOPE POR TELÉFONO de 100: el 100 entra, el 101 da 429 cupo_telefono_lleno sin gastar cupo; otro teléfono sigue', async () => {
+    expect(gm.TOPE_DIARIO_POR_TELEFONO).toBe(100);
+    const clave = gm.claveDeTelefono(TEL);
+    await cupoRef().set({ n: 500, bytes: 0, vence: Timestamp.now(), telefonos: { [clave]: { n: 99, bytes: 0 } } });
+    const cien = idNuevo(); await mensaje(cien);
+    expect((await peticion(OGG(), buenas(cien, 'audio', 'audio/ogg'))).codigo).toBe(200);
+    expect(await telDe()).toEqual({ n: 100, bytes: 2048 });
+    almacen = new AlmacenDeMentira(); al.fijarAlmacenDeMediosDePrueba(almacen);
+    const id = idNuevo(); await mensaje(id);
+    expect(await peticion(OGG(), buenas(id, 'audio', 'audio/ogg'))).toMatchObject({ codigo: 429, cuerpo: { error: 'cupo_telefono_lleno' } });
+    nada();
+    expect((await regDe(id).get()).exists).toBe(false);
+    expect((await cupoRef().get()).get('n')).toBe(501);
+    expect(await telDe()).toEqual({ n: 100, bytes: 2048 });
+    expect((await cupoRef().get()).get('rechazados')).toBe(1);
+    // Tampoco se anota un docx de ese teléfono.
+    const doc = idNuevo(); await mensaje(doc, { tipo: 'document' });
+    expect((await peticion(Buffer.alloc(0), anotar(doc, DOCX_MIME))).cuerpo).toEqual({ error: 'cupo_telefono_lleno' });
+    // Otro teléfono del mismo comercio no se frena.
+    const otroTel = '59100000093';
+    const o = idNuevo(); await mensaje(o, {}, otroTel);
+    expect((await peticion(OGG(), buenas(o, 'audio', 'audio/ogg', { 'x-novuchat-telefono': otroTel }))).codigo).toBe(200);
+    expect(await telDe(otroTel)).toEqual({ n: 1, bytes: 2048 });
+    expect(JSON.stringify((await cupoRef().get()).data())).not.toContain(TEL);
+  });
+
+  it('TOPE DE BYTES POR TELÉFONO (500 MiB): 429 cupo_telefono_lleno si no cabe; cabe justo, 200', async () => {
+    const clave = gm.claveDeTelefono(TEL);
+    await cupoRef().set({ n: 1, bytes: 0, vence: Timestamp.now(), telefonos: { [clave]: { n: 1, bytes: gm.TOPE_DIARIO_DE_BYTES_POR_TELEFONO - 2047 } } });
+    const id = idNuevo(); await mensaje(id);
+    expect((await peticion(OGG(), buenas(id, 'audio', 'audio/ogg'))).cuerpo).toEqual({ error: 'cupo_telefono_lleno' });
+    nada();
+    await cupoRef().set({ n: 1, bytes: 0, vence: Timestamp.now(), telefonos: { [clave]: { n: 1, bytes: gm.TOPE_DIARIO_DE_BYTES_POR_TELEFONO - 2048 } } });
+    expect((await peticion(OGG(), buenas(id, 'audio', 'audio/ogg'))).codigo).toBe(200);
+    expect(await telDe()).toEqual({ n: 2, bytes: gm.TOPE_DIARIO_DE_BYTES_POR_TELEFONO });
+  });
+
+  it('el comercio lleno manda sobre el teléfono: 429 cupo_diario_lleno', async () => {
+    await cupoRef().set({ n: gm.TOPE_DIARIO_DE_MEDIOS, bytes: 0, vence: Timestamp.now(), telefonos: { [gm.claveDeTelefono(TEL)]: { n: 100, bytes: 0 } } });
+    const id = idNuevo(); await mensaje(id);
+    expect((await peticion(OGG(), buenas(id, 'audio', 'audio/ogg'))).cuerpo).toEqual({ error: 'cupo_diario_lleno' });
+  });
+
+  it('NINGÚN rechazo gasta cupo: 413, 415, 400, 409 sin_mensaje dejan el contador (comercio y teléfono) como estaba', async () => {
+    const clave = gm.claveDeTelefono(TEL);
+    await cupoRef().set({ n: 3, bytes: 30, vence: Timestamp.now(), telefonos: { [clave]: { n: 3, bytes: 30 } } });
+    const antes = (await cupoRef().get()).data();
+    const id = idNuevo(); await mensaje(id, { tipo: 'image' });
+    for (const [b, tipo, ct] of [[JPG(5 * ti.MB + 1), 'image', 'image/jpeg'], [HTML(), 'image', 'image/jpeg'], [Buffer.alloc(0), 'image', 'image/jpeg'],
+      [OGG(), 'audio', 'audio/ogg'], [Buffer.alloc(16 * ti.MB + 1, 0x41), 'document', 'application/octet-stream']] as const) {
+      expect((await peticion(b, buenas(id, tipo, ct))).codigo, `${tipo} ${ct}`).not.toBe(200);
+    }
+    expect((await cupoRef().get()).data()).toEqual(antes);
+    nada();
+  });
+
+  it('si Storage falla, el cupo del TELÉFONO también vuelve (una vez)', async () => {
+    const clave = gm.claveDeTelefono(TEL);
+    await cupoRef().set({ n: 7, bytes: 100, vence: Timestamp.now(), telefonos: { [clave]: { n: 4, bytes: 40 } } });
+    const id = idNuevo(); await mensaje(id);
+    almacen.falla = true;
+    expect((await peticion(OGG(), buenas(id, 'audio', 'audio/ogg'))).codigo).toBe(502);
+    expect((await cupoRef().get()).data()).toMatchObject({ n: 7, bytes: 100 });
+    expect(await telDe()).toEqual({ n: 4, bytes: 40 });
+  });
+
+  it('un documento de un comercio no cruza a otro: el token ajeno con el mismo idMeta da sin_mensaje', async () => {
+    await db.doc(`tenants/${T_APAGADO}`).update({ guardarMedios: true });
+    try {
+      const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+      const r = await peticion(MZ(), buenas(id, 'document', 'application/x-msdownload'), TOKEN_AJENO, 'POST', NUMERO_AJENO);
+      expect(r.cuerpo).toEqual({ error: 'sin_mensaje' });
+      nada();
+      expect((await regDe(id).get()).exists).toBe(false);
+      expect((await regDe(id, T_APAGADO).get()).exists).toBe(false);
+    } finally {
+      await db.doc(`tenants/${T_APAGADO}`).update({ guardarMedios: (await import('firebase-admin/firestore')).FieldValue.delete() });
+    }
+  });
+});
+
+describe('revisión de seguridad de #709: X-NovuChat-Mime y el reintento que trae más bytes', () => {
+  const regDe = (id: string) => db.doc(`tenants/${T}/mediosRecibidos/${al.nombreDeObjeto(id)}`);
+  const ayer = () => al.diaDeLaPaz(Date.now() - DIA_MS);
+  const cupoDe = (dia: string) => db.doc(`tenants/${T}/cuposDeMedios/${dia}`);
+
+  it('con Content-Type octet-stream, X-NovuChat-Mime decide el mime declarado del documento', async () => {
+    const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+    const r = await peticion(DOCX(), buenas(id, 'document', 'application/octet-stream', { 'x-novuchat-mime': 'application/zip' }));
+    expect(r.codigo).toBe(200);
+    expect((await regDe(id).get()).data()).toMatchObject({ ext: 'zip', mime: 'application/zip' });
+    expect(almacen.objetos.get(r.cuerpo.ruta)?.contentType).toBe('application/octet-stream');
+  });
+
+  it('NIEGA: X-NovuChat-Mime ausente, con CRLF o fuera de lista → se usa el Content-Type o queda bin', async () => {
+    for (const [mime, ext] of [[undefined, 'bin'], ['application/zip\r\nX: 1', 'bin'], ['application/x-loquesea', 'bin'], ['', 'bin']] as const) {
+      const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+      const extra: Record<string, string> = mime === undefined ? {} : { 'x-novuchat-mime': mime };
+      const r = await peticion(DOCX(), buenas(id, 'document', 'application/octet-stream', extra));
+      expect(r.codigo, String(mime)).toBe(200);
+      expect((await regDe(id).get()).get('ext'), String(mime)).toBe(ext);
+    }
+    // Sin X-NovuChat-Mime, el Content-Type sigue sirviendo (flujos ya publicados).
+    const id = idNuevo(); await mensaje(id, { tipo: 'document' });
+    await peticion(DOCX(), buenas(id, 'document', 'application/zip'));
+    expect((await regDe(id).get()).get('ext')).toBe('zip');
+  });
+
+  it('una imagen con X-NovuChat-Mime falso sigue en 415: la firma manda', async () => {
+    const id = idNuevo(); await mensaje(id, { tipo: 'image' });
+    expect((await peticion(HTML(), buenas(id, 'image', 'application/octet-stream', { 'x-novuchat-mime': 'image/jpeg' }))).codigo).toBe(415);
+    const ok = idNuevo(); await mensaje(ok, { tipo: 'image' });
+    expect((await peticion(JPG(), buenas(ok, 'image', 'application/octet-stream', { 'x-novuchat-mime': 'image/jpeg' }))).codigo).toBe(200);
+  });
+
+  it('un pendiente VIEJO retomado con MÁS bytes cobra la diferencia (comercio y teléfono) en el contador de su día', async () => {
+    const id = idNuevo(); await mensaje(id);
+    const clave = gm.claveDeTelefono(TEL);
+    await cupoDe(ayer()).set({ n: 1, bytes: 10, vence: Timestamp.now(), telefonos: { [clave]: { n: 1, bytes: 10 } } });
+    await regDe(id).set({ idMeta: id, conversacionId: `wa_${TEL}`, estado: 'pendiente', ext: 'ogg', mime: 'audio/ogg', tamano: 10, ruta: gm.rutaDeMedio(T, ayer(), id, 'ogg'), en: Timestamp.fromMillis(Date.now() - 6 * MIN), vence: Timestamp.now() });
+    expect((await peticion(OGG(4096), buenas(id, 'audio', 'audio/ogg'))).codigo).toBe(200);
+    const c = await cupoDe(ayer()).get();
+    expect(c.get('n')).toBe(1);
+    expect(c.get('bytes')).toBe(4096);
+    expect(c.get(new FieldPath('telefonos', clave))).toEqual({ n: 1, bytes: 4096 });
+    expect((await cupoRef().get()).exists).toBe(false);
+  });
+
+  it('NIEGA: si la diferencia no cabe en el tope del comercio o del teléfono, 429 y nada cambia', async () => {
+    const clave = gm.claveDeTelefono(TEL);
+    for (const [cupo, error] of [
+      [{ n: 1, bytes: gm.TOPE_DIARIO_DE_BYTES - 100, telefonos: { [clave]: { n: 1, bytes: 10 } } }, 'cupo_diario_lleno'],
+      [{ n: 1, bytes: 10, telefonos: { [clave]: { n: 1, bytes: gm.TOPE_DIARIO_DE_BYTES_POR_TELEFONO - 100 } } }, 'cupo_telefono_lleno'],
+    ] as const) {
+      const id = idNuevo(); await mensaje(id);
+      await cupoRef().set({ ...cupo, vence: Timestamp.now() });
+      const marcador = { idMeta: id, conversacionId: `wa_${TEL}`, estado: 'pendiente', ext: 'ogg', mime: 'audio/ogg', tamano: 10, ruta: gm.rutaDeMedio(T, hoy(), id, 'ogg'), en: Timestamp.fromMillis(Date.now() - 6 * MIN), vence: Timestamp.now() };
+      await regDe(id).set(marcador);
+      const antes = (await cupoRef().get()).data();
+      expect((await peticion(OGG(4096), buenas(id, 'audio', 'audio/ogg'))).cuerpo, error).toEqual({ error });
+      expect((await cupoRef().get()).data()).toEqual(antes);
+      expect((await regDe(id).get()).get('tamano')).toBe(10);
+      expect(almacen.objetos.size).toBe(0);
+    }
   });
 });

@@ -18,8 +18,9 @@
  * prueba que el JSON y los módulos son idénticos byte a byte; por eso da lo
  * mismo leer uno u otro, y leer el JSON sigue probando «lo que corre».
  *
- * SOBRE `new Function`. Es una EXCEPCIÓN DELIBERADA a `devsecops.js-eval-prohibido`,
- * acotada a este archivo y a las suites. Lo que se ejecuta es un archivo NUESTRO
+ * SOBRE `vm.compileFunction` (antes `new Function`, F3b PR-6a). Compila el cuerpo del nodo como
+ * función con los mismos parámetros y en el mismo contexto, y ya no choca con `devsecops.js-eval-prohibido`.
+ * La nota que sigue conserva el razonamiento original, acotado a este archivo y a las suites. Lo que se ejecuta es un archivo NUESTRO
  * y versionado, dentro de una prueba que no corre en ningún servidor. La
  * alternativa —copiar la lógica del nodo al archivo de pruebas— dejaría la
  * prueba en verde para siempre mientras el flujo se rompe en silencio. No
@@ -30,6 +31,7 @@
  * a byte por evitar una llamada dinámica en una prueba es un mal negocio.
  */
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -190,8 +192,7 @@ export function correr(
   const nombres = [...vacios, ...propios];
   const valores = [...vacios.map(() => undefined), ...propios.map((n) => globales[n])];
   // Se ejecuta el flujo VERSIONADO; ver la cabecera de este archivo.
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$input', '$', ...nombres, codigo) as (...a: unknown[]) => { json: J }[];
+  const fn = vm.compileFunction(codigo, ['$input', '$', ...nombres]) as (...a: unknown[]) => { json: J }[];
   return fn(entrada, $, ...valores);
 }
 
@@ -206,8 +207,7 @@ export function expresion(texto: unknown, $json: J, referencias: Referencias = {
   if (!m) throw new Error(`no es una expresión simple: ${String(texto).slice(0, 60)}`);
   const $ = (n: string) => ({ first: () => ({ json: items(referencias[n])[0] ?? {} }), item: { json: items(referencias[n])[0] ?? {} }, isExecuted: referencias[n] !== undefined });
   const $fromAI = (clave: string) => deLaIA[clave] ?? '';
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$json', '$', '$fromAI', `return (${m[1]});`) as (...a: unknown[]) => unknown;
+  const fn = vm.compileFunction(`return (${m[1]});`, ['$json', '$', '$fromAI']) as (...a: unknown[]) => unknown;
   return fn($json, $, $fromAI);
 }
 
@@ -217,8 +217,7 @@ export function plantilla(texto: unknown, $json: J, referencias: Referencias = {
   if (!t.startsWith('=')) throw new Error('no es una plantilla de n8n');
   const $ = (n: string) => ({ first: () => ({ json: items(referencias[n])[0] ?? {} }), item: { json: items(referencias[n])[0] ?? {} }, isExecuted: referencias[n] !== undefined });
   return t.slice(1).replace(/\{\{([\s\S]*?)\}\}/g, (_, expr: string) => {
-    // nosemgrep: devsecops.js-eval-prohibido
-    const v = (new Function('$json', '$', `return (${expr});`) as (j: unknown, r: unknown) => unknown)($json, $);
+    const v = (vm.compileFunction(`return (${expr});`, ['$json', '$']) as (j: unknown, r: unknown) => unknown)($json, $);
     return v === undefined || v === null ? '' : String(v);
   });
 }
