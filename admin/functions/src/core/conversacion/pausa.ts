@@ -35,6 +35,15 @@ import { type DocumentReference, type Firestore, type Transaction } from 'fireba
 import { leerTurno, turnoEfectivo, type Turno, type Veredicto } from './turno.js';
 import { escribirDevolucion } from './turnoServidor.js';
 
+/**
+ * ¿La conversación está BLOQUEADA por la persona del comercio (`bloquearContacto.ts`)? Solo `true`
+ * exacto: texto, 1 o un mapa NO bloquean (ante la duda, responde el asistente, como el turno ilegible).
+ * La compuerta es la misma de la pausa: `conPausa(atencion, pausada || estaBloqueada(...))`.
+ */
+export function estaBloqueada(valor: unknown): boolean {
+  return valor === true;
+}
+
 export interface DecisionDePausa {
   /** `true` si responde una persona y el turno sigue vigente: el asistente calla. */
   pausada: boolean;

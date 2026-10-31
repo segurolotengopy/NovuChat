@@ -48,6 +48,7 @@ import {
   atenderTurno, auditarEnTransaccion, errorDeTurno, opcionesDeTurno, persistirVencimiento, turnoAFirestore,
   type ContextoDeTurno, type SalidaDeTurno,
 } from './turnoServidor.js';
+import { estaBloqueada } from './pausa.js';
 import { personaPuedeEscribirDeFicha, turnoEfectivo, ventanaDeMetaAbierta, type Turno } from './turno.js';
 
 /** La transacción de la toma (exportada para las pruebas). */
@@ -58,6 +59,8 @@ export async function tomar(c: ContextoDeTurno): Promise<SalidaDeTurno> {
     const [snap, fichaComercio] = await tx.getAll(c.ref, c.db.doc(`tenants/${c.tenantId}`));
     if (!personaPuedeEscribirDeFicha(fichaComercio?.data())) throw errorDeTurno('sinSalida');
     if (!snap || !snap.exists) throw errorDeTurno('noExiste');
+    // Un contacto bloqueado no se toma (31/10/2026): primero se desbloquea. Antes de cualquier escritura.
+    if (estaBloqueada(snap.get('bloqueada'))) throw errorDeTurno('contactoBloqueado');
     const ultimoEntranteEn: unknown = snap.get('ultimoEntranteEn');
     const { veredicto, turno } = turnoEfectivo(snap.get('turno'), { ultimoEntranteEn }, c.ahoraMs);
 

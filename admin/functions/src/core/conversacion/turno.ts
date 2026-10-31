@@ -278,6 +278,10 @@ export const ErroresDeTurno = {
   noEsSuya: { code: 'failed-precondition', message: 'Solo quien atiende la conversación, o un administrador, puede devolverla.' },
   ventanaCerrada: { code: 'failed-precondition', message: 'La ventana de 24 horas de esta conversación está cerrada.' },
   tope: { code: 'resource-exhausted', message: 'Alcanzó el tope de cambios de atención por hora o por día.' },
+  /** El contacto está bloqueado (`bloquearContacto.ts`): no se toma ni se le escribe. */
+  contactoBloqueado: { code: 'failed-precondition', message: 'Este contacto está bloqueado. Desbloquéelo para atenderlo.' },
+  /** Una persona tiene la conversación: antes de bloquear hay que devolverla. */
+  turnoVigente: { code: 'failed-precondition', message: 'Devuelva la conversación antes de bloquear el contacto.' },
   noDisponible: { code: 'unavailable', message: 'No se pudo completar la operación. Intente de nuevo.' },
 } as const;
 

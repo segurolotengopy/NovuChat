@@ -103,6 +103,10 @@ export { buscarConversaciones } from './core/conversacion/buscarConversaciones.j
 // Functions: la etiqueta que las lleve exige rama de reversión hacia adelante lista.
 export { tomarConversacion } from './core/conversacion/tomarConversacion.js';
 export { devolverConversacion } from './core/conversacion/devolverConversacion.js';
+// BLOQUEAR CONTACTO (31/10/2026, Andres, opción A): el asistente deja de responderle a un contacto, reversible. Core, solo el
+// administrador del comercio con la pantalla nueva y sin ser Bellido; no exige la salida de persona. Agregan DOS Functions:
+// la etiqueta que las lleve exige rama de reversión hacia adelante lista y el invocador público tras el despliegue.
+export { bloquearContacto, desbloquearContacto } from './core/conversacion/bloquearContacto.js';
 // ESCRIBIR COMO PERSONA (H2-3, solo TEXTO). `enviarComoPersona` valida, deja el mensaje `pendiente`
 // y toca el timbre del flujo «Salida de persona»; el flujo llama a `reclamarSalidaPersona` y
 // `confirmarSalidaPersona` con la credencial de la ingesta de su número. Core no importa Central: los
