@@ -90,7 +90,7 @@ del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
 - `crm.activo = false` no se puede activar todavía: `configuracionFlujo` no devuelve
   `config/crm` hasta el PR-B3. Hasta entonces el módulo siempre está encendido.
 - Con `returnFirstMatch: false` las ejecuciones de n8n guardan todas las filas A a J
-  del mismo teléfono (datos de esa sola persona, sin columnas del equipo).
+  del mismo teléfono (datos de esa sola persona). En la plantilla de las subcuentas el rango A..T incluye las columnas del equipo J..M (valor, responsable, estado, próxima acción): quedan en el historial de ejecuciones, no se escriben ni deciden nada. PR-F debe partir la lectura en dos rangos (A..I y N..T) o limitar la retención de ejecuciones de esos flujos.
 - `Leer IDs de la planilla` corre una vez por coincidencia.
 
 ## La planilla de las subcuentas (PR-E, 31/10/2026)
@@ -127,5 +127,5 @@ que se lea después (p. ej. U) debe ser lo declarado, en orden, y cualquier otra
 mapa no contiguo, encabezados del equipo movidos, y negaciones sobre F, J, K, L, M y U. **Mensajes por conversación: 0.**
 
 **Lo que queda para PR-F:** el injerto (`construir-crm.mjs`) fija hoy el rango de lectura en A a la última del
-bot (A..T en la plantilla; la U no se lee, que es lo que tolera la comparación); ampliarlo a la última letra del mapa, y que
+bot (A..T en la plantilla; la U no se lee, que es lo que tolera la comparación); NO ampliarlo a la U ni a ninguna columna del equipo posterior (Diagnóstico puede llevar datos de salud y quedaría en el historial de n8n; una prueba debe fallar si el rango incluye la letra de `equipo.diagnostico`); comprobar la fila de encabezados completa antes de AGREGAR una fila nueva (hoy solo se comprueba la A), y que
 `chProspecto` devuelva `senales`, día, horario, qué pidió y derivación.
