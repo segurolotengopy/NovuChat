@@ -13,7 +13,7 @@ modelo solo pone una línea de empatía, contesta preguntas sueltas con los dato
 | `flujo.plantilla.json` | El flujo sin el código ni los datos: cada nodo Code lleva `"jsCode": "@@…:nodos/<archivo>.js"`; las credenciales, `@@cred:<nombre>`; los textos, `@@dato:<ruta>@@`. Es lo que se edita |
 | `src/lib/captacion.js` | Librería PURA (prefijo `cc`): estado, detectores por palabra entera, modelo, mensajes, y las dos funciones del turno `ccDecidir` y `ccCompletar`. Sin reloj, sin red, sin `$…` de n8n, sin `URL`/`Buffer`/`crypto` |
 | `src/nodos/_comun.js` | Utilidades `cn*` de los nodos (leer otro nodo por nombre, texto y JSON de Gemini, atención, ficha) |
-| `src/nodos/*.js` | El código de cada nodo Code. `decidir-fila-de-la-planilla.js` es copia TAL CUAL de `8173a00:Flujos/src/modulos/captacion/decidir-fila-de-la-planilla.js` |
+| `src/nodos/*.js` | El código de cada nodo Code. «Prospecto para la planilla» y «Decidir fila de la planilla» ya NO tienen archivo aquí: se INCLUYEN del módulo `crm` (`Flujos/src/modulos/crm/`, paquetes `crm-prospecto` y `crm-decidir`; el adaptador de captación es `Flujos/src/modulos/captacion/crm-captacion.js`) y el mapa de columnas es el dato `crm` de `admin/scripts/datos/captacion-minima/novuchat.json` (el ensayo lo hereda) |
 | `construir.mjs` | Arma los dos JSON con el armador genérico `../comun-sin-agente/construir.mjs`, valida los datos, inyecta guion y corpus y aplica las guardias. `--verificar` no escribe |
 | `captacion-minima.novuchat.json` | **Producción**: con «WhatsApp Trigger», sin «Entrada de prueba» |
 | `captacion-minima.prueba.json` | **Prueba**: con «Entrada de prueba» (Webhook POST con Header Auth), sin «WhatsApp Trigger» |
