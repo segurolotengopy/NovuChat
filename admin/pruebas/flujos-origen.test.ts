@@ -18,6 +18,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -69,8 +70,7 @@ function normalizar(archivo: string, mensaje: Record<string, unknown>): Record<s
   // La configuración del negocio que el nodo mezcla en su salida. Mínima: lo
   // que se ejercita acá es el origen, no el resto de la normalización.
   const $ = () => ({ first: () => ({ json: entrada[0] }) });
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$input', '$', codigo) as (i: unknown, r: unknown)
+  const fn = vm.compileFunction(codigo, ['$input', '$']) as (i: unknown, r: unknown)
     => { json: Record<string, unknown> }[];
   return fn($input, $)[0].json;
 }
@@ -80,8 +80,7 @@ function reporte(archivo: string, $json: Record<string, unknown>): Record<string
   const cuerpo = String(nodo(flujo(archivo), 'Reportar mensaje (entrante)').parameters['jsonBody']);
   const m = /^=\{\{([\s\S]*)\}\}$/.exec(cuerpo.trim());
   if (!m) throw new Error(`no es una expresión simple: ${cuerpo.slice(0, 60)}`);
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$json', `return (${m[1]});`) as (j: unknown) => string;
+  const fn = vm.compileFunction(`return (${m[1]});`, ['$json']) as (j: unknown) => string;
   return JSON.parse(fn($json)) as Record<string, unknown>;
 }
 

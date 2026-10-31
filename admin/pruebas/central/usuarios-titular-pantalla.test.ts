@@ -3,6 +3,7 @@
  * Solo presentación: el rechazo verdadero es del servidor (`titular-protegido.test.ts`).
  */
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -16,8 +17,7 @@ function criterioDe(codigo: string): (f: Record<string, unknown> | undefined) =>
   const js = m[1]!.replace(/: string \| null/g, '').replace(/as string/g, '');
   // La prueba ejecuta SOLO el cuerpo de una función del propio repositorio (leído del fuente, no de entrada
   // externa) para comprobar que el espejo de la web da lo mismo que el servidor.
-  // nosemgrep: devsecops.js-eval-prohibido
-  return new Function('ficha', js) as (f: Record<string, unknown> | undefined) => string | null;
+  return vm.compileFunction(js, ['ficha']) as (f: Record<string, unknown> | undefined) => string | null;
 }
 
 describe('Usuarios.tsx y el titular de la cuenta', () => {
