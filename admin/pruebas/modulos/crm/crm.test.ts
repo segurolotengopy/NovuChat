@@ -29,9 +29,10 @@ describe('crm: el bot nunca escribe lo del equipo', () => {
     expect(e.sort()).toEqual([...CAMPOS_DEL_BOT].sort());
     for (const c of CAMPOS_DEL_EQUIPO) expect(e).not.toContain(c);
   });
-  it('el contrato: 4 del equipo y las 6 nuevas son del bot', () => {
+  it('el contrato: 4 del equipo y las 7 nuevas (6 + interés) son del bot', () => {
     expect(CAMPOS_DEL_EQUIPO).toEqual(['valor', 'responsable', 'estado', 'proximaAccion']);
-    expect(COLUMNAS_V1.filter((c) => c.nueva).map((c) => c.dueno)).toEqual(Array(6).fill('bot'));
+    expect(COLUMNAS_V1.filter((c) => c.nueva).map((c) => c.dueno)).toEqual(Array(7).fill('bot'));
+    expect(CAMPOS_DEL_BOT).toContain('interes');
   });
   it('letras inválidas, campos desconocidos y letras repetidas no se escriben', () => {
     const e = columnasEscribibles({ nombre: 'b', telefono: 'b', empresa: 'xx1', raro: 'Z', origen: 'C', valor: 'D' });

@@ -62,3 +62,32 @@ PR-A (este: manifiesto, `config/crm`, reglas, pruebas) → PR-B (módulo de fluj
 en `Flujos/src/modulos/crm/`, común a `captacion-minima` y `chat-novuchat`, una
 sola implementación incluida) → PR-C (cuenta de servicio `crm-<tenant>`) →
 PR-D (recordatorios, apagados por defecto).
+
+## El flujo (PR-B, 30/10/2026): mapa de columnas y limitaciones
+
+**Código.** `Flujos/src/modulos/crm/{crm.js,nodo-prospecto.js,nodo-decidir-fila.js}` y el armador `Flujos/experimental/comun-sin-agente/construir-crm.mjs` (fuera de `Flujos/src`: el ensamblador solo admite js, md y json allí)
+se INCLUYEN en los flujos por paquetes (`crm-prospecto`, `crm-decidir`), nunca se
+copian. Cómo se califica y se resume lo pone el flujo como adaptador (hoy
+`Flujos/src/modulos/captacion/crm-captacion.js`): el módulo no lo importa, su
+ruta se la pasa el `construir.mjs` de cada flujo a `rutasPaquetesCrm(ruta)`.
+
+**D1. Dónde vive el mapa.** Es DATO del tenant, en el archivo de datos del flujo
+(`admin/scripts/datos/<flujo>/<tenant>.json`, clave `crm`), validado al construir
+con el mismo `crmValidarMapa` que corre en n8n. `config/crm.{hoja,filaEncabezados,mapaColumnas}`
+queda RESERVADO sin lector: ningún flujo lo lee todavía.
+
+**D2. Formato.**
+`crm: { filaEncabezados, prefijoId, primerId, columnas: {campo: {letra, titulo}}, equipo: {valor|responsable|estado|proximaAccion: {letra, titulo} | null}, extrasDelEquipo: {letra: titulo}, alCrear: {etapaInicial, origen, origenAnuncio[, estado]} }`.
+Reglas: las 4 claves de `equipo` se declaran siempre (columna o `null`); las letras
+(A a Z) y los títulos no se repiten; de A a la última letra del bot solo hay columnas
+del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
+`alCrear.estado` (p. ej. «Activo») se escribe SOLO al crear la fila.
+
+**Limitaciones conocidas.**
+- En una fila NUEVA solo se comprueba el encabezado de la columna A: leer la fila de
+  encabezados completa en el alta queda para un PR posterior, para no leer más hoja.
+- `crm.activo = false` no se puede activar todavía: `configuracionFlujo` no devuelve
+  `config/crm` hasta el PR-B3. Hasta entonces el módulo siempre está encendido.
+- Con `returnFirstMatch: false` las ejecuciones de n8n guardan todas las filas A a J
+  del mismo teléfono (datos de esa sola persona, sin columnas del equipo).
+- `Leer IDs de la planilla` corre una vez por coincidencia.

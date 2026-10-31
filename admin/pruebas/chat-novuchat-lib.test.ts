@@ -1346,11 +1346,12 @@ describe('inyectar: la línea marcadora se reemplaza exactamente una vez', () =>
 
 describe('guardias de --verificar', () => {
   const real = (n: string): J => JSON.parse(readFileSync(join(CARPETA, n), 'utf8')) as J;
+  const DATOS_CRM = { crm: (JSON.parse(readFileSync(join(CARPETA, '../../../admin/scripts/datos/chat-novuchat/novuchat.json'), 'utf8')) as J)['crm'] };
   const prod = (): J => real('chat-novuchat.novuchat.json');
   const prueba = (): J => real('chat-novuchat.prueba.json');
   it('lo versionado no viola ninguna', () => {
-    expect(CONSTRUIR.guardias('trigger', prod())).toEqual([]);
-    expect(CONSTRUIR.guardias('prueba', prueba())).toEqual([]);
+    expect(CONSTRUIR.guardias('trigger', prod(), DATOS_CRM)).toEqual([]);
+    expect(CONSTRUIR.guardias('prueba', prueba(), DATOS_CRM)).toEqual([]);
   });
   it('«Entrada de prueba» en producción, «WhatsApp Trigger» en la prueba y una credencial de AAB1-WA-Prod se detectan', () => {
     const a = prod(); a['nodes'].push({ name: 'Entrada de prueba', type: 'n8n-nodes-base.webhook', parameters: { path: 'x', authentication: 'headerAuth' }, credentials: { httpHeaderAuth: { name: 'x' } } });
@@ -1388,7 +1389,10 @@ describe('guardias de --verificar', () => {
   });
   it('la planilla: solo A3:J y A3:A, USER_ENTERED para agregar y RAW para actualizar', () => {
     const a = prod(); a['nodes'].find((n: J) => n.name === 'Buscar teléfono en planilla').parameters.options.dataLocationOnSheet.values.range = 'A3:N';
-    expect(CONSTRUIR.guardias('trigger', a).join(' ')).toMatch(/A3:J/);
+    expect(CONSTRUIR.guardias('trigger', a, DATOS_CRM).join(' ')).toMatch(/A3:J/);
+    expect(CONSTRUIR.guardias('trigger', prod()).join(' ')).toMatch(/faltan los datos `crm`/);
+    const c = prod(); c['nodes'].find((n: J) => n.name === 'Buscar teléfono en planilla').parameters.options.returnFirstMatch = true;
+    expect(CONSTRUIR.guardias('trigger', c, DATOS_CRM).join(' ')).toMatch(/TODAS las coincidencias/);
     const b = prod(); b['nodes'].find((n: J) => n.name === 'Actualizar fila').parameters.options.cellFormat = 'USER_ENTERED';
     expect(CONSTRUIR.guardias('trigger', b).join(' ')).toMatch(/RAW/);
   });
@@ -1443,6 +1447,10 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     cpSync(DATOS_DIR, datos, { recursive: true });
     mkdirSync(join(dir, 'flujos', 'src', 'core', 'texto'), { recursive: true });
     cpSync(join(aqui, '../../Flujos/src/core/texto/tipeo.js'), join(dir, 'flujos', 'src', 'core', 'texto', 'tipeo.js'));
+    // El módulo crm (se INCLUYE, no se copia al flujo) y su adaptador de captación.
+    mkdirSync(join(dir, 'flujos', 'src', 'modulos', 'captacion'), { recursive: true });
+    cpSync(join(aqui, '../../Flujos/src/modulos/crm'), join(dir, 'flujos', 'src', 'modulos', 'crm'), { recursive: true });
+    cpSync(join(aqui, '../../Flujos/src/modulos/captacion/crm-captacion.js'), join(dir, 'flujos', 'src', 'modulos', 'captacion', 'crm-captacion.js'));
     const tope = join(dir, 'flujos');
     const armar = (): { resultado: J[]; huerfanos: string[] } => CONSTRUIR.construir({ carpeta, datos, verificar: true, tope });
     expect(armar().resultado.every((x) => x.alDia)).toBe(true);
@@ -1546,23 +1554,27 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
     for (const malo of [{}, { error: { message: 'x' } }, { messages: [] }, { messages: [{}] }, { messages: [{ id: 'wamid.X' }], error: {} }, null, { messages: 'x' }]) expect(evalua(malo), JSON.stringify(malo)).toBe(false);
     expect((flujo['connections'] as J)['¿Meta aceptó?'].main[1]).toEqual([]);
   });
-  (existsSync(join(EXPERIMENTAL, 'captacion-minima/src/nodos')) ? it : it.skip)('las dos copias declaradas de la hoja son idénticas a las de Captación mínima (hasta que haya un módulo común: PROPIO.md)', () => {
-    const leer = (base: string, n: string): string => readFileSync(join(base, 'src/nodos', n), 'utf8');
-    expect(leer(CARPETA, 'prospecto-para-la-planilla.js')).toBe(leer(join(EXPERIMENTAL, 'captacion-minima'), 'prospecto-para-la-planilla.js'));
-    // `decidir-fila` diverge en UNA línea a propósito (L2 de la revisión de seguridad del PR #464: quitar TODOS los bloques de signos de fórmula del comienzo, «= =1»). Todo lo demás, idéntico.
-    // (y en el bloque «otros negocios» del resumen J: R5, ajustes del 09/10; y en el bloque «filas nuevas»: fila nueva tras 48 h, 29/10 — se compara con la línea original de `actual`)
-    const mia = leer(CARPETA, 'decidir-fila-de-la-planilla.js').replace(/ *\/\/ >>> otros negocios[\s\S]*?\/\/ <<< otros negocios\n/, '').replace(/ *\/\/ >>> filas nuevas[\s\S]*?\/\/ <<< filas nuevas\n/, "  const actual = coincidencias.find((f) => digitos(f[H.E]) === p.telefono);\n").split('\n');
-    const orig = leer(join(EXPERIMENTAL, 'captacion-minima'), 'decidir-fila-de-la-planilla.js').split('\n');
-    const distintas = mia.filter((l) => !orig.includes(l));
-    expect(distintas.filter((l) => !l.trimStart().startsWith('//'))).toEqual(["const seguro = (v) => limpio(v).replace(/^(?:[=+\\-@]\\s*)+/, '');"]);
-    expect(orig.filter((l) => !mia.includes(l))).toEqual(["const seguro = (v) => limpio(v).replace(/^[=+\\-@]+\\s*/, '');"]);
+  it('la hoja de prospectos se INCLUYE del módulo crm (no hay copias en este flujo) y el código del flujo es byte a byte el del módulo', () => {
+    expect(existsSync(join(CARPETA, 'src/nodos/decidir-fila-de-la-planilla.js'))).toBe(false);
+    expect(existsSync(join(CARPETA, 'src/nodos/prospecto-para-la-planilla.js'))).toBe(false);
+    const plantilla = JSON.parse(readFileSync(join(CARPETA, 'flujo.plantilla.json'), 'utf8')) as J;
+    const js = (nombre: string): string => (plantilla['nodes'] as J[]).find((n) => n.name === nombre)!.parameters.jsCode;
+    expect(js('Prospecto para la planilla')).toBe('@@medio:crm-prospecto');
+    expect(js('Decidir fila de la planilla')).toBe('@@medio:crm-decidir');
+    const modulo = (f: string): string => readFileSync(join(CARPETA, '../../src/modulos', f), 'utf8').trimEnd();
+    const flujoJs = (nombre: string): string => ((JSON.parse(readFileSync(join(CARPETA, 'chat-novuchat.novuchat.json'), 'utf8')) as J)['nodes'] as J[]).find((n) => n.name === nombre)!.parameters.jsCode as string;
+    expect(flujoJs('Decidir fila de la planilla')).toContain(modulo('crm/nodo-decidir-fila.js'));
+    expect(flujoJs('Decidir fila de la planilla')).toContain(modulo('captacion/crm-captacion.js'));
+    expect(flujoJs('Prospecto para la planilla')).toContain(modulo('crm/nodo-prospecto.js'));
   });
-  it('L2: «Decidir fila» quita TODOS los bloques de signos de fórmula del comienzo (revertir la línea hace fallar esta prueba)', () => {
-    const js = readFileSync(join(CARPETA, 'src/nodos/decidir-fila-de-la-planilla.js'), 'utf8');
-    const linea = js.split('\n').find((l) => l.startsWith('const seguro'))!;
-    const seguro = (runInNewContext(`(function (limpio) { ${linea}\nreturn seguro; })`, {}) as (l: (x: string) => string) => (v: string) => string)((x: string) => String(x).trim());
-    for (const x of ['= =1', '=+-@ =HYPERLINK("x")', '+ - @ cmd', '=1']) expect(seguro(x), x).not.toMatch(/^[=+\-@]/);
-    expect(seguro('Panadería Luna')).toBe('Panadería Luna');
+  it('L2: el módulo crm (`crmSeguro`) quita TODOS los bloques de signos de fórmula del comienzo (revertir la línea hace fallar esta prueba)', () => {
+    for (const ruta of ['crm/crm.js']) {
+      const js = readFileSync(join(CARPETA, '../../src/modulos', ruta), 'utf8');
+      const linea = js.split('\n').find((l) => l.startsWith('const crmSeguro'))!;
+      const seguro = (runInNewContext(`(function () { const crmLimpio = (x) => String(x).trim(); ${linea}\nreturn crmSeguro; })`, {}) as () => (v: string) => string)();
+      for (const x of ['= =1', '=+-@ =HYPERLINK("x")', '+ - @ cmd', '=1']) expect(seguro(x), x).not.toMatch(/^[=+\-@]/);
+      expect(seguro('Panadería Luna')).toBe('Panadería Luna');
+    }
   });
 });
 
