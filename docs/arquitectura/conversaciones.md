@@ -493,3 +493,5 @@ No se puede comprobar desde el repositorio y por eso no se dice:
   contra el emulador, no se leyeron los registros de producción.
 - Las `v0.15.x` se comprobaron por Git y por los trabajos de GitHub Actions
   (`desplegar-produccion` en `success`), no leyendo las Functions desplegadas.
+
+**Ventana aceptada de un mensaje en curso (seguridad, 31/10/2026):** un mensaje de persona que ya estaba `pendiente` cuando se devolvió la conversación y se bloqueó el contacto puede ser reclamado por el timbre y entregarse, dentro del tope de 2 minutos de `PENDIENTE_MAXIMO_MS`. Lo inicia el propio comercio, es saliente (no cuenta conversación) y es el mismo comportamiento de «devolver». Cerrarlo (rechazar el reclamo si `bloqueada`) queda como mejora opcional.
