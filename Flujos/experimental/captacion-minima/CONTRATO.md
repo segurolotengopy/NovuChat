@@ -300,8 +300,8 @@ Tras `armarVariante`, cada línea se reemplaza exactamente una vez (0 o 2 aparic
 | `src/lib/captacion.js` | Librería pura, prefijo `cc`, sin reloj ni red |
 | `src/nodos/_comun.js` | Copia adaptada de Agenda mínima: solo `cnNodo`, `cnPrimero`, `cnTodos`, `cnCfg`, `cnNorm`, `cnDigitos`, `cnRecorte`, `cnTextoDeGemini`, `cnJsonDeGemini`, `cnAtencion`, `cnClaveValida` |
 | `src/nodos/{carga-de-entrada,config-del-negocio,interpretar-entrada,comercio-no-operativo,uso-extendido,decidir-turno,armar-mensajes,resumen-del-turno}.js` | Nodos propios |
-| `src/nodos/decidir-fila-de-la-planilla.js` | Copia TAL CUAL de `8173a00:Flujos/src/modulos/captacion/decidir-fila-de-la-planilla.js` (una prueba compara el texto) |
-| `src/nodos/{prospecto-para-la-planilla,confirmar-envio}.js` | Adaptados de `8173a00` (leen los ítems de «Armar mensajes»; Confirmar escribe solo `avisado`/`avisoFalla`; en modo prueba no reporta) |
+| (módulo `crm`) | Desde el PR-B2 (31/10/2026) «Prospecto para la planilla» y «Decidir fila de la planilla» se INCLUYEN de `Flujos/src/modulos/crm/` (no hay copias en `src/nodos/`); el mapa de columnas es el dato `crm` del tenant. Delta: `seguro` estricto y, con dos filas del mismo teléfono, se actualiza la MÁS RECIENTE (`Buscar teléfono en planilla` con `returnFirstMatch: false`) |
+| `src/nodos/confirmar-envio.js` | Adaptado de `8173a00` (lee los ítems de «Armar mensajes»; Confirmar escribe solo `avisado`/`avisoFalla`; en modo prueba no reporta) |
 | `flujo.plantilla.json`, `construir.mjs`, `DISENO.md` | Plantilla, armador y cómo se arma |
 | `captacion-minima.novuchat.json`, `captacion-minima.prueba.json` | Generados por `construir.mjs` |
 | `admin/scripts/datos/captacion-minima/{novuchat,ensayo}.json` | Datos del tenant |

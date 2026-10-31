@@ -363,10 +363,14 @@ function crear(op: OpcionesDelMundo = {}): W {
     'Buscar teléfono en planilla': (ll) => {
       registrarHoja(ll);
       if (w.hoja.falla) return errorDeGoogle();
-      // El filtro de Google (OR sobre «Teléfono WhatsApp»), con los valores YA evaluados del JSON; devuelve la primera coincidencia, de A a J.
+      // El filtro de Google (OR sobre «Teléfono WhatsApp»), con los valores YA evaluados del JSON; con `returnFirstMatch: false` (el módulo crm elige la fila MÁS RECIENTE)
+      // devuelve TODAS las coincidencias, de A a J, con el `row_number` que entrega n8n (la fila de la hoja menos 2: el código suma el desfase).
       const valores = (((ll.parametros['filtersUI'] ?? {})['values'] ?? []) as J[]).map((v) => String(v['lookupValue'] ?? ''));
-      const k = w.hoja.filas.findIndex((f) => valores.includes(String(f[4] ?? '')));
-      return k < 0 ? {} : Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, w.hoja.filas[k]![c] ?? ''])));
+      const primera = ll.parametros['options']?.['returnFirstMatch'] !== false;
+      const todas = w.hoja.filas.map((f, k) => ({ f, k })).filter(({ f }) => valores.includes(String(f[4] ?? '')));
+      if (!todas.length) return {};
+      const item = ({ f, k }: { f: (string | number)[]; k: number }): J => Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, f[c] ?? ''])));
+      return primera ? item(todas[0]!) : todas.map(item);
     },
     'Leer IDs de la planilla': (ll) => {
       registrarHoja(ll);
@@ -765,11 +769,12 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
         expect(urlsPorExpresion).toEqual(['Descargar medio', 'Descargar medio (guardado)', 'Guardar prospecto']);
       }
     });
-    it('Planilla: rangos A3:J y A3:A; «Agregar fila» en USER_ENTERED y «Actualizar fila» en RAW', () => {
+    it('Planilla: rangos A3:J y A3:A, búsqueda con TODAS las coincidencias (el módulo crm elige la más reciente); «Agregar fila» en USER_ENTERED y «Actualizar fila» en RAW', () => {
       for (const f of [PRODUCCION, PRUEBA]) {
         const rango = (n: string): string => String(nodo(f, n)!.parameters['options']?.['dataLocationOnSheet']?.['values']?.['range']);
         expect(rango('Buscar teléfono en planilla')).toBe('A3:J');
         expect(rango('Leer IDs de la planilla')).toBe('A3:A');
+        expect(nodo(f, 'Buscar teléfono en planilla')!.parameters['options']['returnFirstMatch']).toBe(false);
         expect(nodo(f, 'Agregar fila')!.parameters['options']['cellFormat']).toBe('USER_ENTERED');
         expect(nodo(f, 'Actualizar fila')!.parameters['options']['cellFormat']).toBe('RAW');
       }
@@ -2151,6 +2156,10 @@ describe('construir.mjs: el flujo armado es el que sale de la plantilla y los da
       mkdirSync(exp, { recursive: true });
       mkdirSync(datos, { recursive: true });
       copiarModuloDelGuardado(tmp);
+      // El módulo crm (se INCLUYE al armar) y su adaptador de captación.
+      mkdirSync(join(tmp, 'Flujos/src/modulos/captacion'), { recursive: true });
+      cpSync(join(CARPETA, '../../src/modulos/crm'), join(tmp, 'Flujos/src/modulos/crm'), { recursive: true });
+      cpSync(join(CARPETA, '../../src/modulos/captacion/crm-captacion.js'), join(tmp, 'Flujos/src/modulos/captacion/crm-captacion.js'));
       const sinLocal = (src: string): boolean => !src.endsWith('.local.json'); // un `.local.json` lleva valores reales: nunca a un temporal
       cpSync(CARPETA, cm, { recursive: true, filter: sinLocal });
       cpSync(join(CARPETA, '../comun-sin-agente'), join(exp, 'comun-sin-agente'), { recursive: true, filter: sinLocal });

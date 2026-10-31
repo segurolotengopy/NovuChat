@@ -109,6 +109,7 @@ export const SUITES_PURAS = [
   'pruebas/modulos/captacion/captacion.test.ts',
   'pruebas/modulos/crm/crm.test.ts',
   'pruebas/modulos/crm/crm-flujo.test.ts',
+  'pruebas/modulos/crm/crm-captacion-minima.test.ts',
   'pruebas/modulos/catalogo-web/carrito-podado.test.ts',
   'pruebas/modulos/catalogo-web/retencion-fichas.test.ts',
   'pruebas/modulos/catalogo-web/sitio-publico.test.ts',

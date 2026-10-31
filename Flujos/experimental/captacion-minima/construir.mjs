@@ -41,10 +41,13 @@
  */
 import { closeSync, constants, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
+
+// EL miniCRM ES UN MÓDULO (no se copia): los paquetes `crm-prospecto` y `crm-decidir`, y el injerto del mapa de columnas del tenant (dato `crm`).
+import { injertarCrm, rutasPaquetesCrm, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const DATOS = join(AQUI, '../../../admin/scripts/datos/captacion-minima');
@@ -58,6 +61,7 @@ export const CONFIG_BASE = {
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
     filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
+    ...Object.fromEntries(Object.entries(rutasPaquetesCrm(join(AQUI, '..', '..', 'src', 'modulos', 'captacion', 'crm-captacion.js'))).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
   },
 };
 
@@ -292,6 +296,10 @@ export function validarDatos(datos, archivo) {
     if (cb.crmUrl !== undefined && cb.crmUrl !== '') e('configBase.crmUrl', 'tiene que ir vacío en la v0 (el CRM real queda fuera)');
     if (cb.limiteInteractivo !== undefined && !(Number.isInteger(cb.limiteInteractivo) && cb.limiteInteractivo >= 200 && cb.limiteInteractivo <= 4096)) e('configBase.limiteInteractivo', 'tiene que ser un entero de 200 a 4096');
   }
+
+  // --- el mapa de columnas de la hoja de prospectos (módulo crm): lo valida el MISMO validador que corre en n8n
+  if (d.crm === undefined) e('crm', 'falta (el mapa de columnas de la hoja de prospectos)');
+  else for (const m of validarMapaCrm(d.crm)) e('crm', m);
 
   // --- el guion
   const g = d.guion && typeof d.guion === 'object' ? d.guion : null;
@@ -624,8 +632,17 @@ export function guardias(entrada, flujo, datos = {}) {
   const sheet = (nombre) => nodos.find((n) => n.name === nombre);
   const rango = (n) => (((parametros(n).options || {}).dataLocationOnSheet || {}).values || {}).range;
   const formato = (n) => (parametros(n).options || {}).cellFormat;
-  if (sheet('Buscar teléfono en planilla') && rango(sheet('Buscar teléfono en planilla')) !== 'A3:J') h.push('«Buscar teléfono en planilla» tiene que leer solo el rango A3:J (nunca las columnas del equipo)');
-  if (sheet('Leer IDs de la planilla') && rango(sheet('Leer IDs de la planilla')) !== 'A3:A') h.push('«Leer IDs de la planilla» tiene que leer solo el rango A3:A');
+  // Los rangos salen del mapa de columnas del tenant (`datos.crm`): hasta la última columna DEL BOT, nunca las del equipo.
+  const mapa = datos && datos.crm;
+  if (!mapa || !mapa.columnas) h.push('faltan los datos `crm` (el mapa de columnas): sin él no se puede comprobar el rango de lectura de la planilla');
+  else {
+    const f = mapa.filaEncabezados;
+    const ultima = Object.values(mapa.columnas).map((c) => c.letra).sort().pop();
+    if (sheet('Buscar teléfono en planilla') && rango(sheet('Buscar teléfono en planilla')) !== `A${f}:${ultima}`) h.push(`«Buscar teléfono en planilla» tiene que leer solo el rango A${f}:${ultima} (nunca las columnas del equipo)`);
+    if (sheet('Leer IDs de la planilla') && rango(sheet('Leer IDs de la planilla')) !== `A${f}:A`) h.push(`«Leer IDs de la planilla» tiene que leer solo el rango A${f}:A`);
+    const busca = sheet('Buscar teléfono en planilla');
+    if (busca && parametros(busca).options && parametros(busca).options.returnFirstMatch !== false) h.push('«Buscar teléfono en planilla» tiene que traer TODAS las coincidencias (returnFirstMatch false): el módulo crm elige la fila más reciente');
+  }
   if (sheet('Agregar fila') && formato(sheet('Agregar fila')) !== 'USER_ENTERED') h.push('«Agregar fila» tiene que escribir en USER_ENTERED (la fecha queda como fecha)');
   if (sheet('Actualizar fila') && formato(sheet('Actualizar fila')) !== 'RAW') h.push('«Actualizar fila» tiene que escribir en RAW (nada se interpreta)');
   // `REEMPLAZAR_` solo en «Config base» (y en la ruta de «Entrada de prueba»).
@@ -671,6 +688,8 @@ export function armarTenant(proyecto, datos, archivo) {
   const flujo = JSON.parse(texto);
   inyectar(flujo, MARCA_GUION, 'CM_GUION', datos.guion);
   inyectar(flujo, MARCA_CONOCIMIENTO, 'CM_CONOCIMIENTO', datos.conocimiento);
+  // El miniCRM: el mapa del tenant dentro del código de los nodos y el rango/encabezados de los 4 nodos de Google.
+  injertarCrm(flujo, datos.crm);
   const final = JSON.stringify(flujo, null, 2) + '\n';
   // Una marca sin reemplazar: en cualquier texto salvo el código de los nodos (las librerías mencionan «@@solo:» en un
   // comentario) o, en el código, al principio del `jsCode`.
