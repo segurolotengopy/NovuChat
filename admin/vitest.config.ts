@@ -131,6 +131,7 @@ export const SUITES_PURAS = [
   'pruebas/core/conversacion-normalizacion.test.ts',
   'pruebas/core/conversacion-derivados.test.ts',
   'pruebas/core/sesion-turno.test.ts',
+  'pruebas/core/turno/modulos-del-turno.test.ts',
   'pruebas/core/nube-visor.test.ts',
   'pruebas/core/cargar-timbre-n8n.test.ts',
   'pruebas/core/texto-tipeo.test.ts',

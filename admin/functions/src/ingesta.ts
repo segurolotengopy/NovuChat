@@ -304,9 +304,13 @@ const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
  * que no puede quedar desfasada. Acá se guardan datos personales de clientes
  * finales, así que el lado seguro del error es dejar de guardarlos.
  */
-async function estadoDelComercio(tenantId: string): Promise<string> {
+async function estadoDelComercio(
+  tenantId: string,
+): Promise<{ estado: string; ficha: Record<string, unknown> }> {
   const tenant = await getFirestore().doc(`tenants/${tenantId}`).get();
-  return String(tenant.get('estado') ?? 'desconocido');
+  // La ficha viaja con el estado (F3b-2a): el coordinador la usa para decidir los modulos del turno
+  // (`modulosDelTurno`) sin leerla otra vez. Cero lecturas nuevas.
+  return { estado: String(tenant.get('estado') ?? 'desconocido'), ficha: tenant.data() ?? {} };
 }
 
 /**
@@ -846,7 +850,7 @@ export const ingesta = onRequest(
     // datos personales de terceros de un servicio que ya no se presta. El 409 le
     // dice a n8n que mande el mensaje de cortesía —neutro, sin revelar el motivo
     // comercial— y corte el turno.
-    const estado = await estadoDelComercio(tenantId);
+    const { estado } = await estadoDelComercio(tenantId);
     if (estado !== 'activo') {
       // SE REGISTRA IGUAL. La bitácora admite escrituras con el comercio
       // suspendido justamente para esto: el tramo del corte de servicio es el
@@ -1671,10 +1675,13 @@ export const configuracionFlujo = onRequest(
     // vacío haría que el comercio no recibiera NINGUNA configuración de vertical
     // y el flujo se quedaría sin datos sin decir por qué.
     const phoneNumberId = ruta.phoneNumberId;
+    const { estado: estadoDeLaFicha, ficha: fichaDelComercio } = await estadoDelComercio(ruta.tenantId);
     const comercio = {
       tenantId: ruta.tenantId,
       flujo: ruta.flujo || 'agendamiento',
-      estado: await estadoDelComercio(ruta.tenantId),
+      estado: estadoDeLaFicha,
+      // La ficha del tenant, leida una sola vez junto con el estado. F3b-2b..2e la pasan a `modulosDelTurno`.
+      ficha: fichaDelComercio,
     };
 
     const db = getFirestore();
