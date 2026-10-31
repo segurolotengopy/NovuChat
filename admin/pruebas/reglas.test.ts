@@ -886,6 +886,19 @@ describe('Principal de servicio de ingesta (n8n)', () => {
     await assertFails(deleteDoc(doc(ingestaA(), `tenants/${A}/catalogo/item1`)));
   });
 
+  it('el tipo del mensaje es de la lista cerrada de la ingesta: video y sticker sí (30/10/2026); otro desconocido, no', async () => {
+    for (const tipo of ['video', 'sticker', 'image', 'audio', 'otro']) {
+      await assertSucceeds(addDoc(collection(ingestaA(), `tenants/${A}/conversaciones/c1/mensajes`), {
+        direccion: 'entrante', tipo, texto: '', ts: serverTimestamp(),
+      }));
+    }
+    for (const tipo of ['contacts', 'reaction', 'Video', 'loQueSea', '']) {
+      await assertFails(addDoc(collection(ingestaA(), `tenants/${A}/conversaciones/c1/mensajes`), {
+        direccion: 'entrante', tipo, texto: '', ts: serverTimestamp(),
+      }));
+    }
+  });
+
   it('rechaza un mensaje que excede el tope de 4096 caracteres', async () => {
     await assertFails(addDoc(collection(ingestaA(), `tenants/${A}/conversaciones/c1/mensajes`), {
       direccion: 'entrante', tipo: 'text', texto: 'x'.repeat(4097), ts: serverTimestamp(),
@@ -2678,11 +2691,14 @@ describe('Contadores de la oferta comercial', () => {
         { merge: true }));
       await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
         { entrantesPorTipo: { interactive: 1, location: 1, order: 1, otro: 1 } }, { merge: true }));
+      // video y sticker entran a la lista cerrada el 30/10/2026 (contrato de medios v2).
+      await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: { video: 1, sticker: 2 } }, { merge: true }));
     });
 
     it('un tipo que la ingesta no normaliza NO entra: tendría que haber caído en «otro»', async () => {
       await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
-        { entrantesPorTipo: { sticker: 3 } }, { merge: true }));
+        { entrantesPorTipo: { contacts: 3 } }, { merge: true }));
       await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
         { entrantesPorTipo: { text: 1, loQueSea: 1 } }, { merge: true }));
     });

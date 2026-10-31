@@ -109,12 +109,61 @@ Los del bloque de 25 respuestas por conversación y los umbrales de operador y
 bloqueo (`ingesta.ts`, `atencion.ts`). La tabla completa de límites, con su
 estado, está en `limites.md` y en `docs/base-comercial.md` §7.
 
-También el **tope diario de medios** (3.000 medios guardados o anotados por
-comercio y día, más un tope de bytes amplio de 15 GiB por día; Andres, 29/10/2026;
-`core/medios/guardarMedio.ts`, contador `cuposDeMedios/{día}` con TTL de 2 días),
-y los topes por tipo (imagen 5 MB, audio 16 MB, PDF 10 MB).
+También los **topes diarios de medios** (aprobados por Andres el 30/10/2026,
+contrato de medios v2 §7.4): por comercio 3.000 medios guardados o anotados y
+3 GiB de bytes; por teléfono 100 medios y 500 MiB. Viven en un solo bloque de
+`core/medios/guardarMedio.ts`, se cuentan en el contador `cuposDeMedios/{día}`
+(TTL de 2 días; los del teléfono en el mapa `telefonos.{clave}`, con la clave
+como hash del número) dentro de la misma transacción de la reserva. Y los topes
+por tipo (imagen 5 MB, audio 16 MB, video 16 MB, documento 16 MB).
 
 ## Medios entrantes guardados (H3, PR-1; Andres 20, 22 y 23/10/2026)
+
+> **Contrato v2, «guardar y descargar TODO» (Andres, 30/10/2026).** Desde M1b
+> se guardan imagen (jpeg, png, webp; el sticker llega como imagen webp), audio,
+> **video** (mp4, 3gp; `X-NovuChat-Tipo: video`) y **documentos de cualquier
+> tipo** hasta 16 MB. Imagen, audio y video se verifican por la firma (415 si los
+> bytes contradicen la categoría: una «imagen» HTML/SVG/exe, un «video» que es un
+> m4a, un mp4 declarado audio); las marcas `ftyp` de video son una lista
+> **disjunta** de las de audio y exigen una caja de tamaño ≥ 8. Un documento
+> **nunca** da 415: `documentoPorFirma(bytes, mimeDeclarado)` (pura, en
+> `tipos.ts`, la misma que usa `verMedio`) decide la extensión y el mime
+> guardados de una lista cerrada (`pdf|docx|xlsx|pptx|zip|doc|xls|ppt|txt|csv|bin`):
+> un PDF-ZIP políglota, un Office con macros (`vbaProject.bin` o mime
+> `macroEnabled`), un texto con NUL o UTF-8 inválido y todo lo desconocido son
+> `bin`/`application/octet-stream`. Nunca se descomprime nada. El objeto de
+> Storage de un documento se escribe **siempre** `application/octet-stream`, y
+> todo objeto con `contentDisposition: attachment`. `mediosRecibidos` agrega
+> `categoria` (`image|audio|video|document`) y `ext` real. Topes por teléfono
+> (100 medios y 500 MiB al día, `429 cupo_telefono_lleno`) y por comercio
+> (3.000 y 3 GiB). Un rechazo nunca gasta cupo; si Storage falla, vuelve
+> también el cupo del teléfono. El modo Anotar sigue por compatibilidad hasta
+> republicar los flujos. **Ingesta:** hoy registra `video` y `sticker` como
+> `otro` (lista cerrada `TIPOS` de `ingesta.ts`), así que un video o un sticker
+> da 409 `sin_mensaje` hasta que la ingesta los agregue; `guardarMedio` ya acepta
+> un mensaje `sticker` para `image` y nunca acepta `otro` (la ingesta registra
+> `video` y `sticker` con su tipo desde el 30/10/2026).
+>
+> **Revisión de seguridad de #709 (30/10/2026).** (1) La clave del mapa
+> `cuposDeMedios/{día}.telefonos` es `t` + sha256 truncado del número: un
+> **seudónimo reversible por fuerza bruta**, no un secreto; alcanza porque el
+> documento está cerrado a todo cliente, y si alguna vez se abre su lectura pasa
+> a ser un HMAC con secreto. El mapa está exento de índice
+> (`firestore.indexes.json`). (2) Un pendiente retomado con **más** bytes que los
+> reservados cobra la diferencia (comercio y teléfono) en el contador del día de
+> la reserva, con los mismos topes (429 si no cabe). (3) **El framework parsea el
+> cuerpo antes del handler** (functions-framework: `body-parser` json, text,
+> urlencoded y raw, límite 1024 MB): con `application/json` y bytes no JSON
+> responde 400; con `application/x-www-form-urlencoded` de más de 1000
+> parámetros, 413; con un `charset` desconocido en `text/*`, 415; `multipart/*` y
+> `application/octet-stream` llegan intactos. Por eso el mime declarado es
+> `X-NovuChat-Mime` si viene con forma de mime (sin CR/LF), y si no el
+> Content-Type; el flujo debe mandar `application/octet-stream` como Content-Type
+> de transporte y el mime de Meta en `X-NovuChat-Mime`. Riesgo abierto, fuera del
+> handler: el mismo parser descomprime `Content-Encoding: gzip` antes de
+> autenticar.
+>
+> Lo que sigue de esta sección vale salvo donde estas notas lo cambian.
 
 Esto **corrige** la nota de «Lo que este bloque NO hace» de §4terdecies («guardar
 el medio para que una persona lo mire»): desde el 20/10 se guardan los medios
@@ -125,8 +174,8 @@ por el comercio: la ficha no la escribe ningún navegador.
 
 - **`guardarMedio`** (HTTP, solo el token por número; una firma se rechaza):
   409 con la bandera apagada; 400 por teléfono o `idMeta` inválidos; 413 por el
-  tope del tipo; 415 por la firma de los bytes (SVG, HTML, docx y xlsx no se
-  guardan; los alias `image/jpg`, `application/ogg`, `audio/aac` en m4a y
+  tope del tipo; 415 por la firma de los bytes en imagen, audio y video (los
+  documentos ya no dan 415: contrato v2, arriba; los alias `image/jpg`, `application/ogg`, `audio/aac` en m4a y
   `audio/3gpp` en amr se aceptan porque los bytes siguen decidiendo); 409 `sin_mensaje` si no hay un mensaje **entrante** del mismo tipo con
   ese `idMeta` de hace 30 minutos o menos (ata el medio a una conversación, pero
   **no frena un token robado**: con el mismo token la ingesta acepta un `idMeta`
@@ -142,14 +191,14 @@ por el comercio: la ficha no la escribe ningún navegador.
   gasta un cupo, crea `mediosRecibidos/{hash}` con `estado: 'anotado'` (sin ruta,
   tamaño ni sha256) y marca el mensaje; responde `200 {anotado:true}`. Otro mime
   o tipo, 415; Anotar **con** cuerpo, 400 `anotar_con_cuerpo` (anotar no es una
-  puerta para guardar sin pasar por la firma). Un docx con bytes y sin Anotar
-  sigue en 415.
+  puerta para guardar sin pasar por la firma). Desde el contrato v2, un docx con
+  bytes y sin Anotar se guarda (docx si su estructura coincide; si no, `bin`).
   Un Anotar sobre un `idMeta` ya **guardado** responde la forma del guardado,
   `{ruta, repetido:true}`, no la anotada (M2 lo tolera); sobre un `pendiente` de
   bytes, reciente o viejo, responde 409 `en_curso` y no lo pisa.
 - **Riesgo del token robado y alerta recomendada:** el token por número es la
   única credencial; quien lo tenga puede registrar mensajes y medios hasta el
-  tope (3.000 medios y 15 GiB por comercio y día). Se recomienda una alerta de
+  tope (3.000 medios y 3 GiB por comercio y día; 100 y 500 MiB por teléfono). Se recomienda una alerta de
   monitoreo sobre `cuposDeMedios/{día}.bytes` mayor que 2 GiB (o `rechazados`
   mayor que 0), que un comercio real no alcanza: es la señal de abuso.
 - **Fallas de Firestore:** la consulta del mensaje, la reserva y la transacción
@@ -176,9 +225,11 @@ por el comercio: la ficha no la escribe ningún navegador.
   Storage falla, el cupo vuelve una sola vez y el marcador se borra; un pendiente
   de más de 5 minutos (instancia muerta) se retoma sin otro cupo, y uno reciente
   da 409 `en_curso`. El visor (PR-2) debe ignorar los `pendiente`.
-- **Tipos:** solo `ftyp` M4A y M4B cuentan como audio (`isom`, `mp41`, `mp42` e
-  `iso2` también son video MP4: dan 415); un `%PDF-` con `PK\x03\x04` en el
-  primer KB (políglota ZIP/docx/APK) da 415.
+- **Tipos:** solo `ftyp` M4A y M4B cuentan como audio; `isom`, `iso2`,
+  `iso4`–`iso6`, `mp41`, `mp42`, `avc1`, `M4V `, `MSNV`, `dash` son video mp4 y
+  `3gp4`–`3gp6`, `3gg6`, `3g2a` video 3gp. Un `%PDF-` con `PK\x03\x04` en el
+  primer KB o con el fin de directorio ZIP al final (políglota) no es PDF: como
+  documento se guarda `bin`.
   No es un comprobante: no toca `solicitud`, `cierres`, `comprobantesRecibidos`,
   `metricas` ni `conteo`.
 - **Datos:** Storage `tenants/{t}/medios/{aaaa-mm-dd La Paz}/{sha256(idMeta)}.{ext}`
@@ -217,11 +268,12 @@ por el comercio: la ficha no la escribe ningún navegador.
   de abajo). Anotado y pendiente: `failed-precondition` con `details`
   `'anotado'`/`'pendiente'`; baja o inexistente: `not-found`. Auditoría fail-closed
   `medio_visto` o `medio_descargado` con `objeto` (el hash), sin teléfono ni
-  `idMeta`; tope 30/h y 100/día en `topesDeMedios/{uid}`. 1 GiB, 120 s, 3
+  `idMeta`; tope 60/h y 300/día en `topesDeMedios/{uid}` (cifras del integrador, ajustables). 1 GiB, 120 s, 3
   instancias, concurrencia 4 fuera de staging, App Check en producción. El mayor
   archivo (16 MiB) son ~21,3 MiB en base64: cabe en los 32 MiB de respuesta de gen2
-  (no en los 10 MB de gen1). `documentoPorFirma` y `videoPorFirma` son
-  PROVISIONALES en `verMedio.ts` hasta que M1b publique las suyas en `tipos.ts`.
+  (no en los 10 MB de gen1). La extensión se recalcula con `tipoPorFirma` (video) y
+  `documentoPorFirma` (documentos, con el mime guardado) de `tipos.ts`: las mismas
+  funciones que usa `guardarMedio`.
   Tras desplegar: `scripts/nube-visor.sh --servicio vermedio`.
 - `almacen.ts` es copia declarada del de `modulos/cobros/comprobantes.ts` (Core no
   importa módulos); que Cobros importe de Core es un PR aparte del agente `modulo`.
@@ -661,7 +713,9 @@ retención).
   con el anexo aceptado por el cliente y el «sí» explícito de Andres**. El
   consentimiento que antes se pensaba pedir al paciente en el chat
   (`Analisis/38`) pasa a ser el anexo aceptado por el comercio.
-- **D4:** soporte no ve los medios.
+- **D4:** soporte no ve los medios. **Reemplazada el 30/10/2026** (Andres, contrato
+  v2 §8.3): el soporte con ventana vigente ve y descarga igual que admin y operador,
+  con la misma auditoría (`verMedio`).
 - **D5:** cupo de guardado por comercio y día: 1.000 medios o 2 GB.
   **Reemplazada el 29/10/2026:** tope de 3.000 medios por comercio y día (más
   15 GiB de bytes como freno de costo).

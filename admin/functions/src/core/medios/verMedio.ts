@@ -44,9 +44,9 @@
  *    (`tipoPorFirma`), que tiene que coincidir con la extensión, la categoría y el
  *    `mime` del metadato; un `.jpg` que trae HTML no sale. Video y documento (de
  *    cualquier byte): siempre `application/octet-stream`, y la extensión de la
- *    lista cerrada RECALCULADA DESDE LOS BYTES (`documentoPorFirma`, `videoPorFirma`;
- *    provisionales hasta que M1b publique los suyos en `tipos.ts`), que tiene que ser
- *    la de la ruta. Nunca el mime declarado por el cliente. El sha256 de los bytes tiene que ser el guardado.
+ *    lista cerrada RECALCULADA DESDE LOS BYTES con las funciones de `tipos.ts`
+ *    (`tipoPorFirma` para video, `documentoPorFirma` para documentos: las mismas que
+ *    usa `guardarMedio`), que tiene que ser la de la ruta. Nunca el mime declarado por el cliente. El sha256 de los bytes tiene que ser el guardado.
  *  - **Salida:** `{tipo, categoria, mime, extension, tamano, base64}` (`tipo` =
  *    `categoria`). Si el metadato aún no trae `categoria`/`ext` (los agrega M1b),
  *    se deducen de la ruta; si los trae, tienen que coincidir con ella.
@@ -89,7 +89,7 @@ import { REGION } from '../region.js';
 import { esAdminDe, esOperDe, esPropietario, exigirAutenticado } from '../seguridad/autorizacion.js';
 import { cuentaVigenteDe, soporteVigenteDe, type RolVerificado } from '../seguridad/vigencia.js';
 import { CARPETA_DE_DIA, almacenDeMedios, nombreDeObjeto } from './almacen.js';
-import { MB, tipoPorFirma } from './tipos.js';
+import { MB, documentoPorFirma, tipoPorFirma } from './tipos.js';
 
 // ---------------------------------------------------------------------------
 // OPCIONES (copia declarada de `opcionesDeVerComprobante`, con 1 GiB y 60 s)
@@ -172,57 +172,6 @@ export const TOPE_DE_LECTURA: Record<CategoriaDeMedio, number> = { image: 5 * MB
 
 /** El mime que sale para todo lo que no es imagen ni audio verificados: nunca el declarado. */
 export const MIME_DE_DESCARGA = 'application/octet-stream';
-
-const PK = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
-const OLE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
-const MIMES_PK: Readonly<Record<string, ExtensionLeida>> = {
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
-  'application/zip': 'zip', 'application/x-zip-compressed': 'zip',
-};
-const MIMES_OLE: Readonly<Record<string, ExtensionLeida>> = {
-  'application/msword': 'doc', 'application/vnd.ms-excel': 'xls', 'application/vnd.ms-powerpoint': 'ppt',
-};
-const MIMES_TEXTO: Readonly<Record<string, ExtensionLeida>> = { 'text/plain': 'txt', 'text/csv': 'csv' };
-const de = (tabla: Readonly<Record<string, ExtensionLeida>>, m: string): ExtensionLeida | undefined =>
-  Object.prototype.hasOwnProperty.call(tabla, m) ? tabla[m] : undefined;
-
-/**
- * TODO(M1b, adenda §7.1): REEMPLAZAR por `documentoPorFirma` de `tipos.ts` (rama
- * core/medios-todos-los-tipos), la función ÚNICA que comparten `guardarMedio` y `verMedio`. Esto es
- * un PROVISIONAL local con las mismas reglas de la adenda, para no esperar a M1b; el integrador lo
- * cambia por el import y la prueba «documentoPorFirma provisional» pasa a probar la de M1b.
- * La extensión sale de los BYTES (y del mime declarado solo si coincide con una lista cerrada y con
- * la firma): pdf (`%PDF-` sin ZIP en el primer KB); docx/xlsx/pptx/zip (`PK\x03\x04` + su mime);
- * doc/xls/ppt (OLE + su mime); txt/csv (su mime, sin NUL y UTF-8 válido); todo lo demás —incluidos
- * los mimes con macros (docm, xlsm)— `bin`. El mime que devuelve es siempre `application/octet-stream`.
- */
-export function documentoPorFirma(bytes: Buffer, mimeDeclarado: unknown): { ext: ExtensionLeida; mime: string } {
-  const m = (String(mimeDeclarado ?? '').split(';')[0] ?? '').trim().toLowerCase();
-  const empieza = (b: Buffer) => bytes.length >= b.length && bytes.subarray(0, b.length).equals(b);
-  const salida = (ext: ExtensionLeida | undefined) => ({ ext: ext ?? 'bin', mime: MIME_DE_DESCARGA });
-  if (empieza(Buffer.from('%PDF-'))) return salida(bytes.subarray(0, 1024).includes(PK) ? 'bin' : 'pdf');
-  if (empieza(PK)) return salida(de(MIMES_PK, m));
-  if (empieza(OLE)) return salida(de(MIMES_OLE, m));
-  const texto = de(MIMES_TEXTO, m);
-  if (texto && !bytes.includes(0)) {
-    try { new TextDecoder('utf-8', { fatal: true }).decode(bytes); return salida(texto); } catch { return salida('bin'); }
-  }
-  return salida('bin');
-}
-
-/**
- * TODO(M1b, adenda §7.2): reemplazar por la firma de video de `tipos.ts`. Caja `ftyp` (tamaño ≥ 8)
- * con una marca de VIDEO, disjunta de las de audio (`M4A `, `M4B `, `M4P ` no están): mp4 o 3gp.
- */
-const MARCAS_MP4 = new Set(['isom', 'iso2', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'avc1', 'M4V ', 'MSNV', 'dash']);
-const MARCAS_3GP = new Set(['3gp4', '3gp5', '3gp6', '3gg6', '3g2a']);
-export function videoPorFirma(bytes: Buffer): ExtensionLeida | null {
-  if (bytes.length < 12 || bytes.subarray(4, 8).toString('latin1') !== 'ftyp' || bytes.readUInt32BE(0) < 8) return null;
-  const marca = bytes.subarray(8, 12).toString('latin1');
-  return MARCAS_MP4.has(marca) ? 'mp4' : MARCAS_3GP.has(marca) ? '3gp' : null;
-}
 
 export type MotivoDeRechazo =
   | 'tope' | 'sin_medio' | 'anotado' | 'pendiente' | 'caducado' | 'ruta_invalida'
@@ -494,7 +443,13 @@ async function atender(p: CallableRequest): Promise<MedioVisto> {
     }
     mime = firma.mime;
   } else {
-    const deLosBytes = categoria === 'video' ? videoPorFirma(bytes) : documentoPorFirma(bytes, meta.get('mime')).ext;
+    // Video: la firma de `tipos.ts` (marcas ftyp de video, disjuntas de las de audio). Documento:
+    // `documentoPorFirma` de `tipos.ts`, la MISMA función que usó `guardarMedio`, con el mime guardado
+    // en `mediosRecibidos` (es idempotente: da lo mismo que al guardar). Nunca el `ext` de Firestore.
+    const firma = categoria === 'video' ? tipoPorFirma(bytes) : null;
+    const deLosBytes = categoria === 'video'
+      ? (firma !== null && firma.tipo === 'video' ? firma.ext : null)
+      : documentoPorFirma(bytes, meta.get('mime')).ext;
     if (deLosBytes !== extRuta) return rechazar('tipo_no_coincide', 'failed-precondition', MENSAJES.noElegible);
   }
   const extension: ExtensionLeida = extRuta;

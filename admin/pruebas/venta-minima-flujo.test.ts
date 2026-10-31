@@ -831,9 +831,9 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
     expect(Object.keys(base)).not.toContain('catalogoWebActivo');
   });
 
-  it('settings: executionOrder v1, zona de La Paz; 60 s en la plantilla, la prueba y el ensayo y 120 s SOLO en Q\'Taco; la plantilla, la prueba y el ensayo NO guardan ejecuciones y Q\'Taco guarda TODO (all/all, decisión de Andres del 04/10); el progreso nunca', () => {
+  it('settings: executionOrder v1, zona de La Paz; 60 s en la plantilla, la prueba y el ensayo y 120 s SOLO en Q\'Taco; NINGUNO guarda ejecuciones (desde el 30/10 tampoco Q\'Taco: decisión de Andres, contrato v2 de medios §8.1); el progreso nunca', () => {
     // [archivo, éxitos, errores, tiempo límite]
-    for (const [f, exito, error, limite] of [[PLANTILLA, 'none', 'none', 60], [QTACO, 'all', 'all', 120], [PRUEBA, 'none', 'none', 60], [leer('venta-minima.ensayo-demo-a.json'), 'none', 'none', 60]] as [Flujo, string, string, number][]) {
+    for (const [f, exito, error, limite] of [[PLANTILLA, 'none', 'none', 60], [QTACO, 'none', 'none', 120], [PRUEBA, 'none', 'none', 60], [leer('venta-minima.ensayo-demo-a.json'), 'none', 'none', 60]] as [Flujo, string, string, number][]) {
       expect(f.settings).toMatchObject({
         executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: limite,
         saveDataSuccessExecution: exito, saveDataErrorExecution: error, saveExecutionProgress: false,
@@ -841,14 +841,14 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
     }
   });
 
-  it('el `settings` de Q\'Taco difiere de la versión anterior (v0.11 / main del 04/10) SOLO en `executionTimeout` (60 → 120): todo lo demás igual, incluida la retención all/all', () => {
+  it('el `settings` de Q\'Taco difiere de la versión del 04/10 en `executionTimeout` (60 → 120) y, desde el 30/10, en la retención (all/all → none/none): nada más', () => {
     const anterior = {
       executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 60,
       saveDataSuccessExecution: 'all', saveDataErrorExecution: 'all', saveExecutionProgress: false, saveManualExecutions: false,
     };
-    expect(QTACO.settings).toEqual({ ...anterior, executionTimeout: 120 });
+    expect(QTACO.settings).toEqual({ ...anterior, executionTimeout: 120, saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none' });
     const distintas = Object.keys({ ...anterior, ...(QTACO.settings as J) }).filter((k) => (anterior as J)[k] !== (QTACO.settings as J)[k]);
-    expect(distintas).toEqual(['executionTimeout']);
+    expect(distintas.sort()).toEqual(['executionTimeout', 'saveDataErrorExecution', 'saveDataSuccessExecution']);
     // Y no se contagia: la prueba y el ensayo (que heredan los datos de Q'Taco) y la plantilla siguen en 60 s.
     for (const f of [PLANTILLA, PRUEBA, leer('venta-minima.ensayo-demo-a.json')]) expect((f.settings as J)['executionTimeout']).toBe(60);
   });
@@ -862,18 +862,17 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
     expect(verificarEnCopia(() => undefined).status).toBe(0);
   });
 
-  it('--verificar EXIGE all/all en Q\'Taco (bajar a none o a default falla citando la decisión de Andres) y no deja que otro archivo guarde sin declararlo', () => {
-    // Q'Taco guarda TODO (decisión de Andres, 04/10; riesgo M-1 aceptado). La copia sin tocar da 0 (lo prueba la contraprueba de arriba); cada cambio da 1.
+  it('--verificar EXIGE none/none en TODOS, Q\'Taco incluido (subir a all o a default falla) y no deja que un archivo guarde sin declararlo', () => {
+    // Desde el 30/10 (decisión de Andres, contrato v2 de medios §8.1) Q'Taco tampoco guarda: el binario del medio quedaría en la ejecución.
     const sin = verificarEnCopia(() => undefined);
     expect(sin.status, sin.stderr).toBe(0);
-    for (const [clave, valor] of [['saveDataErrorExecution', 'none'], ['saveDataSuccessExecution', 'none'], ['saveDataErrorExecution', 'default'], ['saveDataSuccessExecution', 'default'], ['saveDataSuccessExecution', 'DEFAULT'], ['saveExecutionProgress', true]] as const) {
+    for (const [clave, valor] of [['saveDataErrorExecution', 'all'], ['saveDataSuccessExecution', 'all'], ['saveDataErrorExecution', 'default'], ['saveDataSuccessExecution', 'default'], ['saveDataSuccessExecution', 'DEFAULT'], ['saveExecutionProgress', true]] as const) {
       const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => { (f.settings as J)[clave] = valor; }));
       expect(r.status, `${clave}=${String(valor)}`).toBe(1);
       expect(r.stderr, clave).toContain('retención');
-      expect(r.stderr, clave).toContain('saveDataSuccessExecution «all»');
-      expect(r.stderr, clave).toContain('saveDataErrorExecution «all»');
-      expect(r.stderr, clave).toContain('decisión de Andres (04/10/2026)');
-      expect(r.stderr, clave).not.toContain('TEMPORAL');
+      expect(r.stderr, clave).toContain('saveDataSuccessExecution «none»');
+      expect(r.stderr, clave).toContain('saveDataErrorExecution «none»');
+      expect(r.stderr, clave).not.toContain('Q\'Taco guarda TODO');
     }
     // Las ejecuciones MANUALES tampoco se guardan, en ningún JSON de producción, de prueba ni de ensayo: `true` falla, y una clave que falta también.
     for (const archivo of ['venta-minima.qtaco.json', 'venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json']) {
@@ -1062,8 +1061,9 @@ describe('la entrada del receptor: verificada, sin Trigger, sin repetidos', () =
   it('todo cuerpo HTTP se arma con JSON.stringify (o con la forma del Demo B), nunca interpolando texto en una cadena JSON', () => {
     let httpConCuerpo = 0;
     for (const f of [QTACO, PRUEBA]) {
-      // «Guardar medio» (guardado de medios, módulo común) manda los BYTES del medio (`binaryData`), no un JSON: no hay texto que interpolar.
-      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters['sendBody'] === true && !(x.name === 'Guardar medio' && x.parameters['contentType'] === 'binaryData'))) {
+      // «Guardar medio» y «Reintentar el guardado» (guardado de medios, módulo común) mandan los BYTES del medio (`binaryData`), no un JSON: no hay texto
+      // que interpolar. Desde el contrato v2 (30/10) el reintento siempre lleva cuerpo (ya no hay modo Anotar).
+      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters['sendBody'] === true && !(['Guardar medio', 'Reintentar el guardado'].includes(x.name) && x.parameters['contentType'] === 'binaryData'))) {
         httpConCuerpo++;
         const jb = String(n.parameters['jsonBody']);
         expect(n.parameters['specifyBody'], n.name).toBe('json');
@@ -2902,8 +2902,8 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(61); // 49 + el webhook del carrito + los 11 del guardado de medios: el tope de producción (`construir.mjs` lo impone)
-    expect(PRUEBA.nodes).toHaveLength(57);
+    expect(QTACO.nodes).toHaveLength(59); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10): el tope de producción (`construir.mjs` lo impone)
+    expect(PRUEBA.nodes).toHaveLength(55);
   });
 
   it('L2: en producción un `wamid.SIMULADO-…` NO cuenta como aviso salido: el cliente no lee «pasé tu pedido» y el cierre no lo toma de referencia', () => {
@@ -4738,9 +4738,9 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
     expect(sim.qr.mensajes[0]?.payload['image']?.link).toBe(URL_SIMULADO); // es el QR de prueba, no el plan B que también da 3
   });
 
-  it('el JSON de Q\'Taco sigue en 61 nodos o menos (50 más los 11 del guardado de medios) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
-    // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61: los 11 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +11 nodos: docs/versiones-por-cliente.md).
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(61);
+  it('el JSON de Q\'Taco sigue en 59 nodos o menos (50 más los 9 del guardado de medios) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
+    // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61, y desde el contrato v2 del 30/10, 59: los 9 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md).
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(59);
     const base = configBase(QTACO);
     expect(base['cobroSimuladoActivo']).toBe(true);
     expect(base['qrSimuladoUrl']).toBe(URL_SIMULADO);

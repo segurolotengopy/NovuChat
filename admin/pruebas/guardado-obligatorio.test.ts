@@ -1,5 +1,5 @@
 /**
- * EL GUARDADO DE MEDIOS ES OBLIGATORIO (contrato M1↔M2 del 29/10/2026, §4): TODO flujo versionado que maneja medios lleva la rama común
+ * EL GUARDADO DE MEDIOS ES OBLIGATORIO (contrato M1↔M2 del 29/10/2026, §4; contrato v2 «guardar y descargar TODO» del 30/10, §4, §7.6 y §8.1): TODO flujo versionado que maneja medios lleva la rama común
  * `Flujos/experimental/comun-sin-agente/src/guardado.mjs`, en su lugar y con las credenciales correctas.
  *
  * Se recorre `Flujos/` ENTERO (no una lista escrita a mano): un flujo nuevo con medios que no traiga la rama hace fallar esta prueba sin que
@@ -7,19 +7,21 @@
  * y que sigan manejando medios (una excepción que ya no hace falta, o un archivo que se borró, también falla: la lista no se pudre).
  *
  * Lo que exige `hallazgosDelGuardado` (el mismo que corren los constructores, así que la prueba y el armado no pueden discrepar):
- *   - los once nodos y sus aristas; «Preparar guardado» cuelga de «Reportar mensaje (entrante)», junto a la rama que responde y DEBAJO de ella
+ *   - los NUEVE nodos y sus aristas (contrato v2: «¿Anotar medio?» y «Anotar medio» ya no existen y su presencia falla); «Preparar guardado» cuelga de «Reportar mensaje (entrante)», junto a la rama que responde y DEBAJO de ella
  *     en el lienzo (con `executionOrder: v1` corre después de que el cliente recibió su respuesta);
  *   - el código de los dos nodos Code, el del módulo común tal cual;
  *   - credenciales por nombre: hacia `guardarMedio`, la misma de ingesta de «Reportar mensaje (entrante)»; hacia Meta, una de WhatsApp que no
  *     es esa ni se llama «ingesta» (la trampa del 15/09);
- *   - todo nodo de red con `continueRegularOutput` y `alwaysOutputData`; las llamadas a `guardarMedio` con la respuesta completa sin error.
+ *   - todo nodo de red con `continueRegularOutput` y `alwaysOutputData`; las llamadas a `guardarMedio` con la respuesta completa sin error;
+ *   - ningún nodo Code de la rama lee el contenido del binario, y el Content-Type va saneado;
+ *   - `saveDataSuccessExecution` y `saveDataErrorExecution` «none» y `saveExecutionProgress` false (el binario quedaría en la ejecución guardada).
  * Y se prueba NEGANDO: cada regla tiene su mutación que la rompe.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { hallazgosDelGuardado, manejaMedios, NODOS_DEL_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
+import { codigoLeeBinario, hallazgosDelGuardado, manejaMedios, NODOS_DEL_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 import type { Flujo, J } from './lib/flujo';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -99,25 +101,39 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
   });
 
   // EL BINARIO DEL MEDIO queda en los datos de la ejecución de n8n si la ejecución se guarda. Tabla CERRADA de la retención de cada flujo cubierto:
-  // cambiarla obliga a cambiar esta prueba (y decirlo en el PR). `undefined` = el valor de la instancia (Agenda mínima no lo fija).
-  const RETENCION: Record<string, [string | undefined, string | undefined]> = {
-    'experimental/rroca-evy/rroca-evy.json': ['none', 'none'], 'experimental/rroca-evy/rroca-evy.prueba.json': ['none', 'none'],
-    'experimental/rroca-emma/rroca-emma.json': ['none', 'none'], 'experimental/rroca-emma/rroca-emma.prueba.json': ['none', 'none'],
-    'experimental/doctoras/doctoras.rroca-evy.json': ['none', 'none'], 'experimental/doctoras/doctoras.rroca-evy.prueba.json': ['none', 'none'],
-    'experimental/doctoras/doctoras.rroca-emma.json': ['none', 'none'], 'experimental/doctoras/doctoras.rroca-emma.prueba.json': ['none', 'none'],
-    'experimental/rroca-ruben/rroca-ruben.json': ['none', 'all'], 'experimental/rroca-ruben/rroca-ruben.prueba.json': ['none', 'all'],
-    'experimental/rroca-antonio/rroca-antonio.json': ['none', 'all'], 'experimental/rroca-antonio/rroca-antonio.prueba.json': ['none', 'all'],
-    'experimental/venta-minima/venta-minima.qtaco.json': ['all', 'all'], 'experimental/venta-minima/venta-minima.prueba.json': ['none', 'none'],
-    'experimental/venta-minima/venta-minima.ensayo-demo-a.json': ['none', 'none'],
-    'experimental/chat-novuchat/chat-novuchat.novuchat.json': ['none', 'all'], 'experimental/chat-novuchat/chat-novuchat.prueba.json': ['none', 'all'],
-    'experimental/captacion-minima/captacion-minima.novuchat.json': ['none', 'all'], 'experimental/captacion-minima/captacion-minima.prueba.json': ['none', 'all'],
-    'experimental/agenda-minima/agenda-minima.v0.json': [undefined, undefined], 'experimental/agenda-minima/agenda-minima.prueba.json': [undefined, undefined],
-  };
-  it('la retención de ejecuciones de cada flujo cubierto es la de la tabla cerrada (el binario del medio queda en la ejecución guardada)', () => {
+  // [saveDataSuccessExecution, saveDataErrorExecution, saveExecutionProgress]. DECISIÓN DE ANDRES (30/10, contrato v2 §8.1): «none», «none» y false en
+  // TODOS. Antes de esta decisión guardaban errores Rubén, Antonio, chat-novuchat y captacion-minima, y Q'Taco guardaba todo; Agenda mínima (Bellido) no lo
+  // fijaba (valía el de la instancia). Cambiar una fila obliga a cambiar esta prueba y decirlo en el PR.
+  const NADA: [string, string, boolean] = ['none', 'none', false];
+  const RETENCION: Record<string, [string | undefined, string | undefined, boolean | undefined]> = Object.fromEntries([
+    'experimental/rroca-evy/rroca-evy.json', 'experimental/rroca-evy/rroca-evy.prueba.json',
+    'experimental/rroca-emma/rroca-emma.json', 'experimental/rroca-emma/rroca-emma.prueba.json',
+    'experimental/doctoras/doctoras.rroca-evy.json', 'experimental/doctoras/doctoras.rroca-evy.prueba.json',
+    'experimental/doctoras/doctoras.rroca-emma.json', 'experimental/doctoras/doctoras.rroca-emma.prueba.json',
+    'experimental/rroca-ruben/rroca-ruben.json', 'experimental/rroca-ruben/rroca-ruben.prueba.json',
+    'experimental/rroca-antonio/rroca-antonio.json', 'experimental/rroca-antonio/rroca-antonio.prueba.json',
+    'experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.prueba.json',
+    'experimental/venta-minima/venta-minima.ensayo-demo-a.json',
+    'experimental/chat-novuchat/chat-novuchat.novuchat.json', 'experimental/chat-novuchat/chat-novuchat.prueba.json',
+    'experimental/captacion-minima/captacion-minima.novuchat.json', 'experimental/captacion-minima/captacion-minima.prueba.json',
+    'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/agenda-minima/agenda-minima.prueba.json',
+    // Walisuma (#713, 30/10): main la traía con «none»/«all»; pasa a «none» como todos.
+    'experimental/walisuma/walisuma.json', 'experimental/walisuma/walisuma.prueba.json',
+  ].map((a) => [a, NADA]));
+  it('la retención de ejecuciones de cada flujo cubierto es la de la tabla cerrada: nada guardado (el binario del medio quedaría en la ejecución)', () => {
     expect(Object.keys(RETENCION).sort()).toEqual([...CUBIERTOS].sort());
     for (const a of CUBIERTOS) {
       const st = (leer(a).settings ?? {}) as J;
-      expect([st['saveDataSuccessExecution'], st['saveDataErrorExecution']], a).toEqual(RETENCION[a]);
+      expect([st['saveDataSuccessExecution'], st['saveDataErrorExecution'], st['saveExecutionProgress']], a).toEqual(RETENCION[a]);
+    }
+  });
+
+  it('la rama tiene NUEVE nodos en cada flujo cubierto y ninguno de los que el contrato v2 quitó', () => {
+    expect(NODOS_DEL_GUARDADO).toHaveLength(9);
+    for (const a of CUBIERTOS) {
+      const nombres = leer(a).nodes.map((n) => n.name);
+      expect(nombres.filter((n) => NODOS_DEL_GUARDADO.includes(n)), a).toHaveLength(9);
+      expect(nombres.filter((n) => /Anotar medio/.test(n)), a).toEqual([]);
     }
   });
 
@@ -211,7 +227,7 @@ describe('guardado obligatorio, NEGANDO: cada regla tiene la mutación que la ro
     expect(conBase((f) => { f.connections['Descargar medio (guardado)']!['main']![0] = []; })).toMatch(/«Descargar medio \(guardado\)» \(salida 0\) no está conectado a «Guardar medio»/);
   });
   it('el código de un nodo Code cambiado a mano (no es el del módulo común)', () => {
-    expect(conBase((f) => { (nodoDe(f, 'Preparar guardado').parameters as J)['jsCode'] = String((nodoDe(f, 'Preparar guardado').parameters as J)['jsCode']).replace('16000000', '99000000'); })).toMatch(/guardado-preparar\.js tal cual/);
+    expect(conBase((f) => { (nodoDe(f, 'Preparar guardado').parameters as J)['jsCode'] = String((nodoDe(f, 'Preparar guardado').parameters as J)['jsCode']).replace('16 * 1024 * 1024', '99 * 1024 * 1024'); })).toMatch(/guardado-preparar\.js tal cual/);
     expect(conBase((f) => { (nodoDe(f, 'Resultado del guardado').parameters as J)['jsCode'] = 'return [];'; })).toMatch(/guardado-resultado\.js tal cual/);
   });
   it('LA TRAMPA DEL 15/09: la credencial de ingesta en un nodo que llama a Meta', () => {
@@ -221,7 +237,7 @@ describe('guardado obligatorio, NEGANDO: cada regla tiene la mutación que la ro
   });
   it('hacia guardarMedio, otra credencial que la de ingesta del flujo (la de Graph, o una ingesta ajena)', () => {
     expect(conBase((f) => { nodoDe(f, 'Guardar medio').credentials = { httpHeaderAuth: { id: '', name: 'Graph WhatsApp Dra. Evy (Bearer)' } }; })).toMatch(/«Guardar medio» tiene que llevar SOLO la credencial de ingesta/);
-    expect(conBase((f) => { nodoDe(f, 'Anotar medio').credentials = { httpHeaderAuth: { id: '', name: 'NovuChat ingesta (Emma)' } }; })).toMatch(/«Anotar medio» tiene que llevar SOLO la credencial de ingesta/);
+    expect(conBase((f) => { nodoDe(f, 'Reintentar el guardado').credentials = { httpHeaderAuth: { id: '', name: 'NovuChat ingesta (Emma)' } }; })).toMatch(/«Reintentar el guardado» tiene que llevar SOLO la credencial de ingesta/);
   });
   it('guardarMedio con firma, o hacia otra Function', () => {
     expect(conBase((f) => { ((nodoDe(f, 'Guardar medio').parameters as J)['headerParameters'] as J)['parameters'].push({ name: 'X-NovuChat-Signature', value: 'x' }); })).toMatch(/manda una firma/);
@@ -229,18 +245,56 @@ describe('guardado obligatorio, NEGANDO: cada regla tiene la mutación que la ro
   });
   it('un nodo de red que corta el turno, o que no ve el código de la respuesta', () => {
     expect(conBase((f) => { delete nodoDe(f, 'Guardar medio').onError; })).toMatch(/«Guardar medio» tiene que llevar onError continueRegularOutput/);
-    expect(conBase((f) => { ((((nodoDe(f, 'Anotar medio').parameters as J)['options'] as J)['response'] as J)['response'] as J)['neverError'] = false; })).toMatch(/respuesta completa sin error/);
+    expect(conBase((f) => { ((((nodoDe(f, 'Reintentar el guardado').parameters as J)['options'] as J)['response'] as J)['response'] as J)['neverError'] = false; })).toMatch(/respuesta completa sin error/);
   });
   it('el aviso que traga su fallo (con onError), o que va a otro número que el de recepción', () => {
     expect(conBase((f) => { (nodoDe(f, 'Avisar falla del guardado') as J)['onError'] = 'continueRegularOutput'; })).toMatch(/no lleva onError/);
     expect(conBase((f) => { const p = nodoDe(f, 'Avisar falla del guardado').parameters as J; p['jsonBody'] = String(p['jsonBody']).replace('$json.numeroRecepcion', '$json.telefono'); })).toMatch(/SOLO al número de recepción/);
   });
-  it('el reintento que manda cuerpo en Anotar, o que reintenta algo que no es un 5xx', () => {
-    expect(conBase((f) => { (nodoDe(f, 'Reintentar el guardado').parameters as J)['sendBody'] = true; })).toMatch(/SOLO en modo descargar/);
+  it('el reintento sin los bytes, o sin el Content-Type saneado; o que reintenta algo que no es un 5xx', () => {
+    expect(conBase((f) => { (nodoDe(f, 'Reintentar el guardado').parameters as J)['sendBody'] = "={{ $json.modo === 'descargar' }}"; })).toMatch(/manda los mismos bytes/);
+    expect(conBase((f) => { const p = nodoDe(f, 'Reintentar el guardado').parameters as J; p['jsonHeaders'] = String(p['jsonHeaders']).replace(", 'Content-Type': $json.contentType", ''); })).toMatch(/Reintentar el guardado» manda el Content-Type saneado/);
     expect(conBase((f) => { const c = (nodoDe(f, '¿Reintentar el guardado?').parameters as J)['conditions']['conditions'][0]; c['leftValue'] = '={{ Number($json.statusCode) >= 400 }}'; })).toMatch(/reintenta solo un 5xx/);
   });
-  it('Anotar con cuerpo (el servidor respondería 400 anotar_con_cuerpo)', () => {
-    expect(conBase((f) => { Object.assign(nodoDe(f, 'Anotar medio').parameters as J, { sendBody: true, contentType: 'binaryData', inputDataFieldName: 'data' }); })).toMatch(/«Anotar medio» no lleva cuerpo/);
+  it('«Guardar medio» sin el Content-Type saneado (mandaría el mime que trajo el CDN de Meta), o sin los bytes', () => {
+    expect(conBase((f) => { const h = ((nodoDe(f, 'Guardar medio').parameters as J)['headerParameters'] as J); h['parameters'] = (h['parameters'] as J[]).filter((x) => x['name'] !== 'Content-Type'); })).toMatch(/«Guardar medio» manda el Content-Type saneado/);
+    expect(conBase((f) => { const h = ((nodoDe(f, 'Guardar medio').parameters as J)['headerParameters'] as J); (h['parameters'] as J[]).find((x) => x['name'] === 'Content-Type')!['value'] = "={{ $binary.data.mimeType }}"; })).toMatch(/«Guardar medio» manda el Content-Type saneado/);
+    expect(conBase((f) => { (nodoDe(f, 'Guardar medio').parameters as J)['sendBody'] = false; })).toMatch(/«Guardar medio» manda los bytes/);
+  });
+  it('«Guardar medio» o su reintento sin X-NovuChat-Mime (revisión de #709)', () => {
+    expect(conBase((f) => { const h = ((nodoDe(f, 'Guardar medio').parameters as J)['headerParameters'] as J); h['parameters'] = (h['parameters'] as J[]).filter((x) => x['name'] !== 'X-NovuChat-Mime'); })).toMatch(/«Guardar medio» manda X-NovuChat-Mime/);
+    expect(conBase((f) => { const p = nodoDe(f, 'Reintentar el guardado').parameters as J; p['jsonHeaders'] = String(p['jsonHeaders']).replace(", 'X-NovuChat-Mime': $json.mime", ''); })).toMatch(/«Reintentar el guardado» manda X-NovuChat-Mime/);
+  });
+  it('VUELVEN «¿Anotar medio?» o «Anotar medio» (el contrato v2 los quitó)', () => {
+    expect(conBase((f) => { f.nodes.push({ ...nodoDe(f, 'Guardar medio'), id: 'gm-anotar', name: 'Anotar medio' }); })).toMatch(/sobra «Anotar medio»/);
+    expect(conBase((f) => { f.nodes.push({ ...nodoDe(f, '¿Reintentar el guardado?'), id: 'gm-si-anotar', name: '¿Anotar medio?' }); })).toMatch(/sobra «¿Anotar medio\?»/);
+  });
+  it('UN NODO CODE QUE LEE EL BINARIO (contrato v2 §7.6), o un nodo de la rama que se vuelve Code, o la rama que sale de sí misma', () => {
+    for (const lee of ["const b = await this.helpers.getBinaryDataBuffer(0, 'data');", "const b = $input.first().binary.data.data;", "const t = Buffer.from(x, 'base64');", "const t = atob(x);"]) {
+      expect(codigoLeeBinario(lee), lee).toBe(true);
+      expect(conBase((f) => { const p = nodoDe(f, 'Preparar reintento').parameters as J; p['jsCode'] = `${String(p['jsCode'])}\n${lee}`; }), lee).toMatch(/«Preparar reintento» lee el contenido del binario/);
+    }
+    // El código común NO lee el binario: el reintento solo pasa la referencia.
+    expect(codigoLeeBinario('if (rpBajado && rpBajado.binary && rpBajado.binary.data) rpItem.binary = { data: rpBajado.binary.data };')).toBe(false);
+    expect(conBase((f) => { const n = nodoDe(f, 'Guardar medio') as J; n['type'] = 'n8n-nodes-base.code'; })).toMatch(/«Guardar medio» no puede ser un nodo Code/);
+    expect(conBase((f) => { f.connections['Descargar medio (guardado)']!['main']![0]!.push({ node: 'Puerta del turno', type: 'main', index: 0 }); })).toMatch(/«Descargar medio \(guardado\)» sigue hacia «Puerta del turno», fuera de la rama/);
+  });
+  it('un flujo con la rama que GUARDA ejecuciones (el binario del medio quedaría en n8n)', () => {
+    expect(conBase((f) => { (f.settings as J)['saveDataErrorExecution'] = 'all'; })).toMatch(/settings\.saveDataErrorExecution tiene que ser "none"/);
+    expect(conBase((f) => { (f.settings as J)['saveDataSuccessExecution'] = 'all'; })).toMatch(/settings\.saveDataSuccessExecution tiene que ser "none"/);
+    expect(conBase((f) => { delete (f.settings as J)['saveExecutionProgress']; })).toMatch(/settings\.saveExecutionProgress tiene que ser false/);
+  });
+  it('manejaMedios: un nodo que baja un VIDEO o un DOCUMENTO también obliga a llevar la rama', () => {
+    const f = copia(leer(BASE));
+    const fuera = new Set([...NODOS_DEL_GUARDADO, 'Reportar mensaje (entrante)']);
+    f.nodes = f.nodes.filter((n) => !fuera.has(n.name) && !/^(Obtener URL del medio|Descargar medio)/.test(n.name));
+    f.connections = { 'Carga de entrada': { main: [[{ node: 'Descargar video', type: 'main', index: 0 }, { node: 'Descargar documento', type: 'main', index: 0 }]] } };
+    expect(manejaMedios(f)).toBe(false);
+    f.nodes.push({ id: 'v', name: 'Descargar video', type: 'n8n-nodes-base.noOp', typeVersion: 1, position: [0, 0], parameters: {} } as never);
+    expect(manejaMedios(f)).toBe(true);
+    f.nodes = f.nodes.filter((n) => n.name !== 'Descargar video');
+    f.nodes.push({ id: 'd', name: 'Descargar documento', type: 'n8n-nodes-base.noOp', typeVersion: 1, position: [0, 0], parameters: {} } as never);
+    expect(manejaMedios(f)).toBe(true);
   });
   it('el aviso o el guardado con reintentos (un aviso repetido llegaría dos veces)', () => {
     expect(conBase((f) => { (nodoDe(f, 'Avisar falla del guardado') as J)['retryOnFail'] = true; })).toMatch(/no reintentan/);

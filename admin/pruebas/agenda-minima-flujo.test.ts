@@ -313,7 +313,6 @@ function mundo(op: Opciones = {}) {
       // (la bandera por defecto), así que la rama termina en silencio. Su comportamiento se prueba en `guardado-medios.test.ts`.
       case 'Pedir el medio a Meta (guardado)': return [cada(() => [{ id: 'm', url: 'https://lookaside.fbsbx.com/guardado', mime_type: 'image/jpeg', file_size: 1000 }])];
       case 'Descargar medio (guardado)': return [cada(() => [{ descargado: true }])];
-      case 'Anotar medio':
       case 'Guardar medio':
       case 'Reintentar el guardado': return [cada(() => [{ statusCode: 409, headers: {}, body: { error: 'guardado_apagado' } }])];
       case 'Avisar falla del guardado': return [cada(() => [{ messaging_product: 'whatsapp', messages: [{ id: 'wamid.GUARDADO' }] }])];

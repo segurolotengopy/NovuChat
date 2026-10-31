@@ -50,7 +50,7 @@
  */
 export const IDS_MODULOS = [
   'productos', 'cobros', 'agenda', 'inventario', 'pedidos', 'catalogo-web',
-  'campanas', 'captacion', 'menu-interactivo',
+  'campanas', 'captacion', 'menu-interactivo', 'crm',
 ] as const;
 export type IdModulo = (typeof IDS_MODULOS)[number];
 
@@ -419,6 +419,38 @@ export const REGISTRO = [
     version: 1,
     dependeDe: [],
     configuracion: [],
+    camposEnNegocio: [],
+    colecciones: [],
+    coleccionesRaiz: [],
+    almacenamiento: [],
+    limites: [],
+    pestanas: [],
+    tablero: [],
+    herramientas: [],
+    functions: [],
+    flujosProgramados: [],
+    ganchos: [],
+    mensajes: 0,
+  },
+  {
+    // miniCRM (PR-A del plan del 28/10/2026): módulo NUEVO del core, opcional,
+    // ACTIVO POR DEFECTO y apagable por tenant. NO es común ni depende de la
+    // lista `tenants.modulos`: su ÚNICO interruptor es `config/crm.activo`
+    // (ausente = encendido). Apagar = `activo: false` (el flujo no escribe y
+    // Google ni se consulta). Por eso no está en `MODULOS_COMUNES_HOY` ni en
+    // `PUENTE_DE_FLUJOS`, y la regla de escritura no exige `tieneModulo*`. Costo en mensajes: 0. El flujo (PR-B),
+    // la cuenta de servicio (PR-C) y los recordatorios (PR-D) llegan después.
+    modulo: 'crm',
+    nombre: 'miniCRM',
+    version: 1,
+    dependeDe: [],
+    configuracion: [
+      {
+        documento: 'config/crm',
+        campos: ['activo', 'moneda', 'listas'],
+        camposDelServidor: ['hoja', 'filaEncabezados', 'mapaColumnas', 'cuentaServicio', 'recordatorios'],
+      },
+    ],
     camposEnNegocio: [],
     colecciones: [],
     coleccionesRaiz: [],

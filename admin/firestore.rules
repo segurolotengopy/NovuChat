@@ -659,6 +659,40 @@ service cloud.firestore {
             && campanaValida(lista, 9);
         }
 
+        // =====================================================================
+        // /config/crm — miniCRM (PR-A, 28/10/2026). No es módulo común; activo por
+        // defecto, con UN solo interruptor (`activo`, ausente = encendido): la regla
+        // no mira `tenants.modulos`. El comercio escribe SOLO `activo`,
+        // `moneda` y `listas`. `hoja`, `filaEncabezados`, `mapaColumnas`,
+        // `cuentaServicio` y `recordatorios` los escribe el servidor: aquí se
+        // mira el DIFF, no las claves, porque en una edición el documento
+        // resultante los trae aunque el parche no (mismo contrato que
+        // `config/campanas`). Las listas no se recorren elemento por elemento
+        // (tope de expresiones): se acota su tamaño y el servidor sanea.
+        // =====================================================================
+        allow create, update: if documento == 'crm'
+                              && esAdmin(tenantId)
+                              && tenantOperativo(tenantId)
+                              && configCrmValida();
+
+        function configCrmValida() {
+          let d = request.resource.data;
+          return (resource == null
+                    ? d.keys().hasOnly(['activo', 'moneda', 'listas', 'actualizadoPor', 'actualizadoEn'])
+                    : d.diff(resource.data).affectedKeys()
+                        .hasOnly(['activo', 'moneda', 'listas', 'actualizadoPor', 'actualizadoEn']))
+            && selloValido(d)
+            && d.get('activo', true) is bool
+            && d.get('moneda', 'Bs') is string
+            && d.get('moneda', 'Bs').size() >= 1 && d.get('moneda', 'Bs').size() <= 5
+            && d.get('listas', {}) is map
+            && d.get('listas', {}).keys().hasOnly(['etapas', 'origenes'])
+            && d.get('listas', {}).get('etapas', []) is list
+            && d.get('listas', {}).get('etapas', []).size() <= 20
+            && d.get('listas', {}).get('origenes', []) is list
+            && d.get('listas', {}).get('origenes', []).size() <= 20;
+        }
+
         // EL DOCUMENTO DEL FLUJO DE CAPTACIÓN, POR EL PROPIETARIO. Además del
         // administrador (arriba, solo `update`, como todo documento de flujo),
         // lo escribe el propietario. El alta lo crea vacío, pero el propietario
@@ -1903,7 +1937,7 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
-      // /mediosRecibidos/{objeto} — los medios ENTRANTES (audio, foto, PDF) que
+      // /mediosRecibidos/{objeto} — los medios ENTRANTES (imagen, audio, video y documentos) que
       // `guardarMedio` guardó 90 días (Core; Andres, 20 a 23/10/2026). Los escribe
       // SOLO el servidor, en la misma transacción que marca el mensaje. Lo lee
       // quien puede leer conversaciones; el documento nombra la conversación
@@ -1917,7 +1951,9 @@ service cloud.firestore {
       }
 
       // /cuposDeMedios/{dia} — el contador de medios y bytes del día (tope de 3.000
-      // medios y 15 GiB por comercio; constancia de tope superado, máx. 50). Lo lee y
+      // medios y 3 GiB por comercio; por teléfono 100 medios y 500 MiB en el mapa
+      // `telefonos`, cuya clave es un seudónimo del número; constancia de tope
+      // superado, máx. 50). Lo lee y
       // lo escribe SOLO `guardarMedio`, con el SDK Admin; si el comercio pudiera
       // borrarlo, el cupo no sería un cupo. Caduca por TTL a los 2 días.
       match /cuposDeMedios/{dia} {
@@ -2156,6 +2192,7 @@ service cloud.firestore {
               && (!d.keys().hasAny(['palabras'])
                   || (d.palabras is list && d.palabras.size() <= 30))
               && d.get('tipo', '') in ['text', 'interactive', 'image', 'audio',
+                                       'video', 'sticker',
                                        'document', 'order', 'location', 'otro']
               // Tope de tamaño del texto. El contenido es DATO NO CONFIABLE:
               // lo escribe un cliente final de WhatsApp. Se guarda tal cual y se
@@ -2274,6 +2311,7 @@ service cloud.firestore {
             || (request.resource.data.entrantesPorTipo is map
                 && request.resource.data.entrantesPorTipo.keys().hasOnly([
                      'text', 'interactive', 'image', 'audio',
+                     'video', 'sticker',
                      'document', 'order', 'location', 'otro'
                    ]));
         }

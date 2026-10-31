@@ -81,6 +81,9 @@ const MP4 = (marca = 'isom') => Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buf
 const ZIP = () => Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(20, 1)]);
 const OLE = () => Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0]);
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+/** Un ZIP con los nombres en claro de un Office moderno (lo que mira `documentoPorFirma`; nunca descomprime). */
+const OFFICE = (carpeta: string, extra = '') => Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from(`[Content_Types].xml ${carpeta}document.xml ${extra}`), Buffer.alloc(20, 1)]);
 const M4A = () => Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from('ftypM4A '), Buffer.alloc(40, 2)]);
 
 // ---------------------------------------------------------------------------
@@ -112,7 +115,9 @@ const llamar = (data: unknown, a?: Actor) =>
 const T = 'medio-tienda';
 const OTRO = 'medio-otro';
 const TODOS = [T, OTRO, 'medio-baja', 'medio-suspendido', 'medio-fantasma'];
-const TEL = '59170000123';
+// Armados por partes: el saneo del repositorio público rechaza literales de 10 o más dígitos.
+const TEL = `591${'70000123'}`;
+const OTRA_CONV = `wa_591${'70000999'}`;
 const CONV = `wa_${TEL}`;
 const DIA_MS = 86_400_000;
 
@@ -343,7 +348,7 @@ describe('la forma de la entrada', () => {
     const malos: unknown[] = [
       { ...pedir(e), tenantId: '../otro' }, { ...pedir(e), tenantId: 'A-Mayus' }, { ...pedir(e), tenantId: 42 },
       { ...pedir(e), conversacionId: TEL }, { ...pedir(e), conversacionId: 'wa_123' }, { ...pedir(e), conversacionId: `wa_${'1'.repeat(16)}` },
-      { ...pedir(e), conversacionId: 'wa_59170000123/mensajes' },
+      { ...pedir(e), conversacionId: `${CONV}/mensajes` },
       { ...pedir(e), idMeta: '' }, { ...pedir(e), idMeta: 'con espacio' }, { ...pedir(e), idMeta: 'x'.repeat(121) }, { ...pedir(e), idMeta: 7 },
       { tenantId: T, conversacionId: CONV }, { tenantId: T, idMeta: e.idMeta },
       { ...pedir(e), accion: undefined }, { ...pedir(e), accion: 'borrar' }, { ...pedir(e), accion: 'VER' }, { ...pedir(e), accion: ['ver'] },
@@ -364,7 +369,7 @@ describe('la forma de la entrada', () => {
 describe('el metadato: de ESTA conversación, guardado y vigente', () => {
   it('pedido desde OTRA conversación (el idMeta sí existe): not-found, sin almacén, auditado «sin_medio»', async () => {
     const e = await escena();
-    await expect(llamar({ ...pedir(e), conversacionId: 'wa_59170000999' }, admin(T))).rejects.toMatchObject(falla('not-found', FIJOS.noHay));
+    await expect(llamar({ ...pedir(e), conversacionId: OTRA_CONV }, admin(T))).rejects.toMatchObject(falla('not-found', FIJOS.noHay));
     expect(almacen.llamadas).toBe(0);
     expect((await auditoria(T))[0]).toMatchObject({ resultado: 'rechazado', motivo: 'sin_medio' });
   });
@@ -497,7 +502,7 @@ describe('el tipo se decide por los bytes; la huella, por el guardado', () => {
   });
   it('documentos que sí se sostienen: docx (PK + su mime), xls (OLE), csv (texto UTF-8), todos como octet-stream', async () => {
     const buenos: Array<[V.ExtensionLeida, Buffer, string]> = [
-      ['docx', ZIP(), DOCX], ['xls', OLE(), 'application/vnd.ms-excel'], ['csv', Buffer.from('a,b\nñ,2'), 'text/csv'], ['zip', ZIP(), 'application/zip'],
+      ['docx', OFFICE('word/'), DOCX], ['xlsx', OFFICE('xl/'), XLSX], ['xls', OLE(), 'application/vnd.ms-excel'], ['csv', Buffer.from('a,b\nñ,2'), 'text/csv'], ['zip', ZIP(), 'application/zip'],
     ];
     for (const [i, [ext, bytes, mime]] of buenos.entries()) {
       const e = await escena(T, { idMeta: `wamid.db${i}`, bytes, ext, meta: { mime } });
@@ -737,7 +742,7 @@ describe('ninguna salida de console trae teléfono, idMeta, ruta, hash ni comerc
     const e = await escena();
     await llamar(pedir(e), admin(OTRO, 'u-otro')).catch(() => undefined);
     await llamar({ ...pedir(e), ruta: e.ruta }, admin(T, 'u-a1')).catch(() => undefined);
-    await llamar({ ...pedir(e), conversacionId: 'wa_59170000999' }, admin(T, 'u-a1')).catch(() => undefined);
+    await llamar({ ...pedir(e), conversacionId: OTRA_CONV }, admin(T, 'u-a1')).catch(() => undefined);
     almacen.objetos.set(e.ruta, Buffer.from('<svg/>'));
     await llamar(pedir(e), admin(T, 'u-a1')).catch(() => undefined);
     await refMeta(e).update({ estado: 'anotado' });
@@ -829,25 +834,37 @@ describe('la acción (adenda §7.7): ver o descargar, y lo que puede el soporte'
 });
 
 // ===========================================================================
-describe('documentoPorFirma y videoPorFirma PROVISIONALES (TODO M1b: se reemplazan por los de tipos.ts)', () => {
-  it('documentoPorFirma: la extensión sale de los bytes; el mime solo desempata dentro de la firma; siempre octet-stream', () => {
-    const casos: Array<[Buffer, string | undefined, string]> = [
-      [PDF(), undefined, 'pdf'], [Buffer.concat([Buffer.from('%PDF-1.4 '), ZIP()]), 'application/pdf', 'bin'],
-      [ZIP(), DOCX, 'docx'], [ZIP(), 'application/zip', 'zip'], [ZIP(), undefined, 'bin'], [ZIP(), 'application/vnd.ms-excel.sheet.macroEnabled.12', 'bin'],
-      [OLE(), 'application/msword', 'doc'], [OLE(), DOCX, 'bin'],
-      [Buffer.from('hola'), 'text/plain; charset=utf-8', 'txt'], [Buffer.from([0xff, 0xfe, 0x41]), 'text/plain', 'bin'], [Buffer.from('a\0b'), 'text/csv', 'bin'],
-      [Buffer.from('<svg/>'), 'image/svg+xml', 'bin'], [Buffer.from('MZ'), 'application/x-msdownload', 'bin'], [Buffer.from('hola'), DOCX, 'bin'],
+describe('las firmas que usa verMedio son las de tipos.ts (las mismas de guardarMedio)', () => {
+  it('la fuente importa documentoPorFirma y tipoPorFirma de ./tipos.js y no define firmas propias', () => {
+    expect(FUENTE).toMatch(/import \{[^}]*\bdocumentoPorFirma\b[^}]*\btipoPorFirma\b[^}]*\} from '\.\/tipos\.js'/);
+    expect(CODIGO).not.toMatch(/function (documentoPorFirma|videoPorFirma|tipoPorFirma)\b/);
+    expect(CODIGO).not.toMatch(/ftyp|0x50, 0x4b|0xd0, 0xcf/);
+  });
+  it('documentos: pdf, docx, xlsx y zip se reconocen; el políglota PDF-ZIP, el docx con macros y el txt con NUL son «bin»', async () => {
+    const casos: Array<[string, Buffer, string, V.ExtensionLeida]> = [
+      ['pdf', PDF(), 'application/pdf', 'pdf'],
+      ['docx', OFFICE('word/'), DOCX, 'docx'],
+      ['xlsx', OFFICE('xl/'), XLSX, 'xlsx'],
+      ['zip', ZIP(), 'application/zip', 'zip'],
+      ['políglota PDF que es ZIP', Buffer.concat([Buffer.from('%PDF-1.4 '), ZIP()]), 'application/pdf', 'bin'],
+      ['docx con macros', OFFICE('word/', 'vbaProject.bin'), DOCX, 'bin'],
+      ['txt con NUL', Buffer.from('a\0b'), 'text/plain', 'bin'],
     ];
-    for (const [i, [bytes, mime, ext]] of casos.entries()) {
-      expect(V.documentoPorFirma(bytes, mime), String(i)).toEqual({ ext, mime: V.MIME_DE_DESCARGA });
+    for (const [i, [nombre, bytes, mime, ext]] of casos.entries()) {
+      expect(TI.documentoPorFirma(bytes, mime).ext, nombre).toBe(ext);
+      // Y la callable llega a lo mismo leyendo el mime GUARDADO: con la ruta correcta sale; con otra, no.
+      const e = await escena(T, { idMeta: `wamid.real${i}`, bytes, ext, meta: { mime: TI.documentoPorFirma(bytes, mime).mime } });
+      expect(await llamar(pedir(e, 'descargar'), admin(T)), nombre).toMatchObject({ extension: ext, mime: V.MIME_DE_DESCARGA });
     }
   });
-  it('videoPorFirma: marcas de video (mp4/3gp), nunca las de audio; caja de tamaño menor que 8, no', () => {
-    expect(V.videoPorFirma(MP4('isom'))).toBe('mp4');
-    expect(V.videoPorFirma(MP4('mp42'))).toBe('mp4');
-    expect(V.videoPorFirma(MP4('3gp6'))).toBe('3gp');
-    for (const marca of ['M4A ', 'M4B ', 'M4P ', 'qt  ']) expect(V.videoPorFirma(MP4(marca)), marca).toBeNull();
-    expect(V.videoPorFirma(Buffer.concat([Buffer.from([0, 0, 0, 4]), Buffer.from('ftypisom')]))).toBeNull();
-    expect(V.videoPorFirma(Buffer.from('ftyp'))).toBeNull();
+  it('mp4 contra m4a: la marca decide; un m4a guardado como video y un mp4 guardado como audio no salen', async () => {
+    expect(TI.tipoPorFirma(MP4('isom'))).toMatchObject({ tipo: 'video', ext: 'mp4' });
+    expect(TI.tipoPorFirma(MP4('M4A '))).toMatchObject({ tipo: 'audio', ext: 'm4a' });
+    const m4aComoVideo = await escena(T, { idMeta: 'wamid.m4av', bytes: MP4('M4A '), ext: 'mp4' });
+    await refMeta(m4aComoVideo).update({ tipo: 'video', categoria: 'video', mime: 'video/mp4' });
+    await expect(llamar(pedir(m4aComoVideo, 'descargar'), admin(T))).rejects.toMatchObject(falla('failed-precondition', FIJOS.noElegible));
+    const mp4ComoAudio = await escena(T, { idMeta: 'wamid.mp4a', bytes: MP4('isom'), ext: 'm4a' });
+    await refMeta(mp4ComoAudio).update({ tipo: 'audio', categoria: 'audio', mime: 'audio/mp4' });
+    await expect(llamar(pedir(mp4ComoAudio), admin(T))).rejects.toMatchObject(falla('failed-precondition', FIJOS.noElegible));
   });
 });

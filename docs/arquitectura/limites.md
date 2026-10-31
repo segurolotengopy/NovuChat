@@ -19,7 +19,7 @@
 | Campañas simultáneas por plan | módulo Campañas |
 | Aviso de consumo al 80 % | Central (cuenta) |
 | Cambios de configuración incluidos al mes (`cambiosIncluidos`, F1) | Central (cuenta) |
-| Medios guardados o anotados: 3.000 por comercio y día (y 15 GiB de bytes); constancia de tope superado a lo sumo 50 por día; topes por tipo (imagen 5 MB, audio 16 MB, PDF 10 MB). Constantes de seguridad y de costo de almacenamiento, no de plan | Core (`guardarMedio`, contador `cuposDeMedios`) |
+| Medios guardados o anotados (aprobado por Andres el 30/10/2026, contrato de medios v2 §7.4): por comercio y día 3.000 medios y 3 GiB (bajó de 15 GiB); por teléfono y día 100 medios y 500 MiB (`429 cupo_telefono_lleno`), en la misma transacción del cupo; constancia de tope superado a lo sumo 50 por día; topes por tipo: imagen 5 MB, audio 16 MB, video 16 MB, documento de cualquier tipo 16 MB. **Constantes de seguridad y de costo de almacenamiento, no de plan:** no se venden ni cambian por plan, frenan un token filtrado o un cliente que manda archivos sin parar; por eso viven como constantes en un solo bloque de `guardarMedio.ts` y no en el plan ni en `docs/base-comercial.md` | Core (`guardarMedio`, contador `cuposDeMedios`) |
 | Visor de medios: 60 vistas por hora y 300 por día por usuario (global, propio de los medios, no comparte cupo con el de comprobantes; cifras del integrador del 30/10/2026, ajustables, en `TOPE_POR_HORA`/`TOPE_POR_DIA` de `verMedio.ts`). Freno contra abuso, no límite de plan | Core (`verMedio`, contador `topesDeMedios/{uid}`) |
 
 ### 7. Todo límite comercial se hace cumplir en el SERVIDOR
