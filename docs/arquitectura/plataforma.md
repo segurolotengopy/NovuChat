@@ -178,3 +178,12 @@ negocio nuevo que heredó el identificador. La baja es lógica y el identificado
 queda quemado; `altaTenant` rechaza un identificador ya usado.
 
 ---
+
+## Borrar los medios de una conversación (30/10/2026)
+
+`admin/scripts/plataforma/borrar-medios-conversacion.mjs` (lógica en `-logica.mjs`): por pedido del titular de los datos,
+borra los objetos de Storage y los `mediosRecibidos` de **una** conversación de **un** comercio, marca `medio.estado='borrado'`
+en sus mensajes (el texto queda), respalda el metadato (sin bytes, archivo 600 fuera del repositorio) y audita en
+`tenants/{t}/auditoria` (fail-closed). Seco por omisión; idempotente. Ver el contrato de medios v2 §8.4.
+
+Cerrojos de `--aplicar`: `--bucket` explícito y alcanzable, `--confirmar-comercio "<nombre>"`, proyecto en `NOVUCHAT_PROYECTOS_PERMITIDOS`, `--motivo`, `--respaldo-en` (carpeta 0700 fuera del repositorio; el respaldo tiene el teléfono completo: cifrarlo o guardarlo fuera de sincronización y destruirlo a los 30 días: lo hace quien ejecutó la operación, sin job automático). Una ruta fuera de formato o un bucket que no halla los objetos abortan sin borrar metadatos.
