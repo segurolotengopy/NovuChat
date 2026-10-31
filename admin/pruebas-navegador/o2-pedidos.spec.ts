@@ -98,11 +98,11 @@ test.describe('PED-01: la lista de pedidos en vivo, con sesión de operador', ()
     await expect(page.getByText('Plato numero 1', { exact: true })).toHaveCount(0);
   });
 
-  test('la pantalla avisa que los pedidos tomados conversando no están aquí', async ({ page }) => {
+  test('la pantalla avisa que las conversaciones sin QR no están aquí', async ({ page }) => {
     await ingresar(page, OPERADOR_O2.correo);
     await abrirPedidos(page);
-    await expect(page.getByText('Por ahora aparecen los pedidos hechos desde el catálogo web.')).toBeVisible();
-    await expect(page.getByText('Los que el asistente toma conversando están en «Conversaciones».')).toBeVisible();
+    await expect(page.getByText('Aparecen los pedidos del catálogo web y los que el asistente toma por WhatsApp con QR.')).toBeVisible();
+    await expect(page.getByText('Las conversaciones sin QR no aparecen acá: están en «Conversaciones».')).toBeVisible();
   });
 
   // La consulta de la pantalla es POR LA RUTA del comercio; el aislamiento real (que un operador no lea el comercio de otro) lo prueban las reglas
