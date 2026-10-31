@@ -47,6 +47,15 @@ export const COLUMNAS_V1: readonly ColumnaCrm[] = [
   { campo: 'noContactar', titulo: 'No contactar', dueno: 'bot', nueva: true },
   { campo: 'ultimaActualizacionBot', titulo: 'Última actualización del bot', dueno: 'bot', nueva: true },
   { campo: 'estadoRecordatorio', titulo: 'Estado del recordatorio', dueno: 'bot', nueva: true },
+  // Planilla NOVUCHAT_miniCRM_IA de las subcuentas (31/10/2026): las columnas N a T las escribe el bot y la U es del equipo. Todas opcionales en el mapa.
+  { campo: 'clasificacion', titulo: 'Clasificación', dueno: 'bot', nueva: true },
+  { campo: 'quePidio', titulo: 'Qué pidió', dueno: 'bot', nueva: true },
+  { campo: 'diaPreferido', titulo: 'Día preferido', dueno: 'bot', nueva: true },
+  { campo: 'horarioPreferido', titulo: 'Horario preferido', dueno: 'bot', nueva: true },
+  { campo: 'derivacion', titulo: 'Derivación a recepción', dueno: 'bot', nueva: true },
+  { campo: 'ventana24h', titulo: 'Se cierra la ventana de 24 h', dueno: 'bot', nueva: true },
+  // Notas del equipo sobre el caso: el bot NUNCA la escribe ni la lee para decidir (no es un dato de salud del bot).
+  { campo: 'diagnostico', titulo: 'Diagnóstico del equipo', dueno: 'equipo', nueva: true },
 ];
 
 export const CAMPOS_DEL_BOT: readonly string[] = COLUMNAS_V1.filter((c) => c.dueno === 'bot').map((c) => c.campo);

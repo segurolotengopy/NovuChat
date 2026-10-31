@@ -11,10 +11,37 @@ const CRM_MAPA = null; // @@crm-mapa
 
 // Los campos del contrato de columnas v1 que son del bot (espejo de `COLUMNAS_V1` de Functions; una prueba los compara).
 const CRM_CAMPOS_BOT = ['id', 'fecha', 'nombre', 'empresa', 'telefono', 'etapaInicial', 'origen', 'calificacion', 'resumen', 'interes',
-  'ultimaInteraccion', 'etapaSugerida', 'idCampana', 'noContactar', 'ultimaActualizacionBot', 'estadoRecordatorio'];
-const CRM_CAMPOS_EQUIPO = ['valor', 'responsable', 'estado', 'proximaAccion'];
-// Los campos sin los cuales la logica de la fila no puede escribir.
-const CRM_CAMPOS_OBLIGATORIOS = ['id', 'fecha', 'nombre', 'empresa', 'telefono', 'interes', 'etapaInicial', 'origen', 'calificacion', 'resumen'];
+  'ultimaInteraccion', 'etapaSugerida', 'idCampana', 'noContactar', 'ultimaActualizacionBot', 'estadoRecordatorio',
+  'clasificacion', 'quePidio', 'diaPreferido', 'horarioPreferido', 'derivacion', 'ventana24h'];
+const CRM_CAMPOS_EQUIPO = ['valor', 'responsable', 'estado', 'proximaAccion', 'diagnostico'];
+// De los del equipo, los que el mapa debe declarar siempre (columna o null); `diagnostico` es opcional: solo existe en las planillas que la traen.
+const CRM_EQUIPO_DECLARADO = ['valor', 'responsable', 'estado', 'proximaAccion'];
+// Los campos sin los cuales la logica de la fila no puede escribir. `interes` es opcional (hay planillas sin columna de rubro).
+const CRM_CAMPOS_OBLIGATORIOS = ['id', 'fecha', 'nombre', 'empresa', 'telefono', 'etapaInicial', 'origen', 'calificacion', 'resumen'];
+
+// LA CLASIFICACION DEL LEAD, POR CODIGO Y POR HECHOS (nunca por lo que diga el modelo). Cada senal es un booleano que deja el flujo;
+// solo `=== true` cuenta. Precedencia: no es paciente > Caliente > Frio > Tibio (el resto: llego por anuncio o escribio y no avanzo).
+//   Caliente   acepto agendar, pidio la ubicacion o pidio que lo llamen.
+//   Frio       pregunto el precio y cerro la conversacion.
+//   No es lead proveedor o persona que no es paciente.
+const CRM_SENALES = ['aceptoAgendar', 'pidioUbicacion', 'pidioLlamada', 'llegoPorAnuncio', 'preguntoPrecioYCerro', 'noEsPaciente'];
+const CRM_CLASIFICACIONES = ['No es lead', 'Frío', 'Tibio', 'Caliente'];
+function crmClasificar(s) {
+  const h = s !== null && typeof s === 'object' ? s : {};
+  if (h.noEsPaciente === true) return 'No es lead';
+  if (h.aceptoAgendar === true || h.pidioUbicacion === true || h.pidioLlamada === true) return 'Caliente';
+  if (h.preguntoPrecioYCerro === true) return 'Frío';
+  return 'Tibio';
+}
+// Prioridad de atencion de cada clasificacion; lo que no es una clasificacion conocida no tiene prioridad.
+const CRM_PRIORIDAD_DE = { 'Caliente': 'Alta', 'Tibio': 'Media', 'Frío': 'Baja', 'No es lead': 'N/A' };
+function crmPrioridad(clasificacion) {
+  return typeof clasificacion === 'string' && Object.hasOwn(CRM_PRIORIDAD_DE, clasificacion) ? CRM_PRIORIDAD_DE[clasificacion] : 'N/A';
+}
+// La ventana de 24 h de WhatsApp se cierra 24 h despues del ultimo mensaje del cliente (milisegundos). Dato ilegible = null.
+function crmVentana24h(ultimaInteraccionMs) {
+  return typeof ultimaInteraccionMs === 'number' && Number.isFinite(ultimaInteraccionMs) ? ultimaInteraccionMs + 24 * 3600 * 1000 : null;
+}
 
 // Mismo contrato que `neutralizarTexto` de Functions (una prueba compara ambas sobre la misma tabla): sin controles ni caracteres de formato,
 // acotado, y un apostrofo delante si la hoja lo tomaria por formula.
@@ -92,25 +119,30 @@ function crmValidarMapa(m) {
   if (!eq) e.push('falta el bloque «equipo»');
   const letrasEquipo = [];
   if (eq) {
-    for (const k of CRM_CAMPOS_EQUIPO) {
+    for (const k of CRM_EQUIPO_DECLARADO) {
       if (!Object.prototype.hasOwnProperty.call(eq, k)) { e.push('equipo.' + k + ' debe declararse (columna o null)'); continue; }
       if (eq[k] === null) continue;
       usa(eq[k] && eq[k].letra, eq[k] && eq[k].titulo, 'equipo.' + k);
       if (eq[k] && crmLetraValida(eq[k].letra)) letrasEquipo.push(eq[k].letra);
+    }
+    if (eq.diagnostico !== undefined && eq.diagnostico !== null) {
+      usa(eq.diagnostico.letra, eq.diagnostico.titulo, 'equipo.diagnostico');
+      if (crmLetraValida(eq.diagnostico.letra)) letrasEquipo.push(eq.diagnostico.letra);
     }
     for (const k of Object.keys(eq)) if (CRM_CAMPOS_EQUIPO.indexOf(k) < 0) e.push('equipo.' + k + ' no es un campo del equipo');
   }
   const ex = m.extrasDelEquipo !== undefined && m.extrasDelEquipo !== null ? m.extrasDelEquipo : {};
   if (typeof ex !== 'object' || Array.isArray(ex)) e.push('extrasDelEquipo debe ser un objeto letra -> titulo');
   else for (const l of Object.keys(ex)) { usa(l, ex[l], 'extrasDelEquipo.' + l); if (crmLetraValida(l)) letrasEquipo.push(l); }
-  // Lo que se LEE es A..ultima letra del bot: no puede contener nada del equipo, ni huecos.
-  if (letrasBot.length) {
-    const ultima = letrasBot.slice().sort().pop();
+  // Las columnas del bot ya no son contiguas (las del equipo quedan en medio): el bot solo escribe las letras de sus campos (una letra no tiene dos
+  // dueños: `usa` lo comprueba) y lo que se LEE es A..ultima letra del mapa, sin huecos, para poder comparar los encabezados letra por letra.
+  const todas = letrasBot.concat(letrasEquipo);
+  if (todas.length) {
+    const ultima = todas.slice().sort().pop();
     for (let c = 65; c <= ultima.charCodeAt(0); c++) {
       const l = String.fromCharCode(c);
-      if (letrasBot.indexOf(l) < 0) e.push('la columna ' + l + ' cae dentro del rango que se lee y no es del bot');
+      if (!letras.has(l)) e.push('la columna ' + l + ' cae dentro del rango que se lee (A a ' + ultima + ') y no esta declarada');
     }
-    for (const l of letrasEquipo) if (l <= ultima) e.push('la columna del equipo ' + l + ' cae dentro del rango que se lee (A a ' + ultima + ')');
   }
   const a = m.alCrear !== null && typeof m.alCrear === 'object' ? m.alCrear : null;
   if (!a) e.push('falta alCrear');
@@ -137,6 +169,16 @@ const crmSeguro = (v) => crmLimpio(v).replace(/^(?:[=+\-@]\s*)+/, '');
 // `Agregar fila` escribe con USER_ENTERED: el apostrofo inicial deja el texto como texto y no se ve en la celda.
 const crmComoTexto = (v) => (crmSeguro(v) ? "'" + crmSeguro(v) : '');
 const crmFechaLaPaz = (ahoraMs) => new Date(ahoraMs - 4 * 3600 * 1000).toISOString().slice(0, 10);
+// «AAAA-MM-DD HH:MM» en La Paz (UTC-4 fijo); dato ilegible = ''.
+// Solo milisegundos de 2020 a 2100: fuera de rango (segundos en vez de ms, fechas absurdas, NaN) = '' y no se escribe.
+const CRM_MS_MIN = Date.UTC(2020, 0, 1);
+const CRM_MS_MAX = Date.UTC(2100, 0, 1);
+const crmMsValido = (ms) => (typeof ms === 'number' && Number.isFinite(ms) && !Number.isNaN(new Date(ms).getTime()) && ms >= CRM_MS_MIN && ms < CRM_MS_MAX ? ms : null);
+const crmFechaHoraLaPaz = (ms) => (crmMsValido(ms) === null ? '' : new Date(ms - 4 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' '));
+// Un texto libre del cliente (dia, horario, que pidio): SOLO un string (nunca «false» ni «[object Object]»), acotado ANTES de neutralizarlo.
+const crmTextoCorto = (v, max) => (typeof v === 'string' ? crmLimpio(v).slice(0, max) : '');
+// «Derivacion a recepcion»: true = «Sí», false = «No», un string = ese texto acotado, cualquier otra cosa = vacio.
+const crmDerivacion = (v) => (v === true ? 'Sí' : v === false ? 'No' : crmTextoCorto(v, 80));
 
 // Por que no se pudo leer: SOLO el tipo y el codigo del error, nunca su mensaje, que podria repetir un dato del cliente.
 const CRM_ESTADOS_GOOGLE = /\b(PERMISSION_DENIED|NOT_FOUND|INVALID_ARGUMENT|RESOURCE_EXHAUSTED|UNAUTHENTICATED|UNAVAILABLE|FAILED_PRECONDITION|DEADLINE_EXCEEDED|INTERNAL)\b/;
@@ -152,18 +194,37 @@ function crmPorque(err) {
 // Un nodo de Google que fallo con `continueRegularOutput` devuelve el item de entrada con `error` al lado de `json`.
 const crmFallido = (x) => x.error || (x.json && x.json.error !== undefined && x.json.row_number === undefined);
 
-// Los encabezados que el codigo espera, en orden de columna: A hasta la ultima letra del bot.
-function crmEncabezadosEsperados(mapa) {
+// Los encabezados que el codigo espera, en orden de columna: A hasta la ultima letra del BOT (las del equipo que quedan en medio incluidas).
+function crmLetrasDeclaradas(mapa) {
   const porLetra = {};
-  for (const k of Object.keys(mapa.columnas)) porLetra[mapa.columnas[k].letra] = mapa.columnas[k].titulo;
-  return Object.keys(porLetra).sort().map((l) => porLetra[l]);
+  for (const k of Object.keys(mapa.columnas)) porLetra[mapa.columnas[k].letra] = { titulo: mapa.columnas[k].titulo, bot: true };
+  for (const k of Object.keys(mapa.equipo || {})) if (mapa.equipo[k]) porLetra[mapa.equipo[k].letra] = { titulo: mapa.equipo[k].titulo, bot: false };
+  for (const l of Object.keys(mapa.extrasDelEquipo || {})) porLetra[l] = { titulo: mapa.extrasDelEquipo[l], bot: false };
+  return porLetra;
+}
+function crmEncabezadosEsperados(mapa) {
+  const porLetra = crmLetrasDeclaradas(mapa);
+  const letras = Object.keys(porLetra).sort();
+  const ultimaBot = letras.filter((l) => porLetra[l].bot).pop();
+  return letras.filter((l) => l <= ultimaBot).map((l) => porLetra[l].titulo);
+}
+// Las columnas del equipo que quedan DESPUES de la ultima del bot: si el rango de lectura llega hasta ellas (hoy el injerto lee hasta la ultima letra del BOT, T; la U no se lee) y llegan, deben ser las declaradas.
+function crmEncabezadosCola(mapa) {
+  const porLetra = crmLetrasDeclaradas(mapa);
+  const letras = Object.keys(porLetra).sort();
+  const ultimaBot = letras.filter((l) => porLetra[l].bot).pop();
+  return letras.filter((l) => l > ultimaBot).map((l) => porLetra[l].titulo);
 }
 const CRM_COLUMNAS_DE_MAS = '\u0000columnas de mas';
 // Primer encabezado leido que no es el esperado (letra por letra: orden y sin sobrantes), o '' si coinciden. Una fila leida lleva `row_number` aparte.
-function crmPrimerEncabezadoDistinto(fila, esperados) {
+// Tras los `esperados` pueden venir, en orden, los de la `cola` (equipo, solo lectura); cualquier otro sobrante es «columnas de mas».
+function crmPrimerEncabezadoDistinto(fila, esperados, cola) {
   const claves = Object.keys(fila).filter((k) => k !== 'row_number');
   for (let i = 0; i < esperados.length; i++) if (claves[i] !== esperados[i]) return esperados[i];
-  return claves.length > esperados.length ? CRM_COLUMNAS_DE_MAS : '';
+  const resto = claves.slice(esperados.length);
+  const tail = Array.isArray(cola) ? cola : [];
+  for (let j = 0; j < resto.length; j++) if (resto[j] !== tail[j]) return CRM_COLUMNAS_DE_MAS;
+  return '';
 }
 
 // La decision de la fila. `adaptador` = { calificar(prospecto), resumir(prospecto, conEstado, calificacionFinal), prioridad: [de menor a mayor] }.
@@ -173,6 +234,7 @@ function crmDecidirFila(a) {
   const adaptador = a.adaptador;
   const prospectos = a.prospectos;
   const T = (campo) => mapa.columnas[campo].titulo;
+  const mapeado = (campo) => !!mapa.columnas[campo];
   const errores = crmValidarMapa(mapa);
   const out = [];
   const nada = (i, veredicto) => out.push({ json: { accionPlanilla: 'nada', veredictoPlanilla: veredicto }, pairedItem: { item: i } });
@@ -184,10 +246,11 @@ function crmDecidirFila(a) {
   const ids = lecturaIds.map((x) => x.json).filter((f) => f && f.row_number !== undefined);
   const DESFASE = mapa.filaEncabezados - 1;
   const esperados = crmEncabezadosEsperados(mapa);
+  const cola = crmEncabezadosCola(mapa);
   // Letra por letra, antes de escribir: A en la lectura de IDs; A hasta la ultima del bot en la fila encontrada.
   const faltan = [];
   if (ids.length && crmPrimerEncabezadoDistinto(ids[0], [T('id')])) faltan.push(crmPrimerEncabezadoDistinto(ids[0], [T('id')]) === CRM_COLUMNAS_DE_MAS ? CRM_COLUMNAS_DE_MAS : T('id'));
-  if (coincidencias.length) { const d = crmPrimerEncabezadoDistinto(coincidencias[0], esperados); if (d) faltan.push(d); }
+  if (coincidencias.length) { const d = crmPrimerEncabezadoDistinto(coincidencias[0], esperados, cola); if (d) faltan.push(d); }
   const prioridad = (v) => adaptador.prioridad.indexOf(crmLimpio(v));
   const idRe = new RegExp('^\\s*' + mapa.prefijoId.replace(/[^A-Za-z0-9]/g, '\\$&') + '(\\d+)\\s*$', 'i');
 
@@ -203,6 +266,20 @@ function crmDecidirFila(a) {
     const prospecto = { ...p, ...(p.hechos && typeof p.hechos === 'object' ? p.hechos : {}),
       pidioAsesor: p.estado === 'cerrado' || p.hechos?.pidioAsesor === true };
     const calificacion = adaptador.calificar(prospecto);
+    // CAMPOS NUEVOS (todos opcionales: sin ellos la salida es la de siempre). La clasificacion y el cierre de la ventana los calcula el codigo.
+    const clasificacion = p.senales !== null && typeof p.senales === 'object' && mapeado('clasificacion') ? crmClasificar(p.senales) : '';
+    const ultimaMs = crmMsValido(p.ultimaInteraccionMs);
+    // Sin ninguna senal verdadera, la clasificacion («Tibio» por defecto) solo vale para una fila NUEVA: no pisa la de una fila ya clasificada.
+    const haySenal = p.senales !== null && typeof p.senales === 'object' && CRM_SENALES.some((k) => p.senales[k] === true);
+    const extras = [
+      ['clasificacion', clasificacion],
+      ['quePidio', crmTextoCorto(p.quePidio, 200)],
+      ['diaPreferido', crmTextoCorto(p.diaPreferido, 60)],
+      ['horarioPreferido', crmTextoCorto(p.horarioPreferido, 60)],
+      ['derivacion', crmDerivacion(p.derivacion)],
+      ['ultimaInteraccion', crmFechaHoraLaPaz(ultimaMs)],
+      ['ventana24h', crmFechaHoraLaPaz(crmVentana24h(ultimaMs))],
+    ].filter(([campo, v]) => v !== '' && mapeado(campo));
 
     if (actual) {
       // YA EXISTE: solo nombre, empresa, interes, calificacion y resumen, y solo si el dato nuevo no esta vacio y cambia algo. La calificacion no baja.
@@ -212,11 +289,29 @@ function crmDecidirFila(a) {
         resumen: crmSeguro(adaptador.resumir(prospecto, false, quedaEnI)) };
       const celdas = {};
       for (const campo of ['nombre', 'empresa', 'interes', 'calificacion', 'resumen']) {
+        if (!mapeado(campo)) continue;
         const v = nuevo[campo];
         const antes = actual[T(campo)];
         if (!v || crmLimpio(antes) === v) continue;
+        // El nombre ya dado nunca se pisa con el del perfil de WhatsApp.
+        if (campo === 'nombre' && p.nombreDePerfil === true && crmLimpio(antes)) continue;
         if (campo === 'calificacion' && prioridad(antes) >= 0 && prioridad(v) < prioridad(antes)) continue;
         celdas[T(campo)] = v;
+      }
+      for (const [campo, v] of extras) {
+        const antes = actual[T(campo)];
+        const nuevoV = crmSeguro(v);
+        if (!nuevoV || crmLimpio(antes) === nuevoV) continue;
+        if (campo === 'clasificacion') {
+          const previa = CRM_CLASIFICACIONES.indexOf(crmLimpio(antes));
+          // «No es lead» se escribe SIEMPRE (esta fuera de la escala); el resto sube y no baja, y sin senales no toca una fila ya clasificada.
+          // Un valor que escribio una persona (fuera de la escala) se sobrescribe.
+          if (nuevoV !== 'No es lead' && previa >= 0 && (!haySenal || CRM_CLASIFICACIONES.indexOf(nuevoV) < previa)) continue;
+          // Una fila ya «No es lead» solo vuelve a lead por una senal Caliente (aceptar agendar, pedir ubicacion o pedir que lo llamen), nunca por una debil.
+          if (crmLimpio(antes) === 'No es lead' && nuevoV !== 'No es lead' && nuevoV !== 'Caliente') continue;
+        }
+        // Al actualizar NINGUN valor lleva apostrofo: `Actualizar fila` escribe RAW y el apostrofo se veria. Una fecha escrita asi queda como texto.
+        celdas[T(campo)] = nuevoV;
       }
       if (!Object.keys(celdas).length) return nada(i, 'sin_cambios');
       out.push({ json: { accionPlanilla: 'actualizar', veredictoPlanilla: 'actualizar', row_number: Number(actual.row_number) + DESFASE, ...celdas }, pairedItem: { item: i } });
@@ -234,12 +329,13 @@ function crmDecidirFila(a) {
       [T('nombre')]: crmComoTexto(p.nombre),
       [T('empresa')]: crmComoTexto(p.empresa),
       [T('telefono')]: "'" + p.telefono,
-      [T('interes')]: crmComoTexto(p.rubro),
       [T('etapaInicial')]: mapa.alCrear.etapaInicial,
       [T('origen')]: p.anuncio ? mapa.alCrear.origenAnuncio : mapa.alCrear.origen,
       [T('calificacion')]: calificacion,
       [T('resumen')]: crmComoTexto(adaptador.resumir(prospecto, true, calificacion)),
     };
+    if (mapeado('interes')) fila[T('interes')] = crmComoTexto(p.rubro);
+    for (const [campo, v] of extras) fila[T(campo)] = campo === 'clasificacion' ? v : crmComoTexto(v);
     if (mapa.alCrear.estado !== undefined && mapa.equipo.estado) fila[mapa.equipo.estado.titulo] = mapa.alCrear.estado;
     out.push({ json: fila, pairedItem: { item: i } });
   });
