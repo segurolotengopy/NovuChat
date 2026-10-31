@@ -208,7 +208,7 @@ function crmEncabezadosEsperados(mapa) {
   const ultimaBot = letras.filter((l) => porLetra[l].bot).pop();
   return letras.filter((l) => l <= ultimaBot).map((l) => porLetra[l].titulo);
 }
-// Las columnas del equipo que quedan DESPUES de la ultima del bot: se leen (el rango llega a la ultima letra del mapa) y, si llegan, deben ser las declaradas.
+// Las columnas del equipo que quedan DESPUES de la ultima del bot: si el rango de lectura llega hasta ellas (hoy el injerto lee hasta la ultima letra del BOT, T; la U no se lee) y llegan, deben ser las declaradas.
 function crmEncabezadosCola(mapa) {
   const porLetra = crmLetrasDeclaradas(mapa);
   const letras = Object.keys(porLetra).sort();
@@ -307,9 +307,11 @@ function crmDecidirFila(a) {
           // «No es lead» se escribe SIEMPRE (esta fuera de la escala); el resto sube y no baja, y sin senales no toca una fila ya clasificada.
           // Un valor que escribio una persona (fuera de la escala) se sobrescribe.
           if (nuevoV !== 'No es lead' && previa >= 0 && (!haySenal || CRM_CLASIFICACIONES.indexOf(nuevoV) < previa)) continue;
+          // Una fila ya «No es lead» solo vuelve a lead por una senal Caliente (aceptar agendar, pedir ubicacion o pedir que lo llamen), nunca por una debil.
+          if (crmLimpio(antes) === 'No es lead' && nuevoV !== 'No es lead' && nuevoV !== 'Caliente') continue;
         }
-        // Las fechas van como TEXTO tambien al actualizar (mismo tipo que al crear).
-        celdas[T(campo)] = campo === 'ultimaInteraccion' || campo === 'ventana24h' ? "'" + nuevoV : nuevoV;
+        // Al actualizar NINGUN valor lleva apostrofo: `Actualizar fila` escribe RAW y el apostrofo se veria. Una fecha escrita asi queda como texto.
+        celdas[T(campo)] = nuevoV;
       }
       if (!Object.keys(celdas).length) return nada(i, 'sin_cambios');
       out.push({ json: { accionPlanilla: 'actualizar', veredictoPlanilla: 'actualizar', row_number: Number(actual.row_number) + DESFASE, ...celdas }, pairedItem: { item: i } });

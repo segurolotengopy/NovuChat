@@ -117,13 +117,14 @@ sin los campos nuevos la salida de `crmDecidirFila` es idéntica a la de antes (
   Si `nombreDePerfil` es `true` y la celda ya tiene nombre, no se pisa.
 - **Clasificación al actualizar:** «No es lead» se escribe SIEMPRE (está fuera de la escala); las demás suben y no bajan;
   si `senales` no trae ninguna señal verdadera no se toca la de una fila ya clasificada (el Tibio por defecto no pisa
-  Frío ni Caliente). En una fila nueva sin señales queda Tibio.
+  Frío ni Caliente). Una fila ya «No es lead» solo vuelve a lead por una señal Caliente (aceptó agendar, pidió ubicación o pidió que lo llamen). En una fila nueva sin señales queda Tibio.
 - **Textos libres** (`quePidio`, `diaPreferido`, `horarioPreferido`): solo un `string`; `false`, números, objetos y
   listas dan vacío y no se escriben (jamás «false» ni «[object Object]»). Se acotan (200, 60 y 60) y se neutralizan
   (apóstrofo, `USER_ENTERED`).
 - **Fechas** (`ultimaInteraccion`, `ventana24h`): el prospecto trae milisegundos entre 2020 y 2100 (segundos, NaN o
-  fuera de rango = no se escribe). Se escriben como **texto con apóstrofo**, tanto al crear como al actualizar, en el
-  formato `AAAA-MM-DD HH:MM` **hora de La Paz** (UTC-4 fijo; 02:30 UTC del 01/11 es `2026-10-31 22:30`).
+  fuera de rango = no se escribe). Al **crear** se escriben como texto con apóstrofo (`USER_ENTERED`, el apóstrofo no se ve);
+  al **actualizar** van **sin apóstrofo** (el nodo `Actualizar fila` escribe RAW y el apóstrofo quedaría visible: ningún
+  valor de una actualización lo lleva). Formato `AAAA-MM-DD HH:MM` **hora de La Paz** (UTC-4 fijo; 02:30 UTC del 01/11 es `2026-10-31 22:30`).
 - **Costo de escritura:** `ultimaInteraccion` cambia en cada turno, así que cada mensaje del cliente cuesta UNA
   escritura a Google (actualizar la fila). Mensajes de WhatsApp agregados: 0.
 

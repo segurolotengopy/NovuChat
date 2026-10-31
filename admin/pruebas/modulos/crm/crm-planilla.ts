@@ -281,12 +281,22 @@ describe('decisiones del 31/10: clasificación, textos, derivación y fechas', (
     expect(r[T.ultima]).toBe("'2026-10-31 22:30");
     expect(r[T.ventana]).toBe("'2026-11-01 22:30");
   });
-  it('al actualizar las fechas también van como texto (apóstrofo) y no se reescriben si no cambian', () => {
+  it('al actualizar las fechas van SIN apóstrofo (RAW) y no se reescriben si no cambian; al crear sí lo llevan', () => {
     const u = decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: AHORA }, [fila(8, TEL)]);
-    expect(u[T.ultima]).toBe("'2026-10-31 11:00");
-    expect(u[T.ventana]).toBe("'2026-11-01 11:00");
+    expect(u[T.ultima]).toBe('2026-10-31 11:00');
+    expect(u[T.ventana]).toBe('2026-11-01 11:00');
     const igual = decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: AHORA }, [fila(8, TEL, { [T.ultima]: '2026-10-31 11:00', [T.ventana]: '2026-11-01 11:00' })]);
     expect(igual).not.toHaveProperty(T.ultima);
+  });
+  it('NIEGA: ningún valor de una salida «actualizar» empieza con apóstrofo, con todos los campos nuevos', () => {
+    const r = decidir({ telefono: TEL, nombre: 'Ana', empresa: 'T', rubro: 'Ropa', senales: { aceptoAgendar: true }, quePidio: 'Cita', diaPreferido: 'martes',
+      horarioPreferido: 'tarde', derivacion: true, ultimaInteraccionMs: AHORA }, [fila(8, TEL)]);
+    expect(r.accionPlanilla).toBe('actualizar');
+    for (const [k, v] of Object.entries(r)) expect(String(v).startsWith("'"), k).toBe(false);
+  });
+  it('una fila «No es lead» no vuelve a lead por una señal débil; solo por una Caliente', () => {
+    for (const senales of [{}, { llegoPorAnuncio: true }, { preguntoPrecioYCerro: true }]) expect(upd({ senales }, 'No es lead'), JSON.stringify(senales)).not.toHaveProperty(T.clasif);
+    for (const senales of [{ aceptoAgendar: true }, { pidioUbicacion: true }, { pidioLlamada: true }]) expect(upd({ senales }, 'No es lead')[T.clasif]).toBe('Caliente');
   });
   it('cola con un título distinto en U (Diagnóstico renombrado) = columnas de más, no escribe', () => {
     const r = decidir({ telefono: TEL, nombre: 'A' }, [fila(8, TEL, {})].map((f) => {
