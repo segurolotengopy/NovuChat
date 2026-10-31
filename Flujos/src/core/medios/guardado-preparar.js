@@ -1,13 +1,18 @@
-// PREPARAR GUARDADO (módulo común de medios, contrato M1↔M2 del 29/10/2026 §1 y §4): decide si el medio de ESTE mensaje entrante se guarda y cómo.
+// PREPARAR GUARDADO (módulo común de medios, contrato v2 «guardar y descargar TODO» del 30/10/2026 §1 y §4): decide si el medio de ESTE mensaje
+// entrante se guarda y con qué cabeceras.
 //
 // Corre en su PROPIA rama, colgada de «Reportar mensaje (entrante)» (el servidor exige el entrante ya registrado por la ingesta) y DEBAJO de la rama que
 // responde en el lienzo: con `executionOrder: v1` corre DESPUÉS de que el cliente recibió su respuesta, y nada de lo que pase acá corta el turno.
-// Devuelve [] (la rama termina en silencio) si el mensaje no es imagen, audio o documento, o si le falta un dato que el servidor exige.
-// Si devuelve un item, `modo` es:
-//   - `anotar`: docx y xlsx (solo se ANOTAN, nunca se bajan bytes) y cualquier otro documento que no sea PDF (el servidor responde 415 y no se baja nada);
-//   - `descargar`: imagen (hasta 5 MB), audio (hasta 16 MB) y PDF (hasta 10 MB), con SU PROPIA descarga de Meta (no gasta el tope diario de ver u oír).
+// Devuelve [] (la rama termina en silencio) si el mensaje no trae un medio, o si le falta un dato que el servidor exige.
+// TODO medio se guarda (decisión de Andres, 30/10): imagen, audio (y nota de voz), video, documento de CUALQUIER tipo y sticker (va como `image`, webp).
+// Ya no hay modo Anotar. Cada uno se baja con SU PROPIA descarga de Meta (no gasta el tope diario de ver u oír). El flujo NO se adelanta al tope por tipo
+// del servidor (imagen 5 MB, audio, video y documento 16 MB): solo deja de bajar lo que Meta informa por encima de 16 MiB (`limite`), que cuenta como 413.
+// `mime` es el que declara Meta SOLO si está en la lista cerrada de abajo; si no, `application/octet-stream` (el servidor decide por los bytes). Viaja en
+// `X-NovuChat-Mime`. `contentType` (el transporte): imagen y audio, ese mismo mime; video y documento SIEMPRE `application/octet-stream`, para que el
+// framework de la Function no intente parsear el cuerpo (un documento declarado application/json, form o multipart daría 400 antes del handler).
 // También anota, en el estado estático del flujo (clave `guardadoDeMedios`), cuándo escribió por última vez la RECEPCIÓN: es la ventana de 24 h que
 // decide si el aviso de falla puede salir como texto libre. Ningún dato del cliente se guarda ahí.
+// Este nodo NO toca el binario: no lo hay todavía (se baja después) y nunca lo lee.
 //
 // `GM_FUENTES` la define la cabecera que arma `guardado.mjs` para cada flujo (`carga`: el nodo con `messages`; `config`: «Config del negocio»).
 // JavaScript plano del nodo Code de n8n: sin require, URL, Buffer ni crypto.
@@ -25,33 +30,48 @@ const gmRecepcion = String(gmCfg.numeroRecepcionDigitos || gmCfg.numeroRecepcion
 // La ventana de la recepción: su último mensaje a este número (de cualquier tipo).
 if (gmRecepcion && gmTelefono === gmRecepcion) gmEstado.recepcionMs = gmAhora;
 
-const GM_TIPOS = { image: 'image', audio: 'audio', voice: 'audio', document: 'document' };
-const gmTipo = Object.prototype.hasOwnProperty.call(GM_TIPOS, String(gmMsg.type || '')) ? GM_TIPOS[String(gmMsg.type)] : '';
+// El tipo del mensaje de WhatsApp → la categoría que se manda en `X-NovuChat-Tipo` (contrato v2 §1: image | audio | video | document).
+const GM_TIPOS = { image: 'image', sticker: 'image', audio: 'audio', voice: 'audio', video: 'video', document: 'document' };
+const gmTipoMeta = String(gmMsg.type || '');
+const gmTipo = Object.prototype.hasOwnProperty.call(GM_TIPOS, gmTipoMeta) ? GM_TIPOS[gmTipoMeta] : '';
 if (!gmTipo) return [];
-const gmMedio = gmTipo === 'audio' ? (gmMsg.audio || gmMsg.voice) : gmMsg[gmTipo];
+const gmMedio = gmMsg[gmTipoMeta] || (gmTipo === 'audio' ? (gmMsg.audio || gmMsg.voice) : null);
 if (!gmMedio || typeof gmMedio !== 'object') return [];
 const gmMediaId = String(gmMedio.id || '');
 const gmIdMeta = String(gmMsg.id || '');
 // Lo que el servidor exige (§1): teléfono de 8 a 15 dígitos y el id del MENSAJE. Lo que viaja en una cabecera, sin espacios ni controles.
 if (!/^\d{8,15}$/.test(gmTelefono) || !/^[\x21-\x7e]{1,200}$/.test(gmIdMeta) || !/^[A-Za-z0-9_-]{1,100}$/.test(gmMediaId)) return [];
 const gmMimeCrudo = String(gmMedio.mime_type || '').toLowerCase().split(';')[0].trim();
-const gmMime = /^[a-z0-9.+-]{1,40}\/[a-z0-9.+-]{1,100}$/.test(gmMimeCrudo) ? gmMimeCrudo : 'application/octet-stream';
-
-// docx y xlsx: solo se anotan. Otro documento que no sea PDF también va por Anotar: el servidor responde 415 sin que se baje un byte.
-const GM_SOLO_ANOTAR = ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
-const GM_LIMITES = { image: 5000000, audio: 16000000, pdf: 10000000 };
-const gmModo = gmTipo === 'document' && gmMime !== 'application/pdf' ? 'anotar' : 'descargar';
-const gmLimite = gmModo === 'anotar' ? 0 : (gmTipo === 'document' ? GM_LIMITES.pdf : GM_LIMITES[gmTipo]);
+// La lista CERRADA de mimes que viajan tal cual en `Content-Type`; cualquier otro (o uno de otra categoría) va como application/octet-stream.
+const GM_MIMES = {
+  image: ['image/jpeg', 'image/png', 'image/webp'],
+  audio: ['audio/ogg', 'audio/opus', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/mpeg', 'audio/aac', 'audio/amr'],
+  video: ['video/mp4', 'video/3gpp'],
+  document: [
+    'application/pdf', 'application/zip', 'text/plain', 'text/csv',
+    'application/msword', 'application/vnd.ms-excel', 'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ],
+};
+const gmMime = GM_MIMES[gmTipo].indexOf(gmMimeCrudo) >= 0 ? gmMimeCrudo : 'application/octet-stream';
+const gmContentType = gmTipo === 'image' || gmTipo === 'audio' ? gmMime : 'application/octet-stream';
+// 16 MiB: lo más grande que el flujo baja (Meta permite documentos de 100 MB; manda el tope de Andres). El tope por tipo lo impone el servidor.
+const GM_LIMITE = 16 * 1024 * 1024;
+// Video y documento pueden pesar hasta 100 MB en WhatsApp: sin un tamaño informado por Meta NO se bajan (revisión de seguridad de #713). Imagen, audio y
+// sticker se bajan igual: el servidor ya los acota por tipo.
+const GM_EXIGE_TAMANO = gmTipoMeta === 'video' || gmTipoMeta === 'document';
 
 return [{ json: {
-  modo: gmModo,
   telefono: gmTelefono,
   idMeta: gmIdMeta,
   tipo: gmTipo,
+  contentType: gmContentType,
   mime: gmMime,
   mediaId: gmMediaId,
-  limite: gmLimite,
-  soloAnotar: GM_SOLO_ANOTAR.indexOf(gmMime) >= 0,
+  limite: GM_LIMITE,
+  exigeTamano: GM_EXIGE_TAMANO,
   // A quién iría el aviso de falla (el número del NEGOCIO, no del cliente).
   recepcion: gmRecepcion,
   ahoraMs: gmAhora,

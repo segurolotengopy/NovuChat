@@ -123,6 +123,7 @@ export const SUITES_PURAS = [
   // (sin emulador y sin red). Las de H1 que SÍ abren Firestore (`buscar-conversaciones`,
   // `ingesta-conversaciones`, `conversaciones-ids-reglas`, los scripts con emulador) quedan en `emulador`.
   'pruebas/central/conversaciones-logica.test.ts',
+  'pruebas/central/visor-medios.test.ts',
   'pruebas/central/conversaciones-indices.test.ts',
   'pruebas/central/consola-conversaciones.test.ts',
   'pruebas/central/planes-tarifa.test.ts',
@@ -130,6 +131,7 @@ export const SUITES_PURAS = [
   'pruebas/core/conversacion-normalizacion.test.ts',
   'pruebas/core/conversacion-derivados.test.ts',
   'pruebas/core/sesion-turno.test.ts',
+  'pruebas/core/turno/modulos-del-turno.test.ts',
   'pruebas/core/nube-visor.test.ts',
   'pruebas/core/cargar-timbre-n8n.test.ts',
   'pruebas/core/texto-tipeo.test.ts',

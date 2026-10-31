@@ -335,6 +335,11 @@
       "indexes": []
     },
     {
+      "collectionGroup": "cuposDeMedios",
+      "fieldPath": "telefonos",
+      "indexes": []
+    },
+    {
       "collectionGroup": "mensajes",
       "fieldPath": "palabras",
       "indexes": []

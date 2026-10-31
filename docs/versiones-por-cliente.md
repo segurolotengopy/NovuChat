@@ -182,3 +182,16 @@ La rama común del **guardado de medios** (`Flujos/experimental/comun-sin-agente
   - captacion-minima: 43 → 54.
 
 **Lo cierra:** nada; la excepción es permanente mientras la rama tenga 11 nodos. Una alternativa de 7 a 8 nodos quedó propuesta en el PR para que Andres la decida. Cada flujo se publica aparte, con su botón; hasta que se publiquen, `estado-de-versiones.sh` los mostrará atrasados, y es correcto que lo haga.
+
+## Estado al 30/10/2026 (guardado de medios v2, «guardar y descargar TODO»): la rama baja a 9 nodos y nadie guarda ejecuciones
+
+El contrato v2 (30/10/2026) quita «¿Anotar medio?» y «Anotar medio»: todo medio (imagen, audio, video, documento de cualquier tipo, sticker) se guarda por el camino normal. La rama queda en **9 nodos** y la excepción del 29/10 (**Andres, 29/10/2026**) se mantiene con 2 nodos menos en cada flujo:
+
+- **Q'Taco** (`venta-minima.qtaco.json`): 61 → **59** nodos y tope 61 → 59.
+- **Rubén** (`rroca-ruben.json`): 57 → **55** nodos y tope 59 → 57.
+- **Bellido** (`agenda-minima.v0.json`, sin tope en su constructor): 64 → **62** nodos. Se publica el último.
+- Evy y Emma: 47 → **45**, tope 47 → 45. doctoras: 54 → **52**, tope 59 → 57. Antonio: 58 → **56**, tope 58 → 56. Chat NovuChat: 55 → **53**. captacion-minima: 54 → **52**.
+
+**Retención de ejecuciones (decisión de Andres del 30/10/2026, contrato v2 §8.1):** con la rama, el binario del medio quedaría en los datos de la ejecución de n8n; TODO flujo con la rama lleva `saveDataSuccessExecution` y `saveDataErrorExecution` «none» y `saveExecutionProgress` false (lo pone `injertarGuardado` y lo exige `hallazgosDelGuardado`). **Dejan de guardar ejecuciones** los que guardaban: Rubén, Antonio, Chat NovuChat y captacion-minima (guardaban las fallidas), Q'Taco (guardaba todo, decisión del 04/10 que esta reemplaza) y Bellido (no lo fijaba: valía el de la instancia). Se pierde diagnóstico, por privacidad.
+
+**Publicación:** Evy, Emma, Rubén y Antonio se republican UNA vez, después de la etiqueta del servidor v2 (M1b); Q'Taco, chat, captación y Bellido salen ya con esta versión. Hasta entonces `estado-de-versiones.sh` los mostrará atrasados, y es correcto. Walisuma (sin publicar; entró a main con la rama de 11 nodos y 58 nodos): pasa a **56** nodos, tope 58 → 56, y deja de guardar ejecuciones fallidas (`none`), como todos.
