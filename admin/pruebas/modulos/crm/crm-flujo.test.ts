@@ -12,7 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runInNewContext, Script } from 'node:vm';
+import { compileFunction } from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAMPOS_DEL_BOT, CAMPOS_DEL_EQUIPO, neutralizarTexto } from '../../../functions/src/modulos/crm/columnas.js';
 import { GLOBALES_FUERA_DEL_SANDBOX } from '../../lib/flujo.ts';
@@ -52,7 +52,7 @@ function correr(codigo: string, entrada: Item[], nodos: Record<string, Item[]> =
   };
   const $input = { all: () => entrada, first: () => entrada[0] };
   const vacios = GLOBALES_FUERA_DEL_SANDBOX;
-  const nodo = runInNewContext(`(function ($input, $, ${vacios.join(', ')}) {\n${codigo}\n})`, {});
+  const nodo = compileFunction(codigo, ['$input', '$', ...vacios]);
   return nodo(entrada.length ? $input : $input, $, ...vacios.map(() => undefined));
 }
 
@@ -63,7 +63,7 @@ const NODO_PROSPECTO = leer('crm/nodo-prospecto.js');
 const conMapa = (c: string, m: unknown = MAPA) => inyectarMapa(c, m);
 const FUNCIONES = 'return { crmNeutralizarTexto, crmElemento, crmSanearConfig, crmActivo, crmValidarMapa, crmFilaMasReciente, crmDecidirFila, capCalificar, capResumir, CAP_PRIORIDAD, CRM_CAMPOS_BOT, CRM_CAMPOS_EQUIPO };';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const M: any = runInNewContext(`(function () {\n${conMapa(CRM)}\n${ADAPTADOR}\n${FUNCIONES}\n})()`, {});
+const M: any = compileFunction(`${conMapa(CRM)}\n${ADAPTADOR}\n${FUNCIONES}`, [])();
 const adaptador = { calificar: M.capCalificar, resumir: M.capResumir, prioridad: M.CAP_PRIORIDAD };
 
 const AHORA = Date.UTC(2026, 9, 30, 15, 0, 0);
@@ -294,8 +294,8 @@ describe('el código que corre en n8n', () => {
   });
   it('compila como cuerpo de un nodo Code y no usa globales fuera del sandbox', () => {
     for (const [k, partes] of Object.entries(paq)) {
-      expect(() => new Script(`(function ($input, $) {\n${conMapa(partes.join('\n'))}\n})`), k).not.toThrow();
-      for (const g of GLOBALES_FUERA_DEL_SANDBOX) expect(new RegExp(`(^|[^\\w$.'"«])${g.replace(/[$]/g, '\\$')}\\b(?!['"»])`).test(partes.join('\n').replace(/\/\/.*$/gm, '')), `${k} usa «${g}»`).toBe(false);
+      expect(() => compileFunction(conMapa(partes.join('\n')), ['$input', '$']), k).not.toThrow();
+      for (const g of GLOBALES_FUERA_DEL_SANDBOX) expect(new RegExp(`(^|[^\\w$.'"«])${g.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b(?!['"»])`).test(partes.join('\n').replace(/\/\/.*$/gm, '')), `${k} usa «${g}»`).toBe(false);
     }
     expect(textos).not.toMatch(/\brequire\(|\bnew URL\(|\bBuffer\.|\bcrypto\./);
   });
