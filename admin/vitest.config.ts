@@ -210,6 +210,7 @@ export const SUITES_PURAS = [
   'pruebas/modulos/cobros/visor-consola.test.ts',
   'pruebas/modulos/cobros/comprobantes-recibidos.test.ts',
   'pruebas/plataforma/region-y-cuenta.test.ts',
+  'pruebas/plataforma/crm-cuenta-servicio.test.ts',
   'pruebas/plataforma/scripts-con-registro.test.ts',
   'pruebas/central/saneo.test.ts',
   'pruebas/central/titular-decision.test.ts',

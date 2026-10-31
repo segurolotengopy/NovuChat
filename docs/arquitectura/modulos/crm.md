@@ -91,3 +91,29 @@ del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
 - Con `returnFirstMatch: false` las ejecuciones de n8n guardan todas las filas A a J
   del mismo teléfono (datos de esa sola persona, sin columnas del equipo).
 - `Leer IDs de la planilla` corre una vez por coincidencia.
+
+## Cuenta de servicio por cliente (PR-C)
+
+**Qué resuelve.** Cada subcuenta tiene su planilla del miniCRM. Compartirlas todas con una sola cuenta
+de servicio permitiría que el flujo de un cliente lea o escriba la hoja de otro. Por eso hay UNA cuenta
+de servicio por tenant, `crm-<tenant>`, sin ningún rol (solo toca la planilla que se le comparte a mano
+como editor), y una credencial de n8n por tenant cuyo nombre lleva el tenant
+(`Google Sheets miniCRM (crm-<tenant>)`). La planilla de un cliente se comparte solo con su cuenta y con
+personas del equipo, nunca «cualquiera con el enlace».
+
+**Script.** `admin/scripts/plataforma/crm-cuenta-servicio.mjs` con los subcomandos `crear`,
+`mostrar-correo`, `registrar-credencial-n8n` y `quitar`. Seco por omisión (sin red ni credenciales);
+escribe solo con `--aplicar --confirmo produccion`. El tenant se valida con regex (3 a 26 caracteres, sin
+`--`, para que `crm-<tenant>` quepa en los 30 de una cuenta de servicio). El proyecto de GCP se lee de
+`--proyecto` o de `CRM_PROYECTO_GCP`; nunca está escrito en el archivo. La clave privada se crea en un
+archivo 600 de `/dev/shm`, se sube a n8n y se borra; no pasa por stdout ni por el repositorio, y si no
+llega a n8n se borra también de IAM. El correo de la cuenta no es secreto: `mostrar-correo` lo imprime
+para comunicarlo a la subcuenta.
+
+**Prueba.** `admin/pruebas/plataforma/crm-cuenta-servicio.test.ts` (en `puras`, sin red): rechaza
+tenants inválidos, nombres o credenciales que colisionen entre tenants, una credencial de n8n ya
+existente, una clave que no sea de la cuenta del tenant, y toda escritura sin `--confirmo produccion`;
+comprueba que la clave no aparece en ningún mensaje. Mensajes por conversación: 0.
+
+**Límite honesto.** El script impide que dos tenants compartan cuenta o credencial; lo que decide a quién
+se comparte cada planilla lo hace una persona en Google. Runbook: `docs/runbook-crm-cuenta-servicio.md`.
