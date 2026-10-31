@@ -26,3 +26,5 @@ y la cuenta no se toca.
 **Aislamiento:** la planilla de un cliente no debe figurar compartida con la cuenta de otro. Requisito
 pendiente para PR-F: prueba de CI que recorra `Flujos/clientes/<tenant>/` y falle si un nodo `googleApi`
 usa una credencial distinta de «Google Sheets miniCRM (crm-<tenant>)».
+
+Si el proceso muere con SIGKILL o se corta la energia justo despues de crear la clave, esa clave queda en IAM (en disco no queda nada). La siguiente corrida de `crear` la detecta y se niega; se borra con `rotar` o `quitar`, o a mano.

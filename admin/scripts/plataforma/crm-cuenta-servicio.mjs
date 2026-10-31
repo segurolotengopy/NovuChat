@@ -225,7 +225,8 @@ export function n8nCliente({ baseUrl, apiKey, timeoutMs = 30000 }) {
 function n8nReal(ruta) {
   const env = leerEnv(ruta);
   if (!env.N8N_BASE_URL?.startsWith('https://') || !env.N8N_API_KEY) throw new Error('faltan N8N_BASE_URL (https) o N8N_API_KEY en ENV_FILE');
-  return n8nCliente({ baseUrl: env.N8N_BASE_URL, apiKey: env.N8N_API_KEY });
+  const acceso = { baseUrl: env.N8N_BASE_URL, apiKey: env.N8N_API_KEY };
+  return n8nCliente(acceso);
 }
 
 /**
