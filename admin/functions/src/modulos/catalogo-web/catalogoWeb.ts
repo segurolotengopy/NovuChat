@@ -437,6 +437,8 @@ interface Ficha {
   checkouts: number;
   previa: boolean;
   caducaEn: Timestamp;
+  /** Decidido al leer el tenant (H2b-10): el checkout no hace otra lectura que pueda fallar. */
+  descuentaStock: boolean;
 }
 
 /**
@@ -470,6 +472,7 @@ async function fichaVigente(id: string): Promise<Ficha | null> {
     checkouts: Number(doc.get('checkouts') ?? 0),
     previa: doc.get('previa') === true,
     caducaEn,
+    descuentaStock: fichaDescuentaStock(tenant.data()),
   };
 }
 
@@ -1257,9 +1260,9 @@ export const checkoutCatalogo = onRequest(
     // que el comercio quedó con menos de lo que creía. Al comercio sí, y lo ve
     // en su reporte.
     // Solo si la ficha lleva el módulo `inventario` (H2b-10; antes se descontaba
-    // siempre porque catálogo web y venta venían juntos). Una lectura del tenant.
-    const fichaTenant = await db().doc(`tenants/${ficha.tenantId}`).get();
-    const faltantes = fichaDescuentaStock(fichaTenant.exists ? fichaTenant.data() : null)
+    // siempre porque catálogo web y venta venían juntos). Se decidió al leer la
+    // ficha: sin lectura nueva que pueda fallar después de guardar el pedido.
+    const faltantes = ficha.descuentaStock
       ? await descontarPedido(
         ficha.tenantId, pedidoId, items as Array<{ id?: unknown; cantidad?: unknown }>, 'catalogo-web',
       )

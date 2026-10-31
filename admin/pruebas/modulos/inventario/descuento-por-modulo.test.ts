@@ -23,6 +23,9 @@ describe('fichaDescuentaStock', () => {
     expect(fichaDescuentaStock({ flujos: ['venta'], modulos: ['productos', 'catalogo-web', 'pedidos', 'cobros'] })).toBe(false);
     expect(fichaDescuentaStock({ modulos: [] })).toBe(false);
   });
+  it('modulos que no es lista se ignora y manda el puente de flujos', () => {
+    expect(fichaDescuentaStock({ modulos: 'x' as unknown as string[], flujos: ['venta'] })).toBe(true);
+  });
   it('con modulos que incluyen inventario: descuenta', () => {
     expect(fichaDescuentaStock({ modulos: ['catalogo-web', 'inventario'] })).toBe(true);
   });
@@ -38,7 +41,11 @@ describe('catalogoWeb.ts descuenta solo tras la guarda del módulo', () => {
   it('la llamada a descontarPedido está detrás de fichaDescuentaStock', () => {
     const i = fuente.indexOf('await descontarPedido(');
     expect(i).toBeGreaterThan(0);
-    expect(fuente.slice(Math.max(0, i - 400), i)).toContain('fichaDescuentaStock(');
+    expect(fuente.slice(Math.max(0, i - 400), i)).toContain('ficha.descuentaStock');
     expect(fuente.match(/descontarPedido\(/g)?.length).toBe(1);
+  });
+  it('la guarda se decide al leer la ficha: el checkout no hace una lectura nueva tras guardar', () => {
+    expect(fuente).toContain('descuentaStock: fichaDescuentaStock(tenant.data())');
+    expect(fuente).not.toContain('fichaDescuentaStock(fichaTenant');
   });
 });
