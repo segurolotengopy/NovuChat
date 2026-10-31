@@ -113,6 +113,16 @@ describe('borrar-medios-conversacion', () => {
     for (const e of ['mp4', '3gp', 'bin', 'docx', 'xlsx', 'pptx', 'zip', 'txt', 'csv']) expect(rutaValida(`tenants/t-uno/medios/2026-10-30/${H(1)}.${e}`, 't-uno')).toBe(true);
   });
 
+  it('NEGACIÓN: un documento con ruta y sin idMeta (o no string) cuenta como inválido: aborta y se conserva', async () => {
+    for (const idMeta of [undefined, 123, '']) {
+      const d = escenario(); d['tenants/clinica-uno/mediosRecibidos/m1'].idMeta = idMeta;
+      const { db, docs } = crear(d); const al = almacenDoble(objetosDe()); const antes = new Map(docs);
+      expect((await ejecutar({ db, almacen: al, ...base({ aplicar: true }) }) as any).ok).toBe(false);
+      expect(al.llamadas).toEqual([]);
+      expect(docs).toEqual(antes);
+    }
+  });
+
   it('NEGACIÓN: bucket equivocado (ningún objeto hallado) o inalcanzable no borra metadatos', async () => {
     for (const al of [almacenDoble([]), almacenDoble(objetosDe(), { sinBucket: true }), almacenDoble(objetosDe(), { ciego: true })]) {
       const { db, docs } = crear(escenario()); const antes = new Map(docs);

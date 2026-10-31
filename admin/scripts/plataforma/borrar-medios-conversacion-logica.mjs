@@ -78,7 +78,9 @@ export async function resumir({ db, almacen, tenant, conversacion, docs = null }
     const ruta = d.get('ruta');
     if (ruta == null) continue;
     conRuta += 1;
-    if (!rutaValida(ruta, tenant, d.get('idMeta'))) { invalidas += 1; continue; }
+    // Sin idMeta (string) no se puede comparar el hash del nombre: podría ser el objeto de OTRA conversación.
+    const idMeta = d.get('idMeta');
+    if (typeof idMeta !== 'string' || idMeta === '' || !rutaValida(ruta, tenant, idMeta)) { invalidas += 1; continue; }
     try { if ((await almacen.estado(ruta)) === 'existe') objetos += 1; } catch { ciegos += 1; }
   }
   return { medios: docs.length, porTipo, porEstado, objetos, invalidas, ciegos, conRuta };
@@ -86,8 +88,8 @@ export async function resumir({ db, almacen, tenant, conversacion, docs = null }
 
 /** Respaldo del metadato (sin bytes): carpeta 0700, archivo 0600. Devuelve el nombre (sin ruta). */
 export function respaldar({ carpeta, tenant, conversacion, docs, ahora }) {
-  mkdirSync(carpeta, { recursive: true, mode: 0o700 });
-  chmodSync(carpeta, 0o700);
+  // Solo si la carpeta la creó el script se le fija 0700 (no se cambian los permisos de una carpeta ajena).
+  if (mkdirSync(carpeta, { recursive: true, mode: 0o700 })) chmodSync(carpeta, 0o700);
   const nombre = `respaldo-medios-${tenant}-${conversacion.slice(-4)}-${ahora.toISOString().replace(/[:.]/g, '-')}.json`;
   const ruta = join(carpeta, nombre);
   const destruirAntes = new Date(ahora.getTime() + 30 * 86_400_000).toISOString().slice(0, 10);
@@ -121,7 +123,9 @@ export async function ejecutar({
   try { await almacen.verificar(); } catch { bucketOk = false; }
   if (!bucketOk) log('Atención: el bucket NO es alcanzable; no se aplicará nada.');
 
-  const antes = await resumir({ db, almacen, tenant, conversacion });
+  // UN solo conjunto de documentos: lo que se valida y cuenta es lo que luego se respalda y se borra.
+  const docs = await leerMedios(db, tenant, conversacion);
+  const antes = await resumir({ db, almacen, tenant, conversacion, docs });
   log(`Medios: ${antes.medios} · por tipo ${JSON.stringify(antes.porTipo)} · por estado ${JSON.stringify(antes.porEstado)} · objetos en Storage: ${antes.objetos}`);
   if (antes.invalidas) log(`Atención: ${antes.invalidas} ruta(s) fuera del formato esperado: bloquean --aplicar`);
   if (antes.ciegos) log(`Atención: ${antes.ciegos} objeto(s) cuyo estado no se pudo comprobar: bloquean --aplicar`);
@@ -147,7 +151,6 @@ export async function ejecutar({
     return { ok: false, error: 'hay medios con ruta pero ningún objeto en el bucket (¿bucket equivocado?): no se borró nada; si ya se borraron, use --objetos-ya-borrados' };
   }
 
-  const docs = await leerMedios(db, tenant, conversacion);
   const archivo = respaldar({ carpeta: respaldoEn, tenant, conversacion, docs, ahora });
   log(`Respaldo del metadato creado (600, carpeta 700): ${archivo}. Contiene el teléfono: cifrar o guardar fuera de toda sincronización y destruir en 30 días.`);
 
