@@ -121,3 +121,8 @@ export { confirmarSalidaPersona } from './core/conversacion/confirmarSalidaPerso
 // tiene por `purgarComprobantes`.
 export { guardarMedio } from './core/medios/guardarMedio.js';
 export { purgarMedios } from './core/medios/purgarMedios.js';
+// EL VISOR DE MEDIOS (M3a, 30/10/2026). `verMedio` (callable, 1 GiB, concurrencia 4 fuera de staging, App
+// Check en producción) devuelve los bytes de un medio guardado a admin, operador y soporte con ventana, con
+// auditoría fail-closed y tope por usuario en `topesDeMedios`. Una callable nueva no nace invocable: tras el
+// despliegue, `scripts/nube-visor.sh --servicio vermedio`.
+export { verMedio } from './core/medios/verMedio.js';
