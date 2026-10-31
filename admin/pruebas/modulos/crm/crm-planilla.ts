@@ -92,8 +92,9 @@ describe('clasificación, prioridad y cierre de ventana (por código)', () => {
       const f = decidir({ telefono: TEL, nombre: 'Ana', senales, ultimaInteraccionMs: AHORA });
       expect(f.accionPlanilla).toBe('agregar');
       expect(f[T.clasif]).toBe(clasif);
-      expect(f[T.ultima]).toBe('2026-10-31 11:00');
-      expect(f[T.ventana]).toBe('2026-11-01 11:00');
+      // Las dos fechas van como TEXTO (apóstrofo) tanto al crear como al actualizar: «AAAA-MM-DD HH:MM», hora de La Paz.
+      expect(f[T.ultima]).toBe("'2026-10-31 11:00");
+      expect(f[T.ventana]).toBe("'2026-11-01 11:00");
     }
   });
 });
@@ -108,18 +109,18 @@ describe('mapa con columnas del bot no contiguas', () => {
   });
   const invalido = (cambia: (m: typeof MAPA) => void) => { const m = clonar(MAPA); cambia(m); return M.crmValidarMapa(m) as string[]; };
   it.each([
-    ['un campo del bot en la letra de una columna del equipo (J)', (m: typeof MAPA) => { m.columnas.clasificacion.letra = 'J'; }],
-    ['un campo del bot en la letra del diagnóstico (U)', (m: typeof MAPA) => { m.columnas.ventana24h.letra = 'U'; }],
-    ['el bot en el estado (L)', (m: typeof MAPA) => { m.columnas.derivacion.letra = 'L'; }],
-    ['el bot en la próxima acción (M)', (m: typeof MAPA) => { m.columnas.quePidio.letra = 'M'; }],
-    ['el bot en el responsable (K)', (m: typeof MAPA) => { m.columnas.diaPreferido.letra = 'K'; }],
-    ['una columna del equipo sin declarar dentro del rango leído (hueco en K)', (m: typeof MAPA) => { m.equipo.responsable = null; }],
-    ['letra repetida entre dos del bot', (m: typeof MAPA) => { m.columnas.horarioPreferido.letra = 'N'; }],
-    ['campo del bot desconocido', (m: typeof MAPA) => { m.columnas.raro = { letra: 'V', titulo: 'Raro' }; }],
-    ['el diagnóstico como campo del bot', (m: typeof MAPA) => { m.columnas.diagnostico = { letra: 'V', titulo: 'Otro' }; }],
-    ['título repetido con una del equipo', (m: typeof MAPA) => { m.columnas.quePidio.titulo = T.valor; }],
-  ])('NIEGA: %s', (_n, cambia) => {
-    expect(invalido(cambia as never).length).toBeGreaterThan(0);
+    ['un campo del bot en la letra de una columna del equipo (J)', (m: typeof MAPA) => { m.columnas.clasificacion.letra = 'J'; }, 'equipo.valor: la letra J ya la usa columnas.clasificacion'],
+    ['un campo del bot en la letra del diagnóstico (U)', (m: typeof MAPA) => { m.columnas.ventana24h.letra = 'U'; }, 'equipo.diagnostico: la letra U ya la usa columnas.ventana24h'],
+    ['el bot en el estado (L)', (m: typeof MAPA) => { m.columnas.derivacion.letra = 'L'; }, 'equipo.estado: la letra L ya la usa columnas.derivacion'],
+    ['el bot en la próxima acción (M)', (m: typeof MAPA) => { m.columnas.quePidio.letra = 'M'; }, 'equipo.proximaAccion: la letra M ya la usa columnas.quePidio'],
+    ['el bot en el responsable (K)', (m: typeof MAPA) => { m.columnas.diaPreferido.letra = 'K'; }, 'equipo.responsable: la letra K ya la usa columnas.diaPreferido'],
+    ['una columna del equipo sin declarar dentro del rango leído (hueco en K)', (m: typeof MAPA) => { m.equipo.responsable = null; }, 'la columna K cae dentro del rango que se lee (A a U) y no esta declarada'],
+    ['letra repetida entre dos del bot', (m: typeof MAPA) => { m.columnas.horarioPreferido.letra = 'N'; }, 'columnas.horarioPreferido: la letra N ya la usa columnas.clasificacion'],
+    ['campo del bot desconocido', (m: typeof MAPA) => { m.columnas.raro = { letra: 'V', titulo: 'Raro' }; }, '«raro» no es una columna del bot'],
+    ['el diagnóstico como campo del bot', (m: typeof MAPA) => { m.columnas.diagnostico = { letra: 'V', titulo: 'Otro' }; }, '«diagnostico» no es una columna del bot'],
+    ['título repetido con una del equipo', (m: typeof MAPA) => { m.columnas.quePidio.titulo = T.valor; }, 'equipo.valor: el titulo se repite'],
+  ])('NIEGA: %s', (_n, cambia, mensaje) => {
+    expect(invalido(cambia as never)).toContain(mensaje);
   });
   it('un mapa inválido que llegue al nodo no escribe nada', () => {
     const malo = clonar(MAPA); malo.columnas.clasificacion.letra = 'J';
@@ -226,5 +227,74 @@ describe('reglas de la fila con los campos nuevos', () => {
   });
   it('contacto tras 48 h (nuevoContacto) = fila nueva', () => {
     expect(decidir({ telefono: TEL, nombre: 'Ana', nuevoContacto: true }, [fila(8, TEL)]).accionPlanilla).toBe('agregar');
+  });
+});
+
+describe('decisiones del 31/10: clasificación, textos, derivación y fechas', () => {
+  const CLAS = [T.clasif];
+  const upd = (p: J, previa: string) => decidir({ telefono: TEL, nombre: 'Ana', ...p }, [fila(8, TEL, { [T.clasif]: previa })]);
+  it('«No es lead» SIEMPRE se escribe al actualizar (Tibio → No es lead), aunque sea "bajar" en la escala', () => {
+    for (const previa of ['Tibio', 'Caliente', 'Frío']) expect(upd({ senales: { noEsPaciente: true } }, previa)[T.clasif], previa).toBe('No es lead');
+  });
+  it('sin ninguna señal verdadera no se toca una fila ya clasificada (Tibio por defecto no pisa Frío ni Caliente)', () => {
+    for (const previa of ['Frío', 'Caliente', 'No es lead']) for (const senales of [{}, { aceptoAgendar: 'true', pidioLlamada: 1 }]) {
+      expect(upd({ senales }, previa), previa).not.toHaveProperty(CLAS[0]);
+    }
+  });
+  it('una fila nueva sin señales sí queda en Tibio, y una celda vacía o escrita por una persona se completa', () => {
+    expect(decidir({ telefono: TEL, nombre: 'Ana', senales: {} })[T.clasif]).toBe('Tibio');
+    expect(upd({ senales: {} }, '')[T.clasif]).toBe('Tibio');
+    expect(upd({ senales: {} }, 'a mano')[T.clasif]).toBe('Tibio');
+  });
+  it('textos libres: solo un string; false, números, objetos y listas jamás llegan a la hoja', () => {
+    for (const raro of [false, true, 0, 5, {}, [], ['x'], null, undefined]) {
+      const r = decidir({ telefono: TEL, nombre: 'Ana', quePidio: raro, diaPreferido: raro, horarioPreferido: raro });
+      for (const t of [T.quePidio, T.dia, T.horario]) expect(r, `${JSON.stringify(raro)} ${t}`).not.toHaveProperty(t);
+      const u = decidir({ telefono: TEL, nombre: 'Ana', quePidio: raro, diaPreferido: raro, horarioPreferido: raro }, [fila(8, TEL)]);
+      for (const t of [T.quePidio, T.dia, T.horario]) expect(u).not.toHaveProperty(t);
+    }
+    const todo = JSON.stringify(decidir({ telefono: TEL, nombre: 'Ana', quePidio: false, diaPreferido: {}, horarioPreferido: [{}], derivacion: {} }));
+    expect(todo).not.toMatch(/false|\[object Object\]/);
+  });
+  it('derivación: true = «Sí», false = «No», un string = su texto acotado, lo demás = nada', () => {
+    expect(decidir({ telefono: TEL, nombre: 'A', derivacion: true })[T.deriv]).toBe("'Sí");
+    expect(decidir({ telefono: TEL, nombre: 'A', derivacion: false })[T.deriv]).toBe("'No");
+    expect(decidir({ telefono: TEL, nombre: 'A', derivacion: 'Pasó con recepción' })[T.deriv]).toBe("'Pasó con recepción");
+    expect(String(decidir({ telefono: TEL, nombre: 'A', derivacion: 'x'.repeat(500) })[T.deriv]).length).toBe(81);
+    for (const raro of [0, 1, {}, [], null, undefined, 'x'.repeat(0)]) expect(decidir({ telefono: TEL, nombre: 'A', derivacion: raro }), JSON.stringify(raro)).not.toHaveProperty(T.deriv);
+    expect(decidir({ telefono: TEL, nombre: 'A', derivacion: false }, [fila(8, TEL, { [T.deriv]: 'Sí' })])[T.deriv]).toBe('No');
+  });
+  it('fechas: fuera de 2020..2100, NaN, segundos en vez de milisegundos o no numéricas = no se escriben', () => {
+    const seg = Math.floor(AHORA / 1000);
+    for (const raro of [seg, Date.UTC(2019, 11, 31), Date.UTC(2100, 0, 1), NaN, Infinity, -1, 0, '1793000000000', null, {}, 8.64e15 + 1]) {
+      const r = decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: raro });
+      expect(r, String(raro)).not.toHaveProperty(T.ultima);
+      expect(r).not.toHaveProperty(T.ventana);
+      const u = decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: raro }, [fila(8, TEL)]);
+      expect(u).not.toHaveProperty(T.ultima);
+      expect(u).not.toHaveProperty(T.ventana);
+    }
+    expect(decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: Date.UTC(2020, 0, 1) })[T.ultima]).toBe("'2019-12-31 20:00");
+  });
+  it('la zona horaria cruza la medianoche: 02:30 UTC del 01/11 es 22:30 del 31/10 en La Paz, y la ventana cierra el 01/11 a las 22:30', () => {
+    const r = decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: Date.UTC(2026, 10, 1, 2, 30) });
+    expect(r[T.ultima]).toBe("'2026-10-31 22:30");
+    expect(r[T.ventana]).toBe("'2026-11-01 22:30");
+  });
+  it('al actualizar las fechas también van como texto (apóstrofo) y no se reescriben si no cambian', () => {
+    const u = decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: AHORA }, [fila(8, TEL)]);
+    expect(u[T.ultima]).toBe("'2026-10-31 11:00");
+    expect(u[T.ventana]).toBe("'2026-11-01 11:00");
+    const igual = decidir({ telefono: TEL, nombre: 'A', ultimaInteraccionMs: AHORA }, [fila(8, TEL, { [T.ultima]: '2026-10-31 11:00', [T.ventana]: '2026-11-01 11:00' })]);
+    expect(igual).not.toHaveProperty(T.ultima);
+  });
+  it('cola con un título distinto en U (Diagnóstico renombrado) = columnas de más, no escribe', () => {
+    const r = decidir({ telefono: TEL, nombre: 'A' }, [fila(8, TEL, {})].map((f) => {
+      const n: J = {};
+      for (const [k, v] of Object.entries(f.json)) n[k === T.diag ? 'Notas del médico' : k] = v;
+      return { json: n };
+    }));
+    expect(r.accionPlanilla).toBe('nada');
+    expect(r.veredictoPlanilla).toBe('encabezados_distintos: columnas de más en la fila 3');
   });
 });

@@ -113,8 +113,19 @@ sin los campos nuevos la salida de `crmDecidirFila` es idéntica a la de antes (
 - `crmPrioridad(clasificacion)`: Alta, Media, Baja o N/A (función pura; la planilla no tiene columna de prioridad).
 - `crmVentana24h(ultimaInteraccionMs)`: última interacción + 24 h; se escribe en hora de La Paz («AAAA-MM-DD HH:MM»).
 - El prospecto trae, todos opcionales: `senales`, `quePidio`, `diaPreferido`, `horarioPreferido`, `derivacion`
-  (`true` = «Sí» o un texto), `ultimaInteraccionMs`, `nombreDePerfil`. Si `nombreDePerfil` es `true` y la celda ya
-  tiene nombre, no se pisa. La clasificación sube y no baja al actualizar. Todo texto del cliente se acota y se neutraliza (apóstrofo, `USER_ENTERED`).
+  (`true` = «Sí», `false` = «No», un texto = ese texto acotado a 80, otro tipo = nada), `ultimaInteraccionMs`, `nombreDePerfil`.
+  Si `nombreDePerfil` es `true` y la celda ya tiene nombre, no se pisa.
+- **Clasificación al actualizar:** «No es lead» se escribe SIEMPRE (está fuera de la escala); las demás suben y no bajan;
+  si `senales` no trae ninguna señal verdadera no se toca la de una fila ya clasificada (el Tibio por defecto no pisa
+  Frío ni Caliente). En una fila nueva sin señales queda Tibio.
+- **Textos libres** (`quePidio`, `diaPreferido`, `horarioPreferido`): solo un `string`; `false`, números, objetos y
+  listas dan vacío y no se escriben (jamás «false» ni «[object Object]»). Se acotan (200, 60 y 60) y se neutralizan
+  (apóstrofo, `USER_ENTERED`).
+- **Fechas** (`ultimaInteraccion`, `ventana24h`): el prospecto trae milisegundos entre 2020 y 2100 (segundos, NaN o
+  fuera de rango = no se escribe). Se escriben como **texto con apóstrofo**, tanto al crear como al actualizar, en el
+  formato `AAAA-MM-DD HH:MM` **hora de La Paz** (UTC-4 fijo; 02:30 UTC del 01/11 es `2026-10-31 22:30`).
+- **Costo de escritura:** `ultimaInteraccion` cambia en cada turno, así que cada mensaje del cliente cuesta UNA
+  escritura a Google (actualizar la fila). Mensajes de WhatsApp agregados: 0.
 
 **Mapa relajado.** Las columnas del bot ya no son contiguas. La validación exige letras y títulos sin repetir
 (así un campo del bot nunca cae sobre una letra del equipo), y que todas las letras de A a la última del mapa

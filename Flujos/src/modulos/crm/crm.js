@@ -24,6 +24,7 @@ const CRM_CAMPOS_OBLIGATORIOS = ['id', 'fecha', 'nombre', 'empresa', 'telefono',
 //   Caliente   acepto agendar, pidio la ubicacion o pidio que lo llamen.
 //   Frio       pregunto el precio y cerro la conversacion.
 //   No es lead proveedor o persona que no es paciente.
+const CRM_SENALES = ['aceptoAgendar', 'pidioUbicacion', 'pidioLlamada', 'llegoPorAnuncio', 'preguntoPrecioYCerro', 'noEsPaciente'];
 const CRM_CLASIFICACIONES = ['No es lead', 'Frío', 'Tibio', 'Caliente'];
 function crmClasificar(s) {
   const h = s !== null && typeof s === 'object' ? s : {};
@@ -169,9 +170,15 @@ const crmSeguro = (v) => crmLimpio(v).replace(/^(?:[=+\-@]\s*)+/, '');
 const crmComoTexto = (v) => (crmSeguro(v) ? "'" + crmSeguro(v) : '');
 const crmFechaLaPaz = (ahoraMs) => new Date(ahoraMs - 4 * 3600 * 1000).toISOString().slice(0, 10);
 // «AAAA-MM-DD HH:MM» en La Paz (UTC-4 fijo); dato ilegible = ''.
-const crmFechaHoraLaPaz = (ms) => (typeof ms === 'number' && Number.isFinite(ms) ? new Date(ms - 4 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ') : '');
-// Un texto libre del cliente (dia, horario, que pidio): acotado ANTES de neutralizarlo.
-const crmTextoCorto = (v, max) => crmLimpio(v).slice(0, max);
+// Solo milisegundos de 2020 a 2100: fuera de rango (segundos en vez de ms, fechas absurdas, NaN) = '' y no se escribe.
+const CRM_MS_MIN = Date.UTC(2020, 0, 1);
+const CRM_MS_MAX = Date.UTC(2100, 0, 1);
+const crmMsValido = (ms) => (typeof ms === 'number' && Number.isFinite(ms) && !Number.isNaN(new Date(ms).getTime()) && ms >= CRM_MS_MIN && ms < CRM_MS_MAX ? ms : null);
+const crmFechaHoraLaPaz = (ms) => (crmMsValido(ms) === null ? '' : new Date(ms - 4 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' '));
+// Un texto libre del cliente (dia, horario, que pidio): SOLO un string (nunca «false» ni «[object Object]»), acotado ANTES de neutralizarlo.
+const crmTextoCorto = (v, max) => (typeof v === 'string' ? crmLimpio(v).slice(0, max) : '');
+// «Derivacion a recepcion»: true = «Sí», false = «No», un string = ese texto acotado, cualquier otra cosa = vacio.
+const crmDerivacion = (v) => (v === true ? 'Sí' : v === false ? 'No' : crmTextoCorto(v, 80));
 
 // Por que no se pudo leer: SOLO el tipo y el codigo del error, nunca su mensaje, que podria repetir un dato del cliente.
 const CRM_ESTADOS_GOOGLE = /\b(PERMISSION_DENIED|NOT_FOUND|INVALID_ARGUMENT|RESOURCE_EXHAUSTED|UNAUTHENTICATED|UNAVAILABLE|FAILED_PRECONDITION|DEADLINE_EXCEEDED|INTERNAL)\b/;
@@ -261,14 +268,15 @@ function crmDecidirFila(a) {
     const calificacion = adaptador.calificar(prospecto);
     // CAMPOS NUEVOS (todos opcionales: sin ellos la salida es la de siempre). La clasificacion y el cierre de la ventana los calcula el codigo.
     const clasificacion = p.senales !== null && typeof p.senales === 'object' && mapeado('clasificacion') ? crmClasificar(p.senales) : '';
-    const ultimaMs = typeof p.ultimaInteraccionMs === 'number' && Number.isFinite(p.ultimaInteraccionMs) ? p.ultimaInteraccionMs : null;
-    const derivacionTxt = p.derivacion === true ? 'Sí' : crmTextoCorto(p.derivacion, 80);
+    const ultimaMs = crmMsValido(p.ultimaInteraccionMs);
+    // Sin ninguna senal verdadera, la clasificacion («Tibio» por defecto) solo vale para una fila NUEVA: no pisa la de una fila ya clasificada.
+    const haySenal = p.senales !== null && typeof p.senales === 'object' && CRM_SENALES.some((k) => p.senales[k] === true);
     const extras = [
       ['clasificacion', clasificacion],
       ['quePidio', crmTextoCorto(p.quePidio, 200)],
       ['diaPreferido', crmTextoCorto(p.diaPreferido, 60)],
       ['horarioPreferido', crmTextoCorto(p.horarioPreferido, 60)],
-      ['derivacion', derivacionTxt],
+      ['derivacion', crmDerivacion(p.derivacion)],
       ['ultimaInteraccion', crmFechaHoraLaPaz(ultimaMs)],
       ['ventana24h', crmFechaHoraLaPaz(crmVentana24h(ultimaMs))],
     ].filter(([campo, v]) => v !== '' && mapeado(campo));
@@ -294,9 +302,14 @@ function crmDecidirFila(a) {
         const antes = actual[T(campo)];
         const nuevoV = crmSeguro(v);
         if (!nuevoV || crmLimpio(antes) === nuevoV) continue;
-        // La clasificacion sube y no baja (como la calificacion); un valor que escribio una persona se sobrescribe.
-        if (campo === 'clasificacion' && CRM_CLASIFICACIONES.indexOf(crmLimpio(antes)) >= 0 && CRM_CLASIFICACIONES.indexOf(nuevoV) < CRM_CLASIFICACIONES.indexOf(crmLimpio(antes))) continue;
-        celdas[T(campo)] = nuevoV;
+        if (campo === 'clasificacion') {
+          const previa = CRM_CLASIFICACIONES.indexOf(crmLimpio(antes));
+          // «No es lead» se escribe SIEMPRE (esta fuera de la escala); el resto sube y no baja, y sin senales no toca una fila ya clasificada.
+          // Un valor que escribio una persona (fuera de la escala) se sobrescribe.
+          if (nuevoV !== 'No es lead' && previa >= 0 && (!haySenal || CRM_CLASIFICACIONES.indexOf(nuevoV) < previa)) continue;
+        }
+        // Las fechas van como TEXTO tambien al actualizar (mismo tipo que al crear).
+        celdas[T(campo)] = campo === 'ultimaInteraccion' || campo === 'ventana24h' ? "'" + nuevoV : nuevoV;
       }
       if (!Object.keys(celdas).length) return nada(i, 'sin_cambios');
       out.push({ json: { accionPlanilla: 'actualizar', veredictoPlanilla: 'actualizar', row_number: Number(actual.row_number) + DESFASE, ...celdas }, pairedItem: { item: i } });
@@ -320,7 +333,7 @@ function crmDecidirFila(a) {
       [T('resumen')]: crmComoTexto(adaptador.resumir(prospecto, true, calificacion)),
     };
     if (mapeado('interes')) fila[T('interes')] = crmComoTexto(p.rubro);
-    for (const [campo, v] of extras) fila[T(campo)] = campo === 'clasificacion' ? v : (campo === 'ultimaInteraccion' || campo === 'ventana24h' ? v : crmComoTexto(v));
+    for (const [campo, v] of extras) fila[T(campo)] = campo === 'clasificacion' ? v : crmComoTexto(v);
     if (mapa.alCrear.estado !== undefined && mapa.equipo.estado) fila[mapa.equipo.estado.titulo] = mapa.alCrear.estado;
     out.push({ json: fila, pairedItem: { item: i } });
   });
