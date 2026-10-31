@@ -58,7 +58,8 @@
  *  - **Tope por usuario: 60 por hora y 300 por día** (cifras del integrador, ajustables:
  *    30/100 dejaba sin cuota a quien revisa las 31 fotos de un paciente) en `topesDeMedios/{uid}`
  *    (transaccional, global, propio de los medios: no comparte cupo con el visor
- *    de comprobantes). Cuenta todo intento autorizado antes de leer el metadato.
+ *    de comprobantes). Cuenta todo intento autorizado antes de leer el metadato. Sin cupo,
+ *    a lo sumo UN asiento de «tope» por usuario y hora; los demás intentos no escriben.
  *  - **Un comercio suspendido SÍ puede ver**; dado de baja o inexistente es
  *    `not-found` y no se escribe nada bajo ese comercio.
  *  - Mensajes de error FIJOS; ningún log trae comercio, conversación, teléfono,
@@ -92,7 +93,7 @@ import { CARPETA_DE_DIA, almacenDeMedios, nombreDeObjeto } from './almacen.js';
 import { MB, documentoPorFirma, tipoPorFirma } from './tipos.js';
 
 // ---------------------------------------------------------------------------
-// OPCIONES (copia declarada de `opcionesDeVerComprobante`, con 1 GiB y 60 s)
+// OPCIONES (copia declarada de `opcionesDeVerComprobante`, con 1 GiB y 120 s)
 // ---------------------------------------------------------------------------
 
 /** ¿Se exige App Check? En producción sí; en staging y en el emulador no (como el visor de comprobantes). */
@@ -175,7 +176,7 @@ export const MIME_DE_DESCARGA = 'application/octet-stream';
 
 export type MotivoDeRechazo =
   | 'tope' | 'sin_medio' | 'anotado' | 'pendiente' | 'caducado' | 'ruta_invalida'
-  | 'demasiado_grande' | 'error_almacen' | 'tipo_no_coincide' | 'integridad';
+  | 'demasiado_grande' | 'error_almacen' | 'error_firestore' | 'tipo_no_coincide' | 'integridad';
 
 export const MENSAJES = {
   invalido: 'Solicitud inválida.',
@@ -219,29 +220,43 @@ const extensionDe = (ruta: string): ExtensionLeida => ruta.slice(ruta.lastIndexO
 const numeroValido = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
 
 /**
- * Consume un cupo del usuario en UNA transacción sobre `topesDeMedios/{uid}`: `{hora (La Paz),
- * vistasHora, dia, vistasDia, actualizadoEn}`. `false` si llegó a 30 en la hora o a 100 en el día
- * (sin escribir). Un contador ilegible se trata como agotado (falla cerrado).
+ * Qué pasó con el cupo: `ok` (consumido), `agotado_anotar` (sin cupo, y es la PRIMERA vez en esta hora:
+ * se deja UN asiento de «tope») o `agotado_callar` (sin cupo, y la constancia de esta hora ya está: se
+ * responde sin escribir nada, para que una cuenta que insiste no se convierta en escrituras sin freno;
+ * mismo patrón que la constancia acotada de `guardarMedio`).
  */
-export async function consumirCupoDeMedios(uid: string, ahoraMs: number): Promise<boolean> {
+export type ResultadoDelTope = 'ok' | 'agotado_anotar' | 'agotado_callar';
+
+/**
+ * Consume un cupo del usuario en UNA transacción sobre `topesDeMedios/{uid}`: `{hora (La Paz),
+ * vistasHora, dia, vistasDia, constanciaHora, actualizadoEn}`. Sin cupo si llegó a 60 en la hora o a
+ * 300 en el día; un contador ilegible se trata como agotado (falla cerrado). Sin cupo, la primera vez
+ * de cada hora marca `constanciaHora` en el MISMO documento y en la MISMA transacción; las siguientes
+ * no escriben.
+ */
+export async function consumirCupoDeMedios(uid: string, ahoraMs: number): Promise<ResultadoDelTope> {
   if (!UID_SEGURO.test(uid)) throw new Error('uid inválido para el tope');
   const sello = new Date(ahoraMs - 4 * 3_600_000).toISOString();
   const hora = sello.slice(0, 13);
   const dia = sello.slice(0, 10);
   const db = getFirestore();
   const ref = db.doc(`${COLECCION_DEL_TOPE}/${uid}`);
-  return db.runTransaction(async (tx) => {
+  return db.runTransaction(async (tx): Promise<ResultadoDelTope> => {
     const previo = await tx.get(ref);
     const d = previo.exists ? (previo.data() ?? {}) : {};
     const vistasHora = d['hora'] === hora ? d['vistasHora'] : 0;
     const vistasDia = d['dia'] === dia ? d['vistasDia'] : 0;
-    if (!numeroValido(vistasHora) || !numeroValido(vistasDia)) return false;
-    if (vistasHora >= TOPE_POR_HORA || vistasDia >= TOPE_POR_DIA) return false;
+    if (!numeroValido(vistasHora) || !numeroValido(vistasDia)
+      || vistasHora >= TOPE_POR_HORA || vistasDia >= TOPE_POR_DIA) {
+      if (d['constanciaHora'] === hora) return 'agotado_callar';
+      tx.set(ref, { constanciaHora: hora, actualizadoEn: Timestamp.fromMillis(ahoraMs) }, { merge: true });
+      return 'agotado_anotar';
+    }
     tx.set(ref, {
       hora, vistasHora: vistasHora + 1, dia, vistasDia: vistasDia + 1,
       actualizadoEn: Timestamp.fromMillis(ahoraMs),
     });
-    return true;
+    return 'ok';
   });
 }
 
@@ -376,10 +391,30 @@ async function atender(p: CallableRequest): Promise<MedioVisto> {
 
   // 7. El tope por usuario.
   const ahoraMs = Date.now();
-  if (!(await consumirCupoDeMedios(uid, ahoraMs))) return rechazar('tope', 'resource-exhausted', MENSAJES.tope);
+  // Si Firestore falla acá o al leer el metadato, quien llama tiene rol: se intenta dejar el asiento
+  // `error_firestore` (si tampoco se puede, `rechazar` responde igual `unavailable`). Fail-closed en
+  // los dos casos: ningún byte sale.
+  let tope: ResultadoDelTope;
+  try {
+    tope = await consumirCupoDeMedios(uid, ahoraMs);
+  } catch (e) {
+    registrarRechazo('unavailable', uid, `tope_${codigoDe(e)}`);
+    return rechazar('error_firestore', 'unavailable', MENSAJES.noDisponible);
+  }
+  if (tope === 'agotado_anotar') return rechazar('tope', 'resource-exhausted', MENSAJES.tope);
+  if (tope === 'agotado_callar') {
+    registrarRechazo('resource-exhausted', uid, 'tope_sin_constancia');
+    throw new HttpsError('resource-exhausted', MENSAJES.tope);
+  }
 
   // 8. El metadato: de ESTE medio y ESTA conversación, guardado y sin vencer.
-  const meta = await db.doc(`tenants/${tenantId}/mediosRecibidos/${objeto}`).get();
+  let meta: FirebaseFirestore.DocumentSnapshot;
+  try {
+    meta = await db.doc(`tenants/${tenantId}/mediosRecibidos/${objeto}`).get();
+  } catch (e) {
+    registrarRechazo('unavailable', uid, `metadato_${codigoDe(e)}`);
+    return rechazar('error_firestore', 'unavailable', MENSAJES.noDisponible);
+  }
   if (!meta.exists || meta.get('idMeta') !== idMeta || meta.get('conversacionId') !== conversacionId) {
     return rechazar('sin_medio', 'not-found', MENSAJES.noHay);
   }

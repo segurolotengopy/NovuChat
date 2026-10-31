@@ -2,7 +2,7 @@
  * `verMedio`: LOS BYTES DE UN MEDIO ENTRANTE POR UNA CALLABLE, ESCRITO NEGANDO
  *
  * Contrato M3 (30/10/2026) §1 y contrato v2 §2 («guardar y descargar TODO»): entrada EXACTA
- * `{tenantId, conversacionId, idMeta}`, salida exacta `{tipo, categoria, mime, extension, tamano, base64}`
+ * de CUATRO claves `{tenantId, conversacionId, idMeta, accion}` (`accion`: `'ver'` o `'descargar'`), salida exacta `{tipo, categoria, mime, extension, tamano, base64}`
  * con mime SEGURO (imagen y audio por firma; video y documento, `application/octet-stream`). Cada guarda de `core/medios/verMedio.ts` tiene acá una prueba que
  * falla si se quita. Adaptadas de `pruebas/modulos/cobros/ver-comprobante.test.ts` (T1 a T23).
  *
@@ -686,7 +686,7 @@ describe('el tope por usuario, en topesDeMedios', () => {
     const uid = 'u-carrera';
     await db.doc(`topesDeMedios/${uid}`).set({ hora: hora(), vistasHora: V.TOPE_POR_HORA - 1, dia: dia(), vistasDia: V.TOPE_POR_HORA - 1 });
     const r = await Promise.all([1, 2, 3].map(() => V.consumirCupoDeMedios(uid, Date.now())));
-    expect(r.filter(Boolean)).toHaveLength(1);
+    expect(r.filter((x) => x === 'ok')).toHaveLength(1);
     await expect(V.consumirCupoDeMedios('../tenants/x', Date.now())).rejects.toThrow();
   });
   it('el tope declarado es 60 por hora y 300 por día (cifras del integrador)', () => {
@@ -706,11 +706,39 @@ describe('el tope por usuario, en topesDeMedios', () => {
     const uid = 'u-cifras';
     const t0 = Date.UTC(2026, 9, 9, 14, 0);
     await db.doc(`topesDeMedios/${uid}`).set({ hora: '2026-10-09T10', vistasHora: 59, dia: '2026-10-09', vistasDia: 59 });
-    expect(await V.consumirCupoDeMedios(uid, t0)).toBe(true);
-    expect(await V.consumirCupoDeMedios(uid, t0 + 1)).toBe(false);
+    expect(await V.consumirCupoDeMedios(uid, t0)).toBe('ok');
+    expect(await V.consumirCupoDeMedios(uid, t0 + 1)).toBe('agotado_anotar');
     await db.doc(`topesDeMedios/${uid}`).set({ hora: '2026-10-09T10', vistasHora: 60, dia: '2026-10-09', vistasDia: 299 });
-    expect(await V.consumirCupoDeMedios(uid, Date.UTC(2026, 9, 9, 15, 0))).toBe(true);
-    expect(await V.consumirCupoDeMedios(uid, Date.UTC(2026, 9, 9, 16, 0))).toBe(false);
+    expect(await V.consumirCupoDeMedios(uid, Date.UTC(2026, 9, 9, 15, 0))).toBe('ok');
+    expect(await V.consumirCupoDeMedios(uid, Date.UTC(2026, 9, 9, 16, 0))).toBe('agotado_anotar');
+  });
+  it('sin cupo, a lo sumo UN asiento de «tope» por usuario y hora: el intento 61 escribe uno; el 62 y siguientes, ninguno', async () => {
+    const e = await escena();
+    const a = admin(T);
+    await db.doc(`topesDeMedios/${a.uid}`).set({ hora: hora(), vistasHora: V.TOPE_POR_HORA, dia: dia(), vistasDia: V.TOPE_POR_HORA });
+    await expect(llamar(pedir(e), a)).rejects.toMatchObject(falla('resource-exhausted', FIJOS.tope));
+    expect(await auditoria(T)).toHaveLength(1);
+    const tras61 = (await db.doc(`topesDeMedios/${a.uid}`).get()).data();
+    expect(tras61).toMatchObject({ constanciaHora: hora(), vistasHora: V.TOPE_POR_HORA });
+    const antes = await documentosDe(T);
+    for (let i = 0; i < 5; i++) await expect(llamar(pedir(e), a)).rejects.toMatchObject(falla('resource-exhausted', FIJOS.tope));
+    expect(await auditoria(T)).toHaveLength(1);
+    expect(await documentosDe(T)).toEqual(antes);
+    expect((await db.doc(`topesDeMedios/${a.uid}`).get()).get('actualizadoEn')).toEqual(tras61!['actualizadoEn']);
+    expect(almacen.llamadas).toBe(0);
+    // En la hora siguiente (día también agotado), otra constancia: una por hora, no una para siempre.
+    vi.setSystemTime(Date.now() + 3_600_000);
+    await db.doc(`topesDeMedios/${a.uid}`).update({ dia: dia(), vistasDia: V.TOPE_POR_DIA });
+    await expect(llamar(pedir(e), a)).rejects.toMatchObject({ code: 'resource-exhausted' });
+    await expect(llamar(pedir(e), a)).rejects.toMatchObject({ code: 'resource-exhausted' });
+    expect(await auditoria(T)).toHaveLength(2);
+  });
+  it('un contador corrupto también deja una sola constancia por hora', async () => {
+    const e = await escena();
+    const a = admin(T);
+    await db.doc(`topesDeMedios/${a.uid}`).set({ hora: hora(), vistasHora: 'x', dia: dia(), vistasDia: 0 });
+    for (let i = 0; i < 3; i++) await expect(llamar(pedir(e), a)).rejects.toMatchObject({ code: 'resource-exhausted' });
+    expect(await auditoria(T)).toHaveLength(1);
   });
 });
 
@@ -866,5 +894,41 @@ describe('las firmas que usa verMedio son las de tipos.ts (las mismas de guardar
     const mp4ComoAudio = await escena(T, { idMeta: 'wamid.mp4a', bytes: MP4('isom'), ext: 'm4a' });
     await refMeta(mp4ComoAudio).update({ tipo: 'audio', categoria: 'audio', mime: 'audio/mp4' });
     await expect(llamar(pedir(mp4ComoAudio), admin(T))).rejects.toMatchObject(falla('failed-precondition', FIJOS.noElegible));
+  });
+});
+
+// ===========================================================================
+describe('si Firestore falla en el tope o en el metadato, con rol válido: asiento de rechazo y unavailable', () => {
+  it('la transacción del tope falla: unavailable fijo, un asiento «error_firestore», sin almacén ni bytes', async () => {
+    const e = await escena();
+    const proto = Object.getPrototypeOf(db) as { runTransaction: (...a: unknown[]) => unknown };
+    vi.spyOn(proto, 'runTransaction').mockRejectedValueOnce(Object.assign(new Error(`caída en topesDeMedios/${TEL}`), { code: 14 }));
+    await expect(llamar(pedir(e), admin(T))).rejects.toMatchObject(falla('unavailable', FIJOS.noDisponible));
+    expect((await auditoria(T)).map((x) => [x['motivo'], x['resultado']])).toEqual([['error_firestore', 'rechazado']]);
+    expect(almacen.llamadas).toBe(0);
+    expect(salida.join('\n')).not.toContain(TEL);
+  });
+  it('la lectura del metadato falla: unavailable fijo, un asiento «error_firestore», sin almacén', async () => {
+    const e = await escena();
+    const ref = db.doc(`tenants/${T}/mediosRecibidos/x`);
+    const proto = Object.getPrototypeOf(ref) as { get: (...a: unknown[]) => unknown };
+    const original = proto.get;
+    vi.spyOn(proto, 'get').mockImplementation(function (this: { path: string }, ...a: unknown[]) {
+      if (this.path.includes('/mediosRecibidos/')) return Promise.reject(Object.assign(new Error(`caída en ${this.path}`), { code: 14 }));
+      return original.apply(this, a);
+    });
+    await expect(llamar(pedir(e), admin(T))).rejects.toMatchObject(falla('unavailable', FIJOS.noDisponible));
+    vi.restoreAllMocks();
+    expect((await auditoria(T)).map((x) => x['motivo'])).toEqual(['error_firestore']);
+    expect(almacen.llamadas).toBe(0);
+    expect(salida.join('\n')).not.toContain('mediosRecibidos');
+  });
+  it('si además la auditoría falla, igual unavailable y nada sale (fail-closed)', async () => {
+    const e = await escena();
+    const proto = Object.getPrototypeOf(db) as { runTransaction: (...a: unknown[]) => unknown };
+    vi.spyOn(proto, 'runTransaction').mockRejectedValueOnce(Object.assign(new Error('caída'), { code: 14 }));
+    V.fijarAuditorDeMediosDePrueba(async () => { throw new Error('caída'); });
+    await expect(llamar(pedir(e), admin(T))).rejects.toMatchObject(falla('unavailable', FIJOS.noDisponible));
+    expect(almacen.llamadas).toBe(0);
   });
 });
