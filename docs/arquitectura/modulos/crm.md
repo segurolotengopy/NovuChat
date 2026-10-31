@@ -83,8 +83,6 @@ Reglas: las 4 claves de `equipo` se declaran siempre (columna o `null`); las let
 del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
 `alCrear.estado` (p. ej. «Activo») se escribe SOLO al crear la fila.
 
-**Quién lo incluye (PR-B2, 31/10/2026).** `chat-novuchat` (PR-B) y `captacion-minima` (PR-B2): ninguno lleva copias del código. Captación mínima trae el mismo mapa que NovuChat como dato de su tenant (`admin/scripts/datos/captacion-minima/novuchat.json`, clave `crm`; el ensayo lo hereda). Delta de Captación mínima, declarado y negado en `admin/pruebas/modulos/crm/crm-captacion-minima.test.ts` contra su decidir-fila anterior congelado como oráculo: `seguro` estricto (quita todos los bloques de signos de fórmula del comienzo) y, con dos filas del mismo teléfono, se actualiza la MÁS RECIENTE. Tercer cambio, de control: los encabezados se comparan en orden y letra por letra antes de escribir (columnas de más o movidas dan `encabezados_distintos`). «Leer IDs» corre una sola vez (`executeOnce`) aunque la búsqueda devuelva varias filas. Mensajes por conversación: 0. Sin publicar.
-
 **Limitaciones conocidas.**
 - En una fila NUEVA solo se comprueba el encabezado de la columna A: leer la fila de
   encabezados completa en el alta queda para un PR posterior, para no leer más hoja.
@@ -93,3 +91,34 @@ del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
 - Con `returnFirstMatch: false` las ejecuciones de n8n guardan todas las filas A a J
   del mismo teléfono (datos de esa sola persona, sin columnas del equipo).
 - `Leer IDs de la planilla` corre una vez por coincidencia.
+
+## Cuenta de servicio por cliente (PR-C)
+
+**Qué resuelve.** Cada subcuenta tiene su planilla del miniCRM. Compartirlas todas con una sola cuenta
+de servicio permitiría que el flujo de un cliente lea o escriba la hoja de otro. Por eso hay UNA cuenta
+de servicio por tenant, `crm-<tenant>`, sin ningún rol (solo toca la planilla que se le comparte a mano
+como editor), y una credencial de n8n por tenant cuyo nombre lleva el tenant
+(`Google Sheets miniCRM (crm-<tenant>)`). La planilla de un cliente se comparte solo con su cuenta y con
+personas del equipo, nunca «cualquiera con el enlace».
+
+**Script.** `admin/scripts/plataforma/crm-cuenta-servicio.mjs` con los subcomandos `crear`,
+`mostrar-correo`, `registrar-credencial-n8n`, `rotar` (clave nueva en la misma credencial, mismo id, y borra la vieja) y `quitar` (solo la baja del cliente). Seco por omisión (sin red ni credenciales);
+escribe solo con `--aplicar --confirmo produccion`. El tenant se valida con regex (3 a 26 caracteres, sin
+`--`, para que `crm-<tenant>` quepa en los 30 de una cuenta de servicio). El proyecto de GCP se lee de
+`--proyecto` o de `CRM_PROYECTO_GCP`; nunca está escrito en el archivo. La clave privada se crea en un
+directorio 700 de `/dev/shm` (si no existe, aborta con salida 2: nunca disco), se sube a n8n y se borra siempre (también ante SIGINT, SIGTERM y SIGHUP, salida 130); no pasa por stdout ni por el repositorio, y si no
+llega a n8n se borra también de IAM. El correo de la cuenta no es secreto: `mostrar-correo` lo imprime
+para comunicarlo a la subcuenta.
+
+**Prueba.** `admin/pruebas/plataforma/crm-cuenta-servicio.test.ts` (en `puras`, sin red): rechaza
+tenants inválidos, nombres o credenciales que colisionen entre tenants, una credencial de n8n ya
+existente, una clave que no sea de la cuenta del tenant, y toda escritura sin `--confirmo produccion`;
+comprueba que la clave no aparece en ningún mensaje. Mensajes por conversación: 0.
+
+**Límite honesto.** El script impide que dos tenants compartan cuenta o credencial; lo que decide a quién
+se comparte cada planilla lo hace una persona en Google. Runbook: `docs/runbook-crm-cuenta-servicio.md`.
+
+**Requisito para PR-F (M3).** Que cada flujo use solo la credencial de su tenant no lo garantiza este
+script. PR-F debe agregar una prueba de CI que recorra `Flujos/clientes/<tenant>/` y falle si un nodo
+con credencial `googleApi` usa una distinta de «Google Sheets miniCRM (crm-<tenant>)». Mientras esa
+prueba no exista, el aislamiento depende de revisión humana.
