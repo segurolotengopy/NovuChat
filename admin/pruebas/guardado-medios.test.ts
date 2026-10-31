@@ -1,10 +1,12 @@
 /**
- * EL GUARDADO DE MEDIOS, CORRIENDO (contrato M1↔M2 del 29/10/2026, §1, §2 y §4), contra un DOBLE del servidor `guardarMedio` que responde
+ * EL GUARDADO DE MEDIOS, CORRIENDO (contrato M1↔M2 del 29/10/2026, §1, §2 y §4, con el contrato v2 «guardar y descargar TODO» del 30/10), contra un DOBLE del servidor `guardarMedio` que responde
  * lo que dice el contrato (no el código de M1). Se corre el flujo VERSIONADO de Evy entero en el n8n de mentira, más un recorrido por cada
  * flujo cubierto para ver que la rama no le cambia a nadie lo que recibe el cliente.
  *
- *   - cada respuesta del §2: las de silencio no avisan; 413, 415, 429 y 502 avisan a la recepción (ventana abierta, uno por día, sin datos del paciente);
- *   - docx y xlsx van por ANOTAR, sin pedir la URL ni bajar un byte;
+ *   - cada respuesta del §2: las de silencio no avisan; 413, 415, 429 (cupo del comercio o del teléfono) y 502 avisan a la recepción (ventana abierta, uno
+ *     por día, sin datos del paciente); un 5xx se reintenta UNA vez;
+ *   - TODO medio se guarda con sus bytes: imagen, audio, video, documento de cualquier tipo y sticker (como `image`); ya no hay modo Anotar;
+ *   - el `Content-Type` va saneado (lista cerrada o application/octet-stream) y lo que Meta informa por encima de 16 MiB no se baja (cuenta como 413);
  *   - `guardado_apagado` (la bandera por defecto) es silencio total;
  *   - una falla del guardado (red caída, Meta caída, servidor caído, aviso rechazado) NUNCA impide que el asistente responda, y la rama corre
  *     DESPUÉS de la respuesta;
@@ -24,6 +26,9 @@ import * as ANTONIO from './tenants/rroca-antonio/mundo';
 import * as VM from './lib/venta-minima-mundo';
 
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const MIB16 = 16 * 1024 * 1024;
+const mVideo = (op: J = {}): J => ({ type: 'video', video: { id: 'media-vid', mime_type: 'video/mp4', ...op } });
+const mSticker = (): J => ({ type: 'sticker', sticker: { id: 'media-stk', mime_type: 'image/webp' } });
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const AVISO = (motivo: string): string => `No se pudo guardar un archivo de una conversación (${motivo}). Revísala en la Consola.`;
 
@@ -45,70 +50,75 @@ describe('el pedido a guardarMedio: cabeceras, cuerpo y credenciales (§1)', () 
     expect(g.llamadas.obtener[0]!.url).toMatch(/^https:\/\/graph\.facebook\.com\/v\d+\.\d\/media-img$/);
     expect(g.llamadas.descargar).toHaveLength(1);
     expect(g.llamadas.descargar[0]!.url).toBe('https://lookaside.fbsbx.com/whatsapp_business/attachments/guardado-1');
-    expect(g.llamadas.anotar).toHaveLength(0);
     expect(g.llamadas.servidor).toHaveLength(1);
     const ll = g.llamadas.servidor[0]!;
     expect(ll.nodo).toBe('Guardar medio');
     expect(ll.url).toBe('https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio');
-    expect(ll.encabezados).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.IMG1', 'X-NovuChat-Tipo': 'image' });
+    expect(ll.encabezados).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.IMG1', 'X-NovuChat-Tipo': 'image', 'Content-Type': 'image/jpeg', 'X-NovuChat-Mime': 'image/jpeg' });
     expect(ll.parametros['contentType']).toBe('binaryData');
     expect(ll.parametros['inputDataFieldName']).toBe('data');
     expect(g.llamadas.avisos).toHaveLength(0);
   });
-  it('una nota de voz va como `audio`, y un PDF como `document` (se bajan los dos)', () => {
+  it('TODOS LOS TIPOS se bajan y se guardan con su categoría y el Content-Type saneado (contrato v2 §1 y §4)', () => {
     const { mu, g } = mundo({ respuesta: r(200, { ruta: 'x', repetido: false }) });
-    hablar(mu, ANA, mAudio(), { wamid: 'wamid.AUD1' });
-    hablar(mu, ANA, mDocumento(), { wamid: 'wamid.PDF1' });
-    expect(g.llamadas.servidor.map((x) => [x.nodo, x.encabezados['X-NovuChat-Tipo'], x.encabezados['X-NovuChat-IdMeta']])).toEqual([
-      ['Guardar medio', 'audio', 'wamid.AUD1'], ['Guardar medio', 'document', 'wamid.PDF1'],
-    ]);
-    expect(g.llamadas.descargar).toHaveLength(2);
-  });
-  it.each([['docx', DOCX], ['xlsx', XLSX]])('un %s se ANOTA: cuerpo vacío, `X-NovuChat-Anotar: 1` y el mime de Meta, sin pedir la URL ni bajar un byte', (_, mime) => {
-    const { mu, g } = mundo({ respuesta: r(200, { anotado: true, repetido: false }) });
-    hablar(mu, ANA, mDocumento({ mime_type: mime, filename: 'a' }), { wamid: 'wamid.DOC1' });
-    expect(g.llamadas.obtener).toHaveLength(0);
-    expect(g.llamadas.descargar).toHaveLength(0);
-    expect(g.llamadas.guardar).toHaveLength(0);
-    expect(g.llamadas.anotar).toHaveLength(1);
-    const ll = g.llamadas.anotar[0]!;
-    expect(ll.encabezados).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.DOC1', 'X-NovuChat-Tipo': 'document', 'X-NovuChat-Anotar': '1', 'X-NovuChat-Mime': mime });
-    expect(ll.parametros['sendBody']).toBeUndefined();
-    expect(ll.cuerpo).toBeUndefined();
-    expect(g.llamadas.avisos).toHaveLength(0);
-  });
-  it('un texto, un sticker o una ubicación no tocan el guardado', () => {
-    const { mu, g } = mundo();
-    hablar(mu, ANA, mTexto('hola'));
-    hablar(mu, ANA, { type: 'sticker', sticker: { id: 'stk', mime_type: 'image/webp' } }, { toleraFallo: true });
-    hablar(mu, ANA, { type: 'location', location: { latitude: 1, longitude: 2 } }, { toleraFallo: true });
-    expect(Object.values(g.llamadas).every((l) => l.length === 0)).toBe(true);
-  });
-  it('un medio que Meta informa por encima del límite NO se baja ni llega al servidor (cuenta como 413)', () => {
-    const { mu, g } = mundo({ bytes: 5_000_001, respuesta: r(200, { ruta: 'x', repetido: false }) });
-    abrirVentana(mu);
-    hablar(mu, ANA, mImagen());
-    expect(g.llamadas.descargar.map((x) => x.url)).toEqual(['']);
-    expect(g.llamadas.servidor).toHaveLength(0);
-    expect(g.llamadas.avisos.map((x) => x.cuerpo?.['text']?.['body'])).toEqual([AVISO('el archivo supera el tamaño permitido')]);
-  });
-  it('los límites son los del contrato: imagen 5 MB, PDF 10 MB, audio 16 MB (justo en el límite se baja)', () => {
-    for (const [m, bytes] of [[mImagen(), 5_000_000], [mDocumento(), 10_000_000], [mAudio(), 16_000_000]] as const) {
-      const { mu, g } = mundo({ bytes, respuesta: r(200, { ruta: 'x', repetido: false }) });
-      hablar(mu, ANA, m);
-      expect(g.llamadas.servidor, JSON.stringify(m)).toHaveLength(1);
-      const otro = mundo({ bytes: bytes + 1 });
-      hablar(otro.mu, ANA, m);
-      expect(otro.g.llamadas.servidor, JSON.stringify(m)).toHaveLength(0);
+    // [rótulo, mensaje, X-NovuChat-Tipo, Content-Type (transporte), X-NovuChat-Mime (lo declarado por Meta, saneado)]
+    const OCT = 'application/octet-stream';
+    const casos: [string, J, string, string, string][] = [
+      ['nota de voz', mAudio(), 'audio', 'audio/ogg', 'audio/ogg'],
+      ['PDF', mDocumento(), 'document', OCT, 'application/pdf'],
+      ['docx', mDocumento({ mime_type: DOCX, filename: 'a.docx' }), 'document', OCT, DOCX],
+      ['xlsx', mDocumento({ mime_type: XLSX, filename: 'a.xlsx' }), 'document', OCT, XLSX],
+      ['zip', mDocumento({ mime_type: 'application/zip', filename: 'a.zip' }), 'document', OCT, 'application/zip'],
+      ['ejecutable (mime fuera de la lista)', mDocumento({ mime_type: 'application/x-msdownload', filename: 'a.exe' }), 'document', OCT, OCT],
+      ['html disfrazado de documento', mDocumento({ mime_type: 'text/html', filename: 'a.html' }), 'document', OCT, OCT],
+      // Revisión de #709: un documento que se declara JSON, form o multipart NUNCA sale con ese Content-Type (el framework parsearía el cuerpo).
+      ['documento declarado application/json', mDocumento({ mime_type: 'application/json', filename: 'a.json' }), 'document', OCT, OCT],
+      ['documento declarado form', mDocumento({ mime_type: 'application/x-www-form-urlencoded', filename: 'a' }), 'document', OCT, OCT],
+      ['documento declarado multipart', mDocumento({ mime_type: 'multipart/form-data; boundary=x', filename: 'a' }), 'document', OCT, OCT],
+      ['mime con CRLF (inyección de cabecera)', mDocumento({ mime_type: 'application/pdf\r\nX-Otra: 1', filename: 'a' }), 'document', OCT, OCT],
+      ['documento sin mime', mDocumento({ mime_type: '', filename: 'a' }), 'document', OCT, OCT],
+      ['video', mVideo(), 'video', OCT, 'video/mp4'],
+      ['video 3gp', mVideo({ mime_type: 'video/3gpp' }), 'video', OCT, 'video/3gpp'],
+      ['sticker (como imagen webp)', mSticker(), 'image', 'image/webp', 'image/webp'],
+      ['imagen con mime de otra categoría', mImagen({ mime_type: 'video/mp4' }), 'image', OCT, OCT],
+      ['imagen svg (fuera de la lista)', mImagen({ mime_type: 'image/svg+xml' }), 'image', OCT, OCT],
+      ['imagen declarada application/json', mImagen({ mime_type: 'application/json' }), 'image', OCT, OCT],
+    ];
+    casos.forEach(([, m], i) => hablar(mu, ANA, m, { wamid: `wamid.T${i}`, toleraFallo: true }));
+    expect(g.llamadas.servidor.map((x) => [x.nodo, x.encabezados['X-NovuChat-IdMeta'], x.encabezados['X-NovuChat-Tipo'], x.encabezados['Content-Type'], x.encabezados['X-NovuChat-Mime']]))
+      .toEqual(casos.map(([, , tipo, ct, mime], i) => ['Guardar medio', `wamid.T${i}`, tipo, ct, mime]));
+    // Ninguna cabecera lleva un salto de línea ni un control.
+    for (const ll of g.llamadas.servidor) for (const [k, v] of Object.entries(ll.encabezados)) expect(String(v), k).not.toMatch(/[\r\n\x00-\x1f]/);
+    expect(g.llamadas.descargar).toHaveLength(casos.length);
+    // Ningún pedido lleva las cabeceras del modo Anotar que el contrato v2 quitó.
+    for (const ll of g.llamadas.servidor) {
+      expect(ll.encabezados['X-NovuChat-Anotar'], ll.nodo).toBeUndefined();
+      expect(ll.parametros['contentType']).toBe('binaryData');
     }
   });
-  it('un documento que no es PDF, docx ni xlsx va por Anotar con su mime (el servidor lo rechaza con 415 sin que se baje nada)', () => {
-    const { mu, g } = mundo({ respuesta: r(415, { error: 'tipo_no_admitido' }) });
-    abrirVentana(mu);
-    hablar(mu, ANA, mDocumento({ mime_type: 'application/zip', filename: 'a.zip' }));
-    expect(g.llamadas.descargar).toHaveLength(0);
-    expect(g.llamadas.anotar.map((x) => x.encabezados['X-NovuChat-Mime'])).toEqual(['application/zip']);
-    expect(g.llamadas.avisos.map((x) => x.cuerpo?.['text']?.['body'])).toEqual([AVISO('el tipo de archivo no se admite')]);
+  it('un texto, una ubicación o una reacción no tocan el guardado', () => {
+    const { mu, g } = mundo();
+    hablar(mu, ANA, mTexto('hola'));
+    hablar(mu, ANA, { type: 'location', location: { latitude: 1, longitude: 2 } }, { toleraFallo: true });
+    hablar(mu, ANA, { type: 'reaction', reaction: { message_id: 'wamid.X', emoji: '👍' } }, { toleraFallo: true });
+    expect(Object.values(g.llamadas).every((l) => l.length === 0)).toBe(true);
+  });
+  it('un medio que Meta informa por encima de 16 MiB NO se baja ni llega al servidor (cuenta como 413, con aviso)', () => {
+    for (const m of [mImagen(), mDocumento(), mVideo(), mAudio()]) {
+      const { mu, g } = mundo({ bytes: MIB16 + 1, respuesta: r(200, { ruta: 'x', repetido: false }) });
+      abrirVentana(mu);
+      hablar(mu, ANA, m, { toleraFallo: true });
+      expect(g.llamadas.descargar.map((x) => x.url), JSON.stringify(m)).toEqual(['']);
+      expect(g.llamadas.servidor, JSON.stringify(m)).toHaveLength(0);
+      expect(g.llamadas.avisos.map((x) => x.cuerpo?.['text']?.['body']), JSON.stringify(m)).toEqual([AVISO('el archivo supera el tamaño permitido')]);
+    }
+  });
+  it('el flujo NO se adelanta al tope por tipo del servidor: justo 16 MiB se baja en todos los tipos (una imagen de 6 MB también; la rechaza el servidor con 413)', () => {
+    for (const [m, bytes] of [[mImagen(), 6_000_000], [mImagen(), MIB16], [mDocumento(), MIB16], [mAudio(), MIB16], [mVideo(), MIB16]] as const) {
+      const { mu, g } = mundo({ bytes, respuesta: r(200, { ruta: 'x', repetido: false }) });
+      hablar(mu, ANA, m, { toleraFallo: true });
+      expect(g.llamadas.servidor, `${JSON.stringify(m)} ${bytes}`).toHaveLength(1);
+    }
   });
 });
 
@@ -126,6 +136,7 @@ describe('cada respuesta del §2 se trata, y ninguna rompe el turno', () => {
     ['413 demasiado_grande', r(413, { error: 'demasiado_grande' }), 'el archivo supera el tamaño permitido'],
     ['415 tipo_no_admitido', r(415, { error: 'tipo_no_admitido' }), 'el tipo de archivo no se admite'],
     ['429 cupo_diario_lleno', r(429, { error: 'cupo_diario_lleno' }), 'se llenó el cupo diario de archivos del comercio'],
+    ['429 cupo_telefono_lleno', r(429, { error: 'cupo_telefono_lleno' }), 'se llenó el cupo diario de archivos de una conversación'],
     ['502 no_se_guardo', r(502, { error: 'no_se_guardo' }), 'el servidor no pudo guardarlo'],
     ['502 no_se_registro', r(502, { error: 'no_se_registro' }), 'el servidor no pudo guardarlo'],
     ['500 inesperado', r(500, {}), 'el servidor no pudo guardarlo'],
@@ -156,32 +167,15 @@ describe('cada respuesta del §2 se trata, y ninguna rompe el turno', () => {
     const todo = JSON.stringify(aviso.cuerpo);
     for (const dato of [ANA, 'Ana', 'wamid.PACIENTE1', 'mi foto', 'media-img']) expect(todo, dato).not.toContain(dato);
   });
-  it('Anotar sobre un medio ya guardado: 200 {ruta, repetido:true} también es éxito (silencio)', () => {
-    const { mu, g } = mundo({ respuesta: r(200, { ruta: 'tenants/x/medios/2026-10-05/abc.docx', repetido: true }) });
-    abrirVentana(mu);
-    hablar(mu, ANA, mDocumento({ mime_type: DOCX }));
-    expect(g.llamadas.anotar).toHaveLength(1);
-    expect(g.llamadas.reintentos).toHaveLength(0);
-    expect(g.llamadas.avisos).toHaveLength(0);
-  });
-  it('400 anotar_con_cuerpo es un DEFECTO DEL FLUJO: sin aviso a la recepción, queda registrado en el estado (sin datos del paciente)', () => {
+  it('un 400 que solo daba el modo Anotar (anotar_con_cuerpo) ya no tiene trato propio: se registra como pedidoInvalido, sin aviso', () => {
     const { mu, g } = mundo({ respuesta: r(400, { error: 'anotar_con_cuerpo' }) });
     abrirVentana(mu);
-    const t1 = hablar(mu, ANA, mDocumento({ mime_type: DOCX }), { wamid: 'wamid.DOCX1' });
-    hablar(mu, ANA, mDocumento({ mime_type: XLSX }));
-    expect(t1.fallo).toBeNull();
-    expect(g.llamadas.anotar).toHaveLength(2);
+    hablar(mu, ANA, mDocumento({ mime_type: DOCX }), { wamid: 'wamid.DOCX1' });
     expect(g.llamadas.avisos).toHaveLength(0);
     const estado = mu.sd['guardadoDeMedios'] as J;
-    expect(estado['anotarConCuerpo']).toEqual({ dia: '2026-10-05', n: 2 });
-    expect(estado['avisoDia']).toBeUndefined();
-    expect(JSON.stringify(estado)).not.toContain(ANA);
+    expect(estado['pedidoInvalido']).toEqual({ dia: '2026-10-05', n: 1 });
+    expect(estado['anotarConCuerpo']).toBeUndefined();
     expect(JSON.stringify(estado)).not.toContain('wamid.DOCX1');
-  });
-  it('NIEGA: otro 400 (falta_idmeta) no se registra como anotar_con_cuerpo', () => {
-    const { mu } = mundo({ respuesta: r(400, { error: 'falta_idmeta' }) });
-    hablar(mu, ANA, mDocumento({ mime_type: DOCX }));
-    expect((mu.sd['guardadoDeMedios'] as J)['anotarConCuerpo']).toBeUndefined();
   });
   it('guardado_apagado (la bandera por defecto) es SILENCIO TOTAL: ni aviso, ni marca del día', () => {
     const { mu, g } = mundo();
@@ -203,7 +197,7 @@ describe('el ÚNICO reintento ante un 5xx (revisión del integrador)', () => {
     expect(g.llamadas.reintentos).toHaveLength(1);
     const ll = g.llamadas.reintentos[0]!;
     expect(ll.parametros['sendBody']).toBe(true);
-    expect(JSON.parse(String(ll.parametros['jsonHeaders']))).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.R1', 'X-NovuChat-Tipo': 'image' });
+    expect(JSON.parse(String(ll.parametros['jsonHeaders']))).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.R1', 'X-NovuChat-Tipo': 'image', 'Content-Type': 'image/jpeg', 'X-NovuChat-Mime': 'image/jpeg' });
     expect(g.llamadas.descargar).toHaveLength(1); // el reintento NO vuelve a pedir el medio a Meta
     expect(g.llamadas.avisos).toHaveLength(0);
   });
@@ -214,16 +208,17 @@ describe('el ÚNICO reintento ante un 5xx (revisión del integrador)', () => {
     expect(g.llamadas.servidor).toHaveLength(2);
     expect(g.llamadas.avisos.map((x) => x.cuerpo?.['text']?.['body'])).toEqual([AVISO('el servidor no pudo guardarlo')]);
   });
-  it('en modo Anotar el reintento va SIN cuerpo y con X-NovuChat-Anotar y el mime', () => {
-    const { mu, g } = mundo({ respuesta: secuencia(r(503, {}), r(200, { anotado: true, repetido: false })) });
+  it('un documento cualquiera (xlsx) también se reintenta CON sus bytes, Content-Type octet-stream y su X-NovuChat-Mime (ya no hay Anotar)', () => {
+    const { mu, g } = mundo({ respuesta: secuencia(r(503, {}), r(200, { ruta: 'x', repetido: false })) });
     hablar(mu, ANA, mDocumento({ mime_type: XLSX }), { wamid: 'wamid.R2' });
     const ll = g.llamadas.reintentos[0]!;
-    expect(ll.parametros['sendBody']).toBe(false);
-    expect(JSON.parse(String(ll.parametros['jsonHeaders']))).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.R2', 'X-NovuChat-Tipo': 'document', 'X-NovuChat-Anotar': '1', 'X-NovuChat-Mime': XLSX });
-    expect(g.llamadas.servidor.map((x) => x.nodo)).toEqual(['Anotar medio', 'Reintentar el guardado']);
+    expect(ll.parametros['sendBody']).toBe(true);
+    expect(ll.parametros['contentType']).toBe('binaryData');
+    expect(JSON.parse(String(ll.parametros['jsonHeaders']))).toEqual({ 'X-NovuChat-Numero': PID, 'X-NovuChat-Telefono': ANA, 'X-NovuChat-IdMeta': 'wamid.R2', 'X-NovuChat-Tipo': 'document', 'Content-Type': 'application/octet-stream', 'X-NovuChat-Mime': XLSX });
+    expect(g.llamadas.servidor.map((x) => x.nodo)).toEqual(['Guardar medio', 'Reintentar el guardado']);
   });
   it('NIEGA: un 4xx, un 409 o un 200 no se reintentan', () => {
-    for (const resp of [r(413, { error: 'demasiado_grande' }), r(409, { error: 'guardado_apagado' }), r(429, { error: 'cupo_diario_lleno' }), r(200, { ruta: 'x', repetido: false })]) {
+    for (const resp of [r(413, { error: 'demasiado_grande' }), r(415, { error: 'tipo_no_admitido' }), r(409, { error: 'guardado_apagado' }), r(409, { error: 'en_curso' }), r(429, { error: 'cupo_diario_lleno' }), r(429, { error: 'cupo_telefono_lleno' }), r(200, { ruta: 'x', repetido: false })]) {
       const { mu, g } = mundo({ respuesta: resp });
       hablar(mu, ANA, mImagen());
       expect(g.llamadas.reintentos, JSON.stringify(resp)).toHaveLength(0);
@@ -341,13 +336,15 @@ describe('en cada flujo cubierto la rama se arma igual (mismo código, mismas ca
     const f = leer(archivo);
     const ingesta = (nodo(f, 'Reportar mensaje (entrante)').credentials as J)['httpHeaderAuth']['name'];
     const descarga = nodo(f, 'Descargar medio').credentials as J;
-    for (const n of ['Anotar medio', 'Guardar medio']) expect(nodo(f, n).credentials, `${archivo} · ${n}`).toEqual({ httpHeaderAuth: { id: '', name: ingesta } });
+    for (const n of ['Guardar medio', 'Reintentar el guardado']) expect(nodo(f, n).credentials, `${archivo} · ${n}`).toEqual({ httpHeaderAuth: { id: '', name: ingesta } });
+    // Contrato v2: sin Anotar, nueve nodos.
+    expect(f.nodes.some((x) => /Anotar medio/.test(x.name)), archivo).toBe(false);
     for (const n of ['Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)']) expect(nodo(f, n).credentials, `${archivo} · ${n}`).toEqual(descarga);
     // El aviso sale con la credencial de ENVÍO de su variante (prueba o producción), no con la de descarga.
     expect(nodo(f, 'Avisar falla del guardado').credentials, `${archivo} · aviso`).toEqual(nodo(f, 'Enviar a WhatsApp').credentials);
     // El número del negocio: la misma expresión que el reporte del entrante (misma ruta del token).
     const numero = ((nodo(f, 'Reportar mensaje (entrante)').parameters as J)['headerParameters']['parameters'] as J[]).find((h) => h['name'] === 'X-NovuChat-Numero')!['value'];
-    for (const n of ['Anotar medio', 'Guardar medio']) {
+    for (const n of ['Guardar medio']) {
       expect(((nodo(f, n).parameters as J)['headerParameters']['parameters'] as J[]).find((h) => h['name'] === 'X-NovuChat-Numero')!['value'], `${archivo} · ${n}`).toBe(numero);
     }
   });
@@ -386,6 +383,32 @@ describe('revisión de código de #699: lo que falla sin aviso queda REGISTRADO 
     hablar(mu, ANA, mImagen());
     expect(g.llamadas.descargar.map((x) => x.url)).toEqual(['https://lookaside.fbsbx.com/whatsapp_business/attachments/g']);
     expect(g.llamadas.servidor).toHaveLength(1);
+  });
+  // Revisión de seguridad de #713: video y documento pueden pesar 100 MB; sin tamaño informado NO se bajan. Imagen, audio y sticker sí (el servidor los acota).
+  it.each([
+    ['video sin file_size', mVideo(), undefined], ['video con file_size 0', mVideo(), 0],
+    ['documento sin file_size', mDocumento(), undefined], ['documento con file_size 0', mDocumento(), 0],
+  ] as const)('NIEGA: %s NO se baja ni llega al servidor; queda en guardadoDeMedios.sinTamano y avisa como falla de tamaño', (_, m, bytes) => {
+    const { mu, g } = mundo({ respuesta: r(200, { ruta: 'x', repetido: false }) });
+    mu.dobles['Pedir el medio a Meta (guardado)'] = () => ({ id: 'm', url: 'https://lookaside.fbsbx.com/whatsapp_business/attachments/g', mime_type: 'video/mp4', ...(bytes === undefined ? {} : { file_size: bytes }) });
+    abrirVentana(mu);
+    const t = hablar(mu, ANA, m, { wamid: 'wamid.SINTAM', toleraFallo: true });
+    expect(g.llamadas.descargar.map((x) => x.url)).toEqual(['']);
+    expect(g.llamadas.servidor).toHaveLength(0);
+    const estado = mu.sd['guardadoDeMedios'] as J;
+    expect(estado['sinTamano']).toEqual({ dia: '2026-10-05', n: 1 });
+    expect(estado['sinDescarga']).toBeUndefined();
+    expect(g.llamadas.avisos.map((x) => x.cuerpo?.['text']?.['body'])).toEqual([AVISO('no se pudo comprobar su tamaño')]);
+    expect(JSON.stringify(estado)).not.toContain('wamid.SINTAM');
+    expect(t.mensajes.length).toBeGreaterThan(0);
+  });
+  it.each([['imagen', mImagen()], ['nota de voz', mAudio()], ['sticker', mSticker()]] as const)('%s SIN file_size SÍ se baja (el servidor la acota por tipo)', (_, m) => {
+    const { mu, g } = mundo({ respuesta: r(200, { ruta: 'x', repetido: false }) });
+    mu.dobles['Pedir el medio a Meta (guardado)'] = () => ({ id: 'm', url: 'https://lookaside.fbsbx.com/whatsapp_business/attachments/g', mime_type: 'image/jpeg' });
+    hablar(mu, ANA, m, { toleraFallo: true });
+    expect(g.llamadas.descargar.map((x) => x.url)).toEqual(['https://lookaside.fbsbx.com/whatsapp_business/attachments/g']);
+    expect(g.llamadas.servidor).toHaveLength(1);
+    expect((mu.sd['guardadoDeMedios'] as J)['sinTamano']).toBeUndefined();
   });
   it('NIEGA: una URL que no es del CDN de Meta no se baja, con o sin tamaño', () => {
     const { mu, g } = mundo({ url: 'https://otro.ejemplo.invalid/x' });

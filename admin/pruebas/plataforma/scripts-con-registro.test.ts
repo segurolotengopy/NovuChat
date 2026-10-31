@@ -263,3 +263,39 @@ describe('3. alta-comercio.mjs y asignar-numero.mjs validan el flujo con el regi
     }
   });
 });
+
+describe('4. H2b-7: los scripts escriben `modulos` junto a `flujos` (lectura de código, sin Firebase)', () => {
+  const texto = (r: string) => sinComentarios(leer(r));
+
+  it('alta-comercio.mjs escribe `modulos` derivada del registro', () => {
+    expect(texto('plataforma/alta-comercio.mjs')).toMatch(/modulos:\s*modulosDeFlujos\(FLUJOS\)/);
+  });
+  it('asignar-numero.mjs suma con arrayUnion solo si la ficha ya tiene `modulos`, y lo guarda en el respaldo', () => {
+    const t = texto('plataforma/asignar-numero.mjs');
+    expect(t).toMatch(/modulos:\s*FieldValue\.arrayUnion\(\.\.\.PUENTE_DE_FLUJOS\[FLUJO\]\.modulos\)/);
+    expect(t).toMatch(/sumaModulos\s*\?/);
+    expect(t).toMatch(/modulosAntes/);
+  });
+  it('ensayo.mjs ya no borra `modulos`', () => {
+    const t = texto('plataforma/ensayo.mjs');
+    expect(t).not.toMatch(/modulos:\s*FieldValue\.delete\(\)/);
+    expect(t).toMatch(/modulos:\s*modulosDeFlujos\(\[flujoCliente\]\)/);
+  });
+  it('fijar-flujos y completar-flujos cortan con la ficha que ya tiene `modulos`', () => {
+    expect(leer('plataforma/fijar-flujos-logica.mjs')).toContain('la ficha ya tiene modulos: use aplicar-modulos-tenant.mjs');
+    expect(texto('plataforma/fijar-flujos.mjs')).toMatch(/process\.exit\(resultado\.codigo \?\? 1\)/);
+    expect(texto('plataforma/completar-flujos.mjs')).toMatch(/process\.exit\(2\)/);
+    expect(leer('plataforma/completar-flujos.mjs')).toContain('la ficha ya tiene modulos: use aplicar-modulos-tenant.mjs');
+  });
+  it('migrar-modulos.mjs cuenta los números cuyo flujo no figura en `flujos` y no escribe', () => {
+    const t = texto('plataforma/migrar-modulos.mjs');
+    expect(t).toMatch(/rutasFuera/);
+    expect(t).not.toMatch(/\.(update|create|commit|recursiveDelete)\(|\.doc\([^)]*\)\.(set|delete)\(/);
+  });
+  it('altaTenant escribe `modulos` y agregar un flujo suma con arrayUnion (tenants.ts)', () => {
+    const t = sinComentarios(readFileSync(join(ADMIN, 'functions', 'src', 'plataforma', 'tenants.ts'), 'utf8'));
+    expect(t).toMatch(/modulos:\s*modulosDeFlujos\(/);
+    expect(t).toMatch(/modulos:\s*FieldValue\.arrayUnion\(\.\.\.modulosPorSumar\)/);
+    expect(t).toMatch(/failed-precondition/);
+  });
+});

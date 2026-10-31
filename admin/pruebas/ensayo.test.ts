@@ -273,7 +273,9 @@ describe('ensayo.mjs --flujo venta', () => {
     const ficha = (await db.doc('tenants/ensayo').get()).data() ?? {};
     expect(ficha['vertical']).toBe('venta');
     expect(ficha['flujos']).toEqual(['venta']);
-    expect(ficha['modulos']).toBeUndefined();
+    // H2b-7: ya no se borra; se deriva del flujo del ensayo (la lista vieja ['productos','agenda'] se reemplaza).
+    expect(ficha['modulos']).toEqual(expect.arrayContaining(['productos', 'cobros', 'inventario', 'pedidos', 'catalogo-web']));
+    expect(ficha['modulos']).not.toContain('agenda');
     for (const d of ['pedidos/viejo', 'cierres/viejo', 'conversaciones/viejo', 'conversaciones/viejo/mensajes/m1']) {
       expect((await db.doc(`tenants/ensayo/${d}`).get()).exists, d).toBe(false);
     }
@@ -317,7 +319,9 @@ describe('ensayo.mjs --flujo venta', () => {
     const ficha = (await db.doc('tenants/ensayo').get()).data() ?? {};
     expect(ficha['flujos']).toEqual(['agendamiento']);
     expect(ficha['vertical']).toBe('agendamiento');
-    expect(ficha['modulos']).toBeUndefined();
+    // H2b-7: `modulos` se deriva del flujo del ensayo (agendamiento), sin los restos de venta.
+    expect(ficha['modulos']).toEqual(expect.arrayContaining(['productos', 'cobros', 'agenda']));
+    expect(ficha['modulos']).not.toContain('pedidos');
     expect((await db.doc('tenants/ensayo/pedidos/de-venta-anterior').get()).exists).toBe(false);
     const d = await ruta(NUM_VENTA);
     expect(d).toMatchObject({ tenantId: 'ensayo', ensayoDe: DEMO, flujo: 'agendamiento' });

@@ -757,7 +757,7 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
         expect(f.settings?.['executionOrder']).toBe('v1');
         expect(f.settings?.['timezone']).toBe('America/La_Paz');
         expect(f.settings?.['saveDataSuccessExecution']).toBe('none');
-        expect(f.settings?.['saveDataErrorExecution']).toBe('all'); // D13: se guardan solo las ejecuciones que fallan
+        expect(f.settings?.['saveDataErrorExecution']).toBe('none'); // D13 reemplazada el 30/10 (Andres, contrato v2 de medios §8.1): el binario del medio quedaría en la ejecución
         expect(f.settings?.['errorWorkflow']).toBeUndefined();
         expect(f.settings?.['saveExecutionProgress']).toBe(false);
         const urlsPorExpresion = f.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && /^=\{\{[^}]*\}\}$/.test(String(n.parameters['url'] ?? ''))).map((n) => n.name).sort();
@@ -2229,7 +2229,7 @@ describe('construir.mjs: el flujo armado es el que sale de la plantilla y los da
   it('--verificar FALLA si la retención o el orden de ejecución cambian, o si los rangos y formatos de la planilla se alteran', () => {
     const cambios: [string, (f: Flujo) => void, RegExp][] = [
       ['retención de éxitos', (f) => { f.settings!['saveDataSuccessExecution'] = 'all'; }, /saveDataSuccessExecution/],
-      ['retención de errores (tiene que ser «all»)', (f) => { f.settings!['saveDataErrorExecution'] = 'none'; }, /saveDataErrorExecution/],
+      ['retención de errores (tiene que ser «none»)', (f) => { f.settings!['saveDataErrorExecution'] = 'all'; }, /saveDataErrorExecution/],
       ['un `errorWorkflow`', (f) => { f.settings!['errorWorkflow'] = 'abc'; }, /errorWorkflow/],
       ['progreso guardado', (f) => { f.settings!['saveExecutionProgress'] = true; }, /saveExecutionProgress/],
       ['orden de ejecución', (f) => { f.settings!['executionOrder'] = 'v0'; }, /executionOrder/],
@@ -3077,9 +3077,9 @@ describe('§16: el documento comercial de Kenji, de punta a punta (los JSON vers
   const EXPLICACION_VALIDA = '¡Qué bien! 🍔 En horas pico ya no pierdes pedidos: NovuChat muestra tu menú, toma cada pedido registrando las notas especiales y realiza el cobro con QR para que pase directo a cocina.';
   const modeloPara = (w: W, extra: J): void => modelo(w, { tipo: 'respuesta', ...extra });
 
-  it('el flujo versionado es el del documento comercial: 54 nodos por variante (43 más los 11 del guardado de medios), los datos con «pocos» y sin pregunta de dolor ni nombre de persona', () => {
-    expect(PRODUCCION_REAL.nodes).toHaveLength(54);
-    expect(PRUEBA_REAL.nodes).toHaveLength(54);
+  it('el flujo versionado es el del documento comercial: 52 nodos por variante (43 más los 9 del guardado de medios), los datos con «pocos» y sin pregunta de dolor ni nombre de persona', () => {
+    expect(PRODUCCION_REAL.nodes).toHaveLength(52);
+    expect(PRUEBA_REAL.nodes).toHaveLength(52);
     const guion = JSON.stringify(GUION_NUEVO);
     expect(guion).not.toMatch(/silvana|asesora/i);
     for (const [id, r] of Object.entries(GUION_NUEVO.rubros)) if (id !== 'otro') expect(r['dolor'], id).toBeUndefined();

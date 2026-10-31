@@ -15,7 +15,7 @@
  *   node scripts/plataforma/fijar-flujos.mjs --proyecto <id> --operador <correo> --tenant rroca-antonio --flujos venta
  *   ... --aplicar      # una sola transacción: ficha, config del flujo nuevo y auditoría
  *
- * Sin `--aplicar` no escribe nada. Salida: 0 hecho, o seco sin problemas; 1 rechazo o error; 2 llamada mal hecha.
+ * Sin `--aplicar` no escribe nada. Salida: 0 hecho, o seco sin problemas; 1 rechazo o error; 2 llamada mal hecha o ficha que ya tiene `modulos`.
  */
 import { documentoDeFlujo, esFlujo } from '../../functions/src/registro.ts';
 import { MAX_RUTAS, planearFlujos } from './fijar-flujos-logica.mjs';
@@ -61,7 +61,7 @@ try {
     const ficha = fichaSnap.exists ? fichaSnap.data() : null;
     const rutas = rutasSnap.docs.map((d) => ({ numero: d.id, flujo: d.get('flujo') }));
     const plan = planearFlujos({ ficha, pedidos: PEDIDOS, rutas, esFlujo });
-    if (plan.error) return { error: plan.error };
+    if (plan.error) return { error: plan.error, codigo: plan.codigo };
     const configs = {};
     for (const f of [...plan.agregados, ...plan.quitados]) {
       const doc = documentoDeFlujo(f);
@@ -87,7 +87,7 @@ try {
 }
 if (resultado.error) {
   console.error(`\n  ✗ ${resultado.error}\n`);
-  process.exit(1);
+  process.exit(resultado.codigo ?? 1);
 }
 const { plan, configs } = resultado;
 console.log(`\n  Negocio   : ${TENANT}`);

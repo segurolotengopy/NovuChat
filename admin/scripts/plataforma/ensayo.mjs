@@ -60,6 +60,8 @@ import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { registerHooks } from 'node:module';
+// `registro.ts` no tiene `import`: Node lo carga quitando los tipos.
+import { modulosDeFlujos } from '../../functions/src/registro.ts';
 
 const ENSAYO = 'ensayo';
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -283,6 +285,8 @@ if (APLICAR) {
     const { MODELO_POR_DEFECTO } = await import('../../functions/src/central/ejes.ts');
     await refEnsayo.set({
       nombre: 'Ensayo de NovuChat', estado: 'activo', vertical: flujoCliente, flujos: [flujoCliente],
+      // Doble escritura (H2b-7): `modulos` coherente con el flujo del ensayo.
+      modulos: modulosDeFlujos([flujoCliente]),
       plan: 'pro', modelo: MODELO_POR_DEFECTO, creadoPor: 'ensayo', creadoEn: Timestamp.now(),
     });
     await db.doc(`tenants/${ENSAYO}/cuenta/estado`).set({
@@ -290,9 +294,13 @@ if (APLICAR) {
       estadoPago: 'sin_cargo', montoMensual: 0, moneda: 'USD', actualizadoEn: Timestamp.now(),
     }, { merge: true });
   } else {
-    // SIEMPRE un solo flujo, el de este ensayo, y sin lista `modulos` propia
-    // (que mandaría sobre `flujos`): nada de acumular flujos de ensayos anteriores.
-    await refEnsayo.update({ estado: 'activo', vertical: flujoCliente, flujos: [flujoCliente], modulos: FieldValue.delete() });
+    // SIEMPRE un solo flujo, el de este ensayo, y `modulos` derivada de ESE flujo (H2b-7: antes se
+    // borraba, y la lista que manda en las reglas desaparecía): nada de acumular de ensayos anteriores.
+    // `--restaurar` no toca la ficha `ensayo` (solo devuelve la ruta del demo), así que no hay valor
+    // previo que devolver: cada `--preparar` la reescribe entera.
+    await refEnsayo.update({
+      estado: 'activo', vertical: flujoCliente, flujos: [flujoCliente], modulos: modulosDeFlujos([flujoCliente]),
+    });
     // Los documentos de venta con subcolecciones (conversaciones/mensajes) se
     // borran enteros; el resto va en lote.
     if (vaciarVenta) {
