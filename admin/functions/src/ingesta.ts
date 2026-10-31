@@ -31,7 +31,7 @@ import { validarSesion } from './core/turno/sesion.js';
 // H1-6: los campos derivados de Conversaciones (búsqueda y no leídos). Son más
 // campos en los MISMOS create/set de la transacción: cero lecturas ni escrituras
 // nuevas y cero mensajes. Los escribe el Core para todos los comercios, inertes.
-import { decidirPausa, persistirVencimientoDeIngesta, conPausa } from './core/conversacion/pausa.js';
+import { decidirPausa, persistirVencimientoDeIngesta, conPausa, estaBloqueada } from './core/conversacion/pausa.js';
 import { camposDeConversacionPorMensaje, camposDeMensajeIndexado } from './core/conversacion/derivados.js';
 import {
   HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
@@ -963,6 +963,9 @@ export const ingesta = onRequest(
         tx.get(refConversacion), tx.get(refCuenta), tx.get(refPlataformaPrepago),
       ]);
       const marcas = (conversacion.data() ?? {}) as MarcasDeConteo;
+      // CONTACTO BLOQUEADO (31/10/2026): un entrante de una conversación con `bloqueada === true` NO se cuenta.
+      // Se decide ANTES de cualquier conteo, corte, aviso o métrica; ver la rama `bloqueadoPorContacto` más abajo.
+      const bloqueadoPorContacto = mensaje.direccion === 'entrante' && estaBloqueada(conversacion.get('bloqueada'));
       const conteo = contadoresDelMensaje(marcas, periodo, mensaje.direccion, ahoraMs, mensaje.texto);
 
       // Se mira lo guardado ANTES de aplicar este mensaje: el estado describe
@@ -994,9 +997,9 @@ export const ingesta = onRequest(
       // Con un corte guardado también se lee: hay que saber con exactitud si
       // sigue vigente para borrarlo o no, y sin el agregado `sin_conversaciones`
       // no se puede juzgar.
-      const necesitaMetricas = (conteo.conversacion
+      const necesitaMetricas = !bloqueadoPorContacto && ((conteo.conversacion
         && (avisoConsumoPendiente(cuenta, periodo) || conModalidad))
-        || (conModalidad && corteGuardado !== null);
+        || (conModalidad && corteGuardado !== null));
       const metricasDoc = necesitaMetricas ? await tx.get(refMetricas) : null;
       const previasDelMes = Number(metricasDoc?.get('conversaciones'));
       const avisoConsumo = metricasDoc
@@ -1036,7 +1039,7 @@ export const ingesta = onRequest(
       // queda en la auditoría UNA vez por cuenta, no por mensaje: la marca
       // `incoherencia` en la cuenta es lo que evita repetirla, y se borra sola
       // cuando el dato se corrige (si vuelve a romperse, vuelve a avisar).
-      if (servicio.incoherente) {
+      if (servicio.incoherente && !bloqueadoPorContacto) {
         if (cuentaCruda.incoherencia === undefined) {
           const campos = periodosIncoherentes(cuentaCruda);
           tx.set(refCuenta, { incoherencia: { en: Timestamp.now(), campos } }, { merge: true });
@@ -1049,7 +1052,9 @@ export const ingesta = onRequest(
         tx.set(refCuenta, { incoherencia: FieldValue.delete() }, { merge: true });
       }
 
-      if (rechazo !== null) {
+      if (bloqueadoPorContacto) {
+        // Sin conteo de corte: el mensaje de un contacto bloqueado no se pierde ni se cobra (se resuelve más abajo).
+      } else if (rechazo !== null) {
         // UN CORTE ES NUEVO si no había ninguno, si cambió el motivo, o si
         // cambió de observado a aplicado (o al revés): la fecha «desde» y las
         // pérdidas describen ESE corte. Al pasar de observación a corte real,
@@ -1165,6 +1170,31 @@ export const ingesta = onRequest(
         ...camposDeMensajeIndexado(mensaje.texto, tenantId),
       });
 
+      if (bloqueadoPorContacto) {
+        // CONTACTO BLOQUEADO (`core/conversacion/bloquearContacto.ts`): el asistente calla del todo y el mensaje NO
+        // CUENTA para el plan. Igual que en un corte aplicado se guarda el mensaje y lo mínimo para listarlo (la
+        // persona del comercio tiene que ver que le escribieron), pero NO se toca ningún contador: ni la ventana de
+        // 24 h ni el bloque de 25, ni `atencionEstado`, `periodoContado`, métricas, bolsa, corte, aviso de consumo ni
+        // seña. No hay conversación que facturar ni respuesta que contar: el flujo no responde (atencion
+        // 'bloqueado', aviso vacío). Los salientes de esta conversación (p. ej. un envío ya en curso) siguen su
+        // camino normal. Este es el ÚNICO lugar de la ingesta que decide que un entrante no se cuenta.
+        tx.set(refConversacion, {
+          telefono: mensaje.telefono,
+          canal: 'whatsapp',
+          ultimoMensaje: mensaje.texto.slice(0, 300),
+          ultimoEn: FieldValue.serverTimestamp(),
+          ...(mensaje.nombreContacto ? { nombreContacto: mensaje.nombreContacto } : {}),
+          ...derivadosDeConversacion(),
+        }, { merge: true });
+        escribirMensaje();
+        const sinConteo = {
+          ...conteo, atencion: false, bloqueNuevo: false, conversacion: false, esConsulta: false,
+          personaNueva: false, interaccion: false,
+        };
+        return { atencion, aviso: null, avisoConsumo: null, conteo: sinConteo, servicio, corte, cortado: false, conModalidad,
+          pausadaPorPersona, bloqueadoPorContacto: true };
+      }
+
       if (cortado) {
         // CORTE APLICADO: se escribe el mensaje y lo mínimo de la conversación
         // para listarla (quién y cuándo), y NINGÚN contador de facturación:
@@ -1182,7 +1212,7 @@ export const ingesta = onRequest(
           ...derivadosDeConversacion(),
         }, { merge: true });
         escribirMensaje();
-        return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad, pausadaPorPersona };
+        return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad, pausadaPorPersona, bloqueadoPorContacto: false };
       }
 
       // LA BOLSA (§4undecies.3, punto 6): abrir una conversación con las
@@ -1408,7 +1438,7 @@ export const ingesta = onRequest(
         });
       }
 
-      return { atencion, aviso, avisoConsumo, conteo, servicio, corte, cortado: false, conModalidad, pausadaPorPersona };
+      return { atencion, aviso, avisoConsumo, conteo, servicio, corte, cortado: false, conModalidad, pausadaPorPersona, bloqueadoPorContacto: false };
     });
 
     // Lo que viaja a n8n y al registro sobre el prepago: el estado del
@@ -1510,14 +1540,16 @@ export const ingesta = onRequest(
     // él. El flujo vivo ignora el cuerpo y sigue funcionando igual.
     respuesta.status(200).json({
       atencion: {
-        ...conPausa(veredicto.atencion, veredicto.pausadaPorPersona),
+        ...conPausa(veredicto.atencion, veredicto.pausadaPorPersona || veredicto.bloqueadoPorContacto),
         ventanaVenceEn: veredicto.atencion.ventanaVenceEn === null
           ? null : new Date(veredicto.atencion.ventanaVenceEn).toISOString(),
       },
       // Con la pausa de una persona (H2-2) el aviso va vacío y se agrega `pausadoPorPersona`;
       // sin pausa, las claves son las de siempre.
-      avisarRecepcion: veredicto.pausadaPorPersona ? '' : veredicto.aviso,
+      avisarRecepcion: veredicto.pausadaPorPersona || veredicto.bloqueadoPorContacto ? '' : veredicto.aviso,
       ...(veredicto.pausadaPorPersona ? { pausadoPorPersona: true } : {}),
+      // Contacto bloqueado (31/10/2026): silencio total. Solo la clave se agrega, y solo con bloqueo.
+      ...(veredicto.bloqueadoPorContacto ? { bloqueadoPorContacto: true } : {}),
       // El prepago (bloque A-0): `cortado` si este mensaje no se atendió. El
       // flujo vivo ignora el cuerpo; el corte real entra por el 409 de
       // `configuracionFlujo`, que los tres flujos ya obedecen. SOLO con
@@ -1864,12 +1896,15 @@ export const configuracionFlujo = onRequest(
           // (el vencimiento lo escribe la ingesta con el siguiente entrante). Con pausa,
           // 'bloqueado' y aviso vacío; `atencionEstado` del documento no se toca.
           const pausada = decidirPausa(marcas['turno'], marcas['ultimoEntranteEn'], ahoraMs).pausada;
+          // CONTACTO BLOQUEADO (31/10/2026): misma compuerta, silencio total (aviso vacío).
+          const bloqueada = estaBloqueada(marcas['bloqueada']);
           return {
-            ...conPausa(estado, pausada),
+            ...conPausa(estado, pausada || bloqueada),
             ventanaVenceEn: estado.ventanaVenceEn === null
               ? null : new Date(estado.ventanaVenceEn).toISOString(),
-            avisarRecepcion: pausada ? '' : avisoDeTransicion(marcas['atencionEstado'], estado.estado),
+            avisarRecepcion: pausada || bloqueada ? '' : avisoDeTransicion(marcas['atencionEstado'], estado.estado),
             ...(pausada ? { pausadoPorPersona: true } : {}),
+            ...(bloqueada ? { bloqueadoPorContacto: true } : {}),
           };
         })()
       : null;
