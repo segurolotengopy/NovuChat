@@ -164,3 +164,6 @@ opcional si hay titulares.
   `^[A-Za-z0-9_-]{1,100}$` sin ser `__x__`. La coherencia titular-producto la revisa el modelo
   con la huella, no el servidor por reglas.
 
+### Contacto bloqueado (31/10/2026)
+
+Campañas **no envía mensajes ni arma públicos**: solo inyecta las campañas vigentes al contexto del turno (`alTurnoCampanas`) cuando entra un mensaje. Una conversación bloqueada (`bloqueada === true`, `conversaciones.md` §13) no llega a ese gancho con respuesta: la ingesta responde `bloqueadoPorContacto` y el asistente calla. No hay salida automática que filtrar en este módulo; 0 cambios de código, 0 mensajes.
