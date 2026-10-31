@@ -107,7 +107,7 @@ sabe de la captación: cómo se califica un prospecto (`capCalificar`: Alta,
 Media, Baja, Descalificado, por hechos), cómo se arma el resumen de la ficha
 (`capResumir`: rubro, otros negocios, necesidad, temas, motivos) y el orden de
 las calificaciones (`CAP_PRIORIDAD`). Es la versión de `chat-novuchat` y no se
-parece a `decidir-fila-de-la-planilla.js` de esta carpeta (el histórico del
+parece a `decidir-fila-de-la-planilla.js` que llevaba Captación mínima (hasta el PR-B2 del 31/10/2026, cuando pasó a incluir el módulo `crm`; el histórico del
 manifiesto `novuchat-onboarding.json`, que no se toca). El módulo `crm` no lo
 importa: el paquete `crm-decidir` lo une y `nodo-decidir-fila.js` se lo pasa a
 `crmDecidirFila` como argumento. Mensajes por conversación: 0.

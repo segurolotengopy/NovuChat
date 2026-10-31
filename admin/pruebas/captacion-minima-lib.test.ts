@@ -16,7 +16,7 @@
  * guardias de `--verificar` y los huérfanos, con datos y JSON de EJEMPLO en una carpeta temporal (la plantilla y los nodos
  * del flujo son de la Fase 2). El archivo real de datos (`admin/scripts/datos/captacion-minima/`) también se valida aquí.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { runInNewContext } from 'node:vm';
@@ -1450,10 +1450,13 @@ const plantillaDeEjemplo = (): J => ({
     nodo('Reportar mensaje (entrante)', 'n8n-nodes-base.httpRequest', { url: 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta' }, { credentials: cred('httpHeaderAuth', '@@cred:ingesta') }),
     nodo('Guardar prospecto', 'n8n-nodes-base.httpRequest', { url: '={{ $json.crmUrl }}' }, { credentials: cred('httpHeaderAuth', '@@cred:crm') }),
     nodo('Descargar medio', 'n8n-nodes-base.httpRequest', { url: '={{ $json.url }}' }, { credentials: cred('httpHeaderAuth', '@@cred:graph') }),
-    nodo('Buscar teléfono en planilla', 'n8n-nodes-base.googleSheets', { options: { dataLocationOnSheet: { values: { range: 'A3:J' } } } }, { credentials: cred('googleApi', '@@cred:planilla') }),
+    // La hoja de prospectos la INCLUYE el módulo crm (paquetes `crm-prospecto` y `crm-decidir`); el mapa del tenant fija los rangos de Google.
+    nodo('Prospecto para la planilla', 'n8n-nodes-base.code', { jsCode: '@@medio:crm-prospecto' }),
+    nodo('Decidir fila de la planilla', 'n8n-nodes-base.code', { jsCode: '@@medio:crm-decidir' }),
+    nodo('Buscar teléfono en planilla', 'n8n-nodes-base.googleSheets', { filtersUI: { values: [{ lookupColumn: 'x', lookupValue: 'y' }] }, options: { returnFirstMatch: false, dataLocationOnSheet: { values: { range: 'A3:J' } } } }, { credentials: cred('googleApi', '@@cred:planilla') }),
     nodo('Leer IDs de la planilla', 'n8n-nodes-base.googleSheets', { options: { dataLocationOnSheet: { values: { range: 'A3:A' } } } }, { credentials: cred('googleApi', '@@cred:planilla') }),
-    nodo('Agregar fila', 'n8n-nodes-base.googleSheets', { options: { cellFormat: 'USER_ENTERED' } }, { credentials: cred('googleApi', '@@cred:planilla') }),
-    nodo('Actualizar fila', 'n8n-nodes-base.googleSheets', { options: { cellFormat: 'RAW' } }, { credentials: cred('googleApi', '@@cred:planilla') }),
+    nodo('Agregar fila', 'n8n-nodes-base.googleSheets', { options: { cellFormat: 'USER_ENTERED', locationDefine: { values: { headerRow: 3 } } } }, { credentials: cred('googleApi', '@@cred:planilla') }),
+    nodo('Actualizar fila', 'n8n-nodes-base.googleSheets', { options: { cellFormat: 'RAW', locationDefine: { values: { headerRow: 3, firstDataRow: 4 } } } }, { credentials: cred('googleApi', '@@cred:planilla') }),
   ],
   connections: {
     'WhatsApp Trigger': { main: [[{ node: 'Config base', type: 'main', index: 0 }]] },
@@ -1466,6 +1469,8 @@ const plantillaDeEjemplo = (): J => ({
 });
 
 describe('guardias de --verificar', () => {
+  const DATOS_CRM = { crm: (JSON.parse(readFileSync(join(C.DATOS, 'novuchat.json'), 'utf8')) as J)['crm'] };
+  const G = (entrada: 'trigger' | 'prueba', flujo: J, datos: J = DATOS_CRM): string[] => C.guardias(entrada, flujo, datos);
   const armado = (entrada: 'trigger' | 'prueba'): J => {
     const p = plantillaDeEjemplo();
     p['nodes'] = (p['nodes'] as J[]).filter((n) => n['name'] !== (entrada === 'prueba' ? 'WhatsApp Trigger' : 'Entrada de prueba'));
@@ -1481,39 +1486,39 @@ describe('guardias de --verificar', () => {
   const hay = (hallazgos: string[], patron: RegExp): boolean => hallazgos.some((h) => patron.test(h));
 
   it('un flujo bueno no tiene hallazgos, ni en producción ni en la prueba', () => {
-    expect(C.guardias('trigger', armado('trigger'))).toEqual([]);
-    expect(C.guardias('prueba', armado('prueba'))).toEqual([]);
+    expect(G('trigger', armado('trigger'))).toEqual([]);
+    expect(G('prueba', armado('prueba'))).toEqual([]);
   });
   it('«Entrada de prueba» nunca en producción; «WhatsApp Trigger» nunca en la prueba', () => {
     const prod = armado('trigger');
     (prod['nodes'] as J[]).push(nodo('Entrada de prueba', 'n8n-nodes-base.webhook', { authentication: 'headerAuth', path: 'x' }, { credentials: cred('httpHeaderAuth', 'c') }));
-    expect(hay(C.guardias('trigger', prod), /contiene el nodo «Entrada de prueba»/)).toBe(true);
+    expect(hay(G('trigger', prod), /contiene el nodo «Entrada de prueba»/)).toBe(true);
     const prueba = armado('prueba');
     (prueba['nodes'] as J[]).push(nodo('WhatsApp Trigger', 'n8n-nodes-base.whatsAppTrigger', {}, { credentials: cred('whatsAppTriggerApi', 'Trigger propio') }));
-    expect(hay(C.guardias('prueba', prueba), /contiene el nodo «WhatsApp Trigger» en la prueba/)).toBe(true);
+    expect(hay(G('prueba', prueba), /contiene el nodo «WhatsApp Trigger» en la prueba/)).toBe(true);
   });
   it('producción sin disparador, o con un disparador sin credencial explícita, o con una credencial de la app ajena', () => {
     const sin = armado('trigger');
     sin['nodes'] = (sin['nodes'] as J[]).filter((n) => n['name'] !== 'WhatsApp Trigger');
-    expect(hay(C.guardias('trigger', sin), /no tiene el nodo «WhatsApp Trigger»/)).toBe(true);
+    expect(hay(G('trigger', sin), /no tiene el nodo «WhatsApp Trigger»/)).toBe(true);
     const sinCred = armado('trigger');
     delete nodoDe(sinCred, 'WhatsApp Trigger')['credentials'];
-    expect(hay(C.guardias('trigger', sinCred), /no trae una credencial explícita/)).toBe(true);
+    expect(hay(G('trigger', sinCred), /no trae una credencial explícita/)).toBe(true);
     for (const nombre of ['AAB1-WA-Prod', 'meta wa-prod app', 'Trigger aab1']) {
       const mala = armado('trigger');
       nodoDe(mala, 'WhatsApp Trigger')['credentials'] = cred('whatsAppTriggerApi', nombre);
-      expect(hay(C.guardias('trigger', mala), /prohibición 7/), nombre).toBe(true);
+      expect(hay(G('trigger', mala), /prohibición 7/), nombre).toBe(true);
     }
   });
   it('ningún texto con `subscriptions` ni `subscribed_apps`, en un nodo, un código o una nota', () => {
     for (const texto of ['https://graph.facebook.com/v26.0/1234/subscriptions', 'subscribed_apps', 'SUBSCRIPTIONS']) {
       const p = armado('trigger');
       nodoDe(p, 'Decidir turno')['parameters']['jsCode'] = `// ${texto}\nreturn [];`;
-      expect(hay(C.guardias('trigger', p), /subscriptions|subscribed_apps/), texto).toBe(true);
+      expect(hay(G('trigger', p), /subscriptions|subscribed_apps/), texto).toBe(true);
     }
     const nota = armado('trigger');
     nodoDe(nota, 'Config base')['notes'] = 'ver subscribed_apps';
-    expect(hay(C.guardias('trigger', nota), /prohibición 7/)).toBe(true);
+    expect(hay(G('trigger', nota), /prohibición 7/)).toBe(true);
   });
   it('un nodo HTTP solo habla con Meta, con Gemini y con las Functions de la consola', () => {
     for (const ok of ['=https://graph.facebook.com/v26.0/x/messages', 'https://generativelanguage.googleapis.com/v1beta/models/m:generateContent', 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta', 'REEMPLAZAR_URL_X']) {
@@ -1530,20 +1535,20 @@ describe('guardias de --verificar', () => {
     expect(C.anfitrionPermitido('Guardar prospecto', '={{ $json.url }}')).toBe(false);
     const p = armado('trigger');
     nodoDe(p, 'Enviar a WhatsApp')['parameters']['url'] = 'https://evil.example/x';
-    expect(hay(C.guardias('trigger', p), /«Enviar a WhatsApp» llama a un anfitrión fuera de la lista/)).toBe(true);
+    expect(hay(G('trigger', p), /«Enviar a WhatsApp» llama a un anfitrión fuera de la lista/)).toBe(true);
     const q = armado('trigger');
     nodoDe(q, 'Reportar mensaje (entrante)')['parameters']['url'] = '={{ $json.url }}';
-    expect(hay(C.guardias('trigger', q), /«Reportar mensaje \(entrante\)» llama a un anfitrión/)).toBe(true);
+    expect(hay(G('trigger', q), /«Reportar mensaje \(entrante\)» llama a un anfitrión/)).toBe(true);
   });
   it('ningún nodo agent, memoryBufferWindow ni lmChat*', () => {
     for (const tipo of ['@n8n/n8n-nodes-langchain.agent', '@n8n/n8n-nodes-langchain.memoryBufferWindow', '@n8n/n8n-nodes-langchain.lmChatGoogleGemini', '@n8n/n8n-nodes-langchain.lmChatAnthropic']) {
       const p = armado('trigger');
       (p['nodes'] as J[]).push(nodo('Un agente', tipo));
-      expect(hay(C.guardias('trigger', p), /este flujo no lleva agente, memoria ni modelo de chat/), tipo).toBe(true);
+      expect(hay(G('trigger', p), /este flujo no lleva agente, memoria ni modelo de chat/), tipo).toBe(true);
     }
     const ok = armado('trigger');
     (ok['nodes'] as J[]).push(nodo('Transcribir audio', '@n8n/n8n-nodes-langchain.googleGemini'));
-    expect(C.guardias('trigger', ok)).toEqual([]);
+    expect(G('trigger', ok)).toEqual([]);
   });
   it('retención (éxito `none`, error `all`, D13), sin errorWorkflow, executionOrder v1 y zona de La Paz', () => {
     const cambios: [string, unknown, RegExp][] = [
@@ -1553,63 +1558,68 @@ describe('guardias de --verificar', () => {
     for (const [campo, valor, patron] of cambios) {
       const p = armado('trigger');
       p['settings'][campo] = valor;
-      expect(hay(C.guardias('trigger', p), patron), campo).toBe(true);
+      expect(hay(G('trigger', p), patron), campo).toBe(true);
       if (campo === 'errorWorkflow') continue; // (que falte, está bien)
       const sin = armado('trigger');
       delete sin['settings'][campo];
-      expect(hay(C.guardias('trigger', sin), patron), `sin ${campo}`).toBe(true);
+      expect(hay(G('trigger', sin), patron), `sin ${campo}`).toBe(true);
     }
     const sinAjustes = armado('trigger');
     delete sinAjustes['settings'];
-    expect(C.guardias('trigger', sinAjustes).length).toBeGreaterThanOrEqual(3);
+    expect(G('trigger', sinAjustes).length).toBeGreaterThanOrEqual(3);
   });
   it('la planilla: rangos A3:J y A3:A, «Agregar fila» en USER_ENTERED y «Actualizar fila» en RAW', () => {
     const r1 = armado('trigger');
     nodoDe(r1, 'Buscar teléfono en planilla')['parameters']['options']['dataLocationOnSheet']['values']['range'] = 'A3:N';
-    expect(hay(C.guardias('trigger', r1), /«Buscar teléfono en planilla» tiene que leer solo el rango A3:J/)).toBe(true);
+    expect(hay(G('trigger', r1), /«Buscar teléfono en planilla» tiene que leer solo el rango A3:J/)).toBe(true);
+    // Sin el mapa `crm` no se puede comprobar el rango; y la búsqueda tiene que traer TODAS las coincidencias (el módulo elige la más reciente).
+    expect(hay(C.guardias('trigger', armado('trigger')), /faltan los datos `crm`/)).toBe(true);
+    const r1b = armado('trigger');
+    nodoDe(r1b, 'Buscar teléfono en planilla')['parameters']['options']['returnFirstMatch'] = true;
+    expect(hay(G('trigger', r1b), /TODAS las coincidencias/)).toBe(true);
     const r2 = armado('trigger');
     nodoDe(r2, 'Leer IDs de la planilla')['parameters']['options']['dataLocationOnSheet']['values']['range'] = 'A:Z';
-    expect(hay(C.guardias('trigger', r2), /«Leer IDs de la planilla» tiene que leer solo el rango A3:A/)).toBe(true);
+    expect(hay(G('trigger', r2), /«Leer IDs de la planilla» tiene que leer solo el rango A3:A/)).toBe(true);
     const r3 = armado('trigger');
     nodoDe(r3, 'Agregar fila')['parameters']['options']['cellFormat'] = 'RAW';
-    expect(hay(C.guardias('trigger', r3), /«Agregar fila» tiene que escribir en USER_ENTERED/)).toBe(true);
+    expect(hay(G('trigger', r3), /«Agregar fila» tiene que escribir en USER_ENTERED/)).toBe(true);
     const r4 = armado('trigger');
     nodoDe(r4, 'Actualizar fila')['parameters']['options']['cellFormat'] = 'USER_ENTERED';
-    expect(hay(C.guardias('trigger', r4), /«Actualizar fila» tiene que escribir en RAW/)).toBe(true);
+    expect(hay(G('trigger', r4), /«Actualizar fila» tiene que escribir en RAW/)).toBe(true);
   });
   it('`REEMPLAZAR_` solo en «Config base» y en la ruta de «Entrada de prueba»', () => {
     const ok = armado('prueba');
     nodoDe(ok, 'Config base')['parameters']['assignments']['assignments'].push({ name: 'phoneNumberIdEsperado', type: 'string', value: 'REEMPLAZAR_PHONE_NUMBER_ID_X' });
-    expect(C.guardias('prueba', ok)).toEqual([]);
+    expect(G('prueba', ok)).toEqual([]);
     // Un literal de expresión regular en el código (`/^REEMPLAZAR_/`) para reconocer un marcador no es un marcador.
     nodoDe(ok, 'Decidir turno')['parameters']['jsCode'] = 'return /^REEMPLAZAR_/.test(x);';
-    expect(C.guardias('prueba', ok)).toEqual([]);
+    expect(G('prueba', ok)).toEqual([]);
     const mal = armado('trigger');
     nodoDe(mal, 'Enviar a WhatsApp')['parameters']['url'] = 'https://graph.facebook.com/REEMPLAZAR_ID/mensajes';
-    expect(hay(C.guardias('trigger', mal), /«Enviar a WhatsApp» trae un marcador REEMPLAZAR_/)).toBe(true);
+    expect(hay(G('trigger', mal), /«Enviar a WhatsApp» trae un marcador REEMPLAZAR_/)).toBe(true);
     const cod = armado('trigger');
     nodoDe(cod, 'Decidir turno')['parameters']['jsCode'] = 'const x = "REEMPLAZAR_ALGO";';
-    expect(hay(C.guardias('trigger', cod), /«Decidir turno» trae un marcador REEMPLAZAR_/)).toBe(true);
+    expect(hay(G('trigger', cod), /«Decidir turno» trae un marcador REEMPLAZAR_/)).toBe(true);
     const cr = armado('prueba');
     nodoDe(cr, 'Entrada de prueba')['credentials'] = cred('httpHeaderAuth', 'REEMPLAZAR_CRED');
-    expect(hay(C.guardias('prueba', cr), /«Entrada de prueba» trae un marcador REEMPLAZAR_/)).toBe(true);
+    expect(hay(G('prueba', cr), /«Entrada de prueba» trae un marcador REEMPLAZAR_/)).toBe(true);
   });
   it('los webhooks: ninguno en producción; en la prueba solo «Entrada de prueba», con su credencial de cabecera', () => {
     const prod = armado('trigger');
     (prod['nodes'] as J[]).push(nodo('Un webhook', 'n8n-nodes-base.webhook', { path: 'x' }));
-    expect(hay(C.guardias('trigger', prod), /el webhook «Un webhook» no va en producción/)).toBe(true);
+    expect(hay(G('trigger', prod), /el webhook «Un webhook» no va en producción/)).toBe(true);
     const prueba = armado('prueba');
     (prueba['nodes'] as J[]).push(nodo('Otro webhook', 'n8n-nodes-base.webhook', { path: 'x' }));
-    expect(hay(C.guardias('prueba', prueba), /el webhook «Otro webhook» no es la «Entrada de prueba»/)).toBe(true);
+    expect(hay(G('prueba', prueba), /el webhook «Otro webhook» no es la «Entrada de prueba»/)).toBe(true);
     const sinAuth = armado('prueba');
     nodoDe(sinAuth, 'Entrada de prueba')['parameters']['authentication'] = 'none';
-    expect(hay(C.guardias('prueba', sinAuth), /tiene que exigir una credencial de cabecera/)).toBe(true);
+    expect(hay(G('prueba', sinAuth), /tiene que exigir una credencial de cabecera/)).toBe(true);
     const sinCred = armado('prueba');
     delete nodoDe(sinCred, 'Entrada de prueba')['credentials'];
-    expect(hay(C.guardias('prueba', sinCred), /tiene que exigir una credencial de cabecera/)).toBe(true);
+    expect(hay(G('prueba', sinCred), /tiene que exigir una credencial de cabecera/)).toBe(true);
     const ruta = armado('trigger');
     (ruta['nodes'] as J[]).push(nodo('Webhook de prueba', 'n8n-nodes-base.webhook', { path: 'ruta-de-prueba' }));
-    expect(hay(C.guardias('trigger', ruta), /tiene una ruta de prueba/)).toBe(true);
+    expect(hay(G('trigger', ruta), /tiene una ruta de prueba/)).toBe(true);
   });
   it('huérfanos: todo captacion-minima.*.json tiene su archivo de datos, salvo los *.local.json', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cc-huerf-'));
@@ -1632,7 +1642,11 @@ describe('el armado de punta a punta, con una plantilla de ejemplo', () => {
   let datos = '';
   const CONFIG = {
     plantilla: 'flujo.plantilla.json', raiz: '.', librerias: ['src/lib/captacion.js'], comun: ['src/nodos/_comun.js'],
-    paquetes: { mensajes: ['src/lib/mensajes.js'], filtro: ['src/lib/filtro-redaccion.js'] },
+    paquetes: {
+      mensajes: ['src/lib/mensajes.js'], filtro: ['src/lib/filtro-redaccion.js'],
+      'crm-prospecto': ['src/modulos/crm/crm.js', 'src/modulos/crm/nodo-prospecto.js'],
+      'crm-decidir': ['src/modulos/crm/crm.js', 'src/modulos/captacion/crm-captacion.js', 'src/modulos/crm/nodo-decidir-fila.js'],
+    },
   };
   const MG = 'const CM_GUION = null; // @@guion';
   const MK = 'const CM_CONOCIMIENTO = null; // @@conocimiento';
@@ -1655,6 +1669,11 @@ describe('el armado de punta a punta, con una plantilla de ejemplo', () => {
     writeFileSync(join(dir, 'src/nodos/_comun.js'), 'function cnUno() { return 1; }\n');
     writeFileSync(join(dir, 'src/nodos/config-del-negocio.js'), CONFIG_NODO);
     writeFileSync(join(dir, 'src/nodos/decidir-turno.js'), TURNO_NODO);
+    // El módulo crm (se INCLUYE, no se copia al flujo) y su adaptador de captación.
+    const repo = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/src/modulos');
+    mkdirSync(join(dir, 'src/modulos/captacion'), { recursive: true });
+    cpSync(join(repo, 'crm'), join(dir, 'src/modulos/crm'), { recursive: true });
+    cpSync(join(repo, 'captacion/crm-captacion.js'), join(dir, 'src/modulos/captacion/crm-captacion.js'));
     for (const a of ['novuchat.json', 'ensayo.json']) writeFileSync(join(datos, a), readFileSync(join(C.DATOS, a), 'utf8'));
     escribirPlantilla(plantillaDeEjemplo());
   });
@@ -2131,7 +2150,7 @@ describe('el flujo armado: lo que se versiona', () => {
   });
   it('NIEGA: ningún nodo agent, de memoria ni de modelo de chat, y ningún nombre de comercio ni de persona en el código de `src/`', () => {
     for (const a of archivos) for (const n of nodosDe(leer(a))) expect(String(n['type']), `${a} · ${n['name']}`).not.toMatch(/\.agent$|memoryBufferWindow|lmChat/i);
-    for (const f of ['_comun', 'carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'comercio-no-operativo', 'uso-extendido', 'decidir-turno', 'armar-mensajes', 'resumen-del-turno', 'prospecto-para-la-planilla', 'confirmar-envio']) {
+    for (const f of ['_comun', 'carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'comercio-no-operativo', 'uso-extendido', 'decidir-turno', 'armar-mensajes', 'resumen-del-turno', 'confirmar-envio']) {
       expect(readFileSync(join(CARPETA, `src/nodos/${f}.js`), 'utf8'), f).not.toMatch(/novuchat|silvana|kenji|bellido|q'?taco|platinum/i);
     }
   });
@@ -2151,12 +2170,19 @@ describe('el flujo armado: lo que se versiona', () => {
       expect(fl['settings']).toMatchObject({ executionOrder: 'v1', timezone: 'America/La_Paz', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false });
     }
   });
-  it('«Decidir fila de la planilla» es copia TAL CUAL del archivo de la cantera y el flujo lo lleva sin cambios', () => {
-    const fuente = readFileSync(join(CARPETA, 'src/nodos/decidir-fila-de-la-planilla.js'), 'utf8');
-    expect(fuente).toMatch(/^\/\/ DECIDIR FILA DE LA PLANILLA: con lo que se leyo de la hoja/);
+  it('la hoja de prospectos se INCLUYE del módulo crm (no hay copias en este flujo) y el código del flujo es el del módulo', () => {
+    expect(existsSync(join(CARPETA, 'src/nodos/decidir-fila-de-la-planilla.js'))).toBe(false);
+    expect(existsSync(join(CARPETA, 'src/nodos/prospecto-para-la-planilla.js'))).toBe(false);
+    const plantilla = JSON.parse(readFileSync(join(CARPETA, 'flujo.plantilla.json'), 'utf8')) as J;
+    const js = (nombre: string): string => (plantilla['nodes'] as J[]).find((n) => n['name'] === nombre)!['parameters']['jsCode'];
+    expect(js('Prospecto para la planilla')).toBe('@@medio:crm-prospecto');
+    expect(js('Decidir fila de la planilla')).toBe('@@medio:crm-decidir');
+    const modulo = (f: string): string => readFileSync(join(CARPETA, '../../src/modulos', f), 'utf8').trimEnd();
+    const codigoDe = (fl: J, nombre: string): string => nodosDe(fl).find((x) => x['name'] === nombre)!['parameters']['jsCode'] as string;
     for (const a of archivos) {
-      const n = nodosDe(leer(a)).find((x) => x['name'] === 'Decidir fila de la planilla')!;
-      expect(n['parameters']['jsCode']).toBe(fuente.trimEnd() + '\n');
+      expect(codigoDe(leer(a), 'Decidir fila de la planilla')).toContain(modulo('crm/nodo-decidir-fila.js'));
+      expect(codigoDe(leer(a), 'Decidir fila de la planilla')).toContain(modulo('captacion/crm-captacion.js'));
+      expect(codigoDe(leer(a), 'Prospecto para la planilla')).toContain(modulo('crm/nodo-prospecto.js'));
     }
   });
   it('lo versionado se arma solo desde la plantilla y los datos (`--verificar`)', () => {
@@ -4537,9 +4563,9 @@ describe('§18 (PR #456): lista de permitidos de la explicación, bloqueos comun
     expect(f('ccNecesidadValida')('responder؜ los precios por WhatsApp')).toBe('responder los precios por WhatsApp');
     for (const mala of ['mandar a juan arroba gmail punto com', 'escribir a ventas arroba empresa punto net']) expect(f('ccNecesidadValida')(mala), mala).toBe('');
     expect(f('ccNombreDeEmpresa')('ventas arroba novuchat punto com')).toBe('');
-    const nodo = readFileSync(join(CARPETA, 'src/nodos/decidir-fila-de-la-planilla.js'), 'utf8');
-    const linea = /^const limpio = .*$/m.exec(nodo)![0];
-    const limpio = runInNewContext(`${linea}\nlimpio`, {}) as (v: unknown) => string;
+    const nodo = readFileSync(join(CARPETA, '../../src/modulos/crm/crm.js'), 'utf8');
+    const linea = /^const crmLimpio = .*$/m.exec(nodo)![0];
+    const limpio = runInNewContext(`${linea}\ncrmLimpio`, {}) as (v: unknown) => string;
     expect(limpio('Pana؜dería‮ Luna​')).toBe('Panadería Luna');
   });
 

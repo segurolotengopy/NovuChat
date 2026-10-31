@@ -83,6 +83,8 @@ Reglas: las 4 claves de `equipo` se declaran siempre (columna o `null`); las let
 del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
 `alCrear.estado` (p. ej. «Activo») se escribe SOLO al crear la fila.
 
+**Quién lo incluye (PR-B2, 31/10/2026).** `chat-novuchat` (PR-B) y `captacion-minima` (PR-B2): ninguno lleva copias del código. Captación mínima trae el mismo mapa que NovuChat como dato de su tenant (`admin/scripts/datos/captacion-minima/novuchat.json`, clave `crm`; el ensayo lo hereda). Delta de Captación mínima, declarado y negado en `admin/pruebas/modulos/crm/crm-captacion-minima.test.ts` contra su decidir-fila anterior congelado como oráculo: `seguro` estricto (quita todos los bloques de signos de fórmula del comienzo) y, con dos filas del mismo teléfono, se actualiza la MÁS RECIENTE. Tercer cambio, de control: los encabezados se comparan en orden y letra por letra antes de escribir (columnas de más o movidas dan `encabezados_distintos`). «Leer IDs» corre una sola vez (`executeOnce`) aunque la búsqueda devuelva varias filas. Mensajes por conversación: 0. Sin publicar.
+
 **Limitaciones conocidas.**
 - En una fila NUEVA solo se comprueba el encabezado de la columna A: leer la fila de
   encabezados completa en el alta queda para un PR posterior, para no leer más hoja.
