@@ -47,7 +47,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   IDS_MODULOS, MODULOS_COMUNES_HOY, esFlujo, PUENTE_DE_FLUJOS, documentoDeCobro, etiquetaDeCatalogo,
-  modulosDeFicha, pestanasDe, tieneModulo,
+  modulosDeFicha, flujosDeFicha, pestanasDe, tieneModulo,
 } from '../../functions/src/registro.ts';
 
 // ===========================================================================
@@ -306,6 +306,18 @@ async function principal() {
   }
   for (const t of faltan) { console.log(`  ✗ ${t}: no existe la ficha`); }
 
+  // H2b-7, SOLO CONTEO: números (rutas) cuyo flujo no figura en `flujos` de la ficha de su comercio.
+  // Con `modulos` escrita, esa capacidad queda cerrada en silencio. No se escribe ni se lista el número.
+  const flujosDe = new Map(fichas.map(({ id, ficha }) => [id, flujosDeFicha(ficha)]));
+  const rutasFuera = {};
+  const rutas = await db.collection('rutasWhatsApp').select('tenantId', 'flujo').get();
+  for (const r of rutas.docs) {
+    const t = r.get('tenantId');
+    if (!flujosDe.has(t)) continue;
+    if (!flujosDe.get(t).includes(r.get('flujo'))) rutasFuera[t] = (rutasFuera[t] ?? 0) + 1;
+  }
+  const totalRutasFuera = Object.values(rutasFuera).reduce((a, b) => a + b, 0);
+
   // Documentos de funcionarios/*/privado de los comercios sin agenda: SOLO se cuentan (listDocuments no lee datos).
   console.log('\n  funcionarios/*/privado en comercios sin agenda (solo conteo):');
   let totalPrivados = 0;
@@ -324,6 +336,7 @@ async function principal() {
   console.log(`    flujos que no es lista   : ${flujosNoLista.length}${flujosNoLista.length ? ` (${flujosNoLista.join(', ')})` : ''}`);
   console.log(`    con 2 o más flujos       : ${variosFlujos.length}${variosFlujos.length ? ` (${variosFlujos.join(', ')})` : ''}`);
   console.log(`    con modulos ya escrita   : ${conModulosYa.length}${conModulosYa.length ? ` (${conModulosYa.join(', ')})` : ''}`);
+  console.log(`    números con flujo fuera de `+'`flujos`'+` : ${totalRutasFuera}${totalRutasFuera ? ` (${Object.entries(rutasFuera).map(([t, n]) => `${t}: ${n}`).join(', ')})` : ''}`);
   console.log('\n  Seco: no se escribió nada.\n');
 
   await db.terminate().catch(() => {});

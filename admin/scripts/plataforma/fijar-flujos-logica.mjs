@@ -12,16 +12,19 @@
 /** Cuántas rutas se leen como máximo; con más, se rechaza (no se puede asegurar que ninguna use el flujo quitado). */
 export const MAX_RUTAS = 50;
 
+/** Texto fijo de la negativa para una ficha que ya tiene `modulos`. */
+export const MENSAJE_CON_MODULOS = 'la ficha ya tiene modulos: use aplicar-modulos-tenant.mjs';
+
 export function planearFlujos({ ficha, pedidos, rutas = [], esFlujo }) {
   const problemas = [];
   if (!ficha) return { error: 'el comercio no existe' };
+  // Doble escritura (H2b-7): con `modulos` (lista) cambiar `flujos` sola cerraría capacidades en silencio.
+  // Sale antes que cualquier otra validación, con código 2 (llamada mal hecha para esta ficha).
+  if (ficha.modulos !== undefined && ficha.modulos !== null) return { error: MENSAJE_CON_MODULOS, codigo: 2 };
   if (!Array.isArray(pedidos) || pedidos.length === 0) problemas.push('falta --flujos (al menos uno)');
   const lista = Array.isArray(pedidos) ? pedidos.map((f) => String(f).trim()) : [];
   if (new Set(lista).size !== lista.length) problemas.push('--flujos repite un flujo');
   for (const f of lista) if (!esFlujo(f)) problemas.push(`flujo desconocido: ${f || '(vacío)'}`);
-  if (ficha.modulos !== undefined && ficha.modulos !== null) {
-    problemas.push('la ficha ya tiene `modulos`: no se cambia `flujos` sola (usar aplicar-modulos-tenant)');
-  }
   const antes = Array.isArray(ficha.flujos) ? ficha.flujos.map(String) : [ficha.vertical].filter(Boolean).map(String);
   const quitados = antes.filter((f) => !lista.includes(f));
   const agregados = lista.filter((f) => !antes.includes(f));

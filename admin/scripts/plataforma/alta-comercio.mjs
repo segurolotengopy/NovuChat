@@ -48,7 +48,7 @@ import {
 } from './enlace-privado.mjs';
 // LOS FLUJOS Y SU DOCUMENTO DE CONFIGURACIÓN SALEN DEL REGISTRO (H2b-4e), no de una
 // lista propia: `registro.ts` no tiene `import`, así que Node lo carga quitando los tipos.
-import { documentoDeFlujo, esFlujo } from '../../functions/src/registro.ts';
+import { documentoDeFlujo, esFlujo, modulosDeFlujos } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -158,6 +158,8 @@ const lote = db.batch();
 lote.create(db.doc(`tenants/${TENANT}`), {
   nombre: NOMBRE, estado: 'activo', plan: cuenta.plan,
   vertical: FLUJOS[0], flujos: FLUJOS,
+  // Doble escritura (H2b-7): `modulos` nace coherente con `flujos`.
+  modulos: modulosDeFlujos(FLUJOS),
   waPhoneNumberId: null, waWabaId: null, ...sello,
   // El titular de la cuenta (no la «titularidad» del número): el administrador inicial. Solo NovuChat lo cambia (`fijar-titular.mjs`).
   titularCuentaUid: usuario.uid, titularCuentaEn: sello.creadoEn, titularCuentaPor: 'alta-comercio',
