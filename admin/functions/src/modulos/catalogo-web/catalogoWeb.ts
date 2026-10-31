@@ -54,7 +54,7 @@ import { defineString } from 'firebase-functions/params';
 import { REGION } from '../../core/region.js';
 import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
 import { descontarPedido, hayParaVender } from '../inventario/inventario.js';
-import { sePuedeComprar, idDeItemValido, lineaLimpia, DECIMALES_UBICACION, ubicacionDelPedido } from '../pedidos/comprable.js';
+import { sePuedeComprar, idDeItemValido, lineaLimpia } from '../pedidos/comprable.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../../core/seguridad/firma.js';
 // `enmascarar` sale de `ingesta.ts` y no de `firma.ts`, que tiene la suya con
 // otro recorte. Las dos pasan la regla, pero un mismo teléfono se vería
@@ -165,8 +165,38 @@ export function referenciaDelPedido(cuerpo: Record<string, unknown>, entrega: st
   return entrega === 'envio' ? lineaLimpia(cuerpo['referencia'], MAX_REFERENCIA) : '';
 }
 
-// `DECIMALES_UBICACION` y `ubicacionDelPedido` se mudaron a Pedidos (PR-4), sin cambio de lógica.
-export { DECIMALES_UBICACION, ubicacionDelPedido };
+/** Decimales de la ubicación compartida (5 ≈ 1 m): el mismo número está en la página. */
+export const DECIMALES_UBICACION = 5;
+
+/**
+ * La ubicación que el cliente compartió para la entrega, o null.
+ *
+ * Solo con envío; solo un objeto plano `{ lat, lng }` con números finitos
+ * (las cadenas NO se convierten: una página honesta manda números); dentro de
+ * los rangos de la Tierra; redondeada a 5 decimales (el dato es personal: no
+ * se guarda más precisión de la que sirve para llegar). (0,0) se rechaza: es
+ * el valor de «sin dato» de muchos clientes. Una ubicación inválida se ignora
+ * sin error propio: si además falta la dirección, responde el 400 de siempre.
+ * Las claves de más (p. ej. `accuracy`) se descartan. Con retiro no hay a
+ * dónde llegar, así que no se guarda aunque el cuerpo la traiga.
+ */
+export function ubicacionDelPedido(
+  cuerpo: Record<string, unknown>, entrega: string,
+): { lat: number; lng: number } | null {
+  if (entrega !== 'envio') return null;
+  const u = cuerpo['ubicacion'];
+  if (typeof u !== 'object' || u === null || Array.isArray(u)) return null;
+  const { lat, lng } = u as Record<string, unknown>;
+  if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  const f = 10 ** DECIMALES_UBICACION;
+  const redondea = (x: number): number => Math.round(x * f) / f + 0; // −0 → 0
+  const la = redondea(lat);
+  const ln = redondea(lng);
+  if (la === 0 && ln === 0) return null;
+  return { lat: la, lng: ln };
+}
 
 /**
  * =============================================================================

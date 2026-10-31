@@ -57,26 +57,19 @@ export function lineaLimpia(v: unknown, max: number): string {
   return Array.from(limpio).slice(0, max).join('').trim();
 }
 
-/** Decimales de la ubicación compartida (5 ≈ 1 m): el mismo número está en la página. */
-export const DECIMALES_UBICACION = 5;
+/** Decimales de la ubicación compartida (5 ≈ 1 m). */
+const DECIMALES_UBICACION = 5;
 
 /**
- * La ubicación que el cliente compartió para la entrega, o null.
- *
- * Solo con envío; solo un objeto plano `{ lat, lng }` con números finitos
- * (las cadenas NO se convierten: una página honesta manda números); dentro de
- * los rangos de la Tierra; redondeada a 5 decimales (el dato es personal: no
- * se guarda más precisión de la que sirve para llegar). (0,0) se rechaza: es
- * el valor de «sin dato» de muchos clientes. Una ubicación inválida se ignora
- * sin error propio: si además falta la dirección, responde el 400 de siempre.
- * Las claves de más (p. ej. `accuracy`) se descartan. Con retiro no hay a
- * dónde llegar, así que no se guarda aunque el cuerpo la traiga.
+ * La ubicación de la entrega de un pedido tomado por WhatsApp, o null. Mismas
+ * reglas que `ubicacionDelPedido` del checkout web (que sigue en Catálogo web,
+ * donde sus pruebas leen la fuente): solo con envío, números finitos en rango,
+ * 5 decimales, (0,0) se rechaza.
  */
-export function ubicacionDelPedido(
-  cuerpo: Record<string, unknown>, entrega: string,
+export function ubicacionDeEntrega(
+  u: unknown, entrega: string,
 ): { lat: number; lng: number } | null {
   if (entrega !== 'envio') return null;
-  const u = cuerpo['ubicacion'];
   if (typeof u !== 'object' || u === null || Array.isArray(u)) return null;
   const { lat, lng } = u as Record<string, unknown>;
   if (typeof lat !== 'number' || typeof lng !== 'number') return null;
