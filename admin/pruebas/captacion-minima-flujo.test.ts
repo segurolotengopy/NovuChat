@@ -205,7 +205,7 @@ const campana = (textoDeLaCampana: string, destino?: string, id = 'camp-1'): J =
   id, texto: textoDeLaCampana, inicio: new Date(AHORA - DIA).toISOString(), fin: new Date(AHORA + 5 * DIA).toISOString(), ...(destino ? { destino } : {}),
 });
 
-// La planilla «Leads_CRM»: encabezados en la fila 3 (A3:N3). Es el esquema de `decidir-fila-de-la-planilla.js`, que el contrato
+// La planilla «Leads_CRM»: encabezados en la fila 3 (A3:N3). Es el esquema del mapa `crm` (módulo `Flujos/src/modulos/crm`), que el contrato
 // manda copiar TAL CUAL.
 const ENC = ['ID Lead', 'Fecha Registro', 'Nombre y Apellido', 'Empresa / Cliente', 'Teléfono WhatsApp', 'Rubro', 'Etapa Funnel',
   'Origen / Canal', 'Calificación IA', 'Resumen Chatbot IA', 'Próxima acción', 'Notas del equipo', 'Estado Comercial', 'Responsable'];

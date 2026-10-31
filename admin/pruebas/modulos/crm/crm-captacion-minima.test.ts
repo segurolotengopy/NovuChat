@@ -6,6 +6,7 @@
  *     40 casos de tabla y 300 con semilla fija.
  *   · el delta se DECLARA y se NIEGA: (1) `seguro` pasa a estricto (L2 de chat-novuchat: «= =1» ya no deja «=1»); (2) con dos filas del mismo
  *     teléfono se actualiza la MÁS RECIENTE (antes, la primera que leía n8n, que era la más antigua).
+ *   · tercer cambio, de control: los encabezados se comparan en orden y letra por letra (columnas de más o movidas = `encabezados_distintos`).
  *   · el flujo versionado lleva el código del módulo y el mapa, sin copias.
  * Mensajes por conversación: 0 (ninguna de estas piezas envía).
  */

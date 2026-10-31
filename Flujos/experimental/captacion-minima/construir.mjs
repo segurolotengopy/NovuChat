@@ -641,7 +641,7 @@ export function guardias(entrada, flujo, datos = {}) {
     if (sheet('Buscar teléfono en planilla') && rango(sheet('Buscar teléfono en planilla')) !== `A${f}:${ultima}`) h.push(`«Buscar teléfono en planilla» tiene que leer solo el rango A${f}:${ultima} (nunca las columnas del equipo)`);
     if (sheet('Leer IDs de la planilla') && rango(sheet('Leer IDs de la planilla')) !== `A${f}:A`) h.push(`«Leer IDs de la planilla» tiene que leer solo el rango A${f}:A`);
     const busca = sheet('Buscar teléfono en planilla');
-    if (busca && parametros(busca).options && parametros(busca).options.returnFirstMatch !== false) h.push('«Buscar teléfono en planilla» tiene que traer TODAS las coincidencias (returnFirstMatch false): el módulo crm elige la fila más reciente');
+    if (busca && (parametros(busca).options || {}).returnFirstMatch !== false) h.push('«Buscar teléfono en planilla» tiene que traer TODAS las coincidencias (returnFirstMatch false): el módulo crm elige la fila más reciente');
   }
   if (sheet('Agregar fila') && formato(sheet('Agregar fila')) !== 'USER_ENTERED') h.push('«Agregar fila» tiene que escribir en USER_ENTERED (la fecha queda como fecha)');
   if (sheet('Actualizar fila') && formato(sheet('Actualizar fila')) !== 'RAW') h.push('«Actualizar fila» tiene que escribir en RAW (nada se interpreta)');

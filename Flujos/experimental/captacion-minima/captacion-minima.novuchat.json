@@ -1156,6 +1156,7 @@
       "id": "leer-ids-de-la-planilla",
       "name": "Leer IDs de la planilla",
       "type": "n8n-nodes-base.googleSheets",
+      "executeOnce": true,
       "typeVersion": 4.7,
       "position": [
         5480,
