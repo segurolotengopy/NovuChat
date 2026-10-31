@@ -1,6 +1,7 @@
 /**
  * Core · texto · no repetir (`Flujos/src/core/texto/no-repetir.js`) y pureza de los dos archivos del core de texto.
  * Los hashes LITERALES son los que dio `rrHashTexto` de Rubén (rr.js) el 22/10/2026: los hashes ya guardados en las fichas siguen valiendo.
+ * Las funciones (normalizador, hash) son idénticas a las de rr.js; las alternas de `medio` ya NO lo son: se reescribieron sin «sigo/tampoco» el 23/10/2026 por reclamo de Andres (las de `contenido` siguen siendo las de Rubén).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -120,6 +121,19 @@ describe('core/texto: seguridad de ctAlternaDeRepetido', () => {
       expect(motivo(salida)).not.toBe('');
     }
     expect(motivo(L.ctAlternaDeRepetido({ titular: 'Ana' }))).toBe('');
+  });
+  it('alternas de base (tu y usted, contenido y medio): 3 distintas, <=400, sin saltos, un {titular}, pasan el filtro común; las de medio no presuponen repetición', () => {
+    for (const k of ['tu', 'usted'] as const) for (const c of ['contenido', 'medio'] as const) {
+      const lista = L.CT_ALTERNAS[k][c];
+      expect(new Set(lista).size).toBe(3);
+      for (const x of lista) {
+        expect(x.length).toBeLessThanOrEqual(400);
+        expect(x).not.toMatch(/[\r\n]/);
+        expect(x.split('{titular}').length - 1).toBe(1);
+        expect(motivo(x.split('{titular}').join('Ana'))).toBe('');
+        if (c === 'medio') expect(x).not.toMatch(/\b(sigo|tampoco|otra vez|de nuevo|ya)\b/i);
+      }
+    }
   });
   it('titular: se sanea (control, NUL y bidi fuera) y se corta a 60', () => {
     const r = L.ctAlternaDeRepetido({ alternas: ['Escriba a {titular}.'], titular: 'A\u0000n\u202Ea\u200F\u2066 \u0007Pérez' });
