@@ -25,6 +25,77 @@
     "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
     "limiteInteractivo": 1024
   },
+  "crm": {
+    "filaEncabezados": 3,
+    "prefijoId": "LEAD-",
+    "primerId": 1001,
+    "columnas": {
+      "id": {
+        "letra": "A",
+        "titulo": "ID Lead"
+      },
+      "fecha": {
+        "letra": "B",
+        "titulo": "Fecha Registro"
+      },
+      "nombre": {
+        "letra": "C",
+        "titulo": "Nombre y Apellido"
+      },
+      "empresa": {
+        "letra": "D",
+        "titulo": "Empresa / Cliente"
+      },
+      "telefono": {
+        "letra": "E",
+        "titulo": "Teléfono WhatsApp"
+      },
+      "interes": {
+        "letra": "F",
+        "titulo": "Rubro"
+      },
+      "etapaInicial": {
+        "letra": "G",
+        "titulo": "Etapa Funnel"
+      },
+      "origen": {
+        "letra": "H",
+        "titulo": "Origen / Canal"
+      },
+      "calificacion": {
+        "letra": "I",
+        "titulo": "Calificación IA"
+      },
+      "resumen": {
+        "letra": "J",
+        "titulo": "Resumen Chatbot IA"
+      }
+    },
+    "equipo": {
+      "valor": null,
+      "responsable": {
+        "letra": "N",
+        "titulo": "Responsable"
+      },
+      "estado": {
+        "letra": "M",
+        "titulo": "Estado Comercial"
+      },
+      "proximaAccion": {
+        "letra": "K",
+        "titulo": "Próxima acción"
+      }
+    },
+    "extrasDelEquipo": {
+      "L": "Notas del equipo"
+    },
+    "alCrear": {
+      "etapaInicial": "1. Nuevo Lead",
+      "origen": "Chatbot WhatsApp IA",
+      "origenAnuncio": "Campaña Meta Ads",
+      "estado": "Activo"
+    }
+  },
   "guion": {
     "asesor": {
       "nombre": ""

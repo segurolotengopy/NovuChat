@@ -190,7 +190,9 @@ describe('cableado: los tres puntos donde el nombre llega al modelo pasan por el
   it('ingesta.ts arma anuncios, resumen y catálogo del prompt desde catalogoParaElPrompt', () => {
     const s = leer('ingesta.ts');
     expect(s).toContain('catalogoParaElPrompt(catalogo.docs)');
-    expect(s.match(/catalogoPrompt\.docs\.map/g)?.length).toBe(4);
+    // 5 = anuncios, resumen, catálogo del prompt, ganchos de campañas y el gancho de inventario (F3b-2c, que solo
+    // lee el stock: el nombre no sale de ahí). Todos parten de los documentos ya filtrados.
+    expect(s.match(/catalogoPrompt\.docs\.map/g)?.length).toBe(5);
   });
   it('el contexto de campañas filtra los servicios', () => {
     expect(leer('modulos/campanas/verificarCampanas.ts')).toContain('nombreParaElModelo(d.get(\'nombre\'))');
