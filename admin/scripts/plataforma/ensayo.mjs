@@ -232,11 +232,10 @@ const refEnsayo = db.doc(`tenants/${ENSAYO}`);
 const fichaEnsayo = await refEnsayo.get();
 const colecciones = ['catalogo', 'funcionarios'];
 const aBorrar = [];
-// Los restos de venta se vacían si el ensayo es de venta O si la ficha traía venta
-// (un ensayo de agendamiento después de uno de venta no hereda pedidos viejos).
-const fichaTraiaVenta = fichaEnsayo.exists && (fichaEnsayo.get('vertical') === 'venta'
-  || (Array.isArray(fichaEnsayo.get('flujos')) && fichaEnsayo.get('flujos').includes('venta')));
-const vaciarVenta = fichaEnsayo.exists && (flujoCliente === 'venta' || fichaTraiaVenta);
+// Los restos de venta se vacían SIEMPRE que el comercio `ensayo` exista, sea cual sea su ficha (H2b-11): decidirlo por
+// la ficha dejaba pedidos viejos de un ensayo anterior cuando la ficha migrada ya no tenía `pedidos`. Solo se toca
+// `tenants/ensayo`, y contar una colección vacía no escribe nada.
+const vaciarVenta = fichaEnsayo.exists;
 /** Cuenta documentos (y los de sus subcolecciones) de una colección. */
 async function contar(col) {
   let n = 0;
