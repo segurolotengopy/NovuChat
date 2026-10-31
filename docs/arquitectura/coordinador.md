@@ -309,3 +309,16 @@ sesión por número de origen, filtro de eventos, normalización de entrada, fec
 zona inyectadas, modelo como sub-nodo intercambiable.
 
 ---
+
+- **F3b-2d (31/10/2026): cobro de venta y seña salen de `ingesta.ts`.**
+  `modulos/cobros/alTurno.ts` (`alTurnoCobroDeVenta`: `cobroReal` | `cobroSimulado`
+  y `cobro`) y `modulos/agenda/alTurno.ts` (`alTurnoSena`, con `senaParaElFlujo`
+  movida sin cambios; `ingesta.ts` la reexporta). La seña vive en Agenda y no en
+  Cobros aunque `MODULO_DE_GANCHO.sena` sea `cobros`, porque Agenda depende de
+  Cobros y no al revés. **Cada gancho mira `contexto.flujo`** (`venta` /
+  `agendamiento`), no el módulo, y `ingesta.ts` los llama en cada turno (como
+  Inventario): filtrar por módulo cambiaría la respuesta de las fichas con
+  `modulos` sin Cobros. Los rótulos del cobro simulado (`config/rotulos`, ya
+  leídos por el turno) viajan en `rotulosDeCobro`, extensión local y opcional del
+  contexto (`ContextoDeCobro`), sin tocar el contrato de Core. Sin cambios en la
+  respuesta: la red diferencial pasa con sus referencias intactas.

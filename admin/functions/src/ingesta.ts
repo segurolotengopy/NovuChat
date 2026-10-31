@@ -1,5 +1,5 @@
 import { REGION } from './core/region.js';
-import { MINUTOS_RETENCION_POR_DEFECTO, senaVencidaPorTiempo } from './modulos/agenda/retencion.js';
+import { MINUTOS_RETENCION_POR_DEFECTO } from './modulos/agenda/retencion.js';
 import { milisegundosDe } from './core/turno/tiempo.js';
 import { reactivaTras, solicitudTras } from './modulos/agenda/solicitud.js';
 // F3b-1a y F3b-1b (05/10/2026): la solicitud, el tiempo y los predicados de cobro se
@@ -13,11 +13,13 @@ export {
   reactivaTras, solicitudTras, type Solicitud,
 } from './modulos/agenda/solicitud.js';
 export { cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo } from './modulos/cobros/alCierre.js';
-export { MINUTOS_RETENCION_POR_DEFECTO };
+export { MINUTOS_RETENCION_POR_DEFECTO, senaParaElFlujo, IMPORTE_SENA_MAXIMO, type SenaParaElFlujo };
 export { milisegundosDe };
 import { alTurnoCampanas } from './modulos/campanas/alTurno.js';
 import { alTurnoCaptacion } from './modulos/captacion/alTurno.js';
 import { modulosDelTurno, type ContextoDelTurno } from './core/turno/ganchosDelTurno.js';
+import { alTurnoCobroDeVenta, type ContextoDeCobro } from './modulos/cobros/alTurno.js';
+import { alTurnoSena, senaParaElFlujo, IMPORTE_SENA_MAXIMO, type SenaParaElFlujo } from './modulos/agenda/alTurno.js';
 import { alTurnoInventario } from './modulos/inventario/alTurno.js';
 import { getFirestore, FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
@@ -55,14 +57,14 @@ import {
 } from './central/cuenta/prepago.js';
 import {
   CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
-  resolverFuncionarios, documentoDeVertical, rotulosCobroSimulado,
+  resolverFuncionarios, documentoDeVertical,
   resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT, enlaceDeMapaValido, ubicacionDe,
 } from './core/prompt/prompt.js';
 // El cobro de una VENTA: el importe no vive en la configuración, se fija cuando
 // sale el QR. `cobroVenta.ts` no importa nada de acá en tiempo de ejecución
 // (sus dos importaciones son de tipo), así que no hay ciclo.
 import {
-  CAMPOS_REGLA_2_EN_NULO, cobroParaElFlujo, solicitudDeCobroTras, totalUtilizable,
+  CAMPOS_REGLA_2_EN_NULO, solicitudDeCobroTras, totalUtilizable,
   type EventoDeCobro,
 } from './modulos/cobros/cobroVenta.js';
 // El enlace de la carta para «Venta mínima v0» (`catalogoCompleto: true`). Sale
@@ -384,121 +386,6 @@ export function ultimos4(telefono: unknown): string {
  */
 const EVENTO_INGESTA = 'ingesta_mensaje';
 const EVENTO_CONFIGURACION = 'configuracion_flujo';
-
-/**
- * ===========================================================================
- * LA SEÑA, COMO LA RECIBE EL FLUJO DE RESERVAS (`configuracionFlujo.sena`)
- * ===========================================================================
- *
- * `activa` exige LAS DOS cosas: un importe mayor que cero en
- * `config/agendamiento` Y el QR del comercio registrado y encendido
- * (`cobroReal`, el mismo criterio que el cobro real de venta: activo, con
- * ficha y con código). Un importe sin QR no puede cobrar; un QR sin importe no
- * tiene qué cobrar. En cualquiera de los dos casos el flujo agenda como
- * siempre, sin seña, y no manda ningún mensaje de más.
- *
- * Cuando NO está activa se devuelve igual el objeto, con `importe` 0 y
- * `qr` nulo, y no `null`: así el flujo distingue «este comercio no cobra
- * seña» de «el panel no contestó», que es lo que lo manda al respaldo.
- *
- * `pendiente`, `evento` y `qrEnviadoEn` son de la SOLICITUD del teléfono que
- * escribió, si el flujo mandó `telefono`: le dicen si el próximo archivo se
- * lee como comprobante y qué cita está retenida. Sin teléfono, van vacíos.
- */
-export const IMPORTE_SENA_MAXIMO = 10000;
-
-/** Un día, en minutos: la ventana en la que un pago tardío sigue siendo ESTE caso. */
-const MINUTOS_DE_UN_DIA = 24 * 60;
-
-export interface SenaParaElFlujo {
-  activa: boolean;
-  importe: number;
-  moneda: string;
-  minutosRetencion: number;
-  qr: { url: string; nombreCuenta: string; banco: string } | null;
-  pendiente: boolean;
-  evento: { id: string; calendario: string } | null;
-  qrEnviadoEn: string | null;
-  /**
-   * MINUTOS DESDE QUE SE LIBERÓ EL HORARIO por falta de pago, o `null`.
-   *
-   * Existe por un caso que solo aparece con dinero de por medio (19/09/2026):
-   * el paciente no paga a tiempo, el horario se libera, y DESPUÉS paga. Hasta
-   * ahora el flujo no distinguía eso de un comprobante caído del cielo y le
-   * preguntaba «¿a qué corresponde?», que es lo peor que se le puede decir a
-   * alguien que acaba de pagar lo que el asistente le pidió. Con esto el flujo
-   * sabe que hubo una seña de ESE teléfono que venció recién, y puede decir la
-   * verdad: llegó el comprobante, el horario ya se había liberado, lo resuelve
-   * una persona. La ventana es de un día: más allá, es otra conversación.
-   */
-  vencidaHaceMin: number | null;
-  /** El adelanto a favor vigente de este teléfono (Andres, 21/09/2026), o `null`. */
-  aFavor: { hasta: string } | null;
-}
-
-export function senaParaElFlujo(
-  agendamiento: Record<string, unknown> | undefined,
-  cobroRealActivo: boolean,
-  moneda: string,
-  urlDelQr: (ficha: string) => string,
-  solicitud: unknown,
-): SenaParaElFlujo {
-  const importeCrudo = agendamiento?.['senaImporte'];
-  const importe = typeof importeCrudo === 'number' && Number.isInteger(importeCrudo)
-    && importeCrudo > 0 && importeCrudo <= IMPORTE_SENA_MAXIMO ? importeCrudo : 0;
-  const minutosCrudo = agendamiento?.['senaMinutosRetencion'];
-  const minutosRetencion = typeof minutosCrudo === 'number' && Number.isInteger(minutosCrudo)
-    && minutosCrudo >= 5 && minutosCrudo <= 180 ? minutosCrudo : MINUTOS_RETENCION_POR_DEFECTO;
-  const cobroReal = (agendamiento?.['cobroReal'] ?? {}) as Record<string, unknown>;
-  const activa = importe > 0 && cobroRealActivo;
-
-  const s = (typeof solicitud === 'object' && solicitud !== null ? solicitud : {}) as Record<string, unknown>;
-  const ev = s['evento'] as Record<string, unknown> | null | undefined;
-  const enviado = s['qrEnviadoEn'] as { toMillis?: () => number } | null | undefined;
-  const porReloj = senaVencidaPorTiempo(s, minutosRetencion, Date.now());
-  return {
-    activa,
-    importe: activa ? importe : 0,
-    moneda,
-    minutosRetencion,
-    qr: activa
-      ? {
-          // La imagen no viaja: viaja su dirección pública, que el flujo pone
-          // tal cual en el `link` del mensaje de imagen de WhatsApp.
-          url: urlDelQr(String(cobroReal['ficha'] ?? '')),
-          nombreCuenta: String(cobroReal['nombreCuenta'] ?? ''),
-          banco: String(cobroReal['banco'] ?? ''),
-        }
-      : null,
-    // PENDIENTE ES POR ETAPA Y POR RELOJ (20/09/2026): una seña cuyo plazo pasó
-    // ya no está pendiente aunque el calendario no la haya vencido todavía
-    // (`retencion.ts`, `senaVencidaPorTiempo`).
-    pendiente: s['etapa'] === 'qr_enviado' && !porReloj.vencida,
-    evento: ev && typeof ev['id'] === 'string' && ev['id'] !== ''
-      ? { id: ev['id'], calendario: String(ev['calendario'] ?? '') } : null,
-    qrEnviadoEn: typeof enviado?.toMillis === 'function'
-      ? new Date(enviado.toMillis()).toISOString() : null,
-    vencidaHaceMin: (() => {
-      // Vencida por el calendario (etapa) o por el reloj: en los dos casos el
-      // flujo tiene que tratar un comprobante que llega como pago TARDÍO.
-      let desdeMs: number | null = null;
-      if (s['etapa'] === 'vencida') {
-        const desde = s['desde'] as { toMillis?: () => number } | null | undefined;
-        desdeMs = typeof desde?.toMillis === 'function' ? desde.toMillis() : null;
-      } else if (porReloj.vencida) {
-        desdeMs = porReloj.venceMs;
-      }
-      if (desdeMs === null) return null;
-      const min = Math.floor((Date.now() - desdeMs) / 60000);
-      return min >= 0 && min <= MINUTOS_DE_UN_DIA ? min : null;
-    })(),
-    aFavor: (() => {
-      if (s['etapa'] !== 'a_favor') return null;
-      const hasta = milisegundosDe(s['aFavorHasta']);
-      return hasta !== null && Date.now() < hasta ? { hasta: new Date(hasta).toISOString() } : null;
-    })(),
-  };
-}
 
 /**
  * ===========================================================================
@@ -2043,6 +1930,11 @@ export const configuracionFlujo = onRequest(
     };
     const aporteDeCampanas = modulosDeHoy.includes('campanas') ? alTurnoCampanas(contextoDelTurno) : {};
     const aporteDeCaptacion = modulosDeHoy.includes('captacion') ? alTurnoCaptacion(contextoDelTurno) : {};
+    // Cobros trae dos ganchos; cada uno decide por el flujo del número (`contexto.flujo`), no por el módulo.
+    // Se llaman en cada turno (como Inventario): hoy salen por `comercio.flujo`, aunque la ficha traiga
+    // `modulos` sin Cobros; filtrar por módulo cambiaría la respuesta de esos comercios.
+    const aporteDeCobro = alTurnoCobroDeVenta({ ...contextoDelTurno, rotulosDeCobro: rotulos?.data() } as ContextoDeCobro);
+    const aporteDeSena = alTurnoSena(contextoDelTurno);
 
     respuesta.status(200).json({
       ...sesionLeida,
@@ -2204,81 +2096,11 @@ export const configuracionFlujo = onRequest(
             })() }
           : {}),
 
-      // COBRO: real o simulado, NUNCA los dos.
-      //
-      // Son excluyentes por definición: o el dinero se mueve o no se mueve, y
-      // mezclarlos produciría el peor resultado posible —un cobro real con el
-      // rótulo de simulacro, o al revés—. El cobro real manda si está
-      // encendido, y el encendido no lo hace el comercio guardando un
-      // formulario: es un acto aparte.
-      //
-      // PROHIBICIÓN 3, mientras el cobro sea simulado: los rótulos salen de
-      // plataforma, nunca de la configuración del comercio. Si el documento
-      // faltara, rigen los de respaldo. El sistema falla hacia el rótulo,
-      // jamás hacia el silencio.
-      ...(comercio.flujo === 'venta'
-        ? (cobroRealActivo
-          ? { cobroReal: {
-                nombreCuenta: String(cobroReal?.['nombreCuenta'] ?? ''),
-                // Con esto el flujo coteja el comprobante del cliente.
-                cuentas: Array.isArray(cobroReal?.['cuentas'])
-                  ? (cobroReal['cuentas'] as unknown[]).slice(0, 5).map(String) : [],
-                banco: String(cobroReal?.['banco'] ?? ''),
-                venceEl: String(cobroReal?.['venceEl'] ?? ''),
-                moneda: String(cobroReal?.['moneda'] ?? 'BOB'),
-                montoFijo: typeof cobroReal?.['montoFijo'] === 'number'
-                  ? cobroReal['montoFijo'] : null,
-                // La imagen NO viaja acá: viaja su ficha. El flujo arma la
-                // dirección con su propia base, así que el dominio del panel no
-                // queda escrito en ningún lado del servidor.
-                fichaQr: String(cobroReal?.['ficha'] ?? ''),
-              } }
-          : { cobroSimulado: {
-                ...rotulosCobroSimulado(rotulos?.data()),
-                // Sin media ID no hay QR que enviar, y eso es lo correcto: mejor
-                // no mandar nada que mandar una imagen sin rotular.
-                mediaIdQr: String(especifica?.get('mediaIdQr') ?? ''),
-              } })
-        : {}),
-
-      // EL ESTADO DEL COBRO DE ESTE TELÉFONO, solo para el flujo de venta.
-      //
-      // Va SEPARADO de `cobroReal`/`cobroSimulado` porque no es lo mismo: aquel
-      // par dice en qué modo está el comercio, y esto dice qué hacer con el
-      // próximo archivo que mande ESTE cliente. Y sale en los DOS modos a
-      // propósito: la compuerta del comprobante tiene que funcionar también en
-      // la demostración, o el camino que se prueba delante de un prospecto no
-      // es el que corre en producción.
-      //
-      // Es lo que le faltaba al flujo de venta para dejar de dar por comprobante
-      // cualquier imagen que llegara (`cobroVenta.ts`).
-      ...(comercio.flujo === 'venta'
-        ? { cobro: cobroParaElFlujo(
-              especifica?.exists ? (especifica.data() as Record<string, unknown>) : undefined,
-              cobroRealActivo,
-              String(negocio['moneda'] ?? 'BOB'),
-              (ficha) => `https://${REGION}-${process.env['GCLOUD_PROJECT'] ?? ''}`
-                + `.cloudfunctions.net/imagenDeCobro?f=${ficha}`,
-              docConversacion?.get('solicitud'),
-            ) }
-        : {}),
-
-      // SEÑA PARA RESERVAR, solo para el flujo de agendamiento (bloque 2). El
-      // QR es el mismo `cobroReal` que registra la consola, en el documento
-      // de ESTE flujo (`config/agendamiento`), porque el QR es del flujo que
-      // cobra (política de capas). La dirección de la imagen se arma acá con
-      // la región y el proyecto de esta Function: el flujo no sabe dónde
-      // vive el panel, y no tiene por qué saberlo.
-      ...(comercio.flujo === 'agendamiento'
-        ? { sena: senaParaElFlujo(
-              especifica?.exists ? (especifica.data() as Record<string, unknown>) : undefined,
-              cobroRealActivo,
-              String(negocio['moneda'] ?? 'BOB'),
-              (ficha) => `https://${REGION}-${process.env['GCLOUD_PROJECT'] ?? ''}`
-                + `.cloudfunctions.net/imagenDeCobro?f=${ficha}`,
-              docConversacion?.get('solicitud'),
-            ) }
-        : {}),
+      // COBRO DE VENTA Y SEÑA (F3b-2d): `cobroReal` | `cobroSimulado` y `cobro` los aporta el gancho de
+      // Cobros (`modulos/cobros/alTurno.ts`, solo flujo `venta`) y `sena` el de la seña
+      // (`modulos/agenda/alTurno.ts`, solo flujo `agendamiento`). Cada uno mira `contexto.flujo`.
+      ...aporteDeCobro,
+      ...aporteDeSena,
 
       // Siempre al menos uno. Si el comercio no cargó ninguno, viene el
       // funcionario por defecto con el calendario del negocio: el flujo tiene un
