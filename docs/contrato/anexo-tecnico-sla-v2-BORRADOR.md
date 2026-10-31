@@ -38,6 +38,20 @@ Con H3 eso deja de ser cierto **para los comercios que activen la función**.
   salud. `[PENDIENTE de revisión legal: responsabilidad del Cliente frente a
   sus pacientes, retención y privacidad.]`
 
+## Adición del 30/10/2026: guardado de todos los tipos de archivo y borrado por conversación
+
+> Propuesta, no texto legal; mismo estado de BORRADOR que lo anterior. **Reemplaza en lo que difiere** las viñetas de
+> arriba sobre tipos y límites (decisión de Andres del 30/10, contrato de medios v2 §8), que quedaron atrasadas.
+
+- Se guardan las fotos, los audios, los videos y los documentos que envían los clientes finales del Cliente, durante
+  **90 días**. Pueden contener **datos personales y de salud**; el Cliente responde por informar a sus pacientes.
+- El titular de los datos puede pedir el **borrado de los medios de una conversación**; NovuChat lo ejecuta con un
+  procedimiento auditado (`admin/scripts/plataforma/borrar-medios-conversacion.mjs`). El texto de los mensajes queda.
+- Los 90 días los sostiene la purga diaria `purgarMedios` (`admin/functions/src/core/medios/purgarMedios.ts`, programada 03:45 hora de La Paz; borra las carpetas de más de 90 días) más el TTL de los documentos `mediosRecibidos`. El borrado en Storage y Firestore **no es instantáneo en las copias**: el borrado lógico de Storage (si el bucket lo tiene activado) y los respaldos o la recuperación a un punto en el tiempo de Firestore conservan el dato un tiempo adicional. `[PENDIENTE: confirmar y declarar esos plazos.]`
+- Al borrar por pedido del titular, NovuChat conserva un respaldo del **metadato** (sin los archivos, con el teléfono) para poder acreditar qué se borró; el respaldo **debe destruirse a los 30 días**; es un procedimiento operativo a cargo de quien ejecutó la operación, sin job automático.
+- Los archivos que el Cliente **descargue** salen del control de la retención de NovuChat: su custodia y su borrado
+  pasan a ser del Cliente. `[PENDIENTE de revisión legal y de Andres: plazo de respuesta y constancia del borrado.]`
+
 ## Cómo se aplica (§13 del anexo vigente)
 
 Esto **reduce** un compromiso vigente («no se guarda»), de modo que el §13,

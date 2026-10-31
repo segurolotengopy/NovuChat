@@ -781,7 +781,7 @@
         640
       ],
       "parameters": {
-        "jsCode": "@@solo:nodos/prospecto-para-la-planilla.js"
+        "jsCode": "@@medio:crm-prospecto"
       },
       "notes": "Deja pasar solo al prospecto que «Armar mensajes» decidio guardar. Sin ninguno, Google ni se consulta."
     },
@@ -905,9 +905,9 @@
         640
       ],
       "parameters": {
-        "jsCode": "@@solo:nodos/decidir-fila-de-la-planilla.js"
+        "jsCode": "@@medio:crm-decidir"
       },
-      "notes": "Copia TAL CUAL de la del flujo de captacion anterior: agrega o actualiza segun lo leido; la calificacion se calcula por hechos."
+      "notes": "Incluido del módulo crm (no es copia): agrega o actualiza segun lo leido; la calificacion se calcula por hechos."
     },
     {
       "id": "si-agregar-fila",
