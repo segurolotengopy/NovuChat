@@ -108,6 +108,22 @@ seguridad:
       aprobado_por: Andres Alberdi
       creado: "2026-10-01"
       vence: "2026-12-30"
+    - id: CRM-SA-KEY
+      herramienta: manual
+      justificacion: >-
+        El nodo googleApi de n8n exige una clave JSON de cuenta de servicio de GCP
+        (clase S0 del estandar de gestion de secretos). Condiciones: una cuenta
+        `crm-<tenant>` por cliente, SIN ningun rol de proyecto, con acceso solo a
+        la planilla que ese cliente comparte con ella; la clave va directo a la
+        credencial de n8n del tenant (nunca a pantalla, repositorio ni disco);
+        rotacion cada 90 dias; el aislamiento entre tenants lo hace cumplir
+        admin/scripts/plataforma/crm-cuenta-servicio.mjs y su prueba. Cubre
+        tambien scripts/credencial-planilla.sh, que ya hacia lo mismo. PENDIENTE
+        antes del vencimiento: migrar a una Function intermedia con identidad
+        propia (ADC, sin claves) que escriba en Sheets, y retirar las claves.
+      aprobado_por: Andres Alberdi
+      creado: "2026-10-31"
+      vence: "2027-01-29"
   # ---------------------------------------------------------------------------
   # ✅ CERRADAS el 2026-10-24: las dos excepciones por braces@3.0.3 en
   # admin/pnpm-lock.yaml (GHSA-vfj7-8cjw-p6xm / CVE-2026-93687, DoS por patrones

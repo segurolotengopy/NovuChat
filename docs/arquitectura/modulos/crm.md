@@ -102,11 +102,11 @@ como editor), y una credencial de n8n por tenant cuyo nombre lleva el tenant
 personas del equipo, nunca «cualquiera con el enlace».
 
 **Script.** `admin/scripts/plataforma/crm-cuenta-servicio.mjs` con los subcomandos `crear`,
-`mostrar-correo`, `registrar-credencial-n8n` y `quitar`. Seco por omisión (sin red ni credenciales);
+`mostrar-correo`, `registrar-credencial-n8n`, `rotar` (clave nueva en la misma credencial, mismo id, y borra la vieja) y `quitar` (solo la baja del cliente). Seco por omisión (sin red ni credenciales);
 escribe solo con `--aplicar --confirmo produccion`. El tenant se valida con regex (3 a 26 caracteres, sin
 `--`, para que `crm-<tenant>` quepa en los 30 de una cuenta de servicio). El proyecto de GCP se lee de
 `--proyecto` o de `CRM_PROYECTO_GCP`; nunca está escrito en el archivo. La clave privada se crea en un
-archivo 600 de `/dev/shm`, se sube a n8n y se borra; no pasa por stdout ni por el repositorio, y si no
+directorio 700 de `/dev/shm` (si no existe, aborta con salida 2: nunca disco), se sube a n8n y se borra siempre (también ante SIGINT, SIGTERM y SIGHUP, salida 130); no pasa por stdout ni por el repositorio, y si no
 llega a n8n se borra también de IAM. El correo de la cuenta no es secreto: `mostrar-correo` lo imprime
 para comunicarlo a la subcuenta.
 
@@ -117,3 +117,8 @@ comprueba que la clave no aparece en ningún mensaje. Mensajes por conversación
 
 **Límite honesto.** El script impide que dos tenants compartan cuenta o credencial; lo que decide a quién
 se comparte cada planilla lo hace una persona en Google. Runbook: `docs/runbook-crm-cuenta-servicio.md`.
+
+**Requisito para PR-F (M3).** Que cada flujo use solo la credencial de su tenant no lo garantiza este
+script. PR-F debe agregar una prueba de CI que recorra `Flujos/clientes/<tenant>/` y falle si un nodo
+con credencial `googleApi` usa una distinta de «Google Sheets miniCRM (crm-<tenant>)». Mientras esa
+prueba no exista, el aislamiento depende de revisión humana.

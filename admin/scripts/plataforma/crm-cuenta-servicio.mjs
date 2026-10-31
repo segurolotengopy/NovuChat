@@ -9,7 +9,7 @@
  * lo que una persona le comparta a mano.
  *
  * USO (SECO por omisión: imprime lo que haría, sin red ni credenciales)
- *   node scripts/plataforma/crm-cuenta-servicio.mjs <crear|mostrar-correo|registrar-credencial-n8n|quitar> \
+ *   node scripts/plataforma/crm-cuenta-servicio.mjs <crear|mostrar-correo|registrar-credencial-n8n|rotar|quitar> \
  *       --tenant <id> [--proyecto <id-gcp>] [--aplicar --confirmo produccion]
  * El proyecto sale de --proyecto o de CRM_PROYECTO_GCP; el .env de n8n (N8N_BASE_URL, N8N_API_KEY) de
  * ENV_FILE, leído sin ejecutarlo. gcloud usa el CLOUDSDK_CONFIG aislado que ya esté en el entorno.
@@ -24,7 +24,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const SUBCOMANDOS = ['crear', 'mostrar-correo', 'registrar-credencial-n8n', 'quitar'];
+export const SUBCOMANDOS = ['crear', 'mostrar-correo', 'registrar-credencial-n8n', 'rotar', 'quitar'];
 /** 3 a 26 caracteres: `crm-` + tenant cabe en los 30 que admite el id de una cuenta de servicio. */
 export const ID_TENANT = /^[a-z][a-z0-9-]{1,24}[a-z0-9]$/;
 export const ID_PROYECTO = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
@@ -59,9 +59,12 @@ export function verificarAislamiento(tenants) {
 }
 
 /**
- * Núcleo. `d` = dependencias: gcloud(args) -> {codigo, salida}; n8n.listar() -> [{id,name}];
- * n8n.crear(nombre, claveJson) -> {id}; n8n.borrar(id); clave.crear(correo) -> {clavePath|json, keyId}.
- * En seco no se llama a ninguna dependencia.
+ * Núcleo. `d` = dependencias: gcloud(args) -> {codigo}; n8n.listar() -> [{id,name}] (lanza si falla);
+ * n8n.crear(nombre, k) / n8n.actualizar(id, nombre, k) (lanzan; `definitivo` = n8n rechazó);
+ * n8n.borrar(id) (lanza si falla); clave.existentes(correo) -> {ok, ids}; clave.crear(correo) ->
+ * {ok, abortar?, huerfana?, ids?, correo, privateKey, keyId}; clave.descartar(k, {subida, duda});
+ * clave.borrar(correo, keyId) -> boolean. En seco no se llama a ninguna dependencia.
+ * `quitar` es solo la BAJA del cliente; rotar la clave es `rotar`.
  */
 export async function ejecutar({ sub, tenant, proyecto, aplicar = false, confirmo, d = {} }) {
   const msg = [];
@@ -79,9 +82,12 @@ export async function ejecutar({ sub, tenant, proyecto, aplicar = false, confirm
     const plan = {
       crear: [`activaría la API de Google Sheets y crearía la cuenta ${cuenta} (sin ningún rol) en el proyecto indicado`],
       'registrar-credencial-n8n': [
-        `comprobaría que n8n no tiene ya «${cred}» (se rota, no se duplica)`,
+        `comprobaría que n8n no tiene ya «${cred}» y que la cuenta no tiene claves (se rota, no se duplica)`,
         `crearía una clave de ${cuenta} en RAM, la subiría a n8n como «${cred}» y borraría el archivo`],
-      quitar: [`borraría la credencial «${cred}» de n8n y la cuenta ${cuenta} (con sus claves)`],
+      rotar: [
+        `comprobaría que «${cred}» existe y que ${cuenta} tiene exactamente una clave`,
+        'crearía una clave nueva, la pondría en la misma credencial (mismo id), verificaría y borraría la clave vieja de IAM'],
+      quitar: [`BAJA del cliente: borraría la credencial «${cred}» de n8n y la cuenta ${cuenta} (con sus claves)`],
     }[sub];
     for (const l of plan) msg.push(`SECO: ${l}.`);
     msg.push('Seco: no se escribió nada. Agregue --aplicar --confirmo produccion (con el OK de Andres).');
@@ -101,37 +107,73 @@ export async function ejecutar({ sub, tenant, proyecto, aplicar = false, confirm
     return fin(0);
   }
 
-  if (sub === 'registrar-credencial-n8n') {
-    const existentes = await d.n8n.listar();
-    if (existentes.some((c) => c.name === cred)) { msg.push(`«${cred}» ya existe en n8n: rotar, no duplicar`); return fin(1); }
-    // Una credencial con la cuenta de OTRO tenant jamás se acepta aquí: el nombre sale del tenant.
+  if (sub === 'registrar-credencial-n8n' || sub === 'rotar') {
+    const rotando = sub === 'rotar';
+    let existentes;
+    try { existentes = await d.n8n.listar(); } catch { msg.push('no se pudo leer la lista de credenciales de n8n'); return fin(1); }
+    const actual = existentes.find((c) => c.name === cred);
+    if (!rotando && actual) { msg.push(`«${cred}» ya existe en n8n: usar rotar, no duplicar`); return fin(1); }
+    if (rotando && !actual) { msg.push(`«${cred}» no existe en n8n: usar registrar-credencial-n8n`); return fin(1); }
+    const previas = await d.clave.existentes(correo);
+    if (!previas.ok) { msg.push('no se pudo listar las claves de la cuenta'); return fin(1); }
+    if (!rotando && previas.ids.length > 0) {
+      msg.push(`la cuenta ya tiene ${previas.ids.length} clave(s) de usuario: borrar la vieja (o usar rotar) antes de crear otra`); return fin(1);
+    }
+    if (rotando && previas.ids.length !== 1) {
+      msg.push(`rotar exige exactamente una clave vigente y hay ${previas.ids.length}: revisar a mano`); return fin(1);
+    }
     const k = await d.clave.crear(correo);
-    if (!k.ok) { msg.push('no se pudo crear la clave'); return fin(1); }
+    if (!k.ok) {
+      if (k.abortar) { msg.push(k.motivo ?? 'entorno sin /dev/shm: no se crea la clave'); return fin(2); }
+      if (k.huerfana) {
+        msg.push(`se creó una clave pero no se pudo leer: hay que borrarla de IAM (${(k.ids ?? []).map((x) => String(x).split('/').pop().slice(0, 8)).join(', ') || 'ver keys list'}…)`);
+        return fin(1);
+      }
+      msg.push('no se pudo crear la clave'); return fin(1);
+    }
     let subida = false; let duda = false;
     try {
       if (k.correo !== correo) { msg.push('la clave no pertenece a la cuenta de este tenant: no se sube'); return fin(1); }
-      try { await d.n8n.crear(cred, k); subida = true; } catch (e) {
+      try {
+        if (rotando) await d.n8n.actualizar(actual.id, cred, k); else await d.n8n.crear(cred, k);
+        subida = true;
+      } catch (e) {
         if (e && e.definitivo) { msg.push(`n8n rechazó la credencial (${e.estado ?? '?'})`); return fin(1); }
-        duda = true; msg.push('sin respuesta clara de n8n: no se sabe si se creó. Comprobar antes de borrar la clave de IAM.'); return fin(3);
+        duda = true; msg.push('sin respuesta clara de n8n: no se sabe si se aplicó. Comprobar antes de borrar claves de IAM.'); return fin(3);
+      }
+      if (rotando) {
+        let despues = [];
+        try { despues = await d.n8n.listar(); } catch { /* se trata como no verificado */ }
+        if (!despues.some((c) => c.id === actual.id && c.name === cred)) {
+          subida = true; duda = true; msg.push('no se pudo verificar la credencial tras la rotación: comprobar en n8n; la clave vieja NO se borró'); return fin(3);
+        }
       }
     } finally {
       await d.clave.descartar(k, { subida, duda });
+    }
+    if (rotando) {
+      if (!(await d.clave.borrar(correo, previas.ids[0]))) { msg.push('rotada, pero no se pudo borrar la clave vieja de IAM: borrarla'); return fin(1); }
+      msg.push(`credencial «${cred}» rotada (mismo id) y clave vieja borrada.`);
+      return fin(0);
     }
     msg.push(`credencial «${cred}» registrada en n8n.`);
     msg.push(`Falta un paso de una persona: compartir la planilla de ${tenant} como EDITOR solo con ${correo}.`);
     return fin(0);
   }
 
-  // quitar
-  const todas = await d.n8n.listar();
-  for (const c of todas.filter((x) => x.name === cred)) await d.n8n.borrar(c.id);
+  // quitar: BAJA del cliente
+  let hechas = 0;
+  try {
+    const todas = await d.n8n.listar();
+    for (const c of todas.filter((x) => x.name === cred)) { await d.n8n.borrar(c.id); hechas += 1; }
+  } catch { msg.push(`n8n falló al listar o borrar la credencial (borradas: ${hechas}). La cuenta NO se tocó.`); return fin(1); }
   const b = await d.gcloud(['iam', 'service-accounts', 'delete', correo, '--project', proyecto, '--quiet']);
-  if (b.codigo !== 0) { msg.push('no se pudo borrar la cuenta (¿ya no existía?)'); return fin(1); }
-  msg.push(`credencial y cuenta de ${tenant} borradas.`);
+  if (b.codigo !== 0) { msg.push(`credencial(es) borrada(s): ${hechas}; no se pudo borrar la cuenta (¿ya no existía?)`); return fin(1); }
+  msg.push(`credencial(es) borrada(s): ${hechas}; cuenta de ${tenant} borrada.`);
   return fin(0);
 }
 
-// --- Dependencias reales (solo las usa la línea de comandos) ---------------------------------------
+// --- Dependencias reales (solo las usa la línea de comandos; exportadas para probarlas) -------------
 const gcloudReal = async (args) => {
   const r = spawnSync('gcloud', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   return { codigo: r.status ?? 1, salida: '' }; // la salida de gcloud nunca se reenvía
@@ -146,48 +188,92 @@ export function leerEnv(ruta) {
   return env;
 }
 
-function n8nReal(ruta) {
-  const env = leerEnv(ruta);
-  if (!env.N8N_BASE_URL?.startsWith('https://') || !env.N8N_API_KEY) throw new Error('faltan N8N_BASE_URL (https) o N8N_API_KEY en ENV_FILE');
-  const base = env.N8N_BASE_URL.replace(/\/$/, '') + '/api/v1/credentials';
-  const h = { 'X-N8N-API-KEY': env.N8N_API_KEY, 'Content-Type': 'application/json' };
+/** Cliente de la API de credenciales de n8n. Cada fetch con tope de 30 s; todo error HTTP lanza. */
+export function n8nCliente({ baseUrl, apiKey, timeoutMs = 30000 }) {
+  const base = baseUrl.replace(/\/$/, '') + '/api/v1/credentials';
+  const h = { 'X-N8N-API-KEY': apiKey, 'Content-Type': 'application/json' };
+  const llamar = async (url, init) => {
+    try { return await fetch(url, { ...init, headers: h, signal: AbortSignal.timeout(timeoutMs) }); }
+    catch { throw new Error('sin respuesta'); }
+  };
+  const rechazo = (r) => Object.assign(new Error('rechazada'), { definitivo: true, estado: r.status });
+  const cuerpo = (nombre, k) => JSON.stringify({
+    name: nombre, type: 'googleApi',
+    data: { email: k.correo, privateKey: k.privateKey, inpersonate: false, httpNode: true,
+            scopes: 'https://www.googleapis.com/auth/spreadsheets' } });
   return {
-    listar: async () => (await (await fetch(`${base}?limit=250`, { headers: h })).json()).data ?? [],
-    borrar: async (id) => { await fetch(`${base}/${encodeURIComponent(id)}`, { method: 'DELETE', headers: h }); },
-    crear: async (nombre, k) => {
-      let r;
-      try {
-        r = await fetch(base, { method: 'POST', headers: h, body: JSON.stringify({
-          name: nombre, type: 'googleApi',
-          data: { email: k.correo, privateKey: k.privateKey, inpersonate: false, httpNode: true,
-                  scopes: 'https://www.googleapis.com/auth/spreadsheets' } }) });
-      } catch { throw new Error('sin respuesta'); }
-      if (!r.ok) { const e = new Error('rechazada'); e.definitivo = true; e.estado = r.status; throw e; }
-      return r.json();
+    listar: async () => {
+      const todas = []; let cursor;
+      do {
+        const r = await llamar(`${base}?limit=250${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, {});
+        if (!r.ok) throw rechazo(r);
+        const j = await r.json();
+        todas.push(...(j.data ?? []));
+        cursor = j.nextCursor || undefined;
+      } while (cursor);
+      return todas;
+    },
+    borrar: async (id) => { const r = await llamar(`${base}/${encodeURIComponent(id)}`, { method: 'DELETE' }); if (!r.ok) throw rechazo(r); },
+    crear: async (nombre, k) => { const r = await llamar(base, { method: 'POST', body: cuerpo(nombre, k) }); if (!r.ok) throw rechazo(r); return r.json(); },
+    actualizar: async (id, nombre, k) => {
+      const r = await llamar(`${base}/${encodeURIComponent(id)}`, { method: 'PATCH', body: cuerpo(nombre, k) });
+      if (!r.ok) throw rechazo(r); return r.json();
     },
   };
 }
 
-function claveReal(proyecto) {
+function n8nReal(ruta) {
+  const env = leerEnv(ruta);
+  if (!env.N8N_BASE_URL?.startsWith('https://') || !env.N8N_API_KEY) throw new Error('faltan N8N_BASE_URL (https) o N8N_API_KEY en ENV_FILE');
+  return n8nCliente({ baseUrl: env.N8N_BASE_URL, apiKey: env.N8N_API_KEY });
+}
+
+/**
+ * Claves de la cuenta vía gcloud. La clave privada solo vive en un directorio 700 de /dev/shm (RAM):
+ * si no existe, se ABORTA (nunca disco). El directorio se borra siempre (finally) y ante SIGINT,
+ * SIGTERM o SIGHUP (sale 130).
+ */
+export function claveReal(proyecto, { shm = '/dev/shm', gcloud = 'gcloud' } = {}) {
+  const run = (args, capturar = false) =>
+    spawnSync(gcloud, args, { encoding: 'utf8', stdio: ['ignore', capturar ? 'pipe' : 'ignore', 'ignore'] });
+  const listar = (correo) => run(['iam', 'service-accounts', 'keys', 'list', '--iam-account', correo,
+    '--project', proyecto, '--managed-by=user', '--format=value(name)'], true);
+  const ids = (r) => String(r.stdout ?? '').split('\n').map((s) => s.trim()).filter(Boolean);
+  const borrar = async (correo, keyId) => run(['iam', 'service-accounts', 'keys', 'delete', keyId,
+    '--iam-account', correo, '--project', proyecto, '--quiet']).status === 0;
   return {
+    existentes: async (correo) => { const r = listar(correo); return r.status === 0 ? { ok: true, ids: ids(r) } : { ok: false, ids: [] }; },
+    borrar,
     crear: async (correo) => {
-      const dir = mkdtempSync(join(existsSync('/dev/shm') ? '/dev/shm' : tmpdir(), 'crm-'));
-      chmodSync(dir, 0o700);
-      const archivo = join(dir, 'clave.json');
-      const r = spawnSync('gcloud', ['iam', 'service-accounts', 'keys', 'create', archivo, '--iam-account', correo,
-        '--project', proyecto, '--quiet'], { stdio: 'ignore' });
-      if (r.status !== 0 || !existsSync(archivo)) { rmSync(dir, { recursive: true, force: true }); return { ok: false }; }
-      const j = JSON.parse(readFileSync(archivo, 'utf8'));
-      rmSync(dir, { recursive: true, force: true }); // el archivo ya no existe; la clave vive solo en memoria
-      return { ok: true, correo: j.client_email, privateKey: j.private_key, keyId: j.private_key_id, iam: correo };
+      if (!existsSync(shm)) return { ok: false, abortar: true, motivo: `no existe ${shm}: la clave no se escribe en disco, se aborta` };
+      const dir = mkdtempSync(join(shm, 'crm-'));
+      const limpiar = () => rmSync(dir, { recursive: true, force: true });
+      const salir = () => { limpiar(); process.exit(130); };
+      const senales = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+      for (const s of senales) process.once(s, salir);
+      try {
+        chmodSync(dir, 0o700);
+        const archivo = join(dir, 'clave.json');
+        const r = run(['iam', 'service-accounts', 'keys', 'create', archivo, '--iam-account', correo, '--project', proyecto, '--quiet']);
+        if (r.status !== 0 || !existsSync(archivo)) return { ok: false };
+        let j;
+        try { j = JSON.parse(readFileSync(archivo, 'utf8')); } catch {
+          // La clave existe en IAM pero no se pudo leer: se informa para borrarla (no se adivina cuál).
+          return { ok: false, huerfana: true, ids: ids(listar(correo)) };
+        }
+        return { ok: true, correo: j.client_email, privateKey: j.private_key, keyId: j.private_key_id, iam: correo };
+      } finally {
+        for (const s of senales) process.removeListener(s, salir);
+        limpiar();
+      }
     },
     descartar: async (k, { subida, duda }) => {
       k.privateKey = undefined;
       if (subida) return;
       if (duda) { console.error(`  ! no se sabe si llegó a n8n: comprobar antes de borrar la clave ${String(k.keyId).slice(0, 8)}… de IAM`); return; }
-      spawnSync('gcloud', ['iam', 'service-accounts', 'keys', 'delete', k.keyId, '--iam-account', k.iam,
-        '--project', proyecto, '--quiet'], { stdio: 'ignore' });
-      console.error(`  ↺ clave ${String(k.keyId).slice(0, 8)}… borrada de IAM (no llegó a n8n)`);
+      console.error((await borrar(k.iam, k.keyId))
+        ? `  ↺ clave ${String(k.keyId).slice(0, 8)}… borrada de IAM (no llegó a n8n)`
+        : `  ✗ quedó la clave ${String(k.keyId).slice(0, 8)}… en IAM: hay que borrarla`);
     },
   };
 }
@@ -202,7 +288,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
   if (aplicar && arg('--confirmo') === 'produccion' && SUBCOMANDOS.includes(sub)) {
     d.gcloud = gcloudReal;
     d.clave = claveReal(proyecto);
-    if (sub === 'registrar-credencial-n8n' || sub === 'quitar') {
+    if (['registrar-credencial-n8n', 'rotar', 'quitar'].includes(sub)) {
       try { d.n8n = n8nReal(process.env.ENV_FILE ?? ''); } catch (e) { console.error(`  ✗ ${e.message}`); process.exit(2); }
     }
   }
