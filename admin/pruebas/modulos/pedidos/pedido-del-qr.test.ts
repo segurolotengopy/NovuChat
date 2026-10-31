@@ -143,10 +143,10 @@ describe('armarPedidoWa: el precio sale del catálogo, no del flujo', () => {
 describe('idDePedidoWa', () => {
   it('es wa_ + [A-Za-z0-9_-]{1,60}, un solo segmento', () => {
     expect(idDePedidoWa('ped-20261028-1234-ab12')).toBe('wa_ped-20261028-1234-ab12');
-    const raro = idDePedidoWa('a/../b c')!;
-    expect(raro).toMatch(/^wa_[A-Za-z0-9_-]{1,60}$/);
-    expect(raro).not.toMatch(/[/.]/);
-    expect(idDePedidoWa('x'.repeat(200))!.length).toBe(63);
+    expect(idDePedidoWa('a/../b c')).toBeNull();
+    expect(idDePedidoWa('a.b')).toBeNull();
+    expect(idDePedidoWa('x'.repeat(60))!.length).toBe(63);
+    expect(idDePedidoWa('x'.repeat(61))).toBeNull();
   });
   it('vacía, no texto o solo símbolos: no hay id', () => {
     for (const r of ['', '   ', '///', undefined, 5, null]) expect(idDePedidoWa(r)).toBeNull();
@@ -212,13 +212,12 @@ describe('crearPedidoWa: el pedido llega a su colección', () => {
     }
     expect(await pedidos(T)).toHaveLength(0);
   });
-  it('una referencia con / o .. produce un id de un solo segmento dentro de pedidos/', async () => {
-    const r = await crearPedidoWa(entrada({ referencia: '../../tenants/pdq-b/pedidos/x' }));
-    expect(r.resultado).toBe('creado');
+  it('una referencia con / o .. o caracteres fuera de lista se rechaza, no se sanea (sin choques de id)', async () => {
+    for (const referencia of ['../../tenants/pdq-b/pedidos/x', 'a.b', 'ped 1', 'x'.repeat(61)]) {
+      expect(await crearPedidoWa(entrada({ referencia }))).toEqual({ resultado: 'sin_pedido', motivo: 'referencia_invalida' });
+    }
     expect(await pedidos(TB)).toHaveLength(0);
-    const docs = await pedidos(T);
-    expect(docs).toHaveLength(1);
-    expect(docs[0]?.id).toMatch(/^wa_[A-Za-z0-9_-]{1,60}$/);
+    expect(await pedidos(T)).toHaveLength(0);
   });
   it('sin líneas válidas no hay pedido', async () => {
     expect(await crearPedidoWa(entrada({ lineas: [] }))).toMatchObject({ resultado: 'sin_pedido' });

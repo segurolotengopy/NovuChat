@@ -90,8 +90,10 @@ function facturacionLimpia(v: unknown): { nombre: string; documento: string } | 
 /** El id del pedido: `wa_` + la referencia saneada a [A-Za-z0-9_-]{1,60}. null si no queda nada. */
 export function idDePedidoWa(referencia: unknown): string | null {
   if (typeof referencia !== 'string') return null;
-  const s = referencia.trim().replace(/[^A-Za-z0-9_-]/g, '_').slice(0, MAX_ID_REFERENCIA);
-  return s === '' || /^_+$/.test(s) ? null : `wa_${s}`;
+  const t = referencia.trim();
+  // Si al sanear cambia algo, dos referencias distintas podrían chocar en un mismo id: se rechaza.
+  if (t === '' || t.length > MAX_ID_REFERENCIA || !/^[A-Za-z0-9_-]+$/.test(t) || /^_+$/.test(t)) return null;
+  return `wa_${t}`;
 }
 
 /** Los ids de ítem que vale la pena leer del catálogo (válidos, sin repetir, hasta el tope). */
@@ -178,7 +180,7 @@ export function armarPedidoWa(
       entrega: tipo,
       ...(direccion ? { direccion } : {}),
       ...(ubicacion ? { ubicacion } : {}),
-      referenciaQr: typeof referencia === 'string' ? referencia.trim().slice(0, 150) : '',
+      referenciaQr: typeof referencia === 'string' ? lineaLimpia(referencia, 150) : '',
       ...(descartados.length ? { descartados } : {}),
       totalServidorCentavos: totalCent,
       montoQrCentavos: montoQrCent,
@@ -261,10 +263,15 @@ export async function crearPedidoWa(e: EntradaPedidoWa): Promise<ResultadoEscrit
       throw err;
     }
     const anterior = typeof e.referenciaAnterior === 'string' ? e.referenciaAnterior.trim() : '';
-    if (anterior !== '' && anterior !== ref) await cerrarPedidoWa(e.tenantId, anterior, 'reemplazado');
+    if (anterior !== '' && anterior !== ref) {
+      // El pedido nuevo ya existe: un fallo al cerrar el anterior no lo deshace.
+      try { await cerrarPedidoWa(e.tenantId, anterior, 'reemplazado'); } catch { /* queda en recibido; se revisa a mano */ }
+    }
     return { resultado: 'creado', id };
   } catch {
-    await registrar(e.tenantId, { tipo: 'error_flujo', resultado: 'fallo', codigo: 'pedido_wa', detalle: 'no se pudo crear el pedido de WhatsApp' });
+    try {
+      await registrar(e.tenantId, { tipo: 'error_flujo', resultado: 'fallo', codigo: 'pedido_wa', detalle: 'no se pudo crear el pedido de WhatsApp' });
+    } catch { /* nunca lanza */ }
     return { resultado: 'error' };
   }
 }
