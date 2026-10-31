@@ -53,7 +53,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { defineString } from 'firebase-functions/params';
 import { REGION } from '../../core/region.js';
 import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
-import { descontarPedido, hayParaVender } from '../inventario/inventario.js';
+import { descontarPedido, fichaDescuentaStock, hayParaVender } from '../inventario/inventario.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../../core/seguridad/firma.js';
 // `enmascarar` sale de `ingesta.ts` y no de `firma.ts`, que tiene la suya con
 // otro recorte. Las dos pasan la regla, pero un mismo teléfono se vería
@@ -1256,9 +1256,14 @@ export const checkoutCatalogo = onRequest(
     // al navegador: al cliente que ya cerró su pedido no le sirve enterarse de
     // que el comercio quedó con menos de lo que creía. Al comercio sí, y lo ve
     // en su reporte.
-    const faltantes = await descontarPedido(
-      ficha.tenantId, pedidoId, items as Array<{ id?: unknown; cantidad?: unknown }>, 'catalogo-web',
-    );
+    // Solo si la ficha lleva el módulo `inventario` (H2b-10; antes se descontaba
+    // siempre porque catálogo web y venta venían juntos). Una lectura del tenant.
+    const fichaTenant = await db().doc(`tenants/${ficha.tenantId}`).get();
+    const faltantes = fichaDescuentaStock(fichaTenant.exists ? fichaTenant.data() : null)
+      ? await descontarPedido(
+        ficha.tenantId, pedidoId, items as Array<{ id?: unknown; cantidad?: unknown }>, 'catalogo-web',
+      )
+      : [];
     if (faltantes.length > 0) {
       await registrar(ficha.tenantId, {
         tipo: 'carrito_recibido', resultado: 'fallo', telefono: ficha.telefono,

@@ -32,7 +32,7 @@
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { REGION } from '../../core/region.js';
-import { tieneModulo } from '../../registro.js';
+import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
 
 const db = () => getFirestore();
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
@@ -126,6 +126,15 @@ export async function moverStock(
     return { aplicado, saldo, faltaron };
   }).catch(() => null);
 }
+
+/**
+ * ¿La ficha lleva inventario? Lo decide el registro (`tieneModulo`): con
+ * `modulos` (lista) manda la lista; sin ella, el puente por `flujos`/`vertical`
+ * (el flujo de venta trae `inventario`). Un pedido de catálogo web solo mueve
+ * stock si la ficha lo tiene; sin el módulo el saldo no se toca.
+ */
+export const fichaDescuentaStock = (ficha: FichaConCapacidades | null | undefined): boolean =>
+  tieneModulo(ficha, 'inventario');
 
 /**
  * Descuenta todos los ítems de un pedido.
