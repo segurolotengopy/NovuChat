@@ -189,9 +189,9 @@ export function leerEnv(ruta) {
 }
 
 /** Cliente de la API de credenciales de n8n. Cada fetch con tope de 30 s; todo error HTTP lanza. */
-export function n8nCliente({ baseUrl, apiKey, timeoutMs = 30000 }) {
+export function n8nCliente({ baseUrl, llaveApi, timeoutMs = 30000 }) {
   const base = baseUrl.replace(/\/$/, '') + '/api/v1/credentials';
-  const h = { 'X-N8N-API-KEY': apiKey, 'Content-Type': 'application/json' };
+  const h = { 'X-N8N-API-KEY': llaveApi, 'Content-Type': 'application/json' };
   const llamar = async (url, init) => {
     try { return await fetch(url, { ...init, headers: h, signal: AbortSignal.timeout(timeoutMs) }); }
     catch { throw new Error('sin respuesta'); }
@@ -225,8 +225,7 @@ export function n8nCliente({ baseUrl, apiKey, timeoutMs = 30000 }) {
 function n8nReal(ruta) {
   const env = leerEnv(ruta);
   if (!env.N8N_BASE_URL?.startsWith('https://') || !env.N8N_API_KEY) throw new Error('faltan N8N_BASE_URL (https) o N8N_API_KEY en ENV_FILE');
-  const acceso = { baseUrl: env.N8N_BASE_URL, apiKey: env.N8N_API_KEY };
-  return n8nCliente(acceso);
+  return n8nCliente({ baseUrl: env.N8N_BASE_URL, llaveApi: env.N8N_API_KEY });
 }
 
 /**

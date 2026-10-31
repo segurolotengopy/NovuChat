@@ -302,7 +302,7 @@ describe('n8nCliente contra un servidor HTTP local', () => {
     servidores.push(s);
     await new Promise<void>((ok) => s.listen(0, '127.0.0.1', ok));
     const { port } = s.address() as { port: number };
-    return n8nCliente({ baseUrl: `http://127.0.0.1:${port}`, apiKey: 'llave-falsa', timeoutMs: 400 });
+    return n8nCliente({ baseUrl: `http://127.0.0.1:${port}`, llaveApi: 'llave-falsa', timeoutMs: 400 });
   };
   const k = { correo: 'a@b', privateKey: 'FALSA' };
 
