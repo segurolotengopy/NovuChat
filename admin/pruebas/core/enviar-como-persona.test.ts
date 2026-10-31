@@ -375,6 +375,16 @@ describe('el turno de ESA persona, vigente', () => {
     expect((await rechazo(enviar(base()))).code).toBe('failed-precondition');
   });
 
+  it('NEGATIVA (bloquear contacto, 31/10/2026): con el turno tomado y la conversación BLOQUEADA, no se escribe ni se toca el timbre', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ bloqueada: true, bloqueadaPor: 'u-admin', bloqueadaEn: ts(AHORA - MIN) });
+    const antes = await leerConv();
+    expect(await rechazo(enviar(base()))).toMatchObject({ code: 'failed-precondition', message: 'Este contacto está bloqueado. Desbloquéelo para atenderlo.' });
+    expect(await mensajes()).toHaveLength(0);
+    expect(await auditorias()).toHaveLength(0);
+    expect(timbres).toHaveLength(0);
+    expect(await leerConv()).toEqual(antes);
+  });
+
   it('la conversación inexistente: not-found', async () => {
     expect((await rechazo(enviar(base({ conversacionId: 'wa_59100000009' })))).code).toBe('not-found');
   });

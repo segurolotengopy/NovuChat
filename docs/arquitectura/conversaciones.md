@@ -455,6 +455,26 @@ El asistente deja de responderle del todo a un contacto, y se puede revertir. C�
   de consumo. Sí se guarda el mensaje y lo mínimo para listarlo (último mensaje, no leídos, búsqueda),
   para que el comercio vea que le escribieron. **No cambia** el conteo de un contacto no bloqueado,
   ni los salientes de la misma conversación (el bloqueo es del entrante), ni `registrarCierre`.
+- **Convivencia con tomar y escribir** (revisión de seguridad): `tomarConversacion` y
+  `enviarComoPersona` rechazan una conversación bloqueada dentro de su transacción
+  (`failed-precondition`, «Este contacto está bloqueado. Desbloquéelo para atenderlo.», sin
+  escribir nada, aunque el turno siga tomado). `bloquearContacto` rechaza si hay un turno de persona
+  vigente («Devuelva la conversación antes de bloquear el contacto.»); devolver sigue permitido
+  siempre.
+- **Entrante bloqueado y servicio**: la rama bloqueada no evalúa el servicio (no lee métricas). Por
+  eso no escribe ni borra la marca `incoherencia` de la cuenta, no cuenta pérdidas de un corte, y
+  **omite `servicio`/`servicioMotivo`** del cuerpo de la respuesta (aunque haya modalidad) y del
+  registro, en vez de afirmar «operativo». Ningún flujo n8n lo exige: solo miran
+  `servicio.estado === 'cortado'`. La bitácora del comercio registra el entrante con
+  `resultado: 'rechazado'` y `codigo: 'bloqueado'` (no «ok»).
+- **Bloqueo y pausa por persona**: manda el bloqueo. En la rama bloqueada **no** se decide la pausa
+  ni se persiste el vencimiento de un turno (`persistirVencimientoDeIngesta` no corre: esa rama solo
+  escribe el mensaje y lo mínimo para listarlo, sin auditoría). La respuesta lleva solo
+  `bloqueadoPorContacto` (sin `pausadoPorPersona`), tanto en la ingesta como en
+  `configuracionFlujo`. El turno vencido se persiste con el primer entrante después de desbloquear.
+- **Despliegue**: `scripts/nube-visor.sh` atiende `bloquearcontacto` y `desbloquearcontacto` (callables,
+  misma sonda que tomar y devolver). `verificar-salida-persona.mjs` no las cubre a propósito: esa
+  verificación es de la salida de persona (timbre y flujo) y bloquear no depende de ella.
 - **Lo que no hace**: no enciende `noContactar` (seguimientos y campañas siguen su propio
   filtro) y no oculta la conversación de la consola. La pantalla (botón, marca, «Desbloquear») es el
   PR de Central. Costo en mensajes por conversación: 0 (solo quita).

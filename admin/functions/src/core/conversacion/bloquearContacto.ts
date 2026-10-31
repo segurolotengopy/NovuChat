@@ -29,6 +29,9 @@
  *    lo mínimo para listarlo (que la persona del comercio vea que escribió). Alcance exacto en
  *    `docs/arquitectura/conversaciones.md`.
  *
+ * COMPATIBILIDAD CON TOMAR: `tomarConversacion` y `enviarComoPersona` rechazan una conversación bloqueada
+ * (`failed-precondition`, sin escribir) y `bloquear` rechaza si hay un turno de persona vigente. Devolver sigue permitido.
+ *
  * UNA TRANSACCIÓN lee la conversación, decide y escribe el campo y la auditoría `bloquear_contacto` /
  * `desbloquear_contacto` (falla cerrada y atómica, `turnoServidor.ts`; solo `telefono4`, nunca el id
  * entero). IDEMPOTENTES: bloquear lo ya bloqueado (o desbloquear lo que no lo está) devuelve el estado
@@ -47,6 +50,7 @@ import {
   atenderTurno, auditarEnTransaccion, errorDeTurno, opcionesDeTurno, type ContextoDeTurno,
 } from './turnoServidor.js';
 import { estaBloqueada } from './pausa.js';
+import { turnoEfectivo } from './turno.js';
 
 export interface SalidaDeBloqueo { bloqueada: boolean }
 
@@ -61,6 +65,10 @@ export async function bloquear(c: ContextoDeTurno): Promise<SalidaDeBloqueo> {
     const snap = await tx.get(c.ref);
     if (!snap.exists) throw errorDeTurno('noExiste');
     if (estaBloqueada(snap.get('bloqueada'))) return { bloqueada: true };
+    // Con el turno de una persona VIGENTE no se bloquea (ella estaría escribiéndole a un contacto bloqueado):
+    // primero se devuelve la conversación. Devolver sigue permitido en todo caso.
+    const { veredicto } = turnoEfectivo(snap.get('turno'), { ultimoEntranteEn: snap.get('ultimoEntranteEn') }, c.ahoraMs);
+    if (veredicto.motivo === 'tomado') throw errorDeTurno('turnoVigente');
     tx.update(c.ref, { bloqueada: true, bloqueadaPor: c.uid, bloqueadaEn: Timestamp.fromMillis(c.ahoraMs) });
     auditarEnTransaccion(tx, c, 'bloquear_contacto');
     return { bloqueada: true };

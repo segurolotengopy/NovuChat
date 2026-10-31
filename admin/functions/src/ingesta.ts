@@ -1039,7 +1039,9 @@ export const ingesta = onRequest(
       // queda en la auditoría UNA vez por cuenta, no por mensaje: la marca
       // `incoherencia` en la cuenta es lo que evita repetirla, y se borra sola
       // cuando el dato se corrige (si vuelve a romperse, vuelve a avisar).
-      if (servicio.incoherente && !bloqueadoPorContacto) {
+      if (bloqueadoPorContacto) {
+        // Un entrante bloqueado no evalúa el servicio (no leyó métricas): no escribe ni borra la marca `incoherencia`.
+      } else if (servicio.incoherente) {
         if (cuentaCruda.incoherencia === undefined) {
           const campos = periodosIncoherentes(cuentaCruda);
           tx.set(refCuenta, { incoherencia: { en: Timestamp.now(), campos } }, { merge: true });
@@ -1105,7 +1107,9 @@ export const ingesta = onRequest(
       // mensaje que el asistente tendría que contestar. Se decide con lo que esta transacción ya
       // leyó (cero lecturas extra). Un turno vencido se persiste devuelto aquí mismo. El cuerpo
       // que manda n8n nunca decide nada de esto: el turno solo lo escribe el servidor.
-      const pausa = mensaje.direccion === 'entrante'
+      // Un entrante BLOQUEADO manda sobre la pausa: no se decide ni se persiste ningún vencimiento de turno (esta rama
+      // no escribe más que el mensaje y lo mínimo para listarlo) y la respuesta lleva solo `bloqueadoPorContacto`.
+      const pausa = mensaje.direccion === 'entrante' && !bloqueadoPorContacto
         ? decidirPausa(conversacion.get('turno'), conversacion.get('ultimoEntranteEn'), ahoraMs) : null;
       if (pausa) persistirVencimientoDeIngesta(tx, db, tenantId, refConversacion, idConversacion, pausa, ahoraMs);
       const pausadaPorPersona = pausa?.pausada === true;
@@ -1486,8 +1490,8 @@ export const ingesta = onRequest(
       // El prepago: si este mensaje se atendió, se cortó, o se habría cortado
       // (modo observación). Es lo que permite mirar un ciclo entero antes de
       // encender el corte.
-      servicio: servicio.estado,
-      servicioMotivo: servicio.motivo,
+      // Contacto bloqueado: no se leyó nada del servicio, así que ni el log ni la respuesta lo afirman.
+      ...(veredicto.bloqueadoPorContacto ? {} : { servicio: servicio.estado, servicioMotivo: servicio.motivo }),
       // El TAMAÑO del texto, nunca el texto.
       tamanoTexto: mensaje.texto.length,
     });
@@ -1496,8 +1500,8 @@ export const ingesta = onRequest(
       tipo: mensaje.direccion === 'entrante' ? 'mensaje_entrante' : 'mensaje_saliente',
       // Durante un corte aplicado el mensaje queda registrado como RECHAZADO
       // con `codigo: 'cortado'`: es la evidencia de que llegó y no se atendió.
-      resultado: veredicto.cortado ? 'rechazado' : 'ok',
-      ...(veredicto.cortado ? { codigo: 'cortado' } : {}),
+      resultado: veredicto.cortado || veredicto.bloqueadoPorContacto ? 'rechazado' : 'ok',
+      ...(veredicto.cortado ? { codigo: 'cortado' } : veredicto.bloqueadoPorContacto ? { codigo: 'bloqueado' } : {}),
       telefono: mensaje.telefono,
       conversacionId: idConversacion,
       // El TAMAÑO del texto, nunca el texto.
@@ -1556,7 +1560,7 @@ export const ingesta = onRequest(
       // modalidad: para una demostración, y para los comercios de hoy, la
       // respuesta es byte a byte la de siempre (lo exigen `aviso-consumo` y
       // `entrantes-por-tipo`, y es la negativa de este bloque).
-      ...(veredicto.conModalidad ? { servicio } : {}),
+      ...(veredicto.conModalidad && !veredicto.bloqueadoPorContacto ? { servicio } : {}),
     });
   },
 );
@@ -1895,9 +1899,10 @@ export const configuracionFlujo = onRequest(
           // LA PAUSA POR PERSONA (H2-2): misma regla que la ingesta. Lectura pura, sin persistir
           // (el vencimiento lo escribe la ingesta con el siguiente entrante). Con pausa,
           // 'bloqueado' y aviso vacío; `atencionEstado` del documento no se toca.
-          const pausada = decidirPausa(marcas['turno'], marcas['ultimoEntranteEn'], ahoraMs).pausada;
-          // CONTACTO BLOQUEADO (31/10/2026): misma compuerta, silencio total (aviso vacío).
+          // CONTACTO BLOQUEADO (31/10/2026): misma compuerta, silencio total (aviso vacío). Manda sobre la pausa:
+          // con ambos, la respuesta lleva solo `bloqueadoPorContacto`.
           const bloqueada = estaBloqueada(marcas['bloqueada']);
+          const pausada = !bloqueada && decidirPausa(marcas['turno'], marcas['ultimoEntranteEn'], ahoraMs).pausada;
           return {
             ...conPausa(estado, pausada || bloqueada),
             ventanaVenceEn: estado.ventanaVenceEn === null

@@ -186,6 +186,40 @@ describe('desbloquear: restaura todo', () => {
   });
 });
 
+const TOMAR = await import('../../functions/src/core/conversacion/tomarConversacion.ts');
+const DEVOLVER = await import('../../functions/src/core/conversacion/devolverConversacion.ts');
+const MSG_BLOQUEADO = 'Este contacto está bloqueado. Desbloquéelo para atenderlo.';
+const turnoVigente = (uid = 'u-ana') => ({ responde: 'persona', tomadoPor: uid, tomadoEn: ts(AHORA - 5 * 60_000), actividadPersonaEn: ts(AHORA - 60_000) });
+
+describe('convivencia con tomar y devolver', () => {
+  it('NEGATIVA: tomar una conversación bloqueada se rechaza (failed-precondition) y no escribe turno, tope de más ni auditoría', async () => {
+    await ficha(A, { personaPuedeEscribir: true });
+    await conversacion(A, CONV1, { ultimoEntranteEn: ts(AHORA - 3_600_000), bloqueada: true, bloqueadaPor: 'u-admin', bloqueadaEn: ts(AHORA) });
+    expect(await rechazo(llamarA(TOMAR.tomarConversacion as unknown as Callable, DATOS, oper(A, 'u-ana')))).toEqual({ code: 'failed-precondition', message: MSG_BLOQUEADO });
+    expect((await leerConv(A, CONV1))['turno']).toBeUndefined();
+    expect((await hayEscrituras()).aud).toBe(0);
+  });
+
+  it('NEGATIVA: bloquear con un turno de persona VIGENTE se rechaza y no escribe; vencido o devuelto, sí bloquea', async () => {
+    await conversacion(A, CONV1, { ultimoEntranteEn: ts(AHORA - 3_600_000), turno: turnoVigente() });
+    expect(await rechazo(bloquear(DATOS, admin(A)))).toEqual({ code: 'failed-precondition', message: 'Devuelva la conversación antes de bloquear el contacto.' });
+    expect((await leerConv(A, CONV1))['bloqueada']).toBeUndefined();
+    expect((await hayEscrituras()).aud).toBe(0);
+    // vencido por inactividad (31 min): ya no es vigente
+    await conversacion(A, CONV1, { ultimoEntranteEn: ts(AHORA - 3_600_000), turno: { ...turnoVigente(), actividadPersonaEn: ts(AHORA - 31 * 60_000) } });
+    expect(await bloquear(DATOS, admin(A))).toEqual({ bloqueada: true });
+  });
+
+  it('devolver sigue permitido: devolver y después bloquear', async () => {
+    await ficha(A, { personaPuedeEscribir: true });
+    await conversacion(A, CONV1, { ultimoEntranteEn: ts(AHORA - 3_600_000), turno: turnoVigente() });
+    await llamarA(DEVOLVER.devolverConversacion as unknown as Callable, DATOS, oper(A, 'u-ana'));
+    expect(await bloquear(DATOS, admin(A))).toEqual({ bloqueada: true });
+    // y devolver con la conversación ya bloqueada tampoco se rechaza
+    await expect(llamarA(DEVOLVER.devolverConversacion as unknown as Callable, DATOS, admin(A))).resolves.toBeDefined();
+  });
+});
+
 describe('NEGATIVAS: quién NO bloquea ni desbloquea (y no se escribe nada)', () => {
   const nada = async () => {
     expect((await leerConv(A, CONV1))['bloqueada']).toBeUndefined();

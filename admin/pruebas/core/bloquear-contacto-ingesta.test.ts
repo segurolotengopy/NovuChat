@@ -186,6 +186,108 @@ describe('un contacto bloqueado NO cuenta para el plan', () => {
   });
 });
 
+describe('un entrante bloqueado no evalúa el servicio', () => {
+  it('NEGATIVA: no toca la marca `incoherencia` de la cuenta (ni la escribe ni la borra) y no audita', async () => {
+    await entrante(A, TEL);
+    await db.doc(`tenants/${A.id}/cuenta/estado`).set({ plan: 'pro', estadoPago: 'al_dia', incoherencia: { en: Timestamp.now(), campos: ['x'] } });
+    await bloquear(A, TEL);
+    const antes = (await db.doc(`tenants/${A.id}/cuenta/estado`).get()).data();
+    await entrante(A, TEL);
+    expect((await db.doc(`tenants/${A.id}/cuenta/estado`).get()).data()).toEqual(antes);
+    expect((await db.collection(`tenants/${A.id}/auditoria`).get()).size).toBe(0);
+  });
+
+  const PREPAGO = () => ({ plan: 'pro', estadoPago: 'al_dia', modalidad: 'prepago', periodoPagado: new Date().toISOString().slice(0, 7), limites: { conversaciones: 500, productos: 100, agendas: 2, cambiosIncluidos: 10 } });
+
+  it('con modalidad de prepago, la respuesta y el registro NO traen `servicio` (no se afirma «operativo»); un contacto normal sí', async () => {
+    await db.doc(`tenants/${A.id}/cuenta/estado`).set(PREPAGO());
+    await entrante(A, TEL);
+    await bloquear(A, TEL);
+    const r = await entrante(A, TEL);
+    expect(r.cuerpo['servicio']).toBeUndefined();
+    expect(Object.keys(r.cuerpo).sort()).toEqual(['atencion', 'avisarRecepcion', 'bloqueadoPorContacto']);
+    const normal = await entrante(A, '59100000002');
+    expect((normal.cuerpo['servicio'] as Datos)['estado']).toBe('operativo');
+  });
+
+  it('la bitácora registra `codigo: bloqueado` y NO resultado ok; un entrante normal sigue ok', async () => {
+    await entrante(A, TEL);
+    await bloquear(A, TEL);
+    for (const d of (await db.collection(`tenants/${A.id}/bitacora`).get()).docs) await d.ref.delete();
+    await entrante(A, TEL);
+    const filas = (await db.collection(`tenants/${A.id}/bitacora`).get()).docs.map((d) => d.data());
+    expect(filas).toHaveLength(1);
+    expect(filas[0]).toMatchObject({ tipo: 'mensaje_entrante', resultado: 'rechazado', codigo: 'bloqueado' });
+  });
+
+  it('NEGATIVA: con un corte APLICADO por prepago, un entrante bloqueado no cuenta como pérdida ni toca el corte', async () => {
+    await db.doc('plataforma/prepago').set({ corteActivo: true });
+    await db.doc(`tenants/${A.id}/cuenta/estado`).set({ ...PREPAGO(), periodoPagado: '2020-01', corteActivo: true });
+    await entrante(A, TEL); // cortado: no se atiende, pero la conversación existe
+    await bloquear(A, TEL);
+    const antes = (await db.doc(`tenants/${A.id}/cuenta/estado`).get()).data();
+    const r = await entrante(A, TEL);
+    expect(r.cuerpo['servicio']).toBeUndefined();
+    expect((await db.doc(`tenants/${A.id}/cuenta/estado`).get()).data()).toEqual(antes);
+    await db.doc('plataforma/prepago').delete();
+  });
+});
+
+describe('un turno de persona vigente + contacto bloqueado: manda el bloqueo', () => {
+  const turno = () => ({ responde: 'persona', tomadoPor: 'u-ana', tomadoEn: Timestamp.fromMillis(Date.now() - 300_000), actividadPersonaEn: Timestamp.fromMillis(Date.now() - 60_000) });
+
+  it('la ingesta y configuracionFlujo devuelven SOLO `bloqueadoPorContacto` (sin `pausadoPorPersona`)', async () => {
+    await entrante(A, TEL);
+    await refConv(A, TEL).update({ turno: turno() });
+    await bloquear(A, TEL);
+    const r = await entrante(A, TEL);
+    expect(Object.keys(r.cuerpo).sort()).toEqual(['atencion', 'avisarRecepcion', 'bloqueadoPorContacto']);
+    const c = atencionDe(await configuracion(A, TEL));
+    expect(c['bloqueadoPorContacto']).toBe(true);
+    expect(c['pausadoPorPersona']).toBeUndefined();
+    expect(c['estado']).toBe('bloqueado');
+  });
+
+  it('NEGATIVA: la rama bloqueada NO persiste el vencimiento de un turno (ni escribe auditoría `conversacion_devuelta`)', async () => {
+    await entrante(A, TEL);
+    const vencido = { ...turno(), actividadPersonaEn: Timestamp.fromMillis(Date.now() - 40 * 60_000) };
+    await refConv(A, TEL).update({ turno: vencido });
+    await bloquear(A, TEL);
+    await entrante(A, TEL);
+    expect((await conversacion(A, TEL))['turno']).toEqual(vencido);
+    expect((await db.collection(`tenants/${A.id}/auditoria`).get()).size).toBe(0);
+  });
+});
+
+describe('desbloquear por la CALLABLE, de punta a punta', () => {
+  it('bloquear y desbloquear con las callables reales (administrador del comercio): el asistente calla y luego responde y cuenta', async () => {
+    const BL = await import('../../functions/src/core/conversacion/bloquearContacto.ts');
+    type Callable = { run: (r: unknown) => Promise<unknown> };
+    const admin = { uid: 'u-admin-bloqueo', token: { nc: { v: 1, t: { [A.id]: 'admin' } }, firebase: { sign_in_provider: 'password', identities: {} }, email_verified: true } };
+    const llamarCallable = (c: unknown, data: unknown) => (c as Callable).run({ data, auth: admin, rawRequest: {} });
+    await db.doc(`tenants/${A.id}`).set({ nombre: A.id, estado: 'activo', plan: 'pro', consolaConversaciones: 'nueva' });
+    await entrante(A, TEL);
+    await refConv(A, TEL).update({ atencionDesde: Timestamp.fromMillis(Date.now() - 30 * HORA) });
+    const datos = { tenantId: A.id, conversacionId: `wa_${TEL}` };
+
+    expect(await llamarCallable(BL.bloquearContacto, datos)).toEqual({ bloqueada: true });
+    const r1 = await entrante(A, TEL);
+    expect(atencionDe(r1)['estado']).toBe('bloqueado');
+    expect((await metricas(A))['conversaciones']).toBe(1);
+
+    expect(await llamarCallable(BL.desbloquearContacto, datos)).toEqual({ bloqueada: false });
+    const r2 = await entrante(A, TEL);
+    expect(Object.keys(r2.cuerpo).sort()).toEqual(['atencion', 'avisarRecepcion']);
+    expect(atencionDe(r2)['estado']).toBe('normal');
+    expect((await metricas(A))['conversaciones']).toBe(2);
+    expect(atencionDe(await configuracion(A, TEL))['estado']).toBe('normal');
+    const acciones = (await db.collection(`tenants/${A.id}/auditoria`).get()).docs.map((d) => d.data()['accion']).sort();
+    expect(acciones).toEqual(['bloquear_contacto', 'desbloquear_contacto']);
+    for (const d of await db.collection('topesDeTurno').listDocuments()) await d.delete();
+    await db.doc(`tenants/${A.id}`).set({ nombre: `Comercio ${A.id}`, estado: 'activo', plan: 'pro' });
+  });
+});
+
 describe('desbloquear restaura todo', () => {
   it('sin el campo, el siguiente entrante se cuenta y las respuestas son las de siempre', async () => {
     await entrante(A, TEL);
