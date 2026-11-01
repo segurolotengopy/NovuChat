@@ -21,8 +21,8 @@ orden del registro.
 
 El coordinador de turno es `admin/functions/src/ingesta.ts`, en la raíz de
 Functions hasta F3b: tiene su línea de coordinador en `ZONA_POR_ARCHIVO`
-(`admin/pruebas/frontera/frontera.ts`) y la lista de lo que se parte en
-`SE_PARTE` (seña, inventario, captación, campañas y cobro de venta).
+(`admin/pruebas/frontera/frontera.ts`). Desde F3b-2e ya no figura en `SE_PARTE`:
+no queda lógica de módulo dentro de él.
 `admin/functions/src/ganchos.ts` (F3b-1b) es el segundo archivo coordinador de
 la raíz: une el contrato de `registrarCierre` (Core) con los ganchos de Cobros
 y de Agenda (ver «El cierre» abajo). `index.ts` también es coordinador y solo
@@ -322,3 +322,19 @@ zona inyectadas, modelo como sub-nodo intercambiable.
   leídos por el turno) viajan en `rotulosDeCobro`, extensión local y opcional del
   contexto (`ContextoDeCobro`), sin tocar el contrato de Core. Sin cambios en la
   respuesta: la red diferencial pasa con sus referencias intactas.
+
+- **F3b-2e (31/10/2026): `ingesta.ts` sin lógica de módulos; sale de `SE_PARTE`.**
+  Lo que quedaba, movido sin cambiar lógica: la solicitud en curso del mensaje
+  (seña de Agenda + regla 2 de Cobros, `solicitudTras`/`solicitudDeCobroTras`/
+  `reactivaTras`) a `modulos/agenda/solicitudDelTurno.ts` (Agenda depende de
+  Cobros, no al revés; función pura dentro de la misma transacción); la
+  revalidación de campañas y términos (`vigentesParaElPrompt`, `sigueVigente`) a
+  `modulos/campanas/vigentes.ts`; el enlace de la carta de «Venta mínima» a
+  `modulos/catalogo-web/alTurno.ts` (el coordinador conserva el aviso al
+  registro); el filtro de nombres de producto a `modulos/productos/alTurno.ts`.
+  `documentoDeVertical` es de Core (`core/prompt/prompt.ts`, alias del registro),
+  no de un módulo: queda. En `ingesta.ts` solo quedan importaciones de
+  `alTurno.ts`/`vigentes.ts` de los módulos y las reexportaciones para las
+  suites; los ganchos de inventario, cobro y seña siguen llamándose en cada turno
+  (no filtrados por `modulosDeHoy`). El gancho `despuesDelTurnoPedidos` (PR-4) y
+  `bloqueadoPorContacto` no se tocaron. Red diferencial sin regenerar.

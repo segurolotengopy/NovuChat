@@ -146,8 +146,6 @@ export const ZONA_POR_ARCHIVO: Readonly<Record<string, ZonaDeArchivo>> = {
  * es una zona (`core`, `central`, `plataforma`) o `modulo:<id>`.
  */
 export const SE_PARTE: Readonly<Record<string, readonly string[]>> = {
-  // Coordinador más los ganchos de seña, inventario, captación, campañas y cobro de venta.
-  'admin/functions/src/ingesta.ts': ['modulo:agenda', 'modulo:inventario', 'modulo:captacion', 'modulo:campanas', 'modulo:cobros'],
   // El checkout que escribe pedidos va a modulos/pedidos/.
   'admin/functions/src/modulos/catalogo-web/catalogoWeb.ts': ['modulo:pedidos'],
   // El resumen del catálogo va a Productos; documentoDeVertical desaparece.
