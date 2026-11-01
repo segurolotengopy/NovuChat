@@ -224,7 +224,11 @@ function bloqueDeColeccion(ruta: string): string | null {
   if (!hija) return b.cuerpo;
   const anidado = bloqueMatch(b.cuerpo, hija);
   if (anidado) return anidado.cuerpo;
-  return new RegExp(`== '${hija}'`).test(b.cuerpo) ? b.cuerpo : null;
+  // Un documento con nombre dentro de un `match /{comodín}` (contadores/catalogo, contadores/agendas):
+  // solo cuentan los `allow` que lo nombran, no los del documento vecino que comparte el bloque.
+  const propios = [...sinAnidados(b.cuerpo).matchAll(/allow\s+[\w,\s]+?\s*:\s*if\s+[\s\S]*?;/g)]
+    .map((m) => m[0]).filter((a) => new RegExp(`== '${hija}'`).test(a));
+  return propios.length > 0 ? propios.join('\n') : (new RegExp(`== '${hija}'`).test(b.cuerpo) ? b.cuerpo : null);
 }
 
 type Escritura = 'solo-servidor' | 'exige-capacidad' | 'sin-exigir';

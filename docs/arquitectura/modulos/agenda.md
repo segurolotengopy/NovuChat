@@ -10,7 +10,7 @@
 |---|---|
 | **Qué contiene hoy** | `funcionarios`, `agenda` (candado), `sena.ts`, `retencion.ts`, `seguimientos.ts`, recordatorios, señas vencidas; `Funcionarios.tsx`; 7 módulos de `Flujos/src/modulos/agenda/` (desde FL1; hasta entonces, 13 en `Flujos/src/reservas/`, con la seña y los medios); herramientas de Calendar |
 | **Depende de** | Cobros (solo para la seña) |
-| **Límite por plan** | agendas (1 / 5 / 10), **hoy sin hacer cumplir**: falta la regla en `firestore.rules` al crear un funcionario, con un contador `contadores/agendas` como el del catálogo. El número ya viaja en la copia `cuenta/estado.limites.agendas` (`planes.ts`). Ver `limites.md` |
+| **Límite por plan** | agendas (1 / 5 / 10), **hecho cumplir en las reglas (H2b-9, Q6=A)**: cuentan los `calendarioId` distintos entre funcionarios activos; un activo con `calendarioId` vacío no cuenta. `limiteAgendas()` lee `cuenta/estado.limites.agendas` (respaldo por plan) y `contadores/agendas = { calendarios, refs, ultimoFuncionario, actualizadoEn }` se mueve en el mismo lote que el funcionario que cambia su calendario. Conteo inicial: `scripts/modulos/agenda/contar-agendas.mjs` (seco por defecto) antes de desplegar. Ver `limites.md` |
 | **Configuración** | `config/agenda` (hoy `config/agendamiento`), con lista blanca: `calendarioId` (sale de `config/negocio`), `duracionMin`, `recordatorios`, `senaActiva`, … |
 | **Colecciones** | `funcionarios`, `funcionarios/privado`, `agenda`; se agrega `contadores/agendas` |
 | **Pestañas** | Agenda / Funcionarios (`admin`); ranura «citas de hoy» en el Tablero; la duración de cita como ranura en Catálogo |
