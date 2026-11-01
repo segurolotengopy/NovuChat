@@ -181,3 +181,5 @@ se comparte cada planilla lo hace una persona en Google. Runbook: `docs/runbook-
 script. PR-F debe agregar una prueba de CI que recorra `Flujos/clientes/<tenant>/` y falle si un nodo
 con credencial `googleApi` usa una distinta de «Google Sheets miniCRM (crm-<tenant>)». Mientras esa
 prueba no exista, el aislamiento depende de revisión humana.
+
+**Revisión de #733 (31/10/2026).** «Decidir fila» pide los IDs por nombre (`$('Leer IDs de la planilla')`), no por `$input`: con «Leer encabezados» en medio, `$input` son los encabezados y se repetirían los ID. `hallazgosCrm` exige ahora también ese origen, el nodo «Leer encabezados» con el paquete de señales y su conexión a «Decidir fila». **Decisión DP5 (aprobada por Andres):** la planilla debe tener al menos una fila de datos (la fila semilla); con la fila 4 vacía el bot no agrega filas nuevas y cierra en falla, a propósito. Los rangos que fija `ramaCrm` (`A3:J`, `A3:J4`) son provisorios: `injertarCrm` los reemplaza con el mapa del tenant y la prueba del injerto los exige.

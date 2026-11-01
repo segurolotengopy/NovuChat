@@ -171,8 +171,14 @@ export function hallazgosCrm(flujo, mapa) {
   const st = (flujo && flujo.settings) || {};
   if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false || st.saveManualExecutions !== false)
     h.push('la retencion de ejecuciones tiene que ser none (exito y error), sin progreso y sin guardar las manuales: el flujo lee y escribe la hoja del cliente');
+  const decidir = nodos.find((x) => x.name === 'Decidir fila de la planilla');
+  const conSenales = decidir && typeof (decidir.parameters || {}).jsCode === 'string' && decidir.parameters.jsCode.includes('const CRM_ADAPTADOR');
   const enc = nodos.find((x) => x.name === NODO_ENCABEZADOS);
+  if (conSenales && !enc) h.push(`el paquete de senales exige el nodo «${NODO_ENCABEZADOS}»`);
+  if (decidir && !/\$\('Leer IDs de la planilla'\)\.all\(\)/.test(String((decidir.parameters || {}).jsCode ?? ''))) h.push('«Decidir fila de la planilla» tiene que leer los IDs por nombre ($(\'Leer IDs de la planilla\')), no por $input');
   if (enc) {
+    const c = ((flujo.connections || {})[NODO_ENCABEZADOS] || {}).main || [];
+    if (!c.some((salida) => (salida || []).some((d) => d.node === 'Decidir fila de la planilla'))) h.push(`«Decidir fila de la planilla» tiene que ir conectado despues de «${NODO_ENCABEZADOS}»`);
     const r = (((enc.parameters || {}).options || {}).dataLocationOnSheet || {}).values;
     if (!r || r.range !== rangoEncabezados(mapa)) h.push(`«${NODO_ENCABEZADOS}» tiene que leer exactamente ${rangoEncabezados(mapa)}`);
   }

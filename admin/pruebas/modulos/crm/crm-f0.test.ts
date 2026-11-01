@@ -131,20 +131,29 @@ describe('adaptador general de señales y contrato CRM_ADAPTADOR', () => {
 describe('el nodo «Decidir fila» con el paquete de señales', () => {
   const [crm, adapt, nodo] = ['crm/crm.js', 'crm/adaptador-senales.js', 'crm/nodo-decidir-fila.js'].map(leer);
   const codigo = [inyectarMapa(crm, MAPA), adapt, nodo].join('\n');
-  const correr = (nodos: Record<string, Item[]>) => {
+  const correr = (nodosPropios: Record<string, Item[]>) => {
+    const nodos: Record<string, Item[]> = { 'Leer IDs de la planilla': ids, ...nodosPropios };
     const $ = (n: string) => { if (!(n in nodos)) throw new Error(`nodo sin ejecutar: ${n}`); return { all: () => nodos[n], first: () => nodos[n][0] }; };
     const vacios = GLOBALES_FUERA_DEL_SANDBOX;
-    return compileFunction(codigo, ['$input', '$', ...vacios])({ all: () => ids }, $, ...vacios.map(() => undefined)) as Array<{ json: J }>;
+    // Como en n8n: `$input` es la salida del nodo de ARRIBA, o sea los encabezados cuando la rama los lee en medio; los IDs solo llegan por nombre.
+    return compileFunction(codigo, ['$input', '$', ...vacios])({ all: () => nodos[NODO_ENCABEZADOS] ?? ids }, $, ...vacios.map(() => undefined)) as Array<{ json: J }>;
   };
   const base = { 'Prospecto para la planilla': [{ json: { telefono: TEL, nombre: 'Ana', senales: { pidioUbicacion: true } } }], 'Buscar teléfono en planilla': [] as Item[] };
   it('con «Leer encabezados» comprueba la fila completa', () => {
     expect(correr({ ...base, [NODO_ENCABEZADOS]: [filaEnc()] })[0].json.accionPlanilla).toBe('agregar');
     expect(correr({ ...base, [NODO_ENCABEZADOS]: [{ json: {} }] })[0].json.accionPlanilla).toBe('nada');
   });
+  it('el ID nuevo sale de la lectura de IDs aunque $input sean los encabezados (sigue a L-7, no se repite)', () => {
+    const r = correr({ ...base, [NODO_ENCABEZADOS]: [filaEnc()] })[0].json as J;
+    expect(r.accionPlanilla).toBe('agregar');
+    expect(JSON.stringify(r)).toContain('8');
+    expect(JSON.stringify(r)).not.toMatch(/"ID Lead":"[^"]*-?[0-4]"/);
+  });
   it('con el paquete de señales, sin esa lectura NO agrega (cierra en falla)', () => expect(correr(base)[0].json.accionPlanilla).toBe('nada'));
   it('sin ese nodo en el flujo (captación y chat, adaptador propio) sigue como antes', () => {
     const cod = [inyectarMapa(crm, MAPA), leer('captacion/crm-captacion.js'), nodo].join('\n');
-    const $ = (n: string) => { if (!(n in base)) throw new Error(`nodo sin ejecutar: ${n}`); return { all: () => (base as Record<string, Item[]>)[n], first: () => (base as Record<string, Item[]>)[n][0] }; };
+    const sinEnc: Record<string, Item[]> = { ...(base as Record<string, Item[]>), 'Leer IDs de la planilla': ids };
+    const $ = (n: string) => { if (!(n in sinEnc)) throw new Error(`nodo sin ejecutar: ${n}`); return { all: () => sinEnc[n], first: () => sinEnc[n][0] }; };
     const vacios = GLOBALES_FUERA_DEL_SANDBOX;
     const r = compileFunction(cod, ['$input', '$', ...vacios])({ all: () => ids }, $, ...vacios.map(() => undefined)) as Array<{ json: J }>;
     expect(r[0].json.accionPlanilla).toBe('agregar');
@@ -177,8 +186,8 @@ describe('ramaCrm: 8 nodos generados', () => {
 
   function flujoArmado() {
     const nodes = clonar(rama.nodes) as Array<{ name: string; parameters: J }>;
-    nodes.find((n) => n.name === 'Decidir fila de la planilla')!.parameters.jsCode = MARCA_MAPA;
-    return injertarCrm({ nodes, connections: {}, settings: { executionOrder: 'v1', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false, saveManualExecutions: false } }, MAPA);
+    nodes.find((n) => n.name === 'Decidir fila de la planilla')!.parameters.jsCode = MARCA_MAPA + " $('Leer IDs de la planilla').all()";
+    return injertarCrm({ nodes, connections: clonar(rama.connections), settings: { executionOrder: 'v1', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false, saveManualExecutions: false } }, MAPA);
   }
   const rangoDe = (f: { nodes: Array<{ name: string; parameters: J }> }, nombre: string) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -234,5 +243,24 @@ describe('los flujos que ya llevan miniCRM siguen cumpliendo', () => {
     const flujo = JSON.parse(readFileSync(join(RAIZ, 'Flujos', 'experimental', dir, json), 'utf8'));
     const mapa = (JSON.parse(readFileSync(join(RAIZ, 'admin', 'scripts', 'datos', datos), 'utf8')) as J).crm;
     expect(hallazgosCrm(flujo, mapa)).toEqual([]);
+  });
+});
+
+describe('hallazgosCrm: el nodo de decidir y su conexión', () => {
+  const nodoDecidir = (js: string) => ({ name: 'Decidir fila de la planilla', type: 'n8n-nodes-base.code', parameters: { jsCode: js } });
+  const settings = { saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false, saveManualExecutions: false };
+  it('se NIEGA un Decidir que lee los IDs por $input', () => {
+    const f = { nodes: [nodoDecidir('return crmDecidirFila({ lecturaIds: $input.all() });')], connections: {}, settings };
+    expect(hallazgosCrm(f, MAPA).join(' ')).toMatch(/por nombre/);
+  });
+  it('se NIEGA el paquete de señales sin «Leer encabezados»', () => {
+    const f = { nodes: [nodoDecidir("const CRM_ADAPTADOR = {}; $('Leer IDs de la planilla').all()")], connections: {}, settings };
+    expect(hallazgosCrm(f, MAPA).join(' ')).toMatch(/exige el nodo/);
+  });
+  it('se NIEGA «Leer encabezados» que no está conectado a Decidir', () => {
+    const rama = ramaCrm({ credencial: '@@cred:crm' });
+    const nodos = rama.nodes.map((n: { name: string; parameters: { jsCode?: string } }) => (n.name === 'Decidir fila de la planilla' ? { ...n, parameters: { ...n.parameters, jsCode: "const CRM_ADAPTADOR = {}; $('Leer IDs de la planilla').all()" } } : n));
+    const f = { nodes: nodos, connections: { ...rama.connections, [NODO_ENCABEZADOS]: { main: [[]] } }, settings };
+    expect(hallazgosCrm(f, MAPA).join(' ')).toMatch(/conectado despues/);
   });
 });

@@ -16,7 +16,7 @@ try {
 return crmDecidirFila({
   prospectos: $('Prospecto para la planilla').all(),
   busqueda: $('Buscar teléfono en planilla').all(),
-  lecturaIds: $input.all(),
+  lecturaIds: $('Leer IDs de la planilla').all(), // por nombre: con «Leer encabezados» en medio, $input ya no es la lectura de IDs
   mapa: CRM_MAPA,
   encabezados,
   adaptador: typeof CRM_ADAPTADOR !== 'undefined' ? CRM_ADAPTADOR : { calificar: capCalificar, resumir: capResumir, prioridad: CAP_PRIORIDAD },
