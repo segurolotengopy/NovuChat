@@ -499,7 +499,7 @@ export function manifiestoDe(m: IdModulo): Manifiesto {
 }
 
 /**
- * LOS FLUJOS DE UN NÚMERO (antes `FLUJOS_DE_RUTA`). H2b-cierre: dejó de ser
+ * LOS FLUJOS DE UN NÚMERO (antes llamada «puente de flujos»). H2b-cierre: dejó de ser
  * un puente de la ficha. `tenants.modulos` es la ÚNICA fuente de qué módulos
  * tiene un comercio; esta tabla ya no se consulta para deducirlos de
  * `tenants.flujos`. Queda porque `rutasWhatsApp/{numero}.flujo` sigue

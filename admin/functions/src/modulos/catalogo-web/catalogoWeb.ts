@@ -265,10 +265,8 @@ async function tieneVenta(tenantId: string): Promise<boolean> {
 /**
  * La decisión, pura: la ficha vende si el registro le da el módulo
  * `catalogo-web` (H2b-4d; antes una lista propia de `flujos`/`vertical`).
- * Para fichas reales (`flujos: ['venta']`, `vertical: 'venta'`) el resultado es
- * el de siempre, porque `venta` trae `catalogo-web` en el registro. Diferencias
- * a propósito: con `modulos` (lista) manda la lista, y un `flujos` que no es
- * lista (null, cadena) ya no cae a `vertical`: falla cerrado, como las reglas.
+ * Desde H2b-cierre SOLO manda la lista `modulos`: `flujos` y `vertical` no se
+ * leen y una ficha sin lista no vende (falla cerrado, como las reglas).
  */
 export const fichaVende = (ficha: FichaConCapacidades | null | undefined): boolean =>
   tieneModulo(ficha, 'catalogo-web');

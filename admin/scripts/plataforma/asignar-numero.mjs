@@ -45,7 +45,7 @@ import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 // EL FLUJO VÁLIDO Y SU DOCUMENTO DE CONFIGURACIÓN SALEN DEL REGISTRO (H2b-4e), no de
 // una lista propia: `registro.ts` no tiene `import`, así que no necesita el gancho de abajo.
-import { documentoDeFlujo, esFlujo, flujosDeFicha, FLUJOS_DE_RUTA } from '../../functions/src/registro.ts';
+import { documentoDeFlujo, esFlujo, FLUJOS_DE_RUTA } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -177,11 +177,13 @@ let plan;
 try {
   plan = await db.runTransaction(async (tx) => {
     // Lecturas antes que escrituras, como exige la transacción.
-    const [ruta, tenant, config, conAlias, vieja] = await Promise.all([
+    const [ruta, tenant, config, conAlias, vieja, rutasDelTenant] = await Promise.all([
       tx.get(refRuta), tx.get(refTenant),
       refConfig ? tx.get(refConfig) : Promise.resolve(null),
       tx.get(db.collection('rutasWhatsApp').where('aliasSecreto', '==', ALIAS).limit(5)),
       refVieja ? tx.get(refVieja) : Promise.resolve(null),
+      // "Ya tenía ese flujo" se decide por las rutas del comercio (incluida la que se reemplaza), no por `flujos`.
+      tx.get(db.collection('rutasWhatsApp').where('tenantId', '==', TENANT)),
     ]);
 
     if (!tenant.exists) return { error: `No existe el comercio «${TENANT}». Primero alta-comercio.mjs.` };
@@ -213,8 +215,8 @@ try {
       return { error: 'La ficha tiene `modulos` y no es una lista: corríjala antes de agregar el flujo.' };
     }
     // Si el flujo YA estaba en la ficha no se suma nada: un módulo cerrado a propósito no se reabre.
-    // `flujos` ya no se escribe (H2b-cierre): "ya estaba" = esta misma ruta tenia ese flujo o la ficha vieja lo lista.
-    const flujoYaEstaba = Boolean(ruta.exists && ruta.get('flujo') === FLUJO) || flujosDeFicha(datosFicha).includes(FLUJO);
+    // `flujos` ya no se escribe ni se lee (H2b-cierre): "ya estaba" = alguna ruta del comercio ya tiene ese flujo.
+    const flujoYaEstaba = rutasDelTenant.docs.some((d) => d.get('flujo') === FLUJO);
     const sumaModulos = tieneModulos && !flujoYaEstaba;
     const resumen = {
       flujoYaEstaba, tieneModulos,

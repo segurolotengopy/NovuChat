@@ -258,7 +258,9 @@ describe('A. validación de argumentos y evaluación (puras)', () => {
       const ev = mod.evaluar(FICHA_VENTA, QTACO);
       expect(ev.cambian).toEqual(['inventario']);
       expect(ev.propias).toEqual([]);
-      expect(ev.actual).toContain('inventario');
+      // H2b-cierre: lo REAL de una ficha sin lista es []; lo que daban sus flujos (con lo que se mide el cambio) es `legado`.
+      expect(ev.actual).toEqual([]);
+      expect(ev.legado).toContain('inventario');
       expect(ev.despues).not.toContain('inventario');
       // Los chequeos que lo ven: los nueve módulos y las pestañas (la de Inventario). Nada más.
       expect(ev.diferencias.map((d) => d.chequeo)).toEqual(['1 tieneModulo', '6a pestañas (conjunto)']);
@@ -641,40 +643,25 @@ describe('B. el script como proceso contra el emulador', () => {
     expect(await tiempo(T.aplicar)).toBe(t0);
     expect(readFileSync(resp, 'utf8')).toBe(textoResp);
 
-    // Revertir en seco no escribe y sale con 1: queda un cambio pendiente.
+    // H2b-cierre (seguridad MEDIUM): el respaldo es de una ficha SIN `modulos`; revertir la dejaría sin ningún
+    // módulo (borrar el campo corta todo) y el diff de `flujos` diría «sin cambios». Se rechaza, en seco y con
+    // --aplicar, con o sin --acepto-diferencias, y la ficha no cambia.
     const t1 = await tiempo(T.aplicar);
-    const seco = correr(args(T.aplicar, ['--revertir', '--respaldo', resp, '--acepto-diferencias', 'inventario']));
-    expect(seco.codigo, seco.salida).toBe(1);
-    expect(seco.salida).toContain('AUSENTE (se eliminaría el campo)');
-    expect(seco.salida).toContain('capacidades que cambian      : inventario');
-    expect(seco.salida).toContain('Con --aplicar se aceptaría');
-    expect(await tiempo(T.aplicar)).toBe(t1);
-    // Sin declarar la capacidad, el seco también sale con 1 y dice que no se escribiría.
-    const secoSin = correr(args(T.aplicar, ['--revertir', '--respaldo', resp]));
-    expect(secoSin.codigo, secoSin.salida).toBe(1);
-    expect(secoSin.salida).toContain('Con --aplicar NO se escribiría');
-    expect(await tiempo(T.aplicar)).toBe(t1);
-
-    // Revertir de verdad: como `modulos` no existía, se ELIMINA el campo (con el freno: inventario declarado).
-    const rev = correr(args(T.aplicar, ['--revertir', '--aplicar', '--respaldo', resp, '--acepto-diferencias', 'inventario']));
-    expect(rev.codigo, rev.salida).toBe(0);
-    expect(rev.salida).toContain('eliminado (no existía)');
-    expect(await datos(T.aplicar)).toEqual(FICHA_VENTA);
-    expect('modulos' in (await datos(T.aplicar))).toBe(false);
-
-    // Y revertir otra vez no hace nada: idempotente, sale 0 aunque no se declare nada (el freno va después).
-    const t2 = await tiempo(T.aplicar);
-    const de_nuevo = correr(args(T.aplicar, ['--revertir', '--aplicar', '--respaldo', resp]));
-    expect(de_nuevo.codigo, de_nuevo.salida).toBe(0);
-    expect(de_nuevo.salida).toContain('nada que revertir');
-    expect(await tiempo(T.aplicar)).toBe(t2);
-    const seco2 = correr(args(T.aplicar, ['--revertir', '--respaldo', resp]));
-    expect(seco2.codigo, seco2.salida).toBe(0);
+    for (const extra of [[], ['--acepto-diferencias', 'inventario'], ['--aplicar'], ['--aplicar', '--acepto-diferencias', 'inventario']]) {
+      const r2 = correr(args(T.aplicar, ['--revertir', '--respaldo', resp, ...extra]));
+      expect(r2.codigo, r2.salida).toBe(2);
+      expect(r2.salida).toContain('tras H2b-cierre borrar `modulos` corta todo');
+      expect(await tiempo(T.aplicar)).toBe(t1);
+      expect((await datos(T.aplicar))['modulos']).toEqual(QTACO);
+    }
   });
 
+  const CON_INVENTARIO = [...QTACO, 'inventario'];
   it('--revertir --aplicar exige --acepto-diferencias igual a lo que cambia, como la ida: sin él, o con otro, sale con 2 y no escribe', async () => {
     const dir = nuevoDir();
     const resp = join(dir, 'r.json');
+    // Ficha CON lista previa (el respaldo restaurable): revertir devuelve esa lista.
+    await db.doc(`tenants/${T.reaplica}`).update({ modulos: CON_INVENTARIO });
     const ok = correr(args(T.reaplica, ['--modulos', LISTA_QTACO, '--acepto-diferencias', 'inventario', '--aplicar', '--respaldo', resp]));
     expect(ok.codigo, ok.salida).toBe(0);
     const t = await tiempo(T.reaplica);
@@ -687,12 +674,13 @@ describe('B. el script como proceso contra el emulador', () => {
     }
     const bien = correr(args(T.reaplica, ['--revertir', '--aplicar', '--respaldo', resp, '--acepto-diferencias', 'inventario']));
     expect(bien.codigo, bien.salida).toBe(0);
-    expect('modulos' in (await datos(T.reaplica))).toBe(false);
+    expect((await datos(T.reaplica))['modulos']).toEqual(CON_INVENTARIO);
   });
 
   it('--revertir NO pisa un cambio posterior de otra persona: si la ficha ya no tiene lo escrito, sale con 2 y conserva el cambio', async () => {
     const dir = nuevoDir();
     const resp = join(dir, 'r.json');
+    await db.doc(`tenants/${T.ajeno}`).update({ modulos: CON_INVENTARIO });
     const ok = correr(args(T.ajeno, ['--modulos', LISTA_QTACO, '--acepto-diferencias', 'inventario', '--aplicar', '--respaldo', resp]));
     expect(ok.codigo, ok.salida).toBe(0);
     // Otro proceso (otra persona) agrega `agenda` después.
@@ -716,7 +704,7 @@ describe('B. el script como proceso contra el emulador', () => {
     await db.doc(`tenants/${T.ajeno}`).update({ modulos: [...QTACO].reverse() });
     const rev = correr(args(T.ajeno, ['--revertir', '--aplicar', '--respaldo', resp, '--acepto-diferencias', 'inventario']));
     expect(rev.codigo, rev.salida).toBe(0);
-    expect('modulos' in (await datos(T.ajeno))).toBe(false);
+    expect((await datos(T.ajeno))['modulos']).toEqual(CON_INVENTARIO);
   });
 
   it('un respaldo adulterado (previo o escrito inválidos) sale con 2 y no cambia la ficha ni su updateTime', async () => {
@@ -969,7 +957,8 @@ describe('C. la precondición: la ficha cambia entre la lectura y la escritura',
   });
 
   it('--revertir --aplicar también aborta sin escribir', async () => {
-    await db.doc(`tenants/${T2}`).set({ ...FICHA_VENTA });
+    // H2b-cierre: el respaldo restaurable es de una ficha CON lista (revertir a «sin lista» se rechaza).
+    await db.doc(`tenants/${T2}`).set({ ...FICHA_VENTA, modulos: [...QTACO, 'inventario'] });
     const dir = nuevoDir();
     const resp = join(dir, 'r', 'r.json');
     // Primero se aplica de verdad (con la base real), para tener un respaldo.
@@ -1000,7 +989,7 @@ describe('C. la precondición: la ficha cambia entre la lectura y la escritura',
     expect(estados).toEqual(['escribiendo', 'antes']);
     // Escritura buena: escribiendo -> escrito (y se queda en escrito mientras relee).
     estados.length = 0;
-    await db.doc(`tenants/${T3}`).set({ ...FICHA_VENTA });
+    await db.doc(`tenants/${T3}`).set({ ...FICHA_VENTA, modulos: [...QTACO, 'inventario'] });
     const bien = await mod.ejecutar({ ...cfg, respaldo: join(dir, 'b', 'r.json') }, { db, FieldValue, log, marcarEscritura: (e: string) => estados.push(e) });
     expect(bien).toBe(0);
     expect(estados).toEqual(['escribiendo', 'escrito']);

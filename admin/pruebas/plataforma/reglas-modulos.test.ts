@@ -559,6 +559,13 @@ describe('reglas: la ÚNICA fuente de capacidades es `modulos`', () => {
     expect(sinComentarios).not.toMatch(/data\.get\('vertical'|ficha\.get\('vertical'/);
   });
 
+  it('storage.rules tampoco lee `flujos` ni `vertical`: la captación se decide solo por `modulos`', () => {
+    const storage = readFileSync(join(aqui, '..', '..', 'storage.rules'), 'utf8')
+      .split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    expect(storage).not.toMatch(/flujos|vertical/);
+    expect(storage).toMatch(/m is list && 'captacion' in m/);
+  });
+
   it('cada módulo literal que piden las reglas es un módulo del registro', () => {
     const literales = [...sinComentarios.matchAll(/tieneModulo(?:Comun)?\(tenantId,\s*'([\w-]+)'\)/g)].map((m) => m[1] as string);
     expect(literales.length).toBeGreaterThan(0);

@@ -12,8 +12,7 @@ const aqui = dirname(fileURLToPath(import.meta.url));
 const TEXTO = readFileSync(join(aqui, '..', '..', 'scripts', 'modulos', 'verificar-todas-con-modulos.mjs'), 'utf8');
 
 describe('verificar-todas-con-modulos: la ficha sin lista `modulos` se detecta', () => {
-  it('solo una LISTA cuenta (vacía también); ausente, null, cadena, mapa y número no', () => {
-    expect(clasificarFicha({ modulos: [] }).ok).toBe(true);
+  it('solo una LISTA no vacía cuenta; ausente, null, cadena, mapa y número no', () => {
     expect(clasificarFicha({ modulos: ['agenda'] }).ok).toBe(true);
     expect(clasificarFicha({}).motivo).toBe('ausente');
     expect(clasificarFicha({ modulos: undefined }).motivo).toBe('ausente');
@@ -36,8 +35,28 @@ describe('verificar-todas-con-modulos: la ficha sin lista `modulos` se detecta',
     expect(r.faltan).toEqual([{ id: 'bellido', motivo: 'ausente' }]);
   });
 
+  it('LOW-3: `modulos: []` NO es ok (la ficha quedaría sin ningún módulo)', () => {
+    expect(clasificarFicha({ modulos: [] })).toEqual({ ok: false, motivo: 'vacía' });
+    expect(verificar([{ id: 'v', ficha: { modulos: [] } }]).faltan).toEqual([{ id: 'v', motivo: 'vacía' }]);
+  });
+
+  it('LOW-3: reporta diferencias con la derivación de la migración (sin fallar)', () => {
+    const r = verificar([
+      { id: 'q', ficha: { flujos: ['venta'], modulos: ['productos', 'campanas', 'cobros', 'pedidos', 'catalogo-web'] } },
+      { id: 'igual', ficha: { flujos: ['agendamiento'], modulos: ['productos', 'cobros', 'agenda', 'campanas'] } },
+    ]);
+    expect(r.faltan).toEqual([]);
+    expect(r.diferencias).toEqual([{ id: 'q', sinElLegado: ['inventario'], masQueElLegado: [] }]);
+  });
+
+  it('LOW-3: el script avisa de las bajas y falla si un --tenant pedido no existe (lectura de código)', () => {
+    expect(TEXTO).toMatch(/noExisten/);
+    expect(TEXTO).toMatch(/la ficha no existe/);
+    expect(TEXTO).toMatch(/dada\(s\) de baja/);
+  });
+
   it('pasa cuando todas tienen lista', () => {
-    expect(verificar([{ id: 'a', ficha: { modulos: [] } }, { id: 'b', ficha: { modulos: ['agenda'] } }]).faltan).toEqual([]);
+    expect(verificar([{ id: 'a', ficha: { modulos: ['productos'] } }, { id: 'b', ficha: { modulos: ['agenda'] } }]).faltan).toEqual([]);
     expect(verificar([]).faltan).toEqual([]);
   });
 

@@ -9,9 +9,12 @@
  *
  *   node scripts/modulos/verificar-todas-con-modulos.mjs --proyecto <id> [--tenant a,b]
  *
- * SALIDA. Código 0: todas las fichas tienen `modulos` como lista. Código 1: al
- * menos una no (se imprime su id y el motivo: ausente, nula o no es lista; las
- * fichas dadas de baja se cuentan aparte y NO fallan, porque no operan). Código
+ * SALIDA. Código 0: todas las fichas tienen `modulos` como lista NO vacía. Código 1: al
+ * menos una no (se imprime su id y el motivo: ausente, nula, no es lista o VACÍA), o un
+ * `--tenant` pedido no existe. Las fichas dadas de baja no fallan (no operan) pero se
+ * AVISAN con su conteo. Además se compara cada lista con lo que derivaría la migración
+ * (`modulosDeFlujos(flujosDeFicha)`, como `migrar-modulos.mjs`) y se REPORTAN las diferencias
+ * (no fallan: una lista puede cerrar módulos a propósito, pero hay que verlas). Código
  * 2: uso. Código 3: error de ejecución (solo el código o nombre del error).
  * Imprime ids de tenant, banderas y conteos: nunca un dato del comercio.
  *
@@ -21,6 +24,7 @@
  */
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { IDS_MODULOS, modulosDeFlujos, flujosDeFicha } from '../../functions/src/registro.ts';
 
 /** Pura: clasifica una ficha. `ok` solo si `modulos` es una lista (aunque esté vacía). */
 export function clasificarFicha(ficha) {
@@ -28,6 +32,7 @@ export function clasificarFicha(ficha) {
   if (!Object.prototype.hasOwnProperty.call(f, 'modulos') || f.modulos === undefined) return { ok: false, motivo: 'ausente' };
   if (f.modulos === null) return { ok: false, motivo: 'nula' };
   if (!Array.isArray(f.modulos)) return { ok: false, motivo: 'no es lista' };
+  if (f.modulos.length === 0) return { ok: false, motivo: 'vacía' };
   return { ok: true, motivo: 'lista' };
 }
 
@@ -42,7 +47,17 @@ export function verificar(fichas) {
     if ((ficha ?? {}).estado === 'dado_de_baja') { bajasSinModulos += 1; continue; }
     faltan.push({ id, motivo: c.motivo });
   }
-  return { total: fichas.length, conModulos, bajasSinModulos, faltan };
+  // Diferencias con la derivación de la migración (solo fichas con lista válida y operativas).
+  const diferencias = [];
+  for (const { id, ficha } of fichas) {
+    if (!clasificarFicha(ficha).ok || (ficha ?? {}).estado === 'dado_de_baja') continue;
+    const derivada = modulosDeFlujos(flujosDeFicha(ficha));
+    const lista = ficha.modulos;
+    const faltan_ = IDS_MODULOS.filter((m) => derivada.includes(m) && !lista.includes(m));
+    const sobran = IDS_MODULOS.filter((m) => lista.includes(m) && !derivada.includes(m));
+    if (faltan_.length || sobran.length) diferencias.push({ id, sinElLegado: faltan_, masQueElLegado: sobran });
+  }
+  return { total: fichas.length, conModulos, bajasSinModulos, faltan, diferencias };
 }
 
 const esPrincipal = (() => {
@@ -73,7 +88,7 @@ if (esPrincipal) {
     const { getFirestore } = await import('firebase-admin/firestore');
     initializeApp({ projectId: PROYECTO });
     const db = getFirestore();
-    const campos = ['modulos', 'estado'];
+    const campos = ['modulos', 'estado', 'flujos', 'vertical'];
     let docs;
     if (pedidos.length) {
       docs = (await db.getAll(...pedidos.map((t) => db.doc(`tenants/${t}`)), { fieldMask: campos })).filter((d) => d.exists);
@@ -81,9 +96,17 @@ if (esPrincipal) {
       docs = (await db.collection('tenants').select(...campos).get()).docs;
     }
     const r = verificar(docs.map((d) => ({ id: d.id, ficha: d.data() ?? {} })));
+    // Un `--tenant` pedido que no existe NO es «todo bien»: se cuenta como falla.
+    const existentes = new Set(docs.map((d) => d.id));
+    const noExisten = pedidos.filter((t) => !existentes.has(t));
+    for (const t of noExisten) r.faltan.push({ id: t, motivo: 'la ficha no existe' });
     console.log(`\n  SECO (solo lecturas) · proyecto ${PROYECTO}\n`);
     console.log(`  fichas: ${r.total} · con modulos: ${r.conModulos} · dadas de baja sin modulos: ${r.bajasSinModulos} · sin modulos: ${r.faltan.length}`);
     for (const f of r.faltan.sort((a, b) => a.id.localeCompare(b.id))) console.log(`  ✗ ${f.id}: modulos ${f.motivo}`);
+    for (const d of r.diferencias) {
+      console.log(`  ~ ${d.id}: frente a la derivación de la migración — le faltan [${d.sinElLegado.join(', ')}], tiene de más [${d.masQueElLegado.join(', ')}]`);
+    }
+    if (r.bajasSinModulos > 0) console.log(`  ! aviso: ${r.bajasSinModulos} ficha(s) dada(s) de baja sin modulos (no fallan; no operan).`);
     if (r.faltan.length) {
       console.log('\n  Hay fichas sin `modulos`: NO desplegar las reglas de H2b-cierre hasta escribírselas.\n');
       process.exit(1);

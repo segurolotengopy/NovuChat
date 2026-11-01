@@ -24,7 +24,7 @@ import {
 // es `asignarEjes`, y contar los cambios operados es `registrarCambioOperado`,
 // los dos en `central/`. El plan, la modalidad y los umbrales siguen en
 // `actualizarEstadoCuenta`, más abajo.
-import { IDS_FLUJOS, FLUJOS_DE_RUTA, esFlujo, flujosDeFicha, modulosDeFlujos, type IdFlujo } from '../registro.js';
+import { IDS_FLUJOS, FLUJOS_DE_RUTA, esFlujo, modulosDeFlujos, type IdFlujo } from '../registro.js';
 import { MODELO_POR_DEFECTO, TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } from '../central/ejes.js';
 // PREPAGO (bloque A-0, `DISENO.md` §4undecies): la modalidad de la cuenta y los
 // campos derivados de la situación de pago, que se recalculan y nunca se
@@ -346,6 +346,8 @@ export const asignarNumero = onCall(async (peticion) => {
         'Ese número ya está asignado a otro comercio. Libérelo primero.');
     }
     const tenant = await tx.get(db().doc(`tenants/${tenantId}`));
+    // "Ya tenía ese flujo" se decide por las rutas del comercio (lecturas antes que escrituras).
+    const rutasDelTenant = await tx.get(db().collection('rutasWhatsApp').where('tenantId', '==', tenantId));
     if (!tenant.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
     // DOBLE ESCRITURA (H2b-7): con `modulos` lista se suman los del flujo; ausente,
     // no se crea; existente pero no lista, se rechaza sin escribir.
@@ -356,10 +358,8 @@ export const asignarNumero = onCall(async (peticion) => {
         throw new HttpsError('failed-precondition', 'La ficha tiene `modulos` y no es una lista: corríjala antes de agregar el flujo.');
       }
       // Si el flujo YA estaba, no se suma nada: un módulo cerrado a propósito no se reabre al reasignar un número.
-      // `flujos` ya no se escribe (H2b-cierre): "ya estaba" = esta misma ruta ya tenia ese flujo,
-      // o la ficha vieja aun lo lista.
-      const yaTiene = (existente.exists && existente.get('flujo') === flujo)
-        || flujosDeFicha(datosFicha).includes(flujo as IdFlujo);
+      // `flujos` ya no se escribe ni se lee (H2b-cierre): "ya estaba" = alguna ruta del comercio ya tiene ese flujo.
+      const yaTiene = rutasDelTenant.docs.some((d) => d.get('flujo') === flujo);
       modulosPorSumar = yaTiene ? null : [...FLUJOS_DE_RUTA[flujo as IdFlujo].modulos];
     }
 

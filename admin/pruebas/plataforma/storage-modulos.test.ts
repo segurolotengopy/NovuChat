@@ -97,6 +97,14 @@ for (const bits of ['000', '100', '010', '001', '110', '101', '011', '111']) {
   tenants.push({ id: `m${bits}`, ficha: { ...base, flujos: FLUJOS_TODOS, modulos }, captacion: o });
 }
 
+// H2b-cierre: el ORÁCULO cambia. `flujos`/`vertical` ya no abren nada: solo una LISTA `modulos` con `captacion`.
+// Toda ficha que no la trae (ausente, nula, cadena, mapa, número) NIEGA, aunque `flujos` diga onboarding.
+for (const t of tenants) {
+  const m = t.ficha?.['modulos'];
+  t.captacion = t.captacion && Array.isArray(m) && m.includes('captacion');
+}
+const deAntes = ['so', 'sl', 'mx', 'mmapa', 'mnull', 'mnum', 'f001', 'f111'];
+
 const sembrar = async (t: Tenant, conArchivo: boolean): Promise<void> => {
   // Sin `clear*` por caso (cada uno cuesta segundos): la ficha se reescribe
   // entera y el archivo se deja o se quita según el caso.
@@ -163,6 +171,14 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules por módulo: archivo de planes',
     expect(await violados(false)).toEqual([]);
   }, 600_000);
 
+  it('H2b-cierre: las fichas que antes abrían por flujos/vertical onboarding (sin lista) niegan', () => {
+    for (const id of deAntes) {
+      const t = tenants.find((x) => x.id === id)!;
+      expect(t.captacion, id).toBe(false);
+    }
+    expect(tenants.find((x) => x.id === 'mp')!.captacion).toBe(true);
+  });
+
   it('el oráculo no es vacío: hay tenants que abren y tenants que niegan', () => {
     expect(tenants.filter((t) => t.captacion).length).toBeGreaterThan(3);
     expect(tenants.filter((t) => !t.captacion).length).toBeGreaterThan(3);
@@ -174,7 +190,7 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules por módulo: archivo de planes',
     ['tieneOnboardingEn abre con cualquier lista (`modulos` presente basta)',
       (r) => r.replace("'captacion' in m", 'true')],
     ['tieneOnboardingEn devuelve true para toda ficha',
-      (r) => r.replace('return ficha != null\n        && ((m is list', 'return true || ficha != null\n        && ((m is list')],
+      (r) => r.replace('return ficha != null && m is list', 'return true || ficha != null && m is list')],
   ];
   for (const [nombre, cambio] of mutaciones) {
     it(`mutación: ${nombre}`, async () => {
