@@ -22,7 +22,10 @@ orden del registro.
 El coordinador de turno es `admin/functions/src/ingesta.ts`, en la raíz de
 Functions hasta F3b: tiene su línea de coordinador en `ZONA_POR_ARCHIVO`
 (`admin/pruebas/frontera/frontera.ts`). Desde F3b-2e ya no figura en `SE_PARTE`:
-no queda lógica de módulo dentro de él.
+salió de él la lógica de Agenda, Campañas, Catálogo web y Productos. Queda en
+el coordinador la decisión `cobroRealActivo` (Cobros: separa el camino que mueve
+dinero del simulado) y el conteo de señas enviadas; se mudan en una etapa
+posterior y no deben darse por movidas.
 `admin/functions/src/ganchos.ts` (F3b-1b) es el segundo archivo coordinador de
 la raíz: une el contrato de `registrarCierre` (Core) con los ganchos de Cobros
 y de Agenda (ver «El cierre» abajo). `index.ts` también es coordinador y solo
@@ -333,8 +336,8 @@ zona inyectadas, modelo como sub-nodo intercambiable.
   `modulos/catalogo-web/alTurno.ts` (el coordinador conserva el aviso al
   registro); el filtro de nombres de producto a `modulos/productos/alTurno.ts`.
   `documentoDeVertical` es de Core (`core/prompt/prompt.ts`, alias del registro),
-  no de un módulo: queda. En `ingesta.ts` solo quedan importaciones de
-  `alTurno.ts`/`vigentes.ts` de los módulos y las reexportaciones para las
+  no de un módulo: queda. En `ingesta.ts` quedan importaciones de
+  `alTurno.ts`/`vigentes.ts`/`retencion.ts`/`solicitudDelTurno.ts` de los módulos y las reexportaciones para las
   suites; los ganchos de inventario, cobro y seña siguen llamándose en cada turno
   (no filtrados por `modulosDeHoy`). El gancho `despuesDelTurnoPedidos` (PR-4) y
   `bloqueadoPorContacto` no se tocaron. Red diferencial sin regenerar.

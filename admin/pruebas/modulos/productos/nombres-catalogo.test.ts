@@ -191,6 +191,7 @@ describe('cableado: los tres puntos donde el nombre llega al modelo pasan por el
     const s = leer('ingesta.ts');
     // F3b-2e: la llamada pasa por el gancho de Productos, que es quien llama al filtro.
     expect(s).toContain('catalogoParaElModelo(catalogo.docs)');
+    expect(s).toMatch(/import \{ catalogoDelTurno as catalogoParaElModelo \} from '\.\/modulos\/productos\/alTurno\.js'/);
     expect(leer('modulos/productos/alTurno.ts')).toContain('catalogoParaElPrompt(docs)');
     // 5 = anuncios, resumen, catálogo del prompt, ganchos de campañas y el gancho de inventario (F3b-2c, que solo
     // lee el stock: el nombre no sale de ahí). Todos parten de los documentos ya filtrados.
