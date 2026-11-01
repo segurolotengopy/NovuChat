@@ -345,12 +345,23 @@ describe('--aplicar en proceso, con una base que cambia en medio', () => {
   });
 });
 
+describe('la línea final de ejecutar', () => {
+  it('el lote no recomienda --revertir al terminar una ficha', async () => {
+    await db.doc('tenants/venta-uno').set(VENTA);
+    const { huella } = huellaDelSeco();
+    const r = aplicar(huella, ['--respaldo-dir', join(nuevoDir(), 'r')]);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toContain('Este lote no revierte ni borra');
+    expect(r.salida).not.toContain('Para deshacer: --revertir');
+  });
+});
+
 describe('el texto del script', () => {
   const texto = readFileSync(SCRIPT, 'utf8');
   const raiz = join(aqui, '..', '..', '..');
   it('no tiene ninguna escritura propia a Firestore: toda escritura pasa por `ejecutar` y nunca se le da cómo borrar', () => {
     // El único `.update(` es el del hash de la huella (node:crypto), no de Firestore.
-    expect(texto.replace(".update(JSON.stringify(orden))", '')).not.toMatch(/\.(set|update|delete|create|add|commit|recursiveDelete)\(/);
+    expect(texto.replace(".update(JSON.stringify([entorno, orden]))", '')).not.toMatch(/\.(set|update|delete|create|add|commit|recursiveDelete)\(/);
     expect(texto).not.toMatch(/FieldValue\.delete/);
     expect(texto).not.toMatch(/revertirLote|leerRespaldo/);
     expect(texto).toContain("const BANDERAS = ['aplicar'];");

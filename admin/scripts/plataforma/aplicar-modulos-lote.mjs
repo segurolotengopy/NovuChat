@@ -51,7 +51,8 @@
  * SALIDA. 0: seco sin fichas rechazadas, o aplicado sin fallas. 1: seco con fichas que `--aplicar`
  * rechazaría. 2: uso, salvaguarda, huella distinta o `--excluir` inexistente (nada escrito). 3: alguna ficha
  * falló o fue rechazada al aplicar (las demás se procesaron), o error de ejecución. 130: Ctrl-C (muestra los
- * ids ya escritos). El resumen termina siempre con «quedan SIN modulos: <ids>».
+ * ids ya escritos). El resumen termina con «quedan SIN modulos: <ids>»
+ * en toda corrida que llega a procesar fichas (las salidas tempranas con 2 no lo imprimen).
  *
  * COSTO. Seco: una lectura del listado de `tenants` más dos lecturas por candidata. `--aplicar`: tres
  * lecturas y UNA escritura de un campo por ficha escrita. 0 mensajes por conversación. NO se corre contra
@@ -222,10 +223,10 @@ export function destinoDe(derivada, aceptadas) {
   return { ok: true, destino };
 }
 
-/** Huella de lo que el seco mostró: ids y listas destino (o `null` si la ficha se rechaza), ordenados por id. */
-export function huellaDe(plan) {
+/** Huella de lo que el seco mostró: entorno, ids y listas destino (o `null` si la ficha se rechaza), ordenados por id. */
+export function huellaDe(plan, entorno) {
   const orden = [...plan].sort((a, b) => a.id.localeCompare(b.id)).map((p) => [p.id, p.destino ?? null]);
-  return createHash('sha256').update(JSON.stringify(orden)).digest('hex').slice(0, 32);
+  return createHash('sha256').update(JSON.stringify([entorno, orden])).digest('hex').slice(0, 32);
 }
 
 // ===========================================================================
@@ -234,6 +235,7 @@ export function huellaDe(plan) {
 
 const lista = (l) => (l.length ? l.join(', ') : '(ninguno)');
 /** `ejecutar` solo toca `FieldValue` al revertir, que este script nunca pide; si algún día lo hiciera, falla en vez de borrar. */
+const TEXTO_DESHACER = '  Este lote no revierte ni borra: la vuelta atrás es reescribir la lista derivada con aplicar-modulos-tenant.mjs --modulos <derivada> --acepto-diferencias <caps>.\n';
 const NUNCA_BORRAR = { delete: () => { throw Object.assign(new Error('el lote nunca borra «modulos»'), { code: 'lote-no-borra' }); } };
 
 /**
@@ -311,7 +313,7 @@ export async function ejecutarLote(cfg, deps) {
     const d = destinoDe(c.derivada, aceptadas);
     return d.ok ? { ...c, aceptadas, destino: d.destino } : { ...c, aceptadas, error: d.motivo };
   });
-  const huella = huellaDe(plan);
+  const huella = huellaDe(plan, cfg.entorno);
   const aEscribir = plan.filter((p) => !p.error).map((p) => p.id);
   log(`\n  candidatas: ${candidatas.length} · omitidas: ${omitidas}`);
   log(`  ids que se escribirían (${aEscribir.length}): ${lista(aEscribir)}`);
@@ -343,7 +345,7 @@ export async function ejecutarLote(cfg, deps) {
     try {
       const guardado = dbGuardado(db, (datos) => (tiene(datos, 'modulos') ? 'la ficha ya tiene «modulos»'
         : ESTADOS_DE_BAJA.includes(datos.estado) ? 'la ficha está dada de baja' : null));
-      const codigo = await ejecutar(cfgFicha, { db: guardado, FieldValue: NUNCA_BORRAR, log, marcarEscritura: deps.marcarEscritura });
+      const codigo = await ejecutar(cfgFicha, { db: guardado, FieldValue: NUNCA_BORRAR, textoDeshacer: TEXTO_DESHACER, log, marcarEscritura: deps.marcarEscritura });
       if (codigo === 0) { hechas += 1; deps.escritas?.push(id); } else { fallas.push(id); log(`  ✗ ${id}: terminó con código ${codigo}`); }
     } catch (e) {
       fallas.push(id);

@@ -13,7 +13,7 @@ const mod = await import('../../scripts/plataforma/aplicar-modulos-lote.mjs') as
     { ok: boolean; problemas?: string[]; cfg?: Record<string, unknown> };
   clasificar: (id: string, ficha: Record<string, unknown>, excluir: string[]) => { accion: string; motivo?: string; derivada?: string[] };
   destinoDe: (derivada: string[], aceptadas: string[]) => { ok: boolean; destino?: string[]; motivo?: string };
-  huellaDe: (plan: { id: string; destino?: string[] }[]) => string;
+  huellaDe: (plan: { id: string; destino?: string[] }[], entorno: string) => string;
 };
 
 const ENV_EMU = { FIRESTORE_EMULATOR_HOST: '127.0.0.1:8231' };
@@ -123,10 +123,13 @@ describe('selección y lista destino', () => {
 
   it('huellaDe: igual con el mismo plan en cualquier orden; cambia si aparece una candidata o cambia una lista', () => {
     const a = [{ id: 'aaa', destino: ['productos', 'campanas'] }, { id: 'bbb', destino: ['productos', 'campanas', 'agenda'] }];
-    const h = mod.huellaDe(a);
+    const h = mod.huellaDe(a, 'emulador');
     expect(h).toMatch(/^[0-9a-f]{32}$/);
-    expect(mod.huellaDe([...a].reverse())).toBe(h);
-    expect(mod.huellaDe([...a, { id: 'ccc', destino: ['productos', 'campanas'] }])).not.toBe(h);
-    expect(mod.huellaDe([a[0]!, { id: 'bbb', destino: ['productos', 'campanas'] }])).not.toBe(h);
+    expect(mod.huellaDe([...a].reverse(), 'emulador')).toBe(h);
+    expect(mod.huellaDe([...a, { id: 'ccc', destino: ['productos', 'campanas'] }], 'emulador')).not.toBe(h);
+    expect(mod.huellaDe([a[0]!, { id: 'bbb', destino: ['productos', 'campanas'] }], 'emulador')).not.toBe(h);
+    // La misma lista en otro entorno es otra huella: un seco de staging no autoriza producción.
+    expect(mod.huellaDe(a, 'staging')).not.toBe(h);
+    expect(mod.huellaDe(a, 'produccion')).not.toBe(mod.huellaDe(a, 'staging'));
   });
 });
