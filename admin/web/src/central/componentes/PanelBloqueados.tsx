@@ -33,7 +33,7 @@ export function PanelBloqueados(p: PropsPanelBloqueados) {
       const vigentes = new Set([...prev].filter((id) => filas.some((f) => f.id === id)));
       return vigentes.size === prev.size ? prev : vigentes;
     });
-  }, [p.filas]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [p.filas]);
 
   async function desbloquear(id: string) {
     if (!p.comercioActivo || quitando.has(id)) return;
