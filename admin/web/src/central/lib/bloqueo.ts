@@ -98,7 +98,7 @@ export function textoFechaBloqueo(ms: number | null): string {
 export function textoErrorBloqueo(accion: AccionBloqueo, codigo: string): string {
   switch (codigo) {
     case 'unauthenticated': return 'Su sesión venció. Vuelva a ingresar.';
-    case 'permission-denied': return 'Solo el administrador del negocio puede bloquear o desbloquear contactos.';
+    case 'permission-denied': return 'No tiene permiso para bloquear o desbloquear contactos, o esta función no está habilitada para su comercio.';
     case 'failed-precondition':
       return accion === 'bloquear' ? MOTIVO_TURNO_VIGENTE : 'No se pudo desbloquear. Revise el estado de la conversación.';
     case 'not-found': return 'La conversación ya no existe, o esta función todavía no está disponible.';

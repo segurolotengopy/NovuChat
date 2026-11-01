@@ -244,8 +244,11 @@ export function consultaDePersona(): ConsultaPlana {
 }
 
 /** Los contactos bloqueados (`bloqueada == true`): sin orden ni límite de índice; la pantalla los ordena por fecha de bloqueo. */
+/** Tope de la lista de bloqueados: cada administrador con la consola abierta lee a lo sumo estas filas. */
+export const LIMITE_BLOQUEADAS = 200;
+
 export function consultaDeBloqueadas(): ConsultaPlana {
-  return { restricciones: [{ campo: 'bloqueada', op: '==', valor: true }], orden: [] };
+  return { restricciones: [{ campo: 'bloqueada', op: '==', valor: true }], orden: [], limite: LIMITE_BLOQUEADAS };
 }
 
 /** ¿El filtro depende del reloj? Esos se vuelven a pedir cada 5 minutos. */

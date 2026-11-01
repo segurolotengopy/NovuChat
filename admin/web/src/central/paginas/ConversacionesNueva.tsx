@@ -307,14 +307,14 @@ function useConversacionAbierta(tenantId: string, conversacionId: string | undef
 }
 
 /** Los contactos bloqueados, en vivo (solo si `activo`, o sea, el administrador). `null` = todavía no llegó. Sin orden en la consulta. */
-function useBloqueados(tenantId: string, activo: boolean): FilaBloqueada[] | null {
-  const [filas, setFilas] = useState<FilaBloqueada[] | null>(null);
+function useBloqueados(tenantId: string, activo: boolean): FilaBloqueada[] | 'error' | null {
+  const [filas, setFilas] = useState<FilaBloqueada[] | 'error' | null>(null);
   useEffect(() => {
     if (!tenantId || !activo) { setFilas(null); return; }
     return onSnapshot(
       consultaFirestore(tenantId, consultaDeBloqueadas()),
       (s) => setFilas(s.docs.flatMap((d) => { const f = filaBloqueada(d.id, d.data()); return f ? [f] : []; })),
-      () => setFilas(null),
+      () => setFilas('error'),
     );
   }, [tenantId, activo]);
   return filas;
@@ -699,7 +699,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
             onAnterior={vecina(claves, claveActiva, -1) ? () => irA(-1) : null}
             onSiguiente={vecina(claves, claveActiva, 1) ? () => irA(1) : null}
             posicion={posicion} puedeGestionar={puedeGestionar} esPropietario={permisos.propietario} comercioActivo={estadoComercio === 'activo'} puedeIntervenir={puedeIntervenir}
-            miUid={miUid} esAdmin={esAdminDelNegocio} capa={capa} capaBloqueo={capaBloqueo}
+            miUid={miUid} esAdmin={rol === 'admin' && !permisos.propietario} capa={capa} capaBloqueo={capaBloqueo}
           />
         ) : (
           <div className="cv-detalle cv-detalle--vacio">

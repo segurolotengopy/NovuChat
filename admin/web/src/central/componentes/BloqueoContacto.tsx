@@ -94,7 +94,7 @@ export function BloqueoContacto(p: PropsBloqueoContacto) {
           <p className="cv-turno-aviso" role="alertdialog" aria-label="Confirmar el bloqueo" data-testid="confirmar-bloqueo">
             {CONFIRMAR_BLOQUEO} {AVISO_BLOQUEAR}
           </p>
-          <button type="button" className="btn btn-primary" onClick={() => void ejecutar('bloquear')} disabled={ocupado}>
+          <button type="button" className="btn btn-primary" onClick={() => void ejecutar('bloquear')} disabled={ocupado || !acciones.habilitados}>
             Sí, bloquear
           </button>
           <button type="button" className="btn btn-ghost" onClick={() => setConfirmando(false)} disabled={ocupado}>Cancelar</button>

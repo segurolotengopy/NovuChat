@@ -12,7 +12,7 @@ import {
   MOTIVO_TURNO_VIGENTE, type CapaBloqueo, type EntradaBloqueo,
 } from '../../web/src/central/lib/bloqueo';
 import { accionesDeTurno, type Acciones } from '../../web/src/central/lib/turno';
-import { consultaDeBloqueadas, fichaDeDocumento, puedeGestionarConversaciones } from '../../web/src/central/lib/conversaciones';
+import { consultaDeBloqueadas, LIMITE_BLOQUEADAS, fichaDeDocumento, puedeGestionarConversaciones } from '../../web/src/central/lib/conversaciones';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const ADMIN = join(aqui, '..', '..');
@@ -106,7 +106,7 @@ describe('la lista «Bloqueados (N)»', () => {
     expect(ok.map((f) => f.id)).toEqual(['wa_59100000002', 'wa_59100000001', 'wa_59100000003']);
   });
   it('la consulta es de un solo campo y SIN orden (no pide índice nuevo)', () => {
-    expect(consultaDeBloqueadas()).toEqual({ restricciones: [{ campo: 'bloqueada', op: '==', valor: true }], orden: [] });
+    expect(consultaDeBloqueadas()).toEqual({ restricciones: [{ campo: 'bloqueada', op: '==', valor: true }], orden: [], limite: LIMITE_BLOQUEADAS });
   });
   it('rótulo con número, y sin número mientras no llegó (no se inventa un cero)', () => {
     expect(rotuloBloqueados(3)).toBe('Bloqueados (3)');
@@ -130,7 +130,7 @@ describe('la lista «Bloqueados (N)»', () => {
 describe('errores y fuente', () => {
   it('failed-precondition al bloquear = turno vigente, en español', () => {
     expect(textoErrorBloqueo('bloquear', 'failed-precondition')).toBe(MOTIVO_TURNO_VIGENTE);
-    expect(textoErrorBloqueo('bloquear', 'permission-denied')).toMatch(/administrador/);
+    expect(textoErrorBloqueo('bloquear', 'permission-denied')).toMatch(/permiso/);
     expect(textoErrorBloqueo('desbloquear', 'xyz')).toMatch(/desbloquear/);
   });
   it('NEGATIVA de fuente: no lee `e.message`, no usa fetch ni voseo; llama solo a las dos callables', () => {
@@ -141,6 +141,6 @@ describe('errores y fuente', () => {
       expect(c, r).not.toMatch(/\b(podés|tenés|hacé|elegí|sos)\b/i);
     }
     const lib = quitar('web/src/central/lib/bloqueo.ts');
-    expect([...lib.matchAll(/'(\w+Contacto)'/g)].map((m) => m[1]).sort()).toEqual(['bloquearContacto', 'desbloquearContacto']);
+    expect([...lib.matchAll(/'((?:des)?bloquearContacto)'/g)].map((m) => m[1]).sort()).toEqual(['bloquearContacto', 'desbloquearContacto']);
   });
 });

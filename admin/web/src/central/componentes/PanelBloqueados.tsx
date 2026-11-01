@@ -12,7 +12,7 @@ import { ESPERA_CAMBIO_MS, codigoDeError } from '../lib/turno';
  */
 export interface PropsPanelBloqueados {
   tenantId: string;
-  filas: readonly FilaBloqueada[] | null;
+  filas: readonly FilaBloqueada[] | 'error' | null;
   comercioActivo: boolean;
   capa: CapaBloqueo;
 }
@@ -24,7 +24,8 @@ export function PanelBloqueados(p: PropsPanelBloqueados) {
   const vivo = useRef(true);
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; }; }, []);
 
-  const filas = p.filas ? ordenarBloqueadas(p.filas) : [];
+  const hayError = p.filas === 'error';
+  const filas = Array.isArray(p.filas) ? ordenarBloqueadas(p.filas) : [];
 
   // Las que ya salieron de la lista (el oyente las sacó) dejan de estar «en proceso».
   useEffect(() => {
@@ -55,13 +56,13 @@ export function PanelBloqueados(p: PropsPanelBloqueados) {
     <div className="cv-bloqueados" data-testid="panel-bloqueados">
       <button type="button" className="btn btn-secondary" aria-expanded={abierto} aria-controls="cv-bloqueados-lista"
         onClick={() => setAbierto((v) => !v)}>
-        {rotuloBloqueados(p.filas === null ? null : filas.length)}
+        {rotuloBloqueados(p.filas === null || hayError ? null : filas.length)}
       </button>
       {abierto && (
         <div id="cv-bloqueados-lista">
           {error && <p role="alert" className="cv-error">{error}</p>}
           {filas.length === 0 ? (
-            <p className="cv-vacio">{p.filas === null ? 'Cargando…' : 'No hay contactos bloqueados.'}</p>
+            <p className="cv-vacio">{hayError ? 'No se pudo leer la lista de bloqueados. Recargue la página.' : p.filas === null ? 'Cargando…' : 'No hay contactos bloqueados.'}</p>
           ) : (
             <ul className="cv-bloqueados-filas">
               {filas.map((f) => (
