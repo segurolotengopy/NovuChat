@@ -7,6 +7,8 @@ import {
 import { db } from '../../core/lib/firebase';
 import { TextoSeguro } from './TextoSeguro';
 import { BarraTurno } from './BarraTurno';
+import { BloqueoContacto } from './BloqueoContacto';
+import { accionesDeBloqueo, accionesSinBloqueadas, type CapaBloqueo } from '../lib/bloqueo';
 import { VisorMedio } from './VisorMedio';
 import { accionDeMedio, enlaceWaMe, textoAnotado, AVISO_WA_ME, TEXTO_VENCIDO, TEXTO_PENDIENTE, medioDeDatos, type MedioDeMensaje } from '../lib/medios';
 import { EscribirComoPersona } from './EscribirComoPersona';
@@ -235,6 +237,8 @@ export interface PropsDetalle {
   esAdmin: boolean;
   /** H2: las tres callables (tomar, devolver, enviar). Las pruebas la reemplazan. */
   capa: CapaTurno;
+  /** Bloquear contacto: las dos callables. */
+  capaBloqueo: CapaBloqueo;
 }
 
 export function DetalleConversacion(p: PropsDetalle) {
@@ -314,9 +318,12 @@ export function DetalleConversacion(p: PropsDetalle) {
   // Quién responde AHORA: el veredicto del servidor (Core), no el campo crudo: un turno vencido ya es del asistente.
   const turno = turnoDeFicha(ficha, p.ahora);
   const situacion = situacionDeTurno(turno, p.miUid);
-  const acciones = accionesDeTurno({
+  const acciones = accionesSinBloqueadas(accionesDeTurno({
     situacion, puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo, puedeIntervenir: p.puedeIntervenir,
     ventanaAbierta: ventanaAbiertaParaTomar(ficha.ultimoEntranteEn, p.ahora),
+  }), ficha.bloqueada);
+  const accionesBloqueo = accionesDeBloqueo({
+    puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo, bloqueada: ficha.bloqueada, situacion,
   });
 
   let diaPrevio = 0;
@@ -387,6 +394,10 @@ export function DetalleConversacion(p: PropsDetalle) {
       <BarraTurno
         tenantId={tenantId} conversacionId={ficha.id} turno={turno} situacion={situacion}
         acciones={acciones} miUid={p.miUid} capa={p.capa}
+      />
+
+      <BloqueoContacto
+        tenantId={tenantId} conversacionId={ficha.id} bloqueada={ficha.bloqueada} acciones={accionesBloqueo} capa={p.capaBloqueo}
       />
 
       {m.saltoFallido && (

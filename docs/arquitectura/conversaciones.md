@@ -476,8 +476,13 @@ El asistente deja de responderle del todo a un contacto, y se puede revertir. C�
   misma sonda que tomar y devolver). `verificar-salida-persona.mjs` no las cubre a propósito: esa
   verificación es de la salida de persona (timbre y flujo) y bloquear no depende de ella.
 - **Lo que no hace**: no enciende `noContactar` (seguimientos y campañas siguen su propio
-  filtro) y no oculta la conversación de la consola. La pantalla (botón, marca, «Desbloquear») es el
-  PR de Central. Costo en mensajes por conversación: 0 (solo quita).
+  filtro) y no oculta la conversación de la consola. La pantalla (botón, marca, «Desbloquear») es la de
+  Central (`web/src/central/lib/bloqueo.ts`, `componentes/BloqueoContacto.tsx` y `PanelBloqueados.tsx`;
+  prueba `pruebas/central/bloqueo-pantalla.test.ts`): solo el administrador ve «Bloquear contacto»
+  (con confirmación) y no se ofrece con un turno vigente; bloqueada, la conversación muestra el
+  marcador y «Desbloquear contacto», y no ofrece Tomar ni escribir; «Bloqueados (N)» lista teléfono y
+  fecha con «Desbloquear» por fila, consulta `bloqueada == true` de un campo, ordenada en el cliente,
+  sin índice nuevo. Costo en mensajes por conversación: 0 (solo quita).
 
 ## Lo que este documento no afirma
 
