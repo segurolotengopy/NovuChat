@@ -37,8 +37,10 @@ const TITULOS = ['ID Lead', 'Fecha Registro', 'Nombre y Apellido', 'Empresa / Cl
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function correr(codigo: string, entrada: Item[], nodos: Record<string, Item[]> = {}): any {
   const $ = (n: string) => {
-    if (!(n in nodos)) throw new Error(`nodo sin ejecutar: ${n}`);
-    return { all: () => nodos[n], first: () => nodos[n][0] };
+    // En esos flujos «Leer IDs de la planilla» es el nodo de arriba: su salida es `entrada` (el código ahora la pide por nombre).
+    const salida = n === 'Leer IDs de la planilla' && !(n in nodos) ? entrada : nodos[n];
+    if (!salida) throw new Error(`nodo sin ejecutar: ${n}`);
+    return { all: () => salida, first: () => salida[0] };
   };
   const $input = { all: () => entrada, first: () => entrada[0] };
   const vacios = GLOBALES_FUERA_DEL_SANDBOX;

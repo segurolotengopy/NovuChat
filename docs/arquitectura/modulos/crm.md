@@ -142,6 +142,15 @@ mapa no contiguo, encabezados del equipo movidos, y negaciones sobre F, J, K, L,
 bot (A..T en la plantilla; la U no se lee, que es lo que tolera la comparación); NO ampliarlo a la U ni a ninguna columna del equipo posterior (Diagnóstico puede llevar datos de salud y quedaría en el historial de n8n; una prueba debe fallar si el rango incluye la letra de `equipo.diagnostico`); comprobar la fila de encabezados completa antes de AGREGAR una fila nueva (hoy solo se comprueba la A), y que
 `chProspecto` devuelva `senales`, día, horario, qué pidió y derivación.
 
+**PR-F0 (31/10/2026), hecho en el módulo.** `crmVerificarEncabezados` (con la lectura `Leer encabezados de la planilla`, rango
+`A{fila}:{ultima del bot}{fila+1}`) exige la fila de encabezados completa antes de AGREGAR; lectura vacía = no agrega (la hoja necesita una fila de datos).
+`adaptador-senales.js` define el contrato `CRM_ADAPTADOR = {calificar, resumir, prioridad}` (validado por `crmAdaptadorValido`; inválido = `adaptador_invalido`):
+Caliente = Alta, Tibio = Media, Frío = Baja, No es lead = Descalificado; el resumen usa solo marcas fijas («Marcado como no lead.», «Derivado a recepción.», «Escribió por WhatsApp.»): el texto libre del cliente (qué pidió, día, horario) va a sus propias columnas y no se copia al resumen. `hallazgosCrm` lo exige el CI sobre cada JSON versionado con miniCRM (`pruebas/modulos/crm/crm-hallazgos-flujos.test.ts`: hay que agregar ahí cada flujo nuevo); `ramaCrm` solo acepta la credencial `@@cred:crm`; la retención exige también `saveManualExecutions: false`. Con ese paquete la lectura de encabezados es
+obligatoria; captación y chat siguen con su adaptador y sin esa lectura (misma salida: oráculo en verde). En `construir-crm.mjs`: `ramaCrm` (8 nodos generados,
+la credencial llega como token `@@cred:`), `hallazgosCrm` (rango que llega a la letra de `equipo.diagnostico` o pasa de la última del bot, retención distinta de
+`none`) y `rutasPaqueteCrmSenales`. Aún sin conectar a ningún flujo de cliente (F1 a F4). Verificar contra `node-definitions` de n8n 2.36.5 el nodo Switch 3.2 de
+`ramaCrm` en F1. Mensajes por conversación: 0. Pruebas: `admin/pruebas/modulos/crm/crm-f0.test.ts`.
+
 ## Cuenta de servicio por cliente (PR-C)
 
 **Qué resuelve.** Cada subcuenta tiene su planilla del miniCRM. Compartirlas todas con una sola cuenta
@@ -172,3 +181,5 @@ se comparte cada planilla lo hace una persona en Google. Runbook: `docs/runbook-
 script. PR-F debe agregar una prueba de CI que recorra `Flujos/clientes/<tenant>/` y falle si un nodo
 con credencial `googleApi` usa una distinta de «Google Sheets miniCRM (crm-<tenant>)». Mientras esa
 prueba no exista, el aislamiento depende de revisión humana.
+
+**Revisión de #733 (31/10/2026).** «Decidir fila» pide los IDs por nombre (`$('Leer IDs de la planilla')`), no por `$input`: con «Leer encabezados» en medio, `$input` son los encabezados y se repetirían los ID. `hallazgosCrm` exige ahora también ese origen, el nodo «Leer encabezados» con el paquete de señales y su conexión a «Decidir fila». **Decisión DP5 (aprobada por Andres):** la planilla debe tener al menos una fila de datos (la fila semilla); con la fila 4 vacía el bot no agrega filas nuevas y cierra en falla, a propósito. Los rangos que fija `ramaCrm` (`A3:J`, `A3:J4`) son provisorios: `injertarCrm` los reemplaza con el mapa del tenant y la prueba del injerto los exige.
