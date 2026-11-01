@@ -142,6 +142,15 @@ mapa no contiguo, encabezados del equipo movidos, y negaciones sobre F, J, K, L,
 bot (A..T en la plantilla; la U no se lee, que es lo que tolera la comparación); NO ampliarlo a la U ni a ninguna columna del equipo posterior (Diagnóstico puede llevar datos de salud y quedaría en el historial de n8n; una prueba debe fallar si el rango incluye la letra de `equipo.diagnostico`); comprobar la fila de encabezados completa antes de AGREGAR una fila nueva (hoy solo se comprueba la A), y que
 `chProspecto` devuelva `senales`, día, horario, qué pidió y derivación.
 
+**PR-F0 (31/10/2026), hecho en el módulo.** `crmVerificarEncabezados` (con la lectura `Leer encabezados de la planilla`, rango
+`A{fila}:{ultima del bot}{fila+1}`) exige la fila de encabezados completa antes de AGREGAR; lectura vacía = no agrega (la hoja necesita una fila de datos).
+`adaptador-senales.js` define el contrato `CRM_ADAPTADOR = {calificar, resumir, prioridad}` (validado por `crmAdaptadorValido`; inválido = `adaptador_invalido`):
+Caliente = Alta, Tibio = Media, Frío = Baja, No es lead = Descalificado; el resumen usa solo vocabulario cerrado. Con ese paquete la lectura de encabezados es
+obligatoria; captación y chat siguen con su adaptador y sin esa lectura (misma salida: oráculo en verde). En `construir-crm.mjs`: `ramaCrm` (8 nodos generados,
+la credencial llega como token `@@cred:`), `hallazgosCrm` (rango que llega a la letra de `equipo.diagnostico` o pasa de la última del bot, retención distinta de
+`none`) y `rutasPaqueteCrmSenales`. Aún sin conectar a ningún flujo de cliente (F1 a F4). Verificar contra `node-definitions` de n8n 2.36.5 el nodo Switch 3.2 de
+`ramaCrm` en F1. Mensajes por conversación: 0. Pruebas: `admin/pruebas/modulos/crm/crm-f0.test.ts`.
+
 ## Cuenta de servicio por cliente (PR-C)
 
 **Qué resuelve.** Cada subcuenta tiene su planilla del miniCRM. Compartirlas todas con una sola cuenta
