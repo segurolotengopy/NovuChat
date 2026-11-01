@@ -52,6 +52,16 @@ describe('Omitir bloqueados', () => {
     const r = correrCon(lote(1), [resp]);
     expect(ids(r)).toEqual(['ev0']);
     expect(r[0].json['bloqueoMotivo']).toBe('bloqueo sin verificar');
+    expect(String(r[0].json['bloqueoMotivo'])).not.toMatch(/\d{4,}/);
+    expect(String(r[0].json['bloqueoMotivo'])).not.toContain(String(lote(1)[0]['telefono']));
+  });
+
+  it('atencion null (sin conversacion): se envia igual con el motivo «sin conversación», sin telefono', () => {
+    const r = correrCon(lote(2), [ok(null), ok({ estado: 'activo' })]);
+    expect(ids(r)).toEqual(['ev0', 'ev1']);
+    expect(r[0].json['bloqueoMotivo']).toBe('sin conversación');
+    expect(String(r[0].json['bloqueoMotivo'])).not.toMatch(/\d{4,}/);
+    expect(r[1].json['bloqueoMotivo']).toBeUndefined();
   });
 
   it('un bloqueado no verificable no se omite aunque el cuerpo lo diga con statusCode distinto de 200', () => {
@@ -62,6 +72,20 @@ describe('Omitir bloqueados', () => {
     const r = correrCon(lote(3), [bloq]);
     expect(ids(r)).toEqual(['ev0', 'ev1', 'ev2']);
     expect(r.every((x) => x.json['bloqueoMotivo'] === 'bloqueo sin verificar')).toBe(true);
+  });
+
+  it('3 originales y 1 respuesta: todo pairedItem existe en la entrada (< respuestas.length)', () => {
+    const r = correrCon(lote(3), [bloq]);
+    expect(r).toHaveLength(3);
+    expect(r.every((x) => x.pairedItem.item >= 0 && x.pairedItem.item < 1)).toBe(true);
+  });
+
+  it('el flujo no depende de un indice inexistente: Marcar usa Omitir bloqueados y Config usa first()', () => {
+    const txt = JSON.stringify(f);
+    expect(txt).not.toContain("$('Config del recordatorio').item");
+    const m = JSON.stringify(nodo(f, 'Marcar como recordado'));
+    expect(m).not.toContain("$('Preparar recordatorios').item");
+    expect(m).toContain("$('Omitir bloqueados').item.json");
   });
 
   it('pairedItem apunta al indice ORIGINAL', () => {

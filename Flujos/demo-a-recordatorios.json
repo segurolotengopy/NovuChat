@@ -156,7 +156,7 @@
           "conditions": [
             {
               "id": "m1",
-              "leftValue": "={{ $('Config del recordatorio').item.json.modo }}",
+              "leftValue": "={{ $('Config del recordatorio').first().json.modo }}",
               "rightValue": "plantilla",
               "operator": {
                 "type": "string",
@@ -213,7 +213,7 @@
     {
       "parameters": {
         "operation": "send",
-        "phoneNumberId": "={{ $('Config del recordatorio').item.json.phoneNumberId }}",
+        "phoneNumberId": "={{ $('Config del recordatorio').first().json.phoneNumberId }}",
         "recipientPhoneNumber": "={{ $json.telefono }}",
         "textBody": "={{ $json.texto }}"
       },
@@ -233,14 +233,14 @@
     {
       "parameters": {
         "operation": "update",
-        "eventId": "={{ $('Preparar recordatorios').item.json.eventoId }}",
+        "eventId": "={{ $('Omitir bloqueados').item.json.eventoId }}",
         "calendar": {
           "__rl": true,
           "mode": "id",
-          "value": "={{ $('Preparar recordatorios').item.json.calendarioDelEvento }}"
+          "value": "={{ $('Omitir bloqueados').item.json.calendarioDelEvento }}"
         },
         "updateFields": {
-          "description": "={{ $('Preparar recordatorios').item.json.descripcionMarcada }}"
+          "description": "={{ $('Omitir bloqueados').item.json.descripcionMarcada }}"
         }
       },
       "id": "marcar-como-recordado",
@@ -404,7 +404,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// OMITIR A LOS CONTACTOS BLOQUEADOS (recordatorios de cita).\n//\n// Un contacto bloqueado (bloquear contacto, conversaciones.md §13) no debe\n// recibir un recordatorio. Este nodo corre despues de «Estado del contacto»,\n// que consulta a `configuracionFlujo` una vez por recordatorio y devuelve la\n// respuesta completa (statusCode + body). Se empareja por INDICE con lo que\n// salio de «Preparar recordatorios».\n//\n// REGLA: se omite SOLO si statusCode === 200 y atencion.bloqueadoPorContacto\n// === true (el booleano exacto). Un 409, la pausa por persona, atencion:null,\n// 'true', 1 o un objeto NO omiten.\n//\n// FALLA ABIERTA (decision de Andres, D3=a): ante error, tiempo de espera,\n// respuesta ilegible o cantidades distintas, el recordatorio SE ENVIA IGUAL y\n// queda el motivo «bloqueo sin verificar». Nunca se pierden todos los\n// recordatorios por una caida de la Function. Este nodo solo QUITA envios.\n// No registra telefonos completos: solo cuentas.\n//\n// Cada item de salida lleva pairedItem con el indice ORIGINAL: los nodos\n// siguientes usan $('Preparar recordatorios').item.\nconst originales = $('Preparar recordatorios').all();\nconst respuestas = $input.all();\nconst MOTIVO = 'bloqueo sin verificar';\n\nfunction bloqueado(r) {\n  try {\n    if (!r || !r.json) return false;\n    const j = r.json;\n    if (j.statusCode !== 200) return false;\n    let cuerpo = j.body;\n    if (typeof cuerpo === 'string') cuerpo = JSON.parse(cuerpo);\n    return !!(cuerpo && cuerpo.atencion && cuerpo.atencion.bloqueadoPorContacto === true);\n  } catch (e) {\n    return false;\n  }\n}\n\nfunction verificado(r) {\n  // 200 con un cuerpo legible es una respuesta de verdad; el resto no se pudo verificar.\n  try {\n    if (!r || !r.json || r.json.error || r.json.statusCode !== 200) return false;\n    let cuerpo = r.json.body;\n    if (typeof cuerpo === 'string') cuerpo = JSON.parse(cuerpo);\n    return !!cuerpo && typeof cuerpo === 'object';\n  } catch (e) {\n    return false;\n  }\n}\n\nconst parejas = originales.length === respuestas.length;\nconst salida = [];\nlet omitidos = 0;\nlet sinVerificar = 0;\n\nfor (let i = 0; i < originales.length; i++) {\n  const json = originales[i].json;\n  if (!parejas) {\n    sinVerificar++;\n    salida.push({ json: { ...json, bloqueoMotivo: MOTIVO }, pairedItem: { item: i } });\n    continue;\n  }\n  if (bloqueado(respuestas[i])) { omitidos++; continue; }\n  if (!verificado(respuestas[i])) {\n    sinVerificar++;\n    salida.push({ json: { ...json, bloqueoMotivo: MOTIVO }, pairedItem: { item: i } });\n    continue;\n  }\n  salida.push({ json, pairedItem: { item: i } });\n}\n\nconsole.log(`recordatorios: ${originales.length}, omitidos por bloqueo: ${omitidos}, sin verificar (se envian): ${sinVerificar}`);\nreturn salida;"
+        "jsCode": "// OMITIR A LOS CONTACTOS BLOQUEADOS (recordatorios de cita).\n//\n// Un contacto bloqueado (bloquear contacto, conversaciones.md §13) no debe\n// recibir un recordatorio. Este nodo corre despues de «Estado del contacto»,\n// que consulta a `configuracionFlujo` una vez por recordatorio y devuelve la\n// respuesta completa (statusCode + body). Se empareja por INDICE con lo que\n// salio de «Preparar recordatorios».\n//\n// REGLA: se omite SOLO si statusCode === 200 y atencion.bloqueadoPorContacto\n// === true (el booleano exacto). Un 409, la pausa por persona, atencion:null,\n// 'true', 1 o un objeto NO omiten.\n//\n// FALLA ABIERTA (decision de Andres, D3=a): ante error, tiempo de espera,\n// respuesta ilegible o cantidades distintas, el recordatorio SE ENVIA IGUAL y\n// queda el motivo «bloqueo sin verificar». Nunca se pierden todos los\n// recordatorios por una caida de la Function. Este nodo solo QUITA envios.\n// No registra telefonos completos: solo cuentas.\n//\n// pairedItem apunta SIEMPRE a una entrada que existe en «Estado del contacto»\n// (indice < respuestas.length; si hay menos respuestas que originales, se\n// acota al ultimo). Los nodos siguientes no dependen de ese indice: leen\n// $('Omitir bloqueados').item.json (lleva el JSON original completo) y\n// $('Config del recordatorio').first().\n// Sin conversacion (atencion:null) se envia igual con el motivo «sin conversacion».\nconst originales = $('Preparar recordatorios').all();\nconst respuestas = $input.all();\nconst MOTIVO = 'bloqueo sin verificar';\nconst SIN_CONVERSACION = 'sin conversación';\nconst par = (i) => (respuestas.length ? { pairedItem: { item: Math.min(i, respuestas.length - 1) } } : {});\n\nfunction bloqueado(r) {\n  try {\n    if (!r || !r.json) return false;\n    const j = r.json;\n    if (j.statusCode !== 200) return false;\n    let cuerpo = j.body;\n    if (typeof cuerpo === 'string') cuerpo = JSON.parse(cuerpo);\n    return !!(cuerpo && cuerpo.atencion && cuerpo.atencion.bloqueadoPorContacto === true);\n  } catch (e) {\n    return false;\n  }\n}\n\nfunction sinConversacion(r) {\n  try {\n    let cuerpo = r.json.body;\n    if (typeof cuerpo === 'string') cuerpo = JSON.parse(cuerpo);\n    return cuerpo.atencion === null || cuerpo.atencion === undefined;\n  } catch (e) {\n    return false;\n  }\n}\n\nfunction verificado(r) {\n  // 200 con un cuerpo legible es una respuesta de verdad; el resto no se pudo verificar.\n  try {\n    if (!r || !r.json || r.json.error || r.json.statusCode !== 200) return false;\n    let cuerpo = r.json.body;\n    if (typeof cuerpo === 'string') cuerpo = JSON.parse(cuerpo);\n    return !!cuerpo && typeof cuerpo === 'object';\n  } catch (e) {\n    return false;\n  }\n}\n\nconst parejas = originales.length === respuestas.length;\nconst salida = [];\nlet omitidos = 0;\nlet sinVerificar = 0;\n\nfor (let i = 0; i < originales.length; i++) {\n  const json = originales[i].json;\n  if (!parejas) {\n    sinVerificar++;\n    salida.push({ json: { ...json, bloqueoMotivo: MOTIVO }, ...par(i) });\n    continue;\n  }\n  if (bloqueado(respuestas[i])) { omitidos++; continue; }\n  if (!verificado(respuestas[i])) {\n    sinVerificar++;\n    salida.push({ json: { ...json, bloqueoMotivo: MOTIVO }, ...par(i) });\n    continue;\n  }\n  if (sinConversacion(respuestas[i])) {\n    salida.push({ json: { ...json, bloqueoMotivo: SIN_CONVERSACION }, ...par(i) });\n    continue;\n  }\n  salida.push({ json, ...par(i) });\n}\n\nconsole.log(`recordatorios: ${originales.length}, omitidos por bloqueo: ${omitidos}, sin verificar (se envian): ${sinVerificar}`);\nreturn salida;"
       },
       "id": "omitir-bloqueados",
       "name": "Omitir bloqueados",

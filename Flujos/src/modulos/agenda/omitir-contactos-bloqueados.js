@@ -16,11 +16,17 @@
 // recordatorios por una caida de la Function. Este nodo solo QUITA envios.
 // No registra telefonos completos: solo cuentas.
 //
-// Cada item de salida lleva pairedItem con el indice ORIGINAL: los nodos
-// siguientes usan $('Preparar recordatorios').item.
+// pairedItem apunta SIEMPRE a una entrada que existe en «Estado del contacto»
+// (indice < respuestas.length; si hay menos respuestas que originales, se
+// acota al ultimo). Los nodos siguientes no dependen de ese indice: leen
+// $('Omitir bloqueados').item.json (lleva el JSON original completo) y
+// $('Config del recordatorio').first().
+// Sin conversacion (atencion:null) se envia igual con el motivo «sin conversacion».
 const originales = $('Preparar recordatorios').all();
 const respuestas = $input.all();
 const MOTIVO = 'bloqueo sin verificar';
+const SIN_CONVERSACION = 'sin conversación';
+const par = (i) => (respuestas.length ? { pairedItem: { item: Math.min(i, respuestas.length - 1) } } : {});
 
 function bloqueado(r) {
   try {
@@ -30,6 +36,16 @@ function bloqueado(r) {
     let cuerpo = j.body;
     if (typeof cuerpo === 'string') cuerpo = JSON.parse(cuerpo);
     return !!(cuerpo && cuerpo.atencion && cuerpo.atencion.bloqueadoPorContacto === true);
+  } catch (e) {
+    return false;
+  }
+}
+
+function sinConversacion(r) {
+  try {
+    let cuerpo = r.json.body;
+    if (typeof cuerpo === 'string') cuerpo = JSON.parse(cuerpo);
+    return cuerpo.atencion === null || cuerpo.atencion === undefined;
   } catch (e) {
     return false;
   }
@@ -56,16 +72,20 @@ for (let i = 0; i < originales.length; i++) {
   const json = originales[i].json;
   if (!parejas) {
     sinVerificar++;
-    salida.push({ json: { ...json, bloqueoMotivo: MOTIVO }, pairedItem: { item: i } });
+    salida.push({ json: { ...json, bloqueoMotivo: MOTIVO }, ...par(i) });
     continue;
   }
   if (bloqueado(respuestas[i])) { omitidos++; continue; }
   if (!verificado(respuestas[i])) {
     sinVerificar++;
-    salida.push({ json: { ...json, bloqueoMotivo: MOTIVO }, pairedItem: { item: i } });
+    salida.push({ json: { ...json, bloqueoMotivo: MOTIVO }, ...par(i) });
     continue;
   }
-  salida.push({ json, pairedItem: { item: i } });
+  if (sinConversacion(respuestas[i])) {
+    salida.push({ json: { ...json, bloqueoMotivo: SIN_CONVERSACION }, ...par(i) });
+    continue;
+  }
+  salida.push({ json, ...par(i) });
 }
 
 console.log(`recordatorios: ${originales.length}, omitidos por bloqueo: ${omitidos}, sin verificar (se envian): ${sinVerificar}`);
