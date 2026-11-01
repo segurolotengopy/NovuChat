@@ -7,6 +7,11 @@ aguas abajo nodos distintos que leen los campos que el nodo emite. Unificarlas
 cambia lo que hoy corre y rompe `ensamblar-flujo.mjs verificar` (8 JSON byte a
 byte), así que **no se fuerza**: queda para consulta.
 
+**Decisión de Andres (31/10/2026):** la condición 2 se cierra por **lista cerrada
+declarada**: las variantes quedan listadas y `pruebas/core/nucleo-comun.test.ts`
+falla si la lista crece sin declararse. **No se unifica ahora**; unificar por
+rebanadas queda para después del traslado de Q'Taco (~07/11).
+
 | Nodo | Líneas (reservas / venta / captación) | Diferencia de comportamiento |
 |---|---|---|
 | Comercio no operativo | 17 / 24 / 14 | Distinto contrato de salida: reservas emite `transferir:false`; venta agrega `phoneNumberId`; captación hace `...it.json` y `pairedItem`. Es el más cercano a unificarse (la salida sería la unión), pero cada rama aguas abajo lee campos distintos. |
