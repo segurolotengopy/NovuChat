@@ -46,7 +46,7 @@ export async function despuesDelTurnoPedidos(d: DatosDelTurnoPedidos): Promise<v
     }
     if (d.evento === 'cobro_cancelado' && d.efectoDeCobro === 'cancelado') {
       if (!tieneModulo(d.ficha, 'pedidos') || !d.referenciaAnterior) return;
-      await cerrarPedidoWa(d.tenantId, d.referenciaAnterior, 'cancelado');
+      await cerrarPedidoWa(d.tenantId, d.referenciaAnterior, 'cancelado', d.telefono);
     }
   } catch {
     try {

@@ -222,7 +222,7 @@ const alreadyExists = (e: unknown): boolean => {
 
 /** Pasa un pedido `wa_` de `recibido` a `reemplazado` o `cancelado`. Solo si sigue en `recibido`. */
 export async function cerrarPedidoWa(
-  tenantId: string, referencia: unknown, nuevo: 'reemplazado' | 'cancelado',
+  tenantId: string, referencia: unknown, nuevo: 'reemplazado' | 'cancelado', telefono?: unknown,
 ): Promise<boolean> {
   if (!TENANT_VALIDO.test(tenantId)) return false;
   const id = idDePedidoWa(referencia);
@@ -231,6 +231,11 @@ export async function cerrarPedidoWa(
   return db().runTransaction(async (tx) => {
     const s = await tx.get(ref);
     if (!s.exists || s.get('origen') !== 'whatsapp' || s.get('estado') !== 'recibido') return false;
+    // Con teléfono, solo cierra el pedido de ESA conversación (una referencia repetida en otra no lo toca).
+    if (telefono !== undefined) {
+      const digitos = typeof telefono === 'string' ? telefono.replace(/[^0-9]/g, '') : '';
+      if (s.get('conversacionId') !== `wa_${digitos}`) return false;
+    }
     tx.update(ref, { estado: nuevo, [`${nuevo}En`]: Timestamp.now() });
     return true;
   });
@@ -267,7 +272,7 @@ export async function crearPedidoWa(e: EntradaPedidoWa): Promise<ResultadoEscrit
     const anterior = typeof e.referenciaAnterior === 'string' ? e.referenciaAnterior.trim() : '';
     if (anterior !== '' && anterior !== ref) {
       // El pedido nuevo ya existe: un fallo al cerrar el anterior no lo deshace.
-      try { await cerrarPedidoWa(e.tenantId, anterior, 'reemplazado'); } catch {
+      try { await cerrarPedidoWa(e.tenantId, anterior, 'reemplazado', e.telefono); } catch {
         try { await registrar(e.tenantId, { tipo: 'error_flujo', resultado: 'fallo', codigo: 'pedido_wa_cierre', detalle: 'no se pudo cerrar el pedido anterior de WhatsApp' }); } catch { /* nunca lanza */ }
       }
     }

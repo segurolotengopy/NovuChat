@@ -112,6 +112,13 @@ describe('gancho de Pedidos: reemplazo y cancelación', () => {
     }
     expect((await db.doc(`tenants/${T}/pedidos/wa_ped-1`).get()).get('estado')).toBe('recibido');
   });
+  it('no cierra el pedido de OTRA conversación del mismo comercio con la misma referencia', async () => {
+    await despuesDelTurnoPedidos(datos());
+    await despuesDelTurnoPedidos(datos({ telefono: '59170000002', evento: 'cobro_cancelado', efectoDeCobro: 'cancelado', referenciaAnterior: 'ped-1', lineas: undefined }));
+    expect((await db.doc(`tenants/${T}/pedidos/wa_ped-1`).get()).get('estado')).toBe('recibido');
+    await despuesDelTurnoPedidos(datos({ referencia: 'ped-2', telefono: '59170000002', referenciaAnterior: 'ped-1' }));
+    expect((await db.doc(`tenants/${T}/pedidos/wa_ped-1`).get()).get('estado')).toBe('recibido');
+  });
   it('no cancela el pedido de otro comercio con la misma referencia', async () => {
     await despuesDelTurnoPedidos(datos({ tenantId: TB }));
     await despuesDelTurnoPedidos(datos({ evento: 'cobro_cancelado', efectoDeCobro: 'cancelado', referenciaAnterior: 'ped-1', lineas: undefined }));
