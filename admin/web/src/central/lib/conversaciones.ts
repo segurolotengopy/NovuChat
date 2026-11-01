@@ -99,6 +99,8 @@ export interface Ficha {
   /** `normal`, `operador` o `bloqueado` (lo anota la ingesta); '' si falta. */
   atencionEstado: string;
   noContactar: boolean;
+  /** `bloqueada === true` exacto (lo escribe solo el servidor): el asistente no le responde a este contacto. */
+  bloqueada: boolean;
   telefonoTrozos: string[];
   nombrePalabras: string[];
 }
@@ -151,6 +153,7 @@ export function fichaDeDocumento(id: string, datos: Record<string, unknown> | nu
     turno: x['turno'],
     atencionEstado: str(x['atencionEstado']),
     noContactar: x['noContactar'] === true,
+    bloqueada: x['bloqueada'] === true,
     telefonoTrozos: lista(x['telefonoTrozos']),
     nombrePalabras: lista(x['nombrePalabras']),
   };
@@ -195,6 +198,8 @@ export const FORMAS_CONSULTA: readonly FormaConsulta[] = [
   { id: 'ids', filtros: [{ campo: '__name__', op: 'in' }], orden: [] },
   // H2: cuántas tienen una persona (para el número de «El asistente atiende»: todas menos estas). Un solo campo: sin índice compuesto.
   { id: 'turno-persona', filtros: [{ campo: 'turno.responde', op: '==' }], orden: [] },
+  // «Bloqueados»: un solo campo, sin orden (se ordena en el cliente): sin índice compuesto.
+  { id: 'bloqueadas', filtros: [{ campo: 'bloqueada', op: '==' }], orden: [] },
 ];
 
 /** La forma (sin valores) de una consulta concreta. */
@@ -236,6 +241,11 @@ export function consultaDeFiltro(filtro: Filtro, ahora: number, limite?: number)
 /** Las conversaciones que tiene una persona (solo se cuentan; con `turno.responde == 'persona'`). */
 export function consultaDePersona(): ConsultaPlana {
   return { restricciones: [{ campo: 'turno.responde', op: '==', valor: 'persona' }], orden: [] };
+}
+
+/** Los contactos bloqueados (`bloqueada == true`): sin orden ni límite de índice; la pantalla los ordena por fecha de bloqueo. */
+export function consultaDeBloqueadas(): ConsultaPlana {
+  return { restricciones: [{ campo: 'bloqueada', op: '==', valor: true }], orden: [] };
 }
 
 /** ¿El filtro depende del reloj? Esos se vuelven a pedir cada 5 minutos. */

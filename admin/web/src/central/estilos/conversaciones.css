@@ -213,3 +213,8 @@
 .cv-medio-fondo { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: flex; align-items: center; justify-content: center; z-index: 50; }
 .cv-medio-dialogo { background: var(--fondo, #fff); color: inherit; padding: 16px; border-radius: 8px; max-width: min(92vw, 720px); max-height: 90vh; overflow: auto; }
 .cv-wame-aviso { display: block; font-size: 12px; }
+
+/* Bloquear contacto (31/10/2026) */
+.cv-bloqueados { padding: 6px 10px; }
+.cv-bloqueados-filas { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cv-bloqueados-filas li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
