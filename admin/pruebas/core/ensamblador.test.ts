@@ -66,6 +66,9 @@ const MARCADORES_DECLARADOS_APARTE: Record<string, Record<string, string>> = {
   'novuchat-onboarding.json': { '¿Es un mensaje?': 'REEMPLAZAR_' },
   'salida-de-persona.json': { 'Timbre': 'REEMPLAZAR_' },
 };
+/** El nodo base que conserva los REEMPLAZAR_* cuando no se llama `Config base`. */
+const NODO_BASE_DE: Record<string, string> = { 'demo-a-recordatorios.json': 'Config base del recordatorio' };
+const nodoBase = (f: string): string => NODO_BASE_DE[f] ?? 'Config base';
 const SIN_MANIFIESTO = FLUJOS.filter((f) => leerManifiesto(f) === null);
 
 /** Una copia de `Flujos/` en un directorio temporal, para romperla sin miedo. */
@@ -92,7 +95,6 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
     // Los que todavía no se ensamblan, dichos con nombre: son el bloque B-2.
     expect(SIN_MANIFIESTO).toEqual([
       'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'bellido-agendamiento.json',
-      'demo-a-recordatorios.json',
     ]);
   });
 
@@ -122,7 +124,7 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
       // `Config base` siempre; además, solo los marcadores fuera de él que la
       // higiene de F3a declara (higiene-flujos.test.ts exige que no falte ninguno).
       expect(m.conservanMarcadores).toEqual({
-        'Config base': 'REEMPLAZAR_',
+        [nodoBase(f)]: 'REEMPLAZAR_',
         ...(MARCADORES_DECLARADOS_APARTE[f] ?? {}),
       });
       // `scripts/verificar-saneo.sh` exige que todo `Flujos/**.json` tenga un
