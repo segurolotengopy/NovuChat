@@ -54,6 +54,7 @@ import { defineString } from 'firebase-functions/params';
 import { REGION } from '../../core/region.js';
 import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
 import { descontarPedido, hayParaVender } from '../inventario/inventario.js';
+import { sePuedeComprar, idDeItemValido, lineaLimpia } from '../pedidos/comprable.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../../core/seguridad/firma.js';
 // `enmascarar` sale de `ingesta.ts` y no de `firma.ts`, que tiene la suya con
 // otro recorte. Las dos pasan la regla, pero un mismo teléfono se vería
@@ -150,45 +151,8 @@ const HORAS_VENTANA = 24;
 const texto = (v: unknown, max: number): string =>
   typeof v === 'string' ? v.slice(0, max).trim() : '';
 
-/**
- * UNA LÍNEA DE TEXTO LIBRE DEL CLIENTE, lista para guardar y para reenviar al
- * flujo (hoy, las referencias para llegar). A diferencia de `texto`, que solo
- * recorta, esta limpia:
- *
- *  - caracteres de control (saltos de línea, NUL), de formato (la marca de
- *    derecha a izquierda U+202E y compañía), surrogates sueltos, uso privado,
- *    separadores de línea y de párrafo, y `<`, `>` y `&`, se vuelven un espacio;
- *  - los enlaces (`http(s)://…`, `www.…`) se borran: una referencia para llegar
- *    no lleva enlaces, y un enlace en un mensaje de WhatsApp al repartidor es la
- *    forma más barata de colar un engaño;
- *  - los espacios se colapsan en uno;
- *  - se recorta por PUNTOS DE CÓDIGO, no por unidades UTF-16: `slice` partiría
- *    un emoji por la mitad y dejaría un carácter suelto e ilegible.
- *
- * Lo que no es texto da cadena vacía.
- */
-export function lineaLimpia(v: unknown, max: number): string {
-  if (typeof v !== 'string') return '';
-  // Tope previo solo para acotar el trabajo de las expresiones regulares sobre
-  // un cuerpo hostil; el recorte que vale es el de abajo. Si el corte cae entre
-  // las dos mitades de un emoji, se descarta la mitad que quedó, para no dejar
-  // un surrogate suelto.
-  let tope = v.slice(0, 1000);
-  if (/[\ud800-\udbff]$/.test(tope)) tope = tope.slice(0, -1);
-  const limpio = tope
-    // Cs: surrogates sueltos; Co: uso privado. Ninguno es texto legible.
-    .replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}<>&]/gu, ' ')
-    .replace(/https?:\/\/\S+/gi, ' ')
-    .replace(/www\.\S+/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  // Bien formado por construcción: `\p{Cs}` con la bandera `u` solo casa los
-  // surrogates SUELTOS (una pareja válida es un solo punto de código), y ya se
-  // volvieron espacio arriba; el corte por puntos de código de abajo no parte
-  // parejas. Es el equivalente de `toWellFormed()` sin U+FFFD y sin pedir la
-  // biblioteca ES2024 que el `tsconfig` de Functions no declara.
-  return Array.from(limpio).slice(0, max).join('').trim();
-}
+// `lineaLimpia` se mudó a Pedidos (PR-4), sin cambio de lógica.
+export { lineaLimpia };
 
 /** Tope de las referencias para llegar (el mismo número está en la página). */
 export const MAX_REFERENCIA = 150;
@@ -309,8 +273,8 @@ async function tieneVenta(tenantId: string): Promise<boolean> {
 export const fichaVende = (ficha: FichaConCapacidades | null | undefined): boolean =>
   tieneModulo(ficha, 'catalogo-web');
 
-export const sePuedeComprar = (d: Record<string, unknown> | undefined): boolean =>
-  Number.isFinite(d?.['precio']);
+// `sePuedeComprar` se mudó a Pedidos (PR-4): Pedidos no importa de Catálogo web.
+export { sePuedeComprar };
 
 // ---------------------------------------------------------------------------
 // URL DE IMAGEN — la validación que decide qué puede pintar el navegador
@@ -1024,7 +988,7 @@ function lineasPedidas(cuerpo: Record<string, unknown>): LineaPedida[] {
     // El identificador del ítem ES un segmento de ruta de Firestore. Que no
     // pueda traer barras ni puntos no es cosmética: es lo que impide que un
     // `id` fabricado apunte a otro documento.
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(id) || id.includes('..')) continue;
+    if (!idDeItemValido(id)) continue;
     if (vistas.has(id)) continue;
     const cantidad = Math.trunc(Number(c['cantidad']));
     if (!Number.isFinite(cantidad) || cantidad < 1 || cantidad > MAX_UNIDADES) continue;
