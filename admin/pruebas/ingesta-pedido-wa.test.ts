@@ -14,7 +14,7 @@ const TOKEN = 'valor-de-prueba-del-pedido-wa';
 process.env['INGESTA_CLIENTE19'] = TOKEN;
 
 const roto = vi.hoisted(() => ({ activo: false }));
-vi.mock('../../../functions/src/modulos/pedidos/pedidoDelQr.ts', async (orig) => {
+vi.mock('../functions/src/modulos/pedidos/pedidoDelQr.ts', async (orig) => {
   const m = await orig<Record<string, unknown>>();
   return {
     ...m,
@@ -29,7 +29,7 @@ const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
 const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
-const { ingesta } = await import('../../../functions/src/ingesta.ts');
+const { ingesta } = await import('../functions/src/ingesta.ts');
 
 const T = 'pedido-wa-ingesta';
 const NUMERO = '1000000088';
