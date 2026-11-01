@@ -277,6 +277,11 @@ beforeEach(async () => {
         servicios: ['item-4'], activo: true,
         actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
       });
+      // H2b-9: f1 aporta una agenda; el contador de agendas la refleja (lo exigen las reglas).
+      await setDoc(doc(db, `tenants/${t}/contadores/agendas`), {
+        calendarios: 1, refs: { ['a'.repeat(64) + '@group.calendar.google.com']: 1 },
+        ultimoFuncionario: '', actualizadoEn: Timestamp.now(),
+      });
       await setDoc(doc(db, `tenants/${t}/funcionarios/f1/privado/datos`), {
         telefono: '59170000009', correo: 'rojas@ejemplo.com',
         actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
@@ -1974,8 +1979,23 @@ describe('Funcionarios', () => {
     actualizadoPor: uid, actualizadoEn: serverTimestamp(),
   });
 
+  /**
+   * H2b-9: un funcionario que cambia su calendario aportado mueve `contadores/agendas`
+   * en el mismo lote. `refs` es el mapa completo RESULTANTE.
+   */
+  const conContador = (db: ReturnType<typeof adminA>, id: string, datos: Record<string, unknown>,
+    calendarios: number, refs: Record<string, number>) => {
+    const l = writeBatch(db);
+    l.set(doc(db, `tenants/${A}/funcionarios/${id}`), datos);
+    l.update(doc(db, `tenants/${A}/contadores/agendas`),
+      { calendarios, refs, ultimoFuncionario: id, actualizadoEn: serverTimestamp() });
+    return l.commit();
+  };
+
   it('el admin del comercio los administra; el operador solo los lee', async () => {
-    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f2`), funcionario('u-admin-a')));
+    // Mismo calendario que f1: no suma una agenda, solo una referencia más.
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f2`), funcionario('u-admin-a')));
+    await assertSucceeds(conContador(adminA(), 'f2', funcionario('u-admin-a'), 1, { [CAL_OK]: 2 }));
     // El operador necesita saber quién atiende qué para poder contestar.
     await assertSucceeds(getDoc(doc(operA(), `tenants/${A}/funcionarios/f1`)));
     await assertSucceeds(getDocs(collection(operA(), `tenants/${A}/funcionarios`)));
@@ -1986,8 +2006,7 @@ describe('Funcionarios', () => {
     // Un funcionario borrado dejaría citas pasadas apuntando a un identificador
     // que ya no existe.
     await assertFails(deleteDoc(doc(adminA(), `tenants/${A}/funcionarios/f1`)));
-    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f1`),
-      { ...funcionario('u-admin-a'), activo: false }));
+    await assertSucceeds(conContador(adminA(), 'f1', { ...funcionario('u-admin-a'), activo: false }, 0, { [CAL_OK]: 0 }));
   });
 
   it('el teléfono del funcionario NO lo ve el operador', async () => {
@@ -2022,12 +2041,16 @@ describe('Funcionarios', () => {
     // primero la forma de correo, un ID de grupo malformado se colaría por ahí.
     await assertFails(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f5`),
       { ...funcionario('u-admin-a'), calendarioId: 'corto@group.calendar.google.com' }));
-    // Un calendario primario (correo) sí se acepta.
-    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f5`),
-      { ...funcionario('u-admin-a'), calendarioId: 'agenda.doctor@ejemplo.com' }));
+    // Un calendario primario (correo) sí se acepta (con cupo: el plan de la prueba trae 5).
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `tenants/${A}/cuenta/estado`), { plan: 'basico', limites: { agendas: 5 } });
+    });
+    await assertSucceeds(conContador(adminA(), 'f5',
+      { ...funcionario('u-admin-a'), calendarioId: 'agenda.doctor@ejemplo.com' }, 2,
+      { [CAL_OK]: 1, 'agenda.doctor@ejemplo.com': 1 }));
     // Y vacío también: significa «todavía no tiene agenda propia».
-    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f5`),
-      { ...funcionario('u-admin-a'), calendarioId: '' }));
+    await assertSucceeds(conContador(adminA(), 'f5', { ...funcionario('u-admin-a'), calendarioId: '' }, 1,
+      { [CAL_OK]: 1, 'agenda.doctor@ejemplo.com': 0 }));
   });
 
   it('la misma validación rige para el calendario del comercio', async () => {

@@ -224,7 +224,18 @@ function bloqueDeColeccion(ruta: string): string | null {
   if (!hija) return b.cuerpo;
   const anidado = bloqueMatch(b.cuerpo, hija);
   if (anidado) return anidado.cuerpo;
-  return new RegExp(`== '${hija}'`).test(b.cuerpo) ? b.cuerpo : null;
+  return permisosDeDocumento(b.cuerpo, hija);
+}
+
+/**
+ * Los `allow` que valen para un documento con nombre dentro de un `match /{comodín}` (contadores/catalogo,
+ * contadores/agendas): los que lo nombran Y los genéricos (los que no nombran a ningún documento); solo se
+ * descartan los que nombran a OTRO documento. Un `allow` genérico que abre de más tiene que verse.
+ */
+function permisosDeDocumento(cuerpoPadre: string, hija: string): string | null {
+  const todos = [...sinAnidados(cuerpoPadre).matchAll(/allow\s+[\w,\s]+?\s*:\s*if\s+[\s\S]*?;/g)].map((m) => m[0]);
+  if (!todos.some((a) => new RegExp(`== '${hija}'`).test(a))) return null;
+  return todos.filter((a) => new RegExp(`== '${hija}'`).test(a) || !/\bcontador\s*==\s*'/.test(a)).join('\n');
 }
 
 type Escritura = 'solo-servidor' | 'exige-capacidad' | 'sin-exigir';
@@ -566,7 +577,7 @@ describe('4. colecciones y almacenamiento: el registro contra las reglas', () =>
       const m = colecciones.find((x) => x.c === c);
       return escrituraDe(bloqueDeColeccion(c) as string, modulosDeLaColeccion(m!.modulo));
     };
-    for (const c of ['catalogo', 'fotosCatalogo', 'contadores/catalogo', 'funcionarios/privado']) {
+    for (const c of ['catalogo', 'fotosCatalogo', 'contadores/catalogo', 'contadores/agendas', 'funcionarios/privado']) {
       expect(hoy(c), `${c}: la regla dejó de exigir su módulo`).toBe('exige-capacidad');
     }
     for (const f of ['tieneModulo', 'tieneModuloComun']) {
@@ -586,6 +597,19 @@ describe('4. colecciones y almacenamiento: el registro contra las reglas', () =>
     expect(sinExigir('catalogo', /&&\s*tieneModuloComun\(tenantId,\s*'productos'\)/g)).toBe('sin-exigir');
     expect(sinExigir('fotosCatalogo', /&&\s*tieneModuloComun\(tenantId,\s*'productos'\)/g)).toBe('sin-exigir');
     expect(sinExigir('contadores/catalogo', /&&\s*tieneModuloComun\(tenantId,\s*'productos'\)/g)).toBe('sin-exigir');
+    // H2b-9 (LOW-1): sin `tieneAgenda`, el contador de agendas deja de exigir su módulo.
+    expect(sinExigir('contadores/agendas', /&&\s*tieneAgenda\(tenantId\)/g)).toBe('sin-exigir');
+  });
+
+  it('H2b-9 (mutación en memoria): un allow genérico en el bloque de contadores hace fallar a contadores/agendas', () => {
+    const cuerpo = bloqueMatch(TENANTS!.cuerpo, 'contadores')!.cuerpo;
+    const modulos = modulosDeLaColeccion('agenda');
+    const limpio = permisosDeDocumento(cuerpo, 'agendas') as string;
+    expect(escrituraDe(limpio, modulos), 'control: hoy exige capacidad').toBe('exige-capacidad');
+    const roto = permisosDeDocumento(`${cuerpo}\n        allow update: if esAdmin(tenantId);\n`, 'agendas') as string;
+    expect(escrituraDe(roto, modulos)).toBe('sin-exigir');
+    const rotoCatalogo = permisosDeDocumento(`${cuerpo}\n        allow update: if esAdmin(tenantId);\n`, 'catalogo') as string;
+    expect(escrituraDe(rotoCatalogo, modulosDeLaColeccion('productos'))).toBe('sin-exigir');
   });
 
   it('H2b-6: tieneModulo solo recibe módulos propios de un flujo y tieneModuloComun solo comunes (siempre con literal)', () => {

@@ -247,11 +247,13 @@ export const REGISTRO = [
     ],
     // Sale a `config/agenda` en F2 (migración por script, `Analisis/41` §5.2).
     camposEnNegocio: ['calendarioId'],
-    colecciones: ['funcionarios', 'funcionarios/privado', 'agenda'],
+    colecciones: ['funcionarios', 'funcionarios/privado', 'agenda', 'contadores/agendas'],
     coleccionesRaiz: [],
     almacenamiento: [],
-    // Vendido (1 / 5 / 10) y hoy SIN hacer cumplir: ni regla ni contador.
-    limites: [{ clave: 'agendas', hacerCumplir: 'pendiente' }],
+    // Vendido (1 / 5 / 10). H2b-9 (Q6=A): cuentan los `calendarioId` DISTINTOS entre
+    // los funcionarios activos; vacío no cuenta. `limiteAgendas()` y el contador
+    // `contadores/agendas.calendarios` (con `refs`) en las reglas.
+    limites: [{ clave: 'agendas', hacerCumplir: 'reglas', contador: 'contadores/agendas' }],
     pestanas: [{ ruta: 'agenda', titulo: 'Agenda', roles: ['admin'], orden: 10 }],
     tablero: ['agendas'],
     herramientas: ['consultar_disponibilidad', 'agendar_cita', 'buscar_mi_cita', 'cancelar_cita'],

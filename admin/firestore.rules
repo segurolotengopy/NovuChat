@@ -1529,7 +1529,28 @@ service cloud.firestore {
                       && tenantOperativo(tenantId)
                       && tieneModuloComun(tenantId, 'productos')
                       && contadorCatalogoValido();
+        // H2b-9: el contador de agendas se mueve solo en el lote de un
+        // funcionario que cambia su calendario (ver `agendasMovida`).
+        allow update: if contador == 'agendas'
+                      && esAdmin(tenantId)
+                      && tenantOperativo(tenantId)
+                      && tieneAgenda(tenantId)
+                      && contadorAgendasValido();
         allow create, delete: if false;
+
+        function contadorAgendasValido() {
+          let d = request.resource.data;
+          let fid = d.get('ultimoFuncionario', '');
+          return d.keys().hasOnly(['calendarios', 'refs', 'ultimoFuncionario', 'actualizadoEn'])
+            && fid is string
+            && fid.matches('^[^/]{1,200}$')
+            && d.get('actualizadoEn', null) == request.time
+            && existsAfter(rutaFuncionario(fid))
+            && agendasMovida(
+                 fid,
+                 exists(rutaFuncionario(fid)) ? claveAgenda(get(rutaFuncionario(fid)).data) : '',
+                 claveAgenda(getAfter(rutaFuncionario(fid)).data));
+        }
 
         function rutaItem(id) {
           return /databases/$(database)/documents/tenants/$(tenantId)/catalogo/$(id);
@@ -1580,6 +1601,95 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // LÍMITE DE AGENDAS POR PLAN (H2b-9; decisión Q6=A de Andres).
+      //
+      // QUÉ SE CUENTA: los `calendarioId` DISTINTOS entre los funcionarios
+      // ACTIVOS. Un funcionario activo con `calendarioId` vacío usa el
+      // calendario del comercio y no cuenta; dos funcionarios con el mismo
+      // calendario cuentan una sola agenda; dar de baja a uno libera su
+      // calendario solo si ningún otro activo lo comparte.
+      //
+      // CÓMO. Las reglas no cuentan colecciones y «distintos» exige además
+      // saber cuántos funcionarios usan cada calendario. Por eso
+      // `/contadores/agendas = { calendarios, refs, ultimoFuncionario,
+      // actualizadoEn }`: `refs` es un mapa calendario -> cuántos funcionarios
+      // activos lo usan (en minúsculas) y `calendarios` cuántas claves tienen
+      // más de cero. Una escritura de funcionario que CAMBIA su calendario
+      // aportado (alta, baja, reactivación, cambio de calendario) exige que EN
+      // EL MISMO LOTE el contador mueva exactamente esa clave, nombre a ESE
+      // funcionario en `ultimoFuncionario`, y no pase del límite del plan. Una
+      // edición que no cambia el aporte (nombre, horario, calendario vacío) no
+      // toca el contador. Sin contador no se mueve un calendario desde el
+      // navegador: lo crea `scripts/modulos/agenda/contar-agendas.mjs` ANTES de
+      // desplegar. Un comercio que ya excede su tope (bajó de plan) no puede
+      // sumar agendas, pero sí quitarlas y editar.
+      // -----------------------------------------------------------------------
+      function rutaContadorAgendas() {
+        return /databases/$(database)/documents/tenants/$(tenantId)/contadores/agendas;
+      }
+
+      function rutaFuncionario(id) {
+        return /databases/$(database)/documents/tenants/$(tenantId)/funcionarios/$(id);
+      }
+
+      // El calendario que aporta un funcionario a la cuenta: el suyo si está
+      // activo y lo tiene; '' si no aporta ninguno.
+      function claveAgenda(d) {
+        let c = d.get('calendarioId', '');
+        return (d.get('activo', false) == true && c is string && c != '') ? c.lower() : '';
+      }
+
+      // EL LÍMITE SE LEE DEL PLAN, NO DEL CÓDIGO: `cuenta/estado.limites.agendas`
+      // (entero de 1 a 100000, igual que `limitesDeCuenta()`); si falta o está
+      // corrupto, la tabla de respaldo por plan; sin plan conocido, el más chico.
+      // La fuente es `functions/src/central/cuenta/planes.ts` y
+      // `pruebas/modulos/agenda/limite-agendas.test.ts` compara esta tabla.
+      // RESPALDO-AGENDAS-POR-PLAN
+      function limiteAgendas() {
+        let ruta = /databases/$(database)/documents/tenants/$(tenantId)/cuenta/estado;
+        let cuenta = exists(ruta) ? get(ruta).data : {};
+        let limites = cuenta.get('limites', {});
+        let propio = limites is map ? limites.get('agendas', null) : null;
+        return propio is int && propio >= 1 && propio <= 100000
+          ? propio
+          : {'impulso': 1, 'crecimiento': 5, 'pro': 10, 'byoc': 10}
+              .get(cuenta.get('plan', ''), 1);
+      }
+
+      // El contador se movió, en este lote, exactamente lo que el cambio de
+      // aporte `antes` -> `despues` del funcionario `fid` implica.
+      function agendasMovida(fid, antes, despues) {
+        let ruta = rutaContadorAgendas();
+        return antes != despues
+          && exists(ruta)
+          && getAfter(ruta).data.get('ultimoFuncionario', '') == fid
+          && agendasCuadran(get(ruta).data, getAfter(ruta).data, antes, despues);
+      }
+
+      function agendasCuadran(previo, nuevo, antes, despues) {
+        let ra = previo.get('refs', null);
+        let rb = nuevo.get('refs', null);
+        return previo.get('calendarios', null) is int
+          && nuevo.get('calendarios', null) is int
+          && ra is map && rb is map
+          && rb.diff(ra).affectedKeys().hasOnly([antes, despues])
+          && (antes == '' || (ra.get(antes, 0) >= 1 && rb.get(antes, 0) == ra.get(antes, 0) - 1))
+          && (despues == '' || rb.get(despues, 0) == ra.get(despues, 0) + 1)
+          && nuevo.get('calendarios', -1) == previo.get('calendarios', 0)
+               + ((despues != '' && ra.get(despues, 0) == 0) ? 1 : 0)
+               - ((antes != '' && ra.get(antes, 0) == 1) ? 1 : 0)
+          && (nuevo.get('calendarios', -1) <= limiteAgendas()
+              || nuevo.get('calendarios', -1) <= previo.get('calendarios', 0));
+      }
+
+      // Para las reglas del propio funcionario.
+      function agendaPermitida(fid) {
+        let antes = resource == null ? '' : claveAgenda(resource.data);
+        let despues = claveAgenda(request.resource.data);
+        return antes == despues || agendasMovida(fid, antes, despues);
+      }
+
+      // -----------------------------------------------------------------------
       // /funcionarios/{funcionarioId} — QUIÉN ATIENDE.
       //
       // EL PROBLEMA QUE RESUELVE. El modelo asumía un calendario por comercio, y
@@ -1620,7 +1730,8 @@ service cloud.firestore {
         allow create, update: if esAdmin(tenantId)
                               && tenantOperativo(tenantId)
                               && tieneAgenda(tenantId)
-                              && funcionarioValido();
+                              && funcionarioValido()
+                              && agendaPermitida(funcionarioId);
         // Baja LÓGICA con `activo: false`, no borrado: un funcionario borrado
         // dejaría citas pasadas apuntando a un identificador que ya no existe.
         allow delete: if false;

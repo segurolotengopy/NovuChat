@@ -30,6 +30,8 @@ import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { createHash } from 'node:crypto';
 import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
+// H2b-9: el contador de agendas (Node carga el .ts quitando tipos).
+const { contarAgendas } = await import('../functions/src/modulos/agenda/agendasContadas.ts');
 // El plan inicial de las altas (Impulso con su copia de límites), el mismo que
 // escriben `altaTenant` y `alta-comercio.mjs`. Node 22.18+ carga TypeScript.
 import { cuentaInicial } from '../functions/src/central/cuenta/planes.ts';
@@ -379,6 +381,12 @@ async function sembrarComercio({ id, nombre, estado, vertical, telefono, pnid, c
         telefono: '59170000009', correo: `${fid}@ejemplo.com`, ...sello,
       });
     }
+    // Contador de agendas con lo que HAY (las reglas lo exigen; el SDK Admin no lo mueve).
+    const realAg = contarAgendas((await db.collection(`tenants/${id}/funcionarios`).get()).docs.map((d) => d.data()));
+    await db.doc(`tenants/${id}/contadores/agendas`).set({
+      calendarios: realAg.calendarios, refs: realAg.refs, ultimoFuncionario: '',
+      actualizadoEn: FieldValue.serverTimestamp(),
+    });
   }
 
   await db.doc(`tenants/${id}/auditoria/ev-alta`).set({

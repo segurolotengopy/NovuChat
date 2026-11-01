@@ -28,6 +28,7 @@ const { getFirestore } = await import('firebase-admin/firestore');
 const app = getApps().find((a) => a.name === 'negocio') ?? initializeApp({ projectId: PROYECTO }, 'negocio');
 const db = getFirestore(app);
 const { hashCorto } = await import('../functions/src/central/asistente/comportamiento.ts');
+const { contarAgendas } = await import('../functions/src/modulos/agenda/agendasContadas.ts');
 
 // Identificadores propios de esta suite, para no pisar a ninguna otra.
 const T = 'neg-platinum';
@@ -73,7 +74,7 @@ const doc = async (ruta: string) => (await db.doc(`tenants/${ruta}`).get()).data
 
 beforeAll(async () => {
   for (const t of [T, SIN_AGENDA, SUSPENDIDO, CONTADOR]) {
-    for (const d of ['config/negocio', 'config/agendamiento', 'contadores/catalogo', 'cuenta/estado']) {
+    for (const d of ['config/negocio', 'config/agendamiento', 'contadores/catalogo', 'contadores/agendas', 'cuenta/estado']) {
       await db.doc(`tenants/${t}/${d}`).delete();
     }
     for (const col of ['catalogo', 'funcionarios', 'auditoria']) {
@@ -404,6 +405,17 @@ describe('cargar-negocio.mjs', () => {
     // El contador que hace cumplir el límite de productos por plan: sin él, la
     // consola del comercio no puede dar de alta ni de baja un producto.
     expect(await doc(`${T}/contadores/catalogo`)).toMatchObject({ items: 3 });
+
+    // H2b-9: el contador de agendas queda al día, en la misma transacción, según
+    // el mismo criterio que `contar-agendas.mjs` (en seco no lo encuentra desajustado).
+    const funcs = (await db.collection(`tenants/${T}/funcionarios`).get()).docs.map((d) => d.data());
+    const real = contarAgendas(funcs);
+    expect(await doc(`${T}/contadores/agendas`)).toMatchObject({ calendarios: real.calendarios, refs: real.refs, ultimoFuncionario: '' });
+    const seco = spawnSync(process.execPath, [join(aqui, '..', 'scripts', 'modulos', 'agenda', 'contar-agendas.mjs'), '--proyecto', PROYECTO, '--tenant', T], {
+      env: entornoDelEmulador(HOST), encoding: 'utf8',
+    });
+    expect(seco.status, seco.stderr).toBe(0);
+    expect(seco.stdout).toMatch(/contador al día/);
 
     const auditoria = await db.collection(`tenants/${T}/auditoria`).where('accion', '==', 'cargar_negocio').get();
     expect(auditoria.size).toBe(1);

@@ -241,7 +241,7 @@ describe('ensayo.mjs --flujo venta', () => {
     await db.doc('tenants/ensayo/conversaciones/s1/mensajes/m1').set({ t: 'a' });
     await db.doc('tenants/ensayo/conversaciones/s1/mensajes/m2').set({ t: 'b' });
     const antes = (await db.collection('tenants/ensayo/catalogo').get()).size
-      + (await db.collection('tenants/ensayo/funcionarios').get()).size + 4 /* config/contador: 4 refs */;
+      + (await db.collection('tenants/ensayo/funcionarios').get()).size + 5 /* config/contador: 5 refs (con contadores/agendas, H2b-9) */;
     const r = prepararVenta(NUM_VENTA, ['--flujo', 'venta']);
     expect(r.codigo, r.salida).toBe(0);
     const m = /se vacían (\d+) documento\(s\).*\((\d+) de venta/.exec(r.salida);

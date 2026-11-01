@@ -249,7 +249,7 @@ let deVenta = 0;
 if (fichaEnsayo.exists) {
   for (const c of colecciones) aBorrar.push(...(await db.collection(`tenants/${ENSAYO}/${c}`).select().get()).docs.map((d) => d.ref));
   if (vaciarVenta) for (const c of COLECCIONES_DE_VENTA) deVenta += await contar(db.collection(`tenants/${ENSAYO}/${c}`));
-  for (const d of ['config/negocio', 'config/agendamiento', 'config/venta', 'contadores/catalogo']) aBorrar.push(db.doc(`tenants/${ENSAYO}/${d}`));
+  for (const d of ['config/negocio', 'config/agendamiento', 'config/venta', 'contadores/catalogo', 'contadores/agendas']) aBorrar.push(db.doc(`tenants/${ENSAYO}/${d}`));
 }
 console.log(`  Ensayo    : ${fichaEnsayo.exists ? `existe; se vacían ${aBorrar.length + deVenta} documento(s) antes de cargar${vaciarVenta ? ` (${deVenta} de venta, con sus mensajes)` : ''}` : 'se crea'}`);
 console.log(`  Ruta      : ${actual} -> ${ENSAYO}${FLUJO && FLUJO !== flujoOriginalRuta ? ` · flujo ${flujoOriginalRuta} -> ${FLUJO} (se devuelve al restaurar)` : ''}`);
