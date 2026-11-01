@@ -60,8 +60,8 @@ import {
 import { solicitudDelTurno, montoUtilizable } from './modulos/agenda/solicitudDelTurno.js';
 import { enlaceDeLaCartaDelTurno } from './modulos/catalogo-web/alTurno.js';
 import { catalogoDelTurno as catalogoParaElModelo } from './modulos/productos/alTurno.js';
-import { sigueVigente, vigentesParaElPrompt, type VigentesDelTurno } from './modulos/campanas/vigentes.js';
-export { sigueVigente, vigentesParaElPrompt, type VigentesDelTurno };
+import { sigueVigente, vigentesParaElPrompt } from './modulos/campanas/vigentes.js';
+export { sigueVigente };
 // Términos de producto registrados (Andres, 24/10/2026): se leen una vez por turno, y solo si lo que
 // va al prompt contiene «prompt»; el sistema los cita entre « » y revalida lo ya aprobado.
 import { citarTerminos } from './central/asistente/terminos.js';

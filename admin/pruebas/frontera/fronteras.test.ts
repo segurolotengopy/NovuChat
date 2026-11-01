@@ -483,8 +483,8 @@ describe('la regla de la frontera (árbol inventado)', () => {
     expect(zonaPorCarpeta('admin/scripts/ensamblar-flujo.mjs')).toMatchObject({ zona: 'core' });
     // SE_PARTE anota, no cambia la zona.
     expect(zonaDeCodigo(`${F}modulos/catalogo-web/catalogoWeb.ts`)).toMatchObject({ zona: 'modulo', modulo: 'catalogo-web', seParte: expect.arrayContaining(['modulo:pedidos']) });
-    // F3b-2e: `ingesta.ts` ya no lleva piezas de módulo; no figura en SE_PARTE.
-    expect(zonaDeCodigo(`${F}ingesta.ts`)?.seParte).toBeUndefined();
+    // F3b-2e: quedan en `ingesta.ts` la decisión de cobro real (Cobros) y el conteo de señas (Agenda).
+    expect(zonaDeCodigo(`${F}ingesta.ts`)?.seParte).toEqual(['modulo:agenda', 'modulo:cobros']);
     // Un archivo suelto en la raíz, o una carpeta que no es de zona, no tiene zona por carpeta.
     expect(zonaPorCarpeta(`${F}suelto.ts`)).toBeNull();
     expect(zonaPorCarpeta(`${W}componentes/Marca.tsx`)).toBeNull();

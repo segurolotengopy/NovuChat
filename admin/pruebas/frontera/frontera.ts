@@ -146,6 +146,9 @@ export const ZONA_POR_ARCHIVO: Readonly<Record<string, ZonaDeArchivo>> = {
  * es una zona (`core`, `central`, `plataforma`) o `modulo:<id>`.
  */
 export const SE_PARTE: Readonly<Record<string, readonly string[]>> = {
+  // F3b-2e: ya salieron campañas, catálogo web y productos. Queda en el coordinador la decisión `cobroRealActivo`
+  // (Cobros) y el conteo de señas enviadas (Agenda): la deuda sigue anotada hasta mudarlas.
+  'admin/functions/src/ingesta.ts': ['modulo:agenda', 'modulo:cobros'],
   // El checkout que escribe pedidos va a modulos/pedidos/.
   'admin/functions/src/modulos/catalogo-web/catalogoWeb.ts': ['modulo:pedidos'],
   // El resumen del catálogo va a Productos; documentoDeVertical desaparece.
