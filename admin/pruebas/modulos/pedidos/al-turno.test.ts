@@ -61,6 +61,15 @@ describe('gancho de Pedidos: crea el wa_ solo con QR abierto y líneas', () => {
     expect(d.data()).toMatchObject({ origen: 'whatsapp', total: 20, telefonoEnmascarado: '5917****001', estado: 'recibido' });
     expect(JSON.stringify({ ...d.data(), conversacionId: undefined })).not.toContain(TEL);
   });
+  it('efecto abierto con una referencia que ya tenía pedido: no lo pisa y deja error_flujo sin datos', async () => {
+    await despuesDelTurnoPedidos(datos());
+    await despuesDelTurnoPedidos(datos({ monto: 30, lineas: [{ id: 'taco', cantidad: 3 }] }));
+    expect((await db.doc(`tenants/${T}/pedidos/wa_ped-1`).get()).get('total')).toBe(20);
+    const llamadas = bitacora.registrar.mock.calls as unknown as Array<[string, Record<string, unknown>]>;
+    expect(llamadas).toHaveLength(1);
+    expect(llamadas[0]![1]).toMatchObject({ tipo: 'error_flujo', codigo: 'pedido_wa_referencia_repetida' });
+    expect(JSON.stringify(llamadas)).not.toContain(TEL);
+  });
   it('sin líneas, con líneas vacías o no arreglo: no crea nada', async () => {
     for (const lineas of [undefined, [], 'taco', { id: 'taco' }]) await despuesDelTurnoPedidos(datos({ lineas }));
     expect(await pedidos(T)).toHaveLength(0);

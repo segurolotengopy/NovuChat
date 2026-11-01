@@ -37,11 +37,19 @@ export async function despuesDelTurnoPedidos(d: DatosDelTurnoPedidos): Promise<v
     if (d.evento === 'qr_enviado') {
       if (d.efectoDeCobro !== 'abierto') return;
       if (!Array.isArray(d.lineas) || d.lineas.length === 0) return;
-      await crearPedidoWa({
+      const r = await crearPedidoWa({
         tenantId: d.tenantId, ficha: d.ficha, referencia: d.referencia, telefono: d.telefono,
         montoQr: d.monto, lineas: d.lineas, entrega: d.entrega, facturacion: d.facturacion,
         referenciaAnterior: d.referenciaAnterior,
       });
+      // Efecto `abierto` con un pedido que ya existía: el flujo reusó la referencia con otro carrito.
+      // El pedido conserva lo viejo; se deja constancia, sin datos del pedido, para revisar a mano.
+      if (r.resultado === 'repetido') {
+        await registrar(d.tenantId, {
+          tipo: 'error_flujo', resultado: 'fallo', codigo: 'pedido_wa_referencia_repetida',
+          detalle: 'el cobro se abrio con una referencia que ya tenia pedido de WhatsApp',
+        });
+      }
       return;
     }
     if (d.evento === 'cobro_cancelado' && d.efectoDeCobro === 'cancelado') {
