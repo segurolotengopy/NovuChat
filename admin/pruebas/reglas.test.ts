@@ -2213,6 +2213,35 @@ describe('Comprobar un cobro: lo firma una persona, y una sola vez', () => {
   });
 });
 
+describe('Pedidos tomados por WhatsApp (wa_): los escribe solo el servidor', () => {
+  const pedidoWa = { origen: 'whatsapp', total: 20, estado: 'recibido', telefonoEnmascarado: '5917****001' };
+  const sembrarWa = () => entorno.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `tenants/${A}/pedidos/wa_ped-1`), pedidoWa);
+    await setDoc(doc(ctx.firestore(), `tenants/${B}/pedidos/wa_ped-b`), pedidoWa);
+  });
+
+  it('el administrador y el operador NO pueden crear un wa_', async () => {
+    for (const cliente of [adminA(), operA()]) {
+      await assertFails(setDoc(doc(cliente, `tenants/${A}/pedidos/wa_nuevo`), pedidoWa));
+    }
+  });
+  it('el administrador y el operador NO pueden editar ni borrar un wa_ existente', async () => {
+    await sembrarWa();
+    for (const cliente of [adminA(), operA()]) {
+      await assertFails(updateDoc(doc(cliente, `tenants/${A}/pedidos/wa_ped-1`), { total: 1, estado: 'entregado' }));
+      await assertFails(deleteDoc(doc(cliente, `tenants/${A}/pedidos/wa_ped-1`)));
+    }
+    // Control: lo suyo sí lo leen, y el pedido sigue intacto.
+    const d = await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/pedidos/wa_ped-1`)));
+    expect(d.get('total')).toBe(20);
+  });
+  it('el administrador de A NO lee ni escribe un wa_ del comercio B', async () => {
+    await sembrarWa();
+    await assertFails(getDoc(doc(adminA(), `tenants/${B}/pedidos/wa_ped-b`)));
+    await assertFails(setDoc(doc(adminA(), `tenants/${B}/pedidos/wa_otro`), pedidoWa));
+  });
+});
+
 describe('Mini inventario: el saldo y su historia no pueden discrepar', () => {
   const sello = (uid: string) => ({ actualizadoPor: uid, actualizadoEn: serverTimestamp() });
 

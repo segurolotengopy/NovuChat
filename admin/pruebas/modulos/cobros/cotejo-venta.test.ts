@@ -310,6 +310,15 @@ describe('el total y la ruta de la imagen', () => {
     const r = await comp('59100000051', leidoDe('250'), 'wamid.w1');
     expect(r.cuerpo).toMatchObject({ estado: 'valido', importe: 250 });
   });
+  it('un wa_ NO fija el total (manda el monto del QR), ni se lee el wa_ de otro comercio', async () => {
+    await db.doc(`tenants/${T}/pedidos/wa_ped-1`).set({ total: 999 });
+    await db.doc('tenants/otro-comercio-wa/pedidos/wa_ped-2').set({ total: 999 });
+    await sembrar('59100000053', 2, { monto: 100 }, 'wa_ped-1');
+    expect((await comp('59100000053', leidoDe('100'), 'wamid.wa1')).cuerpo).toMatchObject({ estado: 'valido', importe: 100 });
+    await sembrar('59100000054', 2, { monto: 100 }, 'wa_ped-2');
+    expect((await comp('59100000054', leidoDe('100'), 'wamid.wa2')).cuerpo).toMatchObject({ estado: 'valido', importe: 100 });
+    await db.doc('tenants/otro-comercio-wa/pedidos/wa_ped-2').delete();
+  });
   it('una `ruta` que coincide con el comercio y el idMeta se anota; una ajena queda en null', async () => {
     await sembrar('59100000052', 2);
     const buena = rutaDeComprobante(T, '2026-10-03', 'wamid.rt1', 'jpg');
