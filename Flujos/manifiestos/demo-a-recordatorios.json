@@ -1,0 +1,10 @@
+{
+  "flujo": "demo-a-recordatorios.json",
+  "conservanMarcadores": {
+    "Config base del recordatorio": "REEMPLAZAR_"
+  },
+  "codigo": {
+    "Omitir bloqueados": "modulos/agenda/omitir-contactos-bloqueados.js"
+  },
+  "prompts": {}
+}
