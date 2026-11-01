@@ -578,6 +578,7 @@ export function armarEvy(proyecto, datos, v) {
     n.parameters = reemplazarTextos(n.parameters, datos, `${donde} · ${n.name}`);
     for (const c of Object.values(n.credentials || {})) {
       const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini|crm)$/.exec(String(c.name));
+      // EXCEPCIÓN DECLARADA a «la prueba nunca usa credenciales de producción» (revisión del PR #741): la variante de prueba lleva el NOMBRE de la credencial del miniCRM del tenant (el id va vacío: no resuelve nada) porque la guardia `miniCRM` exige el mismo nombre en ambas variantes y la prueba no tiene planilla propia; sin id de planilla la rama no escribe (ver crm.test.ts, «id vacío»).
       if (m && m[1] === 'crm') { c.name = CREDENCIAL_CRM(dato(datos, 'tenant', `${donde} · ${n.name}`)); continue; }
       // La variante de PRUEBA nunca usa las credenciales de producción de Meta ni de Gemini.
       const clave = prueba && m && m[1] === 'graph' ? 'graphPrueba' : (prueba && m && m[1] === 'gemini' ? 'geminiPrueba' : (m ? m[1] : ''));

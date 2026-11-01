@@ -41,7 +41,7 @@ const ENCABEZADOS = [fila(4)];
 const IDS = [{ json: { row_number: 4, 'ID Lead': 'LEAD-1010' } }];
 
 /** Un turno ya resuelto, con lo que `Armar mensajes` le pasa a `evProspectoCrm`. */
-const turno = (o: J = {}): J => ({ from: TEL, efectivo: 'modelo', textoCliente: 'hola', historial: [], fichaAntes: {}, preferencia: '', nombre: '', nombrePerfil: 'Yeimy Ortiz', anuncio: false, llamada: false, avisoSalio: false, nuevoContacto: true, ahoraMs: AHORA, ...o });
+const turno = (o: J = {}): J => ({ from: TEL, efectivo: 'modelo', textoCliente: 'hola', historial: [], fichaAntes: {}, preferencia: '', nombre: '', nombrePerfil: 'Cliente Ejemplo F', anuncio: false, llamada: false, avisoSalio: false, nuevoContacto: true, ahoraMs: AHORA, ...o });
 const prospecto = (o: J = {}): J => EV.evProspectoCrm(turno(o)) as J;
 /** El prospecto pasa por el módulo: lo que se escribiría en la hoja. */
 function decidir(p: J, existentes: Array<{ json: J }> = []): J {
@@ -51,58 +51,58 @@ function decidir(p: J, existentes: Array<{ json: J }> = []): J {
 const celda = (r: J, campo: string): unknown => r[((MAPA['columnas'] as Record<string, Col>)[campo] as Col).titulo];
 
 describe('unidades: tabla de seis leads (evProspectoCrm + crmDecidirFila)', () => {
-  it('Maria Eugenia: aceptó agendar, derivada a recepción, llegó por un anuncio -> Caliente, Alta, «Solicitud de cita», «Campaña Meta Ads»', () => {
-    const p = prospecto({ efectivo: 'derivar', textoCliente: 'quiero agendar el martes en la tarde', nombre: 'Maria', nombrePerfil: 'Maria Eugenia Soliz', anuncio: true, avisoSalio: true, preferencia: 'el martes en la tarde' });
+  it('Lead Uno: aceptó agendar, derivada a recepción, llegó por un anuncio -> Caliente, Alta, «Solicitud de cita», «Campaña Meta Ads»', () => {
+    const p = prospecto({ efectivo: 'derivar', textoCliente: 'quiero agendar el martes en la tarde', nombre: 'Lead', nombrePerfil: 'Lead Uno Apellido', anuncio: true, avisoSalio: true, preferencia: 'el martes en la tarde' });
     const r = decidir(p);
     expect(r['accionPlanilla']).toBe('agregar');
     expect(celda(r, 'clasificacion')).toBe('Caliente');
     expect(celda(r, 'calificacion')).toBe('Alta');
     expect(String(celda(r, 'derivacion'))).toContain('Solicitud de cita');
     expect(celda(r, 'origen')).toBe('Campaña Meta Ads');
-    expect(String(celda(r, 'nombre'))).toContain('Maria Eugenia Soliz');
+    expect(String(celda(r, 'nombre'))).toContain('Lead Uno Apellido');
     expect(String(celda(r, 'diaPreferido'))).toContain('Martes');
     expect(String(celda(r, 'horarioPreferido'))).toContain('Tarde');
     expect(r['_']).toBeUndefined();
   });
-  it('Rosarito: pide la ubicación -> Caliente', () => {
-    const p = prospecto({ textoCliente: 'cual es la ubicación?', nombrePerfil: 'Rosarito' });
+  it('Lead Dos: pide la ubicación -> Caliente', () => {
+    const p = prospecto({ textoCliente: 'cual es la ubicación?', nombrePerfil: 'Lead Dos' });
     expect((p['senales'] as J)['pidioUbicacion']).toBe(true);
     const r = decidir(p);
     expect(celda(r, 'clasificacion')).toBe('Caliente');
     expect(celda(r, 'calificacion')).toBe('Alta');
     expect(String(celda(r, 'quePidio'))).toContain('Ubicación');
   });
-  it('Dunia: solo llegó por un anuncio -> Tibio, Media', () => {
-    const r = decidir(prospecto({ anuncio: true, nombrePerfil: 'Dunia' }));
+  it('Lead Tres: solo llegó por un anuncio -> Tibio, Media', () => {
+    const r = decidir(prospecto({ anuncio: true, nombrePerfil: 'Lead Tres' }));
     expect(celda(r, 'clasificacion')).toBe('Tibio');
     expect(celda(r, 'calificacion')).toBe('Media');
     expect(celda(r, 'origen')).toBe('Campaña Meta Ads');
   });
-  it('Yeimy: escribió -> Tibio, origen «Chatbot WhatsApp IA»', () => {
+  it('Lead Cuatro: escribió -> Tibio, origen «Chatbot WhatsApp IA»', () => {
     const r = decidir(prospecto());
     expect(celda(r, 'clasificacion')).toBe('Tibio');
     expect(celda(r, 'origen')).toBe('Chatbot WhatsApp IA');
     expect(celda(r, 'etapaInicial')).toBe('1. Nuevo Lead');
     expect(r['Estado Comercial']).toBe('Activo');
   });
-  it('Roxi: preguntó el precio y cerró (cierre amable) -> Frío, Baja', () => {
-    const p = prospecto({ efectivo: 'cierre_amable', textoCliente: 'gracias, lo voy a pensar', historial: [{ r: 'u', t: 'cuánto cuesta el relleno de labios?' }, { r: 'a', t: 'La valoración es gratuita.' }], nombrePerfil: 'Roxi' });
+  it('Lead Cinco: preguntó el precio y cerró (cierre amable) -> Frío, Baja', () => {
+    const p = prospecto({ efectivo: 'cierre_amable', textoCliente: 'gracias, lo voy a pensar', historial: [{ r: 'u', t: 'cuánto cuesta el relleno de labios?' }, { r: 'a', t: 'La valoración es gratuita.' }], nombrePerfil: 'Lead Cinco' });
     expect((p['senales'] as J)['preguntoPrecioYCerro']).toBe(true);
     const r = decidir(p);
     expect(celda(r, 'clasificacion')).toBe('Frío');
     expect(celda(r, 'calificacion')).toBe('Baja');
   });
-  describe('Moira: una fila que el equipo marcó «No es lead» no se pisa salvo señal Caliente', () => {
-    const marcada = (): Array<{ json: J }> => [fila(7, { 'Teléfono WhatsApp': TEL, 'Nombre y Apellido': 'Moira', 'Calificación IA': 'Descalificado', 'Clasificación': 'No es lead' })];
+  describe('Lead Seis: una fila que el equipo marcó «No es lead» no se pisa salvo señal Caliente', () => {
+    const marcada = (): Array<{ json: J }> => [fila(7, { 'Teléfono WhatsApp': TEL, 'Nombre y Apellido': 'Lead Seis', 'Calificación IA': 'Descalificado', 'Clasificación': 'No es lead' })];
     it('una señal débil (solo escribió, o un anuncio) no la toca', () => {
-      for (const o of [{ nombrePerfil: 'Moira', nuevoContacto: false }, { nombrePerfil: 'Moira', anuncio: true, nuevoContacto: false }]) {
+      for (const o of [{ nombrePerfil: 'Lead Seis', nuevoContacto: false }, { nombrePerfil: 'Lead Seis', anuncio: true, nuevoContacto: false }]) {
         const r = decidir(prospecto(o), marcada());
         expect(r['Clasificación'], JSON.stringify(o)).toBeUndefined();
         expect(r['Calificación IA']).toBeUndefined();
       }
     });
     it('una señal Caliente (pidió la ubicación) sí la cambia', () => {
-      const r = decidir(prospecto({ textoCliente: 'cual es la ubicación?', nombrePerfil: 'Moira', nuevoContacto: false }), marcada());
+      const r = decidir(prospecto({ textoCliente: 'cual es la ubicación?', nombrePerfil: 'Lead Seis', nuevoContacto: false }), marcada());
       expect(r['accionPlanilla']).toBe('actualizar');
       expect(r['Clasificación']).toBe('Caliente');
     });
@@ -119,6 +119,36 @@ describe('unidades: negaciones', () => {
     const p = prospecto({ efectivo: 'cierre_amable', textoCliente: 'gracias, hasta luego' });
     expect((p['senales'] as J)['preguntoPrecioYCerro']).toBe(false);
     expect(celda(decidir(p), 'clasificacion')).toBe('Tibio');
+  });
+  it('am/pm: 3 pm -> 15:00; 10 am -> 10:00; 12 pm -> 12:00; 12 am -> 00:00; «a las 3» en la tarde -> 15:00', () => {
+    const h = (pref: string): unknown => prospecto({ efectivo: 'derivar', avisoSalio: true, preferencia: pref })['horarioPreferido'];
+    expect(h('el lunes a las 3 pm')).toBe('15:00');
+    expect(h('el lunes a las 10 am')).toBe('10:00');
+    expect(h('el lunes a las 12 pm')).toBe('12:00');
+    expect(h('el lunes a las 12 am')).toBe('00:00');
+    expect(h('el lunes a las 3 pm')).not.toBe('03:00');
+    expect(h('el martes a las 3 en la tarde')).toBe('Tarde 15:00');
+  });
+  it('«me costó llegar» + cierre amable NO es precio; «cuánto cuesta» + cierre amable sí (Frío)', () => {
+    const no = prospecto({ efectivo: 'cierre_amable', textoCliente: 'gracias, me costó llegar hasta ahí', historial: [{ r: 'u', t: 'me costó llegar a su consultorio' }] });
+    expect((no['senales'] as J)['preguntoPrecioYCerro']).toBe(false);
+    const si = prospecto({ efectivo: 'cierre_amable', textoCliente: 'gracias', historial: [{ r: 'u', t: 'cuánto cuesta el relleno?' }] });
+    expect((si['senales'] as J)['preguntoPrecioYCerro']).toBe(true);
+    const costo = prospecto({ efectivo: 'cierre_amable', textoCliente: 'gracias', historial: [{ r: 'u', t: 'cuál es el costo de la limpieza?' }] });
+    expect((costo['senales'] as J)['preguntoPrecioYCerro']).toBe(true);
+  });
+  it('«la próxima vez que pueda» NO es «Próxima semana»; «la próxima semana» y «la semana que viene» sí', () => {
+    const d = (pref: string): unknown => prospecto({ efectivo: 'derivar', avisoSalio: true, preferencia: pref })['diaPreferido'];
+    expect(d('la próxima vez que pueda')).not.toBe('Próxima semana');
+    expect(d('la que viene')).not.toBe('Próxima semana');
+    expect(d('la próxima semana')).toBe('Próxima semana');
+    expect(d('la semana que viene')).toBe('Próxima semana');
+  });
+  it('el nombre del perfil se limita a letras, espacios, apóstrofo y guion (máx. 60)', () => {
+    expect(prospecto({ nombrePerfil: '=HYPERLINK("http://x") Ana <b>Pérez</b> 😀' })['nombre']).toBe('HYPERLINKhttpx Ana bPérezb');
+    expect(prospecto({ nombrePerfil: "María-José O'Brien" })['nombre']).toBe("María-José O'Brien");
+    expect(String(prospecto({ nombrePerfil: 'A'.repeat(100) })['nombre']).length).toBeLessThanOrEqual(60);
+    expect(String(prospecto({ nombrePerfil: '+591 70000 =1+1' })['nombre'])).not.toMatch(/[0-9=+]/);
   });
   it('«el martes en la tarde, tengo diabetes»: solo el día y la franja; la salud no llega al prospecto ni a la fila', () => {
     const p = prospecto({ efectivo: 'derivar', avisoSalio: true, preferencia: 'el martes en la tarde, tengo diabetes' });
@@ -181,7 +211,7 @@ describe('flujo: quién guarda y quién no', () => {
   it('una conversación normal (id y hoja) agrega UNA fila con el prospecto y no envía nada de más', () => {
     const pl = planilla();
     const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles });
-    const t = hablar(m, ANA, mTexto('hola'), { nombre: 'Yeimy Ortiz' });
+    const t = hablar(m, ANA, mTexto('hola'), { nombre: 'Cliente Ejemplo F' });
     expect(corrioLaRama(t)).toBe(true);
     expect(pl.escrituras).toHaveLength(1);
     expect(pl.actualizaciones).toHaveLength(0);

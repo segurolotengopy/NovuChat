@@ -6,6 +6,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
+// @ts-expect-error el armador es un .mjs sin tipos
+import { NODOS_DE_CRM } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
 import { ANA, BETO, CARPETA, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, conPreferencia, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
 
 describe('topología y tamaño', () => {
@@ -146,7 +148,14 @@ describe('saludo neutro (decisión de Andres, 24/10/2026): la campaña no se men
   it('ni el prompt, ni el código, ni los textos fijos, ni los dos JSON dicen «campaña»; el saludo dice «Hoy tu valoración…»', () => {
     const archivos = ['prompts/evy.md', 'src/lib/ev.js', 'flujo.plantilla.json', 'rroca-evy.json', 'rroca-evy.prueba.json', ...readdirSync(join(CARPETA, 'src/nodos')).map((f) => `src/nodos/${f}`)];
     // El origen «Campaña Meta Ads» es un valor del mapa de la planilla del equipo (dato del miniCRM, F1): jamás sale al cliente; `idCampana` es un identificador del código del módulo `crm` (no un texto).
-    for (const a of archivos) expect(readFileSync(join(CARPETA, a), 'utf8').replace(/Campaña Meta Ads|idCampana/g, ''), a).not.toMatch(/campa[ñn]a/i);
+    // La excepción vale SOLO para los nodos de la rama del miniCRM (`NODOS_DE_CRM`): en cualquier otro nodo o archivo la palabra sigue prohibida.
+    const textoRevisado = (a: string): string => {
+      const t = readFileSync(join(CARPETA, a), 'utf8');
+      if (!a.endsWith('.json')) return t;
+      const f = JSON.parse(t) as { nodes?: Array<{ name: string }> };
+      return JSON.stringify({ ...f, nodes: (f.nodes ?? []).filter((n) => !(NODOS_DE_CRM as string[]).includes(n.name)) });
+    };
+    for (const a of archivos) expect(textoRevisado(a), a).not.toMatch(/campa[ñn]a/i);
     // AJUSTE (observaciones de Rubén, 28/10/2026): sin «hoy bonificado» y con «sin pagar nada para agendar».
     expect(readFileSync(join(CARPETA, 'prompts/evy.md'), 'utf8')).toContain('Hoy tu valoración con la Dra. Evy es **100% gratuita y sin compromiso**, sin pagar nada para agendar (su costo habitual es de 250 Bs)');
   });
