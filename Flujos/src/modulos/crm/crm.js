@@ -193,6 +193,7 @@ function crmPorque(err) {
 }
 // Un nodo de Google que fallo con `continueRegularOutput` devuelve el item de entrada con `error` al lado de `json`.
 const crmFallido = (x) => x.error || (x.json && x.json.error !== undefined && x.json.row_number === undefined);
+const crmFallido0 = (lista) => Array.isArray(lista) && lista.some(crmFallido);
 
 // Los encabezados que el codigo espera, en orden de columna: A hasta la ultima letra del BOT (las del equipo que quedan en medio incluidas).
 function crmLetrasDeclaradas(mapa) {
@@ -227,6 +228,27 @@ function crmPrimerEncabezadoDistinto(fila, esperados, cola) {
   return '';
 }
 
+// VERIFICAR ENCABEZADOS (PR-F0): antes de AGREGAR una fila nueva se comprueba la fila de encabezados COMPLETA (A hasta la ultima letra del bot),
+// no solo la A. `encabezados` = los items que dejo la lectura «Leer encabezados de la planilla» (rango A{fila}:{ultima del bot}{fila+1}: la primera fila
+// de datos trae los titulos como claves). Devuelve '' si coinciden, o el motivo. Lectura vacia (hoja sin filas de datos) = NO agrega (cierra en falla).
+function crmVerificarEncabezados(mapa, encabezados) {
+  const filas = (Array.isArray(encabezados) ? encabezados : []).map((x) => x && x.json).filter((f) => f && f.row_number !== undefined);
+  if (!filas.length) return 'encabezados_distintos: no se pudo leer la fila ' + mapa.filaEncabezados + ' (la hoja necesita al menos una fila de datos)';
+  const d = crmPrimerEncabezadoDistinto(filas[0], crmEncabezadosEsperados(mapa), crmEncabezadosCola(mapa));
+  if (!d) return '';
+  return d === CRM_COLUMNAS_DE_MAS ? 'encabezados_distintos: columnas de más en la fila ' + mapa.filaEncabezados
+    : 'encabezados_distintos: la fila ' + mapa.filaEncabezados + ' no tiene «' + d + '»';
+}
+// CONTRATO CRM_ADAPTADOR = { calificar(prospecto), resumir(prospecto, conEstado, calificacionFinal), prioridad: [de menor a mayor] }. Lista de errores (vacia = valido).
+function crmAdaptadorValido(a) {
+  const e = [];
+  if (!a || typeof a !== 'object') return ['falta el adaptador'];
+  if (typeof a.calificar !== 'function') e.push('calificar tiene que ser una funcion');
+  if (typeof a.resumir !== 'function') e.push('resumir tiene que ser una funcion');
+  if (!Array.isArray(a.prioridad) || !a.prioridad.length || a.prioridad.some((x) => typeof x !== 'string')) e.push('prioridad tiene que ser una lista de textos');
+  return e;
+}
+
 // La decision de la fila. `adaptador` = { calificar(prospecto), resumir(prospecto, conEstado, calificacionFinal), prioridad: [de menor a mayor] }.
 // Devuelve un item por prospecto con `accionPlanilla` (agregar, actualizar o nada) y `veredictoPlanilla`; las celdas llevan el TITULO del encabezado como clave.
 function crmDecidirFila(a) {
@@ -239,6 +261,7 @@ function crmDecidirFila(a) {
   const out = [];
   const nada = (i, veredicto) => out.push({ json: { accionPlanilla: 'nada', veredictoPlanilla: veredicto }, pairedItem: { item: i } });
   if (errores.length) { prospectos.forEach((it, i) => nada(i, 'mapa_invalido')); return out; }
+  if (crmAdaptadorValido(adaptador).length) { prospectos.forEach((it, i) => nada(i, 'adaptador_invalido')); return out; }
   const busqueda = a.busqueda;
   const lecturaIds = a.lecturaIds;
   const fallo = [...busqueda, ...lecturaIds].find(crmFallido);
@@ -318,6 +341,11 @@ function crmDecidirFila(a) {
       return;
     }
 
+    // Con la lectura de encabezados en el flujo (`a.encabezados`), agregar exige la fila completa; sin ella (flujos anteriores) rige la comprobacion de la A.
+    if (a.encabezados !== undefined) {
+      const falla = crmFallido0(a.encabezados) ? 'no_leida: ' + crmPorque(a.encabezados.find(crmFallido).error ?? a.encabezados.find(crmFallido).json.error) : crmVerificarEncabezados(mapa, a.encabezados);
+      if (falla) return nada(i, falla);
+    }
     // NUEVA: el ID que sigue al mayor que haya, y la fila entera. Las columnas del equipo no se escriben (salvo el estado inicial, solo aqui, al crear).
     const numeros = ids.map((f) => (idRe.exec(String(f[T('id')] ?? '')) || [])[1]).filter(Boolean).map(Number);
     const siguiente = numeros.length ? Math.max(...numeros) + 1 : mapa.primerId;

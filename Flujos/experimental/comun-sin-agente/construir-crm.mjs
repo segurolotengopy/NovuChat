@@ -21,6 +21,11 @@ export function rutasPaquetesCrm(rutaAdaptador) {
     'crm-decidir': [join(AQUI, 'crm.js'), rutaAdaptador, join(AQUI, 'nodo-decidir-fila.js')],
   };
 }
+/** El paquete del adaptador GENERAL de senales (PR-F0): crm.js + adaptador-senales.js (define `CRM_ADAPTADOR`) + el nodo de decidir fila. Sin textos de cliente. */
+export const rutasPaqueteCrmSenales = () => ({
+  'crm-prospecto': [join(AQUI, 'crm.js'), join(AQUI, 'nodo-prospecto.js')],
+  'crm-decidir-senales': [join(AQUI, 'crm.js'), join(AQUI, 'adaptador-senales.js'), join(AQUI, 'nodo-decidir-fila.js')],
+});
 export const MARCA_MAPA = 'const CRM_MAPA = null; // @@crm-mapa';
 
 /** El texto de cada paquete (archivos unidos). */
@@ -42,12 +47,16 @@ export function inyectarMapa(codigo, mapa) {
   return partes[0] + `const CRM_MAPA = ${JSON.stringify(mapa)};` + partes[1];
 }
 
-const letraBot = (mapa) => Object.values(mapa.columnas).map((c) => c.letra).sort().pop();
+export const letraBot = (mapa) => Object.values(mapa.columnas).map((c) => c.letra).sort().pop();
 const nodo = (flujo, nombre) => {
   const n = flujo.nodes.find((x) => x.name === nombre);
   if (!n) throw new Error(`crm: el flujo no tiene el nodo «${nombre}»`);
   return n;
 };
+
+export const NODO_ENCABEZADOS = 'Leer encabezados de la planilla';
+/** El rango que lee la fila de encabezados: A{fila}:{ultima del bot}{fila+1}. NUNCA llega a la letra del equipo posterior (diagnostico). */
+export const rangoEncabezados = (mapa) => `A${mapa.filaEncabezados}:${letraBot(mapa)}${mapa.filaEncabezados + 1}`;
 
 /**
  * Injerta el mapa del tenant en un flujo ya armado (objeto): el mapa dentro del codigo de cada nodo que incluye `crm.js` y, en los 4 nodos de Google,
@@ -68,10 +77,110 @@ export function injertarCrm(flujo, mapa) {
   buscar.options.dataLocationOnSheet.values.range = `A${f}:${letraBot(mapa)}`;
   buscar.options.returnFirstMatch = false;
   for (const fl of buscar.filtersUI.values) fl.lookupColumn = mapa.columnas.telefono.titulo;
+  const enc = flujo.nodes.find((x) => x.name === NODO_ENCABEZADOS);
+  if (enc) { // la rama `ramaCrm`: la fila de encabezados + la primera de datos, para comprobar la fila COMPLETA antes de agregar
+    enc.parameters.options.dataLocationOnSheet.values.range = rangoEncabezados(mapa);
+  }
   nodo(flujo, 'Leer IDs de la planilla').parameters.options.dataLocationOnSheet.values.range = `A${f}:A`;
   nodo(flujo, 'Agregar fila').parameters.options.locationDefine.values.headerRow = f;
   const act = nodo(flujo, 'Actualizar fila').parameters.options.locationDefine.values;
   act.headerRow = f;
   act.firstDataRow = f + 1;
   return flujo;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+// ramaCrm: LA RAMA SE GENERA, NO SE COPIA (PR-F0). 8 nodos que cuelgan de «Armar mensajes» por debajo del envio al cliente:
+//   Prospecto para la planilla > Buscar telefono > Leer IDs > Leer encabezados > Decidir fila > ¿accion? (Switch) > Agregar fila | Actualizar fila.
+// Las lecturas leen lo minimo (A..ultima letra del bot): nunca la letra de `equipo.diagnostico`. La credencial llega por parametro (`@@cred:...`), nunca de datos.
+// MENSAJES: ninguno.
+const NODO_SWITCH = '¿Acción de la planilla?';
+const DOC = { __rl: true, mode: 'id', value: "={{ $('Config del negocio').first().json.planillaProspectosId }}" };
+const HOJA = { __rl: true, mode: 'name', value: "={{ $('Config del negocio').first().json.planillaProspectosHoja }}" };
+const FORMATO_LECTURA = { values: { general: 'FORMATTED_VALUE', date: 'FORMATTED_STRING' } };
+
+export function ramaCrm({ desde = 'Armar mensajes', credencial, paquete = 'crm-decidir-senales', x = 5000, y = 640 } = {}) {
+  if (typeof credencial !== 'string' || !/^@@cred:crm$/.test(credencial)) throw new Error('ramaCrm: la credencial tiene que ser exactamente el token @@cred:crm (se calcula por tenant, no sale de datos)');
+  const cred = { googleApi: { id: '', name: credencial } };
+  const lectura = (id, name, pos, range, extra = {}, notes = '') => ({
+    id, name, type: 'n8n-nodes-base.googleSheets', typeVersion: 4.7, position: pos, ...(extra.executeOnce ? { executeOnce: true } : {}),
+    parameters: { authentication: 'serviceAccount', resource: 'sheet', operation: 'read', documentId: DOC, sheetName: HOJA,
+      ...(extra.filtros || {}), options: { dataLocationOnSheet: { values: { rangeDefinition: 'specifyRangeA1', range } }, outputFormatting: FORMATO_LECTURA, ...(extra.opciones || {}) } },
+    credentials: cred, onError: 'continueRegularOutput', alwaysOutputData: true, notes,
+  });
+  const nodes = [
+    { id: 'prospecto-para-la-planilla', name: 'Prospecto para la planilla', type: 'n8n-nodes-base.code', typeVersion: 2, position: [x, y], parameters: { jsCode: '@@medio:crm-prospecto' },
+      notes: 'Deja pasar solo al prospecto que «Armar mensajes» decidio guardar. Sin ninguno, Google ni se consulta.' },
+    lectura('buscar-telefono-en-planilla', 'Buscar teléfono en planilla', [x + 240, y], 'A3:J', {
+      filtros: { filtersUI: { values: [{ lookupColumn: 'Teléfono WhatsApp', lookupValue: '={{ $json.telefono }}' }, { lookupColumn: 'Teléfono WhatsApp', lookupValue: "={{ '+' + $json.telefono }}" }] }, combineFilters: 'OR' },
+      opciones: { returnFirstMatch: false } }, 'Solo las filas de este telefono y solo hasta la ultima columna del bot; nunca las del equipo.'),
+    lectura('leer-ids-de-la-planilla', 'Leer IDs de la planilla', [x + 480, y], 'A3:A', { executeOnce: true }, 'Solo la columna del ID.'),
+    lectura('leer-encabezados-de-la-planilla', NODO_ENCABEZADOS, [x + 720, y], 'A3:J4', { executeOnce: true },
+      'La fila de encabezados completa (con la primera fila de datos) para comprobarla antes de agregar. Hasta la ultima columna del bot.'),
+    { id: 'decidir-fila-de-la-planilla', name: 'Decidir fila de la planilla', type: 'n8n-nodes-base.code', typeVersion: 2, position: [x + 960, y], parameters: { jsCode: `@@medio:${paquete}` },
+      notes: 'Incluido del módulo crm (no es copia): agrega o actualiza segun lo leido; la clasificacion se calcula por hechos.' },
+    { id: 'accion-de-la-planilla', name: NODO_SWITCH, type: 'n8n-nodes-base.switch', typeVersion: 3.2, position: [x + 1200, y],
+      parameters: { rules: { values: ['agregar', 'actualizar'].map((v, i) => ({ conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'strict', version: 2 },
+        conditions: [{ id: `c${i + 1}`, leftValue: '={{ $json.accionPlanilla }}', rightValue: v, operator: { type: 'string', operation: 'equals' } }], combinator: 'and' }, renameOutput: true, outputKey: v })) }, options: {} },
+      notes: 'agregar | actualizar. «nada» no sale por ningun lado.' },
+    { id: 'agregar-fila', name: 'Agregar fila', type: 'n8n-nodes-base.googleSheets', typeVersion: 4.7, position: [x + 1440, y - 80],
+      parameters: { authentication: 'serviceAccount', resource: 'sheet', operation: 'append', documentId: DOC, sheetName: HOJA,
+        columns: { mappingMode: 'autoMapInputData', value: {}, matchingColumns: [], schema: [] },
+        options: { cellFormat: 'USER_ENTERED', locationDefine: { values: { headerRow: 3 } }, handlingExtraData: 'ignoreIt', useAppend: true } },
+      credentials: cred, onError: 'continueRegularOutput', notes: 'USER_ENTERED; los textos llegan con apostrofo y sin «=», «+», «-» ni «@» al inicio.' },
+    { id: 'actualizar-fila', name: 'Actualizar fila', type: 'n8n-nodes-base.googleSheets', typeVersion: 4.7, position: [x + 1440, y + 80],
+      parameters: { authentication: 'serviceAccount', resource: 'sheet', operation: 'update', documentId: DOC, sheetName: HOJA,
+        columns: { mappingMode: 'autoMapInputData', value: {}, matchingColumns: ['row_number'], schema: [] },
+        options: { cellFormat: 'RAW', locationDefine: { values: { headerRow: 3, firstDataRow: 4 } }, handlingExtraData: 'ignoreIt' } },
+      credentials: cred, onError: 'continueRegularOutput', notes: 'RAW: nada se interpreta. Solo las celdas del bot, por `row_number`.' },
+  ];
+  const conexiones = {};
+  const unir = (de, a, salida = 0) => {
+    conexiones[de] = conexiones[de] || { main: [] };
+    while (conexiones[de].main.length <= salida) conexiones[de].main.push([]);
+    conexiones[de].main[salida].push({ node: a, type: 'main', index: 0 });
+  };
+  unir('Prospecto para la planilla', 'Buscar teléfono en planilla');
+  unir('Buscar teléfono en planilla', 'Leer IDs de la planilla');
+  unir('Leer IDs de la planilla', NODO_ENCABEZADOS);
+  unir(NODO_ENCABEZADOS, 'Decidir fila de la planilla');
+  unir('Decidir fila de la planilla', NODO_SWITCH);
+  unir(NODO_SWITCH, 'Agregar fila', 0);
+  unir(NODO_SWITCH, 'Actualizar fila', 1);
+  return { nodes, connections: conexiones, entrada: 'Prospecto para la planilla', desde };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+// hallazgosCrm: lo que el CI y `--verificar` exigen a un flujo con miniCRM. Devuelve la lista de hallazgos (vacia = bien).
+//   * ningun nodo de Google lee un rango que llegue a la letra de `equipo.diagnostico` ni pase de la ultima letra del bot;
+//   * la retencion de ejecuciones es `none` (exito y error) y no se guarda el progreso: el nodo con datos de la hoja no deja huella en n8n;
+//   * si hay «Leer encabezados de la planilla», lee la fila de encabezados completa y el nodo de decidir fila esta conectado despues de el.
+const letraDe = (rango) => { const m = /^A\d+:([A-Z])(\d*)$/.exec(String(rango ?? '')); return m ? m[1] : null; };
+export function hallazgosCrm(flujo, mapa) {
+  const h = [];
+  const nodos = (flujo && flujo.nodes) || [];
+  const ultima = letraBot(mapa);
+  const diag = mapa.equipo && mapa.equipo.diagnostico ? mapa.equipo.diagnostico.letra : null;
+  for (const n of nodos.filter((x) => x.type === 'n8n-nodes-base.googleSheets' && (x.parameters || {}).operation === 'read')) {
+    const rango = (((((n.parameters || {}).options || {}).dataLocationOnSheet || {}).values) || {}).range;
+    const l = letraDe(rango);
+    if (l === null) { h.push(`«${n.name}»: el rango de lectura «${rango}» no es A<fila>:<letra> (no se puede comprobar)`); continue; }
+    if (diag && l >= diag) h.push(`«${n.name}»: el rango «${rango}» llega a la letra ${diag} (diagnostico del equipo): puede llevar datos de salud y quedaria en el historial`);
+    if (l > ultima) h.push(`«${n.name}»: el rango «${rango}» pasa de la ultima letra del bot (${ultima})`);
+  }
+  const st = (flujo && flujo.settings) || {};
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false || st.saveManualExecutions !== false)
+    h.push('la retencion de ejecuciones tiene que ser none (exito y error), sin progreso y sin guardar las manuales: el flujo lee y escribe la hoja del cliente');
+  const decidir = nodos.find((x) => x.name === 'Decidir fila de la planilla');
+  const conSenales = decidir && typeof (decidir.parameters || {}).jsCode === 'string' && decidir.parameters.jsCode.includes('const CRM_ADAPTADOR');
+  const enc = nodos.find((x) => x.name === NODO_ENCABEZADOS);
+  if (conSenales && !enc) h.push(`el paquete de senales exige el nodo «${NODO_ENCABEZADOS}»`);
+  if (decidir && !/\$\('Leer IDs de la planilla'\)\.all\(\)/.test(String((decidir.parameters || {}).jsCode ?? ''))) h.push('«Decidir fila de la planilla» tiene que leer los IDs por nombre ($(\'Leer IDs de la planilla\')), no por $input');
+  if (enc) {
+    const c = ((flujo.connections || {})[NODO_ENCABEZADOS] || {}).main || [];
+    if (!c.some((salida) => (salida || []).some((d) => d.node === 'Decidir fila de la planilla'))) h.push(`«Decidir fila de la planilla» tiene que ir conectado despues de «${NODO_ENCABEZADOS}»`);
+    const r = (((enc.parameters || {}).options || {}).dataLocationOnSheet || {}).values;
+    if (!r || r.range !== rangoEncabezados(mapa)) h.push(`«${NODO_ENCABEZADOS}» tiene que leer exactamente ${rangoEncabezados(mapa)}`);
+  }
+  return h;
 }
