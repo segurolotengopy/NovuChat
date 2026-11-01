@@ -324,7 +324,7 @@ export const REGISTRO = [
     // `pedidos` desde el carrito; hoy vive en `catalogoWeb.ts`, que F2 parte.
     functions: ['checkoutCatalogo'],
     flujosProgramados: [],
-    ganchos: ['alCierre'],
+    ganchos: ['despuesDelTurno', 'alCierre'],
     mensajes: 0,
   },
   {

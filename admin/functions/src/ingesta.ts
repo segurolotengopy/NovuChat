@@ -21,6 +21,7 @@ import { modulosDelTurno, type ContextoDelTurno } from './core/turno/ganchosDelT
 import { alTurnoCobroDeVenta, type ContextoDeCobro } from './modulos/cobros/alTurno.js';
 import { alTurnoSena, senaParaElFlujo, IMPORTE_SENA_MAXIMO, type SenaParaElFlujo } from './modulos/agenda/alTurno.js';
 import { alTurnoInventario } from './modulos/inventario/alTurno.js';
+import { despuesDelTurnoPedidos } from './modulos/pedidos/alTurno.js';
 import { getFirestore, FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
@@ -192,6 +193,15 @@ interface Entrante {
    */
   monto?: number;
   /**
+   * EL PEDIDO TOMADO POR WHATSAPP (PR-4), solo con `qr_enviado`: las líneas
+   * `{id, cantidad, detalle}`, la entrega y, si aplica, la facturación. Dato no
+   * confiable: el precio y el total salen del catálogo (`pedidoDelQr.ts`), no de
+   * acá. Sin `lineas` todo sigue como antes y no se crea ningún pedido.
+   */
+  lineas?: unknown[];
+  entrega?: unknown;
+  facturacion?: unknown;
+  /**
    * EL ADELANTO A FAVOR (Andres, 21/09/2026). `cita_cancelada` trae en
    * `referencia` la cita que se canceló y en `inicio` cuándo era (ISO): con eso
    * el servidor decide si hubo anticipación suficiente. `adelanto_aplicado`
@@ -282,7 +292,20 @@ function normalizar(cuerpo: unknown): Entrante | null {
   // lo demás es regla 1, sin error.
   const reglaCobro = evento === 'qr_enviado' && c['reglaCobro'] === 2 ? 2 as const : undefined;
 
+  // El pedido de WhatsApp (PR-4): solo con `qr_enviado`, hasta 30 líneas, y solo objetos planos.
+  // El saneo fino (ids, cantidades, tope de unidades) lo hace `armarPedidoWa`.
+  const esQr = evento === 'qr_enviado';
+  const lineas = esQr && Array.isArray(c['lineas']) && c['lineas'].length > 0
+    ? (c['lineas'] as unknown[]).slice(0, 30) : undefined;
+  const objetoPlano = (v: unknown) => typeof v === 'object' && v !== null && !Array.isArray(v);
+  const entrega = esQr && lineas && (objetoPlano(c['entrega']) || typeof c['entrega'] === 'string')
+    ? c['entrega'] : undefined;
+  const facturacion = esQr && lineas && objetoPlano(c['facturacion']) ? c['facturacion'] : undefined;
+
   return { telefono, direccion, tipo, texto, origen, ...(idMeta ? { idMeta } : {}),
+           ...(lineas ? { lineas } : {}),
+           ...(entrega !== undefined ? { entrega } : {}),
+           ...(facturacion !== undefined ? { facturacion } : {}),
            ...(nombreContacto ? { nombreContacto } : {}),
            ...(evento ? { evento } : {}),
            ...(reglaCobro ? { reglaCobro } : {}),
@@ -739,7 +762,7 @@ export const ingesta = onRequest(
     // datos personales de terceros de un servicio que ya no se presta. El 409 le
     // dice a n8n que mande el mensaje de cortesía —neutro, sin revelar el motivo
     // comercial— y corte el turno.
-    const { estado } = await estadoDelComercio(tenantId);
+    const { estado, ficha } = await estadoDelComercio(tenantId);
     if (estado !== 'activo') {
       // SE REGISTRA IGUAL. La bitácora admite escrituras con el comercio
       // suspendido justamente para esto: el tramo del corte de servicio es el
@@ -1069,7 +1092,7 @@ export const ingesta = onRequest(
           ...derivadosDeConversacion(),
         }, { merge: true });
         escribirMensaje();
-        return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad, pausadaPorPersona };
+        return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad, pausadaPorPersona, pedidos: null };
       }
 
       // LA BOLSA (§4undecies.3, punto 6): abrir una conversación con las
@@ -1295,7 +1318,13 @@ export const ingesta = onRequest(
         });
       }
 
-      return { atencion, aviso, avisoConsumo, conteo, servicio, corte, cortado: false, conModalidad, pausadaPorPersona };
+      // Para el gancho de Pedidos (PR-4): el efecto del cobro y, solo si la etapa previa era
+      // `qr_enviado`, la referencia del QR que quedó atrás. No agrega lecturas ni escrituras.
+      const previaEvento = (solicitudPrevia as { etapa?: unknown; evento?: { id?: unknown } | null } | undefined);
+      const refAnterior = previaEvento?.etapa === 'qr_enviado' && typeof previaEvento.evento?.id === 'string'
+        ? previaEvento.evento.id : undefined;
+      const pedidos = { efecto: cobro?.efecto as string | undefined, refAnterior };
+      return { atencion, aviso, avisoConsumo, conteo, servicio, corte, cortado: false, conModalidad, pausadaPorPersona, pedidos };
     });
 
     // Lo que viaja a n8n y al registro sobre el prepago: el estado del
@@ -1389,6 +1418,17 @@ export const ingesta = onRequest(
       await registrar(tenantId, {
         tipo: 'aviso_consumo', resultado: 'ok', canal: 'sistema',
         detalle: `${veredicto.avisoConsumo.conversaciones}/${veredicto.avisoConsumo.limite}`,
+      });
+    }
+
+    // EL PEDIDO DE WHATSAPP (PR-4): DESPUÉS de la transacción, solo si el turno se atendió. El gancho
+    // nunca lanza ni cambia la respuesta de abajo.
+    if (veredicto.pedidos && (mensaje.evento === 'qr_enviado' || mensaje.evento === 'cobro_cancelado')) {
+      await despuesDelTurnoPedidos({
+        tenantId, ficha, evento: mensaje.evento, efectoDeCobro: veredicto.pedidos.efecto,
+        referencia: mensaje.referencia, referenciaAnterior: veredicto.pedidos.refAnterior,
+        telefono: mensaje.telefono, monto: mensaje.monto,
+        lineas: mensaje.lineas, entrega: mensaje.entrega, facturacion: mensaje.facturacion,
       });
     }
 
