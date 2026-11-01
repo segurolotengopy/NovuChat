@@ -467,6 +467,7 @@ El asistente deja de responderle del todo a un contacto, y se puede revertir. C�
   registro, en vez de afirmar «operativo». Ningún flujo n8n lo exige: solo miran
   `servicio.estado === 'cortado'`. La bitácora del comercio registra el entrante con
   `resultado: 'rechazado'` y `codigo: 'bloqueado'` (no «ok»).
+- **Recordatorios de cita (Demo A)**: `demo-a-recordatorios.json` consulta `configuracionFlujo` con el teléfono («Estado del contacto») y «Omitir bloqueados» (`Flujos/src/modulos/agenda/omitir-contactos-bloqueados.js`) quita el envío solo con `statusCode 200` y `bloqueadoPorContacto === true`; ante error, espera agotada, respuesta ilegible o longitudes distintas se envía igual con el motivo «bloqueo sin verificar». 0 mensajes agregados. Bellido queda fuera.
 - **Bloqueo y pausa por persona**: manda el bloqueo. En la rama bloqueada **no** se decide la pausa
   ni se persiste el vencimiento de un turno (`persistirVencimientoDeIngesta` no corre: esa rama solo
   escribe el mensaje y lo mínimo para listarlo, sin auditoría). La respuesta lleva solo
