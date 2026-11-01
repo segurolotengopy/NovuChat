@@ -33,7 +33,8 @@ operativo.
   Etapa sugerida, ID de campaña, No contactar, Última actualización del bot,
   Estado del recordatorio).
 - **Columnas del equipo, que el bot NUNCA pisa**: Valor, Responsable, Estado,
-  Próxima acción. `columnasEscribibles(mapa)` devuelve solo las del bot.
+  Próxima acción y Diagnóstico del equipo (PR-E). `columnasEscribibles(mapa)` devuelve solo las del bot.
+  Excepción declarada: la etapa inicial y el estado inicial se escriben SOLO al crear la fila.
 - **config/crm**: el comercio (admin) escribe lo suyo; lo demás, solo el servidor.
 - Un texto del cliente final que empiece con `= + - @` (tras quitar controles,
   caracteres de formato como U+200B y espacios, NBSP incluido) se neutraliza
@@ -91,5 +92,54 @@ del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
 - `crm.activo = false` no se puede activar todavía: `configuracionFlujo` no devuelve
   `config/crm` hasta el PR-B3. Hasta entonces el módulo siempre está encendido.
 - Con `returnFirstMatch: false` las ejecuciones de n8n guardan todas las filas A a J
-  del mismo teléfono (datos de esa sola persona, sin columnas del equipo).
+  del mismo teléfono (datos de esa sola persona). En la plantilla de las subcuentas el rango A..T incluye las columnas del equipo J..M (valor, responsable, estado, próxima acción): quedan en el historial de ejecuciones, no se escriben ni deciden nada. PR-F debe partir la lectura en dos rangos (A..I y N..T) o limitar la retención de ejecuciones de esos flujos.
 - `Leer IDs de la planilla` corre una vez por coincidencia.
+
+## La planilla de las subcuentas (PR-E, 31/10/2026)
+
+Plantilla `NOVUCHAT_miniCRM_IA` (hoja `Leads_CRM`, encabezados en la fila 3), una copia por subcuenta.
+Columnas: A ID, B Fecha, C Nombre, D Empresa, E Teléfono, F Etapa, G Origen, H Calificación IA, I Resumen
+(del bot, F solo al crear); J Valor, K Responsable, L Estado (solo al crear), M Próxima acción (del equipo);
+**N Clasificación, O Qué pidió, P Día preferido, Q Horario preferido, R Derivación a recepción,
+S Última interacción, T Se cierra la ventana de 24 h** (del bot); **U Diagnóstico del equipo** (del equipo).
+
+**Contrato de columnas (`COLUMNAS_V1`).** Campos nuevos del bot: `clasificacion`, `quePidio`, `diaPreferido`,
+`horarioPreferido`, `derivacion`, `ventana24h` (más `ultimaInteraccion`, que ya existía); del equipo:
+`diagnostico`. Todos opcionales en el mapa: `interes` también pasa a opcional (la plantilla no trae «Rubro»);
+sin los campos nuevos la salida de `crmDecidirFila` es idéntica a la de antes (el oráculo `decidir-fila-antes.js` lo prueba).
+
+**Reglas en código, no en el modelo** (`crm.js`):
+- `crmClasificar({aceptoAgendar, pidioUbicacion, pidioLlamada, llegoPorAnuncio, preguntoPrecioYCerro, noEsPaciente})`:
+  `No es lead` (no es paciente, gana a todo) > `Caliente` (aceptó agendar, pidió ubicación o que lo llamen) >
+  `Frío` (preguntó el precio y cerró) > `Tibio` (llegó por anuncio o escribió y no avanzó). Solo `=== true` cuenta.
+- `crmPrioridad(clasificacion)`: Alta, Media, Baja o N/A (función pura; la planilla no tiene columna de prioridad).
+- `crmVentana24h(ultimaInteraccionMs)`: última interacción + 24 h; se escribe en hora de La Paz («AAAA-MM-DD HH:MM»).
+- El prospecto trae, todos opcionales: `senales`, `quePidio`, `diaPreferido`, `horarioPreferido`, `derivacion`
+  (`true` = «Sí», `false` = «No», un texto = ese texto acotado a 80, otro tipo = nada), `ultimaInteraccionMs`, `nombreDePerfil`.
+  Si `nombreDePerfil` es `true` y la celda ya tiene nombre, no se pisa.
+- **Clasificación al actualizar:** «No es lead» se escribe SIEMPRE (está fuera de la escala); las demás suben y no bajan;
+  si `senales` no trae ninguna señal verdadera no se toca la de una fila ya clasificada (el Tibio por defecto no pisa
+  Frío ni Caliente). Una fila ya «No es lead» solo vuelve a lead por una señal Caliente (aceptó agendar, pidió ubicación o pidió que lo llamen). En una fila nueva sin señales queda Tibio.
+- **Textos libres** (`quePidio`, `diaPreferido`, `horarioPreferido`): solo un `string`; `false`, números, objetos y
+  listas dan vacío y no se escriben (jamás «false» ni «[object Object]»). Se acotan (200, 60 y 60) y se neutralizan
+  (apóstrofo, `USER_ENTERED`).
+- **Fechas** (`ultimaInteraccion`, `ventana24h`): el prospecto trae milisegundos entre 2020 y 2100 (segundos, NaN o
+  fuera de rango = no se escribe). Al **crear** se escriben como texto con apóstrofo (`USER_ENTERED`, el apóstrofo no se ve);
+  al **actualizar** van **sin apóstrofo** (el nodo `Actualizar fila` escribe RAW y el apóstrofo quedaría visible: ningún
+  valor de una actualización lo lleva). Formato `AAAA-MM-DD HH:MM` **hora de La Paz** (UTC-4 fijo; 02:30 UTC del 01/11 es `2026-10-31 22:30`).
+- **Costo de escritura:** `ultimaInteraccion` cambia en cada turno, así que cada mensaje del cliente cuesta UNA
+  escritura a Google (actualizar la fila). Mensajes de WhatsApp agregados: 0.
+
+**Mapa relajado.** Las columnas del bot ya no son contiguas. La validación exige letras y títulos sin repetir
+(así un campo del bot nunca cae sobre una letra del equipo), y que todas las letras de A a la última del mapa
+estén declaradas (bot, equipo o extras), sin huecos. El bot solo escribe las letras de sus campos. La
+comparación de encabezados es letra por letra de A hasta la última del bot (las del equipo en medio incluidas); lo
+que se lea después (p. ej. U) debe ser lo declarado, en orden, y cualquier otra cosa es «columnas de más».
+`equipo.diagnostico` es opcional; las otras cuatro claves del equipo se declaran siempre (columna o `null`).
+
+**Pruebas.** `pruebas/modulos/crm/crm-planilla.ts` (importado por `crm.test.ts`): los 6 leads del plan como tabla,
+mapa no contiguo, encabezados del equipo movidos, y negaciones sobre F, J, K, L, M y U. **Mensajes por conversación: 0.**
+
+**Lo que queda para PR-F:** el injerto (`construir-crm.mjs`) fija hoy el rango de lectura en A a la última del
+bot (A..T en la plantilla; la U no se lee, que es lo que tolera la comparación); NO ampliarlo a la U ni a ninguna columna del equipo posterior (Diagnóstico puede llevar datos de salud y quedaría en el historial de n8n; una prueba debe fallar si el rango incluye la letra de `equipo.diagnostico`); comprobar la fila de encabezados completa antes de AGREGAR una fila nueva (hoy solo se comprueba la A), y que
+`chProspecto` devuelva `senales`, día, horario, qué pidió y derivación.
