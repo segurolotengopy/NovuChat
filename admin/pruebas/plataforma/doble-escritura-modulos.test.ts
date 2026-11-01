@@ -83,11 +83,11 @@ beforeEach(async () => {
   await db.doc(`tenants/${CADENA}`).set({ nombre: 'C', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: 'agenda' });
 });
 
-describe('altaTenant escribe flujos y modulos', () => {
-  it('flujos y vertical iguales a hoy; modulos coherente con el registro', async () => {
+describe('altaTenant escribe modulos y YA NO flujos (H2b-cierre)', () => {
+  it('vertical = el primer flujo; modulos coherente con el registro; sin flujos', async () => {
     await correr(altaTenant, { tenantId: ALTA, nombre: 'Alta', correoAdmin: 'a@ejemplo.com', flujos: ['venta', 'agendamiento'] });
     const f = await ficha(ALTA);
-    expect(f['flujos']).toEqual(['venta', 'agendamiento']);
+    expect(Object.prototype.hasOwnProperty.call(f, 'flujos')).toBe(false);
     expect(f['vertical']).toBe('venta');
     expect(f['modulos']).toEqual(modulosDeFlujos(['venta', 'agendamiento']));
     expect(f['modulos']).toEqual(expect.arrayContaining([...COMUNES, ...DE_VENTA, 'agenda']));
@@ -95,7 +95,8 @@ describe('altaTenant escribe flujos y modulos', () => {
   it('sin flujo pedido: agendamiento por defecto, con sus módulos y sin los de venta', async () => {
     await correr(altaTenant, { tenantId: ALTA, nombre: 'Alta', correoAdmin: 'a@ejemplo.com' });
     const f = await ficha(ALTA);
-    expect(f['flujos']).toEqual(['agendamiento']);
+    expect(Object.prototype.hasOwnProperty.call(f, 'flujos')).toBe(false);
+    expect(f['vertical']).toBe('agendamiento');
     expect(f['modulos']).toEqual(expect.arrayContaining(['agenda', 'cobros']));
     expect(f['modulos']).not.toContain('inventario');
   });
@@ -105,7 +106,8 @@ describe('asignarNumero (callable) suma los módulos del flujo', () => {
   it('agregar «venta» a una ficha migrada suma inventario, pedidos y catalogo-web', async () => {
     await asignar(MIGRADA);
     const f = await ficha(MIGRADA);
-    expect(f['flujos']).toEqual(['agendamiento', 'venta']);
+    // `flujos` ya no se escribe: queda el valor viejo, sin sumar.
+    expect(f['flujos']).toEqual(['agendamiento']);
     expect(f['modulos']).toEqual(expect.arrayContaining([...DE_VENTA, 'agenda', 'cobros']));
     // arrayUnion: sin repetidos aunque el flujo ya aportara «cobros» o «productos».
     expect(new Set(f['modulos'] as string[]).size).toBe((f['modulos'] as string[]).length);
@@ -113,7 +115,7 @@ describe('asignarNumero (callable) suma los módulos del flujo', () => {
   it('NEGACIÓN: una ficha sin lista sigue sin lista', async () => {
     await asignar(SIN_LISTA, NUM_S);
     const f = await ficha(SIN_LISTA);
-    expect(f['flujos']).toEqual(['agendamiento', 'venta']);
+    expect(f['flujos']).toEqual(['agendamiento']);
     expect(Object.prototype.hasOwnProperty.call(f, 'modulos')).toBe(false);
   });
   it('NEGACIÓN: `modulos` como cadena se rechaza (failed-precondition) sin escribir nada', async () => {
@@ -144,8 +146,7 @@ describe('el flujo que la ficha ya tiene no reabre módulos cerrados; modulos nu
   it('`modulos: null` se trata como ausente: no se rechaza y no se crea la lista (callable y script)', async () => {
     await asignar(NULA, NUM_S);
     expect((await ficha(NULA))['modulos']).toBeNull();
-    expect((await ficha(NULA))['flujos']).toEqual(['agendamiento', 'venta']);
-    await db.doc(`tenants/${NULA}`).update({ flujos: ['agendamiento'] });
+    expect((await ficha(NULA))['flujos']).toEqual(['agendamiento']);
     const r = script('asignar-numero.mjs', '--tenant', NULA, '--numero', NUM_C, '--alias', 'cliente19', ...BASE);
     expect(r.codigo, r.salida).toBe(0);
     expect((await ficha(NULA))['modulos']).toBeNull();
@@ -200,7 +201,9 @@ describe('scripts', () => {
       // La carga posterior puede fallar con este JSON mínimo; lo que se mira es la ficha, que se escribe antes.
       script('ensayo.mjs', '--numero', NUM, '--preparar', '--cliente', 'ejemplo', '--archivo', archivo, '--aplicar');
       const e = await ficha('ensayo');
-      expect(e['flujos']).toEqual(['venta']);
+      // H2b-cierre: el script ya no escribe `flujos` (el valor viejo queda); `modulos` sale del flujo del ensayo.
+      expect(e['flujos']).toEqual(['agendamiento']);
+      expect(e['vertical']).toBe('venta');
       expect(e['modulos']).toEqual(expect.arrayContaining([...COMUNES, ...DE_VENTA]));
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -81,28 +81,28 @@ describe('modulosDelTurno: lo que SI corre', () => {
   });
 });
 
-describe('modulosDelTurno: fichas sin lista de modulos (anteriores a la migracion)', () => {
-  it('con `flujos` y sin `modulos`: los del flujo del numero mas los comunes de hoy', () => {
-    expect(modulosDelTurno({ flujos: ['agendamiento'] }, 'agendamiento'))
-      .toEqual(['productos', 'cobros', 'agenda', 'campanas']);
-    expect(modulosDelTurno({ flujos: ['onboarding'] }, 'onboarding'))
-      .toEqual(['productos', 'campanas', 'captacion']);
+describe('modulosDelTurno: fichas sin lista de modulos (H2b-cierre: falla cerrado)', () => {
+  it('con `flujos` y sin `modulos`: ningun modulo, ni los comunes (`flujos` ya no enciende nada)', () => {
+    expect(modulosDelTurno({ flujos: ['agendamiento'] }, 'agendamiento')).toEqual([]);
+    expect(modulosDelTurno({ flujos: ['onboarding'] }, 'onboarding')).toEqual([]);
+    expect(modulosDelTurno({ flujos: ['venta'], vertical: 'venta' }, 'venta')).toEqual([]);
   });
 
-  it('un flujo de la ruta que la ficha no declara no enciende sus modulos', () => {
-    expect(modulosDelTurno({ flujos: ['agendamiento'] }, 'venta')).not.toContain('inventario');
+  it('sin lista, ningun gancho corre', () => {
+    expect(ganchosDelTurno({ flujos: ['venta'] }, 'venta')).toEqual([]);
+    expect(ganchosDelTurno({ flujos: ['agendamiento'] }, 'agendamiento')).toEqual([]);
   });
 
-  it('ficha sin ninguna lista, nula o indefinida: solo los comunes, nunca los de un flujo', () => {
-    const comunes = ['productos', 'campanas'];
-    expect(modulosDelTurno({}, 'agendamiento')).toEqual(comunes);
-    expect(modulosDelTurno(null, 'venta')).toEqual(comunes);
-    expect(modulosDelTurno(undefined, 'onboarding')).toEqual(comunes);
+  it('ficha sin ninguna lista, nula o indefinida: ningun modulo', () => {
+    expect(modulosDelTurno({}, 'agendamiento')).toEqual([]);
+    expect(modulosDelTurno(null, 'venta')).toEqual([]);
+    expect(modulosDelTurno(undefined, 'onboarding')).toEqual([]);
   });
 
-  it('`modulos` que no es lista se trata como ausente (no apaga ni enciende todo)', () => {
-    expect(modulosDelTurno({ modulos: 'agenda', flujos: ['agendamiento'] }, 'agendamiento'))
-      .toEqual(['productos', 'cobros', 'agenda', 'campanas']);
+  it('`modulos` que no es lista (cadena, mapa, nulo) no enciende nada, ni cae a `flujos`', () => {
+    expect(modulosDelTurno({ modulos: 'agenda', flujos: ['agendamiento'] }, 'agendamiento')).toEqual([]);
+    expect(modulosDelTurno({ modulos: { agenda: true }, flujos: ['agendamiento'] }, 'agendamiento')).toEqual([]);
+    expect(modulosDelTurno({ modulos: null, flujos: ['agendamiento'] }, 'agendamiento')).toEqual([]);
   });
 
   it('`modulos` vacia apaga todo, comunes incluidos: una lista explicita manda', () => {

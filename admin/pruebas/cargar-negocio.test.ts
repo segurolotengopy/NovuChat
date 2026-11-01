@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'datos', 'cargar-negocio.mjs');
 const PLATINUM = join(aqui, '..', 'scripts', 'datos', 'negocio-platinum.json');
@@ -82,14 +83,14 @@ beforeAll(async () => {
     }
   }
   // Como deja alta-comercio.mjs: la ficha, un config/negocio mínimo y el documento del flujo vacío.
-  await db.doc(`tenants/${T}`).set({ nombre: 'Clínica Platinum', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'] });
+  await db.doc(`tenants/${T}`).set({ nombre: 'Clínica Platinum', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
   await db.doc(`tenants/${T}/config/negocio`).set({ nombreNegocio: 'Clínica Platinum', zonaHoraria: 'America/La_Paz', moneda: 'BOB', paleta: 'vino' });
   await db.doc(`tenants/${T}/config/agendamiento`).set({ actualizadoPor: 'alta-comercio' });
-  await db.doc(`tenants/${SIN_AGENDA}`).set({ nombre: 'Tienda', estado: 'activo', vertical: 'venta', flujos: ['venta'] });
-  await db.doc(`tenants/${SUSPENDIDO}`).set({ nombre: 'Susp', estado: 'suspendido', vertical: 'agendamiento', flujos: ['agendamiento'] });
+  await db.doc(`tenants/${SIN_AGENDA}`).set({ nombre: 'Tienda', estado: 'activo', vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
+  await db.doc(`tenants/${SUSPENDIDO}`).set({ nombre: 'Susp', estado: 'suspendido', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
   // Un comercio de VENTA sin contador y sin cuenta: es como nace uno nuevo, y
   // es el caso que dejaba trabada la consola.
-  await db.doc(`tenants/${CONTADOR}`).set({ nombre: 'Tienda', estado: 'activo', vertical: 'venta', flujos: ['venta'] });
+  await db.doc(`tenants/${CONTADOR}`).set({ nombre: 'Tienda', estado: 'activo', vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
 });
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 

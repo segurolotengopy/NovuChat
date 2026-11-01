@@ -30,6 +30,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 
+import { modulosDeFlujos } from '../../../functions/src/registro.ts';
 const PROYECTO = 'demo-novuchat-pruebas';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['FIRESTORE_EMULATOR_HOST'] = HOST;
@@ -74,7 +75,7 @@ async function sembrarComercio(
   id: string, o: { linea: string | null; estado?: string; ruta?: Record<string, unknown> | null },
 ) {
   await db.doc(`tenants/${id}`).set({
-    nombre: id, estado: o.estado ?? 'activo', plan: 'crecimiento', flujos: ['venta'],
+    nombre: id, estado: o.estado ?? 'activo', plan: 'crecimiento', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]),
     waPhoneNumberId: o.linea,
   });
   await db.doc(`tenants/${id}/config/negocio`).set({

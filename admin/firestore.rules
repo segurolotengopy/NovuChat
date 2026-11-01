@@ -201,41 +201,33 @@ service cloud.firestore {
     // reglas los rechazan. Esconder en la interfaz no protege de nada; lo que
     // protege es que el campo no exista para ese comercio.
     // -------------------------------------------------------------------------
-    // LOS FLUJOS DE UN NEGOCIO SON UNA LISTA, NO UN VALOR. Un negocio puede
-    // tener reservas Y pedidos —cada flujo con su número de WhatsApp— y la
-    // consola le habilita una pestaña por cada uno. `vertical` (valor único) se
-    // conserva como el flujo principal y como respaldo para las fichas escritas
-    // antes de que existiera la lista: una ficha sin `flujos` se lee como
-    // `[vertical]`, así nada de lo ya cargado cambia de comportamiento.
+    // LOS MÓDULOS ENCENDIDOS DE UN NEGOCIO SON LA ÚNICA FUENTE (H2b-cierre).
+    // La ficha trae `modulos`, una lista (`Analisis/41` §3, el registro de
+    // módulos). Antes las capacidades se decidían por `flujos`/`vertical`
+    // (`flujosTenant`, `tieneFlujo`) mientras la lista no existía; esa puerta
+    // se cerró: una ficha SIN `modulos` lista (ausente, null, cadena, mapa,
+    // número) no tiene NINGÚN módulo, ni siquiera los comunes. Falla cerrado.
+    // `flujos` y `vertical` siguen en la ficha como dato, pero ninguna regla
+    // los lee. Escribir `modulos` a toda ficha viva es previo al despliegue
+    // (`scripts/modulos/verificar-todas-con-modulos.mjs`).
     //
-    // Cuando las dos cosas están, MANDA LA LISTA. Es lo que evita que una ficha
-    // con `vertical: 'agendamiento'` y `flujos: ['venta']` abra la agenda por
-    // la puerta del valor viejo.
+    // La comprobación `is list` es necesaria: `m in mapa` pregunta por claves y
+    // abriría un módulo con `modulos: {agenda: 1}`.
     //
-    // PRESUPUESTO DE EXPRESIONES. Igual que `estadoTenant`: la ruta se nombra una
-    // vez. Y el `vertical` de respaldo se lee de la misma ficha (`get(ruta)`, que
-    // la petición ya tiene en caché) en vez de pasar por una función aparte que
-    // volvía a comprobar `exists` y a armar la ruta (la base anterior tenía
-    // `verticalTenant`, ya retirada por no tener otro uso); es lo mismo, porque
-    // acá la ficha ya se sabe que existe. Mismo resultado para toda ficha: la prueba
-    // diferencial `reglas-diferencial-config-negocio.test.ts` lo comprueba contra
-    // la base anterior, incluidas las fichas sin `flujos`, con `flujos` nulo,
-    // mapa o cadena, suspendidas y dadas de baja.
-    function flujosTenant(tenantId) {
-      let ruta = /databases/$(database)/documents/tenants/$(tenantId);
-      return exists(ruta)
-        ? get(ruta).data.get('flujos', [get(ruta).data.get('vertical', '')])
-        : [];
-    }
-
-    function tieneFlujo(tenantId, flujo) {
-      return flujo in flujosTenant(tenantId);
+    // COSTO. Una petición evalúa a lo sumo 1.000 expresiones y `config/negocio`
+    // completo con 6 días de horario y catálogo web llegaba al tope (ver
+    // `pruebas/plataforma/reglas-presupuesto.test.ts`); por eso la ficha se lee
+    // UNA vez (`let`), sin mapa ni `exists`: una ficha inexistente hace fallar
+    // el `get` y la regla deniega.
+    function tieneModulo(tenantId, m) {
+      let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
+      return ficha.get('modulos', null) is list && m in ficha.modulos;
     }
 
     // Capacidades, expresadas como tabla y no como condiciones sueltas: agregar
-    // un flujo es tocar estas líneas, no cazar `if` por el archivo. La misma
-    // tabla vive en `functions/src/core/prompt/prompt.ts` (VERTICALES_CONOCIDOS) y en
-    // `web/src/central/lib/flujos.ts`: si se agrega un flujo en un solo lado, se nota.
+    // un módulo es tocar estas líneas, no cazar `if` por el archivo. La misma
+    // tabla vive en `functions/src/registro.ts` (`capacidadEnReglas`): si se
+    // agrega en un solo lado, `registro.test.ts` lo nota.
     function tieneAgenda(tenantId) {
       return tieneModulo(tenantId, 'agenda');
     }
@@ -244,72 +236,26 @@ service cloud.firestore {
       return tieneModulo(tenantId, 'pedidos');
     }
 
-    // El flujo de CAPTACIÓN: capta y atiende a quien quiere contratar lo que
-    // vende el comercio. Nació como el flujo propio de NovuChat y desde el
-    // 15/09 es un flujo GENÉRICO, igual que agendamiento y venta: su documento
-    // `/config/onboarding` lo leen los miembros del comercio y lo escribe su
-    // administrador, además del propietario de la plataforma.
+    // El módulo de CAPTACIÓN: capta y atiende a quien quiere contratar lo que
+    // vende el comercio. Su documento `/config/onboarding` lo leen los miembros
+    // del comercio y lo escribe su administrador, además del propietario de la
+    // plataforma.
     function tieneOnboarding(tenantId) {
       return tieneModulo(tenantId, 'captacion');
     }
 
-    // LOS MÓDULOS ENCENDIDOS DE UN NEGOCIO (H2b-6). La ficha puede traer
-    // `modulos`, una lista (`Analisis/41` §3, el registro de módulos). MIENTRAS
-    // NO LA TRAIGA —hoy ninguna ficha viva la trae— TODO se decide como antes,
-    // por `flujos`: el módulo se traduce a su flujo y se pregunta `tieneFlujo`.
-    // Cuando la lista existe MANDA, igual que `flujos` manda sobre `vertical`:
-    // un módulo apagado en la lista no se reabre por la puerta del flujo viejo.
-    // `modulos` que no es una lista (cadena, mapa, número, null) se trata como
-    // ausente: cae a `flujos`, nunca abre de más.
-    //
-    // SOLO PARA MÓDULOS PROPIOS DE UN FLUJO. La tabla de respaldo es PARCIAL a
-    // propósito y se cierra con `false`: agenda ⇒ agendamiento; pedidos,
-    // catalogo-web e inventario ⇒ venta; captacion ⇒ onboarding. Son los módulos
-    // que pertenecen a UN solo flujo en `PUENTE_DE_FLUJOS`
-    // (`functions/src/registro.ts`); `reglas-modulos.test.ts` compara este cuerpo
-    // con el registro y falla si divergen. Un módulo COMÚN (`productos`,
-    // `campanas`) o compartido por dos flujos (`cobros`) NO va por acá: los
-    // comunes usan `tieneModuloComun`, y preguntar por `cobros` da `false` para
-    // todo comercio de hoy aunque el registro diga que lo tienen.
-    //
-    // COSTO. Una petición evalúa a lo sumo 1.000 expresiones y `config/negocio`
-    // completo con 6 días de horario y catálogo web llegaba al tope (margen 0 en
-    // la base anterior; tras el recorte, el documento «tope» de 7 días con
-    // ubicación deja margen 22 términos, ~60 expresiones, y la variante más
-    // ajustada medida deja 16 tras H2b-1, según `reglas-presupuesto.test.ts`); por eso la
-    // ficha se lee UNA vez (`let`), sin mapa ni `exists`: una ficha inexistente hace fallar el
-    // `get` y la regla deniega, igual que antes. Medido en
-    // `pruebas/plataforma/reglas-presupuesto.test.ts`.
-    function tieneModulo(tenantId, m) {
-      let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
-      return ficha.get('modulos', null) is list
-        ? m in ficha.modulos
-        : (m == 'agenda' ? tieneFlujo(tenantId, 'agendamiento')
-           : m == 'captacion' ? tieneFlujo(tenantId, 'onboarding')
-           : (m == 'pedidos' || m == 'catalogo-web' || m == 'inventario') ? tieneFlujo(tenantId, 'venta')
-           : false);
-    }
-
-    // `tieneModulo(tenantId, 'catalogo-web')` con solo su rama: misma semántica y
-    // mismo respaldo (sin lista `modulos`, el flujo `venta`; deja de regir cuando la migración de H2b-3 escriba
-    // `modulos` en todas las fichas), pero
-    // sin la cadena de ternarios de las demás ramas. Existe porque `config/negocio`
-    // completo está a pocos términos del tope de expresiones y la cadena entera le
-    // costaba 10 términos de margen (medido en `reglas-presupuesto.test.ts`).
+    // `tieneModulo(tenantId, 'catalogo-web')` con solo su rama. Existe porque
+    // `config/negocio` completo está a pocos términos del tope de expresiones
+    // (medido en `reglas-presupuesto.test.ts`).
     function tieneCatalogoWeb(tenantId) {
       let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
-      return ficha.get('modulos', null) is list
-        ? 'catalogo-web' in ficha.modulos
-        : tieneFlujo(tenantId, 'venta');
+      return ficha.get('modulos', null) is list && 'catalogo-web' in ficha.modulos;
     }
 
-    // Los módulos COMUNES (`productos`, `campanas`) los tiene todo comercio hoy:
-    // sin `modulos` en la ficha, abre como antes (todo comercio activo); con la
-    // lista, solo si el módulo está en ella. Un negocio que no existe no abre (el
-    // `get` falla y la regla deniega).
+    // Los módulos COMUNES (`productos`, `campanas`): desde el cierre de H2b se
+    // piden como cualquier otro, por la lista `modulos`. Ficha sin lista, no abre.
     function tieneModuloComun(tenantId, m) {
-      let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
-      return !(ficha.get('modulos', null) is list) || m in ficha.modulos;
+      return tieneModulo(tenantId, m);
     }
 
     // Habilita ESCRITURA y la ingesta desde n8n. Solo 'activo'.

@@ -2,15 +2,14 @@
  * REGLAS DE FIRESTORE POR MÓDULO (H2b-6) — PROBADAS NEGANDO.
  *
  * Qué verifican (admin/firestore.rules):
- *   · `tieneModulo(tenantId, m)`: si la ficha trae `modulos` (una LISTA), manda;
- *     si no, se decide por `flujos` como hasta hoy (agenda ⇒ agendamiento,
- *     pedidos y catalogo-web ⇒ venta, captacion ⇒ onboarding).
- *   · `tieneModuloComun(tenantId, m)` (productos, campanas): sin `modulos`, abre
- *     como hoy; con la lista, solo si el módulo está en ella.
+ *   · `tieneModulo(tenantId, m)` (H2b-cierre): SOLO manda la lista `modulos`. Una
+ *     ficha sin lista (ausente, cadena) no abre NADA, ni por `flujos` ni por
+ *     `vertical`, ni siquiera los módulos comunes: falla cerrado.
+ *   · `tieneModuloComun(tenantId, m)` (productos, campanas): igual que el anterior.
  *   · `funcionarios/{id}/privado` exige agenda (decisión N2 de Andres: cerrado para
  *     un administrador sin agenda).
  *   · «solo venta → no lee ni escribe `config/onboarding`», y lo mismo para cada
- *     par de flujos: la matriz de los 8 subconjuntos, por `flujos` y por `modulos`.
+ *     par de flujos: la matriz de los 8 subconjuntos, por `modulos` (y por `flujos`, que NO abre nada).
  *
  * LA COLECCIÓN `agenda` (el candado de citas) NO SE TOCA y no se prueba acá:
  * la prueba de siempre vive en `pruebas/reglas.test.ts` y `candado-agenda.test.ts`.
@@ -37,7 +36,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { IDS_FLUJOS, MODULOS_COMUNES_HOY, PUENTE_DE_FLUJOS } from '../../functions/src/registro.ts';
+import { IDS_MODULOS, modulosDeFlujos } from '../../functions/src/registro.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const REGLAS = readFileSync(join(aqui, '..', '..', 'firestore.rules'), 'utf8');
@@ -96,19 +95,20 @@ const base = { nombre: 'x', estado: 'activo', plan: 'pro' };
 const tenants: Tenant[] = [];
 const agregar = (t: Tenant): void => { tenants.push(t); };
 
-// Solo agenda / solo venta / solo onboarding, por `flujos` (la ficha de hoy).
-agregar({ id: 'sa', ficha: { ...base, vertical: 'agendamiento', flujos: ['agendamiento'] },
+// Solo agenda / solo venta / solo onboarding: la ficha de hoy, con `modulos` (los del flujo y los comunes).
+agregar({ id: 'sa', ficha: { ...base, vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento']) },
   abre: ['agenda', 'productos', 'campanas'] });
-agregar({ id: 'sv', ficha: { ...base, vertical: 'venta', flujos: ['venta'] },
+agregar({ id: 'sv', ficha: { ...base, vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta']) },
   abre: ['venta', 'marca', 'productos', 'campanas'] });
-agregar({ id: 'so', ficha: { ...base, vertical: 'onboarding', flujos: ['onboarding'] },
+agregar({ id: 'so', ficha: { ...base, vertical: 'onboarding', flujos: ['onboarding'], modulos: modulosDeFlujos(['onboarding']) },
   abre: ['onb', 'productos', 'campanas'] });
-// Ficha vieja: sin `flujos`, solo `vertical`.
-agregar({ id: 'sl', ficha: { ...base, vertical: 'venta' },
-  abre: ['venta', 'marca', 'productos', 'campanas'] });
-// Con `modulos` que no es lista (cadena): no se lee, manda `flujos`.
-agregar({ id: 'mx', ficha: { ...base, flujos: ['venta'], modulos: 'agenda' },
-  abre: ['venta', 'marca', 'productos', 'campanas'] });
+// H2b-cierre, FALLA CERRADO: ficha sin `modulos` (solo `vertical`, o `flujos` completos): no abre nada.
+agregar({ id: 'sl', ficha: { ...base, vertical: 'venta' }, abre: [] });
+agregar({ id: 'sn', ficha: { ...base, vertical: 'venta', flujos: FLUJOS_TODOS }, abre: [] });
+// Con `modulos` que no es lista (cadena): no se lee y NO cae a `flujos`: no abre nada.
+agregar({ id: 'mx', ficha: { ...base, flujos: ['venta'], modulos: 'agenda' }, abre: [] });
+// Con `modulos` mapa (`m in mapa` miraría claves): tampoco abre nada.
+agregar({ id: 'mm', ficha: { ...base, flujos: FLUJOS_TODOS, modulos: { agenda: true, productos: true } }, abre: [] });
 // Con `modulos` solo agenda (ni catalogo, ni campañas, ni venta).
 agregar({ id: 'ma', ficha: { ...base, flujos: FLUJOS_TODOS, modulos: ['agenda'] }, abre: ['agenda'] });
 // Con `modulos` sin agenda.
@@ -122,7 +122,7 @@ agregar({ id: 'mc', ficha: { ...base, flujos: FLUJOS_TODOS, modulos: ['catalogo-
 agregar({ id: 'ab', ficha: { ...base, flujos: [], modulos: ['agenda', 'pedidos', 'catalogo-web', 'captacion', 'productos', 'campanas'] },
   abre: TODAS });
 
-// La matriz de los 8 subconjuntos, por `flujos` y por `modulos`.
+// La matriz de los 8 subconjuntos, por `modulos` (abre) y por `flujos` solo (no abre nada).
 for (const bits of ['000', '100', '010', '001', '110', '101', '011', '111']) {
   const [a, v, o] = bits.split('').map((b) => b === '1');
   const flujos = [a && 'agendamiento', v && 'venta', o && 'onboarding'].filter(Boolean);
@@ -132,8 +132,8 @@ for (const bits of ['000', '100', '010', '001', '110', '101', '011', '111']) {
   if (a) abre.push('agenda');
   if (v) abre.push('venta', 'marca');
   if (o) abre.push('onb');
-  // Por `flujos`: la ficha de hoy, sin `modulos`.
-  agregar({ id: `f${bits}`, ficha: { ...base, flujos }, abre });
+  // Por `flujos` solo: la ficha de ANTES del cierre. Ya no abre nada.
+  agregar({ id: `f${bits}`, ficha: { ...base, flujos }, abre: [] });
   // Por `modulos`: `flujos` dice TODO a propósito; solo la lista puede explicar el resultado.
   agregar({ id: `m${bits}`, ficha: { ...base, flujos: FLUJOS_TODOS, modulos }, abre });
 }
@@ -196,13 +196,11 @@ type Operacion = {
   prep?: (t: string) => Promise<void>;
   ejecutar: (t: string) => Promise<unknown>;
 };
-/** Lo que el oráculo espera de cada operación para un tenant. `catalogoWebActivo` (config/negocio) se decide por el módulo `catalogo-web` (H2b-1): con `modulos` lista manda la lista; sin ella, el respaldo de `tieneModulo` (flujo `venta`). */
+/** Lo que el oráculo espera de cada operación para un tenant. `catalogoWebActivo` (config/negocio) se decide por el módulo `catalogo-web`: solo la lista `modulos` manda; sin lista, no abre. */
 const abreOp = (t: Tenant, cap: Operacion['cap']): boolean => {
   if (cap !== 'catalogoWebActivo') return t.abre.includes(cap);
   const m = t.ficha['modulos'];
-  if (Array.isArray(m)) return m.includes('catalogo-web');
-  const f = t.ficha['flujos'];
-  return Array.isArray(f) ? f.includes('venta') : t.ficha['vertical'] === 'venta';
+  return Array.isArray(m) && m.includes('catalogo-web');
 };
 const T = (t: string, p: string): string => `tenants/${t}/${p}`;
 
@@ -364,9 +362,9 @@ const casos = (nucleo = false): Caso[] => {
       return a || b;
     },
   });
-  // Respaldo desconocido: la sonda pregunta por un módulo que la tabla no
-  // conoce. Tiene que negar en TODA ficha: con lista (sin ese módulo), con
-  // `flujos`, y sobre todo con una ficha vacía, donde `''` está «en» `['']`.
+  // La sonda pregunta por un módulo que no existe. Tiene que negar en TODA
+  // ficha: con lista (sin ese módulo), con `flujos`, y sobre todo con una ficha
+  // vacía.
   const sonda = (t: Tenant) => async () => {
     await sembrar(t);
     return permitida(() => getDoc(doc(comoAdmin(t.id), T(t.id, 'sonda/s'))));
@@ -374,7 +372,7 @@ const casos = (nucleo = false): Caso[] => {
   const vacio: Tenant = { id: 'vacio', ficha: { ...base }, abre: [] };
   const vacioFlujos: Tenant = { id: 'vacio2', ficha: { ...base, flujos: [''] }, abre: [] };
   for (const t of [vacio, vacioFlujos, ab, porId('sv'), porId('mx')]) {
-    lista.push({ nombre: `${t.id}: un módulo desconocido niega (respaldo null)`, esperado: false, correr: sonda(t) });
+    lista.push({ nombre: `${t.id}: un módulo desconocido niega`, esperado: false, correr: sonda(t) });
   }
   return lista;
 };
@@ -428,8 +426,9 @@ describe('reglas por módulo: batería de capacidades (emulador)', () => {
     expect(await enciende('mcz', { ...base, flujos: ['venta'], modulos: ['catalogo-web'] }, 'ajeno')).toBe(false);
   });
 
-  it('sin `modulos` y sin el flujo `venta` no se enciende (el respaldo de `tieneModulo` no abre por otro flujo)', async () => {
+  it('H2b-cierre: sin `modulos` no se enciende, ni con el flujo `venta` ni con `vertical: venta` (falla cerrado)', async () => {
     expect(await enciende('mcv', { ...base, flujos: ['agendamiento'] })).toBe(false);
+    expect(await enciende('mcu', { ...base, flujos: ['venta'], vertical: 'venta' })).toBe(false);
   });
 
   it('el oráculo no es vacío: hay casos que permiten y casos que niegan por cada operación', () => {
@@ -468,15 +467,17 @@ const mutaciones: Array<{ nombre: string; reglas: () => string }> = [
   { nombre: 'tieneModulo ignora al tenant (mira siempre la ficha del de todos los módulos)',
     reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace('tenants/$(tenantId)', 'tenants/ab')) },
   { nombre: 'tieneModulo ignora la lista `modulos`',
-    reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace(".get('modulos', null) is list", ".get('modulos', null) is string")) },
-  { nombre: 'tieneModulo: con respaldo desconocido abre (la tabla ya no cierra con false)',
-    reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace(': false);', ": tieneFlujo(tenantId, ''));")) },
+    reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace("ficha.get('modulos', null) is list && m in ficha.modulos", "m in ['productos', 'campanas']")) },
+  { nombre: 'tieneModulo: una ficha sin lista `modulos` abre (vuelve el respaldo abierto)',
+    reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace("ficha.get('modulos', null) is list && m in ficha.modulos", "!(ficha.get('modulos', null) is list) || m in ficha.modulos")) },
+  { nombre: 'tieneModulo: `modulos` mapa o cadena cuenta (se quita el `is list`)',
+    reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace("ficha.get('modulos', null) is list && m in ficha.modulos", "m in ficha.get('modulos', [])")) },
   { nombre: 'tieneModuloComun devuelve true',
-    reglas: () => mutarFuncion(REGLAS, 'tieneModuloComun', (c) => c.replace('return !(', 'return true || !(')) },
+    reglas: () => mutarFuncion(REGLAS, 'tieneModuloComun', (c) => c.replace('return tieneModulo(tenantId, m);', 'return true;')) },
   { nombre: 'tieneModuloComun ignora al tenant (mira siempre al de todos los módulos)',
-    reglas: () => mutarFuncion(REGLAS, 'tieneModuloComun', (c) => c.replaceAll('tenants/$(tenantId)', 'tenants/ab')) },
-  { nombre: 'tieneModuloComun ignora la lista `modulos`',
-    reglas: () => mutarFuncion(REGLAS, 'tieneModuloComun', (c) => c.replace(".get('modulos', null) is list", ".get('modulos', null) is string")) },
+    reglas: () => mutarFuncion(REGLAS, 'tieneModuloComun', (c) => c.replace('tieneModulo(tenantId, m)', "tieneModulo('ab', m)")) },
+  { nombre: 'tieneModuloComun abre a toda ficha sin lista `modulos`',
+    reglas: () => mutarFuncion(REGLAS, 'tieneModuloComun', (c) => c.replace('return tieneModulo(tenantId, m);', "return tieneModulo(tenantId, m) || !(get(/databases/$(database)/documents/tenants/$(tenantId)).data.get('modulos', null) is list);")) },
   { nombre: 'funcionarios/*/privado deja de exigir agenda',
     reglas: () => {
       const trozo = '                                && tieneAgenda(tenantId)\n                                && datosPersonalesValidos();';
@@ -484,21 +485,21 @@ const mutaciones: Array<{ nombre: string; reglas: () => string }> = [
       return REGLAS.replace(trozo, '                                && datosPersonalesValidos();');
     } },
   { nombre: 'tieneAgenda vuelve a leer solo `flujos` (ignora modulos)',
-    reglas: () => mutarFuncion(REGLAS, 'tieneAgenda', (c) => c.replace("tieneModulo(tenantId, 'agenda')", "tieneFlujo(tenantId, 'agendamiento')")) },
+    reglas: () => mutarFuncion(REGLAS, 'tieneAgenda', (c) => c.replace("tieneModulo(tenantId, 'agenda')", "('agendamiento' in get(/databases/$(database)/documents/tenants/$(tenantId)).data.get('flujos', []))")) },
   { nombre: 'tieneCobro vuelve a leer solo `flujos` (ignora modulos)',
-    reglas: () => mutarFuncion(REGLAS, 'tieneCobro', (c) => c.replace("tieneModulo(tenantId, 'pedidos')", "tieneFlujo(tenantId, 'venta')")) },
+    reglas: () => mutarFuncion(REGLAS, 'tieneCobro', (c) => c.replace("tieneModulo(tenantId, 'pedidos')", "('venta' in get(/databases/$(database)/documents/tenants/$(tenantId)).data.get('flujos', []))")) },
   { nombre: 'tieneOnboarding vuelve a leer solo `flujos` (ignora modulos)',
-    reglas: () => mutarFuncion(REGLAS, 'tieneOnboarding', (c) => c.replace("tieneModulo(tenantId, 'captacion')", "tieneFlujo(tenantId, 'onboarding')")) },
+    reglas: () => mutarFuncion(REGLAS, 'tieneOnboarding', (c) => c.replace("tieneModulo(tenantId, 'captacion')", "('onboarding' in get(/databases/$(database)/documents/tenants/$(tenantId)).data.get('flujos', []))")) },
   { nombre: 'catalogo-web (config/marca) se abre con cualquier ficha',
     reglas: () => REGLAS.replaceAll("tieneModulo(tenantId, 'catalogo-web')", 'true') },
   { nombre: 'catalogoWebActivo vuelve a decidirse por el flujo `venta` (ignora modulos)',
-    reglas: () => sustituir("|| tieneCatalogoWeb(tenantId))\n            // PALETA", "|| tieneFlujo(tenantId, 'venta'))\n            // PALETA") },
+    reglas: () => sustituir("|| tieneCatalogoWeb(tenantId))\n            // PALETA", "|| ('venta' in get(/databases/$(database)/documents/tenants/$(tenantId)).data.get('flujos', [])))\n            // PALETA") },
   { nombre: 'tieneCatalogoWeb ignora la lista `modulos` (solo mira el flujo)',
-    reglas: () => mutarFuncion(REGLAS, 'tieneCatalogoWeb', (c) => c.replace("'catalogo-web' in ficha.modulos", "tieneFlujo(tenantId, 'venta')")) },
+    reglas: () => mutarFuncion(REGLAS, 'tieneCatalogoWeb', (c) => c.replace("'catalogo-web' in ficha.modulos", "'venta' in ficha.get('flujos', [])")) },
   { nombre: 'tieneCatalogoWeb ignora al tenant (lee siempre la ficha `ab`)',
     reglas: () => mutarFuncion(REGLAS, 'tieneCatalogoWeb', (c) => c.replace('tenants/$(tenantId)', 'tenants/ab')) },
-  { nombre: 'tieneCatalogoWeb: el respaldo sin `modulos` abre siempre',
-    reglas: () => mutarFuncion(REGLAS, 'tieneCatalogoWeb', (c) => c.replace(": tieneFlujo(tenantId, 'venta')", ': true')) },
+  { nombre: 'tieneCatalogoWeb: una ficha sin `modulos` abre',
+    reglas: () => mutarFuncion(REGLAS, 'tieneCatalogoWeb', (c) => c.replace("ficha.get('modulos', null) is list && 'catalogo-web' in ficha.modulos", "!(ficha.get('modulos', null) is list) || 'catalogo-web' in ficha.modulos")) },
   { nombre: 'catálogo: se quita la exigencia del módulo productos',
     reglas: () => REGLAS.replaceAll("&& tieneModuloComun(tenantId, 'productos')", '') },
   { nombre: 'config/marca (CREATE): se quita la exigencia de catalogo-web',
@@ -541,36 +542,26 @@ describe('reglas por módulo: mutaciones (cada una debe dejar pasar una negativa
 });
 
 // ---------------------------------------------------------------------------
-// La tabla de respaldo de `tieneModulo` es PARCIAL a propósito (solo módulos
-// propios de un flujo) y tiene que coincidir con el registro. `registro.test.ts`
-// no la compara; esta prueba lee el cuerpo de la función en las reglas y lo
-// contrasta con `PUENTE_DE_FLUJOS`: si se invierte o se desfasa, falla.
+// H2b-cierre: las reglas ya no conocen los flujos. Esta prueba lee el texto de
+// `firestore.rules`: no hay `tieneFlujo` ni `flujosTenant`, ninguna regla lee el
+// campo `flujos` de la ficha, y cada módulo que pide una capacidad es del registro.
 // ---------------------------------------------------------------------------
-describe('reglas: la tabla de respaldo de tieneModulo coincide con el registro', () => {
-  const cuerpo = (): string => {
-    const i = REGLAS.indexOf('    function tieneModulo(');
-    expect(i, 'existe tieneModulo').toBeGreaterThan(-1);
-    return REGLAS.slice(i, REGLAS.indexOf('\n    }\n', i));
-  };
+describe('reglas: la ÚNICA fuente de capacidades es `modulos`', () => {
+  const sinComentarios = REGLAS.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
-  /** Módulos de `f` que no son comunes ni de otro flujo: lo que `tieneModulo` puede resolver por `flujos`. */
-  const propiosDe = (f: keyof typeof PUENTE_DE_FLUJOS): string[] =>
-    (PUENTE_DE_FLUJOS[f].modulos as readonly string[]).filter((m) =>
-      !(MODULOS_COMUNES_HOY as readonly string[]).includes(m)
-      && !IDS_FLUJOS.some((o) => o !== f && (PUENTE_DE_FLUJOS[o].modulos as readonly string[]).includes(m)));
+  it('no queda tieneFlujo ni flujosTenant', () => {
+    expect(sinComentarios).not.toMatch(/tieneFlujo|flujosTenant/);
+  });
 
-  it('cada flujo resuelve exactamente sus módulos propios, y el resto da false', () => {
-    const texto = cuerpo();
-    const tabla = new Map<string, string[]>();
-    const re = /((?:m == '[\w-]+'(?:\s*\|\|\s*)?)+)\)?\s*\?\s*tieneFlujo\(tenantId,\s*'(\w+)'\)/g;
-    for (const g of texto.matchAll(re)) {
-      const mods = [...(g[1] as string).matchAll(/m == '([\w-]+)'/g)].map((x) => x[1] as string);
-      tabla.set(g[2] as string, [...(tabla.get(g[2] as string) ?? []), ...mods]);
-    }
-    expect([...tabla.keys()].sort(), 'flujos de la tabla de respaldo').toEqual([...IDS_FLUJOS].sort());
-    for (const f of IDS_FLUJOS) {
-      expect((tabla.get(f) ?? []).sort(), `módulos propios de ${f}`).toEqual(propiosDe(f).sort());
-    }
-    expect(texto, 'la tabla se cierra con false').toMatch(/:\s*false\);\s*$/);
+  it('ninguna regla lee `flujos` ni `vertical` de la ficha de un tenant', () => {
+    expect(sinComentarios).not.toMatch(/get\('flujos'/);
+    expect(sinComentarios).not.toMatch(/data\.flujos|ficha\.flujos/);
+    expect(sinComentarios).not.toMatch(/data\.get\('vertical'|ficha\.get\('vertical'/);
+  });
+
+  it('cada módulo literal que piden las reglas es un módulo del registro', () => {
+    const literales = [...sinComentarios.matchAll(/tieneModulo(?:Comun)?\(tenantId,\s*'([\w-]+)'\)/g)].map((m) => m[1] as string);
+    expect(literales.length).toBeGreaterThan(0);
+    for (const l of literales) if (l !== 'desconocido') expect(IDS_MODULOS as readonly string[], l).toContain(l);
   });
 });

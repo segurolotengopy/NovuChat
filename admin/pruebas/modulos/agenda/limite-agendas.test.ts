@@ -29,6 +29,7 @@ import {
 import { PLANES_ASIGNABLES, PLANES, PLAN_POR_DEFECTO, LIMITE_MAXIMO } from '../../../functions/src/central/cuenta/planes.ts';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 
+import { modulosDeFlujos } from '../../../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(aqui, '..', '..', '..');
 const REGLAS = readFileSync(join(RAIZ, 'firestore.rules'), 'utf8');
@@ -114,7 +115,7 @@ const func = (calendarioId: string, activo = true, nombre = 'Ana') =>
 
 type Cuenta = Record<string, unknown>;
 async function sembrar(
-  { cuenta = { plan: 'crecimiento' } as Cuenta | null, ficha = { nombre: 'x', estado: 'activo', plan: 'crecimiento', flujos: ['agendamiento'] } as Record<string, unknown>,
+  { cuenta = { plan: 'crecimiento' } as Cuenta | null, ficha = { nombre: 'x', estado: 'activo', plan: 'crecimiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) } as Record<string, unknown>,
     funcionarios = [] as Array<[string, string, boolean]>, contador = true } = {},
 ) {
   await entorno.clearFirestore();
@@ -247,10 +248,10 @@ describe('Reglas: el tope del plan, negando', () => {
     const oper = entorno.authenticatedContext('u-oper', claims(T, 'oper')).firestore();
     await assertFails(lote(oper, 'f1', func(C1), { calendarios: 1, refs }));
     await assertFails(lote(admin('otro'), 'f1', func(C1), { calendarios: 1, refs }));
-    await sembrar({ ficha: { nombre: 'x', estado: 'activo', plan: 'crecimiento', flujos: ['venta'] }, funcionarios: [] });
+    await sembrar({ ficha: { nombre: 'x', estado: 'activo', plan: 'crecimiento', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) }, funcionarios: [] });
     await assertFails(lote(admin(), 'f1', func(C1), { calendarios: 1, refs }));
     // Comercio suspendido.
-    await sembrar({ ficha: { nombre: 'x', estado: 'suspendido', plan: 'crecimiento', flujos: ['agendamiento'] }, funcionarios: [] });
+    await sembrar({ ficha: { nombre: 'x', estado: 'suspendido', plan: 'crecimiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) }, funcionarios: [] });
     await assertFails(lote(admin(), 'f1', func(C1), { calendarios: 1, refs }));
   });
 

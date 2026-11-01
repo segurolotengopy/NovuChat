@@ -45,7 +45,7 @@ import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 // EL FLUJO VÁLIDO Y SU DOCUMENTO DE CONFIGURACIÓN SALEN DEL REGISTRO (H2b-4e), no de
 // una lista propia: `registro.ts` no tiene `import`, así que no necesita el gancho de abajo.
-import { documentoDeFlujo, esFlujo, flujosDeFicha, PUENTE_DE_FLUJOS } from '../../functions/src/registro.ts';
+import { documentoDeFlujo, esFlujo, flujosDeFicha, FLUJOS_DE_RUTA } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -213,7 +213,8 @@ try {
       return { error: 'La ficha tiene `modulos` y no es una lista: corríjala antes de agregar el flujo.' };
     }
     // Si el flujo YA estaba en la ficha no se suma nada: un módulo cerrado a propósito no se reabre.
-    const flujoYaEstaba = flujosDeFicha(datosFicha).includes(FLUJO);
+    // `flujos` ya no se escribe (H2b-cierre): "ya estaba" = esta misma ruta tenia ese flujo o la ficha vieja lo lista.
+    const flujoYaEstaba = Boolean(ruta.exists && ruta.get('flujo') === FLUJO) || flujosDeFicha(datosFicha).includes(FLUJO);
     const sumaModulos = tieneModulos && !flujoYaEstaba;
     const resumen = {
       flujoYaEstaba, tieneModulos,
@@ -235,8 +236,7 @@ try {
     tx.update(refTenant, {
       waPhoneNumberId: NUMERO, waWabaId: WABA,
       vertical: tenant.get('vertical') ?? FLUJO,
-      flujos: FieldValue.arrayUnion(FLUJO),
-      ...(sumaModulos ? { modulos: FieldValue.arrayUnion(...PUENTE_DE_FLUJOS[FLUJO].modulos) } : {}),
+      ...(sumaModulos ? { modulos: FieldValue.arrayUnion(...FLUJOS_DE_RUTA[FLUJO].modulos) } : {}),
     });
     if (resumen.configNueva) {
       tx.set(refConfig, { actualizadoPor: OPERADOR, actualizadoEn: Timestamp.now() });
@@ -274,7 +274,10 @@ const ruta = await refRuta.get();
 const ficha = await refTenant.get();
 const viejaQueda = refVieja ? (await refVieja.get()).exists : false;
 const ok = !viejaQueda && ruta.get('tenantId') === TENANT && ruta.get('aliasSecreto') === ALIAS
-  && ruta.get('flujo') === FLUJO && (ficha.get('flujos') ?? []).includes(FLUJO)
+  && ruta.get('flujo') === FLUJO
+  // H2b-cierre: `flujos` ya no se escribe; si había que sumar módulos, tienen que estar todos en `modulos`.
+  && (!(plan.tieneModulos && !plan.flujoYaEstaba)
+    || FLUJOS_DE_RUTA[FLUJO].modulos.every((m) => (ficha.get('modulos') ?? []).includes(m)))
   && ficha.get('waPhoneNumberId') === NUMERO && ruta.get('titularidad') === titularidad;
 console.log(`\n  ${ok ? '✓' : '✗'} Verificación: ruta → ${ruta.get('tenantId')} · alias ${ruta.get('aliasSecreto')}`
   + ` · titularidad ${ruta.get('titularidad')} · flujos ${JSON.stringify(ficha.get('flujos'))}\n`);

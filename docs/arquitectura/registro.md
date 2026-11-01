@@ -71,9 +71,12 @@ cumplir es lo común; lo propio entra por su declaración.
 
 **Dónde vive:** `admin/functions/src/registro.ts`, un solo archivo con
 `IDS_MODULOS` (en orden topológico), los nueve manifiestos (`REGISTRO`),
-`carpetasDe(m)`, `manifiestoDe(m)` y dos puentes transitorios:
-`PUENTE_DE_FLUJOS` (cada flujo de hoy expresado como módulos, que se borra con
-la migración `tenants.flujos` → `tenants.modulos`) y `MODULOS_COMUNES_HOY`
+`carpetasDe(m)`, `manifiestoDe(m)` y dos tablas:
+`FLUJOS_DE_RUTA` (antes `PUENTE_DE_FLUJOS`; desde H2b-cierre ya no deduce los
+módulos de una ficha: `tenants.modulos` es la única fuente y una ficha sin esa
+lista no tiene ningún módulo. Queda para el flujo de un número de WhatsApp: su
+documento `/config/<flujo>`, los módulos que ese número ejecuta y los que el
+alta siembra en `modulos`) y `MODULOS_COMUNES_HOY`
 (Productos y Campañas, que hoy tiene todo comercio). En el PR 1 **no lo
 importa nadie**: existe, se verifica y mide.
 

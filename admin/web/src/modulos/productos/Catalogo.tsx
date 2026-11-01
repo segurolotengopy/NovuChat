@@ -406,7 +406,7 @@ export function Catalogo() {
   const modulos = useModulos(tenantId) ?? [];
   const capacidades = capacidadesDeConsola(modulos);
   const conAgenda = capacidades.conAgenda;
-  // La vista previa del sitio público es de Catálogo web (`PUENTE_DE_FLUJOS.venta` lo trae).
+  // La vista previa del sitio público es de Catálogo web (`FLUJOS_DE_RUTA.venta` lo trae).
   const conVenta = capacidades.conVistaPrevia;
   const [items, setItems] = useState<Item[] | null>(null);
   const [veredictos, setVeredictos] = useState<Record<string, Veredicto>>({});

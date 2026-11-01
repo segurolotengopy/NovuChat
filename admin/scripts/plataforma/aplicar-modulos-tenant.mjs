@@ -82,7 +82,13 @@
 import { closeSync, constants, existsSync, fchmodSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, writeSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { IDS_MODULOS, MODULOS_COMUNES_HOY, modulosDeFicha } from '../../functions/src/registro.ts';
+import { IDS_MODULOS, MODULOS_COMUNES_HOY, modulosDeFicha, modulosDeFlujos, flujosDeFicha } from '../../functions/src/registro.ts';
+
+/**
+ * H2b-cierre: `modulosDeFicha` ya no cae a `flujos`. Esta herramienta compara contra lo que la ficha daba ANTES
+ * de tener `modulos` (los módulos de sus flujos), para decir qué cambia al escribirla.
+ */
+const modulosHoy = (f) => (Array.isArray(f.modulos) ? modulosDeFicha(f) : modulosDeFlujos(flujosDeFicha(f)));
 import { comparar } from './migrar-modulos.mjs';
 
 /** La raíz de ESTE repositorio (admin/scripts/plataforma → tres niveles arriba). */
@@ -394,7 +400,7 @@ export const mismoConjunto = (a, b) => Array.isArray(a) && Array.isArray(b) && i
  */
 export function evaluar(ficha, destino) {
   const f = ficha ?? {};
-  const actual = modulosDeFicha(f);
+  const actual = modulosHoy(f);
   const despues = modulosDeFicha({ modulos: destino });
   return {
     actual,
@@ -582,8 +588,8 @@ export async function ejecutar(cfg, deps) {
     const lectura = leerRespaldo(cfg.respaldo, cfg);
     if (!lectura.ok) { log(`\n  ✗ ${lectura.motivo}\n`); return 2; }
     const { previo, escrito } = lectura.respaldo;
-    const restaurada = modulosDeFicha(previo.modulosPresente ? { ...sinModulos(ficha), modulos: previo.modulos } : sinModulos(ficha));
-    const actual = modulosDeFicha(ficha);
+    const restaurada = modulosHoy(previo.modulosPresente ? { ...sinModulos(ficha), modulos: previo.modulos } : sinModulos(ficha));
+    const actual = modulosHoy(ficha);
     const cambian = IDS_MODULOS.filter((m) => actual.includes(m) !== restaurada.includes(m));
     const hoyPresente = Object.prototype.hasOwnProperty.call(ficha, 'modulos');
     const yaIgual = previo.modulosPresente

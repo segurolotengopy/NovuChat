@@ -138,6 +138,8 @@ export const ZONA_POR_ARCHIVO: Readonly<Record<string, ZonaDeArchivo>> = {
   'admin/scripts/sincronizar-flujo-cliente.mjs': { zona: 'core', destino: 'admin/scripts/sincronizar-flujo-cliente.mjs' },
   // Construcción de flujos: se retira con los prompts por capas.
   'admin/scripts/portar-prompt-cliente.py': { zona: 'core', destino: 'admin/scripts/portar-prompt-cliente.py' },
+  // H2b-cierre: seco que verifica que toda ficha tiene `modulos` (la única fuente); lee `tenants`, solo lecturas. PROPUESTA de core a la coordinadora.
+  'admin/scripts/modulos/verificar-todas-con-modulos.mjs': { zona: 'core', destino: 'admin/scripts/modulos/verificar-todas-con-modulos.mjs' },
 };
 
 /**

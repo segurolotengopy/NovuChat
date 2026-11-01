@@ -24,7 +24,7 @@ import {
 // es `asignarEjes`, y contar los cambios operados es `registrarCambioOperado`,
 // los dos en `central/`. El plan, la modalidad y los umbrales siguen en
 // `actualizarEstadoCuenta`, más abajo.
-import { IDS_FLUJOS, PUENTE_DE_FLUJOS, esFlujo, flujosDeFicha, modulosDeFlujos, type IdFlujo } from '../registro.js';
+import { IDS_FLUJOS, FLUJOS_DE_RUTA, esFlujo, flujosDeFicha, modulosDeFlujos, type IdFlujo } from '../registro.js';
 import { MODELO_POR_DEFECTO, TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } from '../central/ejes.js';
 // PREPAGO (bloque A-0, `DISENO.md` §4undecies): la modalidad de la cuenta y los
 // campos derivados de la situación de pago, que se recalculan y nunca se
@@ -52,10 +52,11 @@ import { documentoDeVertical } from '../core/prompt/prompt.js';
 // use como parte de una ruta de Firestore un valor con barras o puntos.
 const ID_NUMERO = /^[0-9]{6,25}$/;
 // Un flujo por vertical. Ver DISENO.md §Varios flujos y varios números.
-// La lista sale del registro (`PUENTE_DE_FLUJOS`): no se repite aquí. El alta escribe
-// `vertical`, `flujos` y `modulos` (derivado de los flujos con `modulosDeFlujos`), y
-// agregar un flujo a una ficha que ya tiene `modulos` suma también sus módulos: las
-// reglas leen `modulos` y, si la lista no se suma, la capacidad queda cerrada en silencio.
+// La lista sale del registro (`FLUJOS_DE_RUTA`): no se repite aquí. El alta escribe
+// `vertical` y `modulos` (sembrado desde el flujo pedido con `modulosDeFlujos`) y YA NO
+// `flujos` (H2b-cierre: `modulos` es la única fuente). Asignar un número con un flujo
+// suma también sus módulos a la ficha: las reglas leen `modulos` y, si la lista no se
+// suma, la capacidad queda cerrada.
 const VERTICALES = new Set<string>(IDS_FLUJOS);
 
 // ---------------------------------------------------------------------------
@@ -112,8 +113,8 @@ export const altaTenant = onCall(async (peticion) => {
     items: 0, ultimoItem: '', actualizadoEn: Timestamp.now(),
   });
   lote.create(ref, {
-    nombre, estado: 'activo', plan: cuenta.plan, vertical, flujos,
-    // Doble escritura (H2b-7): `modulos` nace coherente con `flujos`.
+    nombre, estado: 'activo', plan: cuenta.plan, vertical,
+    // H2b-cierre: `modulos` es la única fuente; el alta ya no escribe `flujos`.
     modulos: modulosDeFlujos(flujos.filter(esFlujo) as IdFlujo[]),
     // El modelo de IA es una decisión de NovuChat por tenant (`central/ejes.ts`):
     // nace con el que corre en todos los flujos y se cambia con
@@ -355,8 +356,11 @@ export const asignarNumero = onCall(async (peticion) => {
         throw new HttpsError('failed-precondition', 'La ficha tiene `modulos` y no es una lista: corríjala antes de agregar el flujo.');
       }
       // Si el flujo YA estaba, no se suma nada: un módulo cerrado a propósito no se reabre al reasignar un número.
-      const yaTiene = flujosDeFicha(datosFicha).includes(flujo as IdFlujo);
-      modulosPorSumar = yaTiene ? null : [...PUENTE_DE_FLUJOS[flujo as IdFlujo].modulos];
+      // `flujos` ya no se escribe (H2b-cierre): "ya estaba" = esta misma ruta ya tenia ese flujo,
+      // o la ficha vieja aun lo lista.
+      const yaTiene = (existente.exists && existente.get('flujo') === flujo)
+        || flujosDeFicha(datosFicha).includes(flujo as IdFlujo);
+      modulosPorSumar = yaTiene ? null : [...FLUJOS_DE_RUTA[flujo as IdFlujo].modulos];
     }
 
     // Asignar un número con un flujo SUMA ese flujo al negocio; no reemplaza
@@ -387,7 +391,6 @@ export const asignarNumero = onCall(async (peticion) => {
     tx.update(tenant.ref, {
       waPhoneNumberId: phoneNumberId, waWabaId: wabaId,
       vertical: tenant.get('vertical') ?? flujo,
-      flujos: FieldValue.arrayUnion(flujo),
       ...(modulosPorSumar ? { modulos: FieldValue.arrayUnion(...modulosPorSumar) } : {}),
     });
     if (refConfig && config && !config.exists) {
