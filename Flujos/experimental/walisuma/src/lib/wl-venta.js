@@ -141,7 +141,7 @@ function wlMontosValidos(texto, vendibles) {
   if (/\b(total|subtotal|descuento|rebaja|ahorro|queda(?:ria|n)? en|ser(?:ia|ian)|saldria|en total)\b[^.!?\d]{0,20}\d/.test(wlNorm(texto))) return false;
   const permitidos = new Set((Array.isArray(vendibles) ? vendibles : []).map((v) => v.precioCentavos));
   const t = String(texto);
-  const re = /(?:\bbs\.?\s*|\bbob\s*)(\d[\d.,]*)|(\d[\d.,]*)\s*(?:bs\b\.?|bob\b|bolivianos?)/gi;
+  const re = /(?:\bbs\.?\s*|\bbob\s*)(\d[\d.,]{0,15})|(\d[\d.,]{0,15})\s*(?:bs\b\.?|bob\b|bolivianos?)/gi;
   let m;
   while ((m = re.exec(t)) !== null) {
     const c = wlCentavos(m[1] || m[2]);
