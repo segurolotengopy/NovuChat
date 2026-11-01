@@ -109,6 +109,25 @@ seguridad:
       creado: "2026-10-01"
       vence: "2026-12-30"
   # ---------------------------------------------------------------------------
+  # RIESGO ACEPTADO (31/10/2026), no es una excepcion de escaner: el esquema no
+  # admite herramienta «manual» (precedente: EXC-QTACO-EJEC-ERROR).
+  #   id:            CRM-SA-KEY
+  #   herramienta:   manual (revision de seguridad de PR-C, H-1)
+  #   componente:    admin/scripts/plataforma/crm-cuenta-servicio.mjs
+  #   severidad:     HIGH (clase S0 del estandar de gestion de secretos)
+  #   justificacion: el nodo googleApi de n8n exige una clave JSON de cuenta de
+  #     servicio de GCP. Condiciones: una cuenta `crm-<tenant>` por cliente, SIN
+  #     ningun rol de proyecto, con acceso solo a la planilla que ese cliente
+  #     comparte con ella; la clave va directo a la credencial de n8n del tenant
+  #     (nunca a pantalla, repositorio ni disco); rotacion cada 90 dias; el
+  #     aislamiento entre tenants lo hace cumplir el script y su prueba.
+  #   PENDIENTE antes del vencimiento: migrar a una Function intermedia con
+  #     identidad propia (ADC, sin claves) que escriba en Sheets, y retirar las
+  #     claves. scripts/credencial-planilla.sh se registra aparte, con su revision.
+  #   aprobado_por:  Andres Alberdi
+  #   creado: 2026-10-31   vence: 2027-01-29
+  # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
   # ✅ CERRADAS el 2026-10-24: las dos excepciones por braces@3.0.3 en
   # admin/pnpm-lock.yaml (GHSA-vfj7-8cjw-p6xm / CVE-2026-93687, DoS por patrones
   # anidados, entrada por firebase-tools@15.29.0 -> chokidar@3.6.0): la de

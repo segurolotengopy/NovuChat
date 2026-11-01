@@ -205,6 +205,7 @@ La decisión es una función pura del servidor —`esPendienteDeSeguimiento`, en
 | `solicitud.etapa` es `horarios` o `qr_enviado` | Son las dos etapas a medio camino. `agendada` y `vencida` están cerradas: **nunca a quien ya agendó** |
 | `solicitud.seguimientos === 0` | **Nunca dos veces a la misma solicitud.** El cero tiene que estar escrito: un campo ausente o con otro tipo no entra |
 | `noContactar !== true` | **Nunca a quien pidió que no le escriban**, ni a quien pasó a una persona |
+| `bloqueada !== true` | Contacto bloqueado por el comercio (`bloquearContacto`, core; 31/10/2026): fuera de todo envío automático. Se revalida también en `seguimientoEnviado` (el bloqueo pudo llegar entre el armado de la lista y el aviso): no marca, no cuenta y contesta `marcado: false, motivo: 'bloqueado'`, y el flujo solo manda con `marcado === true`. Desbloquear lo vuelve a incluir. Costo: 0 mensajes agregados (solo quita). Prueba: `seguimientos-bloqueo.test.ts` |
 | `atencionEstado` no es `operador` ni `bloqueado` | Esa conversación ya la atiende alguien, o el asistente dejó de responder por uso extendido. Un recordatorio automático encima sería el peor mensaje posible |
 | `ultimoEn` entre 2 y 4 h → **texto**; entre 24 y 48 h → **plantilla** | Entre las 4 y las 24 no se manda nada: la ventana está por vencer o recién venció, el texto ya no entra y la plantilla llegaría de madrugada. Después de las 48 un recordatorio ya no es una actualización, es publicidad |
 
