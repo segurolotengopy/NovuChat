@@ -91,6 +91,7 @@ export const SUITES_PURAS = [
   'pruebas/core/preparar-import-respond.test.ts',
   'pruebas/core/env-nace-cerrado.test.ts',
   'pruebas/core/gancho-sistemas-ajenos.test.ts',
+  'pruebas/core/nucleo-comun.test.ts',
   'pruebas/core/hijos-hermeticos.test.ts',
   'pruebas/core/apps-ajenas-escrituras.test.ts',
   'pruebas/core/cotejar-ids-ajenos.test.ts',
