@@ -194,6 +194,7 @@ export const SUITES_PURAS = [
   'pruebas/central/indices.test.ts',
   'pruebas/instancias-minimas.test.ts',
   'pruebas/modulos/inventario/inventario.test.ts',
+  'pruebas/modulos/cobros/al-turno.test.ts',
   'pruebas/nombre-asistente.test.ts',
   'pruebas/onboarding-flujo.test.ts',
   'pruebas/central/planes.test.ts',
