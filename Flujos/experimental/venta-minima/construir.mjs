@@ -53,7 +53,9 @@ const verificar = process.argv.includes('--verificar');
 
 const leer = (ruta) => readFileSync(join(AQUI, ruta), 'utf8');
 const ORDEN_LIBS = ['comun', 'pedido', 'reserva', 'avisos', 'promos', 'cobro'];
-const LIB = ORDEN_LIBS.map((n) => leer(`src/lib/${n}.js`).trimEnd()).join('\n\n');
+// Módulos comunes que se INCLUYEN (no se copian): viven en Flujos/src/modulos/<m>/ y van detrás de las librerías propias.
+const MODULOS_COMUNES = ['../../src/modulos/pedidos/qr-del-pedido.js'];
+const LIB = [...ORDEN_LIBS.map((n) => leer(`src/lib/${n}.js`)), ...MODULOS_COMUNES.map((r) => leer(r))].map((t) => t.trimEnd()).join('\n\n');
 const COMUN = leer('src/lib/comun.js').trimEnd();
 const plantilla = JSON.parse(leer('flujo.plantilla.json'));
 
@@ -411,6 +413,12 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   if (!!aAct !== !!aUrl) hallazgos.push('«Config base» trae solo una de cobroSimuladoActivo / qrSimuladoUrl: van juntas o ninguna');
   if (aUrl && !(typeof aUrl.value === 'string' && URL_QR_SIMULADO.test(aUrl.value))) hallazgos.push('«Config base».qrSimuladoUrl no es la imagen rotulada permitida');
   if (aAct && datos.modoCobro !== 'simulado') hallazgos.push(`«Config base» trae el cobro simulado y los datos dicen modoCobro «${datos.modoCobro}»`);
+  // EL NIT/CI NO SALE EN EL REPORTE: el cuerpo de «Reportar mensaje (saliente)» lleva lineas y entrega del qr_enviado, jamas la facturacion.
+  for (const n of flujo.nodes) {
+    if (n.name === 'Reportar mensaje (saliente)' && /facturacion/i.test(JSON.stringify((n.parameters || {}).jsonBody || ''))) {
+      hallazgos.push('el cuerpo de «Reportar mensaje (saliente)» menciona «facturacion»: el NIT/CI no viaja en el reporte');
+    }
+  }
   const nombres = new Set(flujo.nodes.map((n) => n.name));
   const tipos = flujo.nodes.map((n) => n.type);
   if (entrada !== 'prueba' && nombres.has('Entrada de prueba')) hallazgos.push('contiene el nodo «Entrada de prueba» (activa modoPrueba): solo va en el JSON de prueba');
