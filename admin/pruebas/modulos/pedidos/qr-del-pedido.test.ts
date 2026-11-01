@@ -25,14 +25,27 @@ describe('pqrLineas: solo id, cantidad y detalle', () => {
       { id: 'jugo', cantidad: 1, detalle: '' },
       { id: 'taco', cantidad: 3, detalle: 'con picante' },
     ]);
-    expect(r).toEqual([{ id: 'taco', cantidad: 5, detalle: 'sin cebolla · con picante' }, { id: 'jugo', cantidad: 1, detalle: '' }]);
+    expect(r).toEqual([{ id: 'taco', cantidad: 5, detalle: '2 sin cebolla · 3 con picante' }, { id: 'jugo', cantidad: 1, detalle: '' }]);
+  });
+  it('anota la cantidad por variante, también la que no trae indicación; con una sola variante el detalle queda tal cual', () => {
+    expect(M.pqrLineas([{ id: 'taco', cantidad: 1, detalle: '' }, { id: 'taco', cantidad: 1, detalle: 'sin cebolla' }])[0]!['detalle']).toBe('1 sin indicación · 1 sin cebolla');
+    expect(M.pqrLineas([{ id: 'taco', cantidad: 1, detalle: 'sin cebolla' }, { id: 'taco', cantidad: 2, detalle: 'sin cebolla' }])[0]).toEqual({ id: 'taco', cantidad: 3, detalle: 'sin cebolla' });
+  });
+  it('negado: el detalle fusionado nunca pasa de 120 ni deja un par sustituto partido (emoji)', () => {
+    for (let n = 0; n < 4; n++) {
+      const l = [{ id: 'a', cantidad: 1, detalle: 'x'.repeat(100 + n) }, { id: 'a', cantidad: 1, detalle: '😀'.repeat(60) }];
+      const d = M.pqrLineas(l)[0]!['detalle'] as string;
+      expect(d.length).toBeLessThanOrEqual(120);
+      expect(d).not.toMatch(/[\ud800-\udbff]$/);
+      expect(d).not.toMatch(/(^|[^\ud800-\udbff])[\udc00-\udfff]/);
+    }
   });
   it('el detalle unido se recorta a 120', () => {
     const r = M.pqrLineas([{ id: 'a', cantidad: 1, detalle: 'x'.repeat(100) }, { id: 'a', cantidad: 1, detalle: 'y'.repeat(100) }]);
     expect(r[0]!['detalle'].length).toBeLessThanOrEqual(120);
   });
-  it('negado: la suma nunca pasa de 50 unidades', () => {
-    expect(M.pqrLineas([{ id: 'a', cantidad: 40 }, { id: 'a', cantidad: 40 }])[0]!['cantidad']).toBe(50);
+  it('negado: la suma NO se recorta en silencio a 50: se manda la real para que el servidor la descarte', () => {
+    expect(M.pqrLineas([{ id: 'a', cantidad: 40 }, { id: 'a', cantidad: 40 }])[0]!['cantidad']).toBe(80);
   });
   it('negado: nunca más de 30 líneas', () => {
     const muchas = Array.from({ length: 45 }, (_, i) => ({ id: `p${i}`, cantidad: 1 }));
@@ -73,10 +86,11 @@ describe('pqrEntrega', () => {
     const malas: unknown[] = [{ lat: 0, lng: 0 }, { lat: 91, lng: 0 }, { lat: 0, lng: 181 }, { lat: -91, lng: 5 }, { lat: '1', lng: 2 }, { lat: NaN, lng: 1 }, [1, 2], null, 'x'];
     for (const ubicacion of malas) expect(M.pqrEntrega({ ...base, ubicacion }), JSON.stringify(ubicacion)).not.toHaveProperty('ubicacion');
   });
-  it('la dirección sale sin <>&, sin enlaces y de hasta 200', () => {
+  it('la dirección sale sin <>&, sin saltos, sin enlaces (la limpieza es la misma que la del servidor) y de hasta 200', () => {
     const r = M.pqrEntrega({ entrega: 'delivery', direccion: 'Calle <b>1</b> & 2 ' + 'z'.repeat(300), referencia: 'ver http://malo.example/x' });
     expect(r['direccion']).not.toMatch(/[<>&]/);
     expect(r['direccion'].length).toBeLessThanOrEqual(200);
+    expect(r['direccion']).not.toMatch(/https?:|www\.|malo\.example/i);
   });
   it('negado: nunca lleva facturacion, nit ni documento', () => {
     const r = M.pqrEntrega({ entrega: 'delivery', direccion: 'Calle Falsa 123', facturacion: { documento: '4567890' }, nit: '4567890', documento: '4567890' });
@@ -120,8 +134,20 @@ describe('contrato con el servidor: lo que sale del flujo lo acepta armarPedidoW
     expect(r.pedido?.entrega).toBe('envio');
     expect(r.pedido?.direccion).toBe('Calle Falsa 123 · portón verde');
     expect(r.pedido?.ubicacion).toEqual({ lat: -16.5, lng: -68.15 });
-    expect(r.pedido?.items.find((i) => i['id'] === 'taco')?.['detalle']).toBe('sin cebolla · picante');
+    expect(r.pedido?.items.find((i) => i['id'] === 'taco')?.['detalle']).toBe('2 sin cebolla · 1 picante');
     expect(r.pedido?.facturacion).toBeUndefined();
+  });
+});
+
+describe('contrato: más de 50 unidades de un mismo id', () => {
+  it('30 + 30 del mismo id: el servidor descarta la línea y queda en `descartados` (el pedido no dice menos de lo pedido)', () => {
+    const CAT = { taco: { nombre: 'Taco', precio: 10, moneda: 'BOB', activo: true }, jugo: { nombre: 'Jugo', precio: 7.5, moneda: 'BOB', activo: true } } as Record<string, Record<string, unknown>>;
+    const c = M.pqrCampos('ped-1', [{ id: 'taco', cantidad: 30 }, { id: 'taco', cantidad: 30 }, { id: 'jugo', cantidad: 1 }], {}, false);
+    expect(c['lineas']).toContainEqual({ id: 'taco', cantidad: 60, detalle: '' });
+    const r = armarPedidoWa(c['lineas'], c['entrega'], undefined, CAT, 'ped-1', '59100000011', 7.5);
+    expect(r.descartados).toEqual(['taco']);
+    expect(r.pedido?.items.map((i) => i['id'])).toEqual(['jugo']);
+    expect(r.pedido?.totalDistinto).toBe(false);
   });
 });
 

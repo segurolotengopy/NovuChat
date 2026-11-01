@@ -5,7 +5,6 @@
 // del flujo salen SOLO identificadores, cantidades y un detalle de texto. Aquí nunca viaja precio, nombre, total ni la
 // facturación del cliente: ese dato no sale del flujo por este camino.
 const PQR_MAX_LINEAS = 30;
-const PQR_MAX_CANTIDAD = 50;
 const PQR_MAX_DETALLE = 120;
 const PQR_MAX_DIRECCION = 200;
 function _pqrTexto(v, max) {
@@ -13,7 +12,16 @@ function _pqrTexto(v, max) {
   return v.slice(0, 1000).replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}<>&]/gu, ' ')
     .replace(/\s+/g, ' ').trim().slice(0, max).trim();
 }
+// Recorta a `max` sin partir un par sustituto (emoji): si el corte cae entre las dos mitades, se quita la mitad que quedó.
+function _pqrCorta(t, max) {
+  let r = t.slice(0, max);
+  if (/[\ud800-\udbff]$/.test(r)) r = r.slice(0, -1);
+  return r.trim();
+}
 // [{id, cantidad, detalle}] — junta el mismo id sumando cantidades (el servidor se queda solo con la primera línea de cada id).
+// Con más de una variante de detalle se anota la cantidad de cada una: «1 sin indicación · 1 sin cebolla».
+// La suma NO se recorta: si pasa de 50 se manda tal cual y el servidor descarta esa línea y la deja en `descartados`
+// (armarPedidoWa), en vez de que el pedido diga menos unidades de las que el cliente pidió.
 function pqrLineas(lineas) {
   const porId = new Map();
   const orden = [];
@@ -27,11 +35,18 @@ function pqrLineas(lineas) {
     if (!Number.isFinite(c) || c < 1) continue;
     const detalle = _pqrTexto(l.detalle, PQR_MAX_DETALLE);
     let p = porId.get(id);
-    if (!p) { p = { id: id, cantidad: 0, detalles: [] }; porId.set(id, p); orden.push(p); }
+    if (!p) { p = { id: id, cantidad: 0, variantes: new Map() }; porId.set(id, p); orden.push(p); }
     p.cantidad += c;
-    if (detalle && p.detalles.indexOf(detalle) < 0) p.detalles.push(detalle);
+    p.variantes.set(detalle, (p.variantes.get(detalle) || 0) + c);
   }
-  return orden.map((p) => ({ id: p.id, cantidad: Math.min(p.cantidad, PQR_MAX_CANTIDAD), detalle: p.detalles.join(' · ').slice(0, PQR_MAX_DETALLE).trim() }));
+  return orden.map((p) => {
+    let detalle = '';
+    if (p.variantes.size === 1) detalle = Array.from(p.variantes.keys())[0];
+    else if (p.variantes.size > 1) {
+      detalle = _pqrCorta(Array.from(p.variantes.entries()).map((e) => e[1] + ' ' + (e[0] || 'sin indicación')).join(' · '), PQR_MAX_DETALLE);
+    }
+    return { id: p.id, cantidad: p.cantidad, detalle: detalle };
+  });
 }
 function _pqrUbicacion(u) {
   if (!u || typeof u !== 'object' || Array.isArray(u)) return null;

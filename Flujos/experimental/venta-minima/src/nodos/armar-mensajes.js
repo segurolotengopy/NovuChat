@@ -259,7 +259,7 @@ function amQr(m, cuerpo) {
   if (m.evento === 'qr_enviado') {
     salida.evento = 'qr_enviado';
     // Para que el servidor cree el pedido wa_: solo identificadores, cantidades y detalle (se vuelven a sanear aquí; sin precios ni NIT).
-    const pqr = pqrCampos(pedidoId, m.lineas, m.entrega, false);
+    const pqr = pqrCampos(pedidoId, m.lineas, m.entrega, simulado);
     if (pqr.lineas) { salida.lineas = pqr.lineas; salida.entrega = pqr.entrega; }
   }
   return salida;

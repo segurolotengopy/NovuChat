@@ -415,8 +415,8 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   if (aAct && datos.modoCobro !== 'simulado') hallazgos.push(`«Config base» trae el cobro simulado y los datos dicen modoCobro «${datos.modoCobro}»`);
   // EL NIT/CI NO SALE EN EL REPORTE: el cuerpo de «Reportar mensaje (saliente)» lleva lineas y entrega del qr_enviado, jamas la facturacion.
   for (const n of flujo.nodes) {
-    if (n.name === 'Reportar mensaje (saliente)' && /facturacion/i.test(JSON.stringify((n.parameters || {}).jsonBody || ''))) {
-      hallazgos.push('el cuerpo de «Reportar mensaje (saliente)» menciona «facturacion»: el NIT/CI no viaja en el reporte');
+    if (n.name === 'Reportar mensaje (saliente)' && /facturacion|\bnit\b|documento|\bci\b/i.test(JSON.stringify((n.parameters || {}).jsonBody || ''))) {
+      hallazgos.push('el cuerpo de «Reportar mensaje (saliente)» menciona «facturacion», «nit», «documento» o «ci»: el NIT/CI no viaja en el reporte');
     }
   }
   const nombres = new Set(flujo.nodes.map((n) => n.name));

@@ -45,7 +45,7 @@ import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import type { Flujo, J } from './lib/flujo';
 import { crearMundo, type Doble, type Enviado, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
-import { copiarModuloDelGuardado, doblesDelGuardado } from './lib/doble-guardado';
+import { copiarModulosComunesAlTemporal, doblesDelGuardado } from './lib/doble-guardado';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../Flujos/experimental/captacion-minima');
@@ -2155,7 +2155,7 @@ describe('construir.mjs: el flujo armado es el que sale de la plantilla y los da
       const datos = join(tmp, 'admin/scripts/datos/captacion-minima');
       mkdirSync(exp, { recursive: true });
       mkdirSync(datos, { recursive: true });
-      copiarModuloDelGuardado(tmp);
+      copiarModulosComunesAlTemporal(tmp);
       // El módulo crm (se INCLUYE al armar) y su adaptador de captación.
       mkdirSync(join(tmp, 'Flujos/src/modulos/captacion'), { recursive: true });
       cpSync(join(CARPETA, '../../src/modulos/crm'), join(tmp, 'Flujos/src/modulos/crm'), { recursive: true });
