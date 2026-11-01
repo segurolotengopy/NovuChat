@@ -1,7 +1,6 @@
 import { REGION } from './core/region.js';
 import { MINUTOS_RETENCION_POR_DEFECTO } from './modulos/agenda/retencion.js';
 import { milisegundosDe } from './core/turno/tiempo.js';
-import { reactivaTras, solicitudTras } from './modulos/agenda/solicitud.js';
 // F3b-1a y F3b-1b (05/10/2026): la solicitud, el tiempo y los predicados de cobro se
 // mudaron a `modulos/agenda/solicitud.ts`, `modulos/agenda/retencion.ts`,
 // `core/turno/tiempo.ts` y `modulos/cobros/alCierre.ts` sin cambiar lógica. Se
@@ -22,7 +21,7 @@ import { alTurnoCobroDeVenta, type ContextoDeCobro } from './modulos/cobros/alTu
 import { alTurnoSena, senaParaElFlujo, IMPORTE_SENA_MAXIMO, type SenaParaElFlujo } from './modulos/agenda/alTurno.js';
 import { alTurnoInventario } from './modulos/inventario/alTurno.js';
 import { despuesDelTurnoPedidos } from './modulos/pedidos/alTurno.js';
-import { getFirestore, FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { defineInt } from 'firebase-functions/params';
@@ -45,9 +44,6 @@ import {
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
 // El aviso de consumo al 80 % se decide en `planes.ts`, también puro.
 import { avisoConsumoPendiente, avisoDeConsumo, periodoDe } from './central/cuenta/planes.js';
-import {
-  leerCampanas, plegarParaPatrones, type Campana,
-} from './modulos/campanas/campanas.js';
 // EL PREPAGO se decide en `prepago.ts`, puro: cobertura del mes, gracia,
 // saldo de conversaciones y si el corte SE APLICA o solo se observa. Acá se
 // aplica lo que decidió, dentro de la transacción que ya existía.
@@ -61,22 +57,14 @@ import {
   resolverFuncionarios, documentoDeVertical,
   resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT, enlaceDeMapaValido, ubicacionDe,
 } from './core/prompt/prompt.js';
-// El cobro de una VENTA: el importe no vive en la configuración, se fija cuando
-// sale el QR. `cobroVenta.ts` no importa nada de acá en tiempo de ejecución
-// (sus dos importaciones son de tipo), así que no hay ciclo.
-import {
-  CAMPOS_REGLA_2_EN_NULO, solicitudDeCobroTras, totalUtilizable,
-  type EventoDeCobro,
-} from './modulos/cobros/cobroVenta.js';
-// El enlace de la carta para «Venta mínima v0» (`catalogoCompleto: true`). Sale
-// de `catalogoWeb.ts`, que no importa nada de acá: no hay ciclo.
-import { enlaceParaElFlujo, sePuedeComprar, type EnlaceEmitido } from './modulos/catalogo-web/catalogoWeb.js';
-// Los nombres de producto que son frases de instrucción no llegan al modelo (Productos).
-import { catalogoParaElPrompt, nombreDeProductoApto } from './modulos/productos/nombreSeguro.js';
+import { solicitudDelTurno, montoUtilizable } from './modulos/agenda/solicitudDelTurno.js';
+import { enlaceDeLaCartaDelTurno } from './modulos/catalogo-web/alTurno.js';
+import { catalogoDelTurno as catalogoParaElModelo } from './modulos/productos/alTurno.js';
+import { sigueVigente, vigentesParaElPrompt } from './modulos/campanas/vigentes.js';
+export { sigueVigente };
 // Términos de producto registrados (Andres, 24/10/2026): se leen una vez por turno, y solo si lo que
 // va al prompt contiene «prompt»; el sistema los cita entre « » y revalida lo ya aprobado.
-import { SIN_OTROS, normalizar as normalizarTexto, verificarPatrones } from './central/asistente/comportamiento.js';
-import { citarTerminos, terminosAprobados } from './central/asistente/terminos.js';
+import { citarTerminos } from './central/asistente/terminos.js';
 
 /**
  * =========================================================================
@@ -287,7 +275,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
   // EL TOTAL DEL PEDIDO. Dato no confiable como todo lo de acá: se acepta solo
   // como número finito y positivo dentro de un techo. Lo que no pase no se
   // guarda, y sin total el cotejo no compara nada (no lo toma por cero).
-  const monto = totalUtilizable(c['monto']);
+  const monto = montoUtilizable(c['monto']);
   // LA REGLA DEL COBRO (D5): solo el número 2, y solo junto a `qr_enviado`. Todo
   // lo demás es regla 1, sin error.
   const reglaCobro = evento === 'qr_enviado' && c['reglaCobro'] === 2 ? 2 as const : undefined;
@@ -1170,28 +1158,10 @@ export const ingesta = onRequest(
       // Con regla 2, una `referencia` vacía o igual al `idMeta` no identifica un
       // pedido (cada reenvío sería un cobro nuevo con plazo nuevo): se trata
       // como `sin_id_meta` y no abre cobro.
-      const sinPedido = mensaje.reglaCobro === 2
-        && (!mensaje.referencia || mensaje.referencia === (mensaje.idMeta ?? '').trim());
-      const eventoDeCobro: EventoDeCobro | null =
-        mensaje.evento === 'qr_enviado'
-          ? { tipo: 'qr_enviado', reglaCobro: mensaje.reglaCobro, idMeta: sinPedido ? undefined : mensaje.idMeta,
-              referencia: mensaje.referencia, monto: mensaje.monto }
-          : mensaje.evento === 'cobro_cancelado' ? { tipo: 'cobro_cancelado' }
-          : mensaje.evento === 'anulacion_avisada' ? { tipo: 'anulacion_avisada' } : null;
-      const cobro = eventoDeCobro ? solicitudDeCobroTras(solicitudPrevia, eventoDeCobro, ahoraMs) : null;
-      const sinQr = cobro !== null && mensaje.evento === 'qr_enviado'
-        && (cobro.efecto === 'ignorado' || cobro.efecto === 'sin_id_meta');
-      const base = sinQr ? null : solicitudTras(solicitudPrevia, mensaje.evento, ahoraMs,
-        { referencia: mensaje.referencia, calendario: mensaje.calendario, inicio: mensaje.inicio,
-          nueva: mensaje.nueva, monto: mensaje.monto });
-      const cambiosDeCobro = cobro?.efecto === 'regla_1' && cobro.cambios
-        ? { ...cobro.cambios, ...CAMPOS_REGLA_2_EN_NULO } : cobro?.cambios ?? null;
-      const solicitud = sinQr ? null : base ? (cambiosDeCobro ? { ...base, ...cambiosDeCobro } : base)
-        : cambiosDeCobro;
+      const { solicitud, hayBase, sinQr, reactivada, cobro } = solicitudDelTurno(solicitudPrevia, mensaje, ahoraMs);
       // REACTIVADA (bloque 4): el primer mensaje del paciente dentro de las 24 h
       // de un seguimiento. Se anota en la solicitud y se cuenta en el mes, en
       // la misma transacción que cuenta el mensaje. Cero lecturas extra.
-      const reactivada = reactivaTras(solicitudPrevia, mensaje.direccion, ahoraMs);
 
       // EL ORIGEN ES DE LA VENTANA, NO DEL MENSAJE. Al abrirla manda lo que
       // reportó el flujo; después manda lo guardado, porque Meta solo pone
@@ -1237,7 +1207,7 @@ export const ingesta = onRequest(
         // Si la solicitud viene de `cambios` PARCIALES del cobro (sin base), y el
         // mensaje reactiva, se escribe también `reactivadaEn`: si no, la marca
         // faltaría y `reactivadas` contaría dos veces.
-        ...(solicitud ? { solicitud: !base && reactivada
+        ...(solicitud ? { solicitud: !hayBase && reactivada
           ? { ...solicitud, reactivadaEn: Timestamp.fromMillis(ahoraMs) } : solicitud }
           : reactivada ? { solicitud: { reactivadaEn: Timestamp.fromMillis(ahoraMs) } } : {}),
         // NO CONTACTAR (bloque 4): el paciente pidió que no le escriban, o el
@@ -1522,76 +1492,6 @@ export const ingesta = onRequest(
  *    comercial y tiene que surtir efecto ya. Un caché largo la vuelve inútil.
  */
 /**
- * =========================================================================
- * TÉRMINOS DE PRODUCTO REGISTRADOS EN EL PROMPT (Andres, 24/10/2026; PR 5)
- * =========================================================================
- *
- * Un nombre de producto con «prompt/prompts» («100 prompts») es un DATO LITERAL
- * si el comercio lo registró y Plataforma lo aprobó. Este turno hace dos cosas
- * con eso, y ninguna toca el texto del cliente:
- *
- *  1. CITA: el SISTEMA entrecomilla « » el término donde aparece en lo que viaja
- *     al prompt (nombres del catálogo, instrucciones vigentes, campañas vigentes).
- *     El marcador interno nunca sale de `verificarPatrones`.
- *  2. REVALIDA lo ya aprobado. `instruccionesVigentes` y `vigentes` se aprobaron
- *     con los términos de ENTONCES; si el término se revocó (o su ítem se
- *     renombró o desactivó), lo aprobado gracias a él no puede seguir llegando al
- *     modelo. Se vuelve a pasar por la capa 1 con los términos de AHORA y lo que
- *     ya no pasa NO entra al prompt (la base no se toca: es solo no mostrarlo).
- *
- * COSTO: una sola lectura de términos por turno, y NINGUNA si ningún texto
- * candidato contiene «prompt» (`terminosAprobados` lo decide). Fallar cerrado:
- * si la lectura falla, términos vacíos; lo que necesita un término queda fuera.
- */
-const contienePrompt = (t: string): boolean => normalizarTexto(t).includes('prompt');
-
-/** Los campos de una campaña que viajan al modelo: texto, titulares y ángulo. */
-const camposDeCampana = (c: Campana): string[] => [c.texto, ...(c.titulares ?? []), c.angulo ?? ''];
-
-/** ¿Este texto aprobado sigue pasando la capa 1 con los términos de hoy? Sin «prompt» no se revisa nada. */
-export function sigueVigente(valor: string, terminos: readonly string[]): boolean {
-  const vistas = [valor, valor.normalize('NFKC'), plegarParaPatrones(valor)];
-  if (!vistas.some(contienePrompt)) return true;
-  return vistas.every((v) => verificarPatrones(v, SIN_OTROS, terminos).nivel !== 'rechazado');
-}
-
-export interface VigentesDelTurno {
-  terminos: string[];
-  instrucciones: string;
-  /** Las campañas `vigentes` tal como las leyó el turno, o la lista filtrada si alguna dejó de pasar. */
-  campanas: unknown;
-  /** Cuántas cosas ya aprobadas se dejaron fuera de este prompt. */
-  descartadas: number;
-}
-
-/** Lee los términos (a lo sumo una vez), revalida lo vigente y devuelve lo que puede entrar al prompt. */
-export async function vigentesParaElPrompt(
-  db: Firestore, tenantId: string, entrada: {
-    nombresDeCatalogo: readonly string[]; instrucciones: string; campanas: unknown;
-  },
-): Promise<VigentesDelTurno> {
-  const lista = leerCampanas(entrada.campanas);
-  const candidatos = [...entrada.nombresDeCatalogo, entrada.instrucciones, ...lista.flatMap(camposDeCampana)];
-  let terminos: string[] = [];
-  try {
-    terminos = await terminosAprobados(db, tenantId, candidatos.join('\n'), nombreDeProductoApto);
-  } catch {
-    // Sin datos del comercio en el registro: ni el término ni el texto.
-    logger.warn('configuracionFlujo: no se pudieron leer los términos de producto');
-  }
-  let descartadas = 0;
-  const instrucciones = entrada.instrucciones !== '' && !sigueVigente(entrada.instrucciones, terminos)
-    ? (descartadas++, '') : entrada.instrucciones;
-  const buenas = lista.filter((c) => camposDeCampana(c).every((v) => v === '' || sigueVigente(v, terminos)));
-  descartadas += lista.length - buenas.length;
-  if (descartadas > 0) logger.info('configuracionFlujo: vigentes fuera del prompt por término', { descartadas });
-  return {
-    terminos, instrucciones, descartadas,
-    campanas: buenas.length === lista.length ? entrada.campanas : buenas,
-  };
-}
-
-/**
  * Registro estructurado de lo anómalo del estado de la conversación: una sesión `corrupta`
  * (puede venir en cualquier acción), un `datos_invalidos` o un fallo del servidor. Nunca lleva el
  * teléfono ni el cuerpo: solo el comercio, la acción y el resultado.
@@ -1745,8 +1645,7 @@ export const configuracionFlujo = onRequest(
     // autenticada. Va en la respuesta solo si hay alguno: un comercio sin anuncios
     // recibe la respuesta de siempre, byte a byte (`despacho-sesion.test.ts`).
     // Lo que el modelo lee del catálogo: sin los nombres que son órdenes (`nombreSeguro.ts`).
-    const catalogoFiltrado = catalogoParaElPrompt(catalogo.docs);
-    if (catalogoFiltrado.omitidos > 0) console.info(`catálogo: ${catalogoFiltrado.omitidos} nombre(s) fuera del prompt`);
+    const catalogoFiltrado = catalogoParaElModelo(catalogo.docs);
     // -------------------------------------------------------------------------
     // EL CORTE DEL PREPAGO REUTILIZA EL 409 (`DISENO.md` §4undecies.3). Los tres
     // flujos ya tratan un 409 de acá como «no operativo» y mandan la cortesía
@@ -1880,34 +1779,22 @@ export const configuracionFlujo = onRequest(
     // precio. Cualquier error o límite deja la respuesta sin `enlace` y el turno
     // sigue: el flujo cae a la carta en texto. Es una capacidad: el registro lleva
     // solo los últimos cuatro caracteres de la ficha, nunca la URL.
-    let enlaceDeLaCarta: EnlaceEmitido | null = null;
+    const enlaceDelTurno = catalogoCompletoPedido && catalogoWebActivo
+      ? await enlaceDeLaCartaDelTurno({
+          ruta: { tenantId: comercio.tenantId, phoneNumberId, flujo: comercio.flujo, estado: ruta.estado },
+          telefono, catalogoWebActivo, catalogo: catalogo.docs as { data(): Record<string, unknown> }[],
+        })
+      : null;
+    const enlaceDeLaCarta = enlaceDelTurno?.enlace ?? null;
     // Por qué NO hubo enlace, para el registro: sin esta señal, un `SITIO_PUBLICO`
     // ausente en producción dejaría de dar enlaces sin que nadie lo note.
-    let motivoSinEnlace: string | null = null;
-    if (catalogoCompletoPedido && catalogoWebActivo) {
-      try {
-        const emitido = await enlaceParaElFlujo({
-          ruta: {
-            tenantId: comercio.tenantId, phoneNumberId, flujo: comercio.flujo, estado: ruta.estado,
-          },
-          telefono,
-          catalogoWebActivo,
-          vendibles: catalogo.docs.filter(
-            (d) => sePuedeComprar(d.data() as Record<string, unknown>)).length,
-        });
-        if ('url' in emitido) enlaceDeLaCarta = emitido;
-        else motivoSinEnlace = emitido.motivo;
-      } catch (error) {
-        // Solo el código del error: el mensaje puede traer la ruta de un
-        // documento (con el teléfono o el comercio adentro).
-        motivoSinEnlace = 'error';
-        const codigo = (error as { code?: unknown } | null)?.code;
-        logger.warn('configuracionFlujo: sin enlace del catálogo web', {
-          evento: EVENTO_CONFIGURACION, tenantId: comercio.tenantId,
-          telefonoUlt4: telefono ? ultimos4(telefono) : null,
-          codigo: typeof codigo === 'string' || typeof codigo === 'number' ? codigo : null,
-        });
-      }
+    const motivoSinEnlace: string | null = enlaceDelTurno?.motivo ?? null;
+    if (enlaceDelTurno?.motivo === 'error') {
+      logger.warn('configuracionFlujo: sin enlace del catálogo web', {
+        evento: EVENTO_CONFIGURACION, tenantId: comercio.tenantId,
+        telefonoUlt4: telefono ? ultimos4(telefono) : null,
+        codigo: enlaceDelTurno.codigoDeError ?? null,
+      });
     }
     const cobroReal = especifica?.get('cobroReal') as Record<string, unknown> | undefined;
     // Encendido Y con código: si falta cualquiera de los dos, se cobra simulado.
