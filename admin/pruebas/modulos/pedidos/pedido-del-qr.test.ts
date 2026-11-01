@@ -61,9 +61,10 @@ describe('armarPedidoWa: el precio sale del catálogo, no del flujo', () => {
     expect(mixto.pedido?.descartados).toEqual(['baja']);
   });
   it('cantidad 0, 51, negativa o no numérica no entra; 1 y 50 sí', () => {
-    for (const cantidad of [0, 51, -2, NaN, '3', null]) {
+    for (const cantidad of [0, 51, -2, NaN, '3x', '51', '-1', '', null]) {
       expect(armar([{ id: 'taco', cantidad }]).pedido).toBeNull();
     }
+    expect(armar([{ id: 'taco', cantidad: '3' }]).pedido?.items[0]?.['cantidad']).toBe(3);
     expect(armar([{ id: 'taco', cantidad: 50 }]).pedido?.items[0]?.['cantidad']).toBe(50);
     expect(armar([{ id: 'taco', cantidad: 1 }]).pedido).not.toBeNull();
   });

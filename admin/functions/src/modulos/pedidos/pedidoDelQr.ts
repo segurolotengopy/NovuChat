@@ -134,7 +134,9 @@ export function armarPedidoWa(
     if (typeof id !== 'string' || !idDeItemValido(id)) continue;
     if (vistas.has(id)) continue;
     vistas.add(id);
-    const cantidad = typeof c['cantidad'] === 'number' ? Math.trunc(c['cantidad']) : NaN;
+    const crudo = c['cantidad'];
+    const cantidad = typeof crudo === 'number' ? Math.trunc(crudo)
+      : typeof crudo === 'string' && /^\d{1,3}$/.test(crudo.trim()) ? Number(crudo.trim()) : NaN;
     if (!Number.isFinite(cantidad) || cantidad < 1 || cantidad > MAX_UNIDADES_WA) {
       descartados.push(id); continue;
     }
@@ -265,7 +267,9 @@ export async function crearPedidoWa(e: EntradaPedidoWa): Promise<ResultadoEscrit
     const anterior = typeof e.referenciaAnterior === 'string' ? e.referenciaAnterior.trim() : '';
     if (anterior !== '' && anterior !== ref) {
       // El pedido nuevo ya existe: un fallo al cerrar el anterior no lo deshace.
-      try { await cerrarPedidoWa(e.tenantId, anterior, 'reemplazado'); } catch { /* queda en recibido; se revisa a mano */ }
+      try { await cerrarPedidoWa(e.tenantId, anterior, 'reemplazado'); } catch {
+        try { await registrar(e.tenantId, { tipo: 'error_flujo', resultado: 'fallo', codigo: 'pedido_wa_cierre', detalle: 'no se pudo cerrar el pedido anterior de WhatsApp' }); } catch { /* nunca lanza */ }
+      }
     }
     return { resultado: 'creado', id };
   } catch {
