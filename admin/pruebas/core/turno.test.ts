@@ -316,6 +316,8 @@ describe('los errores fijos', () => {
       noExiste: { code: 'not-found', message: 'La conversación no existe.' },
       ocupada: { code: 'failed-precondition', message: 'Esta conversación la atiende otra persona.' },
       noEsSuya: { code: 'failed-precondition', message: 'Solo quien atiende la conversación, o un administrador, puede devolverla.' },
+      contactoBloqueado: { code: 'failed-precondition', message: 'Este contacto está bloqueado. Desbloquéelo para atenderlo.' },
+      turnoVigente: { code: 'failed-precondition', message: 'Devuelva la conversación antes de bloquear el contacto.' },
       ventanaCerrada: { code: 'failed-precondition', message: 'La ventana de 24 horas de esta conversación está cerrada.' },
       tope: { code: 'resource-exhausted', message: 'Alcanzó el tope de cambios de atención por hora o por día.' },
       noDisponible: { code: 'unavailable', message: 'No se pudo completar la operación. Intente de nuevo.' },
