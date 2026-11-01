@@ -9,9 +9,9 @@ import type { J } from '../../lib/flujo';
 import { ANA, BETO, CARPETA, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, conPreferencia, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
 
 describe('topología y tamaño', () => {
-  it('producción 45 nodos y prueba 40 (36 y 31 más los 9 del guardado de medios), con el tope de 45', () => {
-    expect(PRODUCCION.nodes.length).toBe(45);
-    expect(PRUEBA.nodes.length).toBe(40);
+  it('producción 53 nodos y prueba 48 (36 y 31 más los 9 del guardado de medios y los 8 de la rama del miniCRM), con el tope de 53', () => {
+    expect(PRODUCCION.nodes.length).toBe(53);
+    expect(PRUEBA.nodes.length).toBe(48);
   });
   it('sin agente, memoria ni modelo de chat de n8n, y sin WhatsApp Trigger', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
@@ -145,7 +145,8 @@ describe('el núcleo común', () => {
 describe('saludo neutro (decisión de Andres, 24/10/2026): la campaña no se menciona hasta que el flujo reconozca su texto de entrada', () => {
   it('ni el prompt, ni el código, ni los textos fijos, ni los dos JSON dicen «campaña»; el saludo dice «Hoy tu valoración…»', () => {
     const archivos = ['prompts/evy.md', 'src/lib/ev.js', 'flujo.plantilla.json', 'rroca-evy.json', 'rroca-evy.prueba.json', ...readdirSync(join(CARPETA, 'src/nodos')).map((f) => `src/nodos/${f}`)];
-    for (const a of archivos) expect(readFileSync(join(CARPETA, a), 'utf8'), a).not.toMatch(/campa[ñn]a/i);
+    // El origen «Campaña Meta Ads» es un valor del mapa de la planilla del equipo (dato del miniCRM, F1): jamás sale al cliente; `idCampana` es un identificador del código del módulo `crm` (no un texto).
+    for (const a of archivos) expect(readFileSync(join(CARPETA, a), 'utf8').replace(/Campaña Meta Ads|idCampana/g, ''), a).not.toMatch(/campa[ñn]a/i);
     // AJUSTE (observaciones de Rubén, 28/10/2026): sin «hoy bonificado» y con «sin pagar nada para agendar».
     expect(readFileSync(join(CARPETA, 'prompts/evy.md'), 'utf8')).toContain('Hoy tu valoración con la Dra. Evy es **100% gratuita y sin compromiso**, sin pagar nada para agendar (su costo habitual es de 250 Bs)');
   });
