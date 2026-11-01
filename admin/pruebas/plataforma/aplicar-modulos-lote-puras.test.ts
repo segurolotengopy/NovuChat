@@ -13,6 +13,7 @@ const mod = await import('../../scripts/plataforma/aplicar-modulos-lote.mjs') as
     { ok: boolean; problemas?: string[]; cfg?: Record<string, unknown> };
   clasificar: (id: string, ficha: Record<string, unknown>, excluir: string[]) => { accion: string; motivo?: string; derivada?: string[] };
   destinoDe: (derivada: string[], aceptadas: string[]) => { ok: boolean; destino?: string[]; motivo?: string };
+  huellaDe: (plan: { id: string; destino?: string[] }[]) => string;
 };
 
 const ENV_EMU = { FIRESTORE_EMULATOR_HOST: '127.0.0.1:8231' };
@@ -31,14 +32,17 @@ describe('argumentos', () => {
   it('seco mínimo válido; no exige --excluir ni respaldo', () => {
     const r = mod.analizarArgumentos(['--proyecto', 'demo-lote'], ENV_EMU);
     expect(r.ok, JSON.stringify(r)).toBe(true);
-    expect(r.cfg).toMatchObject({ aplicar: false, revertir: false, excluir: [], entorno: 'emulador' });
+    expect(r.cfg).toMatchObject({ aplicar: false, excluir: [], entorno: 'emulador' });
   });
 
-  it('--aplicar exige --respaldo-dir y --excluir explícitos', () => {
+  it('--aplicar exige --respaldo-dir, --excluir y --esperar explícitos', () => {
     const dir = nuevoDir();
-    expect(problemas(['--proyecto', 'demo-lote', '--aplicar', '--excluir', 'ninguno'])).toContain('--respaldo-dir');
-    expect(problemas(['--proyecto', 'demo-lote', '--aplicar', '--respaldo-dir', join(dir, 'r')])).toContain('--excluir');
-    const r = mod.analizarArgumentos(['--proyecto', 'demo-lote', '--aplicar', '--excluir', 'ninguno', '--respaldo-dir', join(dir, 'r')], ENV_EMU);
+    const H = 'a'.repeat(32);
+    expect(problemas(['--proyecto', 'demo-lote', '--aplicar', '--excluir', 'ninguno', '--esperar', H])).toContain('--respaldo-dir');
+    expect(problemas(['--proyecto', 'demo-lote', '--aplicar', '--respaldo-dir', join(dir, 'r'), '--esperar', H])).toContain('--excluir');
+    expect(problemas(['--proyecto', 'demo-lote', '--aplicar', '--excluir', 'ninguno', '--respaldo-dir', join(dir, 'r')])).toContain('--esperar');
+    expect(problemas(['--proyecto', 'demo-lote', '--aplicar', '--excluir', 'ninguno', '--respaldo-dir', join(dir, 'r'), '--esperar', 'corta'])).toContain('huella');
+    const r = mod.analizarArgumentos(['--proyecto', 'demo-lote', '--aplicar', '--excluir', 'ninguno', '--respaldo-dir', join(dir, 'r'), '--esperar', H], ENV_EMU);
     expect(r.ok, JSON.stringify(r)).toBe(true);
   });
 
@@ -61,7 +65,7 @@ describe('argumentos', () => {
 
   it('salvaguarda de proyecto: lista blanca, nunca imprime el id, y --confirmo-produccion lote contra producción', () => {
     const dir = nuevoDir();
-    const base = ['--aplicar', '--excluir', 'ninguno', '--respaldo-dir', join(dir, 'r')];
+    const base = ['--aplicar', '--excluir', 'ninguno', '--esperar', 'b'.repeat(32), '--respaldo-dir', join(dir, 'r')];
     expect(problemas(['--proyecto', 'proyecto-ajeno-xyz', ...base], ENV_REAL)).not.toContain('proyecto-ajeno-xyz');
     expect(problemas(['--proyecto', 'proyecto-ficticio-prod', ...base], ENV_REAL)).toContain('--confirmo-produccion lote');
     expect(problemas(['--proyecto', 'proyecto-ficticio-prod', ...base, '--confirmo-produccion', 'otro'], ENV_REAL)).toContain('exactamente «lote»');
@@ -74,12 +78,12 @@ describe('argumentos', () => {
   });
 
   it('el respaldo no puede quedar dentro del repositorio ni ser relativo', () => {
-    expect(problemas(['--proyecto', 'demo-lote', '--aplicar', '--excluir', 'ninguno', '--respaldo-dir', 'relativa/r'])).toContain('ruta absoluta');
-    expect(problemas(['--proyecto', 'demo-lote', '--aplicar', '--excluir', 'ninguno', '--respaldo-dir', join(process.cwd(), 'r')])).toContain('repositorio');
+    expect(problemas(['--proyecto', 'demo-lote', '--aplicar', '--excluir', 'ninguno', '--esperar', 'b'.repeat(32), '--respaldo-dir', 'relativa/r'])).toContain('ruta absoluta');
+    expect(problemas(['--proyecto', 'demo-lote', '--aplicar', '--excluir', 'ninguno', '--esperar', 'b'.repeat(32), '--respaldo-dir', join(process.cwd(), 'r')])).toContain('repositorio');
   });
 
-  it('--revertir exige --respaldo-dir; opciones desconocidas y sueltas se rechazan', () => {
-    expect(problemas(['--proyecto', 'demo-lote', '--revertir'])).toContain('--respaldo-dir');
+  it('--revertir ya no existe; opciones desconocidas y sueltas se rechazan', () => {
+    expect(problemas(['--proyecto', 'demo-lote', '--revertir'])).toContain('opción desconocida');
     expect(problemas(['--proyecto', 'demo-lote', '--incluir-bellido'])).toContain('opción desconocida');
     expect(problemas(['--proyecto', 'demo-lote', 'suelto'])).toContain('argumento suelto');
   });
@@ -106,5 +110,23 @@ describe('selección y lista destino', () => {
     expect(mod.destinoDe(['productos', 'campanas', 'inventario'], ['inventario'])).toEqual({ ok: true, destino: ['productos', 'campanas'] });
     expect(mod.destinoDe(['productos', 'campanas'], [])).toEqual({ ok: true, destino: ['productos', 'campanas'] });
     expect(mod.destinoDe(['productos', 'campanas'], ['agenda']).ok).toBe(false);
+  });
+
+  it('destinoDe rechaza una lista con una dependencia rota (dependeDe del registro), sin excepción', () => {
+    const derivada = ['productos', 'campanas', 'cobros', 'pedidos', 'inventario', 'catalogo-web'];
+    const r = mod.destinoDe(derivada, ['inventario']);
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toContain('«catalogo-web» depende de inventario');
+    expect(mod.destinoDe(derivada, ['pedidos']).ok).toBe(false);
+    expect(mod.destinoDe(derivada, ['catalogo-web']).ok).toBe(true);
+  });
+
+  it('huellaDe: igual con el mismo plan en cualquier orden; cambia si aparece una candidata o cambia una lista', () => {
+    const a = [{ id: 'aaa', destino: ['productos', 'campanas'] }, { id: 'bbb', destino: ['productos', 'campanas', 'agenda'] }];
+    const h = mod.huellaDe(a);
+    expect(h).toMatch(/^[0-9a-f]{32}$/);
+    expect(mod.huellaDe([...a].reverse())).toBe(h);
+    expect(mod.huellaDe([...a, { id: 'ccc', destino: ['productos', 'campanas'] }])).not.toBe(h);
+    expect(mod.huellaDe([a[0]!, { id: 'bbb', destino: ['productos', 'campanas'] }])).not.toBe(h);
   });
 });
