@@ -100,7 +100,7 @@ const HOJA = { __rl: true, mode: 'name', value: "={{ $('Config del negocio').fir
 const FORMATO_LECTURA = { values: { general: 'FORMATTED_VALUE', date: 'FORMATTED_STRING' } };
 
 export function ramaCrm({ desde = 'Armar mensajes', credencial, paquete = 'crm-decidir-senales', x = 5000, y = 640 } = {}) {
-  if (typeof credencial !== 'string' || !credencial.startsWith('@@cred:')) throw new Error('ramaCrm: la credencial tiene que ser un token @@cred:<nombre> (se calcula por tenant, no sale de datos)');
+  if (typeof credencial !== 'string' || !/^@@cred:crm$/.test(credencial)) throw new Error('ramaCrm: la credencial tiene que ser exactamente el token @@cred:crm (se calcula por tenant, no sale de datos)');
   const cred = { googleApi: { id: '', name: credencial } };
   const lectura = (id, name, pos, range, extra = {}, notes = '') => ({
     id, name, type: 'n8n-nodes-base.googleSheets', typeVersion: 4.7, position: pos, ...(extra.executeOnce ? { executeOnce: true } : {}),
@@ -169,8 +169,8 @@ export function hallazgosCrm(flujo, mapa) {
     if (l > ultima) h.push(`«${n.name}»: el rango «${rango}» pasa de la ultima letra del bot (${ultima})`);
   }
   const st = (flujo && flujo.settings) || {};
-  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false)
-    h.push('la retencion de ejecuciones tiene que ser none (exito y error) y sin progreso: el flujo lee y escribe la hoja del cliente');
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false || st.saveManualExecutions !== false)
+    h.push('la retencion de ejecuciones tiene que ser none (exito y error), sin progreso y sin guardar las manuales: el flujo lee y escribe la hoja del cliente');
   const enc = nodos.find((x) => x.name === NODO_ENCABEZADOS);
   if (enc) {
     const r = (((enc.parameters || {}).options || {}).dataLocationOnSheet || {}).values;

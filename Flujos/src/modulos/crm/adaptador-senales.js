@@ -13,14 +13,8 @@ function crmCalificarSenales(p) {
 function crmResumirSenales(p, conEstado, calificacionFinal) {
   const partes = [];
   if (calificacionFinal === 'Descalificado') partes.push('Marcado como no lead.');
-  const pidio = typeof p.quePidio === 'string' ? crmLimpio(p.quePidio).slice(0, 120) : '';
-  if (pidio) partes.push('Pidió: ' + pidio + '.');
-  const dia = typeof p.diaPreferido === 'string' ? crmLimpio(p.diaPreferido).slice(0, 40) : '';
-  if (dia) partes.push('Día: ' + dia + '.');
-  const horario = typeof p.horarioPreferido === 'string' ? crmLimpio(p.horarioPreferido).slice(0, 40) : '';
-  if (horario) partes.push('Horario: ' + horario + '.');
-  if (p.derivacion === true) partes.push('Derivado a recepción.');
-  else if (typeof p.derivacion === 'string' && crmLimpio(p.derivacion)) partes.push('Derivación: ' + crmLimpio(p.derivacion).slice(0, 80) + '.');
+  // Solo marcas fijas: el texto libre del cliente (que pidio, dia, horario) va a SUS columnas, si el tenant las mapea, y no se copia aca.
+  if (p.derivacion === true || (typeof p.derivacion === 'string' && crmLimpio(p.derivacion))) partes.push('Derivado a recepción.');
   if (!partes.length) return conEstado ? 'Escribió por WhatsApp.' : '';
   return partes.join(' ').slice(0, 400);
 }

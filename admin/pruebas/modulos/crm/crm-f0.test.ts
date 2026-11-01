@@ -115,14 +115,14 @@ describe('adaptador general de señales y contrato CRM_ADAPTADOR', () => {
   it('la escala va de menor a mayor: Alta pisa todo y Media no pisa Descalificado', () => expect(M.CRM_ADAPTADOR.prioridad).toEqual(['Baja', 'Media', 'Descalificado', 'Alta']));
   it('el resumen usa solo textos y nunca escribe «false», «[object Object]» ni «pag»', () => {
     const r = M.CRM_ADAPTADOR.resumir({ quePidio: 'Precio', diaPreferido: 'lunes', horarioPreferido: 'en la tarde', derivacion: true }, true, 'Alta');
-    expect(r).toBe('Pidió: Precio. Día: lunes. Horario: en la tarde. Derivado a recepción.');
+    expect(r).toBe('Derivado a recepción.'); // el texto libre del cliente NO se copia al resumen
     const raros = M.CRM_ADAPTADOR.resumir({ quePidio: false, diaPreferido: { a: 1 }, horarioPreferido: ['x'], derivacion: false }, false, 'Media');
     expect(raros).toBe('');
     expect(M.CRM_ADAPTADOR.resumir({ quePidio: false }, true, 'Media')).toBe('Escribió por WhatsApp.');
     for (const t of [r, raros]) expect(t).not.toMatch(/false|object|pag/i);
   });
   it('el resumen no empieza con un signo de fórmula y se acota', () => {
-    expect(M.CRM_ADAPTADOR.resumir({ quePidio: '=1+1' }, false, 'Media')).toMatch(/^Pidió: /);
+    expect(M.CRM_ADAPTADOR.resumir({ quePidio: '=1+1', diaPreferido: '+x' }, false, 'Media')).toBe(''); // no copia el texto libre
     expect(M.CRM_ADAPTADOR.resumir({ quePidio: 'x'.repeat(900), derivacion: 'y'.repeat(900) }, false, 'Media').length).toBeLessThanOrEqual(400);
   });
   it('el adaptador no trae textos ni nombres de cliente', () => expect(ADAPT).not.toMatch(/Rubén|Antonio|Evy|Emma|Q'Taco|Bellido|NovuChat|doctora/i));
@@ -165,7 +165,7 @@ describe('ramaCrm: 8 nodos generados', () => {
   });
   it('«Leer encabezados» va antes de «Decidir fila»', () => expect(rama.connections[NODO_ENCABEZADOS].main[0][0].node).toBe('Decidir fila de la planilla'));
   it('sin credencial calculada (@@cred:) no se genera', () => {
-    for (const mala of [undefined, '', 'Google Sheets miniCRM (crm-otro)', 7]) expect(() => ramaCrm({ credencial: mala })).toThrow(/@@cred/);
+    for (const mala of [undefined, '', 'Google Sheets miniCRM (crm-otro)', '@@cred:otra', '@@cred:crm2', 7]) expect(() => ramaCrm({ credencial: mala })).toThrow(/@@cred/);
   });
   it('toda credencial de la rama es la que se pasó', () => {
     for (const n of rama.nodes) if (n.credentials) expect(n.credentials.googleApi.name).toBe('@@cred:crm');
@@ -178,7 +178,7 @@ describe('ramaCrm: 8 nodos generados', () => {
   function flujoArmado() {
     const nodes = clonar(rama.nodes) as Array<{ name: string; parameters: J }>;
     nodes.find((n) => n.name === 'Decidir fila de la planilla')!.parameters.jsCode = MARCA_MAPA;
-    return injertarCrm({ nodes, connections: {}, settings: { executionOrder: 'v1', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false } }, MAPA);
+    return injertarCrm({ nodes, connections: {}, settings: { executionOrder: 'v1', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false, saveManualExecutions: false } }, MAPA);
   }
   const rangoDe = (f: { nodes: Array<{ name: string; parameters: J }> }, nombre: string) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -208,7 +208,7 @@ describe('ramaCrm: 8 nodos generados', () => {
     expect(hallazgosCrm(f, MAPA).join(' ')).toMatch(/no es A<fila>/);
   });
   it.each([
-    ['saveDataSuccessExecution', 'all'], ['saveDataSuccessExecution', undefined], ['saveDataErrorExecution', 'all'], ['saveDataErrorExecution', 'default'], ['saveExecutionProgress', true],
+    ['saveDataSuccessExecution', 'all'], ['saveDataSuccessExecution', undefined], ['saveDataErrorExecution', 'all'], ['saveDataErrorExecution', 'default'], ['saveExecutionProgress', true], ['saveManualExecutions', true], ['saveManualExecutions', undefined],
   ])('la retención %s = %s está prohibida', (campo, valor) => {
     const f = flujoArmado();
     (f.settings as J)[campo] = valor;

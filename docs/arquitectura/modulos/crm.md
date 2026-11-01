@@ -145,7 +145,7 @@ bot (A..T en la plantilla; la U no se lee, que es lo que tolera la comparación)
 **PR-F0 (31/10/2026), hecho en el módulo.** `crmVerificarEncabezados` (con la lectura `Leer encabezados de la planilla`, rango
 `A{fila}:{ultima del bot}{fila+1}`) exige la fila de encabezados completa antes de AGREGAR; lectura vacía = no agrega (la hoja necesita una fila de datos).
 `adaptador-senales.js` define el contrato `CRM_ADAPTADOR = {calificar, resumir, prioridad}` (validado por `crmAdaptadorValido`; inválido = `adaptador_invalido`):
-Caliente = Alta, Tibio = Media, Frío = Baja, No es lead = Descalificado; el resumen usa solo vocabulario cerrado. Con ese paquete la lectura de encabezados es
+Caliente = Alta, Tibio = Media, Frío = Baja, No es lead = Descalificado; el resumen usa solo marcas fijas («Marcado como no lead.», «Derivado a recepción.», «Escribió por WhatsApp.»): el texto libre del cliente (qué pidió, día, horario) va a sus propias columnas y no se copia al resumen. `hallazgosCrm` lo exige el CI sobre cada JSON versionado con miniCRM (`pruebas/modulos/crm/crm-hallazgos-flujos.test.ts`: hay que agregar ahí cada flujo nuevo); `ramaCrm` solo acepta la credencial `@@cred:crm`; la retención exige también `saveManualExecutions: false`. Con ese paquete la lectura de encabezados es
 obligatoria; captación y chat siguen con su adaptador y sin esa lectura (misma salida: oráculo en verde). En `construir-crm.mjs`: `ramaCrm` (8 nodos generados,
 la credencial llega como token `@@cred:`), `hallazgosCrm` (rango que llega a la letra de `equipo.diagnostico` o pasa de la última del bot, retención distinta de
 `none`) y `rutasPaqueteCrmSenales`. Aún sin conectar a ningún flujo de cliente (F1 a F4). Verificar contra `node-definitions` de n8n 2.36.5 el nodo Switch 3.2 de
