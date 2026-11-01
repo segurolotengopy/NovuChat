@@ -196,3 +196,15 @@ El contrato v2 (30/10/2026) quita «¿Anotar medio?» y «Anotar medio»: todo m
 **Retención de ejecuciones (decisión de Andres del 30/10/2026, contrato v2 §8.1):** con la rama, el binario del medio quedaría en los datos de la ejecución de n8n; TODO flujo con la rama lleva `saveDataSuccessExecution` y `saveDataErrorExecution` «none» y `saveExecutionProgress` false (lo pone `injertarGuardado` y lo exige `hallazgosDelGuardado`). **Dejan de guardar ejecuciones** los que guardaban: Rubén, Antonio, Chat NovuChat y captacion-minima (guardaban las fallidas), Q'Taco (guardaba todo, decisión del 04/10 que esta reemplaza) y Bellido (no lo fijaba: valía el de la instancia). Se pierde diagnóstico, por privacidad.
 
 **Publicación:** Evy, Emma, Rubén y Antonio se republican UNA vez, después de la etiqueta del servidor v2 (M1b); Q'Taco, chat, captación y Bellido salen ya con esta versión. Hasta entonces `estado-de-versiones.sh` los mostrará atrasados, y es correcto. Walisuma (sin publicar; entró a main con la rama de 11 nodos y 58 nodos): pasa a **56** nodos, tope 58 → 56, y deja de guardar ejecuciones fallidas (`none`), como todos.
+
+> **Excepción de rearquitectura: flujos vivos de `Flujos/experimental/` (Andres, 31/10/2026).**
+> Qué queda distinto: los flujos de `experimental/` (Rubén, Antonio, Evy, Emma,
+> Walisuma, Bellido, Q'Taco, chat NovuChat) conservan su propia variante de los
+> cinco nodos comunes (Normalizar entrada, Config del negocio, Procesar respuesta,
+> Uso extendido, Comercio no operativo) y no incluyen aún el núcleo desde
+> `Flujos/src/core/`. Por qué: las variantes difieren en comportamiento, no en
+> parámetros (`Flujos/src/core/VARIANTES.md`); unificarlas cambia lo que corre y
+> se hace por rebanadas con ensayo, y Q'Taco no se toca la semana de su traslado
+> (~07/11). Lo cierra: la unificación nodo por nodo con la prueba byte a byte de
+> `pruebas/core/nucleo-comun.test.ts`, o una nueva decisión escrita de Andres.
+> Vence el 31/01/2027; si vence sin cerrarse ni renovarse, es un defecto.
