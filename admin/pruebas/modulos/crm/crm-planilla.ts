@@ -61,12 +61,12 @@ const claves = (j: J) => Object.keys(j).filter((k) => !['accionPlanilla', 'vered
 
 // Los 6 leads del plan: lo que HIZO cada uno y lo que la planilla debe decir.
 const LEADS: Array<[string, J, string, string]> = [
-  ['Maria Eugenia: aceptó agendar', { aceptoAgendar: true, llegoPorAnuncio: true }, 'Caliente', 'Alta'],
-  ['Rosarito: pidió la ubicación', { pidioUbicacion: true }, 'Caliente', 'Alta'],
-  ['Dunia: llegó por anuncio', { llegoPorAnuncio: true }, 'Tibio', 'Media'],
-  ['Yeimy: escribió y no avanzó', {}, 'Tibio', 'Media'],
-  ['Roxi: preguntó el precio y cerró', { preguntoPrecioYCerro: true, llegoPorAnuncio: true }, 'Frío', 'Baja'],
-  ['Moira: no es paciente', { noEsPaciente: true, pidioUbicacion: true }, 'No es lead', 'N/A'],
+  ['Lead A: aceptó agendar', { aceptoAgendar: true, llegoPorAnuncio: true }, 'Caliente', 'Alta'],
+  ['Lead B: pidió la ubicación', { pidioUbicacion: true }, 'Caliente', 'Alta'],
+  ['Lead C: llegó por anuncio', { llegoPorAnuncio: true }, 'Tibio', 'Media'],
+  ['Lead D: escribió y no avanzó', {}, 'Tibio', 'Media'],
+  ['Lead E: preguntó el precio y cerró', { preguntoPrecioYCerro: true, llegoPorAnuncio: true }, 'Frío', 'Baja'],
+  ['Lead F: no es paciente', { noEsPaciente: true, pidioUbicacion: true }, 'No es lead', 'N/A'],
 ];
 
 describe('clasificación, prioridad y cierre de ventana (por código)', () => {
