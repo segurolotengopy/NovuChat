@@ -54,9 +54,9 @@ No se agregan llamadas: las dos por turno ya existen.
    ganchos (`antesDelTurno`, `despuesDelTurno`, `alCierre`, `alCambiarConfig`,
    `programado`; tabla en `modulos.md`).
 
-`ingesta.ts` (2.130 líneas) va a `functions/src/core/turno/` y **se parte**:
-coordinador más los ganchos de seña, inventario, captación, campañas y cobro de
-venta, que vuelven a sus módulos.
+`ingesta.ts` (2.088 líneas) queda en la raíz de Functions como **coordinador**:
+los ganchos de seña, inventario, captación, campañas y cobro de venta ya
+volvieron a sus módulos (`modulos/*/alTurno.ts`) y los llama por el registro.
 
 ## El cierre (`registrarCierre`): ganchos inyectados (F3b-1b, 05/10/2026)
 
@@ -100,9 +100,10 @@ reexporta ese `registrarCierre` (mismo nombre, mismas opciones y secretos).
 
 - **El corte de `ingesta.ts`** (coordinador más ganchos). La deuda de
   `deuda.json` es **0 cruces** desde F3b-1b: ya ningún archivo de Core ni de un
-  módulo importa de `ingesta.ts`. Lo que falta del corte es mover los ganchos
-  de seña, inventario, captación, campañas y cobro de venta que siguen dentro de
-  `ingesta.ts`, y recorrer los módulos encendidos por el registro (F3b-2).
+  módulo importa de `ingesta.ts`. Los ganchos de seña, inventario, captación,
+  campañas y cobro de venta ya están movidos (F3b-2). Lo que sigue dentro de
+  `ingesta.ts` es la decisión `cobroRealActivo` (Cobros) y el conteo de señas
+  enviadas (`senasEnviadas`, Agenda).
 - **F3b-2a (30/10/2026): el contrato y la red, sin mover lógica.**
   `core/turno/ganchosDelTurno.ts` define `GanchosDelTurno` (campañas, captación,
   inventario, cobro de venta, seña) y `modulosDelTurno(ficha, flujoRuta)`:
@@ -327,7 +328,7 @@ zona inyectadas, modelo como sub-nodo intercambiable.
   contexto (`ContextoDeCobro`), sin tocar el contrato de Core. Sin cambios en la
   respuesta: la red diferencial pasa con sus referencias intactas.
 
-- **F3b-2e (31/10/2026): `ingesta.ts` sin lógica de módulos; sale de `SE_PARTE`.**
+- **F3b-2e (31/10/2026): `ingesta.ts` sin lógica de módulos; sigue en `SE_PARTE` con Agenda y Cobros.**
   Lo que quedaba, movido sin cambiar lógica: la solicitud en curso del mensaje
   (seña de Agenda + regla 2 de Cobros, `solicitudTras`/`solicitudDeCobroTras`/
   `reactivaTras`) a `modulos/agenda/solicitudDelTurno.ts` (Agenda depende de
