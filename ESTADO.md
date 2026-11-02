@@ -88,7 +88,7 @@ sigue cortando en 100/220/500 (bitácora del 11/10) hasta la etiqueta del bloque
 1. Decisiones del informe H2: medios guardados (bloquea H3), titularidad
    `novuchat` (BYOC o tope por conversación), topes de la persona, Q'Taco con H2
    antes o después del 07/11, marcar leído al tomar.
-2. Cada etiqueta y cada operación en producción, en la ventana 23:30–01:30.
+2. Cada etiqueta y cada operación en producción, con el botón de Andres y a cualquier hora (sin ventana desde el 22–23/10).
 
 ## Dónde está cada cosa
 
