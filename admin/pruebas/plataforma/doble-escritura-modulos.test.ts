@@ -189,6 +189,9 @@ describe('scripts', () => {
     expect(Object.prototype.hasOwnProperty.call(await ficha(SIN_LISTA), 'modulos')).toBe(false);
   });
   it('asignar-numero.mjs rechaza `modulos` que no es lista, sin escribir', async () => {
+    // El alias se valida ANTES que `modulos`: una ruta que otra suite dejó con `cliente20` (el emulador
+    // se comparte y las suites corren en serie) taparía el rechazo que se prueba aquí. Se limpia esa ajena.
+    for (const d of (await db.collection('rutasWhatsApp').where('aliasSecreto', '==', 'cliente20').get()).docs) await d.ref.delete();
     const antes = await tiempo(CADENA);
     const r = script('asignar-numero.mjs', '--tenant', CADENA, '--numero', NUM_C, '--alias', 'cliente20', ...BASE);
     expect(r.codigo).toBe(1);
