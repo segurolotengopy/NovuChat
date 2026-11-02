@@ -247,6 +247,8 @@ function estadoDe(e) {
   if (!s.reserva || typeof s.reserva !== 'object') s.reserva = null;
   if (!s.pedido || typeof s.pedido !== 'object') s.pedido = null;
   if (!s.pedidoWeb || typeof s.pedidoWeb !== 'object') s.pedidoWeb = null;
+  // El `cat_…` del checkout que este pedido modificó: sobrevive a la revalidación (que suelta `pedidoWeb`) y sale como `reemplaza` con el QR.
+  if (typeof s.catOriginal !== 'string' || !/^cat_[A-Za-z0-9_-]{1,56}$/.test(s.catOriginal)) s.catOriginal = null;
   if (!s.carritoAnterior || typeof s.carritoAnterior !== 'object') s.carritoAnterior = null;
   s.preguntoDejar = s.preguntoDejar === true;
   s.aclaro = s.aclaro === true;
@@ -261,6 +263,7 @@ function limpiarCarrito() {
   en.entrega = entregaVacia();
   en.carritoGuardado = 0;
   en.pedidoWeb = null;
+  en.catOriginal = null;
   en.carritoAnterior = null;
   en.preguntoDejar = false;
 }
@@ -662,7 +665,10 @@ function aBoton(b) {
     // dice y ofrece «Dejarlo como estaba» (mismo mensaje: 0 mensajes agregados).
     const e = en.entrega;
     const anterior = { carrito: en.carrito, entrega: e, pedidoWeb: en.pedidoWeb };
+    const catPrevio = en.catOriginal;
     limpiarCarrito();
+    // El pedido web sigue siendo el que este se lleva por delante: el `cat_…` original se recuerda aunque se cambie el carrito.
+    en.catOriginal = catPrevio;
     irA('pedido');
     en.entrega = Object.assign(entregaVacia(), { direccion: e.direccion, referencia: e.referencia, nombre: e.nombre });
     if (e.ubicacion) en.entrega.ubicacion = e.ubicacion;
@@ -1287,7 +1293,7 @@ function confirmarPedido() {
       // El monto del QR es el del código; el servidor coteja el comprobante contra ESE número (en simulado no se coteja nada).
       // El pedido guarda el modo con que se mandó el QR: un comprobante o un reenvío con otro modo vigente no se acepta.
       const pedConModo = Object.assign({}, ped, { simulado: simulado });
-      mensajes = [{ tipo: 'imagen', cuerpo: pie, url: cobro.qrUrl, evento: 'qr_enviado', referencia: ped.pedidoId, monto: ped.total, ...pqrCampos(ped.pedidoId, en.carrito, ped, simulado) }];
+      mensajes = [{ tipo: 'imagen', cuerpo: pie, url: cobro.qrUrl, evento: 'qr_enviado', referencia: ped.pedidoId, monto: ped.total, ...pqrCampos(ped.pedidoId, en.carrito, ped, simulado, en.catOriginal) }];
       pedidoGuardar = pedConModo;
       limpiarCarrito();
       irA('esperando_comprobante');
@@ -1727,10 +1733,15 @@ function aCarrito() {
   // del estado leido). SOLO si el pedido del flujo es EL de la pagina: el id tiene la forma del checkout, el flujo no quito ni acoto
   // nada, el total coincide con el del servidor y no hay costo de envio (el servidor coteja el comprobante contra el total del pedido
   // `cat_…`, con envio incluido; el QR de este flujo es solo la comida). Cualquier otro caso conserva el id propio `ped-…`.
-  const motivoSinId = !/^cat_[A-Za-z0-9_]{1,56}$/.test(String(c.pedidoId || '')) ? 'id_sin_la_forma_del_checkout'
+  // Una sola expresión para «es un id del checkout» (la misma que valida `pqrCampos`).
+  const esCat = /^cat_[A-Za-z0-9_-]{1,56}$/.test(String(c.pedidoId || ''));
+  const motivoSinId = !esCat ? 'id_sin_la_forma_del_checkout'
     : (fuera.length || recortadas.length) ? 'lineas_quitadas_o_acotadas'
       : flujo !== servidor ? 'total_distinto'
         : Math.round((Number(c.costoEnvio) || 0) * 100) !== 0 ? 'con_costo_de_envio' : '';
+  // Aunque el pedido siga con id propio, el `cat_…` original se recuerda: el QR lo reportará como reemplazado. EXCEPTO cuando el único
+  // motivo es el costo de envío: ahí el carrito es el mismo, el `cat_…` es el registro completo (con nota y `costoEnvio`) y el `wa_…` no los lleva.
+  if (esCat && motivoSinId !== 'con_costo_de_envio') en.catOriginal = String(c.pedidoId);
   if (motivoSinId) errores.push('carrito_con_id_propio: ' + motivoSinId);
   else en.pedidoWeb = { id: String(c.pedidoId), huella: huellaDelCarrito() };
 

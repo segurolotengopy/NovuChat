@@ -189,6 +189,8 @@ interface Entrante {
   lineas?: unknown[];
   entrega?: unknown;
   facturacion?: unknown;
+  /** Solo con `qr_enviado` y líneas: el pedido `cat_…` del checkout web que este QR reemplaza (Pedidos lo revalida). */
+  reemplaza?: string;
   /**
    * EL ADELANTO A FAVOR (Andres, 21/09/2026). `cita_cancelada` trae en
    * `referencia` la cita que se canceló y en `inicio` cuándo era (ISO): con eso
@@ -289,11 +291,14 @@ function normalizar(cuerpo: unknown): Entrante | null {
   const entrega = esQr && lineas && (objetoPlano(c['entrega']) || typeof c['entrega'] === 'string')
     ? c['entrega'] : undefined;
   const facturacion = esQr && lineas && objetoPlano(c['facturacion']) ? c['facturacion'] : undefined;
+  const reemplaza = esQr && lineas && typeof c['reemplaza'] === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(c['reemplaza'])
+    ? c['reemplaza'] : undefined;
 
   return { telefono, direccion, tipo, texto, origen, ...(idMeta ? { idMeta } : {}),
            ...(lineas ? { lineas } : {}),
            ...(entrega !== undefined ? { entrega } : {}),
            ...(facturacion !== undefined ? { facturacion } : {}),
+           ...(reemplaza ? { reemplaza } : {}),
            ...(nombreContacto ? { nombreContacto } : {}),
            ...(evento ? { evento } : {}),
            ...(reglaCobro ? { reglaCobro } : {}),
@@ -1433,6 +1438,7 @@ export const ingesta = onRequest(
         referencia: mensaje.referencia, referenciaAnterior: veredicto.pedidos.refAnterior,
         telefono: mensaje.telefono, monto: mensaje.monto,
         lineas: mensaje.lineas, entrega: mensaje.entrega, facturacion: mensaje.facturacion,
+        reemplaza: mensaje.reemplaza,
       });
     }
 
