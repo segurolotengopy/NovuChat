@@ -123,7 +123,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     const ubicacionSinDato = plan.origen !== 'imagen' && rrPideUbicacion(plan.textoCliente) && rrUbicacionSinDato(cfg);
     if (rrEsDerivar(crudo) || ubicacionSinDato) {
       // DERIVAR: el modelo no supo responder. La palabra jamás llega al cliente: aviso a Rubén (lo armó «Armar avisos», salvo en una imagen) y el botón.
-      if (plan.origen === 'imagen') { tipoDePlan = 'imagen_derivar'; m = conRuben(RR_TEXTO_IMAGEN_DERIVAR); } else { tipoDePlan = 'derivar'; m = conRuben(rrTextoDerivacion('consulta', estadoAviso)); }
+      if (plan.origen === 'imagen') { tipoDePlan = 'imagen_derivar'; m = conRuben(RR_TEXTO_IMAGEN_DERIVAR); } else { tipoDePlan = 'derivar'; m = conRuben(rrTextoDerivacion('consulta', estadoAviso, ubicacionSinDato ? 'ubicacion' : undefined)); }
     } else if (rrSuplantaARuben(crudo)) {
       // SUPLANTACIÓN (prohibición 4): el modelo se dijo Rubén, el autor o una persona: el mensaje completo se sustituye por la identidad fija (con los botones normales). No se guarda en la memoria.
       tipoDePlan = 'identidad';

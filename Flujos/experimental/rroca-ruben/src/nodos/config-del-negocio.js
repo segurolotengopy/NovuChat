@@ -31,7 +31,7 @@ const linea = (v, max) => String(v === undefined || v === null ? '' : v)
 const ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
 const enlaceDeMapa = (v) => (typeof v === 'string' && v.trim().length <= 200 && ENLACE_DE_MAPA.test(v.trim()) ? v.trim() : '');
 // Un texto de la Consola que sea (o lleve) un enlace no es una dirección.
-const sinEnlace = (v) => (/https?:|www\.|wa\.me|maps|goo\.gl/i.test(String(v)) ? '' : v);
+const sinEnlace = (v) => (/[\u00AD\u200B-\u200F\u202A-\u202E\u2060\uFEFF]|https?:|www\.|wa\.me|maps|goo\.gl|\b[a-z0-9-]+\.(?:com|net|org|bo|ly|me|io|app|link|gl)\b(?:\/|$)/i.test(String(v)) ? '' : v);
 
 // --- ATENCIÓN: los umbrales de uso extendido (el servidor decide; este nodo obedece) ---
 const at = (codigo === 200 && cuerpo.atencion && typeof cuerpo.atencion === 'object') ? cuerpo.atencion : {};

@@ -33,7 +33,7 @@ if (!aviso && puerta.ruta === 'uso_extendido' && puerta.responder === true && St
 // Pidió la ubicación y el negocio no tiene ni enlace ni dirección: no se inventa nada, se deriva a Rubén (la misma salida que DERIVAR; «Armar mensajes» usa la misma condición).
 const ubicacionSinDato = plan.tipo === 'modelo' && plan.origen !== 'imagen' && rrPideUbicacion(plan.textoCliente) && rrUbicacionSinDato(cfg);
 if (!aviso && plan.tipo === 'modelo' && plan.origen !== 'imagen' && (ubicacionSinDato || rrEsDerivar(cnTextoDeGemini(cnPrimero('Conversar con el modelo'))))) {
-  aviso = { tipo: 'consulta', clave: 'no_supo', motivo: ubicacionSinDato ? 'pidió la ubicación y no está cargada en la consola' : 'consulta que el asistente no supo responder', mensaje: String(plan.textoCliente || '').slice(0, 200) };
+  aviso = { tipo: 'consulta', clave: ubicacionSinDato ? 'ubicacion' : 'no_supo', motivo: ubicacionSinDato ? 'pidió la ubicación y no está cargada en la consola' : 'consulta que el asistente no supo responder', mensaje: String(plan.textoCliente || '').slice(0, 200) };
 }
 const clave = aviso && typeof aviso.clave === 'string' && RR_CLAVES_AVISO.indexOf(aviso.clave) >= 0 ? aviso.clave : '';
 const sin = (extra) => [{ json: Object.assign({ sinAviso: true, plan: plan.tipo || '', planeado: false, repetido: false, clave: clave, motivoFallo: '' }, extra || {}) }];

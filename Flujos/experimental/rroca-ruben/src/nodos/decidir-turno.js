@@ -116,6 +116,8 @@ const modeloDelTurno = (modo, extra, boton) => {
     : (deAudio ? rrCuerpoModelo(rrEtiquetaAudio(au), historia, { rotulado: true, tope: RR_TOPE_AUDIO_MODELO + 100, respuesta: respuestaAPregunta, modo: modo, anuncio: anuncioDelTurno })
       : rrCuerpoModelo(t.texto, historia, { respuesta: respuestaAPregunta, modo: modo, anuncio: anuncioDelTurno }));
   const plan = Object.assign({ tipo: 'modelo', origen: deAudio ? 'audio' : '', cat: cat, modo: modo, textoCliente: (rotuloToque !== '' ? rotuloToque : (deAudio ? '(audio) ' + rrEnmascarar(textoTurno) : textoTurno)).slice(0, 500), textoRevision: rotuloToque !== '' ? '' : textoTurno.slice(0, 500) }, extra || {});
+  // Pidió la ubicación y la Consola no trae ni enlace ni dirección: «Armar mensajes» deriva a Rubén sin usar lo que diga el modelo, así que no se le llama (sin costo de Gemini). Un toque de botón nunca entra aquí.
+  if (rotuloToque === '' && rrPideUbicacion(plan.textoCliente) && rrUbicacionSinDato(cfg)) return salir(plan, { llamarModelo: false, cuerpoModelo: null });
   return salir(plan, { llamarModelo: true, cuerpoModelo: cuerpo });
 };
 // LA COMPUERTA: el cliente pidió precios, el catálogo, un menú o pagar y todavía no hay dos mensajes de conversación. Sin saludar: el saludo (sin montos), que recuerda que pidió opciones. Con UN mensaje de conversación: el puente (el modelo con

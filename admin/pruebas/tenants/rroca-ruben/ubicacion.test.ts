@@ -27,7 +27,7 @@ const DIR = 'Calle de Prueba 123, Zona Central';
 
 const codigo = ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA, 'src/lib', a), 'utf8')).join('\n');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), en un contexto aislado de `node:vm`.
-const L = runInNewContext(codigo + '\n({ rrPideUbicacion, rrEnlaceDeMapa, rrUbicacionSinDato, rrLineasDeUbicacion, RR_PROMPT })') as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+const L = runInNewContext(codigo + '\n({ rrDireccionDeTexto, rrPideUbicacion, rrEnlaceDeMapa, rrUbicacionSinDato, rrLineasDeUbicacion, RR_PROMPT })') as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 let seq = 0;
 const entrega = (texto: string, from = ANA): J => ({
@@ -55,8 +55,8 @@ function pregunta(datos: J, q: string, modelo?: Doble) {
   const r = w.turno(entrega(q), {});
   return { r, cliente: r.mensajesA(ANA), texto: r.mensajesA(ANA).map((m) => m.cuerpo).join('\n'), avisos: r.avisosA(REC) };
 }
-const PIDEN = ['¿Dónde quedan?', 'cual es la ubicación?', 'Mándame el mapa', '¿Cómo llego?', '¿Cuál es su dirección?'];
-const NO_PIDEN = ['¿Cuánto cuesta el libro?', 'qué incluye el Mapa de Automatización', 'mi dirección de correo es ana@ejemplo.com', '¿dónde queda el libro después de pagar?', 'hola'];
+const PIDEN = ['¿Dónde quedan?', 'cual es la ubicación?', 'Mándame el mapa', '¿Cómo llego?', '¿Cuál es su dirección?', '¿Dónde está ubicado?', 'mándame el mapa por favor', 'pásame el mapa de ubicación'];
+const NO_PIDEN = ['¿Cuánto cuesta el libro?', 'qué incluye el Mapa de Automatización', 'mi dirección de correo es ana@ejemplo.com', '¿dónde queda el libro después de pagar?', 'hola', 'quiero el mapa', 'el mapa me interesa', '¿qué trae el mapa?', 'a qué dirección te mando el comprobante', 'la direccion de pago', 'la dirección del correo', '¿dónde queda el link?', 'donde queda el acceso'];
 
 describe('el validador es LA MISMA regla que el servidor', () => {
   it('acepta https de los dominios de mapas de Google y nada más', () => {
@@ -175,5 +175,33 @@ describe('(f) el conteo de mensajes por conversación no cambia', () => {
       expect(r.mensajesA(ANA)).toHaveLength(1);
       expect(r.avisos.length).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+describe('cancelación, dirección disfrazada, clave propia y costo del modelo', () => {
+  it('«cancela mi pedido, ¿dónde quedan?» no se trata como pedido de ubicación (gana la cancelación)', () => {
+    expect(L.rrPideUbicacion('cancela mi pedido, ¿dónde quedan?')).toBe(false);
+    expect(L.rrPideUbicacion('¿dónde quedan?')).toBe(true);
+  });
+  it('una dirección con dominio sin esquema, con «maps» o con caracteres invisibles se rechaza', () => {
+    for (const mal of ['bit.ly/abc', 'ejemplo.com/ir', 't.me/x', 'Calle 5 ejemplo.com', 'Plaza Maps 12', 'https\u200B://x.example', 'Calle\u2060 5', 'Calle\uFEFF 5', 'http://x.example']) expect(L.rrDireccionDeTexto(mal), mal).toBe('');
+    expect(L.rrDireccionDeTexto(DIR)).toBe(DIR);
+    // y por la Consola: no sale como dirección y, sin más dato, se deriva
+    const { texto, avisos } = pregunta({ direccion: 'bit.ly/abc' }, '¿Dónde quedan?');
+    expect(texto).not.toMatch(/bit\.ly|Dirección:/);
+    expect(avisos.length).toBeGreaterThan(0);
+  });
+  it('el aviso sin dato lleva su clave propia `ubicacion`, y no comparte el límite de 30 minutos con «no supo»', () => {
+    const w = crear({});
+    const r1 = w.turno(entrega('¿Dónde quedan?'), {});
+    expect(r1.avisosA(REC).length).toBeGreaterThan(0);
+    expect(JSON.stringify(r1.porNodo['Armar avisos'])).toContain('"clave":"ubicacion"');
+    expect(r1.mensajesA(ANA)[0]!.cuerpo).toMatch(/ubicación cargada/);
+  });
+  it('sin dato no se llama al modelo (sin costo de Gemini); con dato sí', () => {
+    const sin = crear({});
+    expect(sin.turno(entrega('¿Dónde quedan?'), {}).registro.filter((x) => x.nodo === 'Conversar con el modelo')).toHaveLength(0);
+    const con = crear({ direccionMaps: MAPS });
+    expect(con.turno(entrega('¿Dónde quedan?'), {}).registro.filter((x) => x.nodo === 'Conversar con el modelo')).toHaveLength(1);
   });
 });
