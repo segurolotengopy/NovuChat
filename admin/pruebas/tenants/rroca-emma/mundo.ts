@@ -69,6 +69,8 @@ export interface Opciones {
   modeloDice?: string | null | 'cae' | ((ll: LlamadaDoble) => string);
   /** Lo que devuelven los medios. */
   medio?: { bytes?: number; url?: string; mime?: string; transcripcion?: string | null; vision?: J | null };
+  /** Dobles ADICIONALES por nombre de nodo (p. ej. los nodos de Google Sheets del miniCRM); pisan a los de arriba. */
+  dobles?: Record<string, Doble>;
 }
 /** El horario de Emma como texto libre de la Consola (`operacion.horarioAtencion`): turno partido, que `negocio.horarios` (un rango por día) no admite. */
 export const HORARIO_DE_LA_CONSOLA = 'lunes a viernes de 09:00 a 12:00 y de 14:00 a 18:00; sábados de 09:00 a 12:00; domingos cerrado';
@@ -123,7 +125,7 @@ export function crear(o: Opciones = {}): Mundo {
   };
   return crearMundo({
     flujo: o.flujo ?? PRODUCCION,
-    dobles,
+    dobles: { ...dobles, ...(o.dobles ?? {}) },
     roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)'], avisos: ['Enviar aviso'] },
     ahoraMs: AHORA,
     configBase: {
