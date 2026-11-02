@@ -12,9 +12,9 @@ import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import type { Doble } from '../../lib/n8n-de-mentira';
 // @ts-expect-error módulo .mjs sin tipos
-import { hallazgosCrm, inyectarMapa } from '../../../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
+import { hallazgosCrm, inyectarMapa, urlEncabezados } from '../../../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { CREDENCIAL_CRM, NODOS_DE_CRM, guardias } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
+import { CREDENCIAL_CRM, NODOS_DE_CRM, anfitrionPermitido, guardias } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
 import { ANA, BETO, CARPETA, PRODUCCION, PRUEBA, crear, datos, hablar, mTexto } from './mundo';
 
 const RAIZ = join(CARPETA, '..', '..', '..');
@@ -37,7 +37,8 @@ const TITULOS: string[] = (() => {
   return todas.filter((c) => c.letra <= 'T').sort((a, b) => a.letra.localeCompare(b.letra)).map((c) => c.titulo);
 })();
 const fila = (n: number, extra: J = {}): { json: J } => ({ json: Object.fromEntries([['row_number', n], ...TITULOS.map((t) => [t, ''])].map(([k, v]) => [k, extra[k as string] ?? v])) });
-const ENCABEZADOS = [fila(4)];
+/** Lo que devuelve «Leer encabezados de la planilla» (Sheets API values.get de la fila 3): SOLO los títulos, aunque la primera fila de datos esté vacía o corta. */
+const ENCABEZADOS = [{ json: { values: [TITULOS] } as J }];
 const IDS = [{ json: { row_number: 4, 'ID Lead': 'LEAD-1010' } }];
 
 /** Un turno ya resuelto, con lo que `Armar mensajes` le pasa a `evProspectoCrm`. */
@@ -197,7 +198,7 @@ function planilla(o: { filas?: Array<{ json: J }>; ids?: Array<{ json: J }>; enc
   const lee = (nombre: string, datos: Array<{ json: J }>): Doble => (ll) => { p.lecturas.push(`${nombre}|${String((((ll.parametros['options'] as J)['dataLocationOnSheet'] as J)['values'] as J)['range'])}`); return datos.map((x) => x.json); };
   p.dobles['Buscar teléfono en planilla'] = lee('buscar', o.filas ?? []);
   p.dobles['Leer IDs de la planilla'] = lee('ids', o.ids ?? IDS);
-  p.dobles['Leer encabezados de la planilla'] = lee('enc', o.enc ?? ENCABEZADOS);
+  p.dobles['Leer encabezados de la planilla'] = (ll) => { p.lecturas.push(`enc|${decodeURIComponent(String(ll.parametros['url'])).replace(/^.*!(A\d+:[A-Z]+\d+)$/, '$1')}`); return (o.enc ?? ENCABEZADOS).map((x) => x.json); };
   p.dobles['Agregar fila'] = (ll) => { p.escrituras.push(ll.item); return {}; };
   p.dobles['Actualizar fila'] = (ll) => { p.actualizaciones.push(ll.item); return {}; };
   return p;
@@ -226,7 +227,7 @@ describe('flujo: quién guarda y quién no', () => {
     hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles }), ANA, mTexto('hola'));
     expect(pl.lecturas).toContain('buscar|A3:T');
     expect(pl.lecturas).toContain('ids|A3:A');
-    expect(pl.lecturas).toContain('enc|A3:T4');
+    expect(pl.lecturas).toContain('enc|A3:T3');
     expect(pl.lecturas.some((l) => /:U|:V/.test(l))).toBe(false);
   });
   it('sin id de planilla (vacío, como en la variante de prueba) NO guarda y ni consulta Google', () => {
@@ -321,12 +322,40 @@ describe('flujo: 48 horas y la fila más reciente', () => {
 
 describe('flujo: lo que se lee mal NO escribe', () => {
   it('encabezados distintos (la fila 3 de la hoja viva no coincide) -> no agrega', () => {
-    const rara = { json: { row_number: 4, 'ID Lead': '', 'Otra cosa': '' } };
+    const rara = { json: { values: [['ID Lead', 'Otra cosa']] } as J };
     const pl = planilla({ enc: [rara] });
     const t = hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles }), ANA, mTexto('hola'));
     expect(corrioLaRama(t)).toBe(true);
     expect(pl.escrituras).toEqual([]);
     expect(String((t.porNodo['Decidir fila de la planilla'] ?? [])[0]?.['veredictoPlanilla'])).toMatch(/^encabezados_distintos/);
+  });
+  // El hallazgo del ensayo del 02/11/2026: con la primera fila de datos corta (celdas finales vacías) la comprobación leía claves de menos y NO escribía nunca.
+  it('la excepción de anfitrión es solo para ese nodo y esa URL exacta', () => {
+    const ok = urlEncabezados('A3:T3');
+    expect(anfitrionPermitido(ok, 'Leer encabezados de la planilla')).toBe(true);
+    expect(anfitrionPermitido(ok, 'Enviar a WhatsApp')).toBe(false); // otro nodo con la misma URL
+    expect(anfitrionPermitido(ok.replace('sheets.googleapis.com', 'example.com'), 'Leer encabezados de la planilla')).toBe(false);
+    expect(anfitrionPermitido(ok.replace('A3:T3', 'A3:T3&x=1'), 'Leer encabezados de la planilla')).toBe(false);
+    expect(anfitrionPermitido(ok.replace('A3:T3', "A3:T3') + 'x"), 'Leer encabezados de la planilla')).toBe(false);
+  });
+  it('encabezados completos con la primera fila de datos VACÍA o corta: SÍ agrega (la comprobación lee solo la fila 3)', () => {
+    const pl = planilla({ enc: [{ json: { values: [TITULOS] } as J }] }); // la lectura ya no trae filas de datos
+    const t = hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles }), ANA, mTexto('hola'));
+    expect(pl.escrituras.length).toBe(1);
+    expect(String((t.porNodo['Decidir fila de la planilla'] ?? [])[0]?.['accionPlanilla'])).toBe('agregar');
+  });
+  it.each([
+    ['la fila 3 vacía (Google no devuelve values)', [{ json: {} as J }]],
+    ['la fila 3 con celdas vacías', [{ json: { values: [['', '']] } as J }]],
+    ['un título de menos (falta la T)', [{ json: { values: [TITULOS.slice(0, -1)] } as J }]],
+    ['un título renombrado en la mitad', [{ json: { values: [TITULOS.map((x, i) => (i === 6 ? 'Otro' : x))] } as J }]],
+    ['una columna de más antes de la U', [{ json: { values: [[...TITULOS, 'Sobrante']] } as J }]],
+    ['la lectura falló (error de Google)', [{ json: { error: { message: 'PERMISSION_DENIED' } } as J }]],
+  ])('NO agrega con %s', (_nombre, enc) => {
+    const pl = planilla({ enc: enc as Array<{ json: J }> });
+    const t = hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles }), ANA, mTexto('hola'));
+    expect(pl.escrituras).toEqual([]);
+    expect(String((t.porNodo['Decidir fila de la planilla'] ?? [])[0]?.['accionPlanilla'])).toBe('nada');
   });
   it('si Google falla (permiso denegado) no agrega y la conversación sigue igual', () => {
     const pl = planilla();
@@ -356,7 +385,12 @@ describe('flujo: 0 mensajes agregados', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
       const rama = f.nodes.filter((n) => (NODOS_DE_CRM as string[]).includes(n.name));
       expect(rama).toHaveLength(8);
-      for (const n of rama) expect(['n8n-nodes-base.code', 'n8n-nodes-base.googleSheets', 'n8n-nodes-base.switch']).toContain(n.type);
+      for (const n of rama) expect(['n8n-nodes-base.code', 'n8n-nodes-base.googleSheets', 'n8n-nodes-base.switch', 'n8n-nodes-base.httpRequest']).toContain(n.type);
+      // El único nodo HTTP de la rama es la consulta GET de la fila de encabezados a la API de Sheets: nada que envíe.
+      const http = rama.filter((n) => n.type === 'n8n-nodes-base.httpRequest');
+      expect(http.map((n) => n.name)).toEqual(['Leer encabezados de la planilla']);
+      expect((http[0]!.parameters as J)['method']).toBe('GET');
+      expect(String((http[0]!.parameters as J)['url'])).toMatch(/^=\{\{ 'https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\//);
     }
   });
 });
