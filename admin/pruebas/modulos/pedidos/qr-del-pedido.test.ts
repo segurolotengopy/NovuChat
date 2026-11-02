@@ -16,7 +16,7 @@ const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const FUENTE = readFileSync(join(RAIZ, 'Flujos/src/modulos/pedidos/qr-del-pedido.js'), 'utf8');
 // Se evalúa como lo hace un nodo Code: en un contexto vacío, sin módulos ni globales de Node.
 const M = runInNewContext(`(function () { ${FUENTE}\nreturn { pqrLineas, pqrEntrega, pqrCampos }; })()`, {}) as {
-  pqrLineas: (l: unknown) => J[]; pqrEntrega: (e: unknown) => J; pqrCampos: (r: unknown, l: unknown, e: unknown, s: unknown) => J;
+  pqrLineas: (l: unknown) => J[]; pqrEntrega: (e: unknown) => J; pqrCampos: (r: unknown, l: unknown, e: unknown, s: unknown, c?: unknown) => J;
 };
 
 describe('pqrLineas: solo id, cantidad y detalle', () => {
@@ -156,5 +156,25 @@ describe('NIT/CI: el módulo común no lo menciona y no hay forma de que viaje',
   it('el fuente del módulo no tiene la palabra «facturacion» como campo ni «nit»/«documento» como clave', () => {
     const sinComentarios = FUENTE.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
     expect(sinComentarios).not.toMatch(/facturaci|\bnit\b|documento/i);
+  });
+});
+
+describe('reemplaza: el cat_ del checkout que el chat modificó', () => {
+  const L = [{ id: 'taco', cantidad: 1 }];
+  it('con QR real, líneas y un cat_ válido sale `reemplaza` y ningún otro dato del pedido web', () => {
+    const c = M.pqrCampos('ped-1', L, {}, false, 'cat_mh8x_a1b2c3d4');
+    expect(c['reemplaza']).toBe('cat_mh8x_a1b2c3d4');
+    expect(Object.keys(c).sort()).toEqual(['entrega', 'lineas', 'reemplaza']);
+  });
+  it('negado: simulado, sin líneas, ref cat_, o un reemplaza que no es cat_ válido no lo manda', () => {
+    expect(M.pqrCampos('ped-1', L, {}, true, 'cat_abc')).toEqual({});
+    expect(M.pqrCampos('ped-1', [], {}, false, 'cat_abc')).toEqual({});
+    expect(M.pqrCampos('cat_zzz', L, {}, false, 'cat_abc')).toEqual({});
+    for (const mal of ['ped-1', 'cat_', 'cat_a/b', 'cat_..', 'cat_a b', 'CAT_x', 'xcat_a', 'cat_' + 'a'.repeat(57), 7, null, {}, ['cat_a']]) {
+      expect(M.pqrCampos('ped-1', L, {}, false, mal)['reemplaza']).toBeUndefined();
+    }
+  });
+  it('sin catOriginal nada cambia', () => {
+    expect(Object.keys(M.pqrCampos('ped-1', L, {}, false)).sort()).toEqual(['entrega', 'lineas']);
   });
 });
