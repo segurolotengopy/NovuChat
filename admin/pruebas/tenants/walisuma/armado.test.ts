@@ -224,7 +224,7 @@ describe('lo incluido es byte a byte igual a su fuente', () => {
   });
   it('«Armar mensajes»: librerías + _comun + los constructores de mensajes comunes + su código', () => {
     const libs = LIBS.map(fuente);
-    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('comun-sin-agente/src/mensajes.js'), fuente('comun-sin-agente/src/filtro-redaccion.js'), fuente('walisuma/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
+    const esperado = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('comun-sin-agente/src/mensajes.js'), fuente('comun-sin-agente/src/filtro-redaccion.js'), fuente('../src/modulos/pedidos/qr-del-pedido.js'), fuente('walisuma/src/nodos/armar-mensajes.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar mensajes')).toBe(esperado);
     const avisos = [...libs, fuente('venta-digital/src/nodos/_comun.js'), fuente('comun-sin-agente/src/filtro-redaccion.js'), fuente('walisuma/src/nodos/armar-avisos.js')].join('\n\n') + '\n';
     expect(codigo(PRODUCCION, 'Armar avisos')).toBe(avisos);
