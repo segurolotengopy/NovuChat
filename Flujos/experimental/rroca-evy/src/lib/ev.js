@@ -1121,6 +1121,96 @@ function evPideComparativo(texto) {
 }
 
 // =============================================================================
+// EL PROSPECTO PARA LA PLANILLA DEL miniCRM (módulo `crm`, F1 del 31/10/2026). Función PURA: del turno ya resuelto a lo que va a la hoja. Todo lo que sale es de VOCABULARIO CERRADO o un token que el código
+// extrajo: el texto libre del cliente (lo que cuenta de su salud, por ejemplo) no llega nunca a la hoja. Señales (DP3): aceptó agendar, pidió que la llamen, pidió la ubicación, llegó por un anuncio,
+// preguntó el precio y cerró. NO hay detector de «no es paciente» (DP4): el equipo lo marca a mano en la hoja. MENSAJES: ninguno.
+// -----------------------------------------------------------------------------
+const EV_DIAS_CRM = [['lunes', 'Lunes'], ['martes', 'Martes'], ['miercoles', 'Miércoles'], ['jueves', 'Jueves'], ['viernes', 'Viernes'], ['sabados?', 'Sábado'], ['domingos?', 'Domingo']];
+// Solo los días y franjas que el código reconoce, escritos con SU vocabulario: «tengo diabetes» no pasa porque no es ninguno de ellos.
+function evTokensDePreferencia(preferencia) {
+  const n = evNorm(preferencia);
+  if (n === '' || n.length > 200) return { dia: '', horario: '' };
+  let dia = '';
+  if (/\bpasado manana\b/.test(n)) dia = 'Pasado mañana';
+  else if (/\bhoy\b/.test(n)) dia = 'Hoy';
+  else if (/\b(?:fin de semana|finde)\b/.test(n)) dia = 'Fin de semana';
+  else if (/\b(?:proxima semana|semana que viene)\b/.test(n)) dia = 'Próxima semana';
+  else if (/\besta semana\b/.test(n)) dia = 'Esta semana';
+  else {
+    for (const par of EV_DIAS_CRM) if (new RegExp('\\b' + par[0] + '\\b').test(n)) { dia = par[1]; break; }
+    // «mañana» a secas es el día; «en la mañana», «por la mañana» y «las mañanas» son la franja (más abajo).
+    if (dia === '' && /(?:^|\s)manana\b/.test(n.replace(/\b(?:en|por|de|a) la manana\b/g, ' ').replace(/\b(?:en )?las mananas\b/g, ' '))) dia = 'Mañana';
+  }
+  if (dia === '' && EV_PREFERENCIA_ABIERTA.test(n)) dia = 'Cualquier día';
+  let franja = '';
+  if (/\bmediodia\b/.test(n)) franja = 'Mediodía';
+  else if (/\b(?:(?:en|por|de|a) la manana|(?:en )?las mananas)\b/.test(n)) franja = 'Mañana';
+  else if (/\b(?:(?:en|por|de|a) la tarde|(?:en )?las tardes)\b/.test(n)) franja = 'Tarde';
+  else if (/\b(?:(?:en|por|de|a) la noche|(?:en )?las noches)\b/.test(n)) franja = 'Noche';
+  let hora = '';
+  // am/pm primero («a las 3 pm»): la hora con sufijo se interpreta antes que «a las 3» a secas.
+  const mh = /\b(\d{1,2})(?::(\d{2}))? ?(am|pm)\b/.exec(n) || /\ba las? (\d{1,2})(?: (\d{2}))?\b/.exec(n) || /\b(\d{1,2}):(\d{2})\b/.exec(evTexto(preferencia)) || /\b(\d{1,2}) ?(hs|hrs)\b/.exec(n);
+  if (mh) {
+    let h = Number(mh[1]);
+    const suf = /^(am|pm)$/.test(String(mh[3])) ? mh[3] : '';
+    const m = mh[2] !== undefined && /^\d{2}$/.test(mh[2]) ? Number(mh[2]) : 0;
+    if (suf === 'pm' && h < 12) h += 12;
+    else if (suf === 'am' && h === 12) h = 0;
+    else if (suf === '' && franja === 'Tarde' && h >= 1 && h < 7) h += 12;
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) hora = (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  }
+  return { dia: dia, horario: [franja, hora].filter((x) => x !== '').join(' ') };
+}
+// ¿Preguntó por el precio de un tratamiento? La pregunta por lo gratuito de la valoración no cuenta.
+const EV_PREGUNTA_PRECIO_CRM = /\b(precios?|cuanto (?:me |nos )?(?:cuesta|cuestan|vale|valen|sale|salen|cobran|cobras)|(?:el |su |ese |un )?costo (?:de|del|total)|tarifas?|presupuesto)\b/;
+function evPreguntoPrecio(texto) { return EV_PREGUNTA_PRECIO_CRM.test(evNorm(texto)) && !evPreguntaGratis(texto); }
+/**
+ * d = { from, efectivo (el plan del turno), textoCliente, historial (ANTES del turno), fichaAntes (vigente), preferencia (la de la ficha DESPUÉS del turno), nombre (el dado, de la ficha), nombrePerfil,
+ *       anuncio (bool), llamada (bool), avisoSalio (bool), nuevoContacto (bool), ahoraMs }
+ * Devuelve el prospecto del módulo `crm` (`telefono`, `nombre`, `senales`, `quePidio`, `diaPreferido`, `horarioPreferido`, `derivacion`, `ultimaInteraccionMs`…). Una clave sin valor NO se incluye (jamás `false` ni «No»).
+ */
+function evProspectoCrm(d) {
+  const x = d && typeof d === 'object' ? d : {};
+  const efectivo = String(x.efectivo || '');
+  const antes = x.fichaAntes && typeof x.fichaAntes === 'object' ? x.fichaAntes : {};
+  const historial = Array.isArray(x.historial) ? x.historial : [];
+  const texto = evTexto(x.textoCliente);
+  const derivo = efectivo === 'derivar' || efectivo === 'derivar_corto';
+  const pidioLlamada = (efectivo === 'derivar' && x.llamada === true) || antes.llamadaMs > 0;
+  const aceptoAgendar = (efectivo === 'derivar' && x.llamada !== true) || antes.cierreMs > 0;
+  const pidioUbicacion = texto !== '' && evPideUbicacion(texto);
+  const precioEnLaConversacion = evPreguntoPrecio(texto) || historial.some((h) => h && h.r === 'u' && evPreguntoPrecio(h.t));
+  const cerro = efectivo === 'cierre_amable' || efectivo === 'ofrece_llamada' || (texto !== '' && evDeclina(texto, historial));
+  const senales = {
+    aceptoAgendar: aceptoAgendar === true, pidioLlamada: pidioLlamada === true, pidioUbicacion: pidioUbicacion === true,
+    llegoPorAnuncio: x.anuncio === true, preguntoPrecioYCerro: precioEnLaConversacion && cerro,
+  };
+  let quePidio = '';
+  if (derivo) quePidio = pidioLlamada ? 'Hablar con una persona' : 'Valoración';
+  else if (efectivo === 'comparacion') quePidio = 'Comparación de productos';
+  else if (pidioUbicacion) quePidio = 'Ubicación';
+  else if (evPreguntoPrecio(texto)) quePidio = 'Precio';
+  else if (efectivo === 'medica' || efectivo === 'remision') quePidio = 'Hablar con una persona';
+  let derivacion = '';
+  if (x.avisoSalio === true) {
+    if (derivo) derivacion = pidioLlamada ? 'Pidió llamada' : 'Solicitud de cita';
+    else if (efectivo === 'medica' || efectivo === 'remision') derivacion = 'Consulta para recepción';
+  }
+  const tok = evTokensDePreferencia(x.preferencia);
+  const dado = evPrimerNombre(x.nombre);
+  // El nombre dado es solo el primero: si el del perfil de WhatsApp empieza con él, se escribe el del perfil (con el apellido) y no se degrada un nombre compuesto a su primera palabra.
+  // Seguridad: a la columna C solo van letras (con tildes), espacios, apóstrofo y guion; cualquier otro carácter se descarta.
+  const perfil = evLinea(x.nombrePerfil, 60).replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim();
+  const dadoEnElPerfil = dado !== '' && evNorm(perfil.split(' ')[0]) === evNorm(dado);
+  const p = { telefono: evTexto(x.from).replace(/\D/g, ''), nombre: dadoEnElPerfil ? perfil : (dado || perfil), nombreDePerfil: dado === '', anuncio: x.anuncio === true, nuevoContacto: x.nuevoContacto === true, senales: senales, ultimaInteraccionMs: Number(x.ahoraMs) };
+  if (quePidio !== '') p.quePidio = quePidio;
+  if (tok.dia !== '') p.diaPreferido = tok.dia;
+  if (tok.horario !== '') p.horarioPreferido = tok.horario;
+  if (derivacion !== '') p.derivacion = derivacion;
+  return p;
+}
+
+// =============================================================================
 // OBSERVACIONES DE RUBÉN (decisiones de Andres, 28/10/2026). MISMO BLOQUE en los flujos de las dos doctoras (una prueba lo compara byte a byte). «El prompt no es una barrera»: lo importante lo hace el CÓDIGO.
 // =============================================================================
 

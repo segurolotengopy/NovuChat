@@ -29,9 +29,10 @@
  *   - «Reportar mensaje (entrante)» va ARRIBA de la rama que responde; «Enviar aviso» (imágenes y aviso) corre ANTES de «Armar mensajes»; la prueba nunca usa credenciales de producción.
  */
 import { closeSync, constants, openSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
+import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
 
@@ -41,7 +42,11 @@ export const ARCHIVO_DE_NEGOCIO = join(AQUI, '../../../admin/scripts/datos/rroca
 export const ARCHIVO_DEL_PROMPT = join(AQUI, 'prompts/evy.md');
 // 36 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
 // excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
-export const TOPE_DE_NODOS = 45;
+// 45 + los 8 de la rama del miniCRM (`ramaCrm`, generada por el módulo `crm`; F1 del 31/10/2026): excepción de tope declarada por Andres (DP1, 31/10/2026) en docs/versiones-por-cliente.md.
+export const TOPE_DE_NODOS = 53;
+/** Los 8 nodos de la rama del miniCRM (el módulo `crm` los genera). */
+export const NODOS_DE_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
+export const CREDENCIAL_CRM = (tenant) => `Google Sheets miniCRM (crm-${tenant})`;
 export const ARCHIVO_PRODUCCION = 'rroca-evy.json';
 export const ARCHIVO_PRUEBA = 'rroca-evy.prueba.json';
 
@@ -57,6 +62,8 @@ export const CONFIG = {
     avisos: ['../venta-minima/src/lib/avisos.js'],
     prompt: ['src/lib/prompt-vacio.js'],
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
+    // El miniCRM es un módulo (nunca se copia): los paquetes de código del adaptador general de señales.
+    ...Object.fromEntries(Object.entries(rutasPaqueteCrmSenales()).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
   },
   variantes: [
     { archivo: ARCHIVO_PRODUCCION, quitar: 'Entrada de prueba', nombre: 'se toma de los datos' },
@@ -208,6 +215,9 @@ const FORMAS_CONFIG = {
   topeImagenesDia: /^([0-9]|1[0-9]|20)$/,
   topeAudiosDia: /^([0-9]|[12][0-9]|30)$/,
   topeAvisosHora: /^([0-9]|[1-9][0-9]|1[01][0-9]|120)$/,
+  // La planilla del miniCRM: el id de la hoja de Google (un marcador en el repositorio) y el nombre de su pestaña.
+  planillaProspectosId: /^(REEMPLAZAR_[A-Z0-9_]+|[A-Za-z0-9_-]{25,100})$/,
+  planillaProspectosHoja: /^[\p{L}\p{N}_ .-]{1,100}$/u,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
 // Los textos de «Config base» que viajan a un mensaje o al prompt: sin enlaces, sin llaves ni corchetes.
@@ -241,11 +251,15 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
       if (!['string', 'number', 'boolean'].includes(typeof v)) errores.push(`configBase.${c}: solo texto, número o booleano`);
       if (FORMAS_CONFIG[c] && !FORMAS_CONFIG[c].test(String(v))) errores.push(`configBase.${c}: forma no válida`);
     }
+    for (const c of ['planillaProspectosId', 'planillaProspectosHoja']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
     for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio', 'tenantId', 'clinica', 'arteComparativoMediaId', 'arteAntesDespuesMediaId', 'arteAutoridadMediaId']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
     if (cb.tenantId !== undefined && cb.tenantId !== d.tenant) errores.push('configBase.tenantId: tiene que ser el tenant de este archivo');
     for (const c of TEXTOS_LIBRES) if (typeof cb[c] === 'string' && (/https?:|www\.|wa\.me|[<>{}\[\]]/i.test(cb[c]))) errores.push(`configBase.${c}: no puede llevar enlaces, llaves ni corchetes`);
     if (typeof cb.direccionRespaldo === 'string' && /\d{7,}/.test(cb.direccionRespaldo.replace(/\s/g, ''))) errores.push('configBase.direccionRespaldo: no puede llevar un número largo');
   }
+  // El mapa de columnas del miniCRM: lo valida el MISMO validador que corre en n8n.
+  if (d.crm === undefined) errores.push('crm: falta (el mapa de columnas de la planilla)');
+  else for (const m of validarMapaCrm(d.crm)) errores.push(`crm: ${m}`);
   if (errores.length) throw new Error(`rroca-evy.json: datos no válidos: ${errores.join('; ')}`);
   return d;
 }
@@ -278,7 +292,7 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
 }
 
 /** Lo que un JSON de este flujo no puede tener. `variante`: 'produccion' | 'prueba'. Devuelve la lista de hallazgos (vacía si está limpio). */
-export function guardias(variante, flujo) {
+export function guardias(variante, flujo, mapaCrm) {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   const nombres = new Set(nodos.map((n) => n.name));
@@ -286,12 +300,25 @@ export function guardias(variante, flujo) {
   const p = (n) => (n && n.parameters) || {};
   const conex = (flujo && flujo.connections) || {};
   const destinosDe = (nombre, salida) => (((conex[nombre] || {}).main || [])[salida] || []).map((x) => x.node);
-  if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md)`);
+  if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11), y los 8 de la rama del miniCRM, DP1 del 31/10/2026: docs/versiones-por-cliente.md)`);
   if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
   if (/subscriptions|subscribed_apps/i.test(JSON.stringify(flujo))) h.push('menciona «subscriptions» o «subscribed_apps» (prohibición 7)');
   if (/langchain\.(agent|memory\w*|lmChat\w*|chain\w*)$/i.test(nodos.map((n) => n.type).join('\n'))) h.push('lleva un agente, memoria o modelo de chat de n8n: este flujo no los lleva (el modelo es una llamada HTTP intercambiable)');
   for (const n of [...NODOS_DE_LA_CONVERSACION, ...NODOS_DE_MEDIOS]) if (!nombres.has(n)) h.push(`falta el nodo «${n}»`);
   h.push(...problemasDeReferencias(flujo || {}));
+  // EL miniCRM (módulo `crm`): la rama completa, la credencial del tenant y las barreras del módulo (rangos que no llegan a la letra del diagnóstico del equipo, retención de ejecuciones en `none`).
+  for (const n of NODOS_DE_CRM) if (!nombres.has(n)) h.push(`miniCRM: falta el nodo «${n}»`);
+  if (nombres.has('Prospecto para la planilla') && !destinosDe('Armar mensajes', 0).includes('Prospecto para la planilla')) h.push('miniCRM: «Armar mensajes» no está conectado a «Prospecto para la planilla»');
+  const pros = por('Prospecto para la planilla'); const resumenDelTurno = por('Resumen del turno'); const armado = por('Armar mensajes');
+  if (pros && resumenDelTurno && armado && !(pros.position[1] < resumenDelTurno.position[1] && pros.position[1] > armado.position[1])) h.push('miniCRM: «Prospecto para la planilla» tiene que ir debajo de «Armar mensajes» y encima de «Resumen del turno» en el lienzo (el resumen es la última rama)');
+  for (const n of nodos) {
+    const g = (n.credentials || {}).googleApi;
+    if (g && g.name !== CREDENCIAL_CRM('rroca-evy')) h.push(`miniCRM: «${n.name}» usa una credencial de Google que no es la de este negocio (${CREDENCIAL_CRM('rroca-evy')})`);
+  }
+  let mapa = mapaCrm;
+  if (mapa === undefined) { try { mapa = JSON.parse(leerSiExiste(ARCHIVO_DE_DATOS, 'rroca-evy.json')).crm; } catch (e) { mapa = undefined; } }
+  if (!mapa || !mapa.columnas) h.push('miniCRM: faltan los datos `crm` (el mapa de columnas): sin él no se pueden comprobar los rangos de lectura');
+  else h.push(...hallazgosCrm(flujo || {}, mapa).map((x) => `miniCRM: ${x}`));
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
   // Las imágenes y el aviso SALEN antes de armar el texto: «Armar previos» → «¿Hay previos?» → «Enviar aviso» → «Armar mensajes»; la rama sin previos también llega a «Armar mensajes».
@@ -484,6 +511,8 @@ function hallazgosDeIdentidad(flujo, enFlujo, datos) {
   if (!nombres.length || !nombres.includes(flujo && flujo.name)) h.push('el nombre del flujo no es el de Evy (nombreFlujo ni nombreFlujoPrueba de los datos)');
   for (const [c, v] of Object.entries(datos.configBase || {})) {
     if (typeof v === 'string' && hayMarcador(v)) continue;
+    // La variante de PRUEBA va con el id de la planilla VACÍO a propósito (no escribe en ninguna hoja); vacío en el flujo nunca escribe, así que se acepta.
+    if (c === 'planillaProspectosId' && enFlujo[c] === '') continue;
     if (!coincide(v, enFlujo[c])) h.push(`Config base: ${c} no coincide con los datos de Evy`);
   }
   return h;
@@ -509,6 +538,8 @@ export function guardiaDePublicacion({ flujo, datos, negocio, etapa = 'encender'
   h.push(...hallazgosDeConfig(datos && datos.configBase, 'datos', etapa).filter((x) => !(datos && datos.configBase && datos.configBase.usarMarcas !== 'si' && /arteComparativoMediaId/.test(x))));
   h.push(...hallazgosDelNegocio(negocio));
   h.push(...hallazgosDeMedios(flujo));
+  if (datos && datos.crm) h.push(...hallazgosCrm(flujo || {}, datos.crm).map((x) => `miniCRM: ${x}`));
+  else h.push('miniCRM: los datos no traen el mapa `crm`');
   const nombres = new Set(nodos.map((n) => n.name));
   for (const n of NODOS_DE_LA_CONVERSACION) if (!nombres.has(n)) h.push(`conversación: falta el nodo «${n}»`);
   return h;
@@ -537,15 +568,27 @@ export function armarEvy(proyecto, datos, v) {
   // Primero se quita lo que no corresponde: sus credenciales y rutas no tienen por qué estar resueltas.
   const quitar = new Set(Array.isArray(v.quitar) ? v.quitar : (v.quitar ? [v.quitar] : []));
   plantilla.nodes = plantilla.nodes.filter((n) => !quitar.has(n.name));
+  // LA RAMA DEL miniCRM se GENERA (módulo `crm`), no se copia: 8 nodos debajo de «Armar mensajes» y encima de «Resumen del turno», que sigue siendo el último. La credencial la calcula el tenant, no sale de los datos.
+  const rama = ramaCrm({ credencial: '@@cred:crm', desde: 'Armar mensajes', paquete: 'crm-decidir-senales', x: 5480, y: 640 });
+  plantilla.nodes.push(...rama.nodes);
+  Object.assign(plantilla.connections, rama.connections);
+  const previoDeArmar = (plantilla.connections['Armar mensajes'] && plantilla.connections['Armar mensajes'].main && plantilla.connections['Armar mensajes'].main[0]) || [];
+  plantilla.connections['Armar mensajes'] = { main: [[...previoDeArmar, { node: rama.entrada, type: 'main', index: 0 }]] };
   for (const n of plantilla.nodes) {
     n.parameters = reemplazarTextos(n.parameters, datos, `${donde} · ${n.name}`);
     for (const c of Object.values(n.credentials || {})) {
-      const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini)$/.test(String(c.name)) ? /^@@cred:(ingesta|graph|entradaPrueba|gemini)$/.exec(String(c.name)) : null;
+      const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini|crm)$/.exec(String(c.name));
+      // EXCEPCIÓN DECLARADA a «la prueba nunca usa credenciales de producción» (revisión del PR #741): la variante de prueba lleva el NOMBRE de la credencial del miniCRM del tenant (el id va vacío: no resuelve nada) porque la guardia `miniCRM` exige el mismo nombre en ambas variantes y la prueba no tiene planilla propia; sin id de planilla la rama no escribe (ver crm.test.ts, «id vacío»).
+      if (m && m[1] === 'crm') { c.name = CREDENCIAL_CRM(dato(datos, 'tenant', `${donde} · ${n.name}`)); continue; }
       // La variante de PRUEBA nunca usa las credenciales de producción de Meta ni de Gemini.
       const clave = prueba && m && m[1] === 'graph' ? 'graphPrueba' : (prueba && m && m[1] === 'gemini' ? 'geminiPrueba' : (m ? m[1] : ''));
       if (m) c.name = dato(datos, `credenciales.${clave}`, `${donde} · ${n.name}`);
     }
-    if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos);
+    if (n.name === 'Config base') {
+      n.parameters.assignments.assignments = asignaciones(datos);
+      // La variante de PRUEBA no escribe en ninguna planilla: el id va vacío (nunca la hoja de un cliente real).
+      if (prueba) for (const a of n.parameters.assignments.assignments) if (a.name === 'planillaProspectosId') a.value = '';
+    }
     // El módulo común de medios se INCLUYE desde su fuente (ya leída por el armador genérico, dentro de la raíz): el código queda tal cual, sin una sola edición.
     const js = n.parameters && n.parameters.jsCode;
     const m = typeof js === 'string' ? /^@@medio:([a-z0-9-]+)$/.exec(js) : null;
@@ -576,6 +619,8 @@ export function armarEvy(proyecto, datos, v) {
   injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
+  // El mapa de columnas del tenant (dato, no código) dentro de los nodos del módulo y los rangos de lectura de los nodos de Google.
+  injertarCrm(flujo, datos.crm);
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);
   return JSON.stringify(flujo, null, 2) + '\n';
 }

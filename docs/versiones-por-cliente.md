@@ -197,6 +197,10 @@ El contrato v2 (30/10/2026) quita «¿Anotar medio?» y «Anotar medio»: todo m
 
 **Publicación:** Evy, Emma, Rubén y Antonio se republican UNA vez, después de la etiqueta del servidor v2 (M1b); Q'Taco, chat, captación y Bellido salen ya con esta versión. Hasta entonces `estado-de-versiones.sh` los mostrará atrasados, y es correcto. Walisuma (sin publicar; entró a main con la rama de 11 nodos y 58 nodos): pasa a **56** nodos, tope 58 → 56, y deja de guardar ejecuciones fallidas (`none`), como todos.
 
+## Estado al 31/10/2026 (miniCRM, F1): excepción declarada al tope de nodos de Evy
+
+La rama del miniCRM (`ramaCrm`, módulo `crm`) agrega **8 nodos** a cada flujo que la use. **Evy** (`rroca-evy.json`): 45 -> **53** nodos y tope 45 -> 53; variante de prueba: 40 -> **48**. **Por qué:** miniCRM de las subcuentas, F1; el módulo genera la rama (no se copia). **Aprobado por:** Andres, el 31/10/2026 (DP1). **Lo cierra:** nada; es permanente mientras la rama tenga 8 nodos. **Publicación:** aparte, con su botón; hasta entonces `estado-de-versiones.sh` lo mostrará atrasado, y es correcto. Mensajes por conversación: 0.
+
 > **Excepción de rearquitectura: flujos vivos de `Flujos/experimental/` (Andres, 31/10/2026).**
 > Qué queda distinto: los flujos de `experimental/` (Rubén, Antonio, Evy, Emma,
 > Walisuma, Bellido, Q'Taco, chat NovuChat) conservan su propia variante de los
