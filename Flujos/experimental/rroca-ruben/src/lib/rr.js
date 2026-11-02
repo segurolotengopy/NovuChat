@@ -583,6 +583,38 @@ function rrMotivoDeDerivacion(n) {
 function rrEsDerivar(crudo) {
   return /^derivar\b/.test(rrNorm(crudo));
 }
+// LA UBICACIÓN (31/10/2026; adaptada de Evy, no copiada): el prompt prohíbe enlaces al modelo, así que el enlace de Maps de la Consola lo agrega el CÓDIGO cuando el cliente pide la ubicación. Sin dato (ni enlace válido ni dirección)
+// NO se inventa nada: lo único que se ofrece es pasar con Rubén (aviso + botón), el camino de DERIVAR. «Mapa de Automatización» es un bono del libro y «mi dirección de correo» es del cliente: no son esta pregunta.
+const RR_PIDE_UBICACION = /\b(ubicacion|ubicados|ubicadas|ubicarlos|mapa(?! de )|maps|(?<!\bmi )direccion(?! (?:de )?(?:correo|email|mail|e mail|electronic\w*))|como (?:llego|llegar|llegamos)|donde (?:atienden|se encuentran|se ubican|estan ubicad\w*|queda(?:n)?(?! (?:el|la|los|las|mis|mi) (?:libro|pdf|archivos?|bonos?|material|enlaces?|descarga\w*|curso|videos?|pack|closer))))\b/;
+function rrPideUbicacion(textoCliente) { return RR_PIDE_UBICACION.test(rrNorm(textoCliente)); }
+// EL ENLACE DE GOOGLE MAPS del negocio (`direccionMaps`): LA MISMA regla que `enlaceDeMapaValido` del servidor (https, dominio de mapas de Google, hasta 200 caracteres, sin espacios). Inválido o ausente = ''.
+const RR_ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+function rrEnlaceDeMapa(v) {
+  if (typeof v !== 'string') return '';
+  const t = v.trim();
+  return t.length <= 200 && RR_ENLACE_DE_MAPA.test(t) ? t : '';
+}
+// La dirección en texto de la Consola: una línea, sin enlaces (ya viene saneada de «Config del negocio»; se comprueba otra vez).
+function rrDireccionDeTexto(v) {
+  const t = rrTexto(v).replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 160);
+  return /https?:|www\.|wa\.me|goo\.gl/i.test(t) ? '' : t;
+}
+// ¿El negocio no tiene NADA que dar ante «¿dónde quedan?»? (ni enlace válido ni dirección). Entonces el flujo deriva a Rubén en vez de inventar.
+function rrUbicacionSinDato(cfg) {
+  const c = cfg && typeof cfg === 'object' ? cfg : {};
+  return rrEnlaceDeMapa(c.direccionMaps) === '' && rrDireccionDeTexto(c.direccion) === '';
+}
+// Las líneas que el código agrega a la respuesta del modelo (solo lo que la Consola tiene y el modelo no dijo ya). Sin dato, ninguna.
+function rrLineasDeUbicacion(cfg, texto) {
+  const c = cfg && typeof cfg === 'object' ? cfg : {};
+  const t = rrTexto(texto);
+  const mapa = rrEnlaceDeMapa(c.direccionMaps);
+  const dir = rrDireccionDeTexto(c.direccion);
+  const lineas = [];
+  if (dir && rrNorm(t).indexOf(rrNorm(dir)) < 0) lineas.push('Dirección: ' + dir);
+  if (mapa && t.indexOf(mapa) < 0) lineas.push('📍 Ubicación: ' + mapa);
+  return lineas;
+}
 // El MOTIVO exacto de un aviso por un comprobante que no cuadra, para que Rubén sepa qué mirar. `estado` = lo que dijo el servidor (tardio, en_revision, aproximado) o '' (sin cotejar);
 // `motivoSrv` = el campo `motivo` del cotejo (una lista cerrada; lo desconocido no se copia). Nunca copia texto leído del comprobante.
 function rrMotivoComprobante(estado, motivoSrv) {
