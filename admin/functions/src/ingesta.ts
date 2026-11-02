@@ -33,7 +33,7 @@ import { validarSesion } from './core/turno/sesion.js';
 // H1-6: los campos derivados de Conversaciones (búsqueda y no leídos). Son más
 // campos en los MISMOS create/set de la transacción: cero lecturas ni escrituras
 // nuevas y cero mensajes. Los escribe el Core para todos los comercios, inertes.
-import { decidirPausa, persistirVencimientoDeIngesta, conPausa, estaBloqueada } from './core/conversacion/pausa.js';
+import { decidirPausa, persistirVencimientoDeIngesta, conPausa } from './core/conversacion/pausa.js';
 import { camposDeConversacionPorMensaje, camposDeMensajeIndexado } from './core/conversacion/derivados.js';
 import {
   HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
@@ -863,7 +863,8 @@ export const ingesta = onRequest(
       const marcas = (conversacion.data() ?? {}) as MarcasDeConteo;
       // CONTACTO BLOQUEADO (31/10/2026): un entrante de una conversación con `bloqueada === true` NO se cuenta.
       // Se decide ANTES de cualquier conteo, corte, aviso o métrica; ver la rama `bloqueadoPorContacto` más abajo.
-      const bloqueadoPorContacto = mensaje.direccion === 'entrante' && estaBloqueada(conversacion.get('bloqueada'));
+      // REVERSIÓN (core/bloquear-reversion): el bloqueo ya no se consulta; la compuerta queda inerte.
+      const bloqueadoPorContacto = false as boolean;
       const conteo = contadoresDelMensaje(marcas, periodo, mensaje.direccion, ahoraMs, mensaje.texto);
 
       // Se mira lo guardado ANTES de aplicar este mensaje: el estado describe
@@ -1727,7 +1728,7 @@ export const configuracionFlujo = onRequest(
           // 'bloqueado' y aviso vacío; `atencionEstado` del documento no se toca.
           // CONTACTO BLOQUEADO (31/10/2026): misma compuerta, silencio total (aviso vacío). Manda sobre la pausa:
           // con ambos, la respuesta lleva solo `bloqueadoPorContacto`.
-          const bloqueada = estaBloqueada(marcas['bloqueada']);
+          const bloqueada = false as boolean; // REVERSIÓN: el bloqueo ya no se consulta
           const pausada = !bloqueada && decidirPausa(marcas['turno'], marcas['ultimoEntranteEn'], ahoraMs).pausada;
           return {
             ...conPausa(estado, pausada || bloqueada),
