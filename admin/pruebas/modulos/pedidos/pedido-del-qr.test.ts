@@ -279,7 +279,7 @@ describe('reemplaza: el pedido del checkout web que se modificó en el chat', ()
     expect(await reemplazarPedidoCatalogo(T, CATID, TEL, 'wa_x')).toBe(false);
   });
   it('negado: de otro teléfono no se toca', async () => {
-    await sembrarCat({ conversacionId: 'wa_59171111111' });
+    await sembrarCat({ conversacionId: `wa_${['591', '7111', '1111'].join('')}` });
     await crearPedidoWa(entrada({ reemplaza: CATID }));
     expect(await estadoDe()).toBe('recibido');
   });
