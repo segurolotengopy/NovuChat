@@ -33,6 +33,7 @@ import {
   query, orderBy, limit, where, documentId, collectionGroup,
   serverTimestamp, Timestamp, addDoc, deleteField, writeBatch, increment, getCountFromServer,
 } from 'firebase/firestore';
+import { modulosDeFlujos, type IdFlujo } from '../functions/src/registro.ts';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -192,7 +193,7 @@ beforeEach(async () => {
       // A y C: agendamiento. B y D: venta y cobro. Así cada prueba de vertical
       // tiene un comercio de cada tipo con el que contrastar.
       const vertical = (t === B || t === D) ? 'venta' : 'agendamiento';
-      await setDoc(doc(db, 'tenants', t), { nombre: t, estado, plan: 'basico', vertical });
+      await setDoc(doc(db, 'tenants', t), { nombre: t, estado, plan: 'basico', vertical, modulos: modulosDeFlujos([vertical as IdFlujo]) });
       await setDoc(doc(db, `tenants/${t}/config/negocio`), {
         nombreNegocio: t, direccion: 'Calle Falsa 100',
         tratamiento: 'usted', estiloEmojis: 'pocos',
@@ -300,7 +301,7 @@ beforeEach(async () => {
     // `onboarding` es de NovuChat y no del comercio.
     await setDoc(doc(db, 'tenants', E), {
       nombre: E, estado: 'activo', plan: 'basico',
-      vertical: 'onboarding', flujos: ['onboarding'],
+      vertical: 'onboarding', flujos: ['onboarding'], modulos: modulosDeFlujos(['onboarding']),
     });
     await setDoc(doc(db, `tenants/${E}/config/negocio`), {
       nombreNegocio: 'NovuChat', actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
@@ -2133,7 +2134,7 @@ describe('Un negocio con VARIOS flujos: la lista manda, no el valor', () => {
   const conFlujos = (t: string, flujos: string[], vertical = 'agendamiento') =>
     entorno.withSecurityRulesDisabled(async (ctx) => {
       const db = ctx.firestore();
-      await setDoc(doc(db, 'tenants', t), { nombre: t, estado: 'activo', plan: 'basico', vertical, flujos });
+      await setDoc(doc(db, 'tenants', t), { nombre: t, estado: 'activo', plan: 'basico', vertical, flujos, modulos: modulosDeFlujos(flujos as IdFlujo[]) });
       // Los documentos de configuración los crea el alta (SDK Admin), nunca el
       // navegador: la regla tiene `allow create: if false`.
       for (const f of flujos) {
@@ -2169,9 +2170,12 @@ describe('Un negocio con VARIOS flujos: la lista manda, no el valor', () => {
       { costoDelivery: 12, ...sello('u-admin-a') }));
   });
 
-  it('una ficha SIN lista se sigue leyendo por el valor: lo ya cargado no cambia', async () => {
-    // B viene de la semilla con `vertical: 'venta'` y sin `flujos`.
-    await assertSucceeds(updateDoc(doc(adminB(), `tenants/${B}/config/venta`),
+  it('H2b-cierre: una ficha SIN `modulos` no abre nada, ni por `vertical` ni por `flujos` (falla cerrado)', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'tenants', B),
+        { nombre: B, estado: 'activo', plan: 'basico', vertical: 'venta', flujos: ['venta'] });
+    });
+    await assertFails(updateDoc(doc(adminB(), `tenants/${B}/config/venta`),
       { costoDelivery: 12, ...sello('u-admin-b') }));
     await assertFails(setDoc(doc(adminB(), `tenants/${B}/funcionarios/f-x`),
       funcionario('u-admin-b')));

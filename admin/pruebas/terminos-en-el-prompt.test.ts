@@ -13,6 +13,7 @@
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
@@ -74,7 +75,7 @@ interface Siembra {
 async function sembrar(c: Comercio, s: Siembra = {}): Promise<void> {
   await db.recursiveDelete(db.doc(`tenants/${c.t}`));
   await db.doc(`rutasWhatsApp/${c.numero}`).set({ tenantId: c.t, flujo: 'agendamiento', aliasSecreto: c.alias, estado: 'activo' });
-  await db.doc(`tenants/${c.t}`).set({ nombre: 'Terminos', estado: 'activo', flujos: ['agendamiento'] });
+  await db.doc(`tenants/${c.t}`).set({ nombre: 'Terminos', estado: 'activo', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
   await db.doc(`tenants/${c.t}/cuenta/estado`).set({ limites: { campanas: 5 } });
   const id = s.id ?? ID;
   const nombre = s.nombre ?? NOMBRE;

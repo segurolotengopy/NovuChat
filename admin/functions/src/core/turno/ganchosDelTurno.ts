@@ -1,5 +1,5 @@
 import {
-  IDS_MODULOS, MODULOS_COMUNES_HOY, PUENTE_DE_FLUJOS, esModulo, type IdModulo,
+  IDS_MODULOS, MODULOS_COMUNES_HOY, FLUJOS_DE_RUTA, esModulo, type IdModulo,
 } from '../../registro.js';
 
 /**
@@ -152,22 +152,21 @@ const comoLista = (v: unknown): readonly string[] | null =>
  * existe (un valor raro en la ruta no enciende nada por su cuenta).
  */
 function modulosDelFlujo(flujoRuta: string): readonly IdModulo[] {
-  const puente = PUENTE_DE_FLUJOS as Readonly<Record<string, { readonly modulos: readonly IdModulo[] }>>;
+  const puente = FLUJOS_DE_RUTA as Readonly<Record<string, { readonly modulos: readonly IdModulo[] }>>;
   return Object.prototype.hasOwnProperty.call(puente, flujoRuta) ? (puente[flujoRuta]?.modulos ?? []) : [];
 }
 
 /**
- * Los modulos ENCENDIDOS de la ficha. Con `modulos` (la lista que escribe la
- * migracion de H2b) manda esa lista; sin ella —ficha vieja— se derivan de sus
- * `flujos` por el puente mas los comunes de hoy (todo comercio los tiene), que
- * es lo que hoy hace cada comercio sin saberlo.
+ * Los modulos ENCENDIDOS de la ficha: solo los de la lista `modulos`; sin ella,
+ * ninguno (H2b-cierre).
  * Lo desconocido se ignora: un id que no es modulo no enciende nada.
  */
 function modulosEncendidos(ficha: FichaDelTurno): ReadonlySet<IdModulo> {
+  // H2b-cierre: `modulos` es la unica fuente. Sin lista (ficha vieja, `flujos`
+  // sueltos, nula) no hay ningun modulo encendido: falla cerrado, como las reglas.
   const propios = comoLista(ficha?.['modulos']);
   if (propios !== null) return new Set(propios.filter(esModulo));
-  const flujos = comoLista(ficha?.['flujos']) ?? [];
-  return new Set<IdModulo>([...MODULOS_COMUNES_HOY, ...flujos.flatMap((f) => modulosDelFlujo(f))]);
+  return new Set<IdModulo>();
 }
 
 /**
@@ -181,8 +180,8 @@ function modulosEncendidos(ficha: FichaDelTurno): ReadonlySet<IdModulo> {
  *    ficha apaga (Campañas con limite 0) no corre.
  *  - El orden es el del registro, no el de la lista de la ficha: dos fichas con
  *    la misma lista en distinto orden dan el mismo recorrido.
- *  - Una ficha sin lista (`null`, sin `modulos` ni `flujos`) tiene encendidos
- *    solo los comunes de hoy: no inventa modulos de un flujo que no declara.
+ *  - Una ficha sin lista `modulos` (nula, solo `flujos`) no tiene ninguno
+ *    encendido, ni siquiera los comunes: falla cerrado.
  *
  * Pura: sin Firestore, sin reloj. No devuelve nunca un id fuera de `IDS_MODULOS`.
  */

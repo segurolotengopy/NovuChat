@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { alTurnoCampanas } from '../../../functions/src/modulos/campanas/alTurno.ts';
 import { modulosDelTurno, type ContextoDelTurno } from '../../../functions/src/core/turno/ganchosDelTurno.ts';
 
+import { modulosDeFlujos } from '../../../functions/src/registro.ts';
 const CAMPANA = { id: 'c1', texto: 'Promo de prueba', inicio: '2020-01-01', fin: '2099-12-31', estado: 'aprobada' };
 const CON_TITULARES = { ...CAMPANA, titulares: ['Titular de prueba uno'], angulo: 'Angulo de prueba', productoId: 'p1' };
 
@@ -44,13 +45,14 @@ describe('gancho de Campañas', () => {
 
 describe('el coordinador solo llama a los módulos que corren', () => {
   it('captación corre en el número de captación y no en el de venta', () => {
-    const ficha = { flujos: ['onboarding', 'venta'] };
+    const ficha = { flujos: ['onboarding', 'venta'], modulos: modulosDeFlujos(['onboarding', 'venta'] as never[]) };
     expect(modulosDelTurno(ficha, 'onboarding')).toContain('captacion');
     expect(modulosDelTurno(ficha, 'venta')).not.toContain('captacion');
   });
 
-  it('una ficha que apaga campañas no la corre, y una vieja sí (es común)', () => {
+  it('una ficha que apaga campañas no la corre; con `modulos` que la trae sí; una vieja sin `modulos` no corre nada (H2b-cierre)', () => {
     expect(modulosDelTurno({ modulos: ['productos'] }, 'venta')).not.toContain('campanas');
-    expect(modulosDelTurno({ flujos: ['venta'] }, 'venta')).toContain('campanas');
+    expect(modulosDelTurno({ modulos: modulosDeFlujos(['venta']) }, 'venta')).toContain('campanas');
+    expect(modulosDelTurno({ flujos: ['venta'] }, 'venta')).toEqual([]);
   });
 });

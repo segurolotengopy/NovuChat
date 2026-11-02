@@ -24,6 +24,7 @@ import {
 import { MAXIMO_CAMPANAS, PLANES_ASIGNABLES, limiteDeCampanas } from '../functions/src/central/cuenta/planes.ts';
 import { hashCorto } from '../functions/src/central/asistente/comportamiento.ts';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const DIA = 86_400_000;
 const AHORA = Date.now();
@@ -274,7 +275,7 @@ async function configuracion(): Promise<Record<string, unknown>> {
 
 beforeAll(async () => {
   await db.doc(`rutasWhatsApp/${NUMERO}`).set({ tenantId: T, flujo: 'agendamiento', aliasSecreto: 'cliente14', estado: 'activo' });
-  await db.doc(`tenants/${T}`).set({ nombre: 'Campañas', estado: 'activo', flujos: ['agendamiento'] });
+  await db.doc(`tenants/${T}`).set({ nombre: 'Campañas', estado: 'activo', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
   await db.doc(`tenants/${T}/config/negocio`).set({ nombreNegocio: 'Consultorio de prueba', descripcion: 'Pediatría.' });
 });
 

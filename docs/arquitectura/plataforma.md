@@ -187,3 +187,5 @@ en sus mensajes (el texto queda), respalda el metadato (sin bytes, archivo 600 f
 `tenants/{t}/auditoria` (fail-closed). Seco por omisión; idempotente. Ver el contrato de medios v2 §8.4.
 
 Cerrojos de `--aplicar`: `--bucket` explícito y alcanzable, `--confirmar-comercio "<nombre>"`, proyecto en `NOVUCHAT_PROYECTOS_PERMITIDOS`, `--motivo`, `--respaldo-en` (carpeta 0700 fuera del repositorio; el respaldo tiene el teléfono completo: cifrarlo o guardarlo fuera de sincronización y destruirlo a los 30 días: lo hace quien ejecutó la operación, sin job automático). Una ruta fuera de formato o un bucket que no halla los objetos abortan sin borrar metadatos.
+
+El lote `aplicar-modulos-lote.mjs` (derivaba `modulos` desde `flujos`/`vertical`) se usó el 02/11/2026 y se retiró en H2b-cierre: sin lista `modulos` una ficha no tiene módulos.

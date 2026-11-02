@@ -41,6 +41,7 @@ import {
   aCsv, idDeNombre, leerPrecio, partirCsv, validarCsv,
 } from '../../../web/src/central/lib/csv.ts';
 
+import { modulosDeFlujos } from '../../../functions/src/registro.ts';
 // ===========================================================================
 // 1) URL DE IMAGEN
 // ===========================================================================
@@ -557,7 +558,7 @@ beforeEach(async () => {
   await entorno.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     await setDoc(doc(db, 'tenants', A), {
-      nombre: A, estado: 'activo', plan: 'basico', vertical: 'venta', flujos: ['venta'],
+      nombre: A, estado: 'activo', plan: 'basico', vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]),
     });
     await setDoc(doc(db, `tenants/${A}/config/negocio`), {
       nombreNegocio: 'Panadería Demo', tratamiento: 'usted', estiloEmojis: 'pocos',
@@ -625,7 +626,7 @@ describe('El catálogo web es solo del flujo de VENTA', () => {
       const db = ctx.firestore();
       await setDoc(doc(db, 'tenants', AGENDA), {
         nombre: AGENDA, estado: 'activo', plan: 'basico',
-        vertical: 'agendamiento', flujos: ['agendamiento'],
+        vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]),
       });
       await setDoc(doc(db, `tenants/${AGENDA}/config/negocio`), {
         nombreNegocio: 'Salón Demo', tratamiento: 'usted', estiloEmojis: 'pocos',
