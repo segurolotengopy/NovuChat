@@ -29,7 +29,7 @@ import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import { configBase, destinos, type Flujo, type J } from './lib/flujo';
 import { crearMundo, ROLES_POR_OMISION, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
-import { copiarModuloDelGuardado, doblesDelGuardado } from './lib/doble-guardado';
+import { copiarModulosComunesAlTemporal, doblesDelGuardado } from './lib/doble-guardado';
 import { NODOS_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -452,7 +452,7 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
       const datos = join(tmp, 'admin/scripts/datos/venta-minima');
       mkdirSync(vm, { recursive: true });
       mkdirSync(datos, { recursive: true });
-      copiarModuloDelGuardado(tmp);
+      copiarModulosComunesAlTemporal(tmp);
       cpSync(CARPETA_VM, vm, { recursive: true, filter: (src) => !src.endsWith('.local.json') }); // un `.local.json` lleva valores reales: nunca a un temporal
       cpSync(join(AQUI, '../scripts/datos/venta-minima'), datos, { recursive: true });
       modifica(vm, datos);
@@ -3881,7 +3881,7 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
       const datos = join(tmp, 'admin/scripts/datos/venta-minima');
       mkdirSync(vm, { recursive: true });
       mkdirSync(datos, { recursive: true });
-      copiarModuloDelGuardado(tmp);
+      copiarModulosComunesAlTemporal(tmp);
       cpSync(CARPETA_VM, vm, { recursive: true, filter: (src) => !src.endsWith('.local.json') }); // un `.local.json` lleva valores reales: nunca a un temporal
       cpSync(join(AQUI, '../scripts/datos/venta-minima'), datos, { recursive: true });
       modifica(vm, datos);
@@ -6207,5 +6207,68 @@ describe('la pausa por persona: el flujo calla por completo (forma real de la in
     callaPorCompleto(w, c.escribe('hola'), fotoDelEstado(w), 'en pausa', w.estado.extraer);
     reanudar(w);
     expect(c.escribe('hola').mensajes.length).toBeGreaterThan(0);
+  });
+});
+
+describe('PR-4: el `qr_enviado` lleva lineas y entrega para que el servidor cree el pedido wa_ (sin precios ni NIT)', () => {
+  const abierto = (t: ResultadoTurno): J => t.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado') as J;
+
+  it('el QR real lleva las lineas (id, cantidad, detalle) y la entrega; nunca precio, nombre, total ni facturacion', () => {
+    const r = armarPedido();
+    const t0 = confirmarPedido(r);
+    const ev = abierto(t0);
+    expect(ev['lineas']).toEqual([{ id: 'birria1', cantidad: 4, detalle: 'sin cebolla' }]);
+    expect(ev['entrega']).toEqual({ tipo: 'retiro' });
+    for (const l of ev['lineas'] as J[]) expect(Object.keys(l).sort()).toEqual(['cantidad', 'detalle', 'id']);
+    expect(JSON.stringify(ev)).not.toMatch(/facturacion|nit|precio|subtotal|nombre/i);
+  });
+
+  it('con delivery: tipo envio, direccion y referencia unidas, sin <>&', () => {
+    const r = armarPedido({ entrega: 'delivery', extra: { direccion: 'Calle <Falsa> & 123' } });
+    const ev = abierto(confirmarPedido(r));
+    expect((ev['entrega'] as J)['tipo']).toBe('envio');
+    expect(String((ev['entrega'] as J)['direccion'])).toMatch(/^Calle +Falsa +123 · portón verde$/);
+    expect(JSON.stringify(ev['entrega'])).not.toMatch(/[<>&]/);
+  });
+
+  it('negado: «Reenviar QR» (sin evento) no lleva lineas ni entrega', () => {
+    const r = armarPedido();
+    confirmarPedido(r);
+    const recuerdo = r.c.escribe('¿ya llegó?');
+    const reenvio = r.c.toca(idDeBoton(recuerdo, 'Reenviar QR'), 'Reenviar QR');
+    const rep = reenvio.llamadas.ingesta.find((x) => x['direccion'] === 'saliente' && x['tipo'] === 'image') as J;
+    expect(rep['lineas']).toBeUndefined();
+    expect(rep['entrega']).toBeUndefined();
+    expect(rep['evento']).toBeUndefined();
+  });
+
+  it('negado: el QR simulado no lleva lineas ni entrega', () => {
+    const r = armarPedido({ cobro: false, panelExtra: { cobroSimulado: {} }, ventana: 5 });
+    const ev = abierto(confirmarPedido(r));
+    expect(ev['evento']).toBe('qr_enviado');
+    expect(ev['lineas']).toBeUndefined();
+    expect(ev['entrega']).toBeUndefined();
+  });
+
+  it('negado: un NIT o una facturacion que llegue en la extraccion no aparece en el reporte, el aviso ni el cuerpo del reporte', () => {
+    const r = armarPedido({ extra: { nit: 'NIT 4567890', facturacion: { nombre: 'Juan', documento: '4567890' } } });
+    const t = confirmarPedido(r);
+    expect(JSON.stringify(t.llamadas.ingesta)).not.toMatch(/4567890|facturacion/i);
+    expect(JSON.stringify(t.avisos)).not.toMatch(/4567890|facturacion/i);
+    const reporte = QTACO.nodes.find((n) => n.name === 'Reportar mensaje (saliente)') as { parameters: J };
+    expect(String(reporte.parameters['jsonBody'])).not.toMatch(/facturacion/i);
+    expect(String(reporte.parameters['jsonBody'])).toContain("m.evento === 'qr_enviado' && Array.isArray(m.lineas)");
+  });
+
+  it('el mismo pedido confirmado dos veces desde el mismo estado reporta la misma referencia y las mismas lineas', () => {
+    const r = armarPedido();
+    const id = idDeBoton(r.resumen, 'Confirmar pedido');
+    const partida = JSON.parse(JSON.stringify(r.w.mundo.sd)) as J;
+    const t1 = r.c.toca(id, 'Confirmar pedido');
+    for (const k of Object.keys(r.w.mundo.sd)) delete r.w.mundo.sd[k];
+    Object.assign(r.w.mundo.sd, JSON.parse(JSON.stringify(partida)));
+    const t2 = r.c.toca(id, 'Confirmar pedido');
+    expect(abierto(t2)['referencia']).toBe(abierto(t1)['referencia']);
+    expect(abierto(t2)['lineas']).toEqual(abierto(t1)['lineas']);
   });
 });

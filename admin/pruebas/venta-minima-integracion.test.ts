@@ -23,7 +23,9 @@ import { ejecutar, type J, type Referencias } from './lib/flujo';
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src');
 const leer = (r: string): string => readFileSync(join(RAIZ, r), 'utf8');
 const LIBRERIAS = ['comun', 'pedido', 'reserva', 'promos', 'avisos', 'cobro'].map((n) => leer(`lib/${n}.js`));
-const LIBS = LIBRERIAS.join('\n');
+// El módulo común de Pedidos (qr-del-pedido.js) va detrás de las librerías propias, como lo arma construir.mjs.
+const PQR = readFileSync(join(RAIZ, '../../../src/modulos/pedidos/qr-del-pedido.js'), 'utf8');
+const LIBS = [...LIBRERIAS, PQR].join('\n');
 const CODIGO: Record<string, string> = {};
 for (const n of ['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'interpretar-lectura', 'decidir-turno', 'plan-del-turno', 'armar-avisos', 'armar-mensajes']) {
   CODIGO[n] = `${LIBS}\n${leer(`nodos/${n}.js`)}`;

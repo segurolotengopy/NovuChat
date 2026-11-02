@@ -85,8 +85,8 @@ export function doblesDelGuardado(o: OpcionesDelGuardado = {}): { dobles: Record
  * los nodos (`Flujos/src/core/medios/guardado-*.js`), en las mismas rutas relativas.
  */
 const FLUJOS_REALES = join(dirname(fileURLToPath(import.meta.url)), '../../../Flujos');
-export function copiarModuloDelGuardado(raiz: string): void {
-  for (const rel of ['experimental/comun-sin-agente/src/guardado.mjs', 'src/core/medios/guardado-preparar.js', 'src/core/medios/guardado-resultado.js', 'src/core/medios/guardado-reintento.js']) {
+export function copiarModulosComunesAlTemporal(raiz: string): void {
+  for (const rel of ['experimental/comun-sin-agente/src/guardado.mjs', 'src/core/medios/guardado-preparar.js', 'src/core/medios/guardado-resultado.js', 'src/core/medios/guardado-reintento.js', 'src/modulos/pedidos/qr-del-pedido.js']) {
     const destino = join(raiz, 'Flujos', rel);
     mkdirSync(dirname(destino), { recursive: true });
     cpSync(join(FLUJOS_REALES, rel), destino);
