@@ -9,8 +9,8 @@ Lee N8N_BASE_URL / N8N_API_KEY / N8N_WORKFLOW_ID del entorno (no los imprime).
 Nunca toca las fichas de prospectos: solo las que terminan en los sufijos dados.
 Regla de Andres (11/10): se resetea antes de decir «pueden probar» y se le avisa.
 Seco por defecto; --aplicar escribe (y exige --respaldo <carpeta>). El PUT sobre un
-flujo activo puede reiniciar sus webhooks: aplicarlo en la ventana de mantenimiento
-23:30-01:30. Si el flujo cambia entre la lectura y la escritura, aborta sin escribir. Antes de escribir, respalda el estado
+flujo activo puede reiniciar sus webhooks: aplicarlo cuando no haya riesgo para el cliente (la ventana
+23:30-01:30 es solo promesa al cliente, no regla interna). Si el flujo cambia entre la lectura y la escritura, aborta sin escribir. Antes de escribir, respalda el estado
 completo (modo 600). Solo cambia staticData: nodos, conexiones y settings se
 reescriben TAL CUAL estan publicados. Verifica al final releyendo el flujo.
 """

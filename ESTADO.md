@@ -57,7 +57,7 @@ sigue cortando en 100/220/500 (bitácora del 11/10) hasta la etiqueta del bloque
   (consola) y H1-7. **Al 17/10, H2 de texto está en `main`** (#503, #504, #506,
   #507, #510, #511 y #512, fusionados); #515 (secreto y permiso) y #516
   (`phoneNumberId`) están en revisión. **Etiqueta de H2 prevista la noche del
-  18/10** (23:30–01:30 como más temprano), condicionada a #515 fusionado y al
+  18/10** (entonces la ventana 23:30–01:30 era regla; hoy es solo promesa al cliente), condicionada a #515 fusionado y al
   despliegue a staging verde con el secreto aplicado; si no, el 19/10. «Tomar»
   sigue apagado para los clientes hasta ensayar H2-F. Medios y plantilla fuera de
   ventana son H3 y esperan una decisión de Andres.
@@ -80,7 +80,7 @@ sigue cortando en 100/220/500 (bitácora del 11/10) hasta la etiqueta del bloque
    adelante lista y probada **antes** de etiquetar).
 2. Bloque 1 de planes y bolsas, bloqueante para vender la bolsa; después el bloque 2.
 3. Operar Conversaciones en Q'Taco: índices `READY`, invocador, relleno y bandera,
-   con la ventana 23:30–01:30 y el «sí» de Andres.
+   a cualquier hora, con el «sí» de Andres.
 4. Traslado de Q'Taco a su WABA y cambio al relé de envíos (~07/11).
 
 ## Requiere a Andres (cada una con su «sí»; las corre Claude)
