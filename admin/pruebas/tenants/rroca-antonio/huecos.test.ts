@@ -102,6 +102,9 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
     // Las líneas de comentario propias y los `Object.assign` sin la oferta se declaran en PROPIO.md; aquí se fija lo que cambia de comportamiento.
     const codigo = propias.filter((l) => !l.trim().startsWith('//'));
     expect(codigo).toEqual([
+      // La ubicación (02/11/2026): el enlace de Maps con LA MISMA regla que el servidor y la dirección en texto, de la Consola.
+      'const ENLACE_DE_MAPA = /^https:\\/\\/(maps\\.app\\.goo\\.gl|goo\\.gl\\/maps|www\\.google\\.com\\/maps|google\\.com\\/maps|maps\\.google\\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;',
+      "const enlaceDeMapa = (v) => (typeof v === 'string' && v.trim().length <= 200 && ENLACE_DE_MAPA.test(v.trim()) ? v.trim() : '');",
       '  cfg = {',
       '    ...deBase, ...atencion,',
       '  };',
@@ -109,6 +112,8 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
       '    ...deBase, ...atencion,',
       '  };',
       // Fase 2 del rehecho de Antonio: los anuncios de la Consola (≤ 20), solo en la rama 200.
+      '    direccion: util(dn.direccion) && !/https?:|www\\.|wa\\.me|maps|goo\\.gl/i.test(dn.direccion) ? linea(dn.direccion, 160) || undefined : undefined,',
+      '    direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,',
       '  const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === \'object\' && !Array.isArray(a)).slice(0, 20) : [];',
       '  cfg = {',
       '    ...deBase, ...deLaConsola, ...atencion, anuncios,',

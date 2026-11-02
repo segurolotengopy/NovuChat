@@ -823,6 +823,9 @@ describe('REHECHO · el armado: la base común, el core de texto y solo lo propi
       + "  // A lo más 20; solo objetos (lo que no lo es se descarta). Sin anuncios en la respuesta, la lista va vacía y todo queda como antes.\n"
       + "  const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === 'object' && !Array.isArray(a)).slice(0, 20) : [];\n";
     expect(config).toContain(anuncios);
+    // La ubicación (02/11/2026) es lo único más que gana: el enlace de Maps (misma regla que el servidor) y la dirección, de la Consola. Se quita entera para comparar con el origen.
+    config = config.replace(/\/\/ El enlace de Google Maps de la Consola[^\n]*\nconst ENLACE_DE_MAPA[^\n]*\nconst enlaceDeMapa[^\n]*\n\n/, '')
+      .replace(/    \/\/ La ubicación \(02\/11\/2026\)[^\n]*\n    direccion:[^\n]*\n    direccionMaps:[^\n]*\n/, '');
     config = config.replace(anuncios, '').replace('...atencion, anuncios,', '...atencion,')
       .replace('los prefijos permitidos, la atención (los umbrales de uso extendido) y los ANUNCIOS (a lo más 20, solo en la rama 200).', 'los prefijos permitidos y la atención (los umbrales de uso extendido).');
     expect(h(config), 'config-del-negocio.js sin los anuncios').toBe(ORIGEN['config-del-negocio.js']);
