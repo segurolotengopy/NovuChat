@@ -220,7 +220,10 @@ const CRM_COLUMNAS_DE_MAS = '\u0000columnas de mas';
 // Primer encabezado leido que no es el esperado (letra por letra: orden y sin sobrantes), o '' si coinciden. Una fila leida lleva `row_number` aparte.
 // Tras los `esperados` pueden venir, en orden, los de la `cola` (equipo, solo lectura); cualquier otro sobrante es «columnas de mas».
 function crmPrimerEncabezadoDistinto(fila, esperados, cola) {
-  const claves = Object.keys(fila).filter((k) => k !== 'row_number');
+  return crmPrimerDistintoLista(Object.keys(fila).filter((k) => k !== 'row_number'), esperados, cola);
+}
+// Lo mismo sobre una LISTA de titulos (la fila de encabezados tal cual la devuelve Google, en orden de columna).
+function crmPrimerDistintoLista(claves, esperados, cola) {
   for (let i = 0; i < esperados.length; i++) if (claves[i] !== esperados[i]) return esperados[i];
   const resto = claves.slice(esperados.length);
   const tail = Array.isArray(cola) ? cola : [];
@@ -232,12 +235,23 @@ function crmPrimerEncabezadoDistinto(fila, esperados, cola) {
 // no solo la A. `encabezados` = los items que dejo la lectura «Leer encabezados de la planilla» (rango A{fila}:{ultima del bot}{fila+1}: la primera fila
 // de datos trae los titulos como claves). Devuelve '' si coinciden, o el motivo. Lectura vacia (hoja sin filas de datos) = NO agrega (cierra en falla).
 function crmVerificarEncabezados(mapa, encabezados) {
-  const filas = (Array.isArray(encabezados) ? encabezados : []).map((x) => x && x.json).filter((f) => f && f.row_number !== undefined);
+  const items = (Array.isArray(encabezados) ? encabezados : []).map((x) => x && x.json).filter((f) => f && typeof f === 'object');
+  const motivo = (d) => (d === CRM_COLUMNAS_DE_MAS ? 'encabezados_distintos: columnas de más en la fila ' + mapa.filaEncabezados
+    : 'encabezados_distintos: la fila ' + mapa.filaEncabezados + ' no tiene «' + d + '»');
+  // FORMA ACTUAL: «Leer encabezados de la planilla» es una consulta a Google que trae SOLO la fila de encabezados ({ values: [[titulos...]] }). No depende de que la
+  // primera fila de datos tenga valores hasta la ultima columna (Google y n8n omiten las celdas finales vacias de una fila de datos). Fila vacia o ilegible = NO agrega.
+  const conValores = items.find((f) => Array.isArray(f.values));
+  if (conValores) {
+    const fila = Array.isArray(conValores.values[0]) ? conValores.values[0].map((t) => (typeof t === 'string' ? t : String(t == null ? '' : t))) : [];
+    if (!fila.length || fila.every((t) => t === '')) return 'encabezados_distintos: no se pudo leer la fila ' + mapa.filaEncabezados + ' (esta vacia)';
+    const d = crmPrimerDistintoLista(fila, crmEncabezadosEsperados(mapa), crmEncabezadosCola(mapa));
+    return d ? motivo(d) : '';
+  }
+  // FORMA ANTERIOR (compatibilidad): la lectura de Sheets A{fila}:{ultima}{fila+1}, donde la primera fila de datos trae los titulos como claves.
+  const filas = items.filter((f) => f.row_number !== undefined);
   if (!filas.length) return 'encabezados_distintos: no se pudo leer la fila ' + mapa.filaEncabezados + ' (la hoja necesita al menos una fila de datos)';
   const d = crmPrimerEncabezadoDistinto(filas[0], crmEncabezadosEsperados(mapa), crmEncabezadosCola(mapa));
-  if (!d) return '';
-  return d === CRM_COLUMNAS_DE_MAS ? 'encabezados_distintos: columnas de más en la fila ' + mapa.filaEncabezados
-    : 'encabezados_distintos: la fila ' + mapa.filaEncabezados + ' no tiene «' + d + '»';
+  return d ? motivo(d) : '';
 }
 // CONTRATO CRM_ADAPTADOR = { calificar(prospecto), resumir(prospecto, conEstado, calificacionFinal), prioridad: [de menor a mayor] }. Lista de errores (vacia = valido).
 function crmAdaptadorValido(a) {

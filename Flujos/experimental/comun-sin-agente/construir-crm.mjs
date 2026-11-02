@@ -56,7 +56,9 @@ const nodo = (flujo, nombre) => {
 
 export const NODO_ENCABEZADOS = 'Leer encabezados de la planilla';
 /** El rango que lee la fila de encabezados: A{fila}:{ultima del bot}{fila+1}. NUNCA llega a la letra del equipo posterior (diagnostico). */
-export const rangoEncabezados = (mapa) => `A${mapa.filaEncabezados}:${letraBot(mapa)}${mapa.filaEncabezados + 1}`;
+export const rangoEncabezados = (mapa) => `A${mapa.filaEncabezados}:${letraBot(mapa)}${mapa.filaEncabezados}`;
+/** La URL de la consulta de la fila de encabezados (Google Sheets API, `values.get`): el id y la hoja salen de «Config del negocio»; el rango lo pone el injerto. */
+export const urlEncabezados = (rango) => "={{ 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent($('Config del negocio').first().json.planillaProspectosId) + '/values/' + encodeURIComponent(\"'\" + String($('Config del negocio').first().json.planillaProspectosHoja).replace(/'/g, \"''\") + \"'!" + rango + "\") }}";
 
 /**
  * Injerta el mapa del tenant en un flujo ya armado (objeto): el mapa dentro del codigo de cada nodo que incluye `crm.js` y, en los 4 nodos de Google,
@@ -78,8 +80,8 @@ export function injertarCrm(flujo, mapa) {
   buscar.options.returnFirstMatch = false;
   for (const fl of buscar.filtersUI.values) fl.lookupColumn = mapa.columnas.telefono.titulo;
   const enc = flujo.nodes.find((x) => x.name === NODO_ENCABEZADOS);
-  if (enc) { // la rama `ramaCrm`: la fila de encabezados + la primera de datos, para comprobar la fila COMPLETA antes de agregar
-    enc.parameters.options.dataLocationOnSheet.values.range = rangoEncabezados(mapa);
+  if (enc) { // la rama `ramaCrm`: SOLO la fila de encabezados (no depende de la primera fila de datos), para comprobar la fila COMPLETA antes de agregar
+    enc.parameters.url = urlEncabezados(rangoEncabezados(mapa));
   }
   nodo(flujo, 'Leer IDs de la planilla').parameters.options.dataLocationOnSheet.values.range = `A${f}:A`;
   nodo(flujo, 'Agregar fila').parameters.options.locationDefine.values.headerRow = f;
@@ -115,8 +117,11 @@ export function ramaCrm({ desde = 'Armar mensajes', credencial, paquete = 'crm-d
       filtros: { filtersUI: { values: [{ lookupColumn: 'Teléfono WhatsApp', lookupValue: '={{ $json.telefono }}' }, { lookupColumn: 'Teléfono WhatsApp', lookupValue: "={{ '+' + $json.telefono }}" }] }, combineFilters: 'OR' },
       opciones: { returnFirstMatch: false } }, 'Solo las filas de este telefono y solo hasta la ultima columna del bot; nunca las del equipo.'),
     lectura('leer-ids-de-la-planilla', 'Leer IDs de la planilla', [x + 480, y], 'A3:A', { executeOnce: true }, 'Solo la columna del ID.'),
-    lectura('leer-encabezados-de-la-planilla', NODO_ENCABEZADOS, [x + 720, y], 'A3:J4', { executeOnce: true },
-      'La fila de encabezados completa (con la primera fila de datos) para comprobarla antes de agregar. Hasta la ultima columna del bot.'),
+    { id: 'leer-encabezados-de-la-planilla', name: NODO_ENCABEZADOS, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + 720, y], executeOnce: true,
+      parameters: { method: 'GET', url: urlEncabezados('A3:J3'), authentication: 'predefinedCredentialType', nodeCredentialType: 'googleApi',
+        sendQuery: true, queryParameters: { parameters: [{ name: 'valueRenderOption', value: 'FORMATTED_VALUE' }] }, options: { timeout: 20000 } },
+      credentials: cred, onError: 'continueRegularOutput', alwaysOutputData: true,
+      notes: 'SOLO la fila de encabezados (Sheets API values.get), hasta la ultima columna del bot: no depende de que la primera fila de datos tenga valores hasta el final. Se comprueba antes de agregar.' },
     { id: 'decidir-fila-de-la-planilla', name: 'Decidir fila de la planilla', type: 'n8n-nodes-base.code', typeVersion: 2, position: [x + 960, y], parameters: { jsCode: `@@medio:${paquete}` },
       notes: 'Incluido del módulo crm (no es copia): agrega o actualiza segun lo leido; la clasificacion se calcula por hechos.' },
     { id: 'accion-de-la-planilla', name: NODO_SWITCH, type: 'n8n-nodes-base.switch', typeVersion: 3.2, position: [x + 1200, y],
@@ -179,8 +184,15 @@ export function hallazgosCrm(flujo, mapa) {
   if (enc) {
     const c = ((flujo.connections || {})[NODO_ENCABEZADOS] || {}).main || [];
     if (!c.some((salida) => (salida || []).some((d) => d.node === 'Decidir fila de la planilla'))) h.push(`«Decidir fila de la planilla» tiene que ir conectado despues de «${NODO_ENCABEZADOS}»`);
-    const r = (((enc.parameters || {}).options || {}).dataLocationOnSheet || {}).values;
-    if (!r || r.range !== rangoEncabezados(mapa)) h.push(`«${NODO_ENCABEZADOS}» tiene que leer exactamente ${rangoEncabezados(mapa)}`);
+    if (enc.type === 'n8n-nodes-base.httpRequest' && ((enc.parameters || {}).method !== 'GET' || (enc.parameters || {}).authentication !== 'predefinedCredentialType' || (enc.parameters || {}).nodeCredentialType !== 'googleApi'))
+      h.push(`«${NODO_ENCABEZADOS}» tiene que ser un GET con la credencial googleApi del tenant (autenticacion predefinida)`);
+    if (enc.type !== 'n8n-nodes-base.httpRequest') h.push(`«${NODO_ENCABEZADOS}» tiene que ser la consulta a Google de SOLO la fila de encabezados (httpRequest), no una lectura de Sheets con filas de datos`);
+    else if ((enc.parameters || {}).url !== urlEncabezados(rangoEncabezados(mapa))) {
+      const m = /!(A\d+:([A-Z])\d+)"\) \}\}$/.exec(String((enc.parameters || {}).url ?? ''));
+      if (m && diag && m[2] >= diag) h.push(`«${NODO_ENCABEZADOS}»: el rango «${m[1]}» llega a la letra ${diag} (diagnostico del equipo): puede llevar datos de salud y quedaria en el historial`);
+      if (m && m[2] > ultima) h.push(`«${NODO_ENCABEZADOS}»: el rango «${m[1]}» pasa de la ultima letra del bot (${ultima})`);
+      h.push(`«${NODO_ENCABEZADOS}» tiene que leer exactamente ${rangoEncabezados(mapa)} (solo la fila de encabezados)`);
+    }
   }
   return h;
 }

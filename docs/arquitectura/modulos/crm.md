@@ -144,6 +144,13 @@ bot (A..T en la plantilla; la U no se lee, que es lo que tolera la comparación)
 
 **PR-F0 (31/10/2026), hecho en el módulo.** `crmVerificarEncabezados` (con la lectura `Leer encabezados de la planilla`, rango
 `A{fila}:{ultima del bot}{fila+1}`) exige la fila de encabezados completa antes de AGREGAR; lectura vacía = no agrega (la hoja necesita una fila de datos).
+
+**Corrección del ensayo del 02/11/2026: la comprobación lee SOLO la fila de encabezados.** Con la lectura de Sheets de dos filas, si la primera fila de datos
+tenía celdas finales vacías, n8n omitía esas claves y la comprobación fallaba cerrada: **no escribía nunca** (el ensayo con la hoja de prueba lo mostró). Ahora
+«Leer encabezados de la planilla» es una consulta a la API de Sheets (`values.get`, `A{fila}:{ultima del bot}{fila}`, con la misma credencial del tenant) y
+`crmVerificarEncabezados` compara los títulos de esa fila, en orden y sin sobrantes. No depende de la fila 4. Fila vacía, ilegible, con un título de menos, renombrado
+o de más, o una lectura fallida = no agrega. La forma anterior (claves de la primera fila de datos) sigue aceptada por compatibilidad, pero solo la usan flujos sin ese nodo.
+`hallazgosCrm` exige el nodo `httpRequest` con la URL exacta y el rango sin llegar a la letra del diagnóstico. Sin cambio en captación/chat (no tienen ese nodo). 0 mensajes.
 `adaptador-senales.js` define el contrato `CRM_ADAPTADOR = {calificar, resumir, prioridad}` (validado por `crmAdaptadorValido`; inválido = `adaptador_invalido`):
 Caliente = Alta, Tibio = Media, Frío = Baja, No es lead = Descalificado; el resumen usa solo marcas fijas («Marcado como no lead.», «Derivado a recepción.», «Escribió por WhatsApp.»): el texto libre del cliente (qué pidió, día, horario) va a sus propias columnas y no se copia al resumen. `hallazgosCrm` lo exige el CI sobre cada JSON versionado con miniCRM (`pruebas/modulos/crm/crm-hallazgos-flujos.test.ts`: hay que agregar ahí cada flujo nuevo); `ramaCrm` solo acepta la credencial `@@cred:crm`; la retención exige también `saveManualExecutions: false`. Con ese paquete la lectura de encabezados es
 obligatoria; captación y chat siguen con su adaptador y sin esa lectura (misma salida: oráculo en verde). En `construir-crm.mjs`: `ramaCrm` (8 nodos generados,

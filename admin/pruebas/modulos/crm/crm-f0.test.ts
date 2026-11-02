@@ -13,7 +13,7 @@ import { compileFunction } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { GLOBALES_FUERA_DEL_SANDBOX } from '../../lib/flujo.ts';
 // @ts-expect-error módulo .mjs sin tipos
-import { hallazgosCrm, injertarCrm, inyectarMapa, MARCA_MAPA, NODO_ENCABEZADOS, ramaCrm, rangoEncabezados, rutasPaqueteCrmSenales } from '../../../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
+import { hallazgosCrm, injertarCrm, inyectarMapa, MARCA_MAPA, NODO_ENCABEZADOS, ramaCrm, rangoEncabezados, rutasPaqueteCrmSenales, urlEncabezados } from '../../../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(AQUI, '..', '..', '..', '..');
@@ -90,6 +90,24 @@ describe('verificar encabezados antes de AGREGAR', () => {
     expect(r.accionPlanilla).toBe('nada');
     expect(String(r.veredictoPlanilla)).toMatch(/^no_leida: .*PERMISSION_DENIED$/);
     expect(String(r.veredictoPlanilla)).not.toMatch(/Ana/);
+  });
+  // La lectura ACTUAL trae SOLO la fila 3 ({ values: [[títulos]] }): no depende de la primera fila de datos (Google y n8n omiten sus celdas finales vacías).
+  describe('con la fila 3 leída sola', () => {
+    const fila3 = (titulos: string[] = BOT): Item[] => [{ json: { values: [titulos] } }];
+    it('encabezados completos y en orden: agrega, aunque la fila 4 no tenga valores', () => expect(decidir(p, fila3()).accionPlanilla).toBe('agregar'));
+    it.each([
+      ['sin values (fila 3 vacía)', [{ json: {} }] as Item[], /no se pudo leer la fila 3/],
+      ['values vacío', [{ json: { values: [] } }] as Item[], /no se pudo leer la fila 3/],
+      ['celdas vacías', [{ json: { values: [['', '']] } }] as Item[], /no se pudo leer la fila 3/],
+      ['un título de menos', fila3(BOT.slice(0, -1)), /no tiene «/],
+      ['un título renombrado', fila3(BOT.map((t, i) => (i === 3 ? t + ' (editado)' : t))), /no tiene «/],
+      ['una columna de más', fila3([...BOT, 'Sobrante']), /columnas de más/],
+    ])('NO agrega con %s', (_n, enc, motivo) => {
+      const r = decidir(p, enc);
+      expect(r.accionPlanilla).toBe('nada');
+      expect(String(r.veredictoPlanilla)).toMatch(motivo);
+    });
+    it('una lectura que falló no agrega', () => expect(decidir(p, [{ json: { error: { message: 'PERMISSION_DENIED' } } }]).accionPlanilla).toBe('nada'));
   });
   it('crmVerificarEncabezados devuelve vacío si coincide y el motivo si no', () => {
     expect(M.crmVerificarEncabezados(MAPA, [filaEnc()])).toBe('');
@@ -193,19 +211,25 @@ describe('ramaCrm: 8 nodos generados', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (f.nodes.find((n) => n.name === nombre)!.parameters as any).options.dataLocationOnSheet.values.range as string;
 
-  it('el injerto fija los rangos: A..T, A..T4 y A: ninguno llega a la U', () => {
+  it('el injerto fija los rangos: A..T, A3:T3 (SOLO la fila de encabezados) y A: ninguno llega a la U', () => {
     const f = flujoArmado();
     expect(rangoDe(f, 'Buscar teléfono en planilla')).toBe('A3:T');
-    expect(rangoDe(f, NODO_ENCABEZADOS)).toBe('A3:T4');
+    // «Leer encabezados» es una consulta a Google de la fila 3 y nada más: no lee filas de datos (la comprobación no depende de que la fila 4 tenga valores).
+    const enc = f.nodes.find((n: { name: string }) => n.name === NODO_ENCABEZADOS) as { type: string; parameters: J };
+    expect(enc.type).toBe('n8n-nodes-base.httpRequest');
+    expect(enc.parameters.url).toBe(urlEncabezados('A3:T3'));
     expect(rangoDe(f, 'Leer IDs de la planilla')).toBe('A3:A');
-    expect(rangoEncabezados(MAPA)).toBe('A3:T4');
+    expect(rangoEncabezados(MAPA)).toBe('A3:T3');
     expect(hallazgosCrm(f, MAPA)).toEqual([]);
   });
   it.each([['A3:U'], ['A3:U4'], ['A3:V'], ['A3:Z4']])('se NIEGA un rango como %s (llega a la U o pasa de la T)', (rango) => {
     for (const nombre of ['Buscar teléfono en planilla', NODO_ENCABEZADOS, 'Leer IDs de la planilla']) {
       const f = flujoArmado();
+      const nodo = f.nodes.find((n: { name: string }) => n.name === nombre);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (f.nodes.find((n: { name: string }) => n.name === nombre).parameters as any).options.dataLocationOnSheet.values.range = rango;
+      if (nombre === NODO_ENCABEZADOS) (nodo.parameters as any).url = urlEncabezados(rango.endsWith('U') || rango.endsWith('V') ? rango + '3' : rango);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      else (nodo.parameters as any).options.dataLocationOnSheet.values.range = rango;
       const h = hallazgosCrm(f, MAPA) as string[];
       expect(h.length).toBeGreaterThan(0);
       expect(h.join(' ')).toMatch(/letra U|pasa de la ultima/);
@@ -229,8 +253,19 @@ describe('ramaCrm: 8 nodos generados', () => {
   });
   it('si «Leer encabezados» lee otro rango, es hallazgo', () => {
     const f = flujoArmado();
-    f.nodes.find((n: { name: string }) => n.name === NODO_ENCABEZADOS).parameters.options.dataLocationOnSheet.values.range = 'A3:I4';
-    expect(hallazgosCrm(f, MAPA).join(' ')).toMatch(/tiene que leer exactamente A3:T4/);
+    f.nodes.find((n: { name: string }) => n.name === NODO_ENCABEZADOS).parameters.url = urlEncabezados('A3:I3');
+    expect(hallazgosCrm(f, MAPA).join(' ')).toMatch(/tiene que leer exactamente A3:T3/);
+  });
+  it.each([['method', 'POST'], ['authentication', 'none'], ['nodeCredentialType', 'httpHeaderAuth']])('«Leer encabezados» con %s = %s es hallazgo', (campo, valor) => {
+    const f = flujoArmado();
+    (f.nodes.find((n: { name: string }) => n.name === NODO_ENCABEZADOS).parameters as J)[campo] = valor;
+    expect(hallazgosCrm(f, MAPA).join(' ')).toMatch(/GET con la credencial googleApi/);
+  });
+  it('el nombre de la hoja va entre comillas simples en la URL (hojas con espacios)', () => expect(urlEncabezados('A3:T3')).toContain(`"'" + String($('Config del negocio').first().json.planillaProspectosHoja)`));
+  it('si «Leer encabezados» vuelve a ser una lectura de Sheets con filas de datos, es hallazgo', () => {
+    const f = flujoArmado();
+    f.nodes.find((n: { name: string }) => n.name === NODO_ENCABEZADOS).type = 'n8n-nodes-base.googleSheets';
+    expect(hallazgosCrm(f, MAPA).join(' ')).toMatch(/SOLO la fila de encabezados/);
   });
 });
 
