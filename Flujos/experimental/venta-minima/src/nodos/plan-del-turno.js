@@ -1287,7 +1287,7 @@ function confirmarPedido() {
       // El monto del QR es el del código; el servidor coteja el comprobante contra ESE número (en simulado no se coteja nada).
       // El pedido guarda el modo con que se mandó el QR: un comprobante o un reenvío con otro modo vigente no se acepta.
       const pedConModo = Object.assign({}, ped, { simulado: simulado });
-      mensajes = [{ tipo: 'imagen', cuerpo: pie, url: cobro.qrUrl, evento: 'qr_enviado', referencia: ped.pedidoId, monto: ped.total }];
+      mensajes = [{ tipo: 'imagen', cuerpo: pie, url: cobro.qrUrl, evento: 'qr_enviado', referencia: ped.pedidoId, monto: ped.total, ...pqrCampos(ped.pedidoId, en.carrito, ped, simulado) }];
       pedidoGuardar = pedConModo;
       limpiarCarrito();
       irA('esperando_comprobante');

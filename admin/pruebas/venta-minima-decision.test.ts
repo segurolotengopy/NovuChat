@@ -34,6 +34,8 @@ import { ejecutar } from './lib/flujo';
 const NODOS = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/nodos');
 const DECIDIR = readFileSync(join(NODOS, 'decidir-turno.js'), 'utf8');
 const PLAN = readFileSync(join(NODOS, 'plan-del-turno.js'), 'utf8');
+// El módulo común de Pedidos es REAL (no un doble): construir.mjs lo incluye delante de cada nodo.
+const PQR = readFileSync(join(NODOS, '../../../../src/modulos/pedidos/qr-del-pedido.js'), 'utf8');
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = Record<string, any>;
@@ -186,7 +188,7 @@ function turno(m: Mundo, e: Entrada = {}): Salida {
   const globales = { $getWorkflowStaticData: () => m.global };
   const d = ejecutar(`${DOBLES}\n${DECIDIR}`, [{}], refs, globales)[0]!;
   if (String(d['accion']).startsWith('extraer') && e.extraccion !== undefined) refs['Extraer'] = e.extraccion;
-  const p = ejecutar(`${DOBLES}\n${PLAN}`, [{}], { ...refs, 'Decidir turno': d }, globales)[0]!;
+  const p = ejecutar(`${PQR}\n${DOBLES}\n${PLAN}`, [{}], { ...refs, 'Decidir turno': d }, globales)[0]!;
   // Lo que hace `Armar mensajes` (T7b) con el plan.
   const sd = sdDe(m);
   sd['estados'] ??= {};
@@ -1283,7 +1285,7 @@ describe('Vigencia, botones de promoción y costo en mensajes', () => {
   it('una acción que el plan no conoce se deriva y se anota (nunca se calla)', () => {
     const t: J = { from: FROM, nombrePerfil: 'Ana Pérez', ahoraMs: AHORA, tipo: 'text', texto: 'x' };
     const d = { accion: 'inventada', estado: { paso: 'menu' }, errores: [], texto: 'x' };
-    const p = ejecutar(`${DOBLES}\n${PLAN}`, [{}], { 'Config del negocio': CFG, 'Interpretar entrada': t, 'Decidir turno': d },
+    const p = ejecutar(`${PQR}\n${DOBLES}\n${PLAN}`, [{}], { 'Config del negocio': CFG, 'Interpretar entrada': t, 'Decidir turno': d },
       { $getWorkflowStaticData: () => ({}) })[0]!;
     expect(p['errores']).toContain('accion_desconocida');
     expect(p['aviso']['tipo']).toBe('transferencia');

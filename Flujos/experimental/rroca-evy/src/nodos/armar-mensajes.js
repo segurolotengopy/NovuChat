@@ -160,6 +160,12 @@ if (puerta.ruta === 'fuera_de_prueba') {
 
 // La ficha: un solo lugar, al final del turno. Un número AJENO a la etapa de prueba, o de otro país, no deja ficha. Hasta en un turno sin mensaje (baja previa) se recuerda el id de Meta.
 const sinFicha = puerta.ruta === 'fuera_de_prueba' || t.extranjero === true || !claveOk;
+// LA PLANILLA DEL miniCRM (módulo `crm`): `guardarPlanilla` solo si hay id y hoja, no es la etapa de prueba ni el modo prueba, y el plan es de CONVERSACIÓN (nunca riesgo, baja, nada, suspendido ni uso extendido).
+// El prospecto se arma con `evProspectoCrm` (vocabulario cerrado: el texto libre del cliente no pasa). Sin id vacío, el flujo ni consulta Google.
+const planillaOk = String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';
+const planDeConversacion = ['riesgo', 'baja', 'nada', 'suspendido', 'uso_extendido'].indexOf(efectivo) < 0;
+const guardarPlanilla = planillaOk && cfg.etapaPrueba !== true && !prueba && planDeConversacion && !sinFicha && ms.length > 0;
+let prospectoPlanilla = null;
 if (!sinFicha) {
   const fichas = cnMapaDeFichas(true);
   const ficha = evFichaVigente(cnFichaDe(fichas.mapa, from), ahora);
@@ -190,6 +196,12 @@ if (!sinFicha) {
   const { noContactar, riesgo, comparacionMostrada, ...paraGuardar } = ficha;
   fichas.mapa[from] = paraGuardar;
   evBarrer(fichas.mapa, ahora);
+  if (guardarPlanilla) {
+    // «Contacto nuevo» = sin mensajes en las últimas 48 h (la ficha de ANTES de este turno).
+    const nuevoContacto = !(fichaBruta && Number(fichaBruta.ultimoMs) > 0 && ahora - Number(fichaBruta.ultimoMs) <= EV_OLVIDO_MS);
+    prospectoPlanilla = evProspectoCrm({ from: from, efectivo: efectivo, textoCliente: plan.textoCliente, historial: historiaAntes, fichaAntes: fichaAntes, preferencia: ficha.preferencia, nombre: ficha.nombre,
+      nombrePerfil: t.nombrePerfil, anuncio: t.anuncio === true, llamada: res.llamada === true, avisoSalio: avisoSalio, nuevoContacto: nuevoContacto, ahoraMs: ahora });
+  }
 }
 
 const resumen = { plan: planFinal, mensajes: 0, categoria: t.categoria || '', llamadasModelo: decision.llamarModelo === true ? 1 : 0, imagenes: artesSalidos.length,
@@ -199,9 +211,9 @@ const numero = prueba ? telPrueba : from;
 const sale = ms.length > 0 && numero !== '' && !sinFicha;
 resumen.mensajes = sale ? ms.length : 0;
 if (!sale) {
-  return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen } }];
+  return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen, guardarPlanilla: false, prospectoPlanilla: null } }];
 }
-return ms.map((m) => {
+return ms.map((m, i) => {
   m.payload.to = numero;
   return { json: {
     para: numero, destino: m.para, payload: m.payload, texto: m.texto, respaldo: m.respaldo,
@@ -210,5 +222,6 @@ return ms.map((m) => {
     reportar: !prueba,
     phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion || 'v26.0', from: from, sinMensajes: false,
     plan: resumen.plan, resumen: resumen, hist: hist,
+    guardarPlanilla: i === 0 && prospectoPlanilla !== null, prospectoPlanilla: i === 0 ? prospectoPlanilla : null,
   } };
 });

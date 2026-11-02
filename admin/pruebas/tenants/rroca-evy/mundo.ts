@@ -70,6 +70,8 @@ export interface Opciones {
   modeloDice?: string | null | 'cae' | ((ll: LlamadaDoble) => string);
   /** Lo que devuelven los medios. */
   medio?: { bytes?: number; url?: string; mime?: string; transcripcion?: string | null; vision?: J | null };
+  /** Dobles ADICIONALES por nombre de nodo (p. ej. los nodos de Google Sheets del miniCRM); pisan a los de arriba. */
+  dobles?: Record<string, Doble>;
 }
 /** La consola de Evy, como la devuelve la ingesta: dirección, horario (derivado de `negocio.horarios` con la función del servidor), nombre y recepción. */
 export const panelOk = (extra: J = {}): { statusCode: number; body: J } => {
@@ -122,7 +124,7 @@ export function crear(o: Opciones = {}): Mundo {
   };
   return crearMundo({
     flujo: o.flujo ?? PRODUCCION,
-    dobles,
+    dobles: { ...dobles, ...(o.dobles ?? {}) },
     roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)'], avisos: ['Enviar aviso'] },
     ahoraMs: AHORA,
     configBase: {

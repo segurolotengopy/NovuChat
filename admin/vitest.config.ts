@@ -36,6 +36,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
  * El CI sigue corriendo `pruebas:reglas`: los dos proyectos, con emulador.
  */
 export const SUITES_PURAS = [
+  'pruebas/modulos/agenda/omitir-contactos-bloqueados.test.ts',
   'pruebas/central/cuenta-activa.test.ts',
   'pruebas/central/cuenta-activa-rutas.test.ts',
   'pruebas/core/claims-asignar-rol.test.ts',
@@ -119,6 +120,7 @@ export const SUITES_PURAS = [
   'pruebas/central/comportamiento-pantalla.test.ts',
   'pruebas/central/consola-pagar.test.ts',
   'pruebas/central/consola-oculta.test.ts',
+  'pruebas/plataforma/aplicar-modulos-lote-puras.test.ts',
   'pruebas/plataforma/aplicar-consola-oculta.test.ts',
   'pruebas/plataforma/aplicar-consola-conversaciones.test.ts',
   'pruebas/plataforma/rellenar-conversaciones.test.ts',
@@ -138,6 +140,7 @@ export const SUITES_PURAS = [
   'pruebas/core/nube-visor.test.ts',
   'pruebas/core/cargar-timbre-n8n.test.ts',
   'pruebas/core/texto-tipeo.test.ts',
+  'pruebas/core/new-function-lista-cerrada.test.ts',
   'pruebas/resetear-fichas-chat-novuchat.test.ts',
   'pruebas/core/marcador-desde-archivo.test.ts',
   'pruebas/conteo-bloques.test.ts',

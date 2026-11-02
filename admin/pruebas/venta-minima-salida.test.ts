@@ -33,6 +33,8 @@ const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/expe
 const AVISOS = readFileSync(join(CARPETA, 'armar-avisos.js'), 'utf8');
 const MENSAJES = readFileSync(join(CARPETA, 'armar-mensajes.js'), 'utf8');
 const RESUMEN = readFileSync(join(CARPETA, 'resumen-del-turno.js'), 'utf8');
+// El módulo común de Pedidos (qr-del-pedido.js) es REAL, no un doble: lo que arma el QR lo incluye construir.mjs en cada nodo.
+const PQR = readFileSync(join(CARPETA, '../../../../src/modulos/pedidos/qr-del-pedido.js'), 'utf8') + '\n';
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026, 10:00 en La Paz
 const MIN = 60 * 1000;
@@ -61,7 +63,7 @@ const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\s+
  *    `avDentroDelTopeDiario` lee `sd`; `avContar` escribe en `sd` y SOLO lo llama `Armar mensajes`.
  *  - `reserva.js` (T3): `rsAnotar(sd, from, ahoraMs)` escribe en `sd`; solo lo llama `Armar mensajes`.
  */
-const DOBLES = `
+const DOBLES = PQR + `
 const VM_PROHIBIDAS = ${PROHIBIDAS.toString()};
 function vmNodo(n) { try { const x = $(n); return x && x.isExecuted ? x : null; } catch (e) { return null; } }
 function vmPrimero(n) { const x = vmNodo(n); if (!x) return null; const i = x.first(); return i && i.json ? i.json : null; }
@@ -1153,6 +1155,16 @@ describe('Armar mensajes — S4: «Reenviar QR» sí reenvía, sin reabrir el co
     expect(i).toMatchObject({ referencia: PEDIDO['pedidoId'], monto: 55, tipoReporte: 'image' });
     expect(i['evento']).toBeUndefined();
     expect(r.sd['estados'][CLIENTE].paso).toBe('esperando_comprobante');
+  });
+
+  it('PR-4: lineas y entrega pasan SOLO con el evento qr_enviado, saneadas; el reenvío y los otros eventos no las llevan', () => {
+    const lineas = [{ id: 'taco', cantidad: 2, detalle: 'sin cebolla', precio: 1, nombre: 'X' }, { id: '../mal', cantidad: 1 }];
+    const con = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr({ lineas, entrega: { tipo: 'retiro' } })] });
+    expect(con.items[0]!['lineas']).toEqual([{ id: 'taco', cantidad: 2, detalle: 'sin cebolla' }]);
+    expect(con.items[0]!['entrega']).toEqual({ tipo: 'retiro' });
+    const sin = mensajes(reenvio({ lineas, entrega: { tipo: 'retiro' } }));
+    expect(sin.items[0]!['lineas']).toBeUndefined();
+    expect(sin.items[0]!['entrega']).toBeUndefined();
   });
 
   it('el evento solo lo lleva el QR que el plan pidió como evento (el primer envío)', () => {
