@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { armarPedidoWa } from '../../../functions/src/modulos/pedidos/pedidoDelQr.ts';
@@ -13,8 +14,8 @@ import { armarPedidoWa } from '../../../functions/src/modulos/pedidos/pedidoDelQ
 type J = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const FUENTE = readFileSync(join(RAIZ, 'Flujos/src/modulos/pedidos/qr-del-pedido.js'), 'utf8');
-// Se evalúa como lo hace un nodo Code: el texto del módulo delante, sin módulos ni globales de Node.
-const M = new Function(`${FUENTE}\nreturn { pqrLineas, pqrEntrega, pqrCampos };`)() as {
+// Se evalúa como lo hace un nodo Code: en un contexto vacío, sin módulos ni globales de Node.
+const M = runInNewContext(`(function () { ${FUENTE}\nreturn { pqrLineas, pqrEntrega, pqrCampos }; })()`, {}) as {
   pqrLineas: (l: unknown) => J[]; pqrEntrega: (e: unknown) => J; pqrCampos: (r: unknown, l: unknown, e: unknown, s: unknown) => J;
 };
 
