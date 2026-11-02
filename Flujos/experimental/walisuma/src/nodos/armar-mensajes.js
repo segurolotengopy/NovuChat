@@ -108,6 +108,8 @@ if (puerta.ruta === 'sigue') {
       const imagen = cmMensaje('cliente', Object.assign(cmBase('image'), { image: { id: d.mediaId, caption: pie } }), pie, respaldo, { tipoReporte: 'image' });
       // El evento que ABRE el cobro: `qr_enviado`, con `referencia` (el pedido) y `monto` (el del carrito, en bolivianos). Cobro real: regla 2 (15 minutos, 3 intentos).
       imagen.evento = 'qr_enviado'; imagen.reglaCobro = 2; imagen.referencia = String(d.pedidoId); imagen.monto = d.monto;
+      // Para que el servidor cree el pedido `wa_<referencia>`: solo ids, cantidades y entrega (el servidor recalcula precios y total desde el catálogo).
+      { const pqr = pqrCampos(imagen.referencia, d.lineas, { entrega: d.entrega.modo, direccion: d.entrega.direccion, ciudad: d.entrega.ciudad }, false); if (pqr.lineas) { imagen.lineas = pqr.lineas; imagen.entrega = pqr.entrega; } }
       msgs = [texto(conSaludo(resumen)), imagen];
       nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle }));
       nuevos.entrega = d.entrega; nuevos.cierre = false;
@@ -177,6 +179,7 @@ const salida = msgs.map((m, i) => {
   if (m.reglaCobro === 2) item.reglaCobro = 2;
   if (m.referencia) item.referencia = m.referencia;
   if (m.monto !== undefined) item.monto = m.monto;
+  if (m.evento === 'qr_enviado' && Array.isArray(m.lineas) && m.lineas.length) { item.lineas = m.lineas; if (m.entrega) item.entrega = m.entrega; }
   // «Resumen del turno» lee esto del primer ítem: lo que no salió vuelve a su valor anterior.
   if (i === 0 && Object.keys(ev).length) item.revertirFicha = ev;
   // Solo el ítem del QR (`qr_enviado`) devuelve el cobro a como estaba si SU envío falla: el texto del resumen puede fallar y el QR salir (el servidor ya abrió el cobro).

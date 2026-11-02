@@ -97,6 +97,14 @@ describe('del pedido al QR', () => {
     expect(fichas(m)[ANA].qrHastaMs).toBeGreaterThan(m.ahora());
     expect(fichas(m)[ANA].pedidos).toBe(1);
   });
+  it('el reporte del QR lleva ids, cantidades y entrega para el pedido de la Consola; nunca precio, nombre ni total del modelo', () => {
+    const m = crear({ modeloDice: pide([{ id: BIL, cantidad: 2, precio: 1 }], { entrega: ENTREGA, total: 1 }) });
+    const rep = confirmar(m).llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado') as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect(rep['lineas']).toEqual([expect.objectContaining({ id: BIL, cantidad: 2 })]);
+    expect(rep['entrega']).toBeTruthy();
+    expect(JSON.stringify(rep['lineas'])).not.toMatch(/precio|total|nombre/i);
+    expect(JSON.stringify(rep)).not.toMatch(/factur/i);
+  });
   it('sin la confirmación o sin la entrega completa NO hay QR', () => {
     const sinEntrega = crear({ modeloDice: pide([{ id: BIL, cantidad: 1 }]) });
     const t1 = confirmar(sinEntrega);

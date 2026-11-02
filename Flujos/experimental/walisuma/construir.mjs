@@ -79,6 +79,8 @@ export const CONFIG = {
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
+    // Módulo común de Pedidos: lo que el flujo reporta con `qr_enviado` para que el servidor cree el pedido `wa_<referencia>` (solo ids, cantidades y entrega; nunca precios).
+    'pedidos-qr': ['../../src/modulos/pedidos/qr-del-pedido.js'],
     // Los nodos comunes neutros (zona venta-digital): se piden con `@@vd:<nodo>`.
     'vd-carga-de-entrada': ['../venta-digital/src/nodos/carga-de-entrada.js'],
     'vd-config-del-negocio': ['../venta-digital/src/nodos/config-del-negocio.js'],
@@ -488,7 +490,7 @@ export function armarWalisuma(proyecto, datos, v, origenReceptor = leerReceptorD
   // contra ese número coteja el servidor, y solo viaja si el envío de la imagen fue aceptado. `no_contactar` viaja SIEMPRE.
   const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
   if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes('evento: m.evento')) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
-  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; } return JSON.stringify(r); })() }}";
+  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; if (m.evento === 'qr_enviado' && Array.isArray(m.lineas) && m.lineas.length) { r.lineas = m.lineas; if (m.entrega) r.entrega = m.entrega; } } return JSON.stringify(r); })() }}";
   // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
   injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
