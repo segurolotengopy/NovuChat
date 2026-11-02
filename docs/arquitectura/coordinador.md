@@ -20,7 +20,7 @@ orden del registro.
 ## Dónde vive
 
 El coordinador de turno es `admin/functions/src/ingesta.ts`, en la raíz de
-Functions hasta F3b: tiene su línea de coordinador en `ZONA_POR_ARCHIVO`
+Functions, como coordinador: tiene su línea de coordinador en `ZONA_POR_ARCHIVO`
 (`admin/pruebas/frontera/frontera.ts`). Desde F3b-2e sigue en `SE_PARTE` solo con
 `modulo:agenda` y `modulo:cobros`: salió de él la lógica de Agenda, Campañas,
 Catálogo web y Productos. Queda en
