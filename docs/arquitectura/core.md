@@ -22,7 +22,7 @@ la primera pregunta, «¿lo corre todo tenant igual, aunque no lo vea nadie?».
 se violaba con `ingesta.ts` (core) importando módulos; desde F3b es el
 coordinador (`ingesta.ts` tiene su línea de coordinador en `frontera.ts`, y los
 cruces de `deuda.json` están en cero): llama a los módulos por sus ganchos
-registrados (`coordinador.md`), no con lógica propia. Sigue en `SE_PARTE` con
+registrados (`coordinador.md`), importando los ganchos de cada módulo, no con lógica propia. Sigue en `SE_PARTE` con
 `modulo:agenda` y `modulo:cobros` (queda `cobroRealActivo` y el conteo de señas).
 
 ## Los contratos del core (`Analisis/41` §2)

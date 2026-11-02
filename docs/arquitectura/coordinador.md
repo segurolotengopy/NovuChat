@@ -129,7 +129,8 @@ reexporta ese `registrarCierre` (mismo nombre, mismas opciones y secretos).
 - **La separación seña/prepago:** `sena.ts` ya no importa `ingesta.ts`, así que
   el camino `sena.ts → ingesta.ts → prepago.ts` ya no existe.
 - **§5.1 de `Analisis/41`** manda `ingesta.ts` (coordinador) a `core/turno/`,
-  contra «carpeta = zona»: se resuelve en F3b, al partirla.
+  contra «carpeta = zona»: se resolvió en F3b; `ingesta.ts` queda en la raíz de
+  Functions como coordinador (zona `coordinador`), no en `core/turno/`.
 
 ## Flujo delgado, gradual (`Analisis/41` §6.1.3)
 
