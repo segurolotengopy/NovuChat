@@ -268,6 +268,21 @@ export async function reemplazarPedidoCatalogo(
 }
 
 /**
+ * Aplica `reemplaza` si viene. Nunca lanza. Si el servidor lo niega (otro tenant o teléfono, ya en preparación, forma inválida)
+ * deja un rastro `rechazado` y si falla deja `error_flujo`, ambos SIN id del pedido ni teléfono.
+ */
+async function aplicarReemplazo(e: EntradaPedidoWa, id: string): Promise<void> {
+  if (typeof e.reemplaza !== 'string' || e.reemplaza === '') return;
+  try {
+    if (!(await reemplazarPedidoCatalogo(e.tenantId, e.reemplaza, e.telefono, id))) {
+      await registrar(e.tenantId, { tipo: 'error_flujo', resultado: 'rechazado', codigo: 'pedido_cat_reemplazo_negado', detalle: 'no se marco como reemplazado el pedido del checkout web' });
+    }
+  } catch {
+    try { await registrar(e.tenantId, { tipo: 'error_flujo', resultado: 'fallo', codigo: 'pedido_cat_reemplazo', detalle: 'no se pudo marcar como reemplazado el pedido del checkout web' }); } catch { /* nunca lanza */ }
+  }
+}
+
+/**
  * Crea el pedido. Nunca lanza: si falla, deja un `error_flujo` SIN datos del
  * pedido (ni documento de facturación) y devuelve `error`; el cobro sigue.
  */
@@ -292,7 +307,12 @@ export async function crearPedidoWa(e: EntradaPedidoWa): Promise<ResultadoEscrit
     try {
       await db().doc(`tenants/${e.tenantId}/pedidos/${id}`).create({ ...pedido, creadoEn: Timestamp.now() });
     } catch (err) {
-      if (alreadyExists(err)) return { resultado: 'repetido', id };
+      if (alreadyExists(err)) {
+        // Un reenvío del mismo QR: el reemplazo es idempotente (solo actúa sobre un `cat_` en `recibido`), así que un primer intento
+        // que falló a medias se completa sin duplicar nada.
+        await aplicarReemplazo(e, id);
+        return { resultado: 'repetido', id };
+      }
       throw err;
     }
     const anterior = typeof e.referenciaAnterior === 'string' ? e.referenciaAnterior.trim() : '';
@@ -302,11 +322,7 @@ export async function crearPedidoWa(e: EntradaPedidoWa): Promise<ResultadoEscrit
         try { await registrar(e.tenantId, { tipo: 'error_flujo', resultado: 'fallo', codigo: 'pedido_wa_cierre', detalle: 'no se pudo cerrar el pedido anterior de WhatsApp' }); } catch { /* nunca lanza */ }
       }
     }
-    if (typeof e.reemplaza === 'string' && e.reemplaza !== '') {
-      try { await reemplazarPedidoCatalogo(e.tenantId, e.reemplaza, e.telefono, id); } catch {
-        try { await registrar(e.tenantId, { tipo: 'error_flujo', resultado: 'fallo', codigo: 'pedido_wa_cierre', detalle: 'no se pudo marcar como reemplazado el pedido del checkout web' }); } catch { /* nunca lanza */ }
-      }
-    }
+    await aplicarReemplazo(e, id);
     return { resultado: 'creado', id };
   } catch {
     try {

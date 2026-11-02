@@ -363,7 +363,7 @@ for (const d of AM_lista) {
   if (d.evento) j.evento = d.evento;
   if (d.referencia) j.referencia = d.referencia;
   if (d.monto !== undefined) j.monto = d.monto;
-  if (d.evento === 'qr_enviado' && Array.isArray(d.lineas) && d.lineas.length) { j.lineas = d.lineas; if (d.entrega) j.entrega = d.entrega; }
+  if (d.evento === 'qr_enviado' && Array.isArray(d.lineas) && d.lineas.length) { j.lineas = d.lineas; if (d.entrega) j.entrega = d.entrega; if (typeof d.reemplaza === 'string' && d.reemplaza) j.reemplaza = d.reemplaza; }
   AM_salida.push(j);
 }
 

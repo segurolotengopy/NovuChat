@@ -21,7 +21,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type J } from './lib/flujo';
 import {
-  AHORA, boton, botonesDe, CARPETA_VM, CLIENTE, crear, entrega, estadoDe, idDeBoton, nodoDe, panel, PHONE_ID, QTACO, texto, turno,
+  AHORA, boton, botonesDe, CARPETA_VM, CATALOGO, CLIENTE, crear, entrega, estadoDe, idDeBoton, nodoDe, panel, PHONE_ID, QTACO, texto, turno,
 } from './lib/venta-minima-mundo';
 
 const CARRITO = 'Carrito del catálogo';
@@ -492,6 +492,35 @@ describe('el pedido que llega de la página conserva su `cat_…` como pedidoId 
 // =====================================================================================================
 // COBRO SIMULADO Y REAL SE CRUZAN (revisión del cobro simulado, H2): el comprobante de un pedido de PRUEBA nunca se coteja como real
 // =====================================================================================================
+describe('reemplaza, de punta a punta: el `cat_…` modificado en el chat viaja en el `qr_enviado` real', () => {
+  const CAT = 'cat_abc123_00ff';
+  const abiertos = (w: ReturnType<typeof crear>): J[] => w.mundo.llamadas.ingesta.filter((x) => x['evento'] === 'qr_enviado');
+  it('un cambio real de precio: el QR sale con ped-… y el reporte lleva `reemplaza` (Armar mensajes -> jsonBody), sin precios ni totales', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ pedidoId: CAT }) });
+    const nuevo = CATALOGO.map((i) => (i['id'] === 'birria3' ? { ...i, precio: 60 } : i));
+    w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 200, body: { ...panel(), catalogo: nuevo } });
+    turno(w, boton(idDeBoton(t, 'Confirmar pedido'), 'Confirmar pedido'));
+    expect(abiertos(w)).toHaveLength(0);
+    const r = turno(w, boton(idDeBoton(t, 'Confirmar pedido'), 'Confirmar pedido'));
+    expect(r.ejecutados.has('Armar mensajes')).toBe(true);
+    const q = abiertos(w);
+    expect(q).toHaveLength(1);
+    expect(String(q[0]!['referencia'])).toMatch(/^ped-/);
+    expect(q[0]!['reemplaza']).toBe(CAT);
+    expect(Object.keys(q[0]!).filter((k) => /precio|total|facturaci/i.test(k))).toEqual([]);
+  });
+  it('negado: el `cat_…` intacto sale con su propio id y sin `reemplaza`', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ pedidoId: CAT }) });
+    turno(w, boton(idDeBoton(t, 'Confirmar pedido'), 'Confirmar pedido'));
+    const q = abiertos(w);
+    expect(q).toHaveLength(1);
+    expect(q[0]!['referencia']).toBe(CAT);
+    expect(q[0]!['reemplaza']).toBeUndefined();
+  });
+});
+
 describe('un pedido SIMULADO con el cobro real encendido y una solicitud pendiente: cero cotejos y nada rotulado como pago real', () => {
   const imagen = (): J => ({ type: 'image', image: { id: 'media-9', mime_type: 'image/jpeg' } });
   it('la foto llega, no se baja, no se lee, no se coteja en el servidor y se pasa con una persona; el pedido de prueba se suelta', () => {

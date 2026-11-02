@@ -55,6 +55,24 @@ beforeEach(async () => {
 });
 
 describe('gancho de Pedidos: crea el wa_ solo con QR abierto y líneas', () => {
+  it('reemplaza: con QR abierto y líneas el cat_ de la misma conversación queda en `reemplazado`', async () => {
+    await db.doc(`tenants/${T}/pedidos/cat_g_1`).set({ origen: 'catalogo-web', conversacionId: `wa_${TEL}`, estado: 'recibido' });
+    await despuesDelTurnoPedidos({ ...datos(), reemplaza: 'cat_g_1' });
+    expect((await db.doc(`tenants/${T}/pedidos/cat_g_1`).get()).get('estado')).toBe('reemplazado');
+  });
+  it('reemplaza, negado: sin líneas, sin qr_enviado, efecto no abierto, forma inválida u otro tenant → el cat_ sigue en `recibido`', async () => {
+    await db.doc(`tenants/${T}/pedidos/cat_g_2`).set({ origen: 'catalogo-web', conversacionId: `wa_${TEL}`, estado: 'recibido' });
+    await db.doc(`tenants/${TB}/pedidos/cat_g_2`).set({ origen: 'catalogo-web', conversacionId: `wa_${TEL}`, estado: 'recibido' });
+    await despuesDelTurnoPedidos({ ...datos({ lineas: [] }), reemplaza: 'cat_g_2' });
+    await despuesDelTurnoPedidos({ ...datos({ lineas: undefined }), reemplaza: 'cat_g_2' });
+    await despuesDelTurnoPedidos({ ...datos({ evento: 'cobro_cancelado', efectoDeCobro: 'cancelado', referenciaAnterior: 'ped-0' }), reemplaza: 'cat_g_2' });
+    await despuesDelTurnoPedidos({ ...datos({ efectoDeCobro: 'ignorado' }), reemplaza: 'cat_g_2' });
+    for (const mal of ['ped-1', 'cat_a/b', 'cat_..', '']) await despuesDelTurnoPedidos({ ...datos({ referencia: `ped-m${mal.length}` }), reemplaza: mal });
+    expect((await db.doc(`tenants/${T}/pedidos/cat_g_2`).get()).get('estado')).toBe('recibido');
+    // Con QR abierto pero para el tenant B (el cat_ de B no es el de T): cada tenant toca solo lo suyo.
+    await despuesDelTurnoPedidos({ ...datos({ tenantId: T, referencia: 'ped-b' }), reemplaza: 'cat_g_2' });
+    expect((await db.doc(`tenants/${TB}/pedidos/cat_g_2`).get()).get('estado')).toBe('recibido');
+  });
   it('con lineas y efecto abierto crea wa_<ref> con el precio del catálogo y el teléfono enmascarado', async () => {
     await despuesDelTurnoPedidos(datos());
     const d = await db.doc(`tenants/${T}/pedidos/wa_ped-1`).get();

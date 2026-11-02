@@ -1733,12 +1733,15 @@ function aCarrito() {
   // del estado leido). SOLO si el pedido del flujo es EL de la pagina: el id tiene la forma del checkout, el flujo no quito ni acoto
   // nada, el total coincide con el del servidor y no hay costo de envio (el servidor coteja el comprobante contra el total del pedido
   // `cat_…`, con envio incluido; el QR de este flujo es solo la comida). Cualquier otro caso conserva el id propio `ped-…`.
-  // Aunque el pedido siga con id propio, el `cat_…` original se recuerda: el QR lo reportará como reemplazado.
-  if (/^cat_[A-Za-z0-9_-]{1,56}$/.test(String(c.pedidoId || ''))) en.catOriginal = String(c.pedidoId);
-  const motivoSinId = !/^cat_[A-Za-z0-9_]{1,56}$/.test(String(c.pedidoId || '')) ? 'id_sin_la_forma_del_checkout'
+  // Una sola expresión para «es un id del checkout» (la misma que valida `pqrCampos`).
+  const esCat = /^cat_[A-Za-z0-9_-]{1,56}$/.test(String(c.pedidoId || ''));
+  const motivoSinId = !esCat ? 'id_sin_la_forma_del_checkout'
     : (fuera.length || recortadas.length) ? 'lineas_quitadas_o_acotadas'
       : flujo !== servidor ? 'total_distinto'
         : Math.round((Number(c.costoEnvio) || 0) * 100) !== 0 ? 'con_costo_de_envio' : '';
+  // Aunque el pedido siga con id propio, el `cat_…` original se recuerda: el QR lo reportará como reemplazado. EXCEPTO cuando el único
+  // motivo es el costo de envío: ahí el carrito es el mismo, el `cat_…` es el registro completo (con nota y `costoEnvio`) y el `wa_…` no los lleva.
+  if (esCat && motivoSinId !== 'con_costo_de_envio') en.catOriginal = String(c.pedidoId);
   if (motivoSinId) errores.push('carrito_con_id_propio: ' + motivoSinId);
   else en.pedidoWeb = { id: String(c.pedidoId), huella: huellaDelCarrito() };
 

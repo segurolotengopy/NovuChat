@@ -309,11 +309,27 @@ describe('reemplaza: el pedido del checkout web que se modificó en el chat', ()
     for (const tel of ['', undefined, 'abc']) expect(await reemplazarPedidoCatalogo(T, CATID, tel, 'wa_x')).toBe(false);
     expect(await estadoDe()).toBe('recibido');
   });
-  it('un repetido (ALREADY_EXISTS) no cierra nada: ni el cat_ ni dos veces', async () => {
+  it('un repetido (ALREADY_EXISTS) completa el reemplazo pendiente y no cierra dos veces', async () => {
     await crearPedidoWa(entrada());
     await sembrarCat();
     expect(await crearPedidoWa(entrada({ reemplaza: CATID }))).toEqual({ resultado: 'repetido', id: 'wa_ped-1' });
-    expect(await estadoDe()).toBe('recibido');
+    expect(await estadoDe()).toBe('reemplazado');
+    const en1 = (await db.doc(`tenants/${T}/pedidos/${CATID}`).get()).get('reemplazadoEn');
+    bitacora.registrar.mockClear();
+    expect(await crearPedidoWa(entrada({ reemplaza: CATID }))).toEqual({ resultado: 'repetido', id: 'wa_ped-1' });
+    expect((await db.doc(`tenants/${T}/pedidos/${CATID}`).get()).get('reemplazadoEn')).toEqual(en1);
+    expect(JSON.stringify(bitacora.registrar.mock.calls)).toContain('pedido_cat_reemplazo_negado');
+  });
+  it('rastro: si el servidor lo niega registra `rechazado` sin id ni teléfono', async () => {
+    await sembrarCat({ estado: 'preparando' });
+    await crearPedidoWa(entrada({ reemplaza: CATID }));
+    expect(bitacora.registrar).toHaveBeenCalledTimes(1);
+    const [tenant, ev] = bitacora.registrar.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(tenant).toBe(T);
+    expect(ev).toMatchObject({ tipo: 'error_flujo', resultado: 'rechazado', codigo: 'pedido_cat_reemplazo_negado' });
+    expect(JSON.stringify(ev)).not.toContain(CATID);
+    expect(JSON.stringify(ev)).not.toContain(TEL);
+    expect(await estadoDe()).toBe('preparando');
   });
   it('si no se crea el pedido (sin líneas, módulo apagado) el cat_ queda como estaba', async () => {
     await sembrarCat();
@@ -333,7 +349,8 @@ describe('reemplaza: el pedido del checkout web que se modificó en el chat', ()
       expect(await crearPedidoWa(entrada({ reemplaza: CATID }))).toEqual({ resultado: 'creado', id: 'wa_ped-1' });
     } finally { espia.mockRestore(); }
     expect(bitacora.registrar).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(bitacora.registrar.mock.calls)).toContain('pedido_wa_cierre');
+    expect(JSON.stringify(bitacora.registrar.mock.calls)).toContain('pedido_cat_reemplazo');
+    expect(JSON.stringify(bitacora.registrar.mock.calls)).not.toContain('pedido_wa_cierre');
     expect(JSON.stringify(bitacora.registrar.mock.calls)).not.toContain(CATID);
     expect(JSON.stringify(bitacora.registrar.mock.calls)).not.toContain(TEL);
   });
