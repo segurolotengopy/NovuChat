@@ -564,7 +564,8 @@ export function mensajeDeInterrupcion(estado) {
  * Corre la operación ya validada. `deps`: `{ db, FieldValue, log, marcarEscritura }`; `marcarEscritura(estado)`
  * recibe `escribiendo` justo antes de la escritura, `escrito` apenas vuelve bien y `antes` si Firestore la
  * rechazó por la precondición. Devuelve el código de salida. Importable para probar la precondición con una
- * base que cambia entre la lectura y la escritura.
+ * base que cambia entre la lectura y la escritura. `deps.textoDeshacer` (opcional) reemplaza la línea final «Para deshacer»
+ * (el lote no puede revertir y no recomienda `--revertir`).
  */
 export async function ejecutar(cfg, deps) {
   const { db, FieldValue } = deps;
@@ -690,7 +691,7 @@ export async function ejecutar(cfg, deps) {
     return 3;
   }
   log(`\n  ✓ Escrito y releído: «modulos» = ${lista(d.modulos)}. «flujos» y «vertical» intactos.`);
-  log('  Para deshacer: --revertir con el mismo respaldo, tenant y proyecto.\n');
+  log(deps.textoDeshacer ?? '  Para deshacer: --revertir con el mismo respaldo, tenant y proyecto.\n');
   return 0;
 }
 
