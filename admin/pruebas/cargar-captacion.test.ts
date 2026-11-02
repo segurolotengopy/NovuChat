@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'datos', 'cargar-captacion.mjs');
 const NOVUCHAT = join(aqui, '..', 'scripts', 'datos', 'captacion-novuchat.json');
@@ -50,11 +51,11 @@ beforeAll(async () => {
   for (const t of [T, SIN_FLUJO, SUSPENDIDO]) {
     for (const d of ['config/negocio', 'config/onboarding']) await db.doc(`tenants/${t}/${d}`).delete();
   }
-  await db.doc(`tenants/${T}`).set({ nombre: 'NovuChat', estado: 'activo', vertical: 'onboarding', flujos: ['onboarding'] });
+  await db.doc(`tenants/${T}`).set({ nombre: 'NovuChat', estado: 'activo', vertical: 'onboarding', flujos: ['onboarding'], modulos: modulosDeFlujos(['onboarding'] as never[]) });
   await db.doc(`tenants/${T}/config/negocio`).set({ nombreNegocio: 'NovuChat', zonaHoraria: 'America/La_Paz' });
   await db.doc(`tenants/${T}/config/onboarding`).set({ topeAviso: 25, plantillaAviso: 'solicitud_contacto' });
-  await db.doc(`tenants/${SIN_FLUJO}`).set({ nombre: 'Salón', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'] });
-  await db.doc(`tenants/${SUSPENDIDO}`).set({ nombre: 'Susp', estado: 'suspendido', vertical: 'onboarding', flujos: ['onboarding'] });
+  await db.doc(`tenants/${SIN_FLUJO}`).set({ nombre: 'Salón', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
+  await db.doc(`tenants/${SUSPENDIDO}`).set({ nombre: 'Susp', estado: 'suspendido', vertical: 'onboarding', flujos: ['onboarding'], modulos: modulosDeFlujos(['onboarding'] as never[]) });
 });
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 

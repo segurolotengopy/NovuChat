@@ -82,7 +82,13 @@
 import { closeSync, constants, existsSync, fchmodSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, writeSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { IDS_MODULOS, MODULOS_COMUNES_HOY, modulosDeFicha } from '../../functions/src/registro.ts';
+import { IDS_MODULOS, MODULOS_COMUNES_HOY, modulosDeFicha, modulosDeFlujos, flujosDeFicha } from '../../functions/src/registro.ts';
+
+/**
+ * H2b-cierre: `modulosDeFicha` ya no cae a `flujos`. Esta herramienta compara contra lo que la ficha daba ANTES
+ * de tener `modulos` (los módulos de sus flujos), para decir qué cambia al escribirla.
+ */
+const modulosHoy = (f) => (Array.isArray(f.modulos) ? modulosDeFicha(f) : modulosDeFlujos(flujosDeFicha(f)));
 import { comparar } from './migrar-modulos.mjs';
 
 /** La raíz de ESTE repositorio (admin/scripts/plataforma → tres niveles arriba). */
@@ -394,12 +400,16 @@ export const mismoConjunto = (a, b) => Array.isArray(a) && Array.isArray(b) && i
  */
 export function evaluar(ficha, destino) {
   const f = ficha ?? {};
+  // `actual` es lo REAL tras H2b-cierre (sin lista `modulos`: []); `cambian` se mide contra lo que daban los
+  // `flujos` (`legado`), que es lo que el comercio tenía antes de escribirle la lista.
   const actual = modulosDeFicha(f);
+  const legado = modulosHoy(f);
   const despues = modulosDeFicha({ modulos: destino });
   return {
     actual,
+    legado,
     despues,
-    cambian: IDS_MODULOS.filter((m) => actual.includes(m) !== despues.includes(m)),
+    cambian: IDS_MODULOS.filter((m) => legado.includes(m) !== despues.includes(m)),
     diferencias: comparar(f, destino).diferencias,
     propias: comparar(sinModulos(f)).diferencias,
     yaEscrita: Array.isArray(f.modulos) && JSON.stringify(f.modulos) === JSON.stringify(destino),
@@ -583,7 +593,14 @@ export async function ejecutar(cfg, deps) {
     const lectura = leerRespaldo(cfg.respaldo, cfg);
     if (!lectura.ok) { log(`\n  ✗ ${lectura.motivo}\n`); return 2; }
     const { previo, escrito } = lectura.respaldo;
-    const restaurada = modulosDeFicha(previo.modulosPresente ? { ...sinModulos(ficha), modulos: previo.modulos } : sinModulos(ficha));
+    // H2b-cierre: sin la lista `modulos` una ficha no tiene NINGÚN módulo. Borrar el campo (volver a «ausente»)
+    // le corta todo al comercio, y el diff de «flujos» diría «sin cambios». No se revierte a ausente.
+    if (!previo.modulosPresente) {
+      log('\n  ✗ El respaldo es de una ficha SIN `modulos`: tras H2b-cierre borrar `modulos` corta todo. '
+        + 'No se escribe nada; escriba la lista derivada (aplicar con la lista destino) en vez de revertir.\n');
+      return 2;
+    }
+    const restaurada = modulosDeFicha({ modulos: previo.modulos });
     const actual = modulosDeFicha(ficha);
     const cambian = IDS_MODULOS.filter((m) => actual.includes(m) !== restaurada.includes(m));
     const hoyPresente = Object.prototype.hasOwnProperty.call(ficha, 'modulos');
@@ -634,8 +651,9 @@ export async function ejecutar(cfg, deps) {
   // -------------------------------------------------------- seco y aplicar
   const ev = evaluar(ficha, cfg.modulos);
   log(`\n  ${cfg.aplicar ? 'APLICAR' : 'SECO (solo una lectura)'} · ${rotulo}\n`);
-  log(`  ahora decide el registro por : ${Object.prototype.hasOwnProperty.call(ficha, 'modulos') && Array.isArray(ficha.modulos) ? '«modulos»' : '«flujos»'}`);
-  log(`  módulos de hoy               : ${lista(ev.actual)}`);
+  log(`  ahora decide el registro por : «modulos» (H2b-cierre: sin lista no hay módulos)`);
+  log(`  módulos de hoy               : ${lista(ev.actual)}${Array.isArray(ficha.modulos) ? '' : ' (sin lista «modulos»: ninguno)'}`);
+  if (!Array.isArray(ficha.modulos)) log(`  módulos que daban sus «flujos»: ${lista(ev.legado)}`);
   log(`  módulos de después           : ${lista(ev.despues)}`);
   log('  siete chequeos (antes = «flujos» tal como los leen hoy los lectores; después = la lista nueva):');
   if (ev.diferencias.length === 0) log('    ✓ cero diferencias');

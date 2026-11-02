@@ -50,9 +50,9 @@ const S = 'tenant-s-sin-captacion';
 const D = 'tenant-d-suspendido';
 /** Comercio con captación, dado de baja. */
 const X = 'tenant-x-baja';
-/** Ficha vieja: sin lista `flujos`, con `vertical: 'onboarding'`. */
+/** Ficha vieja SIN `modulos` (solo `flujos`/`vertical` onboarding): falla cerrado. */
 const L = 'tenant-l-legado';
-/** Ficha contradictoria: `vertical: 'onboarding'` pero `flujos: ['venta']`. Manda la lista. */
+/** Ficha contradictoria: `vertical`/`flujos` dicen onboarding pero `modulos` no trae captacion. Manda la lista. */
 const M = 'tenant-m-lista-manda';
 /** Tenant que NO existe en Firestore. */
 const N = 'tenant-n-inexistente';
@@ -131,13 +131,13 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
     await entorno.withSecurityRulesDisabled(async (ctx) => {
       const db = ctx.firestore();
       const fichas: Record<string, object> = {
-        [A]: { estado: 'activo', vertical: 'onboarding', flujos: ['onboarding'] },
-        [B]: { estado: 'activo', vertical: 'onboarding', flujos: ['onboarding'] },
-        [S]: { estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'] },
-        [D]: { estado: 'suspendido', vertical: 'onboarding', flujos: ['onboarding'] },
-        [X]: { estado: 'dado_de_baja', vertical: 'onboarding', flujos: ['onboarding'] },
+        [A]: { estado: 'activo', vertical: 'onboarding', flujos: ['onboarding'], modulos: ['productos', 'campanas', 'captacion'] },
+        [B]: { estado: 'activo', vertical: 'onboarding', flujos: ['onboarding'], modulos: ['productos', 'campanas', 'captacion'] },
+        [S]: { estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: ['productos', 'campanas', 'cobros', 'agenda'] },
+        [D]: { estado: 'suspendido', vertical: 'onboarding', flujos: ['onboarding'], modulos: ['productos', 'campanas', 'captacion'] },
+        [X]: { estado: 'dado_de_baja', vertical: 'onboarding', flujos: ['onboarding'], modulos: ['productos', 'campanas', 'captacion'] },
         [L]: { estado: 'activo', vertical: 'onboarding' },
-        [M]: { estado: 'activo', vertical: 'onboarding', flujos: ['venta'] },
+        [M]: { estado: 'activo', vertical: 'onboarding', flujos: ['onboarding'], modulos: ['productos', 'pedidos'] },
       };
       for (const [t, ficha] of Object.entries(fichas)) {
         await setDoc(doc(db, 'tenants', t), { nombre: t, plan: 'basico', ...ficha });
@@ -170,8 +170,9 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
       await assertSucceeds(pdf(propietario(), A));
     });
 
-    it('ficha vieja sin `flujos` y con vertical onboarding: vale como [vertical]', async () => {
-      await assertSucceeds(pdf(adminL(), L));
+    it('H2b-cierre: ficha vieja SIN `modulos` (vertical/flujos onboarding) NO sube: falla cerrado', async () => {
+      await assertFails(pdf(adminL(), L));
+      await assertFails(pdf(propietario(), L));
     });
   });
 
@@ -248,7 +249,7 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
       await assertFails(pdf(adminS(), S));
     });
 
-    it('con vertical onboarding pero `flujos` sin él, manda la lista y se rechaza', async () => {
+    it('con vertical y flujos onboarding pero `modulos` sin captacion, manda la lista y se rechaza', async () => {
       await assertFails(pdf(adminM(), M));
     });
 

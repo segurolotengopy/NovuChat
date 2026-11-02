@@ -35,6 +35,8 @@ const { contarAgendas } = await import('../functions/src/modulos/agenda/agendasC
 // El plan inicial de las altas (Impulso con su copia de límites), el mismo que
 // escriben `altaTenant` y `alta-comercio.mjs`. Node 22.18+ carga TypeScript.
 import { cuentaInicial } from '../functions/src/central/cuenta/planes.ts';
+// H2b-cierre: `modulos` es la única fuente; la siembra la escribe desde el flujo del comercio.
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 
 // -----------------------------------------------------------------------------
 // Salvaguardas
@@ -202,6 +204,7 @@ async function sembrarComercio({ id, nombre, estado, vertical, telefono, pnid, c
     plan: cuentaInicial().plan,
     vertical,
     flujos: [vertical],
+    modulos: modulosDeFlujos([vertical]),
     waPhoneNumberId: pnid,
     waWabaId: '100000000000001',
     creadoEn: dias(-90),

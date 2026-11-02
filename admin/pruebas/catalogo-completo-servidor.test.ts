@@ -29,6 +29,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
@@ -152,7 +153,7 @@ async function sembrar(
     tenantId: tenant, flujo: o.flujo, aliasSecreto: 'cliente16', estado: 'activo',
   });
   await db.doc(`tenants/${tenant}`).set({
-    nombre: tenant, estado: o.estado ?? 'activo', plan: 'crecimiento', flujos: [o.flujo],
+    nombre: tenant, estado: o.estado ?? 'activo', plan: 'crecimiento', flujos: [o.flujo], modulos: modulosDeFlujos([o.flujo] as never[]),
   });
   await db.doc(`tenants/${tenant}/cuenta/estado`).set({
     plan: 'crecimiento', limites: limitesDe('crecimiento'), modalidad: 'demostracion',
@@ -578,13 +579,13 @@ describe('Los límites del enlace: sin catálogo web, suspendido o de otro flujo
   });
 
   it('un comercio que perdió el flujo `venta` en su ficha: sin enlace', async () => {
-    await db.doc(`tenants/${T_CHICO}`).update({ flujos: ['agendamiento'] });
+    await db.doc(`tenants/${T_CHICO}`).update({ flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
     try {
       const r = await configuracion(T_CHICO, { telefono: TEL, catalogoCompleto: true });
       expect(r.codigo).toBe(200);
       expect(enlaceDe(r)).toBeUndefined();
       expect(await fichasDe(T_CHICO)).toHaveLength(0);
-    } finally { await db.doc(`tenants/${T_CHICO}`).update({ flujos: ['venta'] }); }
+    } finally { await db.doc(`tenants/${T_CHICO}`).update({ flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) }); }
   });
 });
 
@@ -773,11 +774,11 @@ describe('Si no hay enlace, el registro dice por qué (`catalogoEnlaceMotivo`) y
   });
 
   it('el comercio perdió el flujo `venta` en su ficha: `sinVenta`', async () => {
-    await db.doc(`tenants/${T_CHICO}`).update({ flujos: ['agendamiento'] });
+    await db.doc(`tenants/${T_CHICO}`).update({ flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
     try {
       const { log } = await conLog(T_CHICO, { telefono: '70010041', catalogoCompleto: true });
       expect(log).toContain('"catalogoEnlaceMotivo":"sinVenta"');
-    } finally { await db.doc(`tenants/${T_CHICO}`).update({ flujos: ['venta'] }); }
+    } finally { await db.doc(`tenants/${T_CHICO}`).update({ flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) }); }
   });
 
   it('`SITIO_PUBLICO` ausente (o que no es https): `sinSitio`, la señal que faltaba', async () => {

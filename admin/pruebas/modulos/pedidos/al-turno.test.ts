@@ -137,7 +137,8 @@ describe('gancho de Pedidos: reemplazo y cancelación', () => {
 
 describe('gancho de Pedidos: un fallo nunca sale ni lleva datos del pedido', () => {
   it('si algo lanza, resuelve igual y deja error_flujo sin teléfono ni documento', async () => {
-    const ficha = new Proxy({}, { get() { throw new Error(`boom ${TEL} ${DOC}`); } });
+    // `modulos` lanza al leerla (H2b-cierre: es lo primero que mira el registro).
+    const ficha = Object.defineProperty({}, 'modulos', { enumerable: true, get() { throw new Error(`boom ${TEL} ${DOC}`); } });
     await expect(despuesDelTurnoPedidos(datos({ ficha, facturacion: { nombre: 'Ana', documento: DOC } }))).resolves.toBeUndefined();
     expect(await pedidos(T)).toHaveLength(0);
     const llamadas = bitacora.registrar.mock.calls as unknown as Array<[string, Record<string, unknown>]>;

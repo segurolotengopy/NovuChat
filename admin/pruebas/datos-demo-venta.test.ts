@@ -51,6 +51,7 @@ import { limitesDe } from '../functions/src/central/cuenta/planes.ts';
 import { urlImagenValida } from '../functions/src/modulos/catalogo-web/catalogoWeb.ts';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'datos', 'cargar-negocio.mjs');
 const DATOS = join(aqui, '..', 'scripts', 'datos');
@@ -144,14 +145,14 @@ beforeAll(async () => {
   // bien) y sin `catalogoWebActivo`.
   for (const c of CONJUNTOS) {
     await db.doc(`tenants/${c.tenant}`).set({
-      nombre: 'Demo B', estado: 'activo', vertical: 'venta', flujos: ['venta'],
+      nombre: 'Demo B', estado: 'activo', vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]),
     });
     // Un demo desde F1: modalidad demostración con un plan del catálogo y su copia de límites (Pro, como tenían).
     await db.doc(`tenants/${c.tenant}/cuenta/estado`).set({ plan: 'pro', limites: limitesDe('pro'), modalidad: 'demostracion' });
   }
   // Un comercio SIN el flujo venta, para negar el catálogo web.
   await db.doc(`tenants/${SIN_VENTA}`).set({
-    nombre: 'Consultorio', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'],
+    nombre: 'Consultorio', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]),
   });
 }, 60_000);
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -467,7 +468,7 @@ describe('alternar los dos demos sobre el MISMO comercio, con --vaciar-ajenos', 
     for (const x of (await db.collection(`tenants/${T}/catalogo`).get()).docs) await x.ref.delete();
     await db.doc(`tenants/${T}/contadores/catalogo`).delete();
     await db.doc(`tenants/${T}`).set({
-      nombre: 'Demo B', estado: 'activo', vertical: 'venta', flujos: ['venta'],
+      nombre: 'Demo B', estado: 'activo', vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]),
     });
     await db.doc(`tenants/${T}/cuenta/estado`).set({ plan: 'pro', limites: limitesDe('pro'), modalidad: 'demostracion' });
   }, 60_000);

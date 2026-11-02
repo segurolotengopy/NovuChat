@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'datos', 'escribir-qr-comercio.mjs');
 const PROYECTO = 'demo-novuchat-pruebas';
@@ -64,9 +65,9 @@ const mediaId = async (t: string) => (await db.doc(`tenants/${t}/config/venta`).
 
 beforeEach(async () => {
   const fichas: Record<string, Record<string, unknown>> = {
-    [REAL]: { flujos: ['venta'], vertical: 'venta' },
-    [SIN_VENTA]: { flujos: ['agendamiento'], vertical: 'agendamiento' },
-    [DEMO]: { flujos: ['venta'], vertical: 'venta', creadoPor: 'sembrar-demos' },
+    [REAL]: { flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]), vertical: 'venta' },
+    [SIN_VENTA]: { flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]), vertical: 'agendamiento' },
+    [DEMO]: { flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]), vertical: 'venta', creadoPor: 'sembrar-demos' },
     [MIG_SIN_PEDIDOS]: { flujos: ['venta'], vertical: 'venta', modulos: ['productos', 'campanas', 'cobros', 'agenda'] },
     [MIG_CON_PEDIDOS]: { flujos: ['agendamiento'], vertical: 'agendamiento', modulos: ['productos', 'campanas', 'cobros', 'pedidos'] },
   };
@@ -254,7 +255,7 @@ describe('escribir-qr-comercio.mjs', () => {
       readFileSync(join(aqui, '..', 'scripts', 'datos', 'sembrar-demos.mjs'), 'utf8'));
     expect(ids.length).toBeGreaterThan(0);
     const id = ids[0]!;
-    await db.doc(`tenants/${id}`).set({ nombre: id, estado: 'activo', flujos: ['venta'] });
+    await db.doc(`tenants/${id}`).set({ nombre: id, estado: 'activo', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
     await db.doc(`tenants/${id}/config/venta`).set({ mediaIdQr: VIEJO, cobroReal: COBRO });
     const r = correr(base(id, ['--aplicar']));
     expect(r.codigo, r.salida).toBe(1);

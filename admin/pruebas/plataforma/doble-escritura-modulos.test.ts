@@ -65,6 +65,7 @@ const NUM = '7310001';
 const WABA = '7310002';
 const NUM_S = '7310003';
 const NUM_C = '7310004';
+const NUM_P = '7310005'; // número previo (ruta ya existente del comercio)
 const COMUNES = ['productos', 'campanas'];
 const DE_VENTA = ['inventario', 'pedidos', 'catalogo-web'];
 
@@ -74,7 +75,7 @@ const asignar = (tenantId: string, numero = NUM) => correr(asignarNumero, { tena
 
 beforeEach(async () => {
   for (const t of [MIGRADA, SIN_LISTA, CADENA, CERRADA, NULA, ALTA, 'ensayo']) await db.recursiveDelete(db.doc(`tenants/${t}`));
-  for (const n of [NUM, NUM_S, NUM_C]) await db.doc(`rutasWhatsApp/${n}`).delete();
+  for (const n of [NUM, NUM_S, NUM_C, NUM_P]) await db.doc(`rutasWhatsApp/${n}`).delete();
   await db.doc(`tenants/${MIGRADA}`).set({ nombre: 'M', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: ['productos', 'campanas', 'cobros', 'agenda'] });
   await db.doc(`tenants/${SIN_LISTA}`).set({ nombre: 'S', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'] });
   // «venta» sin inventario a propósito (como un comercio con un módulo cerrado a mano).
@@ -83,11 +84,11 @@ beforeEach(async () => {
   await db.doc(`tenants/${CADENA}`).set({ nombre: 'C', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: 'agenda' });
 });
 
-describe('altaTenant escribe flujos y modulos', () => {
-  it('flujos y vertical iguales a hoy; modulos coherente con el registro', async () => {
+describe('altaTenant escribe modulos y YA NO flujos (H2b-cierre)', () => {
+  it('vertical = el primer flujo; modulos coherente con el registro; sin flujos', async () => {
     await correr(altaTenant, { tenantId: ALTA, nombre: 'Alta', correoAdmin: 'a@ejemplo.com', flujos: ['venta', 'agendamiento'] });
     const f = await ficha(ALTA);
-    expect(f['flujos']).toEqual(['venta', 'agendamiento']);
+    expect(Object.prototype.hasOwnProperty.call(f, 'flujos')).toBe(false);
     expect(f['vertical']).toBe('venta');
     expect(f['modulos']).toEqual(modulosDeFlujos(['venta', 'agendamiento']));
     expect(f['modulos']).toEqual(expect.arrayContaining([...COMUNES, ...DE_VENTA, 'agenda']));
@@ -95,7 +96,8 @@ describe('altaTenant escribe flujos y modulos', () => {
   it('sin flujo pedido: agendamiento por defecto, con sus módulos y sin los de venta', async () => {
     await correr(altaTenant, { tenantId: ALTA, nombre: 'Alta', correoAdmin: 'a@ejemplo.com' });
     const f = await ficha(ALTA);
-    expect(f['flujos']).toEqual(['agendamiento']);
+    expect(Object.prototype.hasOwnProperty.call(f, 'flujos')).toBe(false);
+    expect(f['vertical']).toBe('agendamiento');
     expect(f['modulos']).toEqual(expect.arrayContaining(['agenda', 'cobros']));
     expect(f['modulos']).not.toContain('inventario');
   });
@@ -105,7 +107,8 @@ describe('asignarNumero (callable) suma los módulos del flujo', () => {
   it('agregar «venta» a una ficha migrada suma inventario, pedidos y catalogo-web', async () => {
     await asignar(MIGRADA);
     const f = await ficha(MIGRADA);
-    expect(f['flujos']).toEqual(['agendamiento', 'venta']);
+    // `flujos` ya no se escribe: queda el valor viejo, sin sumar.
+    expect(f['flujos']).toEqual(['agendamiento']);
     expect(f['modulos']).toEqual(expect.arrayContaining([...DE_VENTA, 'agenda', 'cobros']));
     // arrayUnion: sin repetidos aunque el flujo ya aportara «cobros» o «productos».
     expect(new Set(f['modulos'] as string[]).size).toBe((f['modulos'] as string[]).length);
@@ -113,7 +116,7 @@ describe('asignarNumero (callable) suma los módulos del flujo', () => {
   it('NEGACIÓN: una ficha sin lista sigue sin lista', async () => {
     await asignar(SIN_LISTA, NUM_S);
     const f = await ficha(SIN_LISTA);
-    expect(f['flujos']).toEqual(['agendamiento', 'venta']);
+    expect(f['flujos']).toEqual(['agendamiento']);
     expect(Object.prototype.hasOwnProperty.call(f, 'modulos')).toBe(false);
   });
   it('NEGACIÓN: `modulos` como cadena se rechaza (failed-precondition) sin escribir nada', async () => {
@@ -128,14 +131,31 @@ describe('asignarNumero (callable) suma los módulos del flujo', () => {
 });
 
 describe('el flujo que la ficha ya tiene no reabre módulos cerrados; modulos null es «sin lista»', () => {
+  // H2b-cierre (seguridad LOW): «ya tenía ese flujo» se decide por las RUTAS del comercio, no por `flujos`.
+  const rutaPrevia = (t: string, flujo: string) => db.doc(`rutasWhatsApp/${NUM_P}`).set({ tenantId: t, flujo, estado: 'activo', aliasSecreto: 'cliente21' });
+  it('NEGACIÓN: un comercio con la agenda apagada a propósito NO la recupera al asignarle otro número de agendamiento', async () => {
+    const CERRADA_A = 'dobl-agenda-off';
+    await db.recursiveDelete(db.doc(`tenants/${CERRADA_A}`));
+    await db.doc(`tenants/${CERRADA_A}`).set({ nombre: 'A', estado: 'activo', vertical: 'agendamiento', modulos: ['productos', 'campanas'] });
+    await rutaPrevia(CERRADA_A, 'agendamiento');
+    await correr(asignarNumero, { tenantId: CERRADA_A, phoneNumberId: NUM, wabaId: WABA, flujo: 'agendamiento' });
+    expect((await ficha(CERRADA_A))['modulos']).toEqual(['productos', 'campanas']);
+    // Y sin ninguna ruta de ese flujo sí se suman (primera vez).
+    await db.doc(`rutasWhatsApp/${NUM_P}`).delete();
+    await db.doc(`rutasWhatsApp/${NUM}`).delete();
+    await correr(asignarNumero, { tenantId: CERRADA_A, phoneNumberId: NUM, wabaId: WABA, flujo: 'agendamiento' });
+    expect((await ficha(CERRADA_A))['modulos']).toEqual(expect.arrayContaining(['agenda', 'cobros']));
+  });
   it('NEGACIÓN (callable): reasignar un número con «venta» a una ficha que ya la tiene NO devuelve inventario', async () => {
+    await rutaPrevia(CERRADA, 'venta');
     await asignar(CERRADA);
     const f = await ficha(CERRADA);
     expect(f['flujos']).toEqual(['venta']);
     expect(f['modulos']).not.toContain('inventario');
     expect(f['modulos']).toEqual(['productos', 'cobros', 'pedidos', 'catalogo-web']);
   });
-  it('NEGACIÓN (script): lo mismo, y lo dice', () => {
+  it('NEGACIÓN (script): lo mismo, y lo dice', async () => {
+    await rutaPrevia(CERRADA, 'venta');
     const r = script('asignar-numero.mjs', '--tenant', CERRADA, '--numero', NUM, '--alias', 'cliente18', ...BASE);
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toContain('el flujo ya estaba, no se suman módulos');
@@ -144,8 +164,7 @@ describe('el flujo que la ficha ya tiene no reabre módulos cerrados; modulos nu
   it('`modulos: null` se trata como ausente: no se rechaza y no se crea la lista (callable y script)', async () => {
     await asignar(NULA, NUM_S);
     expect((await ficha(NULA))['modulos']).toBeNull();
-    expect((await ficha(NULA))['flujos']).toEqual(['agendamiento', 'venta']);
-    await db.doc(`tenants/${NULA}`).update({ flujos: ['agendamiento'] });
+    expect((await ficha(NULA))['flujos']).toEqual(['agendamiento']);
     const r = script('asignar-numero.mjs', '--tenant', NULA, '--numero', NUM_C, '--alias', 'cliente19', ...BASE);
     expect(r.codigo, r.salida).toBe(0);
     expect((await ficha(NULA))['modulos']).toBeNull();
@@ -170,6 +189,9 @@ describe('scripts', () => {
     expect(Object.prototype.hasOwnProperty.call(await ficha(SIN_LISTA), 'modulos')).toBe(false);
   });
   it('asignar-numero.mjs rechaza `modulos` que no es lista, sin escribir', async () => {
+    // El alias se valida ANTES que `modulos`: una ruta que otra suite dejó con `cliente20` (el emulador
+    // se comparte y las suites corren en serie) taparía el rechazo que se prueba aquí. Se limpia esa ajena.
+    for (const d of (await db.collection('rutasWhatsApp').where('aliasSecreto', '==', 'cliente20').get()).docs) await d.ref.delete();
     const antes = await tiempo(CADENA);
     const r = script('asignar-numero.mjs', '--tenant', CADENA, '--numero', NUM_C, '--alias', 'cliente20', ...BASE);
     expect(r.codigo).toBe(1);
@@ -200,7 +222,9 @@ describe('scripts', () => {
       // La carga posterior puede fallar con este JSON mínimo; lo que se mira es la ficha, que se escribe antes.
       script('ensayo.mjs', '--numero', NUM, '--preparar', '--cliente', 'ejemplo', '--archivo', archivo, '--aplicar');
       const e = await ficha('ensayo');
-      expect(e['flujos']).toEqual(['venta']);
+      // H2b-cierre: el script ya no escribe `flujos` (el valor viejo queda); `modulos` sale del flujo del ensayo.
+      expect(e['flujos']).toEqual(['agendamiento']);
+      expect(e['vertical']).toBe('venta');
       expect(e['modulos']).toEqual(expect.arrayContaining([...COMUNES, ...DE_VENTA]));
     } finally {
       rmSync(dir, { recursive: true, force: true });

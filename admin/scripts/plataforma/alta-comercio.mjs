@@ -157,8 +157,8 @@ const sello = { creadoEn: Timestamp.now(), creadoPor: 'alta-comercio' };
 const lote = db.batch();
 lote.create(db.doc(`tenants/${TENANT}`), {
   nombre: NOMBRE, estado: 'activo', plan: cuenta.plan,
-  vertical: FLUJOS[0], flujos: FLUJOS,
-  // Doble escritura (H2b-7): `modulos` nace coherente con `flujos`.
+  vertical: FLUJOS[0],
+  // H2b-cierre: `modulos` es la única fuente; el alta ya no escribe `flujos`.
   modulos: modulosDeFlujos(FLUJOS),
   waPhoneNumberId: null, waWabaId: null, ...sello,
   // El titular de la cuenta (no la «titularidad» del número): el administrador inicial. Solo NovuChat lo cambia (`fijar-titular.mjs`).

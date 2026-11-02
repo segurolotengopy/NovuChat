@@ -136,7 +136,7 @@ console.log(`  Apunta a  : ${actual}${origen ? ` (en ensayo; su comercio es ${or
 
 if (MODO[0] === '--estado') {
   const fe = await db.doc(`tenants/${ENSAYO}`).get();
-  console.log(`  Ensayo    : ${fe.exists ? `flujos ${JSON.stringify(fe.get('flujos') ?? [])} · vertical ${fe.get('vertical') ?? '?'}` : 'el comercio `ensayo` no existe'}`);
+  console.log(`  Ensayo    : ${fe.exists ? `vertical ${fe.get('vertical') ?? '?'} · modulos ${Array.isArray(fe.get('modulos')) ? fe.get('modulos').length : 0}` : 'el comercio `ensayo` no existe'}`);
   console.log(`  Desviada  : ${actual === ENSAYO ? 'sí' : 'no'}${ruta.get('ensayoFlujoDe') ? ` · flujo de la ruta restaurable a ${ruta.get('ensayoFlujoDe')}` : ''}`);
   await salir(0);
 }
@@ -283,8 +283,8 @@ if (APLICAR) {
     });
     const { MODELO_POR_DEFECTO } = await import('../../functions/src/central/ejes.ts');
     await refEnsayo.set({
-      nombre: 'Ensayo de NovuChat', estado: 'activo', vertical: flujoCliente, flujos: [flujoCliente],
-      // Doble escritura (H2b-7): `modulos` coherente con el flujo del ensayo.
+      nombre: 'Ensayo de NovuChat', estado: 'activo', vertical: flujoCliente,
+      // H2b-cierre: `modulos` (la unica fuente) coherente con el flujo del ensayo; sin `flujos`.
       modulos: modulosDeFlujos([flujoCliente]),
       plan: 'pro', modelo: MODELO_POR_DEFECTO, creadoPor: 'ensayo', creadoEn: Timestamp.now(),
     });
@@ -298,7 +298,7 @@ if (APLICAR) {
     // `--restaurar` no toca la ficha `ensayo` (solo devuelve la ruta del demo), así que no hay valor
     // previo que devolver: cada `--preparar` la reescribe entera.
     await refEnsayo.update({
-      estado: 'activo', vertical: flujoCliente, flujos: [flujoCliente], modulos: modulosDeFlujos([flujoCliente]),
+      estado: 'activo', vertical: flujoCliente, modulos: modulosDeFlujos([flujoCliente]),
     });
     // Los documentos de venta con subcolecciones (conversaciones/mensajes) se
     // borran enteros; el resto va en lote.

@@ -45,7 +45,7 @@ import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 // EL FLUJO VÁLIDO Y SU DOCUMENTO DE CONFIGURACIÓN SALEN DEL REGISTRO (H2b-4e), no de
 // una lista propia: `registro.ts` no tiene `import`, así que no necesita el gancho de abajo.
-import { documentoDeFlujo, esFlujo, flujosDeFicha, PUENTE_DE_FLUJOS } from '../../functions/src/registro.ts';
+import { documentoDeFlujo, esFlujo, FLUJOS_DE_RUTA } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -177,11 +177,13 @@ let plan;
 try {
   plan = await db.runTransaction(async (tx) => {
     // Lecturas antes que escrituras, como exige la transacción.
-    const [ruta, tenant, config, conAlias, vieja] = await Promise.all([
+    const [ruta, tenant, config, conAlias, vieja, rutasDelTenant] = await Promise.all([
       tx.get(refRuta), tx.get(refTenant),
       refConfig ? tx.get(refConfig) : Promise.resolve(null),
       tx.get(db.collection('rutasWhatsApp').where('aliasSecreto', '==', ALIAS).limit(5)),
       refVieja ? tx.get(refVieja) : Promise.resolve(null),
+      // "Ya tenía ese flujo" se decide por las rutas del comercio (incluida la que se reemplaza), no por `flujos`.
+      tx.get(db.collection('rutasWhatsApp').where('tenantId', '==', TENANT)),
     ]);
 
     if (!tenant.exists) return { error: `No existe el comercio «${TENANT}». Primero alta-comercio.mjs.` };
@@ -213,7 +215,8 @@ try {
       return { error: 'La ficha tiene `modulos` y no es una lista: corríjala antes de agregar el flujo.' };
     }
     // Si el flujo YA estaba en la ficha no se suma nada: un módulo cerrado a propósito no se reabre.
-    const flujoYaEstaba = flujosDeFicha(datosFicha).includes(FLUJO);
+    // `flujos` ya no se escribe ni se lee (H2b-cierre): "ya estaba" = alguna ruta del comercio ya tiene ese flujo.
+    const flujoYaEstaba = rutasDelTenant.docs.some((d) => d.get('flujo') === FLUJO);
     const sumaModulos = tieneModulos && !flujoYaEstaba;
     const resumen = {
       flujoYaEstaba, tieneModulos,
@@ -235,8 +238,7 @@ try {
     tx.update(refTenant, {
       waPhoneNumberId: NUMERO, waWabaId: WABA,
       vertical: tenant.get('vertical') ?? FLUJO,
-      flujos: FieldValue.arrayUnion(FLUJO),
-      ...(sumaModulos ? { modulos: FieldValue.arrayUnion(...PUENTE_DE_FLUJOS[FLUJO].modulos) } : {}),
+      ...(sumaModulos ? { modulos: FieldValue.arrayUnion(...FLUJOS_DE_RUTA[FLUJO].modulos) } : {}),
     });
     if (resumen.configNueva) {
       tx.set(refConfig, { actualizadoPor: OPERADOR, actualizadoEn: Timestamp.now() });
@@ -274,7 +276,10 @@ const ruta = await refRuta.get();
 const ficha = await refTenant.get();
 const viejaQueda = refVieja ? (await refVieja.get()).exists : false;
 const ok = !viejaQueda && ruta.get('tenantId') === TENANT && ruta.get('aliasSecreto') === ALIAS
-  && ruta.get('flujo') === FLUJO && (ficha.get('flujos') ?? []).includes(FLUJO)
+  && ruta.get('flujo') === FLUJO
+  // H2b-cierre: `flujos` ya no se escribe; si había que sumar módulos, tienen que estar todos en `modulos`.
+  && (!(plan.tieneModulos && !plan.flujoYaEstaba)
+    || FLUJOS_DE_RUTA[FLUJO].modulos.every((m) => (ficha.get('modulos') ?? []).includes(m)))
   && ficha.get('waPhoneNumberId') === NUMERO && ruta.get('titularidad') === titularidad;
 console.log(`\n  ${ok ? '✓' : '✗'} Verificación: ruta → ${ruta.get('tenantId')} · alias ${ruta.get('aliasSecreto')}`
   + ` · titularidad ${ruta.get('titularidad')} · flujos ${JSON.stringify(ficha.get('flujos'))}\n`);

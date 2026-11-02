@@ -37,11 +37,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { IDS_FLUJOS, IDS_MODULOS, PUENTE_DE_FLUJOS } from '../../functions/src/registro.ts';
+import { IDS_FLUJOS, IDS_MODULOS, FLUJOS_DE_RUTA, flujosDeFicha, modulosDeFlujos } from '../../functions/src/registro.ts';
 import type { IdFlujo } from '../../functions/src/registro.ts';
 import {
   FLUJOS as FLUJOS_DESPUES, capacidadesDeConsola, etiquetaCatalogo as etiquetaDespues, etiquetaDeCatalogoDe,
-  flujosDe as flujosDespues, modulosDe, pestanasVisibles,
+  flujosDe as flujosDespues, modulosDe as modulosDeConsola, pestanasVisibles,
 } from '../../web/src/central/lib/flujos.ts';
 
 /** La fachada importa `core/lib/firebase` (para `useModulos`); acá no hay navegador ni claves. */
@@ -108,6 +108,14 @@ const cobroAntes = (flujos: string[]) => {
 };
 
 // ============================================================ DESPUÉS
+/**
+ * H2b-cierre: `tenants.modulos` es la ÚNICA fuente. Una ficha de las de antes (solo `flujos`/`vertical`) no
+ * tiene ningún módulo; para comparar con la consola del 03/10 se la SIEMBRA como lo hace el alta
+ * (`modulosDeFlujos`). Una ficha que ya trae `modulos` (lista, cadena, null) se usa tal cual.
+ */
+const sembrada = (f: Ficha): Ficha =>
+  (Object.prototype.hasOwnProperty.call(f, 'modulos') ? f : { ...f, modulos: modulosDeFlujos(flujosDeFicha(f)) });
+const modulosDe = (f: Ficha) => modulosDeConsola(sembrada(f));
 const menuDespues = (ficha: Ficha, rol: string | null, propietario: boolean) =>
   pestanasVisibles(modulosDe(ficha), { rol, propietario });
 /** Lo que decide `Cobro.tsx`, con la función que `Cobro.tsx` llama. */
@@ -241,7 +249,14 @@ describe('H2b-5: lo que cambia a propósito, negando', () => {
     }
   });
 
-  it('con la clave `flujos` ausente la ficha sigue leyéndose por `vertical`; con `flujos: undefined` también', () => {
+  it('H2b-cierre: SIN `modulos` la consola no abre nada, ni por `flujos` ni por `vertical`', () => {
+    for (const ficha of [{ flujos: ['venta'] }, { vertical: 'venta' }, { flujos: ['agendamiento', 'venta'], vertical: 'venta' }, {}]) {
+      expect(modulosDeConsola(ficha as Ficha), JSON.stringify(ficha)).toEqual([]);
+      expect(pestanasVisibles(modulosDeConsola(ficha as Ficha), { rol: 'admin', propietario: true }), JSON.stringify(ficha)).toEqual([]);
+    }
+  });
+
+  it('con la clave `flujos` ausente la ficha sembrada se siembra por `vertical`; con `flujos: undefined` también', () => {
     expect(menuDespues({ vertical: 'venta' }, 'admin', false).map((p) => p.ruta)).toEqual(['pedidos', 'cobros', 'inventario', 'cobro']);
     expect(menuDespues({ flujos: undefined, vertical: 'venta' }, 'admin', false).map((p) => p.ruta))
       .toEqual(['pedidos', 'cobros', 'inventario', 'cobro']);
@@ -262,9 +277,8 @@ describe('H2b-5: lo que cambia a propósito, negando', () => {
     expect(cobroDespues(ficha).documento).toBe('agendamiento');
     // `modulos: []` explícito apaga todo, aunque la ficha diga venta.
     expect(menuDespues({ flujos: ['venta'], modulos: [] }, 'admin', true)).toEqual([]);
-    // Un valor que no es lista no cuenta: se lee por los flujos.
-    expect(menuDespues({ flujos: ['venta'], modulos: 'agenda' }, 'admin', false).map((p) => p.ruta))
-      .toEqual(['pedidos', 'cobros', 'inventario', 'cobro']);
+    // Un valor que no es lista no cuenta, y (H2b-cierre) tampoco cae a los flujos: no hay nada.
+    expect(menuDespues({ flujos: ['venta'], modulos: 'agenda' }, 'admin', false)).toEqual([]);
   });
 
   it('cada capacidad de la consola se enciende con SU módulo y con ningún otro (fichas con `modulos`)', () => {
@@ -439,6 +453,6 @@ describe('H2b-5: ninguna lista de flujos ni de pestañas queda escrita en la con
   });
 
   it('el nombre del puente es el que la cartera muestra', () => {
-    for (const f of IDS_FLUJOS) expect(FLUJOS_DESPUES[f].nombre).toBe(PUENTE_DE_FLUJOS[f].nombre);
+    for (const f of IDS_FLUJOS) expect(FLUJOS_DESPUES[f].nombre).toBe(FLUJOS_DE_RUTA[f].nombre);
   });
 });

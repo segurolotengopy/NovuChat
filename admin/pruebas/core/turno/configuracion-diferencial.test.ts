@@ -20,6 +20,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { modulosDeFlujos } from '../../../functions/src/registro.ts';
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
@@ -68,17 +69,17 @@ interface Ficha {
 const FICHAS: Ficha[] = [
   {
     nombre: 'agendamiento-sin-sena', numero: '900001', flujo: 'agendamiento',
-    tenant: { flujos: ['agendamiento'] },
+    tenant: { flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) },
     docs: { 'config/agendamiento': { duracionCita: 30 } },
   },
   {
     nombre: 'agendamiento-con-sena', numero: '900002', flujo: 'agendamiento',
-    tenant: { flujos: ['agendamiento'] },
+    tenant: { flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) },
     docs: { 'config/agendamiento': { senaImporte: 50, senaMinutosRetencion: 45, cobroReal: COBRO_REAL } },
   },
   {
     nombre: 'venta-cobro-real', numero: '900003', flujo: 'venta',
-    tenant: { flujos: ['venta'] },
+    tenant: { flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) },
     docs: {
       'config/venta': { cobroReal: COBRO_REAL, envio: true },
       'catalogo/p1': { nombre: 'Producto uno', precio: 10, activo: true, stock: 0 },
@@ -87,7 +88,7 @@ const FICHAS: Ficha[] = [
   },
   {
     nombre: 'venta-cobro-simulado', numero: '900004', flujo: 'venta',
-    tenant: { flujos: ['venta'] },
+    tenant: { flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) },
     docs: {
       'config/venta': { mediaIdQr: 'media-de-prueba' },
       'catalogo/p1': { nombre: 'Producto uno', precio: 10, activo: true },
@@ -95,12 +96,12 @@ const FICHAS: Ficha[] = [
   },
   {
     nombre: 'onboarding', numero: '900005', flujo: 'onboarding',
-    tenant: { flujos: ['onboarding'] },
+    tenant: { flujos: ['onboarding'], modulos: modulosDeFlujos(['onboarding'] as never[]) },
     docs: { 'config/onboarding': { rubros: [{ id: 'r1', nombre: 'Rubro uno' }] } },
   },
   {
     nombre: 'varios-flujos-ruta-venta', numero: '900006', flujo: 'venta',
-    tenant: { flujos: ['agendamiento', 'venta'] },
+    tenant: { flujos: ['agendamiento', 'venta'], modulos: modulosDeFlujos(['agendamiento', 'venta'] as never[]) },
     docs: {
       'config/venta': { cobroReal: COBRO_REAL },
       'config/agendamiento': { senaImporte: 30, cobroReal: COBRO_REAL },
@@ -126,7 +127,7 @@ const FICHAS: Ficha[] = [
   {
     // `agotado` sale en catalogo y anuncios de TODO flujo, aunque Inventario solo se encienda en venta.
     nombre: 'agendamiento-con-item-agotado', numero: '900008', flujo: 'agendamiento',
-    tenant: { flujos: ['agendamiento'] },
+    tenant: { flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) },
     docs: {
       'config/agendamiento': { duracionCita: 30 },
       'catalogo/p1': { nombre: 'Producto uno', precio: 10, activo: true, stock: 0 },

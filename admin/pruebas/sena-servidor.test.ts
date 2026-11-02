@@ -22,6 +22,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
@@ -137,9 +138,9 @@ beforeAll(async () => {
   await db.doc(`rutasWhatsApp/${NUMERO}`).set({
     tenantId: T, flujo: 'agendamiento', aliasSecreto: 'cliente17', estado: 'activo',
   });
-  await db.doc(`tenants/${T}`).set({ nombre: 'Clínica', estado: 'activo', flujos: ['agendamiento'] });
-  await db.doc(`tenants/${T_VENTA}`).set({ nombre: 'Mixto', estado: 'activo', flujos: ['agendamiento', 'venta'] });
-  await db.doc(`tenants/${T_NADA}`).set({ nombre: 'Captación', estado: 'activo', flujos: ['onboarding'] });
+  await db.doc(`tenants/${T}`).set({ nombre: 'Clínica', estado: 'activo', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
+  await db.doc(`tenants/${T_VENTA}`).set({ nombre: 'Mixto', estado: 'activo', flujos: ['agendamiento', 'venta'], modulos: modulosDeFlujos(['agendamiento', 'venta'] as never[]) });
+  await db.doc(`tenants/${T_NADA}`).set({ nombre: 'Captación', estado: 'activo', flujos: ['onboarding'], modulos: modulosDeFlujos(['onboarding'] as never[]) });
   await db.doc(`tenants/${T}/cuenta/estado`).set({ plan: 'impulso', estadoPago: 'al_dia' });
   await db.doc(`tenants/${T}/config/negocio`).set({
     nombreNegocio: 'Clínica', zonaHoraria: 'America/La_Paz', moneda: 'BOB',

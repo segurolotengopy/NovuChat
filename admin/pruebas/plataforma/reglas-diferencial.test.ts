@@ -44,6 +44,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { esFlujo, modulosDeFlujos } from '../../functions/src/registro.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const AHORA = readFileSync(join(aqui, '..', '..', 'firestore.rules'), 'utf8');
@@ -100,8 +101,19 @@ Object.assign(PERFILES, {
   sinEstado: borde({ estado: null, flujos: ['venta'] }, false),
   triple: borde({ flujos: ['agendamiento', 'venta', 'onboarding'], vertical: 'venta' }, true),
 });
+// H2b-cierre. Las fichas VIVAS tendrán `modulos` (lo que escribe la migración): a toda ficha con una lista
+// de `flujos` se le da la `modulos` que hoy daba el puente (`modulosDeFlujos`), así se sigue probando que se
+// comportan IGUAL que con las reglas de origin/main. Las que quedan SIN lista `modulos` (clave ausente, nula,
+// cadena, mapa, número, booleano) son la DIFERENCIA NUEVA Y NEGADA: las reglas nuevas no les abren nada
+// (falla cerrado), mientras las de origin/main las seguían leyendo por `flujos`/`vertical`.
+for (const p of Object.values(PERFILES)) {
+  const f = p.ficha;
+  if (Array.isArray(f['flujos']) && !('modulos' in f)) f['modulos'] = modulosDeFlujos((f['flujos'] as string[]).filter(esFlujo) as never[]);
+}
+const SIN_LISTA = new Set(Object.entries(PERFILES).filter(([, p]) => !Array.isArray(p.ficha['modulos'])).map(([k]) => k));
 const OTRO = 'otro';
-const FICHA_OTRO = { ...sintetica, nombre: 'Otro sintetico', flujos: ['agendamiento', 'venta', 'onboarding'], vertical: 'venta' };
+const FICHA_OTRO = { ...sintetica, nombre: 'Otro sintetico', flujos: ['agendamiento', 'venta', 'onboarding'], vertical: 'venta',
+  modulos: modulosDeFlujos(['agendamiento', 'venta', 'onboarding']) };
 
 const sello = (uid: string) => ({ actualizadoPor: uid, actualizadoEn: serverTimestamp() });
 
@@ -302,6 +314,12 @@ describe('reglas: prueba diferencial contra las reglas de origin/main', () => {
     console.log(`MATRIZ DIFERENCIAL: ${antes.size} operaciones comparadas, ${diferencias.length} diferencias\n${resumen.join('\n')}`);
     for (const k of diferencias) {
       const [perfil, actor, op] = k.split(' | ');
+      // DIFERENCIA NUEVA Y NEGADA (H2b-cierre): una ficha sin lista `modulos` pierde lo que antes abría por `flujos`.
+      if (SIN_LISTA.has(perfil as string)) {
+        expect(antes.get(k), k).toBe(true);
+        expect(ahora.get(k), k).toBe(false);
+        continue;
+      }
       expect(op, `diferencia no declarada: ${k}`).toMatch(/^(update|create) funcionarios\/f1\/privado\//);
       expect(actor, k).toBe('admin');
       expect(PERFILES[perfil as string]?.agenda, `${k}: el perfil tiene agenda`).toBe(false);
@@ -310,13 +328,27 @@ describe('reglas: prueba diferencial contra las reglas de origin/main', () => {
     }
     // Y la diferencia aprobada SÍ ocurre en cada comercio sin agenda (si no, la
     // prueba no está mirando donde debe).
-    for (const [perfil, p] of Object.entries(PERFILES).filter(([, x]) => !x.extra)) {
+    for (const [perfil, p] of Object.entries(PERFILES).filter(([k, x]) => !x.extra && !SIN_LISTA.has(k))) {
       for (const op of ['update funcionarios/f1/privado/datos', 'create funcionarios/f1/privado/otro']) {
         const k = clave(perfil, 'admin', op);
         expect(antes.get(k), `${k}: base`).toBe(true);
         expect(ahora.get(k), k).toBe(p.agenda);
       }
     }
+  });
+
+  // La diferencia declarada: sin lista `modulos` NO se abre nada de módulo, y sí ocurre en cada perfil sin lista.
+  it('H2b-cierre: una ficha SIN `modulos` no abre ningún módulo (falla cerrado), a diferencia de origin/main', () => {
+    const DE_MODULO = ['update config/agendamiento', 'update config/venta', 'update config/marca', 'update config/onboarding',
+      'update config/negocio catalogoWebActivo=true', 'update catalogo/item1', 'create fotosCatalogo/item1',
+      'create config/campanas', 'create funcionarios/nuevo', 'update funcionarios/f1/privado/datos'];
+    expect(SIN_LISTA.size).toBeGreaterThan(5);
+    for (const perfil of SIN_LISTA) {
+      for (const op of DE_MODULO) expect(ahora.get(clave(perfil, 'admin', op)), `${perfil} admin ${op}`).toBe(false);
+    }
+    // Control: las reglas de antes SÍ abrían algo de módulo en esas fichas (si no, la prueba no mira donde debe).
+    const abrian = [...SIN_LISTA].flatMap((perfil) => DE_MODULO.filter((op) => antes.get(clave(perfil, 'admin', op)) === true));
+    expect(abrian.length).toBeGreaterThan(5);
   });
 
   // Q'Taco, con nombre y apellido: lo que podía, lo sigue pudiendo; lo cerrado, cerrado.
@@ -393,9 +425,9 @@ describe('reglas: prueba diferencial contra las reglas de origin/main', () => {
     await caso([], { 'update config/venta': false, 'update config/marca': false, 'update catalogo/item1': false,
       'create fotosCatalogo/item1': false, 'create config/campanas': false, 'update config/agendamiento': false,
       'update funcionarios/f1/privado/datos': false, 'update config/negocio': true });
-    // Cadena: no es lista, manda `flujos` (['venta']): idéntico a la ficha de hoy.
-    await caso('agenda', { 'update config/venta': true, 'update config/marca': true, 'update catalogo/item1': true,
-      'create config/campanas': true, 'update config/agendamiento': false, 'update funcionarios/f1/privado/datos': false });
+    // Cadena: no es lista y (H2b-cierre) ya NO cae a `flujos`: falla cerrado, todo módulo negado.
+    await caso('agenda', { 'update config/venta': false, 'update config/marca': false, 'update catalogo/item1': false,
+      'create config/campanas': false, 'update config/agendamiento': false, 'update funcionarios/f1/privado/datos': false });
     // Lista con los módulos de Q'Taco: puede lo mismo que hoy.
     await caso(['pedidos', 'catalogo-web', 'productos', 'campanas'], { 'update config/venta': true, 'update config/marca': true,
       'update catalogo/item1': true, 'create config/campanas': true, 'update config/onboarding': false });

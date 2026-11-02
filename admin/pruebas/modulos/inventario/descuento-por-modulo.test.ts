@@ -7,13 +7,17 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { fichaDescuentaStock } from '../../../functions/src/modulos/inventario/inventario.ts';
+import { modulosDeFlujos } from '../../../functions/src/registro.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 
 describe('fichaDescuentaStock', () => {
-  it('ficha de venta SIN modulos (puente de flujos): descuenta, igual que hoy', () => {
-    expect(fichaDescuentaStock({ flujos: ['venta'] })).toBe(true);
-    expect(fichaDescuentaStock({ vertical: 'venta' })).toBe(true);
+  it('H2b-cierre: ficha de venta SIN modulos: NO descuenta (falla cerrado, `flujos`/`vertical` no cuentan)', () => {
+    expect(fichaDescuentaStock({ flujos: ['venta'] })).toBe(false);
+    expect(fichaDescuentaStock({ vertical: 'venta' })).toBe(false);
+  });
+  it('ficha de venta CON los modulos de su flujo (el alta los siembra): descuenta', () => {
+    expect(fichaDescuentaStock({ flujos: ['venta'], modulos: modulosDeFlujos(['venta']) })).toBe(true);
   });
   it('flujos de reservas o captación sin modulos: no descuenta', () => {
     expect(fichaDescuentaStock({ flujos: ['agendamiento'] })).toBe(false);
@@ -23,8 +27,8 @@ describe('fichaDescuentaStock', () => {
     expect(fichaDescuentaStock({ flujos: ['venta'], modulos: ['productos', 'catalogo-web', 'pedidos', 'cobros'] })).toBe(false);
     expect(fichaDescuentaStock({ modulos: [] })).toBe(false);
   });
-  it('modulos que no es lista se ignora y manda el puente de flujos', () => {
-    expect(fichaDescuentaStock({ modulos: 'x' as unknown as string[], flujos: ['venta'] })).toBe(true);
+  it('modulos que no es lista no descuenta y no cae a `flujos` (H2b-cierre)', () => {
+    expect(fichaDescuentaStock({ modulos: 'x' as unknown as string[], flujos: ['venta'] })).toBe(false);
   });
   it('con modulos que incluyen inventario: descuenta', () => {
     expect(fichaDescuentaStock({ modulos: ['catalogo-web', 'inventario'] })).toBe(true);

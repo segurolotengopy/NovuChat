@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../core/lib/firebase';
 import {
-  IDS_FLUJOS, PUENTE_DE_FLUJOS, documentoDeCobro, esFlujo as esFlujoDelRegistro, etiquetaDeCatalogo,
+  IDS_FLUJOS, FLUJOS_DE_RUTA, documentoDeCobro, esFlujo as esFlujoDelRegistro, etiquetaDeCatalogo,
   flujosDeFicha, modulosDeFicha, modulosDeFlujos, pestanasDe,
 } from '../../../../functions/src/registro';
 import type { FichaConCapacidades, IdFlujo, IdModulo, Pestana as PestanaDelRegistro } from '../../../../functions/src/registro';
@@ -81,15 +81,15 @@ function aPestanaDeConsola(p: PestanaDelRegistro): Pestana {
 
 /**
  * Los flujos de hoy, DERIVADOS del puente del registro: el nombre, el
- * catálogo y el documento salen de `PUENTE_DE_FLUJOS`; las pestañas, de los
+ * catálogo y el documento salen de `FLUJOS_DE_RUTA`; las pestañas, de los
  * módulos del flujo. Sirve a la cartera (`Tablero`: el nombre de cada flujo) y
  * a la suite del registro, que compara este objeto con la consola del 03/10.
  */
 export const FLUJOS = Object.fromEntries(IDS_FLUJOS.map((f) => [f, {
-  nombre: PUENTE_DE_FLUJOS[f].nombre,
+  nombre: FLUJOS_DE_RUTA[f].nombre,
   pestanas: pestanasDe(modulosDeFlujos([f])).map(aPestanaDeConsola),
-  catalogo: PUENTE_DE_FLUJOS[f].catalogo,
-  documento: PUENTE_DE_FLUJOS[f].documento,
+  catalogo: FLUJOS_DE_RUTA[f].catalogo,
+  documento: FLUJOS_DE_RUTA[f].documento,
 }])) as Record<FlujoId, DefinicionFlujo>;
 
 export const esFlujo = (v: unknown): v is FlujoId => esFlujoDelRegistro(v);
