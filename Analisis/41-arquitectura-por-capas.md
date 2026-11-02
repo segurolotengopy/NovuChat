@@ -348,7 +348,7 @@ Un archivo por fila; la columna «Va a» es la carpeta destino de la fase 2.
 | `autorizacion.ts` | 111 | Core | `core/seguridad/` | |
 | `atencion.ts` | 232 | Core | `core/conteo/` | Ventana, bloque, umbrales |
 | `cierres.ts` | 172 | Core | `core/turno/` | Contrato de cierre |
-| `ingesta.ts` | 2.130 | Coordinador | Queda en la raíz como **coordinador**; el corte en ganchos por módulo es de F3b. Los 3 cruces que quedan (`cierres.ts`, `agenda/seguimientos.ts`, `agenda/sena.ts` hacia `ingesta.ts`) están en `deuda.json` y solo bajan *(corregido el 02/10/2026; decía «`core/turno/` se parte»)* | Coordinador + ganchos de seña, inventario, captación, campañas, cobro de venta, que vuelven a sus módulos |
+| `ingesta.ts` | 2.130 | Coordinador | Queda en la raíz como **coordinador**; el corte en ganchos por módulo se hizo en F3b (F3b-1b, F3b-2e): ya no hay cruces hacia `ingesta.ts` en `deuda.json` y sigue en `SE_PARTE` solo con Agenda y Cobros (`cobroRealActivo`, conteo de señas) *(corregido el 02/10/2026; decía «`core/turno/` se parte»; actualizado tras F3b-2e)* | Coordinador + ganchos de seña, inventario, captación, campañas, cobro de venta, que vuelven a sus módulos |
 | `prompt.ts` | 533 | Core | `core/prompt/` **se parte** | Base del prompt es core; el resumen del catálogo va a Productos; `documentoDeVertical` desaparece |
 | `saneo.ts` | 155 | Central | `central/servicios/` | |
 | `region.ts`, `opcionesGlobales.ts` | 51 | Core | `core/` | |

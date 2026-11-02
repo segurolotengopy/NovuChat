@@ -21,8 +21,9 @@ orden del registro.
 
 El coordinador de turno es `admin/functions/src/ingesta.ts`, en la raíz de
 Functions hasta F3b: tiene su línea de coordinador en `ZONA_POR_ARCHIVO`
-(`admin/pruebas/frontera/frontera.ts`). Desde F3b-2e ya no figura en `SE_PARTE`:
-salió de él la lógica de Agenda, Campañas, Catálogo web y Productos. Queda en
+(`admin/pruebas/frontera/frontera.ts`). Desde F3b-2e sigue en `SE_PARTE` solo con
+`modulo:agenda` y `modulo:cobros`: salió de él la lógica de Agenda, Campañas,
+Catálogo web y Productos. Queda en
 el coordinador la decisión `cobroRealActivo` (Cobros: separa el camino que mueve
 dinero del simulado) y el conteo de señas enviadas; se mudan en una etapa
 posterior y no deben darse por movidas.

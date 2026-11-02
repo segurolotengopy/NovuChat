@@ -19,9 +19,11 @@ entrada, medios entrantes (audio, imagen, documento), prompt base.
 la primera pregunta, «¿lo corre todo tenant igual, aunque no lo vea nadie?».
 
 **Dependencias permitidas:** el core no depende de nada de arriba. La regla que
-hoy se viola: `ingesta.ts` (core) importa `retencion`, `inventario`,
-`captacion`, `campanas` y `cobroVenta` (módulos); se corrige con ganchos
-registrados (`coordinador.md`), no con más importaciones.
+se violaba con `ingesta.ts` (core) importando módulos; desde F3b es el
+coordinador (`ingesta.ts` tiene su línea de coordinador en `frontera.ts`, y los
+cruces de `deuda.json` están en cero): llama a los módulos por sus ganchos
+registrados (`coordinador.md`), no con lógica propia. Sigue en `SE_PARTE` con
+`modulo:agenda` y `modulo:cobros` (queda `cobroRealActivo` y el conteo de señas).
 
 ## Los contratos del core (`Analisis/41` §2)
 
@@ -36,8 +38,9 @@ implementación actual del pipeline de turno. Los cuatro contratos:
 2. **Contexto de turno**: la respuesta de `configuracionFlujo`, ordenada en
    `operativo`, `modulos`, `negocio` y `atencion`. El flujo no sabe de planes
    ni de modalidades.
-3. **Reporte de turno y ganchos**: `ingesta`, partida por dentro en el
-   coordinador más los ganchos de los módulos (ver `coordinador.md`).
+3. **Reporte de turno y ganchos**: `ingesta`, que queda como
+   coordinador y llama a los ganchos de los módulos (ver `coordinador.md`; desde
+   F3b-2e sin lógica de Agenda, Campañas, Catálogo web ni Productos).
 4. **Cierre**: `registrarCierre` no cambia. No es la unidad que se factura
    (es la conversación, `docs/base-comercial.md` §2): es el registro
    verificable de lo que terminó bien.
@@ -52,7 +55,7 @@ implementación actual del pipeline de turno. Los cuatro contratos:
 | `firma.ts`, `claims.ts`, `autorizacion.ts` | `functions/src/core/seguridad/` | `claims.ts` es el único emisor de claims |
 | `atencion.ts` | `core/conteo/` | Ventana, bloque, umbrales |
 | `cierres.ts` | `core/turno/` | Contrato de cierre; desde F3b-1b es `crearRegistrarCierre(ganchos)` y no importa nada de arriba: los ganchos de Cobros y Agenda los inyecta `ganchos.ts` (`coordinador.md`) |
-| `ingesta.ts` | `core/turno/`, **se parte** | Coordinador + ganchos que vuelven a sus módulos |
+| `ingesta.ts` | Coordinador, en la raíz de Functions | Ya partida (F3b-2e): los ganchos volvieron a sus módulos; queda `cobroRealActivo` y el conteo de señas, anotados en `SE_PARTE` |
 | `prompt.ts` | `core/prompt/`, **se parte** | La base es core; el resumen del catálogo va a Productos; `documentoDeVertical` desaparece |
 | `region.ts`, `opcionesGlobales.ts` | `core/` | |
 | `cierres`, `conversaciones`, `mensajes`, `metricas` (Firestore) | Core, escribe la ingesta | `contactoId` con prefijo de canal (`Analisis/35`), sin cambiar el conteo |
