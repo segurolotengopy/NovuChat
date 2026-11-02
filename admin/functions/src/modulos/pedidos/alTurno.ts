@@ -25,6 +25,8 @@ export interface DatosDelTurnoPedidos {
   referencia: string | undefined;
   /** Referencia del QR abierto antes de este turno (solo si su etapa era `qr_enviado`). */
   referenciaAnterior: string | undefined;
+  /** Pedido `cat_…` del checkout que este pedido reemplaza (viene del flujo, se revalida en el servidor). */
+  reemplaza?: string | undefined;
   telefono: string;
   monto: number | undefined;
   lineas: unknown;
@@ -40,7 +42,7 @@ export async function despuesDelTurnoPedidos(d: DatosDelTurnoPedidos): Promise<v
       const r = await crearPedidoWa({
         tenantId: d.tenantId, ficha: d.ficha, referencia: d.referencia, telefono: d.telefono,
         montoQr: d.monto, lineas: d.lineas, entrega: d.entrega, facturacion: d.facturacion,
-        referenciaAnterior: d.referenciaAnterior,
+        referenciaAnterior: d.referenciaAnterior, reemplaza: d.reemplaza,
       });
       // Efecto `abierto` con un pedido que ya existía: el flujo reusó la referencia con otro carrito.
       // El pedido conserva lo viejo; se deja constancia, sin datos del pedido, para revisar a mano.

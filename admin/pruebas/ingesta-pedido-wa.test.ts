@@ -120,4 +120,37 @@ describe('la ingesta y el pedido wa_', () => {
     await reportar({ telefono: b, evento: 'cobro_cancelado', direccion: 'entrante', tipo: 'text', texto: 'cancelar' });
     expect(await estadoDe('wa_ped-i-8')).toBe('recibido');
   });
+
+  describe('reemplaza: el cat_ del checkout web', () => {
+    const sembrarCat = async (id: string, t: string) => {
+      await db.doc(`tenants/${T}/pedidos/${id}`).set({ origen: 'catalogo-web', conversacionId: `wa_${t}`, estado: 'recibido', total: 20 });
+    };
+    it('qr_enviado con líneas y reemplaza válido deja el cat_ en `reemplazado` y crea el wa_', async () => {
+      const t = tel();
+      await sembrarCat('cat_i_1', t);
+      const r = await reportar({ telefono: t, evento: 'qr_enviado', referencia: 'ped-r-1', idMeta: 'wamid.r1', monto: 20, lineas: LINEAS, entrega: 'retiro', reemplaza: 'cat_i_1' });
+      expect(r.codigo).toBe(200);
+      expect(await estadoDe('cat_i_1')).toBe('reemplazado');
+      expect(await estadoDe('wa_ped-r-1')).toBe('recibido');
+    });
+    it('negado: sin líneas, en otro evento o con una forma inválida el cat_ queda en `recibido`', async () => {
+      const t = tel();
+      await sembrarCat('cat_i_2', t);
+      await reportar({ telefono: t, evento: 'qr_enviado', referencia: 'ped-r-2', idMeta: 'wamid.r2', monto: 20, reemplaza: 'cat_i_2' });
+      await reportar({ telefono: t, evento: 'horarios_ofrecidos', referencia: 'ped-r-3', lineas: LINEAS, reemplaza: 'cat_i_2' });
+      let k = 4;
+      for (const mal of ['ped-i-1', 'cat_', 'cat_a/b', 'cat_../x', 'CAT_i_2', 7]) {
+        k += 1;
+        await reportar({ telefono: t, evento: 'qr_enviado', referencia: `ped-r-${k}`, idMeta: `wamid.r${k}`, monto: 20, lineas: LINEAS, entrega: 'retiro', reemplaza: mal });
+      }
+      expect(await estadoDe('cat_i_2')).toBe('recibido');
+    });
+    it('negado: el cat_ de OTRO teléfono no se toca aunque el QR lo nombre', async () => {
+      const t = tel(); const otro = tel();
+      await sembrarCat('cat_i_3', otro);
+      await reportar({ telefono: t, evento: 'qr_enviado', referencia: 'ped-r-20', idMeta: 'wamid.r20', monto: 20, lineas: LINEAS, entrega: 'retiro', reemplaza: 'cat_i_3' });
+      expect(await estadoDe('cat_i_3')).toBe('recibido');
+      expect(await estadoDe('wa_ped-r-20')).toBe('recibido');
+    });
+  });
 });

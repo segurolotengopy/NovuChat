@@ -1439,7 +1439,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const m = $('Armar mensajes').item.json; const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (typeof m.evento === 'string' && m.evento) { r.evento = m.evento; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; if (m.evento === 'qr_enviado' && Array.isArray(m.lineas) && m.lineas.length) { r.lineas = m.lineas; if (m.entrega) r.entrega = m.entrega; } } return JSON.stringify(r); })() }}",
+        "jsonBody": "={{ (() => { const m = $('Armar mensajes').item.json; const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (typeof m.evento === 'string' && m.evento) { r.evento = m.evento; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; if (m.evento === 'qr_enviado' && Array.isArray(m.lineas) && m.lineas.length) { r.lineas = m.lineas; if (m.entrega) r.entrega = m.entrega; if (typeof m.reemplaza === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(m.reemplaza)) r.reemplaza = m.reemplaza; } } return JSON.stringify(r); })() }}",
         "options": {
           "timeout": 4000
         }

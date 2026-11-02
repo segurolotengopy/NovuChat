@@ -73,10 +73,14 @@ function pqrEntrega(e) {
 }
 // Los campos extra del mensaje `qr_enviado`. {} si es simulado, si el pedido es del checkout web (`cat_…`: ya lo creó el servidor)
 // o si no queda ninguna línea. NUNCA devuelve facturación.
-function pqrCampos(ref, lineas, entrega, simulado) {
+// `catOriginal` es el `cat_…` del checkout web que este pedido modificó en el chat: viaja como `reemplaza` (solo esa cadena, validada)
+// para que el servidor marque el pedido web como reemplazado y la Consola no muestre dos pedidos por una compra.
+function pqrCampos(ref, lineas, entrega, simulado, catOriginal) {
   if (simulado) return {};
   if (typeof ref !== 'string' || ref === '' || ref.indexOf('cat_') === 0) return {};
   const ls = pqrLineas(lineas);
   if (!ls.length) return {};
-  return { lineas: ls, entrega: pqrEntrega(entrega) };
+  const out = { lineas: ls, entrega: pqrEntrega(entrega) };
+  if (typeof catOriginal === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(catOriginal)) out.reemplaza = catOriginal;
+  return out;
 }
