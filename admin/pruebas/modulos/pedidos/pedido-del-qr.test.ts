@@ -31,7 +31,7 @@ const db = getFirestore();
 const logger = requerir('firebase-functions/logger') as typeof import('firebase-functions/logger');
 
 const P = await import('../../../functions/src/modulos/pedidos/pedidoDelQr.ts');
-const { armarPedidoWa, crearPedidoWa, cerrarPedidoWa, idDePedidoWa } = P;
+const { armarPedidoWa, crearPedidoWa, cerrarPedidoWa, idDePedidoWa, reemplazarPedidoCatalogo } = P;
 
 const CAT = {
   taco: { nombre: 'Taco', precio: 10, moneda: 'BOB', activo: true },
@@ -255,6 +255,93 @@ describe('reemplazo y cancelación', () => {
     expect((await db.doc(`tenants/${T}/pedidos/wa_ped-1`).get()).get('estado')).toBe('recibido');
     expect(await cerrarPedidoWa(T, 'ped-1', 'cancelado')).toBe(true);
     expect((await db.doc(`tenants/${T}/pedidos/wa_ped-1`).get()).get('estado')).toBe('cancelado');
+  });
+});
+
+describe('reemplaza: el pedido del checkout web que se modificó en el chat', () => {
+  const CATID = 'cat_mh8x_a1b2c3d4';
+  const sembrarCat = (o: Record<string, unknown> = {}, t = T, id = CATID) =>
+    db.doc(`tenants/${t}/pedidos/${id}`).set({ origen: 'catalogo-web', conversacionId: `wa_${TEL}`, estado: 'recibido', total: 20, ...o });
+  const estadoDe = async (id = CATID, t = T) => (await db.doc(`tenants/${t}/pedidos/${id}`).get()).get('estado');
+  it('mismo tenant, misma conversación y en recibido: el cat_ pasa a reemplazado y queda quién lo reemplazó', async () => {
+    await sembrarCat();
+    expect(await crearPedidoWa(entrada({ reemplaza: CATID }))).toEqual({ resultado: 'creado', id: 'wa_ped-1' });
+    const d = await db.doc(`tenants/${T}/pedidos/${CATID}`).get();
+    expect(d.get('estado')).toBe('reemplazado');
+    expect(d.get('reemplazadoPor')).toBe('wa_ped-1');
+    expect(d.get('reemplazadoEn')).toBeTruthy();
+    expect((await db.doc(`tenants/${T}/pedidos/wa_ped-1`).get()).get('estado')).toBe('recibido');
+  });
+  it('negado: de OTRO tenant no se toca', async () => {
+    await sembrarCat({}, TB);
+    expect(await crearPedidoWa(entrada({ reemplaza: CATID }))).toMatchObject({ resultado: 'creado' });
+    expect(await estadoDe(CATID, TB)).toBe('recibido');
+    expect(await reemplazarPedidoCatalogo(T, CATID, TEL, 'wa_x')).toBe(false);
+  });
+  it('negado: de otro teléfono no se toca', async () => {
+    await sembrarCat({ conversacionId: 'wa_59171111111' });
+    await crearPedidoWa(entrada({ reemplaza: CATID }));
+    expect(await estadoDe()).toBe('recibido');
+  });
+  it('negado: ya en preparación, entregado o cancelado no se toca', async () => {
+    for (const estado of ['preparando', 'entregado', 'cancelado', 'reemplazado']) {
+      await sembrarCat({ estado });
+      expect(await reemplazarPedidoCatalogo(T, CATID, TEL, 'wa_x')).toBe(false);
+      expect(await estadoDe()).toBe(estado);
+    }
+  });
+  it('negado: un doc que no es del checkout web (origen whatsapp) bajo un id cat_ no se toca', async () => {
+    await sembrarCat({ origen: 'whatsapp' });
+    expect(await reemplazarPedidoCatalogo(T, CATID, TEL, 'wa_x')).toBe(false);
+  });
+  it('negado: referencias con / o .., sin cat_, vacías o no texto no tocan nada ni lanzan', async () => {
+    await sembrarCat({}, T, 'ped-9');
+    await db.doc(`tenants/${TB}/pedidos/cat_x`).set({ origen: 'catalogo-web', conversacionId: `wa_${TEL}`, estado: 'recibido' });
+    for (const [k, r] of ['cat_../../../pdq-b/pedidos/cat_x', '../pdq-b/pedidos/cat_x', 'cat_a/b', 'ped-9', 'wa_ped-1', '', 'cat_', 7, null, {}].entries()) {
+      expect(await reemplazarPedidoCatalogo(T, r, TEL, 'wa_x')).toBe(false);
+      await expect(crearPedidoWa(entrada({ referencia: `ped-r${k}`, reemplaza: r }))).resolves.toMatchObject({ resultado: 'creado' });
+    }
+    expect(await estadoDe('ped-9')).toBe('recibido');
+    expect(await estadoDe('cat_x', TB)).toBe('recibido');
+  });
+  it('negado: sin teléfono válido no se toca', async () => {
+    await sembrarCat();
+    for (const tel of ['', undefined, 'abc']) expect(await reemplazarPedidoCatalogo(T, CATID, tel, 'wa_x')).toBe(false);
+    expect(await estadoDe()).toBe('recibido');
+  });
+  it('un repetido (ALREADY_EXISTS) no cierra nada: ni el cat_ ni dos veces', async () => {
+    await crearPedidoWa(entrada());
+    await sembrarCat();
+    expect(await crearPedidoWa(entrada({ reemplaza: CATID }))).toEqual({ resultado: 'repetido', id: 'wa_ped-1' });
+    expect(await estadoDe()).toBe('recibido');
+  });
+  it('si no se crea el pedido (sin líneas, módulo apagado) el cat_ queda como estaba', async () => {
+    await sembrarCat();
+    await crearPedidoWa(entrada({ reemplaza: CATID, lineas: [] }));
+    await crearPedidoWa(entrada({ reemplaza: CATID, ficha: null }));
+    expect(await estadoDe()).toBe('recibido');
+  });
+  it('una referencia cat_ propia sigue sin crear nada, y tampoco cierra el reemplaza', async () => {
+    await sembrarCat();
+    expect(await crearPedidoWa(entrada({ referencia: 'cat_otro', reemplaza: CATID }))).toMatchObject({ resultado: 'sin_pedido' });
+    expect(await estadoDe()).toBe('recibido');
+  });
+  it('un fallo al cerrar no deshace el pedido nuevo ni lanza, y registra sin datos del pedido', async () => {
+    const espia = vi.spyOn(db, 'runTransaction').mockRejectedValueOnce(new Error('boom'));
+    try {
+      await sembrarCat();
+      expect(await crearPedidoWa(entrada({ reemplaza: CATID }))).toEqual({ resultado: 'creado', id: 'wa_ped-1' });
+    } finally { espia.mockRestore(); }
+    expect(bitacora.registrar).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(bitacora.registrar.mock.calls)).toContain('pedido_wa_cierre');
+    expect(JSON.stringify(bitacora.registrar.mock.calls)).not.toContain(CATID);
+    expect(JSON.stringify(bitacora.registrar.mock.calls)).not.toContain(TEL);
+  });
+  it('regresión: sin reemplaza nada cambia', async () => {
+    await sembrarCat();
+    await crearPedidoWa(entrada());
+    expect(await estadoDe()).toBe('recibido');
+    expect(await pedidos(T)).toHaveLength(2);
   });
 });
 

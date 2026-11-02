@@ -259,8 +259,8 @@ function amQr(m, cuerpo) {
   if (m.evento === 'qr_enviado') {
     salida.evento = 'qr_enviado';
     // Para que el servidor cree el pedido wa_: solo identificadores, cantidades y detalle (se vuelven a sanear aquí; sin precios ni NIT).
-    const pqr = pqrCampos(pedidoId, m.lineas, m.entrega, simulado);
-    if (pqr.lineas) { salida.lineas = pqr.lineas; salida.entrega = pqr.entrega; }
+    const pqr = pqrCampos(pedidoId, m.lineas, m.entrega, simulado, m.reemplaza);
+    if (pqr.lineas) { salida.lineas = pqr.lineas; salida.entrega = pqr.entrega; if (pqr.reemplaza) salida.reemplaza = pqr.reemplaza; }
   }
   return salida;
 }

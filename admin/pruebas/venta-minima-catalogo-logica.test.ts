@@ -584,6 +584,27 @@ describe('el carrito que vuelve de la página', () => {
     expect(mensajes(sinCambio)[0]!['monto']).toBe(116);
   });
 
+  it('reemplaza: el QR con id propio por un cambio del carrito web lleva el `cat_…` original como `reemplaza`; sin cambio (id cat_) no lo lleva', () => {
+    const m = crear();
+    carrito(m, {}, respuesta(COBRO_REAL));
+    const nuevoCatalogo = CATALOGO.map((i) => (i['id'] === 'nachos' ? { ...i, precio: 60 } : i));
+    const conPrecio = respuesta({ ...COBRO_REAL, catalogo: nuevoCatalogo });
+    turno(m, { mensaje: boton('p|confirmar', 'Confirmar pedido') }, conPrecio);
+    expect(estadoDe(m)['pedidoWeb']).toBeNull();
+    expect(estadoDe(m)['catOriginal']).toBe('cat_abc123_00ff'); // sobrevive a la revalidación
+    const qr = mensajes(turno(m, { mensaje: boton('p|confirmar', 'Confirmar pedido') }, conPrecio))[0]!;
+    expect(String(qr['referencia'])).toMatch(/^ped-/);
+    expect(qr['reemplaza']).toBe('cat_abc123_00ff');
+    expect(Array.isArray(qr['lineas'])).toBe(true);
+    expect(estadoDe(m)['catOriginal'] ?? null).toBeNull(); // el pedido se cerró: no queda para el siguiente
+    // Negando: con el id del checkout intacto el QR usa el `cat_…` y no reemplaza nada.
+    const n = crear();
+    carrito(n, {}, respuesta(COBRO_REAL));
+    const sin = mensajes(turno(n, { mensaje: boton('p|confirmar', 'Confirmar pedido') }, respuesta(COBRO_REAL)))[0]!;
+    expect(sin['referencia']).toBe('cat_abc123_00ff');
+    expect(sin['reemplaza']).toBeUndefined();
+  });
+
   it('N1: «Dejarlo como estaba» tras un cambio de precio tampoco vuelve a poner el id `cat_…` (primero se revalida, luego se decide el id)', () => {
     const m = crear();
     carrito(m, {}, respuesta({ ...COBRO_REAL, catalogoWeb: { enlace: URL_CATALOGO } }));

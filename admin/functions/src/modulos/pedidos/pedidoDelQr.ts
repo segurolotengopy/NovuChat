@@ -213,7 +213,11 @@ export interface EntradaPedidoWa {
   facturacion?: unknown;
   /** La referencia del QR abierto antes de este, si cambió el carrito. */
   referenciaAnterior?: unknown;
+  /** El pedido `cat_…` del checkout web que este pedido de WhatsApp reemplaza (el cliente lo modificó en el chat). */
+  reemplaza?: unknown;
 }
+
+const CAT_VALIDO = /^cat_[A-Za-z0-9_-]{1,56}$/;
 
 const alreadyExists = (e: unknown): boolean => {
   const c = (e as { code?: unknown } | null)?.code;
@@ -237,6 +241,28 @@ export async function cerrarPedidoWa(
       if (s.get('conversacionId') !== `wa_${digitos}`) return false;
     }
     tx.update(ref, { estado: nuevo, [`${nuevo}En`]: Timestamp.now() });
+    return true;
+  });
+}
+
+/**
+ * Pasa un pedido del checkout web (`cat_…`) de `recibido` a `reemplazado` porque el cliente lo modificó en el chat y
+ * el QR salió con una referencia propia (`ped-…`). Solo si es del mismo tenant (la ruta lo fija), de la MISMA
+ * conversación y sigue en `recibido`: uno en preparación o entregado no se toca. Devuelve si lo cerró.
+ */
+export async function reemplazarPedidoCatalogo(
+  tenantId: string, catId: unknown, telefono: unknown, porId: string,
+): Promise<boolean> {
+  if (!TENANT_VALIDO.test(tenantId)) return false;
+  if (typeof catId !== 'string' || !CAT_VALIDO.test(catId)) return false;
+  const digitos = typeof telefono === 'string' ? telefono.replace(/[^0-9]/g, '') : '';
+  if (digitos === '') return false;
+  const ref = db().doc(`tenants/${tenantId}/pedidos/${catId}`);
+  return db().runTransaction(async (tx) => {
+    const s = await tx.get(ref);
+    if (!s.exists || s.get('origen') !== 'catalogo-web' || s.get('estado') !== 'recibido') return false;
+    if (s.get('conversacionId') !== `wa_${digitos}`) return false;
+    tx.update(ref, { estado: 'reemplazado', reemplazadoEn: Timestamp.now(), reemplazadoPor: porId });
     return true;
   });
 }
@@ -274,6 +300,11 @@ export async function crearPedidoWa(e: EntradaPedidoWa): Promise<ResultadoEscrit
       // El pedido nuevo ya existe: un fallo al cerrar el anterior no lo deshace.
       try { await cerrarPedidoWa(e.tenantId, anterior, 'reemplazado', e.telefono); } catch {
         try { await registrar(e.tenantId, { tipo: 'error_flujo', resultado: 'fallo', codigo: 'pedido_wa_cierre', detalle: 'no se pudo cerrar el pedido anterior de WhatsApp' }); } catch { /* nunca lanza */ }
+      }
+    }
+    if (typeof e.reemplaza === 'string' && e.reemplaza !== '') {
+      try { await reemplazarPedidoCatalogo(e.tenantId, e.reemplaza, e.telefono, id); } catch {
+        try { await registrar(e.tenantId, { tipo: 'error_flujo', resultado: 'fallo', codigo: 'pedido_wa_cierre', detalle: 'no se pudo marcar como reemplazado el pedido del checkout web' }); } catch { /* nunca lanza */ }
       }
     }
     return { resultado: 'creado', id };
