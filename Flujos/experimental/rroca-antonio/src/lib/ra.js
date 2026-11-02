@@ -719,8 +719,17 @@ function raTextoCatalogo(cat, conOpciones, nom) {
 }
 // LA UBICACIÓN (02/11/2026): «¿dónde quedan?», «mándame el mapa», «cómo llego». El prompt prohíbe enlaces al modelo, así que la respuesta la arma el CÓDIGO con lo que la Consola trae (`direccion` y `direccionMaps`): nunca se inventa una dirección ni un enlace.
 // Sin ninguno de los dos datos, lo único que se ofrece es pasar con Antonio (aviso + botón; clave `ubicacion`), como con cualquier consulta que el asistente no sabe responder.
-const RA_PIDE_UBICACION = /\b(ubicacion|ubicados|ubicadas|ubicarlos|direccion|mapa|maps|como (llego|llegar|llegamos)|donde (estan|estamos|queda|quedan|atienden|se encuentran|se ubican|puedo ir|los encuentro))\b/;
-function raPideUbicacion(n) { return RA_PIDE_UBICACION.test(String(n || '')); }
+// Solo frases que piden la ubicación DEL NEGOCIO: «mi dirección» / «mi ubicación» (la del cliente), «dirección de correo/email», «dónde queda(n) el libro / los archivos / el enlace…», «cómo llego a la página de pago» y un «mapa» suelto NO cuentan.
+const RA_COSAS_DEL_PEDIDO = '(?: (?:el|la|los|las|mi|mis|su|sus|un|una|del|de la))? ?(?:libro|libros|pdf|archivo|archivos|bono|bonos|material|materiales|enlace|enlaces|link|links|acceso|descarga|descargas|pedido|comprobante|pago|pagina|correo|email|mail|web|sitio)\\b';
+const RA_PIDE_UBICACION = new RegExp('\\b(?:'
+  + '(?<!\\bmi )ubicacion(?! de (?:mi|mis)\\b)|ubicados|ubicadas|ubicado|ubicada|ubicarlos'
+  + '|(?<!\\bmi )direccion(?! (?:de |del )?(?:correo|email|mail|e mail))(?! del (?:correo|email|mail))'
+  + '|(?:manda\\w*|pasa\\w*|envi\\w*|dame|dar\\w*|comparte\\w*|compartir\\w*|ver)(?: me| nos)?(?: el| un| tu| su)? (?:mapa|maps)\\b(?! mental)|mapa de (?:ubicacion|como llegar)|google maps'
+  + '|como (?:llego|llegar|llegamos)(?! (?:a|al)(?: la| el| mi| mis| su)? ?(?:pagina|pago|enlace|link|libro|material|archivo|archivos|bono|bonos|descarga|correo|pedido|web|sitio)\\b)'
+  + '|donde (?:queda|quedan|atienden|se encuentran|se ubican|los encuentro)(?!' + RA_COSAS_DEL_PEDIDO + ')'
+  + ')');
+// Un correo escrito (con «@»): es el correo del cliente, no una pregunta por la ubicación del negocio.
+function raPideUbicacion(n, crudo) { return RA_PIDE_UBICACION.test(String(n || '')) && String(crudo === undefined ? '' : crudo).indexOf('@') < 0; }
 // El enlace de Google Maps de la Consola: LA MISMA regla que `enlaceDeMapaValido` del servidor (https, uno de los dominios de mapas, hasta 200 caracteres, sin espacios). Inválido, ausente o de otro dominio = ''.
 const RA_ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
 function raEnlaceDeMapa(v) {
@@ -731,7 +740,8 @@ function raEnlaceDeMapa(v) {
 // El cuerpo de la respuesta, o '' si la Consola no trae ni dirección ni enlace válido (entonces el plan deriva).
 function raTextoUbicacion(cfg) {
   const c = cfg && typeof cfg === 'object' ? cfg : {};
-  const dir = typeof c.direccion === 'string' ? c.direccion.trim() : '';
+  // Segunda barrera: una dirección que parezca un enlace (con o sin esquema) o traiga caracteres invisibles no se muestra.
+  const dir = typeof c.direccion === 'string' && !/https?:|www\.|wa\.me|maps|goo\.gl|\b[a-z0-9-]+\.(?:com|net|org|bo|ly|me|io|app|link|gl)\b|[\u200B-\u200F\u2060\uFEFF]/i.test(c.direccion) ? c.direccion.trim() : '';
   const mapa = raEnlaceDeMapa(c.direccionMaps);
   if (!dir && !mapa) return '';
   return [dir ? 'Nos ubicamos en ' + dir + '.' : '', mapa ? '📍 Ubicación: ' + mapa : ''].filter((x) => x !== '').join('\n\n');

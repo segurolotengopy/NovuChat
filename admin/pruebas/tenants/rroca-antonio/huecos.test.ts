@@ -112,7 +112,7 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
       '    ...deBase, ...atencion,',
       '  };',
       // Fase 2 del rehecho de Antonio: los anuncios de la Consola (≤ 20), solo en la rama 200.
-      '    direccion: util(dn.direccion) && !/https?:|www\\.|wa\\.me|maps|goo\\.gl/i.test(dn.direccion) ? linea(dn.direccion, 160) || undefined : undefined,',
+      '    direccion: util(dn.direccion) && !/https?:|www\\.|wa\\.me|maps|goo\\.gl|\\b[a-z0-9-]+\\.(?:com|net|org|bo|ly|me|io|app|link|gl)\\b|[\\u200B-\\u200F\\u2060\\uFEFF]/i.test(dn.direccion) ? linea(dn.direccion, 160) || undefined : undefined,',
       '    direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,',
       '  const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === \'object\' && !Array.isArray(a)).slice(0, 20) : [];',
       '  cfg = {',

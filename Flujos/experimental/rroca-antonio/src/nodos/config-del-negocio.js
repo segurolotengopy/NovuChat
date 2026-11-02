@@ -70,7 +70,7 @@ if (codigo === 409) {
   const deLaConsola = soloLlenos({
     nombreNegocio: util(dn.nombreNegocio) ? linea(dn.nombreNegocio, 60) : undefined,
     // La ubicación (02/11/2026): la dirección en texto (sin enlaces) y el enlace de Maps, que `enlaceDeMapa` (misma regla que el servidor; `raEnlaceDeMapa` la repite al usarlo) comprueba aquí. Sin datos, el flujo no inventa nada: deriva.
-    direccion: util(dn.direccion) && !/https?:|www\.|wa\.me|maps|goo\.gl/i.test(dn.direccion) ? linea(dn.direccion, 160) || undefined : undefined,
+    direccion: util(dn.direccion) && !/https?:|www\.|wa\.me|maps|goo\.gl|\b[a-z0-9-]+\.(?:com|net|org|bo|ly|me|io|app|link|gl)\b|[\u200B-\u200F\u2060\uFEFF]/i.test(dn.direccion) ? linea(dn.direccion, 160) || undefined : undefined,
     direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,
     // Solo dígitos: es el destino del botón a una persona.
     numeroRecepcion: recepcion ? (cnDigitos(recepcion) || undefined) : undefined,

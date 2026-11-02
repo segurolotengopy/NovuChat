@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
-import { ANA, crear, hablar, mTexto, panelOk } from './mundo';
+import { ANA, crear, hablar, mTexto, panelConQr, panelOk } from './mundo';
 import type { ResultadoTurno } from '../../lib/flujo';
 
 const MAPS = 'https://maps.app.goo.gl/AbC123xyz';
@@ -21,7 +21,7 @@ const esBoton = (t: ResultadoTurno) => t.mensajes[0]?.payload['interactive']?.ty
 const avisos = (t: ResultadoTurno) => t.ejecutados.has('Enviar aviso');
 
 describe('(a) pide la ubicación y hay dato válido: sale el enlace y la dirección', () => {
-  for (const q of ['¿dónde quedan?', 'mándame el mapa', 'cómo llego', 'cuál es su dirección?', 'me das la ubicación exacta']) {
+  for (const q of ['¿dónde quedan?', 'mándame el mapa', 'cómo llego', 'cuál es su dirección?', 'me das la ubicación exacta', '¿dónde está ubicado?', 'pásame el mapa de cómo llegar', '¿dónde atienden?']) {
     it(`«${q}»`, () => {
       const t = turno({ direccion: DIR, direccionMaps: MAPS }, q);
       expect(t.mensajes).toHaveLength(1);
@@ -102,6 +102,56 @@ describe('(d) no pide la ubicación: no se agrega nada', () => {
       expect(todo(t), q).not.toContain(MAPS);
       expect(todo(t), q).not.toContain('📍');
       expect(todo(t), q).not.toContain(DIR);
+    });
+  }
+});
+
+describe('(d2) frases que NO piden la ubicación del negocio (un comprador que ya pagó no recibe «no tengo la dirección»)', () => {
+  const NO = ['¿dónde están mis libros?', 'ya pagué, ¿dónde están los archivos?', 'donde estan los bonos', '¿dónde queda el enlace de descarga?', 'a qué dirección de correo me lo mandan',
+    'mi dirección de correo es ana' + '@' + 'dominio.example', '¿en qué dirección de email llega?', 'cómo llego a la página de pago', 'donde puedo ir a pagar', 'donde estamos con mi pedido', '¿el libro trae un mapa mental?',
+    'mi dirección es calle 5', '¿dónde queda mi pedido?'];
+  for (const q of NO) {
+    it(`«${q}» no activa la ubicación ni su derivación`, () => {
+      for (const dn of [{}, { direccion: DIR, direccionMaps: MAPS }]) {
+        const t = turno(dn, q);
+        const av = (t.porNodo['Armar avisos']?.[0] ?? {}) as Record<string, unknown>;
+        expect(av['clave'], q).not.toBe('ubicacion');
+        expect(todo(t), q).not.toMatch(/no tengo la direcci|📍|Nos ubicamos/);
+      }
+    });
+  }
+});
+
+describe('prioridades: la ubicación no pisa la cancelación, el cobro ni la queja de no entrega', () => {
+  it('«cancela mi pedido, ¿dónde quedan?» con un QR abierto cancela (no responde la ubicación)', () => {
+    const w = crear({ panel: panelConQr(49, { datosDelNegocio: { nombreNegocio: 'El Puente', direccion: DIR, direccionMaps: MAPS } }) });
+    hablar(w, ANA, mTexto('Hola'));
+    const t = hablar(w, ANA, mTexto('cancela mi pedido, ¿dónde quedan?'));
+    expect(todo(t)).not.toContain('📍');
+    expect(todo(t)).toMatch(/pedido/i);
+  });
+  it('con un QR abierto, «ya pagué, ¿dónde quedan?» sigue el camino del pago, no la ubicación', () => {
+    const w = crear({ panel: panelConQr(49, { datosDelNegocio: { nombreNegocio: 'El Puente', direccion: DIR, direccionMaps: MAPS } }) });
+    hablar(w, ANA, mTexto('Hola'));
+    const t = hablar(w, ANA, mTexto('ya pagué, ¿dónde quedan?'));
+    expect(todo(t)).not.toContain('📍');
+  });
+  it('con un QR abierto, «¿dónde quedan?» sola recibe la ubicación y la invitación a pagar', () => {
+    const w = crear({ panel: panelConQr(49, { datosDelNegocio: { nombreNegocio: 'El Puente', direccion: DIR, direccionMaps: MAPS } }) });
+    hablar(w, ANA, mTexto('Hola'));
+    const t = hablar(w, ANA, mTexto('¿dónde quedan?'));
+    expect(t.mensajes).toHaveLength(1);
+    expect(todo(t)).toContain(MAPS);
+  });
+});
+
+describe('dirección con dominio sin esquema o con caracteres invisibles', () => {
+  for (const d of ['bit.ly/abc', 'ejemplo.com/ir', 't.me/x', 'Calle 5 ejemplo.com', 'ht​tps://x', 'Calle⁠ 5 ﻿zona']) {
+    it(`«${JSON.stringify(d)}» se descarta: sin dato válido se pasa con Antonio`, () => {
+      const t = turno({ direccion: d }, '¿dónde quedan?');
+      expect(todo(t)).not.toContain(d);
+      expect(todo(t)).not.toMatch(/Nos ubicamos/);
+      expect(esBoton(t)).toBe(true);
     });
   }
 });
