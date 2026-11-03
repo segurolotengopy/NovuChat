@@ -52,7 +52,7 @@ set -euo pipefail
 unset N8N_BASE_URL N8N_API_KEY RELE_ENV RELE_ALIAS RELE_ENTREGA RELE_APLICAR RELE_RESPALDO_DIR RELE_NOMBRE RELE_CABECERA RELE_PREFIJO RELE_REGEX RELE_CREA
 
 # ---- Constantes (parametrizables) -------------------------------------------------------------
-ALIAS_PERMITIDOS="evy emma ruben antonio ensayo01"     # nombres de Flujos/experimental/rroca-* y la línea de ensayo
+ALIAS_PERMITIDOS="evy emma ruben antonio cliente07 cliente08 ensayo01"   # nombres de Flujos/experimental/rroca-* y la línea de ensayo
 ALIAS_CREA_SI_FALTA="ensayo01"                         # solo estos pueden crear la credencial
 PREFIJO_ENTREGA="llave-rele-"                          # $XDG_RUNTIME_DIR/<prefijo><alias>
 PREFIJO_NOMBRE="AAB1 envío · "                         # nombre de la credencial = prefijo + alias

@@ -323,6 +323,33 @@ describe('--aplicar', () => {
     expect(existsSync(ruta)).toBe(true);
     limpia(r.salida);
   });
+  for (const [alias, quien] of [['cliente07', 'Emma'], ['cliente08', 'Evy']] as const) {
+    it(`${alias} (${quien}): seco encuentra la credencial; aplicar hace PATCH en el lugar y borra la entrega`, async () => {
+      creds.push({ id: `${alias}abcd`, name: `AAB1 envío · ${alias}`, type: 'httpHeaderAuth' });
+      const ruta = entrega(alias);
+      const s = await correr(seco(alias));
+      expect(s.codigo).toBe(0);
+      expect(escrituras()).toHaveLength(0);
+      limpia(s.salida);
+      const r = await correr(aplicar(alias));
+      expect(r.codigo).toBe(0);
+      expect(escrituras()).toHaveLength(1);
+      const w = escrituras()[0]!;
+      expect(w.metodo).toBe('PATCH');
+      expect(w.ruta).toBe(`/api/v1/credentials/${alias}abcd`);
+      expect(llamadas.some((l) => l.metodo === 'DELETE')).toBe(false);
+      expect(existsSync(ruta)).toBe(false);
+      limpia(r.salida);
+    });
+    it(`${alias} (${quien}): no puede crear la credencial si falta (sale 2)`, async () => {
+      const ruta = entrega(alias);
+      const r = await correr(aplicar(alias));
+      expect(r.codigo).toBe(2);
+      expect(escrituras()).toHaveLength(0);
+      expect(existsSync(ruta)).toBe(true);
+      limpia(r.salida);
+    });
+  }
   it('solo el alias de ensayo crea la credencial si falta', async () => {
     const ruta = entrega('ensayo01');
     const r = await correr(aplicar('ensayo01'));
