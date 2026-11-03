@@ -732,6 +732,60 @@
       "notes": "Copia del Demo B. El audio muere aquí: lo que sigue es texto. Si falla, `Decidir turno` pide que lo escriban."
     },
     {
+      "id": "guardar-comprobante",
+      "name": "Guardar comprobante",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3560,
+        500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/guardarComprobante",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ (() => { const c = $('Config del negocio').first().json; return c.modoPrueba === true ? String(c.phoneNumberIdEsperado || '') : String($('Interpretar entrada').first().json.phoneNumberId || ''); })() }}"
+            },
+            {
+              "name": "X-NovuChat-Telefono",
+              "value": "={{ String($('Interpretar entrada').first().json.from || '') }}"
+            },
+            {
+              "name": "X-NovuChat-IdMeta",
+              "value": "={{ String($('Interpretar entrada').first().json.mensajeId || '') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Guarda la IMAGEN del comprobante (los bytes que bajó `Descargar medio`) para el visor de la consola: `POST guardarComprobante`, solo con el token del número (una firma no cubre una imagen), con el teléfono y el id del mensaje en cabeceras; el tipo lo comprueba el servidor por los bytes. Rama TERMINAL y sin salidas: no toca el binario que lee Gemini, y va ARRIBA de `¿Es PDF?` para correr antes (orden del lienzo). Si falla (409 sin cobro abierto, 413, 415, 502 o un corte), `Interpretar lectura` manda `ruta: null` y el cotejo corre igual: guardar la imagen nunca bloquea la respuesta al cliente. Se guarda 90 días y solo la ve quien abre el visor."
+    },
+    {
       "id": "es-pdf",
       "name": "¿Es PDF?",
       "type": "n8n-nodes-base.if",
@@ -875,7 +929,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ telefono: $json.telefono, legible: $json.legible === true, leido: ($json.leido && typeof $json.leido === 'object') ? $json.leido : {}, idMeta: $json.idMeta || '' }) }}",
+        "jsonBody": "={{ JSON.stringify({ telefono: $json.telefono, legible: $json.legible === true, leido: ($json.leido && typeof $json.leido === 'object') ? $json.leido : {}, idMeta: $json.idMeta || '', ruta: typeof $json.ruta === 'string' ? $json.ruta : null }) }}",
         "options": {
           "timeout": 8000,
           "response": {
@@ -1870,6 +1924,11 @@
           }
         ],
         [
+          {
+            "node": "Guardar comprobante",
+            "type": "main",
+            "index": 0
+          },
           {
             "node": "¿Es PDF?",
             "type": "main",

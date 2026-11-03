@@ -107,8 +107,9 @@ S Última interacción, T Se cierra la ventana de 24 h** (del bot); **U Diagnós
 sin los campos nuevos la salida de `crmDecidirFila` es idéntica a la de antes (el oráculo `decidir-fila-antes.js` lo prueba).
 
 **Reglas en código, no en el modelo** (`crm.js`):
-- `crmClasificar({aceptoAgendar, pidioUbicacion, pidioLlamada, llegoPorAnuncio, preguntoPrecioYCerro, noEsPaciente})`:
-  `No es lead` (no es paciente, gana a todo) > `Caliente` (aceptó agendar, pidió ubicación o que lo llamen) >
+- `crmClasificar({aceptoAgendar, pidioUbicacion, pidioLlamada, inicioCompra, llegoPorAnuncio, preguntoPrecioYCerro, noEsPaciente})`
+  (`inicioCompra`, 02/11/2026, decisión de Andres: señal neutra para quien vende en vez de agendar; el flujo emitió un cobro o recibió un comprobante; los flujos que no la traen no cambian):
+  `No es lead` (no es paciente, gana a todo) > `Caliente` (aceptó agendar, pidió ubicación, pidió que lo llamen o inició la compra) >
   `Frío` (preguntó el precio y cerró) > `Tibio` (llegó por anuncio o escribió y no avanzó). Solo `=== true` cuenta.
 - `crmPrioridad(clasificacion)`: Alta, Media, Baja o N/A (función pura; la planilla no tiene columna de prioridad).
 - `crmVentana24h(ultimaInteraccionMs)`: última interacción + 24 h; se escribe en hora de La Paz («AAAA-MM-DD HH:MM»).
@@ -159,6 +160,8 @@ la credencial llega como token `@@cred:`), `hallazgosCrm` (rango que llega a la 
 `ramaCrm` en F1. Mensajes por conversación: 0. Pruebas: `admin/pruebas/modulos/crm/crm-f0.test.ts`.
 
 **PR-F1 (31/10/2026), Evy (`rroca-evy`).** Primer flujo de cliente con la rama de señales: `ramaCrm` (8 nodos, 45 -> 53 en producción y 40 -> 48 en la prueba; tope subido por DP1, `docs/versiones-por-cliente.md`), mapa `crm` en los datos de Evy (A..I y N..T del bot, J..M y U del equipo; la U no se lee), `evProspectoCrm` en `ev.js` (vocabulario cerrado, sin «no es paciente», DP4) y `guardarPlanilla` en `armar-mensajes.js` (nunca con riesgo, baja, nada, suspendido, uso extendido, etapa de prueba ni id vacío; la variante de prueba lleva el id vacío). El Switch 3.2 de `ramaCrm` se verificó contra los `node-definitions` de n8n 2.36.5 (`rules.values[]` con `conditions` de la forma del IF v2, `outputKey`, `renameOutput`): coincide, sin cambios. El arnés `n8n-de-mentira.ts` ganó el caso `switch` (modo `rules`). Evy suma a `crm-hallazgos-flujos.test.ts`. Mensajes por conversación: 0. Pruebas: `admin/pruebas/tenants/rroca-evy/crm.test.ts`. Pendiente del ensayo: títulos de la fila 3 y formato de ID contra la copia viva de la planilla.
+
+**PR-F3 (02/11/2026), Rubén (`rroca-ruben`).** La misma rama de 8 nodos (63 y 58 nodos) para un flujo que VENDE en vez de agendar. Señal nueva y neutra del módulo, `inicioCompra` (decisión de Andres, opción B): el flujo emitió un QR de cobro o recibió un comprobante, en este turno o en uno anterior (`pedidos`, `comprobanteMs` de la ficha); cuenta como Caliente. `pidioLlamada` = pidió hablar con Rubén; `llegoPorAnuncio` = trae la referencia de un anuncio. Sin «Frío» (no hay detector de rechazo y no se inventa uno) ni «No es lead» (lo marca el equipo). `rrProspectoCrm` en `rr.js`; `guardarPlanilla` nunca en modo prueba, con la puerta cerrada (suspendido, uso extendido, pausa por persona), con un número de otro país ni sin mensaje; la prueba lleva el id vacío. Mensajes por conversación: 0. Pruebas: `admin/pruebas/tenants/rroca-ruben/crm.test.ts`.
 
 **PR-F2 (02/11/2026), Emma (`rroca-emma`).** Misma rama de 8 nodos y mismas reglas que Evy (53 y 48 nodos, DP1; mapa `crm` A..I y N..T del bot, J..M y U del equipo; `evProspectoCrm` en su `ev.js`; `guardarPlanilla` nunca con riesgo, baja, nada, suspendido, uso extendido, etapa de prueba ni id vacío; la prueba lleva el id vacío). Mensajes por conversación: 0. Pruebas: `admin/pruebas/tenants/rroca-emma/crm.test.ts` y Emma en `crm-hallazgos-flujos.test.ts`.
 

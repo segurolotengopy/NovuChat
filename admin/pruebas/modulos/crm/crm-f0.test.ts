@@ -123,7 +123,7 @@ describe('adaptador general de señales y contrato CRM_ADAPTADOR', () => {
       expect(r).toMatchObject({ accionPlanilla: 'nada', veredictoPlanilla: 'adaptador_invalido' });
     });
   it.each([
-    [{ aceptoAgendar: true }, 'Alta'], [{ pidioUbicacion: true }, 'Alta'], [{ pidioLlamada: true }, 'Alta'], [{}, 'Media'],
+    [{ aceptoAgendar: true }, 'Alta'], [{ pidioUbicacion: true }, 'Alta'], [{ pidioLlamada: true }, 'Alta'], [{ inicioCompra: true }, 'Alta'], [{ inicioCompra: 'true' }, 'Media'], [{}, 'Media'],
     [{ llegoPorAnuncio: true }, 'Media'], [{ preguntoPrecioYCerro: true }, 'Baja'], [{ noEsPaciente: true, pidioUbicacion: true }, 'Descalificado'],
   ] as Array<[J, string]>)('señales %j: calificación %s', (senales, esperada) => expect(M.CRM_ADAPTADOR.calificar({ senales })).toBe(esperada));
   it('sin señales o con señales raras, Media (nunca revienta)', () => {

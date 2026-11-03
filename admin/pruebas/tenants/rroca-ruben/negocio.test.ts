@@ -125,10 +125,12 @@ describe('negocio-rroca-ruben.json: repositorio público y marcadores', () => {
       ],
     } as unknown as Flujo);
     const datos = { configBase: { avisoComprobanteEstado: 'APPROVED', avisoComprobantePlantilla: 'a', avisoConsultaEstado: 'APPROVED', avisoConsultaPlantilla: 'b', avisoPlantillaIdioma: 'es', telefonosDePrueba: '59100000042' } };
-    const h = guardiaDePublicacion({ flujo: envolver(TEXTO), datos, anuncios: 3 }) as string[];
+    // La guardia del miniCRM (`miniCRM: …`) se prueba en crm.test.ts; este "flujo" mínimo no lleva su rama.
+    const sinCrm = (l: string[]): string[] => l.filter((x) => !/^miniCRM:/.test(x));
+    const h = sinCrm(guardiaDePublicacion({ flujo: envolver(TEXTO), datos, anuncios: 3 }) as string[]);
     expect(h).toHaveLength(PENDIENTES.length);
     for (const m of PENDIENTES) expect(h.join('|')).toContain(m);
-    expect(guardiaDePublicacion({ flujo: envolver(TEXTO.replace(/REEMPLAZAR_[A-Z0-9_]+/g, 'dato-real')), datos, anuncios: 3 })).toEqual([]);
+    expect(sinCrm(guardiaDePublicacion({ flujo: envolver(TEXTO.replace(/REEMPLAZAR_[A-Z0-9_]+/g, 'dato-real')), datos, anuncios: 3 }) as string[])).toEqual([]);
   });
 
   it('el número de recepción va como marcador de la tabla local (numeroRecepcionMarcador), nunca el número', () => {

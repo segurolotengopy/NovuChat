@@ -560,6 +560,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
     'Registrar cierre': (ll) => { captura.cierre.push(ll.cuerpo ?? {}); return { ok: true }; },
     'Obtener URL del medio': () => ({ id: 'm', url: 'https://medios.ejemplo.invalid/m', mime_type: 'image/jpeg', file_size: 100_000 }),
     'Descargar medio': () => ({}),
+    'Guardar comprobante': () => ({ statusCode: 409, body: { error: 'sin_cobro_pendiente' } }), // la batería no guarda nada: el cotejo sigue con `ruta: null`
     // La rama común del GUARDADO de medios: sin red, el servidor responde «guardado_apagado» (la bandera por defecto).
     ...doblesDeBateriaDelGuardado(),
     'Transcribir audio': () => ({ content: { parts: [{ text: String(turnoActual.t?.cliente?.transcripcion ?? '') }] } }),

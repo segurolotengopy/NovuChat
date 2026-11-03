@@ -189,6 +189,7 @@ La rama común del **guardado de medios** (`Flujos/experimental/comun-sin-agente
 El contrato v2 (30/10/2026) quita «¿Anotar medio?» y «Anotar medio»: todo medio (imagen, audio, video, documento de cualquier tipo, sticker) se guarda por el camino normal. La rama queda en **9 nodos** y la excepción del 29/10 (**Andres, 29/10/2026**) se mantiene con 2 nodos menos en cada flujo:
 
 - **Q'Taco** (`venta-minima.qtaco.json`): 61 → **59** nodos y tope 61 → 59.
+- **Q'Taco** (`venta-minima.qtaco.json`): 59 → **60** nodos y tope 59 → 60. Por qué: «Guardar comprobante» (guardar el comprobante antes de leerlo, PR #688), +1 nodo. Aprobado por: **Andres, 03/11/2026**.
 - **Rubén** (`rroca-ruben.json`): 57 → **55** nodos y tope 59 → 57.
 - **Bellido** (`agenda-minima.v0.json`, sin tope en su constructor): 64 → **62** nodos. Se publica el último.
 - Evy y Emma: 47 → **45**, tope 47 → 45. doctoras: 54 → **52**, tope 59 → 57. Antonio: 58 → **56**, tope 58 → 56. Chat NovuChat: 55 → **53**. captacion-minima: 54 → **52**.
@@ -200,6 +201,8 @@ El contrato v2 (30/10/2026) quita «¿Anotar medio?» y «Anotar medio»: todo m
 ## Estado al 31/10/2026 (miniCRM, F1): excepción declarada al tope de nodos de Evy
 
 La rama del miniCRM (`ramaCrm`, módulo `crm`) agrega **8 nodos** a cada flujo que la use. **Evy** (`rroca-evy.json`): 45 -> **53** nodos y tope 45 -> 53; variante de prueba: 40 -> **48**. **Por qué:** miniCRM de las subcuentas, F1; el módulo genera la rama (no se copia). **Aprobado por:** Andres, el 31/10/2026 (DP1). **Lo cierra:** nada; es permanente mientras la rama tenga 8 nodos. **Publicación:** aparte, con su botón; hasta entonces `estado-de-versiones.sh` lo mostrará atrasado, y es correcto. Mensajes por conversación: 0.
+
+**Rubén (miniCRM, F3, 02/11/2026).** `rroca-ruben.json` 55 -> **63** nodos y tope 57 -> **63**; variante de prueba 50 -> **58**. **Por qué:** miniCRM de las subcuentas, F3; el módulo genera la rama (no se copia). **Aprobado por:** Andres, el 02/11/2026 (botón: opción B, señal neutra `inicioCompra`, tope de Rubén 55 -> 63). El relé de envíos B9 (Clínicas, +2) ya tiene su aprobación (D1, 02/11/2026): con él el tope de Rubén llega a **65** (lo sube el PR del relé); topes aprobados por Andres para las subcuentas: Rubén 65, Antonio 66, Evy y Emma 55. **Lo cierra:** nada; es permanente mientras la rama tenga 8 nodos. **Publicación:** aparte, con su botón; hasta entonces `estado-de-versiones.sh` lo mostrará atrasado, y es correcto. Mensajes por conversación: 0. Los JSON de Evy, Emma, chat-novuchat y captación mínima cambian solo por el texto embebido de `crm.js` (la señal `inicioCompra`, que ninguno emite): sin cambio de comportamiento y sin publicar.
 
 **Emma (miniCRM, F2, 02/11/2026).** Mismo texto de excepción que Evy: `rroca-emma.json` 45 -> **53** nodos y tope 45 -> 53; variante de prueba 40 -> **48**. **Por qué:** miniCRM de las subcuentas, F2; el módulo genera la rama (no se copia). **Aprobado por:** Andres, el 31/10/2026 (DP1). **Lo cierra:** nada; es permanente mientras la rama tenga 8 nodos. **Publicación:** aparte, con su botón; hasta entonces `estado-de-versiones.sh` lo mostrará atrasado, y es correcto. Mensajes por conversación: 0.
 
