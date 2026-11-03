@@ -189,6 +189,7 @@ La rama común del **guardado de medios** (`Flujos/experimental/comun-sin-agente
 El contrato v2 (30/10/2026) quita «¿Anotar medio?» y «Anotar medio»: todo medio (imagen, audio, video, documento de cualquier tipo, sticker) se guarda por el camino normal. La rama queda en **9 nodos** y la excepción del 29/10 (**Andres, 29/10/2026**) se mantiene con 2 nodos menos en cada flujo:
 
 - **Q'Taco** (`venta-minima.qtaco.json`): 61 → **59** nodos y tope 61 → 59.
+- **Q'Taco** (`venta-minima.qtaco.json`): 59 → **60** nodos y tope 59 → 60. Por qué: «Guardar comprobante» (guardar el comprobante antes de leerlo, PR #688), +1 nodo. Aprobado por: **Andres, 03/11/2026**.
 - **Rubén** (`rroca-ruben.json`): 57 → **55** nodos y tope 59 → 57.
 - **Bellido** (`agenda-minima.v0.json`, sin tope en su constructor): 64 → **62** nodos. Se publica el último.
 - Evy y Emma: 47 → **45**, tope 47 → 45. doctoras: 54 → **52**, tope 59 → 57. Antonio: 58 → **56**, tope 58 → 56. Chat NovuChat: 55 → **53**. captacion-minima: 54 → **52**.
