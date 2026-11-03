@@ -124,7 +124,7 @@ describe('B1. argumentos y salvaguarda (puros)', () => {
 
   it('NEGADO: --aplicar sin respaldo; respaldo dentro del repositorio; --revertir sin respaldo o con --valor', () => {
     expect(problemas([...base, '--aplicar'])).toContain('--aplicar exige --respaldo');
-    expect(problemas([...base, '--aplicar', '--respaldo', join(aqui, 'respaldo.json')])).toMatch(/respaldo/); // el texto exacto depende de si se corre en un worktree o en la copia principal (lo decide comprobarRespaldo, ya probado)
+    expect(problemas([...base, '--aplicar', '--respaldo', join(aqui, 'respaldo.json')])).toMatch(/respaldo[^|]*(duradero|dentro del proyecto)/); // el texto exacto depende de si se corre en un worktree o en la copia principal (lo decide comprobarRespaldo, ya probado)
     expect(problemas(['--revertir', '--proyecto', PROY, '--tenant', 'tienda-prueba'])).toContain('--revertir exige --respaldo');
     expect(problemas(['--revertir', '--proyecto', PROY, '--tenant', 'tienda-prueba', '--valor', 'true', '--respaldo', rutaRespaldo()])).toContain('--revertir no admite --valor');
   });
@@ -136,7 +136,8 @@ describe('B2. seco, aplicar, una sola escritura con precondición', () => {
     const r = await correr(cfgDe(), b);
     expect(r.codigo).toBe(1);
     expect(b.escrituras).toEqual([]);
-    expect(b.lecturas.every((l) => l.campos?.length === 1 && l.campos[0] === 'guardarMedios')).toBe(true);
+    // Solo el campo y el nombre de la ficha (este último para la exclusión por nombre).
+    expect(b.lecturas.every((l) => l.campos?.length === 2 && l.campos.includes('guardarMedios') && l.campos.includes('nombre'))).toBe(true);
     expect(r.salida).toContain('AUSENTE');
     expect(r.salida).toContain('Antes de encender');
     const apagar = await correr(cfgDe({ valor: false }), baseDe({ ...FICHA, guardarMedios: true }));
@@ -182,6 +183,47 @@ describe('B2. seco, aplicar, una sola escritura con precondición', () => {
     const yaHay = baseDe({ ...FICHA });
     expect((await correr(cfgDe({ aplicar: true, respaldo: resp }), yaHay)).codigo).toBe(2);
     expect(yaHay.escrituras).toEqual([]);
+  });
+});
+
+describe('B2b. comercios excluidos y barreras del respaldo', () => {
+  it('NEGADO: Bellido y lo que agregue NOVUCHAT_TENANTS_EXCLUIDOS se rechazan al analizar los argumentos', () => {
+    const arg = (t: string, env: Record<string, string> = ENV_EMU) => mod.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--valor', 'true'], env);
+    expect(arg('bellido').ok).toBe(false);
+    expect((arg('consultorio-bellido').problemas ?? []).join(' ')).toContain('EXCLUIDO');
+    expect(arg('tienda-prueba').ok).toBe(true);
+    expect(arg('tienda-prueba', { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'tienda-prueba' }).ok).toBe(false);
+  });
+  it('NEGADO: segunda barrera en `ejecutar`: el NOMBRE de la ficha nombra a un excluido (2, sin respaldo ni escritura)', async () => {
+    const b = baseDe({ nombre: 'Consultorio Béllido', flujos: ['venta'] });
+    const r = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b);
+    expect(r.codigo).toBe(2);
+    expect(b.escrituras).toEqual([]);
+    expect(r.salida).toContain('EXCLUIDO');
+  });
+  it('el seco de --revertir sale 1 sin escribir cuando queda un cambio pendiente', async () => {
+    const resp = rutaRespaldo();
+    const b = baseDe({ ...FICHA });
+    await correr(cfgDe({ aplicar: true, respaldo: resp }), b);
+    const antes = b.escrituras.length;
+    const r = await correr(cfgDe({ revertir: true, aplicar: false, respaldo: resp, valor: null }), b);
+    expect(r.codigo).toBe(1);
+    expect(b.escrituras).toHaveLength(antes);
+  });
+  it('NEGADO: un respaldo recién guardado que no se puede releer, o una ruta que cambió, salen 2 sin escribir la ficha', async () => {
+    const malo = baseDe({ ...FICHA });
+    const r1 = await (async () => {
+      const salida: string[] = [];
+      const codigo = await mod.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: malo.db, FieldValue: malo.FieldValue, log: (t: string) => salida.push(t), leerRespaldo: () => ({ ok: false, motivo: 'ilegible' }) });
+      return { codigo, salida: salida.join('\n') };
+    })();
+    expect(r1.codigo).toBe(2);
+    expect(malo.escrituras).toEqual([]);
+    const otra = baseDe({ ...FICHA });
+    const salida2: string[] = [];
+    const c2 = await mod.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: otra.db, FieldValue: otra.FieldValue, log: (t: string) => salida2.push(t), comprobarRespaldo: () => ({ ok: false }) });
+    expect(c2).toBe(2);
+    expect(otra.escrituras).toEqual([]);
   });
 });
 

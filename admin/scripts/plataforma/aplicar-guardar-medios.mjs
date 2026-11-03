@@ -44,6 +44,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   ID_TENANT, comprobarProyecto, comprobarRespaldo, guardarRespaldo, leerRespaldoGenerico, rutaDelRespaldoSigueIgual,
+  esTenantExcluido, nombreExcluido,
 } from './aplicar-consola-conversaciones.mjs';
 
 const CAMPO = 'guardarMedios';
@@ -105,6 +106,9 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   if (tenant === undefined) problemas.push('falta --tenant');
   else if (tenant.includes(',')) problemas.push('--tenant admite UN solo comercio por corrida (sin comas)');
   else if (!ID_TENANT.test(tenant)) problemas.push('--tenant inválido (minúsculas, dígitos y guiones, de 3 a 60)');
+  else if (esTenantExcluido(tenant, env)) {
+    problemas.push('este comercio está EXCLUIDO (Bellido o NOVUCHAT_TENANTS_EXCLUIDOS): no se le corre este script sin una orden expresa de Andres');
+  }
 
   if (confirmo !== undefined) {
     if (proy.ok && proy.entorno !== 'produccion') problemas.push('--confirmo-produccion solo se usa contra producción');
@@ -178,7 +182,7 @@ async function escribirCampo(ref, valor, ultimaActualizacion) {
 
 async function leerFicha(db, tenant) {
   const ref = db.doc(`tenants/${tenant}`);
-  const [snap] = await db.getAll(ref, { fieldMask: [CAMPO] });
+  const [snap] = await db.getAll(ref, { fieldMask: [CAMPO, 'nombre'] });
   return { ref, snap };
 }
 
@@ -195,6 +199,11 @@ export async function ejecutar(cfg, deps) {
   const { ref, snap } = await leerFicha(db, cfg.tenant);
   if (!snap.exists) { log(`\n  ✗ ${cfg.tenant}: no existe la ficha (${cfg.entorno})\n`); return 1; }
   const ficha = snap.data() ?? {};
+  // Segunda barrera: el NOMBRE de la ficha también puede nombrar a un comercio excluido (si el id no fuera el esperado).
+  if (esTenantExcluido(cfg.tenant, deps.env) || nombreExcluido(ficha.nombre, deps.env)) {
+    log('\n  ✗ Este comercio está EXCLUIDO: no se toca. No se escribió nada.\n');
+    return 2;
+  }
   const hoyPresente = Object.prototype.hasOwnProperty.call(ficha, CAMPO);
 
   // ------------------------------------------------------------------ revertir
