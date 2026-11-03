@@ -89,6 +89,13 @@ miembro y una consulta de colección no puede excluir un documento. Solo la lee
 `scripts/plataforma/crm-enlace.mjs`). `registro.test.ts` exige la lectura
 admin-only, la escritura cerrada y la prueba negativa en `crm-reglas.test.ts`.
 
+**Editores del miniCRM** (03/11/2026): colección `editoresCrm` del módulo `crm`,
+solo servidor (`get` del admin o del propio uid, `list` del admin, escritura
+cerrada), tres Functions (`registrarEditorCrm`, `quitarEditorCrm`,
+`consultarMiEdicionCrm`) y el límite `editoresCrm`, que se lee del plan
+(`limiteDeEditoresCrm`) y se hace cumplir en el servidor. Detalle en
+`modulos/crm.md`.
+
 **Por qué no importa nada:** lo van a importar cuatro mundos que no comparten
 resolución de módulos. Las Functions compilan con `rootDir: src` e importan
 `./registro.js`; la consola lo toma con `../../../functions/src/registro`
