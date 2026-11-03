@@ -276,6 +276,13 @@ if (m && puerta.ruta === 'sigue' && m.tipoReporte !== 'image' && ['comprobante',
   }
 }
 
+// LA PLANILLA DEL miniCRM (módulo `crm`): `guardarPlanilla` solo si hay id y hoja, no es el modo prueba, la puerta dejó seguir, el plan es de CONVERSACIÓN (nunca riesgo, baja, nada ni un número de otro país; tampoco con
+// la protección por violencia o miedo ya activa en la ficha) y hay un mensaje. El prospecto se arma con `raProspectoCrm` (vocabulario cerrado: el texto libre del cliente no pasa). Sin id (vacío), el flujo ni consulta Google. 0 mensajes por conversación.
+const planillaOk = String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';
+const guardarPlanilla = planillaOk && !prueba && puerta.ruta === 'sigue' && claveOk && !!m && riesgoNuevo !== true && fichaAntes.riesgo !== true
+  && ['nada', 'riesgo', 'baja', 'fuera_pais'].indexOf(tipoDePlan) < 0;
+let prospectoPlanilla = null;
+
 // La ficha: un solo lugar, al final del turno. Hasta en un turno sin mensaje (bloqueado) se recuerda el id de Meta (una entrega repetida no se cuenta dos veces).
 if (claveOk) {
   const fichas = cnMapaDeFichas(true);
@@ -326,6 +333,11 @@ if (claveOk) {
   if (huboComprobante && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible') ficha.comprobanteMs = ahora;
   fichas.mapa[from] = ficha;
   raBarrer(fichas.mapa, ahora);
+  if (guardarPlanilla) {
+    // «Contacto nuevo» = sin mensajes en las últimas 48 h (la ficha de ANTES de este turno).
+    const nuevoContacto = !(fichaAntes.ultimoMs > 0 && ahora - fichaAntes.ultimoMs <= RA_OLVIDO_MS);
+    prospectoPlanilla = raProspectoCrm({ from: from, tipo: tipoDePlan, plan: plan, fichaAntes: fichaAntes, anuncio: t.anuncio === true, avisoSalio: avisoSalio === true, nombrePerfil: t.nombrePerfil, nuevoContacto: nuevoContacto, ahoraMs: ahora });
+  }
 }
 
 const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, aviso: avisoPlaneado || avisoRepetido ? (avisoSalio || avisoRepetido ? 'salio' : 'no_salio') : (av.motivoFallo ? 'no_salio' : 'ninguno'), avisoMotivo: '' };
@@ -336,7 +348,7 @@ if (prueba) numero = telPrueba;
 const sale = !!m && numero !== '';
 resumen.mensajes = sale ? 1 : 0;
 if (!sale) {
-  return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen } }];
+  return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen, guardarPlanilla: false, prospectoPlanilla: null } }];
 }
 m.payload.to = numero;
 const salida = {
@@ -346,6 +358,7 @@ const salida = {
   reportar: !prueba,
   phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion || 'v26.0', from: from, sinMensajes: false,
   plan: resumen.plan, resumen: resumen,
+  guardarPlanilla: prospectoPlanilla !== null, prospectoPlanilla: prospectoPlanilla,
 };
 if (qrPrevio) salida.qrPrevio = qrPrevio;
 if (qrLiberado) salida.qrLiberado = qrLiberado;

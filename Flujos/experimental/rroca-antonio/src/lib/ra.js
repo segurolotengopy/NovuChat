@@ -198,6 +198,42 @@ const RA_PRODUCTOS = {
   preguntas: { catId: 'preguntas-profundas', nombre: 'el Banco de 100 Preguntas Profundas', incluye: '', boton: 'b_preguntas', titulo: '100 preguntas', bono: true },
 };
 const RA_BONOS = ['workbook', 'guia', 'calendario', 'preguntas'];
+
+// =============================================================================
+// miniCRM (módulo `crm`, F4 del 02/11/2026): del turno ya resuelto al PROSPECTO de la planilla. Función pura, vocabulario CERRADO: el texto libre del cliente no pasa; el nombre es solo el del perfil
+// de WhatsApp (letras, espacios, apóstrofo y guion). Las señales son HECHOS del flujo (decisión de Andres, 02/11/2026, opción B, la misma de Rubén):
+//   inicioCompra     el flujo emitió un QR de cobro REAL en este turno, o la ficha vigente (menos de 48 h) ya tenía un QR emitido o un comprobante (`pedidos`, `comprobanteMs`); lo simulado no cuenta;
+//   pidioLlamada     pidió hablar con Antonio (derivación `hablar_con_antonio`);
+//   llegoPorAnuncio  el mensaje trae la referencia de un anuncio.
+// Sin señal «Frío» (este flujo no tiene un detector de rechazo y no se inventa uno) ni «No es lead» (lo marca el equipo a mano). Mensajes: ninguno.
+// d = { from, tipo (el tipo de plan resuelto), plan, fichaAntes, anuncio (bool), avisoSalio (bool), nombrePerfil, nuevoContacto (bool), ahoraMs }
+// =============================================================================
+const RA_CRM_PRODUCTO = { pack: 'Pack de Reconexión', libro: 'Libro', workbook: 'Workbook de pareja', guia: 'Guía de conversaciones', calendario: 'Calendario de conexión', preguntas: 'Banco de preguntas' };
+function raProspectoCrm(d) {
+  const x = d && typeof d === 'object' ? d : {};
+  const plan = x.plan && typeof x.plan === 'object' ? x.plan : {};
+  const antes = x.fichaAntes && typeof x.fichaAntes === 'object' ? x.fichaAntes : {};
+  const tipo = String(x.tipo || '');
+  // Un cobro SIMULADO (QR de demostración, comprobante simulado) no es una compra. La ficha anterior solo cuenta si la conversación sigue viva: quien vuelve tras 48 h (`nuevoContacto`) es otra conversación.
+  const simulado = plan.simulado === true || plan.resultado === 'simulado';
+  const comprobanteResuelto = tipo === 'comprobante' && !simulado && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible';
+  const previo = x.nuevoContacto !== true && (antes.pedidos > 0 || antes.comprobanteMs > 0);
+  const inicioCompra = (tipo === 'qr' && !simulado) || comprobanteResuelto || previo;
+  const pidioLlamada = tipo === 'derivar' && plan.clave === 'hablar_con_antonio';
+  const senales = { inicioCompra: inicioCompra === true, pidioLlamada: pidioLlamada === true, llegoPorAnuncio: x.anuncio === true };
+  let quePidio = '';
+  if (tipo === 'qr') quePidio = Object.prototype.hasOwnProperty.call(RA_CRM_PRODUCTO, plan.producto) ? 'Compra: ' + RA_CRM_PRODUCTO[plan.producto] : 'Compra';
+  else if (comprobanteResuelto) quePidio = 'Comprobante de pago';
+  else if (pidioLlamada) quePidio = 'Hablar con una persona';
+  else if (tipo === 'precio' || tipo === 'precios' || tipo === 'catalogo') quePidio = 'Precios';
+  else if (tipo === 'info') quePidio = 'Información';
+  else if (tipo === 'derivar') quePidio = 'Consulta para Antonio';
+  const perfil = raTexto(x.nombrePerfil).slice(0, 60).replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim();
+  const p = { telefono: raTexto(x.from).replace(/\D/g, ''), nombre: perfil, nombreDePerfil: true, anuncio: x.anuncio === true, nuevoContacto: x.nuevoContacto === true, senales: senales, ultimaInteraccionMs: Number(x.ahoraMs) };
+  if (quePidio !== '') p.quePidio = quePidio;
+  if (x.avisoSalio === true && tipo === 'derivar') p.derivacion = pidioLlamada ? 'Pidió hablar con Antonio' : 'Consulta para Antonio';
+  return p;
+}
 // «Ver complementos» abre la lista de los 4 bonos. `b_bonos` es el id del botón anterior: un chat viejo todavía puede tocarlo y se atiende igual.
 const RA_BOTON_BONOS = 'b_comp';
 const RA_BOTON_BONOS_VIEJO = 'b_bonos';
