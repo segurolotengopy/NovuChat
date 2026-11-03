@@ -80,6 +80,16 @@ alta siembra en `modulos`) y `MODULOS_COMUNES_HOY`
 (Productos y Campañas, que hoy tiene todo comercio). En el PR 1 **no lo
 importa nadie**: existe, se verifica y mide.
 
+**Documentos de `config/` solo del servidor y de lectura admin**
+(`DOCUMENTOS_DE_CONFIG_SOLO_SERVIDOR`, 03/11/2026): hoy `crmEnlace`
+(`enlaceHoja`, la URL de la hoja del miniCRM). No entran en la lista blanca de
+ningún módulo porque el comercio no escribe ninguno de sus campos; la lectura
+general de `config/` los excluye y se los da solo a `esAdmin` del mismo
+comercio, y la escritura está cerrada (la hace NovuChat con
+`scripts/plataforma/crm-enlace.mjs`). `registro.test.ts` exige la exclusión, la
+lectura admin-only, la escritura cerrada y la prueba negativa en
+`crm-reglas.test.ts`.
+
 **Por qué no importa nada:** lo van a importar cuatro mundos que no comparten
 resolución de módulos. Las Functions compilan con `rootDir: src` e importan
 `./registro.js`; la consola lo toma con `../../../functions/src/registro`

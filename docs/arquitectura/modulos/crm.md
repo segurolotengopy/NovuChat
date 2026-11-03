@@ -36,6 +36,7 @@ operativo.
   Próxima acción y Diagnóstico del equipo (PR-E). `columnasEscribibles(mapa)` devuelve solo las del bot.
   Excepción declarada: la etapa inicial y el estado inicial se escriben SOLO al crear la fila.
 - **config/crm**: el comercio (admin) escribe lo suyo; lo demás, solo el servidor.
+- **config/crmEnlace** (`enlaceHoja`, 03/11/2026): la URL de la hoja del comercio (`https://docs.google.com/spreadsheets/d/<id>`, validada por `functions/src/central/enlace-minicrm.ts`). La lee SOLO el admin de ese comercio (la lectura general de `config/` lo excluye; un operador, otro comercio y el propietario desde la Consola no) y NADIE la escribe desde un cliente: la escribe NovuChat con `scripts/plataforma/crm-enlace.mjs` (seco por omisión; `--aplicar` con respaldo, un comercio por corrida, producción con `--confirmo-produccion`). Registrado en `DOCUMENTOS_DE_CONFIG_SOLO_SERVIDOR` (`registro.ts`) y probado en `registro.test.ts` y `crm-reglas.test.ts`.
 - Un texto del cliente final que empiece con `= + - @` (tras quitar controles,
   caracteres de formato como U+200B y espacios, NBSP incluido) se neutraliza
   (`neutralizarTexto`) **anteponiendo un apóstrofo `'`**. Consecuencia para el
@@ -197,3 +198,5 @@ con credencial `googleApi` usa una distinta de «Google Sheets miniCRM (crm-<ten
 prueba no exista, el aislamiento depende de revisión humana.
 
 **Revisión de #733 (31/10/2026).** «Decidir fila» pide los IDs por nombre (`$('Leer IDs de la planilla')`), no por `$input`: con «Leer encabezados» en medio, `$input` son los encabezados y se repetirían los ID. `hallazgosCrm` exige ahora también ese origen, el nodo «Leer encabezados» con el paquete de señales y su conexión a «Decidir fila». **Decisión DP5 (aprobada por Andres):** la planilla debe tener al menos una fila de datos (la fila semilla); con la fila 4 vacía el bot no agrega filas nuevas y cierra en falla, a propósito. Los rangos que fija `ramaCrm` (`A3:J`, `A3:J4`) son provisorios: `injertarCrm` los reemplaza con el mapa del tenant y la prueba del injerto los exige.
+
+**Botón «Abrir miniCRM» (03/11/2026).** El Tablero (`BotonMiniCrm`, zona Central) abre la hoja del comercio en otra pestaña. Aparece solo si quien mira es admin, `config/crm.activo` no es `false` y `config/crmEnlace.enlaceHoja` es un enlace válido; si falta cualquiera, no se pinta nada. Mensajes por conversación: 0. Pruebas: `pruebas/modulos/crm/crm-enlace.test.ts` (enlace, condiciones del botón, script) y `crm-reglas.test.ts` (lectura/escritura de `config/crmEnlace`, negando).

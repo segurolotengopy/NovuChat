@@ -137,3 +137,45 @@ describe('config/crm: tipos y topes', () => {
       { listas: { etapas: Array.from({ length: 20 }, (_, i) => `e${i}`) }, ...sello() }));
   });
 });
+
+// -----------------------------------------------------------------------------
+// config/crmEnlace — el enlace a la hoja (03/11/2026): solo lo lee el admin de ESE comercio; nadie lo escribe.
+// -----------------------------------------------------------------------------
+describe('config/crmEnlace: quién lee y nadie escribe', () => {
+  const enlace = (t: string) => `tenants/${t}/config/crmEnlace`;
+  const URL_HOJA = 'https://docs.google.com/spreadsheets/d/AbCdEfGhIjKlMnOpQrSt/edit';
+  const propietarioNc = () => entorno.authenticatedContext('u-novuchat', {
+    nc: { t: {}, v: 1, owner: true }, firebase: { sign_in_provider: 'google.com', identities: {} }, email_verified: true,
+  }).firestore();
+  beforeEach(async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      for (const t of [A, B]) await setDoc(doc(ctx.firestore(), enlace(t)), { enlaceHoja: URL_HOJA });
+    });
+  });
+  it('el admin del comercio lo lee', async () => {
+    await assertSucceeds(getDoc(doc(adminA(), enlace(A))));
+  });
+  it('NIEGA: el operador del mismo comercio no lo lee (sí lee config/crm)', async () => {
+    await assertFails(getDoc(doc(operA(), enlace(A))));
+    await assertSucceeds(getDoc(doc(operA(), ruta(A))));
+  });
+  it('NIEGA: el admin de otro comercio no lo lee', async () => {
+    await assertFails(getDoc(doc(adminB(), enlace(A))));
+  });
+  it('NIEGA: sin sesión no lo lee; el propietario de NovuChat tampoco desde la consola', async () => {
+    await assertFails(getDoc(doc(entorno.unauthenticatedContext().firestore(), enlace(A))));
+    await assertFails(getDoc(doc(propietarioNc(), enlace(A))));
+  });
+  it('NIEGA: nadie lo escribe desde un cliente — ni su admin, ni el de otro, ni el operador; ni crear, editar ni borrar', async () => {
+    for (const db of [adminA(), operA(), adminB()]) {
+      await assertFails(setDoc(doc(db, enlace(A)), { enlaceHoja: URL_HOJA }));
+      await assertFails(updateDoc(doc(db, enlace(A)), { enlaceHoja: 'https://docs.google.com/spreadsheets/d/OtraHojaOtraHoja01' }));
+    }
+    await entorno.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), enlace(SIN)), { enlaceHoja: URL_HOJA }); });
+    await assertFails(setDoc(doc(adminSin(), enlace(SIN)), { enlaceHoja: URL_HOJA }));
+  });
+  it('NIEGA: el admin no puede colar el enlace en config/crm (campo del servidor, ni ese ni otro)', async () => {
+    await assertFails(updateDoc(doc(adminA(), ruta(A)), { enlaceHoja: URL_HOJA, ...sello() }));
+  });
+});
+

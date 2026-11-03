@@ -469,9 +469,17 @@ service cloud.firestore {
         // `onboarding` incluido desde que la captación es un flujo genérico
         // (15/09). El propietario lee además el de captación, como antes: es
         // quien configura el de NovuChat.
-        allow get, list: if esMiembro(tenantId)
+        allow get, list: if (documento != 'crmEnlace' && esMiembro(tenantId))
                          || (documento == 'onboarding' && esPropietario()
                              && tieneOnboarding(tenantId));
+
+        // /config/crmEnlace — el enlace a la hoja del miniCRM (03/11/2026). Solo lo
+        // lee el ADMIN de ESE comercio (un operador, no; el propietario de NovuChat,
+        // no: no pasa por esta consola) y solo lo escribe el servidor (Admin SDK,
+        // `scripts/crm-enlace.mjs`, desde Plataforma): para el cliente no hay
+        // escritura. Es una URL de Google Sheets, nunca un secreto.
+        allow get, list: if documento == 'crmEnlace' && esAdmin(tenantId);
+        allow create, update, delete: if documento == 'crmEnlace' && false;
 
         // Solo el admin del negocio edita la configuración, y solo el documento
         // `negocio`. La creación y el borrado los hace la Function de alta/baja:
