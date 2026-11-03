@@ -162,6 +162,11 @@ export const manejarRegistrar = (d: DepsEditores) => async (p: CallableRequest) 
     if (e !== 'revocado') throw new HttpsError('unavailable', MENSAJE.drive);
   }
 
+  // Lo que la transacción espera encontrar en el documento del destino (ya con la revocación de arriba hecha).
+  const esperado = await coleccion(tenantId).doc(destino).get();
+  const huella = (x: { exists: boolean; data(): Record<string, unknown> | undefined }) =>
+    x.exists ? `${String(x.data()?.['estado'])}|${String(x.data()?.['permisoId'])}` : 'nada';
+
   let permisoId: string;
   let creado: boolean;
   try {
@@ -181,18 +186,27 @@ export const manejarRegistrar = (d: DepsEditores) => async (p: CallableRequest) 
   const veredicto = await db().runTransaction(async (tx) => {
     const ahora = await tx.get(colec.where('estado', '==', 'activo'));
     const mismoGmail = await tx.get(colec.where('correoGoogle', '==', correoToken));
-    if (mismoGmail.docs.some(ocupa)) return 'correo' as const;
-    if (ahora.docs.filter((x) => x.id !== destino).length >= limite) return 'tope' as const;
+    const actual = await tx.get(colec.doc(destino));
+    // En Drive dos altas del mismo Gmail devuelven el MISMO id de permiso: si alguien vigente (o con la baja pendiente)
+    // lo tiene, borrarlo quitaría el permiso de esa persona.
+    const vigente = (x: { data(): Record<string, unknown> | undefined }) =>
+      (x.data()?.['estado'] === 'activo' || x.data()?.['estado'] === 'revocado_pendiente') && x.data()?.['permisoId'] === permisoId;
+    const compartido = mismoGmail.docs.some(vigente) || (actual.exists && vigente(actual));
+    if (mismoGmail.docs.some(ocupa)) return { v: 'correo' as const, compartido };
+    // Otra alta para la MISMA persona se coló desde que se leyó: no se pisa su permisoId sin revocarlo.
+    if (huella(actual) !== huella(esperado)) return { v: 'cambio' as const, compartido };
+    if (ahora.docs.filter((x) => x.id !== destino).length >= limite) return { v: 'tope' as const, compartido };
     tx.set(colec.doc(destino), {
       correoGoogle: correoToken, estado: 'activo' satisfies EstadoEditor, permisoId, archivoId, creadoPorSistema: creado,
       registradoPor: uid, desde: Timestamp.now(), verificadoPor: verificadoPor,
     });
-    return 'ok' as const;
+    return { v: 'ok' as const, compartido };
   });
-  if (veredicto !== 'ok') {
+  if (veredicto.v !== 'ok') {
     // Se deshace SOLO lo que creó esta llamada: un permiso que ya existía no es nuestro para borrarlo.
     let resultado = 'rechazado';
-    if (creado) {
+    if (creado && veredicto.compartido) resultado = 'rechazado_permiso_compartido_conservado';
+    else if (creado) {
       try {
         await drive.borrarPermiso(archivoId, permisoId);
       } catch {
@@ -200,8 +214,9 @@ export const manejarRegistrar = (d: DepsEditores) => async (p: CallableRequest) 
         resultado = 'rechazado_permiso_sin_deshacer';
       }
     }
-    await auditar(tenantId, 'editor_crm_alta', uid, { destino, correo: abreviarCorreo(correoToken), motivo: veredicto, resultado });
-    throw veredicto === 'correo'
+    await auditar(tenantId, 'editor_crm_alta', uid, { destino, correo: abreviarCorreo(correoToken), motivo: veredicto.v, resultado });
+    if (veredicto.v === 'cambio') throw new HttpsError('aborted', 'Otra operación cambió a esta persona al mismo tiempo. Intente de nuevo.');
+    throw veredicto.v === 'correo'
       ? new HttpsError('already-exists', 'Esa cuenta de Google ya es editora de otra persona.')
       : new HttpsError('resource-exhausted', 'El negocio alcanzó el máximo de editores de su plan.');
   }

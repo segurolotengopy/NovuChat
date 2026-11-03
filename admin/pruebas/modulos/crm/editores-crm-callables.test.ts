@@ -50,19 +50,20 @@ const sinSesion = (data: Record<string, unknown>) => ({ data, rawRequest: {} }) 
 
 /** Drive falso: anota cada llamada; los fallos se encienden por prueba. */
 function driveFalso() {
-  const estado = { falloCrear: false, falloBorrar: false, yaExistia: false, propietario: false, barrera: 0 };
+  const estado = { falloCrear: false, falloBorrar: false, yaExistia: false, propietario: false, barrera: 0, idFijo: '' };
   const llamadas: { op: 'crear' | 'borrar'; archivoId: string; dato: string }[] = [];
   let llegaron = 0;
   const cliente: ClienteDrive = {
     async crearPermiso(archivoId, correo) {
       llamadas.push({ op: 'crear', archivoId, dato: correo });
+      const numero = llamadas.length; // el id se fija al entrar: dos llamadas simultáneas reciben ids distintos
       if (estado.barrera > 0) { // las N llamadas esperan a que todas lleguen: así la carrera es real
         llegaron++;
         while (llegaron < estado.barrera) await new Promise((r) => setTimeout(r, 5));
       }
       if (estado.propietario) throw new ErrorPermisoNoRevocable();
       if (estado.falloCrear) throw new ErrorDrive(503);
-      return { permisoId: `perm-${llamadas.length}`, creado: !estado.yaExistia };
+      return { permisoId: estado.idFijo || `perm-${numero}`, creado: !estado.yaExistia };
     },
     async borrarPermiso(archivoId, permisoId) {
       llamadas.push({ op: 'borrar', archivoId, dato: permisoId });
@@ -278,6 +279,35 @@ describe('registrarEditorCrm: revisión de seguridad (03/11/2026)', () => {
     ]);
     expect([...r].sort()).toEqual(['resource-exhausted', 'sin error']);
     expect(await activos(A)).toBe(PLANES.crecimiento.editoresCrm);
+  });
+
+  it('NIEGA (carrera): si Drive devuelve el MISMO id a las dos altas del mismo Gmail, el perdedor no borra el permiso del ganador', async () => {
+    fake.estado.barrera = 2;
+    fake.estado.idFijo = 'perm-fijo';
+    const tok = `ok:${correoDe('compartido')}`;
+    const r = await Promise.all([
+      codigo(registrar(peticion('adm', 'admin', A, { tenantId: A, idTokenGoogle: tok, uidDestino: 'op1' }))),
+      codigo(registrar(peticion('adm', 'admin', A, { tenantId: A, idTokenGoogle: tok, uidDestino: 'op2' }))),
+    ]);
+    expect([...r].sort()).toEqual(['already-exists', 'sin error']);
+    expect(fake.llamadas.filter((l) => l.op === 'borrar')).toEqual([]);
+    const vivos = (await db.collection(`tenants/${A}/editoresCrm`).where('correoGoogle', '==', correoDe('compartido')).get()).docs;
+    expect(vivos).toHaveLength(1);
+    expect(vivos[0]?.data()['permisoId']).toBe('perm-fijo');
+  });
+
+  it('NIEGA (carrera): dos Gmail a la vez para la MISMA persona: uno queda, el otro se aborta y deshace solo lo suyo', async () => {
+    fake.estado.barrera = 2;
+    const r = await Promise.all([
+      codigo(registrar(peticion('adm', 'admin', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('uno')}`, uidDestino: 'op1' }))),
+      codigo(registrar(peticion('adm', 'admin', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('dos')}`, uidDestino: 'op1' }))),
+    ]);
+    expect([...r].sort()).toEqual(['aborted', 'sin error']);
+    const final = await editor(A, 'op1');
+    const borrados = fake.llamadas.filter((l) => l.op === 'borrar');
+    expect(borrados).toHaveLength(1);
+    expect(borrados[0]?.dato).not.toBe(final?.['permisoId']);
+    expect(await activos(A)).toBe(1);
   });
 
   it('rechazo por tope: se borra el permiso solo si lo CREÓ esta llamada', async () => {
