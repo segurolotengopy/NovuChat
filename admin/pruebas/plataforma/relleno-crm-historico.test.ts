@@ -267,6 +267,23 @@ describe('B3b. el respaldo no copia la hoja', () => {
 });
 
 describe('B4. revertir', () => {
+  it('NEGADO: si el equipo anotó algo en las columnas suyas (valor, responsable, próxima acción, o cambió el estado), revertir NO borra (2); un estado intacto «Activo» sí se puede revertir', async () => {
+    const mapa = mapaDe('rroca-ruben');
+    const L = (c: string) => c.charCodeAt(0) - 65;
+    for (const [campo, valor] of [['valor', '150'], ['responsable', 'Ana'], ['proximaAccion', 'Llamar el lunes'], ['estado', 'Ganado']] as const) {
+      const m = mundo('rroca-ruben', [conv(1), conv(2)]);
+      const resp = rutaRespaldo();
+      await mod.ejecutar(cfgDe('rroca-ruben', { aplicar: true, respaldo: resp }), m.deps);
+      m.valores[1][L(mapa['equipo'][campo].letra)] = valor;
+      expect(await mod.ejecutar(cfgDe('rroca-ruben', { revertir: true, aplicar: true, respaldo: resp }), m.deps), campo).toBe(2);
+      expect(m.llamadas.limpiar, campo).toEqual([]);
+    }
+    const intacto = mundo('rroca-ruben', [conv(1)]);
+    const r2 = rutaRespaldo();
+    await mod.ejecutar(cfgDe('rroca-ruben', { aplicar: true, respaldo: r2 }), intacto.deps);
+    expect(intacto.valores[1][L(mapa['equipo'].estado.letra)]).toBe(mapa['alCrear'].estado); // lo que el relleno escribió
+    expect(await mod.ejecutar(cfgDe('rroca-ruben', { revertir: true, aplicar: true, respaldo: r2 }), intacto.deps)).toBe(0);
+  });
   it('NEGADO: un respaldo alterado (fila inicial en el encabezado, rango falso hacia la columna U, cantidad absurda) no limpia nada: el rango se calcula', async () => {
     const m = mundo('rroca-ruben', [conv(1), conv(2)]);
     const resp = rutaRespaldo();

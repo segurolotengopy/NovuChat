@@ -190,6 +190,8 @@ export async function correrEnN8n({ envFile, tenant, hacer, cuerpo }) {
   const BASE = (env.N8N_BASE_URL || '').replace(/\/+$/, '');
   if (!BASE || !env.N8N_API_KEY) throw Object.assign(new Error('faltan N8N_BASE_URL o N8N_API_KEY'), { code: 'sin-n8n' });
   const CABECERA_CLAVE = ['X', 'N8N', 'API', 'KEY'].join('-'); // armada así para que el detector de secretos no confunda el NOMBRE de la cabecera con una clave
+  // La clave y los datos de la hoja viajan por esta URL: solo https (o esta misma máquina).
+  if (!/^https:\/\//.test(BASE) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(BASE)) throw Object.assign(new Error('url'), { code: 'n8n-sin-https' });
   const H = { [CABECERA_CLAVE]: env.N8N_API_KEY, 'Content-Type': 'application/json' };
   const api = async (met, ruta, c) => {
     const r = await fetch(`${BASE}/api/v1${ruta}`, { method: met, headers: H, body: c ? JSON.stringify(c) : undefined, signal: AbortSignal.timeout(30000) });
@@ -324,6 +326,12 @@ export async function ejecutar(cfg, deps) {
     const actual = hoy.slice(desde, desde + r.escrito.length).map((f) => claves.map((j) => dig(f[j])));
     const esperado = r.escrito.map((f) => claves.map((j) => dig(f[j])));
     const igual = actual.length === esperado.length && actual.every((f, i) => f.every((v, j) => v === esperado[i][j]));
+    // El rango que se limpia (A..T) incluye las columnas del EQUIPO (J, K, M y L): si el equipo anotó algo en esas filas, revertir lo borraría. Se rechaza.
+    const filasHoy = hoy.slice(desde, desde + r.escrito.length);
+    const idxEq = (c) => (c && c.letra <= ultima ? c.letra.charCodeAt(0) - 65 : -1);
+    const anotadas = filasHoy.some((f) => ['valor', 'responsable', 'proximaAccion'].some((k) => { const j = idxEq(mapa.equipo[k]); return j >= 0 && String(f[j] ?? '').trim() !== ''; })
+      || (idxEq(mapa.equipo.estado) >= 0 && String(f[idxEq(mapa.equipo.estado)] ?? '').trim() !== '' && String(f[idxEq(mapa.equipo.estado)]).trim() !== String(mapa.alCrear.estado ?? '')));
+    if (igual && anotadas) { log('\n  ✗ El equipo anotó algo en esas filas (valor, responsable, estado o próxima acción): revertir lo borraría. No se borra nada; quite esas filas a mano.\n'); return 2; }
     log(`\n  ${cfg.aplicar ? 'REVERTIR' : 'SECO'} · ${rotulo}: ${r.escrito.length} filas escritas por este script.`);
     if (!igual) { log('  ✗ El rango ya no tiene lo que escribió este script: alguien lo cambió. No se borra nada.\n'); return 2; }
     if (!cfg.aplicar) { log('  Seco: no se borró nada. Agregue --aplicar para limpiar ese rango.\n'); return 1; }
@@ -398,7 +406,7 @@ async function principal() {
     limpiar: (rango) => limpiarRango({ ...args, rango }),
   });
   await db.terminate().catch(() => {});
-  process.exit(estado.limpiezaFallida && codigo === 0 ? 3 : codigo);
+  process.exit(estado.limpiezaFallida ? 3 : codigo);
 }
 
 function seEjecutaDirecto() {
