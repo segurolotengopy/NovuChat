@@ -3,6 +3,8 @@ import { SOLICITUD_AL_CIERRE } from './modulos/agenda/alCierre.js';
 import { COBRO_AL_CIERRE } from './modulos/cobros/alCierre.js';
 import { nombreDeProductoApto } from './modulos/productos/nombreSeguro.js';
 import { crearAprobarTerminoProducto } from './plataforma/aprobarTerminoProducto.js';
+import { crearQuitarUsuario } from './central/usuarios.js';
+import { revocarEditorAlQuitarUsuario } from './modulos/crm/editoresCrm.js';
 
 /**
  * =============================================================================
@@ -43,3 +45,9 @@ export const registrarCierre = crearRegistrarCierre(GANCHOS_DEL_CIERRE);
  * el predicado), así que lo une este archivo, el único que conoce a las dos zonas. Un puerto: no hay registro.
  */
 export const aprobarTerminoProducto = crearAprobarTerminoProducto(nombreDeProductoApto);
+
+/**
+ * QUITAR USUARIO + EDICIÓN DEL miniCRM (03/11/2026): al quitar a una persona se revoca su permiso de edición de la
+ * hoja. Central no importa módulos (`central/usuarios.ts` recibe el gancho), así que lo une este archivo.
+ */
+export const quitarUsuario = crearQuitarUsuario(revocarEditorAlQuitarUsuario());
