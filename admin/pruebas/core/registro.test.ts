@@ -1199,6 +1199,7 @@ describe('documentos de enlaces solo del servidor y de lectura admin (03/11/2026
       expect(bloque, `${n}: no hay match /enlaces`).not.toBe('');
       expect(bloque, `${n}: sin lectura de admin`).toMatch(new RegExp(`allow get: if documento == '${n}' && esAdmin\\(tenantId\\);`));
       expect(bloque, `${n}: sin escritura cerrada`).toMatch(/allow create, update, delete: if false;/);
+      expect(bloque, `${n}: ninguna regla de lectura aparte`).not.toMatch(/allow (read|list)/);
       const lecturas = [...bloque.matchAll(new RegExp(`documento == '${n}'[^;]*;`, 'g'))].map((m) => m[0]);
       for (const l of lecturas) expect(l, `${n}: ${l}`).not.toMatch(/esOperador|esPropietario|esMiembro|esPersonaDelNegocio/);
     }

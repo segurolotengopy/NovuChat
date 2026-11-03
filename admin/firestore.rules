@@ -1210,7 +1210,7 @@ service cloud.firestore {
 
       // -----------------------------------------------------------------------
       // /enlaces/{documento} — enlaces que NovuChat fija a un comercio (03/11/2026).
-      // Hoy solo `crm`: la URL de la hoja del miniCRM. Va FUERA de /config/ a
+      // Hoy solo `minicrm`: la URL de la hoja del miniCRM. Va FUERA de /config/ a
       // propósito: la lectura de config es de todos los miembros y una consulta
       // de colección no puede excluir un documento. La lee solo el ADMIN de ESE
       // comercio (operador, otro comercio y propietario de NovuChat, no) y solo la
