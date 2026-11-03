@@ -19,9 +19,13 @@ export function EdicionMiniCrm({ tenantId, esAdmin }: { tenantId: string; esAdmi
   const [ocupado, setOcupado] = useState(false);
   const [mensaje, setMensaje] = useState<{ texto: string; error: boolean } | null>(null);
 
-  const recargar = useCallback(async () => {
-    try { setMi(leerMiEdicion(await CAPA.consultar(tenantId))); } catch { setMi(null); }
+  // Si la lectura falla se conserva lo que ya se mostraba (no se esconde el bloque) y se avisa con un error.
+  const recargar = useCallback(async (): Promise<boolean> => {
+    try { setMi(leerMiEdicion(await CAPA.consultar(tenantId))); return true; } catch { return false; }
   }, [tenantId]);
+  const releer = async () => {
+    if (!(await recargar())) setMensaje({ texto: 'No se pudo actualizar el estado de la edición. Recargue la página.', error: true });
+  };
 
   useEffect(() => {
     setMi(null); setMensaje(null); setEligiendo(false);
@@ -39,20 +43,20 @@ export function EdicionMiniCrm({ tenantId, esAdmin }: { tenantId: string; esAdmi
     } catch (e) {
       setMensaje({ texto: textoErrorEdicion(e, 'habilitar'), error: true });
     }
-    await recargar();
+    await releer();
     setOcupado(false);
   };
   const quitar = async () => {
     setOcupado(true); setMensaje(null);
     try { setMensaje({ texto: textoResultadoQuitar(await CAPA.quitar(tenantId)), error: false }); }
     catch (e) { setMensaje({ texto: textoErrorEdicion(e, 'quitar'), error: true }); }
-    await recargar();
+    await releer();
     setOcupado(false);
   };
 
   return (
     <section className="edicion-crm" aria-label="Edición del miniCRM" data-testid="edicion-minicrm">
-      {mi.estado === 'activo' && <p>Edición habilitada con <strong>{mi.correo}</strong></p>}
+      {mi.estado === 'activo' && <p>Edición habilitada{mi.correo !== '' && <> con <strong>{mi.correo}</strong></>}</p>}
       {vista.verEnlace && mi.enlaceHoja && (
         <p><a className="btn btn-secondary" href={mi.enlaceHoja} target="_blank" rel="noopener noreferrer" data-testid="abrir-hoja">Abrir hoja</a></p>
       )}

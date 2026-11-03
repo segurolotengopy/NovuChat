@@ -51,6 +51,7 @@ export function Usuarios() {
   // Edición del miniCRM por persona: solo el estado y el correo ABREVIADO (el completo no se guarda). Lo lee el admin (reglas).
   const clientId = clientIdGoogle(import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID);
   const [ediciones, setEdiciones] = useState<Record<string, { estado: EstadoEdicion; correo: string }>>({});
+  const [errorEdiciones, setErrorEdiciones] = useState(false);
   const [eligiendoUid, setEligiendoUid] = useState<string | null>(null);
   const [ocupadoUid, setOcupadoUid] = useState<string | null>(null);
   const [avisoEdicion, setAvisoEdicion] = useState<{ texto: string; error: boolean } | null>(null);
@@ -69,11 +70,12 @@ export function Usuarios() {
 
   useEffect(() => {
     if (!tenantId || !clientId) return;
+    setErrorEdiciones(false);
     return onSnapshot(collection(db, 'tenants', tenantId, 'editoresCrm'),
-      (i) => setEdiciones(Object.fromEntries(i.docs.map((d) => [d.id, {
+      (i) => { setErrorEdiciones(false); setEdiciones(Object.fromEntries(i.docs.map((d) => [d.id, {
         estado: estadoDeEdicion(d.get('estado')), correo: abreviarCorreoVista(d.get('correoGoogle')),
-      }]))),
-      () => setEdiciones({}));
+      }]))); },
+      () => setErrorEdiciones(true));
   }, [tenantId, clientId]);
 
   const habilitarA = async (uid: string, idToken: string) => {
@@ -125,6 +127,7 @@ export function Usuarios() {
               <td><TextoSeguro valor={m.rol} maxLargo={20} /></td>
               <td><TextoSeguro valor={m.estado} maxLargo={20} /></td>
               {clientId && (() => {
+                if (errorEdiciones) return <td>No se pudo leer</td>;
                 const e = ediciones[m.id] ?? { estado: 'ninguno' as EstadoEdicion, correo: '' };
                 const a = accionesDeMiembro({ clientId, esAdmin: true, estado: e.estado, miembroActivo: m.estado === 'activo' });
                 return (

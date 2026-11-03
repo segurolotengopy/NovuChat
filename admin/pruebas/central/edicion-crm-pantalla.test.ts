@@ -118,6 +118,19 @@ describe('P3. el texto de fuente', () => {
     for (const n of ['consultarMiEdicionCrm', 'registrarEditorCrm', 'quitarEditorCrm']) expect(f).toContain(`'${n}'`);
     expect(f).not.toMatch(/from '[^']*functions\/src/);
   });
+  it('si falla la lectura no se oculta ni se ofrece nada de más', () => {
+    const u = sinComentarios(leer('web/src/central/paginas/Usuarios.tsx'));
+    expect(u).not.toContain('setEdiciones({})');
+    expect(u).toContain('setErrorEdiciones(true)');
+    expect(u).toMatch(/if \(errorEdiciones\) return <td>No se pudo leer<\/td>/);
+    const t = sinComentarios(leer('web/src/central/componentes/EdicionMiniCrm.tsx'));
+    expect(t).not.toMatch(/catch \{ setMi\(null\)/);
+    expect(t).toContain('No se pudo actualizar el estado');
+    expect(t).toMatch(/mi\.correo !== ''/);
+  });
+  it('al desmontar se cancela Google', () => {
+    expect(sinComentarios(leer('web/src/central/componentes/BotonGoogle.tsx'))).toMatch(/accounts\?\.id\?\.cancel\(\)/);
+  });
   it('la CSP de la consola deja entrar a Google Identity Services, y solo a sus rutas', () => {
     const csp = (JSON.parse(leer('firebase.json')) as { hosting: Array<{ headers?: Array<{ headers: Array<{ key: string; value: string }> }> }> })
       .hosting.flatMap((h) => (h.headers ?? []).flatMap((x) => x.headers)).map((h) => h.value).filter((v) => v.includes('accounts.google.com'));
