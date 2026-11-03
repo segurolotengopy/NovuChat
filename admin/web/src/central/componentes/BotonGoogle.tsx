@@ -12,7 +12,6 @@ export function BotonGoogle({ clientId, alElegir, alCancelar }: { clientId: stri
     let vivo = true;
     if (caja.current) montarBotonGoogle(caja.current, clientId, (t) => { if (vivo) alElegir(t); }).catch(() => { if (vivo) setFallo(true); });
     return () => { vivo = false; window.google?.accounts?.id?.cancel(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
   return (
     <div className="edicion-crm-google">
