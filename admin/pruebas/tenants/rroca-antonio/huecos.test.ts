@@ -119,8 +119,13 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
       '    ...deBase, ...deLaConsola, ...atencion, anuncios,',
       '  };',
       'const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;',
+      // El miniCRM (02/11/2026): el id y la pestaña de la planilla de ESTE negocio (propias; declaradas en PROPIO.md).
+      "const idDeLaPlanilla = /^[A-Za-z0-9_-]{25,100}$/.test(valor(base.planillaProspectosId)) ? valor(base.planillaProspectosId) : '';",
+      "const hojaDeLaPlanilla = idDeLaPlanilla === '' ? '' : (linea(valor(base.planillaProspectosHoja), 100) || 'Leads_CRM');",
       'return [{ json: {',
       '  ...cfg,',
+      '  planillaProspectosId: idDeLaPlanilla,',
+      '  planillaProspectosHoja: hojaDeLaPlanilla,',
       "  modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/.test(String(base.modelo || '')) ? String(base.modelo) : 'gemini-3.5-flash-lite',",
       '} }];',
     ]);
@@ -130,7 +135,10 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
     const t = nodoDe('config-del-negocio.js');
     expect(t).toContain('permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0');
     expect(t).not.toContain('permitidos.length === 0');
-    for (const ajeno of ['limpiarOferta', 'planilla', 'CH_DATOS', 'archivoPlanes', 'cargosUnicos', 'rubros']) expect(t, ajeno).not.toContain(ajeno);
+    for (const ajeno of ['limpiarOferta', 'CH_DATOS', 'archivoPlanes', 'cargosUnicos', 'rubros']) expect(t, ajeno).not.toContain(ajeno);
+    // La planilla del chat de NovuChat no está; desde el 02/11/2026 este flujo tiene la SUYA (miniCRM): solo esas líneas nombran una planilla.
+    const sinMiniCrm = t.split('\n').filter((l) => !/planillaProspectos|DeLaPlanilla|miniCRM/.test(l)).join('\n');
+    expect(sinMiniCrm).not.toContain('planilla');
     // Semgrep `insecure-object-assign`: se arma con propagación de objetos propios, nunca con `Object.assign`.
     expect(t).not.toContain('Object.assign');
   });

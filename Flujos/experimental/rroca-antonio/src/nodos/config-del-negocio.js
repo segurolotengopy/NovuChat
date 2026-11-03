@@ -95,8 +95,15 @@ const permitidos = valor(base.telefonosDePrueba).split(',').map((x) => cnDigitos
 const telefonoDePrueba = prueba ? cnDigitos(prueba.telefonoDePrueba) : '';
 const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;
 
+// LA PLANILLA DEL miniCRM (módulo `crm`): el id de la hoja de Google de ESTE negocio (25 a 100 caracteres de id) y el nombre de la pestaña. Un marcador `REEMPLAZAR_*`, vacío o con otra forma vale '' y el flujo no consulta Google.
+// Sin id válido no hay hoja: la pestaña también queda vacía. Con id y sin pestaña, 'Leads_CRM'.
+const idDeLaPlanilla = /^[A-Za-z0-9_-]{25,100}$/.test(valor(base.planillaProspectosId)) ? valor(base.planillaProspectosId) : '';
+const hojaDeLaPlanilla = idDeLaPlanilla === '' ? '' : (linea(valor(base.planillaProspectosHoja), 100) || 'Leads_CRM');
+
 return [{ json: {
   ...cfg,
+  planillaProspectosId: idDeLaPlanilla,
+  planillaProspectosHoja: hojaDeLaPlanilla,
   // El modelo es un dato de `Config base` (solo un id con forma de modelo de Gemini).
   modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/.test(String(base.modelo || '')) ? String(base.modelo) : 'gemini-3.5-flash-lite',
   waGraphVersion: /^v\d{1,2}\.\d{1,2}$/.test(String(base.waGraphVersion || '')) ? String(base.waGraphVersion) : 'v26.0',

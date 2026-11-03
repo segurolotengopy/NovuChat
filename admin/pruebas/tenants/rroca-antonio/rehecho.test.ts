@@ -793,9 +793,10 @@ describe('REHECHO · el armado: la base común, el core de texto y solo lo propi
     expect(codigoDe(leerFlujo('rroca-antonio.json'), 'Resumen del turno')).toMatch(/function ctRestaurarPreguntas/);
   });
   it('los nodos: 56 en producción y 51 en prueba (47 y 42 más los 9 del guardado de medios; antes 48 y 43; +1 por «Guardar comprobante») y las guardias de referencias DEL TASK RUNNER corren en las dos variantes, sin excepciones', () => {
-    expect(TOPE_DE_NODOS).toBe(56);
-    expect(leerFlujo('rroca-antonio.json')['nodes']).toHaveLength(56);
-    expect(leerFlujo('rroca-antonio.prueba.json')['nodes']).toHaveLength(51);
+    // +8 (02/11/2026): la rama del miniCRM (módulo `crm`, aprobada por Andres) → 64 y 59.
+    expect(TOPE_DE_NODOS).toBe(64);
+    expect(leerFlujo('rroca-antonio.json')['nodes']).toHaveLength(64);
+    expect(leerFlujo('rroca-antonio.prueba.json')['nodes']).toHaveLength(59);
     for (const [archivo, variante] of [['rroca-antonio.json', 'produccion'], ['rroca-antonio.prueba.json', 'prueba']] as const) {
       expect(guardias(variante, leerFlujo(archivo)), archivo).toEqual([]);
       expect(problemasDeReferencias(leerFlujo(archivo)), archivo).toEqual([]);
@@ -826,6 +827,9 @@ describe('REHECHO · el armado: la base común, el core de texto y solo lo propi
     // La ubicación (02/11/2026) es lo único más que gana: el enlace de Maps (misma regla que el servidor) y la dirección, de la Consola. Se quita entera para comparar con el origen.
     config = config.replace(/\/\/ El enlace de Google Maps de la Consola[^\n]*\nconst ENLACE_DE_MAPA[^\n]*\nconst enlaceDeMapa[^\n]*\n\n/, '')
       .replace(/    \/\/ La ubicación \(02\/11\/2026\)[^\n]*\n    direccion:[^\n]*\n    direccionMaps:[^\n]*\n/, '');
+    // El miniCRM (02/11/2026) es lo otro que gana: el id y la pestaña de la planilla. También se quita entera para comparar con el origen.
+    config = config.replace(/\/\/ LA PLANILLA DEL miniCRM[^\n]*\n\/\/ Sin id válido[^\n]*\nconst idDeLaPlanilla[^\n]*\nconst hojaDeLaPlanilla[^\n]*\n\n/, '')
+      .replace('  planillaProspectosId: idDeLaPlanilla,\n  planillaProspectosHoja: hojaDeLaPlanilla,\n', '');
     config = config.replace(anuncios, '').replace('...atencion, anuncios,', '...atencion,')
       .replace('los prefijos permitidos, la atención (los umbrales de uso extendido) y los ANUNCIOS (a lo más 20, solo en la rama 200).', 'los prefijos permitidos y la atención (los umbrales de uso extendido).');
     expect(h(config), 'config-del-negocio.js sin los anuncios').toBe(ORIGEN['config-del-negocio.js']);
