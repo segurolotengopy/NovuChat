@@ -1223,6 +1223,22 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // /editoresCrm/{uid} — quién edita la hoja del miniCRM con su Gmail (03/11/2026).
+      // Un documento por persona del comercio: correo de Google, estado del permiso en Drive
+      // (activo | revocado | revocado_pendiente) y el id del permiso. Lo escriben SOLO los
+      // callables (`registrarEditorCrm`, `quitarEditorCrm`, `quitarUsuario`) con el Admin SDK:
+      // ningún cliente crea, cambia ni borra uno, o una persona se daría permiso de editar la
+      // hoja sin pasar por la verificación del token de Google ni por el tope del plan.
+      // Lee: el admin de ESE comercio (todos, para su pantalla de Usuarios) y cada persona
+      // del negocio su propio documento. `list` es solo del admin.
+      // -----------------------------------------------------------------------
+      match /editoresCrm/{uid} {
+        allow get: if esAdmin(tenantId) || (esPersonaDelNegocio(tenantId) && request.auth.uid == uid);
+        allow list: if esAdmin(tenantId);
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
       // /catalogo/{itemId} — productos o servicios con precio.
       // Va en subcolección, no como lista dentro de config, para que cada ítem
       // se pueda validar de verdad: las reglas no saben recorrer listas de mapas.

@@ -34,19 +34,19 @@ describe('El catálogo', () => {
     expect(PLANES).toEqual({
       impulso: {
         nombre: 'Impulso', precioUsd: 25, conversaciones: 200, productos: 20, agendas: 1,
-        campanas: 0, cambiosIncluidos: 0,
+        campanas: 0, cambiosIncluidos: 0, editoresCrm: 5,
       },
       crecimiento: {
         nombre: 'Crecimiento', precioUsd: 50, conversaciones: 500, productos: 100, agendas: 5,
-        campanas: 3, cambiosIncluidos: 1,
+        campanas: 3, cambiosIncluidos: 1, editoresCrm: 5,
       },
       pro: {
         nombre: 'Pro', precioUsd: 90, conversaciones: 1000, productos: 500, agendas: 10,
-        campanas: 10, cambiosIncluidos: 2,
+        campanas: 10, cambiosIncluidos: 2, editoresCrm: 5,
       },
       byoc: {
         nombre: 'BYOC', precioUsd: 50, conversaciones: 2000, productos: 500, agendas: 10,
-        campanas: 10, cambiosIncluidos: 2,
+        campanas: 10, cambiosIncluidos: 2, editoresCrm: 5,
       },
     });
     expect(CONVERSACIONES_META_INCLUIDO).toEqual({ impulso: 100, crecimiento: 220, pro: 500, byoc: 2000 });
