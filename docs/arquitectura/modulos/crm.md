@@ -18,11 +18,11 @@ operativo.
 
 | Campo | Valor |
 |---|---|
-| **Qué contiene** | `functions/src/modulos/crm/{crm,columnas}.ts` (PR-A) |
+| **Qué contiene** | `functions/src/modulos/crm/{crm,columnas}.ts` (PR-A) y, desde el 03/11/2026, `editores-crm.ts` + `editoresCrm.ts` (edición por Gmail) |
 | **Depende de** | — |
 | **Configuración** | `config/crm`. Comercio (lista blanca): `activo`, `moneda` (1 a 5 caracteres), `listas` (`etapas`, `origenes`, hasta 20 cada una). Solo servidor: `hoja`, `filaEncabezados`, `mapaColumnas`, `cuentaServicio` (nombre lógico `crm-<tenant>`, nunca una clave), `recordatorios` (`{activo}`, ausente = apagado) |
-| **Colecciones / límite / pestañas** | ninguna / ninguno / ninguna por ahora |
-| **Ganchos / Functions / herramientas** | ninguno (PR-A) |
+| **Colecciones / límite / pestañas** | `editoresCrm` (solo servidor) / `editoresCrm` (del plan, en el servidor) / ninguna por ahora |
+| **Ganchos / Functions / herramientas** | Functions `registrarEditorCrm`, `quitarEditorCrm`, `consultarMiEdicionCrm`; el gancho de `quitarUsuario` lo arma `ganchos.ts` |
 | **Mensajes por conversación** | **0**. Escribir en la hoja no envía WhatsApp; lo demuestra `registro.test.ts` (`mensajes: 0`) |
 | **Pruebas** | `pruebas/modulos/crm/crm.test.ts` (puras) y `crm-reglas.test.ts` (emulador, negando) |
 
@@ -84,6 +84,11 @@ Reglas: las 4 claves de `equipo` se declaran siempre (columna o `null`); las let
 (A a Z) y los títulos no se repiten; de A a la última letra del bot solo hay columnas
 del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
 `alCrear.estado` (p. ej. «Activo») se escribe SOLO al crear la fila.
+
+**Relleno histórico (03/11/2026).** `admin/scripts/plataforma/relleno-crm-historico.mjs` crea una fila por cada contacto anterior de UNA subcuenta
+(Evy, Emma, Rubén o Antonio) en su hoja: seco por omisión (solo conteos), idempotente por teléfono, respaldo antes de escribir y `--revertir`.
+Solo escribe campos que existen y vocabulario cerrado (calificación y clasificación VACÍAS = sin evaluar, resumen fijo); no lee el texto de ningún
+mensaje ni la columna U. La hoja se lee y escribe por un flujo temporal de n8n con la credencial `crm-<tenant>` (la cuenta no tiene clave local).
 
 **Limitaciones conocidas.**
 - En una fila NUEVA solo se comprueba el encabezado de la columna A: leer la fila de
@@ -207,3 +212,27 @@ prueba no exista, el aislamiento depende de revisión humana.
 **Botón «Abrir miniCRM» (03/11/2026).** El Tablero (`BotonMiniCrm`, zona Central) abre la hoja del comercio en otra pestaña. Aparece solo si quien mira es admin, `config/crm.activo` no es `false` y `enlaces/minicrm.enlaceHoja` es un enlace válido; si falta cualquiera, no se pinta nada. Mensajes por conversación: 0. Pruebas: `pruebas/modulos/crm/crm-enlace.test.ts` (enlace, condiciones del botón, script) y `crm-reglas.test.ts` (lectura/escritura de `enlaces/minicrm`, negando).
 
 **Edición del miniCRM con la cuenta de Google: la interfaz (03/11/2026).** `EdicionMiniCrm` (Tablero, admin y operador) consulta `consultarMiEdicionCrm`; con estado `ninguno`/`revocado` ofrece «Habilitar mi edición»: carga Google Identity Services (`accounts.google.com/gsi/client`), muestra el botón de Google (su propio selector de cuenta), y el ID token viaja una sola vez a `registrarEditorCrm`; con `activo` muestra «Edición habilitada con <correo abreviado>» y «Abrir hoja» (el operador obtiene su enlace aquí; el admin conserva «Abrir miniCRM»); con `revocado_pendiente`, un aviso corto y «Quitar mi edición» (`quitarEditorCrm`). En Usuarios (solo admin) cada miembro muestra su estado (lee `editoresCrm`, que las reglas dejan al admin) con «Habilitar edición» (pide el token de ESA cuenta) y «Quitar edición». La cuenta de Google NO se vincula al usuario de Firebase ni inicia sesión: nada de `linkWith*`/`signInWith*`; el token no se guarda ni se imprime. Sin `VITE_GOOGLE_OAUTH_CLIENT_ID` (público) la función no se pinta, sin avisos. Los errores del servidor se mapean por código a textos propios (nunca crudos); el tope de editores lo informa el servidor. CSP de `admin/firebase.json` (solo el sitio de la consola): se agregaron `accounts.google.com/gsi/client` a `script-src`, `/gsi/style` a `style-src`, y `/gsi/` a `connect-src` y `frame-src`. Mensajes por conversación: 0. Pruebas: `pruebas/central/edicion-crm-pantalla.test.ts`.
+
+## Edición de la hoja con el Gmail de la persona (03/11/2026, backend)
+
+Plan: `NOVUCHAT_plan-edicion-minicrm-por-gmail_2026-11-03`. Esta sección es el servidor; la pantalla de la Consola está en el párrafo anterior.
+
+**Hallazgo: no se vincula Google al usuario.** `core/seguridad/claims.ts` impone «una identidad, un proveedor»: admin y operador de comercio son solo contraseña, y las reglas y `esAdminDe`/`esOperDe` exigen `sign_in_provider == 'password'`. Vincular Google (`linkWithPopup`) rompería ese invariante. En su lugar el navegador obtiene un ID token de Google con una instancia de Auth aparte que no inicia sesión en la app, y el SERVIDOR lo verifica (`google-auth-library`, `OAuth2Client.verifyIdToken`): audiencia = `GOOGLE_OAUTH_CLIENT_ID` (parámetro; vacío = falla cerrada), `email_verified === true` y el correo se toma DEL TOKEN, nunca del cuerpo.
+
+**Decisiones de Andres (03/11/2026).** (1) El Gmail de edición es el del login; otro solo lo registra un admin, probado con el ID token de esa cuenta. (2) El operador puede pedir su propia edición, solo con su correo; el admin da de alta a terceros. (3) Tope único de 5 editores activos por comercio, **leído del plan** (`PLANES[plan].editoresCrm`, copia `cuenta.limites.editoresCrm` si es válida; `limiteDeEditoresCrm`): ningún callable lleva el número. (4) Sin vínculo de Google (arriba). (5) Nada contra producción en este PR.
+
+**Dato.** `tenants/{t}/editoresCrm/{uid}`: `correoGoogle` (minúsculas), `estado` (`activo` | `revocado` | `revocado_pendiente`), `permisoId` y `archivoId` (para revocar del archivo donde se concedió, aunque el enlace cambie), `registradoPor`, `desde`, `verificadoPor` (`token-google` | `admin`). Reglas: `get` para el admin del comercio o el propio uid (persona del negocio); `list` solo admin; create/update/delete cerrados. Prueba negativa: `crm-editores-reglas.test.ts`.
+
+**Callables** (onCall v2, autorización de siempre: contraseña + correo verificado):
+- `registrarEditorCrm({ tenantId, idTokenGoogle, uidDestino? })` → `{ ok: true, estado: 'activo' }`. El operador solo sobre sí mismo (se decide antes de verificar el token); el destino debe ser miembro `activo`; el `fileId` sale SOLO de `tenants/{t}/enlaces/minicrm` del tenant autenticado (`esEnlaceDeHoja`); el miniCRM no puede estar apagado; un mismo Gmail no queda activo para dos personas; el tope se vuelve a contar dentro de una transacción.
+- `quitarEditorCrm({ tenantId, uidDestino? })` → `{ ok, estado }`. Admin sobre cualquiera, operador sobre sí mismo. `ok: true` solo si Drive confirmó; con Drive caído queda `revocado_pendiente` (`ok: false`) y repetir la llamada reintenta. Nunca se informa «revocado» sin confirmación.
+- `consultarMiEdicionCrm({ tenantId })` → `{ estado: 'ninguno' | 'activo' | 'revocado' | 'revocado_pendiente', enlaceHoja }`; el enlace solo con estado `activo` y el miniCRM encendido (es la vía del operador, que no lee `enlaces/minicrm`).
+- Auditoría con `auditar`: `editor_crm_alta` y `editor_crm_baja` (uid, quién, correo abreviado `a***@dominio`, resultado).
+
+**Drive.** Con la cuenta `crm-<tenant>` (proyecto de `CRM_PROYECTO_GCP`, o el de la Function): IAM Credentials `generateAccessToken` (alcance `drive`) suplantándola; `permissions.list` (reutiliza el permiso si ya existe), `permissions.create` con `role=writer`, `type=user`, `sendNotificationEmail=false` (jamás `anyone`/`domain`) y `permissions.delete` en la baja (404 = ya no existe). Costo por alta: 1 `generateAccessToken` + 1 `list` + 0 o 1 `create`; por baja: 1 `generateAccessToken` + 1 `delete`. Escrituras Firestore: 1 documento y 1 de auditoría por operación. **Mensajes por conversación: 0.**
+
+**Revocación al quitar un usuario.** `central/usuarios.ts` exporta `crearQuitarUsuario(gancho?)` (y `quitarUsuario` sin gancho, para las pruebas de siempre); `ganchos.ts` arma la versión con `revocarEditorAlQuitarUsuario` y `index.ts` exporta esa. El gancho nunca lanza.
+
+**Huecos conocidos (no resueltos en este PR).** (a) El cambio de correo (`scripts/plataforma/cambiar-correo.mjs`) no revoca ni actualiza al editor. (b) `config/crm.activo = false` lo escribe el cliente por reglas: nada revoca los permisos de Drive (el registro y la consulta sí se niegan con el módulo apagado). (c) `bajaTenant` (Plataforma) no revoca editores, y Plataforma no puede importar módulos: haría falta un gancho como el de `quitarUsuario`. (d) No hay reconciliación programada de `revocado_pendiente`: hoy se reintenta repitiendo `quitarEditorCrm`. (e) Infraestructura sin tocar: Drive API habilitada, `GOOGLE_OAUTH_CLIENT_ID`, y `roles/iam.serviceAccountTokenCreator` de la cuenta de ejecución sobre cada `crm-<tenant>`.
+
+**Pruebas.** `editores-crm.test.ts` (puras: verificador con certificados locales, cliente de Drive con `fetch` falso), `editores-crm-callables.test.ts` (emulador, Drive y token falsos, negando), `crm-editores-reglas.test.ts`.

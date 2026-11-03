@@ -65,7 +65,7 @@ export type Gancho = 'antesDelTurno' | 'despuesDelTurno' | 'alCierre' | 'alCambi
  * (`planes.ts`); `conversaciones` es del core y `cambiosIncluidos` de Central,
  * así que no están acá (`Analisis/41` §4, consecuencia 4).
  */
-export type ClaveLimiteDeModulo = 'productos' | 'agendas' | 'campanas';
+export type ClaveLimiteDeModulo = 'productos' | 'agendas' | 'campanas' | 'editoresCrm';
 
 export interface Pestana {
   /** Segmento de `/negocio/:tenantId/<ruta>` en `App.tsx`. Único en el registro. */
@@ -454,14 +454,16 @@ export const REGISTRO = [
       },
     ],
     camposEnNegocio: [],
-    colecciones: [],
+    // `editoresCrm`: quién edita la hoja con su Gmail (03/11/2026). La escriben SOLO los callables.
+    colecciones: ['editoresCrm'],
     coleccionesRaiz: [],
     almacenamiento: [],
-    limites: [],
+    // Editores activos a la vez: se lee del plan (`limiteDeEditoresCrm`) en `registrarEditorCrm`.
+    limites: [{ clave: 'editoresCrm', hacerCumplir: 'servidor' }],
     pestanas: [],
     tablero: [],
     herramientas: [],
-    functions: [],
+    functions: ['registrarEditorCrm', 'quitarEditorCrm', 'consultarMiEdicionCrm'],
     flujosProgramados: [],
     ganchos: [],
     mensajes: 0,
