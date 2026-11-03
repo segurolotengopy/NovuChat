@@ -24,12 +24,13 @@ const CRM_CAMPOS_OBLIGATORIOS = ['id', 'fecha', 'nombre', 'empresa', 'telefono',
 //   Caliente   acepto agendar, pidio la ubicacion o pidio que lo llamen.
 //   Frio       pregunto el precio y cerro la conversacion.
 //   No es lead proveedor o persona que no es paciente.
-const CRM_SENALES = ['aceptoAgendar', 'pidioUbicacion', 'pidioLlamada', 'llegoPorAnuncio', 'preguntoPrecioYCerro', 'noEsPaciente'];
+//   `inicioCompra` (senal neutra para quien vende en vez de agendar): el flujo emitio un cobro o recibio un comprobante. Cuenta como Caliente.
+const CRM_SENALES = ['aceptoAgendar', 'pidioUbicacion', 'pidioLlamada', 'inicioCompra', 'llegoPorAnuncio', 'preguntoPrecioYCerro', 'noEsPaciente'];
 const CRM_CLASIFICACIONES = ['No es lead', 'Frío', 'Tibio', 'Caliente'];
 function crmClasificar(s) {
   const h = s !== null && typeof s === 'object' ? s : {};
   if (h.noEsPaciente === true) return 'No es lead';
-  if (h.aceptoAgendar === true || h.pidioUbicacion === true || h.pidioLlamada === true) return 'Caliente';
+  if (h.aceptoAgendar === true || h.pidioUbicacion === true || h.pidioLlamada === true || h.inicioCompra === true) return 'Caliente';
   if (h.preguntoPrecioYCerro === true) return 'Frío';
   return 'Tibio';
 }

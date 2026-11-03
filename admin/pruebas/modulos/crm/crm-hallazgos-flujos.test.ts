@@ -21,6 +21,8 @@ const FLUJOS: { flujo: string; json: string; datos: string }[] = [
   { flujo: 'rroca-evy (prueba)', json: 'Flujos/experimental/rroca-evy/rroca-evy.prueba.json', datos: 'admin/scripts/datos/rroca-evy/rroca-evy.json' },
   { flujo: 'rroca-emma', json: 'Flujos/experimental/rroca-emma/rroca-emma.json', datos: 'admin/scripts/datos/rroca-emma/rroca-emma.json' },
   { flujo: 'rroca-emma (prueba)', json: 'Flujos/experimental/rroca-emma/rroca-emma.prueba.json', datos: 'admin/scripts/datos/rroca-emma/rroca-emma.json' },
+  { flujo: 'rroca-ruben', json: 'Flujos/experimental/rroca-ruben/rroca-ruben.json', datos: 'admin/scripts/datos/rroca-ruben/rroca-ruben.json' },
+  { flujo: 'rroca-ruben (prueba)', json: 'Flujos/experimental/rroca-ruben/rroca-ruben.prueba.json', datos: 'admin/scripts/datos/rroca-ruben/rroca-ruben.json' },
 ];
 
 describe('barreras del miniCRM en cada flujo versionado', () => {
