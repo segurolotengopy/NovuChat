@@ -179,6 +179,48 @@ describe('preparar-import.sh y RELE_URL_INTERNA', () => {
     expect(`${r.stdout}${r.stderr}`).toContain('RELE_BASES_PERMITIDAS');
     expect(existsSync(join(raiz, 'Flujos', 'salida-de-persona.local.json'))).toBe(false);
   });
+  const corrienteSalida = (parametros: Record<string, unknown>) => {
+    const f = { ...SUELTO, nodes: [{ name: 'Config base', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: [0, 0], parameters: { value: MARCADOR } }, { name: 'Enviar', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [0, 0], parameters: parametros }] };
+    writeFileSync(join(raiz, 'Flujos', 'salida-de-persona.json'), JSON.stringify(f));
+    rmSync(join(raiz, 'Flujos', 'salida-de-persona.local.json'), { force: true });
+    return spawnSync('bash', ['scripts/preparar-import.sh', 'Flujos/salida-de-persona.json', '.env.prueba'], {
+      cwd: raiz, encoding: 'utf8',
+      env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: join(raiz, 'tabla.md'), BASH_ENV: '', ENV: '', RELE_URL_INTERNA: 'https://rele.empresa.example.com', RELE_BASES_PERMITIDAS: '' }),
+    });
+  };
+  it('NIEGA: las variantes de la ruta /v1/envio en salida-de-persona.json (sin barra final, doble barra, /./, /V1/, concatenación) exigen la lista', () => {
+    const variantes: Record<string, string> = {
+      'sin barra final': "={{ $('Config base').first().json.releBaseUrl }}/v1/envio",
+      'doble barra': "={{ $('Config base').first().json.releBaseUrl }}//v1/envio/mensajes/1",
+      'punto': "={{ $('Config base').first().json.releBaseUrl }}/v1/./envio/mensajes/1",
+      'mayúsculas': "={{ $('Config base').first().json.releBaseUrl }}/V1/ENVIO/mensajes/1",
+      'concatenación': "={{ $('Config base').first().json.releBaseUrl + '/v1' + '/envio/' + 'mensajes/1' }}",
+      'concatenación partida': "={{ $('Config base').first().json.releBaseUrl + '/v' + '1/' + 'envio/mensajes/1' }}",
+      'solo envio': "={{ $('Config base').first().json.releBaseUrl + '/' + 'envio/mensajes/1' }}",
+      'otra copia de la expresión legítima más una variante': "={{ $('Config base').first().json.releBaseUrl }}/v1/envio/mensajes/1 y {{ x }}/V1/envio/",
+    };
+    for (const [nombre, url] of Object.entries(variantes)) {
+      const r = corrienteSalida({ url });
+      expect(r.status, `${nombre}\n${r.stdout}${r.stderr}`).toBe(1);
+      expect(`${r.stdout}${r.stderr}`, nombre).toContain('RELE_BASES_PERMITIDAS');
+      expect(existsSync(join(raiz, 'Flujos', 'salida-de-persona.local.json')), nombre).toBe(false);
+    }
+  });
+  it('la preparación legítima de salida-de-persona.json (la expresión exacta del archivo real, sin otra ruta) sigue pasando sin la lista', () => {
+    const r = corrienteSalida({ url: "={{ $('Config base').first().json.releBaseUrl }}/v1/envio/mensajes/{{ $('Config base').first().json.phoneNumberId }}" });
+    expect(r.status, `${r.stdout}${r.stderr}`).toBe(0);
+    expect(existsSync(join(raiz, 'Flujos', 'salida-de-persona.local.json'))).toBe(true);
+  });
+  it('el Flujos/salida-de-persona.json REAL se prepara sin RELE_BASES_PERMITIDAS (la regla nueva no rompe su uso legítimo)', () => {
+    copyFileSync(join(REPO, 'Flujos', 'salida-de-persona.json'), join(raiz, 'Flujos', 'salida-de-persona.json'));
+    rmSync(join(raiz, 'Flujos', 'salida-de-persona.local.json'), { force: true });
+    const r = spawnSync('bash', ['scripts/preparar-import.sh', 'Flujos/salida-de-persona.json', '.env.prueba'], {
+      cwd: raiz, encoding: 'utf8',
+      env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: join(raiz, 'tabla.md'), BASH_ENV: '', ENV: '', RELE_URL_INTERNA: 'http://relay:8080', RELE_BASES_PERMITIDAS: '' }),
+    });
+    expect(`${r.stdout}${r.stderr}`).not.toContain('RELE_BASES_PERMITIDAS');
+    expect(readFileSync(join(raiz, 'Flujos', 'salida-de-persona.local.json'), 'utf8')).toContain('http://relay:8080');
+  });
   it('la excepción es NOMBRADA por archivo: Flujos/salida-de-persona.json (ruta exacta) valida su propia lista y se repone sin RELE_BASES_PERMITIDAS', () => {
     const r = corrienteSuelto('salida-de-persona.json');
     expect(r.status, `${r.stdout}${r.stderr}`).toBe(0);

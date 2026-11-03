@@ -260,10 +260,9 @@ describe('emparejamiento tras «Esperar reintento» (revisión del PR #757)', ()
 });
 
 describe('504 WM-3041: incierto, nunca se reenvía', () => {
-  const turno = turnoConError; // termina en error a propósito (I4)
   it('un solo envío, sin respaldo, sin espera y sin reporte; el otro mensaje sigue su camino', () => {
     const m = mundoRele((e) => (e.clave.endsWith('-1') ? falla('WM-3041', { reintentable: true }) : ok(e.clave)));
-    const r = turno(m, [mensaje(1), mensaje(2)]);
+    const r = turnoConError(m, [mensaje(1), mensaje(2)]); // termina en error a propósito (I4)
     expect(contiene(m.envios, `${CLIENTE}-${WF}-E1-enviar-1`)).toHaveLength(1);
     expect(m.porNodo(R)).toHaveLength(0);
     expect(r.esperas).toEqual([]);
@@ -272,10 +271,10 @@ describe('504 WM-3041: incierto, nunca se reenvía', () => {
 });
 
 describe('429 WM-3037: una espera de 61 a 64 s y la MISMA clave', () => {
-  const turno = turnoConError; // el segundo 429 queda agotado y termina en error (I4)
   it('reintenta una vez con la misma clave tras 61 a 64 s y reporta el éxito', () => {
     const m = mundoRele((e) => (e.vez === 1 ? falla('WM-3037') : ok(e.clave)));
     const r = turno(m, [mensaje(1)]);
+    expect(r.fallo).toBeNull();
     expect(m.porNodo(Q)).toHaveLength(2);
     expect(new Set(m.porNodo(Q).map((e) => e.clave)).size).toBe(1);
     expect(r.esperas).toHaveLength(1);
@@ -285,7 +284,8 @@ describe('429 WM-3037: una espera de 61 a 64 s y la MISMA clave', () => {
   });
   it('NIEGA: si el segundo intento también da 429 queda agotado: 2 envíos, sin respaldo, sin reporte', () => {
     const m = mundoRele(() => falla('WM-3037'));
-    const r = turno(m, [mensaje(1)]);
+    const r = turnoConError(m, [mensaje(1)]); // agotado termina en error (I4)
+    expect(r.fallo?.nodo).toBe('Detener por envío incierto');
     expect(m.porNodo(Q)).toHaveLength(2);
     expect(m.porNodo(R)).toHaveLength(0);
     expect(r.llamadas.ingesta).toHaveLength(0);
@@ -294,10 +294,10 @@ describe('429 WM-3037: una espera de 61 a 64 s y la MISMA clave', () => {
 });
 
 describe('409 WM-3035: hasta 2 veces tras 2 a 3 s', () => {
-  const turno = turnoConError; // agotado termina en error (I4)
   it('con tres 409 seguidos hace 3 envíos (el original y 2 reintentos) y queda agotado', () => {
     const m = mundoRele(() => falla('WM-3035'));
-    const r = turno(m, [mensaje(1)]);
+    const r = turnoConError(m, [mensaje(1)]); // agotado termina en error (I4)
+    expect(r.fallo?.nodo).toBe('Detener por envío incierto');
     expect(m.porNodo(Q)).toHaveLength(3);
     expect(new Set(m.porNodo(Q).map((e) => e.clave)).size).toBe(1);
     expect(r.esperas).toHaveLength(2);
@@ -308,15 +308,16 @@ describe('409 WM-3035: hasta 2 veces tras 2 a 3 s', () => {
   it('un 409 y luego éxito: reporta', () => {
     const m = mundoRele((e) => (e.vez === 1 ? falla('WM-3035') : ok(e.clave)));
     const r = turno(m, [mensaje(1)]);
+    expect(r.fallo).toBeNull();
     expect(r.llamadas.ingesta).toHaveLength(1);
   });
 });
 
 describe('reintentable: 2 reintentos con 2 s y 8 s', () => {
-  const turno = turnoConError; // agotado termina en error (I4)
   it('WM-3038 siempre: 3 envíos, esperas 2 y 8, agotado', () => {
     const m = mundoRele(() => falla('WM-3038', { reintentable: true }));
-    const r = turno(m, [mensaje(1)]);
+    const r = turnoConError(m, [mensaje(1)]); // agotado termina en error (I4)
+    expect(r.fallo?.nodo).toBe('Detener por envío incierto');
     expect(m.porNodo(Q)).toHaveLength(3);
     expect(r.esperas.map((e) => e.segundos)).toEqual([2, 8]);
     expect(m.porNodo(R)).toHaveLength(0);
@@ -326,16 +327,17 @@ describe('reintentable: 2 reintentos con 2 s y 8 s', () => {
     const guion = [falla('WM-3035'), falla('WM-3037')];
     const m = mundoRele((e) => guion[e.vez - 1] ?? ok(e.clave));
     const r = turno(m, [mensaje(1)]);
+    expect(r.fallo).toBeNull();
     expect(m.porNodo(Q)).toHaveLength(3);
     expect(r.llamadas.ingesta).toHaveLength(1);
   });
 });
 
 describe('respaldo: un rechazo conocido sale como texto, una sola vez', () => {
-  const turno = turnoConError; // un caso de esta serie incluye un incierto (I4)
   it('WM-3032 (link): respaldo con clave -respaldo-n, UN intento, texto plano y se reporta con el id del respaldo', () => {
     const m = mundoRele((e) => (e.nodo === Q ? falla('WM-3032') : ok(e.clave)));
     const r = turno(m, [mensaje(1)]);
+    expect(r.fallo).toBeNull();
     expect(m.porNodo(Q)).toHaveLength(1);
     expect(m.porNodo(R)).toHaveLength(1);
     const e = m.porNodo(R)[0]!;
@@ -358,18 +360,21 @@ describe('respaldo: un rechazo conocido sale como texto, una sola vez', () => {
   });
   it('con `reportarFallidos` el respaldo caído se reporta como en Agenda mínima, pero un incierto sigue sin reportarse', () => {
     const m = mundoRele((e) => (e.nodo === Q ? falla('WM-3032') : falla('WM-3040', { metaCodigo: '131047' })), { reportarFallidos: true });
-    expect(turno(m, [mensaje(1)]).llamadas.ingesta).toHaveLength(1);
+    const r1 = turno(m, [mensaje(1)]);
+    expect(r1.fallo).toBeNull();
+    expect(r1.llamadas.ingesta).toHaveLength(1);
     const n = mundoRele(() => falla('WM-3041'), { reportarFallidos: true });
-    expect(turno(n, [mensaje(1)]).llamadas.ingesta).toHaveLength(0);
+    const r2 = turnoConError(n, [mensaje(1)]); // el incierto termina en error (I4)
+    expect(r2.fallo?.nodo).toBe('Detener por envío incierto');
+    expect(r2.llamadas.ingesta).toHaveLength(0);
   });
 });
 
 describe('I4 (Andres, 03/11): incierto o agotado → la ejecución TERMINA EN ERROR, sin reenvío, sin respaldo, sin reporte', () => {
-  const turno = turnoConError;
   const PARADA = 'Detener por envío incierto';
   it('504 WM-3041 (incierto): error visible, UN solo envío, ningún respaldo, ningún reporte, ninguna espera', () => {
     const m = mundoRele(() => falla('WM-3041', { reintentable: true }));
-    const r = turno(m, [mensaje(1)]);
+    const r = turnoConError(m, [mensaje(1)]);
     expect(r.fallo?.nodo).toBe(PARADA);
     expect(m.porNodo(Q)).toHaveLength(1);
     expect(m.porNodo(R)).toHaveLength(0);
@@ -378,7 +383,7 @@ describe('I4 (Andres, 03/11): incierto o agotado → la ejecución TERMINA EN ER
   });
   it('agotado (429 dos veces): error visible, exactamente 2 envíos (el original y su único reintento), sin respaldo ni reporte', () => {
     const m = mundoRele(() => falla('WM-3037'));
-    const r = turno(m, [mensaje(1)]);
+    const r = turnoConError(m, [mensaje(1)]);
     expect(r.fallo?.nodo).toBe(PARADA);
     expect(m.porNodo(Q)).toHaveLength(2);
     expect(m.porNodo(R)).toHaveLength(0);
@@ -387,7 +392,7 @@ describe('I4 (Andres, 03/11): incierto o agotado → la ejecución TERMINA EN ER
   it('NIEGA: todos los casos inciertos (red, tiempo, 2xx sin id, HTML, código desconocido, respuesta vacía) terminan en error sin una segunda llamada', () => {
     for (const resp of [{ error: 'ECONNRESET' }, { error: { message: 'timeout', code: 'ECONNABORTED' } }, { messages: [] }, { data: '<html>502</html>' }, falla('WM-3999', { reintentable: true }), {}]) {
       const m = mundoRele(() => resp as J);
-      const r = turno(m, [mensaje(1)]);
+      const r = turnoConError(m, [mensaje(1)]);
       expect(r.fallo?.nodo, JSON.stringify(resp)).toBe(PARADA);
       expect(m.envios, JSON.stringify(resp)).toHaveLength(1);
       expect(r.llamadas.ingesta, JSON.stringify(resp)).toHaveLength(0);
@@ -395,7 +400,7 @@ describe('I4 (Andres, 03/11): incierto o agotado → la ejecución TERMINA EN ER
   });
   it('el mensaje de error es FIJO: lleva la decisión y el código sanitizado, y NO el teléfono, el texto del cliente, la clave ni el cuerpo del relé', () => {
     const m = mundoRele(() => falla('WM-3041', { reintentable: true, detalle: 'cuerpo del relé secreto', telefono: '+70000001' }));
-    const r = turno(m, [mensaje(1, { texto: 'texto privado del cliente 777', respaldo: 'respaldo privado' })]);
+    const r = turnoConError(m, [mensaje(1, { texto: 'texto privado del cliente 777', respaldo: 'respaldo privado' })]);
     const msj = String(r.fallo?.mensaje);
     expect(msj).toContain('incierto');
     expect(msj).toContain('WM-3041');
@@ -413,7 +418,7 @@ describe('I4 (Andres, 03/11): incierto o agotado → la ejecución TERMINA EN ER
   });
   it('un lote mixto (uno ok y uno incierto) termina en error, pero la fila de reporte del «ok» SÍ corre antes de la parada (executionOrder v1: la parada va debajo) y no se reenvía nada', () => {
     const m = mundoRele((e) => (e.clave.endsWith('-1') ? falla('WM-3041') : ok(e.clave)));
-    const r = turno(m, [mensaje(1), mensaje(2)]);
+    const r = turnoConError(m, [mensaje(1), mensaje(2)]);
     expect(r.fallo?.nodo).toBe(PARADA);
     expect(r.llamadas.ingesta.map((c) => c['telefono'])).toEqual(['+70000002']);
     const y = (nombre: string) => Number(m.mu.flujo.nodes.find((n) => n.name === nombre)!.position[1]);
@@ -424,7 +429,6 @@ describe('I4 (Andres, 03/11): incierto o agotado → la ejecución TERMINA EN ER
 });
 
 describe('incierto: ni respaldo ni reenvío ni reporte', () => {
-  const turno = turnoConError; // incierto termina en error (I4)
   const CASOS: [string, () => J][] = [
     ['error de red', () => ({ error: 'ECONNRESET' })],
     ['tiempo agotado', () => ({ error: 'timeout of 30000ms exceeded' })],
@@ -437,7 +441,8 @@ describe('incierto: ni respaldo ni reenvío ni reporte', () => {
   for (const [nombre, resp] of CASOS) {
     it(nombre, () => {
       const m = mundoRele(() => resp());
-      const r = turno(m, [mensaje(1)]);
+      const r = turnoConError(m, [mensaje(1)]); // incierto termina en error (I4)
+      expect(r.fallo?.nodo).toBe('Detener por envío incierto');
       expect(m.envios).toHaveLength(1);
       expect(r.esperas).toEqual([]);
       expect(r.llamadas.ingesta).toHaveLength(0);
@@ -446,7 +451,6 @@ describe('incierto: ni respaldo ni reenvío ni reporte', () => {
 });
 
 describe('el cuerpo que sale al relé', () => {
-  const turno = turnoConError; // lo que no sale (sin `n`, de más de 64 KiB) queda incierto y termina en error (I4)
   const payloadSucio = (i: number): J => ({
     messaging_product: 'meta', recipient_type: 'individual', to: `+7000000${i}`, type: 'image',
     image: { id: 'MEDIA1', link: 'https://x.example/a.jpg', caption: 'hola' },
@@ -477,27 +481,31 @@ describe('el cuerpo que sale al relé', () => {
   it('NIEGA: un mensaje de más de 64 KiB no sale (ni respaldo) ni se reporta; uno justo debajo sí sale', () => {
     const m = mundoRele((e) => ok(e.clave));
     const grande = mensaje(1, { payload: { type: 'text', to: '7000001', text: { body: 'x'.repeat(70000) } } });
-    const r = turno(m, [grande]);
+    const r = turnoConError(m, [grande]); // lo que no sale queda incierto y termina en error (I4)
+    expect(r.fallo?.nodo).toBe('Detener por envío incierto');
     expect(m.envios).toHaveLength(0);
     expect(r.llamadas.ingesta).toHaveLength(0);
     const justo = mensaje(1, { payload: { type: 'text', to: '7000001', text: { body: 'x'.repeat(65000) } } });
-    expect(turno(mundoRele((e) => ok(e.clave)), [justo]).mensajes).toHaveLength(1);
+    const rJusto = turno(mundoRele((e) => ok(e.clave)), [justo]);
+    expect(rJusto.fallo).toBeNull();
+    expect(rJusto.mensajes).toHaveLength(1);
     // Los 64 KiB son BYTES: 25.000 emojis (4 bytes cada uno) pasan de 64 KiB aunque tengan menos de 64.000 caracteres.
     const emojis = mensaje(1, { payload: { type: 'text', to: '7000001', text: { body: '😀'.repeat(25000) } } });
     const m2 = mundoRele((e) => ok(e.clave));
-    turno(m2, [emojis]);
+    expect(turnoConError(m2, [emojis]).fallo?.nodo).toBe('Detener por envío incierto');
     expect(m2.envios).toHaveLength(0);
   });
   it('NIEGA: sin el número `n` del mensaje no sale NADA (dos mensajes sin número compartirían clave y el relé tomaría el segundo por un repetido)', () => {
     const m = mundoRele((e) => ok(e.clave));
-    const r = turno(m, [mensaje(1), mensaje(2)], { sinNumerar: true });
+    const r = turnoConError(m, [mensaje(1), mensaje(2)], { sinNumerar: true });
+    expect(r.fallo).not.toBeNull();
     expect(m.envios).toHaveLength(0);
     expect(r.llamadas.ingesta).toHaveLength(0);
   });
   it('NIEGA: un `n` que no es un entero positivo tampoco sale', () => {
     for (const n of [0, -1, 1.5, '1', null]) {
       const m = mundoRele((e) => ok(e.clave));
-      turno(m, [mensaje(1, { n })], { sinNumerar: true });
+      expect(turnoConError(m, [mensaje(1, { n })], { sinNumerar: true }).fallo, String(n)).not.toBeNull();
       expect(m.envios, String(n)).toHaveLength(0);
     }
   });

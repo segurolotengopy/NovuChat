@@ -161,7 +161,16 @@ if MARCADOR_RELE in texto:
     crudo = (de_env("RELE_URL_INTERNA") or tabla.get(MARCADOR_RELE) or "").strip()
     EXCEPCION_SIN_LISTA = "Flujos/salida-de-persona.json"
     # La excepción es por archivo Y solo cubre el marcador como dato suelto: si el archivo lo lleva en una URL del relé (…/v1/envio/…), la lista se exige igual.
-    exige_lista = os.path.normpath(flujo) != EXCEPCION_SIN_LISTA or re.search(re.escape(MARCADOR_RELE) + r'/v1/envio/', texto) is not None
+    # Para ese archivo la lista se exige SIEMPRE que el texto arme una ruta del relé (`/v1`, `v1/`, `/envio`, sin distinguir mayúsculas, con o sin barra final, con `//` o `/./`,
+    # o partida en una concatenación), sin depender de que esté pegada al marcador. La ÚNICA ocurrencia legítima, la que el archivo real arma con la expresión exacta
+    # `releBaseUrl }}/v1/envio/mensajes/`, se quita antes de mirar: lo que quede con rastro de la ruta exige la lista.
+    resto = texto.replace("releBaseUrl }}/v1/envio/mensajes/", "")
+    if os.path.normpath(flujo) != EXCEPCION_SIN_LISTA:
+        exige_lista = True
+    else:
+        # Se miran sin espacios, comillas ni «+» para que una concatenación partida (`'/v' + '1/' + 'envio'`) no esconda la ruta.
+        compacto = re.sub(r'[\s\'"`+]', '', resto).lower()
+        exige_lista = any(p in compacto for p in ("/v1", "v1/", "/envio"))
     if crudo:
         m_base = re.fullmatch(r'(https?)://([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*)(?::(\d{1,5}))?', crudo)
         motivo = None
