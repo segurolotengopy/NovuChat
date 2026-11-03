@@ -134,6 +134,84 @@ for linea in open(local, encoding="utf-8"):
 # Antes se aceptaba cualquier cosa después de «REEMPLAZAR_», y el flujo de captación,
 # que menciona el prefijo en su propio código para reconocer un respaldo sin llenar,
 # se leía como dos marcadores falsos y publicar-flujo.sh abortaba (15/09/2026).
+# --- 2b. la URL INTERNA DEL RELÉ B9 (el valor NUNCA va en el repositorio) --------
+# El marcador va pegado a la ruta («REEMPLAZAR_URL_INTERNA_DEL_RELE/v1/envio/…»), así que la tabla de arriba, que compara el marcador entero hasta el
+# primer espacio, no lo alcanza: se repone acá. El valor sale de la variable RELE_URL_INTERNA (del entorno del proceso o del `.env` del cliente, ambos
+# ignorados por git) o, si no, de la fila `REEMPLAZAR_URL_INTERNA_DEL_RELE` de la tabla. Es una BASE: esquema + host + puerto opcional, sin ruta, sin
+# barra final, sin credenciales. `http://` solo para un host INTERNO (un nombre sin puntos, como un contenedor; `localhost`; `*.internal`/`*.local`; una
+# IP privada o de loopback): el relé no sale a internet. Cualquier otro host exige `https://`. Si falta o es inválida, el marcador queda y el flujo no
+# se publica (`publicar-flujo.sh` aborta con cualquier REEMPLAZAR_* que quede). El valor no se imprime. Rechaza además IP disfrazadas, link-local, 0.0.0.0/8, multicast
+# (224.0.0.0/4) y reservadas (240.0.0.0/4, 255.x.x.x).
+#
+# PRIORIDAD (PR #757, ronda 3): el `.env` del CLIENTE manda sobre la variable de la terminal (la terminal puede arrastrar el valor de otro cliente); si los dos
+# existen y difieren, se avisa SIN mostrar ningún valor y se usa el del `.env`. Lo mismo vale para RELE_BASES_PERMITIDAS.
+# RELE_BASES_PERMITIDAS es OBLIGATORIA siempre que el marcador aparezca en el JSON (en una URL o como dato de Config): tiene que nombrar la base EXACTA
+# (`https://host[:puerto]`), separadas por comas si son varias; sin ella, el script no repone nada y aborta. ÚNICA excepción, NOMBRADA por archivo (ruta exacta,
+# no por la forma del marcador): `Flujos/salida-de-persona.json`, que lleva el marcador como dato de `Config base` y valida su propia lista.
+def de_env(nombre):
+    """El valor del `.env` del cliente; si no, el de la terminal. Avisa (sin valores) si los dos existen y difieren."""
+    del_env = (env.get(nombre) or "").strip()
+    de_terminal = (os.environ.get(nombre) or "").strip()
+    if del_env and de_terminal and del_env != de_terminal:
+        print(f"  {GRIS}!{FIN} {nombre}: la variable de la terminal difiere de la de {env_file}; se usa la de {env_file} (valores no mostrados)")
+    return del_env or de_terminal
+
+MARCADOR_RELE = "REEMPLAZAR_URL_INTERNA_DEL_RELE"
+if MARCADOR_RELE in texto:
+    crudo = (de_env("RELE_URL_INTERNA") or tabla.get(MARCADOR_RELE) or "").strip()
+    EXCEPCION_SIN_LISTA = "Flujos/salida-de-persona.json"
+    # La excepción es por archivo Y solo cubre el marcador como dato suelto: si el archivo lo lleva en una URL del relé (…/v1/envio/…), la lista se exige igual.
+    # Para ese archivo la lista se exige SIEMPRE que el texto arme una ruta del relé (`/v1`, `v1/`, `/envio`, sin distinguir mayúsculas, con o sin barra final, con `//` o `/./`,
+    # o partida en una concatenación), sin depender de que esté pegada al marcador. La ÚNICA ocurrencia legítima, la que el archivo real arma con la expresión exacta
+    # `releBaseUrl }}/v1/envio/mensajes/`, se quita antes de mirar: lo que quede con rastro de la ruta exige la lista.
+    resto = texto.replace("releBaseUrl }}/v1/envio/mensajes/", "")
+    if os.path.normpath(flujo) != EXCEPCION_SIN_LISTA:
+        exige_lista = True
+    else:
+        # Se miran sin espacios, comillas ni «+» para que una concatenación partida (`'/v' + '1/' + 'envio'`) no esconda la ruta.
+        compacto = re.sub(r'[\s\'"`+]', '', resto).lower()
+        exige_lista = any(p in compacto for p in ("/v1", "v1/", "/envio"))
+    if crudo:
+        m_base = re.fullmatch(r'(https?)://([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*)(?::(\d{1,5}))?', crudo)
+        motivo = None
+        if not m_base:
+            motivo = "no es una base «http(s)://host[:puerto]» (sin ruta, sin barra final, sin credenciales)"
+        else:
+            esquema, host, puerto = m_base.group(1), m_base.group(2).lower(), m_base.group(3)
+            partes = host.split(".")
+            # Una etiqueta puramente numérica o hexadecimal (el decimal de 32 bits, «0xa9fea9fe» o «0») es una IP disfrazada (el sistema la resuelve a 169.254.169.254, etc.).
+            numerica = lambda p: re.fullmatch(r'\d+|0x[0-9a-f]+', p) is not None
+            canonica = len(partes) == 4 and all(re.fullmatch(r'0|[1-9]\d{0,2}', p) and int(p) <= 255 for p in partes)
+            octetos = [int(p) for p in partes] if canonica else []
+            privada = canonica and (
+                octetos[0] in (10, 127) or (octetos[0] == 192 and octetos[1] == 168) or (octetos[0] == 172 and 16 <= octetos[1] <= 31))
+            interno = (len(partes) == 1 and re.fullmatch(r'[a-z][a-z0-9-]*', host) is not None) or host == "localhost" \
+                or host.endswith((".internal", ".local", ".localhost")) or privada
+            # Lista cerrada (RELE_BASES_PERMITIDAS, separada por comas: bases EXACTAS «esquema://host[:puerto]»): obligatoria si el marcador va en una URL del relé; si existe, solo esas.
+            permitidas = [x.strip().lower() for x in de_env("RELE_BASES_PERMITIDAS").split(",") if x.strip()]
+            base_exacta = f"{esquema}://{host}" + (f":{puerto}" if puerto else "")
+            if puerto is not None and not (1 <= int(puerto) <= 65535):
+                motivo = "el puerto no es válido"
+            elif host.startswith("metadata") or host.startswith("instance-data") or ".metadata." in host:
+                motivo = "el host parece el servicio de metadatos de la nube (nombre que empieza por «metadata»)"
+            elif numerica(partes[-1]) and not canonica:  # inet_aton: si la última etiqueta es numérica o 0x…, el sistema lo lee como IP
+                motivo = "el host es una IP disfrazada (etiqueta numérica o hexadecimal) o una IP que no está en forma canónica de cuatro octetos"
+            elif canonica and (octetos[0] == 0 or (octetos[0] == 169 and octetos[1] == 254)):
+                motivo = "el host es link-local (169.254.0.0/16) o 0.0.0.0/8, donde viven los metadatos de la nube"
+            elif canonica and octetos[0] >= 224:
+                motivo = "el host es multicast (224.0.0.0/4) o reservado (240.0.0.0/4, incluye 255.x.x.x): no es un destino del relé"
+            elif exige_lista and not permitidas:
+                motivo = "se repone solo con RELE_BASES_PERMITIDAS definida (obligatoria: la base exacta del relé, «esquema://host[:puerto]»)"
+            elif permitidas and base_exacta not in permitidas:
+                motivo = "la base no está (exacta) en RELE_BASES_PERMITIDAS"
+            elif esquema == "http" and not interno:
+                motivo = "http:// solo se admite para un host interno (nombre sin puntos que empiece por letra, localhost, *.internal, *.local o IP privada); use https://"
+        if motivo:
+            print(f"{ROJO}✗ ABORTADO: RELE_URL_INTERNA {motivo}.{FIN}")
+            sys.exit(1)
+        texto = re.sub(re.escape(MARCADOR_RELE) + r'(?![A-Za-z0-9_])', lambda _m: crudo, texto)
+        print(f"  {VERDE}+{FIN} {MARCADOR_RELE} {GRIS}(de RELE_URL_INTERNA; no se muestra){FIN}")
+
 presentes = sorted(set(re.findall(r'REEMPLAZAR_[A-Z][^"\\\s]*', texto)))
 puestos, sin_valor = [], []
 # COINCIDENCIA EXACTA, nunca por prefijo. Antes se aceptaba una fila cuyo
