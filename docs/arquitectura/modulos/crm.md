@@ -85,6 +85,11 @@ Reglas: las 4 claves de `equipo` se declaran siempre (columna o `null`); las let
 del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
 `alCrear.estado` (p. ej. «Activo») se escribe SOLO al crear la fila.
 
+**Relleno histórico (03/11/2026).** `admin/scripts/plataforma/relleno-crm-historico.mjs` crea una fila por cada contacto anterior de UNA subcuenta
+(Evy, Emma, Rubén o Antonio) en su hoja: seco por omisión (solo conteos), idempotente por teléfono, respaldo antes de escribir y `--revertir`.
+Solo escribe campos que existen y vocabulario cerrado (clasificación «Tibio», calificación «Media», resumen fijo); no lee el texto de ningún
+mensaje ni la columna U. La hoja se lee y escribe por un flujo temporal de n8n con la credencial `crm-<tenant>` (la cuenta no tiene clave local).
+
 **Limitaciones conocidas.**
 - En una fila NUEVA solo se comprueba el encabezado de la columna A: leer la fila de
   encabezados completa en el alta queda para un PR posterior, para no leer más hoja.
