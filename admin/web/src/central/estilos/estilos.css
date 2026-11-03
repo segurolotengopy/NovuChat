@@ -1020,3 +1020,9 @@ tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent
 /* La compuerta del corte: observación en gris, activo con el borde de aviso. */
 .corte-prepago { margin: 0 0 var(--space-4); max-width: var(--ancho-lectura); }
 .corte-prepago.corte-activo { border-color: var(--color-error); }
+
+/* Edición del miniCRM con la cuenta de Google (Tablero y Usuarios). Solo tokens existentes; se apila en pantallas angostas. */
+.edicion-crm { margin: 0 0 var(--space-4); max-width: var(--ancho-lectura); }
+.edicion-crm p, .edicion-crm-google p { margin: 0 0 var(--space-2); overflow-wrap: anywhere; }
+.edicion-crm-google { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); margin: var(--space-2) 0; }
+td .btn { margin: var(--space-1) var(--space-1) 0 0; }
