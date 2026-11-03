@@ -891,7 +891,7 @@
       "credentials": {
         "googleApi": {
           "id": "",
-          "name": "Google Sheets NovuChat (cuenta de servicio)"
+          "name": "Google Sheets miniCRM (crm-novuchat)"
         }
       },
       "onError": "continueRegularOutput",
@@ -939,7 +939,7 @@
       "credentials": {
         "googleApi": {
           "id": "",
-          "name": "Google Sheets NovuChat (cuenta de servicio)"
+          "name": "Google Sheets miniCRM (crm-novuchat)"
         }
       },
       "onError": "continueRegularOutput",
@@ -1036,7 +1036,7 @@
       "credentials": {
         "googleApi": {
           "id": "",
-          "name": "Google Sheets NovuChat (cuenta de servicio)"
+          "name": "Google Sheets miniCRM (crm-novuchat)"
         }
       },
       "onError": "continueRegularOutput",
@@ -1120,7 +1120,7 @@
       "credentials": {
         "googleApi": {
           "id": "",
-          "name": "Google Sheets NovuChat (cuenta de servicio)"
+          "name": "Google Sheets miniCRM (crm-novuchat)"
         }
       },
       "onError": "continueRegularOutput",

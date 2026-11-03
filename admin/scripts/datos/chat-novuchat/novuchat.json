@@ -5,7 +5,7 @@
     "trigger": "WhatsApp Trigger NovuChat",
     "ingesta": "NovuChat ingesta (alias del número)",
     "graph": "Graph WhatsApp NovuChat (Bearer)",
-    "planilla": "Google Sheets NovuChat (cuenta de servicio)"
+    "planilla": "Google Sheets miniCRM (crm-novuchat)"
   },
   "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA",
   "configBase": {
