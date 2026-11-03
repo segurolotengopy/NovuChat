@@ -463,7 +463,7 @@ export const REGISTRO = [
     pestanas: [],
     tablero: [],
     herramientas: [],
-    functions: ['registrarEditorCrm', 'quitarEditorCrm', 'consultarMiEdicionCrm'],
+    functions: ['registrarEditorCrm', 'quitarEditorCrm', 'consultarMiEdicionCrm', 'revocarEditoresAlApagarCrm', 'reconciliarEditoresCrm'],
     flujosProgramados: [],
     ganchos: [],
     mensajes: 0,

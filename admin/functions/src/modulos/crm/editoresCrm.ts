@@ -10,9 +10,12 @@
  * handler se fabrica con sus dependencias (verificador del token y cliente de Drive) para probarlo con dobles.
  * El tope de editores se lee del plan (`limiteDeEditoresCrm`), nunca se escribe aquí.
  */
-import { Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { defineString } from 'firebase-functions/params';
+import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { REGION } from '../../core/region.js';
 import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import { esAdminDe, esOperDe, exigirAutenticado } from '../../core/seguridad/autorizacion.js';
 import { ID_TENANT, auditar, db, texto } from '../../central/comunes.js';
@@ -95,15 +98,17 @@ export async function revocarEditor(
   // Se marca DENTRO de una transacción que exige el mismo estado, permisoId y alta que se leyeron: si una alta
   // concurrente reescribió el documento (y quizá recreó el permiso, que en Drive conserva el id), no se puede afirmar
   // «revocado»; queda `revocado_pendiente` y un nuevo quitar reintenta el borrado.
-  let estado: EstadoEditor = confirmado ? 'revocado' : 'revocado_pendiente';
+  let estado = 'revocado_pendiente' as 'revocado' | 'revocado_pendiente';
   await db().runTransaction(async (tx) => {
+    // Se calcula DENTRO de la función de la transacción: si Firestore la reintenta, parte de cero.
+    estado = confirmado ? 'revocado' : 'revocado_pendiente';
     const ahora = await tx.get(ref);
     if (!ahora.exists) return;
     if (huellaDe(ahora.data()) !== huellaDe(f)) estado = 'revocado_pendiente';
     tx.update(ref, { estado, revocadoEn: Timestamp.now(), revocadoPor: quien });
   });
   const correo = typeof f['correoGoogle'] === 'string' ? abreviarCorreo(f['correoGoogle']) : '';
-  await auditar(tenantId, 'editor_crm_baja', quien, { destino: uidDestino, correo, motivo, resultado: confirmado ? 'revocado' : 'pendiente' });
+  await auditar(tenantId, 'editor_crm_baja', quien, { destino: uidDestino, correo, motivo, resultado: estado === 'revocado' ? 'revocado' : 'pendiente' });
   return estado;
 }
 
@@ -320,3 +325,95 @@ export const revocarEditorAlQuitarUsuario = (d: Pick<DepsEditores, 'drive'> = DE
       logger.error('editoresCrm: no se pudo revocar al quitar al usuario', { tenantId });
     }
   };
+
+// ---------------------------------------------------------------------------
+// SEGUIMIENTO (03/11/2026): revocar a todos, config apagada, reconciliación
+// ---------------------------------------------------------------------------
+/**
+ * Revoca a TODOS los editores vigentes o con la baja pendiente de UN tenant (`driveDe` arma su cliente; solo lee y escribe su subcolección).
+ * Nunca lanza: un editor que falla queda `revocado_pendiente` y lo cierra la reconciliación.
+ */
+export async function revocarTodosLosEditores(
+  driveDe: () => ClienteDrive | null, tenantId: string, quien: string, motivo: string,
+): Promise<{ revocados: number; pendientes: number }> {
+  let revocados = 0;
+  let pendientes = 0;
+  const vigentes = await coleccion(tenantId).where('estado', 'in', ['activo', 'revocado_pendiente']).get();
+  // El cliente de Drive se arma solo si hay a quién revocar.
+  const drive = vigentes.empty ? null : driveDe();
+  for (const d of vigentes.docs) {
+    try {
+      const e = await revocarEditor(drive, tenantId, d.id, quien, motivo);
+      if (e === 'revocado') revocados++; else if (e === 'revocado_pendiente') pendientes++;
+    } catch {
+      pendientes++;
+      logger.error('editoresCrm: no se pudo revocar a un editor', { tenantId });
+    }
+  }
+  return { revocados, pendientes };
+}
+
+/** EL GANCHO DE `bajaTenant` Y `suspenderTenant` (lo une `ganchos.ts`). Nunca lanza. */
+export const revocarEditoresAlCerrarTenant = (d: Pick<DepsEditores, 'drive'> = DEPS_REALES) =>
+  async (tenantId: string, quien: string, motivo: 'baja' | 'suspension'): Promise<void> => {
+    try {
+      await revocarTodosLosEditores(() => d.drive(tenantId), tenantId, quien, motivo === 'baja' ? 'baja_tenant' : 'suspension_tenant');
+    } catch {
+      logger.error('editoresCrm: no se pudo revocar a los editores al cerrar el negocio', { tenantId });
+    }
+  };
+
+/** Al pasar `config/crm.activo` a `false` (de encendido o ausente) se revoca a todos. Reencender NO restituye accesos. */
+export const manejarCambioConfigCrm = (d: Pick<DepsEditores, 'drive'> = DEPS_REALES) =>
+  async (tenantId: string, antes: Record<string, unknown> | undefined, despues: Record<string, unknown> | undefined): Promise<void> => {
+    if (!despues || crmActivo(despues) || !crmActivo(antes ?? null)) return;
+    await revocarTodosLosEditores(() => d.drive(tenantId), tenantId, 'sistema', 'crm_apagado');
+  };
+
+export const revocarEditoresAlApagarCrm = onDocumentWritten(
+  { document: 'tenants/{tenantId}/config/crm', region: REGION, maxInstances: 5 },
+  async (evento) => {
+    await manejarCambioConfigCrm()(evento.params.tenantId, evento.data?.before.data(), evento.data?.after.data());
+  },
+);
+
+/** Intentos máximos de la reconciliación por editor (a la hora: un día). Pasado el tope queda a mano y se audita. */
+export const MAX_REINTENTOS_REVOCACION = 24;
+
+/**
+ * RECONCILIACIÓN de `revocado_pendiente`: por cada tenant, por separado y sin estado compartido, reintenta la
+ * revocación de sus editores pendientes. Idempotente (`revocarEditor` no toca a un `revocado`), con tope de reintentos.
+ */
+export const reconciliarEditoresPendientes = (d: Pick<DepsEditores, 'drive'> = DEPS_REALES) =>
+  async (): Promise<{ intentados: number; cerrados: number; agotados: number }> => {
+    const r = { intentados: 0, cerrados: 0, agotados: 0 };
+    const tenants = await db().collection('tenants').select().get();
+    for (const t of tenants.docs) {
+      try {
+        const pendientes = await coleccion(t.id).where('estado', '==', 'revocado_pendiente').get();
+        for (const doc of pendientes.docs) {
+          const f = doc.data();
+          const hechos = typeof f['reintentos'] === 'number' ? f['reintentos'] : 0;
+          if (hechos >= MAX_REINTENTOS_REVOCACION) continue;
+          r.intentados++;
+          const motivo = typeof f['motivoPendiente'] === 'string' ? f['motivoPendiente'] : 'reconciliacion';
+          const e = await revocarEditor(d.drive(t.id), t.id, doc.id, 'sistema', motivo);
+          if (e === 'revocado') { r.cerrados++; continue; }
+          await doc.ref.update({ reintentos: FieldValue.increment(1) });
+          if (hechos + 1 >= MAX_REINTENTOS_REVOCACION) {
+            r.agotados++;
+            logger.error('editoresCrm: la revocación agotó sus reintentos', { tenantId: t.id });
+            await auditar(t.id, 'editor_crm_reconciliacion_agotada', 'sistema', { destino: doc.id, reintentos: hechos + 1 });
+          }
+        }
+      } catch {
+        logger.error('editoresCrm: la reconciliación falló en un negocio', { tenantId: t.id });
+      }
+    }
+    return r;
+  };
+
+export const reconciliarEditoresCrm = onSchedule(
+  { schedule: '17 * * * *', timeZone: 'America/La_Paz', region: REGION, timeoutSeconds: 540, maxInstances: 1 },
+  async () => { await reconciliarEditoresPendientes()(); },
+);

@@ -1585,6 +1585,26 @@
     "labels": {},
     "callableTrigger": {}
   },
+  "reconciliarEditoresCrm": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": 540,
+    "minInstances": null,
+    "maxInstances": 1,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "scheduleTrigger": {
+      "schedule": "17 * * * *",
+      "retryConfig": {},
+      "timeZone": "America/La_Paz"
+    }
+  },
   "recordatorioPrepagoEnviado": {
     "availableMemoryMb": null,
     "timeoutSeconds": null,
@@ -1973,6 +1993,32 @@
     ],
     "labels": {},
     "callableTrigger": {}
+  },
+  "revocarEditoresAlApagarCrm": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 5,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "eventTrigger": {
+      "eventType": "google.cloud.firestore.document.v1.written",
+      "eventFilters": {
+        "database": "(default)",
+        "namespace": "(default)"
+      },
+      "eventFilterPathPatterns": {
+        "document": "tenants/{tenantId}/config/crm"
+      },
+      "retry": false
+    }
   },
   "seguimientoEnviado": {
     "availableMemoryMb": null,
