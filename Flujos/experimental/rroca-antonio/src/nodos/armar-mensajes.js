@@ -336,9 +336,12 @@ if (claveOk) {
   fichas.mapa[from] = ficha;
   raBarrer(fichas.mapa, ahora);
   if (guardarPlanilla) {
-    // «Contacto nuevo» = sin mensajes en las últimas 48 h (la ficha de ANTES de este turno).
-    const nuevoContacto = !(fichaAntes.ultimoMs > 0 && ahora - fichaAntes.ultimoMs <= RA_OLVIDO_MS);
-    prospectoPlanilla = raProspectoCrm({ from: from, tipo: tipoDePlan, plan: plan, fichaAntes: fichaAntes, anuncio: t.anuncio === true, avisoSalio: avisoSalio === true, nombrePerfil: t.nombrePerfil, nuevoContacto: nuevoContacto, ahoraMs: ahora });
+    // LA PLANILLA NUNCA TUMBA LA ATENCIÓN: si calcular el prospecto lanzara por un dato inesperado, este turno igual responde y simplemente no se escribe en la hoja.
+    try {
+      // «Contacto nuevo» = sin mensajes en las últimas 48 h (la ficha de ANTES de este turno).
+      const nuevoContacto = !(fichaAntes.ultimoMs > 0 && ahora - fichaAntes.ultimoMs <= RA_OLVIDO_MS);
+      prospectoPlanilla = raProspectoCrm({ from: from, tipo: tipoDePlan, plan: plan, fichaAntes: fichaAntes, anuncio: t.anuncio === true, avisoSalio: avisoSalio === true, nombrePerfil: t.nombrePerfil, nuevoContacto: nuevoContacto, ahoraMs: ahora });
+    } catch (e) { prospectoPlanilla = null; }
   }
 }
 
