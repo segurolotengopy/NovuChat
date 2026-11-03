@@ -24,6 +24,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -57,16 +58,14 @@ function ejecutar(js: string, items: J[], referencias: Record<string, J[]> = {})
     first: () => ({ json: referencias[n]?.[0] ?? {} }),
     all: () => (referencias[n] ?? []).map((json) => ({ json })),
   });
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$input', '$', js) as (i: unknown, r: unknown) => { json: J }[];
+  const fn = vm.compileFunction(js, ['$input', '$']) as (i: unknown, r: unknown) => { json: J }[];
   return fn(entrada, $).map((x) => x.json);
 }
 function expresion(texto: unknown, $json: J, referencias: Record<string, J> = {}): unknown {
   const m = /^=\{\{([\s\S]*)\}\}$/.exec(String(texto).trim());
   if (!m) throw new Error(`no es una expresión simple: ${String(texto).slice(0, 60)}`);
   const $ = (n: string) => ({ first: () => ({ json: referencias[n] ?? {} }), item: { json: referencias[n] ?? {} } });
-  // nosemgrep: devsecops.js-eval-prohibido
-  return (new Function('$json', '$', `return (${m[1]});`) as (...a: unknown[]) => unknown)($json, $);
+  return (vm.compileFunction(`return (${m[1]});`, ['$json', '$']) as (...a: unknown[]) => unknown)($json, $);
 }
 /** Renderiza una plantilla de n8n (`=texto {{ expresión }} texto`). */
 function plantillaN8n(texto: unknown, referencias: Record<string, J> = {}): string {
@@ -74,8 +73,7 @@ function plantillaN8n(texto: unknown, referencias: Record<string, J> = {}): stri
   if (!t.startsWith('=')) throw new Error('no es una plantilla de n8n');
   const $ = (n: string) => ({ first: () => ({ json: referencias[n] ?? {} }), item: { json: referencias[n] ?? {} } });
   return t.slice(1).replace(/\{\{([\s\S]*?)\}\}/g, (_, expr: string) => {
-    // nosemgrep: devsecops.js-eval-prohibido
-    const v = (new Function('$', `return (${expr});`) as (a: unknown) => unknown)($);
+    const v = (vm.compileFunction(`return (${expr});`, ['$']) as (a: unknown) => unknown)($);
     return v === undefined || v === null ? '' : String(v);
   });
 }

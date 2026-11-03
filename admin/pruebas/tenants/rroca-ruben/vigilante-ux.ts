@@ -190,11 +190,21 @@ const textoEntrante = (entrante: J): string => (entrante['type'] === 'text' ? St
 const toqueEntrante = (entrante: J): string => { const inter = entrante['interactive'] as J | undefined; return entrante['type'] === 'interactive' && inter ? String((inter['button_reply'] ?? inter['list_reply'])?.id ?? '') : ''; };
 /** Un «sí» suelto (lista PROPIA del vigilante, independiente de la del flujo). */
 export const esUnSi = (texto: string): boolean => /^(si|claro|dale|ok|okey|okay|bueno|por favor|me interesa|adelante|si quiero|si por favor|claro que si|muestrame)$/.test(LIB.rrNorm(texto));
+/**
+ * EXCEPCIÓN DECLARADA a los invariantes 11 y 16 (23/10/2026, Andres): «pregunta directa de precio, ya saludado». Desde el SEGUNDO mensaje del cliente, «¿cuánto cuesta el libro?» o «precio» se responde por código con el precio del
+ * catálogo (plan `precio`) o con el bloque de las opciones (plan `opciones_fijo`) sin esperar los dos mensajes de conversación. Detector PROPIO y angosto: solo el texto del cliente, solo esos dos planes y solo si ya hubo un mensaje nuestro.
+ * Todo lo demás (el modelo, el puente, el audio, un botón, «dame tu catálogo»…) sigue bajo la compuerta.
+ */
+export const esPreguntaDirectaDePrecio = (est: EstadoCharla, entrante: J, plan: string, mensajes: UxMsg[]): boolean =>
+  // Saludado DE VERDAD (una presentación o una charla ya contadas), la pregunta del cliente es de precio Y lo que salió es lo que el código da: el precio del catálogo o el bloque de las opciones (no el respaldo de un modelo caído).
+  est.charla >= 1 && /\b(cuanto (me |te |nos )?(cuesta|cuestan|vale|valen|sale|salen)|precios?|costos?|valor)\b/.test(LIB.rrNorm(textoEntrante(entrante)))
+  && ((plan === 'precio' && mensajes.length > 0 && mensajes.every((m) => /\b(cuesta|cuestan|Los precios son)\b/.test(m.cuerpo)))
+    || (plan === 'opciones_fijo' && mensajes.length > 0 && mensajes.every((m) => BLOQUE_DE_OPCIONES.test(m.cuerpo))));
 const titulosDe = (m: { payload: J }): string[] => ((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => String(b['reply']?.title));
 /** Invariante 11. `panelConCobro` = el panel de «Traer configuración» trae un cobro pendiente, en revisión o vencido. Función pura, probada también con casos negativos. */
 export function violacionesDeCompuerta(est: EstadoCharla, entrante: J, mensajes: UxMsg[], plan: string, panelConCobro: boolean): string[] {
   const v: string[] = [];
-  if (est.charla >= 2 || est.qrVisto || panelConCobro || esPrellenadoDeProducto(textoEntrante(entrante)) || PLANES_EXENTOS_DE_COMPUERTA.includes(plan)) return v;
+  if (est.charla >= 2 || est.qrVisto || panelConCobro || esPrellenadoDeProducto(textoEntrante(entrante)) || PLANES_EXENTOS_DE_COMPUERTA.includes(plan) || esPreguntaDirectaDePrecio(est, entrante, plan, mensajes)) return v;
   for (const m of mensajes) {
     if (CON_PRECIO_BS.test(m.cuerpo) || titulosDe(m).some((t) => CON_PRECIO_BS.test(t))) v.push(`un precio antes de tiempo (con ${est.charla} mensaje(s) de conversación): «${m.cuerpo.slice(0, 40)}…»`);
     const prod = idsDeBotones(m).filter((i) => BOTONES_DE_PRODUCTO.includes(i));
@@ -205,7 +215,7 @@ export function violacionesDeCompuerta(est: EstadoCharla, entrante: J, mensajes:
 /** Invariante 16. Detector PROPIO (por oración): un objeto de precio junto a un verbo de mostrar o a un marcador de lugar o de tiempo, o «te las paso». */
 export function violacionesDePromesaConCompuertaCerrada(est: EstadoCharla, entrante: J, mensajes: UxMsg[], plan: string, panelConCobro: boolean): string[] {
   const v: string[] = [];
-  if (est.charla >= 2 || est.qrVisto || panelConCobro || esPrellenadoDeProducto(textoEntrante(entrante)) || PLANES_EXENTOS_DE_COMPUERTA.includes(plan)) return v;
+  if (est.charla >= 2 || est.qrVisto || panelConCobro || esPrellenadoDeProducto(textoEntrante(entrante)) || PLANES_EXENTOS_DE_COMPUERTA.includes(plan) || esPreguntaDirectaDePrecio(est, entrante, plan, mensajes)) return v;
   for (const m of mensajes) {
     for (const o of m.cuerpo.replace(CIERRE_DEL_PUENTE, ' ').split(/(?<=[.!?…])\s+|\n+/)) {
       // Contextos que no prometen nada (el negocio del cliente y «sin costo»), medidos en la batería real del 23/10: se retiran antes de mirar el objeto.

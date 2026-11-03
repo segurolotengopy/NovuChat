@@ -41,6 +41,7 @@ import {
 import {
   deleteDoc, doc, setDoc, updateDoc, serverTimestamp, Timestamp, writeBatch, increment,
 } from 'firebase/firestore';
+import { modulosDeFlujos } from '../../functions/src/registro.ts';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -92,17 +93,18 @@ const UA = 'u-admin-t';
 const sello = (u: string) => ({ actualizadoPor: u, actualizadoEn: serverTimestamp() });
 
 // ---------------------------------------------------------------------------
-// Fichas sintéticas, sin `modulos`.
+// Fichas sintéticas. H2b-cierre: con `modulos` (la única fuente); sin la lista las reglas
+// niegan antes de gastar términos y el presupuesto no se mediría.
 // ---------------------------------------------------------------------------
 const TS = Timestamp.fromMillis(1_700_000_000_000);
 const comun = { creadoEn: TS, creadoPor: 'u-x', estado: 'activo', plan: 'crecimiento', waPhoneNumberId: 'pn', waWabaId: 'wb' };
 const FICHAS: Record<string, Record<string, unknown>> = {
-  qtaco: { ...comun, nombre: 'Q', flujos: ['venta'], vertical: 'venta' },
-  agenda: { ...comun, nombre: 'A', flujos: ['agendamiento'], vertical: 'agendamiento' },
-  doble: { ...comun, nombre: 'D', flujos: ['agendamiento', 'venta'], vertical: 'agendamiento' },
-  novuchat: { ...comun, nombre: 'N', flujos: ['onboarding'], vertical: 'onboarding' },
-  // Una ficha escrita antes de que existiera `flujos`: solo `vertical`.
-  qtacoViejo: { ...comun, nombre: 'Q', vertical: 'venta' },
+  qtaco: { ...comun, nombre: 'Q', flujos: ['venta'], vertical: 'venta', modulos: modulosDeFlujos(['venta']) },
+  agenda: { ...comun, nombre: 'A', flujos: ['agendamiento'], vertical: 'agendamiento', modulos: modulosDeFlujos(['agendamiento']) },
+  doble: { ...comun, nombre: 'D', flujos: ['agendamiento', 'venta'], vertical: 'agendamiento', modulos: modulosDeFlujos(['agendamiento', 'venta']) },
+  novuchat: { ...comun, nombre: 'N', flujos: ['onboarding'], vertical: 'onboarding', modulos: modulosDeFlujos(['onboarding']) },
+  // Una ficha escrita antes de que existiera `flujos`: solo `vertical` (más `modulos`, que ahora manda).
+  qtacoViejo: { ...comun, nombre: 'Q', vertical: 'venta', modulos: modulosDeFlujos(['venta']) },
 };
 
 const DIAS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'];

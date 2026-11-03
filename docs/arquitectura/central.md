@@ -690,10 +690,10 @@ propuesto, vigente y revisión aprobada (`revisadoPor: 'cargar-negocio'`) en la
 misma transacción, y la Function no revisa dos veces porque ve el hash. Antes de
 escribir pasa el texto por la misma capa de patrones y **niega** si no la pasa:
 lo que NovuChat carga tiene que poder editarse después desde la consola sin que
-la verificación lo rechace por un carácter que puso NovuChat (el JSON de Platinum
+la verificación lo rechace por un carácter que puso NovuChat (un JSON de ejemplo
 tenía «cuánto dura» con comillas angulares; ya no). `migrar-instrucciones.mjs`
 (seco por defecto) copia lo propuesto a vigente, una vez, en los comercios
-anteriores al contrato: sin eso, al desplegar, Platinum se quedaba sin sus
+anteriores al contrato: sin eso, al desplegar, un comercio se quedaba sin sus
 precios y objeciones en silencio.
 
 **Lo que esto NO hace, dicho ahora.** No sanea: rechaza. Un texto rechazado
@@ -701,6 +701,54 @@ vuelve al comercio con el motivo, y la consola le muestra qué está vigente
 mientras tanto. Tampoco reemplaza la delimitación del flujo ni la lista blanca de
 claves: es una tercera barrera sobre el único campo que las otras dos no podían
 cerrar del todo.
+
+**Término de producto registrado (24/10/2026, PR 1).** Una descripción de
+producto es LITERAL y una instrucción no debe confundirse con ella: «100
+prompts» es el nombre de un producto, pero «prompt» es también el vocabulario de
+la inyección, y las listas de `promptsSinContexto` (#649/#650) necesitaron
+cinco rondas de seguridad porque el filtro no puede saber, mirando el texto,
+de cuál de los dos habla. Mecanismo, general y sin datos de ningún cliente:
+
+1. El nombre se **registra como dato** (`tenants/{t}/terminosProducto/{itemId}`:
+   `termino`, `nombreHash`, `estado`, `motivo`, `revisadoPor?`, `revisadoEn?`; el
+   id del documento es el del ítem del catálogo). Pasa por `terminoRegistrable`
+   (filtro estricto: letras latinas, dígitos y espacio estables ante NFKC; 2 a 4
+   palabras `a-z` o números de 1 a 5 cifras; EXACTAMENTE una palabra de
+   `prompt`/`prompts` y ninguna de orden, autoridad, posesivo o pronombre; con
+   la palabra cambiada por «producto» el texto es limpio; no coincide con otro
+   comercio) y por la aprobación de Plataforma.
+2. `terminosAprobados` entrega solo los vigentes: ítem del catálogo ACTIVO cuyo
+   nombre actual da el mismo `nombreHash` y que contiene el término; tope de 10
+   por comercio. Solo lee Firestore si el texto contiene «prompt».
+3. `verificarPatrones` normaliza, **sustituye** cada aparición exacta por el
+   marcador fijo `productoregistrado` y recién ahí corre los patrones. El marcador
+   pasa por `terminoSinContexto`: órdenes, autoridad, determinante duro,
+   definidores y vecinas con pronombre. «Otro comercio» y los patrones crudos
+   miran el texto sin sustituir. La palabra «prompt» fuera de un término
+   registrado sigue prohibida.
+4. Al modelo de la capa 2 el **sistema** le entrega el término entre « »
+   (`citarTerminos`); el autor no puede tipear « » (`marcas de bloque`) y las
+   comillas "…" tipeadas no eximen: la exención viene del registro.
+
+**Lista cerrada de palabras del término.** Junto a «prompt/prompts» solo entran
+cifras (1 a 5) y vocabulario comercial inerte (`PALABRAS_DE_TERMINO`: pack, bono,
+kit, pro, premium, marketing, redes, de, para…; nunca verbos, roles, pago o estado,
+inglés de control ni `instruc*`), sin conector al inicio ni al final: la
+sustitución esconde esas palabras de los demás patrones, y una lista de rechazo no
+cierra la clase (revisión de seguridad del #657). La suite de invariancia recorre
+cada palabra de la lista en 50 contextos hostiles.
+
+**Residuo aceptado por Andres (24/10/2026): entra con el PR 6, no antes.** Mientras
+las listas de #650 siguen vivas, un marcador precedido de determinante neutro
+(los/las/estos…) pasa además por la forma cerrada de #650 sobre el texto sin
+sustituir: con un término aprobado no se reabre nada que main rechaza («Los 100
+prompts pesan más que lo demás» sigue rechazada). El registro agrega solo donde
+#650 no opina («Pack 100 prompts», «Ofrecemos kit prompts»). Al retirar las listas
+(PR 6) esa comprobación se quita y esas frases pasan con el término registrado.
+Mitigación: registro aprobado por Plataforma, cita « » puesta por el sistema y
+capa 2. `pruebas/central/terminos-registrados.test.ts` fija qué pasa y qué no. El
+ítem que ancla el término tampoco puede ser un nombre que la capa 1 rechaza, ni
+que el predicado `nombreApto` inyectado por Productos rechace.
 
 ---
 
@@ -1528,7 +1576,7 @@ y vende solo la bolsa de 30 por USD 10. El dinero está en
 - **La tarifa** es un campo de `cuenta/estado`: `estandar` (el comercio paga su
   Meta) o `meta_incluido`. `tarifaDe` (`central/cuenta/planes.ts`) devuelve
   `meta_incluido` si el campo falta o no es válido, el límite menor, así que
-  Bellido, Platinum y los demos no cambian sin escribir sus cuentas. Las altas
+  Bellido y los demos no cambian sin escribir sus cuentas. Las altas
   nuevas nacen `estandar` (`TARIFA_DE_ALTA`). `limitesDe(plan, tarifa)` exige la
   tarifa en la firma y elige entre `CONVERSACIONES_META_INCLUIDO` y las
   conversaciones del plan.

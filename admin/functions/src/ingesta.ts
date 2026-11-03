@@ -1,7 +1,6 @@
 import { REGION } from './core/region.js';
-import { MINUTOS_RETENCION_POR_DEFECTO, senaVencidaPorTiempo } from './modulos/agenda/retencion.js';
+import { MINUTOS_RETENCION_POR_DEFECTO } from './modulos/agenda/retencion.js';
 import { milisegundosDe } from './core/turno/tiempo.js';
-import { reactivaTras, solicitudTras } from './modulos/agenda/solicitud.js';
 // F3b-1a y F3b-1b (05/10/2026): la solicitud, el tiempo y los predicados de cobro se
 // mudaron a `modulos/agenda/solicitud.ts`, `modulos/agenda/retencion.ts`,
 // `core/turno/tiempo.ts` y `modulos/cobros/alCierre.ts` sin cambiar lógica. Se
@@ -13,15 +12,20 @@ export {
   reactivaTras, solicitudTras, type Solicitud,
 } from './modulos/agenda/solicitud.js';
 export { cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo } from './modulos/cobros/alCierre.js';
-export { MINUTOS_RETENCION_POR_DEFECTO };
+export { MINUTOS_RETENCION_POR_DEFECTO, senaParaElFlujo, IMPORTE_SENA_MAXIMO, type SenaParaElFlujo };
 export { milisegundosDe };
-import { existencias } from './modulos/inventario/inventario.js';
+import { alTurnoCampanas } from './modulos/campanas/alTurno.js';
+import { alTurnoCaptacion } from './modulos/captacion/alTurno.js';
+import { modulosDelTurno, type ContextoDelTurno } from './core/turno/ganchosDelTurno.js';
+import { alTurnoCobroDeVenta, type ContextoDeCobro } from './modulos/cobros/alTurno.js';
+import { alTurnoSena, senaParaElFlujo, IMPORTE_SENA_MAXIMO, type SenaParaElFlujo } from './modulos/agenda/alTurno.js';
+import { alTurnoInventario } from './modulos/inventario/alTurno.js';
+import { despuesDelTurnoPedidos } from './modulos/pedidos/alTurno.js';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { defineInt } from 'firebase-functions/params';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
-import { sanearCaptacion } from './modulos/captacion/captacion.js';
 import { vozFija, tratamientoClave, tratamientoEfectivo, quienAtiende } from './core/prompt/prompt.js';
 import { registrar } from './core/turno/bitacora.js';
 import { atenderSesion } from './core/turno/sesionFirestore.js';
@@ -29,7 +33,7 @@ import { validarSesion } from './core/turno/sesion.js';
 // H1-6: los campos derivados de Conversaciones (búsqueda y no leídos). Son más
 // campos en los MISMOS create/set de la transacción: cero lecturas ni escrituras
 // nuevas y cero mensajes. Los escribe el Core para todos los comercios, inertes.
-import { decidirPausa, persistirVencimientoDeIngesta, conPausa } from './core/conversacion/pausa.js';
+import { decidirPausa, persistirVencimientoDeIngesta, conPausa, estaBloqueada } from './core/conversacion/pausa.js';
 import { camposDeConversacionPorMensaje, camposDeMensajeIndexado } from './core/conversacion/derivados.js';
 import {
   HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
@@ -39,8 +43,7 @@ import {
 // consola). Se reexportan para que quien ya los importaba de acá no cambie.
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
 // El aviso de consumo al 80 % se decide en `planes.ts`, también puro.
-import { avisoConsumoPendiente, avisoDeConsumo, limiteDeCampanas, periodoDe } from './central/cuenta/planes.js';
-import { anunciosParaElFlujo, campanasParaElFlujo } from './modulos/campanas/campanas.js';
+import { avisoConsumoPendiente, avisoDeConsumo, periodoDe } from './central/cuenta/planes.js';
 // EL PREPAGO se decide en `prepago.ts`, puro: cobertura del mes, gracia,
 // saldo de conversaciones y si el corte SE APLICA o solo se observa. Acá se
 // aplica lo que decidió, dentro de la transacción que ya existía.
@@ -51,19 +54,17 @@ import {
 } from './central/cuenta/prepago.js';
 import {
   CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
-  resolverFuncionarios, documentoDeVertical, rotulosCobroSimulado,
+  resolverFuncionarios, documentoDeVertical,
   resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT, enlaceDeMapaValido, ubicacionDe,
 } from './core/prompt/prompt.js';
-// El cobro de una VENTA: el importe no vive en la configuración, se fija cuando
-// sale el QR. `cobroVenta.ts` no importa nada de acá en tiempo de ejecución
-// (sus dos importaciones son de tipo), así que no hay ciclo.
-import {
-  CAMPOS_REGLA_2_EN_NULO, cobroParaElFlujo, solicitudDeCobroTras, totalUtilizable,
-  type EventoDeCobro,
-} from './modulos/cobros/cobroVenta.js';
-// El enlace de la carta para «Venta mínima v0» (`catalogoCompleto: true`). Sale
-// de `catalogoWeb.ts`, que no importa nada de acá: no hay ciclo.
-import { enlaceParaElFlujo, sePuedeComprar, type EnlaceEmitido } from './modulos/catalogo-web/catalogoWeb.js';
+import { solicitudDelTurno, montoUtilizable } from './modulos/agenda/solicitudDelTurno.js';
+import { enlaceDeLaCartaDelTurno } from './modulos/catalogo-web/alTurno.js';
+import { catalogoDelTurno as catalogoParaElModelo } from './modulos/productos/alTurno.js';
+import { sigueVigente, vigentesParaElPrompt } from './modulos/campanas/vigentes.js';
+export { sigueVigente };
+// Términos de producto registrados (Andres, 24/10/2026): se leen una vez por turno, y solo si lo que
+// va al prompt contiene «prompt»; el sistema los cita entre « » y revalida lo ya aprobado.
+import { citarTerminos } from './central/asistente/terminos.js';
 
 /**
  * =========================================================================
@@ -180,6 +181,17 @@ interface Entrante {
    */
   monto?: number;
   /**
+   * EL PEDIDO TOMADO POR WHATSAPP (PR-4), solo con `qr_enviado`: las líneas
+   * `{id, cantidad, detalle}`, la entrega y, si aplica, la facturación. Dato no
+   * confiable: el precio y el total salen del catálogo (`pedidoDelQr.ts`), no de
+   * acá. Sin `lineas` todo sigue como antes y no se crea ningún pedido.
+   */
+  lineas?: unknown[];
+  entrega?: unknown;
+  facturacion?: unknown;
+  /** Solo con `qr_enviado` y líneas: el pedido `cat_…` del checkout web que este QR reemplaza (Pedidos lo revalida). */
+  reemplaza?: string;
+  /**
    * EL ADELANTO A FAVOR (Andres, 21/09/2026). `cita_cancelada` trae en
    * `referencia` la cita que se canceló y en `inicio` cuándo era (ISO): con eso
    * el servidor decide si hubo anticipación suficiente. `adelanto_aplicado`
@@ -191,8 +203,16 @@ interface Entrante {
   nueva?: string;
 }
 
+/**
+ * LISTA CERRADA de tipos del mensaje. `video` y `sticker` entran el 30/10/2026
+ * (contrato de medios v2): `guardarMedio` exige un mensaje entrante del MISMO
+ * tipo, y con ambos en `otro` un video o un sticker nunca se podían guardar.
+ * Las mismas dos listas de `firestore.rules` (tipo del mensaje y claves de
+ * `entrantesPorTipo`) llevan exactamente estos valores: si cambia una, cambian
+ * las tres. Un tipo fuera de la lista sigue cayendo en `otro`.
+ */
 const TIPOS = new Set([
-  'text', 'interactive', 'image', 'audio', 'document', 'order', 'location', 'otro',
+  'text', 'interactive', 'image', 'audio', 'video', 'sticker', 'document', 'order', 'location', 'otro',
 ]);
 
 /**
@@ -257,12 +277,28 @@ function normalizar(cuerpo: unknown): Entrante | null {
   // EL TOTAL DEL PEDIDO. Dato no confiable como todo lo de acá: se acepta solo
   // como número finito y positivo dentro de un techo. Lo que no pase no se
   // guarda, y sin total el cotejo no compara nada (no lo toma por cero).
-  const monto = totalUtilizable(c['monto']);
+  const monto = montoUtilizable(c['monto']);
   // LA REGLA DEL COBRO (D5): solo el número 2, y solo junto a `qr_enviado`. Todo
   // lo demás es regla 1, sin error.
   const reglaCobro = evento === 'qr_enviado' && c['reglaCobro'] === 2 ? 2 as const : undefined;
 
+  // El pedido de WhatsApp (PR-4): solo con `qr_enviado`, hasta 30 líneas, y solo objetos planos.
+  // El saneo fino (ids, cantidades, tope de unidades) lo hace `armarPedidoWa`.
+  const esQr = evento === 'qr_enviado';
+  const lineas = esQr && Array.isArray(c['lineas']) && c['lineas'].length > 0
+    ? (c['lineas'] as unknown[]).slice(0, 30) : undefined;
+  const objetoPlano = (v: unknown) => typeof v === 'object' && v !== null && !Array.isArray(v);
+  const entrega = esQr && lineas && (objetoPlano(c['entrega']) || typeof c['entrega'] === 'string')
+    ? c['entrega'] : undefined;
+  const facturacion = esQr && lineas && objetoPlano(c['facturacion']) ? c['facturacion'] : undefined;
+  const reemplaza = esQr && lineas && typeof c['reemplaza'] === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(c['reemplaza'])
+    ? c['reemplaza'] : undefined;
+
   return { telefono, direccion, tipo, texto, origen, ...(idMeta ? { idMeta } : {}),
+           ...(lineas ? { lineas } : {}),
+           ...(entrega !== undefined ? { entrega } : {}),
+           ...(facturacion !== undefined ? { facturacion } : {}),
+           ...(reemplaza ? { reemplaza } : {}),
            ...(nombreContacto ? { nombreContacto } : {}),
            ...(evento ? { evento } : {}),
            ...(reglaCobro ? { reglaCobro } : {}),
@@ -288,9 +324,13 @@ const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
  * que no puede quedar desfasada. Acá se guardan datos personales de clientes
  * finales, así que el lado seguro del error es dejar de guardarlos.
  */
-async function estadoDelComercio(tenantId: string): Promise<string> {
+async function estadoDelComercio(
+  tenantId: string,
+): Promise<{ estado: string; ficha: Record<string, unknown> }> {
   const tenant = await getFirestore().doc(`tenants/${tenantId}`).get();
-  return String(tenant.get('estado') ?? 'desconocido');
+  // La ficha viaja con el estado (F3b-2a): el coordinador la usa para decidir los modulos del turno
+  // (`modulosDelTurno`) sin leerla otra vez. Cero lecturas nuevas.
+  return { estado: String(tenant.get('estado') ?? 'desconocido'), ficha: tenant.data() ?? {} };
 }
 
 /**
@@ -362,121 +402,6 @@ export function ultimos4(telefono: unknown): string {
  */
 const EVENTO_INGESTA = 'ingesta_mensaje';
 const EVENTO_CONFIGURACION = 'configuracion_flujo';
-
-/**
- * ===========================================================================
- * LA SEÑA, COMO LA RECIBE EL FLUJO DE RESERVAS (`configuracionFlujo.sena`)
- * ===========================================================================
- *
- * `activa` exige LAS DOS cosas: un importe mayor que cero en
- * `config/agendamiento` Y el QR del comercio registrado y encendido
- * (`cobroReal`, el mismo criterio que el cobro real de venta: activo, con
- * ficha y con código). Un importe sin QR no puede cobrar; un QR sin importe no
- * tiene qué cobrar. En cualquiera de los dos casos el flujo agenda como
- * siempre, sin seña, y no manda ningún mensaje de más.
- *
- * Cuando NO está activa se devuelve igual el objeto, con `importe` 0 y
- * `qr` nulo, y no `null`: así el flujo distingue «este comercio no cobra
- * seña» de «el panel no contestó», que es lo que lo manda al respaldo.
- *
- * `pendiente`, `evento` y `qrEnviadoEn` son de la SOLICITUD del teléfono que
- * escribió, si el flujo mandó `telefono`: le dicen si el próximo archivo se
- * lee como comprobante y qué cita está retenida. Sin teléfono, van vacíos.
- */
-export const IMPORTE_SENA_MAXIMO = 10000;
-
-/** Un día, en minutos: la ventana en la que un pago tardío sigue siendo ESTE caso. */
-const MINUTOS_DE_UN_DIA = 24 * 60;
-
-export interface SenaParaElFlujo {
-  activa: boolean;
-  importe: number;
-  moneda: string;
-  minutosRetencion: number;
-  qr: { url: string; nombreCuenta: string; banco: string } | null;
-  pendiente: boolean;
-  evento: { id: string; calendario: string } | null;
-  qrEnviadoEn: string | null;
-  /**
-   * MINUTOS DESDE QUE SE LIBERÓ EL HORARIO por falta de pago, o `null`.
-   *
-   * Existe por un caso que solo aparece con dinero de por medio (19/09/2026):
-   * el paciente no paga a tiempo, el horario se libera, y DESPUÉS paga. Hasta
-   * ahora el flujo no distinguía eso de un comprobante caído del cielo y le
-   * preguntaba «¿a qué corresponde?», que es lo peor que se le puede decir a
-   * alguien que acaba de pagar lo que el asistente le pidió. Con esto el flujo
-   * sabe que hubo una seña de ESE teléfono que venció recién, y puede decir la
-   * verdad: llegó el comprobante, el horario ya se había liberado, lo resuelve
-   * una persona. La ventana es de un día: más allá, es otra conversación.
-   */
-  vencidaHaceMin: number | null;
-  /** El adelanto a favor vigente de este teléfono (Andres, 21/09/2026), o `null`. */
-  aFavor: { hasta: string } | null;
-}
-
-export function senaParaElFlujo(
-  agendamiento: Record<string, unknown> | undefined,
-  cobroRealActivo: boolean,
-  moneda: string,
-  urlDelQr: (ficha: string) => string,
-  solicitud: unknown,
-): SenaParaElFlujo {
-  const importeCrudo = agendamiento?.['senaImporte'];
-  const importe = typeof importeCrudo === 'number' && Number.isInteger(importeCrudo)
-    && importeCrudo > 0 && importeCrudo <= IMPORTE_SENA_MAXIMO ? importeCrudo : 0;
-  const minutosCrudo = agendamiento?.['senaMinutosRetencion'];
-  const minutosRetencion = typeof minutosCrudo === 'number' && Number.isInteger(minutosCrudo)
-    && minutosCrudo >= 5 && minutosCrudo <= 180 ? minutosCrudo : MINUTOS_RETENCION_POR_DEFECTO;
-  const cobroReal = (agendamiento?.['cobroReal'] ?? {}) as Record<string, unknown>;
-  const activa = importe > 0 && cobroRealActivo;
-
-  const s = (typeof solicitud === 'object' && solicitud !== null ? solicitud : {}) as Record<string, unknown>;
-  const ev = s['evento'] as Record<string, unknown> | null | undefined;
-  const enviado = s['qrEnviadoEn'] as { toMillis?: () => number } | null | undefined;
-  const porReloj = senaVencidaPorTiempo(s, minutosRetencion, Date.now());
-  return {
-    activa,
-    importe: activa ? importe : 0,
-    moneda,
-    minutosRetencion,
-    qr: activa
-      ? {
-          // La imagen no viaja: viaja su dirección pública, que el flujo pone
-          // tal cual en el `link` del mensaje de imagen de WhatsApp.
-          url: urlDelQr(String(cobroReal['ficha'] ?? '')),
-          nombreCuenta: String(cobroReal['nombreCuenta'] ?? ''),
-          banco: String(cobroReal['banco'] ?? ''),
-        }
-      : null,
-    // PENDIENTE ES POR ETAPA Y POR RELOJ (20/09/2026): una seña cuyo plazo pasó
-    // ya no está pendiente aunque el calendario no la haya vencido todavía
-    // (`retencion.ts`, `senaVencidaPorTiempo`).
-    pendiente: s['etapa'] === 'qr_enviado' && !porReloj.vencida,
-    evento: ev && typeof ev['id'] === 'string' && ev['id'] !== ''
-      ? { id: ev['id'], calendario: String(ev['calendario'] ?? '') } : null,
-    qrEnviadoEn: typeof enviado?.toMillis === 'function'
-      ? new Date(enviado.toMillis()).toISOString() : null,
-    vencidaHaceMin: (() => {
-      // Vencida por el calendario (etapa) o por el reloj: en los dos casos el
-      // flujo tiene que tratar un comprobante que llega como pago TARDÍO.
-      let desdeMs: number | null = null;
-      if (s['etapa'] === 'vencida') {
-        const desde = s['desde'] as { toMillis?: () => number } | null | undefined;
-        desdeMs = typeof desde?.toMillis === 'function' ? desde.toMillis() : null;
-      } else if (porReloj.vencida) {
-        desdeMs = porReloj.venceMs;
-      }
-      if (desdeMs === null) return null;
-      const min = Math.floor((Date.now() - desdeMs) / 60000);
-      return min >= 0 && min <= MINUTOS_DE_UN_DIA ? min : null;
-    })(),
-    aFavor: (() => {
-      if (s['etapa'] !== 'a_favor') return null;
-      const hasta = milisegundosDe(s['aFavorHasta']);
-      return hasta !== null && Date.now() < hasta ? { hasta: new Date(hasta).toISOString() } : null;
-    })(),
-  };
-}
 
 /**
  * ===========================================================================
@@ -830,7 +755,7 @@ export const ingesta = onRequest(
     // datos personales de terceros de un servicio que ya no se presta. El 409 le
     // dice a n8n que mande el mensaje de cortesía —neutro, sin revelar el motivo
     // comercial— y corte el turno.
-    const estado = await estadoDelComercio(tenantId);
+    const { estado, ficha } = await estadoDelComercio(tenantId);
     if (estado !== 'activo') {
       // SE REGISTRA IGUAL. La bitácora admite escrituras con el comercio
       // suspendido justamente para esto: el tramo del corte de servicio es el
@@ -941,6 +866,9 @@ export const ingesta = onRequest(
         tx.get(refConversacion), tx.get(refCuenta), tx.get(refPlataformaPrepago),
       ]);
       const marcas = (conversacion.data() ?? {}) as MarcasDeConteo;
+      // CONTACTO BLOQUEADO (31/10/2026): un entrante de una conversación con `bloqueada === true` NO se cuenta.
+      // Se decide ANTES de cualquier conteo, corte, aviso o métrica; ver la rama `bloqueadoPorContacto` más abajo.
+      const bloqueadoPorContacto = mensaje.direccion === 'entrante' && estaBloqueada(conversacion.get('bloqueada'));
       const conteo = contadoresDelMensaje(marcas, periodo, mensaje.direccion, ahoraMs, mensaje.texto);
 
       // Se mira lo guardado ANTES de aplicar este mensaje: el estado describe
@@ -972,9 +900,9 @@ export const ingesta = onRequest(
       // Con un corte guardado también se lee: hay que saber con exactitud si
       // sigue vigente para borrarlo o no, y sin el agregado `sin_conversaciones`
       // no se puede juzgar.
-      const necesitaMetricas = (conteo.conversacion
+      const necesitaMetricas = !bloqueadoPorContacto && ((conteo.conversacion
         && (avisoConsumoPendiente(cuenta, periodo) || conModalidad))
-        || (conModalidad && corteGuardado !== null);
+        || (conModalidad && corteGuardado !== null));
       const metricasDoc = necesitaMetricas ? await tx.get(refMetricas) : null;
       const previasDelMes = Number(metricasDoc?.get('conversaciones'));
       const avisoConsumo = metricasDoc
@@ -1014,7 +942,9 @@ export const ingesta = onRequest(
       // queda en la auditoría UNA vez por cuenta, no por mensaje: la marca
       // `incoherencia` en la cuenta es lo que evita repetirla, y se borra sola
       // cuando el dato se corrige (si vuelve a romperse, vuelve a avisar).
-      if (servicio.incoherente) {
+      if (bloqueadoPorContacto) {
+        // Un entrante bloqueado no evalúa el servicio (no leyó métricas): no escribe ni borra la marca `incoherencia`.
+      } else if (servicio.incoherente) {
         if (cuentaCruda.incoherencia === undefined) {
           const campos = periodosIncoherentes(cuentaCruda);
           tx.set(refCuenta, { incoherencia: { en: Timestamp.now(), campos } }, { merge: true });
@@ -1027,7 +957,9 @@ export const ingesta = onRequest(
         tx.set(refCuenta, { incoherencia: FieldValue.delete() }, { merge: true });
       }
 
-      if (rechazo !== null) {
+      if (bloqueadoPorContacto) {
+        // Sin conteo de corte: el mensaje de un contacto bloqueado no se pierde ni se cobra (se resuelve más abajo).
+      } else if (rechazo !== null) {
         // UN CORTE ES NUEVO si no había ninguno, si cambió el motivo, o si
         // cambió de observado a aplicado (o al revés): la fecha «desde» y las
         // pérdidas describen ESE corte. Al pasar de observación a corte real,
@@ -1078,7 +1010,9 @@ export const ingesta = onRequest(
       // mensaje que el asistente tendría que contestar. Se decide con lo que esta transacción ya
       // leyó (cero lecturas extra). Un turno vencido se persiste devuelto aquí mismo. El cuerpo
       // que manda n8n nunca decide nada de esto: el turno solo lo escribe el servidor.
-      const pausa = mensaje.direccion === 'entrante'
+      // Un entrante BLOQUEADO manda sobre la pausa: no se decide ni se persiste ningún vencimiento de turno (esta rama
+      // no escribe más que el mensaje y lo mínimo para listarlo) y la respuesta lleva solo `bloqueadoPorContacto`.
+      const pausa = mensaje.direccion === 'entrante' && !bloqueadoPorContacto
         ? decidirPausa(conversacion.get('turno'), conversacion.get('ultimoEntranteEn'), ahoraMs) : null;
       if (pausa) persistirVencimientoDeIngesta(tx, db, tenantId, refConversacion, idConversacion, pausa, ahoraMs);
       const pausadaPorPersona = pausa?.pausada === true;
@@ -1143,6 +1077,31 @@ export const ingesta = onRequest(
         ...camposDeMensajeIndexado(mensaje.texto, tenantId),
       });
 
+      if (bloqueadoPorContacto) {
+        // CONTACTO BLOQUEADO (`core/conversacion/bloquearContacto.ts`): el asistente calla del todo y el mensaje NO
+        // CUENTA para el plan. Igual que en un corte aplicado se guarda el mensaje y lo mínimo para listarlo (la
+        // persona del comercio tiene que ver que le escribieron), pero NO se toca ningún contador: ni la ventana de
+        // 24 h ni el bloque de 25, ni `atencionEstado`, `periodoContado`, métricas, bolsa, corte, aviso de consumo ni
+        // seña. No hay conversación que facturar ni respuesta que contar: el flujo no responde (atencion
+        // 'bloqueado', aviso vacío). Los salientes de esta conversación (p. ej. un envío ya en curso) siguen su
+        // camino normal. Este es el ÚNICO lugar de la ingesta que decide que un entrante no se cuenta.
+        tx.set(refConversacion, {
+          telefono: mensaje.telefono,
+          canal: 'whatsapp',
+          ultimoMensaje: mensaje.texto.slice(0, 300),
+          ultimoEn: FieldValue.serverTimestamp(),
+          ...(mensaje.nombreContacto ? { nombreContacto: mensaje.nombreContacto } : {}),
+          ...derivadosDeConversacion(),
+        }, { merge: true });
+        escribirMensaje();
+        const sinConteo = {
+          ...conteo, atencion: false, bloqueNuevo: false, conversacion: false, esConsulta: false,
+          personaNueva: false, interaccion: false,
+        };
+        return { atencion, aviso: null, avisoConsumo: null, conteo: sinConteo, servicio, corte, cortado: false, conModalidad,
+          pausadaPorPersona, bloqueadoPorContacto: true };
+      }
+
       if (cortado) {
         // CORTE APLICADO: se escribe el mensaje y lo mínimo de la conversación
         // para listarla (quién y cuándo), y NINGÚN contador de facturación:
@@ -1160,7 +1119,7 @@ export const ingesta = onRequest(
           ...derivadosDeConversacion(),
         }, { merge: true });
         escribirMensaje();
-        return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad, pausadaPorPersona };
+        return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad, pausadaPorPersona, pedidos: null, bloqueadoPorContacto: false };
       }
 
       // LA BOLSA (§4undecies.3, punto 6): abrir una conversación con las
@@ -1204,28 +1163,10 @@ export const ingesta = onRequest(
       // Con regla 2, una `referencia` vacía o igual al `idMeta` no identifica un
       // pedido (cada reenvío sería un cobro nuevo con plazo nuevo): se trata
       // como `sin_id_meta` y no abre cobro.
-      const sinPedido = mensaje.reglaCobro === 2
-        && (!mensaje.referencia || mensaje.referencia === (mensaje.idMeta ?? '').trim());
-      const eventoDeCobro: EventoDeCobro | null =
-        mensaje.evento === 'qr_enviado'
-          ? { tipo: 'qr_enviado', reglaCobro: mensaje.reglaCobro, idMeta: sinPedido ? undefined : mensaje.idMeta,
-              referencia: mensaje.referencia, monto: mensaje.monto }
-          : mensaje.evento === 'cobro_cancelado' ? { tipo: 'cobro_cancelado' }
-          : mensaje.evento === 'anulacion_avisada' ? { tipo: 'anulacion_avisada' } : null;
-      const cobro = eventoDeCobro ? solicitudDeCobroTras(solicitudPrevia, eventoDeCobro, ahoraMs) : null;
-      const sinQr = cobro !== null && mensaje.evento === 'qr_enviado'
-        && (cobro.efecto === 'ignorado' || cobro.efecto === 'sin_id_meta');
-      const base = sinQr ? null : solicitudTras(solicitudPrevia, mensaje.evento, ahoraMs,
-        { referencia: mensaje.referencia, calendario: mensaje.calendario, inicio: mensaje.inicio,
-          nueva: mensaje.nueva, monto: mensaje.monto });
-      const cambiosDeCobro = cobro?.efecto === 'regla_1' && cobro.cambios
-        ? { ...cobro.cambios, ...CAMPOS_REGLA_2_EN_NULO } : cobro?.cambios ?? null;
-      const solicitud = sinQr ? null : base ? (cambiosDeCobro ? { ...base, ...cambiosDeCobro } : base)
-        : cambiosDeCobro;
+      const { solicitud, hayBase, sinQr, reactivada, cobro } = solicitudDelTurno(solicitudPrevia, mensaje, ahoraMs);
       // REACTIVADA (bloque 4): el primer mensaje del paciente dentro de las 24 h
       // de un seguimiento. Se anota en la solicitud y se cuenta en el mes, en
       // la misma transacción que cuenta el mensaje. Cero lecturas extra.
-      const reactivada = reactivaTras(solicitudPrevia, mensaje.direccion, ahoraMs);
 
       // EL ORIGEN ES DE LA VENTANA, NO DEL MENSAJE. Al abrirla manda lo que
       // reportó el flujo; después manda lo guardado, porque Meta solo pone
@@ -1271,7 +1212,7 @@ export const ingesta = onRequest(
         // Si la solicitud viene de `cambios` PARCIALES del cobro (sin base), y el
         // mensaje reactiva, se escribe también `reactivadaEn`: si no, la marca
         // faltaría y `reactivadas` contaría dos veces.
-        ...(solicitud ? { solicitud: !base && reactivada
+        ...(solicitud ? { solicitud: !hayBase && reactivada
           ? { ...solicitud, reactivadaEn: Timestamp.fromMillis(ahoraMs) } : solicitud }
           : reactivada ? { solicitud: { reactivadaEn: Timestamp.fromMillis(ahoraMs) } } : {}),
         // NO CONTACTAR (bloque 4): el paciente pidió que no le escriban, o el
@@ -1386,7 +1327,13 @@ export const ingesta = onRequest(
         });
       }
 
-      return { atencion, aviso, avisoConsumo, conteo, servicio, corte, cortado: false, conModalidad, pausadaPorPersona };
+      // Para el gancho de Pedidos (PR-4): el efecto del cobro y, solo si la etapa previa era
+      // `qr_enviado`, la referencia del QR que quedó atrás. No agrega lecturas ni escrituras.
+      const previaEvento = (solicitudPrevia as { etapa?: unknown; evento?: { id?: unknown } | null } | undefined);
+      const refAnterior = previaEvento?.etapa === 'qr_enviado' && typeof previaEvento.evento?.id === 'string'
+        ? previaEvento.evento.id : undefined;
+      const pedidos = { efecto: cobro?.efecto as string | undefined, refAnterior };
+      return { atencion, aviso, avisoConsumo, conteo, servicio, corte, cortado: false, conModalidad, pausadaPorPersona, bloqueadoPorContacto: false, pedidos };
     });
 
     // Lo que viaja a n8n y al registro sobre el prepago: el estado del
@@ -1434,8 +1381,8 @@ export const ingesta = onRequest(
       // El prepago: si este mensaje se atendió, se cortó, o se habría cortado
       // (modo observación). Es lo que permite mirar un ciclo entero antes de
       // encender el corte.
-      servicio: servicio.estado,
-      servicioMotivo: servicio.motivo,
+      // Contacto bloqueado: no se leyó nada del servicio, así que ni el log ni la respuesta lo afirman.
+      ...(veredicto.bloqueadoPorContacto ? {} : { servicio: servicio.estado, servicioMotivo: servicio.motivo }),
       // El TAMAÑO del texto, nunca el texto.
       tamanoTexto: mensaje.texto.length,
     });
@@ -1444,8 +1391,8 @@ export const ingesta = onRequest(
       tipo: mensaje.direccion === 'entrante' ? 'mensaje_entrante' : 'mensaje_saliente',
       // Durante un corte aplicado el mensaje queda registrado como RECHAZADO
       // con `codigo: 'cortado'`: es la evidencia de que llegó y no se atendió.
-      resultado: veredicto.cortado ? 'rechazado' : 'ok',
-      ...(veredicto.cortado ? { codigo: 'cortado' } : {}),
+      resultado: veredicto.cortado || veredicto.bloqueadoPorContacto ? 'rechazado' : 'ok',
+      ...(veredicto.cortado ? { codigo: 'cortado' } : veredicto.bloqueadoPorContacto ? { codigo: 'bloqueado' } : {}),
       telefono: mensaje.telefono,
       conversacionId: idConversacion,
       // El TAMAÑO del texto, nunca el texto.
@@ -1483,26 +1430,40 @@ export const ingesta = onRequest(
       });
     }
 
+    // EL PEDIDO DE WHATSAPP (PR-4): DESPUÉS de la transacción, solo si el turno se atendió. El gancho
+    // nunca lanza ni cambia la respuesta de abajo.
+    if (veredicto.pedidos && (mensaje.evento === 'qr_enviado' || mensaje.evento === 'cobro_cancelado')) {
+      await despuesDelTurnoPedidos({
+        tenantId, ficha, evento: mensaje.evento, efectoDeCobro: veredicto.pedidos.efecto,
+        referencia: mensaje.referencia, referenciaAnterior: veredicto.pedidos.refAnterior,
+        telefono: mensaje.telefono, monto: mensaje.monto,
+        lineas: mensaje.lineas, entrega: mensaje.entrega, facturacion: mensaje.facturacion,
+        reemplaza: mensaje.reemplaza,
+      });
+    }
+
     // Antes era un 204 vacío. Ahora viaja el estado de atención, para que un
     // flujo que reporte el entrante ANTES de llamar al modelo pueda decidir con
     // él. El flujo vivo ignora el cuerpo y sigue funcionando igual.
     respuesta.status(200).json({
       atencion: {
-        ...conPausa(veredicto.atencion, veredicto.pausadaPorPersona),
+        ...conPausa(veredicto.atencion, veredicto.pausadaPorPersona || veredicto.bloqueadoPorContacto),
         ventanaVenceEn: veredicto.atencion.ventanaVenceEn === null
           ? null : new Date(veredicto.atencion.ventanaVenceEn).toISOString(),
       },
       // Con la pausa de una persona (H2-2) el aviso va vacío y se agrega `pausadoPorPersona`;
       // sin pausa, las claves son las de siempre.
-      avisarRecepcion: veredicto.pausadaPorPersona ? '' : veredicto.aviso,
+      avisarRecepcion: veredicto.pausadaPorPersona || veredicto.bloqueadoPorContacto ? '' : veredicto.aviso,
       ...(veredicto.pausadaPorPersona ? { pausadoPorPersona: true } : {}),
+      // Contacto bloqueado (31/10/2026): silencio total. Solo la clave se agrega, y solo con bloqueo.
+      ...(veredicto.bloqueadoPorContacto ? { bloqueadoPorContacto: true } : {}),
       // El prepago (bloque A-0): `cortado` si este mensaje no se atendió. El
       // flujo vivo ignora el cuerpo; el corte real entra por el 409 de
       // `configuracionFlujo`, que los tres flujos ya obedecen. SOLO con
       // modalidad: para una demostración, y para los comercios de hoy, la
       // respuesta es byte a byte la de siempre (lo exigen `aviso-consumo` y
       // `entrantes-por-tipo`, y es la negativa de este bloque).
-      ...(veredicto.conModalidad ? { servicio } : {}),
+      ...(veredicto.conModalidad && !veredicto.bloqueadoPorContacto ? { servicio } : {}),
     });
   },
 );
@@ -1585,10 +1546,13 @@ export const configuracionFlujo = onRequest(
     // vacío haría que el comercio no recibiera NINGUNA configuración de vertical
     // y el flujo se quedaría sin datos sin decir por qué.
     const phoneNumberId = ruta.phoneNumberId;
+    const { estado: estadoDeLaFicha, ficha: fichaDelComercio } = await estadoDelComercio(ruta.tenantId);
     const comercio = {
       tenantId: ruta.tenantId,
       flujo: ruta.flujo || 'agendamiento',
-      estado: await estadoDelComercio(ruta.tenantId),
+      estado: estadoDeLaFicha,
+      // La ficha del tenant, leida una sola vez junto con el estado. F3b-2b..2e la pasan a `modulosDelTurno`.
+      ficha: fichaDelComercio,
     };
 
     const db = getFirestore();
@@ -1686,18 +1650,8 @@ export const configuracionFlujo = onRequest(
     // que este turno YA trajo (cero lecturas nuevas). El tenant sale de la ruta
     // autenticada. Va en la respuesta solo si hay alguno: un comercio sin anuncios
     // recibe la respuesta de siempre, byte a byte (`despacho-sesion.test.ts`).
-    const anunciosDeHoy = anunciosParaElFlujo(
-      campanas.exists ? campanas.get('vigentes') : [],
-      limiteDeCampanas(cuenta.exists ? cuenta.data() as Record<string, unknown> : null),
-      ahoraMs,
-      catalogo.docs.map((d) => {
-        const datos = d.data();
-        const quedan = existencias(datos);
-        return { id: d.id, nombre: datos['nombre'], precio: datos['precio'],
-          ...(quedan !== null ? { agotado: quedan === 0 } : {}) };
-      }),
-    );
-
+    // Lo que el modelo lee del catálogo: sin los nombres que son órdenes (`nombreSeguro.ts`).
+    const catalogoFiltrado = catalogoParaElModelo(catalogo.docs);
     // -------------------------------------------------------------------------
     // EL CORTE DEL PREPAGO REUTILIZA EL 409 (`DISENO.md` §4undecies.3). Los tres
     // flujos ya tratan un 409 de acá como «no operativo» y mandan la cortesía
@@ -1730,6 +1684,39 @@ export const configuracionFlujo = onRequest(
       return;
     }
 
+    // TÉRMINOS DE PRODUCTO REGISTRADOS Y LO VIGENTE REVALIDADO (ver `vigentesParaElPrompt`). Va DESPUÉS del
+    // corte del prepago: un turno cortado no lee nada. Una lectura como máximo, ninguna sin «prompt».
+    const vigentesCrudas = campanas.exists ? campanas.get('vigentes') : [];
+    const vigentesDelTurno = await vigentesParaElPrompt(db, comercio.tenantId, {
+      nombresDeCatalogo: catalogoFiltrado.docs.map((d) => String(d.data()['nombre'] ?? '')),
+      instrucciones: typeof negocio['instruccionesVigentes'] === 'string' ? negocio['instruccionesVigentes'] : '',
+      campanas: vigentesCrudas,
+    });
+    const terminosDelTurno = vigentesDelTurno.terminos;
+    const cita = (t: string): string => citarTerminos(t, terminosDelTurno);
+    // El catálogo como lo ve el modelo, con el término citado por el sistema en el nombre. Sin términos,
+    // son los mismos documentos de siempre.
+    const catalogoPrompt = { docs: terminosDelTurno.length === 0 ? catalogoFiltrado.docs : catalogoFiltrado.docs.map((d) => {
+      const datos = d.data();
+      return { id: d.id, data: (): Record<string, unknown> => ({ ...datos, nombre: cita(String(datos['nombre'] ?? '')) }) };
+    }) };
+    // El catálogo activo que el turno YA trajo, como lo ve un gancho: nombre (citado), precio y, si lleva
+    // control de existencias, `agotado`. Lo calcula el gancho de Inventario (F3b-2c) y corre SIEMPRE:
+    // hoy `agotado` sale en el catálogo de todo flujo, no solo en el de venta, y no se pierde. Campañas
+    // no depende de Inventario: recibe el dato ya puesto. Cero lecturas nuevas.
+    const agotadosDelTurno = (alTurnoInventario({
+      tenantId: comercio.tenantId, flujo: comercio.flujo, telefono, ahoraMs, negocio: {}, cuenta: null,
+      especifica: undefined, vigentesDeCampanas: undefined, solicitud: undefined, cobroRealActivo: false,
+      moneda: '', urlDelQr: () => '', citar: (t) => t,
+      catalogo: catalogoPrompt.docs.map((d) => ({ id: d.id, datos: d.data() })),
+    })['agotados'] ?? {}) as Record<string, boolean>;
+    const catalogoDelTurno = catalogoPrompt.docs.map((d) => {
+      const datos = d.data();
+      const agotado = agotadosDelTurno[d.id];
+      return { id: d.id, datos: { nombre: datos['nombre'], precio: datos['precio'],
+        ...(agotado !== undefined ? { agotado } : {}) } };
+    });
+
     // EL ESTADO DE ATENCIÓN DEL TELÉFONO, si vino. Se calcula con la misma
     // función que la ingesta, sobre lo que la ingesta dejó guardado con el
     // último saliente. `avisarRecepcion` se deduce de la marca que la ingesta
@@ -1744,13 +1731,17 @@ export const configuracionFlujo = onRequest(
           // LA PAUSA POR PERSONA (H2-2): misma regla que la ingesta. Lectura pura, sin persistir
           // (el vencimiento lo escribe la ingesta con el siguiente entrante). Con pausa,
           // 'bloqueado' y aviso vacío; `atencionEstado` del documento no se toca.
-          const pausada = decidirPausa(marcas['turno'], marcas['ultimoEntranteEn'], ahoraMs).pausada;
+          // CONTACTO BLOQUEADO (31/10/2026): misma compuerta, silencio total (aviso vacío). Manda sobre la pausa:
+          // con ambos, la respuesta lleva solo `bloqueadoPorContacto`.
+          const bloqueada = estaBloqueada(marcas['bloqueada']);
+          const pausada = !bloqueada && decidirPausa(marcas['turno'], marcas['ultimoEntranteEn'], ahoraMs).pausada;
           return {
-            ...conPausa(estado, pausada),
+            ...conPausa(estado, pausada || bloqueada),
             ventanaVenceEn: estado.ventanaVenceEn === null
               ? null : new Date(estado.ventanaVenceEn).toISOString(),
-            avisarRecepcion: pausada ? '' : avisoDeTransicion(marcas['atencionEstado'], estado.estado),
+            avisarRecepcion: pausada || bloqueada ? '' : avisoDeTransicion(marcas['atencionEstado'], estado.estado),
             ...(pausada ? { pausadoPorPersona: true } : {}),
+            ...(bloqueada ? { bloqueadoPorContacto: true } : {}),
           };
         })()
       : null;
@@ -1794,34 +1785,22 @@ export const configuracionFlujo = onRequest(
     // precio. Cualquier error o límite deja la respuesta sin `enlace` y el turno
     // sigue: el flujo cae a la carta en texto. Es una capacidad: el registro lleva
     // solo los últimos cuatro caracteres de la ficha, nunca la URL.
-    let enlaceDeLaCarta: EnlaceEmitido | null = null;
+    const enlaceDelTurno = catalogoCompletoPedido && catalogoWebActivo
+      ? await enlaceDeLaCartaDelTurno({
+          ruta: { tenantId: comercio.tenantId, phoneNumberId, flujo: comercio.flujo, estado: ruta.estado },
+          telefono, catalogoWebActivo, catalogo: catalogo.docs as { data(): Record<string, unknown> }[],
+        })
+      : null;
+    const enlaceDeLaCarta = enlaceDelTurno?.enlace ?? null;
     // Por qué NO hubo enlace, para el registro: sin esta señal, un `SITIO_PUBLICO`
     // ausente en producción dejaría de dar enlaces sin que nadie lo note.
-    let motivoSinEnlace: string | null = null;
-    if (catalogoCompletoPedido && catalogoWebActivo) {
-      try {
-        const emitido = await enlaceParaElFlujo({
-          ruta: {
-            tenantId: comercio.tenantId, phoneNumberId, flujo: comercio.flujo, estado: ruta.estado,
-          },
-          telefono,
-          catalogoWebActivo,
-          vendibles: catalogo.docs.filter(
-            (d) => sePuedeComprar(d.data() as Record<string, unknown>)).length,
-        });
-        if ('url' in emitido) enlaceDeLaCarta = emitido;
-        else motivoSinEnlace = emitido.motivo;
-      } catch (error) {
-        // Solo el código del error: el mensaje puede traer la ruta de un
-        // documento (con el teléfono o el comercio adentro).
-        motivoSinEnlace = 'error';
-        const codigo = (error as { code?: unknown } | null)?.code;
-        logger.warn('configuracionFlujo: sin enlace del catálogo web', {
-          evento: EVENTO_CONFIGURACION, tenantId: comercio.tenantId,
-          telefonoUlt4: telefono ? ultimos4(telefono) : null,
-          codigo: typeof codigo === 'string' || typeof codigo === 'number' ? codigo : null,
-        });
-      }
+    const motivoSinEnlace: string | null = enlaceDelTurno?.motivo ?? null;
+    if (enlaceDelTurno?.motivo === 'error') {
+      logger.warn('configuracionFlujo: sin enlace del catálogo web', {
+        evento: EVENTO_CONFIGURACION, tenantId: comercio.tenantId,
+        telefonoUlt4: telefono ? ultimos4(telefono) : null,
+        codigo: enlaceDelTurno.codigoDeError ?? null,
+      });
     }
     const cobroReal = especifica?.get('cobroReal') as Record<string, unknown> | undefined;
     // Encendido Y con código: si falta cualquiera de los dos, se cobra simulado.
@@ -1868,8 +1847,8 @@ export const configuracionFlujo = onRequest(
     // lo propuesto tenga texto. Es la segunda barrera, igual que con los campos
     // derivados: las reglas impiden que el navegador escriba lo vigente, y acá
     // no se lee lo propuesto ni por accidente.
-    datosDelNegocio['instruccionesExtra'] = typeof negocio['instruccionesVigentes'] === 'string'
-      ? negocio['instruccionesVigentes'] : '';
+    // Revalidado con los términos de hoy y con los términos citados por el sistema (`vigentesParaElPrompt`).
+    datosDelNegocio['instruccionesExtra'] = cita(vigentesDelTurno.instrucciones);
 
     // El renglón de este turno, con el comercio adentro. Ver el bloque
     // «REGISTRO DE EJECUCIÓN CON EL COMERCIO ADENTRO» más arriba: el flujo
@@ -1907,6 +1886,28 @@ export const configuracionFlujo = onRequest(
         : {}),
       ...(motivoSinEnlace ? { catalogoEnlaceMotivo: motivoSinEnlace } : {}),
     });
+
+    // LOS GANCHOS DE CAMPAÑAS Y CAPTACIÓN (F3b-2b): el coordinador llama a los de los módulos que corren
+    // en ESTE turno (encendidos en la ficha y propios del flujo del número, `modulosDelTurno`).
+    const modulosDeHoy = modulosDelTurno(comercio.ficha, comercio.flujo);
+    const contextoDelTurno: ContextoDelTurno = {
+      tenantId: comercio.tenantId, flujo: comercio.flujo, telefono, ahoraMs, negocio,
+      cuenta: cuenta.exists ? cuenta.data() as Record<string, unknown> : null,
+      especifica: especifica?.exists ? especifica.data() : undefined,
+      vigentesDeCampanas: vigentesDelTurno.campanas, catalogo: catalogoDelTurno,
+      solicitud: docConversacion?.get('solicitud'), cobroRealActivo,
+      moneda: String(negocio['moneda'] ?? 'BOB'),
+      urlDelQr: (ficha) => `https://${REGION}-${process.env['GCLOUD_PROJECT'] ?? ''}`
+        + `.cloudfunctions.net/imagenDeCobro?f=${ficha}`,
+      citar: cita,
+    };
+    const aporteDeCampanas = modulosDeHoy.includes('campanas') ? alTurnoCampanas(contextoDelTurno) : {};
+    const aporteDeCaptacion = modulosDeHoy.includes('captacion') ? alTurnoCaptacion(contextoDelTurno) : {};
+    // Cobros trae dos ganchos; cada uno decide por el flujo del número (`contexto.flujo`), no por el módulo.
+    // Se llaman en cada turno (como Inventario): hoy salen por `comercio.flujo`, aunque la ficha traiga
+    // `modulos` sin Cobros; filtrar por módulo cambiaría la respuesta de esos comercios.
+    const aporteDeCobro = alTurnoCobroDeVenta({ ...contextoDelTurno, rotulosDeCobro: rotulos?.data() } as ContextoDeCobro);
+    const aporteDeSena = alTurnoSena(contextoDelTurno);
 
     respuesta.status(200).json({
       ...sesionLeida,
@@ -2005,7 +2006,7 @@ export const configuracionFlujo = onRequest(
         ? {
             catalogo: [],
             catalogoResumen: resumirCatalogo(
-              catalogo.docs.map((d) => d.data() as Record<string, unknown>)),
+              catalogoPrompt.docs.map((d) => d.data() as Record<string, unknown>)),
             // Con esto el flujo sabe que tiene que derivar al sitio en vez de
             // intentar recitar una lista que no recibió.
             catalogoWeb: { activo: true, derivar: true },
@@ -2016,12 +2017,11 @@ export const configuracionFlujo = onRequest(
             // una venta para mañana y lo segundo es un cliente que se va. Los
             // ítems SIN control de existencias nunca salen agotados: no saber
             // cuántos hay no es saber que hay cero.
-            catalogo: catalogo.docs.map((d) => {
-              const datos = d.data();
-              const quedan = existencias(datos);
+            catalogo: catalogoPrompt.docs.map((d) => {
+              const agotado = agotadosDelTurno[d.id];
               return {
-                id: d.id, ...datos,
-                ...(quedan !== null ? { agotado: quedan === 0 } : {}),
+                id: d.id, ...d.data(),
+                ...(agotado !== undefined ? { agotado } : {}),
               };
             }),
             ...(catalogoWebActivo
@@ -2059,90 +2059,21 @@ export const configuracionFlujo = onRequest(
       //
       // Afectaba a los DOS verticales que cobran, venta y agendamiento, y
       // estaba en producción desde que existe el cobro real.
-      ...(docVertical === 'onboarding'
-        ? { onboarding: sanearCaptacion(especifica?.exists ? especifica.data() : {}) }
-        : docVertical && especifica?.exists
+      // (F3b-2b) La captación saneada la aporta su gancho (`modulos/captacion/alTurno.ts`);
+      // el documento `onboarding` nunca sale crudo por la rama genérica.
+      ...aporteDeCaptacion,
+      ...(docVertical !== 'onboarding' && docVertical && especifica?.exists
           ? { [docVertical]: (() => {
               const { cobroReal: _fuera, ...resto } = especifica.data() as Record<string, unknown>;
               return resto;
             })() }
           : {}),
 
-      // COBRO: real o simulado, NUNCA los dos.
-      //
-      // Son excluyentes por definición: o el dinero se mueve o no se mueve, y
-      // mezclarlos produciría el peor resultado posible —un cobro real con el
-      // rótulo de simulacro, o al revés—. El cobro real manda si está
-      // encendido, y el encendido no lo hace el comercio guardando un
-      // formulario: es un acto aparte.
-      //
-      // PROHIBICIÓN 3, mientras el cobro sea simulado: los rótulos salen de
-      // plataforma, nunca de la configuración del comercio. Si el documento
-      // faltara, rigen los de respaldo. El sistema falla hacia el rótulo,
-      // jamás hacia el silencio.
-      ...(comercio.flujo === 'venta'
-        ? (cobroRealActivo
-          ? { cobroReal: {
-                nombreCuenta: String(cobroReal?.['nombreCuenta'] ?? ''),
-                // Con esto el flujo coteja el comprobante del cliente.
-                cuentas: Array.isArray(cobroReal?.['cuentas'])
-                  ? (cobroReal['cuentas'] as unknown[]).slice(0, 5).map(String) : [],
-                banco: String(cobroReal?.['banco'] ?? ''),
-                venceEl: String(cobroReal?.['venceEl'] ?? ''),
-                moneda: String(cobroReal?.['moneda'] ?? 'BOB'),
-                montoFijo: typeof cobroReal?.['montoFijo'] === 'number'
-                  ? cobroReal['montoFijo'] : null,
-                // La imagen NO viaja acá: viaja su ficha. El flujo arma la
-                // dirección con su propia base, así que el dominio del panel no
-                // queda escrito en ningún lado del servidor.
-                fichaQr: String(cobroReal?.['ficha'] ?? ''),
-              } }
-          : { cobroSimulado: {
-                ...rotulosCobroSimulado(rotulos?.data()),
-                // Sin media ID no hay QR que enviar, y eso es lo correcto: mejor
-                // no mandar nada que mandar una imagen sin rotular.
-                mediaIdQr: String(especifica?.get('mediaIdQr') ?? ''),
-              } })
-        : {}),
-
-      // EL ESTADO DEL COBRO DE ESTE TELÉFONO, solo para el flujo de venta.
-      //
-      // Va SEPARADO de `cobroReal`/`cobroSimulado` porque no es lo mismo: aquel
-      // par dice en qué modo está el comercio, y esto dice qué hacer con el
-      // próximo archivo que mande ESTE cliente. Y sale en los DOS modos a
-      // propósito: la compuerta del comprobante tiene que funcionar también en
-      // la demostración, o el camino que se prueba delante de un prospecto no
-      // es el que corre en producción.
-      //
-      // Es lo que le faltaba al flujo de venta para dejar de dar por comprobante
-      // cualquier imagen que llegara (`cobroVenta.ts`).
-      ...(comercio.flujo === 'venta'
-        ? { cobro: cobroParaElFlujo(
-              especifica?.exists ? (especifica.data() as Record<string, unknown>) : undefined,
-              cobroRealActivo,
-              String(negocio['moneda'] ?? 'BOB'),
-              (ficha) => `https://${REGION}-${process.env['GCLOUD_PROJECT'] ?? ''}`
-                + `.cloudfunctions.net/imagenDeCobro?f=${ficha}`,
-              docConversacion?.get('solicitud'),
-            ) }
-        : {}),
-
-      // SEÑA PARA RESERVAR, solo para el flujo de agendamiento (bloque 2). El
-      // QR es el mismo `cobroReal` que registra la consola, en el documento
-      // de ESTE flujo (`config/agendamiento`), porque el QR es del flujo que
-      // cobra (política de capas). La dirección de la imagen se arma acá con
-      // la región y el proyecto de esta Function: el flujo no sabe dónde
-      // vive el panel, y no tiene por qué saberlo.
-      ...(comercio.flujo === 'agendamiento'
-        ? { sena: senaParaElFlujo(
-              especifica?.exists ? (especifica.data() as Record<string, unknown>) : undefined,
-              cobroRealActivo,
-              String(negocio['moneda'] ?? 'BOB'),
-              (ficha) => `https://${REGION}-${process.env['GCLOUD_PROJECT'] ?? ''}`
-                + `.cloudfunctions.net/imagenDeCobro?f=${ficha}`,
-              docConversacion?.get('solicitud'),
-            ) }
-        : {}),
+      // COBRO DE VENTA Y SEÑA (F3b-2d): `cobroReal` | `cobroSimulado` y `cobro` los aporta el gancho de
+      // Cobros (`modulos/cobros/alTurno.ts`, solo flujo `venta`) y `sena` el de la seña
+      // (`modulos/agenda/alTurno.ts`, solo flujo `agendamiento`). Cada uno mira `contexto.flujo`.
+      ...aporteDeCobro,
+      ...aporteDeSena,
 
       // Siempre al menos uno. Si el comercio no cargó ninguno, viene el
       // funcionario por defecto con el calendario del negocio: el flujo tiene un
@@ -2150,24 +2081,14 @@ export const configuracionFlujo = onRequest(
       funcionarios: resolverFuncionarios(
         funcionarios.docs.map((d) => ({ id: d.id, datos: d.data() })),
         negocio,
-        new Set(catalogo.docs.map((d) => d.id)),
+        new Set(catalogoPrompt.docs.map((d) => d.id)),
       ),
 
-      // LAS CAMPAÑAS QUE EL FLUJO RECONOCE POR SU TEXTO (Andres, 24/09/2026):
-      // SOLO las aprobadas por `verificarCampanas`, en curso hoy y dentro del
-      // tope del plan de HOY. Lo propuesto (`lista`) nunca viaja: una campaña
-      // sin revisar no salta ningún menú. `campanas.ts` explica el contrato.
-      campanas: campanasParaElFlujo(
-        campanas.exists ? campanas.get('vigentes') : [],
-        limiteDeCampanas(cuenta.exists ? cuenta.data() as Record<string, unknown> : null),
-        ahoraMs,
-      ),
-
-      // LOS ANUNCIOS COMO DATO DEL TENANT (PR-1 de Campañas): las mismas campañas
-      // vigentes, pero las que traen titulares, con el producto y su precio leídos
-      // del catálogo activo que este turno YA trajo (cero lecturas nuevas). El
-      // tenant sale de la ruta autenticada. `campanas` (arriba) no cambia.
-      ...(anunciosDeHoy.length > 0 ? { anuncios: anunciosDeHoy } : {}),
+      // LAS CAMPAÑAS Y LOS ANUNCIOS (F3b-2b): `campanas` y `anuncios` los aporta el
+      // gancho de Campañas (`modulos/campanas/alTurno.ts`) cuando el módulo corre
+      // en este turno. Apagado, la respuesta conserva la forma de siempre: `campanas: []`.
+      campanas: [],
+      ...aporteDeCampanas,
     });
   },
 );

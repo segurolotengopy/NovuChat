@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { documentoQueCobra } from '../../../functions/src/modulos/cobros/cobro.ts';
 
+import { modulosDeFlujos } from '../../../functions/src/registro.ts';
 const ficha = (d: Record<string, unknown>) => ({ get: (k: string) => d[k] });
 const crudo = (d: Record<string, unknown>) => documentoQueCobra(ficha(d));
 
@@ -21,13 +22,13 @@ function anterior(f: { get(c: string): unknown }): 'venta' | 'agendamiento' | nu
 
 describe('documentoQueCobra: fichas reales, resultado idéntico al anterior', () => {
   const reales: Array<[string, Record<string, unknown>, 'venta' | 'agendamiento' | null]> = [
-    ['flujos venta', { flujos: ['venta'] }, 'venta'],
-    ['vertical venta', { vertical: 'venta' }, 'venta'],
-    ['flujos agendamiento', { flujos: ['agendamiento'] }, 'agendamiento'],
-    ['vertical agendamiento', { vertical: 'agendamiento' }, 'agendamiento'],
-    ['ambos', { flujos: ['agendamiento', 'venta'] }, 'venta'],
-    ['onboarding', { flujos: ['onboarding'] }, null],
-    ['lista vacía', { flujos: [] }, null],
+    ['flujos venta', { flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) }, 'venta'],
+    ['vertical venta', { vertical: 'venta', modulos: modulosDeFlujos(['venta'] as never[]) }, 'venta'],
+    ['flujos agendamiento', { flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) }, 'agendamiento'],
+    ['vertical agendamiento', { vertical: 'agendamiento', modulos: modulosDeFlujos(['agendamiento'] as never[]) }, 'agendamiento'],
+    ['ambos', { flujos: ['agendamiento', 'venta'], modulos: modulosDeFlujos(['agendamiento', 'venta'] as never[]) }, 'venta'],
+    ['onboarding', { flujos: ['onboarding'], modulos: modulosDeFlujos(['onboarding'] as never[]) }, null],
+    ['lista vacía', { flujos: [], modulos: modulosDeFlujos([] as never[]) }, null],
     ['ficha vacía', {}, null],
   ];
   for (const [nombre, d, esperado] of reales) {
@@ -68,7 +69,9 @@ describe('documentoQueCobra: fuera del dominio bien formado, el registro falla c
     expect(crudo({ modulos: ['pedidos', 'agenda'] })).toBeNull();
   });
   it('valores esperados escritos a mano, independientes del registro', () => {
-    expect(crudo({ flujos: ['venta'] })).toBe('venta');
+    // H2b-cierre: `flujos` sin `modulos` no cobra nada.
+    expect(crudo({ flujos: ['venta'] })).toBeNull();
+    expect(crudo({ vertical: 'agendamiento' })).toBeNull();
     expect(crudo({ modulos: ['cobros', 'pedidos'] })).toBe('venta');
     expect(crudo({ modulos: ['cobros', 'agenda'] })).toBe('agendamiento');
     expect(crudo({ flujos: null, vertical: 'venta' })).toBeNull();
@@ -80,7 +83,7 @@ describe('documentoQueCobra: la ficha completa de Q\'Taco (valores sintéticos)'
   it('da venta', () => {
     expect(crudo({
       creadoEn: '2026-01-01T00:00:00Z', creadoPor: 'uid-sintetico', estado: 'activo',
-      flujos: ['venta'], nombre: 'Comercio de prueba', plan: 'plan-sintetico',
+      flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]), nombre: 'Comercio de prueba', plan: 'plan-sintetico',
       vertical: 'venta', waPhoneNumberId: 'phone-sintetico', waWabaId: 'waba-sintetico',
     })).toBe('venta');
   });

@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { ejecutar, type Flujo, type J } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { ADAPTADOR_TRANSCRIPCION, AQUI, ARCHIVO_DE_DATOS, CONFIG, NODOS_DEL_AVISO, NOMBRES_DEL_NUCLEO, NUCLEO_TRANSCRIPCION, traducirNucleo, TOPE_DE_NODOS, anfitrionPermitido, cargarDatos, guardias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
+import { ADAPTADOR_TRANSCRIPCION, AQUI, ARCHIVO_DE_DATOS, CONFIG, NODOS_DEL_AVISO, NOMBRES_DEL_NUCLEO, NOMBRES_DEL_NUCLEO_IMAGEN, NUCLEO_IMAGEN, NUCLEO_TRANSCRIPCION, fuenteDelNucleoImagen, traducirNucleo, TOPE_DE_NODOS, anfitrionPermitido, cargarDatos, guardias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
 import { nodosDeEnvio } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
 
 const ESTA = dirname(fileURLToPath(import.meta.url));
@@ -42,13 +42,13 @@ describe('armado: --verificar y el tope de nodos', () => {
     expect(r.status).toBe(2);
   });
 
-  it(`ninguna variante pasa de ${TOPE_DE_NODOS} nodos (48 es el tope duro: si pasa, se rehace)`, () => {
-    expect(TOPE_DE_NODOS).toBe(48);
-    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(48);
-    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(48);
+  it(`ninguna variante pasa de ${TOPE_DE_NODOS} nodos (57 es el tope duro: 48 más los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10: docs/versiones-por-cliente.md; si pasa, se rehace)`, () => {
+    expect(TOPE_DE_NODOS).toBe(57);
+    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(57);
+    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(57);
     const grande = copia(PRODUCCION);
-    while (grande.nodes.length <= 48) grande.nodes.push({ ...copia(grande.nodes[0]!), id: `x${grande.nodes.length}`, name: `Relleno ${grande.nodes.length}` });
-    expect(guardias('produccion', grande).join('|')).toMatch(/tope es 48/);
+    while (grande.nodes.length <= 57) grande.nodes.push({ ...copia(grande.nodes[0]!), id: `x${grande.nodes.length}`, name: `Relleno ${grande.nodes.length}` });
+    expect(guardias('produccion', grande).join('|')).toMatch(/tope es 57/);
   });
 
   it('producción y prueba: guardias limpias, y lo versionado no las viola', () => {
@@ -134,7 +134,8 @@ describe('armado: orden del lienzo y sin modelo en PR-1', () => {
     const destinos = (n: string, salida: number) => (PRODUCCION.connections[n]!['main']![salida] ?? []).map((c) => c.node);
     expect(destinos('¿Reportar? (entrante)', 0)).toEqual(['Reportar mensaje (entrante)']);
     expect(destinos('¿Reportar? (entrante)', 1)).toEqual(['Puerta del turno']);
-    expect(destinos('Reportar mensaje (entrante)', 0)).toEqual(['Puerta del turno']);
+    // Más la rama común del GUARDADO de medios, que cuelga del reporte y va DEBAJO en el lienzo (corre después de la que responde).
+    expect(destinos('Reportar mensaje (entrante)', 0)).toEqual(['Puerta del turno', 'Preparar guardado']);
   });
 
   it('PR-2 lleva el modelo (HTTP a Gemini, un dato), la lectura del comprobante, el cotejo y el aviso mínimo; NO lleva agente, memoria de n8n, «Registrar cierre» ni disparadores por tiempo (el rescate es PR-4)', () => {
@@ -156,13 +157,16 @@ describe('armado: orden del lienzo y sin modelo en PR-1', () => {
     expect(guardias('produccion', roto).join('|')).toMatch(/anfitrión/);
   });
 
-  it('los ajustes: retención solo de errores, zona de La Paz, sin errorWorkflow', () => {
+  it('los ajustes: sin retención de ejecuciones (decisión de Andres del 30/10: el binario del medio quedaría guardado), zona de La Paz, sin errorWorkflow', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
-      expect(f.settings).toMatchObject({ saveDataSuccessExecution: 'none', saveDataErrorExecution: 'all', saveExecutionProgress: false, timezone: 'America/La_Paz' });
+      expect(f.settings).toMatchObject({ saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false, timezone: 'America/La_Paz' });
     }
     const roto = copia(PRODUCCION);
     roto.settings!['saveDataSuccessExecution'] = 'all';
     expect(guardias('produccion', roto).join('|')).toMatch(/retención/);
+    const roto2 = copia(PRODUCCION);
+    roto2.settings!['saveDataErrorExecution'] = 'all';
+    expect(guardias('produccion', roto2).join('|')).toMatch(/retención/);
   });
 });
 
@@ -205,14 +209,17 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
   const x = (f: Flujo, n: string): number => nodo(f, n).position![0];
   const destinos = (f: Flujo, n: string, salida = 0): string[] => (f.connections[n]!['main']![salida] ?? []).map((c) => c.node);
 
-  it('cuenta de nodos: producción y prueba dentro del tope (48) y de la meta de producción (46)', () => {
-    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(46);
-    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(46);
+  it('cuenta de nodos: producción y prueba dentro del tope (57) y de la meta de producción (55)', () => {
+    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(55);
+    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(55);
     expect(PRODUCCION.nodes.length).toBe(PRUEBA.nodes.length + 5);
     // MEDIOS ENTRANTES: 39 → 44 en producción y 34 → 39 en la prueba (5 nodos: ¿Es audio?, Transcribir audio, Preparar transcripción, ¿Es comprobante? y Ver imagen).
     // Y +1 (21/10/2026): «¿Lo leído es comprobante?» (el lector del comprobante clasifica; lo que no es un comprobante no se coteja) → 45 y 40.
-    expect(PRODUCCION.nodes.length).toBe(45);
-    expect(PRUEBA.nodes.length).toBe(40);
+    // Y +1 (23/10/2026): «Preparar imagen» (visión por categorías, módulo común de medios) → 46 y 41.
+    // Y +11 (29/10/2026): la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs) → 57 y 52.
+    // Y −2 (30/10/2026, contrato v2): se quitan «¿Anotar medio?» y «Anotar medio» → 55 y 50.
+    expect(PRODUCCION.nodes.length).toBe(55);
+    expect(PRUEBA.nodes.length).toBe(50);
   });
 
   it('«Reportar mensaje (entrante)» sigue ARRIBA de toda la rama que responde (medios, decisión, modelo, avisos y mensajes)', () => {
@@ -233,7 +240,7 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
       expect(destinos(f, '¿Es comprobante?', 1)).toEqual(['Ver imagen']);
       expect(destinos(f, 'Transcribir audio')).toEqual(['Preparar transcripción']);
       expect(destinos(f, 'Preparar transcripción')).toEqual(['Decidir turno']);
-      expect(destinos(f, 'Ver imagen')).toEqual(['Decidir turno']);
+      expect(destinos(f, 'Ver imagen')).toEqual(['Preparar imagen']);
       for (const n of ['¿Es audio?', 'Transcribir audio', 'Preparar transcripción', '¿Es comprobante?', 'Ver imagen']) expect(y(f, n), n).toBeGreaterThan(y(f, 'Reportar mensaje (entrante)'));
       expect(y(f, 'Guardar comprobante')).toBeLessThan(y(f, '¿Es PDF?'));
       expect(nodo(f, 'Guardar comprobante').parameters['url']).toBe('https://us-east1-novuchat-demo.cloudfunctions.net/guardarComprobante');
@@ -252,8 +259,9 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
     expect(destinos(f, '¿Es comprobante?', 0)).toEqual(['Guardar comprobante', '¿Es PDF?']);
     expect(destinos(f, '¿Es PDF?', 0)).toEqual(['Leer comprobante (PDF)']);
     expect(destinos(f, '¿Es PDF?', 1)).toEqual(['Leer comprobante (imagen)']);
-    expect(destinos(f, 'Leer comprobante (PDF)')).toEqual(['Interpretar lectura']);
-    expect(destinos(f, 'Leer comprobante (imagen)')).toEqual(['Interpretar lectura']);
+    expect(destinos(f, 'Leer comprobante (PDF)')).toEqual(['Preparar imagen']);
+    expect(destinos(f, 'Leer comprobante (imagen)')).toEqual(['Preparar imagen']);
+    expect(destinos(f, 'Preparar imagen')).toEqual(['Interpretar lectura']);
     expect(destinos(f, 'Interpretar lectura')).toEqual(['¿Lo leído es comprobante?']);
     expect(destinos(f, '¿Lo leído es comprobante?', 0)).toEqual(['Cotejar en el servidor']);
     expect(destinos(f, '¿Lo leído es comprobante?', 1)).toEqual(['Decidir turno']);
@@ -633,8 +641,8 @@ describe('NÚCLEO INCLUIDO: «Preparar transcripción» es el archivo común de 
       expect((nodo(PRODUCCION, n) as J)['onError'], n).toBe('continueRegularOutput');
       expect((nodo(PRODUCCION, n) as J)['alwaysOutputData'], n).toBe(true);
     }
-    // «Ver imagen» solo CLASIFICA: no lleva opciones de resolución ni más de 200 tokens de salida.
-    expect(nodo(PRODUCCION, 'Ver imagen').parameters['options']).toEqual({ maxOutputTokens: 200 });
+    // «Ver imagen» solo CLASIFICA (y describe): no lleva opciones de resolución ni más de 400 tokens de salida (200 hasta la visión por categorías: ahora devuelve también `titular_principal` y `descripcion`).
+    expect(nodo(PRODUCCION, 'Ver imagen').parameters['options']).toEqual({ maxOutputTokens: 400 });
   });
 
   it('NEGANDO (guardias): un núcleo alterado, un Gemini sin `alwaysOutputData` o conectado a otro nodo dan hallazgo', () => {
@@ -644,6 +652,16 @@ describe('NÚCLEO INCLUIDO: «Preparar transcripción» es el archivo común de 
     const sinSalida = copia(PRODUCCION);
     delete (nodo(sinSalida, 'Transcribir audio') as J)['alwaysOutputData'];
     expect(guardias('produccion', sinSalida).join('|')).toMatch(/«Transcribir audio» tiene que llevar onError/);
+    // «Preparar imagen» (visión por categorías): un módulo alterado o un lector conectado a otro nodo dan hallazgo.
+    const imagenAlterada = copia(PRODUCCION);
+    nodo(imagenAlterada, 'Preparar imagen').parameters['jsCode'] = String(nodo(imagenAlterada, 'Preparar imagen').parameters['jsCode']).replace("const CATEGORIAS = ['comprobante'", "const CATEGORIAS = ['inventada', 'comprobante'");
+    expect(guardias('produccion', imagenAlterada).join('|')).toMatch(/«Preparar imagen» no incluye los módulos comunes/);
+    const lectorDesviado = copia(PRODUCCION);
+    lectorDesviado.connections['Ver imagen'] = { main: [[{ node: 'Decidir turno', type: 'main', index: 0 }]] } as never;
+    expect(guardias('produccion', lectorDesviado).join('|')).toMatch(/«Ver imagen» tiene que conectarse solo a «Preparar imagen»/);
+    const sinPreparar = copia(PRODUCCION);
+    sinPreparar.nodes = sinPreparar.nodes.filter((n) => n.name !== 'Preparar imagen');
+    expect(guardias('produccion', sinPreparar).join('|')).toMatch(/falta el nodo «Preparar imagen»/);
     const sinVer = copia(PRODUCCION);
     (nodo(sinVer, 'Ver imagen') as J)['onError'] = undefined;
     expect(guardias('produccion', sinVer).join('|')).toMatch(/«Ver imagen» tiene que llevar onError/);
@@ -667,5 +685,49 @@ describe('NÚCLEO INCLUIDO: «Preparar transcripción» es el archivo común de 
     expect(probar('topeAudiosDia', '-1')).toMatch(/forma no válida/);
     expect(probar('topeAudiosDia', '10')).toBe('ok');
     expect(probar('topeImagenesDia', '0')).toBe('ok');
+  });
+});
+
+// ------------------------------------------------------------------------------------------------------------------------------------
+// VISIÓN POR CATEGORÍAS (23/10/2026): «Preparar imagen» incluye los módulos comunes de medios TAL CUAL (con UNA traducción de nombre de nodo), solo con literales, y es el único destino de los tres lectores de Gemini.
+// ------------------------------------------------------------------------------------------------------------------------------------
+describe('NÚCLEO INCLUIDO: «Preparar imagen» son los módulos comunes de la imagen, byte a byte, con un nombre de nodo traducido', () => {
+  const codigo = (f: Flujo, n: string): string => String(nodo(f, n).parameters['jsCode']);
+  const FUENTES = NUCLEO_IMAGEN.map((ruta: string) => leer(ruta).trimEnd());
+  it('el código armado CONTIENE anuncio-por-titular.js y preparar-imagen.js, en ese orden, tal cual salvo `Normalizar entrada` -> `Interpretar entrada`; sin helpers cn* ni `$` redefinido', () => {
+    expect(NUCLEO_IMAGEN.map((r: string) => r.split('/').pop())).toEqual(['anuncio-por-titular.js', 'preparar-imagen.js']);
+    expect(NOMBRES_DEL_NUCLEO_IMAGEN).toEqual({ 'Normalizar entrada': 'Interpretar entrada' });
+    for (const f of [PRODUCCION, PRUEBA]) {
+      const c = codigo(f, 'Preparar imagen');
+      expect(c).toBe(fuenteDelNucleoImagen());
+      const traducidas = FUENTES.map((x: string) => traducirNucleo(x, NOMBRES_DEL_NUCLEO_IMAGEN));
+      let desde = 0;
+      for (const t of traducidas) { const i = c.indexOf(t, desde); expect(i).toBeGreaterThanOrEqual(0); desde = i + t.length; }
+      // Deshacer la traducción devuelve el core exacto.
+      expect(traducidas[1]!.split("$('Interpretar entrada')").join("$('Normalizar entrada')")).toBe(FUENTES[1]);
+      expect(c).not.toContain("$('Normalizar entrada')");
+      expect(c).not.toMatch(/\bcn(Nodo|Primero|Todos)\(|const \$ =/);
+      expect(c).toContain("$('Interpretar entrada')");
+      expect(c).toContain("$('Config del negocio')");
+    }
+  });
+  it('CONTRATO con el core: las cadenas que el flujo usa de «Preparar imagen» siguen literalmente en él (categoriaMedio, descripcionMedio, anuncioMedio, titular_principal y la lista cerrada)', () => {
+    for (const c of ['categoriaMedio: categoria', 'descripcionMedio: descripcion', 'anuncioMedio:', 'objeto.titular_principal', "'pago_con_problema'", "'captura_de_pantalla'", "$('Normalizar entrada')", "$('Config del negocio')", 'cfgNeg.anuncios']) expect(FUENTES.join('\n'), c).toContain(c);
+  });
+  it('«Preparar imagen» queda ARRIBA de «Interpretar lectura» y debajo de los tres lectores, y el orden de ramas es el del lienzo', () => {
+    for (const f of [PRODUCCION, PRUEBA]) {
+      const px = (n: string): number => nodo(f, n).position![0];
+      for (const l of ['Ver imagen', 'Leer comprobante (imagen)', 'Leer comprobante (PDF)']) expect(px('Preparar imagen'), l).toBeGreaterThan(px(l));
+      expect(px('Preparar imagen')).toBeLessThanOrEqual(px('Interpretar lectura'));
+      expect(nodo(f, 'Preparar imagen').position![1]).toBeGreaterThan(nodo(f, 'Reportar mensaje (entrante)').position![1]);
+    }
+  });
+  it('los tres lectores de Gemini piden lo mismo (categoria, titular_principal, descripcion y el pago) y ninguno pide ya `tipo` ni `titular`', () => {
+    const t = (n: string): string => String(nodo(PRODUCCION, n).parameters['text']);
+    expect(t('Ver imagen')).toBe(t('Leer comprobante (imagen)'));
+    expect(t('Ver imagen')).toBe(t('Leer comprobante (PDF)'));
+    for (const clave of ['categoria', 'titular_principal', 'descripcion', 'cuentaDestino', 'pago_con_problema', 'comprobante|publicidad|pago_con_problema|captura_de_pantalla|foto|otro']) expect(t('Ver imagen'), clave).toContain(clave);
+    expect(t('Ver imagen')).not.toMatch(/\btipo\b|"anuncio"|\btitular\s{2}/);
+    for (const n of ['Ver imagen', 'Leer comprobante (imagen)', 'Leer comprobante (PDF)']) expect(nodo(PRODUCCION, n).parameters['options'], n).toEqual({ maxOutputTokens: 400 });
   });
 });

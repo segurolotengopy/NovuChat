@@ -1,8 +1,9 @@
 /**
  * «EL PUENTE» DE ANTONIO (tenant rroca-antonio) — PR-B, LOS HUECOS DEL COBRO Y DE LOS AVISOS, comparados con su ORIGEN.
  *
- * El módulo común de Cobros y el de Avisos todavía no existen: `src/lib/cobro.js` y `src/lib/avisos.js` son COPIAS declaradas (PROPIO.md) de `venta-minima/src/lib/cobro.js` y `avisos.js`
- * (rama #519, `cartera/qtaco-visor-comprobantes`; origen = venta-minima, NO rroca-ruben). Cada declaración (función o constante) se compara BYTE A BYTE con su origen de tres maneras:
+ * Antonio ya no tiene copias propias: usa `Flujos/experimental/venta-digital/src/cobro.js` y `avisos.js` (la base común de las ventas digitales, que `construir.mjs` pega delante de sus nodos). Esa base nació como copia
+ * de `venta-minima/src/lib/cobro.js` y `avisos.js` (rama #519, `cartera/qtaco-visor-comprobantes`; origen = venta-minima, NO rroca-ruben), y esta suite sigue exigiendo que cada declaración de la base sea idéntica a su origen.
+ * Cada declaración (función o constante) se compara BYTE A BYTE con su origen de tres maneras:
  *   1. contra el HASH fijado (sha-256 de la declaración tal como estaba en el origen el 18/10/2026): no depende de ninguna rama;
  *   2. contra el archivo de `venta-minima` del árbol de trabajo, si ya trae lo de #519 (antes de la fusión tiene la versión vieja y no sirve de origen);
  *   3. contra la rama `origin/cartera/qtaco-visor-comprobantes`, si el repositorio la tiene (si #519 se fusionó o la rama se borró, el 2 y el 1 la cubren).
@@ -17,7 +18,8 @@ import { describe, expect, it } from 'vitest';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
-const RROCA = join(REPO, 'Flujos/experimental/rroca-antonio/src/lib');
+// La base común que usa Antonio (antes: `rroca-antonio/src/lib`, copias que se borraron al migrar).
+const RROCA = join(REPO, 'Flujos/experimental/venta-digital/src');
 const VM = join(REPO, 'Flujos/experimental/venta-minima/src/lib');
 const RAMA = 'origin/cartera/qtaco-visor-comprobantes';
 
@@ -194,6 +196,6 @@ describe('HUECO de NIEGA_IA: la expresión es idéntica a la de chat-novuchat (`
   it('`RA_NIEGA_IA` de ra.js es BYTE A BYTE `CH_NIEGA_IA` de chat-novuchat, salvo el nombre', () => {
     const linea = (t: string, n: string): string => t.split('\n').find((l) => l.startsWith('const ' + n + ' = '))!.replace(n, 'X');
     const origen = leer(join(REPO, 'Flujos/experimental/chat-novuchat/src/lib/chat.js'));
-    expect(linea(leer(join(RROCA, 'ra.js')), 'RA_NIEGA_IA')).toBe(linea(origen, 'CH_NIEGA_IA'));
+    expect(linea(leer(join(REPO, 'Flujos/experimental/rroca-antonio/src/lib/ra.js')), 'RA_NIEGA_IA')).toBe(linea(origen, 'CH_NIEGA_IA'));
   });
 });

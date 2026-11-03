@@ -151,16 +151,13 @@ service firebase.storage {
     }
 
     // Misma lógica que `tieneModulo(tenantId, 'captacion')` en firestore.rules
-    // (H2b-6): si la ficha trae `modulos` (una lista), MANDA; si no, se lee por
-    // flujos como hasta hoy: MANDA LA LISTA `flujos`, y una ficha sin lista se
-    // lee como `[vertical]`.
+    // (H2b-cierre): SOLO manda la lista `modulos`. Una ficha sin lista (ausente,
+    // nula, cadena, mapa) no tiene captación: ni `flujos` ni `vertical` cuentan.
     function tieneOnboardingEn(ficha) {
-      // `m` se lee UNA vez y la rama que no corresponde no se evalúa: sin `let`, el
-      // emulador de Storage avisaba «Function not found: in» con `modulos` en cadena.
+      // `m` se lee UNA vez: sin `let`, el emulador de Storage avisaba
+      // «Function not found: in» con `modulos` en cadena.
       let m = ficha != null ? ficha.data.get('modulos', null) : null;
-      return ficha != null
-        && ((m is list && 'captacion' in m)
-            || (!(m is list) && 'onboarding' in ficha.data.get('flujos', [ficha.data.get('vertical', '')])));
+      return ficha != null && m is list && 'captacion' in m;
     }
 
     // Misma lógica que `tenantOperativo`: solo 'activo' habilita escritura.
@@ -372,6 +369,18 @@ service firebase.storage {
     // falle si alguien lo abre por error.
     // =========================================================================
     match /tenants/{tenantId}/comprobantes/{resto=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // /tenants/{tenantId}/medios/** — LOS MEDIOS ENTRANTES GUARDADOS (audio, foto,
+    // PDF; Core, Andres 20 a 23/10/2026). NINGUNA PERSONA LEE NI ESCRIBE AQUÍ,
+    // tampoco el administrador, el operador ni el propietario: escribe
+    // `guardarMedio` (SDK Admin) y borra `purgarMedios` (90 días y baja). Se leen
+    // por una callable auditada que devuelve bytes (PR-2), sin URL ni token de
+    // descarga, de modo que no existe una capacidad que se pueda reenviar.
+    // =========================================================================
+    match /tenants/{tenantId}/medios/{resto=**} {
       allow read, write: if false;
     }
 

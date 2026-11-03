@@ -1,6 +1,8 @@
 import { crearRegistrarCierre, type GanchosDelCierre } from './core/turno/cierres.js';
 import { SOLICITUD_AL_CIERRE } from './modulos/agenda/alCierre.js';
 import { COBRO_AL_CIERRE } from './modulos/cobros/alCierre.js';
+import { nombreDeProductoApto } from './modulos/productos/nombreSeguro.js';
+import { crearAprobarTerminoProducto } from './plataforma/aprobarTerminoProducto.js';
 
 /**
  * =============================================================================
@@ -34,3 +36,10 @@ export const GANCHOS_DEL_CIERRE = {
 
 /** El endpoint de los cierres: el nombre, las opciones y los secretos de siempre, con los ganchos de los módulos. */
 export const registrarCierre = crearRegistrarCierre(GANCHOS_DEL_CIERRE);
+
+/**
+ * TÉRMINOS DE PRODUCTO REGISTRADOS (PR 3): la decisión del propietario valida el nombre del ítem con el
+ * predicado de Productos. Plataforma no importa de módulos (`plataforma/aprobarTerminoProducto.ts` recibe
+ * el predicado), así que lo une este archivo, el único que conoce a las dos zonas. Un puerto: no hay registro.
+ */
+export const aprobarTerminoProducto = crearAprobarTerminoProducto(nombreDeProductoApto);

@@ -93,21 +93,21 @@ export function Pedidos() {
       </p>
 
       {/* LO QUE ESTA PANTALLA TODAVÍA NO MUESTRA, DICHO ACÁ Y NO ESCONDIDO.
-          Un pedido tomado conversando por WhatsApp no se guarda como pedido:
-          registra un cierre, que es un número para facturar y no lleva ítems.
-          Hasta que el flujo escriba el pedido, acá solo aparecen los del
-          catálogo web. Una pantalla vacía sin explicación se lee como rota, y
+          Un pedido tomado por WhatsApp con QR llega con origen «whatsapp»
+          (PR-4); una conversación sin QR registra solo un cierre, que es un
+          número para facturar y no lleva ítems, y no aparece acá. Una pantalla vacía sin explicación se lee como rota, y
           el cocinero dejaría de mirarla el segundo día. Ver `DISENO.md`
           §4nonies.3. */}
       <p className="ayuda aviso-datos">
-        Por ahora aparecen los pedidos hechos desde el <strong>catálogo web</strong>.
-        Los que el asistente toma conversando están en «Conversaciones».
+        Aparecen los pedidos del <strong>catálogo web</strong> y los que el asistente
+        toma por <strong>WhatsApp</strong> con QR. Las conversaciones sin QR no
+        aparecen acá: están en «Conversaciones».
       </p>
 
       {pedidos === null && <p>Cargando…</p>}
       {pedidos?.length === 0 && (
         <p className="vacio">
-          Todavía no hay pedidos. Cuando entre el primero por el catálogo web,
+          Todavía no hay pedidos. Cuando entre el primero por el catálogo web o por WhatsApp,
           aparece acá sin que haya que recargar.
         </p>
       )}

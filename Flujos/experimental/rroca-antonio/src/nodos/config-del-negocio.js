@@ -5,7 +5,7 @@
 //   409            -> SUSPENDIDO: es una respuesta válida, no un error;
 //   otra           -> no se pudo saber -> respaldo de `Config base`.
 //
-// DE LA CONSOLA salen SOLO: el nombre del negocio, el número de recepción, los prefijos permitidos y la atención (los umbrales de uso extendido). El catálogo y el cobro NO pasan por este nodo.
+// DE LA CONSOLA salen SOLO: el nombre del negocio, el número de recepción, los prefijos permitidos, la atención (los umbrales de uso extendido) y los ANUNCIOS (a lo más 20, solo en la rama 200). El catálogo y el cobro NO pasan por este nodo.
 
 const base = cnPrimero('Config base') || {};
 const carga = cnPrimero('Carga de entrada') || {};
@@ -24,6 +24,10 @@ const valor = (v) => (typeof v === 'string' && !/^REEMPLAZAR_/.test(v.trim())) ?
 const linea = (v, max) => String(v === undefined || v === null ? '' : v)
   .replace(/<<<|>>>/g, '').replace(/[\[\]{}]/g, '')
   .replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, max);
+
+// El enlace de Google Maps de la Consola (`datosDelNegocio.direccionMaps`): LA MISMA regla que el servidor (https, dominio de mapas, hasta 200 caracteres, sin espacios). Es el ÚNICO enlace que pasa; los demás se descartan.
+const ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+const enlaceDeMapa = (v) => (typeof v === 'string' && v.trim().length <= 200 && ENLACE_DE_MAPA.test(v.trim()) ? v.trim() : '');
 
 // --- ATENCIÓN: los umbrales de uso extendido (el servidor decide; este nodo obedece) ---
 const at = (codigo === 200 && cuerpo.atencion && typeof cuerpo.atencion === 'object') ? cuerpo.atencion : {};
@@ -65,13 +69,19 @@ if (codigo === 409) {
   const recepcion = util(op.numeroRecepcion);
   const deLaConsola = soloLlenos({
     nombreNegocio: util(dn.nombreNegocio) ? linea(dn.nombreNegocio, 60) : undefined,
+    // La ubicación (02/11/2026): la dirección en texto (sin enlaces) y el enlace de Maps, que `enlaceDeMapa` (misma regla que el servidor; `raEnlaceDeMapa` la repite al usarlo) comprueba aquí. Sin datos, el flujo no inventa nada: deriva.
+    direccion: util(dn.direccion) && !/https?:|www\.|wa\.me|maps|goo\.gl|\b[a-z0-9-]+\.(?:com|net|org|bo|ly|me|io|app|link|gl)\b|[\u200B-\u200F\u2060\uFEFF]/i.test(dn.direccion) ? linea(dn.direccion, 160) || undefined : undefined,
+    direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,
     // Solo dígitos: es el destino del botón a una persona.
     numeroRecepcion: recepcion ? (cnDigitos(recepcion) || undefined) : undefined,
     prefijosPermitidos: Array.isArray(op.prefijosPermitidos) && op.prefijosPermitidos.length ? op.prefijosPermitidos.join(',') : undefined,
   });
   const estadoDeLaConsola = util(cuerpo.estadoComercio);
+  // LOS ANUNCIOS (campañas vigentes de la Consola, con sus titulares, su ángulo y su producto): el módulo común `anuncio-por-titular.js` (en «Preparar imagen») decide por CÓDIGO si la imagen de un cliente es de uno de ellos.
+  // A lo más 20; solo objetos (lo que no lo es se descarta). Sin anuncios en la respuesta, la lista va vacía y todo queda como antes.
+  const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === 'object' && !Array.isArray(a)).slice(0, 20) : [];
   cfg = {
-    ...deBase, ...deLaConsola, ...atencion,
+    ...deBase, ...deLaConsola, ...atencion, anuncios,
     estadoComercio: estadoDeLaConsola === 'activo' ? 'operativo' : (estadoDeLaConsola ? 'suspendido' : 'operativo'),
     configDeLaConsola: true,
   };

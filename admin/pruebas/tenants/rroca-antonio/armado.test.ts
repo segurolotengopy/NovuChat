@@ -2,7 +2,7 @@
  * «EL PUENTE» DE ANTONIO (tenant rroca-antonio) — PR-A: EL ARMADO. Los JSON versionados salen de `construir.mjs` (plantilla + código + datos), nunca a mano.
  *
  * Qué prueba, negando:
- *   1. los dos JSON están AL DÍA con lo que arma la plantilla (`--verificar`), y se cuentan: ≤ 48 nodos, 36 en producción y 31 en prueba;
+ *   1. los dos JSON están AL DÍA con lo que arma la plantilla (`--verificar`), y se cuentan: ≤ 56 nodos (producción 56, prueba 51: 47 y 42 más los 9 del guardado de medios, contrato v2 del 30/10);
  *   2. cada GUARDIA rechaza su violación (una prueba por guardia, con el caso límite): WhatsApp Trigger, `subscriptions`, receptor con «Continue on Fail», `wabaIdEsperado` como expresión, sin descartar repetidos
  *      entre ejecuciones, entrada de prueba en producción, receptor en la prueba, anfitrión fuera de la lista, retención, orden, zona, marcadores `REEMPLAZAR_` fuera de su lugar, el reporte del entrante abajo en el lienzo;
  *   3. los DATOS solo traen marcadores `REEMPLAZAR_*` para identificadores y rutas, y rechazan formas inválidas;
@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
+import { cargarLibrerias } from './librerias';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
@@ -43,10 +44,10 @@ describe('el armado: lo versionado es lo que arma la plantilla', () => {
     }
   });
 
-  it('nodos: producción 48 y prueba 43 (≤ 48); la prueba cambia el receptor (6) por la «Entrada de prueba» (1)', () => {
-    expect((PRODUCCION['nodes'] as J[]).length).toBe(48);
-    expect((PRUEBA['nodes'] as J[]).length).toBe(43);
-    expect(mod.TOPE_DE_NODOS).toBe(48);
+  it('nodos: producción 56 y prueba 51 (≤ 56; antes 47 y 42, +9 por el guardado de medios (eran 11 hasta el contrato v2 del 30/10); antes 48 y 43; +1 por «Guardar comprobante»); la prueba cambia el receptor (6) por la «Entrada de prueba» (1)', () => {
+    expect((PRODUCCION['nodes'] as J[]).length).toBe(56);
+    expect((PRUEBA['nodes'] as J[]).length).toBe(51);
+    expect(mod.TOPE_DE_NODOS).toBe(56);
   });
 
   it('el núcleo: Config base, Carga de entrada, Traer configuración, Config del negocio, Normalizar entrada, ¿Reportar? y Reportar (entrante), Puerta del turno', () => {
@@ -58,7 +59,7 @@ describe('el armado: lo versionado es lo que arma la plantilla', () => {
 
   it('ajustes: orden v1, zona America/La_Paz, sin guardar ejecuciones exitosas ni el progreso, y SIN la marca de no publicable (PR-B: la conversación está completa)', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
-      expect(f['settings']).toMatchObject({ executionOrder: 'v1', timezone: 'America/La_Paz', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'all', saveExecutionProgress: false });
+      expect(f['settings']).toMatchObject({ executionOrder: 'v1', timezone: 'America/La_Paz', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false });
       expect(f['meta']).toBeUndefined();
     }
   });
@@ -106,12 +107,12 @@ describe('las guardias: cada una rechaza su violación', () => {
       expect(hallazgos('produccion', f), t).toMatch(/agente, memoria o modelo/);
     }
   });
-  it('más de 48 nodos', () => {
+  it('más de 56 nodos', () => {
     const f = clon(PRODUCCION);
-    for (let i = (f['nodes'] as J[]).length; i < 49; i++) (f['nodes'] as J[]).push({ name: `Relleno ${i}`, type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] });
-    expect(hallazgos('produccion', f)).toMatch(/49 nodos y el tope es 48/);
+    for (let i = (f['nodes'] as J[]).length; i < 57; i++) (f['nodes'] as J[]).push({ name: `Relleno ${i}`, type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] });
+    expect(hallazgos('produccion', f)).toMatch(/57 nodos y el tope es 56/);
     (f['nodes'] as J[]).pop();
-    expect(hallazgos('produccion', f)).not.toMatch(/el tope es 48/);
+    expect(hallazgos('produccion', f)).not.toMatch(/nodos y el tope es/);
   });
   it('la marca `meta.noPublicable` de PR-A ya no va (la conversación está completa); la guardia de publicación es del PR-C', () => {
     const f = clon(PRODUCCION); f['meta'] = { noPublicable: 'x' };
@@ -189,7 +190,7 @@ describe('las guardias: cada una rechaza su violación', () => {
   });
   it('retención de ejecuciones, `errorWorkflow`, orden y zona horaria', () => {
     const cambios: Array<[string, unknown, RegExp]> = [
-      ['saveDataSuccessExecution', 'all', /retención/], ['saveDataErrorExecution', 'none', /retención/], ['saveExecutionProgress', true, /retención/],
+      ['saveDataSuccessExecution', 'all', /retención/], ['saveDataErrorExecution', 'all', /retención/], ['saveExecutionProgress', true, /retención/],
       ['errorWorkflow', 'x', /errorWorkflow/], ['executionOrder', 'v0', /executionOrder/], ['timezone', 'UTC', /timezone/],
     ];
     for (const [campo, valor, re] of cambios) {
@@ -287,9 +288,7 @@ describe('zona: nada de otro cliente en el código de Antonio', () => {
 });
 
 describe('ra.js: la ficha por teléfono', () => {
-  // El código evaluado es el de un archivo del propio repositorio (src/lib), no una entrada externa: solo prueba.
-  // nosemgrep: devsecops.js-eval-prohibido
-  const ra = new Function(readFileSync(join(CARPETA, 'src/lib/ra.js'), 'utf8') + '\nreturn { raFichaVigente, raYaVisto, raRecordarIds, raBarrer, RA_OLVIDO_MS, RA_TOPE_IDS, RA_TOPE_FICHAS };')() as J;
+  const ra = cargarLibrerias('raFichaVigente, raYaVisto, raRecordarIds, raBarrer, RA_OLVIDO_MS, RA_TOPE_IDS, RA_TOPE_FICHAS') as J;
   it('una ficha de más de 48 horas se olvida; una vigente conserva sus ids', () => {
     const ahora = 1_000_000_000_000;
     expect(ra.raFichaVigente({ ultimoMs: ahora - ra.RA_OLVIDO_MS - 1, ultimosIds: ['a'] }, ahora).ultimosIds).toEqual([]);

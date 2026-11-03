@@ -184,7 +184,12 @@ if (Object.prototype.hasOwnProperty.call(PLANES, plan ?? '')) {
     && ['conversaciones', 'productos', 'agendas'].every((k) => cuenta.limites?.[k] === esperado[k]);
   if (iguales) cumple('Plan', `copia de límites igual a la del plan (${tarifaTexto})`);
   else falta('Plan', `copia de límites ausente o distinta del plan (origen ${vigentes.origen}; el plan con ${tarifaTexto} trae ${esperado.conversaciones} conversaciones): asignar-plan.mjs en seco`);
-  const agendas = funcionarios.docs.filter((d) => d.get('activo') !== false).length;
+  // H2b-9 (Q6=A): agendas = calendarioId distintos entre funcionarios activos.
+  // Plataforma no importa de un módulo (fronteras.test.ts): el criterio se repite acá, igual al de
+  // `modulos/agenda/agendasContadas.ts` (activo === true, calendarioId en minúsculas, vacío no cuenta).
+  const agendas = new Set(funcionarios.docs.map((d) => d.data())
+    .filter((f) => f.activo === true && typeof f.calendarioId === 'string' && f.calendarioId !== '')
+    .map((f) => f.calendarioId.toLowerCase())).size;
   if (agendas <= vigentes.agendas) cumple('Plan', `agendas activas ${agendas} de ${vigentes.agendas}`);
   else falta('Plan', `agendas activas ${agendas}, el plan admite ${vigentes.agendas}: subir de plan o dar de baja una agenda`);
   const productos = catalogo.data().count;

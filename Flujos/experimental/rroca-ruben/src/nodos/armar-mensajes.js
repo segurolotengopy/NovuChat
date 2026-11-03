@@ -33,7 +33,7 @@ const avisoPlaneado = av.planeado === true;
 const avisoRepetido = av.repetido === true;
 const avisoEnviado = avisoPlaneado && (cnTodos('Enviar aviso').some(rrId) || (prueba && cfg.enviarDeVerdad !== true));
 // Un aviso suprimido por el límite de 30 minutos trató OTRO contenido en los motivos de texto variable (la consulta que el modelo no supo, el comprobante sin cotejar): ahí NO se dice «le avisé» de esta vez.
-const repetidoVariable = avisoRepetido && (av.clave === 'no_supo' || av.clave === 'comprobante_sin_cotejo' || av.clave === 'sin_configuracion');
+const repetidoVariable = avisoRepetido && (av.clave === 'no_supo' || av.clave === 'comprobante_sin_cotejo' || av.clave === 'sin_configuracion' || av.clave === 'pago_con_problema');
 const avisoSalio = avisoEnviado || (avisoRepetido && !repetidoVariable);
 const estadoAviso = repetidoVariable ? 'repetido' : avisoSalio;
 
@@ -119,9 +119,11 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   } else if (tipoDePlan === 'modelo') {
     // LO QUE REDACTA EL MODELO: se revisa y se pule; un rechazo (monto, promesa, enlace, negar ser IA, varias preguntas…), un error del servicio o un texto vacío caen al texto fijo.
     const crudo = rrQuitarEcoDeMarcador(cnTextoDeGemini(cnPrimero('Conversar con el modelo')));
-    if (rrEsDerivar(crudo)) {
+    // Pidió la ubicación y la Consola no trae ni enlace ni dirección: no se inventa nada; lo único que se ofrece es pasar con Rubén (aviso + botón), como ante DERIVAR.
+    const ubicacionSinDato = plan.origen !== 'imagen' && rrPideUbicacion(plan.textoCliente) && rrUbicacionSinDato(cfg);
+    if (rrEsDerivar(crudo) || ubicacionSinDato) {
       // DERIVAR: el modelo no supo responder. La palabra jamás llega al cliente: aviso a Rubén (lo armó «Armar avisos», salvo en una imagen) y el botón.
-      if (plan.origen === 'imagen') { tipoDePlan = 'imagen_derivar'; m = conRuben(RR_TEXTO_IMAGEN_DERIVAR); } else { tipoDePlan = 'derivar'; m = conRuben(rrTextoDerivacion('consulta', estadoAviso)); }
+      if (plan.origen === 'imagen') { tipoDePlan = 'imagen_derivar'; m = conRuben(RR_TEXTO_IMAGEN_DERIVAR); } else { tipoDePlan = 'derivar'; m = conRuben(rrTextoDerivacion('consulta', estadoAviso, ubicacionSinDato ? 'ubicacion' : undefined)); }
     } else if (rrSuplantaARuben(crudo)) {
       // SUPLANTACIÓN (prohibición 4): el modelo se dijo Rubén, el autor o una persona: el mensaje completo se sustituye por la identidad fija (con los botones normales). No se guarda en la memoria.
       tipoDePlan = 'identidad';
@@ -165,7 +167,10 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       }
       // Si el texto de respaldo del modelo caído es idéntico a lo último que se le envió, sale el alterno (no «Eso ya te lo conté…»).
       if (!bueno && !modoPuente && !modoOpciones && !modoAntes && plan.origen !== 'imagen' && fichaAntes.ultimoHash !== '' && rrHashTexto(rrSeguro(cuerpo)) === fichaAntes.ultimoHash) cuerpo = RR_TEXTO_CAIDO_ALTERNO;
-      const conPresentacion = falta ? RR_PRESENTACION + '\n\n' + cuerpo : cuerpo;
+      const conPresentacionBase = falta ? RR_PRESENTACION + '\n\n' + cuerpo : cuerpo;
+      // LA UBICACIÓN la agrega el CÓDIGO (el prompt prohíbe enlaces al modelo): el enlace de Maps y la dirección de la Consola, solo si el cliente la pidió y el dato existe y es válido. No es un mensaje más: va en el mismo.
+      const lineasUbicacion = plan.origen !== 'imagen' && rrPideUbicacion(plan.textoCliente) ? rrLineasDeUbicacion(cfg, conPresentacionBase) : [];
+      const conPresentacion = lineasUbicacion.length ? conPresentacionBase + '\n\n' + lineasUbicacion.join('\n') : conPresentacionBase;
       if (modoPuente) m = conBotones(conPresentacion, [rrBoton(RR_BOTON_OPCIONES, 'Ver opciones')], undefined, true);
       else if (modoOpciones) m = conBotones(conPresentacion, menu1());
       else m = plan.qrAbierto === true ? conRuben(conPresentacion) : conBotones(conPresentacion, op);
@@ -212,6 +217,12 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     // ENTREGA 2: «ya cancelé» (= «ya pagué») está EXENTO de la compuerta: ya saludado, recibe el menú de productos aunque aún no haya habido dos mensajes de conversación.
     const op = fichaAntes.saludado ? menu1() : menuAbierto();
     m = op.length ? conBotones(RR_TEXTO_CANCELE_COMO_PAGO, op) : conRuben(RR_TEXTO_CANCELE_COMO_PAGO_RUBEN);
+  } else if (tipoDePlan === 'imagen_descrita') {
+    // VISIÓN POR CATEGORÍAS: dice lo que ve (la descripción ya saneada por «Preparar imagen» y revisada por `rrDescripcionMostrable`, SOLO mostrada: no viaja al modelo; la entrada del cliente en la memoria guarda solo la categoría) y ofrece lo que sí hace, hablar del libro. Si es el primer mensaje, la presentación
+    // va en el MISMO mensaje. Sin botón, salvo en la ruta del comprobante (hay un cobro): ahí lleva la salida para quien sí enviaba su comprobante. UN solo mensaje.
+    const cuerpoImagen = rrTextoImagenDescrita(plan.descripcion, fichaAntes.ultimoHash, plan.conRuben === true);
+    const conPresentacion = !fichaAntes.saludado ? RR_PRESENTACION + '\n\n' + cuerpoImagen : cuerpoImagen;
+    m = plan.conRuben === true ? conRuben(conPresentacion) : texto(conPresentacion);
   } else if (tipoDePlan === 'imagen_comprobante') {
     // Una foto que parece un comprobante SIN pedido abierto: no se coteja ni se avisa; el cliente puede escribirle a Rubén.
     m = conRuben(RR_TEXTO_IMAGEN_COMPROBANTE);
@@ -235,7 +246,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
 
 // NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS (21/10/2026): si lo que sale es idéntico (por hash) a lo último que se le envió a este teléfono, sale una alternativa fija (con el botón de Rubén). Ni el QR (su pie lleva el
 // pedido) ni el resultado de un comprobante (cada comprobante es un hecho distinto) ni el silencio de un número extranjero entran, ni lo que dice qué ES el asistente (regla dura 4: esa respuesta nunca se sustituye). Es el MISMO mensaje: no agrega ni quita ninguno.
-if (m && puerta.ruta === 'sigue' && t.extranjero !== true && m.tipoReporte !== 'image' && tipoDePlan !== 'comprobante' && tipoDePlan !== 'identidad' && !rrTienePresentacionIA(m.texto) && fichaAntes.ultimoHash !== '' && rrHashTexto(m.texto) === fichaAntes.ultimoHash) {
+if (m && puerta.ruta === 'sigue' && t.extranjero !== true && m.tipoReporte !== 'image' && tipoDePlan !== 'comprobante' && tipoDePlan !== 'identidad' && tipoDePlan !== 'imagen_descrita' && !rrTienePresentacionIA(m.texto) && fichaAntes.ultimoHash !== '' && rrHashTexto(m.texto) === fichaAntes.ultimoHash) {
   const medio = /^(audio|imagen|otro)/.test(tipoDePlan);
   // Una derivación SIN CONFIGURACIÓN repetida no usa la alterna de contenido (no tendría sentido): sale «Rubén ya recibió el aviso anterior» y solo si ese texto también fuera idéntico, la alterna.
   const repetidoDeriva = tipoDePlan === 'derivar' && plan.motivo === 'sin_configuracion' ? rrTextoDerivacion('sin_configuracion', 'repetido', plan.clave) : '';

@@ -115,6 +115,8 @@ const VACIAR_AJENOS = args.includes('--vaciar-ajenos');
 // El mismo filtro y el mismo hash que la Function `verificarComportamiento`: el
 // módulo es puro y Node 22.18+ lo carga sin compilar, como `planes.ts`.
 const { hashCorto, verificarPatrones } = await import('../../functions/src/central/asistente/comportamiento.ts');
+// H2b-9: el contador de agendas lo deja este script (el SDK Admin se salta las reglas).
+const { contarAgendas } = await import('../../functions/src/modulos/agenda/agendasContadas.ts');
 
 const PROYECTO = opcion('proyecto');
 const TENANT = (opcion('tenant') ?? '').toLowerCase();
@@ -610,6 +612,10 @@ try {
     const [tenant, docNegocio, docAgend, docContador, docCuenta] = leidos;
     const docsItems = leidos.slice(5, 5 + refsItems.length);
     const docsFunc = leidos.slice(5 + refsItems.length);
+    // H2b-9: TODOS los funcionarios, leídos antes de escribir, para recalcular
+    // `contadores/agendas` en esta misma transacción (mismo criterio que
+    // `contar-agendas.mjs`: calendarioId distintos entre activos).
+    const todosFunc = funcionarios ? await tx.get(db.collection(`tenants/${TENANT}/funcionarios`)) : null;
     if (!tenant.exists) throw new Error(`No existe el comercio «${TENANT}». Primero alta-comercio.mjs.`);
     // Como las reglas: un comercio suspendido o dado de baja no se reconfigura.
     const estado = tenant.get('estado') ?? 'activo';
@@ -735,6 +741,15 @@ try {
     if (contador) escribirContador(tx, refContador, contador);
     for (const f of funcionarios ?? []) {
       tx.set(refFunc(f.id), { ...f.datos, ...sello }, { merge: true });
+    }
+    if (todosFunc) {
+      const resultante = new Map(todosFunc.docs.map((d) => [d.id, d.data()]));
+      for (const f of funcionarios) resultante.set(f.id, { ...(resultante.get(f.id) ?? {}), ...f.datos });
+      const real = contarAgendas([...resultante.values()]);
+      tx.set(db.doc(`tenants/${TENANT}/contadores/agendas`), {
+        calendarios: real.calendarios, refs: real.refs, ultimoFuncionario: '',
+        actualizadoEn: FieldValue.serverTimestamp(),
+      });
     }
     tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
       accion: 'cargar_negocio', uid: 'cargar-negocio', en: ahora,

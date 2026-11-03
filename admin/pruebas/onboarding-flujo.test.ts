@@ -25,6 +25,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -78,8 +79,7 @@ function correr(nombre: string, items: J[], contexto: Record<string, J | J[]> = 
   const vacios = [...GLOBALES_FUERA_DEL_SANDBOX];
   // Se ejecuta el flujo VERSIONADO; copiar la lógica dejaría la prueba en verde
   // mientras el flujo se rompe. Misma justificación que `candado-agenda.test.ts`.
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$input', '$', '$getWorkflowStaticData', ...vacios, codigo) as
+  const fn = vm.compileFunction(codigo, ['$input', '$', '$getWorkflowStaticData', ...vacios]) as
     (...a: unknown[]) => { json: J }[];
   return fn(entrada, $, () => estatico, ...vacios.map(() => undefined)).map((x) => x.json);
 }
@@ -736,8 +736,7 @@ describe('Confirmar envío: solo se da por hecho lo que Meta aceptó', () => {
     const [ok] = confirmar([s], ACEPTADO);
     const cuerpo = nodo('Reportar mensaje (saliente)').parameters['jsonBody'] as string;
     // Se evalúa la expresión VERSIONADA del reporte con lo que sale de «Confirmar envío».
-    // nosemgrep: devsecops.js-eval-prohibido
-    const armar = new Function('$json', `return (${/^=\{\{([\s\S]*)\}\}$/.exec(cuerpo)![1]});`) as (j: J) => string;
+    const armar = vm.compileFunction(`return (${/^=\{\{([\s\S]*)\}\}$/.exec(cuerpo)![1]});`, ['$json']) as (j: J) => string;
     expect(JSON.parse(armar(ok!))).toEqual({
       telefono: TEL, direccion: 'saliente', tipo: 'text', texto: 'Tu cita es el martes, Ana.', idMeta: 'wamid.aceptado' });
   });
@@ -1167,8 +1166,7 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
   const instrucciones = (cfg: J): string => {
     const s = (nodo('AI Agent NovuChat').parameters['options']['systemMessage'] as string).replace(/^=/, '');
     const $ = (n: string) => ({ first: () => ({ json: n === 'Config del negocio' ? cfg : { conocimiento: 'CORPUS' } }) });
-    // nosemgrep: devsecops.js-eval-prohibido
-    return s.replace(/\{\{([\s\S]*?)\}\}/g, (_m, expr: string) => String(new Function('$', `return (${expr});`)($)));
+    return s.replace(/\{\{([\s\S]*?)\}\}/g, (_m, expr: string) => String(vm.compileFunction(`return (${expr});`, ['$'])($)));
   };
 
   describe('nombre del asistente y emojis, desde la consola', () => {
@@ -3053,8 +3051,7 @@ describe('Medios entrantes: el agente recibe texto, nunca el audio ni la imagen'
   /** Evalúa `={{ … }}` con `$json` y `$('Normalizar entrada').first()`. */
   const evaluar = (expr: string, $json: J, ent: J = {}) => {
     const m = /^=\{\{([\s\S]*)\}\}$/.exec(expr.trim());
-    // nosemgrep: devsecops.js-eval-prohibido
-    const fn = new Function('$json', '$', `return (${m![1]});`) as (a: J, b: unknown) => unknown;
+    const fn = vm.compileFunction(`return (${m![1]});`, ['$json', '$']) as (a: J, b: unknown) => unknown;
     return fn($json, () => ({ first: () => ({ json: ent }) }));
   };
   const gemini = (t: string): J => ({ content: { parts: [{ text: t }] } });

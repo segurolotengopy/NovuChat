@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
 import { auth, db } from '../../core/lib/firebase';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
+import { limitesDeCuenta } from '../../central/lib/planes';
+import {
+  claveAgenda, moverAgenda, superaElTope, type ContadorAgendas,
+} from '../../../../functions/src/modulos/agenda/agendasContadas';
 
 interface Funcionario {
   id: string;
@@ -67,6 +71,12 @@ export function Funcionarios() {
     nombre: '', especialidad: '', calendarioId: '', servicios: [] as string[],
   });
   const [estado, setEstado] = useState<string | null>(null);
+  // El plan manda: el tope sale de `cuenta/estado.limites.agendas` y el conteo del
+  // contador `contadores/agendas`. Si no se pueden leer, rige el tope más chico
+  // y no se deja cambiar un calendario (el servidor igual lo negaría).
+  const [cuenta, setCuenta] = useState<Record<string, unknown> | null>(null);
+  const [contador, setContador] = useState<ContadorAgendas | null>(null);
+  const limite = limitesDeCuenta(cuenta).agendas;
   const errorCalendario = calendarioInvalido(nuevo.calendarioId);
 
   useEffect(() => {
@@ -76,19 +86,59 @@ export function Funcionarios() {
       () => setEstado('No se pudo leer la lista de funcionarios.'));
     const b = onSnapshot(collection(db, 'tenants', tenantId, 'catalogo'),
       (i) => setServicios(i.docs.map((d) => ({ id: d.id, ...d.data() }))));
-    return () => { a(); b(); };
+    const c = onSnapshot(doc(db, 'tenants', tenantId, 'cuenta', 'estado'),
+      (d) => setCuenta(d.data() ?? {}), () => setCuenta(null));
+    const e = onSnapshot(doc(db, 'tenants', tenantId, 'contadores', 'agendas'), (d) => {
+      const n = d.get('calendarios');
+      const refs = d.get('refs');
+      setContador(d.exists() && typeof n === 'number' && refs && typeof refs === 'object'
+        ? { calendarios: n, refs: refs as Record<string, number> } : null);
+    }, () => setContador(null));
+    return () => { a(); b(); c(); e(); };
   }, [tenantId]);
+
+  /**
+   * Escribe el funcionario y, si CAMBIA el calendario que aporta a la cuenta,
+   * mueve `contadores/agendas` en el MISMO lote (las reglas lo exigen). El
+   * tope se comprueba acá por cortesía; quien manda es el servidor.
+   */
+  const escribir = async (id: string, datos: Record<string, unknown>, antes: string, despues: string) => {
+    const lote = writeBatch(db);
+    lote.set(doc(db, 'tenants', tenantId, 'funcionarios', id), datos);
+    if (antes !== despues) {
+      if (!contador) throw new Error('sin-contador');
+      const nuevo = moverAgenda(contador, antes, despues);
+      lote.update(doc(db, 'tenants', tenantId, 'contadores', 'agendas'), {
+        calendarios: nuevo.calendarios, refs: nuevo.refs, ultimoFuncionario: id,
+        actualizadoEn: serverTimestamp(),
+      });
+    }
+    await lote.commit();
+  };
+
+  const mensajeDeTope = (antes: string, despues: string): string | null => {
+    if (antes === despues) return null;
+    if (!contador) return 'No se pudo leer el conteo de agendas de su plan. Inténtelo de nuevo en un momento.';
+    if (superaElTope(contador, antes, despues, limite)) {
+      return `Su plan incluye ${limite} agenda${limite === 1 ? '' : 's'} (calendarios distintos) y ya usa ${contador.calendarios}. `
+        + 'Use un calendario que ya tenga cargado, déjelo vacío, o suba de plan.';
+    }
+    return null;
+  };
 
   const guardar = async (evento: React.FormEvent) => {
     evento.preventDefault();
     if (errorCalendario) { setEstado(errorCalendario); return; }
+    const despues = claveAgenda({ activo: true, calendarioId: nuevo.calendarioId });
+    const tope = mensajeDeTope('', despues);
+    if (tope) { setEstado(tope); return; }
     setEstado(null);
     try {
-      await setDoc(doc(db, 'tenants', tenantId, 'funcionarios', `f${Date.now()}`), {
+      await escribir(`f${Date.now()}`, {
         ...nuevo, horarioTrabajo: {}, activo: true,
         actualizadoPor: auth.currentUser?.uid ?? '',
         actualizadoEn: serverTimestamp(),
-      });
+      }, '', despues);
       setNuevo({ nombre: '', especialidad: '', calendarioId: '', servicios: [] });
       setEstado('Funcionario agregado.');
     } catch {
@@ -99,8 +149,12 @@ export function Funcionarios() {
   const alternarActivo = async (f: Funcionario) => {
     // Baja LÓGICA: un funcionario borrado dejaría citas apuntando a un
     // identificador inexistente. Por eso las reglas no admiten `delete`.
+    const antes = claveAgenda(f);
+    const despues = claveAgenda({ activo: f.activo !== true, calendarioId: f.calendarioId });
+    const tope = mensajeDeTope(antes, despues);
+    if (tope) { setEstado(tope); return; }
     try {
-      await setDoc(doc(db, 'tenants', tenantId, 'funcionarios', f.id), {
+      await escribir(f.id, {
         nombre: String(f.nombre ?? ''),
         especialidad: String(f.especialidad ?? ''),
         calendarioId: String(f.calendarioId ?? ''),
@@ -109,7 +163,7 @@ export function Funcionarios() {
         activo: f.activo !== true,
         actualizadoPor: auth.currentUser?.uid ?? '',
         actualizadoEn: serverTimestamp(),
-      });
+      }, antes, despues);
     } catch { setEstado('No se pudo cambiar el estado.'); }
   };
 
@@ -126,6 +180,12 @@ export function Funcionarios() {
         Todos los calendarios de un negocio tienen que ser de <strong>la misma
         cuenta de Google</strong>. Un calendario de otra cuenta no falla al
         cargarlo: falla al crear la cita, y el asistente la confirma igual.
+      </p>
+
+      <p className="ayuda" role="status">
+        Agendas de su plan: <strong>{contador ? contador.calendarios : '—'} de {limite}</strong>.
+        Cuentan los calendarios distintos de las personas activas; quien usa el
+        calendario del comercio no cuenta.
       </p>
 
       <table>

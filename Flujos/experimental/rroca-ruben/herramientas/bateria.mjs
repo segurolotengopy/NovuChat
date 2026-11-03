@@ -36,6 +36,7 @@ import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ErrorDeUso, TARIFA, crearMundo, leerArgumentos, leerCredencial, limpiarSecretos, llamarGemini, telefonoDe, textoDeGemini } from '../../chat-novuchat/herramientas/bateria.mjs';
+import { doblesDeBateriaDelGuardado } from '../../comun-sin-agente/src/guardado-dobles.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RUTA_FLUJO = join(AQUI, '../rroca-ruben.prueba.json');
@@ -105,6 +106,8 @@ export function validarCasos(datos) {
   return casos;
 }
 
+// Los anuncios de la Consola que la batería simula (el flujo no lleva ninguno escrito): solo el del caso C.
+const ANUNCIOS_DE_PRUEBA = [{ id: 'ad-publicar', titulares: ['¿No sabes qué publicar?'], angulo: 'Habla del capítulo 6 y pregunta a qué se dedica y en qué red publica.', producto: { id: 'libro-bonos', nombre: 'Libro + 4 bonos', precio: 32, agotado: false } }];
 // ------------------------------------------------------------------------------------------------------- el mundo de una corrida
 let seq = 0;
 const valorMeta = (msg, from) => ({
@@ -119,7 +122,7 @@ function crearDobles({ tel, seco, turnoActual, credencial, opciones, deps, nodoM
     statusCode: 200,
     body: {
       tenantId: 'rroca-ruben', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Rubén Roca' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, voz: { nombreAsistente: '' }, atencion: { estado: 'normal' },
-      catalogo: CATALOGO, venta: { mediaIdQr: MEDIA_QR },
+      catalogo: CATALOGO, anuncios: ANUNCIOS_DE_PRUEBA, venta: { mediaIdQr: MEDIA_QR },
       cobroReal: { nombreCuenta: 'Titular Ejemplo', banco: 'Banco Ejemplo', cuentas: ['59100000077'], venceEl: '2027-12-31', moneda: 'BOB', montoFijo: null, fichaQr: 'ficha1' },
       cobro: { activo: true, moneda: 'BOB', qr: { url: 'https://us-east1-ejemplo.cloudfunctions.net/imagenDeCobro?f=ficha1', nombreCuenta: 'Titular Ejemplo', banco: 'Banco Ejemplo' }, regla: 2, pendiente: cobro.pendiente, monto: cobro.monto, pedido: cobro.pedido, enRevision: false, vencidoHaceMin: null },
     },
@@ -138,6 +141,8 @@ function crearDobles({ tel, seco, turnoActual, credencial, opciones, deps, nodoM
     'Enviar aviso': envio, 'Enviar a WhatsApp': envio, 'Enviar respaldo': envio,
     'Obtener URL del medio': () => ({ url: 'https://lookaside.fbsbx.com/m', mime_type: 'image/jpeg', file_size: 100_000 }),
     'Descargar medio': () => ({}),
+    // La rama común del GUARDADO de medios: sin red, el servidor responde «guardado_apagado» (la bandera por defecto).
+    ...doblesDeBateriaDelGuardado(),
     'Transcribir audio': () => gemini(''),
     'Ver imagen': () => gemini(JSON.stringify({ tipo: 'otra', descripcion: '' })),
     'Guardar comprobante': () => ({ statusCode: 200, body: { ruta: 'tenants/rroca-ruben/comprobantes/2026-10-05/abc_1.jpg' } }),

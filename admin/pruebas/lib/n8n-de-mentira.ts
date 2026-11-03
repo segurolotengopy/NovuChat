@@ -25,6 +25,7 @@
  *   - `removeDuplicates` v2: «visto en ejecuciones anteriores» (con
  *     `dedupeValue`; la memoria vive en el mundo y SOBREVIVE entre turnos) y
  *     «duplicados dentro de la entrada».
+ *   - `switch` v3.2 (modo `rules`, mínimo): cada regla es una condición de IF v2; primera que cumple, o `allMatchingOutputs`; `fallbackOutput: 'extra'`.
  *   - `noOp`.
  *   Todo lo demás es un nodo de red: necesita un doble. Sin doble, el mundo
  *   lanza `SinDoble` con el nombre del nodo (es un descuido de la prueba, no un
@@ -561,6 +562,44 @@ export function crearMundo(op: OpcionesMundo): Mundo {
     return [si, no];
   }
 
+  /**
+   * Switch v3.2 en modo `rules` (forma verificada contra los node-definitions de n8n 2.36.5): `rules.values[]` con `conditions` (la forma del IF v2) y `outputKey`. Un ítem va a la PRIMERA regla que cumple
+   * (o a todas con `options.allMatchingOutputs`); si ninguna cumple se descarta, salvo `options.fallbackOutput: 'extra'` (una salida más). Mínimo: sin modo `expression`.
+   */
+  function ejecutarSwitch(n: Nodo, items: Item[]): Item[][] {
+    const p = n.parameters;
+    if ((p['mode'] ?? 'rules') !== 'rules') throw new FalloDeNodo(n.name, 'el arnés solo soporta Switch en modo «rules»');
+    const reglas = objeto(p['rules'])['values'];
+    if (!Array.isArray(reglas) || !reglas.length) throw new FalloDeNodo(n.name, 'Switch sin `rules.values`');
+    const opciones = objeto(p['options']);
+    const extra = opciones['fallbackOutput'] === 'extra';
+    const todas = opciones['allMatchingOutputs'] === true;
+    const salidas: Item[][] = Array.from({ length: reglas.length + (extra ? 1 : 0) }, () => []);
+    try {
+      for (const it of items) {
+        let alguna = false;
+        for (let i = 0; i < reglas.length; i++) {
+          const c = objeto(objeto(reglas[i] as J)['conditions']);
+          if (!Array.isArray(c['conditions'])) throw new Error('Switch sin `conditions` v2');
+          const estricto = (objeto(c['options'])['typeValidation'] ?? 'strict') === 'strict' && p['looseTypeValidation'] !== true;
+          const sensible = objeto(c['options'])['caseSensitive'] !== false;
+          const o = c['combinator'] === 'or';
+          let resultado = !o;
+          for (const cond of c['conditions'] as J[]) {
+            const v = evaluarCondicion(cond, it, estricto, sensible);
+            if (o && v) { resultado = true; break; }
+            if (!o && !v) { resultado = false; break; }
+          }
+          if (resultado) { salidas[i]!.push(hijoDe(n, it, it.json)); alguna = true; if (!todas) break; }
+        }
+        if (!alguna && extra) salidas[reglas.length]!.push(hijoDe(n, it, it.json));
+      }
+    } catch (e) {
+      return fallaEntero(n, items, e);
+    }
+    return salidas;
+  }
+
   function convertirTipo(v: unknown, tipo: string, nombre: string): unknown {
     if (v === undefined || v === null) return v;
     if (tipo === 'number') {
@@ -751,6 +790,7 @@ export function crearMundo(op: OpcionesMundo): Mundo {
       switch (tipoCorto(n.type)) {
         case 'code': salidas = ejecutarCode(n, items); break;
         case 'if': salidas = ejecutarIf(n, items); break;
+        case 'switch': salidas = ejecutarSwitch(n, items); break;
         case 'set': salidas = porItem(n, items, (it) => [ejecutarSet(n, it)]); break;
         case 'respondToWebhook': salidas = ejecutarRespuesta(n, items); break;
         case 'removeDuplicates': salidas = ejecutarRepetidos(n, items); break;

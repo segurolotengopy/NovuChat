@@ -201,41 +201,33 @@ service cloud.firestore {
     // reglas los rechazan. Esconder en la interfaz no protege de nada; lo que
     // protege es que el campo no exista para ese comercio.
     // -------------------------------------------------------------------------
-    // LOS FLUJOS DE UN NEGOCIO SON UNA LISTA, NO UN VALOR. Un negocio puede
-    // tener reservas Y pedidos —cada flujo con su número de WhatsApp— y la
-    // consola le habilita una pestaña por cada uno. `vertical` (valor único) se
-    // conserva como el flujo principal y como respaldo para las fichas escritas
-    // antes de que existiera la lista: una ficha sin `flujos` se lee como
-    // `[vertical]`, así nada de lo ya cargado cambia de comportamiento.
+    // LOS MÓDULOS ENCENDIDOS DE UN NEGOCIO SON LA ÚNICA FUENTE (H2b-cierre).
+    // La ficha trae `modulos`, una lista (`Analisis/41` §3, el registro de
+    // módulos). Antes las capacidades se decidían por `flujos`/`vertical`
+    // (`flujosTenant`, `tieneFlujo`) mientras la lista no existía; esa puerta
+    // se cerró: una ficha SIN `modulos` lista (ausente, null, cadena, mapa,
+    // número) no tiene NINGÚN módulo, ni siquiera los comunes. Falla cerrado.
+    // `flujos` y `vertical` siguen en la ficha como dato, pero ninguna regla
+    // los lee. Escribir `modulos` a toda ficha viva es previo al despliegue
+    // (`scripts/modulos/verificar-todas-con-modulos.mjs`).
     //
-    // Cuando las dos cosas están, MANDA LA LISTA. Es lo que evita que una ficha
-    // con `vertical: 'agendamiento'` y `flujos: ['venta']` abra la agenda por
-    // la puerta del valor viejo.
+    // La comprobación `is list` es necesaria: `m in mapa` pregunta por claves y
+    // abriría un módulo con `modulos: {agenda: 1}`.
     //
-    // PRESUPUESTO DE EXPRESIONES. Igual que `estadoTenant`: la ruta se nombra una
-    // vez. Y el `vertical` de respaldo se lee de la misma ficha (`get(ruta)`, que
-    // la petición ya tiene en caché) en vez de pasar por una función aparte que
-    // volvía a comprobar `exists` y a armar la ruta (la base anterior tenía
-    // `verticalTenant`, ya retirada por no tener otro uso); es lo mismo, porque
-    // acá la ficha ya se sabe que existe. Mismo resultado para toda ficha: la prueba
-    // diferencial `reglas-diferencial-config-negocio.test.ts` lo comprueba contra
-    // la base anterior, incluidas las fichas sin `flujos`, con `flujos` nulo,
-    // mapa o cadena, suspendidas y dadas de baja.
-    function flujosTenant(tenantId) {
-      let ruta = /databases/$(database)/documents/tenants/$(tenantId);
-      return exists(ruta)
-        ? get(ruta).data.get('flujos', [get(ruta).data.get('vertical', '')])
-        : [];
-    }
-
-    function tieneFlujo(tenantId, flujo) {
-      return flujo in flujosTenant(tenantId);
+    // COSTO. Una petición evalúa a lo sumo 1.000 expresiones y `config/negocio`
+    // completo con 6 días de horario y catálogo web llegaba al tope (ver
+    // `pruebas/plataforma/reglas-presupuesto.test.ts`); por eso la ficha se lee
+    // UNA vez (`let`), sin mapa ni `exists`: una ficha inexistente hace fallar
+    // el `get` y la regla deniega.
+    function tieneModulo(tenantId, m) {
+      let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
+      return ficha.get('modulos', null) is list && m in ficha.modulos;
     }
 
     // Capacidades, expresadas como tabla y no como condiciones sueltas: agregar
-    // un flujo es tocar estas líneas, no cazar `if` por el archivo. La misma
-    // tabla vive en `functions/src/core/prompt/prompt.ts` (VERTICALES_CONOCIDOS) y en
-    // `web/src/central/lib/flujos.ts`: si se agrega un flujo en un solo lado, se nota.
+    // un módulo es tocar estas líneas, no cazar `if` por el archivo. La misma
+    // tabla vive en `functions/src/registro.ts` (`capacidadEnReglas`): si se
+    // agrega en un solo lado, `registro.test.ts` lo nota.
     function tieneAgenda(tenantId) {
       return tieneModulo(tenantId, 'agenda');
     }
@@ -244,72 +236,26 @@ service cloud.firestore {
       return tieneModulo(tenantId, 'pedidos');
     }
 
-    // El flujo de CAPTACIÓN: capta y atiende a quien quiere contratar lo que
-    // vende el comercio. Nació como el flujo propio de NovuChat y desde el
-    // 15/09 es un flujo GENÉRICO, igual que agendamiento y venta: su documento
-    // `/config/onboarding` lo leen los miembros del comercio y lo escribe su
-    // administrador, además del propietario de la plataforma.
+    // El módulo de CAPTACIÓN: capta y atiende a quien quiere contratar lo que
+    // vende el comercio. Su documento `/config/onboarding` lo leen los miembros
+    // del comercio y lo escribe su administrador, además del propietario de la
+    // plataforma.
     function tieneOnboarding(tenantId) {
       return tieneModulo(tenantId, 'captacion');
     }
 
-    // LOS MÓDULOS ENCENDIDOS DE UN NEGOCIO (H2b-6). La ficha puede traer
-    // `modulos`, una lista (`Analisis/41` §3, el registro de módulos). MIENTRAS
-    // NO LA TRAIGA —hoy ninguna ficha viva la trae— TODO se decide como antes,
-    // por `flujos`: el módulo se traduce a su flujo y se pregunta `tieneFlujo`.
-    // Cuando la lista existe MANDA, igual que `flujos` manda sobre `vertical`:
-    // un módulo apagado en la lista no se reabre por la puerta del flujo viejo.
-    // `modulos` que no es una lista (cadena, mapa, número, null) se trata como
-    // ausente: cae a `flujos`, nunca abre de más.
-    //
-    // SOLO PARA MÓDULOS PROPIOS DE UN FLUJO. La tabla de respaldo es PARCIAL a
-    // propósito y se cierra con `false`: agenda ⇒ agendamiento; pedidos,
-    // catalogo-web e inventario ⇒ venta; captacion ⇒ onboarding. Son los módulos
-    // que pertenecen a UN solo flujo en `PUENTE_DE_FLUJOS`
-    // (`functions/src/registro.ts`); `reglas-modulos.test.ts` compara este cuerpo
-    // con el registro y falla si divergen. Un módulo COMÚN (`productos`,
-    // `campanas`) o compartido por dos flujos (`cobros`) NO va por acá: los
-    // comunes usan `tieneModuloComun`, y preguntar por `cobros` da `false` para
-    // todo comercio de hoy aunque el registro diga que lo tienen.
-    //
-    // COSTO. Una petición evalúa a lo sumo 1.000 expresiones y `config/negocio`
-    // completo con 6 días de horario y catálogo web llegaba al tope (margen 0 en
-    // la base anterior; tras el recorte, el documento «tope» de 7 días con
-    // ubicación deja margen 22 términos, ~60 expresiones, y la variante más
-    // ajustada medida deja 16 tras H2b-1, según `reglas-presupuesto.test.ts`); por eso la
-    // ficha se lee UNA vez (`let`), sin mapa ni `exists`: una ficha inexistente hace fallar el
-    // `get` y la regla deniega, igual que antes. Medido en
-    // `pruebas/plataforma/reglas-presupuesto.test.ts`.
-    function tieneModulo(tenantId, m) {
-      let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
-      return ficha.get('modulos', null) is list
-        ? m in ficha.modulos
-        : (m == 'agenda' ? tieneFlujo(tenantId, 'agendamiento')
-           : m == 'captacion' ? tieneFlujo(tenantId, 'onboarding')
-           : (m == 'pedidos' || m == 'catalogo-web' || m == 'inventario') ? tieneFlujo(tenantId, 'venta')
-           : false);
-    }
-
-    // `tieneModulo(tenantId, 'catalogo-web')` con solo su rama: misma semántica y
-    // mismo respaldo (sin lista `modulos`, el flujo `venta`; deja de regir cuando la migración de H2b-3 escriba
-    // `modulos` en todas las fichas), pero
-    // sin la cadena de ternarios de las demás ramas. Existe porque `config/negocio`
-    // completo está a pocos términos del tope de expresiones y la cadena entera le
-    // costaba 10 términos de margen (medido en `reglas-presupuesto.test.ts`).
+    // `tieneModulo(tenantId, 'catalogo-web')` con solo su rama. Existe porque
+    // `config/negocio` completo está a pocos términos del tope de expresiones
+    // (medido en `reglas-presupuesto.test.ts`).
     function tieneCatalogoWeb(tenantId) {
       let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
-      return ficha.get('modulos', null) is list
-        ? 'catalogo-web' in ficha.modulos
-        : tieneFlujo(tenantId, 'venta');
+      return ficha.get('modulos', null) is list && 'catalogo-web' in ficha.modulos;
     }
 
-    // Los módulos COMUNES (`productos`, `campanas`) los tiene todo comercio hoy:
-    // sin `modulos` en la ficha, abre como antes (todo comercio activo); con la
-    // lista, solo si el módulo está en ella. Un negocio que no existe no abre (el
-    // `get` falla y la regla deniega).
+    // Los módulos COMUNES (`productos`, `campanas`): desde el cierre de H2b se
+    // piden como cualquier otro, por la lista `modulos`. Ficha sin lista, no abre.
     function tieneModuloComun(tenantId, m) {
-      let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
-      return !(ficha.get('modulos', null) is list) || m in ficha.modulos;
+      return tieneModulo(tenantId, m);
     }
 
     // Habilita ESCRITURA y la ingesta desde n8n. Solo 'activo'.
@@ -659,6 +605,40 @@ service cloud.firestore {
             && campanaValida(lista, 9);
         }
 
+        // =====================================================================
+        // /config/crm — miniCRM (PR-A, 28/10/2026). No es módulo común; activo por
+        // defecto, con UN solo interruptor (`activo`, ausente = encendido): la regla
+        // no mira `tenants.modulos`. El comercio escribe SOLO `activo`,
+        // `moneda` y `listas`. `hoja`, `filaEncabezados`, `mapaColumnas`,
+        // `cuentaServicio` y `recordatorios` los escribe el servidor: aquí se
+        // mira el DIFF, no las claves, porque en una edición el documento
+        // resultante los trae aunque el parche no (mismo contrato que
+        // `config/campanas`). Las listas no se recorren elemento por elemento
+        // (tope de expresiones): se acota su tamaño y el servidor sanea.
+        // =====================================================================
+        allow create, update: if documento == 'crm'
+                              && esAdmin(tenantId)
+                              && tenantOperativo(tenantId)
+                              && configCrmValida();
+
+        function configCrmValida() {
+          let d = request.resource.data;
+          return (resource == null
+                    ? d.keys().hasOnly(['activo', 'moneda', 'listas', 'actualizadoPor', 'actualizadoEn'])
+                    : d.diff(resource.data).affectedKeys()
+                        .hasOnly(['activo', 'moneda', 'listas', 'actualizadoPor', 'actualizadoEn']))
+            && selloValido(d)
+            && d.get('activo', true) is bool
+            && d.get('moneda', 'Bs') is string
+            && d.get('moneda', 'Bs').size() >= 1 && d.get('moneda', 'Bs').size() <= 5
+            && d.get('listas', {}) is map
+            && d.get('listas', {}).keys().hasOnly(['etapas', 'origenes'])
+            && d.get('listas', {}).get('etapas', []) is list
+            && d.get('listas', {}).get('etapas', []).size() <= 20
+            && d.get('listas', {}).get('origenes', []) is list
+            && d.get('listas', {}).get('origenes', []).size() <= 20;
+        }
+
         // EL DOCUMENTO DEL FLUJO DE CAPTACIÓN, POR EL PROPIETARIO. Además del
         // administrador (arriba, solo `update`, como todo documento de flujo),
         // lo escribe el propietario. El alta lo crea vacío, pero el propietario
@@ -986,7 +966,7 @@ service cloud.firestore {
             // y el campo ausente cuesta solo `in`, `!` y `||`.
             && (!('nombreQuienAtiende' in d)
                 || (d.nombreQuienAtiende.matches('^[A-Za-zÀ-ÖØ-öø-ÿ0-9 .,&()-]{0,60}$')
-                    && !d.nombreQuienAtiende.matches('(?is).*(banc|pag[oóu]|dep[oó]sit|transferenc|tesorer|acreditad|verificad|comprobante|recibimos|\\bbots?\\b|robot|humano|persona real|persona de verdad|soy una persona|\\bi[.]?a\\b|\\ba[.]?i\\b|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][ .-]?){6,}|\\b(bnb|bcp|fie|asfi|sin|jefe)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money|impuestos nacionales|polic[ií]a|sistema|tu jefe|ya pag).*')))
+                    && !d.nombreQuienAtiende.matches('(?is).*(banc|pag[oóu]|dep[oó]sit|transferenc|tesorer|acreditad|verificad|comprobante|recibimos|\\bbots?\\b|robot|human[oa]s?|persona real|persona de verdad|soy una persona|\\breal\\b|carne y hueso|inteligencia artificial|\\bi[. ]?a\\b|\\ba[.]?i\\b|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][^0-9]{0,3}){6,}|\\b(bnb|bcp|fie|asfi|sin|jefe|bcb|bisa|bmsc|qr|meta)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money|prodem|ecofuturo|cobranzas?|\\byape\\b|\\byap[eé](a|o|ame)|whatsapp|soporte|impuestos nacionales|polic[ií]a|sistema|tu jefe|ya pag).*')))
 
 
             && d.get('mensajes', {}) is map
@@ -1290,6 +1270,14 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // TÉRMINOS DE PRODUCTO REGISTRADOS (módulo Productos). Los propone el disparador y los aprueba
+      // Plataforma, ambos con el SDK Admin: ningún rol del navegador escribe, o el comercio se
+      // aprobaría a sí mismo. El comercio solo lee el estado.
+      match /terminosProducto/{itemId} {
+        allow get, list: if esMiembro(tenantId);
+        allow write: if false;
+      }
+
       // -----------------------------------------------------------------------
       // LÍMITE DE PRODUCTOS DEL CATÁLOGO POR PLAN (decisión del 15/09/2026).
       //
@@ -1487,7 +1475,28 @@ service cloud.firestore {
                       && tenantOperativo(tenantId)
                       && tieneModuloComun(tenantId, 'productos')
                       && contadorCatalogoValido();
+        // H2b-9: el contador de agendas se mueve solo en el lote de un
+        // funcionario que cambia su calendario (ver `agendasMovida`).
+        allow update: if contador == 'agendas'
+                      && esAdmin(tenantId)
+                      && tenantOperativo(tenantId)
+                      && tieneAgenda(tenantId)
+                      && contadorAgendasValido();
         allow create, delete: if false;
+
+        function contadorAgendasValido() {
+          let d = request.resource.data;
+          let fid = d.get('ultimoFuncionario', '');
+          return d.keys().hasOnly(['calendarios', 'refs', 'ultimoFuncionario', 'actualizadoEn'])
+            && fid is string
+            && fid.matches('^[^/]{1,200}$')
+            && d.get('actualizadoEn', null) == request.time
+            && existsAfter(rutaFuncionario(fid))
+            && agendasMovida(
+                 fid,
+                 exists(rutaFuncionario(fid)) ? claveAgenda(get(rutaFuncionario(fid)).data) : '',
+                 claveAgenda(getAfter(rutaFuncionario(fid)).data));
+        }
 
         function rutaItem(id) {
           return /databases/$(database)/documents/tenants/$(tenantId)/catalogo/$(id);
@@ -1538,6 +1547,95 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // LÍMITE DE AGENDAS POR PLAN (H2b-9; decisión Q6=A de Andres).
+      //
+      // QUÉ SE CUENTA: los `calendarioId` DISTINTOS entre los funcionarios
+      // ACTIVOS. Un funcionario activo con `calendarioId` vacío usa el
+      // calendario del comercio y no cuenta; dos funcionarios con el mismo
+      // calendario cuentan una sola agenda; dar de baja a uno libera su
+      // calendario solo si ningún otro activo lo comparte.
+      //
+      // CÓMO. Las reglas no cuentan colecciones y «distintos» exige además
+      // saber cuántos funcionarios usan cada calendario. Por eso
+      // `/contadores/agendas = { calendarios, refs, ultimoFuncionario,
+      // actualizadoEn }`: `refs` es un mapa calendario -> cuántos funcionarios
+      // activos lo usan (en minúsculas) y `calendarios` cuántas claves tienen
+      // más de cero. Una escritura de funcionario que CAMBIA su calendario
+      // aportado (alta, baja, reactivación, cambio de calendario) exige que EN
+      // EL MISMO LOTE el contador mueva exactamente esa clave, nombre a ESE
+      // funcionario en `ultimoFuncionario`, y no pase del límite del plan. Una
+      // edición que no cambia el aporte (nombre, horario, calendario vacío) no
+      // toca el contador. Sin contador no se mueve un calendario desde el
+      // navegador: lo crea `scripts/modulos/agenda/contar-agendas.mjs` ANTES de
+      // desplegar. Un comercio que ya excede su tope (bajó de plan) no puede
+      // sumar agendas, pero sí quitarlas y editar.
+      // -----------------------------------------------------------------------
+      function rutaContadorAgendas() {
+        return /databases/$(database)/documents/tenants/$(tenantId)/contadores/agendas;
+      }
+
+      function rutaFuncionario(id) {
+        return /databases/$(database)/documents/tenants/$(tenantId)/funcionarios/$(id);
+      }
+
+      // El calendario que aporta un funcionario a la cuenta: el suyo si está
+      // activo y lo tiene; '' si no aporta ninguno.
+      function claveAgenda(d) {
+        let c = d.get('calendarioId', '');
+        return (d.get('activo', false) == true && c is string && c != '') ? c.lower() : '';
+      }
+
+      // EL LÍMITE SE LEE DEL PLAN, NO DEL CÓDIGO: `cuenta/estado.limites.agendas`
+      // (entero de 1 a 100000, igual que `limitesDeCuenta()`); si falta o está
+      // corrupto, la tabla de respaldo por plan; sin plan conocido, el más chico.
+      // La fuente es `functions/src/central/cuenta/planes.ts` y
+      // `pruebas/modulos/agenda/limite-agendas.test.ts` compara esta tabla.
+      // RESPALDO-AGENDAS-POR-PLAN
+      function limiteAgendas() {
+        let ruta = /databases/$(database)/documents/tenants/$(tenantId)/cuenta/estado;
+        let cuenta = exists(ruta) ? get(ruta).data : {};
+        let limites = cuenta.get('limites', {});
+        let propio = limites is map ? limites.get('agendas', null) : null;
+        return propio is int && propio >= 1 && propio <= 100000
+          ? propio
+          : {'impulso': 1, 'crecimiento': 5, 'pro': 10, 'byoc': 10}
+              .get(cuenta.get('plan', ''), 1);
+      }
+
+      // El contador se movió, en este lote, exactamente lo que el cambio de
+      // aporte `antes` -> `despues` del funcionario `fid` implica.
+      function agendasMovida(fid, antes, despues) {
+        let ruta = rutaContadorAgendas();
+        return antes != despues
+          && exists(ruta)
+          && getAfter(ruta).data.get('ultimoFuncionario', '') == fid
+          && agendasCuadran(get(ruta).data, getAfter(ruta).data, antes, despues);
+      }
+
+      function agendasCuadran(previo, nuevo, antes, despues) {
+        let ra = previo.get('refs', null);
+        let rb = nuevo.get('refs', null);
+        return previo.get('calendarios', null) is int
+          && nuevo.get('calendarios', null) is int
+          && ra is map && rb is map
+          && rb.diff(ra).affectedKeys().hasOnly([antes, despues])
+          && (antes == '' || (ra.get(antes, 0) >= 1 && rb.get(antes, 0) == ra.get(antes, 0) - 1))
+          && (despues == '' || rb.get(despues, 0) == ra.get(despues, 0) + 1)
+          && nuevo.get('calendarios', -1) == previo.get('calendarios', 0)
+               + ((despues != '' && ra.get(despues, 0) == 0) ? 1 : 0)
+               - ((antes != '' && ra.get(antes, 0) == 1) ? 1 : 0)
+          && (nuevo.get('calendarios', -1) <= limiteAgendas()
+              || nuevo.get('calendarios', -1) <= previo.get('calendarios', 0));
+      }
+
+      // Para las reglas del propio funcionario.
+      function agendaPermitida(fid) {
+        let antes = resource == null ? '' : claveAgenda(resource.data);
+        let despues = claveAgenda(request.resource.data);
+        return antes == despues || agendasMovida(fid, antes, despues);
+      }
+
+      // -----------------------------------------------------------------------
       // /funcionarios/{funcionarioId} — QUIÉN ATIENDE.
       //
       // EL PROBLEMA QUE RESUELVE. El modelo asumía un calendario por comercio, y
@@ -1578,7 +1676,8 @@ service cloud.firestore {
         allow create, update: if esAdmin(tenantId)
                               && tenantOperativo(tenantId)
                               && tieneAgenda(tenantId)
-                              && funcionarioValido();
+                              && funcionarioValido()
+                              && agendaPermitida(funcionarioId);
         // Baja LÓGICA con `activo: false`, no borrado: un funcionario borrado
         // dejaría citas pasadas apuntando a un identificador que ya no existe.
         allow delete: if false;
@@ -1895,6 +1994,30 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // /mediosRecibidos/{objeto} — los medios ENTRANTES (imagen, audio, video y documentos) que
+      // `guardarMedio` guardó 90 días (Core; Andres, 20 a 23/10/2026). Los escribe
+      // SOLO el servidor, en la misma transacción que marca el mensaje. Lo lee
+      // quien puede leer conversaciones; el documento nombra la conversación
+      // (`wa_<teléfono>`) pero no lleva el teléfono suelto ni el contenido. Los
+      // BYTES no se leen por acá: están en Storage, cerrado a todos, y el visor
+      // (PR-2) será una callable auditada. Lo borra el TTL (`vence`) o la purga.
+      // -----------------------------------------------------------------------
+      match /mediosRecibidos/{objeto} {
+        allow get, list: if puedeLeerConversaciones(tenantId);
+        allow create, update, delete: if false;
+      }
+
+      // /cuposDeMedios/{dia} — el contador de medios y bytes del día (tope de 3.000
+      // medios y 3 GiB por comercio; por teléfono 100 medios y 500 MiB en el mapa
+      // `telefonos`, cuya clave es un seudónimo del número; constancia de tope
+      // superado, máx. 50). Lo lee y
+      // lo escribe SOLO `guardarMedio`, con el SDK Admin; si el comercio pudiera
+      // borrarlo, el cupo no sería un cupo. Caduca por TTL a los 2 días.
+      match /cuposDeMedios/{dia} {
+        allow read, write: if false;
+      }
+
+      // -----------------------------------------------------------------------
       // /conversaciones/{conversacionId} — visor de conversaciones.
       // Es el dato más sensible del sistema: mensajes de clientes finales.
       // -----------------------------------------------------------------------
@@ -1917,7 +2040,8 @@ service cloud.firestore {
                       && tenantOperativo(tenantId)
                       && conversacionValida()
                       && !request.resource.data.keys().hasAny(['turno', 'envioPersona',
-                                                               'ultimoSalientePersonaEn', 'phoneNumberId']);
+                                                               'ultimoSalientePersonaEn', 'phoneNumberId',
+                                                               'bloqueada', 'bloqueadaPor', 'bloqueadaEn']);
         allow delete: if false;
 
         // Dos ramas de actualización disjuntas:
@@ -1933,7 +2057,8 @@ service cloud.firestore {
         allow update: if (esIngesta(tenantId) && tenantOperativo(tenantId)
                           && conversacionValida()
                           && !request.resource.data.diff(resource.data).affectedKeys()
-                                .hasAny(['turno', 'envioPersona', 'ultimoSalientePersonaEn', 'phoneNumberId']))
+                                .hasAny(['turno', 'envioPersona', 'ultimoSalientePersonaEn', 'phoneNumberId',
+                                         'bloqueada', 'bloqueadaPor', 'bloqueadaEn']))
                       || (esPersonaDelNegocio(tenantId)
                           && tenantOperativo(tenantId)
                           // `noContactar` es la lista de no molestar (bloque 4): una
@@ -2024,7 +2149,14 @@ service cloud.firestore {
                  // ramas create/update le PROHÍBEN al token de ingesta crearlo o cambiarlo por SDK cliente. Lo suma SOLO la ingesta (SDK Admin) en un entrante, desde la ruta autenticada, nunca
                  // desde el cuerpo; la persona del negocio no lo escribe (no está en su
                  // `soloCampos`). `enviarComoPersona` lo usa para elegir por qué línea sale.
-                 , 'phoneNumberId'])
+                 , 'phoneNumberId'
+                 // BLOQUEAR CONTACTO (31/10/2026): `bloqueada` (true), quién (`bloqueadaPor`) y cuándo
+                 // (`bloqueadaEn`) los escribe SOLO `bloquearContacto` / `desbloquearContacto` con el SDK Admin.
+                 // Se toleran acá (como `turno`) para que la ingesta pueda actualizar una conversación que ya
+                 // los tiene; las ramas create/update de arriba le PROHÍBEN al token de ingesta crearlos o
+                 // cambiarlos, y la persona del negocio no los tiene en su `soloCampos`: un navegador no
+                 // bloquea ni desbloquea por aquí (el servidor además exige administrador).
+                 , 'bloqueada', 'bloqueadaPor', 'bloqueadaEn'])
             && (!d.keys().hasAny(['solicitud'])
                 || (d.solicitud is map
                     // `horarios` es la etapa del bloque 4: el asistente ofreció
@@ -2052,6 +2184,9 @@ service cloud.firestore {
             && (!d.keys().hasAny(['phoneNumberId'])
                 || (d.phoneNumberId is string && d.phoneNumberId.matches('^[0-9]{6,25}$')))
             && turnoValido(d)
+            && d.get('bloqueada', true) == true
+            && (!d.keys().hasAny(['bloqueadaPor']) || cadena(d.bloqueadaPor, 128))
+            && (!d.keys().hasAny(['bloqueadaEn']) || d.bloqueadaEn is timestamp)
             && (!d.keys().hasAny(['envioPersona'])
                 || (d.envioPersona is map && d.envioPersona.get('n', -1) is int))
             && (!d.keys().hasAny(['ultimoSalientePersonaEn'])
@@ -2126,6 +2261,7 @@ service cloud.firestore {
               && (!d.keys().hasAny(['palabras'])
                   || (d.palabras is list && d.palabras.size() <= 30))
               && d.get('tipo', '') in ['text', 'interactive', 'image', 'audio',
+                                       'video', 'sticker',
                                        'document', 'order', 'location', 'otro']
               // Tope de tamaño del texto. El contenido es DATO NO CONFIABLE:
               // lo escribe un cliente final de WhatsApp. Se guarda tal cual y se
@@ -2244,6 +2380,7 @@ service cloud.firestore {
             || (request.resource.data.entrantesPorTipo is map
                 && request.resource.data.entrantesPorTipo.keys().hasOnly([
                      'text', 'interactive', 'image', 'audio',
+                     'video', 'sticker',
                      'document', 'order', 'location', 'otro'
                    ]));
         }
@@ -2790,6 +2927,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /topesDeTurno/{uid} {
+      allow read, write: if false;
+    }
+
+    // /topesDeMedios/{uid} — el contador de tope por usuario del visor de medios (PR-2,
+    // Core). Lo lee y lo escribe SOLO esa callable, con el SDK Admin. Vive fuera de
+    // /tenants porque el tope es de la persona, no del comercio.
+    match /topesDeMedios/{uid} {
       allow read, write: if false;
     }
 

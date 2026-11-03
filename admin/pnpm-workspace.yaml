@@ -78,6 +78,30 @@ overrides:
   # en el artefacto de producción. El salto 7.3.6 -> 7.3.7 es de PARCHE y queda
   # dentro del rango ^7.0.0 de la consola; tilde para no salir de 7.3.x.
   vite: ~7.3.7
+  # Avisos ALTOS del 24/10/2026 (pnpm audit --audit-level high y Trivy fs).
+  # Cada override se acota a la rama mayor que ya resolvía el lockfile y fija la
+  # versión corregida más baja; todas caben en el rango que declara su
+  # dependiente, así que no se fuerza nada fuera de lo que el paquete acepta.
+  #
+  # body-parser — GHSA-27r3-jxmh-p828 (DoS con bytes sobrantes tras un cuerpo
+  # comprimido). Rama 1 (1.20.6 -> 1.20.9): express 4.22.2 (~1.20.5), exegesis
+  # (^1.18.3) y firebase-tools (^1.19.0). OJO: express 4 entra también por
+  # firebase-functions, dependencia de PRODUCCIÓN de las Functions; el
+  # artefacto desplegado resuelve su propio package-lock con npm
+  # (scripts/lockfile-functions.sh) y el rango ~1.20.5 ya le da 1.20.9, así que
+  # este override alinea lo que se prueba con lo que corre. Rama 2 (2.3.0 ->
+  # 2.4.0): express 5 del SDK de MCP de firebase-tools (^2.2.1), solo CLI.
+  'body-parser@1': ~1.20.9
+  'body-parser@2': ~2.4.0
+  # undici — GHSA-xjj6-f33q-929c (DoS por error no manejado con demasiados
+  # content-encoding). Rama 6 (6.28.1 -> 6.29.1): firebase-tools (^6.19.0).
+  # Rama 8 (8.10.2 -> 8.12.x): node-gyp <- re2 <- superstatic <- firebase-tools
+  # (^8.4.1). Solo herramientas de desarrollo (CLI y su compilación nativa).
+  'undici@6': ~6.29.1
+  'undici@8': ~8.12.2
+  # zod — GHSA-mrhx-c7xc-m3w5 (4.5.4 -> 4.6.x). Solo firebase-tools (^4.0.0) y
+  # su SDK de MCP (^3.25 || ^4.0); salto MENOR dentro de la rama 4, solo CLI.
+  zod: ~4.6.6
 
 packages:
   - web

@@ -46,8 +46,8 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  IDS_MODULOS, MODULOS_COMUNES_HOY, esFlujo, PUENTE_DE_FLUJOS, documentoDeCobro, etiquetaDeCatalogo,
-  modulosDeFicha, pestanasDe, tieneModulo,
+  IDS_MODULOS, MODULOS_COMUNES_HOY, esFlujo, FLUJOS_DE_RUTA, documentoDeCobro, etiquetaDeCatalogo,
+  modulosDeFicha, modulosDeFlujos, flujosDeFicha, pestanasDe, tieneModulo,
 } from '../../functions/src/registro.ts';
 
 // ===========================================================================
@@ -140,14 +140,14 @@ function etiquetaAntes(ficha) {
 
 /**
  * Los módulos que el puente da a los flujos que leen las reglas, más los comunes, en orden de
- * `IDS_MODULOS`. OJO: sale del MISMO `PUENTE_DE_FLUJOS` que usa el registro, así que el chequeo 1
+ * `IDS_MODULOS`. OJO: sale del MISMO `FLUJOS_DE_RUTA` que usa el registro, así que el chequeo 1
  * no es independiente (solo prueba que `modulos` guardada y los flujos leídos como las reglas
  * coinciden). Lo independiente, copiado de cada lector, son los chequeos 2 a 7.
  */
 function modulosAntes(ficha) {
   const activos = [...MODULOS_COMUNES_HOY];
   for (const f of flujosDeReglas(ficha) ?? []) {
-    if (Object.prototype.hasOwnProperty.call(PUENTE_DE_FLUJOS, f)) activos.push(...PUENTE_DE_FLUJOS[f].modulos);
+    if (Object.prototype.hasOwnProperty.call(FLUJOS_DE_RUTA, f)) activos.push(...FLUJOS_DE_RUTA[f].modulos);
   }
   return IDS_MODULOS.filter((m) => activos.includes(m));
 }
@@ -162,6 +162,12 @@ export const CHEQUEOS = [
 ];
 
 /**
+ * H2b-cierre: `modulosDeFicha` ya no cae a `flujos` (sin lista no hay módulos). Esta herramienta de
+ * migración SÍ deriva, a propósito, los módulos que el alta sembraría desde los flujos de la ficha.
+ */
+const derivarDeFlujos = (f) => (Array.isArray(f.modulos) ? modulosDeFicha(f) : modulosDeFlujos(flujosDeFicha(f)));
+
+/**
  * Compara una ficha (`{flujos?, vertical?, modulos?}`) antes y después.
  * «Después» migra la ficha: `modulos` = lo que `modulosDeFicha` deriva hoy, y
  * todo se lee sobre `{...ficha, modulos}` solo con las funciones del registro.
@@ -173,7 +179,7 @@ export const CHEQUEOS = [
  */
 export function comparar(ficha, modulosDestino = undefined) {
   const f = ficha ?? {};
-  const modulos = modulosDestino === undefined ? modulosDeFicha(f) : modulosDeFicha({ modulos: modulosDestino });
+  const modulos = modulosDestino === undefined ? derivarDeFlujos(f) : modulosDeFicha({ modulos: modulosDestino });
   const migrada = { ...f, modulos };
   const diferencias = [];
   const ver = (chequeo, antes, despues) => {
@@ -306,6 +312,18 @@ async function principal() {
   }
   for (const t of faltan) { console.log(`  ✗ ${t}: no existe la ficha`); }
 
+  // H2b-7, SOLO CONTEO: números (rutas) cuyo flujo no figura en `flujos` de la ficha de su comercio.
+  // Con `modulos` escrita, esa capacidad queda cerrada en silencio. No se escribe ni se lista el número.
+  const flujosDe = new Map(fichas.map(({ id, ficha }) => [id, flujosDeFicha(ficha)]));
+  const rutasFuera = {};
+  const rutas = await db.collection('rutasWhatsApp').select('tenantId', 'flujo').get();
+  for (const r of rutas.docs) {
+    const t = r.get('tenantId');
+    if (!flujosDe.has(t)) continue;
+    if (!flujosDe.get(t).includes(r.get('flujo'))) rutasFuera[t] = (rutasFuera[t] ?? 0) + 1;
+  }
+  const totalRutasFuera = Object.values(rutasFuera).reduce((a, b) => a + b, 0);
+
   // Documentos de funcionarios/*/privado de los comercios sin agenda: SOLO se cuentan (listDocuments no lee datos).
   console.log('\n  funcionarios/*/privado en comercios sin agenda (solo conteo):');
   let totalPrivados = 0;
@@ -324,6 +342,7 @@ async function principal() {
   console.log(`    flujos que no es lista   : ${flujosNoLista.length}${flujosNoLista.length ? ` (${flujosNoLista.join(', ')})` : ''}`);
   console.log(`    con 2 o más flujos       : ${variosFlujos.length}${variosFlujos.length ? ` (${variosFlujos.join(', ')})` : ''}`);
   console.log(`    con modulos ya escrita   : ${conModulosYa.length}${conModulosYa.length ? ` (${conModulosYa.join(', ')})` : ''}`);
+  console.log(`    números con flujo fuera de `+'`flujos`'+` : ${totalRutasFuera}${totalRutasFuera ? ` (${Object.entries(rutasFuera).map(([t, n]) => `${t}: ${n}`).join(', ')})` : ''}`);
   console.log('\n  Seco: no se escribió nada.\n');
 
   await db.terminate().catch(() => {});

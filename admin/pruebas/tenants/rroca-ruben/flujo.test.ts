@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { vigilarUx } from './vigilante-ux';
+import { doblesDelGuardado } from '../../lib/doble-guardado';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../../../Flujos/experimental/rroca-ruben');
@@ -80,6 +81,8 @@ function crear(o: Opciones = {}) {
     return { messaging_product: 'whatsapp', messages: [{ id: `wamid.OUT${nodo.replace(/\W+/g, '')}${++nEnvios}${ll.n}` }] };
   };
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Verificar firma con el receptor': o.verificador ?? ((ll) => ({ valido: true, deliveryId: ll.cuerpo?.['deliveryId'] })),
     'Traer configuración': () => (o.panel === 'cae' ? { statusCode: 503, body: {} } : (o.panel ?? panelOk())),
     'Reportar mensaje (entrante)': () => o.ingesta ?? { ok: true },
@@ -260,7 +263,7 @@ describe('la normalización de entrada: ningún tipo rompe el flujo ni se queda 
     ['toque de lista', mLista('opcion:uno'), 'conversacion', SALUDO],
     ['toque de botón', mBoton('boton:uno'), 'conversacion', SALUDO],
     ['botón de plantilla', { type: 'button', button: { text: 'Hola', payload: 'p' } }, 'conversacion', SALUDO_O_MODELO],
-    ['imagen', mImagen(), 'medio', /^Recibí tu imagen/],
+    ['imagen', mImagen(), 'medio', /^Hola, soy el asistente virtual de Rubén\.\n\nRecibí tu imagen\./],
     ['audio', mAudio(), 'medio', /^Recibí tu nota de voz, pero no se escuchó bien/],
     ['nota de voz', { type: 'voice', voice: { id: 'media-voz' } }, 'medio', /^Recibí tu nota de voz, pero no se escuchó bien/],
     ['documento', mDocumento(), 'medio', /^Recibí tu archivo/],

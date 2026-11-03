@@ -82,8 +82,9 @@ import {
   huellaDeEnvio, tocarTimbre as tocarTimbreReal, type TocarTimbre,
 } from './salidaPersona.js';
 import {
-  ID_CONVERSACION, MARGEN_ENVIO_MS, VENTANA_META_MS, milisegundosDeMomento, turnoEfectivo, ventanaDeMetaAbierta,
+  ID_CONVERSACION, MARGEN_ENVIO_MS, personaPuedeEscribirDeFicha, VENTANA_META_MS, milisegundosDeMomento, turnoEfectivo, ventanaDeMetaAbierta,
 } from './turno.js';
+import { estaBloqueada } from './pausa.js';
 import {
   auditarEnTransaccion, codigoDe, errorDeTurno, opcionesDeTurno, registrar, type ContextoDeTurno,
 } from './turnoServidor.js';
@@ -168,7 +169,12 @@ export async function crearMensajeDePersona(
   const refComercio = db.doc(`topesDeEnvio/t_${tenantId}`);
 
   return db.runTransaction<Creado>(async (tx) => {
-    const [conv, previo, tUsuario, tComercio] = await tx.getAll(ref, refMensaje, refUsuario, refComercio);
+    const [conv, previo, tUsuario, tComercio, fichaComercio] = await tx.getAll(
+      ref, refMensaje, refUsuario, refComercio, db.doc(`tenants/${tenantId}`),
+    );
+    // La salida publicada se vuelve a comprobar DENTRO de la transacción (si se apagó tras la lectura previa, no se
+    // escribe nada). Va antes que la clave ya usada: un reintento tampoco sale por una salida que ya no existe.
+    if (!personaPuedeEscribirDeFicha(fichaComercio?.data())) throw errorDeTurno('sinSalida');
     if (!conv || !conv.exists) throw errorDeTurno('noExiste');
 
     // 1. LA CLAVE YA USADA. Con los mismos datos es un reintento: lo guardado, sin tocar nada ni volver
@@ -191,6 +197,9 @@ export async function crearMensajeDePersona(
     //     línea cambió entre la lectura del canal y esta transacción), no se envía. Sin lecturas extra.
     const lineaActual: unknown = conv.get('phoneNumberId');
     if (lineaActual !== undefined && lineaActual !== canal.phoneNumberId) throw errorDeEnvio('canal');
+
+    // 1c. CONTACTO BLOQUEADO (31/10/2026): no se le escribe, aunque el turno siga tomado. Antes de escribir nada.
+    if (estaBloqueada(conv.get('bloqueada'))) throw errorDeTurno('contactoBloqueado');
 
     // 2. EL TURNO de ESA persona, vigente.
     const ultimoEntranteEn: unknown = conv.get('ultimoEntranteEn');

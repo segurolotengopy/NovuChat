@@ -192,3 +192,25 @@ describe('tiempo: dígitos largos junto a «cuenta»', () => {
     expect(Date.now() - t0).toBeLessThan(300);
   });
 });
+
+describe('«te lo confirmo»: confirmar INFORMACIÓN no es una acción del código (falso positivo de Evy, 24/10)', () => {
+  const EVY = '¡Hola! Te entiendo perfectamente, es una pregunta muy común porque suena demasiado bien para ser verdad. 😊 Te lo confirmo con total transparencia: **la valoración médica con la Dra. Evy es 100% gratuita**. No hay ningún costo escondido, no pagas nada por adelantado para reservar.';
+  it('la respuesta de Evy y la información confirmada salen', () => {
+    for (const t of [EVY, 'Te lo confirmo.', 'Te lo confirmo con total transparencia.', 'Te lo confirmo: la valoración es gratuita.', 'Te confirmo que la valoración es 100% gratuita.', 'Es gratuita, te lo confirmo.', 'Te lo confirmo: no hay ningún costo.', 'Te lo confirmo: la consulta es gratis.', 'Te lo confirmo: es gratuita y no hay pago de reserva.', 'Te lo confirmo: sin costo ni pago por adelantado.']) expect(motivo(t), t).toBe('');
+  });
+  it('confirmar una cita, un pago o un estado sigue rechazado, antes o después de los dos puntos', () => {
+    for (const t of ['Te confirmo tu cita para el lunes.', 'Te lo confirmo: tu cita es el lunes.', 'Te lo confirmo: ya agendé tu cita.', 'Te confirmo tu reserva', 'Confirmo tu pago', 'Tu cita es el lunes, te lo confirmo.', 'Te lo confirmo: tu cita quedó para el lunes', 'Te lo confirmo: reservé tu lugar', 'Te lo confirmo: no hay pago de reserva y tu cita es el lunes.', 'Te lo confirmo, ya está.', 'Te lo confirmo: queda reservado', 'Te lo confirmo: el horario es de 9 a 12', 'Te lo confirmo: nos vemos mañana a las 10', 'Te confirmo que recibimos tu pago', 'Te lo confirmo: tu turno', 'Te lo\u200b confirmo: tu\u200b cita es el lunes', 'Te lo c0nfirmo: tu c1ta es el lunes', 'Ｔｅ ｌｏ ｃｏｎｆｉｒｍｏ： ｔｕ ｃｉｔａ', 'Te lo confirmo: tu citaa es el lunes', 'Te\u3164lo confirmo: tu cita es el lunes', 'Te lo\u2800confirmo: tu cita']) expect(motivo(t), t).toBe('afirma_un_hecho');
+  });
+  it('confirmaciones naturales de cita, pago o estado que la primera versión dejaba pasar (seguridad, HIGH)', () => {
+    for (const t of ['Te confirmo la valoración de mañana', 'Le confirmo su consulta de mañana', 'Te confirmo tu consulta de mañana', 'Te lo confirmo: tu consulta es mañana', 'Te lo confirmo para mañana', 'Te lo confirmo: a las diez de la mañana', 'Te lo confirmo: hoy 15hs', 'Te lo confirmo: mañana te esperamos', 'Te lo confirmo: todo listo', 'Te lo confirmo: el monto es correcto', 'Te lo confirmo sin falta tu cita del lunes', 'Te lo confirmo, sin duda tu cita es el lunes', 'Te lo confirmo sin problema tu turno de mañana a las 10', 'Te lo confirmo: no hay problema con tu pago', 'Te lo confirmo: sin inconvenientes con tu comprobante', 'Te lo confirmo: ningún problema con tu cita del lunes', 'Te confirmo sin falta tu reserva', 'Te lo confirmo y sin cita', 'Te lo confirmo: ningunacita', 'Te lo confirmo sin ser un bot', 'Te lo confirmo, sin costo: tu cita del lunes', 'Es gratis, te lo confirmo: tu pago llegó', 'Te lo confirmo. Tu cita es el lunes.']) expect(motivo(t), t).not.toBe('');
+  });
+  it('el resto de la matriz sigue igual', () => {
+    for (const t of ['Tu pago fue acreditado', 'Recibimos tu pago', 'Pago verificado', 'Quedó agendada tu cita', 'Ya agendé tu cita', 'ya pagaste tu reserva', 'ya te llegó tu pago', 'No soy un bot']) expect(motivo(t), t).toBe('afirma_un_hecho');
+  });
+  it('no es cuadrático', () => {
+    const t0 = Date.now();
+    motivo('te lo confirmo ' + 'sin '.repeat(450), { maximo: 2000 });
+    motivo('no hay '.repeat(280) + 'te lo confirmo', { maximo: 2000 });
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+});

@@ -102,14 +102,21 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
     // Las líneas de comentario propias y los `Object.assign` sin la oferta se declaran en PROPIO.md; aquí se fija lo que cambia de comportamiento.
     const codigo = propias.filter((l) => !l.trim().startsWith('//'));
     expect(codigo).toEqual([
+      // La ubicación (02/11/2026): el enlace de Maps con LA MISMA regla que el servidor y la dirección en texto, de la Consola.
+      'const ENLACE_DE_MAPA = /^https:\\/\\/(maps\\.app\\.goo\\.gl|goo\\.gl\\/maps|www\\.google\\.com\\/maps|google\\.com\\/maps|maps\\.google\\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;',
+      "const enlaceDeMapa = (v) => (typeof v === 'string' && v.trim().length <= 200 && ENLACE_DE_MAPA.test(v.trim()) ? v.trim() : '');",
       '  cfg = {',
       '    ...deBase, ...atencion,',
       '  };',
       '  cfg = {',
       '    ...deBase, ...atencion,',
       '  };',
+      // Fase 2 del rehecho de Antonio: los anuncios de la Consola (≤ 20), solo en la rama 200.
+      '    direccion: util(dn.direccion) && !/https?:|www\\.|wa\\.me|maps|goo\\.gl|\\b[a-z0-9-]+\\.(?:com|net|org|bo|ly|me|io|app|link|gl)\\b|[\\u200B-\\u200F\\u2060\\uFEFF]/i.test(dn.direccion) ? linea(dn.direccion, 160) || undefined : undefined,',
+      '    direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,',
+      '  const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === \'object\' && !Array.isArray(a)).slice(0, 20) : [];',
       '  cfg = {',
-      '    ...deBase, ...deLaConsola, ...atencion,',
+      '    ...deBase, ...deLaConsola, ...atencion, anuncios,',
       '  };',
       'const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;',
       'return [{ json: {',
@@ -190,7 +197,7 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo 
     const propio = JSON.stringify(sinLibres(de(plantilla, 'Reportar mensaje (entrante)')));
     const viejo = origen.match(/evento: \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\) \? 'no_contactar' : undefined/);
     expect(viejo, 'el origen ya no trae la regex heredada: hay que revisar la declaración').not.toBeNull();
-    const nuevo = propio.match(/evento: \(t\.riesgoEscrito === true \|\| \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\.normalize\('NFD'\)[^]*?\)\) \? 'no_contactar' : undefined/);
+    const nuevo = propio.match(/evento: \(t\.riesgoEscrito === true \|\| \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\.normalize\('NFKC'\)\.normalize\('NFD'\)[^]*?\)\) \? 'no_contactar' : undefined/);
     expect(nuevo, 'el propio no trae el evento declarado').not.toBeNull();
     // Todo lo demás es idéntico al origen.
     expect(propio.replace(nuevo![0], 'EVENTO')).toBe(origen.replace(viejo![0], 'EVENTO'));

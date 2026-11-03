@@ -3,33 +3,36 @@
  * `vigilarUx(mundo)` envuelve `mundo.turno`: cada escenario que habla con el flujo pasa por aquí, así que los invariantes valen en TODA la batería (no en estados sueltos). Invariantes:
  *   1. UN BOTÓN (O FILA DE LISTA) YA PULSADO NO REAPARECE en ningún mensaje posterior de esa conversación, por teléfono; tampoco el del producto cuyo QR abrió un prellenado;
  *   2. NO SE OFRECE ALGO ANTES DE TIEMPO: el QR solo sale si en ese turno el cliente eligió un producto (botón, fila de la lista o prellenado del Pack o del Libro), y ningún texto de pago aparece sin QR;
- *   3. UNA SOLA PRESENTACIÓN por mensaje Y UNA POR TELÉFONO: «asistente virtual de Antonio» (y el saludo largo) sale a lo más una vez en toda la conversación;
+ *   3. UNA SOLA PRESENTACIÓN por mensaje Y UNA POR TELÉFONO: «Soy el asistente virtual del <negocio de la Consola>» (y el saludo largo) sale a lo más una vez en toda la conversación, y NUNCA con el nombre de una persona;
  *   4. PÁRRAFOS: cada párrafo (separado por una línea en blanco) tiene a lo más DOS oraciones y, con dos, a lo más 220 caracteres; sin saltos triples ni espacios sobrantes. La partición en oraciones es la
  *      de la LIBRERÍA (`raOraciones` de `ra.js`): no puede haber desacuerdo entre quien reparte y quien vigila;
  *   5. NINGUNA PREGUNTA POR OPCIONES SIN BOTONES: un texto que pregunta por «las opciones», «¿cuál prefieres?» o «¿con cuál…?» sale con al menos un botón o una lista en ese mismo mensaje;
  *   6. LÍMITES DE WHATSAPP: título de botón ≤ 20 caracteres, de fila de lista ≤ 24, a lo más 3 botones; y NINGUNA clave `link` en ningún payload (el QR sale por `id` de medio).
  * PR-D (22/10/2026):
- *   7. NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS a un teléfono (exentos: el QR, el resultado de un comprobante, la protección ante violencia o miedo, el texto a un número extranjero y la presentación);
+ *   7. NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS a un teléfono (exentos: el QR, el resultado de un comprobante, la protección ante violencia o miedo, la confirmación de una baja, el texto a un número extranjero y la presentación);
  *   8. CON UN QR ABIERTO (el servidor dice `cobro.pendiente`) no hay un segundo QR ni botones de producto en ningún mensaje: solo texto plano (el botón de Antonio va solo al derivar, invariante 13);
  *   9. SIN CONFIGURACIÓN (el panel falló o no trae catálogo) no hay montos, ni QR, ni botones de producto, y el modelo no contesta;
  *  10. EL FLUJO NO PROMETE IMÁGENES: ningún texto dice «te envío/muestro/comparto» una foto, imagen, captura o la portada;
  *  11. UNA NOTA DE VOZ DE MENOS DE 3 PALABRAS nunca llega al modelo;
  *  12. EL MENÚ NO SALE ANTES DE TIEMPO: en las dos primeras respuestas a un teléfono, un mensaje libre (sin precio, catálogo, compra ni producto) no recibe botones de producto ni montos.
  * Botón de Antonio (23/10/2026, regla de Andres):
- *  13. EL BOTÓN DE CONTACTO VA SOLO AL DERIVAR, por tipo de plan: una respuesta RESUELTA (`PLANES_SIN_BOTON`: precio, catálogo, imágenes, resultado, menú, bonos, recordatorio del QR, saludo, conversación…) sale como texto
- *      plano o con sus botones de producto, NUNCA con el botón de Antonio; un plan que deriva (`PLANES_CON_BOTON`: derivar, consulta, repetido, fuera de país, cierre del cobro…) lo lleva siempre.
+ *  13. EL BOTÓN DE CONTACTO VA SOLO AL DERIVAR, por tipo de plan: una respuesta RESUELTA (`PLANES_SIN_BOTON`: precio, catálogo, imágenes, resultado, menú, bonos, recordatorio del QR, saludo, conversación, puente, opciones…) sale como texto
+ *      plano o con sus botones de producto, NUNCA con el botón de Antonio; un plan que deriva (`PLANES_CON_BOTON`: derivar, consulta, fuera de país, cierre del cobro…) lo lleva siempre.
+ *      El plan `repetido` (la alternativa cuando el texto saldría idéntico) NO está en ninguna lista: no deriva, así que sale en texto plano, salvo que lo repetido fuera una derivación (conserva su botón).
+ * Rehecho de Antonio sobre la Entrega 2 (23/10/2026):
+ *  14. LA ETIQUETA DE UN BOTÓN CON PRECIO ES «<nombre DEL CATÁLOGO> <precio>Bs» (≤ 20 caracteres, el nombre completo o recortado por palabras): ningún nombre ni precio sale del código;
+ *  15. EL BOTÓN «Ver opciones» (el del puente) NO lleva precio ni dígitos, y nunca sale junto a botones de producto;
+ *  16. «Ver complementos» abre la lista de bonos: es el único botón de menú sin precio;
+ *  17. LO QUE SE OFRECE SE CUMPLE: tras «¿Te muestro las opciones?» (el puente, o el precio de un producto antes de la charla), el «sí» o el botón «Ver opciones» reciben los botones de producto con precio (salvo con un QR abierto);
+ *      y ese «sí» no es «el menú antes de tiempo» (invariante 12).
  */
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { expect } from 'vitest';
 import type { J } from '../../lib/flujo';
+import { ETIQUETAS_DEL_TENANT } from './mundo';
 import type { Mundo } from '../../lib/n8n-de-mentira';
+import { cargarLibrerias } from './librerias';
 
-const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-antonio/src/lib');
-// El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-// nosemgrep: devsecops.js-eval-prohibido
-export const LIB = new Function(['cobro.js', 'avisos.js', 'ra.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { raOraciones, raParrafos, raNorm, raSeguro, RA_TEXTO_RIESGO, RA_PRODUCTOS, RA_ANGULOS, RA_NIEGA_IA };')() as {
+export const LIB = cargarLibrerias('raOraciones, raParrafos, raNorm, raSeguro, RA_TEXTO_RIESGO, RA_PRODUCTOS, RA_ANGULOS, RA_NIEGA_IA') as {
   raOraciones: (b: string) => string[]; raParrafos: (t: string) => string; raNorm: (t: string) => string; raSeguro: (t: string) => string;
   RA_TEXTO_RIESGO: string; RA_PRODUCTOS: Record<string, { boton: string }>; RA_ANGULOS: Record<string, { fijo: string; pregunta: string }>; RA_NIEGA_IA: RegExp;
 };
@@ -60,14 +63,17 @@ export function violacionesDeParrafos(cuerpo: string): string[] {
   return v;
 }
 /** ¿Este mensaje contiene la presentación del asistente (la frase de presentación o el saludo largo)? */
-export const esPresentacion = (cuerpo: string): boolean => /asistente virtual de antonio|qu[eé] gusto saludarte/i.test(cuerpo);
+// La respuesta de identidad («¿eres un bot?») dice qué ES el asistente por la regla dura 4 y NO cuenta como la presentación gratuita.
+export const esPresentacion = (cuerpo: string): boolean => !/una inteligencia artificial, no una persona/i.test(cuerpo) && /soy el asistente virtual|qu[eé] gusto saludarte/i.test(cuerpo);
 /** Los planes que resuelven (no derivan): jamás llevan el botón de contacto de Antonio. El de `comprobante` depende del resultado y no se vigila aquí. */
-export const PLANES_SIN_BOTON = ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'precio', 'catalogo', 'imagenes', 'resultado', 'menu', 'bonos', 'complemento', 'qr', 'qr_pendiente', 'imagen_descrita', 'imagen_otra', 'audio_fijo', 'archivo', 'otro', 'riesgo', 'suspendido'];
+export const PLANES_SIN_BOTON = ['baja', 'identidad', 'saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo', 'precio', 'catalogo', 'imagenes', 'resultado', 'menu', 'bonos', 'complemento', 'qr', 'qr_pendiente', 'imagen_descrita', 'imagen_otra', 'audio_fijo', 'archivo', 'otro', 'riesgo', 'suspendido'];
 /** Los planes que derivan a Antonio: siempre con el botón. */
-export const PLANES_CON_BOTON = ['derivar', 'consulta', 'qr_insistente', 'cancelacion', 'sin_configuracion', 'fuera_pais', 'repetido', 'cobro_cerrado', 'cobro_ya_cerrado', 'uso_extendido'];
+export const PLANES_CON_BOTON = ['derivar', 'consulta', 'cancelacion', 'sin_configuracion', 'fuera_pais', 'cobro_cerrado', 'cobro_ya_cerrado', 'uso_extendido'];
 /** ¿El mensaje lleva el botón que abre el chat de Antonio (`cta_url`)? */
 export const llevaBotonDeContacto = (m: { payload: J }): boolean => (m.payload['interactive'] as J | undefined)?.['type'] === 'cta_url';
 const IDS_DE_PRODUCTO = ['b_pack', 'b_libro', 'b_workbook', 'b_guia', 'b_calendario', 'b_preguntas'];
+/** Los botones de producto o de la lista de bonos (con un QR abierto o sin configuración no sale ninguno). */
+const IDS_DE_MENU = [...IDS_DE_PRODUCTO, 'b_comp', 'b_bonos'];
 /**
  * Las violaciones de los invariantes para UN turno; `pulsados` se actualiza con el toque de este turno ANTES de mirar la respuesta. `presentaciones` (opcional) cuenta, por teléfono,
  * los mensajes con presentación ya enviados. Función pura, probada también con casos negativos.
@@ -87,9 +93,13 @@ export interface ContextoUx {
   plan?: string;
   /** El turno fue una nota de voz. */
   esAudio?: boolean;
+  /** Los nombres del catálogo de la consola en este momento (el de cada botón con precio sale de ahí). */
+  nombresDelCatalogo?: string[];
+  /** Las etiquetas del tenant (dato de «Config base»), con su emoji: también son nombres válidos de botón. */
+  etiquetasDelTenant?: string[];
 }
 /** Los mensajes EXENTOS del invariante 7, POR PLAN (no por palabras): el QR, el resultado del cotejo, la protección ante violencia o miedo y el texto a un número extranjero; y la presentación. */
-const PLANES_EXENTOS = ['qr', 'comprobante', 'riesgo', 'fuera_pais'];
+const PLANES_EXENTOS = ['identidad', 'qr', 'comprobante', 'riesgo', 'fuera_pais', 'baja'];
 const EXENTO_REPETIDO = (m: UxMsg, plan: string): boolean => m.tipo === 'image' || PLANES_EXENTOS.includes(plan) || esPresentacion(m.cuerpo);
 const TRIGGER_DE_OPCIONES = /precio|cu[aá]nto|cuesta|vale\b|cat[aá]logo|vend|lista|opciones|compr|pagar|pago|adquirir|llevo|pack|libro|workbook|calendario|preguntas|bono|^hola, (quiero|me interesa)|garant|resultado|imagen|foto/i;
 export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, transcripcion = '', ctx: ContextoUx = {}): string[] {
@@ -106,11 +116,15 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
   let ultimoTexto = ctx.ultimoTexto ?? '';
   const palabrasDeVoz = LIB.raNorm(transcripcion).split(' ').filter(Boolean).length;
   if (ctx.esAudio && palabrasDeVoz < 3 && ctx.llamoAlModelo) v.push('una nota de voz de menos de 3 palabras llegó al modelo');
-  const abierto = !ctx.qrAbierto && (ctx.respuestasPrevias ?? 99) < 2 && entrante['type'] === 'text' && !TRIGGER_DE_OPCIONES.test(textoEntrante);
+  // El «sí» (o el botón «Ver opciones») a «¿Te muestro las opciones?» pide las opciones: no son «antes de tiempo» y SE DEBEN cumplir (invariante 17).
+  const dijoSi = /^\s*(s[ií]|claro|dale|ok|okey|bueno|por favor|me interesa|adelante|s[ií],? por favor)\s*[.!]*\s*$/i.test(dicho);
+  const respondeAlPuente = /¿Te muestro las opciones\?\s*$/.test(ultimoTexto) && (idToque === 'b_opciones' || dijoSi);
+  if (respondeAlPuente && !ctx.qrAbierto && !mensajes.some((m) => m.tipo === 'image' || idsDeBotones(m).some((id) => IDS_DE_MENU.includes(id)))) v.push('se ofreció «¿Te muestro las opciones?» y la respuesta no trae los botones de producto');
+  const abierto = !ctx.qrAbierto && !respondeAlPuente && (ctx.respuestasPrevias ?? 99) < 2 && entrante['type'] === 'text' && !TRIGGER_DE_OPCIONES.test(textoEntrante);
   for (const m of mensajes) {
     if (ultimoTexto !== '' && m.cuerpo === ultimoTexto && !EXENTO_REPETIDO(m, ctx.plan ?? '')) v.push(`el mismo texto dos veces seguidas: «${m.cuerpo.slice(0, 40)}…»`);
     ultimoTexto = m.cuerpo;
-    const botonesDeProducto = idsDeBotones(m).filter((id) => IDS_DE_PRODUCTO.includes(id) || id === 'b_bonos');
+    const botonesDeProducto = idsDeBotones(m).filter((id) => IDS_DE_MENU.includes(id));
     if (ctx.qrAbierto) {
       if (m.tipo === 'image') v.push('con un QR abierto salió un segundo QR');
       if (botonesDeProducto.length) v.push(`con un QR abierto salieron botones de producto: ${botonesDeProducto.join(', ')}`);
@@ -142,14 +156,22 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
     for (const b of botones) {
       const titulo = String(b['reply']?.title);
       if (/\d/.test(titulo)) {
-        // Un botón con precio termina SIEMPRE en « <monto> Bs», sin palabras cortadas ni preposición colgando.
-        const m = /^(.*?) (\d+(?:,\d+)?) Bs$/.exec(titulo);
-        if (!m) v.push(`botón con precio que no termina en « <monto> Bs»: «${titulo}»`);
+        // Un botón con precio es «<nombre del catálogo> <monto>Bs»: el nombre es el del catálogo (completo o recortado por palabras), sin palabras cortadas ni preposición colgando.
+        const mm = /^(.*?) (\d+(?:,\d+)?)Bs$/.exec(titulo);
+        if (!mm) v.push(`botón con precio que no termina en « <monto>Bs»: «${titulo}»`);
         else {
-          const vocabulario = new Set(['Mejor', 'el', 'Pack', ...Object.values(LIB.RA_PRODUCTOS).flatMap((p) => String((p as { titulo?: string }).titulo ?? '').split(' '))]);
-          for (const palabra of m[1]!.split(' ')) if (!vocabulario.has(palabra)) v.push(`botón con una palabra cortada o desconocida «${palabra}» en «${titulo}»`);
-          if (/\b(de|del|el|la|y)$/i.test(m[1]!)) v.push(`botón con una preposición colgando: «${titulo}»`);
+          // El emoji de una etiqueta del tenant no es parte del nombre: se compara el nombre sin él (con o sin el espacio que lo separa).
+          const sinEmoji = (x: string): string => x.replace(/^[^\p{L}\p{N}]+/u, '');
+          const nombre = sinEmoji(mm[1]!);
+          const nombres = [...(ctx.nombresDelCatalogo ?? []), ...(ctx.etiquetasDelTenant ?? []).map(sinEmoji)];
+          const esDelCatalogo = nombres.some((n) => n === nombre || n.startsWith(nombre + ' '));
+          if (ctx.nombresDelCatalogo && !esDelCatalogo) v.push(`la etiqueta «${titulo}» no usa el nombre del catálogo (${nombres.join(' | ')})`);
+          if (/\b(de|del|el|la|y)$/i.test(nombre) && !nombres.includes(nombre)) v.push(`botón con una preposición colgando: «${titulo}»`);
         }
+      }
+      if (b['reply']?.id === 'b_opciones') {
+        if (/\d/.test(titulo)) v.push('el botón «Ver opciones» lleva un precio');
+        if (botones.some((x) => IDS_DE_MENU.includes(String(x['reply']?.id)))) v.push('«Ver opciones» salió junto a botones de producto');
       }
     }
     for (const b of botones) if (String(b['reply']?.title).length > 20) v.push(`título de botón de más de 20 caracteres: «${b['reply']?.title}»`);
@@ -180,7 +202,10 @@ export function vigilarUx(mundo: Mundo): void {
     // Los mensajes al cliente de este turno (sin los avisos a Antonio ni los respaldos de texto).
     const salida = t.mensajes.filter((e) => !e.respaldo).map((e) => ({ tipo: e.tipo, cuerpo: e.cuerpo, payload: e.payload }));
     const trans = String((t.porNodo['Preparar transcripción']?.[0]?.['userInput'] ?? '')).replace(/^\(audio transcripto\) /, '').split('\n')[0]!;
+    const nombresDelCatalogo = Array.isArray(cuerpoPanel['catalogo']) ? (cuerpoPanel['catalogo'] as J[]).map((c) => String(c['nombre'] ?? '')).filter((n) => n !== '') : undefined;
     const v = violacionesDeUx(pulsados, msg, salida, pres, trans, {
+      nombresDelCatalogo: nombresDelCatalogo && nombresDelCatalogo.length ? nombresDelCatalogo : undefined,
+      etiquetasDelTenant: ETIQUETAS_DEL_TENANT.get(mundo) ?? [],
       ultimoTexto: estado.ultimo.get(from), respuestasPrevias: estado.respuestas.get(from) ?? 0, qrAbierto, sinConfig: sinConfig && Number(panel?.['statusCode']) !== 409, llamoAlModelo: t.ejecutados.has('Conversar con el modelo'), esAudio: msg['type'] === 'audio', plan: String((t.porNodo['Armar mensajes']?.[0]?.['plan'] ?? '')),
     });
     if (salida.length) { estado.ultimo.set(from, salida[salida.length - 1]!.cuerpo); estado.respuestas.set(from, (estado.respuestas.get(from) ?? 0) + salida.length); }

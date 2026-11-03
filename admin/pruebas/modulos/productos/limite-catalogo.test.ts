@@ -32,6 +32,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { idDeNombre } from '../../../web/src/central/lib/csv.ts';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 
+import { modulosDeFlujos } from '../../../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const PROYECTO = 'demo-novuchat-pruebas';
 const PUERTO = Number(process.env['FIRESTORE_EMULATOR_PORT'] ?? 8231);
@@ -119,7 +120,7 @@ describe('Los números del límite: una sola fuente', () => {
 type Cuenta = Record<string, unknown> | null;
 async function sembrar(t: string, { estado = 'activo', productos = 0, contador = true, cuenta = { plan: 'basico' } as Cuenta } = {}) {
   await db.recursiveDelete(db.doc(`tenants/${t}`));
-  await db.doc(`tenants/${t}`).set({ nombre: t, estado, vertical: 'venta', flujos: ['venta'] });
+  await db.doc(`tenants/${t}`).set({ nombre: t, estado, vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
   if (cuenta) await db.doc(`tenants/${t}/cuenta/estado`).set(cuenta);
   const lote = db.batch();
   for (let i = 1; i <= productos; i++) {
