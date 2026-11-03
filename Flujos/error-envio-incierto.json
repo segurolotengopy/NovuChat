@@ -1,0 +1,39 @@
+{
+  "name": "NovuChat — Error de envío incierto",
+  "nodes": [
+    {
+      "id": "error-trigger",
+      "name": "Error del flujo",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {},
+      "notes": "Se dispara cuando un flujo con settings.errorWorkflow apuntando a este termina en error (p. ej. «Detener por envío incierto», decisión I4, 03/11/2026). El id de ESTE flujo se asigna al publicar: en los flujos con relé es settings.errorWorkflow = REEMPLAZAR_ID_ERROR_WORKFLOW."
+    },
+    {
+      "id": "registrar",
+      "name": "Registrar flujo y hora",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0],
+      "parameters": {
+        "jsCode": "// Registra SOLO el nombre del flujo y la hora. Todo lo demas de la entrada del Error Trigger\n// (ids de ejecucion, url, mensaje de error, nodo, datos) se descarta aqui: nunca se copia ni se reenvia.\nconst entrada = $input.first().json || {};\nconst wf = entrada.workflow && typeof entrada.workflow === 'object' ? entrada.workflow : {};\nconst flujo = typeof wf.name === 'string' ? wf.name.replace(/[^\\p{L}\\p{N} ._()\\u00b7\\u2014-]/gu, '_').slice(0, 80) : 'flujo desconocido';\nconst l = new Date(Date.now() - 4 * 60 * 60 * 1000);\nconst dos = (n) => String(n).padStart(2, '0');\nconst hora = l.getUTCFullYear() + '-' + dos(l.getUTCMonth() + 1) + '-' + dos(l.getUTCDate()) + ' ' + dos(l.getUTCHours()) + ':' + dos(l.getUTCMinutes()) + ':' + dos(l.getUTCSeconds()) + ' (America/La_Paz, UTC-4)';\nreturn [{ json: { flujo, hora } }];"
+      },
+      "notes": "Deja como salida SOLO {flujo, hora}. No envía mensajes ni llama a nada: 0 mensajes por conversación. Se ve en Ejecuciones de este flujo."
+    }
+  ],
+  "connections": {
+    "Error del flujo": {
+      "main": [[{ "node": "Registrar flujo y hora", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 30,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": false
+  },
+  "pinData": {}
+}

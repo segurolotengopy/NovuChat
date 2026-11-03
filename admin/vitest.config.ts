@@ -40,6 +40,7 @@ export const SUITES_PURAS = [
   'pruebas/central/cuenta-activa.test.ts',
   'pruebas/central/cuenta-activa-rutas.test.ts',
   'pruebas/core/claims-asignar-rol.test.ts',
+  'pruebas/core/error-envio-incierto.test.ts',
   'pruebas/core/varias-cuentas-autorizacion.test.ts',
   'pruebas/central/cuenta-activa-personas.test.ts',
   'pruebas/central/sesion-propietario-google.test.ts',
