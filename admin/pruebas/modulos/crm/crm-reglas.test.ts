@@ -6,7 +6,7 @@
 import {
   assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, serverTimestamp, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -166,10 +166,14 @@ describe('enlaces/minicrm: quién lee y nadie escribe', () => {
     await assertFails(getDoc(doc(entorno.unauthenticatedContext().firestore(), enlace(A))));
     await assertFails(getDoc(doc(propietarioNc(), enlace(A))));
   });
+  it('NIEGA: ni su admin lista la colección enlaces (solo se lee el documento por su nombre)', async () => {
+    await assertFails(getDocs(collection(adminA(), `tenants/${A}/enlaces`)));
+  });
   it('NIEGA: nadie lo escribe desde un cliente — ni su admin, ni el de otro, ni el operador; ni crear, editar ni borrar', async () => {
     for (const db of [adminA(), operA(), adminB()]) {
       await assertFails(setDoc(doc(db, enlace(A)), { enlaceHoja: URL_HOJA }));
       await assertFails(updateDoc(doc(db, enlace(A)), { enlaceHoja: 'https://docs.google.com/spreadsheets/d/OtraHojaOtraHoja01' }));
+      await assertFails(deleteDoc(doc(db, enlace(A))));
     }
     await entorno.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), enlace(SIN)), { enlaceHoja: URL_HOJA }); });
     await assertFails(setDoc(doc(adminSin(), enlace(SIN)), { enlaceHoja: URL_HOJA }));
