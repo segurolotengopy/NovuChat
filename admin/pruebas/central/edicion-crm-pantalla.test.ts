@@ -132,11 +132,15 @@ describe('P3. el texto de fuente', () => {
     expect(sinComentarios(leer('web/src/central/componentes/BotonGoogle.tsx'))).toMatch(/accounts\?\.id\?\.cancel\(\)/);
   });
   it('la CSP de la consola deja entrar a Google Identity Services, y solo a sus rutas', () => {
-    const csp = (JSON.parse(leer('firebase.json')) as { hosting: Array<{ headers?: Array<{ headers: Array<{ key: string; value: string }> }> }> })
-      .hosting.flatMap((h) => (h.headers ?? []).flatMap((x) => x.headers)).map((h) => h.value).filter((v) => v.includes('accounts.google.com'));
+    const cabeceras = (JSON.parse(leer('firebase.json')) as { hosting: Array<{ headers?: Array<{ headers: Array<{ key: string; value: string }> }> }> })
+      .hosting.flatMap((h) => (h.headers ?? []).flatMap((x) => x.headers)).map((h) => h.value);
+    // Se razona sobre las fuentes (tokens) de la CSP, no sobre subcadenas de una URL.
+    const fuentes = (v: string) => v.split(/[;\s]+/).filter((t) => t.startsWith('https://'));
+    const csp = cabeceras.filter((v) => fuentes(v).some((f) => new URL(f).hostname === 'accounts.google.com'));
     expect(csp.length).toBe(1);
-    expect(csp[0]).toContain('https://accounts.google.com/gsi/client');
-    expect(csp[0]).not.toMatch(/https:\/\/accounts\.google\.com(?!\/gsi\/)/);
+    const deGoogle = fuentes(csp[0] as string).filter((f) => new URL(f).hostname === 'accounts.google.com');
+    expect(deGoogle).toContain('https://accounts.google.com/gsi/client');
+    for (const f of deGoogle) expect(new URL(f).pathname.startsWith('/gsi/'), f).toBe(true);
     expect(csp[0]).toContain("object-src 'none'");
   });
 });
