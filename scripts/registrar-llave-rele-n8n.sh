@@ -43,13 +43,13 @@
 #
 # LA CLAVE DE LA API DE N8N. Sale de --env (solo N8N_BASE_URL y N8N_API_KEY, leídos como datos, sin
 # ejecutar el archivo; con --aplicar exige que sea del usuario y de modo 600). Viaja en una cabecera
-# dentro del proceso Python (entra por el descriptor 3, no por el entorno), nunca por argumentos ni pantalla.
+# dentro del proceso Python (la lee del --env, no por el entorno), nunca por argumentos ni pantalla.
 #
 # Salida: 0 hecho y comprobado, o seco sin hallazgos · 1 seco con algo pendiente (entrega ausente o
 # inválida) · 2 uso, salvaguarda o validación previa (nada escrito) · 3 error de ejecución (puede
 # haber escrito; la entrega se conserva).
 set -euo pipefail
-unset N8N_BASE_URL N8N_API_KEY RELE_ALIAS RELE_ENTREGA RELE_APLICAR RELE_RESPALDO_DIR RELE_NOMBRE RELE_CABECERA RELE_PREFIJO RELE_REGEX RELE_CREA
+unset N8N_BASE_URL N8N_API_KEY RELE_ENV RELE_ALIAS RELE_ENTREGA RELE_APLICAR RELE_RESPALDO_DIR RELE_NOMBRE RELE_CABECERA RELE_PREFIJO RELE_REGEX RELE_CREA
 
 # ---- Constantes (parametrizables) -------------------------------------------------------------
 ALIAS_PERMITIDOS="evy emma ruben antonio ensayo01"     # nombres de Flujos/experimental/rroca-* y la línea de ensayo
@@ -89,9 +89,8 @@ if (( APLICAR )); then
   [[ -O "$ENV_FILE" && "$(stat -c %a "$ENV_FILE")" == "600" ]] || { echo "✗ Con --aplicar, --env debe ser del usuario y de modo 600" >&2; exit 2; }
 fi
 valor_env() { grep -E "^$1=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true; }
-N8N_BASE_URL="$(valor_env N8N_BASE_URL)"; N8N_API_KEY="$(valor_env N8N_API_KEY)"
+N8N_BASE_URL="$(valor_env N8N_BASE_URL)"
 [[ -n "$N8N_BASE_URL" ]] || { echo "✗ Falta N8N_BASE_URL en --env" >&2; exit 2; }
-[[ -n "$N8N_API_KEY" ]] || { echo "✗ Falta N8N_API_KEY en --env" >&2; exit 2; }
 [[ "$N8N_BASE_URL" =~ ^https://[^/[:space:]@]+(/.*)?$ ]] || [[ -n "${RELE_PERMITIR_HTTP_LOCAL:-}" && "$N8N_BASE_URL" =~ ^http://127\.0\.0\.1:[0-9]+$ ]] \
   || { echo "✗ N8N_BASE_URL tiene que ser https://" >&2; exit 2; }
 
@@ -100,15 +99,21 @@ export RELE_ALIAS="$ALIAS" RELE_ENTREGA="$XDG_RUNTIME_DIR/${PREFIJO_ENTREGA}${AL
 export RELE_NOMBRE="${PREFIJO_NOMBRE}${ALIAS}" RELE_CABECERA="$NOMBRE_CABECERA" RELE_PREFIJO="$ESQUEMA_CABECERA"
 export RELE_REGEX="$REGEX_LLAVE" RELE_RESPALDO_DIR="$XDG_RUNTIME_DIR/registrar-llave-rele-respaldos"
 
-# La clave de la API entra a Python por el descriptor 3 (no por el entorno ni por argumentos).
-exec python3 -I - 3<<<"$N8N_API_KEY" <<'PY'
+# La clave de la API la lee Python del --env (no pasa por el entorno ni por argumentos).
+export RELE_ENV="$ENV_FILE"
+exec python3 -I - <<'PY'
 import json, os, re, stat, sys, time, unicodedata, urllib.error, urllib.parse, urllib.request
 
 E = os.environ
 base = E["N8N_BASE_URL"].rstrip("/") + "/api/v1"
-# La clave de la API llega por el descriptor 3 (nunca está en el entorno de este proceso).
-_clave = os.read(3, 4096).decode().strip()
-os.close(3)
+# La clave de la API se lee aquí del --env, como datos (nunca está en el entorno de este proceso).
+_clave = ""
+with open(E["RELE_ENV"], encoding="utf-8") as _f:
+    for _l in _f:
+        if _l.startswith("N8N_API_KEY="):
+            _clave = _l.rstrip("\n").split("=", 1)[1].strip().strip("\"'")
+if not _clave:
+    print("✗ Falta N8N_API_KEY en --env", file=sys.stderr); sys.exit(2)
 H = {"X-N8N-API-KEY": _clave, "Content-Type": "application/json"}
 _clave = None
 # Sin redirecciones y sin proxies: la clave y la llave solo van a la URL del --env.
