@@ -25,6 +25,10 @@ const linea = (v, max) => String(v === undefined || v === null ? '' : v)
   .replace(/<<<|>>>/g, '').replace(/[\[\]{}]/g, '')
   .replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, max);
 
+// El enlace de Google Maps de la Consola (`datosDelNegocio.direccionMaps`): LA MISMA regla que el servidor (https, dominio de mapas, hasta 200 caracteres, sin espacios). Es el ÚNICO enlace que pasa; los demás se descartan.
+const ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+const enlaceDeMapa = (v) => (typeof v === 'string' && v.trim().length <= 200 && ENLACE_DE_MAPA.test(v.trim()) ? v.trim() : '');
+
 // --- ATENCIÓN: los umbrales de uso extendido (el servidor decide; este nodo obedece) ---
 const at = (codigo === 200 && cuerpo.atencion && typeof cuerpo.atencion === 'object') ? cuerpo.atencion : {};
 const atencion = {
@@ -65,6 +69,9 @@ if (codigo === 409) {
   const recepcion = util(op.numeroRecepcion);
   const deLaConsola = soloLlenos({
     nombreNegocio: util(dn.nombreNegocio) ? linea(dn.nombreNegocio, 60) : undefined,
+    // La ubicación (02/11/2026): la dirección en texto (sin enlaces) y el enlace de Maps, que `enlaceDeMapa` (misma regla que el servidor; `raEnlaceDeMapa` la repite al usarlo) comprueba aquí. Sin datos, el flujo no inventa nada: deriva.
+    direccion: util(dn.direccion) && !/https?:|www\.|wa\.me|maps|goo\.gl|\b[a-z0-9-]+\.(?:com|net|org|bo|ly|me|io|app|link|gl)\b|[\u200B-\u200F\u2060\uFEFF]/i.test(dn.direccion) ? linea(dn.direccion, 160) || undefined : undefined,
+    direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,
     // Solo dígitos: es el destino del botón a una persona.
     numeroRecepcion: recepcion ? (cnDigitos(recepcion) || undefined) : undefined,
     prefijosPermitidos: Array.isArray(op.prefijosPermitidos) && op.prefijosPermitidos.length ? op.prefijosPermitidos.join(',') : undefined,
