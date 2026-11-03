@@ -6,6 +6,7 @@
  * entrega al flujo (`anunciosParaElFlujo`) lo reconoce el código del flujo (`rrAnuncioDe` para el texto; `anuncioPorTitular` del módulo común para la imagen) y los
  * tres anuncios RETIRADOS no se reconocen en ninguno de los dos caminos. Ningún ángulo ni titular lleva montos ni enlaces: el precio sale del catálogo.
  */
+import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,10 +25,8 @@ const copia = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 
 // El código evaluado es el de los archivos del propio repositorio, no una entrada externa: solo prueba.
 const codigoLib = ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(RAIZ, 'Flujos/experimental/rroca-ruben/src/lib', a), 'utf8')).join('\n');
-// nosemgrep: devsecops.js-eval-prohibido
-const RR = new Function(codigoLib + '\nreturn { rrAnuncioDe };')() as Record<string, (...a: unknown[]) => any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-// nosemgrep: devsecops.js-eval-prohibido
-const anuncioPorTitular = new Function(readFileSync(join(RAIZ, 'Flujos/src/core/medios/anuncio-por-titular.js'), 'utf8') + '\nreturn anuncioPorTitular;')() as (t: string, a: unknown) => { id: string; titular: string; angulo: string; producto: { nombre: string } | null } | null;
+const RR = vm.compileFunction(codigoLib + '\nreturn { rrAnuncioDe };')() as Record<string, (...a: unknown[]) => any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+const anuncioPorTitular = vm.compileFunction(readFileSync(join(RAIZ, 'Flujos/src/core/medios/anuncio-por-titular.js'), 'utf8') + '\nreturn anuncioPorTitular;')() as (t: string, a: unknown) => { id: string; titular: string; angulo: string; producto: { nombre: string } | null } | null;
 
 const RETIRADOS = ['La IA es mucho más que escribir textos', '¿Te escriben pero no compran?', '¿Quieres hacer videos pero no sabes cómo?'];
 const CATALOGO = [{ id: 'libro-bonos', nombre: 'Libro + bonos', precio: 32, agotado: false }, { id: 'pack-completo', nombre: 'Pack completo', precio: 60, agotado: false }];

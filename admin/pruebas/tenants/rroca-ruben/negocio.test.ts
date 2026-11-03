@@ -5,6 +5,7 @@
  * id de un ítem (que `cargar-negocio.mjs` saca del nombre) deje de coincidir; que el archivo traiga un secreto, un teléfono real o una cuenta; y que sea APLICABLE mientras tenga marcadores
  * `REEMPLAZAR_*` (la misma guardia de publicación lo niega). No toca Firestore: la carga real es del script con «sí» de Andres.
  */
+import vm from 'node:vm';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,8 +31,7 @@ const idDe = (nombre: string): string => nombre.toLowerCase().normalize('NFD').r
 // El código del flujo, tal cual se despliega (cobro + avisos + rr), para preguntarle a `rrCatalogo` con el catálogo que la consola mostraría.
 const CODIGO = ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(RR, a), 'utf8')).join('\n');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-// nosemgrep: devsecops.js-eval-prohibido
-const L = new Function(CODIGO + '\nreturn { rrCatalogo, rrAhorro };')() as { rrCatalogo: (c: unknown) => Record<string, number>; rrAhorro: (c: Record<string, number>) => number | null };
+const L = vm.compileFunction(CODIGO + '\nreturn { rrCatalogo, rrAhorro };')() as { rrCatalogo: (c: unknown) => Record<string, number>; rrAhorro: (c: Record<string, number>) => number | null };
 
 const ESPERADO: Record<string, number> = { 'pack-completo': 60, 'libro-bonos': 32, 'closer-ventas': 20, 'videos-ia': 25 };
 

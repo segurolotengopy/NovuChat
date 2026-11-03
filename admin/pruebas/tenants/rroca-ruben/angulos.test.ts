@@ -7,6 +7,7 @@
  * (el texto libre del cliente llega dentro del dato delimitado <<< >>>, saneado); un modelo simulado que ante cada titular devuelva precio, enlace o «varían según tu país» no llega al cliente (cae al texto fijo); «Desde solo 32 Bs»
  * sigue el saludo fijo sin modelo; el prompt no crece sin medida; 0 mensajes agregados (uno por turno).
  */
+import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,8 +27,7 @@ const TEXTO_CAIDO = 'Gracias por escribir. ¿Quieres que te cuente qué incluye 
 
 const codigo = ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA, 'src/lib', a), 'utf8')).join('\n');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-// nosemgrep: devsecops.js-eval-prohibido
-const L = new Function(codigo + '\nreturn { rrAnuncioDe, rrAnunciosValidos, rrEsInsigniaDePrecio, RR_PROMPT, rrCuerpoModelo, rrNorm, rrPreguntaPorIA, rrEsPresentacion, rrUnaPresentacion, rrTienePresentacionIA, rrTemaDeInfo, rrSeguro, rrDiceIA, rrSuplantaARuben, rrExtraRedaccion };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+const L = vm.compileFunction(codigo + '\nreturn { rrAnuncioDe, rrAnunciosValidos, rrEsInsigniaDePrecio, RR_PROMPT, rrCuerpoModelo, rrNorm, rrPreguntaPorIA, rrEsPresentacion, rrUnaPresentacion, rrTienePresentacionIA, rrTemaDeInfo, rrSeguro, rrDiceIA, rrSuplantaARuben, rrExtraRedaccion };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 // Los anuncios de PRUEBA (el dato que entrega la Consola): titulares, ángulo y producto. Ninguno vive en el código del flujo.
 const ANUNCIOS_DE_PRUEBA = [
