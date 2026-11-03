@@ -117,10 +117,18 @@ export function crearVerificadorGoogle(
 // DRIVE
 // ---------------------------------------------------------------------------
 export interface ClienteDrive {
-  /** Idempotente: si el permiso ya existe (rol de escritura), devuelve su id sin duplicar. */
-  crearPermiso(archivoId: string, correo: string): Promise<{ permisoId: string }>;
+  /**
+   * Idempotente: si el permiso ya existe con rol `writer`, lo adopta (`creado: false`) sin duplicar. Si ya es propietario u
+   * organizador, lanza `ErrorPermisoNoRevocable`: no se puede administrar ni revocar. `creado: true` = lo creó esta llamada.
+   */
+  crearPermiso(archivoId: string, correo: string): Promise<{ permisoId: string; creado: boolean }>;
   /** Idempotente: un permiso que ya no existe (404) cuenta como borrado. Lanza `ErrorDrive` en cualquier otro fallo. */
   borrarPermiso(archivoId: string, permisoId: string): Promise<void>;
+}
+
+/** El Gmail ya tiene en la hoja un rol que no se puede revocar (propietario u organizador). */
+export class ErrorPermisoNoRevocable extends Error {
+  constructor() { super('permiso no revocable'); }
 }
 
 /** Un fallo de Drive o de IAM: solo el estado HTTP, nunca el cuerpo (puede llevar correos o tokens). */
@@ -131,7 +139,7 @@ export class ErrorDrive extends Error {
 const DRIVE = 'https://www.googleapis.com/drive/v3';
 const IAM = 'https://iamcredentials.googleapis.com/v1';
 const ALCANCE_DRIVE = 'https://www.googleapis.com/auth/drive';
-const ROLES_DE_ESCRITURA = new Set(['writer', 'fileOrganizer', 'organizer', 'owner']);
+const ROLES_NO_REVOCABLES = new Set(['fileOrganizer', 'organizer', 'owner']);
 const PAGINAS_MAXIMAS = 5;
 
 const ID_TENANT_CUENTA = /^[a-z][a-z0-9-]{1,24}[a-z0-9]$/;
@@ -192,10 +200,11 @@ export function crearClienteDrive(opciones: {
         if (!r.ok) throw new ErrorDrive(r.status);
         const cuerpo = (await r.json()) as { permissions?: unknown; nextPageToken?: unknown };
         const lista = Array.isArray(cuerpo.permissions) ? cuerpo.permissions as Record<string, unknown>[] : [];
-        const hay = lista.find((p) => p['type'] === 'user' && typeof p['emailAddress'] === 'string'
-          && p['emailAddress'].toLowerCase() === correo && typeof p['id'] === 'string'
-          && typeof p['role'] === 'string' && ROLES_DE_ESCRITURA.has(p['role']));
-        if (hay) return { permisoId: hay['id'] as string };
+        const delCorreo = lista.filter((p) => p['type'] === 'user' && typeof p['emailAddress'] === 'string'
+          && p['emailAddress'].toLowerCase() === correo && typeof p['id'] === 'string' && typeof p['role'] === 'string');
+        if (delCorreo.some((p) => ROLES_NO_REVOCABLES.has(p['role'] as string))) throw new ErrorPermisoNoRevocable();
+        const writer = delCorreo.find((p) => p['role'] === 'writer');
+        if (writer) return { permisoId: writer['id'] as string, creado: false };
         if (typeof cuerpo.nextPageToken !== 'string' || cuerpo.nextPageToken === '') break;
         pagina = `&pageToken=${encodeURIComponent(cuerpo.nextPageToken)}`;
       }
@@ -207,7 +216,7 @@ export function crearClienteDrive(opciones: {
       if (!c.ok) throw new ErrorDrive(c.status);
       const creado = (await c.json()) as { id?: unknown };
       if (typeof creado.id !== 'string' || creado.id === '') throw new ErrorDrive(502);
-      return { permisoId: creado.id };
+      return { permisoId: creado.id, creado: true };
     },
 
     async borrarPermiso(archivoId, permisoId) {

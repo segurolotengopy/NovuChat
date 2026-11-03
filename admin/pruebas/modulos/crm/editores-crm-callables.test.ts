@@ -16,14 +16,15 @@ if (getApps().length === 0) initializeApp({ projectId: PROYECTO });
 const { getFirestore } = await import('firebase-admin/firestore');
 const { manejarRegistrar, manejarQuitar, manejarConsultar, revocarEditorAlQuitarUsuario } =
   await import('../../../functions/src/modulos/crm/editoresCrm.ts');
-const { ErrorDrive, ErrorToken, crearVerificadorGoogle } = await import('../../../functions/src/modulos/crm/editores-crm.ts');
+const { ErrorDrive, ErrorPermisoNoRevocable, ErrorToken, crearVerificadorGoogle } = await import('../../../functions/src/modulos/crm/editores-crm.ts');
 const { PLANES } = await import('../../../functions/src/central/cuenta/planes.ts');
 type ClienteDrive = import('../../../functions/src/modulos/crm/editores-crm.ts').ClienteDrive;
 type DepsEditores = import('../../../functions/src/modulos/crm/editoresCrm.ts').DepsEditores;
 type Peticion = Parameters<ReturnType<typeof manejarRegistrar>>[0];
 const db = getFirestore();
 /** El `logger` de firebase-functions guarda la consola original al cargar: se lo espía por su propio módulo. */
-const loggerDeFunctions = createRequire(fileURLToPath(new URL('../../../functions/package.json', import.meta.url)))('firebase-functions/logger') as
+const requerirDesdeFunctions = createRequire(fileURLToPath(new URL('../../../functions/package.json', import.meta.url)));
+const loggerDeFunctions = requerirDesdeFunctions('firebase-functions/logger') as
   Record<'debug' | 'info' | 'log' | 'warn' | 'error', (...a: unknown[]) => void>;
 
 const A = 'edc-a';
@@ -49,13 +50,19 @@ const sinSesion = (data: Record<string, unknown>) => ({ data, rawRequest: {} }) 
 
 /** Drive falso: anota cada llamada; los fallos se encienden por prueba. */
 function driveFalso() {
-  const estado = { falloCrear: false, falloBorrar: false };
+  const estado = { falloCrear: false, falloBorrar: false, yaExistia: false, propietario: false, barrera: 0 };
   const llamadas: { op: 'crear' | 'borrar'; archivoId: string; dato: string }[] = [];
+  let llegaron = 0;
   const cliente: ClienteDrive = {
     async crearPermiso(archivoId, correo) {
       llamadas.push({ op: 'crear', archivoId, dato: correo });
+      if (estado.barrera > 0) { // las N llamadas esperan a que todas lleguen: así la carrera es real
+        llegaron++;
+        while (llegaron < estado.barrera) await new Promise((r) => setTimeout(r, 5));
+      }
+      if (estado.propietario) throw new ErrorPermisoNoRevocable();
       if (estado.falloCrear) throw new ErrorDrive(503);
-      return { permisoId: `perm-${llamadas.length}` };
+      return { permisoId: `perm-${llamadas.length}`, creado: !estado.yaExistia };
     },
     async borrarPermiso(archivoId, permisoId) {
       llamadas.push({ op: 'borrar', archivoId, dato: permisoId });
@@ -220,6 +227,104 @@ describe('registrarEditorCrm: el alta', () => {
     await sembrarActivos(A, 3); // 1 + 3 = 4 de 5
     await registrar(p());
     expect(await activos(A)).toBe(4);
+  });
+});
+
+describe('registrarEditorCrm: revisión de seguridad (03/11/2026)', () => {
+  const sembrarPendiente = (uid: string, correo: string, permiso = 'perm-viejo') =>
+    db.doc(`tenants/${A}/editoresCrm/${uid}`).set({ correoGoogle: correo, estado: 'revocado_pendiente', permisoId: permiso, archivoId: ARCHIVO_A });
+
+  it('NIEGA: con la baja pendiente y OTRO Gmail, primero se revoca el permiso viejo; si no se puede, se rechaza sin pisarlo', async () => {
+    await sembrarPendiente('op1', correoDe('viejo'));
+    const p = () => peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` });
+    fake.estado.falloBorrar = true;
+    expect(await codigo(registrar(p()))).toBe('unavailable');
+    expect(fake.llamadas.map((l) => l.op)).toEqual(['borrar']);
+    expect(await editor(A, 'op1')).toMatchObject({ estado: 'revocado_pendiente', permisoId: 'perm-viejo', correoGoogle: correoDe('viejo') });
+    fake.estado.falloBorrar = false;
+    fake.llamadas.length = 0;
+    expect(await codigo(registrar(p()))).toBe('sin error');
+    expect(fake.llamadas.map((l) => `${l.op}:${l.dato}`)[0]).toBe('borrar:perm-viejo');
+    expect(fake.llamadas.map((l) => l.op)).toEqual(['borrar', 'crear']);
+    expect(await editor(A, 'op1')).toMatchObject({ estado: 'activo', correoGoogle: correoDe('op1') });
+    expect((await editor(A, 'op1'))?.['permisoId']).not.toBe('perm-viejo');
+  });
+
+  it('NIEGA: un Gmail con la baja pendiente de otra persona tampoco se registra para alguien más', async () => {
+    await sembrarPendiente('op2', correoDe('op1'));
+    expect(await codigo(registrar(peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` })))).toBe('already-exists');
+    expect(fake.llamadas).toEqual([]);
+  });
+
+  it('NIEGA (carrera): dos altas a la vez con el MISMO Gmail para dos personas: solo una queda y la otra deshace lo que creó', async () => {
+    fake.estado.barrera = 2;
+    const tok = `ok:${correoDe('compartido')}`;
+    const r = await Promise.all([
+      codigo(registrar(peticion('adm', 'admin', A, { tenantId: A, idTokenGoogle: tok, uidDestino: 'op1' }))),
+      codigo(registrar(peticion('adm', 'admin', A, { tenantId: A, idTokenGoogle: tok, uidDestino: 'op2' }))),
+    ]);
+    expect([...r].sort()).toEqual(['already-exists', 'sin error']);
+    const vivos = (await db.collection(`tenants/${A}/editoresCrm`).where('correoGoogle', '==', correoDe('compartido')).get()).docs;
+    expect(vivos).toHaveLength(1);
+    expect(fake.llamadas.filter((l) => l.op === 'borrar')).toHaveLength(1);
+  });
+
+  it('NIEGA (carrera): con un solo cupo libre, dos altas a la vez de personas distintas: entra una', async () => {
+    await sembrarActivos(A, PLANES.crecimiento.editoresCrm - 1);
+    fake.estado.barrera = 2;
+    const r = await Promise.all([
+      codigo(registrar(peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` }))),
+      codigo(registrar(peticion('op2', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op2')}` }))),
+    ]);
+    expect([...r].sort()).toEqual(['resource-exhausted', 'sin error']);
+    expect(await activos(A)).toBe(PLANES.crecimiento.editoresCrm);
+  });
+
+  it('rechazo por tope: se borra el permiso solo si lo CREÓ esta llamada', async () => {
+    await sembrarActivos(A, PLANES.crecimiento.editoresCrm - 1);
+    await db.doc(`tenants/${A}/editoresCrm/otro`).set({ correoGoogle: correoDe('otro'), estado: 'activo', permisoId: 'po', archivoId: ARCHIVO_A });
+    // el rechazo previo (conteo) no corre porque el tope se llena justo antes de la transacción: se simula con la barrera
+    fake.estado.barrera = 1;
+    const llenar = fake.cliente.crearPermiso;
+    fake.cliente.crearPermiso = async (...a) => { const r = await llenar(...a); await db.doc(`tenants/${A}/editoresCrm/otro`).set({ correoGoogle: correoDe('otro'), estado: 'activo', permisoId: 'po', archivoId: ARCHIVO_A }); return r; };
+    await db.doc(`tenants/${A}/editoresCrm/otro`).delete();
+    fake.estado.yaExistia = true;
+    expect(await codigo(registrar(peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` })))).toBe('resource-exhausted');
+    expect(fake.llamadas.filter((l) => l.op === 'borrar')).toEqual([]);
+    fake.estado.yaExistia = false;
+    fake.llamadas.length = 0;
+    await db.doc(`tenants/${A}/editoresCrm/otro`).delete();
+    expect(await codigo(registrar(peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` })))).toBe('resource-exhausted');
+    expect(fake.llamadas.filter((l) => l.op === 'borrar')).toHaveLength(1);
+  });
+
+  it('si deshacer el permiso falla, el fallo queda en la auditoría (no se traga)', async () => {
+    await sembrarActivos(A, PLANES.crecimiento.editoresCrm - 1);
+    const crear = fake.cliente.crearPermiso;
+    fake.cliente.crearPermiso = async (...a) => {
+      const r = await crear(...a);
+      await db.doc(`tenants/${A}/editoresCrm/otro`).set({ correoGoogle: correoDe('otro'), estado: 'activo', permisoId: 'po', archivoId: ARCHIVO_A });
+      fake.estado.falloBorrar = true;
+      return r;
+    };
+    expect(await codigo(registrar(peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` })))).toBe('resource-exhausted');
+    const aud = (await db.collection(`tenants/${A}/auditoria`).where('accion', '==', 'editor_crm_alta').get()).docs.map((d) => d.data());
+    expect(aud.some((x) => x['resultado'] === 'rechazado_permiso_sin_deshacer')).toBe(true);
+    expect(await editor(A, 'op1')).toBeUndefined();
+  });
+
+  it('NIEGA: si el Gmail ya es propietario de la hoja se rechaza y no queda editor', async () => {
+    fake.estado.propietario = true;
+    expect(await codigo(registrar(peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` })))).toBe('failed-precondition');
+    expect(await editor(A, 'op1')).toBeUndefined();
+  });
+
+  it('guarda creadoPorSistema: true si lo creó el sistema, false si adoptó un permiso writer que ya existía', async () => {
+    await registrar(peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` }));
+    fake.estado.yaExistia = true;
+    await registrar(peticion('op2', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op2')}` }));
+    expect((await editor(A, 'op1'))?.['creadoPorSistema']).toBe(true);
+    expect((await editor(A, 'op2'))?.['creadoPorSistema']).toBe(false);
   });
 });
 

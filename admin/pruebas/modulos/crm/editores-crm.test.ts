@@ -6,7 +6,7 @@
 import { createSign, generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
-  ErrorDrive, ErrorToken, OAuth2Client, abreviarCorreo, archivoDeEnlace, correoCuentaCrm, crearClienteDrive, crearVerificadorGoogle,
+  ErrorDrive, ErrorPermisoNoRevocable, ErrorToken, OAuth2Client, abreviarCorreo, archivoDeEnlace, correoCuentaCrm, crearClienteDrive, crearVerificadorGoogle,
   hayCupo, normalizarCorreo, puedeApuntarA, verificadoPorDe, type Fetch,
 } from '../../../functions/src/modulos/crm/editores-crm.ts';
 
@@ -165,7 +165,7 @@ describe('cliente de Drive', () => {
       : l.method === 'GET' ? { cuerpo: { permissions: [] } } : { cuerpo: { id: 'perm-1' } });
     const r = await crearClienteDrive({ cuentaServicio: CUENTA, fetch: f, tokenDeLaFunction: async () => TOKEN_FUNCTION })
       .crearPermiso(ID_HOJA, correoDe('persona'));
-    expect(r).toEqual({ permisoId: 'perm-1' });
+    expect(r).toEqual({ permisoId: 'perm-1', creado: true });
     const iam = llamadas.find(esIam)!;
     expect(iam.url).toContain(`/serviceAccounts/${encodeURIComponent(CUENTA)}:generateAccessToken`);
     expect(iam.headers['authorization']).toBe(`Bearer ${TOKEN_FUNCTION}`);
@@ -194,7 +194,7 @@ describe('cliente de Drive', () => {
       : { cuerpo: { permissions: [{ id: 'perm-9', type: 'user', role: 'writer', emailAddress: correoDe('Persona') }] } });
     const r = await crearClienteDrive({ cuentaServicio: CUENTA, fetch: f, tokenDeLaFunction: async () => TOKEN_FUNCTION })
       .crearPermiso(ID_HOJA, correoDe('persona'));
-    expect(r).toEqual({ permisoId: 'perm-9' });
+    expect(r).toEqual({ permisoId: 'perm-9', creado: false });
     expect(llamadas.filter((l) => l.method === 'POST' && !esIam(l))).toHaveLength(0);
   });
   it('un permiso de solo lectura no se reutiliza: se crea el de escritura', async () => {
@@ -203,8 +203,17 @@ describe('cliente de Drive', () => {
         : { cuerpo: { id: 'perm-10' } });
     const r = await crearClienteDrive({ cuentaServicio: CUENTA, fetch: f, tokenDeLaFunction: async () => TOKEN_FUNCTION })
       .crearPermiso(ID_HOJA, correoDe('persona'));
-    expect(r).toEqual({ permisoId: 'perm-10' });
+    expect(r).toEqual({ permisoId: 'perm-10', creado: true });
     expect(llamadas.filter((l) => l.method === 'POST' && !esIam(l))).toHaveLength(1);
+  });
+  it('NIEGA: si el Gmail ya es propietario u organizador de la hoja se rechaza (no se podría revocar) y no se crea nada', async () => {
+    for (const role of ['owner', 'organizer', 'fileOrganizer']) {
+      const { f, llamadas } = fetchFalso((l) => esIam(l) ? { cuerpo: { accessToken: TOKEN_CUENTA } }
+        : { cuerpo: { permissions: [{ id: 'perm-7', type: 'user', role, emailAddress: correoDe('persona') }] } });
+      await expect(crearClienteDrive({ cuentaServicio: CUENTA, fetch: f, tokenDeLaFunction: async () => TOKEN_FUNCTION })
+        .crearPermiso(ID_HOJA, correoDe('persona')), role).rejects.toBeInstanceOf(ErrorPermisoNoRevocable);
+      expect(llamadas.filter((l) => l.method === 'POST' && !esIam(l)), role).toHaveLength(0);
+    }
   });
   it('baja: un DELETE al permiso; 404 cuenta como borrado; otro fallo lanza ErrorDrive con solo el estado', async () => {
     let status = 204;

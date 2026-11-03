@@ -19,7 +19,7 @@ import { ID_TENANT, auditar, db, texto } from '../../central/comunes.js';
 import { limiteDeEditoresCrm } from '../../central/cuenta/planes.js';
 import { crmActivo } from './crm.js';
 import {
-  ErrorToken, UID_VALIDO, abreviarCorreo, archivoDeEnlace, correoCuentaCrm, crearClienteDrive, crearVerificadorGoogle,
+  ErrorPermisoNoRevocable, ErrorToken, UID_VALIDO, abreviarCorreo, archivoDeEnlace, correoCuentaCrm, crearClienteDrive, crearVerificadorGoogle,
   hayCupo, normalizarCorreo, puedeApuntarA, verificadoPorDe,
   type ClienteDrive, type EstadoEditor, type RolQueLlama, type VerificarTokenGoogle,
 } from './editores-crm.js';
@@ -143,41 +143,67 @@ export const manejarRegistrar = (d: DepsEditores) => async (p: CallableRequest) 
   if (!hayCupo(activos.size, limite, yaCuenta)) {
     throw new HttpsError('resource-exhausted', 'El negocio alcanzó el máximo de editores de su plan.');
   }
-  // Un mismo Gmail no queda activo para dos personas: revocar a una quitaría el permiso de la otra.
-  if (activos.docs.some((x) => x.id !== destino && x.data()['correoGoogle'] === correoToken)) {
+  // Un mismo Gmail no queda activo (ni con la baja pendiente) para dos personas: revocar a una quitaría el
+  // permiso de la otra. Aquí es el rechazo rápido; la regla que vale se repite DENTRO de la transacción.
+  const ocupa = (x: { id: string; data(): Record<string, unknown> | undefined }) =>
+    x.id !== destino && x.data()?.['correoGoogle'] === correoToken
+    && (x.data()?.['estado'] === 'activo' || x.data()?.['estado'] === 'revocado_pendiente');
+  const delGmail = await coleccion(tenantId).where('correoGoogle', '==', correoToken).get();
+  if (delGmail.docs.some(ocupa)) {
     throw new HttpsError('already-exists', 'Esa cuenta de Google ya es editora de otra persona.');
   }
 
-  // Cambio de cuenta del mismo usuario: primero se cierra el permiso anterior.
-  if (yaCuenta && previo.data()?.['correoGoogle'] !== correoToken) {
+  // Nunca se pisa un permisoId sin revocarlo: si la persona tiene un permiso vigente o con la baja pendiente en otra
+  // cuenta (o en otra hoja), primero se cierra ese. Si Drive no lo confirma, se rechaza.
+  const f = previo.data();
+  if (previo.exists && (f?.['estado'] === 'activo' || f?.['estado'] === 'revocado_pendiente')
+    && (f['correoGoogle'] !== correoToken || f['archivoId'] !== archivoId)) {
     const e = await revocarEditor(drive, tenantId, destino, uid, 'cambio_de_cuenta');
     if (e !== 'revocado') throw new HttpsError('unavailable', MENSAJE.drive);
   }
 
   let permisoId: string;
+  let creado: boolean;
   try {
-    permisoId = (await drive.crearPermiso(archivoId, correoToken)).permisoId;
-  } catch {
+    ({ permisoId, creado } = await drive.crearPermiso(archivoId, correoToken));
+  } catch (e) {
     logger.warn('editoresCrm: Drive no concedió el permiso', { tenantId });
-    await auditar(tenantId, 'editor_crm_alta', uid, { destino, correo: abreviarCorreo(correoToken), resultado: 'fallo_drive' });
+    const noRevocable = e instanceof ErrorPermisoNoRevocable;
+    await auditar(tenantId, 'editor_crm_alta', uid, {
+      destino, correo: abreviarCorreo(correoToken), resultado: noRevocable ? 'rechazado_propietario' : 'fallo_drive',
+    });
+    if (noRevocable) throw new HttpsError('failed-precondition', 'Esa cuenta de Google ya es propietaria de la hoja: no se puede administrar su permiso.');
     throw new HttpsError('unavailable', MENSAJE.drive);
   }
 
-  // Se vuelve a contar dentro de la transacción: dos altas a la vez no pasan el tope.
+  // Se vuelve a contar dentro de la transacción: dos altas a la vez no pasan el tope ni repiten el Gmail.
   const colec = coleccion(tenantId);
-  const cupoEnTransaccion = await db().runTransaction(async (tx) => {
+  const veredicto = await db().runTransaction(async (tx) => {
     const ahora = await tx.get(colec.where('estado', '==', 'activo'));
-    const otros = ahora.docs.filter((x) => x.id !== destino).length;
-    if (otros >= limite) return false;
+    const mismoGmail = await tx.get(colec.where('correoGoogle', '==', correoToken));
+    if (mismoGmail.docs.some(ocupa)) return 'correo' as const;
+    if (ahora.docs.filter((x) => x.id !== destino).length >= limite) return 'tope' as const;
     tx.set(colec.doc(destino), {
-      correoGoogle: correoToken, estado: 'activo' satisfies EstadoEditor, permisoId, archivoId,
+      correoGoogle: correoToken, estado: 'activo' satisfies EstadoEditor, permisoId, archivoId, creadoPorSistema: creado,
       registradoPor: uid, desde: Timestamp.now(), verificadoPor: verificadoPor,
     });
-    return true;
+    return 'ok' as const;
   });
-  if (!cupoEnTransaccion) {
-    await drive.borrarPermiso(archivoId, permisoId).catch(() => undefined);
-    throw new HttpsError('resource-exhausted', 'El negocio alcanzó el máximo de editores de su plan.');
+  if (veredicto !== 'ok') {
+    // Se deshace SOLO lo que creó esta llamada: un permiso que ya existía no es nuestro para borrarlo.
+    let resultado = 'rechazado';
+    if (creado) {
+      try {
+        await drive.borrarPermiso(archivoId, permisoId);
+      } catch {
+        logger.warn('editoresCrm: no se pudo deshacer el permiso tras rechazar el alta', { tenantId });
+        resultado = 'rechazado_permiso_sin_deshacer';
+      }
+    }
+    await auditar(tenantId, 'editor_crm_alta', uid, { destino, correo: abreviarCorreo(correoToken), motivo: veredicto, resultado });
+    throw veredicto === 'correo'
+      ? new HttpsError('already-exists', 'Esa cuenta de Google ya es editora de otra persona.')
+      : new HttpsError('resource-exhausted', 'El negocio alcanzó el máximo de editores de su plan.');
   }
   await auditar(tenantId, 'editor_crm_alta', uid, { destino, correo: abreviarCorreo(correoToken), verificadoPor, resultado: 'activo' });
   return { ok: true, estado: 'activo' as const };
