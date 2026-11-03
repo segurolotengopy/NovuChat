@@ -8,9 +8,6 @@
     "admin/pruebas/tenants/doctoras/armado.test.ts",
     "admin/pruebas/tenants/doctoras/huecos.test.ts",
     "admin/pruebas/tenants/doctoras/vigilante-ux.ts",
-    "admin/pruebas/tenants/rroca-antonio/huecos-cobro.test.ts",
-    "admin/pruebas/tenants/rroca-antonio/librerias.ts",
-    "admin/pruebas/tenants/rroca-antonio/rehecho.test.ts",
     "admin/pruebas/tenants/rroca-ruben/portado-de-antonio.test.ts",
     "admin/pruebas/tenants/rroca-ruben/venta.test.ts",
     "admin/pruebas/venta-minima-catalogo-punta-a-punta.test.ts"

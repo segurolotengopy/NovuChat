@@ -390,3 +390,12 @@ Anotado, sin corregir (LOW):
 
 El costo (`respuestaCosto`) solo se dice si lo preguntan, nunca al agendar. La frase («La consulta pediátrica
 cuesta 250 Bs. Si quieres, te ayudo a agendarla.») es un dato del cliente en «Config base» y la valida Andres.
+
+## Estado de Bellido al 24/10/2026
+
+- Bellido corre este flujo con 53 nodos desde el 24/10 (madrugada UTC), publicado con `flujo-de-prueba.mjs --sobre-bellido --desde-b` desde `main` `b82f22bf`: incluye #603 (medios), #619, #627 y #640 (head `ea3d1d6e`). Sin atraso entre el JSON versionado y el vivo.
+- #640: la oferta de horarios lleva siempre encabezado, servicio y día por código; toda respuesta del modelo que remita a recepción sin botón pasa a la transferencia estándar (+1 aviso a recepción solo cuando esa red actúa; 0 nodos agregados).
+- #629 (pregunta de salud a recepción) abierto y estacionado; código congelado salvo orden de Andres. Palabras de salud y lista de emergencia: decisión del doctor.
+- Humo del 23/10 leído en la Consola, sin errores; observación pendiente: tras agendar, la primera pregunta de golpe en la cabeza vuelve al menú de bienvenida (la transferencia con botón llega en el segundo intento).
+- Vuelta atrás: `--restaurar-respaldo` (con «sí» de Andres) o republicar `9d3bc4c2`.
+- Pendientes no-código a producción: ver el asiento de `bitacora/2026-10.md` del 24/10.

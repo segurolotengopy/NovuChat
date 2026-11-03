@@ -82,7 +82,7 @@ importa nadie**: existe, se verifica y mide.
 
 **Enlaces solo del servidor y de lectura admin**
 (`DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR`, 03/11/2026): colección
-`tenants/{t}/enlaces/`, hoy `crm` (`enlaceHoja`, la URL de la hoja del
+`tenants/{t}/enlaces/`, hoy `minicrm` (`enlaceHoja`, la URL de la hoja del
 miniCRM). Va fuera de `config/` porque la lectura de `config/` es de todo
 miembro y una consulta de colección no puede excluir un documento. Solo la lee
 `esAdmin` del mismo comercio y la escritura está cerrada (la hace NovuChat con
