@@ -152,13 +152,28 @@ if MARCADOR_RELE in texto:
         else:
             esquema, host, puerto = m_base.group(1), m_base.group(2).lower(), m_base.group(3)
             partes = host.split(".")
-            privada = (len(partes) == 4 and all(p.isdigit() and int(p) <= 255 for p in partes) and (
-                partes[0] in ("10", "127") or (partes[0] == "192" and partes[1] == "168") or (partes[0] == "172" and 16 <= int(partes[1]) <= 31)))
-            interno = len(partes) == 1 or host == "localhost" or host.endswith((".internal", ".local", ".localhost")) or privada
+            # Una etiqueta puramente numérica o hexadecimal (el decimal de 32 bits, «0xa9fea9fe» o «0») es una IP disfrazada (el sistema la resuelve a 169.254.169.254, etc.).
+            numerica = lambda p: re.fullmatch(r'\d+|0x[0-9a-f]+', p) is not None
+            canonica = len(partes) == 4 and all(re.fullmatch(r'0|[1-9]\d{0,2}', p) and int(p) <= 255 for p in partes)
+            octetos = [int(p) for p in partes] if canonica else []
+            privada = canonica and (
+                octetos[0] in (10, 127) or (octetos[0] == 192 and octetos[1] == 168) or (octetos[0] == 172 and 16 <= octetos[1] <= 31))
+            interno = (len(partes) == 1 and re.fullmatch(r'[a-z][a-z0-9-]*', host) is not None) or host == "localhost" \
+                or host.endswith((".internal", ".local", ".localhost")) or privada
+            # Lista cerrada OPCIONAL (RELE_BASES_PERMITIDAS, separada por comas: bases «https://host[:puerto]» o hosts): si existe, solo esas.
+            permitidas = [x.strip().lower() for x in (os.environ.get("RELE_BASES_PERMITIDAS") or env.get("RELE_BASES_PERMITIDAS") or "").split(",") if x.strip()]
             if puerto is not None and not (1 <= int(puerto) <= 65535):
                 motivo = "el puerto no es válido"
+            elif host.startswith("metadata") or host.startswith("instance-data") or ".metadata." in host:
+                motivo = "el host parece el servicio de metadatos de la nube (nombre que empieza por «metadata»)"
+            elif numerica(partes[-1]) and not canonica:  # inet_aton: si la última etiqueta es numérica o 0x…, el sistema lo lee como IP
+                motivo = "el host es una IP disfrazada (etiqueta numérica o hexadecimal) o una IP que no está en forma canónica de cuatro octetos"
+            elif canonica and (octetos[0] == 0 or (octetos[0] == 169 and octetos[1] == 254)):
+                motivo = "el host es link-local (169.254.0.0/16) o 0.0.0.0/8, donde viven los metadatos de la nube"
+            elif permitidas and not (host in permitidas or f"{esquema}://{host}" + (f":{puerto}" if puerto else "") in permitidas):
+                motivo = "el host no está en RELE_BASES_PERMITIDAS"
             elif esquema == "http" and not interno:
-                motivo = "http:// solo se admite para un host interno (nombre sin puntos, localhost, *.internal, *.local o IP privada); use https://"
+                motivo = "http:// solo se admite para un host interno (nombre sin puntos que empiece por letra, localhost, *.internal, *.local o IP privada); use https://"
         if motivo:
             print(f"{ROJO}✗ ABORTADO: RELE_URL_INTERNA {motivo}.{FIN}")
             sys.exit(1)

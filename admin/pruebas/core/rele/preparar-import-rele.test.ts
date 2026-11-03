@@ -78,6 +78,40 @@ describe('preparar-import.sh y RELE_URL_INTERNA', () => {
     }
   });
 
+  it('NIEGA: IP disfrazadas, link-local, 0.0.0.0/8 y nombres «metadata» abortan con http y con https (segunda revisión del PR #757)', () => {
+    // 169.254.169.254 escrito como un solo número decimal de 32 bits (calculado: el repositorio no lleva secuencias largas de dígitos).
+    const decimal = String(169 * 2 ** 24 + 254 * 2 ** 16 + 169 * 2 ** 8 + 254);
+    const malos = [
+      `http://${decimal}`, `https://${decimal}`, 'http://0xa9fea9fe', 'https://0xa9fea9fe', 'http://0', 'https://0', 'http://169.254.169.254', 'https://169.254.169.254',
+      'https://169.254.0.1:8443', 'http://0.0.0.0', 'https://0.1.2.3', 'https://rele.0x7f000001', 'https://10.1.2', 'https://metadata', 'http://metadata.google.internal', 'https://metadata.internal',
+      'https://169.254.169.254.', 'http://relay.123',
+    ];
+    for (const v of malos) {
+      rmSync(join(raiz, 'Flujos', 'f.local.json'), { force: true });
+      const r = correr(v);
+      expect(r.codigo, `${v}\n${r.salida}`).toBe(1);
+      expect(existsSync(join(raiz, 'Flujos', 'f.local.json')), v).toBe(false);
+      expect(r.salida).not.toContain(v);
+    }
+  });
+
+  it('la lista cerrada opcional RELE_BASES_PERMITIDAS deja pasar solo lo que nombra', () => {
+    const corre = (v: string, lista: string) => {
+      writeFileSync(join(raiz, 'Flujos', 'f.json'), JSON.stringify(FLUJO));
+      const r = spawnSync('bash', ['scripts/preparar-import.sh', 'Flujos/f.json', '.env.prueba'], {
+        cwd: raiz, encoding: 'utf8',
+        env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: join(raiz, 'tabla.md'), BASH_ENV: '', ENV: '', RELE_URL_INTERNA: v, RELE_BASES_PERMITIDAS: lista }),
+      });
+      return r.status;
+    };
+    expect(corre('http://relay:8080', 'http://relay:8080,https://otro.example.com')).toBe(0);
+    expect(corre('https://otro.example.com', 'http://relay:8080,https://otro.example.com')).toBe(0);
+    expect(corre('http://relay2:8080', 'http://relay:8080')).toBe(1);
+    expect(corre('https://intruso.example.com', 'http://relay:8080')).toBe(1);
+    // Aun en la lista, un link-local no pasa.
+    expect(corre('https://169.254.169.254', 'https://169.254.169.254')).toBe(1);
+  });
+
   it('NIEGA: con ruta, barra final, credenciales, comillas, espacios, puerto roto o esquema ajeno aborta', () => {
     for (const v of ['https://rele.example.com/', 'https://rele.example.com/v1', 'https://usuario:clave@rele.example.com', "https://rele.example.com'+alert(1)+'", 'https://rele.example.com extra', 'https://rele.example.com:99999', 'ftp://rele.example.com', 'rele.example.com', 'https://', 'https://-malo.example.com', 'https://rele.example.com?x=1', 'https://rele.example.com#x', 'http://relay\\x']) {
       rmSync(join(raiz, 'Flujos', 'f.local.json'), { force: true });

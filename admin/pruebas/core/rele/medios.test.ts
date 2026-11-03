@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  cabeceraDeFuentes, FUENTE_CUPO, FUENTE_PREPARAR, hallazgosDelGuardado, injertarGuardado, manejaMedios, nodosDelGuardado, urlDescargaRele, urlInfoRele, URL_DESCARGA_GUARDADO, NODOS_DE_META_DEL_GUARDADO,
+  CUPO_POR_DEFECTO_RELE, cabeceraDeFuentes, FUENTE_CUPO, FUENTE_PREPARAR, hallazgosDelGuardado, injertarGuardado, manejaMedios, nodosDelGuardado, urlDescargaRele, urlInfoRele, URL_DESCARGA_GUARDADO, NODOS_DE_META_DEL_GUARDADO,
   type OpcionesDelGuardado,
 } from '../../../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 import { MARCADOR_URL_DEL_RELE } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
@@ -52,7 +52,7 @@ function flujoBase(): Flujo {
 }
 const flujoConGuardado = (o: Partial<OpcionesDelGuardado> = {}): Flujo => injertarGuardado(flujoBase(), { ...OPC, ...o });
 
-interface Mundo { r: (m: J, o?: { tamano?: number | null; info?: J | 'lanza'; contenido?: 'lanza' | 'ok'; servidor?: number; aviso?: 'lanza'; ahoraMs?: number }, de?: string) => ResultadoTurno; llamadas: Record<'info' | 'contenido' | 'servidor' | 'aviso', LlamadaDoble[]> }
+interface Mundo { r: (m: J, o?: { tamano?: number | null; info?: J | 'lanza'; contenido?: 'lanza' | 'ok'; servidor?: number; aviso?: 'lanza'; ahoraMs?: number }, de?: string, wamid?: string) => ResultadoTurno; llamadas: Record<'info' | 'contenido' | 'servidor' | 'aviso', LlamadaDoble[]>; sd: J }
 function mundo(flujo: Flujo = flujoConGuardado()): Mundo {
   const llamadas: Mundo['llamadas'] = { info: [], contenido: [], servidor: [], aviso: [] };
   let cfg: Parameters<Mundo['r']>[1] = {};
@@ -92,7 +92,7 @@ function mundo(flujo: Flujo = flujoConGuardado()): Mundo {
     return mu.turno({ messages: [{ from: de, id: wamid, ...msg }], ahoraMs: o.ahoraMs ?? Date.UTC(2026, 10, 2, 15, 0, 0) }, { tolerarFallo: true } as never);
   };
   turno({ type: 'text', text: { body: 'hola' } }, {}, REC, 'wamid.R0');
-  return { r: (m, o, de) => turno(m, o, de), llamadas };
+  return { r: (m, o, de, wamid) => turno(m, o, de, wamid), llamadas, sd: mu.sd };
 }
 const imagen = (id = 'M1'): J => ({ type: 'image', image: { id, mime_type: 'image/jpeg' } });
 const documento = (): J => ({ type: 'document', document: { id: 'D1', mime_type: 'application/pdf', filename: 'a.pdf' } });
@@ -289,18 +289,49 @@ describe('corriendo: dos GET por medio guardado, nada a ciegas', () => {
 describe('cupo de descargas (500 por día y por WABA, 2 GET por medio): solo en el canal rele', () => {
   const tel = (i: number): string => `591700000${String(i).padStart(2, '0')}`;
   const D1 = Date.UTC(2026, 10, 2, 15, 0, 0);
-  it('NIEGA: un teléfono que manda 25 imágenes guarda 20; las 5 últimas no piden ni la info ni el contenido', () => {
+  it('el cupo por defecto es de 10 medios por teléfono y 60 por flujo (decisión de Andres, 03/11/2026)', () => {
+    expect(CUPO_POR_DEFECTO_RELE).toEqual({ porTelefono: 10, global: 60 });
+    expect(cabeceraDeFuentes('Carga de entrada', 'Config del negocio', {})).toContain('porTelefono: 10, global: 60');
+  });
+  it('NIEGA: un teléfono que manda 25 imágenes guarda 10; las 15 últimas no piden ni la info ni el contenido, y quedan contadas', () => {
     const m = mundo();
     for (let i = 0; i < 25; i++) m.r(imagen(`M${i}`), {}, tel(1));
-    expect(m.llamadas.info).toHaveLength(20);
-    expect(m.llamadas.contenido).toHaveLength(20);
+    expect(m.llamadas.info).toHaveLength(10);
+    expect(m.llamadas.contenido).toHaveLength(10);
+    // Lo omitido se ve en el estado del flujo (junto a sinAcceso, sinDescarga…), sin un mensaje más.
+    const hoy = '2026-11-02';
+    expect((m.sd['cupoDeMedios'] as J)['omitidos']).toBe(15);
+    expect(((m.sd['guardadoDeMedios'] as J)['omitidoPorCupo'] as J)).toEqual({ dia: hoy, n: 15 });
+    expect(m.llamadas.aviso).toHaveLength(0);
     // Otro teléfono sigue con su propio cupo.
     m.r(imagen('OTRO'), {}, tel(2));
-    expect(m.llamadas.info).toHaveLength(21);
+    expect(m.llamadas.info).toHaveLength(11);
   });
-  it('NIEGA: el tope global por flujo (60): con 4 teléfonos de 20 se agota y el quinto ya no guarda nada', () => {
+  it('NIEGA: lo que «Preparar guardado» descarta (teléfono, id de mensaje o id de medio inválidos) NO gasta cupo', () => {
+    const m = mundo(flujoConGuardado({ cupo: { porTelefono: 2, global: 3 } }));
+    for (let i = 0; i < 6; i++) m.r(imagen(`M${i}`), {}, '123');
+    for (let i = 0; i < 6; i++) m.r(imagen('a b'), {}, tel(1));
+    for (let i = 0; i < 6; i++) m.r(imagen(`N${i}`), {}, tel(2), '');
+    for (let i = 0; i < 6; i++) m.r({ type: 'image', image: 'x' }, {}, tel(3));
+    expect(m.llamadas.info).toHaveLength(0);
+    expect((m.sd['cupoDeMedios'] as J | undefined)?.['total'] ?? 0).toBe(0);
+    // El cupo sigue entero para lo válido.
+    m.r(imagen('V1'), {}, tel(1));
+    m.r(imagen('V2'), {}, tel(1));
+    m.r(imagen('V3'), {}, tel(1));
+    expect(m.llamadas.info).toHaveLength(2);
+  });
+  it('el cupo sin GM_CUPO definido (cabecera vieja) no revienta y usa los valores por defecto (10 y 60)', () => {
+    const f = flujoConGuardado();
+    const prep = f.nodes.find((n) => n.name === 'Preparar guardado')!;
+    prep.parameters['jsCode'] = String(prep.parameters['jsCode']).replace(/const GM_CUPO = [^\n]*\n/, '');
+    const m = mundo(f);
+    for (let i = 0; i < 12; i++) m.r(imagen(`M${i}`), {}, tel(1));
+    expect(m.llamadas.info).toHaveLength(10);
+  });
+  it('NIEGA: el tope global por flujo (60): con 6 teléfonos de 10 se agota y el séptimo ya no guarda nada', () => {
     const m = mundo();
-    for (const t of [1, 2, 3]) for (let i = 0; i < 20; i++) m.r(imagen(`M${t}-${i}`), {}, tel(t));
+    for (const t of [1, 2, 3, 4, 5, 6]) for (let i = 0; i < 10; i++) m.r(imagen(`M${t}-${i}`), {}, tel(t));
     expect(m.llamadas.info).toHaveLength(60);
     m.r(imagen('X'), {}, tel(4));
     m.r(documento(), {}, tel(5));
@@ -308,14 +339,14 @@ describe('cupo de descargas (500 por día y por WABA, 2 GET por medio): solo en 
   });
   it('el cupo se reinicia al cambiar el día de La Paz (UTC-4), no a las 00:00 UTC', () => {
     const m = mundo();
-    for (let i = 0; i < 21; i++) m.r(imagen(`M${i}`), { ahoraMs: D1 }, tel(1));
-    expect(m.llamadas.info).toHaveLength(20);
+    for (let i = 0; i < 11; i++) m.r(imagen(`M${i}`), { ahoraMs: D1 }, tel(1));
+    expect(m.llamadas.info).toHaveLength(10);
     // 02/11 23:30 La Paz = 03/11 03:30 UTC: sigue siendo el mismo día del negocio.
     m.r(imagen('T'), { ahoraMs: Date.UTC(2026, 10, 3, 3, 30, 0) }, tel(1));
-    expect(m.llamadas.info).toHaveLength(20);
+    expect(m.llamadas.info).toHaveLength(10);
     // 03/11 00:30 La Paz = 03/11 04:30 UTC: día nuevo.
     m.r(imagen('N'), { ahoraMs: Date.UTC(2026, 10, 3, 4, 30, 0) }, tel(1));
-    expect(m.llamadas.info).toHaveLength(21);
+    expect(m.llamadas.info).toHaveLength(11);
   });
   it('NIEGA: no cuentan los textos ni lo que escribe la recepción del negocio (es la ventana de las 24 h, no un cliente)', () => {
     const m = mundo(flujoConGuardado({ cupo: { porTelefono: 3, global: 3 } }));
@@ -365,6 +396,54 @@ describe('cupo de descargas (500 por día y por WABA, 2 GET por medio): solo en 
   });
   it('el cupo no usa nada que el Code de n8n no tenga', () => {
     expect(FUENTE_CUPO.replace(/^\s*\/\/.*$/gm, '')).not.toMatch(/\b(require|URL|URLSearchParams|Buffer|crypto|process|setTimeout|fetch)\b/);
+  });
+  it('NIEGA: `hallazgosDelGuardado` revisa la cabecera, las constantes y el ORDEN (cabecera + cupo + preparar), no solo que el cupo esté', () => {
+    const rompe = (f: (js: string) => string): string => {
+      const fl = flujoConGuardado();
+      const prep = fl.nodes.find((n) => n.name === 'Preparar guardado')!;
+      prep.parameters['jsCode'] = f(String(prep.parameters['jsCode']));
+      return hallazgosDelGuardado(fl).join('\n');
+    };
+    expect(hallazgosDelGuardado(flujoConGuardado())).toEqual([]);
+    // Sin la constante GM_CUPO.
+    expect(rompe((js) => js.replace(/const GM_CUPO = [^\n]*\n/, ''))).toMatch(/cabecera de fuentes que define GM_FUENTES y GM_CUPO/);
+    // Constantes fuera de rango.
+    expect(rompe((js) => js.replace(/porTelefono: \d+, global: \d+/, 'porTelefono: 0, global: 60'))).toMatch(/fuera de rango/);
+    expect(rompe((js) => js.replace(/porTelefono: \d+, global: \d+/, 'porTelefono: 90, global: 60'))).toMatch(/fuera de rango/);
+    expect(rompe((js) => js.replace(/porTelefono: \d+, global: \d+/, 'porTelefono: 10, global: 9999'))).toMatch(/fuera de rango/);
+    // El cupo DESPUÉS de preparar.
+    expect(rompe((js) => js.replace(FUENTE_CUPO, '').replace(FUENTE_PREPARAR, `${FUENTE_PREPARAR}\n\n${FUENTE_CUPO}`))).toMatch(/ANTES de guardado-preparar|DESPUÉS del cupo/);
+    // Algo entre la cabecera y el cupo.
+    expect(rompe((js) => js.replace(FUENTE_CUPO, `// nada\n\n${FUENTE_CUPO}`))).toMatch(/justo después de la cabecera/);
+    // Sin cabecera.
+    expect(rompe((js) => js.slice(js.indexOf(FUENTE_CUPO)))).toMatch(/cabecera/);
+  });
+});
+
+describe('manejaMedios no se esconde tras una URL del relé con otra forma (segunda revisión del PR #757)', () => {
+  const conUrl = (url: string, metodo = 'GET'): Flujo => {
+    const f = flujoBase();
+    // Con otro nombre: manejaMedios tiene que mirar la URL y el método, no el nombre del nodo.
+    const n = f.nodes.find((x) => x.name === 'Obtener URL del medio (general)')!;
+    n.name = 'Llamar al relé';
+    n.parameters = { method: metodo, url };
+    (f.connections['Reportar mensaje (entrante)'] as J)['main'] = [[{ node: 'Llamar al relé', type: 'main', index: 0 }]];
+    return f;
+  };
+  it('detecta la base marcador, una calculada, con ruta, con usuario, con puerto y con expresión', () => {
+    for (const u of [
+      `=${MARCADOR_URL_DEL_RELE}/v1/envio/medios/{{ $json.id }}`,
+      '={{ $json.base }}/v1/envio/medios/{{ $json.id }}',
+      '=https://h/api/v1/envio/medios/{{ $json.id }}',
+      '=https://usuario@host/v1/envio/medios/{{ $json.id }}',
+      '=https://usuario:clave@host:8443/prefijo/v1/envio/medios/abc',
+      "={{ $('Config del negocio').first().json.releUrl }}/v1/envio/medios/{{ $json.id }}",
+      'http://relay/v1/envio/medios/abc/contenido',
+    ]) expect(manejaMedios(conUrl(u)), u).toBe(true);
+  });
+  it('NIEGA: la subida (POST) y otras rutas del relé no cuentan como bajar un medio', () => {
+    expect(manejaMedios(conUrl('=https://h/v1/envio/medios/123', 'POST'))).toBe(false);
+    expect(manejaMedios(conUrl('=https://h/v1/envio/mensajes/123'))).toBe(false);
   });
 });
 

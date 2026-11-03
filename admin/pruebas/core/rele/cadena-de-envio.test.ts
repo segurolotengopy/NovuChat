@@ -201,13 +201,17 @@ describe('guardia: con el relé, «Armar mensajes» tiene que llamar a cmNumerar
     connections: {},
   });
   it('NIEGA: sin la llamada no se injerta, ni siquiera con la DEFINICIÓN de mensajes.js, un comentario o un texto', () => {
-    for (const js of ['return [];', MENSAJES_JS, `${MENSAJES_JS}\n// cmNumerar(lista)\nreturn [];`, "/* cmNumerar(x) */ return [];", 'const f = function cmNumerar(items) { return items; }; return [];']) {
+    for (const js of ['return [];', MENSAJES_JS, `${MENSAJES_JS}\n// cmNumerar(lista)\nreturn [];`, "/* cmNumerar(x) */ return [];", 'const f = function cmNumerar(items) { return items; }; return [];',
+      "const t = 'cmNumerar(x)'; return [];", 'const t = `cmNumerar(${x})`; return [];', 'return [{ json: { texto: "cmNumerar(x)" } }];',
+      'if (false) cmNumerar([]); return [];', 'if (false) { return cmNumerar([]); } return lista;', 'const f = () => { return cmNumerar(x); }; return lista;',
+      "return lista; // return cmNumerar(x)"]) {
       expect(() => injertar(plantilla(js), OPC_RELE), js.slice(0, 40)).toThrow(/cmNumerar/);
       expect(llamaANumerar(js), js.slice(0, 40)).toBe(false);
     }
   });
   it('con la llamada sí se injerta, y el canal Graph no la exige', () => {
     expect(() => injertar(plantilla(`${MENSAJES_JS}\nreturn cmNumerar(lista).map((json) => ({ json }));`), OPC_RELE)).not.toThrow();
+    expect(llamaANumerar('if (x) return [];\nreturn (e.sinNumerar === true ? lista : cmNumerar(lista)).map((json) => ({ json }));')).toBe(true);
     expect(() => injertar(plantilla('return [];'), { credenciales: { graph: 'G', ingesta: 'I' }, ingestaUrl: 'https://i.example/x' })).not.toThrow();
   });
 });

@@ -9,6 +9,7 @@
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { RAIZ_REPO, leerFuentes } from '../fuente-vm';
+import { FUENTE_CODIGOS_RELE, FUENTE_DECIDIR_ENVIO, hallazgosDelEnvioRele } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
 
 interface Decision { accion: string; codigo: string; esperaS: number; idMeta?: string; intentos: { n429: number; n409: number; nReint: number } }
 interface Intentos { n429?: number; n409?: number; nReint?: number }
@@ -247,6 +248,50 @@ describe('propiedades de toda la tabla', () => {
   });
   it('los contadores basura se toman como cero', () => {
     for (const i of [null, 'x', { n429: -3, n409: 'a', nReint: NaN }, []]) expect(releDecidir(err('WM-3037'), i, 0).accion).toBe('reintentar');
+  });
+});
+
+describe('falla cerrada: si «¿Enviar de verdad?» corrió más de una vez, el origen es ambiguo (segunda revisión del PR #757)', () => {
+  interface It { json: Record<string, unknown>; pairedItem?: { item: number } }
+  /** Corre el cuerpo del nodo con un `$` de mentira: `corridas` = cuántas veces corrió «¿Enviar de verdad?». */
+  function nodo(corridas: number, respuestas: unknown[]): It[] {
+    const origen = [{ json: { para: '1', respaldo: 'a', n: 1 } }, { json: { para: '2', respaldo: 'b', n: 2 } }];
+    const f = vm.runInNewContext(`(function ($input, $, $runIndex) {\n${FUENTE}\n})`, Object.create(null)) as (a: unknown, b: unknown, c: number) => It[];
+    const entrada = { all: () => respuestas.map((r, i) => ({ json: r, pairedItem: { item: i } })) };
+    const dolar = (nombre: string) => ({
+      all: (_rama: number, corrida: number) => {
+        if (nombre !== '¿Enviar de verdad?') throw new Error('nodo inesperado');
+        if (corrida >= corridas) throw new Error('Node has no run ' + corrida);
+        return origen;
+      },
+    });
+    return f(entrada, dolar, 0);
+  }
+  const OK = [{ messages: [{ id: 'wamid.1' }] }, { messages: [{ id: 'wamid.2' }] }];
+  it('con UNA corrida decide normal: cada respuesta con su mensaje', () => {
+    const r = nodo(1, OK);
+    expect(r.map((x) => [x.json['accion'], x.json['para'], x.json['idMeta']])).toEqual([['ok', '1', 'wamid.1'], ['ok', '2', 'wamid.2']]);
+  });
+  it('NIEGA: con dos corridas TODO sale incierto (no se reenvía, no se respalda, no se reporta) y con motivo claro', () => {
+    for (const corridas of [2, 3]) {
+      const r = nodo(corridas, [...OK.slice(0, 1), { error: { codigo: 'WM-3010', reintentable: false } }]);
+      expect(r.map((x) => x.json['accion'])).toEqual(['incierto', 'incierto']);
+      expect(r.map((x) => x.json['codigo'])).toEqual(['ORIGEN-AMBIGUO', 'ORIGEN-AMBIGUO']);
+      expect(String(r[0]!.json['motivo'])).toMatch(/mas de una vez/);
+      expect(r.every((x) => x.json['para'] === undefined && x.json['idMeta'] === undefined)).toBe(true);
+    }
+  });
+});
+
+describe('hallazgosDelEnvioRele verifica la falla cerrada del nodo armado', () => {
+  const nodoLeer = (js: string) => ({ nodes: [{ name: 'Leer respuesta del relé', parameters: { jsCode: js } }] });
+  it('el código actual pasa', () => {
+    expect(hallazgosDelEnvioRele(nodoLeer(`${FUENTE_CODIGOS_RELE}\n\n${FUENTE_DECIDIR_ENVIO}\n`))).toEqual([]);
+  });
+  it('NIEGA: sin el nodo, sin la guardia o con el código cambiado, se queja', () => {
+    expect(hallazgosDelEnvioRele({ nodes: [] }).join()).toMatch(/falta/);
+    expect(hallazgosDelEnvioRele(nodoLeer(`${FUENTE_CODIGOS_RELE}\n\n${FUENTE_DECIDIR_ENVIO.replace('ORIGEN-AMBIGUO', 'X')}\n`)).join()).toMatch(/falla cerrado/);
+    expect(hallazgosDelEnvioRele(nodoLeer('return [];')).join()).toMatch(/tal cual/);
   });
 });
 

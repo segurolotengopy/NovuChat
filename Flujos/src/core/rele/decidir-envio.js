@@ -72,9 +72,18 @@ function releDecidir(respuesta, intentos, azar) {
 
 const respuestas = $input.all();
 const vuelta = $runIndex;
+// FALLA CERRADA: «¿Enviar de verdad?» corre UNA vez por ejecución. Si hubiera una segunda corrida, `all(0, 0)` ya no sería el lote que se está enviando y
+// cada respuesta se emparejaría con el mensaje de OTRO origen (cruzado): se declara `incierto` (no se reenvía, no se respalda, no se reporta) con un motivo claro.
+let origenCruzado = false;
+try { origenCruzado = $('¿Enviar de verdad?').all(0, 1).length > 0; } catch (e) { origenCruzado = false; }
+if (origenCruzado) {
+  return respuestas.map((x, i) => ({ json: { accion: 'incierto', codigo: 'ORIGEN-AMBIGUO', esperaS: 0, motivo: '¿Enviar de verdad? corrio mas de una vez: el origen del mensaje es ambiguo' }, pairedItem: { item: i } }));
+}
 const origen = vuelta > 0 ? $('Esperar reintento').all(0, vuelta - 1) : $('¿Enviar de verdad?').all(0, 0);
 return respuestas.map((x, i) => {
-  const par = x && x.pairedItem && Number.isInteger(x.pairedItem.item) ? x.pairedItem.item : i;
+  // La respuesta i del HTTP (neverError, un ítem por ítem de entrada, en orden) es del mensaje i del origen: n8n reescribe el pairedItem de la entrada del nodo
+  // a { item: i } antes de correrlo (n8n-core 2.36.4, workflow-execute.js:893-918) y el Wait devuelve esos mismos ítems, así que el índice i del origen es el correcto.
+  const par = i;
   const src = origen[par] && origen[par].json && typeof origen[par].json === 'object' ? origen[par].json : null;
   // Sin el mensaje original no hay con qué reintentar ni con qué respaldar: incierto, sin reenviar.
   if (!src) return { json: { accion: 'incierto', codigo: 'SIN-ORIGEN', esperaS: 0 }, pairedItem: { item: i } };

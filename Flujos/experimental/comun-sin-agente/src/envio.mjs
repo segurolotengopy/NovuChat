@@ -161,10 +161,61 @@ export function nodosDeEnvio(opciones = {}) {
   return { nodes, connections, entrada: '¿Enviar de verdad?', salidas };
 }
 
-/** ¿El código llama a `cmNumerar(…)`? Se ignoran los comentarios y la definición `function cmNumerar(`. */
+/** Deja el código sin comentarios ni contenido de cadenas o plantillas (cada carácter pasa a espacio, el largo no cambia): solo queda código real. */
+function soloCodigo(js) {
+  const s = String(js);
+  let o = '';
+  for (let i = 0; i < s.length;) {
+    const c = s[i];
+    const d = s[i + 1];
+    if (c === '/' && d === '/') { while (i < s.length && s[i] !== '\n') { o += ' '; i++; } continue; }
+    if (c === '/' && d === '*') {
+      const f = s.indexOf('*/', i + 2);
+      const hasta = f < 0 ? s.length : f + 2;
+      while (i < hasta) { o += s[i] === '\n' ? '\n' : ' '; i++; }
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      o += c; i++;
+      while (i < s.length && s[i] !== c) { if (s[i] === '\\') { o += ' '; i++; } o += s[i] === '\n' ? '\n' : ' '; i++; }
+      if (i < s.length) { o += c; i++; }
+      continue;
+    }
+    o += c; i++;
+  }
+  return o;
+}
+
+/**
+ * ¿«Armar mensajes» numera sus mensajes? La llamada `cmNumerar(…)` tiene que ser CÓDIGO REAL (no un comentario, una cadena, ni la definición `function cmNumerar(`)
+ * y estar en el `return` FINAL del nodo, a nivel de función (fuera de llaves): así no vale `'cmNumerar(x)'` dentro de un texto, ni `if (false) cmNumerar([])`, ni un
+ * `return` temprano que no la lleva. No ejecuta el código: el límite es que una expresión muerta dentro del propio return (`return false ? cmNumerar(x) : x`) pasaría.
+ */
 export function llamaANumerar(js) {
-  const sinComentarios = String(js).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
-  return /\bcmNumerar\s*\(/.test(sinComentarios.replace(/\bfunction\s+cmNumerar\s*\(/g, ''));
+  const c = soloCodigo(js).replace(/\bfunction\s+cmNumerar\s*\(/g, 'function ______(');
+  let profundidad = 0;
+  let ultimo = -1;
+  for (let i = 0; i < c.length; i++) {
+    if (c[i] === '{') profundidad++;
+    else if (c[i] === '}') profundidad--;
+    else if (profundidad === 0 && c.startsWith('return', i) && !/[A-Za-z0-9_$.]/.test(c[i - 1] || ' ') && !/[A-Za-z0-9_$]/.test(c[i + 6] || ' ')) ultimo = i;
+  }
+  return ultimo >= 0 && /(?<![A-Za-z0-9_$.])cmNumerar\s*\(/.test(c.slice(ultimo + 6));
+}
+
+/**
+ * Lo que le falta a la cadena del relé en un flujo ya armado (vacío si está bien). Hoy verifica la FALLA CERRADA de «Leer respuesta del relé»: su código tiene que ser
+ * `codigos.js` + `decidir-envio.js` tal cual y declarar `incierto` (`ORIGEN-AMBIGUO`) si «¿Enviar de verdad?» corrió más de una vez (origen cruzado posible).
+ */
+export function hallazgosDelEnvioRele(flujo) {
+  const h = [];
+  const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
+  const leer = nodos.find((n) => n.name === 'Leer respuesta del relé');
+  if (!leer) return ['envio rele: falta «Leer respuesta del relé»'];
+  const js = String((leer.parameters || {}).jsCode || '');
+  if (!js.includes(FUENTE_DECIDIR_ENVIO) || !js.includes(FUENTE_CODIGOS_RELE)) h.push('envio rele: «Leer respuesta del relé» no incluye codigos.js y decidir-envio.js tal cual');
+  if (!/ORIGEN-AMBIGUO/.test(js) || !/\$\('¿Enviar de verdad\?'\)\.all\(0, 1\)/.test(js)) h.push('envio rele: «Leer respuesta del relé» no falla cerrado si «¿Enviar de verdad?» corrió más de una vez (origen cruzado)');
+  return h;
 }
 
 /**
@@ -303,10 +354,11 @@ export function nodosDeEnvioRele(opciones = {}) {
   const para = o.para || 'cliente';
   const [x0, y0] = o.desde || [8120, 300];
   const lote = { tamano: (o.lote && o.lote.tamano) || 1, intervaloMs: (o.lote && o.lote.intervaloMs) || 1500 };
-  // El mensaje en cada punto de la cadena. NO se lee de «Armar mensajes» con `.item`: tras «Esperar reintento» el pairedItem de un ítem es el que le dio el Switch
-  // (su índice en la entrada del Switch) y el Wait lo devuelve sin tocarlo, así que `.item` apunta a OTRO mensaje. «Leer respuesta del relé» copia el ítem armado
-  // y lo emite 1 a 1 con su pairedItem, y desde el Switch hasta el reporte la cadena de pairedItem llega a él. `$json` trae el mensaje (con `para`) cuando el ítem
-  // viene de «Leer respuesta del relé» o de la rama «no» de «¿Enviar de verdad?» (el ítem armado); solo la salida del respaldo (la respuesta del relé) no lo trae.
+  // El mensaje en cada punto de la cadena. NO se lee de «Armar mensajes» con `.item`: es un camino largo (Switch, Wait, HTTP) y, aunque n8n reescribe el pairedItem de
+  // la entrada de CADA nodo a { item: índice } antes de correrlo (n8n-core 2.36.4, workflow-execute.js:893-918, así que el Wait no cruza mensajes), leerlo de
+  // «Leer respuesta del relé» es más robusto: ese nodo copia el ítem armado y lo emite 1 a 1, y desde ahí hasta el reporte la cadena de pairedItem llega a él.
+  // `$json` trae el mensaje (con `para`) cuando el ítem viene de «Leer respuesta del relé» o de la rama «no» de «¿Enviar de verdad?» (el ítem armado); solo la
+  // salida del respaldo (la respuesta del relé) no lo trae.
   const L = "$('Leer respuesta del relé')";
   const M = `((($json || {}).para !== undefined || ($json || {}).reportar !== undefined || ($json || {}).sinMensajes !== undefined) ? $json : ${L}.item.json)`;
   const credencialDelRele = { httpHeaderAuth: { id: '', name: credencial } };
@@ -345,7 +397,7 @@ export function nodosDeEnvioRele(opciones = {}) {
         ...o, rol: 'respaldo', pnidExpresion: `${L}.item.json.phoneNumberId`, destinoExpresion: `${L}.item.json.para`, nExpresion: `${L}.item.json.n`, lote,
         payloadExpresion: `({ messaging_product: 'whatsapp', recipient_type: 'individual', type: 'text', text: { preview_url: true, body: String(${L}.item.json.respaldo || '').slice(0, 4000) } })`,
       }),
-      notes: 'Si el relé o Meta rechazan el interactivo o la plantilla, sale el mismo contenido como texto: UN solo intento (Idempotency-Key = cliente-ejecución-respaldo-n). Envía de a uno con 1,5 s entre mensajes. Lee el mensaje de «Leer respuesta del relé», no de «Armar mensajes»: tras «Esperar reintento» el pairedItem es el del Switch y apuntaría a otro mensaje.',
+      notes: 'Si el relé o Meta rechazan el interactivo o la plantilla, sale el mismo contenido como texto: UN solo intento (Idempotency-Key = cliente-ejecución-respaldo-n). Envía de a uno con 1,5 s entre mensajes. Lee el mensaje de «Leer respuesta del relé», no de «Armar mensajes»: el camino por el Switch y la espera es largo y así no depende del emparejamiento.',
     },
   ];
   const connections = {

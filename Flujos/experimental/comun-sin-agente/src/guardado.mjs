@@ -78,7 +78,9 @@ const ANFITRION_DE_MEDIO = /^=?\s*https:\/\/(graph\.facebook\.com|lookaside\.fbs
 // Esto DETECTA (a propósito, cualquier host http(s)): un nodo que baja medios del relé con una URL real tiene que contar como «maneja medios» para que
 // lo alcance la compuerta del guardado. Lo que el repositorio ADMITE como base del relé (solo el marcador; las pruebas, un host `*.example`) lo valida
 // `esBaseDeReleAdmitida`, en `validarRele` y en `hallazgosDelGuardado`.
-const ANFITRION_DE_MEDIO_RELE = /^=?\s*(?:REEMPLAZAR_URL_INTERNA_DEL_RELE|https?:\/\/[A-Za-z0-9.:-]+)\/v1\/envio\/medios\//;
+// Se busca la RUTA del relé en cualquier parte de la URL (no solo tras un host simple), para que no la esconda una base calculada (`={{ $json.base }}/v1/…`), una base con ruta
+// (`https://h/api/v1/…`) ni un usuario (`https://user@host/v1/…`); segunda revisión del PR #757.
+const ANFITRION_DE_MEDIO_RELE = /\/v1\/envio\/medios\//;
 const esPedidoDeMedio = (url, metodo = 'GET') => {
   const texto = String(url || '').trim();
   if (ANFITRION_DE_MEDIO_RELE.test(texto)) return String(metodo || 'GET').toUpperCase() === 'GET';
@@ -129,7 +131,7 @@ export const ARISTAS_DEL_GUARDADO = [
  */
 export const LIMITE_DE_IMAGEN_RELE = 5 * 1024 * 1024;
 /** El cupo por defecto del canal rele (ver `guardado-cupo.js`): medios por teléfono y día, y por flujo y día. */
-export const CUPO_POR_DEFECTO_RELE = { porTelefono: 20, global: 60 };
+export const CUPO_POR_DEFECTO_RELE = { porTelefono: 10, global: 60 }; // 10 por teléfono: decisión de Andres, 03/11/2026
 
 /** La URL de la descarga: la del CDN de Meta solo si Meta informó un tamaño dentro de 16 MiB (`limite`); si no, vacía (no se baja nada). */
 // Si Meta NO informa el tamaño (0 o ausente): imagen, audio y sticker se bajan igual (el servidor impone el tope por tipo, 413, y el tiempo límite de la
@@ -495,7 +497,23 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
       if (n.retryOnFail) h.push(`guardado: «${nombre}» no reintenta por el relé (un id vencido da 502 WM-3040 y cada GET gasta una de las 500 descargas diarias por WABA)`);
     }
     if (bases.size > 1) h.push('guardado: los nodos del relé no usan la misma base');
-    if (!String((prep.parameters || {}).jsCode || '').includes(FUENTE_CUPO)) h.push('guardado: «Preparar guardado» (canal rele) no incluye guardado-cupo.js tal cual: sin el cupo, una ráfaga de un teléfono gasta las 500 descargas diarias del WABA');
+    const jsPrep = String((prep.parameters || {}).jsCode || '');
+    if (!jsPrep.includes(FUENTE_CUPO)) h.push('guardado: «Preparar guardado» (canal rele) no incluye guardado-cupo.js tal cual: sin el cupo, una ráfaga de un teléfono gasta las 500 descargas diarias del WABA');
+    else {
+      // El orden exigido: cabecera (con `GM_FUENTES` y `GM_CUPO`) + cupo + preparar. Con el cupo después de preparar, o sin las constantes, no cuenta lo que debe.
+      const cab = /^([\s\S]*?const GM_CUPO = \{ porTelefono: (\d+), global: (\d+) \};)\n\n/.exec(jsPrep);
+      if (!cab) h.push('guardado: «Preparar guardado» (canal rele) tiene que empezar con la cabecera de fuentes que define GM_FUENTES y GM_CUPO');
+      else {
+        if (!/^\/\/ FUENTES DEL GUARDADO:[^\n]*\nconst GM_FUENTES = \{/.test(cab[1])) h.push('guardado: «Preparar guardado» (canal rele) no empieza con la cabecera de fuentes del guardado');
+        const pt = Number(cab[2]);
+        const gl = Number(cab[3]);
+        if (!(pt >= 1 && gl >= 1 && pt <= gl && gl <= 250)) h.push('guardado: GM_CUPO de «Preparar guardado» fuera de rango (1 a 250, porTelefono no mayor que global)');
+        if (jsPrep.slice(cab[0].length).indexOf(FUENTE_CUPO) !== 0) h.push('guardado: guardado-cupo.js tiene que ir justo después de la cabecera y ANTES de guardado-preparar.js');
+      }
+      const iCupo = jsPrep.indexOf(FUENTE_CUPO);
+      const iPrep = jsPrep.indexOf(FUENTE_PREPARAR);
+      if (iPrep < 0 || iPrep < iCupo) h.push('guardado: «Preparar guardado» (canal rele) tiene que llevar guardado-preparar.js DESPUÉS del cupo');
+    }
     const base = [...bases][0];
     if (base !== undefined && !esBaseDeReleAdmitida(base)) h.push('guardado: la base del relé tiene que ser el marcador REEMPLAZAR_URL_INTERNA_DEL_RELE (solo las pruebas usan un host *.example)');
     if (base !== undefined) {

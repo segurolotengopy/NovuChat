@@ -119,7 +119,8 @@ describe('pairedItem', () => {
     const f = emparejado("const t = $input.all(); return [2, 1, 0].map((i) => ({ json: { y: t[i].json.x * 10 }, pairedItem: { item: i } }));");
     const r = crearMundo({ flujo: f, ahoraMs: AHORA }).turno({ lista: [1, 2, 3] });
     expect(r.porNodo['B']!.map((j) => [j['recibido'], j['origen']])).toEqual([[30, 3], [20, 2], [10, 1]]);
-    expect(r.porNodo['C']!.map((j) => j['par'])).toEqual([2, 1, 0]);
+    // El que sigue ve SIEMPRE `{ item: su propio índice }` (n8n reescribe el pairedItem de la entrada de cada nodo), también tras un reordenamiento.
+    expect(r.porNodo['C']!.map((j) => j['par'])).toEqual([0, 1, 2]);
   });
   it('NIEGA: sin `pairedItem` y con otro número de ítems, `.item` no se adivina y lanza', () => {
     const f = emparejado("return [{ json: { y: 1 } }, { json: { y: 2 } }];");
@@ -144,10 +145,18 @@ describe('pairedItem tras un filtro y un Wait (el defecto de la revisión del PR
     nodes: [{ name: 'Entrada de prueba', type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] }, code('Origen', 'return $input.first().json.lista.map((x) => ({ json: { x } }));', 1), ...medio],
   } as unknown as Flujo);
 
-  it('NIEGA: tras IF → Wait, un ítem que NO era el primero ya no empareja con su origen (el Wait conserva el pairedItem del IF): el doble lo reproduce lanzando', () => {
+  // n8n-core 2.36.4 (workflow-execute.js:893-918) reescribe el pairedItem de cada ítem de entrada a { item: itemIndex } ANTES de correr cualquier nodo,
+  // y el Wait devuelve getInputData (ya reescritos): tras IF → Wait cada ítem empareja con SU origen, no con otro.
+  it('tras IF → Wait, un ítem que NO era el primero sigue emparejando con SU origen (n8n reescribe el pairedItem de la entrada del Wait)', () => {
     const f = flujo(iff('Filtro', 2), espera('Esperar', 3), lector('Leer', 4));
     f.connections = { ...c('Entrada de prueba', 'Origen'), ...c('Origen', 'Filtro'), Filtro: { main: [[{ node: 'Esperar', type: 'main', index: 0 }], []] }, ...c('Esperar', 'Leer') } as Flujo['connections'];
-    expect(() => crearMundo({ flujo: f, ahoraMs: AHORA }).turno({ lista: [1, 2, 3] })).toThrow(/sin ítem emparejado/);
+    const r = crearMundo({ flujo: f, ahoraMs: AHORA }).turno({ lista: [1, 2, 3] });
+    expect(r.porNodo['Leer']!.map((j) => j['origen'])).toEqual([2, 3]);
+  });
+  it('NIEGA: el Wait NO conserva el índice de más atrás (si lo conservara, el segundo ítem filtrado, índice 2, apuntaría fuera de la entrada del Wait y lanzaría)', () => {
+    const f = flujo(iff('Filtro', 2), espera('Esperar', 3), lector('Leer', 4));
+    f.connections = { ...c('Entrada de prueba', 'Origen'), ...c('Origen', 'Filtro'), Filtro: { main: [[{ node: 'Esperar', type: 'main', index: 0 }], []] }, ...c('Esperar', 'Leer') } as Flujo['connections'];
+    expect(() => crearMundo({ flujo: f, ahoraMs: AHORA }).turno({ lista: [1, 2, 3] })).not.toThrow();
   });
   it('sin el Wait, el IF reescribe el pairedItem y el origen sale bien: el defecto es del nodo de paso, no del filtro', () => {
     const f = flujo(iff('Filtro', 2), lector('Leer', 4));
@@ -155,20 +164,19 @@ describe('pairedItem tras un filtro y un Wait (el defecto de la revisión del PR
     const r = crearMundo({ flujo: f, ahoraMs: AHORA }).turno({ lista: [1, 2, 3] });
     expect(r.porNodo['Leer']!.map((j) => j['origen'])).toEqual([2, 3]);
   });
-  it('el Wait conserva el pairedItem: un ítem que era el primero sigue emparejando (por eso el defecto no aparece con un solo mensaje)', () => {
+  it('con un solo ítem tras el filtro también empareja', () => {
     const f = flujo(iff('Filtro', 2), espera('Esperar', 3), lector('Leer', 4));
     f.connections = { ...c('Entrada de prueba', 'Origen'), ...c('Origen', 'Filtro'), Filtro: { main: [[{ node: 'Esperar', type: 'main', index: 0 }], []] }, ...c('Esperar', 'Leer') } as Flujo['connections'];
     // Con lista [2]: el único ítem pasa el filtro con pairedItem 0 y el Wait tiene un ítem en la entrada, índice 0: empareja.
     const r = crearMundo({ flujo: f, ahoraMs: AHORA }).turno({ lista: [2] });
     expect(r.porNodo['Leer']!.map((j) => j['origen'])).toEqual([2]);
   });
-  it('NIEGA: si el ítem 2 del filtro es el primero que pasa pero hay otro después, el emparejamiento sale CRUZADO, no solo roto', () => {
-    // Filtro deja pasar los ítems 2 y 3 del origen (índices 1 y 2 en la entrada del filtro); el Wait recibe dos ítems (índices 0 y 1).
-    // El primero conserva pairedItem 1 y empareja con el SEGUNDO ítem del Wait (el 3): cruzado. El segundo tiene pairedItem 2: no existe.
+  it('`$input.all()[i].pairedItem` es { item: i } para todo nodo, también tras un filtro', () => {
+    // Filtro deja pasar los ítems 2 y 3 del origen (índices 1 y 2 en la entrada del filtro); el Wait recibe dos ítems y n8n los reindexa a 0 y 1.
     const f = flujo(iff('Filtro', 2), espera('Esperar', 3), code('Lee', "return $input.all().map((it) => ({ json: { par: it.pairedItem.item } }));", 4));
     f.connections = { ...c('Entrada de prueba', 'Origen'), ...c('Origen', 'Filtro'), Filtro: { main: [[{ node: 'Esperar', type: 'main', index: 0 }], []] }, ...c('Esperar', 'Lee') } as Flujo['connections'];
     const r = crearMundo({ flujo: f, ahoraMs: AHORA }).turno({ lista: [1, 2, 3] });
-    expect(r.porNodo['Lee']!.map((j) => j['par'])).toEqual([1, 2]);
+    expect(r.porNodo['Lee']!.map((j) => j['par'])).toEqual([0, 1]);
   });
 });
 

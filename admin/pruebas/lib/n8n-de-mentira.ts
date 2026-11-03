@@ -83,8 +83,8 @@
  *     una corrida que no existe LANZA, como n8n. Los ítems que recibe un Code traen `pairedItem: { item }` (el índice en la entrada del nodo que los
  *     produjo), y un Code puede devolver `pairedItem` en sus ítems de salida para que `.item` siga emparejado a través de él (n8n lo exige: sin
  *     emparejamiento, `$('Armar mensajes').item` falla). `.item` recorre la cadena de `pairedItem` nodo por nodo como n8n: IF, Switch, HTTP y Code
- *     reescriben el índice (el de su entrada); Wait y noOp devuelven el ítem TAL CUAL, con el índice que traía. Por eso, tras un filtro y un Wait, un
- *     ítem que no era el primero empareja con OTRO o con ninguno (revisión del PR #757). `opciones.idEjecucion` fija `$execution.id` de un turno (por omisión, el de siempre).
+ *     reescriben el índice (el de su entrada); Wait y noOp devuelven los ítems de su entrada, que n8n ya reescribió a `{ item: índice en su entrada }`
+ *     (n8n-core 2.36.4, workflow-execute.js:893-918): tras un filtro y un Wait el emparejamiento sigue bien (segunda revisión del PR #757). `opciones.idEjecucion` fija `$execution.id` de un turno (por omisión, el de siempre).
  *   - `$('Nodo').all()` / `.first()` devuelven las salidas de TODAS las ramas de
  *     la última corrida de ese nodo; `.item` sin emparejamiento cae al único
  *     ítem que el nodo emitió, y si hay varios, lanza.
@@ -425,9 +425,8 @@ export function crearMundo(op: OpcionesMundo): Mundo {
 
   /**
    * `$('Nodo').item` como lo resuelve n8n: se sigue el `pairedItem` del ítem actual de nodo en nodo, hacia atrás. `par` es un índice en la ENTRADA del
-   * nodo que produjo el ítem; el ítem de la ENTRADA del nodo en ese índice es el siguiente paso, y el ítem que sale del nodo pedido es el hallado. Un nodo de paso (Wait, noOp) conserva el `pairedItem` que traía,
-   * y un IF o un Switch lo reescriben con el índice de su propia entrada: por eso, tras un Wait que sigue a un filtro, el índice ya no apunta a donde
-   * el ítem estaba y `.item` entrega OTRO mensaje (o ninguno). Devuelve `undefined` si la cadena no se puede seguir (queda el emparejamiento por linaje).
+   * nodo que produjo el ítem; el ítem de la ENTRADA del nodo en ese índice es el siguiente paso, y el ítem que sale del nodo pedido es el hallado. Todo nodo, también un Wait o un noOp, deja en el ítem el índice de su propia
+   * entrada (n8n lo reescribe antes de correrlo), así que la cadena se sigue sin cruzar mensajes. Devuelve `undefined` si la cadena no se puede seguir (queda el emparejamiento por linaje).
    */
   function caminarEmparejamiento(inicio: Item, destino: string): Item | undefined {
     let it: Item = inicio;
@@ -493,8 +492,12 @@ export function crearMundo(op: OpcionesMundo): Mundo {
 
   const hijoDe = (n: Nodo, it: Item, json: J): Item => ({ json, linaje: { ...it.linaje, [n.name]: json }, origen: it });
 
-  /** Un nodo de paso (Wait, noOp, desactivado) devuelve los ítems de entrada TAL CUAL: conservan su `pairedItem`. */
-  const pasa = (n: Nodo, it: Item): Item => ({ ...hijoDe(n, it, it.json), par: it.par });
+  /**
+   * Un nodo de paso (Wait, noOp, desactivado) devuelve los ítems de entrada. Pero n8n (n8n-core 2.36.4, `workflow-execute.js:893-918`) reescribe, ANTES de
+   * correr cualquier nodo, el `pairedItem` de cada ítem de entrada a `{ item: itemIndex }`: lo que el nodo de paso devuelve ya trae el índice de SU propia
+   * entrada, no el que traía de atrás. Por eso un Wait detrás de un filtro NO cruza los mensajes (segunda revisión del PR #757).
+   */
+  const pasa = (n: Nodo, it: Item, indice: number): Item => ({ ...hijoDe(n, it, it.json), par: indice });
 
   /** Corre `fn` ítem por ítem; los errores siguen `onError`. */
   function porItem(n: Nodo, items: Item[], fn: (it: Item) => J[]): Item[][] {
@@ -708,7 +711,8 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   /** Corre el cuerpo de un Code con `$input` (con `pairedItem`), `$('Nodo')` con corridas y `$runIndex`. Devuelve los ítems tal cual (`json` y `pairedItem`). */
   function correrCode(codigo: string, items: Item[], nombre: string): { json: J; pairedItem?: { item: number } }[] {
     const jsons = items.map((i) => clonar(i.json));
-    const deEntrada = (j: J, i: number): { json: J; pairedItem?: { item: number } } => (items[i]?.par === undefined ? { json: j } : { json: j, pairedItem: { item: items[i]!.par! } });
+    // n8n reescribe el `pairedItem` de cada ítem de entrada a `{ item: itemIndex }` antes de correr el nodo (workflow-execute.js:893-918).
+    const deEntrada = (j: J, i: number): { json: J; pairedItem: { item: number } } => ({ json: j, pairedItem: { item: i } });
     const entrada = {
       all: () => jsons.map(deEntrada),
       first: () => deEntrada(jsons[0] as J, 0),
@@ -769,7 +773,7 @@ export function crearMundo(op: OpcionesMundo): Mundo {
     } catch (e) {
       return fallaEntero(n, items, e);
     }
-    return [items.map((it) => pasa(n, it))];
+    return [items.map((it, i) => pasa(n, it, i))];
   }
 
   function ejecutarRespuesta(n: Nodo, items: Item[]): Item[][] {
@@ -895,7 +899,7 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   // --- un nodo ---------------------------------------------------------------------------------
   function ejecutarNodo(n: Nodo, entradas: Item[]): Item[][] {
     const items = (n as J)['executeOnce'] === true ? entradas.slice(0, 1) : entradas;
-    if (desactivados.has(n.name)) return [items.map((it) => pasa(n, it))];
+    if (desactivados.has(n.name)) return [items.map((it, i) => pasa(n, it, i))];
     const doble = dobles[n.name];
     let salidas: Item[][];
     if (doble !== undefined) salidas = porItem(n, items, (it) => correrDoble(n, it, doble));
@@ -907,7 +911,7 @@ export function crearMundo(op: OpcionesMundo): Mundo {
         case 'set': salidas = porItem(n, items, (it) => [ejecutarSet(n, it)]); break;
         case 'respondToWebhook': salidas = ejecutarRespuesta(n, items); break;
         case 'removeDuplicates': salidas = ejecutarRepetidos(n, items); break;
-        case 'noOp': salidas = [items.map((it) => pasa(n, it))]; break;
+        case 'noOp': salidas = [items.map((it, i) => pasa(n, it, i))]; break;
         case 'wait': salidas = ejecutarEspera(n, items); break;
         default: throw new SinDoble(n.name, n.type);
       }

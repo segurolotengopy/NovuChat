@@ -219,3 +219,13 @@ La rama del miniCRM (`ramaCrm`, módulo `crm`) agrega **8 nodos** a cada flujo q
 > (~07/11). Lo cierra: la unificación nodo por nodo con la prueba byte a byte de
 > `pruebas/core/nucleo-comun.test.ts`, o una nueva decisión escrita de Andres.
 > Vence el 31/01/2027; si vence sin cerrarse ni renovarse, es un defecto.
+
+> **Definición de `cmNumerar` en `mensajes.js` (PR del relé B9, 03/11/2026, 0 mensajes por conversación).** Qué queda distinto: el módulo común
+> `Flujos/experimental/comun-sin-agente/src/mensajes.js` suma la FUNCIÓN `cmNumerar` (numera los mensajes de «Armar mensajes» para la Idempotency-Key del canal
+> `rele`) y ninguno de estos flujos la llama: solo cambia el texto del nodo «Armar mensajes», sin cambio de comportamiento. Cambian por eso, y solo por eso, los
+> **18 JSON**: `captacion-minima.novuchat.json` y `captacion-minima.prueba.json`; `chat-novuchat.novuchat.json` y `chat-novuchat.prueba.json`;
+> `doctoras.rroca-emma.json`, `doctoras.rroca-emma.prueba.json`, `doctoras.rroca-evy.json` y `doctoras.rroca-evy.prueba.json`; `rroca-antonio.json` y
+> `rroca-antonio.prueba.json`; `rroca-emma.json` y `rroca-emma.prueba.json`; `rroca-evy.json` y `rroca-evy.prueba.json`; `rroca-ruben.json` y
+> `rroca-ruben.prueba.json`; `walisuma.json` y `walisuma.prueba.json`. Por qué: el módulo es común y los constructores lo incluyen tal cual; no se publica nada
+> solo por esto. Lo cierra: la próxima publicación de cada flujo (que ya lleva la definición); hasta entonces `estado-de-versiones.sh` puede mostrar atrasado a
+> cualquiera de los vivos que figuran arriba (Rubén, Antonio, Evy, Emma, Walisuma, chat NovuChat) y es una diferencia declarada, sin riesgo. Vence el 31/01/2027.

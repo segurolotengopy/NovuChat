@@ -27,6 +27,7 @@ export interface CadenaDeEnvio {
 }
 export function nodosDeEnvio(opciones: OpcionesDeEnvio): CadenaDeEnvio;
 export function llamaANumerar(js: string): boolean;
+export function hallazgosDelEnvioRele(flujo: { nodes?: any[] }): string[];
 export function esBaseDeReleAdmitida(base: string): boolean;
 export function injertar<T extends { nodes: any[]; connections: Record<string, any> }>(plantilla: T, opciones: OpcionesDeEnvio): T;
 
