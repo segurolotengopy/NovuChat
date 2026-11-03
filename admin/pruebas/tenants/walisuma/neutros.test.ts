@@ -23,7 +23,8 @@ const huella = (t: string): string => createHash('sha256').update(t).digest('hex
 const HUELLAS: [string, string, string][] = [
   ['_comun.js', '304e6d15ac80e270', 'b861766c1285d559'],
   ['carga-de-entrada.js', '2562bb2b56c2ea23', '2562bb2b56c2ea23'],
-  ['config-del-negocio.js', '4f36336734d741cb', '4f36336734d741cb'],
+  // Antonio ganó la ubicación (02/11/2026: `direccion` y `direccionMaps` de la Consola); el neutro queda como estaba. Su diferencia se declara abajo.
+  ['config-del-negocio.js', '1a6f220b08a46619', '4f36336734d741cb'],
   ['normalizar-entrada.js', 'ad54b5d57c48e022', '03a6bdc856c0e0ff'],
   ['puerta-del-turno.js', '3f8a837a3912eb78', '3f8a837a3912eb78'],
   ['resumen-del-turno.js', '56e4bdf011a18b83', '08eea9fd84116169'],
@@ -37,7 +38,13 @@ describe('huellas: lo que se subió y de dónde', () => {
     });
   }
   it('los tres idénticos lo son byte a byte', () => {
-    for (const a of ['carga-de-entrada.js', 'config-del-negocio.js', 'puerta-del-turno.js']) expect(leer(join(NEUTROS, a))).toBe(leer(join(ANTONIO, a)));
+    for (const a of ['carga-de-entrada.js', 'puerta-del-turno.js']) expect(leer(join(NEUTROS, a))).toBe(leer(join(ANTONIO, a)));
+  });
+  it('config-del-negocio.js: idéntico salvo la ubicación propia de Antonio (el enlace de Maps y la dirección de la Consola)', () => {
+    const antonio = leer(join(ANTONIO, 'config-del-negocio.js'))
+      .replace(/\/\/ El enlace de Google Maps de la Consola[^\n]*\nconst ENLACE_DE_MAPA[^\n]*\nconst enlaceDeMapa[^\n]*\n\n/, '')
+      .replace(/    \/\/ La ubicación \(02\/11\/2026\)[^\n]*\n    direccion:[^\n]*\n    direccionMaps:[^\n]*\n/, '');
+    expect(leer(join(NEUTROS, 'config-del-negocio.js'))).toBe(antonio);
   });
 });
 
