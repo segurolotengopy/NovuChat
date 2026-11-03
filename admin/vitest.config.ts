@@ -112,6 +112,7 @@ export const SUITES_PURAS = [
   'pruebas/capacidades-comunes.test.ts',
   'pruebas/modulos/captacion/captacion.test.ts',
   'pruebas/modulos/crm/crm.test.ts',
+  'pruebas/modulos/crm/editores-crm.test.ts',
   'pruebas/modulos/crm/crm-flujo.test.ts',
   'pruebas/modulos/catalogo-web/carrito-podado.test.ts',
   'pruebas/modulos/catalogo-web/retencion-fichas.test.ts',
