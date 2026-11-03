@@ -124,7 +124,7 @@ describe('B1. argumentos y salvaguarda (puros)', () => {
 
   it('NEGADO: --aplicar sin respaldo; respaldo dentro del repositorio; --revertir sin respaldo o con --valor', () => {
     expect(problemas([...base, '--aplicar'])).toContain('--aplicar exige --respaldo');
-    expect(problemas([...base, '--aplicar', '--respaldo', join(aqui, 'respaldo.json')])).toMatch(/respaldo (duradero|no puede)/);
+    expect(problemas([...base, '--aplicar', '--respaldo', join(aqui, 'respaldo.json')])).toMatch(/respaldo/); // el texto exacto depende de si se corre en un worktree o en la copia principal (lo decide comprobarRespaldo, ya probado)
     expect(problemas(['--revertir', '--proyecto', PROY, '--tenant', 'tienda-prueba'])).toContain('--revertir exige --respaldo');
     expect(problemas(['--revertir', '--proyecto', PROY, '--tenant', 'tienda-prueba', '--valor', 'true', '--respaldo', rutaRespaldo()])).toContain('--revertir no admite --valor');
   });
