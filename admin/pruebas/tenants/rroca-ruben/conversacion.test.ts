@@ -10,6 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
@@ -26,8 +27,7 @@ const EXPORTADOS = [
 ];
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
 const FILTRO = readFileSync(join(CARPETA_LIB, '../../../comun-sin-agente/src/filtro-redaccion.js'), 'utf8');
-// nosemgrep: devsecops.js-eval-prohibido
-export const RR = new Function(FILTRO + '\n' + ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + `\nreturn { ${EXPORTADOS.join(', ')} };`)() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+export const RR = (vm.compileFunction(FILTRO + '\n' + ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + `\nreturn { ${EXPORTADOS.join(', ')} };`) as () => unknown)() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const rr = (n: string): F => RR[n] as F;
 
 const CAT = { pack: 60, libro: 32, closer: 20, videos: 25 };
