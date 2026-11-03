@@ -45,7 +45,9 @@ describe('cuentaInicial()', () => {
     // plan, que lee `limiteDeCampanas`, salvo que NovuChat fije
     // `limites.campanas` a mano. `cambiosIncluidos` SÍ se copia (F1): es un
     // límite de Central que se hace cumplir contra la copia.
-    const { nombre: _n, precioUsd: _p, campanas: _c, ...limites } = PLANES[PLAN_POR_DEFECTO];
+    // `editoresCrm` (03/11/2026) tampoco se copia: rige el del plan, que lee
+    // `limiteDeEditoresCrm`, salvo que NovuChat fije `limites.editoresCrm` a mano.
+    const { nombre: _n, precioUsd: _p, campanas: _c, editoresCrm: _e, ...limites } = PLANES[PLAN_POR_DEFECTO];
     expect(c.limites).toEqual(limites);
     expect(c.limites.cambiosIncluidos).toBe(0);
     expect(c.catalogoPlanes).toBe(CATALOGO_PLANES);
