@@ -323,7 +323,7 @@ describe('--aplicar', () => {
     expect(existsSync(ruta)).toBe(true);
     limpia(r.salida);
   });
-  for (const [alias, quien] of [['cliente07', 'Emma'], ['cliente08', 'Evy']] as const) {
+  for (const [alias, quien] of [['cliente07', 'Emma'], ['cliente08', 'Evy'], ['qtaco', "Q'Taco"], ['cliente03', 'Bellido']] as const) {
     it(`${alias} (${quien}): seco encuentra la credencial; aplicar hace PATCH en el lugar y borra la entrega`, async () => {
       creds.push({ id: `${alias}abcd`, name: `AAB1 envío · ${alias}`, type: 'httpHeaderAuth' });
       const ruta = entrega(alias);

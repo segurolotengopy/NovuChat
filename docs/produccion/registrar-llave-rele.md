@@ -7,9 +7,10 @@ de nuestro n8n sin imprimirla ni leerla.
 - **Entrega** (acordada con WAM): `$XDG_RUNTIME_DIR/llave-rele-<alias>`, modo 600, una línea con la llave
   sola, de la forma `aab1e_<wabaId>_<64 hexadecimales>`. Si la forma no calza el script dice solo
   «forma inválida».
-- **Alias**: `evy`, `emma`, `ruben`, `antonio`, `cliente07`, `cliente08` y `ensayo01` (línea de ensayo). Otro alias se niega.
+- **Alias**: `evy`, `emma`, `ruben`, `antonio`, `cliente07`, `cliente08`, `qtaco`, `cliente03` y `ensayo01` (línea de ensayo). Otro alias se niega.
   Evy = `cliente08` y Emma = `cliente07` (alias del receptor confirmados por WAM el 03/11); los de Rubén y
-  Antonio se confirmarán antes de su publicación.
+  Antonio se confirmarán antes de su publicación. `qtaco` = Q'Taco y `cliente03` = Bellido: alias a confirmar
+  con WAM antes de usarlos.
 - **Seco** (por omisión, solo GET): `./scripts/registrar-llave-rele-n8n.sh --alias <alias> --env .env`.
   Dice si la credencial existe, cuántos flujos la citan y si la entrega es válida.
 - **Aplicar**: `./scripts/registrar-llave-rele-n8n.sh --alias <alias> --env .env --aplicar --confirmo produccion`.
