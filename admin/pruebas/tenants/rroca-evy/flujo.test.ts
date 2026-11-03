@@ -11,9 +11,9 @@ import { NODOS_DE_CRM } from '../../../../Flujos/experimental/rroca-evy/construi
 import { ANA, BETO, CARPETA, EXTRANJERO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, conPreferencia, crear, entrega, hablar, mTexto, panelOk, textos, valorMeta, tel } from './mundo';
 
 describe('topología y tamaño', () => {
-  it('producción 53 nodos y prueba 48 (36 y 31 más los 9 del guardado de medios y los 8 de la rama del miniCRM), con el tope de 53', () => {
-    expect(PRODUCCION.nodes.length).toBe(53);
-    expect(PRUEBA.nodes.length).toBe(48);
+  it('producción 56 nodos y prueba 51 (36 y 31 más los 9 del guardado, los 8 del miniCRM y los 3 del relé B9), con el tope de 56', () => {
+    expect(PRODUCCION.nodes.length).toBe(56);
+    expect(PRUEBA.nodes.length).toBe(51);
   });
   it('sin agente, memoria ni modelo de chat de n8n, y sin WhatsApp Trigger', () => {
     for (const f of [PRODUCCION, PRUEBA]) {

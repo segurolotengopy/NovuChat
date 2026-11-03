@@ -231,3 +231,13 @@ La rama del miniCRM (`ramaCrm`, módulo `crm`) agrega **8 nodos** a cada flujo q
 > `rroca-ruben.prueba.json`; `walisuma.json` y `walisuma.prueba.json`. Por qué: el módulo es común y los constructores lo incluyen tal cual; no se publica nada
 > solo por esto. Lo cierra: la próxima publicación de cada flujo (que ya lleva la definición); hasta entonces `estado-de-versiones.sh` puede mostrar atrasado a
 > cualquiera de los vivos que figuran arriba (Rubén, Antonio, Evy, Emma, Walisuma, chat NovuChat) y es una diferencia declarada, sin riesgo. Vence el 31/01/2027.
+
+> **Evy (`rroca-evy`, cliente08) y Emma (`rroca-emma`, cliente07): envío y medios por el relé B9 (PR 2, 03/11/2026, 0 mensajes por conversación).** Qué queda distinto:
+> `rroca-evy.json` y `rroca-emma.json` pasan de 53 a **56 nodos** y el tope sube de 53 a **56**; las variantes de prueba pasan de 48 a **51**. Por qué: el canal `rele` suma
+> «Leer respuesta del relé», «¿Qué hacer con el envío?» y «Esperar reintento», y el nodo «Detener por envío incierto» (decisión I4: incierto o agotado termina la ejecución
+> en ERROR, sin reenvío ni mensaje extra). Todo lo que hablaba con Graph (envío, respaldo, aviso, descarga de medios y guardado) sale por el relé con la credencial
+> «AAB1 envío · cliente08» / «AAB1 envío · cliente07» y la URL interna como marcador `REEMPLAZAR_URL_INTERNA_DEL_RELE`; `executionTimeout` pasa de 120 a 300 s.
+> **Aprobado por:** Andres, el 03/11/2026 (topes 56 y 56). **Riesgo de cupo aceptado:** las descargas para transcribir o ver una imagen (audio e imagen a Gemini) gastan
+> de las 500 descargas diarias por WABA y no pasan por el cupo del guardado (10 por teléfono y día, 30 por flujo); una ráfaga atraviesa el cupo (limitación de
+> concurrencia ya declarada en #757). **Publicación:** viernes 06/11/2026, con el botón de Andres; hasta entonces `estado-de-versiones.sh` los mostrará atrasados y es
+> correcto. **Lo cierra:** la publicación; el tope es permanente mientras el canal tenga estos nodos. Vence el 31/01/2027 (igual que la nota de #757).
