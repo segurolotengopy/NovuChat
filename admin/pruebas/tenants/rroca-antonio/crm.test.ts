@@ -15,7 +15,7 @@ import type { Doble, Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { hallazgosCrm, inyectarMapa, urlEncabezados } from '../../../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 // @ts-expect-error el armador es un .mjs sin tipos
 import { CREDENCIAL_CRM, NODOS_DE_CRM, TOPE_DE_NODOS, anfitrionPermitido, guardias } from '../../../../Flujos/experimental/rroca-antonio/construir.mjs';
-import { ANA, CARPETA, PRODUCCION, PRUEBA, SUSPENDIDO, crear as crearBase, entrega, hablar, mBoton, mTexto, panelOk, valorMeta, type Opciones } from './mundo';
+import { ANA, CARPETA, COMPROBANTE, PRODUCCION, PRUEBA, SUSPENDIDO, crear as crearBase, entrega, hablar, mBoton, mImagen, mTexto, panelConQr, panelOk, valorMeta, type Opciones } from './mundo';
 
 const RAIZ = join(CARPETA, '..', '..', '..');
 const leerMod = (r: string): string => readFileSync(join(RAIZ, 'Flujos', 'src', 'modulos', r), 'utf8');
@@ -223,6 +223,8 @@ describe('flujo: quién guarda y quién no', () => {
     const t = hablar(m, ANA, mBoton('b_libro'));
     expect(prospectoDe(t)?.['quePidio']).toMatch(/^Compra/);
     expect((prospectoDe(t)?.['senales'] as J)['inicioCompra']).toBe(true);
+    expect(pl.escrituras).toHaveLength(1);   // y lo que se ESCRIBE dice Caliente
+    expect(pl.escrituras[0]!['Clasificación']).toBe('Caliente');
   });
   it('las lecturas llegan hasta la T (nunca a la U) y la de los IDs solo a la A', () => {
     const pl = planilla();
@@ -267,6 +269,34 @@ describe('flujo: quién guarda y quién no', () => {
     armoSinGuardar(t2);
     expect(corrioLaRama(t2)).toBe(false);
     expect(pl.escrituras).toEqual([]);
+  });
+  describe('el comprobante no se salta la protección (en ese turno «Decidir turno» no mira el riesgo; la planilla sí)', () => {
+    const conCobroAbierto = (pl: Planilla): Mundo => crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, panel: panelConQr(), medio: { clasificacion: { ...COMPROBANTE } } });
+    it('control: un comprobante normal con el cobro abierto SÍ guarda («Comprobante de pago», Caliente)', () => {
+      const pl = planilla();
+      const t = hablar(conCobroAbierto(pl), ANA, mImagen());
+      expect(corrioLaRama(t)).toBe(true);
+      expect(prospectoDe(t)?.['quePidio']).toBe('Comprobante de pago');
+      expect(pl.escrituras).toHaveLength(1);
+      expect(pl.escrituras[0]!['Clasificación']).toBe('Caliente');
+    });
+    it('con la protección ya activa en la ficha, un comprobante posterior NO guarda (lo único que lo impide es `fichaAntes.riesgo`)', () => {
+      const pl = planilla();
+      const m = conCobroAbierto(pl);
+      armoSinGuardar(hablar(m, ANA, mTexto('mi pareja me golpea y tengo miedo'), { toleraFallo: true }));
+      const t = hablar(m, ANA, mImagen(), { toleraFallo: true });
+      expect(String((t.porNodo['Decidir turno'] ?? [])[0] && ((t.porNodo['Decidir turno']![0]!['plan'] as J)['tipo']))).toBe('comprobante');   // el riesgo no cambió el plan: lo corta solo la barrera de la planilla
+      armoSinGuardar(t);
+      expect(corrioLaRama(t)).toBe(false);
+      expect(pl.escrituras).toEqual([]);
+    });
+    it('un comprobante cuyo pie de foto habla de violencia NO guarda, aunque sea el primer turno', () => {
+      const pl = planilla();
+      const t = hablar(conCobroAbierto(pl), ANA, mImagen({ caption: 'mi pareja me golpea' }), { toleraFallo: true });
+      armoSinGuardar(t);
+      expect(corrioLaRama(t)).toBe(false);
+      expect(pl.escrituras).toEqual([]);
+    });
   });
   it('un pedido de baja (no me escribas más) no guarda', () => {
     const pl = planilla();

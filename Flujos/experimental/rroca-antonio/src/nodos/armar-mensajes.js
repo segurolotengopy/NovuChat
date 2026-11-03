@@ -280,7 +280,9 @@ if (m && puerta.ruta === 'sigue' && m.tipoReporte !== 'image' && ['comprobante',
 // la protección por violencia o miedo ya activa en la ficha) y hay un mensaje. El prospecto se arma con `raProspectoCrm` (vocabulario cerrado: el texto libre del cliente no pasa). Sin id (vacío), el flujo ni consulta Google. 0 mensajes por conversación.
 const planillaOk = String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';
 const guardarPlanilla = planillaOk && !prueba && puerta.ruta === 'sigue' && claveOk && !!m && riesgoNuevo !== true && fichaAntes.riesgo !== true
-  && ['nada', 'riesgo', 'baja', 'fuera_pais'].indexOf(tipoDePlan) < 0;
+  && ['nada', 'riesgo', 'baja', 'fuera_pais'].indexOf(tipoDePlan) < 0
+  // «Decidir turno» no mira el riesgo en el turno de un COMPROBANTE (el cobro sigue su camino); la planilla sí: ni el texto ni el pie de foto de ese turno pueden hablar de violencia o miedo.
+  && !raEsRiesgo(raNorm([t.texto, t.pie].join(' ')));
 let prospectoPlanilla = null;
 
 // La ficha: un solo lugar, al final del turno. Hasta en un turno sin mensaje (bloqueado) se recuerda el id de Meta (una entrega repetida no se cuenta dos veces).
