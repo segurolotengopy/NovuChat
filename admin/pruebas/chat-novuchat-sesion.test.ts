@@ -9,12 +9,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { crearServidorDeSesion } from '../../Flujos/experimental/chat-novuchat/herramientas/servidor-de-sesion.mjs';
-import { decidirCompromiso, leerConversacion, validarSesion, type DocSesion } from '../functions/src/core/turno/sesion';
+import { decidirCompromiso, leerConversacion, planDeCupos, validarSesion, type DocSesion } from '../functions/src/core/turno/sesion';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FUENTE = readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat/src/nodos/_sesion.js'), 'utf8');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const H: Record<string, any> = runInNewContext(`${FUENTE}\n({ cnEjecucion, cnTelefonoDeSesion, cnCuerpoLeer, cnIdCompromiso, cnCuerpoComprometer, cnSesionDeLaConfig, cnResultadoDeCompromiso })`, {});
+const H: Record<string, any> = runInNewContext(`${FUENTE}\n({ cnEjecucion, cnTelefonoDeSesion, cnCuerpoLeer, cnIdCompromiso, cnCuerpoComprometer, cnBytes, cnSesionDeLaConfig, cnResultadoDeCompromiso })`, {});
 const PNID = '59100000003';
 const TEL = '59100000011';
 const AHORA = Date.UTC(2026, 9, 5, 14);
@@ -28,11 +28,13 @@ describe('servidor de sesión de mentira vs el núcleo real', () => {
       const v = validarSesion(cuerpo['sesion'], String(cuerpo['telefono']));
       if (!v.ok) return { status: v.status };
       const p = v.peticion;
+      if (p.accion === 'asentar') return { status: 200, fueraDeAlcance: true };
       if (p.accion === 'leer') return { status: 200, conv: leerConversacion(doc, reloj) };
-      const d = decidirCompromiso({ doc, ahoraMs: reloj, versionLeida: p.versionLeida!, idCompromiso: p.idCompromiso!, estado: p.estado ?? null, venceEnMin: p.venceEnMin!, cupos: [], cuposActuales: {} });
+      const d = decidirCompromiso({ doc, ahoraMs: reloj, versionLeida: p.versionLeida!, idCompromiso: p.idCompromiso!, estado: p.estado ?? null, venceEnMin: p.venceEnMin!, cupos: planDeCupos(PNID, TEL, p.cupos, reloj), cuposActuales: {} });
       if (d.resultado === 'comprometido') doc = { version: d.version, estadoJson: d.estadoJson, vence: d.vence, actualizadoEn: d.actualizadoEn, compromisos: d.compromisos };
       return { status: 200, resultado: d.resultado, conv: d.conversacion };
     };
+    const prof = (n: number): Record<string, unknown> => { let o: Record<string, unknown> = {}; for (let i = 1; i < n; i++) o = { h: o }; return o; };
     const c = (accion: string, extra: Record<string, unknown> = {}) => ({ telefono: TEL, sesion: { v: 1, accion, espacio: 'chat-novuchat', canal: 'wa', ejecucion: 'e1', ...extra } });
     const k = (id: string, ver: number, estado: unknown, min = 2880) => c('comprometer', { idCompromiso: id, versionLeida: ver, estado, venceEnMin: min });
     const serie = [
@@ -40,11 +42,26 @@ describe('servidor de sesión de mentira vs el núcleo real', () => {
       k('chat-fin1-e1', 2, null), c('leer'), k('chat-fin2-e1', 3, { b: 1 }, 1), 'AVANZA', c('leer'), k('chat-fin3-e1', 4, { b: 2 }),
       k('corto', 5, {}), c('comprometer', { idCompromiso: 'chat-xx-e1', versionLeida: 5 }), { telefono: '123', sesion: { v: 1, accion: 'leer', espacio: 'chat-novuchat', ejecucion: 'e' } },
       { telefono: TEL, sesion: { v: 1, accion: 'leer', espacio: 'chat-novuchat', ejecucion: 'e', tenantId: 'otro' } }, k('chat-big-e1', 5, { x: 'y'.repeat(17000) }),
+      // Lo que el núcleo rechaza y la primera versión del falso aceptaba:
+      c('leer', { canal: 'sms' }), c('leer', { ejecucion: 123 }), c('leer', { versionLeida: -1 }), c('leer', { versionLeida: 1.5 }), c('leer', { versionLeida: 7 }), c('leer', { estado: {} }),
+      c('leer', { idMensaje: 'wamid.ABC' }), c('leer', { idMensaje: 'con espacio' }), c('leer', { idMensaje: 5 }), c('leer', { canal: 'wa' }),
+      k('chat-idm-e1', 5, {}), c('comprometer', { idCompromiso: 'chat-idm-e1', versionLeida: 5, estado: {}, venceEnMin: 5, idMensaje: 'wamid.X' }),
+      k('hasOwnProperty', 5, {}), k('constructor', 5, {}), k('_chat-xx-e1', 5, {}), k('chat-prof-e1', 5, prof(20)), k('chat-prof-e1', 5, prof(21)),
+      c('comprometer', { idCompromiso: 'chat-sinv-e1', estado: {}, venceEnMin: 5 }), c('comprometer', { idCompromiso: 'chat-sine-e1', versionLeida: 5, venceEnMin: 5 }),
+      c('comprometer', { idCompromiso: 'chat-sinm-e1', versionLeida: 5, estado: {} }), k('chat-min0-e1', 5, {}, 0), k('chat-max-e1', 5, {}, 4321), k('chat-ok-e1', 5, { ñ: 'á' }),
+      // Fuera de alcance, declarado: cupos con tope 0 (el núcleo: cupo_negado) y `asentar`.
+      c('comprometer', { idCompromiso: 'chat-cupo-e1', versionLeida: 6, estado: {}, venceEnMin: 5, cupos: [{ clave: 'avisos', alcance: 'contacto', periodo: 'dia', cantidad: 1, tope: 0 }] }),
+      c('comprometer', { idCompromiso: 'chat-cupo2-e1', versionLeida: 6, estado: {}, venceEnMin: 5, cupos: [{ clave: 'avisos', alcance: 'contacto', periodo: 'dia', cantidad: 1, tope: 5 }] }),
+      c('asentar', { idCompromiso: 'chat-cupo2-e1' }),
     ] as (Record<string, unknown> | 'AVANZA')[];
     for (const q of serie) {
       if (q === 'AVANZA') { reloj += 2 * 60_000; continue; }
       const a = falso.atender(PNID, q);
       const b = real(q);
+      const sesion = (q['sesion'] ?? {}) as Record<string, unknown>;
+      const fuera = b.fueraDeAlcance === true || (Array.isArray(sesion['cupos']) && sesion['cupos'].length > 0);
+      // FUERA DE ALCANCE (declarado): `asentar` y los cupos no existen en el servidor falso: ahí responde 400 donde el núcleo acepta. Todo lo demás debe coincidir.
+      if (fuera) { expect(a.statusCode, 'fuera de alcance: 400').toBe(400); continue; }
       expect(a.statusCode, JSON.stringify(q).slice(0, 120)).toBe(b.status);
       if (b.status === 200) {
         const conv = (a.body['conversacion'] ?? {}) as Record<string, unknown>;
@@ -95,6 +112,12 @@ describe('ayudantes de los nodos Code (_sesion.js)', () => {
     expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 1.5, {})).toBeNull();
     expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, [1])).toBeNull();
   });
+  it('el tamaño se mide en BYTES UTF-8: 15.000 caracteres con «ñ» (30.000 bytes) no caben; 7.000 sí', () => {
+    expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'ñ'.repeat(15000) })).toBeNull();
+    expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'ñ'.repeat(7000) })).not.toBeNull();
+    expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: '😀'.repeat(4000) })).toBeNull();
+    expect(H['cnBytes']('ñ😀a')).toBe(7);
+  });
   it('cnSesionDeLaConfig: solo 200 con conversación válida es ok; todo lo demás es falla (genérico con botón)', () => {
     const buena = { conversacion: { version: 4, estado: { a: 1 }, vencido: false } };
     expect(H['cnSesionDeLaConfig'](200, buena)).toEqual({ ok: true, version: 4, estado: { a: 1 }, vencido: false, corrupta: false });
@@ -114,7 +137,7 @@ describe('ayudantes de los nodos Code (_sesion.js)', () => {
     }
   });
   it('el archivo no usa globales que el Code de n8n no tiene y todavía no está incluido en ningún nodo ni JSON', () => {
-    expect(FUENTE.replace(/^\s*\/\/.*$/gm, '')).not.toMatch(/\b(URL|Buffer|crypto|require|process|fetch)\b(?!\s*:)/);
+    expect(FUENTE.replace(/^\s*\/\/.*$/gm, '')).not.toMatch(/\b(URL|Buffer|crypto|require|process|fetch|eval|TextEncoder)\b(?!\s*:)|new\s+Function|\bFunction\s*\(/);
     const cons = readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat/construir.mjs'), 'utf8');
     expect(cons).not.toContain('_sesion');
     for (const j of ['chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json']) expect(readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat', j), 'utf8')).not.toContain('cnCuerpoComprometer');

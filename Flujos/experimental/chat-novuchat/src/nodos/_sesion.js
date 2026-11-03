@@ -14,6 +14,8 @@ function cnEjecucion(id) {
 }
 // El teléfono lo valida el servidor con 8 a 15 dígitos; antes de pedir nada se comprueba igual.
 function cnTelefonoDeSesion(from) { return /^[0-9]{8,15}$/.test(String(from || '')); }
+// Bytes UTF-8 sin `Buffer` ni `TextEncoder` (el Code de n8n no los tiene): cada %XX de encodeURIComponent es un byte.
+function cnBytes(t) { return encodeURIComponent(String(t)).replace(/%[0-9A-F]{2}/g, 'x').length; }
 function cnCuerpoLeer(from, ejecucion) {
   return { telefono: String(from), sesion: { v: 1, accion: 'leer', espacio: CN_ESPACIO, canal: 'wa', ejecucion: cnEjecucion(ejecucion) } };
 }
@@ -22,7 +24,7 @@ function cnIdCompromiso(ejecucion, paso) { return 'chat-' + String(paso).replace
 // Devuelve el cuerpo, o null si el estado no cabe (nunca se manda algo que el servidor rechazaría con 413).
 function cnCuerpoComprometer(from, ejecucion, paso, versionLeida, estado) {
   if (!cnTelefonoDeSesion(from) || !Number.isInteger(versionLeida) || versionLeida < 0) return null;
-  if (estado !== null && (typeof estado !== 'object' || Array.isArray(estado) || JSON.stringify(estado).length > CN_MAX_ESTADO)) return null;
+  if (estado !== null && (typeof estado !== 'object' || Array.isArray(estado) || cnBytes(JSON.stringify(estado)) > CN_MAX_ESTADO)) return null;
   return { telefono: String(from), sesion: { v: 1, accion: 'comprometer', espacio: CN_ESPACIO, canal: 'wa', ejecucion: cnEjecucion(ejecucion), idCompromiso: cnIdCompromiso(ejecucion, paso), versionLeida: versionLeida, estado: estado, venceEnMin: CN_VENCE_MIN } };
 }
 function cnConversacionValida(c) {
