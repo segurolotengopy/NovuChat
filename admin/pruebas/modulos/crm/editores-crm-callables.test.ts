@@ -50,7 +50,7 @@ const sinSesion = (data: Record<string, unknown>) => ({ data, rawRequest: {} }) 
 
 /** Drive falso: anota cada llamada; los fallos se encienden por prueba. */
 function driveFalso() {
-  const estado = { falloCrear: false, falloBorrar: false, yaExistia: false, propietario: false, barrera: 0, idFijo: '' };
+  const estado = { falloCrear: false, falloBorrar: false, yaExistia: false, propietario: false, barrera: 0, idFijo: '', pausaBorrar: null as Promise<void> | null };
   const llamadas: { op: 'crear' | 'borrar'; archivoId: string; dato: string }[] = [];
   let llegaron = 0;
   const cliente: ClienteDrive = {
@@ -67,6 +67,7 @@ function driveFalso() {
     },
     async borrarPermiso(archivoId, permisoId) {
       llamadas.push({ op: 'borrar', archivoId, dato: permisoId });
+      if (estado.pausaBorrar) await estado.pausaBorrar;
       if (estado.falloBorrar) throw new ErrorDrive(503);
     },
   };
@@ -308,6 +309,35 @@ describe('registrarEditorCrm: revisión de seguridad (03/11/2026)', () => {
     };
     expect(await codigo(registrar(peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` })))).toBe('already-exists');
     expect(fake.llamadas.filter((l) => l.op === 'borrar')).toEqual([{ op: 'borrar', archivoId: ARCHIVO_A, dato: 'perm-fijo' }]);
+    expect(await editor(A, 'op1')).toBeUndefined();
+  });
+
+  it('NIEGA (carrera): una baja y un alta a la vez con el mismo permisoId: la baja no deja «revocado» y el reintento cierra', async () => {
+    fake.estado.idFijo = 'perm-fijo';
+    const p = () => peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` });
+    await registrar(p());
+    await new Promise((r) => setTimeout(r, 15));
+    let soltar!: () => void;
+    fake.estado.pausaBorrar = new Promise<void>((r) => { soltar = r; });
+    const baja = quitar(peticion('adm', 'admin', A, { tenantId: A, uidDestino: 'op1' }));
+    while (!fake.llamadas.some((l) => l.op === 'borrar')) await new Promise((r) => setTimeout(r, 5));
+    expect(await codigo(registrar(p()))).toBe('sin error'); // el alta recrea el permiso (mismo id) mientras la baja espera a Drive
+    soltar();
+    expect(await baja).toEqual({ ok: false, estado: 'revocado_pendiente' });
+    expect((await editor(A, 'op1'))?.['estado']).toBe('revocado_pendiente');
+    fake.estado.pausaBorrar = null;
+    expect(await quitar(peticion('adm', 'admin', A, { tenantId: A, uidDestino: 'op1' }))).toEqual({ ok: true, estado: 'revocado' });
+  });
+
+  it('NIEGA (carrera): si quitarUsuario saca a la persona mientras se da el alta, el permiso creado se deshace y no queda editor', async () => {
+    const crear = fake.cliente.crearPermiso;
+    fake.cliente.crearPermiso = async (...a) => {
+      const r = await crear(...a);
+      await db.doc(`tenants/${A}/miembros/op1`).delete();
+      return r;
+    };
+    expect(await codigo(registrar(peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` })))).toBe('failed-precondition');
+    expect(fake.llamadas.filter((l) => l.op === 'borrar')).toHaveLength(1);
     expect(await editor(A, 'op1')).toBeUndefined();
   });
 

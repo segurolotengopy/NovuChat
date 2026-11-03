@@ -61,6 +61,13 @@ function destinoDe(datos: Record<string, unknown>, uid: string): string {
   return d;
 }
 
+/** Lo que identifica una alta: estado, permiso y momento del alta (una alta nueva cambia `desde` aunque repita el id). */
+function huellaDe(d: Record<string, unknown> | undefined): string {
+  const desde = d?.['desde'];
+  const ms = typeof desde === 'object' && desde !== null && 'toMillis' in desde ? (desde as Timestamp).toMillis() : 'x';
+  return `${String(d?.['estado'])}|${String(d?.['permisoId'])}|${String(ms)}`;
+}
+
 /**
  * REVOCA el permiso de un editor. Devuelve el estado REAL: `revocado` solo si Drive confirmó (o el permiso ya no
  * existía); si Drive falla o falta algún dato, queda `revocado_pendiente` y nunca se dice `revocado`. Lo usan
@@ -85,8 +92,16 @@ export async function revocarEditor(
       logger.warn('editoresCrm: Drive no confirmó la baja', { tenantId });
     }
   }
-  const estado: EstadoEditor = confirmado ? 'revocado' : 'revocado_pendiente';
-  await ref.update({ estado, revocadoEn: Timestamp.now(), revocadoPor: quien });
+  // Se marca DENTRO de una transacción que exige el mismo estado, permisoId y alta que se leyeron: si una alta
+  // concurrente reescribió el documento (y quizá recreó el permiso, que en Drive conserva el id), no se puede afirmar
+  // «revocado»; queda `revocado_pendiente` y un nuevo quitar reintenta el borrado.
+  let estado: EstadoEditor = confirmado ? 'revocado' : 'revocado_pendiente';
+  await db().runTransaction(async (tx) => {
+    const ahora = await tx.get(ref);
+    if (!ahora.exists) return;
+    if (huellaDe(ahora.data()) !== huellaDe(f)) estado = 'revocado_pendiente';
+    tx.update(ref, { estado, revocadoEn: Timestamp.now(), revocadoPor: quien });
+  });
   const correo = typeof f['correoGoogle'] === 'string' ? abreviarCorreo(f['correoGoogle']) : '';
   await auditar(tenantId, 'editor_crm_baja', quien, { destino: uidDestino, correo, motivo, resultado: confirmado ? 'revocado' : 'pendiente' });
   return estado;
@@ -187,6 +202,7 @@ export const manejarRegistrar = (d: DepsEditores) => async (p: CallableRequest) 
     const ahora = await tx.get(colec.where('estado', '==', 'activo'));
     const mismoGmail = await tx.get(colec.where('correoGoogle', '==', correoToken));
     const actual = await tx.get(colec.doc(destino));
+    const miembroAhora = await tx.get(db().doc(`tenants/${tenantId}/miembros/${destino}`));
     // En Drive dos altas del mismo Gmail devuelven el MISMO id de permiso: si alguien vigente (o con la baja pendiente)
     // lo tiene, borrarlo quitaría el permiso de esa persona.
     const vigente = (x: { data(): Record<string, unknown> | undefined }) =>
@@ -194,6 +210,8 @@ export const manejarRegistrar = (d: DepsEditores) => async (p: CallableRequest) 
       // El id de permiso de un usuario es el mismo en todos los archivos: solo protege si es de ESTA hoja.
       && x.data()?.['archivoId'] === archivoId;
     const compartido = mismoGmail.docs.some(vigente) || (actual.exists && vigente(actual));
+    // Si quitarUsuario corrió mientras tanto, la persona ya no es miembro: no queda acceso sin dueño.
+    if (!miembroAhora.exists || miembroAhora.data()?.['estado'] !== 'activo') return { v: 'miembro' as const, compartido };
     if (mismoGmail.docs.some(ocupa)) return { v: 'correo' as const, compartido };
     // Otra alta para la MISMA persona se coló desde que se leyó: no se pisa su permisoId sin revocarlo.
     if (huella(actual) !== huella(esperado)) return { v: 'cambio' as const, compartido };
@@ -217,6 +235,7 @@ export const manejarRegistrar = (d: DepsEditores) => async (p: CallableRequest) 
       }
     }
     await auditar(tenantId, 'editor_crm_alta', uid, { destino, correo: abreviarCorreo(correoToken), motivo: veredicto.v, resultado });
+    if (veredicto.v === 'miembro') throw new HttpsError('failed-precondition', 'Esa persona no es miembro activo del negocio.');
     if (veredicto.v === 'cambio') throw new HttpsError('aborted', 'Otra operación cambió a esta persona al mismo tiempo. Intente de nuevo.');
     throw veredicto.v === 'correo'
       ? new HttpsError('already-exists', 'Esa cuenta de Google ya es editora de otra persona.')
