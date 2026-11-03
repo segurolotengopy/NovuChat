@@ -8,7 +8,7 @@
  *   B4. Revertir: limpia solo lo escrito; no pisa un cambio ajeno.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import { chmodSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 type Cfg = Record<string, unknown>;
@@ -60,6 +60,11 @@ describe('B1. argumentos y salvaguarda', () => {
   });
   it('NEGADO: --aplicar sin respaldo, respaldo dentro del repo, producción sin confirmación, opciones raras', () => {
     expect(problemas([...base, '--aplicar'])).toContain('--aplicar exige --respaldo');
+    // LA HOJA ES SIEMPRE LA REAL: en el emulador y en staging también hace falta la confirmación con el nombre del comercio.
+    const sinConfirmar = problemas([...base, '--aplicar', '--respaldo', rutaRespaldo()]);
+    expect(sinConfirmar).toContain('--aplicar exige --confirmo-produccion');
+    expect(mod.analizarArgumentos([...base, '--aplicar', '--respaldo', rutaRespaldo(), '--confirmo-produccion', 'rroca-ruben'], ENV).ok).toBe(true);
+    expect(problemas(['--revertir', ...base, '--aplicar', '--respaldo', rutaRespaldo()])).toMatch(/respaldo|confirmo/);
     expect(problemas([...base, '--aplicar', '--respaldo', join(process.cwd(), 'r.json')])).toMatch(/respaldo/);
     const prod = ['--proyecto', 'proyecto-ficticio-prod', '--tenant', 'rroca-ruben'];
     expect(mod.analizarArgumentos(prod, ENV_REAL).ok).toBe(true);
@@ -205,7 +210,35 @@ describe('B3. ejecución', () => {
   });
 });
 
+describe('B3b. el respaldo no copia la hoja', () => {
+  it('guarda solo las filas escritas y dónde: sin la hoja de antes', async () => {
+    const m = mundo('rroca-evy', [conv(1)], [['LEAD-1001', '2026-10-01', 'Persona Real Ejemplo', '', "59170000099", '1. Nuevo Lead', 'WhatsApp', 'Alta', 'Resumen que puede ser sensible']]);
+    const resp = rutaRespaldo();
+    expect(await mod.ejecutar(cfgDe('rroca-evy', { aplicar: true, respaldo: resp }), m.deps)).toBe(0);
+    const t = readFileSync(resp, 'utf8');
+    expect(JSON.parse(t)).not.toHaveProperty('antes');
+    expect(t).not.toMatch(/Persona Real Ejemplo|Resumen que puede ser sensible|LEAD-1001/);
+  });
+});
+
 describe('B4. revertir', () => {
+  it('NEGADO: un respaldo alterado (fila inicial en el encabezado, rango falso hacia la columna U, cantidad absurda) no limpia nada: el rango se calcula', async () => {
+    const m = mundo('rroca-ruben', [conv(1), conv(2)]);
+    const resp = rutaRespaldo();
+    await mod.ejecutar(cfgDe('rroca-ruben', { aplicar: true, respaldo: resp }), m.deps);
+    const original = JSON.parse(readFileSync(resp, 'utf8'));
+    for (const cambio of [{ filaDesde: 3 }, { filaDesde: 4.5 }, { filaDesde: 'x' }, { escrito: [] }]) {
+      const mala = rutaRespaldo();
+      writeFileSync(mala, JSON.stringify({ ...original, ...cambio }), { mode: 0o600 });
+      expect(await mod.ejecutar(cfgDe('rroca-ruben', { revertir: true, aplicar: true, respaldo: mala }), m.deps), JSON.stringify(cambio)).toBe(2);
+    }
+    // un `rango` falso en el archivo se ignora: lo que se limpia es lo calculado (A4:T5), nunca la U
+    const falso = rutaRespaldo();
+    writeFileSync(falso, JSON.stringify({ ...original, rango: "'Leads_CRM'!A1:Z999" }), { mode: 0o600 });
+    expect(await mod.ejecutar(cfgDe('rroca-ruben', { revertir: true, aplicar: true, respaldo: falso }), m.deps)).toBe(0);
+    expect(m.llamadas.limpiar).toEqual(["'Leads_CRM'!A4:T5"]);
+  });
+
   it('limpia solo el rango escrito, y solo si sigue siendo lo escrito', async () => {
     const m = mundo('rroca-ruben', [conv(1), conv(2)]);
     const resp = rutaRespaldo();

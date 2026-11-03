@@ -25,9 +25,12 @@
  * escribe una vez. Los teléfonos se comparan solo por sus dígitos.
  *
  * SECO: lee la hoja (A3:T, sin la U) y Firestore y IMPRIME SOLO CONTEOS (nunca teléfonos ni nombres).
- * `--aplicar`: exige `--respaldo` (ruta absoluta, 0600, fuera de todo repositorio, nunca se pisa). Guarda ahí las filas de la hoja ANTES (A..T) y el
- * rango que va a escribir, agrega las filas nuevas en UNA llamada (`values:append`, USER_ENTERED con apóstrofo en los textos) y relee y compara.
- * `--revertir --aplicar`: borra SOLO el rango que escribió este script y solo si su contenido sigue siendo el escrito.
+ * `--aplicar`: exige `--confirmo-produccion <tenant>` SIEMPRE (la hoja es la real aunque Firestore sea staging o el emulador) y `--respaldo`
+ * (ruta absoluta, 0600, fuera de todo repositorio, nunca se pisa). Guarda ahí SOLO las filas que va a escribir y dónde (no copia la hoja: lleva
+ * datos de personas; el respaldo se borra al cerrar la operación), agrega las filas nuevas en UNA llamada (`values:append`, USER_ENTERED con
+ * apóstrofo en los textos) y relee y compara.
+ * `--revertir --aplicar`: borra SOLO el rango que escribió este script (lo CALCULA desde la fila inicial y la cantidad; nunca llega a la U) y solo si
+ * su contenido sigue siendo el escrito.
  *
  * LA CREDENCIAL. La cuenta `crm-<tenant>` no tiene clave en este equipo (vive en n8n). La lectura y la escritura de la hoja pasan por un flujo
  * TEMPORAL de n8n que usa la credencial «Google Sheets miniCRM (crm-<tenant>)»: se crea, se activa, se llama y se BORRA, con la retención de
@@ -92,10 +95,10 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   if (proyecto === undefined) problemas.push('falta --proyecto'); else if (!proy.ok) problemas.push(proy.motivo);
   if (tenant === undefined) problemas.push('falta --tenant');
   else if (!TENANTS.includes(tenant)) problemas.push(`--tenant tiene que ser uno de: ${TENANTS.join(', ')} (un comercio por corrida)`);
-  if (confirmo !== undefined) {
-    if (proy.ok && proy.entorno !== 'produccion') problemas.push('--confirmo-produccion solo se usa contra producción');
-    else if (proy.ok && confirmo !== tenant) problemas.push('--confirmo-produccion no coincide con --tenant');
-  } else if (proy.ok && proy.entorno === 'produccion' && aplicar) problemas.push('contra producción, --aplicar exige --confirmo-produccion <tenant> (igual a --tenant)');
+  // LA HOJA ES SIEMPRE LA REAL: la lectura y la escritura pasan por el n8n real, con la credencial y el SHEET_ID reales, aunque Firestore sea el emulador
+  // o staging. Por eso TODO --aplicar (y --revertir --aplicar) exige la confirmación con el nombre del comercio, sea cual sea el proyecto.
+  if (confirmo !== undefined && confirmo !== tenant) problemas.push('--confirmo-produccion no coincide con --tenant');
+  if (aplicar && confirmo === undefined) problemas.push('--aplicar exige --confirmo-produccion <tenant> (igual a --tenant): escribe en la hoja REAL del comercio, sea cual sea el proyecto de Firestore');
   if (!/^[A-Za-z0-9_-]{25,100}$/.test(env.SHEET_ID ?? '')) problemas.push('falta SHEET_ID (el id de la hoja del comercio, en el entorno)');
   if (typeof env.ENV_FILE !== 'string' || env.ENV_FILE === '') problemas.push('falta ENV_FILE (el .env de n8n)');
   if (revertir) {
@@ -204,6 +207,18 @@ export async function correrEnN8n({ envFile, tenant, hacer, cuerpo }) {
     settings: { executionOrder: 'v1', saveDataErrorExecution: 'none', saveDataSuccessExecution: 'none', saveManualExecutions: false, saveExecutionProgress: false } };
   void salida;
   let id = null;
+  // Borra el flujo temporal pase lo que pase: cada paso en su propio try (si desactivar falla, igual se intenta borrar) y, si el borrado falla, se avisa con el id.
+  const limpiar = async () => {
+    if (!id) return;
+    const idLocal = id; id = null;
+    try { await api('POST', `/workflows/${idLocal}/deactivate`); } catch { /* se intenta borrar igual */ }
+    let borrado = false;
+    try { borrado = (await api('DELETE', `/workflows/${idLocal}`)).ok; } catch { /* se avisa abajo */ }
+    if (!borrado) console.error(`\n  ! No se pudo borrar el flujo temporal «TEMPORAL relleno miniCRM ${tenant} (borrar)» (id ${idLocal}): bórrelo a mano en n8n.\n`);
+  };
+  const alSenal = () => { void limpiar().finally(() => process.exit(130)); };
+  process.once('SIGINT', alSenal);
+  process.once('SIGTERM', alSenal);
   try {
     const c = await api('POST', '/workflows', flujo);
     if (!c.ok) throw Object.assign(new Error('crear'), { code: `n8n-crear-${c.estado}` });
@@ -216,7 +231,9 @@ export async function correrEnN8n({ envFile, tenant, hacer, cuerpo }) {
     if (!r.ok) throw Object.assign(new Error('llamada'), { code: `n8n-llamada-${r.status}` });
     try { return JSON.parse(texto); } catch { throw Object.assign(new Error('respuesta'), { code: 'n8n-respuesta-no-json' }); }
   } finally {
-    if (id) { await api('POST', `/workflows/${id}/deactivate`); await api('DELETE', `/workflows/${id}`); }
+    process.off('SIGINT', alSenal);
+    process.off('SIGTERM', alSenal);
+    await limpiar();
   }
 }
 
@@ -276,9 +293,15 @@ export async function ejecutar(cfg, deps) {
     const l = leerRespaldoGenerico(cfg.respaldo, { limite: 512 * 1024 });
     if (!l.ok) { log(`\n  ✗ ${l.motivo}\n`); return 2; }
     const r = l.respaldo;
-    if (r?.version !== 1 || r.campo !== 'relleno-crm-historico' || r.tenant !== cfg.tenant || r.entorno !== cfg.entorno || typeof r.rango !== 'string' || !Array.isArray(r.escrito)) {
+    if (r?.version !== 1 || r.campo !== 'relleno-crm-historico' || r.tenant !== cfg.tenant || r.entorno !== cfg.entorno || !Array.isArray(r.escrito)) {
       log('\n  ✗ el respaldo no es de este comercio y entorno, o no tiene la forma esperada\n'); return 2;
     }
+    // El rango a limpiar se CALCULA (nunca se confía en el del archivo): desde `filaDesde`, tantas filas como se escribieron, hasta la última letra del bot (jamás la U).
+    const ultima = Object.values(mapa.columnas).map((c) => c.letra).sort().pop();
+    if (!Number.isInteger(r.filaDesde) || r.filaDesde <= mapa.filaEncabezados || r.escrito.length === 0 || r.escrito.length > 2000) {
+      log('\n  ✗ el respaldo trae una fila inicial o una cantidad que no son válidas: no se borra nada\n'); return 2;
+    }
+    const rangoALimpiar = `'${HOJA}'!A${r.filaDesde}:${ultima}${r.filaDesde + r.escrito.length - 1}`;
     const hoy = await deps.leer(); // A3:T completo
     const desde = r.filaDesde - mapa.filaEncabezados;
     const actual = hoy.slice(desde, desde + r.escrito.length).map((f) => f.map((v) => String(v ?? '')));
@@ -287,7 +310,7 @@ export async function ejecutar(cfg, deps) {
     log(`\n  ${cfg.aplicar ? 'REVERTIR' : 'SECO'} · ${rotulo}: ${r.escrito.length} filas escritas por este script.`);
     if (!igual) { log('  ✗ El rango ya no tiene lo que escribió este script: alguien lo cambió. No se borra nada.\n'); return 2; }
     if (!cfg.aplicar) { log('  Seco: no se borró nada. Agregue --aplicar para limpiar ese rango.\n'); return 1; }
-    await deps.limpiar(r.rango);
+    await deps.limpiar(rangoALimpiar);
     log('  ✓ Rango limpiado.\n');
     return 0;
   }
@@ -309,7 +332,7 @@ export async function ejecutar(cfg, deps) {
   const rango = `'${HOJA}'!A${filaDesde}:${conteos.ultima}${filaDesde + filas.length - 1}`;
   try {
     guardarRespaldo(cfg.respaldo, { version: 1, campo: 'relleno-crm-historico', entorno: cfg.entorno, tenant: cfg.tenant, creadoEn: new Date().toISOString(),
-      rango, filaDesde, escrito: filas, antes: valores });
+      rango, filaDesde, escrito: filas });
   } catch (e) {
     if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe un archivo en esa ruta de respaldo: un respaldo nunca se pisa. No se escribe nada.\n'); return 2; }
     throw e;
