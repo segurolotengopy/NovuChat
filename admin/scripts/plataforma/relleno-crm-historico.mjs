@@ -13,8 +13,8 @@
  * QUÉ ESCRIBE (por fila nueva; el resto de las columnas queda vacío, y J..M y U son del equipo: no se tocan):
  *   A  ID correlativo (LEAD-n, a continuación del mayor que ya haya en la hoja)      B  fecha del PRIMER mensaje (La Paz)
  *   C  nombre del contacto (el de su perfil de WhatsApp, sin signos de fórmula)       E  teléfono
- *   F  etapa inicial       G  origen/canal («Campaña Meta Ads» si la conversación vino de un anuncio)      H  calificación: Media
- *   I  resumen fijo («Contacto anterior al miniCRM.»)     L  estado inicial (Activo)     N  clasificación: Tibio
+ *   F  etapa inicial       G  origen/canal («Campaña Meta Ads» si la conversación vino de un anuncio)      H  calificación: Media (SIN EVALUAR)
+ *   I  resumen fijo («Contacto anterior al miniCRM; calificación sin evaluar.»)     L  estado inicial (Activo)     N  clasificación: Tibio (SIN EVALUAR)
  *   S  última interacción (La Paz)
  * NUNCA escribe: lo que dijo el cliente, datos de salud, motivos ni montos; «qué pidió», día, horario, derivación y diagnóstico quedan
  * vacíos (no se inventan). Ninguna fila dice que alguien pagó.
@@ -46,7 +46,8 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = resolve(AQUI, '..', '..', '..');
 export const TENANTS = Object.freeze(['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio']);
 const HOJA = 'Leads_CRM';
-const RESUMEN = 'Contacto anterior al miniCRM.';
+// «Media» (calificación) y «Tibio» (clasificación) son el valor por OMISIÓN de un contacto anterior al miniCRM: SIN EVALUAR, no un juicio sobre la persona.
+const RESUMEN = 'Contacto anterior al miniCRM; calificación sin evaluar.';
 const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'revertir'];
 
