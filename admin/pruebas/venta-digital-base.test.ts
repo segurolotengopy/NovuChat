@@ -10,6 +10,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { cargarFuente } from './core/fuente-vm';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental');
 const COMUN = join(RAIZ, 'venta-digital');
@@ -21,9 +22,7 @@ const EXPORTADOS = [
   'vdFichaCharla', 'vdHabilitado', 'vdCuentaComoCharla', 'vdLineaModo', 'vdSinPreguntaFinal', 'vdQuitarPromesaDeOpciones', 'vdPrometeOpciones', 'vdEtiquetaConPrecio',
   'vdAhorro', 'vdTextoPuente', 'vdPrecioPedido', 'vdHashTexto', 'vdNorm', 'vdOraciones', 'VD_MODOS',
 ];
-// El código evaluado es el de los archivos del propio repositorio, no una entrada externa: solo prueba.
-// nosemgrep: devsecops.js-eval-prohibido
-const VD = new Function(leer(join(COMUN, 'src/cobro.js')) + '\n' + leer(join(COMUN, 'src/conversacion.js')) + `\nreturn { ${EXPORTADOS.join(', ')} };`)() as Record<string, any>;
+const VD = cargarFuente<Record<string, any>>([join(COMUN, 'src/cobro.js'), join(COMUN, 'src/conversacion.js')], EXPORTADOS);
 const vd = (n: string): F => VD[n] as F;
 
 // Catálogo de PRUEBA (no es de ningún negocio): los ids y las palabras entran como dato.

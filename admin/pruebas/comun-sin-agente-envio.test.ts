@@ -151,9 +151,7 @@ describe('lo que la revisión de seguridad encontró (01/10): URL validada y rep
   const evaluarUrl = (nombre: string, item: J): string => {
     const m = /^=(.*)$/s.exec(urlDe(nombre))![1]!;
     return m.replace(/\{\{([\s\S]*?)\}\}/g, (_: string, e: string) => {
-      // nosemgrep: devsecops.js-eval-prohibido
-      const f = new Function('$json', '$', `return (${e});`) as (j: J, r: unknown) => unknown;
-      return String(f(item, () => ({ item: { json: item } })));
+      return String(expresion(`={{${e}}}`, item, { 'Armar mensajes': item }));
     });
   };
   it('el `phoneNumberId` y la versión de Graph no pueden alterar la URL del envío', () => {

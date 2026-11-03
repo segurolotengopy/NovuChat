@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -67,9 +68,7 @@ describe('_comun: la clave de la ficha es un parámetro del tenant', () => {
   const FUENTE = leer(join(NEUTROS, '_comun.js'));
   type Sd = Record<string, unknown>;
   const cargar = (tenant: unknown, sd: Sd | null) => {
-    // El código evaluado es el de un archivo del propio repositorio, no una entrada externa: solo prueba.
-    // nosemgrep: devsecops.js-eval-prohibido
-    return new Function('CN_TENANT', '$getWorkflowStaticData', '$', `${FUENTE}\nreturn { cnMapaDeFichas, cnClaveDeFichas, cnFichaDe };`)(tenant, () => { if (sd === null) throw new Error('sin datos'); return sd; }, () => { throw new Error('sin nodos'); }) as {
+    return (vm.compileFunction(`${FUENTE}\nreturn { cnMapaDeFichas, cnClaveDeFichas, cnFichaDe };`, ['CN_TENANT', '$getWorkflowStaticData', '$']) as (...a: unknown[]) => unknown)(tenant, () => { if (sd === null) throw new Error('sin datos'); return sd; }, () => { throw new Error('sin nodos'); }) as {
       cnMapaDeFichas: (e?: boolean) => { sd: Sd | null; mapa: Record<string, unknown> };
       cnClaveDeFichas: () => string;
       cnFichaDe: (m: Record<string, unknown>, f: string) => unknown;
