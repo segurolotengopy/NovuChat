@@ -27,6 +27,8 @@
  *     «duplicados dentro de la entrada».
  *   - `switch` v3.2 (modo `rules`, mínimo): cada regla es una condición de IF v2; primera que cumple, o `allMatchingOutputs`; `fallbackOutput: 'extra'`.
  *   - `noOp`.
+ *   - `wait` (solo `resume: 'timeInterval'`): NO duerme; anota la espera en `resultado.esperas` ({ nodo, segundos }), adelanta el reloj congelado esa
+ *     cantidad y deja pasar los ítems. Así un bucle «enviar → esperar → reintentar» se prueba sin esperar 61 s de verdad.
  *   Todo lo demás es un nodo de red: necesita un doble. Sin doble, el mundo
  *   lanza `SinDoble` con el nombre del nodo (es un descuido de la prueba, no un
  *   error del flujo, y `onError` no lo esconde). Un doble tiene prioridad sobre
@@ -76,6 +78,11 @@
  *   - No soporta Set en modo `raw`, ni los `fields` de las versiones < 3.3.
  *   - No soporta IF v1 ni condiciones de fecha, arreglo u objeto.
  *   - No simula `retryOnFail`, ni el `batching` del HTTP: cada ítem es una llamada.
+ *   - BUCLES (relé B9, PR 1): `$runIndex` es el número de corrida del nodo en el turno (0 la primera); el historial de cada nodo guarda sus corridas
+ *     y `$('Nodo').all(rama, corrida)` / `.first(rama, corrida)` las leen (sin argumentos, igual que antes: la última corrida, todas las ramas juntas);
+ *     una corrida que no existe LANZA, como n8n. Los ítems que recibe un Code traen `pairedItem: { item }` (el índice en la entrada del nodo que los
+ *     produjo), y un Code puede devolver `pairedItem` en sus ítems de salida para que `.item` siga emparejado a través de él (n8n lo exige: sin
+ *     emparejamiento, `$('Armar mensajes').item` falla). `opciones.idEjecucion` fija `$execution.id` de un turno (por omisión, el de siempre).
  *   - `$('Nodo').all()` / `.first()` devuelven las salidas de TODAS las ramas de
  *     la última corrida de ese nodo; `.item` sin emparejamiento cae al único
  *     ítem que el nodo emitió, y si hay varios, lanza.
@@ -86,7 +93,8 @@
  *   - Orden de ramas: por `y` y luego `x`, sobre todas las salidas del nodo;
  *     cada rama termina entera antes de empezar la siguiente.
  */
-import { ejecutar, type Flujo, type J, type Nodo, type Referencias } from './flujo';
+import vm from 'node:vm';
+import { ejecutar, GLOBALES_FUERA_DEL_SANDBOX, type Flujo, type J, type Nodo, type Referencias } from './flujo';
 
 // ----------------------------------------------------------------------------- tipos públicos
 
@@ -146,7 +154,12 @@ export interface OpcionesTurno {
   avanzarMin?: number;
   /** Con `true`, un error de nodo queda en `resultado.fallo` en vez de lanzarse. */
   tolerarFallo?: boolean;
+  /** `$execution.id` de este turno (por omisión `ejecucion-de-mentira`). */
+  idEjecucion?: string;
 }
+
+/** Una espera de un nodo Wait (que el arnés no duerme). */
+export interface Espera { nodo: string; segundos: number }
 
 /** Un envío (mensaje al cliente o aviso al negocio) tal cual salió por el nodo de red. */
 export interface Enviado {
@@ -190,6 +203,8 @@ export interface ResultadoTurno {
   /** El primer ítem de salida del nodo con rol `resumen`, o `null`. */
   resumen: J | null;
   respuestasWebhook: RespuestaWebhook[];
+  /** Las esperas de los nodos Wait, en orden. */
+  esperas: Espera[];
   /** Los nodos en el orden en que corrieron (con repetidos). */
   orden: string[];
   ejecutados: Set<string>;
@@ -335,7 +350,7 @@ const RE_ITEM = /\$\(\s*(['"`])((?:\\.|(?!\1)[^\\])*)\1\s*\)\s*\.item\b/g;
 
 // ----------------------------------------------------------------------------- el mundo
 
-interface Item { json: J; linaje: Record<string, J> }
+interface Item { json: J; linaje: Record<string, J>; origen?: Item; par?: number }
 
 const ROLES_DE_ENVIO: Rol[] = ['mensajes', 'avisos'];
 const ROLES_DE_LLAMADA: Rol[] = ['ingesta', 'cierre', 'cotejo', 'extraer'];
@@ -387,6 +402,11 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   // Estado del turno en curso (se reinicia en cada `turno`).
   let refs: Referencias = {};
   let turnoActual: ResultadoTurno | null = null;
+  /** Las corridas de cada nodo en el turno: nodo → corrida → salida → jsons. */
+  let historial: Record<string, J[][][]> = {};
+  /** El `$runIndex` del nodo que está corriendo. */
+  let corridaActual = 0;
+  let idEjecucion = 'ejecucion-de-mentira';
 
   // --- las expresiones -------------------------------------------------------------------------
   const posicion = (nombre: string): [number, number] => nodos.get(nombre)?.position ?? [0, 0];
@@ -397,7 +417,8 @@ export function crearMundo(op: OpcionesMundo): Mundo {
       Date: relojFijo(ahoraMs),
       $getWorkflowStaticData: (tipo?: string) => (tipo === 'node' ? (sdNodos['__expresion__'] ??= {}) : sd),
       $workflow: { name: flujo.name, active: true },
-      $execution: { id: 'ejecucion-de-mentira', mode: 'production' },
+      $execution: { id: idEjecucion, mode: 'production' },
+      $runIndex: corridaActual,
       $env: {},
       $vars: {},
       $__item: (nombre: string) => {
@@ -436,7 +457,7 @@ export function crearMundo(op: OpcionesMundo): Mundo {
     return modo;
   }
 
-  const hijoDe = (n: Nodo, it: Item, json: J): Item => ({ json, linaje: { ...it.linaje, [n.name]: json } });
+  const hijoDe = (n: Nodo, it: Item, json: J): Item => ({ json, linaje: { ...it.linaje, [n.name]: json }, origen: it });
 
   /** Corre `fn` ítem por ítem; los errores siguen `onError`. */
   function porItem(n: Nodo, items: Item[], fn: (it: Item) => J[]): Item[][] {
@@ -634,29 +655,84 @@ export function crearMundo(op: OpcionesMundo): Mundo {
     return salida;
   }
 
+  /** Los ítems de un nodo, o los de una corrida y rama concretas (`$('Nodo').all(rama, corrida)`). */
+  function elegirItems(nombre: string, rama?: number, corrida?: number): J[] {
+    if (rama === undefined && corrida === undefined) {
+      const lista = refs[nombre];
+      return lista === undefined ? [] : Array.isArray(lista) ? lista : [lista];
+    }
+    const corridas = historial[nombre] ?? [];
+    const c = corrida === undefined ? corridas.length - 1 : corrida;
+    const salida = corridas[c];
+    if (salida === undefined) throw new Error(`el nodo «${nombre}» no tiene la corrida ${String(corrida)} (corrió ${corridas.length} veces)`);
+    return salida[rama ?? 0] ?? [];
+  }
+
+  /** Corre el cuerpo de un Code con `$input` (con `pairedItem`), `$('Nodo')` con corridas y `$runIndex`. Devuelve los ítems tal cual (`json` y `pairedItem`). */
+  function correrCode(codigo: string, items: Item[], nombre: string): { json: J; pairedItem?: { item: number } }[] {
+    const jsons = items.map((i) => clonar(i.json));
+    const deEntrada = (j: J, i: number): { json: J; pairedItem?: { item: number } } => (items[i]?.par === undefined ? { json: j } : { json: j, pairedItem: { item: items[i]!.par! } });
+    const entrada = {
+      all: () => jsons.map(deEntrada),
+      first: () => deEntrada(jsons[0] as J, 0),
+      item: deEntrada(jsons[0] as J, 0),
+    };
+    const $ = (n: string) => ({
+      first: (rama?: number, corrida?: number) => ({ json: elegirItems(n, rama, corrida)[0] ?? {} }),
+      all: (rama?: number, corrida?: number) => elegirItems(n, rama, corrida).map((json) => ({ json })),
+      item: { json: elegirItems(n)[0] ?? {} },
+      isExecuted: n in refs,
+    });
+    const globales: Record<string, unknown> = {
+      $getWorkflowStaticData: (tipo?: string) => (tipo === 'node' ? (sdNodos[nombre] ??= {}) : sd),
+      Date: relojFijo(ahoraMs),
+      $workflow: { name: flujo.name, active: true },
+      $execution: { id: idEjecucion, mode: 'production' },
+      $runIndex: corridaActual,
+    };
+    const propios = Object.keys(globales);
+    const vacios = GLOBALES_FUERA_DEL_SANDBOX.filter((g) => !propios.includes(g));
+    const fn = vm.compileFunction(codigo, ['$input', '$', ...vacios, ...propios]) as (...a: unknown[]) => { json: J; pairedItem?: { item: number } }[];
+    return fn(entrada, $, ...vacios.map(() => undefined), ...propios.map((k) => globales[k]));
+  }
+
   function ejecutarCode(n: Nodo, items: Item[]): Item[][] {
     const p = n.parameters;
     if (p['mode'] === 'runOnceForEachItem') throw new FalloDeNodo(n.name, 'el arnés no soporta Code en modo runOnceForEachItem');
     if (p['language'] !== undefined && p['language'] !== 'javaScript') throw new FalloDeNodo(n.name, 'el arnés solo soporta Code en JavaScript');
-    let salida: (J | undefined)[];
+    let salida: { json: J; pairedItem?: { item: number } }[];
     try {
-      salida = ejecutar(String(p['jsCode']), items.map((i) => clonar(i.json)), refs, {
-        $getWorkflowStaticData: (tipo?: string) => (tipo === 'node' ? (sdNodos[n.name] ??= {}) : sd),
-        Date: relojFijo(ahoraMs),
-        $workflow: { name: flujo.name, active: true },
-        $execution: { id: 'ejecucion-de-mentira', mode: 'production' },
-      });
-      if (salida.some((x) => x === null || typeof x !== 'object' || Array.isArray(x))) {
+      salida = correrCode(String(p['jsCode']), items, n.name);
+      if (salida.some((x) => x === null || typeof x !== 'object' || Array.isArray(x) || x.json === null || typeof x.json !== 'object' || Array.isArray(x.json))) {
         throw new Error('el código no devolvió ítems con la forma { json: { … } }');
       }
     } catch (e) {
       return fallaEntero(n, items, e);
     }
-    // n8n empareja 1 a 1 si hay el mismo número de ítems, y todos con el único de entrada si solo hay uno.
-    return [(salida as J[]).map((json, i) => {
-      const origen = items.length === salida.length ? items[i] : items.length === 1 ? items[0] : undefined;
-      return origen ? hijoDe(n, origen, json) : { json, linaje: { [n.name]: json } };
+    // n8n empareja 1 a 1 si hay el mismo número de ítems, y todos con el único de entrada si solo hay uno; un `pairedItem` explícito manda.
+    return [salida.map((x, i) => {
+      const explicito = x.pairedItem !== undefined && Number.isInteger(x.pairedItem.item) ? items[x.pairedItem.item] : undefined;
+      const origen = explicito ?? (items.length === salida.length ? items[i] : items.length === 1 ? items[0] : undefined);
+      return origen ? hijoDe(n, origen, x.json) : { json: x.json, linaje: { [n.name]: x.json } };
     })];
+  }
+
+  /** Wait v1.1 en modo `timeInterval`: no duerme; anota la espera, adelanta el reloj congelado y deja pasar los ítems. */
+  function ejecutarEspera(n: Nodo, items: Item[]): Item[][] {
+    const p = n.parameters;
+    if ((p['resume'] ?? 'timeInterval') !== 'timeInterval') throw new FalloDeNodo(n.name, 'el arnés solo soporta Wait con resume «timeInterval»');
+    try {
+      const cantidad = Number(evaluar(p['amount'], items[0] ?? null));
+      const factores: Record<string, number> = { seconds: 1, minutes: 60, hours: 3600, days: 86400 };
+      const unidad = String(p['unit'] ?? 'hours');
+      if (!Number.isFinite(cantidad) || cantidad < 0 || !(unidad in factores)) throw new Error(`Wait: espera no válida (${String(p['amount'])} ${unidad})`);
+      const segundos = cantidad * (factores[unidad] as number);
+      turnoActual?.esperas.push({ nodo: n.name, segundos });
+      ahoraMs += segundos * 1000;
+    } catch (e) {
+      return fallaEntero(n, items, e);
+    }
+    return [items.map((it) => hijoDe(n, it, it.json))];
   }
 
   function ejecutarRespuesta(n: Nodo, items: Item[]): Item[][] {
@@ -795,11 +871,14 @@ export function crearMundo(op: OpcionesMundo): Mundo {
         case 'respondToWebhook': salidas = ejecutarRespuesta(n, items); break;
         case 'removeDuplicates': salidas = ejecutarRepetidos(n, items); break;
         case 'noOp': salidas = [items.map((it) => hijoDe(n, it, it.json))]; break;
+        case 'wait': salidas = ejecutarEspera(n, items); break;
         default: throw new SinDoble(n.name, n.type);
       }
     }
     const primera = salidas[0];
     if ((n as J)['alwaysOutputData'] === true && primera && primera.length === 0 && items[0]) primera.push(hijoDe(n, items[0], {}));
+    // El índice de cada ítem de salida en la ENTRADA de este nodo: es el `pairedItem` que verá el nodo siguiente.
+    for (const lista of salidas) for (const out of lista) if (out.origen !== undefined && out.par === undefined) out.par = items.indexOf(out.origen);
     return salidas;
   }
 
@@ -826,12 +905,15 @@ export function crearMundo(op: OpcionesMundo): Mundo {
     if (!nodos.has(via)) throw new Error(`la entrada «${via}» no existe en el flujo`);
 
     refs = {};
+    historial = {};
+    corridaActual = 0;
+    idEjecucion = opciones.idEjecucion ?? 'ejecucion-de-mentira';
     const orden: string[] = [];
     const salidas: Record<string, J[][]> = {};
     const porNodo: Record<string, J[]> = {};
     const resultado: ResultadoTurno = {
       mensajes: [], avisos: [], llamadas: { ingesta: [], cierre: [], cotejo: [], extraer: [] }, resumen: null,
-      respuestasWebhook: [], orden, ejecutados: new Set<string>(), salidas, porNodo, registro: [], fallo: null,
+      respuestasWebhook: [], esperas: [], orden, ejecutados: new Set<string>(), salidas, porNodo, registro: [], fallo: null,
       mensajesA: (tel) => resultado.mensajes.filter((m) => m.a === tel),
       avisosA: (tel) => resultado.avisos.filter((m) => m.a === tel),
     };
@@ -844,7 +926,9 @@ export function crearMundo(op: OpcionesMundo): Mundo {
       const n = nodos.get(nombre) as Nodo;
       orden.push(nombre);
       resultado.ejecutados.add(nombre);
+      corridaActual = (historial[nombre] ?? []).length;
       const salida = nombre === via ? [items] : ejecutarNodo(n, items);
+      (historial[nombre] ??= []).push(salida.map((its) => its.map((i) => i.json)));
       refs[nombre] = salida.flat().map((i) => i.json);
       const previas = salidas[nombre] ?? [];
       salida.forEach((its, idx) => { previas[idx] = [...(previas[idx] ?? []), ...its.map((i) => i.json)]; });

@@ -1,5 +1,5 @@
 // Tipos de `guardado.mjs` (para las pruebas en TypeScript).
-export interface CredencialesDelGuardado { ingesta: string; graph: string; graphTipo?: 'httpHeaderAuth' | 'whatsAppApi'; graphAviso?: string; graphAvisoTipo?: 'httpHeaderAuth' | 'whatsAppApi' }
+export interface CredencialesDelGuardado { ingesta: string; graph?: string; rele?: string; graphTipo?: 'httpHeaderAuth' | 'whatsAppApi'; graphAviso?: string; graphAvisoTipo?: 'httpHeaderAuth' | 'whatsAppApi' }
 export interface OpcionesDelGuardado {
   credenciales?: CredencialesDelGuardado;
   guardarUrl: string;
@@ -7,6 +7,12 @@ export interface OpcionesDelGuardado {
   config?: string;
   ancla?: string;
   graphDe?: string;
+  /** 'graph' (por defecto) o 'rele' (relé B9). */
+  canal?: 'graph' | 'rele';
+  /** Canal rele: prefijo de la Idempotency-Key del aviso. */
+  cliente?: string;
+  /** Canal rele: base del relé (por defecto el marcador REEMPLAZAR_URL_INTERNA_DEL_RELE). */
+  releUrl?: string;
   numero?: string;
   desde?: [number, number];
 }
@@ -23,7 +29,9 @@ export const FUENTE_REINTENTO: string;
 export function cabeceraDeFuentes(carga: string, config: string): string;
 export function numeroDelAncla(ancla: { name?: string; parameters?: Record<string, any> }): string;
 export function nodosDelGuardado(opciones: OpcionesDelGuardado & { credenciales: CredencialesDelGuardado; numero: string }): NodoDelGuardado[];
-export function credencialesDelFlujo(flujo: { nodes: any[] }, ancla: any, graphDe: string): CredencialesDelGuardado;
+export function credencialesDelFlujo(flujo: { nodes: any[] }, ancla: any, graphDe: string, canal?: 'graph' | 'rele'): CredencialesDelGuardado;
 export function injertarGuardado<T extends { nodes: any[]; connections: Record<string, any> }>(flujo: T, opciones: OpcionesDelGuardado): T;
 export function hallazgosDelGuardado(flujo: unknown, opciones?: { exigir?: boolean }): string[];
 export function manejaMedios(flujo: unknown): boolean;
+export function urlDescargaRele(releUrl?: string): string;
+export function urlInfoRele(releUrl?: string): string;
