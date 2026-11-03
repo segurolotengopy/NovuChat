@@ -14,18 +14,31 @@ mensaje, nodo, datos) se descarta en el Code. No envía mensajes ni llama a nada
 **0 mensajes por conversación**. Prueba negando:
 `admin/pruebas/core/error-envio-incierto.test.ts`.
 
-Se ve en la lista de Ejecuciones de ese flujo (`saveDataSuccessExecution: all`).
-Residuo a saber: n8n guarda también la entrada del Error Trigger en esa
-ejecución; lo único libre ahí es el mensaje fijo del nodo «Detener» (decisión y
-código sanitizado, sin teléfono, texto ni clave) y un id de una ejecución que no
-se guardó. Si se quiere cero residuo, poner `saveDataSuccessExecution: none` y
-perder la visibilidad en la lista.
+## Decisión pendiente: `saveDataSuccessExecution` none o all
+
+El errorWorkflow se dispara con **cualquier** error de un flujo con relé, no
+solo con el «Detener». Con `all`, n8n guarda en la ejecución del errorWorkflow
+la entrada completa del Error Trigger: `execution.error` (de un NodeApiError,
+su descripción y el cuerpo HTTP de la respuesta), el stack, el nodo que falló
+con sus parámetros y la URL de la ejecución. Con el «Detener» de #757 el mensaje
+es fijo y no hay datos del paciente; el riesgo depende de los demás nodos que
+puedan fallar (bajo, no cero).
+
+- `all`: se ve la fila en Ejecuciones (flujo y hora), con ese riesgo.
+- `none`: cero residuo, pero no queda nada visible en la lista.
+
+Recomendación provisional: `all` solo si antes se audita qué nodos de los flujos
+con relé pueden lanzar un error con datos; si no se audita, `none`. El JSON
+versionado queda con `all` hasta que Andres decida.
 
 ## Cómo se crea y asigna (lo hace Claude, con el botón de Andres)
 
-1. Importar `Flujos/error-envio-incierto.json` en n8n y **activarlo** (un
-   workflow de errores no necesita estar activo para recibir errores, pero se
-   publica como cualquier flujo: `publicar-flujo.sh`, desde `origin/main`).
+1. Importar `Flujos/error-envio-incierto.json` en n8n (`publicar-flujo.sh`,
+   desde `origin/main`). Un flujo con solo Error Trigger normalmente **no se
+   activa**: basta asignarlo en `settings.errorWorkflow` de los otros flujos.
+   No verificado en n8n 2.36.5: si lo dispara estando inactivo, y que la
+   ejecución del errorWorkflow se guarde con las opciones de arriba; se
+   comprueba en el ensayo.
 2. Anotar su id (lo asigna n8n; nunca se versiona).
 3. Asignarlo a cada flujo con relé: `settings.errorWorkflow = <id>`.
 

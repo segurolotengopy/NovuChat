@@ -47,6 +47,15 @@ describe('errorWorkflow «Error de envío incierto»', () => {
     expect(s.flujo).not.toMatch(/[{}"]/);
   });
 
+  it('el nombre del flujo no deja secuencias de 6 o más dígitos', () => {
+    const [s] = ejecutar(codigo, [{ workflow: { name: `Flujo ${TEL} y 1234567` } }]);
+    expect(s.flujo).not.toMatch(/\d{6,}/);
+  });
+
+  it('el JSON no trae ningún REEMPLAZAR_ (publicar-flujo.sh aborta ante uno)', () => {
+    expect(JSON.stringify(f)).not.toMatch(/REEMPLAZAR_[A-Z]/);
+  });
+
   it('sin workflow o con tipos raros no falla ni filtra', () => {
     for (const e of [{}, { workflow: null, execution: sucia.execution }, { workflow: { name: { texto: TEXTO } } }]) {
       const [s] = ejecutar(codigo, [e]);
