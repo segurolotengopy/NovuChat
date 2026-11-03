@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 export const MARCADOR = /REEMPLAZAR_[A-Z][A-Z0-9_]*/g;
 const MAX_MARCADORES_POR_TEXTO = 3;
 const MAX_TEXTO_VIVO = 20_000;
+const MAX_TEXTO_VIVO_VARIOS = 1_500;
 const esObjeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const escapar = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -63,7 +64,8 @@ export function emparejar(local, vivo) {
   const marcas = marcadoresDe(local);
   if (marcas.length === 1 && local === marcas[0]) return { [marcas[0]]: vivo };
   // Con muchos marcadores o un texto vivo enorme el emparejamiento por expresión regular puede ser ambiguo o lentísimo: no se repone.
-  if (marcas.length > MAX_MARCADORES_POR_TEXTO || vivo.length > MAX_TEXTO_VIVO) return null;
+  // (La expresión regular con varios grupos perezosos crece de forma polinómica: con 2 o más marcadores el texto vivo se limita a unos pocos KB.)
+  if (marcas.length > MAX_MARCADORES_POR_TEXTO || vivo.length > MAX_TEXTO_VIVO || (marcas.length > 1 && vivo.length > MAX_TEXTO_VIVO_VARIOS)) return null;
   const armar = (grupo) => {
     let patron = '';
     let resto = local;
@@ -152,6 +154,8 @@ export async function leerFlujoVivo(envFile, buscar = fetch) {
 }
 
 export async function ejecutar({ local: rutaLocal, env: rutaEnv, aplicar = false }, { log = console.log, buscar = fetch } = {}) {
+  // El archivo lleva valores sensibles: tiene que ser un `*.local.json` (ignorado por git).
+  if (!/\.local\.json$/.test(rutaLocal)) { log('✗ --local tiene que terminar en .local.json (lleva valores sensibles y solo ese nombre lo ignora git).'); return 2; }
   const local = JSON.parse(readFileSync(rutaLocal, 'utf8'));
   const vivo = await leerFlujoVivo(rutaEnv, buscar);
   // FALLA CERRADA: es la única defensa contra un --env equivocado (el phone id o la ruta de OTRO cliente). Los dos nombres tienen que existir y ser iguales.

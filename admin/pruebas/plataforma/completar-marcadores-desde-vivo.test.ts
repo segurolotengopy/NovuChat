@@ -69,6 +69,19 @@ describe('B1b. NEGADO: lo ambiguo, lo enorme y lo que puede imprimir un valor', 
     expect(mod.emparejar('REEMPLAZAR_A-REEMPLAZAR_B-REEMPLAZAR_C-REEMPLAZAR_D', '1-2-3-4')).toBeNull();
     expect(mod.emparejar('x REEMPLAZAR_A y', `x ${'a'.repeat(25_000)} y`)).toBeNull();
   });
+  it('con 2 o más marcadores el texto vivo se limita a ~1,5 KB (la regex perezosa crece de forma polinómica): no se cuelga', () => {
+    const t0 = Date.now();
+    expect(mod.emparejar('a REEMPLAZAR_A b REEMPLAZAR_B c', `a ${'x'.repeat(4_000)} b ${'y'.repeat(4_000)}`)).toBeNull();
+    expect(Date.now() - t0).toBeLessThan(500);
+    expect(mod.emparejar('a REEMPLAZAR_A b REEMPLAZAR_B c', 'a 1 b 2 c')).toEqual({ REEMPLAZAR_A: '1', REEMPLAZAR_B: '2' });
+  });
+  it('NEGADO: --local que no termina en .local.json (git no lo ignora y lleva valores sensibles) se rechaza sin leer nada', async () => {
+    const m = mundo(LOCAL, VIVO);
+    const sinSufijo = m.archivo.replace('.local.json', '.json');
+    writeFileSync(sinSufijo, JSON.stringify(LOCAL));
+    expect(await mod.ejecutar({ local: sinSufijo, env: m.env, aplicar: true }, m.deps)).toBe(2);
+    expect(m.pedidos).toEqual([]);
+  });
   it('un marcador que encaja en un nodo y no encaja en otro nodo vivo es conflicto y no se repone', () => {
     const local = flujo('Flujo X', [asig('a', 'REEMPLAZAR_A')], [{ name: 'Otro', parameters: { t: 'prefijo-REEMPLAZAR_A' } }]);
     const vivo = flujo('Flujo X', [asig('a', 'valor')], [{ name: 'Otro', parameters: { t: 'algo-distinto' } }]);
