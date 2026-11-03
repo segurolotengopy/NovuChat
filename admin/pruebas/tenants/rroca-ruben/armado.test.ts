@@ -43,12 +43,13 @@ describe('armado: --verificar y el tope de nodos', () => {
   });
 
   it(`ninguna variante pasa de ${TOPE_DE_NODOS} nodos (57 es el tope duro: 48 más los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10: docs/versiones-por-cliente.md; si pasa, se rehace)`, () => {
-    expect(TOPE_DE_NODOS).toBe(57);
-    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(57);
-    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(57);
+    // 02/11/2026: 57 + 8 − 2 de holgura = 63, el tope aprobado por Andres para el miniCRM (55 + los 8 de la rama).
+    expect(TOPE_DE_NODOS).toBe(63);
+    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(63);
+    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(63);
     const grande = copia(PRODUCCION);
-    while (grande.nodes.length <= 57) grande.nodes.push({ ...copia(grande.nodes[0]!), id: `x${grande.nodes.length}`, name: `Relleno ${grande.nodes.length}` });
-    expect(guardias('produccion', grande).join('|')).toMatch(/tope es 57/);
+    while (grande.nodes.length <= 63) grande.nodes.push({ ...copia(grande.nodes[0]!), id: `x${grande.nodes.length}`, name: `Relleno ${grande.nodes.length}` });
+    expect(guardias('produccion', grande).join('|')).toMatch(/tope es 63/);
   });
 
   it('producción y prueba: guardias limpias, y lo versionado no las viola', () => {
@@ -209,17 +210,18 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
   const x = (f: Flujo, n: string): number => nodo(f, n).position![0];
   const destinos = (f: Flujo, n: string, salida = 0): string[] => (f.connections[n]!['main']![salida] ?? []).map((c) => c.node);
 
-  it('cuenta de nodos: producción y prueba dentro del tope (57) y de la meta de producción (55)', () => {
-    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(55);
-    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(55);
+  it('cuenta de nodos: producción y prueba dentro del tope (63) y de la meta de producción (63)', () => {
+    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(63);
+    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(63);
     expect(PRODUCCION.nodes.length).toBe(PRUEBA.nodes.length + 5);
     // MEDIOS ENTRANTES: 39 → 44 en producción y 34 → 39 en la prueba (5 nodos: ¿Es audio?, Transcribir audio, Preparar transcripción, ¿Es comprobante? y Ver imagen).
     // Y +1 (21/10/2026): «¿Lo leído es comprobante?» (el lector del comprobante clasifica; lo que no es un comprobante no se coteja) → 45 y 40.
     // Y +1 (23/10/2026): «Preparar imagen» (visión por categorías, módulo común de medios) → 46 y 41.
     // Y +11 (29/10/2026): la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs) → 57 y 52.
     // Y −2 (30/10/2026, contrato v2): se quitan «¿Anotar medio?» y «Anotar medio» → 55 y 50.
-    expect(PRODUCCION.nodes.length).toBe(55);
-    expect(PRUEBA.nodes.length).toBe(50);
+    // Y +8 (02/11/2026): la rama del miniCRM (módulo `crm`, aprobada por Andres) → 63 y 58.
+    expect(PRODUCCION.nodes.length).toBe(63);
+    expect(PRUEBA.nodes.length).toBe(58);
   });
 
   it('«Reportar mensaje (entrante)» sigue ARRIBA de toda la rama que responde (medios, decisión, modelo, avisos y mensajes)', () => {
@@ -274,7 +276,8 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
     expect(destinos(f, '¿Hay avisos?', 0)).toEqual(['Enviar aviso']);
     expect(destinos(f, '¿Hay avisos?', 1)).toEqual(['Armar mensajes']);
     expect(destinos(f, 'Enviar aviso')).toEqual(['Armar mensajes']);
-    expect(destinos(f, 'Armar mensajes')).toEqual(['Resumen del turno', '¿Enviar de verdad?']);
+    // La rama del miniCRM (02/11/2026) cuelga de «Armar mensajes» antes del envío; «Resumen del turno» sigue siendo la primera conexión y el envío corre después.
+    expect(destinos(f, 'Armar mensajes')).toEqual(['Resumen del turno', 'Prospecto para la planilla', '¿Enviar de verdad?']);
   });
 
   it('el avance de izquierda a derecha respeta el orden de ejecución: el aviso corre ANTES de armar el mensaje que dice si salió', () => {
@@ -446,8 +449,9 @@ describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen'
     // La ÚNICA diferencia del modo prueba (declarada en PROPIO.md): `telefonoPermitido` niega por defecto.
     expect(entre(o, 'const telefonoPermitido', ';\n')).toBe('const telefonoPermitido = permitidos.length === 0 || permitidos.indexOf(telefonoDePrueba) >= 0;\n');
     expect(entre(c, 'const telefonoPermitido', ';\n')).toBe('const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;\n');
-    // Lo QUE SE QUITÓ: la oferta (planes y cargos), la planilla y los datos propios del chat.
-    for (const quitado of ['CH_DATOS', 'limpiarOferta', 'planillaProspectosId', 'archivoPlanes', 'cargosUnicos']) expect(c).not.toContain(quitado);
+    // Lo QUE SE QUITÓ: la oferta (planes y cargos) y los datos propios del chat. (La planilla del chat de NovuChat se quitó también; desde el 02/11/2026 este flujo tiene la SUYA, la del módulo miniCRM: `planillaProspectosId`
+    // y `planillaProspectosHoja` en «Config del negocio», declarados en PROPIO.md y probados en crm.test.ts.)
+    for (const quitado of ['CH_DATOS', 'limpiarOferta', 'archivoPlanes', 'cargosUnicos']) expect(c).not.toContain(quitado);
   });
 
   it('NIEGA_IA: la expresión es IDÉNTICA a `CH_NIEGA_IA` de chat-novuchat (la librería propia la declara)', () => {

@@ -76,6 +76,10 @@ describe('clasificación, prioridad y cierre de ventana (por código)', () => {
   });
   it('pidió que lo llamen = Caliente; solo `=== true` cuenta', () => {
     expect(M.crmClasificar({ pidioLlamada: true })).toBe('Caliente');
+    expect(M.crmClasificar({ inicioCompra: true })).toBe('Caliente');
+    expect(M.crmClasificar({ inicioCompra: 'true', llegoPorAnuncio: true })).toBe('Tibio');
+    expect(M.crmClasificar({ inicioCompra: true, preguntoPrecioYCerro: true })).toBe('Caliente');
+    expect(M.crmClasificar({ inicioCompra: true, noEsPaciente: true })).toBe('No es lead');
     expect(M.crmClasificar({ aceptoAgendar: 'true', pidioUbicacion: 1, pidioLlamada: 'si' })).toBe('Tibio');
     for (const raro of [null, undefined, 'x', 5, [], {}]) expect(M.crmClasificar(raro)).toBe('Tibio');
   });
