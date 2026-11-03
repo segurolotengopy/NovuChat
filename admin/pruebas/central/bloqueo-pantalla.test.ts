@@ -144,3 +144,19 @@ describe('errores y fuente', () => {
     expect([...lib.matchAll(/'((?:des)?bloquearContacto)'/g)].map((m) => m[1]).sort()).toEqual(['bloquearContacto', 'desbloquearContacto']);
   });
 });
+
+describe('posición de «Bloquear contacto»', () => {
+  it('va en la misma fila que «No contactar» (cv-det-sub), justo después, y no suelto debajo de la barra de turno', () => {
+    const c = readFileSync(join(ADMIN, 'web/src/central/componentes/DetalleConversacion.tsx'), 'utf8');
+    const sub = c.indexOf('className="cv-det-sub"');
+    const noContactar = c.indexOf('className="cv-nocontactar"');
+    const bloqueo = c.indexOf('<BloqueoContacto');
+    const barra = c.indexOf('<BarraTurno');
+    expect(c.match(/<BloqueoContacto/g)).toHaveLength(1);
+    expect(sub).toBeGreaterThan(-1);
+    expect(noContactar).toBeGreaterThan(sub);
+    expect(bloqueo).toBeGreaterThan(noContactar);
+    expect(bloqueo).toBeLessThan(barra);
+    expect(c.slice(noContactar, bloqueo)).not.toContain('</div>');
+  });
+});
