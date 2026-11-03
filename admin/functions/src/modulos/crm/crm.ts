@@ -21,7 +21,19 @@ export interface ConfigCrm {
 export const crmActivo = (config: ConfigCrm | null | undefined): boolean =>
   config === null || typeof config !== 'object' || config.activo !== false;
 
-export const recordatoriosActivos = (config: ConfigCrm | null | undefined): boolean => {
+/**
+ * Lo que `configuracionFlujo` entrega del miniCRM (PR-B3): SOLO `{ crm: { activo } }`, y solo si `config/crm`
+ * existe con `activo` booleano. Cualquier otra cosa (sin documento, `activo` ausente o de otro tipo, campos extra)
+ * devuelve `{}`: la respuesta queda como siempre y el módulo sigue ENCENDIDO por omisión (`crmActivo`). Los campos
+ * reservados del servidor (`hoja`, `mapaColumnas`, `cuentaServicio`…) NUNCA viajan al flujo.
+ */
+export const crmParaElFlujo = (datos: Readonly<Record<string, unknown>> | null | undefined): { crm?: { activo: boolean } } => {
+  if (datos === null || datos === undefined || typeof datos !== 'object') return {};
+  const activo = (datos as ConfigCrm).activo;
+  return typeof activo === 'boolean' ? { crm: { activo } } : {};
+};
+
+export const recordatoriosActivos =(config: ConfigCrm | null | undefined): boolean => {
   if (config === null || typeof config !== 'object') return false;
   const r = config.recordatorios;
   return r !== null && typeof r === 'object' && (r as { activo?: unknown }).activo === true;
