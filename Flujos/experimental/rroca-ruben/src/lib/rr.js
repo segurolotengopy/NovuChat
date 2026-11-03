@@ -455,7 +455,7 @@ const RR_VENTANA_AVISO_CONSULTA_MS = 30 * 60 * 1000;   // a lo más un aviso de 
 // La ventana de servicio de Meta es de 24 h desde el último mensaje de Rubén al número; se deja un margen de media hora: dentro va texto libre, fuera va plantilla.
 const RR_VENTANA_RUBEN_MS = 23.5 * 60 * 60 * 1000;
 // Los motivos de los avisos de consulta (la clave limita el aviso: uno cada 30 minutos por teléfono y clave).
-const RR_CLAVES_AVISO = ['factura', 'otro_medio_pago', 'garantia', 'reclamo', 'hablar_con_ruben', 'acceso_material', 'descuento', 'qr_no_disponible', 'no_entrega', 'no_supo', 'atencion_humana', 'comprobante_sin_cotejo', 'cancelacion', 'qr_insistente', 'sin_configuracion', 'pago_con_problema'];
+const RR_CLAVES_AVISO = ['factura', 'otro_medio_pago', 'garantia', 'reclamo', 'hablar_con_ruben', 'acceso_material', 'descuento', 'qr_no_disponible', 'no_entrega', 'no_supo', 'atencion_humana', 'comprobante_sin_cotejo', 'cancelacion', 'qr_insistente', 'sin_configuracion', 'pago_con_problema', 'ubicacion'];
 const RR_MINUTOS_QR = 15;   // el plazo de la regla 2 del cobro: lo manda el servidor; aquí solo es una guarda para no abrir dos QR seguidos
 
 function rrProductoDeBoton(id) {
@@ -582,6 +582,42 @@ function rrMotivoDeDerivacion(n) {
 // El modelo no sabe responder: por regla de su instrucción contesta SOLO la palabra DERIVAR. Lo decide el código, y esa palabra jamás llega al cliente.
 function rrEsDerivar(crudo) {
   return /^derivar\b/.test(rrNorm(crudo));
+}
+// LA UBICACIÓN (31/10/2026; adaptada de Evy, no copiada): el prompt prohíbe enlaces al modelo, así que el enlace de Maps de la Consola lo agrega el CÓDIGO cuando el cliente pide la ubicación. Sin dato (ni enlace válido ni dirección)
+// NO se inventa nada: lo único que se ofrece es pasar con Rubén (aviso + botón), el camino de DERIVAR. «Mapa de Automatización» es un bono del libro y «mi dirección de correo» es del cliente: no son esta pregunta.
+const RR_PIDE_UBICACION = /\b(ubicacion|ubicados|ubicadas|ubicarlos|(?:manda\w*|mandame|pasa\w*|pasame|envia\w*|enviame|dame|compart\w*) (?:me )?(?:el |un |tu |su )?(?:mapa|maps)|mapa de (?:ubicacion|como llegar)|(?:link|enlace) (?:del|de) (?:mapa|maps)|maps|(?<!\bmi |\bmis |\bque |\bcual )direccion(?! (?:de|del) (?:correo|email|mail|e mail|electronic\w*|pago|pagos|envio|entrega|deposito|transferencia|factura|cobro))|como (?:llego|llegar|llegamos)|donde (?:atienden|se encuentran|se ubican|(?:estan|esta) ubicad\w*|queda(?:n)?(?! (?:el|la|los|las|mis|mi|tu|su) (?:libro|pdf|archivos?|bonos?|material|enlaces?|links?|acceso|accesos|descarga\w*|curso|videos?|pack|closer|comprobante|qr|pedido|pago|correo|mail|email|factura|boleta))))\b|^(?:el )?mapa$/;
+// Una cancelación con un pedido en curso es de «Decidir turno» (derivar): no se trata como pedido de ubicación.
+function rrPideUbicacion(textoCliente) { const n = rrNorm(textoCliente); return RR_PIDE_UBICACION.test(n) && rrCancelaPedido(n) !== 'cancela'; }
+// EL ENLACE DE GOOGLE MAPS del negocio (`direccionMaps`): LA MISMA regla que `enlaceDeMapaValido` del servidor (https, dominio de mapas de Google, hasta 200 caracteres, sin espacios). Inválido o ausente = ''.
+const RR_ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+function rrEnlaceDeMapa(v) {
+  if (typeof v !== 'string') return '';
+  const t = v.trim();
+  return t.length <= 200 && RR_ENLACE_DE_MAPA.test(t) ? t : '';
+}
+// La dirección en texto de la Consola: una línea, sin enlaces (ya viene saneada de «Config del negocio»; se comprueba otra vez).
+function rrDireccionDeTexto(v) {
+  if (/[\u00AD\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/.test(rrTexto(v))) return '';
+  const t = rrTexto(v).replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 160);
+  // Sin enlaces (con o sin esquema: «bit.ly/abc», «ejemplo.com/ir», «t.me/x»), sin «maps» y sin caracteres invisibles (un enlace disfrazado).
+  if (/[\u00AD\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/.test(t)) return '';
+  return /https?:|www\.|wa\.me|maps|goo\.gl|\b[a-z0-9-]+\.(?:com|net|org|bo|ly|me|io|app|link|gl)\b(?:\/|$)/i.test(t) ? '' : t;
+}
+// ¿El negocio no tiene NADA que dar ante «¿dónde quedan?»? (ni enlace válido ni dirección). Entonces el flujo deriva a Rubén en vez de inventar.
+function rrUbicacionSinDato(cfg) {
+  const c = cfg && typeof cfg === 'object' ? cfg : {};
+  return rrEnlaceDeMapa(c.direccionMaps) === '' && rrDireccionDeTexto(c.direccion) === '';
+}
+// Las líneas que el código agrega a la respuesta del modelo (solo lo que la Consola tiene y el modelo no dijo ya). Sin dato, ninguna.
+function rrLineasDeUbicacion(cfg, texto) {
+  const c = cfg && typeof cfg === 'object' ? cfg : {};
+  const t = rrTexto(texto);
+  const mapa = rrEnlaceDeMapa(c.direccionMaps);
+  const dir = rrDireccionDeTexto(c.direccion);
+  const lineas = [];
+  if (dir && rrNorm(t).indexOf(rrNorm(dir)) < 0) lineas.push('Dirección: ' + dir);
+  if (mapa && t.indexOf(mapa) < 0) lineas.push('📍 Ubicación: ' + mapa);
+  return lineas;
 }
 // El MOTIVO exacto de un aviso por un comprobante que no cuadra, para que Rubén sepa qué mirar. `estado` = lo que dijo el servidor (tardio, en_revision, aproximado) o '' (sin cotejar);
 // `motivoSrv` = el campo `motivo` del cotejo (una lista cerrada; lo desconocido no se copia). Nunca copia texto leído del comprobante.
@@ -932,9 +968,9 @@ function rrTextoDerivacion(motivo, salio, clave) {
   if (salio === 'repetido' && motivo === 'consulta') return 'Eso lo ve Rubén directamente. Rubén ya recibió el aviso de tu consulta anterior; si quieres, escríbele directo con el botón.';
   // F5 (19/10/2026): factura, garantía, devolución, otros medios de pago, reclamos y pagos que no aparecen se conversan DIRECTAMENTE con el autor: aviso + botón, y NUNCA una promesa de garantía,
   // devolución ni resultado. La queja de no entrega no afirma que se entregó. Solo para el motivo `consulta`; el resto de los motivos conserva su texto.
-  if (motivo === 'consulta' && (clave === 'factura' || clave === 'garantia' || clave === 'otro_medio_pago' || clave === 'reclamo' || clave === 'no_entrega')) {
+  if (motivo === 'consulta' && (clave === 'factura' || clave === 'garantia' || clave === 'otro_medio_pago' || clave === 'reclamo' || clave === 'no_entrega' || clave === 'ubicacion')) {
     const intro = clave === 'no_entrega' ? 'Lamento la espera. Rubén revisa el pago y te envía el material por este chat en cuanto lo termine de revisar; desde aquí no puedo confirmarte si ya salió.'
-      : (clave === 'factura' || clave === 'garantia' ? 'Sobre factura, garantía o devolución puedes conversar directamente con el autor, Rubén; desde aquí no puedo prometerte nada de eso.'
+      : (clave === 'ubicacion' ? 'Por aquí no tengo la ubicación cargada; puedes pedírsela directamente a Rubén.' : clave === 'factura' || clave === 'garantia' ? 'Sobre factura, garantía o devolución puedes conversar directamente con el autor, Rubén; desde aquí no puedo prometerte nada de eso.'
         : 'Eso lo ve directamente el autor, Rubén, y puedes conversarlo con él.');
     return salio === true ? intro + ' Le avisé; también puedes escribirle directo con el botón.' : intro + ' No pude avisarle; escríbele directo con el botón.';
   }

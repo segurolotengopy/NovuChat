@@ -26,7 +26,7 @@ const negocioV = (): J => JSON.parse(readFileSync(ARCHIVO_DE_NEGOCIO, 'utf8')) a
 
 /** El flujo, los datos y el negocio como quedarían con todos los marcadores sustituidos (ids de imagen y recepción reales, plantilla aprobada). */
 function listo(prueba = false): { flujo: Flujo; datos: ReturnType<typeof datosV>; negocio: J } {
-  const llenar = (s: string): string => s.replace(MARCADORES, (m) => (/MEDIA_ID_ARTE_ANTES/.test(m) ? IDS.antes_despues : /MEDIA_ID_ARTE_AUTORIDAD/.test(m) ? IDS.autoridad : /ETAPA_PRUEBA/.test(m) ? '' : /RECEPCION/.test(m) ? REC : /TELEFONOS/.test(m) ? `${ANA},${BETO}` : /PHONE_NUMBER_ID|WABA_ID/.test(m) ? REC : 'valorsustituido'));
+  const llenar = (s: string): string => s.replace(MARCADORES, (m) => (/PLANILLA_PROSPECTOS_ID/.test(m) ? 'PlanillaDePruebaDeEmmaParaElMiniCrm01' : /MEDIA_ID_ARTE_ANTES/.test(m) ? IDS.antes_despues : /MEDIA_ID_ARTE_AUTORIDAD/.test(m) ? IDS.autoridad : /ETAPA_PRUEBA/.test(m) ? '' : /RECEPCION/.test(m) ? REC : /TELEFONOS/.test(m) ? `${ANA},${BETO}` : /PHONE_NUMBER_ID|WABA_ID/.test(m) ? REC : 'valorsustituido'));
   const flujo = JSON.parse(llenar(JSON.stringify(prueba ? PRUEBA : PRODUCCION))) as Flujo;
   const datos = datosV(); datos.configBase = JSON.parse(llenar(JSON.stringify(datos.configBase))) as Record<string, unknown>;
   const negocio = JSON.parse(JSON.stringify(negocioV()).replace(MARCADORES, 'dato-real')) as J;

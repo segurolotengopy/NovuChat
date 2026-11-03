@@ -135,7 +135,7 @@ otra zona que hay dentro de un archivo y que F3 separa; no cambia su zona y
 solo se achica. Las dos tienen su prueba: cada clave existe, y `SE_PARTE`
 nombra zonas reales distintas de la del archivo.
 
-**El coordinador de turno** es `ingesta.ts`, en la raíz de Functions hasta F3b;
+**El coordinador de turno** es `ingesta.ts`, en la raíz de Functions, como coordinador;
 `index.ts` es coordinador y solo reexporta (salvo `core/opcionesGlobales.ts`,
 que va primero). La prueba toma de `index.ts` el archivo que reexporta la
 Function `ingesta` y exige que sea coordinador: si alguien lo muda a una
@@ -315,7 +315,7 @@ importaciones (la raíz no es una carpeta de zona).
   `web/src/core/` (`consola`), `Flujos/manifiestos/` (`core-flujos`),
   `functions/src/index.ts` y `functions/src/ingesta.ts` (la coordinadora) y
   `.github/` (`devsecops`).
-- **El corte de `ingesta.ts` y `prompt.ts`** es de F3b.
+- **El corte de `prompt.ts`** sigue pendiente de F3b; el de `ingesta.ts` ya se hizo (F3b-1b y F3b-2e).
 
 ## Lo que sigue
 

@@ -20,9 +20,10 @@ orden del registro.
 ## Dónde vive
 
 El coordinador de turno es `admin/functions/src/ingesta.ts`, en la raíz de
-Functions hasta F3b: tiene su línea de coordinador en `ZONA_POR_ARCHIVO`
-(`admin/pruebas/frontera/frontera.ts`). Desde F3b-2e ya no figura en `SE_PARTE`:
-salió de él la lógica de Agenda, Campañas, Catálogo web y Productos. Queda en
+Functions, como coordinador: tiene su línea de coordinador en `ZONA_POR_ARCHIVO`
+(`admin/pruebas/frontera/frontera.ts`). Desde F3b-2e sigue en `SE_PARTE` solo con
+`modulo:agenda` y `modulo:cobros`: salió de él la lógica de Agenda, Campañas,
+Catálogo web y Productos. Queda en
 el coordinador la decisión `cobroRealActivo` (Cobros: separa el camino que mueve
 dinero del simulado) y el conteo de señas enviadas; se mudan en una etapa
 posterior y no deben darse por movidas.
@@ -53,9 +54,9 @@ No se agregan llamadas: las dos por turno ya existen.
    ganchos (`antesDelTurno`, `despuesDelTurno`, `alCierre`, `alCambiarConfig`,
    `programado`; tabla en `modulos.md`).
 
-`ingesta.ts` (2.130 líneas) va a `functions/src/core/turno/` y **se parte**:
-coordinador más los ganchos de seña, inventario, captación, campañas y cobro de
-venta, que vuelven a sus módulos.
+`ingesta.ts` (2.088 líneas) queda en la raíz de Functions como **coordinador**:
+los ganchos de seña, inventario, captación, campañas y cobro de venta ya
+volvieron a sus módulos (`modulos/*/alTurno.ts`) y los llama por el registro.
 
 ## El cierre (`registrarCierre`): ganchos inyectados (F3b-1b, 05/10/2026)
 
@@ -99,9 +100,10 @@ reexporta ese `registrarCierre` (mismo nombre, mismas opciones y secretos).
 
 - **El corte de `ingesta.ts`** (coordinador más ganchos). La deuda de
   `deuda.json` es **0 cruces** desde F3b-1b: ya ningún archivo de Core ni de un
-  módulo importa de `ingesta.ts`. Lo que falta del corte es mover los ganchos
-  de seña, inventario, captación, campañas y cobro de venta que siguen dentro de
-  `ingesta.ts`, y recorrer los módulos encendidos por el registro (F3b-2).
+  módulo importa de `ingesta.ts`. Los ganchos de seña, inventario, captación,
+  campañas y cobro de venta ya están movidos (F3b-2). Lo que sigue dentro de
+  `ingesta.ts` es la decisión `cobroRealActivo` (Cobros) y el conteo de señas
+  enviadas (`senasEnviadas`, Agenda).
 - **F3b-2a (30/10/2026): el contrato y la red, sin mover lógica.**
   `core/turno/ganchosDelTurno.ts` define `GanchosDelTurno` (campañas, captación,
   inventario, cobro de venta, seña) y `modulosDelTurno(ficha, flujoRuta)`:
@@ -127,7 +129,8 @@ reexporta ese `registrarCierre` (mismo nombre, mismas opciones y secretos).
 - **La separación seña/prepago:** `sena.ts` ya no importa `ingesta.ts`, así que
   el camino `sena.ts → ingesta.ts → prepago.ts` ya no existe.
 - **§5.1 de `Analisis/41`** manda `ingesta.ts` (coordinador) a `core/turno/`,
-  contra «carpeta = zona»: se resuelve en F3b, al partirla.
+  contra «carpeta = zona»: se resolvió en F3b; `ingesta.ts` queda en la raíz de
+  Functions como coordinador (zona `coordinador`), no en `core/turno/`.
 
 ## Flujo delgado, gradual (`Analisis/41` §6.1.3)
 
@@ -326,7 +329,7 @@ zona inyectadas, modelo como sub-nodo intercambiable.
   contexto (`ContextoDeCobro`), sin tocar el contrato de Core. Sin cambios en la
   respuesta: la red diferencial pasa con sus referencias intactas.
 
-- **F3b-2e (31/10/2026): `ingesta.ts` sin lógica de módulos; sale de `SE_PARTE`.**
+- **F3b-2e (31/10/2026): `ingesta.ts` sin lógica de módulos; sigue en `SE_PARTE` con Agenda y Cobros.**
   Lo que quedaba, movido sin cambiar lógica: la solicitud en curso del mensaje
   (seña de Agenda + regla 2 de Cobros, `solicitudTras`/`solicitudDeCobroTras`/
   `reactivaTras`) a `modulos/agenda/solicitudDelTurno.ts` (Agenda depende de

@@ -160,6 +160,8 @@ la credencial llega como token `@@cred:`), `hallazgosCrm` (rango que llega a la 
 
 **PR-F1 (31/10/2026), Evy (`rroca-evy`).** Primer flujo de cliente con la rama de señales: `ramaCrm` (8 nodos, 45 -> 53 en producción y 40 -> 48 en la prueba; tope subido por DP1, `docs/versiones-por-cliente.md`), mapa `crm` en los datos de Evy (A..I y N..T del bot, J..M y U del equipo; la U no se lee), `evProspectoCrm` en `ev.js` (vocabulario cerrado, sin «no es paciente», DP4) y `guardarPlanilla` en `armar-mensajes.js` (nunca con riesgo, baja, nada, suspendido, uso extendido, etapa de prueba ni id vacío; la variante de prueba lleva el id vacío). El Switch 3.2 de `ramaCrm` se verificó contra los `node-definitions` de n8n 2.36.5 (`rules.values[]` con `conditions` de la forma del IF v2, `outputKey`, `renameOutput`): coincide, sin cambios. El arnés `n8n-de-mentira.ts` ganó el caso `switch` (modo `rules`). Evy suma a `crm-hallazgos-flujos.test.ts`. Mensajes por conversación: 0. Pruebas: `admin/pruebas/tenants/rroca-evy/crm.test.ts`. Pendiente del ensayo: títulos de la fila 3 y formato de ID contra la copia viva de la planilla.
 
+**PR-F2 (02/11/2026), Emma (`rroca-emma`).** Misma rama de 8 nodos y mismas reglas que Evy (53 y 48 nodos, DP1; mapa `crm` A..I y N..T del bot, J..M y U del equipo; `evProspectoCrm` en su `ev.js`; `guardarPlanilla` nunca con riesgo, baja, nada, suspendido, uso extendido, etapa de prueba ni id vacío; la prueba lleva el id vacío). Mensajes por conversación: 0. Pruebas: `admin/pruebas/tenants/rroca-emma/crm.test.ts` y Emma en `crm-hallazgos-flujos.test.ts`.
+
 ## Cuenta de servicio por cliente (PR-C)
 
 **Qué resuelve.** Cada subcuenta tiene su planilla del miniCRM. Compartirlas todas con una sola cuenta

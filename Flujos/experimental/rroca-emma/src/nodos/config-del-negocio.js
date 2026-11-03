@@ -113,12 +113,19 @@ const idArte = (v) => (/^\d{6,25}$/.test(valor(v)) ? valor(v) : '');
 // D6 (Andres, 23/10/2026): `usarMarcas = si` enciende el texto con las marcas (Sculptra®, Radiesse®) y el comparativo. Cualquier otro valor lo deja apagado.
 const usarMarcas = valor(base.usarMarcas).toLowerCase() === 'si';
 
+// LA PLANILLA DEL miniCRM (módulo `crm`): el id de la hoja de Google de ESTE negocio (25 a 100 caracteres de id) y el nombre de la pestaña. Un marcador `REEMPLAZAR_*`, vacío o con otra forma vale '' y el flujo no consulta Google.
+// Sin id válido no hay hoja: la pestaña también queda vacía. Con id y sin pestaña, 'Leads_CRM'.
+const idDeLaPlanilla = /^[A-Za-z0-9_-]{25,100}$/.test(valor(base.planillaProspectosId)) ? valor(base.planillaProspectosId) : '';
+const hojaDeLaPlanilla = idDeLaPlanilla === '' ? '' : (linea(valor(base.planillaProspectosHoja), 100) || 'Leads_CRM');
+
 return [{ json: {
   ...cfg,
   etapaPrueba,
   telefonosEtapaPrueba: etapaPrueba ? permitidos : [],
   fueraDePrueba,
   usarMarcas,
+  planillaProspectosId: idDeLaPlanilla,
+  planillaProspectosHoja: hojaDeLaPlanilla,
   artesMedia: { comparativo: idArte(base.arteComparativoMediaId), antes_despues: idArte(base.arteAntesDespuesMediaId), autoridad: idArte(base.arteAutoridadMediaId) },
   // El modelo es un dato de `Config base` (solo un id con forma de modelo de Gemini).
   modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/.test(String(base.modelo || '')) ? String(base.modelo) : 'gemini-3.5-flash-lite',

@@ -11,6 +11,9 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error el motor es un .mjs sin tipos
 import { main } from '../../../../Flujos/experimental/rroca-emma/herramientas/bateria.mjs';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import { NODOS_DE_CRM } from '../../../../Flujos/experimental/rroca-emma/construir.mjs';
 import { ANA, CARPETA, HORARIO_DE_LA_CONSOLA, IDS, PRODUCCION, PRUEBA, REC, avisosARecepcion, conPreferencia, crear, esPreguntaDePreferencia, dice, hablar, hablarYa, imagenes, mImagen, mTexto, panelOk, textos } from './mundo';
 
 const sin = (t: string, ...palabras: string[]): boolean => palabras.every((p) => !t.toLowerCase().includes(p.toLowerCase()));
@@ -278,7 +281,14 @@ describe('humo de la batería real (24/10/2026): los 2 duros y las fallas blanda
     expect(fallo(sale('Atendemos unos 700 pacientes por zona. ¿Cómo te llamas?'))).toBe(false);
   });
   it('B (Andres, 24/10): ningún saludo ni texto fijo de Emma menciona «campaña» (la campaña solo se menciona cuando el flujo reconozca su texto de entrada)', () => {
-    for (const a of ['prompts/emma.md', 'src/lib/ev.js', 'flujo.plantilla.json', 'rroca-emma.json', 'rroca-emma.prueba.json', ...readdirSync(join(CARPETA, 'src/nodos')).map((f) => `src/nodos/${f}`)]) expect(leer(a), a).not.toMatch(/campa[ñn]a/i);
+    // «Campaña Meta Ads» es un valor del mapa del miniCRM (dato del equipo), nunca texto al cliente: la excepción vale SOLO para los nodos de la rama del miniCRM (`NODOS_DE_CRM`); en cualquier otro nodo o archivo la palabra sigue prohibida.
+    const textoRevisado = (a: string): string => {
+      const t = leer(a);
+      if (!a.endsWith('.json')) return t;
+      const f = JSON.parse(t) as { nodes?: Array<{ name: string }> };
+      return JSON.stringify({ ...f, nodes: (f.nodes ?? []).filter((n) => !(NODOS_DE_CRM as string[]).includes(n.name)) });
+    };
+    for (const a of ['prompts/emma.md', 'src/lib/ev.js', 'flujo.plantilla.json', 'rroca-emma.json', 'rroca-emma.prueba.json', ...readdirSync(join(CARPETA, 'src/nodos')).map((f) => `src/nodos/${f}`)]) expect(textoRevisado(a), a).not.toMatch(/campa[ñn]a/i);
     expect(leer('prompts/emma.md')).toContain('Hoy tu valoración con la Dra. Emma es **100% gratuita y sin compromiso**');
   });
   it('M-c: evNumeroDePrecio no es cuadrática con salidas de 200 000 caracteres (≤ 100 ms)', () => {

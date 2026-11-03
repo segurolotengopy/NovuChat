@@ -27,6 +27,12 @@ const linea = (v, max) => String(v === undefined || v === null ? '' : v)
   .replace(/<<<|>>>/g, '').replace(/[\[\]{}]/g, '')
   .replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, max);
 
+// El enlace de Google Maps de la Consola (`datosDelNegocio.direccionMaps`): LA MISMA regla que el servidor (https, dominio de mapas de Google, hasta 200 caracteres, sin espacios). Es el ÚNICO enlace que pasa.
+const ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+const enlaceDeMapa = (v) => (typeof v === 'string' && v.trim().length <= 200 && ENLACE_DE_MAPA.test(v.trim()) ? v.trim() : '');
+// Un texto de la Consola que sea (o lleve) un enlace no es una dirección.
+const sinEnlace = (v) => (/[\u00AD\u200B-\u200F\u202A-\u202E\u2060\uFEFF]|https?:|www\.|wa\.me|maps|goo\.gl|\b[a-z0-9-]+\.(?:com|net|org|bo|ly|me|io|app|link|gl)\b(?:\/|$)/i.test(String(v)) ? '' : v);
+
 // --- ATENCIÓN: los umbrales de uso extendido (el servidor decide; este nodo obedece) ---
 const at = (codigo === 200 && cuerpo.atencion && typeof cuerpo.atencion === 'object') ? cuerpo.atencion : {};
 const atencion = {
@@ -77,6 +83,9 @@ if (codigo === 409) {
     // Solo dígitos: es el destino del botón a una persona.
     numeroRecepcion: recepcion ? (cnDigitos(recepcion) || undefined) : undefined,
     prefijosPermitidos: Array.isArray(op.prefijosPermitidos) && op.prefijosPermitidos.length ? op.prefijosPermitidos.join(',') : undefined,
+    // La ubicación (Consola): la dirección en texto (sin enlaces) y el enlace de Maps (solo el válido). Sin dato no se inventa nada: «Armar mensajes» deriva a Rubén.
+    direccion: linea(sinEnlace(util(dn.direccion) || ''), 160) || undefined,
+    direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,
   });
   const estadoDeLaConsola = util(cuerpo.estadoComercio);
   cfg = Object.assign({}, deBase, deLaConsola, atencion, {
