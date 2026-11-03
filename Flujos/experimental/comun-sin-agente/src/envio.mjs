@@ -161,6 +161,12 @@ export function nodosDeEnvio(opciones = {}) {
   return { nodes, connections, entrada: '¿Enviar de verdad?', salidas };
 }
 
+/** ¿El código llama a `cmNumerar(…)`? Se ignoran los comentarios y la definición `function cmNumerar(`. */
+export function llamaANumerar(js) {
+  const sinComentarios = String(js).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
+  return /\bcmNumerar\s*\(/.test(sinComentarios.replace(/\bfunction\s+cmNumerar\s*\(/g, ''));
+}
+
 /**
  * Injerta la cadena en una plantilla (objeto del flujo): agrega los nodos y conexiones, cuelga la entrada de
  * `armado` y conecta las salidas a `siguiente` (si se da). Devuelve la misma plantilla. Lanza si un nombre ya existe.
@@ -171,6 +177,11 @@ export function injertar(plantilla, opciones = {}) {
   const existentes = new Set(plantilla.nodes.map((n) => n.name));
   if (!existentes.has(armado)) throw new Error(`la plantilla no tiene el nodo «${armado}»`);
   for (const n of f.nodes) if (existentes.has(n.name)) throw new Error(`la plantilla ya tiene un nodo «${n.name}»`);
+  if (opciones.canal === 'rele') {
+    // Sin `n` la Idempotency-Key lanza y NADA sale: el nodo que arma los mensajes tiene que numerarlos con `cmNumerar(…)` (una LLAMADA, no solo la definición de mensajes.js).
+    const nodoArmado = plantilla.nodes.find((n) => n.name === armado);
+    if (!llamaANumerar(String((nodoArmado.parameters || {}).jsCode || ''))) throw new Error(`canal rele: el código de «${armado}» no llama a cmNumerar(…): sin el número del mensaje no hay Idempotency-Key y no sale ningún mensaje`);
+  }
   plantilla.nodes.push(...f.nodes);
   plantilla.connections = Object.assign({}, plantilla.connections, f.connections);
   const previo = plantilla.connections[armado] && plantilla.connections[armado].main;
@@ -209,12 +220,18 @@ const AQUI_ENVIO = dirname(fileURLToPath(import.meta.url));
 export const FUENTE_CODIGOS_RELE = readFileSync(join(AQUI_ENVIO, '../../../src/core/rele/codigos.js'), 'utf8').trimEnd();
 export const FUENTE_DECIDIR_ENVIO = readFileSync(join(AQUI_ENVIO, '../../../src/core/rele/decidir-envio.js'), 'utf8').trimEnd();
 
+/** La base del relé que admite el repositorio: SOLO el marcador (lo reemplaza el publicador); las pruebas pueden usar un host `*.example` (con puerto opcional). */
+export function esBaseDeReleAdmitida(base) {
+  const b = String(base);
+  return b === MARCADOR_URL_DEL_RELE || /^https?:\/\/[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.example(?::\d{1,5})?$/.test(b);
+}
+
 /** Valida lo que el canal «rele» exige y devuelve { cliente, releUrl, credencial }. Lanza si falta algo. */
 export function validarRele(o = {}) {
   const cliente = String(o.cliente || '');
   if (!/^[a-z0-9][a-z0-9-]{0,29}$/.test(cliente)) throw new Error('rele: falta cliente (minúsculas, dígitos y guiones, hasta 30: el prefijo de la Idempotency-Key)');
   const releUrl = String(o.releUrl === undefined ? MARCADOR_URL_DEL_RELE : o.releUrl);
-  if (releUrl !== MARCADOR_URL_DEL_RELE && !/^https?:\/\/[A-Za-z0-9.:-]+$/.test(releUrl)) throw new Error('rele: releUrl tiene que ser el marcador REEMPLAZAR_URL_INTERNA_DEL_RELE o una base http(s) sin ruta ni barra final');
+  if (!esBaseDeReleAdmitida(releUrl)) throw new Error('rele: releUrl tiene que ser el marcador REEMPLAZAR_URL_INTERNA_DEL_RELE (solo las pruebas admiten un host *.example, sin ruta ni barra final)');
   const credencial = String((o.credenciales || {}).rele || '');
   if (!credencial.startsWith(PREFIJO_CREDENCIAL_RELE) || credencial.length <= PREFIJO_CREDENCIAL_RELE.length) throw new Error(`rele: falta credenciales.rele con la forma «${PREFIJO_CREDENCIAL_RELE}<alias>» (Header Auth)`);
   if (/ingesta/i.test(credencial)) throw new Error('rele: la credencial del relé no puede ser la de ingesta');
@@ -223,7 +240,7 @@ export function validarRele(o = {}) {
 }
 
 /**
- * La Idempotency-Key como EXPRESIÓN de n8n: `<cliente>-<ejecución>-<rol>-<n>`. `n` es el número del mensaje (`cmNumerar`) y se exige entero positivo: si falta,
+ * La Idempotency-Key como EXPRESIÓN de n8n: `<cliente>-<flujo>-<ejecución>-<rol>-<n>` (flujo = `$workflow.id`, saneado igual que la ejecución). `n` es el número del mensaje (`cmNumerar`) y se exige entero positivo: si falta,
  * la expresión LANZA (el nodo no envía) en vez de mandar `undefined` y dejar que dos mensajes distintos compartan clave, que el relé tomaría por un repetido.
  * La misma `n` y la misma ejecución dan la misma clave en cada reintento.
  */
@@ -231,7 +248,8 @@ export function claveDeIdempotencia(cliente, rol, nExpresion) {
   if (!ROLES_DE_CLAVE_RELE.includes(rol)) throw new Error(`rele: rol de clave desconocido: ${String(rol).slice(0, 20)}`);
   if (!/^[a-z0-9][a-z0-9-]{0,29}$/.test(String(cliente))) throw new Error('rele: cliente no válido');
   const n = `(() => { const n = ${nExpresion}; if (!Number.isInteger(n) || n < 1) throw new Error('falta el numero del mensaje (n)'); return n; })()`;
-  return `={{ '${cliente}-' + String($execution.id).replace(/[^A-Za-z0-9_.-]/g, '_') + '-${rol}-' + ${n} }}`;
+  // `$workflow.id` entra en la clave: dos flujos de un mismo cliente que comparten el contador de ejecuciones no pueden repetir una clave y hacer que el relé tome un mensaje por otro.
+  return `={{ '${cliente}-' + String($workflow.id).replace(/[^A-Za-z0-9_.-]/g, '_') + '-' + String($execution.id).replace(/[^A-Za-z0-9_.-]/g, '_') + '-${rol}-' + ${n} }}`;
 }
 
 /**
@@ -280,13 +298,17 @@ export function nodosDeEnvioRele(opciones = {}) {
   const reportar = o.reportar !== false;
   if (reportar && !ingesta) throw new Error('falta credenciales.ingesta (el nombre de la credencial de la ingesta)');
   if (reportar && !/^https:\/\//.test(String(o.ingestaUrl || ''))) throw new Error('falta ingestaUrl (https://…)');
-  const armado = o.armado || 'Armar mensajes';
   const config = o.config || 'Config del negocio';
   const entrada = o.entrada || 'Interpretar entrada';
   const para = o.para || 'cliente';
   const [x0, y0] = o.desde || [8120, 300];
   const lote = { tamano: (o.lote && o.lote.tamano) || 1, intervaloMs: (o.lote && o.lote.intervaloMs) || 1500 };
-  const A = `$('${armado}')`;
+  // El mensaje en cada punto de la cadena. NO se lee de «Armar mensajes» con `.item`: tras «Esperar reintento» el pairedItem de un ítem es el que le dio el Switch
+  // (su índice en la entrada del Switch) y el Wait lo devuelve sin tocarlo, así que `.item` apunta a OTRO mensaje. «Leer respuesta del relé» copia el ítem armado
+  // y lo emite 1 a 1 con su pairedItem, y desde el Switch hasta el reporte la cadena de pairedItem llega a él. `$json` trae el mensaje (con `para`) cuando el ítem
+  // viene de «Leer respuesta del relé» o de la rama «no» de «¿Enviar de verdad?» (el ítem armado); solo la salida del respaldo (la respuesta del relé) no lo trae.
+  const L = "$('Leer respuesta del relé')";
+  const M = `((($json || {}).para !== undefined || ($json || {}).reportar !== undefined || ($json || {}).sinMensajes !== undefined) ? $json : ${L}.item.json)`;
   const credencialDelRele = { httpHeaderAuth: { id: '', name: credencial } };
 
   const nodes = [
@@ -320,10 +342,10 @@ export function nodosDeEnvioRele(opciones = {}) {
       id: 'enviar-respaldo', name: 'Enviar respaldo', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x0 + 960, y0 - 140],
       credentials: credencialDelRele, onError: 'continueRegularOutput', alwaysOutputData: true,
       parameters: parametrosDeMensajeRele({
-        ...o, rol: 'respaldo', pnidExpresion: `${A}.item.json.phoneNumberId`, destinoExpresion: `${A}.item.json.para`, nExpresion: `${A}.item.json.n`, lote,
-        payloadExpresion: `({ messaging_product: 'whatsapp', recipient_type: 'individual', type: 'text', text: { preview_url: true, body: String(${A}.item.json.respaldo || '').slice(0, 4000) } })`,
+        ...o, rol: 'respaldo', pnidExpresion: `${L}.item.json.phoneNumberId`, destinoExpresion: `${L}.item.json.para`, nExpresion: `${L}.item.json.n`, lote,
+        payloadExpresion: `({ messaging_product: 'whatsapp', recipient_type: 'individual', type: 'text', text: { preview_url: true, body: String(${L}.item.json.respaldo || '').slice(0, 4000) } })`,
       }),
-      notes: 'Si el relé o Meta rechazan el interactivo o la plantilla, sale el mismo contenido como texto: UN solo intento (Idempotency-Key = cliente-ejecución-respaldo-n). Envía de a uno con 1,5 s entre mensajes.',
+      notes: 'Si el relé o Meta rechazan el interactivo o la plantilla, sale el mismo contenido como texto: UN solo intento (Idempotency-Key = cliente-ejecución-respaldo-n). Envía de a uno con 1,5 s entre mensajes. Lee el mensaje de «Leer respuesta del relé», no de «Armar mensajes»: tras «Esperar reintento» el pairedItem es el del Switch y apuntaría a otro mensaje.',
     },
   ];
   const connections = {
@@ -337,7 +359,7 @@ export function nodosDeEnvioRele(opciones = {}) {
     nodes.push(
       {
         id: 'reportar-sal-si', name: '¿Reportar? (saliente)', type: 'n8n-nodes-base.if', typeVersion: 2.2, position: [x0 + 1200, y0],
-        parameters: condicion(`={{ (() => { const j = $json || {}; return ${A}.item.json.reportar === true && j.accion !== 'incierto' && j.accion !== 'agotado'${o.reportarFallidos === true ? '' : ' && !j.error'}; })() }}`),
+        parameters: condicion(`={{ (() => { const j = $json || {}; return ${M}.reportar === true && j.accion !== 'incierto' && j.accion !== 'agotado'${o.reportarFallidos === true ? '' : ' && !j.error'}; })() }}`),
         notes: `Solo lo que se envio AL CLIENTE se reporta (para = «${para}»), no en modo prueba, y nunca un envío incierto o agotado (sin idMeta no se cuenta como enviado).`,
       },
       {
@@ -349,7 +371,7 @@ export function nodosDeEnvioRele(opciones = {}) {
           authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth',
           sendHeaders: true, headerParameters: { parameters: [{ name: 'X-NovuChat-Numero', value: `={{ $('${entrada}').first().json.phoneNumberId }}` }] },
           sendBody: true, specifyBody: 'json',
-          jsonBody: `={{ (() => { const m = ${A}.item.json; return JSON.stringify({ telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: $json.idMeta || ((($json || {}).messages || [])[0] || {}).id || '', evento: m.evento }); })() }}`,
+          jsonBody: `={{ (() => { const m = ${M}; return JSON.stringify({ telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: $json.idMeta || ((($json || {}).messages || [])[0] || {}).id || '', evento: m.evento }); })() }}`,
           options: {},
         },
         notes: 'Una llamada por cada mensaje enviado al cliente. Lee el texto del nodo que arma los mensajes, no de la respuesta del envio; el idMeta viene de «Leer respuesta del relé» o de la respuesta del respaldo.',

@@ -15,6 +15,8 @@ export const leer = (ruta: string): string => readFileSync(join(RAIZ, ruta), 'ut
 export const MENSAJES_JS = leer('Flujos/experimental/comun-sin-agente/src/mensajes.js');
 
 export const CLIENTE = 'prueba';
+/** El `$workflow.id` del flujo de prueba (entra en la Idempotency-Key). */
+export const WF = 'WF1';
 export const CRED_RELE = 'AAB1 envío · prueba';
 export const CRED_INGESTA = 'Ingesta de prueba';
 export const OPC_RELE: OpcionesDeEnvio = {
@@ -30,7 +32,7 @@ const ARMAR = [
 /** Un flujo mínimo: Entrada → (Config del negocio, Armar mensajes) → la cadena de envío injertada. */
 export function flujoConCadena(opciones: Partial<OpcionesDeEnvio> = {}): Flujo {
   const base = {
-    name: 'prueba-rele', settings: {},
+    id: WF, name: 'prueba-rele', settings: {},
     nodes: [
       { name: 'Entrada de prueba', type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] },
       { name: 'Config del negocio', type: 'n8n-nodes-base.code', parameters: { jsCode: 'return [{ json: { modoPrueba: false } }];' }, position: [200, -100] },

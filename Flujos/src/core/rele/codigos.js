@@ -21,5 +21,7 @@ const RELE_METAS = ['131047', '131026', '131049', '131051', '131052', '131053', 
 const RELE_TOPE_429 = 1;
 const RELE_TOPE_409 = 2;
 const RELE_PAUSAS_REINTENTABLE_S = [2, 8];
+// Y un tope TOTAL por mensaje: la suma de los reintentos de todos los motivos no pasa de 3 (sin él, un 409, un 429 y un reintentable harían hasta 5).
+const RELE_TOPE_TOTAL = 3;
 // Estos NUNCA se repiten, diga lo que diga el relé en `reintentable`: el mismo pedido fallaría igual (un link, un medio de más de 16 MiB).
 const RELE_NUNCA_REINTENTAR = ['WM-3032', 'WM-3039'];

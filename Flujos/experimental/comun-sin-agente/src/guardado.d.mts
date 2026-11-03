@@ -13,6 +13,8 @@ export interface OpcionesDelGuardado {
   cliente?: string;
   /** Canal rele: base del relé (por defecto el marcador REEMPLAZAR_URL_INTERNA_DEL_RELE). */
   releUrl?: string;
+  /** Canal rele: medios por teléfono y día / por flujo y día (por defecto 20 y 60). */
+  cupo?: { porTelefono?: number; global?: number };
   numero?: string;
   desde?: [number, number];
 }
@@ -26,7 +28,11 @@ export const URL_DESCARGA_GUARDADO: string;
 export const FUENTE_PREPARAR: string;
 export const FUENTE_RESULTADO: string;
 export const FUENTE_REINTENTO: string;
-export function cabeceraDeFuentes(carga: string, config: string): string;
+export const FUENTE_CUPO: string;
+export const LIMITE_DE_IMAGEN_RELE: number;
+export const CUPO_POR_DEFECTO_RELE: { porTelefono: number; global: number };
+export function validarCupo(cupo?: { porTelefono?: number; global?: number }): { porTelefono: number; global: number };
+export function cabeceraDeFuentes(carga: string, config: string, cupo?: { porTelefono?: number; global?: number }): string;
 export function numeroDelAncla(ancla: { name?: string; parameters?: Record<string, any> }): string;
 export function nodosDelGuardado(opciones: OpcionesDelGuardado & { credenciales: CredencialesDelGuardado; numero: string }): NodoDelGuardado[];
 export function credencialesDelFlujo(flujo: { nodes: any[] }, ancla: any, graphDe: string, canal?: 'graph' | 'rele'): CredencialesDelGuardado;

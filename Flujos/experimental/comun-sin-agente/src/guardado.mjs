@@ -56,7 +56,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MARCADOR_URL_DEL_RELE, PREFIJO_CREDENCIAL_RELE, parametrosDeMensajeRele, validarRele } from './envio.mjs';
+import { MARCADOR_URL_DEL_RELE, PREFIJO_CREDENCIAL_RELE, esBaseDeReleAdmitida, parametrosDeMensajeRele, validarRele } from './envio.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 
@@ -75,6 +75,9 @@ export const NODOS_DEL_GUARDADO = [
 // nombra en otra parte (`https://otro.dominio/?x=graph.facebook.com`) no cuenta.
 const ANFITRION_DE_MEDIO = /^=?\s*https:\/\/(graph\.facebook\.com|lookaside\.fbsbx\.com)(?=[/?#]|$)/i;
 // El relé B9: GET <base>/v1/envio/medios/<id> (la base es el marcador REEMPLAZAR_URL_INTERNA_DEL_RELE o un host http(s)); NO cuenta la subida (POST …/medios/<pnid>).
+// Esto DETECTA (a propósito, cualquier host http(s)): un nodo que baja medios del relé con una URL real tiene que contar como «maneja medios» para que
+// lo alcance la compuerta del guardado. Lo que el repositorio ADMITE como base del relé (solo el marcador; las pruebas, un host `*.example`) lo valida
+// `esBaseDeReleAdmitida`, en `validarRele` y en `hallazgosDelGuardado`.
 const ANFITRION_DE_MEDIO_RELE = /^=?\s*(?:REEMPLAZAR_URL_INTERNA_DEL_RELE|https?:\/\/[A-Za-z0-9.:-]+)\/v1\/envio\/medios\//;
 const esPedidoDeMedio = (url, metodo = 'GET') => {
   const texto = String(url || '').trim();
@@ -120,6 +123,14 @@ export const ARISTAS_DEL_GUARDADO = [
   ['Preparar reintento', 0, 'Reintentar el guardado'], ['Reintentar el guardado', 0, 'Resultado del guardado'],
   ['Resultado del guardado', 0, 'Avisar falla del guardado'],
 ];
+/**
+ * Por el relé, una imagen o un sticker (`tipo: image`) de más de 5 MiB no se descarga: el servidor la rechazaría (413) y el GET de `/contenido` gastaría una
+ * de las 500 descargas diarias por WABA para nada. Audio, video y documento siguen con el tope de 16 MiB.
+ */
+export const LIMITE_DE_IMAGEN_RELE = 5 * 1024 * 1024;
+/** El cupo por defecto del canal rele (ver `guardado-cupo.js`): medios por teléfono y día, y por flujo y día. */
+export const CUPO_POR_DEFECTO_RELE = { porTelefono: 20, global: 60 };
+
 /** La URL de la descarga: la del CDN de Meta solo si Meta informó un tamaño dentro de 16 MiB (`limite`); si no, vacía (no se baja nada). */
 // Si Meta NO informa el tamaño (0 o ausente): imagen, audio y sticker se bajan igual (el servidor impone el tope por tipo, 413, y el tiempo límite de la
 // descarga, 60 s, acota lo que se baja); video y documento NO se bajan (`exigeTamano`: pueden pesar 100 MB) y cuentan como falla de tamaño (`sinTamano`).
@@ -131,10 +142,11 @@ export const URL_DESCARGA_GUARDADO = "={{ (String($json.url || '').startsWith('h
  * (id vencido: 502 WM-3040), la URL queda vacía y no se baja nada (cuenta como falla de tamaño). Los GET de medios gastan 500 descargas por día y por WABA
  * (la info y el contenido cuentan): nunca se baja a ciegas ni se reintenta.
  */
-export const urlDescargaRele = (releUrl = MARCADOR_URL_DEL_RELE) => `={{ (Number($json.file_size) > 0 && !(Number($json.file_size) > Number($('Preparar guardado').first().json.limite))) ? '${releUrl}/v1/envio/medios/' + String($('Preparar guardado').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') + '/contenido' : '' }}`;
+export const urlDescargaRele = (releUrl = MARCADOR_URL_DEL_RELE) => `={{ (() => { const p = $('Preparar guardado').first().json; const tope = p.tipo === 'image' ? Math.min(Number(p.limite), ${LIMITE_DE_IMAGEN_RELE}) : Number(p.limite); return Number($json.file_size) > 0 && !(Number($json.file_size) > tope); })() ? '${releUrl}/v1/envio/medios/' + String($('Preparar guardado').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') + '/contenido' : '' }}`;
 export const urlInfoRele = (releUrl = MARCADOR_URL_DEL_RELE) => `=${releUrl}/v1/envio/medios/{{ String($json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}`;
 
 export const FUENTE_PREPARAR = readFileSync(join(AQUI, '../../../src/core/medios/guardado-preparar.js'), 'utf8').trimEnd();
+export const FUENTE_CUPO = readFileSync(join(AQUI, '../../../src/core/medios/guardado-cupo.js'), 'utf8').trimEnd();
 export const FUENTE_REINTENTO = readFileSync(join(AQUI, '../../../src/core/medios/guardado-reintento.js'), 'utf8').trimEnd();
 export const FUENTE_RESULTADO = readFileSync(join(AQUI, '../../../src/core/medios/guardado-resultado.js'), 'utf8').trimEnd();
 
@@ -153,15 +165,28 @@ const SIN_CORTAR = { onError: 'continueRegularOutput', alwaysOutputData: true };
 const RESPUESTA_COMPLETA = { response: { response: { fullResponse: true, neverError: true } } };
 
 /** La cabecera que define `GM_FUENTES` para este flujo: nombres de nodo LITERALES (el task runner de n8n solo precarga los nombrados así). */
-export function cabeceraDeFuentes(carga, config) {
+export function cabeceraDeFuentes(carga, config, cupo) {
   for (const n of [carga, config]) if (!NOMBRE_DE_NODO.test(String(n))) throw new Error(`guardado: nombre de nodo no válido: ${String(n).slice(0, 40)}`);
+  // Con `cupo` (solo el canal rele) la cabecera define también `GM_CUPO`; sin él, la cabecera es la de siempre, byte a byte.
+  const lineaCupo = cupo === undefined ? [] : [`const GM_CUPO = { porTelefono: ${validarCupo(cupo).porTelefono}, global: ${validarCupo(cupo).global} };`];
   return [
     '// FUENTES DEL GUARDADO: las arma Flujos/experimental/comun-sin-agente/src/guardado.mjs para este flujo (nombres de nodo literales, para que n8n los precargue).',
     'const GM_FUENTES = {',
     `  carga: $('${carga}').isExecuted ? $('${carga}').first().json : {},`,
     `  config: $('${config}').isExecuted ? $('${config}').first().json : {},`,
     '};',
+    ...lineaCupo,
   ].join('\n');
+}
+
+/** El cupo: enteros de 1 a 500 (500 es el tope diario de descargas por WABA; cada medio gasta 2, así que un cupo de medios mayor que 250 no tiene sentido). */
+export function validarCupo(cupo) {
+  const c = { ...CUPO_POR_DEFECTO_RELE, ...(cupo || {}) };
+  for (const k of ['porTelefono', 'global']) {
+    if (!Number.isInteger(c[k]) || c[k] < 1 || c[k] > 250) throw new Error(`guardado: cupo.${k} tiene que ser un entero de 1 a 250 (medios por día; cada uno gasta 2 de las 500 descargas del WABA)`);
+  }
+  if (c.porTelefono > c.global) throw new Error('guardado: cupo.porTelefono no puede pasar de cupo.global');
+  return c;
 }
 
 /** El número del negocio: la expresión de la cabecera `X-NovuChat-Numero` de «Reportar mensaje (entrante)», sin el `={{ … }}`. */
@@ -224,7 +249,8 @@ export function nodosDelGuardado(opciones) {
   return [
     {
       id: 'gm-preparar', name: 'Preparar guardado', type: 'n8n-nodes-base.code', typeVersion: 2, position: [x, y],
-      parameters: { jsCode: `${cabeceraDeFuentes(carga, config)}\n\n${FUENTE_PREPARAR}\n` },
+      // Canal rele: el cupo de descargas va DELANTE (cabecera con `GM_CUPO` + `guardado-cupo.js`); el canal Graph queda byte a byte como estaba.
+      parameters: { jsCode: rele ? `${cabeceraDeFuentes(carga, config, o.cupo || {})}\n\n${FUENTE_CUPO}\n\n${FUENTE_PREPARAR}\n` : `${cabeceraDeFuentes(carga, config)}\n\n${FUENTE_PREPARAR}\n` },
       notes: 'Rama del GUARDADO de medios (módulo común Flujos/src/core/medios/): todo medio se guarda (imagen, audio, video, documento de cualquier tipo, sticker). Corre después de la respuesta al cliente y nunca la frena. No toca el binario.',
     },
     {
@@ -469,8 +495,9 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
       if (n.retryOnFail) h.push(`guardado: «${nombre}» no reintenta por el relé (un id vencido da 502 WM-3040 y cada GET gasta una de las 500 descargas diarias por WABA)`);
     }
     if (bases.size > 1) h.push('guardado: los nodos del relé no usan la misma base');
+    if (!String((prep.parameters || {}).jsCode || '').includes(FUENTE_CUPO)) h.push('guardado: «Preparar guardado» (canal rele) no incluye guardado-cupo.js tal cual: sin el cupo, una ráfaga de un teléfono gasta las 500 descargas diarias del WABA');
     const base = [...bases][0];
-    if (base !== undefined && base !== MARCADOR_URL_DEL_RELE && !/^https?:\/\/[A-Za-z0-9.:-]+$/.test(base)) h.push('guardado: la base del relé tiene que ser el marcador REEMPLAZAR_URL_INTERNA_DEL_RELE o un host http(s)');
+    if (base !== undefined && !esBaseDeReleAdmitida(base)) h.push('guardado: la base del relé tiene que ser el marcador REEMPLAZAR_URL_INTERNA_DEL_RELE (solo las pruebas usan un host *.example)');
     if (base !== undefined) {
       if (String((pedir.parameters || {}).url) !== urlInfoRele(base)) h.push('guardado: «Pedir el medio a Meta (guardado)» no pide GET /v1/envio/medios/<id>');
       if (String(((por('Descargar medio (guardado)') || {}).parameters || {}).url) !== urlDescargaRele(base)) h.push('guardado: «Descargar medio (guardado)» no pide /contenido solo con file_size dentro del límite');

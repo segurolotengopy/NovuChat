@@ -32,7 +32,14 @@ describe('el módulo se parte donde dice y no usa nada que el Code de n8n no ten
   });
   it('las listas son las mismas del verificador de la salida de persona', () => {
     const otro = leerFuentes(['Flujos/src/core/salida-persona/resultado-del-envio.js']);
-    for (const c of [...RELE_PREVIOS, ...RELE_METAS]) expect(otro, c).toContain(`'${c}'`);
+    // Los ARREGLOS enteros, en el mismo orden: `toContain` sobre el texto aceptaba que el verificador tuviera de más (o de menos) sin que nadie lo notara.
+    const lista = (nombre: string): string[] => {
+      const m = new RegExp(`const ${nombre} = (\\[[^\\]]*\\]);`).exec(otro);
+      expect(m, nombre).not.toBeNull();
+      return JSON.parse((m as RegExpExecArray)[1]!.replace(/'/g, '"')) as string[];
+    };
+    expect(RELE_PREVIOS).toEqual(lista('PREVIOS'));
+    expect(RELE_METAS).toEqual(lista('METAS'));
   });
 });
 
@@ -174,6 +181,34 @@ describe('incierto: red, tiempo, cuerpos raros', () => {
     const x = d(err('WM-3032'));
     expect(x.codigo).toMatch(/^[A-Za-z0-9_.-]{0,40}$/);
     expect(d({ error: { codigo: 'WM-3040', metaCodigo: '131047' } }).codigo).toBe('131047');
+  });
+});
+
+describe('tope TOTAL de reintentos por mensaje: la suma de todos los motivos no pasa de 3', () => {
+  it('NIEGA: con 2 de 409 y 1 de reintentable ya gastados, un 409, un 429 o un reintentable más quedan agotados (cada cuenta aislada aún no llegaba a su tope)', () => {
+    const gastado = { n429: 0, n409: 1, nReint: 2 };
+    expect(d(err('WM-3035'), gastado).accion).toBe('agotado');
+    expect(d(err('WM-3037'), gastado).accion).toBe('agotado');
+    expect(d(err('WM-3038', { reintentable: true }), { n429: 1, n409: 1, nReint: 1 }).accion).toBe('agotado');
+    expect(d(err('WM-3037'), { n429: 0, n409: 2, nReint: 1 }).accion).toBe('agotado');
+  });
+  it('con 2 reintentos gastados sí queda uno (el tercero), venga de donde venga', () => {
+    expect(d(err('WM-3035'), { n429: 0, n409: 1, nReint: 1 }).accion).toBe('reintentar');
+    expect(d(err('WM-3037'), { n429: 0, n409: 1, nReint: 1 }).accion).toBe('reintentar');
+    expect(d(err('WM-3038', { reintentable: true }), { n429: 1, n409: 1, nReint: 0 }).accion).toBe('reintentar');
+  });
+  it('NIEGA: ninguna cadena de fallos mezclados hace más de 3 reintentos', () => {
+    const CAUSAS = [err('WM-3035'), err('WM-3037'), err('WM-3038', { reintentable: true }), err('WM-3040', { metaCodigo: '130429' })];
+    const recorrer = (intentos: Intentos, profundidad: number): void => {
+      for (const causa of CAUSAS) {
+        const x = d(causa, intentos);
+        if (x.accion === 'reintentar') {
+          expect(x.intentos.n429 + x.intentos.n409 + x.intentos.nReint).toBeLessThanOrEqual(3);
+          if (profundidad < 7) recorrer(x.intentos, profundidad + 1);
+        }
+      }
+    };
+    recorrer({}, 0);
   });
 });
 

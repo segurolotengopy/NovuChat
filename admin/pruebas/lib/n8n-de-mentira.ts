@@ -82,7 +82,9 @@
  *     y `$('Nodo').all(rama, corrida)` / `.first(rama, corrida)` las leen (sin argumentos, igual que antes: la última corrida, todas las ramas juntas);
  *     una corrida que no existe LANZA, como n8n. Los ítems que recibe un Code traen `pairedItem: { item }` (el índice en la entrada del nodo que los
  *     produjo), y un Code puede devolver `pairedItem` en sus ítems de salida para que `.item` siga emparejado a través de él (n8n lo exige: sin
- *     emparejamiento, `$('Armar mensajes').item` falla). `opciones.idEjecucion` fija `$execution.id` de un turno (por omisión, el de siempre).
+ *     emparejamiento, `$('Armar mensajes').item` falla). `.item` recorre la cadena de `pairedItem` nodo por nodo como n8n: IF, Switch, HTTP y Code
+ *     reescriben el índice (el de su entrada); Wait y noOp devuelven el ítem TAL CUAL, con el índice que traía. Por eso, tras un filtro y un Wait, un
+ *     ítem que no era el primero empareja con OTRO o con ninguno (revisión del PR #757). `opciones.idEjecucion` fija `$execution.id` de un turno (por omisión, el de siempre).
  *   - `$('Nodo').all()` / `.first()` devuelven las salidas de TODAS las ramas de
  *     la última corrida de ese nodo; `.item` sin emparejamiento cae al único
  *     ítem que el nodo emitió, y si hay varios, lanza.
@@ -350,7 +352,13 @@ const RE_ITEM = /\$\(\s*(['"`])((?:\\.|(?!\1)[^\\])*)\1\s*\)\s*\.item\b/g;
 
 // ----------------------------------------------------------------------------- el mundo
 
-interface Item { json: J; linaje: Record<string, J>; origen?: Item; par?: number }
+interface Item {
+  json: J; linaje: Record<string, J>; origen?: Item;
+  /** El `pairedItem` del ítem: el índice en la ENTRADA del nodo que lo produjo (los nodos de paso, como Wait, lo conservan tal cual). */
+  par?: number;
+  /** Quién produjo el ítem: el nodo, su corrida y la salida. Con `par` permite recorrer la cadena de emparejamiento como n8n. */
+  prod?: { nodo: string; corrida: number; salida: number };
+}
 
 const ROLES_DE_ENVIO: Rol[] = ['mensajes', 'avisos'];
 const ROLES_DE_LLAMADA: Rol[] = ['ingesta', 'cierre', 'cotejo', 'extraer'];
@@ -360,6 +368,8 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   const flujo = clonar(op.flujo);
   const nodos = new Map<string, Nodo>(flujo.nodes.map((n) => [n.name, n]));
   const maxVisitas = op.maxVisitas ?? 1000;
+  /** El `$workflow.id` (el `id` del JSON del flujo, o uno fijo si no lo trae). */
+  const idDeFlujo = String((flujo as unknown as J)['id'] ?? 'wf-de-mentira');
 
   // La estructura del grafo se valida de entrada: una conexión rota no debe esperar a un turno.
   for (const [desde, salidas] of Object.entries(flujo.connections)) {
@@ -404,6 +414,8 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   let turnoActual: ResultadoTurno | null = null;
   /** Las corridas de cada nodo en el turno: nodo → corrida → salida → jsons. */
   let historial: Record<string, J[][][]> = {};
+  /** Lo mismo con los ítems enteros: la entrada de cada corrida (para seguir el `pairedItem` hacia atrás). */
+  let entradasDeItems: Record<string, Item[][]> = {};
   /** El `$runIndex` del nodo que está corriendo. */
   let corridaActual = 0;
   let idEjecucion = 'ejecucion-de-mentira';
@@ -411,17 +423,39 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   // --- las expresiones -------------------------------------------------------------------------
   const posicion = (nombre: string): [number, number] => nodos.get(nombre)?.position ?? [0, 0];
 
+  /**
+   * `$('Nodo').item` como lo resuelve n8n: se sigue el `pairedItem` del ítem actual de nodo en nodo, hacia atrás. `par` es un índice en la ENTRADA del
+   * nodo que produjo el ítem; el ítem de la ENTRADA del nodo en ese índice es el siguiente paso, y el ítem que sale del nodo pedido es el hallado. Un nodo de paso (Wait, noOp) conserva el `pairedItem` que traía,
+   * y un IF o un Switch lo reescriben con el índice de su propia entrada: por eso, tras un Wait que sigue a un filtro, el índice ya no apunta a donde
+   * el ítem estaba y `.item` entrega OTRO mensaje (o ninguno). Devuelve `undefined` si la cadena no se puede seguir (queda el emparejamiento por linaje).
+   */
+  function caminarEmparejamiento(inicio: Item, destino: string): Item | undefined {
+    let it: Item = inicio;
+    for (let paso = 0; paso < 200; paso++) {
+      const p = it.prod;
+      if (p === undefined) return undefined;
+      if (p.nodo === destino) return it; // el ítem al que se llegó ES una salida del destino
+      if (it.par === undefined) return undefined;
+      const previo = entradasDeItems[p.nodo]?.[p.corrida]?.[it.par];
+      if (previo === undefined) throw new Error(`sin ítem emparejado con «${destino}»: «${p.nodo}» no tiene un ítem ${it.par} en su entrada (n8n: «Paired item data unavailable»)`);
+      it = previo;
+    }
+    return undefined;
+  }
+
   function globalesDe(it: Item | null): J {
     return {
       $json: it?.json ?? {},
       Date: relojFijo(ahoraMs),
       $getWorkflowStaticData: (tipo?: string) => (tipo === 'node' ? (sdNodos['__expresion__'] ??= {}) : sd),
-      $workflow: { name: flujo.name, active: true },
+      $workflow: { id: idDeFlujo, name: flujo.name, active: true },
       $execution: { id: idEjecucion, mode: 'production' },
       $runIndex: corridaActual,
       $env: {},
       $vars: {},
       $__item: (nombre: string) => {
+        const caminado = it ? caminarEmparejamiento(it, nombre) : undefined;
+        if (caminado !== undefined) return { json: caminado.json };
         const par = it?.linaje[nombre];
         if (par !== undefined) return { json: par };
         const lista = refs[nombre];
@@ -458,6 +492,9 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   }
 
   const hijoDe = (n: Nodo, it: Item, json: J): Item => ({ json, linaje: { ...it.linaje, [n.name]: json }, origen: it });
+
+  /** Un nodo de paso (Wait, noOp, desactivado) devuelve los ítems de entrada TAL CUAL: conservan su `pairedItem`. */
+  const pasa = (n: Nodo, it: Item): Item => ({ ...hijoDe(n, it, it.json), par: it.par });
 
   /** Corre `fn` ítem por ítem; los errores siguen `onError`. */
   function porItem(n: Nodo, items: Item[], fn: (it: Item) => J[]): Item[][] {
@@ -686,7 +723,7 @@ export function crearMundo(op: OpcionesMundo): Mundo {
     const globales: Record<string, unknown> = {
       $getWorkflowStaticData: (tipo?: string) => (tipo === 'node' ? (sdNodos[nombre] ??= {}) : sd),
       Date: relojFijo(ahoraMs),
-      $workflow: { name: flujo.name, active: true },
+      $workflow: { id: idDeFlujo, name: flujo.name, active: true },
       $execution: { id: idEjecucion, mode: 'production' },
       $runIndex: corridaActual,
     };
@@ -732,7 +769,7 @@ export function crearMundo(op: OpcionesMundo): Mundo {
     } catch (e) {
       return fallaEntero(n, items, e);
     }
-    return [items.map((it) => hijoDe(n, it, it.json))];
+    return [items.map((it) => pasa(n, it))];
   }
 
   function ejecutarRespuesta(n: Nodo, items: Item[]): Item[][] {
@@ -858,7 +895,7 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   // --- un nodo ---------------------------------------------------------------------------------
   function ejecutarNodo(n: Nodo, entradas: Item[]): Item[][] {
     const items = (n as J)['executeOnce'] === true ? entradas.slice(0, 1) : entradas;
-    if (desactivados.has(n.name)) return [items.map((it) => hijoDe(n, it, it.json))];
+    if (desactivados.has(n.name)) return [items.map((it) => pasa(n, it))];
     const doble = dobles[n.name];
     let salidas: Item[][];
     if (doble !== undefined) salidas = porItem(n, items, (it) => correrDoble(n, it, doble));
@@ -870,7 +907,7 @@ export function crearMundo(op: OpcionesMundo): Mundo {
         case 'set': salidas = porItem(n, items, (it) => [ejecutarSet(n, it)]); break;
         case 'respondToWebhook': salidas = ejecutarRespuesta(n, items); break;
         case 'removeDuplicates': salidas = ejecutarRepetidos(n, items); break;
-        case 'noOp': salidas = [items.map((it) => hijoDe(n, it, it.json))]; break;
+        case 'noOp': salidas = [items.map((it) => pasa(n, it))]; break;
         case 'wait': salidas = ejecutarEspera(n, items); break;
         default: throw new SinDoble(n.name, n.type);
       }
@@ -906,6 +943,7 @@ export function crearMundo(op: OpcionesMundo): Mundo {
 
     refs = {};
     historial = {};
+    entradasDeItems = {};
     corridaActual = 0;
     idEjecucion = opciones.idEjecucion ?? 'ejecucion-de-mentira';
     const orden: string[] = [];
@@ -928,7 +966,8 @@ export function crearMundo(op: OpcionesMundo): Mundo {
       resultado.ejecutados.add(nombre);
       corridaActual = (historial[nombre] ?? []).length;
       const salida = nombre === via ? [items] : ejecutarNodo(n, items);
-      (historial[nombre] ??= []).push(salida.map((its) => its.map((i) => i.json)));
+      salida.forEach((its, idx) => { for (const i of its) i.prod = { nodo: nombre, corrida: corridaActual, salida: idx }; });
+      (entradasDeItems[nombre] ??= []).push(items);      (historial[nombre] ??= []).push(salida.map((its) => its.map((i) => i.json)));
       refs[nombre] = salida.flat().map((i) => i.json);
       const previas = salidas[nombre] ?? [];
       salida.forEach((its, idx) => { previas[idx] = [...(previas[idx] ?? []), ...its.map((i) => i.json)]; });

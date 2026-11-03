@@ -135,6 +135,43 @@ describe('pairedItem', () => {
   });
 });
 
+describe('pairedItem tras un filtro y un Wait (el defecto de la revisión del PR #757)', () => {
+  const iff = (name: string, y: number) => ({ name, type: 'n8n-nodes-base.if', typeVersion: 2.2, position: [y * 10, y], parameters: { conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 }, conditions: [{ id: 'c', leftValue: '={{ $json.x > 1 }}', rightValue: true, operator: { type: 'boolean', operation: 'true', singleValue: true } }], combinator: 'and' }, options: {} } });
+  const espera = (name: string, y: number) => ({ name, type: 'n8n-nodes-base.wait', typeVersion: 1.1, position: [y * 10, y], parameters: { resume: 'timeInterval', amount: '={{ 1 }}', unit: 'seconds' } });
+  const lector = (name: string, y: number) => ({ name, type: 'n8n-nodes-base.set', typeVersion: 3.4, position: [y * 10, y], parameters: { assignments: { assignments: [{ id: 'a', name: 'origen', type: 'number', value: "={{ $('Origen').item.json.x }}" }] }, options: {} } });
+  const flujo = (...medio: object[]): Flujo => ({
+    name: 'filtro-y-espera',
+    nodes: [{ name: 'Entrada de prueba', type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] }, code('Origen', 'return $input.first().json.lista.map((x) => ({ json: { x } }));', 1), ...medio],
+  } as unknown as Flujo);
+
+  it('NIEGA: tras IF → Wait, un ítem que NO era el primero ya no empareja con su origen (el Wait conserva el pairedItem del IF): el doble lo reproduce lanzando', () => {
+    const f = flujo(iff('Filtro', 2), espera('Esperar', 3), lector('Leer', 4));
+    f.connections = { ...c('Entrada de prueba', 'Origen'), ...c('Origen', 'Filtro'), Filtro: { main: [[{ node: 'Esperar', type: 'main', index: 0 }], []] }, ...c('Esperar', 'Leer') } as Flujo['connections'];
+    expect(() => crearMundo({ flujo: f, ahoraMs: AHORA }).turno({ lista: [1, 2, 3] })).toThrow(/sin ítem emparejado/);
+  });
+  it('sin el Wait, el IF reescribe el pairedItem y el origen sale bien: el defecto es del nodo de paso, no del filtro', () => {
+    const f = flujo(iff('Filtro', 2), lector('Leer', 4));
+    f.connections = { ...c('Entrada de prueba', 'Origen'), ...c('Origen', 'Filtro'), Filtro: { main: [[{ node: 'Leer', type: 'main', index: 0 }], []] } } as Flujo['connections'];
+    const r = crearMundo({ flujo: f, ahoraMs: AHORA }).turno({ lista: [1, 2, 3] });
+    expect(r.porNodo['Leer']!.map((j) => j['origen'])).toEqual([2, 3]);
+  });
+  it('el Wait conserva el pairedItem: un ítem que era el primero sigue emparejando (por eso el defecto no aparece con un solo mensaje)', () => {
+    const f = flujo(iff('Filtro', 2), espera('Esperar', 3), lector('Leer', 4));
+    f.connections = { ...c('Entrada de prueba', 'Origen'), ...c('Origen', 'Filtro'), Filtro: { main: [[{ node: 'Esperar', type: 'main', index: 0 }], []] }, ...c('Esperar', 'Leer') } as Flujo['connections'];
+    // Con lista [2]: el único ítem pasa el filtro con pairedItem 0 y el Wait tiene un ítem en la entrada, índice 0: empareja.
+    const r = crearMundo({ flujo: f, ahoraMs: AHORA }).turno({ lista: [2] });
+    expect(r.porNodo['Leer']!.map((j) => j['origen'])).toEqual([2]);
+  });
+  it('NIEGA: si el ítem 2 del filtro es el primero que pasa pero hay otro después, el emparejamiento sale CRUZADO, no solo roto', () => {
+    // Filtro deja pasar los ítems 2 y 3 del origen (índices 1 y 2 en la entrada del filtro); el Wait recibe dos ítems (índices 0 y 1).
+    // El primero conserva pairedItem 1 y empareja con el SEGUNDO ítem del Wait (el 3): cruzado. El segundo tiene pairedItem 2: no existe.
+    const f = flujo(iff('Filtro', 2), espera('Esperar', 3), code('Lee', "return $input.all().map((it) => ({ json: { par: it.pairedItem.item } }));", 4));
+    f.connections = { ...c('Entrada de prueba', 'Origen'), ...c('Origen', 'Filtro'), Filtro: { main: [[{ node: 'Esperar', type: 'main', index: 0 }], []] }, ...c('Esperar', 'Lee') } as Flujo['connections'];
+    const r = crearMundo({ flujo: f, ahoraMs: AHORA }).turno({ lista: [1, 2, 3] });
+    expect(r.porNodo['Lee']!.map((j) => j['par'])).toEqual([1, 2]);
+  });
+});
+
 describe('$execution.id', () => {
   it('por omisión sigue siendo ejecucion-de-mentira; `idEjecucion` lo cambia SOLO en ese turno', () => {
     const mu = crearMundo({ flujo: bucle(1), ahoraMs: AHORA });

@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  hallazgosDelGuardado, injertarGuardado, manejaMedios, nodosDelGuardado, urlDescargaRele, urlInfoRele, URL_DESCARGA_GUARDADO, NODOS_DE_META_DEL_GUARDADO,
+  cabeceraDeFuentes, FUENTE_CUPO, FUENTE_PREPARAR, hallazgosDelGuardado, injertarGuardado, manejaMedios, nodosDelGuardado, urlDescargaRele, urlInfoRele, URL_DESCARGA_GUARDADO, NODOS_DE_META_DEL_GUARDADO,
   type OpcionesDelGuardado,
 } from '../../../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 import { MARCADOR_URL_DEL_RELE } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
@@ -52,7 +52,7 @@ function flujoBase(): Flujo {
 }
 const flujoConGuardado = (o: Partial<OpcionesDelGuardado> = {}): Flujo => injertarGuardado(flujoBase(), { ...OPC, ...o });
 
-interface Mundo { r: (m: J, o?: { tamano?: number | null; info?: J | 'lanza'; contenido?: 'lanza' | 'ok'; servidor?: number; aviso?: 'lanza' }) => ResultadoTurno; llamadas: Record<'info' | 'contenido' | 'servidor' | 'aviso', LlamadaDoble[]> }
+interface Mundo { r: (m: J, o?: { tamano?: number | null; info?: J | 'lanza'; contenido?: 'lanza' | 'ok'; servidor?: number; aviso?: 'lanza'; ahoraMs?: number }, de?: string) => ResultadoTurno; llamadas: Record<'info' | 'contenido' | 'servidor' | 'aviso', LlamadaDoble[]> }
 function mundo(flujo: Flujo = flujoConGuardado()): Mundo {
   const llamadas: Mundo['llamadas'] = { info: [], contenido: [], servidor: [], aviso: [] };
   let cfg: Parameters<Mundo['r']>[1] = {};
@@ -89,10 +89,10 @@ function mundo(flujo: Flujo = flujoConGuardado()): Mundo {
   // La recepción escribe primero: abre su ventana de 24 h (la anota «Preparar guardado»), para que el aviso de falla pueda salir.
   const turno = (msg: J, o: NonNullable<Parameters<Mundo['r']>[1]> = {}, de = TEL, wamid = 'wamid.M1'): ResultadoTurno => {
     cfg = o;
-    return mu.turno({ messages: [{ from: de, id: wamid, ...msg }], ahoraMs: Date.UTC(2026, 10, 2, 15, 0, 0) }, { tolerarFallo: true } as never);
+    return mu.turno({ messages: [{ from: de, id: wamid, ...msg }], ahoraMs: o.ahoraMs ?? Date.UTC(2026, 10, 2, 15, 0, 0) }, { tolerarFallo: true } as never);
   };
   turno({ type: 'text', text: { body: 'hola' } }, {}, REC, 'wamid.R0');
-  return { r: (m, o) => turno(m, o), llamadas };
+  return { r: (m, o, de) => turno(m, o, de), llamadas };
 }
 const imagen = (id = 'M1'): J => ({ type: 'image', image: { id, mime_type: 'image/jpeg' } });
 const documento = (): J => ({ type: 'document', document: { id: 'D1', mime_type: 'application/pdf', filename: 'a.pdf' } });
@@ -146,6 +146,10 @@ describe('la rama armada para el relé', () => {
     expect(() => injertarGuardado(flujoBase(), { ...OPC, credenciales: { ingesta: CRED_INGESTA, rele: CRED_INGESTA } })).toThrow();
     expect(() => injertarGuardado(flujoBase(), { ...OPC, credenciales: { ingesta: CRED_INGESTA } })).toThrow(/credenciales\.rele/);
     expect(() => injertarGuardado(flujoBase(), { ...OPC, releUrl: 'http://x/y' })).toThrow(/releUrl/);
+    // Solo el marcador (o un host *.example en las pruebas): una base real, interna o pública, no se versiona.
+    for (const u of ['http://relay.internal:8080', 'http://10.0.0.5:8080', 'https://relay.example.com']) {
+      expect(() => injertarGuardado(flujoBase(), { ...OPC, releUrl: u }), u).toThrow(/releUrl/);
+    }
     expect(() => injertarGuardado(flujoBase(), { ...OPC, canal: 'otro' as 'rele' })).toThrow(/canal desconocido/);
     const f = flujoBase();
     f.nodes.find((n) => n.name === 'Enviar a WhatsApp')!.credentials = { httpHeaderAuth: { id: '', name: 'Graph de Evy' } };
@@ -217,7 +221,7 @@ describe('corriendo: dos GET por medio guardado, nada a ciegas', () => {
   });
   it('justo 16 MiB se baja; 16 MiB + 1 NO: sin /contenido, sin guardarMedio, y avisa a la recepción (413)', () => {
     const justo = mundo();
-    justo.r(imagen(), { tamano: MIB16 });
+    justo.r(documento(), { tamano: MIB16 });
     expect(justo.llamadas.contenido.map((x) => x.url)).toHaveLength(1);
     expect(justo.llamadas.contenido[0]!.url).toMatch(/\/contenido$/);
     const mas = mundo();
@@ -266,7 +270,7 @@ describe('corriendo: dos GET por medio guardado, nada a ciegas', () => {
     expect(m.llamadas.aviso).toHaveLength(1);
     const a = m.llamadas.aviso[0]!;
     expect(a.url).toBe(`${MARCADOR_URL_DEL_RELE}/v1/envio/mensajes/${PID}`);
-    expect(a.encabezados['Idempotency-Key']).toBe(`${CLIENTE}-ejecucion-de-mentira-avisoguardado-1`);
+    expect(a.encabezados['Idempotency-Key']).toBe(`${CLIENTE}-wf-de-mentira-ejecucion-de-mentira-avisoguardado-1`);
     expect(a.cuerpo).toEqual({ messaging_product: 'whatsapp', recipient_type: 'individual', to: REC, type: 'text', text: { preview_url: false, body: AVISO('el archivo supera el tamaño permitido') } });
   });
   it('un aviso que el relé rechaza (sin neverError) deja la ejecución en error y no se reintenta', () => {
@@ -279,6 +283,88 @@ describe('corriendo: dos GET por medio guardado, nada a ciegas', () => {
     const m = mundo();
     m.r({ type: 'text', text: { body: 'hola' } });
     expect(m.llamadas.info.length + m.llamadas.contenido.length + m.llamadas.servidor.length).toBe(0);
+  });
+});
+
+describe('cupo de descargas (500 por día y por WABA, 2 GET por medio): solo en el canal rele', () => {
+  const tel = (i: number): string => `591700000${String(i).padStart(2, '0')}`;
+  const D1 = Date.UTC(2026, 10, 2, 15, 0, 0);
+  it('NIEGA: un teléfono que manda 25 imágenes guarda 20; las 5 últimas no piden ni la info ni el contenido', () => {
+    const m = mundo();
+    for (let i = 0; i < 25; i++) m.r(imagen(`M${i}`), {}, tel(1));
+    expect(m.llamadas.info).toHaveLength(20);
+    expect(m.llamadas.contenido).toHaveLength(20);
+    // Otro teléfono sigue con su propio cupo.
+    m.r(imagen('OTRO'), {}, tel(2));
+    expect(m.llamadas.info).toHaveLength(21);
+  });
+  it('NIEGA: el tope global por flujo (60): con 4 teléfonos de 20 se agota y el quinto ya no guarda nada', () => {
+    const m = mundo();
+    for (const t of [1, 2, 3]) for (let i = 0; i < 20; i++) m.r(imagen(`M${t}-${i}`), {}, tel(t));
+    expect(m.llamadas.info).toHaveLength(60);
+    m.r(imagen('X'), {}, tel(4));
+    m.r(documento(), {}, tel(5));
+    expect(m.llamadas.info).toHaveLength(60);
+  });
+  it('el cupo se reinicia al cambiar el día de La Paz (UTC-4), no a las 00:00 UTC', () => {
+    const m = mundo();
+    for (let i = 0; i < 21; i++) m.r(imagen(`M${i}`), { ahoraMs: D1 }, tel(1));
+    expect(m.llamadas.info).toHaveLength(20);
+    // 02/11 23:30 La Paz = 03/11 03:30 UTC: sigue siendo el mismo día del negocio.
+    m.r(imagen('T'), { ahoraMs: Date.UTC(2026, 10, 3, 3, 30, 0) }, tel(1));
+    expect(m.llamadas.info).toHaveLength(20);
+    // 03/11 00:30 La Paz = 03/11 04:30 UTC: día nuevo.
+    m.r(imagen('N'), { ahoraMs: Date.UTC(2026, 10, 3, 4, 30, 0) }, tel(1));
+    expect(m.llamadas.info).toHaveLength(21);
+  });
+  it('NIEGA: no cuentan los textos ni lo que escribe la recepción del negocio (es la ventana de las 24 h, no un cliente)', () => {
+    const m = mundo(flujoConGuardado({ cupo: { porTelefono: 3, global: 3 } }));
+    for (let i = 0; i < 10; i++) m.r({ type: 'text', text: { body: 'hola' } }, {}, tel(1));
+    for (let i = 0; i < 10; i++) m.r(imagen(`R${i}`), {}, REC);
+    // Si los 20 anteriores hubieran contado, el cupo global de 3 estaría agotado.
+    for (const t of [1, 2, 3]) m.r(imagen(`C${t}`), {}, tel(t));
+    expect(m.llamadas.info).toHaveLength(3);
+  });
+  it('el cupo se parametriza (`cupo`) y se rechaza lo absurdo', () => {
+    const m = mundo(flujoConGuardado({ cupo: { porTelefono: 2, global: 3 } }));
+    for (let i = 0; i < 3; i++) m.r(imagen(`A${i}`), {}, tel(1));
+    m.r(imagen('B0'), {}, tel(2));
+    m.r(imagen('B1'), {}, tel(2));
+    expect(m.llamadas.info).toHaveLength(3);
+    for (const cupo of [{ porTelefono: 0 }, { porTelefono: 1.5 }, { global: 251 }, { porTelefono: 30, global: 20 }, { global: -1 }]) {
+      expect(() => flujoConGuardado({ cupo }), JSON.stringify(cupo)).toThrow(/cupo/);
+    }
+  });
+  it('NIEGA: una imagen o un sticker de más de 5 MiB no pide /contenido (el servidor la rechazaría); un documento de 6 MiB sí', () => {
+    const grande = 5 * 1024 * 1024 + 1;
+    const m = mundo();
+    m.r(imagen(), { tamano: grande }, tel(1));
+    m.r({ type: 'sticker', sticker: { id: 'S1', mime_type: 'image/webp' } }, { tamano: grande }, tel(2));
+    expect(m.llamadas.contenido.map((x) => x.url)).toEqual(['', '']);
+    m.r(imagen(), { tamano: 5 * 1024 * 1024 }, tel(3));
+    expect(m.llamadas.contenido[2]!.url).toMatch(/\/contenido$/);
+    m.r(documento(), { tamano: 6 * 1024 * 1024 }, tel(4));
+    expect(m.llamadas.contenido[3]!.url).toMatch(/\/contenido$/);
+  });
+  it('NIEGA: el canal Graph no cambia ni un byte: sin cupo, sin GM_CUPO y con la cabecera de siempre', () => {
+    const f = flujoBase();
+    f.nodes.find((n) => n.name === 'Obtener URL del medio (general)')!.parameters['url'] = '=https://graph.facebook.com/v26.0/{{ $json.id }}';
+    f.nodes.find((n) => n.name === 'Enviar a WhatsApp')!.credentials = { httpHeaderAuth: { id: '', name: 'Graph de prueba' } };
+    f.nodes.push({ name: 'Descargar medio', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [400, 300], parameters: {}, credentials: { httpHeaderAuth: { id: '', name: 'Graph de prueba' } } } as never);
+    injertarGuardado(f, { guardarUrl: GUARDAR });
+    const js = String(f.nodes.find((n) => n.name === 'Preparar guardado')!.parameters['jsCode']);
+    expect(js).toBe(`${cabeceraDeFuentes('Carga de entrada', 'Config del negocio')}\n\n${FUENTE_PREPARAR}\n`);
+    expect(js).not.toMatch(/GM_CUPO|cupoDeMedios/);
+    expect(cabeceraDeFuentes('Carga de entrada', 'Config del negocio')).not.toContain('GM_CUPO');
+  });
+  it('NIEGA: sin el cupo el canal rele no pasa `hallazgosDelGuardado`', () => {
+    const f = flujoConGuardado();
+    const prep = f.nodes.find((n) => n.name === 'Preparar guardado')!;
+    prep.parameters['jsCode'] = String(prep.parameters['jsCode']).replace(FUENTE_CUPO, '');
+    expect(hallazgosDelGuardado(f).join('\n')).toMatch(/cupo/);
+  });
+  it('el cupo no usa nada que el Code de n8n no tenga', () => {
+    expect(FUENTE_CUPO.replace(/^\s*\/\/.*$/gm, '')).not.toMatch(/\b(require|URL|URLSearchParams|Buffer|crypto|process|setTimeout|fetch)\b/);
   });
 });
 

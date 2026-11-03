@@ -134,6 +134,37 @@ for linea in open(local, encoding="utf-8"):
 # Antes se aceptaba cualquier cosa después de «REEMPLAZAR_», y el flujo de captación,
 # que menciona el prefijo en su propio código para reconocer un respaldo sin llenar,
 # se leía como dos marcadores falsos y publicar-flujo.sh abortaba (15/09/2026).
+# --- 2b. la URL INTERNA DEL RELÉ B9 (el valor NUNCA va en el repositorio) --------
+# El marcador va pegado a la ruta («REEMPLAZAR_URL_INTERNA_DEL_RELE/v1/envio/…»), así que la tabla de arriba, que compara el marcador entero hasta el
+# primer espacio, no lo alcanza: se repone acá. El valor sale de la variable RELE_URL_INTERNA (del entorno del proceso o del `.env` del cliente, ambos
+# ignorados por git) o, si no, de la fila `REEMPLAZAR_URL_INTERNA_DEL_RELE` de la tabla. Es una BASE: esquema + host + puerto opcional, sin ruta, sin
+# barra final, sin credenciales. `http://` solo para un host INTERNO (un nombre sin puntos, como un contenedor; `localhost`; `*.internal`/`*.local`; una
+# IP privada o de loopback): el relé no sale a internet. Cualquier otro host exige `https://`. Si falta o es inválida, el marcador queda y el flujo no
+# se publica (`publicar-flujo.sh` aborta con cualquier REEMPLAZAR_* que quede). El valor no se imprime.
+MARCADOR_RELE = "REEMPLAZAR_URL_INTERNA_DEL_RELE"
+if MARCADOR_RELE in texto:
+    crudo = (os.environ.get("RELE_URL_INTERNA") or env.get("RELE_URL_INTERNA") or tabla.get(MARCADOR_RELE) or "").strip()
+    if crudo:
+        m_base = re.fullmatch(r'(https?)://([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*)(?::(\d{1,5}))?', crudo)
+        motivo = None
+        if not m_base:
+            motivo = "no es una base «http(s)://host[:puerto]» (sin ruta, sin barra final, sin credenciales)"
+        else:
+            esquema, host, puerto = m_base.group(1), m_base.group(2).lower(), m_base.group(3)
+            partes = host.split(".")
+            privada = (len(partes) == 4 and all(p.isdigit() and int(p) <= 255 for p in partes) and (
+                partes[0] in ("10", "127") or (partes[0] == "192" and partes[1] == "168") or (partes[0] == "172" and 16 <= int(partes[1]) <= 31)))
+            interno = len(partes) == 1 or host == "localhost" or host.endswith((".internal", ".local", ".localhost")) or privada
+            if puerto is not None and not (1 <= int(puerto) <= 65535):
+                motivo = "el puerto no es válido"
+            elif esquema == "http" and not interno:
+                motivo = "http:// solo se admite para un host interno (nombre sin puntos, localhost, *.internal, *.local o IP privada); use https://"
+        if motivo:
+            print(f"{ROJO}✗ ABORTADO: RELE_URL_INTERNA {motivo}.{FIN}")
+            sys.exit(1)
+        texto = re.sub(re.escape(MARCADOR_RELE) + r'(?![A-Za-z0-9_])', lambda _m: crudo, texto)
+        print(f"  {VERDE}+{FIN} {MARCADOR_RELE} {GRIS}(de RELE_URL_INTERNA; no se muestra){FIN}")
+
 presentes = sorted(set(re.findall(r'REEMPLAZAR_[A-Z][^"\\\s]*', texto)))
 puestos, sin_valor = [], []
 # COINCIDENCIA EXACTA, nunca por prefijo. Antes se aceptaba una fila cuyo

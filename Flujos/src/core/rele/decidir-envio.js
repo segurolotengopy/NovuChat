@@ -12,6 +12,7 @@
 //   WM-3037 (429) ...................... UNA vez tras 61 s + azar (61 a 64 s, bajo los 65 s en que n8n deja de esperar en memoria); luego agotado
 //   WM-3035 (409) ...................... hasta 2 veces tras 2 a 3 s; luego agotado
 //   `reintentable` de un código conocido  hasta 2 reintentos (2 s y 8 s); luego agotado (salvo WM-3032 y WM-3039, que nunca se repiten)
+//   TOPE TOTAL ......................... la suma de reintentos de todos los motivos no pasa de 3 por mensaje; el siguiente es agotado
 //   código previo o de Meta conocido ... respaldo
 //   cualquier otra cosa ................ incierto
 //
@@ -23,6 +24,8 @@ function releDecidir(respuesta, intentos, azar) {
   const r = respuesta !== null && typeof respuesta === 'object' && !Array.isArray(respuesta) ? respuesta : {};
   const ya = intentos !== null && typeof intentos === 'object' ? intentos : {};
   const cuenta = { n429: Number(ya.n429) > 0 ? Number(ya.n429) : 0, n409: Number(ya.n409) > 0 ? Number(ya.n409) : 0, nReint: Number(ya.nReint) > 0 ? Number(ya.nReint) : 0 };
+  // Tope TOTAL por mensaje: la suma de reintentos de todos los motivos no pasa de RELE_TOPE_TOTAL (cada causa tiene además el suyo).
+  const total = cuenta.n429 + cuenta.n409 + cuenta.nReint;
   const a = Math.min(Math.max(Number(azar) || 0, 0), 0.999999);
   const limpio = (v) => String(v === undefined || v === null ? '' : v).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 40);
   const fin = (accion, codigo, extra) => Object.assign({ accion: accion, codigo: limpio(codigo), esperaS: 0, intentos: cuenta }, extra || {});
@@ -39,12 +42,12 @@ function releDecidir(respuesta, intentos, azar) {
   if (!/^WM-\d{4}$/.test(wm)) return fin('incierto', 'SIN-CODIGO');
   if (wm === 'WM-3041') return fin('incierto', wm);
   if (wm === 'WM-3037') {
-    if (cuenta.n429 >= RELE_TOPE_429) return fin('agotado', wm);
+    if (cuenta.n429 >= RELE_TOPE_429 || total >= RELE_TOPE_TOTAL) return fin('agotado', wm);
     cuenta.n429 += 1;
     return fin('reintentar', wm, { esperaS: 61 + Math.floor(a * 4) });
   }
   if (wm === 'WM-3035') {
-    if (cuenta.n409 >= RELE_TOPE_409) return fin('agotado', wm);
+    if (cuenta.n409 >= RELE_TOPE_409 || total >= RELE_TOPE_TOTAL) return fin('agotado', wm);
     cuenta.n409 += 1;
     return fin('reintentar', wm, { esperaS: 2 + Math.round(a * 10) / 10 });
   }
@@ -59,7 +62,7 @@ function releDecidir(respuesta, intentos, azar) {
   } else conocido = RELE_PREVIOS.indexOf(wm) >= 0;
   if (!conocido) return fin('incierto', codigo);
   if (reintentable && RELE_NUNCA_REINTENTAR.indexOf(wm) < 0) {
-    if (cuenta.nReint >= RELE_PAUSAS_REINTENTABLE_S.length) return fin('agotado', codigo);
+    if (cuenta.nReint >= RELE_PAUSAS_REINTENTABLE_S.length || total >= RELE_TOPE_TOTAL) return fin('agotado', codigo);
     const espera = RELE_PAUSAS_REINTENTABLE_S[cuenta.nReint];
     cuenta.nReint += 1;
     return fin('reintentar', codigo, { esperaS: espera });

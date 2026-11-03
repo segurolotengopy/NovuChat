@@ -9,8 +9,8 @@
  *   - ningún nodo habla con Graph, su CDN ni la credencial `whatsAppApi`; la URL del relé es solo el marcador.
  */
 import { describe, expect, it } from 'vitest';
-import { nodosDeEnvio, injertar, MARCADOR_URL_DEL_RELE, NODOS_DEL_ENVIO_RELE } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
-import { CLIENTE, CRED_INGESTA, CRED_RELE, MENSAJES_JS, OPC_RELE, falla, flujoConCadena, mensaje, mundoRele, ok, turno, type Envio } from './ayuda';
+import { nodosDeEnvio, injertar, llamaANumerar, MARCADOR_URL_DEL_RELE, NODOS_DEL_ENVIO_RELE } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
+import { CLIENTE, WF, CRED_INGESTA, CRED_RELE, MENSAJES_JS, OPC_RELE, falla, flujoConCadena, mensaje, mundoRele, ok, turno, type Envio } from './ayuda';
 import { crearMundo } from '../../lib/n8n-de-mentira';
 import type { J } from '../../lib/flujo';
 
@@ -103,7 +103,7 @@ describe('la forma de la cadena del relé', () => {
     expect(c.salidas).toEqual([{ nodo: R, salida: 0 }, { nodo: '¿Qué hacer con el envío?', salida: 2 }, { nodo: '¿Enviar de verdad?', salida: 1 }]);
   });
   it('injertar la cuelga de «Armar mensajes» y las salidas de lo que sigue', () => {
-    const p = injertar({ nodes: [{ id: 'x', name: 'Armar mensajes', type: 't', parameters: {} }, { id: 'y', name: 'Resumen del turno', type: 't', parameters: {} }], connections: {} as Record<string, { main: { node: string }[][] }> }, { ...OPC_RELE, siguiente: 'Resumen del turno' });
+    const p = injertar({ nodes: [{ id: 'x', name: 'Armar mensajes', type: 't', parameters: { jsCode: 'return cmNumerar(x);' } }, { id: 'y', name: 'Resumen del turno', type: 't', parameters: {} }], connections: {} as Record<string, { main: { node: string }[][] }> }, { ...OPC_RELE, siguiente: 'Resumen del turno' });
     expect(p.nodes).toHaveLength(10);
     expect(p.connections['Armar mensajes']!.main[0]!.map((c) => c.node)).toEqual(['¿Enviar de verdad?']);
     expect(p.connections['Reportar mensaje (saliente)']!.main[0]!.map((c) => c.node)).toEqual(['Resumen del turno']);
@@ -124,7 +124,9 @@ describe('opciones: sin lo que el relé exige no se arma', () => {
   });
   it('NIEGA: la URL del relé es el marcador o una base http(s) sin ruta; nada más', () => {
     for (const u of ['', 'ftp://x', 'http://x/y', 'http://x/', 'x.example', "http://x'+evil", 'REEMPLAZAR_OTRA']) expect(() => nodosDeEnvio({ ...base, releUrl: u }), u).toThrow(/releUrl/);
-    expect(() => nodosDeEnvio({ ...base, releUrl: 'http://relay.internal:8080' })).not.toThrow();
+    // El repositorio admite SOLO el marcador; las pruebas pueden usar un host `*.example`. Cualquier host real (interno o público) es una URL que no debe versionarse.
+    for (const u of ['http://relay.internal:8080', 'http://10.0.0.5', 'http://localhost:8080', 'https://relay.example.com', 'https://relay.example.org', 'http://example']) expect(() => nodosDeEnvio({ ...base, releUrl: u }), u).toThrow(/releUrl/);
+    expect(() => nodosDeEnvio({ ...base, releUrl: 'http://relay.example:8080' })).not.toThrow();
     expect(() => nodosDeEnvio({ ...base, releUrl: MARCADOR_URL_DEL_RELE })).not.toThrow();
   });
   it('NIEGA: un canal desconocido no se arma, y el reporte sigue pidiendo su credencial y su URL', () => {
@@ -145,10 +147,10 @@ describe('el camino feliz: tres mensajes, tres claves', () => {
   it('cada mensaje sale una vez, con su clave cliente-ejecución-enviar-n, y se reporta con su id', () => {
     const m = mundoRele((e) => ok(e.clave));
     const r = turno(m, [mensaje(1), mensaje(2), mensaje(3)]);
-    expect(m.porNodo(Q).map((e) => e.clave)).toEqual([`${CLIENTE}-E1-enviar-1`, `${CLIENTE}-E1-enviar-2`, `${CLIENTE}-E1-enviar-3`]);
+    expect(m.porNodo(Q).map((e) => e.clave)).toEqual([`${CLIENTE}-${WF}-E1-enviar-1`, `${CLIENTE}-${WF}-E1-enviar-2`, `${CLIENTE}-${WF}-E1-enviar-3`]);
     expect(m.porNodo(R)).toHaveLength(0);
     expect(r.mensajes).toHaveLength(3);
-    expect(r.llamadas.ingesta.map((c) => c['idMeta'])).toEqual([1, 2, 3].map((n) => `wamid.${CLIENTE}-E1-enviar-${n}`));
+    expect(r.llamadas.ingesta.map((c) => c['idMeta'])).toEqual([1, 2, 3].map((n) => `wamid.${CLIENTE}-${WF}-E1-enviar-${n}`));
     expect(r.esperas).toEqual([]);
   });
   it('NIEGA: dos ejecuciones distintas no comparten clave; dos mensajes del mismo turno tampoco', () => {
@@ -164,6 +166,24 @@ describe('el camino feliz: tres mensajes, tres claves', () => {
     turno(m, [mensaje(1)], { idEjecucion: 'E 1/../x\r\n' });
     expect(m.porNodo(Q)[0]!.clave).toMatch(/^[A-Za-z0-9_.-]+$/);
   });
+  it('NIEGA: dos flujos con la misma ejecución y el mismo cliente no comparten clave (entra `$workflow.id`), y un id raro se sanea', () => {
+    const claves = (id: string): string[] => {
+      const flujo = flujoConCadena();
+      (flujo as unknown as { id: string }).id = id;
+      const vistas: string[] = [];
+      const mu = crearMundo({
+        flujo, ahoraMs: Date.UTC(2026, 10, 2, 15, 0, 0),
+        dobles: { [Q]: (ll) => { vistas.push(ll.encabezados['Idempotency-Key'] ?? ''); return ok('x'); }, 'Reportar mensaje (saliente)': () => ({ ok: true }) },
+      });
+      mu.turno({ mensajes: [mensaje(1)] }, { idEjecucion: 'E1' });
+      return vistas;
+    };
+    expect(claves('WFa')).toEqual([`${CLIENTE}-WFa-E1-enviar-1`]);
+    expect(claves('WFb')).toEqual([`${CLIENTE}-WFb-E1-enviar-1`]);
+    expect(claves('a b/../x\r\n')[0]).toMatch(/^[A-Za-z0-9_.-]+$/);
+    const nodo = nodosDeEnvio(OPC_RELE).nodes.find((n) => n.name === Q)!;
+    expect(JSON.stringify(nodo.parameters)).toContain('$workflow.id');
+  });
   it('0 mensajes agregados: los que salen son los armados, con el relé o con un reintento', () => {
     const limpio = mundoRele((e) => ok(e.clave));
     const rl = turno(limpio, [mensaje(1), mensaje(2)]);
@@ -175,11 +195,67 @@ describe('el camino feliz: tres mensajes, tres claves', () => {
   });
 });
 
+describe('guardia: con el relé, «Armar mensajes» tiene que llamar a cmNumerar(', () => {
+  const plantilla = (jsCode: string) => ({
+    nodes: [{ name: 'Armar mensajes', type: 'n8n-nodes-base.code', parameters: { jsCode } }, { name: 'Config del negocio', type: 'n8n-nodes-base.code', parameters: { jsCode: '' } }],
+    connections: {},
+  });
+  it('NIEGA: sin la llamada no se injerta, ni siquiera con la DEFINICIÓN de mensajes.js, un comentario o un texto', () => {
+    for (const js of ['return [];', MENSAJES_JS, `${MENSAJES_JS}\n// cmNumerar(lista)\nreturn [];`, "/* cmNumerar(x) */ return [];", 'const f = function cmNumerar(items) { return items; }; return [];']) {
+      expect(() => injertar(plantilla(js), OPC_RELE), js.slice(0, 40)).toThrow(/cmNumerar/);
+      expect(llamaANumerar(js), js.slice(0, 40)).toBe(false);
+    }
+  });
+  it('con la llamada sí se injerta, y el canal Graph no la exige', () => {
+    expect(() => injertar(plantilla(`${MENSAJES_JS}\nreturn cmNumerar(lista).map((json) => ({ json }));`), OPC_RELE)).not.toThrow();
+    expect(() => injertar(plantilla('return [];'), { credenciales: { graph: 'G', ingesta: 'I' }, ingestaUrl: 'https://i.example/x' })).not.toThrow();
+  });
+});
+
+describe('emparejamiento tras «Esperar reintento» (revisión del PR #757)', () => {
+  // Tras el Switch el pairedItem de cada ítem es su índice en la ENTRADA del Switch, y el Wait lo devuelve sin tocarlo: si el 2 y el 3 se reintentan,
+  // llegan al envío como los ítems 0 y 1 con pairedItem 1 y 2. Un `$('Armar mensajes').item` ahí apunta a OTRO mensaje (o a ninguno).
+  it('NIEGA: 3 mensajes, el 2 y el 3 reintentados y uno termina en respaldo: cada envío, respaldo y reporte lleva SU teléfono, SU texto y SU clave', () => {
+    const guion = (e: Envio) => {
+      if (e.clave.endsWith('-enviar-1')) return ok(e.clave);
+      if (e.clave.endsWith('-enviar-2')) return e.vez === 1 ? falla('WM-3035') : falla('WM-3032'); // reintenta y luego pide respaldo
+      if (e.clave.endsWith('-enviar-3')) return e.vez === 1 ? falla('WM-3035') : ok(e.clave); // reintenta y sale
+      return ok(e.clave); // el respaldo del 2
+    };
+    const m = mundoRele(guion);
+    const r = turno(m, [mensaje(1), mensaje(2), mensaje(3)]);
+    expect(m.porNodo(Q).map((e) => [e.clave, e.cuerpo['to']])).toEqual([
+      [`${CLIENTE}-${WF}-E1-enviar-1`, '70000001'], [`${CLIENTE}-${WF}-E1-enviar-2`, '70000002'], [`${CLIENTE}-${WF}-E1-enviar-3`, '70000003'],
+      [`${CLIENTE}-${WF}-E1-enviar-2`, '70000002'], [`${CLIENTE}-${WF}-E1-enviar-3`, '70000003'],
+    ]);
+    expect(m.porNodo(R)).toHaveLength(1);
+    expect(m.porNodo(R)[0]!.clave).toBe(`${CLIENTE}-${WF}-E1-respaldo-2`);
+    expect(m.porNodo(R)[0]!.cuerpo).toEqual({ messaging_product: 'whatsapp', recipient_type: 'individual', to: '70000002', type: 'text', text: { preview_url: true, body: 'respaldo 2' } });
+    const reportes = r.llamadas.ingesta.map((c) => [c['telefono'], c['texto'], c['idMeta']]).sort();
+    expect(reportes).toEqual([
+      ['+70000001', 'texto 1', `wamid.${CLIENTE}-${WF}-E1-enviar-1`],
+      ['+70000002', 'texto 2', `wamid.${CLIENTE}-${WF}-E1-respaldo-2`],
+      ['+70000003', 'texto 3', `wamid.${CLIENTE}-${WF}-E1-enviar-3`],
+    ]);
+  });
+  it('NIEGA: tres mensajes, el 3 es el único reintentado y cae en respaldo: el respaldo es del 3, no del 1', () => {
+    const m = mundoRele((e) => (e.clave.endsWith('-enviar-3') ? (e.vez === 1 ? falla('WM-3035') : falla('WM-3032')) : ok(e.clave)));
+    const r = turno(m, [mensaje(1), mensaje(2), mensaje(3)]);
+    expect(m.porNodo(R).map((e) => [e.clave, e.cuerpo['to']])).toEqual([[`${CLIENTE}-${WF}-E1-respaldo-3`, '70000003']]);
+    expect(r.llamadas.ingesta.map((c) => c['texto']).sort()).toEqual(['texto 1', 'texto 2', 'texto 3']);
+  });
+  it('NIEGA: ningún nodo posterior al Wait lee de «Armar mensajes» salvo la rama «no» de ¿Enviar de verdad? (que lee $json)', () => {
+    for (const n of nodosDeEnvio(OPC_RELE).nodes) {
+      expect(JSON.stringify(n.parameters), n.name).not.toContain("$('Armar mensajes')");
+    }
+  });
+});
+
 describe('504 WM-3041: incierto, nunca se reenvía', () => {
   it('un solo envío, sin respaldo, sin espera y sin reporte; el otro mensaje sigue su camino', () => {
     const m = mundoRele((e) => (e.clave.endsWith('-1') ? falla('WM-3041', { reintentable: true }) : ok(e.clave)));
     const r = turno(m, [mensaje(1), mensaje(2)]);
-    expect(contiene(m.envios, `${CLIENTE}-E1-enviar-1`)).toHaveLength(1);
+    expect(contiene(m.envios, `${CLIENTE}-${WF}-E1-enviar-1`)).toHaveLength(1);
     expect(m.porNodo(R)).toHaveLength(0);
     expect(r.esperas).toEqual([]);
     expect(r.llamadas.ingesta.map((c) => c['telefono'])).toEqual(['+70000002']);
@@ -250,9 +326,9 @@ describe('respaldo: un rechazo conocido sale como texto, una sola vez', () => {
     expect(m.porNodo(Q)).toHaveLength(1);
     expect(m.porNodo(R)).toHaveLength(1);
     const e = m.porNodo(R)[0]!;
-    expect(e.clave).toBe(`${CLIENTE}-E1-respaldo-1`);
+    expect(e.clave).toBe(`${CLIENTE}-${WF}-E1-respaldo-1`);
     expect(e.cuerpo).toEqual({ messaging_product: 'whatsapp', recipient_type: 'individual', to: '70000001', type: 'text', text: { preview_url: true, body: 'respaldo 1' } });
-    expect(r.llamadas.ingesta.map((c) => c['idMeta'])).toEqual([`wamid.${CLIENTE}-E1-respaldo-1`]);
+    expect(r.llamadas.ingesta.map((c) => c['idMeta'])).toEqual([`wamid.${CLIENTE}-${WF}-E1-respaldo-1`]);
     expect(r.esperas).toEqual([]);
   });
   it('NIEGA: si el respaldo también falla, no se reintenta ni se reporta', () => {

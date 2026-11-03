@@ -26,6 +26,8 @@ export interface CadenaDeEnvio {
   salidas: Array<{ nodo: string; salida: number }>;
 }
 export function nodosDeEnvio(opciones: OpcionesDeEnvio): CadenaDeEnvio;
+export function llamaANumerar(js: string): boolean;
+export function esBaseDeReleAdmitida(base: string): boolean;
 export function injertar<T extends { nodes: any[]; connections: Record<string, any> }>(plantilla: T, opciones: OpcionesDeEnvio): T;
 
 export const MARCADOR_URL_DEL_RELE: string;
