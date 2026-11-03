@@ -13,6 +13,7 @@ const FORMA = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{10,1
 export function esEnlaceDeHoja(v: unknown): v is string {
   if (typeof v !== 'string' || v.length === 0 || v.length > LARGO_MAXIMO_ENLACE_HOJA) return false;
   if (!FORMA.test(v)) return false;
+  if (v.includes('..') || v.includes('//', 8)) return false; // nada de subir de ruta ni de segmentos vacíos
   try {
     const u = new URL(v);
     return u.protocol === 'https:' && u.hostname === 'docs.google.com' && u.username === '' && u.password === '' && u.port === '';

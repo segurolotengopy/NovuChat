@@ -43,6 +43,7 @@ describe('E1. el enlace', () => {
       `javascript:alert(1)`, `data:text/html,<script>1</script>`,
       `https://docs.google.com/document/d/${ID}/edit`,
       `https://docs.google.com/spreadsheets/d/corto`,
+      `https://docs.google.com/spreadsheets/d/${ID}/../../x`, `https://docs.google.com/spreadsheets/d/${ID}//x`,
       ` ${BUENO}`, `${BUENO} `, `${BUENO}\n`, `${BUENO}"onclick="x`, `${BUENO}<`,
       '', `https://docs.google.com/spreadsheets/d/${ID}/${'a'.repeat(300)}`,
     ];
