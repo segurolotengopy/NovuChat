@@ -87,7 +87,7 @@ del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
 
 **Relleno histórico (03/11/2026).** `admin/scripts/plataforma/relleno-crm-historico.mjs` crea una fila por cada contacto anterior de UNA subcuenta
 (Evy, Emma, Rubén o Antonio) en su hoja: seco por omisión (solo conteos), idempotente por teléfono, respaldo antes de escribir y `--revertir`.
-Solo escribe campos que existen y vocabulario cerrado (clasificación «Tibio», calificación «Media», resumen fijo); no lee el texto de ningún
+Solo escribe campos que existen y vocabulario cerrado (calificación y clasificación VACÍAS = sin evaluar, resumen fijo); no lee el texto de ningún
 mensaje ni la columna U. La hoja se lee y escribe por un flujo temporal de n8n con la credencial `crm-<tenant>` (la cuenta no tiene clave local).
 
 **Limitaciones conocidas.**

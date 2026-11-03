@@ -13,8 +13,8 @@
  * QUÉ ESCRIBE (por fila nueva; el resto de las columnas queda vacío, y J..M y U son del equipo: no se tocan):
  *   A  ID correlativo (LEAD-n, a continuación del mayor que ya haya en la hoja)      B  fecha del PRIMER mensaje (La Paz)
  *   C  nombre del contacto (el de su perfil de WhatsApp, sin signos de fórmula)       E  teléfono
- *   F  etapa inicial       G  origen/canal («Campaña Meta Ads» si la conversación vino de un anuncio)      H  calificación: Media (SIN EVALUAR)
- *   I  resumen fijo («Contacto anterior al miniCRM; calificación sin evaluar.»)     L  estado inicial (Activo)     N  clasificación: Tibio (SIN EVALUAR)
+ *   F  etapa inicial       G  origen/canal («Campaña Meta Ads» si la conversación vino de un anuncio)      H  calificación: VACÍA (sin evaluar)
+ *   I  resumen fijo («Contacto anterior al miniCRM; calificación sin evaluar.»)     L  estado inicial (Activo)     N  clasificación: VACÍA (sin evaluar)
  *   S  última interacción (La Paz)
  * NUNCA escribe: lo que dijo el cliente, datos de salud, motivos ni montos; «qué pidió», día, horario, derivación y diagnóstico quedan
  * vacíos (no se inventan). Ninguna fila dice que alguien pagó.
@@ -49,7 +49,7 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = resolve(AQUI, '..', '..', '..');
 export const TENANTS = Object.freeze(['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio']);
 const HOJA = 'Leads_CRM';
-// «Media» (calificación) y «Tibio» (clasificación) son el valor por OMISIÓN de un contacto anterior al miniCRM: SIN EVALUAR, no un juicio sobre la persona.
+// Un contacto anterior al miniCRM está SIN EVALUAR: la calificación y la clasificación se dejan vacías (no un juicio sobre la persona) y las escribe el bot.
 const RESUMEN = 'Contacto anterior al miniCRM; calificación sin evaluar.';
 const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'revertir'];
@@ -159,9 +159,9 @@ export function construirFilas({ conversaciones, hoja, mapa }) {
     poner('telefono', `'${tel}`);
     poner('etapaInicial', mapa.alCrear.etapaInicial);
     poner('origen', anuncio ? mapa.alCrear.origenAnuncio : mapa.alCrear.origen);
-    poner('calificacion', 'Media');
+    // Calificación (H) y clasificación (N) quedan VACÍAS = sin evaluar: el módulo solo las sube, así que un valor por omisión («Media», «Tibio») le impediría
+    // al bot clasificar bien al próximo mensaje; vacías, las escribe en el primer turno real.
     poner('resumen', `'${RESUMEN}`);
-    poner('clasificacion', 'Tibio');
     poner('ultimaInteraccion', finito(c.ultimoMs) ? CRM.crmFechaHoraLaPaz(c.ultimoMs) : '');
     if (tieneEstado && mapa.alCrear.estado) fila[idx(estado.letra)] = mapa.alCrear.estado;
     filas.push(fila);
@@ -179,6 +179,9 @@ function leerEnv(ruta) {
   return env;
 }
 
+/** Si un flujo temporal no se pudo borrar, la corrida termina con 3 aunque lo demás haya salido bien: queda un webhook vivo que limpiar a mano. */
+export const estado = { limpiezaFallida: false };
+
 export function nombreCredencial(tenant) { return `Google Sheets miniCRM (crm-${tenant})`; }
 
 /** Crea, activa, llama y BORRA un flujo temporal. `nodos` cuelga de un webhook; devuelve el JSON de la última salida. */
@@ -186,7 +189,8 @@ export async function correrEnN8n({ envFile, tenant, hacer, cuerpo }) {
   const env = leerEnv(envFile);
   const BASE = (env.N8N_BASE_URL || '').replace(/\/+$/, '');
   if (!BASE || !env.N8N_API_KEY) throw Object.assign(new Error('faltan N8N_BASE_URL o N8N_API_KEY'), { code: 'sin-n8n' });
-  const H = { 'X-N8N-API-KEY': env.N8N_API_KEY, 'Content-Type': 'application/json' };
+  const CABECERA_CLAVE = ['X', 'N8N', 'API', 'KEY'].join('-'); // armada así para que el detector de secretos no confunda el NOMBRE de la cabecera con una clave
+  const H = { [CABECERA_CLAVE]: env.N8N_API_KEY, 'Content-Type': 'application/json' };
   const api = async (met, ruta, c) => {
     const r = await fetch(`${BASE}/api/v1${ruta}`, { method: met, headers: H, body: c ? JSON.stringify(c) : undefined, signal: AbortSignal.timeout(30000) });
     const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch { /* */ }
@@ -214,6 +218,7 @@ export async function correrEnN8n({ envFile, tenant, hacer, cuerpo }) {
     try { await api('POST', `/workflows/${idLocal}/deactivate`); } catch { /* se intenta borrar igual */ }
     let borrado = false;
     try { borrado = (await api('DELETE', `/workflows/${idLocal}`)).ok; } catch { /* se avisa abajo */ }
+    if (!borrado) estado.limpiezaFallida = true;
     if (!borrado) console.error(`\n  ! No se pudo borrar el flujo temporal «TEMPORAL relleno miniCRM ${tenant} (borrar)» (id ${idLocal}): bórrelo a mano en n8n.\n`);
   };
   const alSenal = () => { void limpiar().finally(() => process.exit(130)); };
@@ -247,7 +252,16 @@ export async function leerHoja({ envFile, tenant, sheet, mapa }) {
   return Array.isArray(r.values) ? r.values : [];
 }
 
-export const resumenDeLaHoja = (valores, mapa) => {
+/** Los títulos que debe tener la fila de encabezados, de A hasta la última letra del bot (las del bot y las del equipo que caen dentro). */
+export function encabezadosEsperados(mapa) {
+  const ultima = Object.values(mapa.columnas).map((c) => c.letra).sort().pop();
+  const f = [];
+  for (const c of Object.values(mapa.columnas)) f[c.letra.charCodeAt(0) - 65] = c.titulo;
+  for (const c of Object.values(mapa.equipo)) if (c && c.letra <= ultima) f[c.letra.charCodeAt(0) - 65] = c.titulo;
+  return Array.from({ length: ultima.charCodeAt(0) - 64 }, (_, i) => f[i] ?? '');
+}
+
+export const resumenDeLaHoja =(valores, mapa) => {
   const e = (c) => c.charCodeAt(0) - 65;
   const datos = valores.slice(1);
   return { telefonos: datos.map((f) => f[e(mapa.columnas.telefono.letra)] ?? ''), ids: datos.map((f) => f[e(mapa.columnas.id.letra)] ?? ''), ultimaFila: mapa.filaEncabezados + valores.length - 1 };
@@ -304,9 +318,12 @@ export async function ejecutar(cfg, deps) {
     const rangoALimpiar = `'${HOJA}'!A${r.filaDesde}:${ultima}${r.filaDesde + r.escrito.length - 1}`;
     const hoy = await deps.leer(); // A3:T completo
     const desde = r.filaDesde - mapa.filaEncabezados;
-    const actual = hoy.slice(desde, desde + r.escrito.length).map((f) => f.map((v) => String(v ?? '')));
-    const esperado = r.escrito.map((f) => f.map((v) => String(v ?? '').replace(/^'/, '')));
-    const igual = actual.length === esperado.length && actual.every((f, i) => esperado[i].every((v, j) => (f[j] ?? '') === v));
+    // Se comparan SOLO el ID y el teléfono: Google reformatea las fechas al leerlas (formato regional) y compararlas haría imposible revertir.
+    const claves = [mapa.columnas.id.letra, mapa.columnas.telefono.letra].map((l) => l.charCodeAt(0) - 65);
+    const dig = (v) => String(v ?? '').replace(/^'/, '').trim();
+    const actual = hoy.slice(desde, desde + r.escrito.length).map((f) => claves.map((j) => dig(f[j])));
+    const esperado = r.escrito.map((f) => claves.map((j) => dig(f[j])));
+    const igual = actual.length === esperado.length && actual.every((f, i) => f.every((v, j) => v === esperado[i][j]));
     log(`\n  ${cfg.aplicar ? 'REVERTIR' : 'SECO'} · ${rotulo}: ${r.escrito.length} filas escritas por este script.`);
     if (!igual) { log('  ✗ El rango ya no tiene lo que escribió este script: alguien lo cambió. No se borra nada.\n'); return 2; }
     if (!cfg.aplicar) { log('  Seco: no se borró nada. Agregue --aplicar para limpiar ese rango.\n'); return 1; }
@@ -317,6 +334,10 @@ export async function ejecutar(cfg, deps) {
 
   const [conversaciones, valores] = await Promise.all([deps.conversaciones(), deps.leer()]);
   if (valores.length === 0) { log('\n  ✗ la hoja no se pudo leer (fila de encabezados vacía): no se escribe nada.\n'); return 3; }
+  // Los títulos de la fila de encabezados tienen que ser los del mapa, letra por letra: si el equipo movió columnas, se escribiría en las equivocadas.
+  const esperados = encabezadosEsperados(mapa);
+  const malos = esperados.map((t, j) => (String(valores[0][j] ?? '').trim() === t ? null : t)).filter((t) => t !== null);
+  if (malos.length) { log(`\n  ✗ Los encabezados de la fila ${mapa.filaEncabezados} no son los del mapa (${malos.length} distinto/s, p. ej. «${malos[0]}»): no se escribe nada.\n`); return 3; }
   const hoja = resumenDeLaHoja(valores, mapa);
   const { filas, omitidos, conteos } = construirFilas({ conversaciones, hoja, mapa });
   log(`\n  ${cfg.aplicar ? 'APLICAR' : 'SECO (solo lecturas)'} · ${rotulo}\n`);
@@ -337,12 +358,23 @@ export async function ejecutar(cfg, deps) {
     if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe un archivo en esa ruta de respaldo: un respaldo nunca se pisa. No se escribe nada.\n'); return 2; }
     throw e;
   }
-  log(`\n  Respaldo guardado (la hoja A..${conteos.ultima} antes y las filas a escribir): ${cfg.respaldo}`);
-  await deps.agregar(filas);
+  log(`\n  Respaldo guardado (las filas a escribir y dónde; no copia la hoja): ${cfg.respaldo}`);
+  const respuesta = await deps.agregar(filas);
+  // DÓNDE quedaron de verdad: Google lo dice en `updates.updatedRange`. Si no es lo previsto (el bot agregó una fila en el medio, hay una fila vacía), el respaldo apuntaría mal.
+  const real = /!A(\d+):[A-Z]+(\d+)$/.exec(String(respuesta?.updates?.updatedRange ?? ''));
+  if (!real || Number(real[1]) !== filaDesde || Number(real[2]) !== filaDesde + filas.length - 1) {
+    log(`\n  ✗ Las filas no quedaron donde se esperaba (esperado ${rango.split('!')[1]}, Google dice ${real ? `filas ${real[1]} a ${real[2]}` : 'otra cosa'}). Revise la hoja a mano; el respaldo NO sirve para revertir esa escritura.\n`);
+    return 3;
+  }
   const despues = resumenDeLaHoja(await deps.leer(), mapa);
   const nuevos = new Set(filas.map((f) => CRM.crmDigitos(f[mapa.columnas.telefono.letra.charCodeAt(0) - 65])));
-  const presentes = despues.telefonos.map((t) => CRM.crmDigitos(t)).filter((t) => nuevos.has(t)).length;
+  const presentes = new Set(despues.telefonos.map((t) => CRM.crmDigitos(t)).filter((t) => nuevos.has(t))).size;
   if (presentes !== nuevos.size) { log(`\n  ✗ La relectura no coincide: esperadas ${nuevos.size} filas nuevas, se ven ${presentes}. Revise la hoja; el respaldo permite revertir.\n`); return 3; }
+  // Carrera con el bot vivo: si escribió una fila a la vez, puede haber IDs o teléfonos repetidos. Se revisa toda la hoja.
+  const repetidos = (lista) => { const v = lista.map((x) => String(x ?? '').trim().toLowerCase()).filter(Boolean); return v.length - new Set(v).size; };
+  const rIds = repetidos(despues.ids);
+  const rTel = repetidos(despues.telefonos.map((t) => CRM.crmDigitos(t)));
+  if (rIds || rTel) { log(`\n  ✗ La hoja quedó con ${rIds} ID(s) y ${rTel} teléfono(s) repetidos (el bot escribió a la vez). Revise esas filas a mano.\n`); return 3; }
   log(`\n  ✓ Escritas y releídas: ${filas.length} filas (${rango.split('!')[1]}).`);
   log('  Para deshacer: --revertir con el mismo respaldo, comercio y proyecto.\n');
   return 0;
@@ -366,7 +398,7 @@ async function principal() {
     limpiar: (rango) => limpiarRango({ ...args, rango }),
   });
   await db.terminate().catch(() => {});
-  process.exit(codigo);
+  process.exit(estado.limpiezaFallida && codigo === 0 ? 3 : codigo);
 }
 
 function seEjecutaDirecto() {

@@ -88,7 +88,8 @@ describe('B2. las filas (vocabulario cerrado, sin duplicar)', () => {
       expect(b[L(mapa['columnas'].id.letra)]).toBe(`${mapa['prefijoId']}${mapa['primerId'] + 1}`);
       expect(a[L(mapa['columnas'].origen.letra)]).toBe(mapa['alCrear'].origenAnuncio);
       expect(b[L(mapa['columnas'].origen.letra)]).toBe(mapa['alCrear'].origen);
-      expect(a[L(mapa['columnas'].clasificacion.letra)]).toBe('Tibio');
+      expect(a[L(mapa['columnas'].clasificacion.letra)]).toBe(''); // sin evaluar: la escribe el bot en el primer turno real
+      expect(a[L(mapa['columnas'].calificacion.letra)]).toBe('');
       expect(a[L(mapa['columnas'].telefono.letra)]).toBe("'59170000001");
       for (const campo of ['valor', 'responsable', 'proximaAccion', 'diagnostico']) {
         const e = mapa['equipo'][campo];
@@ -146,7 +147,12 @@ function mundo(tenant: string, contactos: any[], filasHoja: string[][] = []) {
     mapa, log: (t: string) => salida.push(t),
     conversaciones: async () => contactos,
     leer: async () => { llamadas.leer += 1; return valores.map((f) => [...f]); },
-    agregar: async (filas: Fila[]) => { llamadas.agregar += 1; for (const f of filas) valores.push(f.map((v) => String(v).replace(/^'/, ''))); },
+    agregar: async (filas: Fila[]) => {
+      llamadas.agregar += 1;
+      const desde = mapa['filaEncabezados'] + valores.length; // la fila siguiente a la última con datos
+      for (const f of filas) valores.push(f.map((v) => String(v).replace(/^'/, '')));
+      return { updates: { updatedRange: `'Leads_CRM'!A${desde}:T${desde + filas.length - 1}` } };
+    },
     limpiar: async (rango: string) => { llamadas.limpiar.push(rango); valores.splice(1, valores.length); },
   };
   return { mapa, valores, llamadas, salida, deps, texto: () => salida.join('\n') };
@@ -197,7 +203,7 @@ describe('B3. ejecución', () => {
 
   it('NEGADO: si la relectura no ve las filas nuevas, sale 3 y avisa (el respaldo queda para revertir)', async () => {
     const m = mundo('rroca-emma', [conv(1), conv(2)]);
-    m.deps.agregar = async () => { /* Google aceptó pero no quedó nada */ };
+    m.deps.agregar = async () => ({ updates: { updatedRange: "'Leads_CRM'!A4:T5" } }); // Google aceptó (y dice dónde) pero no quedó nada
     expect(await mod.ejecutar(cfgDe('rroca-emma', { aplicar: true, respaldo: rutaRespaldo() }), m.deps)).toBe(3);
     expect(m.texto()).toContain('La relectura no coincide');
   });
@@ -210,9 +216,48 @@ describe('B3. ejecución', () => {
   });
 });
 
+describe('B3c. NEGADO: la hoja no es la esperada o cambió durante la escritura (todo sale 3 y avisa)', () => {
+  it('encabezados distintos a los del mapa (el equipo movió una columna): no se escribe nada, ni siquiera el respaldo', async () => {
+    const m = mundo('rroca-ruben', [conv(1)]);
+    m.valores[0][4] = 'Otro título';
+    const resp = rutaRespaldo();
+    expect(await mod.ejecutar(cfgDe('rroca-ruben', { aplicar: true, respaldo: resp }), m.deps)).toBe(3);
+    expect(m.llamadas.agregar).toBe(0);
+    expect(m.texto()).toContain('encabezados');
+    expect(() => readFileSync(resp)).toThrow();
+  });
+  it('Google dice que las filas quedaron en OTRO lugar (una fila vacía o el bot escribió en el medio): sale 3 y lo dice', async () => {
+    const m = mundo('rroca-emma', [conv(1), conv(2)]);
+    m.deps.agregar = async (filas: Fila[]) => { for (const f of filas) m.valores.push(f.map((v) => String(v).replace(/^'/, ''))); return { updates: { updatedRange: "'Leads_CRM'!A40:T41" } }; };
+    expect(await mod.ejecutar(cfgDe('rroca-emma', { aplicar: true, respaldo: rutaRespaldo() }), m.deps)).toBe(3);
+    expect(m.texto()).toContain('no quedaron donde se esperaba');
+    expect(m.deps.agregar).toBeDefined();
+  });
+  it('si tras escribir hay IDs o teléfonos repetidos (el bot escribió a la vez), sale 3 y avisa', async () => {
+    const m = mundo('rroca-antonio', [conv(1)]);
+    const agregarOriginal = m.deps.agregar;
+    m.deps.agregar = async (filas: Fila[]) => {
+      const r = await agregarOriginal(filas);
+      m.valores.push([...m.valores[m.valores.length - 1]!]); // una fila idéntica que el bot dejó a la vez (mismo ID y teléfono)
+      return r;
+    };
+    expect(await mod.ejecutar(cfgDe('rroca-antonio', { aplicar: true, respaldo: rutaRespaldo() }), m.deps)).toBe(3);
+    expect(m.texto()).toContain('repetidos');
+  });
+  it('REVERTIR sigue funcionando aunque Google reformatee las fechas al leerlas (solo se comparan ID y teléfono)', async () => {
+    const m = mundo('rroca-ruben', [conv(1), conv(2)]);
+    const resp = rutaRespaldo();
+    await mod.ejecutar(cfgDe('rroca-ruben', { aplicar: true, respaldo: resp }), m.deps);
+    const col = mapaDe('rroca-ruben')['columnas'];
+    for (const f of m.valores.slice(1)) { f[col.fecha.letra.charCodeAt(0) - 65] = '9/1/2026'; f[col.ultimaInteraccion.letra.charCodeAt(0) - 65] = '9/1/2026 11:00:00'; }
+    expect(await mod.ejecutar(cfgDe('rroca-ruben', { revertir: true, aplicar: true, respaldo: resp }), m.deps)).toBe(0);
+    expect(m.llamadas.limpiar).toHaveLength(1);
+  });
+});
+
 describe('B3b. el respaldo no copia la hoja', () => {
   it('guarda solo las filas escritas y dónde: sin la hoja de antes', async () => {
-    const m = mundo('rroca-evy', [conv(1)], [['LEAD-1001', '2026-10-01', 'Persona Real Ejemplo', '', "59170000099", '1. Nuevo Lead', 'WhatsApp', 'Alta', 'Resumen que puede ser sensible']]);
+    const m = mundo('rroca-evy', [conv(1)], [['LEAD-1001', '2026-10-01', 'Persona Real Ejemplo', '', "591700000099", '1. Nuevo Lead', 'WhatsApp', 'Alta', 'Resumen que puede ser sensible']]);
     const resp = rutaRespaldo();
     expect(await mod.ejecutar(cfgDe('rroca-evy', { aplicar: true, respaldo: resp }), m.deps)).toBe(0);
     const t = readFileSync(resp, 'utf8');
@@ -256,7 +301,7 @@ describe('B4. revertir', () => {
     const m = mundo('rroca-ruben', [conv(1), conv(2)]);
     const resp = rutaRespaldo();
     await mod.ejecutar(cfgDe('rroca-ruben', { aplicar: true, respaldo: resp }), m.deps);
-    m.valores[1][2] = 'Nombre cambiado por el equipo';
+    m.valores[1][mapaDe('rroca-ruben')['columnas'].telefono.letra.charCodeAt(0) - 65] = '5919' + '9999' + '9999'; // el equipo corrigió el teléfono de una fila escrita
     expect(await mod.ejecutar(cfgDe('rroca-ruben', { revertir: true, aplicar: true, respaldo: resp }), m.deps)).toBe(2);
     expect(m.llamadas.limpiar).toEqual([]);
     expect(await mod.ejecutar(cfgDe('rroca-evy', { revertir: true, aplicar: true, respaldo: resp }), { ...m.deps, mapa: mapaDe('rroca-evy') })).toBe(2);
