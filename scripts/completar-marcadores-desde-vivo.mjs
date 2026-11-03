@@ -21,10 +21,14 @@
  * tabla ya repuso. El archivo de salida lleva valores sensibles: está en .gitignore (`*.local.json`).
  * SALIDA. 0: no queda ningún marcador. 1: quedan marcadores sin valor. 2: uso o error.
  */
-import { chmodSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export const MARCADOR = /REEMPLAZAR_[A-Z][^"\\\s]*/g;
+// ESTRICTO: solo el nombre (mayúsculas, dígitos y guion bajo). Lo que sigue (`/ruta`, `@dominio`) es texto literal. La regex amplia de preparar-import.sh
+// puede dejar en el .local.json un «marcador» que ya lleva pegado un valor repuesto (una ruta secreta); este script nunca debe imprimirlo.
+export const MARCADOR = /REEMPLAZAR_[A-Z][A-Z0-9_]*/g;
+const MAX_MARCADORES_POR_TEXTO = 3;
+const MAX_TEXTO_VIVO = 20_000;
 const esObjeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const escapar = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -58,22 +62,29 @@ export function emparejar(local, vivo) {
   if (typeof vivo !== 'string') return null;
   const marcas = marcadoresDe(local);
   if (marcas.length === 1 && local === marcas[0]) return { [marcas[0]]: vivo };
-  let patron = '';
-  let resto = local;
-  const orden = [];
-  for (const m of marcas) {
-    const i = resto.indexOf(m);
-    patron += escapar(resto.slice(0, i)) + '([\\s\\S]*?)';
-    orden.push(m);
-    resto = resto.slice(i + m.length);
+  // Con muchos marcadores o un texto vivo enorme el emparejamiento por expresión regular puede ser ambiguo o lentísimo: no se repone.
+  if (marcas.length > MAX_MARCADORES_POR_TEXTO || vivo.length > MAX_TEXTO_VIVO) return null;
+  const armar = (grupo) => {
+    let patron = '';
+    let resto = local;
+    for (const m of marcas) {
+      const i = resto.indexOf(m);
+      patron += escapar(resto.slice(0, i)) + grupo;
+      resto = resto.slice(i + m.length);
+    }
+    return new RegExp(`^${patron}${escapar(resto)}$`);
+  };
+  const perezoso = armar('([\\s\\S]*?)').exec(vivo);
+  if (!perezoso) return null;
+  // Con 2 o más marcadores, la partición tiene que ser ÚNICA: si el emparejamiento perezoso y el codicioso reparten distinto, es ambiguo y no se repone.
+  if (marcas.length > 1) {
+    const codicioso = armar('([\\s\\S]*)').exec(vivo);
+    if (!codicioso || codicioso.slice(1).some((v, i) => v !== perezoso[i + 1])) return null;
   }
-  patron += escapar(resto);
-  const r = new RegExp(`^${patron}$`).exec(vivo);
-  if (!r) return null;
   const salida = {};
-  for (let i = 0; i < orden.length; i++) {
-    if (orden[i] in salida && salida[orden[i]] !== r[i + 1]) return null;
-    salida[orden[i]] = r[i + 1];
+  for (let i = 0; i < marcas.length; i++) {
+    if (marcas[i] in salida && salida[marcas[i]] !== perezoso[i + 1]) return null;
+    salida[marcas[i]] = perezoso[i + 1];
   }
   return salida;
 }
@@ -86,21 +97,23 @@ export function resolverDesdeVivo(local, vivo) {
   const resueltos = {};
   const vistos = new Set();
   const conflictos = new Set();
+  const noEncajan = new Set(); // marcadores de un texto cuyo nodo SÍ existe en el vivo pero cuyo texto no encaja
   const nodosVivos = new Map((vivo.nodes ?? []).map((n) => [n.name, n]));
   for (const n of local.nodes ?? []) {
     const v = nodosVivos.get(n.name);
-    const huecos = [];
     recorrer(n.parameters, v?.parameters, 'parameters', (_camino, textoLocal, textoVivo) => {
       for (const m of marcadoresDe(textoLocal)) vistos.add(m);
       const par = v === undefined ? null : emparejar(textoLocal, textoVivo);
-      if (par === null) return;
+      if (par === null) { if (v !== undefined) for (const m of marcadoresDe(textoLocal)) noEncajan.add(m); return; }
       for (const [m, valor] of Object.entries(par)) {
         if (valor.includes('REEMPLAZAR_')) continue; // en el vivo también es un marcador: no es un valor
         if (m in resueltos && resueltos[m] !== valor) conflictos.add(m);
         else resueltos[m] = valor;
       }
-    }, huecos);
+    }, []);
   }
+  // Un marcador que encaja en un lugar y no encaja en otro nodo vivo es ambiguo: no se repone.
+  for (const m of noEncajan) if (m in resueltos) conflictos.add(m);
   for (const m of conflictos) delete resueltos[m];
   const sinResolver = [...vistos].filter((m) => !(m in resueltos) && !conflictos.has(m)).sort();
   return { resueltos, sinResolver, conflictos: [...conflictos].sort() };
@@ -129,16 +142,24 @@ export async function leerFlujoVivo(envFile, buscar = fetch) {
   const env = leerEnv(envFile);
   const base = (env.N8N_BASE_URL ?? '').replace(/\/+$/, '');
   if (!base || !env.N8N_API_KEY || !env.N8N_WORKFLOW_ID) throw Object.assign(new Error('faltan N8N_BASE_URL, N8N_API_KEY o N8N_WORKFLOW_ID'), { code: 'sin-env' });
-  const r = await buscar(`${base}/api/v1/workflows/${encodeURIComponent(env.N8N_WORKFLOW_ID)}`, { headers: { 'X-N8N-API-KEY': env.N8N_API_KEY }, signal: AbortSignal.timeout(30000) });
+  // La clave viaja en una cabecera propia: solo por https (o a esta misma máquina) y sin seguir redirecciones (no se la damos a otro host).
+  if (!/^https:\/\//.test(base) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(base)) throw Object.assign(new Error('url'), { code: 'n8n-sin-https' });
+  const r = await buscar(`${base}/api/v1/workflows/${encodeURIComponent(env.N8N_WORKFLOW_ID)}`, { headers: { 'X-N8N-API-KEY': env.N8N_API_KEY }, redirect: 'error', signal: AbortSignal.timeout(30000) });
   if (!r.ok) throw Object.assign(new Error('n8n'), { code: `n8n-${r.status}` });
-  return r.json();
+  const vivo = await r.json();
+  return { ...vivo, __idEsperado: env.N8N_WORKFLOW_ID };
 }
 
 export async function ejecutar({ local: rutaLocal, env: rutaEnv, aplicar = false }, { log = console.log, buscar = fetch } = {}) {
   const local = JSON.parse(readFileSync(rutaLocal, 'utf8'));
   const vivo = await leerFlujoVivo(rutaEnv, buscar);
-  if (typeof local.name === 'string' && typeof vivo.name === 'string' && local.name !== vivo.name) {
-    log('✗ el archivo y el flujo vivo no son el mismo flujo (el nombre difiere): no se repone nada.');
+  // FALLA CERRADA: es la única defensa contra un --env equivocado (el phone id o la ruta de OTRO cliente). Los dos nombres tienen que existir y ser iguales.
+  if (typeof local.name !== 'string' || typeof vivo.name !== 'string' || local.name !== vivo.name) {
+    log('✗ el archivo y el flujo vivo no son el mismo flujo (el nombre falta o difiere): no se repone nada.');
+    return 2;
+  }
+  if (local.id !== undefined && String(local.id) !== String(vivo.__idEsperado)) {
+    log('✗ el id del archivo no es el del flujo vivo de este .env: no se repone nada.');
     return 2;
   }
   const { resueltos, sinResolver, conflictos } = resolverDesdeVivo(local, vivo);
@@ -149,8 +170,11 @@ export async function ejecutar({ local: rutaLocal, env: rutaEnv, aplicar = false
   for (const m of sinResolver) log(`  ✗ ${m}: no se pudo emparejar con el vivo`);
   if (aplicar && nombres.length) {
     const texto = `${JSON.stringify(aplicarValores(local, resueltos), null, 2)}\n`;
-    const tmp = `${rutaLocal}.tmp`;
-    writeFileSync(tmp, texto, { mode: 0o600 });
+    // El temporal también termina en `.local.json` (ignorado por git) y se crea nuevo y exclusivo (0600) para no escribir sobre un enlace ni un archivo ajeno.
+    const tmp = rutaLocal.replace(/(\.local)?\.json$/, '.tmp.local.json');
+    if (tmp === rutaLocal) throw Object.assign(new Error('nombre'), { code: 'nombre-no-local' });
+    try { unlinkSync(tmp); } catch { /* no existía */ }
+    writeFileSync(tmp, texto, { mode: 0o600, flag: 'wx' });
     chmodSync(tmp, 0o600);
     renameSync(tmp, rutaLocal);
     log(`Reescrito (0600): ${rutaLocal}`);
