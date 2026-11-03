@@ -66,7 +66,7 @@
 # pendiente · 2 uso o salvaguarda (nada escrito) · 3 error de ejecución, el
 # servicio no existe (despliega primero), o se revirtió lo escrito.
 #
-# Contra producción: con el «sí» de Andres, en la ventana 23:30–01:30, seco
+# Contra producción: con el «sí» de Andres, a cualquier hora (la ventana 23:30–01:30 es solo promesa al cliente, no regla interna), seco
 # primero (.github/DESPLIEGUE-FIREBASE.md). Andres autoriza; Claude opera.
 set -euo pipefail
 ESTE="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
@@ -293,7 +293,7 @@ if (( APLICAR )); then MODO="APLICANDO"; else MODO="seco (no escribe)"; fi
 echo "Entorno: ${ENTORNO}  ·  región ${REGION}  ·  servicio ${SERVICIO} (${FUNCION})  ·  ${ACCION} ${ROL} a ${MIEMBRO}  ·  ${MODO}"
 if [[ "$ENTORNO" == "produccion" ]]; then
   nota "proyecto cruzado con las credenciales: ${CRUCE}"
-  (( APLICAR )) && nota "producción: solo con el «sí» de Andres, en la ventana 23:30–01:30 y después del seco"
+  (( APLICAR )) && nota "producción: solo con el «sí» de Andres, a cualquier hora, y después del seco"
 fi
 echo
 

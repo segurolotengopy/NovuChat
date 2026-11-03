@@ -208,7 +208,7 @@ en `admin/scripts/`.
   nadie la llama), con auditoría de quién y cuándo.
 - **Cinco pasos fijos** para cualquier reclamo de falla: ejecuciones de n8n
   leídas; causa y severidad según el SLA §5; corrección como hotfix (severidad
-  1) o en la ventana de 23:30 a 01:30; publicación **a todos** con excepciones
+  1) o a cualquier hora si no hay riesgo para el cliente (la ventana de 23:30 a 01:30 se mantiene como promesa del anexo técnico, no como regla interna); publicación **a todos** con excepciones
   declaradas; **verificación con el cliente anotada en su `aceptacion.md`**.
 - **Errores de redacción del modelo** están excluidos por el SLA §11, pero un
   patrón que se repite es un pedido de barrera por hecho, y entra al §12.4.
