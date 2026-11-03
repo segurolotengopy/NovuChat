@@ -507,7 +507,7 @@ describe('reintento propio de los dos GET de medios por el relé: 0 nodos nuevos
       const g = flujoConGuardado();
       expect(nodoDe(g, nombre)['parameters'].options.redirect, nombre).toEqual({ redirect: { followRedirects: false } });
       nodoDe(g, nombre)['parameters'].options.redirect = { redirect: { followRedirects: true } };
-      expect(hallazgosDelGuardado(g).join('\n'), nombre).toMatch(new RegExp(`«${nombre.replace(/[()]/g, '\\$&')}» no puede seguir redirecciones`));
+      expect(hallazgosDelGuardado(g).join('\n'), nombre).toContain(`guardado: «${nombre}» no puede seguir redirecciones`);
       const h = flujoConGuardado();
       delete nodoDe(h, nombre)['parameters'].options.redirect;
       expect(hallazgosDelGuardado(h).join('\n'), nombre).toMatch(/no puede seguir redirecciones/);
