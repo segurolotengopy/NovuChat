@@ -38,15 +38,18 @@
 # comprueba nombre, tipo e id (y que la escritura respondió 200), no el contenido de la cabecera. Que
 # la llave sirva se prueba con un envío real por el relé, que corresponde a la sesión de WAM.
 #
+# N8N_BASE_URL tiene que ser https:// (única excepción, para las pruebas con un n8n falso: RELE_PERMITIR_HTTP_LOCAL=1 admite
+# http://127.0.0.1:<puerto>, que no sale de la máquina) (sin redirecciones ni proxies) y XDG_RUNTIME_DIR del usuario, modo 700.
+#
 # LA CLAVE DE LA API DE N8N. Sale de --env (solo N8N_BASE_URL y N8N_API_KEY, leídos como datos, sin
 # ejecutar el archivo; con --aplicar exige que sea del usuario y de modo 600). Viaja en una cabecera
-# dentro del proceso Python, nunca por argumentos ni pantalla.
+# dentro del proceso Python (entra por el descriptor 3, no por el entorno), nunca por argumentos ni pantalla.
 #
 # Salida: 0 hecho y comprobado, o seco sin hallazgos · 1 seco con algo pendiente (entrega ausente o
 # inválida) · 2 uso, salvaguarda o validación previa (nada escrito) · 3 error de ejecución (puede
 # haber escrito; la entrega se conserva).
 set -euo pipefail
-unset RELE_ALIAS RELE_ENTREGA RELE_APLICAR RELE_RESPALDO_DIR RELE_NOMBRE RELE_CABECERA RELE_PREFIJO RELE_REGEX RELE_CREA
+unset N8N_BASE_URL N8N_API_KEY RELE_ALIAS RELE_ENTREGA RELE_APLICAR RELE_RESPALDO_DIR RELE_NOMBRE RELE_CABECERA RELE_PREFIJO RELE_REGEX RELE_CREA
 
 # ---- Constantes (parametrizables) -------------------------------------------------------------
 ALIAS_PERMITIDOS="evy emma ruben antonio ensayo01"     # nombres de Flujos/experimental/rroca-* y la línea de ensayo
@@ -79,7 +82,8 @@ CREA=0; for a in $ALIAS_CREA_SI_FALTA; do [[ "$a" == "$ALIAS" ]] && CREA=1; done
 if (( APLICAR )); then
   [[ "$CONFIRMO" == "produccion" ]] || { echo "✗ --aplicar exige --confirmo produccion" >&2; exit 2; }
 elif [[ -n "$CONFIRMO" ]]; then echo "✗ --confirmo solo va con --aplicar" >&2; exit 2; fi
-[[ -n "${XDG_RUNTIME_DIR:-}" && -d "$XDG_RUNTIME_DIR" ]] || { echo "✗ XDG_RUNTIME_DIR no está definido o no es un directorio" >&2; exit 2; }
+[[ -n "${XDG_RUNTIME_DIR:-}" && -d "$XDG_RUNTIME_DIR" && ! -L "$XDG_RUNTIME_DIR" ]] || { echo "✗ XDG_RUNTIME_DIR no está definido o no es un directorio" >&2; exit 2; }
+[[ -O "$XDG_RUNTIME_DIR" && "$(stat -c %a "$XDG_RUNTIME_DIR")" == "700" ]] || { echo "✗ XDG_RUNTIME_DIR debe ser del usuario y de modo 700" >&2; exit 2; }
 [[ -f "$ENV_FILE" ]] || { echo "✗ No existe --env" >&2; exit 2; }
 if (( APLICAR )); then
   [[ -O "$ENV_FILE" && "$(stat -c %a "$ENV_FILE")" == "600" ]] || { echo "✗ Con --aplicar, --env debe ser del usuario y de modo 600" >&2; exit 2; }
@@ -88,18 +92,30 @@ valor_env() { grep -E "^$1=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- | tr -d '"' 
 N8N_BASE_URL="$(valor_env N8N_BASE_URL)"; N8N_API_KEY="$(valor_env N8N_API_KEY)"
 [[ -n "$N8N_BASE_URL" ]] || { echo "✗ Falta N8N_BASE_URL en --env" >&2; exit 2; }
 [[ -n "$N8N_API_KEY" ]] || { echo "✗ Falta N8N_API_KEY en --env" >&2; exit 2; }
+[[ "$N8N_BASE_URL" =~ ^https://[^/[:space:]@]+(/.*)?$ ]] || [[ -n "${RELE_PERMITIR_HTTP_LOCAL:-}" && "$N8N_BASE_URL" =~ ^http://127\.0\.0\.1:[0-9]+$ ]] \
+  || { echo "✗ N8N_BASE_URL tiene que ser https://" >&2; exit 2; }
 
-export N8N_BASE_URL N8N_API_KEY RELE_APLICAR="$APLICAR" RELE_CREA="$CREA"
+export N8N_BASE_URL RELE_APLICAR="$APLICAR" RELE_CREA="$CREA"
 export RELE_ALIAS="$ALIAS" RELE_ENTREGA="$XDG_RUNTIME_DIR/${PREFIJO_ENTREGA}${ALIAS}"
 export RELE_NOMBRE="${PREFIJO_NOMBRE}${ALIAS}" RELE_CABECERA="$NOMBRE_CABECERA" RELE_PREFIJO="$ESQUEMA_CABECERA"
 export RELE_REGEX="$REGEX_LLAVE" RELE_RESPALDO_DIR="$XDG_RUNTIME_DIR/registrar-llave-rele-respaldos"
 
-exec python3 -I - <<'PY'
-import json, os, re, stat, sys, time, urllib.error, urllib.parse, urllib.request
+# La clave de la API entra a Python por el descriptor 3 (no por el entorno ni por argumentos).
+exec python3 -I - 3<<<"$N8N_API_KEY" <<'PY'
+import json, os, re, stat, sys, time, unicodedata, urllib.error, urllib.parse, urllib.request
 
 E = os.environ
 base = E["N8N_BASE_URL"].rstrip("/") + "/api/v1"
-H = {"X-N8N-API-KEY": E["N8N_API_KEY"], "Content-Type": "application/json"}
+# La clave de la API llega por el descriptor 3 (nunca está en el entorno de este proceso).
+_clave = os.read(3, 4096).decode().strip()
+os.close(3)
+H = {"X-N8N-API-KEY": _clave, "Content-Type": "application/json"}
+_clave = None
+# Sin redirecciones y sin proxies: la clave y la llave solo van a la URL del --env.
+class _SinRedireccion(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):
+        return None
+OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _SinRedireccion)
 NOMBRE, ENTREGA, APLICAR = E["RELE_NOMBRE"], E["RELE_ENTREGA"], E["RELE_APLICAR"] == "1"
 CREA = E["RELE_CREA"] == "1"
 TIPO = "httpHeaderAuth"
@@ -109,23 +125,23 @@ def salir(cod, msg):
     print(msg, file=sys.stderr if cod else sys.stdout)
     sys.exit(cod)
 
-def pedir(metodo, ruta, cuerpo=None):
+def pedir(metodo, ruta, cuerpo=None, espera=30):
     # Nunca se imprime el cuerpo del pedido ni el de la respuesta.
     datos = json.dumps(cuerpo).encode() if cuerpo is not None else None
     req = urllib.request.Request(base + ruta, method=metodo, headers=H, data=datos)
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with OPENER.open(req, timeout=espera) as r:
             return r.status, json.loads(r.read() or b"null")
     except urllib.error.HTTPError as e:
         return e.code, None
     except Exception:
         return 0, None
 
-def paginas(ruta):
+def paginas(ruta, espera=30):
     todas, cursor = [], None
     while True:
         r = ruta + "?limit=100" + ("&cursor=" + urllib.parse.quote(cursor, safe="") if cursor else "")
-        cod, d = pedir("GET", r)
+        cod, d = pedir("GET", r, None, espera)
         if cod != 200 or not isinstance(d, dict):
             salir(3, f"✗ n8n respondió {cod} al leer {ruta}")
         todas += d.get("data", [])
@@ -164,8 +180,15 @@ def abrir_entrega():
         os.close(fd); return None, motivo, None
     return fd, texto, (st.st_dev, st.st_ino)
 
+def norm(t):
+    t = unicodedata.normalize("NFKC", str(t)).casefold()
+    return "".join(ch for ch in t if unicodedata.category(ch) != "Cf")
+
 # ---- Estado vivo (solo GET) ----
-mismas = [c for c in paginas("/credentials") if c.get("name") == NOMBRE]
+todas_creds = paginas("/credentials")
+if any(c.get("name") != NOMBRE and norm(c.get("name", "")) == norm(NOMBRE) for c in todas_creds):
+    salir(2, "✗ Hay una credencial con un nombre equivalente pero no exacto (normalizado): se aborta sin escribir")
+mismas = [c for c in todas_creds if c.get("name") == NOMBRE]
 exactas = [c for c in mismas if c.get("type") == TIPO]
 if len(mismas) > len(exactas):
     salir(2, f"✗ Hay una credencial «{NOMBRE}» de otro tipo: se aborta sin escribir")
@@ -176,7 +199,7 @@ cid = exactas[0]["id"] if existe else None
 
 citan = []
 if existe:
-    for w in paginas("/workflows"):
+    for w in paginas("/workflows", 300):
         for n in w.get("nodes", []) or []:
             c = (n.get("credentials") or {}).get(TIPO) or {}
             if c.get("id") == cid or c.get("name") == NOMBRE:
@@ -199,14 +222,17 @@ if not entrega_ok:
     salir(2, "✗ Sin entrega válida no se escribe nada")
 
 # ---- Respaldo (sin valor) ----
-dr = E["RELE_RESPALDO_DIR"]
-os.makedirs(dr, mode=0o700, exist_ok=True)
-os.chmod(dr, 0o700)
-ruta_resp = os.path.join(dr, f"{E['RELE_ALIAS']}-{time.strftime('%Y%m%dT%H%M%S')}.json")
-rfd = os.open(ruta_resp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-with os.fdopen(rfd, "w") as f:
-    json.dump({"nombre": NOMBRE, "tipo": TIPO, "id": cid, "existiaAntes": existe, "flujosQueLaCitan": citan,
-               "nota": "estado previo sin el valor de la credencial"}, f, ensure_ascii=False, indent=1)
+try:
+    dr = E["RELE_RESPALDO_DIR"]
+    os.makedirs(dr, mode=0o700, exist_ok=True)
+    os.chmod(dr, 0o700)
+    ruta_resp = os.path.join(dr, f"{E['RELE_ALIAS']}-{time.strftime('%Y%m%dT%H%M%S')}.json")
+    rfd = os.open(ruta_resp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(rfd, "w") as f:
+        json.dump({"nombre": NOMBRE, "tipo": TIPO, "id": cid, "existiaAntes": existe, "flujosQueLaCitan": citan,
+                   "nota": "estado previo sin el valor de la credencial"}, f, ensure_ascii=False, indent=1)
+except OSError:
+    salir(2, "✗ no se pudo escribir el respaldo: no se escribe nada")
 print("  Respaldo escrito (modo 600, sin valor).")
 
 def fallar(msg):

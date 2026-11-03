@@ -11,7 +11,7 @@
  *  - solo el alias de ensayo puede crear la credencial.
  */
 import { spawn } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -39,6 +39,10 @@ let creds: Cred[] = [];
 let llamadas: Llamada[] = [];
 let flujos: unknown[] = [];
 let patchCodigo = 200;
+let postCodigo = 200;
+let pagina1 = false;
+let alPatch: (() => void) | null = null;
+let redirige = false;
 let envArchivo = '';
 
 beforeEach(async () => {
@@ -48,6 +52,10 @@ beforeEach(async () => {
   llamadas = [];
   flujos = [{ name: 'Flujo A', nodes: [{ credentials: { httpHeaderAuth: { id: 'cred1abcd', name: 'x' } } }] }];
   patchCodigo = 200;
+  postCodigo = 200;
+  pagina1 = false;
+  alPatch = null;
+  redirige = false;
   servidor = createServer((req, res) => {
     const partes: Buffer[] = [];
     req.on('data', (c: Buffer) => partes.push(c));
@@ -57,15 +65,23 @@ beforeEach(async () => {
       llamadas.push({ metodo: req.method ?? '', ruta, cuerpo });
       const responder = (codigo: number, o: unknown) => { res.statusCode = codigo; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(o)); };
       if (req.headers['x-n8n-api-key'] !== API_KEY) return responder(401, {});
-      if (ruta === '/api/v1/credentials' && req.method === 'GET') return responder(200, { data: creds.map(({ id, name, type }) => ({ id, name, type })) });
+      if (redirige) { res.statusCode = 302; res.setHeader('location', 'http://127.0.0.1:1/otro'); return res.end(); }
+      if (ruta === '/api/v1/credentials' && req.method === 'GET') {
+        const todas = creds.map(({ id, name, type }) => ({ id, name, type }));
+        if (!pagina1) return responder(200, { data: todas });
+        const desde = Number(new URL(req.url ?? '', 'http://x').searchParams.get('cursor') ?? '0');
+        return responder(200, { data: todas.slice(desde, desde + 1), nextCursor: desde + 1 < todas.length ? String(desde + 1) : null });
+      }
       if (ruta === '/api/v1/workflows' && req.method === 'GET') return responder(200, { data: flujos });
       if (ruta === '/api/v1/credentials' && req.method === 'POST') {
+        if (postCodigo !== 200) return responder(postCodigo, {});
         const c = JSON.parse(cuerpo) as Cred;
         creds.push({ id: `nueva${creds.length}abcd`, name: c.name, type: c.type, data: c.data });
         return responder(200, {});
       }
       const m = /^\/api\/v1\/credentials\/(\w+)$/.exec(ruta);
       if (m && req.method === 'PATCH') {
+        if (alPatch) alPatch();
         if (patchCodigo !== 200) return responder(patchCodigo, {});
         const c = creds.find((x) => x.id === m[1]);
         if (c) c.data = (JSON.parse(cuerpo) as { data: unknown }).data;
@@ -85,9 +101,9 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function correr(args: string[]): Promise<{ codigo: number; salida: string }> {
+function correr(args: string[], extra: Record<string, string> = {}): Promise<{ codigo: number; salida: string }> {
   return new Promise((ok) => {
-    const h = spawn('bash', [SCRIPT, ...args], { cwd: RAIZ, env: entornoDelEmulador(undefined, { XDG_RUNTIME_DIR: dir }) });
+    const h = spawn('bash', [SCRIPT, ...args], { cwd: RAIZ, env: entornoDelEmulador(undefined, { XDG_RUNTIME_DIR: dir, RELE_PERMITIR_HTTP_LOCAL: '1', ...extra }) });
     let salida = '';
     h.stdout.on('data', (d: Buffer) => { salida += d.toString(); });
     h.stderr.on('data', (d: Buffer) => { salida += d.toString(); });
@@ -176,6 +192,14 @@ describe('seco: solo GET, valida la entrega sin mostrarla', () => {
     const r = await correr(aplicar());
     expect(r.codigo).toBe(2);
     expect(escrituras()).toHaveLength(0);
+    expect(existsSync(join(dir, 'llave-rele-ruben'))).toBe(true);
+  });
+  it('nombre equivalente pero no exacto (normalizado): aborta sin escribir', async () => {
+    entrega('ruben');
+    creds.push({ id: 'cred3abcd', name: 'aab1 envío · RUBEN', type: 'httpHeaderAuth' });
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(2);
+    expect(escrituras()).toHaveLength(0);
   });
   it('credencial inexistente en un alias de cliente: aborta sin crear', async () => {
     entrega('evy');
@@ -185,7 +209,92 @@ describe('seco: solo GET, valida la entrega sin mostrarla', () => {
   });
 });
 
+describe('salvaguardas de entorno', () => {
+  it('--aplicar con .env de modo distinto de 600: sale 2 sin llamadas', async () => {
+    entrega('ruben');
+    chmodSync(envArchivo, 0o644);
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(2);
+    expect(llamadas).toHaveLength(0);
+  });
+  it('XDG_RUNTIME_DIR de modo distinto de 700: sale 2 sin llamadas', async () => {
+    entrega('ruben');
+    chmodSync(dir, 0o755);
+    const r = await correr(seco());
+    chmodSync(dir, 0o700);
+    expect(r.codigo).toBe(2);
+    expect(llamadas).toHaveLength(0);
+  });
+  it('N8N_BASE_URL sin https (y sin la excepción local): sale 2 sin llamadas', async () => {
+    entrega('ruben');
+    const r = await correr(seco(), { RELE_PERMITIR_HTTP_LOCAL: '' });
+    expect(r.codigo).toBe(2);
+    expect(llamadas).toHaveLength(0);
+    limpia(r.salida);
+  });
+  it('no sigue redirecciones', async () => {
+    entrega('ruben');
+    redirige = true;
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(3);
+    expect(escrituras()).toHaveLength(0);
+    expect(existsSync(join(dir, 'llave-rele-ruben'))).toBe(true);
+  });
+  it('no se pudo escribir el respaldo: sale 2, no escribe y conserva la entrega', async () => {
+    entrega('ruben');
+    writeFileSync(join(dir, 'registrar-llave-rele-respaldos'), 'x');
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(2);
+    expect(escrituras()).toHaveLength(0);
+    expect(existsSync(join(dir, 'llave-rele-ruben'))).toBe(true);
+    limpia(r.salida);
+  });
+});
+
+describe('paginación', () => {
+  it('un duplicado en la segunda página se ve', async () => {
+    entrega('ruben');
+    pagina1 = true;
+    creds.push({ id: 'otra1abcd', name: 'Otra', type: 'httpHeaderAuth' }, { id: 'cred2abcd', name: 'AAB1 envío · ruben', type: 'httpHeaderAuth' });
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(2);
+    expect(escrituras()).toHaveLength(0);
+  });
+  it('--aplicar funciona recorriendo páginas', async () => {
+    entrega('ruben');
+    pagina1 = true;
+    creds.unshift({ id: 'otra1abcd', name: 'Otra', type: 'httpHeaderAuth' });
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(0);
+    expect(escrituras()).toHaveLength(1);
+  });
+});
+
 describe('--aplicar', () => {
+  it('relectura que falla (duplicado tras el PATCH): sale 3 y conserva la entrega', async () => {
+    const ruta = entrega('ruben');
+    alPatch = () => { creds.push({ id: 'dup1abcd', name: 'AAB1 envío · ruben', type: 'httpHeaderAuth' }); };
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(3);
+    expect(existsSync(ruta)).toBe(true);
+    limpia(r.salida);
+  });
+  it('la entrega cambia de archivo antes del borrado: sale 3 y no la borra', async () => {
+    const ruta = entrega('ruben');
+    alPatch = () => { unlinkSync(ruta); writeFileSync(ruta, LLAVE, { mode: 0o600 }); };
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(3);
+    expect(existsSync(ruta)).toBe(true);
+    limpia(r.salida);
+  });
+  it('falla el POST del alias de ensayo: sale 3 y conserva la entrega', async () => {
+    const ruta = entrega('ensayo01');
+    postCodigo = 500;
+    const r = await correr(aplicar('ensayo01'));
+    expect(r.codigo).toBe(3);
+    expect(existsSync(ruta)).toBe(true);
+    limpia(r.salida);
+  });
   it('actualiza en el lugar, relee, borra la entrega y no muestra la llave', async () => {
     const ruta = entrega('ruben');
     const r = await correr(aplicar());
@@ -203,6 +312,8 @@ describe('--aplicar', () => {
     const archivos = readdirSync(rd);
     expect(archivos).toHaveLength(1);
     expect(readFileSync(join(rd, archivos[0]!), 'utf8')).not.toContain(HEX);
+    expect(statSync(join(rd, archivos[0]!)).mode & 0o777).toBe(0o600);
+    expect(statSync(rd).mode & 0o777).toBe(0o700);
   });
   it('si n8n falla, conserva la entrega', async () => {
     const ruta = entrega('ruben');

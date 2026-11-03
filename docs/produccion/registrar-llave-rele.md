@@ -15,6 +15,7 @@ de nuestro n8n sin imprimirla ni leerla.
   id y solo entonces borra la entrega. Si algo falla, la conserva.
 - **La credencial debe existir** (la deja `cargar-timbre-n8n.sh`, con valor inerte). Si falta, hay duplicados
   o el nombre es de otro tipo, aborta sin escribir; solo `ensayo01` la crea si falta.
+- **Requisitos**: `N8N_BASE_URL` https (sin redirecciones ni proxies), `$XDG_RUNTIME_DIR` del usuario y de modo 700; la clave de la API entra a Python por un descriptor, no por el entorno.
 - **Límite**: la API de n8n no devuelve el valor de una credencial; que la llave sirva se prueba con un envío
   real por el relé (sesión de WAM). Este script no toca el receptor, el relé ni la red de Docker.
 
