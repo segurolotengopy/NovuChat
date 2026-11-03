@@ -489,6 +489,22 @@ export const COLECCIONES_CERRADAS_DEL_CORE = {
   tenant: ['salida', 'cuposDeMedios'],
 } as const;
 
+/**
+ * DOCUMENTOS DE `enlaces/` QUE SOLO ESCRIBE EL SERVIDOR Y SOLO LEE EL ADMIN DEL COMERCIO (03/11/2026).
+ *
+ * Documentos de `tenants/{t}/enlaces/{documento}`, FUERA de `config/`: la lectura de `config/` es de todo miembro y
+ * una consulta de colección no puede excluir un documento. Aquí solo los lee `esAdmin` del mismo comercio y nadie los
+ * escribe desde un cliente (los fija NovuChat con el Admin SDK). `registro.test.ts` exige el `match` con
+ * `documento == '<nombre>' && esAdmin(tenantId)` para leer, la escritura cerrada y su prueba negativa en
+ * `crm-reglas.test.ts`.
+ *
+ * `minicrm`: la URL de la hoja del miniCRM; la escribe NovuChat con `scripts/plataforma/crm-enlace.mjs` y la
+ * Consola la muestra como el botón «Abrir miniCRM» del Tablero.
+ */
+export const DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR = {
+  minicrm: { modulo: 'crm', campos: ['enlaceHoja'], lectura: 'admin' },
+} as const;
+
 export const esModulo = (v: unknown): v is IdModulo =>
   typeof v === 'string' && (IDS_MODULOS as readonly string[]).includes(v);
 

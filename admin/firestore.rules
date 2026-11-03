@@ -1209,6 +1209,20 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // /enlaces/{documento} — enlaces que NovuChat fija a un comercio (03/11/2026).
+      // Hoy solo `minicrm`: la URL de la hoja del miniCRM. Va FUERA de /config/ a
+      // propósito: la lectura de config es de todos los miembros y una consulta
+      // de colección no puede excluir un documento. La lee solo el ADMIN de ESE
+      // comercio (operador, otro comercio y propietario de NovuChat, no) y solo la
+      // escribe el servidor (Admin SDK, `scripts/plataforma/crm-enlace.mjs`).
+      // Es una URL de Google Sheets, nunca un secreto.
+      // -----------------------------------------------------------------------
+      match /enlaces/{documento} {
+        allow get: if documento == 'minicrm' && esAdmin(tenantId);
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
       // /catalogo/{itemId} — productos o servicios con precio.
       // Va en subcolección, no como lista dentro de config, para que cada ítem
       // se pueda validar de verdad: las reglas no saben recorrer listas de mapas.
