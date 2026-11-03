@@ -315,7 +315,7 @@ export function guardias(variante, flujo, mapaCrm) {
   const nombres = new Set(nodos.map((n) => n.name));
   const por = (nombre) => nodos.find((n) => n.name === nombre);
   const p = (n) => (n && n.parameters) || {};
-  if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md)`);
+  if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11), y los 8 de la rama del miniCRM, aprobados por Andres el 02/11/2026: docs/versiones-por-cliente.md)`);
   // EL miniCRM (módulo `crm`): la rama completa, la credencial del tenant y las barreras del módulo (rangos que no llegan a la letra del diagnóstico del equipo, retención de ejecuciones en `none`).
   const conexCrm = (flujo && flujo.connections) || {};
   for (const n of NODOS_DE_CRM) if (!nombres.has(n)) h.push(`miniCRM: falta el nodo «${n}»`);

@@ -1527,7 +1527,7 @@ function rrExtranjeroRespondido(ficha, ahoraMs) {
 // =============================================================================
 // miniCRM (módulo `crm`, F3 del 02/11/2026): del turno ya resuelto al PROSPECTO de la planilla. Función pura, vocabulario CERRADO: el texto libre del cliente no pasa; el nombre es solo el del perfil
 // de WhatsApp (letras, espacios, apóstrofo y guion). Las señales son HECHOS del flujo (decisión de Andres, 02/11/2026, opción B):
-//   inicioCompra     el flujo emitió un QR de cobro en este turno, o la ficha anterior ya tenía un QR emitido o un comprobante (`pedidos`, `comprobanteMs`);
+//   inicioCompra     el flujo emitió un QR de cobro REAL en este turno, o la ficha vigente (menos de 48 h) ya tenía un QR emitido o un comprobante (`pedidos`, `comprobanteMs`); lo simulado no cuenta;
 //   pidioLlamada     pidió hablar con Rubén (derivación `hablar_con_ruben`);
 //   llegoPorAnuncio  el mensaje trae la referencia de un anuncio.
 // Sin señal «Frío» (este flujo no tiene un detector de rechazo y no se inventa uno) ni «No es lead» (lo marca el equipo a mano). Mensajes: ninguno.
@@ -1539,8 +1539,11 @@ function rrProspectoCrm(d) {
   const plan = x.plan && typeof x.plan === 'object' ? x.plan : {};
   const antes = x.fichaAntes && typeof x.fichaAntes === 'object' ? x.fichaAntes : {};
   const tipo = String(x.tipo || '');
-  const comprobanteResuelto = tipo === 'comprobante' && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible';
-  const inicioCompra = tipo === 'qr' || comprobanteResuelto || antes.pedidos > 0 || antes.comprobanteMs > 0;
+  // Un cobro SIMULADO (QR de demostración, comprobante simulado) no es una compra: no cuenta. La ficha anterior solo cuenta si la conversación sigue viva: quien vuelve tras 48 h (`nuevoContacto`) es otra conversación.
+  const simulado = plan.simulado === true || plan.resultado === 'simulado';
+  const comprobanteResuelto = tipo === 'comprobante' && !simulado && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible';
+  const previo = x.nuevoContacto !== true && (antes.pedidos > 0 || antes.comprobanteMs > 0);
+  const inicioCompra = (tipo === 'qr' && !simulado) || comprobanteResuelto || previo;
   const pidioLlamada = tipo === 'derivar' && plan.clave === 'hablar_con_ruben';
   const senales = { inicioCompra: inicioCompra === true, pidioLlamada: pidioLlamada === true, llegoPorAnuncio: x.anuncio === true };
   let quePidio = '';

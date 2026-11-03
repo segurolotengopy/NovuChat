@@ -72,7 +72,7 @@ describe('unidades: tabla de leads de un vendedor (rrProspectoCrm + crmDecidirFi
     expect(celda(r, 'origen')).toBe('Campaña Meta Ads');
   });
   it('comprobante recibido (cotejado o no) -> Caliente; uno ilegible o por reintentar NO', () => {
-    for (const resultado of ['valido', 'diferencia', 'en_revision', 'tardio']) {
+    for (const resultado of ['cuadra', 'aproximado', 'monto_distinto', 'tardio', 'ya_cotejado', 'sin_cotejo']) {
       const p = prospecto({ tipo: 'comprobante', plan: { tipo: 'comprobante', resultado } });
       expect((p['senales'] as J)['inicioCompra'], resultado).toBe(true);
       expect(celda(decidir(p), 'clasificacion')).toBe('Caliente');
@@ -84,9 +84,23 @@ describe('unidades: tabla de leads de un vendedor (rrProspectoCrm + crmDecidirFi
     }
   });
   it('una ficha con un QR ya emitido o un comprobante recibido en turnos anteriores sigue siendo inicio de compra', () => {
-    expect((prospecto({ fichaAntes: { pedidos: 1 } })['senales'] as J)['inicioCompra']).toBe(true);
-    expect((prospecto({ fichaAntes: { comprobanteMs: AHORA - 1000 } })['senales'] as J)['inicioCompra']).toBe(true);
-    expect((prospecto({ fichaAntes: { pedidos: 0, comprobanteMs: 0 } })['senales'] as J)['inicioCompra']).toBe(false);
+    expect((prospecto({ fichaAntes: { pedidos: 1 }, nuevoContacto: false })['senales'] as J)['inicioCompra']).toBe(true);
+    expect((prospecto({ fichaAntes: { comprobanteMs: AHORA - 1000 }, nuevoContacto: false })['senales'] as J)['inicioCompra']).toBe(true);
+    expect((prospecto({ fichaAntes: { pedidos: 0, comprobanteMs: 0 }, nuevoContacto: false })['senales'] as J)['inicioCompra']).toBe(false);
+  });
+  it('quien compró o pagó y vuelve tras 48 h (contacto nuevo) NO es Caliente por la ficha vieja', () => {
+    for (const fichaAntes of [{ pedidos: 1 }, { comprobanteMs: AHORA - 3 * 24 * 3600 * 1000 }, { pedidos: 2, comprobanteMs: 1 }]) {
+      const p = prospecto({ fichaAntes, nuevoContacto: true });
+      expect((p['senales'] as J)['inicioCompra'], JSON.stringify(fichaAntes)).toBe(false);
+      expect(celda(decidir(p), 'clasificacion')).toBe('Tibio');
+    }
+  });
+  it('un cobro SIMULADO (QR de demostración o comprobante simulado) no es inicio de compra', () => {
+    const qr = prospecto({ tipo: 'qr', plan: { tipo: 'qr', producto: 'pack', simulado: true } });
+    expect((qr['senales'] as J)['inicioCompra']).toBe(false);
+    expect(celda(decidir(qr), 'clasificacion')).toBe('Tibio');
+    const comp = prospecto({ tipo: 'comprobante', plan: { tipo: 'comprobante', resultado: 'simulado' } });
+    expect((comp['senales'] as J)['inicioCompra']).toBe(false);
   });
   it('pidió hablar con Rubén (derivación) -> Caliente, «Pidió hablar con Rubén» solo si el aviso salió', () => {
     const plan = { tipo: 'derivar', clave: 'hablar_con_ruben', motivo: 'hablar_boton' };
@@ -231,6 +245,13 @@ function crear(o: { base?: J; dobles?: Record<string, Doble>; flujo?: Flujo; ate
 const hablar = (w: { mundo: Mundo }, from: string, msg: J, tolerar = false): ResultadoTurno => w.mundo.turno(entrega(msg, from), tolerar ? { tolerarFallo: true } : {});
 const corrioLaRama = (t: ResultadoTurno): boolean => t.ejecutados.has('Prospecto para la planilla') && t.ejecutados.has('Decidir fila de la planilla');
 const prospectoDe = (t: ResultadoTurno): J | undefined => (t.porNodo['Prospecto para la planilla'] ?? [])[0];
+/** La negación de verdad: «Armar mensajes» CORRIÓ y su salida dice `guardarPlanilla: false` (no basta con que la rama no corra: el flujo pudo caerse antes). */
+const armoSinGuardar = (t: ResultadoTurno): void => {
+  expect(t.ejecutados.has('Armar mensajes')).toBe(true);
+  const salida = t.porNodo['Armar mensajes'] ?? [];
+  expect(salida.length).toBeGreaterThan(0);
+  for (const s of salida) expect(s['guardarPlanilla']).toBe(false);
+};
 
 describe('flujo: quién guarda y quién no', () => {
   it('una conversación normal (id y hoja) agrega UNA fila con el prospecto', () => {
@@ -285,6 +306,7 @@ describe('flujo: quién guarda y quién no', () => {
   it('un número de otro país no guarda', () => {
     const pl = planilla();
     const t = hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles }), ['54', '9', '11', '55500001'].join(''), mTexto('hola'), true);
+    armoSinGuardar(t);
     expect(corrioLaRama(t)).toBe(false);
     expect(pl.escrituras).toEqual([]);
   });
@@ -292,6 +314,7 @@ describe('flujo: quién guarda y quién no', () => {
     const pl = planilla();
     const w = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, atencion: { estado: 'operador', mensajeFijo: 'Una persona del equipo va a continuar esta conversación.', respuestasEnVentana: 40 } });
     const t = hablar(w, ANA, mTexto('hola'));
+    armoSinGuardar(t);
     expect(corrioLaRama(t)).toBe(false);
     expect(pl.escrituras).toEqual([]);
   });
@@ -299,6 +322,7 @@ describe('flujo: quién guarda y quién no', () => {
     const pl = planilla();
     const w = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, atencion: { estado: 'bloqueado' } });
     const t = hablar(w, ANA, mTexto('hola'), true);
+    armoSinGuardar(t);
     expect(corrioLaRama(t)).toBe(false);
     expect(pl.escrituras).toEqual([]);
   });
@@ -306,14 +330,26 @@ describe('flujo: quién guarda y quién no', () => {
     const pl = planilla();
     const w = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, panel: { statusCode: 409, body: { mensajeCortesia: 'En este momento no podemos atenderte por este medio. Gracias por escribirnos.' } } });
     const t = hablar(w, ANA, mTexto('hola'), true);
+    armoSinGuardar(t);
     expect(corrioLaRama(t)).toBe(false);
     expect(pl.escrituras).toEqual([]);
   });
+  // La variante de prueba (id vacío en el JSON) con el id forzado por `configBase`: SIN modo prueba escribe (gemelo positivo); CON modo prueba, no.
+  const turnoDePrueba = (w: { mundo: Mundo }, modoPrueba: boolean): ResultadoTurno => w.mundo.turno({ headers: {}, body: {
+    // La forma de «Entrada de prueba» (la de venta.test.ts): el valor de Meta va PLANO en el cuerpo, con `modoPrueba` al lado.
+    ...(modoPrueba ? { modoPrueba: true, telefonoDePrueba: ANA, enviarDeVerdad: false } : {}),
+    messaging_product: 'whatsapp', metadata: { phone_number_id: PID }, contacts: [{ profile: { name: 'Ana' }, wa_id: ANA }], messages: [{ from: ANA, id: `wamid.P${++seq}`, timestamp: '1', type: 'text', text: { body: 'hola' } }],
+  } }, { tolerarFallo: true });
+  it('gemelo positivo: la variante de prueba con id forzado y SIN modo prueba sí corre la rama', () => {
+    const pl = planilla();
+    const t = turnoDePrueba(crear({ flujo: PRUEBA, base: { ...BASE_CON_PLANILLA }, dobles: pl.dobles }), false);
+    expect(t.ejecutados.has('Armar mensajes')).toBe(true);
+    expect(corrioLaRama(t)).toBe(true);
+  });
   it('el modo prueba (entrada de prueba) no guarda', () => {
     const pl = planilla();
-    const w = crear({ flujo: PRUEBA, base: { ...BASE_CON_PLANILLA }, dobles: pl.dobles });
-    // La variante de prueba va con el id vacío en el JSON; aun forzando uno por `configBase`, el modo prueba no escribe.
-    const t = w.mundo.turno({ body: { value: { messaging_product: 'whatsapp', metadata: { phone_number_id: PID }, contacts: [{ profile: { name: 'Ana' }, wa_id: ANA }], messages: [{ from: ANA, id: 'wamid.P1', timestamp: '1', type: 'text', text: { body: 'hola' } }] }, prueba: { modoPrueba: true, telefonoDePrueba: ANA, enviarDeVerdad: false } } }, { tolerarFallo: true });
+    const t = turnoDePrueba(crear({ flujo: PRUEBA, base: { ...BASE_CON_PLANILLA }, dobles: pl.dobles }), true);
+    armoSinGuardar(t);
     expect(corrioLaRama(t)).toBe(false);
     expect(pl.escrituras).toEqual([]);
   });
