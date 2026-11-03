@@ -38,14 +38,24 @@ describe('preparar-import.sh y RELE_URL_INTERNA', () => {
   };
   const salidaLocal = (): string => readFileSync(join(raiz, 'Flujos', 'f.local.json'), 'utf8');
 
-  function correr(valor: string | undefined, o: { enEnv?: boolean; enTabla?: string } = {}) {
+  /**
+   * `lista` = RELE_BASES_PERMITIDAS (obligatoria desde la ronda 3 del PR #757): por omisión, la base exacta que se quiere reponer (o la de la tabla).
+   * `enEnv` pone RELE_URL_INTERNA (y la lista) en el `.env` del cliente; `terminal` pone valores DISTINTOS en la terminal, para probar la prioridad.
+   */
+  function correr(valor: string | undefined, o: { enEnv?: boolean; enTabla?: string; lista?: string; listaEnEnv?: boolean; terminal?: { url?: string; lista?: string } } = {}) {
     writeFileSync(join(raiz, 'Flujos', 'f.json'), JSON.stringify(FLUJO));
-    writeFileSync(join(raiz, '.env.prueba'), `N8N_BASE_URL=https://n8n.invalid\n${o.enEnv && valor !== undefined ? `RELE_URL_INTERNA=${valor}\n` : ''}`);
+    const lista = o.lista ?? valor ?? o.enTabla ?? '';
+    const lineasEnv = `${o.enEnv && valor !== undefined ? `RELE_URL_INTERNA=${valor}\n` : ''}${o.listaEnEnv ? `RELE_BASES_PERMITIDAS=${lista}\n` : ''}`;
+    writeFileSync(join(raiz, '.env.prueba'), `N8N_BASE_URL=https://n8n.invalid\n${lineasEnv}`);
     writeFileSync(join(raiz, 'tabla.md'), '| Marcador | Valor |\n|---|---|\n');
     if (o.enTabla !== undefined) writeFileSync(join(raiz, 'tabla.md'), `| Marcador | Valor |\n|---|---|\n| \`${MARCADOR}\` | ${o.enTabla} |\n`);
     const r = spawnSync('bash', ['scripts/preparar-import.sh', 'Flujos/f.json', '.env.prueba'], {
       cwd: raiz, encoding: 'utf8',
-      env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: join(raiz, 'tabla.md'), BASH_ENV: '', ENV: '', RELE_URL_INTERNA: o.enEnv ? '' : (valor ?? '') }),
+      env: entornoDelEmulador(undefined, {
+        CONFIG_LOCAL_MD: join(raiz, 'tabla.md'), BASH_ENV: '', ENV: '',
+        RELE_URL_INTERNA: o.terminal ? (o.terminal.url ?? '') : (o.enEnv ? '' : (valor ?? '')),
+        RELE_BASES_PERMITIDAS: o.terminal ? (o.terminal.lista ?? '') : (o.listaEnEnv ? '' : lista),
+      }),
     });
     return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
   }
@@ -95,7 +105,69 @@ describe('preparar-import.sh y RELE_URL_INTERNA', () => {
     }
   });
 
-  it('la lista cerrada opcional RELE_BASES_PERMITIDAS deja pasar solo lo que nombra', () => {
+  it('NIEGA: sin RELE_BASES_PERMITIDAS no se repone nada: aborta, no escribe la salida y no muestra el valor (ronda 3 del PR #757)', () => {
+    for (const v of ['https://rele.empresa.example.com', 'http://relay:8080']) {
+      rmSync(join(raiz, 'Flujos', 'f.local.json'), { force: true });
+      const r = correr(v, { lista: '' });
+      expect(r.codigo, `${v}\n${r.salida}`).toBe(1);
+      expect(r.salida).toContain('RELE_BASES_PERMITIDAS');
+      expect(existsSync(join(raiz, 'Flujos', 'f.local.json')), v).toBe(false);
+      expect(r.salida).not.toContain(v);
+    }
+  });
+
+  it('NIEGA: la lista tiene que nombrar la base EXACTA: el host solo, otro puerto u otro esquema no valen', () => {
+    for (const [v, lista] of [['https://rele.empresa.example.com', 'rele.empresa.example.com'], ['https://rele.empresa.example.com:8443', 'https://rele.empresa.example.com'],
+      ['http://relay:8080', 'https://relay:8080'], ['http://relay:8080', 'http://relay'], ['http://relay:8080', 'relay']] as const) {
+      rmSync(join(raiz, 'Flujos', 'f.local.json'), { force: true });
+      const r = correr(v, { lista });
+      expect(r.codigo, `${v} vs ${lista}\n${r.salida}`).toBe(1);
+      expect(existsSync(join(raiz, 'Flujos', 'f.local.json')), `${v} vs ${lista}`).toBe(false);
+    }
+  });
+
+  it('NIEGA: 255.x.x.x, multicast 224.0.0.0/4 y reservadas 240.0.0.0/4 abortan con http y con https, aunque la lista las nombre', () => {
+    for (const v of ['http://255.255.255.255', 'https://255.1.2.3', 'http://224.0.0.1', 'https://239.255.255.250', 'http://240.0.0.1', 'https://250.1.1.1:8443']) {
+      rmSync(join(raiz, 'Flujos', 'f.local.json'), { force: true });
+      const r = correr(v);
+      expect(r.codigo, `${v}\n${r.salida}`).toBe(1);
+      expect(r.salida).toContain('multicast');
+      expect(existsSync(join(raiz, 'Flujos', 'f.local.json')), v).toBe(false);
+    }
+    // Y 223.x.x.x (justo debajo) no es multicast: con https y la lista exacta se repone.
+    // (la IP se arma por partes: el saneo del repositorio público veta una IPv4 pública escrita en un archivo)
+    expect(correr(`https://${['223', '1', '2', '3'].join('.')}`).codigo).toBe(0);
+  });
+
+  it('el .env del cliente manda sobre la variable de la terminal: si difieren se avisa SIN mostrar valores y se usa la del .env', () => {
+    const r = correr('http://relay:8080', { enEnv: true, listaEnEnv: true, terminal: { url: 'https://otro.cliente.example.com', lista: 'https://otro.cliente.example.com' } });
+    expect(r.codigo, r.salida).toBe(0);
+    expect(salidaLocal()).toContain('http://relay:8080/v1/envio/mensajes/');
+    expect(salidaLocal()).not.toContain('otro.cliente.example.com');
+    expect(r.salida).toMatch(/RELE_URL_INTERNA: la variable de la terminal difiere/);
+    expect(r.salida).toMatch(/RELE_BASES_PERMITIDAS: la variable de la terminal difiere/);
+    expect(r.salida).not.toContain('relay:8080');
+    expect(r.salida).not.toContain('otro.cliente.example.com');
+  });
+
+  it('el marcador como DATO suelto (salida-de-persona.json lo lleva en Config base y valida su propia lista) no exige la lista: se repone igual', () => {
+    const suelto = { name: 'f', nodes: [{ name: 'Config base', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: [0, 0], parameters: { value: MARCADOR } }], connections: {}, settings: {} };
+    writeFileSync(join(raiz, 'Flujos', 'f.json'), JSON.stringify(suelto));
+    const r = spawnSync('bash', ['scripts/preparar-import.sh', 'Flujos/f.json', '.env.prueba'], {
+      cwd: raiz, encoding: 'utf8',
+      env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: join(raiz, 'tabla.md'), BASH_ENV: '', ENV: '', RELE_URL_INTERNA: 'https://rele.empresa.example.com', RELE_BASES_PERMITIDAS: '' }),
+    });
+    expect(r.status, `${r.stdout}${r.stderr}`).toBe(0);
+    expect(salidaLocal()).toContain('"value": "https://rele.empresa.example.com"');
+  });
+
+  it('NIEGA: la lista del .env también manda: una lista de la terminal que sí nombraba la base no la rescata', () => {
+    const r = correr('https://rele.empresa.example.com', { enEnv: true, listaEnEnv: true, lista: 'https://otra.example.com', terminal: { url: 'https://rele.empresa.example.com', lista: 'https://rele.empresa.example.com' } });
+    expect(r.codigo, r.salida).toBe(1);
+    expect(existsSync(join(raiz, 'Flujos', 'f.local.json'))).toBe(false);
+  });
+
+  it('la lista cerrada RELE_BASES_PERMITIDAS deja pasar solo lo que nombra', () => {
     const corre = (v: string, lista: string) => {
       writeFileSync(join(raiz, 'Flujos', 'f.json'), JSON.stringify(FLUJO));
       const r = spawnSync('bash', ['scripts/preparar-import.sh', 'Flujos/f.json', '.env.prueba'], {

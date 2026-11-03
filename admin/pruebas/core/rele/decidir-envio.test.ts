@@ -170,6 +170,12 @@ describe('incierto: red, tiempo, cuerpos raros', () => {
   it('un error de red o de tiempo (texto) es incierto', () => {
     for (const r of [{ error: 'timeout of 30000ms exceeded' }, { error: 'ECONNRESET' }, { error: true }, { error: ['x'] }]) expect(d(r), JSON.stringify(r)).toMatchObject({ accion: 'incierto', esperaS: 0 });
   });
+  it('la forma real del error de red de HttpRequestV3 ({ error: { message, code: ECONNABORTED } }) es incierto con SIN-CODIGO: no se reenvía ni se respalda', () => {
+    for (const code of ['ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET']) {
+      const r = d({ error: { message: 'timeout of 30000ms exceeded', code } });
+      expect(r, code).toMatchObject({ accion: 'incierto', codigo: 'SIN-CODIGO', esperaS: 0 });
+    }
+  });
   it('un error sin código WM o con código mal formado es incierto', () => {
     for (const r of [{ error: {} }, { error: { codigo: 5 } }, { error: { codigo: 'wm-3037' } }, { error: { codigo: 'WM-37' } }, { error: { codigo: 'WM-3037 ; drop' } }, { error: { message: 'x', reintentable: true } }]) {
       expect(d(r), JSON.stringify(r)).toMatchObject({ accion: 'incierto' });

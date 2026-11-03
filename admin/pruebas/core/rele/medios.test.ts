@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  CUPO_POR_DEFECTO_RELE, cabeceraDeFuentes, FUENTE_CUPO, FUENTE_PREPARAR, hallazgosDelGuardado, injertarGuardado, manejaMedios, nodosDelGuardado, urlDescargaRele, urlInfoRele, URL_DESCARGA_GUARDADO, NODOS_DE_META_DEL_GUARDADO,
+  CUPO_POR_DEFECTO_RELE, cabeceraDeFuentes, FUENTE_CUPO, FUENTE_PREPARAR, hallazgosDelGuardado, injertarGuardado, manejaMedios, nodosDelGuardado, NODOS_DE_REINTENTO_RELE, ESPERA_429_RELE, urlDescargaRele, urlInfoRele, URL_DESCARGA_GUARDADO, NODOS_DE_META_DEL_GUARDADO,
   type OpcionesDelGuardado,
 } from '../../../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 import { MARCADOR_URL_DEL_RELE } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
@@ -52,7 +52,7 @@ function flujoBase(): Flujo {
 }
 const flujoConGuardado = (o: Partial<OpcionesDelGuardado> = {}): Flujo => injertarGuardado(flujoBase(), { ...OPC, ...o });
 
-interface Mundo { r: (m: J, o?: { tamano?: number | null; info?: J | 'lanza'; contenido?: 'lanza' | 'ok'; servidor?: number; aviso?: 'lanza'; ahoraMs?: number }, de?: string, wamid?: string) => ResultadoTurno; llamadas: Record<'info' | 'contenido' | 'servidor' | 'aviso', LlamadaDoble[]>; sd: J }
+interface Mundo { r: (m: J, o?: { tamano?: number | null; info?: J | 'lanza'; contenido?: 'lanza' | 'ok'; infoSec?: string[]; contenidoSec?: string[]; servidor?: number; aviso?: 'lanza'; ahoraMs?: number }, de?: string, wamid?: string) => ResultadoTurno; llamadas: Record<'info' | 'contenido' | 'servidor' | 'aviso', LlamadaDoble[]>; sd: J }
 function mundo(flujo: Flujo = flujoConGuardado()): Mundo {
   const llamadas: Mundo['llamadas'] = { info: [], contenido: [], servidor: [], aviso: [] };
   let cfg: Parameters<Mundo['r']>[1] = {};
@@ -63,6 +63,9 @@ function mundo(flujo: Flujo = flujoConGuardado()): Mundo {
       'Obtener URL del medio (general)': () => ({}),
       'Pedir el medio a Meta (guardado)': (ll) => {
         llamadas.info.push(ll);
+        // Una secuencia por llamada: cada texto es el error que lanza el relé en esa vuelta ('ok' = contesta bien; la última se repite).
+        const sec = cfg?.infoSec?.[Math.min(llamadas.info.length, cfg.infoSec.length) - 1];
+        if (sec !== undefined && sec !== 'ok') throw new Error(sec);
         if (cfg?.info === 'lanza') throw new Error('502 WM-3040 (id vencido)');
         if (cfg?.info) return cfg.info;
         return cfg?.tamano === null ? { id: 'M1', mime_type: 'image/jpeg' } : { id: 'M1', mime_type: 'image/jpeg', file_size: cfg?.tamano ?? 2048, sha256: 'x' };
@@ -71,6 +74,8 @@ function mundo(flujo: Flujo = flujoConGuardado()): Mundo {
         llamadas.contenido.push(ll);
         // Como n8n: una URL vacía revienta, y un no-2xx también (sin neverError): el item queda con `error` y sin binario.
         if (ll.url === '') throw new Error('Invalid URL');
+        const sec = cfg?.contenidoSec?.[Math.min(llamadas.contenido.length, cfg.contenidoSec.length) - 1];
+        if (sec !== undefined && sec !== 'ok') throw new Error(sec);
         if (cfg?.contenido === 'lanza') throw new Error('The service was not able to process your request (404)');
         return { data: 'binario' };
       },
@@ -107,7 +112,7 @@ describe('la rama armada para el relé', () => {
   });
   it('info: GET /v1/envio/medios/<id>; contenido: …/contenido; las dos con la credencial «AAB1 envío · alias» y SIN reintentos', () => {
     expect(nodo('Pedir el medio a Meta (guardado)').parameters['url']).toBe(urlInfoRele());
-    expect(nodo('Pedir el medio a Meta (guardado)').parameters['url']).toBe(`=${MARCADOR_URL_DEL_RELE}/v1/envio/medios/{{ String($json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}`);
+    expect(nodo('Pedir el medio a Meta (guardado)').parameters['url']).toBe(`=${MARCADOR_URL_DEL_RELE}/v1/envio/medios/{{ String($('Preparar guardado').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}`);
     expect(nodo('Descargar medio (guardado)').parameters['url']).toBe(urlDescargaRele());
     for (const n of NODOS_DE_META_DEL_GUARDADO) {
       expect(nodo(n).credentials).toEqual({ httpHeaderAuth: { id: '', name: CRED_RELE } });
@@ -463,5 +468,111 @@ describe('el canal Graph no cambia', () => {
   it('una URL de relé sigue sin ser un pedido a Meta para el resto: urlInfoRele y urlDescargaRele llevan el marcador por defecto', () => {
     expect(urlInfoRele()).toContain(MARCADOR_URL_DEL_RELE);
     expect(urlDescargaRele()).toContain(`'${MARCADOR_URL_DEL_RELE}/v1/envio/medios/'`);
+  });
+});
+
+describe('un 429 (WM-3037) del relé en la info o en /contenido: UN reintento tras 2 a 3 s; nada más se repite (PR #757, ronda 3)', () => {
+  const E429 = 'The service is receiving too many requests (429) WM-3037';
+  it('la rama del relé lleva 4 nodos más (dos compuertas y dos esperas) y el canal Graph ninguno', () => {
+    const f = flujoConGuardado();
+    expect(f.nodes.filter((n) => NODOS_DE_REINTENTO_RELE.includes(n.name))).toHaveLength(4);
+    expect(hallazgosDelGuardado(f)).toEqual([]);
+    const w = f.nodes.find((n) => n.name === 'Esperar para repetir la info')!;
+    expect(w.parameters['amount']).toBe(ESPERA_429_RELE);
+  });
+  it('info: 429 y luego bien → DOS pedidos de info, una espera de 2 a 3 s, y el medio se guarda', () => {
+    const m = mundo();
+    const r = m.r(imagen(), { infoSec: [E429, 'ok'] });
+    expect(m.llamadas.info).toHaveLength(2);
+    expect(m.llamadas.info[1]!.url).toBe(`${MARCADOR_URL_DEL_RELE}/v1/envio/medios/M1`);
+    expect(r.esperas.map((e) => e.nodo)).toEqual(['Esperar para repetir la info']);
+    expect(r.esperas[0]!.segundos).toBeGreaterThanOrEqual(2);
+    expect(r.esperas[0]!.segundos).toBeLessThanOrEqual(3);
+    expect(m.llamadas.contenido).toHaveLength(1);
+    expect(m.llamadas.servidor).toHaveLength(1);
+  });
+  it('NIEGA: info con 429 dos veces → un solo reintento, sin tercera llamada y sin descargar nada', () => {
+    const m = mundo();
+    const r = m.r(imagen(), { infoSec: [E429, E429] });
+    expect(m.llamadas.info).toHaveLength(2);
+    expect(r.esperas).toHaveLength(1);
+    expect(m.llamadas.contenido.map((x) => x.url)).toEqual(['']);
+    expect(m.llamadas.servidor).toHaveLength(0);
+    expect(r.fallo).toBeNull();
+  });
+  it('contenido: 429 y luego bien → DOS descargas, una espera y el medio se guarda; con dos 429 falla sin tercer intento', () => {
+    const bien = mundo();
+    const r = bien.r(imagen(), { contenidoSec: [E429, 'ok'] });
+    expect(bien.llamadas.contenido).toHaveLength(2);
+    expect(bien.llamadas.contenido[1]!.url).toMatch(/\/v1\/envio\/medios\/M1\/contenido$/);
+    expect(r.esperas.map((e) => e.nodo)).toEqual(['Esperar para repetir el contenido']);
+    expect(bien.llamadas.servidor).toHaveLength(1);
+    expect(bien.llamadas.info).toHaveLength(1);
+    const mal = mundo();
+    const r2 = mal.r(imagen(), { contenidoSec: [E429, E429] });
+    expect(mal.llamadas.contenido).toHaveLength(2);
+    expect(r2.esperas).toHaveLength(1);
+    expect(mal.llamadas.servidor).toHaveLength(0);
+  });
+  it('NIEGA: WM-3040 (502, id vencido) y WM-3039 (413) NUNCA se reintentan, ni en la info ni en /contenido; tampoco un 5xx cualquiera', () => {
+    for (const e of ['502 WM-3040 (id vencido)', '413 WM-3039 (demasiado grande)', '500 error interno', 'ECONNABORTED']) {
+      const a = mundo();
+      const ra = a.r(imagen(), { infoSec: [e] });
+      expect(a.llamadas.info, `info ${e}`).toHaveLength(1);
+      expect(ra.esperas, `info ${e}`).toEqual([]);
+      const b = mundo();
+      const rb = b.r(imagen(), { contenidoSec: [e] });
+      expect(b.llamadas.contenido, `contenido ${e}`).toHaveLength(1);
+      expect(rb.esperas, `contenido ${e}`).toEqual([]);
+    }
+  });
+  it('NIEGA: un error que nombra WM-3037 y también WM-3040/3039 no se repite (gana la prohibición)', () => {
+    const m = mundo();
+    const r = m.r(imagen(), { infoSec: ['WM-3037 y luego WM-3040'] });
+    expect(m.llamadas.info).toHaveLength(1);
+    expect(r.esperas).toEqual([]);
+  });
+  it('la compuerta también reconoce la forma real de n8n (objeto con httpCode «429»)', () => {
+    const f = flujoConGuardado();
+    const c = f.nodes.find((n) => n.name === '¿Info limitada (429)?')!;
+    expect(JSON.stringify(c.parameters)).toContain('httpCode');
+  });
+});
+
+describe('falla cerrado si falta el límite de tamaño (GM_LIMITE) y el cupo cuenta un voice con solo la clave audio (PR #757, ronda 3)', () => {
+  it('NIEGA: sin `limite` en «Preparar guardado» (NaN) NO se descarga nada, aunque la info traiga un tamaño', () => {
+    const f = flujoConGuardado();
+    const prep = f.nodes.find((n) => n.name === 'Preparar guardado')!;
+    const js = String(prep.parameters['jsCode']);
+    expect(js).toContain('limite: GM_LIMITE,');
+    prep.parameters['jsCode'] = js.replace('limite: GM_LIMITE,', '');
+    const m = mundo(f);
+    m.r(imagen());
+    expect(m.llamadas.info).toHaveLength(1);
+    expect(m.llamadas.contenido.map((x) => x.url)).toEqual(['']);
+    expect(m.llamadas.servidor).toHaveLength(0);
+  });
+  it('NIEGA: con `limite` no numérico tampoco; con el límite puesto sí se baja', () => {
+    const f = flujoConGuardado();
+    const prep = f.nodes.find((n) => n.name === 'Preparar guardado')!;
+    prep.parameters['jsCode'] = String(prep.parameters['jsCode']).replace('limite: GM_LIMITE,', "limite: 'mucho',");
+    const m = mundo(f);
+    m.r(imagen());
+    expect(m.llamadas.contenido.map((x) => x.url)).toEqual(['']);
+    const bien = mundo();
+    bien.r(imagen());
+    expect(bien.llamadas.contenido[0]!.url).toMatch(/\/contenido$/);
+  });
+  const voz = (id: string): J => ({ type: 'voice', audio: { id, mime_type: 'audio/ogg' } });
+  it('un mensaje `voice` con SOLO la clave audio se guarda y gasta cupo: con 12 del mismo teléfono se guardan 10', () => {
+    const m = mundo();
+    for (let i = 0; i < 12; i++) m.r(voz(`V${i}`), {}, '59170000001', `wamid.V${i}`);
+    expect(m.llamadas.info).toHaveLength(10);
+    expect(m.llamadas.servidor).toHaveLength(10);
+  });
+  it('y al revés: un `audio` con solo la clave voice gasta cupo igual', () => {
+    const m = mundo();
+    for (let i = 0; i < 12; i++) m.r({ type: 'audio', voice: { id: `V${i}`, mime_type: 'audio/ogg' } }, {}, '59170000002', `wamid.W${i}`);
+    expect(m.llamadas.info).toHaveLength(10);
   });
 });

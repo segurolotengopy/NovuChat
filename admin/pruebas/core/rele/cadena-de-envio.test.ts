@@ -9,7 +9,7 @@
  *   - ningún nodo habla con Graph, su CDN ni la credencial `whatsAppApi`; la URL del relé es solo el marcador.
  */
 import { describe, expect, it } from 'vitest';
-import { nodosDeEnvio, injertar, llamaANumerar, MARCADOR_URL_DEL_RELE, NODOS_DEL_ENVIO_RELE } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
+import { nodosDeEnvio, injertar, llamaANumerar, hallazgosDelEnvioRele, MARCADOR_URL_DEL_RELE, NODOS_DEL_ENVIO_RELE } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
 import { CLIENTE, WF, CRED_INGESTA, CRED_RELE, MENSAJES_JS, OPC_RELE, falla, flujoConCadena, mensaje, mundoRele, ok, turno, type Envio } from './ayuda';
 import { crearMundo } from '../../lib/n8n-de-mentira';
 import type { J } from '../../lib/flujo';
@@ -472,5 +472,58 @@ describe('cmNumerar (P4)', () => {
   });
   it('no usa nada que el Code de n8n no tenga', () => {
     expect(MENSAJES_JS.replace(/^\s*\/\/.*$/gm, '')).not.toMatch(/\b(require|URL|Buffer|crypto|process)\b/);
+  });
+});
+
+describe('ORIGEN-AMBIGUO de punta a punta: «¿Enviar de verdad?» corre dos veces en el flujo armado (PR #757, ronda 3)', () => {
+  /** El flujo armado, con un segundo camino de «Armar mensajes» a «¿Enviar de verdad?»: el nodo corre DOS veces en el turno. */
+  function flujoConDobleEntrada() {
+    const f = flujoConCadena();
+    f.nodes.push({ name: 'Segundo camino', type: 'n8n-nodes-base.code', parameters: { jsCode: 'return $input.all();' }, position: [400, 500] } as never);
+    f.connections['Armar mensajes']!.main[0]!.push({ node: 'Segundo camino', type: 'main', index: 0 });
+    f.connections['Segundo camino'] = { main: [[{ node: '¿Enviar de verdad?', type: 'main', index: 0 }]] };
+    return f;
+  }
+  /** El primer envío sale bien; el segundo (el de la segunda corrida de «¿Enviar de verdad?») recibiría un 429 que SIN la guardia se reintentaría. */
+  const armar = (f: ReturnType<typeof flujoConCadena>, guion: (n: number) => J = () => falla('WM-3037')) => {
+    const envios: Envio[] = [];
+    const mu = crearMundo({
+      flujo: f, ahoraMs: Date.UTC(2026, 10, 2, 15, 0, 0),
+      dobles: {
+        'Enviar a WhatsApp': (ll) => { envios.push({ nodo: Q, clave: ll.encabezados['Idempotency-Key'] ?? '', vez: 1, url: ll.url, cuerpo: ll.cuerpo ?? {}, encabezados: ll.encabezados, parametros: ll.parametros }); return guion(envios.filter((e) => e.nodo === Q).length); },
+        'Enviar respaldo': (ll) => { envios.push({ nodo: R, clave: '', vez: 1, url: ll.url, cuerpo: {}, encabezados: ll.encabezados, parametros: ll.parametros }); return ok('respaldo'); },
+        'Reportar mensaje (saliente)': () => ({ ok: true }),
+      },
+    });
+    return { mu, envios };
+  };
+  it('el flujo armado con una sola entrada NO es ambiguo (el mismo guion reintenta el 429 normal)', () => {
+    const { mu, envios } = armar(flujoConCadena());
+    const r = mu.turno({ mensajes: [mensaje(1)], sinNumerar: false }, { idEjecucion: 'E1' });
+    expect(r.esperas).toHaveLength(1);
+    expect(envios.filter((e) => e.nodo === Q)).toHaveLength(2);
+  });
+  it('NIEGA: con dos corridas de «¿Enviar de verdad?» la segunda tanda sale incierta ORIGEN-AMBIGUO: sin reintento (ni espera), sin respaldo y sin reporte', () => {
+    // n8n (executionOrder v1) termina un camino entero antes del siguiente: la 1.ª tanda se decide con su origen correcto (solo había una corrida); en la 2.ª, `all(0, 0)` ya
+    // sería el lote de OTRA tanda, y la guardia lo declara incierto en vez de emparejar la respuesta con el mensaje equivocado.
+    const { mu, envios } = armar(flujoConDobleEntrada(), (n) => (n === 1 ? ok('1') : falla('WM-3037')));
+    const r = mu.turno({ mensajes: [mensaje(1)], sinNumerar: false }, { idEjecucion: 'E1' });
+    const leidos = (r.porNodo['Leer respuesta del relé'] ?? []);
+    expect(leidos.map((x) => x['accion'])).toEqual(['ok', 'incierto']);
+    expect(leidos[1]!['codigo']).toBe('ORIGEN-AMBIGUO');
+    expect(String(leidos[1]!['motivo'])).toMatch(/mas de una vez/);
+    expect(r.esperas).toEqual([]);
+    expect(envios.filter((e) => e.nodo === R)).toHaveLength(0);
+    // Los dos envíos son los de las dos corridas del origen; la decisión no reenvió nada (la 429 de la 2.ª no se reintenta).
+    expect(envios.filter((e) => e.nodo === Q)).toHaveLength(2);
+    // Solo la 1.ª tanda (sin ambigüedad) se reporta.
+    expect(r.llamadas.ingesta).toHaveLength(1);
+  });
+  it('el flujo armado lo declara: `hallazgosDelEnvioRele` pasa en el flujo armado y se queja si se quita la guardia del nodo', () => {
+    const f = flujoConDobleEntrada();
+    expect(hallazgosDelEnvioRele(f)).toEqual([]);
+    const leer = f.nodes.find((n) => n.name === 'Leer respuesta del relé')!;
+    leer.parameters['jsCode'] = String(leer.parameters['jsCode']).replace('ORIGEN-AMBIGUO', 'X');
+    expect(hallazgosDelEnvioRele(f).join()).toMatch(/falla cerrado/);
   });
 });

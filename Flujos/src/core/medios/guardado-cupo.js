@@ -28,7 +28,9 @@ if (gcMsg && GC_MEDIOS.indexOf(String(gcMsg.type || '')) >= 0) {
   const gcTelefono = String(gcMsg.from || '');
   const gcRecepcion = String(gcCfg.numeroRecepcionDigitos || gcCfg.numeroRecepcion || '').replace(/\D/g, '');
   // Las validaciones de «Preparar guardado» que descartan un mensaje: lo descartado no se cuenta.
-  const gcMedio = gcMsg[String(gcMsg.type)];
+  // Mismo cálculo que «Preparar guardado»: un `voice` con solo la clave `audio` (o al revés) también es un medio y gasta cupo.
+  const gcTipoMeta = String(gcMsg.type);
+  const gcMedio = gcMsg[gcTipoMeta] || ((gcTipoMeta === 'audio' || gcTipoMeta === 'voice') ? (gcMsg.audio || gcMsg.voice) : null);
   const gcValido = !!gcMedio && typeof gcMedio === 'object'
     && /^\d{8,15}$/.test(gcTelefono)
     && /^[\x21-\x7e]{1,200}$/.test(String(gcMsg.id || ''))

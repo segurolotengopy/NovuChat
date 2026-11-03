@@ -140,10 +140,26 @@ for linea in open(local, encoding="utf-8"):
 # ignorados por git) o, si no, de la fila `REEMPLAZAR_URL_INTERNA_DEL_RELE` de la tabla. Es una BASE: esquema + host + puerto opcional, sin ruta, sin
 # barra final, sin credenciales. `http://` solo para un host INTERNO (un nombre sin puntos, como un contenedor; `localhost`; `*.internal`/`*.local`; una
 # IP privada o de loopback): el relé no sale a internet. Cualquier otro host exige `https://`. Si falta o es inválida, el marcador queda y el flujo no
-# se publica (`publicar-flujo.sh` aborta con cualquier REEMPLAZAR_* que quede). El valor no se imprime.
+# se publica (`publicar-flujo.sh` aborta con cualquier REEMPLAZAR_* que quede). El valor no se imprime. Rechaza además IP disfrazadas, link-local, 0.0.0.0/8, multicast
+# (224.0.0.0/4) y reservadas (240.0.0.0/4, 255.x.x.x).
+#
+# PRIORIDAD (PR #757, ronda 3): el `.env` del CLIENTE manda sobre la variable de la terminal (la terminal puede arrastrar el valor de otro cliente); si los dos
+# existen y difieren, se avisa SIN mostrar ningún valor y se usa el del `.env`. Lo mismo vale para RELE_BASES_PERMITIDAS.
+# RELE_BASES_PERMITIDAS es OBLIGATORIA cuando se repone la base del relé en una URL (`REEMPLAZAR_URL_INTERNA_DEL_RELE/v1/envio/…`): tiene que nombrar la base EXACTA
+# (`https://host[:puerto]`), separadas por comas si son varias; sin ella, el script no repone nada y aborta. (El flujo `salida-de-persona.json`, que lleva el marcador
+# solo como un dato de `Config base` y valida su propia lista, no entra en esta obligación.)
+def de_env(nombre):
+    """El valor del `.env` del cliente; si no, el de la terminal. Avisa (sin valores) si los dos existen y difieren."""
+    del_env = (env.get(nombre) or "").strip()
+    de_terminal = (os.environ.get(nombre) or "").strip()
+    if del_env and de_terminal and del_env != de_terminal:
+        print(f"  {GRIS}!{FIN} {nombre}: la variable de la terminal difiere de la de {env_file}; se usa la de {env_file} (valores no mostrados)")
+    return del_env or de_terminal
+
 MARCADOR_RELE = "REEMPLAZAR_URL_INTERNA_DEL_RELE"
 if MARCADOR_RELE in texto:
-    crudo = (os.environ.get("RELE_URL_INTERNA") or env.get("RELE_URL_INTERNA") or tabla.get(MARCADOR_RELE) or "").strip()
+    crudo = (de_env("RELE_URL_INTERNA") or tabla.get(MARCADOR_RELE) or "").strip()
+    exige_lista = re.search(re.escape(MARCADOR_RELE) + r'/v1/envio/', texto) is not None
     if crudo:
         m_base = re.fullmatch(r'(https?)://([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*)(?::(\d{1,5}))?', crudo)
         motivo = None
@@ -160,8 +176,9 @@ if MARCADOR_RELE in texto:
                 octetos[0] in (10, 127) or (octetos[0] == 192 and octetos[1] == 168) or (octetos[0] == 172 and 16 <= octetos[1] <= 31))
             interno = (len(partes) == 1 and re.fullmatch(r'[a-z][a-z0-9-]*', host) is not None) or host == "localhost" \
                 or host.endswith((".internal", ".local", ".localhost")) or privada
-            # Lista cerrada OPCIONAL (RELE_BASES_PERMITIDAS, separada por comas: bases «https://host[:puerto]» o hosts): si existe, solo esas.
-            permitidas = [x.strip().lower() for x in (os.environ.get("RELE_BASES_PERMITIDAS") or env.get("RELE_BASES_PERMITIDAS") or "").split(",") if x.strip()]
+            # Lista cerrada (RELE_BASES_PERMITIDAS, separada por comas: bases EXACTAS «esquema://host[:puerto]»): obligatoria si el marcador va en una URL del relé; si existe, solo esas.
+            permitidas = [x.strip().lower() for x in de_env("RELE_BASES_PERMITIDAS").split(",") if x.strip()]
+            base_exacta = f"{esquema}://{host}" + (f":{puerto}" if puerto else "")
             if puerto is not None and not (1 <= int(puerto) <= 65535):
                 motivo = "el puerto no es válido"
             elif host.startswith("metadata") or host.startswith("instance-data") or ".metadata." in host:
@@ -170,8 +187,12 @@ if MARCADOR_RELE in texto:
                 motivo = "el host es una IP disfrazada (etiqueta numérica o hexadecimal) o una IP que no está en forma canónica de cuatro octetos"
             elif canonica and (octetos[0] == 0 or (octetos[0] == 169 and octetos[1] == 254)):
                 motivo = "el host es link-local (169.254.0.0/16) o 0.0.0.0/8, donde viven los metadatos de la nube"
-            elif permitidas and not (host in permitidas or f"{esquema}://{host}" + (f":{puerto}" if puerto else "") in permitidas):
-                motivo = "el host no está en RELE_BASES_PERMITIDAS"
+            elif canonica and octetos[0] >= 224:
+                motivo = "el host es multicast (224.0.0.0/4) o reservado (240.0.0.0/4, incluye 255.x.x.x): no es un destino del relé"
+            elif exige_lista and not permitidas:
+                motivo = "se repone solo con RELE_BASES_PERMITIDAS definida (obligatoria: la base exacta del relé, «esquema://host[:puerto]»)"
+            elif permitidas and base_exacta not in permitidas:
+                motivo = "la base no está (exacta) en RELE_BASES_PERMITIDAS"
             elif esquema == "http" and not interno:
                 motivo = "http:// solo se admite para un host interno (nombre sin puntos que empiece por letra, localhost, *.internal, *.local o IP privada); use https://"
         if motivo:
