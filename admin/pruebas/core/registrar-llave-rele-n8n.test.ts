@@ -43,7 +43,20 @@ let postCodigo = 200;
 let pagina1 = false;
 let alPatch: (() => void) | null = null;
 let redirige = false;
+let redirigeSoloPatch = false;
+let destinoRedireccion = 'http://127.0.0.1:1/otro';
+let sinData = false;
+let elementosRaros = false;
 let envArchivo = '';
+
+/** Servidor falso que solo cuenta las llamadas que recibe (proxy o destino de una redirección). */
+async function contador(): Promise<{ srv: Server; url: string; n: () => number }> {
+  let n = 0;
+  const srv = createServer((_req, res) => { n += 1; res.statusCode = 200; res.end('{}'); });
+  await new Promise<void>((ok) => srv.listen(0, '127.0.0.1', ok));
+  return { srv, url: `http://127.0.0.1:${(srv.address() as AddressInfo).port}`, n: () => n };
+}
+const cerrar = (s: Server) => new Promise<void>((ok) => s.close(() => ok()));
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'llave-rele-'));
@@ -56,6 +69,10 @@ beforeEach(async () => {
   pagina1 = false;
   alPatch = null;
   redirige = false;
+  redirigeSoloPatch = false;
+  destinoRedireccion = 'http://127.0.0.1:1/otro';
+  sinData = false;
+  elementosRaros = false;
   servidor = createServer((req, res) => {
     const partes: Buffer[] = [];
     req.on('data', (c: Buffer) => partes.push(c));
@@ -65,8 +82,10 @@ beforeEach(async () => {
       llamadas.push({ metodo: req.method ?? '', ruta, cuerpo });
       const responder = (codigo: number, o: unknown) => { res.statusCode = codigo; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(o)); };
       if (req.headers['x-n8n-api-key'] !== API_KEY) return responder(401, {});
-      if (redirige) { res.statusCode = 302; res.setHeader('location', 'http://127.0.0.1:1/otro'); return res.end(); }
+      if (redirige || (redirigeSoloPatch && req.method === 'PATCH')) { res.statusCode = 307; res.setHeader('location', destinoRedireccion); return res.end(); }
       if (ruta === '/api/v1/credentials' && req.method === 'GET') {
+        if (sinData) return responder(200, {});
+        if (elementosRaros) return responder(200, { data: ['x'] });
         const todas = creds.map(({ id, name, type }) => ({ id, name, type }));
         if (!pagina1) return responder(200, { data: todas });
         const desde = Number(new URL(req.url ?? '', 'http://x').searchParams.get('cursor') ?? '0');
@@ -74,18 +93,18 @@ beforeEach(async () => {
       }
       if (ruta === '/api/v1/workflows' && req.method === 'GET') return responder(200, { data: flujos });
       if (ruta === '/api/v1/credentials' && req.method === 'POST') {
-        if (postCodigo !== 200) return responder(postCodigo, {});
+        if (postCodigo >= 400) return responder(postCodigo, {});
         const c = JSON.parse(cuerpo) as Cred;
         creds.push({ id: `nueva${creds.length}abcd`, name: c.name, type: c.type, data: c.data });
-        return responder(200, {});
+        return responder(postCodigo, {});
       }
       const m = /^\/api\/v1\/credentials\/(\w+)$/.exec(ruta);
       if (m && req.method === 'PATCH') {
         if (alPatch) alPatch();
-        if (patchCodigo !== 200) return responder(patchCodigo, {});
+        if (patchCodigo >= 400) return responder(patchCodigo, {});
         const c = creds.find((x) => x.id === m[1]);
         if (c) c.data = (JSON.parse(cuerpo) as { data: unknown }).data;
-        return responder(200, {});
+        return responder(patchCodigo, {});
       }
       return responder(404, {});
     });
@@ -103,7 +122,7 @@ afterEach(async () => {
 
 function correr(args: string[], extra: Record<string, string> = {}): Promise<{ codigo: number; salida: string }> {
   return new Promise((ok) => {
-    const h = spawn('bash', [SCRIPT, ...args], { cwd: RAIZ, env: entornoDelEmulador(undefined, { XDG_RUNTIME_DIR: dir, RELE_PERMITIR_HTTP_LOCAL: '1', ...extra }) });
+    const h = spawn('bash', [SCRIPT, ...args], { cwd: RAIZ, env: entornoDelEmulador(undefined, { XDG_RUNTIME_DIR: dir, TMPDIR: tmpdir(), RELE_PERMITIR_HTTP_LOCAL: '1', ...extra }) });
     let salida = '';
     h.stdout.on('data', (d: Buffer) => { salida += d.toString(); });
     h.stderr.on('data', (d: Buffer) => { salida += d.toString(); });
@@ -232,13 +251,58 @@ describe('salvaguardas de entorno', () => {
     expect(llamadas).toHaveLength(0);
     limpia(r.salida);
   });
-  it('no sigue redirecciones', async () => {
+  it('no sigue redirecciones en el GET: el segundo servidor recibe 0 llamadas', async () => {
+    const otro = await contador();
+    try {
+      entrega('ruben');
+      redirige = true;
+      destinoRedireccion = `${otro.url}/api/v1/credentials`;
+      const r = await correr(aplicar());
+      expect(r.codigo).toBe(3);
+      expect(escrituras()).toHaveLength(0);
+      expect(otro.n()).toBe(0);
+      expect(existsSync(join(dir, 'llave-rele-ruben'))).toBe(true);
+      limpia(r.salida);
+    } finally { await cerrar(otro.srv); }
+  });
+  it('no sigue redirecciones en el PATCH: el segundo servidor recibe 0 llamadas y se conserva la entrega', async () => {
+    const otro = await contador();
+    try {
+      const ruta = entrega('ruben');
+      redirigeSoloPatch = true;
+      destinoRedireccion = `${otro.url}/api/v1/credentials/cred1abcd`;
+      const r = await correr(aplicar());
+      expect(r.codigo).toBe(3);
+      expect(otro.n()).toBe(0);
+      expect(existsSync(ruta)).toBe(true);
+      limpia(r.salida);
+    } finally { await cerrar(otro.srv); }
+  });
+  it('ignora HTTPS_PROXY/HTTP_PROXY: el proxy falso recibe 0 llamadas', async () => {
+    const proxy = await contador();
+    try {
+      entrega('ruben');
+      const r = await correr(aplicar(), { HTTPS_PROXY: proxy.url, HTTP_PROXY: proxy.url, https_proxy: proxy.url, http_proxy: proxy.url, ALL_PROXY: proxy.url });
+      expect(r.codigo).toBe(0);
+      expect(proxy.n()).toBe(0);
+      expect(escrituras()).toHaveLength(1);
+      limpia(r.salida);
+    } finally { await cerrar(proxy.srv); }
+  });
+  it('RELE_PERMITIR_HTTP_LOCAL=1 con http:// no local: sale 2 sin llamadas', async () => {
     entrega('ruben');
-    redirige = true;
-    const r = await correr(aplicar());
-    expect(r.codigo).toBe(3);
-    expect(escrituras()).toHaveLength(0);
-    expect(existsSync(join(dir, 'llave-rele-ruben'))).toBe(true);
+    writeFileSync(envArchivo, `N8N_API_KEY=${API_KEY}\nN8N_BASE_URL=http://10.255.255.1:5678\n`, { mode: 0o600 });
+    const r = await correr(aplicar(), { RELE_PERMITIR_HTTP_LOCAL: '1' });
+    expect(r.codigo).toBe(2);
+    expect(llamadas).toHaveLength(0);
+    limpia(r.salida);
+  });
+  it('RELE_PERMITIR_HTTP_LOCAL=1 con --env fuera del directorio temporal: se ignora y sale 2', async () => {
+    entrega('ruben');
+    const r = await correr(aplicar(), { TMPDIR: join(dir, 'otro-tmp-que-no-existe') });
+    expect(r.codigo).toBe(2);
+    expect(llamadas).toHaveLength(0);
+    limpia(r.salida);
   });
   it('no se pudo escribir el respaldo: sale 2, no escribe y conserva la entrega', async () => {
     entrega('ruben');
@@ -315,6 +379,82 @@ describe('--aplicar', () => {
     expect(statSync(join(rd, archivos[0]!)).mode & 0o777).toBe(0o600);
     expect(statSync(rd).mode & 0o777).toBe(0o700);
   });
+  it('401 (clave de API rechazada): sale 3 sin escribir y conserva la entrega', async () => {
+    const ruta = entrega('ruben');
+    const url = readFileSync(envArchivo, 'utf8').split('N8N_BASE_URL=')[1]!.trim();
+    writeFileSync(envArchivo, `N8N_API_KEY=otra-clave\nN8N_BASE_URL=${url}\n`, { mode: 0o600 });
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(3);
+    expect(escrituras()).toHaveLength(0);
+    expect(existsSync(ruta)).toBe(true);
+    limpia(r.salida);
+  });
+  it('lista sin `data`: sale 3 sin escribir, sin traceback', async () => {
+    const ruta = entrega('ruben');
+    sinData = true;
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(3);
+    expect(escrituras()).toHaveLength(0);
+    expect(r.salida).not.toContain('Traceback');
+    expect(existsSync(ruta)).toBe(true);
+    limpia(r.salida);
+  });
+  it('elementos que no son objetos: sale 3 sin traceback', async () => {
+    entrega('ruben');
+    elementosRaros = true;
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(3);
+    expect(escrituras()).toHaveLength(0);
+    expect(r.salida).not.toContain('Traceback');
+  });
+  it('credencial sin id: sale 3 sin escribir y sin traceback', async () => {
+    const ruta = entrega('ruben');
+    delete (creds[0] as Partial<Cred>).id;
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(3);
+    expect(escrituras()).toHaveLength(0);
+    expect(r.salida).not.toContain('Traceback');
+    expect(existsSync(ruta)).toBe(true);
+  });
+  it('flujo con nodos que no son objetos: sale 3 sin escribir', async () => {
+    entrega('ruben');
+    flujos = [{ name: 'Raro', nodes: ['x'] }];
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(3);
+    expect(escrituras()).toHaveLength(0);
+    expect(r.salida).not.toContain('Traceback');
+  });
+  it('ningún flujo cita la credencial: sale 3 sin escribir y conserva la entrega', async () => {
+    const ruta = entrega('ruben');
+    flujos = [];
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(3);
+    expect(escrituras()).toHaveLength(0);
+    expect(existsSync(ruta)).toBe(true);
+    limpia(r.salida);
+  });
+  it('ensayo01 con la credencial existente y sin flujos que la citen: sí actualiza', async () => {
+    creds.push({ id: 'ens1abcd', name: 'AAB1 envío · ensayo01', type: 'httpHeaderAuth' });
+    flujos = [];
+    entrega('ensayo01');
+    const r = await correr(aplicar('ensayo01'));
+    expect(r.codigo).toBe(0);
+    expect(escrituras().map((l) => l.metodo)).toEqual(['PATCH']);
+  });
+  it('el PATCH acepta 201', async () => {
+    const ruta = entrega('ruben');
+    patchCodigo = 201;
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(0);
+    expect(existsSync(ruta)).toBe(false);
+  });
+  it('el POST del alias de ensayo acepta 201', async () => {
+    const ruta = entrega('ensayo01');
+    postCodigo = 201;
+    const r = await correr(aplicar('ensayo01'));
+    expect(r.codigo).toBe(0);
+    expect(existsSync(ruta)).toBe(false);
+  });
   it('si n8n falla, conserva la entrega', async () => {
     const ruta = entrega('ruben');
     patchCodigo = 500;
@@ -326,6 +466,7 @@ describe('--aplicar', () => {
   for (const [alias, quien] of [['cliente07', 'Emma'], ['cliente08', 'Evy'], ['qtaco', "Q'Taco"], ['cliente03', 'Bellido']] as const) {
     it(`${alias} (${quien}): seco encuentra la credencial; aplicar hace PATCH en el lugar y borra la entrega`, async () => {
       creds.push({ id: `${alias}abcd`, name: `AAB1 envío · ${alias}`, type: 'httpHeaderAuth' });
+      flujos.push({ name: `Flujo ${alias}`, nodes: [{ credentials: { httpHeaderAuth: { id: `${alias}abcd`, name: 'x' } } }] });
       const ruta = entrega(alias);
       const s = await correr(seco(alias));
       expect(s.codigo).toBe(0);

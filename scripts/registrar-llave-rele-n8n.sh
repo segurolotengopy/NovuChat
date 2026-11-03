@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Registra en n8n la llave del relé B9 de UN cliente en la credencial Header Auth
-# «AAB1 envío · <alias>», SIN imprimir ni leer la llave. SECO por omisión.
+# «AAB1 envío · <alias>», SIN mostrarla. SECO por omisión.
 #
 # POR QUÉ EXISTE. La sesión que opera el receptor y el relé (WAM) emite la llave del relé de cada
 # cliente y la deja en un archivo de modo 600 en $XDG_RUNTIME_DIR; nadie la ve por el chat. Este es
@@ -38,16 +38,22 @@
 # comprueba nombre, tipo e id (y que la escritura respondió 200), no el contenido de la cabecera. Que
 # la llave sirva se prueba con un envío real por el relé, que corresponde a la sesión de WAM.
 #
-# N8N_BASE_URL tiene que ser https:// (única excepción, para las pruebas con un n8n falso: RELE_PERMITIR_HTTP_LOCAL=1 admite
-# http://127.0.0.1:<puerto>, que no sale de la máquina) (sin redirecciones ni proxies) y XDG_RUNTIME_DIR del usuario, modo 700.
+# N8N_BASE_URL tiene que ser https:// (sin redirecciones ni proxies) y XDG_RUNTIME_DIR del usuario, modo 700.
+# ÚNICA EXCEPCIÓN, SOLO PARA PRUEBAS con un n8n falso: RELE_PERMITIR_HTTP_LOCAL=1 admite http://127.0.0.1:<puerto>
+# (no sale de la máquina), y solo se respeta si el --env está bajo el directorio temporal (${TMPDIR:-/tmp});
+# si no, se ignora. No es para producción.
+#
+# AUTO-PROTECCIÓN. Con --aplicar, si la credencial existe pero NINGÚN flujo la cita (salvo el alias de
+# ensayo) se aborta con salida 3 sin escribir: dejar la llave en una credencial que ningún flujo usa no
+# sirve de nada (p. ej. un alias duplicado del receptor, evy/emma frente a cliente08/cliente07).
 #
 # LA CLAVE DE LA API DE N8N. Sale de --env (solo N8N_BASE_URL y N8N_API_KEY, leídos como datos, sin
 # ejecutar el archivo; con --aplicar exige que sea del usuario y de modo 600). Viaja en una cabecera
 # dentro del proceso Python (la lee del --env, no por el entorno), nunca por argumentos ni pantalla.
 #
 # Salida: 0 hecho y comprobado, o seco sin hallazgos · 1 seco con algo pendiente (entrega ausente o
-# inválida) · 2 uso, salvaguarda o validación previa (nada escrito) · 3 error de ejecución (puede
-# haber escrito; la entrega se conserva).
+# inválida) · 2 uso, salvaguarda o validación previa (nada escrito) · 3 error de ejecución o respuesta
+# inesperada de n8n (puede haber escrito; la entrega se conserva).
 set -euo pipefail
 unset N8N_BASE_URL N8N_API_KEY RELE_ENV RELE_ALIAS RELE_ENTREGA RELE_APLICAR RELE_RESPALDO_DIR RELE_NOMBRE RELE_CABECERA RELE_PREFIJO RELE_REGEX RELE_CREA
 
@@ -90,6 +96,11 @@ if (( APLICAR )); then
 fi
 valor_env() { grep -E "^$1=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true; }
 N8N_BASE_URL="$(valor_env N8N_BASE_URL)"
+# La excepción http local solo vale para pruebas: el --env debe estar bajo el directorio temporal.
+if [[ -n "${RELE_PERMITIR_HTTP_LOCAL:-}" ]]; then
+  _tmp="$(realpath -e -- "${TMPDIR:-/tmp}" 2>/dev/null || true)"; _env="$(realpath -e -- "$ENV_FILE" 2>/dev/null || true)"
+  if [[ -z "$_tmp" || -z "$_env" || "$_env" != "$_tmp"/* ]]; then unset RELE_PERMITIR_HTTP_LOCAL; fi
+fi
 [[ -n "$N8N_BASE_URL" ]] || { echo "✗ Falta N8N_BASE_URL en --env" >&2; exit 2; }
 [[ "$N8N_BASE_URL" =~ ^https://[^/[:space:]@]+(/.*)?$ ]] || [[ -n "${RELE_PERMITIR_HTTP_LOCAL:-}" && "$N8N_BASE_URL" =~ ^http://127\.0\.0\.1:[0-9]+$ ]] \
   || { echo "✗ N8N_BASE_URL tiene que ser https://" >&2; exit 2; }
@@ -117,6 +128,12 @@ if not _clave:
 H = {"X-N8N-API-KEY": _clave, "Content-Type": "application/json"}
 _clave = None
 # Sin redirecciones y sin proxies: la clave y la llave solo van a la URL del --env.
+def _inesperado(*_a):
+    # Cualquier excepción no prevista (respuesta de forma rara): sin traceback y con salida 3.
+    print("✗ respuesta inesperada de n8n o error interno: se aborta (la entrega se conserva si existe)", file=sys.stderr)
+    sys.stdout.flush(); os._exit(3)
+sys.excepthook = _inesperado
+
 class _SinRedireccion(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k):
         return None
@@ -147,9 +164,12 @@ def paginas(ruta, espera=30):
     while True:
         r = ruta + "?limit=100" + ("&cursor=" + urllib.parse.quote(cursor, safe="") if cursor else "")
         cod, d = pedir("GET", r, None, espera)
-        if cod != 200 or not isinstance(d, dict):
-            salir(3, f"✗ n8n respondió {cod} al leer {ruta}")
-        todas += d.get("data", [])
+        if cod != 200 or not isinstance(d, dict) or not isinstance(d.get("data"), list):
+            salir(3, f"✗ n8n respondió {cod} o no entregó una lista al leer {ruta}")
+        lote = d["data"]
+        if not all(isinstance(x, dict) for x in lote):
+            salir(3, f"✗ n8n entregó elementos de forma inesperada en {ruta}")
+        todas += lote
         cursor = d.get("nextCursor")
         if not cursor:
             return todas
@@ -200,13 +220,21 @@ if len(mismas) > len(exactas):
 if len(exactas) > 1:
     salir(2, f"✗ Hay {len(exactas)} credenciales «{NOMBRE}»: se aborta sin escribir")
 existe = len(exactas) == 1
-cid = exactas[0]["id"] if existe else None
+cid = exactas[0].get("id") if existe else None
+if existe and not (isinstance(cid, (str, int)) and not isinstance(cid, bool) and str(cid)):
+    salir(3, "✗ n8n entregó la credencial sin id válido: se aborta sin escribir")
 
 citan = []
 if existe:
     for w in paginas("/workflows", 300):
-        for n in w.get("nodes", []) or []:
-            c = (n.get("credentials") or {}).get(TIPO) or {}
+        nodos = w.get("nodes") or []
+        if not isinstance(nodos, list):
+            salir(3, "✗ n8n entregó un flujo con nodos de forma inesperada: se aborta sin escribir")
+        for n in nodos:
+            cr = (n.get("credentials") or {}) if isinstance(n, dict) else None
+            c = (cr.get(TIPO) or {}) if isinstance(cr, dict) else None
+            if not isinstance(c, dict):
+                salir(3, "✗ n8n entregó un nodo con credenciales de forma inesperada: se aborta sin escribir")
             if c.get("id") == cid or c.get("name") == NOMBRE:
                 citan.append(w.get("name", "?")); break
 
@@ -217,12 +245,16 @@ entrega_ok = fd is not None
 print("  Entrega: " + ("válida (modo 600, una línea, forma correcta)" if entrega_ok else f"✗ {llave}"))
 if not existe and not CREA:
     salir(2, "✗ La credencial tiene que existir antes (cárguela con cargar-timbre-n8n.sh): no se crea aquí")
+if existe and not citan:
+    print("  ⚠ Ningún flujo cita esta credencial.")
 if not APLICAR:
     if entrega_ok:
         os.close(fd)
     print("  Seco: no se escribió nada. Con --aplicar --confirmo produccion se " + ("crea." if not existe else "actualiza en el lugar.")
           if entrega_ok else "  Seco: no se escribió nada; falta una entrega válida.")
     sys.exit(0 if entrega_ok else 1)
+if not CREA and not citan:
+    salir(3, "✗ Ningún flujo cita esta credencial: la llave quedaría sin uso. Se aborta sin escribir (la entrega se conserva)")
 if not entrega_ok:
     salir(2, "✗ Sin entrega válida no se escribe nada")
 
@@ -247,15 +279,18 @@ def fallar(msg):
 datos = {"name": E["RELE_CABECERA"], "value": E["RELE_PREFIJO"] + llave}
 llave = None
 if existe:
-    cod, _ = pedir("PATCH", f"/credentials/{cid}", {"data": datos})
+    cod, _ = pedir("PATCH", "/credentials/" + urllib.parse.quote(str(cid), safe=""), {"data": datos})
 else:
     cod, _ = pedir("POST", "/credentials", {"name": NOMBRE, "type": TIPO, "data": datos})
 datos = None
-if cod != 200:
+if cod not in (200, 201):
     fallar(f"n8n respondió {cod} al escribir la credencial")
 
 # ---- Relectura ----
-mismas2 = [c for c in paginas("/credentials") if c.get("name") == NOMBRE]
+todas2 = paginas("/credentials")
+if any(c.get("name") != NOMBRE and norm(c.get("name", "")) == norm(NOMBRE) for c in todas2):
+    fallar("la relectura halló una credencial de nombre equivalente pero no exacto")
+mismas2 = [c for c in todas2 if c.get("name") == NOMBRE]
 if not (len(mismas2) == 1 and mismas2[0].get("type") == TIPO and (not existe or mismas2[0].get("id") == cid)):
     fallar("la relectura no encontró exactamente una credencial con el mismo nombre, tipo e id")
 print("  ✓ Relectura: una sola credencial, mismo nombre y tipo" + (", mismo id" if existe else "") + " (el valor no se lee).")
