@@ -70,6 +70,10 @@ siguen verdes sin cambios: este módulo las usa solo para comparar, leyendo sus 
   Cuenta solo lo que «Preparar guardado» dejaría pasar y anota lo omitido en `cupoDeMedios.omitidos` y `guardadoDeMedios.omitidoPorCupo`, sin mensajes.
   **Limitación de concurrencia:** el estado es el `staticData` del flujo y n8n no da un candado; una RÁFAGA (un álbum son N ejecuciones simultáneas) lo
   atraviesa porque todas leen el mismo conteo. El tope por remitente de verdad lo pone el relé (WAM). Riesgo residual **aceptado por Andres el 03/11/2026**.
+- **Reintento de los GET de medios por el relé** (canal rele): los nodos «Pedir el medio a Meta (guardado)» y «Descargar medio (guardado)» llevan `retryOnFail`, `maxTries: 2`
+  y `waitBetweenTries: 3000` (n8n no admite espera con azar ahí). 0 nodos nuevos, así que los topes de nodos no cambian. Son GET idempotentes. **Costo:** todo fallo reintentable
+  de esos GET (un 5xx, un 502 WM-3040 de id vencido) gasta una descarga más de las 500 por día y por WABA; un 429 no gasta. El nodo no distingue el código: reintenta cualquiera.
+  La descarga sigue sin seguir redirecciones.
 - **«Esperar reintento» espera el MÁXIMO del lote** (`Math.max` de los `esperaS`): si en un mismo turno un mensaje pide 61 s y otro 2 s, el segundo también espera 61 s.
   Es un efecto conocido de usar un solo Wait por lote; el lote de 1 con 1,5 s lo acota en la práctica.
 - **Un reintento sale DESPUÉS del mensaje siguiente:** el bucle reintenta tras terminar la vuelta de todos los mensajes, así que el mensaje 1 reintentado puede llegar

@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  CUPO_POR_DEFECTO_RELE, cabeceraDeFuentes, FUENTE_CUPO, FUENTE_PREPARAR, hallazgosDelGuardado, injertarGuardado, manejaMedios, nodosDelGuardado, NODOS_DE_REINTENTO_RELE, ESPERA_429_RELE, urlDescargaRele, urlInfoRele, URL_DESCARGA_GUARDADO, NODOS_DE_META_DEL_GUARDADO,
+  CUPO_POR_DEFECTO_RELE, cabeceraDeFuentes, FUENTE_CUPO, FUENTE_PREPARAR, hallazgosDelGuardado, injertarGuardado, manejaMedios, nodosDelGuardado, REINTENTO_GET_RELE, urlDescargaRele, urlInfoRele, URL_DESCARGA_GUARDADO, NODOS_DE_META_DEL_GUARDADO,
   type OpcionesDelGuardado,
 } from '../../../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 import { MARCADOR_URL_DEL_RELE } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
@@ -110,13 +110,14 @@ describe('la rama armada para el relé', () => {
     expect(hallazgosDelGuardado(flujo)).toEqual([]);
     expect(manejaMedios(flujoBase())).toBe(true);
   });
-  it('info: GET /v1/envio/medios/<id>; contenido: …/contenido; las dos con la credencial «AAB1 envío · alias» y SIN reintentos', () => {
+  it('info: GET /v1/envio/medios/<id>; contenido: …/contenido; las dos con la credencial «AAB1 envío · alias» y con reintento propio', () => {
     expect(nodo('Pedir el medio a Meta (guardado)').parameters['url']).toBe(urlInfoRele());
     expect(nodo('Pedir el medio a Meta (guardado)').parameters['url']).toBe(`=${MARCADOR_URL_DEL_RELE}/v1/envio/medios/{{ String($('Preparar guardado').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}`);
     expect(nodo('Descargar medio (guardado)').parameters['url']).toBe(urlDescargaRele());
     for (const n of NODOS_DE_META_DEL_GUARDADO) {
       expect(nodo(n).credentials).toEqual({ httpHeaderAuth: { id: '', name: CRED_RELE } });
-      expect(nodo(n)['retryOnFail']).toBeUndefined();
+      if (n !== 'Avisar falla del guardado') expect(nodo(n)['retryOnFail']).toBe(true);
+      else expect(nodo(n)['retryOnFail']).toBeUndefined();
     }
     expect(nodo('Pedir el medio a Meta (guardado)').parameters['options'].timeout).toBeGreaterThanOrEqual(30000);
     expect(nodo('Descargar medio (guardado)').parameters['options'].timeout).toBe(60000);
@@ -177,9 +178,9 @@ describe('los cambios que se hagan a la rama los nota `hallazgosDelGuardado`', (
     expect(romper((f) => { n(f, 'Descargar medio (guardado)').credentials = { whatsAppApi: { id: '', name: 'x' } }; }).length).toBeGreaterThan(0);
     expect(romper((f) => { n(f, 'Pedir el medio a Meta (guardado)').credentials = { httpHeaderAuth: { id: '', name: 'Otra' } }; }).join('\n')).toMatch(/AAB1 envío/);
   });
-  it('NIEGA: un reintento en la info o en el contenido (cada GET gasta una de las 500 descargas diarias)', () => {
+  it('NIEGA: un reintento fuera de lo acordado (la espera de 3 s y 2 intentos) en la info o en el contenido', () => {
     for (const nombre of ['Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)']) {
-      expect(romper((f) => { n(f, nombre)['retryOnFail'] = true; }).join('\n'), nombre).toMatch(/no reintenta/);
+      expect(romper((f) => { n(f, nombre)['maxTries'] = 5; }).join('\n'), nombre).toMatch(/maxTries 2/);
     }
   });
   it('NIEGA: neverError en la descarga o en el aviso; un aviso sin Idempotency-Key o sin tiempo suficiente', () => {
@@ -471,71 +472,52 @@ describe('el canal Graph no cambia', () => {
   });
 });
 
-describe('un 429 (WM-3037) del relé en la info o en /contenido: UN reintento tras 2 a 3 s; nada más se repite (PR #757, ronda 3)', () => {
-  const E429 = 'The service is receiving too many requests (429) WM-3037';
-  it('la rama del relé lleva 4 nodos más (dos compuertas y dos esperas) y el canal Graph ninguno', () => {
+describe('reintento propio de los dos GET de medios por el relé: 0 nodos nuevos (PR #757, ronda 3b)', () => {
+  const GETS = ['Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)'];
+  const nodoDe = (f: Flujo, nombre: string) => f.nodes.find((n) => n.name === nombre)! as unknown as J;
+  it('la rama del relé sigue con sus nueve nodos y la info y el contenido llevan retryOnFail, maxTries 2 y 3000 ms', () => {
     const f = flujoConGuardado();
-    expect(f.nodes.filter((n) => NODOS_DE_REINTENTO_RELE.includes(n.name))).toHaveLength(4);
+    expect(f.nodes.length).toBe(flujoBase().nodes.length + 9);
     expect(hallazgosDelGuardado(f)).toEqual([]);
-    const w = f.nodes.find((n) => n.name === 'Esperar para repetir la info')!;
-    expect(w.parameters['amount']).toBe(ESPERA_429_RELE);
-  });
-  it('info: 429 y luego bien → DOS pedidos de info, una espera de 2 a 3 s, y el medio se guarda', () => {
-    const m = mundo();
-    const r = m.r(imagen(), { infoSec: [E429, 'ok'] });
-    expect(m.llamadas.info).toHaveLength(2);
-    expect(m.llamadas.info[1]!.url).toBe(`${MARCADOR_URL_DEL_RELE}/v1/envio/medios/M1`);
-    expect(r.esperas.map((e) => e.nodo)).toEqual(['Esperar para repetir la info']);
-    expect(r.esperas[0]!.segundos).toBeGreaterThanOrEqual(2);
-    expect(r.esperas[0]!.segundos).toBeLessThanOrEqual(3);
-    expect(m.llamadas.contenido).toHaveLength(1);
-    expect(m.llamadas.servidor).toHaveLength(1);
-  });
-  it('NIEGA: info con 429 dos veces → un solo reintento, sin tercera llamada y sin descargar nada', () => {
-    const m = mundo();
-    const r = m.r(imagen(), { infoSec: [E429, E429] });
-    expect(m.llamadas.info).toHaveLength(2);
-    expect(r.esperas).toHaveLength(1);
-    expect(m.llamadas.contenido.map((x) => x.url)).toEqual(['']);
-    expect(m.llamadas.servidor).toHaveLength(0);
-    expect(r.fallo).toBeNull();
-  });
-  it('contenido: 429 y luego bien → DOS descargas, una espera y el medio se guarda; con dos 429 falla sin tercer intento', () => {
-    const bien = mundo();
-    const r = bien.r(imagen(), { contenidoSec: [E429, 'ok'] });
-    expect(bien.llamadas.contenido).toHaveLength(2);
-    expect(bien.llamadas.contenido[1]!.url).toMatch(/\/v1\/envio\/medios\/M1\/contenido$/);
-    expect(r.esperas.map((e) => e.nodo)).toEqual(['Esperar para repetir el contenido']);
-    expect(bien.llamadas.servidor).toHaveLength(1);
-    expect(bien.llamadas.info).toHaveLength(1);
-    const mal = mundo();
-    const r2 = mal.r(imagen(), { contenidoSec: [E429, E429] });
-    expect(mal.llamadas.contenido).toHaveLength(2);
-    expect(r2.esperas).toHaveLength(1);
-    expect(mal.llamadas.servidor).toHaveLength(0);
-  });
-  it('NIEGA: WM-3040 (502, id vencido) y WM-3039 (413) NUNCA se reintentan, ni en la info ni en /contenido; tampoco un 5xx cualquiera', () => {
-    for (const e of ['502 WM-3040 (id vencido)', '413 WM-3039 (demasiado grande)', '500 error interno', 'ECONNABORTED']) {
-      const a = mundo();
-      const ra = a.r(imagen(), { infoSec: [e] });
-      expect(a.llamadas.info, `info ${e}`).toHaveLength(1);
-      expect(ra.esperas, `info ${e}`).toEqual([]);
-      const b = mundo();
-      const rb = b.r(imagen(), { contenidoSec: [e] });
-      expect(b.llamadas.contenido, `contenido ${e}`).toHaveLength(1);
-      expect(rb.esperas, `contenido ${e}`).toEqual([]);
+    expect(REINTENTO_GET_RELE).toEqual({ retryOnFail: true, maxTries: 2, waitBetweenTries: 3000 });
+    for (const nombre of GETS) {
+      const n = nodoDe(f, nombre);
+      expect(n['retryOnFail'], nombre).toBe(true);
+      expect(n['maxTries'], nombre).toBe(2);
+      expect(n['waitBetweenTries'], nombre).toBeGreaterThanOrEqual(2000);
+      expect(n['waitBetweenTries'], nombre).toBeLessThanOrEqual(3000);
     }
   });
-  it('NIEGA: un error que nombra WM-3037 y también WM-3040/3039 no se repite (gana la prohibición)', () => {
-    const m = mundo();
-    const r = m.r(imagen(), { infoSec: ['WM-3037 y luego WM-3040'] });
-    expect(m.llamadas.info).toHaveLength(1);
-    expect(r.esperas).toEqual([]);
-  });
-  it('la compuerta también reconoce la forma real de n8n (objeto con httpCode «429»)', () => {
+  it('la descarga de /contenido sigue sin seguir redirecciones; el guardado, el reintento y el aviso no reintentan por su cuenta', () => {
     const f = flujoConGuardado();
-    const c = f.nodes.find((n) => n.name === '¿Info limitada (429)?')!;
-    expect(JSON.stringify(c.parameters)).toContain('httpCode');
+    expect(nodoDe(f, 'Descargar medio (guardado)')['parameters'].options.redirect).toEqual({ redirect: { followRedirects: false } });
+    for (const nombre of ['Guardar medio', 'Reintentar el guardado', 'Avisar falla del guardado']) expect(nodoDe(f, nombre)['retryOnFail'], nombre).toBeUndefined();
+  });
+  it('NIEGA: sin el reintento, con otro número de intentos o con otra espera, `hallazgosDelGuardado` se queja', () => {
+    for (const nombre of GETS) {
+      for (const cambio of [{ retryOnFail: undefined }, { maxTries: 3 }, { waitBetweenTries: 1000 }, { waitBetweenTries: 5000 }] as const) {
+        const f = flujoConGuardado();
+        Object.assign(nodoDe(f, nombre), cambio);
+        expect(hallazgosDelGuardado(f).join('\n'), `${nombre} ${JSON.stringify(cambio)}`).toMatch(/retryOnFail, maxTries 2 y waitBetweenTries/);
+      }
+    }
+    const g = flujoConGuardado();
+    nodoDe(g, 'Descargar medio (guardado)')['parameters'].options.redirect = { redirect: { followRedirects: true } };
+    expect(hallazgosDelGuardado(g).join('\n')).toMatch(/no puede seguir redirecciones/);
+  });
+  it('NIEGA: el aviso no reintenta (un aviso repetido llegaría dos veces)', () => {
+    const f = flujoConGuardado();
+    nodoDe(f, 'Avisar falla del guardado')['retryOnFail'] = true;
+    expect(hallazgosDelGuardado(f).join('\n')).toMatch(/no reintenta/);
+  });
+  it('el canal Graph no cambia: la descarga no reintenta y la info conserva su reintento de siempre (1000 ms)', () => {
+    const f = flujoBase();
+    f.nodes.find((n) => n.name === 'Obtener URL del medio (general)')!.parameters['url'] = '=https://graph.facebook.com/v26.0/{{ $json.id }}';
+    f.nodes.find((n) => n.name === 'Enviar a WhatsApp')!.credentials = { httpHeaderAuth: { id: '', name: 'Graph de prueba' } };
+    f.nodes.push({ name: 'Descargar medio', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [400, 300], parameters: {}, credentials: { httpHeaderAuth: { id: '', name: 'Graph de prueba' } } } as never);
+    injertarGuardado(f, { guardarUrl: GUARDAR });
+    expect(nodoDe(f, 'Descargar medio (guardado)')['retryOnFail']).toBeUndefined();
+    expect(nodoDe(f, 'Pedir el medio a Meta (guardado)')['waitBetweenTries']).toBe(1000);
   });
 });
 

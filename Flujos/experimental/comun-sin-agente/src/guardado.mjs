@@ -66,11 +66,6 @@ export const NODOS_DEL_GUARDADO = [
   'Guardar medio', '¿Reintentar el guardado?', 'Preparar reintento', 'Reintentar el guardado', 'Resultado del guardado', 'Avisar falla del guardado',
 ];
 /**
- * Canal rele: cuatro nodos más para el ÚNICO reintento de un 429 (WM-3037) del relé en la info y en `/contenido`. El canal Graph no los lleva (sus JSON no
- * cambian ni un byte). Declarado en el PR #757 (ronda 3): son +4 nodos por flujo que use el relé.
- */
-export const NODOS_DE_REINTENTO_RELE = ['¿Info limitada (429)?', 'Esperar para repetir la info', '¿Contenido limitado (429)?', 'Esperar para repetir el contenido'];
-/**
  * ¿El flujo baja medios entrantes de Meta? Un nodo conectado (fuera de esta rama) que pide la URL del medio o lo descarga: por su nombre, por ser un nodo
  * de medios de WhatsApp, o por su URL (Graph con un id de medio, o el CDN `lookaside.fbsbx.com`), así que renombrar el nodo no lo esconde. La prueba de CI
  * exige además la rama a TODO flujo con «Reportar mensaje (entrante)», salvo su lista cerrada. Es lo que vuelve OBLIGATORIO el
@@ -100,7 +95,7 @@ export function manejaMedios(flujo) {
   // Solo cuenta un nodo CONECTADO (alguien le entrega ítems): uno suelto no baja nada.
   const conEntrada = new Set();
   for (const salidas of Object.values((flujo && flujo.connections) || {})) for (const s of ((salidas || {}).main || [])) for (const c of (s || [])) conEntrada.add(c.node);
-  return nodos.some((n) => !NODOS_DEL_GUARDADO.includes(n.name) && !NODOS_DE_REINTENTO_RELE.includes(n.name) && conEntrada.has(n.name) && (
+  return nodos.some((n) => !NODOS_DEL_GUARDADO.includes(n.name) && conEntrada.has(n.name) && (
     // Contrato v2 (30/10): también un nodo que baja un VIDEO o un DOCUMENTO (todos los tipos se guardan).
     /^(Obtener URL del (medio|video|documento)|Descargar (medio|video|documento))/i.test(String(n.name))
     || (n.type === 'n8n-nodes-base.whatsApp' && (n.parameters || {}).resource === 'media')
@@ -130,24 +125,12 @@ export const ARISTAS_DEL_GUARDADO = [
   ['Preparar reintento', 0, 'Reintentar el guardado'], ['Reintentar el guardado', 0, 'Resultado del guardado'],
   ['Resultado del guardado', 0, 'Avisar falla del guardado'],
 ];
-/** Canal rele: la info y el contenido pasan por su compuerta del 429 (salida 0 = repetir tras la espera; salida 1 = seguir). */
-export const ARISTAS_DEL_GUARDADO_RELE = [
-  ...ARISTAS_DEL_GUARDADO.filter(([de, , a]) => !(de === 'Pedir el medio a Meta (guardado)' && a === 'Descargar medio (guardado)') && !(de === 'Descargar medio (guardado)' && a === 'Guardar medio')),
-  ['Pedir el medio a Meta (guardado)', 0, '¿Info limitada (429)?'],
-  ['¿Info limitada (429)?', 0, 'Esperar para repetir la info'], ['¿Info limitada (429)?', 1, 'Descargar medio (guardado)'],
-  ['Esperar para repetir la info', 0, 'Pedir el medio a Meta (guardado)'],
-  ['Descargar medio (guardado)', 0, '¿Contenido limitado (429)?'],
-  ['¿Contenido limitado (429)?', 0, 'Esperar para repetir el contenido'], ['¿Contenido limitado (429)?', 1, 'Guardar medio'],
-  ['Esperar para repetir el contenido', 0, 'Descargar medio (guardado)'],
-];
 /**
- * ¿Es este ítem un 429 del relé (WM-3037) en la PRIMERA vuelta de su compuerta? `$runIndex` es el de la compuerta (0 la primera vez): la segunda vez, sea lo que
- * sea, sigue (UN solo reintento). Un WM-3039 (413) o un WM-3040 (502, id vencido) NUNCA se repiten. El error llega como objeto (`httpCode`) o como texto: se busca
- * el código en ambos. Un 429 NO gasta de las 500 descargas diarias del WABA (confirmado por WAM), por eso es el único reintento.
+ * Canal rele: reintento PROPIO del nodo HTTP (0 nodos nuevos) en los dos GET de medios, la info y `/contenido`: `retryOnFail`, 2 intentos en total, espera fija de
+ * 3000 ms (n8n no admite espera con azar en `waitBetweenTries`). Seguro porque son GET idempotentes. COSTO: cualquier fallo reintentable de esos GET (un 5xx, un id
+ * vencido 502 WM-3040) gasta una descarga más de las 500 por día y por WABA; un 429 no gasta. Ronda 3b del PR #757: la versión con 4 nodos (IF + Wait) rompía los topes.
  */
-export const CONDICION_429_RELE = "={{ Number($runIndex) === 0 && (() => { const e = $json.error; let t = ''; try { t = JSON.stringify(e === undefined ? '' : e); } catch (x) { t = String(e); } const o = e !== null && typeof e === 'object' ? e : {}; return !/WM-30(39|40)/.test(t) && (/WM-3037/.test(t) || String(o.httpCode || o.statusCode || '') === '429'); })() }}";
-/** La espera del reintento: 2 a 3 s con azar. */
-export const ESPERA_429_RELE = '={{ 2 + Math.round(Math.random() * 10) / 10 }}';
+export const REINTENTO_GET_RELE = { retryOnFail: true, maxTries: 2, waitBetweenTries: 3000 };
 /**
  * Por el relé, una imagen o un sticker (`tipo: image`) de más de 5 MiB no se descarga: el servidor la rechazaría (413) y el GET de `/contenido` gastaría una
  * de las 500 descargas diarias por WABA para nada. Audio, video y documento siguen con el tope de 16 MiB.
@@ -289,10 +272,10 @@ export function nodosDelGuardado(opciones) {
           method: 'GET', url: `=https://graph.facebook.com/{{ ${version} }}/{{ String($json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}`,
           ...graph.parametros, options: { timeout: 10000 },
         },
-      // Por el relé NO se reintenta: un id vencido da 502 WM-3040 y reintentarlo gasta una descarga más de las 500 por día y por WABA.
-      credentials: graph.credentials, ...SIN_CORTAR, ...(rele ? {} : { retryOnFail: true, maxTries: 2, waitBetweenTries: 1000 }),
+      // Por el relé: reintento propio del nodo (2 intentos, 3000 ms); un fallo reintentable gasta una descarga más de las 500 por día y por WABA, un 429 no.
+      credentials: graph.credentials, ...SIN_CORTAR, ...(rele ? REINTENTO_GET_RELE : { retryOnFail: true, maxTries: 2, waitBetweenTries: 1000 }),
       notes: rele
-        ? 'GET /v1/envio/medios/<id> por el relé B9: devuelve id, mime_type, file_size y sha256 (sin url). Sin reintentos, salvo UN reintento de un 429 WM-3037 (que no gasta descarga): un id vencido da 502 WM-3040 y cada GET gasta una de las 500 descargas diarias por WABA. Llamada PROPIA del guardado (doble descarga).'
+        ? 'GET /v1/envio/medios/<id> por el relé B9: devuelve id, mime_type, file_size y sha256 (sin url). Reintento propio del nodo (2 intentos, 3 s; GET idempotente): un fallo reintentable (por ejemplo un 502 WM-3040) gasta una descarga más de las 500 diarias por WABA; un 429 no gasta. Llamada PROPIA del guardado (doble descarga).'
         : 'GET /{media-id} con la credencial de WhatsApp: devuelve url, mime_type y file_size. Llamada PROPIA del guardado (doble descarga): no gasta el tope de ver u oír.',
     },
     {
@@ -301,8 +284,9 @@ export function nodosDelGuardado(opciones) {
         method: 'GET', url: rele ? urlDescargaRele(releUrl) : URL_DESCARGA_GUARDADO, ...graph.parametros,
         options: { timeout: 60000, redirect: { redirect: { followRedirects: false } }, response: { response: { responseFormat: 'file', outputPropertyName: 'data' } } },
       },
-      // Sin reintento: con la URL vacía (medio demasiado grande) no hay nada que reintentar. Una descarga fallida la registra «Resultado del guardado».
-      credentials: graph.credentials, ...SIN_CORTAR,
+      // Graph: sin reintento (con la URL vacía no hay nada que reintentar). Relé: reintento propio del nodo (GET idempotente; con la URL vacía no sale ninguna llamada).
+      // Una descarga fallida la registra «Resultado del guardado».
+      credentials: graph.credentials, ...SIN_CORTAR, ...(rele ? REINTENTO_GET_RELE : {}),
       notes: rele
         ? 'Baja el archivo por el relé (GET /v1/envio/medios/<id>/contenido), sin seguir redirecciones, SOLO si la info trajo un file_size mayor que cero y de hasta 16 MiB. Si no (sin tamaño, demasiado grande, id vencido), la URL queda vacía y no se baja nada. Sin neverError: un 4xx o 5xx deja un item sin binario. 60 s para 16 MiB.'
         : 'Baja el archivo del CDN de Meta con el token, sin seguir redirecciones, SOLO si Meta informó un tamaño de hasta 16 MiB. Si no, la URL queda vacía y no se baja nada (cuenta como 413). 60 s para 16 MiB.',
@@ -365,32 +349,6 @@ export function nodosDelGuardado(opciones) {
       notes: 'El aviso de falla a la recepción del negocio, en texto libre (su ventana está abierta). Sin reintentos: un aviso repetido llegaría dos veces. Sin onError: si falla, la ejecución termina en error (corre al final, el cliente ya tiene su respuesta). +1 mensaje solo cuando falla el guardado, a lo más uno por día.',
     },
   ];
-  if (rele) {
-    // El ÚNICO reintento de un 429 (WM-3037): una compuerta y una espera de 2 a 3 s por cada GET de medios. La segunda vuelta de la compuerta (`$runIndex` 1) sigue
-    // siempre, y WM-3039 / WM-3040 no entran nunca. Un 429 no gasta de las 500 descargas diarias del WABA (WAM).
-    nodos.push(
-      {
-        id: 'gm-429-info', name: NODOS_DE_REINTENTO_RELE[0], type: 'n8n-nodes-base.if', typeVersion: 2.2, position: [x + 360, y + 420],
-        parameters: condicion(CONDICION_429_RELE),
-        notes: 'Si la info del medio dio 429 (WM-3037) y es la primera vuelta, espera y la repite UNA vez. Cualquier otro error (WM-3040 id vencido, WM-3039) sigue sin repetir.',
-      },
-      {
-        id: 'gm-espera-info', name: NODOS_DE_REINTENTO_RELE[1], type: 'n8n-nodes-base.wait', typeVersion: 1.1, position: [x + 360, y + 600],
-        parameters: { resume: 'timeInterval', amount: ESPERA_429_RELE, unit: 'seconds' },
-        notes: 'De 2 a 3 s con azar y vuelve a «Pedir el medio a Meta (guardado)». Menos de 65 s: n8n la mantiene en memoria.',
-      },
-      {
-        id: 'gm-429-contenido', name: NODOS_DE_REINTENTO_RELE[2], type: 'n8n-nodes-base.if', typeVersion: 2.2, position: [x + 600, y + 420],
-        parameters: condicion(CONDICION_429_RELE),
-        notes: 'Si la descarga del contenido dio 429 (WM-3037) y es la primera vuelta, espera y la repite UNA vez. Cualquier otro error sigue sin repetir (a «Guardar medio», que sin binario no guarda).',
-      },
-      {
-        id: 'gm-espera-contenido', name: NODOS_DE_REINTENTO_RELE[3], type: 'n8n-nodes-base.wait', typeVersion: 1.1, position: [x + 600, y + 600],
-        parameters: { resume: 'timeInterval', amount: ESPERA_429_RELE, unit: 'seconds' },
-        notes: 'De 2 a 3 s con azar y vuelve a «Descargar medio (guardado)».',
-      },
-    );
-  }
   return nodos;
 }
 
@@ -432,7 +390,7 @@ export function injertarGuardado(flujo, opciones) {
   const ancla = (flujo.nodes || []).find((n) => n.name === nombreAncla);
   if (!ancla) throw new Error(`guardado: el flujo no tiene «${nombreAncla}»`);
   const credenciales = o.credenciales || credencialesDelFlujo(flujo, ancla, o.graphDe || 'Descargar medio', o.canal);
-  for (const n of o.canal === 'rele' ? [...NODOS_DEL_GUARDADO, ...NODOS_DE_REINTENTO_RELE] : NODOS_DEL_GUARDADO) if ((flujo.nodes || []).some((x) => x.name === n)) throw new Error(`guardado: el flujo ya tiene «${n}»`);
+  for (const n of NODOS_DEL_GUARDADO) if ((flujo.nodes || []).some((x) => x.name === n)) throw new Error(`guardado: el flujo ya tiene «${n}»`);
   for (const n of [o.carga || 'Carga de entrada', o.config || 'Config del negocio']) if (!(flujo.nodes || []).some((x) => x.name === n)) throw new Error(`guardado: el flujo no tiene «${n}»`);
   // Debajo de TODO el flujo: con executionOrder v1 la rama corre después de la que responde.
   const yMax = Math.max(...flujo.nodes.map((n) => Number((n.position || [0, 0])[1]) || 0));
@@ -444,7 +402,7 @@ export function injertarGuardado(flujo, opciones) {
   const salidaAncla = ((con[nombreAncla] || (con[nombreAncla] = { main: [[]] })).main);
   if (!salidaAncla[0]) salidaAncla[0] = [];
   salidaAncla[0].push(enlace('Preparar guardado'));
-  for (const [de, salida, a] of o.canal === 'rele' ? ARISTAS_DEL_GUARDADO_RELE : ARISTAS_DEL_GUARDADO) {
+  for (const [de, salida, a] of ARISTAS_DEL_GUARDADO) {
     const m = (con[de] || (con[de] = { main: [] })).main;
     while (m.length <= salida) m.push([]);
     m[salida].push(enlace(a));
@@ -466,9 +424,7 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
   // exige que los tres lo hagan: una rama a medias no pasa por Graph. Con el relé la rama lleva además los cuatro nodos del reintento del 429.
   const rele = NODOS_DE_META_DEL_GUARDADO.some((nombre) => /\/v1\/envio\//.test(String(((por(nombre) || {}).parameters || {}).url || ''))
     || credDe(por(nombre)).some((c) => c.nombre.startsWith(PREFIJO_CREDENCIAL_RELE)));
-  const todosLosNodos = rele ? [...NODOS_DEL_GUARDADO, ...NODOS_DE_REINTENTO_RELE] : NODOS_DEL_GUARDADO;
-  for (const n of todosLosNodos) if (!por(n)) h.push(`guardado: falta el nodo «${n}»`);
-  if (!rele) for (const n of NODOS_DE_REINTENTO_RELE) if (por(n)) h.push(`guardado: sobra «${n}» (solo el canal rele reintenta un 429)`);
+  for (const n of NODOS_DEL_GUARDADO) if (!por(n)) h.push(`guardado: falta el nodo «${n}»`);
   for (const n of NODOS_RETIRADOS_DEL_GUARDADO) if (por(n)) h.push(`guardado: sobra «${n}» (el contrato v2 del 30/10 lo quitó: todo documento se guarda)`);
   const st = (flujo && flujo.settings) || {};
   for (const [k, v] of Object.entries(RETENCION_DEL_GUARDADO)) if (st[k] !== v) h.push(`guardado: settings.${k} tiene que ser ${JSON.stringify(v)} (el binario del medio quedaría en los datos de la ejecución; decisión de Andres del 30/10)`);
@@ -486,20 +442,15 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
     if (n && !(Number(prep.position[1]) > Number(n.position[1]))) h.push(`guardado: «Preparar guardado» tiene que ir DEBAJO de «${otro}» en el lienzo (si no, corre antes y demora la respuesta)`);
   }
   if (!(Number(ancla.position[1]) < Number(prep.position[1]))) h.push('guardado: «Reportar mensaje (entrante)» tiene que ir arriba de «Preparar guardado»');
-  for (const [de, salida, a] of rele ? ARISTAS_DEL_GUARDADO_RELE : ARISTAS_DEL_GUARDADO) if (!destinosDe(flujo, de, salida).includes(a)) h.push(`guardado: «${de}» (salida ${salida}) no está conectado a «${a}»`);
+  for (const [de, salida, a] of ARISTAS_DEL_GUARDADO) if (!destinosDe(flujo, de, salida).includes(a)) h.push(`guardado: «${de}» (salida ${salida}) no está conectado a «${a}»`);
   if (rele) {
-    // El reintento del 429: una sola vuelta (la condición mira `$runIndex`), solo WM-3037, 2 a 3 s con azar. Y la compuerta no se salta: nada va de la info a la descarga ni de la descarga a guardar sin pasar por ella.
-    for (const [de, a] of [['Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)'], ['Descargar medio (guardado)', 'Guardar medio']]) {
-      if ([0, 1].some((i) => destinosDe(flujo, de, i).includes(a))) h.push(`guardado: «${de}» salta la compuerta del 429 hacia «${a}»`);
+    // Canal rele: los dos GET de medios reintentan por su cuenta (0 nodos nuevos): 2 intentos y una espera de 2000 a 3000 ms.
+    for (const nombre of ['Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)']) {
+      const g = por(nombre);
+      if (g.retryOnFail !== true || g.maxTries !== 2 || !(Number(g.waitBetweenTries) >= 2000 && Number(g.waitBetweenTries) <= 3000)) h.push(`guardado: «${nombre}» (canal rele) tiene que llevar retryOnFail, maxTries 2 y waitBetweenTries de 2000 a 3000 ms`);
     }
-    for (const nombre of [NODOS_DE_REINTENTO_RELE[0], NODOS_DE_REINTENTO_RELE[2]]) {
-      const c = por(nombre);
-      if (c.type !== 'n8n-nodes-base.if' || JSON.stringify((c.parameters || {}).conditions || {}).indexOf(JSON.stringify(CONDICION_429_RELE).slice(1, -1)) < 0) h.push(`guardado: «${nombre}» tiene que ser un IF con la condición del 429 (WM-3037, solo en la primera vuelta)`);
-    }
-    for (const nombre of [NODOS_DE_REINTENTO_RELE[1], NODOS_DE_REINTENTO_RELE[3]]) {
-      const w = por(nombre);
-      if (w.type !== 'n8n-nodes-base.wait' || (w.parameters || {}).amount !== ESPERA_429_RELE || (w.parameters || {}).unit !== 'seconds') h.push(`guardado: «${nombre}» tiene que esperar de 2 a 3 s (Wait en segundos)`);
-    }
+    const redir = ((((por('Descargar medio (guardado)').parameters || {}).options || {}).redirect || {}).redirect || {});
+    if (redir.followRedirects !== false) h.push('guardado: «Descargar medio (guardado)» no puede seguir redirecciones');
   }
   // El código común, tal cual.
   if (!String((prep.parameters || {}).jsCode || '').includes(FUENTE_PREPARAR)) h.push('guardado: «Preparar guardado» no incluye guardado-preparar.js tal cual');
@@ -510,11 +461,11 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
     if (n.type !== 'n8n-nodes-base.code') h.push(`guardado: «${nombre}» tiene que ser un nodo Code`);
     if (codigoLeeBinario((n.parameters || {}).jsCode)) h.push(`guardado: «${nombre}» lee el contenido del binario (ningún nodo Code de la rama lo hace)`);
   }
-  for (const nombre of todosLosNodos) {
+  for (const nombre of NODOS_DEL_GUARDADO) {
     const n = por(nombre);
     if (!NODOS_CODE_DEL_GUARDADO.includes(nombre) && n.type === 'n8n-nodes-base.code') h.push(`guardado: «${nombre}» no puede ser un nodo Code`);
     for (const d of [0, 1].flatMap((i) => destinosDe(flujo, nombre, i))) {
-      if (!todosLosNodos.includes(d)) h.push(`guardado: «${nombre}» sigue hacia «${d}», fuera de la rama`);
+      if (!NODOS_DEL_GUARDADO.includes(d)) h.push(`guardado: «${nombre}» sigue hacia «${d}», fuera de la rama`);
     }
   }
   const reintento = por('Reintentar el guardado').parameters || {};
@@ -563,7 +514,7 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
       if (/graph\.facebook\.com|lookaside|fbsbx|whatsAppApi/i.test(texto + JSON.stringify(n.credentials || {}))) h.push(`guardado: «${nombre}» llama a Meta (Graph o su CDN) en un flujo que va por el relé`);
       const base = esBase((n.parameters || {}).url);
       if (base === undefined) h.push(`guardado: «${nombre}» no llama al relé (/v1/envio/…)`); else bases.add(base);
-      if (n.retryOnFail) h.push(`guardado: «${nombre}» no reintenta por el relé (un id vencido da 502 WM-3040 y cada GET gasta una de las 500 descargas diarias por WABA)`);
+      if (n.retryOnFail && nombre === 'Avisar falla del guardado') h.push('guardado: «Avisar falla del guardado» no reintenta (un aviso repetido llegaría dos veces)');
     }
     if (bases.size > 1) h.push('guardado: los nodos del relé no usan la misma base');
     const jsPrep = String((prep.parameters || {}).jsCode || '');
@@ -612,7 +563,7 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
   const aviso = por('Avisar falla del guardado');
   const envioDelFlujo = por('Enviar a WhatsApp');
   if (envioDelFlujo && JSON.stringify(aviso.credentials || {}) !== JSON.stringify(envioDelFlujo.credentials || {})) h.push('guardado: «Avisar falla del guardado» tiene que llevar la MISMA credencial que «Enviar a WhatsApp» (la de envío de su variante)');
-  if (por('Descargar medio (guardado)').retryOnFail) h.push('guardado: «Descargar medio (guardado)» no reintenta (con la URL vacía no hay qué reintentar)');
+  if (!rele && por('Descargar medio (guardado)').retryOnFail) h.push('guardado: «Descargar medio (guardado)» no reintenta (con la URL vacía no hay qué reintentar)');
   if (aviso.onError !== undefined || aviso.continueOnFail !== undefined) h.push('guardado: «Avisar falla del guardado» no lleva onError: si Meta lo rechaza, la ejecución termina en error (ningún fallo tragado)');
   if (!/(to:\s*|o\.to = String\()\(?\$json\.numeroRecepcion\b/.test(String((aviso.parameters || {}).jsonBody || ''))) h.push('guardado: «Avisar falla del guardado» va SOLO al número de recepción del negocio');
   if (aviso.retryOnFail || por('Guardar medio').retryOnFail) h.push('guardado: el aviso y el guardado no reintentan');
