@@ -355,7 +355,7 @@ callable, ensayo y, **al final, la bandera**. El invocador lo concede
 `scripts/nube-visor.sh --servicio buscarconversaciones` (lista cerrada de siete
 servicios: también `tomarconversacion`, `devolverconversacion`, `enviarcomopersona`, `reclamarsalidapersona` y `confirmarsalidapersona`): una Function nueva puede quedar sin `roles/run.invoker` para `allUsers`
 y responder un 403 de Google en HTML antes de correr el código. Sale en seco por
-omisión, con el «sí» de Andres y en la ventana 23:30–01:30
+omisión y con el «sí» de Andres, a cualquier hora (Andres, 22–23/10/2026: sin ventana)
 (`.github/DESPLIEGUE-FIREBASE.md`, sección del invocador).
 
 **Reversión hacia adelante, no hacia atrás.** Redesplegar una etiqueta anterior

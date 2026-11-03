@@ -335,6 +335,11 @@ if (!ficha.saludado && raEsSoloSaludo(norm)) return salir(saludo());
 if (ficha.comprobanteMs > 0 && (raHablaDePagar(norm) || /\b(pago|pague|pagado|pagaste|comprobante|transferencia|deposito|material|llega\w*|llego|enviar\w*|enviaron|mandar\w*|mandaron|recib\w*|entrega\w*)\b/.test(norm) || (/\blibro\b/.test(norm) && /\b(cuando|donde|llega\w*|llego|envi\w*|mand\w*|recib\w*)\b/.test(norm)))) {
   return salir({ tipo: 'derivar', motivo: 'consulta', clave: 'no_entrega', aviso: avisoDeConsulta('no_entrega', 'queja de no entrega: el cliente pregunta por su pago o por el material'), cat: cat });
 }
+// LA UBICACIÓN (02/11/2026): el cliente la pide por texto o por voz. Va DESPUÉS de la cancelación, del recordatorio del QR abierto y de la queja de no entrega tras un comprobante: «cancela mi pedido, ¿dónde quedan?» cancela, y «ya pagué, ¿dónde quedan?» sigue el camino del pago. La respuesta es del CÓDIGO (la dirección y el enlace de Maps de la Consola, sin modelo, sin botones); sin ninguno de los dos datos NO se inventa nada y se pasa con Antonio (aviso + botón).
+if (!esVisual && raPideUbicacion(norm, textoCliente)) {
+  if (raTextoUbicacion(cfg) !== '') return salir(Object.assign({ tipo: 'ubicacion', cat: cat }, abierto()));
+  return salir({ tipo: 'derivar', motivo: 'consulta', clave: 'ubicacion', aviso: avisoDeConsulta('ubicacion', 'pidió la ubicación del negocio y la Consola no la trae'), cat: cat });
+}
 // Una nota de voz corta o ininteligible (menos de 3 palabras o sin letras que valgan) que el código no atendió arriba (ni siquiera la derivación de no entrega tras un comprobante, que va antes): se pide repetirla
 // con un texto fijo; el modelo no inventa una respuesta.
 if (esAudio && raAudioIlegible(norm)) return salir({ tipo: 'audio_fijo', causa: 'corto', cat: cat });
