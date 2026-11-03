@@ -190,7 +190,9 @@ export const manejarRegistrar = (d: DepsEditores) => async (p: CallableRequest) 
     // En Drive dos altas del mismo Gmail devuelven el MISMO id de permiso: si alguien vigente (o con la baja pendiente)
     // lo tiene, borrarlo quitaría el permiso de esa persona.
     const vigente = (x: { data(): Record<string, unknown> | undefined }) =>
-      (x.data()?.['estado'] === 'activo' || x.data()?.['estado'] === 'revocado_pendiente') && x.data()?.['permisoId'] === permisoId;
+      (x.data()?.['estado'] === 'activo' || x.data()?.['estado'] === 'revocado_pendiente') && x.data()?.['permisoId'] === permisoId
+      // El id de permiso de un usuario es el mismo en todos los archivos: solo protege si es de ESTA hoja.
+      && x.data()?.['archivoId'] === archivoId;
     const compartido = mismoGmail.docs.some(vigente) || (actual.exists && vigente(actual));
     if (mismoGmail.docs.some(ocupa)) return { v: 'correo' as const, compartido };
     // Otra alta para la MISMA persona se coló desde que se leyó: no se pisa su permisoId sin revocarlo.

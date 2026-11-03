@@ -296,6 +296,21 @@ describe('registrarEditorCrm: revisión de seguridad (03/11/2026)', () => {
     expect(vivos[0]?.data()['permisoId']).toBe('perm-fijo');
   });
 
+  it('NIEGA: el mismo permisoId en OTRA hoja no protege: el perdedor sí deshace el permiso recién creado en esta hoja', async () => {
+    fake.estado.idFijo = 'perm-fijo';
+    const crear = fake.cliente.crearPermiso;
+    fake.cliente.crearPermiso = async (...a) => {
+      const r = await crear(...a);
+      await db.doc(`tenants/${A}/editoresCrm/op2`).set({
+        correoGoogle: correoDe('op1'), estado: 'activo', permisoId: 'perm-fijo', archivoId: ARCHIVO_B,
+      });
+      return r;
+    };
+    expect(await codigo(registrar(peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` })))).toBe('already-exists');
+    expect(fake.llamadas.filter((l) => l.op === 'borrar')).toEqual([{ op: 'borrar', archivoId: ARCHIVO_A, dato: 'perm-fijo' }]);
+    expect(await editor(A, 'op1')).toBeUndefined();
+  });
+
   it('NIEGA (carrera): dos Gmail a la vez para la MISMA persona: uno queda, el otro se aborta y deshace solo lo suyo', async () => {
     fake.estado.barrera = 2;
     const r = await Promise.all([
