@@ -215,6 +215,13 @@ export function hallazgosDelEnvioRele(flujo) {
   const js = String((leer.parameters || {}).jsCode || '');
   if (!js.includes(FUENTE_DECIDIR_ENVIO) || !js.includes(FUENTE_CODIGOS_RELE)) h.push('envio rele: «Leer respuesta del relé» no incluye codigos.js y decidir-envio.js tal cual');
   if (!/ORIGEN-AMBIGUO/.test(js) || !/\$\('¿Enviar de verdad\?'\)\.all\(0, 1\)/.test(js)) h.push('envio rele: «Leer respuesta del relé» no falla cerrado si «¿Enviar de verdad?» corrió más de una vez (origen cruzado)');
+  // Decisión I4: «incierto» y «agotado» terminan en error (Stop and Error), no siguen al reporte.
+  const parar = nodos.find((n) => n.name === 'Detener por envío incierto');
+  const sw = nodos.find((n) => n.name === '¿Qué hacer con el envío?');
+  const con = (flujo && flujo.connections) || {};
+  const sale = (i) => (((con['¿Qué hacer con el envío?'] || {}).main || [])[i] || []).map((c) => c.node);
+  if (!parar || parar.type !== 'n8n-nodes-base.stopAndError') h.push('envio rele: falta «Detener por envío incierto» (Stop and Error)');
+  else if (!sw || !JSON.stringify(sw.parameters || {}).includes('"rightValue":"incierto"') || !JSON.stringify(sw.parameters || {}).includes('"rightValue":"agotado"') || !sale(2).includes('Detener por envío incierto')) h.push('envio rele: «incierto» y «agotado» tienen que ir a «Detener por envío incierto»');
   return h;
 }
 
@@ -261,7 +268,7 @@ export function injertar(plantilla, opciones = {}) {
 // El destinatario va sin «+», el cuerpo solo lleva las claves de la Cloud API que el relé acepta y pesa hasta 64 KiB.
 export const MARCADOR_URL_DEL_RELE = 'REEMPLAZAR_URL_INTERNA_DEL_RELE';
 export const PREFIJO_CREDENCIAL_RELE = 'AAB1 envío · ';
-export const NODOS_DEL_ENVIO_RELE = ['¿Enviar de verdad?', 'Enviar a WhatsApp', 'Leer respuesta del relé', '¿Qué hacer con el envío?', 'Esperar reintento', 'Enviar respaldo', '¿Reportar? (saliente)', 'Reportar mensaje (saliente)'];
+export const NODOS_DEL_ENVIO_RELE = ['¿Enviar de verdad?', 'Enviar a WhatsApp', 'Leer respuesta del relé', '¿Qué hacer con el envío?', 'Esperar reintento', 'Enviar respaldo', 'Detener por envío incierto', '¿Reportar? (saliente)', 'Reportar mensaje (saliente)'];
 /** Las claves del cuerpo que el relé acepta (el resto se descarta). */
 export const CLAVES_DEL_CUERPO_RELE = ['messaging_product', 'recipient_type', 'to', 'type', 'text', 'interactive', 'template', 'reaction', 'image', 'audio', 'video', 'document', 'sticker'];
 export const LIMITE_DEL_CUERPO_RELE = 64 * 1024;
@@ -333,13 +340,13 @@ export function parametrosDeMensajeRele(o) {
   };
 }
 
-const reglaPorAccion = (accion) => ({
+const reglaPorAccion = (accion, otras = [], nombre = accion) => ({
   conditions: {
     options: { caseSensitive: true, leftValue: '', typeValidation: 'strict', version: 2 },
-    conditions: [{ id: `a-${accion}`, leftValue: '={{ $json.accion }}', rightValue: accion, operator: { type: 'string', operation: 'equals' } }],
-    combinator: 'and',
+    conditions: [accion, ...otras].map((a) => ({ id: `a-${a}`, leftValue: '={{ $json.accion }}', rightValue: a, operator: { type: 'string', operation: 'equals' } })),
+    combinator: otras.length ? 'or' : 'and',
   },
-  renameOutput: true, outputKey: accion,
+  renameOutput: true, outputKey: nombre,
 });
 
 export function nodosDeEnvioRele(opciones = {}) {
@@ -382,8 +389,8 @@ export function nodosDeEnvioRele(opciones = {}) {
     },
     {
       id: 'rele-que-hacer', name: '¿Qué hacer con el envío?', type: 'n8n-nodes-base.switch', typeVersion: 3.2, position: [x0 + 720, y0],
-      parameters: { rules: { values: [reglaPorAccion('reintentar'), reglaPorAccion('respaldo')] }, options: { fallbackOutput: 'extra', renameFallbackOutput: 'listo' } },
-      notes: 'reintentar → espera y vuelve a «Enviar a WhatsApp»; respaldo → el mismo contenido como texto; listo (ok, incierto o agotado) → sigue al reporte, que solo cuenta lo que salió.',
+      parameters: { rules: { values: [reglaPorAccion('reintentar'), reglaPorAccion('respaldo'), reglaPorAccion('incierto', ['agotado'], 'detener')] }, options: { fallbackOutput: 'extra', renameFallbackOutput: 'listo' } },
+      notes: 'reintentar → espera y vuelve a «Enviar a WhatsApp»; respaldo → el mismo contenido como texto; detener (incierto o agotado, decisión I4 de Andres, 03/11) → «Detener por envío incierto», la ejecución termina en error; listo (ok) → sigue al reporte.',
     },
     {
       id: 'rele-esperar', name: 'Esperar reintento', type: 'n8n-nodes-base.wait', typeVersion: 1.1, position: [x0 + 960, y0 - 340],
@@ -399,11 +406,20 @@ export function nodosDeEnvioRele(opciones = {}) {
       }),
       notes: 'Si el relé o Meta rechazan el interactivo o la plantilla, sale el mismo contenido como texto: UN solo intento (Idempotency-Key = cliente-ejecución-respaldo-n). Envía de a uno con 1,5 s entre mensajes. Lee el mensaje de «Leer respuesta del relé», no de «Armar mensajes»: el camino por el Switch y la espera es largo y así no depende del emparejamiento.',
     },
+    {
+      id: 'rele-detener', name: 'Detener por envío incierto', type: 'n8n-nodes-base.stopAndError', typeVersion: 1, position: [x0 + 960, y0 + 200],
+      parameters: {
+        errorType: 'errorMessage',
+        // Mensaje FIJO: solo la decisión y el código sanitizado (ya limpio por decidir-envio.js). Nunca el teléfono, el texto del cliente, la clave ni el cuerpo del relé.
+        errorMessage: "={{ 'Envio por el rele sin confirmar (' + String($json.accion).replace(/[^a-z]/g, '').slice(0, 10) + ', codigo ' + String($json.codigo).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 40) + ', rol enviar): no se reenvia, no se respalda, no se reporta.' }}",
+      },
+      notes: 'Decisión I4 (Andres, 03/11/2026): si la decisión del envío es «incierto» (504 WM-3041, red, código desconocido, origen ambiguo) o «agotado», la ejecución TERMINA EN ERROR y se ve en n8n. Sin reenvío, sin respaldo, sin reporte y sin avisar de nuevo al cliente. 0 mensajes por conversación. Va debajo de todo (corre al final).',
+    },
   ];
   const connections = {
     'Enviar a WhatsApp': { main: [[enlace('Leer respuesta del relé')]] },
     'Leer respuesta del relé': { main: [[enlace('¿Qué hacer con el envío?')]] },
-    '¿Qué hacer con el envío?': { main: [[enlace('Esperar reintento')], [enlace('Enviar respaldo')], []] },
+    '¿Qué hacer con el envío?': { main: [[enlace('Esperar reintento')], [enlace('Enviar respaldo')], [enlace('Detener por envío incierto')], []] },
     'Esperar reintento': { main: [[enlace('Enviar a WhatsApp')]] },
   };
   let salidas;
@@ -430,7 +446,7 @@ export function nodosDeEnvioRele(opciones = {}) {
       },
     );
     connections['Enviar respaldo'] = { main: [[enlace('¿Reportar? (saliente)')]] };
-    connections['¿Qué hacer con el envío?'].main[2] = [enlace('¿Reportar? (saliente)')];
+    connections['¿Qué hacer con el envío?'].main[3] = [enlace('¿Reportar? (saliente)')];
     connections['¿Enviar de verdad?'] = { main: [[enlace('Enviar a WhatsApp')], [enlace('¿Reportar? (saliente)')]] };
     connections['¿Reportar? (saliente)'] = { main: [[enlace('Reportar mensaje (saliente)')], []] };
     connections['Reportar mensaje (saliente)'] = { main: [[]] };
@@ -438,7 +454,7 @@ export function nodosDeEnvioRele(opciones = {}) {
   } else {
     connections['Enviar respaldo'] = { main: [[]] };
     connections['¿Enviar de verdad?'] = { main: [[enlace('Enviar a WhatsApp')], []] };
-    salidas = [{ nodo: 'Enviar respaldo', salida: 0 }, { nodo: '¿Qué hacer con el envío?', salida: 2 }, { nodo: '¿Enviar de verdad?', salida: 1 }];
+    salidas = [{ nodo: 'Enviar respaldo', salida: 0 }, { nodo: '¿Qué hacer con el envío?', salida: 3 }, { nodo: '¿Enviar de verdad?', salida: 1 }];
   }
   return { nodes, connections, entrada: '¿Enviar de verdad?', salidas };
 }

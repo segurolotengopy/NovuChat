@@ -20,11 +20,11 @@ const contiene = (e: Envio[], clave: string) => e.filter((x) => x.clave === clav
 
 describe('la forma de la cadena del relé', () => {
   const cadena = nodosDeEnvio(OPC_RELE);
-  it('son 8 nodos: DOS más que la cadena de Graph (D1), y «¿Falló el envío?» ya no existe', () => {
+  it('son 9 nodos: TRES más que la cadena de Graph (D1 + «Detener por envío incierto», I4), y «¿Falló el envío?» ya no existe', () => {
     const graph = nodosDeEnvio({ credenciales: { graph: 'G', ingesta: 'I' }, ingestaUrl: 'https://i.example/x' });
     expect(graph.nodes).toHaveLength(6);
     expect(cadena.nodes.map((n) => n.name)).toEqual(NODOS_DEL_ENVIO_RELE);
-    expect(cadena.nodes).toHaveLength(graph.nodes.length + 2);
+    expect(cadena.nodes).toHaveLength(graph.nodes.length + 3);
     expect(cadena.nodes.some((n) => n.name === '¿Falló el envío?')).toBe(false);
   });
   it('los nombres y los ids no se repiten', () => {
@@ -39,7 +39,9 @@ describe('la forma de la cadena del relé', () => {
     expect(a('Leer respuesta del relé')).toEqual(['¿Qué hacer con el envío?']);
     expect(a('¿Qué hacer con el envío?', 0)).toEqual(['Esperar reintento']);
     expect(a('¿Qué hacer con el envío?', 1)).toEqual([R]);
-    expect(a('¿Qué hacer con el envío?', 2)).toEqual(['¿Reportar? (saliente)']);
+    expect(a('¿Qué hacer con el envío?', 2)).toEqual(['Detener por envío incierto']);
+    expect(a('¿Qué hacer con el envío?', 3)).toEqual(['¿Reportar? (saliente)']);
+    expect(a('Detener por envío incierto')).toEqual([]);
     expect(a('Esperar reintento')).toEqual([Q]);
     expect(a(R)).toEqual(['¿Reportar? (saliente)']);
   });
@@ -63,9 +65,11 @@ describe('la forma de la cadena del relé', () => {
     expect(w.type).toBe('n8n-nodes-base.wait');
     expect(w.parameters).toMatchObject({ resume: 'timeInterval', unit: 'seconds' });
   });
-  it('la Switch tiene 3 salidas: reintentar, respaldo y el resto', () => {
+  it('la Switch tiene 4 salidas: reintentar, respaldo, detener (incierto o agotado) y el resto', () => {
     const s = cadena.nodes.find((n) => n.name === '¿Qué hacer con el envío?')!;
-    expect(s.parameters['rules'].values.map((v: J) => v['outputKey'])).toEqual(['reintentar', 'respaldo']);
+    expect(s.parameters['rules'].values.map((v: J) => v['outputKey'])).toEqual(['reintentar', 'respaldo', 'detener']);
+    expect(s.parameters['rules'].values[2].conditions.conditions.map((c: J) => c['rightValue'])).toEqual(['incierto', 'agotado']);
+    expect(s.parameters['rules'].values[2].conditions.combinator).toBe('or');
     expect(s.parameters['options'].fallbackOutput).toBe('extra');
   });
   it('NIEGA: ningún nodo habla con Graph, su CDN ni la credencial whatsAppApi, ni lleva una URL real', () => {
@@ -99,12 +103,12 @@ describe('la forma de la cadena del relé', () => {
   });
   it('sin reporte: la cadena no lo arma y las salidas son el respaldo, el resto y el «no» de ¿Enviar de verdad?', () => {
     const c = nodosDeEnvio({ ...OPC_RELE, reportar: false, credenciales: { rele: CRED_RELE } });
-    expect(c.nodes).toHaveLength(6);
-    expect(c.salidas).toEqual([{ nodo: R, salida: 0 }, { nodo: '¿Qué hacer con el envío?', salida: 2 }, { nodo: '¿Enviar de verdad?', salida: 1 }]);
+    expect(c.nodes).toHaveLength(7);
+    expect(c.salidas).toEqual([{ nodo: R, salida: 0 }, { nodo: '¿Qué hacer con el envío?', salida: 3 },{ nodo: '¿Enviar de verdad?', salida: 1 }]);
   });
   it('injertar la cuelga de «Armar mensajes» y las salidas de lo que sigue', () => {
     const p = injertar({ nodes: [{ id: 'x', name: 'Armar mensajes', type: 't', parameters: { jsCode: 'return cmNumerar(x);' } }, { id: 'y', name: 'Resumen del turno', type: 't', parameters: {} }], connections: {} as Record<string, { main: { node: string }[][] }> }, { ...OPC_RELE, siguiente: 'Resumen del turno' });
-    expect(p.nodes).toHaveLength(10);
+    expect(p.nodes).toHaveLength(11);
     expect(p.connections['Armar mensajes']!.main[0]!.map((c) => c.node)).toEqual(['¿Enviar de verdad?']);
     expect(p.connections['Reportar mensaje (saliente)']!.main[0]!.map((c) => c.node)).toEqual(['Resumen del turno']);
     expect(p.connections['¿Reportar? (saliente)']!.main[1]!.map((c) => c.node)).toEqual(['Resumen del turno']);
@@ -355,6 +359,61 @@ describe('respaldo: un rechazo conocido sale como texto, una sola vez', () => {
   });
 });
 
+describe('I4 (Andres, 03/11): incierto o agotado → la ejecución TERMINA EN ERROR, sin reenvío, sin respaldo, sin reporte', () => {
+  const PARADA = 'Detener por envío incierto';
+  it('504 WM-3041 (incierto): error visible, UN solo envío, ningún respaldo, ningún reporte, ninguna espera', () => {
+    const m = mundoRele(() => falla('WM-3041', { reintentable: true }));
+    const r = turno(m, [mensaje(1)]);
+    expect(r.fallo?.nodo).toBe(PARADA);
+    expect(m.porNodo(Q)).toHaveLength(1);
+    expect(m.porNodo(R)).toHaveLength(0);
+    expect(r.llamadas.ingesta).toHaveLength(0);
+    expect(r.esperas).toEqual([]);
+  });
+  it('agotado (429 dos veces): error visible, exactamente 2 envíos (el original y su único reintento), sin respaldo ni reporte', () => {
+    const m = mundoRele(() => falla('WM-3037'));
+    const r = turno(m, [mensaje(1)]);
+    expect(r.fallo?.nodo).toBe(PARADA);
+    expect(m.porNodo(Q)).toHaveLength(2);
+    expect(m.porNodo(R)).toHaveLength(0);
+    expect(r.llamadas.ingesta).toHaveLength(0);
+  });
+  it('NIEGA: todos los casos inciertos (red, tiempo, 2xx sin id, HTML, código desconocido, respuesta vacía) terminan en error sin una segunda llamada', () => {
+    for (const resp of [{ error: 'ECONNRESET' }, { error: { message: 'timeout', code: 'ECONNABORTED' } }, { messages: [] }, { data: '<html>502</html>' }, falla('WM-3999', { reintentable: true }), {}]) {
+      const m = mundoRele(() => resp as J);
+      const r = turno(m, [mensaje(1)]);
+      expect(r.fallo?.nodo, JSON.stringify(resp)).toBe(PARADA);
+      expect(m.envios, JSON.stringify(resp)).toHaveLength(1);
+      expect(r.llamadas.ingesta, JSON.stringify(resp)).toHaveLength(0);
+    }
+  });
+  it('el mensaje de error es FIJO: lleva la decisión y el código sanitizado, y NO el teléfono, el texto del cliente, la clave ni el cuerpo del relé', () => {
+    const m = mundoRele(() => falla('WM-3041', { reintentable: true, detalle: 'cuerpo del relé secreto', telefono: '+70000001' }));
+    const r = turno(m, [mensaje(1, { texto: 'texto privado del cliente 777', respaldo: 'respaldo privado' })]);
+    const msj = String(r.fallo?.mensaje);
+    expect(msj).toContain('incierto');
+    expect(msj).toContain('WM-3041');
+    for (const prohibido of ['70000001', 'texto privado', 'respaldo privado', 'cuerpo del relé', 'secreto', CLIENTE + '-' + WF, 'Idempotency', 'wamid']) expect(msj, prohibido).not.toContain(prohibido);
+  });
+  it('lo demás sigue igual: ok y un rechazo no reintentable (respaldo) NO terminan en error', () => {
+    const bien = mundoRele((e) => ok(e.clave));
+    const r1 = turno(bien, [mensaje(1)]);
+    expect(r1.fallo).toBeNull();
+    expect(r1.llamadas.ingesta).toHaveLength(1);
+    const resp = mundoRele((e) => (e.nodo === Q ? falla('WM-3010') : ok(e.clave)));
+    const r2 = turno(resp, [mensaje(1)]);
+    expect(r2.fallo).toBeNull();
+    expect(resp.porNodo(R)).toHaveLength(1);
+  });
+  it('un lote mixto (uno ok y uno incierto) termina en error pero el ok ya salió y no se reenvía nada', () => {
+    const m = mundoRele((e) => (e.clave.endsWith('-1') ? falla('WM-3041') : ok(e.clave)));
+    const r = turno(m, [mensaje(1), mensaje(2)]);
+    expect(r.fallo?.nodo).toBe(PARADA);
+    expect(m.porNodo(Q)).toHaveLength(2);
+    expect(m.porNodo(R)).toHaveLength(0);
+  });
+});
+
 describe('incierto: ni respaldo ni reenvío ni reporte', () => {
   const CASOS: [string, () => J][] = [
     ['error de red', () => ({ error: 'ECONNRESET' })],
@@ -499,15 +558,20 @@ describe('ORIGEN-AMBIGUO de punta a punta: «¿Enviar de verdad?» corre dos vec
   };
   it('el flujo armado con una sola entrada NO es ambiguo (el mismo guion reintenta el 429 normal)', () => {
     const { mu, envios } = armar(flujoConCadena());
-    const r = mu.turno({ mensajes: [mensaje(1)], sinNumerar: false }, { idEjecucion: 'E1' });
+    const r = mu.turno({ mensajes: [mensaje(1)], sinNumerar: false }, { idEjecucion: 'E1', tolerarFallo: true });
     expect(r.esperas).toHaveLength(1);
     expect(envios.filter((e) => e.nodo === Q)).toHaveLength(2);
+    // Dos 429 seguidos: agotado → la ejecución termina en error (I4).
+    expect(r.fallo?.nodo).toBe('Detener por envío incierto');
   });
   it('NIEGA: con dos corridas de «¿Enviar de verdad?» la segunda tanda sale incierta ORIGEN-AMBIGUO: sin reintento (ni espera), sin respaldo y sin reporte', () => {
     // n8n (executionOrder v1) termina un camino entero antes del siguiente: la 1.ª tanda se decide con su origen correcto (solo había una corrida); en la 2.ª, `all(0, 0)` ya
     // sería el lote de OTRA tanda, y la guardia lo declara incierto en vez de emparejar la respuesta con el mensaje equivocado.
     const { mu, envios } = armar(flujoConDobleEntrada(), (n) => (n === 1 ? ok('1') : falla('WM-3037')));
-    const r = mu.turno({ mensajes: [mensaje(1)], sinNumerar: false }, { idEjecucion: 'E1' });
+    const r = mu.turno({ mensajes: [mensaje(1)], sinNumerar: false }, { idEjecucion: 'E1', tolerarFallo: true });
+    // I4: la segunda tanda es incierta, así que la ejecución termina en error (visible en n8n).
+    expect(r.fallo?.nodo).toBe('Detener por envío incierto');
+    expect(r.fallo?.mensaje).toContain('ORIGEN-AMBIGUO');
     const leidos = (r.porNodo['Leer respuesta del relé'] ?? []);
     expect(leidos.map((x) => x['accion'])).toEqual(['ok', 'incierto']);
     expect(leidos[1]!['codigo']).toBe('ORIGEN-AMBIGUO');

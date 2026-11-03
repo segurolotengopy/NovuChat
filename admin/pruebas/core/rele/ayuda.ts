@@ -82,4 +82,4 @@ export function mundoRele(guion: Guion, opciones: Partial<OpcionesDeEnvio> = {},
 }
 
 export const turno = (m: MundoRele, mensajes: J[], op: { idEjecucion?: string; sinNumerar?: boolean } = {}): ResultadoTurno =>
-  m.mu.turno({ mensajes, sinNumerar: op.sinNumerar === true }, { idEjecucion: op.idEjecucion ?? 'E1' });
+  m.mu.turno({ mensajes, sinNumerar: op.sinNumerar === true }, { idEjecucion: op.idEjecucion ?? 'E1', tolerarFallo: true });

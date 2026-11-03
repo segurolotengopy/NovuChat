@@ -10,6 +10,7 @@ import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { RAIZ_REPO, leerFuentes } from '../fuente-vm';
 import { FUENTE_CODIGOS_RELE, FUENTE_DECIDIR_ENVIO, hallazgosDelEnvioRele } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
+import { flujoConCadena } from './ayuda';
 
 interface Decision { accion: string; codigo: string; esperaS: number; idMeta?: string; intentos: { n429: number; n409: number; nReint: number } }
 interface Intentos { n429?: number; n409?: number; nReint?: number }
@@ -292,7 +293,15 @@ describe('falla cerrada: si «¿Enviar de verdad?» corrió más de una vez, el 
 describe('hallazgosDelEnvioRele verifica la falla cerrada del nodo armado', () => {
   const nodoLeer = (js: string) => ({ nodes: [{ name: 'Leer respuesta del relé', parameters: { jsCode: js } }] });
   it('el código actual pasa', () => {
-    expect(hallazgosDelEnvioRele(nodoLeer(`${FUENTE_CODIGOS_RELE}\n\n${FUENTE_DECIDIR_ENVIO}\n`))).toEqual([]);
+    expect(hallazgosDelEnvioRele(flujoConCadena())).toEqual([]);
+  });
+  it('NIEGA (I4): sin «Detener por envío incierto», o con incierto/agotado sin conectar a él, se queja', () => {
+    const sin = flujoConCadena();
+    sin.nodes = sin.nodes.filter((n) => n.name !== 'Detener por envío incierto');
+    expect(hallazgosDelEnvioRele(sin).join()).toMatch(/Detener por envío incierto/);
+    const suelto = flujoConCadena();
+    suelto.connections['¿Qué hacer con el envío?']!.main[2] = [];
+    expect(hallazgosDelEnvioRele(suelto).join()).toMatch(/tienen que ir a «Detener por envío incierto»/);
   });
   it('NIEGA: sin el nodo, sin la guardia o con el código cambiado, se queja', () => {
     expect(hallazgosDelEnvioRele({ nodes: [] }).join()).toMatch(/falta/);

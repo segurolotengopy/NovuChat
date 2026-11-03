@@ -74,6 +74,13 @@ siguen verdes sin cambios: este módulo las usa solo para comparar, leyendo sus 
   y `waitBetweenTries: 3000` (n8n no admite espera con azar ahí). 0 nodos nuevos, así que los topes de nodos no cambian. Son GET idempotentes. **Costo:** todo fallo reintentable
   de esos GET (un 5xx, un 502 WM-3040 de id vencido) gasta una descarga más de las 500 por día y por WABA; un 429 no gasta. El nodo no distingue el código: reintenta cualquiera.
   La descarga sigue sin seguir redirecciones.
+- **Decisión I4 (Andres, 03/11/2026): incierto o agotado → la ejecución termina en ERROR** (canal rele). La Switch «¿Qué hacer con el envío?» tiene ahora 4 salidas
+  (reintentar, respaldo, **detener**, listo) y «incierto» o «agotado» van al nodo Stop and Error «Detener por envío incierto» (**+1 nodo por flujo que use el relé**; contrato
+  de nodos: `NODOS_DEL_ENVIO_RELE` lo lleva y «listo» pasó de la salida 2 a la 3). Sin reenvío (el mensaje pudo haber salido, p. ej. 504 WM-3041), sin respaldo, sin
+  reporte y sin avisar de nuevo al cliente: 0 mensajes por conversación. El mensaje de error es fijo y solo trae la decisión y el código sanitizado: nunca el teléfono, el
+  texto del cliente, la clave ni el cuerpo del relé. Por qué un nodo y no un `throw` en el Code: lanzar en «Leer respuesta del relé» cortaría todo el lote y se perderían
+  los respaldos y reintentos de los otros mensajes del turno. Límite conocido: en un lote mixto, el error corta la ejecución al llegar al nodo, así que el reporte de un
+  mensaje «ok» posterior de ese mismo lote puede no correr (el mensaje ya salió; solo se pierde su fila de reporte).
 - **«Esperar reintento» espera el MÁXIMO del lote** (`Math.max` de los `esperaS`): si en un mismo turno un mensaje pide 61 s y otro 2 s, el segundo también espera 61 s.
   Es un efecto conocido de usar un solo Wait por lote; el lote de 1 con 1,5 s lo acota en la práctica.
 - **Un reintento sale DESPUÉS del mensaje siguiente:** el bucle reintenta tras terminar la vuelta de todos los mensajes, así que el mensaje 1 reintentado puede llegar

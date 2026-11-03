@@ -913,6 +913,8 @@ export function crearMundo(op: OpcionesMundo): Mundo {
         case 'removeDuplicates': salidas = ejecutarRepetidos(n, items); break;
         case 'noOp': salidas = [items.map((it, i) => pasa(n, it, i))]; break;
         case 'wait': salidas = ejecutarEspera(n, items); break;
+        // Stop and Error (errorMessage): la ejecución termina en error con el mensaje evaluado; ningún `onError` la esconde.
+        case 'stopAndError': throw new FalloDeNodo(n.name, new Error(String(evaluar(n.parameters['errorMessage'], items[0] ?? null))));
         default: throw new SinDoble(n.name, n.type);
       }
     }
