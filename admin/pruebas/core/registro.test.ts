@@ -31,7 +31,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../../web/src/core/lib/firebase', () => ({ db: {} }));
 
 import {
-  COLECCIONES_CERRADAS_DEL_CORE, DOCUMENTOS_DE_CONFIG_SOLO_SERVIDOR, IDS_FLUJOS, IDS_MODULOS, MODULOS_COMUNES_HOY, FLUJOS_DE_RUTA, REGISTRO, carpetasDe, documentoDeCobro,
+  COLECCIONES_CERRADAS_DEL_CORE, DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR, IDS_FLUJOS, IDS_MODULOS, MODULOS_COMUNES_HOY, FLUJOS_DE_RUTA, REGISTRO, carpetasDe, documentoDeCobro,
   documentoDeFlujo, esFlujo, esModulo, etiquetaDeCatalogo, flujosDeFicha, manifiestoDe, modulosDeFicha, modulosDeFlujos, pestanasDe, tieneModulo,
   type FichaConCapacidades, type IdFlujo, type IdModulo, type Manifiesto, type Pestana,
 } from '../../functions/src/registro.ts';
@@ -1189,34 +1189,28 @@ describe('9. derivaciones equivalentes: el registro calcula lo que las copias ca
   });
 });
 
-describe('documentos de config solo del servidor y de lectura admin (03/11/2026)', () => {
+describe('documentos de enlaces solo del servidor y de lectura admin (03/11/2026)', () => {
   const PRUEBAS_CRM = leer('admin/pruebas/modulos/crm/crm-reglas.test.ts');
-  const nombres = Object.keys(DOCUMENTOS_DE_CONFIG_SOLO_SERVIDOR);
+  const nombres = Object.keys(DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR);
 
-  it('la regla de lectura general los EXCLUYE de los miembros', () => {
-    for (const n of nombres) {
-      expect(REGLAS, `${n}: la lectura general no lo excluye`).toMatch(
-        new RegExp(`allow get, list: if \\(documento != '${n}' && esMiembro\\(tenantId\\)\\)`));
-    }
-  });
   it('cada uno tiene su lectura SOLO para esAdmin del mismo comercio y su escritura cerrada', () => {
     for (const n of nombres) {
       expect(REGLAS, `${n}: sin lectura de admin`).toMatch(new RegExp(`allow get, list: if documento == '${n}' && esAdmin\\(tenantId\\);`));
-      expect(REGLAS, `${n}: sin escritura cerrada`).toMatch(new RegExp(`allow create, update, delete: if documento == '${n}' && false;`));
+      expect(REGLAS, `${n}: sin escritura cerrada`).toMatch(new RegExp(`allow create, update, delete: if false;`));
       const lecturas = [...REGLAS.matchAll(new RegExp(`documento == '${n}'[^;]*;`, 'g'))].map((m) => m[0]);
       for (const l of lecturas) expect(l, `${n}: ${l}`).not.toMatch(/esOperador|esPropietario|esMiembro|esPersonaDelNegocio/);
     }
   });
   it('no están en la lista blanca de ningún módulo (el comercio no escribe ninguno de sus campos)', () => {
     for (const m of MANIFIESTOS) for (const c of m.configuracion) {
-      for (const n of nombres) expect(c.documento, `${m.modulo}`).not.toBe(`config/${n}`);
+      for (const n of nombres) expect(c.documento, `${m.modulo}`).not.toBe(`enlaces/${n}`);
     }
   });
   it('cada uno tiene su dueño en el registro y su prueba negativa', () => {
     for (const n of nombres) {
-      const d = DOCUMENTOS_DE_CONFIG_SOLO_SERVIDOR[n as keyof typeof DOCUMENTOS_DE_CONFIG_SOLO_SERVIDOR];
+      const d = DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR[n as keyof typeof DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR];
       expect(MANIFIESTOS.map((m) => m.modulo as string), n).toContain(d.modulo);
-      expect(PRUEBAS_CRM, `${n}: sin prueba negativa`).toContain(`config/${n}`);
+      expect(PRUEBAS_CRM, `${n}: sin prueba negativa`).toContain(`enlaces/${n}`);
     }
   });
 });

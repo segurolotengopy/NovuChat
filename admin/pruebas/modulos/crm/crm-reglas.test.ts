@@ -139,10 +139,10 @@ describe('config/crm: tipos y topes', () => {
 });
 
 // -----------------------------------------------------------------------------
-// config/crmEnlace — el enlace a la hoja (03/11/2026): solo lo lee el admin de ESE comercio; nadie lo escribe.
+// enlaces/minicrm — el enlace a la hoja (03/11/2026): solo lo lee el admin de ESE comercio; nadie lo escribe.
 // -----------------------------------------------------------------------------
-describe('config/crmEnlace: quién lee y nadie escribe', () => {
-  const enlace = (t: string) => `tenants/${t}/config/crmEnlace`;
+describe('enlaces/minicrm: quién lee y nadie escribe', () => {
+  const enlace = (t: string) => `tenants/${t}/enlaces/minicrm`;
   const URL_HOJA = 'https://docs.google.com/spreadsheets/d/AbCdEfGhIjKlMnOpQrSt/edit';
   const propietarioNc = () => entorno.authenticatedContext('u-novuchat', {
     nc: { t: {}, v: 1, owner: true }, firebase: { sign_in_provider: 'google.com', identities: {} }, email_verified: true,

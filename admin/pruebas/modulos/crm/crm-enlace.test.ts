@@ -4,7 +4,7 @@
  *   E2. Cuándo hay botón: solo admin, miniCRM encendido y enlace válido.
  *   E3. El script de Plataforma: seco por omisión, una escritura, respaldo, precondición, proyecto y producción.
  *   E4. El texto de la Consola y del script: solo el admin se suscribe; el comercio no escribe; sin secretos.
- * Las reglas de Firestore (quién lee y quién escribe `config/crmEnlace`) están en `crm-reglas.test.ts`.
+ * Las reglas de Firestore (quién lee y quién escribe `enlaces/minicrm`) están en `crm-reglas.test.ts`.
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
@@ -108,7 +108,7 @@ describe('E3. el script de Plataforma', () => {
     expect(mod.analizarArgumentos([...prod, '--confirmo-produccion', 'comercio-x'], ENV_REAL).ok).toBe(true);
   });
 
-  /** Una Firestore mínima en memoria: la ficha y `config/crmEnlace`, con cuenta de escrituras. */
+  /** Una Firestore mínima en memoria: la ficha y `enlaces/minicrm`, con cuenta de escrituras. */
   function baseDe(enlace: string | null, opciones: { cambiaAntes?: boolean } = {}) {
     let doc: { enlaceHoja: string } | null = enlace === null ? null : { enlaceHoja: enlace };
     let hora = 1;
@@ -126,7 +126,7 @@ describe('E3. el script de Plataforma', () => {
       async delete() { if (!doc) throw Object.assign(new Error('x'), { code: 5 }); doc = null; escrituras.push('delete'); },
     };
     const db = {
-      doc: (p: string) => (p.endsWith('crmEnlace') ? ref : ficha),
+      doc: (p: string) => (p.endsWith('enlaces/minicrm') ? ref : ficha),
       getAll: async (r: unknown) => [r === ficha ? { exists: true, get: () => 'activo', updateTime: { hora } } : snap(doc)],
     };
     return { db, escrituras, actual: () => doc };
@@ -185,9 +185,9 @@ describe('E4. el texto', () => {
     expect(c).toContain('enlaceMiniCrmParaBoton');
     expect(sinComentarios(leer('web/src/central/paginas/Tablero.tsx'))).toMatch(/<BotonMiniCrm tenantId=\{tenantId\} esAdmin=\{esAdmin\} \/>/);
   });
-  it('el script escribe SOLO config/crmEnlace: una sola ruta de escritura y ningún secreto', () => {
+  it('el script escribe SOLO enlaces/minicrm: una sola ruta de escritura y ningún secreto', () => {
     const c = sinComentarios(leer('scripts/plataforma/crm-enlace.mjs'));
-    expect([...c.matchAll(/\bdb\.doc\(`([^`]+)`\)/g)].map((m) => m[1])).toEqual(['tenants/${cfg.tenant}', 'tenants/${cfg.tenant}/config/crmEnlace']);
+    expect([...c.matchAll(/\bdb\.doc\(`([^`]+)`\)/g)].map((m) => m[1])).toEqual(['tenants/${cfg.tenant}', 'tenants/${cfg.tenant}/enlaces/minicrm']);
     expect(c).not.toMatch(/token|secret|clave|password|apiKey/i);
   });
 });

@@ -1,5 +1,5 @@
 /**
- * ESCRIBIR `tenants/{id}/config/crmEnlace` DE UN SOLO COMERCIO — seco por omisión.
+ * ESCRIBIR `tenants/{id}/enlaces/minicrm` DE UN SOLO COMERCIO — seco por omisión.
  *
  * QUÉ ES. El enlace a la hoja de Google del miniCRM de ese comercio (carpeta MiniCRM_CLIENTES), que la Consola
  * muestra como el botón «Abrir miniCRM» del Tablero al administrador del comercio. Lo escribe NovuChat desde
@@ -12,7 +12,7 @@
  *        [--aplicar] [--respaldo <ruta>] [--confirmo-produccion <tenant>]
  *
  * QUÉ HACE.
- *   · SECO (sin `--aplicar`): lee SOLO `config/crmEnlace`, imprime si hay enlace (nunca el enlace entero: el
+ *   · SECO (sin `--aplicar`): lee SOLO `enlaces/minicrm`, imprime si hay enlace (nunca el enlace entero: el
  *     identificador de la hoja se abrevia) y qué cambiaría. No escribe.
  *   · `--aplicar`: exige `--respaldo` (ruta absoluta, fuera de todo repositorio, carpeta 0700, archivo 0600, nunca
  *     se pisa) con el valor previo (o su ausencia), y recién entonces UNA escritura del documento. Relee y compara.
@@ -107,7 +107,7 @@ export async function ejecutar(cfg, deps) {
   const log = deps.log ?? ((t) => console.log(t));
   const rotulo = `${cfg.entorno} · tenant ${cfg.tenant}`;
   const ficha = db.doc(`tenants/${cfg.tenant}`);
-  const ref = db.doc(`tenants/${cfg.tenant}/config/crmEnlace`);
+  const ref = db.doc(`tenants/${cfg.tenant}/enlaces/minicrm`);
 
   const [fsnap] = await db.getAll(ficha, { fieldMask: ['estado'] });
   if (!fsnap.exists) { log(`\n  ✗ ${cfg.tenant}: no existe el comercio (${cfg.entorno})\n`); return 1; }

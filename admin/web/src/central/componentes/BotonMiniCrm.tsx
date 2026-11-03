@@ -5,7 +5,7 @@ import { enlaceMiniCrmParaBoton } from '../../../../functions/src/central/enlace
 
 /**
  * «ABRIR miniCRM» EN EL TABLERO. Lo ve solo el administrador del comercio, con el miniCRM encendido y un enlace
- * válido en `config/crmEnlace` (lo escribe NovuChat desde Plataforma; las reglas solo dejan leerlo al admin de ese
+ * válido en `enlaces/minicrm` (lo escribe NovuChat desde Plataforma; las reglas solo dejan leerlo al admin de ese
  * comercio). Sin enlace, sin permiso o con un error de lectura: no se pinta nada, sin avisos ni mensajes.
  */
 export function BotonMiniCrm({ tenantId, esAdmin }: { tenantId: string; esAdmin: boolean }) {
@@ -18,7 +18,7 @@ export function BotonMiniCrm({ tenantId, esAdmin }: { tenantId: string; esAdmin:
     if (!tenantId || !esAdmin) return;
     const a = onSnapshot(doc(db, 'tenants', tenantId, 'config', 'crm'),
       (d) => setActivo(d.get('activo')), () => setActivo(false));
-    const b = onSnapshot(doc(db, 'tenants', tenantId, 'config', 'crmEnlace'),
+    const b = onSnapshot(doc(db, 'tenants', tenantId, 'enlaces', 'minicrm'),
       (d) => setEnlace(d.get('enlaceHoja')), () => setEnlace(null));
     return () => { a(); b(); };
   }, [tenantId, esAdmin]);
