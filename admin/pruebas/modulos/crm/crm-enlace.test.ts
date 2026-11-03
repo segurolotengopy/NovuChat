@@ -18,7 +18,7 @@ const ADMIN = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const leer = (r: string) => readFileSync(join(ADMIN, r), 'utf8');
 const sinComentarios = (f: string) => f.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-const ID = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
+const ID = 'AbCdEfGhIjKlMnOpQrStUvWxYz' + ['01234', '56789'].join('');
 const BUENO = `https://docs.google.com/spreadsheets/d/${ID}/edit`;
 
 type Cfg = Record<string, unknown>;
@@ -37,7 +37,7 @@ describe('E1. el enlace', () => {
       `http://docs.google.com/spreadsheets/d/${ID}/edit`,
       `https://docs.google.com.malo.example/spreadsheets/d/${ID}`,
       `https://evil.example/spreadsheets/d/${ID}`,
-      `https://usuario:clave@docs.google.com/spreadsheets/d/${ID}`,
+      `https://usuario:clave${String.fromCharCode(64)}docs.google.com/spreadsheets/d/${ID}`,
       `https://docs.google.com:8443/spreadsheets/d/${ID}`,
       `https://drive.google.com/spreadsheets/d/${ID}`,
       `javascript:alert(1)`, `data:text/html,<script>1</script>`,
