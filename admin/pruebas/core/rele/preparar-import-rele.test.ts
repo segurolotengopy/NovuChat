@@ -167,6 +167,18 @@ describe('preparar-import.sh y RELE_URL_INTERNA', () => {
       expect(existsSync(join(raiz, 'Flujos', archivo.replace(/\.json$/, '.local.json'))), archivo).toBe(false);
     }
   });
+  it('NIEGA: Flujos/salida-de-persona.json NO queda libre de RELE_BASES_PERMITIDAS si lleva el marcador en una URL /v1/envio/ (la excepción cubre solo el dato suelto)', () => {
+    const conUrl = { ...SUELTO, nodes: [{ name: 'Enviar', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [0, 0], parameters: { url: `=${MARCADOR}/v1/envio/mensajes/{{ 1 }}` } }] };
+    writeFileSync(join(raiz, 'Flujos', 'salida-de-persona.json'), JSON.stringify(conUrl));
+    rmSync(join(raiz, 'Flujos', 'salida-de-persona.local.json'), { force: true });
+    const r = spawnSync('bash', ['scripts/preparar-import.sh', 'Flujos/salida-de-persona.json', '.env.prueba'], {
+      cwd: raiz, encoding: 'utf8',
+      env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: join(raiz, 'tabla.md'), BASH_ENV: '', ENV: '', RELE_URL_INTERNA: 'https://rele.empresa.example.com', RELE_BASES_PERMITIDAS: '' }),
+    });
+    expect(r.status, `${r.stdout}${r.stderr}`).toBe(1);
+    expect(`${r.stdout}${r.stderr}`).toContain('RELE_BASES_PERMITIDAS');
+    expect(existsSync(join(raiz, 'Flujos', 'salida-de-persona.local.json'))).toBe(false);
+  });
   it('la excepción es NOMBRADA por archivo: Flujos/salida-de-persona.json (ruta exacta) valida su propia lista y se repone sin RELE_BASES_PERMITIDAS', () => {
     const r = corrienteSuelto('salida-de-persona.json');
     expect(r.status, `${r.stdout}${r.stderr}`).toBe(0);

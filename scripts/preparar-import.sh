@@ -160,7 +160,8 @@ MARCADOR_RELE = "REEMPLAZAR_URL_INTERNA_DEL_RELE"
 if MARCADOR_RELE in texto:
     crudo = (de_env("RELE_URL_INTERNA") or tabla.get(MARCADOR_RELE) or "").strip()
     EXCEPCION_SIN_LISTA = "Flujos/salida-de-persona.json"
-    exige_lista = os.path.normpath(flujo) != EXCEPCION_SIN_LISTA
+    # La excepción es por archivo Y solo cubre el marcador como dato suelto: si el archivo lo lleva en una URL del relé (…/v1/envio/…), la lista se exige igual.
+    exige_lista = os.path.normpath(flujo) != EXCEPCION_SIN_LISTA or re.search(re.escape(MARCADOR_RELE) + r'/v1/envio/', texto) is not None
     if crudo:
         m_base = re.fullmatch(r'(https?)://([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*)(?::(\d{1,5}))?', crudo)
         motivo = None

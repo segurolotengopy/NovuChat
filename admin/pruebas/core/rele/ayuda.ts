@@ -81,5 +81,8 @@ export function mundoRele(guion: Guion, opciones: Partial<OpcionesDeEnvio> = {},
   return { mu, envios, porNodo: (n) => envios.filter((e) => e.nodo === n) };
 }
 
-export const turno = (m: MundoRele, mensajes: J[], op: { idEjecucion?: string; sinNumerar?: boolean } = {}): ResultadoTurno =>
-  m.mu.turno({ mensajes, sinNumerar: op.sinNumerar === true }, { idEjecucion: op.idEjecucion ?? 'E1', tolerarFallo: true });
+/** Como `turno`, pero el error de la ejecución queda en `resultado.fallo`: para los casos que terminan en error a propósito (incierto o agotado, I4). */
+export const turnoConError = (m: MundoRele, mensajes: J[], op: { idEjecucion?: string; sinNumerar?: boolean } = {}): ResultadoTurno => turno(m, mensajes, { ...op, tolerarFallo: true });
+/** `tolerarFallo` solo en los casos que terminan EN ERROR a propósito (incierto o agotado, decisión I4): ahí el error queda en `resultado.fallo`; en los demás un error lanza. */
+export const turno = (m: MundoRele, mensajes: J[], op: { idEjecucion?: string; sinNumerar?: boolean; tolerarFallo?: boolean } = {}): ResultadoTurno =>
+  m.mu.turno({ mensajes, sinNumerar: op.sinNumerar === true }, { idEjecucion: op.idEjecucion ?? 'E1', tolerarFallo: op.tolerarFallo === true });

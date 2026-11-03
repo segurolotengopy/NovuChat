@@ -422,7 +422,7 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
   const por = (nombre) => nodos.find((n) => n.name === nombre);
   // ¿La rama habla con el relé B9 (canal rele) o con Graph? Si CUALQUIERA de los tres nodos de Meta nombra al relé (por su URL o por su credencial), se
   // exige que los tres lo hagan: una rama a medias no pasa por Graph.
-  const rele =NODOS_DE_META_DEL_GUARDADO.some((nombre) => /\/v1\/envio\//.test(String(((por(nombre) || {}).parameters || {}).url || ''))
+  const rele = NODOS_DE_META_DEL_GUARDADO.some((nombre) => /\/v1\/envio\//.test(String(((por(nombre) || {}).parameters || {}).url || ''))
     || credDe(por(nombre)).some((c) => c.nombre.startsWith(PREFIJO_CREDENCIAL_RELE)));
   for (const n of NODOS_DEL_GUARDADO) if (!por(n)) h.push(`guardado: falta el nodo «${n}»`);
   for (const n of NODOS_RETIRADOS_DEL_GUARDADO) if (por(n)) h.push(`guardado: sobra «${n}» (el contrato v2 del 30/10 lo quitó: todo documento se guarda)`);

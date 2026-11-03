@@ -79,8 +79,9 @@ siguen verdes sin cambios: este módulo las usa solo para comparar, leyendo sus 
   de nodos: `NODOS_DEL_ENVIO_RELE` lo lleva y «listo» pasó de la salida 2 a la 3). Sin reenvío (el mensaje pudo haber salido, p. ej. 504 WM-3041), sin respaldo, sin
   reporte y sin avisar de nuevo al cliente: 0 mensajes por conversación. El mensaje de error es fijo y solo trae la decisión y el código sanitizado: nunca el teléfono, el
   texto del cliente, la clave ni el cuerpo del relé. Por qué un nodo y no un `throw` en el Code: lanzar en «Leer respuesta del relé» cortaría todo el lote y se perderían
-  los respaldos y reintentos de los otros mensajes del turno. Límite conocido: en un lote mixto, el error corta la ejecución al llegar al nodo, así que el reporte de un
-  mensaje «ok» posterior de ese mismo lote puede no correr (el mensaje ya salió; solo se pierde su fila de reporte).
+  los respaldos y reintentos de los otros mensajes del turno. En un lote mixto el error corta la ejecución al llegar al nodo, pero «Detener por envío incierto» va debajo de todo en el lienzo
+  (`executionOrder: v1` corre de arriba hacia abajo), así que la fila de reporte de los mensajes «ok» del mismo lote SÍ corre antes de la parada (lo prueba la suite).
+  Los reintentos y respaldos de la misma tanda tampoco se pierden.
 - **«Esperar reintento» espera el MÁXIMO del lote** (`Math.max` de los `esperaS`): si en un mismo turno un mensaje pide 61 s y otro 2 s, el segundo también espera 61 s.
   Es un efecto conocido de usar un solo Wait por lote; el lote de 1 con 1,5 s lo acota en la práctica.
 - **Un reintento sale DESPUÉS del mensaje siguiente:** el bucle reintenta tras terminar la vuelta de todos los mensajes, así que el mensaje 1 reintentado puede llegar

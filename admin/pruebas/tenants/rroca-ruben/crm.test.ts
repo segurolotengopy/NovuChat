@@ -253,6 +253,34 @@ const armoSinGuardar = (t: ResultadoTurno): void => {
   for (const s of salida) expect(s['guardarPlanilla']).toBe(false);
 };
 
+describe('la planilla NUNCA tumba la atención: si calcular el prospecto lanza, el turno responde y no se escribe en la hoja', () => {
+  const CIERRE = '} catch (e) { prospectoPlanilla = null; }';
+  const conFalla = (protegido: boolean): Flujo => {
+    const f = structuredClone(PRODUCCION) as Flujo;
+    const n = f.nodes.find((x) => x.name === 'Armar mensajes')!;
+    const js = String((n.parameters as J)['jsCode']);
+    expect(js.includes(CIERRE)).toBe(true);
+    // La declaración de más abajo pisa a la de la biblioteca (las declaraciones se elevan; gana la última): el cálculo del prospecto lanza.
+    (n.parameters as J)['jsCode'] = `${protegido ? js : js.replace(CIERRE, '} finally { }')}\nfunction rrProspectoCrm() { throw new Error('prospecto inesperado'); }`;
+    return f;
+  };
+  it('PROTEGIDO: el mensaje al cliente sale, no se escribe en Sheets y la rama de la planilla no corre', () => {
+    const pl = planilla();
+    const t = hablar(crear({ flujo: conFalla(true), base: BASE_CON_PLANILLA, dobles: pl.dobles }), ANA, mTexto('hola'));
+    expect(t.mensajes.length).toBeGreaterThan(0);
+    expect(pl.escrituras).toEqual([]);
+    expect(pl.actualizaciones).toEqual([]);
+    expect(corrioLaRama(t)).toBe(false);
+  });
+  it('MUTACIÓN: sin el try/catch, el mismo fallo tumba el turno (el cliente no recibe respuesta): la prueba de arriba sí detecta la protección', () => {
+    const pl = planilla();
+    let t: ReturnType<typeof hablar> | null = null;
+    let lanzo = false;
+    try { t = hablar(crear({ flujo: conFalla(false), base: BASE_CON_PLANILLA, dobles: pl.dobles }), ANA, mTexto('hola')); } catch { lanzo = true; }
+    expect(lanzo || t!.mensajes.length === 0).toBe(true);
+  });
+});
+
 describe('flujo: quién guarda y quién no', () => {
   it('una conversación normal (id y hoja) agrega UNA fila con el prospecto', () => {
     const pl = planilla();
