@@ -22,7 +22,7 @@ const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
 const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
-const { configuracionFlujo } = await import('../../../functions/src/ingesta.ts');
+const { configuracionFlujo } = await import('../functions/src/ingesta.ts');
 
 const T = 'crm-cableado';
 // Número de prueba con la forma que exige el repositorio público: seis ceros seguidos.
