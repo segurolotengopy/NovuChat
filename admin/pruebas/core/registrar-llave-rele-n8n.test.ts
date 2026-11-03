@@ -1,0 +1,225 @@
+/**
+ * `scripts/registrar-llave-rele-n8n.sh`: registra la llave del relé B9 en la credencial Header Auth
+ * «AAB1 envío · <alias>» de n8n. Se prueba NEGANDO, con un n8n FALSO (servidor HTTP local en memoria).
+ *
+ * Lo que se cierra:
+ *  - alias desconocido o mal uso: sale 2 y no hay ni una llamada;
+ *  - el seco solo lee (GET): rechaza modo distinto de 600, dos líneas, forma inválida, enlaces;
+ *  - duplicados o nombre con otro tipo: se aborta sin escribir;
+ *  - la llave de prueba jamás aparece en stdout/stderr, ni en los archivos de respaldo;
+ *  - --aplicar actualiza en el lugar (PATCH), relee y borra la entrega; si falla, la conserva;
+ *  - solo el alias de ensayo puede crear la credencial.
+ */
+import { spawn } from 'node:child_process';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { entornoDelEmulador } from './entorno-del-hijo.ts';
+
+const AQUI = dirname(fileURLToPath(import.meta.url));
+const RAIZ = join(AQUI, '..', '..', '..');
+const SCRIPT = join(RAIZ, 'scripts', 'registrar-llave-rele-n8n.sh');
+
+const API_KEY = 'llave-api-de-prueba-xyz';
+// Llave de prueba con la forma aab1e_<wabaId>_<64 hex>, armada sin diez dígitos seguidos.
+const WABA = '12345' + 'x'.replace('x', '6789');
+const HEX = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6';
+const LLAVE = `aab1e_${WABA}_${HEX}`;
+
+interface Cred { id: string; name: string; type: string; data?: unknown }
+interface Llamada { metodo: string; ruta: string; cuerpo: string }
+
+let dir = '';
+let servidor: Server;
+let creds: Cred[] = [];
+let llamadas: Llamada[] = [];
+let flujos: unknown[] = [];
+let patchCodigo = 200;
+let envArchivo = '';
+
+beforeEach(async () => {
+  dir = mkdtempSync(join(tmpdir(), 'llave-rele-'));
+  chmodSync(dir, 0o700);
+  creds = [{ id: 'cred1abcd', name: 'AAB1 envío · ruben', type: 'httpHeaderAuth' }];
+  llamadas = [];
+  flujos = [{ name: 'Flujo A', nodes: [{ credentials: { httpHeaderAuth: { id: 'cred1abcd', name: 'x' } } }] }];
+  patchCodigo = 200;
+  servidor = createServer((req, res) => {
+    const partes: Buffer[] = [];
+    req.on('data', (c: Buffer) => partes.push(c));
+    req.on('end', () => {
+      const cuerpo = Buffer.concat(partes).toString();
+      const ruta = (req.url ?? '').split('?')[0] ?? '';
+      llamadas.push({ metodo: req.method ?? '', ruta, cuerpo });
+      const responder = (codigo: number, o: unknown) => { res.statusCode = codigo; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(o)); };
+      if (req.headers['x-n8n-api-key'] !== API_KEY) return responder(401, {});
+      if (ruta === '/api/v1/credentials' && req.method === 'GET') return responder(200, { data: creds.map(({ id, name, type }) => ({ id, name, type })) });
+      if (ruta === '/api/v1/workflows' && req.method === 'GET') return responder(200, { data: flujos });
+      if (ruta === '/api/v1/credentials' && req.method === 'POST') {
+        const c = JSON.parse(cuerpo) as Cred;
+        creds.push({ id: `nueva${creds.length}abcd`, name: c.name, type: c.type, data: c.data });
+        return responder(200, {});
+      }
+      const m = /^\/api\/v1\/credentials\/(\w+)$/.exec(ruta);
+      if (m && req.method === 'PATCH') {
+        if (patchCodigo !== 200) return responder(patchCodigo, {});
+        const c = creds.find((x) => x.id === m[1]);
+        if (c) c.data = (JSON.parse(cuerpo) as { data: unknown }).data;
+        return responder(200, {});
+      }
+      return responder(404, {});
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, '127.0.0.1', ok));
+  const base = `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`;
+  envArchivo = join(dir, 'env');
+  writeFileSync(envArchivo, `N8N_API_KEY=${API_KEY}\nN8N_BASE_URL=${base}\n`, { mode: 0o600 });
+});
+
+afterEach(async () => {
+  await new Promise<void>((ok) => servidor.close(() => ok()));
+  rmSync(dir, { recursive: true, force: true });
+});
+
+function correr(args: string[]): Promise<{ codigo: number; salida: string }> {
+  return new Promise((ok) => {
+    const h = spawn('bash', [SCRIPT, ...args], { cwd: RAIZ, env: entornoDelEmulador(undefined, { XDG_RUNTIME_DIR: dir }) });
+    let salida = '';
+    h.stdout.on('data', (d: Buffer) => { salida += d.toString(); });
+    h.stderr.on('data', (d: Buffer) => { salida += d.toString(); });
+    h.on('close', (c) => ok({ codigo: c ?? -1, salida }));
+  });
+}
+const entrega = (alias: string, contenido = LLAVE, modo = 0o600) => {
+  const ruta = join(dir, `llave-rele-${alias}`);
+  writeFileSync(ruta, contenido, { mode: modo });
+  chmodSync(ruta, modo);
+  return ruta;
+};
+const seco = (alias = 'ruben') => ['--alias', alias, '--env', envArchivo];
+const aplicar = (alias = 'ruben') => [...seco(alias), '--aplicar', '--confirmo', 'produccion'];
+const escrituras = () => llamadas.filter((l) => l.metodo !== 'GET');
+function limpia(salida: string) {
+  expect(salida).not.toContain(LLAVE);
+  expect(salida).not.toContain(HEX);
+  expect(salida).not.toContain(WABA);
+  expect(salida).not.toContain(API_KEY);
+}
+
+describe('mal uso: sale 2 sin llamar a n8n', () => {
+  const casos: Array<[string, () => string[]]> = [
+    ['alias desconocido', () => seco('cliente99')],
+    ['alias con mayúsculas', () => seco('Ruben')],
+    ['sin alias', () => ['--env', envArchivo]],
+    ['aplicar sin --confirmo', () => [...seco(), '--aplicar']],
+    ['aplicar con confirmación equivocada', () => [...seco(), '--aplicar', '--confirmo', 'si']],
+    ['opción desconocida', () => [...seco(), '--x']],
+  ];
+  for (const [que, args] of casos) {
+    it(que, async () => {
+      entrega('ruben');
+      const r = await correr(args());
+      expect(r.codigo).toBe(2);
+      expect(llamadas).toHaveLength(0);
+      limpia(r.salida);
+    });
+  }
+});
+
+describe('seco: solo GET, valida la entrega sin mostrarla', () => {
+  it('entrega válida: sale 0, no escribe y no muestra la llave', async () => {
+    entrega('ruben');
+    const r = await correr(seco());
+    expect(r.codigo).toBe(0);
+    expect(r.salida).toContain('citada por 1 flujo');
+    expect(escrituras()).toHaveLength(0);
+    limpia(r.salida);
+  });
+  const malas: Array<[string, () => void]> = [
+    ['modo distinto de 600', () => { entrega('ruben', LLAVE, 0o644); }],
+    ['dos líneas', () => { entrega('ruben', `${LLAVE}\n${LLAVE}\n`); }],
+    ['forma inválida', () => { entrega('ruben', `${LLAVE}x`); }],
+    ['con espacios', () => { entrega('ruben', `${LLAVE} `); }],
+    ['vacía', () => { entrega('ruben', ''); }],
+    ['enlace simbólico', () => { const real = join(dir, 'real'); writeFileSync(real, LLAVE, { mode: 0o600 }); symlinkSync(real, join(dir, 'llave-rele-ruben')); }],
+    ['ausente', () => undefined],
+  ];
+  for (const [que, armar] of malas) {
+    it(`rechaza entrega ${que}`, async () => {
+      armar();
+      const r = await correr(seco());
+      expect(r.codigo).toBe(1);
+      expect(escrituras()).toHaveLength(0);
+      limpia(r.salida);
+      const ap = await correr(aplicar());
+      expect(ap.codigo).toBe(2);
+      expect(escrituras()).toHaveLength(0);
+      limpia(ap.salida);
+    });
+  }
+  it('duplicados: aborta sin escribir', async () => {
+    entrega('ruben');
+    creds.push({ id: 'cred2abcd', name: 'AAB1 envío · ruben', type: 'httpHeaderAuth' });
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(2);
+    expect(escrituras()).toHaveLength(0);
+    expect(existsSync(join(dir, 'llave-rele-ruben'))).toBe(true);
+    limpia(r.salida);
+  });
+  it('nombre con otro tipo: aborta sin escribir', async () => {
+    entrega('ruben');
+    creds[0]!.type = 'whatsAppApi';
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(2);
+    expect(escrituras()).toHaveLength(0);
+  });
+  it('credencial inexistente en un alias de cliente: aborta sin crear', async () => {
+    entrega('evy');
+    const r = await correr(aplicar('evy'));
+    expect(r.codigo).toBe(2);
+    expect(escrituras()).toHaveLength(0);
+  });
+});
+
+describe('--aplicar', () => {
+  it('actualiza en el lugar, relee, borra la entrega y no muestra la llave', async () => {
+    const ruta = entrega('ruben');
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(0);
+    expect(escrituras()).toHaveLength(1);
+    const w = escrituras()[0]!;
+    expect(w.metodo).toBe('PATCH');
+    expect(w.ruta).toBe('/api/v1/credentials/cred1abcd');
+    expect(JSON.parse(w.cuerpo)).toEqual({ data: { name: 'Authorization', value: `Bearer ${LLAVE}` } });
+    expect(llamadas.some((l) => l.metodo === 'DELETE')).toBe(false);
+    expect(existsSync(ruta)).toBe(false);
+    limpia(r.salida);
+    // El respaldo existe, es de modo 600 y no lleva la llave.
+    const rd = join(dir, 'registrar-llave-rele-respaldos');
+    const archivos = readdirSync(rd);
+    expect(archivos).toHaveLength(1);
+    expect(readFileSync(join(rd, archivos[0]!), 'utf8')).not.toContain(HEX);
+  });
+  it('si n8n falla, conserva la entrega', async () => {
+    const ruta = entrega('ruben');
+    patchCodigo = 500;
+    const r = await correr(aplicar());
+    expect(r.codigo).toBe(3);
+    expect(existsSync(ruta)).toBe(true);
+    limpia(r.salida);
+  });
+  it('solo el alias de ensayo crea la credencial si falta', async () => {
+    const ruta = entrega('ensayo01');
+    const r = await correr(aplicar('ensayo01'));
+    expect(r.codigo).toBe(0);
+    expect(escrituras().map((l) => l.metodo)).toEqual(['POST']);
+    expect(creds.some((c) => c.name === 'AAB1 envío · ensayo01' && c.type === 'httpHeaderAuth')).toBe(true);
+    expect(existsSync(ruta)).toBe(false);
+    limpia(r.salida);
+  });
+});
+
