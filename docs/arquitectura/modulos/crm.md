@@ -90,7 +90,7 @@ del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
 - `crm.activo = false` (PR-B3): `configuracionFlujo` lee `config/crm` en cada turno y, si existe con
   `activo` booleano, devuelve `crm: { activo }` (`crmParaElFlujo`, `modulos/crm/crm.ts`); nunca los campos
   reservados del servidor. Sin documento o sin booleano la respuesta es la de siempre y el módulo sigue
-  encendido. Costo: una lectura de documento por turno, 0 mensajes por conversación. Los flujos con la rama
+  encendido. `moneda` y `listas` de `config/crm` todavía NO llegan al flujo (solo `activo`). Costo: una lectura de documento por turno, 0 mensajes por conversación. Los flujos con la rama
   (`Prospecto para la planilla`) ya lo leen; ningún flujo vivo se republica con este cambio.
 - Con `returnFirstMatch: false` las ejecuciones de n8n guardan todas las filas A a J
   del mismo teléfono (datos de esa sola persona). En la plantilla de las subcuentas el rango A..T incluye las columnas del equipo J..M (valor, responsable, estado, próxima acción): quedan en el historial de ejecuciones, no se escriben ni deciden nada. PR-F debe partir la lectura en dos rangos (A..I y N..T) o limitar la retención de ejecuciones de esos flujos.

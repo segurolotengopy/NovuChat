@@ -33,7 +33,7 @@ export const crmParaElFlujo = (datos: Readonly<Record<string, unknown>> | null |
   return typeof activo === 'boolean' ? { crm: { activo } } : {};
 };
 
-export const recordatoriosActivos =(config: ConfigCrm | null | undefined): boolean => {
+export const recordatoriosActivos = (config: ConfigCrm | null | undefined): boolean => {
   if (config === null || typeof config !== 'object') return false;
   const r = config.recordatorios;
   return r !== null && typeof r === 'object' && (r as { activo?: unknown }).activo === true;
