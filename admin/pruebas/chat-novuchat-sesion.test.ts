@@ -136,10 +136,11 @@ describe('ayudantes de los nodos Code (_sesion.js)', () => {
       expect(H['cnResultadoDeCompromiso'](x), JSON.stringify(x)).toEqual({ resultado: 'falla', version: 0, ganador: null });
     }
   });
-  it('el archivo no usa globales que el Code de n8n no tiene y todavía no está incluido en ningún nodo ni JSON', () => {
+  it('el archivo no usa globales que el Code de n8n no tiene (ni eval ni new Function) y SÍ está incluido en los nodos (PR-4c2)', () => {
     expect(FUENTE.replace(/^\s*\/\/.*$/gm, '')).not.toMatch(/\b(URL|Buffer|crypto|require|process|fetch|eval|TextEncoder)\b(?!\s*:)|new\s+Function|\bFunction\s*\(/);
     const cons = readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat/construir.mjs'), 'utf8');
-    expect(cons).not.toContain('_sesion');
-    for (const j of ['chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json']) expect(readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat', j), 'utf8')).not.toContain('cnCuerpoComprometer');
+    expect(cons).toContain('_sesion');
+    for (const j of ['chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json']) expect(readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat', j), 'utf8')).toContain('cnCuerpoComprometer');
   });
+
 });

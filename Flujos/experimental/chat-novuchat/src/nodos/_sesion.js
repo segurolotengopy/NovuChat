@@ -49,3 +49,22 @@ function cnResultadoDeCompromiso(item) {
   if (cuerpo.resultado === 'conflicto_version') return { resultado: 'conflicto', version: conv.version, ganador: conv.estado };
   return { resultado: 'falla', version: 0, ganador: null };
 }
+// La cabecera `X-NovuChat-Numero` con la MISMA regla que «Traer configuración»: en modo prueba, el número esperado de «Config base»; si no, el del entrante.
+function cnNumeroHeader() {
+  const carga = cnPrimero('Carga de entrada') || {};
+  const base = cnPrimero('Config base') || {};
+  return carga.prueba && carga.prueba.modoPrueba === true ? String(base.phoneNumberIdEsperado || '') : String(carga.phoneNumberId || '');
+}
+// Qué quedó comprometido del registro de eventos: recorre los intentos de atrás hacia adelante y toma el último que corrió.
+//   { ok, falla, version, ficha, seq } — `ficha` es la que ESE intento propuso (la que el servidor guardó si ok).
+const CN_INTENTOS_REGISTRO = [['Comprometer evento (3.º intento)', 'Replanificar registro (2.º)'], ['Comprometer evento (2.º intento)', 'Replanificar registro'], ['Comprometer evento', 'Registrar evento']];
+function cnRegistro() {
+  for (const par of CN_INTENTOS_REGISTRO) {
+    if (!cnNodo(par[0])) continue;
+    const r = cnResultadoDeCompromiso(cnPrimero(par[0]));
+    const prop = cnPrimero(par[1]) || {};
+    if (r.resultado !== 'ok' || !prop.ficha) return { ok: false, falla: true, version: 0, ficha: null, seq: 0 };
+    return { ok: true, falla: false, version: r.version, ficha: prop.ficha, seq: prop.seq };
+  }
+  return { ok: false, falla: false, version: 0, ficha: null, seq: 0 };
+}

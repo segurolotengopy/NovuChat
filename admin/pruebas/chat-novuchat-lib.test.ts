@@ -1363,6 +1363,22 @@ describe('guardias de --verificar', () => {
     const d = prod(); delete d['nodes'].find((n: J) => n.name === 'WhatsApp Trigger').credentials;
     expect(CONSTRUIR.guardias('trigger', d).join(' ')).toMatch(/no trae una credencial explícita/);
   });
+  it('el ESTADO SE COMPROMETE ANTES DE ENVIAR: «Armar mensajes» conectado al envío, un nodo de compromiso ausente o apuntando a otra Function, y un envío colgado de otro nodo se detectan (PR-4c2)', () => {
+    const a = prod();
+    a['connections']['Armar mensajes'].main[0].push({ node: '¿Enviar de verdad?', type: 'main', index: 0 });
+    const ha = CONSTRUIR.guardias('trigger', a, DATOS_CRM).join(' ');
+    expect(ha).toMatch(/«Armar mensajes» tiene que colgar SOLO de «¿Comprometer turno\?»/);
+    expect(ha).toMatch(/«Armar mensajes» conecta con «¿Enviar de verdad\?»|solo «Soltar mensajes» puede/);
+    const b = prod();
+    b['nodes'] = b['nodes'].filter((n: J) => n.name !== 'Comprometer turno');
+    expect(CONSTRUIR.guardias('trigger', b, DATOS_CRM).join(' ')).toMatch(/falta el nodo «Comprometer turno»/);
+    const c = prod();
+    c['nodes'].find((n: J) => n.name === 'Comprometer evento').parameters.url = 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta';
+    expect(CONSTRUIR.guardias('trigger', c, DATOS_CRM).join(' ')).toMatch(/«Comprometer evento» tiene que llamar a configuracionFlujo/);
+    const d = prod();
+    d['connections']['Soltar mensajes'].main[0] = d['connections']['Soltar mensajes'].main[0].filter((x: J) => x.node !== '¿Enviar de verdad?');
+    expect(CONSTRUIR.guardias('trigger', d, DATOS_CRM).join(' ')).toMatch(/tiene que colgar de «Soltar mensajes»/);
+  });
   it('subscriptions, un anfitrión ajeno, un agente, la memoria, un modelo de chat y un marcador REEMPLAZAR_ fuera de «Config base» se detectan', () => {
     const a = prod(); a['nodes'].find((n: J) => n.name === 'Enviar a WhatsApp').parameters.url = 'https://graph.facebook.com/v26.0/123/subscribed_apps';
     expect(CONSTRUIR.guardias('trigger', a).join(' ')).toMatch(/subscriptions|subscribed_apps/);
@@ -1433,8 +1449,8 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     const r = CONSTRUIR.construir({ verificar: true });
     expect(r.resultado.map((x) => [x.archivo, x.alDia, x.versionado])).toEqual([['chat-novuchat.prueba.json', true, []], ['chat-novuchat.novuchat.json', true, []]]);
     expect(r.huerfanos).toEqual([]);
-    // 44 + los 9 de la rama común del guardado de medios (contrato v2 del 30/10).
-    expect(r.resultado.map((x) => x.nodos)).toEqual([53, 53]);
+    // 53 de antes (44 + los 9 de la rama común del guardado de medios) y los 17 del estado de la conversación en el servidor (PR-4c2).
+    expect(r.resultado.map((x) => x.nodos)).toEqual([70, 70]);
   });
   it('un dato cambiado, un archivo borrado a mano o una guardia violada a mano hacen fallar `--verificar` en una copia temporal; un JSON sin datos es un huérfano', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chat-novuchat-'));
@@ -1528,7 +1544,7 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
   it('la cadena de envío (enviar, respaldo en texto, reporte saliente) es la de `comun-sin-agente/src/envio.mjs`, injertada sin cambios', async () => {
     const { nodosDeEnvio } = (await import(/* @vite-ignore */ join(EXPERIMENTAL, 'comun-sin-agente/src/envio.mjs'))) as { nodosDeEnvio: Fn };
     const datos = DATOS_BRUTOS['credenciales'] as J;
-    const fuente = nodosDeEnvio({ credenciales: { graph: datos['graph'], ingesta: datos['ingesta'] }, ingestaUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta', desde: [5720, 160] });
+    const fuente = nodosDeEnvio({ credenciales: { graph: datos['graph'], ingesta: datos['ingesta'] }, ingestaUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta', desde: [9080, 160], armado: 'Soltar mensajes' });
     for (const n of fuente.nodes as J[]) expect((flujo['nodes'] as J[]).find((x) => x.name === n.name), `«${n.name}» difiere de la fuente común`).toEqual(n);
     expect((fuente.nodes as J[]).map((n) => n.name)).toEqual(['¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)', 'Reportar mensaje (saliente)']);
     // Una sola conexión es propia: «¿Reportar? (saliente)» cuelga de la puerta «¿Meta aceptó?» (regla I-ENTREGA 3) y no directo del reporte.

@@ -43,7 +43,7 @@ export const CONFIG_BASE = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   librerias: ['src/lib/chat.js'],
-  comun: ['src/nodos/_comun.js'],
+  comun: ['src/nodos/_comun.js', 'src/nodos/_sesion.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
     filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
@@ -555,6 +555,18 @@ export function guardias(entrada, flujo, datos = {}) {
   // La coalescencia de clics necesita su espera y el modelo, su reintento: sin ellos el flujo responde una vez por clic o sin validar.
   const espera = nodos.find((n) => n.name === 'Esperar ráfaga');
   if (nodos.length && (!espera || espera.type !== 'n8n-nodes-base.wait')) h.push('falta el nodo «Esperar ráfaga» (n8n-nodes-base.wait): sin él no hay coalescencia de clics');
+  // El ESTADO SE COMPROMETE ANTES DE ENVIAR (PR-4c2, enmienda §2.3): «Armar mensajes» nunca cuelga del envío; solo de «¿Comprometer turno?». Y los nodos de compromiso existen y llaman a la consola.
+  const conex = (flujo && flujo.connections) || {};
+  const destinosDe = (n) => (((conex[n] || {}).main || []).flat().map((x) => x && x.node));
+  if (nodos.length) {
+    for (const n of ['¿Comprometer turno?', 'Comprometer turno', '¿Conflicto de versión?', 'Replanificar mensajes', 'Comprometer turno (2.º intento)', 'Soltar mensajes', 'Comprometer evento', 'Comprometer evento (2.º intento)', 'Comprometer evento (3.º intento)', 'Comprometer compensación', 'Cerrar turno']) {
+      if (!nombres.has(n)) h.push(`falta el nodo «${n}» (estado de la conversación en el servidor)`);
+    }
+    if (destinosDe('Armar mensajes').join('|') !== '¿Comprometer turno?') h.push('«Armar mensajes» tiene que colgar SOLO de «¿Comprometer turno?»: el estado se compromete antes de enviar');
+    if (!destinosDe('Soltar mensajes').includes('¿Enviar de verdad?')) h.push('«¿Enviar de verdad?» tiene que colgar de «Soltar mensajes» (el envío va después del compromiso)');
+    for (const [desde, a] of Object.entries(conex)) if (desde !== 'Soltar mensajes' && ((a.main || []).flat().some((x) => x && x.node === '¿Enviar de verdad?'))) h.push(`«${desde}» conecta con «¿Enviar de verdad?»: solo «Soltar mensajes» puede`);
+    for (const n of nodos.filter((x) => /^Comprometer /.test(x.name))) if (!/\/configuracionFlujo$/.test(String(parametros(n).url || ''))) h.push(`«${n.name}» tiene que llamar a configuracionFlujo`);
+  }
   // Retención de ejecuciones, orden y zona horaria (decisión de Andres, 03/10/2026: se guardan solo las ejecuciones que fallan).
   const st = (flujo && flujo.settings) || {};
   if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» y saveExecutionProgress false (con la rama del guardado de medios el binario quedaría en la ejecución: decisión de Andres del 30/10, contrato v2 §8.1)');
@@ -615,8 +627,8 @@ export function armarTenant(proyecto, datos, archivo) {
     }
     if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
   }
-  // La cadena de envío común, con las credenciales por NOMBRE del archivo de datos y la ingesta de la consola. Cuelga de «Armar mensajes», arriba de la hoja y de «Confirmar envío».
-  injertar(plantilla, { credenciales: { graph: dato(datos, 'credenciales.graph', archivo), ingesta: dato(datos, 'credenciales.ingesta', archivo) }, ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`, desde: [5720, 160] });
+  // La cadena de envío común, con las credenciales por NOMBRE del archivo de datos y la ingesta de la consola. Cuelga de «Soltar mensajes» (después de comprometer el estado), arriba de la hoja y de «Confirmar envío».
+  injertar(plantilla, { credenciales: { graph: dato(datos, 'credenciales.graph', archivo), ingesta: dato(datos, 'credenciales.ingesta', archivo) }, ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`, desde: [9080, 160], armado: 'Soltar mensajes' });
   // Puerta de la entrega (propia): el reporte saliente cuelga de «¿Meta aceptó?», que lee `messages[0].id`. Solo se reencamina la CONEXION de la cadena común; sus nodos quedan intactos.
   const reporta = plantilla.connections['¿Reportar? (saliente)'];
   if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${archivo}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);

@@ -12,7 +12,7 @@ por teléfono lo guarda y lo pasa este mismo flujo, explícito, en cada llamada.
 | `src/lib/chat.js` | Biblioteca pura (prefijo `ch`, ~1.650 líneas). Primera parte: copia adaptada de Captación mínima (detectores, extracción de nombre y empresa, filtros del modelo, aviso); el resto es nuevo |
 | `src/nodos/*.js` | Un archivo por nodo Code. Qué es común y qué propio: `PROPIO.md` |
 | `construir.mjs` | Arma los dos JSON con `../comun-sin-agente/construir.mjs`, valida los datos, inyecta `@@datos` y aplica las guardias. `--verificar` no escribe; un argumento desconocido sale con 2 sin escribir |
-| `chat-novuchat.novuchat.json` / `.prueba.json` | Producción (con «WhatsApp Trigger») y prueba (con «Entrada de prueba»), 44 nodos cada uno |
+| `chat-novuchat.novuchat.json` / `.prueba.json` | Producción (con «WhatsApp Trigger») y prueba (con «Entrada de prueba»), 70 nodos cada uno (53 hasta PR-4c1 y 17 del estado de la conversación en el servidor) |
 | `admin/scripts/datos/chat-novuchat/{novuchat,ensayo}.json` | LA fuente de datos: instrucciones del documento, 7 rubros con puntos clave, cierres exactos, respaldos, textos, precios (frases) y `modelo` |
 | `herramientas/bateria.mjs`, `bateria-casos.json` | Batería contra el modelo (`--seco` o `--vertex`/`--env`), 53 casos |
 
@@ -34,11 +34,21 @@ WhatsApp Trigger | Entrada de prueba → Config base → Carga de entrada (filtr
 `PROPIO.md` declara qué se incluye de lo común (con su ruta) y qué es propio. Con `executionOrder: v1`, cada rama termina antes de la siguiente, de arriba abajo: el entrante se reporta ARRIBA de lo que responde; «Confirmar envío» va
 debajo de los envíos y la hoja. No hay ciclos: ningún nodo lee por nombre algo que corra más de una vez.
 
+## El estado de la conversación vive en el servidor (PR-4c2, 03/11/2026)
+
+La ficha ENTERA (un bloque opaco, ~7 KB, tope 16 KiB medido en bytes) ya no está en `$getWorkflowStaticData` sino en el servidor (`configuracionFlujo`, rama `sesion`, espacio `chat-novuchat`; contrato en `docs/arquitectura/estado-de-conversacion.md`). La cola de eventos (≤6) va DENTRO del estado versionado.
+- **Leer**: «Traer configuración» pide también `sesion: leer`; «Config del negocio» entrega `cfg.sesion {ok, version, estado}`. Sin `conversacion` válida, o con otro código que 200, la puerta da la ruta `sin_estado`: genérico con el botón a recepción (`traspasoSinPregunta` con `cta_url`), sin medios, modelo, aviso, hoja ni compromiso.
+- **Registrar evento** compromete el evento en la cola (`versionLeida` de `leer`): es lo que permite la coalescencia entre ejecuciones. Con `conflicto_version` se replanifica en código sobre el estado ganador y admite hasta TRES intentos (los clics en ráfaga chocan a menudo); con el tercer conflicto, genérico con botón. Nodos: «¿Comprometer evento?», «Comprometer evento» (+2.º y 3.er intento), «¿Conflicto al registrar?» (×2), «Replanificar registro» (×2, el mismo código que «Registrar evento»).
+- **No se relee tras la espera** (enmienda §6.1.3): las N ejecuciones de una ráfaga llegan al modelo y solo la última compromete; las demás chocan y, si otra ya respondió o hay un evento más nuevo, terminan sin enviar. Costo residual: ~0,0005 USD por ejecución extra en una ráfaga que llega al modelo.
+- **Armar mensajes** NO envía ni escribe: arma todo en un ítem y pide el compromiso ANTES de enviar (enmienda §2.3). «¿Comprometer turno?», «Comprometer turno», «¿Conflicto de versión?», «Replanificar mensajes» (el mismo código, sobre el estado ganador y con el mismo resultado del modelo), «Comprometer turno (2.º intento)» y «Soltar mensajes» (un ítem por mensaje; de él cuelgan el envío común, la hoja, «Confirmar envío» y «Resumen del turno»). Un solo reintento; el 2.º conflicto o un 5xx dan el genérico con botón, sin aviso y sin hoja (reemplaza la respuesta: 0 mensajes más).
+- **Confirmar envío** ya no escribe: arma el compromiso compensatorio (ficha de antes, o deshace el `avisado` si Meta rechazó la plantilla; `avisado` se comprometió ya con el aviso). «¿Compensar entrega?», «Comprometer compensación» y «Cerrar turno» (que termina en error si Meta rechazó al cliente).
+- Residuos declarados: `chatNovuchatCrm` (la marca del contacto nuevo) sigue en `staticData`; el reseteo de las fichas de prueba debe pasar a `comprometer` con estado null (otro PR); al publicar, las fichas vivas de `staticData` se abandonan (decide Andres al publicar).
+
 ## Contratos
 
 - **Evento** `{k, t, c, rubro, boton}`: `t` es lo que lee el modelo (`[Eligió el rubro: Salud]`, `[Nota de voz] …`, `[Envió solo emojis o signos: 👽]`); `c`, lo que el cliente escribió o dijo
   (sobre `c` corren los detectores). Un texto del cliente nunca trae corchetes (no puede fingir un evento del sistema) ni los delimitadores `<<<` `>>>`.
-- **Ficha** (`staticData.global.chatNovuchat[tel]`, ~30 campos, saneada campo por campo): `rubro`, `nombre`, `empresa`, `necesidad`, `temas`, `hechos`
+- **Ficha** (en el servidor, `estadoJson` del espacio `chat-novuchat`; antes `staticData.global.chatNovuchat[tel]`; ~30 campos, saneada campo por campo): `rubro`, `nombre`, `empresa`, `necesidad`, `temas`, `hechos`
   (`pidioEquipo`, `pidioPlanes`, `eligioOtro`, `interactuo`, `descarte`), `avisado`, `planesMostrados`, `soporte`, `anuncio`, `seq`, `hasta`, `cola` (eventos sin responder, ≤6),
   `historial` (últimas 8 entradas, ≤300 caracteres) y `ultimosIds` (5). Ventana de 24 h (vencen aviso, planes y soporte), olvido a las 48 h. Sin contadores de rotación.
   Escriben: «Registrar evento» (el evento), «Armar mensajes» (todo lo demás) y «Confirmar envío» (`avisado`; y restaura `fichaAntes`, con la cola, si Meta rechaza el envío).

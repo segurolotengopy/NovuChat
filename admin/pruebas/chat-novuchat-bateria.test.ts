@@ -266,10 +266,9 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect(v).toEqual(expect.arrayContaining(['muletilla']));
   });
   it('si no se coalescen los clics (cada ejecución responde solo a su evento y nada se consume), tres clics en 2 s dan tres respuestas: «mas_de_un_mensaje_por_turno»', async () => {
-    // La coalescencia tiene DOS cerrojos independientes (el último evento de cada teléfono y lo ya respondido); para revertirla hay que quitar los dos.
-    let f = estropear('if (f.seq !== reg.seq) return [];', '', ['Armar turno']);
-    f = estropear('const eventos = f.cola.filter((e) => e.seq > f.hasta);', 'const eventos = f.cola.filter((e) => e.seq === reg.seq);', ['Armar turno'], f);
-    f = estropear('f.cola = f.cola.filter((e) => e.seq > a.hasta);', '', undefined, f);
+    // Con el estado en el servidor, la coalescencia la hace el compromiso final: quien choca (`conflicto_version`) y ve que otra ejecución ya respondió o que llegó un evento más nuevo, NO responde.
+    // Para revertirla se quita ese «no respondo» y cada ejecución que choca replanifica y responde por su cuenta.
+    const f = estropear("if (antes.seq > ultimo || antes.hasta >= ultimo || pendientes !== eventosTurno.map((e) => e.seq).join(',')) return [];", '', ['Replanificar mensajes']);
     expect(await violacionesCon(f, 'E1')).toContain('mas_de_un_mensaje_por_turno');
   });
   it('si el código confía en la etiqueta del modelo («derivar_equipo» sin que el cliente lo pida), se avisa a recepción de más', async () => {

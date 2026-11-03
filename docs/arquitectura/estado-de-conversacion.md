@@ -154,7 +154,7 @@ PR-4a, PR-4b, PR-6b); escritor B en paralelo (H2b, PR-6a).
 | PR-3 | TTL e índices en `firestore.indexes.json` (políticas primero en staging) | coordinadora | pendiente; puede ir en la etiqueta de PR-2b |
 | PR-4a | Q'Taco adopta estado y vistos | `flujos-n8n` con Cartera | pendiente; espera PR-2b en producción y #519 |
 | PR-4b | Q'Taco: cupos (`av.dia`, `transferencias`, `avisosPedido`) | `flujos-n8n` | pendiente; depende de PR-4a y D-7 |
-| PR-4c | El chat NovuChat adopta | a decidir | solo si Andres lo incluye (§10, 3) |
+| PR-4c | El chat NovuChat adopta | `core-flujos` | PR-4c1 (servidor falso y ayudantes) fusionado; PR-4c2 (nodos y plantilla) construido, sin publicar; orden de despliegue: Functions, ensayo en el Demo A, flujo del chat |
 | PR-5 | Bellido adopta | n/a | **en espera**: Bellido no se toca |
 | PR-6a | Suites sin `new Function` (las que no son de Q'Taco, Bellido ni el demo de la clínica) | `core-flujos` | pendiente |
 | PR-6b | Ídem para las `venta-minima-*` | `core-flujos` | pendiente; tras PR-4b |

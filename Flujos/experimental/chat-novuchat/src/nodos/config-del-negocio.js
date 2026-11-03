@@ -130,6 +130,8 @@ const telefonoDePrueba = prueba ? cnDigitos(prueba.telefonoDePrueba) : '';
 const telefonoPermitido = permitidos.length === 0 || permitidos.indexOf(telefonoDePrueba) >= 0;
 
 return [{ json: Object.assign({}, cfg, planilla, {
+  // El estado de la conversación que contestó `leer` (en la respuesta de configuración). Sin él, o con otro código que 200, `ok` es falso: genérico con botón (§6 del contrato).
+  sesion: cnSesionDeLaConfig(codigo, cuerpo),
   datos: datos,
   nombreAsistente: cfg.nombreAsistente || linea(datos.asistente, 40),
   // El modelo es un parámetro de los datos (para pasar de `gemini-3.5-flash-lite` a `gemini-3.5-flash` sin tocar código); solo un id con forma de modelo de Gemini.

@@ -4,8 +4,8 @@
 // pasar por aquí. LA CLAVE DE LA CONVERSACIÓN ES EL NÚMERO DE ORIGEN (`messages[0].from`): dos clientes jamás comparten ficha. Si no son solo dígitos (6 a 20), el mensaje se descarta.
 //
 // NADA se descarta antes del modelo salvo: no hay mensaje, el número no es válido, el prefijo de país no está permitido (responder a un número extranjero cuesta su tarifa), Meta
-// reenvió un mensaje que ya se procesó (los últimos ids de la ficha y los de la cola), y lo que no es una conversación (reacciones, bienvenida, sistema, efímeros).
-// Este nodo SOLO LEE la ficha. Un audio, una imagen o un documento salen SIN `evento`: lo arma «Registrar evento» con lo que lean los nodos de medios.
+// reenvió un mensaje que ya se procesó (los últimos ids de la ficha del servidor y los de la cola), y lo que no es una conversación (reacciones, bienvenida, sistema, efímeros).
+// Este nodo SOLO LEE la ficha (la que leyó «Traer configuración» del servidor). Un audio, una imagen o un documento salen SIN `evento`: lo arma «Registrar evento» con lo que lean los nodos de medios.
 const carga = cnPrimero('Carga de entrada') || {};
 const cfg = cnCfg();
 const msg = Array.isArray(carga.messages) ? carga.messages[0] : undefined;
@@ -18,7 +18,7 @@ const prefijos = String(cfg.prefijosPermitidos || '').split(',').map((p) => p.tr
 if (prefijos.length && !prefijos.some((p) => from.startsWith(p))) return [];
 
 const mensajeId = String(msg.id || '').slice(0, 200);
-if (mensajeId && chYaVisto(cnFichaDe(cnMapaDeFichas(false).mapa, from), mensajeId)) return [];
+if (mensajeId && cfg.sesion && cfg.sesion.ok === true && chYaVisto(cfg.sesion.estado, mensajeId)) return [];
 
 const tipo = msg.type === 'voice' ? 'audio' : String(msg.type || 'desconocido');
 const sel = msg.interactive ? (msg.interactive.list_reply || msg.interactive.button_reply) : null;
