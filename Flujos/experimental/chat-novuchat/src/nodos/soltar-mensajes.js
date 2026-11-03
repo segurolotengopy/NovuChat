@@ -10,14 +10,19 @@ if (!a) return [];
 const reciente = cnNodo('Comprometer turno (2.º intento)') ? 'Comprometer turno (2.º intento)' : 'Comprometer turno';
 const r = a.comprometer === true ? cnResultadoDeCompromiso(cnPrimero(reciente)) : { resultado: 'ok', version: 0, ganador: null };
 const comprometido = a.comprometer === true && r.resultado === 'ok';
-const bien = a.fallaEstado !== true && r.resultado === 'ok';
+// Segundo conflicto: si otra ejecución ya respondió estos eventos o hay uno más nuevo (misma condición que «Replanificar mensajes»), esta termina SIN enviar.
+if (r.resultado === 'conflicto' && rep && Array.isArray(a.seqs) && chOtraEjecucionResponde(chFichaVigente(r.ganador, Number(a.ahoraMs) || Date.now()), a.seqs)) return [];
+// Las puertas cerradas (suspendido, uso extendido, bloqueado) comprometen solo para guardar los ids: si el compromiso falla sale igual lo suyo (bloqueado: nada), nunca el genérico.
+const mejor = a.mejorEsfuerzo === true && a.comprometer === true && r.resultado !== 'ok';
+const bien = (a.fallaEstado !== true && r.resultado === 'ok') || mejor;
 const salida = bien ? a.salida : a.salidaFalla;
 const resumen = Object.assign({}, a.resumen, { estado: { comprometido: comprometido, version: comprometido ? r.version : null, resultado: a.comprometer === true ? r.resultado : (a.fallaEstado === true ? 'sin_estado' : 'sin_compromiso') } });
+if (mejor) resumen.estado.resultado = 'mejor_esfuerzo_' + r.resultado;
 if (!bien) Object.assign(resumen, { plan: 'falla_estado', mensajes: Array.isArray(salida) ? salida.length : 0, rubro: a.nueva ? a.nueva.rubro : '' });
 
 const ahora = Number(a.ahoraMs) || Date.now();
 let prospectoSalida = null;
-if (bien && a.guardarPlanilla === true && a.despues) {
+if (bien && !mejor && a.guardarPlanilla === true && a.despues) {
   const crm = (() => {
     let sd = null;
     try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }
@@ -28,7 +33,7 @@ if (bien && a.guardarPlanilla === true && a.despues) {
   prospectoSalida = Object.assign({}, a.despues, { nuevoContacto: nuevoContacto });
 }
 // La marca de «último mensaje» se escribe aunque no se guarde la planilla, como siempre (una conversación en curso no es un contacto nuevo).
-if (bien && a.conversacion === true && cnClaveValida(a.from)) {
+if (bien && !mejor && a.conversacion === true && cnClaveValida(a.from)) {
   let sd = null;
   try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }
   if (sd) {

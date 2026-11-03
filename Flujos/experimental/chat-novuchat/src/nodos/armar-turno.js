@@ -19,6 +19,8 @@ if (puerta.ruta !== 'sigue') return cerrado(puerta.ruta);
 if (reg.falla === true) return cerrado('sin_estado');
 if (reg.registrado !== true) return [];
 const r = cnRegistro();
+// Agotados los intentos de registro y el ganador ya trae un evento más nuevo: otra ejecución responde (ráfaga de 4 o más clics); esta termina SIN enviar.
+if (r.cede === true) return [];
 if (!r.ok) return cerrado('sin_estado');
 const f = chFichaVigente(r.ficha, t.ahoraMs);
 const eventos = f.cola.filter((e) => e.seq > f.hasta);

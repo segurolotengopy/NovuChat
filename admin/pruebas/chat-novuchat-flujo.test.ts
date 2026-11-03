@@ -1695,7 +1695,7 @@ describe('un mensaje por turno: el costo de la conversación', () => {
 describe('la variante de prueba: «Entrada de prueba», todo al teléfono de prueba, nada a la ingesta ni a la hoja', () => {
   const PRUEBA_TEL = '59100000044';
   it('con `enviarDeVerdad` y un teléfono de prueba, TODO va a ese teléfono (el aviso a recepción también, rotulado) y no se reporta ni se escribe la hoja', () => {
-    const w = crear({ flujo: PRUEBA });
+    const w = crear({ flujo: PRUEBA, config: { telefonosDePrueba: MAMA + ',' + PRUEBA_TEL } });
     const j = jugar(w, MAMA, { prueba: { modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true }, sinPropiedades: true });
     j.texto('Hola');
     w.modelo.con = 'ERROR';
@@ -1709,7 +1709,7 @@ describe('la variante de prueba: «Entrada de prueba», todo al teléfono de pru
     expect(w.hoja.llamadas).toHaveLength(0);
   });
   it('sin `enviarDeVerdad` no se envía nada, pero el turno responde con el resumen (para el corredor de pruebas)', () => {
-    const w = crear({ flujo: PRUEBA });
+    const w = crear({ flujo: PRUEBA, config: { telefonosDePrueba: MAMA + ',' + PRUEBA_TEL } });
     const j = jugar(w, MAMA, { prueba: { modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: false }, sinPropiedades: true });
     const t = j.texto('Hola');
     expect(t.mensajes).toHaveLength(0);
@@ -1728,9 +1728,9 @@ describe('la variante de prueba: «Entrada de prueba», todo al teléfono de pru
 
 describe('la topología y las guardias del JSON versionado', () => {
   const nombres = (f: Flujo): string[] => f.nodes.map((n) => n.name);
-  it('tiene 70 nodos por variante (53 de antes más los 17 del estado de la conversación en el servidor: 8 del registro de eventos, 6 del compromiso del turno y 3 de la compensación): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
-    expect(PRODUCCION.nodes).toHaveLength(70);
-    expect(PRUEBA.nodes).toHaveLength(70);
+  it('tiene 73 nodos por variante (53 de antes más los 20 del estado de la conversación en el servidor: 10 del registro de eventos, 7 del compromiso del turno y 3 de la compensación): la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
+    expect(PRODUCCION.nodes).toHaveLength(73);
+    expect(PRUEBA.nodes).toHaveLength(73);
     expect(nombres(PRODUCCION)).not.toContain('Entrada de prueba');
     expect(nombres(PRUEBA)).not.toContain('WhatsApp Trigger');
     expect(nombres(PRODUCCION).filter((x) => !nombres(PRUEBA).includes(x))).toEqual(['WhatsApp Trigger']);
@@ -1813,8 +1813,8 @@ describe('la topología y las guardias del JSON versionado', () => {
       alcanzables.add(n);
     };
     visitar('WhatsApp Trigger', []);
-    // los 53 de antes (44 + los 9 de la rama común del guardado de medios) y los 17 del estado de la conversación.
-    expect(alcanzables.size).toBe(70);
+    // los 53 de antes (44 + los 9 de la rama común del guardado de medios) y los 20 del estado de la conversación.
+    expect(alcanzables.size).toBe(73);
   });
   it('«Llamar al modelo» y «Reintentar el modelo» apuntan a generateContent con el modelo de los datos (gemini-3.5-flash-lite) por expresión', () => {
     for (const nombre of ['Llamar al modelo', 'Reintentar el modelo']) {
@@ -3373,3 +3373,164 @@ describe('el estado de la conversación vive en el servidor (docs/arquitectura/e
     expect(f['avisosVentana']).toBe(0);
   });
 });
+
+// ------------------------------------------------------------------------------ revisiones de #782 (código y seguridad)
+describe('revisión de #782: puertas cerradas, espacio de prueba, ráfagas, reintentos y peso del estado', () => {
+  const compromiso = (id: string) => (c: J): boolean => String(((c['sesion'] as J)['idCompromiso'])).startsWith(id);
+  const OPERADOR = { atencion: { estado: 'operador', mensajeFijo: 'Gracias por tu paciencia. Una persona del equipo seguirá con tu consulta.', avisarRecepcion: 'operador', respuestasEnVentana: 30 } };
+  const PRUEBA_TEL = '59100000044';
+
+  it('1. PUERTAS CERRADAS: si el compromiso (solo guarda ids) falla, bloqueado sigue sin decir nada, operador mantiene su texto y su aviso a recepción, suspendido su texto neutro; NUNCA el genérico', () => {
+    const casos: { w: W; esperaCliente: RegExp | null; plantillas: number }[] = [
+      { w: crear({ ingesta: { atencion: { estado: 'bloqueado', avisarRecepcion: 'bloqueado', respuestasEnVentana: 80 } } }), esperaCliente: null, plantillas: 1 },
+      { w: crear({ ingesta: OPERADOR }), esperaCliente: /Una persona del equipo seguirá/, plantillas: 1 },
+      { w: crear({ ingesta: { servicio: { estado: 'cortado' } } }), esperaCliente: new RegExp(SUSPENDIDO.slice(0, 30)), plantillas: 0 },
+    ];
+    for (const { w, esperaCliente, plantillas } of casos) {
+      w.servidor.fallar = (c) => (compromiso('chat-fin')(c) ? 503 : null);
+      const t = jugar(w, MAMA, { sinPropiedades: true }).texto('Hola');
+      expect(t.aMi.length, 'un mensaje de más (¿el genérico?)').toBe(esperaCliente ? 1 : 0);
+      if (esperaCliente) { expect(t.aMi[0]!.cuerpo).toMatch(esperaCliente); expect(tipoInter(t.aMi[0]!)).not.toBe('cta_url'); }
+      expect(t.plantillas).toHaveLength(plantillas);
+      expect(w.hoja.filas).toHaveLength(0);
+    }
+  });
+
+  it('2. PRUEBA: usa el espacio «chat-novuchat-prueba» y solo para `telefonosDePrueba`; un teléfono de producción no lee ni compromete su documento; sin lista, sin_estado', () => {
+    // con lista: todo va al espacio de prueba y el documento de producción del MISMO teléfono ni se toca
+    const w = crear({ flujo: PRUEBA, config: { telefonosDePrueba: MAMA + ',' + PRUEBA_TEL } });
+    sembrar(w, MAMA, { rubro: 'salud', ultimoMs: AHORA - MIN, historial: [{ r: 'u', t: 'hola' }] });
+    const version = w.servidor.conversacion(PID, ESPACIO, MAMA).version;
+    const j = jugar(w, MAMA, { prueba: { modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true }, sinPropiedades: true });
+    j.texto('Hola');
+    expect(w.servidor.llamadas.length).toBeGreaterThan(0);
+    for (const l of w.servidor.llamadas) expect((l['sesion'] as J)['espacio']).toBe('chat-novuchat-prueba');
+    expect(w.servidor.conversacion(PID, ESPACIO, MAMA).version).toBe(version);
+    expect(fichaDe(w, MAMA)!.rubro).toBe('salud'); // el de producción, intacto
+    expect(w.servidor.conversacion(PID, 'chat-novuchat-prueba', MAMA).version).toBeGreaterThan(0);
+    // un teléfono que NO está en la lista (uno «de producción»): no lee ni compromete nada, y responde el genérico
+    const w2 = crear({ flujo: PRUEBA, config: { telefonosDePrueba: MAMA + ',' + PRUEBA_TEL } });
+    const t2 = jugar(w2, OTRA, { prueba: { modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true }, sinPropiedades: true }).texto('Hola');
+    expect(w2.servidor.llamadas).toHaveLength(0);
+    expect(t2.mensajes.length).toBe(1);
+    expect(tipoInter(t2.mensajes[0]!)).toBe('cta_url');
+    // sin lista (el ensayo sin `telefonosDePrueba`): ninguno
+    const w3 = crear({ flujo: PRUEBA });
+    jugar(w3, MAMA, { prueba: { modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true }, sinPropiedades: true }).texto('Hola');
+    expect(w3.servidor.llamadas).toHaveLength(0);
+    // y producción sigue en «chat-novuchat»
+    const w4 = crear();
+    jugar(w4, MAMA).texto('Hola');
+    for (const l of w4.servidor.llamadas) expect((l['sesion'] as J)['espacio']).toBe('chat-novuchat');
+  });
+
+  it('3. RÁFAGA de 4 o más clics: agotados los 3 intentos de registro, si el ganador ya trae un evento tan nuevo, otra ejecución responde: esta termina SIN enviar ni genérico; con un ganador sin evento nuevo, el genérico', () => {
+    const w = crear();
+    w.servidor.antesDeComprometer = (c) => {
+      if (!compromiso('chat-reg')(c)) return;
+      const e = clonar((c['sesion'] as J)['estado']) as J; // el rival registró OTRO evento con el mismo seq
+      e['cola'] = (e['cola'] as J[]).map((x) => ({ ...x, id: 'wamid.RIVAL' }));
+      w.servidor.sembrar(PID, ESPACIO, MAMA, e);
+    };
+    const t = jugar(w, MAMA, { sinPropiedades: true }).texto('Hola');
+    expect(t.mensajes.filter((m) => m.a === MAMA)).toHaveLength(0);
+    expect(t.plantillas).toHaveLength(0);
+    expect(w.modelo.llamadas).toHaveLength(0);
+    expect(w.compromisos.map((c) => c.nodo)).toEqual(['Comprometer evento', 'Comprometer evento (2.º intento)', 'Comprometer evento (3.º intento)']);
+  });
+
+  it('4. SEGUNDO conflicto del turno con un evento más nuevo en el ganador: esta ejecución termina sin enviar (la más nueva responde); sin evento nuevo, el genérico (ya probado)', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { sinPropiedades: true });
+    j.texto('Hola');
+    w.modelo.con = dice(EXPLICA_GASTRO, { rubro: 'gastronomia' });
+    let n = 0;
+    w.servidor.antesDeComprometer = (c) => {
+      if (!compromiso('chat-fin')(c)) return;
+      n += 1;
+      const f = clonar(fichaDe(w, MAMA)!) as J;
+      if (n === 2) { f['seq'] = Number(f['seq']) + 1; (f['cola'] as J[]).push({ seq: f['seq'], id: 'wamid.NUEVO', k: 'texto', t: 'otro mensaje', c: 'otro mensaje', ms: 1, rubro: '', boton: '' }); } else f['sitiosVentana'] = 1;
+      w.servidor.sembrar(PID, ESPACIO, MAMA, f);
+    };
+    const t = j.lista('rubro:gastronomia');
+    expect(t.mensajes.filter((m) => m.a === MAMA)).toHaveLength(0);
+    expect(w.compromisos.map((c) => c.nodo).slice(-2)).toEqual(['Comprometer turno', 'Comprometer turno (2.º intento)']);
+  });
+
+  it('5. Los nodos «Comprometer *» reintentan UNA vez con el MISMO cuerpo (retryOnFail, sin neverError); si la primera ya se aplicó, la segunda es `repetido` y se trata como éxito: 1 mensaje, estado comprometido una vez', () => {
+    for (const f of [PRODUCCION, PRUEBA]) {
+      const http = f.nodes.filter((n) => /^Comprometer /.test(n.name));
+      expect(http.map((n) => n.name).sort()).toEqual(['Comprometer compensación', 'Comprometer evento', 'Comprometer evento (2.º intento)', 'Comprometer evento (3.º intento)', 'Comprometer turno', 'Comprometer turno (2.º intento)']);
+      for (const n of http) {
+        expect((n as J)['retryOnFail'], n.name).toBe(true);
+        expect((n as J)['maxTries'], n.name).toBe(2);
+        expect(JSON.stringify(n.parameters), n.name).not.toContain('neverError');
+        expect(String(n.parameters['jsonBody'])).toBe('={{ JSON.stringify($json.compromiso) }}'); // el cuerpo es el mismo en el reintento
+      }
+    }
+    const w = crear();
+    const comp = w.mundo.dobles['Comprometer turno'] as (ll: LlamadaDoble) => J;
+    // n8n reintenta tras un timeout cuya escritura SÍ se hizo: el servidor ve el mismo idCompromiso dos veces
+    w.mundo.dobles['Comprometer turno'] = (ll) => { comp(ll); return comp(ll); };
+    const t = jugar(w, MAMA, { sinPropiedades: true }).texto('Hola');
+    expect(t.aMi).toHaveLength(1);
+    expect(tipoInter(t.aMi[0]!)).not.toBe('cta_url');
+    expect(w.servidor.conversacion(PID, ESPACIO, MAMA).version).toBe(2); // registro + turno, una sola vez cada uno
+  });
+
+  it('6. PESO: con CJK y emojis (3 y 4 bytes por carácter) la cola y el historial se recortan por BYTES: el estado sigue ≤15.000 bytes y NO cae al genérico', () => {
+    const w = crear();
+    const cjk = '漢字'.repeat(300); // 600 caracteres, 1.800 bytes
+    const emoji = '😀'.repeat(75); // 300 «caracteres» de UTF-16 (150 unidades de código), 300 bytes... por entrada
+    sembrar(w, MAMA, {
+      ultimoMs: AHORA - MIN, seq: 5, hasta: 0,
+      cola: [1, 2, 3, 4, 5].map((i) => ({ seq: i, id: 'wamid.C' + i, k: 'texto', t: cjk, c: cjk, ms: 1, rubro: '', boton: '' })),
+      historial: Array.from({ length: 8 }, (_, i) => ({ r: i % 2 ? 'a' : 'u', t: emoji + '漢'.repeat(120) })),
+    });
+    expect(Buffer.byteLength(JSON.stringify(fichaDe(w, MAMA)))).toBeGreaterThan(15000); // el peor caso sembrado SÍ excede el tope del servidor
+    w.modelo.con = dice('Veo que estás explorando varias de nuestras soluciones, ¡excelente! 🚀 Como NovuChat se adapta a los procesos de diferentes industrias, me ayudaría mucho enfocarme: ¿cuál de estas áreas es el corazón de tu negocio hoy para darte la información que realmente te sirva?');
+    const t = jugar(w, MAMA, { sinPropiedades: true }).texto(cjk.slice(0, 500));
+    expect(t.aMi).toHaveLength(1);
+    expect(tipoInter(t.aMi[0]!)).not.toBe('cta_url'); // no cayó al genérico
+    expect(w.compromisos.length).toBeGreaterThanOrEqual(2);
+    for (const c of w.compromisos) expect(Buffer.byteLength(JSON.stringify((c.cuerpo['sesion'] as J)['estado']))).toBeLessThanOrEqual(15000);
+    expect(Buffer.byteLength(JSON.stringify(fichaDe(w, MAMA)))).toBeLessThanOrEqual(15000);
+  });
+
+  it('7. SIN ESTADO: una entrega repetida de Meta (mismo id) no recibe un segundo genérico', () => {
+    const w = crear();
+    w.servidor.fallar = () => 503;
+    const t1 = w.mundo.turno(valorMeta(mTexto('Hola'), MAMA, { wamid: 'wamid.SIN1' }), { avanzarMin: 0 });
+    const t2 = w.mundo.turno(valorMeta(mTexto('Hola'), MAMA, { wamid: 'wamid.SIN1' }), { avanzarMin: 0 });
+    const t3 = w.mundo.turno(valorMeta(mTexto('Hola'), MAMA, { wamid: 'wamid.SIN2' }), { avanzarMin: 0 });
+    expect(t1.mensajes.filter((m) => m.a === MAMA)).toHaveLength(1);
+    expect(t2.mensajes.filter((m) => m.a === MAMA)).toHaveLength(0);
+    expect(t3.mensajes.filter((m) => m.a === MAMA)).toHaveLength(1); // otro mensaje sí
+  });
+
+  it('9. Una replanificación que no puede armar el estado NO deja que el HTTP siguiente haga un POST sin cuerpo: entre cada «Replanificar» y su HTTP hay un IF de «¿Comprometer…?»', () => {
+    for (const f of [PRODUCCION, PRUEBA]) {
+      const c = f.connections;
+      const sig = (n: string): string[] => (c[n]?.['main']?.[0] ?? []).map((x) => x.node);
+      expect(sig('Replanificar registro')).toEqual(['¿Comprometer evento? (2.º)']);
+      expect(sig('Replanificar registro (2.º)')).toEqual(['¿Comprometer evento? (3.º)']);
+      expect(sig('Replanificar mensajes')).toEqual(['¿Comprometer turno? (2.º)']);
+      expect(c['¿Comprometer evento? (2.º)']!['main']!.map((g) => g!.map((x) => x.node))).toEqual([['Comprometer evento (2.º intento)'], ['Esperar ráfaga']]);
+      expect(c['¿Comprometer turno? (2.º)']!['main']!.map((g) => g!.map((x) => x.node))).toEqual([['Comprometer turno (2.º intento)'], ['Soltar mensajes']]);
+    }
+  });
+
+  it('CERO MENSAJES de más: una conversación completa con todas las salvaguardas activas manda UN mensaje por turno y una plantilla; los caminos de falla REEMPLAZAN la respuesta, nunca la suman', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    for (const f of [() => j.texto('Hola'), () => j.lista('rubro:salud'), () => j.texto('Y?'), () => j.boton('equipo')]) {
+      w.modelo.con = dice(PITCH);
+      expect(f().aMi).toHaveLength(1);
+    }
+    expect(plantillasTotales(w)).toBe(1);
+    // con el servidor caído en el compromiso del turno: sigue siendo UN mensaje por turno (el genérico en lugar de la respuesta)
+    w.servidor.fallar = (c) => (compromiso('chat-fin')(c) ? 503 : null);
+    expect(j.texto('otra cosa más').aMi).toHaveLength(1);
+  });
+});
+

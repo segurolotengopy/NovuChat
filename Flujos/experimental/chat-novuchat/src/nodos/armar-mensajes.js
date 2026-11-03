@@ -36,10 +36,8 @@ if (pasada === 2) {
 }
 const antes = chFichaVigente(base, ahora);
 if (pasada === 2 && eventosTurno.length) {
-  // El ganador cambió la ficha. Si ya respondió estos eventos (`hasta`) o hay uno más nuevo (`seq`), responde otra ejecución; esta no.
-  const ultimo = eventosTurno[eventosTurno.length - 1].seq;
-  const pendientes = antes.cola.filter((e) => e.seq > antes.hasta).map((e) => e.seq).join(',');
-  if (antes.seq > ultimo || antes.hasta >= ultimo || pendientes !== eventosTurno.map((e) => e.seq).join(',')) return [];
+  // El ganador cambió la ficha. Si otra ejecución ya respondió estos eventos o hay uno más nuevo, responde ella; esta no (`chOtraEjecucionResponde`).
+  if (chOtraEjecucionResponde(antes, eventosTurno.map((e) => e.seq))) return [];
 }
 
 let mensajes = [];
@@ -198,9 +196,13 @@ const resumen = {
 };
 // El compromiso: la ficha del turno, con la versión que se leyó. Sin estado (plan `sin_estado`) no hay compromiso; si no cabe o el teléfono no es válido para el servidor, sale el genérico.
 const sinEstado = plan.ruta === 'sin_estado';
-const compromiso = !sinEstado && claveOk ? cnCuerpoComprometer(from, $execution.id, 'fin' + pasada, version, nueva) : null;
+// Por BYTES antes de comprometer (CJK y emojis): una ficha pesada se recorta, no cae al genérico.
+const ajuste = sinEstado ? null : chAjustarBytes(nueva, 14900);
+const compromiso = !sinEstado && claveOk && ajuste.cupo ? cnCuerpoComprometer(from, $execution.id, 'fin' + pasada, version, nueva) : null;
 return [{ json: {
   from: from, ahoraMs: ahora, pasada: pasada, plan: accion, resumen: resumen, salida: salida, salidaFalla: salidaFalla, nueva: nueva, fichaAntes: fichaAntes, conversacion: conversacion,
   comprometer: compromiso !== null, compromiso: compromiso, numero: cnNumeroHeader(), fallaEstado: sinEstado || compromiso === null,
+  // Las puertas cerradas (suspendido, uso extendido, bloqueado) comprometen solo para guardar los ids: si falla, sale lo suyo igual (bloqueado: nada), nunca el genérico. `seqs`: los eventos de este turno.
+  mejorEsfuerzo: plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido', seqs: eventosTurno.map((e) => e.seq),
   despues: despues, primeraVez: primeraVez, guardarPlanilla: guardarPlanilla,
 } }];

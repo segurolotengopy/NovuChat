@@ -559,13 +559,20 @@ export function guardias(entrada, flujo, datos = {}) {
   const conex = (flujo && flujo.connections) || {};
   const destinosDe = (n) => (((conex[n] || {}).main || []).flat().map((x) => x && x.node));
   if (nodos.length) {
-    for (const n of ['¿Comprometer turno?', 'Comprometer turno', '¿Conflicto de versión?', 'Replanificar mensajes', 'Comprometer turno (2.º intento)', 'Soltar mensajes', 'Comprometer evento', 'Comprometer evento (2.º intento)', 'Comprometer evento (3.º intento)', 'Comprometer compensación', 'Cerrar turno']) {
+    for (const n of ['¿Comprometer turno?', 'Comprometer turno', '¿Conflicto de versión?', 'Replanificar mensajes', 'Comprometer turno (2.º intento)', '¿Comprometer turno? (2.º)', '¿Comprometer evento? (2.º)', '¿Comprometer evento? (3.º)', 'Soltar mensajes', 'Comprometer evento', 'Comprometer evento (2.º intento)', 'Comprometer evento (3.º intento)', 'Comprometer compensación', 'Cerrar turno']) {
       if (!nombres.has(n)) h.push(`falta el nodo «${n}» (estado de la conversación en el servidor)`);
     }
     if (destinosDe('Armar mensajes').join('|') !== '¿Comprometer turno?') h.push('«Armar mensajes» tiene que colgar SOLO de «¿Comprometer turno?»: el estado se compromete antes de enviar');
     if (!destinosDe('Soltar mensajes').includes('¿Enviar de verdad?')) h.push('«¿Enviar de verdad?» tiene que colgar de «Soltar mensajes» (el envío va después del compromiso)');
     for (const [desde, a] of Object.entries(conex)) if (desde !== 'Soltar mensajes' && ((a.main || []).flat().some((x) => x && x.node === '¿Enviar de verdad?'))) h.push(`«${desde}» conecta con «¿Enviar de verdad?»: solo «Soltar mensajes» puede`);
-    for (const n of nodos.filter((x) => /^Comprometer /.test(x.name))) if (!/\/configuracionFlujo$/.test(String(parametros(n).url || ''))) h.push(`«${n.name}» tiene que llamar a configuracionFlujo`);
+    for (const n of nodos.filter((x) => /^Comprometer /.test(x.name))) {
+      if (!/\/configuracionFlujo$/.test(String(parametros(n).url || ''))) h.push(`«${n.name}» tiene que llamar a configuracionFlujo`);
+      // Un 5xx o un timeout se reintenta con el MISMO idCompromiso (el servidor contesta `repetido` si ya se aplicó): reintento activo y sin `neverError` (con él un 5xx no se reintenta).
+      if (n.retryOnFail !== true || !(n.maxTries >= 2) || JSON.stringify(parametros(n)).includes('neverError')) h.push(`«${n.name}» tiene que reintentar (retryOnFail, maxTries >= 2) y no llevar neverError`);
+    }
+    // En la variante de PRUEBA el estado va en OTRO espacio y solo para los teléfonos de prueba: «Traer configuración» lo dice en su cuerpo.
+    const traer = nodos.find((x) => x.name === 'Traer configuración');
+    if (traer && !/chat-novuchat-prueba/.test(String(parametros(traer).jsonBody || ''))) h.push('«Traer configuración» tiene que pedir el estado en el espacio «chat-novuchat-prueba» cuando es una prueba');
   }
   // Retención de ejecuciones, orden y zona horaria (decisión de Andres, 03/10/2026: se guardan solo las ejecuciones que fallan).
   const st = (flujo && flujo.settings) || {};
@@ -628,7 +635,7 @@ export function armarTenant(proyecto, datos, archivo) {
     if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
   }
   // La cadena de envío común, con las credenciales por NOMBRE del archivo de datos y la ingesta de la consola. Cuelga de «Soltar mensajes» (después de comprometer el estado), arriba de la hoja y de «Confirmar envío».
-  injertar(plantilla, { credenciales: { graph: dato(datos, 'credenciales.graph', archivo), ingesta: dato(datos, 'credenciales.ingesta', archivo) }, ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`, desde: [9080, 160], armado: 'Soltar mensajes' });
+  injertar(plantilla, { credenciales: { graph: dato(datos, 'credenciales.graph', archivo), ingesta: dato(datos, 'credenciales.ingesta', archivo) }, ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`, desde: [9560, 160], armado: 'Soltar mensajes' });
   // Puerta de la entrega (propia): el reporte saliente cuelga de «¿Meta aceptó?», que lee `messages[0].id`. Solo se reencamina la CONEXION de la cadena común; sus nodos quedan intactos.
   const reporta = plantilla.connections['¿Reportar? (saliente)'];
   if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${archivo}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);

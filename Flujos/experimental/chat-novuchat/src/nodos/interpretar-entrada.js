@@ -19,6 +19,20 @@ if (prefijos.length && !prefijos.some((p) => from.startsWith(p))) return [];
 
 const mensajeId = String(msg.id || '').slice(0, 200);
 if (mensajeId && cfg.sesion && cfg.sesion.ok === true && chYaVisto(cfg.sesion.estado, mensajeId)) return [];
+// Sin estado en el servidor (ruta `sin_estado`) no hay ficha donde mirar los ids: se recuerdan los últimos 5 por teléfono en los datos estáticos (solo para este fallback; a lo más 200 teléfonos), para que
+// una entrega repetida de Meta no reciba un segundo genérico.
+if (mensajeId && !(cfg.sesion && cfg.sesion.ok === true)) {
+  let sd = null;
+  try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }
+  if (sd) {
+    const mapa = sd.chatNovuchatSinEstado && typeof sd.chatNovuchatSinEstado === 'object' && !Array.isArray(sd.chatNovuchatSinEstado) ? sd.chatNovuchatSinEstado : (sd.chatNovuchatSinEstado = {});
+    const previos = Object.prototype.hasOwnProperty.call(mapa, from) && Array.isArray(mapa[from]) ? mapa[from] : [];
+    if (previos.includes(mensajeId)) return [];
+    mapa[from] = previos.concat([mensajeId]).slice(-CH_TOPE_IDS);
+    const claves = Object.keys(mapa);
+    for (const k of claves.slice(0, Math.max(0, claves.length - 200))) delete mapa[k];
+  }
+}
 
 const tipo = msg.type === 'voice' ? 'audio' : String(msg.type || 'desconocido');
 const sel = msg.interactive ? (msg.interactive.list_reply || msg.interactive.button_reply) : null;

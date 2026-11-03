@@ -45,7 +45,9 @@ if (!saneado) return sin();
 f.cola.push(saneado);
 f.cola = f.cola.slice(-CH_TOPE_COLA);
 f.ultimoMs = t.ahoraMs;
-const compromiso = cnCuerpoComprometer(t.from, $execution.id, 'reg' + pasada, version, f);
+// El estado se recorta por BYTES (CJK y emojis pesan 3 y 4 bytes por carácter) antes de comprometer: una cola larga no debe llevar al genérico.
+const ajuste = chAjustarBytes(f, 14900);
+const compromiso = ajuste.cupo ? cnCuerpoComprometer(t.from, $execution.id, 'reg' + pasada, version, f) : null;
 // Sin poder comprometer (estado demasiado grande o teléfono que el servidor no admite) el turno sale con el genérico y el botón.
 if (!compromiso) return sin({ falla: true });
 return [{ json: { registrado: true, comprometer: true, falla: false, seq: f.seq, esperarSeg: CH_ESPERA_SEG, from: t.from, ficha: f, compromiso: compromiso, numero: cnNumeroHeader(), pasada: pasada } }];
