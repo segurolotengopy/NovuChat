@@ -1,10 +1,30 @@
 import { describe, expect, it } from 'vitest';
 // Las pruebas de la planilla de las subcuentas (PR-E) viven en crm-planilla.ts, sin sufijo .test para no pedir otra entrada en SUITES_PURAS: corren aquí.
 import './crm-planilla.ts';
-import { crmActivo, recordatoriosActivos } from '../../../functions/src/modulos/crm/crm.js';
+import { crmActivo, crmParaElFlujo, recordatoriosActivos } from '../../../functions/src/modulos/crm/crm.js';
 import {
   CAMPOS_DEL_BOT, CAMPOS_DEL_EQUIPO, COLUMNAS_V1, columnasEscribibles, neutralizarTexto,
 } from '../../../functions/src/modulos/crm/columnas.js';
+
+describe('crm: lo que configuracionFlujo entrega al flujo (PR-B3)', () => {
+  it('sin documento, sin `activo` o con `activo` que no es booleano, NO entrega nada (la respuesta queda como siempre)', () => {
+    for (const d of [null, undefined, {}, { activo: 'false' }, { activo: 0 }, { activo: null }, { activo: [] }, { moneda: 'BOB' }]) {
+      expect(crmParaElFlujo(d as never), JSON.stringify(d)).toEqual({});
+    }
+  });
+  it('entrega SOLO `crm.activo`, true o false; nunca los campos reservados del servidor ni campos desconocidos', () => {
+    expect(crmParaElFlujo({ activo: false })).toEqual({ crm: { activo: false } });
+    expect(crmParaElFlujo({ activo: true })).toEqual({ crm: { activo: true } });
+    const sucio = { activo: false, hoja: 'Leads_CRM', filaEncabezados: 3, mapaColumnas: { a: 1 }, cuentaServicio: 'crm-x', moneda: 'BOB', extra: 'x' };
+    expect(crmParaElFlujo(sucio)).toEqual({ crm: { activo: false } });
+    expect(JSON.stringify(crmParaElFlujo(sucio))).not.toMatch(/Leads_CRM|crm-x|mapaColumnas/);
+  });
+  it('lo que entrega es lo que el nodo «Prospecto para la planilla» entiende: false apaga, true y ausente encienden', () => {
+    expect(crmActivo(crmParaElFlujo({ activo: false }).crm)).toBe(false);
+    expect(crmActivo(crmParaElFlujo({ activo: true }).crm)).toBe(true);
+    expect(crmActivo(crmParaElFlujo({}).crm)).toBe(true);
+  });
+});
 
 describe('crm: encendido por defecto', () => {
   it('sin documento o sin `activo`, está encendido; solo `false` lo apaga', () => {

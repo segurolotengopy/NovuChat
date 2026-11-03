@@ -15,6 +15,7 @@ export { cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo } from './modulos/
 export { MINUTOS_RETENCION_POR_DEFECTO, senaParaElFlujo, IMPORTE_SENA_MAXIMO, type SenaParaElFlujo };
 export { milisegundosDe };
 import { alTurnoCampanas } from './modulos/campanas/alTurno.js';
+import { crmParaElFlujo } from './modulos/crm/crm.js';
 import { alTurnoCaptacion } from './modulos/captacion/alTurno.js';
 import { modulosDelTurno, type ContextoDelTurno } from './core/turno/ganchosDelTurno.js';
 import { alTurnoCobroDeVenta, type ContextoDeCobro } from './modulos/cobros/alTurno.js';
@@ -1616,7 +1617,7 @@ export const configuracionFlujo = onRequest(
     const docVertical = documentoDeVertical(comercio.flujo);
     const ahoraMs = Date.now();
 
-    const [catalogo, funcionarios, especifica, rotulos, docConversacion, cuenta, metricas, plataformaPrepago, campanas] =
+    const [catalogo, funcionarios, especifica, rotulos, docConversacion, cuenta, metricas, plataformaPrepago, campanas, configCrm] =
       await Promise.all([
         db.collection(`tenants/${comercio.tenantId}/catalogo`)
           .where('activo', '==', true).limit(200).get(),
@@ -1643,6 +1644,9 @@ export const configuracionFlujo = onRequest(
         // LAS CAMPAÑAS (24/09/2026): capa común, un documento por comercio.
         // Solo se usan las `vigentes` (las aprobó `verificarCampanas`).
         db.doc(`tenants/${comercio.tenantId}/config/campanas`).get(),
+        // EL INTERRUPTOR DEL miniCRM (PR-B3): `config/crm.activo`. Una lectura por turno; el flujo
+        // que lleva la rama lo lee en «Prospecto para la planilla», los demás ignoran la clave.
+        db.doc(`tenants/${comercio.tenantId}/config/crm`).get(),
       ]);
 
     // LOS ANUNCIOS COMO DATO DEL TENANT (PR-1 de Campañas): las campañas vigentes
@@ -2089,6 +2093,8 @@ export const configuracionFlujo = onRequest(
       // en este turno. Apagado, la respuesta conserva la forma de siempre: `campanas: []`.
       campanas: [],
       ...aporteDeCampanas,
+      // `crm: { activo }` solo si el comercio escribió el interruptor; sin documento la respuesta es la de siempre.
+      ...crmParaElFlujo(configCrm.exists ? configCrm.data() : undefined),
     });
   },
 );
