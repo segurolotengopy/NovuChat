@@ -66,11 +66,11 @@ nada más de esa carpeta.
    cierra, y cuatro worktrees colgados de esas ramas.
 3. **Hay un hotfix de producción pendiente:** `Olvidar turno fallido` declara
    `deleteMode: lastMessages`, valor que n8n 2.36.5 no conoce, y borra la
-   memoria entera en Demo A, Platinum y Bellido. Y el candado tiene un hueco
+   memoria entera en Demo A y Bellido. Y el candado tiene un hueco
    cuando `agendar_cita` falla pero la verificación responde. Los dos van
    primero.
-4. **Ningún cliente está en producción** (modalidad), pero Platinum y Bellido
-   atienden personas reales. Se publica en la ventana de 23:30 a 01:30 igual,
+4. **Ningún cliente está en producción** (modalidad), pero Bellido
+   atiende personas reales. Se publica en la ventana de 23:30 a 01:30 igual,
    y todo se ensaya antes en el número del TENANT de ensayo.
 5. **`Analisis/40` es el de planes a medida** (PR #184). La arquitectura es
    `Analisis/41`. No los confundas al citar.
@@ -185,9 +185,8 @@ la alternativa declarada) y publicación de los 8 flujos → **F3a** (core-flujo
 con los módulos de venta) → etiqueta, despliegue, publicación de Demo B y
 captación y ensayo real → **H3a; la sesión de cartera ensambla el flujo de Rubén Roca** → **F3b**
 (core-functions ∥ core-flujos, después módulos) → etiqueta, despliegue,
-publicación de los 8 en ventana y ensayo → H3b → F4 ∥ F5. **H4-Bellido y
-H4-Platinum los cierra la sesión de cartera en paralelo, sin esperar a
-F3**; antes de F3b, la cartera alinea el JSON de Platinum con producción.
+publicación de los 8 en ventana y ensayo → H3b → F4 ∥ F5. **H4-Bellido lo
+cierra la sesión de cartera en paralelo, sin esperar a F3**.
 
 **Secuencia o paralelo, por fase:** F-1 y E van en secuencia y vos mismo las
 hacés (con `flujos-n8n` para el hotfix y `devsecops` para E). F1, F6 y S
@@ -271,8 +270,7 @@ mismo desde Negocios; Negocios lo muestra; el pago manual de Negocios acepta el
 precio del contrato y rechaza otro. Pruebas negativas: un admin no lo escribe,
 la copia manda sobre el plan, un precio fuera de contrato se rechaza. No mueve
 archivos ni toca flujos. **Costo:** 0 mensajes; un PR; sin despliegue propio,
-entra con la etiqueta de F2. **Cierra H1b.** Platinum lo espera (USD 120 por
-500); Dhermacore, los cambios pactados.
+entra con la etiqueta de F2. **Cierra H1b.** Lo espera Dhermacore (los cambios pactados).
 
 ### F6 — Método (1,5 jornadas, en paralelo con F1 a F3)
 `docs/arquitectura/` por zona y por módulo con `indice.md` que mapea cada
@@ -340,11 +338,8 @@ capas (base + módulos + variables del tenant); las suites importan
 `Flujos/src/` en vez de `new Function`; el corpus de captación sale del nodo
 Code; barrera de horas libres rechazadas en `modulos/agenda`. Ensayo real en el
 TENANT de ensayo de reservas; Bellido se porta con
-`sincronizar-flujo-cliente.mjs --base` y se ensaya antes de publicar. **Platinum
-no se publica hasta que su sesión haya alineado `platinum-agendamiento.json` y
-`negocio-platinum.json` con producción** (tercera agenda, estética facial,
-emojis, Maps). **Costo:** 0 mensajes; etiqueta, despliegue y publicación de los
-8 flujos en ventana; las sesiones de Bellido y Platinum re-aceptan solo el
+`sincronizar-flujo-cliente.mjs --base` y se ensaya antes de publicar. **Costo:** 0 mensajes; etiqueta, despliegue y publicación de los
+8 flujos en ventana; la sesión de Bellido re-acepta solo el
 delta. **Cierra H3b.** Ya no bloquea a ningún cliente.
 
 ### F4 — Conector de canal fuera de n8n (5 jornadas, después de H3b y del primer cliente pagador)
@@ -360,11 +355,11 @@ un salto de red por mensaje. **Cierra H5 con F5.**
 
 ### F5 — Tenants como datos (2 jornadas, junto con F4)
 Los 19 nodos de Bellido a `modulos/menu-interactivo/` con bandera;
-`platinum-flujo` y `bellido-flujo` repartidas en módulos y pruebas de instancia
+`bellido-flujo` repartida en módulos y pruebas de instancia
 cortas; `docs/versiones-por-cliente.md` con versión de módulo por tenant;
 `estado-de-versiones.sh` compara además el JSON del cliente con sus módulos;
 el ensayo sirve para clientes con módulos propios. **Costo:** 0 mensajes;
-publicación de Bellido y Platinum en ventana.
+publicación de Bellido en ventana.
 
 ### Lo que NO se construye ahora (y por qué)
 - **Partir las Functions en varios paquetes de despliegue**: espera medir el

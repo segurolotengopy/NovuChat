@@ -103,6 +103,10 @@ export { buscarConversaciones } from './core/conversacion/buscarConversaciones.j
 // Functions: la etiqueta que las lleve exige rama de reversión hacia adelante lista.
 export { tomarConversacion } from './core/conversacion/tomarConversacion.js';
 export { devolverConversacion } from './core/conversacion/devolverConversacion.js';
+// BLOQUEAR CONTACTO (31/10/2026, Andres, opción A): el asistente deja de responderle a un contacto, reversible. Core, solo el
+// administrador del comercio con la pantalla nueva y sin ser Bellido; no exige la salida de persona. Agregan DOS Functions:
+// la etiqueta que las lleve exige rama de reversión hacia adelante lista y el invocador público tras el despliegue.
+export { bloquearContacto, desbloquearContacto } from './core/conversacion/bloquearContacto.js';
 // ESCRIBIR COMO PERSONA (H2-3, solo TEXTO). `enviarComoPersona` valida, deja el mensaje `pendiente`
 // y toca el timbre del flujo «Salida de persona»; el flujo llama a `reclamarSalidaPersona` y
 // `confirmarSalidaPersona` con la credencial de la ingesta de su número. Core no importa Central: los
@@ -114,3 +118,15 @@ export { devolverConversacion } from './core/conversacion/devolverConversacion.j
 export { enviarComoPersona } from './central/cuenta/enviarComoPersona.js';
 export { reclamarSalidaPersona } from './core/conversacion/reclamarSalidaPersona.js';
 export { confirmarSalidaPersona } from './core/conversacion/confirmarSalidaPersona.js';
+// MEDIOS ENTRANTES GUARDADOS (H3, PR-1; Andres 20 a 23/10/2026). `guardarMedio` (HTTP, solo token, exige un
+// mensaje entrante reciente) y `purgarMedios` (03:45 La Paz, 90 días y baja). Con la bandera `guardarMedios`
+// APAGADA por defecto no guarda nada. Agregan DOS Functions: la HTTP nueva no nace invocable (paso de
+// invocador tras el despliegue en staging) y la purga necesita `storage.objectUser` de sa-functions, que ya
+// tiene por `purgarComprobantes`.
+export { guardarMedio } from './core/medios/guardarMedio.js';
+export { purgarMedios } from './core/medios/purgarMedios.js';
+// EL VISOR DE MEDIOS (M3a, 30/10/2026). `verMedio` (callable, 1 GiB, concurrencia 4 fuera de staging, App
+// Check en producción) devuelve los bytes de un medio guardado a admin, operador y soporte con ventana, con
+// auditoría fail-closed y tope por usuario en `topesDeMedios`. Una callable nueva no nace invocable: tras el
+// despliegue, `scripts/nube-visor.sh --servicio vermedio`.
+export { verMedio } from './core/medios/verMedio.js';

@@ -355,7 +355,7 @@ callable, ensayo y, **al final, la bandera**. El invocador lo concede
 `scripts/nube-visor.sh --servicio buscarconversaciones` (lista cerrada de siete
 servicios: también `tomarconversacion`, `devolverconversacion`, `enviarcomopersona`, `reclamarsalidapersona` y `confirmarsalidapersona`): una Function nueva puede quedar sin `roles/run.invoker` para `allUsers`
 y responder un 403 de Google en HTML antes de correr el código. Sale en seco por
-omisión, con el «sí» de Andres y en la ventana 23:30–01:30
+omisión y con el «sí» de Andres, a cualquier hora (Andres, 22–23/10/2026: sin ventana)
 (`.github/DESPLIEGUE-FIREBASE.md`, sección del invocador).
 
 **Reversión hacia adelante, no hacia atrás.** Redesplegar una etiqueta anterior
@@ -428,6 +428,63 @@ nueva no tiene Tomar, Devolver ni campo de escritura, y lo único que llama es
 `buscarConversaciones`. Cuando H2 llegue a `main`, este documento se actualiza con
 lo que haya, no con lo que prometa el contrato.
 
+## 13. Bloquear contacto (31/10/2026, Andres, opción A)
+
+El asistente deja de responderle del todo a un contacto, y se puede revertir. Código:
+`admin/functions/src/core/conversacion/bloquearContacto.ts`; compuerta en `ingesta.ts` y
+`configuracionFlujo`; pruebas `pruebas/core/bloquear-contacto.test.ts` y
+`pruebas/core/bloquear-contacto-ingesta.test.ts`.
+
+- **Dato**: `bloqueada: true`, `bloqueadaPor` (uid) y `bloqueadaEn` en la conversación. Solo el
+  servidor los escribe; `firestore.rules` se los niega a la persona del negocio y al token de ingesta.
+  Solo vale `true` exacto (texto, `1` o un mapa no bloquean).
+- **Callables** (Core, `us-east1`): `bloquearContacto` y `desbloquearContacto`, `{tenantId,
+  conversacionId}` -> `{bloqueada}`. Mismo camino que tomar y devolver (`atenderTurno`: sesión, rol
+  del comercio pedido, comercio activo, `consolaConversaciones === 'nueva'`, no Bellido, tope por
+  usuario), con dos diferencias: **no exigen `personaPuedeEscribir`** (no envían nada) y **solo el
+  administrador** bloquea o desbloquea. Auditoría atómica `bloquear_contacto` /
+  `desbloquear_contacto` (solo `telefono4`); idempotentes (repetir no escribe ni audita).
+- **Compuerta**: igual que la pausa por persona, la ingesta y `configuracionFlujo` devuelven
+  `atencion.estado = 'bloqueado'`, `avisarRecepcion: ''` y la clave `bloqueadoPorContacto: true`
+  (solo con bloqueo). **Silencio total**: ni al contacto ni a recepción. Los flujos n8n actuales ya
+  obedecen `bloqueado` con aviso vacío (es lo que usa la pausa), así que no se tocó ninguno.
+- **Alcance exacto del conteo.** Un entrante de una conversación bloqueada se descarta **antes de
+  contar**: no abre conversación del plan (ni al vencer la ventana de 24 h), no suma al bloque de 25,
+  y no mueve `mensajesVentana`, `atencionDesde`, `periodoContado`, `atencionEstado`,
+  `mensajesTotal`, `personasAtendidas`, `entrantes`/`mensajes` de métricas, bolsa, corte ni aviso
+  de consumo. Sí se guarda el mensaje y lo mínimo para listarlo (último mensaje, no leídos, búsqueda),
+  para que el comercio vea que le escribieron. **No cambia** el conteo de un contacto no bloqueado,
+  ni los salientes de la misma conversación (el bloqueo es del entrante), ni `registrarCierre`.
+- **Convivencia con tomar y escribir** (revisión de seguridad): `tomarConversacion` y
+  `enviarComoPersona` rechazan una conversación bloqueada dentro de su transacción
+  (`failed-precondition`, «Este contacto está bloqueado. Desbloquéelo para atenderlo.», sin
+  escribir nada, aunque el turno siga tomado). `bloquearContacto` rechaza si hay un turno de persona
+  vigente («Devuelva la conversación antes de bloquear el contacto.»); devolver sigue permitido
+  siempre.
+- **Entrante bloqueado y servicio**: la rama bloqueada no evalúa el servicio (no lee métricas). Por
+  eso no escribe ni borra la marca `incoherencia` de la cuenta, no cuenta pérdidas de un corte, y
+  **omite `servicio`/`servicioMotivo`** del cuerpo de la respuesta (aunque haya modalidad) y del
+  registro, en vez de afirmar «operativo». Ningún flujo n8n lo exige: solo miran
+  `servicio.estado === 'cortado'`. La bitácora del comercio registra el entrante con
+  `resultado: 'rechazado'` y `codigo: 'bloqueado'` (no «ok»).
+- **Recordatorios de cita (Demo A)**: `demo-a-recordatorios.json` consulta `configuracionFlujo` con el teléfono («Estado del contacto») y «Omitir bloqueados» (`Flujos/src/modulos/agenda/omitir-contactos-bloqueados.js`) quita el envío solo con `statusCode 200` y `bloqueadoPorContacto === true`; ante error, espera agotada, respuesta ilegible o longitudes distintas se envía igual con el motivo «bloqueo sin verificar». 0 mensajes agregados. Bellido queda fuera. El motivo «bloqueo sin verificar» (y «sin conversación» cuando no existe `conversaciones/wa_<tel>`, que se envía igual) queda **solo en los datos de la ejecución** de n8n: el `console.log` del nodo no llega al registro del servidor salvo `CODE_ENABLE_STDOUT`, y ningún motivo lleva teléfono.
+- **Bloqueo y pausa por persona**: manda el bloqueo. En la rama bloqueada **no** se decide la pausa
+  ni se persiste el vencimiento de un turno (`persistirVencimientoDeIngesta` no corre: esa rama solo
+  escribe el mensaje y lo mínimo para listarlo, sin auditoría). La respuesta lleva solo
+  `bloqueadoPorContacto` (sin `pausadoPorPersona`), tanto en la ingesta como en
+  `configuracionFlujo`. El turno vencido se persiste con el primer entrante después de desbloquear.
+- **Despliegue**: `scripts/nube-visor.sh` atiende `bloquearcontacto` y `desbloquearcontacto` (callables,
+  misma sonda que tomar y devolver). `verificar-salida-persona.mjs` no las cubre a propósito: esa
+  verificación es de la salida de persona (timbre y flujo) y bloquear no depende de ella.
+- **Lo que no hace**: no enciende `noContactar` (seguimientos y campañas siguen su propio
+  filtro) y no oculta la conversación de la consola. La pantalla (botón, marca, «Desbloquear») es la de
+  Central (`web/src/central/lib/bloqueo.ts`, `componentes/BloqueoContacto.tsx` y `PanelBloqueados.tsx`;
+  prueba `pruebas/central/bloqueo-pantalla.test.ts`): solo el administrador ve «Bloquear contacto»
+  (con confirmación) y no se ofrece con un turno vigente; bloqueada, la conversación muestra el
+  marcador y «Desbloquear contacto», y no ofrece Tomar ni escribir; «Bloqueados (N)» lista teléfono y
+  fecha con «Desbloquear» por fila, consulta `bloqueada == true` de un campo, ordenada en el cliente,
+  sin índice nuevo. Costo en mensajes por conversación: 0 (solo quita).
+
 ## Lo que este documento no afirma
 
 No se puede comprobar desde el repositorio y por eso no se dice:
@@ -442,3 +499,5 @@ No se puede comprobar desde el repositorio y por eso no se dice:
   contra el emulador, no se leyeron los registros de producción.
 - Las `v0.15.x` se comprobaron por Git y por los trabajos de GitHub Actions
   (`desplegar-produccion` en `success`), no leyendo las Functions desplegadas.
+
+**Ventana aceptada de un mensaje en curso (seguridad, 31/10/2026):** un mensaje de persona que ya estaba `pendiente` cuando se devolvió la conversación y se bloqueó el contacto puede ser reclamado por el timbre y entregarse, dentro del tope de 2 minutos de `PENDIENTE_MAXIMO_MS`. Lo inicia el propio comercio, es saliente (no cuenta conversación) y es el mismo comportamiento de «devolver». Cerrarlo (rechazar el reclamo si `bloqueada`) queda como mejora opcional.

@@ -42,13 +42,13 @@ describe('armado: --verificar y el tope de nodos', () => {
     expect(r.status).toBe(2);
   });
 
-  it(`ninguna variante pasa de ${TOPE_DE_NODOS} nodos (48 es el tope duro: si pasa, se rehace)`, () => {
-    expect(TOPE_DE_NODOS).toBe(48);
-    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(48);
-    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(48);
+  it(`ninguna variante pasa de ${TOPE_DE_NODOS} nodos (57 es el tope duro: 48 más los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10: docs/versiones-por-cliente.md; si pasa, se rehace)`, () => {
+    expect(TOPE_DE_NODOS).toBe(57);
+    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(57);
+    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(57);
     const grande = copia(PRODUCCION);
-    while (grande.nodes.length <= 48) grande.nodes.push({ ...copia(grande.nodes[0]!), id: `x${grande.nodes.length}`, name: `Relleno ${grande.nodes.length}` });
-    expect(guardias('produccion', grande).join('|')).toMatch(/tope es 48/);
+    while (grande.nodes.length <= 57) grande.nodes.push({ ...copia(grande.nodes[0]!), id: `x${grande.nodes.length}`, name: `Relleno ${grande.nodes.length}` });
+    expect(guardias('produccion', grande).join('|')).toMatch(/tope es 57/);
   });
 
   it('producción y prueba: guardias limpias, y lo versionado no las viola', () => {
@@ -134,7 +134,8 @@ describe('armado: orden del lienzo y sin modelo en PR-1', () => {
     const destinos = (n: string, salida: number) => (PRODUCCION.connections[n]!['main']![salida] ?? []).map((c) => c.node);
     expect(destinos('¿Reportar? (entrante)', 0)).toEqual(['Reportar mensaje (entrante)']);
     expect(destinos('¿Reportar? (entrante)', 1)).toEqual(['Puerta del turno']);
-    expect(destinos('Reportar mensaje (entrante)', 0)).toEqual(['Puerta del turno']);
+    // Más la rama común del GUARDADO de medios, que cuelga del reporte y va DEBAJO en el lienzo (corre después de la que responde).
+    expect(destinos('Reportar mensaje (entrante)', 0)).toEqual(['Puerta del turno', 'Preparar guardado']);
   });
 
   it('PR-2 lleva el modelo (HTTP a Gemini, un dato), la lectura del comprobante, el cotejo y el aviso mínimo; NO lleva agente, memoria de n8n, «Registrar cierre» ni disparadores por tiempo (el rescate es PR-4)', () => {
@@ -156,13 +157,16 @@ describe('armado: orden del lienzo y sin modelo en PR-1', () => {
     expect(guardias('produccion', roto).join('|')).toMatch(/anfitrión/);
   });
 
-  it('los ajustes: retención solo de errores, zona de La Paz, sin errorWorkflow', () => {
+  it('los ajustes: sin retención de ejecuciones (decisión de Andres del 30/10: el binario del medio quedaría guardado), zona de La Paz, sin errorWorkflow', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
-      expect(f.settings).toMatchObject({ saveDataSuccessExecution: 'none', saveDataErrorExecution: 'all', saveExecutionProgress: false, timezone: 'America/La_Paz' });
+      expect(f.settings).toMatchObject({ saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false, timezone: 'America/La_Paz' });
     }
     const roto = copia(PRODUCCION);
     roto.settings!['saveDataSuccessExecution'] = 'all';
     expect(guardias('produccion', roto).join('|')).toMatch(/retención/);
+    const roto2 = copia(PRODUCCION);
+    roto2.settings!['saveDataErrorExecution'] = 'all';
+    expect(guardias('produccion', roto2).join('|')).toMatch(/retención/);
   });
 });
 
@@ -205,15 +209,17 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
   const x = (f: Flujo, n: string): number => nodo(f, n).position![0];
   const destinos = (f: Flujo, n: string, salida = 0): string[] => (f.connections[n]!['main']![salida] ?? []).map((c) => c.node);
 
-  it('cuenta de nodos: producción y prueba dentro del tope (48) y de la meta de producción (46)', () => {
-    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(46);
-    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(46);
+  it('cuenta de nodos: producción y prueba dentro del tope (57) y de la meta de producción (55)', () => {
+    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(55);
+    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(55);
     expect(PRODUCCION.nodes.length).toBe(PRUEBA.nodes.length + 5);
     // MEDIOS ENTRANTES: 39 → 44 en producción y 34 → 39 en la prueba (5 nodos: ¿Es audio?, Transcribir audio, Preparar transcripción, ¿Es comprobante? y Ver imagen).
     // Y +1 (21/10/2026): «¿Lo leído es comprobante?» (el lector del comprobante clasifica; lo que no es un comprobante no se coteja) → 45 y 40.
     // Y +1 (23/10/2026): «Preparar imagen» (visión por categorías, módulo común de medios) → 46 y 41.
-    expect(PRODUCCION.nodes.length).toBe(46);
-    expect(PRUEBA.nodes.length).toBe(41);
+    // Y +11 (29/10/2026): la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs) → 57 y 52.
+    // Y −2 (30/10/2026, contrato v2): se quitan «¿Anotar medio?» y «Anotar medio» → 55 y 50.
+    expect(PRODUCCION.nodes.length).toBe(55);
+    expect(PRUEBA.nodes.length).toBe(50);
   });
 
   it('«Reportar mensaje (entrante)» sigue ARRIBA de toda la rama que responde (medios, decisión, modelo, avisos y mensajes)', () => {

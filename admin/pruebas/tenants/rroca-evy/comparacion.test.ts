@@ -7,7 +7,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
-import { ANA, CARPETA, CARPETA_DE_DATOS, IDS, avisosARecepcion, crear, dice, hablar, imagenes, mTexto, panelOk, textos } from './mundo';
+import { ANA, CARPETA, CARPETA_DE_DATOS, IDS, avisosARecepcion, conPreferencia, crear, dice, hablar, imagenes, mTexto, panelOk, textos } from './mundo';
+
+// AJUSTE (observaciones de Rubén, 28/10/2026): antes del cierre el código pregunta el día y el horario; donde se espera el cierre, la persona contesta (`conPreferencia`) o el pedido ya trae el día.
+// El cierre termina ahora en «Ya pasé tus datos a recepción; te contactarán para confirmar tu hora.» (antes, «Para elegir el día y horario…»).
 
 const MAPS = 'https://maps.app.goo.gl/PruebaSintetica1';
 const conMaps = (valor: unknown) => { const p = panelOk(); (p.body['datosDelNegocio'] as J)['direccionMaps'] = valor; return p; };
@@ -66,7 +69,7 @@ describe('la comparación fija', () => {
     for (const p of ['Quiero agendar mi valoración. ¿Cuál me conviene, Radiesse o HArmonyCa?', 'Sí, quiero agendar. Pero ¿qué diferencia hay entre Radiesse y HArmonyCa?']) {
       const m = crear({ modeloDice: dice('Perfecto.') });
       hablar(m, ANA, mTexto('hola'));
-      const t = hablar(m, ANA, mTexto(p));
+      const t = conPreferencia(m, ANA, hablar(m, ANA, mTexto(p)));
       expect(esBoton(t), p).toBe(true);
       expect(textos(t)[0], p).toMatch(/Excelente decisión/);
       expect(textos(t).join(' '), p).not.toContain('Ninguno es');
@@ -97,7 +100,7 @@ describe('la comparación fija', () => {
   it('queda en el historial como lo dicho por el asistente: la oferta «¿Te ayudo a agendarla?» se reconoce y el «sí» deriva', () => {
     const m = crear({ modeloDice: MODELO });
     hablar(m, ANA, mTexto(PREGUNTAS[0]!));
-    const t = hablar(m, ANA, mTexto('sí'));
+    const t = conPreferencia(m, ANA, hablar(m, ANA, mTexto('sí')));
     expect(esBoton(t)).toBe(true);
     expect(textos(t)[0]).toMatch(/Excelente decisión/);
     expect(avisosARecepcion(t).length).toBe(1);
@@ -108,7 +111,7 @@ describe('la ubicación en el cierre', () => {
   const cierreTras = (panel: ReturnType<typeof panelOk> | 'cae' | undefined, comparar: boolean) => {
     const m = crear({ modeloDice: MODELO, panel });
     if (comparar) hablar(m, ANA, mTexto(PREGUNTAS[0]!)); else hablar(m, ANA, mTexto('Cuéntame del Radiesse'));
-    return { m, t: hablar(m, ANA, mTexto('sí')) };
+    return { m, t: conPreferencia(m, ANA, hablar(m, ANA, mTexto('sí'))) };
   };
   it('tras la comparación y el «sí», el cierre lleva «📍 Ubicación: <enlace>» antes de la línea del botón, con el botón y el aviso de siempre', () => {
     const { t } = cierreTras(conMaps(MAPS), true);
@@ -116,7 +119,7 @@ describe('la ubicación en el cierre', () => {
     expect(esBoton(t)).toBe(true);
     expect(c).toContain(`📍 Ubicación: ${MAPS}`);
     const partes = c.split('\n\n');
-    expect(partes[partes.length - 1]).toMatch(/^Para elegir el día y horario/);
+    expect(partes[partes.length - 1]).toBe('Ya pasé tus datos a recepción; te contactarán para confirmar tu hora.');
     expect(partes[partes.length - 2]).toBe(`📍 Ubicación: ${MAPS}`);
     expect(c.length).toBeLessThanOrEqual(1024);
     expect(avisosARecepcion(t).length).toBe(1);
@@ -130,7 +133,7 @@ describe('la ubicación en el cierre', () => {
   it('sin haber visto la comparación el cierre queda como hoy (sin Maps), aunque la Consola traiga el enlace', () => {
     const m = crear({ modeloDice: (ll) => (JSON.stringify(ll.cuerpo).includes('<<<sí>>>') ? '[DERIVAR_RECEPCION]' : 'Te cuento del Radiesse. ¿Te gustaría agendar tu valoración?'), panel: conMaps(MAPS) });
     hablar(m, ANA, mTexto('Cuéntame del Radiesse'));
-    const t = hablar(m, ANA, mTexto('sí'));
+    const t = conPreferencia(m, ANA, hablar(m, ANA, mTexto('sí')));
     expect(esBoton(t)).toBe(true);
     expect(textos(t)[0]).not.toContain('📍');
   });
@@ -157,7 +160,7 @@ describe('la ubicación en el cierre', () => {
   });
   it('si el cierre completo ya había salido antes de la comparación, el «sí» posterior es el cierre corto y sin Maps', () => {
     const m = crear({ modeloDice: MODELO, panel: conMaps(MAPS) });
-    hablar(m, ANA, mTexto('Quiero agendar, soy Rosa'));
+    hablar(m, ANA, mTexto('Quiero agendar el martes en la tarde, soy Rosa'));
     hablar(m, ANA, mTexto(PREGUNTAS[0]!));
     const t = hablar(m, ANA, mTexto('sí'));
     expect(textos(t)[0]).not.toContain('📍');

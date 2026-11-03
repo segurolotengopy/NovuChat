@@ -19,6 +19,7 @@ import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import {
   armarVariante, codigoDe, construir, leerProyecto, type ConfigDeConstruccion,
 } from '../../Flujos/experimental/comun-sin-agente/construir.mjs';
+import { injertarGuardado } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 // Los proyectos de juguete viven en una carpeta temporal: el tope de lectura de las pruebas es esa carpeta.
@@ -46,18 +47,22 @@ const CONFIG_AGENDA: ConfigDeConstruccion = {
 
 describe('el armador genérico produce los JSON de Agenda mínima, byte por byte', () => {
   const p = leerProyecto(AGENDA, CONFIG_AGENDA);
+  // `agenda-minima/construir.mjs` injerta DESPUÉS la rama común del guardado de medios (`comun-sin-agente/src/guardado.mjs`): se injerta igual aquí.
+  const conGuardado = (texto: string): string => `${JSON.stringify(injertarGuardado(JSON.parse(texto), { guardarUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio' }), null, 2)}\n`;
   for (const v of CONFIG_AGENDA.variantes) {
     it(`${v.archivo}`, () => {
-      expect(armarVariante(p, v)).toBe(readFileSync(join(AGENDA, v.archivo), 'utf8'));
+      expect(conGuardado(armarVariante(p, v))).toBe(readFileSync(join(AGENDA, v.archivo), 'utf8'));
     });
   }
   it('NIEGA: con otro nombre de flujo ya no es el mismo archivo (la prueba compara de verdad)', () => {
     const otro = armarVariante(p, { ...CONFIG_AGENDA.variantes[0]!, nombre: 'Otro nombre' });
     expect(otro).not.toBe(readFileSync(join(AGENDA, 'agenda-minima.v0.json'), 'utf8'));
   });
-  it('construir(…, {verificar:true}) sobre Agenda mínima no escribe nada y dice que está al día', () => {
+  it('construir(…, {verificar:true}) sobre Agenda mínima no escribe nada (y, sin la rama del guardado que injerta su constructor, no está al día)', () => {
+    const antes = CONFIG_AGENDA.variantes.map((v) => readFileSync(join(AGENDA, v.archivo), 'utf8'));
     const r = construir(AGENDA, { verificar: true, config: CONFIG_AGENDA });
-    expect(r.every((x) => x.alDia && x.existia)).toBe(true);
+    expect(r.every((x) => x.existia && !x.alDia)).toBe(true);
+    expect(CONFIG_AGENDA.variantes.map((v) => readFileSync(join(AGENDA, v.archivo), 'utf8'))).toEqual(antes);
   });
 });
 

@@ -156,7 +156,7 @@ PR-4a, PR-4b, PR-6b); escritor B en paralelo (H2b, PR-6a).
 | PR-4b | Q'Taco: cupos (`av.dia`, `transferencias`, `avisosPedido`) | `flujos-n8n` | pendiente; depende de PR-4a y D-7 |
 | PR-4c | El chat NovuChat adopta | a decidir | solo si Andres lo incluye (§10, 3) |
 | PR-5 | Bellido adopta | n/a | **en espera**: Bellido no se toca |
-| PR-6a | Suites sin `new Function` (las que no son de Q'Taco, Bellido ni Platinum) | `core-flujos` | pendiente |
+| PR-6a | Suites sin `new Function` (las que no son de Q'Taco, Bellido ni el demo de la clínica) | `core-flujos` | pendiente |
 | PR-6b | Ídem para las `venta-minima-*` | `core-flujos` | pendiente; tras PR-4b |
 
 Cada PR declara 0 mensajes por conversación y pasa por `revisor-codigo` y
@@ -178,7 +178,7 @@ turno, cerca de 0,00007 USD por conversación.
 4. **`av.ventana`** (estado del comercio). Recomendación: aceptarlo como residuo
    declarado en PR-4a (si se pierde una escritura sale la plantilla de respaldo) y
    luego derivarlo de `ultimoEntranteEn` de `conversaciones/wa_{destinatario}`.
-5. **H2b en Bellido y Platinum.** Recomendación: «sí» a escribir `modulos` en sus
+5. **H2b en Bellido.** Recomendación: «sí» a escribir `modulos` en sus
    fichas (dato, sin cambio de capacidad); si no, la condición 6 no cierra.
 6. **Qué cuenta como agenda** (límite de agendas de H2b). Recomendación: los
    `calendarioId` distintos entre funcionarios activos; un comercio sin

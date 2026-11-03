@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const A = 'campanas-a';
 const B = 'campanas-b';
@@ -67,7 +68,7 @@ beforeEach(async () => {
   await entorno.withSecurityRulesDisabled(async (ctx) => {
     const fs = ctx.firestore();
     for (const [t, estado] of [[A, 'activo'], [B, 'activo'], [S, 'suspendido']] as const) {
-      await setDoc(doc(fs, 'tenants', t), { nombre: t, estado, plan: 'crecimiento', flujos: ['agendamiento'] });
+      await setDoc(doc(fs, 'tenants', t), { nombre: t, estado, plan: 'crecimiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
       await setDoc(doc(fs, `tenants/${t}/cuenta/estado`), { plan: 'crecimiento' });
     }
   });
@@ -80,7 +81,7 @@ describe('config/campanas: el tope del plan lo pone la regla', () => {
     await entorno.clearFirestore();
     await preparar(A, { plan: 'crecimiento' });
     await entorno.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'tenants', A), { nombre: A, estado: 'activo', plan: 'crecimiento', flujos: ['agendamiento'] });
+      await setDoc(doc(ctx.firestore(), 'tenants', A), { nombre: A, estado: 'activo', plan: 'crecimiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
     });
     await assertFails(setDoc(doc(adminA(), ruta(A)), { lista: lista(4), ...sello() }));
   });

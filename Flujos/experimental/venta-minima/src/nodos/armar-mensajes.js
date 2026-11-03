@@ -256,7 +256,12 @@ function amQr(m, cuerpo) {
   };
   // El evento `qr_enviado` (abre el cobro en el servidor) solo lo lleva el QR que el plan pidió como evento: «Reenviar QR»
   // lleva monto y referencia pero NO el evento, porque el servidor ya abrió ese cobro.
-  if (m.evento === 'qr_enviado') salida.evento = 'qr_enviado';
+  if (m.evento === 'qr_enviado') {
+    salida.evento = 'qr_enviado';
+    // Para que el servidor cree el pedido wa_: solo identificadores, cantidades y detalle (se vuelven a sanear aquí; sin precios ni NIT).
+    const pqr = pqrCampos(pedidoId, m.lineas, m.entrega, simulado, m.reemplaza);
+    if (pqr.lineas) { salida.lineas = pqr.lineas; salida.entrega = pqr.entrega; if (pqr.reemplaza) salida.reemplaza = pqr.reemplaza; }
+  }
   return salida;
 }
 function amArmarUno(m) {
@@ -358,6 +363,7 @@ for (const d of AM_lista) {
   if (d.evento) j.evento = d.evento;
   if (d.referencia) j.referencia = d.referencia;
   if (d.monto !== undefined) j.monto = d.monto;
+  if (d.evento === 'qr_enviado' && Array.isArray(d.lineas) && d.lineas.length) { j.lineas = d.lineas; if (d.entrega) j.entrega = d.entrega; if (typeof d.reemplaza === 'string' && d.reemplaza) j.reemplaza = d.reemplaza; }
   AM_salida.push(j);
 }
 

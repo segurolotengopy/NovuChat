@@ -294,14 +294,14 @@ describe('El identificador del cierre de una cita es el mismo en sena.ts y en ci
 describe('documentoQueCobra: dónde va el QR del comercio', () => {
   const ficha = (d: Record<string, unknown>) => ({ get: (k: string) => d[k] });
   it('venta gana; agendamiento si no hay venta; sin ninguno, null', () => {
-    expect(documentoQueCobra(ficha({ flujos: ['agendamiento', 'venta'] }))).toBe('venta');
-    expect(documentoQueCobra(ficha({ flujos: ['agendamiento'] }))).toBe('agendamiento');
-    expect(documentoQueCobra(ficha({ flujos: ['onboarding'] }))).toBeNull();
-    expect(documentoQueCobra(ficha({ flujos: [] }))).toBeNull();
+    expect(documentoQueCobra(ficha({ modulos: ['cobros', 'agenda', 'pedidos'] }))).toBe('venta');
+    expect(documentoQueCobra(ficha({ modulos: ['cobros', 'agenda'] }))).toBe('agendamiento');
+    expect(documentoQueCobra(ficha({ modulos: ['cobros', 'captacion'] }))).toBeNull();
+    expect(documentoQueCobra(ficha({ modulos: [] }))).toBeNull();
   });
-  it('una ficha vieja sin lista usa `vertical`', () => {
-    expect(documentoQueCobra(ficha({ vertical: 'venta' }))).toBe('venta');
-    expect(documentoQueCobra(ficha({ vertical: 'agendamiento' }))).toBe('agendamiento');
+  it('una ficha sin lista `modulos` no tiene módulos: ni `flujos` ni `vertical` la sustituyen (H2b-cierre)', () => {
+    expect(documentoQueCobra(ficha({ vertical: 'venta' }))).toBeNull();
+    expect(documentoQueCobra(ficha({ flujos: ['venta'], vertical: 'venta' }))).toBeNull();
     expect(documentoQueCobra(ficha({}))).toBeNull();
   });
 });

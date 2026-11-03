@@ -344,11 +344,9 @@ export function puedeComprobar(token: unknown, tenantId: string): boolean {
 
 /**
  * ¿El comercio tiene captación? Lo decide el registro (`tieneModulo`), no una
- * lista propia. Diferencia con la comprobación anterior, que leía
- * `tenant.get('flujos') ?? [vertical]`: con `flujos` en `null` caía a
- * `vertical`; ahora `flujos` que no es lista (null, cadena, objeto) da «no»
- * (falla cerrado, como las reglas). Con `flujos` ausente sigue valiendo
- * `[vertical]`. Además, una lista `modulos` explícita manda sobre los flujos.
+ * lista propia. Desde H2b-cierre SOLO manda la lista `modulos`: `flujos` y
+ * `vertical` no se leen, y una ficha sin lista da «no» (falla cerrado, como
+ * las reglas).
  */
 export const tieneCaptacion = (ficha: FichaConCapacidades | null | undefined): boolean =>
   tieneModulo(ficha, 'captacion');

@@ -42,6 +42,7 @@ import {
   capacidadesDeConsola, modulosDe, pestanasVisibles,
 } from '../../../web/src/central/lib/flujos.ts';
 
+import { modulosDeFlujos } from '../../../functions/src/registro.ts';
 /** La fachada importa `core/lib/firebase` (para `useModulos`); acá no hay navegador ni claves. */
 vi.mock('../../../web/src/core/lib/firebase', () => ({ db: {} }));
 
@@ -66,23 +67,24 @@ type Ficha = Record<string, unknown>;
 /** Q'Taco: venta, con la lista explícita de lo que usa (sin inventario). */
 const MODULOS_QTACO = ['productos', 'campanas', 'cobros', 'pedidos', 'catalogo-web'];
 const QTACO: Ficha = { nombre: 'qtaco', vertical: 'venta', flujos: ['venta'], modulos: MODULOS_QTACO };
-const QTACO_SIN_LISTA: Ficha = { nombre: 'qtaco', vertical: 'venta', flujos: ['venta'] };
+const QTACO_SIN_LISTA: Ficha = { nombre: 'qtaco', vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) };
 
 /** Tipo de ficha → ¿abre el inventario?  Es la tabla del PR. */
 const TABLA: Array<[string, Ficha | null, boolean]> = [
-  ['venta sin lista (flujos: [venta])', { flujos: ['venta'] }, true],
-  ['venta sin lista (solo vertical: venta)', { vertical: 'venta' }, true],
-  ['venta con flujos y vertical', { vertical: 'venta', flujos: ['venta'] }, true],
+  ['venta con los modulos de su flujo (el alta los siembra)', { flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) }, true],
+  ['H2b-cierre: venta SIN modulos (solo flujos): falla cerrado', { flujos: ['venta'] }, false],
+  ['H2b-cierre: venta SIN modulos (solo vertical: venta): falla cerrado', { vertical: 'venta' }, false],
+  ['venta con flujos y vertical', { vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) }, true],
   ['lista con inventario', { modulos: ['productos', 'inventario'] }, true],
   ['lista con inventario sobre una ficha de reservas', { flujos: ['agendamiento'], modulos: ['inventario'] }, true],
   ['venta con lista SIN inventario (Q\'Taco)', QTACO, false],
   ['venta con lista vacía', { flujos: ['venta'], modulos: [] }, false],
-  ['reservas sin lista (flujos: [agendamiento])', { flujos: ['agendamiento'] }, false],
+  ['reservas sin lista (flujos: [agendamiento])', { flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) }, false],
   ['reservas sin lista (solo vertical)', { vertical: 'agendamiento' }, false],
-  ['captación sin lista', { flujos: ['onboarding'] }, false],
+  ['captación sin lista', { flujos: ['onboarding'], modulos: modulosDeFlujos(['onboarding'] as never[]) }, false],
   ['`flujos` que no es lista (cadena)', { flujos: 'venta', vertical: 'venta' }, false],
   ['`flujos` nulo con vertical de venta', { flujos: null, vertical: 'venta' }, false],
-  ['`modulos` que no es lista: manda `flujos` (venta)', { flujos: ['venta'], modulos: 'inventario' }, true],
+  ['`modulos` que no es lista: no abre y no cae a `flujos` (H2b-cierre)', { flujos: ['venta'], modulos: 'inventario' }, false],
   ['ficha vacía', {}, false],
   ['ficha inexistente', null, false],
 ];
@@ -170,7 +172,7 @@ describe('ajustarStock sin el módulo responde permission-denied y no escribe na
 describe('Lo que ya se exigía antes se sigue exigiendo, y primero', () => {
   it('sin sesión: unauthenticated; con un id inválido: invalid-argument; operador: permission-denied', async () => {
     const t = 'inv-con-modulo';
-    await sembrar(t, { flujos: ['venta'] });
+    await sembrar(t, { flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
     await expect(ajustar({ tenantId: t, itemId: 'torta', sumar: 1 }, undefined)).rejects.toMatchObject({ code: 'unauthenticated' });
     await expect(ajustar({ tenantId: 'X', itemId: 'torta', sumar: 1 }, admin(t))).rejects.toMatchObject({ code: 'invalid-argument' });
     const oper: Auth = { uid: 'u-oper', token: token({ [t]: 'oper' }) };
@@ -183,7 +185,7 @@ describe('Lo que ya se exigía antes se sigue exigiendo, y primero', () => {
   it('el ORDEN es rol y después ficha: sobre una ficha SIN el módulo, el operador y el administrador ajeno reciben el mensaje del rol', async () => {
     const t = 'inv-orden';
     await sembrar(t, QTACO); // sin inventario
-    await sembrar('inv-orden-otro', { flujos: ['venta'] });
+    await sembrar('inv-orden-otro', { flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
     const oper: Auth = { uid: 'u-oper', token: token({ [t]: 'oper' }) };
     const rol = { code: 'permission-denied', message: 'Solo el administrador del negocio.' };
     for (const quien of [oper, admin('inv-orden-otro')]) {
@@ -194,8 +196,8 @@ describe('Lo que ya se exigía antes se sigue exigiendo, y primero', () => {
   });
 
   it('el administrador de OTRO negocio con el módulo no mueve el stock de éste', async () => {
-    await sembrar('inv-ajeno-a', { flujos: ['venta'] });
-    await sembrar('inv-ajeno-b', { flujos: ['venta'] });
+    await sembrar('inv-ajeno-a', { flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
+    await sembrar('inv-ajeno-b', { flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
     await expect(ajustar({ tenantId: 'inv-ajeno-b', itemId: 'torta', sumar: 1 }, admin('inv-ajeno-a')))
       .rejects.toMatchObject({ code: 'permission-denied', message: 'Solo el administrador del negocio.' });
     expect(await stockDe('inv-ajeno-b')).toBe(5);
@@ -203,7 +205,7 @@ describe('Lo que ya se exigía antes se sigue exigiendo, y primero', () => {
 
   it('con el módulo, un ítem que no existe sigue dando not-found y uno sin control, failed-precondition', async () => {
     const t = 'inv-con-modulo';
-    await sembrar(t, { flujos: ['venta'] });
+    await sembrar(t, { flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
     await expect(ajustar({ tenantId: t, itemId: 'no-existe', fijarEn: 1 }, admin(t))).rejects.toMatchObject({ code: 'not-found' });
     await db.doc(`tenants/${t}/catalogo/pan`).set({ nombre: 'Pan', activo: true });
     await expect(ajustar({ tenantId: t, itemId: 'pan', sumar: 1 }, admin(t))).rejects.toMatchObject({ code: 'failed-precondition' });
@@ -257,9 +259,13 @@ describe('Los seis comercios de hoy y Q\'Taco: lo único que se pierde es `inven
   it('los que no tienen inventario hoy no lo tienen con el módulo exigido; el de venta sin lista, sí', () => {
     for (const f of IDS_FLUJOS) {
       for (const ficha of [{ flujos: [f] }, { vertical: f }, { vertical: f, flujos: [f] }]) {
-        expect(tieneModulo(ficha, 'inventario'), JSON.stringify(ficha)).toBe(f === 'venta');
+        // H2b-cierre: sin `modulos`, nada; sembrada desde el flujo, solo venta trae inventario.
+        expect(tieneModulo(ficha, 'inventario'), JSON.stringify(ficha)).toBe(false);
+        expect(modulosDeFicha(ficha)).toEqual([]);
+        const sembrada = { ...ficha, modulos: modulosDeFlujos([f]) };
+        expect(tieneModulo(sembrada, 'inventario'), JSON.stringify(sembrada)).toBe(f === 'venta');
         // Su menú de hoy: sin `inventario` salvo venta, y el resto idéntico.
-        expect(pestanasDe(modulosDeFicha(ficha)).some((p) => p.ruta === 'inventario'), JSON.stringify(ficha)).toBe(f === 'venta');
+        expect(pestanasDe(modulosDeFicha(sembrada)).some((p) => p.ruta === 'inventario'), JSON.stringify(sembrada)).toBe(f === 'venta');
       }
     }
   });

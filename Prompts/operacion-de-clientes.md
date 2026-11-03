@@ -50,8 +50,8 @@ Lee primero, en este orden: `CLAUDE.md` entero, `ESTADO.md` (asientos del 24 y
 
 ## Antes que nada: dónde estás parado
 
-1. **Ningún cliente está en producción** (modalidad). Platinum y Bellido
-   atienden personas reales en modalidad demostración; su aceptación formal
+1. **Ningún cliente está en producción** (modalidad). Bellido
+   atiende personas reales en modalidad demostración; su aceptación formal
    tiene **0 filas llenas**. El pase de cualquiera espera el hito **H3** de la
    rearquitectura (core unificado y publicado), porque republicarlos dos
    veces es pagar dos ventanas y dos aceptaciones.
@@ -200,7 +200,6 @@ evidencia, ventana de 23:30 a 01:30 para la publicación final. Es el hito
 
 | Instancia | Dónde está | Lo abierto que esta sesión resuelve |
 |---|---|---|
-| **Platinum** | Atiende desde el 16/09; número en el portafolio de NovuChat; §11 de `pase-a-produccion-waba-propia.md` con cinco decisiones | Titularidad (quién paga Meta, el chip, el nombre visible) y plan: se deciden ahora, se escriben en H1; camino A o B a la WABA propia empieza en Meta ya; supuestos cargados (horario, cancelación, profesionales, retención de la seña 30 contra 15); qué odontóloga hace la valoración; qué documento manda (Excel o mensaje); plantilla del aviso a recepción; **el QR de seña vence el 26/09**; 45 filas de aceptación después de H3; pase = H4 |
 | **Bellido** | Atiende desde el 18/09; 19 nodos propios (pasan a módulo en F5); siete pedidos en el audio del 23/09 | Del audio: «Andres sin acento» (cupo mensual de Meta, una sola vez), asistente sin nombre (configuración), emergencia recortada (decisión clínica del doctor, con su nombre), vacunas y cremas al doctor (configuración), María René como `oper` (script), citas de octubre desde `.ics` (script), menú de 3 botones a lista de 4 filas (topología: después de F3 o F5). Además: el doctor como administrador del portafolio, alerta de gasto, `_supuestos` en `negocio-bellido.json`, siete preguntas abiertas, borrar el evento fantasma y su cierre, borrar la app y la WABA huérfanas; 46 filas de aceptación después de H3 |
 | **NovuChat** (captación) | Traspaso al portafolio de Silvana preparado; la rama se fusiona en F-1 | Fases 1 a 3 del traspaso en Meta (`CLIENTES/NOVUCHAT/traspaso-tech-provider.md`), plantilla `solicitud_contacto` pedida de nuevo, desuscribir la app vieja, tarjeta de Silvana; es el primer tenant con titularidad `comercio` |
 | **Q'Taco** | En pausa desde el 16/09 | Antes de retomar: `cumplimiento.md` sobre la propuesta del 11/09 (tope con corte que ya no rige, «pago confirmado» en el guion) |

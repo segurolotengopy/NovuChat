@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import { ANA, BETO, PID, PRODUCCION, PRUEBA, REC, SUSPENDIDO, crear, entrega, hablar, mTexto, textos, valorMeta } from './mundo';
+import { NODOS_DEL_GUARDADO } from '../../../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 
 const CORTES = /solo puedo leer texto, notas de voz, fotos y archivos PDF/;
 const PROHIBIDAS = /acreditad|verificad|validad|recibimos tu pago|pago (?:recibido|confirmado)/i;
@@ -211,7 +212,10 @@ describe('el orden del lienzo: el entrante se reporta ANTES que la respuesta', (
   it('«Resumen del turno» corre al final, después de los envíos', () => {
     const w = crear();
     const t = hablar(w, ANA, STICKER);
-    expect(t.orden[t.orden.length - 1]).toBe('Resumen del turno');
+    // Lo último de la rama que responde; DESPUÉS solo corre la rama común del GUARDADO de medios, que va debajo de todo a propósito.
+    const sinGuardado = t.orden.filter((n) => !NODOS_DEL_GUARDADO.includes(n));
+    expect(sinGuardado[sinGuardado.length - 1]).toBe('Resumen del turno');
+    expect(t.orden.slice(sinGuardado.length).every((n) => NODOS_DEL_GUARDADO.includes(n))).toBe(true);
   });
 });
 

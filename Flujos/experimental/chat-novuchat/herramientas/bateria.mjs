@@ -38,6 +38,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { doblesDeBateriaDelGuardado } from '../../comun-sin-agente/src/guardado-dobles.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ_FLUJO = join(AQUI, '..');
@@ -825,6 +826,8 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       'Reportar mensaje (saliente)': () => ({ atencion: { estado: 'normal' }, servicio: { estado: 'activo' } }),
       'Obtener URL del medio (general)': () => ({ id: 'm', url: 'https://lookaside.fbsbx.com/whatsapp_business/attachments/medio-1', mime_type: 'audio/ogg', file_size: 5000 }),
       'Descargar medio': () => ({ descargado: true }),
+      // La rama común del GUARDADO de medios: sin red, el servidor responde «guardado_apagado» (la bandera por defecto).
+      ...doblesDeBateriaDelGuardado(),
       'Transcribir audio': () => ({ content: { parts: [{ text: String(act.t?.transcripcion ?? '') }] } }),
       'Describir imagen': () => ({ content: { parts: [{ text: JSON.stringify({ categoria: act.t?.categoria === 'comprobante' ? 'comprobante' : 'otro', texto: String(act.t?.lectura ?? '') }) }] } }),
       'Describir documento': () => ({ content: { parts: [{ text: JSON.stringify({ categoria: act.t?.categoria === 'comprobante' ? 'comprobante' : 'otro', texto: String(act.t?.lectura ?? '') }) }] } }),

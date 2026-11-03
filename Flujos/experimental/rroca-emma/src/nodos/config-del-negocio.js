@@ -26,6 +26,9 @@ const valor = (v) => (typeof v === 'string' && !/^REEMPLAZAR_/.test(v.trim())) ?
 const linea = (v, max) => String(v === undefined || v === null ? '' : v)
   .replace(/<<<|>>>/g, '').replace(/[\[\]{}]/g, '')
   .replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, max);
+// El enlace de Google Maps de la Consola (`datosDelNegocio.direccionMaps`): LA MISMA regla que el servidor (https, dominio de mapas, hasta 200 caracteres, sin espacios). Es el ÚNICO enlace que pasa; los demás se descartan.
+const ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+const enlaceDeMapa = (v) => (typeof v === 'string' && v.trim().length <= 200 && ENLACE_DE_MAPA.test(v.trim()) ? v.trim() : '');
 // Un texto de la Consola que sea (o lleve) un enlace no es una dirección ni un horario.
 const sinEnlace = (v) => (/https?:|www\.|wa\.me|maps|goo\.gl/i.test(String(v)) ? '' : v);
 
@@ -79,6 +82,7 @@ if (codigo === 409) {
     prefijosPermitidos: Array.isArray(op.prefijosPermitidos) && op.prefijosPermitidos.length ? op.prefijosPermitidos.join(',') : undefined,
     direccion: linea(sinEnlace(util(dn.direccion) || ''), 160) || undefined,
     horario: linea(sinEnlace(util(op.horarioAtencion) || ''), 200) || undefined,
+    direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,
   });
   const estadoDeLaConsola = util(cuerpo.estadoComercio);
   cfg = {
@@ -109,12 +113,19 @@ const idArte = (v) => (/^\d{6,25}$/.test(valor(v)) ? valor(v) : '');
 // D6 (Andres, 23/10/2026): `usarMarcas = si` enciende el texto con las marcas (Sculptra®, Radiesse®) y el comparativo. Cualquier otro valor lo deja apagado.
 const usarMarcas = valor(base.usarMarcas).toLowerCase() === 'si';
 
+// LA PLANILLA DEL miniCRM (módulo `crm`): el id de la hoja de Google de ESTE negocio (25 a 100 caracteres de id) y el nombre de la pestaña. Un marcador `REEMPLAZAR_*`, vacío o con otra forma vale '' y el flujo no consulta Google.
+// Sin id válido no hay hoja: la pestaña también queda vacía. Con id y sin pestaña, 'Leads_CRM'.
+const idDeLaPlanilla = /^[A-Za-z0-9_-]{25,100}$/.test(valor(base.planillaProspectosId)) ? valor(base.planillaProspectosId) : '';
+const hojaDeLaPlanilla = idDeLaPlanilla === '' ? '' : (linea(valor(base.planillaProspectosHoja), 100) || 'Leads_CRM');
+
 return [{ json: {
   ...cfg,
   etapaPrueba,
   telefonosEtapaPrueba: etapaPrueba ? permitidos : [],
   fueraDePrueba,
   usarMarcas,
+  planillaProspectosId: idDeLaPlanilla,
+  planillaProspectosHoja: hojaDeLaPlanilla,
   artesMedia: { comparativo: idArte(base.arteComparativoMediaId), antes_despues: idArte(base.arteAntesDespuesMediaId), autoridad: idArte(base.arteAutoridadMediaId) },
   // El modelo es un dato de `Config base` (solo un id con forma de modelo de Gemini).
   modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/.test(String(base.modelo || '')) ? String(base.modelo) : 'gemini-3.5-flash-lite',

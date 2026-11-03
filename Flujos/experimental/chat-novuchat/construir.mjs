@@ -26,11 +26,14 @@
  */
 import { closeSync, constants, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
+import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
 // LA CADENA DE ENVÍO ES COMÚN (no se copia): se injerta desde `comun-sin-agente/src/envio.mjs` (enviar, respaldo en texto, reporte saliente).
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
+// EL miniCRM ES UN MÓDULO (no se copia): los paquetes `crm-prospecto` y `crm-decidir`, y el injerto del mapa de columnas del tenant (dato `crm`).
+import { injertarCrm, rutasPaquetesCrm, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const DATOS = join(AQUI, '../../../admin/scripts/datos/chat-novuchat');
@@ -45,6 +48,7 @@ export const CONFIG_BASE = {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
     filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
     tipeo: ['../../src/core/texto/tipeo.js'],
+    ...Object.fromEntries(Object.entries(rutasPaquetesCrm(join(AQUI, '..', '..', 'src', 'modulos', 'captacion', 'crm-captacion.js'))).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
   },
 };
 
@@ -231,6 +235,10 @@ export function validarDatos(datos, archivo) {
     if (typeof cb.planillaProspectosHoja === 'string' && (cb.planillaProspectosHoja.trim() === '' || cb.planillaProspectosHoja.length > 100)) e('configBase.planillaProspectosHoja', 'tiene que tener de 1 a 100 caracteres (o el marcador)');
     if (typeof cb.mensajeComercioSuspendido === 'string' && (cb.mensajeComercioSuspendido.trim() === '' || cb.mensajeComercioSuspendido.length > 300)) e('configBase.mensajeComercioSuspendido', 'tiene que tener de 1 a 300 caracteres');
   }
+
+  // --- el mapa de columnas de la hoja de prospectos (módulo crm): lo valida el MISMO validador que corre en n8n
+  if (d.crm === undefined) e('crm', 'falta (el mapa de columnas de la hoja de prospectos)');
+  else for (const m of validarMapaCrm(d.crm)) e('crm', m);
 
   // --- los datos propios del chat
   const k = d.datos && typeof d.datos === 'object' && !Array.isArray(d.datos) ? d.datos : null;
@@ -496,7 +504,7 @@ export function inyectar(flujo, marca, nombre, valor) {
 const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
 const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', ANFITRION_CONSOLA];
 // Una URL por expresión (`={{ … }}`) solo vale para la descarga del medio (la URL que devuelve Meta): las del modelo llevan el host fijo y solo el id del modelo por expresión.
-const URL_POR_EXPRESION = { 'Descargar medio': '={{ $json.url }}' };
+const URL_POR_EXPRESION = { 'Descargar medio': '={{ $json.url }}', 'Descargar medio (guardado)': URL_DESCARGA_GUARDADO };
 export function anfitrionPermitido(nombreDelNodo, url) {
   if (/^REEMPLAZAR_[A-Z0-9_]+$/.test(url)) return true;
   if (URL_POR_EXPRESION[nombreDelNodo] === url) return true;
@@ -515,6 +523,8 @@ export function guardias(entrada, flujo, datos = {}) {
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   const nombres = new Set(nodos.map((n) => n.name));
   const parametros = (n) => (n && n.parameters) || {};
+  // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
+  if (nodos.length) h.push(...hallazgosDelGuardado(flujo));
   // «Entrada de prueba» nunca en producción: es el único nodo que activa el modo prueba. «WhatsApp Trigger» nunca en la prueba.
   if (entrada !== 'prueba' && nombres.has(NODO_PRUEBA)) h.push(`contiene el nodo «${NODO_PRUEBA}» (activa el modo prueba): solo va en el JSON de prueba`);
   if (entrada === 'prueba' && nombres.has(NODO_TRIGGER)) h.push(`contiene el nodo «${NODO_TRIGGER}» en la prueba: activarlo registra el webhook en Meta y se lo quita al flujo vivo`);
@@ -547,7 +557,7 @@ export function guardias(entrada, flujo, datos = {}) {
   if (nodos.length && (!espera || espera.type !== 'n8n-nodes-base.wait')) h.push('falta el nodo «Esperar ráfaga» (n8n-nodes-base.wait): sin él no hay coalescencia de clics');
   // Retención de ejecuciones, orden y zona horaria (decisión de Andres, 03/10/2026: se guardan solo las ejecuciones que fallan).
   const st = (flujo && flujo.settings) || {};
-  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'all' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «all» y saveExecutionProgress false (solo se guardan las ejecuciones que fallan; llevan el texto del turno)');
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» y saveExecutionProgress false (con la rama del guardado de medios el binario quedaría en la ejecución: decisión de Andres del 30/10, contrato v2 §8.1)');
   if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow` (D13)');
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
@@ -555,8 +565,17 @@ export function guardias(entrada, flujo, datos = {}) {
   const sheet = (nombre) => nodos.find((n) => n.name === nombre);
   const rango = (n) => (((parametros(n).options || {}).dataLocationOnSheet || {}).values || {}).range;
   const formato = (n) => (parametros(n).options || {}).cellFormat;
-  if (sheet('Buscar teléfono en planilla') && rango(sheet('Buscar teléfono en planilla')) !== 'A3:J') h.push('«Buscar teléfono en planilla» tiene que leer solo el rango A3:J (nunca las columnas del equipo)');
-  if (sheet('Leer IDs de la planilla') && rango(sheet('Leer IDs de la planilla')) !== 'A3:A') h.push('«Leer IDs de la planilla» tiene que leer solo el rango A3:A');
+  // Los rangos salen del mapa de columnas del tenant (`datos.crm`): hasta la última columna DEL BOT, nunca las del equipo.
+  const mapa = datos && datos.crm;
+  if (!mapa || !mapa.columnas) h.push('faltan los datos `crm` (el mapa de columnas): sin él no se puede comprobar el rango de lectura de la planilla');
+  else {
+    const f = mapa.filaEncabezados;
+    const ultima = Object.values(mapa.columnas).map((c) => c.letra).sort().pop();
+    if (sheet('Buscar teléfono en planilla') && rango(sheet('Buscar teléfono en planilla')) !== `A${f}:${ultima}`) h.push(`«Buscar teléfono en planilla» tiene que leer solo el rango A${f}:${ultima} (nunca las columnas del equipo)`);
+    if (sheet('Leer IDs de la planilla') && rango(sheet('Leer IDs de la planilla')) !== `A${f}:A`) h.push(`«Leer IDs de la planilla» tiene que leer solo el rango A${f}:A`);
+    const busca = sheet('Buscar teléfono en planilla');
+    if (busca && parametros(busca).options && parametros(busca).options.returnFirstMatch !== false) h.push('«Buscar teléfono en planilla» tiene que traer TODAS las coincidencias (returnFirstMatch false): el módulo crm elige la fila más reciente');
+  }
   if (sheet('Agregar fila') && formato(sheet('Agregar fila')) !== 'USER_ENTERED') h.push('«Agregar fila» tiene que escribir en USER_ENTERED (la fecha queda como fecha)');
   if (sheet('Actualizar fila') && formato(sheet('Actualizar fila')) !== 'RAW') h.push('«Actualizar fila» tiene que escribir en RAW (nada se interpreta)');
   // `REEMPLAZAR_` solo en «Config base» (y en la ruta de «Entrada de prueba»).
@@ -602,9 +621,13 @@ export function armarTenant(proyecto, datos, archivo) {
   const reporta = plantilla.connections['¿Reportar? (saliente)'];
   if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${archivo}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);
   reporta.main[0] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
+  // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
+  injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: salidaDe(archivo), nombre: dato(datos, 'nombreFlujo', archivo), quitar: [] });
   const flujo = JSON.parse(texto);
   inyectar(flujo, MARCA_DATOS, 'CH_DATOS', datos.datos);
+  // El miniCRM: el mapa del tenant dentro del código de los nodos y el rango/encabezados de los 4 nodos de Google.
+  injertarCrm(flujo, datos.crm);
   const final = JSON.stringify(flujo, null, 2) + '\n';
   if (!sinMarcas(flujo, false)) throw new Error(`${archivo}: quedó una marca @@ sin reemplazar`);
   return final;

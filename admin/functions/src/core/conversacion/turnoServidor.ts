@@ -123,7 +123,8 @@ export async function consumirCupoDeTurno(
 // REGISTROS Y ERRORES
 // ---------------------------------------------------------------------------
 
-export type NombreDeCallableDeTurno = 'tomarConversacion' | 'devolverConversacion' | 'enviarComoPersona';
+export type NombreDeCallableDeTurno =
+  | 'tomarConversacion' | 'devolverConversacion' | 'enviarComoPersona' | 'bloquearContacto' | 'desbloquearContacto';
 
 interface DatosDeRegistro {
   tenantId?: unknown; uid?: string; rol?: RolDePersona; conversacionId?: unknown; motivo?: string;
@@ -178,7 +179,8 @@ export interface SalidaDeTurno {
 }
 
 /** La acción de auditoría de cada callable (lista cerrada). */
-export type AccionDeTurno = 'conversacion_tomada' | 'conversacion_devuelta' | 'mensaje_persona_creado';
+export type AccionDeTurno =
+  | 'conversacion_tomada' | 'conversacion_devuelta' | 'mensaje_persona_creado' | 'bloquear_contacto' | 'desbloquear_contacto';
 
 export interface ContextoDeTurno {
   db: Firestore;
@@ -263,13 +265,13 @@ export function turnoAFirestore(t: Turno): Record<string, unknown> {
  * Recorre los pasos 1 a 4 y entrega el control a `transaccion` (paso 5). Cualquier error que no sea
  * un `HttpsError` nuestro sale como `unavailable`, registrado solo con su `code`.
  */
-export async function atenderTurno(
+export async function atenderTurno<S = SalidaDeTurno>(
   funcion: NombreDeCallableDeTurno,
   p: CallableRequest,
-  transaccion: (c: ContextoDeTurno) => Promise<SalidaDeTurno>,
+  transaccion: (c: ContextoDeTurno) => Promise<S>,
   db: Firestore = getFirestore(),
   ahoraMs: number = Date.now(),
-): Promise<SalidaDeTurno> {
+): Promise<S> {
   const datos = esObjeto(p.data) ? p.data : {};
   const tenantId = datos['tenantId'];
   const conversacionId = datos['conversacionId'];
@@ -296,11 +298,12 @@ export async function atenderTurno(
       registrar(funcion, 'invalid-argument', { tenantId: t, uid, rol, motivo: 'conversacion' });
       throw errorDeTurno('solicitudInvalida');
     }
-    // 4. El comercio: activo, habilitado y —salvo al devolver— con la salida publicada (`personaPuedeEscribir`).
+    // 4. El comercio: activo, habilitado y —solo al tomar— con la salida publicada (`personaPuedeEscribir`).
+    //    Devolver y (des)bloquear no envían nada, así que no la exigen.
     //    VA ANTES DEL TOPE (25/10/2026): un rechazo por falta de salida no debe escribir nada, y el tope escribe
     //    su contador. Costo: quien tiene rol en un comercio no habilitado puede forzar lecturas de UNA ficha.
     try {
-      await exigirComercioHabilitado(t, db, { exigirSalida: funcion !== 'devolverConversacion' });
+      await exigirComercioHabilitado(t, db, { exigirSalida: funcion === 'tomarConversacion' });
     } catch (e) {
       registrar(funcion, e instanceof HttpsError ? e.code : 'unavailable', { tenantId: t, uid, rol });
       throw e;
@@ -313,7 +316,7 @@ export async function atenderTurno(
     }
     // 5. La transacción de la callable. Sus rechazos (no existe, ocupada…) se registran acá.
     const ref = db.doc(`tenants/${t}/conversaciones/${conversacionId}`);
-    let salida: SalidaDeTurno;
+    let salida: S;
     try {
       salida = await transaccion({ db, tenantId: t, conversacionId, uid, rol, ahoraMs, ref });
     } catch (e) {

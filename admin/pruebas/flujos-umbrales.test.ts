@@ -23,6 +23,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
@@ -82,8 +83,7 @@ function expresion(texto: unknown, $json: Record<string, unknown>): unknown {
   if (!m) throw new Error(`no es una expresión simple: ${String(texto).slice(0, 60)}`);
   // Se evalúa la expresión VERSIONADA, por la misma razón que el código de los
   // nodos: copiarla dejaría la prueba en verde mientras el flujo se rompe.
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$json', '$', `return (${m[1]});`) as (j: unknown, d: unknown) => unknown;
+  const fn = vm.compileFunction(`return (${m[1]});`, ['$json', '$']) as (j: unknown, d: unknown) => unknown;
   // Ningún otro nodo corrió en esta evaluación (`$('X').isExecuted` es falso).
   return fn($json, () => ({ isExecuted: false }));
 }
@@ -95,8 +95,7 @@ function ejecutar(
 ): Record<string, unknown>[] {
   const entrada = { all: () => items.map((json) => ({ json })), first: () => ({ json: items[0] }) };
   const $ = (n: string) => ({ first: () => ({ json: referencias[n] ?? {} }) });
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$input', '$', codigo) as (i: unknown, r: unknown) => { json: Record<string, unknown> }[];
+  const fn = vm.compileFunction(codigo, ['$input', '$']) as (i: unknown, r: unknown) => { json: Record<string, unknown> }[];
   return fn(entrada, $).map((x) => x.json);
 }
 

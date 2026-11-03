@@ -175,6 +175,9 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     // El catálogo completo con precio, por código (los precios son los del catálogo de la consola). Con un QR abierto, texto plano con la invitación a pagar.
     const op = qrAbierto ? [] : menuAbierto();
     m = qrAbierto ? texto(invitar(raTextoCatalogo(cat, false, nom))) : conBotones(raTextoCatalogo(cat, op.length > 0, nom), op);
+  } else if (tipoDePlan === 'ubicacion') {
+    // La ubicación de la Consola, por código (el modelo no interviene; el prompt le prohíbe los enlaces). Sin botones de producto; con un QR abierto, la invitación a pagar.
+    m = texto(invitar(conPresentacion(raTextoUbicacion(cfg))));
   } else if (tipoDePlan === 'imagenes') {
     // «¿Tienes imágenes?»: respuesta fija (no se envían imágenes del libro) y lo que sí hay, con los botones del menú vigente (con un QR abierto, texto plano con la invitación a pagar).
     const op = qrAbierto ? [] : menuAbierto();

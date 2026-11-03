@@ -7,18 +7,13 @@ import { describe, expect, it } from 'vitest';
 import { tieneCaptacion } from '../../../functions/src/modulos/captacion/captacion.ts';
 
 describe('tieneCaptacion (registro)', () => {
-  it('flujos con onboarding: sí', () => {
-    expect(tieneCaptacion({ flujos: ['onboarding'] })).toBe(true);
+  it('H2b-cierre: `flujos` con onboarding SIN `modulos` ya no cuenta: falla cerrado', () => {
+    expect(tieneCaptacion({ flujos: ['onboarding'] })).toBe(false);
+    expect(tieneCaptacion({ vertical: 'onboarding' })).toBe(false);
+    expect(tieneCaptacion({ flujos: ['onboarding'], vertical: 'onboarding' })).toBe(false);
   });
-  it('ficha con solo vertical onboarding: sí (flujos ausente cae en [vertical])', () => {
-    expect(tieneCaptacion({ vertical: 'onboarding' })).toBe(true);
-  });
-  it('flujos venta o agendamiento: no', () => {
-    expect(tieneCaptacion({ flujos: ['venta'] })).toBe(false);
-    expect(tieneCaptacion({ flujos: ['agendamiento'] })).toBe(false);
-  });
-  it('flujos vigentes manda sobre vertical', () => {
-    expect(tieneCaptacion({ flujos: ['venta'], vertical: 'onboarding' })).toBe(false);
+  it('`modulos` con captacion: sí, sea cual sea `flujos` o `vertical`', () => {
+    expect(tieneCaptacion({ modulos: ['captacion'], flujos: ['venta'], vertical: 'venta' })).toBe(true);
   });
   it('modulos sin captacion: no; con captacion: sí', () => {
     expect(tieneCaptacion({ modulos: ['productos'] })).toBe(false);

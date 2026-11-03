@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
+import { doblesDelGuardado } from '../../lib/doble-guardado';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 export const CARPETA = join(AQUI, '../../../../Flujos/experimental/rroca-antonio');
@@ -57,6 +58,8 @@ export interface Opciones {
   base?: Record<string, unknown>;
   /** Lo que contesta `cotejarComprobanteVenta`: un código y un cuerpo, o 'cae'. */
   cotejo?: { statusCode: number; body: J } | 'cae';
+  /** Lo que contesta `guardarComprobante` (nodo «Guardar comprobante»): un código y un cuerpo, o 'cae'. Por omisión, 200 con la ruta guardada. */
+  guardado?: { statusCode: number; body: J } | 'cae';
   /** Lo que contesta `ingesta` al evento `cobro_cancelado` (nodo «Avisar al servidor»): un código y un cuerpo, o 'cae'. Por omisión, 200. */
   cancelar?: { statusCode: number; body: J } | 'cae';
   /** Lo que escribe el modelo de conversación: un texto, null (sin texto), 'cae' (error de servicio) o una función. */
@@ -89,6 +92,7 @@ export const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({
 export const panelConQr = (monto = 49, extra: J = {}): { statusCode: number; body: J } => panelOk({ cobro: { activo: true, qr: { url: 'https://qr.example.com/q.png' }, pendiente: true, monto, pedido: 'AN1', regla: 2 }, ...extra });
 /** El panel con productos marcados `agotado` (dato conmutable de la consola). */
 export const panelConAgotados = (...ids: string[]): { statusCode: number; body: J } => panelOk({ catalogo: CATALOGO.map((c) => ({ ...c, ...(ids.includes(c.id) ? { agotado: true } : {}) })) });
+export const RUTA_GUARDADA = { statusCode: 200, body: { ruta: 'tenants/rroca-antonio/comprobantes/2026-10-26/abc_1.jpg' } };
 export const COTEJO_VALIDO = { statusCode: 200, body: { estado: 'valido', importe: 49, avisarComercio: true } };
 export const COMPROBANTE = { categoria: 'comprobante', texto: 'Transferencia', monto: '49.00', cuentaDestino: '1*****9', nombreCuenta: 'ANTONIO', fecha: '05/10/2026', hora: '10:00', banco: 'Banco' };
 export function crear(o: Opciones = {}): Mundo {
@@ -104,12 +108,15 @@ export function crear(o: Opciones = {}): Mundo {
   const gemini = (t: string): J => ({ content: { parts: [{ text: t }] } });
   const clasificar = (): J => (m.clasificacion === null ? { error: { message: 'no se pudo describir' } } : gemini(JSON.stringify(m.clasificacion ?? { categoria: 'otro', texto: '' })));
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Verificar firma con el receptor': o.verificador ?? ((ll) => ({ valido: true, deliveryId: ll.cuerpo?.['deliveryId'] })),
     'Traer configuración': () => (o.panel === 'cae' ? { statusCode: 503, body: {} } : (o.panel ?? panelOk())),
     'Reportar mensaje (entrante)': () => o.ingesta ?? { ok: true },
     'Reportar mensaje (saliente)': () => ({ ok: true }),
     'Obtener URL del medio (general)': () => ({ id: 'm', url: m.url ?? 'https://lookaside.fbsbx.com/whatsapp_business/attachments/medio-1', mime_type: m.mime ?? 'image/jpeg', file_size: m.bytes ?? 100_000 }),
     'Descargar medio': () => ({ descargado: true }),
+    'Guardar comprobante': () => (o.guardado === 'cae' ? { statusCode: 503, body: {} } : (o.guardado ?? RUTA_GUARDADA)),
     'Cotejar en el servidor': () => (o.cotejo === 'cae' ? { statusCode: 503, body: {} } : (o.cotejo ?? COTEJO_VALIDO)),
     // «Avisar al servidor»: `cobro_cancelado` (lo que contesta `o.cancelar`) o `no_contactar` (siempre 200).
     'Avisar al servidor': (ll) => (ll.cuerpo?.['evento'] !== 'cobro_cancelado' ? { statusCode: 200, body: { ok: true } } : (o.cancelar === 'cae' ? { statusCode: 503, body: {} } : (o.cancelar ?? { statusCode: 200, body: { atencion: { estado: 'normal' } } }))),

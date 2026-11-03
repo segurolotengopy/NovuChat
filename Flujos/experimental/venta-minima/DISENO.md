@@ -65,7 +65,8 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
   - la clave `avisarAlPropioNumero` (interruptor solo de ensayo) solo puede estar en `ensayo-demo-a.json` y en su salida (ver «La variante
     de ensayo en el Demo A»);
   - retención de ejecuciones (ver abajo).
-- **Retención de ejecuciones (decisión de Andres, 04/10/2026; reemplaza las del 02/10 y el 03/10).** Por omisión (plantilla, prueba, ensayo en el Demo A y cualquier otro
+- **Retención de ejecuciones: desde el 30/10/2026 `none` en TODO, Q'Taco incluido** (decisión de Andres en el contrato v2 de medios, §8.1: con la rama del guardado de medios el binario del medio quedaría en los datos de la ejecución; se pierde diagnóstico, por privacidad). Lo que sigue es la decisión del 04/10, REEMPLAZADA en lo que dice de Q'Taco.
+- **(Histórico) Retención de ejecuciones (decisión de Andres, 04/10/2026; reemplaza las del 02/10 y el 03/10).** Por omisión (plantilla, prueba, ensayo en el Demo A y cualquier otro
   tenant) nada se guarda: `saveDataSuccessExecution: "none"`, `saveDataErrorExecution: "none"` y `saveExecutionProgress: false`, porque las ejecuciones llevan
   texto de clientes. **La excepción es UN solo archivo, `venta-minima.qtaco.json`: guarda TODO, las fallas y los éxitos (`all`/`all`), por lo menos 24 horas, para poder
   diagnosticar** (el progreso sigue sin guardarse; las ejecuciones manuales tampoco: `saveManualExecutions: false` en todos los JSON). Decisión de Andres, 04/10:
@@ -181,6 +182,22 @@ en la prueba (L2): son 51 menos esos dos.
    dejaba pasar `formaPlantillaReserva` ni `formaPlantillaDerivacion`, y la reserva salía con la forma `cita`
    («equipo» en la variable 1). Se agregó `formaPlantilla*` a ese patrón (una línea; commit aparte, fácil de revertir si su dueño
    prefiere hacerlo él).
+
+   **Aviso de pedido por líneas (24/10/2026, aditivo).** La variable de una plantilla no admite saltos, así que el aviso de
+   `pedido_registrado` salía como un bloque continuo (« · »). Se agrega una familia de tres plantillas UTILITY (es) de 2, 4 y 6
+   productos, con el salto de línea FIJO en el cuerpo y una variable por línea: «Se registró un pedido en Q' Taco.⏎Pedido: {{1}}⏎Modalidad: {{2}}⏎Detalle pedido:⏎- {{3}}⏎… (una línea «- {{k}}» por producto, hasta N)⏎Comprobante: {{N+3}}⏎Revise el pedido
+   en la consola antes de despachar.» (las tres están APROBADAS en la WABA de Q'Taco desde el 28/10: l2 = 5 variables, l4 = 7, l6 = 9) Variables: {{1}} «N.º <código> de <n> ítems. Total de la comida: Bs <total>»; {{2}} modalidad
+   por rol SIN los ítems; {{3}}…{{N+2}} «<cant> × <producto> (<nota>)», una por variable, «—» en las sobrantes y, si hay más
+   productos que N, «… y K más» en la última (nunca a mitad de producto); {{N+3}} el cotejo. **Configuración:** `plantillasPedidoLineas`
+   = «2:nombre,4:nombre,6:nombre» e `idiomaPlantillaPedidoLineas` en `Config base` (los nombres reales viven allí; `pedido_registrado_l2`,
+   `_l4` y `_l6` son los previstos). **Con la clave vacía o ausente todo sale como hoy** (`plantillaPedido`, `ordenPedido`): el estado
+   de Q'Taco no cambia hasta cargarla. Se elige el menor tamaño que cabe (6 como máximo); si ese tamaño no tiene plantilla, cae a la
+   antigua y anota `lineas_sin_plantilla_<N>`. Solo pedido y comprobante; reserva y derivación no cambian. **Mensajes por conversación:
+   0 agregados, 0 quitados** (un ítem de plantilla por destinatario, igual que antes; el texto libre con ventana abierta no se toca).
+   Meta: cada variable queda en una línea, sin 4+ espacios y con tope de 500 caracteres (modalidad) o 200 (producto), muy por debajo
+   del tope de 1024 por variable. Suite: `admin/pruebas/venta-minima-avisos-lineas.test.ts`. **No se publica con este cambio:** espera
+   la aprobación de Meta de las tres plantillas y el botón de Andres.
+
 6. **Entrada del receptor sin «Raw Body».** El pedido de armado decía «Raw Body activado»; la referencia del
    receptor, probada en vivo el 28/09, no lo usa: el Webhook va con `options: {}` y el verificador recibe
    `JSON.stringify($json.body)`. Activar «Raw Body» mueve la carga a un binario y deja sin probar `$json.body`
@@ -757,7 +774,7 @@ Q'Taco no puede depender de la ventana de 24 h del dueño: antes el archivo solo
   Andres prefiere una plantilla propia para reservas y consultas (ver el punto 5).
 - **Consola de Q'Taco**: `catalogoWebActivo` en `false` (con más de 40 ítems la ingesta manda `catalogo: []` y el flujo
   deriva todo pedido), carta, campañas y QR; `numeroRecepcion` y `venta.aceptaDelivery`/`aceptaRetiroEnLocal`.
-- **Retención de ejecuciones (P6)**: `none` en todo, salvo `venta-minima.qtaco.json`, que guarda todo (`all`/`all`, por lo menos 24 h; decisión de Andres del 04/10; riesgo M-1 aceptado: ver «Cómo se arma»).
+- **Retención de ejecuciones (P6)**: `none` en todo desde el 30/10 (contrato v2 de medios §8.1); antes, salvo `venta-minima.qtaco.json`, que guarda todo (`all`/`all`, por lo menos 24 h; decisión de Andres del 04/10; riesgo M-1 aceptado: ver «Cómo se arma»).
 - **Marcador nuevo en el alta**: `REEMPLAZAR_RUTA_CARRITO_QTACO` (la ruta del webhook del carrito) entra a la tabla local del alta de Q'Taco.
 - Importar con `./scripts/preparar-import.sh Flujos/experimental/venta-minima/venta-minima.qtaco.json .env.qtaco`
   (el patrón de marcadores corta en comillas, barras y espacios: **no pegar dos marcadores con una coma**; la suite lo

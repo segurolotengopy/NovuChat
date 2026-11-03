@@ -33,6 +33,7 @@ import {
   query, orderBy, limit, where, documentId, collectionGroup,
   serverTimestamp, Timestamp, addDoc, deleteField, writeBatch, increment, getCountFromServer,
 } from 'firebase/firestore';
+import { modulosDeFlujos, type IdFlujo } from '../functions/src/registro.ts';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -192,7 +193,7 @@ beforeEach(async () => {
       // A y C: agendamiento. B y D: venta y cobro. Así cada prueba de vertical
       // tiene un comercio de cada tipo con el que contrastar.
       const vertical = (t === B || t === D) ? 'venta' : 'agendamiento';
-      await setDoc(doc(db, 'tenants', t), { nombre: t, estado, plan: 'basico', vertical });
+      await setDoc(doc(db, 'tenants', t), { nombre: t, estado, plan: 'basico', vertical, modulos: modulosDeFlujos([vertical as IdFlujo]) });
       await setDoc(doc(db, `tenants/${t}/config/negocio`), {
         nombreNegocio: t, direccion: 'Calle Falsa 100',
         tratamiento: 'usted', estiloEmojis: 'pocos',
@@ -277,6 +278,11 @@ beforeEach(async () => {
         servicios: ['item-4'], activo: true,
         actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
       });
+      // H2b-9: f1 aporta una agenda; el contador de agendas la refleja (lo exigen las reglas).
+      await setDoc(doc(db, `tenants/${t}/contadores/agendas`), {
+        calendarios: 1, refs: { ['a'.repeat(64) + '@group.calendar.google.com']: 1 },
+        ultimoFuncionario: '', actualizadoEn: Timestamp.now(),
+      });
       await setDoc(doc(db, `tenants/${t}/funcionarios/f1/privado/datos`), {
         telefono: '59170000009', correo: 'rojas@ejemplo.com',
         actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
@@ -295,7 +301,7 @@ beforeEach(async () => {
     // `onboarding` es de NovuChat y no del comercio.
     await setDoc(doc(db, 'tenants', E), {
       nombre: E, estado: 'activo', plan: 'basico',
-      vertical: 'onboarding', flujos: ['onboarding'],
+      vertical: 'onboarding', flujos: ['onboarding'], modulos: modulosDeFlujos(['onboarding']),
     });
     await setDoc(doc(db, `tenants/${E}/config/negocio`), {
       nombreNegocio: 'NovuChat', actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
@@ -884,6 +890,19 @@ describe('Principal de servicio de ingesta (n8n)', () => {
   it('no puede tocar la configuración ni el catálogo del negocio', async () => {
     await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/config/negocio`), configValida('svc-a')));
     await assertFails(deleteDoc(doc(ingestaA(), `tenants/${A}/catalogo/item1`)));
+  });
+
+  it('el tipo del mensaje es de la lista cerrada de la ingesta: video y sticker sí (30/10/2026); otro desconocido, no', async () => {
+    for (const tipo of ['video', 'sticker', 'image', 'audio', 'otro']) {
+      await assertSucceeds(addDoc(collection(ingestaA(), `tenants/${A}/conversaciones/c1/mensajes`), {
+        direccion: 'entrante', tipo, texto: '', ts: serverTimestamp(),
+      }));
+    }
+    for (const tipo of ['contacts', 'reaction', 'Video', 'loQueSea', '']) {
+      await assertFails(addDoc(collection(ingestaA(), `tenants/${A}/conversaciones/c1/mensajes`), {
+        direccion: 'entrante', tipo, texto: '', ts: serverTimestamp(),
+      }));
+    }
   });
 
   it('rechaza un mensaje que excede el tope de 4096 caracteres', async () => {
@@ -1961,8 +1980,23 @@ describe('Funcionarios', () => {
     actualizadoPor: uid, actualizadoEn: serverTimestamp(),
   });
 
+  /**
+   * H2b-9: un funcionario que cambia su calendario aportado mueve `contadores/agendas`
+   * en el mismo lote. `refs` es el mapa completo RESULTANTE.
+   */
+  const conContador = (db: ReturnType<typeof adminA>, id: string, datos: Record<string, unknown>,
+    calendarios: number, refs: Record<string, number>) => {
+    const l = writeBatch(db);
+    l.set(doc(db, `tenants/${A}/funcionarios/${id}`), datos);
+    l.update(doc(db, `tenants/${A}/contadores/agendas`),
+      { calendarios, refs, ultimoFuncionario: id, actualizadoEn: serverTimestamp() });
+    return l.commit();
+  };
+
   it('el admin del comercio los administra; el operador solo los lee', async () => {
-    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f2`), funcionario('u-admin-a')));
+    // Mismo calendario que f1: no suma una agenda, solo una referencia más.
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f2`), funcionario('u-admin-a')));
+    await assertSucceeds(conContador(adminA(), 'f2', funcionario('u-admin-a'), 1, { [CAL_OK]: 2 }));
     // El operador necesita saber quién atiende qué para poder contestar.
     await assertSucceeds(getDoc(doc(operA(), `tenants/${A}/funcionarios/f1`)));
     await assertSucceeds(getDocs(collection(operA(), `tenants/${A}/funcionarios`)));
@@ -1973,8 +2007,7 @@ describe('Funcionarios', () => {
     // Un funcionario borrado dejaría citas pasadas apuntando a un identificador
     // que ya no existe.
     await assertFails(deleteDoc(doc(adminA(), `tenants/${A}/funcionarios/f1`)));
-    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f1`),
-      { ...funcionario('u-admin-a'), activo: false }));
+    await assertSucceeds(conContador(adminA(), 'f1', { ...funcionario('u-admin-a'), activo: false }, 0, { [CAL_OK]: 0 }));
   });
 
   it('el teléfono del funcionario NO lo ve el operador', async () => {
@@ -2009,12 +2042,16 @@ describe('Funcionarios', () => {
     // primero la forma de correo, un ID de grupo malformado se colaría por ahí.
     await assertFails(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f5`),
       { ...funcionario('u-admin-a'), calendarioId: 'corto@group.calendar.google.com' }));
-    // Un calendario primario (correo) sí se acepta.
-    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f5`),
-      { ...funcionario('u-admin-a'), calendarioId: 'agenda.doctor@ejemplo.com' }));
+    // Un calendario primario (correo) sí se acepta (con cupo: el plan de la prueba trae 5).
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `tenants/${A}/cuenta/estado`), { plan: 'basico', limites: { agendas: 5 } });
+    });
+    await assertSucceeds(conContador(adminA(), 'f5',
+      { ...funcionario('u-admin-a'), calendarioId: 'agenda.doctor@ejemplo.com' }, 2,
+      { [CAL_OK]: 1, 'agenda.doctor@ejemplo.com': 1 }));
     // Y vacío también: significa «todavía no tiene agenda propia».
-    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f5`),
-      { ...funcionario('u-admin-a'), calendarioId: '' }));
+    await assertSucceeds(conContador(adminA(), 'f5', { ...funcionario('u-admin-a'), calendarioId: '' }, 1,
+      { [CAL_OK]: 1, 'agenda.doctor@ejemplo.com': 0 }));
   });
 
   it('la misma validación rige para el calendario del comercio', async () => {
@@ -2097,7 +2134,7 @@ describe('Un negocio con VARIOS flujos: la lista manda, no el valor', () => {
   const conFlujos = (t: string, flujos: string[], vertical = 'agendamiento') =>
     entorno.withSecurityRulesDisabled(async (ctx) => {
       const db = ctx.firestore();
-      await setDoc(doc(db, 'tenants', t), { nombre: t, estado: 'activo', plan: 'basico', vertical, flujos });
+      await setDoc(doc(db, 'tenants', t), { nombre: t, estado: 'activo', plan: 'basico', vertical, flujos, modulos: modulosDeFlujos(flujos as IdFlujo[]) });
       // Los documentos de configuración los crea el alta (SDK Admin), nunca el
       // navegador: la regla tiene `allow create: if false`.
       for (const f of flujos) {
@@ -2133,9 +2170,12 @@ describe('Un negocio con VARIOS flujos: la lista manda, no el valor', () => {
       { costoDelivery: 12, ...sello('u-admin-a') }));
   });
 
-  it('una ficha SIN lista se sigue leyendo por el valor: lo ya cargado no cambia', async () => {
-    // B viene de la semilla con `vertical: 'venta'` y sin `flujos`.
-    await assertSucceeds(updateDoc(doc(adminB(), `tenants/${B}/config/venta`),
+  it('H2b-cierre: una ficha SIN `modulos` no abre nada, ni por `vertical` ni por `flujos` (falla cerrado)', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'tenants', B),
+        { nombre: B, estado: 'activo', plan: 'basico', vertical: 'venta', flujos: ['venta'] });
+    });
+    await assertFails(updateDoc(doc(adminB(), `tenants/${B}/config/venta`),
       { costoDelivery: 12, ...sello('u-admin-b') }));
     await assertFails(setDoc(doc(adminB(), `tenants/${B}/funcionarios/f-x`),
       funcionario('u-admin-b')));
@@ -2197,6 +2237,35 @@ describe('Comprobar un cobro: lo firma una persona, y una sola vez', () => {
     });
     await assertFails(updateDoc(doc(adminA(), `tenants/${A}/cierres/c5`),
       { ...sello('u-admin-a'), monto: 7200 }));
+  });
+});
+
+describe('Pedidos tomados por WhatsApp (wa_): los escribe solo el servidor', () => {
+  const pedidoWa = { origen: 'whatsapp', total: 20, estado: 'recibido', telefonoEnmascarado: '5917****001' };
+  const sembrarWa = () => entorno.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `tenants/${A}/pedidos/wa_ped-1`), pedidoWa);
+    await setDoc(doc(ctx.firestore(), `tenants/${B}/pedidos/wa_ped-b`), pedidoWa);
+  });
+
+  it('el administrador y el operador NO pueden crear un wa_', async () => {
+    for (const cliente of [adminA(), operA()]) {
+      await assertFails(setDoc(doc(cliente, `tenants/${A}/pedidos/wa_nuevo`), pedidoWa));
+    }
+  });
+  it('el administrador y el operador NO pueden editar ni borrar un wa_ existente', async () => {
+    await sembrarWa();
+    for (const cliente of [adminA(), operA()]) {
+      await assertFails(updateDoc(doc(cliente, `tenants/${A}/pedidos/wa_ped-1`), { total: 1, estado: 'entregado' }));
+      await assertFails(deleteDoc(doc(cliente, `tenants/${A}/pedidos/wa_ped-1`)));
+    }
+    // Control: lo suyo sí lo leen, y el pedido sigue intacto.
+    const d = await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/pedidos/wa_ped-1`)));
+    expect(d.get('total')).toBe(20);
+  });
+  it('el administrador de A NO lee ni escribe un wa_ del comercio B', async () => {
+    await sembrarWa();
+    await assertFails(getDoc(doc(adminA(), `tenants/${B}/pedidos/wa_ped-b`)));
+    await assertFails(setDoc(doc(adminA(), `tenants/${B}/pedidos/wa_otro`), pedidoWa));
   });
 });
 
@@ -2678,11 +2747,14 @@ describe('Contadores de la oferta comercial', () => {
         { merge: true }));
       await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
         { entrantesPorTipo: { interactive: 1, location: 1, order: 1, otro: 1 } }, { merge: true }));
+      // video y sticker entran a la lista cerrada el 30/10/2026 (contrato de medios v2).
+      await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: { video: 1, sticker: 2 } }, { merge: true }));
     });
 
     it('un tipo que la ingesta no normaliza NO entra: tendría que haber caído en «otro»', async () => {
       await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
-        { entrantesPorTipo: { sticker: 3 } }, { merge: true }));
+        { entrantesPorTipo: { contacts: 3 } }, { merge: true }));
       await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
         { entrantesPorTipo: { text: 1, loQueSea: 1 } }, { merge: true }));
     });
@@ -4132,6 +4204,8 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
       const db = ctx.firestore();
       await setDoc(doc(db, 'topesDeTurno/u-admin-a'), { hora: '2026-10-16T10', n: 1 });
       await setDoc(doc(db, 'topesDeBusqueda/u-admin-a'), { hora: '2026-10-16T10', n: 1 });
+      await setDoc(doc(db, 'topesDeMedios/u-admin-a'), { hora: '2026-10-23T10', n: 1 });
+      await setDoc(doc(db, `tenants/${A}/cuposDeMedios/2026-10-23`), { n: 1, bytes: 10, vence: Timestamp.now() });
       await setDoc(doc(db, `tenants/${A}/salida/clave-0000000000001`), {
         estado: 'pendiente', creadoEn: Timestamp.now(), actualizadoEn: Timestamp.now(),
       });
@@ -4145,6 +4219,8 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
     const rutas = () => [
       'topesDeTurno/u-admin-a', 'topesDeTurno/u-nuevo',
       'topesDeBusqueda/u-admin-a', 'topesDeBusqueda/u-nuevo',
+      'topesDeMedios/u-admin-a', 'topesDeMedios/u-nuevo',
+      `tenants/${A}/cuposDeMedios/2026-10-23`, `tenants/${A}/cuposDeMedios/2026-10-24`,
       `tenants/${A}/salida/clave-0000000000001`, `tenants/${A}/salida/clave-nueva-0000001`,
     ];
     const quienes: Array<[string, () => ReturnType<typeof adminA>]> = [
@@ -4172,6 +4248,8 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
       await assertFails(getDocs(collection(propietarioConSoporte(), `tenants/${A}/salida`)));
       await assertFails(getDocs(collection(adminA(), 'topesDeTurno')));
       await assertFails(getDocs(collection(adminA(), 'topesDeBusqueda')));
+      await assertFails(getDocs(collection(adminA(), 'topesDeMedios')));
+      await assertFails(getDocs(collection(adminA(), `tenants/${A}/cuposDeMedios`)));
       await assertFails(getDocs(collectionGroup(adminA(), 'salida')));
     });
 

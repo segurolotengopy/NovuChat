@@ -24,7 +24,7 @@ import {
 // es `asignarEjes`, y contar los cambios operados es `registrarCambioOperado`,
 // los dos en `central/`. El plan, la modalidad y los umbrales siguen en
 // `actualizarEstadoCuenta`, más abajo.
-import { IDS_FLUJOS } from '../registro.js';
+import { IDS_FLUJOS, FLUJOS_DE_RUTA, esFlujo, modulosDeFlujos, type IdFlujo } from '../registro.js';
 import { MODELO_POR_DEFECTO, TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } from '../central/ejes.js';
 // PREPAGO (bloque A-0, `DISENO.md` §4undecies): la modalidad de la cuenta y los
 // campos derivados de la situación de pago, que se recalculan y nunca se
@@ -52,8 +52,11 @@ import { documentoDeVertical } from '../core/prompt/prompt.js';
 // use como parte de una ruta de Firestore un valor con barras o puntos.
 const ID_NUMERO = /^[0-9]{6,25}$/;
 // Un flujo por vertical. Ver DISENO.md §Varios flujos y varios números.
-// La lista sale del registro (`PUENTE_DE_FLUJOS`): no se repite aquí. El alta SIGUE
-// escribiendo `vertical` y `flujos`; `modulos` lo escribe solo la migración (H2b).
+// La lista sale del registro (`FLUJOS_DE_RUTA`): no se repite aquí. El alta escribe
+// `vertical` y `modulos` (sembrado desde el flujo pedido con `modulosDeFlujos`) y YA NO
+// `flujos` (H2b-cierre: `modulos` es la única fuente). Asignar un número con un flujo
+// suma también sus módulos a la ficha: las reglas leen `modulos` y, si la lista no se
+// suma, la capacidad queda cerrada.
 const VERTICALES = new Set<string>(IDS_FLUJOS);
 
 // ---------------------------------------------------------------------------
@@ -110,7 +113,9 @@ export const altaTenant = onCall(async (peticion) => {
     items: 0, ultimoItem: '', actualizadoEn: Timestamp.now(),
   });
   lote.create(ref, {
-    nombre, estado: 'activo', plan: cuenta.plan, vertical, flujos,
+    nombre, estado: 'activo', plan: cuenta.plan, vertical,
+    // H2b-cierre: `modulos` es la única fuente; el alta ya no escribe `flujos`.
+    modulos: modulosDeFlujos(flujos.filter(esFlujo) as IdFlujo[]),
     // El modelo de IA es una decisión de NovuChat por tenant (`central/ejes.ts`):
     // nace con el que corre en todos los flujos y se cambia con
     // `asignarEjes`, nunca desde el navegador.
@@ -341,7 +346,22 @@ export const asignarNumero = onCall(async (peticion) => {
         'Ese número ya está asignado a otro comercio. Libérelo primero.');
     }
     const tenant = await tx.get(db().doc(`tenants/${tenantId}`));
+    // "Ya tenía ese flujo" se decide por las rutas del comercio (lecturas antes que escrituras).
+    const rutasDelTenant = await tx.get(db().collection('rutasWhatsApp').where('tenantId', '==', tenantId));
     if (!tenant.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
+    // DOBLE ESCRITURA (H2b-7): con `modulos` lista se suman los del flujo; ausente,
+    // no se crea; existente pero no lista, se rechaza sin escribir.
+    const datosFicha = tenant.data() ?? {};
+    let modulosPorSumar: string[] | null = null;
+    if (Object.prototype.hasOwnProperty.call(datosFicha, 'modulos') && datosFicha['modulos'] !== undefined && datosFicha['modulos'] !== null) {
+      if (!Array.isArray(datosFicha['modulos'])) {
+        throw new HttpsError('failed-precondition', 'La ficha tiene `modulos` y no es una lista: corríjala antes de agregar el flujo.');
+      }
+      // Si el flujo YA estaba, no se suma nada: un módulo cerrado a propósito no se reabre al reasignar un número.
+      // `flujos` ya no se escribe ni se lee (H2b-cierre): "ya estaba" = alguna ruta del comercio ya tiene ese flujo.
+      const yaTiene = rutasDelTenant.docs.some((d) => d.get('flujo') === flujo);
+      modulosPorSumar = yaTiene ? null : [...FLUJOS_DE_RUTA[flujo as IdFlujo].modulos];
+    }
 
     // Asignar un número con un flujo SUMA ese flujo al negocio; no reemplaza
     // los que ya tenía. Antes se sobreescribía `vertical`, y un negocio con
@@ -371,7 +391,7 @@ export const asignarNumero = onCall(async (peticion) => {
     tx.update(tenant.ref, {
       waPhoneNumberId: phoneNumberId, waWabaId: wabaId,
       vertical: tenant.get('vertical') ?? flujo,
-      flujos: FieldValue.arrayUnion(flujo),
+      ...(modulosPorSumar ? { modulos: FieldValue.arrayUnion(...modulosPorSumar) } : {}),
     });
     if (refConfig && config && !config.exists) {
       tx.set(refConfig, { actualizadoPor: uid, actualizadoEn: Timestamp.now() });

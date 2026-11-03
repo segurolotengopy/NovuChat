@@ -36,6 +36,7 @@ import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ErrorDeUso, TARIFA, crearMundo, leerArgumentos, leerCredencial, limpiarSecretos, llamarGemini, telefonoDe, textoDeGemini } from '../../chat-novuchat/herramientas/bateria.mjs';
+import { doblesDeBateriaDelGuardado } from '../../comun-sin-agente/src/guardado-dobles.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RUTA_FLUJO = join(AQUI, '../rroca-ruben.prueba.json');
@@ -140,6 +141,8 @@ function crearDobles({ tel, seco, turnoActual, credencial, opciones, deps, nodoM
     'Enviar aviso': envio, 'Enviar a WhatsApp': envio, 'Enviar respaldo': envio,
     'Obtener URL del medio': () => ({ url: 'https://lookaside.fbsbx.com/m', mime_type: 'image/jpeg', file_size: 100_000 }),
     'Descargar medio': () => ({}),
+    // La rama común del GUARDADO de medios: sin red, el servidor responde «guardado_apagado» (la bandera por defecto).
+    ...doblesDeBateriaDelGuardado(),
     'Transcribir audio': () => gemini(''),
     'Ver imagen': () => gemini(JSON.stringify({ tipo: 'otra', descripcion: '' })),
     'Guardar comprobante': () => ({ statusCode: 200, body: { ruta: 'tenants/rroca-ruben/comprobantes/2026-10-05/abc_1.jpg' } }),

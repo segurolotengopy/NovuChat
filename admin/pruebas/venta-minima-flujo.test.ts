@@ -29,6 +29,8 @@ import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import { configBase, destinos, type Flujo, type J } from './lib/flujo';
 import { crearMundo, ROLES_POR_OMISION, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
+import { copiarModulosComunesAlTemporal, doblesDelGuardado } from './lib/doble-guardado';
+import { NODOS_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA_VM = join(AQUI, '../../Flujos/experimental/venta-minima');
@@ -130,6 +132,8 @@ function crear(op: OpcionesDeLaPrueba = {}) {
     ? { error: { message: 'Meta rechazó el envío', code: 131000 } }
     : aceptado(nombre, ll.n));
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Verificar firma con el receptor': (ll) => ({ valido: !String(ll.cuerpo?.['firma'] ?? '').includes('mala'), deliveryId: ll.cuerpo?.['deliveryId'] }),
     'Traer configuración': () => ({ statusCode: 200, body: estado.panel }),
     'Reportar mensaje (entrante)': () => ({ ok: true }),
@@ -158,6 +162,8 @@ function crear(op: OpcionesDeLaPrueba = {}) {
       destinatariosAviso: `completo:${AV1},cocina:${AV2}`,
       respaldoNumeroRecepcion: REC, // el de «Config base»: lo usa el flujo si la consola no responde
       horario: HORARIO_TODOS,
+      // Estas pruebas cubren la plantilla `pedido_registrado` de siempre; el aviso por líneas de Q'Taco (dato del 28/10) se prueba en venta-minima-avisos-lineas.test.ts.
+      plantillasPedidoLineas: '',
       ...(op.config ?? {}),
     },
   });
@@ -447,6 +453,7 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
       const datos = join(tmp, 'admin/scripts/datos/venta-minima');
       mkdirSync(vm, { recursive: true });
       mkdirSync(datos, { recursive: true });
+      copiarModulosComunesAlTemporal(tmp);
       cpSync(CARPETA_VM, vm, { recursive: true, filter: (src) => !src.endsWith('.local.json') }); // un `.local.json` lleva valores reales: nunca a un temporal
       cpSync(join(AQUI, '../scripts/datos/venta-minima'), datos, { recursive: true });
       modifica(vm, datos);
@@ -619,6 +626,8 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
     // Y los JSON reales cumplen: todo nodo HTTP tiene un anfitrión permitido.
     for (const f of [QTACO, PRUEBA]) {
       for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
+        // La descarga PROPIA del guardado de medios (módulo común): la URL de Meta solo si el tamaño que informó cabe.
+        if (n.name === 'Descargar medio (guardado)') { expect(n.parameters['url']).toBe(URL_DESCARGA_GUARDADO); continue; }
         expect(String(n.parameters['url']), n.name).toMatch(/^(=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|us-east1-novuchat-demo\.cloudfunctions\.net)\/|REEMPLAZAR_[A-Z0-9_]+$|=\{\{ \$json\.url \}\}$)/);
       }
     }
@@ -823,9 +832,9 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
     expect(Object.keys(base)).not.toContain('catalogoWebActivo');
   });
 
-  it('settings: executionOrder v1, zona de La Paz; 60 s en la plantilla, la prueba y el ensayo y 120 s SOLO en Q\'Taco; la plantilla, la prueba y el ensayo NO guardan ejecuciones y Q\'Taco guarda TODO (all/all, decisión de Andres del 04/10); el progreso nunca', () => {
+  it('settings: executionOrder v1, zona de La Paz; 60 s en la plantilla, la prueba y el ensayo y 120 s SOLO en Q\'Taco; NINGUNO guarda ejecuciones (desde el 30/10 tampoco Q\'Taco: decisión de Andres, contrato v2 de medios §8.1); el progreso nunca', () => {
     // [archivo, éxitos, errores, tiempo límite]
-    for (const [f, exito, error, limite] of [[PLANTILLA, 'none', 'none', 60], [QTACO, 'all', 'all', 120], [PRUEBA, 'none', 'none', 60], [leer('venta-minima.ensayo-demo-a.json'), 'none', 'none', 60]] as [Flujo, string, string, number][]) {
+    for (const [f, exito, error, limite] of [[PLANTILLA, 'none', 'none', 60], [QTACO, 'none', 'none', 120], [PRUEBA, 'none', 'none', 60], [leer('venta-minima.ensayo-demo-a.json'), 'none', 'none', 60]] as [Flujo, string, string, number][]) {
       expect(f.settings).toMatchObject({
         executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: limite,
         saveDataSuccessExecution: exito, saveDataErrorExecution: error, saveExecutionProgress: false,
@@ -833,14 +842,14 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
     }
   });
 
-  it('el `settings` de Q\'Taco difiere de la versión anterior (v0.11 / main del 04/10) SOLO en `executionTimeout` (60 → 120): todo lo demás igual, incluida la retención all/all', () => {
+  it('el `settings` de Q\'Taco difiere de la versión del 04/10 en `executionTimeout` (60 → 120) y, desde el 30/10, en la retención (all/all → none/none): nada más', () => {
     const anterior = {
       executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 60,
       saveDataSuccessExecution: 'all', saveDataErrorExecution: 'all', saveExecutionProgress: false, saveManualExecutions: false,
     };
-    expect(QTACO.settings).toEqual({ ...anterior, executionTimeout: 120 });
+    expect(QTACO.settings).toEqual({ ...anterior, executionTimeout: 120, saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none' });
     const distintas = Object.keys({ ...anterior, ...(QTACO.settings as J) }).filter((k) => (anterior as J)[k] !== (QTACO.settings as J)[k]);
-    expect(distintas).toEqual(['executionTimeout']);
+    expect(distintas.sort()).toEqual(['executionTimeout', 'saveDataErrorExecution', 'saveDataSuccessExecution']);
     // Y no se contagia: la prueba y el ensayo (que heredan los datos de Q'Taco) y la plantilla siguen en 60 s.
     for (const f of [PLANTILLA, PRUEBA, leer('venta-minima.ensayo-demo-a.json')]) expect((f.settings as J)['executionTimeout']).toBe(60);
   });
@@ -854,18 +863,17 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
     expect(verificarEnCopia(() => undefined).status).toBe(0);
   });
 
-  it('--verificar EXIGE all/all en Q\'Taco (bajar a none o a default falla citando la decisión de Andres) y no deja que otro archivo guarde sin declararlo', () => {
-    // Q'Taco guarda TODO (decisión de Andres, 04/10; riesgo M-1 aceptado). La copia sin tocar da 0 (lo prueba la contraprueba de arriba); cada cambio da 1.
+  it('--verificar EXIGE none/none en TODOS, Q\'Taco incluido (subir a all o a default falla) y no deja que un archivo guarde sin declararlo', () => {
+    // Desde el 30/10 (decisión de Andres, contrato v2 de medios §8.1) Q'Taco tampoco guarda: el binario del medio quedaría en la ejecución.
     const sin = verificarEnCopia(() => undefined);
     expect(sin.status, sin.stderr).toBe(0);
-    for (const [clave, valor] of [['saveDataErrorExecution', 'none'], ['saveDataSuccessExecution', 'none'], ['saveDataErrorExecution', 'default'], ['saveDataSuccessExecution', 'default'], ['saveDataSuccessExecution', 'DEFAULT'], ['saveExecutionProgress', true]] as const) {
+    for (const [clave, valor] of [['saveDataErrorExecution', 'all'], ['saveDataSuccessExecution', 'all'], ['saveDataErrorExecution', 'default'], ['saveDataSuccessExecution', 'default'], ['saveDataSuccessExecution', 'DEFAULT'], ['saveExecutionProgress', true]] as const) {
       const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => { (f.settings as J)[clave] = valor; }));
       expect(r.status, `${clave}=${String(valor)}`).toBe(1);
       expect(r.stderr, clave).toContain('retención');
-      expect(r.stderr, clave).toContain('saveDataSuccessExecution «all»');
-      expect(r.stderr, clave).toContain('saveDataErrorExecution «all»');
-      expect(r.stderr, clave).toContain('decisión de Andres (04/10/2026)');
-      expect(r.stderr, clave).not.toContain('TEMPORAL');
+      expect(r.stderr, clave).toContain('saveDataSuccessExecution «none»');
+      expect(r.stderr, clave).toContain('saveDataErrorExecution «none»');
+      expect(r.stderr, clave).not.toContain('Q\'Taco guarda TODO');
     }
     // Las ejecuciones MANUALES tampoco se guardan, en ningún JSON de producción, de prueba ni de ensayo: `true` falla, y una clave que falta también.
     for (const archivo of ['venta-minima.qtaco.json', 'venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json']) {
@@ -1055,7 +1063,9 @@ describe('la entrada del receptor: verificada, sin Trigger, sin repetidos', () =
     let httpConCuerpo = 0;
     for (const f of [QTACO, PRUEBA]) {
       // «Guardar comprobante» manda los BYTES del archivo (`contentType: binaryData`), no un JSON: no hay cuerpo que interpolar.
-      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters['sendBody'] === true && x.parameters['contentType'] !== 'binaryData')) {
+      // «Guardar medio» y «Reintentar el guardado» (guardado de medios, módulo común) mandan los BYTES del medio (`binaryData`), no un JSON: no hay texto
+      // que interpolar. Desde el contrato v2 (30/10) el reintento siempre lleva cuerpo (ya no hay modo Anotar).
+      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters['sendBody'] === true && !(['Guardar medio', 'Reintentar el guardado', 'Guardar comprobante'].includes(x.name) && x.parameters['contentType'] === 'binaryData'))) {
         httpConCuerpo++;
         const jb = String(n.parameters['jsonBody']);
         expect(n.parameters['specifyBody'], n.name).toBe('json');
@@ -2776,7 +2786,8 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
   /** Espía las llamadas de red que importan: la URL y las cabeceras de cada envío y de las llamadas al servidor. */
   function espiar(panelActual: () => J = () => panel()): { dobles: Record<string, Doble>; llamadas: { nodo: string; url: string; encabezados: Record<string, string> }[] } {
     const llamadas: { nodo: string; url: string; encabezados: Record<string, string> }[] = [];
-    const dobles: Record<string, Doble> = {};
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    const dobles: Record<string, Doble> = { ...doblesDelGuardado().dobles };
     for (const nodo of ['Enviar a WhatsApp', 'Enviar aviso', 'Traer configuración', 'Cotejar en el servidor']) {
       dobles[nodo] = (ll: LlamadaDoble) => {
         llamadas.push({ nodo, url: ll.url, encabezados: ll.encabezados });
@@ -2893,8 +2904,8 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(51); // 50 + el webhook del carrito: el tope de producción (`construir.mjs` lo impone)
-    expect(PRUEBA.nodes).toHaveLength(47);
+    expect(QTACO.nodes).toHaveLength(60); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10): el tope de producción (`construir.mjs` lo impone)
+    expect(PRUEBA.nodes).toHaveLength(56);
   });
 
   it('L2: en producción un `wamid.SIMULADO-…` NO cuenta como aviso salido: el cliente no lee «pasé tu pedido» y el cierre no lo toma de referencia', () => {
@@ -3150,7 +3161,9 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
     expect(t.orden.filter((n) => n === 'Armar mensajes')).toHaveLength(1);
     expect(t.orden.filter((n) => n === 'Registrar cierre')).toHaveLength(1);
     expect(t.orden.filter((n) => n === 'Resumen del turno')).toHaveLength(1);
-    expect(t.orden[t.orden.length - 1]).toBe('Resumen del turno'); // y es el último nodo
+    // y es el último nodo de la rama que responde (después solo corre la rama común del guardado de medios, que va debajo de todo)
+    const sinGuardado = t.orden.filter((n) => !NODOS_DEL_GUARDADO.includes(n));
+    expect(sinGuardado[sinGuardado.length - 1]).toBe('Resumen del turno');
     // Negativo: sin cierre (un menú con 2 ítems) tampoco corre dos veces.
     const menu = con(crear({ flujo: DOS })).escribe('hola');
     expect(menu.orden.filter((n) => n === 'Resumen del turno')).toHaveLength(1);
@@ -3872,6 +3885,7 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
       const datos = join(tmp, 'admin/scripts/datos/venta-minima');
       mkdirSync(vm, { recursive: true });
       mkdirSync(datos, { recursive: true });
+      copiarModulosComunesAlTemporal(tmp);
       cpSync(CARPETA_VM, vm, { recursive: true, filter: (src) => !src.endsWith('.local.json') }); // un `.local.json` lleva valores reales: nunca a un temporal
       cpSync(join(AQUI, '../scripts/datos/venta-minima'), datos, { recursive: true });
       modifica(vm, datos);
@@ -3913,7 +3927,8 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     expect(herramienta).toContain("'Cierres NovuChat A (auto)': 'Cierres NovuChat A (auto)'");
     expect(herramienta).toContain("whatsAppApi: 'WhatsApp account'");
     expect(herramienta).toContain('const GRAPH_BEARER = /^Graph WhatsApp .+ \\(Bearer\\)$/;');
-    const ENVIOS = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo'];
+    // Y el aviso de falla del guardado de medios (módulo común), que sale con la credencial de envío del flujo.
+    const ENVIOS = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo', 'Avisar falla del guardado'];
     for (const c of credencialesDe(DEMO_A)) {
       if (c.tipo === 'httpHeaderAuth') {
         // El nombre de los envíos es solo la ETIQUETA que la herramienta reconoce: esa credencial NO existe en el Demo A ni se crea.
@@ -3973,6 +3988,8 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
 
   it('ningún nodo HTTP habla con otro anfitrión que Meta, Gemini o la consola', () => {
     for (const n of DEMO_A.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
+      // La descarga PROPIA del guardado de medios (módulo común): la URL de Meta solo si el tamaño que informó cabe.
+      if (n.name === 'Descargar medio (guardado)') { expect(n.parameters['url']).toBe(URL_DESCARGA_GUARDADO); continue; }
       expect(String(n.parameters['url']), n.name).toMatch(/^(=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|us-east1-novuchat-demo\.cloudfunctions\.net)\/|REEMPLAZAR_[A-Z0-9_]+$|=\{\{ \$json\.url \}\}$)/);
     }
   });
@@ -4725,13 +4742,14 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
     expect(sim.qr.mensajes[0]?.payload['image']?.link).toBe(URL_SIMULADO); // es el QR de prueba, no el plan B que también da 3
   });
 
-  it('el JSON de Q\'Taco sigue en 50 nodos o menos y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(51);
+  it('el JSON de Q\'Taco sigue en 60 nodos o menos (50 más los 9 del guardado de medios y «Guardar comprobante») y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
+    // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61, y desde el contrato v2 del 30/10, 59: los 9 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md).
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(60);
     const base = configBase(QTACO);
     expect(base['cobroSimuladoActivo']).toBe(true);
     expect(base['qrSimuladoUrl']).toBe(URL_SIMULADO);
-    // La plantilla no se toca: ningún nodo nuevo, y todo nombre del JSON de producción sale de ella.
-    const deLaPlantilla = new Set(nombresDeLaPlantilla(PLANTILLA));
+    // La plantilla no se toca: ningún nodo nuevo, y todo nombre del JSON de producción sale de ella (o de la rama común del guardado, que se injerta al armar).
+    const deLaPlantilla = new Set([...nombresDeLaPlantilla(PLANTILLA), ...NODOS_DEL_GUARDADO]);
     for (const n of QTACO.nodes) expect(deLaPlantilla.has(n.name), n.name).toBe(true);
     expect(QTACO.nodes.some((n) => /simulad/i.test(n.name))).toBe(false); // el simulado no agrega nodos
   });
@@ -6193,5 +6211,68 @@ describe('la pausa por persona: el flujo calla por completo (forma real de la in
     callaPorCompleto(w, c.escribe('hola'), fotoDelEstado(w), 'en pausa', w.estado.extraer);
     reanudar(w);
     expect(c.escribe('hola').mensajes.length).toBeGreaterThan(0);
+  });
+});
+
+describe('PR-4: el `qr_enviado` lleva lineas y entrega para que el servidor cree el pedido wa_ (sin precios ni NIT)', () => {
+  const abierto = (t: ResultadoTurno): J => t.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado') as J;
+
+  it('el QR real lleva las lineas (id, cantidad, detalle) y la entrega; nunca precio, nombre, total ni facturacion', () => {
+    const r = armarPedido();
+    const t0 = confirmarPedido(r);
+    const ev = abierto(t0);
+    expect(ev['lineas']).toEqual([{ id: 'birria1', cantidad: 4, detalle: 'sin cebolla' }]);
+    expect(ev['entrega']).toEqual({ tipo: 'retiro' });
+    for (const l of ev['lineas'] as J[]) expect(Object.keys(l).sort()).toEqual(['cantidad', 'detalle', 'id']);
+    expect(JSON.stringify(ev)).not.toMatch(/facturacion|nit|precio|subtotal|nombre/i);
+  });
+
+  it('con delivery: tipo envio, direccion y referencia unidas, sin <>&', () => {
+    const r = armarPedido({ entrega: 'delivery', extra: { direccion: 'Calle <Falsa> & 123' } });
+    const ev = abierto(confirmarPedido(r));
+    expect((ev['entrega'] as J)['tipo']).toBe('envio');
+    expect(String((ev['entrega'] as J)['direccion'])).toMatch(/^Calle +Falsa +123 · portón verde$/);
+    expect(JSON.stringify(ev['entrega'])).not.toMatch(/[<>&]/);
+  });
+
+  it('negado: «Reenviar QR» (sin evento) no lleva lineas ni entrega', () => {
+    const r = armarPedido();
+    confirmarPedido(r);
+    const recuerdo = r.c.escribe('¿ya llegó?');
+    const reenvio = r.c.toca(idDeBoton(recuerdo, 'Reenviar QR'), 'Reenviar QR');
+    const rep = reenvio.llamadas.ingesta.find((x) => x['direccion'] === 'saliente' && x['tipo'] === 'image') as J;
+    expect(rep['lineas']).toBeUndefined();
+    expect(rep['entrega']).toBeUndefined();
+    expect(rep['evento']).toBeUndefined();
+  });
+
+  it('negado: el QR simulado no lleva lineas ni entrega', () => {
+    const r = armarPedido({ cobro: false, panelExtra: { cobroSimulado: {} }, ventana: 5 });
+    const ev = abierto(confirmarPedido(r));
+    expect(ev['evento']).toBe('qr_enviado');
+    expect(ev['lineas']).toBeUndefined();
+    expect(ev['entrega']).toBeUndefined();
+  });
+
+  it('negado: un NIT o una facturacion que llegue en la extraccion no aparece en el reporte, el aviso ni el cuerpo del reporte', () => {
+    const r = armarPedido({ extra: { nit: 'NIT 4567890', facturacion: { nombre: 'Juan', documento: '4567890' } } });
+    const t = confirmarPedido(r);
+    expect(JSON.stringify(t.llamadas.ingesta)).not.toMatch(/4567890|facturacion/i);
+    expect(JSON.stringify(t.avisos)).not.toMatch(/4567890|facturacion/i);
+    const reporte = QTACO.nodes.find((n) => n.name === 'Reportar mensaje (saliente)') as { parameters: J };
+    expect(String(reporte.parameters['jsonBody'])).not.toMatch(/facturacion/i);
+    expect(String(reporte.parameters['jsonBody'])).toContain("m.evento === 'qr_enviado' && Array.isArray(m.lineas)");
+  });
+
+  it('el mismo pedido confirmado dos veces desde el mismo estado reporta la misma referencia y las mismas lineas', () => {
+    const r = armarPedido();
+    const id = idDeBoton(r.resumen, 'Confirmar pedido');
+    const partida = JSON.parse(JSON.stringify(r.w.mundo.sd)) as J;
+    const t1 = r.c.toca(id, 'Confirmar pedido');
+    for (const k of Object.keys(r.w.mundo.sd)) delete r.w.mundo.sd[k];
+    Object.assign(r.w.mundo.sd, JSON.parse(JSON.stringify(partida)));
+    const t2 = r.c.toca(id, 'Confirmar pedido');
+    expect(abierto(t2)['referencia']).toBe(abierto(t1)['referencia']);
+    expect(abierto(t2)['lineas']).toEqual(abierto(t1)['lineas']);
   });
 });

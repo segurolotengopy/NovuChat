@@ -690,10 +690,10 @@ propuesto, vigente y revisión aprobada (`revisadoPor: 'cargar-negocio'`) en la
 misma transacción, y la Function no revisa dos veces porque ve el hash. Antes de
 escribir pasa el texto por la misma capa de patrones y **niega** si no la pasa:
 lo que NovuChat carga tiene que poder editarse después desde la consola sin que
-la verificación lo rechace por un carácter que puso NovuChat (el JSON de Platinum
+la verificación lo rechace por un carácter que puso NovuChat (un JSON de ejemplo
 tenía «cuánto dura» con comillas angulares; ya no). `migrar-instrucciones.mjs`
 (seco por defecto) copia lo propuesto a vigente, una vez, en los comercios
-anteriores al contrato: sin eso, al desplegar, Platinum se quedaba sin sus
+anteriores al contrato: sin eso, al desplegar, un comercio se quedaba sin sus
 precios y objeciones en silencio.
 
 **Lo que esto NO hace, dicho ahora.** No sanea: rechaza. Un texto rechazado
@@ -1576,7 +1576,7 @@ y vende solo la bolsa de 30 por USD 10. El dinero está en
 - **La tarifa** es un campo de `cuenta/estado`: `estandar` (el comercio paga su
   Meta) o `meta_incluido`. `tarifaDe` (`central/cuenta/planes.ts`) devuelve
   `meta_incluido` si el campo falta o no es válido, el límite menor, así que
-  Bellido, Platinum y los demos no cambian sin escribir sus cuentas. Las altas
+  Bellido y los demos no cambian sin escribir sus cuentas. Las altas
   nuevas nacen `estandar` (`TARIFA_DE_ALTA`). `limitesDe(plan, tarifa)` exige la
   tarifa en la firma y elige entre `CONVERSACIONES_META_INCLUIDO` y las
   conversaciones del plan.

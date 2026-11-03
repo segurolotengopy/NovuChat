@@ -66,8 +66,8 @@ un tenant (los 19 de Bellido) son del agente `tenants` en F5.
 - **Cero mensajes agregados o quitados**, y se demuestra con la suite.
 - Ensayo con teléfono real en el tenant de ensayo (`admin/scripts/plataforma/ensayo.mjs` +
   `scripts/ensayo-flujo.sh`) antes de publicar en un cliente; publicación
-  **solo desde `origin/main`** con `publicar-flujo.sh`, en la ventana de 23:30
-  a 01:30 cuando el flujo atiende personas; `estado-de-versiones.sh` 8/8 al
+  **solo desde `origin/main`** con `publicar-flujo.sh`, a cualquier hora si no hay riesgo para el cliente y con el «sí» de Andres (la ventana de 23:30
+  a 01:30 es solo promesa al cliente, no regla interna); `estado-de-versiones.sh` 8/8 al
   cerrar.
 
 ## Reglas comunes de la rearquitectura (`Analisis/41` §8)

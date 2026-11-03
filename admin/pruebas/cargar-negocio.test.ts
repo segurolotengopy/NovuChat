@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'datos', 'cargar-negocio.mjs');
 const PLATINUM = join(aqui, '..', 'scripts', 'datos', 'negocio-platinum.json');
@@ -28,6 +29,7 @@ const { getFirestore } = await import('firebase-admin/firestore');
 const app = getApps().find((a) => a.name === 'negocio') ?? initializeApp({ projectId: PROYECTO }, 'negocio');
 const db = getFirestore(app);
 const { hashCorto } = await import('../functions/src/central/asistente/comportamiento.ts');
+const { contarAgendas } = await import('../functions/src/modulos/agenda/agendasContadas.ts');
 
 // Identificadores propios de esta suite, para no pisar a ninguna otra.
 const T = 'neg-platinum';
@@ -73,7 +75,7 @@ const doc = async (ruta: string) => (await db.doc(`tenants/${ruta}`).get()).data
 
 beforeAll(async () => {
   for (const t of [T, SIN_AGENDA, SUSPENDIDO, CONTADOR]) {
-    for (const d of ['config/negocio', 'config/agendamiento', 'contadores/catalogo', 'cuenta/estado']) {
+    for (const d of ['config/negocio', 'config/agendamiento', 'contadores/catalogo', 'contadores/agendas', 'cuenta/estado']) {
       await db.doc(`tenants/${t}/${d}`).delete();
     }
     for (const col of ['catalogo', 'funcionarios', 'auditoria']) {
@@ -81,14 +83,14 @@ beforeAll(async () => {
     }
   }
   // Como deja alta-comercio.mjs: la ficha, un config/negocio mínimo y el documento del flujo vacío.
-  await db.doc(`tenants/${T}`).set({ nombre: 'Clínica Platinum', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'] });
+  await db.doc(`tenants/${T}`).set({ nombre: 'Clínica Platinum', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
   await db.doc(`tenants/${T}/config/negocio`).set({ nombreNegocio: 'Clínica Platinum', zonaHoraria: 'America/La_Paz', moneda: 'BOB', paleta: 'vino' });
   await db.doc(`tenants/${T}/config/agendamiento`).set({ actualizadoPor: 'alta-comercio' });
-  await db.doc(`tenants/${SIN_AGENDA}`).set({ nombre: 'Tienda', estado: 'activo', vertical: 'venta', flujos: ['venta'] });
-  await db.doc(`tenants/${SUSPENDIDO}`).set({ nombre: 'Susp', estado: 'suspendido', vertical: 'agendamiento', flujos: ['agendamiento'] });
+  await db.doc(`tenants/${SIN_AGENDA}`).set({ nombre: 'Tienda', estado: 'activo', vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
+  await db.doc(`tenants/${SUSPENDIDO}`).set({ nombre: 'Susp', estado: 'suspendido', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
   // Un comercio de VENTA sin contador y sin cuenta: es como nace uno nuevo, y
   // es el caso que dejaba trabada la consola.
-  await db.doc(`tenants/${CONTADOR}`).set({ nombre: 'Tienda', estado: 'activo', vertical: 'venta', flujos: ['venta'] });
+  await db.doc(`tenants/${CONTADOR}`).set({ nombre: 'Tienda', estado: 'activo', vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
 });
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -404,6 +406,17 @@ describe('cargar-negocio.mjs', () => {
     // El contador que hace cumplir el límite de productos por plan: sin él, la
     // consola del comercio no puede dar de alta ni de baja un producto.
     expect(await doc(`${T}/contadores/catalogo`)).toMatchObject({ items: 3 });
+
+    // H2b-9: el contador de agendas queda al día, en la misma transacción, según
+    // el mismo criterio que `contar-agendas.mjs` (en seco no lo encuentra desajustado).
+    const funcs = (await db.collection(`tenants/${T}/funcionarios`).get()).docs.map((d) => d.data());
+    const real = contarAgendas(funcs);
+    expect(await doc(`${T}/contadores/agendas`)).toMatchObject({ calendarios: real.calendarios, refs: real.refs, ultimoFuncionario: '' });
+    const seco = spawnSync(process.execPath, [join(aqui, '..', 'scripts', 'modulos', 'agenda', 'contar-agendas.mjs'), '--proyecto', PROYECTO, '--tenant', T], {
+      env: entornoDelEmulador(HOST), encoding: 'utf8',
+    });
+    expect(seco.status, seco.stderr).toBe(0);
+    expect(seco.stdout).toMatch(/contador al día/);
 
     const auditoria = await db.collection(`tenants/${T}/auditoria`).where('accion', '==', 'cargar_negocio').get();
     expect(auditoria.size).toBe(1);

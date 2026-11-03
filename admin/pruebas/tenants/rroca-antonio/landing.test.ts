@@ -166,8 +166,8 @@ describe('landing · el dominio es dato del tenant y el flujo no lo usa', () => 
     }
     expect(leer('Flujos/experimental/rroca-antonio/src/lib/ra.js')).not.toMatch(/materiales digitales/i);
   });
-  it('la frase llega a «Config base» como `landingFrase`; los nodos siguen en 46 y 41 y el prompt no crece (≤ 3.619; tope 4.670)', () => {
-    for (const [a, n] of [['rroca-antonio.json', 46], ['rroca-antonio.prueba.json', 41]] as const) {
+  it('la frase llega a «Config base» como `landingFrase`; los nodos son 56 y 51 (47 y 42 más los 9 del guardado de medios) y el prompt no crece (≤ 3.619; tope 4.670)', () => {
+    for (const [a, n] of [['rroca-antonio.json', 56], ['rroca-antonio.prueba.json', 51]] as const) {
       const f = JSON.parse(leer(`Flujos/experimental/rroca-antonio/${a}`)) as { nodes: J[] };
       expect(f.nodes, a).toHaveLength(n);
       const base = f.nodes.find((x) => x['name'] === 'Config base')!['parameters'].assignments.assignments as J[];

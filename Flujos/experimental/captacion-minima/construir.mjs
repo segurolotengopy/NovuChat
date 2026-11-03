@@ -41,9 +41,13 @@
  */
 import { closeSync, constants, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
+import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
+
+// EL miniCRM ES UN MÓDULO (no se copia): los paquetes `crm-prospecto` y `crm-decidir`, y el injerto del mapa de columnas del tenant (dato `crm`).
+import { injertarCrm, rutasPaquetesCrm, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const DATOS = join(AQUI, '../../../admin/scripts/datos/captacion-minima');
@@ -57,6 +61,7 @@ export const CONFIG_BASE = {
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
     filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
+    ...Object.fromEntries(Object.entries(rutasPaquetesCrm(join(AQUI, '..', '..', 'src', 'modulos', 'captacion', 'crm-captacion.js'))).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
   },
 };
 
@@ -291,6 +296,10 @@ export function validarDatos(datos, archivo) {
     if (cb.crmUrl !== undefined && cb.crmUrl !== '') e('configBase.crmUrl', 'tiene que ir vacío en la v0 (el CRM real queda fuera)');
     if (cb.limiteInteractivo !== undefined && !(Number.isInteger(cb.limiteInteractivo) && cb.limiteInteractivo >= 200 && cb.limiteInteractivo <= 4096)) e('configBase.limiteInteractivo', 'tiene que ser un entero de 200 a 4096');
   }
+
+  // --- el mapa de columnas de la hoja de prospectos (módulo crm): lo valida el MISMO validador que corre en n8n
+  if (d.crm === undefined) e('crm', 'falta (el mapa de columnas de la hoja de prospectos)');
+  else for (const m of validarMapaCrm(d.crm)) e('crm', m);
 
   // --- el guion
   const g = d.guion && typeof d.guion === 'object' ? d.guion : null;
@@ -564,7 +573,7 @@ export function inyectar(flujo, marca, nombre, valor) {
 const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
 const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', ANFITRION_CONSOLA];
 // Una URL por expresión (`={{ … }}`) solo vale para dos nodos: la descarga del medio (la URL que devuelve Meta) y el CRM.
-const URL_POR_EXPRESION = { 'Descargar medio': '={{ $json.url }}', 'Guardar prospecto': '={{ $json.crmUrl }}' };
+const URL_POR_EXPRESION = { 'Descargar medio': '={{ $json.url }}', 'Descargar medio (guardado)': URL_DESCARGA_GUARDADO, 'Guardar prospecto': '={{ $json.crmUrl }}' };
 export function anfitrionPermitido(nombreDelNodo, url) {
   if (/^REEMPLAZAR_[A-Z0-9_]+$/.test(url)) return true;
   if (URL_POR_EXPRESION[nombreDelNodo] === url) return true;
@@ -584,6 +593,8 @@ export function guardias(entrada, flujo, datos = {}) {
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   const nombres = new Set(nodos.map((n) => n.name));
   const parametros = (n) => (n && n.parameters) || {};
+  // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
+  if (nodos.length) h.push(...hallazgosDelGuardado(flujo));
   // «Entrada de prueba» nunca en producción: es el único nodo que activa el modo prueba. «WhatsApp Trigger» nunca en la prueba.
   if (entrada !== 'prueba' && nombres.has(NODO_PRUEBA)) h.push(`contiene el nodo «${NODO_PRUEBA}» (activa el modo prueba): solo va en el JSON de prueba`);
   if (entrada === 'prueba' && nombres.has(NODO_TRIGGER)) h.push(`contiene el nodo «${NODO_TRIGGER}» en la prueba: activarlo registra el webhook en Meta y se lo quita al flujo vivo`);
@@ -613,7 +624,7 @@ export function guardias(entrada, flujo, datos = {}) {
   }
   // Retención de ejecuciones, orden y zona horaria (decisión de Andres, 03/10/2026: se guardan solo las ejecuciones que fallan).
   const st = (flujo && flujo.settings) || {};
-  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'all' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «all» y saveExecutionProgress false (solo se guardan las ejecuciones que fallan; llevan el texto del turno)');
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» y saveExecutionProgress false (con la rama del guardado de medios el binario quedaría en la ejecución: decisión de Andres del 30/10, contrato v2 §8.1)');
   if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow` (D13)');
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
@@ -621,8 +632,17 @@ export function guardias(entrada, flujo, datos = {}) {
   const sheet = (nombre) => nodos.find((n) => n.name === nombre);
   const rango = (n) => (((parametros(n).options || {}).dataLocationOnSheet || {}).values || {}).range;
   const formato = (n) => (parametros(n).options || {}).cellFormat;
-  if (sheet('Buscar teléfono en planilla') && rango(sheet('Buscar teléfono en planilla')) !== 'A3:J') h.push('«Buscar teléfono en planilla» tiene que leer solo el rango A3:J (nunca las columnas del equipo)');
-  if (sheet('Leer IDs de la planilla') && rango(sheet('Leer IDs de la planilla')) !== 'A3:A') h.push('«Leer IDs de la planilla» tiene que leer solo el rango A3:A');
+  // Los rangos salen del mapa de columnas del tenant (`datos.crm`): hasta la última columna DEL BOT, nunca las del equipo.
+  const mapa = datos && datos.crm;
+  if (!mapa || !mapa.columnas) h.push('faltan los datos `crm` (el mapa de columnas): sin él no se puede comprobar el rango de lectura de la planilla');
+  else {
+    const f = mapa.filaEncabezados;
+    const ultima = Object.values(mapa.columnas).map((c) => c.letra).sort().pop();
+    if (sheet('Buscar teléfono en planilla') && rango(sheet('Buscar teléfono en planilla')) !== `A${f}:${ultima}`) h.push(`«Buscar teléfono en planilla» tiene que leer solo el rango A${f}:${ultima} (nunca las columnas del equipo)`);
+    if (sheet('Leer IDs de la planilla') && rango(sheet('Leer IDs de la planilla')) !== `A${f}:A`) h.push(`«Leer IDs de la planilla» tiene que leer solo el rango A${f}:A`);
+    const busca = sheet('Buscar teléfono en planilla');
+    if (busca && (parametros(busca).options || {}).returnFirstMatch !== false) h.push('«Buscar teléfono en planilla» tiene que traer TODAS las coincidencias (returnFirstMatch false): el módulo crm elige la fila más reciente');
+  }
   if (sheet('Agregar fila') && formato(sheet('Agregar fila')) !== 'USER_ENTERED') h.push('«Agregar fila» tiene que escribir en USER_ENTERED (la fecha queda como fecha)');
   if (sheet('Actualizar fila') && formato(sheet('Actualizar fila')) !== 'RAW') h.push('«Actualizar fila» tiene que escribir en RAW (nada se interpreta)');
   // `REEMPLAZAR_` solo en «Config base» (y en la ruta de «Entrada de prueba»).
@@ -662,10 +682,14 @@ export function armarTenant(proyecto, datos, archivo) {
     }
     if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
   }
+  // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
+  injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: salidaDe(archivo), nombre: dato(datos, 'nombreFlujo', archivo), quitar: [] });
   const flujo = JSON.parse(texto);
   inyectar(flujo, MARCA_GUION, 'CM_GUION', datos.guion);
   inyectar(flujo, MARCA_CONOCIMIENTO, 'CM_CONOCIMIENTO', datos.conocimiento);
+  // El miniCRM: el mapa del tenant dentro del código de los nodos y el rango/encabezados de los 4 nodos de Google.
+  injertarCrm(flujo, datos.crm);
   const final = JSON.stringify(flujo, null, 2) + '\n';
   // Una marca sin reemplazar: en cualquier texto salvo el código de los nodos (las librerías mencionan «@@solo:» en un
   // comentario) o, en el código, al principio del `jsCode`.
