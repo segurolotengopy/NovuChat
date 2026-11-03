@@ -150,15 +150,35 @@ describe('preparar-import.sh y RELE_URL_INTERNA', () => {
     expect(r.salida).not.toContain('otro.cliente.example.com');
   });
 
-  it('el marcador como DATO suelto (salida-de-persona.json lo lleva en Config base y valida su propia lista) no exige la lista: se repone igual', () => {
-    const suelto = { name: 'f', nodes: [{ name: 'Config base', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: [0, 0], parameters: { value: MARCADOR } }], connections: {}, settings: {} };
-    writeFileSync(join(raiz, 'Flujos', 'f.json'), JSON.stringify(suelto));
-    const r = spawnSync('bash', ['scripts/preparar-import.sh', 'Flujos/f.json', '.env.prueba'], {
+  const SUELTO = { name: 'f', nodes: [{ name: 'Config base', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: [0, 0], parameters: { value: MARCADOR } }], connections: {}, settings: {} };
+  const corrienteSuelto = (archivo: string) => {
+    writeFileSync(join(raiz, 'Flujos', archivo), JSON.stringify(SUELTO));
+    return spawnSync('bash', ['scripts/preparar-import.sh', `Flujos/${archivo}`, '.env.prueba'], {
       cwd: raiz, encoding: 'utf8',
       env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: join(raiz, 'tabla.md'), BASH_ENV: '', ENV: '', RELE_URL_INTERNA: 'https://rele.empresa.example.com', RELE_BASES_PERMITIDAS: '' }),
     });
+  };
+  it('NIEGA: un JSON cualquiera con el marcador como DATO de Config (no en una URL) también exige RELE_BASES_PERMITIDAS', () => {
+    for (const archivo of ['f.json', 'otro-flujo.json', 'salida-de-persona.json.bak.json']) {
+      rmSync(join(raiz, 'Flujos', archivo.replace(/\.json$/, '.local.json')), { force: true });
+      const r = corrienteSuelto(archivo);
+      expect(r.status, `${archivo}\n${r.stdout}${r.stderr}`).toBe(1);
+      expect(`${r.stdout}${r.stderr}`).toContain('RELE_BASES_PERMITIDAS');
+      expect(existsSync(join(raiz, 'Flujos', archivo.replace(/\.json$/, '.local.json'))), archivo).toBe(false);
+    }
+  });
+  it('la excepción es NOMBRADA por archivo: Flujos/salida-de-persona.json (ruta exacta) valida su propia lista y se repone sin RELE_BASES_PERMITIDAS', () => {
+    const r = corrienteSuelto('salida-de-persona.json');
     expect(r.status, `${r.stdout}${r.stderr}`).toBe(0);
-    expect(salidaLocal()).toContain('"value": "https://rele.empresa.example.com"');
+    expect(readFileSync(join(raiz, 'Flujos', 'salida-de-persona.local.json'), 'utf8')).toContain('"value": "https://rele.empresa.example.com"');
+    // Y con otro nombre en otra carpeta, no: la excepción no es por forma ni por nombre suelto.
+    mkdirSync(join(raiz, 'Flujos', 'sub'), { recursive: true });
+    writeFileSync(join(raiz, 'Flujos', 'sub', 'salida-de-persona.json'), JSON.stringify(SUELTO));
+    const otra = spawnSync('bash', ['scripts/preparar-import.sh', 'Flujos/sub/salida-de-persona.json', '.env.prueba'], {
+      cwd: raiz, encoding: 'utf8',
+      env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: join(raiz, 'tabla.md'), BASH_ENV: '', ENV: '', RELE_URL_INTERNA: 'https://rele.empresa.example.com', RELE_BASES_PERMITIDAS: '' }),
+    });
+    expect(otra.status).toBe(1);
   });
 
   it('NIEGA: la lista del .env también manda: una lista de la terminal que sí nombraba la base no la rescata', () => {

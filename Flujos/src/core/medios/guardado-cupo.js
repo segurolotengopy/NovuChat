@@ -1,10 +1,10 @@
 // CUPO DE DESCARGAS DEL GUARDADO (módulo común de medios, SOLO canal «rele»; revisión del PR #757).
 //
-// Por el relé B9 los GET de medios tienen un tope de 500 descargas por día y por WABA, y cada medio guardado gasta 2 (la info y el contenido). Un solo teléfono
+// Por el relé B9 los GET de medios tienen un tope de 500 descargas por día y por WABA, y cada medio guardado gasta 2 (la info y el contenido), hasta 4 con los reintentos. Un solo teléfono
 // que manda fotos en ráfaga, o una conversación larga, no puede gastar el cupo de todos: pasado el tope el medio NO se guarda (el flujo sigue y responde
 // igual; el cliente no lo nota) y se cuenta para poder verlo. Dos topes, por día de La Paz (UTC-4 fijo):
 //   `GM_CUPO.porTelefono` ... medios por teléfono y día (10 por defecto; decisión de Andres, 03/11/2026)
-//   `GM_CUPO.global` ........ medios por flujo y día (60 por defecto: con 2 GET cada uno son 120 de las 500 del WABA, y entran 4 flujos)
+//   `GM_CUPO.global` ........ medios por flujo y día (30 por defecto: peor caso 4 GET por medio, 2 y sus reintentos, son 120 de las 500 del WABA, y entran 4 flujos)
 // Se cuenta ANTES de bajar nada, y SOLO lo que «Preparar guardado» (que va pegado detrás) dejaría pasar: un mensaje con un teléfono, un id de mensaje o un id
 // de medio inválidos se descarta ahí y acá NO gasta cupo (las mismas validaciones, repetidas abajo). No cuenta lo que escribe la recepción del negocio (es la
 // ventana de las 24 h, no un cliente), ni lo que no es un medio.
@@ -46,7 +46,7 @@ if (gcMsg && GC_MEDIOS.indexOf(String(gcMsg.type || '')) >= 0) {
     const gcCupo = gcSd.cupoDeMedios;
     const gcCfgCupo = typeof GM_CUPO !== 'undefined' && GM_CUPO && typeof GM_CUPO === 'object' ? GM_CUPO : {};
     const gcPorTel = Number(gcCfgCupo.porTelefono) > 0 ? Number(gcCfgCupo.porTelefono) : 10;
-    const gcGlobal = Number(gcCfgCupo.global) > 0 ? Number(gcCfgCupo.global) : 60;
+    const gcGlobal = Number(gcCfgCupo.global) > 0 ? Number(gcCfgCupo.global) : 30;
     const gcDeEste = Object.prototype.hasOwnProperty.call(gcCupo.porTelefono, gcTelefono) ? Number(gcCupo.porTelefono[gcTelefono]) : 0;
     if (gcDeEste >= gcPorTel || gcCupo.total >= gcGlobal) {
       gcCupo.omitidos += 1;

@@ -295,9 +295,9 @@ describe('corriendo: dos GET por medio guardado, nada a ciegas', () => {
 describe('cupo de descargas (500 por día y por WABA, 2 GET por medio): solo en el canal rele', () => {
   const tel = (i: number): string => `591700000${String(i).padStart(2, '0')}`;
   const D1 = Date.UTC(2026, 10, 2, 15, 0, 0);
-  it('el cupo por defecto es de 10 medios por teléfono y 60 por flujo (decisión de Andres, 03/11/2026)', () => {
-    expect(CUPO_POR_DEFECTO_RELE).toEqual({ porTelefono: 10, global: 60 });
-    expect(cabeceraDeFuentes('Carga de entrada', 'Config del negocio', {})).toContain('porTelefono: 10, global: 60');
+  it('el cupo por defecto es de 10 medios por teléfono y 30 por flujo (hasta 4 GET por medio con los reintentos) (decisión de Andres, 03/11/2026)', () => {
+    expect(CUPO_POR_DEFECTO_RELE).toEqual({ porTelefono: 10, global: 30 });
+    expect(cabeceraDeFuentes('Carga de entrada', 'Config del negocio', {})).toContain('porTelefono: 10, global: 30');
   });
   it('NIEGA: un teléfono que manda 25 imágenes guarda 10; las 15 últimas no piden ni la info ni el contenido, y quedan contadas', () => {
     const m = mundo();
@@ -327,7 +327,7 @@ describe('cupo de descargas (500 por día y por WABA, 2 GET por medio): solo en 
     m.r(imagen('V3'), {}, tel(1));
     expect(m.llamadas.info).toHaveLength(2);
   });
-  it('el cupo sin GM_CUPO definido (cabecera vieja) no revienta y usa los valores por defecto (10 y 60)', () => {
+  it('el cupo sin GM_CUPO definido (cabecera vieja) no revienta y usa los valores por defecto (10 y 30)', () => {
     const f = flujoConGuardado();
     const prep = f.nodes.find((n) => n.name === 'Preparar guardado')!;
     prep.parameters['jsCode'] = String(prep.parameters['jsCode']).replace(/const GM_CUPO = [^\n]*\n/, '');
@@ -335,13 +335,13 @@ describe('cupo de descargas (500 por día y por WABA, 2 GET por medio): solo en 
     for (let i = 0; i < 12; i++) m.r(imagen(`M${i}`), {}, tel(1));
     expect(m.llamadas.info).toHaveLength(10);
   });
-  it('NIEGA: el tope global por flujo (60): con 6 teléfonos de 10 se agota y el séptimo ya no guarda nada', () => {
+  it('NIEGA: el tope global por flujo (30): con 3 teléfonos de 10 se agota y el cuarto ya no guarda nada', () => {
     const m = mundo();
-    for (const t of [1, 2, 3, 4, 5, 6]) for (let i = 0; i < 10; i++) m.r(imagen(`M${t}-${i}`), {}, tel(t));
-    expect(m.llamadas.info).toHaveLength(60);
+    for (const t of [1, 2, 3]) for (let i = 0; i < 10; i++) m.r(imagen(`M${t}-${i}`), {}, tel(t));
+    expect(m.llamadas.info).toHaveLength(30);
     m.r(imagen('X'), {}, tel(4));
     m.r(documento(), {}, tel(5));
-    expect(m.llamadas.info).toHaveLength(60);
+    expect(m.llamadas.info).toHaveLength(30);
   });
   it('el cupo se reinicia al cambiar el día de La Paz (UTC-4), no a las 00:00 UTC', () => {
     const m = mundo();
@@ -368,9 +368,10 @@ describe('cupo de descargas (500 por día y por WABA, 2 GET por medio): solo en 
     m.r(imagen('B0'), {}, tel(2));
     m.r(imagen('B1'), {}, tel(2));
     expect(m.llamadas.info).toHaveLength(3);
-    for (const cupo of [{ porTelefono: 0 }, { porTelefono: 1.5 }, { global: 251 }, { porTelefono: 30, global: 20 }, { global: -1 }]) {
+    for (const cupo of [{ porTelefono: 0 }, { porTelefono: 1.5 }, { global: 126 }, { global: 251 }, { porTelefono: 30, global: 20 }, { global: -1 }]) {
       expect(() => flujoConGuardado({ cupo }), JSON.stringify(cupo)).toThrow(/cupo/);
     }
+    expect(() => flujoConGuardado({ cupo: { porTelefono: 10, global: 125 } })).not.toThrow();
   });
   it('NIEGA: una imagen o un sticker de más de 5 MiB no pide /contenido (el servidor la rechazaría); un documento de 6 MiB sí', () => {
     const grande = 5 * 1024 * 1024 + 1;
@@ -417,6 +418,7 @@ describe('cupo de descargas (500 por día y por WABA, 2 GET por medio): solo en 
     expect(rompe((js) => js.replace(/porTelefono: \d+, global: \d+/, 'porTelefono: 0, global: 60'))).toMatch(/fuera de rango/);
     expect(rompe((js) => js.replace(/porTelefono: \d+, global: \d+/, 'porTelefono: 90, global: 60'))).toMatch(/fuera de rango/);
     expect(rompe((js) => js.replace(/porTelefono: \d+, global: \d+/, 'porTelefono: 10, global: 9999'))).toMatch(/fuera de rango/);
+    expect(rompe((js) => js.replace(/porTelefono: \d+, global: \d+/, 'porTelefono: 10, global: 126'))).toMatch(/fuera de rango/);
     // El cupo DESPUÉS de preparar.
     expect(rompe((js) => js.replace(FUENTE_CUPO, '').replace(FUENTE_PREPARAR, `${FUENTE_PREPARAR}\n\n${FUENTE_CUPO}`))).toMatch(/ANTES de guardado-preparar|DESPUÉS del cupo/);
     // Algo entre la cabecera y el cupo.
@@ -501,9 +503,15 @@ describe('reintento propio de los dos GET de medios por el relé: 0 nodos nuevos
         expect(hallazgosDelGuardado(f).join('\n'), `${nombre} ${JSON.stringify(cambio)}`).toMatch(/retryOnFail, maxTries 2 y waitBetweenTries/);
       }
     }
-    const g = flujoConGuardado();
-    nodoDe(g, 'Descargar medio (guardado)')['parameters'].options.redirect = { redirect: { followRedirects: true } };
-    expect(hallazgosDelGuardado(g).join('\n')).toMatch(/no puede seguir redirecciones/);
+    for (const nombre of GETS) {
+      const g = flujoConGuardado();
+      expect(nodoDe(g, nombre)['parameters'].options.redirect, nombre).toEqual({ redirect: { followRedirects: false } });
+      nodoDe(g, nombre)['parameters'].options.redirect = { redirect: { followRedirects: true } };
+      expect(hallazgosDelGuardado(g).join('\n'), nombre).toMatch(new RegExp(`«${nombre.replace(/[()]/g, '\\$&')}» no puede seguir redirecciones`));
+      const h = flujoConGuardado();
+      delete nodoDe(h, nombre)['parameters'].options.redirect;
+      expect(hallazgosDelGuardado(h).join('\n'), nombre).toMatch(/no puede seguir redirecciones/);
+    }
   });
   it('NIEGA: el aviso no reintenta (un aviso repetido llegaría dos veces)', () => {
     const f = flujoConGuardado();

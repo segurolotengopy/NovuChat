@@ -145,9 +145,9 @@ for linea in open(local, encoding="utf-8"):
 #
 # PRIORIDAD (PR #757, ronda 3): el `.env` del CLIENTE manda sobre la variable de la terminal (la terminal puede arrastrar el valor de otro cliente); si los dos
 # existen y difieren, se avisa SIN mostrar ningún valor y se usa el del `.env`. Lo mismo vale para RELE_BASES_PERMITIDAS.
-# RELE_BASES_PERMITIDAS es OBLIGATORIA cuando se repone la base del relé en una URL (`REEMPLAZAR_URL_INTERNA_DEL_RELE/v1/envio/…`): tiene que nombrar la base EXACTA
-# (`https://host[:puerto]`), separadas por comas si son varias; sin ella, el script no repone nada y aborta. (El flujo `salida-de-persona.json`, que lleva el marcador
-# solo como un dato de `Config base` y valida su propia lista, no entra en esta obligación.)
+# RELE_BASES_PERMITIDAS es OBLIGATORIA siempre que el marcador aparezca en el JSON (en una URL o como dato de Config): tiene que nombrar la base EXACTA
+# (`https://host[:puerto]`), separadas por comas si son varias; sin ella, el script no repone nada y aborta. ÚNICA excepción, NOMBRADA por archivo (ruta exacta,
+# no por la forma del marcador): `Flujos/salida-de-persona.json`, que lleva el marcador como dato de `Config base` y valida su propia lista.
 def de_env(nombre):
     """El valor del `.env` del cliente; si no, el de la terminal. Avisa (sin valores) si los dos existen y difieren."""
     del_env = (env.get(nombre) or "").strip()
@@ -159,7 +159,8 @@ def de_env(nombre):
 MARCADOR_RELE = "REEMPLAZAR_URL_INTERNA_DEL_RELE"
 if MARCADOR_RELE in texto:
     crudo = (de_env("RELE_URL_INTERNA") or tabla.get(MARCADOR_RELE) or "").strip()
-    exige_lista = re.search(re.escape(MARCADOR_RELE) + r'/v1/envio/', texto) is not None
+    EXCEPCION_SIN_LISTA = "Flujos/salida-de-persona.json"
+    exige_lista = os.path.normpath(flujo) != EXCEPCION_SIN_LISTA
     if crudo:
         m_base = re.fullmatch(r'(https?)://([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*)(?::(\d{1,5}))?', crudo)
         motivo = None

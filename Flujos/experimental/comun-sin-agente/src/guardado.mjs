@@ -128,7 +128,7 @@ export const ARISTAS_DEL_GUARDADO = [
 /**
  * Canal rele: reintento PROPIO del nodo HTTP (0 nodos nuevos) en los dos GET de medios, la info y `/contenido`: `retryOnFail`, 2 intentos en total, espera fija de
  * 3000 ms (n8n no admite espera con azar en `waitBetweenTries`). Seguro porque son GET idempotentes. COSTO: cualquier fallo reintentable de esos GET (un 5xx, un id
- * vencido 502 WM-3040) gasta una descarga más de las 500 por día y por WABA; un 429 no gasta. Ronda 3b del PR #757: la versión con 4 nodos (IF + Wait) rompía los topes.
+ * vencido 502 WM-3040) gasta una descarga más de las 500 por día y por WABA; un 429 no gasta. Ronda 3b del PR #757: la versión con 4 nodos (IF + Wait) rompía los topes. Con los reintentos cada medio gasta hasta 4 GET (por eso el cupo global baja a 30 por flujo).
  */
 export const REINTENTO_GET_RELE = { retryOnFail: true, maxTries: 2, waitBetweenTries: 3000 };
 /**
@@ -137,7 +137,7 @@ export const REINTENTO_GET_RELE = { retryOnFail: true, maxTries: 2, waitBetweenT
  */
 export const LIMITE_DE_IMAGEN_RELE = 5 * 1024 * 1024;
 /** El cupo por defecto del canal rele (ver `guardado-cupo.js`): medios por teléfono y día, y por flujo y día. */
-export const CUPO_POR_DEFECTO_RELE = { porTelefono: 10, global: 60 }; // 10 por teléfono: decisión de Andres, 03/11/2026
+export const CUPO_POR_DEFECTO_RELE = { porTelefono: 10, global: 30 }; // 10 por teléfono: decisión de Andres, 03/11/2026
 
 /** La URL de la descarga: la del CDN de Meta solo si Meta informó un tamaño dentro de 16 MiB (`limite`); si no, vacía (no se baja nada). */
 // Si Meta NO informa el tamaño (0 o ausente): imagen, audio y sticker se bajan igual (el servidor impone el tope por tipo, 413, y el tiempo límite de la
@@ -148,12 +148,12 @@ export const URL_DESCARGA_GUARDADO = "={{ (String($json.url || '').startsWith('h
  * La URL de la descarga por el relé. `releUrl` va dentro de una cadena entre comillas simples: solo el marcador o una base http(s) sin comillas ni llaves.
  * Pide `/contenido` SOLO si la info trae `file_size` mayor que cero y dentro del límite: sin tamaño, con tamaño excesivo (WM-3039, 413) o si la info falló
  * (id vencido: 502 WM-3040), la URL queda vacía y no se baja nada (cuenta como falla de tamaño). Los GET de medios gastan 500 descargas por día y por WABA
- * (la info y el contenido cuentan): nunca se baja a ciegas ni se reintenta.
+ * (la info y el contenido cuentan): nunca se baja a ciegas; solo los reintentos propios del nodo (`REINTENTO_GET_RELE`) repiten un GET.
  */
 // FALLA CERRADA: si `limite` faltara o no fuera un número (NaN), `tope` no es finito y NO se descarga (antes la comparación `!(x > NaN)` daba verdadero y bajaba sin tope).
-// El tamaño se lee de la respuesta de la info (su ÚLTIMA corrida), no de `$json`: tras la espera de un 429 el ítem que llega es el del error.
+// El tamaño se lee de la respuesta de la info (su ÚLTIMA corrida), no de `$json`.
 export const urlDescargaRele = (releUrl = MARCADOR_URL_DEL_RELE) => `={{ (() => { const p = $('Preparar guardado').first().json; const t = $('Pedir el medio a Meta (guardado)').first().json; const tope = p.tipo === 'image' ? Math.min(Number(p.limite), ${LIMITE_DE_IMAGEN_RELE}) : Number(p.limite); return Number.isFinite(tope) && tope > 0 && Number(t.file_size) > 0 && Number(t.file_size) <= tope; })() ? '${releUrl}/v1/envio/medios/' + String($('Preparar guardado').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') + '/contenido' : '' }}`;
-// El id del medio sale de «Preparar guardado» (no de `$json`): en la segunda vuelta de un 429 el ítem que llega es el del error.
+// El id del medio sale de «Preparar guardado» (no de `$json`), así no depende del ítem que llegue.
 export const urlInfoRele = (releUrl = MARCADOR_URL_DEL_RELE) => `=${releUrl}/v1/envio/medios/{{ String($('Preparar guardado').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}`;
 
 export const FUENTE_PREPARAR = readFileSync(join(AQUI, '../../../src/core/medios/guardado-preparar.js'), 'utf8').trimEnd();
@@ -194,7 +194,7 @@ export function cabeceraDeFuentes(carga, config, cupo) {
 export function validarCupo(cupo) {
   const c = { ...CUPO_POR_DEFECTO_RELE, ...(cupo || {}) };
   for (const k of ['porTelefono', 'global']) {
-    if (!Number.isInteger(c[k]) || c[k] < 1 || c[k] > 250) throw new Error(`guardado: cupo.${k} tiene que ser un entero de 1 a 250 (medios por día; cada uno gasta 2 de las 500 descargas del WABA)`);
+    if (!Number.isInteger(c[k]) || c[k] < 1 || c[k] > 125) throw new Error(`guardado: cupo.${k} tiene que ser un entero de 1 a 125 (medios por día; cada uno gasta de 2 a 4 de las 500 descargas del WABA, con sus reintentos)`);
   }
   if (c.porTelefono > c.global) throw new Error('guardado: cupo.porTelefono no puede pasar de cupo.global');
   return c;
@@ -267,7 +267,7 @@ export function nodosDelGuardado(opciones) {
     {
       id: 'gm-url', name: 'Pedir el medio a Meta (guardado)', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + 240, y + 200],
       parameters: rele
-        ? { method: 'GET', url: urlInfoRele(releUrl), ...graph.parametros, options: { timeout: 30000 } }
+        ? { method: 'GET', url: urlInfoRele(releUrl), ...graph.parametros, options: { timeout: 30000, redirect: { redirect: { followRedirects: false } } } }
         : {
           method: 'GET', url: `=https://graph.facebook.com/{{ ${version} }}/{{ String($json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}`,
           ...graph.parametros, options: { timeout: 10000 },
@@ -421,8 +421,8 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   const por = (nombre) => nodos.find((n) => n.name === nombre);
   // ¿La rama habla con el relé B9 (canal rele) o con Graph? Si CUALQUIERA de los tres nodos de Meta nombra al relé (por su URL o por su credencial), se
-  // exige que los tres lo hagan: una rama a medias no pasa por Graph. Con el relé la rama lleva además los cuatro nodos del reintento del 429.
-  const rele = NODOS_DE_META_DEL_GUARDADO.some((nombre) => /\/v1\/envio\//.test(String(((por(nombre) || {}).parameters || {}).url || ''))
+  // exige que los tres lo hagan: una rama a medias no pasa por Graph.
+  const rele =NODOS_DE_META_DEL_GUARDADO.some((nombre) => /\/v1\/envio\//.test(String(((por(nombre) || {}).parameters || {}).url || ''))
     || credDe(por(nombre)).some((c) => c.nombre.startsWith(PREFIJO_CREDENCIAL_RELE)));
   for (const n of NODOS_DEL_GUARDADO) if (!por(n)) h.push(`guardado: falta el nodo «${n}»`);
   for (const n of NODOS_RETIRADOS_DEL_GUARDADO) if (por(n)) h.push(`guardado: sobra «${n}» (el contrato v2 del 30/10 lo quitó: todo documento se guarda)`);
@@ -449,8 +449,10 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
       const g = por(nombre);
       if (g.retryOnFail !== true || g.maxTries !== 2 || !(Number(g.waitBetweenTries) >= 2000 && Number(g.waitBetweenTries) <= 3000)) h.push(`guardado: «${nombre}» (canal rele) tiene que llevar retryOnFail, maxTries 2 y waitBetweenTries de 2000 a 3000 ms`);
     }
-    const redir = ((((por('Descargar medio (guardado)').parameters || {}).options || {}).redirect || {}).redirect || {});
-    if (redir.followRedirects !== false) h.push('guardado: «Descargar medio (guardado)» no puede seguir redirecciones');
+    for (const nombre of ['Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)']) {
+      const redir = ((((por(nombre).parameters || {}).options || {}).redirect || {}).redirect || {});
+      if (redir.followRedirects !== false) h.push(`guardado: «${nombre}» no puede seguir redirecciones`);
+    }
   }
   // El código común, tal cual.
   if (!String((prep.parameters || {}).jsCode || '').includes(FUENTE_PREPARAR)) h.push('guardado: «Preparar guardado» no incluye guardado-preparar.js tal cual');
@@ -527,7 +529,7 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
         if (!/^\/\/ FUENTES DEL GUARDADO:[^\n]*\nconst GM_FUENTES = \{/.test(cab[1])) h.push('guardado: «Preparar guardado» (canal rele) no empieza con la cabecera de fuentes del guardado');
         const pt = Number(cab[2]);
         const gl = Number(cab[3]);
-        if (!(pt >= 1 && gl >= 1 && pt <= gl && gl <= 250)) h.push('guardado: GM_CUPO de «Preparar guardado» fuera de rango (1 a 250, porTelefono no mayor que global)');
+        if (!(pt >= 1 && gl >= 1 && pt <= gl && gl <= 125)) h.push('guardado: GM_CUPO de «Preparar guardado» fuera de rango (1 a 125, porTelefono no mayor que global)');
         if (jsPrep.slice(cab[0].length).indexOf(FUENTE_CUPO) !== 0) h.push('guardado: guardado-cupo.js tiene que ir justo después de la cabecera y ANTES de guardado-preparar.js');
       }
       const iCupo = jsPrep.indexOf(FUENTE_CUPO);
