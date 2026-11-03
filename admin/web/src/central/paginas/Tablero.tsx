@@ -16,6 +16,7 @@ import { GraficoDias, type DiaDeGrafico } from '../componentes/GraficoDias';
 import { avisoConsumoVigente, type AvisoConsumoVista as Aviso } from '../lib/planes';
 import { AvisoConsumo } from '../componentes/AvisoConsumo';
 import { SelectorDeCuenta } from '../componentes/SelectorDeCuenta';
+import { BotonMiniCrm } from '../componentes/BotonMiniCrm';
 import { cuentasDe } from '../../core/lib/cuentaActiva';
 
 /**
@@ -385,6 +386,7 @@ export function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdm
         pide una decisión, y el comercio tiene que verlo antes de pasarse, no
         descubrirlo en la factura. */}
     {esAdmin && datos.avisoConsumo && <AvisoConsumo aviso={datos.avisoConsumo} cuenta={datos.cuentaCruda} />}
+    <BotonMiniCrm tenantId={tenantId} esAdmin={esAdmin} />
     {esAdmin && (
       <>
         <SelectorDePeriodo valor={periodo} onCambio={setPeriodo} />

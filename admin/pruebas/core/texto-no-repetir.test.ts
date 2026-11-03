@@ -8,19 +8,18 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { ejecutar } from '../lib/flujo';
+import { cargarFuente } from './fuente-vm';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../Flujos/src/core/texto');
 interface Ficha { ultimoHash: string; ultimaFirma: string }
 interface Alternas { tu: { contenido: string[]; medio: string[] }; usted: { contenido: string[]; medio: string[] } }
-// El código evaluado es el de un archivo del propio repositorio: solo prueba.
-// nosemgrep: devsecops.js-eval-prohibido
-const L = new Function(readFileSync(join(RAIZ, 'no-repetir.js'), 'utf8') + '\nreturn { ctNormTexto, ctHashTexto, ctSimilitud, ctFichaNoRepetir, ctEsRepetido, ctAlternaDeRepetido, ctRecordarEnviado, ctRestaurarEnviado, CT_ALTERNAS };')() as {
+const L = cargarFuente<{
   ctNormTexto: (t: unknown) => string; ctHashTexto: (t: unknown) => string; ctSimilitud: (a: string, b: string) => number;
   ctFichaNoRepetir: (f: unknown) => Ficha; ctEsRepetido: (t: string, o?: { hash?: string; previo?: string; umbral?: number }) => boolean;
   ctAlternaDeRepetido: (o: { medio?: boolean; hashUltimo?: string; tratamiento?: string; titular?: string; alternas?: unknown }) => string;
   ctRecordarEnviado: (f: Ficha, t: string, firma: string, img: boolean) => { h: string; f: string }; ctRestaurarEnviado: (f: Ficha, p: { h: string; f: string }) => void;
   CT_ALTERNAS: Alternas;
-};
+}>([join(RAIZ, 'no-repetir.js')], ['ctNormTexto', 'ctHashTexto', 'ctSimilitud', 'ctFichaNoRepetir', 'ctEsRepetido', 'ctAlternaDeRepetido', 'ctRecordarEnviado', 'ctRestaurarEnviado', 'CT_ALTERNAS']);
 
 const HASHES: Array<[string, string]> = [['Hola, ¿qué tal?', '011f9457'], ['Eso ya te lo conté', '8f3fb425'], ['', '00001505'], ['Árbol ÁRBOL   árbol!', '34dc1477'], ['Bs. 150 — pack', '598da039'], ['😊', '00001505']];
 const conTitular = (x: string, t: string): string => x.split('{titular}').join(t);
@@ -161,8 +160,7 @@ describe('core/texto: pureza (se incluyen byte a byte en un Code de n8n)', () =>
       expect(src).not.toMatch(/\d{10,}/);
     });
     it(`${archivo}: se evalúa en un Function sin globales de Node`, () => {
-      // nosemgrep: devsecops.js-eval-prohibido
-      expect(() => new Function('URL', 'Buffer', 'crypto', 'require', src)).not.toThrow();
+      expect(() => vm.compileFunction(src, ['URL', 'Buffer', 'crypto', 'require'])).not.toThrow();
     });
     it(`${archivo}: corre en un contexto vm vacío (sin ningún global de Node)`, () => {
       const ctx = vm.createContext(Object.create(null));

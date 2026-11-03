@@ -8,6 +8,7 @@
  *   3. contra la rama `origin/cartera/qtaco-visor-comprobantes`, si el repositorio la tiene (si #519 se fusionó o la rama se borró, el 2 y el 1 la cubren).
  * Si el origen cambia, la prueba falla y obliga a decidir (volver a copiar y fijar el hash nuevo, o resolver el módulo común).
  */
+import vm from 'node:vm';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -127,8 +128,7 @@ suite('avisos.js', HASH_AVISOS);
 describe('HUECOS del cobro y los avisos: la copia funciona sola (sin `$`, sin red, sin reloj) y hace lo que se espera', () => {
   const cargar = (archivo: string): Record<string, unknown> => {
     // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-    // nosemgrep: devsecops.js-eval-prohibido
-    const fn = new Function(leer(join(RROCA, archivo)) + '\nreturn { ' + Object.keys(archivo === 'cobro.js' ? HASH_COBRO : HASH_AVISOS).join(', ') + ' };');
+    const fn = vm.compileFunction(leer(join(RROCA, archivo)) + '\nreturn { ' + Object.keys(archivo === 'cobro.js' ? HASH_COBRO : HASH_AVISOS).join(', ') + ' };');
     return fn() as Record<string, unknown>;
   };
   it('cobro.js: `cbMonto` formatea como Bolivia y `cbTotalValido` solo acepta un número del código', () => {

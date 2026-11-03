@@ -3,21 +3,20 @@
  *
  * Se prueba NEGANDO: lo que el modelo no debe lograr (fijar un precio, un total o un descuento; agregar un ítem que no se vende; pasar un enlace o invisibles en el detalle) no pasa.
  * La prueba vive aquí y no en `admin/pruebas/` porque la zona de escritura de esta sesión es `admin/pruebas/tenants/walisuma/`.
- * Carga el archivo con el mismo mecanismo que `venta-digital-base.test.ts` (`new Function` sobre el texto del archivo). Los catálogos son mínimos y escritos aquí; el real (`catalogo.json`) solo sirve para la prueba de humo.
+ * Carga el archivo con el mismo mecanismo que `venta-digital-base.test.ts` (`cargarFuente`: `node:vm` sobre el texto del archivo). Los catálogos son mínimos y escritos aquí; el real (`catalogo.json`) solo sirve para la prueba de humo.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { cargarFuente } from '../../core/fuente-vm';
 import { idDeItem } from '../../../functions/src/modulos/productos/limiteCatalogo.ts';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const ARCHIVO = join(AQUI, '../../../../Flujos/experimental/venta-digital/src/carrito.js');
 const FUENTE = readFileSync(ARCHIVO, 'utf8');
 const EXPORTADOS = ['vcVendibles', 'vcIndice', 'vcSeleccion', 'vcLineas', 'vcTotalCentavos', 'vcMonto', 'vcResumen', 'vcLineaAviso', 'vcMismoCarrito'];
-// El código evaluado es el de un archivo del propio repositorio, no una entrada externa: solo prueba.
-// nosemgrep: devsecops.js-eval-prohibido
-const VC = new Function(FUENTE + `\nreturn { ${EXPORTADOS.join(', ')} };`)() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+const VC = cargarFuente<Record<string, any>>([ARCHIVO], EXPORTADOS); // eslint-disable-line @typescript-eslint/no-explicit-any
 type F = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
 const vc = (n: string): F => VC[n] as F;
 

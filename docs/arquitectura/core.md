@@ -748,7 +748,7 @@ retención).
 | PR-0 | Documentación: estas decisiones, la enmienda y el borrador del anexo |
 | PR-1 | `guardarMedio`, `purgarMedios` y las reglas de Firestore y Storage |
 | PR-2 | `verMedio` |
-| PR-3 | Script de la bandera `guardarMedios` por comercio |
+| PR-3 | Script de la bandera `guardarMedios` por comercio: `admin/scripts/plataforma/aplicar-guardar-medios.mjs` (seco por omisión, `--valor true\|false`, respaldo, precondición y `--revertir`; calcado de `aplicar-consola-conversaciones.mjs`; prueba en `admin/pruebas/plataforma/aplicar-guardar-medios.test.ts`). Encender sigue necesitando el «sí» de Andres y las condiciones de abajo |
 | PR-4 | Rama «Guardar medio» en el flujo de Cartera |
 | PR-5 | Consola: visor, y CSP con `media-src blob:` |
 

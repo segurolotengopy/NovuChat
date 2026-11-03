@@ -36,6 +36,7 @@ operativo.
   Próxima acción y Diagnóstico del equipo (PR-E). `columnasEscribibles(mapa)` devuelve solo las del bot.
   Excepción declarada: la etapa inicial y el estado inicial se escriben SOLO al crear la fila.
 - **config/crm**: el comercio (admin) escribe lo suyo; lo demás, solo el servidor.
+- **enlaces/minicrm** (`enlaceHoja`, 03/11/2026): la URL de la hoja del comercio (`https://docs.google.com/spreadsheets/d/<id>`, validada por `functions/src/central/enlace-minicrm.ts`). La lee SOLO el admin de ese comercio (vive fuera de `config/` porque la lectura de `config/` es de todo miembro; un operador, otro comercio y el propietario desde la Consola no) y NADIE la escribe desde un cliente: la escribe NovuChat con `scripts/plataforma/crm-enlace.mjs` (seco por omisión; `--aplicar` con respaldo, un comercio por corrida, producción con `--confirmo-produccion`). Registrado en `DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR` (`registro.ts`) y probado en `registro.test.ts` y `crm-reglas.test.ts`.
 - Un texto del cliente final que empiece con `= + - @` (tras quitar controles,
   caracteres de formato como U+200B y espacios, NBSP incluido) se neutraliza
   (`neutralizarTexto`) **anteponiendo un apóstrofo `'`**. Consecuencia para el
@@ -87,8 +88,11 @@ del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
 **Limitaciones conocidas.**
 - En una fila NUEVA solo se comprueba el encabezado de la columna A: leer la fila de
   encabezados completa en el alta queda para un PR posterior, para no leer más hoja.
-- `crm.activo = false` no se puede activar todavía: `configuracionFlujo` no devuelve
-  `config/crm` hasta el PR-B3. Hasta entonces el módulo siempre está encendido.
+- `crm.activo = false` (PR-B3): `configuracionFlujo` lee `config/crm` en cada turno y, si existe con
+  `activo` booleano, devuelve `crm: { activo }` (`crmParaElFlujo`, `modulos/crm/crm.ts`); nunca los campos
+  reservados del servidor. Sin documento o sin booleano la respuesta es la de siempre y el módulo sigue
+  encendido. `moneda` y `listas` de `config/crm` todavía NO llegan al flujo (solo `activo`). Costo: una lectura de documento por turno, 0 mensajes por conversación. Los flujos con la rama
+  (`Prospecto para la planilla`) ya lo leen; ningún flujo vivo se republica con este cambio.
 - Con `returnFirstMatch: false` las ejecuciones de n8n guardan todas las filas A a J
   del mismo teléfono (datos de esa sola persona). En la plantilla de las subcuentas el rango A..T incluye las columnas del equipo J..M (valor, responsable, estado, próxima acción): quedan en el historial de ejecuciones, no se escriben ni deciden nada. PR-F debe partir la lectura en dos rangos (A..I y N..T) o limitar la retención de ejecuciones de esos flujos.
 - `Leer IDs de la planilla` corre una vez por coincidencia.
@@ -199,3 +203,5 @@ con credencial `googleApi` usa una distinta de «Google Sheets miniCRM (crm-<ten
 prueba no exista, el aislamiento depende de revisión humana.
 
 **Revisión de #733 (31/10/2026).** «Decidir fila» pide los IDs por nombre (`$('Leer IDs de la planilla')`), no por `$input`: con «Leer encabezados» en medio, `$input` son los encabezados y se repetirían los ID. `hallazgosCrm` exige ahora también ese origen, el nodo «Leer encabezados» con el paquete de señales y su conexión a «Decidir fila». **Decisión DP5 (aprobada por Andres):** la planilla debe tener al menos una fila de datos (la fila semilla); con la fila 4 vacía el bot no agrega filas nuevas y cierra en falla, a propósito. Los rangos que fija `ramaCrm` (`A3:J`, `A3:J4`) son provisorios: `injertarCrm` los reemplaza con el mapa del tenant y la prueba del injerto los exige.
+
+**Botón «Abrir miniCRM» (03/11/2026).** El Tablero (`BotonMiniCrm`, zona Central) abre la hoja del comercio en otra pestaña. Aparece solo si quien mira es admin, `config/crm.activo` no es `false` y `enlaces/minicrm.enlaceHoja` es un enlace válido; si falta cualquiera, no se pinta nada. Mensajes por conversación: 0. Pruebas: `pruebas/modulos/crm/crm-enlace.test.ts` (enlace, condiciones del botón, script) y `crm-reglas.test.ts` (lectura/escritura de `enlaces/minicrm`, negando).
