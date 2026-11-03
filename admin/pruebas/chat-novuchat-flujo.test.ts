@@ -3534,3 +3534,104 @@ describe('revisión de #782: puertas cerradas, espacio de prueba, ráfagas, rein
   });
 });
 
+// ------------------------------------------------------------------------------ ronda 3 de la revisión de #782
+describe('ronda 3 de #782: puertas cerradas sin pedido, la prueba sin modoPrueba, capas de telefonosDePrueba y replanificación fallida', () => {
+  const PRUEBA_TEL = '59100000044';
+  const LISTA = MAMA + ',' + PRUEBA_TEL;
+  const pruebaCon = (extra: J = {}): J => ({ modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true, ...extra });
+  const noPlantillas = (t: { mensajes: Enviado[] }): Enviado[] => t.mensajes.filter((m) => m.tipo !== 'template');
+
+  it('1. Una puerta cerrada SIN pedido de compromiso (PRUEBA sin lista) nunca cae al genérico: bloqueado = nada al cliente y el aviso a recepción sale; suspendido = su texto neutro', () => {
+    const bloqueado = crear({ flujo: PRUEBA, panel: panel({ atencion: { estado: 'bloqueado', avisarRecepcion: 'bloqueado', respuestasEnVentana: 80 } }) });
+    const t = jugar(bloqueado, MAMA, { prueba: pruebaCon(), sinPropiedades: true }).texto('Hola');
+    expect(noPlantillas(t)).toHaveLength(0);
+    expect(t.plantillas).toHaveLength(1);
+    expect(bloqueado.servidor.llamadas).toHaveLength(0); // sin lista: ni leer ni comprometer
+    const suspendido = crear({ flujo: PRUEBA, panel: panel({ estadoComercio: 'suspendido' }) });
+    const t2 = jugar(suspendido, MAMA, { prueba: pruebaCon(), sinPropiedades: true }).texto('Hola');
+    expect(noPlantillas(t2)).toHaveLength(1);
+    expect(t2.mensajes[0]!.cuerpo).toBe(SUSPENDIDO);
+    expect(tipoInter(t2.mensajes[0]!)).not.toBe('cta_url');
+    // producción con el `leer` caído y bloqueado: sigue sin decir nada
+    const prod = crear({ ingesta: { atencion: { estado: 'bloqueado', avisarRecepcion: 'bloqueado', respuestasEnVentana: 80 } } });
+    prod.servidor.fallar = () => 503;
+    const t3 = jugar(prod, MAMA, { sinPropiedades: true }).texto('Hola');
+    expect(t3.aMi).toHaveLength(0);
+    expect(t3.plantillas).toHaveLength(1);
+  });
+
+  it('2. La variante de PRUEBA descarta lo que llegue a «Entrada de prueba» sin `modoPrueba: true` (ni lo pide a la consola, ni envía): no se comporta como producción', () => {
+    for (const cuerpo of [{}, { modoPrueba: 'true' }, { modoPrueba: 1 }, { modoPrueba: false, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true }]) {
+      const w = crear({ flujo: PRUEBA, config: { telefonosDePrueba: LISTA } });
+      const t = jugar(w, MAMA, { prueba: cuerpo, sinPropiedades: true }).texto('Hola');
+      expect(t.mensajes, JSON.stringify(cuerpo)).toHaveLength(0);
+      expect(w.config).toHaveLength(0);
+      expect(w.servidor.llamadas).toHaveLength(0);
+      expect(w.mundo.llamadas.ingesta).toHaveLength(0);
+    }
+    expect(PRUEBA.nodes.find((n) => n.name === 'Carga de entrada')!.parameters['jsCode']).toMatch(/if \(corrioPrueba && !prueba\) return \[\];/);
+  });
+
+  // Las tres capas de `telefonosDePrueba` se prueban CADA UNA SOLA (las otras dos quitadas): quitar cualquiera hace fallar su prueba.
+  const sinCapas = (quitar: ('traer' | 'config' | 'helper')[]): Flujo => {
+    const f = clonar(PRUEBA);
+    let hechas = 0;
+    for (const n of f.nodes) {
+      if (quitar.includes('traer') && n.name === 'Traer configuración') {
+        const antes = String(n.parameters['jsonBody']);
+        n.parameters['jsonBody'] = antes.replace('(!prueba || (lista.length > 0 && lista.indexOf(de) >= 0))', 'true');
+        if (n.parameters['jsonBody'] !== antes) hechas += 1;
+      }
+      let js = n.parameters['jsCode'];
+      if (typeof js !== 'string') continue;
+      if (quitar.includes('config') && n.name === 'Config del negocio' && js.includes('prueba && !(permitidos.length > 0 && permitidos.indexOf(cnDigitos(deMeta)) >= 0)')) { js = js.replace('prueba && !(permitidos.length > 0 && permitidos.indexOf(cnDigitos(deMeta)) >= 0)', 'false'); hechas += 1; }
+      if (quitar.includes('helper') && js.includes('if (!cnEsPrueba()) return true;')) { js = js.split('if (!cnEsPrueba()) return true;').join('return true;'); hechas += 1; }
+      n.parameters['jsCode'] = js;
+    }
+    // (cada capa quitada se cuenta una vez: «Traer configuración» 1, «Config del negocio» 1 y cnDesdeAutorizado, pegado en cada Code que la trae)
+    expect(hechas, 'la capa a quitar no se encontró: la prueba no probaría nada').toBeGreaterThanOrEqual(quitar.length);
+    expect(JSON.stringify(f).includes('prueba && !(permitidos.length > 0')).toBe(!quitar.includes('config'));
+    expect(JSON.stringify(f).includes('(!prueba || (lista.length > 0')).toBe(!quitar.includes('traer'));
+    expect(JSON.stringify(f).includes('if (!cnEsPrueba()) return true;')).toBe(!quitar.includes('helper'));
+    return f;
+  };
+  it('5. CADA capa de telefonosDePrueba basta sola: «Traer configuración» (no pide el estado), «Config del negocio» (descarta el que llegó) y cnDesdeAutorizado (no arma el pedido); un teléfono fuera de la lista nunca compromete', () => {
+    const capas: ['traer' | 'config' | 'helper', ('traer' | 'config' | 'helper')[]][] = [['traer', ['config', 'helper']], ['config', ['traer', 'helper']], ['helper', ['traer', 'config']]];
+    for (const [sola, quitadas] of capas) {
+      const w = crear({ flujo: sinCapas(quitadas), config: { telefonosDePrueba: LISTA } });
+      const t = jugar(w, OTRA, { prueba: pruebaCon(), sinPropiedades: true }).texto('Hola');
+      const comprometio = w.compromisos.length;
+      expect(comprometio, `capa «${sola}» sola: no debe comprometer`).toBe(0);
+      expect(t.mensajes.length).toBe(1);
+      expect(tipoInter(t.mensajes[0]!), `capa «${sola}» sola: genérico con botón`).toBe('cta_url');
+    }
+    // y las tres quitadas: SÍ compromete (la prueba de que las pruebas de arriba detectan algo)
+    const w = crear({ flujo: sinCapas(['traer', 'config', 'helper']), config: { telefonosDePrueba: LISTA } });
+    jugar(w, OTRA, { prueba: pruebaCon(), sinPropiedades: true }).texto('Hola');
+    expect(w.compromisos.length).toBeGreaterThan(0);
+  });
+
+  it('6. Si «Replanificar registro» no arma el pedido, el registro FALLÓ (genérico con botón): no cede con el conflicto del intento anterior aunque el ganador traiga un evento más nuevo', () => {
+    const f = clonar(PRODUCCION);
+    let hechas = 0;
+    for (const n of f.nodes.filter((x) => x.name === 'Replanificar registro')) {
+      const js = String(n.parameters['jsCode']);
+      n.parameters['jsCode'] = js.replace('const ajuste = chAjustarBytes(f, 14900);', 'const ajuste = pasada > 1 ? { cupo: false } : chAjustarBytes(f, 14900);');
+      if (n.parameters['jsCode'] !== js) hechas += 1;
+    }
+    expect(hechas).toBe(1);
+    const w = crear({ flujo: f });
+    let n = 0;
+    w.servidor.antesDeComprometer = (c) => {
+      if (!String(((c['sesion'] as J)['idCompromiso'])).startsWith('chat-reg') || n++ > 0) return;
+      const e = clonar((c['sesion'] as J)['estado']) as J; // un rival registró otro evento con el mismo seq
+      e['cola'] = (e['cola'] as J[]).map((x) => ({ ...x, id: 'wamid.RIVAL' }));
+      w.servidor.sembrar(PID, ESPACIO, MAMA, e);
+    };
+    const t = jugar(w, MAMA, { sinPropiedades: true }).texto('Hola');
+    expect(t.mensajes.filter((m) => m.a === MAMA)).toHaveLength(1);
+    expect(tipoInter(t.mensajes[0]!)).toBe('cta_url');
+    expect(w.compromisos.map((c) => c.nodo)).toEqual(['Comprometer evento']); // el 2.º intento no se mandó sin cuerpo
+  });
+});
+

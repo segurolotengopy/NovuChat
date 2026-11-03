@@ -350,6 +350,27 @@ describe('la ficha por teléfono: saneada campo por campo, con tope y con olvido
     // un tope imposible (más chico que lo que queda sin historial ni texto) lo dice: `cupo` falso, no un recorte infinito
     expect(f('chAjustarBytes')(clonar(peor), 100).cupo).toBe(false);
   });
+  it('chBytes / chAjustarBytes con un surrogate SUELTO no lanzan (se cuenta como U+FFFD, 3 bytes) y el recorte termina', () => {
+    expect(() => f('chBytes')('a\uD800b')).not.toThrow();
+    expect(f('chBytes')('a\uD800b')).toBe(5); // a + U+FFFD (3) + b
+    expect(f('chBytes')('\uDC00')).toBe(3);
+    const suelto = 'x\uD83D'.repeat(400); // surrogates altos sueltos
+    const ficha: J = { ...fichaBase(), seq: 2, cola: [1, 2].map((i) => ({ seq: i, id: 'w' + i, k: 'texto', t: suelto, c: suelto, ms: 1, rubro: '', boton: '' })), historial: [] };
+    const r = f('chAjustarBytes')(clonar(ficha), 2500);
+    expect(r.cupo).toBe(true);
+    expect(f('chBytes')(JSON.stringify(r.ficha))).toBeLessThanOrEqual(2500);
+  });
+  it('el recorte por bytes del turno (armar-mensajes) es defensa en profundidad INALCANZABLE con los topes actuales: la ficha de DESPUÉS de un turno (cola vacía) con todos los campos al máximo pesa muy por debajo de 14.900 bytes', () => {
+    const grande = '漢'.repeat(400);
+    const maxima: J = {
+      ...fichaBase(), ultimoMs: AHORA, rubro: 'x'.repeat(40), nombre: grande, empresa: grande, necesidad: grande, temas: Array.from({ length: 20 }, () => 'costos'), avisoFalla: grande, ofrecio: 'ambas',
+      empresasAvisadas: [grande, grande, grande, grande], primero: { rubro: 'salud', empresa: grande }, otros: Array.from({ length: 10 }, () => ({ e: grande, r: 'salud' })),
+      historial: Array.from({ length: 20 }, () => ({ r: 'u', t: grande })), ultimosIds: Array.from({ length: 20 }, () => 'w'.repeat(300)), cola: [],
+    };
+    const tras = f('chFichaVigente')(maxima, AHORA);
+    expect(tras.historial).toHaveLength(8);
+    expect(f('chBytes')(JSON.stringify(tras))).toBeLessThan(14900 - 3000);
+  });
   it('chOtraEjecucionResponde: ya respondió (`hasta`), hay un evento más nuevo (`seq`) o lo pendiente ya no es lo de este turno; sin eventos o idéntico, no', () => {
     const ficha = (seq: number, hasta: number, cola: number[]): J => ({ seq, hasta, cola: cola.map((x) => ({ seq: x })) });
     const o = f('chOtraEjecucionResponde');

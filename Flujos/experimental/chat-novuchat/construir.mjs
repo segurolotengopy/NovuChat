@@ -570,6 +570,9 @@ export function guardias(entrada, flujo, datos = {}) {
       // Un 5xx o un timeout se reintenta con el MISMO idCompromiso (el servidor contesta `repetido` si ya se aplicó): reintento activo y sin `neverError` (con él un 5xx no se reintenta).
       if (n.retryOnFail !== true || !(n.maxTries >= 2) || JSON.stringify(parametros(n)).includes('neverError')) h.push(`«${n.name}» tiene que reintentar (retryOnFail, maxTries >= 2) y no llevar neverError`);
     }
+    // En la variante de PRUEBA, «Carga de entrada» DESCARTA lo que llegue a «Entrada de prueba» sin `modoPrueba: true` (si no, se comportaría como producción); producción no tiene «Entrada de prueba».
+    const carga = nodos.find((x) => x.name === 'Carga de entrada');
+    if (entrada === 'prueba' && carga && !/if \(corrioPrueba && !prueba\) return \[\];/.test(String(parametros(carga).jsCode || ''))) h.push('«Carga de entrada» tiene que descartar lo que llegue a «Entrada de prueba» sin modoPrueba: true');
     // En la variante de PRUEBA el estado va en OTRO espacio y solo para los teléfonos de prueba: «Traer configuración» lo dice en su cuerpo.
     const traer = nodos.find((x) => x.name === 'Traer configuración');
     if (traer && !/chat-novuchat-prueba/.test(String(parametros(traer).jsonBody || ''))) h.push('«Traer configuración» tiene que pedir el estado en el espacio «chat-novuchat-prueba» cuando es una prueba');

@@ -16,7 +16,7 @@ function cnEjecucion(id) {
 // El teléfono lo valida el servidor con 8 a 15 dígitos; antes de pedir nada se comprueba igual.
 function cnTelefonoDeSesion(from) { return /^[0-9]{8,15}$/.test(String(from || '')); }
 // Bytes UTF-8 sin `Buffer` ni `TextEncoder` (el Code de n8n no los tiene): cada %XX de encodeURIComponent es un byte.
-function cnBytes(t) { return encodeURIComponent(String(t)).replace(/%[0-9A-F]{2}/g, 'x').length; }
+function cnBytes(t) { return encodeURIComponent(String(t).replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD')).replace(/%[0-9A-F]{2}/g, 'x').length; }
 // ¿Es una ejecución de la variante de prueba? (solo la «Entrada de prueba» la activa; `Carga de entrada` lo deja en `prueba`). Sin los nodos (una prueba aislada), producción.
 function cnEsPrueba() {
   if (typeof cnPrimero !== 'function') return false;
@@ -73,6 +73,10 @@ function cnNumeroHeader() {
 //   { ok, falla, version, ficha, seq } — `ficha` es la que ESE intento propuso (la que el servidor guardó si ok).
 const CN_INTENTOS_REGISTRO = [['Comprometer evento (3.º intento)', 'Replanificar registro (2.º)'], ['Comprometer evento (2.º intento)', 'Replanificar registro'], ['Comprometer evento', 'Registrar evento']];
 function cnRegistro() {
+  // Si una replanificación corrió pero NO armó el pedido (no hay HTTP del intento siguiente), el registro FALLÓ: no se cede con el conflicto del intento anterior.
+  for (const par of [['Replanificar registro (2.º)', 'Comprometer evento (3.º intento)'], ['Replanificar registro', 'Comprometer evento (2.º intento)']]) {
+    if (cnNodo(par[0]) && !cnNodo(par[1])) return { ok: false, falla: true, version: 0, ficha: null, seq: 0 };
+  }
   for (const par of CN_INTENTOS_REGISTRO) {
     if (!cnNodo(par[0])) continue;
     const r = cnResultadoDeCompromiso(cnPrimero(par[0]));

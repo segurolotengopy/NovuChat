@@ -13,11 +13,12 @@ const comprometido = a.comprometer === true && r.resultado === 'ok';
 // Segundo conflicto: si otra ejecución ya respondió estos eventos o hay uno más nuevo (misma condición que «Replanificar mensajes»), esta termina SIN enviar.
 if (r.resultado === 'conflicto' && rep && Array.isArray(a.seqs) && chOtraEjecucionResponde(chFichaVigente(r.ganador, Number(a.ahoraMs) || Date.now()), a.seqs)) return [];
 // Las puertas cerradas (suspendido, uso extendido, bloqueado) comprometen solo para guardar los ids: si el compromiso falla sale igual lo suyo (bloqueado: nada), nunca el genérico.
-const mejor = a.mejorEsfuerzo === true && a.comprometer === true && r.resultado !== 'ok';
+// (también sin pedido de compromiso —`from` fuera de `telefonosDePrueba`, teléfono que el servidor no admite, estado que no cabe—: la puerta cerrada NO cae al genérico)
+const mejor = a.mejorEsfuerzo === true && (a.comprometer !== true || r.resultado !== 'ok');
 const bien = (a.fallaEstado !== true && r.resultado === 'ok') || mejor;
 const salida = bien ? a.salida : a.salidaFalla;
 const resumen = Object.assign({}, a.resumen, { estado: { comprometido: comprometido, version: comprometido ? r.version : null, resultado: a.comprometer === true ? r.resultado : (a.fallaEstado === true ? 'sin_estado' : 'sin_compromiso') } });
-if (mejor) resumen.estado.resultado = 'mejor_esfuerzo_' + r.resultado;
+if (mejor) resumen.estado.resultado = 'mejor_esfuerzo_' + (a.comprometer === true ? r.resultado : 'sin_compromiso');
 if (!bien) Object.assign(resumen, { plan: 'falla_estado', mensajes: Array.isArray(salida) ? salida.length : 0, rubro: a.nueva ? a.nueva.rubro : '' });
 
 const ahora = Number(a.ahoraMs) || Date.now();

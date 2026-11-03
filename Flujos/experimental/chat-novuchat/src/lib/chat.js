@@ -658,7 +658,8 @@ function chRecordarIds(f, ids) {
   return f;
 }
 // Bytes UTF-8 de un texto sin `Buffer` ni `TextEncoder` (el Code de n8n no los tiene): cada %XX de encodeURIComponent es un byte.
-function chBytes(t) { return encodeURIComponent(chTexto(t)).replace(/%[0-9A-F]{2}/g, 'x').length; }
+// (un surrogate suelto haría lanzar a encodeURIComponent: se cuenta como U+FFFD, 3 bytes)
+function chBytes(t) { return encodeURIComponent(chTexto(t).replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD')).replace(/%[0-9A-F]{2}/g, 'x').length; }
 // El estado que se compromete al servidor pesa a lo más `max` BYTES de JSON (el servidor admite 16 KiB): con CJK o emojis (3 y 4 bytes por carácter) la peor ficha pasa de los topes por cantidad.
 // Se recorta, en este orden: (1) el historial, de lo más viejo; (2) el texto de los eventos de la cola, del más pesado, hasta 60 caracteres cada campo (el `t` y el `c`); nunca se quita un evento.
 // Devuelve la misma ficha (la modifica) y si cupo.

@@ -117,6 +117,9 @@ describe('ayudantes de los nodos Code (_sesion.js)', () => {
     expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'ñ'.repeat(7000) })).not.toBeNull();
     expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: '😀'.repeat(4000) })).toBeNull();
     expect(H['cnBytes']('ñ😀a')).toBe(7);
+    expect(() => H['cnBytes']('a\uD800b')).not.toThrow(); // un surrogate suelto cuenta como U+FFFD (3 bytes)
+    expect(H['cnBytes']('a\uD800b')).toBe(5);
+    expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'x\uDC00y' })).not.toBeNull();
   });
   it('cnSesionDeLaConfig: solo 200 con conversación válida es ok; todo lo demás es falla (genérico con botón)', () => {
     const buena = { conversacion: { version: 4, estado: { a: 1 }, vencido: false } };
