@@ -385,6 +385,10 @@ export function DetalleConversacion(p: PropsDetalle) {
           ficha.noContactar && <span className="cv-etiqueta">No contactar</span>
         )}
         {errorNoContactar && <span role="alert" className="cv-error">{errorNoContactar}</span>}
+        {/* «Bloquear contacto» va al lado de «No contactar»: bloquear quita visibilidad, y se decide en el mismo lugar. */}
+        <BloqueoContacto
+          tenantId={tenantId} conversacionId={ficha.id} bloqueada={ficha.bloqueada} acciones={accionesBloqueo} capa={p.capaBloqueo}
+        />
       </div>
 
       {mostrarAvisoPropietario(p.esPropietario === true) && (
@@ -394,10 +398,6 @@ export function DetalleConversacion(p: PropsDetalle) {
       <BarraTurno
         tenantId={tenantId} conversacionId={ficha.id} turno={turno} situacion={situacion}
         acciones={acciones} miUid={p.miUid} capa={p.capa}
-      />
-
-      <BloqueoContacto
-        tenantId={tenantId} conversacionId={ficha.id} bloqueada={ficha.bloqueada} acciones={accionesBloqueo} capa={p.capaBloqueo}
       />
 
       {m.saltoFallido && (
