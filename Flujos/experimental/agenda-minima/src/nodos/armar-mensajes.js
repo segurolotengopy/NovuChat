@@ -620,6 +620,43 @@ if (estado && cnClaveValida(t.from) && plan !== 'nada') {
   }
 }
 
+// ================================================================ LA PLANILLA DEL miniCRM
+// Modulo `crm`. `guardarPlanilla` solo si hay id y hoja validos (`Config del negocio` deja vacio un marcador), no es modo prueba y el turno trae una respuesta.
+// El prospecto lo arma `agmProspectoCrm` (agenda.js): vocabulario cerrado, el texto del cliente no pasa, los hechos son los que el CODIGO verifico (la cita que creo el
+// calendario, la que se borro), no lo que dijo el modelo. LA PLANILLA NUNCA TUMBA LA ATENCION: si el calculo lanza, el turno responde igual y no se escribe en la hoja.
+// MENSAJES: ninguno (no se agrega ni se quita ninguno).
+const CRM_OLVIDO_MS = 48 * 3600 * 1000; // «contacto nuevo» = sin mensajes en las ultimas 48 h (el estado de agenda vence a los 30 min: no sirve).
+let guardarPlanilla = false;
+let prospectoPlanilla = null;
+const planillaOk = String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';
+if (planillaOk && !prueba && salida.length > 0 && cnClaveValida(t.from)) {
+  try {
+    let sdCrm = null;
+    try { sdCrm = $getWorkflowStaticData('global'); } catch (err) { sdCrm = null; }
+    const previo = sdCrm && sdCrm.agendaMinimaCrm && typeof sdCrm.agendaMinimaCrm === 'object' ? Number(sdCrm.agendaMinimaCrm[String(t.from)]) : 0;
+    const nuevoContacto = !(previo > 0 && ahora - previo <= CRM_OLVIDO_MS);
+    const bBorrar = cnPrimero('Borrar evento');
+    const conBoton = msgs.some((m) => m.para === 'recepcion' || (m.payload && m.payload.type === 'interactive' && m.payload.interactive && m.payload.interactive.type === 'cta_url'));
+    const p = agmProspectoCrm({
+      from: t.from, plan: plan, servicio: srv, clave: params.clave,
+      creada: base.creada === true, reprogramo: !!base.borrarId && !!bBorrar && !bBorrar.error, cancelada: !!bBorrar && !bBorrar.error,
+      inicioCita: base.crear && base.crear.inicio ? base.crear.inicio : '',
+      huecos: base.oferta && Array.isArray(base.oferta.huecos) ? base.oferta.huecos.map((h) => h.inicio) : [],
+      derivo: plan === 'contacto_doctor' ? 'doctor' : (conBoton ? 'recepcion' : ''),
+      nombrePerfil: t.nombrePerfil, anuncio: t.origen === 'anuncio', nuevoContacto: nuevoContacto, ahoraMs: ahora,
+    });
+    if (p) {
+      prospectoPlanilla = p;
+      guardarPlanilla = true;
+      if (sdCrm) {
+        if (!sdCrm.agendaMinimaCrm || typeof sdCrm.agendaMinimaCrm !== 'object') sdCrm.agendaMinimaCrm = {};
+        for (const k of Object.keys(sdCrm.agendaMinimaCrm)) if (!(ahora - Number(sdCrm.agendaMinimaCrm[k]) <= CRM_OLVIDO_MS)) delete sdCrm.agendaMinimaCrm[k];
+        sdCrm.agendaMinimaCrm[String(t.from)] = ahora;
+      }
+    }
+  } catch (e) { guardarPlanilla = false; prospectoPlanilla = null; }
+}
+
 if (!salida.length) {
   return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: t.from,
     plan: plan, estadoDespues: estadoDespues, errores: errores, huecosOfrecidos: [], eventoCreadoId: '', eventoBorradoId: '' } }];
@@ -633,4 +670,7 @@ const resumen = {
   eventoBorradoId: borradoOk ? String(base.borrarId) : (base.deshacerId && !deshacerFallo ? String(base.deshacerId) : ''),
 };
 salida[0].json.resumen = resumen;
+// Solo el primer item lleva el prospecto: el nodo del modulo `crm` lo toma de ahi (uno por turno).
+salida[0].json.guardarPlanilla = guardarPlanilla;
+salida[0].json.prospectoPlanilla = prospectoPlanilla;
 return salida;

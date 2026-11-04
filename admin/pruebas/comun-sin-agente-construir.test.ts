@@ -20,6 +20,7 @@ import {
   armarVariante, codigoDe, construir, leerProyecto, type ConfigDeConstruccion,
 } from '../../Flujos/experimental/comun-sin-agente/construir.mjs';
 import { injertarGuardado } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
+import { injertarCrm, ramaCrm, rutasPaqueteCrmSenales } from '../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 // Los proyectos de juguete viven en una carpeta temporal: el tope de lectura de las pruebas es esa carpeta.
@@ -48,7 +49,27 @@ const CONFIG_AGENDA: ConfigDeConstruccion = {
 describe('el armador genérico produce los JSON de Agenda mínima, byte por byte', () => {
   const p = leerProyecto(AGENDA, CONFIG_AGENDA);
   // `agenda-minima/construir.mjs` injerta DESPUÉS la rama común del guardado de medios (`comun-sin-agente/src/guardado.mjs`): se injerta igual aquí.
-  const conGuardado = (texto: string): string => `${JSON.stringify(injertarGuardado(JSON.parse(texto), { guardarUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio' }), null, 2)}\n`;
+  // Y la rama del miniCRM (módulo `crm`, 04/11/2026), que `construir.mjs` de Agenda mínima genera ANTES del guardado: se arma aquí por su cuenta.
+  const mapaCrm = (JSON.parse(readFileSync(join(aqui, '../scripts/datos/bellido/crm.json'), 'utf8')) as { crm: unknown }).crm;
+  const paquetesCrm = rutasPaqueteCrmSenales() as Record<string, string[]>;
+  const conGuardado = (texto: string): string => {
+    const flujo = JSON.parse(texto);
+    const rama = ramaCrm({ credencial: '@@cred:crm', desde: 'Armar mensajes', paquete: 'crm-decidir-senales', x: 9080, y: 640 });
+    for (const n of rama.nodes as Array<{ parameters: { jsCode?: string }; credentials?: Record<string, { name: string }> }>) {
+      const m = /^@@medio:(.+)$/.exec(String(n.parameters.jsCode ?? ''));
+      if (m) n.parameters.jsCode = `${paquetesCrm[m[1]!]!.map((r) => readFileSync(r, 'utf8').trimEnd()).join('\n')}\n`;
+      for (const c of Object.values(n.credentials ?? {})) c.name = 'Google Sheets miniCRM (crm-bellido)';
+    }
+    flujo.nodes.push(...rama.nodes);
+    Object.assign(flujo.connections, rama.connections);
+    flujo.connections['Armar mensajes'] = { main: [[...flujo.connections['Armar mensajes'].main[0], { node: rama.entrada, type: 'main', index: 0 }]] };
+    if (!flujo.nodes.some((n: { name: string }) => n.name === 'WhatsApp Trigger')) { // la variante de prueba: el id de planilla va vacío
+      for (const a of flujo.nodes.find((n: { name: string }) => n.name === 'Config base').parameters.assignments.assignments) if (a.name === 'planillaProspectosId') a.value = '';
+    }
+    injertarGuardado(flujo, { guardarUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/guardarMedio' });
+    injertarCrm(flujo, mapaCrm);
+    return `${JSON.stringify(flujo, null, 2)}\n`;
+  };
   for (const v of CONFIG_AGENDA.variantes) {
     it(`${v.archivo}`, () => {
       expect(conGuardado(armarVariante(p, v))).toBe(readFileSync(join(AGENDA, v.archivo), 'utf8'));

@@ -3,7 +3,8 @@
   "settings": {
     "executionOrder": "v1",
     "timezone": "America/La_Paz",
-    "executionTimeout": 60
+    "executionTimeout": 60,
+    "saveManualExecutions": false
   },
   "nodes": [
     {
@@ -145,6 +146,18 @@
               "name": "horarioAtencion",
               "type": "string",
               "value": "REEMPLAZAR_HORARIO_ATENCION_BELLIDO"
+            },
+            {
+              "id": "b_planillaProspectosId",
+              "name": "planillaProspectosId",
+              "type": "string",
+              "value": "REEMPLAZAR_PLANILLA_PROSPECTOS_ID_BELLIDO"
+            },
+            {
+              "id": "b_planillaProspectosHoja",
+              "name": "planillaProspectosHoja",
+              "type": "string",
+              "value": "Leads_CRM"
             },
             {
               "id": "b_mensajeCierre",
