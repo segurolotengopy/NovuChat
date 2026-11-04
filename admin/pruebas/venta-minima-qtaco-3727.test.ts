@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import { verificarEnCopia } from './lib/venta-minima-mundo';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -22,7 +23,7 @@ const creds = (f: J) => new Set<string>(f.nodes.flatMap((n: J) => Object.values(
 
 describe("Q'Taco 3727: workflow nuevo, separado del vivo", () => {
   it('el constructor lo deja al dia', () => {
-    expect(() => execFileSync('node', ['construir.mjs', '--verificar'], { cwd: DIR, stdio: 'pipe' })).not.toThrow();
+    expect(() => execFileSync(process.execPath, ['construir.mjs', '--verificar'], { cwd: DIR, stdio: 'pipe', env: entornoDelEmulador(undefined) })).not.toThrow();
   });
   it('nombre distinto del vivo y mismos nodos', () => {
     expect(NUEVO.name).not.toBe(VIVO.name);
