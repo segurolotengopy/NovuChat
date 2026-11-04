@@ -276,6 +276,8 @@ export const resumenDeLaHoja =(valores, mapa) => {
  * Antes se usaba `values:append` con INSERT_ROWS: Google insertaba las filas heredando el formato de la fila de arriba (el encabezado, fondo oscuro), dejaba las
  * fechas como número serie y, con filas con formato debajo de la tabla, las ponía lejos de donde se esperaba. El formato va ANTES de los valores para que una
  * fecha `yyyy-mm-dd` se interprete con el formato de la celda y no quede como número.
+ * REQUISITO: la fila de referencia (la 4) debe tener el formato bueno (el de la fila 4 de Emma); si la hoja quedó dañada por el `append` anterior, se arregla ANTES de correr esto.
+ * Dentro del flujo, el destino se lee dos veces (antes de formatear y antes de escribir) y se corta si ya hay algo: nunca se pisa una fila del bot.
  */
 export function pedidoDeFormato({ mapa, filaDesde, cantidad }) {
   const ultima = Object.values(mapa.columnas).map((c) => c.letra).sort().pop();
@@ -291,13 +293,23 @@ export async function agregarFilas({ envFile, tenant, sheet, mapa, filas, filaDe
   const rango = encodeURIComponent(`'${HOJA}'!A${filaDesde}:${ultima}${fin}`);
   const { origen, destino, pegados } = pedidoDeFormato({ mapa, filaDesde, cantidad: filas.length });
   const peticiones = pegados.map((pegar) => ({ copyPaste: { source: { sheetId: '__ID__', ...origen }, destination: { sheetId: '__ID__', ...destino }, pasteType: pegar, pasteOrientation: 'NORMAL' } }));
-  const cuerpoFormato = `={{ (() => { const p = $json.sheets.find((x) => x.properties.title === ${JSON.stringify(HOJA)}); if (!p) { throw new Error('sin pestaña'); } return JSON.stringify(${JSON.stringify({ requests: peticiones })}).replace(/"__ID__"/g, String(p.properties.sheetId)); })() }}`;
-  return correrEnN8n({ envFile, tenant, cuerpo: { filas }, hacer: ({ http }) => ({ nodos: [
-    http('propiedades', 'Propiedades', 240, { method: 'GET', url: `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheet)}?fields=sheets.properties(sheetId,title)` }),
-    http('formato', 'Formato', 480, { method: 'POST', url: `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheet)}:batchUpdate`, sendBody: true, contentType: 'json',
-      specifyBody: 'json', jsonBody: cuerpoFormato }),
-    http('escribir', 'Escribir', 720, { method: 'PUT', url: `${urlHoja(sheet, rango)}?valueInputOption=USER_ENTERED`, sendBody: true, contentType: 'json',
-      specifyBody: 'json', jsonBody: "={{ JSON.stringify({ range: " + JSON.stringify(`'${HOJA}'!A${filaDesde}:${ultima}${fin}`) + ", majorDimension: 'ROWS', values: $('Entrada').first().json.body.filas }) }}" }),
+  // REGLA de las expresiones de n8n: el analizador corta en el PRIMER «}}», no cuenta llaves. Por eso ninguna expresión lleva JSON ni llaves seguidas incrustadas:
+  // los pedidos viajan como DATO en el cuerpo de la entrada y la expresión solo los lee. Prueba: «sin }} en medio».
+  const cuerpoFormato = `={{ JSON.stringify($('Entrada').first().json.body.peticiones).replace(/"__ID__"/g, String($json.sheets.find((x) => x.properties.title === ${JSON.stringify(HOJA)}).properties.sheetId)) }}`;
+  // El destino se lee dentro del flujo, justo antes de formatear y otra vez justo antes de escribir: si hay algo, se corta (nunca se pisa una fila del bot).
+  const ocupado = (nodo) => `$('${nodo}').first().json.values`;
+  const aborta = "(() => { throw new Error('destino ocupado'); })()";
+  const urlDestino = `${urlHoja(sheet, rango)}?valueRenderOption=FORMATTED_VALUE`;
+  const cuerpoEscribir = `={{ ${ocupado('Destino 2')} ? ${aborta} : JSON.stringify({ range: ${JSON.stringify(`'${HOJA}'!A${filaDesde}:${ultima}${fin}`)}, majorDimension: 'ROWS', values: $('Entrada').first().json.body.filas }) }}`;
+  const cuerpoFormatoGuardado = cuerpoFormato.replace('={{ ', `={{ ${ocupado('Destino')} ? ${aborta} : `);
+  return correrEnN8n({ envFile, tenant, cuerpo: { filas, peticiones }, hacer: ({ http }) => ({ nodos: [
+    http('destino', 'Destino', 240, { method: 'GET', url: urlDestino }),
+    http('propiedades', 'Propiedades', 480, { method: 'GET', url: `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheet)}?fields=sheets.properties(sheetId,title)` }),
+    http('formato', 'Formato', 720, { method: 'POST', url: `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheet)}:batchUpdate`, sendBody: true, contentType: 'json',
+      specifyBody: 'json', jsonBody: cuerpoFormatoGuardado }),
+    http('destino2', 'Destino 2', 960, { method: 'GET', url: urlDestino }),
+    http('escribir', 'Escribir', 1200, { method: 'PUT', url: `${urlHoja(sheet, rango)}?valueInputOption=USER_ENTERED`, sendBody: true, contentType: 'json',
+      specifyBody: 'json', jsonBody: cuerpoEscribir }),
   ] }) });
 }
 
@@ -383,6 +395,9 @@ export async function ejecutar(cfg, deps) {
 
   const filaDesde = hoja.ultimaFila + 1;
   const rango = `'${HOJA}'!A${filaDesde}:${conteos.ultima}${filaDesde + filas.length - 1}`;
+  // El rango es explícito: antes de escribir se relee y, si el bot agregó una fila mientras tanto, NO se escribe (se pisaría).
+  const ahora = resumenDeLaHoja(await deps.leer(), mapa);
+  if (ahora.ultimaFila !== hoja.ultimaFila) { log('\n  ✗ La hoja cambió mientras se preparaba (el bot escribió una fila): no se escribe nada. Vuelva a correr el seco.\n'); return 3; }
   try {
     guardarRespaldo(cfg.respaldo, { version: 1, campo: 'relleno-crm-historico', entorno: cfg.entorno, tenant: cfg.tenant, creadoEn: new Date().toISOString(),
       rango, filaDesde, escrito: filas });
@@ -391,9 +406,6 @@ export async function ejecutar(cfg, deps) {
     throw e;
   }
   log(`\n  Respaldo guardado (las filas a escribir y dónde; no copia la hoja): ${cfg.respaldo}`);
-  // El rango es explícito: antes de escribir se relee y, si el bot agregó una fila mientras tanto, NO se escribe (se pisaría).
-  const ahora = resumenDeLaHoja(await deps.leer(), mapa);
-  if (ahora.ultimaFila !== hoja.ultimaFila) { log('\n  ✗ La hoja cambió mientras se preparaba (el bot escribió una fila): no se escribe nada. Vuelva a correr el seco.\n'); return 3; }
   const respuesta = await deps.agregar(filas, filaDesde);
   // DÓNDE quedaron de verdad: `values:update` lo dice en `updatedRange` (`values:append` lo decía en `updates.updatedRange`; se acepta cualquiera).
   const real = /!A(\d+):[A-Z]+(\d+)$/.exec(String(respuesta?.updatedRange ?? respuesta?.updates?.updatedRange ?? ''));

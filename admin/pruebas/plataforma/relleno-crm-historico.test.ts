@@ -10,6 +10,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 type Cfg = Record<string, unknown>;
 type Fila = string[];
@@ -279,6 +280,40 @@ describe('B3d. formato y filas de las hojas rellenadas (04/11: fondo oscuro, fec
     expect(codigo).not.toMatch(/:append|insertDataOption|INSERT_ROWS/);
     expect(codigo).toContain('?valueInputOption=USER_ENTERED');
     expect(codigo).toMatch(/method: 'PUT'/);
+  });
+  it('agregarFilas arma el flujo temporal: ninguna expresión lleva «}}» en medio, el destino se lee antes de formatear y antes de escribir, y el rango del URL es el del cuerpo', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'crm-'));
+    const envFile = join(dir, 'env');
+    writeFileSync(envFile, 'N8N_BASE_URL=https://n8n.ejemplo.test\nN8N_API_KEY=clave-de-prueba\n');
+    const real = globalThis.fetch; let flujo: any = null; let cuerpoEntrada: any = null;
+    const resp = (j: unknown) => new Response(JSON.stringify(j), { status: 200 });
+    globalThis.fetch = (async (url: string, init: any) => {
+      const u = String(url);
+      if (u.includes('/credentials')) return resp({ data: [{ id: '7', name: mod.nombreCredencial('rroca-evy') }] });
+      if (u.endsWith('/api/v1/workflows') && init.method === 'POST') { flujo = JSON.parse(init.body); return resp({ id: 'wf1' }); }
+      if (u.includes('/webhook/')) { cuerpoEntrada = JSON.parse(init.body); return resp({ updatedRange: "'Leads_CRM'!A4:T5" }); }
+      return resp({});
+    }) as typeof fetch;
+    try {
+      const mapa = mapaDe('rroca-evy');
+      const r: any = await mod.agregarFilas({ envFile, tenant: 'rroca-evy', sheet: 'HOJA', mapa, filas: [['a'], ['b']], filaDesde: 4 });
+      expect(r.updatedRange).toBe("'Leads_CRM'!A4:T5");
+      const nodos = flujo.nodes.map((n: any) => n.name);
+      expect(nodos).toEqual(['Entrada', 'Destino', 'Propiedades', 'Formato', 'Destino 2', 'Escribir']);
+      for (const n of flujo.nodes) {
+        const e = n.parameters?.jsonBody;
+        if (typeof e !== 'string') continue;
+        const dentro = e.slice(3, e.length - 3); // lo de adentro de ={{ … }}
+        expect(dentro).not.toContain('}}');
+      }
+      expect(cuerpoEntrada.peticiones).toHaveLength(3);
+      expect(cuerpoEntrada.filas).toEqual([['a'], ['b']]);
+      const esc = flujo.nodes.find((n: any) => n.name === 'Escribir');
+      expect(esc.parameters.jsonBody).toContain("$('Destino 2')");
+      expect(decodeURIComponent(esc.parameters.url)).toContain('A4:T5');
+      expect(esc.parameters.jsonBody).toContain('A4:T5');
+      expect(flujo.nodes.find((n: any) => n.name === 'Formato').parameters.jsonBody).toContain("$('Destino')");
+    } finally { globalThis.fetch = real; rmSync(dir, { recursive: true, force: true }); }
   });
   it('las fechas salen como yyyy-mm-dd (y la última interacción como yyyy-mm-dd hh:mm), no como número', () => {
     const mapa = mapaDe('rroca-ruben');
