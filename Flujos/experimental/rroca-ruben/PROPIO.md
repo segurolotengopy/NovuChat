@@ -95,3 +95,9 @@ Cuando #519 se fusione y exista el módulo común de Cobros y de Avisos, estos d
 ## Ports de Antonio (22/10/2026)
 
 Rubén tiene SU copia de lo portado de `rroca-antonio` (audio dudoso `rrAudioDudoso`, sin configuración `rrSinConfiguracion` y «Sí»/«No» suelto con `ultimaPregunta`), en `src/lib/rr.js` y los nodos `decidir-turno.js`, `armar-mensajes.js` y `resumen-del-turno.js`; no comparte código con el de Antonio. La segunda vez que otro cliente pida una de estas piezas, pasa a módulo. Diferencias con Antonio y riesgos: ver «Lo portado de Antonio» en `DISENO.md`.
+
+## Núcleo copiado de `chat-novuchat`: queda en el estado previo a PR-4c2 (04/11/2026)
+
+Este flujo NO adopta el estado de la conversación en el servidor (`sesion`) en PR-4c2: su núcleo copiado del chat queda como estaba en el commit `1fff3d59` y adoptará `sesion` en su propio PR. Por eso sus pruebas
+comparan con el ORIGEN CONGELADO (`admin/pruebas/lib/origen-chat-pre-4c2/`, con su LEEME y sus huellas verificadas por `core/origen-chat-congelado.test.ts`) y no con la fuente viva del chat. El JSON vivo no cambia:
+0 mensajes por conversación agregados o quitados.

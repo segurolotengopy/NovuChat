@@ -376,7 +376,7 @@ describe('SIN CONFIGURACIÓN · no se improvisa: texto honesto, aviso (solo si s
   it('`rrSinConfiguracion` evaluada sola: verdadera sin panel, panel no ok, catálogo vacío o ausente, sin cobro ni venta; falsa con configuración o con un catálogo todo agotado', () => {
     const codigo = ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA, 'src/lib', a), 'utf8')).join('\n');
     // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-    const fn = compilar(codigo + '\nreturn { rrSinConfiguracion, rrTextoDerivacion, RR_CLAVES_AVISO, CB_PROHIBIDAS, cbCanon, RR_NIEGA_IA, rrNorm };'); // nosemgrep: devsecops.js-eval-prohibido
+    const fn = compilar(codigo + '\nreturn { rrSinConfiguracion, rrTextoDerivacion, RR_CLAVES_AVISO, CB_PROHIBIDAS, cbCanon, RR_NIEGA_IA, rrNorm };');
     const L = fn() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
     const ok = (c: J): J => ({ ok: true, cuerpo: { tenantId: 'x', ...c } });
     expect(L.rrSinConfiguracion(undefined)).toBe(true);

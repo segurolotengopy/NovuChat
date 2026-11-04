@@ -114,7 +114,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ telefono: String(((($json.messages || [])[0]) || {}).from || '') }) }}",
+        "jsonBody": "={{ (() => { const de = String(((($json.messages || [])[0]) || {}).from || ''); const prueba = !!$json.prueba && $json.prueba.modoPrueba === true; const lista = String($('Config base').first().json.telefonosDePrueba || '').split(',').map((x) => x.replace(/\\D/g, '')).filter((x) => x.length >= 6); const valido = /^[0-9]{8,15}$/.test(de) && (!prueba || (lista.length > 0 && lista.indexOf(de) >= 0)); return JSON.stringify(Object.assign({ telefono: de }, valido ? { sesion: { v: 1, accion: 'leer', espacio: prueba ? 'chat-novuchat-prueba' : 'chat-novuchat', canal: 'wa', ejecucion: String($execution.id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 'sin-id' } } : {})); })() }}",
         "options": {
           "timeout": 4000,
           "response": {
@@ -132,7 +132,7 @@
         }
       },
       "onError": "continueRegularOutput",
-      "notes": "De la consola salen SOLO los precios, la imagen de planes, el número de recepción, el nombre del asistente, el estilo de emojis, el trato y la atención. Los rubros NO: este chat tiene los suyos. Con el panel caído, «Config del negocio» usa el respaldo de «Config base» y no inventa precios."
+      "notes": "De la consola salen SOLO los precios, la imagen de planes, el número de recepción, el nombre del asistente, el estilo de emojis, el trato y la atención. Los rubros NO: este chat tiene los suyos. Con el panel caído, «Config del negocio» usa el respaldo de «Config base» y no inventa precios. Con teléfono válido (y, en la variante de prueba, de `telefonosDePrueba`, en el espacio `chat-novuchat-prueba`) pide también la `sesion` (leer): el estado de la conversación vive en el servidor (docs/arquitectura/estado-de-conversacion.md), no en los datos estáticos de n8n."
     },
     {
       "parameters": {
@@ -584,7 +584,7 @@
     {
       "parameters": {
         "resume": "timeInterval",
-        "amount": "={{ $json.esperarSeg }}",
+        "amount": "={{ $('Registrar evento').first().json.esperarSeg }}",
         "unit": "seconds"
       },
       "id": "esperar-rafaga",
@@ -592,7 +592,7 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        3800,
+        6200,
         300
       ],
       "notes": "Coalescencia de clics: espera 2,5 s (0,1 s si el turno está cerrado). Quien toca tres botones seguidos dispara tres ejecuciones; solo la última responde, con todos los eventos. Menos de 65 s: n8n la mantiene en memoria."
@@ -606,7 +606,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4040,
+        6440,
         300
       ],
       "notes": "Solo sigue la última ejecución de cada teléfono: arma el contexto con TODOS los eventos desde el último mensaje del asistente. Un toque de botón o un detector del código (costo del servicio, consumo, tope de un plan, banco, costos de Meta, integraciones, descuento, pedido de una persona) resuelve sin modelo; todo lo demás cae en el modelo (Catch All), con el historial por teléfono."
@@ -641,7 +641,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        4280,
+        6680,
         300
       ],
       "notes": "Solo los turnos que no resuelve el código llaman al modelo. UNA llamada por turno (y un reintento si el mensaje viola una guardia)."
@@ -652,7 +652,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        4520,
+        6920,
         160
       ],
       "parameters": {
@@ -686,7 +686,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4760,
+        7160,
         160
       ],
       "notes": "Lo que el modelo escribió NO sale sin pasar por aquí: valida el JSON, los campos que alimentan la hoja y el mensaje (contenido mínimo, cierre con pregunta, identidad, promesas, ofertas, cifras, sistemas, banco, nombres de personas). Si viola una guardia, arma UN reintento con la causa."
@@ -721,7 +721,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        5000,
+        7400,
         160
       ],
       "notes": "UN solo reintento, con la causa del rechazo (de una lista cerrada) en el prompt."
@@ -732,7 +732,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        5240,
+        7640,
         60
       ],
       "parameters": {
@@ -766,10 +766,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5480,
+        7880,
         300
       ],
-      "notes": "Un ítem por mensaje (cliente y, si corresponde, el aviso a recepción con plantilla). TODO mensaje del asistente lleva los dos botones «Ver planes» y «Hablar con el equipo», salvo la lista de rubros y el traspaso con su botón de enlace. Escribe la ficha: el historial, la cola, el rubro y lo que el cliente dijo de sí mismo."
+      "notes": "Arma TODO lo que sale (un solo ítem con los mensajes, el aviso a recepción y el estado nuevo) y el pedido de compromiso. No envía ni escribe nada: el estado se compromete en el servidor ANTES de enviar. Todo mensaje del asistente lleva los dos botones «Ver planes» y «Hablar con el equipo», salvo la lista de rubros, el traspaso con su botón de enlace y el genérico."
     },
     {
       "id": "prospecto-para-la-planilla",
@@ -777,7 +777,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5720,
+        9560,
         640
       ],
       "parameters": {
@@ -791,7 +791,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        5960,
+        9800,
         640
       ],
       "parameters": {
@@ -853,7 +853,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        6200,
+        10040,
         640
       ],
       "parameters": {
@@ -901,7 +901,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6440,
+        10280,
         640
       ],
       "parameters": {
@@ -915,7 +915,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        6680,
+        10520,
         640
       ],
       "parameters": {
@@ -948,7 +948,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        6920,
+        10760,
         560
       ],
       "parameters": {
@@ -997,7 +997,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        6920,
+        10760,
         720
       ],
       "parameters": {
@@ -1030,7 +1030,7 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        7160,
+        11000,
         720
       ],
       "parameters": {
@@ -1081,13 +1081,13 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5720,
+        9560,
         900
       ],
       "parameters": {
         "jsCode": "@@comun:nodos/confirmar-envio.js"
       },
-      "notes": "HIJO MAS BAJO de «Armar mensajes» (con `executionOrder: v1` corre al final: lee lo que contesto Meta). `throw` si Meta rechaza el mensaje al cliente y su respaldo. Escribe solo `avisado` y `avisoFalla`."
+      "notes": "HIJO MAS BAJO de «Soltar mensajes» (con `executionOrder: v1` corre al final: lee lo que contesto Meta). Si Meta rechaza el mensaje al cliente o la plantilla, arma el compromiso compensatorio; «Cerrar turno» termina la ejecución en error."
     },
     {
       "id": "resumen-del-turno",
@@ -1095,13 +1095,13 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5720,
+        9560,
         1100
       ],
       "parameters": {
         "jsCode": "@@comun:nodos/resumen-del-turno.js"
       },
-      "notes": "Ultima rama de «Armar mensajes». En la variante de prueba, «Entrada de prueba» responde con esto."
+      "notes": "Ultima rama de «Soltar mensajes». En la variante de prueba, «Entrada de prueba» responde con esto."
     },
     {
       "id": "meta-acepto",
@@ -1109,7 +1109,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        6920,
+        10760,
         260
       ],
       "parameters": {
@@ -1137,6 +1137,673 @@
         "options": {}
       },
       "notes": "PUERTA de la entrega (regla I-ENTREGA 3): el reporte saliente solo corre si Meta devolvio `messages[0].id` y ningun `error`, sea del envio o de su respaldo. Lo pega `construir.mjs` entre «¿Reportar? (saliente)» y «Reportar mensaje (saliente)» sin tocar los nodos comunes."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.comprometer === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "si-comprometer-evento",
+      "name": "¿Comprometer evento?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3800,
+        300
+      ],
+      "notes": "Solo se compromete el evento si «Registrar evento» armó un estado nuevo; si no, sigue directo a la espera."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.numero }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.compromiso) }}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "comprometer-evento",
+      "name": "Comprometer evento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4040,
+        300
+      ],
+      "notes": "Compromete al servidor la ficha con el evento en su cola (acción comprometer, versionLeida de `leer`). Es lo que hace posible la coalescencia: todas las ejecuciones de una ráfaga ven la cola de las demás. Un 5xx o un timeout se reintenta UNA vez con el MISMO idCompromiso (si la primera ya se aplicó, el servidor contesta `repetido`).",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ ($json.body && $json.body.resultado) === 'conflicto_version' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "si-conflicto-registrar",
+      "name": "¿Conflicto al registrar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4280,
+        300
+      ],
+      "notes": "Primer conflicto_version: otra ejecución comprometió antes; se replanifica en código sobre el estado ganador."
+    },
+    {
+      "parameters": {
+        "jsCode": "@@todo:nodos/registrar-evento.js"
+      },
+      "id": "replanificar-registro",
+      "name": "Replanificar registro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4520,
+        300
+      ],
+      "notes": "MISMO código que «Registrar evento»: agrega el evento al estado ganador y vuelve a comprometer."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.numero }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.compromiso) }}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "comprometer-evento-2",
+      "name": "Comprometer evento (2.º intento)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5000,
+        300
+      ],
+      "notes": "Segundo intento de comprometer el evento. Un 5xx o un timeout se reintenta UNA vez con el MISMO idCompromiso (si la primera ya se aplicó, el servidor contesta `repetido`).",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ ($json.body && $json.body.resultado) === 'conflicto_version' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "si-conflicto-registrar-2",
+      "name": "¿Conflicto al registrar? (2.º)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5240,
+        300
+      ],
+      "notes": "Segundo conflicto: el registro de eventos admite un tercer intento (ráfagas de clics)."
+    },
+    {
+      "parameters": {
+        "jsCode": "@@todo:nodos/registrar-evento.js"
+      },
+      "id": "replanificar-registro-2",
+      "name": "Replanificar registro (2.º)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5480,
+        300
+      ],
+      "notes": "MISMO código que «Registrar evento», tercera pasada."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.numero }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.compromiso) }}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "comprometer-evento-3",
+      "name": "Comprometer evento (3.º intento)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5960,
+        300
+      ],
+      "notes": "Tercer y último intento; si falla, el turno sale con el genérico y el botón a recepción. Un 5xx o un timeout se reintenta UNA vez con el MISMO idCompromiso (si la primera ya se aplicó, el servidor contesta `repetido`).",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.comprometer === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "si-comprometer-turno",
+      "name": "¿Comprometer turno?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        8120,
+        300
+      ],
+      "notes": "Sin estado que comprometer (el servidor no respondió el `leer`) no se llama al servidor: sale el genérico con botón."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.numero }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.compromiso) }}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "comprometer-turno",
+      "name": "Comprometer turno",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        8360,
+        300
+      ],
+      "notes": "Compromete la ficha del turno ANTES de enviar nada (enmienda §2.3): ni la respuesta ni la plantilla a recepción salen sin este compromiso. Un 5xx o un timeout se reintenta UNA vez con el MISMO idCompromiso (si la primera ya se aplicó, el servidor contesta `repetido`).",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ ($json.body && $json.body.resultado) === 'conflicto_version' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "si-conflicto-version",
+      "name": "¿Conflicto de versión?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        8600,
+        300
+      ],
+      "notes": "Primer conflicto_version: se replanifica en código (sin modelo) sobre el estado ganador y se reintenta una vez."
+    },
+    {
+      "parameters": {
+        "jsCode": "@@todo+mensajes+filtro+tipeo:nodos/armar-mensajes.js"
+      },
+      "id": "replanificar-mensajes",
+      "name": "Replanificar mensajes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8840,
+        300
+      ],
+      "notes": "MISMO código que «Armar mensajes» sobre el estado ganador, con el mismo resultado del modelo. Si otra ejecución ya respondió o llegó un evento más nuevo, esta no responde (la más nueva responde por todos)."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.numero }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.compromiso) }}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "comprometer-turno-2",
+      "name": "Comprometer turno (2.º intento)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        9320,
+        300
+      ],
+      "notes": "Segundo y último intento. Si también hay conflicto o falla, sale el genérico con botón, sin avisos. Un 5xx o un timeout se reintenta UNA vez con el MISMO idCompromiso (si la primera ya se aplicó, el servidor contesta `repetido`).",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500
+    },
+    {
+      "parameters": {
+        "jsCode": "@@todo:nodos/soltar-mensajes.js"
+      },
+      "id": "soltar-mensajes",
+      "name": "Soltar mensajes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9560,
+        300
+      ],
+      "notes": "Decide con lo que contestó el servidor: sale la respuesta armada (comprometida) o el genérico con botón. Un ítem por mensaje: de aquí cuelgan el envío, la hoja, «Confirmar envío» y «Resumen del turno»."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!$json.compensar }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "si-compensar",
+      "name": "¿Compensar entrega?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        9800,
+        900
+      ],
+      "notes": "Solo si Meta rechazó algo y el turno estaba comprometido."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.numero }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.compromiso) }}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "comprometer-compensacion",
+      "name": "Comprometer compensación",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        10040,
+        900
+      ],
+      "notes": "Compromiso compensatorio con la versión recién comprometida (ficha anterior, sin hecho externo). Un 5xx o un timeout se reintenta UNA vez con el MISMO idCompromiso (si la primera ya se aplicó, el servidor contesta `repetido`).",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500
+    },
+    {
+      "parameters": {
+        "jsCode": "@@comun:nodos/cerrar-turno.js"
+      },
+      "id": "cerrar-turno",
+      "name": "Cerrar turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        10280,
+        900
+      ],
+      "notes": "Termina la ejecución en error si Meta rechazó el mensaje al cliente (después de compensar)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.comprometer === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "si-comprometer-evento-2",
+      "name": "¿Comprometer evento? (2.º)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4760,
+        300
+      ],
+      "notes": "Sin pedido que mandar (la replanificación no pudo armar el estado) no se llama al servidor: sigue directo a la espera y el turno sale con el genérico."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.comprometer === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "si-comprometer-evento-3",
+      "name": "¿Comprometer evento? (3.º)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5720,
+        300
+      ],
+      "notes": "Ídem para el tercer intento."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.comprometer === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "si-comprometer-turno-2",
+      "name": "¿Comprometer turno? (2.º)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        9080,
+        300
+      ],
+      "notes": "Sin pedido que mandar (la replanificación no pudo armar el estado) no se llama al servidor: sale el genérico con botón."
     }
   ],
   "connections": {
@@ -1388,7 +2055,7 @@
       "main": [
         [
           {
-            "node": "Esperar ráfaga",
+            "node": "¿Comprometer evento?",
             "type": "main",
             "index": 0
           }
@@ -1490,17 +2157,7 @@
       "main": [
         [
           {
-            "node": "Prospecto para la planilla",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Confirmar envío",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Resumen del turno",
+            "node": "¿Comprometer turno?",
             "type": "main",
             "index": 0
           }
@@ -1582,7 +2239,13 @@
     },
     "Confirmar envío": {
       "main": [
-        []
+        [
+          {
+            "node": "¿Compensar entrega?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "¿Meta aceptó?": {
@@ -1595,6 +2258,288 @@
           }
         ],
         []
+      ]
+    },
+    "¿Comprometer evento?": {
+      "main": [
+        [
+          {
+            "node": "Comprometer evento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Esperar ráfaga",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comprometer evento": {
+      "main": [
+        [
+          {
+            "node": "¿Conflicto al registrar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Conflicto al registrar?": {
+      "main": [
+        [
+          {
+            "node": "Replanificar registro",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Esperar ráfaga",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replanificar registro": {
+      "main": [
+        [
+          {
+            "node": "¿Comprometer evento? (2.º)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comprometer evento (2.º intento)": {
+      "main": [
+        [
+          {
+            "node": "¿Conflicto al registrar? (2.º)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Conflicto al registrar? (2.º)": {
+      "main": [
+        [
+          {
+            "node": "Replanificar registro (2.º)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Esperar ráfaga",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replanificar registro (2.º)": {
+      "main": [
+        [
+          {
+            "node": "¿Comprometer evento? (3.º)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comprometer evento (3.º intento)": {
+      "main": [
+        [
+          {
+            "node": "Esperar ráfaga",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Comprometer turno?": {
+      "main": [
+        [
+          {
+            "node": "Comprometer turno",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Soltar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comprometer turno": {
+      "main": [
+        [
+          {
+            "node": "¿Conflicto de versión?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Conflicto de versión?": {
+      "main": [
+        [
+          {
+            "node": "Replanificar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Soltar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replanificar mensajes": {
+      "main": [
+        [
+          {
+            "node": "¿Comprometer turno? (2.º)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comprometer turno (2.º intento)": {
+      "main": [
+        [
+          {
+            "node": "Soltar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soltar mensajes": {
+      "main": [
+        [
+          {
+            "node": "Prospecto para la planilla",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Confirmar envío",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Resumen del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Compensar entrega?": {
+      "main": [
+        [
+          {
+            "node": "Comprometer compensación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cerrar turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comprometer compensación": {
+      "main": [
+        [
+          {
+            "node": "Cerrar turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Comprometer evento? (2.º)": {
+      "main": [
+        [
+          {
+            "node": "Comprometer evento (2.º intento)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Esperar ráfaga",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Comprometer evento? (3.º)": {
+      "main": [
+        [
+          {
+            "node": "Comprometer evento (3.º intento)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Esperar ráfaga",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Comprometer turno? (2.º)": {
+      "main": [
+        [
+          {
+            "node": "Comprometer turno (2.º intento)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Soltar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   }

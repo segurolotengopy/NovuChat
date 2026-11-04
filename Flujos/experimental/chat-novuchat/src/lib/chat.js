@@ -657,6 +657,33 @@ function chRecordarIds(f, ids) {
   f.ultimosIds = x.slice(-CH_TOPE_IDS);
   return f;
 }
+// Bytes UTF-8 de un texto sin `Buffer` ni `TextEncoder` (el Code de n8n no los tiene): cada %XX de encodeURIComponent es un byte.
+// (un surrogate suelto haría lanzar a encodeURIComponent: se cuenta como U+FFFD, 3 bytes)
+function chBytes(t) { return encodeURIComponent(chTexto(t).replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD')).replace(/%[0-9A-F]{2}/g, 'x').length; }
+// El estado que se compromete al servidor pesa a lo más `max` BYTES de JSON (el servidor admite 16 KiB): con CJK o emojis (3 y 4 bytes por carácter) la peor ficha pasa de los topes por cantidad.
+// Se recorta, en este orden: (1) el historial, de lo más viejo; (2) el texto de los eventos de la cola, del más pesado, hasta 60 caracteres cada campo (el `t` y el `c`); nunca se quita un evento.
+// Devuelve la misma ficha (la modifica) y si cupo.
+function chAjustarBytes(f, max) {
+  const pesa = () => chBytes(JSON.stringify(f));
+  while (pesa() > max && f.historial.length > 0) f.historial.shift();
+  while (pesa() > max) {
+    let k = -1; let mayor = 0;
+    f.cola.forEach((e, i) => { const n = Math.max(chTexto(e.t).length, chTexto(e.c).length); if (n > 60 && chBytes(e.t) + chBytes(e.c) > mayor) { mayor = chBytes(e.t) + chBytes(e.c); k = i; } });
+    if (k < 0) break;
+    const e = f.cola[k];
+    e.t = chCortar(chTexto(e.t), Math.max(60, Math.floor(chTexto(e.t).length * 0.7)));
+    e.c = chCortar(chTexto(e.c), Math.max(60, Math.floor(chTexto(e.c).length * 0.7)));
+  }
+  return { ficha: f, cupo: pesa() <= max };
+}
+// ¿Otra ejecución va a responder estos eventos? `seqs` = los `seq` de los eventos de ESTE turno. Sí si la ficha ganadora ya respondió el último de ellos (`hasta`), si tiene un evento MÁS NUEVO (`seq`), o si lo
+// pendiente (`seq` mayor que `hasta`) ya no es exactamente lo de este turno: la más nueva responde por todos.
+function chOtraEjecucionResponde(ficha, seqs) {
+  if (!Array.isArray(seqs) || !seqs.length) return false;
+  const ultimo = seqs[seqs.length - 1];
+  const pendientes = ficha.cola.filter((e) => e.seq > ficha.hasta).map((e) => e.seq).join(',');
+  return ficha.seq > ultimo || ficha.hasta >= ultimo || pendientes !== seqs.join(',');
+}
 function chUltimoDelAsistente(f) { const h = (f && Array.isArray(f.historial) ? f.historial : []).filter((x) => x.r === 'a'); return h.length ? chTexto(h[h.length - 1].t) : ''; }
 function chPitchDicho(f) { return (f && Array.isArray(f.historial) ? f.historial : []).some((x) => x.r === 'a' && /nunca duerme/.test(chNorm(x.t))); }
 

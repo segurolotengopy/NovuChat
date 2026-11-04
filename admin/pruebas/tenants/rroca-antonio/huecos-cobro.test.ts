@@ -130,7 +130,6 @@ suite('avisos.js', HASH_AVISOS);
 describe('HUECOS del cobro y los avisos: la copia funciona sola (sin `$`, sin red, sin reloj) y hace lo que se espera', () => {
   const cargar = (archivo: string): Record<string, unknown> => {
     // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-    // nosemgrep: devsecops.js-eval-prohibido
     const fn = vm.compileFunction(leer(join(RROCA, archivo)) + '\nreturn { ' + Object.keys(archivo === 'cobro.js' ? HASH_COBRO : HASH_AVISOS).join(', ') + ' };');
     return fn() as Record<string, unknown>;
   };

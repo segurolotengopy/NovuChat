@@ -13,6 +13,5 @@ export const RUTAS_DE_LIBRERIAS: string[] = (CONFIG.librerias as string[]).map((
 export const CODIGO_LIBRERIAS: string = RUTAS_DE_LIBRERIAS.map((r) => readFileSync(r, 'utf8')).join('\n\n');
 /** Evalúa las librerías y devuelve las declaraciones pedidas. El código es el de archivos del propio repositorio, no una entrada externa: solo prueba. */
 export function cargarLibrerias<T = Record<string, any>>(nombres: string): T { // eslint-disable-line @typescript-eslint/no-explicit-any
-  // nosemgrep: devsecops.js-eval-prohibido
   return (vm.compileFunction(`${CODIGO_LIBRERIAS}\nreturn { ${nombres} };`) as () => T)();
 }
