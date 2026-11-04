@@ -90,6 +90,16 @@ siguen verdes sin cambios: este módulo las usa solo para comparar, leyendo sus 
   emparejar con el mensaje de otro origen (`hallazgosDelEnvioRele` lo exige).
 - **Pendiente de decisión de Andres (I4):** que `incierto` y `agotado` terminen la ejecución en ERROR (hoy terminan en silencio, sin reporte). No se implementa.
 
+## Estado de la conversación en el servidor (PR-4a0): el paquete `sesion`
+
+Los ayudantes con que un nodo Code arma el pedido `sesion` (`leer`, `comprometer`) y lee la respuesta de `configuracionFlujo` (contrato: `docs/arquitectura/estado-de-conversacion.md`) son un módulo COMÚN, no del chat: `src/sesion.js` (prefijo **`ss`**, «sesión»: no se confunde con el `cn` de las utilidades de nodo de cada flujo ni con el prefijo propio de cada flujo) y su doble de pruebas `herramientas/servidor-de-sesion.mjs` (+ `.d.mts`), comparado con el núcleo real `core/turno/sesion.ts` por `admin/pruebas/comun-sin-agente-sesion.test.ts`.
+
+**Cómo se incluye.** Como cualquier paquete de este armador: se declara en el `construir.config.json` del flujo (en el chat, `paquetes.sesion` en `CONFIG_BASE` de su `construir.mjs`) y cada nodo que lo usa lo pide en su marca (`@@todo+sesion:...`, `@@comun+sesion:...`). Se pega TAL CUAL; el chat tiene una guardia en `construir.mjs` (con su prueba negando) que rechaza una copia, una edición o un nodo que usa `ss*` sin el módulo. Depende de `cnNodo`/`cnPrimero` del código común del flujo.
+
+**Parámetros.** El flujo declara UNA constante `SS_CONFIG` en su código común: `espacio` y `espacioPrueba` (la variante de prueba nunca toca los documentos de producción y solo atiende a `telefonosDePrueba`), `venceMin` (vida del estado), `maxBytes` (tope del estado en bytes UTF-8), `prefijo` (del `idCompromiso`) y `nodoCarga`/`nodoBase` (los nodos que dicen si es prueba y traen el número esperado). El chat pasa `chat-novuchat`/`chat-novuchat-prueba`, 2880 min, 15000 bytes y `chat`; Q'Taco (PR-4a) pasará `venta-minima`/`venta-minima-prueba`. El servidor de mentira acepta `espacios` para restringir los espacios de un flujo. Lo propio de cada flujo (en el chat, `cnRegistro` y los nombres de sus nodos, `src/nodos/_registro.js`) NO está aquí.
+
+Costo: 0 mensajes por conversación (el chat regenera sus JSON con las mismas funciones renombradas; el módulo no manda nada).
+
 ## Costo
 
 Cero mensajes por conversación agregados o quitados: no hay ningún flujo desplegado. Una cadena de envío con lote

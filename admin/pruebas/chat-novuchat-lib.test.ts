@@ -27,6 +27,7 @@ const DATOS_DIR = join(aqui, '../scripts/datos/chat-novuchat');
 const LIB = readFileSync(join(CARPETA, 'src/lib/chat.js'), 'utf8');
 const MENSAJES = readFileSync(join(EXPERIMENTAL, 'comun-sin-agente/src/mensajes.js'), 'utf8');
 const FILTRO = readFileSync(join(EXPERIMENTAL, 'comun-sin-agente/src/filtro-redaccion.js'), 'utf8');
+const SESION = readFileSync(join(EXPERIMENTAL, 'comun-sin-agente/src/sesion.js'), 'utf8');
 const TIPEO = readFileSync(join(aqui, '../../Flujos/src/core/texto/tipeo.js'), 'utf8');
 const RUTA_ORIGINAL = join(EXPERIMENTAL, 'captacion-minima/src/lib/captacion.js');
 const ORIGINAL = existsSync(RUTA_ORIGINAL) ? readFileSync(RUTA_ORIGINAL, 'utf8') : '';
@@ -1409,6 +1410,31 @@ describe('guardias de --verificar', () => {
     const d = prod(); delete d['nodes'].find((n: J) => n.name === 'WhatsApp Trigger').credentials;
     expect(CONSTRUIR.guardias('trigger', d).join(' ')).toMatch(/no trae una credencial explícita/);
   });
+  it('el estado de la conversación es el MÓDULO COMÚN `comun-sin-agente/src/sesion.js`: un nodo con una copia propia, editada o sin el módulo se detecta (PR-4a0)', () => {
+    const modulo = readFileSync(join(CARPETA, '../comun-sin-agente/src/sesion.js'), 'utf8').trimEnd();
+    expect(prod()['nodes'].filter((n: J) => String(n.parameters?.jsCode ?? '').includes(modulo)).length).toBeGreaterThanOrEqual(8); // lo traen los nodos que lo usan, tal cual
+    // (a) un nodo con el módulo EDITADO (una copia que se aparta)
+    const a = prod();
+    const na = a['nodes'].find((n: J) => n.name === 'Soltar mensajes');
+    na.parameters.jsCode = String(na.parameters.jsCode).replace('function ssBytes(t) {', 'function ssBytes(t) { /* editado */');
+    expect(CONSTRUIR.guardias('trigger', a, DATOS_CRM).join(' ')).toMatch(/«Soltar mensajes» usa o define funciones de sesión \(ss\*\) sin traer/);
+    // (b) un nodo que usa las funciones pero NO trae el módulo
+    const b = prod();
+    const nb = b['nodes'].find((n: J) => n.name === 'Soltar mensajes');
+    nb.parameters.jsCode = String(nb.parameters.jsCode).replace(modulo, '');
+    expect(CONSTRUIR.guardias('trigger', b, DATOS_CRM).join(' ')).toMatch(/«Soltar mensajes» usa o define funciones de sesión/);
+    // (c) una copia propia con el prefijo viejo
+    const c = prod();
+    c['nodes'].find((n: J) => n.name === 'Cerrar turno').parameters.jsCode += '\nfunction cnCuerpoComprometer(a) { return a; }';
+    expect(CONSTRUIR.guardias('trigger', c, DATOS_CRM).join(' ')).toMatch(/copia propia de los ayudantes de sesión/);
+    // (d) dos declaraciones de SS_CONFIG
+    const d = prod();
+    d['nodes'].find((n: J) => n.name === 'Soltar mensajes').parameters.jsCode += "\nconst SS_CONFIG = { espacio: 'otro' };";
+    expect(CONSTRUIR.guardias('trigger', d, DATOS_CRM).join(' ')).toMatch(/«Soltar mensajes» tiene que declarar SS_CONFIG exactamente una vez/);
+    // lo versionado, limpio; y el armador pide el paquete común, no uno propio
+    expect(CONSTRUIR.guardias('trigger', prod(), DATOS_CRM)).toEqual([]);
+    expect(CONSTRUIR.CONFIG_BASE.paquetes.sesion).toEqual(['../comun-sin-agente/src/sesion.js']);
+  });
   it('el ESTADO SE COMPROMETE ANTES DE ENVIAR: «Armar mensajes» conectado al envío, un nodo de compromiso ausente o apuntando a otra Function, y un envío colgado de otro nodo se detectan (PR-4c2)', () => {
     const a = prod();
     a['connections']['Armar mensajes'].main[0].push({ node: '¿Enviar de verdad?', type: 'main', index: 0 });
@@ -1581,11 +1607,12 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
       const js = codigo(n.name);
       if (m[1]!.includes('+mensajes')) { expect(js, `«${n.name}» no trae mensajes.js tal cual`).toContain(MENSAJES.trimEnd()); revisados++; }
       if (m[1]!.includes('+filtro')) { expect(js, `«${n.name}» no trae filtro-redaccion.js tal cual`).toContain(FILTRO.trimEnd()); revisados++; }
+      if (m[1]!.includes('+sesion')) { expect(js, `«${n.name}» no trae sesion.js (módulo común) tal cual`).toContain(SESION.trimEnd()); revisados++; }
       if (m[1]!.includes('+tipeo')) { expect(js, `«${n.name}» no trae core/texto/tipeo.js tal cual`).toContain(TIPEO.trimEnd()); revisados++; }
     }
     expect(revisados).toBeGreaterThanOrEqual(3);
-    expect(marca('Armar mensajes')).toBe('@@todo+mensajes+filtro+tipeo:nodos/armar-mensajes.js');
-    expect(marca('Armar turno')).toBe('@@todo+tipeo:nodos/armar-turno.js');
+    expect(marca('Armar mensajes')).toBe('@@todo+mensajes+filtro+tipeo+sesion:nodos/armar-mensajes.js');
+    expect(marca('Armar turno')).toBe('@@todo+tipeo+sesion:nodos/armar-turno.js');
   });
   it('la cadena de envío (enviar, respaldo en texto, reporte saliente) es la de `comun-sin-agente/src/envio.mjs`, injertada sin cambios', async () => {
     const { nodosDeEnvio } = (await import(/* @vite-ignore */ join(EXPERIMENTAL, 'comun-sin-agente/src/envio.mjs'))) as { nodosDeEnvio: Fn };

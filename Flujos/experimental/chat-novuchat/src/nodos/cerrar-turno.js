@@ -20,5 +20,5 @@ enviables.forEach((it, k) => {
 });
 if (!sinAceptar) return [];
 const c = cnPrimero('Confirmar envío') || {};
-const comp = cnNodo('Comprometer compensación') ? cnResultadoDeCompromiso(cnPrimero('Comprometer compensación')) : null;
+const comp = cnNodo('Comprometer compensación') ? ssResultadoDeCompromiso(cnPrimero('Comprometer compensación')) : null;
 throw new Error((c.error || 'Meta rechazó el mensaje al cliente') + (comp ? (comp.resultado === 'ok' ? ' [estado restaurado]' : ' [el estado NO se pudo restaurar: ' + comp.resultado + ']') : ''));

@@ -43,11 +43,13 @@ export const CONFIG_BASE = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   librerias: ['src/lib/chat.js'],
-  comun: ['src/nodos/_comun.js', 'src/nodos/_sesion.js'],
+  comun: ['src/nodos/_comun.js', 'src/nodos/_registro.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
     filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
     tipeo: ['../../src/core/texto/tipeo.js'],
+    // El estado de la conversación en el servidor es un MÓDULO COMÚN (PR-4a0): se INCLUYE, no se copia. Sus parámetros (`SS_CONFIG`) los declara `src/nodos/_registro.js`.
+    sesion: ['../comun-sin-agente/src/sesion.js'],
     ...Object.fromEntries(Object.entries(rutasPaquetesCrm(join(AQUI, '..', '..', 'src', 'modulos', 'captacion', 'crm-captacion.js'))).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
   },
 };
@@ -108,6 +110,10 @@ export function cargarDatos(archivo, dir = DATOS, pila = []) {
 
 // ----------------------------------------------------------------- las expresiones de la librería (UNA fuente: `src/lib/chat.js`)
 const FUENTE = leerSiExiste(join(AQUI, 'src/lib/chat.js'), 'src/lib/chat.js') || '';
+// El módulo común del estado de la conversación (PR-4a0): los nodos lo INCLUYEN tal cual; la guardia compara con esta fuente.
+const FUENTE_SESION = leerSiExiste(join(AQUI, '../comun-sin-agente/src/sesion.js'), 'comun-sin-agente/src/sesion.js') || '';
+// (`_registro.js`, propio del chat y presente en todo nodo, llama a `ssResultadoDeCompromiso` dentro de una función: eso no cuenta como usar el módulo)
+const FUENTE_REGISTRO = leerSiExiste(join(AQUI, 'src/nodos/_registro.js'), 'src/nodos/_registro.js') || '';
 function regexDeLaLibreria(nombre) {
   const m = new RegExp(`^const ${nombre} = \\/(.+)\\/([a-z]*);`, 'm').exec(FUENTE);
   if (!m) throw new Error(`src/lib/chat.js: no se encontró la línea «const ${nombre} = /…/;»`);
@@ -569,6 +575,17 @@ export function guardias(entrada, flujo, datos = {}) {
       if (!/\/configuracionFlujo$/.test(String(parametros(n).url || ''))) h.push(`«${n.name}» tiene que llamar a configuracionFlujo`);
       // Un 5xx o un timeout se reintenta con el MISMO idCompromiso (el servidor contesta `repetido` si ya se aplicó): reintento activo y sin `neverError` (con él un 5xx no se reintenta).
       if (n.retryOnFail !== true || !(n.maxTries >= 2) || JSON.stringify(parametros(n)).includes('neverError')) h.push(`«${n.name}» tiene que reintentar (retryOnFail, maxTries >= 2) y no llevar neverError`);
+    }
+    // EL ESTADO DE LA CONVERSACIÓN ES UN MÓDULO COMÚN (PR-4a0): todo nodo que usa sus funciones `ss*` trae el texto de `comun-sin-agente/src/sesion.js` TAL CUAL, y ninguno lleva una copia propia o editada.
+    if (!FUENTE_SESION) h.push('falta `comun-sin-agente/src/sesion.js` (el módulo común del estado de la conversación)');
+    for (const n of nodos) {
+      const js = String(parametros(n).jsCode || '');
+      const sinRegistro = FUENTE_REGISTRO ? js.split(FUENTE_REGISTRO.trimEnd()).join('') : js;
+      const usa = /\bss(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig|NumeroHeader)\(/.test(sinRegistro);
+      const define = /function ss[A-Z]\w*\(/.test(js);
+      if ((usa || define) && !js.includes(FUENTE_SESION.trimEnd())) h.push(`el nodo «${n.name}» usa o define funciones de sesión (ss*) sin traer \`comun-sin-agente/src/sesion.js\` tal cual: se INCLUYE el módulo común, no se copia ni se edita`);
+      if (/function (cn|ch)(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig)\(/.test(js)) h.push(`el nodo «${n.name}» trae una copia propia de los ayudantes de sesión`);
+      if ((usa || define) && (js.match(/^const SS_CONFIG = /gm) || []).length !== 1) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
     }
     // En la variante de PRUEBA, «Carga de entrada» DESCARTA lo que llegue a «Entrada de prueba» sin `modoPrueba: true` (si no, se comportaría como producción); producción no tiene «Entrada de prueba».
     const carga = nodos.find((x) => x.name === 'Carga de entrada');

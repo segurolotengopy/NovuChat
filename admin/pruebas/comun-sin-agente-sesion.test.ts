@@ -1,20 +1,24 @@
 /**
- * PR-4c1: el servidor de sesión de mentira y los ayudantes de los nodos Code del chat, SIN tocar el flujo.
+ * MÓDULO COMÚN `sesion` de comun-sin-agente (PR-4a0; nació como PR-4c1 del chat): el servidor de sesión de mentira y los ayudantes `ss*` de los nodos Code, con sus PARÁMETROS (`SS_CONFIG`).
  * La suite diferencial compara el servidor falso con el núcleo real (`core/turno/sesion.ts`): mismas peticiones, mismas decisiones.
- * Los ayudantes (`src/nodos/_sesion.js`) se cargan en un contexto vacío (sin URL, Buffer ni crypto, como el Code de n8n); sin `new Function`.
+ * Los ayudantes (`comun-sin-agente/src/sesion.js`) se cargan en un contexto vacío (sin URL, Buffer ni crypto, como el Code de n8n); sin `new Function`.
  */
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { crearServidorDeSesion } from '../../Flujos/experimental/chat-novuchat/herramientas/servidor-de-sesion.mjs';
+import { crearServidorDeSesion } from '../../Flujos/experimental/comun-sin-agente/herramientas/servidor-de-sesion.mjs';
 import { decidirCompromiso, leerConversacion, planDeCupos, validarSesion, type DocSesion } from '../functions/src/core/turno/sesion';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const FUENTE = readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat/src/nodos/_sesion.js'), 'utf8');
+const FUENTE = readFileSync(join(AQUI, '../../Flujos/experimental/comun-sin-agente/src/sesion.js'), 'utf8');
+const CONFIG_CHAT = "const SS_CONFIG = { espacio: 'chat-novuchat', espacioPrueba: 'chat-novuchat-prueba', venceMin: 2880, maxBytes: 15000, prefijo: 'chat', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' };";
+const EXPORTA = '({ ssEjecucion, ssTelefonoDeSesion, ssCuerpoLeer, ssIdCompromiso, ssCuerpoComprometer, ssBytes, ssSesionDeLaConfig, ssResultadoDeCompromiso, ssNumeroHeader, ssEsPrueba, ssDesdeAutorizado })';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const H: Record<string, any> = runInNewContext(`${FUENTE}\n({ cnEjecucion, cnTelefonoDeSesion, cnCuerpoLeer, cnIdCompromiso, cnCuerpoComprometer, cnBytes, cnSesionDeLaConfig, cnResultadoDeCompromiso })`, {});
+const cargar = (config: string, extra = '', contexto: Record<string, unknown> = {}): Record<string, any> => runInNewContext(`${config}\n${extra}\n${FUENTE}\n${EXPORTA}`, contexto);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const H: Record<string, any> = cargar(CONFIG_CHAT);
 const PNID = '59100000003';
 const TEL = '59100000011';
 const AHORA = Date.UTC(2026, 9, 5, 14);
@@ -78,72 +82,118 @@ describe('servidor de sesión de mentira vs el núcleo real', () => {
   });
   it('los ganchos: antesDeComprometer mete un rival (conflicto) y fallar da 503 sin escribir', () => {
     const f = crearServidorDeSesion({ ahoraMs: () => AHORA });
-    const cuerpo = H['cnCuerpoComprometer'](TEL, 'ej1', 'reg1', 0, { a: 1 });
+    const cuerpo = H['ssCuerpoComprometer'](TEL, 'ej1', 'reg1', 0, { a: 1 });
     f.antesDeComprometer = () => { f.antesDeComprometer = null; f.sembrar(PNID, 'chat-novuchat', TEL, { rival: true }); };
-    const r = H['cnResultadoDeCompromiso'](f.atender(PNID, cuerpo));
+    const r = H['ssResultadoDeCompromiso'](f.atender(PNID, cuerpo));
     expect(r).toMatchObject({ resultado: 'conflicto', version: 1, ganador: { rival: true } });
     f.fallar = () => 503;
     const antes = f.conversacion(PNID, 'chat-novuchat', TEL).version;
-    expect(H['cnResultadoDeCompromiso'](f.atender(PNID, H['cnCuerpoComprometer'](TEL, 'ej1', 'reg2', 1, { a: 2 })))).toMatchObject({ resultado: 'falla' });
+    expect(H['ssResultadoDeCompromiso'](f.atender(PNID, H['ssCuerpoComprometer'](TEL, 'ej1', 'reg2', 1, { a: 2 })))).toMatchObject({ resultado: 'falla' });
     f.fallar = null;
     expect(f.conversacion(PNID, 'chat-novuchat', TEL).version).toBe(antes);
   });
 });
 
-describe('ayudantes de los nodos Code (_sesion.js)', () => {
+describe('ayudantes de los nodos Code (sesion.js, prefijo ss)', () => {
   it('ejecución e id de compromiso con la forma del servidor; cada paso lleva el suyo', () => {
-    expect(H['cnEjecucion']('123')).toBe('123');
-    expect(H['cnEjecucion']('a/b c\n' + 'x'.repeat(100))).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
-    expect(H['cnEjecucion'](undefined)).toBe('sin-id');
-    expect(H['cnEjecucion']('///')).toBe('sin-id');
-    const a = H['cnIdCompromiso']('1', 'reg1');
+    expect(H['ssEjecucion']('123')).toBe('123');
+    expect(H['ssEjecucion']('a/b c\n' + 'x'.repeat(100))).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+    expect(H['ssEjecucion'](undefined)).toBe('sin-id');
+    expect(H['ssEjecucion']('///')).toBe('sin-id');
+    const a = H['ssIdCompromiso']('1', 'reg1');
     expect(a).toMatch(/^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$/);
-    expect(H['cnIdCompromiso']('1', 'reg2')).not.toBe(a);
-    expect(H['cnIdCompromiso']('2', 'reg1')).not.toBe(a);
+    expect(H['ssIdCompromiso']('1', 'reg2')).not.toBe(a);
+    expect(H['ssIdCompromiso']('2', 'reg1')).not.toBe(a);
   });
   it('los cuerpos pasan la validación real; el estado que no cabe, el teléfono corto y la versión inválida dan null (nunca se manda)', () => {
-    for (const cuerpo of [H['cnCuerpoLeer'](TEL, '7'), H['cnCuerpoComprometer'](TEL, '7', 'fin1', 3, { a: 1 }), H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, null)]) {
+    for (const cuerpo of [H['ssCuerpoLeer'](TEL, '7'), H['ssCuerpoComprometer'](TEL, '7', 'fin1', 3, { a: 1 }), H['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, null)]) {
       expect(validarSesion(cuerpo.sesion, cuerpo.telefono).ok).toBe(true);
       expect(Object.keys(cuerpo)).toEqual(['telefono', 'sesion']); // ningún tenantId ni número en el cuerpo
     }
-    expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { x: 'y'.repeat(16000) })).toBeNull();
-    expect(H['cnCuerpoComprometer']('12345', '7', 'fin1', 0, {})).toBeNull();
-    expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', -1, {})).toBeNull();
-    expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 1.5, {})).toBeNull();
-    expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, [1])).toBeNull();
+    expect(H['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, { x: 'y'.repeat(16000) })).toBeNull();
+    expect(H['ssCuerpoComprometer']('12345', '7', 'fin1', 0, {})).toBeNull();
+    expect(H['ssCuerpoComprometer'](TEL, '7', 'fin1', -1, {})).toBeNull();
+    expect(H['ssCuerpoComprometer'](TEL, '7', 'fin1', 1.5, {})).toBeNull();
+    expect(H['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, [1])).toBeNull();
   });
   it('el tamaño se mide en BYTES UTF-8: 15.000 caracteres con «ñ» (30.000 bytes) no caben; 7.000 sí', () => {
-    expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'ñ'.repeat(15000) })).toBeNull();
-    expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'ñ'.repeat(7000) })).not.toBeNull();
-    expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: '😀'.repeat(4000) })).toBeNull();
-    expect(H['cnBytes']('ñ😀a')).toBe(7);
-    expect(() => H['cnBytes']('a\uD800b')).not.toThrow(); // un surrogate suelto cuenta como U+FFFD (3 bytes)
-    expect(H['cnBytes']('a\uD800b')).toBe(5);
-    expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'x\uDC00y' })).not.toBeNull();
+    expect(H['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'ñ'.repeat(15000) })).toBeNull();
+    expect(H['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'ñ'.repeat(7000) })).not.toBeNull();
+    expect(H['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: '😀'.repeat(4000) })).toBeNull();
+    expect(H['ssBytes']('ñ😀a')).toBe(7);
+    expect(() => H['ssBytes']('a\uD800b')).not.toThrow(); // un surrogate suelto cuenta como U+FFFD (3 bytes)
+    expect(H['ssBytes']('a\uD800b')).toBe(5);
+    expect(H['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'x\uDC00y' })).not.toBeNull();
   });
   it('cnSesionDeLaConfig: solo 200 con conversación válida es ok; todo lo demás es falla (genérico con botón)', () => {
     const buena = { conversacion: { version: 4, estado: { a: 1 }, vencido: false } };
-    expect(H['cnSesionDeLaConfig'](200, buena)).toEqual({ ok: true, version: 4, estado: { a: 1 }, vencido: false, corrupta: false });
-    expect(H['cnSesionDeLaConfig'](200, { conversacion: { version: 0, estado: null, vencido: false, corrupta: true } })).toMatchObject({ ok: true, version: 0, corrupta: true });
+    expect(H['ssSesionDeLaConfig'](200, buena)).toEqual({ ok: true, version: 4, estado: { a: 1 }, vencido: false, corrupta: false });
+    expect(H['ssSesionDeLaConfig'](200, { conversacion: { version: 0, estado: null, vencido: false, corrupta: true } })).toMatchObject({ ok: true, version: 0, corrupta: true });
     for (const [cod, cu] of [[500, buena], [409, buena], [200, {}], [200, null], [200, { conversacion: { version: -1, estado: null } }], [200, { conversacion: { version: 1, estado: [] } }], [200, { conversacion: { version: '1', estado: null } }]] as const) {
-      expect(H['cnSesionDeLaConfig'](cod, cu), `${cod} ${JSON.stringify(cu)}`.slice(0, 80)).toMatchObject({ ok: false });
+      expect(H['ssSesionDeLaConfig'](cod, cu), `${cod} ${JSON.stringify(cu)}`.slice(0, 80)).toMatchObject({ ok: false });
     }
   });
   it('cnResultadoDeCompromiso: ok, repetido=ok, conflicto con ganador; 5xx, timeout, forma rara, cupo y datos inválidos son falla', () => {
     const conv = { version: 2, estado: { z: 1 }, vencido: false };
-    expect(H['cnResultadoDeCompromiso']({ statusCode: 200, body: { resultado: 'comprometido', conversacion: conv } })).toEqual({ resultado: 'ok', version: 2, ganador: null });
-    expect(H['cnResultadoDeCompromiso']({ statusCode: 200, body: { resultado: 'repetido', conversacion: conv } }).resultado).toBe('ok');
-    expect(H['cnResultadoDeCompromiso']({ statusCode: 200, body: JSON.stringify({ resultado: 'conflicto_version', conversacion: conv }) })).toEqual({ resultado: 'conflicto', version: 2, ganador: { z: 1 } });
+    expect(H['ssResultadoDeCompromiso']({ statusCode: 200, body: { resultado: 'comprometido', conversacion: conv } })).toEqual({ resultado: 'ok', version: 2, ganador: null });
+    expect(H['ssResultadoDeCompromiso']({ statusCode: 200, body: { resultado: 'repetido', conversacion: conv } }).resultado).toBe('ok');
+    expect(H['ssResultadoDeCompromiso']({ statusCode: 200, body: JSON.stringify({ resultado: 'conflicto_version', conversacion: conv }) })).toEqual({ resultado: 'conflicto', version: 2, ganador: { z: 1 } });
     for (const x of [{ statusCode: 503, body: { error: 'x' } }, { error: { message: 'timeout' } }, null, undefined, 'x', { statusCode: 200, body: 'no json' }, { statusCode: 200, body: { resultado: 'cupo_negado', conversacion: conv } },
       { statusCode: 200, body: { resultado: 'datos_invalidos', conversacion: conv } }, { statusCode: 200, body: { resultado: 'comprometido' } }, { statusCode: 200, body: { resultado: 'otra', conversacion: conv } }]) {
-      expect(H['cnResultadoDeCompromiso'](x), JSON.stringify(x)).toEqual({ resultado: 'falla', version: 0, ganador: null });
+      expect(H['ssResultadoDeCompromiso'](x), JSON.stringify(x)).toEqual({ resultado: 'falla', version: 0, ganador: null });
     }
   });
-  it('el archivo no usa globales que el Code de n8n no tiene (ni eval ni new Function) y SÍ está incluido en los nodos (PR-4c2)', () => {
+  it('el archivo no usa globales que el Code de n8n no tiene (ni eval ni new Function) y SÍ está incluido en los nodos del chat (PR-4a0)', () => {
     expect(FUENTE.replace(/^\s*\/\/.*$/gm, '')).not.toMatch(/\b(URL|Buffer|crypto|require|process|fetch|eval|TextEncoder)\b(?!\s*:)|new\s+Function|\bFunction\s*\(/);
     const cons = readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat/construir.mjs'), 'utf8');
-    expect(cons).toContain('_sesion');
-    for (const j of ['chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json']) expect(readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat', j), 'utf8')).toContain('cnCuerpoComprometer');
+    expect(cons).toContain('comun-sin-agente/src/sesion.js'); // el chat INCLUYE el módulo común (no lo copia)
+    for (const j of ['chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json']) expect(readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat', j), 'utf8')).toContain('ssCuerpoComprometer');
   });
 
 });
+
+describe('PARÁMETROS del módulo (SS_CONFIG): lo que cambia de un flujo a otro es SOLO la configuración', () => {
+  const QTACO = "const SS_CONFIG = { espacio: 'venta-minima', espacioPrueba: 'venta-minima-prueba', venceMin: 1440, maxBytes: 8000, prefijo: 'vm', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' };";
+  const nodos = (carga: Record<string, unknown>, base: Record<string, unknown>): string =>
+    `const cnPrimero = (n) => (n === 'Carga de entrada' ? ${JSON.stringify(carga)} : n === 'Config base' ? ${JSON.stringify(base)} : null);`;
+  it('espacio, vencimiento, tope de bytes y prefijo del idCompromiso salen de SS_CONFIG: otro flujo, otro espacio, sin tocar el código', () => {
+    const Q = cargar(QTACO);
+    const c = Q['ssCuerpoComprometer'](TEL, '7', 'fin1', 3, { a: 1 });
+    expect(c.sesion).toMatchObject({ espacio: 'venta-minima', venceEnMin: 1440, idCompromiso: 'vm-fin1-7' });
+    expect(validarSesion(c.sesion, c.telefono).ok).toBe(true);
+    expect(Q['ssCuerpoLeer'](TEL, '7').sesion.espacio).toBe('venta-minima');
+    expect(Q['ssIdCompromiso']('9', 'reg2')).toBe('vm-reg2-9');
+    // el tope de bytes es el SUYO (8.000), no el del chat (15.000)
+    expect(Q['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'x'.repeat(9000) })).toBeNull();
+    expect(H['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'x'.repeat(9000) })).not.toBeNull();
+    // y el chat sigue siendo el chat
+    expect(H['ssCuerpoComprometer'](TEL, '7', 'fin1', 3, { a: 1 }).sesion).toMatchObject({ espacio: 'chat-novuchat', venceEnMin: 2880, idCompromiso: 'chat-fin1-7' });
+  });
+  it('la variante de PRUEBA usa SU espacio y solo para telefonosDePrueba (con los nombres de nodo del flujo); sin lista, ninguno; producción, cualquiera', () => {
+    const prueba = { prueba: { modoPrueba: true }, phoneNumberId: 'P1' };
+    const Q = cargar(QTACO, nodos(prueba, { telefonosDePrueba: `${TEL},59100000044`, phoneNumberIdEsperado: 'P1' }));
+    expect(Q['ssEsPrueba']()).toBe(true);
+    expect(Q['ssCuerpoLeer'](TEL, '7').sesion.espacio).toBe('venta-minima-prueba');
+    expect(Q['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, {}).sesion.espacio).toBe('venta-minima-prueba');
+    expect(Q['ssCuerpoComprometer']('59100000099', '7', 'fin1', 0, {})).toBeNull(); // un teléfono de producción NO compromete en prueba
+    expect(Q['ssNumeroHeader']()).toBe('P1');
+    const sinLista = cargar(QTACO, nodos(prueba, {}));
+    expect(sinLista['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, {})).toBeNull();
+    const prod = cargar(QTACO, nodos({ phoneNumberId: 'P2', prueba: null }, { telefonosDePrueba: TEL }));
+    expect(prod['ssEsPrueba']()).toBe(false);
+    expect(prod['ssCuerpoComprometer']('59100000099', '7', 'fin1', 0, {}).sesion.espacio).toBe('venta-minima');
+    expect(prod['ssNumeroHeader']()).toBe('P2');
+    // los nombres de nodo también son parámetros: con otros nombres, los nodos de arriba no cuentan
+    const otros = cargar(QTACO.replace("'Carga de entrada'", "'Otra carga'"), nodos(prueba, {}));
+    expect(otros['ssEsPrueba']()).toBe(false);
+  });
+  it('el servidor falso restringe los espacios con `espacios`: la variante de prueba de un flujo no puede tocar el espacio de producción ni el de otro flujo', () => {
+    const f = crearServidorDeSesion({ ahoraMs: () => AHORA, espacios: ['venta-minima', 'venta-minima-prueba'] });
+    const pide = (espacio: string) => f.atender(PNID, { telefono: TEL, sesion: { v: 1, accion: 'leer', espacio, ejecucion: 'e' } }).statusCode;
+    expect(pide('venta-minima')).toBe(200);
+    expect(pide('venta-minima-prueba')).toBe(200);
+    expect(pide('chat-novuchat')).toBe(400);
+    expect(crearServidorDeSesion({ ahoraMs: () => AHORA }).atender(PNID, { telefono: TEL, sesion: { v: 1, accion: 'leer', espacio: 'chat-novuchat', ejecucion: 'e' } }).statusCode).toBe(200);
+  });
+});
+

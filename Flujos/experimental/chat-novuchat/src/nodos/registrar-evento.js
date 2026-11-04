@@ -32,7 +32,7 @@ if (!ev) {
   }
 }
 // El estado sobre el que se registra: en la 1.ª pasada el que leyó «Traer configuración»; en las otras, el ESTADO GANADOR del conflicto anterior.
-const previo = pasada === 1 ? null : cnResultadoDeCompromiso(cnPrimero(pasada === 2 ? 'Comprometer evento' : 'Comprometer evento (2.º intento)'));
+const previo = pasada === 1 ? null : ssResultadoDeCompromiso(cnPrimero(pasada === 2 ? 'Comprometer evento' : 'Comprometer evento (2.º intento)'));
 if (pasada === 1 ? (!cfg.sesion || cfg.sesion.ok !== true) : (!previo || previo.resultado !== 'conflicto')) return sin({ falla: true });
 const base = pasada === 1 ? cfg.sesion.estado : previo.ganador;
 const version = pasada === 1 ? cfg.sesion.version : previo.version;
@@ -47,7 +47,7 @@ f.cola = f.cola.slice(-CH_TOPE_COLA);
 f.ultimoMs = t.ahoraMs;
 // El estado se recorta por BYTES (CJK y emojis pesan 3 y 4 bytes por carácter) antes de comprometer: una cola larga no debe llevar al genérico.
 const ajuste = chAjustarBytes(f, 14900);
-const compromiso = ajuste.cupo ? cnCuerpoComprometer(t.from, $execution.id, 'reg' + pasada, version, f) : null;
+const compromiso = ajuste.cupo ? ssCuerpoComprometer(t.from, $execution.id, 'reg' + pasada, version, f) : null;
 // Sin poder comprometer (estado demasiado grande o teléfono que el servidor no admite) el turno sale con el genérico y el botón.
 if (!compromiso) return sin({ falla: true });
-return [{ json: { registrado: true, comprometer: true, falla: false, seq: f.seq, esperarSeg: CH_ESPERA_SEG, from: t.from, ficha: f, compromiso: compromiso, numero: cnNumeroHeader(), pasada: pasada } }];
+return [{ json: { registrado: true, comprometer: true, falla: false, seq: f.seq, esperarSeg: CH_ESPERA_SEG, from: t.from, ficha: f, compromiso: compromiso, numero: ssNumeroHeader(), pasada: pasada } }];

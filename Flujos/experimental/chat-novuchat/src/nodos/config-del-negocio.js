@@ -133,7 +133,7 @@ const telefonoPermitido = permitidos.length === 0 || permitidos.indexOf(telefono
 const deMeta = ((Array.isArray(carga.messages) ? carga.messages[0] : null) || {}).from;
 const sesion = prueba && !(permitidos.length > 0 && permitidos.indexOf(cnDigitos(deMeta)) >= 0)
   ? { ok: false, version: 0, estado: null, vencido: false, corrupta: false }
-  : cnSesionDeLaConfig(codigo, cuerpo);
+  : ssSesionDeLaConfig(codigo, cuerpo);
 return [{ json: Object.assign({}, cfg, planilla, {
   // El estado de la conversación que contestó `leer` (en la respuesta de configuración). Sin él, o con otro código que 200, `ok` es falso: genérico con botón (§6 del contrato).
   sesion: sesion,
