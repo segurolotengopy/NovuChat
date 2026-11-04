@@ -166,7 +166,15 @@ export const altaTenant = onCall(async (peticion) => {
 // nadie siga adentro con un token que todavía no caducó. El borrado real de los
 // datos es un procedimiento aparte, deliberado y con plazo.
 // ---------------------------------------------------------------------------
-export const bajaTenant = onCall(async (peticion) => {
+/**
+ * GANCHO AL CERRAR UN NEGOCIO (baja o suspensión, 03/11/2026): lo que otra zona debe hacer cuando el negocio deja de
+ * tener servicio. Hoy lo usa el miniCRM para revocar a TODOS los editores de la hoja. Plataforma no importa módulos,
+ * así que lo recibe armado de `ganchos.ts`. NO debe lanzar: si no completa su parte la deja anotada
+ * (`revocado_pendiente`, que cierra la reconciliación programada).
+ */
+export type GanchoAlCerrarTenant = (tenantId: string, quien: string, motivo: 'baja' | 'suspension') => Promise<void>;
+
+export const crearBajaTenant = (gancho?: GanchoAlCerrarTenant) => onCall(async (peticion) => {
   const uid = exigirPropietario(peticion);
   const tenantId = texto((peticion.data as Record<string, unknown>)['tenantId'], 60);
   if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
@@ -188,6 +196,8 @@ export const bajaTenant = onCall(async (peticion) => {
   // prefiero que el corte de servicio ya esté hecho y queden roles por limpiar,
   // y no al revés.
   await marcarRutasDelTenant(tenantId, 'dado_de_baja');
+  // La edición de la hoja del miniCRM con Gmail no depende de los claims: se revoca aparte (no lanza).
+  if (gancho) await gancho(tenantId, uid, 'baja');
 
   const miembros = await db().collection(`tenants/${tenantId}/miembros`).get();
   for (const m of miembros.docs) {
@@ -196,6 +206,9 @@ export const bajaTenant = onCall(async (peticion) => {
   await auditar(tenantId, 'baja_tenant', uid, { miembros: miembros.size, rutasCortadas: true });
   return { ok: true };
 });
+
+/** La versión sin gancho: la de las pruebas de siempre. El despliegue exporta la de `ganchos.ts`. */
+export const bajaTenant = crearBajaTenant();
 
 // ---------------------------------------------------------------------------
 // SUSPENDER Y REACTIVAR — LA PALANCA COMERCIAL
@@ -215,7 +228,7 @@ export const bajaTenant = onCall(async (peticion) => {
 // Al depender solo del campo `estado`, que las reglas consultan en cada
 // operación, el corte y la reanudación son instantáneos en ambas direcciones.
 // ---------------------------------------------------------------------------
-export const suspenderTenant = onCall(async (peticion) => {
+export const crearSuspenderTenant = (gancho?: GanchoAlCerrarTenant) => onCall(async (peticion) => {
   const uid = exigirPropietario(peticion);
   const datos = peticion.data as Record<string, unknown>;
   const tenantId = texto(datos['tenantId'], 60);
@@ -242,6 +255,8 @@ export const suspenderTenant = onCall(async (peticion) => {
   // La ruta del número también se marca: n8n consulta por número, no por tenant,
   // y así corta sin necesidad de una segunda lectura.
   await marcarRutasDelTenant(tenantId, 'suspendido');
+  // Suspender corta el servicio, y la hoja del miniCRM es parte de él: se revocan los editores (no lanza).
+  if (gancho) await gancho(tenantId, uid, 'suspension');
 
   // COHERENCIA. El comercio suspendido sigue viendo sus datos, así que también
   // tiene que ver POR QUÉ. `motivoVisible` es lo que se le muestra en el panel;
@@ -263,6 +278,9 @@ export const suspenderTenant = onCall(async (peticion) => {
   await registrar(tenantId, { tipo: 'suspension', resultado: 'ok', canal: 'panel' });
   return { estado: 'suspendido' };
 });
+
+/** La versión sin gancho: la de las pruebas de siempre. El despliegue exporta la de `ganchos.ts`. */
+export const suspenderTenant = crearSuspenderTenant();
 
 export const reactivarTenant = onCall(async (peticion) => {
   const uid = exigirPropietario(peticion);

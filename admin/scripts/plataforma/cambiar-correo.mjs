@@ -89,6 +89,15 @@ if (!APLICAR) { console.log('\n  Seco: no se escribió nada. Agregue --aplicar.\
 
 // Reanudando (Auth ya cambió), el correo anterior es el que sigue en las membresías sin actualizar.
 const anterior = plan.haceAuth ? u.email : miembros.find((m) => plan.miembros.includes(m.tenant))?.correo;
+// EDICIÓN DEL miniCRM (03/11/2026): el permiso de Drive de quien cambia de correo ya no es de la persona que ingresa.
+// Este script no habla con Drive: deja a sus editores vigentes en `revocado_pendiente` (motivo `correo_cambiado`) y la
+// Function programada `reconciliarEditoresCrm` borra el permiso. La persona vuelve a registrarse con el correo nuevo.
+const editores = [];
+for (const t of plan.tenants) {
+  const e = await db.doc(`tenants/${t}/editoresCrm/${uid}`).get();
+  if (e.exists && e.get('estado') === 'activo') editores.push(e.ref);
+}
+console.log(`  Editores miniCRM: ${editores.length ? `${editores.length} pasan a revocado_pendiente (los cierra la reconciliación)` : 'ninguno vigente'}`);
 try {
   if (plan.haceAuth) {
     // Contraseña aleatoria que nadie ve: la de antes no sirve con el correo nuevo. La persona pone la suya con «Olvidé mi contraseña».
@@ -102,6 +111,9 @@ try {
       accion: 'cambiar_correo', uid: OPERADOR, origen: 'script', script: 'cambiar-correo', en: Timestamp.now(),
       uidAfectado: uid, correoNuevo: plan.nuevo, correoAnterior: String(anterior ?? '').toLowerCase(),
     });
+  }
+  for (const ref of editores) {
+    lote.update(ref, { estado: 'revocado_pendiente', motivoPendiente: 'correo_cambiado', reintentos: 0, revocadoEn: Timestamp.now(), revocadoPor: 'script:cambiar-correo' });
   }
   await lote.commit();
 } catch (e) {
