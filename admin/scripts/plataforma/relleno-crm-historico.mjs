@@ -27,7 +27,7 @@
  * SECO: lee la hoja (A3:T, sin la U) y Firestore y IMPRIME SOLO CONTEOS (nunca teléfonos ni nombres).
  * `--aplicar`: exige `--confirmo-produccion <tenant>` SIEMPRE (la hoja es la real aunque Firestore sea staging o el emulador) y `--respaldo`
  * (ruta absoluta, 0600, fuera de todo repositorio, nunca se pisa). Guarda ahí SOLO las filas que va a escribir y dónde (no copia la hoja: lleva
- * datos de personas; el respaldo se borra al cerrar la operación), agrega las filas nuevas en UNA llamada (`values:append`, USER_ENTERED con
+ * datos de personas; el respaldo se borra al cerrar la operación), escribe las filas nuevas en un rango explícito con el formato de la primera fila de datos (`values:update`, USER_ENTERED con
  * apóstrofo en los textos) y relee y compara.
  * `--revertir --aplicar`: borra SOLO el rango que escribió este script (lo CALCULA desde la fila inicial y la cantidad; nunca llega a la U) y solo si
  * su contenido sigue siendo el escrito.
@@ -269,12 +269,36 @@ export const resumenDeLaHoja =(valores, mapa) => {
   return { telefonos: datos.map((f) => f[e(mapa.columnas.telefono.letra)] ?? ''), ids: datos.map((f) => f[e(mapa.columnas.id.letra)] ?? ''), ultimaFila: mapa.filaEncabezados + valores.length - 1 };
 };
 
-export async function agregarFilas({ envFile, tenant, sheet, mapa, filas }) {
+/**
+ * Escribe las filas en un rango EXPLÍCITO (`filaDesde`), con el formato de la primera fila de datos. Tres llamadas en un solo flujo temporal:
+ *   1. lee el `sheetId` de la pestaña; 2. copia a las filas destino el formato, las listas desplegables y los formatos condicionales de la fila de referencia
+ *   (la primera de datos, `filaEncabezados + 1`; solo A..última letra del bot: la U del equipo no se toca); 3. escribe los valores con `values:update`.
+ * Antes se usaba `values:append` con INSERT_ROWS: Google insertaba las filas heredando el formato de la fila de arriba (el encabezado, fondo oscuro), dejaba las
+ * fechas como número serie y, con filas con formato debajo de la tabla, las ponía lejos de donde se esperaba. El formato va ANTES de los valores para que una
+ * fecha `yyyy-mm-dd` se interprete con el formato de la celda y no quede como número.
+ */
+export function pedidoDeFormato({ mapa, filaDesde, cantidad }) {
   const ultima = Object.values(mapa.columnas).map((c) => c.letra).sort().pop();
-  const rango = encodeURIComponent(`'${HOJA}'!A${mapa.filaEncabezados + 1}:${ultima}`);
-  return correrEnN8n({ envFile, tenant, cuerpo: { filas }, hacer: ({ http }) => ({ nodos: [http('agregar', 'Agregar', 240, {
-    method: 'POST', url: `${urlHoja(sheet, rango)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, sendBody: true, contentType: 'json',
-    specifyBody: 'json', jsonBody: '={{ JSON.stringify({ values: $json.body.filas }) }}' })] }) });
+  const columnas = ultima.charCodeAt(0) - 64; // A..última letra del bot; jamás la U
+  const origen = { startRowIndex: mapa.filaEncabezados, endRowIndex: mapa.filaEncabezados + 1, startColumnIndex: 0, endColumnIndex: columnas };
+  const destino = { startRowIndex: filaDesde - 1, endRowIndex: filaDesde - 1 + cantidad, startColumnIndex: 0, endColumnIndex: columnas };
+  return { origen, destino, pegados: ['PASTE_FORMAT', 'PASTE_DATA_VALIDATION', 'PASTE_CONDITIONAL_FORMATTING'] };
+}
+
+export async function agregarFilas({ envFile, tenant, sheet, mapa, filas, filaDesde }) {
+  const ultima = Object.values(mapa.columnas).map((c) => c.letra).sort().pop();
+  const fin = filaDesde + filas.length - 1;
+  const rango = encodeURIComponent(`'${HOJA}'!A${filaDesde}:${ultima}${fin}`);
+  const { origen, destino, pegados } = pedidoDeFormato({ mapa, filaDesde, cantidad: filas.length });
+  const peticiones = pegados.map((pegar) => ({ copyPaste: { source: { sheetId: '__ID__', ...origen }, destination: { sheetId: '__ID__', ...destino }, pasteType: pegar, pasteOrientation: 'NORMAL' } }));
+  const cuerpoFormato = `={{ (() => { const p = $json.sheets.find((x) => x.properties.title === ${JSON.stringify(HOJA)}); if (!p) { throw new Error('sin pestaña'); } return JSON.stringify(${JSON.stringify({ requests: peticiones })}).replace(/"__ID__"/g, String(p.properties.sheetId)); })() }}`;
+  return correrEnN8n({ envFile, tenant, cuerpo: { filas }, hacer: ({ http }) => ({ nodos: [
+    http('propiedades', 'Propiedades', 240, { method: 'GET', url: `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheet)}?fields=sheets.properties(sheetId,title)` }),
+    http('formato', 'Formato', 480, { method: 'POST', url: `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheet)}:batchUpdate`, sendBody: true, contentType: 'json',
+      specifyBody: 'json', jsonBody: cuerpoFormato }),
+    http('escribir', 'Escribir', 720, { method: 'PUT', url: `${urlHoja(sheet, rango)}?valueInputOption=USER_ENTERED`, sendBody: true, contentType: 'json',
+      specifyBody: 'json', jsonBody: "={{ JSON.stringify({ range: " + JSON.stringify(`'${HOJA}'!A${filaDesde}:${ultima}${fin}`) + ", majorDimension: 'ROWS', values: $('Entrada').first().json.body.filas }) }}" }),
+  ] }) });
 }
 
 export async function limpiarRango({ envFile, tenant, sheet, rango }) {
@@ -367,9 +391,12 @@ export async function ejecutar(cfg, deps) {
     throw e;
   }
   log(`\n  Respaldo guardado (las filas a escribir y dónde; no copia la hoja): ${cfg.respaldo}`);
-  const respuesta = await deps.agregar(filas);
-  // DÓNDE quedaron de verdad: Google lo dice en `updates.updatedRange`. Si no es lo previsto (el bot agregó una fila en el medio, hay una fila vacía), el respaldo apuntaría mal.
-  const real = /!A(\d+):[A-Z]+(\d+)$/.exec(String(respuesta?.updates?.updatedRange ?? ''));
+  // El rango es explícito: antes de escribir se relee y, si el bot agregó una fila mientras tanto, NO se escribe (se pisaría).
+  const ahora = resumenDeLaHoja(await deps.leer(), mapa);
+  if (ahora.ultimaFila !== hoja.ultimaFila) { log('\n  ✗ La hoja cambió mientras se preparaba (el bot escribió una fila): no se escribe nada. Vuelva a correr el seco.\n'); return 3; }
+  const respuesta = await deps.agregar(filas, filaDesde);
+  // DÓNDE quedaron de verdad: `values:update` lo dice en `updatedRange` (`values:append` lo decía en `updates.updatedRange`; se acepta cualquiera).
+  const real = /!A(\d+):[A-Z]+(\d+)$/.exec(String(respuesta?.updatedRange ?? respuesta?.updates?.updatedRange ?? ''));
   if (!real || Number(real[1]) !== filaDesde || Number(real[2]) !== filaDesde + filas.length - 1) {
     log(`\n  ✗ Las filas no quedaron donde se esperaba (esperado ${rango.split('!')[1]}, Google dice ${real ? `filas ${real[1]} a ${real[2]}` : 'otra cosa'}). Revise la hoja a mano; el respaldo NO sirve para revertir esa escritura.\n`);
     return 3;
@@ -402,7 +429,7 @@ async function principal() {
     mapa,
     conversaciones: () => leerConversaciones(db, cfg.tenant),
     leer: () => leerHoja(args),
-    agregar: (filas) => agregarFilas({ ...args, filas }),
+    agregar: (filas, filaDesde) => agregarFilas({ ...args, filas, filaDesde }),
     limpiar: (rango) => limpiarRango({ ...args, rango }),
   });
   await db.terminate().catch(() => {});

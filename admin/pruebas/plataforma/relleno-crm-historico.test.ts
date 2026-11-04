@@ -20,7 +20,8 @@ const mod = await import('../../scripts/plataforma/relleno-crm-historico.mjs') a
   construirFilas: (a: { conversaciones: any[]; hoja: { telefonos: string[]; ids: string[]; ultimaFila: number }; mapa: Record<string, any> }) =>
     { filas: Fila[]; omitidos: Record<string, number>; conteos: Record<string, any> };
   resumenDeLaHoja: (valores: string[][], mapa: Record<string, any>) => { telefonos: string[]; ids: string[]; ultimaFila: number };
-  ejecutar: (cfg: Cfg, deps: Record<string, unknown>) => Promise<number>;
+  pedidoDeFormato: (a: { mapa: Record<string, any>; filaDesde: number; cantidad: number }) => { origen: Record<string, number>; destino: Record<string, number>; pegados: string[] };
+  ejecutar: (cfg: Cfg, deps: Record<string, any>) => Promise<number>;
 };
 
 const PROY = 'demo-novuchat-pruebas';
@@ -141,17 +142,19 @@ describe('B2. las filas (vocabulario cerrado, sin duplicar)', () => {
 function mundo(tenant: string, contactos: any[], filasHoja: string[][] = []) {
   const mapa = mapaDe(tenant);
   const valores: string[][] = [ENCABEZADOS(mapa), ...filasHoja.map((f) => [...f])];
-  const llamadas = { agregar: 0, limpiar: [] as string[], leer: 0 };
+  const llamadas = { agregar: 0, limpiar: [] as string[], leer: 0, filaDesde: [] as number[] };
   const salida: string[] = [];
   const deps = {
     mapa, log: (t: string) => salida.push(t),
     conversaciones: async () => contactos,
     leer: async () => { llamadas.leer += 1; return valores.map((f) => [...f]); },
-    agregar: async (filas: Fila[]) => {
+    agregar: async (filas: Fila[], filaDesde: number) => {
       llamadas.agregar += 1;
+      llamadas.filaDesde.push(filaDesde);
       const desde = mapa['filaEncabezados'] + valores.length; // la fila siguiente a la última con datos
+      expect(filaDesde).toBe(desde); // el script ESCRIBE en un rango explícito: la fila que él calculó es la que sigue a la última
       for (const f of filas) valores.push(f.map((v) => String(v).replace(/^'/, '')));
-      return { updates: { updatedRange: `'Leads_CRM'!A${desde}:T${desde + filas.length - 1}` } };
+      return { updatedRange: `'Leads_CRM'!A${desde}:T${desde + filas.length - 1}` };
     },
     limpiar: async (rango: string) => { llamadas.limpiar.push(rango); valores.splice(1, valores.length); },
   };
@@ -203,7 +206,7 @@ describe('B3. ejecución', () => {
 
   it('NEGADO: si la relectura no ve las filas nuevas, sale 3 y avisa (el respaldo queda para revertir)', async () => {
     const m = mundo('rroca-emma', [conv(1), conv(2)]);
-    m.deps.agregar = async () => ({ updates: { updatedRange: "'Leads_CRM'!A4:T5" } }); // Google aceptó (y dice dónde) pero no quedó nada
+    m.deps.agregar = async () => ({ updatedRange: "'Leads_CRM'!A4:T5" }); // Google aceptó (y dice dónde) pero no quedó nada
     expect(await mod.ejecutar(cfgDe('rroca-emma', { aplicar: true, respaldo: rutaRespaldo() }), m.deps)).toBe(3);
     expect(m.texto()).toContain('La relectura no coincide');
   });
@@ -228,7 +231,7 @@ describe('B3c. NEGADO: la hoja no es la esperada o cambió durante la escritura 
   });
   it('Google dice que las filas quedaron en OTRO lugar (una fila vacía o el bot escribió en el medio): sale 3 y lo dice', async () => {
     const m = mundo('rroca-emma', [conv(1), conv(2)]);
-    m.deps.agregar = async (filas: Fila[]) => { for (const f of filas) m.valores.push(f.map((v) => String(v).replace(/^'/, ''))); return { updates: { updatedRange: "'Leads_CRM'!A40:T41" } }; };
+    m.deps.agregar = async (filas: Fila[]) => { for (const f of filas) m.valores.push(f.map((v) => String(v).replace(/^'/, ''))); return { updatedRange: "'Leads_CRM'!A40:T41" }; };
     expect(await mod.ejecutar(cfgDe('rroca-emma', { aplicar: true, respaldo: rutaRespaldo() }), m.deps)).toBe(3);
     expect(m.texto()).toContain('no quedaron donde se esperaba');
     expect(m.deps.agregar).toBeDefined();
@@ -236,8 +239,8 @@ describe('B3c. NEGADO: la hoja no es la esperada o cambió durante la escritura 
   it('si tras escribir hay IDs o teléfonos repetidos (el bot escribió a la vez), sale 3 y avisa', async () => {
     const m = mundo('rroca-antonio', [conv(1)]);
     const agregarOriginal = m.deps.agregar;
-    m.deps.agregar = async (filas: Fila[]) => {
-      const r = await agregarOriginal(filas);
+    m.deps.agregar = async (filas: Fila[], filaDesde: number) => {
+      const r = await agregarOriginal(filas, filaDesde);
       m.valores.push([...m.valores[m.valores.length - 1]!]); // una fila idéntica que el bot dejó a la vez (mismo ID y teléfono)
       return r;
     };
@@ -252,6 +255,50 @@ describe('B3c. NEGADO: la hoja no es la esperada o cambió durante la escritura 
     for (const f of m.valores.slice(1)) { f[col.fecha.letra.charCodeAt(0) - 65] = '9/1/2026'; f[col.ultimaInteraccion.letra.charCodeAt(0) - 65] = '9/1/2026 11:00:00'; }
     expect(await mod.ejecutar(cfgDe('rroca-ruben', { revertir: true, aplicar: true, respaldo: resp }), m.deps)).toBe(0);
     expect(m.llamadas.limpiar).toHaveLength(1);
+  });
+});
+
+describe('B3d. formato y filas de las hojas rellenadas (04/11: fondo oscuro, fechas como número, filas desplazadas)', () => {
+  const fuente = readFileSync(new URL('../../scripts/plataforma/relleno-crm-historico.mjs', import.meta.url), 'utf8');
+  for (const t of ['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio']) {
+    it(`${t}: el formato sale de la primera fila de datos, solo A..T (jamás la U), sobre las filas nuevas y con listas y formatos condicionales`, () => {
+      const mapa = mapaDe(t);
+      const p = mod.pedidoDeFormato({ mapa, filaDesde: 10, cantidad: 3 });
+      expect(p.origen).toEqual({ startRowIndex: mapa['filaEncabezados'], endRowIndex: mapa['filaEncabezados'] + 1, startColumnIndex: 0, endColumnIndex: 20 });
+      expect(p.destino).toEqual({ startRowIndex: 9, endRowIndex: 12, startColumnIndex: 0, endColumnIndex: 20 });
+      expect(p.pegados).toEqual(['PASTE_FORMAT', 'PASTE_DATA_VALIDATION', 'PASTE_CONDITIONAL_FORMATTING']);
+    });
+  }
+  it('el origen es la fila 4 (índice 3), la de datos: nunca la de encabezados (fondo oscuro)', () => {
+    const p = mod.pedidoDeFormato({ mapa: mapaDe('rroca-emma'), filaDesde: 4, cantidad: 1 });
+    expect(p.origen.startRowIndex).toBe(3);
+    expect(p.origen.startRowIndex).not.toBe(2);
+  });
+  it('NEGADO: la escritura ya no usa values:append ni INSERT_ROWS (heredaban el formato del encabezado y desplazaban las filas); va a un rango explícito', () => {
+    const codigo = fuente.split('\n').filter((l) => !/^\s*(\*|\/\/)/.test(l)).join('\n');
+    expect(codigo).not.toMatch(/:append|insertDataOption|INSERT_ROWS/);
+    expect(codigo).toContain('?valueInputOption=USER_ENTERED');
+    expect(codigo).toMatch(/method: 'PUT'/);
+  });
+  it('las fechas salen como yyyy-mm-dd (y la última interacción como yyyy-mm-dd hh:mm), no como número', () => {
+    const mapa = mapaDe('rroca-ruben');
+    const r = mod.construirFilas({ conversaciones: [conv(1)], hoja: { telefonos: [], ids: [], ultimaFila: 3 }, mapa });
+    const c = mapa['columnas'];
+    expect(r.filas[0][c.fecha.letra.charCodeAt(0) - 65]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(r.filas[0][c.ultimaInteraccion.letra.charCodeAt(0) - 65]).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+  });
+  it('escribe a continuación de la última fila de datos (la 4 en una hoja vacía), no donde Google decida', async () => {
+    const m = mundo('rroca-evy', [conv(1), conv(2)]);
+    expect(await mod.ejecutar(cfgDe('rroca-evy', { aplicar: true, respaldo: rutaRespaldo() }), m.deps)).toBe(0);
+    expect(m.llamadas.filaDesde).toEqual([4]);
+  });
+  it('NEGADO: si el bot agregó una fila entre la lectura y la escritura, no se escribe (se pisaría) y sale 3', async () => {
+    const m = mundo('rroca-emma', [conv(1)]);
+    const leer = m.deps.leer; let n = 0;
+    m.deps.leer = async () => { const v = await leer(); n += 1; if (n === 2) v.push(['LEAD-1001', '', '', '', '591790000000']); return v; };
+    expect(await mod.ejecutar(cfgDe('rroca-emma', { aplicar: true, respaldo: rutaRespaldo() }), m.deps)).toBe(3);
+    expect(m.llamadas.agregar).toBe(0);
+    expect(m.texto()).toContain('La hoja cambió');
   });
 });
 
