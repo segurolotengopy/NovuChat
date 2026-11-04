@@ -91,14 +91,7 @@ const MARCADOR_DEL_CARRITO = 'REEMPLAZAR_RUTA_CARRITO_QTACO';
 // Un segundo workflow del MISMO comercio (el de 3727) convive con el vivo: no puede compartir la ruta del carrito (n8n no activa dos webhooks en la misma ruta).
 // El dato `carritoMarcador` (solo uno de estos dos valores) cambia el marcador de ESA salida; sin el rige el de siempre.
 
-// ESTAS CONSTANTES SON EL UNICO PUNTO donde se fijan los nombres de credencial y el marcador del carrito del flujo del 3727 (envio directo por Graph, token de la WABA
-// del comercio). Los nombres los carga y confirma WAM en n8n ANTES de publicar (`publicar-flujo.sh --crear` los resuelve por tipo y nombre exactos y aborta si faltan).
-// Cambiar un nombre = cambiar esta linea y regenerar (`node construir.mjs`). El alias de ingesta lo trae el archivo de datos (credenciales.ingesta).
-const CRED_GRAPH_3727 = 'Graph WhatsApp QTaco 3727 (Bearer)';
-const CRED_MEDIOS_3727 = 'WhatsApp QTaco 3727 (envio)';
-const SOBRE_DATOS_POR_ARCHIVO = {
-  'qtaco-3727.json': { carritoMarcador: 'REEMPLAZAR_RUTA_CARRITO_QTACO_3727', credenciales: { graph: CRED_GRAPH_3727, medios: CRED_MEDIOS_3727 } },
-};
+// Los NOMBRES de credencial y el marcador del carrito del 3727 son datos del tenant (`qtaco-3727.json`); aqui solo la lista de marcadores validos.
 const MARCADORES_DEL_CARRITO = [MARCADOR_DEL_CARRITO, 'REEMPLAZAR_RUTA_CARRITO_QTACO_3727'];
 const marcadorDelCarrito = (datos) => ((datos || {}).carritoMarcador) || MARCADOR_DEL_CARRITO;
 
@@ -139,18 +132,13 @@ function codigoDe(marca, nodo) {
 
 // --- los datos del tenant ---------------------------------------------------------------------------
 function cargarDatos(archivo, pila = []) {
-  const d0 = cargarDatosBase(archivo, pila);
-  const sobre = pila.length === 0 ? SOBRE_DATOS_POR_ARCHIVO[archivo] : undefined;
-  return sobre ? { ...d0, ...sobre, credenciales: { ...d0.credenciales, ...sobre.credenciales } } : d0;
-}
-function cargarDatosBase(archivo, pila = []) {
   if (pila.includes(archivo)) throw new Error(`${archivo}: «hereda» da una vuelta`);
   const d = JSON.parse(readFileSync(join(DATOS, archivo), 'utf8'));
   if (d.hereda === undefined) return d;
   // `hereda` es un nombre de archivo de datos, nada más: sin barras ni «..», y el archivo queda dentro de la carpeta de datos.
   if (typeof d.hereda !== 'string' || !/^[a-z0-9-]+$/.test(d.hereda)) throw new Error(`${archivo}: «hereda» no es un nombre válido (solo a-z, 0-9 y guion)`);
   if (!resolve(DATOS, `${d.hereda}.json`).startsWith(resolve(DATOS) + sep)) throw new Error(`${archivo}: «hereda» sale de la carpeta de datos`);
-  const base = cargarDatosBase(`${d.hereda}.json`, [...pila, archivo]);
+  const base = cargarDatos(`${d.hereda}.json`, [...pila, archivo]);
   const { hereda, ...propio } = d;
   return {
     ...base, ...propio,
@@ -464,6 +452,14 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   // Presupuesto de nodos de producción.
   if (entrada !== 'prueba' && flujo.nodes.length > TOPE_DE_NODOS) {
     hallazgos.push(`tiene ${flujo.nodes.length} nodos y el tope de producción es ${TOPE_DE_NODOS}: reutilice los nodos existentes (el código vive en src/lib y src/nodos)`);
+  }
+  // EL FLUJO DEL 3727 NO COMPARTE NADA CON EL VIVO: ni marcador de ruta, WABA o numero, ni credencial de Q'Taco (cada una cae en el flujo equivocado).
+  if (/(^|\.)qtaco-3727\.json$/.test(destino)) {
+    const t3727 = JSON.stringify(flujo);
+    const vivo = [...new Set(t3727.match(/REEMPLAZAR_(RUTA_RECEPTOR|RUTA_CARRITO|WABA_ID|PHONE_NUMBER_ID)_QTACO(?!_3727)[A-Z0-9_]*/g) || [])];
+    if (vivo.length) hallazgos.push(`el flujo del 3727 trae marcadores del flujo vivo: ${vivo.join(', ')}`);
+    const credVivas = [...new Set(flujo.nodes.flatMap((n) => Object.values(n.credentials || {}).map((c) => String((c || {}).name || ''))).filter((x) => /Q'Taco/.test(x)))];
+    if (credVivas.length) hallazgos.push(`el flujo del 3727 usa credenciales del flujo vivo: ${credVivas.join(', ')}`);
   }
   if (entrada === 'receptor' && tipos.includes('n8n-nodes-base.whatsAppTrigger')) hallazgos.push('contiene un «WhatsApp Trigger» en la variante del receptor (prohibición 7)');
   // L1. Ninguna llamada a las suscripciones de la app de Meta, en ningún nodo, texto ni código (prohibición 7).

@@ -344,7 +344,7 @@
               "id": "cb_destinatariosAviso",
               "name": "destinatariosAviso",
               "type": "string",
-              "value": "completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO , cocina:REEMPLAZAR_NUMERO_AVISO_2_QTACO"
+              "value": "completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO"
             },
             {
               "id": "cb_plantillaPedido",

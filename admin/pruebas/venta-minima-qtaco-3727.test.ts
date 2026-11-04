@@ -4,10 +4,11 @@
  * credenciales propias, sin ids reales, plantillas por lineas vacias y el constructor al dia.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { verificarEnCopia } from './lib/venta-minima-mundo';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DIR = join(REPO, 'Flujos', 'experimental', 'venta-minima');
@@ -61,5 +62,46 @@ describe("Q'Taco 3727: workflow nuevo, separado del vivo", () => {
   });
   it('sin disparador de WhatsApp ni suscripciones (prohibicion 7)', () => {
     expect(texto).not.toMatch(/whatsAppTrigger|subscribed_apps|subscriptions/);
+  });
+  it('solo un destinatario de aviso (completo): el aviso de cocina NO se manda (decision de Andres)', () => {
+    const cb = nodo(NUEVO, 'Config base').parameters.assignments.assignments as J[];
+    const d = String(cb.find((a) => a.name === 'destinatariosAviso')?.value);
+    expect(d).toMatch(/^completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO$/);
+    expect(d).not.toMatch(/cocina|AVISO_2/);
+  });
+});
+
+describe("Q'Taco 3727: los negativos (copias en temporal, nunca el repositorio)", () => {
+  const F = 'venta-minima.qtaco-3727.json';
+  const editarTexto = (vm: string, f: (t: string) => string) => writeFileSync(join(vm, F), f(readFileSync(join(vm, F), 'utf8')));
+  const datosDe = (vm: string) => join(vm, '..', '..', '..', 'admin', 'scripts', 'datos', 'venta-minima', 'qtaco-3727.json');
+
+  it('FALLA --verificar si al 3727 se le pone un marcador del vivo', () => {
+    const r = verificarEnCopia((vm) => editarTexto(vm, (t) => t.replace('REEMPLAZAR_WABA_ID_QTACO_3727', 'REEMPLAZAR_WABA_ID_QTACO')));
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/marcadores del flujo vivo/);
+  });
+  it('FALLA --verificar si al 3727 se le pone una credencial del vivo', () => {
+    const r = verificarEnCopia((vm) => editarTexto(vm, (t) => t.replace('Graph WhatsApp QTaco 3727 (Bearer)', "Graph WhatsApp Q'Taco (Bearer)")));
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/credenciales del flujo vivo/);
+  });
+  it('FALLA construir si los datos del 3727 apuntan a una credencial del vivo', () => {
+    const r = verificarEnCopia((vm) => {
+      const d = JSON.parse(readFileSync(datosDe(vm), 'utf8'));
+      d.credenciales.medios = "WhatsApp Q'Taco (envío)";
+      writeFileSync(datosDe(vm), JSON.stringify(d));
+    }, []);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/credenciales del flujo vivo/);
+  });
+  it('FALLA construir con un carritoMarcador fuera de la lista', () => {
+    const r = verificarEnCopia((vm) => {
+      const d = JSON.parse(readFileSync(datosDe(vm), 'utf8'));
+      d.carritoMarcador = 'REEMPLAZAR_RUTA_CARRITO_OTRO';
+      writeFileSync(datosDe(vm), JSON.stringify(d));
+    }, []);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/carritoMarcador/);
   });
 });
