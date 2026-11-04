@@ -190,6 +190,7 @@ El contrato v2 (30/10/2026) quita «¿Anotar medio?» y «Anotar medio»: todo m
 
 - **Q'Taco** (`venta-minima.qtaco.json`): 61 → **59** nodos y tope 61 → 59.
 - **Q'Taco** (`venta-minima.qtaco.json`): 59 → **60** nodos y tope 59 → 60. Por qué: «Guardar comprobante» (guardar el comprobante antes de leerlo, PR #688), +1 nodo. Aprobado por: **Andres, 03/11/2026**.
+- **Q'Taco** (`venta-minima.qtaco.json`): mismos 60 nodos. Dato `plantillasPedidoLineas` **vacío** (cambio de número a la WABA del comercio, 04/11/2026): los avisos de pedido y comprobante salen por `pedido_registrado` hasta que Meta apruebe `pedido_registrado_l2/_l4/_l6` allí. Se repone la clave con un PR de datos cuando las tres figuren APROBADAS. 0 mensajes por conversación agregados o quitados.
 - **Rubén** (`rroca-ruben.json`): 57 → **55** nodos y tope 59 → 57.
 - **Bellido** (`agenda-minima.v0.json`, sin tope en su constructor): 64 → **62** nodos. Se publica el último.
 - Evy y Emma: 47 → **45**, tope 47 → 45. doctoras: 54 → **52**, tope 59 → 57. Antonio: 58 → **56**, tope 58 → 56. Chat NovuChat: 55 → **53**. captacion-minima: 54 → **52**.
@@ -231,3 +232,15 @@ La rama del miniCRM (`ramaCrm`, módulo `crm`) agrega **8 nodos** a cada flujo q
 > `rroca-ruben.prueba.json`; `walisuma.json` y `walisuma.prueba.json`. Por qué: el módulo es común y los constructores lo incluyen tal cual; no se publica nada
 > solo por esto. Lo cierra: la próxima publicación de cada flujo (que ya lleva la definición); hasta entonces `estado-de-versiones.sh` puede mostrar atrasado a
 > cualquiera de los vivos que figuran arriba (Rubén, Antonio, Evy, Emma, Walisuma, chat NovuChat) y es una diferencia declarada, sin riesgo. Vence el 31/01/2027.
+
+> **Evy (`rroca-evy`, cliente08) y Emma (`rroca-emma`, cliente07): envío y medios por el relé B9 (PR 2, 03/11/2026, 0 mensajes por conversación).** Qué queda distinto:
+> `rroca-evy.json` y `rroca-emma.json` pasan de 53 a **56 nodos** y el tope sube de 53 a **56**; las variantes de prueba pasan de 48 a **51**. Por qué: el canal `rele` suma
+> «Leer respuesta del relé», «¿Qué hacer con el envío?» y «Esperar reintento», y el nodo «Detener por envío incierto» (decisión I4: incierto o agotado termina la ejecución
+> en ERROR, sin reenvío ni mensaje extra). Todo lo que hablaba con Graph (envío, respaldo, aviso, descarga de medios y guardado) sale por el relé con la credencial
+> «AAB1 envío · cliente08» / «AAB1 envío · cliente07» y la URL interna como marcador `REEMPLAZAR_URL_INTERNA_DEL_RELE`; `executionTimeout` pasa de 120 a 300 s.
+> **Aprobado por:** Andres, el 03/11/2026 (56 producción / 51 prueba por flujo). **Riesgo de cupo aceptado:** las descargas para transcribir o ver una imagen (audio e imagen a Gemini) gastan
+> de las 500 descargas diarias por WABA y no pasan por el cupo del guardado (10 por teléfono y día, 30 por flujo); una ráfaga atraviesa el cupo (limitación de
+> concurrencia ya declarada en #757). **Publicación:** viernes 06/11/2026, con el botón de Andres; hasta entonces `estado-de-versiones.sh` los mostrará atrasados y es
+> correcto. **Lo cierra:** la publicación; el tope es permanente mientras el canal tenga estos nodos. Vence el 31/01/2027 (igual que la nota de #757).
+>
+> **Variante de prueba por el relé (03/11/2026, pendiente de confirmar por Andres).** `rroca-evy.prueba.json` y `rroca-emma.prueba.json` ya no usan la credencial `graphPrueba`: llevan la credencial real del relé de su WABA («AAB1 envío · cliente08» / «· cliente07»), porque la llave del relé es por WABA y no existe una de prueba. Qué implica: la prueba envía y descarga desde el número de la clienta y gasta de su cupo de 500 descargas diarias. Barreras que lo acotan: `modoPrueba`/`etapaPrueba` con `telefonosDePrueba` (solo atiende a esos teléfonos y la recepción debe estar dentro), `enviarDeVerdad` apagado salta el envío, y la entrada de prueba exige cabecera propia. **El guardado de medios NO corre en la prueba** (verificado por traza del grafo: «Preparar guardado» solo cuelga de «¿Reportar? (entrante)», que exige `modoPrueba !== true`). Sí corren «Obtener URL del medio (general)» y «Descargar medio» con la llave real: cada imagen o audio de la prueba gasta unos 2 GET del cupo de 500 descargas por día del WABA, fuera de `GM_CUPO`. Pendiente: que Andres confirme este uso.

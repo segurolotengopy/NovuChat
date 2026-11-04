@@ -66,7 +66,7 @@ siguen verdes sin cambios: este módulo las usa solo para comparar, leyendo sus 
 
 ## Canal «rele» (relé B9): límites conocidos y aceptados
 
-- **Cupo de descargas del guardado** (`Flujos/src/core/medios/guardado-cupo.js`): 10 medios por teléfono y día, 60 por flujo (decisión de Andres, 03/11/2026).
+- **Cupo de descargas del guardado** (`Flujos/src/core/medios/guardado-cupo.js`): 10 medios por teléfono y día, 30 por flujo (decisión de Andres, 03/11/2026).
   Cuenta solo lo que «Preparar guardado» dejaría pasar y anota lo omitido en `cupoDeMedios.omitidos` y `guardadoDeMedios.omitidoPorCupo`, sin mensajes.
   **Limitación de concurrencia:** el estado es el `staticData` del flujo y n8n no da un candado; una RÁFAGA (un álbum son N ejecuciones simultáneas) lo
   atraviesa porque todas leen el mismo conteo. El tope por remitente de verdad lo pone el relé (WAM). Riesgo residual **aceptado por Andres el 03/11/2026**.

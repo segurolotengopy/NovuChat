@@ -156,7 +156,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
 /** Escapa TODO lo que es especial en una expresión regular (barra invertida incluida). */
 const escaparRegex = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const copia = (f: Flujo): Flujo => JSON.parse(JSON.stringify(f)) as Flujo;
-const BASE = 'experimental/rroca-evy/rroca-evy.json';
+const BASE = 'experimental/rroca-antonio/rroca-antonio.json';
 const conBase = (cambio: (f: Flujo) => void): string => { const f = copia(leer(BASE)); cambio(f); return (hallazgosDelGuardado(f) as string[]).join(' | '); };
 const nodoDe = (f: Flujo, n: string) => f.nodes.find((x) => x.name === n)!;
 

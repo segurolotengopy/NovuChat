@@ -187,13 +187,16 @@ describe('aviso por líneas: la plantilla de tamaño 2, 4 o 6 y sus variables', 
   });
 });
 
-describe('el dato de Q\'Taco (28/10): las tres plantillas aprobadas, vigentes en su flujo versionado', () => {
+describe('el dato de Q\'Taco: las plantillas por líneas, vacías hasta que Meta las apruebe en su WABA nueva (04/11)', () => {
   const datosQtaco = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../scripts/datos/venta-minima/qtaco.json'), 'utf8')) as J;
   const flujoQtaco = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/venta-minima.qtaco.json'), 'utf8')) as J;
-  it('qtaco.json trae las tres, en español, y el flujo construido las lleva en «Config base»', () => {
-    expect((datosQtaco['configBase'] as J)['plantillasPedidoLineas']).toBe('2:pedido_registrado_l2,4:pedido_registrado_l4,6:pedido_registrado_l6');
+  it('qtaco.json trae la clave VACÍA (el aviso sale por «pedido_registrado») y el flujo construido no lleva los nombres l2/l4/l6', () => {
+    // Cambio de número a la WABA del comercio (04/11/2026): l2, l4 y l6 están pendientes de aprobación allí y, con la clave
+    // cargada, un pedido elige la plantilla del menor tamaño y el aviso cae si Meta la rechaza. Reponer la clave
+    // («2:pedido_registrado_l2,4:pedido_registrado_l4,6:pedido_registrado_l6») cuando las tres figuren APROBADAS.
+    expect((datosQtaco['configBase'] as J)['plantillasPedidoLineas']).toBe('');
     expect((datosQtaco['configBase'] as J)['idiomaPlantillaPedidoLineas']).toBe('es');
-    expect(JSON.stringify(flujoQtaco)).toContain('pedido_registrado_l6');
+    expect(JSON.stringify(flujoQtaco)).not.toContain('pedido_registrado_l6');
   });
   it('NEGADA: con la clave vacía el payload es el de siempre (vuelta atrás = vaciar la clave)', () => {
     const plan = L.avPlan('pedido', pedido(3), CSV, { ...BASE, plantillasPedidoLineas: '' }, sd(), AHORA);
