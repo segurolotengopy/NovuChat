@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
@@ -1090,7 +1091,7 @@ describe('CORRECCIÓN R2 · el evento de «Avisar al servidor» usa la MISMA nor
     expect(cuerpo).toContain(E);
     // Se evalúa la expresión TAL CUAL con un `$` de mentira (nodos de prueba) y se compara con las funciones de `ra.js`.
     // eslint-disable-next-line no-new-func
-    const evaluar = (texto: string): string => new Function('$', `return ${E};`)((n: string) => {   // nosemgrep: devsecops.js-eval-prohibido
+    const evaluar = (texto: string): string => (vm.compileFunction(`return ${E};`, ['$']) as ($: (n: string) => unknown) => string)((n: string) => {   // nosemgrep: devsecops.js-eval-prohibido
       const nodos: Record<string, J> = {
         'Decidir turno': { json: { plan: { tipo: 'modelo' } } }, 'Config del negocio': { json: { modoPrueba: false } }, 'Normalizar entrada': { json: { riesgoEscrito: false } },
         'Conversar con el modelo': { json: { content: { parts: [{ text: texto }] } } },
@@ -1280,7 +1281,7 @@ describe('CORRECCIÓN · un pedido de baja recibe una confirmación fija y NADA 
     const expr = cuerpo.slice(i, fin);
     // La expresión sale del JSON versionado del propio repositorio (no es una entrada externa); es la misma marca que usan las demás suites.
     // nosemgrep: devsecops.js-eval-prohibido
-    const nodo = new Function('t', `return ${expr};`) as (t: { texto: string }) => boolean;
+    const nodo = vm.compileFunction(`return ${expr};`, ['t']) as (t: { texto: string }) => boolean;
     const f = LIB['raPideBaja'] as (x: string) => boolean;
     for (const x of [...BAJAS_F2, ...NO_BAJAS, 'hola', 'quiero el libro', 'stop', 'STOP por favor', 'no me escribiste el precio del libro', 'bórrame de la lista', 'dar de baja', 'le dije que no me escriba más', 'mi ex no deja de escribirme', 'no me llamó la atención']) {
       expect(nodo({ texto: x }), x).toBe(f(x));

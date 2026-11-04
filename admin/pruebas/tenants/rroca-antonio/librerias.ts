@@ -5,6 +5,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import vm from 'node:vm';
 // @ts-expect-error el armador es un .mjs sin tipos
 import { AQUI, CONFIG } from '../../../../Flujos/experimental/rroca-antonio/construir.mjs';
 
@@ -13,5 +14,5 @@ export const CODIGO_LIBRERIAS: string = RUTAS_DE_LIBRERIAS.map((r) => readFileSy
 /** Evalúa las librerías y devuelve las declaraciones pedidas. El código es el de archivos del propio repositorio, no una entrada externa: solo prueba. */
 export function cargarLibrerias<T = Record<string, any>>(nombres: string): T { // eslint-disable-line @typescript-eslint/no-explicit-any
   // nosemgrep: devsecops.js-eval-prohibido
-  return new Function(`${CODIGO_LIBRERIAS}\nreturn { ${nombres} };`)() as T;
+  return (vm.compileFunction(`${CODIGO_LIBRERIAS}\nreturn { ${nombres} };`) as () => T)();
 }

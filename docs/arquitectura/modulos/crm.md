@@ -85,6 +85,11 @@ Reglas: las 4 claves de `equipo` se declaran siempre (columna o `null`); las let
 del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
 `alCrear.estado` (p. ej. «Activo») se escribe SOLO al crear la fila.
 
+**Relleno histórico (03/11/2026).** `admin/scripts/plataforma/relleno-crm-historico.mjs` crea una fila por cada contacto anterior de UNA subcuenta
+(Evy, Emma, Rubén o Antonio) en su hoja: seco por omisión (solo conteos), idempotente por teléfono, respaldo antes de escribir y `--revertir`.
+Solo escribe campos que existen y vocabulario cerrado (calificación y clasificación VACÍAS = sin evaluar, resumen fijo); no lee el texto de ningún
+mensaje ni la columna U. La hoja se lee y escribe por un flujo temporal de n8n con la credencial `crm-<tenant>` (la cuenta no tiene clave local).
+
 **Limitaciones conocidas.**
 - En una fila NUEVA solo se comprueba el encabezado de la columna A: leer la fila de
   encabezados completa en el alta queda para un PR posterior, para no leer más hoja.
@@ -206,9 +211,11 @@ prueba no exista, el aislamiento depende de revisión humana.
 
 **Botón «Abrir miniCRM» (03/11/2026).** El Tablero (`BotonMiniCrm`, zona Central) abre la hoja del comercio en otra pestaña. Aparece solo si quien mira es admin, `config/crm.activo` no es `false` y `enlaces/minicrm.enlaceHoja` es un enlace válido; si falta cualquiera, no se pinta nada. Mensajes por conversación: 0. Pruebas: `pruebas/modulos/crm/crm-enlace.test.ts` (enlace, condiciones del botón, script) y `crm-reglas.test.ts` (lectura/escritura de `enlaces/minicrm`, negando).
 
+**Edición del miniCRM con la cuenta de Google: la interfaz (03/11/2026).** `EdicionMiniCrm` (Tablero, admin y operador) consulta `consultarMiEdicionCrm`; con estado `ninguno`/`revocado` ofrece «Habilitar mi edición»: carga Google Identity Services (`accounts.google.com/gsi/client`), muestra el botón de Google (su propio selector de cuenta), y el ID token viaja una sola vez a `registrarEditorCrm`; con `activo` muestra «Edición habilitada con <correo abreviado>» y «Abrir hoja» (el operador obtiene su enlace aquí; el admin conserva «Abrir miniCRM»); con `revocado_pendiente`, un aviso corto y «Quitar mi edición» (`quitarEditorCrm`). En Usuarios (solo admin) cada miembro muestra su estado (lee `editoresCrm`, que las reglas dejan al admin) con «Habilitar edición» (pide el token de ESA cuenta) y «Quitar edición». La cuenta de Google NO se vincula al usuario de Firebase ni inicia sesión: nada de `linkWith*`/`signInWith*`; el token no se guarda ni se imprime. Sin `VITE_GOOGLE_OAUTH_CLIENT_ID` (público) la función no se pinta, sin avisos. Los errores del servidor se mapean por código a textos propios (nunca crudos); el tope de editores lo informa el servidor. CSP de `admin/firebase.json` (solo el sitio de la consola): se agregaron `accounts.google.com/gsi/client` a `script-src`, `/gsi/style` a `style-src`, y `/gsi/` a `connect-src` y `frame-src`. Mensajes por conversación: 0. Pruebas: `pruebas/central/edicion-crm-pantalla.test.ts`.
+
 ## Edición de la hoja con el Gmail de la persona (03/11/2026, backend)
 
-Plan: `NOVUCHAT_plan-edicion-minicrm-por-gmail_2026-11-03`. Este PR es solo el servidor; la pantalla de la Consola va aparte.
+Plan: `NOVUCHAT_plan-edicion-minicrm-por-gmail_2026-11-03`. Esta sección es el servidor; la pantalla de la Consola está en el párrafo anterior.
 
 **Hallazgo: no se vincula Google al usuario.** `core/seguridad/claims.ts` impone «una identidad, un proveedor»: admin y operador de comercio son solo contraseña, y las reglas y `esAdminDe`/`esOperDe` exigen `sign_in_provider == 'password'`. Vincular Google (`linkWithPopup`) rompería ese invariante. En su lugar el navegador obtiene un ID token de Google con una instancia de Auth aparte que no inicia sesión en la app, y el SERVIDOR lo verifica (`google-auth-library`, `OAuth2Client.verifyIdToken`): audiencia = `GOOGLE_OAUTH_CLIENT_ID` (parámetro; vacío = falla cerrada), `email_verified === true` y el correo se toma DEL TOKEN, nunca del cuerpo.
 

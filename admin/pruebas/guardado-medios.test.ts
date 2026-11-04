@@ -1,6 +1,6 @@
 /**
  * EL GUARDADO DE MEDIOS, CORRIENDO (contrato M1↔M2 del 29/10/2026, §1, §2 y §4, con el contrato v2 «guardar y descargar TODO» del 30/10), contra un DOBLE del servidor `guardarMedio` que responde
- * lo que dice el contrato (no el código de M1). Se corre el flujo VERSIONADO de Evy entero en el n8n de mentira, más un recorrido por cada
+ * lo que dice el contrato (no el código de M1). Se corre el flujo VERSIONADO de Antonio (canal Graph; Evy y Emma ya van por el relé, ver core/rele) entero en el n8n de mentira, más un recorrido por cada
  * flujo cubierto para ver que la rama no le cambia a nadie lo que recibe el cliente.
  *
  *   - cada respuesta del §2: las de silencio no avisan; 413, 415, 429 (cupo del comercio o del teléfono) y 502 avisan a la recepción (ventana abierta, uno
@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest';
 import { doblesDelGuardado, type OpcionesDelGuardado, type RespuestaDelServidor } from './lib/doble-guardado';
 import type { Doble } from './lib/n8n-de-mentira';
 import type { Flujo, J } from './lib/flujo';
-import { ANA, PID, PRUEBA, REC, crear, hablar, mAudio, mDocumento, mImagen, mTexto, textos } from './tenants/rroca-evy/mundo';
+import { ANA, PID, PRUEBA, REC, crear, hablar, mAudio, mDocumento, mImagen, mTexto, textos } from './tenants/rroca-antonio/mundo';
 import * as EMMA from './tenants/rroca-emma/mundo';
 import * as DOCTORAS from './tenants/doctoras/mundo';
 import * as ANTONIO from './tenants/rroca-antonio/mundo';

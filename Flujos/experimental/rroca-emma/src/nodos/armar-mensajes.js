@@ -191,10 +191,13 @@ if (!sinFicha) {
   fichas.mapa[from] = paraGuardar;
   evBarrer(fichas.mapa, ahora);
   if (guardarPlanilla) {
+    // LA PLANILLA NUNCA TUMBA LA ATENCIÓN: si calcular el prospecto lanzara por un dato inesperado, este turno igual responde y simplemente no se escribe en la hoja.
+    try {
     // «Contacto nuevo» = sin mensajes en las últimas 48 h (la ficha de ANTES de este turno).
     const nuevoContacto = !(fichaBruta && Number(fichaBruta.ultimoMs) > 0 && ahora - Number(fichaBruta.ultimoMs) <= EV_OLVIDO_MS);
     prospectoPlanilla = evProspectoCrm({ from: from, efectivo: efectivo, textoCliente: plan.textoCliente, historial: historiaAntes, fichaAntes: fichaAntes, preferencia: ficha.preferencia, nombre: ficha.nombre,
       nombrePerfil: t.nombrePerfil, anuncio: t.anuncio === true, llamada: res.llamada === true, avisoSalio: avisoSalio, nuevoContacto: nuevoContacto, ahoraMs: ahora });
+    } catch (e) { prospectoPlanilla = null; }
   }
 }
 
@@ -205,11 +208,12 @@ const numero = prueba ? telPrueba : from;
 const sale = ms.length > 0 && numero !== '' && !sinFicha;
 resumen.mensajes = sale ? ms.length : 0;
 if (!sale) {
-  return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen, guardarPlanilla: false, prospectoPlanilla: null } }];
+  return cmNumerar([{ sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen, guardarPlanilla: false, prospectoPlanilla: null }]).map((json) => ({ json }));
 }
-return ms.map((m, i) => {
+// El relé B9 exige el número del mensaje (Idempotency-Key): cmNumerar lo agrega (n = 1, 2, …) en el orden en que salen.
+return cmNumerar(ms.map((m, i) => {
   m.payload.to = numero;
-  return { json: {
+  return {
     para: numero, destino: m.para, payload: m.payload, texto: m.texto, respaldo: m.respaldo,
     tipoReporte: m.tipoReporte, evento: m.evento || '', esInteractivo: m.tipoReporte === 'interactive',
     // Solo lo que sale a la persona se reporta; en modo prueba, nada.
@@ -217,5 +221,5 @@ return ms.map((m, i) => {
     phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion || 'v26.0', from: from, sinMensajes: false,
     plan: resumen.plan, resumen: resumen, hist: hist,
     guardarPlanilla: i === 0 && prospectoPlanilla !== null, prospectoPlanilla: i === 0 ? prospectoPlanilla : null,
-  } };
-});
+  };
+})).map((json) => ({ json }));

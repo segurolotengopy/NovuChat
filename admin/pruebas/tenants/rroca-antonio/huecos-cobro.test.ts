@@ -14,6 +14,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -130,7 +131,7 @@ describe('HUECOS del cobro y los avisos: la copia funciona sola (sin `$`, sin re
   const cargar = (archivo: string): Record<string, unknown> => {
     // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
     // nosemgrep: devsecops.js-eval-prohibido
-    const fn = new Function(leer(join(RROCA, archivo)) + '\nreturn { ' + Object.keys(archivo === 'cobro.js' ? HASH_COBRO : HASH_AVISOS).join(', ') + ' };');
+    const fn = vm.compileFunction(leer(join(RROCA, archivo)) + '\nreturn { ' + Object.keys(archivo === 'cobro.js' ? HASH_COBRO : HASH_AVISOS).join(', ') + ' };');
     return fn() as Record<string, unknown>;
   };
   it('cobro.js: `cbMonto` formatea como Bolivia y `cbTotalValido` solo acepta un número del código', () => {

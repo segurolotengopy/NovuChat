@@ -27,6 +27,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { expect } from 'vitest';
 import type { J } from '../../lib/flujo';
@@ -34,8 +35,7 @@ import type { Mundo } from '../../lib/n8n-de-mentira';
 
 const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-ruben/src/lib');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-// nosemgrep: devsecops.js-eval-prohibido
-export const LIB = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { rrOraciones, rrEsPresentacion, rrNorm, rrTienePresentacionIA };')() as { rrOraciones: (b: string) => string[]; rrEsPresentacion: (o: string) => boolean; rrNorm: (t: string) => string; rrTienePresentacionIA: (t: string) => boolean };
+export const LIB = (vm.compileFunction(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { rrOraciones, rrEsPresentacion, rrNorm, rrTienePresentacionIA };') as () => unknown)() as { rrOraciones: (b: string) => string[]; rrEsPresentacion: (o: string) => boolean; rrNorm: (t: string) => string; rrTienePresentacionIA: (t: string) => boolean };
 
 export interface UxMsg { tipo: string; cuerpo: string; payload: J }
 /** El estado de la CONVERSACIÓN por teléfono (invariantes 11 a 15): lo cuenta el vigilante por su cuenta, sin importar nada del flujo. */

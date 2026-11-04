@@ -349,6 +349,7 @@ describe('1. estructura del registro', () => {
     const GENERICAS = new Set([
       'agendamiento', 'seguimientos', 'senas', 'vencidas', 'demo', 'recordatorios', 'venta', 'cobro',
       'novuchat', 'onboarding', 'captacion', 'negocio', 'resto', 'json', 'salida', 'persona',
+      'error', 'envio', 'incierto',
     ]);
     const nombres = new Set(
       [...readdirSync(join(RAIZ, 'Flujos')), ...readdirSync(join(RAIZ, 'admin/scripts/datos'))]
@@ -1195,9 +1196,12 @@ describe('documentos de enlaces solo del servidor y de lectura admin (03/11/2026
 
   it('cada uno tiene su lectura SOLO para esAdmin del mismo comercio y su escritura cerrada', () => {
     for (const n of nombres) {
-      expect(REGLAS, `${n}: sin lectura de admin`).toMatch(new RegExp(`allow get, list: if documento == '${n}' && esAdmin\\(tenantId\\);`));
-      expect(REGLAS, `${n}: sin escritura cerrada`).toMatch(new RegExp(`allow create, update, delete: if false;`));
-      const lecturas = [...REGLAS.matchAll(new RegExp(`documento == '${n}'[^;]*;`, 'g'))].map((m) => m[0]);
+      const bloque = /match \/enlaces\/\{documento\} \{[^}]*\}/.exec(REGLAS)?.[0] ?? '';
+      expect(bloque, `${n}: no hay match /enlaces`).not.toBe('');
+      expect(bloque, `${n}: sin lectura de admin`).toMatch(new RegExp(`allow get: if documento == '${n}' && esAdmin\\(tenantId\\);`));
+      expect(bloque, `${n}: sin escritura cerrada`).toMatch(/allow create, update, delete: if false;/);
+      expect(bloque, `${n}: ninguna regla de lectura aparte`).not.toMatch(/allow (read|list)/);
+      const lecturas = [...bloque.matchAll(new RegExp(`documento == '${n}'[^;]*;`, 'g'))].map((m) => m[0]);
       for (const l of lecturas) expect(l, `${n}: ${l}`).not.toMatch(/esOperador|esPropietario|esMiembro|esPersonaDelNegocio/);
     }
   });
