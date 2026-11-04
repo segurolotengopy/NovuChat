@@ -24,7 +24,7 @@ const dpropios = [ddig(dmeta.display_phone_number), ddig(dmeta.phone_number_id)]
 const dnumero = String(dcfg.numeroNuevo || '').trim();
 const dnuevo = ddig(dnumero);
 if (dnuevo.length < 8) return dnada;
-const dtexto = String(dcfg.textoAviso || '').replace('[NUMERO]', dnumero).replace('[ENLACE]', 'https://wa.me/' + dnuevo);
+const dtexto = String(dcfg.textoAviso || '').replace('[NUMERO]', () => dnumero).replace('[ENLACE]', () => 'https://wa.me/' + dnuevo);
 if (dtexto === '') return dnada;
 
 const dsalida = [];

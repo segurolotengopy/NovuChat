@@ -19,13 +19,16 @@ const PLAN_B = cargar('qtaco-redireccion.qtaco-ruta-nueva.json');
 const PHONE_ID = '100000000000042';
 const AHORA = Date.UTC(2026, 10, 4, 14);
 const CLIENTE = '59100000011';
-const AVISO = "¡Hola! Q'Taco estrenó su nuevo WhatsApp. Escríbenos desde ahora al +591 78933727 👉 https://wa.me/" + "591" + "78933727 y te atendemos igual que siempre. ¡Gracias por tu preferencia!";
+// El texto sale del JSON VERSIONADO (no de una constante propia): la prueba de promesas mira lo que el flujo realmente envia.
+const CFG = ((PLAN_A.nodes as J[]).find((x) => x['name'] === 'Config del negocio')!['parameters'].assignments.assignments as J[]);
+const cfg = (k: string): string => String(CFG.find((a) => a['name'] === k)!['value']);
+const AVISO = cfg('textoAviso').replace('[NUMERO]', () => cfg('numeroNuevo')).replace('[ENLACE]', () => 'https://wa.me/' + cfg('numeroNuevo').replace(/\D/g, ''));
 
-type Opc = { valida?: boolean; envio?: 'acepta' | 'sin_id' };
+type Opc = { valida?: boolean; envio?: 'acepta' | 'sin_id'; sinIdPara?: string; verificadorCaido?: boolean };
 function doblesDe(o: Opc = {}): Record<string, Doble> {
   const dobles: Record<string, Doble> = {
-    'Verificar firma con el receptor': (ll) => ({ valido: o.valida !== false, deliveryId: ll.cuerpo?.['deliveryId'] }),
-    'Enviar aviso': (ll) => (o.envio === 'sin_id' ? { messaging_product: 'whatsapp', messages: [] } : { messaging_product: 'whatsapp', messages: [{ id: `wamid.A${ll.n}` }] }),
+    'Verificar firma con el receptor': (ll) => { if (o.verificadorCaido) throw new Error('503 Service Unavailable'); return { valido: o.valida !== false, deliveryId: ll.cuerpo?.['deliveryId'] }; },
+    'Enviar aviso': (ll) => (o.envio === 'sin_id' || (o.sinIdPara !== undefined && ll.cuerpo?.['to'] === o.sinIdPara) ? { messaging_product: 'whatsapp', messages: [] } : { messaging_product: 'whatsapp', messages: [{ id: `wamid.A${ll.n}` }] }),
   };
   return dobles;
 }
@@ -121,6 +124,44 @@ describe('redireccion de Q\'Taco', () => {
     expect(w.sd['avisadosRedireccion']).toEqual({});
     w.dobles['Enviar aviso'] = () => ({ messaging_product: 'whatsapp', messages: [{ id: 'wamid.ok' }] });
     expect(w.turno(entrega([msg(CLIENTE)])).avisos).toHaveLength(1);
+  });
+  it('NEGANDO: verificador caido (503) -> ni 200 ni 401, la ejecucion falla (el receptor reintenta) y nadie recibe aviso', () => {
+    const w = nuevo({ verificadorCaido: true });
+    const r = w.turno(entrega([msg(CLIENTE)]), { tolerarFallo: true });
+    expect(r.respuestasWebhook).toHaveLength(0);
+    expect(r.fallo?.nodo).toBe('Verificar firma con el receptor');
+    expect(r.avisos).toHaveLength(0);
+  });
+  it('NEGANDO: dos clientes, Meta acepta uno y rechaza otro -> el aceptado queda marcado, el otro no, y la ejecucion falla', () => {
+    const otro = '59100000012';
+    const w = nuevo({ sinIdPara: otro });
+    const r = w.turno(entrega([msg(CLIENTE), msg(otro)]), { tolerarFallo: true });
+    expect(r.fallo?.nodo).toBe('Marcar avisado');
+    expect(Object.keys(w.sd['avisadosRedireccion'] as J)).toEqual([CLIENTE]);
+    // el siguiente mensaje del rechazado reintenta; el del aceptado no repite
+    w.dobles['Enviar aviso'] = () => ({ messaging_product: 'whatsapp', messages: [{ id: 'wamid.ok' }] });
+    expect(w.turno(entrega([msg(CLIENTE)])).avisos).toHaveLength(0);
+    expect(w.turno(entrega([msg(otro)])).avisos).toHaveLength(1);
+  });
+  it('la retencion de errores es «all» (el cuerpo no lleva secretos) y la de exito «none»', () => {
+    expect(PLAN_A.settings).toMatchObject({ saveDataErrorExecution: 'all', saveDataSuccessExecution: 'none' });
+  });
+  it('vuelta atras documentada: el respaldo de publicar-flujo.sh (--aplicar) se republica con --flujo, y no se promete venta-minima.qtaco.json', () => {
+    const raiz = join(CARPETA, '../../..');
+    const sh = readFileSync(join(raiz, 'scripts/publicar-flujo.sh'), 'utf8');
+    expect(sh).toContain('Flujos/respaldo-{vivo.get');
+    expect(sh).toContain('--flujo');
+    for (const doc of [join(CARPETA, 'PROPIO.md'), join(raiz, 'docs/versiones-por-cliente.md')]) {
+      const x = readFileSync(doc, 'utf8');
+      const i = x.indexOf('edirección de Q');
+      expect(i, doc).toBeGreaterThanOrEqual(0);
+      expect(x.slice(i)).toMatch(/respaldo-<id>-<fecha>\.local\.json/);
+      expect(x.slice(i)).toMatch(/--flujo/);
+    }
+  });
+  it('los marcadores son los del flujo vivo: ninguno nuevo exige fila en la tabla local (plan A)', () => {
+    const marcas = new Set(JSON.stringify(PLAN_A).match(/REEMPLAZAR_[A-Z0-9_]+/g));
+    expect([...marcas].sort()).toEqual(['REEMPLAZAR_PHONE_NUMBER_ID_QTACO', 'REEMPLAZAR_RUTA_RECEPTOR_QTACO', 'REEMPLAZAR_URL_VERIFICADOR_RECEPTOR', 'REEMPLAZAR_WABA_ID_QTACO']);
   });
   it('estructura: 11 nodos, sin IA ni medios, un solo webhook, ruta y nombre parametrizables (plan A y plan B)', () => {
     for (const f of [PLAN_A, PLAN_B]) {

@@ -11,8 +11,9 @@ mcandidatos.forEach((c, i) => {
   const id = Array.isArray(r.messages) && r.messages[0] ? String(r.messages[0].id || '') : '';
   if (id !== '') mmapa[c.from] = mahora; else mfallidos++;
 });
-// Poda: lo mas viejo que 48 h ya no cuenta.
-for (const k of Object.keys(mmapa)) if (mahora - Number(mmapa[k] || 0) > 48 * 3600 * 1000) delete mmapa[k];
+// Poda: lo mas viejo que max(48 h, 2 x la ventana) ya no cuenta.
+const mpoda = Math.max(48, 2 * (Number($('Config del negocio').first().json.ventanaHoras) || 24)) * 3600 * 1000;
+for (const k of Object.keys(mmapa)) if (mahora - Number(mmapa[k] || 0) > mpoda) delete mmapa[k];
 msd.avisadosRedireccion = mmapa;
 if (mfallidos > 0) throw new Error('Aviso de redireccion no enviado a ' + mfallidos + ' cliente(s): Meta no devolvio un id.');
 return mcandidatos.map((c) => ({ json: { from: c.from, avisado: true } }));

@@ -86,7 +86,8 @@ function guardias(flujo) {
   const por = (n) => nodos.find((x) => x.name === n);
   if (nodos.length > TOPE_DE_NODOS) f.push(`${nodos.length} nodos: el tope es ${TOPE_DE_NODOS}`);
   for (const n of nodos) {
-    if (/langchain|googleGemini|whatsApp\b/i.test(n.type)) f.push(`${n.name}: sin IA ni nodos de medios`);
+    if (/langchain|googleGemini|whatsApp/i.test(n.type)) f.push(`${n.name}: sin IA ni nodos de medios`);
+    if (/subscriptions/i.test(JSON.stringify(n.parameters || {}))) f.push(`${n.name}: nada de /subscriptions (es de la sesion de WhatsApp-Modular)`);
     if (n.type === 'n8n-nodes-base.webhook' && n.name !== 'Entrega del receptor') f.push(`${n.name}: la unica entrada es «Entrega del receptor»`);
     if (n.type === 'n8n-nodes-base.httpRequest' && n.name !== 'Enviar aviso' && n.name !== 'Verificar firma con el receptor') f.push(`${n.name}: solo hay dos llamadas HTTP`);
     if (/\b(URL|Buffer|crypto|require|process)\b\s*[.(]/.test(String(n.parameters?.jsCode || '').replace(/\/\/.*$/gm, ''))) f.push(`${n.name}: usa un global que el Code de n8n no tiene`);
