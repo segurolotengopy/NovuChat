@@ -13,7 +13,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const sesion = vi.hoisted(() => ({ valor: null as unknown }));
 const lecturas = vi.hoisted(() => ({ n: 0 }));
-vi.mock('../../web/src/core/lib/firebase', () => ({ db: {}, auth: {} }));
+vi.mock('../../web/src/core/lib/firebase', () => ({ db: {}, auth: {}, funciones: {} }));
 vi.mock('../../web/src/core/lib/contexto', () => ({ useSesion: () => sesion.valor, ProveedorSesion: ({ children }: { children: unknown }) => children }));
 vi.mock('firebase/firestore', async (orig) => {
   const real = await orig<Record<string, unknown>>();

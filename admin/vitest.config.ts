@@ -38,6 +38,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
 export const SUITES_PURAS = [
   'pruebas/modulos/agenda/omitir-contactos-bloqueados.test.ts',
   'pruebas/central/cuenta-activa.test.ts',
+  'pruebas/central/edicion-crm-pantalla.test.ts',
   'pruebas/central/cuenta-activa-rutas.test.ts',
   'pruebas/core/claims-asignar-rol.test.ts',
   'pruebas/core/error-envio-incierto.test.ts',

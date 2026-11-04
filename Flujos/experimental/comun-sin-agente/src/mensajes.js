@@ -127,3 +127,11 @@ function cmContactoConBoton(op) {
   } else sinBoton = cmSinMencionDelBoton(op.cuerpo, op.sinNumero || 'Eso lo coordina una persona del equipo.');
   return cmMensaje(para, cmTexto(sinBoton), sinBoton, sinBoton, { tipoReporte: 'text', evento: op.evento, conBoton: false });
 }
+// NUMERAR los mensajes de un turno (1, 2, 3…) en el orden en que salen: es la `n` de la `Idempotency-Key` del relé B9
+// (`<cliente>-<ejecución>-<rol>-<n>`). Tiene que ser estable: un reintento del MISMO mensaje lleva la misma `n` y la misma clave, y dos mensajes
+// distintos del mismo turno nunca comparten `n` (el relé devolvería la respuesta del primero y el segundo se perdería). No muta los items que recibe
+// y siempre renumera: una `n` que ya traía un item no se respeta. Lo que no es un objeto se descarta.
+function cmNumerar(items) {
+  const lista = (Array.isArray(items) ? items : []).filter((it) => it !== null && typeof it === 'object' && !Array.isArray(it));
+  return lista.map((it, i) => Object.assign({}, it, { n: i + 1 }));
+}
