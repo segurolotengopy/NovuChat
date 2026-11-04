@@ -191,6 +191,7 @@ El contrato v2 (30/10/2026) quita «¿Anotar medio?» y «Anotar medio»: todo m
 
 - **Q'Taco** (`venta-minima.qtaco.json`): 61 → **59** nodos y tope 61 → 59.
 - **Q'Taco** (`venta-minima.qtaco.json`): 59 → **60** nodos y tope 59 → 60. Por qué: «Guardar comprobante» (guardar el comprobante antes de leerlo, PR #688), +1 nodo. Aprobado por: **Andres, 03/11/2026**.
+- **Q'Taco** (`venta-minima.qtaco.json`): mismos 60 nodos. Dato `plantillasPedidoLineas` **vacío** (cambio de número a la WABA del comercio, 04/11/2026): los avisos de pedido y comprobante salen por `pedido_registrado` hasta que Meta apruebe `pedido_registrado_l2/_l4/_l6` allí. Se repone la clave con un PR de datos cuando las tres figuren APROBADAS. 0 mensajes por conversación agregados o quitados.
 - **Rubén** (`rroca-ruben.json`): 57 → **55** nodos y tope 59 → 57.
 - **Bellido** (`agenda-minima.v0.json`, sin tope en su constructor): 64 → **62** nodos. Se publica el último.
 - Evy y Emma: 47 → **45**, tope 47 → 45. doctoras: 54 → **52**, tope 59 → 57. Antonio: 58 → **56**, tope 58 → 56. Chat NovuChat: 55 → **53**. captacion-minima: 54 → **52**.
