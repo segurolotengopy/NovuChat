@@ -10,11 +10,11 @@
  *
  *   ENV_FILE=<.env con N8N_BASE_URL y N8N_API_KEY> node scripts/plataforma/vaciar-memoria-flujo.mjs --workflow <id> --clave rroca
  *        (--todas-las-fichas | --sufijos 12345678,87654321) [--con-topes]
- *        [--aplicar --respaldo <ruta absoluta> --confirmo-produccion <clave>]
+ *        [--aplicar --respaldo <ruta absoluta> --confirmo-produccion <id del flujo>]
  *
  * SECO: informa cuántas fichas hay, cuántas se borrarían, cuántas tienen pedidos o un QR abierto (cobro real: un pedido a medias pierde su
  * contexto y el contador del id de pedido vuelve a empezar). Nunca imprime teléfonos (solo los 4 últimos dígitos cuando hay pocas) ni contenido.
- * `--aplicar`: exige `--confirmo-produccion <clave>` y `--respaldo` (ruta absoluta, 0600, fuera de todo repositorio, nunca se pisa: guarda el
+ * `--aplicar`: exige `--confirmo-produccion <id del flujo>` (igual a `--workflow`) y `--respaldo` (ruta absoluta, 0600, fuera de todo repositorio, nunca se pisa: guarda el
  * staticData COMPLETO, por si hay que reponerlo). Relee justo antes de escribir y, si el flujo cambió, no escribe. Solo cambia `staticData`:
  * nodos, conexiones y ajustes se reescriben TAL CUAL. Relee al final y verifica que no se perdió nada más. El PUT sobre un flujo activo puede
  * reiniciar sus webhooks: aplicarlo con poco tráfico. Lista cerrada de claves: `rroca`.
@@ -26,13 +26,14 @@ import { fileURLToPath } from 'node:url';
 import { comprobarRespaldo, guardarRespaldo } from './aplicar-consola-conversaciones.mjs';
 
 export const CLAVES = Object.freeze(['rroca']);
+export const ESPERA_FINAL_MS = 150_000;
 /** Claves hermanas que solo se borran con --con-topes (por clave). */
 const TOPES = Object.freeze({ rroca: ['rrTopes', 'rrExtranjeros'] });
 const CON_VALOR = ['workflow', 'clave', 'sufijos', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'todas-las-fichas', 'con-topes'];
 
 export const USO = '  ENV_FILE=… node scripts/plataforma/vaciar-memoria-flujo.mjs --workflow <id> --clave rroca (--todas-las-fichas | --sufijos a,b) [--con-topes] '
-  + '[--aplicar --respaldo <ruta> --confirmo-produccion <clave>]';
+  + '[--aplicar --respaldo <ruta> --confirmo-produccion <id del flujo>]';
 
 export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   const problemas = [];
@@ -63,8 +64,8 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     if (!sufijos.length || sufijos.some((s) => !/^\d{8}$/.test(s)) || new Set(sufijos).size !== sufijos.length) problemas.push('--sufijos: los 8 dígitos finales de cada teléfono, distintos, separados por coma');
   }
   if (todas === (valores.sufijos !== undefined)) problemas.push('indique exactamente una: --todas-las-fichas o --sufijos <a,b>');
-  if (confirmo !== undefined && confirmo !== clave) problemas.push('--confirmo-produccion no coincide con --clave');
-  if (aplicar && confirmo === undefined) problemas.push('--aplicar exige --confirmo-produccion <clave>');
+  if (confirmo !== undefined && confirmo !== workflow) problemas.push('--confirmo-produccion no coincide con --workflow (se confirma con el id del flujo)');
+  if (aplicar && confirmo === undefined) problemas.push('--aplicar exige --confirmo-produccion <id del flujo> (igual a --workflow)');
   if (aplicar && respaldo === undefined) problemas.push('--aplicar exige --respaldo <ruta absoluta> (0600, fuera del repositorio)');
   if (typeof env.ENV_FILE !== 'string' || env.ENV_FILE === '') problemas.push('falta ENV_FILE (el .env de n8n)');
   let respaldoResuelto = null;
@@ -102,7 +103,7 @@ export function sinFichas(staticData, cfg, ahoraMs = Date.now()) {
 }
 
 /**
- * deps = { leer(): Promise<flujo>, escribir(flujo, staticData): Promise<número HTTP> }
+ * deps = { leer(): Promise<flujo>, escribir(flujo, staticData): Promise<número HTTP>, esperar?(ms): Promise<void> }
  */
 export async function ejecutar(cfg, deps, log = (t) => console.log(t)) {
   const vivo = await deps.leer();
@@ -115,10 +116,11 @@ export async function ejecutar(cfg, deps, log = (t) => console.log(t)) {
   log(`  con pedidos guardados    : ${r.conPedidos}   con QR abierto: ${r.conQr}   (cobro real: decida antes)`);
   log(`  topes/extranjeros        : ${cfg.conTopes ? `se borran (${r.hermanas.join(', ') || 'no había'})` : 'se conservan'}`);
   if (r.aBorrar === 0 && r.hermanas.length === 0) { log('\n  ✓ Nada que borrar.\n'); return 0; }
-  if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar --respaldo <ruta> --confirmo-produccion <clave>.\n'); return 1; }
+  if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar --respaldo <ruta> --confirmo-produccion <id del flujo>.\n'); return 1; }
   // El GET y el PUT no son atómicos y el PUT reemplaza TODO el staticData: si una conversación escribió su ficha entre ambos, se perdería.
   const justo = await deps.leer();
-  if (JSON.stringify(justo.staticData) !== JSON.stringify(vivo.staticData) || JSON.stringify(justo.nodes) !== JSON.stringify(vivo.nodes)) {
+  const huella = (f) => JSON.stringify([f.staticData, f.nodes, f.connections, f.settings, f.active]);
+  if (huella(justo) !== huella(vivo)) {
     log('\n  ✗ El flujo cambió entre la lectura y la escritura: no se escribió nada. Vuelva a correrlo con poco tráfico.\n'); return 3;
   }
   try {
@@ -135,9 +137,15 @@ export async function ejecutar(cfg, deps, log = (t) => console.log(t)) {
   const igualRestoDeGlobal = Object.keys(vivo.staticData.global ?? {}).filter((k) => k !== cfg.clave && !(cfg.conTopes && (TOPES[cfg.clave] ?? []).includes(k)))
     .every((k) => JSON.stringify(despues.staticData.global?.[k]) === JSON.stringify(vivo.staticData.global[k]));
   const nodosIguales = JSON.stringify(despues.nodes) === JSON.stringify(vivo.nodes);
+  const sigueActivo = despues.active === vivo.active;
   log(`  PUT HTTP ${http} · fichas ahora=${Object.keys(m2).length} (esperadas ${esperado}) · resto del estado igual=${igualRestoDeGlobal} · nodos iguales=${nodosIguales} · activo=${despues.active}`);
+  if (!sigueActivo) { log(`\n  ✗ El flujo quedó ${despues.active ? 'activo' : 'DESACTIVADO'} y estaba ${vivo.active ? 'activo' : 'desactivado'}: reactívelo y revise. El respaldo permite reponer el estado.\n`); return 3; }
   if (Object.keys(m2).length !== esperado || !igualRestoDeGlobal || !nodosIguales) { log('\n  ✗ La verificación no coincide: revise el flujo; el respaldo permite reponer el estado.\n'); return 3; }
-  log('\n  ✓ Fichas borradas y releídas. El resto del flujo y del estado no cambió.\n');
+  // Una ejecución que empezó ANTES del PUT y termina después guarda su propio staticData y puede reponer las fichas viejas: se espera más que la ejecución más larga y se relee.
+  if (deps.esperar) await deps.esperar(ESPERA_FINAL_MS);
+  const tarde = (await deps.leer()).staticData?.global?.[cfg.clave] ?? {};
+  if (Object.keys(tarde).length > esperado) { log('\n  ✗ Tras la espera, las fichas reaparecieron (una ejecución en curso repuso el estado): corra el script de nuevo con poco tráfico.\n'); return 3; }
+  log('\n  ✓ Fichas borradas y releídas (también tras la espera). El resto del flujo y del estado no cambió.\n');
   return 0;
 }
 
@@ -163,6 +171,7 @@ async function principal() {
   };
   const codigo = await ejecutar(cfg, {
     leer: async () => (await llamar('GET')).json,
+    esperar: (ms) => new Promise((r) => setTimeout(r, ms)),
     escribir: async (vivo, staticData) => (await llamar('PUT', { name: vivo.name, nodes: vivo.nodes, connections: vivo.connections, settings: vivo.settings ?? {}, staticData })).status,
   });
   process.exit(codigo);

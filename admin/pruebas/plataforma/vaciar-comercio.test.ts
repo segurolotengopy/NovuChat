@@ -6,7 +6,7 @@
  * Se escribe NEGANDO primero: lo que NO debe pasar.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 type Cfg = Record<string, any>;
@@ -32,8 +32,9 @@ describe('V1. vaciar-chats-tenant', () => {
     expect(chats.analizarArgumentos(base, ENV).cfg).toMatchObject({ aplicar: false, tenant: 'rroca-ruben' });
   });
   it('NEGADO: «todos», comodines, varios comercios o sin tenant', () => {
-    for (const t of ['todos', '*', 'a,b', 'ROCA', '..', '__proto__']) expect(problemas(chats.analizarArgumentos(['--proyecto', PROY, '--tenant', t], ENV)), t).toContain('--tenant');
+    for (const t of ['todos', '*', 'a,b', 'ROCA', '..', '__proto__', 'bellido', 'qtaco', 'novuchat']) expect(problemas(chats.analizarArgumentos(['--proyecto', PROY, '--tenant', t], ENV)), t).toContain('--tenant');
     expect(problemas(chats.analizarArgumentos(['--proyecto', PROY], ENV))).toContain('falta --tenant');
+    for (const t of ['rroca-evy', 'rroca-emma', 'rroca-antonio']) expect(chats.analizarArgumentos(['--proyecto', PROY, '--tenant', t], ENV).ok, t).toBe(true);
   });
   it('NEGADO: --aplicar sin confirmación, sin respaldo, o con una confirmación de otro comercio', () => {
     expect(problemas(chats.analizarArgumentos([...base, '--aplicar', '--respaldo', rutaRespaldo()], ENV))).toContain('--confirmo-produccion');
@@ -95,6 +96,21 @@ describe('V1. vaciar-chats-tenant', () => {
     expect(m.llamadas.auditar[0]).toHaveProperty('borrados');
     expect(JSON.stringify(m.llamadas.auditar)).not.toContain('texto-secreto');
   });
+  it('una conversación fantasma (sin datos, pero con mensajes) también se borra con sus mensajes', async () => {
+    const m = mundo(0);
+    m.docs['tenants/rroca-ruben/conversaciones/wa_9/mensajes/m1'] = { texto: 'x' };
+    const original = m.deps.listar;
+    m.deps.listar = async (c: string) => (c === 'conversaciones' ? (Object.keys(m.docs).some((k) => k.includes('/wa_9/')) ? [{ ruta: 'tenants/rroca-ruben/conversaciones/wa_9', datos: {} }] : []) : original(c));
+    expect(await chats.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), m.deps, () => {})).toBe(0);
+    expect(Object.keys(m.docs).some((k) => k.includes('/wa_9/'))).toBe(false);
+  });
+  it('NEGADO: si un borrado falla, sale 3 (no 1), sin imprimir rutas, y no deja auditoría de éxito', async () => {
+    const m = mundo(); const salida: string[] = [];
+    m.deps.borrar = async () => 2;
+    expect(await chats.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), m.deps, (t: string) => salida.push(t))).toBe(3);
+    expect(salida.join('\n')).not.toContain('wa_');
+    expect(m.llamadas.auditar).toHaveLength(0);
+  });
   it('NEGADO: un respaldo existente no se pisa y no se borra nada', async () => {
     const m = mundo(); const resp = rutaRespaldo();
     expect(await chats.ejecutar(cfgDe({ aplicar: true, respaldo: resp }), mundo().deps, () => {})).toBe(0);
@@ -131,7 +147,8 @@ describe('V2. vaciar-memoria-flujo', () => {
   });
   it('NEGADO: --aplicar sin confirmación ni respaldo', () => {
     expect(problemas(memoria.analizarArgumentos([...base, '--aplicar'], ENV))).toContain('--confirmo-produccion');
-    expect(problemas(memoria.analizarArgumentos([...base, '--aplicar', '--confirmo-produccion', 'rroca'], ENV))).toContain('--respaldo');
+    expect(problemas(memoria.analizarArgumentos([...base, '--aplicar', '--confirmo-produccion', 'rroca', '--respaldo', rutaRespaldo()], ENV))).toContain('id del flujo');
+    expect(problemas(memoria.analizarArgumentos([...base, '--aplicar', '--confirmo-produccion', 'abc123XYZ'], ENV))).toContain('--respaldo');
   });
 
   const fichas = () => ({ '59170000001': { pedidos: [{ id: 1 }], qrHastaMs: Date.now() + 60_000, historial: ['x'] }, '59170000002': { historial: [] }, '59170000003': {} });
@@ -190,6 +207,23 @@ describe('V2. vaciar-memoria-flujo', () => {
     expect(await memoria.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), m.deps, () => {})).toBe(3);
     expect(m.puts).toHaveLength(0);
   });
+  it('NEGADO: si el PUT deja el flujo desactivado, sale 3', async () => {
+    const m = mundo(); const w = m.deps.escribir;
+    m.deps.escribir = async (v: any, sd: any) => { const r = await w(v, sd); m.vivo.active = false; return r; };
+    expect(await memoria.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), m.deps, () => {})).toBe(3);
+  });
+  it('NEGADO: si tras la espera las fichas reaparecen (una ejecución en curso repuso el estado), sale 3', async () => {
+    const m = mundo(); let esperas = 0;
+    (m.deps as any).esperar = async () => { esperas += 1; m.vivo.staticData.global.rroca = fichas(); };
+    expect(await memoria.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), m.deps, () => {})).toBe(3);
+    expect(esperas).toBe(1);
+  });
+  it('NEGADO: si cambió connections o settings entre las lecturas, no escribe', async () => {
+    const m = mundo(); let n = 0; const leer = m.deps.leer;
+    m.deps.leer = async () => { const v = await leer(); n += 1; if (n === 2) v.settings = { executionOrder: 'v0' }; return v; };
+    expect(await memoria.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), m.deps, () => {})).toBe(3);
+    expect(m.puts).toHaveLength(0);
+  });
   it('NEGADO: un respaldo existente no se pisa', async () => {
     const resp = rutaRespaldo();
     expect(await memoria.ejecutar(cfgDe({ aplicar: true, respaldo: resp }), mundo().deps, () => {})).toBe(0);
@@ -210,6 +244,9 @@ describe('V3. vaciar-hoja-crm', () => {
   it('NEGADO: otro comercio o varios, --aplicar sin confirmación/respaldo, SHEET_ID ausente, --acepto-borrar-equipo en seco', () => {
     for (const t of ['bellido', 'qtaco', 'todos']) expect(problemas(hoja.analizarArgumentos(['--proyecto', PROY, '--tenant', t], ENV)), t).toContain('tiene que ser uno de');
     expect(problemas(hoja.analizarArgumentos([...base, '--aplicar', '--respaldo', rutaRespaldo()], ENV))).toContain('--confirmo-produccion');
+    expect(problemas(hoja.analizarArgumentos([...base, '--aplicar', '--confirmo-produccion', 'rroca-ruben', '--respaldo', rutaRespaldo()], ENV))).toContain('--confirmo-hoja');
+    expect(problemas(hoja.analizarArgumentos([...base, '--aplicar', '--confirmo-produccion', 'rroca-ruben', '--confirmo-hoja', 'zzzzzz', '--respaldo', rutaRespaldo()], ENV))).toContain('no coincide');
+    expect(hoja.analizarArgumentos([...base, '--aplicar', '--confirmo-produccion', 'rroca-ruben', '--confirmo-hoja', SHEET.slice(-6), '--respaldo', rutaRespaldo()], ENV).ok).toBe(true);
     expect(problemas(hoja.analizarArgumentos([...base, '--aplicar', '--confirmo-produccion', 'rroca-ruben'], ENV))).toContain('--respaldo');
     expect(problemas(hoja.analizarArgumentos(base, { ...ENV, SHEET_ID: '' }))).toContain('SHEET_ID');
     expect(problemas(hoja.analizarArgumentos([...base, '--acepto-borrar-equipo'], ENV))).toContain('--aplicar');
@@ -273,6 +310,18 @@ describe('V3. vaciar-hoja-crm', () => {
     expect(await hoja.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), m.deps, mapaR, () => {})).toBe(3);
     expect(m.llamadas.limpiar).toHaveLength(0);
   });
+  it('NEGADO: si el bot ACTUALIZÓ una fila existente entre las lecturas, no borra', async () => {
+    const m = mundo([fila(1), fila(2)]); const leer = m.deps.leer; let n = 0;
+    m.deps.leer = async () => { const v = await leer(); n += 1; if (n === 2) v[1][5] = 'cambió'; return v; };
+    expect(await hoja.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), m.deps, mapaR, () => {})).toBe(3);
+    expect(m.llamadas.limpiar).toHaveLength(0);
+  });
+  it('el respaldo lleva también los valores formateados (las fechas como se ven)', async () => {
+    const m = mundo([fila(1)]); const resp = rutaRespaldo();
+    (m.deps as any).leerFormateado = async () => [['formateado']];
+    expect(await hoja.ejecutar(cfgDe({ aplicar: true, respaldo: resp }), m.deps, mapaR, () => {})).toBe(0);
+    expect(JSON.parse(readFileSync(resp, 'utf8')).valoresFormateados).toEqual([['formateado']]);
+  });
   it('NEGADO: un respaldo existente no se pisa', async () => {
     const resp = rutaRespaldo();
     expect(await hoja.ejecutar(cfgDe({ aplicar: true, respaldo: resp }), mundo([fila(1)]).deps, mapaR, () => {})).toBe(0);
@@ -284,6 +333,5 @@ describe('V3. vaciar-hoja-crm', () => {
     const m = mundo([]);
     expect(await hoja.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), m.deps, mapaR, () => {})).toBe(0);
     expect(m.llamadas.limpiar).toHaveLength(0);
-    expect(existsSync('/nada')).toBe(false);
   });
 });

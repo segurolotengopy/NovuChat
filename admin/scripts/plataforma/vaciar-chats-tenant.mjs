@@ -18,13 +18,16 @@
  * `--aplicar`: exige `--confirmo-produccion` igual a `--tenant` y `--respaldo` (ruta absoluta, 0600, fuera de todo repositorio, nunca se
  * pisa). El respaldo lleva los documentos a borrar (datos de personas: se borra al cerrar la operación). Borra primero las subcolecciones
  * y después los documentos, relee que no quede nada y deja una línea en la auditoría con SOLO conteos.
- * Un solo comercio: no existe «todos» ni comodines. IRREVERSIBLE salvo por ese respaldo.
+ * Un solo comercio de la lista cerrada de las subcuentas (la misma del relleno histórico), y nunca uno excluido: no existe «todos» ni comodines. IRREVERSIBLE salvo por ese respaldo.
+ *
+ * ORDEN con las otras dos herramientas (con poco tráfico, de noche): 1) fichas del flujo en n8n, 2) chats (este script), 3) hoja del miniCRM. Si el bot recibe un mensaje durante el borrado puede recrear una conversación: la relectura lo detecta y sale 3.
  *
  * SALIDA. 0 hecho o seco sin nada que borrar; 1 el seco encontró documentos; 2 uso o salvaguarda (nada escrito); 3 error de ejecución.
  */
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
-import { comprobarProyecto, comprobarRespaldo, guardarRespaldo, ID_TENANT } from './aplicar-consola-conversaciones.mjs';
+import { comprobarProyecto, comprobarRespaldo, guardarRespaldo, esTenantExcluido } from './aplicar-consola-conversaciones.mjs';
+import { TENANTS } from './relleno-crm-historico.mjs';
 
 /** Lista CERRADA de lo que se borra: colección -> subcolecciones. */
 export const SE_BORRA = Object.freeze({ conversaciones: Object.freeze(['mensajes', 'privado']), contactos: Object.freeze([]) });
@@ -57,7 +60,8 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   const proy = proyecto === undefined ? { ok: false } : comprobarProyecto(proyecto, env);
   if (proyecto === undefined) problemas.push('falta --proyecto'); else if (!proy.ok) problemas.push(proy.motivo);
   if (tenant === undefined) problemas.push('falta --tenant (un comercio por corrida; no existe «todos»)');
-  else if (!ID_TENANT.test(tenant) || ['todos', 'todas', 'all', 'todo'].includes(tenant)) problemas.push('--tenant no es un id de comercio válido (sin comodines ni «todos»)');
+  else if (!TENANTS.includes(tenant)) problemas.push(`--tenant tiene que ser uno de: ${TENANTS.join(', ')} (un comercio por corrida; no existe «todos»)`);
+  else if (esTenantExcluido(tenant, env)) problemas.push('--tenant está excluido de las herramientas de la plataforma');
   if (confirmo !== undefined && confirmo !== tenant) problemas.push('--confirmo-produccion no coincide con --tenant');
   if (aplicar && confirmo === undefined) problemas.push('--aplicar exige --confirmo-produccion <tenant> (igual a --tenant)');
   if (aplicar && respaldo === undefined) problemas.push('--aplicar exige --respaldo <ruta absoluta> (0600, fuera del repositorio)');
@@ -75,7 +79,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
  *   listar(coleccion): Promise<{ruta, datos}[]>      documentos de tenants/<t>/<coleccion> (sin subcolecciones)
  *   listarSub(rutaDoc, sub): Promise<{ruta, datos}[]>
  *   contar(coleccion): Promise<number>               solo conteo de lo que NO se borra
- *   borrar(rutas: string[]): Promise<void>
+ *   borrar(rutas: string[]): Promise<number | void>   devuelve cuántos borrados FALLARON (0 o nada = todos bien)
  *   auditar(conteos): Promise<void>
  * }
  */
@@ -120,8 +124,9 @@ export async function ejecutar(cfg, deps, log = (t) => console.log(t)) {
   const prefijos = Object.keys(SE_BORRA).map((c) => `tenants/${cfg.tenant}/${c}/`);
   const seguras = aBorrar.every((d) => prefijos.some((p) => d.ruta.startsWith(p)));
   if (!seguras) { log('\n  ✗ Una ruta quedó fuera de la lista cerrada: no se borra nada.\n'); return 2; }
-  await deps.borrar(aBorrar.filter((d) => d.nivel === 0).map((d) => d.ruta));
-  await deps.borrar(aBorrar.filter((d) => d.nivel === 1).map((d) => d.ruta));
+  const fallos = ((await deps.borrar(aBorrar.filter((d) => d.nivel === 0).map((d) => d.ruta))) ?? 0)
+    + ((await deps.borrar(aBorrar.filter((d) => d.nivel === 1).map((d) => d.ruta))) ?? 0);
+  if (fallos > 0) { log(`\n  ✗ Fallaron ${fallos} borrados (no se imprimen rutas): revise y vuelva a correr; lo ya borrado está en el respaldo.\n`); return 3; }
   let quedan = 0;
   for (const [col, subs] of Object.entries(SE_BORRA)) {
     const docs = await deps.listar(col);
@@ -129,7 +134,7 @@ export async function ejecutar(cfg, deps, log = (t) => console.log(t)) {
     for (const s of subs) for (const d of docs) quedan += (await deps.listarSub(d.ruta, s)).length;
   }
   await deps.auditar({ borrados: plan.documentos });
-  if (quedan > 0) { log(`\n  ✗ Quedan ${quedan} documentos tras el borrado: revise (el respaldo permite reponer lo borrado).\n`); return 3; }
+  if (quedan > 0) { log(`\n  ✗ Quedan ${quedan} documentos tras el borrado: revise (el respaldo permite reponer lo borrado). Si el bot sigue activo, un mensaje nuevo puede haber recreado una conversación: corra de nuevo con poco tráfico.\n`); return 3; }
   log(`\n  ✓ Borrados ${total} documentos y releído: no queda nada en la lista cerrada. metricas, config y el resto no se tocaron.\n`);
   return 0;
 }
@@ -153,7 +158,7 @@ async function principal() {
     listar: async (c) => leer(await db.collection(`tenants/${cfg.tenant}/${c}`).listDocuments()),
     listarSub: async (ruta, s) => leer(await db.doc(ruta).collection(s).listDocuments()),
     contar: async (c) => (await db.collection(`tenants/${cfg.tenant}/${c}`).count().get()).data().count,
-    borrar: async (rutas) => { const w = db.bulkWriter(); for (const r of rutas) void w.delete(db.doc(r)); await w.close(); },
+    borrar: async (rutas) => { const w = db.bulkWriter(); const res = await Promise.allSettled(rutas.map((r) => w.delete(db.doc(r)))); await w.close(); return res.filter((x) => x.status === 'rejected').length; },
     auditar: async (c) => { await db.collection(`tenants/${cfg.tenant}/auditoria`).add({ accion: 'vaciar_chats', en: Timestamp.now(), ...c }); },
   });
   process.exit(codigo);
