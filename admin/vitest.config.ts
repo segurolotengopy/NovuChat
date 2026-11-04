@@ -46,6 +46,7 @@ export const SUITES_PURAS = [
   'pruebas/central/cuenta-activa-personas.test.ts',
   'pruebas/central/sesion-propietario-google.test.ts',
   'pruebas/agenda-minima-flujo.test.ts',
+  'pruebas/tenants/bellido/crm.test.ts',
   'pruebas/agenda-minima-lib.test.ts',
   'pruebas/agenda-minima-cnnorm-invisibles.test.ts',
   'pruebas/agenda-minima-herramienta-actualizar.test.ts',

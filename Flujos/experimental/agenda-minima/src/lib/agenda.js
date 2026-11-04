@@ -578,3 +578,65 @@ function partirNombre(texto) {
   const nNombres = w.filter((x) => AGM_PARTICULAS.indexOf(x.toLowerCase()) < 0).length >= 4 ? 2 : 1;
   return { apellidos: w.slice(nNombres).join(' '), nombres: w.slice(0, nNombres).join(' ') };
 }
+
+// ---------------------------------------------------------------------------
+// EL PROSPECTO DEL miniCRM (modulo `crm`). Funcion PURA: del turno ya resuelto a la ficha del prospecto, con VOCABULARIO CERRADO.
+//   * El texto libre del cliente NO entra (ni el mensaje, ni el nombre del paciente, ni nada clinico): solo etiquetas fijas de este archivo.
+//   * Los hechos salen de lo que el CODIGO verifico (cita creada por el calendario, cita borrada, aviso que salio), nunca de lo que dijo el modelo.
+//   * El nombre del contacto es el del perfil de WhatsApp, saneado (letras, espacios, apostrofo y guion).
+//   * No dice jamas que alguien pago. MENSAJES: ninguno. La columna del diagnostico del equipo no se toca desde aqui.
+// Entrada `d` (todo opcional): { from, plan, servicio, clave, creada, reprogramo, cancelada, inicioCita, huecos, derivo, nombrePerfil,
+//   anuncio, nuevoContacto, ahoraMs }. Devuelve null si el turno no es de conversacion de agenda o no hay telefono valido.
+// Los planes que NUNCA dejan prospecto: la emergencia, los medios que el canal no lee, los errores, el uso extendido, la suspension y los turnos sin respuesta.
+const AGM_PLANES_CRM = ['menu', 'respuesta_fija', 'pedir_boton', 'pedir_nombre', 'ofrecer', 'responder', 'cruce', 'listar', 'sin_citas',
+  'cancelar', 'crear', 'transferir', 'contacto_doctor', 'contacto_recepcion'];
+const AGM_SERVICIO_CRM = { control_recien_nacido: 'Control del recién nacido', control_nino_sano: 'Control del niño sano' };
+const AGM_CLAVE_CRM = { servicios: 'Servicios', costo: 'Precio', direccion: 'Ubicación', horario: 'Horario de atención' };
+function agmProspectoCrm(d) {
+  const x = d && typeof d === 'object' ? d : {};
+  const plan = String(x.plan || '');
+  if (AGM_PLANES_CRM.indexOf(plan) < 0) return null;
+  const telefono = String(x.from === undefined || x.from === null ? '' : x.from).replace(/\D/g, '');
+  if (!/^\d{6,20}$/.test(telefono)) return null;
+  const servicio = Object.prototype.hasOwnProperty.call(AGM_SERVICIO_CRM, x.servicio) ? AGM_SERVICIO_CRM[x.servicio] : '';
+  const agendo = plan === 'crear' && x.creada === true;
+  const reprogramo = agendo && x.reprogramo === true;
+  const canceloCita = plan === 'cancelar' && x.cancelada === true;
+  let quePidio = '';
+  if (reprogramo) quePidio = 'Reprogramar cita';
+  else if (agendo) quePidio = 'Agendar cita' + (servicio ? ' (' + servicio + ')' : '');
+  else if (canceloCita) quePidio = 'Cancelar cita';
+  else if (plan === 'respuesta_fija') quePidio = Object.prototype.hasOwnProperty.call(AGM_CLAVE_CRM, x.clave) ? AGM_CLAVE_CRM[x.clave] : '';
+  // Lo que PIDIO (intencion) se distingue de lo que se HIZO (arriba): ofrecer horarios o listar citas no es agendar ni cancelar.
+  else if (plan === 'listar' || plan === 'sin_citas') quePidio = 'Consulta por su cita';
+  else if (plan === 'ofrecer' || plan === 'cruce' || plan === 'pedir_boton' || plan === 'pedir_nombre') quePidio = 'Consultar horarios' + (servicio ? ' (' + servicio + ')' : '');
+  else if (plan === 'contacto_doctor') quePidio = 'Hablar con el doctor';
+  else if (plan === 'contacto_recepcion' || plan === 'transferir') quePidio = 'Hablar con recepción';
+  // Dia y horario: SOLO de un instante que el codigo ya tiene (la cita creada o el primer hueco ofrecido), en etiquetas fijas.
+  const fuente = agendo && x.inicioCita ? x.inicioCita : ((plan === 'ofrecer' || plan === 'cruce' || plan === 'pedir_boton') && Array.isArray(x.huecos) && x.huecos.length ? x.huecos[0] : '');
+  let diaPreferido = '';
+  let horarioPreferido = '';
+  if (fuente) {
+    const m = msDe(fuente);
+    if (!Number.isNaN(m)) {
+      const dia = diaDeLaSemana(fechaLocal(m));
+      if (dia) diaPreferido = dia.charAt(0).toUpperCase() + dia.slice(1);
+      horarioPreferido = Number(horaLocal(m).split(':')[0]) < 12 ? 'Mañana' : 'Tarde';
+    }
+  }
+  let derivacion = '';
+  if (x.derivo === 'recepcion') derivacion = 'Consulta para recepción';
+  else if (x.derivo === 'doctor') derivacion = 'Consulta para el doctor';
+  const nombre = String(x.nombrePerfil === undefined || x.nombrePerfil === null ? '' : x.nombrePerfil)
+    .replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim().slice(0, 60);
+  const p = {
+    telefono: telefono, nombre: nombre, nombreDePerfil: true, anuncio: x.anuncio === true, nuevoContacto: x.nuevoContacto === true,
+    senales: { aceptoAgendar: agendo, pidioUbicacion: plan === 'respuesta_fija' && x.clave === 'direccion', llegoPorAnuncio: x.anuncio === true },
+    ultimaInteraccionMs: Number(x.ahoraMs),
+  };
+  if (quePidio !== '') p.quePidio = quePidio;
+  if (diaPreferido !== '') p.diaPreferido = diaPreferido;
+  if (horarioPreferido !== '') p.horarioPreferido = horarioPreferido;
+  if (derivacion !== '') p.derivacion = derivacion;
+  return p;
+}

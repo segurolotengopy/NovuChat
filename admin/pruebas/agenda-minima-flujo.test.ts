@@ -42,6 +42,8 @@ const OTRA = '59100000022';
 const REC = '59100000001';
 const DOC = '59100000002';
 const PRUEBA_TEL = '59100000004';
+/** Los 7 nodos de la rama del miniCRM que hablan con Google o corren el módulo (el primero, «Prospecto para la planilla», sí corre). */
+const RAMA_CRM_SIN_RED = new Set(['Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila']);
 // Lunes 05/10/2026, 10:00 en La Paz (UTC-4). Nada mira el reloj real: las pruebas no caducan.
 const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
 const CAL = 'cal-ejemplo';
@@ -176,7 +178,10 @@ function mundo(op: Opciones = {}) {
     const p = n.parameters;
     if (desactivados.has(n.name) && n.type !== 'n8n-nodes-base.if') return [items];
     const tipo = n.type.split('.').pop() ?? '';
-    const cada = (f: (it: Item) => J[]): Item[] => items.flatMap((it) => f(it).map((json) => ({ json, pair: it.pair })));
+    // La rama del miniCRM (módulo `crm`): corre «Prospecto para la planilla» (código real, para ver qué se guardaría); de ahí en adelante son Google Sheets y el
+    // módulo, que se prueban aparte (`tenants/bellido/crm.test.ts`, `modulos/crm`). Aquí no devuelven nada: la rama termina sin tocar la conversación.
+    if (RAMA_CRM_SIN_RED.has(n.name)) return [[]];
+    const cada =(f: (it: Item) => J[]): Item[] => items.flatMap((it) => f(it).map((json) => ({ json, pair: it.pair })));
 
     if (entrada && entrada.nombre === n.name) return [[{ json: entrada.json, pair: {} }]];
 
@@ -361,6 +366,10 @@ function mundo(op: Opciones = {}) {
       ejecutados: new Set(orden),
       resumen: ultimoResumen,
       config: (refs['Config del negocio']?.[0] ?? {}) as J,
+      /** Lo que «Prospecto para la planilla» dejó pasar a la rama del miniCRM (vacío = Google ni se consulta). */
+      prospecto: (refs['Prospecto para la planilla']?.[0] ?? null) as J | null,
+      /** El primer ítem de «Armar mensajes»: lleva `guardarPlanilla` y `prospectoPlanilla`. */
+      armado: (refs['Armar mensajes']?.[0] ?? {}) as J,
     };
   }
 
@@ -3204,5 +3213,143 @@ describe('Agenda mínima v0: la red de la promesa de recepción no rompe lo que 
       expect(cuerpo).toMatch(/Toca el horario que prefieras/);
       expect(cuerpo).toContain('• jueves 8 de octubre a las 14:00');
     });
+  });
+});
+
+// =================================================================================================
+// EL miniCRM (módulo `crm`, orden de Andres del 04/11/2026): qué guarda «Armar mensajes» y qué NO, sobre el flujo versionado en el n8n de mentira. Las unidades de
+// `agmProspectoCrm` y la forma de la rama están en `tenants/bellido/crm.test.ts`. Mensajes por conversación: 0 (la rama no envía y no cambia lo que sale).
+describe('Agenda mínima v0: el miniCRM', () => {
+  // Un id de planilla con la forma de uno real, sin serlo.
+  const PLANILLA = 'PlanillaDePruebaDeBellidoParaElMiniCrm01';
+  const CON = { planillaProspectosId: PLANILLA };
+  const conFalla = (): Flujo => {
+    const f = JSON.parse(JSON.stringify(PRODUCCION)) as Flujo;
+    const n = f.nodes.find((x) => x.name === 'Armar mensajes')!;
+    n.parameters['jsCode'] = `${String(n.parameters['jsCode'])}\nfunction agmProspectoCrm() { throw new Error('prospecto inesperado'); }`;
+    return f;
+  };
+
+  it('sin id de planilla (el marcador del JSON versionado cuenta como vacío) no guarda y Google ni se consulta', () => {
+    const t = mundo({ eventos: [] }).turno(texto(MAMA, 'hola'));
+    expect(t.armado['guardarPlanilla']).toBe(false);
+    expect(t.armado['prospectoPlanilla']).toBeNull();
+    expect(t.config['planillaProspectosId']).toBe('');
+    expect(t.prospecto).toBeNull();
+  });
+  it('con id y hoja: el primer contacto deja UN prospecto (contacto nuevo, nombre del perfil, teléfono) y no cambia lo que se envía', () => {
+    const t = mundo({ eventos: [], configBase: CON }).turno(texto(MAMA, 'hola'));
+    expect(t.armado['guardarPlanilla']).toBe(true);
+    expect(t.prospecto).toMatchObject({ telefono: MAMA, nombre: 'Mamá de Ana', nuevoContacto: true, nombreDePerfil: true });
+    expect(t.config['planillaProspectosHoja']).toBe('Leads_CRM');
+    expect(t.enviados).toHaveLength(1);
+  });
+  it('0 mensajes: la misma conversación completa (menú, horarios, nombre, cita) manda exactamente lo mismo con planilla y sin planilla', () => {
+    const conversacion = (configBase: Record<string, string>): string[] => {
+      const m = mundo({ eventos: [], configBase });
+      const salida: string[] = [];
+      const reg = (t: Turno): void => { salida.push(...t.enviados.map((e) => `${e.a}|${e.tipo}|${e.cuerpo}`), `cierres:${t.cierres.length}`, `ingesta:${t.ingesta.length}`); };
+      reg(m.turno(texto(MAMA, 'hola')));
+      reg(hastaPedirNombre(m));
+      m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+      reg(m.turno(texto(MAMA, 'Ana Pérez Gómez')));
+      return salida;
+    };
+    expect(conversacion(CON)).toEqual(conversacion({}));
+  });
+  it('una cita que el CALENDARIO creó marca el hecho (Agendar cita, día, horario, aceptó agendar) aunque el modelo no lo diga', () => {
+    const m = mundo({ eventos: [], configBase: CON });
+    hastaPedirNombre(m);
+    // El modelo redacta cualquier cosa que no confirma nada; el texto de la confirmación lo arma el código.
+    m.gemini.redactar = 'Gracias por la paciencia.';
+    m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+    const t = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
+    expect(m.calendario.eventos).toHaveLength(1);
+    expect(t.prospecto).toMatchObject({ quePidio: 'Agendar cita (Control del niño sano)', diaPreferido: 'Jueves', horarioPreferido: 'Tarde', senales: { aceptoAgendar: true } });
+    // El nombre del niño de la cita NO viaja al prospecto.
+    expect(JSON.stringify(t.prospecto)).not.toMatch(/P[eé]rez|G[oó]mez|Ana P/);
+  });
+  it('NIEGA: si el candado deshizo la cita (cruce) no hay hecho de agendar', () => {
+    const m = mundo({ eventos: [], configBase: CON });
+    hastaPedirNombre(m);
+    m.calendario.despuesDeCrear = (c) => { c.push(evento('rival-1', JUEVES, '14:00', '14:30', 'Otro paciente')); };
+    m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+    const t = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
+    expect(t.prospecto).not.toBeNull();
+    expect((t.prospecto!['senales'] as J)['aceptoAgendar']).toBe(false);
+    expect(String(t.prospecto!['quePidio'])).not.toMatch(/^Agendar cita|^Reprogramar/);
+  });
+  it('mover una cita (crea la nueva y borra la vieja) marca «Reprogramar cita»', () => {
+    const m = mundo({ eventos: [citaDe(MAMA, 'vieja', JUEVES, '14:00', '14:30', 'Pérez Gómez, Ana (CNS)')], configBase: CON });
+    m.gemini.extraer = extraccion({ intencion: 'mover' });
+    m.turno(texto(MAMA, 'quiero mover mi cita'));
+    const t = m.turno(boton(MAMA, idHueco(VIERNES, '11:00')));
+    expect(t.bitacora).toEqual(['crear:ev-1', 'borrar:vieja']);
+    expect(t.prospecto).toMatchObject({ quePidio: 'Reprogramar cita', diaPreferido: 'Viernes', horarioPreferido: 'Mañana' });
+  });
+  it('cancelar: «Cancelar cita» solo cuando el borrado salió bien; el listado previo es solo una consulta', () => {
+    const m = mundo({ eventos: [citaDe(MAMA, 'vieja', JUEVES, '14:00', '14:30', 'Pérez Gómez, Ana (CNS)')], configBase: CON });
+    m.gemini.extraer = extraccion({ intencion: 'cancelar' });
+    const lst = m.turno(texto(MAMA, 'quiero cancelar mi cita'));
+    expect(lst.prospecto).toMatchObject({ quePidio: 'Consulta por su cita' });
+    const t = m.turno(boton(MAMA, 'c|vieja'));
+    expect(t.bitacora).toEqual(['borrar:vieja']);
+    expect(t.prospecto).toMatchObject({ quePidio: 'Cancelar cita' });
+  });
+  it('NIEGA: si el borrado falla (la cita sigue) no se marca «Cancelar cita»', () => {
+    const m = mundo({ eventos: [citaDe(MAMA, 'vieja', JUEVES, '14:00', '14:30', 'Pérez Gómez, Ana (CNS)')], configBase: CON });
+    m.gemini.extraer = extraccion({ intencion: 'cancelar' });
+    m.turno(texto(MAMA, 'quiero cancelar mi cita'));
+    m.calendario.fallas.borrar = true;
+    const t = m.turno(boton(MAMA, 'c|vieja'));
+    expect(t.bitacora).toEqual([]);
+    expect(String(t.prospecto?.['quePidio'] ?? '')).not.toBe('Cancelar cita');
+  });
+  it('NIEGA: la emergencia no deja prospecto, aunque haya id de planilla', () => {
+    const t = mundo({ eventos: [], configBase: CON }).turno(texto(MAMA, 'emergencia, mi bebé no respira'));
+    expect(t.armado['guardarPlanilla']).toBe(false);
+    expect(t.prospecto).toBeNull();
+  });
+  it('NIEGA: un mensaje con síntomas, el nombre del niño y montos NO llega a la planilla', () => {
+    const m = mundo({ eventos: [], configBase: CON });
+    m.gemini.extraer = extraccion({ intencion: 'otra', pregunta: 'Mateo Quispe tiene fiebre y tos, ¿cuánto cuesta? 250 Bs' });
+    const t = m.turno(texto(MAMA, 'mi hijo Mateo Quispe tiene fiebre y tos desde ayer, le di paracetamol, ¿cuánto cuesta? 250 Bs'));
+    const vista = JSON.stringify([t.armado['prospectoPlanilla'], t.prospecto]);
+    for (const x of ['Mateo', 'Quispe', 'fiebre', 'tos', 'paracetamol', '250']) expect(vista, x).not.toContain(x);
+  });
+  it('el modo prueba (Webhook de prueba con modoPrueba) no guarda', () => {
+    const m = mundo({ eventos: [], flujo: PRUEBA, configBase: CON });
+    const cuerpo = Object.assign({}, texto(MAMA, 'hola'), { modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true, calendarioDePrueba: 'cal-de-prueba' });
+    const t = m.turno({ body: cuerpo });
+    expect(t.armado['guardarPlanilla']).toBe(false);
+    expect(t.prospecto).toBeNull();
+  });
+  it('la variante de prueba (id vacío en Config base) no guarda', () => {
+    const t = mundo({ eventos: [], flujo: PRUEBA }).turno({ body: texto(MAMA, 'hola') });
+    expect(t.armado['guardarPlanilla']).toBe(false);
+    expect(t.prospecto).toBeNull();
+  });
+  it('LA PLANILLA NUNCA TUMBA LA ATENCIÓN: si calcular el prospecto lanza, el paciente recibe su respuesta y no se guarda nada', () => {
+    const t = mundo({ eventos: [], configBase: CON, flujo: conFalla() }).turno(texto(MAMA, 'hola'));
+    expect(t.enviados).toHaveLength(1);
+    expect(t.armado['guardarPlanilla']).toBe(false);
+    expect(t.armado['prospectoPlanilla']).toBeNull();
+    expect(t.prospecto).toBeNull();
+  });
+  it('48 horas: el segundo mensaje seguido no es contacto nuevo; con 48 h vencidas sí (el estado de agenda vence a los 30 minutos, el mapa del miniCRM no)', () => {
+    const m = mundo({ eventos: [], configBase: CON });
+    expect(m.turno(texto(MAMA, 'hola')).prospecto).toMatchObject({ nuevoContacto: true });
+    expect(m.turno(texto(MAMA, 'hola otra vez'), { avanzarMin: 60 }).prospecto).toMatchObject({ nuevoContacto: false });
+    expect(m.turno(texto(MAMA, 'volví'), { avanzarMin: 49 * 60 }).prospecto).toMatchObject({ nuevoContacto: true });
+  });
+  it('el mapa de contactos del miniCRM guarda solo teléfono y hora, y se poda a las 48 h', () => {
+    const m = mundo({ eventos: [], configBase: CON });
+    m.turno(texto(MAMA, 'hola'));
+    m.turno(texto(OTRA, 'hola'));
+    const mapa = m.sd['agendaMinimaCrm'] as Record<string, number>;
+    expect(Object.keys(mapa).sort()).toEqual([MAMA, OTRA].sort());
+    expect(Object.values(mapa).every((v) => typeof v === 'number')).toBe(true);
+    m.turno(texto(OTRA, 'volví'), { avanzarMin: 49 * 60 });
+    expect(Object.keys(m.sd['agendaMinimaCrm'] as J)).toEqual([OTRA]);
   });
 });

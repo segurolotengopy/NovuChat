@@ -271,7 +271,7 @@ if (bandera('sobre-bellido')) {
     // Con `--desde-b` el vivo ya es B: su «Config base» tiene los MISMOS campos (los llena la publicación anterior);
     // el flujo viejo de 96 nodos los tenía con otro nombre (`numeroRecepcion`, `numeroDoctor`).
     const origen = bandera('desde-b')
-      ? (['respaldoNumeroRecepcion', 'respaldoNumeroDoctor', 'horarioAtencion'].includes(a.name) ? a.name : undefined)
+      ? (['respaldoNumeroRecepcion', 'respaldoNumeroDoctor', 'horarioAtencion', 'planillaProspectosId'].includes(a.name) ? a.name : undefined)
       : { respaldoNumeroRecepcion: 'numeroRecepcion', respaldoNumeroDoctor: 'numeroDoctor', horarioAtencion: 'horarioAtencion' }[a.name];
     if (!origen || !/^REEMPLAZAR_/.test(String(a.value))) continue;
     const v = String(valorVivo(origen) ?? '');
@@ -609,7 +609,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   // Solo se admiten marcadores de RESPALDO del cliente en «Config base» (recepción, doctor, calendario,
   // horario): con la ruta del Demo A en «ensayo», los manda el panel; sin reemplazar no son números ni
   // calendarios válidos, así que nunca llegan al doctor ni a la agenda reales.
-  const RESPALDO_OK = /^REEMPLAZAR_(NUMERO_(RECEPCION|DOCTOR)|CALENDARIO|HORARIO_ATENCION)_[A-Z0-9_]+$/;
+  const RESPALDO_OK = /^REEMPLAZAR_(NUMERO_(RECEPCION|DOCTOR)|CALENDARIO|HORARIO_ATENCION|PLANILLA_PROSPECTOS_ID)_[A-Z0-9_]+$/;
   const marcasMal = marcas.filter((m) => !RESPALDO_OK.test(m));
   const fueraDeConfigBase = b.nodes.filter((n) => n.name !== 'Config base' && /REEMPLAZAR_[A-Z]/.test(JSON.stringify(n.parameters ?? {}))).map((n) => n.name);
   if (fueraDeConfigBase.length) morir(`hay marcadores fuera de «Config base»: ${fueraDeConfigBase.join(', ')}`);
