@@ -625,8 +625,8 @@ function agmProspectoCrm(d) {
     }
   }
   let derivacion = '';
+  // Solo la derivacion a recepcion va a la columna R: el adaptador comun resume «Derivado a recepción.» y con el doctor se contradiria. Al doctor basta `quePidio`.
   if (x.derivo === 'recepcion') derivacion = 'Consulta para recepción';
-  else if (x.derivo === 'doctor') derivacion = 'Consulta para el doctor';
   const nombre = String(x.nombrePerfil === undefined || x.nombrePerfil === null ? '' : x.nombrePerfil)
     .replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim().slice(0, 60);
   const p = {

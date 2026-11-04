@@ -3287,6 +3287,16 @@ describe('Agenda mínima v0: el miniCRM', () => {
     expect(t.bitacora).toEqual(['crear:ev-1', 'borrar:vieja']);
     expect(t.prospecto).toMatchObject({ quePidio: 'Reprogramar cita', diaPreferido: 'Viernes', horarioPreferido: 'Mañana' });
   });
+  it('NIEGA: si el borrado de la cita anterior falla al mover, NO se marca «Reprogramar cita» (la nueva sí quedó creada)', () => {
+    const m = mundo({ eventos: [citaDe(MAMA, 'vieja', JUEVES, '14:00', '14:30', 'Pérez Gómez, Ana (CNS)')], configBase: CON });
+    m.gemini.extraer = extraccion({ intencion: 'mover' });
+    m.turno(texto(MAMA, 'quiero mover mi cita'));
+    m.calendario.fallas.borrar = true;
+    const t = m.turno(boton(MAMA, idHueco(VIERNES, '11:00')));
+    expect(t.prospecto).not.toBeNull();
+    expect(String(t.prospecto!['quePidio'])).not.toBe('Reprogramar cita');
+    expect(String(t.prospecto!['quePidio'])).toMatch(/^Agendar cita/);
+  });
   it('cancelar: «Cancelar cita» solo cuando el borrado salió bien; el listado previo es solo una consulta', () => {
     const m = mundo({ eventos: [citaDe(MAMA, 'vieja', JUEVES, '14:00', '14:30', 'Pérez Gómez, Ana (CNS)')], configBase: CON });
     m.gemini.extraer = extraccion({ intencion: 'cancelar' });

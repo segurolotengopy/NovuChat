@@ -217,6 +217,7 @@ async function idDeCredencialCrm() {
   return String(m[0].id);
 }
 const ID_PLANILLA_VALIDO = (v) => typeof v === 'string' && !v.startsWith('REEMPLAZAR_') && /^[A-Za-z0-9_-]{25,100}$/.test(v);
+const NODOS_CRM_DE_BELLIDO = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
 const AJENOS_A_BELLIDO = /platinum|q'?taco|captaci|segurolo|otp|aab1|whatsapp-?modular|receptor|demo ?a\b|NovuChat A|pruebas/i;
 if (bandera('sobre-bellido')) {
   const RESPALDO = resolve(opcion('respaldo') ?? morir('falta --respaldo <archivo fuera del repositorio>'));
@@ -609,6 +610,12 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
       n.credentials = { whatsAppApi: {} };
       tabla.push(`  ${n.name}: PARÁMETROS CAMBIADOS ${antes} → predefinedCredentialType/whatsAppApi`);
     }
+    // El ENSAYO en el Demo A no escribe en ninguna planilla: los nodos de Google del miniCRM quedan SIN credencial (declarada aqui), con el id de planilla vacio.
+    // Ninguna credencial de Bellido ni de otro cliente llega al Demo A; es la unica excepcion y solo para esos 8 nodos por nombre y por su credencial exacta.
+    if (NODOS_CRM_DE_BELLIDO.includes(n.name) && n.credentials && n.credentials.googleApi && n.credentials.googleApi.name === CRED_CRM_BELLIDO) {
+      delete n.credentials.googleApi;
+      tabla.push(`  ${n.name}: googleApi → SIN credencial (el ensayo no escribe en la planilla del miniCRM)`);
+    }
     for (const tipo of Object.keys(n.credentials ?? {})) {
       const regla = CRED_DEMO_A[tipo];
       const origen = (n.credentials[tipo] && n.credentials[tipo].name) || '';
@@ -622,10 +629,13 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
       tabla.push(`  ${n.name}: ${tipo} → «${c.name}»`);
     }
   }
-  const sinCred = b.nodes.filter((n) => Object.values(n.credentials ?? {}).some((c) => !c || !c.id)
+  const sinCred = b.nodes.filter((n) => !NODOS_CRM_DE_BELLIDO.includes(n.name) && (Object.values(n.credentials ?? {}).some((c) => !c || !c.id)
     // L4: un HTTP con autenticación y sin credencial fallaría en ejecución.
-    || (n.type === 'n8n-nodes-base.httpRequest' && (n.parameters?.authentication ?? 'none') !== 'none' && !Object.keys(n.credentials ?? {}).length));
+    || (n.type === 'n8n-nodes-base.httpRequest' && (n.parameters?.authentication ?? 'none') !== 'none' && !Object.keys(n.credentials ?? {}).length)));
   if (sinCred.length) morir(`nodos sin credencial resuelta: ${sinCred.map((n) => n.name).join(', ')}`);
+  // El id de la planilla del miniCRM va VACIO en el ensayo (aunque el JSON trajera otro): sin planilla no se escribe nada.
+  const idPlanillaDemo = b.nodes.find((n) => n.name === 'Config base')?.parameters?.assignments?.assignments?.find((a) => a.name === 'planillaProspectosId');
+  if (idPlanillaDemo) idPlanillaDemo.value = '';
   // La trampa del 15/09: un nodo que habla con Graph (Meta) con una credencial de cabecera genérica (la de la ingesta) le manda el token
   // de la consola a Meta. Tras resolver, ningún nodo con URL al anfitrión de Graph (Meta) puede conservar `httpHeaderAuth`: va con `whatsAppApi`.
   const graphConCabecera = b.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && llamaAGraph(n.parameters?.url)

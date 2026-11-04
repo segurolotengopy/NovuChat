@@ -196,7 +196,12 @@ describe('unidades: agmProspectoCrm (vocabulario cerrado)', () => {
     expect(d['quePidio']).toBe('Ubicación');
     expect(celda(decidir(d), 'clasificacion')).toBe('Caliente');
     expect(prospecto({ plan: 'transferir', derivo: 'recepcion' })!['derivacion']).toBe('Consulta para recepción');
-    expect(prospecto({ plan: 'contacto_doctor', derivo: 'doctor' })!['derivacion']).toBe('Consulta para el doctor');
+    // Al doctor NO va la columna R (el resumen común diría «Derivado a recepción.» y se contradiría): basta «Qué pidió».
+    const dr = prospecto({ plan: 'contacto_doctor', derivo: 'doctor' })!;
+    expect(dr['derivacion']).toBeUndefined();
+    expect(dr['quePidio']).toBe('Hablar con el doctor');
+    expect(String(celda(decidir(dr), 'resumen'))).not.toContain('Derivado a recepción');
+    expect(celda(decidir(dr), 'derivacion')).toBeUndefined();
     expect(String(celda(decidir(prospecto({ plan: 'transferir', derivo: 'recepcion' })!), 'resumen'))).toContain('Derivado a recepción.');
   });
   it('NIEGA: el texto libre del cliente, el nombre del niño, los síntomas y los montos NO llegan al prospecto ni a la fila', () => {

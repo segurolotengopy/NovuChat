@@ -639,7 +639,7 @@ if (planillaOk && !prueba && salida.length > 0 && cnClaveValida(t.from)) {
     const conBoton = msgs.some((m) => m.para === 'recepcion' || (m.payload && m.payload.type === 'interactive' && m.payload.interactive && m.payload.interactive.type === 'cta_url'));
     const p = agmProspectoCrm({
       from: t.from, plan: plan, servicio: srv, clave: params.clave,
-      creada: base.creada === true, reprogramo: !!base.borrarId, cancelada: !!bBorrar && !bBorrar.error,
+      creada: base.creada === true, reprogramo: !!base.borrarId && !!bBorrar && !bBorrar.error, cancelada: !!bBorrar && !bBorrar.error,
       inicioCita: base.crear && base.crear.inicio ? base.crear.inicio : '',
       huecos: base.oferta && Array.isArray(base.oferta.huecos) ? base.oferta.huecos.map((h) => h.inicio) : [],
       derivo: plan === 'contacto_doctor' ? 'doctor' : (conBoton ? 'recepcion' : ''),
