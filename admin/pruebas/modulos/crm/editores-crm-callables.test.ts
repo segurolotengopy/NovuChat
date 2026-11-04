@@ -50,12 +50,13 @@ const sinSesion = (data: Record<string, unknown>) => ({ data, rawRequest: {} }) 
 
 /** Drive falso: anota cada llamada; los fallos se encienden por prueba. */
 function driveFalso() {
-  const estado = { falloCrear: false, falloBorrar: false, yaExistia: false, propietario: false, barrera: 0, idFijo: '', pausaBorrar: null as Promise<void> | null };
+  const estado = { falloCrear: false, falloBorrar: false, yaExistia: false, propietario: false, barrera: 0, idFijo: '', pausaBorrar: null as Promise<void> | null, alCrear: null as (() => Promise<void>) | null };
   const llamadas: { op: 'crear' | 'borrar'; archivoId: string; dato: string }[] = [];
   let llegaron = 0;
   const cliente: ClienteDrive = {
     async crearPermiso(archivoId, correo) {
       llamadas.push({ op: 'crear', archivoId, dato: correo });
+      if (estado.alCrear) await estado.alCrear();
       const numero = llamadas.length; // el id se fija al entrar: dos llamadas simultáneas reciben ids distintos
       if (estado.barrera > 0) { // las N llamadas esperan a que todas lleguen: así la carrera es real
         llegaron++;
@@ -384,8 +385,9 @@ describe('registrarEditorCrm: revisión de seguridad (03/11/2026)', () => {
     };
     expect(await codigo(registrar(peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` })))).toBe('resource-exhausted');
     const aud = (await db.collection(`tenants/${A}/auditoria`).where('accion', '==', 'editor_crm_alta').get()).docs.map((d) => d.data());
-    expect(aud.some((x) => x['resultado'] === 'rechazado_permiso_sin_deshacer')).toBe(true);
-    expect(await editor(A, 'op1')).toBeUndefined();
+    expect(aud.some((x) => x['resultado'] === 'rechazado_permiso_pendiente_de_revocar')).toBe(true);
+    // Nunca queda activo: el permiso sin deshacer queda como revocado_pendiente para la reconciliación.
+    expect(await editor(A, 'op1')).toMatchObject({ estado: 'revocado_pendiente', archivoId: ARCHIVO_A });
   });
 
   it('NIEGA: si el Gmail ya es propietario de la hoja se rechaza y no queda editor', async () => {
@@ -400,6 +402,75 @@ describe('registrarEditorCrm: revisión de seguridad (03/11/2026)', () => {
     await registrar(peticion('op2', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op2')}` }));
     expect((await editor(A, 'op1'))?.['creadoPorSistema']).toBe(true);
     expect((await editor(A, 'op2'))?.['creadoPorSistema']).toBe(false);
+  });
+});
+
+describe('registrarEditorCrm: el negocio debe estar operativo y el miniCRM encendido (dentro de la transacción)', () => {
+  const alta = () => peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` });
+  const borrados = () => fake.llamadas.filter((l) => l.op === 'borrar');
+
+  for (const estadoNegocio of ['suspendido', 'dado_de_baja']) {
+    it(`NIEGA: re-registro con el negocio ${estadoNegocio}: se rechaza, se deshace el permiso creado y no queda editor`, async () => {
+      await db.doc(`tenants/${A}`).update({ estado: estadoNegocio });
+      expect(await codigo(registrar(alta()))).toBe('failed-precondition');
+      expect(await editor(A, 'op1')).toBeUndefined();
+      expect(borrados()).toHaveLength(1);
+    });
+
+    it(`NIEGA (carrera con barrera): el negocio pasa a ${estadoNegocio} mientras Drive crea el permiso: se deshace y no queda editor`, async () => {
+      fake.estado.barrera = 1;
+      fake.estado.alCrear = async () => { await db.doc(`tenants/${A}`).update({ estado: estadoNegocio }); };
+      expect(await codigo(registrar(alta()))).toBe('failed-precondition');
+      expect(await editor(A, 'op1')).toBeUndefined();
+      expect(borrados()).toHaveLength(1);
+    });
+  }
+
+  it('NIEGA: con el miniCRM apagado antes del alta no queda editor', async () => {
+    await db.doc(`tenants/${A}/config/crm`).set({ activo: false });
+    expect(await codigo(registrar(alta()))).toBe('failed-precondition');
+    expect(await editor(A, 'op1')).toBeUndefined();
+  });
+
+  it('NIEGA (carrera con barrera): el miniCRM se apaga mientras Drive crea el permiso: se deshace y no queda editor', async () => {
+    fake.estado.barrera = 1;
+    fake.estado.alCrear = async () => { await db.doc(`tenants/${A}/config/crm`).set({ activo: false }); };
+    expect(await codigo(registrar(alta()))).toBe('failed-precondition');
+    expect(await editor(A, 'op1')).toBeUndefined();
+    expect(borrados()).toHaveLength(1);
+  });
+
+  it('si además Drive no puede deshacer el permiso, queda revocado_pendiente con permisoId y archivoId para la reconciliación', async () => {
+    await db.doc(`tenants/${A}`).update({ estado: 'suspendido' });
+    fake.estado.falloBorrar = true;
+    expect(await codigo(registrar(alta()))).toBe('failed-precondition');
+    const e = await editor(A, 'op1');
+    expect(e).toMatchObject({ estado: 'revocado_pendiente', archivoId: ARCHIVO_A, motivoPendiente: 'alta_rechazada', reintentos: 0 });
+    expect(typeof e?.['permisoId']).toBe('string');
+    const aud = (await db.collection(`tenants/${A}/auditoria`).where('accion', '==', 'editor_crm_alta').get()).docs.map((d) => d.data());
+    expect(aud.some((x) => x['resultado'] === 'rechazado_permiso_pendiente_de_revocar')).toBe(true);
+  });
+
+  it('control: con el negocio activo y el miniCRM encendido sí queda activo', async () => {
+    await db.doc(`tenants/${A}/config/crm`).set({ activo: true });
+    expect(await codigo(registrar(alta()))).toBe('sin error');
+    expect((await editor(A, 'op1'))?.['estado']).toBe('activo');
+  });
+});
+
+describe('quitarEditorCrm: el documento desaparece durante la baja', () => {
+  it('se audita «sin_editor», no «revocado»', async () => {
+    await registrar(peticion('op1', 'oper', A, { tenantId: A, idTokenGoogle: `ok:${correoDe('op1')}` }));
+    let soltar!: () => void;
+    fake.estado.pausaBorrar = new Promise<void>((r) => { soltar = r; });
+    const baja = quitar(peticion('adm', 'admin', A, { tenantId: A, uidDestino: 'op1' }));
+    await new Promise((r) => setTimeout(r, 100));
+    await db.doc(`tenants/${A}/editoresCrm/op1`).delete();
+    soltar();
+    await baja;
+    const aud = (await db.collection(`tenants/${A}/auditoria`).where('accion', '==', 'editor_crm_baja').get()).docs.map((d) => d.data());
+    expect(aud.some((x) => x['resultado'] === 'sin_editor')).toBe(true);
+    expect(aud.some((x) => x['resultado'] === 'revocado')).toBe(false);
   });
 });
 

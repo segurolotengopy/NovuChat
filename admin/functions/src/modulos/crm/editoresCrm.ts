@@ -99,11 +99,13 @@ export async function revocarEditor(
   // concurrente reescribió el documento (y quizá recreó el permiso, que en Drive conserva el id), no se puede afirmar
   // «revocado»; queda `revocado_pendiente` y un nuevo quitar reintenta el borrado.
   let estado = 'revocado_pendiente' as 'revocado' | 'revocado_pendiente';
+  let desaparecio = false;
   await db().runTransaction(async (tx) => {
     // Se calcula DENTRO de la función de la transacción: si Firestore la reintenta, parte de cero.
     estado = confirmado ? 'revocado' : 'revocado_pendiente';
+    desaparecio = false;
     const ahora = await tx.get(ref);
-    if (!ahora.exists) return;
+    if (!ahora.exists) { desaparecio = true; return; }
     const actual = ahora.data() as Record<string, unknown>;
     if (huellaDe(actual) !== huellaDe(f)) estado = 'revocado_pendiente';
     const cambios: Record<string, unknown> = { estado };
@@ -119,7 +121,7 @@ export async function revocarEditor(
     tx.update(ref, cambios);
   });
   const correo = typeof f['correoGoogle'] === 'string' ? abreviarCorreo(f['correoGoogle']) : '';
-  await auditar(tenantId, 'editor_crm_baja', quien, { destino: uidDestino, correo, motivo, resultado: estado === 'revocado' ? 'revocado' : 'pendiente' });
+  await auditar(tenantId, 'editor_crm_baja', quien, { destino: uidDestino, correo, motivo, resultado: desaparecio ? 'sin_editor' : estado === 'revocado' ? 'revocado' : 'pendiente' });
   return estado;
 }
 
@@ -254,6 +256,24 @@ export const manejarRegistrar = (d: DepsEditores) => async (p: CallableRequest) 
       } catch {
         logger.warn('editoresCrm: no se pudo deshacer el permiso tras rechazar el alta', { tenantId });
         resultado = 'rechazado_permiso_sin_deshacer';
+        // Se deja constancia para que la reconciliación lo cierre, salvo que el documento de la persona esté vigente
+        // (no se pisa un permiso que otra alta sí necesita).
+        try {
+          const ref = coleccion(tenantId).doc(destino);
+          const guardado = await db().runTransaction(async (tx) => {
+            const x = await tx.get(ref);
+            const e = x.data()?.['estado'];
+            if (x.exists && (e === 'activo' || e === 'revocado_pendiente')) return false;
+            tx.set(ref, {
+              correoGoogle: correoToken, estado: 'revocado_pendiente' satisfies EstadoEditor, permisoId, archivoId, motivoPendiente: 'alta_rechazada',
+              reintentos: 0, revocadoEn: Timestamp.now(), revocadoPor: uid,
+            });
+            return true;
+          });
+          if (guardado) resultado = 'rechazado_permiso_pendiente_de_revocar';
+        } catch {
+          logger.error('editoresCrm: no se pudo dejar pendiente el permiso sin deshacer', { tenantId });
+        }
       }
     }
     await auditar(tenantId, 'editor_crm_alta', uid, { destino, correo: abreviarCorreo(correoToken), motivo: veredicto.v, resultado });
@@ -355,7 +375,7 @@ export const revocarEditorAlQuitarUsuario = (d: Pick<DepsEditores, 'drive'> = DE
 export async function revocarTodosLosEditores(
   driveDe: () => ClienteDrive | null, tenantId: string, quien: string, motivo: string,
   estados: readonly string[] = ['activo', 'revocado_pendiente'],
-): Promise<{ revocados: number; pendientes: number }> {
+): Promise<{ revocados: number; pendientes: number; tocados: string[] }> {
   let revocados = 0;
   let pendientes = 0;
   const vigentes = await coleccion(tenantId).where('estado', 'in', [...estados]).get();
@@ -382,7 +402,7 @@ export async function revocarTodosLosEditores(
       logger.error('editoresCrm: no se pudo revocar a un editor', { tenantId });
     }
   }
-  return { revocados, pendientes };
+  return { revocados, pendientes, tocados: vigentes.docs.map((x) => x.id) };
 }
 
 /** Deja a un editor `activo` como `revocado_pendiente` (con motivo y reintentos en cero). Otro estado no se toca. */
@@ -442,13 +462,17 @@ export const reconciliarEditoresPendientes = (d: Pick<DepsEditores, 'drive'> = D
         const estadoNegocio = t.get('estado');
         const cerrado = estadoNegocio === 'suspendido' || estadoNegocio === 'dado_de_baja';
         const configCrm = await db().doc(`tenants/${t.id}/config/crm`).get();
+        // Los que se acaban de marcar y tocar en esta corrida no se reintentan en ella.
+        let recien = new Set<string>();
         if (cerrado || !crmActivo(configCrm.exists ? configCrm.data() : null)) {
           const x = await revocarTodosLosEditores(() => d.drive(t.id), t.id, 'sistema', cerrado ? 'negocio_cerrado' : 'crm_apagado', ['activo']);
           r.cerrados += x.revocados;
+          recien = new Set(x.tocados);
         }
         const pendientes = await coleccion(t.id).where('estado', '==', 'revocado_pendiente').get();
         for (const doc of pendientes.docs) {
           // Un editor que falla no salta a los demás del mismo negocio.
+          if (recien.has(doc.id)) continue;
           try {
             const f = doc.data();
             const hechos = typeof f['reintentos'] === 'number' ? f['reintentos'] : 0;

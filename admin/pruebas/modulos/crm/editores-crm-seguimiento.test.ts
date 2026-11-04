@@ -13,7 +13,7 @@ process.env['GCLOUD_PROJECT'] = PROYECTO;
 
 const { initializeApp, getApps } = await import('firebase-admin/app');
 if (getApps().length === 0) initializeApp({ projectId: PROYECTO });
-const { getFirestore } = await import('firebase-admin/firestore');
+const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
 const {
   revocarEditoresAlCerrarTenant, manejarCambioConfigCrm, reconciliarEditoresPendientes, MAX_REINTENTOS_REVOCACION,
 } = await import('../../../functions/src/modulos/crm/editoresCrm.ts');
@@ -213,5 +213,82 @@ describe('cambio de correo (scripts/plataforma/cambiar-correo.mjs)', () => {
     // Va antes del commit del lote que cambia las membresías, y el script no habla con Drive.
     expect(s.indexOf("motivoPendiente: 'correo_cambiado'")).toBeLessThan(s.indexOf('await lote.commit()'));
     expect(s).not.toMatch(/googleapis|drive\.google/i);
+  });
+});
+
+describe('revisión de seguimiento (04/11/2026)', () => {
+  it('se marca revocado_pendiente ANTES de llamar a Drive', async () => {
+    const vistos: unknown[] = [];
+    const cliente: ClienteDrive = {
+      async crearPermiso() { throw new Error('no'); },
+      async borrarPermiso() { vistos.push((await editor(A, 'e1'))?.['estado']); throw new ErrorDrive(503); },
+    };
+    await manejarCambioConfigCrm({ drive: () => cliente })(A, { activo: true }, { activo: false });
+    expect(vistos).toEqual(['revocado_pendiente', 'revocado_pendiente']);
+    expect(await editor(A, 'e1')).toMatchObject({ estado: 'revocado_pendiente', motivoPendiente: 'crm_apagado', reintentos: 0 });
+  });
+
+  it('NIEGA: si no se puede armar el cliente de Drive al apagar el CRM, los editores quedan revocado_pendiente (no activos)', async () => {
+    const dep = { drive: () => { throw new Error('sin cliente'); } };
+    await expect(manejarCambioConfigCrm(dep)(A, { activo: true }, { activo: false })).resolves.toBeUndefined();
+    expect(await editor(A, 'e1')).toMatchObject({ estado: 'revocado_pendiente', motivoPendiente: 'crm_apagado', reintentos: 0 });
+  });
+
+  it('el reconciliador revoca a los activos de un negocio suspendido, dado de baja o con crm.activo=false, y no a los de uno sano', async () => {
+    await db.doc(`tenants/${A}`).update({ estado: 'suspendido' });
+    await db.doc(`tenants/${B}/config/crm`).set({ activo: false });
+    const C = 'seg-c';
+    const S = 'seg-sano';
+    for (const [t, estado] of [[C, 'dado_de_baja'], [S, 'activo']] as const) {
+      await db.recursiveDelete(db.doc(`tenants/${t}`));
+      await db.doc(`tenants/${t}`).set({ nombre: t, estado });
+      await sembrarEditor(t, 'e1', 'activo');
+    }
+    await reconciliarEditoresPendientes(deps())();
+    for (const t of [A, B, C]) expect((await editor(t, 'e1'))?.['estado']).toBe('revocado');
+    expect((await editor(S, 'e1'))?.['estado']).toBe('activo');
+    await db.recursiveDelete(db.doc(`tenants/${C}`));
+    await db.recursiveDelete(db.doc(`tenants/${S}`));
+  });
+
+  it('NIEGA: la reconciliación no reintenta en la misma corrida a los que acaba de marcar (reintentos sigue en 0)', async () => {
+    await db.doc(`tenants/${A}`).update({ estado: 'suspendido' });
+    fake.estado.falloBorrar = true;
+    await reconciliarEditoresPendientes(deps())();
+    expect(await editor(A, 'e1')).toMatchObject({ estado: 'revocado_pendiente', reintentos: 0 });
+  });
+
+  it('un editor que falla en la reconciliación cuenta su reintento y no salta a los demás del mismo negocio', async () => {
+    await sembrarEditor(A, 'e4', 'revocado_pendiente', { motivoPendiente: 'x', reintentos: 0 });
+    const cliente: ClienteDrive = {
+      async crearPermiso() { throw new Error('no'); },
+      async borrarPermiso(_a, permisoId) { if (permisoId === `perm-${A}-e2`) throw new Error('inesperado'); },
+    };
+    await reconciliarEditoresPendientes({ drive: () => cliente })();
+    expect(await editor(A, 'e2')).toMatchObject({ estado: 'revocado_pendiente', reintentos: 1 });
+    expect((await editor(A, 'e4'))?.['estado']).toBe('revocado');
+  });
+
+  it('no pisa revocadoPor ni revocadoEn si ya existen', async () => {
+    const antes = new Date('2026-01-01T00:00:00Z');
+    await sembrarEditor(A, 'cc', 'revocado_pendiente', { motivoPendiente: 'correo_cambiado', reintentos: 0, revocadoPor: 'script:cambiar-correo', revocadoEn: antes });
+    await reconciliarEditoresPendientes(deps())();
+    const e = await editor(A, 'cc');
+    expect(e?.['estado']).toBe('revocado');
+    expect(e?.['revocadoPor']).toBe('script:cambiar-correo');
+    expect((e?.['revocadoEn'] as { toDate(): Date }).toDate().getTime()).toBe(antes.getTime());
+  });
+
+  it('un motivo nuevo pone reintentos en 0; el mismo motivo y el de reconciliación no lo reinician', async () => {
+    fake.estado.falloBorrar = true;
+    await db.doc(`tenants/${A}/editoresCrm/e2`).update({ reintentos: MAX_REINTENTOS_REVOCACION, motivoPendiente: 'viejo' });
+    await revocarEditoresAlCerrarTenant(deps())(A, 'sistema', 'baja');
+    expect(await editor(A, 'e2')).toMatchObject({ estado: 'revocado_pendiente', motivoPendiente: 'baja_tenant', reintentos: 0 });
+    await db.doc(`tenants/${A}/editoresCrm/e2`).update({ reintentos: 5 });
+    await revocarEditoresAlCerrarTenant(deps())(A, 'sistema', 'baja');
+    expect((await editor(A, 'e2'))?.['reintentos']).toBe(5);
+    await db.doc(`tenants/${A}/editoresCrm/e2`).update({ reintentos: 7, motivoPendiente: FieldValue.delete() });
+    await reconciliarEditoresPendientes(deps())();
+    expect((await editor(A, 'e2'))?.['reintentos']).toBe(8);
   });
 });
