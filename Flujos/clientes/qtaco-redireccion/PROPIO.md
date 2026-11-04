@@ -38,7 +38,7 @@ queda pendiente su decisión antes de publicar.**
 
 ## Publicar y volver atrás
 
-- **El nombre del flujo del número nuevo es otro:** «NovuChat — Venta mínima (v0) — Q'Taco 3727». El plan A reemplaza SOLO al flujo vivo de la línea
+- **El nombre del flujo del número nuevo es otro:** «NovuChat — Venta mínima (v0) — QTaco 3727». El plan A reemplaza SOLO al flujo vivo de la línea
   anterior (nombre «NovuChat — Venta mínima (v0) — Q'Taco»); no confundirlos al publicar.
 - **Se pierde la ruta «Carrito del catálogo»:** este flujo no tiene ese webhook. Al reemplazar el flujo vivo, el catálogo web de la línea anterior
   devuelve 404. Antes de publicar hay que confirmar que el catálogo ya apunta al flujo del número nuevo.
