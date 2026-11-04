@@ -126,10 +126,10 @@ describe('`--verificar` impone la forma del webhook del carrito y el presupuesto
     });
   };
 
-  it('contraprueba: sin tocar nada sale con 0 y las tres variantes quedan al día', () => {
+  it('contraprueba: sin tocar nada sale con 0 y las cuatro variantes (con la del 3727) quedan al día', () => {
     const r = verificarEnCopia(() => undefined);
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout.match(/al día/g)).toHaveLength(3);
+    expect(r.stdout.match(/al día/g)).toHaveLength(4);
   });
 
   rompe('el carrito sin autenticación (cualquiera podría mandar un carrito)', (f) => { delete nodoDe(f, CARRITO).parameters['authentication']; }, /debe autenticar con headerAuth/);
@@ -170,7 +170,7 @@ describe('`--verificar` impone la forma del webhook del carrito y el presupuesto
       expect(fuente, pieza).toContain(pieza);
     }
     // El marcador está declarado con su formato.
-    expect(fuente).toMatch(/MARCADORES_FIJOS = \{ REEMPLAZAR_RUTA_CARRITO_QTACO: \/\^REEMPLAZAR_\[A-Z0-9_\]\+\$\/ \}/);
+    expect(fuente).toMatch(/MARCADORES_FIJOS = \{ REEMPLAZAR_RUTA_CARRITO_QTACO: \/\^REEMPLAZAR_\[A-Z0-9_\]\+\$\/, REEMPLAZAR_RUTA_CARRITO_QTACO_3727: \/\^REEMPLAZAR_\[A-Z0-9_\]\+\$\/ \}/);
   });
 });
 
