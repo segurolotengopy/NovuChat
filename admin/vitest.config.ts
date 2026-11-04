@@ -75,6 +75,7 @@ export const SUITES_PURAS = [
   'pruebas/venta-minima-guardar-comprobante.test.ts',
   'pruebas/venta-minima-catalogo-logica.test.ts',
   'pruebas/venta-minima-catalogo-topologia.test.ts',
+  'pruebas/venta-minima-qtaco-3727.test.ts',
   'pruebas/venta-minima-catalogo-punta-a-punta.test.ts',
   'pruebas/n8n-de-mentira.test.ts',
   'pruebas/comun-sin-agente-construir.test.ts',

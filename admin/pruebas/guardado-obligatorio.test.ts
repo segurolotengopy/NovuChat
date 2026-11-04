@@ -112,7 +112,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
     'experimental/doctoras/doctoras.rroca-emma.json', 'experimental/doctoras/doctoras.rroca-emma.prueba.json',
     'experimental/rroca-ruben/rroca-ruben.json', 'experimental/rroca-ruben/rroca-ruben.prueba.json',
     'experimental/rroca-antonio/rroca-antonio.json', 'experimental/rroca-antonio/rroca-antonio.prueba.json',
-    'experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.prueba.json',
+    'experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.qtaco-3727.json', 'experimental/venta-minima/venta-minima.prueba.json',
     'experimental/venta-minima/venta-minima.ensayo-demo-a.json',
     'experimental/chat-novuchat/chat-novuchat.novuchat.json', 'experimental/chat-novuchat/chat-novuchat.prueba.json',
     'experimental/captacion-minima/captacion-minima.novuchat.json', 'experimental/captacion-minima/captacion-minima.prueba.json',

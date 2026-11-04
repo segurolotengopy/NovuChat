@@ -86,8 +86,14 @@ const TOPE_DE_NODOS = 60;
 const WEBHOOK_DEL_CARRITO = 'Carrito del catálogo';
 const WEBHOOK_DEL_RECEPTOR = 'Entrega del receptor';
 // Marcadores que NO vienen de los datos del tenant (la plantilla los trae fijos) y la forma que deben tener.
-const MARCADORES_FIJOS = { REEMPLAZAR_RUTA_CARRITO_QTACO: /^REEMPLAZAR_[A-Z0-9_]+$/ };
+const MARCADORES_FIJOS = { REEMPLAZAR_RUTA_CARRITO_QTACO: /^REEMPLAZAR_[A-Z0-9_]+$/, REEMPLAZAR_RUTA_CARRITO_QTACO_3727: /^REEMPLAZAR_[A-Z0-9_]+$/ };
 const MARCADOR_DEL_CARRITO = 'REEMPLAZAR_RUTA_CARRITO_QTACO';
+// Un segundo workflow del MISMO comercio (el de 3727) convive con el vivo: no puede compartir la ruta del carrito (n8n no activa dos webhooks en la misma ruta).
+// El dato `carritoMarcador` (solo uno de estos dos valores) cambia el marcador de ESA salida; sin el rige el de siempre.
+
+// Los NOMBRES de credencial y el marcador del carrito del 3727 son datos del tenant (`qtaco-3727.json`); aqui solo la lista de marcadores validos.
+const MARCADORES_DEL_CARRITO = [MARCADOR_DEL_CARRITO, 'REEMPLAZAR_RUTA_CARRITO_QTACO_3727'];
+const marcadorDelCarrito = (datos) => ((datos || {}).carritoMarcador) || MARCADOR_DEL_CARRITO;
 
 // RETENCIÓN DE EJECUCIONES POR SALIDA. DECISIÓN DE ANDRES (04/10/2026, reemplaza la del 03/10): en el flujo de Q'Taco se guarda TODO, las fallas Y los
 // éxitos (`all`/`all`), por lo menos 24 horas, para poder diagnosticar. El riesgo (M-1 de la revisión de seguridad del PR #382) está ACEPTADO por Andres y
@@ -104,7 +110,8 @@ const retencionDe = (destino) => RETENCION_POR_SALIDA[destino] || RETENCION_POR_
 // TIEMPO LÍMITE DE LA EJECUCIÓN (`settings.executionTimeout`, en segundos) POR SALIDA. Decisión de Andres (04/10/2026): el flujo de Q'Taco sube a 120 s porque el
 // peor caso del comprobante (57 s, ver DISENO.md) quedaba a 3 s de los 60 de la plantilla. SOLO Q'Taco: las variantes de prueba y de ensayo (aunque hereden sus
 // datos) y la plantilla conservan los 60 s. Un tiempo más largo no cambia mensajes ni costo por conversación: solo deja de cortar una ejecución lenta.
-const TIMEOUT_POR_SALIDA = { 'venta-minima.qtaco.json': 120 };
+// `qtaco-3727` (numero definitivo de Q'Taco, envio directo, 04/11/2026) es el MISMO comercio y el mismo peor caso: 120 s.
+const TIMEOUT_POR_SALIDA = { 'venta-minima.qtaco.json': 120, 'venta-minima.qtaco-3727.json': 120 };
 const timeoutDe = (destino) => TIMEOUT_POR_SALIDA[destino] || plantilla.settings.executionTimeout;
 
 // COBRO SIMULADO (piloto de Q'Taco, 03/10/2026): la ÚNICA imagen permitida es el QR de demostración versionado, con el rótulo
@@ -245,6 +252,10 @@ function armar(datos, archivo) {
       if (m) cred.name = dato(datos, `credenciales.${m[1]}`, `${archivo} · ${n.name}`);
     }
     if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
+    if (n.name === WEBHOOK_DEL_CARRITO && datos.carritoMarcador) {
+      if (!MARCADORES_DEL_CARRITO.includes(datos.carritoMarcador)) throw new Error(`${archivo}: «carritoMarcador» no es uno de ${MARCADORES_DEL_CARRITO.join(', ')}`);
+      n.parameters.path = datos.carritoMarcador;
+    }
   }
   const vivos = new Set(flujo.nodes.map((n) => n.name));
   const conexiones = {};
@@ -279,8 +290,9 @@ function guardiaDelCarrito(entrada, n, datos) {
   if (p.httpMethod !== 'POST') h.push(`«${n.name}» debe recibir POST`);
   if (p.authentication !== 'headerAuth') h.push(`«${n.name}» debe autenticar con headerAuth (sin eso cualquiera puede mandar un carrito)`);
   if (p.responseMode !== 'onReceived') h.push(`«${n.name}» debe responder al recibir (responseMode onReceived)`);
-  if (p.path !== MARCADOR_DEL_CARRITO || !MARCADORES_FIJOS[MARCADOR_DEL_CARRITO].test(String(p.path))) {
-    h.push(`«${n.name}» debe llevar la ruta como marcador ${MARCADOR_DEL_CARRITO} (una URL de capacidad no se versiona)`);
+  const marca = marcadorDelCarrito(datos);
+  if (!MARCADORES_DEL_CARRITO.includes(marca) || p.path !== marca || !MARCADORES_FIJOS[marca].test(String(p.path))) {
+    h.push(`«${n.name}» debe llevar la ruta como marcador ${marca} (una URL de capacidad no se versiona)`);
   }
   const cred = (((n.credentials || {}).httpHeaderAuth) || {}).name;
   if (!cred || cred !== (datos.credenciales || {}).ingesta) h.push(`«${n.name}» debe usar la credencial de cabecera de la ingesta (${(datos.credenciales || {}).ingesta || 'sin dato'}), no «${cred || 'ninguna'}»`);
@@ -441,6 +453,14 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   if (entrada !== 'prueba' && flujo.nodes.length > TOPE_DE_NODOS) {
     hallazgos.push(`tiene ${flujo.nodes.length} nodos y el tope de producción es ${TOPE_DE_NODOS}: reutilice los nodos existentes (el código vive en src/lib y src/nodos)`);
   }
+  // EL FLUJO DEL 3727 NO COMPARTE NADA CON EL VIVO: ni marcador de ruta, WABA o numero, ni credencial de Q'Taco (cada una cae en el flujo equivocado).
+  if (/(^|\.)qtaco-3727\.json$/.test(destino)) {
+    const t3727 = JSON.stringify(flujo);
+    const vivo = [...new Set(t3727.match(/REEMPLAZAR_(RUTA_RECEPTOR|RUTA_CARRITO|WABA_ID|PHONE_NUMBER_ID)_QTACO(?!_3727)[A-Z0-9_]*/g) || [])];
+    if (vivo.length) hallazgos.push(`el flujo del 3727 trae marcadores del flujo vivo: ${vivo.join(', ')}`);
+    const credVivas = [...new Set(flujo.nodes.flatMap((n) => Object.values(n.credentials || {}).map((c) => String((c || {}).name || ''))).filter((x) => /Q'Taco/.test(x)))];
+    if (credVivas.length) hallazgos.push(`el flujo del 3727 usa credenciales del flujo vivo: ${credVivas.join(', ')}`);
+  }
   if (entrada === 'receptor' && tipos.includes('n8n-nodes-base.whatsAppTrigger')) hallazgos.push('contiene un «WhatsApp Trigger» en la variante del receptor (prohibición 7)');
   // L1. Ninguna llamada a las suscripciones de la app de Meta, en ningún nodo, texto ni código (prohibición 7).
   if (/subscriptions|subscribed_apps/i.test(JSON.stringify(flujo))) hallazgos.push('menciona «subscriptions» o «subscribed_apps»: ningún flujo toca las suscripciones de la app de Meta (prohibición 7)');
@@ -461,8 +481,8 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   }
   if (entrada === 'prueba' && nombres.has(WEBHOOK_DEL_CARRITO)) hallazgos.push(`la variante de prueba no lleva el webhook «${WEBHOOK_DEL_CARRITO}»`);
   // El marcador de la ruta aparece UNA vez (en `path`): repetido en una nota, `preparar-import.sh` pondría la URL de capacidad en texto visible.
-  if (nombres.has(WEBHOOK_DEL_CARRITO) && JSON.stringify(flujo).split(MARCADOR_DEL_CARRITO).length - 1 !== 1) {
-    hallazgos.push(`el marcador ${MARCADOR_DEL_CARRITO} debe aparecer una sola vez (en el path del webhook), no repetido en notas ni en código`);
+  if (nombres.has(WEBHOOK_DEL_CARRITO) && JSON.stringify(flujo).split(marcadorDelCarrito(datos)).length - 1 !== 1) {
+    hallazgos.push(`el marcador ${marcadorDelCarrito(datos)} debe aparecer una sola vez (en el path del webhook), no repetido en notas ni en código`);
   }
   // El carrito llega a `Carga de entrada` y a nada más (lo valida ese Code, SOLO si el webhook corrió).
   if (nombres.has(WEBHOOK_DEL_CARRITO)) {

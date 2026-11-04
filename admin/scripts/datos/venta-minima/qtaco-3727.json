@@ -1,0 +1,19 @@
+{
+  "hereda": "qtaco",
+  "nombreFlujo": "NovuChat — Venta mínima (v0) — QTaco 3727",
+  "carritoMarcador": "REEMPLAZAR_RUTA_CARRITO_QTACO_3727",
+  "credenciales": {
+    "ingesta": "NovuChat ingesta (cliente11)",
+    "graph": "Graph WhatsApp QTaco 3727 (Bearer)",
+    "medios": "WhatsApp QTaco 3727 (envio)"
+  },
+  "receptor": {
+    "ruta": "REEMPLAZAR_RUTA_RECEPTOR_QTACO_3727",
+    "wabaIdEsperado": "REEMPLAZAR_WABA_ID_QTACO_3727"
+  },
+  "configBase": {
+    "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_QTACO_3727",
+    "plantillasPedidoLineas": "",
+    "destinatariosAviso": "completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO"
+  }
+}
