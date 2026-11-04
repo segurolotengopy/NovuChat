@@ -1030,7 +1030,6 @@ describe('+0 mensajes agregados al cliente y nunca textos prohibidos', () => {
   it('todos los textos fijos de PR-2 cumplen las prohibiciones 3 y 4 (frases prohibidas sobre CADA texto)', () => {
     const codigo = ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA, 'src/lib', a), 'utf8')).join('\n');
     // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-    // nosemgrep: devsecops.js-eval-prohibido
     const fn = compilar(codigo + '\nreturn { RR_NIEGA_IA, rrNorm, CB_PROHIBIDAS, cbCanon, rrTextoComprobante, rrTextoDerivacion, rrTextoComplemento, rrTextoComplementos, rrTextoQrPendiente, rrPieQr, rrSaludo, RR_TEXTO_INGRESOS, RR_TEXTO_IMAGEN, RR_TEXTO_AUDIO, RR_TEXTO_OTRO, RR_TEXTO_MODELO_CAIDO };');
     const L = fn() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
     const cat = { pack: 60, libro: 32, closer: 20, videos: 25 };
@@ -1998,7 +1997,6 @@ describe('INVARIANTES DE UX · vigilados en TODOS los turnos de la batería (un 
 
   // `rrParrafos` como FUNCIÓN PURA (la librería se carga como `L`): aserciones incondicionales.
   // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-  // nosemgrep: devsecops.js-eval-prohibido
   const L = compilar(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA, 'src/lib', a), 'utf8')).join('\n')
     + '\nreturn { rrParrafos, rrOraciones, rrPreguntaPorPrecio, rrExtraRedaccion, rrNorm, rrSaludo, rrTextoDerivacion, RR_TEXTO_MODELO_CAIDO };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   const sinBlancos = (t: string): string => t.replace(/\s+/g, ' ').trim();
@@ -3380,7 +3378,6 @@ describe('RONDA 5 · criterios invertidos: nada crudo del modelo sale, suplantac
 describe('BLOQUE DE PAGOS · la constante «comprobante leído» es la ÚNICA exención de CB_PROHIBIDAS, por coincidencia exacta y solo si la pasa el código', () => {
   const libs = ['filtro', 'cobro.js', 'avisos.js', 'rr.js'].map((a) => (a === 'filtro' ? readFileSync(join(CARPETA, '../comun-sin-agente/src/filtro-redaccion.js'), 'utf8') : readFileSync(join(CARPETA, 'src/lib', a), 'utf8'))).join('\n');
   // El código evaluado es el de los archivos del propio repositorio, no una entrada externa: solo prueba.
-  // nosemgrep: devsecops.js-eval-prohibido
   const fn = compilar(libs + '\nreturn { rrSeguro, rrTextoComprobante, rrExtraRedaccion, cmRevisarRedaccion, RR_SALUDO_MINIMO, RR_TEXTO_COMPROBANTE_LEIDO, CB_PROHIBIDAS, cbCanon };');
   const L = fn() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   const MINIMO = 'Hola, soy el asistente virtual de Rubén.';
@@ -3513,7 +3510,6 @@ describe('BLOQUE DE PAGOS · el aviso a Rubén sale en la misma vuelta, dice «r
     const reportar = (aviso: unknown, resumen: boolean = true): J => {
       const item = { para: ANA, tipoReporte: 'text', texto: 'x', ...(resumen ? { resumen: { aviso } } : {}) };
       // La expresión del nodo de este repositorio, con `$`/`$json` de mentira.
-      // nosemgrep: devsecops.js-eval-prohibido
       const f = compilar('return ' + expr + ';', '$', '$json');
       const doble = (nombre: string) => ({ item: { json: nombre === 'Armar mensajes' ? item : {} }, first: () => ({ json: item }) });
       return JSON.parse(f(doble, { messages: [{ id: 'wamid.X' }] }) as string) as J;
@@ -3524,7 +3520,6 @@ describe('BLOQUE DE PAGOS · el aviso a Rubén sale en la misma vuelta, dice «r
     // `avisoMotivo`: solo con `no_salio` y solo uno de los tres valores cerrados; con `salio`/`ninguno` o cualquier otro valor, el campo no se envía.
     const conMotivo = (aviso: unknown, avisoMotivo: unknown): J => {
       const item = { para: ANA, tipoReporte: 'text', texto: 'x', resumen: { aviso, avisoMotivo } };
-      // nosemgrep: devsecops.js-eval-prohibido
       const f = compilar('return ' + expr + ';', '$', '$json');
       const doble = (nombre: string) => ({ item: { json: nombre === 'Armar mensajes' ? item : {} }, first: () => ({ json: item }) });
       return JSON.parse(f(doble, { messages: [{ id: 'wamid.X' }] }) as string) as J;
@@ -3538,7 +3533,6 @@ describe('BLOQUE DE PAGOS · el aviso a Rubén sale en la misma vuelta, dice «r
 
 describe('BLOQUE DE PAGOS · remediación del filtro: lo que el banco de frases (#568) deja pasar en el filtro común, la cadena de Rubén lo bloquea', () => {
   const libs = ['filtro', 'cobro.js', 'avisos.js', 'rr.js'].map((a) => (a === 'filtro' ? readFileSync(join(CARPETA, '../comun-sin-agente/src/filtro-redaccion.js'), 'utf8') : readFileSync(join(CARPETA, 'src/lib', a), 'utf8'))).join('\n');
-  // nosemgrep: devsecops.js-eval-prohibido
   const L = compilar(libs + '\nreturn { rrSeguro, rrExtraRedaccion, cmRevisarRedaccion, RR_SALUDO_MINIMO };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   /** La cadena de Rubén para lo que redacta el modelo: filtro común + reglas propias + rrSeguro. Devuelve '' si el texto llegaría al cliente. */
   const bloqueo = (texto: string, cliente = ''): string => {
@@ -3816,7 +3810,6 @@ describe('MEDIOS · AUDIO: se transcribe, es un DATO rotulado y sigue la cadena 
   it('18 · los textos fijos de audio y documento cumplen las barreras (sin palabras prohibidas ni NIEGA_IA, sin enlaces) y pasan `rrSeguro` sin cambiar palabras', () => {
     const codigo = ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA, 'src/lib', a), 'utf8')).join('\n');
     // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-    // nosemgrep: devsecops.js-eval-prohibido
     const L = compilar(codigo + '\nreturn { RR_NIEGA_IA, rrNorm, CB_PROHIBIDAS, cbCanon, rrSeguro, RR_TEXTO_AUDIO_LARGO, RR_TEXTO_AUDIO_NO_ENTENDIDO, RR_TEXTO_AUDIO_NO_ABIERTO, RR_TEXTO_AUDIO_TOPE, RR_TEXTO_AUDIO_PAGO, RR_TEXTO_AUDIO, RR_TEXTO_DOCUMENTO, RR_TEXTO_ARCHIVO_NO_ACEPTADO, RR_TEXTO_IMAGEN_NO_VISTA, RR_TEXTO_IMAGEN_TOPE, RR_TEXTO_IMAGEN_COMPROBANTE, RR_TEXTO_IMAGEN_CAIDO, RR_TEXTO_IMAGEN_DERIVAR, RR_TEXTO_EXTRANJERO, RR_TEXTO_EXTRANJERO_DE_NUEVO };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
     const textos = Object.entries(L).filter(([k]) => k.startsWith('RR_TEXTO_')).map(([, v]) => String(v));
     expect(textos).toHaveLength(15);
@@ -4335,7 +4328,6 @@ describe('MEDIOS · NÚMEROS DE OTRO PAÍS: una respuesta fija por número y por
 describe('MEDIOS · funciones puras de rr.js (los bordes de los topes, del saneo, de los pagos por audio y de los números de otro país)', () => {
   const codigoLib = ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA, 'src/lib', a), 'utf8')).join('\n');
   // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-  // nosemgrep: devsecops.js-eval-prohibido
   const L = compilar(codigoLib + '\nreturn { rrConteoDeFicha, rrConteoVigente, rrContarMedio, rrTopeMedio, rrMediosDelTurno, rrAudioDelTurno, rrDatoDeMedio, rrEtiquetaAudio, rrHistorialAudio, rrAudioDePago, rrNorm, rrDatoDeImagen, rrAnuncioDe, rrVistaDeImagen, rrDescripcionMostrable, rrClasificaLector, rrTextoImagenDescrita, rrHashTexto, rrEtiquetaImagen, rrHistorialImagen, rrEsExtranjero, rrExtranjeroRespondido, rrFichaVigente, rrCuerpoModelo };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   const DIA = 24 * 60 * 60 * 1000;
 
@@ -4537,7 +4529,6 @@ describe('CIERRE · números de otro país: sin ficha, mapa aparte con su tope, 
   const ext = (i: number): string => '54' + String(100000000 + i).padStart(9, '0');
   const libs = ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA, 'src/lib', a), 'utf8')).join('\n');
   // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-  // nosemgrep: devsecops.js-eval-prohibido
   const L = compilar(libs + '\nreturn { rrBarrerExtranjeros, rrHoraN, rrHoraContar, rrTopeHora };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   const sdMapa = (w: Mundial, clave: string): Record<string, unknown> => ((w.mundo.sd as J)[clave] ?? {}) as Record<string, unknown>;
 
@@ -4675,7 +4666,7 @@ describe('CIERRE · tope GLOBAL por hora de llamadas a Gemini (audio y visión),
   });
 
   it('el tope por hora: 120 por omisión y 600 como máximo duro; lo que no es número vuelve al valor por omisión', () => {
-    const L = compilar(readFileSync(join(CARPETA, 'src/lib/rr.js'), 'utf8') + '\nreturn { rrTopeHora, RR_GEMINI_HORA, RR_GEMINI_HORA_MAX };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call -- nosemgrep: devsecops.js-eval-prohibido
+    const L = compilar(readFileSync(join(CARPETA, 'src/lib/rr.js'), 'utf8') + '\nreturn { rrTopeHora, RR_GEMINI_HORA, RR_GEMINI_HORA_MAX };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call
     expect(L.RR_GEMINI_HORA).toBe(120);
     expect(L.rrTopeHora(undefined, L.RR_GEMINI_HORA, L.RR_GEMINI_HORA_MAX)).toBe(120);
     expect(L.rrTopeHora('99999', L.RR_GEMINI_HORA, L.RR_GEMINI_HORA_MAX)).toBe(600);
@@ -4685,7 +4676,6 @@ describe('CIERRE · tope GLOBAL por hora de llamadas a Gemini (audio y visión),
 
 describe('CIERRE · «afirma_hecho_corto» y «afirma_entrega» ancladas: lo legítimo pasa y las frases de pago/entrega siguen bloqueadas', () => {
   const libs = ['filtro', 'cobro.js', 'avisos.js', 'rr.js'].map((a) => (a === 'filtro' ? readFileSync(join(CARPETA, '../comun-sin-agente/src/filtro-redaccion.js'), 'utf8') : readFileSync(join(CARPETA, 'src/lib', a), 'utf8'))).join('\n');
-  // nosemgrep: devsecops.js-eval-prohibido
   const L = compilar(libs + '\nreturn { rrSeguro, rrExtraRedaccion, cmRevisarRedaccion, RR_SALUDO_MINIMO };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   const bloqueo = (texto: string, cliente = ''): string => {
     const rev = L.cmRevisarRedaccion(texto, { maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: 'Rubén Roca', textoDelCliente: cliente, extra: [L.rrExtraRedaccion] });
@@ -5099,7 +5089,7 @@ describe('CIERRE 2 · topes GLOBALES por hora de avisos a Rubén: consultas y de
   });
 
   it('los topes: 30 y 60 por omisión, 120 y 240 como máximo duro, lo que no es número vuelve al valor por omisión; ambos validados en los datos', () => {
-    const L = compilar(readFileSync(join(CARPETA, 'src/lib/rr.js'), 'utf8') + '\nreturn { rrTopeHora, RR_AVISOS_HORA, RR_AVISOS_HORA_MAX, RR_DERIVACIONES_HORA, RR_DERIVACIONES_HORA_MAX };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call -- nosemgrep: devsecops.js-eval-prohibido
+    const L = compilar(readFileSync(join(CARPETA, 'src/lib/rr.js'), 'utf8') + '\nreturn { rrTopeHora, RR_AVISOS_HORA, RR_AVISOS_HORA_MAX, RR_DERIVACIONES_HORA, RR_DERIVACIONES_HORA_MAX };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call
     expect([L.RR_AVISOS_HORA, L.RR_AVISOS_HORA_MAX, L.RR_DERIVACIONES_HORA, L.RR_DERIVACIONES_HORA_MAX]).toEqual([30, 120, 60, 240]);
     expect(L.rrTopeHora('99999', L.RR_AVISOS_HORA, L.RR_AVISOS_HORA_MAX)).toBe(120);
     expect(L.rrTopeHora('99999', L.RR_DERIVACIONES_HORA, L.RR_DERIVACIONES_HORA_MAX)).toBe(240);

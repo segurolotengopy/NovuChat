@@ -4,7 +4,8 @@ import { COBRO_AL_CIERRE } from './modulos/cobros/alCierre.js';
 import { nombreDeProductoApto } from './modulos/productos/nombreSeguro.js';
 import { crearAprobarTerminoProducto } from './plataforma/aprobarTerminoProducto.js';
 import { crearQuitarUsuario } from './central/usuarios.js';
-import { revocarEditorAlQuitarUsuario } from './modulos/crm/editoresCrm.js';
+import { crearBajaTenant, crearSuspenderTenant } from './plataforma/tenants.js';
+import { revocarEditorAlQuitarUsuario, revocarEditoresAlCerrarTenant } from './modulos/crm/editoresCrm.js';
 
 /**
  * =============================================================================
@@ -51,3 +52,10 @@ export const aprobarTerminoProducto = crearAprobarTerminoProducto(nombreDeProduc
  * hoja. Central no importa módulos (`central/usuarios.ts` recibe el gancho), así que lo une este archivo.
  */
 export const quitarUsuario = crearQuitarUsuario(revocarEditorAlQuitarUsuario());
+
+/**
+ * BAJA Y SUSPENSIÓN + EDICIÓN DEL miniCRM (03/11/2026): al dar de baja o suspender un negocio se revoca a TODOS sus
+ * editores de la hoja. Plataforma no importa módulos (`plataforma/tenants.ts` recibe el gancho), así que lo une este archivo.
+ */
+export const bajaTenant = crearBajaTenant(revocarEditoresAlCerrarTenant());
+export const suspenderTenant = crearSuspenderTenant(revocarEditoresAlCerrarTenant());
