@@ -58,11 +58,9 @@ Es todo lo que `Flujos/experimental/chat-novuchat/PROPIO.md` llama «Propio de N
 
 ## Camino de PR-4c (estado y vistos al servidor)
 
-Pendiente: ver el informe del PR. El contrato (`estado-de-conversacion.md`) está definido, pero ningún
-flujo lo adopta todavía y el chat guarda en `$getWorkflowStaticData` una ficha de más de 40 campos con una
-cola de eventos para la ráfaga de clics; trasladarla exige decidir qué parte es `estado` opaco (16 KiB),
-qué pasa con la cola y con `seq`/`hasta` frente a `conflicto_version`, y el orden `comprometer` antes de
-`Enviar a WhatsApp`. No se inventa aquí.
+Construido (PR-4c1: servidor falso y ayudantes; PR-4c2: nodos y plantilla; sin publicar). La ficha entera es el bloque opaco `estadoJson` (espacio `chat-novuchat`), la cola (≤6) va dentro del estado
+versionado, `comprometer` va ANTES de enviar y la compensación está en «Confirmar envío». Detalle y decisiones: `Flujos/experimental/chat-novuchat/DISENO.md`, sección «El estado de la conversación vive en el servidor».
+Pendiente: ensayo en el Demo A, reseteo de fichas por `comprometer` y `chatNovuchatCrm`.
 
 ## Mensajes por conversación
 

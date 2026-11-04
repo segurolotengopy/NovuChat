@@ -25,7 +25,9 @@ const leer = (r: string): string => readFileSync(r, 'utf8');
 const nodoDe = (ruta: string): string => leer(join(ANTONIO, 'src/nodos', ruta));
 const NQUITADAS = 44;
 const HUELLA = 'c92ff194f2cd0cf6';
-const origenChat = (a: string): string => leer(join(EXP, 'chat-novuchat/src/nodos', a));
+// ORIGEN CONGELADO (estado previo a PR-4c2, commit 1fff3d59): Antonio no adopta `sesion` en ese PR. Ver `lib/origen-chat-pre-4c2/LEEME.md`.
+const ORIGEN_CHAT = join(AQUI, '../../lib/origen-chat-pre-4c2');
+const origenChat = (a: string): string => leer(join(ORIGEN_CHAT, 'nodos', a));
 
 /** Reemplaza `de` por `a` exigiendo que aparezca exactamente una vez (si el origen cambia, la sustitución deja de aplicar y la prueba lo dice). */
 function unico(t: string, de: string, a: string): string {
@@ -172,7 +174,7 @@ describe('config-del-negocio.js sin Object.assign: el cuerpo de «Traer configur
 
 describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo salvo `id`, `notes` y `position`', () => {
   const plantilla = JSON.parse(leer(join(ANTONIO, 'flujo.plantilla.json'))) as { nodes: J[] };
-  const chat = JSON.parse(leer(join(EXP, 'chat-novuchat/flujo.plantilla.json'))) as { nodes: J[] };
+  const chat = JSON.parse(leer(join(ORIGEN_CHAT, 'flujo.plantilla.json'))) as { nodes: J[] };
   const venta = JSON.parse(leer(join(EXP, 'venta-minima/flujo.plantilla.json'))) as { nodes: J[] };
   const de = (f: { nodes: J[] }, n: string): J => f.nodes.find((x) => x.name === n) as J;
   const sinLibres = (n: J): J => { const { id: _i, notes: _n, position: _p, ...resto } = n; return resto; };

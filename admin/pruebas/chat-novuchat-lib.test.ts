@@ -77,8 +77,8 @@ describe('la biblioteca es autosuficiente y pura', () => {
     expect(d.filter((n) => !/^(ch[A-Z]|CH_)/.test(n))).toEqual([]);
     expect(sinComentarios).not.toMatch(/\bcc[A-Z]\w*\(|\bCC_[A-Z]/);
   });
-  it('mide menos de 1.800 líneas (el viejo, 2.224) y no trae los contadores ni las listas que se dejaron fuera a propósito', () => {
-    expect(LIB.split('\n').length).toBeLessThan(1800); // (tope autoimpuesto; la tabla única de botones lo devuelve a 1.800) 1.500 en la entrega original; los ajustes del 09/10 (nombre, botones por estado, complemento, empresa) lo subieron
+  it('mide menos de 1.850 líneas (el viejo, 2.224) y no trae los contadores ni las listas que se dejaron fuera a propósito', () => {
+    expect(LIB.split('\n').length).toBeLessThan(1850); // (PR-4c2: +25 líneas de recorte por bytes y de «otra ejecución responde») (tope autoimpuesto; la tabla única de botones lo devuelve a 1.800) 1.500 en la entrega original; los ajustes del 09/10 (nombre, botones por estado, complemento, empresa) lo subieron
     expect(sinComentarios).not.toMatch(/\brot\b|\bfijas\b|\bofertas\b|\bsueltas\b|\brepetidas\b|chVariante|chRotBase|CH_ROT_|CH_PASOS|chCampana|chPresentacion|chRetomar|ccPideLista/);
   });
   it('ningún nombre de persona del equipo en lo que se arma para el cliente (el patrón del filtro sí los nombra, para rechazarlos)', () => {
@@ -334,6 +334,52 @@ describe('la ficha por teléfono: saneada campo por campo, con tope y con olvido
     expect(a25.hechos.pidioEquipo).toBe(true);
     expect(a25.historial).toHaveLength(1);
     expect(f('chFichaVigente')({ ...base, ultimoMs: AHORA - 49 * H }, AHORA)).toEqual(fichaBase());
+  });
+  it('chAjustarBytes: el peor caso (6 eventos de 600+600 CJK y 8 entradas de historial con emojis) se recorta por BYTES a ≤14.900 sin quitar ningún evento; una ficha chica no se toca; chBytes cuenta UTF-8', () => {
+    const cjk = '漢字'.repeat(300);
+    const peor: J = { ...fichaBase(), seq: 6, cola: [1, 2, 3, 4, 5, 6].map((i) => ({ seq: i, id: 'w' + i, k: 'texto', t: cjk, c: cjk, ms: 1, rubro: '', boton: '' })), historial: Array.from({ length: 8 }, () => ({ r: 'u', t: '😀'.repeat(75) + '漢'.repeat(120) })) };
+    expect(f('chBytes')(JSON.stringify(peor))).toBeGreaterThan(15000);
+    const r = f('chAjustarBytes')(clonar(peor), 14900);
+    expect(r.cupo).toBe(true);
+    expect(f('chBytes')(JSON.stringify(r.ficha))).toBeLessThanOrEqual(14900);
+    expect(r.ficha.cola).toHaveLength(6); // nunca se quita un evento
+    expect(r.ficha.cola.every((e: J) => String(e.t).length >= 60 && String(e.c).length >= 60)).toBe(true);
+    const chica: J = { ...fichaBase(), historial: [{ r: 'u', t: 'hola' }] };
+    expect(f('chAjustarBytes')(clonar(chica), 14900).ficha).toEqual(chica);
+    expect(f('chBytes')('ñ😀a')).toBe(7);
+    // un tope imposible (más chico que lo que queda sin historial ni texto) lo dice: `cupo` falso, no un recorte infinito
+    expect(f('chAjustarBytes')(clonar(peor), 100).cupo).toBe(false);
+  });
+  it('chBytes / chAjustarBytes con un surrogate SUELTO no lanzan (se cuenta como U+FFFD, 3 bytes) y el recorte termina', () => {
+    expect(() => f('chBytes')('a\uD800b')).not.toThrow();
+    expect(f('chBytes')('a\uD800b')).toBe(5); // a + U+FFFD (3) + b
+    expect(f('chBytes')('\uDC00')).toBe(3);
+    const suelto = 'x\uD83D'.repeat(400); // surrogates altos sueltos
+    const ficha: J = { ...fichaBase(), seq: 2, cola: [1, 2].map((i) => ({ seq: i, id: 'w' + i, k: 'texto', t: suelto, c: suelto, ms: 1, rubro: '', boton: '' })), historial: [] };
+    const r = f('chAjustarBytes')(clonar(ficha), 2500);
+    expect(r.cupo).toBe(true);
+    expect(f('chBytes')(JSON.stringify(r.ficha))).toBeLessThanOrEqual(2500);
+  });
+  it('el recorte por bytes del turno (armar-mensajes) es defensa en profundidad INALCANZABLE con los topes actuales: la ficha de DESPUÉS de un turno (cola vacía) con todos los campos al máximo pesa muy por debajo de 14.900 bytes', () => {
+    const grande = '漢'.repeat(400);
+    const maxima: J = {
+      ...fichaBase(), ultimoMs: AHORA, rubro: 'x'.repeat(40), nombre: grande, empresa: grande, necesidad: grande, temas: Array.from({ length: 20 }, () => 'costos'), avisoFalla: grande, ofrecio: 'ambas',
+      empresasAvisadas: [grande, grande, grande, grande], primero: { rubro: 'salud', empresa: grande }, otros: Array.from({ length: 10 }, () => ({ e: grande, r: 'salud' })),
+      historial: Array.from({ length: 20 }, () => ({ r: 'u', t: grande })), ultimosIds: Array.from({ length: 20 }, () => 'w'.repeat(300)), cola: [],
+    };
+    const tras = f('chFichaVigente')(maxima, AHORA);
+    expect(tras.historial).toHaveLength(8);
+    expect(f('chBytes')(JSON.stringify(tras))).toBeLessThan(14900 - 3000);
+  });
+  it('chOtraEjecucionResponde: ya respondió (`hasta`), hay un evento más nuevo (`seq`) o lo pendiente ya no es lo de este turno; sin eventos o idéntico, no', () => {
+    const ficha = (seq: number, hasta: number, cola: number[]): J => ({ seq, hasta, cola: cola.map((x) => ({ seq: x })) });
+    const o = f('chOtraEjecucionResponde');
+    expect(o(ficha(3, 3, []), [2, 3])).toBe(true); // ya respondió
+    expect(o(ficha(4, 0, [2, 3, 4]), [2, 3])).toBe(true); // llegó uno más nuevo
+    expect(o(ficha(3, 1, [3]), [2, 3])).toBe(true); // lo pendiente cambió
+    expect(o(ficha(3, 1, [2, 3]), [2, 3])).toBe(false); // es exactamente lo de este turno
+    expect(o(ficha(3, 1, [2, 3]), [])).toBe(false);
+    expect(o(ficha(3, 1, [2, 3]), undefined)).toBe(false);
   });
   it('chBarrer: fuera las de más de 48 h y las sin hora; con más de 300, quedan las más nuevas; chYaVisto mira los ids y la cola', () => {
     const mapa: J = { '1': { ultimoMs: AHORA }, '2': { ultimoMs: AHORA - 49 * H }, '3': {}, '4': null };
@@ -1363,6 +1409,22 @@ describe('guardias de --verificar', () => {
     const d = prod(); delete d['nodes'].find((n: J) => n.name === 'WhatsApp Trigger').credentials;
     expect(CONSTRUIR.guardias('trigger', d).join(' ')).toMatch(/no trae una credencial explícita/);
   });
+  it('el ESTADO SE COMPROMETE ANTES DE ENVIAR: «Armar mensajes» conectado al envío, un nodo de compromiso ausente o apuntando a otra Function, y un envío colgado de otro nodo se detectan (PR-4c2)', () => {
+    const a = prod();
+    a['connections']['Armar mensajes'].main[0].push({ node: '¿Enviar de verdad?', type: 'main', index: 0 });
+    const ha = CONSTRUIR.guardias('trigger', a, DATOS_CRM).join(' ');
+    expect(ha).toMatch(/«Armar mensajes» tiene que colgar SOLO de «¿Comprometer turno\?»/);
+    expect(ha).toMatch(/«Armar mensajes» conecta con «¿Enviar de verdad\?»|solo «Soltar mensajes» puede/);
+    const b = prod();
+    b['nodes'] = b['nodes'].filter((n: J) => n.name !== 'Comprometer turno');
+    expect(CONSTRUIR.guardias('trigger', b, DATOS_CRM).join(' ')).toMatch(/falta el nodo «Comprometer turno»/);
+    const c = prod();
+    c['nodes'].find((n: J) => n.name === 'Comprometer evento').parameters.url = 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta';
+    expect(CONSTRUIR.guardias('trigger', c, DATOS_CRM).join(' ')).toMatch(/«Comprometer evento» tiene que llamar a configuracionFlujo/);
+    const d = prod();
+    d['connections']['Soltar mensajes'].main[0] = d['connections']['Soltar mensajes'].main[0].filter((x: J) => x.node !== '¿Enviar de verdad?');
+    expect(CONSTRUIR.guardias('trigger', d, DATOS_CRM).join(' ')).toMatch(/tiene que colgar de «Soltar mensajes»/);
+  });
   it('subscriptions, un anfitrión ajeno, un agente, la memoria, un modelo de chat y un marcador REEMPLAZAR_ fuera de «Config base» se detectan', () => {
     const a = prod(); a['nodes'].find((n: J) => n.name === 'Enviar a WhatsApp').parameters.url = 'https://graph.facebook.com/v26.0/123/subscribed_apps';
     expect(CONSTRUIR.guardias('trigger', a).join(' ')).toMatch(/subscriptions|subscribed_apps/);
@@ -1433,8 +1495,8 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     const r = CONSTRUIR.construir({ verificar: true });
     expect(r.resultado.map((x) => [x.archivo, x.alDia, x.versionado])).toEqual([['chat-novuchat.prueba.json', true, []], ['chat-novuchat.novuchat.json', true, []]]);
     expect(r.huerfanos).toEqual([]);
-    // 44 + los 9 de la rama común del guardado de medios (contrato v2 del 30/10).
-    expect(r.resultado.map((x) => x.nodos)).toEqual([53, 53]);
+    // 53 de antes (44 + los 9 de la rama común del guardado de medios) y los 20 del estado de la conversación en el servidor (PR-4c2).
+    expect(r.resultado.map((x) => x.nodos)).toEqual([73, 73]);
   });
   it('un dato cambiado, un archivo borrado a mano o una guardia violada a mano hacen fallar `--verificar` en una copia temporal; un JSON sin datos es un huérfano', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chat-novuchat-'));
@@ -1528,7 +1590,7 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
   it('la cadena de envío (enviar, respaldo en texto, reporte saliente) es la de `comun-sin-agente/src/envio.mjs`, injertada sin cambios', async () => {
     const { nodosDeEnvio } = (await import(/* @vite-ignore */ join(EXPERIMENTAL, 'comun-sin-agente/src/envio.mjs'))) as { nodosDeEnvio: Fn };
     const datos = DATOS_BRUTOS['credenciales'] as J;
-    const fuente = nodosDeEnvio({ credenciales: { graph: datos['graph'], ingesta: datos['ingesta'] }, ingestaUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta', desde: [5720, 160] });
+    const fuente = nodosDeEnvio({ credenciales: { graph: datos['graph'], ingesta: datos['ingesta'] }, ingestaUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta', desde: [9560, 160], armado: 'Soltar mensajes' });
     for (const n of fuente.nodes as J[]) expect((flujo['nodes'] as J[]).find((x) => x.name === n.name), `«${n.name}» difiere de la fuente común`).toEqual(n);
     expect((fuente.nodes as J[]).map((n) => n.name)).toEqual(['¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)', 'Reportar mensaje (saliente)']);
     // Una sola conexión es propia: «¿Reportar? (saliente)» cuelga de la puerta «¿Meta aceptó?» (regla I-ENTREGA 3) y no directo del reporte.

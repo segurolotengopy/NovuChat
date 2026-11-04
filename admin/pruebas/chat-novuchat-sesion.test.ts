@@ -117,6 +117,9 @@ describe('ayudantes de los nodos Code (_sesion.js)', () => {
     expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'ñ'.repeat(7000) })).not.toBeNull();
     expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: '😀'.repeat(4000) })).toBeNull();
     expect(H['cnBytes']('ñ😀a')).toBe(7);
+    expect(() => H['cnBytes']('a\uD800b')).not.toThrow(); // un surrogate suelto cuenta como U+FFFD (3 bytes)
+    expect(H['cnBytes']('a\uD800b')).toBe(5);
+    expect(H['cnCuerpoComprometer'](TEL, '7', 'fin1', 0, { t: 'x\uDC00y' })).not.toBeNull();
   });
   it('cnSesionDeLaConfig: solo 200 con conversación válida es ok; todo lo demás es falla (genérico con botón)', () => {
     const buena = { conversacion: { version: 4, estado: { a: 1 }, vencido: false } };
@@ -136,10 +139,11 @@ describe('ayudantes de los nodos Code (_sesion.js)', () => {
       expect(H['cnResultadoDeCompromiso'](x), JSON.stringify(x)).toEqual({ resultado: 'falla', version: 0, ganador: null });
     }
   });
-  it('el archivo no usa globales que el Code de n8n no tiene y todavía no está incluido en ningún nodo ni JSON', () => {
+  it('el archivo no usa globales que el Code de n8n no tiene (ni eval ni new Function) y SÍ está incluido en los nodos (PR-4c2)', () => {
     expect(FUENTE.replace(/^\s*\/\/.*$/gm, '')).not.toMatch(/\b(URL|Buffer|crypto|require|process|fetch|eval|TextEncoder)\b(?!\s*:)|new\s+Function|\bFunction\s*\(/);
     const cons = readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat/construir.mjs'), 'utf8');
-    expect(cons).not.toContain('_sesion');
-    for (const j of ['chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json']) expect(readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat', j), 'utf8')).not.toContain('cnCuerpoComprometer');
+    expect(cons).toContain('_sesion');
+    for (const j of ['chat-novuchat.novuchat.json', 'chat-novuchat.prueba.json']) expect(readFileSync(join(AQUI, '../../Flujos/experimental/chat-novuchat', j), 'utf8')).toContain('cnCuerpoComprometer');
   });
+
 });

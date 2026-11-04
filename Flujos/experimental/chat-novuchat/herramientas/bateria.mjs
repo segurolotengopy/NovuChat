@@ -39,6 +39,7 @@ import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { doblesDeBateriaDelGuardado } from '../../comun-sin-agente/src/guardado-dobles.mjs';
+import { crearServidorDeSesion } from './servidor-de-sesion.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ_FLUJO = join(AQUI, '..');
@@ -781,12 +782,15 @@ const respuestaSeca = (s) => (s === 'ERROR' ? { error: { message: 'simulado', ht
 export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, deps }) {
   const CLIENTE = (caso.opciones ?? {}).desde === 'recepcion' ? REC : telefonoDe(caso.id, rep);
   const panel = panelDe(caso.opciones ?? {});
-  const comp = { hoja: { filas: [] }, formulas: [], captura: { mensajes: [], modelo: [] }, seqSalida: 0, esperas: 0 };
+  const comp = { hoja: { filas: [] }, formulas: [], captura: { mensajes: [], modelo: [] }, seqSalida: 0, esperas: 0, ejecuciones: 0 };
+  // EL ESTADO DE LA CONVERSACIÓN VIVE EN EL SERVIDOR (PR-4c2): uno por corrida, compartido por todas las ejecuciones de una ráfaga (la rama `sesion` de `configuracionFlujo`, de mentira).
+  comp.servidor = crearServidorDeSesion({ ahoraMs: () => comp.relojMs ?? AHORA });
+  const fichaDe = () => objeto(comp.servidor.conversacion(PID, 'chat-novuchat', CLIENTE).estado);
   // `fichaInicial`: el caso arranca con una ficha ya vigente (un estado que la conversación sola no alcanza: p. ej. el equipo ya pulsado sin traspaso vigente).
   if (caso.fichaInicial) {
     const base = lib.chFichaBase();
     Object.assign(base, caso.fichaInicial, { historial: [{ r: 'u', t: 'hola' }, { r: 'a', t: 'respuesta' }], ultimoMs: AHORA - 60_000 });
-    comp.sd = { chatNovuchat: { [CLIENTE]: base } };
+    comp.servidor.sembrar(PID, 'chat-novuchat', CLIENTE, base);
   }
   const celdas = (f) => Object.fromEntries(ENC.map((h, c) => [h, f[c] ?? '']));
   const celda = (valor, formato) => {
@@ -806,6 +810,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
 
   /** Un mundo (una ejecución de n8n) con el doble de cada nodo de red; `act` dice qué evento le toca (para los medios y el modelo simulado). */
   function mundoNuevo(act, ahoraMs) {
+    let ejec = 0;
     const modeloDe = (nombre) => async (ll) => {
       const t = act.t;
       if (opciones.seco) {
@@ -821,7 +826,16 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       return r.json;
     };
     const dobles = {
-      'Traer configuración': () => ({ statusCode: 200, body: panel }),
+      'Traer configuración': (ll) => {
+        ejec = ++comp.ejecuciones; // (el n8n de esta batería da el mismo `$execution.id` a todos: aquí cada ejecución estrena el suyo)
+        const sesion = ll.cuerpo && ll.cuerpo.sesion ? comp.servidor.atender(PID, ll.cuerpo) : null;
+        if (sesion && sesion.statusCode !== 200) return { statusCode: sesion.statusCode, body: sesion.body };
+        return { statusCode: 200, body: sesion ? { ...panel, conversacion: sesion.body.conversacion, visto: sesion.body.visto } : panel };
+      },
+      ...Object.fromEntries(['Comprometer evento', 'Comprometer evento (2.º intento)', 'Comprometer evento (3.º intento)', 'Comprometer turno', 'Comprometer turno (2.º intento)', 'Comprometer compensación'].map((nodo) => [nodo, (ll) => {
+        const q = ll.cuerpo.sesion;
+        return comp.servidor.atender(PID, { ...ll.cuerpo, sesion: { ...q, idCompromiso: `${q.idCompromiso}-x${ejec}` } });
+      }])),
       'Reportar mensaje (entrante)': () => ({ atencion: { estado: 'normal' }, servicio: { estado: 'activo' } }),
       'Reportar mensaje (saliente)': () => ({ atencion: { estado: 'normal' }, servicio: { estado: 'activo' } }),
       'Obtener URL del medio (general)': () => ({ id: 'm', url: 'https://lookaside.fbsbx.com/whatsapp_business/attachments/medio-1', mime_type: 'audio/ogg', file_size: 5000 }),
@@ -862,7 +876,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     });
   }
 
-  /** Un turno del caso: un evento, o una RÁFAGA (varios eventos seguidos = varias ejecuciones que comparten los datos estáticos y se despiertan en cadena). */
+  /** Un turno del caso: un evento, o una RÁFAGA (varios eventos seguidos = varias ejecuciones que comparten el estado del servidor y se despiertan en cadena). */
   async function correrTurno(t, i) {
     const wamid = (k) => `wamid.BAT${caso.id}.${rep}.${i + 1}.${k}`;
     if (t.tipo !== 'rafaga') {
@@ -891,7 +905,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     return resultados;
   }
 
-  const corrida = { caso: caso.id, rep, turnos: 0, llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], conversacion: [], palabras: [], pulsados: new Set(), equipoPrev: objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).equipoTocado === true, rubroPrev: String(objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).rubro ?? ''), respondidasPrev: Number(objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).respondidas) || 0, inv: { pulsado: 0, antes: 0, texto: 0, oferta: 0 }, modeloTurnos: 0, respaldos: 0, causas: {}, esperas: 0, repeticiones: 0 };
+  const corrida = { caso: caso.id, rep, turnos: 0, llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], conversacion: [], palabras: [], pulsados: new Set(), equipoPrev: fichaDe().equipoTocado === true, rubroPrev: String(fichaDe().rubro ?? ''), respondidasPrev: Number(fichaDe().respondidas) || 0, inv: { pulsado: 0, antes: 0, texto: 0, oferta: 0 }, modeloTurnos: 0, respaldos: 0, causas: {}, esperas: 0, repeticiones: 0 };
   const falla = (turno, dicho, regla, texto) => corrida.violaciones.push({ caso: caso.id, rep, turno, dicho, regla, texto: String(texto).replace(/\s+/g, ' ').slice(0, 200) });
   for (const [i, t] of caso.turnos.entries()) {
     comp.captura = { mensajes: [], modelo: [] };
@@ -906,7 +920,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     const dicho = dichoDe(t);
     // UN mensaje al cliente por turno del cliente (los clics seguidos de una ráfaga cuentan como UN turno).
     if (buenos.length > 1) falla(i + 1, dicho, 'mas_de_un_mensaje_por_turno', buenos.map((m) => m.cuerpo).join(' | '));
-    const fichaDespues = objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]);
+    const fichaDespues = fichaDe();
     // R6: lo que escribió el MODELO no calca el mensaje anterior (similitud de conjuntos de palabras >= 0,75): se cuenta y es una violación.
     const anterior = corrida.conversacion.length ? (corrida.conversacion[corrida.conversacion.length - 1].mensajes.at(-1) ?? '') : '';
     if (String(resumen.origen ?? '') === 'modelo' && buenos[0] && anterior && lib.chSimilitud(buenos[0].cuerpo, anterior) >= 0.75) { corrida.repeticiones += 1; falla(i + 1, dicho, 'repite_el_mensaje_anterior', buenos[0].cuerpo); }
@@ -990,7 +1004,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     corrida.conversacion.push({ turno: i + 1, dicho, mensajes: alCliente.filter((m) => !m.esRespaldo).map((m) => m.cuerpo), origen: String(resumen.origen ?? ''), contexto: String(resumen.contexto ?? '') });
   }
   corrida.esperas = comp.esperas;
-  const ficha = objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]);
+  const ficha = fichaDe();
   const fila = comp.hoja.filas.find((f) => String(f[4] ?? '').replace(/\D/g, '') === CLIENTE);
   corrida.calificacion = fila ? String(fila[ENC.indexOf(COL_CALIFICACION)] ?? '') : '(sin fila)';
   corrida.planilla = fila ? celdas(fila) : null;
