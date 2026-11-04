@@ -231,3 +231,5 @@ La rama del miniCRM (`ramaCrm`, módulo `crm`) agrega **8 nodos** a cada flujo q
 > `rroca-ruben.prueba.json`; `walisuma.json` y `walisuma.prueba.json`. Por qué: el módulo es común y los constructores lo incluyen tal cual; no se publica nada
 > solo por esto. Lo cierra: la próxima publicación de cada flujo (que ya lleva la definición); hasta entonces `estado-de-versiones.sh` puede mostrar atrasado a
 > cualquiera de los vivos que figuran arriba (Rubén, Antonio, Evy, Emma, Walisuma, chat NovuChat) y es una diferencia declarada, sin riesgo. Vence el 31/01/2027.
+
+> **Redirección de Q'Taco (04/11/2026), sin publicar.** `Flujos/clientes/qtaco-redireccion/qtaco-redireccion.qtaco.json` (11 nodos) está pensado para reemplazar EN SU LUGAR, con el mismo nombre de workflow y la misma ruta, al flujo vivo de Q'Taco (`venta-minima.qtaco.json`) que atiende la línea anterior. Mientras no se publique no cambia nada; al publicarlo, `estado-de-versiones.sh` verá a Q'Taco distinto de `venta-minima.qtaco.json` y esa fila se actualiza en ese mismo PR de publicación. Vuelta atrás: republicar `venta-minima.qtaco.json`.

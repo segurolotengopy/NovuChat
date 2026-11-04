@@ -1,0 +1,18 @@
+{
+  "nombreFlujo": "NovuChat — Venta mínima (v0) — Q'Taco",
+  "credenciales": {
+    "graph": "Graph WhatsApp Q'Taco (Bearer)"
+  },
+  "receptor": {
+    "ruta": "REEMPLAZAR_RUTA_RECEPTOR_QTACO",
+    "urlVerificador": "REEMPLAZAR_URL_VERIFICADOR_RECEPTOR",
+    "wabaIdEsperado": "REEMPLAZAR_WABA_ID_QTACO"
+  },
+  "configNegocio": {
+    "waGraphVersion": "v26.0",
+    "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_QTACO",
+    "numeroNuevo": "+591 78933727",
+    "ventanaHoras": 24,
+    "textoAviso": "¡Hola! Q'Taco estrenó su nuevo WhatsApp. Escríbenos desde ahora al [NUMERO] 👉 [ENLACE] y te atendemos igual que siempre. ¡Gracias por tu preferencia!"
+  }
+}
