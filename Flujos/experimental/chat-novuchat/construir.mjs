@@ -581,18 +581,29 @@ export function guardias(entrada, flujo, datos = {}) {
     for (const n of nodos) {
       const js = String(parametros(n).jsCode || '');
       const sinRegistro = FUENTE_REGISTRO ? js.split(FUENTE_REGISTRO.trimEnd()).join('') : js;
-      const usa = /\bss(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig|NumeroHeader)\(/.test(sinRegistro);
+      // (sin los comentarios: el módulo trae un ejemplo de `const SS_CONFIG = …` en su cabecera)
+      const codigo = js.replace(/^\s*\/\/.*$/gm, '');
+      // `cnRegistro(` fuera de `_registro.js` también es usar el módulo: llama a `ssResultadoDeCompromiso`.
+      const usa = /\bss(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig|NumeroHeader)\(/.test(sinRegistro) || /\bcnRegistro\(/.test(sinRegistro);
       const define = /function ss[A-Z]\w*\(/.test(js);
       if ((usa || define) && !js.includes(FUENTE_SESION.trimEnd())) h.push(`el nodo «${n.name}» usa o define funciones de sesión (ss*) sin traer \`comun-sin-agente/src/sesion.js\` tal cual: se INCLUYE el módulo común, no se copia ni se edita`);
       if (/function (cn|ch)(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig)\(/.test(js)) h.push(`el nodo «${n.name}» trae una copia propia de los ayudantes de sesión`);
-      if ((usa || define) && (js.match(/^const SS_CONFIG = /gm) || []).length !== 1) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
+      if (usa || define) {
+        // En JS gana la ÚLTIMA declaración: traer el módulo y luego REDEFINIR una función (`function ssDesdeAutorizado() { return true; }`) anularía el aislamiento. Cada `ss*` y SS_CONFIG, UNA vez por nodo.
+        const cuenta = new Map();
+        for (const m of codigo.matchAll(/\b(?:function|const|let|var)\s+(ss[A-Z]\w*|SS_CONFIG)\b/g)) cuenta.set(m[1], (cuenta.get(m[1]) || 0) + 1);
+        for (const [nombre, veces] of cuenta) if (veces !== 1) h.push(`el nodo «${n.name}» declara ${nombre} ${veces} veces: cada ayudante de sesión y SS_CONFIG se declaran UNA sola vez por nodo (la última declaración gana y anularía el módulo)`);
+        if (!cuenta.has('SS_CONFIG')) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
+      }
     }
     // En la variante de PRUEBA, «Carga de entrada» DESCARTA lo que llegue a «Entrada de prueba» sin `modoPrueba: true` (si no, se comportaría como producción); producción no tiene «Entrada de prueba».
     const carga = nodos.find((x) => x.name === 'Carga de entrada');
     if (entrada === 'prueba' && carga && !/if \(corrioPrueba && !prueba\) return \[\];/.test(String(parametros(carga).jsCode || ''))) h.push('«Carga de entrada» tiene que descartar lo que llegue a «Entrada de prueba» sin modoPrueba: true');
-    // En la variante de PRUEBA el estado va en OTRO espacio y solo para los teléfonos de prueba: «Traer configuración» lo dice en su cuerpo.
+    // El estado va en OTRO espacio en la variante de PRUEBA, y los espacios de «Traer configuración» (que lleva el `leer` fijo en su cuerpo) tienen que ser LOS MISMOS que declara SS_CONFIG (los de `comprometer`): si divergen, se lee un documento y se compromete otro.
     const traer = nodos.find((x) => x.name === 'Traer configuración');
-    if (traer && !/chat-novuchat-prueba/.test(String(parametros(traer).jsonBody || ''))) h.push('«Traer configuración» tiene que pedir el estado en el espacio «chat-novuchat-prueba» cuando es una prueba');
+    const declarados = /espacio: '([a-z0-9-]+)', espacioPrueba: '([a-z0-9-]+)'/.exec(FUENTE_REGISTRO);
+    const enCuerpo = /prueba \? '([a-z0-9-]+)' : '([a-z0-9-]+)'/.exec(String((traer && parametros(traer).jsonBody) || ''));
+    if (traer && (!declarados || !enCuerpo || enCuerpo[1] !== declarados[2] || enCuerpo[2] !== declarados[1])) h.push('«Traer configuración» tiene que pedir el estado en el MISMO espacio que declara SS_CONFIG (espacioPrueba cuando es una prueba, espacio en producción)');
   }
   // Retención de ejecuciones, orden y zona horaria (decisión de Andres, 03/10/2026: se guardan solo las ejecuciones que fallan).
   const st = (flujo && flujo.settings) || {};

@@ -187,13 +187,26 @@ describe('PARÁMETROS del módulo (SS_CONFIG): lo que cambia de un flujo a otro 
     const otros = cargar(QTACO.replace("'Carga de entrada'", "'Otra carga'"), nodos(prueba, {}));
     expect(otros['ssEsPrueba']()).toBe(false);
   });
-  it('el servidor falso restringe los espacios con `espacios`: la variante de prueba de un flujo no puede tocar el espacio de producción ni el de otro flujo', () => {
+  it('el servidor falso acepta solo los `espacios` de UN flujo: ni el del chat; un espacio fuera de la lista es 400 (restricción del DOBLE; el núcleo real no la tiene)', () => {
     const f = crearServidorDeSesion({ ahoraMs: () => AHORA, espacios: ['venta-minima', 'venta-minima-prueba'] });
     const pide = (espacio: string) => f.atender(PNID, { telefono: TEL, sesion: { v: 1, accion: 'leer', espacio, ejecucion: 'e' } }).statusCode;
     expect(pide('venta-minima')).toBe(200);
     expect(pide('venta-minima-prueba')).toBe(200);
     expect(pide('chat-novuchat')).toBe(400);
     expect(crearServidorDeSesion({ ahoraMs: () => AHORA }).atender(PNID, { telefono: TEL, sesion: { v: 1, accion: 'leer', espacio: 'chat-novuchat', ejecucion: 'e' } }).statusCode).toBe(200);
+  });
+  it('AISLAMIENTO entre espacios: lo que Q\'Taco compromete en `venta-minima` NO lo lee el chat en `chat-novuchat` (mismo servidor, mismo teléfono, mismo número)', () => {
+    // La restricción `espacios` es solo del servidor FALSO; el núcleo real no la tiene: allí el aislamiento lo da la CLAVE del documento (`{pnid}~{espacio}~wa_{tel}`).
+    const servidor = crearServidorDeSesion({ ahoraMs: () => AHORA });
+    const Q = cargar("const SS_CONFIG = { espacio: 'venta-minima', espacioPrueba: 'venta-minima-prueba', venceMin: 1440, maxBytes: 8000, prefijo: 'vm', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' };");
+    const c = Q['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, { pedido: 'secreto de Q\'Taco' });
+    expect(servidor.atender(PNID, c).body['resultado']).toBe('comprometido');
+    const delChat = servidor.atender(PNID, H['ssCuerpoLeer'](TEL, '8'));
+    expect(delChat.body['conversacion']).toMatchObject({ version: 0, estado: null });
+    expect(servidor.atender(PNID, Q['ssCuerpoLeer'](TEL, '9')).body['conversacion']).toMatchObject({ version: 1, estado: { pedido: 'secreto de Q\'Taco' } });
+    // y al revés: el chat compromete lo suyo sin pisar la versión de Q'Taco
+    expect(servidor.atender(PNID, H['ssCuerpoComprometer'](TEL, '8', 'fin1', 0, { a: 1 })).body['resultado']).toBe('comprometido');
+    expect(servidor.atender(PNID, Q['ssCuerpoLeer'](TEL, '9')).body['conversacion']).toMatchObject({ version: 1, estado: { pedido: 'secreto de Q\'Taco' } });
   });
 });
 

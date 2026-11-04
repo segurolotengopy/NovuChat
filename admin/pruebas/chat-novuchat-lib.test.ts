@@ -1430,7 +1430,28 @@ describe('guardias de --verificar', () => {
     // (d) dos declaraciones de SS_CONFIG
     const d = prod();
     d['nodes'].find((n: J) => n.name === 'Soltar mensajes').parameters.jsCode += "\nconst SS_CONFIG = { espacio: 'otro' };";
-    expect(CONSTRUIR.guardias('trigger', d, DATOS_CRM).join(' ')).toMatch(/«Soltar mensajes» tiene que declarar SS_CONFIG exactamente una vez/);
+    expect(CONSTRUIR.guardias('trigger', d, DATOS_CRM).join(' ')).toMatch(/«Soltar mensajes» declara SS_CONFIG 2 veces/);
+    // (e) el módulo TAL CUAL y luego una REDEFINICIÓN (en JS gana la última declaración: anularía el aislamiento de la prueba)
+    for (const redefine of ['function ssDesdeAutorizado() { return true; }', 'function ssEspacio() { return "chat-novuchat"; }', 'const ssBytes = () => 0;']) {
+      const e = prod();
+      e['nodes'].find((n: J) => n.name === 'Soltar mensajes').parameters.jsCode += '\n' + redefine;
+      expect(CONSTRUIR.guardias('trigger', e, DATOS_CRM).join(' '), redefine).toMatch(/«Soltar mensajes» declara ss\w+ 2 veces/);
+    }
+    // (f) «Armar turno» llama a `cnRegistro` (que usa `ssResultadoDeCompromiso`): sin el módulo se detecta aunque no nombre ninguna función `ss*`
+    const f2 = prod();
+    const nf = f2['nodes'].find((n: J) => n.name === 'Armar turno');
+    expect(String(nf.parameters.jsCode)).toContain(modulo);
+    nf.parameters.jsCode = String(nf.parameters.jsCode).replace(modulo, '');
+    expect(CONSTRUIR.guardias('trigger', f2, DATOS_CRM).join(' ')).toMatch(/«Armar turno» usa o define funciones de sesión/);
+    // (g) «Traer configuración» pide el estado en un espacio que NO es el de SS_CONFIG
+    for (const [de, a] of [["'chat-novuchat-prueba'", "'otro-prueba'"], [": 'chat-novuchat',", ": 'otro',"]] as const) {
+      const g = prod();
+      const t = g['nodes'].find((n: J) => n.name === 'Traer configuración');
+      const antes = String(t.parameters.jsonBody);
+      t.parameters.jsonBody = antes.replace(de, a);
+      expect(t.parameters.jsonBody, `la mutación ${de} no se aplicó`).not.toBe(antes);
+      expect(CONSTRUIR.guardias('trigger', g, DATOS_CRM).join(' ')).toMatch(/«Traer configuración» tiene que pedir el estado en el MISMO espacio/);
+    }
     // lo versionado, limpio; y el armador pide el paquete común, no uno propio
     expect(CONSTRUIR.guardias('trigger', prod(), DATOS_CRM)).toEqual([]);
     expect(CONSTRUIR.CONFIG_BASE.paquetes.sesion).toEqual(['../comun-sin-agente/src/sesion.js']);
