@@ -275,7 +275,7 @@ export function nodosDelGuardado(opciones) {
       // Por el relé: reintento propio del nodo (2 intentos, 3000 ms); un fallo reintentable gasta una descarga más de las 500 por día y por WABA, un 429 no.
       credentials: graph.credentials, ...SIN_CORTAR, ...(rele ? REINTENTO_GET_RELE : { retryOnFail: true, maxTries: 2, waitBetweenTries: 1000 }),
       notes: rele
-        ? 'GET /v1/envio/medios/<id> por el relé B9: devuelve id, mime_type, file_size y sha256 (sin url). Reintento propio del nodo (2 intentos, 3 s; GET idempotente): un fallo reintentable (por ejemplo un 502 WM-3040) gasta una descarga más de las 500 diarias por WABA; un 429 no gasta. Llamada PROPIA del guardado (doble descarga).'
+        ? 'Información del medio por el relé B9 (GET medios/<id>): devuelve id, mime_type, file_size y sha256 (sin url). Reintento propio del nodo (2 intentos, 3 s; GET idempotente): un fallo reintentable (por ejemplo un 502 WM-3040) gasta una descarga más de las 500 diarias por WABA; un 429 no gasta. Llamada PROPIA del guardado (doble descarga).'
         : 'GET /{media-id} con la credencial de WhatsApp: devuelve url, mime_type y file_size. Llamada PROPIA del guardado (doble descarga): no gasta el tope de ver u oír.',
     },
     {
@@ -288,7 +288,7 @@ export function nodosDelGuardado(opciones) {
       // Una descarga fallida la registra «Resultado del guardado».
       credentials: graph.credentials, ...SIN_CORTAR, ...(rele ? REINTENTO_GET_RELE : {}),
       notes: rele
-        ? 'Baja el archivo por el relé (GET /v1/envio/medios/<id>/contenido), sin seguir redirecciones, SOLO si la info trajo un file_size mayor que cero y de hasta 16 MiB. Si no (sin tamaño, demasiado grande, id vencido), la URL queda vacía y no se baja nada. Sin neverError: un 4xx o 5xx deja un item sin binario. 60 s para 16 MiB.'
+        ? 'Baja el archivo por el relé (GET medios/<id>/contenido), sin seguir redirecciones, SOLO si la info trajo un file_size mayor que cero y de hasta 16 MiB. Si no (sin tamaño, demasiado grande, id vencido), la URL queda vacía y no se baja nada. Sin neverError: un 4xx o 5xx deja un item sin binario. 60 s para 16 MiB.'
         : 'Baja el archivo del CDN de Meta con el token, sin seguir redirecciones, SOLO si Meta informó un tamaño de hasta 16 MiB. Si no, la URL queda vacía y no se baja nada (cuenta como 413). 60 s para 16 MiB.',
     },
     {

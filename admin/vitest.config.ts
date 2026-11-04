@@ -143,6 +143,7 @@ export const SUITES_PURAS = [
   'pruebas/core/nube-visor.test.ts',
   'pruebas/core/cargar-timbre-n8n.test.ts',
   'pruebas/core/registrar-llave-rele-n8n.test.ts',
+  'pruebas/core/rele/evy-emma-rele.test.ts',
   'pruebas/core/texto-tipeo.test.ts',
   'pruebas/core/new-function-lista-cerrada.test.ts',
   'pruebas/resetear-fichas-chat-novuchat.test.ts',
