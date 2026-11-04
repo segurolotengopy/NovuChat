@@ -33,8 +33,8 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
-import { injertar } from '../comun-sin-agente/src/envio.mjs';
-import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
+import { hallazgosDelEnvioRele, injertar, MARCADOR_URL_DEL_RELE, parametrosDeMensajeRele, PREFIJO_CREDENCIAL_RELE } from '../comun-sin-agente/src/envio.mjs';
+import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO, urlDescargaRele } from '../comun-sin-agente/src/guardado.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-evy/rroca-evy.json');
@@ -43,7 +43,13 @@ export const ARCHIVO_DEL_PROMPT = join(AQUI, 'prompts/evy.md');
 // 36 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
 // excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 // 45 + los 8 de la rama del miniCRM (`ramaCrm`, generada por el módulo `crm`; F1 del 31/10/2026): excepción de tope declarada por Andres (DP1, 31/10/2026) en docs/versiones-por-cliente.md.
-export const TOPE_DE_NODOS = 53;
+// 53 + 3 del canal `rele` (relé B9, PR 2, 03/11/2026: «Leer respuesta del relé», «¿Qué hacer con el envío?», «Esperar reintento» y el nodo «Detener por envío incierto» (I4) menos lo que la cadena de Graph ya tenía): tope 56 APROBADO por Andres el 03/11/2026 (docs/versiones-por-cliente.md).
+export const TOPE_DE_NODOS = 56;
+/** El relé B9 de AAB1 (canal `rele`): el prefijo de la Idempotency-Key y la credencial Header Auth de ESTE WABA, por NOMBRE (el valor lo tiene n8n). La URL interna del relé es un marcador que sustituye el publicador. */
+export const CLIENTE_RELE = 'rroca-evy';
+export const CREDENCIAL_RELE = 'AAB1 envío · cliente08';
+/** Los tres nodos que bajan o mandan medios en la conversación hablan con el relé; el resto de la cadena la injerta el módulo común. */
+const releGeneral = (n) => [MARCADOR_URL_DEL_RELE, '/v1/envio/'].every((x) => String(n.parameters.url || '').includes(x));
 /** Los 8 nodos de la rama del miniCRM (el módulo `crm` los genera). */
 export const NODOS_DE_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
 export const CREDENCIAL_CRM = (tenant) => `Google Sheets miniCRM (crm-${tenant})`;
@@ -282,10 +288,11 @@ const asignaciones = (datos) => Object.entries(datos.configBase).map(([nombre, v
 // ----------------------------------------------------------------- las guardias de lo armado
 export function anfitrionPermitido(url, nombreDelNodo = '') {
   if (MARCADOR.test(url)) return true;
+  // El relé B9: la URL interna es el marcador pegado a una ruta /v1/envio/ (nunca un host real). Las demás guardias de marcador siguen iguales.
+  if (new RegExp(`^=?${MARCADOR_URL_DEL_RELE}/v1/envio/`).test(url)) return true;
   // La única excepción: «Descargar medio» baja el medio de la URL que le devuelve Meta (la anterior, «¿Tamaño aceptable?», exige https://lookaside.fbsbx.com/ y un tamaño).
-  if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
   // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
-  if (nombreDelNodo === 'Descargar medio (guardado)' && url === URL_DESCARGA_GUARDADO) return true;
+  if (nombreDelNodo === 'Descargar medio (guardado)' && (url === URL_DESCARGA_GUARDADO || url === urlDescargaRele())) return true;
   // La consulta de SOLO la fila de encabezados del miniCRM (Google Sheets API, `values.get`): la URL exacta del módulo común, con un rango A<fila>:<letra><fila>.
   if (nombreDelNodo === 'Leer encabezados de la planilla') {
     const [antes, despues] = urlEncabezados('@@').split('@@');
@@ -368,7 +375,7 @@ export function guardias(variante, flujo, mapaCrm) {
     for (const n of nodos) {
       for (const [tipo, c] of Object.entries(n.credentials || {})) {
         const nombreCred = String((c || {}).name || '');
-        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && !NODOS_DE_INGESTA_DEL_GUARDADO.includes(n.name) && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred))) {
+        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (String(((c || {}).name) || '') === CREDENCIAL_RELE ? false : (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && !NODOS_DE_INGESTA_DEL_GUARDADO.includes(n.name) && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred)))) {
           h.push(`la prueba usa una credencial de producción en «${n.name}» (${tipo})`);
         }
       }
@@ -406,6 +413,30 @@ export function guardias(variante, flujo, mapaCrm) {
     const url = String(p(n).url || '');
     if (!anfitrionPermitido(url, n.name)) h.push(`el nodo «${n.name}» llama a un anfitrión fuera de la lista (graph.facebook.com, generativelanguage.googleapis.com, las Functions de la consola)`);
   }
+  // RELÉ B9: ni un nodo habla con Meta (Graph ni su CDN), la cadena de envío y el guardado son los del módulo común, y la ejecución dura 300 s (los reintentos del relé esperan hasta 64 s).
+  for (const n of nodos) if (/graph\.facebook\.com|lookaside|fbsbx|whatsAppApi/i.test(JSON.stringify({ p: n.parameters, t: n.type }))) h.push(`relé: «${n.name}» llama a Meta directo (Graph o su CDN) en un flujo que va por el relé`);
+  for (const n of ['Obtener URL del medio (general)', 'Descargar medio', 'Enviar aviso']) {
+    const nodo = por(n);
+    if (nodo && !releGeneral(nodo)) h.push(`relé: «${n}» no habla con el relé (/v1/envio/)`);
+  }
+  // MULTI-TENANT: los 8 nodos que hablan con el relé llevan, POR NOMBRE EXACTO, la credencial de ESTE cliente.
+  for (const n of ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Obtener URL del medio (general)', 'Descargar medio', 'Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)', 'Avisar falla del guardado']) {
+    const nodo = por(n);
+    if (nodo && ((nodo.credentials || {}).httpHeaderAuth || {}).name !== CREDENCIAL_RELE) h.push(`relé: «${n}» no lleva la credencial ${CREDENCIAL_RELE}`);
+  }
+  // Y CUALQUIER credencial cuyo nombre, normalizado (sin tildes, minúsculas, espacios simples), empiece con «aab1 envio» es exactamente la de este cliente (un nombre con otra grafía no se cuela).
+  const normal = (t) => String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  for (const n of nodos) for (const [tipo, c] of Object.entries(n.credentials || {})) {
+    const nombreCred = String((c || {}).name || '');
+    if ((normal(nombreCred).startsWith('aab1 envio') || nombreCred.startsWith(PREFIJO_CREDENCIAL_RELE)) && nombreCred !== CREDENCIAL_RELE) h.push(`relé: «${n.name}» (${tipo}) lleva una credencial del relé que no es la de este cliente (${CREDENCIAL_RELE})`);
+  }
+  // Un header Authorization escrito a mano en CUALQUIER nodo HTTP: la llave del relé va solo por la credencial (Header Auth), nunca en el flujo.
+  for (const n of nodos.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
+    const cabeceras = (((p(n).headerParameters || {}).parameters) || []);
+    if (cabeceras.some((x) => normal((x && x.name) || '').replace(/[^a-z]/g, '') === 'authorization')) h.push(`relé: «${n.name}» escribe un header Authorization en headerParameters (la llave va solo por la credencial)`);
+  }
+  h.push(...hallazgosDelEnvioRele(flujo || {}));
+  if (nodos.length && (flujo.settings || {}).executionTimeout !== 300) h.push('relé: executionTimeout tiene que ser 300');
   // Retención de ejecuciones (datos de salud: no se guardan ni los turnos fallidos), orden y zona horaria.
   const st = (flujo && flujo.settings) || {};
   if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» (datos de salud: no se guardan ni los turnos fallidos) y saveExecutionProgress false');
@@ -416,7 +447,8 @@ export function guardias(variante, flujo, mapaCrm) {
   const conMarcador = new Set(['Config base', NODO_RECEPTOR, 'Verificar firma con el receptor', NODO_PRUEBA]);
   for (const n of nodos) {
     if (conMarcador.has(n.name)) continue;
-    if (/REEMPLAZAR_[A-Z0-9]/.test(JSON.stringify(n).replace(/\/\^?REEMPLAZAR_\/i?/gi, ''))) h.push(`el nodo «${n.name}» trae un marcador REEMPLAZAR_: solo va en «Config base», el receptor y la ruta de prueba`);
+    // D5 (Andres, 03/11/2026): SOLO el marcador de la URL interna del relé se tolera, y solo pegado a /v1/envio/ (lo sustituye el publicador). Cualquier otro REEMPLAZAR_ sigue prohibido.
+    if (/REEMPLAZAR_[A-Z0-9]/.test(JSON.stringify(n).replace(/\/\^?REEMPLAZAR_\/i?/gi, '').split(`${MARCADOR_URL_DEL_RELE}/v1/envio/`).join(''))) h.push(`el nodo «${n.name}» trae un marcador REEMPLAZAR_: solo va en «Config base», el receptor y la ruta de prueba`);
   }
   return h;
 }
@@ -604,24 +636,54 @@ export function armarEvy(proyecto, datos, v) {
     }
   }
   // La cadena de envío común (no se copia), con las credenciales por NOMBRE. Cuelga de «Armar mensajes»; el resumen cuelga aparte y corre al final.
+  // CANAL «rele» (relé B9 de AAB1): TODO lo que habla con Meta sale por el relé, con la credencial «AAB1 envío · <alias>» de este WABA y la URL interna como marcador (la sustituye el publicador). Ningún nodo llama a Graph.
+  plantilla.settings = Object.assign({}, plantilla.settings, { executionTimeout: 300 });
+  const relePorNombre = (nombre) => { const nodo = plantilla.nodes.find((x) => x.name === nombre); if (!nodo) throw new Error(`${donde}: falta el nodo «${nombre}»`); return nodo; };
+  const credRele = { httpHeaderAuth: { id: '', name: CREDENCIAL_RELE } };
+  const idMedio = "String($('Normalizar entrada').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '')";
+  const info = relePorNombre('Obtener URL del medio (general)');
+  info.parameters.url = `=${MARCADOR_URL_DEL_RELE}/v1/envio/medios/{{ ${idMedio} }}`;
+  info.credentials = credRele; info.waitBetweenTries = 3000;
+  info.notes = 'Información del medio por el relé (GET medios/<id>): devuelve id, mime_type y file_size, no el archivo (ni url). Cada GET gasta una de las 500 descargas diarias por WABA (relé B9).';
+  const bajar = relePorNombre('Descargar medio');
+  bajar.parameters.url = `=${MARCADOR_URL_DEL_RELE}/v1/envio/medios/{{ ${idMedio} }}/contenido`;
+  bajar.credentials = credRele; bajar.waitBetweenTries = 3000;
+  bajar.notes = 'Contenido del medio por el relé (GET medios/<id>/contenido): el archivo como binario `data`, sin seguir redirecciones; solo llega aquí si «¿Tamaño aceptable?» confirmó el tamaño. No se guarda en ningún lado.';
+  const tam = relePorNombre('¿Tamaño aceptable?').parameters.conditions.conditions[0];
+  if (!tam.leftValue.includes("String($json.url || '').startsWith('https://lookaside.fbsbx.com/')")) throw new Error(`${donde}: «¿Tamaño aceptable?» cambió: ya no pide la url de Meta`);
+  tam.leftValue = tam.leftValue.replace("String($json.url || '').startsWith('https://lookaside.fbsbx.com/')", "String($json.id || '') !== ''");
+  const aviso = relePorNombre('Enviar aviso');
+  aviso.parameters = parametrosDeMensajeRele({ cliente: CLIENTE_RELE, credenciales: { rele: CREDENCIAL_RELE }, rol: 'aviso', pnidExpresion: '$json.phoneNumberId', payloadExpresion: '$json.payload', destinoExpresion: '$json.para', nExpresion: '$json.n', lote: { tamano: 1, intervaloMs: 1500 } });
+  aviso.credentials = credRele;
+  aviso.notes = 'Envía de a uno, con 1,5 s entre mensajes y en el orden de «Armar previos», POR EL RELÉ (Idempotency-Key rol aviso + n). Sin reintentos: un aviso repetido llegaría dos veces. El resultado (un `wamid` real o el error del relé) lo lee «Armar mensajes»: si la imagen no salió, el texto no la promete.';
+  // `injertar` exige que «Armar mensajes» LLAME a cmNumerar en su return final: en la plantilla el código es todavía una marca `@@…:nodos/armar-mensajes.js`, así que se le muestra la fuente de ese archivo (la que se pega en el nodo) y se restaura la marca.
+  const armadoNodo = relePorNombre('Armar mensajes');
+  const marcaDelArmado = armadoNodo.parameters.jsCode;
+  const fuenteDelArmado = /^@@[a-z+]*:(.+)$/.exec(String(marcaDelArmado));
+  if (!fuenteDelArmado) throw new Error(`${donde}: «Armar mensajes» ya no se arma desde un archivo de nodos/`);
+  armadoNodo.parameters.jsCode = leerSiExiste(join(AQUI, 'src', fuenteDelArmado[1]), 'armar-mensajes.js') || '';
   injertar(plantilla, {
-    credenciales: { graph: dato(datos, prueba ? 'credenciales.graphPrueba' : 'credenciales.graph', donde), ingesta: dato(datos, 'credenciales.ingesta', donde) },
+    canal: 'rele', cliente: CLIENTE_RELE,
+    credenciales: { rele: CREDENCIAL_RELE, ingesta: dato(datos, 'credenciales.ingesta', donde) },
     ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`,
     entrada: 'Normalizar entrada',
     desde: [5480, 300],
   });
-  // La PUERTA DE LA ENTREGA (I-ENTREGA, regla 3): lo que se reporta como enviado SOLO es lo que Meta aceptó con un `messages[0].id` (el envío principal o su respaldo). Se reemplaza la condición de «¿Reportar? (saliente)»,
-  // que el módulo común arma sin leer el id: sin un nodo nuevo.
+  armadoNodo.parameters.jsCode = marcaDelArmado;
+  // La PUERTA DE LA ENTREGA (I-ENTREGA, regla 3): lo que se reporta como enviado SOLO es lo que Meta aceptó con un `messages[0].id` (el envío principal o su respaldo). En el canal rele el id llega como `idMeta` (envío principal, lo escribe
+  // «Leer respuesta del relé») o como `messages[0].id` (el respaldo). Se agrega a la condición de «¿Reportar? (saliente)» que arma el módulo común (sin un nodo nuevo).
   const puerta = plantilla.nodes.find((n) => n.name === '¿Reportar? (saliente)');
   const condicion = puerta && puerta.parameters && puerta.parameters.conditions && puerta.parameters.conditions.conditions && puerta.parameters.conditions.conditions[0];
-  if (!condicion || condicion.leftValue !== "={{ $('Armar mensajes').item.json.reportar === true && !($json && $json.error) }}") throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no tiene la condición esperada`);
-  condicion.leftValue = "={{ $('Armar mensajes').item.json.reportar === true && !!($json && !$json.error && Array.isArray($json.messages) && $json.messages[0] && $json.messages[0].id) }}";
-  // El reporte saliente de ESTE flujo: igual al común, más el EVENTO `no_contactar` (la baja y la protección), que viaja SIEMPRE, aunque salga el respaldo.
+  const FIN_COMUN = " && j.accion !== 'agotado' && !j.error; })() }}";
+  if (!condicion || typeof condicion.leftValue !== 'string' || !condicion.leftValue.endsWith(FIN_COMUN)) throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no tiene la condición esperada`);
+  condicion.leftValue = condicion.leftValue.slice(0, -FIN_COMUN.length) + " && j.accion !== 'agotado' && !j.error && !!(j.idMeta || (Array.isArray(j.messages) && j.messages[0] && j.messages[0].id)); })() }}";
+  // El reporte saliente de ESTE flujo: igual al común, más el EVENTO `no_contactar` (la baja y la protección), que viaja SIEMPRE, aunque salga el respaldo; y SOLO ese evento (el común manda `evento` siempre, aunque vacío).
   const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
-  if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes('evento: m.evento')) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
-  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } return JSON.stringify(r); })() }}";
+  const cuerpoComun = rep && rep.parameters && rep.parameters.jsonBody;
+  if (typeof cuerpoComun !== 'string' || !cuerpoComun.includes('return JSON.stringify({ telefono:') || !cuerpoComun.endsWith(", evento: m.evento }); })() }}")) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
+  rep.parameters.jsonBody = cuerpoComun.replace('return JSON.stringify({ telefono:', 'const r = { telefono:').replace(", evento: m.evento }); })() }}", " }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } return JSON.stringify(r); })() }}");
   // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
-  injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
+  injertarGuardado(plantilla, { canal: 'rele', cliente: CLIENTE_RELE, guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
   // El mapa de columnas del tenant (dato, no código) dentro de los nodos del módulo y los rangos de lectura de los nodos de Google.

@@ -470,8 +470,8 @@ describe('flujo: la rama, sus rangos y su credencial se NIEGAN con mutaciones', 
   it('los datos sin el mapa `crm` son hallazgo', () => {
     expect((guardias('produccion', PRODUCCION, {}) as string[]).join(' ')).toMatch(/faltan los datos `crm`/);
   });
-  it('conteo de nodos: 53 en producción y 48 en la prueba (el tope sube de 45 a 53, DP1 del 31/10/2026)', () => {
-    expect(PRODUCCION.nodes.length).toBe(53);
-    expect(PRUEBA.nodes.length).toBe(48);
+  it('conteo de nodos: 56 en producción y 51 en la prueba (el tope sube de 45 a 53, DP1 del 31/10/2026, y a 56 con el relé B9, 03/11/2026)', () => {
+    expect(PRODUCCION.nodes.length).toBe(56);
+    expect(PRUEBA.nodes.length).toBe(51);
   });
 });
