@@ -79,7 +79,7 @@ function leerEnv(ruta, claves, opcionales = []) {
   for (const c of claves) if (!out[c]) morir(`el .env no tiene ${c}`);
   return out;
 }
-const env = leerEnv(ENV, ['N8N_BASE_URL', 'N8N_API_KEY', 'N8N_WORKFLOW_ID'], ['WA_PHONE_ID']);
+const env = leerEnv(ENV, ['N8N_BASE_URL', 'N8N_API_KEY', 'N8N_WORKFLOW_ID'], ['WA_PHONE_ID', 'PLANILLA_PROSPECTOS_ID_BELLIDO']);
 const API = `${env.N8N_BASE_URL.replace(/\/$/, '')}/api/v1`;
 
 async function llamar(metodo, ruta, cuerpo) {
@@ -202,6 +202,21 @@ const MARCA_PHONE = /REEMPLAZAR_PHONE_NUMBER_ID_[A-Z0-9_]+/g;
  *     valores del «Config base» del vivo de Bellido, sin mostrarlos. El calendario no tiene respaldo.
  *   - Respaldo exacto del vivo antes de escribir; la vuelta atrás es --restaurar-respaldo con el mismo .env.
  */
+// La credencial del miniCRM de Bellido (rama `ramaCrm`): el vivo todavia no la usa, asi que su id se resuelve en la LISTA de credenciales de n8n,
+// SOLO por este nombre exacto (constante: nunca por patron, ni otro nombre, ni otro tenant) y con exactamente UNA coincidencia. Nunca se imprime el id.
+const CRED_CRM_BELLIDO = 'Google Sheets miniCRM (crm-bellido)';
+let listaDeCredenciales = null;
+async function idDeCredencialCrm() {
+  if (listaDeCredenciales === null) {
+    const r = await llamar('GET', '/credentials?limit=250');
+    if (r.cod !== 200) morir(`no pude leer la lista de credenciales de n8n (GET /credentials → ${r.cod})`);
+    listaDeCredenciales = Array.isArray(r.datos.data) ? r.datos.data : (Array.isArray(r.datos) ? r.datos : []);
+  }
+  const m = listaDeCredenciales.filter((c) => c && c.name === CRED_CRM_BELLIDO && c.type === 'googleApi' && c.id);
+  if (m.length !== 1) morir(`la credencial «${CRED_CRM_BELLIDO}» (googleApi) tiene que existir en n8n exactamente una vez; hay ${m.length}. Cree la credencial antes de publicar`);
+  return String(m[0].id);
+}
+const ID_PLANILLA_VALIDO = (v) => typeof v === 'string' && !v.startsWith('REEMPLAZAR_') && /^[A-Za-z0-9_-]{25,100}$/.test(v);
 const AJENOS_A_BELLIDO = /platinum|q'?taco|captaci|segurolo|otp|aab1|whatsapp-?modular|receptor|demo ?a\b|NovuChat A|pruebas/i;
 if (bandera('sobre-bellido')) {
   const RESPALDO = resolve(opcion('respaldo') ?? morir('falta --respaldo <archivo fuera del repositorio>'));
@@ -247,6 +262,11 @@ if (bandera('sobre-bellido')) {
     const requerida = CRED_POR_TIPO_DE_NODO[n.type];
     if (requerida && !(n.credentials && n.credentials[requerida])) { n.credentials = Object.assign({}, n.credentials, { [requerida]: {} }); tabla.push(`  ${n.name}: venía SIN credencial ${requerida}; se pone la de Bellido de ese tipo`); }
     for (const [tipo, c] of Object.entries(n.credentials ?? {})) {
+      if (tipo === 'googleApi' && c && c.name === CRED_CRM_BELLIDO) {
+        n.credentials[tipo] = { id: await idDeCredencialCrm(), name: CRED_CRM_BELLIDO };
+        tabla.push(`  ${n.name}: ${tipo} → «${CRED_CRM_BELLIDO}» (de la lista de n8n)`);
+        continue;
+      }
       const usadas = delVivo[tipo] ?? morir(`el vivo de Bellido no usa ninguna credencial ${tipo} («${n.name}»)`);
       let elegida = null;
       if (c && c.name) {
@@ -277,6 +297,14 @@ if (bandera('sobre-bellido')) {
     const v = String(valorVivo(origen) ?? '');
     if (v && !v.startsWith('REEMPLAZAR_') && !v.startsWith('=')) { a.value = v; llenados.push(a.name); }
   }
+  // El id de la planilla del miniCRM: si el vivo no lo trae, se siembra del archivo de entorno (PLANILLA_PROSPECTOS_ID_BELLIDO). Nunca se imprime ni se guarda en el respaldo.
+  let sembradoDelEntorno = false;
+  const campoPlanilla = baseB.parameters.assignments.assignments.find((a) => a.name === 'planillaProspectosId');
+  if (campoPlanilla && /^REEMPLAZAR_/.test(String(campoPlanilla.value)) && env.PLANILLA_PROSPECTOS_ID_BELLIDO !== undefined) {
+    if (!ID_PLANILLA_VALIDO(env.PLANILLA_PROSPECTOS_ID_BELLIDO)) morir('PLANILLA_PROSPECTOS_ID_BELLIDO del entorno no tiene la forma de un id de planilla (25 a 100 letras, digitos, guion o guion bajo; no puede empezar con REEMPLAZAR_)');
+    campoPlanilla.value = env.PLANILLA_PROSPECTOS_ID_BELLIDO;
+    sembradoDelEntorno = true;
+  }
   const marcas = [...new Set(JSON.stringify(b).match(/REEMPLAZAR_[A-Z][A-Z0-9_]*/g) ?? [])];
   const nv = new Set(vivo.datos.nodes.map((n) => n.name)); const nb = new Set(b.nodes.map((n) => n.name));
   console.log(`Bellido vivo: «${vivo.datos.name}», ${vivo.datos.nodes.length} nodos, activo=${vivo.datos.active}`);
@@ -287,6 +315,7 @@ if (bandera('sobre-bellido')) {
   const cambiadosCompartidos = b.nodes.filter((n) => vivo.datos.nodes.some((x) => x.name === n.name && estable(x.parameters) !== estable(n.parameters))).map((n) => n.name);
   console.log(`Nodos en los dos con PARÁMETROS que cambian (${cambiadosCompartidos.length}; se sobrescriben con los del candidato, sin mostrar valores): ${cambiadosCompartidos.join(', ') || '—'}`);
   console.log(`Respaldo de «Config base» llenado desde el vivo (sin mostrar valores): ${llenados.join(', ') || '—'}`);
+  if (sembradoDelEntorno) console.log('Id de la planilla del miniCRM: llenado desde el entorno (no se muestra)');
   console.log(`Marcadores que quedan: ${marcas.join(', ') || 'ninguno'}`);
   console.log(`Respaldo del vivo: ${RESPALDO}`);
   guardarRespaldo(RESPALDO, vivo.datos);
