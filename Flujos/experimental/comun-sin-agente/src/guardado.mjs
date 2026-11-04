@@ -46,11 +46,17 @@
  *   carga          nodo cuyo primer item trae `messages` y `ahoraMs` (por defecto «Carga de entrada»)
  *   config         nodo con `waGraphVersion` y `numeroRecepcion` (por defecto «Config del negocio»)
  *   ancla          nodo del que cuelga (por defecto «Reportar mensaje (entrante)»)
+ *   canal          'graph' (por defecto: nada cambia, ni un byte) o 'rele' (relé B9: la info y el contenido del medio salen de GET /v1/envio/medios/<id> y
+ *                  /contenido, y el aviso de falla de POST /v1/envio/mensajes/<phone_number_id>; ver `envio.mjs`). Con 'rele' hacen falta además:
+ *   cliente        prefijo de la Idempotency-Key del aviso («rroca-evy»)
+ *   releUrl        base del relé (por defecto el marcador REEMPLAZAR_URL_INTERNA_DEL_RELE)
+ *                  y `credenciales.rele` («AAB1 envío · <alias>») en lugar de `credenciales.graph` (si no se da, se toma de «Enviar a WhatsApp»)
  * Devuelve el mismo flujo, con los nueve nodos y sus conexiones agregados. Lanza si falta algo: un flujo con medios no se arma sin guardado.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MARCADOR_URL_DEL_RELE, PREFIJO_CREDENCIAL_RELE, esBaseDeReleAdmitida, parametrosDeMensajeRele, validarRele } from './envio.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 
@@ -68,8 +74,16 @@ export const NODOS_DEL_GUARDADO = [
 // El anfitrión va ANCLADO al inicio de la URL (con o sin el `=` de una expresión de n8n) y termina en `/`, `?`, `#` o el final: un texto que solo lo
 // nombra en otra parte (`https://otro.dominio/?x=graph.facebook.com`) no cuenta.
 const ANFITRION_DE_MEDIO = /^=?\s*https:\/\/(graph\.facebook\.com|lookaside\.fbsbx\.com)(?=[/?#]|$)/i;
-const esPedidoDeMedio = (url) => {
+// El relé B9: GET <base>/v1/envio/medios/<id> (la base es el marcador REEMPLAZAR_URL_INTERNA_DEL_RELE o un host http(s)); NO cuenta la subida (POST …/medios/<pnid>).
+// Esto DETECTA (a propósito, cualquier host http(s)): un nodo que baja medios del relé con una URL real tiene que contar como «maneja medios» para que
+// lo alcance la compuerta del guardado. Lo que el repositorio ADMITE como base del relé (solo el marcador; las pruebas, un host `*.example`) lo valida
+// `esBaseDeReleAdmitida`, en `validarRele` y en `hallazgosDelGuardado`.
+// Se busca la RUTA del relé en cualquier parte de la URL (no solo tras un host simple), para que no la esconda una base calculada (`={{ $json.base }}/v1/…`), una base con ruta
+// (`https://h/api/v1/…`) ni un usuario (`https://user@host/v1/…`); segunda revisión del PR #757.
+const ANFITRION_DE_MEDIO_RELE = /\/v1\/envio\/medios\//;
+const esPedidoDeMedio = (url, metodo = 'GET') => {
   const texto = String(url || '').trim();
+  if (ANFITRION_DE_MEDIO_RELE.test(texto)) return String(metodo || 'GET').toUpperCase() === 'GET';
   const m = ANFITRION_DE_MEDIO.exec(texto);
   if (!m) return false;
   if (m[1].toLowerCase() === 'lookaside.fbsbx.com') return true;
@@ -86,7 +100,7 @@ export function manejaMedios(flujo) {
     /^(Obtener URL del (medio|video|documento)|Descargar (medio|video|documento))/i.test(String(n.name))
     || (n.type === 'n8n-nodes-base.whatsApp' && (n.parameters || {}).resource === 'media')
     // Por lo que HACE, no por cómo se llama: un HTTP a Graph que nombra un medio (`/{media-id}`) o que baja del CDN de Meta.
-    || (n.type === 'n8n-nodes-base.httpRequest' && esPedidoDeMedio(String((n.parameters || {}).url || '')))
+    || (n.type === 'n8n-nodes-base.httpRequest' && esPedidoDeMedio(String((n.parameters || {}).url || ''), (n.parameters || {}).method))
   ));
 }
 /** Los nodos que hablan con Meta (credencial de Graph) y los que hablan con `guardarMedio` (credencial de ingesta). */
@@ -111,12 +125,39 @@ export const ARISTAS_DEL_GUARDADO = [
   ['Preparar reintento', 0, 'Reintentar el guardado'], ['Reintentar el guardado', 0, 'Resultado del guardado'],
   ['Resultado del guardado', 0, 'Avisar falla del guardado'],
 ];
+/**
+ * Canal rele: reintento PROPIO del nodo HTTP (0 nodos nuevos) en los dos GET de medios, la info y `/contenido`: `retryOnFail`, 2 intentos en total, espera fija de
+ * 3000 ms (n8n no admite espera con azar en `waitBetweenTries`). Seguro porque son GET idempotentes. COSTO: cualquier fallo reintentable de esos GET (un 5xx, un id
+ * vencido 502 WM-3040) gasta una descarga más de las 500 por día y por WABA; un 429 no gasta. Ronda 3b del PR #757: la versión con 4 nodos (IF + Wait) rompía los topes. Con los reintentos cada medio gasta hasta 4 GET (por eso el cupo global baja a 30 por flujo).
+ */
+export const REINTENTO_GET_RELE = { retryOnFail: true, maxTries: 2, waitBetweenTries: 3000 };
+/**
+ * Por el relé, una imagen o un sticker (`tipo: image`) de más de 5 MiB no se descarga: el servidor la rechazaría (413) y el GET de `/contenido` gastaría una
+ * de las 500 descargas diarias por WABA para nada. Audio, video y documento siguen con el tope de 16 MiB.
+ */
+export const LIMITE_DE_IMAGEN_RELE = 5 * 1024 * 1024;
+/** El cupo por defecto del canal rele (ver `guardado-cupo.js`): medios por teléfono y día, y por flujo y día. */
+export const CUPO_POR_DEFECTO_RELE = { porTelefono: 10, global: 30 }; // 10 por teléfono: decisión de Andres, 03/11/2026
+
 /** La URL de la descarga: la del CDN de Meta solo si Meta informó un tamaño dentro de 16 MiB (`limite`); si no, vacía (no se baja nada). */
 // Si Meta NO informa el tamaño (0 o ausente): imagen, audio y sticker se bajan igual (el servidor impone el tope por tipo, 413, y el tiempo límite de la
 // descarga, 60 s, acota lo que se baja); video y documento NO se bajan (`exigeTamano`: pueden pesar 100 MB) y cuentan como falla de tamaño (`sinTamano`).
 export const URL_DESCARGA_GUARDADO = "={{ (String($json.url || '').startsWith('https://lookaside.fbsbx.com/') && !(Number($json.file_size) > Number($('Preparar guardado').first().json.limite)) && !($('Preparar guardado').first().json.exigeTamano === true && !(Number($json.file_size) > 0))) ? $json.url : '' }}";
 
+/**
+ * La URL de la descarga por el relé. `releUrl` va dentro de una cadena entre comillas simples: solo el marcador o una base http(s) sin comillas ni llaves.
+ * Pide `/contenido` SOLO si la info trae `file_size` mayor que cero y dentro del límite: sin tamaño, con tamaño excesivo (WM-3039, 413) o si la info falló
+ * (id vencido: 502 WM-3040), la URL queda vacía y no se baja nada (cuenta como falla de tamaño). Los GET de medios gastan 500 descargas por día y por WABA
+ * (la info y el contenido cuentan): nunca se baja a ciegas; solo los reintentos propios del nodo (`REINTENTO_GET_RELE`) repiten un GET.
+ */
+// FALLA CERRADA: si `limite` faltara o no fuera un número (NaN), `tope` no es finito y NO se descarga (antes la comparación `!(x > NaN)` daba verdadero y bajaba sin tope).
+// El tamaño se lee de la respuesta de la info (su ÚLTIMA corrida), no de `$json`.
+export const urlDescargaRele = (releUrl = MARCADOR_URL_DEL_RELE) => `={{ (() => { const p = $('Preparar guardado').first().json; const t = $('Pedir el medio a Meta (guardado)').first().json; const tope = p.tipo === 'image' ? Math.min(Number(p.limite), ${LIMITE_DE_IMAGEN_RELE}) : Number(p.limite); return Number.isFinite(tope) && tope > 0 && Number(t.file_size) > 0 && Number(t.file_size) <= tope; })() ? '${releUrl}/v1/envio/medios/' + String($('Preparar guardado').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') + '/contenido' : '' }}`;
+// El id del medio sale de «Preparar guardado» (no de `$json`), así no depende del ítem que llegue.
+export const urlInfoRele = (releUrl = MARCADOR_URL_DEL_RELE) => `=${releUrl}/v1/envio/medios/{{ String($('Preparar guardado').first().json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}`;
+
 export const FUENTE_PREPARAR = readFileSync(join(AQUI, '../../../src/core/medios/guardado-preparar.js'), 'utf8').trimEnd();
+export const FUENTE_CUPO = readFileSync(join(AQUI, '../../../src/core/medios/guardado-cupo.js'), 'utf8').trimEnd();
 export const FUENTE_REINTENTO = readFileSync(join(AQUI, '../../../src/core/medios/guardado-reintento.js'), 'utf8').trimEnd();
 export const FUENTE_RESULTADO = readFileSync(join(AQUI, '../../../src/core/medios/guardado-resultado.js'), 'utf8').trimEnd();
 
@@ -135,15 +176,28 @@ const SIN_CORTAR = { onError: 'continueRegularOutput', alwaysOutputData: true };
 const RESPUESTA_COMPLETA = { response: { response: { fullResponse: true, neverError: true } } };
 
 /** La cabecera que define `GM_FUENTES` para este flujo: nombres de nodo LITERALES (el task runner de n8n solo precarga los nombrados así). */
-export function cabeceraDeFuentes(carga, config) {
+export function cabeceraDeFuentes(carga, config, cupo) {
   for (const n of [carga, config]) if (!NOMBRE_DE_NODO.test(String(n))) throw new Error(`guardado: nombre de nodo no válido: ${String(n).slice(0, 40)}`);
+  // Con `cupo` (solo el canal rele) la cabecera define también `GM_CUPO`; sin él, la cabecera es la de siempre, byte a byte.
+  const lineaCupo = cupo === undefined ? [] : [`const GM_CUPO = { porTelefono: ${validarCupo(cupo).porTelefono}, global: ${validarCupo(cupo).global} };`];
   return [
     '// FUENTES DEL GUARDADO: las arma Flujos/experimental/comun-sin-agente/src/guardado.mjs para este flujo (nombres de nodo literales, para que n8n los precargue).',
     'const GM_FUENTES = {',
     `  carga: $('${carga}').isExecuted ? $('${carga}').first().json : {},`,
     `  config: $('${config}').isExecuted ? $('${config}').first().json : {},`,
     '};',
+    ...lineaCupo,
   ].join('\n');
+}
+
+/** El cupo: enteros de 1 a 500 (500 es el tope diario de descargas por WABA; cada medio gasta 2, así que un cupo de medios mayor que 250 no tiene sentido). */
+export function validarCupo(cupo) {
+  const c = { ...CUPO_POR_DEFECTO_RELE, ...(cupo || {}) };
+  for (const k of ['porTelefono', 'global']) {
+    if (!Number.isInteger(c[k]) || c[k] < 1 || c[k] > 125) throw new Error(`guardado: cupo.${k} tiene que ser un entero de 1 a 125 (medios por día; cada uno gasta de 2 a 4 de las 500 descargas del WABA, con sus reintentos)`);
+  }
+  if (c.porTelefono > c.global) throw new Error('guardado: cupo.porTelefono no puede pasar de cupo.global');
+  return c;
 }
 
 /** El número del negocio: la expresión de la cabecera `X-NovuChat-Numero` de «Reportar mensaje (entrante)», sin el `={{ … }}`. */
@@ -166,17 +220,28 @@ function autenticacionDeGraph(credenciales) {
 export function nodosDelGuardado(opciones) {
   const o = opciones || {};
   const c = o.credenciales || {};
-  if (!c.ingesta || !c.graph) throw new Error('guardado: faltan credenciales.ingesta y credenciales.graph (por NOMBRE)');
-  if (/ingesta/i.test(String(c.graph)) || String(c.graph) === String(c.ingesta)) throw new Error('guardado: la credencial de Graph no puede ser la de ingesta (la trampa del 15/09)');
+  if (o.canal !== undefined && o.canal !== 'graph' && o.canal !== 'rele') throw new Error(`guardado: canal desconocido: ${String(o.canal).slice(0, 20)} (graph o rele)`);
+  const rele = o.canal === 'rele';
+  if (rele) {
+    if (!c.ingesta || !c.rele) throw new Error('guardado: faltan credenciales.ingesta y credenciales.rele (por NOMBRE)');
+    if (String(c.rele) === String(c.ingesta)) throw new Error('guardado: la credencial del relé no puede ser la de ingesta');
+    validarRele({ cliente: o.cliente, releUrl: o.releUrl, credenciales: { rele: c.rele } });
+  } else {
+    if (!c.ingesta || !c.graph) throw new Error('guardado: faltan credenciales.ingesta y credenciales.graph (por NOMBRE)');
+    if (/ingesta/i.test(String(c.graph)) || String(c.graph) === String(c.ingesta)) throw new Error('guardado: la credencial de Graph no puede ser la de ingesta (la trampa del 15/09)');
+  }
   if (!/^https:\/\/[a-z0-9.-]+\/guardarMedio$/.test(String(o.guardarUrl || ''))) throw new Error('guardado: guardarUrl tiene que ser https://<anfitrión>/guardarMedio');
   const carga = o.carga || 'Carga de entrada';
   const config = o.config || 'Config del negocio';
   const numero = o.numero;
   if (!numero) throw new Error('guardado: falta la expresión del número del negocio (numero)');
   const [x, y] = o.desde || [0, 0];
-  const graph = autenticacionDeGraph(c);
+  const releUrl = o.releUrl === undefined ? MARCADOR_URL_DEL_RELE : String(o.releUrl);
+  const graph = rele
+    ? { parametros: { authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth' }, credentials: { httpHeaderAuth: { id: '', name: c.rele } } }
+    : autenticacionDeGraph(c);
   // El aviso sale con la credencial de ENVÍO del flujo («Enviar a WhatsApp»), la que corresponde a su variante (prueba o producción), no con la de descarga.
-  const graphAviso = autenticacionDeGraph({ graph: c.graphAviso || c.graph, graphTipo: c.graphAvisoTipo || c.graphTipo });
+  const graphAviso = rele ? graph : autenticacionDeGraph({ graph: c.graphAviso || c.graph, graphTipo: c.graphAvisoTipo || c.graphTipo });
   const ingesta = { authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth' };
   const credIngesta = { httpHeaderAuth: { id: '', name: c.ingesta } };
   const P = "$('Preparar guardado').first().json";
@@ -192,30 +257,39 @@ export function nodosDelGuardado(opciones) {
   const tipoDeContenido = { name: 'Content-Type', value: `={{ ${P}.contentType }}` };
   // El mime declarado por Meta, saneado contra la lista cerrada (revisión de #709): en video y documento el Content-Type es siempre octet-stream.
   const mimeDeclarado = { name: 'X-NovuChat-Mime', value: `={{ ${P}.mime }}` };
-  return [
+  const nodos = [
     {
       id: 'gm-preparar', name: 'Preparar guardado', type: 'n8n-nodes-base.code', typeVersion: 2, position: [x, y],
-      parameters: { jsCode: `${cabeceraDeFuentes(carga, config)}\n\n${FUENTE_PREPARAR}\n` },
+      // Canal rele: el cupo de descargas va DELANTE (cabecera con `GM_CUPO` + `guardado-cupo.js`); el canal Graph queda byte a byte como estaba.
+      parameters: { jsCode: rele ? `${cabeceraDeFuentes(carga, config, o.cupo || {})}\n\n${FUENTE_CUPO}\n\n${FUENTE_PREPARAR}\n` : `${cabeceraDeFuentes(carga, config)}\n\n${FUENTE_PREPARAR}\n` },
       notes: 'Rama del GUARDADO de medios (módulo común Flujos/src/core/medios/): todo medio se guarda (imagen, audio, video, documento de cualquier tipo, sticker). Corre después de la respuesta al cliente y nunca la frena. No toca el binario.',
     },
     {
       id: 'gm-url', name: 'Pedir el medio a Meta (guardado)', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + 240, y + 200],
-      parameters: {
-        method: 'GET', url: `=https://graph.facebook.com/{{ ${version} }}/{{ String($json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}`,
-        ...graph.parametros, options: { timeout: 10000 },
-      },
-      credentials: graph.credentials, ...SIN_CORTAR, retryOnFail: true, maxTries: 2, waitBetweenTries: 1000,
-      notes: 'GET /{media-id} con la credencial de WhatsApp: devuelve url, mime_type y file_size. Llamada PROPIA del guardado (doble descarga): no gasta el tope de ver u oír.',
+      parameters: rele
+        ? { method: 'GET', url: urlInfoRele(releUrl), ...graph.parametros, options: { timeout: 30000, redirect: { redirect: { followRedirects: false } } } }
+        : {
+          method: 'GET', url: `=https://graph.facebook.com/{{ ${version} }}/{{ String($json.mediaId || '').replace(/[^A-Za-z0-9_-]/g, '') }}`,
+          ...graph.parametros, options: { timeout: 10000 },
+        },
+      // Por el relé: reintento propio del nodo (2 intentos, 3000 ms); un fallo reintentable gasta una descarga más de las 500 por día y por WABA, un 429 no.
+      credentials: graph.credentials, ...SIN_CORTAR, ...(rele ? REINTENTO_GET_RELE : { retryOnFail: true, maxTries: 2, waitBetweenTries: 1000 }),
+      notes: rele
+        ? 'GET /v1/envio/medios/<id> por el relé B9: devuelve id, mime_type, file_size y sha256 (sin url). Reintento propio del nodo (2 intentos, 3 s; GET idempotente): un fallo reintentable (por ejemplo un 502 WM-3040) gasta una descarga más de las 500 diarias por WABA; un 429 no gasta. Llamada PROPIA del guardado (doble descarga).'
+        : 'GET /{media-id} con la credencial de WhatsApp: devuelve url, mime_type y file_size. Llamada PROPIA del guardado (doble descarga): no gasta el tope de ver u oír.',
     },
     {
       id: 'gm-descargar', name: 'Descargar medio (guardado)', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + 480, y + 200],
       parameters: {
-        method: 'GET', url: URL_DESCARGA_GUARDADO, ...graph.parametros,
+        method: 'GET', url: rele ? urlDescargaRele(releUrl) : URL_DESCARGA_GUARDADO, ...graph.parametros,
         options: { timeout: 60000, redirect: { redirect: { followRedirects: false } }, response: { response: { responseFormat: 'file', outputPropertyName: 'data' } } },
       },
-      // Sin reintento: con la URL vacía (medio demasiado grande) no hay nada que reintentar. Una descarga fallida la registra «Resultado del guardado».
-      credentials: graph.credentials, ...SIN_CORTAR,
-      notes: 'Baja el archivo del CDN de Meta con el token, sin seguir redirecciones, SOLO si Meta informó un tamaño de hasta 16 MiB. Si no, la URL queda vacía y no se baja nada (cuenta como 413). 60 s para 16 MiB.',
+      // Graph: sin reintento (con la URL vacía no hay nada que reintentar). Relé: reintento propio del nodo (GET idempotente; con la URL vacía no sale ninguna llamada).
+      // Una descarga fallida la registra «Resultado del guardado».
+      credentials: graph.credentials, ...SIN_CORTAR, ...(rele ? REINTENTO_GET_RELE : {}),
+      notes: rele
+        ? 'Baja el archivo por el relé (GET /v1/envio/medios/<id>/contenido), sin seguir redirecciones, SOLO si la info trajo un file_size mayor que cero y de hasta 16 MiB. Si no (sin tamaño, demasiado grande, id vencido), la URL queda vacía y no se baja nada. Sin neverError: un 4xx o 5xx deja un item sin binario. 60 s para 16 MiB.'
+        : 'Baja el archivo del CDN de Meta con el token, sin seguir redirecciones, SOLO si Meta informó un tamaño de hasta 16 MiB. Si no, la URL queda vacía y no se baja nada (cuenta como 413). 60 s para 16 MiB.',
     },
     {
       id: 'gm-guardar', name: 'Guardar medio', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + 720, y + 200],
@@ -256,26 +330,42 @@ export function nodosDelGuardado(opciones) {
     },
     {
       id: 'gm-avisar', name: 'Avisar falla del guardado', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x + 1920, y],
-      parameters: {
-        method: 'POST', url: `=https://graph.facebook.com/{{ ${version} }}/{{ String(${numero}).replace(/\\D/g, '') }}/messages`,
-        ...graphAviso.parametros, sendBody: true, specifyBody: 'json',
-        jsonBody: "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $json.numeroRecepcion, type: 'text', text: { preview_url: false, body: String($json.texto || '').slice(0, 500) } }) }}",
-        options: { timeout: 10000 },
-      },
+      parameters: rele
+        // Un solo intento, sin onError y SIN neverError: un no-2xx deja la ejecución en error (ningún fallo tragado). 504 WM-3041 nunca se reenvía.
+        ? parametrosDeMensajeRele({
+          cliente: o.cliente, releUrl, credenciales: { rele: c.rele }, rol: 'avisoguardado', neverError: false,
+          pnidExpresion: String(numero), nExpresion: '1',
+          payloadExpresion: "({ messaging_product: 'whatsapp', recipient_type: 'individual', type: 'text', text: { preview_url: false, body: String($json.texto || '').slice(0, 500) } })",
+          destinoExpresion: '$json.numeroRecepcion',
+        })
+        : {
+          method: 'POST', url: `=https://graph.facebook.com/{{ ${version} }}/{{ String(${numero}).replace(/\\D/g, '') }}/messages`,
+          ...graphAviso.parametros, sendBody: true, specifyBody: 'json',
+          jsonBody: "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $json.numeroRecepcion, type: 'text', text: { preview_url: false, body: String($json.texto || '').slice(0, 500) } }) }}",
+          options: { timeout: 10000 },
+        },
       // SIN onError: si Meta rechaza el aviso, la ejecución termina en error (ningún fallo tragado). Corre al final, cuando el cliente ya tiene su respuesta.
       credentials: graphAviso.credentials,
       notes: 'El aviso de falla a la recepción del negocio, en texto libre (su ventana está abierta). Sin reintentos: un aviso repetido llegaría dos veces. Sin onError: si falla, la ejecución termina en error (corre al final, el cliente ya tiene su respuesta). +1 mensaje solo cuando falla el guardado, a lo más uno por día.',
     },
   ];
+  return nodos;
 }
 
 /**
  * Sin `credenciales`, se toman del propio flujo YA ARMADO (con los nombres resueltos para su variante): la de ingesta, de «Reportar mensaje (entrante)»;
  * la de Graph, del nodo que ya baja medios de Meta (`graphDe`, por defecto «Descargar medio»), con su tipo (Bearer o whatsAppApi).
  */
-export function credencialesDelFlujo(flujo, ancla, graphDe) {
+export function credencialesDelFlujo(flujo, ancla, graphDe, canal) {
   const ing = ((ancla.credentials || {}).httpHeaderAuth || {}).name;
   if (!ing) throw new Error(`guardado: «${ancla.name}» no lleva la credencial de ingesta (httpHeaderAuth) por nombre`);
+  if (canal === 'rele') {
+    // Por el relé la credencial es UNA, la del envío del flujo: «AAB1 envío · <alias>».
+    const envioRele = (flujo.nodes || []).find((n) => n.name === 'Enviar a WhatsApp');
+    const nombre = String((((envioRele || {}).credentials || {}).httpHeaderAuth || {}).name || '');
+    if (!nombre.startsWith(PREFIJO_CREDENCIAL_RELE)) throw new Error(`guardado: «Enviar a WhatsApp» no lleva la credencial «${PREFIJO_CREDENCIAL_RELE}<alias>» (canal rele)`);
+    return { ingesta: String(ing), rele: nombre };
+  }
   const ref = (flujo.nodes || []).find((n) => n.name === graphDe);
   if (!ref) throw new Error(`guardado: el flujo no tiene «${graphDe}» de donde tomar la credencial de Graph`);
   const tipos = Object.keys(ref.credentials || {});
@@ -293,12 +383,13 @@ export function credencialesDelFlujo(flujo, ancla, graphDe) {
 /** Agrega la rama al flujo (lo modifica y lo devuelve). */
 export function injertarGuardado(flujo, opciones) {
   const o = opciones || {};
+  if (o.canal !== undefined && o.canal !== 'graph' && o.canal !== 'rele') throw new Error(`guardado: canal desconocido: ${String(o.canal).slice(0, 20)} (graph o rele)`);
   // Un flujo que no baja medios no lleva la rama (y no hay nada que guardar).
   if (!manejaMedios(flujo)) return flujo;
   const nombreAncla = o.ancla || ANCLA_DEL_GUARDADO;
   const ancla = (flujo.nodes || []).find((n) => n.name === nombreAncla);
   if (!ancla) throw new Error(`guardado: el flujo no tiene «${nombreAncla}»`);
-  const credenciales = o.credenciales || credencialesDelFlujo(flujo, ancla, o.graphDe || 'Descargar medio');
+  const credenciales = o.credenciales || credencialesDelFlujo(flujo, ancla, o.graphDe || 'Descargar medio', o.canal);
   for (const n of NODOS_DEL_GUARDADO) if ((flujo.nodes || []).some((x) => x.name === n)) throw new Error(`guardado: el flujo ya tiene «${n}»`);
   for (const n of [o.carga || 'Carga de entrada', o.config || 'Config del negocio']) if (!(flujo.nodes || []).some((x) => x.name === n)) throw new Error(`guardado: el flujo no tiene «${n}»`);
   // Debajo de TODO el flujo: con executionOrder v1 la rama corre después de la que responde.
@@ -329,6 +420,10 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
   if (!manejaMedios(flujo) && !(opciones && opciones.exigir)) return h;
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   const por = (nombre) => nodos.find((n) => n.name === nombre);
+  // ¿La rama habla con el relé B9 (canal rele) o con Graph? Si CUALQUIERA de los tres nodos de Meta nombra al relé (por su URL o por su credencial), se
+  // exige que los tres lo hagan: una rama a medias no pasa por Graph.
+  const rele = NODOS_DE_META_DEL_GUARDADO.some((nombre) => /\/v1\/envio\//.test(String(((por(nombre) || {}).parameters || {}).url || ''))
+    || credDe(por(nombre)).some((c) => c.nombre.startsWith(PREFIJO_CREDENCIAL_RELE)));
   for (const n of NODOS_DEL_GUARDADO) if (!por(n)) h.push(`guardado: falta el nodo «${n}»`);
   for (const n of NODOS_RETIRADOS_DEL_GUARDADO) if (por(n)) h.push(`guardado: sobra «${n}» (el contrato v2 del 30/10 lo quitó: todo documento se guarda)`);
   const st = (flujo && flujo.settings) || {};
@@ -348,6 +443,17 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
   }
   if (!(Number(ancla.position[1]) < Number(prep.position[1]))) h.push('guardado: «Reportar mensaje (entrante)» tiene que ir arriba de «Preparar guardado»');
   for (const [de, salida, a] of ARISTAS_DEL_GUARDADO) if (!destinosDe(flujo, de, salida).includes(a)) h.push(`guardado: «${de}» (salida ${salida}) no está conectado a «${a}»`);
+  if (rele) {
+    // Canal rele: los dos GET de medios reintentan por su cuenta (0 nodos nuevos): 2 intentos y una espera de 2000 a 3000 ms.
+    for (const nombre of ['Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)']) {
+      const g = por(nombre);
+      if (g.retryOnFail !== true || g.maxTries !== 2 || !(Number(g.waitBetweenTries) >= 2000 && Number(g.waitBetweenTries) <= 3000)) h.push(`guardado: «${nombre}» (canal rele) tiene que llevar retryOnFail, maxTries 2 y waitBetweenTries de 2000 a 3000 ms`);
+    }
+    for (const nombre of ['Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)']) {
+      const redir = ((((por(nombre).parameters || {}).options || {}).redirect || {}).redirect || {});
+      if (redir.followRedirects !== false) h.push(`guardado: «${nombre}» no puede seguir redirecciones`);
+    }
+  }
   // El código común, tal cual.
   if (!String((prep.parameters || {}).jsCode || '').includes(FUENTE_PREPARAR)) h.push('guardado: «Preparar guardado» no incluye guardado-preparar.js tal cual');
   if (!String(((por('Preparar reintento') || {}).parameters || {}).jsCode || '').includes(FUENTE_REINTENTO)) h.push('guardado: «Preparar reintento» no incluye guardado-reintento.js tal cual');
@@ -382,6 +488,7 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
   if (!ingesta) h.push('guardado: «Reportar mensaje (entrante)» no lleva la credencial de ingesta por nombre');
   for (const nombre of NODOS_DE_META_DEL_GUARDADO) {
     const cs = credDe(por(nombre));
+    if (rele && cs.length === 1 && (cs[0].tipo !== 'httpHeaderAuth' || !cs[0].nombre.startsWith(PREFIJO_CREDENCIAL_RELE))) h.push(`guardado: «${nombre}» tiene que llevar la credencial «${PREFIJO_CREDENCIAL_RELE}<alias>» (Header Auth) del relé`);
     if (cs.length !== 1 || !cs[0].nombre) h.push(`guardado: «${nombre}» tiene que llevar UNA credencial de WhatsApp por nombre`);
     else if (cs[0].nombre === ingesta || /ingesta/i.test(cs[0].nombre)) h.push(`guardado: «${nombre}» llama a Meta con la credencial de ingesta (la trampa del 15/09)`);
     else if (!['httpHeaderAuth', 'whatsAppApi'].includes(cs[0].tipo)) h.push(`guardado: «${nombre}» lleva una credencial de tipo ${cs[0].tipo}`);
@@ -395,7 +502,56 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
   }
   for (const nombre of NODOS_DE_META_DEL_GUARDADO) {
     const url = String(((por(nombre) || {}).parameters || {}).url || '');
+    if (rele) continue;
     if (nombre === 'Descargar medio (guardado)' ? url !== URL_DESCARGA_GUARDADO : !url.startsWith('=https://graph.facebook.com/')) h.push(`guardado: «${nombre}» llama a otro anfitrión`);
+  }
+  if (rele) {
+    // Canal rele: ni una llamada a Meta (Graph, su CDN) ni un reintento; las URL son las del relé y la base es el marcador o la misma en los tres.
+    const pedir = por('Pedir el medio a Meta (guardado)');
+    const bases = new Set();
+    const esBase = (t) => { const m = /^=\{\{[^]*?'([^']*)\/v1\/envio\/medios\//.exec(String(t)); return m ? m[1] : (/^=([^/{]*(?:\/\/[^/{]*)?)\/v1\/envio\//.exec(String(t)) || [])[1]; };
+    for (const nombre of NODOS_DE_META_DEL_GUARDADO) {
+      const n = por(nombre);
+      const texto = JSON.stringify(n.parameters || {});
+      if (/graph\.facebook\.com|lookaside|fbsbx|whatsAppApi/i.test(texto + JSON.stringify(n.credentials || {}))) h.push(`guardado: «${nombre}» llama a Meta (Graph o su CDN) en un flujo que va por el relé`);
+      const base = esBase((n.parameters || {}).url);
+      if (base === undefined) h.push(`guardado: «${nombre}» no llama al relé (/v1/envio/…)`); else bases.add(base);
+      if (n.retryOnFail && nombre === 'Avisar falla del guardado') h.push('guardado: «Avisar falla del guardado» no reintenta (un aviso repetido llegaría dos veces)');
+    }
+    if (bases.size > 1) h.push('guardado: los nodos del relé no usan la misma base');
+    const jsPrep = String((prep.parameters || {}).jsCode || '');
+    if (!jsPrep.includes(FUENTE_CUPO)) h.push('guardado: «Preparar guardado» (canal rele) no incluye guardado-cupo.js tal cual: sin el cupo, una ráfaga de un teléfono gasta las 500 descargas diarias del WABA');
+    else {
+      // El orden exigido: cabecera (con `GM_FUENTES` y `GM_CUPO`) + cupo + preparar. Con el cupo después de preparar, o sin las constantes, no cuenta lo que debe.
+      const cab = /^([\s\S]*?const GM_CUPO = \{ porTelefono: (\d+), global: (\d+) \};)\n\n/.exec(jsPrep);
+      if (!cab) h.push('guardado: «Preparar guardado» (canal rele) tiene que empezar con la cabecera de fuentes que define GM_FUENTES y GM_CUPO');
+      else {
+        if (!/^\/\/ FUENTES DEL GUARDADO:[^\n]*\nconst GM_FUENTES = \{/.test(cab[1])) h.push('guardado: «Preparar guardado» (canal rele) no empieza con la cabecera de fuentes del guardado');
+        const pt = Number(cab[2]);
+        const gl = Number(cab[3]);
+        if (!(pt >= 1 && gl >= 1 && pt <= gl && gl <= 125)) h.push('guardado: GM_CUPO de «Preparar guardado» fuera de rango (1 a 125, porTelefono no mayor que global)');
+        if (jsPrep.slice(cab[0].length).indexOf(FUENTE_CUPO) !== 0) h.push('guardado: guardado-cupo.js tiene que ir justo después de la cabecera y ANTES de guardado-preparar.js');
+      }
+      const iCupo = jsPrep.indexOf(FUENTE_CUPO);
+      const iPrep = jsPrep.indexOf(FUENTE_PREPARAR);
+      if (iPrep < 0 || iPrep < iCupo) h.push('guardado: «Preparar guardado» (canal rele) tiene que llevar guardado-preparar.js DESPUÉS del cupo');
+    }
+    const base = [...bases][0];
+    if (base !== undefined && !esBaseDeReleAdmitida(base)) h.push('guardado: la base del relé tiene que ser el marcador REEMPLAZAR_URL_INTERNA_DEL_RELE (solo las pruebas usan un host *.example)');
+    if (base !== undefined) {
+      if (String((pedir.parameters || {}).url) !== urlInfoRele(base)) h.push('guardado: «Pedir el medio a Meta (guardado)» no pide GET /v1/envio/medios/<id>');
+      if (String(((por('Descargar medio (guardado)') || {}).parameters || {}).url) !== urlDescargaRele(base)) h.push('guardado: «Descargar medio (guardado)» no pide /contenido solo con file_size dentro del límite');
+    }
+    const av = por('Avisar falla del guardado');
+    if (!/\/v1\/envio\/mensajes\//.test(String((av.parameters || {}).url || ''))) h.push('guardado: «Avisar falla del guardado» tiene que enviar por POST /v1/envio/mensajes/<phone_number_id>');
+    const clave = (((av.parameters || {}).headerParameters || {}).parameters || []).find((x) => x && x.name === 'Idempotency-Key');
+    if (!clave || !/-avisoguardado-/.test(String(clave.value))) h.push('guardado: «Avisar falla del guardado» tiene que llevar la Idempotency-Key');
+    const respuesta = ((((av.parameters || {}).options || {}).response || {}).response) || {};
+    if (respuesta.neverError === true || respuesta.fullResponse === true) h.push('guardado: «Avisar falla del guardado» sin neverError: un no-2xx deja la ejecución en error');
+    if (Number(((av.parameters || {}).options || {}).timeout) < 30000) h.push('guardado: «Avisar falla del guardado» espera al menos 30 s al relé');
+    const descarga = por('Descargar medio (guardado)');
+    const rd = ((((descarga.parameters || {}).options || {}).response || {}).response) || {};
+    if (rd.neverError === true) h.push('guardado: «Descargar medio (guardado)» sin neverError: un 4xx o 5xx no puede pasar por un binario');
   }
   // Nada corta el turno: todo nodo de red de la rama sigue con un ítem, salvo el aviso, que falla ruidoso (ningún fallo tragado) y corre al final.
   for (const nombre of [...NODOS_DE_META_DEL_GUARDADO, ...NODOS_DE_INGESTA_DEL_GUARDADO].filter((x) => x !== 'Avisar falla del guardado')) {
@@ -409,9 +565,9 @@ export function hallazgosDelGuardado(flujo, opciones = {}) {
   const aviso = por('Avisar falla del guardado');
   const envioDelFlujo = por('Enviar a WhatsApp');
   if (envioDelFlujo && JSON.stringify(aviso.credentials || {}) !== JSON.stringify(envioDelFlujo.credentials || {})) h.push('guardado: «Avisar falla del guardado» tiene que llevar la MISMA credencial que «Enviar a WhatsApp» (la de envío de su variante)');
-  if (por('Descargar medio (guardado)').retryOnFail) h.push('guardado: «Descargar medio (guardado)» no reintenta (con la URL vacía no hay qué reintentar)');
+  if (!rele && por('Descargar medio (guardado)').retryOnFail) h.push('guardado: «Descargar medio (guardado)» no reintenta (con la URL vacía no hay qué reintentar)');
   if (aviso.onError !== undefined || aviso.continueOnFail !== undefined) h.push('guardado: «Avisar falla del guardado» no lleva onError: si Meta lo rechaza, la ejecución termina en error (ningún fallo tragado)');
-  if (!/to:\s*\$json\.numeroRecepcion\b/.test(String((aviso.parameters || {}).jsonBody || ''))) h.push('guardado: «Avisar falla del guardado» va SOLO al número de recepción del negocio');
+  if (!/(to:\s*|o\.to = String\()\(?\$json\.numeroRecepcion\b/.test(String((aviso.parameters || {}).jsonBody || ''))) h.push('guardado: «Avisar falla del guardado» va SOLO al número de recepción del negocio');
   if (aviso.retryOnFail || por('Guardar medio').retryOnFail) h.push('guardado: el aviso y el guardado no reintentan');
   return h;
 }
