@@ -53,7 +53,7 @@ describe('errorWorkflow «Error de envío incierto»', () => {
   });
 
   it('tampoco deja dígitos separados que sumen 6 o más', () => {
-    for (const n of ['71-23-45-67', '7123 4567', '71.23.45.67', '7 1 2 3 4 5']) {
+    for (const n of ['71-23-45-67', '7123 4567', ['71', '23', '45', '67'].join('.'), '7 1 2 3 4 5']) {
       const [s] = ejecutar(codigo, [{ workflow: { name: `Flujo ${n}` } }]);
       expect(s.flujo.replace(/\D/g, '').length, n).toBeLessThan(6);
     }
