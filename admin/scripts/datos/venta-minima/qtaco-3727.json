@@ -1,0 +1,15 @@
+{
+  "hereda": "qtaco",
+  "nombreFlujo": "NovuChat — Venta mínima (v0) — QTaco 3727",
+  "credenciales": {
+    "ingesta": "NovuChat ingesta (cliente11)"
+  },
+  "receptor": {
+    "ruta": "REEMPLAZAR_RUTA_RECEPTOR_QTACO_3727",
+    "wabaIdEsperado": "REEMPLAZAR_WABA_ID_QTACO_3727"
+  },
+  "configBase": {
+    "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_QTACO_3727",
+    "plantillasPedidoLineas": ""
+  }
+}
