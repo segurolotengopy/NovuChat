@@ -420,12 +420,22 @@ export function guardias(variante, flujo, mapaCrm) {
   for (const n of ['Obtener URL del medio (general)', 'Descargar medio', 'Enviar aviso']) {
     const nodo = por(n);
     if (nodo && !releGeneral(nodo)) h.push(`relé: «${n}» no habla con el relé (/v1/envio/)`);
+  }
+  // MULTI-TENANT: los 8 nodos que hablan con el relé llevan, POR NOMBRE EXACTO, la credencial de ESTE cliente.
+  for (const n of ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Obtener URL del medio (general)', 'Descargar medio', 'Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)', 'Avisar falla del guardado']) {
+    const nodo = por(n);
     if (nodo && ((nodo.credentials || {}).httpHeaderAuth || {}).name !== CREDENCIAL_RELE) h.push(`relé: «${n}» no lleva la credencial ${CREDENCIAL_RELE}`);
   }
-  // MULTI-TENANT: TODO nodo cuya credencial sea del relé («AAB1 envío · …») lleva la de ESTE cliente y ninguna otra (no solo los tres nodos de arriba).
+  // Y CUALQUIER credencial cuyo nombre, normalizado (sin tildes, minúsculas, espacios simples), empiece con «aab1 envio» es exactamente la de este cliente (un nombre con otra grafía no se cuela).
+  const normal = (t) => String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   for (const n of nodos) for (const [tipo, c] of Object.entries(n.credentials || {})) {
     const nombreCred = String((c || {}).name || '');
-    if (nombreCred.startsWith(PREFIJO_CREDENCIAL_RELE) && nombreCred !== CREDENCIAL_RELE) h.push(`relé: «${n.name}» (${tipo}) lleva una credencial del relé que no es la de este cliente (${CREDENCIAL_RELE})`);
+    if ((normal(nombreCred).startsWith('aab1 envio') || nombreCred.startsWith(PREFIJO_CREDENCIAL_RELE)) && nombreCred !== CREDENCIAL_RELE) h.push(`relé: «${n.name}» (${tipo}) lleva una credencial del relé que no es la de este cliente (${CREDENCIAL_RELE})`);
+  }
+  // Un header Authorization escrito a mano en CUALQUIER nodo HTTP: la llave del relé va solo por la credencial (Header Auth), nunca en el flujo.
+  for (const n of nodos.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
+    const cabeceras = (((p(n).headerParameters || {}).parameters) || []);
+    if (cabeceras.some((x) => normal((x && x.name) || '').replace(/[^a-z]/g, '') === 'authorization')) h.push(`relé: «${n.name}» escribe un header Authorization en headerParameters (la llave va solo por la credencial)`);
   }
   h.push(...hallazgosDelEnvioRele(flujo || {}));
   if (nodos.length && (flujo.settings || {}).executionTimeout !== 300) h.push('relé: executionTimeout tiene que ser 300');

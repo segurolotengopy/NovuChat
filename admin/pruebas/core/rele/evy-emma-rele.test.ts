@@ -136,6 +136,35 @@ describe.each(CLIENTES)('$nombre por el relé', ({ carpeta, archivo, cliente, cr
         }
       }
     });
+    it('NIEGA: en cada uno de los 8 nodos del relé, un nombre distinto del exacto (otra grafía, otro cliente, sin tilde) rompe guardias(); y una credencial «aab1 envio» en un nodo ajeno también', () => {
+      const ocho = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Obtener URL del medio (general)', 'Descargar medio', 'Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)', 'Avisar falla del guardado'];
+      const malos = ['AAB1 envio · cliente99', 'aab1 envío · ' + cred.slice(-9), 'AAB1  envío · ' + cred.slice(-9), `${cred} `, 'Otra credencial'];
+      for (const n of ocho) {
+        for (const nombre of malos) {
+          const m = copia(prod);
+          nodo(m, n).credentials = { httpHeaderAuth: { id: '', name: nombre } };
+          expect(c.guardias('produccion', m).join('\n'), `${n} · ${nombre}`).toMatch(/no lleva la credencial|que no es la de este cliente/);
+        }
+      }
+      const ajeno = copia(prod);
+      nodo(ajeno, 'Traer configuración').credentials = { httpHeaderAuth: { id: '', name: 'AAB1 envio · cliente08' } };
+      expect(c.guardias('produccion', ajeno).join('\n')).toMatch(/que no es la de este cliente/);
+    });
+    it('NIEGA: un header Authorization escrito en headerParameters de cualquier nodo HTTP rompe guardias() (cualquier grafía)', () => {
+      const http = prod.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest');
+      expect(http.length).toBeGreaterThan(10);
+      for (const n of http) {
+        for (const nombre of ['Authorization', 'authorization', ' AUTHORIZATION ']) {
+          const m = copia(prod);
+          const x = nodo(m, n.name);
+          x.parameters['sendHeaders'] = true;
+          const previo = ((x.parameters['headerParameters'] as J | undefined)?.['parameters'] as J[] | undefined) ?? [];
+          x.parameters['headerParameters'] = { parameters: [...previo, { name: nombre, value: 'Bearer x' }] };
+          expect(c.guardias('produccion', m).join('\n'), `${n.name} · ${nombre}`).toMatch(/header Authorization/);
+        }
+      }
+      expect(c.guardias('produccion', prod)).toEqual([]);
+    });
     it('NIEGA: la guardia de PUBLICACIÓN sigue rechazando el marcador de la URL del relé (el publicador debe sustituirlo)', () => {
       const datos = c.cargarDatos(c.ARCHIVO_DE_DATOS);
       const hallazgos = c.guardiaDePublicacion({ flujo: prod, datos, negocio: JSON.parse(readFileSync(c.ARCHIVO_DE_NEGOCIO, 'utf8')) as J, etapa: 'crear' });
