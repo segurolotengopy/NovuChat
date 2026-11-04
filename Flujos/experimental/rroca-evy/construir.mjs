@@ -375,7 +375,7 @@ export function guardias(variante, flujo, mapaCrm) {
     for (const n of nodos) {
       for (const [tipo, c] of Object.entries(n.credentials || {})) {
         const nombreCred = String((c || {}).name || '');
-        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (String(((c || {}).name) || '').startsWith(PREFIJO_CREDENCIAL_RELE) ? false : (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && !NODOS_DE_INGESTA_DEL_GUARDADO.includes(n.name) && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred)))) {
+        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (String(((c || {}).name) || '') === CREDENCIAL_RELE ? false : (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && !NODOS_DE_INGESTA_DEL_GUARDADO.includes(n.name) && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred)))) {
           h.push(`la prueba usa una credencial de producción en «${n.name}» (${tipo})`);
         }
       }
@@ -419,6 +419,11 @@ export function guardias(variante, flujo, mapaCrm) {
     const nodo = por(n);
     if (nodo && !releGeneral(nodo)) h.push(`relé: «${n}» no habla con el relé (/v1/envio/)`);
     if (nodo && ((nodo.credentials || {}).httpHeaderAuth || {}).name !== CREDENCIAL_RELE) h.push(`relé: «${n}» no lleva la credencial ${CREDENCIAL_RELE}`);
+  }
+  // MULTI-TENANT: TODO nodo cuya credencial sea del relé («AAB1 envío · …») lleva la de ESTE cliente y ninguna otra (no solo los tres nodos de arriba).
+  for (const n of nodos) for (const [tipo, c] of Object.entries(n.credentials || {})) {
+    const nombreCred = String((c || {}).name || '');
+    if (nombreCred.startsWith(PREFIJO_CREDENCIAL_RELE) && nombreCred !== CREDENCIAL_RELE) h.push(`relé: «${n.name}» (${tipo}) lleva una credencial del relé que no es la de este cliente (${CREDENCIAL_RELE})`);
   }
   h.push(...hallazgosDelEnvioRele(flujo || {}));
   if (nodos.length && (flujo.settings || {}).executionTimeout !== 300) h.push('relé: executionTimeout tiene que ser 300');

@@ -93,7 +93,9 @@ describe.each(CLIENTES)('$nombre por el relé', ({ carpeta, archivo, cliente, cr
     expect(String(nodo(prod, 'Armar previos').parameters['jsCode'])).toContain('it.json.n = i + 1');
   });
   it('el reporte saliente: solo lo que Meta aceptó con id (idMeta o messages[0].id) y el evento no_contactar solo cuando lo es', () => {
-    expect(String(nodo(prod, '¿Reportar? (saliente)').parameters['conditions'] && JSON.stringify(nodo(prod, '¿Reportar? (saliente)').parameters))).toContain('j.idMeta');
+    const condicion = JSON.stringify(nodo(prod, '¿Reportar? (saliente)').parameters);
+    expect(condicion).toContain('j.idMeta');
+    expect(condicion).toContain('j.messages[0].id');
     const cuerpo = String(nodo(prod, 'Reportar mensaje (saliente)').parameters['jsonBody']);
     expect(cuerpo).toContain("if (m.evento === 'no_contactar')");
     expect(cuerpo).not.toContain('evento: m.evento');
@@ -122,10 +124,30 @@ describe.each(CLIENTES)('$nombre por el relé', ({ carpeta, archivo, cliente, cr
       nodo(d, 'Enviar aviso').credentials = { httpHeaderAuth: { id: '', name: 'AAB1 envío · cliente99' } };
       expect(c.guardias('produccion', d).join('\n')).toMatch(/no lleva la credencial/);
     });
+    it('NIEGA (multi-tenant): la credencial del relé del OTRO cliente en cualquier nodo que lleve una del relé rompe guardias(), en producción y en la prueba', () => {
+      const otra = cred === 'AAB1 envío · cliente08' ? 'AAB1 envío · cliente07' : 'AAB1 envío · cliente08';
+      for (const [variante, base] of [['produccion', prod], ['prueba', prueba]] as const) {
+        const conRele = base.nodes.filter((n) => Object.values(n.credentials ?? {}).some((x) => String((x as J)['name']).startsWith('AAB1 envío · ')));
+        for (const n of ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Obtener URL del medio (general)', 'Descargar medio', 'Pedir el medio a Meta (guardado)', 'Descargar medio (guardado)', 'Avisar falla del guardado']) expect(conRele.map((x) => x.name), n).toContain(n);
+        for (const n of conRele) {
+          const m = copia(base);
+          nodo(m, n.name).credentials = { httpHeaderAuth: { id: '', name: otra } };
+          expect(c.guardias(variante, m).join('\n'), `${variante} · ${n.name}`).toMatch(/credencial del relé que no es la de este cliente/);
+        }
+      }
+    });
     it('NIEGA: la guardia de PUBLICACIÓN sigue rechazando el marcador de la URL del relé (el publicador debe sustituirlo)', () => {
       const datos = c.cargarDatos(c.ARCHIVO_DE_DATOS);
       const hallazgos = c.guardiaDePublicacion({ flujo: prod, datos, negocio: JSON.parse(readFileSync(c.ARCHIVO_DE_NEGOCIO, 'utf8')) as J, etapa: 'crear' });
       expect(hallazgos.join('\n')).toContain('marcador sin sustituir: REEMPLAZAR_URL_INTERNA_DEL_RELE');
+    });
+    it('la prueba: «Entrada de prueba» exige cabecera y no es el receptor (responde al final); nada del relé corre antes de «Config base»', () => {
+      const e = nodo(prueba, 'Entrada de prueba');
+      expect(e.parameters['authentication']).toBe('headerAuth');
+      expect(e.parameters['responseMode']).toBe('lastNode');
+      const sig = (prueba.connections['Entrada de prueba']?.main ?? []).flatMap((s) => (s ?? []).map((x) => x.node));
+      expect(sig).toEqual(['Config base']);
+      expect(prueba.nodes.some((n) => n.name === 'Aceptar (200)')).toBe(false);
     });
     it('«Aceptar (200)» va antes de toda espera y de toda llamada al relé, y la verificación del receptor sigue fija y sin Continue on Fail', () => {
       const f = mapa(prod);
