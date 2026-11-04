@@ -337,7 +337,9 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
 // LOS HUECOS DECLARADOS en PROPIO.md: núcleo sin fuente utilizable, tomado de chat-novuchat. Cada uno se compara con su ORIGEN.
 // ------------------------------------------------------------------------------------------------------------------------------------
 const NODOS_PROPIOS = join(RROCA, 'src/nodos');
-const NODOS_CHAT = join(CHAT, 'src/nodos');
+// ORIGEN CONGELADO (estado previo a PR-4c2, commit 1fff3d59): Rubén no adopta `sesion` en ese PR. Ver `lib/origen-chat-pre-4c2/LEEME.md`.
+const ORIGEN_CHAT = join(ESTA, '../../lib/origen-chat-pre-4c2');
+const NODOS_CHAT = join(ORIGEN_CHAT, 'nodos');
 const propio = (a: string): string => leer(join(NODOS_PROPIOS, a));
 const chat = (a: string): string => leer(join(NODOS_CHAT, a));
 /** Aplica sustituciones DECLARADAS: cada `de` tiene que aparecer en el origen (si no, el origen cambió y la copia quedó atrás). */
@@ -481,7 +483,7 @@ describe('HUECOS: nodos JSON de la plantilla, comparados con sus orígenes (sin 
     comparar(plantilla(join(FLUJOS, 'venta-minima/flujo.plantilla.json')), ['Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos']);
   });
   it('«Traer configuración», «Config base», «¿Reportar? (entrante)», «Reportar mensaje (entrante)» y «¿Meta aceptó?» son IDÉNTICOS a los de chat-novuchat', () => {
-    comparar(plantilla(join(CHAT, 'flujo.plantilla.json')), ['Traer configuración', 'Config base', '¿Reportar? (entrante)', 'Reportar mensaje (entrante)', '¿Meta aceptó?']);
+    comparar(plantilla(join(ORIGEN_CHAT, 'flujo.plantilla.json')), ['Traer configuración', 'Config base', '¿Reportar? (entrante)', 'Reportar mensaje (entrante)', '¿Meta aceptó?']);
   });
   it('la comparación niega: un cambio en `parameters` de la copia se detecta', () => {
     const a = copia(nodo(RR, 'Traer configuración')) as J;

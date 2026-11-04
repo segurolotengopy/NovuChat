@@ -124,3 +124,7 @@ baja de N respuestas a UNA. **Llamadas al modelo: 0 o 1 por turno** (2 si una gu
 - **Trato**: se lee `voz.tratamiento` de la consola («usted» cambia lo que se le pide al modelo), pero los textos fijos del dato están en tú.
 - No hay campañas, rubro libre, CRM real, imágenes salientes (salvo la de planes), trato de usted en textos fijos ni miniCRM/Kanban (D4: «panel de control»).
 - Pasarlo a producción: `scripts/preparar-import.sh Flujos/experimental/chat-novuchat/chat-novuchat.novuchat.json .env.<cliente>` y `publicar-flujo.sh` (el nombre del flujo es el del vivo).
+
+## Copias del núcleo en otros flujos (PR-4c2)
+
+Los flujos de Antonio y de Rubén llevan copias declaradas del núcleo de este chat. No adoptan `sesion` en PR-4c2: sus pruebas comparan con el origen CONGELADO previo a PR-4c2 (`admin/pruebas/lib/origen-chat-pre-4c2/`, commit `1fff3d59`) y adoptarán el estado en su propio PR. 0 mensajes por conversación.
