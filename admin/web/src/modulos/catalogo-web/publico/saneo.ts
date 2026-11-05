@@ -80,3 +80,21 @@ export function precioTexto(precio: number | null, moneda: string): string {
   const n = Number.isInteger(precio) ? String(precio) : precio.toFixed(2);
   return `${moneda === 'USD' ? '$' : 'Bs'} ${n}`;
 }
+
+/** Para comparar nombres de área: sin mayúsculas, sin tildes y con los espacios normalizados. */
+const claveDeArea = (s: string): string =>
+  s.normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * El área con la que arranca el filtro, según la URL (`?area=<nombre>`). Devuelve SIEMPRE el nombre exacto de una de las áreas que el negocio
+ * publicó, o '' («Todo») si no hay parámetro, está vacío o no coincide con ninguna. El texto de la URL solo se COMPARA: nunca se devuelve ni se
+ * muestra tal cual. Coincidencia exacta tras normalizar (no parcial).
+ */
+export function areaInicial(search: string, areas: readonly string[]): string {
+  if (typeof search !== 'string' || search === '' || areas.length === 0) return '';
+  let pedido = '';
+  try { pedido = new URLSearchParams(search.slice(0, 2000)).get('area') ?? ''; } catch { return ''; }
+  const clave = claveDeArea(pedido.slice(0, 200));
+  if (clave === '') return '';
+  return areas.find((a) => claveDeArea(a) === clave) ?? '';
+}
