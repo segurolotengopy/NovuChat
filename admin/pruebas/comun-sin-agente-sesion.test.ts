@@ -13,10 +13,15 @@ import { decidirCompromiso, leerConversacion, planDeCupos, validarSesion, type D
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FUENTE = readFileSync(join(AQUI, '../../Flujos/experimental/comun-sin-agente/src/sesion.js'), 'utf8');
-const CONFIG_CHAT = "const SS_CONFIG = { espacio: 'chat-novuchat', espacioPrueba: 'chat-novuchat-prueba', venceMin: 2880, maxBytes: 15000, prefijo: 'chat', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' };";
+/** Los parámetros del módulo para el chat (`SS_CONFIG`): un OBJETO que entra al contexto como variable, nunca texto de código. */
+const CONFIG_CHAT = { espacio: 'chat-novuchat', espacioPrueba: 'chat-novuchat-prueba', venceMin: 2880, maxBytes: 15000, prefijo: 'chat', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' };
 const EXPORTA = '({ ssEjecucion, ssTelefonoDeSesion, ssCuerpoLeer, ssIdCompromiso, ssCuerpoComprometer, ssBytes, ssSesionDeLaConfig, ssResultadoDeCompromiso, ssNumeroHeader, ssEsPrueba, ssDesdeAutorizado })';
+/**
+ * Evalúa el módulo en un contexto NUEVO y vacío (como el Code de n8n) cuyas ÚNICAS variables son las que se pasan: `SS_CONFIG` (objeto) y, si hace falta, `cnPrimero` (una función de la prueba).
+ * NINGÚN parámetro se vuelve texto de código: el texto evaluado es siempre `FUENTE` + `EXPORTA`, constantes. Lo que devuelve nace en OTRO contexto: se compara con `toEqual`/`toMatchObject`.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const cargar = (config: string, extra = '', contexto: Record<string, unknown> = {}): Record<string, any> => runInNewContext(`${config}\n${extra}\n${FUENTE}\n${EXPORTA}`, contexto);
+const cargar = (config: Record<string, unknown>, variables: Record<string, unknown> = {}): Record<string, any> => runInNewContext(`${FUENTE}\n${EXPORTA}`, { SS_CONFIG: config, ...variables });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const H: Record<string, any> = cargar(CONFIG_CHAT);
 const PNID = '59100000003';
@@ -153,9 +158,9 @@ describe('ayudantes de los nodos Code (sesion.js, prefijo ss)', () => {
 });
 
 describe('PARÁMETROS del módulo (SS_CONFIG): lo que cambia de un flujo a otro es SOLO la configuración', () => {
-  const QTACO = "const SS_CONFIG = { espacio: 'venta-minima', espacioPrueba: 'venta-minima-prueba', venceMin: 1440, maxBytes: 8000, prefijo: 'vm', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' };";
-  const nodos = (carga: Record<string, unknown>, base: Record<string, unknown>): string =>
-    `const cnPrimero = (n) => (n === 'Carga de entrada' ? ${JSON.stringify(carga)} : n === 'Config base' ? ${JSON.stringify(base)} : null);`;
+  const QTACO = { espacio: 'venta-minima', espacioPrueba: 'venta-minima-prueba', venceMin: 1440, maxBytes: 8000, prefijo: 'vm', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' };
+  /** El `cnPrimero` del flujo, de mentira: la carga de entrada y la config base que el flujo daría (una FUNCIÓN que entra al contexto como variable). */
+  const nodos = (carga: Record<string, unknown>, base: Record<string, unknown>): Record<string, unknown> => ({ cnPrimero: (n: string) => (n === 'Carga de entrada' ? carga : n === 'Config base' ? base : null) });
   it('espacio, vencimiento, tope de bytes y prefijo del idCompromiso salen de SS_CONFIG: otro flujo, otro espacio, sin tocar el código', () => {
     const Q = cargar(QTACO);
     const c = Q['ssCuerpoComprometer'](TEL, '7', 'fin1', 3, { a: 1 });
@@ -184,7 +189,7 @@ describe('PARÁMETROS del módulo (SS_CONFIG): lo que cambia de un flujo a otro 
     expect(prod['ssCuerpoComprometer']('59100000099', '7', 'fin1', 0, {}).sesion.espacio).toBe('venta-minima');
     expect(prod['ssNumeroHeader']()).toBe('P2');
     // los nombres de nodo también son parámetros: con otros nombres, los nodos de arriba no cuentan
-    const otros = cargar(QTACO.replace("'Carga de entrada'", "'Otra carga'"), nodos(prueba, {}));
+    const otros = cargar({ ...QTACO, nodoCarga: 'Otra carga' }, nodos(prueba, {}));
     expect(otros['ssEsPrueba']()).toBe(false);
   });
   it('el servidor falso acepta solo los `espacios` de UN flujo: ni el del chat; un espacio fuera de la lista es 400 (restricción del DOBLE; el núcleo real no la tiene)', () => {
@@ -195,10 +200,11 @@ describe('PARÁMETROS del módulo (SS_CONFIG): lo que cambia de un flujo a otro 
     expect(pide('chat-novuchat')).toBe(400);
     expect(crearServidorDeSesion({ ahoraMs: () => AHORA }).atender(PNID, { telefono: TEL, sesion: { v: 1, accion: 'leer', espacio: 'chat-novuchat', ejecucion: 'e' } }).statusCode).toBe(200);
   });
+  const QTACO_AISLADO = { espacio: 'venta-minima', espacioPrueba: 'venta-minima-prueba', venceMin: 1440, maxBytes: 8000, prefijo: 'vm', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' };
   it('AISLAMIENTO entre espacios: lo que Q\'Taco compromete en `venta-minima` NO lo lee el chat en `chat-novuchat` (mismo servidor, mismo teléfono, mismo número)', () => {
     // La restricción `espacios` es solo del servidor FALSO; el núcleo real no la tiene: allí el aislamiento lo da la CLAVE del documento (`{pnid}~{espacio}~wa_{tel}`).
     const servidor = crearServidorDeSesion({ ahoraMs: () => AHORA });
-    const Q = cargar("const SS_CONFIG = { espacio: 'venta-minima', espacioPrueba: 'venta-minima-prueba', venceMin: 1440, maxBytes: 8000, prefijo: 'vm', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' };");
+    const Q = cargar(QTACO_AISLADO);
     const c = Q['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, { pedido: 'secreto de Q\'Taco' });
     expect(servidor.atender(PNID, c).body['resultado']).toBe('comprometido');
     const delChat = servidor.atender(PNID, H['ssCuerpoLeer'](TEL, '8'));
