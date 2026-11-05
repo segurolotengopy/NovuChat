@@ -1456,6 +1456,35 @@ describe('guardias de --verificar', () => {
     expect(CONSTRUIR.guardias('trigger', prod(), DATOS_CRM)).toEqual([]);
     expect(CONSTRUIR.CONFIG_BASE.paquetes.sesion).toEqual(['../comun-sin-agente/src/sesion.js']);
   });
+  it('SS_CONFIG: espacioPrueba distinto de espacio y terminado en «-prueba», congelado, y ningún nodo lo reasigna ni lo muta (hallazgos LOW de #794)', () => {
+    const edita = (f: J, nodo: string, de: string | RegExp, a: string): J => {
+      const n = f['nodes'].find((x: J) => x.name === nodo);
+      const antes = String(n.parameters.jsCode);
+      n.parameters.jsCode = antes.replace(de, a);
+      expect(n.parameters.jsCode, `la mutación ${String(de)} no se aplicó`).not.toBe(antes);
+      return f;
+    };
+    // (a) el espacio de prueba igual al de producción, o sin el sufijo
+    for (const a of ["espacioPrueba: 'chat-novuchat'", "espacioPrueba: 'chat-novuchat-ensayo'"]) {
+      const f = edita(prod(), 'Soltar mensajes', "espacioPrueba: 'chat-novuchat-prueba'", a);
+      expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), a).toMatch(/espacioPrueba tiene que ser distinto de espacio y terminar en «-prueba»/);
+    }
+    // (a2) iguales Y con el sufijo: la regla «distinto» sola tiene que saltar
+    const iguales = edita(prod(), 'Soltar mensajes', "espacio: 'chat-novuchat', espacioPrueba: 'chat-novuchat-prueba'", "espacio: 'chat-novuchat-prueba', espacioPrueba: 'chat-novuchat-prueba'");
+    expect(CONSTRUIR.guardias('trigger', iguales, DATOS_CRM).join(' ')).toMatch(/espacioPrueba tiene que ser distinto de espacio/);
+    // (b) sin congelar
+    expect(CONSTRUIR.guardias('trigger', edita(prod(), 'Soltar mensajes', 'Object.freeze({', '({'), DATOS_CRM).join(' ')).toMatch(/SS_CONFIG tiene que declararse con Object\.freeze/);
+    // (c) reasignaciones y mutaciones en el código de CUALQUIER nodo (el módulo y el registro, tal cual, no cuentan)
+    for (const mut of ["SS_CONFIG = {};", "SS_CONFIG.espacio = 'x';", "ssEspacio = () => 'x';", "ssFoo.bar = 1;", "SS_CONFIG['espacio'] = 'x';", "Object.assign(SS_CONFIG, { espacio: 'x' });", "Object.defineProperty(SS_CONFIG, 'espacio', { value: 'x' });", "const y = SS_CONFIG[k];"]) {
+      const f = prod();
+      f['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += '\n' + mut;
+      expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(/«Cerrar turno» (reasigna o muta|accede a SS_CONFIG|muta SS_CONFIG)/);
+    }
+    // un comentario o una comparación no son una mutación
+    const limpio = prod();
+    limpio['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += "\n// SS_CONFIG = {} (ejemplo)\n/* ssX = 1 */\nconst ok = SS_CONFIG.espacio === 'chat-novuchat' && ssEspacio() !== 'z';";
+    expect(CONSTRUIR.guardias('trigger', limpio, DATOS_CRM)).toEqual([]);
+  });
   it('el ESTADO SE COMPROMETE ANTES DE ENVIAR: «Armar mensajes» conectado al envío, un nodo de compromiso ausente o apuntando a otra Function, y un envío colgado de otro nodo se detectan (PR-4c2)', () => {
     const a = prod();
     a['connections']['Armar mensajes'].main[0].push({ node: '¿Enviar de verdad?', type: 'main', index: 0 });
