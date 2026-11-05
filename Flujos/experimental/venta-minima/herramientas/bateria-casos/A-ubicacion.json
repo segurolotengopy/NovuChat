@@ -474,7 +474,7 @@
     },
     {
       "id": "U5",
-      "titulo": "El aviso al local de un delivery con ubicación compartida lleva las COORDENADAS (con coma decimal) y la dirección no las arrastra",
+      "titulo": "El aviso al local de un delivery con ubicación compartida lleva el ENLACE al mapa (variable de modalidad, ventana cerrada) en lugar de las coordenadas crudas, y la dirección no lo arrastra",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -553,7 +553,7 @@
               "aviso": true
             },
             "avisoTextos": [
-              "ubicaci[oó]n compartida \\(-16,50000; -68,15000\\)"
+              "mapa: https://www.google.com/maps/search/\\?api=1&query=-16\\.500000%2C-68\\.150000"
             ]
           }
         }
@@ -561,7 +561,7 @@
     },
     {
       "id": "U5m",
-      "titulo": "Ventana del local CERRADA: el aviso de un delivery con ubicación compartida lleva las coordenadas y NINGÚN enlace al mapa (decisión del 05/10: la plantilla no se toca; el enlace va solo en el detalle de texto con la ventana abierta)",
+      "titulo": "Ventana del local CERRADA: el aviso de un delivery con ubicación compartida lleva el enlace al mapa en la variable de modalidad y ni coordenadas crudas ni «[enlace omitido]» (corrección del 05/11 a la decisión del 05/10)",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -640,18 +640,16 @@
               "aviso": true
             },
             "avisoTextos": [
-              "ubicaci[oó]n compartida \\(-16,50000; -68,15000\\)"
+              "mapa: https://www.google.com/maps/search/\\?api=1&query=-16\\.500000%2C-68\\.150000"
             ],
             "avisoTextosNo": [
-              "google",
-              "maps",
-              "https?:",
-              "query="
+              "\\[enlace omitido\\]",
+              "ubicaci[oó]n compartida \\("
             ]
           }
         }
       ],
-      "nota": "El enlace a Maps (`Ver en el mapa: …`) sale solo en el detalle de texto del rol completo, que exige la ventana de 24 h del local abierta; la batería no puede abrir esa ventana (el local no escribe), y eso lo prueban `venta-minima-integracion.test.ts` («PR-A») y `venta-minima-avisos.test.ts`. Aquí se comprueba lo que sí es de punta a punta: la plantilla no lleva el enlace."
+      "nota": "El enlace a Maps (`Ver en el mapa: …`) sale solo en el detalle de texto del rol completo, que exige la ventana de 24 h del local abierta; la batería no puede abrir esa ventana (el local no escribe), y eso lo prueban `venta-minima-integracion.test.ts` («PR-A») y `venta-minima-avisos.test.ts`. Aquí se comprueba lo que sí es de punta a punta: la plantilla de completo lleva el enlace entero en la variable de modalidad."
     },
     {
       "id": "U6",

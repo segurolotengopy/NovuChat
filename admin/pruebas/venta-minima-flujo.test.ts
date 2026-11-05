@@ -49,6 +49,7 @@ const MIN = 60_000;
 const HORA = 60 * MIN;
 const DIA = 24 * HORA;
 const CLIENTE = '59100000011';
+const CLIENTE_LEGIBLE = '+591 '+ CLIENTE.slice(3, 7) + ' ' + CLIENTE.slice(7); // formato de las variables y del detalle
 const OTRO = '59100000012';
 const AV1 = '59100000021'; // destinatario con rol «completo»
 const AV2 = '59100000022'; // destinatario con rol «cocina»
@@ -1628,7 +1629,7 @@ describe('no negociable 8: la reserva (día de la semana por código; cada error
     expect(v[0]).toMatch(/ · Carlos Pérez$/);
     expect(v[1]).toBe('4 personas');
     expect(v[2]).toBe('viernes 9 de octubre a las 20:00, salón');
-    expect(v[3]).toBe('+' + CLIENTE);
+    expect(v[3]).toBe(CLIENTE_LEGIBLE);
     expect(v[4]).toBe('sin datos adicionales');
     expect(v.join(' ')).not.toMatch(/confirmad/i);
     const cocina = plantillasA(por, AV2)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>;
@@ -1693,7 +1694,7 @@ describe('no negociable 9: roles de los destinatarios (cocina no ve el teléfono
     }
     const detalleCompleto = detallesA(entrega.comp, AV1)[0]?.cuerpo ?? '';
     expect(detalleCompleto).toContain('Calle Falsa 123');
-    expect(detalleCompleto).toContain(CLIENTE);
+    expect(detalleCompleto).toContain(CLIENTE_LEGIBLE);
     // En recojo, ni siquiera el `completo` recibe una dirección.
     const recojo = pedidoConComprobante({ ventana: 5 });
     expect(detallesA(recojo.comp, AV1)[0]?.cuerpo ?? '').not.toMatch(/Calle Falsa|Dirección|dirección/);
@@ -1704,7 +1705,7 @@ describe('no negociable 9: roles de los destinatarios (cocina no ve el teléfono
       expect(parametrosDe(a).join(' ')).not.toMatch(/Calle Falsa|portón verde/);
     }
     const plantillaCompleto = entrega.comp.avisos.filter((x) => x.tipo === 'template' && x.a === AV1).map((a) => parametrosDe(a).join(' ')).join(' ');
-    expect(plantillaCompleto).toContain(CLIENTE);
+    expect(plantillaCompleto).toContain(CLIENTE_LEGIBLE);
     expect(plantillaCompleto).toContain('Calle Falsa 123');
   });
 });
@@ -2334,14 +2335,14 @@ describe('cobro', () => {
     expect(estadoDe(p.w.mundo)['paso']).toBe('esperando_comprobante');
     const segunda = p.c.imagen('media-10');
     expect(segunda.avisos.filter((a) => a.tipo === 'template').length).toBeGreaterThan(0);
-    expect(segunda.avisos.map((a) => parametrosDe(a).join(' ')).join(' ')).toContain('comprobante ilegible');
+    expect(segunda.avisos.map((a) => parametrosDe(a).join(' ')).join(' ')).toContain('ilegible');
     expect(tieneEnlace(segunda)).toBe(true);
     expect(cuerpos(segunda).join('\n')).toMatch(/Como no se lee bien, ya lo pasé a nuestro equipo/);
     // Negativo: si la segunda foto es nítida y cuadra, se avisa «datos coinciden», no «ilegible».
     const p2 = pedidoConComprobante({ cotejo: ilegible, ventana: 5 });
     p2.w.estado.cotejo = { statusCode: 200, body: { resultado: 'cuadra', diferencias: [], cierreId: 'venta_y' } };
     const buena = p2.c.imagen('media-10');
-    expect(buena.avisos.map((a) => parametrosDe(a).join(' ')).join(' ')).toContain('comprobante: datos coinciden');
+    expect(buena.avisos.map((a) => parametrosDe(a).join(' ')).join(' ')).toContain('datos coinciden');
     expect(buena.avisos.map((a) => parametrosDe(a).join(' ')).join(' ')).not.toContain('ilegible');
   });
 
@@ -2351,7 +2352,7 @@ describe('cobro', () => {
       ventana: 5, entrega: 'delivery',
       cotejo: { statusCode: 200, body: { resultado: 'no_cuadra', diferencias: ['El comprobante dice 60 y el pedido es de 84', `El depósito figura a ${inyeccion}`], cierreId: 'venta_x' } },
     });
-    expect(p.comp.avisos.filter((a) => a.tipo === 'template').map((a) => parametrosDe(a).join(' ')).join(' ')).toContain('comprobante: NO coinciden');
+    expect(p.comp.avisos.filter((a) => a.tipo === 'template').map((a) => parametrosDe(a).join(' ')).join(' ')).toContain('NO coinciden');
     const detalle = detallesA(p.comp, AV1)[0]?.cuerpo ?? '';
     expect(detalle).toContain('El comprobante dice 60 y el pedido es de 84');
     // La cocina no ve las diferencias.
@@ -2400,7 +2401,7 @@ describe('cobro', () => {
     const t = r.c.imagen('media-14');
     expect(t.ejecutados.has('Descargar medio')).toBe(false);
     expect(t.ejecutados.has('Cotejar en el servidor')).toBe(false);
-    expect(t.avisos.map((a) => parametrosDe(a).join(' ')).join(' ')).toContain('comprobante sin cotejar');
+    expect(t.avisos.map((a) => parametrosDe(a).join(' ')).join(' ')).toContain('sin cotejar');
     expect(todoElTexto(t)).not.toMatch(/datos coinciden/);
   });
 

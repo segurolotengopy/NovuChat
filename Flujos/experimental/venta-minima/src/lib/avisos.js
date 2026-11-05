@@ -438,9 +438,28 @@ function avPlantilla(tel, nombre, idioma, params4) {
     template: {
       name: n,
       language: { code: lang },
-      components: [{ type: 'body', parameters: lista.map((p) => ({ type: 'text', text: avParametro(p) })) }],
+      components: [{ type: 'body', parameters: lista.map((p) => ({ type: 'text', text: avParametroConMapa(p) })) }],
     },
   });
+}
+
+// Como `avParametro`, pero conserva UN enlace de mapa con la forma exacta de `avEnlaceDeUbicacion` (solo dígitos, armado por el
+// código, nunca texto del cliente) cuando va como segmento «mapa: <enlace>» al principio o tras « · » y al final o antes de « · ».
+// Los segmentos del cliente ya vienen saneados (todo enlace suyo es «[enlace omitido]»), así que un enlace con esta forma solo
+// puede venir del código. Se sustituye por una marca durante el saneo y se repone entero; si la marca no queda exactamente una
+// vez, el enlace se descarta (nunca se devuelve un enlace partido).
+const AV_MARCA_MAPA = 'ENLACEMAPAOK';
+function avParametroConMapa(t) {
+  const s = String(t === undefined || t === null ? '' : t);
+  const re = new RegExp('(^| · )mapa: (' + AV_FORMA_ENLACE_MAPA.source.slice(1, -1) + ')(?= · |$)');
+  const m = re.exec(s);
+  if (!m) return avParametro(s);
+  const sin = s.slice(0, m.index) + m[1] + 'mapa: ' + AV_MARCA_MAPA + s.slice(m.index + m[0].length);
+  const limpio = avParametro(sin);
+  const partes = limpio.split(AV_MARCA_MAPA);
+  if (partes.length !== 2 || limpio.indexOf('mapa: ' + AV_MARCA_MAPA) < 0) return limpio.split(AV_MARCA_MAPA).join('').replace(/mapa:\s*(?=$| · )/g, '').trim() || '—';
+  const salida = partes.join(m[2]);
+  return salida.length <= 500 ? salida : limpio.split(AV_MARCA_MAPA).join('').trim() || '—';
 }
 
 /** Mensaje de texto libre (solo con ventana abierta). */
@@ -558,6 +577,24 @@ function avCotejoTexto(resultado) {
   if (resultado === 'sin_qr') return 'sin QR: se cobra al entregar o al recoger';
   if (resultado === 'qr_vencido') return 'QR vencido: coordinar el pago';
   return 'comprobante sin cotejar';
+}
+
+// El valor de la VARIABLE de plantilla del cotejo: el cuerpo de la plantilla ya dice «Comprobante: {{N}}», así que se quita la
+// palabra repetida («NO coinciden los datos», «datos coinciden», «ilegible»). El texto libre (`avDetalle`) sigue con `avCotejoTexto`.
+function avCotejoVariable(resultado) {
+  return avCotejoTexto(resultado).replace(/^comprobante:?\s+/i, '');
+}
+
+// Teléfono legible, calculado SOLO con los dígitos: «+591 7066 1250» (11 dígitos con prefijo 591); otros largos de 8 a 15,
+// «+» y grupos de 4 de izquierda a derecha. Devuelve '' (y quien llama conserva lo que hacía) si el valor trae letras o no
+// tiene entre 8 y 15 dígitos.
+function avTelefonoLegible(v) {
+  const crudo = String(v === undefined || v === null ? '' : v);
+  if (/\p{L}/u.test(crudo)) return '';
+  const d = avDigitos(crudo);
+  if (d.length < 8 || d.length > 15) return '';
+  if (d.length === 11 && d.slice(0, 3) === '591') return '+591 ' + d.slice(3, 7) + ' ' + d.slice(7);
+  return '+' + d.replace(/(\d{4})(?=\d)/g, '$1 ');
 }
 
 function avModalidadTexto(m) {
@@ -679,27 +716,46 @@ function avModalidadVariable(d, dest, opc, sinItems) {
   const base = avModalidadTexto(d.modalidad);
   const delivery = d.modalidad === 'delivery';
   let segmentos = [base];
+  let mapa = '';
+  let posCoord = -1;
   if (dest.rol === 'completo') {
     const dir = delivery ? avLimpio(d.direccion, 160) : '';
     const ref = delivery ? avLimpio(d.referencia, 100) : '';
     const quien = avLimpio(d.nombre, 60);
     const tel = avDigitos(d.telefono);
     const coord = delivery ? avLimpio(d.coordenadas, 60) : '';
+    // Con una ubicación válida (dos números, nunca texto del cliente) el enlace al mapa reemplaza a las coordenadas crudas.
+    mapa = delivery ? avEnlaceDeUbicacion(d.ubicacion) : '';
+    const telLegible = avTelefonoLegible(d.telefono);
     segmentos = [
       base + (dir ? ' a ' + dir : '') + (ref ? ' (' + ref + ')' : ''),
       quien ? (delivery ? 'recibe ' : 'cliente ') + quien : '',
-      tel ? 'cel ' + tel : '',
+      tel ? 'cel ' + (telLegible || tel) : '',
       coord,
     ].filter(Boolean);
+    posCoord = coord ? segmentos.length - 1 : -1;
   }
   // La nota del cliente desde la pagina del catalogo (`notaPedido`) es una nota de cocina: la ven los dos roles (a cocina,
   // sin numeros largos). Va con los segmentos fijos, para que los items se corten antes que ella.
   const nota = typeof d.notaPedido === 'string' ? avLimpio(d.notaPedido, 100, opc) : '';
   if (nota) segmentos.push('nota: ' + nota);
+  // El enlace va entero o no va: se prueba en el lugar de las coordenadas y, si con él lo fijo pasa del tope, se conservan las
+  // coordenadas. No pasa por `avLimpio` (volvería «[enlace omitido]»); lo demás ya viene saneado por segmento.
+  if (mapa) {
+    const conMapa = segmentos.slice();
+    const seg = 'mapa: ' + mapa;
+    if (posCoord >= 0) conMapa[posCoord] = seg; else conMapa.splice(Math.min(3, conMapa.length), 0, seg);
+    const fijoMapa = conMapa.join(' · ');
+    if (fijoMapa.length <= tope) {
+      if (sinItems === true) return fijoMapa;
+      const itemsM = avItemsCompactos(avLineas(d.lineas), opc, tope - fijoMapa.length - 3);
+      return itemsM ? fijoMapa + ' · ' + itemsM : fijoMapa;
+    }
+  }
   const fijo = segmentos.join(' · ');
-  if (sinItems === true) return fijo;
+  if (sinItems === true) return avParametro(fijo, tope, opc);
   const items = avItemsCompactos(avLineas(d.lineas), opc, tope - fijo.length - 3);
-  return items ? fijo + ' · ' + items : fijo;
+  return avParametro(items ? fijo + ' · ' + items : fijo, tope, opc);
 }
 
 // Reserva y derivación con la FORMA `pedido` (`formaPlantillaReserva` / `formaPlantillaDerivacion`): llenan las cuatro
@@ -764,7 +820,7 @@ function avVariablesSolicitud(d, dest) {
     cliente: avParametro((cod ? cod + ' · ' : '') + nombre, 90),
     personas: avParametro(Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : 'personas sin indicar', 30),
     cuando: avParametro(cuando + (zona ? ', ' + zona : ''), 100),
-    telefono: avParametro(tel && tel.length >= 8 && tel.length <= 15 ? '+' + tel : '', 20),
+    telefono: avParametro(tel && tel.length >= 8 && tel.length <= 15 ? (avTelefonoLegible(d.telefono) || '+' + tel) : '', 20),
     nota: avParametro(extras.length ? extras.join(' · ') : 'sin datos adicionales', 300),
   };
 }
@@ -782,8 +838,8 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
     return {
       items: avParametro((resultado === 'simulado' ? 'PRUEBA · ' : '') + 'N.º ' + cod + (n > 0 ? ' de ' + n + (n === 1 ? ' ítem' : ' ítems') : ''), 60),
       total: avParametro('Bs ' + avMonto(d.total) + (resultado === 'simulado' ? ' (SIMULADO)' : ''), 30),
-      modalidad: avParametro(avModalidadVariable(d, dest, opc), 500),
-      cotejo: avParametro(avCotejoTexto(resultado), 80),
+      modalidad: avModalidadVariable(d, dest, opc),
+      cotejo: avParametro(avCotejoVariable(resultado), 80),
     };
   }
   const destinatario = avParametro(dest.nombre || 'equipo', 40);
@@ -844,7 +900,7 @@ function avVariablesLineas(d, dest, resultado, tamano) {
   const primera = avParametro(
     (resultado === 'simulado' ? 'PRUEBA · ' : '') + 'N.º ' + cod + (n > 0 ? ' de ' + n + (n === 1 ? ' ítem' : ' ítems') : '')
     + '. Total de la comida: Bs ' + avMonto(d.total) + (resultado === 'simulado' ? ' (SIMULADO)' : ''), 120);
-  const vars = [primera, avParametro(avModalidadVariable(d, dest, opc, true), 500, opc)];
+  const vars = [primera, avModalidadVariable(d, dest, opc, true)];
   const cuantos = lineas.length;
   for (let k = 0; k < tamano; k++) {
     if (cuantos > tamano && k === tamano - 1) vars.push(avParametro('… y ' + (cuantos - (tamano - 1)) + ' más', 40));
@@ -852,14 +908,14 @@ function avVariablesLineas(d, dest, resultado, tamano) {
     else vars.push('—');
   }
   // El cuerpo de la plantilla ya dice «Comprobante: {{N+3}}.»: sin la palabra repetida («Comprobante: comprobante: datos coinciden»).
-  vars.push(avParametro(avCotejoTexto(resultado).replace(/^comprobante:?\s+/i, ''), 80));
+  vars.push(avParametro(avCotejoVariable(resultado), 80));
   return vars;
 }
 
 // El enlace al mapa de la ubicación compartida (PR-A 05/10). Se arma SOLO con dos números —nunca con texto del cliente— y por eso NO pasa por
 // `avLimpio` (que cambia toda URL por «[enlace omitido]»); a cambio se valida con la forma exacta y se devuelve '' ante cualquier duda: tipos
 // que no son número, fuera de rango, no finitos o (0, 0) (el «punto nulo» de un GPS sin fijar). Solo lo usa el detalle de texto del rol `completo`:
-// la plantilla (ventana cerrada) sigue con las coordenadas sin enlace.
+// la variable de modalidad de la plantilla (ventana cerrada, rol completo) también lo lleva (`avModalidadVariable`).
 const AV_FORMA_ENLACE_MAPA = /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=-?\d{1,2}\.\d{6}%2C-?\d{1,3}\.\d{6}$/;
 function avEnlaceDeUbicacion(u) {
   if (!u || typeof u !== 'object') return '';
@@ -879,7 +935,7 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
   const nombre = completo ? avLimpio(d.nombre, 60) : avPrimerNombre(d.nombre, opc);
   const tel = avDigitos(d.telefono);
   const cliente = () => {
-    if (completo) return 'Cliente: ' + (nombre || 'sin nombre') + (tel ? ' · tel ' + tel : '');
+    if (completo) return 'Cliente: ' + (nombre || 'sin nombre') + (tel ? ' · tel ' + (avTelefonoLegible(d.telefono) || tel) : '');
     return nombre ? 'Cliente: ' + nombre : '';
   };
   let cierre = '';
@@ -936,7 +992,7 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
     if (avMarcasReserva(r).length) lineas.push('• ' + avMarcasReserva(r).join(' · '));
     if (avLimpio(r.celebracion, 120, opc)) lineas.push('• Celebración: ' + avLimpio(r.celebracion, 120, opc));
     if (avLimpio(r.requerimiento, 200, opc)) lineas.push('• Pedido especial: ' + avLimpio(r.requerimiento, 200, opc));
-    if (completo && tel) lineas.push('Cliente: tel ' + tel);
+    if (completo && tel) lineas.push('Cliente: tel ' + (avTelefonoLegible(d.telefono) || tel));
     cierre = AV_CIERRE_RESERVA;
   } else {
     const cod = avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs);
