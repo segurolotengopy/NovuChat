@@ -41,7 +41,7 @@ if (!aviso || !cnClaveValida(from) || (aviso.tipo !== 'comprobante' && aviso.tip
 
 // 2. Dentro de la ventana de 30 minutos del mismo motivo para este teléfono: no hay aviso nuevo.
 const fichas = cnMapaDeFichas(false).mapa;
-const fichaCliente = rrFichaVigente(cnFichaDe(fichas, from), ahora);
+const fichaCliente = rrFichaVigente(cnFichaDe(fichas, from), ahora, rrTurnoDeAtencion(cnPrimero('Reportar mensaje (entrante)'), puerta));
 const ultimoMotivo = clave ? (fichaCliente.avisosConsulta[clave] || 0) : 0;
 if (ultimoMotivo > 0 && ahora - ultimoMotivo >= 0 && ahora - ultimoMotivo < RR_VENTANA_AVISO_CONSULTA_MS) return sin({ repetido: true });
 

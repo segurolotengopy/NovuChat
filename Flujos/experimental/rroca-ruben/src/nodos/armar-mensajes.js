@@ -26,7 +26,8 @@ const prueba = cfg.modoPrueba === true;
 const telPrueba = String(cfg.telefonoDePrueba || '');
 const claveOk = cnClaveValida(from);
 const cat = plan.cat && typeof plan.cat === 'object' ? plan.cat : {};
-const fichaAntes = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora);
+const atencionDelTurno = rrTurnoDeAtencion(cnPrimero('Reportar mensaje (entrante)'), puerta);
+const fichaAntes = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora, atencionDelTurno);
 // El nombre del negocio (la Consola manda, `Config base` respalda: lo resuelve «Config del negocio») y los NOMBRES del catálogo de la consola, que son los que dicen las etiquetas de los botones.
 const negocio = String(cfg.nombreNegocio || '');
 const nom = rrNombres(rrPanelDe(cnPrimero('Traer configuración')).cuerpo);
@@ -303,7 +304,7 @@ let prospectoPlanilla = null;
 // La ficha: un solo lugar, al final del turno. Hasta en un turno sin mensaje (bloqueado) se recuerda el id de Meta (una entrega repetida no se cuenta dos veces).
 if (claveOk) {
   const fichas = cnMapaDeFichas(true);
-  const ficha = rrFichaVigente(cnFichaDe(fichas.mapa, from), ahora);
+  const ficha = rrFichaVigente(cnFichaDe(fichas.mapa, from), ahora, atencionDelTurno);
   rrRecordarIds(ficha, [t.mensajeId]);
   ficha.turnos += 1;
   ficha.ultimoMs = ahora;
@@ -334,6 +335,8 @@ if (claveOk) {
   // «Cancela mi pedido» con un QR abierto: se libera la guarda LOCAL del QR (si el servidor cerró el cobro, ya no hay nada abierto; si no, sigue hasta que venza); se restaura si la respuesta no sale (`Resumen del turno`).
   if ((tipoDePlan === 'derivar' || tipoDePlan === 'cobro_cerrado') && plan.liberaGuarda === true && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
   if (riesgoNuevo) { ficha.riesgo = true; if (senalDeRiesgo || !(ficha.riesgoMs > 0)) ficha.riesgoMs = ahora; }
+  // Con la protección activa, anota que una persona (Rubén) tiene tomada la conversación: es lo que permite levantarla cuando la devuelva (`rrFichaVigente`).
+  if (ficha.riesgo === true && atencionDelTurno.pausa === true) ficha.pausaPersonaMs = ahora;
   if (upgradeOfrecido && m && puerta.ruta === 'sigue') ficha.upgrade = 1;
   // La memoria de la charla (15 mensajes): lo que dijo el cliente y lo que se le respondió, solo en la conversación (no en el cobro) y NUNCA en la protección por violencia o miedo.
   if (m && ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo', 'precio', 'resultado', 'info'].indexOf(tipoDePlan) >= 0) {

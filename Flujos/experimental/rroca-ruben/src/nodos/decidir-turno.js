@@ -41,7 +41,7 @@ const cat = rrCatalogo(panel.cuerpo);
 const nom = rrNombres(panel.cuerpo);
 const agotados = rrAgotados(panel.cuerpo);
 const cobro = rrCobro(panel);
-const ficha = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora);
+const ficha = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora, rrTurnoDeAtencion(cnPrimero('Reportar mensaje (entrante)'), puerta));
 
 // 0. LA PROTECCIÓN ANTE UNA CRISIS EMOCIONAL VA PRIMERO, también con la puerta cerrada y fuera del país: si el comercio está suspendido, el estado es «operador» (el cliente sí recibe un mensaje) o el número no es
 //    boliviano, un texto de riesgo recibe el texto de protección y reporta `no_contactar`, nunca el texto neutro, el aviso de uso extendido ni el de «pago con QR boliviano». La pausa por persona («bloqueado»)

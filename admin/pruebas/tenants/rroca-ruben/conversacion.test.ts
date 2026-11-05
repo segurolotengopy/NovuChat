@@ -214,6 +214,101 @@ describe('CASOS (c) y (d) del PDF: no garantiza; dos preguntas juntas en UN solo
 
 const BETO_DE_PRUEBA = '59100000022';
 
+describe('la crisis la levanta Rubén (la pausa por persona que se devuelve), nunca el cliente (Andres, 05/11/2026)', () => {
+  const HORA = 60;
+  const esCrisis = (t: ResultadoTurno): boolean => /Siento mucho que estés pasando por esto/.test(t.mensajes[0]?.cuerpo ?? '');
+  const PAUSA = { ok: true, atencion: { estado: 'bloqueado' }, avisarRecepcion: '', pausadoPorPersona: true };
+  // La ingesta es UN objeto que la prueba cambia entre turnos: lo que el servidor diría en cada momento.
+  const mundoConIngesta = (): { w: Mundo; ing: J; poner: (v: J) => void } => {
+    const ing: J = { ok: true };
+    const poner = (v: J): void => { for (const k of Object.keys(ing)) delete ing[k]; Object.assign(ing, v); };
+    return { w: nuevo({ ingesta: ing }), ing, poner };
+  };
+  const enCrisis = (): ReturnType<typeof mundoConIngesta> => {
+    const m = mundoConIngesta();
+    hablar(m.w, ANA, mTexto('hola'));
+    expect(esCrisis(hablar(m.w, ANA, mTexto('ya no quiero vivir')))).toBe(true);
+    m.w.avanzar(1);
+    return m;
+  };
+
+  it('SÍ levanta: pausa por persona (Rubén la tuvo) y luego atención normal: la venta vuelve y la ficha se limpia', () => {
+    const { w, poner } = enCrisis();
+    poner(PAUSA);
+    const calla = hablar(w, ANA, mTexto('gracias'));
+    expect(calla.mensajes).toHaveLength(0);
+    expect(fichaDe(w)['riesgo']).toBe(true);
+    expect(fichaDe(w)['pausaPersonaMs'] as number).toBeGreaterThan(fichaDe(w)['riesgoMs'] as number);
+    poner({ ok: true });
+    w.avanzar(1);
+    const t = hablar(w, ANA, mTexto('hola, quiero el libro'));
+    expect(esCrisis(t)).toBe(false);
+    expect(fichaDe(w)['riesgo']).toBe(false);
+    expect(fichaDe(w)['riesgoMs']).toBe(0);
+    expect(fichaDe(w)['pausaPersonaMs']).toBe(0);
+  });
+
+  it('NEGANDO: «ya estoy bien», «gracias» o «mejor» del cliente NO levantan la protección (sin pausa de Rubén)', () => {
+    const { w } = enCrisis();
+    for (const dicho of ['ya estoy bien', 'gracias', 'estoy mejor, quiero el libro', 'fue un error, no pasa nada']) {
+      w.avanzar(HORA);
+      expect(esCrisis(hablar(w, ANA, mTexto(dicho))), dicho).toBe(true);
+      expect(fichaDe(w)['riesgo'], dicho).toBe(true);
+    }
+  });
+
+  it('NEGANDO: el uso extendido (operador) y el bloqueo de un contacto NO levantan; solo la pausa por persona', () => {
+    for (const otra of [
+      { ok: true, atencion: { estado: 'operador', respuestasEnVentana: 20 }, avisarRecepcion: 'operador' },
+      { ok: true, atencion: { estado: 'bloqueado', respuestasEnVentana: 30 } },
+      { ok: true, atencion: { estado: 'bloqueado' }, avisarRecepcion: '', bloqueadoPorContacto: true },
+    ] as J[]) {
+      const { w, poner } = enCrisis();
+      poner(otra);
+      hablar(w, ANA, mTexto('gracias'));
+      expect(fichaDe(w)['pausaPersonaMs'], JSON.stringify(otra)).toBe(0);
+      poner({ ok: true });
+      w.avanzar(1);
+      const t = hablar(w, ANA, mTexto('quiero el libro'));
+      expect(esCrisis(t), JSON.stringify(otra)).toBe(true);
+      expect(fichaDe(w)['riesgo']).toBe(true);
+    }
+  });
+
+  it('NEGANDO: la pausa sin devolver (sigue pausada) no levanta', () => {
+    const { w, poner } = enCrisis();
+    poner(PAUSA);
+    hablar(w, ANA, mTexto('hola'));
+    w.avanzar(1);
+    hablar(w, ANA, mTexto('sigues ahí'));
+    expect(fichaDe(w)['riesgo']).toBe(true);
+  });
+
+  it('NEGANDO: sin pausa de Rubén la protección sigue venciendo sola a las 48 h de la última señal', () => {
+    const otra = enCrisis();
+    otra.w.avanzar(30 * HORA);
+    expect(esCrisis(hablar(otra.w, ANA, mTexto('gracias')))).toBe(true);
+    otra.w.avanzar(19 * HORA);
+    expect(esCrisis(hablar(otra.w, ANA, mTexto('hola, quiero el libro')))).toBe(false);
+    expect(fichaDe(otra.w)['riesgo']).toBe(false);
+  });
+
+  it('una crisis NUEVA tras levantar vuelve a proteger, y esa señal posterior a la pausa no se levanta sola', () => {
+    const { w, poner } = enCrisis();
+    poner(PAUSA);
+    hablar(w, ANA, mTexto('gracias'));
+    poner({ ok: true });
+    w.avanzar(1);
+    expect(esCrisis(hablar(w, ANA, mTexto('quiero el libro')))).toBe(false);
+    w.avanzar(1);
+    expect(esCrisis(hablar(w, ANA, mTexto('quiero morir'))))
+      .toBe(true);
+    expect(fichaDe(w)['riesgo']).toBe(true);
+    w.avanzar(1);
+    expect(esCrisis(hablar(w, ANA, mTexto('quiero el libro')))).toBe(true);
+  });
+});
+
 describe('la crisis se levanta sola: vence a las 48 h de la ÚLTIMA SEÑAL, no del último mensaje', () => {
   const HORA = 60;
   const hablarTras = (w: Mundo, horas: number, texto: string): ResultadoTurno => { w.avanzar(horas * HORA); return hablar(w, ANA, mTexto(texto)); };

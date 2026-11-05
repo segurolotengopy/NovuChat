@@ -109,12 +109,19 @@ function rrSeguro(texto) {
 // -----------------------------------------------------------------------------
 function rrFichaBase() {
   return {
-    v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, usados: [], pedidos: 0, qrHastaMs: 0, comprobanteMs: 0, avisosConsulta: {}, producto: '', hist: [], modeloN: 0, riesgo: false, riesgoMs: 0, fueraDePaisMs: 0,
+    v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, usados: [], pedidos: 0, qrHastaMs: 0, comprobanteMs: 0, avisosConsulta: {}, producto: '', hist: [], modeloN: 0, riesgo: false, riesgoMs: 0, pausaPersonaMs: 0, fueraDePaisMs: 0,
     charlaN: 0, pidioOpciones: false, opcionesVistas: false, pendientes: [], ultimoHash: '', ultimaFirma: '', upgrade: 0,
   };
 }
 // La ficha vigente de un teléfono: si pasó el olvido, es una ficha nueva.
-function rrFichaVigente(e, ahoraMs) {
+// LA SEÑAL DE RUBÉN: `pausadoPorPersona` es la clave que el servidor agrega a la respuesta de la ingesta SOLO cuando una persona tomó la conversación desde la consola (el tope de uso extendido y el bloqueo de un contacto no la traen).
+// `puerta` es la salida de «Puerta del turno» (módulo común, no se toca): la pausa llega como `uso_extendido` sin respuesta. Devuelve { libre, pausa } para `rrFichaVigente` y para anotar la pausa en la ficha.
+function rrTurnoDeAtencion(previo, puerta) {
+  const p = puerta && typeof puerta === 'object' ? puerta : {};
+  const pausa = !!(previo && typeof previo === 'object' && previo.pausadoPorPersona === true) && p.ruta === 'uso_extendido' && p.responder !== true;
+  return { pausa: pausa, libre: p.ruta === 'sigue' && !pausa };
+}
+function rrFichaVigente(e, ahoraMs, turno) {
   const base = rrFichaBase();
   if (!e || typeof e !== 'object' || Array.isArray(e)) return base;
   const ultimo = Number.isFinite(e.ultimoMs) && e.ultimoMs > 0 ? e.ultimoMs : 0;
@@ -124,6 +131,11 @@ function rrFichaVigente(e, ahoraMs) {
   // La conversación antes de las opciones (campos nuevos: una ficha sin ellos vale 0, falso, falso) y las preguntas pendientes (vigentes 30 minutos).
   const charla = vdFichaCharla(e, ahoraMs);
   const fnr = ctFichaNoRepetir(e);
+  // LA PROTECCIÓN DE UNA CRISIS LA LEVANTA RUBÉN, NUNCA EL CLIENTE (decisión de Andres, 05/11/2026). `pausaPersonaMs` = la última vez que, con la protección activa, el servidor dijo que una persona tenía tomada la conversación (`pausadoPorPersona`).
+  // Si esa pausa es POSTERIOR a la última señal de crisis y este turno ya es de atención normal (`turno.libre`: ruta «sigue» y sin pausa), Rubén la tuvo y la devolvió al asistente: la protección se limpia. Un texto («ya estoy bien»),
+  // el uso extendido o el bloqueo de un contacto no tocan esto. Sin pausa vista, vence sola a las 48 h de la última señal.
+  const vigente = e.riesgo === true && !((nums(e.riesgoMs) || ultimo) > 0 && ahoraMs - Math.min(nums(e.riesgoMs) || ultimo, ahoraMs) > RR_OLVIDO_MS);
+  const levantada = vigente && !!turno && turno.libre === true && nums(e.pausaPersonaMs) > (nums(e.riesgoMs) || ultimo);
   return {
     v: 2,
     ultimoMs: ultimo,
@@ -140,8 +152,9 @@ function rrFichaVigente(e, ahoraMs) {
     modeloN: Number.isFinite(e.modeloN) && e.modeloN > 0 ? Math.min(Math.floor(e.modeloN), 1000) : 0,
     // LEVANTAR LA CRISIS (PR-2): la protección vence a las 48 h de la ÚLTIMA SEÑAL de crisis (`riesgoMs`), no del último mensaje: escribir «gracias» o «el libro» no la renueva, y escribir otra señal sí. Una ficha vieja sin `riesgoMs` usa su último mensaje.
     // `Math.min(…, ahoraMs)`: una señal fechada en el futuro (reloj adelantado) no alarga la protección más de 48 h desde ahora.
-    riesgo: e.riesgo === true && !((nums(e.riesgoMs) || ultimo) > 0 && ahoraMs - Math.min(nums(e.riesgoMs) || ultimo, ahoraMs) > RR_OLVIDO_MS),
-    riesgoMs: e.riesgo === true && !((nums(e.riesgoMs) || ultimo) > 0 && ahoraMs - Math.min(nums(e.riesgoMs) || ultimo, ahoraMs) > RR_OLVIDO_MS) ? Math.min(nums(e.riesgoMs) || ultimo, ahoraMs) : 0,
+    riesgo: vigente && !levantada,
+    riesgoMs: vigente && !levantada ? Math.min(nums(e.riesgoMs) || ultimo, ahoraMs) : 0,
+    pausaPersonaMs: vigente && !levantada ? Math.min(nums(e.pausaPersonaMs), ahoraMs) : 0,
     upgrade: e.upgrade === 1 || e.upgrade === 2 ? e.upgrade : 0,
     fueraDePaisMs: nums(e.fueraDePaisMs),
     charlaN: charla.charlaN,
