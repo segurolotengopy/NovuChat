@@ -96,5 +96,9 @@ export function areaInicial(search: string, areas: readonly string[]): string {
   try { pedido = new URLSearchParams(search.slice(0, 2000)).get('area') ?? ''; } catch { return ''; }
   const clave = claveDeArea(pedido.slice(0, 200));
   if (clave === '') return '';
-  return areas.find((a) => claveDeArea(a) === clave) ?? '';
+  // Primero la coincidencia EXACTA («Café» pedido como «Café»); si no, la normalizada, pero solo si es ÚNICA (con «Cafe» y «Café» a la vez, un pedido ambiguo no filtra nada).
+  const exacta = areas.find((a) => a === pedido.trim());
+  if (exacta !== undefined) return exacta;
+  const iguales = areas.filter((a) => claveDeArea(a) === clave);
+  return iguales.length === 1 ? iguales[0]! : '';
 }

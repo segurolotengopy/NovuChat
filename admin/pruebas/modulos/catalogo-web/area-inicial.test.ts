@@ -27,6 +27,13 @@ describe('areaInicial: NEGADO primero (todo lo que NO debe arrancar filtrado)', 
     expect(areaInicial('?area=', AREAS)).toBe('');
     expect(areaInicial('?area=%20%20', AREAS)).toBe('');
   });
+  it('dos áreas que se normalizan igual («Cafe» y «Café»): gana la coincidencia EXACTA; si no hay exacta, el pedido es ambiguo → Todo', () => {
+    const dos = ['Cafe', 'Café', 'Té'];
+    expect(areaInicial('?area=Caf%C3%A9', dos)).toBe('Café');
+    expect(areaInicial('?area=Cafe', dos)).toBe('Cafe');
+    expect(areaInicial('?area=CAFE', dos)).toBe(''); // sin exacta y con dos candidatas: no se adivina
+    expect(areaInicial('?area=te', dos)).toBe('Té'); // única tras normalizar: sí
+  });
   it('sin áreas en el negocio → Todo', () => {
     expect(areaInicial('?area=promos', [])).toBe('');
   });
@@ -64,10 +71,17 @@ describe('el componente usa areaInicial para el estado inicial, y no agrega red 
   const ADMIN = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
   const fuente = readFileSync(join(ADMIN, 'web/src/modulos/catalogo-web/publico/SitioCatalogo.tsx'), 'utf8');
   it('el estado `area` se inicia con areaInicial(...) y sigue siendo \'\' si no hay ventana', () => {
-    expect(fuente).toMatch(/useState\(\(\) => \(typeof window === 'undefined' \? '' : areaInicial\(window\.location\.search, areas\)\)\)/);
+    expect(fuente).toMatch(/useState\(\(\) => \(typeof window === 'undefined' \? '' : areaInicial\(window\.location\.search, /);
     expect(fuente).not.toMatch(/const \[area, setArea\] = useState\(''\)/);
   });
-  it('no usa dangerouslySetInnerHTML ni agrega fetch por el parámetro', () => {
-    expect(fuente).not.toMatch(/dangerouslySetInnerHTML/);
+  it('con UNA sola área (sin botones de filtro) el parámetro no se aplica: no deja ocultos los productos sin área', () => {
+    expect(fuente).toMatch(/areaInicial\(window\.location\.search, areas\.length > 1 \? areas : \[\]\)/);
+    expect(areaInicial('?area=promos', [])).toBe('');
   });
+  it('no usa dangerouslySetInnerHTML ni agrega llamadas de red: los fetch son los dos que ya había', () => {
+    expect(fuente).not.toMatch(/dangerouslySetInnerHTML/);
+    expect((fuente.match(/\bfetch\(/g) ?? []).length).toBe(2);
+  });
+  // DECISIÓN declarada: el área de la URL es solo el punto de partida de la pantalla. Si la persona elige otra («Todo») y vuelve de «Pedido» o recarga,
+  // el filtro vuelve al de la URL (`setArea` no escribe en la URL). Es lo esperado para un enlace de campaña; no se guarda nada.
 });
