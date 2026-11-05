@@ -596,13 +596,35 @@ export function guardias(entrada, flujo, datos = {}) {
         if (!cuenta.has('SS_CONFIG')) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
       }
     }
+    // Nadie reasigna ni muta los parámetros de sesión: ni `ss*` ni `SS_CONFIG` (con `=`, por índice o con `Object.assign/defineProperty`), sobre el código de cada nodo SIN el módulo común ni el registro (que los declaran) y sin comentarios.
+    {
+      const sinCom = (t) => String(t).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      const propios = [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean).map((t) => sinCom(t).trim());
+      const REGLAS = [
+        [/\b(ss[A-Z]\w*|SS_CONFIG)\s*(\.\s*\w+\s*)?[-+*\/%&|^]?=(?!=)/, 'reasigna o muta un ayudante de sesión (ss*) o SS_CONFIG con «=»'],
+        [/(\+\+|--)\s*ss[A-Z]|ss[A-Z]\w*\s*(\+\+|--)/, 'incrementa o decrementa un ayudante de sesión (ss*)'],
+        [/[\[{,:]\s*ss[A-Z]\w*\s*[\]},]\s*=/, 'reasigna un ayudante de sesión (ss*) por desestructuración'],
+        [/SS_CONFIG\s*\[/, 'accede a SS_CONFIG por índice'],
+        [/Object\.(assign|defineProperty)\(\s*SS_CONFIG/, 'muta SS_CONFIG con Object.assign o Object.defineProperty'],
+      ];
+      for (const n of nodos) {
+        let resto = sinCom(parametros(n).jsCode || '');
+        for (const p of propios) resto = resto.split(p).join('');
+        for (const [re, que] of REGLAS) if (re.test(resto)) h.push(`el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
+      }
+    }
     // En la variante de PRUEBA, «Carga de entrada» DESCARTA lo que llegue a «Entrada de prueba» sin `modoPrueba: true` (si no, se comportaría como producción); producción no tiene «Entrada de prueba».
     const carga = nodos.find((x) => x.name === 'Carga de entrada');
     if (entrada === 'prueba' && carga && !/if \(corrioPrueba && !prueba\) return \[\];/.test(String(parametros(carga).jsCode || ''))) h.push('«Carga de entrada» tiene que descartar lo que llegue a «Entrada de prueba» sin modoPrueba: true');
     // El estado va en OTRO espacio en la variante de PRUEBA, y los espacios de «Traer configuración» (que lleva el `leer` fijo en su cuerpo) tienen que ser LOS MISMOS que declara SS_CONFIG (los de `comprometer`): si divergen, se lee un documento y se compromete otro.
     const traer = nodos.find((x) => x.name === 'Traer configuración');
-    const declarados = /espacio: '([a-z0-9-]+)', espacioPrueba: '([a-z0-9-]+)'/.exec(FUENTE_REGISTRO);
+    // (lo que declara el código ARMADO de «Soltar mensajes», que es el que corre; si no está, la fuente)
+    const textoSS = String(parametros(nodos.find((x) => x.name === 'Soltar mensajes') || {}).jsCode || FUENTE_REGISTRO);
+    const declarados = /espacio: '([a-z0-9-]+)', espacioPrueba: '([a-z0-9-]+)'/.exec(textoSS);
     const enCuerpo = /prueba \? '([a-z0-9-]+)' : '([a-z0-9-]+)'/.exec(String((traer && parametros(traer).jsonBody) || ''));
+    // El espacio de prueba tiene que ser OTRO y terminar en «-prueba»: si coincidiera con el de producción, una prueba pisaría las fichas de los clientes.
+    if (!declarados || declarados[1] === declarados[2] || !declarados[2].endsWith('-prueba')) h.push('SS_CONFIG.espacioPrueba tiene que ser distinto de espacio y terminar en «-prueba»');
+    if (!/const SS_CONFIG = Object\.freeze\(\{/.test(textoSS)) h.push('SS_CONFIG tiene que declararse con Object.freeze');
     if (traer && (!declarados || !enCuerpo || enCuerpo[1] !== declarados[2] || enCuerpo[2] !== declarados[1])) h.push('«Traer configuración» tiene que pedir el estado en el MISMO espacio que declara SS_CONFIG (espacioPrueba cuando es una prueba, espacio en producción)');
   }
   // Retención de ejecuciones, orden y zona horaria (decisión de Andres, 03/10/2026: se guardan solo las ejecuciones que fallan).
