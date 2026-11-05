@@ -14,7 +14,7 @@ const L = cargarLibrerias('rrSeguro, rrNorm, rrExtraRedaccion, RR_SALUDO_MINIMO'
 
 describe('rrSeguro: la salud y el cobro real viven también en la barrera de código', () => {
   it('NEGADOS: cada frase cae al mínimo', () => {
-    for (const x of ['Duerme sin pastillas desde hoy.', 'Esto cura el insomnio.', 'Vas a dormir desde la primera noche.', 'Te garantizamos buenas noches.', 'Tu cobro simulado quedó listo.', 'Sin medicamentos y sin dudas.']) expect(L.rrSeguro(x), x).toBe(L.RR_SALUDO_MINIMO);
+    for (const x of ['Duerme sin pastillas desde hoy.', 'Esto cura el insomnio.', 'Vas a dormir desde la primera noche.', 'Te garantizamos buenas noches.', 'Tu cobro simulado quedó listo.', 'Sin medicamentos y sin dudas.', 'Te curarás pronto.', 'Sin pastilla alguna.', 'Sin fármacos también.', 'Lo curó.']) expect(L.rrSeguro(x), x).toBe(L.RR_SALUDO_MINIMO);
   });
   it('POSITIVOS: lo legítimo pasa tal cual (garantía no es garantizar; «accura» no es «cura»)', () => {
     for (const x of ['Sobre garantía o devolución, eso lo responde Rubén directamente.', 'Es un método práctico de 14 eslabones.']) expect(L.rrSeguro(x), x).toContain(x.slice(0, 20));

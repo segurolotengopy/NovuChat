@@ -605,7 +605,7 @@ describe('la derivación a Rubén: texto fijo, aviso y botón', () => {
   });
 
   it('NEGANDO: tomar medicación a secas o una objeción corriente NO deriva como médica; sí deriva una acción sobre la medicación (dosis, suspender, receta)', () => {
-    for (const x of ['no quiero tomar pastillas, ¿me sirve?', 'tomo melatonina, ¿puedo usar el libro?']) {
+    for (const x of ['no quiero tomar pastillas, ¿me sirve?', 'tomo melatonina, ¿puedo usar el libro?', '¿cuánto cuesta el libro? tomo melatonina', 'tomo melatonina junto con una infusión, ¿sirve el audiolibro?']) {
       const w = nuevo();
       saludar(w);
       const t = hablar(w, ANA, mTexto(x));
@@ -741,7 +741,7 @@ describe('crisis emocional: se corta la venta, hay texto cálido, botón y aviso
   });
 
   it('NEGANDO: objeciones corrientes con palabras de salud o de «desaparecer» NO son una crisis ni cortan la venta; las crisis REALES siguen disparando', () => {
-    for (const x of ['quiero desaparecer mis ojeras', 'no vale la pena seguir intentando con pastillas', 'hay riesgo de sobredosis con melatonina', 'quiero desaparecer el insomnio']) {
+    for (const x of ['quiero desaparecer mis ojeras', 'no vale la pena seguir intentando con pastillas', 'hay riesgo de sobredosis con melatonina', 'quiero desaparecer el insomnio', 'quiero desaparecer las pesadillas', 'no vale la pena seguir probando', 'no vale la pena seguir con el libro', '¿puede causar sobredosis?', '¿hay riesgo de sobredosis con el clonazepam?', '¿cuál es la dosis máxima de melatonina?', '¿cuánto cuesta el libro? tomo melatonina']) {
       const w = nuevo();
       saludar(w);
       const t = hablar(w, ANA, mTexto(x));
@@ -749,7 +749,7 @@ describe('crisis emocional: se corta la venta, hay texto cálido, botón y aviso
       expect(fichaDe(w, ANA)['riesgo'], x).toBe(false);
       expect(t.mensajes[0]!.cuerpo, x).not.toMatch(/Siento mucho que estés pasando por esto/);
     }
-    for (const x of ['quiero desaparecer del mundo', 'quiero desaparecer para siempre', 'no vale la pena seguir viviendo', 'ya no vale la pena seguir con mi vida', 'me voy a tomar una sobredosis', 'voy a tomar todas las pastillas']) {
+    for (const x of ['quiero desaparecer del mundo', 'quiero desaparecer para siempre', 'quiero desaparecer', 'solo quiero desaparecer', 'a veces quiero desaparecer', 'quiero desaparecer, ya no puedo más', 'me dan ganas de desaparecer', 'quisiera desaparecer y no volver', 'no vale la pena seguir', 'ya no vale la pena seguir', 'siento que no vale la pena seguir.', 'no vale la pena seguir así', 'tomé una sobredosis', 'me tomaría una sobredosis', 'pienso en una sobredosis', 'pensé en una sobredosis', 'me tomaría todas las pastillas', 'quiero dormir y no despertar', 'me quiero morir', 'quiero acabar con todo', 'no quiero seguir viviendo', 'no vale la pena seguir viviendo', 'ya no vale la pena seguir con mi vida', 'me voy a tomar una sobredosis', 'voy a tomar todas las pastillas']) {
       const w = nuevo();
       saludar(w);
       const t = hablar(w, ANA, mTexto(x));
