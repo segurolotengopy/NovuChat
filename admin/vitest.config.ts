@@ -124,6 +124,7 @@ export const SUITES_PURAS = [
   'pruebas/modulos/catalogo-web/carrito-podado.test.ts',
   'pruebas/modulos/catalogo-web/retencion-fichas.test.ts',
   'pruebas/modulos/catalogo-web/sitio-publico.test.ts',
+  'pruebas/modulos/catalogo-web/area-inicial.test.ts',
   'pruebas/ci-calidad-filtro.test.ts',
   'pruebas/citas-a-calendario.test.ts',
   'pruebas/central/cobrador-doble.test.ts',
