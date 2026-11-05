@@ -144,7 +144,7 @@ export async function ejecutar(cfg, deps, log = (t) => console.log(t)) {
   // Una ejecución que empezó ANTES del PUT y termina después guarda su propio staticData y puede reponer las fichas viejas: se espera más que la ejecución más larga y se relee.
   if (deps.esperar) await deps.esperar(ESPERA_FINAL_MS);
   const tarde = (await deps.leer()).staticData?.global?.[cfg.clave] ?? {};
-  if (Object.keys(tarde).length > esperado) { log('\n  ✗ Tras la espera, las fichas reaparecieron (una ejecución en curso repuso el estado): corra el script de nuevo con poco tráfico.\n'); return 3; }
+  if (r.objetivo.some((k) => k in tarde)) { log('\n  ✗ Tras la espera, las fichas reaparecieron (una ejecución en curso repuso el estado): corra el script de nuevo con poco tráfico.\n'); return 3; }
   log('\n  ✓ Fichas borradas y releídas (también tras la espera). El resto del flujo y del estado no cambió.\n');
   return 0;
 }

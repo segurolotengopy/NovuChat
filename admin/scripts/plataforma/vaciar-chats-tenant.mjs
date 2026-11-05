@@ -158,7 +158,7 @@ async function principal() {
     listar: async (c) => leer(await db.collection(`tenants/${cfg.tenant}/${c}`).listDocuments()),
     listarSub: async (ruta, s) => leer(await db.doc(ruta).collection(s).listDocuments()),
     contar: async (c) => (await db.collection(`tenants/${cfg.tenant}/${c}`).count().get()).data().count,
-    borrar: async (rutas) => { const w = db.bulkWriter(); const res = await Promise.allSettled(rutas.map((r) => w.delete(db.doc(r)))); await w.close(); return res.filter((x) => x.status === 'rejected').length; },
+    borrar: async (rutas) => { const w = db.bulkWriter(); const ps = rutas.map((r) => w.delete(db.doc(r))); const [res] = await Promise.all([Promise.allSettled(ps), w.close()]); return res.filter((x) => x.status === 'rejected').length; }, // BulkWriter solo envía el último lote al cerrar: se espera junto con close()
     auditar: async (c) => { await db.collection(`tenants/${cfg.tenant}/auditoria`).add({ accion: 'vaciar_chats', en: Timestamp.now(), ...c }); },
   });
   process.exit(codigo);

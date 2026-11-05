@@ -218,6 +218,12 @@ describe('V2. vaciar-memoria-flujo', () => {
     expect(await memoria.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), m.deps, () => {})).toBe(3);
     expect(esperas).toBe(1);
   });
+  it('aplicar espera ESPERA_FINAL_MS, y una ficha NUEVA escrita durante la espera no es falsa alarma (solo cuentan las claves borradas)', async () => {
+    const m = mundo(); const esperado: number[] = [];
+    (m.deps as any).esperar = async (ms: number) => { esperado.push(ms); m.vivo.staticData.global.rroca = { '59170000099': { historial: [] } }; };
+    expect(await memoria.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), m.deps, () => {})).toBe(0);
+    expect(esperado).toEqual([memoria.ESPERA_FINAL_MS]);
+  });
   it('NEGADO: si cambió connections o settings entre las lecturas, no escribe', async () => {
     const m = mundo(); let n = 0; const leer = m.deps.leer;
     m.deps.leer = async () => { const v = await leer(); n += 1; if (n === 2) v.settings = { executionOrder: 'v0' }; return v; };
