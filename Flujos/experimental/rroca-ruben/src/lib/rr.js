@@ -90,7 +90,7 @@ function rrParrafos(texto) {
 // acreditación bancaria), sale el mínimo. `CB_PROHIBIDAS` y `cbCanon` son del hueco `cobro.js`.
 // Además (PR-1, revisión): la SALUD vive también aquí, en código y no solo en el prompt (nunca «sin pastillas», «curar», «desde la primera noche» ni «garantizado») y el cobro de este flujo es REAL, así que ningún texto dice «simulado»
 // (`RR_SALUD_PROHIBIDA`, `RR_SIMULADO`). Es la barrera final de TODO lo que sale al cliente, no solo de lo que redacta el modelo.
-const RR_SALUD_PROHIBIDA = /\b(?:sin (?:pastillas|medicamentos|medicacion)|cur(?:a|ar|an|arte|acion)|desde la primera noche|garantiz\w*)\b/;
+const RR_SALUD_PROHIBIDA = /\b(?:sin (?:pastillas?|farmacos?|medicamentos?|medicacion)|cur(?:a|o|as|an|ar|aras?|are|arte|arse|ado|ada|acion)|desde la primera noche|garantiz\w*)\b/;
 const RR_SIMULADO = /\bsimulad[oa]s?\b/;
 function rrSeguro(texto) {
   if (RR_NIEGA_IA.test(rrNorm(texto))) return rrParrafos(RR_SALUDO_MINIMO);
@@ -385,8 +385,18 @@ const RR_CRISIS = new RegExp([
   '\\b(nadie|a nadie) (me )?(extranaria|extranara|va a extranar|le importo|le importaria)\\b|\\bsoy una carga para (todos|mi familia|los demas)\\b',
   '\\b(tomarme (todas )?las pastillas|tomar todas las pastillas|(?:tomarme|tomar|tomo|me tomo|voy a tomar) (?:una )?sobredosis)\\b',
 ].join('|'));
+// Reglas de seguridad de las personas (revisión de seguridad del PR #795): ante la duda, CRISIS. Tres casos que una lista de frases cerradas dejaba pasar:
+//  · «sobredosis» ES crisis («tomé una sobredosis», «pienso en una sobredosis») salvo una pregunta informativa clara («riesgo de sobredosis con melatonina», «¿puede causar sobredosis?», «dosis máxima»), que va a la derivación `medica`;
+//  · «quiero desaparecer» sin complemento, o con puntuación o «ya no puedo» detrás, ES crisis; solo se excluye «desaparecer» + un objeto cotidiano (ojeras, el insomnio, las pesadillas…);
+//  · «no vale la pena seguir» ES crisis salvo «seguir intentando / probando / con pastillas / con el libro…».
+const RR_SOBREDOSIS_INFORMATIVA = /\b(?:riesgo|peligro) de sobredosis\b|\b(?:puede|puedo|pueden|podria|podrian) (?:causar|provocar|dar|haber|tener) (?:una )?sobredosis\b|\bcausa(?:r)? (?:una )?sobredosis\b|\bdosis maxima\b|\bque es (?:una )?sobredosis\b/;
+const RR_DESAPARECER = /\b(?:quiero|quisiera|prefiero|solo quiero|solo quisiera|me dan ganas de|ojala pudiera|deseo) desaparecer\b(?! (?:(?:mis|mi|el|la|los|las|esas|esos|estas|estos|este|esta|ese|esa|un|una|unas|unos|del todo el|de mi cara las) )?(?:ojeras?|insomnio|cansancio|pesadillas?|ansiedad|dolor\w*|ronquidos?|manchas?|arrugas?|ruido|estres|preocupaciones|pensamientos|despertares|ojos)\b)(?! (?:mis|mi|tu|tus|el|la|los|las|esas|esos|estas|estos|este|esta|ese|esa|unas|unos) \w)/;
+const RR_NO_VALE_SEGUIR = /\bno vale la pena seguir\b(?! (?:intentando|probando|tomando|gastando|buscando|leyendo|escuchando|pagando|comprando|insistiendo|con (?:pastillas|el|los|las|mis|estas|estos|esas|esos|un|una|la (?!vida))\b))/;
+const RR_CRISIS_EXTRA = /\b(?:me )?tomaria (?:todas )?las pastillas\b|\bdormir y no despertar(?:me)?\b|\bquedarme dormid[oa] y no despertar\b/;
 function rrEsCrisis(norm) {
-  return RR_CRISIS.test(String(norm || ''));
+  const n = String(norm || '');
+  if (RR_CRISIS.test(n) || RR_DESAPARECER.test(n) || RR_NO_VALE_SEGUIR.test(n) || RR_CRISIS_EXTRA.test(n)) return true;
+  return /\bsobredosis\b/.test(n) && !RR_SOBREDOSIS_INFORMATIVA.test(n);
 }
 // El modelo puede marcar una crisis que las raíces no vieron: contesta SOLO la palabra RIESGO (el texto lo pone el código).
 function rrEsMarcaRiesgo(crudo) {
@@ -450,7 +460,7 @@ function rrDerivacion(n, ctx) {
   if (/\bno (puedo|logro|me deja|consigo) (abrir|descargar|entrar|acceder|escuchar|reproducir)\b|\bno abre\b|\bno se (abre|escucha|reproduce|descarga)\b|\b(link|enlace|pdf|audio|archivo) (roto|no (abre|funciona|carga|se abre|se escucha))\b/.test(n)) return { clave: 'acceso_material', motivo: 'no puede abrir el PDF o el audio' };
   // Pregunta médica ESPECÍFICA: un medicamento (dejarlo, mezclarlo, la dosis) o una condición de salud concreta. Una mención general («no quiero depender de pastillas») sin pregunta no deriva.
   const medicamento = /\b(dosis|sobredosis|medicament\w*|medicacion|pastilla\w*|somnifer\w*|melatonina|clonazepam|alprazolam|zolpidem|lorazepam|diazepam|trazodona|antidepresiv\w*|ansiolitic\w*|psiquiatr\w*)\b/.test(n);
-  const accionMedica = /\b(dejar|deje|dejo|suspender|suspendo|receta|recetado|recetada|recetaron|mezclar|combinar|reemplazar|sustituir|bajar|subir|cambiar|interfiere|compatible|junto con|cuanto)\b/.test(n);
+  const accionMedica = /\b(dejar|deje|dejo|suspender|suspendo|receta|recetado|recetada|recetaron|mezclar|combinar|reemplazar|sustituir|bajar|subir|cambiar|interfiere|compatible|dosis)\b/.test(n);
   const condicion = /\b(tengo|padezco|sufro de|me diagnosticaron|me diagnosticaron con|diagnostico de) (apnea|insomnio cronico|depresion|ansiedad|narcolepsia|trastorno\w*|bipolaridad|epilepsia|hipertension|diabetes|cancer|fibromialgia|sindrome\w*)\b|\b(embarazada|embarazo|lactancia)\b/.test(n);
   if ((medicamento && accionMedica) || /\bsobredosis\b/.test(n) || condicion) return { clave: 'medica', motivo: 'pregunta médica específica' };
   return null;
