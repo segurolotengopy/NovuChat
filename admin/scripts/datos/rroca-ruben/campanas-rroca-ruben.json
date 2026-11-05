@@ -1,59 +1,40 @@
 {
-  "_fuente": "Los 5 anuncios de la parte 1 de «Anuncios de Rubén: lo que el asistente dirá según el anuncio» (23/10/2026), con los ángulos APROBADOS tal cual. Son DATO del negocio (módulo Campañas de la consola): el flujo no lleva ninguno escrito. Sin montos, sin enlaces: el precio sale siempre del catálogo (productoId). Tres anuncios del código anterior se RETIRARON (no están aquí).",
+  "_fuente": "Los 3 artes de anuncio y la portada de «Noches Sin Insomnio» (04/11/2026), con los ángulos de apertura de la guía B del MD de Rubén. Son DATO del negocio (módulo Campañas de la consola): el flujo no lleva ninguno escrito. Sin montos, sin enlaces y sin promesas de resultado: el precio sale siempre del catálogo. Los 5 anuncios del libro anterior (IA para Emprendedores) se RETIRARON. Los anuncios no llevan `productoId`: la charla abre con su ángulo y el precio solo se dice si el cliente lo pide.",
   "_uso": "node admin/scripts/datos/rroca-ruben/cargar-campanas.mjs --proyecto <id> --tenant rroca-ruben [--archivo <json>]   (en SECO por defecto; --aplicar escribe y lo hace el coordinador con la autorización de Andres)",
   "tenant": "rroca-ruben",
   "diasDeVigencia": 180,
   "anuncios": [
     {
-      "id": "asistente-de-negocio",
-      "texto": "Hola Rubén, tengo una consulta sobre el libro IA para Emprendedores",
+      "id": "tres-doce-am",
       "titulares": [
-        "Convierte la IA en tu asistente de negocio",
-        "Más ideas · Más clientes · Más tiempo para ti"
+        "3:12 a. m.",
+        "Un método de 14 eslabones para ordenar tus noches"
       ],
-      "productoId": "libro-bonos",
-      "angulo": "Habla de los capítulos 9 (asistente personal) y 11 (equipo virtual) y pregunta de qué es su emprendimiento."
+      "angulo": "Abre con empatía: a veces el problema no es la hora, sino la cuenta mental que hacemos sobre ella. Cuenta que es un método de 14 eslabones para ordenar las noches y pregunta cuál es su noche más difícil: quedarse dormido o despertar de madrugada."
     },
     {
-      "id": "usando-la-ia-realmente",
-      "texto": "Hola Rubén, tengo una consulta sobre los bonos del libro IA para Emprendedores",
+      "id": "mente-hace-cuentas",
       "titulares": [
-        "¿Estás usando la IA realmente para tu negocio?",
-        "¿Estás usando la IA mal?",
-        "La mayoría de emprendedores solo la usa para escribir textos"
+        "La mente hace cuentas de madrugada",
+        "Aprende a bajarle el ruido"
       ],
-      "productoId": "libro-bonos",
-      "angulo": "Reconoce que ya usa IA y no le saca provecho; pregunta para qué la usa hoy y qué quiere lograr."
+      "angulo": "Conecta con acostarse cansado mientras la mente repasa el día o calcula las horas que quedan. Comenta que el libro enseña a bajar ese ruido con ejercicios sencillos y pregunta qué le cuesta más apagar por las noches."
     },
     {
-      "id": "que-publicar",
-      "texto": "Hola Rubén, tengo una consulta sobre el contenido para redes del libro IA para Emprendedores",
+      "id": "suelta-el-calculo",
       "titulares": [
-        "¿No sabes qué publicar?",
-        "Deja de inventar. Aprende a usar la IA."
+        "Suelta el cálculo",
+        "Rutinas simples para tus noches"
       ],
-      "productoId": "libro-bonos",
-      "angulo": "Habla de contenido: capítulo 6 y el bono de 100 prompts. Pregunta a qué se dedica y en qué red publica."
+      "angulo": "Destaca ir un paso a la vez: un capítulo corto, un ejercicio práctico y recién el siguiente eslabón. Pregunta si quiere que le cuentes cómo funciona y cuáles son las opciones para empezar."
     },
     {
-      "id": "tiempo-automatizar",
-      "texto": "Hola Rubén, tengo una consulta sobre los capítulos del libro IA para Emprendedores",
+      "id": "portada-del-libro",
       "titulares": [
-        "¿Cuánto tiempo pierdes en tareas que podrías automatizar con IA?"
+        "Noches Sin Insomnio",
+        "Libro · Bono · Audiolibro · Meditaciones"
       ],
-      "productoId": "libro-bonos",
-      "angulo": "Habla del Mapa de automatización y los capítulos 8 y 10; pregunta qué tarea repetitiva le quita más tiempo."
-    },
-    {
-      "id": "chatgpt-sin-saber-usarlo",
-      "texto": "Hola Rubén, tengo una consulta sobre cómo aplicar la IA a mi negocio con el libro IA para Emprendedores",
-      "titulares": [
-        "¿Ya tienes ChatGPT… pero no sabes cómo usarlo para tu negocio?",
-        "Tener acceso a una herramienta no es lo mismo que saber aplicarla"
-      ],
-      "productoId": "libro-bonos",
-      "angulo": "Explica que no es aprender una herramienta sino aplicarla a procesos reales con el Checklist de 7 días; pregunta a qué se dedica."
+      "angulo": "Explica con claridad que el método reúne el libro con 14 eslabones, un bono, el audiolibro y las meditaciones guiadas, y pregunta cuál se adapta mejor a lo que busca. No es un tratamiento médico ni promete resultados."
     }
-  ],
-  "_advertenciaTexto": "TEMPORAL (25/10/2026): el `texto` de cada anuncio es una CONSULTA SOBRE EL LIBRO (la del primero es el prellenado real de la landing; las otras cuatro son variantes naturales de esa consulta, sin precios), puesta SOLO para que el revisor de modelo del servidor no rechace el anuncio por texto vacío; el servidor rechazó los prellenados del Pack, los videos y el Closer por traer precios que no respalda o la palabra «Prompt». Los anuncios de Rubén se reconocen por TITULAR de imagen: el texto NO reconoce nada porque el flujo no cablea campanasActivas. AL CABLEAR campanasActivas POR TEXTO DE ENTRADA HAY QUE REVISAR ESTOS TEXTOS: un anuncio podría activarse con un mensaje que no es suyo. Se quitan cuando el servidor acepte anuncios solo con titulares."
+  ]
 }

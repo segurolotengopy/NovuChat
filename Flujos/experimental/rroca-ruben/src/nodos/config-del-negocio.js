@@ -5,9 +5,7 @@
 //   409            -> SUSPENDIDO: es una respuesta válida, no un error;
 //   otra           -> no se pudo saber -> respaldo de `Config base`.
 //
-// DE LA CONSOLA salen SOLO (PR-1): el nombre del negocio, el número de recepción (el de Rubén), el nombre del asistente, el trato y la atención (los umbrales de uso extendido).
-// El catálogo y el cobro entran en PR-2; el precio vive solo en el catálogo. Este nodo es una COPIA ADAPTADA de `chat-novuchat/src/nodos/config-del-negocio.js` (HUECO declarado en
-// PROPIO.md): se quitaron la oferta (planes y cargos), la planilla y los datos del chat, y se conservaron BYTE A BYTE los bloques de lectura de la respuesta, de atención y del modo prueba.
+// DE LA CONSOLA salen SOLO: el nombre del negocio, el número de recepción, los prefijos permitidos, la atención (los umbrales de uso extendido) y los ANUNCIOS (a lo más 20, solo en la rama 200). El catálogo y el cobro NO pasan por este nodo.
 
 const base = cnPrimero('Config base') || {};
 const carga = cnPrimero('Carga de entrada') || {};
@@ -22,16 +20,14 @@ const util = (v) => (typeof v === 'string' && v.trim() !== '') ? v.trim() : unde
 const soloLlenos = (o) => Object.fromEntries(Object.entries(o).filter((par) => par[1] !== undefined));
 // Un marcador sin llenar (`REEMPLAZAR_…`) no es un valor.
 const valor = (v) => (typeof v === 'string' && !/^REEMPLAZAR_/.test(v.trim())) ? v.trim() : '';
-// Texto de la consola que va a un mensaje: una línea, sin corchetes ni llaves ni los delimitadores del turno.
+// Texto de la consola que va al prompt o a un mensaje: una línea, sin corchetes ni llaves ni los delimitadores del turno.
 const linea = (v, max) => String(v === undefined || v === null ? '' : v)
   .replace(/<<<|>>>/g, '').replace(/[\[\]{}]/g, '')
   .replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, max);
 
-// El enlace de Google Maps de la Consola (`datosDelNegocio.direccionMaps`): LA MISMA regla que el servidor (https, dominio de mapas de Google, hasta 200 caracteres, sin espacios). Es el ÚNICO enlace que pasa.
+// El enlace de Google Maps de la Consola (`datosDelNegocio.direccionMaps`): LA MISMA regla que el servidor (https, dominio de mapas, hasta 200 caracteres, sin espacios). Es el ÚNICO enlace que pasa; los demás se descartan.
 const ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
 const enlaceDeMapa = (v) => (typeof v === 'string' && v.trim().length <= 200 && ENLACE_DE_MAPA.test(v.trim()) ? v.trim() : '');
-// Un texto de la Consola que sea (o lleve) un enlace no es una dirección.
-const sinEnlace = (v) => (/[\u00AD\u200B-\u200F\u202A-\u202E\u2060\uFEFF]|https?:|www\.|wa\.me|maps|goo\.gl|\b[a-z0-9-]+\.(?:com|net|org|bo|ly|me|io|app|link|gl)\b(?:\/|$)/i.test(String(v)) ? '' : v);
 
 // --- ATENCIÓN: los umbrales de uso extendido (el servidor decide; este nodo obedece) ---
 const at = (codigo === 200 && cuerpo.atencion && typeof cuerpo.atencion === 'object') ? cuerpo.atencion : {};
@@ -44,12 +40,6 @@ const atencion = {
   atencionVenceEn: util(at.ventanaVenceEn) || '',
 };
 
-// --- LOS ANUNCIOS del negocio (módulo Campañas, 23/10/2026): son DATO de la Consola, ya vigentes y aprobados; el flujo no lleva ninguno escrito. Solo con una respuesta 200 del panel; a lo más 20, cada uno con un id y su lista de titulares.
-// «Preparar imagen» (módulo común) y «Decidir turno» los leen de aquí. Sin anuncios (el panel no responde o el negocio no cargó ninguno) la lista va vacía y el flujo sigue: una imagen de publicidad se describe, sin ángulo.
-const anuncios = (codigo === 200 && Array.isArray(cuerpo.anuncios))
-  ? cuerpo.anuncios.filter((a) => a && typeof a === 'object' && !Array.isArray(a) && typeof a.id === 'string' && a.id.trim() !== '' && Array.isArray(a.titulares)).slice(0, 20)
-  : [];
-
 // --- Lo de `Config base` (respaldo) ---
 const deBase = {
   nombreNegocio: linea(valor(base.nombreNegocio), 60),
@@ -57,50 +47,50 @@ const deBase = {
   prefijosPermitidos: valor(base.prefijosPermitidos) || '591',
   mensajeComercioSuspendido: linea(valor(base.mensajeComercioSuspendido), 300)
     || 'En este momento no podemos atenderte por este medio. Gracias por escribirnos.',
-  nombreAsistente: '',
-  trato: 'tu',
 };
 
 let cfg;
 if (codigo === 409) {
-  cfg = Object.assign({}, deBase, atencion, {
+  cfg = {
+    ...deBase, ...atencion,
     estadoComercio: 'suspendido',
     // Texto neutro del panel: no menciona pagos ni deudas.
     mensajeComercioSuspendido: linea(util(cuerpo.mensajeCortesia), 300) || deBase.mensajeComercioSuspendido,
     configDeLaConsola: false, panelDice: 'no operativo',
-  });
+  };
 } else if (!(codigo === 200 && typeof cuerpo.tenantId === 'string')) {
-  cfg = Object.assign({}, deBase, atencion, {
+  cfg = {
+    ...deBase, ...atencion,
     estadoComercio: 'operativo', configDeLaConsola: false, panelSinRespuesta: true, codigoDelPanel: Number.isFinite(codigo) ? codigo : 0,
-  });
+  };
 } else {
   const dn = cuerpo.datosDelNegocio && typeof cuerpo.datosDelNegocio === 'object' ? cuerpo.datosDelNegocio : {};
   const op = cuerpo.operacion && typeof cuerpo.operacion === 'object' ? cuerpo.operacion : {};
-  const voz = cuerpo.voz && typeof cuerpo.voz === 'object' ? cuerpo.voz : {};
   const recepcion = util(op.numeroRecepcion);
   const deLaConsola = soloLlenos({
     nombreNegocio: util(dn.nombreNegocio) ? linea(dn.nombreNegocio, 60) : undefined,
+    // La ubicación (02/11/2026): la dirección en texto (sin enlaces) y el enlace de Maps, que `enlaceDeMapa` (misma regla que el servidor; `rrEnlaceDeMapa` la repite al usarlo) comprueba aquí. Sin datos, el flujo no inventa nada: deriva.
+    direccion: util(dn.direccion) && !/https?:|www\.|wa\.me|maps|goo\.gl|\b[a-z0-9-]+\.(?:com|net|org|bo|ly|me|io|app|link|gl)\b|[\u200B-\u200F\u2060\uFEFF]/i.test(dn.direccion) ? linea(dn.direccion, 160) || undefined : undefined,
+    direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,
     // Solo dígitos: es el destino del botón a una persona.
     numeroRecepcion: recepcion ? (cnDigitos(recepcion) || undefined) : undefined,
     prefijosPermitidos: Array.isArray(op.prefijosPermitidos) && op.prefijosPermitidos.length ? op.prefijosPermitidos.join(',') : undefined,
-    // La ubicación (Consola): la dirección en texto (sin enlaces) y el enlace de Maps (solo el válido). Sin dato no se inventa nada: «Armar mensajes» deriva a Rubén.
-    direccion: linea(sinEnlace(util(dn.direccion) || ''), 160) || undefined,
-    direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,
   });
   const estadoDeLaConsola = util(cuerpo.estadoComercio);
-  cfg = Object.assign({}, deBase, deLaConsola, atencion, {
-    // Mandan aunque vengan vacíos: el nombre del asistente. El trato es una frase de la consola (`usted`, `tú`, `vos`, neutro): solo «usted» cambia el trato.
-    nombreAsistente: linea(voz.nombreAsistente, 40),
-    trato: /usted/i.test(String(voz.tratamiento || '')) ? 'usted' : 'tu',
+  // LOS ANUNCIOS (campañas vigentes de la Consola, con sus titulares, su ángulo y su producto): el módulo común `anuncio-por-titular.js` (en «Preparar imagen») decide por CÓDIGO si la imagen de un cliente es de uno de ellos.
+  // A lo más 20; solo objetos (lo que no lo es se descarta). Sin anuncios en la respuesta, la lista va vacía y todo queda como antes.
+  const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === 'object' && !Array.isArray(a)).slice(0, 20) : [];
+  cfg = {
+    ...deBase, ...deLaConsola, ...atencion, anuncios,
     estadoComercio: estadoDeLaConsola === 'activo' ? 'operativo' : (estadoDeLaConsola ? 'suspendido' : 'operativo'),
     configDeLaConsola: true,
-  });
+  };
 }
 
-// --- el MODO PRUEBA ---
+// --- EL MODELO y el MODO PRUEBA ---
 const prueba = carga.prueba && carga.prueba.modoPrueba === true ? carga.prueba : null;
-// S7: `telefonosDePrueba` (opcional, en «Config base») limita a qué números puede dirigirse una ejecución de PRUEBA: si el teléfono pedido no está en la lista, no se envía nada. En ESTE flujo se NIEGA POR DEFECTO
-// (diferencia declarada con chat-novuchat): sin lista, o con el marcador sin llenar, ningún teléfono está permitido.
+// S7: `telefonosDePrueba` (en «Config base») limita a qué números puede dirigirse una ejecución de PRUEBA: si el teléfono pedido no está en la lista, no se envía nada.
+// NIEGA POR DEFECTO: sin lista, o con el marcador sin llenar, ningún teléfono está permitido en el JSON de prueba.
 const permitidos = valor(base.telefonosDePrueba).split(',').map((x) => cnDigitos(x)).filter((x) => x.length >= 6);
 const telefonoDePrueba = prueba ? cnDigitos(prueba.telefonoDePrueba) : '';
 const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;
@@ -110,14 +100,16 @@ const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDe
 const idDeLaPlanilla = /^[A-Za-z0-9_-]{25,100}$/.test(valor(base.planillaProspectosId)) ? valor(base.planillaProspectosId) : '';
 const hojaDeLaPlanilla = idDeLaPlanilla === '' ? '' : (linea(valor(base.planillaProspectosHoja), 100) || 'Leads_CRM');
 
-return [{ json: Object.assign({}, cfg, {
+return [{ json: {
+  ...cfg,
   planillaProspectosId: idDeLaPlanilla,
   planillaProspectosHoja: hojaDeLaPlanilla,
-  anuncios: anuncios,
+  // El modelo es un dato de `Config base` (solo un id con forma de modelo de Gemini).
+  modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/.test(String(base.modelo || '')) ? String(base.modelo) : 'gemini-3.5-flash-lite',
   waGraphVersion: /^v\d{1,2}\.\d{1,2}$/.test(String(base.waGraphVersion || '')) ? String(base.waGraphVersion) : 'v26.0',
   phoneNumberId: String(carga.phoneNumberId || ''),
   // El modo prueba. Solo lo trae `Carga de entrada` cuando corrió «Entrada de prueba».
   modoPrueba: prueba !== null,
   telefonoDePrueba: prueba && telefonoPermitido ? telefonoDePrueba : '',
   enviarDeVerdad: prueba ? prueba.enviarDeVerdad === true && telefonoPermitido : true,
-}) }];
+} }];

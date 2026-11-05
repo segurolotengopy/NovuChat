@@ -1,5 +1,5 @@
 // =============================================================================
-// UTILIDADES COMUNES DE LOS NODOS DE LA «VENTA DIGITAL DE RUBÉN» (prefijo `cn`)
+// UTILIDADES COMUNES DE LOS NODOS DEL FLUJO DE RUBEN (prefijo `cn`)
 // =============================================================================
 // El constructor las pega entre la librería (`rr.js`, y las `cm*` en los nodos que las piden) y el código de cada nodo. JavaScript plano: sin `require`, `URL`,
 // `Buffer` ni `crypto`, y nada de red. Lo que se lee de otro nodo se lee POR NOMBRE y solo si corrió (`isExecuted`): un nodo que no corrió no se lee con `.item`.
@@ -75,17 +75,17 @@ function cnJsonDeGemini(j) {
 function cnClaveValida(from) {
   return /^\d{6,20}$/.test(String(from || ''));
 }
-// Las fichas de los teléfonos (`staticData.global.rroca`). Un nodo que SOLO LEE no escribe nada en los datos estáticos. Los que escriben (con `escribir` verdadero) crean el mapa si falta.
+// Las fichas de los teléfonos (`staticData.global.ruben`). Un nodo que SOLO LEE no escribe nada en los datos estáticos.
 function cnMapaDeFichas(escribir) {
   let sd = null;
   try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }
   if (!sd) return { sd: null, mapa: {} };
-  const valido = sd.rroca && typeof sd.rroca === 'object' && !Array.isArray(sd.rroca);
+  const valido = sd.ruben && typeof sd.ruben === 'object' && !Array.isArray(sd.ruben);
   if (!valido) {
     if (escribir !== true) return { sd: sd, mapa: {} };
-    sd.rroca = {};
+    sd.ruben = {};
   }
-  return { sd: sd, mapa: sd.rroca };
+  return { sd: sd, mapa: sd.ruben };
 }
 function cnFichaDe(mapa, from) {
   return cnClaveValida(from) && Object.prototype.hasOwnProperty.call(mapa, from) ? mapa[from] : null;

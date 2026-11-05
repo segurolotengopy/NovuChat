@@ -4,9 +4,11 @@
 // Formas que acepta:
 //   1. el disparador de WhatsApp: {messages, metadata, contacts} en la raíz;
 //   2. un Webhook: lo mismo dentro de `body`;
-//   3. la carga completa de la Cloud API: {entry:[{changes:[{value:{...}}]}]}, en la raíz o dentro de `body`;
-//   4. la del receptor: si CORRIÓ «Entrega del receptor», el evento es su `body.value` (y si `body.field` viene, tiene que ser `messages`: otro campo —un cambio de plantilla, de calidad— no es un mensaje). Ese nodo manda
-//      sobre las otras tres: lo que pasa por «Verificar firma con el receptor» ya no es el evento sino su veredicto, y NUNCA se lee como un mensaje.
+//   3. la carga completa de la Cloud API: {entry:[{changes:[{value:{...}}]}]}, en la raíz o dentro de `body`.
+//
+// 4. LA DEL RECEPTOR: si CORRIÓ «Entrega del receptor», el evento es su `body.value`, y si `body.field` viene, tiene que ser `messages` (otro campo —un cambio de plantilla, de calidad— no es
+//    un mensaje). Ese nodo manda sobre las otras formas: lo que pasa por «Verificar firma con el receptor» ya no es el evento sino su veredicto, que nunca se lee como mensaje.
+//    Fuera del receptor, el `body` solo se lee si CORRIÓ «Entrada de prueba»: ningún otro Webhook puede hacerse pasar por un mensaje de WhatsApp.
 //
 // EL MODO PRUEBA NO SE LEE DE LA CARGA. Solo lo activa el nodo «Entrada de prueba» (un Webhook que el JSON de producción NO tiene): se pregunta si ese nodo corrió y se
 // lee SU cuerpo, con `=== true`. Una carga de WhatsApp con `modoPrueba` adentro —en la raíz, en el mensaje o en un texto— no lo activa jamás.
@@ -40,13 +42,12 @@ const prueba = cnPrueba();
 const esperado = String((cnPrimero('Config base') || {}).phoneNumberIdEsperado || '');
 const receptor = cnPrimero('Entrega del receptor');
 const cuerpoReceptor = receptor && receptor.body && typeof receptor.body === 'object' ? receptor.body : {};
+const valorReceptor = cuerpoReceptor.value && typeof cuerpoReceptor.value === 'object' && (cuerpoReceptor.field === undefined || cuerpoReceptor.field === 'messages') ? cnValorDeMeta(cuerpoReceptor.value) : null;
 const salida = [];
 for (const it of $input.all()) {
   const j = (it && it.json) || {};
-  const b = !receptor && j.body && typeof j.body === 'object' ? j.body : null;
-  const v = receptor
-    ? (cuerpoReceptor.value && typeof cuerpoReceptor.value === 'object' && (cuerpoReceptor.field === undefined || cuerpoReceptor.field === 'messages') ? cnValorDeMeta(cuerpoReceptor.value) : null)
-    : (cnValorDeMeta(j) || cnValorDeMeta(b));
+  const b = prueba && j.body && typeof j.body === 'object' ? j.body : null;
+  const v = receptor ? valorReceptor : (cnValorDeMeta(j) || cnValorDeMeta(b));
   const metadata = (v && v.metadata) || (j.metadata) || (b && b.metadata) || {};
   const messages = v && Array.isArray(v.messages) ? v.messages : [];
   const statuses = v && Array.isArray(v.statuses) ? v.statuses : [];
