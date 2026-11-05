@@ -604,6 +604,22 @@ describe('la derivación a Rubén: texto fijo, aviso y botón', () => {
     }
   });
 
+  it('NEGANDO: tomar medicación a secas o una objeción corriente NO deriva como médica; sí deriva una acción sobre la medicación (dosis, suspender, receta)', () => {
+    for (const x of ['no quiero tomar pastillas, ¿me sirve?', 'tomo melatonina, ¿puedo usar el libro?']) {
+      const w = nuevo();
+      saludar(w);
+      const t = hablar(w, ANA, mTexto(x));
+      expect(t.avisos, x).toHaveLength(0);
+      expect(t.mensajes[0]!.cuerpo, x).not.toMatch(/pregunta de salud específica/);
+    }
+    for (const x of ['¿qué dosis de melatonina debo usar junto con el libro?', 'quiero suspender la melatonina, ¿puedo?', 'mi receta de zolpidem, ¿cómo la combino?']) {
+      const w = nuevo();
+      const t = hablar(w, ANA, mTexto(x));
+      expect(t.mensajes[0]!.cuerpo, x).toMatch(/pregunta de salud específica/);
+      expect(t.avisos, x).toHaveLength(1);
+    }
+  });
+
   it('NEGANDO: una mención general de medicación SIN pregunta, o un dolor de sueño, NO deriva (se conversa); y el texto nunca dice «sin pastillas»', () => {
     for (const x of ['no quiero depender de pastillas para dormir', 'me cuesta dormir y estoy agotada']) {
       const w = nuevo();
@@ -724,6 +740,30 @@ describe('crisis emocional: se corta la venta, hay texto cálido, botón y aviso
     }
   });
 
+  it('NEGANDO: objeciones corrientes con palabras de salud o de «desaparecer» NO son una crisis ni cortan la venta; las crisis REALES siguen disparando', () => {
+    for (const x of ['quiero desaparecer mis ojeras', 'no vale la pena seguir intentando con pastillas', 'hay riesgo de sobredosis con melatonina', 'quiero desaparecer el insomnio']) {
+      const w = nuevo();
+      saludar(w);
+      const t = hablar(w, ANA, mTexto(x));
+      expect(noContactar(t), x).toBe(false);
+      expect(fichaDe(w, ANA)['riesgo'], x).toBe(false);
+      expect(t.mensajes[0]!.cuerpo, x).not.toMatch(/Siento mucho que estés pasando por esto/);
+    }
+    for (const x of ['quiero desaparecer del mundo', 'quiero desaparecer para siempre', 'no vale la pena seguir viviendo', 'ya no vale la pena seguir con mi vida', 'me voy a tomar una sobredosis', 'voy a tomar todas las pastillas']) {
+      const w = nuevo();
+      saludar(w);
+      const t = hablar(w, ANA, mTexto(x));
+      expect(noContactar(t), x).toBe(true);
+    }
+  });
+
+  it('«sobredosis» con un medicamento va a la derivación médica (con aviso a Rubén), no a la crisis', () => {
+    const w = nuevo();
+    const t = hablar(w, ANA, mTexto('hay riesgo de sobredosis con melatonina'));
+    expect(t.mensajes[0]!.cuerpo).toMatch(/pregunta de salud específica/);
+    expect(t.avisos).toHaveLength(1);
+  });
+
   it('también en una nota de voz transcrita y en el texto leído de una captura', () => {
     const a = nuevo({ medio: { transcripcion: 'ya no quiero seguir viviendo' } });
     const ta = hablar(a, ANA, mAudio());
@@ -840,7 +880,7 @@ describe('el paso del Libro al Pack: UNA vez, solo tras el comprobante de un Lib
     const t = hablar(w, ANA, mTexto('quiero pasar al pack por 35'));
     expect(salientes(t).some((c) => c['monto'] === 35)).toBe(false);
     const u = hablar(w, ANA, mTexto('quiero el pack'));
-    if (salientes(u).some((c) => c['evento'] === 'qr_enviado')) expect(salientes(u)[0]).toMatchObject({ monto: 70 });
+    expect(salientes(u).find((c) => c['evento'] === 'qr_enviado')).toMatchObject({ monto: 70 });
   });
 
   it('NEGANDO: el Audiolibro, las Meditaciones y el Pack NO ofrecen el paso al Pack (solo Libro → Pack)', () => {
