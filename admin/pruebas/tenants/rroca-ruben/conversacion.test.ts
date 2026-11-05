@@ -214,6 +214,69 @@ describe('CASOS (c) y (d) del PDF: no garantiza; dos preguntas juntas en UN solo
 
 const BETO_DE_PRUEBA = '59100000022';
 
+describe('la crisis NO la levanta ni el cliente ni una pausa por persona que termina (seguridad, 05/11/2026)', () => {
+  const HORA = 60;
+  const esCrisis = (t: ResultadoTurno): boolean => /Siento mucho que estés pasando por esto/.test(t.mensajes[0]?.cuerpo ?? '');
+  const PAUSA = { ok: true, atencion: { estado: 'bloqueado' }, avisarRecepcion: '', pausadoPorPersona: true };
+  const mundo = (): { w: Mundo; poner: (v: J) => void } => {
+    const ing: J = { ok: true };
+    const w = nuevo({ ingesta: ing });
+    hablar(w, ANA, mTexto('hola'));
+    expect(esCrisis(hablar(w, ANA, mTexto('ya no quiero vivir')))).toBe(true);
+    w.avanzar(1);
+    return { w, poner: (v: J) => { for (const k of Object.keys(ing)) delete ing[k]; Object.assign(ing, v); } };
+  };
+  it('NEGANDO: «ya estoy bien», «gracias» o «mejor» del cliente NO levantan la protección', () => {
+    const { w } = mundo();
+    for (const dicho of ['ya estoy bien', 'gracias', 'estoy mejor, quiero el libro', 'fue un error, no pasa nada']) {
+      w.avanzar(HORA);
+      expect(esCrisis(hablar(w, ANA, mTexto(dicho))), dicho).toBe(true);
+      expect(fichaDe(w)['riesgo'], dicho).toBe(true);
+    }
+  });
+  it('NEGANDO: la pausa por persona que TERMINA (devolución, vencimiento por inactividad o por la ventana de 24 h: la ingesta no los distingue) NO levanta la protección', () => {
+    const { w, poner } = mundo();
+    poner(PAUSA);
+    expect(hablar(w, ANA, mTexto('gracias')).mensajes).toHaveLength(0);
+    poner({ ok: true });
+    w.avanzar(1);
+    const t = hablar(w, ANA, mTexto('hola, quiero el libro'));
+    expect(esCrisis(t)).toBe(true);
+    expect(fichaDe(w)['riesgo']).toBe(true);
+    expect(fichaDe(w)).not.toHaveProperty('pausaPersonaMs');
+  });
+  it('NEGANDO: una crisis NUEVA escrita durante la pausa renueva el plazo y, al terminar la pausa, la protección SIGUE', () => {
+    const { w, poner } = mundo();
+    const ms0 = fichaDe(w)['riesgoMs'] as number;
+    poner(PAUSA);
+    hablar(w, ANA, mTexto('me quiero morir'));
+    expect(fichaDe(w)['riesgoMs'] as number).toBeGreaterThan(ms0);
+    poner({ ok: true });
+    w.avanzar(HORA);
+    expect(esCrisis(hablar(w, ANA, mTexto('hola, quiero el libro')))).toBe(true);
+    expect(fichaDe(w)['riesgo']).toBe(true);
+  });
+  it('NEGANDO: el uso extendido y el bloqueo de un contacto tampoco levantan', () => {
+    for (const otra of [
+      { ok: true, atencion: { estado: 'operador', respuestasEnVentana: 20 }, avisarRecepcion: 'operador' },
+      { ok: true, atencion: { estado: 'bloqueado' }, avisarRecepcion: '', bloqueadoPorContacto: true },
+    ] as J[]) {
+      const { w, poner } = mundo();
+      poner(otra); hablar(w, ANA, mTexto('gracias'));
+      poner({ ok: true }); w.avanzar(1);
+      expect(esCrisis(hablar(w, ANA, mTexto('quiero el libro')))).toBe(true);
+    }
+  });
+  it('sin ninguna señal, la protección sigue venciendo SOLA a las 48 h de la última señal', () => {
+    const { w } = mundo();
+    w.avanzar(30 * HORA);
+    expect(esCrisis(hablar(w, ANA, mTexto('gracias')))).toBe(true);
+    w.avanzar(19 * HORA);
+    expect(esCrisis(hablar(w, ANA, mTexto('hola, quiero el libro')))).toBe(false);
+    expect(fichaDe(w)['riesgo']).toBe(false);
+  });
+});
+
 describe('la crisis se levanta sola: vence a las 48 h de la ÚLTIMA SEÑAL, no del último mensaje', () => {
   const HORA = 60;
   const hablarTras = (w: Mundo, horas: number, texto: string): ResultadoTurno => { w.avanzar(horas * HORA); return hablar(w, ANA, mTexto(texto)); };
