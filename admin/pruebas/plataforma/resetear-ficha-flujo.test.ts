@@ -51,7 +51,7 @@ describe('R1. argumentos y lista cerrada', () => {
   });
   it('NEGADO: faltan N8N_BASE_URL o N8N_API_KEY; respaldo relativo', () => {
     expect(problemas(ficha.analizarArgumentos(BASE, { TELEFONOS_PRUEBA: ENV.TELEFONOS_PRUEBA }))).toContain('N8N_BASE_URL');
-    expect(problemas(ficha.analizarArgumentos(BASE, ENV).ok ? ficha.analizarArgumentos([...BASE, '--respaldo', 'r.json'], ENV) : {}) ).toContain('absoluta');
+    expect(problemas(ficha.analizarArgumentos([...BASE, '--respaldo', 'r.json'], ENV))).toContain('absoluta');
   });
   it('la invocación completa es válida y queda en seco por omisión', () => {
     expect(ficha.analizarArgumentos(BASE, ENV).cfg).toMatchObject({ aplicar: false, tel: TEL, workflow: 'abc123XYZ' });
@@ -104,10 +104,39 @@ describe('R2. sinFicha (puro)', () => {
     expect(ficha.sinFicha(estado(), '59100000009').total).toBe(0);
     expect(ficha.sinFicha(undefined, TEL).total).toBe(0);
   });
-  it('los conteos no exponen teléfonos: los segmentos numéricos del camino salen como #', () => {
-    const r = ficha.sinFicha({ global: { [OTRO]: { sub: { [TEL]: 1 } } } }, TEL);
-    expect(JSON.stringify(r.porContenedor)).not.toMatch(/\d{6,}/);
+  it('los conteos no exponen teléfonos: segmentos numéricos y claves mixtas salen con #', () => {
+    const r = ficha.sinFicha({ global: { [`tel_${OTRO}_x`]: { [`sub_${OTRO}`]: { m: { from: TEL } } }, [OTRO]: { a: 1 } } }, TEL);
     expect(r.total).toBe(1);
+    expect(JSON.stringify(r.porContenedor)).not.toMatch(/\d{6,}/);
+    expect(Object.keys(r.porContenedor)[0]).toBe('global.tel_#_x.sub_#');
+  });
+  it('NEGADO: un `from` igual al teléfono en un contenedor (global, o un mapa que guarda fichas de otros) no lo borra entero', () => {
+    const a = ficha.sinFicha({ global: { from: TEL, rroca: { [OTRO]: { h: 1 } }, otro: 1 } }, TEL);
+    expect(a.total).toBe(0);
+    expect(a.nuevo).toEqual({ global: { from: TEL, rroca: { [OTRO]: { h: 1 } }, otro: 1 } });
+    const b = ficha.sinFicha({ global: { rroca: { from: TEL, [OTRO]: { h: 1 } }, otro: 1 } }, TEL);
+    expect(b.total).toBe(0);
+    expect(b.nuevo.global.rroca[OTRO]).toEqual({ h: 1 });
+    const c = ficha.sinFicha({ from: TEL, 'node:X': { a: 1 } }, TEL); // nunca profundidad 0 ni 1
+    expect(c.total).toBe(0);
+    expect(c.nuevo).toEqual({ from: TEL, 'node:X': { a: 1 } });
+  });
+  it('NEGADO: el teléfono anidado en la ficha de OTRO no se toca; la clave suelta en la raíz tampoco', () => {
+    const sd = { global: { x: { [OTRO]: { referidos: { [TEL]: 1 }, lista: [{ from: TEL }] } }, y: { from: OTRO, ref: { [TEL]: 1 } } }, [TEL]: { raiz: 1 } };
+    const r = ficha.sinFicha(sd, TEL);
+    expect(r.total).toBe(0);
+    expect(r.nuevo).toEqual(sd);
+  });
+  it('posibles restos: otras formas de clave se cuentan (sin imprimirse) y el resultado dice ⚠', async () => {
+    const sd = { global: { [`+${TEL}`]: { a: 1 }, [`c_${TEL}`]: { a: 1 }, lista: [TEL.slice(-8)], [TEL]: { b: 1 } } };
+    const r = ficha.sinFicha(sd, TEL);
+    expect(r.total).toBe(1);
+    expect(r.restos).toBe(3);
+    const m = mundo(); m.vivo = { ...m.vivo, staticData: { global: { [`+${TEL}`]: { a: 1 } } } };
+    const salida: string[] = [];
+    expect(await ficha.ejecutar(cfgDe(), m.deps, (t: string) => salida.push(t))).toBe(0);
+    const t = salida.join('\n');
+    expect(t).toContain('⚠'); expect(t).not.toContain('✓'); expect(t).not.toMatch(/\d{8}/);
   });
 });
 
@@ -160,6 +189,11 @@ describe('R3. ejecutar', () => {
     const m = mundo();
     const deps = { ...m.deps, esperar: async () => { m.vivo = { ...m.vivo, staticData: { global: { ...m.vivo.staticData.global, [TEL]: { vuelve: true } } } }; } };
     expect(await ficha.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), deps, () => {})).toBe(3);
+  });
+  it('NEGADO: falla si, tras el PUT, algo del resto del estado cambió', async () => {
+    const m = mundo();
+    m.deps.escribir = async (_v: any, sd: any) => { const x = JSON.parse(JSON.stringify(sd)); x.global.ajuste.a = 2; m.vivo = { ...m.vivo, staticData: x }; return 200; };
+    expect(await ficha.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), m.deps, () => {})).toBe(3);
   });
   it('NEGADO: falla si el PUT cambia los nodos o desactiva el flujo', async () => {
     const m1 = mundo();

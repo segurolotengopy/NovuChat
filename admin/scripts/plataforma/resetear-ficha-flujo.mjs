@@ -5,8 +5,13 @@
  * etapa, barreras de dos turnos). Esto borra SOLO, dentro de `staticData` (a cualquier profundidad): las claves iguales al teléfono y los
  * objetos con `from` igual al teléfono (también dentro de listas). Un teléfono distinto, aunque comparta prefijo, no se toca.
  *
+ * FORMA DE LA CLAVE. Espera el teléfono completo en dígitos, tal cual lo guarda el flujo (`messages[0].from`). Formas distintas (+591…, c_591…,
+ * solo los 8 últimos dígitos, el teléfono suelto en una lista) no se borran: se informan como «posibles restos» (sin imprimirlos) y el resultado
+ * dice ⚠ en vez de ✓. No se entra en la ficha de otro teléfono ni se borra un contenedor entero por su `from`.
+ *
  * LISTA CERRADA. El repositorio es público: los teléfonos de prueba NO están en el código. Se leen de la variable de entorno
- * `TELEFONOS_PRUEBA` (dígitos separados por coma) y `--tel` tiene que estar en ella. Sin la variable, no corre.
+ * `TELEFONOS_PRUEBA` (dígitos separados por coma) y `--tel` tiene que estar en ella. Sin la variable, no corre. La lista la declara el operador:
+ * solo protege de errores de tipeo, no es una barrera contra quien controla el entorno.
  *
  *   (con N8N_BASE_URL, N8N_API_KEY y TELEFONOS_PRUEBA en el ENTORNO del proceso) node scripts/plataforma/resetear-ficha-flujo.mjs
  *        --workflow <id> --tel <dígitos> [--aplicar --respaldo <ruta absoluta> --confirmo-produccion <id del flujo>]
@@ -22,7 +27,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { comprobarRespaldo, guardarRespaldo } from './aplicar-consola-conversaciones.mjs';
 
-export const ESPERA_FINAL_MS = 60_000;
+export const ESPERA_FINAL_MS = 150_000; // más que la ejecución más larga del flujo, como vaciar-memoria-flujo
 const CON_VALOR = ['workflow', 'tel', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar'];
 
@@ -74,30 +79,55 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
 }
 
 const esObjeto = (v) => v !== null && typeof v === 'object';
-/** Un segmento del camino que son solo dígitos podría ser el teléfono de otra persona: no se imprime. */
-const segmento = (k) => (/^\d+$/.test(k) ? '#' : k.slice(0, 40));
-const esFicha = (k, v, tel) => k === tel || (esObjeto(v) && !Array.isArray(v) && String(v.from) === tel);
+/** Un segmento del camino puede traer un teléfono (también en claves mixtas, p. ej. «tel_…»): toda secuencia de 6+ dígitos sale como #. */
+const segmento = (k) => k.replace(/\d{6,}/g, '#').slice(0, 40);
+/** Una clave de teléfono completo (solo dígitos): la ficha de ALGUIEN; si no es la del teléfono pedido, no se entra ni se toca. */
+const esClaveDeTelefono = (k) => /^\d{8,}$/.test(k);
+const canon = (v) => JSON.stringify(v, (_k, x) => (esObjeto(x) && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
 
-/** Puro: del staticData a (nuevo staticData, cuántas entradas se borran y en qué contenedor). No muta la entrada. */
+/**
+ * Puro: del staticData a (nuevo staticData, cuántas entradas se borran y en qué contenedor). No muta la entrada.
+ * Qué forma de clave espera: el teléfono COMPLETO en dígitos, tal cual lo guarda el flujo (`messages[0].from`, sin «+» ni prefijo), ya sea como
+ * clave de un mapa de fichas o como `from` de un objeto. Otras formas (+591…, c_591…, solo los 8 últimos dígitos, el teléfono suelto en una
+ * lista) NO se borran: se informan como «posibles restos» (`restos`) para que el operador las revise.
+ * Reglas de seguridad: (1) se borra por clave solo dentro de un contenedor (nunca una clave de la raíz del staticData); (2) se borra por
+ * `from` solo un VALOR de un mapa o un ELEMENTO de una lista a profundidad 2 o más (nunca `global` ni `node:*`) y nunca un objeto que
+ * guarde fichas de otros (con claves de teléfono): borraría un contenedor entero; (3) no se entra en la ficha de OTRO teléfono (clave de
+ * teléfono distinta, o `from` distinto), porque lo que haya adentro es de ese otro.
+ */
 export function sinFicha(staticData, tel) {
   const nuevo = JSON.parse(JSON.stringify(staticData ?? {}));
   const porContenedor = {};
   const anotar = (ruta) => { const n = ruta.join('.') || '(raíz)'; porContenedor[n] = (porContenedor[n] ?? 0) + 1; };
-  const recorrer = (o, ruta) => {
+  const guardaFichas = (o) => esObjeto(o) && !Array.isArray(o) && Object.keys(o).some(esClaveDeTelefono);
+  const deTelefono = (v) => esObjeto(v) && !Array.isArray(v) && 'from' in v && String(v.from) === tel && !guardaFichas(v);
+  const deOtro = (k, v) => (esClaveDeTelefono(k) && k !== tel) || (esObjeto(v) && !Array.isArray(v) && 'from' in v && String(v.from) !== tel);
+  // `prof` es la profundidad del contenedor `o` (la raíz es 0; `global` es 1).
+  const recorrer = (o, ruta, prof) => {
     if (Array.isArray(o)) {
       for (let i = o.length - 1; i >= 0; i--) {
-        if (esFicha(String(i), o[i], tel) && String(i) !== tel) { anotar(ruta.concat('[]')); o.splice(i, 1); } else if (esObjeto(o[i])) recorrer(o[i], ruta.concat('[]'));
+        if (prof >= 1 && deTelefono(o[i])) { anotar(ruta.concat('[]')); o.splice(i, 1); } else if (esObjeto(o[i]) && !deOtro('', o[i])) recorrer(o[i], ruta.concat('[]'), prof + 1);
       }
       return;
     }
     for (const k of Object.keys(o)) {
       const v = o[k];
-      if (esFicha(k, v, tel)) { anotar(ruta); delete o[k]; } else if (esObjeto(v)) recorrer(v, ruta.concat(segmento(k)));
+      if (prof >= 1 && k === tel) { anotar(ruta); delete o[k]; } else if (prof >= 1 && prof + 1 >= 2 && deTelefono(v)) { anotar(ruta); delete o[k]; } else if (esObjeto(v) && !deOtro(k, v)) recorrer(v, ruta.concat(segmento(k)), prof + 1);
     }
   };
-  if (esObjeto(nuevo)) recorrer(nuevo, []);
+  if (esObjeto(nuevo)) recorrer(nuevo, [], 0);
   const total = Object.values(porContenedor).reduce((a, b) => a + b, 0);
-  return { nuevo, total, porContenedor };
+  const sufijo = tel.slice(-8);
+  let restos = 0;
+  const buscar = (o) => {
+    for (const k of Array.isArray(o) ? o.keys() : Object.keys(o)) {
+      const v = o[k];
+      if (String(k).includes(sufijo) && !Array.isArray(o)) restos += 1;
+      if (esObjeto(v)) buscar(v); else if (typeof v === 'string' || typeof v === 'number') { if (String(v).includes(sufijo)) restos += 1; }
+    }
+  };
+  if (esObjeto(nuevo)) buscar(nuevo);
+  return { nuevo, total, porContenedor, restos };
 }
 
 /** Cuántas entradas del teléfono quedan (mismo criterio exacto que el borrado; no es una búsqueda de subcadena). */
@@ -112,7 +142,8 @@ export async function ejecutar(cfg, deps, log = (t) => console.log(t)) {
   log(`\n  ${cfg.aplicar ? 'APLICAR' : 'SECO (solo lecturas)'} · flujo «${String(vivo.name).slice(0, 60)}» activo=${vivo.active} nodos=${vivo.nodes?.length}`);
   log(`  entradas del teléfono que se borrarían: ${r.total}`);
   for (const [c, n] of Object.entries(r.porContenedor)) log(`    ${c}: ${n}`);
-  if (r.total === 0) { log('\n  ✓ Nada que borrar.\n'); return 0; }
+  log(`  posibles restos (otra forma de clave, no se borran): ${r.restos}`);
+  if (r.total === 0) { log(r.restos > 0 ? '\n  ⚠ Nada que borrar con el teléfono exacto, pero hay posibles restos: revíselos.\n' : '\n  ✓ Nada que borrar.\n'); return 0; }
   if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar --respaldo <ruta> --confirmo-produccion <id del flujo>.\n'); return 1; }
   // El GET y el PUT no son atómicos y el PUT reemplaza TODO el staticData: si una conversación escribió entre ambos, se perdería.
   const justo = await deps.leer();
@@ -130,17 +161,19 @@ export async function ejecutar(cfg, deps, log = (t) => console.log(t)) {
   const http = await deps.escribir(vivo, r.nuevo);
   const despues = await deps.leer();
   const restantes = quedan(despues.staticData, cfg.tel);
+  // Todo lo que no está en los caminos borrados tiene que seguir IGUAL (como `igualRestoDeGlobal` de vaciar-memoria-flujo).
+  const restoIgual = canon(despues.staticData ?? {}) === canon(r.nuevo);
   const nodosIguales = JSON.stringify(despues.nodes) === JSON.stringify(vivo.nodes)
     && JSON.stringify(despues.connections) === JSON.stringify(vivo.connections) && JSON.stringify(despues.settings) === JSON.stringify(vivo.settings);
   const sigueActivo = despues.active === vivo.active;
-  log(`  PUT HTTP ${http} · entradas restantes=${restantes} · nodos, conexiones y ajustes iguales=${nodosIguales} · activo=${despues.active}`);
+  log(`  PUT HTTP ${http} · entradas restantes=${restantes} · resto del estado igual=${restoIgual} · nodos, conexiones y ajustes iguales=${nodosIguales} · activo=${despues.active}`);
   if (!sigueActivo) { log(`\n  ✗ El flujo quedó ${despues.active ? 'activo' : 'DESACTIVADO'} y estaba ${vivo.active ? 'activo' : 'desactivado'}: reactívelo y revise. El respaldo permite reponer el estado.\n`); return 3; }
-  if (restantes !== 0 || !nodosIguales) { log('\n  ✗ La verificación no coincide: revise el flujo; el respaldo permite reponer el estado.\n'); return 3; }
+  if (restantes !== 0 || !nodosIguales || !restoIgual) { log('\n  ✗ La verificación no coincide: revise el flujo; el respaldo permite reponer el estado.\n'); return 3; }
   // Una ejecución que empezó ANTES del PUT y termina después guarda su propio staticData y puede reponer la ficha: se espera y se relee.
   if (deps.esperar) await deps.esperar(ESPERA_FINAL_MS);
   const tarde = await deps.leer();
   if (quedan(tarde.staticData, cfg.tel) !== 0) { log('\n  ✗ Tras la espera, la ficha reapareció (una ejecución en curso repuso el estado): corra el script de nuevo con poco tráfico.\n'); return 3; }
-  log('\n  ✓ Ficha borrada y releída (también tras la espera). El resto del flujo y del estado no cambió.\n');
+  log(r.restos > 0 ? `\n  ⚠ Ficha exacta borrada y releída, pero quedan ${r.restos} posibles restos (otra forma de clave): revíselos.\n` : '\n  ✓ Ficha borrada y releída (también tras la espera). El resto del flujo y del estado no cambió.\n');
   return 0;
 }
 
