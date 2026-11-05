@@ -127,6 +127,12 @@ describe('CASO (b) del PDF: «¿precio y devolución?» da el precio Y deriva, e
     expect(esBotonDeRuben(t)).toBe(true);
     expect(t.avisos).toHaveLength(1);
     expect(t.avisos[0]!.a).toBe(REC);
+    // La CLAVE y el motivo del aviso son los de la garantía (no `no_supo`), y un segundo «¿precio y devolución?» dentro de 30 minutos no repite el aviso.
+    expect(t.porNodo['Decidir turno']![0]!['plan']).toMatchObject({ tipo: 'derivar', clave: 'garantia', aviso: { clave: 'garantia', motivo: 'garantía o devolución' } });
+    expect(t.porNodo['Armar avisos']![0]).toMatchObject({ clave: 'garantia', planeado: true });
+    const otra = hablar(w, ANA, mTexto('perdón, ¿precio y devolución?'));
+    expect(otra.avisos).toHaveLength(0);
+    expect(esBotonDeRuben(otra)).toBe(true);
     expect(t.mensajes.some((m) => m.tipo === 'image')).toBe(false);
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
     expect(fichaDe(w)['saludado']).toBe(true);
@@ -265,6 +271,31 @@ describe('la crisis se levanta sola: vence a las 48 h de la ÚLTIMA SEÑAL, no d
     expect(esCrisis(hablarTras(w, 9, 'hola, quiero el libro'))).toBe(true);   // 49 h de la primera, 9 h de la segunda señal
     expect(esCrisis(hablarTras(w, 38, 'quiero el libro'))).toBe(true);        // 47 h de la segunda
     expect(esCrisis(hablarTras(w, 2, 'quiero el libro'))).toBe(false);        // 49 h de la segunda señal: se levantó
+  });
+
+  it('NEGANDO: dentro del plazo, quien sigue mal con palabras que ninguna lista reconoce («sigo igual de mal») RENUEVA el plazo; «gracias», «ok», «el libro» o «precio» no', () => {
+    const w = nuevo();
+    hablar(w, ANA, mTexto('hola'));
+    hablar(w, ANA, mTexto('quiero morir'));
+    const ms0 = fichaDe(w)['riesgoMs'] as number;
+    for (const neutro of ['gracias', 'ok', 'listo', 'el libro', 'precio', '¿cuánto cuesta el pack?']) {
+      hablarTras(w, 1, neutro);
+      expect(fichaDe(w)['riesgoMs'], neutro).toBe(ms0);
+    }
+    expect(esCrisis(hablarTras(w, 40, 'sigo igual de mal'))).toBe(true);
+    expect(fichaDe(w)['riesgoMs'] as number).toBeGreaterThan(ms0);
+    expect(esCrisis(hablarTras(w, 9, 'quiero el libro'))).toBe(true);   // 49 h de la primera señal, 9 h de la renovación
+    expect(esCrisis(hablarTras(w, 40, 'quiero el libro'))).toBe(false); // 49 h de la renovación
+  });
+
+  it('NEGANDO: un `riesgoMs` en el futuro (reloj adelantado) no alarga la protección más de 48 h desde ahora', () => {
+    const w = nuevo();
+    hablar(w, ANA, mTexto('hola'));
+    hablar(w, ANA, mTexto('quiero morir'));
+    ((w.sd['ruben'] as J)[ANA] as J)['riesgoMs'] = Number.MAX_SAFE_INTEGER;
+    expect(esCrisis(hablarTras(w, 1, 'gracias'))).toBe(true);
+    expect(esCrisis(hablarTras(w, 30, 'ok'))).toBe(true);
+    expect(esCrisis(hablarTras(w, 19, 'quiero el libro'))).toBe(false);   // 49 h desde que se leyó la señal futura
   });
 
   it('la marca RIESGO del modelo también es una señal (fija el plazo) y levantada la protección una frase de venta no la reactiva', () => {

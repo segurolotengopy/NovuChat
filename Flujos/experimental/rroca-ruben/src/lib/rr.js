@@ -139,8 +139,9 @@ function rrFichaVigente(e, ahoraMs) {
     hist: hist,
     modeloN: Number.isFinite(e.modeloN) && e.modeloN > 0 ? Math.min(Math.floor(e.modeloN), 1000) : 0,
     // LEVANTAR LA CRISIS (PR-2): la protección vence a las 48 h de la ÚLTIMA SEÑAL de crisis (`riesgoMs`), no del último mensaje: escribir «gracias» o «el libro» no la renueva, y escribir otra señal sí. Una ficha vieja sin `riesgoMs` usa su último mensaje.
-    riesgo: e.riesgo === true && !((nums(e.riesgoMs) || ultimo) > 0 && ahoraMs - (nums(e.riesgoMs) || ultimo) > RR_OLVIDO_MS),
-    riesgoMs: e.riesgo === true && !((nums(e.riesgoMs) || ultimo) > 0 && ahoraMs - (nums(e.riesgoMs) || ultimo) > RR_OLVIDO_MS) ? (nums(e.riesgoMs) || ultimo) : 0,
+    // `Math.min(…, ahoraMs)`: una señal fechada en el futuro (reloj adelantado) no alarga la protección más de 48 h desde ahora.
+    riesgo: e.riesgo === true && !((nums(e.riesgoMs) || ultimo) > 0 && ahoraMs - Math.min(nums(e.riesgoMs) || ultimo, ahoraMs) > RR_OLVIDO_MS),
+    riesgoMs: e.riesgo === true && !((nums(e.riesgoMs) || ultimo) > 0 && ahoraMs - Math.min(nums(e.riesgoMs) || ultimo, ahoraMs) > RR_OLVIDO_MS) ? Math.min(nums(e.riesgoMs) || ultimo, ahoraMs) : 0,
     upgrade: e.upgrade === 1 || e.upgrade === 2 ? e.upgrade : 0,
     fueraDePaisMs: nums(e.fueraDePaisMs),
     charlaN: charla.charlaN,
@@ -397,13 +398,13 @@ const RR_NO_VALE_SEGUIR = /\bno vale la pena seguir\b(?! (?:intentando|probando|
 const RR_CRISIS_EXTRA = /\b(?:me )?tomaria (?:todas )?las pastillas\b|\bdormir y no despertar(?:me)?\b|\bquedarme dormid[oa] y no despertar\b/;
 // Más variantes reales (ante la duda, crisis) y sus excepciones de venta («me corto el pelo», «no quiero estar aquí en esta lista», «mejor no despertar a mi esposo»).
 const RR_CRISIS_EXTRA2 = new RegExp([
-  '\\bya no aguanto mas\\b(?! (?:sin (?:dormir|sueno)|de no (?:dormir|poder dormir|descansar)|despertarme (?:a las|en la madrugada|de madrugada|cada noche|tan temprano)|(?:(?:el|la|los|las|este|esta|estos|estas|mi|mis|tu|tus|su|sus|tanto|tanta|tantos|tantas) )(?:insomnio|noches?|desvelos?|ruido|calor|frio|trafico|cansancio|pesadi(?:ll|l)as?|ronquidos?|musica|fiesta|madrugadas?|despertares)|(?:esta|esa) situacion con (?:mi|mis|el|la|los|las) (?:vecin\\w*|jefe|jefa|jefes|suegr\\w*|companer\\w*|esposo|esposa|pareja|hijos?|ninos)|a (?:mi|mis|la|el|los|las) (?:jefe|jefa|jefes|vecin\\w*|suegr\\w*|companer\\w*|esposo|esposa|pareja|hijos?|ninos)))',
+  '\\bya no aguanto mas\\b(?! (?:sin (?:dormir|sueno)|de no (?:dormir|poder dormir|descansar)|despertarme (?:a las|en la madrugada|de madrugada|cada noche|tan temprano)|(?:(?:el|la|los|las|este|esta|estos|estas|mi|mis|tu|tus|su|sus|tanto|tanta|tantos|tantas) )(?:insomnio|noches?|desvelos?|ruido|calor|frio|trafico|cansancio|pesadi(?:ll|l)as?|ronquidos?|musica|fiesta|madrugadas?|despertares)|(?:esta|esa) situacion con (?:mi|mis|el|la|los|las) vecin\\w*|a (?:mi|mis|la|el|los|las) (?:jefe|jefa|jefes|vecin\\w*|suegr\\w*|companer\\w*|esposo|esposa|pareja|hijos?|ninos)))',
   '\\bya no aguanto (?:la vida|mi vida|tanto dolor|tanto sufrimiento|el dolor|el sufrimiento|vivir)\\b',
   '\\bya no puedo mas con (?:esta|mi) vida\\b',
   '\\b(?:mejor|ojala) no despertar(?:me)?\\b(?! (?:a|al) (?:(?:mi|mis|tu|tus|su|sus|los|las|la|el) )?(?:esposo|esposa|marido|mujer|hijos?|hijas?|pareja|bebes?|ninos?|ninas?|gente|vecin\\w*|companer\\w*|abuel\\w*|padres|mama|papa|hermano|hermana|perro|gato|novio|novia)\\b)',
   '\\bno quiero despertar(?:me)? manana\\b(?! (?:temprano|tan temprano|con sueno|cansad[oa]))',
   '\\b(?:quiero|quisiera|me gustaria) dormir(?:me)? para siempre\\b|\\bdormirme para siempre\\b',
-  '\\bno quiero estar aqui\\b(?! (?:en (?:esta|este|la|el|ese|esa) (?:lista|grupo|chat|conversacion|pagina|sitio|tienda)|mucho tiempo|tanto tiempo|mas tiempo|esperando|perdiendo (?:el )?tiempo))',
+  '\\bno quiero estar aqui\\b(?! (?:en (?:esta|este|la|el|ese|esa) (?:lista|grupo|chat|conversacion|pagina|sitio|tienda)|mucho tiempo))',
   '\\b(?:ya )?no (?:tiene|tendria|tenia) sentido (?:vivir|seguir viviendo|mi vida|la vida|existir)\\b',
   '\\b(?:para|pa) que (?:sigo|seguir|continuo|continuar) (?:viviendo|vivo|viva|en este mundo)\\b',
   '\\b(?:me quiero|quisiera|me gustaria|prefiero) ir(?:me)? (?:de este mundo )?para siempre\\b|\\bme voy (?:de este mundo )?para siempre\\b',
@@ -424,6 +425,15 @@ const RR_CRISIS_EXTRA2 = new RegExp([
   '\\b(?:tomarme|me tomaria|me tome|me tomo) (?:todo )?el frasco\\b|\\bfrasco entero\\b',
 ].join('|'));
 const RR_INTENCION_SOBREDOSIS = /\b(?:igual|de todos modos|lo voy a hacer|voy a hacerlo|quiero|me voy a|pienso|pense|tomaria|tome|tomo|tomarme)\b/;
+// «Lo que NO renueva la protección» (PR-2): dentro del plazo de 48 h de una crisis, todo turno de TEXTO renueva `riesgoMs` (quien sigue mal con palabras que ninguna lista reconoce —«sigo igual de mal»— no queda sin protección a las 48 h
+// de la primera señal), SALVO una lista cerrada: un acuse corto («gracias», «ok», «listo») o un mensaje corto de venta (precio, el libro, cuánto cuesta, comprar…). Ante la duda, renueva.
+const RR_NEUTRO_CORTO = /^(?:hola|holi|buenas|buenos dias|buenas tardes|buenas noches|gracias|muchas gracias|ok|okay|oka|listo|vale|dale|si|sii|no|bien|perfecto|entiendo|claro|de acuerdo|bueno|ya|aja|mmm|mm)(?: gracias)?$/;
+const RR_NEUTRO_VENTA = /\b(?:libro|pack|paquete|audiolibro|audio|audios|meditacion|meditaciones|precio|precios|cuesta|cuestan|cuanto|comprar|compra|pagar|qr|opciones|catalogo)\b/;
+function rrEsNeutro(n) {
+  const t = String(n || '').trim();
+  if (t === '') return true;
+  return RR_NEUTRO_CORTO.test(t) || (t.split(' ').length <= 8 && RR_NEUTRO_VENTA.test(t));
+}
 // Los tipeos y las letras repetidas («kiero», «qiero», «morirrr», «mmorir», «sobre dosis») se pliegan antes de mirar.
 function rrPlegarCrisis(n) {
   return n.replace(/sobre dosis/g, 'sobredosis').replace(/\b(?:k|q)iero\b/g, 'quiero').replace(/([a-z])\1+/g, '$1');

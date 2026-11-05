@@ -100,6 +100,10 @@ export const FRASES_DE_CRISIS: string[] = [
   "esta es mi despedida",
   "me tomé muchas pastillas para dormir todas juntas",
   "me tomé muchas pastillas para no despertar",
+  "no quiero estar aquí más tiempo",
+  "no quiero estar aquí tanto tiempo",
+  "ya no aguanto más esta situación con mi pareja",
+  "ya no aguanto más esta situación",
 ];
 
 export const CONTROL_DE_FALSOS_POSITIVOS: string[] = [
