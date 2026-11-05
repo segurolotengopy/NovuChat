@@ -137,6 +137,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { crearMundo, ErrorDeUso, leerCredencial, limpiarSecretos, llamarGemini, TARIFA } from '../../captacion-minima/herramientas/bateria.mjs';
 import { doblesDeBateriaDelGuardado } from '../../comun-sin-agente/src/guardado-dobles.mjs';
+// El estado de la conversación vive en el servidor (PR-4a): el servidor de sesión de mentira es el común de los flujos sin agente.
+import { crearServidorDeSesion } from '../../comun-sin-agente/herramientas/servidor-de-sesion.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RUTA_FLUJO = join(AQUI, '..', 'venta-minima.qtaco.json');
@@ -537,6 +539,9 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
   let captura = null;
   let seq = 0;
   const nodoExtraer = flujo.nodes.find((n) => n.name === 'Extraer');
+  let ejec = 0;
+  let ejecuciones = 0;
+  const servidor = crearServidorDeSesion({ ahoraMs: () => reloj });
 
   const envio = (nodo) => (ll) => {
     const payload = ll.cuerpo ?? {};
@@ -554,7 +559,17 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
       const vistos = new Set();
       return (ll) => { const k = String(ll.parametros.dedupeValue ?? ''); if (!k || vistos.has(k)) return []; vistos.add(k); return ll.item; };
     })(),
-    'Traer configuración': () => ({ statusCode: 200, body: clonar(panel) }),
+    // El `leer` de la sesión viaja en la respuesta de configuración (con el id del mensaje: de ahí sale el repetido). Cada ejecución estrena su número (el n8n de esta batería da el mismo `$execution.id` a todas).
+    'Traer configuración': (ll) => {
+      ejec = ++ejecuciones;
+      const sesion = ll.cuerpo && ll.cuerpo.sesion ? servidor.atender(PID, ll.cuerpo) : null;
+      if (sesion && sesion.statusCode !== 200) return { statusCode: sesion.statusCode, body: sesion.body };
+      return { statusCode: 200, body: sesion ? { ...clonar(panel), conversacion: sesion.body.conversacion, visto: sesion.body.visto } : clonar(panel) };
+    },
+    ...Object.fromEntries(['Comprometer turno', 'Comprometer turno (2.º intento)', 'Comprometer compensación'].map((nodo) => [nodo, (ll) => {
+      const q = ll.cuerpo.sesion;
+      return servidor.atender(PID, { ...ll.cuerpo, sesion: { ...q, idCompromiso: `${q.idCompromiso}-x${ejec}` } });
+    }])),
     'Reportar mensaje (entrante)': (ll) => { captura.ingesta.push(ll.cuerpo ?? {}); return { ok: true }; },
     'Reportar mensaje (saliente)': (ll) => { captura.ingesta.push(ll.cuerpo ?? {}); return { ok: true }; },
     'Registrar cierre': (ll) => { captura.cierre.push(ll.cuerpo ?? {}); return { ok: true }; },
@@ -612,7 +627,8 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
     },
   });
 
-  const estadoDe = () => clonar(objeto(objeto(objeto(mundo.sd.ventaMinima).estados)[CLIENTE]));
+  // El estado de la conversación vive en el servidor: el bloque `{v, estado, pedidos}` del espacio `venta-minima`.
+  const estadoDe = () => clonar(objeto(objeto(servidor.conversacion(PID, 'venta-minima', CLIENTE).estado).estado));
   const corrida = { caso: caso.id, rep, ok: true, fallas: [], turnos: 0, llamadasModelo: 0, lecturas: 0, avisos: 0, mensajes: 0, usos: [], erroresModelo: [], bytesModelo: 0, conversacion: [], textos: [], respaldos: [], previoLogrado: true };
   const vistos = []; // lo que el cliente recibio, por turno: [{id, title}] de botones y filas (para tocarlos por titulo)
   let reloj = inicio;
@@ -684,7 +700,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
     corrida.erroresModelo.push(...captura.erroresModelo);
     const dicho = c.tipo === 'texto' ? c.texto : c.tipo === 'audio' ? `(audio) ${c.transcripcion}` : c.tipo === 'carrito' ? `(carrito) ${c.items.map((x) => `${x.cantidad ?? 1}× ${x.id}`).join(', ')}` : c.tipo === 'imagen' || c.tipo === 'documento' ? `(${c.tipo})${c.pie ? ' ' + c.pie : ''}` : c.tipo === 'ubicacion' ? `(ubicación) ${c.latitud}; ${c.longitud}` : `(toca) ${c.titulo ?? c.id}`;
     for (const m of entregados) corrida.textos.push({ turno: n, previo, texto: m.piezas.join(' ') });
-    for (const it of r.porNodo['Armar mensajes'] ?? []) if (it && it.destino === 'cliente' && typeof it.respaldo === 'string' && it.respaldo) corrida.respaldos.push({ turno: n, previo, texto: it.respaldo });
+    for (const it of r.porNodo['Soltar mensajes'] ?? []) if (it && it.destino === 'cliente' && typeof it.respaldo === 'string' && it.respaldo) corrida.respaldos.push({ turno: n, previo, texto: it.respaldo });
     corrida.conversacion.push({
       turno: n, previo, dicho, ruta, avisos: avisosSalidos, qr,
       recibio: mensajes.map((m) => ({ tipo: m.tipo, texto: m.piezas.join(' ¦ '), botones: m.botones.map((b) => b.id), filas: m.filas.map((b) => b.id), enlaces: m.enlaces.map((b) => b.url) })),

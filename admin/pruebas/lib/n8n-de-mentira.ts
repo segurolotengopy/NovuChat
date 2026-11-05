@@ -147,6 +147,11 @@ export interface OpcionesMundo {
   roles?: RolesDelMundo;
   /** Tope de nodos visitados por turno (defensa contra ciclos). 1.000 por omisión. */
   maxVisitas?: number;
+  /**
+   * Gancho que ve la respuesta de CADA doble (de cualquier nodo) antes de que siga por el flujo y puede completarla: así un servidor de mentira (por ejemplo el de la sesión
+   * del estado de la conversación, PR-4a) agrega lo suyo a la respuesta de configuración AUNQUE una prueba cambie el doble de ese nodo entre turnos.
+   */
+  alResponder?: (llamada: LlamadaDoble, respuesta: J) => J;
 }
 
 export interface OpcionesTurno {
@@ -867,7 +872,7 @@ export function crearMundo(op: OpcionesMundo): Mundo {
     let lista: J[];
     try {
       const r = typeof doble === 'function' ? doble(llamada) : doble;
-      lista = (Array.isArray(r) ? r : [r === undefined ? {} : r]).map((x) => clonar(x));
+      lista = (Array.isArray(r) ? r : [r === undefined ? {} : r]).map((x) => clonar(x)).map((x) => (op.alResponder ? clonar(op.alResponder(llamada, x)) : x));
     } catch (e) {
       anotar(n, llamada, { error: { message: mensajeDe(e) } }, false);
       throw e;

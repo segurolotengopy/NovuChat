@@ -10,16 +10,32 @@
 // (`isExecuted`): un nodo que no corrio no se lee con `$('X').item`, y un nodo de
 // envio o de reporte desactivado deja pasar su entrada.
 //
-// EL ESTADO VIVE EN `$getWorkflowStaticData('global').ventaMinima`, con tres
-// mapas: `estados` (por telefono), `vistos` (mensajes ya procesados) y `pedidos`
-// (pedidos guardados, 72 h). `vmBarrer` limpia estados y vistos; los pedidos los
-// barre `Armar mensajes` (T7b), porque un pedido vive mas que una conversacion.
+// EL ESTADO VIVE EN EL SERVIDOR (PR-4a, `docs/arquitectura/estado-de-conversacion.md`): `Traer configuración` hace el `leer` de la
+// sesion (espacio `venta-minima`; `venta-minima-prueba` en la variante de prueba) y `Config del negocio` lo deja en `cfg.sesion`.
+// Por telefono hay UN bloque `{v, estado, pedidos}`: el estado de la conversacion (60 min; 24 h en `esperando_comprobante`, por su
+// `ultimoMensajeMs`) y SUS pedidos (72 h, por `guardadoMs`). Los mensajes ya vistos los marca el mismo `leer` (`cfg.sesion.visto`).
+// `vmSes` arma, con la misma forma de siempre (`estados`, `pedidos`, `vistos` por mapa), la vista que leen `Decidir turno`, `Plan del
+// turno` e `Interpretar entrada`; `Armar mensajes` la cambia y compromete el bloque ANTES de enviar.
+//
+// RESIDUO DECLARADO (PR-4b): en `$getWorkflowStaticData('global').ventaMinima` siguen `av` (contador diario y ventana de aviso: `av.ventana`
+// es del comercio, contrato §10.4), `transferencias`, `avisosPedido` y `reservasDelDia`. Y, SOLO hasta el RETIRO del respaldo
+// (`VM_RESPALDO_HASTA_MS`), los mapas viejos `estados`, `vistos` y `pedidos`: la lectura de respaldo de la publicacion (`vmSes`).
 
 const VM_VENCE_MS = 60 * 60 * 1000;
 const VM_VENCE_COMPROBANTE_MS = 24 * 60 * 60 * 1000;
 const VM_VISTOS_MS = 24 * 60 * 60 * 1000;
 const VM_MAX_ESTADOS = 1000;
 const VM_MAX_VISTOS = 2000;
+const VM_PEDIDOS_MS = 72 * 60 * 60 * 1000;
+const VM_MAX_PEDIDOS = 500; // por telefono caben menos: el tope en BYTES manda (`Armar mensajes`)
+// LECTURA DE RESPALDO DE LA PUBLICACION (PR-4a): hasta esta fecha, si el servidor no tiene estado para el telefono (version 0) y la memoria vieja
+// de n8n SI, se usa esa y se migra al comprometer. RETIRO: 30/11/2026 00:00 en La Paz (72 h de vida maxima de un pedido, mas el margen de las
+// 24 h del comprobante, de sobra); pasada esa fecha el codigo ya no la mira y la primera ejecucion borra los mapas viejos. Despues se quita el codigo.
+const VM_RESPALDO_HASTA_MS = Date.UTC(2026, 10, 30, 4, 0, 0);
+
+// Parametros del modulo comun `sesion` (`comun-sin-agente/src/sesion.js`, paquete que se INCLUYE, nunca se copia). `venceMin` es el del estado
+// sin pedidos; `Armar mensajes` lo sube (`vmVenceEnMin`) segun el paso y los pedidos guardados.
+const SS_CONFIG = { espacio: 'venta-minima', espacioPrueba: 'venta-minima-prueba', venceMin: 60, maxBytes: 15000, prefijo: 'vm', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' };
 const VM_TZ_OFFSET_MIN = -240;
 const VM_MAX_ID_BOTON = 256;
 const VM_DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -67,6 +83,9 @@ function vmTodos(n) {
 function vmCfg() {
   return vmPrimero('Config del negocio') || {};
 }
+// Los nombres que usa el modulo comun `sesion` para leer un nodo solo si corrio.
+function cnNodo(n) { return vmNodo(n); }
+function cnPrimero(n) { return vmPrimero(n); }
 
 // ---------------------------------------------------------------------------
 // Texto
@@ -280,19 +299,16 @@ function _vmVence(paso) {
   return paso === 'esperando_comprobante' ? VM_VENCE_COMPROBANTE_MS : VM_VENCE_MS;
 }
 
-// `ventaMinima` de los datos estaticos, con sus tres mapas (`estados`, `vistos`,
-// `pedidos`); los crea si faltan. `null` si el nodo no tiene datos estaticos. Crea
-// tambien `reservasDelDia` (vacio): es de `reserva.js` (T3, tope diario de reservas
-// por telefono, `{dia, n}`), que se limpia sola; `vmBarrer` no la toca.
+// `ventaMinima` de los datos estaticos: el RESIDUO que sigue ahi (`av`, `transferencias`, `avisosPedido`, `reservasDelDia`: son de PR-4b) y, hasta el
+// retiro del respaldo, los mapas viejos `estados`, `vistos` y `pedidos` (YA NO se crean: el estado vive en el servidor, ver `vmSes`). `null` si el nodo
+// no tiene datos estaticos. Crea `reservasDelDia` (vacio): es de `reserva.js` (T3, tope diario de reservas por telefono, `{dia, n}`), que se limpia sola.
 function vmSd() {
   let raiz = null;
   try { raiz = $getWorkflowStaticData('global'); } catch (e) { return null; }
   if (!_vmObjeto(raiz)) return null;
   if (!_vmObjeto(raiz.ventaMinima)) raiz.ventaMinima = {};
   const sd = raiz.ventaMinima;
-  for (const k of ['estados', 'vistos', 'pedidos', 'reservasDelDia']) {
-    if (!_vmObjeto(sd[k])) sd[k] = {};
-  }
+  if (!_vmObjeto(sd.reservasDelDia)) sd.reservasDelDia = {};
   return sd;
 }
 
@@ -373,6 +389,117 @@ function vmMarcarVisto(sd, idMensaje, ahoraMs) {
   if (!_vmObjeto(sd.vistos)) sd.vistos = {};
   sd.vistos[idMensaje] = Number(ahoraMs);
   vmBarrer(sd, ahoraMs);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// La sesion del servidor (PR-4a): el estado por telefono, sus pedidos y los mensajes vistos
+// ---------------------------------------------------------------------------
+// Cuanto vive el bloque en el servidor, en MINUTOS (el servidor admite 1 a 4320). Con pedidos guardados, 72 h (4320): cada pedido se poda por su
+// `guardadoMs`, el bloque solo es el tope. Sin pedidos, lo que dura el estado: 24 h en `esperando_comprobante` (como el QR del servidor), 60 min en el resto.
+function vmVenceEnMin(bloque) {
+  const b = _vmObjeto(bloque) ? bloque : {};
+  if (_vmObjeto(b.pedidos) && Object.keys(b.pedidos).length > 0) return 4320;
+  return _vmObjeto(b.estado) && b.estado.paso === 'esperando_comprobante' ? 1440 : 60;
+}
+
+// La vista de la sesion para el telefono `from`, con la forma de `sd`: `estados[from]` y `pedidos` (los de ESE telefono, ya sin los de mas de 72 h).
+//   ses.ok        el servidor contesto el `leer` con una conversacion valida (sin eso no hay version y no se puede comprometer)
+//   ses.version   la version leida (la que pide `comprometer`)
+//   ses.previo    el bloque tal como estaba al empezar el turno (o el que se arma de la memoria vieja): lo que restaura la compensacion
+//   ses.deRespaldo  el estado o un pedido salio de la memoria vieja de n8n y se migra al comprometer
+// LECTURA DE RESPALDO (solo hasta VM_RESPALDO_HASTA_MS): si el servidor no tiene NADA para el telefono (version 0: nunca se comprometio) y la memoria vieja
+// tiene un estado vigente o pedidos suyos, se usan; al comprometer quedan en el servidor y `vmRetirarRespaldo` los borra de la memoria vieja.
+function vmSes(from, ahoraMs) {
+  const cfg = vmCfg();
+  const s = _vmObjeto(cfg.sesion) ? cfg.sesion : {};
+  const ahora = Number(ahoraMs);
+  const ses = { ok: s.ok === true, version: Number.isInteger(s.version) && s.version >= 0 ? s.version : 0, estados: {}, pedidos: {}, vistos: {}, previo: null, deRespaldo: false };
+  const f = _vmCadena(from);
+  if (!ses.ok || !_vmClaveValida(f) || !Number.isFinite(ahora)) return ses;
+  const copia = (x) => JSON.parse(JSON.stringify(x));
+  const bloque = _vmObjeto(s.estado) ? s.estado : null;
+  if (bloque) {
+    if (_vmObjeto(bloque.estado)) ses.estados[f] = copia(bloque.estado);
+    const ps = _vmObjeto(bloque.pedidos) ? bloque.pedidos : {};
+    for (const k of Object.keys(ps)) {
+      // (al LEER solo se descarta el que tiene una marca de tiempo de mas de 72 h; `vmGuardarPedido` poda tambien los que no la traen)
+      if (_vmIdValido(k) && _vmObjeto(ps[k]) && !(Number.isFinite(Number(ps[k].guardadoMs)) && ahora - Number(ps[k].guardadoMs) >= VM_PEDIDOS_MS)) ses.pedidos[k] = copia(ps[k]);
+    }
+    ses.previo = copia(bloque);
+    return ses;
+  }
+  if (ses.version === 0 && ahora < VM_RESPALDO_HASTA_MS) {
+    let viejo = null;
+    try { viejo = $getWorkflowStaticData('global').ventaMinima; } catch (e) { viejo = null; }
+    if (_vmObjeto(viejo)) {
+      if (_vmHay(viejo.estados, f) && _vmObjeto(viejo.estados[f]) && ahora - Number(viejo.estados[f].ultimoMensajeMs || 0) < _vmVence(viejo.estados[f].paso)) {
+        ses.estados[f] = copia(viejo.estados[f]);
+        ses.deRespaldo = true;
+      }
+      if (_vmObjeto(viejo.pedidos)) {
+        for (const k of Object.keys(viejo.pedidos)) {
+          const p = viejo.pedidos[k];
+          if (_vmIdValido(k) && _vmObjeto(p) && String(p.from) === f && !(Number.isFinite(Number(p.guardadoMs)) && ahora - Number(p.guardadoMs) >= VM_PEDIDOS_MS)) { ses.pedidos[k] = copia(p); ses.deRespaldo = true; }
+        }
+      }
+      if (ses.deRespaldo) ses.previo = { v: 1, estado: ses.estados[f] || null, pedidos: copia(ses.pedidos) };
+    }
+  }
+  return ses;
+}
+
+// El pedido a guardar, con la ventana de 72 h desde su ultima escritura (`guardadoMs`): se podan los vencidos y, pasado el tope, los mas antiguos
+// (el recien escrito nunca). `ped` ya trae `pedidoId`. Devuelve el pedido guardado, o null si no se pudo.
+function vmGuardarPedido(ses, ped, ahoraMs) {
+  if (!_vmObjeto(ses) || !_vmObjeto(ped) || !_vmIdValido(String(ped.pedidoId || '')) || !Number.isFinite(Number(ahoraMs))) return null;
+  const ahora = Number(ahoraMs);
+  if (!_vmObjeto(ses.pedidos)) ses.pedidos = {};
+  for (const k of Object.keys(ses.pedidos)) {
+    const v = ses.pedidos[k];
+    if (!v || !(ahora - Number(v.guardadoMs || 0) < VM_PEDIDOS_MS)) delete ses.pedidos[k];
+  }
+  const id = String(ped.pedidoId);
+  ses.pedidos[id] = Object.assign({}, _vmHay(ses.pedidos, id) ? ses.pedidos[id] : {}, ped, { guardadoMs: ahora });
+  const claves = Object.keys(ses.pedidos);
+  if (claves.length > VM_MAX_PEDIDOS) {
+    claves.sort((a, b) => Number(ses.pedidos[a].guardadoMs || 0) - Number(ses.pedidos[b].guardadoMs || 0));
+    for (const k of claves.slice(0, claves.length - VM_MAX_PEDIDOS)) delete ses.pedidos[k];
+  }
+  return ses.pedidos[id];
+}
+
+// La clave con que se recuerda un aviso ya enviado cuando el compromiso del estado fallo (`sd.avisosHuerfanos`). El de PEDIDO es por pedidoId; el de COMPROBANTE incluye el medio y el
+// resultado del cotejo: un segundo comprobante (otra foto, o el mismo pedido ahora correcto) NO es el mismo aviso y nunca se suprime por uno anterior.
+function vmClaveAviso(tipo, pedidoId, mediaId, resultado) {
+  const base = _vmCadena(tipo) + ':' + _vmCadena(pedidoId);
+  return tipo === 'comprobante' ? base + ':' + _vmCadena(mediaId) + ':' + _vmCadena(resultado) : base;
+}
+
+// ¿El mensaje ya se vio segun la memoria vieja? Solo hasta el retiro del respaldo: un reintento de Meta que llega justo al publicar no se responde dos veces.
+function vmVistoDeRespaldo(idMensaje, ahoraMs) {
+  if (!(Number(ahoraMs) < VM_RESPALDO_HASTA_MS) || !_vmIdValido(idMensaje)) return false;
+  let viejo = null;
+  try { viejo = $getWorkflowStaticData('global').ventaMinima; } catch (e) { return false; }
+  return _vmObjeto(viejo) && vmYaVisto(viejo, idMensaje, ahoraMs);
+}
+
+// Despues de comprometer: lo migrado ya esta en el servidor, se borra de la memoria vieja (el telefono y SUS pedidos). Pasado el retiro, se borran
+// los tres mapas viejos enteros (nadie los escribe ya). Nunca toca el residuo de PR-4b.
+function vmRetirarRespaldo(from, ahoraMs, migrado) {
+  let viejo = null;
+  try { viejo = $getWorkflowStaticData('global').ventaMinima; } catch (e) { return false; }
+  if (!_vmObjeto(viejo)) return false;
+  if (!(Number(ahoraMs) < VM_RESPALDO_HASTA_MS)) {
+    for (const k of ['estados', 'vistos', 'pedidos']) delete viejo[k];
+    return true;
+  }
+  if (migrado !== true) return false;
+  const f = _vmCadena(from);
+  if (_vmObjeto(viejo.estados) && _vmHay(viejo.estados, f)) delete viejo.estados[f];
+  if (_vmObjeto(viejo.pedidos)) {
+    for (const k of Object.keys(viejo.pedidos)) if (_vmObjeto(viejo.pedidos[k]) && String(viejo.pedidos[k].from) === f) delete viejo.pedidos[k];
+  }
   return true;
 }
 

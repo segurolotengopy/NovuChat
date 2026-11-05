@@ -297,7 +297,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ telefono: String(((($json.messages || [])[0]) || {}).from || ''), catalogoCompleto: true }) }}",
+        "jsonBody": "={{ (() => { const m = (($json.messages || [])[0]) || {}; const de = String(m.from || ''); const prueba = !!$json.prueba && $json.prueba.modoPrueba === true; const lista = String($('Config base').first().json.telefonosDePrueba || '').split(',').map((x) => x.replace(/\\D/g, '')).filter((x) => x.length >= 6); const valido = /^[0-9]{8,15}$/.test(de) && (!prueba || (lista.length > 0 && lista.indexOf(de) >= 0)); const id = String(m.id || ''); const sesion = Object.assign({ v: 1, accion: 'leer', espacio: prueba ? 'venta-minima-prueba' : 'venta-minima', canal: 'wa', ejecucion: String($execution.id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 'sin-id' }, /^[\\x21-\\x7e]{1,256}$/.test(id) ? { idMensaje: id } : {}); return JSON.stringify(Object.assign({ telefono: de, catalogoCompleto: true }, valido ? { sesion: sesion } : {})); })() }}",
         "options": {
           "timeout": 4000,
           "response": {
@@ -315,7 +315,7 @@
         }
       },
       "onError": "continueRegularOutput",
-      "notes": "Carta, campañas, cobro real, atención y datos del negocio. `catalogoCompleto: true` pide además el catálogo completo y, si el comercio tiene el catálogo web encendido, el enlace de ESTA conversación en `catalogoWeb.enlace` (sin un nodo aparte). Con el panel caído, «Config del negocio» usa el respaldo: sin carta no se toma ningún pedido, se deriva."
+      "notes": "Carta, campañas, cobro real, atención y datos del negocio. `catalogoCompleto: true` pide además el catálogo completo y, si el comercio tiene el catálogo web encendido, el enlace de ESTA conversación en `catalogoWeb.enlace` (sin un nodo aparte). Con el panel caído, «Config del negocio» usa el respaldo: sin carta no se toma ningún pedido, se deriva. PR-4a: pide además el `leer` de la sesión (estado de la conversación y mensaje visto) en el espacio `venta-minima` (`venta-minima-prueba` en la prueba, solo para `telefonosDePrueba`); `Config del negocio` lo entrega como `sesion`."
     },
     {
       "id": "config-negocio",
@@ -329,7 +329,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@nodos/config-del-negocio.js"
+        "jsCode": "@@todo+sesion:nodos/config-del-negocio.js"
       }
     },
     {
@@ -517,7 +517,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2360,
+        2600,
         560
       ],
       "parameters": {
@@ -532,7 +532,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        2360,
+        2600,
         300
       ],
       "parameters": {
@@ -567,7 +567,7 @@
       "type": "n8n-nodes-base.whatsApp",
       "typeVersion": 1,
       "position": [
-        2600,
+        2840,
         460
       ],
       "parameters": {
@@ -594,7 +594,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        2840,
+        3080,
         460
       ],
       "parameters": {
@@ -629,7 +629,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3080,
+        3320,
         460
       ],
       "parameters": {
@@ -671,7 +671,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        3320,
+        3560,
         460
       ],
       "parameters": {
@@ -705,7 +705,7 @@
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1.2,
       "position": [
-        3560,
+        3800,
         360
       ],
       "parameters": {
@@ -737,7 +737,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3560,
+        3800,
         500
       ],
       "parameters": {
@@ -791,7 +791,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        3560,
+        3800,
         620
       ],
       "parameters": {
@@ -825,7 +825,7 @@
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1.2,
       "position": [
-        3800,
+        4040,
         560
       ],
       "parameters": {
@@ -860,7 +860,7 @@
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1.2,
       "position": [
-        3800,
+        4040,
         720
       ],
       "parameters": {
@@ -895,7 +895,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4040,
+        4280,
         640
       ],
       "parameters": {
@@ -910,7 +910,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        4280,
+        4520,
         640
       ],
       "parameters": {
@@ -955,7 +955,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4520,
+        4760,
         300
       ],
       "parameters": {
@@ -971,7 +971,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        4760,
+        5000,
         300
       ],
       "parameters": {
@@ -1005,7 +1005,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        5000,
+        5240,
         160
       ],
       "parameters": {
@@ -1039,7 +1039,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5240,
+        5480,
         300
       ],
       "parameters": {
@@ -1055,7 +1055,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5480,
+        5720,
         300
       ],
       "parameters": {
@@ -1071,7 +1071,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        5720,
+        5960,
         300
       ],
       "parameters": {
@@ -1105,7 +1105,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        5960,
+        6200,
         160
       ],
       "parameters": {
@@ -1140,7 +1140,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        6200,
+        6440,
         60
       ],
       "parameters": {
@@ -1177,7 +1177,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6200,
+        6440,
         260
       ],
       "parameters": {
@@ -1192,7 +1192,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6440,
+        6680,
         60
       ],
       "parameters": {
@@ -1207,7 +1207,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        6680,
+        6920,
         60
       ],
       "parameters": {
@@ -1242,7 +1242,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        6920,
+        7160,
         -60
       ],
       "parameters": {
@@ -1279,15 +1279,15 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7160,
+        7400,
         300
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@nodos/armar-mensajes.js"
+        "jsCode": "@@todo+sesion:nodos/armar-mensajes.js"
       },
-      "notes": "Segunda etapa: todo lo que sale AL CLIENTE, con código. Elige el texto por lo que PASÓ con el aviso (hecho, no dicho). Es el ÚNICO lugar donde se escribe el estado por teléfono."
+      "notes": "Segunda etapa: todo lo que sale AL CLIENTE, con código. Elige el texto por lo que PASÓ con el aviso (hecho, no dicho). ARMA el estado por teléfono y sus pedidos (un bloque para el servidor) y pide el compromiso ANTES de enviar; no envía ni escribe el estado (las marcas de aviso por hora siguen en los datos estáticos: residuo de PR-4b)."
     },
     {
       "id": "enviar-si",
@@ -1295,7 +1295,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        7400,
+        8840,
         300
       ],
       "parameters": {
@@ -1330,7 +1330,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        7640,
+        9080,
         160
       ],
       "parameters": {
@@ -1367,7 +1367,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        7880,
+        9320,
         300
       ],
       "parameters": {
@@ -1402,17 +1402,17 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        8120,
+        9560,
         160
       ],
       "parameters": {
         "method": "POST",
-        "url": "=https://graph.facebook.com/{{ $('Armar mensajes').item.json.waGraphVersion || 'v26.0' }}/{{ $('Armar mensajes').item.json.phoneNumberId }}/messages",
+        "url": "=https://graph.facebook.com/{{ $('Soltar mensajes').item.json.waGraphVersion || 'v26.0' }}/{{ $('Soltar mensajes').item.json.phoneNumberId }}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $('Armar mensajes').item.json.para, type: 'text', text: { preview_url: true, body: String($('Armar mensajes').item.json.respaldo || '').slice(0, 4000) } }) }}",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $('Soltar mensajes').item.json.para, type: 'text', text: { preview_url: true, body: String($('Soltar mensajes').item.json.respaldo || '').slice(0, 4000) } }) }}",
         "options": {
           "timeout": 15000,
           "batching": {
@@ -1439,7 +1439,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        8360,
+        9800,
         300
       ],
       "parameters": {
@@ -1453,7 +1453,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ $('Armar mensajes').item.json.reportar === true && !!((($json || {}).messages || [])[0] || {}).id }}",
+              "leftValue": "={{ $('Soltar mensajes').item.json.reportar === true && !!((($json || {}).messages || [])[0] || {}).id }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -1474,7 +1474,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        8600,
+        10040,
         160
       ],
       "parameters": {
@@ -1493,7 +1493,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const m = $('Armar mensajes').item.json; const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (typeof m.evento === 'string' && m.evento) { r.evento = m.evento; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; if (m.evento === 'qr_enviado' && Array.isArray(m.lineas) && m.lineas.length) { r.lineas = m.lineas; if (m.entrega) r.entrega = m.entrega; if (typeof m.reemplaza === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(m.reemplaza)) r.reemplaza = m.reemplaza; } } return JSON.stringify(r); })() }}",
+        "jsonBody": "={{ (() => { const m = $('Soltar mensajes').item.json; const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (typeof m.evento === 'string' && m.evento) { r.evento = m.evento; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; if (m.evento === 'qr_enviado' && Array.isArray(m.lineas) && m.lineas.length) { r.lineas = m.lineas; if (m.entrega) r.entrega = m.entrega; if (typeof m.reemplaza === 'string' && /^cat_[A-Za-z0-9_-]{1,56}$/.test(m.reemplaza)) r.reemplaza = m.reemplaza; } } return JSON.stringify(r); })() }}",
         "options": {
           "timeout": 4000
         }
@@ -1517,7 +1517,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        7400,
+        8840,
         620
       ],
       "parameters": {
@@ -1544,7 +1544,7 @@
         },
         "options": {}
       },
-      "notes": "Cuelga de `Armar mensajes` en paralelo con el envío, por debajo en el lienzo: corre una sola vez. En modo prueba nunca se registra un cierre (es la unidad que se factura)."
+      "notes": "Cuelga de `Soltar mensajes` en paralelo con el envío, por debajo en el lienzo: corre una sola vez. En modo prueba nunca se registra un cierre (es la unidad que se factura)."
     },
     {
       "id": "registrar-cierre",
@@ -1552,7 +1552,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        7640,
+        9080,
         620
       ],
       "parameters": {
@@ -1595,15 +1595,303 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7400,
-        780
+        8840,
+        1100
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@comun:nodos/resumen-del-turno.js"
+        "jsCode": "@@comun+sesion:nodos/resumen-del-turno.js"
       },
-      "notes": "R3 (último recurso): si un mensaje al cliente no salió y su respaldo en texto tampoco, este nodo LANZA un error (la ejecución queda en error, visible) y antes ajusta el estado del teléfono: SIN hecho externo (ningún aviso salió ni corrió el cierre) lo devuelve al de antes del turno conservando su ancla, así reconfirmar repite el mismo pedido; CON un aviso ya enviado o un cierre ya registrado NO lo revierte (reconfirmar armaría un segundo pedido) y, si la conversación corrió y no se espera un comprobante, lo deja en el paso `menu`. No deshace el pedido guardado ni el aviso enviado: el error es la señal para que una persona le escriba al cliente. Último nodo, y el único que corre UNA sola vez por turno: cuelga directo de «Armar mensajes» por debajo de todo el lienzo, así que con `executionOrder: v1` corre después de los envíos y del cierre. En la variante de prueba, «Entrada de prueba» responde con esto: mensajes al cliente, avisos y resumen del turno."
+      "notes": "R3 (último recurso): si un mensaje al cliente no salió y su respaldo en texto tampoco, este nodo LANZA un error (la ejecución queda en error, visible). El estado ya lo compensó «Confirmar envío» → «Comprometer compensación» (ver la nota de «Confirmar envío»: la regla del hecho externo). Último nodo: cuelga directo de «Soltar mensajes», debajo de todo el lienzo y de la cadena de compensación, así que con `executionOrder: v1` corre después de los envíos y del cierre. En la variante de prueba, «Entrada de prueba» responde con esto: mensajes al cliente, avisos y resumen del turno."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; return !!(c.sesion && c.sesion.ok === true); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hay-estado",
+      "name": "¿Hay estado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2360,
+        300
+      ],
+      "notes": "El estado de la conversación vive en el servidor (PR-4a, contrato §6). Sin una conversación válida en la respuesta de `Traer configuración` (un servidor sin la rama `sesion`, un 5xx o un timeout —con el panel caído tampoco hay `leer`—, o la variante de prueba para un teléfono que no es de `telefonosDePrueba`) no se sabe en qué paso va el cliente: sale «pasar con recepción» (`Sin estado`): el aviso estándar de transferencia a recepción MÁS el botón (política del 21/09/2026, dentro de `topeTransferenciasHora`), sin modelo, sin estado nuevo y sin compromiso. Reemplaza la respuesta: un mensaje por turno."
+    },
+    {
+      "parameters": {
+        "jsCode": "@@comun:nodos/sin-estado.js"
+      },
+      "id": "sin-estado",
+      "name": "Sin estado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        760
+      ],
+      "notes": "Sin estado en el servidor: lo único que se ofrece es pasar con recepción, que es SIEMPRE el aviso estándar de transferencia a recepción (dentro de `topeTransferenciasHora`) MÁS el botón para escribirle directo. Reemplaza la respuesta (un mensaje por turno); sin cambio de estado."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.comprometer === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "comprometer-turno-si",
+      "name": "¿Comprometer turno?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        7640,
+        300
+      ],
+      "notes": "Solo se llama al servidor si `Armar mensajes` armó un bloque que comprometer (el turno cambia el estado, hay versión y el bloque cabe en 15.000 bytes). Si no, sigue directo a `Soltar mensajes`, que decide qué sale."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.numero }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.compromiso) }}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "comprometer-turno",
+      "name": "Comprometer turno",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        7880,
+        300
+      ],
+      "notes": "Compromete el bloque (estado + pedidos del teléfono) ANTES de enviar nada al cliente (enmienda §2.3 del contrato). Un 5xx o un timeout se reintenta UNA vez con el MISMO idCompromiso (si la primera ya se aplicó, el servidor contesta `repetido`, que cuenta como éxito); sin `neverError`, para que el 5xx se reintente. Un `conflicto_version` lo decide `Soltar mensajes`: sin hecho externo la ejecución que pierde cede sin enviar; con un aviso al local ya enviado (o un cotejo) se replanifica en «Comprometer turno (2.º intento)» y nunca se cede en silencio.",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500
+    },
+    {
+      "parameters": {
+        "jsCode": "@@comun+sesion:nodos/soltar-mensajes.js"
+      },
+      "id": "soltar-mensajes",
+      "name": "Soltar mensajes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8600,
+        300
+      ],
+      "notes": "Decide qué sale con lo que contestó el servidor: los mensajes armados (comprometido o nada que comprometer), NADA (conflicto de versión: la ejecución perdedora cede) o SOLO el genérico con el botón a recepción (el compromiso falló o el bloque no cabe: reemplaza la respuesta, 0 mensajes más). Un ítem por mensaje: de aquí cuelgan el envío, el cierre y «Confirmar envío»."
+    },
+    {
+      "parameters": {
+        "jsCode": "@@comun+sesion:nodos/confirmar-envio.js"
+      },
+      "id": "confirmar-envio",
+      "name": "Confirmar envío",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8840,
+        940
+      ],
+      "notes": "Si Meta rechazó el mensaje al cliente y su respaldo en texto, arma el compromiso compensatorio del estado, con la versión recién comprometida. SIN hecho externo (ningún aviso salió y no corrió el cierre): el bloque de ANTES del turno entero, con su ancla (`ultimoMensajeMs`, la ancla de las claves estables) y SUS pedidos: reconfirmar da el MISMO pedido y nunca un segundo. CON un aviso ya enviado o un cierre ya registrado: el bloque comprometido queda, en el paso `menu` (salvo `esperando_comprobante`), porque reconfirmar armaría un segundo pedido con otro código, otro aviso y otro cierre. Devuelve un ítem SOLO si hay que compensar (si no, «Comprometer compensación» no corre). Es el hijo más bajo de «Soltar mensajes»: corre después de los envíos y del cierre."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.numero }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.compromiso) }}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "comprometer-compensacion",
+      "name": "Comprometer compensación",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        8840,
+        1000
+      ],
+      "notes": "Compromiso compensatorio con la versión recién comprometida (el bloque de antes del turno, o el comprometido con el paso `menu` si ya salió un aviso). Un 5xx o un timeout se reintenta UNA vez con el MISMO idCompromiso. Corre solo si «Confirmar envío» armó la compensación (si no, no le llega ningún ítem).",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ ((($json || {}).body || {}).resultado === 'conflicto_version') && $('Armar mensajes').first().json.hechoExterno === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "replanificar-si",
+      "name": "¿Replanificar compromiso?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        8120,
+        300
+      ],
+      "notes": "Conflicto de versión (otra ejecución del mismo teléfono comprometió primero) CON un hecho externo ya ocurrido (un aviso al local salió o se cotejó el comprobante): ceder en silencio dejaría al local con un pedido que el cliente no vio y un segundo pedido al reconfirmar. Se replanifica UNA vez sobre la versión ganadora. Sin hecho externo, la ejecución que pierde cede."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Armar mensajes').first().json.numero }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const a = $('Armar mensajes').first().json; const r = a.replan || {}; const c = ((($json || {}).body || {}).conversacion) || {}; const g = (c.estado && typeof c.estado === 'object' && !Array.isArray(c.estado)) ? c.estado : null; const base = (g && g.estado && typeof g.estado === 'object' && !Array.isArray(g.estado)) ? g.estado : null; const mio = !!(base && base.pedido && typeof base.pedido === 'object' && r.pedidoId && String(base.pedido.pedidoId) === String(r.pedidoId)); const estado = (base && !mio) ? Object.assign({}, base, base.paso === 'esperando_comprobante' ? {} : { paso: 'menu' }) : (r.estadoMenu || null); const pedidos = Object.assign({}, (g && g.pedidos && typeof g.pedidos === 'object' && !Array.isArray(g.pedidos)) ? g.pedidos : {}, r.pedidos || {}); const bytes = (t) => encodeURIComponent(String(t).replace(/[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF])|(?<![\\uD800-\\uDBFF])[\\uDC00-\\uDFFF]/g, '\\uFFFD')).replace(/%[0-9A-F]{2}/g, 'x').length; const activo = (estado && estado.pedido && typeof estado.pedido === 'object') ? String(estado.pedido.pedidoId || '') : ''; const tope = Number(r.maxBytes) > 0 ? Number(r.maxBytes) : 15000; const orden = Object.keys(pedidos).filter((k) => !(r.pedidos && Object.prototype.hasOwnProperty.call(r.pedidos, k))).sort((x, y) => (Number(x === activo) - Number(y === activo)) || (Number((pedidos[x] || {}).guardadoMs || 0) - Number((pedidos[y] || {}).guardadoMs || 0))); const arma = () => ({ v: 1, estado: estado, pedidos: pedidos }); for (const k of orden) { if (bytes(JSON.stringify(arma())) <= tope) break; delete pedidos[k]; } return JSON.stringify({ telefono: r.telefono, sesion: { v: 1, accion: 'comprometer', espacio: r.espacio, canal: 'wa', ejecucion: r.ejecucion, idCompromiso: r.idCompromiso, versionLeida: Number(c.version), estado: arma(), venceEnMin: Object.keys(pedidos).length > 0 ? 4320 : (estado && estado.paso === 'esperando_comprobante' ? 1440 : 60) } }); })() }}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "comprometer-turno-2",
+      "name": "Comprometer turno (2.º intento)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        8360,
+        160
+      ],
+      "notes": "Replanificación tras un conflicto de versión CON hecho externo: se compromete sobre la versión GANADORA (versionLeida = la del ganador) el bloque del ganador con el pedido de este turno unido por pedidoId (gana el nuestro) y el paso en `menu` (salvo que el ganador espere un comprobante). Mismo idCompromiso en el reintento de n8n; un solo intento: si también falla, «Soltar mensajes» responde el genérico con el botón (nunca silencio). Si el estado ganador espera el comprobante de ESTE mismo pedido y este turno ya lo cerró (ráfaga foto + texto), el paso queda en `menu`. El cuerpo se recorta por bytes (los pedidos más antiguos primero y el que espera el comprobante el último; el tope sale de `SS_CONFIG.maxBytes`) y `venceEnMin` depende de si hay pedidos.",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500
     }
   ],
   "connections": {
@@ -1831,7 +2119,7 @@
       "main": [
         [
           {
-            "node": "¿Bajar medio?",
+            "node": "¿Hay estado?",
             "type": "main",
             "index": 0
           }
@@ -2174,17 +2462,7 @@
       "main": [
         [
           {
-            "node": "¿Enviar de verdad?",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "¿Registrar cierre?",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Resumen del turno",
+            "node": "¿Comprometer turno?",
             "type": "main",
             "index": 0
           }
@@ -2271,6 +2549,130 @@
           }
         ],
         []
+      ]
+    },
+    "¿Hay estado?": {
+      "main": [
+        [
+          {
+            "node": "¿Bajar medio?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sin estado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sin estado": {
+      "main": [
+        [
+          {
+            "node": "Armar avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Comprometer turno?": {
+      "main": [
+        [
+          {
+            "node": "Comprometer turno",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Soltar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comprometer turno": {
+      "main": [
+        [
+          {
+            "node": "¿Replanificar compromiso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soltar mensajes": {
+      "main": [
+        [
+          {
+            "node": "¿Enviar de verdad?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Registrar cierre?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Confirmar envío",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Resumen del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmar envío": {
+      "main": [
+        [
+          {
+            "node": "Comprometer compensación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Replanificar compromiso?": {
+      "main": [
+        [
+          {
+            "node": "Comprometer turno (2.º intento)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Soltar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comprometer turno (2.º intento)": {
+      "main": [
+        [
+          {
+            "node": "Soltar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   }

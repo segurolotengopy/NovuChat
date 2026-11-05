@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // BATERÍA DE LA CONVERSACIÓN DE «EL PUENTE» DE RUBEN (REHECHO SOBRE LA ENTREGA 2, 23/10/2026) CONTRA EL MODELO REAL.
 //
-// QUÉ ES. Corre los turnos del cliente de `bateria-casos.json` (A el camino completo, B «precio primero», C precios en general y el puente, D anuncio) por el flujo armado de PRUEBA (`rroca-ruben.prueba.json`):
+// QUÉ ES. Corre los turnos del cliente de `bateria-casos.json` (A el camino completo, B «precio primero», C precios en general y el puente, D anuncio, E y F los casos del PDF) por el flujo armado de PRUEBA (`rroca-ruben.prueba.json`):
 // recorre su grafo nodo por nodo y corre de verdad los nodos Code del JSON. Lo ÚNICO que sale a la red es «Conversar con el modelo» (el cuerpo EXACTO que arma `rrCuerpoModelo`, con la línea `[MODO_TURNO: …]`): la
 // consola, la ingesta, Graph, los medios y el cotejo van simulados y en memoria, igual que en `chat-novuchat`. El motor (`crearMundo`, `llamarGemini`, `leerCredencial`, `limpiarSecretos`, `TARIFA`) se IMPORTA de
 // `Flujos/experimental/chat-novuchat/herramientas/bateria.mjs`: NO se copia un cuarto motor. (Es la herramienta de `rroca-ruben/herramientas/bateria.mjs` adaptada a los nombres y a las reglas de Rubén.)
@@ -202,6 +202,8 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     const planDec = objeto(decision.plan);
     t.diagnostico = t.llamoAlModelo ? diagnosticar(lib, crudo, { modo: String(planDec.modo ?? ''), habil: decision.opcionesHabilitadas === true, qrAbierto: planDec.qrAbierto === true, textoCliente: String(planDec.textoCliente ?? turno.dice ?? '') }) : null;
     t.motivo = t.diagnostico ? t.diagnostico.motivo : '';
+    t.clave = String(planDec.clave ?? '');
+    t.precioPorCodigo = planDec.precio !== null && typeof planDec.precio === 'object';
     t.modo = String(planDec.modo ?? '');
     t.violaciones = [...violacionesDelTurno(estado, turno, t), ...(r.fallo ? [`el flujo falló en «${r.fallo.nodo}»: ${r.fallo.mensaje}`] : [])];
     actualizarEstado(estado, t);
@@ -270,7 +272,12 @@ function violacionesDelTurno(est, turno, t) {
     const montos = new Set((m.cuerpo.match(new RegExp(CON_PRECIO.source, 'gi')) ?? []).map((x) => x.replace(/\s/g, '')));
     // 11. Ningún precio antes de tiempo. La excepción declarada: el precio de UN producto nombrado (un solo monto, sin botones de producto ni de precio).
     const precioDeUnProducto = t.plan === 'precio' && montos.size === 1 && !titulos.some((x) => CON_PRECIO.test(x)) && !ids.some((i) => BOTONES_DE_PRODUCTO.includes(i));
-    if (est.charla < 2 && !est.qrVisto && !prellenado && !PLANES_EXENTOS.includes(t.plan) && !precioDeUnProducto) {
+    // La excepción del PR-2 (caso (b) del PDF): «¿precio y devolución?» da el precio YA, junto con la derivación a Rubén (plan `derivar`, con el botón de Rubén y sin botones de producto): es una pregunta de precio contestada por código, no el menú.
+    const sinBotonesDeProducto = !titulos.some((x) => CON_PRECIO.test(x)) && !ids.some((i) => BOTONES_DE_PRODUCTO.includes(i));
+    const precioConDerivacion = t.plan === 'derivar' && ['garantia', 'otro_medio_pago', 'reclamo', 'volumen'].includes(t.clave) && t.precioPorCodigo === true && !titulos.some((x) => CON_PRECIO.test(x)) && !ids.some((i) => BOTONES_DE_PRODUCTO.includes(i));
+    // También del PR-2 (caso (d)): «¿cuánto cuesta el libro y me garantizan dormir?» recibe el precio y la respuesta de resultado en UN mensaje, sin botones de producto: el precio lo pidió el cliente y lo dice el código.
+    const precioEnResultado = t.plan === 'resultado' && t.precioPorCodigo === true && sinBotonesDeProducto;
+    if (est.charla < 2 && !est.qrVisto && !prellenado && !PLANES_EXENTOS.includes(t.plan) && !precioDeUnProducto && !precioConDerivacion && !precioEnResultado) {
       if (CON_PRECIO.test(m.cuerpo) || titulos.some((x) => CON_PRECIO.test(x))) v.push(`inv. 11: un precio con ${est.charla} mensaje(s) de conversación («${m.cuerpo.slice(0, 40)}…»)`);
       if (ids.some((i) => BOTONES_DE_PRODUCTO.includes(i))) v.push(`inv. 11: un botón de producto con ${est.charla} mensaje(s) de conversación`);
     }

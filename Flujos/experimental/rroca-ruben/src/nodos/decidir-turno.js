@@ -48,13 +48,14 @@ const ficha = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora)
 //    sigue en silencio: ahí responde Rubén. Aquí solo se mira el texto y el pie (los medios no se bajan con la puerta cerrada ni fuera del país).
 // El aviso de una crisis NUNCA copia lo que escribió la persona: solo el motivo.
 const avisoCrisis = { tipo: 'consulta', clave: 'crisis', motivo: 'posible crisis o riesgo emocional de la persona (se cortó la venta y se le sugirió ayuda profesional)', mensaje: '' };
-const riesgoEscrito = ficha.riesgo || rrEsCrisis(rrNorm([t.texto, t.pie].join(' ')));
+const senalEscrita = rrEsCrisis(rrNorm([t.texto, t.pie].join(' '))) || (ficha.riesgo && t.tipo !== 'interactive' && String(t.texto || '').trim() !== '' && !rrEsNeutro(rrNorm(t.texto), t.texto));   // ESTE turno trae una señal de crisis (renueva el plazo de 48 h de `ficha.riesgoMs`; escribir otra cosa no lo renueva)
+const riesgoEscrito = ficha.riesgo || senalEscrita;
 const puertaResponde = puerta.ruta === 'sigue' || puerta.ruta === 'suspendido' || (puerta.ruta === 'uso_extendido' && puerta.responder === true);
-if (puertaResponde && puerta.ruta !== 'sigue' && riesgoEscrito) return salir({ tipo: 'riesgo', aviso: avisoCrisis, cat: cat });
+if (puertaResponde && puerta.ruta !== 'sigue' && riesgoEscrito) return salir({ tipo: 'riesgo', aviso: avisoCrisis, cat: cat, senal: senalEscrita });
 if (puerta.ruta !== 'sigue') return salir({ tipo: 'nada' });
 
 // 0b. Un número no boliviano: el texto fijo y el botón de Rubén. Nada de modelo, de medios ni de QR.
-if (t.fueraDePais === true) return salir(riesgoEscrito ? { tipo: 'riesgo', aviso: avisoCrisis, cat: cat } : { tipo: 'fuera_pais', cat: cat });
+if (t.fueraDePais === true) return salir(riesgoEscrito ? { tipo: 'riesgo', aviso: avisoCrisis, cat: cat, senal: senalEscrita } : { tipo: 'fuera_pais', cat: cat });
 
 // El medio de este turno (solo uno de estos nodos corrió) y lo que se leyó en él.
 const prep = cnPrimero('Preparar imagen') || cnPrimero('Preparar transcripción') || cnPrimero('Medio no aceptado') || {};
@@ -113,10 +114,13 @@ const planComprobante = () => {
 };
 
 // 1. VIOLENCIA O MIEDO: antes que cualquier otra cosa (corta la venta). Se mira el texto, la transcripción, el texto leído de la imagen y el pie de foto; una vez activada, sigue activa 48 horas. El turno que trae
-//    un COMPROBANTE (imagen o PDF) sigue su camino normal del cobro (cotejo y aviso a Rubén): el riesgo se detecta solo en turnos sin comprobante pendiente de cotejar. Sin aviso a Rubén, sin consejos.
-if (!(esVisual && categoriaMedio === 'comprobante') && (ficha.riesgo || rrEsCrisis(rrNorm([textoCliente, leido, t.pie].join(' '))))) {
+//    un COMPROBANTE (imagen o PDF) sigue su camino normal del cobro (cotejo y aviso a Rubén), salvo que su PIE DE FOTO hable de una crisis (arriba). Sin consejos.
+const senalDelTurno = rrEsCrisis(rrNorm([textoCliente, leido, t.pie].join(' '))) || (ficha.riesgo && t.tipo !== 'interactive' && textoCliente.trim() !== '' && !rrEsNeutro(norm, textoCliente));
+// El PIE DE FOTO de un comprobante que habla de una crisis (LOW de seguridad del PR-1): responde la protección (texto, botón, aviso y `no_contactar`) y renueva el plazo; un pie sin crisis no corta el cotejo.
+if (esVisual && categoriaMedio === 'comprobante' && rrEsCrisis(rrNorm(t.pie))) return salir({ tipo: 'riesgo', aviso: avisoCrisis, cat: cat, nuevo: ficha.riesgo !== true, senal: true });
+if (!(esVisual && categoriaMedio === 'comprobante') && (ficha.riesgo || senalDelTurno)) {
   // `nuevo`: el riesgo se activa AHORA (no lo traía la ficha) y no lo dijo el texto escrito: «¿Avisar al servidor?» reporta `no_contactar` una sola vez, antes de armar el mensaje (un audio, una imagen o el pie ya viajan por su vía).
-  return salir({ tipo: 'riesgo', aviso: avisoCrisis, cat: cat, nuevo: ficha.riesgo !== true });
+  return salir({ tipo: 'riesgo', aviso: avisoCrisis, cat: cat, nuevo: ficha.riesgo !== true, senal: senalDelTurno });
 }
 
 // 1a. UN PEDIDO DE BAJA («no me escribas más», «ya no me escriban», «no me escribás»), con o sin QR abierto: un texto fijo corto de confirmación y NADA más —ni el modelo, ni la invitación a pagar, ni botones de producto, ni aviso a Rubén—.
@@ -171,8 +175,14 @@ if (esVisual) {
     textoDelTurno = rrLineaCliente('Imagen del anuncio «' + String(anuncio.titulares && anuncio.titulares[0] || '').replace(/[«»\[\]]/g, ' ') + '»', 300).replace(/\s+/g, ' ').trim();
     if (k && (agotados.indexOf(k) >= 0 || (prodAnuncio && prodAnuncio.agotado === true))) return salir({ tipo: 'derivar', motivo: 'agotado', aviso: avisoDeConsulta('producto_agotado', 'preguntó por un anuncio de ' + rrTitulo(nom, k) + ', que figura como agotado'), cat: cat, anuncio: idAnuncio });
     if (k && rrPrecio(cat, k) !== null) return salir(Object.assign({ tipo: 'precio', producto: k, cat: cat, conPresentacion: !ficha.saludado, temprano: !habilitado, anuncio: idAnuncio }, abierto()));
-    // Sin producto con precio: nada de montos; el ángulo del anuncio (dato aprobado por el negocio) abre la conversación. Como primer mensaje, el saludo fijo.
-    if (!ficha.saludado) return salir({ tipo: 'saludo', cat: cat, boton: '', anuncio: idAnuncio });
+    // Sin producto con precio: nada de montos; el ángulo del anuncio (dato aprobado por el negocio) abre la conversación. CASO (a) del PDF (PR-2): como PRIMER mensaje, una captura de anuncio SIN texto abre con SU ángulo —la presentación,
+    // una vez, y la apertura que redacta el modelo con el ángulo como dato—, no con el saludo genérico. Si el modelo falla, cae al saludo fijo (`angulo_fijo`). Un anuncio sin ángulo (dato vacío) sí recibe el saludo fijo.
+    if (!ficha.saludado) {
+      if (String(anuncio.angulo || '').trim() === '') return salir({ tipo: 'saludo', cat: cat, boton: '', anuncio: idAnuncio });
+      return salir(Object.assign({ tipo: 'angulo', angulo: '', conPresentacion: true, cat: cat, anuncio: idAnuncio, textoCliente: textoDelTurno }, abierto()), {
+        llamarModelo: true, cuerpoModelo: rrCuerpoModelo(textoDelTurno, ficha.hist, String(anuncio.angulo), base.temperatura, null, 'charla', cfg.nombreNegocio),
+      });
+    }
     return salir(Object.assign({ tipo: 'modelo', cat: cat, modo: 'charla', anuncio: idAnuncio, textoCliente: textoDelTurno }, abierto()), {
       llamarModelo: true, cuerpoModelo: rrCuerpoModelo(textoDelTurno, ficha.hist, String(anuncio.angulo || anuncio.titulares && anuncio.titulares[0] || ''), base.temperatura, null, 'charla', cfg.nombreNegocio),
     });
@@ -259,7 +269,10 @@ if (pre !== '') return salir(elegir(pre, ''));
 if (!esAudio && !esVisual && !hayQrAbierto && !ficha.saludado && rrEsEntradaLanding(norm, base.landingFrase)) return salir(saludo('', { origen: 'landing' }));
 // DERIVA SOLO LO QUE RUBÉN TIENE QUE VER (lista cerrada de `rrDerivacion`): garantía o devolución, reclamo, volumen o reventa, otro medio de pago, no entrega, hablar con una persona, el material que no abre, una pregunta médica específica (y la cancelación, más abajo). Todo lo demás se conversa, también con un QR abierto.
 const derivacion = rrDerivacion(norm, { comprobante: ficha.comprobanteMs > 0 || cobro.enRevision === true, qrAbierto: hayQrAbierto });
-if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', clave: derivacion.clave, aviso: avisoDeConsulta(derivacion.clave, derivacion.motivo), cat: cat });
+// CASO (b) del PDF (PR-2): «vi el video, ¿precio y devolución?» da el PRECIO por código y deriva la devolución en el MISMO mensaje (un solo envío): aviso a Rubén y botón; nunca solo la derivación sin el precio.
+const precioMencionado = rrPrecioMencionado(norm);
+const pideDuracion = rrPideDuracion(norm);
+if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', clave: derivacion.clave, aviso: avisoDeConsulta(derivacion.clave, derivacion.motivo), cat: cat, precio: precioMencionado !== null && ['garantia', 'otro_medio_pago', 'reclamo', 'volumen'].indexOf(derivacion.clave) >= 0 ? precioMencionado : null });
 // «Cancela mi pedido», «no quiero comprar», «ya no lo quiero» (con un QR abierto o un pedido hecho). «Solo quiero saber…» no cancela nada: es un cliente que mira (se le responde más abajo).
 // CANCELAR POR CÓDIGO: (a) QR abierto de regla 2 que el servidor ve (`cobro.pendiente`) y SIN comprobante previo: plan `cancelar_cobro`; «Avisar al servidor» reporta `cobro_cancelado` ANTES de armar el texto
 // y «Armar mensajes» dice «cerré tu pedido» solo si el servidor respondió 200; si no, cae a la escalada de siempre (`aviso` de este plan). (c) Con comprobante previo (en revisión o ya cotejado) NO se cancela: se escala y se
@@ -282,7 +295,8 @@ if (siNo && siNo.estado === 'resuelta' && siNo.intencion === 'ver_opciones' && s
   if (hayQrAbierto) return salir(Object.assign({ tipo: 'catalogo', cat: cat }, abierto()));
   return salir(rrMenu(cat, ficha.usados).length ? { tipo: 'opciones_codigo', cat: cat, boton: '' } : sinOpciones(''));
 }
-if (rrPreguntaPorResultado(norm)) return salir(Object.assign({ tipo: 'resultado', cat: cat }, abierto()));
+// CASOS (c) y (d): «¿me garantizan que voy a dormir?» no promete nada y recuerda el plan de 21 días; si la misma frase trae otra pregunta (el precio, la duración de los audios), el código responde TODO en UN solo mensaje.
+if (rrPreguntaPorResultado(norm)) return salir(Object.assign({ tipo: 'resultado', cat: cat, precio: precioMencionado, duracion: pideDuracion }, abierto()));
 // CON UN QR ABIERTO: el recordatorio SOLO sale si el cliente habla de pagar («ya pagué», «cómo pago», «comprobante», «QR», «monto») o pide un producto (más abajo). Todo lo demás se responde (resultado, imágenes, catálogo, precio, o el modelo
 // para una pregunta) sin botones de producto y SIN abrir otro QR (`qrAbierto: true`), y «Armar mensajes» agrega la invitación a pagar.
 if (hayQrAbierto && rrHablaDelCobro(norm)) return salir(recordatorio(''));
@@ -302,7 +316,7 @@ if (precioPedido && precioPedido.producto !== '') {
   const k = precioPedido.producto;
   // Un producto sin precio en el catálogo (agotado, o ausente) no se cotiza: con la bandera `agotado` se dice la verdad con el aviso y el botón; si no, no hay opciones que mostrar. Nunca se lista OTRO precio en su lugar.
   if (rrPrecio(cat, k) === null) return salir(agotados.indexOf(k) >= 0 ? { tipo: 'derivar', motivo: 'agotado', aviso: avisoDeConsulta('producto_agotado', 'preguntó el precio de ' + rrTitulo(nom, k) + ', que figura como agotado'), cat: cat } : sinOpciones(''));
-  return salir(Object.assign({ tipo: 'precio', producto: k, cat: cat, conPresentacion: !ficha.saludado, temprano: !habilitado }, abierto()));
+  return salir(Object.assign({ tipo: 'precio', producto: k, cat: cat, conPresentacion: !ficha.saludado, temprano: !habilitado, duracion: pideDuracion }, abierto()));
 }
 // «¿Tienes imágenes?»: respuesta fija, el flujo no envía imágenes del libro. Como PRIMER mensaje, el saludo.
 if (rrPideImagenes(norm)) return salir(!ficha.saludado ? saludo() : Object.assign({ tipo: 'imagenes', cat: cat }, abierto()));
@@ -321,6 +335,9 @@ if (precioPedido) {
 // La confirmación en texto (o por voz) de UN producto: el QR con el monto del catálogo, como un botón.
 const confirmado = rrProductoConfirmado(norm);
 if (confirmado) return salir(elegir(confirmado, ''));
+// «Lo voy a pensar»: sin presión, con los dos precios principales, por código, ya con las opciones habilitadas (antes de la charla no hay montos: lo contesta el modelo; con un QR abierto sigue el camino de siempre). La muestra de voz solo si la piden.
+if (!hayQrAbierto && habilitado && rrDiceLoVoyAPensar(norm)) return salir({ tipo: 'info', clave: 'pensar', cat: cat });
+if (!hayQrAbierto && rrPideMuestra(norm)) return salir({ tipo: 'info', clave: 'muestra', cat: cat });
 // «Quiero comprar», «cómo pago», «opciones»: las opciones, tras la compuerta (el QR sale solo de un producto elegido).
 if (rrQuiereOpciones(norm)) {
   if (hayQrAbierto) return salir(recordatorio(''));

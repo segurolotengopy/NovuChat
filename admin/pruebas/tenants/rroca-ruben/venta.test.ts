@@ -807,15 +807,22 @@ describe('crisis emocional: se corta la venta, hay texto cálido, botón y aviso
     expect(noContactar(t)).toBe(true);
   });
 
-  it('un turno con COMPROBANTE sigue el cobro normal aunque el pie de foto hable de una crisis: cotejo y aviso normal a Rubén; el entrante igual reporta `no_contactar`', () => {
+  it('un COMPROBANTE cuyo pie de foto habla de una crisis recibe la protección (texto, botón, aviso de crisis y `no_contactar`) y renueva el plazo; un pie SIN crisis sigue el cobro normal (cotejo y aviso de comprobante)', () => {
     const w = nuevo({ panel: panelConQr(70), medio: { clasificacion: COMPROBANTE } });
     const t = hablar(w, ANA, mImagen({ caption: 'ya no quiero vivir' }));
-    expect(t.ejecutados.has('Cotejar en el servidor')).toBe(true);
-    expect(t.mensajes[0]!.cuerpo).toMatch(/Recibí tu comprobante/);
-    expect(t.mensajes[0]!.cuerpo).not.toMatch(/Siento mucho/);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Siento mucho/);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/Recibí tu comprobante/);
+    expect(esBotonDeRubén(t)).toBe(true);
     expect(t.avisos).toHaveLength(1);
-    expect(t.avisos[0]!.cuerpo).not.toMatch(/vivir|crisis|contactar/i);
+    expect(t.avisos[0]!.cuerpo).not.toMatch(/vivir|contactar/i);
     expect(t.llamadas.ingesta.some((c) => c['evento'] === 'no_contactar')).toBe(true);
+    expect(fichaDe(w, ANA)['riesgo']).toBe(true);
+    expect(fichaDe(w, ANA)['riesgoMs'] as number).toBeGreaterThan(0);
+    const normal = nuevo({ panel: panelConQr(70), medio: { clasificacion: COMPROBANTE } });
+    const n = hablar(normal, ANA, mImagen({ caption: 'aquí va mi pago' }));
+    expect(n.ejecutados.has('Cotejar en el servidor')).toBe(true);
+    expect(n.mensajes[0]!.cuerpo).toMatch(/Recibí tu comprobante/);
+    expect(fichaDe(normal, ANA)['riesgo']).toBe(false);
   });
 
   it('NEGANDO: la crisis no ofrece el libro ni un QR, ni con un cobro abierto, y no niega ser una IA', () => {

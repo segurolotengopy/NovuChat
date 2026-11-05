@@ -32,6 +32,8 @@ const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experim
 const COMUN = readFileSync(join(RAIZ, 'lib/comun.js'), 'utf8');
 const NODOS = ['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'uso-extendido', 'comercio-no-operativo'] as const;
 const FUENTE_NODO = (n: (typeof NODOS)[number]): string => readFileSync(join(RAIZ, `nodos/${n}.js`), 'utf8');
+// El estado de la conversación en el servidor (PR-4a): `Config del negocio` incluye el módulo común `sesion`, como arma construir.mjs.
+const SESION = readFileSync(join(RAIZ, '../../comun-sin-agente/src/sesion.js'), 'utf8');
 
 // --- El mundo de las pruebas ------------------------------------------------------------------
 // Lunes 05/10/2026, 10:00 en La Paz (UTC-4 fijo).
@@ -124,7 +126,7 @@ interface Mundo { raiz?: J | null; ahoraMs?: number; globales?: Record<string, u
 function correrNodo(n: (typeof NODOS)[number], entradas: J[], refs: Referencias, m: Mundo = {}): J[] {
   const globales: Record<string, unknown> = { Date: relojFijo(m.ahoraMs ?? AHORA), ...(m.globales ?? {}) };
   if (m.raiz !== null) globales['$getWorkflowStaticData'] = () => m.raiz ?? {};
-  return ejecutar(`${DOBLES}\n${COMUN}\n${FUENTE_NODO(n)}`, entradas, refs, globales);
+  return ejecutar(`${DOBLES}\n${COMUN}\n${n === 'config-del-negocio' ? `${SESION}\n` : ''}${FUENTE_NODO(n)}`, entradas, refs, globales);
 }
 
 // --- Entradas de WhatsApp ----------------------------------------------------------------------
@@ -308,21 +310,21 @@ describe('comun.js: nodos de n8n por nombre', () => {
 
 // ================================================================================================
 describe('comun.js: datos estáticos, estado por teléfono y repetidos', () => {
-  it('vmSd crea las tres claves (estados, vistos, pedidos) y devuelve siempre el mismo objeto', () => {
+  it('vmSd crea solo `reservasDelDia` (el residuo de PR-4b) y devuelve siempre el mismo objeto; los mapas viejos YA NO se crean (el estado vive en el servidor)', () => {
     const raiz: J = {};
     const A = lib(raiz);
     const sd = A.vmSd();
-    expect(sd).toEqual({ estados: {}, vistos: {}, pedidos: {}, reservasDelDia: {} }); // la cuarta es de reserva.js (T3)
+    expect(sd).toEqual({ reservasDelDia: {} }); // es de reserva.js (T3)
     expect(raiz['ventaMinima']).toBe(sd);
-    sd.estados['59100000021'] = { paso: 'menu' };
-    expect(A.vmSd().estados['59100000021']).toEqual({ paso: 'menu' });
+    sd.reservasDelDia['59100000021'] = { dia: '2026-10-05', n: 1 };
+    expect(A.vmSd().reservasDelDia['59100000021']).toEqual({ dia: '2026-10-05', n: 1 });
   });
-  it('vmSd completa lo que falte sin pisar lo que hay, y repara una clave que no es objeto', () => {
-    const raiz: J = { ventaMinima: { estados: { x: 1 }, vistos: [] } };
+  it('vmSd completa lo que falte sin pisar lo que hay (los mapas viejos que queden hasta el retiro del respaldo se dejan como están), y repara una clave que no es objeto', () => {
+    const raiz: J = { ventaMinima: { estados: { x: 1 }, vistos: [], reservasDelDia: [] } };
     const sd = lib(raiz).vmSd();
     expect(sd.estados).toEqual({ x: 1 });
-    expect(sd.vistos).toEqual({});
-    expect(sd.pedidos).toEqual({});
+    expect(sd.vistos).toEqual([]); // no se toca: lo retira `vmRetirarRespaldo`
+    expect(sd.reservasDelDia).toEqual({});
   });
   it('vmSd da null sin datos estáticos', () => {
     const sinSd = ejecutar(`${COMUN}\nreturn [{ json: { sd: vmSd() } }];`, [{}])[0]!;
@@ -361,7 +363,7 @@ describe('comun.js: datos estáticos, estado por teléfono y repetidos', () => {
   });
   it('una clave que no es un teléfono ni se lee ni se escribe (nada de __proto__)', () => {
     const A = lib();
-    const sd = A.vmSd();
+    const sd = Object.assign(A.vmSd(), { estados: {}, vistos: {}, pedidos: {} }); // los mapas viejos (hasta el retiro del respaldo)
     for (const mala of ['__proto__', 'constructor', '', 'abc', '12345', undefined]) {
       expect(A.vmEscribirEstado(sd, mala, A.vmEstadoBase(), AHORA), String(mala)).toBe(false);
       expect(A.vmLeerEstado(sd, mala, AHORA)).toEqual(A.vmEstadoBase());
@@ -375,7 +377,7 @@ describe('comun.js: datos estáticos, estado por teléfono y repetidos', () => {
 
   it('vmBarrer: quita estados vencidos y repetidos de más de 24 h, y NO barre los pedidos', () => {
     const A = lib();
-    const sd = A.vmSd();
+    const sd = Object.assign(A.vmSd(), { estados: {}, vistos: {}, pedidos: {} }); // los mapas viejos: `vmBarrer` los poda por su vencimiento
     sd.estados['59100000021'] = { ...A.vmEstadoBase(), paso: 'pedido', ultimoMensajeMs: AHORA - 2 * HORA };
     sd.estados['59100000022'] = { ...A.vmEstadoBase(), paso: 'esperando_comprobante', ultimoMensajeMs: AHORA - 2 * HORA };
     sd.estados['59100000023'] = { ...A.vmEstadoBase(), paso: 'pedido', ultimoMensajeMs: AHORA - 5 * MIN };
@@ -393,7 +395,7 @@ describe('comun.js: datos estáticos, estado por teléfono y repetidos', () => {
   });
   it('vmBarrer recorta cada mapa a su tope y se van los más viejos', () => {
     const A = lib();
-    const sd = A.vmSd();
+    const sd = Object.assign(A.vmSd(), { estados: {}, vistos: {}, pedidos: {} }); // los mapas viejos (hasta el retiro del respaldo)
     for (let i = 0; i < 1005; i++) {
       sd.estados[String(59100000000 + i)] = { ...A.vmEstadoBase(), paso: 'pedido', ultimoMensajeMs: AHORA - i * 1000 };
     }
@@ -409,7 +411,7 @@ describe('comun.js: datos estáticos, estado por teléfono y repetidos', () => {
 
   it('vmYaVisto y vmMarcarVisto: la memoria dura 24 horas', () => {
     const A = lib();
-    const sd = A.vmSd();
+    const sd = Object.assign(A.vmSd(), { estados: {}, vistos: {}, pedidos: {} }); // los mapas viejos (hasta el retiro del respaldo)
     expect(A.vmYaVisto(sd, 'wamid.1', AHORA)).toBe(false);
     expect(A.vmMarcarVisto(sd, 'wamid.1', AHORA)).toBe(true);
     expect(A.vmYaVisto(sd, 'wamid.1', AHORA)).toBe(true);
@@ -419,7 +421,7 @@ describe('comun.js: datos estáticos, estado por teléfono y repetidos', () => {
   });
   it('un id vacío o raro nunca cuenta como visto ni se anota', () => {
     const A = lib();
-    const sd = A.vmSd();
+    const sd = Object.assign(A.vmSd(), { estados: {}, vistos: {}, pedidos: {} }); // los mapas viejos (hasta el retiro del respaldo)
     for (const malo of ['', '__proto__', 'constructor', 'prototype', undefined, null, 5, 'a'.repeat(301)]) {
       expect(A.vmMarcarVisto(sd, malo, AHORA), String(malo)).toBe(false);
       expect(A.vmYaVisto(sd, malo, AHORA), String(malo)).toBe(false);
@@ -837,8 +839,15 @@ describe('Interpretar entrada', () => {
   });
   const refs = (c: J, cfg: J = CFG): Referencias => ({ 'Carga de entrada': c, 'Config del negocio': cfg });
   /** Un turno con su estado propio. */
+  // PR-4a: el estado y los pedidos de un teléfono vienen de la sesión del servidor (`cfg.sesion`, que arma «Config del negocio»). Las semillas de estas pruebas se escriben como
+  // siempre (`raiz.ventaMinima.estados` / `.pedidos`) y aquí se traducen al bloque que habría leído el servidor.
+  const conSesion = (cfg: J, raiz: J | null | undefined): J => {
+    const vm = raiz && typeof raiz === 'object' ? (raiz['ventaMinima'] as J | undefined) : undefined;
+    if (cfg['sesion'] || !vm || (!vm['pedidos'] && !vm['estados'])) return cfg;
+    return { ...cfg, sesion: { ok: true, version: 1, vencido: false, corrupta: false, visto: null, estado: { v: 1, estado: vm['estados']?.[CLIENTE] ?? null, pedidos: vm['pedidos'] ?? {} } } };
+  };
   const turno = (msg: J | null, o: { cfg?: J; extra?: J; raiz?: J | null; globales?: Record<string, unknown> } = {}): J[] =>
-    correrNodo('interpretar-entrada', [{}], refs(carga(msg, o.extra), o.cfg ?? CFG), { raiz: o.raiz === undefined ? {} : o.raiz, globales: o.globales });
+    correrNodo('interpretar-entrada', [{}], refs(carga(msg, o.extra), conSesion(o.cfg ?? CFG, o.raiz)), { raiz: o.raiz === undefined ? {} : o.raiz, globales: o.globales });
   const uno = (msg: J, o: Parameters<typeof turno>[1] = {}): J => {
     const s = turno(msg, o);
     expect(s).toHaveLength(1);
@@ -1066,15 +1075,16 @@ describe('Interpretar entrada', () => {
     expect(turno(mensaje({ from: '54900000021' }), { cfg: { ...CFG, prefijosPermitidos: '591,54' } })).toHaveLength(1);
     expect(turno(mensaje(), { cfg: { ...CFG, prefijosPermitidos: '' } })).toEqual([]); // sin prefijos, ninguno
   });
-  it('[] si el mensaje ya se vio: el segundo turno con el mismo wamid no hace nada', () => {
+  it('[] si el mensaje ya se vio: lo dice el SERVIDOR al leer (`cfg.sesion.visto`); un id nuevo pasa', () => {
+    const visto = (v: string | null): J => ({ ...CFG, sesion: { ok: true, version: 0, vencido: false, corrupta: false, visto: v, estado: null } });
+    expect(turno(mensaje(), { cfg: visto('nuevo') })).toHaveLength(1);
+    expect(turno(mensaje(), { cfg: visto('repetido') })).toEqual([]);
+    expect(turno(mensaje({ id: 'wamid.otro' }), { cfg: visto('nuevo') })).toHaveLength(1);
+    expect(turno(mensaje(), { cfg: visto(null) })).toHaveLength(1); // sin veredicto no se descarta nada aquí (la entrada del receptor ya descarta por entrega)
+    // y ya NO se escribe nada en los datos estáticos: ni `vistos` ni nada
     const raiz: J = {};
-    expect(turno(mensaje(), { raiz })).toHaveLength(1);
-    expect(turno(mensaje(), { raiz })).toEqual([]);
-    expect(turno(mensaje({ id: 'wamid.otro' }), { raiz })).toHaveLength(1); // un id distinto pasa
-    expect(Object.keys(raiz['ventaMinima']['vistos']).sort()).toEqual(['wamid.otro', 'wamid.prueba-1']);
-    // pasadas 24 horas, Meta ya no reintenta ese id: se vuelve a aceptar
-    const [deNuevo] = correrNodo('interpretar-entrada', [{}], refs(carga(mensaje(), { ahoraMs: AHORA + 25 * HORA })), { raiz, ahoraMs: AHORA + 25 * HORA });
-    expect(deNuevo).toBeDefined();
+    turno(mensaje(), { cfg: visto('nuevo'), raiz });
+    expect(raiz['ventaMinima']?.['vistos']).toBeUndefined();
   });
   it('sin datos estáticos el turno sigue (no hay con qué descartar repetidos)', () => {
     expect(turno(mensaje(), { raiz: null })).toHaveLength(1);
@@ -1100,9 +1110,10 @@ describe('Interpretar entrada', () => {
   });
   it('un mensaje repetido de un destinatario no vuelve a anotar su ventana', () => {
     const raiz: J = {};
-    uno(mensaje({ from: AVISO_1 }), { raiz });
+    const visto = (v: string): J => ({ ...CFG, sesion: { ok: true, version: 0, vencido: false, corrupta: false, visto: v, estado: null } });
+    uno(mensaje({ from: AVISO_1 }), { raiz, cfg: visto('nuevo') });
     raiz['ventaMinima']['avVentanas'][AVISO_1] = 1;
-    expect(turno(mensaje({ from: AVISO_1 }), { raiz })).toEqual([]);
+    expect(turno(mensaje({ from: AVISO_1 }), { raiz, cfg: visto('repetido') })).toEqual([]);
     expect(raiz['ventaMinima']['avVentanas'][AVISO_1]).toBe(1);
   });
 });
@@ -1631,8 +1642,9 @@ describe('Los cinco nodos y la librería: reglas de la zona', () => {
     const OTROS = /\bfunction\s+(pd|rs|av|pr|cb)[A-Z]\w*\s*\(/;
     for (const [nombre, fuente] of FUENTES) expect(fuente, nombre).not.toMatch(OTROS);
     // toda función de la librería lleva el prefijo vm (o _vm si es privada)
-    for (const m of COMUN.matchAll(/^function\s+(\w+)\s*\(/gm)) expect(m[1], m[1]).toMatch(/^_?vm[A-Z]/);
-    for (const m of COMUN.matchAll(/^const\s+(\w+)\s*=/gm)) expect(m[1], m[1]).toMatch(/^_?VM_/);
+    // (`cnNodo` y `cnPrimero` son los dos nombres que pide el módulo común `sesion` para leer un nodo solo si corrió)
+    for (const m of COMUN.matchAll(/^function\s+(\w+)\s*\(/gm)) expect(m[1], m[1]).toMatch(/^(_?vm[A-Z]|cn(Nodo|Primero)$)/);
+    for (const m of COMUN.matchAll(/^const\s+(\w+)\s*=/gm)) expect(m[1], m[1]).toMatch(/^(_?VM_|SS_CONFIG$)/);
   });
   it('ningún nodo agrega mensajes: a lo sumo uno por turno', () => {
     // Uso extendido en operador: 1; bloqueado: 0; comercio no operativo: 1; el resto no emite mensajes.

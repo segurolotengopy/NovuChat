@@ -55,6 +55,7 @@ let usadoNuevo = '';        // el botón de este turno que no debe reaparecer
 let respuestaDelModelo = false;   // el texto que sale es la redacción del modelo (cuenta para la memoria y para el menú)
 let pedidoNuevo = null;
 let riesgoNuevo = false;    // este turno activó (o mantiene) la protección ante una crisis
+let senalDeRiesgo = false;  // este turno trae una SEÑAL de crisis (el texto, o la marca RIESGO del modelo): solo ella renueva el plazo de 48 h de la protección (`ficha.riesgoMs`)
 let upgradeOfrecido = false;   // este turno ofreció el paso del Libro al Pack (se escribe en la ficha, una sola vez)
 let qrPrevio = null;        // la ficha antes de la marca provisional del QR
 let hashPrevio = null;      // lo último dicho al teléfono antes de este turno (hash y plan): vuelve si Meta no aceptó el envío
@@ -106,13 +107,15 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
   // La marca RIESGO del modelo activa la protección; la palabra DERIVAR pasa a Rubén. Ninguna de las dos llega jamás al cliente.
   if (tipoDePlan === 'modelo' || tipoDePlan === 'angulo') {
     const crudo = rrQuitarEcoDeMarcador(cnTextoDeGemini(cnPrimero('Conversar con el modelo')));
-    if (rrEsMarcaRiesgo(crudo)) tipoDePlan = 'riesgo';
+    if (rrEsMarcaRiesgo(crudo)) { tipoDePlan = 'riesgo'; senalDeRiesgo = true; }
     else if (rrEsDerivar(crudo)) { tipoDePlan = 'derivar'; plan.motivo = 'consulta'; plan.clave = 'no_supo'; }
   }
 
   if (tipoDePlan === 'riesgo') {
     // CRISIS: el texto cálido lo pone el código, con el botón de Rubén; «Le avisé…» solo si el aviso salió de verdad. `no_contactar` viaja siempre (nunca el rescate de ventas a una persona en crisis).
     riesgoNuevo = true;
+    if (plan.senal === true) senalDeRiesgo = true;
+    // La continuación (la protección sigue activa, sin señal nueva) recibe el mismo texto, sin venta: la crisis sigue cortando la venta; lo que cambia es CUÁNTO dura (ver `riesgoMs`).
     m = conRuben(RR_TEXTO_CRISIS + (avisoSalio ? '\n\n' + RR_TEXTO_CRISIS_AVISO : ''));
     m.evento = 'no_contactar';
   } else if (tipoDePlan === 'fuera_pais') {
@@ -162,12 +165,16 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
   } else if (tipoDePlan === 'precio') {
     if (plan.temprano === true && !qrAbierto) {
       // El precio de UN producto antes de la charla: lo dice el código (con la presentación si es el primer mensaje), sin botones de producto; el cierre es el del puente («¿Te muestro las opciones?» y el botón «Ver opciones»).
-      m = conBotones(conPresentacion(rrTextoPrecio(cat, plan.producto, 'puente', nom)), botonOpciones(), undefined, true);
+      m = conBotones(conPresentacion(plan.duracion === true ? rrTextoPrecio(cat, plan.producto, false, nom) + '\n\n' + RR_TEXTO_DURACION + '\n\n' + RR_CIERRE_PUENTE : rrTextoPrecio(cat, plan.producto, 'puente', nom)), botonOpciones(), undefined, true);
     } else {
       const op = qrAbierto ? [] : menuAbierto();
       // Con un QR abierto no se ofrecen botones de producto (no se abre otro QR) ni el de Rubén: el texto cierra con la invitación a pagar, no con una pregunta.
-      m = qrAbierto ? texto(invitar(rrTextoPrecio(cat, plan.producto, false, nom))) : conBotones(rrTextoPrecio(cat, plan.producto, op.length > 0, nom), op);
+      const durP = plan.duracion === true ? '\n\n' + RR_TEXTO_DURACION : '';
+      m = qrAbierto ? texto(invitar(rrTextoPrecio(cat, plan.producto, false, nom) + durP)) : conBotones(durP !== '' ? rrTextoPrecio(cat, plan.producto, false, nom) + durP + (op.length > 0 ? '\n\n¿Qué opción prefieres?' : '') : rrTextoPrecio(cat, plan.producto, op.length > 0, nom), op);
     }
+  } else if (tipoDePlan === 'info') {
+    // Textos fijos de la base de conocimiento que el código dice solo si hacen falta: «lo voy a pensar» (con los dos precios del catálogo) y la muestra de voz (solo si la piden). Sin botones, sin aviso.
+    m = texto(conPresentacion(plan.clave === 'muestra' ? RR_TEXTO_MUESTRA : rrTextoPensar(cat, nom)));
   } else if (tipoDePlan === 'catalogo') {
     // El catálogo completo con precio, por código (los precios son los del catálogo de la consola). Con un QR abierto, texto plano con la invitación a pagar.
     const op = qrAbierto ? [] : menuAbierto();
@@ -192,7 +199,13 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     else { tipoDePlan = 'derivar'; m = conRuben('Por ahora no puedo mostrarte las opciones de audio. Escríbele directo a Rubén con el botón.'); }
   } else if (tipoDePlan === 'resultado') {
     const op = qrAbierto ? [] : menuAbierto();
-    m = qrAbierto ? texto(invitar(conPresentacion(rrTextoResultado(false)))) : conBotones(conPresentacion(rrTextoResultado(op.length > 0)), op);
+    // CASOS (c) y (d): el precio y la duración de los audios, si también los preguntó, van DELANTE de la respuesta de resultado, en el MISMO mensaje (un solo envío).
+    const antes = [];
+    const precioR = plan.precio && typeof plan.precio === 'object' ? rrTextoPrecioSolo(cat, plan.precio.producto, nom) : '';
+    if (precioR !== '') antes.push(precioR);
+    if (plan.duracion === true) antes.push(RR_TEXTO_DURACION);
+    const delante = antes.length ? antes.join('\n\n') + '\n\n' : '';
+    m = qrAbierto ? texto(invitar(conPresentacion(delante + rrTextoResultado(false)))) : conBotones(conPresentacion(delante + rrTextoResultado(op.length > 0)), op);
   } else if (tipoDePlan === 'qr') {
     const monto = rrPrecio(cat, plan.producto);
     const mediaId = rrMediaId(plan.mediaId);
@@ -234,7 +247,10 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
       upgradeOfrecido = true;
     } else m = r.boton === true ? conRuben(r.cuerpo) : texto(r.cuerpo);
   } else if (tipoDePlan === 'derivar') {
-    m = conRuben(rrTextoDerivacion(plan.motivo, estadoAviso, plan.clave, base));
+    // CASO (b): si el cliente también preguntó el precio, el precio (por código, del catálogo) va DELANTE de la derivación, en el MISMO mensaje; si es el primer mensaje, con la presentación.
+    const precioDeriva = plan.precio && typeof plan.precio === 'object' ? rrTextoPrecioSolo(cat, plan.precio.producto, nom) : '';
+    const derivacion = rrTextoDerivacion(plan.motivo, estadoAviso, plan.clave, base);
+    m = conRuben(precioDeriva !== '' ? conPresentacion(precioDeriva + '\n\n' + derivacion) : derivacion);
     // Con un comprobante previo, «cancelar» no cancela: el evento `anulacion_avisada` solo avisa al servidor (viaja con el reporte del mensaje).
     if (plan.evento === 'anulacion_avisada') m.evento = 'anulacion_avisada';
   } else if (tipoDePlan === 'imagen_descrita') {
@@ -317,10 +333,10 @@ if (claveOk) {
   }
   // «Cancela mi pedido» con un QR abierto: se libera la guarda LOCAL del QR (si el servidor cerró el cobro, ya no hay nada abierto; si no, sigue hasta que venza); se restaura si la respuesta no sale (`Resumen del turno`).
   if ((tipoDePlan === 'derivar' || tipoDePlan === 'cobro_cerrado') && plan.liberaGuarda === true && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
-  if (riesgoNuevo) ficha.riesgo = true;
+  if (riesgoNuevo) { ficha.riesgo = true; if (senalDeRiesgo || !(ficha.riesgoMs > 0)) ficha.riesgoMs = ahora; }
   if (upgradeOfrecido && m && puerta.ruta === 'sigue') ficha.upgrade = 1;
   // La memoria de la charla (15 mensajes): lo que dijo el cliente y lo que se le respondió, solo en la conversación (no en el cobro) y NUNCA en la protección por violencia o miedo.
-  if (m && ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo', 'precio', 'resultado'].indexOf(tipoDePlan) >= 0) {
+  if (m && ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo', 'precio', 'resultado', 'info'].indexOf(tipoDePlan) >= 0) {
     rrRecordarMensaje(ficha, 'u', decision.textoCliente);
     rrRecordarMensaje(ficha, 'm', m.texto);
   }
