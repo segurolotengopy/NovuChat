@@ -1,6 +1,6 @@
 // ARMAR MENSAJES: lo que sale al cliente, armado por CÓDIGO. UN SOLO MENSAJE por turno, o ninguno (+0 mensajes agregados).
 //
-// Lee el plan de «Decidir turno» y arma: un texto, un texto con botones (los menús, sin los botones que el cliente ya pulsó), una lista (los bonos), el QR (una IMAGEN por `id` de medio, NUNCA por `link`: el relé
+// Lee el plan de «Decidir turno» y arma: un texto, un texto con botones (los menús, sin los botones que el cliente ya pulsó), una lista, el QR (una IMAGEN por `id` de medio, NUNCA por `link`: el relé
 // de WAM rechaza cualquier clave `link` en el cuerpo) o un texto con el botón que abre el chat de Rubén. Lo que redacta el modelo pasa por `cmRevisarRedaccion` (filtro común): si se rechaza, cae al texto fijo.
 //
 //   puerta «suspendido»        -> el texto neutro del comercio (sin revelar el motivo);
@@ -74,7 +74,7 @@ const conRuben = (cuerpo, extra) => {
 };
 const usadosHoy = () => fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
 // REGLA (P7): un saludo SIN producto decidido no lleva botones con montos. Mientras no esté saludado, o la compuerta esté cerrada, no hay menú en las respuestas libres; ya saludado y habilitado, el menú principal sin los botones que ya pulsó.
-// Un prellenado de la landing (Pack, Libro con bono, Audiolibro o Meditaciones) tiene el producto ya decidido y va directo al QR con su monto.
+// Un prellenado de la landing (Pack, Libro, Audiolibro o Meditaciones) tiene el producto ya decidido y va directo al QR con su monto.
 const menu1 = () => rrMenu(cat, usadosHoy(), nom);
 const menuAbierto = () => (fichaAntes.saludado && habil ? menu1() : []);
 const presentacion = !fichaAntes.saludado;
@@ -174,7 +174,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     }
   } else if (tipoDePlan === 'info') {
     // Textos fijos de la base de conocimiento que el código dice solo si hacen falta: «lo voy a pensar» (con los dos precios del catálogo) y la muestra de voz (solo si la piden). Sin botones, sin aviso.
-    m = texto(conPresentacion(plan.clave === 'muestra' ? RR_TEXTO_MUESTRA : rrTextoPensar(cat, nom)));
+    m = texto(conPresentacion(plan.clave === 'muestra' ? rrTextoMuestra(base) : rrTextoPensar(cat, nom)));
   } else if (tipoDePlan === 'catalogo') {
     // El catálogo completo con precio, por código (los precios son los del catálogo de la consola). Con un QR abierto, texto plano con la invitación a pagar.
     const op = qrAbierto ? [] : menuAbierto();
@@ -334,6 +334,8 @@ if (claveOk) {
   // «Cancela mi pedido» con un QR abierto: se libera la guarda LOCAL del QR (si el servidor cerró el cobro, ya no hay nada abierto; si no, sigue hasta que venza); se restaura si la respuesta no sale (`Resumen del turno`).
   if ((tipoDePlan === 'derivar' || tipoDePlan === 'cobro_cerrado') && plan.liberaGuarda === true && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
   if (riesgoNuevo) { ficha.riesgo = true; if (senalDeRiesgo || !(ficha.riesgoMs > 0)) ficha.riesgoMs = ahora; }
+  // Con la protección activa y la pausa por persona en curso (el asistente calla), una señal de crisis o un texto no neutro también renueva el plazo de 48 h: Rubén la tiene, pero la protección no se acorta por eso.
+  if (ficha.riesgo === true && puerta.ruta === 'uso_extendido' && puerta.responder !== true && (rrEsCrisis(rrNorm([t.texto, t.pie].join(' '))) || (t.tipo !== 'interactive' && String(t.texto || '').trim() !== '' && !rrEsNeutro(rrNorm(t.texto), t.texto)))) ficha.riesgoMs = ahora;
   if (upgradeOfrecido && m && puerta.ruta === 'sigue') ficha.upgrade = 1;
   // La memoria de la charla (15 mensajes): lo que dijo el cliente y lo que se le respondió, solo en la conversación (no en el cobro) y NUNCA en la protección por violencia o miedo.
   if (m && ['saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo', 'precio', 'resultado', 'info'].indexOf(tipoDePlan) >= 0) {

@@ -1,5 +1,5 @@
 {
-  "_fuente": "Los 3 artes de anuncio y la portada de «Noches Sin Insomnio» (04/11/2026), con los ángulos de apertura de la guía B del MD de Rubén. Son DATO del negocio (módulo Campañas de la consola): el flujo no lleva ninguno escrito. Sin montos, sin enlaces y sin promesas de resultado: el precio sale siempre del catálogo. Los 5 anuncios del libro anterior (IA para Emprendedores) se RETIRARON. Los anuncios no llevan `productoId`: la charla abre con su ángulo y el precio solo se dice si el cliente lo pide.",
+  "_fuente": "Los 3 artes de anuncio de «Noches Sin Insomnio» (04/11/2026), con los ángulos de apertura de la guía B del MD de Rubén. Son DATO del negocio (módulo Campañas de la consola): el flujo no lleva ninguno escrito. Sin montos, sin enlaces y sin promesas de resultado: el precio sale siempre del catálogo. Los 5 anuncios del libro anterior (IA para Emprendedores) se RETIRARON. Los anuncios no llevan `productoId`: la charla abre con su ángulo y el precio solo se dice si el cliente lo pide.",
   "_uso": "node admin/scripts/datos/rroca-ruben/cargar-campanas.mjs --proyecto <id> --tenant rroca-ruben [--archivo <json>]   (en SECO por defecto; --aplicar escribe y lo hace el coordinador con la autorización de Andres)",
   "tenant": "rroca-ruben",
   "diasDeVigencia": 180,
@@ -27,14 +27,6 @@
         "Rutinas simples para tus noches"
       ],
       "angulo": "Destaca ir un paso a la vez: un capítulo corto, un ejercicio práctico y recién el siguiente eslabón. Pregunta si quiere que le cuentes cómo funciona y cuáles son las opciones para empezar."
-    },
-    {
-      "id": "portada-del-libro",
-      "titulares": [
-        "Noches Sin Insomnio",
-        "Libro · Bono · Audiolibro · Meditaciones"
-      ],
-      "angulo": "Explica con claridad que el método reúne el libro con 14 eslabones, el audiolibro y las meditaciones guiadas, y pregunta cuál se adapta mejor a lo que busca. No es un tratamiento médico ni promete resultados."
     }
   ]
 }

@@ -65,7 +65,7 @@ describe('la batería de Rubén en seco: los 19 turnos corren por el flujo versi
     expect(r.salida).toMatch(/Caso A, corrida 1/);
     expect(r.salida).toMatch(/Soy el asistente virtual de Noches Sin Insomnio\./);
     expect(r.salida).not.toMatch(/Dauber|Antonio/);
-    expect(r.salida).toMatch(/Asistente \[opciones\]:[^\n]*Te dejo aquí abajo las opciones[^\n]*ahorras 20 Bs[^\n]*Pack completo 70Bs \| Libro con bono 35Bs \| Solo audios/);
+    expect(r.salida).toMatch(/Asistente \[opciones\]:[^\n]*Te dejo aquí abajo las opciones[^\n]*ahorras 20 Bs[^\n]*Pack completo 70Bs \| Libro 35Bs \| Solo audios/);
     expect(r.salida).toMatch(/Asistente \[puente\]:[^\n]*¿Te muestro las opciones\?[^\n]*botones: Ver opciones/);
     expect(r.salida).toMatch(/Asistente \[precio\]:[^\n]*cuesta 35 Bs[^\n]*¿Te muestro las opciones\?/);
     expect(r.salida).toMatch(/Asistente \[modelo\]:[^\n]*tu QR sigue abierto/);

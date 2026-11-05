@@ -195,8 +195,9 @@ const FORMAS_CONFIG = {
   avisoConsultaEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
   avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
   // Textos que ve el cliente: una frase, sin comillas dobles ni llaves ni saltos.
-  garantiaTexto: /^[^"{}\r\n<>]{10,300}$/,
   // La planilla del miniCRM: el id de la hoja de Google (un marcador en el repositorio) y el nombre de su pestaña.
+  // La landing (solo su dominio): el flujo la comparte únicamente cuando la persona pide la muestra de voz.
+  landingDominio: /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i,
   planillaProspectosId: /^(REEMPLAZAR_[A-Z0-9_]+|[A-Za-z0-9_-]{25,100})$/,
   planillaProspectosHoja: /^[\p{L}\p{N}_ .-]{1,100}$/u,
 };
@@ -423,7 +424,7 @@ export const CLAVES_DE_PLANTILLA = [
   { estado: 'avisoConsultaEstado', nombre: 'avisoConsultaPlantilla' },
 ];
 /** Los 4 productos que lee el flujo (`RR_PRODUCTOS.catId`): el id sale de `idDe(nombre)` al cargar el negocio. */
-export const IDS_DEL_CATALOGO = ['pack-completo', 'libro-con-bono', 'audiolibro', 'meditaciones'];
+export const IDS_DEL_CATALOGO = ['pack-completo', 'libro', 'audiolibro', '3-meditaciones'];
 const idDe = (nombre) => String(nombre).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 // Un marcador es CUALQUIER `REEMPLAZAR_` (sin distinguir mayúsculas, tras normalizar a NFKC). Se quitan antes de mirar SOLO las formas que son texto de comentario de los módulos copiados
 // (`REEMPLAZAR_*`, `REEMPLAZAR_…`, `REEMPLAZAR_...`, `REEMPLAZAR_` entre comillas invertidas) y los literales de expresión regular `/^REEMPLAZAR_/` y `/reemplazar_/i` con los que el código descarta marcadores.
