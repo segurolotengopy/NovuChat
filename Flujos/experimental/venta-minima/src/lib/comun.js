@@ -469,6 +469,13 @@ function vmGuardarPedido(ses, ped, ahoraMs) {
   return ses.pedidos[id];
 }
 
+// La clave con que se recuerda un aviso ya enviado cuando el compromiso del estado fallo (`sd.avisosHuerfanos`). El de PEDIDO es por pedidoId; el de COMPROBANTE incluye el medio y el
+// resultado del cotejo: un segundo comprobante (otra foto, o el mismo pedido ahora correcto) NO es el mismo aviso y nunca se suprime por uno anterior.
+function vmClaveAviso(tipo, pedidoId, mediaId, resultado) {
+  const base = _vmCadena(tipo) + ':' + _vmCadena(pedidoId);
+  return tipo === 'comprobante' ? base + ':' + _vmCadena(mediaId) + ':' + _vmCadena(resultado) : base;
+}
+
 // ¿El mensaje ya se vio segun la memoria vieja? Solo hasta el retiro del respaldo: un reintento de Meta que llega justo al publicar no se responde dos veces.
 function vmVistoDeRespaldo(idMensaje, ahoraMs) {
   if (!(Number(ahoraMs) < VM_RESPALDO_HASTA_MS) || !_vmIdValido(idMensaje)) return false;

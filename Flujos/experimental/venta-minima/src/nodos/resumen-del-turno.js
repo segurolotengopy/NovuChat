@@ -25,8 +25,19 @@ const rtId = (j) => {
   return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== '';
 };
 if (vmNodo('Enviar a WhatsApp')) {
-  const RT_esperados = RT_items.filter((i) => i && i.sinMensajes !== true).length;
-  const RT_entregados = vmTodos('Enviar a WhatsApp').filter(rtId).length + vmTodos('Enviar respaldo').filter(rtId).length;
+  // Solo cuentan los mensajes AL CLIENTE: el aviso de transferencia que acompaña al genérico de una falla (destino `recepcion`, siempre el último ítem) no corta el turno si Meta lo rechaza.
+  const RT_enviables = RT_items.filter((i) => i && i.sinMensajes !== true);
+  const RT_envios = vmTodos('Enviar a WhatsApp');
+  const RT_respaldos = vmTodos('Enviar respaldo');
+  let RT_usados = 0;
+  let RT_esperados = 0;
+  let RT_entregados = 0;
+  RT_enviables.forEach((it, k) => {
+    const final = rtId(RT_envios[k]) ? RT_envios[k] : RT_respaldos[RT_usados++];
+    if (it.destino === 'recepcion') return;
+    RT_esperados++;
+    if (rtId(final)) RT_entregados++;
+  });
   if (RT_entregados < RT_esperados) {
     const RT_comp = vmNodo('Comprometer compensación') ? ssResultadoDeCompromiso(vmPrimero('Comprometer compensación')) : null;
     throw new Error('Entrega fallida: Meta rechazó el envío y su respaldo en texto; ' + (RT_esperados - RT_entregados) + ' de ' + RT_esperados + ' mensaje(s) al cliente sin entregar. El cliente no recibió respuesta.'

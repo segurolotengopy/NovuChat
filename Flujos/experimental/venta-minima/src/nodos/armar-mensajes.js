@@ -505,20 +505,62 @@ const AM_falla = AM_jFalla ? [Object.assign(AM_jFalla, {
   resumen: Object.assign({}, AM_resumen, { estadoDespues: null, errores: AM_erroresFalla, mensajesSalientes: 1, avisoSalio: AM_AVISO_SALIO }),
 })] : [{ sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: AM_FROM, cierre: null, errores: AM_erroresFalla,
   resumen: Object.assign({}, AM_resumen, { estadoDespues: null, errores: AM_erroresFalla, mensajesSalientes: 0 }) }];
-// Los avisos de pedido y de comprobante que SALIERON en este turno, por `tipo:pedidoId`: si el compromiso falla, `Soltar mensajes` los anota para que el turno siguiente no los repita (I1).
+// Los avisos de pedido y de comprobante que SALIERON en este turno (o ya estaban avisados): si el compromiso falla, `Soltar mensajes` los anota para que el turno siguiente no los repita (I1).
+// La clave es la de `Armar avisos` (`vmClaveAviso`): el pedido por pedidoId; el comprobante, además, por medio y resultado del cotejo (B2: un comprobante correcto nunca se suprime por uno malo anterior).
 const AM_idPedido = AM_ped && AM_ped.pedidoId ? String(AM_ped.pedidoId) : '';
+const AM_datosDe = (tipo) => {
+  const lista = [].concat(AM_PLAN.aviso || [], AM_PLAN.avisos || []).filter((x) => x && typeof x === 'object' && x.tipo === tipo);
+  return lista[0] && lista[0].datos && typeof lista[0].datos === 'object' ? lista[0].datos : {};
+};
 const AM_avisoMarcas = AM_AVISO_SALIO && AM_idPedido
-  ? ['pedido', 'comprobante'].filter((x) => AM_tiposSalidos.indexOf(x) >= 0 || AM_yaAvisado.indexOf(x) >= 0).map((x) => x + ':' + AM_idPedido) : [];
+  ? ['pedido', 'comprobante'].filter((x) => AM_tiposSalidos.indexOf(x) >= 0 || AM_yaAvisado.indexOf(x) >= 0).map((x) => {
+    const d = AM_datosDe(x);
+    return vmClaveAviso(x, d.pedidoId || AM_idPedido, d.mediaId || AM_ped.mediaId || (x === 'comprobante' ? AM_T.mediaId : '') || '', d.resultado || '');
+  }) : [];
 // HECHO EXTERNO ya ocurrido antes del compromiso: un aviso al local salió (o ya estaba avisado) o se cotejó el comprobante en el servidor. Con él, ceder en un conflicto de versión es un defecto (B1).
 const AM_hechoExterno = AM_AVISO_SALIO || AM_yaAvisado.length > 0 || vmNodo('Cotejar en el servidor') !== null;
+// El genérico de una falla del compromiso SIN hecho externo lleva, como un ítem más (destino `recepcion`, sin nodos nuevos), el aviso estándar de transferencia: «pasar con recepción» es SIEMPRE el
+// aviso a recepción MÁS el botón (política del 21/09/2026), dentro de `topeTransferenciasHora` y a los destinatarios de «Config base». Con hecho externo el local ya recibió el del pedido: no hace falta otro.
+// En la variante de prueba no se arma (los avisos de la prueba los simula `Simular aviso`). `Soltar mensajes` anota la marca de la derivación.
+let AM_avisoFalla = false;
+if (AM_jFalla && AM_modo !== 'sin_estado_que_guardar' && !AM_hechoExterno && !AM_PRUEBA && AM_sd && AM_claveValida) {
+  try {
+    const marcas = AM_sd.transferencias && typeof AM_sd.transferencias === 'object' && Object.prototype.hasOwnProperty.call(AM_sd.transferencias, AM_FROM) ? AM_sd.transferencias[AM_FROM] : null;
+    const lista = Array.isArray(marcas) ? marcas : (marcas ? [marcas] : []);
+    const tope = Number.isFinite(Number(AM_CFG.topeTransferenciasHora)) && AM_CFG.topeTransferenciasHora !== '' && AM_CFG.topeTransferenciasHora !== null ? Math.max(0, Math.floor(Number(AM_CFG.topeTransferenciasHora))) : 1;
+    if (lista.filter((ms) => AM_AHORA - Number(ms) < AM_HORA_MS && AM_AHORA - Number(ms) >= 0).length < tope) {
+      const dest = avDestinatarios(AM_CFG.destinatariosAviso, AM_FROM, AM_CFG.prefijosPermitidos || '591', AM_CFG.avisarAlPropioNumero === true) || [];
+      let crudo = dest.length ? avPlan('transferencia', {
+        motivo: 'no se pudo guardar el estado de la conversación: el asistente le ofreció pasar con recepción', codigo: vmCodigoCorto(AM_AHORA), from: AM_FROM,
+        nombre: AM_T.nombrePerfil || '', telefono: AM_FROM, ahoraMs: AM_AHORA,
+      }, dest, AM_CFG, AM_sd, AM_AHORA) : [];
+      if (crudo && !Array.isArray(crudo) && Array.isArray(crudo.items)) crudo = crudo.items;
+      for (const it of Array.isArray(crudo) ? crudo : []) {
+        const numero = vmDigitos(it && it.para);
+        if (!numero || !it.payload || typeof it.payload !== 'object') continue;
+        // solo los TEXTOS que ve una persona pasan por la red de palabras (como en `Armar avisos`): el nombre de la plantilla y su idioma no son texto
+        const textos = it.payload.type === 'text' && it.payload.text ? [it.payload.text.body] : [].concat(...((it.payload.template && Array.isArray(it.payload.template.components) ? it.payload.template.components : []).map((c) => (c && Array.isArray(c.parameters) ? c.parameters.map((p) => p && p.text) : []))));
+        if (textos.some((x) => typeof x === 'string' && amSeguro(x) !== true)) continue;
+        it.payload.to = numero;
+        const resp = typeof it.respaldo === 'string' ? { messaging_product: 'whatsapp', recipient_type: 'individual', to: numero, type: 'text', text: { preview_url: false, body: it.respaldo.slice(0, 4000) } }
+          : (it.respaldo && typeof it.respaldo === 'object' ? Object.assign(it.respaldo, { to: numero }) : null);
+        AM_falla.push({
+          para: numero, destino: 'recepcion', payload: it.payload, texto: '', respaldo: resp, tipoReporte: null, reportar: false, phoneNumberId: AM_NUMERO_ID,
+          waGraphVersion: AM_CFG.waGraphVersion || 'v26.0', from: AM_FROM, sinMensajes: false,
+        });
+        AM_avisoFalla = true;
+      }
+    }
+  } catch (e) { AM_avisoFalla = false; }
+}
 // La replanificación (`Comprometer turno (2.º intento)`) arma su cuerpo en una expresión con el bloque GANADOR: aquí van el pedido de este turno y el estado de respaldo, y los datos fijos.
 const AM_replan = AM_hechoExterno && AM_modo === 'comprometer' ? {
-  telefono: AM_FROM, espacio: ssEspacio(), ejecucion: ssEjecucion($execution.id), idCompromiso: ssIdCompromiso($execution.id, 'fin2'),
+  telefono: AM_FROM, espacio: ssEspacio(), ejecucion: ssEjecucion($execution.id), idCompromiso: ssIdCompromiso($execution.id, 'fin2'), pedidoId: AM_idPedido,
   pedidos: AM_pedidoGuardado && AM_idPedido && AM_bloque && AM_bloque.pedidos && Object.prototype.hasOwnProperty.call(AM_bloque.pedidos, AM_idPedido) ? { [AM_idPedido]: AM_bloque.pedidos[AM_idPedido] } : {},
   estadoMenu: AM_bloque && AM_bloque.estado ? Object.assign({}, AM_bloque.estado, AM_bloque.estado.paso === 'esperando_comprobante' ? {} : { paso: 'menu' }) : null,
 } : null;
 return [{ json: {
-  hechoExterno: AM_hechoExterno, replan: AM_replan, avisoMarcas: AM_avisoMarcas,
+  hechoExterno: AM_hechoExterno, replan: AM_replan, avisoMarcas: AM_avisoMarcas, avisoFalla: AM_avisoFalla,
   turno: true, modo: AM_modo, comprometer: AM_compromiso !== null, compromiso: AM_compromiso, numero: ssNumeroHeader(),
   salida: AM_final, salidaFalla: AM_falla, previo: AM_ses.previo, bloque: AM_bloque, deRespaldo: AM_ses.deRespaldo, from: AM_FROM, ahoraMs: AM_AHORA,
 } }];

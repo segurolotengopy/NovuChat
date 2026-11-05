@@ -1638,7 +1638,7 @@
         2360,
         300
       ],
-      "notes": "El estado de la conversación vive en el servidor (PR-4a, contrato §6). Sin una conversación válida en la respuesta de `Traer configuración` (un servidor sin la rama `sesion`, un 5xx o un timeout —con el panel caído tampoco hay `leer`—, o la variante de prueba para un teléfono que no es de `telefonosDePrueba`) no se sabe en qué paso va el cliente: sale el genérico con el botón a recepción (`Sin estado`), sin aviso al local, sin modelo, sin estado nuevo y sin compromiso. Reemplaza la respuesta: un mensaje por turno."
+      "notes": "El estado de la conversación vive en el servidor (PR-4a, contrato §6). Sin una conversación válida en la respuesta de `Traer configuración` (un servidor sin la rama `sesion`, un 5xx o un timeout —con el panel caído tampoco hay `leer`—, o la variante de prueba para un teléfono que no es de `telefonosDePrueba`) no se sabe en qué paso va el cliente: sale «pasar con recepción» (`Sin estado`): el aviso estándar de transferencia a recepción MÁS el botón (política del 21/09/2026, dentro de `topeTransferenciasHora`), sin modelo, sin estado nuevo y sin compromiso. Reemplaza la respuesta: un mensaje por turno."
     },
     {
       "parameters": {
@@ -1652,7 +1652,7 @@
         2600,
         760
       ],
-      "notes": "Sin estado en el servidor: lo único que se ofrece es pasar con recepción (el botón para escribirle directo). Reemplaza la respuesta (un mensaje por turno); sin aviso al local, sin cambio de estado."
+      "notes": "Sin estado en el servidor: lo único que se ofrece es pasar con recepción, que es SIEMPRE el aviso estándar de transferencia a recepción (dentro de `topeTransferenciasHora`) MÁS el botón para escribirle directo. Reemplaza la respuesta (un mensaje por turno); sin cambio de estado."
     },
     {
       "parameters": {
@@ -1731,7 +1731,7 @@
         7880,
         300
       ],
-      "notes": "Compromete el bloque (estado + pedidos del teléfono) ANTES de enviar nada al cliente (enmienda §2.3 del contrato). Un 5xx o un timeout se reintenta UNA vez con el MISMO idCompromiso (si la primera ya se aplicó, el servidor contesta `repetido`, que cuenta como éxito); sin `neverError`, para que el 5xx se reintente. Un `conflicto_version` (otra ejecución del mismo teléfono comprometió primero) lo decide `Soltar mensajes`: la que pierde cede sin enviar.",
+      "notes": "Compromete el bloque (estado + pedidos del teléfono) ANTES de enviar nada al cliente (enmienda §2.3 del contrato). Un 5xx o un timeout se reintenta UNA vez con el MISMO idCompromiso (si la primera ya se aplicó, el servidor contesta `repetido`, que cuenta como éxito); sin `neverError`, para que el 5xx se reintente. Un `conflicto_version` lo decide `Soltar mensajes`: sin hecho externo la ejecución que pierde cede sin enviar; con un aviso al local ya enviado (o un cotejo) se replanifica en «Comprometer turno (2.º intento)» y nunca se cede en silencio.",
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 500
@@ -1863,7 +1863,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const a = $('Armar mensajes').first().json; const r = a.replan || {}; const c = ((($json || {}).body || {}).conversacion) || {}; const g = (c.estado && typeof c.estado === 'object' && !Array.isArray(c.estado)) ? c.estado : null; const base = (g && g.estado && typeof g.estado === 'object' && !Array.isArray(g.estado)) ? g.estado : null; const estado = base ? Object.assign({}, base, base.paso === 'esperando_comprobante' ? {} : { paso: 'menu' }) : (r.estadoMenu || null); const pedidos = Object.assign({}, (g && g.pedidos && typeof g.pedidos === 'object' && !Array.isArray(g.pedidos)) ? g.pedidos : {}, r.pedidos || {}); return JSON.stringify({ telefono: r.telefono, sesion: { v: 1, accion: 'comprometer', espacio: r.espacio, canal: 'wa', ejecucion: r.ejecucion, idCompromiso: r.idCompromiso, versionLeida: Number(c.version), estado: { v: 1, estado: estado, pedidos: pedidos }, venceEnMin: 4320 } }); })() }}",
+        "jsonBody": "={{ (() => { const a = $('Armar mensajes').first().json; const r = a.replan || {}; const c = ((($json || {}).body || {}).conversacion) || {}; const g = (c.estado && typeof c.estado === 'object' && !Array.isArray(c.estado)) ? c.estado : null; const base = (g && g.estado && typeof g.estado === 'object' && !Array.isArray(g.estado)) ? g.estado : null; const mio = !!(base && base.pedido && typeof base.pedido === 'object' && r.pedidoId && String(base.pedido.pedidoId) === String(r.pedidoId)); const estado = (base && !mio) ? Object.assign({}, base, base.paso === 'esperando_comprobante' ? {} : { paso: 'menu' }) : (r.estadoMenu || null); const pedidos = Object.assign({}, (g && g.pedidos && typeof g.pedidos === 'object' && !Array.isArray(g.pedidos)) ? g.pedidos : {}, r.pedidos || {}); const bytes = (t) => encodeURIComponent(String(t).replace(/[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF])|(?<![\\uD800-\\uDBFF])[\\uDC00-\\uDFFF]/g, '\\uFFFD')).replace(/%[0-9A-F]{2}/g, 'x').length; const orden = Object.keys(pedidos).filter((k) => !(r.pedidos && Object.prototype.hasOwnProperty.call(r.pedidos, k))).sort((x, y) => Number((pedidos[x] || {}).guardadoMs || 0) - Number((pedidos[y] || {}).guardadoMs || 0)); const arma = () => ({ v: 1, estado: estado, pedidos: pedidos }); for (const k of orden) { if (bytes(JSON.stringify(arma())) <= 15000) break; delete pedidos[k]; } return JSON.stringify({ telefono: r.telefono, sesion: { v: 1, accion: 'comprometer', espacio: r.espacio, canal: 'wa', ejecucion: r.ejecucion, idCompromiso: r.idCompromiso, versionLeida: Number(c.version), estado: arma(), venceEnMin: Object.keys(pedidos).length > 0 ? 4320 : (estado && estado.paso === 'esperando_comprobante' ? 1440 : 60) } }); })() }}",
         "options": {
           "timeout": 5000,
           "response": {
@@ -1888,7 +1888,7 @@
         8360,
         160
       ],
-      "notes": "Replanificación tras un conflicto de versión CON hecho externo: se compromete sobre la versión GANADORA (versionLeida = la del ganador) el bloque del ganador con el pedido de este turno unido por pedidoId (gana el nuestro) y el paso en `menu` (salvo que el ganador espere un comprobante). Mismo idCompromiso en el reintento de n8n; un solo intento: si también falla, «Soltar mensajes» responde el genérico con el botón (nunca silencio).",
+      "notes": "Replanificación tras un conflicto de versión CON hecho externo: se compromete sobre la versión GANADORA (versionLeida = la del ganador) el bloque del ganador con el pedido de este turno unido por pedidoId (gana el nuestro) y el paso en `menu` (salvo que el ganador espere un comprobante). Mismo idCompromiso en el reintento de n8n; un solo intento: si también falla, «Soltar mensajes» responde el genérico con el botón (nunca silencio). Si el estado ganador espera el comprobante de ESTE mismo pedido y este turno ya lo cerró (ráfaga foto + texto), el paso queda en `menu`. El cuerpo se recorta por bytes (los pedidos más antiguos primero, a 15.000) y `venceEnMin` depende de si hay pedidos.",
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 500

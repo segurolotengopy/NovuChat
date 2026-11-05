@@ -20,8 +20,16 @@ const sale = (extra) => (extra && extra.compensar === true ? [{ json: Object.ass
 const items = vmTodos('Soltar mensajes');
 const enviables = items.filter((i) => i && i.sinMensajes !== true);
 if (!enviables.length || !vmNodo('Enviar a WhatsApp')) return sale();
-const entregados = vmTodos('Enviar a WhatsApp').filter(rtId).length + vmTodos('Enviar respaldo').filter(rtId).length;
-if (entregados >= enviables.length) return sale();
+// Solo cuentan los mensajes AL CLIENTE (el aviso de transferencia del genérico, destino `recepcion`, va al final y no dispara compensación).
+const envios = vmTodos('Enviar a WhatsApp');
+const respaldos = vmTodos('Enviar respaldo');
+let usados = 0;
+let faltan = 0;
+enviables.forEach((it, k) => {
+  const final = rtId(envios[k]) ? envios[k] : respaldos[usados++];
+  if (it.destino !== 'recepcion' && !rtId(final)) faltan++;
+});
+if (faltan === 0) return sale();
 const primero = items[0] || {};
 if (primero.comprometido !== true) return sale();
 const hecho = vmNodo('Registrar cierre') !== null || vmTodos('Enviar aviso').concat(vmTodos('Aviso de respaldo')).some(rtId);

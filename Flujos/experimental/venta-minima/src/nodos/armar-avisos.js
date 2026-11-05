@@ -39,11 +39,11 @@ const AA_HORA_MS = 60 * 60 * 1000;
 const AA_errores = (Array.isArray(AA_PLAN.errores) ? AA_PLAN.errores : []).slice();
 const AA_sd = vmSd();
 // AVISO YA ENVIADO (PR-4a, I1): si el compromiso del estado falló DESPUÉS de un aviso de pedido o de comprobante, el estado no avanzó y el cliente puede repetir el mismo botón: el aviso de ese
-// pedido no se manda dos veces. `Soltar mensajes` anota `tipo:pedidoId` en `sd.avisosHuerfanos` (residuo de PR-4b) SOLO cuando el compromiso falló; con el estado avanzado no hace falta.
+// pedido no se manda dos veces. `Soltar mensajes` anota `tipo:pedidoId` (el comprobante, `comprobante:pedidoId:medio:resultado`) en `sd.avisosHuerfanos` (residuo de PR-4b) SOLO cuando el compromiso falló; con el estado avanzado no hace falta.
 const AA_YA = [];
-function aaYaAvisado(tipo, pedidoId) {
+function aaYaAvisado(clave) {
   const m = AA_sd && AA_sd.avisosHuerfanos && typeof AA_sd.avisosHuerfanos === 'object' ? AA_sd.avisosHuerfanos : null;
-  const ms = m && pedidoId && Object.prototype.hasOwnProperty.call(m, tipo + ':' + pedidoId) ? Number(m[tipo + ':' + pedidoId]) : NaN;
+  const ms = m && clave && Object.prototype.hasOwnProperty.call(m, clave) ? Number(m[clave]) : NaN;
   return Number.isFinite(ms) && AA_AHORA - ms < 72 * AA_HORA_MS && AA_AHORA - ms >= 0;
 }
 
@@ -174,7 +174,7 @@ if (AA_armar) {
       continue;
     }
     const datos = aaDatos(a);
-    if ((tipo === 'pedido' || tipo === 'comprobante') && aaYaAvisado(tipo, String(datos.pedidoId || ''))) {
+    if ((tipo === 'pedido' || tipo === 'comprobante') && aaYaAvisado(vmClaveAviso(tipo, datos.pedidoId || '', datos.mediaId || '', datos.resultado || ''))) {
       AA_errores.push('aviso_ya_enviado: ' + tipo + ' del pedido ' + String(datos.pedidoId).slice(0, 60));
       AA_YA.push(tipo);
       continue;

@@ -6361,7 +6361,7 @@ describe('PR-4a: el estado, los pedidos y los vistos viven en el servidor, no en
     const antes = JSON.stringify(r.w.sesion.bloque(CLIENTE));
     r.w.sesion.servidor.fallar = (c) => ((c['sesion'] as J)['accion'] === 'comprometer' ? 503 : null);
     const t = confirmarPedido(r);
-    expect(t.mensajes).toHaveLength(1);
+    expect(t.mensajesA(CLIENTE)).toHaveLength(1); // (a recepción va además el aviso de transferencia: ver «PR-4a ronda 3»)
     expect(t.mensajes.some((m) => m.tipo === 'image')).toBe(false);
     expect(tieneEnlace(t)).toBe(true);
     expect(urlDeEnlace(t.mensajes[0]!)).toBe(`https://wa.me/${REC}?text=${encodeURIComponent("Hola, escribo desde el asistente de Q'Taco.")}`);
@@ -6643,5 +6643,114 @@ describe('PR-4a ronda 2', () => {
     const otra = con(w).escribe('hola');
     expect(otra.mensajes).toHaveLength(1);
     expect(otra.avisos).toHaveLength(0); // topeTransferenciasHora
+  });
+});
+
+// =============================================================================================================================
+// PR-4a, ronda 3 de revisión: B2 (comprobante), I3 (ráfaga foto + texto), aviso en el genérico, solo el cotejo como hecho externo
+// =============================================================================================================================
+describe('PR-4a ronda 3', () => {
+  const MALO = { statusCode: 200, body: { resultado: 'no_cuadra', diferencias: ['monto'], cierreId: 'venta_mala' } };
+  const BUENO = { statusCode: 200, body: { resultado: 'cuadra', diferencias: [], cierreId: 'venta_buena' } };
+  const falla503 = (w: Mundial, activa: boolean): void => { w.sesion.servidor.fallar = activa ? (c) => ((c['sesion'] as J)['accion'] === 'comprometer' ? 503 : null) : null; };
+  /** Pedido confirmado con QR y el cobro pendiente en el servidor, listo para recibir fotos. */
+  const esperando = () => {
+    const r = armarPedido({ ventana: 5 });
+    const qr = confirmarPedido(r);
+    const abierto = qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado') as J;
+    r.w.estado.panel = panel(conCobroPendiente(String(abierto['referencia']), Number(abierto['monto'])));
+    return r;
+  };
+  const comprobantes = (t: ResultadoTurno): number => t.avisosA(AV1).filter((a) => a.tipo === 'template').length;
+
+  it('B2: un 1.er comprobante MALO con el compromiso fallido no suprime el aviso de un 2.º comprobante CORRECTO (otro medio, otro resultado): el local lo recibe', () => {
+    const r = esperando();
+    r.w.estado.cotejo = MALO;
+    falla503(r.w, true);
+    const t1 = r.c.imagen('media-mala');
+    expect(comprobantes(t1)).toBe(1); // el local ya tiene el malo
+    r.w.estado.cotejo = BUENO;
+    falla503(r.w, false);
+    const t2 = r.c.imagen('media-buena');
+    expect(comprobantes(t2)).toBe(1); // sin el medio y el resultado en la clave, este aviso se perdía y el cliente leía «ya lo pasé»
+  });
+
+  it('B2 (negado): el MISMO comprobante (mismo medio y mismo resultado) tras un compromiso fallido no se avisa dos veces', () => {
+    const r = esperando();
+    r.w.estado.cotejo = BUENO;
+    falla503(r.w, true);
+    const t1 = r.c.imagen('media-x');
+    expect(comprobantes(t1)).toBe(1);
+    falla503(r.w, false);
+    const t2 = r.c.imagen('media-x');
+    expect(comprobantes(t2)).toBe(0);
+  });
+
+  it('I3: ráfaga «foto del comprobante + texto»: si este turno ya cerró el pedido (cotejó y avisó) y el ganador seguía esperándolo, la replanificación deja el paso en `menu`', () => {
+    const r = esperando();
+    r.w.sesion.servidor.antesDeComprometer = (c) => {
+      r.w.sesion.servidor.antesDeComprometer = null;
+      // el texto ganó la carrera con el MISMO estado (esperando_comprobante de este mismo pedido)
+      if ((c['sesion'] as J)['accion'] === 'comprometer') r.w.sesion.sembrar(CLIENTE, estadoDe(r.w.mundo), r.w.sesion.pedidos(CLIENTE));
+    };
+    const foto = r.c.imagen('media-9');
+    expect(foto.ejecutados.has('Comprometer turno (2.º intento)')).toBe(true);
+    expect(foto.mensajesA(CLIENTE)).toHaveLength(1);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+    expect(cuerpos(r.c.escribe('gracias')).join(' ')).not.toMatch(/falta que me env/i);
+  });
+
+  it('aviso en el genérico: si el compromiso falla SIN hecho externo, el genérico sale CON el botón y con el aviso estándar de transferencia a recepción, dentro de `topeTransferenciasHora`', () => {
+    const r = armarPedido({ ventana: 5 }); // cobro real: ningún aviso del pedido antes del compromiso
+    falla503(r.w, true);
+    const t = confirmarPedido(r);
+    const aRecepcion = (x: ResultadoTurno) => x.mensajesA(AV1); // (con la ventana del destinatario abierta, el aviso sale como el texto con el detalle; si no, como plantilla)
+    expect(t.mensajesA(CLIENTE)).toHaveLength(1);
+    expect(tieneEnlace(t)).toBe(true);
+    expect(aRecepcion(t)).toHaveLength(1); // el aviso va como un ítem más del envío (sin nodos nuevos)
+    expect(JSON.stringify(t.mensajes.map((m) => m.payload))).not.toMatch(/acreditad|pagad|verificad/i);
+    // el tope por hora: el segundo intento sigue con el botón pero no repite el aviso
+    const otra = confirmarPedido(r);
+    expect(otra.mensajesA(CLIENTE)).toHaveLength(1);
+    expect(aRecepcion(otra)).toHaveLength(0);
+    // un aviso rechazado por Meta no corta el turno ni cuenta como mensaje al cliente
+    const q = armarPedido({ ventana: 5 });
+    falla503(q.w, true);
+    q.w.mundo.dobles['Enviar a WhatsApp'] = (ll) => (String(ll.cuerpo?.['to']) === AV1 || String(ll.cuerpo?.['to']) === AV2 ? { error: { message: 'rechazado' } } : { messaging_product: 'whatsapp', messages: [{ id: 'wamid.OK' }] });
+    q.w.mundo.dobles['Enviar respaldo'] = (ll) => (String(ll.cuerpo?.['to']) === CLIENTE ? { messaging_product: 'whatsapp', messages: [{ id: 'wamid.R' }] } : { error: { message: 'rechazado' } });
+    expect(() => confirmarPedido(q)).not.toThrow();
+  });
+
+  it('aviso en el genérico (negado): CON hecho externo el local ya recibió el aviso del pedido y NO se agrega otro de transferencia', () => {
+    const r = armarPedido({ cobro: false, ventana: 5 });
+    falla503(r.w, true);
+    const t = confirmarPedido(r);
+    expect(t.mensajesA(CLIENTE)).toHaveLength(1);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    expect(JSON.stringify(t.mensajes.filter((m) => m.a !== CLIENTE))).toBe('[]'); // nada extra a recepción por el camino de los mensajes
+  });
+
+  it('hecho externo = SOLO el cotejo (ningún aviso salió): un conflicto de versión también replanifica, no cede', () => {
+    const r = esperando();
+    r.w.estado.cotejo = BUENO;
+    r.w.fallan.add('Enviar aviso');
+    r.w.fallan.add('Aviso de respaldo');
+    r.w.sesion.servidor.antesDeComprometer = (c) => {
+      r.w.sesion.servidor.antesDeComprometer = null;
+      if ((c['sesion'] as J)['accion'] === 'comprometer') r.w.sesion.sembrar(CLIENTE, estadoDe(r.w.mundo), r.w.sesion.pedidos(CLIENTE));
+    };
+    const t = r.c.imagen('media-9');
+    expect(t.ejecutados.has('Cotejar en el servidor')).toBe(true);
+    expect(t.avisos.every((a) => !a.ok)).toBe(true);
+    expect(t.ejecutados.has('Comprometer turno (2.º intento)')).toBe(true);
+    expect(t.mensajesA(CLIENTE).length).toBeGreaterThan(0);
+  });
+
+  it('la replanificación recorta por bytes (15.000) y `venceEnMin` depende de si hay pedidos', () => {
+    const nodo = QTACO.nodes.find((n) => n.name === 'Comprometer turno (2.º intento)') as unknown as J;
+    const cuerpo = String(nodo['parameters']['jsonBody']);
+    expect(cuerpo).toContain('<= 15000');
+    expect(cuerpo).toContain('Object.keys(pedidos).length > 0 ? 4320');
+    expect(cuerpo).not.toContain('venceEnMin: 4320 }');
   });
 });

@@ -107,8 +107,7 @@ colecciones.
 
 Criterio vigente: «solo se ofrece lo que se cumple» (`CLAUDE.md`).
 
-- `leer` falla o falta `conversacion`: respuesta genérica **con botón**, sin avisos
-  ni compromiso. (Hoy `Traer configuración` tiene timeout de 4 s y `neverError`; si
+- `leer` falla o falta `conversacion`: respuesta genérica **con botón** y, por la política del 21/09/2026 («pasar con recepción» = aviso a recepción MÁS botón), el aviso estándar de transferencia dentro del tope por hora (así lo hace Q'Taco, PR-4a); sin compromiso. (Hoy `Traer configuración` tiene timeout de 4 s y `neverError`; si
   falla, `Config del negocio` usa el respaldo y deriva.)
 - `comprometer` con 5xx, timeout o segundo conflicto: genérico con botón, sin
   avisos ni cierre. **Reemplaza** la respuesta: 0 mensajes agregados.
@@ -262,4 +261,5 @@ Flujo `Flujos/experimental/venta-minima`; todas las salidas se regeneran (qtaco,
 - **Compensación** («Confirmar envío» → «Comprometer compensación», que solo corre si hay que compensar): si Meta rechaza el mensaje y su respaldo, SIN hecho externo vuelve el bloque entero de antes (con su ancla y sus pedidos); CON hecho externo (aviso salido o cierre registrado) el bloque comprometido queda en el paso `menu`, salvo `esperando_comprobante`. «Resumen del turno» corta la ejecución en error.
 - **Tope en bytes:** el bloque se mide en UTF-8 (`ssBytes`, sin lanzar con un surrogate suelto) y se recorta antes de comprometer: primero los pedidos más antiguos, el que espera el comprobante el último; si ni el estado solo cabe, genérico (nunca un 413).
 - **Lectura de respaldo de la publicación** con retiro el 30/11/2026 (ver `docs/versiones-por-cliente.md`).
+- **Ronda 3 de revisión:** la marca del aviso ya enviado del comprobante es `comprobante:pedidoId:medio:resultado` (el del pedido, por pedidoId): un comprobante correcto nunca se suprime por uno malo anterior. La replanificación deja el paso en `menu` si el ganador espera el comprobante de ESTE mismo pedido y este turno ya lo cerró. El genérico de una falla del compromiso SIN hecho externo lleva el aviso de transferencia a recepción como un ítem más del envío (sin nodos nuevos; con hecho externo, no). **Costo de I2:** con el panel caído o sin estado, +1 aviso de transferencia por destinatario, por teléfono y por hora (más el del genérico sin hecho externo); el cliente sigue recibiendo un mensaje.
 - **Residuo (PR-4b):** `av.dia`, `transferencias`, `avisosPedido`, `reservasDelDia` y `av.ventana` (contrato §10.4).

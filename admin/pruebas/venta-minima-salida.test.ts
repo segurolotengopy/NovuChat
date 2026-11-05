@@ -50,7 +50,7 @@ const constanteDeComun = (nombre: string): string => {
 };
 const DE_COMUN = [
   ...['VM_PEDIDOS_MS', 'VM_MAX_PEDIDOS', 'VM_RESPALDO_HASTA_MS', 'VM_VENCE_MS', 'VM_VENCE_COMPROBANTE_MS', 'SS_CONFIG'].map(constanteDeComun),
-  ...['_vmObjeto', '_vmCadena', '_vmClaveValida', '_vmIdValido', '_vmHay', '_vmVence', 'vmSes', 'vmGuardarPedido', 'vmVenceEnMin', 'vmRetirarRespaldo'].map(deComun),
+  ...['_vmObjeto', '_vmCadena', '_vmClaveValida', '_vmIdValido', '_vmHay', '_vmVence', 'vmSes', 'vmGuardarPedido', 'vmVenceEnMin', 'vmRetirarRespaldo', 'vmClaveAviso'].map(deComun),
 ].join('\n');
 // El módulo común de Pedidos (qr-del-pedido.js) es REAL, no un doble: lo que arma el QR lo incluye construir.mjs en cada nodo.
 const PQR = readFileSync(join(CARPETA, '../../../../src/modulos/pedidos/qr-del-pedido.js'), 'utf8') + '\n';

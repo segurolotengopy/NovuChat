@@ -41,6 +41,15 @@ else if (!(Number(a.ahoraMs) < VM_RESPALDO_HASTA_MS)) vmRetirarRespaldo(a.from, 
     if (claves.length > 500) for (const k of claves.sort((x, y) => Number(sd.avisosHuerfanos[x]) - Number(sd.avisosHuerfanos[y])).slice(0, claves.length - 500)) delete sd.avisosHuerfanos[k];
   }
 }
+// El genérico de una falla SIN hecho externo lleva el aviso de transferencia a recepción: se anota la marca de la hora (`topeTransferenciasHora`) como `Armar mensajes` la anota cuando un aviso sale.
+if (!bien && a.avisoFalla === true) {
+  const sd = vmSd();
+  if (sd) {
+    if (!sd.transferencias || typeof sd.transferencias !== 'object' || Array.isArray(sd.transferencias)) sd.transferencias = {};
+    const previas = Object.prototype.hasOwnProperty.call(sd.transferencias, a.from) && Array.isArray(sd.transferencias[a.from]) ? sd.transferencias[a.from] : [];
+    sd.transferencias[a.from] = previas.filter((ms) => Number(a.ahoraMs) - Number(ms) < 60 * 60 * 1000).concat([Number(a.ahoraMs)]);
+  }
+}
 const estado = { replanificado: replanificado, modo: a.modo, resultado: a.comprometer === true ? r.resultado : 'sin_compromiso', comprometido: comprometido, version: comprometido ? r.version : null };
 const items = (Array.isArray(salida) && salida.length ? salida : [{ sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: a.from, cierre: null, errores: [] }])
   .map((x) => ({ json: Object.assign({}, x) }));
