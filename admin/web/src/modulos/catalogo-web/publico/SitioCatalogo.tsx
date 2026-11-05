@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CatalogoPublico, ItemPublico, RespuestaCheckout } from './tipos';
-import { coordenadasValidas, enlaceAlChat, imagenSegura, logoSeguro, precioTexto } from './saneo';
+import { areaInicial, coordenadasValidas, enlaceAlChat, imagenSegura, logoSeguro, precioTexto } from './saneo';
 import { variablesDe } from '../../../central/lib/paletas';
 
 /**
@@ -233,11 +233,12 @@ function Catalogo({ items, ficha, carrito, moneda, conFotos, alSumar, alAbrir }:
   alAbrir: (i: ItemPublico) => void;
 }) {
   const [busqueda, setBusqueda] = useState('');
-  const [area, setArea] = useState('');
-
   const areas = useMemo(
     () => [...new Set(items.map((i) => i.area).filter((a) => a !== ''))].sort(),
     [items]);
+  // Si el enlace trae `?area=<nombre>`, el filtro arranca en esa área (solo si existe en el negocio); si no, «Todo», como siempre.
+  const [area, setArea] = useState(() => (typeof window === 'undefined' ? '' : areaInicial(window.location.search, areas.length > 1 ? areas : [])));
+  // Con una sola área no se muestran los botones de filtro: si el parámetro la aplicara, los productos sin área quedarían ocultos sin forma de verlos.
 
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
