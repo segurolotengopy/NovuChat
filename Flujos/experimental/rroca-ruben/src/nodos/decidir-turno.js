@@ -48,7 +48,7 @@ const ficha = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora)
 //    sigue en silencio: ahí responde Rubén. Aquí solo se mira el texto y el pie (los medios no se bajan con la puerta cerrada ni fuera del país).
 // El aviso de una crisis NUNCA copia lo que escribió la persona: solo el motivo.
 const avisoCrisis = { tipo: 'consulta', clave: 'crisis', motivo: 'posible crisis o riesgo emocional de la persona (se cortó la venta y se le sugirió ayuda profesional)', mensaje: '' };
-const senalEscrita = rrEsCrisis(rrNorm([t.texto, t.pie].join(' '))) || (ficha.riesgo && t.tipo !== 'interactive' && String(t.texto || '').trim() !== '' && !rrEsNeutro(rrNorm(t.texto)));   // ESTE turno trae una señal de crisis (renueva el plazo de 48 h de `ficha.riesgoMs`; escribir otra cosa no lo renueva)
+const senalEscrita = rrEsCrisis(rrNorm([t.texto, t.pie].join(' '))) || (ficha.riesgo && t.tipo !== 'interactive' && String(t.texto || '').trim() !== '' && !rrEsNeutro(rrNorm(t.texto), t.texto));   // ESTE turno trae una señal de crisis (renueva el plazo de 48 h de `ficha.riesgoMs`; escribir otra cosa no lo renueva)
 const riesgoEscrito = ficha.riesgo || senalEscrita;
 const puertaResponde = puerta.ruta === 'sigue' || puerta.ruta === 'suspendido' || (puerta.ruta === 'uso_extendido' && puerta.responder === true);
 if (puertaResponde && puerta.ruta !== 'sigue' && riesgoEscrito) return salir({ tipo: 'riesgo', aviso: avisoCrisis, cat: cat, senal: senalEscrita });
@@ -115,7 +115,7 @@ const planComprobante = () => {
 
 // 1. VIOLENCIA O MIEDO: antes que cualquier otra cosa (corta la venta). Se mira el texto, la transcripción, el texto leído de la imagen y el pie de foto; una vez activada, sigue activa 48 horas. El turno que trae
 //    un COMPROBANTE (imagen o PDF) sigue su camino normal del cobro (cotejo y aviso a Rubén), salvo que su PIE DE FOTO hable de una crisis (arriba). Sin consejos.
-const senalDelTurno = rrEsCrisis(rrNorm([textoCliente, leido, t.pie].join(' '))) || (ficha.riesgo && t.tipo !== 'interactive' && textoCliente.trim() !== '' && !rrEsNeutro(norm));
+const senalDelTurno = rrEsCrisis(rrNorm([textoCliente, leido, t.pie].join(' '))) || (ficha.riesgo && t.tipo !== 'interactive' && textoCliente.trim() !== '' && !rrEsNeutro(norm, textoCliente));
 // El PIE DE FOTO de un comprobante que habla de una crisis (LOW de seguridad del PR-1): responde la protección (texto, botón, aviso y `no_contactar`) y renueva el plazo; un pie sin crisis no corta el cotejo.
 if (esVisual && categoriaMedio === 'comprobante' && rrEsCrisis(rrNorm(t.pie))) return salir({ tipo: 'riesgo', aviso: avisoCrisis, cat: cat, nuevo: ficha.riesgo !== true, senal: true });
 if (!(esVisual && categoriaMedio === 'comprobante') && (ficha.riesgo || senalDelTurno)) {

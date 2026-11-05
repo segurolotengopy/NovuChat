@@ -278,9 +278,16 @@ describe('la crisis se levanta sola: vence a las 48 h de la ÚLTIMA SEÑAL, no d
     hablar(w, ANA, mTexto('hola'));
     hablar(w, ANA, mTexto('quiero morir'));
     const ms0 = fichaDe(w)['riesgoMs'] as number;
-    for (const neutro of ['gracias', 'ok', 'listo', 'el libro', 'precio', '¿cuánto cuesta el pack?']) {
+    for (const neutro of ['gracias', 'ok', 'listo', 'el libro', 'precio', '¿cuánto cuesta el pack?', 'ok gracias', 'gracias, quiero el pack']) {
       hablarTras(w, 1, neutro);
       expect(fichaDe(w)['riesgoMs'], neutro).toBe(ms0);
+    }
+    // NEGANDO: con una sola palabra fuera de las listas, o con emojis, o con más de 5 palabras, SÍ renueva (la lista de neutros es cerrada).
+    for (const [i, no] of ['cuánto me queda de vida', 'ni el libro me va a salvar', 'no hay audio que me ayude ya', 'ya no me importa el precio de nada', 'precio pero sigo fatal', '😢😢', 'gracias por todo, adiós', 'el libro el pack el audio el libro el pack'].entries()) {
+      const antes = fichaDe(w)['riesgoMs'] as number;
+      hablarTras(w, 1, no);
+      expect(fichaDe(w)['riesgoMs'] as number, no).toBeGreaterThan(antes);
+      expect(i).toBeGreaterThanOrEqual(0);
     }
     expect(esCrisis(hablarTras(w, 40, 'sigo igual de mal'))).toBe(true);
     expect(fichaDe(w)['riesgoMs'] as number).toBeGreaterThan(ms0);

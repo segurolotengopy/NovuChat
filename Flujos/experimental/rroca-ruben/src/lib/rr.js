@@ -426,13 +426,17 @@ const RR_CRISIS_EXTRA2 = new RegExp([
 ].join('|'));
 const RR_INTENCION_SOBREDOSIS = /\b(?:igual|de todos modos|lo voy a hacer|voy a hacerlo|quiero|me voy a|pienso|pense|tomaria|tome|tomo|tomarme)\b/;
 // «Lo que NO renueva la protección» (PR-2): dentro del plazo de 48 h de una crisis, todo turno de TEXTO renueva `riesgoMs` (quien sigue mal con palabras que ninguna lista reconoce —«sigo igual de mal»— no queda sin protección a las 48 h
-// de la primera señal), SALVO una lista cerrada: un acuse corto («gracias», «ok», «listo») o un mensaje corto de venta (precio, el libro, cuánto cuesta, comprar…). Ante la duda, renueva.
-const RR_NEUTRO_CORTO = /^(?:hola|holi|buenas|buenos dias|buenas tardes|buenas noches|gracias|muchas gracias|ok|okay|oka|listo|vale|dale|si|sii|no|bien|perfecto|entiendo|claro|de acuerdo|bueno|ya|aja|mmm|mm)(?: gracias)?$/;
-const RR_NEUTRO_VENTA = /\b(?:libro|pack|paquete|audiolibro|audio|audios|meditacion|meditaciones|precio|precios|cuesta|cuestan|cuanto|comprar|compra|pagar|qr|opciones|catalogo)\b/;
-function rrEsNeutro(n) {
-  const t = String(n || '').trim();
-  if (t === '') return true;
-  return RR_NEUTRO_CORTO.test(t) || (t.split(' ').length <= 8 && RR_NEUTRO_VENTA.test(t));
+// de la primera señal), SALVO un mensaje NEUTRO: de a lo más 5 palabras y con TODAS ellas en listas cerradas de acuse («gracias», «ok», «listo»…) o de venta («precio», «cuánto cuesta», «el libro», «quiero el pack»…). Una sola palabra fuera de las
+// listas («vida», «salvar», «mal», «nada», «importa»…) renueva. Un mensaje de solo emojis o símbolos NO es neutro (renueva); solo el mensaje realmente vacío lo es. Ante la duda, renueva.
+const RR_NEUTRO_ACUSE = new Set(['hola', 'holi', 'buenas', 'buenos', 'dias', 'tardes', 'noches', 'gracias', 'muchas', 'ok', 'okay', 'oka', 'listo', 'vale', 'dale', 'si', 'sii', 'no', 'bien', 'perfecto', 'entiendo', 'claro', 'de', 'acuerdo', 'bueno', 'ya', 'aja', 'mmm', 'mm', 'por', 'favor']);
+const RR_NEUTRO_VENTA = new Set(['el', 'la', 'los', 'las', 'un', 'una', 'libro', 'pack', 'paquete', 'audio', 'audios', 'audiolibro', 'meditacion', 'meditaciones', 'precio', 'precios', 'opciones', 'catalogo', 'y', 'o', 'qr', 'completo', 'con', 'bono']);
+// `n` = el texto normalizado (`rrNorm`); `crudo` = el texto sin normalizar (distingue un mensaje vacío de uno de solo emojis).
+function rrEsNeutro(n, crudo) {
+  let t = String(n || '').trim();
+  if (t === '') return String(crudo === undefined || crudo === null ? '' : crudo).trim() === '';
+  const palabras = t.split(/\s+/).length;
+  t = t.replace(/\bcuanto (?:cuesta|sale|vale|es)\b/g, ' ').replace(/\bquiero (?:comprar |pagar )?(?:el|la|los|las|un|una)\b/g, ' ').replace(/\bme llevo (?:el|la|los|las)\b/g, ' ').replace(/\b(?:lo|la) compro\b/g, ' ').trim();
+  return palabras <= 5 && (t === '' || t.split(/\s+/).every((w) => RR_NEUTRO_ACUSE.has(w) || RR_NEUTRO_VENTA.has(w)));
 }
 // Los tipeos y las letras repetidas («kiero», «qiero», «morirrr», «mmorir», «sobre dosis») se pliegan antes de mirar.
 function rrPlegarCrisis(n) {
