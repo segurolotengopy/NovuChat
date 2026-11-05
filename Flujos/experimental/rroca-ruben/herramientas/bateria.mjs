@@ -53,11 +53,11 @@ const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
 const NEGOCIO = 'Noches Sin Insomnio';
 const CATALOGO = [
   { id: 'pack-completo', nombre: 'Pack completo', precio: 70, activo: true },
-  { id: 'libro-con-bono', nombre: 'Libro con bono', precio: 35, activo: true },
+  { id: 'libro', nombre: 'Libro', precio: 35, activo: true },
   { id: 'audiolibro', nombre: 'Audiolibro', precio: 35, activo: true },
   { id: '3-meditaciones', nombre: '3 Meditaciones', precio: 20, activo: true },
 ];
-// Legítimas: las del producto (14 eslabones y 14 capítulos, 208 páginas, bono de 18 páginas, plan de 21 días, 3 meditaciones de 7, 7 y 5 minutos, 5 pasos) y el número de un capítulo (1 a 14).
+// Legítimas: las del producto (14 eslabones y 14 capítulos, 208 páginas, plan de 21 días, 3 meditaciones de 7, 7 y 5 minutos, 5 pasos) y el número de un capítulo (1 a 14).
 const CIFRAS_PERMITIDAS = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '18', '21', '50', '208']);
 const UMBRAL_SIN_RESPALDO = 0.85;
 const PLANES_DEL_MODELO_BUENOS = ['modelo', 'angulo', 'puente', 'opciones'];

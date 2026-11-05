@@ -71,7 +71,7 @@ export interface Opciones {
 }
 /** El catálogo de la consola de Rubén: ids que salen de `idDe(nombre)`; los NOMBRES y los precios son del catálogo, nunca del flujo (las etiquetas de los botones dicen «<nombre> <precio>Bs»). */
 export const CATALOGO = [
-  { id: 'pack-completo', nombre: 'Pack completo', precio: 70 }, { id: 'libro-con-bono', nombre: 'Libro con bono', precio: 35 }, { id: 'audiolibro', nombre: 'Audiolibro', precio: 35 }, { id: '3-meditaciones', nombre: '3 Meditaciones', precio: 20 },
+  { id: 'pack-completo', nombre: 'Pack completo', precio: 70 }, { id: 'libro', nombre: 'Libro', precio: 35 }, { id: 'audiolibro', nombre: 'Audiolibro', precio: 35 }, { id: '3-meditaciones', nombre: '3 Meditaciones', precio: 20 },
 ];
 export const MEDIA_QR = 'media-qr-1';
 export const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({
@@ -156,7 +156,7 @@ export const textos = (t: ResultadoTurno): string[] => t.mensajes.map((e) => e.c
 /** Los 4 prellenados de la landing: «Hola, vengo de la página. Quiero …» (MD de Rubén, guía de apertura A). */
 export const PRELLENADOS = {
   pack: 'Hola, vengo de la página. Quiero el Pack Completo (70 Bs).',
-  libro: 'Hola, vengo de la página. Quiero el Libro + bono de regalo (35 Bs).',
+  libro: 'Hola, vengo de la página. Quiero el Libro (35 Bs).',
   audiolibro: 'Hola, vengo de la página. Quiero el Audiolibro (35 Bs).',
   meditaciones: 'Hola, vengo de la página. Quiero las 3 Meditaciones guiadas (20 Bs).',
 };

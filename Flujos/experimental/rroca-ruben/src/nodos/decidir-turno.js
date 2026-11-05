@@ -6,7 +6,7 @@
 //   saludo         la presentación (UNA vez por teléfono, «asistente virtual de <el negocio de la Consola>») y la pregunta de apertura, sin montos. EL PRIMER TURNO de un teléfono es SIEMPRE este saludo fijo, por código, salvo que el mensaje traiga una intención que el código
 //                  atiende (prellenado, ángulo de anuncio, derivación, precio de UN producto, producto confirmado): el modelo no abre la conversación. `pideOpciones`: pidió precios, catálogo u opciones antes de tiempo;
 //   angulo         una entrada por un anuncio: el modelo redacta la apertura con el ángulo como dato (o el texto fijo del ángulo);
-//   menu           las opciones principales (Pack, Libro con bono, «Solo audios») con sus precios;   audios   Audiolibro, Meditaciones y «Mejor el Pack»;   precio   «¿cuánto cuesta…?» por código (`temprano`: el precio de UN producto antes de la charla);
+//   menu           las opciones principales (Pack, Libro, «Solo audios») con sus precios;   audios   Audiolibro, Meditaciones y «Mejor el Pack»;   precio   «¿cuánto cuesta…?» por código (`temprano`: el precio de UN producto antes de la charla);
 //   opciones_codigo  el bloque de las opciones (texto fijo con el ahorro calculado + el menú): un «sí» a «¿Te muestro las opciones?» o el botón «Ver opciones»;
 //   qr             el QR con el monto del CATÁLOGO (prellenados de Pack y Libro, o un botón o una fila de producto);
 //   qr_pendiente   ya hay un QR abierto Y el cliente habla de pagar o pide un producto: el recordatorio (un solo QR a la vez, un pedido = un producto). Ya no se escala a Rubén por insistir: el recordatorio tiene dos formas y nunca sale idéntico dos veces seguidas.

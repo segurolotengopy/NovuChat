@@ -7,7 +7,7 @@
  *   - «¿precio y devolución?» da el precio Y deriva en un solo mensaje; la devolución sola nunca trae precios; jamás una promesa de devolución;
  *   - «¿me garantizan dormir?» no garantiza; dos preguntas juntas se responden en UN solo mensaje, nunca en dos;
  *   - la crisis NO se renueva con cada mensaje: vence a las 48 h de la ÚLTIMA SEÑAL; mientras dura, no hay venta; una señal nueva reinicia el plazo;
- *   - «lo voy a pensar» no abre un QR; el bono no se vende suelto; la muestra de voz solo sale si la piden; el modelo no habla de precios ni de la web;
+ *   - «lo voy a pensar» no abre un QR; la muestra de voz solo sale si la piden; el modelo no habla de precios ni de la web;
  *   - ningún aviso a Rubén dice «validado», «acreditado» ni «verificado».
  */
 import { readFileSync } from 'node:fs';
@@ -55,7 +55,7 @@ describe('CASO (a) del PDF: una captura de anuncio SIN texto abre con SU ángulo
     expect(fichaDe(w)['saludado']).toBe(true);
   });
 
-  it('cada arte de la campaña abre con SU ángulo (3 artes y la portada): el dato de la consola, no el código', () => {
+  it('cada arte de la campaña abre con SU ángulo (los 3 artes): el dato de la consola, no el código', () => {
     for (const a of ANUNCIOS) {
       const w = conAnuncios(ANUNCIOS, { medio: captura(a.titulares[0]!) });
       const t = hablar(w, ANA, mImagen({ caption: '' }));
@@ -94,7 +94,7 @@ describe('CASO (a) del PDF: una captura de anuncio SIN texto abre con SU ángulo
     mensajes.push(hablar(w, ANA, mTexto('Exacto eso me pasa, me llevo todos los pendientes de la oficina a la cama. Pero soy pésimo para leer libros largos, ¿cómo funciona esto?')));
     const precios = hablar(w, ANA, mTexto('¿y cuánto cuesta?'));
     mensajes.push(precios);
-    expect(titulos(precios)).toEqual(['Pack completo 70Bs', 'Libro con bono 35Bs', 'Solo audios']);
+    expect(titulos(precios)).toEqual(['Pack completo 70Bs', 'Libro 35Bs', 'Solo audios']);
     const qr = hablar(w, ANA, mBoton('b_pack'));
     mensajes.push(qr);
     expect(qr.mensajes[0]!.tipo).toBe('image');
@@ -415,12 +415,12 @@ describe('objeciones por código: «lo voy a pensar» y la muestra de voz', () =
   });
 
   it('NEGANDO: los precios del texto son los del catálogo (cambian con él) y un catálogo sin precios no inventa ninguno', () => {
-    const catalogo = [{ id: 'pack-completo', nombre: 'Pack completo', precio: 80 }, { id: 'libro-con-bono', nombre: 'Libro con bono', precio: 40 }];
+    const catalogo = [{ id: 'pack-completo', nombre: 'Pack completo', precio: 80 }, { id: 'libro', nombre: 'Libro', precio: 40 }];
     const t = pensando(nuevo({ panel: panelOk({ catalogo }) }));
     expect(unico(t)).toMatch(/40 Bs/);
     expect(unico(t)).toMatch(/80 Bs/);
     expect(unico(t)).not.toMatch(/35 Bs|70 Bs/);
-    const sin = pensando(nuevo({ panel: panelOk({ catalogo: [{ id: 'pack-completo', nombre: 'Pack completo', precio: 70, agotado: true }, { id: 'libro-con-bono', nombre: 'Libro', precio: 35, agotado: true }] }) }));
+    const sin = pensando(nuevo({ panel: panelOk({ catalogo: [{ id: 'pack-completo', nombre: 'Pack completo', precio: 70, agotado: true }, { id: 'libro', nombre: 'Libro', precio: 35, agotado: true }] }) }));
     expect(unico(sin)).not.toMatch(/\d+\s*Bs/);
   });
 
@@ -441,7 +441,7 @@ describe('objeciones por código: «lo voy a pensar» y la muestra de voz', () =
     expect(unico(sinDato)).not.toMatch(/https?:|\.com/i);
   });
 
-  it('NEGANDO: el modelo no habla de la web ni de enlaces, ni vende el bono suelto, ni da precios: cualquiera de esos textos cae al respaldo fijo', () => {
+  it('NEGANDO: el modelo no habla de la web ni de enlaces, ni ofrece un bono que no existe, ni da precios: cualquiera de esos textos cae al respaldo fijo', () => {
     for (const modeloDice of [
       'Puedes escuchar un fragmento en nuestra página web. ¿Te cuento más?',
       'Claro, el bono se vende suelto por 10 Bs. ¿Lo quieres?',
@@ -461,10 +461,10 @@ describe('el prompt del modelo: la base de conocimiento, las reglas de salud y l
   const p = L.RR_PROMPT;
   it('cabe en el tope de 4.670 caracteres (el mismo de Antonio) y trae los datos del libro', () => {
     expect(p.length).toBeLessThanOrEqual(4670);
-    for (const dato of [/208 páginas/, /14 eslabones/, /ejercicio por eslabón/, /Diario del sueño/, /registro semanal/, /Anexo C/, /plan de 21 días/, /18 páginas/, /5 pasos/, /14 capítulos/, /Cierra el día/, /Suelta el cuerpo/, /Si despiertas de madrugada/, /pago único/, /sin suscripción/]) expect(p).toMatch(dato);
+    for (const dato of [/208 páginas/, /14 eslabones/, /ejercicio por eslabón/, /Diario del sueño/, /registro semanal/, /Anexo C/, /plan de 21 días/, /14 capítulos/, /Cierra el día/, /Suelta el cuerpo/, /Si despiertas de madrugada/, /pago único/, /sin suscripción/]) expect(p).toMatch(dato);
   });
-  it('el bono es un REGALO que no se vende suelto; el audio lleva voz sintética y el libro se hizo con apoyo de IA; sin testimonios', () => {
-    expect(p).toMatch(/REGALO[^.]*NO se vende suelto/);
+  it('SIN BONO: el prompt no menciona ningún bono; el audio lleva voz sintética y el libro se hizo con apoyo de IA; sin testimonios', () => {
+    expect(p).not.toMatch(/\bbonos?\b/i);
     expect(p).toMatch(/voz sintética/);
     expect(p).toMatch(/apoyo de inteligencia artificial/);
     expect(p).toMatch(/No inventes testimonios/);

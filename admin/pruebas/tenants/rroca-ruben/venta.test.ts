@@ -68,7 +68,7 @@ describe('el saludo: una presentación, una pregunta, sin montos', () => {
     const b = hablar(w, ANA, mTexto('¿cuánto cuesta el libro?'));
     expect(b.ejecutados.has('Conversar con el modelo')).toBe(false);
     expect(b.mensajes[0]!.cuerpo).toMatch(/35 Bs/);
-    expect(titulos(b)).toEqual(['Pack completo 70Bs', 'Libro con bono 35Bs', 'Solo audios']);
+    expect(titulos(b)).toEqual(['Pack completo 70Bs', 'Libro 35Bs', 'Solo audios']);
   });
 
   it('el saludo no se repite: la presentación sale una vez por teléfono aunque vuelva a escribir «hola»', () => {
@@ -90,7 +90,7 @@ describe('la conversación libre: el modelo conversa, el código calcula', () =>
     expect(a.mensajes[0]!.tipo).toBe('text');
     // La TERCERA respuesta lleva el bloque de las opciones (por código, con el ahorro calculado) y los botones con el NOMBRE DEL CATÁLOGO y su precio.
     const b = hablar(w, ANA, mTexto('no sé si hay solución'));
-    expect(titulos(b)).toEqual(['Pack completo 70Bs', 'Libro con bono 35Bs', 'Solo audios']);
+    expect(titulos(b)).toEqual(['Pack completo 70Bs', 'Libro 35Bs', 'Solo audios']);
     expect(b.mensajes[0]!.cuerpo).toMatch(/con «Pack completo» ahorras 20 Bs/);
     for (const x of titulos(b)) expect(x.length).toBeLessThanOrEqual(20);
   });
@@ -281,8 +281,8 @@ describe('catálogo COMPLETO por defecto; la bandera `agotado` de la consola sig
   });
 });
 
-describe('los botones: Pack / Libro con bono / Solo audios', () => {
-  it('«Pack completo» y «Libro con bono»: el QR con el monto del catálogo; el botón pulsado no reaparece', () => {
+describe('los botones: Pack / Libro / Solo audios', () => {
+  it('«Pack completo» y «Libro»: el QR con el monto del catálogo; el botón pulsado no reaparece', () => {
     const w = nuevo();
     saludar(w);
     const t = hablar(w, ANA, mBoton('b_pack'));
@@ -931,7 +931,7 @@ describe('el paso del Libro al Pack: UNA vez, solo tras el comprobante de un Lib
   it('si el catálogo no trae el Pack (agotado) o el Libro, la oferta no existe: nunca un precio inventado', () => {
     const w = nuevo({ medio: { clasificacion: COMPROBANTE } });
     hablar(w, ANA, mBoton('b_libro'));
-    w.dobles['Traer configuración'] = () => panelConQr(35, { catalogo: [{ id: 'libro-con-bono', nombre: 'Libro con bono', precio: 35 }] });
+    w.dobles['Traer configuración'] = () => panelConQr(35, { catalogo: [{ id: 'libro', nombre: 'Libro', precio: 35 }] });
     const t = hablar(w, ANA, mImagen());
     expect(ids(t)).toEqual([]);
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/pasar al Pack|35 Bs más/);

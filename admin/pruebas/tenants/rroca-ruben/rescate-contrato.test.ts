@@ -69,10 +69,10 @@ describe('punto 3: la petición de «no me escribas» del reporte entrante (rege
       expect(noContactar(t).filter((c) => c['direccion'] === 'entrante').length, texto).toBe(1);
     }
   });
-  it('las QUEJAS y los usos corrientes NO son una petición: no entrega, «quítame el libro», «bórrame el pedido», «dame de baja el bono 2», «no me llamen la atención»', () => {
+  it('las QUEJAS y los usos corrientes NO son una petición: no entrega, «quítame el libro», «bórrame el pedido», «dame de baja el audio 2», «no me llamen la atención»', () => {
     const NO = [
       'no me mandaron el material', 'no me contactan', 'pagué y no me contactan', 'no me llegó nada', 'no me escribieron todavía', 'no me llamaron', 'quiero escribirte una duda',
-      'quítame el libro', 'bórrame el pedido', 'dame de baja el bono 2', 'no me llamen la atención jaja', 'no me mande el material', 'no me han escrito', 'quiero el libro',
+      'quítame el libro', 'bórrame el pedido', 'dame de baja el audio 2', 'no me llamen la atención jaja', 'no me mande el material', 'no me han escrito', 'quiero el libro',
       'bórrame el workbook de la compra', 'dar de baja el calendario',
       'mi ex no deja de escribirme', 'mi esposo no deja de molestarme', 'le dije que no me escriba más', 'deja de mandar indirectas dice mi esposa',
     ];

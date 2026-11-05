@@ -1,6 +1,6 @@
 // ARMAR MENSAJES: lo que sale al cliente, armado por CÓDIGO. UN SOLO MENSAJE por turno, o ninguno (+0 mensajes agregados).
 //
-// Lee el plan de «Decidir turno» y arma: un texto, un texto con botones (los menús, sin los botones que el cliente ya pulsó), una lista (los bonos), el QR (una IMAGEN por `id` de medio, NUNCA por `link`: el relé
+// Lee el plan de «Decidir turno» y arma: un texto, un texto con botones (los menús, sin los botones que el cliente ya pulsó), una lista, el QR (una IMAGEN por `id` de medio, NUNCA por `link`: el relé
 // de WAM rechaza cualquier clave `link` en el cuerpo) o un texto con el botón que abre el chat de Rubén. Lo que redacta el modelo pasa por `cmRevisarRedaccion` (filtro común): si se rechaza, cae al texto fijo.
 //
 //   puerta «suspendido»        -> el texto neutro del comercio (sin revelar el motivo);
@@ -74,7 +74,7 @@ const conRuben = (cuerpo, extra) => {
 };
 const usadosHoy = () => fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
 // REGLA (P7): un saludo SIN producto decidido no lleva botones con montos. Mientras no esté saludado, o la compuerta esté cerrada, no hay menú en las respuestas libres; ya saludado y habilitado, el menú principal sin los botones que ya pulsó.
-// Un prellenado de la landing (Pack, Libro con bono, Audiolibro o Meditaciones) tiene el producto ya decidido y va directo al QR con su monto.
+// Un prellenado de la landing (Pack, Libro, Audiolibro o Meditaciones) tiene el producto ya decidido y va directo al QR con su monto.
 const menu1 = () => rrMenu(cat, usadosHoy(), nom);
 const menuAbierto = () => (fichaAntes.saludado && habil ? menu1() : []);
 const presentacion = !fichaAntes.saludado;

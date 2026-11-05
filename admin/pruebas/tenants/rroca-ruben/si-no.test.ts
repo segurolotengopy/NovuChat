@@ -54,7 +54,7 @@ describe('un «Sí» responde a la última pregunta', () => {
     expect(c).not.toMatch(NO_INSISTIR);
   });
 
-  it('(2) una respuesta con los botones Pack / Libro / Bonos cuya pregunta es otra: el «Sí» lleva ESA pregunta', () => {
+  it('(2) una respuesta con los botones Pack / Libro / Audios cuya pregunta es otra: el «Sí» lleva ESA pregunta', () => {
     const otra = 'Lo que cuentas es muy común en las parejas que se distancian. ¿Qué es lo que más extrañas de cómo se comunicaban antes?';
     const { w, cuerpos } = mundo(otra);
     hablar(w, ANA, mTexto('hola'));

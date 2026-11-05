@@ -6,7 +6,7 @@
   },
   "negocio": {
     "nombreNegocio": "Noches Sin Insomnio",
-    "descripcion": "Un método práctico para dormir mejor: libro digital con su bono, audiolibro y tres meditaciones guiadas, solos o en un pack. Rubén (el autor) revisa el comprobante de pago y envía el material por este mismo chat; el asistente no entrega enlaces. No es consejo médico.",
+    "descripcion": "Un método práctico para dormir mejor: libro digital, audiolibro y tres meditaciones guiadas, solos o en un pack. Rubén (el autor) revisa el comprobante de pago y envía el material por este mismo chat; el asistente no entrega enlaces. No es consejo médico.",
     "numeroRecepcionMarcador": "REEMPLAZAR_NUMERO_RECEPCION_RUBEN",
     "zonaHoraria": "America/La_Paz",
     "moneda": "BOB",
@@ -36,14 +36,14 @@
   "catalogo": [
     {
       "nombre": "Pack completo",
-      "descripcion": "Libro con su bono, audiolibro y 3 meditaciones guiadas",
+      "descripcion": "Libro, audiolibro y 3 meditaciones guiadas",
       "precio": 70,
       "moneda": "BOB",
       "activo": true
     },
     {
-      "nombre": "Libro con bono",
-      "descripcion": "Libro digital «Noches Sin Insomnio» (208 páginas) con el bono para desconectar del trabajo antes de dormir",
+      "nombre": "Libro",
+      "descripcion": "Libro digital «Noches Sin Insomnio» (208 páginas)",
       "precio": 35,
       "moneda": "BOB",
       "activo": true

@@ -424,7 +424,7 @@ export const CLAVES_DE_PLANTILLA = [
   { estado: 'avisoConsultaEstado', nombre: 'avisoConsultaPlantilla' },
 ];
 /** Los 4 productos que lee el flujo (`RR_PRODUCTOS.catId`): el id sale de `idDe(nombre)` al cargar el negocio. */
-export const IDS_DEL_CATALOGO = ['pack-completo', 'libro-con-bono', 'audiolibro', '3-meditaciones'];
+export const IDS_DEL_CATALOGO = ['pack-completo', 'libro', 'audiolibro', '3-meditaciones'];
 const idDe = (nombre) => String(nombre).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 // Un marcador es CUALQUIER `REEMPLAZAR_` (sin distinguir mayúsculas, tras normalizar a NFKC). Se quitan antes de mirar SOLO las formas que son texto de comentario de los módulos copiados
 // (`REEMPLAZAR_*`, `REEMPLAZAR_…`, `REEMPLAZAR_...`, `REEMPLAZAR_` entre comillas invertidas) y los literales de expresión regular `/^REEMPLAZAR_/` y `/reemplazar_/i` con los que el código descarta marcadores.
