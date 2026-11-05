@@ -146,9 +146,22 @@ function livianos(): Caso[] {
     mapa: { lun: { desde: '09:00', hasta: '19:00' } }, nulo: { lun: null }, lista: { lun: ['09:00-18:00'] }, feriado: { lun: '09:00-19:00', feriado: 'cerrado' },
     lunes: { lunes: '09:00-19:00' }, tilde: { 'mié': '09:00-19:00' }, semana: { ...hor(6), dom: 'cerrado' }, semana7: hor(7),
     semana7MalDom: { ...hor(6), dom: '9 a 7' }, semana7InvSab: { ...hor(5), sab: '18:00-09:00', dom: '09:00-12:00' }, todosCerrados: hor(7, 'cerrado'),
-    separadorRaro: { lun: '09:00–18:00' }, dobleRango: { lun: '09:00-12:00,14:00-18:00' },
+    separadorRaro: { lun: '09:00–18:00' },
   };
   for (const [r, v] of Object.entries(H)) add(`hor=${r}`, { horarios: v });
+  // VARIOS TRAMOS POR DÍA (23/10/2026): lo único que cambia respecto de la base anterior. Eran rechazos y ahora son
+  // válidos (hasta tres tramos); `esperado: 'P'` es el árbitro porque la base anterior los rotula LIMITE al denegar.
+  add('hor=dobleRango', { horarios: { lun: '09:00-12:00,14:00-18:00' } }, { esperado: 'P' });
+  add('hor=tripleRango', { horarios: { lun: '09:00-12:00,13:00-15:00,16:00-18:00' } }, { esperado: 'P' });
+  add('hor=semanaPartida', { horarios: { ...hor(5, '09:00-12:00,14:00-18:00'), sab: '09:00-13:00', dom: 'cerrado' } }, { esperado: 'P' });
+  // Y lo que sigue rechazado en las dos bases: cuatro tramos, espacios, coma suelta, primer tramo invertido.
+  add('hor=cuatroRangos', { horarios: { lun: '08:00-09:00,10:00-11:00,12:00-13:00,14:00-15:00' } });
+  add('hor=comaConEspacio', { horarios: { lun: '09:00-12:00, 14:00-18:00' } });
+  add('hor=comaFinal', { horarios: { lun: '09:00-12:00,' } });
+  add('hor=comaInicial', { horarios: { lun: ',09:00-12:00' } });
+  add('hor=primeroInvertido', { horarios: { lun: '12:00-09:00,14:00-18:00' } });
+  add('hor=segundoHoraImposible', { horarios: { lun: '09:00-12:00,25:00-26:00' } });
+  add('hor=separadorPuntoYComa', { horarios: { lun: '09:00-12:00;14:00-18:00' } });
   for (const [r, v] of Object.entries(raros)) add(`hor=${r}`, { horarios: v });
   add('hor=borrar', { horarios: BORRAR }, { semilla: { ...MIN, horarios: H['uno'] as Record<string, unknown> } });
 

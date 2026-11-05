@@ -31,6 +31,7 @@
  *    comportamiento del agente.
  */
 import { textoPlano, sinMarcas } from './texto.js';
+import { esVariosTramos, horariosSaneados, horarioParaFlujos, tramosEnPalabras, tramosNormalizados } from './horario-tramos.js';
 import { IDS_FLUJOS, documentoDeFlujo, type IdFlujo } from '../../registro.js';
 
 /**
@@ -101,7 +102,9 @@ const NOMBRE_DIA: Record<string, string> = {
  */
 export function horarioAtencion(horarios: unknown): string {
   if (typeof horarios !== 'object' || horarios === null) return '';
-  const h = horarios as Record<string, unknown>;
+  // Un día con varios tramos se normaliza (ordena, fusiona, `cerrado` si no queda
+  // ninguno; ver `horario-tramos.ts`); todo lo demás pasa igual que siempre.
+  const h = horariosSaneados(horarios);
 
   // Se agrupan los días seguidos con el mismo horario. Sin esto sale
   // «lunes: 09:00-19:00; martes: 09:00-19:00; miércoles: …», que es correcto y
@@ -111,7 +114,8 @@ export function horarioAtencion(horarios: unknown): string {
   for (const d of DIAS) {
     const v = h[d];
     if (typeof v !== 'string' || v.trim() === '') continue;
-    const valor = v.trim().slice(0, 40);
+    // Los varios tramos ya normalizados no se recortan (4 tramos miden 47); el resto, a 40 como siempre.
+    const valor = esVariosTramos(v.trim()) ? v.trim() : v.trim().slice(0, 40);
     const ultimo = tramos[tramos.length - 1];
     // Se extiende el tramo solo si el día es CONSECUTIVO al anterior: si el
     // negocio cierra los miércoles, «lunes a viernes» sería mentira.
@@ -127,6 +131,9 @@ export function horarioAtencion(horarios: unknown): string {
       ? NOMBRE_DIA[desde]
       : `${NOMBRE_DIA[desde]} a ${NOMBRE_DIA[hasta]}`;
     if (valor.toLowerCase() === 'cerrado') return `${dias}: cerrado`;
+    // Turno partido: «lunes a viernes, de 09:00 a 12:00 y de 14:00 a 18:00».
+    const varios = valor.includes(',') ? tramosNormalizados(valor) : null;
+    if (varios && varios.length > 1) return `${dias}, ${tramosEnPalabras(varios)}`;
     // «09:00-19:00» se lee mejor como «de 09:00 a 19:00».
     const rango = /^(\d{1,2}:\d{2})\s*[-–a]\s*(\d{1,2}:\d{2})$/.exec(valor);
     return rango ? `${dias}, de ${rango[1]} a ${rango[2]}` : `${dias}: ${valor}`;
@@ -212,6 +219,112 @@ export function vozFija(config: Record<string, unknown>): {
     nivelEmojis: (NIVELES_EMOJIS as readonly unknown[]).includes(nivel)
       ? nivel as NivelEmojis : 'pocos',
   };
+}
+
+/**
+ * EL TRATAMIENTO COMO ENUMERADO PARA TEXTOS FIJOS (`voz.tratamientoClave`).
+ *
+ * `voz.tratamiento` es la FRASE para el prompt; un texto fijo del código
+ * («Cuéntame» / «Cuéntenos») necesita el enumerado. Solo hay dos salidas:
+ * 'usted' y 'tu'. «vos», «neutro», un valor desconocido o la ausencia caen en
+ * 'tu': invariante «sin voseo» de NovuChat (el texto fijo nunca vosea) y, ante
+ * la duda, el trato que no presume jerarquía.
+ */
+export type TratamientoClave = 'tu' | 'usted';
+const TRATAMIENTOS_VALIDOS = ['usted', 'tu', 'vos', 'neutro'] as const;
+
+/**
+ * EL TRATAMIENTO EFECTIVO: un valor del enumerado, o 'tu' si falta o no se
+ * conoce (decisión de Andres: texto común «tu neutro, sin voseo»). La frase
+ * (`voz.tratamiento`) y la clave (`voz.tratamientoClave`) salen del MISMO
+ * valor, así que no se contradicen cuando el campo falta.
+ */
+export function tratamientoEfectivo(config: Record<string, unknown>): string {
+  const t = config['tratamiento'];
+  return (TRATAMIENTOS_VALIDOS as readonly unknown[]).includes(t) ? t as string : 'tu';
+}
+export function tratamientoClave(config: Record<string, unknown>): TratamientoClave {
+  return tratamientoEfectivo(config) === 'usted' ? 'usted' : 'tu';
+}
+
+/** Tope del nombre de quien atiende (igual que la regla de Firestore). */
+export const TOPE_QUIEN_ATIENDE = 60;
+
+/**
+ * FUENTE ÚNICA DE PATRONES de «nombre de quien atiende». Las mismas cadenas
+ * están, caracter por caracter, en `firestore.rules` y en
+ * `web/src/central/lib/payloadNegocio.ts`; `pruebas/core/voz-quien-atiende.test.ts`
+ * lee los tres archivos y exige que coincidan.
+ *
+ * LISTA DE PERMITIDOS, no de prohibidos: solo letras latinas (con acentos y
+ * eñe), dígitos, espacio y `.,&()-`. Eso elimina de una vez invisibles (guion
+ * suave, etiquetas U+E00xx, selectores de variación, U+061C), homoglifos
+ * cirílicos y griegos, ancho completo, emoji, controles y marcas bidi. El
+ * vocabulario se busca encima, sobre un texto que ya solo tiene caracteres
+ * conocidos. Es TEXTO QUE LLEGA A CLIENTES FINALES: prohibiciones 3 y 4 de
+ * CLAUDE.md (no hacerse pasar por el banco, no afirmar un pago, no negar ser IA).
+ */
+export const QUIEN_RE_CARACTERES = '^[A-Za-zÀ-ÖØ-öø-ÿ0-9 .,&()-]{0,60}$';
+export const QUIEN_RE_VOCABULARIO =
+  'banc|pag[oóu]|dep[oó]sit|transferenc|tesorer|acreditad|verificad|comprobante|recibimos'
+  + '|\\bbots?\\b|robot|human[oa]s?|persona real|persona de verdad|soy una persona|\\breal\\b|carne y hueso'
+  + '|inteligencia artificial|\\bi[. ]?a\\b|\\ba[.]?i\\b'
+  + '|no soy (un|una)\\b|www[.]|[.](com|net|org|bo|me|app|io|gl|ly)\\b|([0-9][^0-9]{0,3}){6,}'
+  + '|\\b(bnb|bcp|fie|asfi|sin|jefe|bcb|bisa|bmsc|qr|meta)\\b|uni[oó]n|mercantil|ganadero|econ[oó]mico|fassil|tigo ?money'
+  + '|prodem|ecofuturo|cobranzas?|\\byape\\b|\\byap[eé](a|o|ame)|whatsapp|soporte'
+  + '|impuestos nacionales|polic[ií]a|sistema|tu jefe|ya pag';
+const RE_CARACTERES = new RegExp(QUIEN_RE_CARACTERES);
+const RE_VOCABULARIO = new RegExp(QUIEN_RE_VOCABULARIO, 'i');
+
+/**
+ * Solo del servidor (la regla de Firestore no puede normalizar): NFKC, minúsculas,
+ * sin diacríticos, cifras parecidas a letras (4->a, 3->e, 1->i, 0->o, 5->s,
+ * 7->t, @->a, $->s) y sin ningún separador, para ver «B A N C O», «b.a.n.c.o»
+ * o «b4nco».
+ */
+export const COMPACTO_PROHIBIDO = [
+  'banc', 'pago', 'pagu', 'deposit', 'transferenc', 'tesorer', 'acreditad', 'verificad',
+  'comprobante', 'recibimos', 'robot', 'chatbot', 'humano', 'humana', 'personareal', 'personadeverdad',
+  'unapersona', 'asesorareal', 'carneyhueso', 'inteligenciaartificial', 'prodem', 'ecofuturo', 'cobranza',
+  'whatsapp', 'yapea', 'yapeo', 'mercantil', 'ganadero', 'economico', 'fassil', 'tigomoney',
+  'impuestosnacionales', 'policia', 'sistema', 'tujefe', 'yapag',
+];
+export function compactarQuien(texto: string): string {
+  return texto.normalize('NFKC').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[4]/g, 'a').replace(/3/g, 'e').replace(/1/g, 'i').replace(/0/g, 'o')
+    .replace(/5/g, 's').replace(/7/g, 't').replace(/@/g, 'a').replace(/\$/g, 's')
+    .replace(/[^a-z]/g, '');
+}
+
+/**
+ * ¿Es válido el «nombre de quien atiende»? Devuelve el motivo del rechazo, o
+ * `null` si es válido (vacío es válido). El servidor es AL MENOS tan estricto
+ * como la regla: aplica los mismos patrones y además la forma compacta.
+ */
+export function motivoQuienAtiendeInvalido(valor: unknown): string | null {
+  if (valor === undefined || valor === null || valor === '') return null;
+  if (typeof valor !== 'string') return 'no es texto';
+  if (Array.from(valor).length > TOPE_QUIEN_ATIENDE) return `supera los ${TOPE_QUIEN_ATIENDE} caracteres`;
+  if (!RE_CARACTERES.test(valor)) return 'solo admite letras, números, espacios y . , & ( ) -';
+  if (RE_VOCABULARIO.test(valor)) return 'no puede llevar enlaces, números largos ni hablar de bancos, pagos o de ser o no una IA';
+  // Dígitos en total, sin importar los separadores (L1 del #615): 6 o más son un teléfono.
+  if (valor.replace(/[^0-9]/g, '').length >= 6) return 'no puede llevar números largos';
+  const compacto = compactarQuien(valor);
+  if (COMPACTO_PROHIBIDO.some((t) => compacto.includes(t))) return 'no puede hablar de bancos, pagos o instituciones';
+  return null;
+}
+
+/**
+ * `voz.quienAtiende`: el nombre saneado, o '' si no hay o no pasa la
+ * validación. El flujo decide el respaldo («nuestro equipo»).
+ */
+export function quienAtiende(config: Record<string, unknown>): string {
+  const v = config['nombreQuienAtiende'];
+  if (typeof v !== 'string') return '';
+  // Se valida el texto TAL COMO ESTÁ GUARDADO: limpiarlo antes taparía un
+  // control o una marca bidi que la regla habría negado.
+  if (motivoQuienAtiendeInvalido(v) !== null) return '';
+  return sinMarcas(textoPlano(v, TOPE_QUIEN_ATIENDE));
 }
 
 /** Etiquetas legibles de los datos que el comercio no cargó. */
@@ -322,7 +435,7 @@ export function resolverFuncionarios(
       nombre: String(negocio['nombreNegocio'] ?? 'El negocio'),
       especialidad: '',
       calendarioId: String(negocio['calendarioId'] ?? ''),
-      horarioTrabajo: (negocio['horarios'] ?? {}) as Record<string, unknown>,
+      horarioTrabajo: horarioParaFlujos(negocio['horarios']),
       servicios: [],           // vacío = atiende todo
       porDefecto: true,
     }];
@@ -338,7 +451,7 @@ export function resolverFuncionarios(
         // Si quedó vacío, hereda el del comercio: un funcionario sin agenda
         // propia no puede quedar sin agenda ninguna.
         || String(negocio['calendarioId'] ?? ''),
-      horarioTrabajo: (f.datos['horarioTrabajo'] ?? negocio['horarios'] ?? {}) as Record<string, unknown>,
+      horarioTrabajo: horarioParaFlujos(f.datos['horarioTrabajo'] ?? negocio['horarios']),
       // REFERENCIAS COLGADAS. Las reglas solo pudieron comprobar que `servicios`
       // es una lista de hasta 50 elementos, no que esos identificadores existan.
       // Un servicio borrado del catálogo deja la referencia atrás. Se descartan

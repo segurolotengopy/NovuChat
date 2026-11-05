@@ -38,7 +38,7 @@ valores válidos son `lastN` y `all`. El código hace
 **cualquier valor desconocido borra el historial completo** del paciente en vez de los
 dos últimos mensajes.
 
-**Por qué importa:** está en **dos clientes reales en producción** (Platinum y Bellido).
+**Por qué importa:** está en un cliente real en producción (Bellido) y en el flujo de ejemplo de la clínica.
 Se dispara en el reintento tras un cruce de agenda, que es justo cuando la conversación
 importa. Lo encontró un agente verificando parámetros contra el paquete de npm.
 

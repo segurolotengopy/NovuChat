@@ -34,6 +34,8 @@ import { ejecutar } from './lib/flujo';
 const NODOS = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/nodos');
 const DECIDIR = readFileSync(join(NODOS, 'decidir-turno.js'), 'utf8');
 const PLAN = readFileSync(join(NODOS, 'plan-del-turno.js'), 'utf8');
+// El módulo común de Pedidos es REAL (no un doble): construir.mjs lo incluye delante de cada nodo.
+const PQR = readFileSync(join(NODOS, '../../../../src/modulos/pedidos/qr-del-pedido.js'), 'utf8');
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = Record<string, any>;
@@ -53,6 +55,8 @@ function vmRecorte(t, max){ const s = String(t == null ? '' : t); return s.lengt
 function vmTextoDeGemini(j){ if (!j || j.error) return ''; const c = j.candidates && j.candidates[0]; return c && c.content && c.content.parts ? c.content.parts.map(function(p){ return p.text || ''; }).join('\n') : ''; }
 function vmJsonDeGemini(j){ const t = vmTextoDeGemini(j).trim(); if (!t) return null; try { const o = JSON.parse(t); return o && typeof o === 'object' && !Array.isArray(o) ? o : null; } catch (e) { return null; } }
 function vmSd(){ try { const g = $getWorkflowStaticData('global'); if (!g.ventaMinima) g.ventaMinima = {}; return g.ventaMinima; } catch (e) { return null; } }
+// PR-4a: el estado y los pedidos de un teléfono vienen de la sesión del servidor (vmSes); esta suite los guarda donde siempre (los mapas de ventaMinima), que es lo que hace Armar mensajes al comprometer.
+function vmSes(from, ahora){ const sd = vmSd(); sd.estados = sd.estados || {}; sd.pedidos = sd.pedidos || {}; return sd; }
 function vmEstadoBase(){ return { paso: 'inicio', ultimoMensajeMs: 0 }; }
 function vmLeerEstado(sd, from, ahora){ const e = sd && sd.estados && sd.estados[from]; if (!e) return vmEstadoBase(); const vida = e.paso === 'esperando_comprobante' ? 86400000 : 3600000; return ahora - e.ultimoMensajeMs < vida ? JSON.parse(JSON.stringify(e)) : vmEstadoBase(); }
 function vmIdDeBoton(){ return Array.prototype.slice.call(arguments).join('|'); }
@@ -186,7 +190,7 @@ function turno(m: Mundo, e: Entrada = {}): Salida {
   const globales = { $getWorkflowStaticData: () => m.global };
   const d = ejecutar(`${DOBLES}\n${DECIDIR}`, [{}], refs, globales)[0]!;
   if (String(d['accion']).startsWith('extraer') && e.extraccion !== undefined) refs['Extraer'] = e.extraccion;
-  const p = ejecutar(`${DOBLES}\n${PLAN}`, [{}], { ...refs, 'Decidir turno': d }, globales)[0]!;
+  const p = ejecutar(`${PQR}\n${DOBLES}\n${PLAN}`, [{}], { ...refs, 'Decidir turno': d }, globales)[0]!;
   // Lo que hace `Armar mensajes` (T7b) con el plan.
   const sd = sdDe(m);
   sd['estados'] ??= {};
@@ -1283,7 +1287,7 @@ describe('Vigencia, botones de promoción y costo en mensajes', () => {
   it('una acción que el plan no conoce se deriva y se anota (nunca se calla)', () => {
     const t: J = { from: FROM, nombrePerfil: 'Ana Pérez', ahoraMs: AHORA, tipo: 'text', texto: 'x' };
     const d = { accion: 'inventada', estado: { paso: 'menu' }, errores: [], texto: 'x' };
-    const p = ejecutar(`${DOBLES}\n${PLAN}`, [{}], { 'Config del negocio': CFG, 'Interpretar entrada': t, 'Decidir turno': d },
+    const p = ejecutar(`${PQR}\n${DOBLES}\n${PLAN}`, [{}], { 'Config del negocio': CFG, 'Interpretar entrada': t, 'Decidir turno': d },
       { $getWorkflowStaticData: () => ({}) })[0]!;
     expect(p['errores']).toContain('accion_desconocida');
     expect(p['aviso']['tipo']).toBe('transferencia');

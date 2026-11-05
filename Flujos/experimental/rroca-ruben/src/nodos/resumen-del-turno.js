@@ -20,7 +20,7 @@ if (cnNodo('Enviar a WhatsApp')) {
     const rrDesde = String((items[0] || {}).from || '');
     const rrFichas = cnMapaDeFichas(true);
     const rrF = cnFichaDe(rrFichas.mapa, rrDesde);
-    if (rrF) { rrF.pedidos = Number(rrPrevio.pedidos) || 0; rrF.producto = String(rrPrevio.producto || ''); rrF.qrHastaMs = Number(rrPrevio.qrHastaMs) || 0; }
+    if (rrF) { rrF.pedidos = Number(rrPrevio.pedidos) || 0; rrF.producto = String(rrPrevio.producto || ''); rrF.qrHastaMs = Number(rrPrevio.qrHastaMs) || 0; rrF.upgrade = Number(rrPrevio.upgrade) || 0; }
   }
   // La guarda liberada por un comprobante resuelto vuelve si no salió nada al cliente (ni el envío ni su respaldo).
   const rrLib = (items[0] || {}).qrLiberado;
@@ -28,6 +28,18 @@ if (cnNodo('Enviar a WhatsApp')) {
     const rrFichas2 = cnMapaDeFichas(true);
     const rrF2 = cnFichaDe(rrFichas2.mapa, String((items[0] || {}).from || ''));
     if (rrF2) rrF2.qrHastaMs = Number(rrLib.qrHastaMs) || 0;
+  }
+  // Lo último dicho al teléfono (hash y plan) vuelve a su valor anterior si no salió nada al cliente.
+  const rrHp = (items[0] || {}).hashPrevio;
+  if (rrHp && typeof rrHp === 'object' && !cnTodos('Enviar a WhatsApp').some(rrId) && !cnTodos('Enviar respaldo').some(rrId)) {
+    const rrFichas3 = cnMapaDeFichas(true);
+    const rrF3 = cnFichaDe(rrFichas3.mapa, String((items[0] || {}).from || ''));
+    if (rrF3) {
+      ctRestaurarEnviado(rrF3, { h: rrHp.h, f: rrHp.f });
+      // Las preguntas pendientes vuelven a las de antes del turno; la conversación (el contador y las dos marcas de las opciones) solo cuenta lo que Meta aceptó.
+      ctRestaurarPreguntas(rrF3, rrHp.preg);
+      rrF3.charlaN = Number(rrHp.c) || 0; rrF3.pidioOpciones = rrHp.po === true; rrF3.opcionesVistas = rrHp.ov === true; rrF3.upgrade = Number(rrHp.u) || 0;
+    }
   }
   const rrEsperados = items.filter((i) => i && i.sinMensajes !== true).length;
   const rrEntregados = cnTodos('Enviar a WhatsApp').filter(rrId).length + cnTodos('Enviar respaldo').filter(rrId).length;

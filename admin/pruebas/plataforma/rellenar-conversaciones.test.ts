@@ -786,6 +786,103 @@ describe('R5. Bellido y la ficha', () => {
 });
 
 // =====================================================================================================
+describe('R5b. --permitir-excluido bellido: la excepción explícita, negando todo lo demás', () => {
+  const BASE = ['--proyecto', PROY, '--tenant', 'bellido'];
+  const problemas = (argv: string[], env: Record<string, string> = ENV_EMU) => {
+    const r = mod.analizarArgumentos(argv, env);
+    expect(r.ok, JSON.stringify(r)).toBe(false);
+    return (r.problemas ?? []).join(' | ');
+  };
+
+  it('sin la bandera Bellido sigue denegado; con ella y --tenant bellido pasa, en seco por omisión', () => {
+    expect(problemas(BASE)).toContain('EXCLUIDO');
+    const r = mod.analizarArgumentos([...BASE, '--permitir-excluido', 'bellido'], ENV_EMU);
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    expect(r.cfg).toMatchObject({ tenant: 'bellido', aplicar: false, permitirExcluido: 'bellido' });
+  });
+
+  it('la bandera con otro comercio no levanta nada, y no vale para ids que solo contienen bellido', () => {
+    expect(problemas(['--proyecto', PROY, '--tenant', T, '--permitir-excluido', 'bellido'])).toContain('MISMO id');
+    expect(problemas(['--proyecto', PROY, '--tenant', 'bellido', '--permitir-excluido', T])).toContain('solo admite');
+    expect(problemas(['--proyecto', PROY, '--tenant', 'consultorio-bellido', '--permitir-excluido', 'bellido'])).toContain('EXCLUIDO');
+    expect(problemas(['--proyecto', PROY, '--tenant', 'bellido2', '--permitir-excluido', 'bellido'])).toContain('EXCLUIDO');
+    expect(problemas(['--proyecto', PROY, '--tenant', 'consultorio-bellido', '--permitir-excluido', 'consultorio-bellido'])).toContain('solo admite');
+    // Un comercio excluido por la variable de entorno tampoco se levanta con la bandera.
+    expect(problemas([...BASE, '--permitir-excluido', 'bellido'], { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' })).toContain('EXCLUIDO');
+  });
+
+  it('no existe --todos ni lista con comas, ni la bandera repetida o sin valor', () => {
+    expect(problemas([...BASE, '--permitir-excluido', 'bellido', '--todos'])).toContain('opción desconocida: --todos');
+    expect(problemas(['--proyecto', PROY, '--tenant', 'bellido,tienda-prueba', '--permitir-excluido', 'bellido'])).toContain('UN solo comercio');
+    expect(problemas([...BASE, '--permitir-excluido', 'bellido', '--permitir-excluido', 'bellido'])).toContain('opción repetida');
+    expect(problemas([...BASE, '--permitir-excluido'])).toContain('sin valor');
+  });
+
+  it('las demás salvaguardas siguen: --aplicar exige respaldo, y producción exige --confirmo-produccion bellido', () => {
+    expect(problemas([...BASE, '--permitir-excluido', 'bellido', '--aplicar'])).toContain('--aplicar exige --respaldo');
+    expect(problemas(['--proyecto', 'proyecto-ficticio-prod', '--tenant', 'bellido', '--permitir-excluido', 'bellido', '--aplicar', '--respaldo', rutaRespaldo()], ENV_REAL))
+      .toContain('--confirmo-produccion');
+  });
+
+  it('ejecutar solo respeta la excepción si la cfg trae la bandera Y el mismo id (no basta con una cfg a mano distinta)', async () => {
+    const siembra = () => baseEnMemoria({ 'tenants/bellido': { nombre: 'Consultorio Bellido', estado: 'activo' }, [`tenants/bellido/conversaciones/${ID(1)}`]: conv(1) });
+    for (const extra of [{}, { permitirExcluido: 'otro-comercio' }, { permitirExcluido: 'consultorio-bellido' }]) {
+      const b = siembra();
+      const { codigo } = await correr(cfgDe({ tenant: 'bellido', ...extra }), b);
+      expect(codigo).toBe(2);
+      expect(b.estado.lecturas).toBe(0);
+    }
+    // Un comercio cualquiera con la bandera "bellido" en la cfg no levanta nada: su nombre excluido sigue negado.
+    const c = sembrar(2, () => ({}), { nombre: 'Consultorio Bellido', estado: 'activo' });
+    expect((await correr(cfgDe({ permitirExcluido: 'bellido' }), c)).codigo).toBe(2);
+    expect(c.estado.escrituras).toHaveLength(0);
+  });
+
+  it('en seco no escribe (sale 1); con --aplicar solo AGREGA los dos campos, con respaldo, y la segunda corrida no hace nada', async () => {
+    const ficha = { nombre: 'Consultorio Bellido', estado: 'activo' };
+    const inicial: Record<string, Record<string, unknown>> = { 'tenants/bellido': ficha };
+    for (let n = 1; n <= 5; n++) inicial[`tenants/bellido/conversaciones/${ID(n)}`] = conv(n, { etiquetas: ['x'], ultimoEntranteEn: 5 });
+    inicial[`tenants/bellido/conversaciones/${ID(6)}`] = conv(6, { telefonoTrozos: ['ya'] }); // ya tiene uno: no se pisa
+    const b = baseEnMemoria(inicial);
+    const antes = Object.fromEntries(Object.keys(inicial).map((k) => [k, structuredClone(b.leer(k))]));
+    const cfg = { tenant: 'bellido', permitirExcluido: 'bellido' };
+
+    const seco = await correr(cfgDe(cfg), b);
+    expect(seco.codigo).toBe(1);
+    expect(seco.salida).toContain('EXCLUSIÓN LEVANTADA SOLO PARA ESTA CORRIDA');
+    expect(b.estado.escrituras).toHaveLength(0);
+
+    const ruta = rutaRespaldo();
+    const ap = await correr(cfgDe({ ...cfg, aplicar: true, respaldo: ruta }), b);
+    expect(ap.codigo, ap.salida).toBe(0);
+    expect(ap.salida).toContain('Escritas: 6 · saltadas por precondición (cambiaron durante la corrida): 0 · relectura que no coincide: 0');
+    expect(modo(ruta)).toBe('600');
+    const rsp = mod.leerRespaldo(ruta, { entorno: 'emulador', tenant: 'bellido' });
+    expect(rsp.ok, rsp.motivo).toBe(true);
+    expect(rsp.respaldo!.items).toHaveLength(6);
+    for (const [k, previo] of Object.entries(antes)) {
+      const hoy = b.leer(k) as Record<string, unknown>;
+      if (k === 'tenants/bellido') { expect(hoy).toEqual(previo); continue; }
+      const nuevosCampos = Object.keys(hoy).filter((c) => !(c in (previo as object)));
+      expect(nuevosCampos.every((c) => mod.CAMPOS_DERIVADOS.includes(c)), k).toBe(true);
+      for (const [c, v] of Object.entries(previo as object)) expect(hoy[c], `${k}.${c}`).toEqual(v); // nada cambió ni se borró
+      expect(hoy).toHaveProperty('telefonoTrozos');
+      expect(hoy).toHaveProperty('nombrePalabras');
+    }
+    expect(b.leer(`tenants/bellido/conversaciones/${ID(6)}`)).toMatchObject({ telefonoTrozos: ['ya'] });
+    expect(b.estado.escrituras.every((e: { ruta?: string }) => !String(e.ruta ?? '').includes('/mensajes/') && !String(e.ruta ?? '').includes('/turno'))).toBe(true);
+
+    const otra = rutaRespaldo();
+    const escritasAntes = b.estado.escrituras.length;
+    const idem = await correr(cfgDe({ ...cfg, aplicar: true, respaldo: otra }), b);
+    expect(idem.codigo).toBe(0);
+    expect(idem.salida).toContain('nada que hacer');
+    expect(b.estado.escrituras).toHaveLength(escritasAntes);
+    expect(() => statSync(otra)).toThrow();
+  });
+});
+
+// =====================================================================================================
 describe('R6. revertir', () => {
   const aplicada = async (cantidad = 6) => {
     const b = sembrar(cantidad);

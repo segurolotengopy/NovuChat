@@ -19,14 +19,20 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar, type J, type Referencias } from './lib/flujo';
+import { comprometer, crearSesion, leerSesion, type SesionDeMentira } from './lib/venta-minima-sesion';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src');
 const leer = (r: string): string => readFileSync(join(RAIZ, r), 'utf8');
 const LIBRERIAS = ['comun', 'pedido', 'reserva', 'promos', 'avisos', 'cobro'].map((n) => leer(`lib/${n}.js`));
-const LIBS = LIBRERIAS.join('\n');
+// El módulo común de Pedidos (qr-del-pedido.js) va detrás de las librerías propias, como lo arma construir.mjs.
+const PQR = readFileSync(join(RAIZ, '../../../src/modulos/pedidos/qr-del-pedido.js'), 'utf8');
+// El estado de la conversación en el servidor (PR-4a): el módulo común `sesion` lo incluyen los nodos que lo usan, como arma construir.mjs.
+const SESION = readFileSync(join(RAIZ, '../../comun-sin-agente/src/sesion.js'), 'utf8');
+const LIBS = [...LIBRERIAS, PQR].join('\n');
 const CODIGO: Record<string, string> = {};
-for (const n of ['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'interpretar-lectura', 'decidir-turno', 'plan-del-turno', 'armar-avisos', 'armar-mensajes']) {
-  CODIGO[n] = `${LIBS}\n${leer(`nodos/${n}.js`)}`;
+const CON_SESION = ['config-del-negocio', 'armar-mensajes', 'soltar-mensajes'];
+for (const n of ['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'interpretar-lectura', 'decidir-turno', 'plan-del-turno', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes', 'sin-estado']) {
+  CODIGO[n] = `${LIBS}\n${CON_SESION.includes(n) ? `${SESION}\n` : ''}${leer(`nodos/${n}.js`)}`;
 }
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026, 10:00 en La Paz
@@ -102,10 +108,16 @@ const BASE: J = {
 };
 const sinClaves = (...claves: string[]): J => Object.fromEntries(Object.entries(BASE).filter(([k]) => !claves.includes(k)));
 
-interface Mundo { g: J; base: J; panel: J; ahora: number; n: number; codigoPanel: number }
-const crear = (o: { base?: J; panel?: J; ahora?: number } = {}): Mundo => ({ g: {}, base: o.base ?? BASE, panel: o.panel ?? panel(), ahora: o.ahora ?? AHORA, n: 0, codigoPanel: 200 });
+interface Mundo { g: J; base: J; panel: J; ahora: number; n: number; codigoPanel: number; sesion: SesionDeMentira }
+const crear = (o: { base?: J; panel?: J; ahora?: number } = {}): Mundo => {
+  const m: Mundo = { g: {}, base: o.base ?? BASE, panel: o.panel ?? panel(), ahora: o.ahora ?? AHORA, n: 0, codigoPanel: 200, sesion: undefined as unknown as SesionDeMentira };
+  m.sesion = crearSesion({ pid: PNID, ahora: () => m.ahora });
+  return m;
+};
+/** Los datos estáticos que SIGUEN en n8n (residuo de PR-4b: marcas de aviso, contador diario, reservas del día). El estado y los pedidos viven en el servidor (`m.sesion`). */
 const sdDe = (m: Mundo): J => (m.g['ventaMinima'] ??= {});
-const estadoDe = (m: Mundo, from = CLIENTE): J => sdDe(m)['estados']?.[from] ?? {};
+const estadoDe = (m: Mundo, from = CLIENTE): J => m.sesion.estado(from);
+const pedidosDe = (m: Mundo, from = CLIENTE): J => m.sesion.pedidos(from);
 
 const OK = (i = 1): J => ({ messaging_product: 'whatsapp', contacts: [{ wa_id: AV1 }], messages: [{ id: `wamid.AVISO${i}` }] });
 const FALLA: J = { error: { message: 'Graph rechazó el envío', code: 131030 } };
@@ -147,7 +159,7 @@ function turno(m: Mundo, e: Entrada = {}): Salida {
     messaging_product: 'whatsapp', metadata: { phone_number_id: PNID },
     contacts: [{ profile: { name: e.nombrePerfil ?? 'Ana Pérez' }, wa_id: from }], messages: [msg],
   };
-  const globales = { $getWorkflowStaticData: () => m.g, Date: relojFijo(m.ahora) };
+  const globales = { $getWorkflowStaticData: () => m.g, Date: relojFijo(m.ahora), $execution: { id: `e${m.n}` } };
   const correr = (nodo: string, entradas: J[], refs: Referencias): J[] => ejecutar(CODIGO[nodo]!, entradas, refs, globales);
 
   let [carga] = correr('carga-de-entrada', [evento], {}) as [J];
@@ -156,7 +168,9 @@ function turno(m: Mundo, e: Entrada = {}): Salida {
   if (e.carrito) {
     carga = { ...carga, carritoWeb: true, messages: [{ from, id: `carrito:${e.carrito['pedidoId']}`, timestamp: String(Math.floor(m.ahora / 1000)), type: 'carrito', carrito: e.carrito }] };
   }
-  const [cfg] = correr('config-del-negocio', [{ statusCode: m.codigoPanel, body: m.codigoPanel === 200 ? m.panel : {} }], { 'Config base': m.base, 'Carga de entrada': carga }) as [J];
+  // El `leer` de la sesión viaja en la respuesta de configuración (con el id del mensaje: de ahí sale el repetido).
+  const cuerpoPanel = m.codigoPanel === 200 ? { ...m.panel, ...leerSesion(m.sesion, from, String(((carga['messages'] as J[] | undefined) ?? [])[0]?.['id'] ?? ''), `e${m.n}`) } : {};
+  const [cfg] = correr('config-del-negocio', [{ statusCode: m.codigoPanel, body: cuerpoPanel }], { 'Config base': m.base, 'Carga de entrada': carga }) as [J];
   const refs: Referencias = { 'Carga de entrada': carga, 'Config base': m.base, 'Config del negocio': cfg };
   if (e.carrito) refs['Traer configuración'] = { statusCode: m.codigoPanel, body: m.codigoPanel === 200 ? m.panel : {} };
   const entrada = correr('interpretar-entrada', [{}], refs);
@@ -167,18 +181,32 @@ function turno(m: Mundo, e: Entrada = {}): Salida {
   if (e.cotejo) refs['Cotejar en el servidor'] = e.cotejo;
   if (e.lectura) refs['Interpretar lectura'] = e.lectura;
   if (e.lecturaGemini) refs['Interpretar lectura'] = correr('interpretar-lectura', [e.lecturaGemini], refs)[0]!;
-  const [d] = correr('decidir-turno', [{}], refs) as [J];
-  refs['Decidir turno'] = d;
-  if (String(d['accion']).startsWith('extraer') && e.extraccion) refs['Extraer'] = (e.candidates ? geminiCandidates : gemini)(e.extraccion);
-  let [p] = correr('plan-del-turno', [{}], refs) as [J];
-  if (e.plan) p = e.plan(p);
-  refs['Plan del turno'] = p;
+  // `¿Hay estado?`: sin una conversación válida del servidor no se sabe en qué paso va el cliente y sale el genérico con el botón («Sin estado»).
+  const hayEstado = (cfg['sesion'] as J | undefined)?.['ok'] === true;
+  let d: J = {};
+  let p: J;
+  if (hayEstado) {
+    [d] = correr('decidir-turno', [{}], refs) as [J];
+    refs['Decidir turno'] = d;
+    if (String(d['accion']).startsWith('extraer') && e.extraccion) refs['Extraer'] = (e.candidates ? geminiCandidates : gemini)(e.extraccion);
+    [p] = correr('plan-del-turno', [{}], refs) as [J];
+    if (e.plan) p = e.plan(p);
+    refs['Plan del turno'] = p;
+  } else {
+    [p] = correr('sin-estado', [{}], refs) as [J];
+    refs['Sin estado'] = p;
+  }
   const avisos = correr('armar-avisos', [{}], refs);
   refs['Armar avisos'] = avisos;
   const armados = avisos.filter((i) => i['sinAviso'] !== true && i['payload']);
   const enviados = armados.length ? (e.envio ?? ((a: J[]) => a.map((_, i) => OK(i + 1))))(armados) : [];
   if (armados.length) refs['Enviar aviso'] = enviados;
-  const mensajes = correr('armar-mensajes', [{}], refs);
+  // «Armar mensajes» arma el bloque y pide el compromiso ANTES de enviar; el servidor de mentira contesta y «Soltar mensajes» decide qué sale.
+  const armado = correr('armar-mensajes', [{}], refs)[0]!;
+  refs['Armar mensajes'] = armado;
+  const respuesta = comprometer(m.sesion, armado['compromiso'] as J | null);
+  if (respuesta) refs['Comprometer turno'] = respuesta;
+  const mensajes = correr('soltar-mensajes', [{}], refs);
   return { descartado: false, t, d, p, cfg, avisos, armados, enviados, mensajes, tiempoMs: performance.now() - ini };
 }
 
@@ -417,7 +445,7 @@ describe('R3: la marca de derivación es por hecho, y el tope respeta el 0', () 
     expect(a.p['aviso'].tipo).toBe('transferencia');
     expect(a.armados.length).toBeGreaterThan(0);
     expect(sdDe(m)['transferencias']).toBeUndefined();
-    expect(sdDe(m)['estados'][CLIENTE]['transferencias']).toEqual([]);
+    expect(estadoDe(m)['transferencias']).toEqual([]);
     // El cliente igual recibe la derivación honesta: el botón, sin «ya pasé».
     expect(cuerpos(a).join('\n')).toContain('Toca «Escribir al local» y conversas directamente con nuestro equipo');
     const b = turno(m, { despues: MIN, texto: pide });
@@ -682,7 +710,8 @@ describe('comprobante: cuadra, no cuadra e ilegible, de punta a punta', () => {
   it('S7: la referencia del servidor de otro teléfono no se coteja contra el pedido de este: se deriva', () => {
     const { m } = pagando();
     // Un pedido guardado de OTRO teléfono; el servidor (o alguien) manda su referencia para este teléfono.
-    sdDe(m)['pedidos']['ped-ajeno'] = { pedidoId: 'ped-ajeno', from: OTRO, codigo: 'ZZZZ', total: 10, lineas: [], modalidad: 'recojo' };
+    // (el bloque de un teléfono solo trae SUS pedidos; un pedido ajeno ahí sería un dato dañado: la defensa por `from` sigue)
+    m.sesion.sembrar(CLIENTE, estadoDe(m), { ...pedidosDe(m), 'ped-ajeno': { pedidoId: 'ped-ajeno', from: OTRO, codigo: 'ZZZZ', total: 10, lineas: [], modalidad: 'recojo' } });
     m.panel = conCobro({ pedido: 'ped-ajeno', monto: 10 });
     const s = comprobante(m, { statusCode: 200, body: { resultado: 'cuadra' } });
     expect(s.p['ruta']).toContain('comprobante sin pedido en el flujo');
@@ -1029,7 +1058,7 @@ describe('PR-A (05/10), revisión de seguridad: (0, 0) tras redondear, `Carga de
     expect(estadoDe(m)['entrega']['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
     // El estado pasa a recojo conservando los datos viejos de entrega (como si el cliente hubiera cambiado de modalidad).
     const e = estadoDe(m)['entrega'];
-    sdDe(m)['estados'][CLIENTE]['entrega'] = { ...e, entrega: 'recojo', modalidad: 'recojo' };
+    m.sesion.sembrar(CLIENTE, { ...estadoDe(m), entrega: { ...e, entrega: 'recojo', modalidad: 'recojo' } }, pedidosDe(m));
     const c = turno(m, { boton: 'p|confirmar' });
     const ped = c.p['pedido'] as J;
     expect(ped['modalidad']).toBe('recojo');
@@ -1037,7 +1066,7 @@ describe('PR-A (05/10), revisión de seguridad: (0, 0) tras redondear, `Carga de
     expect(ped['coordenadas']).toBe('');
     expect(ped['direccion']).toBe('');
     expect(ped['referencia']).toBe('');
-    const guardado = JSON.stringify(Object.values(sdDe(m)['pedidos'] ?? {}));
+    const guardado = JSON.stringify(Object.values(pedidosDe(m)));
     expect(guardado).not.toMatch(/Calle Falsa|portón|-16\.5|68\.15|"ubicacion":\{/);
     expect(JSON.stringify(c.armados)).not.toMatch(/ubicación compartida|google|Calle Falsa/);
   });
@@ -1078,17 +1107,21 @@ describe('S6: los topes por teléfono y por hora, de punta a punta', () => {
     expect(otra.armados.length).toBeGreaterThan(0);
   });
 
-  it('`sd.pedidos` no pasa de 500: con 520 pedidos guardados, el nuevo entra y los más antiguos salen', () => {
+  it('los pedidos del teléfono no pasan del tope en BYTES (15.000): con 520 pedidos guardados, el nuevo entra y los más antiguos salen (PR-4a: antes el tope era de 500 por flujo)', () => {
     const m = crear({ panel: conCobro() });
     const viejos: J = {};
-    for (let i = 0; i < 520; i++) viejos[`ped-${i}`] = { pedidoId: `ped-${i}`, from: OTRO, total: 10, guardadoMs: m.ahora - 60 * MIN + i };
-    sdDe(m)['pedidos'] = viejos;
+    for (let i = 0; i < 520; i++) viejos[`ped-${i}`] = { pedidoId: `ped-${i}`, from: CLIENTE, total: 10, lineas: [], guardadoMs: m.ahora - 60 * MIN + i };
+    m.sesion.sembrar(CLIENTE, null, viejos);
     hastaResumen(m);
     const c = turno(m, { boton: 'p|confirmar' });
-    const claves = Object.keys(sdDe(m)['pedidos']);
-    expect(claves).toHaveLength(500);
+    const claves = Object.keys(pedidosDe(m));
+    // (la cota de esta prueba es holgada a propósito: el tope en BYTES, su exactitud y el peor caso se prueban en venta-minima-sesion.test.ts)
+    expect(claves.length).toBeLessThan(500);
+    expect(claves.length).toBeGreaterThan(10);
     expect(claves).toContain(String(clientes(c)[0]!['referencia']));
     expect(claves).not.toContain('ped-0');
+    expect(claves).toContain('ped-519'); // los más recientes sobreviven
+    expect(Buffer.byteLength(JSON.stringify(m.sesion.bloque(CLIENTE)))).toBeLessThanOrEqual(15000);
   });
 });
 
@@ -1322,19 +1355,24 @@ describe('M1: los topes en 0 se respetan de punta a punta', () => {
   });
 });
 
-describe('M3: con el panel caído a mitad de un pedido no se ofrece ni se afirma delivery: se deriva', () => {
-  it('con el resumen de un delivery en pantalla, el panel cae y «Confirmar pedido» deriva (aviso + botón) en vez de confirmar', () => {
+describe('M3: con el panel caído a mitad de un pedido no se ofrece ni se afirma delivery ni se confirma nada (PR-4a: el estado viaja con el panel, sin estado sale el aviso a recepción y el botón)', () => {
+  it('con el resumen de un delivery en pantalla, el panel cae y «Confirmar pedido» no confirma nada: sin estado, el genérico con el botón (con aviso de transferencia a recepción, sin pedido, sin cobro)', () => {
     const m = crear();
     hastaResumen(m);
     expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
     m.codigoPanel = 500;
     const s = turno(m, { boton: 'p|confirmar' });
     expect(s.cfg['panelSinRespuesta']).toBe(true);
-    expect(s.p['ruta']).toContain('transferir');
-    expect(s.p['aviso'].tipo).toBe('transferencia');
-    expect(s.p['pedido']).toBeNull();
+    expect(s.cfg['sesion']).toMatchObject({ ok: false });
+    // (política del 21/09: pasar con recepción = el aviso estándar de transferencia MÁS el botón)
+    expect(s.armados.length).toBeGreaterThan(0);
+    expect(s.armados.every((a) => a['tipoAviso'] === 'transferencia')).toBe(true);
+    expect(cuerpos(s)).toHaveLength(1);
     expect(cuerpos(s).join('\n')).toContain('Toca «Escribir al local» y lo ves directamente con nuestro equipo');
     expect(cuerpos(s).join('\n')).not.toMatch(/delivery|pas[ée] tu pedido/i);
+    expect(errores(s)).toContain('sin_estado');
+    expect(s.mensajes[0]!['comprometido']).toBe(false);
+    expect(estadoDe(m)['paso']).toBe('pedido_confirmar'); // el servidor no se tocó: el pedido sigue donde estaba
   });
   it('con el pedido a medias (aún sin elegir entrega), un botón de entrega tampoco ofrece delivery con el panel caído', () => {
     const m = crear();
@@ -1343,31 +1381,27 @@ describe('M3: con el panel caído a mitad de un pedido no se ofrece ni se afirma
     expect(estadoDe(m)['paso']).toBe('pedido_entrega');
     m.codigoPanel = 500;
     const s = turno(m, { boton: 'e|delivery' });
-    expect(s.p['aviso'].tipo).toBe('transferencia');
-    expect(JSON.stringify(s.p['mensajes'])).not.toMatch(/Delivery|dirección exacta/);
+    expect(s.armados.length).toBeGreaterThan(0);
+    expect(s.armados.every((a) => a['tipoAviso'] === 'transferencia')).toBe(true);
+    expect(JSON.stringify(cuerpos(s))).not.toMatch(/Delivery|dirección exacta/);
+    expect(estadoDe(m)['paso']).toBe('pedido_entrega');
   });
-  it('negado: con el panel de vuelta el mismo pedido se retoma (la derivación deja el paso en `menu` pero NO borra el carrito) y se confirma', () => {
+  it('negado: con el panel de vuelta el mismo pedido se retoma EXACTAMENTE donde quedó (la caída no tocó el estado) y se confirma', () => {
     const m = crear();
     hastaResumen(m);
     m.codigoPanel = 500;
     turno(m, { boton: 'p|confirmar' });
-    expect(estadoDe(m)['paso']).toBe('menu');
+    expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
     expect(estadoDe(m)['carrito']).toHaveLength(1);
     m.codigoPanel = 200;
-    // El botón del resumen viejo ya no confirma nada: muestra el menú.
-    expect(turno(m, { boton: 'p|confirmar' }).p['ruta']).toBe('menu:boton_viejo');
-    // «Hacer un pedido» retoma el pedido guardado y cualquier dato de entrega lleva de nuevo al resumen.
-    const carta = turno(m, { boton: 'm|pedido' });
-    expect(cuerpos(carta)[0]).toMatch(/^Todavía tienes un pedido sin confirmar: 1 × [^.]+\./);
-    turno(m, { texto: 'recojo', extraccion: { lineas: [], entrega: 'recojo', direccion: '', referencia: '', nombre: '' } });
-    expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
     const s = turno(m, { boton: 'p|confirmar' });
     expect(s.p['ruta']).toBe('pedido:sin_qr');
     expect(s.armados.length).toBeGreaterThan(0);
     expect(s.armados.every((a) => a['tipoAviso'] === 'pedido')).toBe(true);
   });
-  it('declarado en la cabecera: una consulta de delivery con el panel caído suma 1 o 2 avisos', () => {
+  it('declarado en la cabecera: con el panel caído ya no hay estado (PR-4a) y la derivación de delivery solo queda para un panel a medias, con su costo de 1 o 2 avisos', () => {
     expect(leer('nodos/plan-del-turno.js')).toMatch(/consulta de delivery con el panel caído, o un pedido en curso que lo encuentra caído, suma 1 o 2 avisos/);
+    expect(leer('nodos/plan-del-turno.js')).toMatch(/`¿Hay estado\?` manda a `Sin estado` ANTES de llegar aquí/);
   });
 });
 
@@ -1541,7 +1575,7 @@ describe('cobro SIMULADO: QR de prueba, cualquier foto como comprobante, aviso d
     expect(cierre['detalle']).toMatch(/^PRUEBA · cobro SIMULADO/);
     expect(cierre).not.toHaveProperty('monto');
     expect(estadoDe(m)['paso']).toBe('menu');
-    expect(sdDe(m)['pedidos'][ref]).toMatchObject({ resultado: 'simulado', simulado: true });
+    expect(pedidosDe(m)[ref]).toMatchObject({ resultado: 'simulado', simulado: true });
   });
 
   it('en simulado el servidor de cobro y la lectura NUNCA se consultan: aunque la foto llegue ilegible o sin medio, es el comprobante de la prueba', () => {
@@ -1563,7 +1597,7 @@ describe('cobro SIMULADO: QR de prueba, cualquier foto como comprobante, aviso d
     expect(s.armados).toEqual([]);
     expect(s.mensajes[0]!['cierre']).toBeNull();
     expect(cuerpos(s).join('\n')).toMatch(/^Ya tengo el comprobante de tu pedido #/);
-    expect(Object.keys(sdDe(m)['pedidos'])).toEqual([ref]);
+    expect(Object.keys(pedidosDe(m))).toEqual([ref]);
   });
 
   it('una foto después de «Cancelar pedido» no se toma por comprobante: ni aviso ni cierre', () => {
@@ -1574,7 +1608,7 @@ describe('cobro SIMULADO: QR de prueba, cualquier foto como comprobante, aviso d
     expect(s.armados).toEqual([]);
     expect(s.mensajes[0]!['cierre']).toBeNull();
     expect(cuerpos(s).join('\n')).toContain('no tienes ninguno pendiente');
-    expect(sdDe(m)['pedidos'][ref]['resultado']).not.toBe('simulado');
+    expect(pedidosDe(m)[ref]['resultado']).not.toBe('simulado');
   });
 
   it('EXCLUSIÓN de punta a punta: con el cobro REAL del servidor y la «Config base» simulada, el pie es el real y no hay «SIMULADO»', () => {
@@ -1639,7 +1673,7 @@ describe('cobro SIMULADO: QR de prueba, cualquier foto como comprobante, aviso d
       expect(f.p['ruta']).toBe('comprobante:simulado');
       expect(f.mensajes[0]!['cierre']).toMatchObject({ tipo: 'registro', referencia: CAT });
       expect(f.mensajes[0]!['cierre']).not.toHaveProperty('monto');
-      expect(Object.keys(sdDe(m)['pedidos'])).toEqual([CAT]);
+      expect(Object.keys(pedidosDe(m))).toEqual([CAT]);
     });
   });
 });
@@ -1696,7 +1730,7 @@ describe('QR REAL VENCIDO (07/10): no se ofrece un QR que la imagen no va a serv
     // El estado: nada esperando comprobante; el pedido queda guardado sin cobro.
     expect(estadoDe(m)['paso']).toBe('menu');
     expect(estadoDe(m)['pedido']).toBeFalsy();
-    const guardados = Object.values(sdDe(m)['pedidos']) as J[];
+    const guardados = Object.values(pedidosDe(m)) as J[];
     expect(guardados).toHaveLength(1);
     expect(guardados[0]).toMatchObject({ resultado: 'qr_vencido' });
   });

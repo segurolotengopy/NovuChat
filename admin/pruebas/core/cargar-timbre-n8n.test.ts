@@ -52,7 +52,8 @@ const CURL_FALSO = `#!/usr/bin/env python3
 import json, os, sys
 E = os.environ["FAKE_DIR"]
 a = sys.argv[1:]
-con_valor = {"-o", "-w", "-X", "-H", "--data-binary", "--max-time", "--proto"}
+con_valor = {"-o", "-w", "-X", "-H", "--data-binary", "--max-time", "--proto", "--connect-timeout"}
+max_t, con_t = None, None
 metodo, salida, cabeza, cuerpo_f, url = "GET", None, None, None, None
 i = 0
 while i < len(a):
@@ -63,6 +64,8 @@ while i < len(a):
         elif x == "-X": metodo = v
         elif x == "-H" and v == "@-": cabeza = sys.stdin.read().strip()
         elif x == "--data-binary": cuerpo_f = v[1:]
+        elif x == "--max-time": max_t = v
+        elif x == "--connect-timeout": con_t = v
         i += 2
     else:
         if x.startswith("https://"): url = x
@@ -77,6 +80,13 @@ if "graph.facebook.com" in url:
 ruta = url.split("/api/v1", 1)[1]
 limpia = ruta.split("?")[0]
 open(os.path.join(E, "llamadas"), "a").write(metodo + " " + limpia + "\\n")
+open(os.path.join(E, "pedidos"), "a").write("%s %s max=%s conn=%s\\n" % (metodo, limpia, max_t, con_t))
+# Caídas de red simuladas en la lista de flujos: archivo "caer-lista" = "<código curl> <cuántas veces>"
+_caer = os.path.join(E, "caer-lista")
+if metodo == "GET" and limpia == "/workflows" and os.path.exists(_caer):
+    rc, veces = open(_caer).read().split()
+    if int(veces) > 0:
+        open(_caer, "w").write(rc + " " + str(int(veces) - 1)); print("000"); sys.exit(int(rc))
 def sin_versiones(x):
     if isinstance(x, dict): return {k: sin_versiones(v) for k, v in x.items() if k not in ("versionId", "activeVersionId")}
     if isinstance(x, list): return [sin_versiones(i) for i in x]
@@ -156,6 +166,7 @@ const creds = () => estado<Cred[]>('creds.json', []);
 const flujos = () => estado<Flujo[]>('wfs.json', []);
 const llamadas = () => leerTxt(join(dir, 'llamadas')).split('\n').filter(Boolean);
 const escrituras = () => llamadas().filter((l) => !l.startsWith('GET '));
+const pedidos = () => leerTxt(join(dir, 'pedidos')).split('\n').filter(Boolean);
 const entregaRuta = () => join(runtime, `novuchat-salida-persona-${ALIAS}.json`);
 
 function instancia(extra: Cred[] = []) {
@@ -1409,6 +1420,120 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
     expect(escrituras()).toEqual([]);
   });
 
+  describe('rol envío con httpHeaderAuth o whatsAppApi', () => {
+    const conEnvioComo = (tipo: string) => {
+      instanciaReal();
+      writeFileSync(join(dir, 'creds.json'), JSON.stringify(creds().map((c) => (c.id === 'qg' ? { ...c, type: tipo } : c))));
+      writeFlujosVivos([flujoVivo('wv', 'Venta del cliente', [
+        nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta), nodoVivo('Enviar', tipo, 'qg', NOM.envio),
+      ], PHONE)]);
+    };
+    const graph = () => propio().nodes.find((x) => x.name === 'Enviar por Graph')!;
+
+    it('envío httpHeaderAuth: se acepta y el nodo pasa a autenticación genérica, con el mismo cuerpo y URL', () => {
+      conEnvioComo('httpHeaderAuth');
+      const r = correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]);
+      expect(r.codigo).toBe(0);
+      const g = graph();
+      expect(g.credentials).toEqual({ httpHeaderAuth: { id: 'qg', name: NOM.envio } });
+      expect(g.parameters?.authentication).toBe('genericCredentialType');
+      expect(g.parameters?.genericAuthType).toBe('httpHeaderAuth');
+      expect(g.parameters).not.toHaveProperty('nodeCredentialType');
+      const plantilla = JSON.parse(readFileSync(join(RAIZ, 'Flujos', 'salida-de-persona.json'), 'utf8')).nodes.find((x: Nodo) => x.name === 'Enviar por Graph');
+      expect(g.parameters?.url).toBe(plantilla.parameters.url);
+      expect(g.parameters?.jsonBody).toBe(plantilla.parameters.jsonBody);
+      expect(g.parameters?.options).toEqual(plantilla.parameters.options);
+    });
+
+    it('envío whatsAppApi: se acepta y el nodo queda como la plantilla (sin cambio de comportamiento)', () => {
+      conEnvioComo('whatsAppApi');
+      expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0);
+      const g = graph();
+      expect(g.credentials).toEqual({ whatsAppApi: { id: 'qg', name: NOM.envio } });
+      expect(g.parameters?.authentication).toBe('predefinedCredentialType');
+      expect(g.parameters?.nodeCredentialType).toBe('whatsAppApi');
+    });
+
+    it('envío de otro tipo (oAuth2Api): rechazado sin escribir', () => {
+      conEnvioComo('oAuth2Api');
+      const r = correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+    });
+
+    it.each(['httpHeaderAuth', 'whatsAppApi'])('ingesta = envío (mismo nombre) con envío %s: rechazado sin escribir', (tipo) => {
+      conEnvioComo(tipo);
+      const r = correr([...R, envFile, '--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.ingesta, '--cred-rele', NOM.rele, ...INERTE, ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+    });
+
+    it('relé = envío (mismo nombre): rechazado sin escribir', () => {
+      conEnvioComo('httpHeaderAuth');
+      expect(correr([...R, envFile, '--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.rele, '--cred-rele', NOM.rele, ...INERTE, ...APLICAR]).codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+    });
+
+    it('envío con el nombre de otra credencial (que sí existe): rechazado, porque no está atada al número del alias', () => {
+      conEnvioComo('httpHeaderAuth');
+      writeFileSync(join(dir, 'creds.json'), JSON.stringify([...creds(), { id: 'zz', name: 'Graph WhatsApp de otro (Bearer)', type: 'httpHeaderAuth' }]));
+      const r = correr([...R, envFile, '--cred-ingesta', NOM.ingesta, '--cred-envio', 'Graph WhatsApp de otro (Bearer)', '--cred-rele', NOM.rele, ...INERTE, ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+    });
+
+    describe('cruce relé/envío y URL de los nodos', () => {
+      const vivoConNodos = (extra: Nodo[]) => writeFlujosVivos([flujoVivo('wv', 'Venta del cliente', [
+        nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta), nodoVivo('Enviar', 'httpHeaderAuth', 'qg', NOM.envio), ...extra,
+      ], PHONE)]);
+      const rechaza = (args: string[] = [...AR(), ...MAPA]) => {
+        const r = correr([...args, ...INERTE, ...APLICAR]);
+        expect(r.codigo).toBe(2);
+        expect(escrituras()).toEqual([]);
+        return r;
+      };
+      it.each(['Graph WhatsApp Comercio (Bearer)', 'Réle con BEARER', 'GRÁPH'.replace('Á', 'A')])('relé con nombre «%s»: rechazado', (nombre) => {
+        conEnvioComo('httpHeaderAuth');
+        writeFileSync(join(dir, 'creds.json'), JSON.stringify([...creds(), { id: 'rx', name: nombre, type: 'httpHeaderAuth' }]));
+        rechaza([...R, envFile, '--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.envio, '--cred-rele', nombre]);
+      });
+      it('relé citado por un nodo «Enviar por Graph» de otro flujo: rechazado', () => {
+        conEnvioComo('httpHeaderAuth');
+        vivoConNodos([nodoVivo('Enviar por Graph', 'httpHeaderAuth', 'qr', NOM.rele)]);
+        rechaza();
+      });
+      it('envío citado por un nodo «Enviar por el relé» de otro flujo: rechazado', () => {
+        conEnvioComo('httpHeaderAuth');
+        vivoConNodos([nodoVivo('Enviar por el relé', 'httpHeaderAuth', 'qg', NOM.envio)]);
+        rechaza();
+      });
+      const conUrl = (nodo: string, url: string) => {
+        const f = JSON.parse(readFileSync(join(RAIZ, 'Flujos', 'salida-de-persona.json'), 'utf8'));
+        f.nodes.find((x: Nodo) => x.name === nodo).parameters.url = url;
+        const ruta = join(dir, 'url.json');
+        writeFileSync(ruta, JSON.stringify(f));
+        return ruta;
+      };
+      it.each(['Enviar por Graph', 'Enviar por el relé'])('URL editada a otro host en «%s»: rechazado', (nodo) => {
+        conEnvioComo('httpHeaderAuth');
+        rechaza([...AR(), ...MAPA, '--flujo', conUrl(nodo, '=https://otro-host.example/v1/messages')]);
+      });
+      it('con las URL de la plantilla se carga (caso positivo, httpHeaderAuth y whatsAppApi)', () => {
+        for (const tipo of ['httpHeaderAuth', 'whatsAppApi']) {
+          conEnvioComo(tipo); entregaReal(); SIN_RELE();
+          expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0);
+        }
+      });
+    });
+
+    it('el mismo nombre de envío en los dos tipos: aborta sin escribir (no se elige)', () => {
+      conEnvioComo('httpHeaderAuth');
+      writeFileSync(join(dir, 'creds.json'), JSON.stringify([...creds(), { id: 'qg2', name: NOM.envio, type: 'whatsAppApi' }]));
+      expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+    });
+  });
+
   const ajenoNum = '555000111';
   describe('atadura de las credenciales al número del alias', () => {
     const ajeno = ajenoNum;
@@ -1822,5 +1947,80 @@ print("\\n".join(errs))`;
     const r = correr(['--help']);
     expect(r.codigo).toBe(0);
     for (const t of ['--cred-ingesta', '--cred-envio', '--cred-rele', 'CLIENTES REALES', 'VALOR INERTE DEL RELÉ']) expect(r.salida).toContain(t);
+  });
+});
+
+describe('cargar-timbre-n8n.sh: la lista de flujos (grande y lenta)', () => {
+  const lecturasDeLista = () => llamadas().filter((l) => l === 'GET /workflows').length;
+  const caer = (rc: number, veces: number) => writeFileSync(join(dir, 'caer-lista'), `${rc} ${veces}`);
+
+  it('el pedido de la lista espera 300 s con conexión de 10 s; los demás, 60 s', () => {
+    const r = correr([...A(), ...APLICAR]);
+    expect(r.codigo).toBe(0);
+    const ps = pedidos();
+    const listas = ps.filter((p) => p.startsWith('GET /workflows max='));
+    expect(listas.length).toBeGreaterThan(0);
+    for (const p of listas) expect(p).toContain('max=300 conn=10');
+    for (const p of ps.filter((x) => !x.startsWith('GET /workflows max='))) expect(p).toContain('max=60 conn=None');
+  });
+
+  it.each([28, 7, 52, 56])('curl %i en la lista: UN reintento y el comando sigue', (rc) => {
+    caer(rc, 1);
+    const r = correr(A());
+    expect(r.codigo).not.toBe(3);
+    expect(lecturasDeLista()).toBe(2); // el fallo y el reintento
+  });
+
+  it('dos caídas seguidas: sin respuesta de n8n, salida 3, solo dos intentos', () => {
+    caer(28, 5);
+    const r = correr(A());
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('sin respuesta de n8n');
+    expect(lecturasDeLista()).toBe(2);
+  });
+
+  it('un código de curl que no es de red (6) no se reintenta', () => {
+    caer(6, 5);
+    const r = correr(A());
+    expect(r.codigo).toBe(3);
+    expect(lecturasDeLista()).toBe(1);
+  });
+
+  it('HTTP 500 en la lista no se reintenta', () => {
+    writeFileSync(join(dir, 'falla-GET-workflows'), '');
+    const r = correr(A());
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('HTTP 500');
+    expect(lecturasDeLista()).toBe(1);
+  });
+
+  it('seco: la lista se lee UNA vez por corrida', () => {
+    correr(A());
+    expect(lecturasDeLista()).toBe(1);
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('aplicar: la relectura posterior a escribir es nueva (credencial y flujo), no la caché', () => {
+    const r = correr([...A(), ...APLICAR]);
+    expect(r.codigo).toBe(0);
+    const ll = llamadas();
+    // 1 inicial + 1 tras escribir la credencial + 1 tras escribir el flujo
+    expect(lecturasDeLista()).toBe(3);
+    const iCred = ll.findIndex((l) => l.startsWith('POST /credentials') || l.startsWith('PATCH /credentials'));
+    const iFlujo = ll.findIndex((l) => l.startsWith('POST /workflows') || l.startsWith('PUT /workflows'));
+    const listas = ll.map((l, i) => (l === 'GET /workflows' ? i : -1)).filter((i) => i >= 0);
+    expect(listas[0]).toBeLessThan(iCred);
+    expect(listas[1]).toBeGreaterThan(iCred);
+    expect(listas[1]).toBeLessThan(iFlujo);
+    expect(listas[2]).toBeGreaterThan(iFlujo);
+  });
+
+  it('un reintento tras una escritura no cambia nada: las escrituras nunca se repiten', () => {
+    caer(28, 1);
+    correr([...A(), ...APLICAR]);
+    const e = escrituras();
+    expect(e.length).toBeGreaterThan(0);
+    expect(e.filter((l) => l === 'POST /workflows').length).toBe(1);
+    expect(e.filter((l) => l === 'POST /credentials').length).toBe(1);
   });
 });

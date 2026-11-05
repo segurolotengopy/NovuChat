@@ -29,6 +29,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { modulosDeFlujos } from '../../../functions/src/registro.ts';
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
@@ -105,7 +106,7 @@ async function sembrar(c: typeof NUEVO): Promise<void> {
   await db.doc(`rutasWhatsApp/${c.pid}`).set({
     tenantId: c.t, flujo: 'venta', aliasSecreto: 'cliente16', estado: 'activo',
   });
-  await db.doc(`tenants/${c.t}`).set({ nombre: c.t, estado: 'activo', plan: 'crecimiento', flujos: ['venta'] });
+  await db.doc(`tenants/${c.t}`).set({ nombre: c.t, estado: 'activo', plan: 'crecimiento', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
   await db.doc(`tenants/${c.t}/cuenta/estado`).set({
     plan: 'crecimiento', limites: limitesDe('crecimiento'), modalidad: 'demostracion',
   });

@@ -33,8 +33,7 @@ una zona aparte de la de los datos (fila «Flujo de cliente» de `CLAUDE.md`).
   CI comparará byte a byte lo incluido contra su fuente. **Esa prueba no
   existe todavía:** se construye en un PR posterior y, hasta que esté en verde,
   es una compuerta futura, no una garantía.
-- **La segunda vez que otro cliente pide una pieza propia, esa pieza pasa a
-  módulo** (con bandera, para todos).
+- **Lo general sube; lo específico es dato (Andres, 22/10/2026).** Sustituye a «la segunda vez que otro cliente pide una pieza propia, pasa a módulo». La regla, la clasificación y el mecanismo de sub-módulo están en `submodulos.md`.
 - **Seguridad y protección valen para todos sin excepción.**
 - **Barridos comunes:** un barrido por tipo de flujo que recorre los tenants (no
   uno por cliente) es la excepción declarada a «flujo propio», no a seguridad ni protección (cada iteración usa solo el número, la credencial y los datos de su tenant, sin estado compartido entre iteraciones); son más de la
@@ -65,7 +64,7 @@ una zona aparte de la de los datos (fila «Flujo de cliente» de `CLAUDE.md`).
 | `Flujos/prompts/reservas/demo-a.md`, `platinum.md` (201 y 202 líneas, 23 distintas) | Core + Agenda + Tenant | El tenant solo aporta variables (nombres, ejemplos del rubro, duración) en `prompts/tenants/<t>.vars` |
 | `Flujos/<tenant>.json` | Salida de construcción | Generado del registro, los módulos encendidos, las piezas propias de `Flujos/clientes/<tenant>/` y el núcleo común incluido |
 | `cargar-negocio`, `cargar-captacion`, `cargar-fotos-catalogo`, `citas-a-calendario`, `catalogo-demo` | Scripts que cargan datos | `admin/scripts/datos/` bajo `tenants/` |
-| `pruebas/tenants/<t>/` | Pruebas de instancia | «Este tenant tiene estos módulos con esta configuración»; `platinum-flujo` y `bellido-flujo` se reparten entre módulos (F5) |
+| `pruebas/tenants/<t>/` | Pruebas de instancia | «Este tenant tiene estos módulos con esta configuración»; `bellido-flujo` se reparte entre módulos (F5) |
 
 ## Los tres ejes de la cuenta son datos del tenant
 

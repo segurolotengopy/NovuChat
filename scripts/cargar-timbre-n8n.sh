@@ -64,7 +64,7 @@
 # carga con ellas en lugar de las de ensayo (cargar, --activar y --quitar; el timbre sigue siendo
 # `Salida de persona (timbre <alias>)`, que crea este script):
 #     --cred-ingesta <nombre>  rol ingesta, httpHeaderAuth (Reclamar y Confirmar)
-#     --cred-envio   <nombre>  rol envío por Graph, whatsAppApi (Enviar por Graph)
+#     --cred-envio   <nombre>  rol envío por Graph, whatsAppApi o httpHeaderAuth (Enviar por Graph; el script ajusta el nodo al tipo hallado)
 #     --cred-rele    <nombre>  rol relé, httpHeaderAuth (Enviar por el relé)
 # Van LAS TRES o ninguna. El nombre se busca por nombre Y tipo exactos y tiene que haber exactamente una;
 # si falta o está repetida se aborta sin escribir. No se crea ni se modifica ninguna de las tres (no hay
@@ -433,6 +433,69 @@ def recorrer(x, f, clave=None):
     return x
 
 
+TIPOS_ENVIO = ("whatsAppApi", "httpHeaderAuth")  # los dos tipos que puede tener la credencial del rol envío
+
+
+def tipo_envio(indice, n):
+    """Tipo de la credencial del rol envío: el de la ÚNICA que lleva ese nombre entre TIPOS_ENVIO.
+    Sin ninguna (o con una de otro tipo) devuelve whatsAppApi: el plan falla después con «0 credenciales».
+    Con el mismo nombre en los dos tipos aborta: no se elige."""
+    hay = [t for t in TIPOS_ENVIO if indice.get((t, n["graph"]))]
+    if len(hay) > 1:
+        salir(4, "hay credenciales de envío con el mismo nombre en más de un tipo: no se elige una")
+    return hay[0] if hay else "whatsAppApi"
+
+
+def ajustar_envio(nodo, tipo):
+    """El nodo «Enviar por Graph» de la plantilla viene en whatsAppApi (forma vigente). Con una credencial
+    httpHeaderAuth (Authorization: Bearer) pasa a autenticación genérica; el resto del nodo no cambia."""
+    ps = nodo.setdefault("parameters", {})
+    refs = nodo.get("credentials") or {}
+    ref = next(iter(refs.values()), {})
+    if tipo == "httpHeaderAuth":
+        ps["authentication"] = "genericCredentialType"
+        ps["genericAuthType"] = "httpHeaderAuth"
+        ps.pop("nodeCredentialType", None)
+    else:
+        ps["authentication"] = "predefinedCredentialType"
+        ps["nodeCredentialType"] = "whatsAppApi"
+        ps.pop("genericAuthType", None)
+    nodo["credentials"] = {tipo: ref}
+
+
+URL_GRAPH = "=https://graph.facebook.com/"
+URL_RELE = "={{ $('Config base').first().json.releBaseUrl }}"
+
+
+def sin_tildes(s):
+    t = unicodedata.normalize("NFKD", str(s)).casefold()
+    return "".join(c for c in t if not unicodedata.combining(c) and unicodedata.category(c) != "Cf")
+
+
+def revisar_cruce_rele_envio(wfs, indice, n, propio):
+    """Con httpHeaderAuth el relé y el envío no se distinguen por tipo: un Bearer de Graph no puede viajar al relé
+    ni al revés. El relé no puede llamarse «Graph»/«Bearer» ni estar citado por un nodo «Enviar por Graph»;
+    el envío no puede estar citado por un nodo «Enviar por el relé» (en ningún flujo, salvo el propio del alias)."""
+    errores = []
+    nom = sin_tildes(n["rele"])
+    if "graph" in nom or "bearer" in nom:
+        errores.append("la credencial del rol relé tiene nombre de Graph o de Bearer: no se usa como relé")
+    for rol, tipos, nodo_ajeno, msg in (
+            ("rele", ("httpHeaderAuth",), "Enviar por Graph", "la credencial del rol relé la cita un nodo «Enviar por Graph»"),
+            ("graph", TIPOS_ENVIO, "Enviar por el relé", "la credencial del rol envío la cita un nodo «Enviar por el relé»")):
+        ids = {c.get("id") for t in tipos for c in indice.get((t, n[rol]), [])}
+        for w in wfs:
+            if w.get("name") == propio:
+                continue
+            for nodo in w.get("nodes") or []:
+                if nodo.get("name") != nodo_ajeno:
+                    continue
+                for ctipo, ref in (nodo.get("credentials") or {}).items():
+                    if isinstance(ref, dict) and ((ref.get("id") and ref.get("id") in ids) or (ctipo in tipos and ref.get("name") == n[rol])):
+                        errores.append(msg)
+    return sorted(set(errores))
+
+
 def revisar_roles(nodos, alias):
     """El nodo que manda a Meta o al relé nunca lleva la credencial de ingesta."""
     n = nombres(alias)
@@ -442,17 +505,31 @@ def revisar_roles(nodos, alias):
         "Reclamar": ("httpHeaderAuth", n["ingesta"]),
         "Confirmar": ("httpHeaderAuth", n["ingesta"]),
         "Enviar por el relé": ("httpHeaderAuth", n["rele"]),
-        "Enviar por Graph": ("whatsAppApi", n["graph"]),
+        "Enviar por Graph": (None, n["graph"]),  # whatsAppApi o httpHeaderAuth (TIPOS_ENVIO)
     }
     por_nombre = {x.get("name"): x for x in nodos}
+    if len({n["ingesta"], n["rele"], n["graph"]}) != 3:
+        errores.append("ingesta, relé y envío tienen que ser tres credenciales distintas")
     for nom, (tipo, cred) in esperado.items():
         x = por_nombre.get(nom)
         if x is None:
             errores.append("falta el nodo %s" % nom)
             continue
         c = x.get("credentials") or {}
+        if tipo is None:
+            tipo = next(iter(c), "")
+            ps = x.get("parameters") or {}
+            coherente = (tipo == "whatsAppApi" and ps.get("authentication") == "predefinedCredentialType" and ps.get("nodeCredentialType") == "whatsAppApi") \
+                or (tipo == "httpHeaderAuth" and ps.get("authentication") == "genericCredentialType" and ps.get("genericAuthType") == "httpHeaderAuth")
+            if tipo not in TIPOS_ENVIO or not coherente:
+                errores.append("%s debe llevar una credencial whatsAppApi o httpHeaderAuth con su autenticación coherente" % nom)
+                continue
         if set(c) != {tipo} or (c[tipo] or {}).get("name") != cred:
             errores.append("%s debe llevar exactamente la credencial %s «%s»" % (nom, tipo, cred))
+    for nom, previo in (("Enviar por Graph", URL_GRAPH), ("Enviar por el relé", URL_RELE)):
+        x = por_nombre.get(nom)
+        if x is not None and not str((x.get("parameters") or {}).get("url", "")).startswith(previo):
+            errores.append("%s tiene una URL que no es la de la plantilla: el Bearer podría ir a otro host" % nom)
     t = por_nombre.get("Timbre")
     if t is not None and (t.get("parameters") or {}).get("authentication") != "headerAuth":
         errores.append("el nodo Timbre no exige authentication=headerAuth: quedaría abierto")
@@ -629,7 +706,7 @@ def vincular_al_alias(wfs, indice, n, phone):
     la cita y en el que no se encuentra NINGÚN número es INDETERMINADO (Indeterminado): no se adivina de quién es.
     Devuelve [(rol, vinculada)] sin nombres ni valores."""
     resultado = []
-    for rol, tipo, etiqueta in (("ingesta", "httpHeaderAuth", "ingesta"), ("graph", "whatsAppApi", "envío")):
+    for rol, tipo, etiqueta in (("ingesta", "httpHeaderAuth", "ingesta"), ("graph", tipo_envio(indice, n), "envío")):
         nom = n[rol]
         ids = {c.get("id") for c in indice.get((tipo, nom), [])}
         propios, ajenos = 0, 0
@@ -704,6 +781,12 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
     indice = {}
     for c in creds:
         indice.setdefault((c.get("type"), c.get("name")), []).append(c)
+    # El rol envío acepta whatsAppApi (forma de la plantilla) o httpHeaderAuth; el tipo lo dice la credencial
+    # que existe con ese nombre. Solo con credenciales EXISTENTES (mapa): en ensayo la crea este script, whatsAppApi.
+    if credenciales_existentes():
+        for nodo in flujo["nodes"]:
+            if nodo.get("name") == "Enviar por Graph":
+                ajustar_envio(nodo, tipo_envio(indice, n))
     errores = []
     for nodo in flujo["nodes"]:
         for tipo, ref in list((nodo.get("credentials") or {}).items()):
@@ -729,6 +812,10 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
             errores.append("el nodo Timbre no quedó con el path de la entrega")
     if errores:
         salir(4, "\n".join("    " + e for e in errores))
+    if credenciales_existentes():
+        cruce = revisar_cruce_rele_envio(wfs, indice, n, n["flujo"])
+        if cruce:
+            salir(4, "\n".join("    " + e for e in cruce) + "\n    no se escribe nada")
     vinculos = exigir_atadura(wfs, indice, n, t["phone"]) if credenciales_existentes() else []
     w, c = buscar(wfs, creds, alias)
     if len(w) > 1 or len(c) > 1:
@@ -976,12 +1063,25 @@ fi
 
 # --- n8n por la API: la clave va por stdin (-H @-), nunca por argumentos ---------------
 CODIGO=000
+LISTA_VIGENTE=0 # 1 si flujos.json se descargó y desde entonces no se escribió nada en n8n
 api() { # <método> <ruta> [archivo-cuerpo]
-  local m="$1" r="$2" b="${3:-}" cod
+  local m="$1" r="$2" b="${3:-}" cod rc intento=0 espera=60 lista=0
   if [[ "$m" != GET ]] && (( ! APLICAR )); then falla "BUG: escritura (${m}) sin --aplicar; se detiene"; exit 3; fi
-  local args=(-sS --max-time 60 --proto '=https' -o "$WORK/rta.json" -w '%{http_code}' -X "$m" -H @-)
+  # La lista de flujos pesa decenas de MB y tarda hasta minutos: solo ese pedido (GET) espera 300 s,
+  # con conexión corta y UN reintento ante fallo de red (curl 28, 7, 52, 56). Nada más se reintenta.
+  if [[ "$m" == GET && "$r" == /workflows\?* ]]; then lista=1; espera=300; fi
+  [[ "$m" == GET ]] || LISTA_VIGENTE=0
+  local args=(-sS --max-time "$espera" --proto '=https' -o "$WORK/rta.json" -w '%{http_code}' -X "$m" -H @-)
+  (( ! lista )) || args+=(--connect-timeout 10)
   [[ -z "$b" ]] || args+=(-H "Content-Type: application/json" --data-binary "@$b")
-  cod="$(curl "${args[@]}" "${API}${r}" 2>"$ERR" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")" || cod=000
+  while :; do
+    rc=0
+    cod="$(curl "${args[@]}" "${API}${r}" 2>"$ERR" <<<"X-N8N-API-KEY: ${N8N_API_KEY}")" || rc=$?
+    (( rc )) || break
+    cod=000
+    if (( lista && intento == 0 )) && [[ "$rc" =~ ^(28|7|52|56)$ ]]; then intento=1; continue; fi
+    break
+  done
   CODIGO="$cod"
 }
 exigir() { # <códigos aceptados separados por |> <qué se hacía>
@@ -996,8 +1096,12 @@ exigir() { # <códigos aceptados separados por |> <qué se hacía>
 leer_estado() { # deja credenciales.json y flujos.json, enteros
   api GET "/credentials?limit=250"; exigir 200 "no pude leer las credenciales" || exit 3
   cp "$WORK/rta.json" "$WORK/credenciales.json"; py lista "$WORK/credenciales.json" || { falla "lista de credenciales incompleta"; exit 3; }
-  api GET "/workflows?limit=250"; exigir 200 "no pude leer los flujos" || exit 3
-  cp "$WORK/rta.json" "$WORK/flujos.json"; py lista "$WORK/flujos.json" || { falla "lista de flujos incompleta"; exit 3; }
+  # La lista se descarga una vez y se reutiliza mientras no se haya escrito nada en n8n (api() la invalida).
+  if (( ! LISTA_VIGENTE )); then
+    api GET "/workflows?limit=250"; exigir 200 "no pude leer los flujos" || exit 3
+    cp "$WORK/rta.json" "$WORK/flujos.json"; py lista "$WORK/flujos.json" || { falla "lista de flujos incompleta"; exit 3; }
+    LISTA_VIGENTE=1
+  fi
 }
 
 if (( APLICAR )); then ESTADO="APLICANDO"; else ESTADO="seco (no escribe)"; fi

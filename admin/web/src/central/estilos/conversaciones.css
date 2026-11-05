@@ -129,6 +129,7 @@
 .cv-turno-aviso { margin: 0; flex: 1 1 14rem; font-size: 12.5px; color: color-mix(in srgb, var(--color-text) 72%, transparent); }
 .cv-turno-error { margin: 0; flex-basis: 100%; font-size: 13px; }
 .cv-turno .btn { min-height: 36px; }
+.cv-det-sub .cv-bloqueo { padding: 0; border-bottom: 0; }
 
 .cv-redactor {
   flex: none; display: flex; flex-direction: column; gap: 4px; padding: var(--space-2) var(--space-3);
@@ -206,3 +207,15 @@
   .cv-hilo { padding-inline: var(--space-2); }
 }
 @media (prefers-reduced-motion: reduce) { .cv-burbuja--buscada { animation: none; } }
+
+/* Visor de medios (M3b) y enlace wa.me */
+.cv-medio { display: inline-block; margin: 4px 0; }
+.cv-medio-texto { display: block; font-size: 12.5px; font-style: italic; margin: 2px 0; }
+.cv-medio-fondo { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: flex; align-items: center; justify-content: center; z-index: 50; }
+.cv-medio-dialogo { background: var(--fondo, #fff); color: inherit; padding: 16px; border-radius: 8px; max-width: min(92vw, 720px); max-height: 90vh; overflow: auto; }
+.cv-wame-aviso { display: block; font-size: 12px; }
+
+/* Bloquear contacto (31/10/2026) */
+.cv-bloqueados { padding: 6px 10px; }
+.cv-bloqueados-filas { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cv-bloqueados-filas li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

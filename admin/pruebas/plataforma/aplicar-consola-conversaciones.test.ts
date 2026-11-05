@@ -35,6 +35,9 @@ const mod = await import('../../scripts/plataforma/aplicar-consola-conversacione
   comprobarRespaldo: (r: unknown, o?: Record<string, unknown>) => { ok: boolean; motivo?: string; real?: string };
   esTenantExcluido: (t: unknown, env?: Record<string, string>) => boolean;
   nombreExcluido: (n: unknown, env?: Record<string, string>) => boolean;
+  esTenantExcluidoDeBandera: (t: unknown, env?: Record<string, string>) => boolean;
+  nombreExcluidoDeBandera: (n: unknown, env?: Record<string, string>) => boolean;
+  TENANTS_EXCLUIDOS_BANDERA: readonly string[];
   leerRespaldo: (ruta: string, o: { entorno: string; tenant: string }) => { ok: boolean; motivo?: string };
   ejecutar: (cfg: Cfg, deps: Record<string, unknown>) => Promise<number>;
 };
@@ -122,22 +125,28 @@ describe('B1. argumentos y salvaguarda (puros)', () => {
     expect(validarPantallaConversaciones('nueva')).toEqual({ ok: true, pantalla: 'nueva' });
   });
 
-  it('BELLIDO NO SE TOCA: id, id que lo contiene, y la variable de exclusión (que solo agrega)', () => {
-    const con = (t: string, extra: string[] = []) => problemas(['--proyecto', PROY, '--tenant', t, '--pantalla', 'nueva', ...extra]);
-    expect(con('bellido')).toContain('EXCLUIDO');
-    expect(con('bellido', ['--aplicar', '--respaldo', rutaRespaldo()])).toContain('EXCLUIDO');
-    expect(con('consultorio-bellido')).toContain('EXCLUIDO');
-    expect(con('dr-bellido-2')).toContain('EXCLUIDO');
-    expect(problemas(['--revertir', '--proyecto', PROY, '--tenant', 'bellido', '--respaldo', rutaRespaldo()])).toContain('EXCLUIDO');
+  it('BELLIDO PUEDE RECIBIR LA BANDERA (24/10/2026), y la variable de exclusión sigue negando lo que agregue', () => {
+    const valida = (t: string, extra: string[] = []) => mod.analizarArgumentos(['--proyecto', PROY, '--tenant', t, '--pantalla', 'nueva', ...extra], ENV_EMU);
+    expect(valida('bellido').ok).toBe(true);
+    expect(valida('bellido', ['--aplicar', '--respaldo', rutaRespaldo()]).ok).toBe(true);
+    expect(valida('consultorio-bellido').ok).toBe(true);
+    expect([...mod.TENANTS_EXCLUIDOS_BANDERA]).toEqual([]);
     expect(problemas(base, { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'tienda-prueba' })).toContain('EXCLUIDO');
-    expect(mod.esTenantExcluido('bellido', { NOVUCHAT_TENANTS_EXCLUIDOS: 'otro' })).toBe(true);
-    expect(mod.esTenantExcluido('tienda-prueba')).toBe(false);
+    // Otro tenant excluido por la variable se sigue negando, también con Bellido en la lista.
+    expect(problemas(['--proyecto', PROY, '--tenant', 'bellido', '--pantalla', 'nueva'], { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' })).toContain('EXCLUIDO');
+    expect(mod.esTenantExcluidoDeBandera('bellido')).toBe(false);
+    expect(mod.esTenantExcluidoDeBandera('bellido', { NOVUCHAT_TENANTS_EXCLUIDOS: 'otro' })).toBe(false);
+    expect(mod.esTenantExcluidoDeBandera('otro', { NOVUCHAT_TENANTS_EXCLUIDOS: 'otro' })).toBe(true);
+    expect(mod.esTenantExcluidoDeBandera('tienda-prueba')).toBe(false);
     // Las entradas de la variable también se comparan sin tildes ni mayúsculas.
-    expect(mod.esTenantExcluido('dr-perez', { NOVUCHAT_TENANTS_EXCLUIDOS: ' Dr-Pérez , otro' })).toBe(true);
-    expect(mod.esTenantExcluido('dr-perez', { NOVUCHAT_TENANTS_EXCLUIDOS: '' })).toBe(false);
-    expect(mod.esTenantExcluido(undefined)).toBe(false);
+    expect(mod.esTenantExcluidoDeBandera('dr-perez', { NOVUCHAT_TENANTS_EXCLUIDOS: ' Dr-Pérez , otro' })).toBe(true);
+    expect(mod.esTenantExcluidoDeBandera('dr-perez', { NOVUCHAT_TENANTS_EXCLUIDOS: '' })).toBe(false);
+    expect(mod.esTenantExcluidoDeBandera(undefined)).toBe(false);
+    expect(mod.nombreExcluidoDeBandera('Consultorio Béllido')).toBe(false);
+    expect(mod.nombreExcluidoDeBandera('Consultorio Béllido', { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' })).toBe(true);
+    // La lista del RELLENO (otro script) NO se levantó: sigue incluyendo a Bellido.
+    expect(mod.esTenantExcluido('bellido', { NOVUCHAT_TENANTS_EXCLUIDOS: 'otro' })).toBe(true);
     expect(mod.nombreExcluido('Consultorio Béllido')).toBe(true);
-    expect(mod.nombreExcluido('Tienda Sintetica')).toBe(false);
     expect(mod.nombreExcluido(undefined)).toBe(false);
   });
 
@@ -461,29 +470,42 @@ describe('B3. revertir', () => {
   });
 });
 
-describe('B4. Bellido por la ficha, y el texto del script', () => {
-  it('ejecutar se niega con el id de Bellido sin abrir nada, aunque lo llamen sin pasar por los argumentos', async () => {
+describe('B4. exclusiones por variable (Bellido ya no está), y el texto del script', () => {
+  const ENV_EXCL = { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' };
+  it('con la variable de exclusión, ejecutar se niega con ese id sin abrir nada', async () => {
     const b = baseDe(FICHA);
-    const { codigo, salida } = await correr(cfgDe({ tenant: 'bellido', aplicar: true, respaldo: rutaRespaldo() }), b);
+    const { codigo, salida } = await correr(cfgDe({ tenant: 'bellido', aplicar: true, respaldo: rutaRespaldo() }), b, { env: ENV_EXCL });
     expect(codigo).toBe(2);
     expect(salida).toContain('EXCLUIDO');
     expect(b.lecturas).toHaveLength(0);
     expect(b.escrituras).toHaveLength(0);
   });
 
-  it('segunda barrera: el nombre de la ficha lo nombra y el id es otro', async () => {
+  it('segunda barrera (solo si la variable lo agrega): el nombre de la ficha lo nombra y el id es otro', async () => {
     const b = baseDe({ nombre: 'Consultorio Dr. Bellido', flujos: ['agendamiento'] });
-    const { codigo, salida } = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b);
+    const { codigo, salida } = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b, { env: ENV_EXCL });
     expect(codigo).toBe(2);
     expect(salida).toContain('EXCLUIDO');
     expect(b.escrituras).toHaveLength(0);
     expect(b.datos()).not.toHaveProperty('consolaConversaciones');
   });
 
+  it('sin la variable, Bellido (id y nombre) recibe la bandera solo con --aplicar y respaldo, con la precondición de siempre', async () => {
+    const b = baseDe({ nombre: 'Consultorio Dr. Bellido', flujos: ['agendamiento'] });
+    const seco = await correr(cfgDe({ tenant: 'bellido' }), b);
+    expect(seco.codigo).toBe(1);   // seco: sale 1 y no escribe, como con cualquier otro comercio
+    expect(b.escrituras).toHaveLength(0);
+    const { codigo } = await correr(cfgDe({ tenant: 'bellido', aplicar: true, respaldo: rutaRespaldo() }), b);
+    expect(codigo).toBe(0);
+    expect(b.escrituras).toHaveLength(1);
+    expect(Object.keys(b.escrituras[0]!.campos)).toEqual(['consolaConversaciones']);
+    expect(b.datos()).toMatchObject({ consolaConversaciones: 'nueva' });
+  });
+
   it('el proceso sale 2 antes de abrir Firebase con Bellido, con un proyecto real y emulador heredado, y con pantalla inválida', () => {
     const correrHijo = (args: string[], extra: Record<string, string> = {}, host: string | undefined = HOST) =>
       spawnSync(process.execPath, [SCRIPT, ...args], { env: entornoDelEmulador(host, extra), encoding: 'utf8' });
-    const b = correrHijo(['--proyecto', PROY, '--tenant', 'bellido', '--pantalla', 'nueva', '--aplicar', '--respaldo', rutaRespaldo()]);
+    const b = correrHijo(['--proyecto', PROY, '--tenant', 'bellido', '--pantalla', 'nueva', '--aplicar', '--respaldo', rutaRespaldo()], { NOVUCHAT_TENANTS_EXCLUIDOS: 'bellido' });
     expect(b.status).toBe(2);
     expect(b.stderr).toContain('EXCLUIDO');
     expect(b.stdout).toBe('');

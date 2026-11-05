@@ -18,7 +18,7 @@ sueltos. No construís, no operás Meta ni producción, no reescribís el plano:
 leés, cruzás, priorizás y proponés.
 
 Las decisiones están en `Analisis/41` §6.3 (reorientación del 26/09), §7
-(fases F1b, F2, F3a, F3b), §8.5 (hitos H4-Bellido, H4-Platinum, H4-Rubén) y
+(fases F1b, F2, F3a, F3b), §8.5 (hitos H4-Bellido, H4-Rubén) y
 §12 (el ciclo de vida del cliente, «así se puede», el análisis de solicitud, el
 congelamiento). No se rediscuten.
 
@@ -70,8 +70,7 @@ mes (`bitacora/<aaaa-mm>.md`), y después:
    `asignar-plan.mjs`, con el «sí» de Andres. El comercio no cambia plan ni
    modalidad por su cuenta; el pago no cambia la modalidad; el pase a
    producción lo hace el propietario después de confirmar el pago.
-6. **Los hitos por cliente** (H4-Bellido ahora, H4-Platinum con anexo y datos,
-   H4-Rubén con H3a) y que **NovuChat (captación) nunca pasa a producción**.
+6. **Los hitos por cliente** (H4-Bellido ahora, H4-Rubén con H3a) y que **NovuChat (captación) nunca pasa a producción**.
 7. **Recursos compartidos (§12.9):** un ensayo a la vez en el número del Demo
    A; los umbrales no se bajan en un comercio que atiende; los cupos de Meta
    (portafolios, números, apps) se cuentan antes de prometer un alta.
@@ -163,7 +162,7 @@ Una fila por cliente y prospecto, con estas columnas, y nada más:
 | Le falta y no es construcción | Contrato, anexo, datos, Meta, pago, aceptación, decisiones de Andres; con dueño y fecha |
 | Le falta y es construcción | Qué pieza, qué módulo la contiene, qué fase (F2, F3a, F3b, módulo nuevo después de F3a) |
 | Se puede hacer ahora | Lo que no depende de nadie más que de su sesión y de Andres |
-| Hito que lo habilita | H4-Bellido, H4-Platinum, H4-Rubén, o «después de F3a» |
+| Hito que lo habilita | H4-Bellido, H4-Rubén, o «después de F3a» |
 | Riesgo | Lo que puede pasar si se demora (una prueba que vence, un QR que vence, un cupo de Meta) |
 
 Se reescribe entera en cada hito y cuando cambia algo de un cliente. La
@@ -176,8 +175,7 @@ cliente**: una fila por capacidad, con qué clientes la piden, si existe (anexo
 A, §3), en qué módulo vive o viviría, qué fase la habilita, esfuerzo real con
 sus señales (§12.4) y cuántos mensajes por conversación agrega. Ejemplos que ya
 se conocen al 26/09: enrutamiento por campaña a la recepción de cada
-profesional (Dhermacore), reactivación o remarketing (Dhermacore, Platinum en
-su anexo), reserva de mesas (Q'Taco), entrega de un enlace después de la
+profesional (Dhermacore), reactivación o remarketing (Dhermacore), reserva de mesas (Q'Taco), entrega de un enlace después de la
 verificación del negocio (Rubén Roca), aviso al negocio por plantilla de utilidad
 fuera de las 24 h (todo cliente de venta), descarte de webhooks repetidos y el
 pedido conversado guardado como pedido (Q'Taco y cualquier cobro real), menú
@@ -245,17 +243,15 @@ antes de autorizar la fase siguiente.
 | Cliente | Etapa y modalidad | Le falta y no es construcción | Le falta y es construcción | Ahora | Hito |
 |---|---|---|---|---|---|
 | **Bellido** (reservas) | Atiende desde el 18/09; **prueba** de septiembre, Impulso, 0 cambios incluidos | Contrato con cero cambios y quién paga Meta; teléfonos de pago; una nota de supuesto en `negocio-bellido.json`; app y WABA huérfanas; 46 filas de aceptación sobre la versión publicada; excepción de versión ya declarada | Nada para el pase. Lista de cuatro filas y el pase a módulo de sus 19 nodos: F3b y F5 | Todo lo de la columna anterior; extensión a octubre el 01/10 con `--periodo-prueba` | **H4-Bellido**, ahora |
-| **Platinum** (reservas) | Atiende desde el 16/09; **prueba** de septiembre con bolsa 100; Pro; contrato escrito: 4 cambios, USD 120 | Anexo con 1 cláusula prohibida, 4 que no coinciden y 3 que faltan (`cumplimiento.md`); datos que la clínica nunca dio (horario, cancelación, segundo profesional, recepción, administrador, razón social); tarjeta y alerta de gasto en su WABA; plantilla del aviso a recepción; seña apagada hasta acta y QR de la clínica; 45 filas de aceptación; **PR de datos que alinee su JSON con producción antes de F3b** | Nada para el pase. El script de pase imprime el precio de lista (declarado, va con F2) | Anexo, datos, tarjeta, plantilla, PR de datos, aceptación | **H4-Platinum**, cuando cierren anexo y datos |
 | **Rubén Roca** (venta, BYOC; libros e infoproductos; tenant propio, `CLIENTES/RUBEN_ROCA/`) | Prospecto con alcance claro; sin alta | Portafolio propio (verificado si se puede), número sin WhatsApp previo, tarjeta en su WABA, cuenta publicitaria vinculada, QR de monto abierto, número de avisos, información y productos con precio; contrato con el modelo elegido por NovuChat y el tope de 250 conversaciones iniciadas por día | Medios entrantes y transferencia con botón en el esqueleto de venta: **F3a**. Catálogo en el chat, sin catálogo web (compuerta T-37) | Alta completa en paralelo; decisión de Andres sobre prueba antes de H3a con dos excepciones declaradas | **H4-Rubén**, con H3a |
 | **NovuChat** (captación) | Atiende prospectos desde el 15/09; demostración por diseño; **nunca pasa a producción** | Traspaso al portafolio de Silvana: fases 1 a 3 en Meta, plantilla `solicitud_contacto` pedida de nuevo, tarjeta de Silvana, corte de minutos; titularidad `comercio` el día del corte; consola sin recepción ni horario | Medios, botón ante fallo del modelo, campaña por texto: **F3a**, junto con dos deudas del módulo (bienvenida marcada antes de confirmar, envío rechazado sin marcar fallo); `leadWhatsapp` es de la sesión del sitio | Traspaso y titularidad | Sin pase; se republica en H3a |
 | **Dhermacore** (venta, una línea, BYOC piloto) | Propuesta del 22/09 sin firmar | `cumplimiento.md`; setup y cláusulas de `Analisis/38` §7 (imagen que consume 2 mensajes no existe; reactivación «cuando exista»; origen medido; revisión si el tráfico por anuncio baja del 40 %). **Una sola línea desde el 26/09:** la de libros e infoproductos era de Rubén Roca, tenant propio; la oferta dual de `Analisis/38` quedó sin base | Esqueleto de venta (F3a) más dos módulos con bandera después de F3a: enrutamiento por campaña a la recepción de cada doctor (1 a 2 jornadas), reactivación (2 jornadas); rescate a 48 h es el módulo de seguimientos que ya existe | `cumplimiento.md` y contrato; Meta de su número en paralelo | Después de H3a y de sus módulos |
 | **Q'Taco** (venta con mesas) | En pausa desde el 16/09; el cliente no respondió | Respuesta del cliente; `cumplimiento.md` con la propuesta reescrita (unidad de cobro, «pago confirmado», USD 40 por 200 fuera de lista); chip, portafolio, WABA, todo desde cero | Esqueleto de venta (F3a); `tenants.modulos` (F2); módulo de mesas después de F3a (2 a 3 jornadas); segundo sitio de Hosting para el catálogo web (69 ítems); tres deudas del cobro real (aviso por plantilla, dedup de webhooks, pedido guardado) | Solo `cumplimiento.md`, antes de responderle | Después de H3a, F2 y su módulo |
 | **Walisuma** (venta) | Prospecto sobre el Demo B, sin propuesta | Propuesta | Esqueleto de venta (F3a) | Nada hasta que haya propuesta | Después de H3a |
 
-**Riesgos con fecha al 26/09:** la prueba de Bellido y Platinum vence el 30/09
+**Riesgos con fecha al 26/09:** la prueba de Bellido vence el 30/09
 (se extiende el 01/10, sin corte porque el corte está apagado); las plantillas
 `prueba_termina` y `conversaciones_agotadas` prometen elegir o cambiar de plan
-y hay que pedir los textos nuevos a Meta antes del primer pase; el QR de la
-seña de Platinum venció el 26/09 y la seña está apagada; los cupos de Meta
+y hay que pedir los textos nuevos a Meta antes del primer pase; los cupos de Meta
 (dos portafolios por persona, dos números por portafolio sin verificar) están
 llenos en «NovuChat Produccion»: todo prospecto nuevo va a portafolio propio.

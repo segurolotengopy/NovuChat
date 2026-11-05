@@ -24,7 +24,7 @@ import {
 // es `asignarEjes`, y contar los cambios operados es `registrarCambioOperado`,
 // los dos en `central/`. El plan, la modalidad y los umbrales siguen en
 // `actualizarEstadoCuenta`, más abajo.
-import { IDS_FLUJOS } from '../registro.js';
+import { IDS_FLUJOS, FLUJOS_DE_RUTA, esFlujo, modulosDeFlujos, type IdFlujo } from '../registro.js';
 import { MODELO_POR_DEFECTO, TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } from '../central/ejes.js';
 // PREPAGO (bloque A-0, `DISENO.md` §4undecies): la modalidad de la cuenta y los
 // campos derivados de la situación de pago, que se recalculan y nunca se
@@ -52,8 +52,11 @@ import { documentoDeVertical } from '../core/prompt/prompt.js';
 // use como parte de una ruta de Firestore un valor con barras o puntos.
 const ID_NUMERO = /^[0-9]{6,25}$/;
 // Un flujo por vertical. Ver DISENO.md §Varios flujos y varios números.
-// La lista sale del registro (`PUENTE_DE_FLUJOS`): no se repite aquí. El alta SIGUE
-// escribiendo `vertical` y `flujos`; `modulos` lo escribe solo la migración (H2b).
+// La lista sale del registro (`FLUJOS_DE_RUTA`): no se repite aquí. El alta escribe
+// `vertical` y `modulos` (sembrado desde el flujo pedido con `modulosDeFlujos`) y YA NO
+// `flujos` (H2b-cierre: `modulos` es la única fuente). Asignar un número con un flujo
+// suma también sus módulos a la ficha: las reglas leen `modulos` y, si la lista no se
+// suma, la capacidad queda cerrada.
 const VERTICALES = new Set<string>(IDS_FLUJOS);
 
 // ---------------------------------------------------------------------------
@@ -110,7 +113,9 @@ export const altaTenant = onCall(async (peticion) => {
     items: 0, ultimoItem: '', actualizadoEn: Timestamp.now(),
   });
   lote.create(ref, {
-    nombre, estado: 'activo', plan: cuenta.plan, vertical, flujos,
+    nombre, estado: 'activo', plan: cuenta.plan, vertical,
+    // H2b-cierre: `modulos` es la única fuente; el alta ya no escribe `flujos`.
+    modulos: modulosDeFlujos(flujos.filter(esFlujo) as IdFlujo[]),
     // El modelo de IA es una decisión de NovuChat por tenant (`central/ejes.ts`):
     // nace con el que corre en todos los flujos y se cambia con
     // `asignarEjes`, nunca desde el navegador.
@@ -161,7 +166,15 @@ export const altaTenant = onCall(async (peticion) => {
 // nadie siga adentro con un token que todavía no caducó. El borrado real de los
 // datos es un procedimiento aparte, deliberado y con plazo.
 // ---------------------------------------------------------------------------
-export const bajaTenant = onCall(async (peticion) => {
+/**
+ * GANCHO AL CERRAR UN NEGOCIO (baja o suspensión, 03/11/2026): lo que otra zona debe hacer cuando el negocio deja de
+ * tener servicio. Hoy lo usa el miniCRM para revocar a TODOS los editores de la hoja. Plataforma no importa módulos,
+ * así que lo recibe armado de `ganchos.ts`. NO debe lanzar: si no completa su parte la deja anotada
+ * (`revocado_pendiente`, que cierra la reconciliación programada).
+ */
+export type GanchoAlCerrarTenant = (tenantId: string, quien: string, motivo: 'baja' | 'suspension') => Promise<void>;
+
+export const crearBajaTenant = (gancho?: GanchoAlCerrarTenant) => onCall(async (peticion) => {
   const uid = exigirPropietario(peticion);
   const tenantId = texto((peticion.data as Record<string, unknown>)['tenantId'], 60);
   if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
@@ -183,6 +196,8 @@ export const bajaTenant = onCall(async (peticion) => {
   // prefiero que el corte de servicio ya esté hecho y queden roles por limpiar,
   // y no al revés.
   await marcarRutasDelTenant(tenantId, 'dado_de_baja');
+  // La edición de la hoja del miniCRM con Gmail no depende de los claims: se revoca aparte (no lanza).
+  if (gancho) await gancho(tenantId, uid, 'baja');
 
   const miembros = await db().collection(`tenants/${tenantId}/miembros`).get();
   for (const m of miembros.docs) {
@@ -191,6 +206,9 @@ export const bajaTenant = onCall(async (peticion) => {
   await auditar(tenantId, 'baja_tenant', uid, { miembros: miembros.size, rutasCortadas: true });
   return { ok: true };
 });
+
+/** La versión sin gancho: la de las pruebas de siempre. El despliegue exporta la de `ganchos.ts`. */
+export const bajaTenant = crearBajaTenant();
 
 // ---------------------------------------------------------------------------
 // SUSPENDER Y REACTIVAR — LA PALANCA COMERCIAL
@@ -210,7 +228,7 @@ export const bajaTenant = onCall(async (peticion) => {
 // Al depender solo del campo `estado`, que las reglas consultan en cada
 // operación, el corte y la reanudación son instantáneos en ambas direcciones.
 // ---------------------------------------------------------------------------
-export const suspenderTenant = onCall(async (peticion) => {
+export const crearSuspenderTenant = (gancho?: GanchoAlCerrarTenant) => onCall(async (peticion) => {
   const uid = exigirPropietario(peticion);
   const datos = peticion.data as Record<string, unknown>;
   const tenantId = texto(datos['tenantId'], 60);
@@ -237,6 +255,8 @@ export const suspenderTenant = onCall(async (peticion) => {
   // La ruta del número también se marca: n8n consulta por número, no por tenant,
   // y así corta sin necesidad de una segunda lectura.
   await marcarRutasDelTenant(tenantId, 'suspendido');
+  // Suspender corta el servicio, y la hoja del miniCRM es parte de él: se revocan los editores (no lanza).
+  if (gancho) await gancho(tenantId, uid, 'suspension');
 
   // COHERENCIA. El comercio suspendido sigue viendo sus datos, así que también
   // tiene que ver POR QUÉ. `motivoVisible` es lo que se le muestra en el panel;
@@ -258,6 +278,9 @@ export const suspenderTenant = onCall(async (peticion) => {
   await registrar(tenantId, { tipo: 'suspension', resultado: 'ok', canal: 'panel' });
   return { estado: 'suspendido' };
 });
+
+/** La versión sin gancho: la de las pruebas de siempre. El despliegue exporta la de `ganchos.ts`. */
+export const suspenderTenant = crearSuspenderTenant();
 
 export const reactivarTenant = onCall(async (peticion) => {
   const uid = exigirPropietario(peticion);
@@ -341,7 +364,22 @@ export const asignarNumero = onCall(async (peticion) => {
         'Ese número ya está asignado a otro comercio. Libérelo primero.');
     }
     const tenant = await tx.get(db().doc(`tenants/${tenantId}`));
+    // "Ya tenía ese flujo" se decide por las rutas del comercio (lecturas antes que escrituras).
+    const rutasDelTenant = await tx.get(db().collection('rutasWhatsApp').where('tenantId', '==', tenantId));
     if (!tenant.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
+    // DOBLE ESCRITURA (H2b-7): con `modulos` lista se suman los del flujo; ausente,
+    // no se crea; existente pero no lista, se rechaza sin escribir.
+    const datosFicha = tenant.data() ?? {};
+    let modulosPorSumar: string[] | null = null;
+    if (Object.prototype.hasOwnProperty.call(datosFicha, 'modulos') && datosFicha['modulos'] !== undefined && datosFicha['modulos'] !== null) {
+      if (!Array.isArray(datosFicha['modulos'])) {
+        throw new HttpsError('failed-precondition', 'La ficha tiene `modulos` y no es una lista: corríjala antes de agregar el flujo.');
+      }
+      // Si el flujo YA estaba, no se suma nada: un módulo cerrado a propósito no se reabre al reasignar un número.
+      // `flujos` ya no se escribe ni se lee (H2b-cierre): "ya estaba" = alguna ruta del comercio ya tiene ese flujo.
+      const yaTiene = rutasDelTenant.docs.some((d) => d.get('flujo') === flujo);
+      modulosPorSumar = yaTiene ? null : [...FLUJOS_DE_RUTA[flujo as IdFlujo].modulos];
+    }
 
     // Asignar un número con un flujo SUMA ese flujo al negocio; no reemplaza
     // los que ya tenía. Antes se sobreescribía `vertical`, y un negocio con
@@ -371,7 +409,7 @@ export const asignarNumero = onCall(async (peticion) => {
     tx.update(tenant.ref, {
       waPhoneNumberId: phoneNumberId, waWabaId: wabaId,
       vertical: tenant.get('vertical') ?? flujo,
-      flujos: FieldValue.arrayUnion(flujo),
+      ...(modulosPorSumar ? { modulos: FieldValue.arrayUnion(...modulosPorSumar) } : {}),
     });
     if (refConfig && config && !config.exists) {
       tx.set(refConfig, { actualizadoPor: uid, actualizadoEn: Timestamp.now() });

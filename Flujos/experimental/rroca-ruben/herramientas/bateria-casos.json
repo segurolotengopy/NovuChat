@@ -1,0 +1,121 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_). Misma convención que rroca-ruben, chat-novuchat y captacion-minima.",
+  "nodes": [],
+  "descripcion": "Batería de «Noches Sin Insomnio» (Rubén): 19 turnos del cliente en seis casos (A el camino completo, B «precio primero», C precios en general y el puente, D anuncio y duda, E precio y devolución juntos, F duración de los audios y garantía juntas). 6 turnos llegan al modelo; el resto los resuelve el código (saludo, precio, botones, derivación, resultado).",
+  "casos": [
+    {
+      "id": "A",
+      "nombre": "El camino completo: saludo, conversación, duda, Pack con QR y una pregunta con el QR abierto",
+      "turnos": [
+        {
+          "dice": "Hola"
+        },
+        {
+          "dice": "Me despierto a las tres de la mañana y no puedo volver a dormirme, la mente no para.",
+          "tema": [
+            "desp",
+            "mente"
+          ],
+          "seco": "Se nota lo agotador que es eso, y que llevas tiempo así. Despertar de madrugada con la mente en marcha le pasa a mucha gente. ¿Qué es lo que más te da vueltas a esa hora?"
+        },
+        {
+          "dice": "No sé si un libro me va a servir, ya probé de todo.",
+          "duda": true,
+          "seco": "Entiendo ese cansancio de probar cosas. Esto no es una promesa mágica: es un método práctico de ejercicios cortos, que se hacen de a poco y a tu ritmo. ¿Qué has probado hasta ahora?"
+        },
+        {
+          "boton": "b_pack"
+        },
+        {
+          "dice": "¿Las meditaciones se escuchan para dormirme?",
+          "duda": true,
+          "seco": "Las meditaciones guiadas son cortas y están pensadas para la noche, con voz sintética y música suave. Te sirven como apoyo junto con los ejercicios del libro."
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "nombre": "Precio primero: el precio de UN producto sale ya; el «sí» al cierre da las opciones; la devolución se deriva",
+      "turnos": [
+        {
+          "dice": "¿cuánto cuesta el libro?"
+        },
+        {
+          "dice": "sí"
+        },
+        {
+          "dice": "Últimamente casi no duermo y me da miedo llegar a la noche.",
+          "tema": [
+            "duer",
+            "noche"
+          ],
+          "seco": "Eso desgasta mucho, y tiene sentido que la noche te preocupe si llevas tiempo durmiendo mal. Lo bueno es que se puede practicar de a poco. ¿Qué te cuesta más: dormirte o seguir dormido?"
+        },
+        {
+          "dice": "¿me devuelven el dinero si no me sirve?"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "nombre": "Precios en general antes de tiempo: el saludo, el puente y las opciones",
+      "turnos": [
+        {
+          "dice": "¿Qué precios tienen?"
+        },
+        {
+          "dice": "y cuánto cuesta todo?",
+          "tema": [
+            "libro",
+            "ejercicio"
+          ],
+          "seco": "Con gusto. Antes de verlo, una idea que suele ayudar: el libro propone ejercicios breves y un plan de 21 días para que tu mente aprenda a soltar el día, a tu ritmo."
+        },
+        {
+          "dice": "sí"
+        },
+        {
+          "boton": "b_audios"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "nombre": "Anuncio de Meta y una duda sobre qué es el método",
+      "turnos": [
+        {
+          "dice": "Hola, vengo del anuncio «La mente hace cuentas de madrugada»."
+        },
+        {
+          "dice": "¿Esto es medicina o terapia?",
+          "duda": true,
+          "seco": "No es un tratamiento médico ni terapia: es un método práctico de lectura y ejercicios para ordenar tus noches, y no reemplaza a un profesional de la salud. ¿Cómo están siendo tus noches últimamente?"
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "nombre": "Casos (b) y (d) del PDF: «vi el video, ¿precio y devolución?» (el precio por código y la devolución derivada en UN mensaje) y luego precio y garantía juntos",
+      "turnos": [
+        {
+          "dice": "Hola, vi el video en Facebook. ¿Qué precio tiene y qué pasa si lo compro y siento que no me sirve, hay devolución?"
+        },
+        {
+          "dice": "¿Cuánto cuesta el libro y me garantizan que voy a dormir?"
+        }
+      ]
+    },
+    {
+      "id": "F",
+      "nombre": "Casos (c) y (d) del PDF: dos preguntas juntas (duración de los audios y garantía) en UN solo mensaje, sin garantizar",
+      "turnos": [
+        {
+          "dice": "Hola"
+        },
+        {
+          "dice": "Ah qué bueno que tenga audio. ¿Pero los audios duran mucho? ¿Y me garantizan que con eso ya duermo toda la noche?"
+        }
+      ]
+    }
+  ]
+}

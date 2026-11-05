@@ -10,7 +10,7 @@
 |---|---|
 | **Qué contiene hoy** | `funcionarios`, `agenda` (candado), `sena.ts`, `retencion.ts`, `seguimientos.ts`, recordatorios, señas vencidas; `Funcionarios.tsx`; 7 módulos de `Flujos/src/modulos/agenda/` (desde FL1; hasta entonces, 13 en `Flujos/src/reservas/`, con la seña y los medios); herramientas de Calendar |
 | **Depende de** | Cobros (solo para la seña) |
-| **Límite por plan** | agendas (1 / 5 / 10), **hoy sin hacer cumplir**: falta la regla en `firestore.rules` al crear un funcionario, con un contador `contadores/agendas` como el del catálogo. El número ya viaja en la copia `cuenta/estado.limites.agendas` (`planes.ts`). Ver `limites.md` |
+| **Límite por plan** | agendas (1 / 5 / 10), **hecho cumplir en las reglas (H2b-9, Q6=A)**: cuentan los `calendarioId` distintos entre funcionarios activos; un activo con `calendarioId` vacío no cuenta. `limiteAgendas()` lee `cuenta/estado.limites.agendas` (respaldo por plan) y `contadores/agendas = { calendarios, refs, ultimoFuncionario, actualizadoEn }` se mueve en el mismo lote que el funcionario que cambia su calendario. Conteo inicial: `scripts/modulos/agenda/contar-agendas.mjs` (seco por defecto) antes de desplegar. Ver `limites.md` |
 | **Configuración** | `config/agenda` (hoy `config/agendamiento`), con lista blanca: `calendarioId` (sale de `config/negocio`), `duracionMin`, `recordatorios`, `senaActiva`, … |
 | **Colecciones** | `funcionarios`, `funcionarios/privado`, `agenda`; se agrega `contadores/agendas` |
 | **Pestañas** | Agenda / Funcionarios (`admin`); ranura «citas de hoy» en el Tablero; la duración de cita como ranura en Catálogo |
@@ -19,7 +19,7 @@
 | **Nodos (lo que queda en n8n)** | `Flujos/src/modulos/agenda/*.js` (7 módulos desde FL1; la seña está en Cobros y los medios en `core/medios/`); Google Calendar por credencial de n8n |
 | **Ganchos** | `antesDelTurno`, `despuesDelTurno` (seña: retención), `alCierre` (cita), `programado` (recordatorios, seguimientos, señas vencidas: `agendamiento-seguimientos`, `agendamiento-senas-vencidas`, `demo-a-recordatorios`) |
 | **Mensajes por conversación** | 0 en la conversación; el recordatorio de solicitud pendiente y los recordatorios de cita son mensajes fuera de la ventana y se declaran en su sección |
-| **Pruebas** | `candado-agenda.test.ts`, `seguimientos.test.ts`, `senas-vencidas.test.ts`, `agendamiento-seguimientos.test.ts`, `sena-servidor.test.ts`, `citas-a-calendario.test.ts`, `direccion-maps.test.ts`; las suites de flujo de reservas (Demo A, Platinum, Bellido) hasta que F5 las reparta |
+| **Pruebas** | `candado-agenda.test.ts`, `seguimientos.test.ts`, `senas-vencidas.test.ts`, `agendamiento-seguimientos.test.ts`, `sena-servidor.test.ts`, `citas-a-calendario.test.ts`, `direccion-maps.test.ts`; las suites de flujo de reservas (Demo A, Bellido) hasta que F5 las reparta |
 
 **Observación:** es el módulo más grande. Hoy se llama vertical `agendamiento`. `preparar-sena`, `respuesta-de-la-sena`, `mensaje-de-la-sena` e `interpretar-lectura` van a Cobros con dependencia de Agenda. El techo de agendas por plan no es el número de personas: es que el candado hace una llamada a Google Calendar por cada calendario configurado (`Analisis/24`)
 
@@ -205,6 +205,7 @@ La decisión es una función pura del servidor —`esPendienteDeSeguimiento`, en
 | `solicitud.etapa` es `horarios` o `qr_enviado` | Son las dos etapas a medio camino. `agendada` y `vencida` están cerradas: **nunca a quien ya agendó** |
 | `solicitud.seguimientos === 0` | **Nunca dos veces a la misma solicitud.** El cero tiene que estar escrito: un campo ausente o con otro tipo no entra |
 | `noContactar !== true` | **Nunca a quien pidió que no le escriban**, ni a quien pasó a una persona |
+| `bloqueada !== true` | Contacto bloqueado por el comercio (`bloquearContacto`, core; 31/10/2026): fuera de todo envío automático. Se revalida también en `seguimientoEnviado` (el bloqueo pudo llegar entre el armado de la lista y el aviso): no marca, no cuenta y contesta `marcado: false, motivo: 'bloqueado'`, y el flujo solo manda con `marcado === true`. Desbloquear lo vuelve a incluir. Costo: 0 mensajes agregados (solo quita). Prueba: `seguimientos-bloqueo.test.ts` |
 | `atencionEstado` no es `operador` ni `bloqueado` | Esa conversación ya la atiende alguien, o el asistente dejó de responder por uso extendido. Un recordatorio automático encima sería el peor mensaje posible |
 | `ultimoEn` entre 2 y 4 h → **texto**; entre 24 y 48 h → **plantilla** | Entre las 4 y las 24 no se manda nada: la ventana está por vencer o recién venció, el texto ya no entra y la plantilla llegaría de madrugada. Después de las 48 un recordatorio ya no es una actualización, es publicidad |
 

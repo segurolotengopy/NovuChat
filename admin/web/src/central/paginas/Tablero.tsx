@@ -16,6 +16,8 @@ import { GraficoDias, type DiaDeGrafico } from '../componentes/GraficoDias';
 import { avisoConsumoVigente, type AvisoConsumoVista as Aviso } from '../lib/planes';
 import { AvisoConsumo } from '../componentes/AvisoConsumo';
 import { SelectorDeCuenta } from '../componentes/SelectorDeCuenta';
+import { BotonMiniCrm } from '../componentes/BotonMiniCrm';
+import { EdicionMiniCrm } from '../componentes/EdicionMiniCrm';
 import { cuentasDe } from '../../core/lib/cuentaActiva';
 
 /**
@@ -72,7 +74,9 @@ function horarioDeHoy(horarios: unknown): string {
   if (typeof horarios !== 'object' || horarios === null) return '';
   const clave = DIAS[new Date().getDay()] as string;
   const valor = (horarios as Record<string, unknown>)[clave];
-  return typeof valor === 'string' ? valor : '';
+  // Turno partido («09:00-12:00,14:00-18:00») se lee «09:00-12:00 y 14:00-18:00»;
+  // un solo rango y «cerrado» salen igual que siempre.
+  return typeof valor === 'string' ? valor.replace(/,/g, ' y ') : '';
 }
 
 /**
@@ -383,6 +387,8 @@ export function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdm
         pide una decisión, y el comercio tiene que verlo antes de pasarse, no
         descubrirlo en la factura. */}
     {esAdmin && datos.avisoConsumo && <AvisoConsumo aviso={datos.avisoConsumo} cuenta={datos.cuentaCruda} />}
+    <BotonMiniCrm tenantId={tenantId} esAdmin={esAdmin} />
+    <EdicionMiniCrm tenantId={tenantId} esAdmin={esAdmin} />
     {esAdmin && (
       <>
         <SelectorDePeriodo valor={periodo} onCambio={setPeriodo} />

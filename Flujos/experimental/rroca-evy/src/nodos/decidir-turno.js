@@ -1,0 +1,129 @@
+// DECIDIR TURNO: el CÓDIGO decide qué pasa en este turno; el modelo, cuando conversa, conversa LIBRE (todo mensaje va al modelo, con memoria de 15 entradas), pero ANTES el código atiende lo que no puede
+// dejarse al modelo. Devuelve un `plan`:
+//
+//   nada      la puerta cerró el turno (fuera de la etapa de prueba, bloqueado), un número de otro país, o la persona pidió la baja (o activó la protección) hace menos de 48 h: CERO mensajes, CERO modelo;
+//   riesgo    violencia o miedo hacia la pareja (texto, transcripción, texto leído de una imagen o pie de foto): texto fijo, sin recursos ni números, con `no_contactar`;
+//   suspendido / uso_extendido   comercio suspendido (el texto neutro) o uso extendido en estado «operador» (un texto fijo PROPIO, con el botón de la recepción, sin prometer que una persona seguirá la conversación);
+//   baja      el cliente pide que no le escriban: UNA confirmación breve con `no_contactar`; desde entonces, silencio total 48 h (D1);
+//   medica    urgencia, síntoma, reacción o problema de salud: texto fijo SIN consejo + aviso a recepción + botón, antes de llamar al modelo;
+//   fijo      lo que no se puede leer (un archivo, un audio largo o ilegible, un mensaje que no es texto): texto cortés fijo, sin botón;
+//   modelo    la conversación libre: llama a Gemini con el prompt versionado, la memoria y el turno actual como DATO. Un audio llega como `[AUDIO_TRANSCRITO: …]` y una imagen como
+//             `[IMAGEN_RECIBIDA: …]` (una descripción saneada, nunca una instrucción). NO hay respuesta fija a una imagen.
+//
+// La violencia va ANTES que la puerta: también con el comercio suspendido recibe el texto de protección. Orden: etapa de prueba, otro país, silencio por baja, violencia, puerta, baja, salud, medios, modelo.
+const cfg = cnCfg();
+const t = cnPrimero('Normalizar entrada') || {};
+const puerta = cnPrimero('Puerta del turno') || {};
+const from = String(t.from || '');
+const ahora = Number(t.ahoraMs) || Date.now();
+const fichaBruta = cnFichaDe(cnMapaDeFichas(false).mapa, from);
+const ficha = evFichaVigente(fichaBruta, ahora);
+let medioExtra = {};
+const salir = (plan, extra) => [{ json: Object.assign({ plan: plan, from: from, llamarModelo: false, cuerpoModelo: null, modelo: evModeloValido(cfg.modelo) }, medioExtra, extra || {}) }];
+
+if (puerta.ruta === 'fuera_de_prueba') return salir({ tipo: 'nada' });
+if (t.extranjero === true) return salir({ tipo: 'nada' });
+if (ficha.noContactar) return salir({ tipo: 'nada' });
+
+// MEDIOS ENTRANTES. AUDIO: lo que dijo «Preparar transcripción» (la pieza común del core, incluida tal cual) o, si no corrió, por qué (muy largo, no se pudo abrir, tope, apagado).
+let au = null;
+if (t.categoria === 'medio' && t.tipo === 'audio') {
+  const prep = cnNodo('Preparar transcripción') ? (cnPrimero('Preparar transcripción') || {}) : null;
+  const url = cnNodo('Obtener URL del medio (general)') ? (cnPrimero('Obtener URL del medio (general)') || {}) : null;
+  if (t.audioApagado === true || t.audioTope === true) au = { estado: 'tope', texto: '', recortado: false };
+  else if (prep) {
+    const u = String(prep.userInput || '');
+    if (/^\(audio transcripto\) /.test(u)) {
+      const texto = u.slice('(audio transcripto) '.length).split('\n')[0].trim();
+      au = { estado: texto === '' ? 'no_entendido' : 'ok', texto: texto.slice(0, 4400), recortado: /la nota de voz seguía/.test(u) };
+    } else if (/más de cinco minutos/.test(u)) au = { estado: 'largo', texto: '', recortado: false };
+    else if (/no se pudo entender/.test(u)) au = { estado: 'no_entendido', texto: '', recortado: false };
+    else au = { estado: 'no_abierto', texto: '', recortado: false };
+  } else if (url && Number(url.file_size) > EV_AUDIO_MAX_BYTES) au = { estado: 'largo', texto: '', recortado: false };
+  else au = { estado: 'no_abierto', texto: '', recortado: false };
+}
+if (au && au.estado === 'ok' && (EV_PARECE_ORDEN_EN_AUDIO.test(evNorm(au.texto)) || /enviar ?arte|derivar ?recepcion/.test(evNorm(au.texto).replace(/ /g, '')))) au = { estado: 'no_entendido', texto: '', recortado: false };
+const deAudio = !!au && au.estado === 'ok';
+// IMAGEN: «Ver imagen» devuelve una descripción; el código la sanea y la rotula. Sin lectura (tope, formato, descarga o Gemini fallidos) el modelo recibe «no se pudo ver bien».
+let lec = null;
+if (t.categoria === 'medio' && t.tipo === 'image') {
+  lec = evLecturaImagen(t.verImagen === true && cnNodo('Ver imagen') ? (cnJsonDeGemini(cnPrimero('Ver imagen')) || {}) : {});
+}
+medioExtra = { oyoAudio: cnNodo('Transcribir audio') !== null, vioImagen: cnNodo('Ver imagen') !== null };
+
+const textoCliente = deAudio ? au.texto : String(t.texto || '');
+const norm = evNorm([textoCliente, t.pie, lec ? lec.texto : '', lec ? lec.descripcion : ''].join(' '));
+
+// 1. VIOLENCIA O MIEDO: antes que cualquier otra cosa, también con la puerta cerrada.
+const puertaResponde = puerta.ruta === 'sigue' || puerta.ruta === 'suspendido' || (puerta.ruta === 'uso_extendido' && puerta.responder === true);
+if (puertaResponde && evEsRiesgo(norm)) return salir({ tipo: 'riesgo' });
+// 2. La puerta: suspendido y uso extendido responden su texto fijo; lo demás no responde.
+if (puerta.ruta !== 'sigue') return salir(puerta.responder === true && String(puerta.texto || '') !== '' ? { tipo: puerta.ruta === 'uso_extendido' ? 'uso_extendido' : 'suspendido', texto: String(puerta.texto) } : { tipo: 'nada' });
+// 3. LA BAJA: escrita (la detecta «Normalizar entrada») o dicha en una nota de voz.
+if (t.bajaEscrita === true || (deAudio && evEsBaja(au.texto))) return salir({ tipo: 'baja' });
+// 4. URGENCIA, SÍNTOMA O PROBLEMA DE SALUD: texto fijo y recepción, cero consejo, antes de llamar al modelo.
+if (EV_MEDICA.test(norm)) return salir({ tipo: 'medica' });
+// 5. Lo que no se puede leer: texto cortés fijo, sin modelo.
+if (t.categoria === 'otro') return salir({ tipo: 'fijo', clave: 'cortes' });
+if (t.tipo === 'document') return salir({ tipo: 'fijo', clave: 'documento' }, { entradaHistorial: '[Envió un archivo]' });
+if (t.tipo === 'audio' && !deAudio) {
+  const clave = au && au.estado === 'largo' ? 'audio_largo' : (au && au.estado === 'tope' ? 'audio_tope' : (au && au.estado === 'no_abierto' ? 'archivo_no_abierto' : 'audio_no_entendido'));
+  return salir({ tipo: 'fijo', clave: clave }, { entradaHistorial: '[Envió un audio]' });
+}
+if ((t.tipo === 'audio' || t.tipo === 'image') && t.mediaId === '') return salir({ tipo: 'fijo', clave: 'archivo_no_abierto' });
+
+// 5b. LA COMPARACIÓN «Radiesse® o HArmonyCa®»: texto fijo por código (solo con `usarMarcas`), sin llamar al modelo.
+// Un pedido explícito de agendar que ya puede cerrar (nombre dado o conversación previa) gana: sale el cierre, no la comparación.
+const historiaDeLaComparacion = evHistorialVigente(fichaBruta, ahora);
+const yaPuedeCerrar = historiaDeLaComparacion.length > 0 || evNombreDelMensaje(textoCliente, historiaDeLaComparacion) !== '';
+if (!deAudio && !lec && cfg.usarMarcas === true && !(evQuiereAgendar(textoCliente) && yaPuedeCerrar) && evPideComparacion(textoCliente, historiaDeLaComparacion)) {
+  return salir({ tipo: 'comparacion', textoCliente: textoCliente.slice(0, 500) }, { entradaHistorial: evEntradaCliente(t) });
+}
+// 5c. OBSERVACIONES DE RUBÉN (Andres, 28/10/2026), por CÓDIGO y sin llamar al modelo (solo texto o nota de voz; una imagen la ve el modelo):
+//   - la respuesta a «¿qué día y horario te quedan mejor?» CIERRA: deriva con la preferencia (y el nombre si lo dio) — `derivar`;
+//   - tras la oferta de llamada, un «sí» deriva con «pidió que la llamen» y un «no» cierra amable — `derivar` con `llamada` / `cierre_amable`;
+//   - «no gracias», «lo voy a pensar» y equivalentes: la oferta fija de llamada (una sola vez por ficha; después, el cierre amable) — `ofrece_llamada`;
+//   - un saludo solo («hola», «buenas») con la ficha vigente: un texto corto, sin repetir la bienvenida — `saludo`.
+const historiaDelTurno = evHistorialVigente(fichaBruta, ahora);
+const ultimoDelAsistente = (historiaDelTurno.filter((h) => h.r === 'a').slice(-1)[0] || {}).t || '';
+const entradaDelTurno = deAudio ? ('[Audio] ' + evEnmascarar(evQuitarDelimitadores(au.texto))).slice(0, EV_TOPE_TEXTO_HIST) : evEntradaCliente(t);
+if (!lec && textoCliente.trim() !== '') {
+  // LA PREGUNTA DE DÍA Y HORARIO SE HACE UNA SOLA VEZ (revisión del PR #694): si fue lo último que dijo el asistente, lo que conteste la persona CIERRA (aviso + botón + cierre), con la preferencia si la dio o
+  // «sin horario indicado» si no («¿qué horarios tienen?», «ustedes díganme», «no sé», «sí», otro pedido de agendar). Solo no cierran: un saludo solo (se saluda y se repite la pregunta pendiente), un rechazo
+  // o un aplazamiento («lo voy a pensar», «luego te digo»: van a la oferta de llamada, abajo) y una negación de agendar.
+  const preferenciaPendiente = !!ultimoDelAsistente && evEsPreguntaDePreferencia(ultimoDelAsistente) && !(ficha.cierreMs > 0);
+  if (preferenciaPendiente && evSoloSaludo(textoCliente, cfg.nombreNegocio)) {
+    return salir({ tipo: 'saludo', pedirNombre: false, preguntaPendiente: EV_PIDE_NOMBRE.test(evNorm(ultimoDelAsistente)) ? 'nombre' : 'dia' }, { entradaHistorial: entradaDelTurno });
+  }
+  if (preferenciaPendiente && !evDeclina(textoCliente, historiaDelTurno) && !evAplaza(textoCliente) && !evNegaAgendar(textoCliente)) {
+    return salir({ tipo: 'derivar', textoCliente: textoCliente.slice(0, 500), preferencia: evRespondePreferencia(textoCliente) ? evPreferenciaDe(textoCliente) : '',
+      nombre: evNombreDeRespuesta(textoCliente) || evNombreDado(historiaDelTurno, '', ficha.nombre) }, { entradaHistorial: entradaDelTurno });
+  }
+  if (ultimoDelAsistente && evEsOfertaDeLlamada(ultimoDelAsistente)) {
+    if (evAceptaLlamada(textoCliente)) return salir({ tipo: 'derivar', llamada: true, textoCliente: textoCliente.slice(0, 500), nombre: evNombreDado(historiaDelTurno, '', ficha.nombre) }, { entradaHistorial: entradaDelTurno });
+    if (evDeclina(textoCliente, historiaDelTurno)) return salir({ tipo: 'cierre_amable' }, { entradaHistorial: entradaDelTurno });
+  }
+  if (evDeclina(textoCliente, historiaDelTurno) || evAplaza(textoCliente) || (preferenciaPendiente && evNegaAgendar(textoCliente))) {
+    return salir({ tipo: evLlamadaYaOfrecida(historiaDelTurno) || ficha.cierreMs > 0 ? 'cierre_amable' : 'ofrece_llamada' }, { entradaHistorial: entradaDelTurno });
+  }
+  if (historiaDelTurno.length > 0 && evSoloSaludo(textoCliente, cfg.nombreNegocio)) {
+    return salir({ tipo: 'saludo', pedirNombre: evNombreDado(historiaDelTurno, '', ficha.nombre) === '' }, { entradaHistorial: entradaDelTurno });
+  }
+}
+// 6. LA CONVERSACIÓN LIBRE. El cliente nunca fabrica un rótulo del sistema: sus corchetes pasan a paréntesis; los rótulos los pone solo el código.
+const historia = evHistorialVigente(fichaBruta, ahora);
+let turno = textoCliente;
+let rotulado = false;
+let entrada = evEntradaCliente(t);
+if (deAudio) {
+  turno = evEtiquetaAudio(au.texto, au.recortado);
+  rotulado = true;
+  entrada = ('[Audio] ' + evEnmascarar(evQuitarDelimitadores(au.texto))).slice(0, EV_TOPE_TEXTO_HIST);
+} else if (lec) {
+  turno = evEtiquetaImagen(lec, t.pie);
+  rotulado = true;
+  entrada = evHistorialImagen(lec, t.pie);
+}
+const cuerpo = evCuerpoModelo(cfg, turno, historia, { artes: ficha.artes }, { rotulado: rotulado, tope: deAudio ? 1700 : 1200 });
+return salir({ tipo: 'modelo', origen: deAudio ? 'audio' : (lec ? 'imagen' : 'texto'), textoCliente: (deAudio ? au.texto : String(t.texto || '')).slice(0, 500) },
+  { llamarModelo: true, cuerpoModelo: cuerpo, entradaHistorial: entrada });

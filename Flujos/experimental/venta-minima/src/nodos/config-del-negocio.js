@@ -26,6 +26,7 @@
 //     respuesta no se fijan (se desconocen) y `Plan del turno` deriva en vez de ofrecer delivery; con el comercio
 //     suspendido van en `false`.
 // EL MODO PRUEBA lo dijo `Carga de entrada` (solo si corrio «Entrada de prueba»).
+// EL ESTADO DE LA CONVERSACION (`sesion`) viene en la MISMA respuesta (PR-4a): ver el final de este nodo.
 const RESPALDO = {
   nombreNegocio: 'nuestro restaurante',
   nombreAsistente: '',
@@ -227,7 +228,13 @@ cfg.prefijosPermitidos = csvLimpio(String(cfg.prefijosPermitidos || '').split(',
 // --- MODO PRUEBA ---------------------------------------------------------------
 const prueba = carga.prueba && carga.prueba.modoPrueba === true ? carga.prueba : null;
 
+// EL ESTADO DE LA CONVERSACION (PR-4a): lo que contesto el `leer` de la sesion, en la misma respuesta. Sin `conversacion` valida (un servidor sin la rama, un 5xx, el 409
+// de un comercio suspendido, o una variante de prueba para un telefono que no es de `telefonosDePrueba`) `ok` es false: `¿Hay estado?` manda al aviso con el boton.
+// `visto` ('nuevo' o 'repetido') lo marca el servidor al leer; `Interpretar entrada` descarta el repetido.
+const sesion = Object.assign(ssSesionDeLaConfig(codigo, cuerpo), { visto: codigo === 200 && (cuerpo.visto === 'nuevo' || cuerpo.visto === 'repetido') ? cuerpo.visto : null });
+
 return [{ json: Object.assign({}, cfg, {
+  sesion: sesion,
   phoneNumberId: String(carga.phoneNumberId || ''),
   modoPrueba: prueba !== null,
   telefonoDePrueba: prueba ? String(prueba.telefonoDePrueba || '') : '',

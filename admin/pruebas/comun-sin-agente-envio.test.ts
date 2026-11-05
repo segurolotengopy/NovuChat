@@ -151,9 +151,7 @@ describe('lo que la revisión de seguridad encontró (01/10): URL validada y rep
   const evaluarUrl = (nombre: string, item: J): string => {
     const m = /^=(.*)$/s.exec(urlDe(nombre))![1]!;
     return m.replace(/\{\{([\s\S]*?)\}\}/g, (_: string, e: string) => {
-      // nosemgrep: devsecops.js-eval-prohibido
-      const f = new Function('$json', '$', `return (${e});`) as (j: J, r: unknown) => unknown;
-      return String(f(item, () => ({ item: { json: item } })));
+      return String(expresion(`={{${e}}}`, item, { 'Armar mensajes': item }));
     });
   };
   it('el `phoneNumberId` y la versión de Graph no pueden alterar la URL del envío', () => {
@@ -217,5 +215,20 @@ describe('injertar en una plantilla', () => {
     p.connections['Armar mensajes'] = { main: [[{ node: 'Resumen del turno' }]] };
     injertar(p, OPC);
     expect(p.connections['Armar mensajes']!.main[0]!.map((c) => c.node)).toEqual(['Resumen del turno', '¿Enviar de verdad?']);
+  });
+});
+
+describe('el canal «rele» (relé B9) no toca el canal por defecto', () => {
+  // La cadena del relé y su bucle se prueban en `core/rele/` (cadena-de-envio, decidir-envio, medios). Acá solo se fija que quien NO pide `canal: 'rele'` recibe
+  // exactamente lo de siempre, para que los demás flujos no cambien ni un byte por el trabajo del relé.
+  it('sin `canal` y con `canal: \'graph\'` salen los mismos nodos y conexiones, y ninguno nombra al relé', () => {
+    const a = nodosDeEnvio(OPC);
+    expect(nodosDeEnvio({ ...OPC, canal: 'graph' })).toEqual(a);
+    expect(a.nodes.map((n) => n.name)).toEqual(NOMBRES);
+    expect(JSON.stringify(a)).not.toMatch(/REEMPLAZAR_URL_INTERNA_DEL_RELE|Idempotency-Key|\/v1\/envio\//);
+  });
+  it('NIEGA: pedir el relé sin lo que exige no cae en Graph en silencio', () => {
+    expect(() => nodosDeEnvio({ ...OPC, canal: 'rele' })).toThrow(/cliente/);
+    expect(() => nodosDeEnvio({ ...OPC, canal: 'rele', cliente: 'x-y' })).toThrow(/credenciales\.rele/);
   });
 });

@@ -41,6 +41,7 @@ import {
 import {
   deleteDoc, doc, setDoc, updateDoc, serverTimestamp, Timestamp, writeBatch, increment,
 } from 'firebase/firestore';
+import { modulosDeFlujos } from '../../functions/src/registro.ts';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -92,17 +93,18 @@ const UA = 'u-admin-t';
 const sello = (u: string) => ({ actualizadoPor: u, actualizadoEn: serverTimestamp() });
 
 // ---------------------------------------------------------------------------
-// Fichas sintéticas, sin `modulos`.
+// Fichas sintéticas. H2b-cierre: con `modulos` (la única fuente); sin la lista las reglas
+// niegan antes de gastar términos y el presupuesto no se mediría.
 // ---------------------------------------------------------------------------
 const TS = Timestamp.fromMillis(1_700_000_000_000);
 const comun = { creadoEn: TS, creadoPor: 'u-x', estado: 'activo', plan: 'crecimiento', waPhoneNumberId: 'pn', waWabaId: 'wb' };
 const FICHAS: Record<string, Record<string, unknown>> = {
-  qtaco: { ...comun, nombre: 'Q', flujos: ['venta'], vertical: 'venta' },
-  agenda: { ...comun, nombre: 'A', flujos: ['agendamiento'], vertical: 'agendamiento' },
-  doble: { ...comun, nombre: 'D', flujos: ['agendamiento', 'venta'], vertical: 'agendamiento' },
-  novuchat: { ...comun, nombre: 'N', flujos: ['onboarding'], vertical: 'onboarding' },
-  // Una ficha escrita antes de que existiera `flujos`: solo `vertical`.
-  qtacoViejo: { ...comun, nombre: 'Q', vertical: 'venta' },
+  qtaco: { ...comun, nombre: 'Q', flujos: ['venta'], vertical: 'venta', modulos: modulosDeFlujos(['venta']) },
+  agenda: { ...comun, nombre: 'A', flujos: ['agendamiento'], vertical: 'agendamiento', modulos: modulosDeFlujos(['agendamiento']) },
+  doble: { ...comun, nombre: 'D', flujos: ['agendamiento', 'venta'], vertical: 'agendamiento', modulos: modulosDeFlujos(['agendamiento', 'venta']) },
+  novuchat: { ...comun, nombre: 'N', flujos: ['onboarding'], vertical: 'onboarding', modulos: modulosDeFlujos(['onboarding']) },
+  // Una ficha escrita antes de que existiera `flujos`: solo `vertical` (más `modulos`, que ahora manda).
+  qtacoViejo: { ...comun, nombre: 'Q', vertical: 'venta', modulos: modulosDeFlujos(['venta']) },
 };
 
 const DIAS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'];
@@ -170,13 +172,14 @@ pruebas.push({
 type Catalogo = 'apagado' | 'enciende' | 'ya';
 const nombreCatalogo: Record<Catalogo, string> = { apagado: 'catálogo web apagado (sin cambios)', enciende: 'ENCIENDE catálogo web', ya: 'catálogo web ya encendido' };
 const guardadoCompleto = (forma: Forma, dias: number, catalogo: Catalogo, ubicacion: boolean,
-  extra: { calendario?: Calendario; ficha?: string } = {}): Prueba => {
+  extra: { calendario?: Calendario; ficha?: string; tramosYQuienAtiende?: boolean } = {}): Prueba => {
   const almacenado = documentoAlmacenado(forma, {
     dias, ubicacion, ...(extra.calendario ? { calendario: extra.calendario } : {}), catalogoWebGuardado: catalogo === 'ya',
+    ...(extra.tramosYQuienAtiende ? { tramosYQuienAtiende: true } : {}),
   });
   return {
     id: `guardado completo ${forma}, ${dias} días, ${nombreCatalogo[catalogo]}, ${ubicacion ? 'con' : 'sin'} ubicación`
-      + `${extra.calendario ? `, calendario ${extra.calendario}` : ''}${extra.ficha ? `, ficha ${extra.ficha}` : ''}`,
+      + `${extra.calendario ? `, calendario ${extra.calendario}` : ''}${extra.ficha ? `, ficha ${extra.ficha}` : ''}${extra.tramosYQuienAtiende ? ', 3 tramos por día y nombreQuienAtiende presente' : ''}`,
     ficha: extra.ficha ?? 'qtaco',
     seed: (db) => setDoc(doc(db, P('config/negocio')), almacenado),
     correr: (fs) => updateDoc(doc(fs, P('config/negocio')), payloadDeLaConsola(almacenado, UA, catalogo !== 'apagado')),
@@ -193,6 +196,10 @@ for (const forma of ['sembrado', 'tope'] as const) {
 for (const calendario of ['vacio', 'correo'] as const) completos.push(guardadoCompleto('tope', 7, 'enciende', true, { calendario }));
 completos.push(guardadoCompleto('tope', 7, 'enciende', true, { ficha: 'qtacoViejo' }));
 completos.push(guardadoCompleto('sembrado', 7, 'enciende', true, { ficha: 'qtacoViejo' }));
+// El peor caso de HOY: siete días con TRES tramos y el nombre de quien atiende presente (60 caracteres).
+for (const catalogo of ['enciende', 'ya', 'apagado'] as const) {
+  completos.push(guardadoCompleto('tope', 7, catalogo, true, { tramosYQuienAtiende: true }));
+}
 /** El peor documento: 7 días, todo en su tope, catálogo web que se enciende, con ubicación. */
 const PEOR = guardadoCompleto('tope', 7, 'enciende', true);
 

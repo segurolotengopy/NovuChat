@@ -104,7 +104,7 @@ test.describe('Cobros', () => {
     const tarjeta = page.getByLabel('Comprobantes por mes');
     await expect(tarjeta).toContainText('Comprobantes por mes (últimos 6 meses)');
     await expect(tarjeta.getByRole('row').nth(1)).toContainText('7');
-    await expect(tarjeta).toContainText('Este mes hubo comprobantes aproximados o en revisión');
+    await expect(tarjeta).toContainText('Este mes hubo comprobantes que coinciden en parte o en revisión');
     expect((await tarjeta.innerText()).toLowerCase()).not.toContain('acreditado');
   });
 

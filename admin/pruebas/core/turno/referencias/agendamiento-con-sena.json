@@ -1,0 +1,80 @@
+{
+  "tenantId": "diferencial-agendamiento-con-sena",
+  "flujo": "agendamiento",
+  "estadoComercio": "activo",
+  "phoneNumberId": "900002",
+  "atencion": null,
+  "prepago": {
+    "modalidad": "demostracion",
+    "fase": "cubierto",
+    "motivo": null,
+    "graciaHasta": null,
+    "disponibles": null,
+    "corteAplicado": false
+  },
+  "operacion": {
+    "zonaHoraria": "America/La_Paz",
+    "moneda": "BOB",
+    "numeroRecepcion": "",
+    "calendarioId": "",
+    "horarioAtencion": "",
+    "prefijosPermitidos": [],
+    "ubicacion": null
+  },
+  "instruccionesDeVoz": [
+    "Trate al cliente de USTED en todo momento, sin excepción.",
+    "Use como mucho un emoji por mensaje, y solo cuando aporte."
+  ],
+  "voz": {
+    "tratamiento": "Trate al cliente de TÚ en todo momento, sin excepción.",
+    "emojis": "Use como mucho un emoji por mensaje, y solo cuando aporte.",
+    "nombreAsistente": "",
+    "nivelEmojis": "pocos",
+    "tratamientoClave": "tu",
+    "quienAtiende": ""
+  },
+  "datosDelNegocio": {
+    "nombreNegocio": "Negocio agendamiento-con-sena",
+    "datosQueNoTenemos": [
+      "la dirección del local",
+      "el teléfono de recepción",
+      "la agenda de citas",
+      "los horarios de atención",
+      "la política de cancelación"
+    ],
+    "instruccionesExtra": ""
+  },
+  "catalogo": [],
+  "agendamiento": {
+    "senaImporte": 50,
+    "senaMinutosRetencion": 45
+  },
+  "sena": {
+    "activa": true,
+    "importe": 50,
+    "moneda": "BOB",
+    "minutosRetencion": 45,
+    "qr": {
+      "url": "https://us-east1-demo-novuchat-pruebas.cloudfunctions.net/imagenDeCobro?f=ficha-de-prueba-0001",
+      "nombreCuenta": "Titular de Prueba",
+      "banco": "Banco de Prueba"
+    },
+    "pendiente": false,
+    "evento": null,
+    "qrEnviadoEn": null,
+    "vencidaHaceMin": null,
+    "aFavor": null
+  },
+  "funcionarios": [
+    {
+      "id": "_comercio",
+      "nombre": "Negocio agendamiento-con-sena",
+      "especialidad": "",
+      "calendarioId": "",
+      "horarioTrabajo": {},
+      "servicios": [],
+      "porDefecto": true
+    }
+  ],
+  "campanas": []
+}

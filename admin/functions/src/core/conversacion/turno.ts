@@ -243,6 +243,21 @@ export function turnoEfectivo(
 }
 
 // ---------------------------------------------------------------------------
+// SALIDA PUBLICADA: la bandera por comercio (`tenants/{id}.personaPuedeEscribir`)
+// ---------------------------------------------------------------------------
+
+/**
+ * ¿Puede una persona del comercio tomar y escribir? SOLO si la ficha tiene `personaPuedeEscribir === true` (booleano
+ * exacto: ausente, `false`, `'true'`, `1` o ficha ilegible = no). Qué significa: lo escrito como persona sale por el flujo
+ * n8n «Salida de persona» DE ESE NÚMERO; si ese flujo no está publicado, tomar silencia al asistente y lo escrito caduca
+ * sin enviarse. NovuChat enciende la bandera (script de plataforma) solo cuando la salida existe. Pura y sin `import`:
+ * la misma función la usan el servidor (`accesoPersona.ts`) y la consola, para que no haya dos defaults.
+ */
+export function personaPuedeEscribirDeFicha(ficha: { readonly personaPuedeEscribir?: unknown } | null | undefined): boolean {
+  return !!ficha && ficha.personaPuedeEscribir === true;
+}
+
+// ---------------------------------------------------------------------------
 // ERRORES: códigos y mensajes fijos, sin detalle
 // ---------------------------------------------------------------------------
 
@@ -255,12 +270,18 @@ export const ErroresDeTurno = {
   sinSesion: { code: 'unauthenticated', message: 'Inicie sesión.' },
   sinPermiso: { code: 'permission-denied', message: 'No tiene permiso para atender esta conversación.' },
   noHabilitado: { code: 'permission-denied', message: 'Esta función no está habilitada para su comercio.' },
+  /** La bandera `personaPuedeEscribir` no está en `true`: el mensaje no nombra la bandera ni el flujo de salida. */
+  sinSalida: { code: 'permission-denied', message: 'Esta función todavía no está activa para su negocio.' },
   solicitudInvalida: { code: 'invalid-argument', message: 'Solicitud inválida.' },
   noExiste: { code: 'not-found', message: 'La conversación no existe.' },
   ocupada: { code: 'failed-precondition', message: 'Esta conversación la atiende otra persona.' },
   noEsSuya: { code: 'failed-precondition', message: 'Solo quien atiende la conversación, o un administrador, puede devolverla.' },
   ventanaCerrada: { code: 'failed-precondition', message: 'La ventana de 24 horas de esta conversación está cerrada.' },
   tope: { code: 'resource-exhausted', message: 'Alcanzó el tope de cambios de atención por hora o por día.' },
+  /** El contacto está bloqueado (`bloquearContacto.ts`): no se toma ni se le escribe. */
+  contactoBloqueado: { code: 'failed-precondition', message: 'Este contacto está bloqueado. Desbloquéelo para atenderlo.' },
+  /** Una persona tiene la conversación: antes de bloquear hay que devolverla. */
+  turnoVigente: { code: 'failed-precondition', message: 'Devuelva la conversación antes de bloquear el contacto.' },
   noDisponible: { code: 'unavailable', message: 'No se pudo completar la operación. Intente de nuevo.' },
 } as const;
 
