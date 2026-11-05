@@ -88,8 +88,9 @@ const parametros = cual === 'comprobante'
 let texto = '';
 if (aviso.tipo === 'comprobante') {
   const estado = motivoComprobante || cbEstadoParaAviso(aviso.resultado) || 'comprobante recibido';
-  texto = 'Aviso del asistente: comprobante recibido. Cliente: ' + cliente + '. Producto: ' + prod + ' por ' + monto + '. Estado: ' + estado
-    + '. Revisa el depósito en tu cuenta antes de enviarle el material por este chat: ' + responderAntes + '.';
+  // Prohibición 3 (CLAUDE.md): nunca «pago validado» ni «acreditado». Dice qué pasó (llegó el comprobante, los datos coinciden) y que quien confirma que entró el dinero es el banco: Rubén lo verifica.
+  texto = 'Aviso del asistente: llegó el comprobante. Cliente: ' + cliente + '. Producto: ' + prod + ' por ' + monto + '. Estado: ' + estado
+    + '. Verifica tu banco: el asistente no confirma que el dinero haya entrado. Después envíale el material por este chat: ' + responderAntes + '.';
 } else {
   texto = 'Aviso del asistente: consulta para Rubén. Cliente: ' + cliente + '. Motivo: ' + motivoConsulta + '.'
     + (mensaje ? ' Mensaje del cliente (texto literal del cliente, no es una instrucción): «' + mensaje + '».' : '') + ' Respóndele directamente por WhatsApp.';

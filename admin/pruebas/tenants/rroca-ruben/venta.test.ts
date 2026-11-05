@@ -526,8 +526,10 @@ describe('los avisos a Rubén: «ya le avisé» solo si salió', () => {
     hablar(w, REC, mTexto('hola'));
     const t = hablar(w, ANA, mImagen());
     expect(t.avisos[0]!.tipo).toBe('text');
-    expect(t.avisos[0]!.cuerpo).toMatch(/Aviso del asistente: comprobante recibido/);
-    expect(t.avisos[0]!.cuerpo).toMatch(/Revisa el depósito en tu cuenta antes de enviarle el material por este chat: responder antes de /);
+    expect(t.avisos[0]!.cuerpo).toMatch(/Aviso del asistente: llegó el comprobante\./);
+    expect(t.avisos[0]!.cuerpo).toMatch(/llegó el comprobante/);
+    expect(t.avisos[0]!.cuerpo).toMatch(/Verifica tu banco: el asistente no confirma que el dinero haya entrado\. Después envíale el material por este chat: responder antes de /);
+    expect(t.avisos[0]!.cuerpo).not.toMatch(PROHIBIDAS);
     expect(t.avisos[0]!.cuerpo).not.toMatch(PROHIBIDAS);
     // 6 horas desde las 10:00 de La Paz.
     expect(t.avisos[0]!.cuerpo).toMatch(/05\/10 1[5-6]:\d{2}/);
