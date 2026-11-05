@@ -310,21 +310,21 @@ describe('comun.js: nodos de n8n por nombre', () => {
 
 // ================================================================================================
 describe('comun.js: datos estáticos, estado por teléfono y repetidos', () => {
-  it('vmSd crea solo `reservasDelDia` (el residuo de PR-4b) y devuelve siempre el mismo objeto; los mapas viejos YA NO se crean (el estado vive en el servidor)', () => {
+  it('vmSd no crea ningún mapa (PR-4b: las reservas del día viajan en el bloque del servidor, ya no hay `reservasDelDia`) y devuelve siempre el mismo objeto', () => {
     const raiz: J = {};
     const A = lib(raiz);
     const sd = A.vmSd();
-    expect(sd).toEqual({ reservasDelDia: {} }); // es de reserva.js (T3)
+    expect(sd).toEqual({});
     expect(raiz['ventaMinima']).toBe(sd);
-    sd.reservasDelDia['59100000021'] = { dia: '2026-10-05', n: 1 };
-    expect(A.vmSd().reservasDelDia['59100000021']).toEqual({ dia: '2026-10-05', n: 1 });
+    sd['avisosHuerfanos'] = { x: 1 };
+    expect(A.vmSd()['avisosHuerfanos']).toEqual({ x: 1 });
   });
   it('vmSd completa lo que falte sin pisar lo que hay (los mapas viejos que queden hasta el retiro del respaldo se dejan como están), y repara una clave que no es objeto', () => {
     const raiz: J = { ventaMinima: { estados: { x: 1 }, vistos: [], reservasDelDia: [] } };
     const sd = lib(raiz).vmSd();
     expect(sd.estados).toEqual({ x: 1 });
     expect(sd.vistos).toEqual([]); // no se toca: lo retira `vmRetirarRespaldo`
-    expect(sd.reservasDelDia).toEqual({});
+    expect(sd.reservasDelDia).toEqual([]); // PR-4b: tampoco se repara ni se usa; lo borra el retiro del respaldo (30/11/2026)
   });
   it('vmSd da null sin datos estáticos', () => {
     const sinSd = ejecutar(`${COMUN}\nreturn [{ json: { sd: vmSd() } }];`, [{}])[0]!;
@@ -377,7 +377,7 @@ describe('comun.js: datos estáticos, estado por teléfono y repetidos', () => {
 
   it('vmBarrer: quita estados vencidos y repetidos de más de 24 h, y NO barre los pedidos', () => {
     const A = lib();
-    const sd = Object.assign(A.vmSd(), { estados: {}, vistos: {}, pedidos: {} }); // los mapas viejos: `vmBarrer` los poda por su vencimiento
+    const sd = Object.assign(A.vmSd(), { estados: {}, vistos: {}, pedidos: {}, reservasDelDia: {} }); // los mapas viejos: `vmBarrer` los poda por su vencimiento
     sd.estados['59100000021'] = { ...A.vmEstadoBase(), paso: 'pedido', ultimoMensajeMs: AHORA - 2 * HORA };
     sd.estados['59100000022'] = { ...A.vmEstadoBase(), paso: 'esperando_comprobante', ultimoMensajeMs: AHORA - 2 * HORA };
     sd.estados['59100000023'] = { ...A.vmEstadoBase(), paso: 'pedido', ultimoMensajeMs: AHORA - 5 * MIN };

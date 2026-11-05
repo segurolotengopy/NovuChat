@@ -14,7 +14,7 @@
 // detalle, referencia} | null; `ruta`; `errores`. Además, `anotarReserva` (ver el supuesto 4) y `accion`.
 //
 // LIBRERÍAS QUE LLAMA (contrato §4.2; en la suite van dobles mínimos):
-//   comun: vmCfg, vmPrimero, vmNodo, vmSd, vmSes, vmIdDeBoton, vmLinea, vmRecorte, vmCodigoCorto, vmIdEstable, vmJsonDeGemini, vmSinProhibidas, vmHorarioLegible.
+//   comun: vmCfg, vmPrimero, vmNodo, vmSes, vmReservasSd, vmIdDeBoton, vmLinea, vmRecorte, vmCodigoCorto, vmIdEstable, vmJsonDeGemini, vmSinProhibidas, vmHorarioLegible.
 //   pedido: pdCarta, pdExcluidos, pdNombreCorto, pdBotonAgregar, pdTextoExcluido, pdTextoDeLaCarta, pdValidarExtraccion, pdAgregarLineas, pdResolverForma,
 //     pdQuitarSinDelivery, pdTotal, pdFaltanEntrega, pdResumen, pdLineaCompacta, pdNuevoPedido y
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
@@ -37,9 +37,9 @@
 //     {from, nombrePerfil, telefono, nombre, codigo, motivo}, donde `motivo` es lo que escribió
 //     el cliente (lo pide `avisos.js`) y la razón interna va en `ruta`. `resultado` ∈ cuadra |
 //     no_cuadra | ilegible | sin_cotejo | sin_qr | ya_cotejado.
-//  4. `rsAnotar` escribe en `sd`, y este nodo no escribe en `sd`: el plan pide `anotarReserva:
-//     true` y T7b llama `rsAnotar(sd, from, ahoraMs)` cuando `aviso.tipo === 'reserva'`. SIN
-//     ESE LLAMADO EL TOPE DE RESERVAS POR DÍA NO FUNCIONA.
+//  4. `rsAnotar` escribe en el contador de reservas, y este nodo no escribe: `Armar mensajes` llama
+//     `rsAnotar` (sobre la copia del bloque del telefono, PR-4b) cuando el aviso de la reserva SALIO. SIN
+//     ESE LLAMADO EL TOPE DE RESERVAS POR DÍA NO FUNCIONA. Aqui `sd` es la vista `vmReservasSd(ses, from)` del bloque, solo para leer.
 //  5. `botones` = {id, title}. Botón con enlace = {tipo: 'enlace', cuerpo, botones: [{id: '',
 //     title: 'Escribir al local'}], url} (url = enlace al número de recepción).
 //  6. `accion: 'boton'` con `boton: null` = mostrar el paso actual (botón viejo, «sí» suelto,
@@ -119,8 +119,8 @@ const ahora = Number(t.ahoraMs) || Date.now();
 // El ancla de las claves estables (B0): el `ultimoMensajeMs` del estado LEIDO que fija `Decidir turno`. Sin ancla (un
 // doble de prueba, o sin estado previo) se usa `ahora` y la clave deja de ser estable.
 const ancla = Number(d.anclaMs) > 0 ? Number(d.anclaMs) : ahora;
-const sd = vmSd(); // el RESIDUO de PR-4b (tope de reservas por dia); el estado y los pedidos vienen del servidor
 const ses = vmSes(t.from, ahora);
+const sd = vmReservasSd(ses, t.from); // las reservas del dia de ESTE telefono: vienen del bloque del servidor (PR-4b), no de la memoria de n8n
 const en = estadoDe(d.estado);
 const errores = Array.isArray(d.errores) ? d.errores.slice() : [];
 const monedaTxt = /^(bob|bs\.?)?$/i.test(String(cfg.moneda || '').trim()) ? 'Bs' : String(cfg.moneda).trim();

@@ -1061,7 +1061,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@nodos/armar-avisos.js"
+        "jsCode": "@@todo+sesion:nodos/armar-avisos.js"
       },
       "notes": "Primera etapa de envío: lo que va AL RESTAURANTE. Siempre emite al menos un ítem (`sinAviso: true` si no hay nada que avisar)."
     },
@@ -1098,6 +1098,89 @@
         },
         "options": {}
       }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ ($json.cupos || {}).numero || $json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(($json.cupos || {}).cuerpo || {}) }}",
+        "options": {
+          "timeout": 4000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "consumir-cupos",
+      "name": "Consumir cupos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6200,
+        -100
+      ],
+      "notes": "PR-4b. Consume en el SERVIDOR los cupos de aviso del turno (avisos del día del comercio y, por hora y por teléfono, derivaciones o pedidos): UNA sola llamada por turno (`executeOnce`; el cuerpo lo arma `Armar avisos` en su primer ítem), en un espacio NUEVO por turno (`vmc-<ejecución>`; `vmcp-<ejecución>` en la prueba) con versionLeida 0 y estado null: NO toca la versión del estado de la conversación. Un 5xx o un timeout se reintenta UNA vez con el MISMO idCompromiso (`repetido` cuenta como concedido); sin `neverError`. Cuelga de la salida verdadera de `¿Hay avisos?`, MÁS ARRIBA que `¿Cupo concedido?` para que corra primero (`executionOrder` v1). Si el servidor falla, el aviso sale igual (fail-open) con el tope LOCAL de caída. Solo `cupo_negado` impide los avisos; si ningún aviso es aceptado por Meta, `Confirmar envío` devuelve el cupo (`asentar`).",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500,
+      "executeOnce": true
+    },
+    {
+      "id": "cupo-concedido",
+      "name": "¿Cupo concedido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        6200,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { const j = $('Consumir cupos').first().json; let b = j.body; if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { b = null; } } return !(Number(j.statusCode) === 200 && b && b.resultado === 'cupo_negado'); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "PR-4b. Niega SOLO ante `cupo_negado` (agotado, sin tope o datos inválidos): sin cupo no sale ningún aviso y el cliente lee la frase honesta con «Escribir al local» (un mensaje, como siempre). Cualquier otra respuesta (5xx, timeout, forma rara) deja pasar (fail-open). Pasa los ítems de `Armar avisos` tal cual a los envíos."
     },
     {
       "id": "avisar-si",
@@ -1863,7 +1946,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const a = $('Armar mensajes').first().json; const r = a.replan || {}; const c = ((($json || {}).body || {}).conversacion) || {}; const g = (c.estado && typeof c.estado === 'object' && !Array.isArray(c.estado)) ? c.estado : null; const base = (g && g.estado && typeof g.estado === 'object' && !Array.isArray(g.estado)) ? g.estado : null; const mio = !!(base && base.pedido && typeof base.pedido === 'object' && r.pedidoId && String(base.pedido.pedidoId) === String(r.pedidoId)); const estado = (base && !mio) ? Object.assign({}, base, base.paso === 'esperando_comprobante' ? {} : { paso: 'menu' }) : (r.estadoMenu || null); const pedidos = Object.assign({}, (g && g.pedidos && typeof g.pedidos === 'object' && !Array.isArray(g.pedidos)) ? g.pedidos : {}, r.pedidos || {}); const bytes = (t) => encodeURIComponent(String(t).replace(/[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF])|(?<![\\uD800-\\uDBFF])[\\uDC00-\\uDFFF]/g, '\\uFFFD')).replace(/%[0-9A-F]{2}/g, 'x').length; const activo = (estado && estado.pedido && typeof estado.pedido === 'object') ? String(estado.pedido.pedidoId || '') : ''; const tope = Number(r.maxBytes) > 0 ? Number(r.maxBytes) : 15000; const orden = Object.keys(pedidos).filter((k) => !(r.pedidos && Object.prototype.hasOwnProperty.call(r.pedidos, k))).sort((x, y) => (Number(x === activo) - Number(y === activo)) || (Number((pedidos[x] || {}).guardadoMs || 0) - Number((pedidos[y] || {}).guardadoMs || 0))); const arma = () => ({ v: 1, estado: estado, pedidos: pedidos }); for (const k of orden) { if (bytes(JSON.stringify(arma())) <= tope) break; delete pedidos[k]; } return JSON.stringify({ telefono: r.telefono, sesion: { v: 1, accion: 'comprometer', espacio: r.espacio, canal: 'wa', ejecucion: r.ejecucion, idCompromiso: r.idCompromiso, versionLeida: Number(c.version), estado: arma(), venceEnMin: Object.keys(pedidos).length > 0 ? 4320 : (estado && estado.paso === 'esperando_comprobante' ? 1440 : 60) } }); })() }}",
+        "jsonBody": "={{ (() => { const a = $('Armar mensajes').first().json; const r = a.replan || {}; const c = ((($json || {}).body || {}).conversacion) || {}; const g = (c.estado && typeof c.estado === 'object' && !Array.isArray(c.estado)) ? c.estado : null; const base = (g && g.estado && typeof g.estado === 'object' && !Array.isArray(g.estado)) ? g.estado : null; const mio = !!(base && base.pedido && typeof base.pedido === 'object' && r.pedidoId && String(base.pedido.pedidoId) === String(r.pedidoId)); const estado = (base && !mio) ? Object.assign({}, base, base.paso === 'esperando_comprobante' ? {} : { paso: 'menu' }) : (r.estadoMenu || null); const pedidos = Object.assign({}, (g && g.pedidos && typeof g.pedidos === 'object' && !Array.isArray(g.pedidos)) ? g.pedidos : {}, r.pedidos || {}); const bytes = (t) => encodeURIComponent(String(t).replace(/[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF])|(?<![\\uD800-\\uDBFF])[\\uDC00-\\uDFFF]/g, '\\uFFFD')).replace(/%[0-9A-F]{2}/g, 'x').length; const activo = (estado && estado.pedido && typeof estado.pedido === 'object') ? String(estado.pedido.pedidoId || '') : ''; const tope = Number(r.maxBytes) > 0 ? Number(r.maxBytes) : 15000; const orden = Object.keys(pedidos).filter((k) => !(r.pedidos && Object.prototype.hasOwnProperty.call(r.pedidos, k))).sort((x, y) => (Number(x === activo) - Number(y === activo)) || (Number((pedidos[x] || {}).guardadoMs || 0) - Number((pedidos[y] || {}).guardadoMs || 0))); const gr = (g && g.reservas && typeof g.reservas === 'object' && !Array.isArray(g.reservas) && typeof g.reservas.dia === 'string' && Number.isInteger(g.reservas.n)) ? g.reservas : null; const reservas = r.reservaSuma === true ? { dia: r.reservaHoy, n: ((gr && gr.dia === r.reservaHoy) ? gr.n : 0) + 1 } : ((gr && gr.dia === r.reservaHoy) ? gr : null); const arma = () => (reservas ? { v: 1, estado: estado, pedidos: pedidos, reservas: reservas } : { v: 1, estado: estado, pedidos: pedidos }); for (const k of orden) { if (bytes(JSON.stringify(arma())) <= tope) break; delete pedidos[k]; } return JSON.stringify({ telefono: r.telefono, sesion: { v: 1, accion: 'comprometer', espacio: r.espacio, canal: 'wa', ejecucion: r.ejecucion, idCompromiso: r.idCompromiso, versionLeida: Number(c.version), estado: arma(), venceEnMin: Object.keys(pedidos).length > 0 ? 4320 : (estado && estado.paso === 'esperando_comprobante' ? 1440 : 60) } }); })() }}",
         "options": {
           "timeout": 5000,
           "response": {
@@ -1888,7 +1971,7 @@
         8360,
         160
       ],
-      "notes": "Replanificación tras un conflicto de versión CON hecho externo: se compromete sobre la versión GANADORA (versionLeida = la del ganador) el bloque del ganador con el pedido de este turno unido por pedidoId (gana el nuestro) y el paso en `menu` (salvo que el ganador espere un comprobante). Mismo idCompromiso en el reintento de n8n; un solo intento: si también falla, «Soltar mensajes» responde el genérico con el botón (nunca silencio). Si el estado ganador espera el comprobante de ESTE mismo pedido y este turno ya lo cerró (ráfaga foto + texto), el paso queda en `menu`. El cuerpo se recorta por bytes (los pedidos más antiguos primero y el que espera el comprobante el último; el tope sale de `SS_CONFIG.maxBytes`) y `venceEnMin` depende de si hay pedidos.",
+      "notes": "Replanificación tras un conflicto de versión CON hecho externo: se compromete sobre la versión GANADORA (versionLeida = la del ganador) el bloque del ganador con el pedido de este turno unido por pedidoId (gana el nuestro) y el paso en `menu` (salvo que el ganador espere un comprobante). Mismo idCompromiso en el reintento de n8n; un solo intento: si también falla, «Soltar mensajes» responde el genérico con el botón (nunca silencio). Si el estado ganador espera el comprobante de ESTE mismo pedido y este turno ya lo cerró (ráfaga foto + texto), el paso queda en `menu`. El cuerpo se recorta por bytes (los pedidos más antiguos primero y el que espera el comprobante el último; el tope sale de `SS_CONFIG.maxBytes`) y `venceEnMin` depende de si hay pedidos. PR-4b: conserva las reservas del día del ganador (`reservas: {dia, n}`) y suma la de este turno si la anotó (`reservaSuma`).",
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 500
@@ -2364,7 +2447,12 @@
       "main": [
         [
           {
-            "node": "¿Avisar de verdad?",
+            "node": "Consumir cupos",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Cupo concedido?",
             "type": "main",
             "index": 0
           }
@@ -2669,6 +2757,24 @@
         [
           {
             "node": "Soltar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Cupo concedido?": {
+      "main": [
+        [
+          {
+            "node": "¿Avisar de verdad?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Armar mensajes",
             "type": "main",
             "index": 0
           }

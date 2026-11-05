@@ -8,6 +8,7 @@
 //     idCompromiso por paso); si ese también falla o choca, sale el genérico con el botón: NUNCA silencio con un hecho externo;
 //   - el compromiso falló (5xx o timeout, ya reintentado con el MISMO idCompromiso), no hay sesión o el bloque no cabe: sale SOLO el genérico con el botón a recepción, sin cierre. REEMPLAZA la respuesta (0 mensajes más).
 // Una puerta cerrada o sin respuesta (uso extendido, comercio no operativo, sin estado) no compromete nada y nunca cae al genérico.
+// PR-4b: el primer ítem lleva `asentar` (el cuerpo que devuelve el cupo de aviso si ningún aviso salió; lo manda «Confirmar envío»). Si la ejecución CEDE (conflicto sin hecho externo) no sale ningún ítem y el cupo, si se consumió, queda consumido (lado conservador).
 // Si el estado salió de la memoria vieja de n8n (lectura de respaldo) y quedó comprometido, se borra de allí; pasado el retiro (30/11/2026), se borran los mapas viejos.
 const a = vmPrimero('Armar mensajes');
 if (!a || a.turno !== true) return [];
@@ -57,5 +58,5 @@ if (!bien && a.avisoFalla === true) {
 const estado = { replanificado: replanificado, modo: a.modo, resultado: a.comprometer === true ? r.resultado : 'sin_compromiso', comprometido: comprometido, version: comprometido ? r.version : null };
 const items = (Array.isArray(salida) && salida.length ? salida : [{ sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: a.from, cierre: null, errores: [] }])
   .map((x) => ({ json: Object.assign({}, x) }));
-Object.assign(items[0].json, { sesion: estado, comprometido: comprometido, versionComprometida: comprometido ? r.version : 0, previo: bien ? a.previo : null, bloque: comprometido ? bloqueComprometido : null, numero: a.numero });
+Object.assign(items[0].json, { sesion: estado, comprometido: comprometido, versionComprometida: comprometido ? r.version : 0, previo: bien ? a.previo : null, bloque: comprometido ? bloqueComprometido : null, numero: a.numero, asentar: a.asentar || null });
 return items;

@@ -1800,7 +1800,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     expect(cuerpos(a.t)[0]).toContain('pasé tu pedido');
     const b = uno();
     expect(b.t.avisos).toHaveLength(0);
-    expect((b.t.resumen as J)['resumen'].errores.join(' ')).toMatch(/tope_diario_de_avisos/);
+    expect((b.t.resumen as J)['resumen'].errores.join(' ')).toMatch(/cupo_negado: avisos: agotado/); // PR-4b: lo niega el servidor (todo o nada)
     expect(cuerpos(b.t).join('\n')).toContain('No pude pasarle tu pedido a nuestro equipo');
     expect(cuerpos(b.t).join('\n')).not.toMatch(/ya (lo |la )?pas[eé]|pasé tu pedido/i);
     // Negativo: con el tope por omisión (150), el segundo pedido sí avisa.
@@ -2908,16 +2908,19 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(nombres(PRUEBA), n).toContain(n);
       expect(nombres(PLANTILLA), n).toContain(n);
     }
-    expect([destinos(QTACO, '¿Hay avisos?', 0), destinos(QTACO, '¿Hay avisos?', 1)]).toEqual([['Enviar aviso'], ['Armar mensajes']]);
-    expect([destinos(PRUEBA, '¿Hay avisos?', 0), destinos(PRUEBA, '¿Hay avisos?', 1)]).toEqual([['¿Avisar de verdad?'], ['Armar mensajes']]);
+    // PR-4b: de la salida verdadera de `¿Hay avisos?` cuelgan `Consumir cupos` y `¿Cupo concedido?`; los avisos solo salen por el sí de `¿Cupo concedido?` (el no va a `Armar mensajes`)
+    expect([destinos(QTACO, '¿Hay avisos?', 0), destinos(QTACO, '¿Hay avisos?', 1)]).toEqual([['Consumir cupos', '¿Cupo concedido?'], ['Armar mensajes']]);
+    expect([destinos(QTACO, '¿Cupo concedido?', 0), destinos(QTACO, '¿Cupo concedido?', 1)]).toEqual([['Enviar aviso'], ['Armar mensajes']]);
+    expect([destinos(PRUEBA, '¿Hay avisos?', 0), destinos(PRUEBA, '¿Hay avisos?', 1)]).toEqual([['Consumir cupos', '¿Cupo concedido?'], ['Armar mensajes']]);
+    expect([destinos(PRUEBA, '¿Cupo concedido?', 0), destinos(PRUEBA, '¿Cupo concedido?', 1)]).toEqual([['¿Avisar de verdad?'], ['Armar mensajes']]);
     // Ninguna conexión de producción apunta a un nodo que no existe.
     const vivos = new Set(nombres(QTACO));
     for (const [de, c] of Object.entries(QTACO.connections)) {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(69); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 9 del estado en el servidor (PR-4a): el tope de producción es 69 (`construir.mjs` lo impone)
-    expect(PRUEBA.nodes).toHaveLength(65);
+    expect(QTACO.nodes).toHaveLength(71); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 9 del estado en el servidor (PR-4a) + los 2 de los cupos (PR-4b, PENDIENTE DE APROBACIÓN DE ANDRES): el tope de producción es 71 (`construir.mjs` lo impone)
+    expect(PRUEBA.nodes).toHaveLength(67);
   });
 
   it('L2: en producción un `wamid.SIMULADO-…` NO cuenta como aviso salido: el cliente no lee «pasé tu pedido» y el cierre no lo toma de referencia', () => {
@@ -4758,9 +4761,9 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
     expect(sim.qr.mensajes[0]?.payload['image']?.link).toBe(URL_SIMULADO); // es el QR de prueba, no el plan B que también da 3
   });
 
-  it('el JSON de Q\'Taco sigue en 69 nodos o menos (50 más los 9 del guardado de medios, «Guardar comprobante» y los 9 del estado en el servidor) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
+  it('el JSON de Q\'Taco sigue en 71 nodos o menos (50 más los 9 del guardado de medios, «Guardar comprobante», los 9 del estado en el servidor y los 2 de los cupos) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
     // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61, y desde el contrato v2 del 30/10, 59: los 9 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md).
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(69); // tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026)
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(71); // tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026) → 71 (PR-4b: PENDIENTE DE APROBACIÓN DE ANDRES)
     const base = configBase(QTACO);
     expect(base['cobroSimuladoActivo']).toBe(true);
     expect(base['qrSimuladoUrl']).toBe(URL_SIMULADO);
@@ -6315,14 +6318,19 @@ describe('PR-4a: el estado, los pedidos y los vistos viven en el servidor, no en
     expect(Object.keys(sdVm(r.w.mundo)).every((k) => ['av', 'transferencias', 'avisosPedido', 'reservasDelDia'].includes(k)), JSON.stringify(Object.keys(sdVm(r.w.mundo)))).toBe(true);
   });
 
-  it('el residuo declarado de PR-4b SIGUE en los datos estáticos (av.dia, av.ventana, transferencias, avisosPedido, reservasDelDia): aquí no se mueve', () => {
+  it('PR-4b: de los datos estáticos SOLO queda `av.ventana` (estado del comercio, contrato §10.4); el contador diario, las marcas por hora y las reservas del día ya no están (los cupos los cuenta el servidor)', () => {
     const r = armarPedido({ cobro: false, ventana: 5 });
     const t = confirmarPedido(r);
     expect(t.avisos.length).toBeGreaterThan(0);
     const sd = sdVm(r.w.mundo);
-    expect(sd['av']['dia']['n']).toBeGreaterThan(0);
     expect(Object.keys(sd['av']['ventana']).sort()).toEqual([AV1, AV2].sort());
-    expect(Object.keys(sd['avisosPedido'])).toEqual([CLIENTE]);
+    expect(sd['av']['dia']).toBeUndefined();
+    expect(sd['avisosPedido']).toBeUndefined();
+    expect(sd['transferencias']).toBeUndefined();
+    expect(sd['reservasDelDia']).toBeUndefined();
+    const srv = r.w.sesion.servidor;
+    expect(srv.usados(PHONE_ID, 'avisos', 'comercio', null, 'dia')).toBe(t.avisos.length);
+    expect(srv.usados(PHONE_ID, 'pedidos', 'contacto', CLIENTE, 'hora')).toBe(1);
   });
 
   it('los repetidos los marca el servidor al LEER (el `leer` lleva el idMensaje): el mismo wamid dos veces responde una; un id nuevo pasa', () => {
@@ -6543,6 +6551,7 @@ describe('PR-4a: la variante de PRUEBA nunca toca los documentos de producción 
     const w = crear({ flujo: PRUEBA, config: { numeroEnsayo: PRUEBA_TEL, telefonosDePrueba: `${AV2}` } });
     const t = w.mundo.turno(cuerpoDePrueba(hola(), PRUEBA_TEL));
     expect(w.sesion.servidor.llamadas).toHaveLength(0);
+    expect(w.sesion.consumos.every((c) => c['sesion'] === undefined)).toBe(true); // PR-4b: «Consumir cupos» manda un cuerpo vacío (sin teléfono ni espacio): nunca consume el cupo de un número ajeno a la prueba
     expect(t.ejecutados.has('Sin estado')).toBe(true);
     expect(t.ejecutados.has('Decidir turno')).toBe(false);
     // y sin la lista, ninguno
@@ -6557,7 +6566,9 @@ describe('PR-4a: la variante de PRUEBA nunca toca los documentos de producción 
       w.mundo.turno(cuerpoDePrueba(hola(), PRUEBA_TEL, extra));
     }
     expect(w.sesion.servidor.llamadas.length).toBeGreaterThan(0);
-    for (const l of w.sesion.servidor.llamadas) expect((l['sesion'] as J)['espacio']).toBe(ESPACIO_PRUEBA);
+    // PR-4b: los cupos de la prueba van a `vmcp-<ejecución>` (nunca a `vmc-`, el de producción)
+    for (const l of w.sesion.servidor.llamadas) expect(String((l['sesion'] as J)['espacio'])).toMatch(/^(venta-minima-prueba|vmcp-.+)$/);
+    expect(w.sesion.servidor.llamadas.some((l) => /^vmc-/.test(String((l['sesion'] as J)['espacio'])))).toBe(false);
     expect(PRUEBA.nodes.some((n) => n.name === 'Entrada de prueba')).toBe(true);
     expect(QTACO.nodes.some((n) => n.name === 'Entrada de prueba')).toBe(false);
   });

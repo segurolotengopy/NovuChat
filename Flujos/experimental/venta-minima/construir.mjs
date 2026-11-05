@@ -84,7 +84,8 @@ const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 // +1: «Guardar comprobante» (pedido de Andres del 26/10/2026: ningún comprobante se pierde; ver DISENO.md).
 // +9: el estado de la conversación y los vistos en el servidor (PR-4a; tope de Q'Taco 60 → 69, aprobado por Andres el 04/11/2026): «¿Hay estado?», «Sin estado», «¿Comprometer turno?», «Comprometer turno»,
 // «¿Replanificar compromiso?», «Comprometer turno (2.º intento)», «Soltar mensajes», «Confirmar envío» y «Comprometer compensación» (9: se quitó «¿Compensar entrega?»; queda 0 de margen). Ver DISENO.md y docs/versiones-por-cliente.md.
-const TOPE_DE_NODOS = 69;
+// +2: los CUPOS pasan al servidor (PR-4b; tope de 69 a 71, PENDIENTE DE APROBACIÓN DE ANDRES: la pide la coordinadora por botón): «Consumir cupos» y «¿Cupo concedido?». `asentar` NO lleva nodo (segundo ítem de «Confirmar envío»).
+const TOPE_DE_NODOS = 71;
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,
 // su credencial de cabecera (la de la ingesta), `responseMode: onReceived` y la ruta como marcador (una URL de capacidad que
@@ -421,7 +422,7 @@ function guardiasDeEntrega(flujo) {
 //   - la variante de PRUEBA nunca toca los documentos de producción: «Traer configuración» usa el espacio de prueba solo para `telefonosDePrueba`, «Carga de entrada» solo da `modoPrueba` si corrió «Entrada de prueba»;
 //   - los avisos al local y los envíos nunca cuelgan de otro nodo que «Soltar mensajes» (nada sale antes del compromiso del estado).
 // =====================================================================================================
-const NODOS_DE_SESION = ['Comprometer turno', 'Comprometer turno (2.º intento)', 'Comprometer compensación'];
+const NODOS_DE_SESION = ['Comprometer turno', 'Comprometer turno (2.º intento)', 'Comprometer compensación', 'Consumir cupos'];
 function guardiasDeSesion(entrada, flujo) {
   const h = [];
   const nodos = flujo.nodes || [];
@@ -429,7 +430,7 @@ function guardiasDeSesion(entrada, flujo) {
   const conex = flujo.connections || {};
   const destinosDe = (nombre) => [...new Set(((conex[nombre] || {}).main || []).flat().map((c) => c && c.node))];
   const parametros = (n) => n.parameters || {};
-  for (const nombre of ['¿Hay estado?', 'Sin estado', '¿Comprometer turno?', 'Comprometer turno', '¿Replanificar compromiso?', 'Comprometer turno (2.º intento)', 'Soltar mensajes', 'Confirmar envío', 'Comprometer compensación']) {
+  for (const nombre of ['¿Hay estado?', 'Sin estado', '¿Comprometer turno?', 'Comprometer turno', '¿Replanificar compromiso?', 'Comprometer turno (2.º intento)', 'Soltar mensajes', 'Confirmar envío', 'Comprometer compensación', 'Consumir cupos', '¿Cupo concedido?']) {
     if (!porNombre.has(nombre)) h.push(`sesión: falta el nodo «${nombre}» (el estado de la conversación vive en el servidor)`);
   }
   if (destinosDe('Armar mensajes').join('|') !== '¿Comprometer turno?') h.push('sesión: «Armar mensajes» tiene que colgar SOLO de «¿Comprometer turno?»: el estado se compromete antes de enviar');
@@ -438,6 +439,26 @@ function guardiasDeSesion(entrada, flujo) {
     const hijos = ((a && a.main) || []).flat().map((x) => x && x.node);
     if (desde !== 'Soltar mensajes' && hijos.includes('¿Enviar de verdad?')) h.push(`sesión: «${desde}» conecta con «¿Enviar de verdad?»: solo «Soltar mensajes» puede`);
     if (!['Soltar mensajes', 'Armar mensajes'].includes(desde) && hijos.includes('¿Registrar cierre?')) h.push(`sesión: «${desde}» conecta con «¿Registrar cierre?»: solo «Soltar mensajes» puede`);
+  }
+  // PR-4b, los cupos de aviso: `Consumir cupos` y `¿Cupo concedido?` cuelgan de la salida VERDADERA de `¿Hay avisos?`, con `Consumir cupos` MÁS ARRIBA en el lienzo (con executionOrder v1 corre primero) y de una sola llamada por turno
+  // (`executeOnce`); NINGÚN aviso sale sin pasar por `¿Cupo concedido?` (el único padre de `¿Avisar de verdad?` / `Enviar aviso`); la salida falsa va a `Armar mensajes` (ningún aviso, un solo mensaje al cliente).
+  const consumir = porNombre.get('Consumir cupos');
+  const concedido = porNombre.get('¿Cupo concedido?');
+  const hay = ((conex['¿Hay avisos?'] || {}).main || [])[0] || [];
+  if (consumir && concedido) {
+    if (!hay.some((c) => c && c.node === 'Consumir cupos') || !hay.some((c) => c && c.node === '¿Cupo concedido?')) h.push('cupos: «Consumir cupos» y «¿Cupo concedido?» tienen que colgar de la salida verdadera de «¿Hay avisos?»');
+    const yC = (consumir.position || [])[1];
+    const yI = (concedido.position || [])[1];
+    if (typeof yC !== 'number' || typeof yI !== 'number' || !(yC < yI)) h.push('cupos: «Consumir cupos» tiene que estar por ENCIMA de «¿Cupo concedido?» en el lienzo (con executionOrder v1 corre primero)');
+    if (consumir.executeOnce !== true) h.push('cupos: «Consumir cupos» tiene que ser executeOnce (una llamada por turno, no una por aviso)');
+    if (destinosDe('Consumir cupos').length) h.push('cupos: «Consumir cupos» no tiene hijos (lo lee «¿Cupo concedido?» por nombre)');
+    const salidas = ((conex['¿Cupo concedido?'] || {}).main || []);
+    const aEnvio = (salidas[0] || []).map((c) => c && c.node);
+    if (!(aEnvio.includes('¿Avisar de verdad?') || aEnvio.includes('Enviar aviso')) || ((salidas[1] || []).map((c) => c && c.node).join('|') !== 'Armar mensajes')) h.push('cupos: «¿Cupo concedido?» tiene que ir a los avisos por el sí y a «Armar mensajes» por el no');
+    for (const [desde, a] of Object.entries(conex)) {
+      const hijos = ((a && a.main) || []).flat().map((x) => x && x.node);
+      if ((hijos.includes('Enviar aviso') || hijos.includes('¿Avisar de verdad?')) && desde !== '¿Cupo concedido?' && !(desde === '¿Avisar de verdad?' && hijos.includes('Enviar aviso'))) h.push(`cupos: «${desde}» conecta con los avisos al local: solo «¿Cupo concedido?» puede (ningún aviso sale sin consumir el cupo)`);
+    }
   }
   for (const nombre of NODOS_DE_SESION) {
     const n = porNombre.get(nombre);
