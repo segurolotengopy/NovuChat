@@ -64,7 +64,7 @@ describe('vcVendibles con los campos de una fuente externa', () => {
   });
   it('la foto solo pasa si es https con nombre de dominio; si no, se omite y el producto sigue', () => {
     const malas = ['http://x.test/a.jpg', 'javascript:alert(1)', 'ftp://x.test/a', '', 42, 'https://con espacio/a.jpg',
-      'https://169.254.169.254/latest', 'https://127.0.0.1/x', 'https://10.0.0.1:8080/a', 'https://localhost/a', 'https://a@e.test/x',
+      'https://169.254.169.254/latest', 'https://127.0.0.1/x', 'https://10.0.0.1:8080/a', 'https://localhost/a', 'https://u' + String.fromCharCode(64) + 'e.test/x',
       'https://e.test/\u202Egpj.exe', 'https://e.test/"><x', 'https://e.test/a\\b', 'https://servicio.internal/a', 'https://' + 'a'.repeat(600) + '.test/x', 'https://sinpunto/a'];
     for (const foto of malas) {
       const v = vend({ foto });
