@@ -279,7 +279,8 @@ describe('el pedido que llega de la página conserva su `cat_…` como pedidoId 
   const CAT2 = 'cat_k1a2b3c5_0a1b2c3d';
   const web = (extra: J = {}) => ({ headers: cabeceras(), body: cuerpo({ pedidoId: CAT, ...extra }) });
   const pedidoDe = (w: ReturnType<typeof crear>): J => (estadoDe(w)['pedido'] ?? {}) as J;
-  const guardados = (w: ReturnType<typeof crear>): J[] => Object.values((((w.mundo.sd['ventaMinima'] as J | undefined)?.['pedidos']) ?? {}) as J);
+  // (PR-4a: los pedidos del teléfono viven en el servidor, dentro de su bloque)
+  const guardados = (w: ReturnType<typeof crear>): J[] => Object.values(w.sesion.pedidos(CLIENTE));
   const qrAbiertos = (t: { llamadas: { ingesta: J[] } }): J[] => t.llamadas.ingesta.filter((x) => x['evento'] === 'qr_enviado');
   const confirmar = (w: ReturnType<typeof crear>, t: ReturnType<typeof carrito>) => turno(w, boton(idDeBoton(t, 'Confirmar pedido'), 'Confirmar pedido'));
   /** Plan B: sin cobro real, el pedido se registra y se avisa (cierre `registro` con la referencia del pedido). */
@@ -328,9 +329,12 @@ describe('el pedido que llega de la página conserva su `cat_…` como pedidoId 
     const id = idDeBoton(t, 'Confirmar pedido');
     w.envios['Enviar a WhatsApp'] = 'cuerpo vacío';
     w.envios['Enviar respaldo'] = 'cuerpo vacío';
-    expect(() => turno(w, boton(id, 'Confirmar pedido'))).toThrow(/Entrega fallida/);
-    const codigoFallido = String(guardados(w)[0]!['codigo']);
-    expect(guardados(w).map((p) => p['pedidoId'])).toEqual([CAT]);
+    const fallido = w.mundo.turno(entrega(CLIENTE, boton(id, 'Confirmar pedido')), { tolerarFallo: true });
+    expect(fallido.fallo?.mensaje).toMatch(/Entrega fallida/);
+    // PR-4a: la compensación devuelve el bloque entero de antes del turno, también los pedidos; el código del intento fallido es el que el cliente habría leído.
+    expect(guardados(w)).toHaveLength(0);
+    const codigoFallido = /#([0-9A-Z]{4})/.exec(JSON.stringify(fallido.mensajes[0]?.payload ?? {}))?.[1] as string;
+    expect(codigoFallido).toBeDefined();
     w.envios['Enviar a WhatsApp'] = 'acepta';
     w.envios['Enviar respaldo'] = 'acepta';
     const ok = turno(w, boton(id, 'Confirmar pedido'));

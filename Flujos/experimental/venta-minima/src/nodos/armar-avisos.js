@@ -22,7 +22,7 @@
 // el flujo siga hasta `Armar mensajes`. El PRIMER ítem lleva `errores`.
 //
 // MODO PRUEBA: todo va a `telefonoDePrueba`, con el prefijo «[al restaurante]».
-const AA_PLAN = vmPrimero('Plan del turno') || vmPrimero('Uso extendido') || vmPrimero('Comercio no operativo') || {};
+const AA_PLAN = vmPrimero('Plan del turno') || vmPrimero('Uso extendido') || vmPrimero('Comercio no operativo') || vmPrimero('Sin estado') || {};
 const AA_CFG = vmCfg();
 const AA_T = vmPrimero('Interpretar entrada') || {};
 const AA_AHORA = Number(AA_T.ahoraMs) || Date.now();
@@ -38,6 +38,15 @@ const AA_GENERICO_PIE = 'Comprobante enviado por el cliente.';
 const AA_HORA_MS = 60 * 60 * 1000;
 const AA_errores = (Array.isArray(AA_PLAN.errores) ? AA_PLAN.errores : []).slice();
 const AA_sd = vmSd();
+// AVISO YA ENVIADO (PR-4a, I1): si el compromiso del estado falló DESPUÉS de un aviso de pedido o de comprobante, el estado no avanzó y el cliente puede repetir el mismo botón: el aviso de ese
+// pedido no se manda dos veces. `Soltar mensajes` anota `tipo:pedidoId` (el comprobante, `comprobante:pedidoId:medio:resultado`) en `sd.avisosHuerfanos` (residuo de PR-4b) SOLO cuando el compromiso falló; con el estado avanzado no hace falta.
+const AA_YA = [];
+const AA_CLAVES_YA = [];
+function aaYaAvisado(clave) {
+  const m = AA_sd && AA_sd.avisosHuerfanos && typeof AA_sd.avisosHuerfanos === 'object' ? AA_sd.avisosHuerfanos : null;
+  const ms = m && clave && Object.prototype.hasOwnProperty.call(m, clave) ? Number(m[clave]) : NaN;
+  return Number.isFinite(ms) && AA_AHORA - ms < 72 * AA_HORA_MS && AA_AHORA - ms >= 0;
+}
 
 // Lo que sale a la red nunca coincide con la red de palabras prohibidas. Se revisa el texto tal cual y
 // normalizado (sin tildes), y se trata como PREDICADO: solo `true` pasa.
@@ -166,6 +175,16 @@ if (AA_armar) {
       continue;
     }
     const datos = aaDatos(a);
+    // LA CLAVE se calcula UNA sola vez, aquí, y viaja en cada ítem (`claveAviso`): `Armar mensajes` y `Soltar mensajes` usan esta misma, no la recalculan (con el cobro simulado el plan trae `mediaId: ''`
+    // y el medio sale de la entrada del turno: dos cálculos distintos nunca coincidían).
+    const clave = (tipo === 'pedido' || tipo === 'comprobante')
+      ? vmClaveAviso(tipo, datos.pedidoId || '', datos.mediaId || (tipo === 'comprobante' ? AA_T.mediaId : '') || '', datos.resultado || '') : '';
+    if (clave && aaYaAvisado(clave)) {
+      AA_errores.push('aviso_ya_enviado: ' + tipo + ' del pedido ' + String(datos.pedidoId).slice(0, 60));
+      AA_YA.push(tipo);
+      AA_CLAVES_YA.push(clave);
+      continue;
+    }
     // Un comprobante ya cotejado no se vuelve a avisar (el cliente solo lee «Ya tengo el comprobante»).
     if (tipo === 'comprobante' && datos.resultado === 'ya_cotejado') { AA_errores.push('sin_aviso_ya_cotejado'); continue; }
     let crudo = null;
@@ -196,7 +215,7 @@ if (AA_armar) {
         : (payload.type === 'image' ? 'imagen' : (it.esPlantilla === true ? 'plantilla' : 'detalle'));
       AA_items.push({
         para: numero, rol: String(it.rol || ''), payload: payload, respaldo: respaldo, esPlantilla: it.esPlantilla === true,
-        clase: clase, sinAviso: false, tipoAviso: tipo, phoneNumberId: AA_NUMERO_ID,
+        clase: clase, sinAviso: false, tipoAviso: tipo, claveAviso: clave, phoneNumberId: AA_NUMERO_ID,
         waGraphVersion: AA_CFG.waGraphVersion || 'v26.0', from: AA_FROM,
       });
     }
@@ -207,8 +226,10 @@ if (!AA_items.length) {
   return [{ json: {
     para: '', rol: '', payload: null, respaldo: null, esPlantilla: false, sinAviso: true, tipoAviso: '',
     phoneNumberId: AA_NUMERO_ID,
-    waGraphVersion: AA_CFG.waGraphVersion || 'v26.0', from: AA_FROM, errores: AA_errores,
+    waGraphVersion: AA_CFG.waGraphVersion || 'v26.0', from: AA_FROM, errores: AA_errores, yaAvisado: AA_YA, clavesYa: AA_CLAVES_YA,
   } }];
 }
 AA_items[0].errores = AA_errores;
+AA_items[0].yaAvisado = AA_YA;
+AA_items[0].clavesYa = AA_CLAVES_YA;
 return AA_items.map((j) => ({ json: j }));

@@ -55,6 +55,8 @@ function vmRecorte(t, max){ const s = String(t == null ? '' : t); return s.lengt
 function vmTextoDeGemini(j){ if (!j || j.error) return ''; const c = j.candidates && j.candidates[0]; return c && c.content && c.content.parts ? c.content.parts.map(function(p){ return p.text || ''; }).join('\n') : ''; }
 function vmJsonDeGemini(j){ const t = vmTextoDeGemini(j).trim(); if (!t) return null; try { const o = JSON.parse(t); return o && typeof o === 'object' && !Array.isArray(o) ? o : null; } catch (e) { return null; } }
 function vmSd(){ try { const g = $getWorkflowStaticData('global'); if (!g.ventaMinima) g.ventaMinima = {}; return g.ventaMinima; } catch (e) { return null; } }
+// PR-4a: el estado y los pedidos de un teléfono vienen de la sesión del servidor (vmSes); esta suite los guarda donde siempre (los mapas de ventaMinima), que es lo que hace Armar mensajes al comprometer.
+function vmSes(from, ahora){ const sd = vmSd(); sd.estados = sd.estados || {}; sd.pedidos = sd.pedidos || {}; return sd; }
 function vmEstadoBase(){ return { paso: 'inicio', ultimoMensajeMs: 0 }; }
 function vmLeerEstado(sd, from, ahora){ const e = sd && sd.estados && sd.estados[from]; if (!e) return vmEstadoBase(); const vida = e.paso === 'esperando_comprobante' ? 86400000 : 3600000; return ahora - e.ultimoMensajeMs < vida ? JSON.parse(JSON.stringify(e)) : vmEstadoBase(); }
 function vmIdDeBoton(){ return Array.prototype.slice.call(arguments).join('|'); }
