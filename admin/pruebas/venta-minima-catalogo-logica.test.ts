@@ -21,6 +21,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { codigoDe, configBase, ejecutar, type Flujo, type J, type Referencias } from './lib/flujo';
+import { comprometer, crearSesion, leerSesion, type SesionDeMentira } from './lib/venta-minima-sesion';
 
 const CARPETA_VM = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima');
 const QTACO = JSON.parse(readFileSync(join(CARPETA_VM, 'venta-minima.qtaco.json'), 'utf8')) as Flujo;
@@ -75,14 +76,17 @@ function relojFijo(ms: number): unknown {
   };
 }
 
-interface Mundo { global: J; ahora: number; config: J }
+interface Mundo { global: J; ahora: number; config: J; sesion: SesionDeMentira; n: number }
 function crear(config: J = {}): Mundo {
-  return { global: {}, ahora: AHORA, config: { phoneNumberIdEsperado: PHONE_ID, respaldoNumeroRecepcion: REC, horario: HORARIO_TODOS, ...config } };
+  const m: Mundo = { global: {}, ahora: AHORA, config: { phoneNumberIdEsperado: PHONE_ID, respaldoNumeroRecepcion: REC, horario: HORARIO_TODOS, ...config }, sesion: undefined as unknown as SesionDeMentira, n: 0 };
+  m.sesion = crearSesion({ pid: PHONE_ID, ahora: () => m.ahora });
+  return m;
 }
-const estadoDe = (m: Mundo): J => (m.global['ventaMinima'] as J | undefined)?.['estados']?.[CLIENTE] ?? {};
+// El estado de la conversación vive en el servidor (PR-4a).
+const estadoDe = (m: Mundo): J => m.sesion.estado(CLIENTE);
 
 function nodo(m: Mundo, nombre: string, entradas: J[], refs: Referencias): J[] {
-  return ejecutar(codigoDe(QTACO, nombre), entradas, refs, { $getWorkflowStaticData: () => m.global, Date: relojFijo(m.ahora) });
+  return ejecutar(codigoDe(QTACO, nombre), entradas, refs, { $getWorkflowStaticData: () => m.global, Date: relojFijo(m.ahora), $execution: { id: `e${m.n}` } });
 }
 
 interface Turno {
@@ -122,6 +126,7 @@ function webhookDeCarrito(m: Mundo, cuerpo: J = {}, cab: J = {}): J {
 /** Un turno entero, de la entrada al plan y a `Armar mensajes` (que guarda el estado). El reloj avanza un minuto por turno. */
 function turno(m: Mundo, entrada: { mensaje: J; wamid?: string; phoneId?: string } | { carrito: J }, panelResp: J = respuesta()): Turno {
   m.ahora += MIN;
+  m.n += 1;
   const refs: Referencias = {};
   const vacio: Turno = { parada: null, carga: [], interpretado: null, decision: null, plan: null, envio: [], textos: [] };
   let carga: J[];
@@ -136,8 +141,11 @@ function turno(m: Mundo, entrada: { mensaje: J; wamid?: string; phoneId?: string
   if (!carga.length) return { ...vacio, parada: 'Carga de entrada' };
   refs['Carga de entrada'] = carga[0]!;
   refs['Config base'] = { ...configBase(QTACO), ...m.config };
-  refs['Traer configuración'] = panelResp;
-  const cfg = nodo(m, 'Config del negocio', [panelResp], refs)[0]!;
+  // El `leer` de la sesión viaja en la respuesta de configuración (con el id del mensaje: de ahí sale el repetido).
+  const idMsg = String(((carga[0]!['messages'] as J[] | undefined) ?? [])[0]?.['id'] ?? '');
+  const conSesion = panelResp['statusCode'] === 200 ? { ...panelResp, body: { ...(panelResp['body'] as J), ...leerSesion(m.sesion, CLIENTE, idMsg, `e${m.n}`) } } : panelResp;
+  refs['Traer configuración'] = conSesion;
+  const cfg = nodo(m, 'Config del negocio', [conSesion], refs)[0]!;
   refs['Config del negocio'] = cfg;
   const inter = nodo(m, 'Interpretar entrada', [{}], refs);
   if (!inter.length) return { ...vacio, carga, parada: 'Interpretar entrada' };
@@ -146,7 +154,12 @@ function turno(m: Mundo, entrada: { mensaje: J; wamid?: string; phoneId?: string
   refs['Decidir turno'] = dec;
   const plan = nodo(m, 'Plan del turno', [dec], refs)[0]!;
   refs['Plan del turno'] = plan;
-  const envio = nodo(m, 'Armar mensajes', [plan], refs);
+  // «Armar mensajes» arma el bloque y pide el compromiso ANTES de enviar; el servidor de mentira contesta y «Soltar mensajes» decide qué sale.
+  const armado = nodo(m, 'Armar mensajes', [plan], refs)[0]!;
+  refs['Armar mensajes'] = armado;
+  const respuesta = comprometer(m.sesion, armado['compromiso'] as J | null);
+  if (respuesta) refs['Comprometer turno'] = respuesta;
+  const envio = nodo(m, 'Soltar mensajes', [{}], refs);
   const textos = ((plan['mensajes'] ?? []) as J[]).map((x) => String(x['cuerpo']));
   return { parada: null, carga, interpretado: inter[0]!, decision: dec, plan, envio, textos };
 }
@@ -740,7 +753,7 @@ describe('el carrito que vuelve de la página', () => {
     turno(m, { mensaje: boton('m|reserva', 'Reservar mesa') });
     turno(m, { mensaje: texto('hola') }); // el paso de reserva sigue
     const e0 = estadoDe(m);
-    e0['reserva'] = { personas: 4, fecha: '2026-10-06', hora: '20:00', zona: '', nombre: 'Ana Pérez', celebracion: '', requerimiento: '' };
+    m.sesion.sembrar(CLIENTE, { ...e0, reserva: { personas: 4, fecha: '2026-10-06', hora: '20:00', zona: '', nombre: 'Ana Pérez', celebracion: '', requerimiento: '' } }, m.sesion.pedidos(CLIENTE));
     carrito(m);
     const e = estadoDe(m);
     expect(e['reserva']).toMatchObject({ personas: 4, hora: '20:00' });

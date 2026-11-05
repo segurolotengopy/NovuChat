@@ -14,7 +14,7 @@
 // detalle, referencia} | null; `ruta`; `errores`. Además, `anotarReserva` (ver el supuesto 4) y `accion`.
 //
 // LIBRERÍAS QUE LLAMA (contrato §4.2; en la suite van dobles mínimos):
-//   comun: vmCfg, vmPrimero, vmNodo, vmSd, vmIdDeBoton, vmLinea, vmRecorte, vmCodigoCorto, vmIdEstable, vmJsonDeGemini, vmSinProhibidas, vmHorarioLegible.
+//   comun: vmCfg, vmPrimero, vmNodo, vmSd, vmSes, vmIdDeBoton, vmLinea, vmRecorte, vmCodigoCorto, vmIdEstable, vmJsonDeGemini, vmSinProhibidas, vmHorarioLegible.
 //   pedido: pdCarta, pdExcluidos, pdNombreCorto, pdBotonAgregar, pdTextoExcluido, pdTextoDeLaCarta, pdValidarExtraccion, pdAgregarLineas, pdResolverForma,
 //     pdQuitarSinDelivery, pdTotal, pdFaltanEntrega, pdResumen, pdLineaCompacta, pdNuevoPedido y
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
@@ -60,7 +60,7 @@
 //     `cbResultado(resp, previo)` recibe como `previo` el resultado guardado del pedido ('' si
 //     no hay), así un 409 de un QR vencido no se lee como «ya cotejado».
 //  e. El pedido de un comprobante se busca primero por la referencia que manda el servidor
-//     (`cobro.pedidoRef`, en `sd.pedidos`) y, si no está, en el estado del teléfono. Sin pedido,
+//     (`cobro.pedidoRef`, en `ses.pedidos` (los del servidor)) y, si no está, en el estado del teléfono. Sin pedido,
 //     el comprobante se deriva a una persona.
 //  f. «Reenviar QR» no reporta `qr_enviado` otra vez: el servidor ya abrió ese cobro. El mensaje lleva `monto`
 //     y `referencia` (para que `Armar mensajes` compruebe el total) y NO lleva `evento`.
@@ -78,10 +78,13 @@
 //     aun así no caben, el texto termina en «• … y N más» (el total sigue siendo el de todas las líneas).
 //  m. Con el panel sin respuesta (`cfg.panelSinRespuesta`) no se sabe si el local hace delivery ni qué cobro tiene: a mitad de
 //     un pedido NO se ofrece ni se afirma nada de la entrega, se deriva (aviso + botón), igual que `aConsulta('delivery')`.
+//     PR-4a: el estado de la conversación viaja en la MISMA llamada que el panel, así que con el panel caído tampoco hay estado y
+//     `¿Hay estado?` manda al genérico con el botón ANTES de llegar aquí (`Sin estado`: sin aviso, 0 mensajes extra). Esta defensa
+//     queda para un panel que contesta 200 sin `tenantId` con la sesión viva (un servidor a medias). Si llega aquí:
 //     COSTO: una consulta de delivery con el panel caído, o un pedido en curso que lo encuentra caído, suma 1 o 2 avisos
 //     al restaurante (la plantilla y, con la ventana abierta, el texto de detalle), y 0 mensajes extra al cliente: sale la
 //     derivación de siempre (el botón), como hasta ahora.
-//  l. El comprobante busca su pedido por la referencia del servidor SOLO en `sd.pedidos` (propio y del mismo teléfono) o,
+//  l. El comprobante busca su pedido por la referencia del servidor SOLO en `ses.pedidos` (los del servidor) (propio y del mismo teléfono) o,
 //     si la referencia es la del pedido del estado, en el estado; si no hay forma, deriva.
 //  h. Textos que el diseño no fija (se agregaron los mínimos): avisos de producto quitado por
 //     delivery, producto que sigue sin entenderse, consultas fijas (dirección, horario, delivery,
@@ -116,7 +119,8 @@ const ahora = Number(t.ahoraMs) || Date.now();
 // El ancla de las claves estables (B0): el `ultimoMensajeMs` del estado LEIDO que fija `Decidir turno`. Sin ancla (un
 // doble de prueba, o sin estado previo) se usa `ahora` y la clave deja de ser estable.
 const ancla = Number(d.anclaMs) > 0 ? Number(d.anclaMs) : ahora;
-const sd = vmSd();
+const sd = vmSd(); // el RESIDUO de PR-4b (tope de reservas por dia); el estado y los pedidos vienen del servidor
+const ses = vmSes(t.from, ahora);
 const en = estadoDe(d.estado);
 const errores = Array.isArray(d.errores) ? d.errores.slice() : [];
 const monedaTxt = /^(bob|bs\.?)?$/i.test(String(cfg.moneda || '').trim()) ? 'Bs' : String(cfg.moneda).trim();
@@ -412,9 +416,9 @@ function textoEmpezar() {
   return pedidosOn && menuBotones().some((b) => b.title === 'Hacer un pedido') ? ' Cuando quieras empezar otro, toca «Hacer un pedido».' : '';
 }
 
-// El último pedido de este teléfono que YA se pasó a nuestro equipo (comprobante recibido o pedido sin QR enviado): en `sd.pedidos` con `resultado`.
+// El último pedido de este teléfono que YA se pasó a nuestro equipo (comprobante recibido o pedido sin QR enviado): en `ses.pedidos` (los del servidor) con `resultado`.
 function pedidoYaPasado() {
-  const guardados = sd && sd.pedidos && typeof sd.pedidos === 'object' ? sd.pedidos : {};
+  const guardados = ses.pedidos;
   let mejor = null;
   for (const k of Object.keys(guardados)) {
     const p = guardados[k];
@@ -1374,12 +1378,12 @@ function aReenviarQr() {
 }
 
 // El pedido al que apunta la referencia del servidor (`cobro.pedidoRef`), o el del estado si no hay referencia. La referencia se busca SOLO entre los pedidos
-// propios de `sd.pedidos` y solo si el pedido es de ESTE teléfono (`hasOwnProperty`: «constructor» o «__proto__» no son un pedido; otro teléfono tampoco).
+// propios de `ses.pedidos` (los del servidor) y solo si el pedido es de ESTE teléfono (`hasOwnProperty`: «constructor» o «__proto__» no son un pedido; otro teléfono tampoco).
 // Si la referencia no sirve y el pedido del estado no es ese mismo, no se coteja contra otro pedido: null (se deriva).
 function pedidoDeLaReferencia() {
   const cobro = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
   const ref = String(cobro.pedidoRef || '');
-  const guardados = sd && sd.pedidos && typeof sd.pedidos === 'object' ? sd.pedidos : {};
+  const guardados = ses.pedidos;
   if (!ref) return en.pedido;
   const propio = Object.prototype.hasOwnProperty.call(guardados, ref) ? guardados[ref] : null;
   if (propio && typeof propio === 'object' && String(propio.from) === String(t.from)) return propio;

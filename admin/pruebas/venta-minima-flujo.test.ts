@@ -30,6 +30,7 @@ import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import { configBase, destinos, type Flujo, type J } from './lib/flujo';
 import { crearMundo, ROLES_POR_OMISION, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
 import { copiarModulosComunesAlTemporal, doblesDelGuardado } from './lib/doble-guardado';
+import { crearSesion, ESPACIO, ESPACIO_PRUEBA, type SesionDeMentira } from './lib/venta-minima-sesion';
 import { NODOS_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -55,7 +56,7 @@ const AV2 = '59100000022'; // destinatario con rol «cocina»
 const REC = '59100000031'; // recepción: el destino del botón «Escribir al local»
 const PRUEBA_TEL = '59100000041';
 /** El número de ensayo configurable de la variante de prueba (`numeroEnsayo` de «Config base»): sin él, un `telefonoDePrueba` ajeno a los avisos no envía. */
-const NUMERO_DE_ENSAYO: J = { numeroEnsayo: PRUEBA_TEL };
+const NUMERO_DE_ENSAYO: J = { numeroEnsayo: PRUEBA_TEL, telefonosDePrueba: `${PRUEBA_TEL},${AV1},${AV2}` };
 const PHONE_ID = '100000000000042';
 const QR_URL = 'https://qr.ejemplo.invalid/qtaco.png';
 /** Cualquiera de los textos de derivación a una persona (el de ahora y el de la rama de voz): el negativo «no deriva» no pasa solo si el texto cambia. */
@@ -117,6 +118,7 @@ const aceptado = (nodo: string, n: number): J => ({ messaging_product: 'whatsapp
 interface Turno { t: ResultadoTurno; from: string; etiqueta: string }
 
 interface OpcionesDeLaPrueba {
+  sesion?: SesionDeMentira;
   flujo?: Flujo;
   panel?: J;
   config?: J;
@@ -127,6 +129,8 @@ interface OpcionesDeLaPrueba {
 /** Un mundo con el flujo de Q'Taco y los dobles de red por omisión; `fallan` = nodos de envío que Meta rechaza. */
 function crear(op: OpcionesDeLaPrueba = {}) {
   const fallan = new Set<string>();
+  const reloj = { ahora: (): number => AHORA };
+  const sesion = op.sesion ?? crearSesion({ pid: PHONE_ID, ahora: () => reloj.ahora() });
   const estado = { panel: op.panel ?? panel(), cotejo: { statusCode: 200, body: { resultado: 'cuadra', diferencias: [], cierreId: 'venta_prueba' } } as J, extraccion: null as J | null, extraer: 0 };
   const envio = (nombre: string): Doble => (ll: LlamadaDoble) => (fallan.has(nombre)
     ? { error: { message: 'Meta rechazó el envío', code: 131000 } }
@@ -134,6 +138,8 @@ function crear(op: OpcionesDeLaPrueba = {}) {
   const dobles: Record<string, Doble> = {
     // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
     ...doblesDelGuardado().dobles,
+    // El estado de la conversación vive en el servidor (PR-4a): los compromisos los contesta el servidor de sesión de mentira (`sesion`).
+    ...sesion.dobles,
     'Verificar firma con el receptor': (ll) => ({ valido: !String(ll.cuerpo?.['firma'] ?? '').includes('mala'), deliveryId: ll.cuerpo?.['deliveryId'] }),
     'Traer configuración': () => ({ statusCode: 200, body: estado.panel }),
     'Reportar mensaje (entrante)': () => ({ ok: true }),
@@ -156,6 +162,7 @@ function crear(op: OpcionesDeLaPrueba = {}) {
   const mundo = crearMundo({
     flujo: op.flujo ?? QTACO,
     dobles,
+    alResponder: sesion.alResponder,
     ahoraMs: op.ahoraMs ?? AHORA,
     configBase: {
       phoneNumberIdEsperado: PHONE_ID,
@@ -167,7 +174,9 @@ function crear(op: OpcionesDeLaPrueba = {}) {
       ...(op.config ?? {}),
     },
   });
-  return { mundo, estado, fallan, turnos: [] as Turno[] };
+  reloj.ahora = () => mundo.ahora();
+  SESIONES.set(mundo, sesion);
+  return { mundo, estado, fallan, turnos: [] as Turno[], sesion };
 }
 
 let contador = 0;
@@ -239,8 +248,11 @@ const detallesA = (t: ResultadoTurno, tel: string) => t.avisosA(tel).filter((a) 
 const parametrosDe = (a: { payload: J }): string[] =>
   (((a.payload['template']?.components ?? []) as J[]).flatMap((c) => (c['parameters'] ?? []) as J[])).map((p) => String(p['text']));
 const sdVm = (mundo: Mundo): J => (mundo.sd['ventaMinima'] ?? {}) as J;
-const estadoDe = (mundo: Mundo, tel = CLIENTE): J => (sdVm(mundo)['estados']?.[tel] ?? {}) as J;
-const pedidosGuardados = (mundo: Mundo): J[] => Object.values((sdVm(mundo)['pedidos'] ?? {}) as J);
+/** El estado de la conversación vive en el servidor (PR-4a): cada mundo trae su servidor de sesión de mentira. */
+const SESIONES = new WeakMap<Mundo, SesionDeMentira>();
+const sesionDe = (mundo: Mundo): SesionDeMentira => SESIONES.get(mundo) as SesionDeMentira;
+const estadoDe = (mundo: Mundo, tel = CLIENTE): J => sesionDe(mundo).estado(tel);
+const pedidosGuardados = (mundo: Mundo, tel = CLIENTE): J[] => Object.values(sesionDe(mundo).pedidos(tel));
 
 /** Lo mínimo de un turno que no debe cambiar entre ejecuciones: sin mensajes, sin avisos y sin una sola llamada. */
 const silencio = (t: ResultadoTurno): void => {
@@ -772,7 +784,7 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
     const comunes = ['REEMPLAZAR_DIRECCION_QTACO', 'REEMPLAZAR_HORARIO_ATENCION_QTACO', 'REEMPLAZAR_HORARIO_PEDIDOS_QTACO', 'REEMPLAZAR_NUMERO_AVISO_1_QTACO', 'REEMPLAZAR_NUMERO_AVISO_2_QTACO', 'REEMPLAZAR_NUMERO_RECEPCION_QTACO', 'REEMPLAZAR_PHONE_NUMBER_ID_QTACO'];
     // `REEMPLAZAR_RUTA_CARRITO_QTACO` es el marcador de la ruta del webhook del carrito (segunda entrada de producción, solo en el JSON de Q'Taco).
     expect(marcadores('venta-minima.qtaco.json')).toEqual([...comunes, 'REEMPLAZAR_RUTA_CARRITO_QTACO', 'REEMPLAZAR_RUTA_RECEPTOR_QTACO', 'REEMPLAZAR_URL_VERIFICADOR_RECEPTOR', 'REEMPLAZAR_WABA_ID_QTACO'].sort());
-    expect(marcadores('venta-minima.prueba.json')).toEqual([...comunes, 'REEMPLAZAR_NUMERO_ENSAYO_QTACO', 'REEMPLAZAR_RUTA_DE_PRUEBA'].sort());
+    expect(marcadores('venta-minima.prueba.json')).toEqual([...comunes, 'REEMPLAZAR_NUMERO_ENSAYO_QTACO', 'REEMPLAZAR_RUTA_DE_PRUEBA', 'REEMPLAZAR_TELEFONOS_DE_PRUEBA'].sort());
     // El negativo: así se fundían los dos números de aviso (o el WABA y su comilla) cuando iban pegados.
     expect('completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO,cocina:REEMPLAZAR_NUMERO_AVISO_2_QTACO'.match(patron)).toHaveLength(1);
     expect("wabaIdEsperado: 'REEMPLAZAR_WABA_ID_QTACO' }".match(patron)).toEqual(["REEMPLAZAR_WABA_ID_QTACO'"]);
@@ -2435,7 +2447,7 @@ describe('cobro', () => {
     expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
     // De punta a punta: «Armar mensajes» le da a la imagen el monto y la referencia SIN evento, y «Reportar mensaje (saliente)»
     // se guía por el EVENTO: la imagen del reenvío se reporta (cuenta como mensaje) pero sin evento, sin referencia y sin monto.
-    const armada = (reenvio.porNodo['Armar mensajes'] ?? []).find((m) => (m['payload'] as J)?.['type'] === 'image') as J;
+    const armada = (reenvio.porNodo['Soltar mensajes'] ?? []).find((m) => (m['payload'] as J)?.['type'] === 'image') as J;
     expect(armada['monto']).toBe(84);
     expect(String(armada['referencia'])).toMatch(/^ped-/);
     expect(armada['evento']).toBeUndefined();
@@ -2741,7 +2753,7 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       for (const nodo of ['Traer configuración', 'Cotejar en el servidor', 'Obtener URL del medio', 'Extraer', 'Enviar a WhatsApp', 'Enviar aviso', 'Reportar mensaje (entrante)']) {
         expect(t.ejecutados.has(nodo), nodo).toBe(false);
       }
-      expect(JSON.stringify(sdVm(w.mundo))).not.toContain(AJENO); // ni memoria ni vistos a su nombre
+      expect(JSON.stringify([sdVm(w.mundo), w.sesion.copia(), w.sesion.servidor.llamadas])).not.toContain(AJENO); // ni memoria ni vistos a su nombre, ni una sola llamada a la sesión
     }
     // Negativo: el `telefonoDePrueba` sí pasa, y un destinatario de aviso también.
     expect(w.mundo.turno(cuerpoDePrueba(texto_('hola'))).ejecutados.has('Traer configuración')).toBe(true);
@@ -2851,7 +2863,7 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
     const id = botonesDe(a.mensajes[0] as NonNullable<(typeof a.mensajes)[number]>)[0]?.id as string;
     const b = w.mundo.turno(cuerpoDePrueba({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title: 'Confirmar pedido' } } }, op, AJENO));
     expect(b.mensajes.some((m) => m.tipo === 'image')).toBe(true);
-    const ref = Object.keys((sdVm(w.mundo)['pedidos'] ?? {}) as J)[0] as string;
+    const ref = Object.keys(w.sesion.pedidos(PRUEBA_TEL, ESPACIO_PRUEBA))[0] as string;
     panelDelServidor = panel(conCobroPendiente(ref, 84));
     const c = w.mundo.turno(cuerpoDePrueba({ type: 'image', image: { id: 'media-7', mime_type: 'image/jpeg' } }, op, AJENO));
     expect(c.ejecutados.has('Cotejar en el servidor')).toBe(true);
@@ -2864,7 +2876,7 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
     const AJENO = '59100000099';
     const corre = (config: J, tel: string) => {
       const espia = espiar();
-      const w = crear({ flujo: PRUEBA, panel: panel(), config, dobles: espia.dobles });
+      const w = crear({ flujo: PRUEBA, panel: panel(), config: { ...config, telefonosDePrueba: [tel, PRUEBA_TEL].filter(Boolean).join(',') }, dobles: espia.dobles }); // (el estado de la conversación solo se pide para `telefonosDePrueba`)
       w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
       const op = { enviarDeVerdad: true, telefonoDePrueba: tel, desde: tel === '' ? PRUEBA_TEL : tel };
       const a = w.mundo.turno(cuerpoDePrueba(texto_('quiero 4 tacos de birria'), op));
@@ -2904,8 +2916,8 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(60); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10): el tope de producción (`construir.mjs` lo impone)
-    expect(PRUEBA.nodes).toHaveLength(56);
+    expect(QTACO.nodes).toHaveLength(68); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 8 del estado en el servidor (PR-4a): el tope de producción es 69 (`construir.mjs` lo impone)
+    expect(PRUEBA.nodes).toHaveLength(64);
   });
 
   it('L2: en producción un `wamid.SIMULADO-…` NO cuenta como aviso salido: el cliente no lee «pasé tu pedido» y el cierre no lo toma de referencia', () => {
@@ -3128,9 +3140,11 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
     expect(t.orden.indexOf('Reportar mensaje (entrante)')).toBeGreaterThan(-1);
     expect(t.orden.indexOf('Reportar mensaje (entrante)')).toBeLessThan(t.orden.indexOf('Decidir turno'));
     expect(destinos(QTACO, '¿Reportar? (entrante)', 0)).toEqual(['Reportar mensaje (entrante)']);
-    // El cierre cuelga de «Armar mensajes» por debajo del envío: primero se manda, después se registra.
-    // …y «Resumen del turno» cuelga directo de «Armar mensajes», lo más abajo de todo: corre una vez, al final.
-    expect(destinos(QTACO, 'Armar mensajes', 0)).toEqual(['¿Enviar de verdad?', '¿Registrar cierre?', 'Resumen del turno']);
+    // El cierre cuelga de «Soltar mensajes» (PR-4a: el estado se compromete ANTES de enviar) por debajo del envío: primero se manda, después se registra.
+    // …y «Resumen del turno» cuelga al final de la cadena «Confirmar envío» → «¿Compensar entrega?», lo más abajo de todo: corre una vez, al final.
+    expect(destinos(QTACO, 'Armar mensajes', 0)).toEqual(['¿Comprometer turno?']);
+    expect(destinos(QTACO, 'Soltar mensajes', 0)).toEqual(['¿Enviar de verdad?', '¿Registrar cierre?', 'Confirmar envío']);
+    expect(destinos(QTACO, '¿Compensar entrega?', 1)).toEqual(['Resumen del turno']);
     expect(y(QTACO, '¿Registrar cierre?')).toBeGreaterThan(y(QTACO, '¿Enviar de verdad?'));
     expect(y(QTACO, 'Resumen del turno')).toBeGreaterThan(y(QTACO, '¿Registrar cierre?'));
     expect(y(QTACO, 'Resumen del turno')).toBeGreaterThan(y(QTACO, 'Registrar cierre'));
@@ -3144,7 +3158,7 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
   it('«Resumen del turno» corre UNA sola vez aunque «Armar mensajes» emita 2 ítems y haya cierre (con su negativo: el cierre se registra una sola vez y los dos mensajes salen)', () => {
     // El mismo flujo, con «Armar mensajes» envuelto para que emita un segundo mensaje sin cierre.
     const DOS = JSON.parse(JSON.stringify(QTACO)) as Flujo;
-    const armar = DOS.nodes.find((n) => n.name === 'Armar mensajes') as NonNullable<(typeof DOS.nodes)[number]>;
+    const armar = DOS.nodes.find((n) => n.name === 'Soltar mensajes') as NonNullable<(typeof DOS.nodes)[number]>;
     armar.parameters['jsCode'] = `const AMX_salida = (() => {\n${String(armar.parameters['jsCode'])}\n})();\n`
       + 'if (AMX_salida.length === 1 && AMX_salida[0].json.sinMensajes !== true) {\n'
       + '  const j = AMX_salida[0].json;\n'
@@ -3322,11 +3336,9 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
 // "cargó" los datos antes de que la primera los reescribiera). El segundo toque llega con otro `wamid`, otra entrega y
 // UN MINUTO después (más estricto que los milisegundos reales: la clave no puede mirar el reloj).
 describe('B0: claves estables por pedido (doble toque simulado desde el mismo estado)', () => {
-  const sdCopia = (mundo: Mundo): J => JSON.parse(JSON.stringify(mundo.sd)) as J;
-  const restaurarSd = (mundo: Mundo, copia: J): void => {
-    for (const k of Object.keys(mundo.sd)) delete mundo.sd[k];
-    Object.assign(mundo.sd, JSON.parse(JSON.stringify(copia)));
-  };
+  // (PR-4a: el estado vive en el servidor; la copia y la vuelta atrás son las de su documento. El servidor real habría contestado «conflicto_version» a la segunda: aquí se prueba que, DADO el mismo estado, las claves salen iguales.)
+  const sdCopia = (mundo: Mundo): [string, unknown][] => sesionDe(mundo).copia();
+  const restaurarSd = (mundo: Mundo, copia: [string, unknown][]): void => sesionDe(mundo).restaurar(copia);
   /** Dos ejecuciones que parten del mismo estado y reciben el mismo botón (cada una, con su `wamid`). */
   function dobleToque(mundo: Mundo, c: ReturnType<typeof conversacion>, id: string, titulo: string): { t1: ResultadoTurno; t2: ResultadoTurno; pedidos1: J[]; pedidos2: J[] } {
     const partida = sdCopia(mundo);
@@ -3423,8 +3435,9 @@ describe('B0: claves estables por pedido (doble toque simulado desde el mismo es
     const r2 = c2.escribe('quiero 4 tacos de birria');
     c1.toca(idDeBoton(r1, 'Confirmar pedido'), 'Confirmar pedido');
     c2.toca(idDeBoton(r2, 'Confirmar pedido'), 'Confirmar pedido');
-    expect(new Set(pedidosGuardados(w.mundo).map((p) => String(p['pedidoId']))).size).toBe(2);
-    expect(new Set(pedidosGuardados(w.mundo).map((p) => String(p['codigo']))).size).toBe(2);
+    const dos = [...pedidosGuardados(w.mundo, CLIENTE), ...pedidosGuardados(w.mundo, OTRO)];
+    expect(new Set(dos.map((p) => String(p['pedidoId']))).size).toBe(2);
+    expect(new Set(dos.map((p) => String(p['codigo']))).size).toBe(2);
   });
 
   it('(c) el mismo teléfono repite el MISMO pedido idéntico más tarde: el ancla cambió (el estado se reescribió en cada turno), así que el id es otro', () => {
@@ -4311,11 +4324,14 @@ describe('R3 y hechos externos: si ya salió un aviso o corrió el cierre, recon
     expect(fallido.llamadas.cierre).toHaveLength(0);
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
     expect(estadoDe(r.w.mundo)['ultimoMensajeMs'], 'la ancla del estado leído se conserva').toBe(ancla);
-    const codigo1 = pedidosGuardados(r.w.mundo).map((p) => p['codigo']);
+    // PR-4a: la compensación devuelve el bloque ENTERO de antes del turno, también los pedidos (antes quedaba guardado: límite I-3).
+    expect(pedidosGuardados(r.w.mundo)).toHaveLength(0);
+    const codigoDelIntento = /#([0-9A-Z]{4})/.exec(JSON.stringify(fallido.mensajes[0]?.payload ?? {}))?.[1];
+    expect(codigoDelIntento).toBeDefined();
     sinFalla(r.w);
     const ok = r.c.toca(id, 'Confirmar pedido');
     expect(ok.mensajes.some((m) => m.ok && m.tipo === 'image')).toBe(true);
-    expect(pedidosGuardados(r.w.mundo).map((p) => p['codigo'])).toEqual(codigo1);
+    expect(pedidosGuardados(r.w.mundo).map((p) => p['codigo'])).toEqual([codigoDelIntento]); // el MISMO código del intento fallido, y un solo pedido
     expect(ok.llamadas.ingesta.filter((x) => x['evento'] === 'qr_enviado')).toHaveLength(1);
   });
 });
@@ -4742,9 +4758,9 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
     expect(sim.qr.mensajes[0]?.payload['image']?.link).toBe(URL_SIMULADO); // es el QR de prueba, no el plan B que también da 3
   });
 
-  it('el JSON de Q\'Taco sigue en 60 nodos o menos (50 más los 9 del guardado de medios y «Guardar comprobante») y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
+  it('el JSON de Q\'Taco sigue en 69 nodos o menos (50 más los 9 del guardado de medios, «Guardar comprobante» y los 8 del estado en el servidor) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
     // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61, y desde el contrato v2 del 30/10, 59: los 9 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md).
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(60);
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(69); // tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026)
     const base = configBase(QTACO);
     expect(base['cobroSimuladoActivo']).toBe(true);
     expect(base['qrSimuladoUrl']).toBe(URL_SIMULADO);
@@ -6063,7 +6079,7 @@ describe('la pausa por persona: el flujo calla por completo (forma real de la in
     w.estado.panel = { ...w.estado.panel, atencion: { estado: 'normal' } };
     w.mundo.dobles['Reportar mensaje (entrante)'] = () => RESPUESTA_INGESTA_NORMAL;
   };
-  const fotoDelEstado = (w: Mundial): string => JSON.stringify({ estados: sdVm(w.mundo)['estados'] ?? {}, pedidos: sdVm(w.mundo)['pedidos'] ?? {} });
+  const fotoDelEstado = (w: Mundial): string => JSON.stringify({ estados: w.sesion.estado(CLIENTE), pedidos: w.sesion.pedidos(CLIENTE) });
   /** Un turno en pausa: 0 mensajes al cliente, 0 avisos, 0 llamadas al modelo ni a medios ni al cotejo, 0 cierres, sin saliente reportado y estado intacto. */
   const callaPorCompleto = (w: Mundial, t: ResultadoTurno, antes: string, etiqueta: string, geminiAntes = 0): void => {
     expect(t.mensajes, `${etiqueta}: mensajes`).toHaveLength(0);
@@ -6267,12 +6283,276 @@ describe('PR-4: el `qr_enviado` lleva lineas y entrega para que el servidor cree
   it('el mismo pedido confirmado dos veces desde el mismo estado reporta la misma referencia y las mismas lineas', () => {
     const r = armarPedido();
     const id = idDeBoton(r.resumen, 'Confirmar pedido');
-    const partida = JSON.parse(JSON.stringify(r.w.mundo.sd)) as J;
+    const partida = r.w.sesion.copia();
     const t1 = r.c.toca(id, 'Confirmar pedido');
-    for (const k of Object.keys(r.w.mundo.sd)) delete r.w.mundo.sd[k];
-    Object.assign(r.w.mundo.sd, JSON.parse(JSON.stringify(partida)));
+    r.w.sesion.restaurar(partida);
     const t2 = r.c.toca(id, 'Confirmar pedido');
     expect(abierto(t2)['referencia']).toBe(abierto(t1)['referencia']);
     expect(abierto(t2)['lineas']).toEqual(abierto(t1)['lineas']);
+  });
+});
+
+
+// =============================================================================================================================
+// PR-4a: EL ESTADO DE LA CONVERSACIÓN Y LOS MENSAJES VISTOS VIVEN EN EL SERVIDOR (docs/arquitectura/estado-de-conversacion.md)
+// Cada prueba es un invariante con su negativo; la suite de funciones sueltas (respaldo, bytes, guardias) es `venta-minima-sesion.test.ts`.
+// =============================================================================================================================
+describe('PR-4a: el estado, los pedidos y los vistos viven en el servidor, no en la memoria de n8n', () => {
+  const sesionesPedidas = (w: Mundial): J[] => w.sesion.servidor.llamadas.map((l) => l['sesion'] as J);
+  const acciones = (w: Mundial, accion: string): J[] => sesionesPedidas(w).filter((q) => q['accion'] === accion);
+
+  it('tras un pedido confirmado con QR, `estados`, `vistos` y `pedidos` NO están en los datos estáticos: están en el bloque del servidor (espacio «venta-minima»), con SUS pedidos', () => {
+    const r = armarPedido({ ventana: 5 });
+    const t = confirmarPedido(r);
+    expect(t.mensajes.some((m) => m.tipo === 'image')).toBe(true);
+    for (const k of ['estados', 'vistos', 'pedidos']) expect(sdVm(r.w.mundo)[k], k).toBeUndefined();
+    const bloque = r.w.sesion.bloque(CLIENTE) as J;
+    expect(bloque['v']).toBe(1);
+    expect(bloque['estado']).toMatchObject({ paso: 'esperando_comprobante' });
+    expect(Object.keys(bloque['pedidos'] as J)).toHaveLength(1);
+    expect(r.w.sesion.malFormado).toEqual([]);
+    for (const q of sesionesPedidas(r.w)) expect(q['espacio']).toBe(ESPACIO);
+    expect(Object.keys(sdVm(r.w.mundo)).every((k) => ['av', 'transferencias', 'avisosPedido', 'reservasDelDia'].includes(k)), JSON.stringify(Object.keys(sdVm(r.w.mundo)))).toBe(true);
+  });
+
+  it('el residuo declarado de PR-4b SIGUE en los datos estáticos (av.dia, av.ventana, transferencias, avisosPedido, reservasDelDia): aquí no se mueve', () => {
+    const r = armarPedido({ cobro: false, ventana: 5 });
+    const t = confirmarPedido(r);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    const sd = sdVm(r.w.mundo);
+    expect(sd['av']['dia']['n']).toBeGreaterThan(0);
+    expect(Object.keys(sd['av']['ventana']).sort()).toEqual([AV1, AV2].sort());
+    expect(Object.keys(sd['avisosPedido'])).toEqual([CLIENTE]);
+  });
+
+  it('los repetidos los marca el servidor al LEER (el `leer` lleva el idMensaje): el mismo wamid dos veces responde una; un id nuevo pasa', () => {
+    const w = crear();
+    const c = con(w);
+    const primero = c.turno(mTexto('hola'), { wamid: 'wamid.REP1' });
+    expect(primero.mensajes).toHaveLength(1);
+    const lecturas = acciones(w, 'leer');
+    expect(lecturas).toHaveLength(1);
+    expect(lecturas[0]).toMatchObject({ v: 1, accion: 'leer', espacio: ESPACIO, idMensaje: 'wamid.REP1' });
+    const repetido = c.turno(mTexto('hola'), { wamid: 'wamid.REP1' });
+    silencio(repetido);
+    expect(repetido.ejecutados.has('Decidir turno')).toBe(false);
+    expect(c.turno(mTexto('hola'), { wamid: 'wamid.REP2' }).mensajes).toHaveLength(1); // negado: otro id pasa
+    expect(sdVm(w.mundo)['vistos']).toBeUndefined();
+  });
+
+  it('el estado se COMPROMETE antes de enviar: al salir el primer mensaje al cliente, la versión del servidor ya subió; y el compromiso lleva la versión que leyó el turno', () => {
+    const r = armarPedido({ ventana: 5 });
+    const versiones: number[] = [];
+    const envio = r.w.mundo.dobles['Enviar a WhatsApp'] as Doble;
+    r.w.mundo.dobles['Enviar a WhatsApp'] = (ll) => { versiones.push(r.w.sesion.version(CLIENTE)); return typeof envio === 'function' ? envio(ll) : envio; };
+    const antes = r.w.sesion.version(CLIENTE);
+    const t = confirmarPedido(r);
+    expect(t.mensajes.length).toBeGreaterThan(0);
+    expect(versiones[0]).toBe(antes + 1);
+    const compromiso = r.w.sesion.compromisos.at(-1)!;
+    expect(compromiso.nodo).toBe('Comprometer turno');
+    expect((compromiso.cuerpo['sesion'] as J)['versionLeida']).toBe(antes);
+    expect(t.orden.indexOf('Comprometer turno')).toBeLessThan(t.orden.indexOf('Enviar a WhatsApp'));
+    // Negado: el compromiso es de verdad lo que gobierna el envío (si el servidor lo rechaza, no sale el QR: ver la prueba siguiente).
+  });
+
+  it('si el compromiso FALLA (5xx), la respuesta se REEMPLAZA por el genérico con el botón a recepción: un mensaje, sin QR, sin cierre, sin reporte, sin tocar el estado', () => {
+    const r = armarPedido({ ventana: 5 });
+    const antes = JSON.stringify(r.w.sesion.bloque(CLIENTE));
+    r.w.sesion.servidor.fallar = (c) => ((c['sesion'] as J)['accion'] === 'comprometer' ? 503 : null);
+    const t = confirmarPedido(r);
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.mensajes.some((m) => m.tipo === 'image')).toBe(false);
+    expect(tieneEnlace(t)).toBe(true);
+    expect(urlDeEnlace(t.mensajes[0]!)).toBe(`https://wa.me/${REC}?text=${encodeURIComponent("Hola, escribo desde el asistente de Q'Taco.")}`);
+    expect(t.llamadas.cierre).toHaveLength(0);
+    expect(t.llamadas.ingesta.filter((x) => x['evento'] === 'qr_enviado')).toHaveLength(0);
+    expect(JSON.stringify(r.w.sesion.bloque(CLIENTE))).toBe(antes);
+    // Negado: con el servidor sano, el mismo botón da el QR (y un solo mensaje igual: la falla reemplaza, no suma).
+    r.w.sesion.servidor.fallar = null;
+    const bien = confirmarPedido(r);
+    expect(bien.mensajes.some((m) => m.tipo === 'image')).toBe(true);
+    expect(bien.mensajes).toHaveLength(1);
+  });
+
+  it('CONFLICTO de versión (otra ejecución del mismo teléfono comprometió primero): la que pierde CEDE sin enviar nada, sin cierre, sin reporte, sin Resumen; la ganadora queda intacta', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.w.sesion.servidor.antesDeComprometer = (c) => {
+      r.w.sesion.servidor.antesDeComprometer = null;
+      if ((c['sesion'] as J)['accion'] === 'comprometer') r.w.sesion.sembrar(CLIENTE, { ...estadoDe(r.w.mundo), paso: 'menu' }, r.w.sesion.pedidos(CLIENTE));
+    };
+    const t = confirmarPedido(r);
+    expect(t.mensajes).toHaveLength(0);
+    expect(t.llamadas.cierre).toHaveLength(0);
+    expect(t.llamadas.ingesta.filter((x) => x['direccion'] === 'saliente')).toHaveLength(0);
+    expect(t.ejecutados.has('Resumen del turno')).toBe(false);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu'); // el estado ganador no se pisó
+    // Negado: sin rival, el mismo botón responde.
+    const r2 = armarPedido({ ventana: 5 });
+    expect(confirmarPedido(r2).mensajes).toHaveLength(1);
+  });
+
+  it('un reintento con el MISMO idCompromiso (`repetido`) cuenta como éxito, y los dos nodos «Comprometer *» reintentan sin `neverError`', () => {
+    const r = armarPedido({ ventana: 5 });
+    const compromete = r.w.mundo.dobles['Comprometer turno'] as (ll: LlamadaDoble) => J;
+    const ids: string[] = [];
+    // n8n reintenta tras un timeout cuya escritura SÍ se hizo: el servidor ve el mismo idCompromiso dos veces.
+    r.w.mundo.dobles['Comprometer turno'] = (ll) => { ids.push(String(((ll.cuerpo as J)['sesion'] as J)['idCompromiso'])); compromete(ll); return compromete(ll); };
+    const antes = r.w.sesion.version(CLIENTE);
+    const t = confirmarPedido(r);
+    expect(t.mensajes.some((m) => m.tipo === 'image')).toBe(true);
+    expect(r.w.sesion.version(CLIENTE)).toBe(antes + 1); // una sola vez
+    expect(ids[0]).toMatch(/^vm-fin-/);
+    for (const n of ['Comprometer turno', 'Comprometer compensación']) {
+      const nodo = QTACO.nodes.find((x) => x.name === n) as unknown as J;
+      expect(nodo['retryOnFail'], n).toBe(true);
+      expect(nodo['maxTries'], n).toBeGreaterThanOrEqual(2);
+      expect(JSON.stringify(nodo['parameters']), n).not.toContain('neverError');
+      expect(String(nodo['parameters']['url']), n).toMatch(/\/configuracionFlujo$/);
+    }
+  });
+
+  it('SIN ESTADO (el servidor no contesta el `leer`: 5xx; o es un servidor viejo sin la rama): el genérico con el botón, un mensaje, sin aviso, sin modelo, sin compromiso', () => {
+    for (const modo of ['5xx', 'sin rama']) {
+      const w = crear();
+      if (modo === '5xx') w.sesion.servidor.fallar = () => 503;
+      else w.sesion.sinRama = true;
+      w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+      const t = con(w).escribe('quiero 4 tacos de birria');
+      expect(t.mensajes, modo).toHaveLength(1);
+      expect(tieneEnlace(t), modo).toBe(true);
+      expect(t.avisos, modo).toHaveLength(0);
+      expect(t.llamadas.extraer, modo).toHaveLength(0);
+      expect(w.sesion.compromisos, modo).toHaveLength(0);
+      expect(t.ejecutados.has('Sin estado'), modo).toBe(true);
+      expect(t.ejecutados.has('Decidir turno'), modo).toBe(false);
+      expect(todoElTexto(t)).not.toMatch(/pedido|total|Bs/i);
+    }
+    // Negado: con el servidor sano el mismo mensaje sigue la conversación.
+    const sano = crear();
+    sano.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    const ok = con(sano).escribe('quiero 4 tacos de birria');
+    expect(ok.ejecutados.has('Sin estado')).toBe(false);
+    expect(ok.ejecutados.has('Decidir turno')).toBe(true);
+  });
+
+  it('las puertas cerradas (uso extendido, bloqueado, comercio no operativo) no comprometen nada y NUNCA caen al genérico, aunque el servidor falle', () => {
+    const w = crear();
+    w.sesion.servidor.fallar = (c) => ((c['sesion'] as J)['accion'] === 'comprometer' ? 503 : null);
+    // uso extendido (operador): el aviso fijo con el botón
+    w.mundo.dobles['Reportar mensaje (entrante)'] = () => ({ atencion: { estado: 'operador', mensajeFijo: 'Te atiende una persona del restaurante.', respuestasEnVentana: 9 }, servicio: { estado: 'activo' } });
+    const op = con(w).escribe('hola');
+    expect(op.mensajes).toHaveLength(1);
+    expect(cuerpos(op)[0]).toContain('Te atiende una persona del restaurante.');
+    expect(w.sesion.compromisos).toHaveLength(0);
+    // bloqueado: silencio total
+    w.mundo.dobles['Reportar mensaje (entrante)'] = () => ({ atencion: { estado: 'bloqueado', respuestasEnVentana: 20 }, servicio: { estado: 'activo' } });
+    const callado = con(w).escribe('hola');
+    for (const t of [callado.mensajes, callado.avisos, callado.llamadas.cierre, callado.llamadas.extraer]) expect(t).toHaveLength(0);
+    expect(callado.ejecutados.has('Sin estado')).toBe(false);
+    // comercio no operativo (409): la cortesía, no el genérico
+    w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 409, body: { mensajeCortesia: 'Estamos en pausa. Gracias por escribir.' } });
+    w.mundo.dobles['Reportar mensaje (entrante)'] = () => ({ atencion: { estado: 'normal' }, servicio: { estado: 'activo' } });
+    const pausa = con(w).escribe('hola');
+    expect(cuerpos(pausa)).toEqual(['Estamos en pausa. Gracias por escribir.']);
+    expect(w.sesion.compromisos).toHaveLength(0);
+    expect(pausa.ejecutados.has('Sin estado')).toBe(false);
+  });
+
+  it('COMPENSACIÓN: si Meta rechaza el mensaje y su respaldo SIN hecho externo, el bloque de antes vuelve entero (estado, ancla y pedidos) con la versión recién comprometida; con la ejecución en error', () => {
+    const r = armarPedido();
+    const id = idDeBoton(r.resumen, 'Confirmar pedido');
+    const antes = JSON.stringify(r.w.sesion.bloque(CLIENTE));
+    const v0 = r.w.sesion.version(CLIENTE);
+    fallaTodo2(r.w);
+    const t = r.w.mundo.turno(entrega(CLIENTE, mBoton(id, 'x')), { tolerarFallo: true });
+    expect(t.fallo?.mensaje).toMatch(/Entrega fallida.*\[estado restaurado\]/);
+    expect(JSON.stringify(r.w.sesion.bloque(CLIENTE))).toBe(antes);
+    expect(r.w.sesion.version(CLIENTE)).toBe(v0 + 2); // el compromiso del turno y su compensación
+    const comp = r.w.sesion.compromisos.at(-1)!;
+    expect(comp.nodo).toBe('Comprometer compensación');
+    expect((comp.cuerpo['sesion'] as J)['versionLeida']).toBe(v0 + 1);
+    expect(t.orden.indexOf('Comprometer compensación')).toBeLessThan(t.orden.indexOf('Resumen del turno'));
+  });
+
+  it('COMPENSACIÓN con hecho externo (el aviso al local ya salió): el estado nuevo queda en `menu` y los pedidos se conservan (reconfirmar armaría un segundo pedido)', () => {
+    const r = armarPedido({ cobro: false, ventana: 5 });
+    const id = idDeBoton(r.resumen, 'Confirmar pedido');
+    fallaTodo2(r.w);
+    const t = r.w.mundo.turno(entrega(CLIENTE, mBoton(id, 'x')), { tolerarFallo: true });
+    expect(t.fallo?.mensaje).toMatch(/Entrega fallida/);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+    expect(pedidosGuardados(r.w.mundo)).toHaveLength(1);
+  });
+
+  it('0 mensajes por conversación agregados o quitados: hola → pedido → confirmar con QR → foto → menú = 1 mensaje por turno, igual que antes de PR-4a', () => {
+    const w = crear({ panel: panel(COBRO_REAL) });
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    const c = con(w);
+    const t1 = c.escribe('hola');
+    const t2 = c.escribe('quiero 4 tacos de birria');
+    const t3 = c.toca(idDeBoton(t2, 'Confirmar pedido'), 'Confirmar pedido');
+    const t4 = c.imagen('media-1');
+    const t5 = c.escribe('menu');
+    // (la misma conversación, con el flujo de antes de PR-4a —origin/main 7c75…—, dio [1, 1, 1, 1, 1])
+    expect([t1, t2, t3, t4, t5].map((t) => t.mensajes.length)).toEqual([1, 1, 1, 1, 1]);
+    expect(t3.mensajes.some((m) => m.tipo === 'image')).toBe(true);
+  });
+});
+
+/** Meta rechaza el envío y su respaldo. */
+const fallaTodo2 = (w: Mundial): void => { w.fallan.add('Enviar a WhatsApp'); w.fallan.add('Enviar respaldo'); };
+
+describe('PR-4a: la variante de PRUEBA nunca toca los documentos de producción (espacio «venta-minima-prueba», solo `telefonosDePrueba`)', () => {
+  const cuerpoDePrueba = (mensaje: J, desde: string = PRUEBA_TEL, extra: J = {}): J => ({
+    headers: {},
+    body: {
+      messaging_product: 'whatsapp', metadata: { phone_number_id: PHONE_ID }, contacts: [{ profile: { name: 'Carlos Pérez' }, wa_id: desde }],
+      messages: [{ from: desde, id: `wamid.PRS${++contador}`, timestamp: '1', ...mensaje }],
+      modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: false, ...extra,
+    },
+  });
+  const hola = (): J => ({ type: 'text', text: { body: 'hola' } });
+
+  it('con un teléfono de `telefonosDePrueba`, TODA llamada a la sesión va al espacio de prueba y el de producción no se toca; con producción, al revés', () => {
+    const w = crear({ flujo: PRUEBA, config: NUMERO_DE_ENSAYO });
+    w.sesion.sembrar(PRUEBA_TEL, { paso: 'menu', ultimoMensajeMs: 1 }, {}, ESPACIO, 60);
+    const antes = w.sesion.version(PRUEBA_TEL, ESPACIO);
+    const t = w.mundo.turno(cuerpoDePrueba(hola()));
+    expect(t.resumen).not.toBeNull();
+    const llamadas = w.sesion.servidor.llamadas.filter((l) => l['telefono'] === PRUEBA_TEL);
+    expect(llamadas.length).toBeGreaterThan(0);
+    for (const l of llamadas) expect((l['sesion'] as J)['espacio']).toBe(ESPACIO_PRUEBA);
+    expect(w.sesion.version(PRUEBA_TEL, ESPACIO)).toBe(antes);
+    expect(w.sesion.version(PRUEBA_TEL, ESPACIO_PRUEBA)).toBeGreaterThan(0);
+    // producción: el espacio de producción, nunca el de prueba
+    const p = crear();
+    con(p).escribe('hola');
+    for (const l of p.sesion.servidor.llamadas) expect((l['sesion'] as J)['espacio']).toBe(ESPACIO);
+    expect(p.sesion.version(CLIENTE, ESPACIO_PRUEBA)).toBe(0);
+  });
+
+  it('un teléfono que NO es de `telefonosDePrueba` (aunque sea destinatario de aviso o el número de ensayo) no manda ninguna llamada a la sesión: sale el genérico con el botón', () => {
+    const w = crear({ flujo: PRUEBA, config: { numeroEnsayo: PRUEBA_TEL, telefonosDePrueba: `${AV2}` } });
+    const t = w.mundo.turno(cuerpoDePrueba(hola(), PRUEBA_TEL));
+    expect(w.sesion.servidor.llamadas).toHaveLength(0);
+    expect(t.ejecutados.has('Sin estado')).toBe(true);
+    expect(t.ejecutados.has('Decidir turno')).toBe(false);
+    // y sin la lista, ninguno
+    const sin = crear({ flujo: PRUEBA, config: { numeroEnsayo: PRUEBA_TEL, telefonosDePrueba: '' } });
+    sin.mundo.turno(cuerpoDePrueba(hola(), PRUEBA_TEL));
+    expect(sin.sesion.servidor.llamadas).toHaveLength(0);
+  });
+
+  it('lo que llega a «Entrada de prueba» es SIEMPRE modo prueba (con o sin `modoPrueba` en el cuerpo): nunca habla con el espacio de producción', () => {
+    const w = crear({ flujo: PRUEBA, config: NUMERO_DE_ENSAYO });
+    for (const extra of [{ modoPrueba: undefined }, { modoPrueba: false }, { modoPrueba: 'si' }, { modoPrueba: 1 }]) {
+      w.mundo.turno(cuerpoDePrueba(hola(), PRUEBA_TEL, extra));
+    }
+    expect(w.sesion.servidor.llamadas.length).toBeGreaterThan(0);
+    for (const l of w.sesion.servidor.llamadas) expect((l['sesion'] as J)['espacio']).toBe(ESPACIO_PRUEBA);
+    expect(PRUEBA.nodes.some((n) => n.name === 'Entrada de prueba')).toBe(true);
+    expect(QTACO.nodes.some((n) => n.name === 'Entrada de prueba')).toBe(false);
   });
 });

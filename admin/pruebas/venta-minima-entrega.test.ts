@@ -111,13 +111,14 @@ describe('R3: si el respaldo también falla, la ejecución termina en ERROR, sin
     }
   }
 
-  it('la nota del nodo «Resumen del turno» describe la regla del HECHO EXTERNO (no la reversión incondicional de antes), en la plantilla y en los tres JSON', () => {
+  it('la nota del nodo «Confirmar envío» (que ahora arma la compensación, PR-4a) describe la regla del HECHO EXTERNO (no la reversión incondicional de antes), en la plantilla y en los tres JSON; la de «Resumen del turno» remite a ella', () => {
     for (const f of [PLANTILLA_R3, QTACO, leer('venta-minima.prueba.json'), leer('venta-minima.ensayo-demo-a.json')]) {
-      const nota = String((nodoDe(f, 'Resumen del turno') as unknown as J)['notes']);
+      const nota = String((nodoDe(f, 'Confirmar envío') as unknown as J)['notes']);
       expect(nota).toContain('SIN hecho externo');
-      expect(nota).toContain('CON un aviso ya enviado o un cierre ya registrado NO lo revierte');
-      expect(nota).toContain('conservando su ancla');
+      expect(nota).toContain('CON un aviso ya enviado o un cierre ya registrado');
+      expect(nota).toContain('su ancla');
       expect(nota).not.toContain('y antes devuelve el estado del teléfono al de antes del turno');
+      expect(String((nodoDe(f, 'Resumen del turno') as unknown as J)['notes'])).toContain('Confirmar envío');
     }
   });
 
@@ -187,7 +188,7 @@ describe('contrapruebas: con el defecto viejo puesto, el cliente se queda sin na
   });
 
   it('el reporte saliente sin la condición del id contaría un mensaje que no salió (el flujo real no reporta nada)', () => {
-    const viejo = sin((f) => { nodoDe(f, '¿Reportar? (saliente)').parameters['conditions'].conditions[0].leftValue = "={{ $('Armar mensajes').item.json.reportar === true }}"; });
+    const viejo = sin((f) => { nodoDe(f, '¿Reportar? (saliente)').parameters['conditions'].conditions[0].leftValue = "={{ $('Soltar mensajes').item.json.reportar === true }}"; });
     const w = crear({ 'Enviar a WhatsApp': 'cuerpo vacío', 'Enviar respaldo': 'cuerpo vacío' }, viejo);
     const desde = marcar(w);
     const t = turno(w, texto('hola'), true);
@@ -229,7 +230,7 @@ describe('las guardias de entrega de `construir.mjs --verificar` (sobre los JSON
     c.leftValue = '={{ !!($json.error) || !((($json.messages || [])[0] || {}).id) }}';
   }, /R1: «¿Falló el envío\?» mira `error`/);
   rompe('`¿Reportar? (saliente)` ya no exige el id de Meta', (f) => {
-    nodo(f, '¿Reportar? (saliente)').parameters['conditions'].conditions[0].leftValue = "={{ $('Armar mensajes').item.json.reportar === true }}";
+    nodo(f, '¿Reportar? (saliente)').parameters['conditions'].conditions[0].leftValue = "={{ $('Soltar mensajes').item.json.reportar === true }}";
   }, /R1: «¿Reportar\? \(saliente\)» no exige/);
   rompe('`Reportar mensaje (saliente)` no manda `idMeta` desde el id de Meta', (f) => {
     const n = nodo(f, 'Reportar mensaje (saliente)');
@@ -299,7 +300,8 @@ describe('las guardias de entrega de `construir.mjs --verificar` (sobre los JSON
     nodo(f, '¿Falló el envío?').parameters['conditions'].conditions[0].leftValue = '={{ $json.ok !== true }}';
   }, /R5: el verificador «¿Falló el envío\?» de «Enviar a WhatsApp» no lee messages\[0\]\.id/);
   rompe('el verificador del respaldo ya no corre después de él (su rama pasa ARRIBA)', (f) => {
-    nodo(f, 'Resumen del turno').position = [7400, 100];
+    // (PR-4a: «Resumen del turno» corre al final de la cadena «Confirmar envío» → «¿Compensar entrega?»; lo que fija su orden es que la cabeza de su rama vaya DEBAJO del envío)
+    nodo(f, 'Confirmar envío').position = [8360, 100];
   }, /R5: el verificador «Resumen del turno» no corre después de «Enviar respaldo»/);
   rompe('el envío principal con `continueOnFail`', (f) => {
     (nodo(f, 'Enviar a WhatsApp') as unknown as J)['continueOnFail'] = true;
@@ -316,19 +318,20 @@ describe('las guardias de entrega de `construir.mjs --verificar` (sobre los JSON
 // =====================================================================================================
 // 5. El presupuesto de nodos: la regla de entrega NO sumó ningún nodo
 // =====================================================================================================
-describe('presupuesto de nodos de producción (Andres, 03/10/2026: 50; 30/10/2026: 59 con el guardado de medios; 26/10/2026: +1 «Guardar comprobante» = 60)', () => {
-  it('el JSON de Q\'Taco tiene como máximo 60 nodos y NO tiene un nodo «Entrega fallida» (R3 va dentro de «Resumen del turno»)', () => {
+describe('presupuesto de nodos de producción (Andres, 03/10/2026: 50; 30/10/2026: 59 con el guardado de medios; 26/10/2026: +1 «Guardar comprobante» = 60; 04/11/2026: 69 con el estado en el servidor)', () => {
+  it('el JSON de Q\'Taco tiene como máximo 69 nodos y NO tiene un nodo «Entrega fallida» (R3 va dentro de «Resumen del turno»)', () => {
     // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61, y desde el contrato v2 del 30/10, 59: los 9 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md). Más «Guardar comprobante» (pedido del 26/10/2026): 60.
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(60);
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(69); // tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026)
     expect(QTACO.nodes.map((n) => n.name)).not.toContain('Entrega fallida');
   });
 
-  it('`--verificar` FALLA si un JSON de producción crece por encima de 60 nodos (50 más los 9 del guardado de medios y «Guardar comprobante»)', () => {
+  it('`--verificar` FALLA si un JSON de producción crece por encima de 69 nodos (50 más los 9 del guardado de medios, «Guardar comprobante» y los 8 del estado en el servidor)', () => {
     const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => {
       f.nodes.push({ id: 'uno-de-mas', name: 'Uno de más', type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
+      f.nodes.push({ id: 'otro-de-mas', name: 'Otro de más', type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
     }));
     expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(/tiene 61 nodos y el tope de producción es 60/);
+    expect(r.stderr).toMatch(/tiene 70 nodos y el tope de producción es 69/);
   });
 
   it('el error de entrega es de verdad un error de n8n: `FalloDeNodo` (y no un `success` con un aviso adentro)', () => {

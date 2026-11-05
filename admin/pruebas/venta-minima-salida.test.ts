@@ -33,6 +33,25 @@ const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/expe
 const AVISOS = readFileSync(join(CARPETA, 'armar-avisos.js'), 'utf8');
 const MENSAJES = readFileSync(join(CARPETA, 'armar-mensajes.js'), 'utf8');
 const RESUMEN = readFileSync(join(CARPETA, 'resumen-del-turno.js'), 'utf8');
+const SOLTAR = readFileSync(join(CARPETA, 'soltar-mensajes.js'), 'utf8');
+const CONFIRMAR = readFileSync(join(CARPETA, 'confirmar-envio.js'), 'utf8');
+// El estado de la conversación en el servidor (PR-4a): el módulo común `sesion` (REAL, como lo incluye construir.mjs) y las piezas REALES de `comun.js` que arman el bloque (no dobles).
+const SESION = readFileSync(join(CARPETA, '../../../comun-sin-agente/src/sesion.js'), 'utf8');
+const COMUN_REAL = readFileSync(join(CARPETA, '../lib/comun.js'), 'utf8');
+const deComun = (nombre: string): string => {
+  const f = new RegExp(`^function ${nombre}\\([\\s\\S]*?^}\\n`, 'm').exec(COMUN_REAL);
+  if (!f) throw new Error(`comun.js no trae la función ${nombre}`);
+  return f[0];
+};
+const constanteDeComun = (nombre: string): string => {
+  const f = new RegExp(`^const ${nombre} =[^\\n]*\\n`, 'm').exec(COMUN_REAL);
+  if (!f) throw new Error(`comun.js no trae la constante ${nombre}`);
+  return f[0];
+};
+const DE_COMUN = [
+  ...['VM_PEDIDOS_MS', 'VM_MAX_PEDIDOS', 'VM_RESPALDO_HASTA_MS', 'VM_VENCE_MS', 'VM_VENCE_COMPROBANTE_MS', 'SS_CONFIG'].map(constanteDeComun),
+  ...['_vmObjeto', '_vmCadena', '_vmClaveValida', '_vmIdValido', '_vmHay', '_vmVence', 'vmSes', 'vmGuardarPedido', 'vmVenceEnMin', 'vmRetirarRespaldo'].map(deComun),
+].join('\n');
 // El módulo común de Pedidos (qr-del-pedido.js) es REAL, no un doble: lo que arma el QR lo incluye construir.mjs en cada nodo.
 const PQR = readFileSync(join(CARPETA, '../../../../src/modulos/pedidos/qr-del-pedido.js'), 'utf8') + '\n';
 
@@ -94,6 +113,8 @@ function avDestinatarios(csv, from, pref) {
   }
   return out;
 }
+function cnNodo(n) { return vmNodo(n); }
+function cnPrimero(n) { return vmPrimero(n); }
 function avDentroDelTopeDiario(sd, ms, tope) { return Number(sd.avisosDia || 0) < tope; }
 function avContar(sd, ms, n) { __bit.push(['avContar', n]); sd.avisosDia = Number(sd.avisosDia || 0) + n; }
 function rsAnotar(sd, from, ms) { __bit.push(['rsAnotar', from]); sd.reservasDia = Number(sd.reservasDia || 0) + 1; }
@@ -136,16 +157,30 @@ interface Entrada {
   /** Código que se agrega después de los dobles (una función repetida pisa a la anterior). */
   extra?: string;
 }
-function nodo(fuente: string, e: Entrada = {}): { items: J[]; g: J; sd: J; bit: unknown[][] } {
+/** Lo que `Config del negocio` deja en `cfg.sesion` cuando el servidor contestó el `leer`: sin estado todavía (versión 0) salvo que la prueba siembre uno. */
+const SESION_VACIA: J = { ok: true, version: 0, estado: null, vencido: false, corrupta: false, visto: 'nuevo' };
+/** La sesión que habría leído el servidor para este teléfono: `bloque` = `{v, estado, pedidos}` (o null). */
+const sesionCon = (bloque: J | null, version = 1): J => ({ ...SESION_VACIA, version, estado: bloque });
+interface Salida { items: J[]; g: J; sd: J; bit: unknown[][]; armado?: J }
+function nodo(fuente: string, e: Entrada = {}): Salida {
   const g: J = e.g ?? {};
   const bit: unknown[][] = [];
-  const refs: Referencias = { 'Config del negocio': { ...CFG, ...e.cfg }, 'Interpretar entrada': { ...ENTRADA, ...e.t } };
+  const esMensajes = fuente === MENSAJES;
+  const refs: Referencias = { 'Config del negocio': { sesion: SESION_VACIA, ...CFG, ...e.cfg }, 'Interpretar entrada': { ...ENTRADA, ...e.t } };
   if (e.plan) refs[e.nombrePlan ?? 'Plan del turno'] = e.plan;
   if (e.armados) refs['Armar avisos'] = e.armados;
   if (e.enviados) refs['Enviar aviso'] = e.enviados;
   if (e.respaldos) refs['Aviso de respaldo'] = e.respaldos;
-  const items = ejecutar(`${DOBLES}\n${e.extra ?? ''}\n${fuente}`, [{}], refs, { $getWorkflowStaticData: () => g, __bit: bit });
-  return { items, g, sd: (g['ventaMinima'] ?? {}) as J, bit };
+  const items = ejecutar(`${DOBLES}\n${DE_COMUN}\n${esMensajes ? `${SESION}\n` : ''}${e.extra ?? ''}\n${fuente}`, [{}], refs, { $getWorkflowStaticData: () => g, __bit: bit, $execution: { id: 'e1' } });
+  if (!esMensajes) return { items, g, sd: (g['ventaMinima'] ?? {}) as J, bit };
+  // «Armar mensajes» ya no envía ni escribe: arma TODO en un ítem (`salida`) y el bloque a comprometer (`bloque`). Esta vista conserva la lectura de siempre: `items` = lo que sale y `sd` = los
+  // datos estáticos que SIGUEN en n8n (residuo de PR-4b) más `estados` y `pedidos` tal como quedarían en el servidor tras el compromiso.
+  const a = items[0] as J;
+  const bloque = (a['bloque'] ?? null) as J | null;
+  const sd: J = { ...((g['ventaMinima'] ?? {}) as J) };
+  if (bloque && bloque['estado']) sd['estados'] = { [String(a['from'])]: bloque['estado'] };
+  if (bloque && Object.keys((bloque['pedidos'] ?? {}) as J).length) sd['pedidos'] = bloque['pedidos'];
+  return { items: a['salida'] as J[], g, sd, bit, armado: a };
 }
 const avisos = (plan: J, e: Entrada = {}) => nodo(AVISOS, { plan, ...e });
 const mensajes = (plan: J, e: Entrada = {}) => nodo(MENSAJES, { plan, ...e });
@@ -858,51 +893,56 @@ describe('Armar mensajes — marcas de derivación y de reservas (solo si el avi
 
 // =================================================================================================
 describe('Armar mensajes — estado, pedido guardado y cierre (el único que escribe)', () => {
-  it('escribe el estado con vmBarrer antes de vmEscribirEstado; «nada» y sin estadoNuevo no escriben', () => {
+  it('arma el estado con vmEscribirEstado sobre la vista de la sesión y lo pide al servidor; «nada» y sin estadoNuevo no arman nada que comprometer', () => {
     const r = mensajes({ ruta: 'menu', estadoNuevo: { paso: 'menu' }, mensajes: [texto('Hola')] });
     const pasos = r.bit.map((b) => b[0]);
-    expect(pasos.indexOf('barrer')).toBeGreaterThanOrEqual(0);
-    expect(pasos.indexOf('barrer')).toBeLessThan(pasos.indexOf('escribirEstado'));
+    expect(pasos).toContain('escribirEstado');
     expect(r.bit.find((b) => b[0] === 'escribirEstado')).toEqual(['escribirEstado', CLIENTE, 'menu']);
     expect(r.items[0]!['resumen']).toMatchObject({ estadoDespues: { paso: 'menu' } });
+    expect(r.armado).toMatchObject({ comprometer: true, modo: 'comprometer' });
     const nada = mensajes({ ruta: 'nada', estadoNuevo: { paso: 'menu' }, mensajes: [texto('Hola')] });
     expect(nada.bit.some((b) => b[0] === 'escribirEstado')).toBe(false);
+    expect(nada.armado).toMatchObject({ comprometer: false, modo: 'sin_estado_que_guardar', compromiso: null });
     const sin = mensajes({ ruta: 'menu', estadoNuevo: null, mensajes: [texto('Hola')] });
     expect(sin.bit.some((b) => b[0] === 'escribirEstado')).toBe(false);
+    expect(sin.armado).toMatchObject({ comprometer: false, modo: 'sin_estado_que_guardar' });
     const claveMala = mensajes({ ruta: 'menu', estadoNuevo: { paso: 'menu' }, mensajes: [texto('Hola')] }, { t: { from: 'abc' } });
     expect(claveMala.bit.some((b) => b[0] === 'escribirEstado')).toBe(false);
   });
 
-  it('el estado es por teléfono: dos clientes no comparten', () => {
-    const g: J = {};
-    mensajes({ ruta: 'm', estadoNuevo: { paso: 'pedido' }, mensajes: [texto('a')] }, { g });
-    mensajes({ ruta: 'm', estadoNuevo: { paso: 'reserva' }, mensajes: [texto('b')] }, { g, t: { from: '59100000012' } });
-    expect(g['ventaMinima'].estados[CLIENTE].paso).toBe('pedido');
-    expect(g['ventaMinima'].estados['59100000012'].paso).toBe('reserva');
+  it('el estado es por teléfono: dos clientes no comparten (cada uno tiene su bloque en el servidor)', () => {
+    const a = mensajes({ ruta: 'm', estadoNuevo: { paso: 'pedido' }, mensajes: [texto('a')] });
+    const b = mensajes({ ruta: 'm', estadoNuevo: { paso: 'reserva' }, mensajes: [texto('b')] }, { t: { from: '59100000012' } });
+    expect(a.sd['estados'][CLIENTE].paso).toBe('pedido');
+    expect(a.armado!['compromiso'].telefono).toBe(CLIENTE);
+    expect(b.sd['estados'][CLIENTE]).toBeUndefined();
+    expect(b.sd['estados']['59100000012'].paso).toBe('reserva');
+    expect(b.armado!['compromiso'].telefono).toBe('59100000012');
   });
 
   it('guarda el pedido con guardadoMs y lo fusiona en el turno siguiente (mediaId, resultado)', () => {
-    const g: J = {};
-    mensajes({ ruta: 'm', pedido: PEDIDO, mensajes: [texto('a')] }, { g });
-    expect(g['ventaMinima'].pedidos[PEDIDO['pedidoId']]).toMatchObject({ total: 55, codigo: 'K7Q2', guardadoMs: AHORA });
-    mensajes({ ruta: 'm', pedido: { pedidoId: PEDIDO['pedidoId'], mediaId: 'media-1', resultado: 'cuadra' }, mensajes: [texto('b')] }, { g, t: { ahoraMs: AHORA + 5 * MIN } });
-    expect(g['ventaMinima'].pedidos[PEDIDO['pedidoId']]).toMatchObject({
+    const primero = mensajes({ ruta: 'm', pedido: PEDIDO, mensajes: [texto('a')] });
+    expect(primero.sd['pedidos'][PEDIDO['pedidoId']]).toMatchObject({ total: 55, codigo: 'K7Q2', guardadoMs: AHORA });
+    const siguiente = mensajes({ ruta: 'm', pedido: { pedidoId: PEDIDO['pedidoId'], mediaId: 'media-1', resultado: 'cuadra' }, mensajes: [texto('b')] },
+      { cfg: { sesion: sesionCon(primero.armado!['bloque'] as J) }, t: { ahoraMs: AHORA + 5 * MIN } });
+    expect(siguiente.sd['pedidos'][PEDIDO['pedidoId']]).toMatchObject({
       total: 55, lineas: PEDIDO['lineas'], mediaId: 'media-1', resultado: 'cuadra', guardadoMs: AHORA + 5 * MIN,
     });
   });
 
-  it('los pedidos de más de 72 horas se borran; los de menos, no', () => {
-    const g = { ventaMinima: { pedidos: { viejo: { guardadoMs: AHORA - 73 * HORA }, reciente: { guardadoMs: AHORA - 71 * HORA }, roto: null } } };
-    const r = mensajes({ ruta: 'm', mensajes: [texto('a')] }, { g });
-    expect(Object.keys(r.sd['pedidos'])).toEqual(['reciente']);
+  it('los pedidos de más de 72 horas se borran al comprometer; los de menos, no', () => {
+    const bloque = { v: 1, estado: null, pedidos: { viejo: { guardadoMs: AHORA - 73 * HORA }, reciente: { guardadoMs: AHORA - 71 * HORA }, roto: null } };
+    const r = mensajes({ ruta: 'm', pedido: PEDIDO, mensajes: [texto('a')] }, { cfg: { sesion: sesionCon(bloque) } });
+    expect(Object.keys(r.sd['pedidos']).sort()).toEqual(['reciente', PEDIDO['pedidoId']].sort());
   });
 
-  it('sin datos estáticos (vmSd da null) el turno responde igual, sin estado ni conteo', () => {
+  it('sin datos estáticos (vmSd da null) el turno responde igual y el estado se arma igual (vive en el servidor); solo falta el residuo de PR-4b', () => {
     const sinSd = 'function vmSd() { return null; }';
     const r = nodo(MENSAJES, { plan: { ruta: 'm', estadoNuevo: { paso: 'menu' }, pedido: PEDIDO, mensajes: [texto('Hola')] }, extra: sinSd });
     expect(r.items).toHaveLength(1);
     expect(r.items[0]!['texto']).toBe('Hola');
-    expect(r.bit).toEqual([]);
+    expect(r.armado).toMatchObject({ comprometer: true, modo: 'comprometer' });
+    expect(r.sd['estados'][CLIENTE].paso).toBe('menu');
     const a = nodo(AVISOS, { plan: { aviso: { tipo: 'pedido', datos: {} } }, extra: sinSd });
     expect(a.items).toHaveLength(2);
     expect(a.items[0]!['errores']).toEqual(['sin_datos_estaticos: no se pudo comprobar el tope de avisos']);
@@ -1078,7 +1118,7 @@ describe('Las diez reglas: nada prohibido sale, en ningún texto', () => {
 // =================================================================================================
 describe('Resumen del turno', () => {
   const corrida = (items: J[], armados: J[] = [], cfg: J = {}): J[] =>
-    ejecutar(`${DOBLES}\n${RESUMEN}`, [{}], { 'Config del negocio': { ...CFG, ...cfg }, 'Armar mensajes': items, 'Armar avisos': armados },
+    ejecutar(`${DOBLES}\n${DE_COMUN}\n${SESION}\n${RESUMEN}`, [{}], { 'Config del negocio': { ...CFG, ...cfg }, 'Soltar mensajes': items, 'Armar avisos': armados },
       { $getWorkflowStaticData: () => ({}), __bit: [] });
 
   it('junta los mensajes, los avisos armados y el resumen del primer ítem', () => {
@@ -1131,12 +1171,16 @@ describe('Los tres nodos son JavaScript plano', () => {
 
   it('solo Armar mensajes escribe estado: los otros dos no llaman a las funciones que escriben (salvo que Resumen del turno DEVUELVE el estado previo si la entrega falla del todo: R3)', () => {
     expect(AVISOS).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData/);
-    expect(RESUMEN).not.toMatch(/vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData/);
-    // La única escritura de Resumen es la reversión, y va justo antes del `throw` de la entrega fallida.
-    expect(RESUMEN.match(/vmEscribirEstado/g)).toHaveLength(1);
-    expect(RESUMEN).toMatch(/vmEscribirEstado\([\s\S]{0,200}\}\s*throw new Error\('Entrega fallida/);
+    // PR-4a: el estado vive en el servidor. Resumen ya no escribe nada (ni en los datos estáticos): solo corta con el `throw` de la entrega fallida.
+    expect(RESUMEN).not.toMatch(/vmBarrer|vmEscribirEstado|avContar|rsAnotar|\$getWorkflowStaticData|vmSd\(/);
+    expect(RESUMEN).toMatch(/throw new Error\('Entrega fallida/);
+    // La compensación la ARMA «Confirmar envío» (con el bloque de antes del turno) y la manda el nodo HTTP «Comprometer compensación»; los Code nunca llaman al servidor.
+    expect(CONFIRMAR).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData|vmSd\(|fetch|\$http/);
+    expect(SOLTAR).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|vmSd\(|fetch|\$http/);
+    // «Armar mensajes» ARMA el estado (sobre la vista de la sesión) y las marcas del residuo de PR-4b; no envía ni llama a la red.
     expect(MENSAJES).toMatch(/vmEscribirEstado/);
     expect(MENSAJES).toMatch(/avContar/);
+    expect(MENSAJES).not.toMatch(/fetch|\$http|httpRequest/);
   });
 });
 
@@ -1274,18 +1318,19 @@ describe('Armar mensajes y Armar avisos — S6: topes por teléfono y por hora, 
     expect(claves).not.toContain('59170000000'); // las más antiguas, sí
   });
 
-  it('`sd.pedidos` guarda como mucho 500 pedidos: al pasarse se expulsan los más antiguos, nunca el recién guardado', () => {
+  it('los pedidos de un teléfono caben en el tope en BYTES del servidor (15.000): al pasarse se expulsan los más antiguos, nunca el recién guardado ni el que sigue en el estado', () => {
     const viejos: J = {};
-    for (let i = 0; i < 520; i++) viejos[`ped-${i}`] = { pedidoId: `ped-${i}`, from: '59100000099', total: 10, guardadoMs: AHORA - 60 * MIN + i };
-    const r = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr()] }, { g: { ventaMinima: { pedidos: viejos } } });
+    for (let i = 0; i < 520; i++) viejos[`ped-${i}`] = { pedidoId: `ped-${i}`, from: CLIENTE, total: 10, guardadoMs: AHORA - 60 * MIN + i };
+    const r = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr()] }, { cfg: { sesion: sesionCon({ v: 1, estado: null, pedidos: viejos }) } });
     const claves = Object.keys(r.sd['pedidos']);
-    expect(claves).toHaveLength(500);
+    expect(claves.length).toBeLessThan(520);
     expect(claves).toContain(PEDIDO['pedidoId']);
     expect(claves).not.toContain('ped-0');
     expect(claves).toContain('ped-519');
+    expect(Buffer.byteLength(JSON.stringify(r.armado!['bloque']))).toBeLessThanOrEqual(15000);
     // Negado: por debajo del tope no se expulsa nada.
-    const pocos: J = { 'ped-a': { pedidoId: 'ped-a', from: '59100000099', total: 10, guardadoMs: AHORA - 60 * MIN } };
-    const q = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr()] }, { g: { ventaMinima: { pedidos: pocos } } });
+    const pocos: J = { 'ped-a': { pedidoId: 'ped-a', from: CLIENTE, total: 10, guardadoMs: AHORA - 60 * MIN } };
+    const q = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr()] }, { cfg: { sesion: sesionCon({ v: 1, estado: null, pedidos: pocos }) } });
     expect(Object.keys(q.sd['pedidos']).sort()).toEqual(['ped-a', PEDIDO['pedidoId']].sort());
   });
 });

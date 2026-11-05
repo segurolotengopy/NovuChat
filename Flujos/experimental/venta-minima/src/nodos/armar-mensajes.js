@@ -1,8 +1,8 @@
 // ARMAR MENSAJES (Venta mínima v0): segunda etapa de envío (DD6). Todo lo que sale AL CLIENTE
 // se arma acá, con código, y sale un ítem por mensaje:
 // {para, payload, texto, respaldo, tipoReporte, evento, referencia, monto, reportar, ...}.
-// También es el ÚNICO lugar donde se escribe el estado por teléfono, los pedidos guardados y la
-// marca de derivación (`staticData`), al final del turno.
+// También es el ÚNICO lugar donde se ARMA el estado por teléfono y sus pedidos guardados (PR-4a): NO envía ni escribe, pide el compromiso del bloque al servidor ANTES
+// de enviar (`Comprometer turno`) y `Soltar mensajes` decide qué sale con lo que contestó. Las marcas de aviso por hora (`staticData`) siguen aquí (residuo de PR-4b).
 //
 // LO QUE NUNCA HACE:
 //   - decir «pasé tu pedido al restaurante» o «tu solicitud llegó al restaurante» si Meta no
@@ -23,9 +23,9 @@
 //   - bloquear un mensaje por el texto de un TERCERO: la dirección, la referencia, las notas y el nombre llegan ya
 //     saneados por `Plan del turno` (las palabras prohibidas en «…»); esta red queda para el texto fijo y el compuesto.
 //
-// ESTADO QUE ESCRIBE (solo este nodo): el estado por teléfono; los pedidos guardados (72 h, como mucho 500: al pasar el
-// tope se expulsan los más antiguos); y las marcas de aviso por hora, SOLO si el aviso salió: `transferencias` y
-// `avisosPedido` (pedido y comprobante), que `Armar avisos` lee para sus topes. Un aviso que falló no deja marca.
+// ESTADO QUE ARMA (solo este nodo): el estado por teléfono y sus pedidos guardados (72 h) en UN bloque `{v, estado, pedidos}` para el servidor, recortado por BYTES
+// (tope 15.000: primero salen los pedidos más antiguos, nunca el que espera el comprobante). Si no hay sesión o el bloque no cabe, sale el genérico con botón (reemplaza la respuesta). LO QUE SIGUE EN `staticData` (residuo de PR-4b): las marcas de
+// aviso por hora, SOLO si el aviso salió: `transferencias` y `avisosPedido` (pedido y comprobante), que `Armar avisos` lee para sus topes; un aviso que falló no deja marca.
 //
 // BOTÓN «MENÚ» (03/10): todo mensaje interactivo con botones de respuesta que tenga lugar (menos de tres) sale con `m|menu`
 // como último botón (salvo el propio menú: `sinMenu`), para que el cliente siempre pueda volver al inicio; el mensaje con botón de enlace (uno solo) lleva al
@@ -38,7 +38,7 @@
 // en un texto y un mensaje corto con el total: es el único caso en el flujo que agrega un mensaje.)
 //
 // MODO PRUEBA: los mensajes al cliente van a `telefonoDePrueba`, sin prefijo y sin reportar.
-const AM_PLAN = vmPrimero('Plan del turno') || vmPrimero('Uso extendido') || vmPrimero('Comercio no operativo') || {};
+const AM_PLAN = vmPrimero('Plan del turno') || vmPrimero('Uso extendido') || vmPrimero('Comercio no operativo') || vmPrimero('Sin estado') || {};
 const AM_CFG = vmCfg();
 // ¿Es la conversación (`Plan del turno`)? El aviso fijo de «Uso extendido» y el de «Comercio no operativo» no pasan por
 // `Decidir turno`: ahí escribir «menú» no hace nada y no se ofrece (solo se ofrece lo que se cumple).
@@ -61,8 +61,6 @@ const AM_GEN_CUERPO = AM_CONVERSA
 const AM_SEGUIR = 'Para volver al inicio, escribe «menú».';
 const AM_GEN_BOTON = 'Escribir al local';
 const AM_HORA_MS = 60 * 60 * 1000;
-const AM_PEDIDOS_MS = 72 * AM_HORA_MS;
-const AM_MAX_PEDIDOS = 500; // pedidos guardados: al pasar el tope se expulsan los más antiguos
 const AM_MAX_MARCAS = 500; // teléfonos con marcas de aviso por hora
 const AM_sd = vmSd();
 
@@ -349,10 +347,10 @@ for (const m of AM_pedidosMsg) {
 }
 if (AM_pedidosMsg.length && !AM_lista.length) AM_lista.push(amGenerico('ningun_mensaje_utilizable'));
 
-const AM_salida = [];
-for (const d of AM_lista) {
+// Un ítem de salida para el cliente (o para el número de prueba).
+function amSalir(d) {
   const numero = AM_PRUEBA ? AM_TEL_PRUEBA : AM_FROM;
-  if (!numero && !AM_PRUEBA) continue;
+  if (!numero && !AM_PRUEBA) return null;
   d.payload.to = numero;
   const j = {
     para: numero, destino: 'cliente', payload: d.payload, texto: d.texto, respaldo: d.respaldo,
@@ -364,7 +362,12 @@ for (const d of AM_lista) {
   if (d.referencia) j.referencia = d.referencia;
   if (d.monto !== undefined) j.monto = d.monto;
   if (d.evento === 'qr_enviado' && Array.isArray(d.lineas) && d.lineas.length) { j.lineas = d.lineas; if (d.entrega) j.entrega = d.entrega; if (typeof d.reemplaza === 'string' && d.reemplaza) j.reemplaza = d.reemplaza; }
-  AM_salida.push(j);
+  return j;
+}
+const AM_salida = [];
+for (const d of AM_lista) {
+  const j = amSalir(d);
+  if (j) AM_salida.push(j);
 }
 
 // ----------------------------------------------------------------- el estado: un solo lugar
@@ -372,35 +375,23 @@ const AM_claveValida = /^\d{6,20}$/.test(AM_FROM);
 const AM_estadoNuevo = typeof AM_PLAN.estadoNuevo === 'string' ? { paso: AM_PLAN.estadoNuevo }
   : (AM_PLAN.estadoNuevo && typeof AM_PLAN.estadoNuevo === 'object' ? AM_PLAN.estadoNuevo : null);
 const AM_sinQr = AM_qrRechazado && AM_estadoNuevo && AM_estadoNuevo.paso === 'esperando_comprobante';
+// La vista de la sesión del servidor (el estado de este teléfono y SUS pedidos): aquí se cambia y de ahí sale el bloque a comprometer.
+const AM_ses = vmSes(AM_FROM, AM_AHORA);
 let AM_estadoDespues = null;
+let AM_pedidoGuardado = false;
+if (AM_estadoNuevo && AM_claveValida && String(AM_PLAN.ruta || '') !== 'nada' && !AM_sinQr) {
+  AM_estadoDespues = Object.assign(vmEstadoBase(), AM_estadoNuevo);
+  vmEscribirEstado(AM_ses, AM_FROM, AM_estadoDespues, AM_AHORA);
+}
+// El pedido guardado vive 72 horas desde su última escritura (`vmGuardarPedido` poda lo vencido).
+const AM_ped = AM_PLAN.pedido && typeof AM_PLAN.pedido === 'object' ? AM_PLAN.pedido : null;
+if (AM_ped && AM_ped.pedidoId && !AM_sinQr) AM_pedidoGuardado = vmGuardarPedido(AM_ses, AM_ped, AM_AHORA) !== null;
 if (AM_sd) {
+  // Los mapas VIEJOS (`estados`, `vistos`) que quedan en la memoria de n8n hasta el retiro del respaldo se siguen podando por su vencimiento.
   vmBarrer(AM_sd, AM_AHORA);
-  if (AM_estadoNuevo && AM_claveValida && String(AM_PLAN.ruta || '') !== 'nada' && !AM_sinQr) {
-    AM_estadoDespues = Object.assign(vmEstadoBase(), AM_estadoNuevo);
-    vmEscribirEstado(AM_sd, AM_FROM, AM_estadoDespues, AM_AHORA);
-  }
-  // El pedido guardado vive 72 horas desde su última escritura.
-  if (AM_sd.pedidos && typeof AM_sd.pedidos === 'object') {
-    for (const k of Object.keys(AM_sd.pedidos)) {
-      const v = AM_sd.pedidos[k];
-      if (!v || !(AM_AHORA - Number(v.guardadoMs || 0) < AM_PEDIDOS_MS)) delete AM_sd.pedidos[k];
-    }
-  }
-  const ped = AM_PLAN.pedido && typeof AM_PLAN.pedido === 'object' ? AM_PLAN.pedido : null;
-  if (ped && ped.pedidoId && !AM_sinQr) {
-    if (!AM_sd.pedidos || typeof AM_sd.pedidos !== 'object') AM_sd.pedidos = {};
-    const id = String(ped.pedidoId);
-    AM_sd.pedidos[id] = Object.assign({}, AM_sd.pedidos[id] || {}, ped, { guardadoMs: AM_AHORA });
-    // Como mucho 500 pedidos guardados: pasado el tope se expulsan los más antiguos (el recién escrito nunca).
-    const claves = Object.keys(AM_sd.pedidos);
-    if (claves.length > AM_MAX_PEDIDOS) {
-      claves.sort((a, b) => Number(AM_sd.pedidos[a].guardadoMs || 0) - Number(AM_sd.pedidos[b].guardadoMs || 0));
-      for (const k of claves.slice(0, claves.length - AM_MAX_PEDIDOS)) delete AM_sd.pedidos[k];
-    }
-  }
   // Las marcas de aviso por hora se escriben SOLO si el aviso salió (hecho, no dicho): `transferencias` (derivaciones)
   // y `avisosPedido` (avisos de pedido y de comprobante). `Armar avisos` las lee para aplicar `topeTransferenciasHora` y
-  // `topePedidosHora`. Se podan las de más de una hora y no hay más de 500 teléfonos con marca.
+  // `topePedidosHora`. Se podan las de más de una hora y no hay más de 500 teléfonos con marca. RESIDUO DE PR-4b: siguen en `staticData`.
   for (const mapa of ['transferencias', 'avisosPedido']) {
     const m = AM_sd[mapa];
     if (!m || typeof m !== 'object') continue;
@@ -429,6 +420,43 @@ if (AM_sd) {
   if (AM_wamids.length) avContar(AM_sd, AM_AHORA, AM_wamids.length);
 }
 
+// EL BLOQUE A COMPROMETER: el estado de este teléfono y SUS pedidos, recortado por BYTES al tope del servidor (`SS_CONFIG.maxBytes`, medido en UTF-8: `ssBytes` no lanza con un surrogate
+// suelto). Primero se sueltan los pedidos más antiguos; el que sigue en el estado (el que espera el comprobante) va al final, porque su copia en el estado basta para encontrarlo por
+// su referencia. Si ni el estado solo cabe, null: no se manda nada que el servidor rechazaría con 413 (sale el genérico con botón).
+function amBloque(ses, from) {
+  const estado = Object.prototype.hasOwnProperty.call(ses.estados, from) ? ses.estados[from] : null;
+  const pedidos = {};
+  for (const k of Object.keys(ses.pedidos)) pedidos[k] = ses.pedidos[k];
+  const activo = estado && typeof estado.pedido === 'object' && estado.pedido ? String(estado.pedido.pedidoId || '') : '';
+  const arma = () => ({ v: 1, estado: estado, pedidos: pedidos });
+  const pesa = () => ssBytes(JSON.stringify(arma()));
+  const antiguos = Object.keys(pedidos).sort((a, b) => Number(pedidos[a].guardadoMs || 0) - Number(pedidos[b].guardadoMs || 0));
+  const orden = antiguos.filter((k) => k !== activo).concat(antiguos.filter((k) => k === activo));
+  for (const k of orden) {
+    if (pesa() <= SS_CONFIG.maxBytes) break;
+    delete pedidos[k];
+  }
+  return pesa() <= SS_CONFIG.maxBytes ? arma() : null;
+}
+
+// ----------------------------------------------------------------- el compromiso (ANTES de enviar)
+//   sin_estado_que_guardar  el turno no cambia el estado (uso extendido, comercio no operativo, sin estado, `nada`): sale lo planificado, nada que comprometer;
+//   comprometer             el bloque cabe y hay versión: `Comprometer turno` lo manda, `Soltar mensajes` decide con lo que conteste;
+//   sin_sesion              hay estado que guardar pero el servidor no dio versión (no debería llegar aquí: `¿Hay estado?` manda al aviso con el botón antes): falla cerrada, sale el genérico con botón;
+//   no_cabe                 el bloque no cabe en el tope o el teléfono no vale para el servidor: sale el genérico con botón (reemplaza la respuesta).
+const AM_hayQueGuardar = AM_estadoDespues !== null || AM_pedidoGuardado;
+let AM_modo = 'sin_estado_que_guardar';
+let AM_bloque = null;
+let AM_compromiso = null;
+if (AM_hayQueGuardar) {
+  if (!AM_ses.ok) AM_modo = 'sin_sesion';
+  else {
+    AM_bloque = amBloque(AM_ses, AM_FROM);
+    AM_compromiso = AM_bloque ? ssCuerpoComprometer(AM_FROM, $execution.id, 'fin', AM_ses.version, AM_bloque) : null;
+    if (AM_compromiso) { AM_compromiso.sesion.venceEnMin = vmVenceEnMin(AM_bloque); AM_modo = 'comprometer'; } else AM_modo = 'no_cabe';
+  }
+}
+
 // ----------------------------------------------------------------- el cierre (solo el primer ítem)
 let AM_cierre = null;
 const AM_c = AM_PLAN.cierre && typeof AM_PLAN.cierre === 'object' ? AM_PLAN.cierre : null;
@@ -455,11 +483,27 @@ const AM_resumen = {
   avisosArmados: AM_armados.length, avisosConWamid: AM_wamids.length, qrRechazado: AM_qrRechazado,
   mensajesSalientes: AM_salida.length,
 };
+// Lo que sale si el turno se compromete (o no hay nada que comprometer): un ítem por mensaje; sin mensajes, un ítem `sinMensajes`.
+let AM_final;
 if (!AM_salida.length) {
-  return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: AM_FROM,
-    cierre: AM_cierre, resumen: AM_resumen, errores: AM_errores } }];
+  AM_final = [{ sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: AM_FROM,
+    cierre: AM_cierre, resumen: AM_resumen, errores: AM_errores }];
+} else {
+  AM_salida[0].cierre = AM_cierre;
+  AM_salida[0].resumen = AM_resumen;
+  AM_salida[0].errores = AM_errores;
+  AM_final = AM_salida;
 }
-AM_salida[0].cierre = AM_cierre;
-AM_salida[0].resumen = AM_resumen;
-AM_salida[0].errores = AM_errores;
-return AM_salida.map((j) => ({ json: j }));
+// Lo que sale si el estado no se pudo guardar (el compromiso falló, o el bloque no cabe): SOLO el genérico con el botón a recepción, sin cierre. REEMPLAZA la respuesta (un mensaje por turno).
+const AM_erroresFalla = AM_errores.concat(['estado_no_comprometido']);
+const AM_dFalla = amEnlace(amEmojis(AM_GEN_CUERPO).trim(), AM_GEN_BOTON, '', 'interactive');
+const AM_jFalla = amSalir(AM_dFalla);
+const AM_falla = AM_jFalla ? [Object.assign(AM_jFalla, {
+  cierre: null, errores: AM_erroresFalla,
+  resumen: Object.assign({}, AM_resumen, { estadoDespues: null, errores: AM_erroresFalla, mensajesSalientes: 1, avisoSalio: AM_AVISO_SALIO }),
+})] : [{ sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: AM_FROM, cierre: null, errores: AM_erroresFalla,
+  resumen: Object.assign({}, AM_resumen, { estadoDespues: null, errores: AM_erroresFalla, mensajesSalientes: 0 }) }];
+return [{ json: {
+  turno: true, modo: AM_modo, comprometer: AM_compromiso !== null, compromiso: AM_compromiso, numero: ssNumeroHeader(),
+  salida: AM_final, salidaFalla: AM_falla, previo: AM_ses.previo, bloque: AM_bloque, deRespaldo: AM_ses.deRespaldo, from: AM_FROM, ahoraMs: AM_AHORA,
+} }];

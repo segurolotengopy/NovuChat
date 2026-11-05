@@ -22,7 +22,7 @@
 // el flujo siga hasta `Armar mensajes`. El PRIMER ítem lleva `errores`.
 //
 // MODO PRUEBA: todo va a `telefonoDePrueba`, con el prefijo «[al restaurante]».
-const AA_PLAN = vmPrimero('Plan del turno') || vmPrimero('Uso extendido') || vmPrimero('Comercio no operativo') || {};
+const AA_PLAN = vmPrimero('Plan del turno') || vmPrimero('Uso extendido') || vmPrimero('Comercio no operativo') || vmPrimero('Sin estado') || {};
 const AA_CFG = vmCfg();
 const AA_T = vmPrimero('Interpretar entrada') || {};
 const AA_AHORA = Number(AA_T.ahoraMs) || Date.now();

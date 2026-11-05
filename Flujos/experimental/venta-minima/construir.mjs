@@ -18,6 +18,8 @@
  *     más, para no repetir código que el nodo no usa:
  *       `"@@comun:nodos/<archivo>.js"`  solo `comun.js` + el archivo;
  *       `"@@solo:nodos/<archivo>.js"`   solo el archivo.
+ *     Y el sufijo `+sesion` (`@@todo+sesion:…`, `@@comun+sesion:…`) pega ENTRE las librerías y el nodo el módulo común
+ *     `comun-sin-agente/src/sesion.js` (el estado de la conversación en el servidor, PR-4a): se INCLUYE, nunca se copia ni se edita.
  *   - `@@dato:a.b.c@@` (dentro de cualquier texto) se reemplaza por ese dato del tenant;
  *   - `@@cred:ingesta|graph|medios|entradaPrueba|trigger` (en el nombre de una credencial) por el nombre que da el tenant;
  *   - `Config base` se llena con `configBase` del tenant (tipos string, number o boolean).
@@ -52,6 +54,8 @@ const DATOS = join(AQUI, '../../../admin/scripts/datos/venta-minima');
 const verificar = process.argv.includes('--verificar');
 
 const leer = (ruta) => readFileSync(join(AQUI, ruta), 'utf8');
+// El módulo común del estado de la conversación (PR-4a): lo INCLUYEN los nodos que marcan `+sesion`; la guardia compara con esta fuente.
+const FUENTE_SESION = leer('../comun-sin-agente/src/sesion.js').trimEnd();
 const ORDEN_LIBS = ['comun', 'pedido', 'reserva', 'avisos', 'promos', 'cobro'];
 // Módulos comunes que se INCLUYEN (no se copian): viven en Flujos/src/modulos/<m>/ y van detrás de las librerías propias.
 const MODULOS_COMUNES = ['../../src/modulos/pedidos/qr-del-pedido.js'];
@@ -78,7 +82,9 @@ const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 // 50 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
 // excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 // +1: «Guardar comprobante» (pedido de Andres del 26/10/2026: ningún comprobante se pierde; ver DISENO.md).
-const TOPE_DE_NODOS = 60;
+// +9: el estado de la conversación y los vistos en el servidor (PR-4a; tope de Q'Taco 60 → 69, aprobado por Andres el 04/11/2026): «¿Hay estado?», «Sin estado», «¿Comprometer turno?», «Comprometer turno»,
+// «Soltar mensajes», «Confirmar envío», «¿Compensar entrega?» y «Comprometer compensación» (8; queda 1 de margen). Ver DISENO.md y docs/versiones-por-cliente.md.
+const TOPE_DE_NODOS = 69;
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,
 // su credencial de cabecera (la de la ingesta), `responseMode: onReceived` y la ruta como marcador (una URL de capacidad que
@@ -122,12 +128,16 @@ const URL_QR_SIMULADO = /^https:\/\/raw\.githubusercontent\.com\/segurolotengopy
 const MODOS_COBRO = ['simulado', 'real', 'sin_qr'];
 
 function codigoDe(marca, nodo) {
-  const modo = marca.startsWith('@@solo:') ? 'solo' : (marca.startsWith('@@comun:') ? 'comun' : 'todo');
-  const ruta = marca.slice(modo === 'solo' ? '@@solo:'.length : (modo === 'comun' ? '@@comun:'.length : '@@'.length));
-  if (!/^nodos\/[a-z0-9-]+\.js$/.test(ruta)) throw new Error(`${nodo}: ruta de código no válida: ${marca}`);
+  const m = /^@@(?:(solo|comun|todo)(\+sesion)?:)?(nodos\/[a-z0-9-]+\.js)$/.exec(marca);
+  if (!m) throw new Error(`${nodo}: ruta de código no válida: ${marca}`);
+  const modo = m[1] || 'todo';
+  const conSesion = m[2] === '+sesion';
+  const ruta = m[3];
+  if (conSesion && modo === 'solo') throw new Error(`${nodo}: «+sesion» no va con «solo» (el módulo de sesión depende de comun.js)`);
   if (!existsSync(join(AQUI, 'src', ruta))) throw new Error(`${nodo}: no existe src/${ruta}`);
   const propio = leer(`src/${ruta}`).trimEnd();
-  return (modo === 'solo' ? propio : (modo === 'comun' ? `${COMUN}\n\n${propio}` : `${LIB}\n\n${propio}`)) + '\n';
+  const base = modo === 'solo' ? [] : [modo === 'comun' ? COMUN : LIB];
+  return base.concat(conSesion ? [FUENTE_SESION] : []).concat([propio]).join('\n\n') + '\n';
 }
 
 // --- los datos del tenant ---------------------------------------------------------------------------
@@ -402,6 +412,69 @@ function guardiasDeEntrega(flujo) {
   return h;
 }
 
+// =====================================================================================================
+// EL ESTADO DE LA CONVERSACIÓN EN EL SERVIDOR (PR-4a): lo que `--verificar` exige sobre el JSON, armado y versionado.
+//   - los nodos que usan o definen funciones `ss*` traen `comun-sin-agente/src/sesion.js` TAL CUAL (se INCLUYE, no se copia ni se edita) y declaran `SS_CONFIG` y cada `ss*` UNA vez;
+//   - «Armar mensajes» cuelga SOLO de «¿Comprometer turno?»; el envío al cliente y el cierre cuelgan de «Soltar mensajes» y de ningún otro;
+//   - los nodos «Comprometer *» llaman a configuracionFlujo, reintentan con el mismo idCompromiso (retryOnFail, maxTries >= 2) y no llevan `neverError`;
+//   - «Traer configuración» pide el `leer` en los MISMOS espacios que declara `SS_CONFIG` (si divergen se lee un documento y se compromete otro) y manda el id del mensaje;
+//   - la variante de PRUEBA nunca toca los documentos de producción: «Traer configuración» usa el espacio de prueba solo para `telefonosDePrueba`, «Carga de entrada» solo da `modoPrueba` si corrió «Entrada de prueba»;
+//   - los avisos al local y los envíos nunca cuelgan de otro nodo que «Soltar mensajes» (nada sale antes del compromiso del estado).
+// =====================================================================================================
+const NODOS_DE_SESION = ['Comprometer turno', 'Comprometer compensación'];
+function guardiasDeSesion(entrada, flujo) {
+  const h = [];
+  const nodos = flujo.nodes || [];
+  const porNombre = new Map(nodos.map((n) => [n.name, n]));
+  const conex = flujo.connections || {};
+  const destinosDe = (nombre) => [...new Set(((conex[nombre] || {}).main || []).flat().map((c) => c && c.node))];
+  const parametros = (n) => n.parameters || {};
+  for (const nombre of ['¿Hay estado?', 'Sin estado', '¿Comprometer turno?', 'Comprometer turno', 'Soltar mensajes', 'Confirmar envío', '¿Compensar entrega?', 'Comprometer compensación']) {
+    if (!porNombre.has(nombre)) h.push(`sesión: falta el nodo «${nombre}» (el estado de la conversación vive en el servidor)`);
+  }
+  if (destinosDe('Armar mensajes').join('|') !== '¿Comprometer turno?') h.push('sesión: «Armar mensajes» tiene que colgar SOLO de «¿Comprometer turno?»: el estado se compromete antes de enviar');
+  if (!destinosDe('Soltar mensajes').includes('¿Enviar de verdad?')) h.push('sesión: «¿Enviar de verdad?» tiene que colgar de «Soltar mensajes» (el envío va después del compromiso)');
+  for (const [desde, a] of Object.entries(conex)) {
+    const hijos = ((a && a.main) || []).flat().map((x) => x && x.node);
+    if (desde !== 'Soltar mensajes' && hijos.includes('¿Enviar de verdad?')) h.push(`sesión: «${desde}» conecta con «¿Enviar de verdad?»: solo «Soltar mensajes» puede`);
+    if (!['Soltar mensajes', 'Armar mensajes'].includes(desde) && hijos.includes('¿Registrar cierre?')) h.push(`sesión: «${desde}» conecta con «¿Registrar cierre?»: solo «Soltar mensajes» puede`);
+  }
+  for (const nombre of NODOS_DE_SESION) {
+    const n = porNombre.get(nombre);
+    if (!n) continue;
+    if (!/\/configuracionFlujo$/.test(String(parametros(n).url || ''))) h.push(`sesión: «${nombre}» tiene que llamar a configuracionFlujo`);
+    // Un 5xx o un timeout se reintenta con el MISMO idCompromiso (el servidor contesta `repetido` si ya se aplicó): reintento activo y sin `neverError` (con él un 5xx no se reintenta).
+    if (n.retryOnFail !== true || !(n.maxTries >= 2) || JSON.stringify(parametros(n)).includes('neverError')) h.push(`sesión: «${nombre}» tiene que reintentar (retryOnFail, maxTries >= 2) y no llevar neverError`);
+  }
+  // El módulo común, tal cual, en todo nodo que lo use; y ninguna copia propia ni función redefinida (en JS gana la ÚLTIMA declaración).
+  for (const n of nodos) {
+    const js = String(parametros(n).jsCode || '');
+    const codigo = js.replace(/^\s*\/\/.*$/gm, '');
+    const usa = /\bss(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig|NumeroHeader)\(/.test(codigo);
+    const define = /function ss[A-Z]\w*\(/.test(codigo);
+    if ((usa || define) && !js.includes(FUENTE_SESION)) h.push(`sesión: el nodo «${n.name}» usa o define funciones de sesión (ss*) sin traer \`comun-sin-agente/src/sesion.js\` tal cual: se INCLUYE el módulo común, no se copia ni se edita`);
+    if (/function (cn|vm)(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig)\(/.test(codigo)) h.push(`sesión: el nodo «${n.name}» trae una copia propia de los ayudantes de sesión`);
+    if (usa || define) {
+      const cuenta = new Map();
+      for (const m of codigo.matchAll(/\b(?:function|const|let|var)\s+(ss[A-Z]\w*|SS_CONFIG)\b/g)) cuenta.set(m[1], (cuenta.get(m[1]) || 0) + 1);
+      for (const [nombre, veces] of cuenta) if (veces !== 1) h.push(`sesión: el nodo «${n.name}» declara ${nombre} ${veces} veces: cada ayudante de sesión y SS_CONFIG se declaran UNA sola vez por nodo (la última declaración gana y anularía el módulo)`);
+      if (!cuenta.has('SS_CONFIG')) h.push(`sesión: el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
+    }
+  }
+  // Los espacios de «Traer configuración» (el `leer`) y los de SS_CONFIG (los de `comprometer`) tienen que ser LOS MISMOS; el id del mensaje viaja en el `leer` (de ahí salen los repetidos).
+  const traer = porNombre.get('Traer configuración');
+  const declarados = /espacio: '([a-z0-9-]+)', espacioPrueba: '([a-z0-9-]+)'/.exec(COMUN);
+  const cuerpo = String((traer && parametros(traer).jsonBody) || '');
+  const enCuerpo = /prueba \? '([a-z0-9-]+)' : '([a-z0-9-]+)'/.exec(cuerpo);
+  if (traer && (!declarados || !enCuerpo || enCuerpo[1] !== declarados[2] || enCuerpo[2] !== declarados[1])) h.push('sesión: «Traer configuración» tiene que pedir el estado en el MISMO espacio que declara SS_CONFIG (espacioPrueba cuando es una prueba, espacio en producción)');
+  if (traer && !/idMensaje: id/.test(cuerpo)) h.push('sesión: «Traer configuración» tiene que mandar el idMensaje (de ahí sale el visto/repetido del servidor)');
+  if (traer && !/telefonosDePrueba/.test(cuerpo)) h.push('sesión: «Traer configuración» en la prueba solo pide el estado para los `telefonosDePrueba`');
+  // La variante de PRUEBA: «Entrada de prueba» siempre es modo prueba (nunca toca el espacio de producción); y producción no tiene «Entrada de prueba».
+  const carga = porNombre.get('Carga de entrada');
+  if (carga && !/modoPrueba: true/.test(String(parametros(carga).jsCode || ''))) h.push('sesión: «Carga de entrada» tiene que dejar `modoPrueba: true` siempre que corra «Entrada de prueba» (la prueba nunca toca los documentos de producción)');
+  return h;
+}
+
 // LO QUE UN JSON DE PRODUCCIÓN NO PUEDE TENER, aunque alguien lo haya agregado a mano al archivo versionado.
 //   - «Entrada de prueba»: es el único nodo que activa `modoPrueba`; en producción no debe existir, porque
 //     una carga que lo trajera podría encender el modo prueba (mensajes a otro número, avisos simulados);
@@ -493,6 +566,7 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   const traer = flujo.nodes.find((n) => n.name === 'Traer configuración');
   if (!traer || !/catalogoCompleto:\s*true/.test(String((traer.parameters || {}).jsonBody || ''))) hallazgos.push('«Traer configuración» no pide `catalogoCompleto: true` (sin eso no llega el enlace del catálogo web)');
   hallazgos.push(...guardiasDeEntrega(flujo));
+  hallazgos.push(...guardiasDeSesion(entrada, flujo));
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   hallazgos.push(...hallazgosDelGuardado(flujo));
   // L1. Un WhatsApp Trigger (camino A) exige su credencial explícita, y nunca la de AAB1-WA-Prod (prohibición 7).

@@ -11,7 +11,7 @@
 //     mensajes de otro numero. Sin esperado configurado (marcador sin reemplazar) se descarta
 //     TODO, salvo en modo prueba, que no mira este dato;
 //   - el prefijo del telefono no esta permitido (responder a un numero extranjero cuesta su tarifa);
-//   - el mensaje ya se vio en las ultimas 24 h (`vmYaVisto`; Meta reintenta);
+//   - el mensaje ya se vio en las ultimas 24 h (lo dice el servidor: `cfg.sesion.visto === 'repetido'`; Meta reintenta);
 //   - es una reaccion, un sticker o un tipo equivalente sin contenido (cada respuesta cuesta
 //     dinero y no hay nada que contestar). CAMBIO AL CONTRATO §4.3, declarado.
 //
@@ -59,9 +59,12 @@ if (esCarritoWeb && (!msg.carrito || typeof msg.carrito !== 'object' || Array.is
 
 const ahoraMs = Number(carga.ahoraMs) || Date.now();
 const mensajeId = String(msg.id || '');
+// Los repetidos: los marca el SERVIDOR al leer (`Traer configuración` manda el id del mensaje) y `Config del negocio` deja el veredicto en `cfg.sesion.visto`.
+// Hasta el retiro del respaldo (30/11/2026) tambien vale la memoria vieja de n8n (`vmVistoDeRespaldo`). Sin veredicto (el servidor no contesto) no se descarta
+// nada aqui: la entrada del receptor ya descarta los repetidos por entrega.
 const sd = vmSd();
-if (sd && vmYaVisto(sd, mensajeId, ahoraMs)) return [];
-if (sd) vmMarcarVisto(sd, mensajeId, ahoraMs);
+const ses = vmSes(from, ahoraMs);
+if ((cfg.sesion && cfg.sesion.visto === 'repetido') || vmVistoDeRespaldo(mensajeId, ahoraMs)) return [];
 
 // Si quien escribe es uno de los destinatarios de los avisos, su mensaje abre la ventana de 24 h en
 // la que se le puede mandar el detalle en texto. Es un dato de apoyo: si falla, el turno sigue.
@@ -134,11 +137,11 @@ const cobro = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
 // «cuadra» o «no cuadra» sobre una prueba y un cierre de venta con monto). `comprobanteCruzado` la manda a una persona (`Decidir turno`).
 const pedidoDeLaRef = (() => {
   const ref = typeof cobro.pedidoRef === 'string' ? cobro.pedidoRef : '';
-  const guardados = sd && sd.pedidos && typeof sd.pedidos === 'object' ? sd.pedidos : {};
+  const guardados = ses.pedidos;
   const propio = ref && Object.prototype.hasOwnProperty.call(guardados, ref) ? guardados[ref] : null;
   if (propio && typeof propio === 'object' && String(propio.from) === from) return propio;
   // Igual que `aComprobante`: sin referencia del servidor (`pedido: null`) el pedido es el del estado; con referencia, solo si es ESE mismo.
-  const enEstado = sd ? vmLeerEstado(sd, from, ahoraMs).pedido : null;
+  const enEstado = vmLeerEstado(ses, from, ahoraMs).pedido;
   if (!enEstado || typeof enEstado !== 'object') return null;
   return !ref || String(enEstado.pedidoId) === ref ? enEstado : null;
 })();
