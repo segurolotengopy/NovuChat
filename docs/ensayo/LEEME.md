@@ -620,7 +620,7 @@ el flujo deriva («QR no disponible») y esa rama es lo que se prueba.
    negocio-rroca-ruben.json en el scratchpad> --local <tabla local>` (seco leído entero y luego
    `--aplicar`). El cliente se llama `ruben` a propósito: `REEMPLAZAR_NUMERO_RECEPCION_RUBEN` se traduce
    solo a la recepción del ensayo (el teléfono de quien prueba), que es también donde llega el botón.
-   Con QR: cargar en `ensayo` el de NovuChat (arriba).
+   Con QR: cargar en `ensayo` el de NovuChat (arriba). ANTES de cargarlo, comprobar que `ensayo` no conserva el QR de otro cliente de un ensayo anterior (`ensayo.mjs` no toca el cobro): si lo hay, retirarlo primero; y AL TERMINAR, retirar también el de NovuChat. Nunca se muestra el QR real de un cliente en un ensayo.
 3. **El flujo:** `flujo-de-prueba.mjs --sobre-demo-a --flujo <…ensayo-demo-a.local.json>` con el respaldo y
    el estado en el scratchpad, exactamente como el §6 paso 4. El seco tiene que decir: «Demo A vivo» con
    `activo=True`, `WhatsApp Trigger: el del Demo A, tal cual («…»)` (si no, **detenerse**), los **ocho**

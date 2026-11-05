@@ -459,7 +459,7 @@ export function guardias(variante, flujo, mapaCrm) {
         if (!(CREDENCIALES_DEL_DEMO_A[tipo] || []).includes(nombreCred)) h.push(`ensayo: «${n.name}» usa ${tipo} «${nombreCred}», que no es una credencial del Demo A`);
         if (/bellido|platinum|q'?taco|captaci|segurolo|otp|aab1|whatsapp-?modular|receptor|antonio|evy|emma|ruben|rubén/i.test(nombreCred)) h.push(`ensayo: la credencial de «${n.name}» nombra a un cliente o a un sistema ajeno`);
       }
-      if (n.type === 'n8n-nodes-base.httpRequest' && /graph\.facebook\.com/.test(String(p(n).url || '')) && ((n.credentials || {}).httpHeaderAuth || {}).name !== NOMBRE_GRAPH_DEL_DEMO_A) h.push(`ensayo: «${n.name}» llama a graph.facebook.com sin la credencial de Graph del Demo A (con la de la ingesta le mandaría su token a Meta)`);
+      if (n.type === 'n8n-nodes-base.httpRequest' && /^=?https:\/\/graph\.facebook\.com\//.test(String(p(n).url || '')) && ((n.credentials || {}).httpHeaderAuth || {}).name !== NOMBRE_GRAPH_DEL_DEMO_A) h.push(`ensayo: «${n.name}» llama a graph.facebook.com sin la credencial de Graph del Demo A (con la de la ingesta le mandaría su token a Meta)`);
     }
   }
   // El cobro: el de Rubén es REAL (QR del comercio); un cobro simulado y uno real no conviven (prohibición 3). El flujo no sabe rotular un cobro simulado: `rrSeguro` prohíbe «simulado».

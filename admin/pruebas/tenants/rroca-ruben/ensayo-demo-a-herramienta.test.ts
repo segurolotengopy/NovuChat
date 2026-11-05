@@ -247,6 +247,7 @@ describe('la herramienta se NIEGA, sin ningún PUT', () => {
     nuevo();
     const r = await sobreDemoA(respaldoNuevo(), ['--aplicar'], torcido((f) => { nodo(f, 'Traer configuración').credentials.httpHeaderAuth.name = "NovuChat ingesta (Q'Taco)"; }));
     expect(r.codigo, r.salida).toBe(1);
+    expect(r.salida).toMatch(/usa httpHeaderAuth «NovuChat ingesta \(Q'Taco\)», que no está en la tabla de credenciales del Demo A/);
     expect(mundo.puts).toHaveLength(0);
   });
 

@@ -228,7 +228,7 @@ describe('credenciales: solo las del Demo A, por nombre', () => {
     // Gemini: la de producción del Demo A, en los cuatro nodos que llaman al modelo.
     for (const n of ['Transcribir audio', 'Describir documento', 'Describir imagen', 'Conversar con el modelo']) expect(nodo(ENSAYO, n)['credentials']['googlePalmApi']['name'], n).toBe('Google Gemini(PaLM) Api account');
     // Todo nodo que habla con Graph lleva la credencial «Graph WhatsApp Demo A (Bearer)» (la herramienta la cambia a la predefinida), nunca la de la ingesta.
-    const graph = (ENSAYO['nodes'] as J[]).filter((n) => n['type'] === 'n8n-nodes-base.httpRequest' && /graph\.facebook\.com/.test(String(n['parameters']['url'])));
+    const graph = (ENSAYO['nodes'] as J[]).filter((n) => n['type'] === 'n8n-nodes-base.httpRequest' && /^=?https:\/\/graph\.facebook\.com\//.test(String(n['parameters']['url'])));
     expect(graph.map((n) => n['name']).sort()).toEqual(['Avisar falla del guardado', 'Enviar a WhatsApp', 'Enviar aviso', 'Enviar respaldo', 'Obtener URL del medio (general)', 'Pedir el medio a Meta (guardado)'].sort());
     for (const n of graph) expect(n['credentials']['httpHeaderAuth']['name'], String(n['name'])).toBe('Graph WhatsApp Demo A (Bearer)');
     expect(JSON.stringify(ENSAYO)).not.toMatch(/googleApi|Google Sheets/);
