@@ -13,6 +13,13 @@ const crisis = (f: string): boolean => L.rrEsCrisis(L.rrNorm(f));
 const clave = (f: string): string => L.rrDerivacion(L.rrNorm(f), {})?.clave ?? '';
 
 export const FRASES_DE_CRISIS: string[] = [
+  "me quiero colgar",
+  "colgarme",
+  "me voy a tirar del puente",
+  "ya me cansé de vivir",
+  "estoy harta de vivir",
+  "estoy harto de vivir con el insomnio",
+  "estoy cansada de vivir",
   "tomé una sobredosis",
   "me tomaría una sobredosis",
   "pienso en una sobredosis",
@@ -133,6 +140,8 @@ export const CONTROL_DE_FALSOS_POSITIVOS: string[] = [
   "¿cuántos capítulos tiene el audiolibro?",
 ];
 
+export const CONTROL_PRECISO: string[] = ['voy a colgar la ropa', 'mi hermano se va a tirar al agua en la piscina'];
+
 export const DERIVAN_COMO_MEDICA: string[] = [
   "hay riesgo de sobredosis con melatonina",
   "¿puede causar sobredosis?",
@@ -197,4 +206,21 @@ describe('red de crisis: el control de falsos positivos NO dispara', () => {
 describe('derivación médica (solo lo que no es crisis)', () => {
   it.each(DERIVAN_COMO_MEDICA.filter((f) => !crisis(f)))('medica: %s', (f) => { expect(clave(f)).toBe('medica'); });
   it.each(NO_DERIVAN_COMO_MEDICA)('no medica: %s', (f) => { expect(clave(f)).not.toBe('medica'); });
+});
+
+describe('control preciso de las raíces nuevas', () => {
+  it.each(CONTROL_PRECISO)('no crisis: %s', (f) => { expect(crisis(f)).toBe(false); });
+});
+
+// PENDIENTES DEL PR-2 (NO implementados aquí; ante la duda son crisis salvo los falsos positivos conocidos). Se mueven a las listas de arriba cuando el PR-2 los cubra.
+export const PENDIENTES_PR2_CRISIS: string[] = [
+  'ya no tiene sentido vivir', 'pa que sigo viviendo', 'me quiero ir para siempre', 'ojalá me muera dormido', 'ganas de no despertar nunca más',
+  'me tomé un montón de pastillas', 'me lastimo los brazos', 'esta es mi despedida', 'me tomé muchas pastillas para dormir todas juntas', 'me tomé muchas pastillas para no despertar',
+];
+export const PENDIENTES_PR2_FALSOS_POSITIVOS: string[] = [
+  'ya no aguanto más mi insomnio', 'ya no aguanto tanto insomnio', 'ya no aguanto más de no dormir', 'ya no aguanto más mis noches sin dormir', 'ya no aguanto más despertarme a las 3',
+  'ya no aguanto más esta situación con mi vecino', 'no quiero estar aquí mucho tiempo, mándame el precio',
+];
+describe('pendientes del PR-2 (registrados, sin implementar)', () => {
+  it.todo.each([...PENDIENTES_PR2_CRISIS.map((f) => `debe ser crisis: ${f}`), ...PENDIENTES_PR2_FALSOS_POSITIVOS.map((f) => `no debe ser crisis: ${f}`)])('%s', () => undefined);
 });
