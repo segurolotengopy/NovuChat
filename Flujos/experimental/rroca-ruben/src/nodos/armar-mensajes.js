@@ -13,7 +13,7 @@
 // `charlaN` de la ficha lo suma este nodo (solo lo que cuenta como conversación) y «Resumen del turno» lo restaura si Meta no aceptó el envío. Sigue siendo UN mensaje por turno (+0 mensajes): el puente, la invitación a pagar y la pregunta pendiente viajan en él.
 // El botón de Rubén va SOLO cuando el plan deriva (aviso + botón). Con un QR abierto la respuesta sale sin botones de producto y con la invitación a pagar el QR pendiente.
 // Todo texto pasa por `rrSeguro` (NIEGA_IA, `CB_PROHIBIDAS` y párrafos). La ficha del teléfono (`ruben[<messages[0].from>]`) se escribe AQUÍ, una sola vez por turno.
-// VIOLENCIA O MIEDO: si «Decidir turno» la detectó, o el modelo contestó la marca RIESGO, sale SOLO el texto fijo («Este asistente no atiende ese tipo de consultas.»: sin botones, sin QR, sin precios, sin aviso a Rubén) y el mensaje se reporta con el evento `no_contactar`.
+// CRISIS EMOCIONAL: si «Decidir turno» la detectó, o el modelo contestó la marca RIESGO, sale SOLO el texto cálido de `RR_TEXTO_CRISIS` con el botón de Rubén (sin QR ni precios; «Le avisé» solo si el aviso salió) y el mensaje se reporta con el evento `no_contactar`.
 const cfg = cnCfg();
 const base = cnPrimero('Config base') || {};
 const t = cnPrimero('Normalizar entrada') || {};

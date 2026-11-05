@@ -2,12 +2,11 @@
 //
 //   nada           la puerta cerró el turno (suspendido, uso extendido, pausa por persona): no se hace nada más;
 //   fuera_pais     un número no boliviano: el texto fijo con el botón de Rubén, sin QR (a lo más una vez en 24 horas: lo exige «Normalizar entrada»);
-//   riesgo         violencia o miedo (raíces sobre texto, transcripción o texto leído de una imagen; o la marca del modelo en «Armar mensajes»): corta la venta, sin botones ni QR ni precios;
+//   riesgo         crisis emocional (raíces sobre texto, transcripción o texto leído de una imagen; o la marca del modelo en «Armar mensajes»): corta la venta (texto cálido con el botón de Rubén y su aviso, sin QR ni precios);
 //   saludo         la presentación (UNA vez por teléfono, «asistente virtual de <el negocio de la Consola>») y la pregunta de apertura, sin montos. EL PRIMER TURNO de un teléfono es SIEMPRE este saludo fijo, por código, salvo que el mensaje traiga una intención que el código
 //                  atiende (prellenado, ángulo de anuncio, derivación, precio de UN producto, producto confirmado): el modelo no abre la conversación. `pideOpciones`: pidió precios, catálogo u opciones antes de tiempo;
 //   angulo         una entrada por un anuncio: el modelo redacta la apertura con el ángulo como dato (o el texto fijo del ángulo);
-//   complemento    el prellenado de un bono: su precio, el ahorro del Pack calculado por el código (si el Pack está disponible) y los botones;
-//   menu           las opciones principales (Pack, Libro, «Ver complementos») con sus precios;   bonos   la lista de los 4 bonos;   precio   «¿cuánto cuesta…?» por código (`temprano`: el precio de UN producto antes de la charla);
+//   menu           las opciones principales (Pack, Libro con bono, «Solo audios») con sus precios;   audios   Audiolibro, Meditaciones y «Mejor el Pack»;   precio   «¿cuánto cuesta…?» por código (`temprano`: el precio de UN producto antes de la charla);
 //   opciones_codigo  el bloque de las opciones (texto fijo con el ahorro calculado + el menú): un «sí» a «¿Te muestro las opciones?» o el botón «Ver opciones»;
 //   qr             el QR con el monto del CATÁLOGO (prellenados de Pack y Libro, o un botón o una fila de producto);
 //   qr_pendiente   ya hay un QR abierto Y el cliente habla de pagar o pide un producto: el recordatorio (un solo QR a la vez, un pedido = un producto). Ya no se escala a Rubén por insistir: el recordatorio tiene dos formas y nunca sale idéntico dos veces seguidas.
@@ -15,8 +14,8 @@
 //   catalogo       «qué vendes», «catálogo», «lista», «opciones»: los productos con precio leídos del catálogo de la consola, por código;   imagenes   «¿tienes imágenes?»: texto fijo, el flujo no envía imágenes;
 //   cancelar_cobro «cancela ese qr» con un QR abierto y sin comprobante: el servidor cierra el cobro (llamada síncrona) y sale `cobro_cerrado`; si el servidor no responde 200, sale la derivación `cancelacion`;   cobro_ya_cerrado   la segunda cancelación seguida;
 //   comprobante    el resultado del cotejo traducido por `cbResultadoVenta`;
-//   derivar        pasa a Rubén (factura, otro medio de pago, garantía, reclamo, una persona; producto agotado; sin QR utilizable; «cancela mi pedido» con un QR abierto: `cancelacion`; SIN CONFIGURACIÓN del negocio: `sin_configuracion`): aviso + botón;
-//   resultado      «¿me garantiza recuperar mi relación?»: frase fija;
+//   derivar        pasa a Rubén (lista cerrada de `rrDerivacion`: garantía o devolución, reclamo, volumen o reventa, otro medio de pago, el material que no abre, pregunta médica, una persona; producto agotado; sin QR utilizable; «cancela mi pedido» con un QR abierto: `cancelacion`; SIN CONFIGURACIÓN del negocio: `sin_configuracion`): aviso + botón;
+//   resultado      «¿me garantizan que voy a dormir?»: frase fija, sin promesa de resultado;
 //   baja           «no me escribas más»: texto fijo de confirmación, sin modelo, sin invitación a pagar, sin botones y sin aviso (el `no_contactar` viaja con el entrante);
 //   modelo         una conversación libre: llama al modelo (memoria de 15 mensajes) con un `modo` (`charla` | `antes` | `puente` | `opciones`) que viaja como línea del sistema (`[MODO_TURNO: …]`);
 //   imagen_otra, audio_fijo, otro   respuestas fijas a lo que no es un comprobante ni texto. `audio_fijo` también cubre una nota de voz CORTA o ininteligible (menos de 3 palabras): se pide repetirla; el modelo nunca la contesta.
@@ -44,7 +43,7 @@ const agotados = rrAgotados(panel.cuerpo);
 const cobro = rrCobro(panel);
 const ficha = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora);
 
-// 0. LA PROTECCIÓN ANTE VIOLENCIA O MIEDO VA PRIMERO, también con la puerta cerrada y fuera del país: si el comercio está suspendido, el estado es «operador» (el cliente sí recibe un mensaje) o el número no es
+// 0. LA PROTECCIÓN ANTE UNA CRISIS EMOCIONAL VA PRIMERO, también con la puerta cerrada y fuera del país: si el comercio está suspendido, el estado es «operador» (el cliente sí recibe un mensaje) o el número no es
 //    boliviano, un texto de riesgo recibe el texto de protección y reporta `no_contactar`, nunca el texto neutro, el aviso de uso extendido ni el de «pago con QR boliviano». La pausa por persona («bloqueado»)
 //    sigue en silencio: ahí responde Rubén. Aquí solo se mira el texto y el pie (los medios no se bajan con la puerta cerrada ni fuera del país).
 // El aviso de una crisis NUNCA copia lo que escribió la persona: solo el motivo.
@@ -84,7 +83,9 @@ const siNo = !esVisual && t.tipo !== 'interactive' ? ctInterpretarSiNo(textoClie
 const respuestaAPregunta = siNo && (siNo.estado === 'resuelta' || siNo.estado === 'ambigua') ? siNo : null;
 
 // El aviso de consulta a Rubén lleva el MOTIVO exacto (`clave` + `motivo`). El límite (a lo más UN aviso cada 30 minutos por teléfono Y por motivo) lo aplica «Armar avisos», que ve la ficha.
-const avisoDeConsulta = (clave, motivo) => ({ tipo: 'consulta', clave: clave, motivo: motivo, mensaje: t.tipo === 'interactive' ? '' : String(textoCliente || leido).slice(0, 200) });
+// En `sin_configuracion` y `qr_no_disponible` el texto del cliente NO viaja en el aviso (no hace falta para atender el motivo).
+const sinTexto = (clave) => clave === 'sin_configuracion' || clave === 'qr_no_disponible';
+const avisoDeConsulta = (clave, motivo) => ({ tipo: 'consulta', clave: clave, motivo: motivo, mensaje: t.tipo === 'interactive' || sinTexto(clave) ? '' : String(textoCliente || leido).slice(0, 200) });
 // EL RECORDATORIO DEL QR ABIERTO (solo si el cliente habla de pagar o pide un producto). Ya NO se escala a Rubén por insistir: «Armar mensajes» alterna dos formas para no repetir el mismo texto dos veces seguidas.
 const recordatorio = (boton) => ({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat, boton: boton || '' });
 const sinOpciones = (boton) => ({ tipo: 'derivar', motivo: 'sin_opciones', aviso: avisoDeConsulta('qr_no_disponible', 'sin opciones de compra disponibles'), cat: cat, boton: boton });

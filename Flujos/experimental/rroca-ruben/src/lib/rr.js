@@ -88,9 +88,14 @@ function rrParrafos(texto) {
 }
 // El texto que ve el cliente, con la barrera aplicada: si niega ser una IA (prohibición 4) o dice que un pago está acreditado, verificado o recibido (prohibición 3: el comprobante no es una
 // acreditación bancaria), sale el mínimo. `CB_PROHIBIDAS` y `cbCanon` son del hueco `cobro.js`.
+// Además (PR-1, revisión): la SALUD vive también aquí, en código y no solo en el prompt (nunca «sin pastillas», «curar», «desde la primera noche» ni «garantizado») y el cobro de este flujo es REAL, así que ningún texto dice «simulado»
+// (`RR_SALUD_PROHIBIDA`, `RR_SIMULADO`). Es la barrera final de TODO lo que sale al cliente, no solo de lo que redacta el modelo.
+const RR_SALUD_PROHIBIDA = /\b(?:sin (?:pastillas|medicamentos|medicacion)|cur(?:a|ar|an|arte|acion)|desde la primera noche|garantiz\w*)\b/;
+const RR_SIMULADO = /\bsimulad[oa]s?\b/;
 function rrSeguro(texto) {
   if (RR_NIEGA_IA.test(rrNorm(texto))) return rrParrafos(RR_SALUDO_MINIMO);
   if (CB_PROHIBIDAS.test(cbCanon(texto))) return rrParrafos(RR_SALUDO_MINIMO);
+  if (RR_SALUD_PROHIBIDA.test(rrNorm(texto)) || RR_SIMULADO.test(rrNorm(texto))) return rrParrafos(RR_SALUDO_MINIMO);
   return rrParrafos(texto);
 }
 
@@ -370,15 +375,15 @@ function rrTextoGarantia(base) {
 // -----------------------------------------------------------------------------
 const RR_CRISIS = new RegExp([
   '\\b(suicid\\w*|autolesion\\w*|autolesion|autoagred\\w*)\\b',
-  '\\b(quiero|quisiera|prefiero|pienso en|pense en|estoy pensando en|me dan ganas de) (morir|morirme|matarme|suicidarme|desaparecer|no despertar|no despertarme|acabar con (todo|mi vida)|terminar con (todo|mi vida)|quitarme la vida|quitarme la existencia|hacerme dano|lastimarme)\\b(?! de (?:sueno|cansancio|risa|verguenza|hambre|frio|calor|aburrimiento|ganas|envidia|pena))',
+  '\\b(quiero|quisiera|prefiero|pienso en|pense en|estoy pensando en|me dan ganas de) (morir|morirme|matarme|suicidarme|desaparecer (?:del mundo|de este mundo|para siempre|de la faz de la tierra|de todos)|no despertar|no despertarme|acabar con (todo|mi vida)|terminar con (todo|mi vida)|quitarme la vida|quitarme la existencia|hacerme dano|lastimarme)\\b(?! de (?:sueno|cansancio|risa|verguenza|hambre|frio|calor|aburrimiento|ganas|envidia|pena))',
   '\\b(me quiero|me voy a|me pienso|podria) (morir|matar|quitar la vida|hacer dano|lastimar)\\b(?! de (?:sueno|cansancio|risa|verguenza|hambre|frio|calor|aburrimiento|ganas|envidia|pena))',
   '\\bquitarme la vida\\b|\\bacabar con mi vida\\b|\\bterminar con mi vida\\b|\\bhacerme dano\\b|\\bcortarme las venas\\b|\\bcortarme\\b(?= (?:los brazos|las munecas|las venas|la piel))',
   '\\bno (quiero|puedo|aguanto|soporto) (seguir )?(vivir|viviendo|con mi vida|mas con mi vida|con esta vida)\\b',
   '\\bya no (quiero|puedo) (seguir )?(vivir|viviendo|estar aqui|estar vivo|estar viva|existir)\\b',
-  '\\b(no le encuentro sentido a (mi vida|la vida|vivir)|no vale la pena (vivir|seguir viviendo|seguir))\\b',
+  '\\b(no le encuentro sentido a (mi vida|la vida|vivir)|no vale la pena (vivir|seguir viviendo|seguir (?:vivo|viva|con mi vida|con esta vida|aqui)))\\b',
   '\\b(mejor )?(estar|estaria|estarian|estarias) (muerto|muerta|muertos)\\b|\\bmejor (muerto|muerta)\\b|\\bquisiera estar muert[oa]\\b',
   '\\b(nadie|a nadie) (me )?(extranaria|extranara|va a extranar|le importo|le importaria)\\b|\\bsoy una carga para (todos|mi familia|los demas)\\b',
-  '\\b(sobredosis|tomarme (todas )?las pastillas|tomar todas las pastillas)\\b',
+  '\\b(tomarme (todas )?las pastillas|tomar todas las pastillas|(?:tomarme|tomar|tomo|me tomo|voy a tomar) (?:una )?sobredosis)\\b',
 ].join('|'));
 function rrEsCrisis(norm) {
   return RR_CRISIS.test(String(norm || ''));
@@ -444,15 +449,15 @@ function rrDerivacion(n, ctx) {
   if (/\b(hablar con|comunicame con|pasame con|contactar a|numero de) (ruben|una persona|alguien|el dueno|el autor)\b|\bquiero hablar con (ruben|una persona|alguien|un asesor|asesor|el dueno|el autor)\b/.test(n)) return { clave: 'hablar_con_ruben', motivo: 'quiere hablar con Rubén' };
   if (/\bno (puedo|logro|me deja|consigo) (abrir|descargar|entrar|acceder|escuchar|reproducir)\b|\bno abre\b|\bno se (abre|escucha|reproduce|descarga)\b|\b(link|enlace|pdf|audio|archivo) (roto|no (abre|funciona|carga|se abre|se escucha))\b/.test(n)) return { clave: 'acceso_material', motivo: 'no puede abrir el PDF o el audio' };
   // Pregunta médica ESPECÍFICA: un medicamento (dejarlo, mezclarlo, la dosis) o una condición de salud concreta. Una mención general («no quiero depender de pastillas») sin pregunta no deriva.
-  const medicamento = /\b(dosis|medicament\w*|medicacion|pastilla\w*|somnifer\w*|melatonina|clonazepam|alprazolam|zolpidem|lorazepam|diazepam|trazodona|antidepresiv\w*|ansiolitic\w*|psiquiatr\w*)\b/.test(n);
-  const accionMedica = /\b(dejar|deje|dejo|suspender|suspendo|tomar|tomo|tomando|mezclar|combinar|reemplazar|sustituir|bajar|subir|cambiar|interfiere|compatible|junto con|cuanto)\b/.test(n);
+  const medicamento = /\b(dosis|sobredosis|medicament\w*|medicacion|pastilla\w*|somnifer\w*|melatonina|clonazepam|alprazolam|zolpidem|lorazepam|diazepam|trazodona|antidepresiv\w*|ansiolitic\w*|psiquiatr\w*)\b/.test(n);
+  const accionMedica = /\b(dejar|deje|dejo|suspender|suspendo|receta|recetado|recetada|recetaron|mezclar|combinar|reemplazar|sustituir|bajar|subir|cambiar|interfiere|compatible|junto con|cuanto)\b/.test(n);
   const condicion = /\b(tengo|padezco|sufro de|me diagnosticaron|me diagnosticaron con|diagnostico de) (apnea|insomnio cronico|depresion|ansiedad|narcolepsia|trastorno\w*|bipolaridad|epilepsia|hipertension|diabetes|cancer|fibromialgia|sindrome\w*)\b|\b(embarazada|embarazo|lactancia)\b/.test(n);
-  if ((medicamento && accionMedica) || condicion) return { clave: 'medica', motivo: 'pregunta médica específica' };
+  if ((medicamento && accionMedica) || /\bsobredosis\b/.test(n) || condicion) return { clave: 'medica', motivo: 'pregunta médica específica' };
   return null;
 }
 // «¿Me garantiza recuperar mi relación en 30 días?»: la respuesta es una frase fija (no se promete ningún resultado).
 function rrPreguntaPorResultado(n) {
-  return /\bgarantiz\w*\b|\basegur\w*\b[^.?!]{0,30}\b(vuelva|vuelvan|recuper\w*|funcion\w*|resultad\w*)|\bfunciona(ra)? de verdad\b|\bseguro que (funciona|sirve)\b/.test(n);
+  return /\bgarantiz\w*\b|\basegur\w*\b[^.?!]{0,30}\b(duerma|duermas|duermo|dormir|funcion\w*|resultad\w*|mejor\w*)|\bfunciona(ra)? de verdad\b|\bseguro que (funciona|sirve)\b/.test(n);
 }
 // «¿Cuánto cuesta…?»: el precio lo dice el CÓDIGO desde el catálogo, sin pasar por el modelo (`vdPrecioPedido`, con las palabras de `RR_SINONIMOS`). Devuelve { producto } con la clave del producto si nombra UNO solo,
 // { producto: '' } si pregunta por los precios en general (o nombra varios) o null si no es una pregunta de precio. «Precio» o «precios» como mensaje entero también es la pregunta general.
@@ -1008,7 +1013,7 @@ function rrExtraBase(texto, norm, ctx) {
   if (!preguntaPorSerAsi && /\b(asistente virtual|soy el asistente|me presento)\b/.test(norm)) return 'presentacion_repetida';
   // El modelo no se hace pasar por el autor ni por una persona con nombre (regla 4: se presenta como asistente virtual): «soy Rubén», «te habla Rubén Roca», «me llamo Rubén».
   if (/\b(soy|me llamo|te habla|te escribe|habla|escribe|aqui esta|aqui|yo soy) (el |la )?(mismo |propio )?(ruben|roca|autor|autora|creador|creadora)\b/.test(norm)) return 'suplanta_al_autor';
-  // Lo mismo con letras cambiadas por cifras o símbolos («S0y Ant0nio», «Ant@nio») y dicho de otra forma («soy quien escribió el libro»).
+  // Lo mismo con letras cambiadas por cifras o símbolos («S0y Rub3n», «R@ben») y dicho de otra forma («soy quien escribió el libro»).
   // La arroba puede estar en lugar de una «a» o de una «o»: se prueban las dos lecturas.
   for (const leet of [rrLeet(texto), rrLeet(texto, 'o')]) {
   if (/\b(soy|me llamo|te habla|te escribe|habla|escribe|aqui esta|aqui|yo soy) (el |la )?(mismo |propio )?(ruben|roca|autor|autora|creador|creadora)\b/.test(leet) || /\b(soy|fui) (quien|el que|la que|el autor|la autora) (escribio|creo|hizo|redacto)?\s?(el|este|del) ?(libro|metodo)\b/.test(leet) || /\b(yo )?(escribi|cree|redacte) (el|este) libro\b/.test(leet)) return 'suplanta_al_autor';
@@ -1048,7 +1053,7 @@ function rrDigitos(norm) {
   return s;
 }
 // Las unidades de CONTENIDO del libro (dato del tenant): una cifra solo pasa si es la cantidad de una de ellas («14 capítulos», «30 días», «de 10 a 20 minutos», «los capítulos 4, 5 y 8»). Toda otra cifra o número dicho por el modelo rechaza el texto.
-const RR_UNIDADES_DE_CONTENIDO = 'eslabon(?:es)?|meditaciones|capitulos?|paginas?|dias?|minutos?|horas?|semanas?|meses|pilares|partes|bonos|preguntas|ejercicios|retos|pasos|veces|personas|anos|segundos';
+const RR_UNIDADES_DE_CONTENIDO = 'eslabon(?:es)?|meditaciones|capitulos?|paginas?|dias?|minutos?|horas?|semanas?|meses|ejercicios|pasos|veces|personas|anos|segundos';
 // La vista NUMÉRICA del texto: NFKC, sin tildes, minúsculas, «1OO»/«l00» → 100, y solo letras, cifras, % $ . , y espacios.
 function rrVistaNumerica(texto) {
   const s = rrDigitos(String(texto === undefined || texto === null ? '' : texto).normalize('NFKC').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase());

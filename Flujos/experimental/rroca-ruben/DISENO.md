@@ -30,6 +30,15 @@ Fuentes (04/11/2026): especificación consolidada y plan único confirmado por A
 - [ ] Garantía y devolución (`garantiaTexto`), enlaces o archivos de entrega y horario de Rubén de noche (el aviso y el botón de crisis dependen de su teléfono).
 - [ ] Falla abierta de la pausa: es la de `chat-novuchat` con la puerta idéntica (si la ingesta y la consola caen en el mismo turno, la puerta devuelve «normal»); a decidir con Cartera antes de publicar.
 
+## Para el PR-2 (casos del PDF que NO se resuelven aquí)
+
+- **Caso (a):** una captura de anuncio como PRIMER mensaje recibe el saludo genérico, no la apertura de su ángulo (`decidir-turno.js`, rama del anuncio sin saludar). El PR-2 debe abrir con el ángulo del anuncio.
+- **Caso (b):** «vi el video, ¿precio y devolución?» deriva por garantía (`rrDerivacion`) sin dar el precio ni avisar `no_supo`. El PR-2 debe dar el precio por código Y derivar la devolución en el mismo mensaje.
+
+## Dónde vive la salud
+
+La barrera final es `rrSeguro` (código): nunca «sin pastillas», «curar», «desde la primera noche», «garantizado» ni «simulado»; además el filtro de redacción del modelo (`rrExtraRedaccion`) y la derivación médica por código (`rrDerivacion`, clave `medica`: una acción sobre la medicación —dejar, suspender, mezclar, dosis, receta— o `sobredosis`). El prompt solo lo repite.
+
 ## Límites conocidos de este PR
 
 - La ficha vence a las 48 h: el paso al Pack («una sola vez») y la crisis viven en esa ficha.
