@@ -93,3 +93,14 @@ La barrera final es `rrSeguro` (código): nunca «sin pastillas», «curar», «
 - Una crisis queda activa 48 h desde la ÚLTIMA SEÑAL: cada mensaje posterior recibe el texto de la crisis con su botón (ver «PR-2»).
 - `config-del-negocio.js` (hueco copiado) todavía lee `direccion` y `direccionMaps`; no se usan.
 - Los ángulos de anuncio llegan solo como dato de Campañas (por `titular_principal`); en el código `RR_ANGULOS` está vacío. Un video o Reel por texto («vi el video…») no tiene anuncio en Campañas (no hay titular que leer): lo atiende el modelo con la pauta del prompt.
+
+## La variante de ensayo en el Demo A (05/11/2026)
+
+`rroca-ruben.ensayo-demo-a.json` (51 nodos) se arma con `construir.mjs` desde `admin/scripts/datos/rroca-ruben/ensayo-demo-a.json` (hereda de `rroca-ruben.json` y cambia solo lo que dice). Sirve para probar el flujo de Rubén con UN teléfono en el número del Demo A, sin tocar el de Rubén; el procedimiento y sus cerrojos están en `docs/ensayo/LEEME.md` §9. Diferencias con la producción, todas declaradas y probadas (`admin/pruebas/tenants/rroca-ruben/ensayo-demo-a*.test.ts`):
+
+- **Entrada:** un `WhatsApp Trigger` (que `flujo-de-prueba.mjs --sobre-demo-a` reemplaza por el del Demo A vivo) en vez de la entrada verificada del receptor (-6 nodos, +1).
+- **Sin miniCRM** (-8 nodos): el Demo A no tiene la credencial de la planilla de Rubén; `planillaProspectosId` va vacío.
+- **Credenciales:** solo las del Demo A, por nombre. Los avisos de plantilla van como NO aprobados (el Demo A no tiene las plantillas de la WABA de Rubén): el aviso sale por texto libre, con la ventana de quien prueba.
+- **Interruptor `avisarAlPropioNumero`** (solo `true`, solo en «Config base», solo en el archivo de datos del ensayo): el aviso a Rubén y el botón «Escribir a Rubén» llegan al mismo teléfono de quien prueba. Dos reemplazos exactos en el código de «Armar avisos» y «Armar mensajes», hechos al armar solo esta variante (la producción y la prueba quedan idénticas byte a byte); si el código cambia y el reemplazo ya no encuentra su sitio, el armado falla.
+- **Cobro:** sin cambios. El flujo de Rubén solo conoce el cobro REAL (QR del comercio): `rrSeguro` prohíbe la palabra «simulado», así que NO existe un cobro simulado rotulado en este flujo y `cobroSimuladoActivo` en true se rechaza en todas las variantes. En el ensayo el QR es el que cargue `ensayo` desde la Consola (uno de NovuChat con importe simbólico y su imagen rotulada de demostración), nunca el de Rubén.
+- **Nunca se publica sobre el número de Rubén:** `--publicable` la rechaza (por el interruptor, por el Trigger o por el nombre «ensayo»).
