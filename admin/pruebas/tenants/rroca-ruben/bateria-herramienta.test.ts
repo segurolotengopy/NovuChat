@@ -1,12 +1,12 @@
 /**
- * LA BATERÍA DE LA CONVERSACIÓN DE RUBÉN (`Flujos/experimental/rroca-ruben/herramientas/bateria.mjs` y `bateria-casos.json`), ENTREGA 2.
+ * LA BATERÍA DE LA CONVERSACIÓN DE RUBÉN (`Flujos/experimental/rroca-ruben/herramientas/bateria.mjs` y `bateria-casos.json`), (NOCHES SIN INSOMNIO).
  *
  * Aquí se prueba SIN modelo ni red (`--seco`: una respuesta fija por turno) y se comprueba:
- *   1. que los 12 turnos corren por el flujo de prueba versionado y dan CERO violaciones (invariantes 11 a 15 y reglas duras), con 8 llamadas al modelo por corrida;
+ *   1. que los 15 turnos corren por el flujo de prueba versionado y dan CERO violaciones (invariantes y reglas duras), con 6 llamadas al modelo por corrida;
  *   2. que la corrida real EXIGE `--confirmo-gasto` (es gasto) y que en `--seco` no se toca la red, ni un archivo de entorno, ni gcloud;
  *   3. que no imprime un secreto;
  *   4. que cada detector detecta (una batería que acepta todo no mediría nada) y que `medir` aplica el umbral del 85 %;
- *   5. que REUTILIZA el motor de `chat-novuchat` (no hay un cuarto motor copiado).
+ *   5. que REUTILIZA el motor de `chat-novuchat` (no hay un cuarto motor copiado) y que su lista de librerías sale del armador (no hay una lista aparte).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -20,7 +20,7 @@ const RUTA_BATERIA = join(CARPETA, 'herramientas/bateria.mjs');
 type J = Record<string, any>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Fn = (...a: any[]) => any;
-const B = (await import(/* @vite-ignore */ RUTA_BATERIA)) as { main: (argv: string[], deps?: J) => Promise<number>; validarCasos: (d: J) => J[]; medir: Fn; cargarLibreria: () => J };
+const B = (await import(/* @vite-ignore */ RUTA_BATERIA)) as { main: (argv: string[], deps?: J) => Promise<number>; validarCasos: (d: J) => J[]; medir: Fn; cargarLibreria: () => J; diagnosticar: Fn };
 const CASOS = JSON.parse(readFileSync(join(CARPETA, 'herramientas/bateria-casos.json'), 'utf8')) as J;
 const FUENTE = readFileSync(RUTA_BATERIA, 'utf8');
 const clonar = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
@@ -37,14 +37,14 @@ const sinRed: J = {
   gcloudToken: () => { throw new Error('el modo seco NO pide un token'); },
 };
 
-describe('la batería de Rubén en seco: los 12 turnos corren por el flujo versionado con cero violaciones', () => {
-  it('una corrida por caso: 12 turnos, 8 llamadas al modelo, ningún respaldo y cero violaciones', async () => {
+describe('la batería de Rubén en seco: los 15 turnos corren por el flujo versionado con cero violaciones', () => {
+  it('una corrida por caso: 15 turnos, 6 llamadas al modelo, ningún respaldo y cero violaciones', async () => {
     const r = await correr(['--seco', '--n', '1', '--json'], sinRed);
     expect(r.codigo, r.error).toBe(0);
     const m = (JSON.parse(r.salida) as J)['medidas'] as J;
-    expect(m['turnosTotales']).toBe(12);
-    // Los turnos que llegan al modelo: A2 y A3, B2 y B4, C1 a C4 (A1, A4 y B1 y B3 no).
-    expect(m['turnosDelModelo']).toBe(8);
+    expect(m['turnosTotales']).toBe(15);
+    // Los turnos que llegan al modelo: A2, A3 y A5, B3, C2 y D2 (el saludo, el precio de un producto, el «sí», los botones y la devolución —que se deriva— no).
+    expect(m['turnosDelModelo']).toBe(6);
     expect(m['violaciones'], JSON.stringify(m['violaciones'].slice(0, 5))).toEqual([]);
     expect(m['conRespaldo'].n, JSON.stringify(m['conRespaldo'])).toBe(0);
     expect(m['umbral'].cumple).toBe(true);
@@ -54,17 +54,21 @@ describe('la batería de Rubén en seco: los 12 turnos corren por el flujo versi
     const r = await correr(['--seco', '--n', '3', '--json'], sinRed);
     expect(r.codigo, r.error).toBe(0);
     const m = (JSON.parse(r.salida) as J)['medidas'] as J;
-    expect(m['turnosTotales']).toBe(36);
+    expect(m['turnosTotales']).toBe(45);
     expect(m['violaciones']).toEqual([]);
   }, 120_000);
 
-  it('el informe de texto dice que es seco y trae las conversaciones para compararlas con el PDF', async () => {
-    const r = await correr(['--seco', '--n', '1', '--casos', 'A', '--conversaciones'], sinRed);
+  it('el informe de texto dice que es seco y trae las conversaciones: la presentación con el nombre del negocio, los nombres del catálogo y el puente', async () => {
+    const r = await correr(['--seco', '--n', '1', '--conversaciones'], sinRed);
     expect(r.codigo, r.error).toBe(0);
     expect(r.salida).toMatch(/MODO SECO/);
     expect(r.salida).toMatch(/Caso A, corrida 1/);
-    expect(r.salida).toMatch(/Asistente \[opciones\]:[^\n]*Te dejo aquí abajo las opciones[^\n]*ahorras 17 Bs/);
-    expect(r.salida).toMatch(/Asistente \[qr\]:[^\n]*¡Genial! Te llevas el Pack Completo/);
+    expect(r.salida).toMatch(/Soy el asistente virtual de Noches Sin Insomnio\./);
+    expect(r.salida).not.toMatch(/Dauber|Antonio/);
+    expect(r.salida).toMatch(/Asistente \[opciones\]:[^\n]*Te dejo aquí abajo las opciones[^\n]*ahorras 20 Bs[^\n]*Pack completo 70Bs \| Libro con bono 35Bs \| Solo audios/);
+    expect(r.salida).toMatch(/Asistente \[puente\]:[^\n]*¿Te muestro las opciones\?[^\n]*botones: Ver opciones/);
+    expect(r.salida).toMatch(/Asistente \[precio\]:[^\n]*cuesta 35 Bs[^\n]*¿Te muestro las opciones\?/);
+    expect(r.salida).toMatch(/Asistente \[modelo\]:[^\n]*tu QR sigue abierto/);
   }, 60_000);
 
   it('NEGADA: la corrida real sin `--confirmo-gasto` no hace nada (código 2, sin leer la clave ni llamar a la red)', async () => {
@@ -84,11 +88,11 @@ describe('la batería de Rubén en seco: los 12 turnos corren por el flujo versi
 });
 
 describe('la batería de Rubén: validación de casos, detectores y umbral', () => {
-  it('los casos versionados son válidos: A, B y C con 4 turnos cada uno y 8 con respuesta fija del modo seco', () => {
+  it('los casos versionados son válidos: A, B, C y D con 5, 4, 4 y 2 turnos y 6 con respuesta fija del modo seco', () => {
     const casos = B.validarCasos(clonar(CASOS));
-    expect(casos.map((c) => c['id'])).toEqual(['A', 'B', 'C']);
-    expect(casos.map((c) => c['turnos'].length)).toEqual([4, 4, 4]);
-    expect(casos.flatMap((c) => c['turnos']).filter((t: J) => typeof t['seco'] === 'string')).toHaveLength(8);
+    expect(casos.map((c) => c['id'])).toEqual(['A', 'B', 'C', 'D']);
+    expect(casos.map((c) => c['turnos'].length)).toEqual([5, 4, 4, 2]);
+    expect(casos.flatMap((c) => c['turnos']).filter((t: J) => typeof t['seco'] === 'string')).toHaveLength(6);
   });
   it('NEGADA: rechaza casos mal formados (sin turnos, ids repetidos, turno sin `dice` ni `boton` o con los dos, botón inválido)', () => {
     const base = (): J => clonar(CASOS);
@@ -99,15 +103,16 @@ describe('la batería de Rubén: validación de casos, detectores y umbral', () 
       (d) => { d['casos'][0]['turnos'][0] = {}; },
       (d) => { d['casos'][0]['turnos'][0] = { dice: 'hola', boton: 'b_pack' }; },
       (d) => { d['casos'][0]['turnos'][3] = { boton: 'pack' }; },
-      (d) => { d['casos'][0]['turnos'][1]['rubro'] = 'torta'; },
+      (d) => { d['casos'][0]['turnos'][1]['tema'] = 'discut'; },
       (d) => { d['casos'][0]['turnos'][1]['seco'] = 7; },
+      (d) => { d['casos'][0]['turnos'][2]['duda'] = 'si'; },
     ];
     for (const [i, f] of mal.entries()) { const d = base(); f(d); expect(() => B.validarCasos(d), `caso malo ${i}`).toThrow(); }
   });
   it('`medir` aplica el umbral del 85 % de turnos sin respaldo y exige cero violaciones', () => {
-    const turno = (plan: string, extra: J = {}): J => ({ n: 2, plan, llamoAlModelo: true, crudo: 'Una idea útil para tu negocio sin cifras.', motivo: plan.endsWith('_fijo') || plan === 'modelo_caido' ? 'varias_preguntas' : '', finishReason: 'STOP', tokensEntrada: 3500, tokensSalida: 250, ms: 800, marcas: {}, mensajes: [], botones: [], violaciones: [], ...extra });
+    const turno = (plan: string, extra: J = {}): J => ({ n: 2, plan, llamoAlModelo: true, crudo: 'Una idea útil para ustedes, sin cifras y con calidez, que cabe en la rutina de una pareja.', motivo: plan.endsWith('_fijo') || plan === 'modelo_caido' ? 'varias_preguntas' : '', finishReason: 'STOP', tokensEntrada: 3500, tokensSalida: 250, ms: 800, marcas: {}, mensajes: [], botones: [], violaciones: [], ...extra });
     const corrida = (planes: string[], extra: J = {}): J => ({ caso: 'A', rep: 1, turnos: planes.map((p) => turno(p, extra)) });
-    const bien = B.medir([corrida(['modelo', 'opciones', 'modelo', 'puente', 'modelo', 'modelo', 'modelo', 'modelo', 'modelo', 'modelo'])]);
+    const bien = B.medir([corrida(['modelo', 'opciones', 'modelo', 'puente', 'modelo', 'angulo', 'modelo', 'modelo', 'modelo', 'modelo'])]);
     expect(bien.umbral.cumple).toBe(true);
     expect(bien.sinRespaldo.pct).toBe(100);
     // 8 de 10 (80 %): no cumple.
@@ -122,34 +127,55 @@ describe('la batería de Rubén: validación de casos, detectores y umbral', () 
     // Sin turnos del modelo no hay umbral que cumplir.
     expect(B.medir([{ caso: 'A', rep: 1, turnos: [turno('saludo', { llamoAlModelo: false })] }]).umbral.cumple).toBe(false);
   });
-  it('`medir` cuenta MAX_TOKENS, cifras inventadas, repetición de la descripción, más de una pregunta y el largo', () => {
+  it('`medir` cuenta MAX_TOKENS, cifras inventadas, más de una pregunta, el tema, la duda y el largo', () => {
     const t = (crudo: string, extra: J = {}): J => ({ n: 2, plan: 'modelo', llamoAlModelo: true, crudo, motivo: '', finishReason: 'STOP', tokensEntrada: 100, tokensSalida: 50, ms: 10, marcas: {}, mensajes: [], botones: [], violaciones: [], ...extra });
     const m = B.medir([{ caso: 'A', rep: 1, turnos: [
       t('Son 99 ideas.', { finishReason: 'MAX_TOKENS' }),
-      t('El libro tiene 12 capítulos y 230 páginas.'),
-      t('¿Qué vendes? ¿Y dónde?'),
-      t('x'.repeat(400)),
-      t('Con 7 pasos y 100 prompts.'),
+      t('El libro tiene 14 eslabones y 208 páginas.'),
+      t('¿Qué sienten? ¿Y desde cuándo?'),
+      t('x'.repeat(800)),
+      t('Con 14 eslabones y 21 días de ejercicios para ordenar tus noches con calma, el libro y su método ayudan en casa, paso a paso y sin prisa.', { marcas: { duda: true } }),
+      t('Dormir mal agota a cualquier persona y se puede practicar de otra forma.', { marcas: { tema: ['dormir'] } }),
     ] }]);
     expect(m.maxTokens).toBe(1);
     expect(m.cifrasInventadas).toBe(1);
-    expect(m.repiteLaDescripcion).toBe(1);
-    expect(m.unaSolaPregunta).toEqual({ n: 4, de: 5 });
-    expect(m.largoEntre300y900).toEqual({ n: 1, de: 5 });
-    expect(m.tokensEntrada).toBe(500);
+    expect(m.unaSolaPregunta).toEqual({ n: 5, de: 6 });
+    expect(m.laDudaConectaConElLibro).toEqual({ n: 1, de: 1 });
+    expect(m.respondeAlTema).toEqual({ n: 1, de: 1 });
+    expect(m.largoEntre120y700).toEqual({ n: 1, de: 6 });
+    expect(m.tokensEntrada).toBe(600);
     expect(m.costoUsd).toBeGreaterThan(0);
   });
-  it('la librería aislada rechaza lo que rechaza el flujo: un monto, «gratis» y la suplantación', () => {
+  it('la librería aislada rechaza lo que rechaza el flujo: un monto, datos de pago, afirmar una compra, la promesa de aviso y la suplantación del autor', () => {
     const lib = B.cargarLibreria();
-    const rev = (t: string): string => (lib['cmRevisarRedaccion'] as Fn)(t, { maximo: 900, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: 'Rubén Roca', textoDelCliente: '', extra: [lib['rrExtraRedaccion']] }).motivo;
+    const rev = (t: string): string => (lib['cmRevisarRedaccion'] as Fn)(t, {
+      maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: 'El Puente', textoDelCliente: '', extra: [lib['rrExtraRedaccion']],
+      sinDatosDePago: true, sinAfirmarCompra: true, sinPromesasDeAviso: true,
+    }).motivo;
     expect(rev('El libro cuesta solo 5 Bs hoy.')).not.toBe('');
-    expect(rev('Te alcanza mucho alcance gratis en TikTok.')).not.toBe('');
-    expect((lib['rrSuplantaARuben'] as Fn)('Soy Rubén y te escribo yo.')).toBe(true);
-    expect(rev('Para una tienda el libro ayuda a responder más rápido.')).toBe('');
+    expect(rev('Puedes depositar a la cuenta del Banco Unión.')).not.toBe('');
+    expect(rev('Ya compraste el libro, felicidades.')).not.toBe('');
+    expect(rev('Un asesor se comunicará contigo muy pronto.')).not.toBe('');
+    expect(rev('Soy Rubén Dauber y te escribo yo.')).not.toBe('');
+    expect(rev('Para una pareja ocupada los ejercicios del libro son cortos y caben en la rutina.')).toBe('');
+  });
+  it('el diagnóstico nombra la regla exacta que rechazó y las etapas que quitó (eco del marcador, promesas de opciones, pregunta final)', () => {
+    const lib = B.cargarLibreria();
+    const d = (crudo: string, ctx: J = {}) => B.diagnosticar(lib, crudo, { modo: 'charla', habil: true, qrAbierto: false, textoCliente: '', ...ctx });
+    expect(d('').motivo).toBe('vacio');
+    expect(d('DERIVAR').motivo).toBe('derivar');
+    expect(d('RIESGO').motivo).toBe('riesgo');
+    expect(d('Soy Rubén Dauber, te atiendo yo.').motivo).toBe('suplanta_al_autor');
+    expect(d('Ahorita te paso los precios.', { habil: false }).motivo).not.toBe('');
+    const eco = d('[MODO_TURNO: PUENTE] Una idea útil para ustedes. ¿Qué piensas?', { modo: 'puente', habil: false });
+    expect(eco.motivo).toBe('');
+    expect(eco.pasos.map((p: J) => p['etapa'])).toContain('sin eco de marcador');
+    expect(eco.pasos.at(-1)?.texto).not.toMatch(/\?/);
+    expect(d('Una idea. Otra idea. Otra. Y otra más.', { qrAbierto: true }).motivo).toBe('');
   });
 });
 
-describe('la batería de Rubén REUTILIZA el motor de chat-novuchat (no copia un cuarto motor)', () => {
+describe('la batería de Rubén REUTILIZA el motor de chat-novuchat (no copia un cuarto motor) y su lista de librerías sale del armador', () => {
   it('importa `crearMundo`, `llamarGemini`, `leerCredencial`, `limpiarSecretos` y `TARIFA` de `chat-novuchat/herramientas/bateria.mjs` y no los redefine', () => {
     expect(FUENTE).toMatch(/from '\.\.\/\.\.\/chat-novuchat\/herramientas\/bateria\.mjs'/);
     for (const n of ['crearMundo', 'llamarGemini', 'leerCredencial', 'limpiarSecretos', 'TARIFA']) {
@@ -157,8 +183,38 @@ describe('la batería de Rubén REUTILIZA el motor de chat-novuchat (no copia un
       expect(FUENTE, n).not.toMatch(new RegExp(`(function|const|class) ${n}\\b`));
     }
   });
+  it('las librerías del flujo salen de `CONFIG.librerias` del armador (si el armador cambia, la batería cambia con él)', () => {
+    expect(FUENTE).toMatch(/import \{ CONFIG \} from '\.\.\/construir\.mjs'/);
+    expect(FUENTE).toMatch(/CONFIG\.librerias\.map/);
+  });
   it('la clave solo la ve el motor común (la herramienta propia no lee archivos de entorno ni la escribe en ningún lado)', () => {
     expect(FUENTE).not.toMatch(/writeFile|appendFile|x-goog-api-key|Authorization/);
     expect(FUENTE).toMatch(/--confirmo-gasto/);
+  });
+});
+
+describe('la batería de Rubén: la entrega de Gemini cuando la respuesta sale VACÍA o bloqueada (`--crudo`)', () => {
+  const CLAVE = 'AI' + 'zaFAKE_clave_de_prueba_' + 'ABCDEFGHIJKLMNOP';
+  const respuesta = (json: J, status = 200): J => ({ ok: status < 400, status, text: async () => JSON.stringify(json) });
+  const conRed = (resp: () => J): J => ({ fetch: async () => resp(), leerArchivo: () => `GEMINI_API_KEY=${CLAVE}\n`, gcloudToken: () => { throw new Error('sin gcloud'); } });
+  const ARGS = ['--n', '1', '--casos', 'D', '--env', '.env.x', '--confirmo-gasto', '--crudo'];
+
+  it('una respuesta SIN candidatos y con `promptFeedback.blockReason` y `safetyRatings` los imprime: HTTP, candidatos, finishReason, blockReason, ratings y reintentos', async () => {
+    const r = await correr(ARGS, conRed(() => respuesta({ promptFeedback: { blockReason: 'PROHIBITED_CONTENT', safetyRatings: [{ category: 'HARM_CATEGORY_HARASSMENT', probability: 'HIGH', blocked: true }] } })));
+    expect(r.salida).toMatch(/motivo exacto: vacio/);
+    expect(r.salida).toMatch(/\[entrega de Gemini\] HTTP 2xx · candidatos 0 · finishReason - · blockReason PROHIBITED_CONTENT · safetyRatings HARASSMENT=HIGH\(BLOQUEADA\) · reintentos 0/);
+    expect(r.salida + r.error).not.toContain(CLAVE);
+  });
+  it('una respuesta con candidato VACÍO (sin texto, finishReason SAFETY) imprime sus safetyRatings; y un HTTP 500 imprime el código y los reintentos', async () => {
+    const a = await correr(ARGS, conRed(() => respuesta({ candidates: [{ finishReason: 'SAFETY', safetyRatings: [{ category: 'HARM_CATEGORY_DANGEROUS_CONTENT', probability: 'MEDIUM' }] }] })));
+    expect(a.salida).toMatch(/\[entrega de Gemini\] HTTP 2xx · candidatos 1 · finishReason SAFETY · blockReason - · safetyRatings DANGEROUS_CONTENT=MEDIUM/);
+    const b = await correr(ARGS, conRed(() => respuesta({ error: { message: 'boom' } }, 500)));
+    expect(b.salida).toMatch(/\[entrega de Gemini\] HTTP 500 /);
+    expect(b.salida).toMatch(/reintentos [1-9]/);
+    expect(b.salida + b.error).not.toContain(CLAVE);
+  });
+  it('NEGADA: una respuesta normal con texto NO imprime la línea de entrega', async () => {
+    const r = await correr(ARGS, conRed(() => respuesta({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Entiendo lo difícil que es esto. ¿Qué te gustaría mejorar primero?' }] } }] })));
+    expect(r.salida).not.toMatch(/\[entrega de Gemini\]/);
   });
 });

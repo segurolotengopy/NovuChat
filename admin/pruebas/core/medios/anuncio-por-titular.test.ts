@@ -332,9 +332,9 @@ describe('los flujos que incluyen «Preparar imagen» llevan anuncio-por-titular
   it('hay flujos que lo incluyen (la prueba no es vacía)', () => {
     expect(incluyen.length).toBeGreaterThanOrEqual(10);
   });
-  // EXCEPCIÓN DECLARADA (23/10/2026): el flujo de Rubén llama «Interpretar entrada» al nodo que los demás llaman «Normalizar entrada». Lo incluye TAL CUAL salvo esa única traducción textual de un nombre de nodo
-  // (`construir.mjs` de rroca-ruben, `NOMBRES_DEL_NUCLEO_IMAGEN`; la comprueba su guardia y `armado.test.ts`). Para ese flujo se compara el módulo con ese nombre traducido; para todos los demás, byte a byte.
-  const NOMBRES_TRADUCIDOS: Record<string, Record<string, string>> = { 'experimental/rroca-ruben/': { 'Normalizar entrada': 'Interpretar entrada' } };
+  // Ya no hay excepciones (05/11/2026): el flujo de Rubén «Noches» llama «Normalizar entrada» al nodo de entrada, como los demás, y lo incluye byte a byte. Si algún flujo vuelve a necesitar
+  // una traducción textual de un nombre de nodo, se declara aquí con su motivo.
+  const NOMBRES_TRADUCIDOS: Record<string, Record<string, string>> = {};
   const traducir = (f: string, texto: string): string => {
     const t = Object.entries(NOMBRES_TRADUCIDOS).find(([prefijo]) => f.startsWith(prefijo))?.[1] ?? {};
     return Object.entries(t).reduce((acc, [de, a]) => acc.split(`$('${de}')`).join(`$('${a}')`), texto);

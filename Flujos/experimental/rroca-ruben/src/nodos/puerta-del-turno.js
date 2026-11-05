@@ -9,7 +9,7 @@
 // La atención sale de lo que devolvió la ingesta del entrante si lo trae y, si no, de `configuracionFlujo` (`cnAtencion`). Sin modelo; sin ficha.
 const FIJO = 'Gracias por tu paciencia. Para atenderte mejor, una persona del equipo va a continuar esta conversación.';
 const cfg = cnCfg();
-const t = cnPrimero('Interpretar entrada') || {};
+const t = cnPrimero('Normalizar entrada') || {};
 const previo = cnPrimero('Reportar mensaje (entrante)');
 const cortado = !!(previo && previo.servicio && previo.servicio.estado === 'cortado');
 if (cfg.estadoComercio !== 'operativo' || cortado) {

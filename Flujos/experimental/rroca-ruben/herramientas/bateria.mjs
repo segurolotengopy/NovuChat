@@ -1,74 +1,76 @@
 #!/usr/bin/env node
-// BATERÍA DE LA CONVERSACIÓN DE «VENTA DIGITAL DE RUBÉN» (ENTREGA 2, 23/10/2026) CONTRA EL MODELO REAL.
+// BATERÍA DE LA CONVERSACIÓN DE «EL PUENTE» DE RUBEN (REHECHO SOBRE LA ENTREGA 2, 23/10/2026) CONTRA EL MODELO REAL.
 //
-// QUÉ ES. Corre los 12 turnos del cliente de `bateria-casos.json` (A el PDF, B «precio primero», C anuncio y salidas de tema) por el flujo armado de PRUEBA (`rroca-ruben.prueba.json`): recorre su grafo
-// nodo por nodo y corre de verdad los nodos Code del JSON. Lo ÚNICO que sale a la red es «Conversar con el modelo» (el cuerpo EXACTO que arma `rrCuerpoModelo`, con la línea `[MODO_TURNO: …]`): la
-// consola, la ingesta, Graph, los medios y el cotejo van simulados y en memoria, igual que en `chat-novuchat`. El motor (`crearMundo`, `llamarGemini`, `leerCredencial`, `limpiarSecretos`, `TARIFA`)
-// se IMPORTA de `Flujos/experimental/chat-novuchat/herramientas/bateria.mjs`: NO se copia un cuarto motor.
+// QUÉ ES. Corre los turnos del cliente de `bateria-casos.json` (A el camino completo, B «precio primero», C precios en general y el puente, D anuncio) por el flujo armado de PRUEBA (`rroca-ruben.prueba.json`):
+// recorre su grafo nodo por nodo y corre de verdad los nodos Code del JSON. Lo ÚNICO que sale a la red es «Conversar con el modelo» (el cuerpo EXACTO que arma `rrCuerpoModelo`, con la línea `[MODO_TURNO: …]`): la
+// consola, la ingesta, Graph, los medios y el cotejo van simulados y en memoria, igual que en `chat-novuchat`. El motor (`crearMundo`, `llamarGemini`, `leerCredencial`, `limpiarSecretos`, `TARIFA`) se IMPORTA de
+// `Flujos/experimental/chat-novuchat/herramientas/bateria.mjs`: NO se copia un cuarto motor. (Es la herramienta de `rroca-ruben/herramientas/bateria.mjs` adaptada a los nombres y a las reglas de Rubén.)
 //
-// QUÉ MIDE (lo que depende del MODELO; lo determinista lo cubren `conversacion.test.ts` y el vigilante de UX):
+// QUÉ MIDE (lo que depende del MODELO; lo determinista lo cubren `rehecho.test.ts` y el vigilante de UX):
 //   - qué porcentaje de los turnos del modelo pasa las barreras (sin texto de respaldo) y, si no, el motivo del rechazo;
-//   - `finishReason = MAX_TOKENS`, un solo «?», nombra el rubro del cliente, responde la salida de tema (TikTok, Facebook, Instagram), la objeción cita Checklist, 100 Prompts, Closer o videos,
-//     no repite la descripción del libro, ninguna cifra inventada (fuera de 4, 7, 12, 30, 100 y 230) y el largo entre 300 y 900 caracteres;
-//   - las violaciones de los invariantes 11 a 15 del vigilante (versión espejo, en JavaScript, sobre lo que el cliente RECIBE) y las reglas duras (nunca «acreditado», nunca negar ser una IA);
+//   - `finishReason = MAX_TOKENS`, un solo «?», responde al tema del cliente, la duda conecta con el libro, ninguna cifra inventada y el largo entre 120 y 700 caracteres;
+//   - las violaciones de los invariantes del vigilante (versión espejo, en JavaScript, sobre lo que el cliente RECIBE) y las reglas duras (nunca «acreditado», nunca negar ser una IA, nunca el nombre de una persona en la presentación);
 //   - tokens, latencia y costo.
-// UMBRAL para seguir con `gemini-3.5-flash-lite`: al menos 85 % de los turnos del modelo sin texto de respaldo y 0 violaciones duras (si no, DECISIÓN de Andres: gemini-3.5-flash o UN reintento).
+// UMBRAL para seguir con `gemini-3.5-flash-lite`: al menos 85 % de los turnos del modelo sin texto de respaldo y 0 violaciones duras (si no, DECISIÓN de Andres).
 //
 // Se corre desde la raíz del repositorio:
 //   node Flujos/experimental/rroca-ruben/herramientas/bateria.mjs --seco
 //   node Flujos/experimental/rroca-ruben/herramientas/bateria.mjs --vertex <proyecto-de-pruebas> --n 3 --confirmo-gasto
 //   node Flujos/experimental/rroca-ruben/herramientas/bateria.mjs --env <archivo> --n 3 --confirmo-gasto --conversaciones
 //
-// OPCIONES (las de `chat-novuchat` más dos propias)
+// OPCIONES (las de `chat-novuchat` más tres propias)
 //   --seco            NO llama a nada: el modelo es una respuesta fija por turno (campo `seco` de cada turno del caso; sin él, el modelo «cae»). No lee ninguna clave ni toca la red.
-//   --n <1..20>       corridas por caso (3 por defecto; 3 corridas = 24 llamadas ≈ USD 0,043 con la tarifa de abajo).
+//   --n <1..20>       corridas por caso (3 por defecto).
 //   --casos A,B,C     ids de los casos (todos por defecto).
 //   --env <archivo>   archivo con la clave (`.env` y este). --vertex <proyecto> usa Vertex AI con el token de `gcloud` (la clave vive solo en n8n). --locacion <región>.
 //   --confirmo-gasto  OBLIGATORIA fuera de `--seco`: la corrida real es GASTO y solo se hace con el «sí» de Andres. USA UNA CREDENCIAL DEL PROYECTO DE PRUEBAS, NUNCA la de producción.
-//   --conversaciones  además del informe, imprime cada conversación (lo que dijo el cliente y lo que se le envió) para compararla con el PDF.
-//   --crudo           por turno del modelo: el TEXTO CRUDO que devolvió Gemini (antes de filtros), el motivo EXACTO de rechazo (nombre de la regla) y el texto que quedó tras cada barrera. Sin secretos.
+//   --conversaciones  además del informe, imprime cada conversación (lo que dijo el cliente y lo que se le envió).
+//   --crudo           por turno del modelo: el TEXTO CRUDO que devolvió Gemini (antes de filtros), el motivo EXACTO de rechazo y el texto que quedó tras cada barrera. Sin secretos.
 //   --json            salida de máquina: UN objeto JSON en la salida estándar. --ayuda: este resumen.
 //
-// NUNCA SE IMPRIME EL VALOR DE UN SECRETO (sale el NOMBRE de la variable). NO ESCRIBE ARCHIVOS. El código del flujo se ejecuta con `new Function` (como el motor de chat-novuchat): es código del propio repositorio.
+// NUNCA SE IMPRIME EL VALOR DE UN SECRETO (sale el NOMBRE de la variable). NO ESCRIBE ARCHIVOS. El código del flujo se ejecuta con el motor de chat-novuchat: es código del propio repositorio.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ErrorDeUso, TARIFA, crearMundo, leerArgumentos, leerCredencial, limpiarSecretos, llamarGemini, telefonoDe, textoDeGemini } from '../../chat-novuchat/herramientas/bateria.mjs';
+import { CONFIG } from '../construir.mjs';
 import { doblesDeBateriaDelGuardado } from '../../comun-sin-agente/src/guardado-dobles.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const RUTA_FLUJO = join(AQUI, '../rroca-ruben.prueba.json');
+const CARPETA_FLUJO = join(AQUI, '..');
+const RUTA_FLUJO = join(CARPETA_FLUJO, 'rroca-ruben.prueba.json');
 const RUTA_CASOS = join(AQUI, 'bateria-casos.json');
-const CARPETA_LIB = join(AQUI, '../src/lib');
-const RUTA_FILTRO = join(AQUI, '../../comun-sin-agente/src/filtro-redaccion.js');
+// El filtro común de la redacción y, EN EL MISMO ORDEN que el armador, las librerías del flujo (base común, core de texto y `rr.js`): no hay una lista aparte que pueda desactualizarse.
+const RUTAS_DE_LA_LIBRERIA = [join(CARPETA_FLUJO, '../comun-sin-agente/src/filtro-redaccion.js'), ...CONFIG.librerias.map((r) => join(CARPETA_FLUJO, r))];
 
 // Datos de ejemplo: teléfonos sintéticos (seis ceros) y el catálogo de Rubén. Lunes 05/10/2026, 10:00 en La Paz.
 const PID = '59100000003';
 const REC = '59100000001';
 const MEDIA_QR = 'MEDIAQR100200';
 const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
+const NEGOCIO = 'Noches Sin Insomnio';
 const CATALOGO = [
-  { id: 'pack-completo', nombre: 'Pack Completo', precio: 60, activo: true },
-  { id: 'libro-bonos', nombre: 'Libro + 4 bonos', precio: 32, activo: true },
-  { id: 'closer-ventas', nombre: 'Prompt Closer', precio: 20, activo: true },
-  { id: 'videos-ia', nombre: 'Videos con IA', precio: 25, activo: true },
+  { id: 'pack-completo', nombre: 'Pack completo', precio: 70, activo: true },
+  { id: 'libro-con-bono', nombre: 'Libro con bono', precio: 35, activo: true },
+  { id: 'audiolibro', nombre: 'Audiolibro', precio: 35, activo: true },
+  { id: 'meditaciones', nombre: 'Meditaciones', precio: 20, activo: true },
 ];
-// Legítimas: las del libro (4 bonos, 7 días, 12 capítulos, 30 ideas, 100 prompts, 230 páginas) y el número de un capítulo (1 a 12: «capítulo 6»).
-const CIFRAS_PERMITIDAS = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '30', '100', '230']);
+// Legítimas: las del producto (14 eslabones y 14 capítulos, 208 páginas, bono de 18 páginas, plan de 21 días, 3 meditaciones de 7, 7 y 5 minutos, 5 pasos) y el número de un capítulo (1 a 14).
+const CIFRAS_PERMITIDAS = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '18', '21', '50', '208']);
 const UMBRAL_SIN_RESPALDO = 0.85;
-const PLANES_DEL_MODELO_BUENOS = ['modelo', 'audio_modelo', 'imagen_modelo', 'puente', 'opciones'];
-const PLANES_DE_RESPALDO = ['identidad', 'modelo_caido', 'audio_modelo_caido', 'puente_fijo', 'opciones_fijo', 'charla_fija'];
-const PLANES_DE_CHARLA = ['saludo', 'modelo', 'audio_modelo', 'imagen_modelo', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo'];
-const PLANES_EXENTOS = ['qr', 'qr_pendiente', 'complemento', 'comprobante', 'cancele_como_pago'];
-const BOTONES_DE_PRODUCTO = ['b_pack', 'b_libro', 'b_comp', 'b_closer', 'b_videos'];
+const PLANES_DEL_MODELO_BUENOS = ['modelo', 'angulo', 'puente', 'opciones'];
+const PLANES_DE_RESPALDO = ['modelo_caido', 'angulo_fijo', 'puente_fijo', 'opciones_fijo', 'charla_fija'];
+const PLANES_DE_CHARLA = ['saludo', 'modelo', 'angulo', 'angulo_fijo', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo'];
+const PLANES_EXENTOS = ['qr', 'qr_pendiente', 'audios', 'comprobante', 'opciones_fijo', 'repetido'];
+const BOTONES_DE_PRODUCTO = ['b_pack', 'b_libro', 'b_audiolibro', 'b_meditaciones', 'b_upgrade', 'b_audios'];
 const CON_PRECIO = /\b\d+(?:[.,]\d{1,2})?\s?Bs\b/i;
 const CIERRE_PUENTE = '¿Te muestro las opciones?';
 const BLOQUE = /Te dejo aqu[ií] abajo las opciones/;
 
-const AYUDA = `Batería de la conversación de Rubén contra el modelo (ENTREGA 2).
-  --seco  --n <1..20>  --casos A,B,C  --env <archivo>  --vertex <proyecto>  --locacion <región>  --confirmo-gasto  --conversaciones  --crudo  --json  --ayuda
+const AYUDA = `Batería de la conversación de Rubén contra el modelo (rehecho sobre la ENTREGA 2).
+  --seco  --n <1..20>  --casos A,B,C,D  --env <archivo>  --vertex <proyecto>  --locacion <región>  --confirmo-gasto  --conversaciones  --crudo  --json  --ayuda
 Fuera de --seco la corrida es GASTO: exige --confirmo-gasto y una credencial del proyecto de PRUEBAS (nunca la de producción).`;
 
 const norm = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -76,10 +78,10 @@ const redondear = (n, d = 2) => (Number.isFinite(n) ? Math.round(n * 10 ** d) / 
 const mensajeDe = (e) => (e instanceof Error ? e.message : String(e));
 const objeto = (v) => (v !== null && typeof v === 'object' && !Array.isArray(v) ? v : {});
 
-/** Las funciones de la librería del flujo (rr.js y las comunes) en un contexto aislado, sin los globales de Node. */
+/** Las funciones de la librería del flujo (la base común, el core de texto y `rr.js`) en un contexto aislado, sin los globales de Node. */
 export function cargarLibreria() {
-  const fuente = [RUTA_FILTRO, ...['cobro.js', 'avisos.js', 'rr.js'].map((a) => join(CARPETA_LIB, a))].map((r) => readFileSync(r, 'utf8')).join('\n');
-  return runInNewContext(`${fuente}\n({ rrQuitarEcoDeMarcador, cmRevisarRedaccion, rrExtraRedaccion, rrSuplantaARuben, rrEsDerivar, rrQuitarRepeticionDelLibro, rrQuitarPromesaDeOpciones, rrUnaPresentacion, rrSinPreguntaFinal, rrPreguntaPorIA, rrNorm, rrTienePresentacionIA })`, {});
+  const fuente = RUTAS_DE_LA_LIBRERIA.map((r) => readFileSync(r, 'utf8')).join('\n');
+  return runInNewContext(`${fuente}\n({ rrQuitarEcoDeMarcador, cmRevisarRedaccion, rrExtraRedaccion, rrEsDerivar, rrEsMarcaRiesgo, vdQuitarPromesaDeOpciones, vdSinPreguntaFinal, vdOraciones, vdPrometeOpciones, RR_PROMETE_DEBILES, rrNorm })`, {});
 }
 
 // ------------------------------------------------------------------------------------------------------- los casos
@@ -99,15 +101,13 @@ export function validarCasos(datos) {
       const tieneBoton = typeof t.boton === 'string' && /^b_[a-z]{1,12}$/.test(t.boton);
       if (tieneTexto === tieneBoton) throw new ErrorDeUso(`${donde}: debe traer \`dice\` (texto) o \`boton\` (id b_*), uno solo.`);
       if (t.seco !== undefined && typeof t.seco !== 'string') throw new ErrorDeUso(`${donde}: \`seco\` debe ser un texto.`);
-      for (const k of ['rubro', 'tema']) if (t[k] !== undefined && (!Array.isArray(t[k]) || t[k].some((x) => typeof x !== 'string' || !x))) throw new ErrorDeUso(`${donde}: \`${k}\` debe ser una lista de palabras.`);
-      if (t.objecion !== undefined && typeof t.objecion !== 'boolean') throw new ErrorDeUso(`${donde}: \`objecion\` debe ser verdadero o falso.`);
+      if (t.tema !== undefined && (!Array.isArray(t.tema) || t.tema.some((x) => typeof x !== 'string' || !x))) throw new ErrorDeUso(`${donde}: \`tema\` debe ser una lista de palabras.`);
+      if (t.duda !== undefined && typeof t.duda !== 'boolean') throw new ErrorDeUso(`${donde}: \`duda\` debe ser verdadero o falso.`);
     });
   }
   return casos;
 }
 
-// Los anuncios de la Consola que la batería simula (el flujo no lleva ninguno escrito): solo el del caso C.
-const ANUNCIOS_DE_PRUEBA = [{ id: 'ad-publicar', titulares: ['¿No sabes qué publicar?'], angulo: 'Habla del capítulo 6 y pregunta a qué se dedica y en qué red publica.', producto: { id: 'libro-bonos', nombre: 'Libro + 4 bonos', precio: 32, agotado: false } }];
 // ------------------------------------------------------------------------------------------------------- el mundo de una corrida
 let seq = 0;
 const valorMeta = (msg, from) => ({
@@ -121,10 +121,10 @@ function crearDobles({ tel, seco, turnoActual, credencial, opciones, deps, nodoM
   const panel = () => ({
     statusCode: 200,
     body: {
-      tenantId: 'rroca-ruben', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'Rubén Roca' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, voz: { nombreAsistente: '' }, atencion: { estado: 'normal' },
-      catalogo: CATALOGO, anuncios: ANUNCIOS_DE_PRUEBA, venta: { mediaIdQr: MEDIA_QR },
-      cobroReal: { nombreCuenta: 'Titular Ejemplo', banco: 'Banco Ejemplo', cuentas: ['59100000077'], venceEl: '2027-12-31', moneda: 'BOB', montoFijo: null, fichaQr: 'ficha1' },
-      cobro: { activo: true, moneda: 'BOB', qr: { url: 'https://us-east1-ejemplo.cloudfunctions.net/imagenDeCobro?f=ficha1', nombreCuenta: 'Titular Ejemplo', banco: 'Banco Ejemplo' }, regla: 2, pendiente: cobro.pendiente, monto: cobro.monto, pedido: cobro.pedido, enRevision: false, vencidoHaceMin: null },
+      tenantId: 'rroca-ruben', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: NEGOCIO }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, atencion: { estado: 'normal' },
+      catalogo: CATALOGO, venta: { mediaIdQr: MEDIA_QR },
+      cobroReal: { nombreCuenta: 'Titular Ejemplo', banco: 'Banco Ejemplo' },
+      cobro: { activo: true, qr: { url: 'https://qr.example.com/q.png' }, regla: 2, pendiente: cobro.pendiente, monto: cobro.monto, pedido: cobro.pedido },
     },
   });
   const gemini = (t) => ({ candidates: [{ content: { parts: [{ text: t }] } }] });
@@ -139,16 +139,16 @@ function crearDobles({ tel, seco, turnoActual, credencial, opciones, deps, nodoM
       return { ok: true };
     },
     'Enviar aviso': envio, 'Enviar a WhatsApp': envio, 'Enviar respaldo': envio,
-    'Obtener URL del medio': () => ({ url: 'https://lookaside.fbsbx.com/m', mime_type: 'image/jpeg', file_size: 100_000 }),
+    'Obtener URL del medio (general)': () => ({ url: 'https://lookaside.fbsbx.com/m', mime_type: 'image/jpeg', file_size: 100_000 }),
     'Descargar medio': () => ({}),
     // La rama común del GUARDADO de medios: sin red, el servidor responde «guardado_apagado» (la bandera por defecto).
     ...doblesDeBateriaDelGuardado(),
     'Transcribir audio': () => gemini(''),
-    'Ver imagen': () => gemini(JSON.stringify({ tipo: 'otra', descripcion: '' })),
-    'Guardar comprobante': () => ({ statusCode: 200, body: { ruta: 'tenants/rroca-ruben/comprobantes/2026-10-05/abc_1.jpg' } }),
-    'Leer comprobante (imagen)': () => gemini(JSON.stringify({ monto: '60.00', cuentaDestino: '59100000077', nombreCuenta: 'Titular Ejemplo', fecha: '05/10/2026', hora: '10:02', banco: 'Banco Ejemplo' })),
-    'Leer comprobante (PDF)': () => gemini(JSON.stringify({ monto: '60.00', cuentaDestino: '59100000077', nombreCuenta: 'Titular Ejemplo', fecha: '05/10/2026', hora: '10:02', banco: 'Banco Ejemplo' })),
-    'Cotejar en el servidor': () => { cobro.pendiente = false; return { statusCode: 200, body: { estado: 'valido', importe: 60, avisarComercio: true, cierreId: 'venta_1' } }; },
+    'Describir imagen': () => gemini(JSON.stringify({ categoria: 'otro', texto: '' })),
+    'Describir documento': () => gemini(JSON.stringify({ categoria: 'otro', texto: '' })),
+    'Cotejar en el servidor': () => { cobro.pendiente = false; return { statusCode: 200, body: { estado: 'valido', importe: 49, avisarComercio: true } }; },
+    // «Avisar al servidor» (cancelar el cobro o reportar `no_contactar`): el servidor lo recibe siempre.
+    'Avisar al servidor': () => ({ statusCode: 200, body: { atencion: { estado: 'normal' } } }),
     // LO ÚNICO QUE SALE A LA RED (y solo fuera de --seco): el cuerpo exacto que arma el flujo.
     'Conversar con el modelo': async (ll) => {
       const t = turnoActual();
@@ -177,8 +177,8 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
   let actual = null;
   const { dobles } = crearDobles({ tel, seco: opciones.seco, turnoActual: () => actual, credencial, opciones, deps, nodoModelo });
   const mundo = crearMundo({ flujo, dobles, ahoraMs: AHORA, configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: tel } });
-  mundo.sd.rroca = { [REC]: { ultimoMs: AHORA - 5 * 60_000, turnos: 1 } };
-  const estado = { charla: 0, qrVisto: false, bloques: 0, ultimoFuePuente: false, descripcionVista: false };
+  mundo.sd.ruben = { [REC]: { ultimoMs: AHORA - 5 * 60_000, turnos: 1 } };
+  const estado = { charla: 0, qrVisto: false, bloques: 0, ultimoFuePuente: false };
   for (const [i, turno] of caso.turnos.entries()) {
     actual = { turno, llamadasAlModelo: 0, cuerpoModelo: null, ms: 0, reintentos: 0 };
     const entrada = { headers: {}, body: { modoPrueba: true, telefonoDePrueba: tel, enviarDeVerdad: false, ...valorMeta(mensajeDelTurno(turno), tel) } };
@@ -197,10 +197,10 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       llamoAlModelo: decision.llamarModelo === true || actual.llamadasAlModelo > 0, crudo,
       finishReason: String(objeto(objeto((objeto(respuestaModelo).candidates ?? [])[0])).finishReason ?? ''),
       tokensEntrada: Number(objeto(objeto(respuestaModelo).usageMetadata).promptTokenCount) || 0, tokensSalida: Number(objeto(objeto(respuestaModelo).usageMetadata).candidatesTokenCount) || 0,
-      ms: actual.ms, reintentos: actual.reintentos, marcas: turno,
+      ms: actual.ms, reintentos: actual.reintentos, marcas: turno, entrega: datosDeEntrega(respuestaModelo, actual.reintentos),
     };
     const planDec = objeto(decision.plan);
-    t.diagnostico = t.llamoAlModelo ? diagnosticar(lib, crudo, { modo: String(planDec.modo ?? ''), habil: decision.opcionesHabilitadas === true, qrAbierto: planDec.qrAbierto === true, saludado: i > 0, textoCliente: String(planDec.textoRevision ?? turno.dice ?? '') }) : null;
+    t.diagnostico = t.llamoAlModelo ? diagnosticar(lib, crudo, { modo: String(planDec.modo ?? ''), habil: decision.opcionesHabilitadas === true, qrAbierto: planDec.qrAbierto === true, textoCliente: String(planDec.textoCliente ?? turno.dice ?? '') }) : null;
     t.motivo = t.diagnostico ? t.diagnostico.motivo : '';
     t.modo = String(planDec.modo ?? '');
     t.violaciones = [...violacionesDelTurno(estado, turno, t), ...(r.fallo ? [`el flujo falló en «${r.fallo.nodo}»: ${r.fallo.mensaje}`] : [])];
@@ -211,10 +211,27 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
 }
 
 /**
- * EL DIAGNÓSTICO de un turno del modelo: repite, etapa por etapa y con las mismas condiciones, la cadena de «Armar mensajes» (derivar, suplantación, `cmRevisarRedaccion` con `rrExtraRedaccion` y el flag de la compuerta, quita de la
- * repetición del libro, quita de promesas, una presentación, pregunta final del puente y de las opciones) y devuelve `{ motivo, pasos }`: `motivo` es el NOMBRE de la regla que rechazó (o «vacio_tras_<etapa>» si una quita dejó el
- * texto vacío; '' si pasa) y `pasos` el texto que quedó tras cada barrera. `ctx` = { modo, habil, qrAbierto, saludado, textoCliente }.
+ * EL DIAGNÓSTICO de un turno del modelo: repite, etapa por etapa y con las mismas condiciones, la cadena de «Armar mensajes» (eco del marcador, RIESGO, DERIVAR, `cmRevisarRedaccion` con sus filtros siempre activos y `rrExtraRedaccion`,
+ * quita de promesas de opciones, pregunta final del puente y de las opciones) y devuelve `{ motivo, pasos }`: `motivo` es el NOMBRE de la regla que rechazó (o «vacio_tras_<etapa>» si una quita dejó el texto vacío; '' si pasa)
+ * y `pasos` el texto que quedó tras cada barrera. `ctx` = { modo, habil, qrAbierto, textoCliente }.
  */
+/** Lo que Gemini dijo de una respuesta VACÍA o bloqueada (sin secretos): código HTTP (2xx si hubo JSON; el real si falló), finishReason, `promptFeedback.blockReason`, `safetyRatings` (del candidato y del prompt) y reintentos. */
+export function datosDeEntrega(respuesta, reintentos) {
+  const r = objeto(respuesta);
+  const cand = objeto((Array.isArray(r.candidates) ? r.candidates : [])[0]);
+  const pf = objeto(r.promptFeedback);
+  const err = objeto(r.error);
+  const ratings = (v) => (Array.isArray(v) ? v.map((x) => `${String(objeto(x).category ?? '?').replace('HARM_CATEGORY_', '')}=${String(objeto(x).probability ?? '?')}${objeto(x).blocked === true ? '(BLOQUEADA)' : ''}`) : []);
+  return {
+    http: r.error !== undefined ? String(err.httpCode ?? err.code ?? '?') : '2xx',
+    error: r.error !== undefined ? String(err.message ?? '').slice(0, 140) : '',
+    finishReason: String(cand.finishReason ?? ''), blockReason: String(pf.blockReason ?? ''),
+    safetyRatings: [...ratings(cand.safetyRatings), ...ratings(pf.safetyRatings)], candidatos: Array.isArray(r.candidates) ? r.candidates.length : 0, reintentos: Number(reintentos) || 0,
+  };
+}
+export function lineaDeEntrega(e) {
+  return `  [entrega de Gemini] HTTP ${e.http}${e.error ? ` («${e.error}»)` : ''} · candidatos ${e.candidatos} · finishReason ${e.finishReason || '-'} · blockReason ${e.blockReason || '-'} · safetyRatings ${e.safetyRatings.length ? e.safetyRatings.join(', ') : '-'} · reintentos ${e.reintentos}`;
+}
 export function diagnosticar(lib, crudo, ctx) {
   const pasos = [{ etapa: 'crudo', texto: String(crudo ?? '') }];
   const sinEco = lib.rrQuitarEcoDeMarcador(String(crudo ?? ''));
@@ -222,18 +239,22 @@ export function diagnosticar(lib, crudo, ctx) {
   crudo = sinEco;
   const fin = (motivo) => ({ motivo, pasos });
   if (String(crudo).trim() === '') return fin('vacio');
+  if (lib.rrEsMarcaRiesgo(crudo)) return fin('riesgo');
   if (lib.rrEsDerivar(crudo)) return fin('derivar');
-  if (lib.rrSuplantaARuben(crudo)) return fin('suplanta');
-  const rev = lib.cmRevisarRedaccion(crudo, { maximo: 900, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: 'Rubén Roca', textoDelCliente: ctx.textoCliente, extra: [lib.rrExtraRedaccion] });
+  const rev = lib.cmRevisarRedaccion(crudo, {
+    maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: '', textoDelCliente: ctx.textoCliente, extra: [lib.rrExtraRedaccion],
+    sinDatosDePago: true, sinAfirmarCompra: true, sinPromesasDeAviso: true, avisoRespaldado: false, maxOraciones: ctx.qrAbierto === true ? 3 : undefined,
+  });
   pasos.push({ etapa: 'filtro (cmRevisarRedaccion + rrExtraRedaccion)', texto: rev.texto, motivo: rev.motivo });
   if (rev.motivo !== '') return fin(rev.motivo);
   let t = rev.texto;
-  if (ctx.saludado) { t = lib.rrQuitarRepeticionDelLibro(t); pasos.push({ etapa: 'sin repetir el libro', texto: t }); if (t.trim() === '') return fin('vacio_tras_repeticion_del_libro'); }
-  if (ctx.qrAbierto !== true && (!ctx.habil || ctx.modo === 'puente' || ctx.modo === 'opciones')) { t = lib.rrQuitarPromesaDeOpciones(t); pasos.push({ etapa: 'sin promesas de opciones', texto: t }); if (t.trim() === '') return fin('vacio_tras_promesas_de_opciones'); }
-  t = lib.rrUnaPresentacion(t, !ctx.saludado || lib.rrPreguntaPorIA(lib.rrNorm(ctx.textoCliente)), true);
-  pasos.push({ etapa: 'una presentación', texto: t });
-  if (t.trim() === '') return fin('vacio_tras_presentacion');
-  if (ctx.modo === 'puente' || ctx.modo === 'opciones') { t = lib.rrSinPreguntaFinal(t); pasos.push({ etapa: 'sin pregunta final', texto: t }); if (t.trim() === '') return fin('vacio_tras_pregunta_final'); }
+  if (ctx.qrAbierto !== true && (!ctx.habil || ctx.modo === 'puente' || ctx.modo === 'opciones')) {
+    t = lib.vdQuitarPromesaDeOpciones(t, lib.RR_PROMETE_DEBILES);
+    pasos.push({ etapa: 'sin promesas de opciones', texto: t });
+    if (t.trim() === '') return fin('vacio_tras_promesas_de_opciones');
+  }
+  if (!ctx.habil && ctx.qrAbierto !== true && ctx.modo !== 'puente' && t.split('\n').some((l) => lib.vdOraciones(l).some((o) => lib.vdPrometeOpciones(o, lib.RR_PROMETE_DEBILES)))) return fin('promete_opciones');
+  if (ctx.qrAbierto !== true && (ctx.modo === 'puente' || ctx.modo === 'opciones')) { t = lib.vdSinPreguntaFinal(t); pasos.push({ etapa: 'sin pregunta final', texto: t }); if (t.trim() === '') return fin('vacio_tras_pregunta_final'); }
   return fin('');
 }
 
@@ -241,28 +262,31 @@ export function diagnosticar(lib, crudo, ctx) {
 function violacionesDelTurno(est, turno, t) {
   const v = [];
   const idToque = turno.boton ?? '';
-  const prellenado = typeof turno.dice === 'string' && /^Hola Rubén, quiero (el Pack Completo|el libro IA para Emprendedores|el Prompt Maestro de Cierre de Ventas|los videos tutoriales)/.test(turno.dice);
+  const prellenado = typeof turno.dice === 'string' && /^Hola, vengo de la página\. Quiero (el Pack|el Libro|el Audiolibro|las 3 Meditaciones)/.test(turno.dice);
   if (t.mensajes.length > 1) v.push(`el turno ${t.n} envió ${t.mensajes.length} mensajes`);
   for (const m of t.mensajes) {
     const titulos = (objeto(objeto(m.payload.interactive).action).buttons ?? []).map((b) => String(objeto(b.reply).title));
     const ids = (objeto(objeto(m.payload.interactive).action).buttons ?? []).map((b) => String(objeto(b.reply).id));
-    // 11. Ningún precio antes de tiempo.
-    if (est.charla < 2 && !est.qrVisto && !prellenado && !PLANES_EXENTOS.includes(t.plan)) {
+    const montos = new Set((m.cuerpo.match(new RegExp(CON_PRECIO.source, 'gi')) ?? []).map((x) => x.replace(/\s/g, '')));
+    // 11. Ningún precio antes de tiempo. La excepción declarada: el precio de UN producto nombrado (un solo monto, sin botones de producto ni de precio).
+    const precioDeUnProducto = t.plan === 'precio' && montos.size === 1 && !titulos.some((x) => CON_PRECIO.test(x)) && !ids.some((i) => BOTONES_DE_PRODUCTO.includes(i));
+    if (est.charla < 2 && !est.qrVisto && !prellenado && !PLANES_EXENTOS.includes(t.plan) && !precioDeUnProducto) {
       if (CON_PRECIO.test(m.cuerpo) || titulos.some((x) => CON_PRECIO.test(x))) v.push(`inv. 11: un precio con ${est.charla} mensaje(s) de conversación («${m.cuerpo.slice(0, 40)}…»)`);
       if (ids.some((i) => BOTONES_DE_PRODUCTO.includes(i))) v.push(`inv. 11: un botón de producto con ${est.charla} mensaje(s) de conversación`);
     }
     // 12. El bloque de opciones a lo más una vez.
     if (BLOQUE.test(m.cuerpo) && est.bloques >= 1) v.push('inv. 12: el bloque de las opciones salió más de una vez');
-    // 14. Sin repetir la descripción.
-    if (est.descripcionVista && ['modelo', 'audio_modelo', 'imagen_modelo', 'puente', 'opciones'].includes(t.plan) && /230 p[aá]ginas/i.test(m.cuerpo)) v.push('inv. 14: el mensaje repite la descripción del libro («230 páginas»)');
     // 15. Una sola pregunta.
     if (PLANES_DE_CHARLA.includes(t.plan)) {
       if ((m.cuerpo.match(/\?/g) ?? []).length > 1) v.push('inv. 15: más de una pregunta en un mensaje de conversación');
       if (/^opciones(_fijo)?$/.test(t.plan) && /\?\s*$/.test(m.cuerpo)) v.push('inv. 15: el bloque de las opciones termina en una pregunta');
     }
-    // Reglas duras: prohibición 3 y 4.
-    if (/acreditad|verificad|recibimos tu pago/i.test(m.cuerpo) && !/Ya recibí tu comprobante, dame un momento mientras confirmamos tu pago/.test(m.cuerpo)) v.push('regla 3: dice que un pago está acreditado, verificado o recibido');
+    // El botón de Rubén solo al derivar: la conversación no lo lleva.
+    if (PLANES_DE_CHARLA.includes(t.plan) && objeto(m.payload.interactive).type === 'cta_url') v.push(`el plan «${t.plan}» no deriva, pero salió con el botón de Rubén`);
+    // Reglas duras: prohibición 3 y 4, y la presentación sin el nombre de una persona.
+    if (/acreditad|verificad|recibimos tu pago/i.test(m.cuerpo)) v.push('regla 3: dice que un pago está acreditado, verificado o recibido');
     if (/no soy (un |una )?(bot|ia|robot|asistente)|persona (real|de verdad)|soy humano/i.test(norm(m.cuerpo))) v.push('regla 4: niega ser una IA');
+    if (/soy el asistente virtual de (ruben|dauber)/i.test(norm(m.cuerpo))) v.push('la presentación nombra a una persona');
   }
   // 13. Lo que se ofrece se cumple.
   const acepta = /^(si|claro|dale|ok|bueno|por favor|me interesa|adelante|si por favor)$/.test(norm(turno.dice ?? '')) || idToque === 'b_opciones';
@@ -272,9 +296,9 @@ function violacionesDelTurno(est, turno, t) {
 function actualizarEstado(est, t) {
   for (const m of t.mensajes) {
     if (m.tipo === 'image') est.qrVisto = true;
-    if (PLANES_DE_CHARLA.includes(t.plan) && (t.plan !== 'saludo' || /asistente virtual de rub/i.test(m.cuerpo))) est.charla += 1;
+    // Cuenta como conversación el saludo con presentación, lo que sigue de la charla y el precio de un producto que lleva la presentación (el primer mensaje).
+    if ((PLANES_DE_CHARLA.includes(t.plan) && (t.plan !== 'saludo' || /asistente virtual/i.test(m.cuerpo))) || (t.plan === 'precio' && /asistente virtual/i.test(m.cuerpo))) est.charla += 1;
     if (BLOQUE.test(m.cuerpo)) est.bloques += 1;
-    if (/230 p[aá]ginas/i.test(m.cuerpo)) est.descripcionVista = true;
   }
   const ult = [...t.mensajes].reverse().find((m) => m.tipo !== 'image' && m.cuerpo.trim() !== '');
   if (t.mensajes.length) est.ultimoFuePuente = !!ult && ult.cuerpo.trim().endsWith(CIERRE_PUENTE);
@@ -292,15 +316,12 @@ export function medir(corridas) {
   const pct = (n, d) => (d ? redondear((100 * n) / d, 1) : 0);
   const conTexto = delModelo.filter((t) => t.crudo.trim() !== '' && t.motivo !== 'derivar');
   const unaPregunta = conTexto.filter((t) => (t.crudo.match(/\?/g) ?? []).length <= 1);
-  const conRubro = delModelo.filter((t) => Array.isArray(t.marcas.rubro));
-  const rubroOk = conRubro.filter((t) => t.marcas.rubro.some((p) => norm(t.crudo).includes(norm(p))));
   const conTema = delModelo.filter((t) => Array.isArray(t.marcas.tema));
   const temaOk = conTema.filter((t) => t.marcas.tema.some((p) => norm(t.crudo).includes(norm(p))));
-  const conObjecion = delModelo.filter((t) => t.marcas.objecion === true);
-  const objecionOk = conObjecion.filter((t) => /checklist|100 prompts|closer|video/.test(norm(t.crudo)));
-  const repite = conTexto.filter((t) => t.n > 1 && /230 paginas|12 capitulos/.test(norm(t.crudo)));
+  const conDuda = delModelo.filter((t) => t.marcas.duda === true);
+  const dudaOk = conDuda.filter((t) => /libro|ejercicio|eslabon|21 dias|metodo|noche|dormir|sue/.test(norm(t.crudo)));
   const conCifras = conTexto.filter((t) => (t.crudo.match(/\b\d+(?:[.,]\d+)?\b/g) ?? []).some((x) => !CIFRAS_PERMITIDAS.has(x)));
-  const largoOk = conTexto.filter((t) => t.crudo.length >= 300 && t.crudo.length <= 900);
+  const largoOk = conTexto.filter((t) => t.crudo.length >= 120 && t.crudo.length <= 700);
   const violaciones = turnos.flatMap((t) => t.violaciones.map((v) => ({ caso: t.caso, rep: t.rep, turno: t.n, v })));
   const tokensEntrada = delModelo.reduce((a, t) => a + t.tokensEntrada, 0);
   const tokensSalida = delModelo.reduce((a, t) => a + t.tokensSalida, 0);
@@ -310,8 +331,8 @@ export function medir(corridas) {
     turnosTotales: turnos.length, turnosDelModelo: delModelo.length,
     sinRespaldo: { n: sinRespaldo.length, pct: pct(sinRespaldo.length, delModelo.length) }, conRespaldo: { n: conRespaldo.length, motivos },
     maxTokens: delModelo.filter((t) => t.finishReason === 'MAX_TOKENS').length,
-    unaSolaPregunta: { n: unaPregunta.length, de: conTexto.length }, nombraElRubro: { n: rubroOk.length, de: conRubro.length }, respondeLaSalidaDeTema: { n: temaOk.length, de: conTema.length },
-    laObjecionCita: { n: objecionOk.length, de: conObjecion.length }, repiteLaDescripcion: repite.length, cifrasInventadas: conCifras.length, largoEntre300y900: { n: largoOk.length, de: conTexto.length },
+    unaSolaPregunta: { n: unaPregunta.length, de: conTexto.length }, respondeAlTema: { n: temaOk.length, de: conTema.length },
+    laDudaConectaConElLibro: { n: dudaOk.length, de: conDuda.length }, cifrasInventadas: conCifras.length, largoEntre120y700: { n: largoOk.length, de: conTexto.length },
     violaciones, tokensEntrada, tokensSalida, costoUsd: redondear(costo, 5), latenciaMsMedia: delModelo.length ? Math.round(delModelo.reduce((a, t) => a + t.ms, 0) / delModelo.length) : 0,
     umbral: { sinRespaldoMinimo: UMBRAL_SIN_RESPALDO, cumple: delModelo.length > 0 && proporcion >= UMBRAL_SIN_RESPALDO && violaciones.length === 0 },
   };
@@ -319,19 +340,19 @@ export function medir(corridas) {
 
 function textoDelInforme(m, proveedor, opciones) {
   const l = [];
-  l.push('BATERÍA DE LA CONVERSACIÓN DE RUBÉN (ENTREGA 2)');
+  l.push('BATERÍA DE LA CONVERSACIÓN DE RUBEN (rehecho sobre la ENTREGA 2)');
   l.push(`Proveedor: ${proveedor}. Corridas por caso: ${opciones.n}. Turnos: ${m.turnosTotales} (${m.turnosDelModelo} con llamada al modelo).`);
   if (opciones.seco) l.push('MODO SECO: el modelo es una respuesta fija por turno; las cifras del modelo NO significan nada. Solo prueba que lo determinista corre sin violaciones.');
   l.push('');
   l.push(`Turnos del modelo sin texto de respaldo: ${m.sinRespaldo.n}/${m.turnosDelModelo} (${m.sinRespaldo.pct} %). Umbral: ${UMBRAL_SIN_RESPALDO * 100} %.`);
   l.push(`Con respaldo: ${m.conRespaldo.n}. Motivos: ${Object.keys(m.conRespaldo.motivos).length ? Object.entries(m.conRespaldo.motivos).map(([k, v]) => `${k}=${v}`).join(', ') : 'ninguno'}.`);
-  l.push(`finishReason MAX_TOKENS: ${m.maxTokens}. Una sola «?»: ${m.unaSolaPregunta.n}/${m.unaSolaPregunta.de}. Nombra el rubro: ${m.nombraElRubro.n}/${m.nombraElRubro.de}. Responde la salida de tema: ${m.respondeLaSalidaDeTema.n}/${m.respondeLaSalidaDeTema.de}.`);
-  l.push(`La objeción cita Checklist, 100 Prompts, Closer o videos: ${m.laObjecionCita.n}/${m.laObjecionCita.de}. Repite la descripción del libro: ${m.repiteLaDescripcion}. Cifras inventadas: ${m.cifrasInventadas}. Largo 300 a 900: ${m.largoEntre300y900.n}/${m.largoEntre300y900.de}.`);
+  l.push(`finishReason MAX_TOKENS: ${m.maxTokens}. Una sola «?»: ${m.unaSolaPregunta.n}/${m.unaSolaPregunta.de}. Responde al tema: ${m.respondeAlTema.n}/${m.respondeAlTema.de}.`);
+  l.push(`La duda conecta con el libro: ${m.laDudaConectaConElLibro.n}/${m.laDudaConectaConElLibro.de}. Cifras inventadas: ${m.cifrasInventadas}. Largo 120 a 700: ${m.largoEntre120y700.n}/${m.largoEntre120y700.de}.`);
   l.push(`Tokens de entrada ${m.tokensEntrada}, de salida ${m.tokensSalida}; latencia media ${m.latenciaMsMedia} ms; costo ≈ USD ${m.costoUsd} (tarifa ${TARIFA.entrada}/${TARIFA.salida} USD por millón; no es una factura).`);
-  l.push(`Violaciones de los invariantes 11 a 15 y de las reglas duras: ${m.violaciones.length}.`);
+  l.push(`Violaciones de los invariantes y de las reglas duras: ${m.violaciones.length}.`);
   for (const x of m.violaciones.slice(0, 30)) l.push(`  - ${x.caso}#${x.rep} turno ${x.turno}: ${x.v}`);
   l.push('');
-  l.push(`VEREDICTO: ${m.umbral.cumple ? 'cumple el umbral' : 'NO cumple el umbral'} (${opciones.seco ? 'en seco solo cuenta la parte de violaciones' : 'si no cumple: decisión de Andres, D9'}).`);
+  l.push(`VEREDICTO: ${m.umbral.cumple ? 'cumple el umbral' : 'NO cumple el umbral'} (${opciones.seco ? 'en seco solo cuenta la parte de violaciones' : 'si no cumple: decisión de Andres'}).`);
   return l.join('\n');
 }
 function textoDelCrudo(corridas) {
@@ -339,6 +360,7 @@ function textoDelCrudo(corridas) {
   for (const c of corridas) for (const t of c.turnos.filter((x) => x.llamoAlModelo)) {
     l.push(`--- ${c.caso}#${c.rep} turno ${t.n} · modo ${t.modo || '-'} · plan final «${t.plan}» · motivo exacto: ${t.motivo || '(pasa las barreras)'} · finishReason ${t.finishReason || '-'}`);
     l.push(`Cliente: ${t.dice}`);
+    if (t.motivo === 'vacio' || t.entrega.blockReason || t.entrega.http !== '2xx') l.push(lineaDeEntrega(t.entrega));
     for (const p of t.diagnostico.pasos) l.push(`  [${p.etapa}]${p.motivo ? ` RECHAZA «${p.motivo}»` : ''} ${JSON.stringify(String(p.texto).slice(0, 1200))}`);
     l.push(`  Cliente recibió: ${t.mensajes.map((m) => JSON.stringify(m.cuerpo.slice(0, 600))).join(' | ') || '(nada)'}`);
   }
@@ -364,7 +386,7 @@ export async function main(argv, deps = {}) {
     const opciones = leerArgumentos(argv.filter((a) => a !== '--confirmo-gasto' && a !== '--conversaciones' && a !== '--crudo'));
     if (opciones.ayuda) { d.salida(AYUDA + '\n'); return 0; }
     // La corrida real es GASTO: sin la confirmación explícita (que solo da el «sí» de Andres) no se llama a nada.
-    if (!opciones.seco && !confirmaGasto) throw new ErrorDeUso('La corrida real es GASTO (≈ USD 0,043 con --n 3): agregue --confirmo-gasto solo con el «sí» de Andres, y con una credencial del proyecto de PRUEBAS. Para verificar sin gasto, use --seco.');
+    if (!opciones.seco && !confirmaGasto) throw new ErrorDeUso('La corrida real es GASTO: agregue --confirmo-gasto solo con el «sí» de Andres, y con una credencial del proyecto de PRUEBAS. Para verificar sin gasto, use --seco.');
     const flujo = JSON.parse(readFileSync(RUTA_FLUJO, 'utf8'));
     const todos = validarCasos(JSON.parse(readFileSync(RUTA_CASOS, 'utf8')));
     const elegidos = opciones.casos ? opciones.casos.map((id) => { const c = todos.find((x) => x.id === id); if (!c) throw new ErrorDeUso(`Caso desconocido: ${id}. Hay: ${todos.map((x) => x.id).join(', ')}.`); return c; }) : todos;
@@ -380,7 +402,7 @@ export async function main(argv, deps = {}) {
       }
     }
     const m = medir(corridas);
-    d.salida(opciones.json ? JSON.stringify({ proveedor, medidas: m, ...(conversaciones ? { conversaciones: corridas } : {}), ...(crudo ? { crudo: corridas.flatMap((c) => c.turnos.filter((x) => x.llamoAlModelo).map((x) => ({ caso: c.caso, rep: c.rep, turno: x.n, modo: x.modo, motivo: x.motivo, pasos: x.diagnostico.pasos }))) } : {}) }) + '\n' : textoDelInforme(m, proveedor, opciones) + (conversaciones ? '\n\n' + textoDeConversaciones(corridas) : '') + (crudo ? '\n\n' + textoDelCrudo(corridas) : '') + '\n');
+    d.salida(opciones.json ? JSON.stringify({ proveedor, medidas: m, ...(conversaciones ? { conversaciones: corridas } : {}), ...(crudo ? { crudo: corridas.flatMap((c) => c.turnos.filter((x) => x.llamoAlModelo).map((x) => ({ caso: c.caso, rep: c.rep, turno: x.n, modo: x.modo, motivo: x.motivo, entrega: x.entrega, pasos: x.diagnostico.pasos }))) } : {}) }) + '\n' : textoDelInforme(m, proveedor, opciones) + (conversaciones ? '\n\n' + textoDeConversaciones(corridas) : '') + (crudo ? '\n\n' + textoDelCrudo(corridas) : '') + '\n');
     return m.violaciones.length === 0 ? 0 : 1;
   } catch (e) {
     const secretos = [credencial.clave, credencial.token];

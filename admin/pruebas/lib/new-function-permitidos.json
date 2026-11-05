@@ -2,7 +2,6 @@
   "archivos": [
     "Flujos/experimental/captacion-minima/herramientas/bateria.mjs",
     "Flujos/experimental/chat-novuchat/herramientas/bateria.mjs",
-    "Flujos/experimental/rroca-ruben/herramientas/bateria-vision.mjs",
     "admin/pruebas/bellido-flujo.test.ts",
     "admin/pruebas/platinum-flujo.test.ts",
     "admin/pruebas/tenants/doctoras/armado.test.ts",
