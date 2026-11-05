@@ -400,7 +400,7 @@ describe('revisión de código de #576', () => {
   it('(2) un botón con precio conserva SIEMPRE «<monto>Bs», con ≤ 20 caracteres, el nombre del catálogo sin palabras cortadas ni preposición colgando, también con precios de 2 decimales', () => {
     const catalogo = [
       { id: 'pack-completo', nombre: 'Pack completo', precio: 70.5 }, { id: 'libro-con-bono', nombre: 'Libro con bono', precio: 35.25 }, { id: 'audiolibro', nombre: 'Audiolibro', precio: 35.75 },
-      { id: 'meditaciones', nombre: 'Meditaciones', precio: 20.5 },
+      { id: '3-meditaciones', nombre: 'Meditaciones', precio: 20.5 },
     ];
     const v = nuevo({ panel: panelOk({ catalogo }) });
     hablar(v, ANA, mTexto('hola'));

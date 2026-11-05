@@ -39,12 +39,9 @@ function publicable(base: Flujo = PRODUCCION): Flujo {
 }
 function datosListos(): Datos {
   const d = copia(DATOS);
+  // Las dos plantillas ya vienen APPROVED en el dato versionado (se reutilizan las aprobadas en Meta); aquí solo se sustituyen los marcadores que faltan.
   d.configBase['avisoComprobanteEstado'] = 'APPROVED';
   d.configBase['avisoConsultaEstado'] = 'APPROVED';
-  // Las plantillas nuevas todavía no existen: sus nombres son marcadores hasta que Meta las apruebe; aquí se simula que ya están.
-  d.configBase['avisoComprobantePlantilla'] = 'aviso_comprobante_nuevo';
-  d.configBase['avisoConsultaPlantilla'] = 'aviso_consulta_nuevo';
-  d.configBase['garantiaTexto'] = 'Sobre garantía o devolución, eso lo responde Rubén directamente.';
   return d;
 }
 function negocioListo(): Record<string, unknown> { return JSON.parse(JSON.stringify(NEGOCIO).replace(MARCADORES, 'dato-real')) as Record<string, unknown>; }
@@ -55,12 +52,12 @@ describe('guardia de publicación de Rubén: la ruta feliz y lo versionado de ho
     expect(hallazgos(publicable(PRODUCCION))).toEqual([]);
     expect(hallazgos(publicable(PRUEBA))).toEqual([]);
   });
-  it('lo versionado de hoy NO es publicable: marcadores y negocio sin datos (las plantillas nuevas están PENDING y no hay línea de protección)', () => {
+  it('lo versionado de hoy NO es publicable: marcadores y negocio sin datos (las plantillas ya están APPROVED; siguen los marcadores de receptor, waba, teléfonos y planilla)', () => {
     const h = guardiaDePublicacion({ flujo: PRODUCCION, datos: DATOS, negocio: NEGOCIO, anuncios: 4 }) as string[];
     expect(h.some((x) => /marcador sin sustituir/.test(x))).toBe(true);
-    // Las plantillas de aviso son nuevas (PENDING y sin nombre): la guardia las nombra hasta que Meta las apruebe. Lo que NO falta es la línea de protección (ya no existe).
-    expect(h.join('|')).toMatch(/avisoComprobanteEstado/);
-    expect(h.join('|')).toMatch(/avisoConsultaEstado/);
+    // Las plantillas de aviso ya son las aprobadas: la guardia ya no las nombra. Siguen impidiendo publicar los demás marcadores.
+    expect(h.join('|')).not.toMatch(/avisoComprobante|avisoConsulta/);
+    for (const m of ['REEMPLAZAR_RUTA_RECEPTOR_RROCA_RUBEN', 'REEMPLAZAR_WABA_ID_RROCA_RUBEN', 'REEMPLAZAR_PHONE_NUMBER_ID_RROCA_RUBEN', 'REEMPLAZAR_NUMERO_RECEPCION_RUBEN', 'REEMPLAZAR_TELEFONOS_DE_PRUEBA', 'REEMPLAZAR_PLANILLA_PROSPECTOS_ID_RROCA_RUBEN']) expect(h.join('|'), m).toContain(m);
     expect(h.join('|')).not.toMatch(/lineaProteccion/);
   });
   it('los literales de comentario y de expresión regular de los módulos copiados NO cuentan como marcador (pero un marcador real, sí)', () => {

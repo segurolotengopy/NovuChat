@@ -239,7 +239,7 @@ describe('catálogo COMPLETO por defecto; la bandera `agotado` de la consola sig
     expect(ids(hablar(v, ANA, mTexto('quiero comprar')))).toEqual(['b_pack', 'b_libro', 'b_audios']);
     const a = hablar(v, ANA, mBoton('b_audios'));
     expect(ids(a)).toEqual(['b_audiolibro', 'b_meditaciones', 'b_pack']);
-    expect(titulos(a)).toEqual(['Audiolibro 35Bs', 'Meditaciones 20Bs', 'Mejor el Pack 70Bs']);
+    expect(titulos(a)).toEqual(['Audiolibro 35Bs', '3 Meditaciones 20Bs', 'Mejor el Pack 70Bs']);
   });
 
   it('con el Pack agotado, el prellenado del Pack deriva a Rubén con aviso y botón: ningún QR, ningún monto', () => {
@@ -263,7 +263,7 @@ describe('catálogo COMPLETO por defecto; la bandera `agotado` de la consola sig
   });
 
   it('pedir un producto agotado por un botón viejo deriva a Rubén; al apagar la bandera, el mismo pedido vuelve a abrir el QR (dato conmutable)', () => {
-    const w = nuevo({ panel: panelConAgotados('meditaciones') });
+    const w = nuevo({ panel: panelConAgotados('3-meditaciones') });
     const a = hablar(w, ANA, mBoton('b_meditaciones'));
     expect(a.mensajes.some((m) => m.tipo === 'image')).toBe(false);
     expect(esBotonDeRubén(a)).toBe(true);
@@ -296,7 +296,7 @@ describe('los botones: Pack / Libro con bono / Solo audios', () => {
     charlar(w);
     const l = hablar(w, ANA, mBoton('b_audios'));
     expect(l.mensajes[0]!.payload['interactive'].type).toBe('button');
-    expect(titulos(l)).toEqual(['Audiolibro 35Bs', 'Meditaciones 20Bs', 'Mejor el Pack 70Bs']);
+    expect(titulos(l)).toEqual(['Audiolibro 35Bs', '3 Meditaciones 20Bs', 'Mejor el Pack 70Bs']);
     for (const x of titulos(l)) expect(x.length).toBeLessThanOrEqual(20);
     const q = hablar(w, ANA, mBoton('b_meditaciones'));
     expect(q.mensajes[0]!.tipo).toBe('image');
@@ -581,8 +581,8 @@ describe('los avisos a Rubén: «ya le avisé» solo si salió', () => {
 
 describe('la derivación a Rubén: texto fijo, aviso y botón', () => {
   const casos: Array<[string, string, RegExp]> = [
-    ['quiero una devolución', 'garantía', /desde aquí no puedo prometerte nada de eso/],
-    ['¿hay garantía si no me sirve?', 'garantía', /eso lo responde Rubén directamente/],
+    ['quiero una devolución', 'devolución', /no tiene garantía de devolución/],
+    ['¿hay garantía si no me sirve?', 'devolución', /producto digital de pago único y no tiene garantía de devolución.*Rubén te atiende directamente/],
     ['¿puedo pagar con tarjeta?', 'otro medio', /cualquier otra forma de pago la ve Rubén directamente/],
     ['tengo un reclamo', 'reclamo', /Eso lo ve directamente Rubén/],
     ['quiero hablar con Rubén', 'persona', /Eso lo ve Rubén directamente/],
@@ -638,9 +638,13 @@ describe('la derivación a Rubén: texto fijo, aviso y botón', () => {
     expect(esBotonDeRubén(t)).toBe(true);
   });
 
-  it('la frase de garantía es un DATO de la consola del flujo', () => {
+  it('NO HAY GARANTÍA: la frase es fija en código (un dato `garantiaTexto` ya no la cambia) y no promete nada; con botón y aviso', () => {
     const w = nuevo({ base: { garantiaTexto: 'La garantía la define Rubén caso por caso y la responde por este chat.' } });
-    expect(hablar(w, ANA, mTexto('¿hay garantía?')).mensajes[0]!.cuerpo).toMatch(/La garantía la define Rubén caso por caso/);
+    const t = hablar(w, ANA, mTexto('¿hay garantía?'));
+    expect(t.mensajes[0]!.cuerpo).toMatch(/no tiene garantía de devolución/);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/caso por caso|te devolvemos|te reembolsamos|te garantizo/i);
+    expect(esBotonDeRubén(t)).toBe(true);
+    expect(t.avisos).toHaveLength(1);
   });
 
   it('a lo más UN aviso por teléfono y motivo cada 30 minutos: el segundo del mismo motivo no avisa de nuevo; cuando el contenido es variable (lo que el modelo no supo) NO dice «ya le avisé» de esta vez', () => {

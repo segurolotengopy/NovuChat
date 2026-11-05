@@ -174,7 +174,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     }
   } else if (tipoDePlan === 'info') {
     // Textos fijos de la base de conocimiento que el código dice solo si hacen falta: «lo voy a pensar» (con los dos precios del catálogo) y la muestra de voz (solo si la piden). Sin botones, sin aviso.
-    m = texto(conPresentacion(plan.clave === 'muestra' ? RR_TEXTO_MUESTRA : rrTextoPensar(cat, nom)));
+    m = texto(conPresentacion(plan.clave === 'muestra' ? rrTextoMuestra(base) : rrTextoPensar(cat, nom)));
   } else if (tipoDePlan === 'catalogo') {
     // El catálogo completo con precio, por código (los precios son los del catálogo de la consola). Con un QR abierto, texto plano con la invitación a pagar.
     const op = qrAbierto ? [] : menuAbierto();

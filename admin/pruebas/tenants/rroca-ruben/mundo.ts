@@ -71,7 +71,7 @@ export interface Opciones {
 }
 /** El catálogo de la consola de Rubén: ids que salen de `idDe(nombre)`; los NOMBRES y los precios son del catálogo, nunca del flujo (las etiquetas de los botones dicen «<nombre> <precio>Bs»). */
 export const CATALOGO = [
-  { id: 'pack-completo', nombre: 'Pack completo', precio: 70 }, { id: 'libro-con-bono', nombre: 'Libro con bono', precio: 35 }, { id: 'audiolibro', nombre: 'Audiolibro', precio: 35 }, { id: 'meditaciones', nombre: 'Meditaciones', precio: 20 },
+  { id: 'pack-completo', nombre: 'Pack completo', precio: 70 }, { id: 'libro-con-bono', nombre: 'Libro con bono', precio: 35 }, { id: 'audiolibro', nombre: 'Audiolibro', precio: 35 }, { id: '3-meditaciones', nombre: '3 Meditaciones', precio: 20 },
 ];
 export const MEDIA_QR = 'media-qr-1';
 export const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({
@@ -142,6 +142,7 @@ export function crear(o: Opciones = {}): Mundo {
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`,
       avisoComprobantePlantilla: 'aviso_comprobante_recibido', avisoComprobanteEstado: 'APPROVED', avisoConsultaPlantilla: 'aviso_consulta_para_ruben', avisoConsultaEstado: 'APPROVED',
+      landingDominio: 'noches.dhermacore.com',
       ...(o.base ?? {}),
     },
   });

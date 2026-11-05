@@ -122,14 +122,14 @@ describe('CASO (b) del PDF: «¿precio y devolución?» da el precio Y deriva, e
     expect(c).toMatch(/asistente virtual de Noches Sin Insomnio/);
     expect(c).toMatch(/70 Bs/);
     expect(c).toMatch(/35 Bs/);
-    expect(c).toMatch(/garantía o devolución, eso lo responde Rubén directamente/);
+    expect(c).toMatch(/no tiene garantía de devolución/);
     expect(c).not.toMatch(/\b(?:sí|si),? (?:hay|tienes|puedes)\b[^.]*devoluci|te devolvemos|te devuelvo|reembols/i);
     expect(esBotonDeRuben(t)).toBe(true);
     expect(t.avisos).toHaveLength(1);
     expect(t.avisos[0]!.a).toBe(REC);
     // La CLAVE y el motivo del aviso son los de la garantía (no `no_supo`), y un segundo «¿precio y devolución?» dentro de 30 minutos no repite el aviso.
-    expect(t.porNodo['Decidir turno']![0]!['plan']).toMatchObject({ tipo: 'derivar', clave: 'garantia', aviso: { clave: 'garantia', motivo: 'garantía o devolución' } });
-    expect(t.porNodo['Armar avisos']![0]).toMatchObject({ clave: 'garantia', planeado: true });
+    expect(t.porNodo['Decidir turno']![0]!['plan']).toMatchObject({ tipo: 'derivar', clave: 'devolucion', aviso: { clave: 'devolucion', motivo: 'devolución, garantía o reembolso' } });
+    expect(t.porNodo['Armar avisos']![0]).toMatchObject({ clave: 'devolucion', planeado: true });
     const otra = hablar(w, ANA, mTexto('perdón, ¿precio y devolución?'));
     expect(otra.avisos).toHaveLength(0);
     expect(esBotonDeRuben(otra)).toBe(true);
@@ -361,7 +361,7 @@ describe('objeciones por código: «lo voy a pensar» y la muestra de voz', () =
     expect(unico(sin)).not.toMatch(/\d+\s*Bs/);
   });
 
-  it('la muestra de voz SOLO si la piden: 50 segundos de «Cierra el día», voz sintética, sin enlaces; sin pedirla, nada de eso', () => {
+  it('la muestra de voz SOLO si la piden: 50 segundos de «Cierra el día», voz sintética, con la dirección de la landing (dato de Config base); sin pedirla, nada de eso', () => {
     const w = nuevo();
     hablar(w, ANA, mTexto('hola'));
     const t = hablar(w, ANA, mTexto('¿puedo escuchar una muestra de la voz antes de comprar?'));
@@ -369,9 +369,13 @@ describe('objeciones por código: «lo voy a pensar» y la muestra de voz', () =
     expect(c).toMatch(/50 segundos/);
     expect(c).toMatch(/Cierra el día/);
     expect(c).toMatch(/voz sintética/);
-    expect(c).not.toMatch(/https?:|www\.|\.com|\.bo\b/i);
+    expect(c).toContain('https://noches.dhermacore.com/');
+    expect(c).not.toMatch(/página del libro|Escucha un fragmento/);
     const sin = hablar(nuevo(), ANA, mTexto('quiero contarte cómo duermo'));
-    expect(unico(sin)).not.toMatch(/50 segundos|Escucha un fragmento/);
+    expect(unico(sin)).not.toMatch(/50 segundos|Escucha un fragmento|dhermacore/);
+    // Sin el dato, la muestra no inventa ninguna dirección.
+    const sinDato = hablar(nuevo({ base: { landingDominio: '' } }), ANA, mTexto('¿puedo escuchar una muestra de la voz antes de comprar?'));
+    expect(unico(sinDato)).not.toMatch(/https?:|\.com/i);
   });
 
   it('NEGANDO: el modelo no habla de la web ni de enlaces, ni vende el bono suelto, ni da precios: cualquiera de esos textos cae al respaldo fijo', () => {

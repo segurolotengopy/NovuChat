@@ -1,7 +1,7 @@
 {
   "_fuente": "Datos del negocio de «Noches Sin Insomnio» de Rubén (tenant rroca-ruben, flujo Flujos/experimental/rroca-ruben/). Se carga con admin/scripts/datos/cargar-negocio.mjs, que solo admite las secciones negocio, agendamiento, catalogo y funcionarios: aquí van negocio y catalogo. Las claves que empiezan con `_` son notas y no se escriben. Los ids del catálogo salen del nombre (idDe) y son los que lee el flujo (rrCatalogo): el monto de un QR sale de aquí y de ningún otro lado; el paso del Libro al Pack (la diferencia de precios) lo calcula el flujo con estos dos precios.",
   "_pendiente": {
-    "_nota": "Rubén todavía debe dar: las condiciones de garantía y devolución, los enlaces o archivos de entrega y su QR nuevo (concepto «Noches Sin Insomnio»). NovuChat no entrega enlaces: Rubén envía el material por este chat. El horario de atención es abierto siempre (24/7), decisión de Andres del 19/10/2026.",
+    "_nota": "Rubén todavía debe dar: su QR nuevo (concepto «Noches Sin Insomnio»). NovuChat no entrega enlaces: Rubén envía el material él mismo por este chat. No hay garantía de devolución (decisión de Andres, 05/11/2026). El horario de atención es abierto siempre (24/7), decisión de Andres del 19/10/2026.",
     "horarioDeRecepcion": "Abierto siempre (24/7)"
   },
   "negocio": {
@@ -12,17 +12,16 @@
     "moneda": "BOB",
     "tratamiento": "tu",
     "estiloEmojis": "pocos",
-    "politicaCancelacion": "Garantía y devolución las ve directamente el autor: el asistente no las promete ni promete resultados; pasa con el autor (aviso más botón para escribirle a su WhatsApp).",
+    "politicaCancelacion": "No hay garantía de devolución: es un producto digital de pago único. El asistente no la ofrece ni promete resultados; si la persona tiene un problema con su pago o su material, pasa con el autor (aviso más botón para escribirle a su WhatsApp).",
     "prefijosPermitidos": [
       "591"
     ],
     "datosQueNoTenemos": [
-      "garantía y devolución",
       "factura",
       "otros medios de pago",
       "un plazo de entrega exacto (solo «en cuanto Rubén revise»)"
     ],
-    "instruccionesExtra": "ENTREGA: la hace Rubén (el autor) a mano por este chat, en cuanto revisa el pago (sin prometer una hora exacta). El asistente nunca entrega ni envía enlaces, ni dice que algo ya se envió.\nPAGO: solo por el QR del comercio, de monto abierto: se pide el monto exacto y la captura del comprobante. No inventes otros medios de pago, factura, garantía ni devoluciones: Rubén lo conversa directamente con el cliente; ofrece pasar con él.\nSALUD: esto no es consejo médico; no prometas resultados ni hables de medicación.\nNo digas que un pago está acreditado ni verificado: Rubén revisa el comprobante y su banco lo confirma.",
+    "instruccionesExtra": "ENTREGA: la hace Rubén (el autor) a mano por este chat, en cuanto revisa el pago (sin prometer una hora exacta). El asistente nunca entrega ni envía enlaces, ni dice que algo ya se envió.\nPAGO: solo por el QR del comercio, de monto abierto: se pide el monto exacto y la captura del comprobante. No hay garantía de devolución (producto digital de pago único): no la ofrezcas ni inventes devoluciones, otros medios de pago ni factura; si la persona tiene un problema con su pago o su material, ofrece pasar con Rubén.\nSALUD: esto no es consejo médico; no prometas resultados ni hables de medicación.\nNo digas que un pago está acreditado ni verificado: Rubén revisa el comprobante y su banco lo confirma.",
     "horarios": {
       "_nota": "Abierto siempre (24/7), decisión de Andres del 19/10/2026. Con 24/7 el asistente no promete respuesta humana inmediata: el material se envía en cuanto Rubén revisa el pago, sin plazo exacto.",
       "lun": "00:00-23:59",
@@ -57,7 +56,7 @@
       "activo": true
     },
     {
-      "nombre": "Meditaciones",
+      "nombre": "3 Meditaciones",
       "descripcion": "3 meditaciones guiadas para dormir (voz sintética)",
       "precio": 20,
       "moneda": "BOB",

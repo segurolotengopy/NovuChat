@@ -4,7 +4,7 @@
 //   - FUERA de esa ventana: PLANTILLA UTILITY (4 variables para el comprobante, 3 para la consulta). El nombre, el idioma y el estado de cada plantilla son DATO de «Config base» (`rrPlantilla`):
 //     si falta, o el estado no es APPROVED, NUNCA se inventa; no sale nada («plantilla_no_configurada») y «Armar mensajes» le dice al cliente la verdad, con el botón de Rubén. Sin ventana de 24 h
 //     no se envía texto libre.
-//   - Quién avisa: un comprobante (cuadra, o con su motivo: tardío, en revisión, casi coincide, sin cotejar), una derivación (garantía, reclamo, volumen o reventa, otro medio de pago, pregunta médica, hablar con Rubén, acceso al
+//   - Quién avisa: un comprobante (cuadra, o con su motivo: tardío, en revisión, casi coincide, sin cotejar), una derivación (devolución, reclamo, volumen o reventa, otro medio de pago, pregunta médica, hablar con Rubén, acceso al
 //     material, producto agotado, QR no disponible, comprobante sin QR abierto), el modelo cuando contesta DERIVAR y el estado «operador» (el texto fijo promete que una persona continúa).
 //     La pausa por persona (`bloqueado`) NO avisa: cero envío. Una crisis SÍ avisa a Rubén, solo con el motivo (nunca copia lo que escribió la persona); en `sin_configuracion` y `qr_no_disponible` tampoco viaja el texto del cliente.
 //   - La captura de un pago que no se completó (`pago_con_problema`) avisa a Rubén con ese motivo exacto; el MENSAJE del cliente nunca viaja en ese aviso.

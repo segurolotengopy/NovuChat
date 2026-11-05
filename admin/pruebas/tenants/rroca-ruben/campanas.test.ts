@@ -21,7 +21,7 @@ const AHORA = Date.now();
 const HOY = servidor.diaBolivia(AHORA);
 const SIN_OTROS = { ids: [] as string[], nombres: [] as string[] };
 // Los ids del catálogo de Rubén (salen de `idDe(nombre)`; ver `negocio-rroca-ruben.json`).
-const PRODUCTOS = new Set(['pack-completo', 'libro-con-bono', 'audiolibro', 'meditaciones']);
+const PRODUCTOS = new Set(['pack-completo', 'libro-con-bono', 'audiolibro', '3-meditaciones']);
 const copia = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const delLote = (d: typeof DATOS): typeof DATOS => ({ ...d, anuncios: d.anuncios.filter((a) => a.pendiente_de_termino_registrado !== true) });
 const revisar = (d: typeof DATOS): Map<string, unknown> => servidor.revisarSinModelo(validar.armarLista(d, HOY) as servidor.Campana[], [], 10, AHORA, SIN_OTROS, PRODUCTOS);

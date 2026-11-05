@@ -220,12 +220,14 @@ describe('los datos: solo marcadores para identificadores y rutas', () => {
     expect(d.configBase['modelo']).toBe('gemini-3.5-flash-lite');
     // Ya no hay línea de protección: el asistente no atiende denuncias y no cita recursos.
     expect(d.configBase).not.toHaveProperty('lineaProteccion');
-    // Las plantillas de aviso de este flujo todavía NO existen con su texto nuevo (el de «pago validado» del libro anterior no sirve): marcador y PENDING hasta que Meta apruebe las nuevas (la guardia de publicación lo exige APPROVED).
-    expect(String(d.configBase['avisoComprobantePlantilla'])).toMatch(/^REEMPLAZAR_[A-Z0-9_]+$/);
-    expect(String(d.configBase['avisoConsultaPlantilla'])).toMatch(/^REEMPLAZAR_[A-Z0-9_]+$/);
-    expect(d.configBase['avisoConsultaEstado']).toBe('PENDING');
+    // Se reutilizan las dos plantillas ya APROBADAS en Meta (decisión de Andres, 05/11/2026): sus nombres no son secretos ni identificadores.
+    expect(d.configBase['avisoComprobantePlantilla']).toBe('aviso_comprobante_recibido');
+    expect(d.configBase['avisoConsultaPlantilla']).toBe('aviso_consulta_para_ruben');
+    expect(d.configBase['avisoConsultaEstado']).toBe('APPROVED');
     expect(d.configBase['avisoPlantillaIdioma']).toBe('es');
-    expect(d.configBase['avisoComprobanteEstado']).toBe('PENDING');
+    expect(d.configBase['avisoComprobanteEstado']).toBe('APPROVED');
+    // NO HAY GARANTÍA: el dato ya no existe.
+    expect(d.configBase).not.toHaveProperty('garantiaTexto');
     expect(d.configBase['plazoEntregaHoras']).toBe(6);
     expect(d.configBase['temperatura']).toBe(0.4);
     expect(d.configBase['prefijosPermitidos']).toBe('591');
@@ -246,7 +248,6 @@ describe('los datos: solo marcadores para identificadores y rutas', () => {
       (d) => { d['configBase'].plazoEntregaHoras = 24; },
       (d) => { d['configBase'].temperatura = 1.5; },
       (d) => { d['configBase'].avisoComprobanteEstado = 'APROBADA'; },
-      (d) => { d['configBase'].garantiaTexto = 'corto'; },
       (d) => { d['configBase'].telefonosDePrueba = '123'; },
       (d) => { d['pruebaRuta'] = 'ruta-real'; },
       (d) => { delete d['configBase'].nombreNegocio; },

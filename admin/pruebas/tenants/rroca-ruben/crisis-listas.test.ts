@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { cargarLibrerias } from './librerias';
 
-const L = cargarLibrerias('rrEsCrisis, rrDerivacion, rrNorm') as { rrEsCrisis: (n: string) => boolean; rrDerivacion: (n: string, c: object) => { clave: string } | null; rrNorm: (t: string) => string };
+const L = cargarLibrerias('rrEsCrisis, rrDerivacion, rrNorm, RR_TEXTO_CRISIS') as { RR_TEXTO_CRISIS: string; rrEsCrisis: (n: string) => boolean; rrDerivacion: (n: string, c: object) => { clave: string } | null; rrNorm: (t: string) => string };
 const crisis = (f: string): boolean => L.rrEsCrisis(L.rrNorm(f));
 const clave = (f: string): string => L.rrDerivacion(L.rrNorm(f), {})?.clave ?? '';
 
@@ -238,4 +238,14 @@ describe('derivación médica (solo lo que no es crisis)', () => {
 
 describe('control preciso de las raíces nuevas', () => {
   it.each(CONTROL_PRECISO)('no crisis: %s', (f) => { expect(crisis(f)).toBe(false); });
+});
+
+describe('el texto de crisis no nombra ningún teléfono ni línea de ayuda (decisión de Andres, 05/11/2026)', () => {
+  it('NEGANDO: sin cifras, sin «línea», sin enlaces; recomienda un profesional y ofrece a Rubén', () => {
+    const t = L.RR_TEXTO_CRISIS;
+    expect(t).not.toMatch(/\d/);
+    expect(t).not.toMatch(/l[ií]nea|tel[eé]fono|llama|https?:|www\./i);
+    expect(t).toMatch(/ayuda profesional/);
+    expect(t).toMatch(/Rub[eé]n/);
+  });
 });

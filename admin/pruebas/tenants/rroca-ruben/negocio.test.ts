@@ -24,7 +24,7 @@ const idDe = (nombre: string): string => nombre.toLowerCase().normalize('NFD').r
 
 const L = cargarLibrerias('rrCatalogo') as { rrCatalogo: (c: unknown) => Record<string, number> };
 
-const ESPERADO: Record<string, number> = { 'pack-completo': 70, 'libro-con-bono': 35, audiolibro: 35, meditaciones: 20 };
+const ESPERADO: Record<string, number> = { 'pack-completo': 70, 'libro-con-bono': 35, audiolibro: 35, '3-meditaciones': 20 };
 
 describe('negocio-rroca-ruben.json: el catálogo es el que espera el flujo', () => {
   it('tiene exactamente los 4 productos, con los ids que salen del nombre y los precios del guion', () => {
