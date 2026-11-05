@@ -152,6 +152,7 @@ PR-4a, PR-4b, PR-6b); escritor B en paralelo (H2b, PR-6a).
 | PR-2a | Transacciones `core/turno/sesionFirestore.ts` y su suite de emulador | `core-functions` | pendiente |
 | PR-2b | Rama `sesion` en `configuracionFlujo` (despacho); renombrar la variable local `conversacion` a `docConversacion` | coordinadora | construido en la rama `core/f3b-pr2b-despacho-y-ttl`; producción con «sí» de Andres |
 | PR-3 | TTL e índices en `firestore.indexes.json` (políticas primero en staging) | coordinadora | pendiente; puede ir en la etiqueta de PR-2b |
+| PR-4a0 | Los ayudantes de sesión del chat suben al módulo común `comun-sin-agente/src/sesion.js` (prefijo `ss`, parámetros `SS_CONFIG`: espacio, vencimiento, bytes, prefijo, nodos) y el servidor falso a `comun-sin-agente/herramientas/`; el chat los INCLUYE (guardia en su `construir.mjs`) | `core-flujos` | construido; 0 mensajes. Q'Taco lo incluye en PR-4a |
 | PR-4a | Q'Taco adopta estado y vistos | `flujos-n8n` con Cartera | pendiente; espera PR-2b en producción y #519 |
 | PR-4b | Q'Taco: cupos (`av.dia`, `transferencias`, `avisosPedido`) | `flujos-n8n` | pendiente; depende de PR-4a y D-7 |
 | PR-4c | El chat NovuChat adopta | `core-flujos` | PR-4c1 (servidor falso y ayudantes) fusionado; PR-4c2 (nodos y plantilla) construido, sin publicar; orden de despliegue: Functions, ensayo en el Demo A, flujo del chat |

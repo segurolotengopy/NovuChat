@@ -29,7 +29,7 @@ let version = Number(turno.version) || 0;
 let base = turno.ficha;
 let eventosTurno = Array.isArray(turno.eventos) ? turno.eventos : [];
 if (pasada === 2) {
-  const r1 = cnResultadoDeCompromiso(cnPrimero('Comprometer turno'));
+  const r1 = ssResultadoDeCompromiso(cnPrimero('Comprometer turno'));
   if (r1.resultado !== 'conflicto') return [];
   version = r1.version;
   base = r1.ganador;
@@ -198,10 +198,10 @@ const resumen = {
 const sinEstado = plan.ruta === 'sin_estado';
 // Por BYTES antes de comprometer (CJK y emojis): una ficha pesada se recorta, no cae al genérico.
 const ajuste = sinEstado ? null : chAjustarBytes(nueva, 14900);
-const compromiso = !sinEstado && claveOk && ajuste.cupo ? cnCuerpoComprometer(from, $execution.id, 'fin' + pasada, version, nueva) : null;
+const compromiso = !sinEstado && claveOk && ajuste.cupo ? ssCuerpoComprometer(from, $execution.id, 'fin' + pasada, version, nueva) : null;
 return [{ json: {
   from: from, ahoraMs: ahora, pasada: pasada, plan: accion, resumen: resumen, salida: salida, salidaFalla: salidaFalla, nueva: nueva, fichaAntes: fichaAntes, conversacion: conversacion,
-  comprometer: compromiso !== null, compromiso: compromiso, numero: cnNumeroHeader(), fallaEstado: sinEstado || compromiso === null,
+  comprometer: compromiso !== null, compromiso: compromiso, numero: ssNumeroHeader(), fallaEstado: sinEstado || compromiso === null,
   // Las puertas cerradas (suspendido, uso extendido, bloqueado) comprometen solo para guardar los ids: si falla, sale lo suyo igual (bloqueado: nada), nunca el genérico. `seqs`: los eventos de este turno.
   mejorEsfuerzo: plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido', seqs: eventosTurno.map((e) => e.seq),
   despues: despues, primeraVez: primeraVez, guardarPlanilla: guardarPlanilla,

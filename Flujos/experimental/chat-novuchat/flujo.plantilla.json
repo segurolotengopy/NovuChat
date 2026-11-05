@@ -136,7 +136,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@comun:nodos/config-del-negocio.js"
+        "jsCode": "@@comun+sesion:nodos/config-del-negocio.js"
       },
       "id": "config-del-negocio",
       "name": "Config del negocio",
@@ -569,7 +569,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@todo:nodos/registrar-evento.js"
+        "jsCode": "@@todo+sesion:nodos/registrar-evento.js"
       },
       "id": "registrar-evento",
       "name": "Registrar evento",
@@ -599,7 +599,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@todo+tipeo:nodos/armar-turno.js"
+        "jsCode": "@@todo+tipeo+sesion:nodos/armar-turno.js"
       },
       "id": "armar-turno",
       "name": "Armar turno",
@@ -759,7 +759,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@todo+mensajes+filtro+tipeo:nodos/armar-mensajes.js"
+        "jsCode": "@@todo+mensajes+filtro+tipeo+sesion:nodos/armar-mensajes.js"
       },
       "id": "armar-mensajes",
       "name": "Armar mensajes",
@@ -1085,7 +1085,7 @@
         900
       ],
       "parameters": {
-        "jsCode": "@@comun:nodos/confirmar-envio.js"
+        "jsCode": "@@comun+sesion:nodos/confirmar-envio.js"
       },
       "notes": "HIJO MAS BAJO de «Soltar mensajes» (con `executionOrder: v1` corre al final: lee lo que contesto Meta). Si Meta rechaza el mensaje al cliente o la plantilla, arma el compromiso compensatorio; «Cerrar turno» termina la ejecución en error."
     },
@@ -1257,7 +1257,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@todo:nodos/registrar-evento.js"
+        "jsCode": "@@todo+sesion:nodos/registrar-evento.js"
       },
       "id": "replanificar-registro",
       "name": "Replanificar registro",
@@ -1353,7 +1353,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@todo:nodos/registrar-evento.js"
+        "jsCode": "@@todo+sesion:nodos/registrar-evento.js"
       },
       "id": "replanificar-registro-2",
       "name": "Replanificar registro (2.º)",
@@ -1531,7 +1531,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@todo+mensajes+filtro+tipeo:nodos/armar-mensajes.js"
+        "jsCode": "@@todo+mensajes+filtro+tipeo+sesion:nodos/armar-mensajes.js"
       },
       "id": "replanificar-mensajes",
       "name": "Replanificar mensajes",
@@ -1592,7 +1592,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@todo:nodos/soltar-mensajes.js"
+        "jsCode": "@@todo+sesion:nodos/soltar-mensajes.js"
       },
       "id": "soltar-mensajes",
       "name": "Soltar mensajes",
@@ -1688,7 +1688,7 @@
     },
     {
       "parameters": {
-        "jsCode": "@@comun:nodos/cerrar-turno.js"
+        "jsCode": "@@comun+sesion:nodos/cerrar-turno.js"
       },
       "id": "cerrar-turno",
       "name": "Cerrar turno",

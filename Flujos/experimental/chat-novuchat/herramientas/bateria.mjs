@@ -39,7 +39,7 @@ import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { doblesDeBateriaDelGuardado } from '../../comun-sin-agente/src/guardado-dobles.mjs';
-import { crearServidorDeSesion } from './servidor-de-sesion.mjs';
+import { crearServidorDeSesion } from '../../comun-sin-agente/herramientas/servidor-de-sesion.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ_FLUJO = join(AQUI, '..');

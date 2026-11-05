@@ -90,6 +90,8 @@ del bot, sin huecos (lo del equipo va después); `prefijoId` no empieza con `-`;
 Solo escribe campos que existen y vocabulario cerrado (calificación y clasificación VACÍAS = sin evaluar, resumen fijo); no lee el texto de ningún
 mensaje ni la columna U. La hoja se lee y escribe por un flujo temporal de n8n con la credencial `crm-<tenant>` (la cuenta no tiene clave local).
 
+**Empezar de nuevo un comercio (04/11/2026).** Tres herramientas de `admin/scripts/plataforma/`, todas en seco por omisión, con `--confirmo-produccion`, respaldo fuera del repositorio y lista cerrada: `vaciar-chats-tenant.mjs` (Firestore: `conversaciones` con `mensajes`/`privado`, y `contactos`; nunca `metricas`, `config`, pedidos ni pagos), `vaciar-memoria-flujo.mjs` (n8n: solo `staticData.global.rroca`, nunca `--reiniciar-estado`) y `vaciar-hoja-crm.mjs` (hoja `Leads_CRM`, solo A4:T de datos; nunca encabezados, fórmulas, Dashboard, Kanban ni la columna U). Prueba: `pruebas/plataforma/vaciar-comercio.test.ts`.
+
 **Limitaciones conocidas.**
 - En una fila NUEVA solo se comprueba el encabezado de la columna A: leer la fila de
   encabezados completa en el alta queda para un PR posterior, para no leer más hoja.

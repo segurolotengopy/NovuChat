@@ -8,7 +8,7 @@ const rep = cnNodo('Replanificar mensajes') ? cnPrimero('Replanificar mensajes')
 const a = rep || cnPrimero('Armar mensajes');
 if (!a) return [];
 const reciente = cnNodo('Comprometer turno (2.º intento)') ? 'Comprometer turno (2.º intento)' : 'Comprometer turno';
-const r = a.comprometer === true ? cnResultadoDeCompromiso(cnPrimero(reciente)) : { resultado: 'ok', version: 0, ganador: null };
+const r = a.comprometer === true ? ssResultadoDeCompromiso(cnPrimero(reciente)) : { resultado: 'ok', version: 0, ganador: null };
 const comprometido = a.comprometer === true && r.resultado === 'ok';
 // Segundo conflicto: si otra ejecución ya respondió estos eventos o hay uno más nuevo (misma condición que «Replanificar mensajes»), esta termina SIN enviar.
 if (r.resultado === 'conflicto' && rep && Array.isArray(a.seqs) && chOtraEjecucionResponde(chFichaVigente(r.ganador, Number(a.ahoraMs) || Date.now()), a.seqs)) return [];

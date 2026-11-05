@@ -80,5 +80,5 @@ if (comprometido) {
     estado.avisoFalla = avisoRechazado.slice(0, 200);
   }
 }
-const compensar = estado ? cnCuerpoComprometer(from, $execution.id, 'comp', Number(primero.versionComprometida) || 0, estado) : null;
-return [{ json: { compensar: compensar !== null, compromiso: compensar, numero: primero.numero || cnNumeroHeader(), error: fallas.length ? 'Meta rechazó el mensaje al cliente: ' + fallas.join(' | ') : '', avisoRechazado: avisoRechazado } }];
+const compensar = estado ? ssCuerpoComprometer(from, $execution.id, 'comp', Number(primero.versionComprometida) || 0, estado) : null;
+return [{ json: { compensar: compensar !== null, compromiso: compensar, numero: primero.numero || ssNumeroHeader(), error: fallas.length ? 'Meta rechazó el mensaje al cliente: ' + fallas.join(' | ') : '', avisoRechazado: avisoRechazado } }];
