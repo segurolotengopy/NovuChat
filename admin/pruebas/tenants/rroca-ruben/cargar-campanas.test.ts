@@ -68,11 +68,11 @@ describe('cargar-campanas.mjs (las campañas de Rubén)', () => {
     expect((await db.doc(`tenants/${T}/config/campanas`).get()).exists).toBe(false);
   });
   it('una campaña marcada `pendiente_de_termino_registrado` queda FUERA del lote: se dice y no se escribe', async () => {
-    const r = correr(T, archivo('pend', bueno(T, (d) => { d.anuncios[6]!['pendiente_de_termino_registrado'] = true; })));
+    const r = correr(T, archivo('pend', bueno(T, (d) => { d.anuncios[3]!['pendiente_de_termino_registrado'] = true; })));
     expect(r.codigo, r.salida).toBe(0);
-    expect(r.salida).toMatch(/Fuera del lote \(pendientes de término registrado\): cien-preguntas/);
+    expect(r.salida).toMatch(/Fuera del lote \(pendientes de término registrado\): portada-del-libro/);
     expect(r.salida).toMatch(new RegExp(`anuncios del archivo: ${base.anuncios.length - 1}\\b`));
-    expect(r.salida).not.toMatch(/nuevo\s+cien-preguntas/);
+    expect(r.salida).not.toMatch(/nuevo\s+portada-del-libro/);
   });
   it('con --aplicar (en el emulador) escribe la lista con fechas de hoy, el sello y la auditoría; NO escribe `revision` ni `vigentes`', async () => {
     await sembrar('pro');
@@ -82,7 +82,7 @@ describe('cargar-campanas.mjs (las campañas de Rubén)', () => {
     const doc = (await db.doc(`tenants/${T}/config/campanas`).get()).data() ?? {};
     const l = doc['lista'] as Array<Record<string, unknown>>;
     expect(l.map((c) => c['id'])).toEqual(base.anuncios.map((a) => a['id']));
-    for (const c of l) expect(Object.keys(c).sort()).toEqual(['angulo', 'fin', 'id', 'inicio', 'productoId', 'texto', 'titulares']);
+    for (const c of l) expect(Object.keys(c).sort()).toEqual(['angulo', 'fin', 'id', 'inicio', 'texto', 'titulares']);
     expect(doc['actualizadoPor']).toBe('cargar-campanas');
     expect(doc['revision']).toBeUndefined();
     expect(doc['vigentes']).toBeUndefined();
@@ -96,7 +96,8 @@ describe('cargar-campanas.mjs (las campañas de Rubén)', () => {
   });
   it('NEGADO: un producto que no es un documento ACTIVO del catálogo, un comercio suspendido o inexistente, un archivo de otro comercio y un archivo SIN campo `tenant`', async () => {
     await sembrar('pro', 'activo', false);
-    const sinProducto = correr(T, archivo('sinprod', bueno(T)), '--aplicar');
+    // Los anuncios de «Noches» no llevan `productoId`: para probar la guarda se le pone uno que NO existe en el catálogo.
+    const sinProducto = correr(T, archivo('sinprod', bueno(T, (d) => { d.anuncios[0]!['productoId'] = 'producto-inexistente'; })), '--aplicar');
     expect(sinProducto.codigo).toBe(1);
     expect(sinProducto.salida).toMatch(/no existe o no está activo/);
     expect(await lista(T)).toEqual([]);

@@ -50,10 +50,14 @@ try { datos = JSON.parse(readFileSync(ARCHIVO, 'utf8')); } catch (e) {
   console.error(`\n  ✗ No se pudo leer ${ARCHIVO} como JSON: ${e.message}\n`);
   process.exit(2);
 }
-if (typeof datos.tenant === 'string' && datos.tenant !== TENANT) {
-  console.error(`\n  ✗ El archivo es del comercio «${datos.tenant}» y se pidió «${TENANT}»: no se escribe nada.\n`);
+// El archivo TIENE que decir de qué comercio es (un archivo sin `tenant` no se carga en ninguno) y tiene que ser el pedido.
+if (datos.tenant !== 'rroca-ruben' || datos.tenant !== TENANT) {
+  console.error(`\n  ✗ El archivo es del comercio «${String(datos.tenant ?? '(sin campo tenant)').slice(0, 60)}» (tiene que decir «rroca-ruben») y se pidió «${TENANT}»: no se escribe nada.\n`);
   process.exit(2);
 }
+// Un anuncio marcado `pendiente_de_termino_registrado` (su titular lleva un término que el servidor aún no admite) NO viaja en el lote: se informa y se deja fuera.
+const pendientes = Array.isArray(datos.anuncios) ? datos.anuncios.filter((a) => a && a.pendiente_de_termino_registrado === true) : [];
+if (pendientes.length) datos = { ...datos, anuncios: datos.anuncios.filter((a) => !(a && a.pendiente_de_termino_registrado === true)) };
 const antes = validarArchivo(datos);
 if (antes.length) {
   console.error(`\n  ✗ El archivo no cumple las reglas del servidor (${antes.length}):\n    - ${antes.join('\n    - ')}\n\n  No se escribió nada.\n`);
@@ -120,6 +124,7 @@ try {
 }
 if (rechazo) { console.error(`  ✗ ${rechazo}\n`); process.exit(1); }
 
+if (pendientes.length) console.log(`  Fuera del lote (pendientes de término registrado): ${pendientes.map((a) => a.id).join(', ')}`);
 console.log(`  config/campanas${plan.creaDocumento ? ' (se crea)' : ''} · tope del plan: ${plan.limite} · anuncios del archivo: ${plan.filas.length} · otras campañas que se conservan: ${plan.conservadas}`);
 for (const f of plan.filas) console.log(`    ${f.estado.padEnd(6)} ${f.id.padEnd(28)} «${f.titular}»`);
 if (!APLICAR) {
