@@ -612,7 +612,7 @@ describe('la derivación a Rubén: texto fijo, aviso y botón', () => {
       expect(t.avisos, x).toHaveLength(0);
       expect(t.mensajes[0]!.cuerpo, x).not.toMatch(/pregunta de salud específica/);
     }
-    for (const x of ['¿qué dosis de melatonina debo usar junto con el libro?', 'quiero suspender la melatonina, ¿puedo?', 'mi receta de zolpidem, ¿cómo la combino?']) {
+    for (const x of ['¿qué dosis de melatonina debo usar junto con el libro?', 'quiero suspender la melatonina, ¿puedo?', 'mi receta de zolpidem, ¿cómo la combino?', '¿cuánto clonazepam puedo tomar?', '¿puedo tomar melatonina junto con clonazepam?', '¿cuántas pastillas de melatonina son demasiado?', '¿puedo tomar 10 mg de melatonina?']) {
       const w = nuevo();
       const t = hablar(w, ANA, mTexto(x));
       expect(t.mensajes[0]!.cuerpo, x).toMatch(/pregunta de salud específica/);
@@ -741,7 +741,7 @@ describe('crisis emocional: se corta la venta, hay texto cálido, botón y aviso
   });
 
   it('NEGANDO: objeciones corrientes con palabras de salud o de «desaparecer» NO son una crisis ni cortan la venta; las crisis REALES siguen disparando', () => {
-    for (const x of ['quiero desaparecer mis ojeras', 'no vale la pena seguir intentando con pastillas', 'hay riesgo de sobredosis con melatonina', 'quiero desaparecer el insomnio', 'quiero desaparecer las pesadillas', 'no vale la pena seguir probando', 'no vale la pena seguir con el libro', '¿puede causar sobredosis?', '¿hay riesgo de sobredosis con el clonazepam?', '¿cuál es la dosis máxima de melatonina?', '¿cuánto cuesta el libro? tomo melatonina']) {
+    for (const x of ['quiero desaparecer mis ojeras', 'no vale la pena seguir intentando con pastillas', 'hay riesgo de sobredosis con melatonina', 'quiero desaparecer el insomnio', 'quiero desaparecer las pesadillas', 'no vale la pena seguir probando', 'no vale la pena seguir con el libro', '¿puede causar sobredosis?', '¿hay riesgo de sobredosis con el clonazepam?', '¿cuál es la dosis máxima de melatonina?', '¿cuánto cuesta el libro? tomo melatonina', 'me corto el pelo', 'no quiero estar aquí en esta lista', 'ya no aguanto más sin dormir', 'mejor no despertar a mi esposo', 'no quiero despertar mañana temprano', 'me tomo las pastillas del botiquín de la tienda']) {
       const w = nuevo();
       saludar(w);
       const t = hablar(w, ANA, mTexto(x));
@@ -749,7 +749,7 @@ describe('crisis emocional: se corta la venta, hay texto cálido, botón y aviso
       expect(fichaDe(w, ANA)['riesgo'], x).toBe(false);
       expect(t.mensajes[0]!.cuerpo, x).not.toMatch(/Siento mucho que estés pasando por esto/);
     }
-    for (const x of ['quiero desaparecer del mundo', 'quiero desaparecer para siempre', 'quiero desaparecer', 'solo quiero desaparecer', 'a veces quiero desaparecer', 'quiero desaparecer, ya no puedo más', 'me dan ganas de desaparecer', 'quisiera desaparecer y no volver', 'no vale la pena seguir', 'ya no vale la pena seguir', 'siento que no vale la pena seguir.', 'no vale la pena seguir así', 'tomé una sobredosis', 'me tomaría una sobredosis', 'pienso en una sobredosis', 'pensé en una sobredosis', 'me tomaría todas las pastillas', 'quiero dormir y no despertar', 'me quiero morir', 'quiero acabar con todo', 'no quiero seguir viviendo', 'no vale la pena seguir viviendo', 'ya no vale la pena seguir con mi vida', 'me voy a tomar una sobredosis', 'voy a tomar todas las pastillas']) {
+    for (const x of ['quiero desaparecer del mundo', 'quiero desaparecer para siempre', 'quiero desaparecer', 'solo quiero desaparecer', 'quisiera desaparecer esta noche', 'quiero desaparecer este mes', 'quiero desaparecer mi vida', 'no vale la pena seguir con el sufrimiento', 'hay riesgo de sobredosis, igual lo voy a hacer', 'quiero dormir para siempre', 'me tomaría el frasco entero', 'ya no aguanto más', 'ya no puedo más con esta vida', 'mejor no despertarme', 'ojalá no despertar', 'no quiero despertar mañana', 'no quiero estar aquí', 'quisiera no existir', 'quiero dejar de existir', 'mejor me muero', 'tengo ganas de morir', 'ganas de morirme', 'me haría daño', 'me corto las venas', 'me quiero cortar el brazo', 'no le veo sentido a la vida', 'todos estarían mejor sin mí', 'ya fue, no quiero seguir', 'me tomé todas las pastillas', 'me tomo todas mis pastillas', 'me tomé muchas pastillas', 'voy a tomarme todo el frasco', 'kiero morirme', 'me kiero morir', 'qiero morir', 'quiero morirrr', 'me quiero mmorir', 'tomé una sobre dosis', 'a veces quiero desaparecer', 'quiero desaparecer, ya no puedo más', 'me dan ganas de desaparecer', 'quisiera desaparecer y no volver', 'no vale la pena seguir', 'ya no vale la pena seguir', 'siento que no vale la pena seguir.', 'no vale la pena seguir así', 'tomé una sobredosis', 'me tomaría una sobredosis', 'pienso en una sobredosis', 'pensé en una sobredosis', 'me tomaría todas las pastillas', 'quiero dormir y no despertar', 'me quiero morir', 'quiero acabar con todo', 'no quiero seguir viviendo', 'no vale la pena seguir viviendo', 'ya no vale la pena seguir con mi vida', 'me voy a tomar una sobredosis', 'voy a tomar todas las pastillas']) {
       const w = nuevo();
       saludar(w);
       const t = hablar(w, ANA, mTexto(x));
