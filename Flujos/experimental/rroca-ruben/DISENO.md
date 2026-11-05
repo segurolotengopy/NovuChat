@@ -35,6 +35,8 @@ Fuentes (04/11/2026): especificación consolidada y plan único confirmado por A
 - **Caso (a):** una captura de anuncio como PRIMER mensaje recibe el saludo genérico, no la apertura de su ángulo (`decidir-turno.js`, rama del anuncio sin saludar). El PR-2 debe abrir con el ángulo del anuncio.
 - **Caso (b):** «vi el video, ¿precio y devolución?» deriva por garantía (`rrDerivacion`) sin dar el precio ni avisar `no_supo`. El PR-2 debe dar el precio por código Y derivar la devolución en el mismo mensaje.
 
+- **Levantar la crisis:** hoy `ficha.riesgo` solo se apaga a las 48 h; el PR-2 debe darle a Rubén una forma de levantarla (cuando la atiende él) y afinar la continuación. Las variantes pendientes y los falsos positivos conocidos están en `crisis-listas.test.ts` (`PENDIENTES_PR2_*`).
+
 ## La red de crisis: dos capas y sus límites
 
 1. **Código** (`rrEsCrisis` en `rr.js`): red amplia de frases y raíces sobre texto, voz, texto de una captura y pie de foto; con tipeos plegados; las exclusiones son SOLO listas cerradas de objetos cotidianos y de venta. Ante la duda, crisis.

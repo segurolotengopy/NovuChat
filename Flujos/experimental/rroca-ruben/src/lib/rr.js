@@ -406,6 +406,9 @@ const RR_CRISIS_EXTRA2 = new RegExp([
   '\\bmejor me muero\\b|\\b(?:tengo )?ganas de (?:morir|morirme)\\b',
   '\\bme haria dano\\b|\\bme (?:quiero |voy a |pienso )?cort(?:o|ar) (?:las venas|el brazo|los brazos|las munecas|la muneca|la piel|a proposito)\\b',
   '\\bno le veo sentido a la vida\\b|\\btodos estarian mejor sin mi\\b|\\bya fue,? no quiero seguir\\b',
+  '\\bme (?:quiero |voy a |pienso |podria )?colgar\\b|\\bcolgarme\\b',
+  '\\b(?:tirarme|me voy a tirar|me quiero tirar|me tiro) (?:de|del|desde) (?:el |la |un |una )?(?:puente|edificio|techo|balcon|cerro|ventana|azotea)\\b',
+  '\\b(?:cansad[oa]|harta?o?|cans[eé]) de vivir\\b|\\bya me canse de vivir\\b',
   '\\bme tom(?:o|e) todas(?: mis| las)* pasti[l]{1,2}as\\b|\\bme tom(?:o|e) muchas pasti[l]{1,2}as\\b(?! (?:para dormir|para el sueno|y no (?:funcionan|duermo|sirven|me sirven)))',
   '\\b(?:tomarme|me tomaria|me tome|me tomo) (?:todo )?el frasco\\b|\\bfrasco entero\\b',
 ].join('|'));
