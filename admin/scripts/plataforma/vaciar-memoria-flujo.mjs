@@ -8,7 +8,7 @@
  *
  * NO usar `publicar-flujo.sh --reiniciar-estado` para esto: reemplaza TODO el staticData y borraría también esas claves y las fichas que no son de prueba.
  *
- *   ENV_FILE=<.env con N8N_BASE_URL y N8N_API_KEY> node scripts/plataforma/vaciar-memoria-flujo.mjs --workflow <id> --clave rroca
+ *   (con N8N_BASE_URL y N8N_API_KEY en el ENTORNO del proceso, no en un archivo que el script lea) node scripts/plataforma/vaciar-memoria-flujo.mjs --workflow <id> --clave rroca
  *        (--todas-las-fichas | --sufijos 12345678,87654321) [--con-topes]
  *        [--aplicar --respaldo <ruta absoluta> --confirmo-produccion <id del flujo>]
  *
@@ -21,7 +21,7 @@
  *
  * SALIDA. 0 hecho o nada que borrar; 1 el seco encontró fichas; 2 uso o salvaguarda; 3 error de ejecución.
  */
-import { readFileSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { comprobarRespaldo, guardarRespaldo } from './aplicar-consola-conversaciones.mjs';
 
@@ -32,7 +32,7 @@ const TOPES = Object.freeze({ rroca: ['rrTopes', 'rrExtranjeros'] });
 const CON_VALOR = ['workflow', 'clave', 'sufijos', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'todas-las-fichas', 'con-topes'];
 
-export const USO = '  ENV_FILE=… node scripts/plataforma/vaciar-memoria-flujo.mjs --workflow <id> --clave rroca (--todas-las-fichas | --sufijos a,b) [--con-topes] '
+export const USO = '  N8N_BASE_URL=… N8N_API_KEY=… node scripts/plataforma/vaciar-memoria-flujo.mjs --workflow <id> --clave rroca (--todas-las-fichas | --sufijos a,b) [--con-topes] '
   + '[--aplicar --respaldo <ruta> --confirmo-produccion <id del flujo>]';
 
 export function analizarArgumentos(argv, env = process.env, opciones = {}) {
@@ -67,7 +67,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   if (confirmo !== undefined && confirmo !== workflow) problemas.push('--confirmo-produccion no coincide con --workflow (se confirma con el id del flujo)');
   if (aplicar && confirmo === undefined) problemas.push('--aplicar exige --confirmo-produccion <id del flujo> (igual a --workflow)');
   if (aplicar && respaldo === undefined) problemas.push('--aplicar exige --respaldo <ruta absoluta> (0600, fuera del repositorio)');
-  if (typeof env.ENV_FILE !== 'string' || env.ENV_FILE === '') problemas.push('falta ENV_FILE (el .env de n8n)');
+  if (typeof env.N8N_BASE_URL !== 'string' || env.N8N_BASE_URL === '' || typeof env.N8N_API_KEY !== 'string' || env.N8N_API_KEY === '') problemas.push('faltan N8N_BASE_URL o N8N_API_KEY en el entorno');
   let respaldoResuelto = null;
   if (respaldo !== undefined) {
     const r = comprobarRespaldo(respaldo, { ...opciones, lectura: false, permitirExistente: false });
@@ -149,21 +149,17 @@ export async function ejecutar(cfg, deps, log = (t) => console.log(t)) {
   return 0;
 }
 
-function leerEnv(ruta) {
-  const env = {};
-  for (const l of readFileSync(ruta, 'utf8').split('\n')) { const m = /^\s*(?:export\s+)?([A-Z0-9_]+)=(.*)$/.exec(l); if (m) env[m[1]] = m[2].trim().replace(/^['"]|['"]$/g, ''); }
-  return env;
-}
-
 async function principal() {
   const a = analizarArgumentos(process.argv.slice(2));
   if (!a.ok) { console.error(`\n  ✗ ${a.problemas.join('\n  ✗ ')}\n\n${USO}\n`); process.exit(2); }
   const { cfg } = a;
-  const env = leerEnv(process.env.ENV_FILE);
-  const BASE = (env.N8N_BASE_URL || '').replace(/\/+$/, '');
-  if (!BASE || !env.N8N_API_KEY) throw Object.assign(new Error('faltan N8N_BASE_URL o N8N_API_KEY'), { code: 'sin-n8n' });
-  if (!/^https:\/\//.test(BASE) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(BASE)) throw Object.assign(new Error('url'), { code: 'n8n-sin-https' });
-  const cab = { [['X', 'N8N', 'API', 'KEY'].join('-')]: env.N8N_API_KEY, 'Content-Type': 'application/json' };
+  // La dirección y la clave vienen del ENTORNO del proceso (no se leen de un archivo). La dirección se valida: solo https (o esta misma máquina), sin credenciales ni ruta.
+  let origen;
+  try { origen = new URL(process.env.N8N_BASE_URL ?? ''); } catch { throw Object.assign(new Error('url'), { code: 'n8n-url-invalida' }); }
+  const local = origen.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(origen.hostname);
+  if ((origen.protocol !== 'https:' && !local) || origen.username || origen.password) throw Object.assign(new Error('url'), { code: 'n8n-sin-https' });
+  const BASE = origen.origin;
+  const cab = { [['X', 'N8N', 'API', 'KEY'].join('-')]: process.env.N8N_API_KEY, 'Content-Type': 'application/json' };
   const llamar = async (metodo, cuerpo) => {
     const r = await fetch(`${BASE}/api/v1/workflows/${cfg.workflow}`, { method: metodo, headers: cab, body: cuerpo ? JSON.stringify(cuerpo) : undefined, signal: AbortSignal.timeout(60000) });
     if (!r.ok) throw Object.assign(new Error('n8n'), { code: `n8n-${metodo}-${r.status}` });

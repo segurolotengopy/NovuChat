@@ -6,7 +6,7 @@
  * Se escribe NEGANDO primero: lo que NO debe pasar.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, closeSync, fstatSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 type Cfg = Record<string, any>;
@@ -22,6 +22,8 @@ const ENV = { FIRESTORE_EMULATOR_HOST: '127.0.0.1:1', SHEET_ID: SHEET, ENV_FILE:
 const dirs: string[] = [];
 const nuevoDir = () => { const d = mkdtempSync(join('/tmp', 'vaciar-')); chmodSync(d, 0o700); dirs.push(d); return d; };
 afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
+/** Una sola operación sobre el archivo (abrir, mirar el modo y leer con el mismo descriptor): sin carrera entre comprobar y leer. */
+const respaldoLeido = (ruta: string) => { const fd = openSync(ruta, 'r'); try { return { modo: fstatSync(fd).mode & 0o777, json: JSON.parse(readFileSync(fd, 'utf8')) }; } finally { closeSync(fd); } };
 const rutaRespaldo = () => join(nuevoDir(), 'respaldo.json');
 const problemas = (r: any) => { expect(r.ok, JSON.stringify(r)).toBe(false); return (r.problemas ?? []).join(' | '); };
 
@@ -86,8 +88,9 @@ describe('V1. vaciar-chats-tenant', () => {
   it('--aplicar: respaldo 0600, borra SOLO la lista cerrada, deja metricas/config/pedidos/pagos/cierres y relee', async () => {
     const m = mundo(); const resp = rutaRespaldo();
     expect(await chats.ejecutar(cfgDe({ aplicar: true, respaldo: resp }), m.deps, () => {})).toBe(0);
-    expect(statSync(resp).mode & 0o777).toBe(0o600);
-    expect(JSON.parse(readFileSync(resp, 'utf8')).documentos.length).toBe(2 + 6 + 2 + 1);
+    const r1 = respaldoLeido(resp);
+    expect(r1.modo).toBe(0o600);
+    expect(r1.json.documentos.length).toBe(2 + 6 + 2 + 1);
     const quedan = Object.keys(m.docs);
     expect(quedan.sort()).toEqual(['metricas/2026-11', 'config/crm', 'pedidos/p1', 'pagos/g1', 'cierres/c1', 'rutas/x'].map((r) => `tenants/rroca-ruben/${r}`).sort());
     // subcolecciones antes que sus documentos
@@ -145,6 +148,10 @@ describe('V2. vaciar-memoria-flujo', () => {
     expect(problemas(memoria.analizarArgumentos(['--workflow', 'abc123XYZ', '--clave', 'rroca', '--sufijos', '123'], ENV))).toContain('sufijos');
     expect(problemas(memoria.analizarArgumentos(['--workflow', 'abc123XYZ', '--clave', 'rroca', '--sufijos', '12345678,12345678'], ENV))).toContain('sufijos');
   });
+  it('la dirección y la clave de n8n salen del entorno: sin ellas no corre; con ellas la invocación es válida', () => {
+    expect(problemas(memoria.analizarArgumentos(base, ENV))).toContain('N8N_BASE_URL');
+    expect(memoria.analizarArgumentos(base, { ...ENV, N8N_BASE_URL: 'https://n8n.ejemplo.test', N8N_API_KEY: 'clave-ficticia' }).ok).toBe(true);
+  });
   it('NEGADO: --aplicar sin confirmación ni respaldo', () => {
     expect(problemas(memoria.analizarArgumentos([...base, '--aplicar'], ENV))).toContain('--confirmo-produccion');
     expect(problemas(memoria.analizarArgumentos([...base, '--aplicar', '--confirmo-produccion', 'rroca', '--respaldo', rutaRespaldo()], ENV))).toContain('id del flujo');
@@ -193,8 +200,9 @@ describe('V2. vaciar-memoria-flujo', () => {
   it('--aplicar: respaldo del staticData completo (0600), PUT solo con staticData cambiado, verifica y deja el resto igual', async () => {
     const m = mundo(); const resp = rutaRespaldo();
     expect(await memoria.ejecutar(cfgDe({ aplicar: true, respaldo: resp }), m.deps, () => {})).toBe(0);
-    expect(statSync(resp).mode & 0o777).toBe(0o600);
-    expect(JSON.parse(readFileSync(resp, 'utf8')).staticData.global.rroca['59170000001']).toBeDefined();
+    const r2 = respaldoLeido(resp);
+    expect(r2.modo).toBe(0o600);
+    expect(r2.json.staticData.global.rroca['59170000001']).toBeDefined();
     expect(m.puts).toHaveLength(1);
     expect(m.vivo.staticData.global.rroca).toEqual({});
     expect(m.vivo.staticData.global.otraCosa).toEqual({ a: 1 });
@@ -289,7 +297,7 @@ describe('V3. vaciar-hoja-crm', () => {
   it('--aplicar: respaldo 0600, limpia exactamente A4:T<última> (nunca la U ni el encabezado) y relee', async () => {
     const m = mundo([fila(1), fila(2), fila(3)]); const resp = rutaRespaldo();
     expect(await hoja.ejecutar(cfgDe({ aplicar: true, respaldo: resp }), m.deps, mapaR, () => {})).toBe(0);
-    expect(statSync(resp).mode & 0o777).toBe(0o600);
+    expect(respaldoLeido(resp).modo).toBe(0o600);
     expect(m.llamadas.limpiar).toEqual([`'Leads_CRM'!A${mapaR.filaEncabezados + 1}:T${mapaR.filaEncabezados + 3}`]);
     expect(m.llamadas.limpiar[0]).not.toMatch(/U/);
     expect(m.valores).toHaveLength(1); // quedan los encabezados
@@ -326,7 +334,7 @@ describe('V3. vaciar-hoja-crm', () => {
     const m = mundo([fila(1)]); const resp = rutaRespaldo();
     (m.deps as any).leerFormateado = async () => [['formateado']];
     expect(await hoja.ejecutar(cfgDe({ aplicar: true, respaldo: resp }), m.deps, mapaR, () => {})).toBe(0);
-    expect(JSON.parse(readFileSync(resp, 'utf8')).valoresFormateados).toEqual([['formateado']]);
+    expect(respaldoLeido(resp).json.valoresFormateados).toEqual([['formateado']]);
   });
   it('NEGADO: un respaldo existente no se pisa', async () => {
     const resp = rutaRespaldo();
