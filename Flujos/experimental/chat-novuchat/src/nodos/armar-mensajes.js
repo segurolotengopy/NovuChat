@@ -59,7 +59,7 @@ const aviso = (estado, marca, yaAvisado) => {
   return payload ? { para: 'recepcion', payload: payload, texto: 'Aviso a recepción: ' + estado + '.', respaldo: '', tipoReporte: null, esAviso: true, marcaAvisado: marca, empresaAviso: chNorm(chPlano(nueva.empresa, 60)), evento: 'aviso' } : null;
 };
 
-// El genérico con botón a recepción (§6 del contrato): el texto del traspaso con el botón de enlace, SIN aviso ni compromiso. Sale cuando no hay estado en el servidor y cuando el compromiso falla.
+// El genérico con botón a recepción (§6 del contrato): el texto del traspaso con el botón de enlace, más el aviso a recepción de la falla (`salidaFalla`), SIN compromiso. Sale cuando no hay estado en el servidor y cuando el compromiso falla.
 const generico = () => chMensajeEquipo(cfg, Object.assign({}, chFichaVigente(null, ahora), { nombrePedido: true }), from);
 if (plan.ruta === 'sin_estado') {
   mensajes.push(generico());
@@ -197,7 +197,7 @@ if (!prueba && claveOk && plan.ruta !== 'suspendido' && plan.ruta !== 'uso_exten
       rubro: (chRubroDe(cfg, antes.rubro) || {}).nombre || '', flujos: (chRubroDe(cfg, antes.rubro) || {}).flujo || '',
     });
     if (payloadFalla) {
-      const extra = aItems([{ para: 'recepcion', payload: payloadFalla, texto: 'Aviso a recepción: ' + CH_ESTADO_AVISO_FALLA + '.', respaldo: '', tipoReporte: null, esAviso: true, marcaAvisado: false, empresaAviso: '', evento: 'aviso_falla' }]);
+      const extra = aItems([{ para: 'recepcion', payload: payloadFalla, texto: 'Aviso a recepción: ' + CH_ESTADO_AVISO_FALLA + '.', respaldo: 'Aviso a recepción: ' + CH_ESTADO_AVISO_FALLA + '. Cliente: ' + from + '.', tipoReporte: null, esAviso: true, marcaAvisado: false, empresaAviso: '', evento: 'aviso_falla' }]);
       for (const x of extra) { salidaFalla.push(x); avisoFalla = true; }
     }
   }

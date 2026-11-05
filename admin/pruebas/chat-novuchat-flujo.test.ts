@@ -338,7 +338,9 @@ function propiedades(w: W, t: T, from: string, entrada: string, tiposSinBotones:
     // Ningún dígito en lo que sale salvo «24/7», «24 horas» y las cifras del mensaje de planes (65, 125, 25) que arma el código.
     const sinPermitidos = c.replace(/\b(?:los\s+)?7\s+d[ií]as(?:\s+(?:de|a)\s+la\s+semana)?\b(?!\s+(?:de\s+prueba|gratis|gratuit\w*|libres?|sin\s+costo|de\s+garant\w*|extra))/gi, ' ').replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' ').replace(/USD (65|125|25)\b/g, ' ');
     // (el complemento de los planes trae a propósito los tamaños de agendas y de catálogo; ver `complementoPlanes`)
-    if (!/^Te cuento un poco más de los planes/.test(c)) expect(sinPermitidos, `${que}: dígitos de más`).not.toMatch(/\d/);
+    // (el respaldo en texto del aviso de la falla a RECEPCIÓN lleva el teléfono del cliente a propósito, para que sepan a quién atender)
+    if (/^Aviso a recepción: no se pudo guardar el chat; .* Cliente: \d+\.$/.test(c)) { /* teléfono del cliente a recepción */ }
+    else if (!/^Te cuento un poco más de los planes/.test(c)) expect(sinPermitidos, `${que}: dígitos de más`).not.toMatch(/\d/);
     else expect(c, `${que}: cifras de conversaciones o de consumo`).not.toMatch(/\d+\s+(conversaciones?|mensajes?|interacciones?|respuestas?|chats?)\b|ilimitad|gratis/i);
     if (e.tipo === 'image' || e.tipo === 'document') {
       expect(e.tipo, `${que}: la imagen de planes sale como imagen`).toBe('image');
@@ -3604,9 +3606,9 @@ describe('el genérico de una falla del compromiso: botón MÁS aviso a recepci�
     expect(w.compromisos.some((c) => c.nodo === 'Comprometer compensación')).toBe(false);
     // y el mismo mensaje repetido por Meta no manda un segundo aviso
     w.graph.falla = () => false;
-    const t2 = w.mundo.turno(valorMeta(mTexto('Hola'), MAMA, { wamid: 'wamid.DUPFALLA' }), { avanzarMin: 0 });
+    const t2 = w.mundo.turno(valorMeta(mTexto('Hola'), MAMA, { wamid: 'wamid.DUPFALLA' }), { avanzarMin: 61 });
     const t3 = w.mundo.turno(valorMeta(mTexto('Hola'), MAMA, { wamid: 'wamid.DUPFALLA' }), { avanzarMin: 0 });
-    expect([t2, t3].reduce((n, x) => n + x.mensajes.filter((m) => m.tipo === 'template').length, 0)).toBeLessThanOrEqual(1);
+    expect([t2, t3].reduce((n, x) => n + x.mensajes.filter((m) => m.tipo === 'template').length, 0)).toBe(1);
   });
 
   it('segundo conflicto (la replanificación también falla): UN solo aviso, aunque «Armar» y «Replanificar» armen cada uno el suyo', () => {

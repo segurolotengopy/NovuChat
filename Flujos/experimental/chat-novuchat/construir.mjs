@@ -602,6 +602,8 @@ export function guardias(entrada, flujo, datos = {}) {
       const propios = [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean).map((t) => sinCom(t).trim());
       const REGLAS = [
         [/\b(ss[A-Z]\w*|SS_CONFIG)\s*(\.\s*\w+\s*)?[-+*\/%&|^]?=(?!=)/, 'reasigna o muta un ayudante de sesión (ss*) o SS_CONFIG con «=»'],
+        [/(\+\+|--)\s*ss[A-Z]|ss[A-Z]\w*\s*(\+\+|--)/, 'incrementa o decrementa un ayudante de sesión (ss*)'],
+        [/[\[{,:]\s*ss[A-Z]\w*\s*[\]},]\s*=/, 'reasigna un ayudante de sesión (ss*) por desestructuración'],
         [/SS_CONFIG\s*\[/, 'accede a SS_CONFIG por índice'],
         [/Object\.(assign|defineProperty)\(\s*SS_CONFIG/, 'muta SS_CONFIG con Object.assign o Object.defineProperty'],
       ];

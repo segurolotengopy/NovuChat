@@ -1475,10 +1475,10 @@ describe('guardias de --verificar', () => {
     // (b) sin congelar
     expect(CONSTRUIR.guardias('trigger', edita(prod(), 'Soltar mensajes', 'Object.freeze({', '({'), DATOS_CRM).join(' ')).toMatch(/SS_CONFIG tiene que declararse con Object\.freeze/);
     // (c) reasignaciones y mutaciones en el código de CUALQUIER nodo (el módulo y el registro, tal cual, no cuentan)
-    for (const mut of ["SS_CONFIG = {};", "SS_CONFIG.espacio = 'x';", "ssEspacio = () => 'x';", "ssFoo.bar = 1;", "SS_CONFIG['espacio'] = 'x';", "Object.assign(SS_CONFIG, { espacio: 'x' });", "Object.defineProperty(SS_CONFIG, 'espacio', { value: 'x' });", "const y = SS_CONFIG[k];"]) {
+    for (const mut of ["SS_CONFIG = {};", "SS_CONFIG.espacio = 'x';", "ssEspacio = () => 'x';", "ssFoo.bar = 1;", "SS_CONFIG['espacio'] = 'x';", "Object.assign(SS_CONFIG, { espacio: 'x' });", "Object.defineProperty(SS_CONFIG, 'espacio', { value: 'x' });", "const y = SS_CONFIG[k];", "ssFoo++;", "--ssFoo;", "[ssFoo] = [1];", "({ a: ssFoo } = x);"]) {
       const f = prod();
       f['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += '\n' + mut;
-      expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(/«Cerrar turno» (reasigna o muta|accede a SS_CONFIG|muta SS_CONFIG)/);
+      expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(/«Cerrar turno» (reasigna o muta|reasigna un ayudante|incrementa o decrementa|accede a SS_CONFIG|muta SS_CONFIG)/);
     }
     // un comentario o una comparación no son una mutación
     const limpio = prod();
