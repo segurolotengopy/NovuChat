@@ -1,5 +1,5 @@
 /**
- * LAS DOS LISTAS DE LA RED DE CRISIS de Rubén (criterio de cierre del PR-1, Principal, 04/11/2026). Son datos fáciles de ampliar: las variantes nuevas que aparezcan se agregan aquí (en el PR-2) y no se parchan frase por frase.
+ * LAS DOS LISTAS DE LA RED DE CRISIS de Rubén (criterio de cierre del PR-1, Principal, 04/11/2026). Son datos fáciles de ampliar: las variantes nuevas que aparezcan se agregan aquí y no se parchan frase por frase (las 17 pendientes del PR-1 se cubrieron en el PR-2).
  *   - FRASES_DE_CRISIS: frases reales que DEBEN disparar la crisis (`rrEsCrisis`). Principio: la red es amplia; ante la duda, crisis.
  *   - CONTROL_DE_FALSOS_POSITIVOS: frases cotidianas de venta o de insomnio que NO deben dispararla (cortaría la venta 48 h y reportaría `no_contactar`).
  *   - DERIVAN_COMO_MEDICA / NO_DERIVAN_COMO_MEDICA: la derivación médica (`rrDerivacion`), que solo aplica a lo que NO es crisis.
@@ -90,6 +90,16 @@ export const FRASES_DE_CRISIS: string[] = [
   "ojalá no despertar a la mañana siguiente",
   "me tomé el frasco",
   "me tomé todo el frasco de clonazepam",
+  "ya no tiene sentido vivir",
+  "pa que sigo viviendo",
+  "me quiero ir para siempre",
+  "ojalá me muera dormido",
+  "ganas de no despertar nunca más",
+  "me tomé un montón de pastillas",
+  "me lastimo los brazos",
+  "esta es mi despedida",
+  "me tomé muchas pastillas para dormir todas juntas",
+  "me tomé muchas pastillas para no despertar",
 ];
 
 export const CONTROL_DE_FALSOS_POSITIVOS: string[] = [
@@ -138,6 +148,13 @@ export const CONTROL_DE_FALSOS_POSITIVOS: string[] = [
   "quiero comprar el libro con bono",
   "mi pareja ronca y no me deja dormir",
   "¿cuántos capítulos tiene el audiolibro?",
+  "ya no aguanto más mi insomnio",
+  "ya no aguanto tanto insomnio",
+  "ya no aguanto más de no dormir",
+  "ya no aguanto más mis noches sin dormir",
+  "ya no aguanto más despertarme a las 3",
+  "ya no aguanto más esta situación con mi vecino",
+  "no quiero estar aquí mucho tiempo, mándame el precio",
 ];
 
 export const CONTROL_PRECISO: string[] = ['voy a colgar la ropa', 'mi hermano se va a tirar al agua en la piscina'];
@@ -191,6 +208,13 @@ export const NO_DERIVAN_COMO_MEDICA: string[] = [
   "quiero comprar el libro con bono",
   "mi pareja ronca y no me deja dormir",
   "¿cuántos capítulos tiene el audiolibro?",
+  "ya no aguanto más mi insomnio",
+  "ya no aguanto tanto insomnio",
+  "ya no aguanto más de no dormir",
+  "ya no aguanto más mis noches sin dormir",
+  "ya no aguanto más despertarme a las 3",
+  "ya no aguanto más esta situación con mi vecino",
+  "no quiero estar aquí mucho tiempo, mándame el precio",
 ];
 
 describe('red de crisis: las frases reales disparan', () => {
@@ -210,17 +234,4 @@ describe('derivación médica (solo lo que no es crisis)', () => {
 
 describe('control preciso de las raíces nuevas', () => {
   it.each(CONTROL_PRECISO)('no crisis: %s', (f) => { expect(crisis(f)).toBe(false); });
-});
-
-// PENDIENTES DEL PR-2 (NO implementados aquí; ante la duda son crisis salvo los falsos positivos conocidos). Se mueven a las listas de arriba cuando el PR-2 los cubra.
-export const PENDIENTES_PR2_CRISIS: string[] = [
-  'ya no tiene sentido vivir', 'pa que sigo viviendo', 'me quiero ir para siempre', 'ojalá me muera dormido', 'ganas de no despertar nunca más',
-  'me tomé un montón de pastillas', 'me lastimo los brazos', 'esta es mi despedida', 'me tomé muchas pastillas para dormir todas juntas', 'me tomé muchas pastillas para no despertar',
-];
-export const PENDIENTES_PR2_FALSOS_POSITIVOS: string[] = [
-  'ya no aguanto más mi insomnio', 'ya no aguanto tanto insomnio', 'ya no aguanto más de no dormir', 'ya no aguanto más mis noches sin dormir', 'ya no aguanto más despertarme a las 3',
-  'ya no aguanto más esta situación con mi vecino', 'no quiero estar aquí mucho tiempo, mándame el precio',
-];
-describe('pendientes del PR-2 (registrados, sin implementar)', () => {
-  it.todo.each([...PENDIENTES_PR2_CRISIS.map((f) => `debe ser crisis: ${f}`), ...PENDIENTES_PR2_FALSOS_POSITIVOS.map((f) => `no debe ser crisis: ${f}`)])('%s', () => undefined);
 });

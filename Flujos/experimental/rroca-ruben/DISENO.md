@@ -5,7 +5,7 @@ Fuentes (04/11/2026): especificación consolidada y plan único confirmado por A
 ## Estado por PR
 
 - **PR-1 (este):** esqueleto de la forma de Antonio (puerta del turno, entrada verificada del receptor, medios, guardado de medios, miniCRM), catálogo de 4 productos y el paso del Libro al Pack, 4 prellenados, botones, cobro REAL por QR de monto abierto, comprobante con cotejo en el servidor, avisos, derivación de lista cerrada, crisis, número no boliviano y un prompt mínimo. Datos con marcadores `REEMPLAZAR_*`.
-- **PR-2:** prompt completo, ángulos de anuncio (los de la guía B del MD), objeciones y respuestas de salud largas, y la suite con los 4 casos del PDF de ejemplos.
+- **PR-2 (hecho):** prompt completo, ángulos de anuncio (dato de Campañas), objeciones y reglas de salud, la crisis que se levanta a las 48 h de la última señal y la suite `conversacion.test.ts` con los 4 casos del PDF.
 - **Después:** seco contra el vivo, ensayo en el Demo A y publicación solo con el botón de Andres. Este flujo NO se publica con marcadores ni con plantillas sin aprobar (`construir.mjs --publicable --anuncios <N>`).
 
 ## Decisiones (04/11/2026)
@@ -30,18 +30,25 @@ Fuentes (04/11/2026): especificación consolidada y plan único confirmado por A
 - [ ] Garantía y devolución (`garantiaTexto`), enlaces o archivos de entrega y horario de Rubén de noche (el aviso y el botón de crisis dependen de su teléfono).
 - [ ] Falla abierta de la pausa: es la de `chat-novuchat` con la puerta idéntica (si la ingesta y la consola caen en el mismo turno, la puerta devuelve «normal»); a decidir con Cartera antes de publicar.
 
-## Para el PR-2 (casos del PDF que NO se resuelven aquí)
+## PR-2 (05/11/2026): la conversación
 
-- **Caso (a):** una captura de anuncio como PRIMER mensaje recibe el saludo genérico, no la apertura de su ángulo (`decidir-turno.js`, rama del anuncio sin saludar). El PR-2 debe abrir con el ángulo del anuncio.
-- **Caso (b):** «vi el video, ¿precio y devolución?» deriva por garantía (`rrDerivacion`) sin dar el precio ni avisar `no_supo`. El PR-2 debe dar el precio por código Y derivar la devolución en el mismo mensaje.
+**Qué trae.** El prompt completo del modelo (`RR_PROMPT`: base de conocimiento, objeciones, reglas de salud, transparencia; **4.626 caracteres, tope 4.670 = el de Antonio**; el de Antonio usa ≈ 3.6k, el de Rubén lleva más porque trae los 14 eslabones y las objeciones, y no repite ninguna cifra de precio), los casos del PDF resueltos **por código**, las 17 variantes de crisis y de falsos positivos que quedaron pendientes en el PR-1, la forma de levantar la crisis y la suite `conversacion.test.ts`. Mensajes por conversación al cliente: **0 agregados** (todo va dentro del mensaje que ya sale; la prueba lo niega turno a turno).
 
-- **Levantar la crisis:** hoy `ficha.riesgo` solo se apaga a las 48 h; el PR-2 debe darle a Rubén una forma de levantarla (cuando la atiende él) y afinar la continuación. Las variantes pendientes y los falsos positivos conocidos están en `crisis-listas.test.ts` (`PENDIENTES_PR2_*`).
+**Casos del PDF.**
+- **(a)** Una captura de anuncio SIN texto, como primer mensaje y con un anuncio reconocido por su titular (dato de Campañas, `titular_principal`) y con ángulo, ya NO recibe el saludo genérico: sale la presentación (una vez) y la apertura que redacta el modelo con el ángulo como dato (plan `angulo`); si el modelo falla o el texto se rechaza, cae al saludo fijo. Sin ángulo (dato vacío), saludo fijo. No se agregó lógica de anuncios: es el mecanismo `titular_principal` que ya existía.
+- **(b)** «¿Precio y devolución?»: el precio sale por código (el del catálogo, el de UN producto si lo nombra, la lista si no) DELANTE de la derivación, en el mismo mensaje, con presentación si es el primero, el botón de Rubén y el aviso. **Clave del aviso: `garantia`** (el motivo exacto), no `no_supo`: `no_supo` es la clave de «el modelo no supo», con texto variable y sin el motivo; el PDF pide un aviso a Rubén, que sale con su motivo. Solo con garantía, otro medio de pago, reclamo o volumen; la crisis y la pregunta médica nunca traen precio.
+- **(c) y (d)** «¿Me garantizan dormir?» no garantiza y recuerda el plan de 21 días; si la misma frase pregunta el precio o la duración de los audios, el código junta las respuestas en UN mensaje. Dos preguntas que el código no reconoce las contesta el modelo (el prompt se lo pide) y su respuesta con más de una «?» cae al texto fijo.
+- **Objeciones por código:** «lo voy a pensar» (sin presión, con los dos precios del catálogo, sin pregunta ni botones; solo con las opciones habilitadas: antes lo contesta el modelo, sin montos) y la muestra de voz (solo si la piden: 50 segundos de «Cierra el día», sin enlaces: **el dato de la URL de la landing no está en los datos del tenant**, el texto dice «la página del libro, sección Escucha un fragmento»).
+
+**Levantar la crisis (decisión).** La ficha guarda `riesgoMs` = cuándo fue la **última señal** de crisis (el texto de ese turno, o la marca RIESGO del modelo). La protección vence a las 48 h de esa señal, **no** del último mensaje: escribir «gracias» o «el libro» ya no la renueva; escribir otra señal reinicia el plazo. Dentro de las 48 h la crisis sigue cortando la venta (sin libro, precio ni QR aunque pida comprar) y cada respuesta reporta `no_contactar`. Una ficha vieja sin `riesgoMs` usa su último mensaje (comportamiento anterior). Se prefirió esto a un camino de Rubén porque el único camino que ya existe (pausar la conversación desde la Consola) no distingue «Rubén atendió la crisis» de «uso extendido»: levantarla ahí sería adivinar. **Decisión pendiente de Andres:** si quiere además que Rubén pueda levantarla antes de las 48 h, hace falta un dato nuevo en la Consola (no existe hoy). El texto de la continuación es el mismo (no se afinó: una frase distinta para «gracias» sería una decisión de redacción de Silvana).
+
+**Variantes de crisis.** Las listas de `crisis-listas.test.ts` pasaron de 17 pendientes a casos reales (10 variantes de crisis y 7 falsos positivos; el principio no cambia: ante la duda, crisis; las exclusiones son solo listas cerradas de objetos cotidianos y las listas de referencia solo se amplían). Límite: una frase que ninguna capa reconozca sigue sin disparar; el modelo es la segunda red.
 
 ## La red de crisis: dos capas y sus límites
 
 1. **Código** (`rrEsCrisis` en `rr.js`): red amplia de frases y raíces sobre texto, voz, texto de una captura y pie de foto; con tipeos plegados; las exclusiones son SOLO listas cerradas de objetos cotidianos y de venta. Ante la duda, crisis.
 2. **Marca RIESGO del modelo**: cuando el modelo juzga que hay una crisis que el código no vio, contesta solo esa palabra y el código arma el mismo texto.
-Límites: una frase nueva que ninguna capa reconozca no dispara (el modelo es la segunda red, no una garantía); una crisis queda activa 48 h en la ficha. **Las listas de referencia** viven en `admin/pruebas/tenants/rroca-ruben/crisis-listas.test.ts` (frases de crisis y control de falsos positivos); las variantes nuevas se agregan ahí, no se parchan una por una.
+Límites: una frase nueva que ninguna capa reconozca no dispara (el modelo es la segunda red, no una garantía); una crisis queda activa 48 h desde la última señal. **Las listas de referencia** viven en `admin/pruebas/tenants/rroca-ruben/crisis-listas.test.ts` (frases de crisis y control de falsos positivos); las variantes nuevas se agregan ahí, no se parchan una por una.
 **Ninguna publicación sin el PR-2 aprobado y el ensayo en el Demo A pasando esas listas.**
 
 ## Dónde vive la salud
@@ -50,7 +57,7 @@ La barrera final es `rrSeguro` (código): nunca «sin pastillas», «curar», «
 
 ## Límites conocidos de este PR
 
-- La ficha vence a las 48 h: el paso al Pack («una sola vez») y la crisis viven en esa ficha.
-- Una crisis queda activa 48 h: cada mensaje posterior recibe el texto de la crisis con su botón; el PR-2 afina la continuación.
+- La ficha vence a las 48 h del último mensaje: el paso al Pack («una sola vez») vive en esa ficha; la crisis vence a las 48 h de su última señal (`riesgoMs`).
+- Una crisis queda activa 48 h desde la ÚLTIMA SEÑAL: cada mensaje posterior recibe el texto de la crisis con su botón (ver «PR-2»).
 - `config-del-negocio.js` (hueco copiado) todavía lee `direccion` y `direccionMaps`; no se usan.
-- Los ángulos de anuncio llegan solo como dato de Campañas (por `titular_principal`); en el código `RR_ANGULOS` está vacío.
+- Los ángulos de anuncio llegan solo como dato de Campañas (por `titular_principal`); en el código `RR_ANGULOS` está vacío. Un video o Reel por texto («vi el video…») no tiene anuncio en Campañas (no hay titular que leer): lo atiende el modelo con la pauta del prompt.

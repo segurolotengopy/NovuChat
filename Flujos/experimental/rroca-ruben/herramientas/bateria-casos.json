@@ -1,7 +1,7 @@
 {
   "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_). Misma convención que rroca-ruben, chat-novuchat y captacion-minima.",
   "nodes": [],
-  "descripcion": "Batería de «Noches Sin Insomnio» (Rubén): 15 turnos del cliente en cuatro casos (A el camino completo, B «precio primero», C precios en general y el puente, D anuncio y duda). 6 turnos llegan al modelo; el resto los resuelve el código (saludo, precio, botones, derivación).",
+  "descripcion": "Batería de «Noches Sin Insomnio» (Rubén): 18 turnos del cliente en seis casos (A el camino completo, B «precio primero», C precios en general y el puente, D anuncio y duda, E precio y devolución juntos, F duración de los audios y garantía juntas). 6 turnos llegan al modelo; el resto los resuelve el código (saludo, precio, botones, derivación, resultado).",
   "casos": [
     {
       "id": "A",
@@ -90,6 +90,27 @@
           "dice": "¿Esto es medicina o terapia?",
           "duda": true,
           "seco": "No es un tratamiento médico ni terapia: es un método práctico de lectura y ejercicios para ordenar tus noches, y no reemplaza a un profesional de la salud. ¿Cómo están siendo tus noches últimamente?"
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "nombre": "Caso (b) del PDF: «vi el video, ¿precio y devolución?»: el precio por código y la derivación de la devolución en UN mensaje",
+      "turnos": [
+        {
+          "dice": "Hola, vi el video en Facebook. ¿Qué precio tiene y qué pasa si lo compro y siento que no me sirve, hay devolución?"
+        }
+      ]
+    },
+    {
+      "id": "F",
+      "nombre": "Casos (c) y (d) del PDF: dos preguntas juntas (duración de los audios y garantía) en UN solo mensaje, sin garantizar",
+      "turnos": [
+        {
+          "dice": "Hola"
+        },
+        {
+          "dice": "Ah qué bueno que tenga audio. ¿Pero los audios duran mucho? ¿Y me garantizan que con eso ya duermo toda la noche?"
         }
       ]
     }
