@@ -1,7 +1,10 @@
 /**
- * SERVIDOR DE SESIÓN DE MENTIRA (PR-4c1): la rama `sesion` de `configuracionFlujo`, en memoria, para las pruebas del chat.
- * Contrato: docs/arquitectura/estado-de-conversacion.md (§2 a §6, §11). Lo comparte la suite del flujo y la batería; una prueba diferencial
- * (`admin/pruebas/chat-novuchat-sesion.test.ts`) lo compara con el núcleo real `core/turno/sesion.ts`, así que no puede divergir en silencio.
+ * SERVIDOR DE SESIÓN DE MENTIRA (PR-4c1; común desde PR-4a0): la rama `sesion` de `configuracionFlujo`, en memoria, para las pruebas de TODO flujo sin agente que adopte el estado
+ * (el chat de NovuChat, Q'Taco…). Contrato: docs/arquitectura/estado-de-conversacion.md (§2 a §6, §11). Una prueba diferencial
+ * (`admin/pruebas/comun-sin-agente-sesion.test.ts`) lo compara con el núcleo real `core/turno/sesion.ts`, así que no puede divergir en silencio.
+ *
+ * PARÁMETROS: `crearServidorDeSesion({ ahoraMs, espacios })`. `espacios` (lista de nombres) restringe los espacios que el flujo puede usar: cualquier otro responde 400, como una prueba negativa
+ * de que la variante de prueba no toca los documentos de producción. Sin `espacios`, vale cualquier nombre válido.
  * Responde como el nodo HTTP con respuesta completa: `{ statusCode, body }`.
  */
 const RE_TEL = /^[0-9]{8,15}$/;
@@ -18,7 +21,7 @@ function profundidadSupera(v, max, nivel = 0) {
 }
 const err = (statusCode, error) => ({ statusCode, body: { error } });
 
-export function crearServidorDeSesion({ ahoraMs = () => Date.now() } = {}) {
+export function crearServidorDeSesion({ ahoraMs = () => Date.now(), espacios = null } = {}) {
   const docs = new Map();
   const vistos = new Map();
   const s = {
@@ -57,6 +60,7 @@ export function crearServidorDeSesion({ ahoraMs = () => Date.now() } = {}) {
       if ((q.canal !== undefined && q.canal !== 'wa') || typeof q.ejecucion !== 'string' || !RE_EJEC.test(q.ejecucion)) return forma;
       if (q.versionLeida !== undefined && (!Number.isInteger(q.versionLeida) || q.versionLeida < 0)) return forma;
       if (q.cupos !== undefined && !(Array.isArray(q.cupos) && q.cupos.length === 0)) return forma;
+      if (Array.isArray(espacios) && !espacios.includes(q.espacio)) return forma;
       const tel = cuerpo.telefono;
       if (accion === 'leer') {
         if (q.idCompromiso !== undefined || q.estado !== undefined || q.venceEnMin !== undefined || q.cupos !== undefined) return forma;

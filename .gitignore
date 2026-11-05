@@ -78,3 +78,7 @@ Flujos/ensayo-*.json
 
 # Temporales del script reponer-clave-n8n.sh
 .reponer-clave.*
+
+# Líneas base de las pruebas de PR-4c2 y PR-4a0 (medidas en el worktree; nunca se versionan)
+.claude/base-4a0/
+.claude/base-4c2/

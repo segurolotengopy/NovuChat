@@ -16,6 +16,8 @@ const REPO = join(AQUI, '../../..');
 const COMMIT = '1fff3d59';
 const LEEME = readFileSync(join(ORIGEN, 'LEEME.md'), 'utf8');
 const huellas = [...LEEME.matchAll(/^\| `([^`]+)` \| `([0-9a-f]{8}(?:-[0-9a-f]{8}){7})` \|$/gm)].map((m) => [m[1]!, m[2]!.replace(/-/g, '')] as const);
+let tieneCommit = true;
+try { execFileSync('git', ['cat-file', '-e', `${COMMIT}^{commit}`], { cwd: REPO, stdio: 'ignore' }); } catch { tieneCommit = false; }
 const sha = (b: Buffer | string): string => createHash('sha256').update(b).digest('hex');
 
 describe('origen congelado del chat (previo a PR-4c2)', () => {
@@ -26,10 +28,7 @@ describe('origen congelado del chat (previo a PR-4c2)', () => {
   it.each(huellas)('%s coincide con su huella (si alguien lo edita, la prueba lo dice)', (ruta, esperada) => {
     expect(sha(readFileSync(join(ORIGEN, ruta)))).toBe(esperada);
   });
-  it('y con el commit 1fff3d59 cuando git lo tiene (en un clon superficial se omite esta comprobación, no las huellas)', () => {
-    let tiene = true;
-    try { execFileSync('git', ['cat-file', '-e', `${COMMIT}^{commit}`], { cwd: REPO, stdio: 'ignore' }); } catch { tiene = false; }
-    if (!tiene) return;
+  it.skipIf(!tieneCommit)('y con el commit 1fff3d59 cuando git lo tiene (en un clon superficial esta comprobación SE OMITE —y se ve como omitida—, no las huellas)', () => {
     for (const [ruta] of huellas) {
       const rutaGit = ruta === 'flujo.plantilla.json' ? 'flujo.plantilla.json' : `src/${ruta}`;
       const enGit = execFileSync('git', ['show', `${COMMIT}:Flujos/experimental/chat-novuchat/${rutaGit}`], { cwd: REPO, maxBuffer: 20_000_000 });

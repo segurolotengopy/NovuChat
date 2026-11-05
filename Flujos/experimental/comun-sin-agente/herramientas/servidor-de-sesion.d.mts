@@ -9,4 +9,4 @@ export interface ServidorDeSesion {
   sembrar(pnid: string, espacio: string, tel: string, estado: Record<string, unknown> | null, venceEnMin?: number): void;
   atender(pnid: string, cuerpo: Record<string, unknown>): RespuestaHttp;
 }
-export function crearServidorDeSesion(opciones?: { ahoraMs?: () => number }): ServidorDeSesion;
+export function crearServidorDeSesion(opciones?: { ahoraMs?: () => number; espacios?: string[] | null }): ServidorDeSesion;

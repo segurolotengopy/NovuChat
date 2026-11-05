@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from './lib/flujo';
 import { crearMundo, type Doble, type Enviado, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
 import { doblesDelGuardado } from './lib/doble-guardado';
-import { crearServidorDeSesion, type ServidorDeSesion } from '../../Flujos/experimental/chat-novuchat/herramientas/servidor-de-sesion.mjs';
+import { crearServidorDeSesion, type ServidorDeSesion } from '../../Flujos/experimental/comun-sin-agente/herramientas/servidor-de-sesion.mjs';
 import { URL_DESCARGA_GUARDADO } from '../../Flujos/experimental/comun-sin-agente/src/guardado.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -3585,14 +3585,14 @@ describe('ronda 3 de #782: puertas cerradas sin pedido, la prueba sin modoPrueba
       let js = n.parameters['jsCode'];
       if (typeof js !== 'string') continue;
       if (quitar.includes('config') && n.name === 'Config del negocio' && js.includes('prueba && !(permitidos.length > 0 && permitidos.indexOf(cnDigitos(deMeta)) >= 0)')) { js = js.replace('prueba && !(permitidos.length > 0 && permitidos.indexOf(cnDigitos(deMeta)) >= 0)', 'false'); hechas += 1; }
-      if (quitar.includes('helper') && js.includes('if (!cnEsPrueba()) return true;')) { js = js.split('if (!cnEsPrueba()) return true;').join('return true;'); hechas += 1; }
+      if (quitar.includes('helper') && js.includes('if (!ssEsPrueba()) return true;')) { js = js.split('if (!ssEsPrueba()) return true;').join('return true;'); hechas += 1; }
       n.parameters['jsCode'] = js;
     }
     // (cada capa quitada se cuenta una vez: «Traer configuración» 1, «Config del negocio» 1 y cnDesdeAutorizado, pegado en cada Code que la trae)
     expect(hechas, 'la capa a quitar no se encontró: la prueba no probaría nada').toBeGreaterThanOrEqual(quitar.length);
     expect(JSON.stringify(f).includes('prueba && !(permitidos.length > 0')).toBe(!quitar.includes('config'));
     expect(JSON.stringify(f).includes('(!prueba || (lista.length > 0')).toBe(!quitar.includes('traer'));
-    expect(JSON.stringify(f).includes('if (!cnEsPrueba()) return true;')).toBe(!quitar.includes('helper'));
+    expect(JSON.stringify(f).includes('if (!ssEsPrueba()) return true;')).toBe(!quitar.includes('helper'));
     return f;
   };
   it('5. CADA capa de telefonosDePrueba basta sola: «Traer configuración» (no pide el estado), «Config del negocio» (descarta el que llegó) y cnDesdeAutorizado (no arma el pedido); un teléfono fuera de la lista nunca compromete', () => {
