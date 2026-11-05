@@ -390,14 +390,15 @@ const RR_CRISIS = new RegExp([
 //  · «quiero desaparecer» sin complemento, o con puntuación o «ya no puedo» detrás, ES crisis; solo se excluye «desaparecer» + un objeto cotidiano (ojeras, el insomnio, las pesadillas…);
 //  · «no vale la pena seguir» ES crisis salvo «seguir intentando / probando / con pastillas / con el libro…».
 const RR_SOBREDOSIS_INFORMATIVA = /\b(?:riesgo|peligro) de sobredosis\b|\b(?:puede|puedo|pueden|podria|podrian) (?:causar|provocar|dar|haber|tener) (?:una )?sobredosis\b|\bcausa(?:r)? (?:una )?sobredosis\b|\bdosis maxima\b|\bque es (?:una )?sobredosis\b/;
-const RR_DESAPARECER = /\b(?:quiero|quisiera|prefiero|solo quiero|solo quisiera|me dan ganas de|ojala pudiera|deseo) desaparecer\b(?! (?:(?:mis|mi|el|la|los|las|esas|esos|estas|estos|este|esta|ese|esa|un|una|unas|unos|del todo el|de mi cara las) )?(?:ojeras?|insomnio|cansancio|pesadi(?:ll|l)as?|ansiedad|dolor\w*|ronquidos?|manchas?|arrugas?|ruido|estres|preocupaciones|pensamientos|despertares|ojos)\b)/;
+const RR_DESAPARECER = /\b(?:quiero|quisiera|prefiero|solo quiero|solo quisiera|me dan ganas de|ojala pudiera|deseo) desaparecer\b(?! (?:(?:mis|mi|el|la|los|las|esas|esos|estas|estos|este|esta|ese|esa|un|una|unas|unos|del todo el|de mi cara las) )?(?:ojeras?|miedos?|temor|insomnio|cansancio|pesadi(?:ll|l)as?|ansiedad|dolor\w*|ronquidos?|manchas?|arrugas?|ruido|estres|preocupaciones|pensamientos|despertares|ojos)\b)/;
 const RR_NO_VALE_SEGUIR = /\bno vale la pena seguir\b(?! (?:intentando|probando|tomando|gastando|buscando|leyendo|escuchando|pagando|comprando|insistiendo|con (?:pasti(?:ll|l)as|el|los|las|mis|estas|estos|esas|esos|un|una|la)\b(?! (?:sufrimiento|dolor|angustia|tristeza|vida|esta vida|mi vida))))/;
 const RR_CRISIS_EXTRA = /\b(?:me )?tomaria (?:todas )?las pastillas\b|\bdormir y no despertar(?:me)?\b|\bquedarme dormid[oa] y no despertar\b/;
 // Más variantes reales (ante la duda, crisis) y sus excepciones de venta («me corto el pelo», «no quiero estar aquí en esta lista», «mejor no despertar a mi esposo»).
 const RR_CRISIS_EXTRA2 = new RegExp([
-  '\\bya no aguanto mas\\b(?! (?:el|la|los|las|este|esta|estos|estas|sin|tanto|de) \\w)',
+  '\\bya no aguanto mas\\b(?! (?:sin (?:dormir|sueno)|(?:el|la|los|las|este|esta|estos|estas) (?:insomnio|ruido|noches?|calor|frio|trafico|cansancio|pesadi(?:ll|l)as?|ronquidos?|musica|fiesta)|a (?:mi|mis|la|el|los|las) (?:jefe|jefa|jefes|vecin\\w*|suegr\\w*|companer\\w*|esposo|esposa|pareja|hijos?|ninos)))',
+  '\\bya no aguanto (?:la vida|mi vida|tanto dolor|tanto sufrimiento|el dolor|el sufrimiento|vivir)\\b',
   '\\bya no puedo mas con (?:esta|mi) vida\\b',
-  '\\b(?:mejor|ojala) no despertar(?:me)?\\b(?! (?:a|al) \\w)',
+  '\\b(?:mejor|ojala) no despertar(?:me)?\\b(?! (?:a|al) (?:(?:mi|mis|tu|tus|su|sus|los|las|la|el) )?(?:esposo|esposa|marido|mujer|hijos?|hijas?|pareja|bebes?|ninos?|ninas?|gente|vecin\\w*|companer\\w*|abuel\\w*|padres|mama|papa|hermano|hermana|perro|gato|novio|novia)\\b)',
   '\\bno quiero despertar(?:me)? manana\\b(?! (?:temprano|tan temprano|con sueno|cansad[oa]))',
   '\\b(?:quiero|quisiera|me gustaria) dormir(?:me)? para siempre\\b|\\bdormirme para siempre\\b',
   '\\bno quiero estar aqui\\b(?! en (?:esta|este|la|el|ese|esa) (?:lista|grupo|chat|conversacion|pagina|sitio|tienda))',
@@ -405,8 +406,8 @@ const RR_CRISIS_EXTRA2 = new RegExp([
   '\\bmejor me muero\\b|\\b(?:tengo )?ganas de (?:morir|morirme)\\b',
   '\\bme haria dano\\b|\\bme (?:quiero |voy a |pienso )?cort(?:o|ar) (?:las venas|el brazo|los brazos|las munecas|la muneca|la piel|a proposito)\\b',
   '\\bno le veo sentido a la vida\\b|\\btodos estarian mejor sin mi\\b|\\bya fue,? no quiero seguir\\b',
-  '\\b(?:me )?tom(?:o|e) (?:todas|muchas)(?: mis| las)* pasti[l]{1,2}as\\b',
-  '\\b(?:tomarme|me tomaria|me tomo) (?:todo )?el frasco\\b|\\bfrasco entero\\b',
+  '\\bme tom(?:o|e) todas(?: mis| las)* pasti[l]{1,2}as\\b|\\bme tom(?:o|e) muchas pasti[l]{1,2}as\\b(?! (?:para dormir|para el sueno|y no (?:funcionan|duermo|sirven|me sirven)))',
+  '\\b(?:tomarme|me tomaria|me tome|me tomo) (?:todo )?el frasco\\b|\\bfrasco entero\\b',
 ].join('|'));
 const RR_INTENCION_SOBREDOSIS = /\b(?:igual|de todos modos|lo voy a hacer|voy a hacerlo|quiero|me voy a|pienso|pense|tomaria|tome|tomo|tomarme)\b/;
 // Los tipeos y las letras repetidas («kiero», «qiero», «morirrr», «mmorir», «sobre dosis») se pliegan antes de mirar.
@@ -486,9 +487,13 @@ function rrDerivacion(n, ctx) {
   const accionMedica = /\b(dejar|deje|dejo|suspender|suspendo|receta|recetado|recetada|recetaron|mezclar|combinar|reemplazar|sustituir|bajar|subir|cambiar|interfiere|compatible|dosis)\b/.test(n);
   const condicion = /\b(tengo|padezco|sufro de|me diagnosticaron|me diagnosticaron con|diagnostico de) (apnea|insomnio cronico|depresion|ansiedad|narcolepsia|trastorno\w*|bipolaridad|epilepsia|hipertension|diabetes|cancer|fibromialgia|sindrome\w*)\b|\b(embarazada|embarazo|lactancia)\b/.test(n);
   // Una pregunta de CANTIDAD («cuánto clonazepam puedo tomar», «cuántas pastillas», «50 mg») con un medicamento, o DOS medicamentos juntos; «cuánto cuesta / vale» es un precio y no cuenta.
-  const cantidad = (/\bcuant[oa]s?\b(?! (?:cuesta|cuestan|vale|valen|sale|salen|cobran|cobras|es el (?:precio|costo)|pago|pagar|tiempo|dura))/.test(n) || /\b\d+ ?(?:mg|miligramos)\b/.test(n)) && medicamento;
+  // «Cuánto / cuántas» solo cuenta junto a un medicamento (a pocas palabras) o a «puedo tomar»; páginas, días, capítulos, audios, personas y precios NO son cantidad médica. «mg» y los dos medicamentos exigen además un verbo de consulta.
+  const MED = '(?:dosis|medicament\\w*|medicacion|pasti(?:ll|l)as?|somnifer\\w*|melatonina|clonazepam|alprazolam|zolpidem|lorazepam|diazepam|trazodona|antidepresiv\\w*|ansiolitic\\w*)';
+  const NO_CANT = '(?!(?:paginas?|dias?|capitulos?|audios?|meditaciones|personas|horas|minutos|veces|eslabones|cuesta|cuestan|vale|valen|sale|salen|cobran|tiempo|dura)\\b)';
+  const consulta = /\b(?:puedo|debo|deberia|podria|es seguro|hace dano|junto|mezclar|combinar|a la vez|al mismo tiempo|interactu\w*)\b/.test(n);
+  const cantidad = new RegExp('\\bcuant[oa]s? ' + NO_CANT + '(?:\\w+ ){0,3}?' + MED + '\\b').test(n) || /\bcuant[oa]s? (?!(?:paginas?|dias?|capitulos?|audios?|personas|cuesta|cuestan|vale|valen)\b)(?:\w+ ){0,3}?(?:puedo|debo|deberia|podria) tomar/.test(n) || (/\b\d+ ?(?:mg|miligramos)\b/.test(n) && consulta && medicamento);
   const nombrados = new Set(n.match(/\b(?:melatonina|clonazepam|alprazolam|zolpidem|lorazepam|diazepam|trazodona|antidepresiv\w*|ansiolitic\w*|somnifer\w*)\b/g) || []);
-  if ((medicamento && accionMedica) || cantidad || nombrados.size >= 2 || /\bsobredosis\b/.test(n) || condicion) return { clave: 'medica', motivo: 'pregunta médica específica' };
+  if ((medicamento && accionMedica) || cantidad || (nombrados.size >= 2 && consulta) || /\bsobredosis\b/.test(n) || condicion) return { clave: 'medica', motivo: 'pregunta médica específica' };
   return null;
 }
 // «¿Me garantiza recuperar mi relación en 30 días?»: la respuesta es una frase fija (no se promete ningún resultado).

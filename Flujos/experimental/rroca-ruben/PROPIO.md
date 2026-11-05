@@ -41,6 +41,8 @@ Como Antonio, este flujo NO adopta el estado de la conversación en el servidor 
 
 Detección por código (raíces sobre texto, voz, texto de una captura y pie de foto) Y por la marca `RIESGO` del modelo. Corta la venta: texto cálido con ayuda profesional, botón «Hablar con Rubén» y aviso a Rubén (sin copiar lo que escribió la persona); se reporta `no_contactar` (el rescate de 22 h no escribe a quien está en crisis). Una frase hecha («me muero de sueño») no es crisis. Queda activa 48 h en la ficha: cada mensaje posterior recibe el mismo texto con su botón (límite conocido; el PR-2 afina la continuación).
 
+La red de crisis tiene **DOS capas** (el código `rrEsCrisis` y la marca RIESGO del modelo) y sus listas de referencia están en `crisis-listas.test.ts` (ver `DISENO.md`). **No se publica sin el PR-2 aprobado y el ensayo en el Demo A pasando esas listas.**
+
 ## Condiciones declaradas (no se resuelven en este PR)
 
 - **Datos que faltan** (marcadores `REEMPLAZAR_*` en `rroca-ruben.json` y en `negocio-rroca-ruben.json`): las dos plantillas de aviso nuevas (el texto del libro anterior decía «pago validado»; hoy `PENDING`), `garantiaTexto`, los enlaces o archivos de entrega (no hay: Rubén entrega a mano desde la Consola), el QR nuevo (y su concepto) y la planilla del miniCRM.

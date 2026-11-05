@@ -35,6 +35,13 @@ Fuentes (04/11/2026): especificación consolidada y plan único confirmado por A
 - **Caso (a):** una captura de anuncio como PRIMER mensaje recibe el saludo genérico, no la apertura de su ángulo (`decidir-turno.js`, rama del anuncio sin saludar). El PR-2 debe abrir con el ángulo del anuncio.
 - **Caso (b):** «vi el video, ¿precio y devolución?» deriva por garantía (`rrDerivacion`) sin dar el precio ni avisar `no_supo`. El PR-2 debe dar el precio por código Y derivar la devolución en el mismo mensaje.
 
+## La red de crisis: dos capas y sus límites
+
+1. **Código** (`rrEsCrisis` en `rr.js`): red amplia de frases y raíces sobre texto, voz, texto de una captura y pie de foto; con tipeos plegados; las exclusiones son SOLO listas cerradas de objetos cotidianos y de venta. Ante la duda, crisis.
+2. **Marca RIESGO del modelo**: cuando el modelo juzga que hay una crisis que el código no vio, contesta solo esa palabra y el código arma el mismo texto.
+Límites: una frase nueva que ninguna capa reconozca no dispara (el modelo es la segunda red, no una garantía); una crisis queda activa 48 h en la ficha. **Las listas de referencia** viven en `admin/pruebas/tenants/rroca-ruben/crisis-listas.test.ts` (frases de crisis y control de falsos positivos); las variantes nuevas se agregan ahí, no se parchan una por una.
+**Ninguna publicación sin el PR-2 aprobado y el ensayo en el Demo A pasando esas listas.**
+
 ## Dónde vive la salud
 
 La barrera final es `rrSeguro` (código): nunca «sin pastillas», «curar», «desde la primera noche», «garantizado» ni «simulado»; además el filtro de redacción del modelo (`rrExtraRedaccion`) y la derivación médica por código (`rrDerivacion`, clave `medica`: una acción sobre la medicación —dejar, suspender, mezclar, dosis, receta— o `sobredosis`). El prompt solo lo repite.
