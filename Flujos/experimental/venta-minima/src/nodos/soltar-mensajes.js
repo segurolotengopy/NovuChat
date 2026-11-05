@@ -47,6 +47,10 @@ if (!bien && a.avisoFalla === true) {
   if (sd) {
     if (!sd.transferencias || typeof sd.transferencias !== 'object' || Array.isArray(sd.transferencias)) sd.transferencias = {};
     const previas = Object.prototype.hasOwnProperty.call(sd.transferencias, a.from) && Array.isArray(sd.transferencias[a.from]) ? sd.transferencias[a.from] : [];
+    // y cuenta para el tope DIARIO de avisos (`topeAvisosDia`), igual que el contador de avisos de la librería (la fecha la calculó «Armar mensajes»)
+    if (!sd.av || typeof sd.av !== 'object') sd.av = {};
+    const previo = sd.av.dia && sd.av.dia.fecha === a.avisoFallaFecha && Number.isFinite(sd.av.dia.n) ? Math.max(0, Math.floor(sd.av.dia.n)) : 0;
+    sd.av.dia = { fecha: a.avisoFallaFecha, n: previo + Math.max(0, Math.floor(Number(a.avisoFallaN) || 0)) };
     sd.transferencias[a.from] = previas.filter((ms) => Number(a.ahoraMs) - Number(ms) < 60 * 60 * 1000).concat([Number(a.ahoraMs)]);
   }
 }

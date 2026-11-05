@@ -116,6 +116,7 @@ function avDestinatarios(csv, from, pref) {
 function cnNodo(n) { return vmNodo(n); }
 function cnPrimero(n) { return vmPrimero(n); }
 function avDentroDelTopeDiario(sd, ms, tope) { return Number(sd.avisosDia || 0) < tope; }
+function avFechaLocal(ms) { return new Date(ms - 4 * 3600000).toISOString().slice(0, 10); }
 function avContar(sd, ms, n) { __bit.push(['avContar', n]); sd.avisosDia = Number(sd.avisosDia || 0) + n; }
 function rsAnotar(sd, from, ms) { __bit.push(['rsAnotar', from]); sd.reservasDia = Number(sd.reservasDia || 0) + 1; }
 function avArmar(tipo, datos, dest, cfg, sd, ms) {

@@ -244,7 +244,9 @@ describe('vmGuardarPedido, vmVenceEnMin y el tope en BYTES', () => {
 describe('PEOR CASO en bytes: el bloque nunca pasa de 15.000 aunque el teléfono tenga muchos pedidos (recorte por bytes, el más antiguo primero)', () => {
   // `Armar mensajes` arma el bloque con `amBloque`. Se corre el nodo REAL con el módulo `sesion` y las piezas de `comun.js`.
   const MENSAJES = nodoFuente('armar-mensajes');
-  const corre = (cfg: J, plan: J): J => ejecutar(`${COMUN}\n${SESION}\n${MENSAJES}`, [{}], {
+  // (la librería de avisos no se carga aquí: `Armar mensajes` solo necesita la fecha local del contador diario)
+  const AVISOS_MINIMOS = "function avFechaLocal(ms) { return new Date(ms - 4 * 3600000).toISOString().slice(0, 10); }\nfunction avDestinatarios() { return []; }\nfunction avPlan() { return []; }\n";
+  const corre = (cfg: J, plan: J): J => ejecutar(`${COMUN}\n${SESION}\n${AVISOS_MINIMOS}${MENSAJES}`, [{}], {
     'Config del negocio': { numeroRecepcion: '59100000031', nivelEmojis: 'muchos', ...cfg },
     'Interpretar entrada': { from: CLIENTE, ahoraMs: AHORA, mensajeId: 'wamid.X', phoneNumberId: 'P1' },
     'Plan del turno': plan,

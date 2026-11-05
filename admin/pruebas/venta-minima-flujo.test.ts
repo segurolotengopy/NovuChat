@@ -27,7 +27,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
-import { configBase, destinos, type Flujo, type J } from './lib/flujo';
+import { configBase, destinos, expresion, type Flujo, type J } from './lib/flujo';
 import { crearMundo, ROLES_POR_OMISION, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
 import { copiarModulosComunesAlTemporal, doblesDelGuardado } from './lib/doble-guardado';
 import { crearSesion, ESPACIO, ESPACIO_PRUEBA, type SesionDeMentira } from './lib/venta-minima-sesion';
@@ -6749,8 +6749,86 @@ describe('PR-4a ronda 3', () => {
   it('la replanificación recorta por bytes (15.000) y `venceEnMin` depende de si hay pedidos', () => {
     const nodo = QTACO.nodes.find((n) => n.name === 'Comprometer turno (2.º intento)') as unknown as J;
     const cuerpo = String(nodo['parameters']['jsonBody']);
-    expect(cuerpo).toContain('<= 15000');
+    expect(cuerpo).toContain('<= tope');
+    expect(cuerpo).toContain('r.maxBytes');
     expect(cuerpo).toContain('Object.keys(pedidos).length > 0 ? 4320');
     expect(cuerpo).not.toContain('venceEnMin: 4320 }');
+  });
+});
+
+
+// =============================================================================================================================
+// PR-4a, ronda 4 de revisión: la clave del aviso ya enviado con el cobro SIMULADO, el recorte de la replanificación, la prueba y el contador diario
+// =============================================================================================================================
+describe('PR-4a ronda 4', () => {
+  const falla503 = (w: Mundial, activa: boolean): void => { w.sesion.servidor.fallar = activa ? (c) => ((c['sesion'] as J)['accion'] === 'comprometer' ? 503 : null) : null; };
+
+  it('cobro SIMULADO: tras un compromiso fallido, la MISMA foto otra vez NO reenvía los avisos al local (la clave se calcula una sola vez, en «Armar avisos»)', () => {
+    const r = armarPedido({ cobro: false, panelExtra: { cobroSimulado: {} }, ventana: 5 });
+    const qr = confirmarPedido(r);
+    expect(qr.mensajes.some((m) => m.tipo === 'image')).toBe(true);
+    const abierto = qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado') as J;
+    r.w.estado.panel = panel({ cobroSimulado: {}, cobro: { activo: false, pendiente: true, monto: Number(abierto['monto']), pedido: String(abierto['referencia']) } });
+    falla503(r.w, true);
+    const t1 = r.c.imagen('media-1');
+    expect(t1.avisos.length).toBeGreaterThan(0); // el local recibe el comprobante simulado
+    expect(t1.ejecutados.has('Cotejar en el servidor')).toBe(false); // (simulado: no se coteja ni se lee)
+    falla503(r.w, false);
+    const t2 = r.c.imagen('media-1');
+    expect(t2.avisos).toHaveLength(0); // sin la clave única, salían otra vez los mismos avisos
+    expect(t2.mensajesA(CLIENTE)).toHaveLength(1);
+  });
+
+  it('la replanificación recorta de verdad por bytes: salen primero los pedidos más antiguos, el que espera el comprobante el último y el nuestro nunca; y respeta SS_CONFIG.maxBytes', () => {
+    const nodo = QTACO.nodes.find((n) => n.name === 'Comprometer turno (2.º intento)') as unknown as J;
+    const grande = (id: string, ms: number): J => ({ pedidoId: id, from: CLIENTE, guardadoMs: ms, relleno: 'ñ😀'.repeat(150) });
+    const pedidos: J = {};
+    for (let i = 0; i < 30; i++) pedidos[`p${i}`] = grande(`p${i}`, 1000 + i);
+    const ganador = { version: 7, estado: { v: 1, estado: { paso: 'esperando_comprobante', pedido: { pedidoId: 'p0' } }, pedidos } };
+    const replan = { telefono: CLIENTE, maxBytes: 15000, espacio: 'venta-minima', ejecucion: 'e1', idCompromiso: 'vm-fin2-e1', pedidoId: 'nuevo', pedidos: { nuevo: grande('nuevo', 5000) }, estadoMenu: { paso: 'menu' } };
+    const cuerpo = JSON.parse(String(expresion(nodo['parameters']['jsonBody'], { body: { conversacion: ganador } }, { 'Armar mensajes': { replan } }))) as J;
+    const bloque = cuerpo['sesion']['estado'] as J;
+    const claves = Object.keys(bloque['pedidos']);
+    expect(Buffer.byteLength(JSON.stringify(bloque))).toBeLessThanOrEqual(15000);
+    expect(claves).toContain('nuevo');
+    expect(claves).toContain('p0'); // el que espera el comprobante se suelta el último
+    expect(claves).not.toContain('p1'); // los más antiguos salieron
+    expect(claves.length).toBeLessThan(31);
+    expect(cuerpo['sesion']['versionLeida']).toBe(7);
+    expect(cuerpo['sesion']['venceEnMin']).toBe(4320);
+    // un tope menor (SS_CONFIG.maxBytes) se respeta
+    const chico = JSON.parse(String(expresion(nodo['parameters']['jsonBody'], { body: { conversacion: ganador } }, { 'Armar mensajes': { replan: { ...replan, maxBytes: 4000 } } }))) as J;
+    expect(Buffer.byteLength(JSON.stringify(chico['sesion']['estado']))).toBeLessThanOrEqual(4000);
+  });
+
+  it('en la variante de PRUEBA no se arma el aviso del genérico: ningún aviso a recepción aunque falle el compromiso', () => {
+    const w = crear({ flujo: PRUEBA, config: NUMERO_DE_ENSAYO });
+    falla503(w, true);
+    const cuerpo = (m: J): J => ({
+      headers: {},
+      body: {
+        messaging_product: 'whatsapp', metadata: { phone_number_id: PHONE_ID }, contacts: [{ profile: { name: 'Carlos Pérez' }, wa_id: PRUEBA_TEL }],
+        messages: [{ from: PRUEBA_TEL, id: `wamid.PR4${++contador}`, timestamp: '1', ...m }], modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true,
+      },
+    });
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    const a = w.mundo.turno(cuerpo({ type: 'text', text: { body: 'quiero 4 tacos de birria' } }));
+    expect(a.ejecutados.has('Comprometer turno')).toBe(true);
+    expect(a.avisos).toHaveLength(0);
+    for (const m of a.mensajes) expect(m.a).toBe(PRUEBA_TEL);
+  });
+
+  it('el aviso del genérico cuenta para el tope diario de avisos y pasa por la misma limpieza que «Armar avisos»', () => {
+    const r = armarPedido({ ventana: 5 });
+    falla503(r.w, true);
+    const antes = Number((sdVm(r.w.mundo)['av'] ?? {})['dia']?.['n'] ?? 0);
+    const t = confirmarPedido(r);
+    const aRecepcion = t.mensajes.filter((m) => m.a !== CLIENTE).length;
+    expect(aRecepcion).toBeGreaterThan(0);
+    expect(Number(sdVm(r.w.mundo)['av']['dia']['n'])).toBe(antes + aRecepcion);
+    // con el tope diario en 0 no se arma ningún aviso (avPlan respeta el cupo)
+    const q = armarPedido({ ventana: 5, config: { topeAvisosDia: 0 } });
+    falla503(q.w, true);
+    expect(confirmarPedido(q).mensajes.filter((m) => m.a !== CLIENTE)).toHaveLength(0);
   });
 });

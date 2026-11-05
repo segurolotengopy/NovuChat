@@ -508,21 +508,31 @@ const AM_falla = AM_jFalla ? [Object.assign(AM_jFalla, {
 // Los avisos de pedido y de comprobante que SALIERON en este turno (o ya estaban avisados): si el compromiso falla, `Soltar mensajes` los anota para que el turno siguiente no los repita (I1).
 // La clave es la de `Armar avisos` (`vmClaveAviso`): el pedido por pedidoId; el comprobante, además, por medio y resultado del cotejo (B2: un comprobante correcto nunca se suprime por uno malo anterior).
 const AM_idPedido = AM_ped && AM_ped.pedidoId ? String(AM_ped.pedidoId) : '';
-const AM_datosDe = (tipo) => {
-  const lista = [].concat(AM_PLAN.aviso || [], AM_PLAN.avisos || []).filter((x) => x && typeof x === 'object' && x.tipo === tipo);
-  return lista[0] && lista[0].datos && typeof lista[0].datos === 'object' ? lista[0].datos : {};
-};
-const AM_avisoMarcas = AM_AVISO_SALIO && AM_idPedido
-  ? ['pedido', 'comprobante'].filter((x) => AM_tiposSalidos.indexOf(x) >= 0 || AM_yaAvisado.indexOf(x) >= 0).map((x) => {
-    const d = AM_datosDe(x);
-    return vmClaveAviso(x, d.pedidoId || AM_idPedido, d.mediaId || AM_ped.mediaId || (x === 'comprobante' ? AM_T.mediaId : '') || '', d.resultado || '');
-  }) : [];
+// (la clave la calculó `Armar avisos` y viaja en cada ítem: aquí NO se recalcula)
+const AM_claves = [];
+if (AM_AVISO_SALIO && AM_idPedido) {
+  for (const x of AM_armados) if (x.claveAviso && AM_tiposSalidos.indexOf(x.tipoAviso) >= 0 && AM_claves.indexOf(x.claveAviso) < 0) AM_claves.push(x.claveAviso);
+  for (const c of (AM_avisosArmados[0] && Array.isArray(AM_avisosArmados[0].clavesYa) ? AM_avisosArmados[0].clavesYa : [])) if (AM_claves.indexOf(c) < 0) AM_claves.push(c);
+}
+const AM_avisoMarcas = AM_claves;
 // HECHO EXTERNO ya ocurrido antes del compromiso: un aviso al local salió (o ya estaba avisado) o se cotejó el comprobante en el servidor. Con él, ceder en un conflicto de versión es un defecto (B1).
 const AM_hechoExterno = AM_AVISO_SALIO || AM_yaAvisado.length > 0 || vmNodo('Cotejar en el servidor') !== null;
 // El genérico de una falla del compromiso SIN hecho externo lleva, como un ítem más (destino `recepcion`, sin nodos nuevos), el aviso estándar de transferencia: «pasar con recepción» es SIEMPRE el
 // aviso a recepción MÁS el botón (política del 21/09/2026), dentro de `topeTransferenciasHora` y a los destinatarios de «Config base». Con hecho externo el local ya recibió el del pedido: no hace falta otro.
 // En la variante de prueba no se arma (los avisos de la prueba los simula `Simular aviso`). `Soltar mensajes` anota la marca de la derivación.
+// La MISMA limpieza que `Armar avisos` (`aaLimpiar`): un texto o un parámetro con una palabra prohibida se reemplaza, no se manda.
+function amLimpiarAviso(payload) {
+  if (payload.type === 'text' && payload.text) {
+    if (!amSeguro(payload.text.body)) payload.text.body = 'Hay un pedido o una consulta de un cliente. Revisen el chat con el cliente para ver el detalle.';
+  } else if (payload.type === 'template' && payload.template && Array.isArray(payload.template.components)) {
+    for (const c of payload.template.components) {
+      if (!c || !Array.isArray(c.parameters)) continue;
+      c.parameters.forEach((p, i) => { if (p && typeof p.text === 'string' && !amSeguro(p.text)) p.text = i === 0 ? 'consulta de cliente' : '—'; });
+    }
+  }
+}
 let AM_avisoFalla = false;
+let AM_avisoFallaN = 0;
 if (AM_jFalla && AM_modo !== 'sin_estado_que_guardar' && !AM_hechoExterno && !AM_PRUEBA && AM_sd && AM_claveValida) {
   try {
     const marcas = AM_sd.transferencias && typeof AM_sd.transferencias === 'object' && Object.prototype.hasOwnProperty.call(AM_sd.transferencias, AM_FROM) ? AM_sd.transferencias[AM_FROM] : null;
@@ -538,29 +548,29 @@ if (AM_jFalla && AM_modo !== 'sin_estado_que_guardar' && !AM_hechoExterno && !AM
       for (const it of Array.isArray(crudo) ? crudo : []) {
         const numero = vmDigitos(it && it.para);
         if (!numero || !it.payload || typeof it.payload !== 'object') continue;
-        // solo los TEXTOS que ve una persona pasan por la red de palabras (como en `Armar avisos`): el nombre de la plantilla y su idioma no son texto
-        const textos = it.payload.type === 'text' && it.payload.text ? [it.payload.text.body] : [].concat(...((it.payload.template && Array.isArray(it.payload.template.components) ? it.payload.template.components : []).map((c) => (c && Array.isArray(c.parameters) ? c.parameters.map((p) => p && p.text) : []))));
-        if (textos.some((x) => typeof x === 'string' && amSeguro(x) !== true)) continue;
+        amLimpiarAviso(it.payload);
         it.payload.to = numero;
         const resp = typeof it.respaldo === 'string' ? { messaging_product: 'whatsapp', recipient_type: 'individual', to: numero, type: 'text', text: { preview_url: false, body: it.respaldo.slice(0, 4000) } }
           : (it.respaldo && typeof it.respaldo === 'object' ? Object.assign(it.respaldo, { to: numero }) : null);
+        if (resp) amLimpiarAviso(resp);
         AM_falla.push({
           para: numero, destino: 'recepcion', payload: it.payload, texto: '', respaldo: resp, tipoReporte: null, reportar: false, phoneNumberId: AM_NUMERO_ID,
           waGraphVersion: AM_CFG.waGraphVersion || 'v26.0', from: AM_FROM, sinMensajes: false,
         });
         AM_avisoFalla = true;
+        AM_avisoFallaN++;
       }
     }
   } catch (e) { AM_avisoFalla = false; }
 }
 // La replanificación (`Comprometer turno (2.º intento)`) arma su cuerpo en una expresión con el bloque GANADOR: aquí van el pedido de este turno y el estado de respaldo, y los datos fijos.
 const AM_replan = AM_hechoExterno && AM_modo === 'comprometer' ? {
-  telefono: AM_FROM, espacio: ssEspacio(), ejecucion: ssEjecucion($execution.id), idCompromiso: ssIdCompromiso($execution.id, 'fin2'), pedidoId: AM_idPedido,
+  telefono: AM_FROM, maxBytes: SS_CONFIG.maxBytes, espacio: ssEspacio(), ejecucion: ssEjecucion($execution.id), idCompromiso: ssIdCompromiso($execution.id, 'fin2'), pedidoId: AM_idPedido,
   pedidos: AM_pedidoGuardado && AM_idPedido && AM_bloque && AM_bloque.pedidos && Object.prototype.hasOwnProperty.call(AM_bloque.pedidos, AM_idPedido) ? { [AM_idPedido]: AM_bloque.pedidos[AM_idPedido] } : {},
   estadoMenu: AM_bloque && AM_bloque.estado ? Object.assign({}, AM_bloque.estado, AM_bloque.estado.paso === 'esperando_comprobante' ? {} : { paso: 'menu' }) : null,
 } : null;
 return [{ json: {
-  hechoExterno: AM_hechoExterno, replan: AM_replan, avisoMarcas: AM_avisoMarcas, avisoFalla: AM_avisoFalla,
+  hechoExterno: AM_hechoExterno, replan: AM_replan, avisoMarcas: AM_avisoMarcas, avisoFalla: AM_avisoFalla, avisoFallaN: AM_avisoFallaN, avisoFallaFecha: avFechaLocal(AM_AHORA),
   turno: true, modo: AM_modo, comprometer: AM_compromiso !== null, compromiso: AM_compromiso, numero: ssNumeroHeader(),
   salida: AM_final, salidaFalla: AM_falla, previo: AM_ses.previo, bloque: AM_bloque, deRespaldo: AM_ses.deRespaldo, from: AM_FROM, ahoraMs: AM_AHORA,
 } }];
