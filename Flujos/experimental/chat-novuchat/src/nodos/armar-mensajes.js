@@ -178,6 +178,30 @@ const aItems = (lista) => {
 };
 const salida = aItems(mensajes);
 const salidaFalla = aItems([generico()]);
+// «Pasar con recepción» es SIEMPRE el aviso a recepción MÁS el botón (política del 21/09/2026): el genérico de una falla (compromiso, `no_cabe`, sin estado) lleva la plantilla de aviso como un ÍTEM MÁS,
+// sin nodos nuevos. NO se arma en la variante de PRUEBA (sería un envío real a recepción), ni en las puertas cerradas (suspendido, uso extendido, bloqueado: nunca caen al genérico), ni más de
+// `CH_TOPE_AVISO_FALLA_HORA` veces por hora y por teléfono (las marcas viven en `staticData.chatNovuchatAvisoFalla`; las anota «Soltar mensajes» solo si salió el genérico). El aviso no marca `avisado`
+// de la ficha (no hay compromiso), no cuenta como `marcaAvisado` para «Confirmar envío» (un rechazo de Meta no corta el turno ni compensa) y no es una respuesta más al cliente (0 mensajes más).
+let avisoFalla = false;
+if (!prueba && claveOk && plan.ruta !== 'suspendido' && plan.ruta !== 'uso_extendido' && recepcion.length >= 6) {
+  let marcasFalla = [];
+  try {
+    const sd = $getWorkflowStaticData('global');
+    const mapa = sd && sd.chatNovuchatAvisoFalla && typeof sd.chatNovuchatAvisoFalla === 'object' && !Array.isArray(sd.chatNovuchatAvisoFalla) ? sd.chatNovuchatAvisoFalla : {};
+    marcasFalla = Object.prototype.hasOwnProperty.call(mapa, from) && Array.isArray(mapa[from]) ? mapa[from] : [];
+  } catch (e) { marcasFalla = []; }
+  if (marcasFalla.filter((ms) => ahora - Number(ms) < CH_HORA_MS && ahora - Number(ms) >= 0).length < CH_TOPE_AVISO_FALLA_HORA) {
+    const payloadFalla = chAviso({
+      avisado: false, numeroRecepcion: cfg.numeroRecepcion, desde: from, plantilla: cfg.plantillaAviso, idioma: cfg.idiomaPlantillaAviso,
+      estado: CH_ESTADO_AVISO_FALLA, empresa: antes.empresa, contacto: antes.nombre, nombrePerfil: chNombreDelPerfil(t.nombrePerfil),
+      rubro: (chRubroDe(cfg, antes.rubro) || {}).nombre || '', flujos: (chRubroDe(cfg, antes.rubro) || {}).flujo || '',
+    });
+    if (payloadFalla) {
+      const extra = aItems([{ para: 'recepcion', payload: payloadFalla, texto: 'Aviso a recepción: ' + CH_ESTADO_AVISO_FALLA + '.', respaldo: '', tipoReporte: null, esAviso: true, marcaAvisado: false, empresaAviso: '', evento: 'aviso_falla' }]);
+      for (const x of extra) { salidaFalla.push(x); avisoFalla = true; }
+    }
+  }
+}
 
 // ============================================ el prospecto: solo si la ficha cambió. En modo prueba la planilla NO se escribe (una prueba no llena la hoja de nadie).
 const planillaOk = !prueba && String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';
@@ -200,7 +224,7 @@ const sinEstado = plan.ruta === 'sin_estado';
 const ajuste = sinEstado ? null : chAjustarBytes(nueva, 14900);
 const compromiso = !sinEstado && claveOk && ajuste.cupo ? ssCuerpoComprometer(from, $execution.id, 'fin' + pasada, version, nueva) : null;
 return [{ json: {
-  from: from, ahoraMs: ahora, pasada: pasada, plan: accion, resumen: resumen, salida: salida, salidaFalla: salidaFalla, nueva: nueva, fichaAntes: fichaAntes, conversacion: conversacion,
+  from: from, ahoraMs: ahora, pasada: pasada, plan: accion, resumen: resumen, salida: salida, salidaFalla: salidaFalla, avisoFalla: avisoFalla, nueva: nueva, fichaAntes: fichaAntes, conversacion: conversacion,
   comprometer: compromiso !== null, compromiso: compromiso, numero: ssNumeroHeader(), fallaEstado: sinEstado || compromiso === null,
   // Las puertas cerradas (suspendido, uso extendido, bloqueado) comprometen solo para guardar los ids: si falla, sale lo suyo igual (bloqueado: nada), nunca el genérico. `seqs`: los eventos de este turno.
   mejorEsfuerzo: plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido', seqs: eventosTurno.map((e) => e.seq),

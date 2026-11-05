@@ -2,7 +2,7 @@
 //
 // «Armar mensajes» (o «Replanificar mensajes», tras un primer conflicto de versión) armó TODO en un solo ítem y pidió comprometer la ficha ANTES de enviar. Aquí:
 //   - comprometido (o turno sin estado que comprometer): salen los mensajes armados, el prospecto de la hoja y la marca del contacto nuevo;
-//   - el compromiso falló, o hubo un segundo conflicto (§6 del contrato): sale SOLO el genérico con el botón a recepción, sin avisos, sin hoja y sin compromiso. Reemplaza la respuesta (0 mensajes más).
+//   - el compromiso falló, o hubo un segundo conflicto (§6 del contrato): sale SOLO el genérico con el botón a recepción MÁS el aviso a recepción (un ítem más, a lo más uno por hora y por teléfono; política del 21/09/2026), sin hoja y sin compromiso. Reemplaza la respuesta (0 mensajes más al cliente).
 // La marca de contacto nuevo (`chatNovuchatCrm`, última hora por teléfono, aparte de la ficha) se escribe SOLO si el turno quedó comprometido.
 const rep = cnNodo('Replanificar mensajes') ? cnPrimero('Replanificar mensajes') : null;
 const a = rep || cnPrimero('Armar mensajes');
@@ -19,9 +19,22 @@ const bien = (a.fallaEstado !== true && r.resultado === 'ok') || mejor;
 const salida = bien ? a.salida : a.salidaFalla;
 const resumen = Object.assign({}, a.resumen, { estado: { comprometido: comprometido, version: comprometido ? r.version : null, resultado: a.comprometer === true ? r.resultado : (a.fallaEstado === true ? 'sin_estado' : 'sin_compromiso') } });
 if (mejor) resumen.estado.resultado = 'mejor_esfuerzo_' + (a.comprometer === true ? r.resultado : 'sin_compromiso');
-if (!bien) Object.assign(resumen, { plan: 'falla_estado', mensajes: Array.isArray(salida) ? salida.length : 0, rubro: a.nueva ? a.nueva.rubro : '' });
+if (!bien) Object.assign(resumen, { plan: 'falla_estado', mensajes: Array.isArray(salida) ? salida.filter((x) => x && x.destino !== 'recepcion').length : 0, avisoRecepcion: Array.isArray(salida) && salida.some((x) => x && x.evento === 'aviso_falla'), rubro: a.nueva ? a.nueva.rubro : '' });
 
 const ahora = Number(a.ahoraMs) || Date.now();
+// El aviso del genérico (`aviso_falla`) cuenta para el tope por hora SOLO si salió en este turno (se anota aquí, como la marca del contacto nuevo; por teléfono, a lo más 500 teléfonos).
+if (!bien && Array.isArray(salida) && salida.some((x) => x && x.evento === 'aviso_falla') && cnClaveValida(a.from)) {
+  let sd = null;
+  try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }
+  if (sd) {
+    const mapa = sd.chatNovuchatAvisoFalla && typeof sd.chatNovuchatAvisoFalla === 'object' && !Array.isArray(sd.chatNovuchatAvisoFalla) ? sd.chatNovuchatAvisoFalla : (sd.chatNovuchatAvisoFalla = {});
+    const previas = Object.prototype.hasOwnProperty.call(mapa, a.from) && Array.isArray(mapa[a.from]) ? mapa[a.from] : [];
+    mapa[a.from] = previas.filter((ms) => ahora - Number(ms) < CH_HORA_MS && ahora - Number(ms) >= 0).concat([ahora]);
+    for (const k of Object.keys(mapa)) if (!Array.isArray(mapa[k]) || !mapa[k].some((ms) => ahora - Number(ms) < CH_HORA_MS && ahora - Number(ms) >= 0)) delete mapa[k];
+    const claves = Object.keys(mapa);
+    if (claves.length > 500) for (const k of claves.sort((x, y) => Math.max(...mapa[x]) - Math.max(...mapa[y])).slice(0, claves.length - 500)) delete mapa[k];
+  }
+}
 let prospectoSalida = null;
 if (bien && !mejor && a.guardarPlanilla === true && a.despues) {
   const crm = (() => {

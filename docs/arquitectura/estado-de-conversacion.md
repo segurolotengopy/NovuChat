@@ -109,8 +109,9 @@ Criterio vigente: «solo se ofrece lo que se cumple» (`CLAUDE.md`).
 
 - `leer` falla o falta `conversacion`: respuesta genérica **con botón** y, por la política del 21/09/2026 («pasar con recepción» = aviso a recepción MÁS botón), el aviso estándar de transferencia dentro del tope por hora (así lo hace Q'Taco, PR-4a); sin compromiso. (Hoy `Traer configuración` tiene timeout de 4 s y `neverError`; si
   falla, `Config del negocio` usa el respaldo y deriva.)
-- `comprometer` con 5xx, timeout o segundo conflicto: genérico con botón, sin
-  avisos ni cierre. **Reemplaza** la respuesta: 0 mensajes agregados.
+- `comprometer` con 5xx, timeout o segundo conflicto: genérico con botón y, por la misma política, el aviso estándar a recepción como un ítem más
+  (dentro del tope por hora y por teléfono; no en la variante de prueba ni en las puertas cerradas), sin cierre. **Reemplaza** la respuesta:
+  0 mensajes agregados al cliente (el chat de NovuChat lo adoptó en `core/chat-aviso-generico`; antes decía «sin avisos»).
 - Primer `conflicto_version`: **una** replanificación en código sobre el estado
   ganador (sin modelo) y un segundo `comprometer` (+1 llamada solo en ese caso).
 - Entrega fallida **sin** hecho externo: compromiso compensatorio con la versión
@@ -154,7 +155,7 @@ PR-4a, PR-4b, PR-6b); escritor B en paralelo (H2b, PR-6a).
 | PR-4a0 | Los ayudantes de sesión del chat suben al módulo común `comun-sin-agente/src/sesion.js` (prefijo `ss`, parámetros `SS_CONFIG`: espacio, vencimiento, bytes, prefijo, nodos) y el servidor falso a `comun-sin-agente/herramientas/`; el chat los INCLUYE (guardia en su `construir.mjs`) | `core-flujos` | construido; 0 mensajes. Q'Taco lo incluye en PR-4a |
 | PR-4a | Q'Taco adopta estado y vistos | `flujos-n8n` con Cartera | construido (04/11/2026), sin publicar; 0 mensajes; espera PR-2b en producción y el «sí» de Andres. Decisiones en §14 |
 | PR-4b | Q'Taco: cupos (`av.dia`, `transferencias`, `avisosPedido`) | `flujos-n8n` | pendiente; depende de PR-4a y D-7 |
-| PR-4c | El chat NovuChat adopta | `core-flujos` | PR-4c1 (servidor falso y ayudantes) fusionado; PR-4c2 (nodos y plantilla) construido, sin publicar; orden de despliegue: Functions, ensayo en el Demo A, flujo del chat |
+| PR-4c | El chat NovuChat adopta | `core-flujos` | PR-4c1 (servidor falso y ayudantes) fusionado; PR-4c2 (nodos y plantilla) construido, sin publicar (el genérico de una falla lleva también el aviso a recepción, `core/chat-aviso-generico`); orden de despliegue: Functions, ensayo en el Demo A, flujo del chat |
 | PR-5 | Bellido adopta | n/a | **en espera**: Bellido no se toca |
 | PR-6a | Suites sin `new Function` (las que no son de Q'Taco, Bellido ni el demo de la clínica) | `core-flujos` | pendiente |
 | PR-6b | Ídem para las `venta-minima-*` | `core-flujos` | pendiente; tras PR-4b |
