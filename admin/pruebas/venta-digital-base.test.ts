@@ -6,7 +6,7 @@
  *  2. La carpeta común no tiene nombres de cliente ni montos: todo eso entra por parámetro.
  *  3. Las funciones `vd*` son puras y se prueban NEGANDO (lo que no debe pasar, no pasa).
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -14,7 +14,9 @@ import { cargarFuente } from './core/fuente-vm';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental');
 const COMUN = join(RAIZ, 'venta-digital');
-const COPIAS = join(RAIZ, 'rroca-ruben/src/lib');
+// Carpetas de flujos que aún conservan COPIAS de la base (cabecera + cuerpo común). Rubén («Noches», 05/11/2026) ya no tiene: INCLUYE la base desde su fuente.
+const COPIAS: string[] = [];
+const SIN_COPIAS = ['rroca-ruben/src/lib'];
 const leer = (ruta: string): string => readFileSync(ruta, 'utf8');
 
 type F = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -41,19 +43,25 @@ function partir(texto: string): [string, string] {
 }
 
 describe('las copias de la primera venta digital son cabecera + cuerpo común', () => {
-  for (const nombre of ['cobro.js', 'avisos.js']) {
-    it(`${nombre}: mismo cuerpo, byte a byte`, () => {
-      const [cabeceraCopia, cuerpoCopia] = partir(leer(join(COPIAS, nombre)));
+  for (const dir of COPIAS) for (const nombre of ['cobro.js', 'avisos.js']) {
+    it(`${dir}/${nombre}: mismo cuerpo, byte a byte`, () => {
+      const [cabeceraCopia, cuerpoCopia] = partir(leer(join(RAIZ, dir, nombre)));
       const [cabeceraComun, cuerpoComun] = partir(leer(join(COMUN, 'src', nombre)));
       expect(cuerpoComun.length).toBeGreaterThan(1000);
       expect(cuerpoComun).toBe(cuerpoCopia);
       // Las dos cabeceras son solo comentarios.
       for (const c of [cabeceraCopia, cabeceraComun]) expect(c.split('\n').every((l) => l.startsWith('//'))).toBe(true);
     });
-    it(`${nombre}: negado, cambiar un solo carácter del cuerpo común lo rompe`, () => {
-      const [, cuerpoCopia] = partir(leer(join(COPIAS, nombre)));
+    it(`${dir}/${nombre}: negado, cambiar un solo carácter del cuerpo común lo rompe`, () => {
+      const [, cuerpoCopia] = partir(leer(join(RAIZ, dir, nombre)));
       const [, cuerpoComun] = partir(leer(join(COMUN, 'src', nombre)));
       expect(cuerpoComun.replace('const ', 'let ')).not.toBe(cuerpoCopia);
+    });
+  }
+  // Rubén dejó de tener copias: si reaparece una, tiene que declararse en COPIAS (y compararse byte a byte), no quedar suelta.
+  for (const dir of SIN_COPIAS) for (const nombre of ['cobro.js', 'avisos.js']) {
+    it(`${dir}/${nombre}: ya no existe (el flujo incluye la base desde su fuente)`, () => {
+      expect(existsSync(join(RAIZ, dir, nombre))).toBe(false);
     });
   }
 });

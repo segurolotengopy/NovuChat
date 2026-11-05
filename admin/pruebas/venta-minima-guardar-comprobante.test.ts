@@ -97,7 +97,9 @@ describe('Guardar comprobante: seguridad y forma de la llamada', () => {
 
   it('PARIDAD con Rubén: mismos parámetros, credencial y política de error', () => {
     const r = nodoDe(RUBEN, G) as unknown as J;
-    expect(n.parameters).toEqual(r.parameters);
+    // El flujo de Rubén nuevo («Noches») llama «Normalizar entrada» al nodo que venta-mínima llama «Interpretar entrada»: ÚNICA traducción de nombre permitida; el resto debe ser idéntico.
+    const aVentaMinima = JSON.parse(JSON.stringify(r.parameters).split("$('Normalizar entrada')").join("$('Interpretar entrada')"));
+    expect(n.parameters).toEqual(aVentaMinima);
     expect(n.onError).toBe(r.onError);
     expect(n.alwaysOutputData).toBe(r.alwaysOutputData);
     expect(n.typeVersion).toBe(r.typeVersion);
