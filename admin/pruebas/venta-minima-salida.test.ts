@@ -1176,7 +1176,7 @@ describe('Los tres nodos son JavaScript plano', () => {
     expect(RESUMEN).toMatch(/throw new Error\('Entrega fallida/);
     // La compensación la ARMA «Confirmar envío» (con el bloque de antes del turno) y la manda el nodo HTTP «Comprometer compensación»; los Code nunca llaman al servidor.
     expect(CONFIRMAR).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData|vmSd\(|fetch|\$http/);
-    expect(SOLTAR).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|vmSd\(|fetch|\$http/);
+    expect(SOLTAR).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|fetch|\$http/); // (solo anota las marcas del aviso ya enviado: residuo de PR-4b)
     // «Armar mensajes» ARMA el estado (sobre la vista de la sesión) y las marcas del residuo de PR-4b; no envía ni llama a la red.
     expect(MENSAJES).toMatch(/vmEscribirEstado/);
     expect(MENSAJES).toMatch(/avContar/);

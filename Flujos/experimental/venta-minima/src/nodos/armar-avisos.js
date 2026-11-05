@@ -38,6 +38,14 @@ const AA_GENERICO_PIE = 'Comprobante enviado por el cliente.';
 const AA_HORA_MS = 60 * 60 * 1000;
 const AA_errores = (Array.isArray(AA_PLAN.errores) ? AA_PLAN.errores : []).slice();
 const AA_sd = vmSd();
+// AVISO YA ENVIADO (PR-4a, I1): si el compromiso del estado falló DESPUÉS de un aviso de pedido o de comprobante, el estado no avanzó y el cliente puede repetir el mismo botón: el aviso de ese
+// pedido no se manda dos veces. `Soltar mensajes` anota `tipo:pedidoId` en `sd.avisosHuerfanos` (residuo de PR-4b) SOLO cuando el compromiso falló; con el estado avanzado no hace falta.
+const AA_YA = [];
+function aaYaAvisado(tipo, pedidoId) {
+  const m = AA_sd && AA_sd.avisosHuerfanos && typeof AA_sd.avisosHuerfanos === 'object' ? AA_sd.avisosHuerfanos : null;
+  const ms = m && pedidoId && Object.prototype.hasOwnProperty.call(m, tipo + ':' + pedidoId) ? Number(m[tipo + ':' + pedidoId]) : NaN;
+  return Number.isFinite(ms) && AA_AHORA - ms < 72 * AA_HORA_MS && AA_AHORA - ms >= 0;
+}
 
 // Lo que sale a la red nunca coincide con la red de palabras prohibidas. Se revisa el texto tal cual y
 // normalizado (sin tildes), y se trata como PREDICADO: solo `true` pasa.
@@ -166,6 +174,11 @@ if (AA_armar) {
       continue;
     }
     const datos = aaDatos(a);
+    if ((tipo === 'pedido' || tipo === 'comprobante') && aaYaAvisado(tipo, String(datos.pedidoId || ''))) {
+      AA_errores.push('aviso_ya_enviado: ' + tipo + ' del pedido ' + String(datos.pedidoId).slice(0, 60));
+      AA_YA.push(tipo);
+      continue;
+    }
     // Un comprobante ya cotejado no se vuelve a avisar (el cliente solo lee «Ya tengo el comprobante»).
     if (tipo === 'comprobante' && datos.resultado === 'ya_cotejado') { AA_errores.push('sin_aviso_ya_cotejado'); continue; }
     let crudo = null;
@@ -207,8 +220,9 @@ if (!AA_items.length) {
   return [{ json: {
     para: '', rol: '', payload: null, respaldo: null, esPlantilla: false, sinAviso: true, tipoAviso: '',
     phoneNumberId: AA_NUMERO_ID,
-    waGraphVersion: AA_CFG.waGraphVersion || 'v26.0', from: AA_FROM, errores: AA_errores,
+    waGraphVersion: AA_CFG.waGraphVersion || 'v26.0', from: AA_FROM, errores: AA_errores, yaAvisado: AA_YA,
   } }];
 }
 AA_items[0].errores = AA_errores;
+AA_items[0].yaAvisado = AA_YA;
 return AA_items.map((j) => ({ json: j }));

@@ -103,7 +103,9 @@ if (AM_wamids.length) {
     if (AM_avisoSalio) AM_armados.filter((a) => !amEsImagen(a)).forEach((a) => AM_tiposSalidos.push(a.tipoAviso));
   }
 }
-const AM_AVISO_SALIO = AM_avisoSalio;
+// AVISO YA ENVIADO por un turno anterior cuyo compromiso falló (`Armar avisos` lo omitió): el local YA tiene ese pedido, así que el cliente lee la frase de «pasé tu pedido».
+const AM_yaAvisado = AM_avisosArmados[0] && Array.isArray(AM_avisosArmados[0].yaAvisado) ? AM_avisosArmados[0].yaAvisado : [];
+const AM_AVISO_SALIO = AM_avisoSalio || (AM_yaAvisado.length > 0 && AM_armados.length === 0);
 
 // LA RESERVA EXIGE EL AVISO DEL ROL `completo` (el único que lleva el teléfono del cliente). Con dos roles (`completo` con la plantilla
 // `solicitud_reserva`, `cocina` sin teléfono), que salga solo el de cocina NO alcanza: el local no podría escribirle al cliente y este leería
@@ -503,7 +505,20 @@ const AM_falla = AM_jFalla ? [Object.assign(AM_jFalla, {
   resumen: Object.assign({}, AM_resumen, { estadoDespues: null, errores: AM_erroresFalla, mensajesSalientes: 1, avisoSalio: AM_AVISO_SALIO }),
 })] : [{ sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: AM_FROM, cierre: null, errores: AM_erroresFalla,
   resumen: Object.assign({}, AM_resumen, { estadoDespues: null, errores: AM_erroresFalla, mensajesSalientes: 0 }) }];
+// Los avisos de pedido y de comprobante que SALIERON en este turno, por `tipo:pedidoId`: si el compromiso falla, `Soltar mensajes` los anota para que el turno siguiente no los repita (I1).
+const AM_idPedido = AM_ped && AM_ped.pedidoId ? String(AM_ped.pedidoId) : '';
+const AM_avisoMarcas = AM_AVISO_SALIO && AM_idPedido
+  ? ['pedido', 'comprobante'].filter((x) => AM_tiposSalidos.indexOf(x) >= 0 || AM_yaAvisado.indexOf(x) >= 0).map((x) => x + ':' + AM_idPedido) : [];
+// HECHO EXTERNO ya ocurrido antes del compromiso: un aviso al local salió (o ya estaba avisado) o se cotejó el comprobante en el servidor. Con él, ceder en un conflicto de versión es un defecto (B1).
+const AM_hechoExterno = AM_AVISO_SALIO || AM_yaAvisado.length > 0 || vmNodo('Cotejar en el servidor') !== null;
+// La replanificación (`Comprometer turno (2.º intento)`) arma su cuerpo en una expresión con el bloque GANADOR: aquí van el pedido de este turno y el estado de respaldo, y los datos fijos.
+const AM_replan = AM_hechoExterno && AM_modo === 'comprometer' ? {
+  telefono: AM_FROM, espacio: ssEspacio(), ejecucion: ssEjecucion($execution.id), idCompromiso: ssIdCompromiso($execution.id, 'fin2'),
+  pedidos: AM_pedidoGuardado && AM_idPedido && AM_bloque && AM_bloque.pedidos && Object.prototype.hasOwnProperty.call(AM_bloque.pedidos, AM_idPedido) ? { [AM_idPedido]: AM_bloque.pedidos[AM_idPedido] } : {},
+  estadoMenu: AM_bloque && AM_bloque.estado ? Object.assign({}, AM_bloque.estado, AM_bloque.estado.paso === 'esperando_comprobante' ? {} : { paso: 'menu' }) : null,
+} : null;
 return [{ json: {
+  hechoExterno: AM_hechoExterno, replan: AM_replan, avisoMarcas: AM_avisoMarcas,
   turno: true, modo: AM_modo, comprometer: AM_compromiso !== null, compromiso: AM_compromiso, numero: ssNumeroHeader(),
   salida: AM_final, salidaFalla: AM_falla, previo: AM_ses.previo, bloque: AM_bloque, deRespaldo: AM_ses.deRespaldo, from: AM_FROM, ahoraMs: AM_AHORA,
 } }];

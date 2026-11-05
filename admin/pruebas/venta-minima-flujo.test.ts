@@ -2916,8 +2916,8 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(68); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 8 del estado en el servidor (PR-4a): el tope de producción es 69 (`construir.mjs` lo impone)
-    expect(PRUEBA.nodes).toHaveLength(64);
+    expect(QTACO.nodes).toHaveLength(69); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 9 del estado en el servidor (PR-4a): el tope de producción es 69 (`construir.mjs` lo impone)
+    expect(PRUEBA.nodes).toHaveLength(65);
   });
 
   it('L2: en producción un `wamid.SIMULADO-…` NO cuenta como aviso salido: el cliente no lee «pasé tu pedido» y el cierre no lo toma de referencia', () => {
@@ -3141,10 +3141,10 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
     expect(t.orden.indexOf('Reportar mensaje (entrante)')).toBeLessThan(t.orden.indexOf('Decidir turno'));
     expect(destinos(QTACO, '¿Reportar? (entrante)', 0)).toEqual(['Reportar mensaje (entrante)']);
     // El cierre cuelga de «Soltar mensajes» (PR-4a: el estado se compromete ANTES de enviar) por debajo del envío: primero se manda, después se registra.
-    // …y «Resumen del turno» cuelga al final de la cadena «Confirmar envío» → «¿Compensar entrega?», lo más abajo de todo: corre una vez, al final.
+    // …y «Resumen del turno» cuelga al final de la cadena «Soltar mensajes» (debajo de «Confirmar envío»), lo más abajo de todo: corre una vez, al final.
     expect(destinos(QTACO, 'Armar mensajes', 0)).toEqual(['¿Comprometer turno?']);
-    expect(destinos(QTACO, 'Soltar mensajes', 0)).toEqual(['¿Enviar de verdad?', '¿Registrar cierre?', 'Confirmar envío']);
-    expect(destinos(QTACO, '¿Compensar entrega?', 1)).toEqual(['Resumen del turno']);
+    expect(destinos(QTACO, 'Soltar mensajes', 0)).toEqual(['¿Enviar de verdad?', '¿Registrar cierre?', 'Confirmar envío', 'Resumen del turno']);
+    expect(destinos(QTACO, 'Confirmar envío', 0)).toEqual(['Comprometer compensación']);
     expect(y(QTACO, '¿Registrar cierre?')).toBeGreaterThan(y(QTACO, '¿Enviar de verdad?'));
     expect(y(QTACO, 'Resumen del turno')).toBeGreaterThan(y(QTACO, '¿Registrar cierre?'));
     expect(y(QTACO, 'Resumen del turno')).toBeGreaterThan(y(QTACO, 'Registrar cierre'));
@@ -4758,7 +4758,7 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
     expect(sim.qr.mensajes[0]?.payload['image']?.link).toBe(URL_SIMULADO); // es el QR de prueba, no el plan B que también da 3
   });
 
-  it('el JSON de Q\'Taco sigue en 69 nodos o menos (50 más los 9 del guardado de medios, «Guardar comprobante» y los 8 del estado en el servidor) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
+  it('el JSON de Q\'Taco sigue en 69 nodos o menos (50 más los 9 del guardado de medios, «Guardar comprobante» y los 9 del estado en el servidor) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
     // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61, y desde el contrato v2 del 30/10, 59: los 9 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md).
     expect(QTACO.nodes.length).toBeLessThanOrEqual(69); // tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026)
     const base = configBase(QTACO);
@@ -6421,12 +6421,18 @@ describe('PR-4a: el estado, los pedidos y los vistos viven en el servidor, no en
       const t = con(w).escribe('quiero 4 tacos de birria');
       expect(t.mensajes, modo).toHaveLength(1);
       expect(tieneEnlace(t), modo).toBe(true);
-      expect(t.avisos, modo).toHaveLength(0);
+      // I2 (política del 21/09: «pasar con recepción» = SIEMPRE el aviso a recepción MÁS el botón): el aviso estándar de transferencia, a los destinatarios de «Config base»
+      expect(plantillasA(t, AV1), modo).toHaveLength(1);
+      expect(t.avisos.every((a) => a.tipo === 'template' || a.tipo === 'text'), modo).toBe(true);
       expect(t.llamadas.extraer, modo).toHaveLength(0);
       expect(w.sesion.compromisos, modo).toHaveLength(0);
       expect(t.ejecutados.has('Sin estado'), modo).toBe(true);
       expect(t.ejecutados.has('Decidir turno'), modo).toBe(false);
-      expect(todoElTexto(t)).not.toMatch(/pedido|total|Bs/i);
+      expect(cuerpos(t).join(' ')).not.toMatch(/pedido|total|Bs/i);
+      // y respeta `topeTransferenciasHora` (1 por hora y teléfono): el segundo turno sigue con el botón pero sin repetir el aviso
+      const otra = con(w).escribe('hola otra vez');
+      expect(otra.mensajes, modo).toHaveLength(1);
+      expect(otra.avisos, modo).toHaveLength(0);
     }
     // Negado: con el servidor sano el mismo mensaje sigue la conversación.
     const sano = crear();
@@ -6554,5 +6560,88 @@ describe('PR-4a: la variante de PRUEBA nunca toca los documentos de producción 
     for (const l of w.sesion.servidor.llamadas) expect((l['sesion'] as J)['espacio']).toBe(ESPACIO_PRUEBA);
     expect(PRUEBA.nodes.some((n) => n.name === 'Entrada de prueba')).toBe(true);
     expect(QTACO.nodes.some((n) => n.name === 'Entrada de prueba')).toBe(false);
+  });
+});
+
+// =============================================================================================================================
+// PR-4a, ronda 2 de revisión: B1 (conflicto con hecho externo), I1 (aviso ya enviado) e I2 (sin estado = aviso + botón)
+// =============================================================================================================================
+describe('PR-4a ronda 2', () => {
+  const rival = (r: Armado, siempre = false): void => {
+    r.w.sesion.servidor.antesDeComprometer = (c) => {
+      if ((c['sesion'] as J)['accion'] !== 'comprometer') return;
+      if (!siempre) r.w.sesion.servidor.antesDeComprometer = null;
+      // el ganador: otra ejecución del mismo teléfono comprometió antes (la versión se mueve en cada intento)
+      r.w.sesion.sembrar(CLIENTE, { ...estadoDe(r.w.mundo), paso: 'pedido_confirmar' }, r.w.sesion.pedidos(CLIENTE));
+    };
+  };
+
+  it('B1: conflicto CON un aviso al local ya enviado (cobro:false) NO cede: se replanifica sobre la versión ganadora, el pedido queda en el bloque, UN mensaje al cliente y ningún segundo pedido al reconfirmar', () => {
+    const r = armarPedido({ cobro: false, ventana: 5 });
+    const id = idDeBoton(r.resumen, 'Confirmar pedido');
+    rival(r);
+    const t = r.c.toca(id, 'Confirmar pedido');
+    expect(t.avisos.length).toBeGreaterThan(0); // el local YA tiene el pedido
+    expect(t.mensajes).toHaveLength(1); // y el cliente lo ve: nunca silencio
+    expect(t.ejecutados.has('Comprometer turno (2.º intento)')).toBe(true);
+    expect(t.llamadas.cierre).toHaveLength(1);
+    expect(pedidosGuardados(r.w.mundo)).toHaveLength(1);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+    const compromiso2 = r.w.sesion.compromisos.filter((c) => c.nodo === 'Comprometer turno (2.º intento)').at(-1);
+    expect(String(((compromiso2 as J)['cuerpo']['sesion'] as J)['idCompromiso'])).toMatch(/^vm-fin2-/);
+    // al reconfirmar con el botón viejo: ni un segundo pedido ni otro aviso
+    const otra = r.c.toca(id, 'Confirmar pedido');
+    expect(pedidosGuardados(r.w.mundo)).toHaveLength(1);
+    expect(otra.avisos).toHaveLength(0);
+    expect(otra.llamadas.cierre).toHaveLength(0);
+    expect(otra.mensajes).toHaveLength(1);
+  });
+
+  it('B1: si la replanificación TAMBIÉN choca, sale el genérico con el botón (un mensaje, nunca silencio); SIN hecho externo el perdedor sí cede (cobro real, sin aviso)', () => {
+    const r = armarPedido({ cobro: false, ventana: 5 });
+    rival(r, true);
+    const t = confirmarPedido(r);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    expect(t.mensajes).toHaveLength(1);
+    expect(tieneEnlace(t)).toBe(true);
+    expect(t.llamadas.cierre).toHaveLength(0);
+    // negado: sin hecho externo (QR real, ningún aviso) el perdedor cede sin enviar
+    const q = armarPedido({ ventana: 5 });
+    rival(q);
+    const c = confirmarPedido(q);
+    expect(c.avisos).toHaveLength(0);
+    expect(c.mensajes).toHaveLength(0);
+    expect(c.ejecutados.has('Comprometer turno (2.º intento)')).toBe(false);
+  });
+
+  it('I1: si el compromiso falla DESPUÉS del aviso, el turno siguiente (botón viejo) NO repite el aviso del pedido y el cierre sale una sola vez', () => {
+    const r = armarPedido({ cobro: false, ventana: 5 });
+    r.w.sesion.servidor.fallar = (c) => ((c['sesion'] as J)['accion'] === 'comprometer' ? 503 : null);
+    const t1 = confirmarPedido(r);
+    expect(t1.avisos.length).toBeGreaterThan(0);
+    expect(t1.mensajes).toHaveLength(1);
+    expect(t1.llamadas.cierre).toHaveLength(0);
+    r.w.sesion.servidor.fallar = null;
+    const t2 = confirmarPedido(r);
+    expect(t2.avisos).toHaveLength(0); // sin la deduplicación salían otra vez los mismos avisos
+    expect(t2.mensajes).toHaveLength(1);
+    expect(cuerpos(t2).join(' ')).not.toMatch(/No pude pasarle/); // el local SÍ lo tiene: la frase es verdad
+    expect(t2.llamadas.cierre).toHaveLength(1);
+    expect(String(t2.llamadas.cierre[0]!['referencia'])).toBe(pedidosGuardados(r.w.mundo)[0]!['pedidoId']);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+    // el estado avanzó: la marca se borra y otro pedido (otro id) avisa normal
+    expect(Object.keys(sdVm(r.w.mundo)['avisosHuerfanos'] ?? {})).toHaveLength(0);
+  });
+
+  it('I2: con el panel caído (sin estado) sale UN mensaje con el botón y el aviso estándar de transferencia a recepción, dentro del tope por hora', () => {
+    const w = crear();
+    w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 503, body: {} });
+    const t = con(w).escribe('quiero 4 tacos de birria');
+    expect(t.mensajes).toHaveLength(1);
+    expect(tieneEnlace(t)).toBe(true);
+    expect(plantillasA(t, AV1)).toHaveLength(1);
+    const otra = con(w).escribe('hola');
+    expect(otra.mensajes).toHaveLength(1);
+    expect(otra.avisos).toHaveLength(0); // topeTransferenciasHora
   });
 });

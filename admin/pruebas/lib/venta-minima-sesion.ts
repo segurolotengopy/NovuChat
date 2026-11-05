@@ -13,7 +13,7 @@ import type { Doble, LlamadaDoble } from './n8n-de-mentira';
 
 export const ESPACIO = 'venta-minima';
 export const ESPACIO_PRUEBA = 'venta-minima-prueba';
-export const NODOS_COMPROMETER = ['Comprometer turno', 'Comprometer compensación'] as const;
+export const NODOS_COMPROMETER = ['Comprometer turno', 'Comprometer turno (2.º intento)', 'Comprometer compensación'] as const;
 
 const clonar = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 

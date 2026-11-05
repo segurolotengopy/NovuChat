@@ -1295,7 +1295,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        8360,
+        8840,
         300
       ],
       "parameters": {
@@ -1330,7 +1330,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        8600,
+        9080,
         160
       ],
       "parameters": {
@@ -1367,7 +1367,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        8840,
+        9320,
         300
       ],
       "parameters": {
@@ -1402,7 +1402,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        9080,
+        9560,
         160
       ],
       "parameters": {
@@ -1439,7 +1439,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        9320,
+        9800,
         300
       ],
       "parameters": {
@@ -1474,7 +1474,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        9560,
+        10040,
         160
       ],
       "parameters": {
@@ -1517,7 +1517,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        8360,
+        8840,
         620
       ],
       "parameters": {
@@ -1552,7 +1552,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        8600,
+        9080,
         620
       ],
       "parameters": {
@@ -1595,15 +1595,15 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        9080,
-        940
+        8840,
+        1100
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
         "jsCode": "@@comun+sesion:nodos/resumen-del-turno.js"
       },
-      "notes": "R3 (último recurso): si un mensaje al cliente no salió y su respaldo en texto tampoco, este nodo LANZA un error (la ejecución queda en error, visible). El estado ya lo compensó «Confirmar envío» → «Comprometer compensación» (ver la nota de «Confirmar envío»: la regla del hecho externo). Último nodo: cuelga de «¿Compensar entrega?» y de «Comprometer compensación», debajo de todo el lienzo, así que con `executionOrder: v1` corre después de los envíos y del cierre. En la variante de prueba, «Entrada de prueba» responde con esto: mensajes al cliente, avisos y resumen del turno."
+      "notes": "R3 (último recurso): si un mensaje al cliente no salió y su respaldo en texto tampoco, este nodo LANZA un error (la ejecución queda en error, visible). El estado ya lo compensó «Confirmar envío» → «Comprometer compensación» (ver la nota de «Confirmar envío»: la regla del hecho externo). Último nodo: cuelga directo de «Soltar mensajes», debajo de todo el lienzo y de la cadena de compensación, así que con `executionOrder: v1` corre después de los envíos y del cierre. En la variante de prueba, «Entrada de prueba» responde con esto: mensajes al cliente, avisos y resumen del turno."
     },
     {
       "parameters": {
@@ -1745,7 +1745,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        8120,
+        8600,
         300
       ],
       "notes": "Decide qué sale con lo que contestó el servidor: los mensajes armados (comprometido o nada que comprometer), NADA (conflicto de versión: la ejecución perdedora cede) o SOLO el genérico con el botón a recepción (el compromiso falló o el bloque no cabe: reemplaza la respuesta, 0 mensajes más). Un ítem por mensaje: de aquí cuelgan el envío, el cierre y «Confirmar envío»."
@@ -1759,45 +1759,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        8360,
+        8840,
         940
       ],
-      "notes": "Si Meta rechazó el mensaje al cliente y su respaldo en texto, arma el compromiso compensatorio del estado, con la versión recién comprometida. SIN hecho externo (ningún aviso salió y no corrió el cierre): el bloque de ANTES del turno entero, con su ancla (`ultimoMensajeMs`, la ancla de las claves estables) y SUS pedidos: reconfirmar da el MISMO pedido y nunca un segundo. CON un aviso ya enviado o un cierre ya registrado: el bloque comprometido queda, en el paso `menu` (salvo `esperando_comprobante`), porque reconfirmar armaría un segundo pedido con otro código, otro aviso y otro cierre. Siempre devuelve un ítem. Es el hijo más bajo de «Soltar mensajes»: corre después de los envíos y del cierre."
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "c1",
-              "leftValue": "={{ $json.compensar === true }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "compensar-si",
-      "name": "¿Compensar entrega?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        8600,
-        940
-      ],
-      "notes": "Solo se compensa si hubo compromiso y el mensaje al cliente no salió."
+      "notes": "Si Meta rechazó el mensaje al cliente y su respaldo en texto, arma el compromiso compensatorio del estado, con la versión recién comprometida. SIN hecho externo (ningún aviso salió y no corrió el cierre): el bloque de ANTES del turno entero, con su ancla (`ultimoMensajeMs`, la ancla de las claves estables) y SUS pedidos: reconfirmar da el MISMO pedido y nunca un segundo. CON un aviso ya enviado o un cierre ya registrado: el bloque comprometido queda, en el paso `menu` (salvo `esperando_comprobante`), porque reconfirmar armaría un segundo pedido con otro código, otro aviso y otro cierre. Devuelve un ítem SOLO si hay que compensar (si no, «Comprometer compensación» no corre). Es el hijo más bajo de «Soltar mensajes»: corre después de los envíos y del cierre."
     },
     {
       "parameters": {
@@ -1839,9 +1804,91 @@
       "typeVersion": 4.2,
       "position": [
         8840,
-        1060
+        1000
       ],
-      "notes": "Compromiso compensatorio con la versión recién comprometida (el bloque de antes del turno, o el comprometido con el paso `menu` si ya salió un aviso). Un 5xx o un timeout se reintenta UNA vez con el MISMO idCompromiso.",
+      "notes": "Compromiso compensatorio con la versión recién comprometida (el bloque de antes del turno, o el comprometido con el paso `menu` si ya salió un aviso). Un 5xx o un timeout se reintenta UNA vez con el MISMO idCompromiso. Corre solo si «Confirmar envío» armó la compensación (si no, no le llega ningún ítem).",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ ((($json || {}).body || {}).resultado === 'conflicto_version') && $('Armar mensajes').first().json.hechoExterno === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "replanificar-si",
+      "name": "¿Replanificar compromiso?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        8120,
+        300
+      ],
+      "notes": "Conflicto de versión (otra ejecución del mismo teléfono comprometió primero) CON un hecho externo ya ocurrido (un aviso al local salió o se cotejó el comprobante): ceder en silencio dejaría al local con un pedido que el cliente no vio y un segundo pedido al reconfirmar. Se replanifica UNA vez sobre la versión ganadora. Sin hecho externo, la ejecución que pierde cede."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Armar mensajes').first().json.numero }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const a = $('Armar mensajes').first().json; const r = a.replan || {}; const c = ((($json || {}).body || {}).conversacion) || {}; const g = (c.estado && typeof c.estado === 'object' && !Array.isArray(c.estado)) ? c.estado : null; const base = (g && g.estado && typeof g.estado === 'object' && !Array.isArray(g.estado)) ? g.estado : null; const estado = base ? Object.assign({}, base, base.paso === 'esperando_comprobante' ? {} : { paso: 'menu' }) : (r.estadoMenu || null); const pedidos = Object.assign({}, (g && g.pedidos && typeof g.pedidos === 'object' && !Array.isArray(g.pedidos)) ? g.pedidos : {}, r.pedidos || {}); return JSON.stringify({ telefono: r.telefono, sesion: { v: 1, accion: 'comprometer', espacio: r.espacio, canal: 'wa', ejecucion: r.ejecucion, idCompromiso: r.idCompromiso, versionLeida: Number(c.version), estado: { v: 1, estado: estado, pedidos: pedidos }, venceEnMin: 4320 } }); })() }}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "comprometer-turno-2",
+      "name": "Comprometer turno (2.º intento)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        8360,
+        160
+      ],
+      "notes": "Replanificación tras un conflicto de versión CON hecho externo: se compromete sobre la versión GANADORA (versionLeida = la del ganador) el bloque del ganador con el pedido de este turno unido por pedidoId (gana el nuestro) y el paso en `menu` (salvo que el ganador espere un comprobante). Mismo idCompromiso en el reintento de n8n; un solo intento: si también falla, «Soltar mensajes» responde el genérico con el botón (nunca silencio).",
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 500
@@ -2555,7 +2602,7 @@
       "main": [
         [
           {
-            "node": "Soltar mensajes",
+            "node": "¿Replanificar compromiso?",
             "type": "main",
             "index": 0
           }
@@ -2579,6 +2626,11 @@
             "node": "Confirmar envío",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Resumen del turno",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -2587,36 +2639,36 @@
       "main": [
         [
           {
-            "node": "¿Compensar entrega?",
+            "node": "Comprometer compensación",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "¿Compensar entrega?": {
+    "¿Replanificar compromiso?": {
       "main": [
         [
           {
-            "node": "Comprometer compensación",
+            "node": "Comprometer turno (2.º intento)",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Resumen del turno",
+            "node": "Soltar mensajes",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Comprometer compensación": {
+    "Comprometer turno (2.º intento)": {
       "main": [
         [
           {
-            "node": "Resumen del turno",
+            "node": "Soltar mensajes",
             "type": "main",
             "index": 0
           }

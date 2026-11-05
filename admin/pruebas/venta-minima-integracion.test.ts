@@ -1115,6 +1115,7 @@ describe('S6: los topes por teléfono y por hora, de punta a punta', () => {
     hastaResumen(m);
     const c = turno(m, { boton: 'p|confirmar' });
     const claves = Object.keys(pedidosDe(m));
+    // (la cota de esta prueba es holgada a propósito: el tope en BYTES, su exactitud y el peor caso se prueban en venta-minima-sesion.test.ts)
     expect(claves.length).toBeLessThan(500);
     expect(claves.length).toBeGreaterThan(10);
     expect(claves).toContain(String(clientes(c)[0]!['referencia']));
@@ -1354,8 +1355,8 @@ describe('M1: los topes en 0 se respetan de punta a punta', () => {
   });
 });
 
-describe('M3: con el panel caído a mitad de un pedido no se ofrece ni se afirma delivery ni se confirma nada (PR-4a: el estado viaja con el panel, sin estado sale el genérico con el botón)', () => {
-  it('con el resumen de un delivery en pantalla, el panel cae y «Confirmar pedido» no confirma nada: sin estado, el genérico con el botón (sin aviso, sin pedido, sin cobro)', () => {
+describe('M3: con el panel caído a mitad de un pedido no se ofrece ni se afirma delivery ni se confirma nada (PR-4a: el estado viaja con el panel, sin estado sale el aviso a recepción y el botón)', () => {
+  it('con el resumen de un delivery en pantalla, el panel cae y «Confirmar pedido» no confirma nada: sin estado, el genérico con el botón (con aviso de transferencia a recepción, sin pedido, sin cobro)', () => {
     const m = crear();
     hastaResumen(m);
     expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
@@ -1363,7 +1364,9 @@ describe('M3: con el panel caído a mitad de un pedido no se ofrece ni se afirma
     const s = turno(m, { boton: 'p|confirmar' });
     expect(s.cfg['panelSinRespuesta']).toBe(true);
     expect(s.cfg['sesion']).toMatchObject({ ok: false });
-    expect(s.armados).toHaveLength(0);
+    // (política del 21/09: pasar con recepción = el aviso estándar de transferencia MÁS el botón)
+    expect(s.armados.length).toBeGreaterThan(0);
+    expect(s.armados.every((a) => a['tipoAviso'] === 'transferencia')).toBe(true);
     expect(cuerpos(s)).toHaveLength(1);
     expect(cuerpos(s).join('\n')).toContain('Toca «Escribir al local» y lo ves directamente con nuestro equipo');
     expect(cuerpos(s).join('\n')).not.toMatch(/delivery|pas[ée] tu pedido/i);
@@ -1378,7 +1381,8 @@ describe('M3: con el panel caído a mitad de un pedido no se ofrece ni se afirma
     expect(estadoDe(m)['paso']).toBe('pedido_entrega');
     m.codigoPanel = 500;
     const s = turno(m, { boton: 'e|delivery' });
-    expect(s.armados).toHaveLength(0);
+    expect(s.armados.length).toBeGreaterThan(0);
+    expect(s.armados.every((a) => a['tipoAviso'] === 'transferencia')).toBe(true);
     expect(JSON.stringify(cuerpos(s))).not.toMatch(/Delivery|dirección exacta/);
     expect(estadoDe(m)['paso']).toBe('pedido_entrega');
   });
@@ -1397,7 +1401,7 @@ describe('M3: con el panel caído a mitad de un pedido no se ofrece ni se afirma
   });
   it('declarado en la cabecera: con el panel caído ya no hay estado (PR-4a) y la derivación de delivery solo queda para un panel a medias, con su costo de 1 o 2 avisos', () => {
     expect(leer('nodos/plan-del-turno.js')).toMatch(/consulta de delivery con el panel caído, o un pedido en curso que lo encuentra caído, suma 1 o 2 avisos/);
-    expect(leer('nodos/plan-del-turno.js')).toMatch(/`¿Hay estado\?` manda al genérico con el botón ANTES de llegar aquí/);
+    expect(leer('nodos/plan-del-turno.js')).toMatch(/`¿Hay estado\?` manda a `Sin estado` ANTES de llegar aquí/);
   });
 });
 

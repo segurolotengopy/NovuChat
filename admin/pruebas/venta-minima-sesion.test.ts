@@ -327,6 +327,8 @@ describe('las guardias de `construir.mjs --verificar` sobre el estado de la conv
     f.connections['Comprometer turno']!['main']![0]!.push({ node: '¿Enviar de verdad?', type: 'main', index: 0 });
   }, /«Comprometer turno» conecta con «¿Enviar de verdad\?»: solo «Soltar mensajes» puede/);
   rompe('«Comprometer turno» sin reintento (un 5xx perdería el compromiso)', (f) => { nodoDe(f, 'Comprometer turno').retryOnFail = false; }, /«Comprometer turno» tiene que reintentar/);
+  rompe('«Comprometer turno (2.º intento)» (la replanificación) sin reintento', (f) => { nodoDe(f, 'Comprometer turno (2.º intento)').retryOnFail = false; }, /«Comprometer turno \(2\.º intento\)» tiene que reintentar/);
+  rompe('«Comprometer compensación» llega al envío por su cuenta', (f) => { f.connections['Comprometer compensación'] = { main: [[{ node: '¿Enviar de verdad?', type: 'main', index: 0 }]] }; }, /«Comprometer compensación» conecta con «¿Enviar de verdad\?»: solo «Soltar mensajes» puede/);
   rompe('«Comprometer turno» con maxTries 1', (f) => { nodoDe(f, 'Comprometer turno').maxTries = 1; }, /«Comprometer turno» tiene que reintentar/);
   rompe('«Comprometer compensación» con `neverError` (un 5xx no se reintentaría)', (f) => {
     (nodoDe(f, 'Comprometer compensación').parameters['options'] as J)['response'] = { response: { fullResponse: true, neverError: true } };

@@ -83,7 +83,7 @@ const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 // excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 // +1: «Guardar comprobante» (pedido de Andres del 26/10/2026: ningún comprobante se pierde; ver DISENO.md).
 // +9: el estado de la conversación y los vistos en el servidor (PR-4a; tope de Q'Taco 60 → 69, aprobado por Andres el 04/11/2026): «¿Hay estado?», «Sin estado», «¿Comprometer turno?», «Comprometer turno»,
-// «Soltar mensajes», «Confirmar envío», «¿Compensar entrega?» y «Comprometer compensación» (8; queda 1 de margen). Ver DISENO.md y docs/versiones-por-cliente.md.
+// «¿Replanificar compromiso?», «Comprometer turno (2.º intento)», «Soltar mensajes», «Confirmar envío» y «Comprometer compensación» (9: se quitó «¿Compensar entrega?»; queda 0 de margen). Ver DISENO.md y docs/versiones-por-cliente.md.
 const TOPE_DE_NODOS = 69;
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,
@@ -421,7 +421,7 @@ function guardiasDeEntrega(flujo) {
 //   - la variante de PRUEBA nunca toca los documentos de producción: «Traer configuración» usa el espacio de prueba solo para `telefonosDePrueba`, «Carga de entrada» solo da `modoPrueba` si corrió «Entrada de prueba»;
 //   - los avisos al local y los envíos nunca cuelgan de otro nodo que «Soltar mensajes» (nada sale antes del compromiso del estado).
 // =====================================================================================================
-const NODOS_DE_SESION = ['Comprometer turno', 'Comprometer compensación'];
+const NODOS_DE_SESION = ['Comprometer turno', 'Comprometer turno (2.º intento)', 'Comprometer compensación'];
 function guardiasDeSesion(entrada, flujo) {
   const h = [];
   const nodos = flujo.nodes || [];
@@ -429,7 +429,7 @@ function guardiasDeSesion(entrada, flujo) {
   const conex = flujo.connections || {};
   const destinosDe = (nombre) => [...new Set(((conex[nombre] || {}).main || []).flat().map((c) => c && c.node))];
   const parametros = (n) => n.parameters || {};
-  for (const nombre of ['¿Hay estado?', 'Sin estado', '¿Comprometer turno?', 'Comprometer turno', 'Soltar mensajes', 'Confirmar envío', '¿Compensar entrega?', 'Comprometer compensación']) {
+  for (const nombre of ['¿Hay estado?', 'Sin estado', '¿Comprometer turno?', 'Comprometer turno', '¿Replanificar compromiso?', 'Comprometer turno (2.º intento)', 'Soltar mensajes', 'Confirmar envío', 'Comprometer compensación']) {
     if (!porNombre.has(nombre)) h.push(`sesión: falta el nodo «${nombre}» (el estado de la conversación vive en el servidor)`);
   }
   if (destinosDe('Armar mensajes').join('|') !== '¿Comprometer turno?') h.push('sesión: «Armar mensajes» tiene que colgar SOLO de «¿Comprometer turno?»: el estado se compromete antes de enviar');

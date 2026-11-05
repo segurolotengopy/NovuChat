@@ -1,8 +1,8 @@
 // CONFIRMAR ENVÍO (PR-4a): lo único que se da por hecho es lo que Meta ACEPTÓ. Si el mensaje al cliente no salió (ni por el envío ni por su respaldo en texto), ARMA el compromiso
 // compensatorio del estado; `Comprometer compensación` lo manda y `Resumen del turno` corta la ejecución en ERROR. No envía, no reporta y no escribe en ningún lado.
 //
-// CORRE AL FINAL: es el hijo más bajo de «Soltar mensajes» (`executionOrder: v1`), debajo de los envíos y del cierre, y lee lo que contestaron. SIEMPRE devuelve un ítem
-// (los dos caminos de «¿Compensar entrega?» llegan a «Resumen del turno», que en la variante de prueba responde con el resumen).
+// CORRE AL FINAL: es el hijo más bajo de «Soltar mensajes» (`executionOrder: v1`), debajo de los envíos y del cierre, y lee lo que contestaron. devuelve un ítem SOLO si hay que compensar
+// (así «Comprometer compensación» corre solo entonces; «Resumen del turno», que en la variante de prueba responde con el resumen, cuelga directo de «Soltar mensajes»).
 //
 // QUÉ SE RESTAURA (la regla de siempre, ahora con el bloque entero y con la versión recién comprometida):
 //   - SIN hecho externo (ningún aviso salió y no corrió `Registrar cierre`): el bloque de ANTES del turno (`previo`: estado con su `ultimoMensajeMs`, o sea el ancla de las claves
@@ -15,7 +15,8 @@ const rtId = (j) => {
   const m = j && j.messages;
   return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== '';
 };
-const sale = (extra) => [{ json: Object.assign({ compensar: false, compromiso: null, numero: '' }, extra || {}) }];
+// Sin compensación no se devuelve ningún ítem: «Comprometer compensación» no corre y «Resumen del turno» (hijo directo de «Soltar mensajes», debajo de todo) cierra el turno.
+const sale = (extra) => (extra && extra.compensar === true ? [{ json: Object.assign({ compensar: true, compromiso: null, numero: '' }, extra) }] : []);
 const items = vmTodos('Soltar mensajes');
 const enviables = items.filter((i) => i && i.sinMensajes !== true);
 if (!enviables.length || !vmNodo('Enviar a WhatsApp')) return sale();

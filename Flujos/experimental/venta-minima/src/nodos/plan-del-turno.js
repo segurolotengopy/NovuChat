@@ -79,7 +79,7 @@
 //  m. Con el panel sin respuesta (`cfg.panelSinRespuesta`) no se sabe si el local hace delivery ni qué cobro tiene: a mitad de
 //     un pedido NO se ofrece ni se afirma nada de la entrega, se deriva (aviso + botón), igual que `aConsulta('delivery')`.
 //     PR-4a: el estado de la conversación viaja en la MISMA llamada que el panel, así que con el panel caído tampoco hay estado y
-//     `¿Hay estado?` manda al genérico con el botón ANTES de llegar aquí (`Sin estado`: sin aviso, 0 mensajes extra). Esta defensa
+//     `¿Hay estado?` manda a `Sin estado` ANTES de llegar aquí (política del 21/09: el aviso estándar de transferencia a recepción MÁS el botón, dentro de `topeTransferenciasHora`; 0 mensajes extra). Esta defensa
 //     queda para un panel que contesta 200 sin `tenantId` con la sesión viva (un servidor a medias). Si llega aquí:
 //     COSTO: una consulta de delivery con el panel caído, o un pedido en curso que lo encuentra caído, suma 1 o 2 avisos
 //     al restaurante (la plantilla y, con la ventana abierta, el texto de detalle), y 0 mensajes extra al cliente: sale la

@@ -566,7 +566,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
       if (sesion && sesion.statusCode !== 200) return { statusCode: sesion.statusCode, body: sesion.body };
       return { statusCode: 200, body: sesion ? { ...clonar(panel), conversacion: sesion.body.conversacion, visto: sesion.body.visto } : clonar(panel) };
     },
-    ...Object.fromEntries(['Comprometer turno', 'Comprometer compensación'].map((nodo) => [nodo, (ll) => {
+    ...Object.fromEntries(['Comprometer turno', 'Comprometer turno (2.º intento)', 'Comprometer compensación'].map((nodo) => [nodo, (ll) => {
       const q = ll.cuerpo.sesion;
       return servidor.atender(PID, { ...ll.cuerpo, sesion: { ...q, idCompromiso: `${q.idCompromiso}-x${ejec}` } });
     }])),

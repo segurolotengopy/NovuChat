@@ -300,8 +300,7 @@ describe('las guardias de entrega de `construir.mjs --verificar` (sobre los JSON
     nodo(f, '¿Falló el envío?').parameters['conditions'].conditions[0].leftValue = '={{ $json.ok !== true }}';
   }, /R5: el verificador «¿Falló el envío\?» de «Enviar a WhatsApp» no lee messages\[0\]\.id/);
   rompe('el verificador del respaldo ya no corre después de él (su rama pasa ARRIBA)', (f) => {
-    // (PR-4a: «Resumen del turno» corre al final de la cadena «Confirmar envío» → «¿Compensar entrega?»; lo que fija su orden es que la cabeza de su rama vaya DEBAJO del envío)
-    nodo(f, 'Confirmar envío').position = [8360, 100];
+    nodo(f, 'Resumen del turno').position = [9560, 100];
   }, /R5: el verificador «Resumen del turno» no corre después de «Enviar respaldo»/);
   rompe('el envío principal con `continueOnFail`', (f) => {
     (nodo(f, 'Enviar a WhatsApp') as unknown as J)['continueOnFail'] = true;
@@ -325,10 +324,9 @@ describe('presupuesto de nodos de producción (Andres, 03/10/2026: 50; 30/10/202
     expect(QTACO.nodes.map((n) => n.name)).not.toContain('Entrega fallida');
   });
 
-  it('`--verificar` FALLA si un JSON de producción crece por encima de 69 nodos (50 más los 9 del guardado de medios, «Guardar comprobante» y los 8 del estado en el servidor)', () => {
+  it('`--verificar` FALLA si un JSON de producción crece por encima de 69 nodos (50 más los 9 del guardado de medios, «Guardar comprobante» y los 9 del estado en el servidor)', () => {
     const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => {
       f.nodes.push({ id: 'uno-de-mas', name: 'Uno de más', type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
-      f.nodes.push({ id: 'otro-de-mas', name: 'Otro de más', type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
     }));
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/tiene 70 nodos y el tope de producción es 69/);
