@@ -17,9 +17,9 @@
  *        --workflow <id> --tel <dígitos> [--aplicar --respaldo <ruta absoluta> --confirmo-produccion <id del flujo>]
  *
  * SECO: informa cuántas entradas se borrarían y en qué contenedor (con los números del camino ocultos). Nunca imprime teléfonos ni contenido.
- * `--aplicar`: exige `--confirmo-produccion <id del flujo>` (igual a `--workflow`) y `--respaldo` (ruta absoluta, 0600, fuera de todo repositorio,
+ * `--aplicar`: exige `--confirmo-produccion <id del flujo>` (igual a `--workflow`) y `--respaldo` (ruta absoluta, 0600, fuera de la copia de trabajo o en una carpeta ignorada por git,
  * nunca se pisa: guarda el staticData COMPLETO). Relee justo antes de escribir y, si el flujo cambió, no escribe. Solo cambia `staticData`:
- * nodos, conexiones y ajustes se reescriben TAL CUAL. Verifica al releer y de nuevo tras una espera. No agrega ni quita mensajes.
+ * nodos, conexiones y ajustes se reescriben TAL CUAL. Verifica al releer y de nuevo tras una espera. AVISO: un PUT sobre un flujo activo puede reiniciar sus webhooks; córralo con poco tráfico. Si sale con 3, la ficha pudo reaparecer o una conversación escribió justo en medio: revise y reponga desde el respaldo. No agrega ni quita mensajes.
  *
  * SALIDA. 0 hecho o nada que borrar; 1 el seco encontró entradas; 2 uso o salvaguarda; 3 error de ejecución.
  */
@@ -84,6 +84,16 @@ const segmento = (k) => k.replace(/\d{6,}/g, '#').slice(0, 40);
 /** Una clave de teléfono completo (solo dígitos): la ficha de ALGUIEN; si no es la del teléfono pedido, no se entra ni se toca. */
 const esClaveDeTelefono = (k) => /^\d{8,}$/.test(k);
 const canon = (v) => JSON.stringify(v, (_k, x) => (esObjeto(x) && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
+
+/** Valida la dirección de n8n: https (o http solo en esta misma máquina), sin credenciales, ruta, consulta ni fragmento. Pura. */
+export function validarBaseUrl(valor) {
+  let u;
+  try { u = new URL(valor ?? ''); } catch { return { ok: false, codigo: 'n8n-url-invalida' }; }
+  const local = u.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  if ((u.protocol !== 'https:' && !local) || u.username || u.password) return { ok: false, codigo: 'n8n-sin-https' };
+  if ((u.pathname !== '/' && u.pathname !== '') || u.search || u.hash) return { ok: false, codigo: 'n8n-url-con-ruta' };
+  return { ok: true, origen: u.origin };
+}
 
 /**
  * Puro: del staticData a (nuevo staticData, cuántas entradas se borran y en qué contenedor). No muta la entrada.
@@ -181,12 +191,10 @@ async function principal() {
   const a = analizarArgumentos(process.argv.slice(2));
   if (!a.ok) { console.error(`\n  ✗ ${a.problemas.join('\n  ✗ ')}\n\n${USO}\n`); process.exit(2); }
   const { cfg } = a;
-  // La dirección y la clave vienen del ENTORNO del proceso. La dirección se valida: solo https (o esta misma máquina), sin credenciales ni ruta.
-  let origen;
-  try { origen = new URL(process.env.N8N_BASE_URL ?? ''); } catch { throw Object.assign(new Error('url'), { code: 'n8n-url-invalida' }); }
-  const local = origen.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(origen.hostname);
-  if ((origen.protocol !== 'https:' && !local) || origen.username || origen.password) throw Object.assign(new Error('url'), { code: 'n8n-sin-https' });
-  const BASE = origen.origin;
+  // La dirección y la clave vienen del ENTORNO del proceso. La dirección se valida (validarBaseUrl): solo https (o esta misma máquina), sin credenciales, ruta, consulta ni fragmento.
+  const v = validarBaseUrl(process.env.N8N_BASE_URL);
+  if (!v.ok) throw Object.assign(new Error('url'), { code: v.codigo });
+  const BASE = v.origen;
   const cab = { [['X', 'N8N', 'API', 'KEY'].join('-')]: process.env.N8N_API_KEY, 'Content-Type': 'application/json' };
   const llamar = async (metodo, cuerpo) => {
     const r = await fetch(`${BASE}/api/v1/workflows/${cfg.workflow}`, { method: metodo, headers: cab, body: cuerpo ? JSON.stringify(cuerpo) : undefined, signal: AbortSignal.timeout(60000) });

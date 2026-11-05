@@ -204,3 +204,17 @@ describe('R3. ejecutar', () => {
     expect(await ficha.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), m2.deps, () => {})).toBe(3);
   });
 });
+
+describe('validarBaseUrl (la dirección de n8n)', () => {
+  it('NIEGA: con ruta, consulta o fragmento, sin https, con credenciales o vacía', () => {
+    for (const malo of ['https://n8n.ejemplo.test/ruta', 'https://n8n.ejemplo.test/?a=1', 'https://n8n.ejemplo.test/#x', 'http://n8n.ejemplo.test', `https://usuario:clave@${'n8n.ejemplo.test'}`, '', undefined, 'no es url']) {
+      expect(ficha.validarBaseUrl(malo).ok, String(malo)).toBe(false);
+    }
+    expect(ficha.validarBaseUrl('https://n8n.ejemplo.test/ruta').codigo).toBe('n8n-url-con-ruta');
+  });
+  it('acepta https sin ruta y http solo en esta misma máquina', () => {
+    expect(ficha.validarBaseUrl('https://n8n.ejemplo.test').origen).toBe('https://n8n.ejemplo.test');
+    expect(ficha.validarBaseUrl('https://n8n.ejemplo.test/').ok).toBe(true);
+    expect(ficha.validarBaseUrl('http://localhost:5678').ok).toBe(true);
+  });
+});
