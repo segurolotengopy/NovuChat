@@ -339,7 +339,7 @@ function propiedades(w: W, t: T, from: string, entrada: string, tiposSinBotones:
     const sinPermitidos = c.replace(/\b(?:los\s+)?7\s+d[ií]as(?:\s+(?:de|a)\s+la\s+semana)?\b(?!\s+(?:de\s+prueba|gratis|gratuit\w*|libres?|sin\s+costo|de\s+garant\w*|extra))/gi, ' ').replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' ').replace(/USD (65|125|25)\b/g, ' ');
     // (el complemento de los planes trae a propósito los tamaños de agendas y de catálogo; ver `complementoPlanes`)
     // (el respaldo en texto del aviso de la falla a RECEPCIÓN lleva el teléfono del cliente a propósito, para que sepan a quién atender)
-    if (/^Aviso a recepción: no se pudo guardar el chat; .* Cliente: \d+\.$/.test(c)) { /* teléfono del cliente a recepción */ }
+    if (e.a === REC && c === 'Aviso a recepción: no se pudo guardar el chat; se le ofreció recepción. Cliente: ' + from + '.') { /* teléfono del cliente, solo a recepción y con este texto exacto */ }
     else if (!/^Te cuento un poco más de los planes/.test(c)) expect(sinPermitidos, `${que}: dígitos de más`).not.toMatch(/\d/);
     else expect(c, `${que}: cifras de conversaciones o de consumo`).not.toMatch(/\d+\s+(conversaciones?|mensajes?|interacciones?|respuestas?|chats?)\b|ilimitad|gratis/i);
     if (e.tipo === 'image' || e.tipo === 'document') {
