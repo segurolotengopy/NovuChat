@@ -679,7 +679,7 @@ export function guardias(entrada, flujo, datos = {}) {
         [/\bss[A-Z]\w*[^\[\]{}();]*[\]}](?:\s*[\]}])*\s*=(?![=>])/, 'reasigna un ayudante de sesión (ss*) por desestructuración'],
         [/\bfor\s*(?:await\s*)?\([^;)]*?\b(?:ss[A-Z]|SS_CONFIG)[^;)]*?\b(?:of|in)\b/, 'usa un ayudante de sesión (ss*) o SS_CONFIG como variable de un for…of / for…in'],
         [/(?<![\p{L}\p{N}_$])eval(?![\p{L}\p{N}_$])|\.\s*constructor(?![\p{L}\p{N}_$])/u, 'usa eval o .constructor en cualquier posición (cubre eval(…), (eval)(…), alias de eval y X.constructor)'],
-        [/(?<![\p{L}\p{N}_$])Function(?![\p{L}\p{N}_$])/u, 'usa Function en cualquier posición (cubre Function(…) y new Function; no ve otros caminos hacia Function); usa eval aparte', 'soloCodigo'],
+        [/(?<![\p{L}\p{N}_$])Function(?![\p{L}\p{N}_$])/u, 'usa Function en cualquier posición (cubre Function(…) y new Function; no ve otros caminos hacia Function)', 'soloCodigo'],
         [/\.\s*prototype(?:\s*\.\s*\w+)*\s*(?:\*\*|<<|>>>?|&&|\|\||\?\?|[-+*\/%&|^])?=(?![=>])|=\s*[\w$.]*\.prototype\b(?!\s*\.)|__proto__|\bdefinePropert(?:y|ies)\s*\(\s*[\w$.]*prototype|\bReflect\s*\.\s*(?:set|defineProperty)\s*\(\s*[\w$.]*prototype|\bObject\s*\.\s*assign\s*\(\s*[\w$.]*prototype/, 'contamina un prototipo (asigna a .prototype, asigna un .prototype a una variable, __proto__, o defineProperty/Reflect/Object.assign sobre un prototype)'],
         [/\b(?:set|get)PrototypeOf\b/, 'usa setPrototypeOf o getPrototypeOf'],
         [/\bdelete\s+(?:ss[A-Z]|SS_CONFIG)/, 'borra un ayudante de sesión (ss*) o SS_CONFIG con delete'],
