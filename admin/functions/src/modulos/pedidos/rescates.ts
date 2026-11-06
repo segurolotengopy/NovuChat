@@ -122,10 +122,10 @@ export function motivoParaNoRescatar(
   if (c['rescate'] !== undefined) return 'ya_rescatado';
   // PROTECCIÓN ANTE UNA CRISIS. `riesgoEn` solo lo escribe el servidor (ingesta, con el hecho
   // `no_contactar` + `riesgo`) y ninguna regla de la consola lo cambia ni lo borra. A diferencia de
-  // `noContactar` (que una persona del negocio puede apagar), cualquier valor distinto de ausente,
-  // false o null bloquea: ante la duda, no se escribe a una persona en crisis.
+  // `noContactar` (que una persona del negocio puede apagar), cualquier valor distinto de ausente
+  // o `false` bloquea, `null` incluido: ante la duda, no se escribe a una persona en crisis.
   const rg = c['riesgoEn'];
-  if (rg !== undefined && rg !== null && rg !== false) return 'riesgo';
+  if (rg !== undefined && rg !== false) return 'riesgo';
   // Cualquier valor distinto de ausente o `false` bloquea; `null` también (no es «ausente»).
   const nc = c['noContactar'];
   if (nc !== undefined && nc !== false) return 'no_contactar';
@@ -289,6 +289,11 @@ export const reclamarRescates = onRequest(
       respuesta.status(200).json({ phoneNumberId, rescates: [], motivo: 'sin_modulo' });
       return;
     }
+    // Un comercio que no está activo (suspendido, dado de baja) no rescata, aunque su ruta siga activa.
+    if (ficha.get('estado') !== 'activo') {
+      respuesta.status(200).json({ phoneNumberId, rescates: [], motivo: 'servicio_no_operativo' });
+      return;
+    }
     const cuentaCruda = (cuenta.data() ?? {}) as CuentaCruda;
     const servicio = estadoDeServicio(cuentaCruda, consumidasDe(metricas.data()), ahoraMs);
     if (corteAplicable(cuentaCruda, plataforma.data()) && !servicio.operativo) {
@@ -355,7 +360,7 @@ export const reclamarRescates = onRequest(
           // reciente, ante la duda, no se rescata.
           const pedidos = await db.collection(`tenants/${tenantId}/pedidos`)
             .where('conversacionId', '==', doc.id).limit(PEDIDOS_A_LEER).get();
-          const desdePedido = ahoraMs - 24 * HORA;
+          const desdePedido = ultimoMs - 24 * HORA;
           if (pedidos.size >= PEDIDOS_A_LEER
             || pedidos.docs.some((p) => (milisegundosDe(p.get('creadoEn')) ?? Infinity) >= desdePedido)) continue;
 

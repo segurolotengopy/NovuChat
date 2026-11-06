@@ -129,7 +129,7 @@ for ((i = 0; i < \${#a[@]}; i++)); do [[ "\${a[i]}" == -o ]] && out="\${a[i+1]}"
 http=0; [[ "\${a[\${#a[@]}-1]}" == *reclamarsalidapersona* || "\${a[\${#a[@]}-1]}" == *confirmarsalidapersona* || "\${a[\${#a[@]}-1]}" == *reclamarrescates* ]] && http=1
 modo="auto"; [[ -f "$E/curl-modo" ]] && modo="$(cat "$E/curl-modo")"
 if [[ "$modo" == auto ]]; then
-  if python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); sys.exit(0 if any(b.get("role")=="roles/run.invoker" and "allUsers" in b.get("members",[]) for b in p.get("bindings",[])) else 1)' "$E/politica.json"; then modo=propio; else modo=403; fi
+  if grep -q '"allUsers"' "$E/politica.json"; then modo=propio; else modo=403; fi
 fi
 err() { printf '{"error":{"message":"x","status":"%s"}}' "$1" > "$out"; printf '%s' "$2"; }
 if (( http )) && [[ "$modo" == propio ]]; then printf 'no autorizado' > "$out"; printf '401'; exit 0; fi
@@ -715,8 +715,10 @@ describe('nube-visor.sh: las Functions HTTP de la ingesta (H2-3)', () => {
     expect(escrituras()).toEqual([escritura('add', STAGING, servicio)]);
   });
 
-  it.each(HTTP)('%s: cualquier respuesta distinta del 401 propio y del 403 de Google es «abierto»: revierte y sale 3', (servicio) => {
-    for (const [modo, codigo] of [['200', 200], ['http400', 400], ['http404', 404], ['http409', 409], ['http503', 503], ['500', 500], ['http200html', 200], ['http401otro', 401], ['http401json', 401]] as const) {
+  // Un caso por servicio y por modo (no un `it` que recorre los nueve): cada uno lanza bash, gcloud y curl falsos, y en un CI con poca CPU el conjunto pasaba del tiempo.
+  const MODOS_ABIERTOS = [['200', 200], ['http400', 400], ['http404', 404], ['http409', 409], ['http503', 503], ['500', 500], ['http200html', 200], ['http401otro', 401], ['http401json', 401]] as const;
+  it.each(HTTP.flatMap((servicio) => MODOS_ABIERTOS.map(([modo, codigo]) => [servicio, modo, codigo] as const)))(
+    '%s, respuesta «%s»: distinta del 401 propio y del 403 de Google es «abierto»: revierte y sale 3', (servicio, modo, codigo) => {
       politica(SIN_NADA);
       marcar('llamadas', ''); marcar('curl', ''); marcar('curl-modo', modo);
       const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
@@ -724,8 +726,8 @@ describe('nube-visor.sh: las Functions HTTP de la ingesta (H2-3)', () => {
       expect(r.salida).toContain(`REVERTIDO: respondió sin sesión (abierto:${codigo})`);
       expect(escrituras()).toEqual([escritura('add', STAGING, servicio), escritura('remove', STAGING, servicio)]);
       expect(publico()).toBe(false);
-    }
-  });
+    },
+  );
 
   it.each(HTTP)('%s: el 403 HTML de Google sigue siendo de Google (no revierte, el binding queda)', (servicio) => {
     marcar('curl-modo', '403');

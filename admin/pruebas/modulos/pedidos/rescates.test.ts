@@ -210,6 +210,27 @@ describe('módulo y compra', () => {
     expect(await marca(X, tel(52))).toBeUndefined();
   });
 
+  it('un pedido de 5 h antes del último mensaje del cliente también es una compra (la ventana se cuenta desde su último mensaje, no desde ahora)', async () => {
+    await sembrar(X, tel(57));
+    await db.doc(`tenants/${X}/pedidos/wa_ped-4`).set({ conversacionId: `wa_${tel(57)}`, creadoEn: en(SILENCIO_OK + 5 * HORA), estado: 'recibido' });
+    await sembrar(X, tel(58));                                   // control: su pedido es de 30 h antes de su último mensaje
+    await db.doc(`tenants/${X}/pedidos/wa_ped-5`).set({ conversacionId: `wa_${tel(58)}`, creadoEn: en(SILENCIO_OK + 30 * HORA), estado: 'recibido' });
+    const r = await llamar();
+    expect(r.cuerpo.rescates.map((x: { telefono: string }) => x.telefono)).toEqual([tel(58)]);
+    expect(await marca(X, tel(57))).toBeUndefined();
+  });
+
+  it('comercio no activo (suspendido o sin estado) con la ruta activa: 200 servicio_no_operativo y nada marcado', async () => {
+    await sembrar(X, tel(59));
+    for (const estado of ['suspendido', 'baja', undefined]) {
+      await db.doc(`tenants/${X}`).set({ nombre: X, ...(estado ? { estado } : {}), flujos: ['venta'], modulos: ['productos', 'pedidos'] });
+      const r = await llamar();
+      expect(r.codigo, String(estado)).toBe(200);
+      expect(r.cuerpo, String(estado)).toEqual({ phoneNumberId: NUM_X, rescates: [], motivo: 'servicio_no_operativo' });
+      expect(await marca(X, tel(59))).toBeUndefined();
+    }
+  });
+
   it('crisis: `riesgoEn` corta aunque la consola haya apagado `noContactar`', async () => {
     await sembrar(X, tel(55), { noContactar: false, riesgoEn: en(5 * HORA) });
     await sembrar(X, tel(56), { noContactar: false });

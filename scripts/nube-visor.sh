@@ -31,7 +31,7 @@
 # `NOT_FOUND` o `RESOURCE_EXHAUSTED`, sin sesión, quiere decir que el código
 # atendió a un anónimo («abierto»).
 #
-# LAS TRES HTTP (`reclamarsalidapersona`, `confirmarsalidapersona`, `reclamarrescates`) NO son
+# LAS CUATRO HTTP (`reclamarsalidapersona`, `confirmarsalidapersona`, `reclamarrescates`, `guardarmedio`) NO son
 # callables: no hay sesión de Firebase ni App Check; la barrera es la credencial
 # de la ingesta del número (`rutaAutenticada`, secreto por alias), que el código
 # exige ANTES de mirar la entrada. Sin ella contestan `401` con el texto «no

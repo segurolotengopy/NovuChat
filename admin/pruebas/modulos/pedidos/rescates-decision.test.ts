@@ -4,6 +4,8 @@
  * Acá se prueba mandarle un mensaje a alguien que no escribió. La mayoría de los
  * casos comprueban que NO se rescata. Los teléfonos son ficticios (591000000xx).
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Timestamp } from 'firebase-admin/firestore';
 import {
@@ -67,12 +69,11 @@ describe('motivoParaNoRescatar: quién entra, y sobre todo quién no', () => {
     expect(motivo(conv(undefined, { noContactar: null }))).toBe('no_contactar');
   });
 
-  it('`riesgoEn` (crisis, la escribe solo el servidor): cualquier valor distinto de ausente/false/null corta, aun con noContactar apagado', () => {
-    for (const v of [ts(HORA), true, 'x', 0, 1, {}]) {
+  it('`riesgoEn` (crisis, la escribe solo el servidor): cualquier valor distinto de ausente/false corta (null incluido), aun con noContactar apagado', () => {
+    for (const v of [ts(HORA), true, 'x', 0, 1, {}, null]) {
       expect(motivo(conv(undefined, { riesgoEn: v, noContactar: false })), JSON.stringify(v)).toBe('riesgo');
     }
     expect(motivo(conv(undefined, { riesgoEn: false }))).toBe('');
-    expect(motivo(conv(undefined, { riesgoEn: null }))).toBe('');
   });
 
   it('contacto bloqueado por el comercio (`bloqueada`): true, «true» o cualquier valor raro corta; false o ausente no', () => {
@@ -259,5 +260,33 @@ describe('validarCuerpo', () => {
     ]) {
       expect(validarCuerpo(c).ok, JSON.stringify(c)).toBe(false);
     }
+  });
+});
+
+// Sobre el CÓDIGO FUENTE: una escritura sin `merge` sobre la conversación borraría sus demás campos (turno, noContactar, riesgoEn…).
+const CON_MERGE = /\{\s*merge:\s*true\s*\}\s*$/;
+function argumentosDeSet(fuente: string): string[] {
+  const sets: string[] = [];
+  for (const m of fuente.matchAll(/\.set\(/g)) {
+    let prof = 1; let i = (m.index ?? 0) + m[0].length;
+    const ini = i;
+    while (i < fuente.length && prof > 0) { if (fuente[i] === '(') prof += 1; else if (fuente[i] === ')') prof -= 1; i += 1; }
+    sets.push(fuente.slice(ini, i - 1));
+  }
+  return sets;
+}
+describe('rescates.ts: toda escritura sobre la conversación es un merge', () => {
+  const fuente = readFileSync(join(__dirname, '../../../functions/src/modulos/pedidos/rescates.ts'), 'utf8');
+  it('cada `.set(` lleva `merge: true`, y no hay `.update(` ni `.delete(`', () => {
+    const sets = argumentosDeSet(fuente);
+    expect(sets.length).toBeGreaterThan(0);
+    for (const s of sets) expect(s, s.slice(0, 80)).toMatch(CON_MERGE);
+    expect(fuente).not.toMatch(/\.(update|delete)\(/);
+  });
+  it('NIEGA: la comprobación detecta un `set` sin merge', () => {
+    const malos = argumentosDeSet('tx.set(ref, { rescate: { x: 1 } });');
+    expect(malos).toHaveLength(1);
+    expect(CON_MERGE.test(malos[0]!)).toBe(false);
+    expect(CON_MERGE.test(argumentosDeSet('tx.set(ref, { a: 1 }, { merge: true });')[0]!)).toBe(true);
   });
 });
