@@ -51,7 +51,7 @@ if (!hecho) {
 }
 const compromiso = ssCuerpoComprometer(from, $execution.id, 'comp', Number(primero.versionComprometida) || 0, bloque);
 if (compromiso === null) return sale({ numero: primero.numero || ssNumeroHeader() });
-compromiso.sesion.venceEnMin = vmVenceEnMin(bloque);
+compromiso.sesion.venceEnMin = vmVenceEnMin(bloque, Number(primero.ahoraMs) || Date.now());
 return sale({ compensar: true, compromiso: compromiso, numero: primero.numero || ssNumeroHeader() });
 };
 const salidaComp = compensacion();

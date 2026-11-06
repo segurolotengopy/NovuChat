@@ -1686,6 +1686,13 @@ describe('PR-4b: «Armar avisos» pide los cupos al servidor (`Consumir cupos` m
     expect(cupo(r, 'avisos')['cantidad']).toBe(r.items.filter((i) => i['clase'] !== 'imagen').length);
     expect(cupo(r, 'avisos')['cantidad']).toBe(r.items.length - 1);
   });
+  it('MUTACIÓN: sin el filtro de la imagen en «Armar avisos», la cantidad pedida incluye la imagen y la prueba de arriba lo detecta', () => {
+    const de = "AA_items.filter((j) => j.clase !== 'imagen').length";
+    expect(AVISOS).toContain(de);
+    const r = nodo(AVISOS.replace(de, 'AA_items.length'), { plan: { pedido: PEDIDO, aviso: { tipo: 'comprobante', datos: { resultado: 'cuadra', detalle: 'Detalle.', imagen: true, mediaId: 'media-1' } } } }) as Salida;
+    expect(cupo(r, 'avisos')['cantidad']).toBe(r.items.length); // con la imagen contada
+    expect(cupo(r, 'avisos')['cantidad']).not.toBe(r.items.length - 1);
+  });
 
   it('el comprobante exento (derivación `comprobante: true`) NO consume `transferencias`; la derivación normal sí', () => {
     const exento = avisos({ aviso: { tipo: 'transferencia', datos: { comprobante: true, motivo: 'comprobante enviado' } } });
