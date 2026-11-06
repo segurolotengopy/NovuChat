@@ -524,6 +524,32 @@ export function anfitrionPermitido(nombreDelNodo, url) {
  * Lo que un JSON de este flujo no puede tener, aunque alguien lo haya agregado a mano al archivo versionado. Devuelve la lista de hallazgos (vacía si está limpio).
  * `entrada`: 'trigger' | 'prueba'.
  */
+// Quita los comentarios de un código JS respetando cadenas, plantillas y literales de regex (un «/*» dentro de una cadena NO abre un comentario: borrar código real ocultaría una mutación).
+export function sinComentarios(texto) {
+  const t = String(texto);
+  let salida = '';
+  let i = 0;
+  let ultimo = '';  // último carácter significativo fuera de cadenas y comentarios: decide si un «/» abre una regex
+  while (i < t.length) {
+    const c = t[i];
+    const d = t[i + 1];
+    if (c === '/' && d === '/') { while (i < t.length && t[i] !== '\n') i++; continue; }
+    if (c === '/' && d === '*') { const fin = t.indexOf('*/', i + 2); i = fin < 0 ? t.length : fin + 2; salida += ' '; continue; }
+    if (c === '"' || c === "'" || c === '`') {
+      let j = i + 1;
+      while (j < t.length && t[j] !== c) j += t[j] === '\\' ? 2 : 1;
+      salida += t.slice(i, j + 1); i = j + 1; ultimo = c; continue;
+    }
+    if (c === '/' && (ultimo === '' || '(,=:[!&|?{};+-*%<>~^'.includes(ultimo))) {
+      let j = i + 1; let clase = false;
+      while (j < t.length && (clase || t[j] !== '/') && t[j] !== '\n') { if (t[j] === '\\') j++; else if (t[j] === '[') clase = true; else if (t[j] === ']') clase = false; j++; }
+      salida += t.slice(i, j + 1); i = j + 1; ultimo = '/'; continue;
+    }
+    salida += c; if (!/\s/.test(c)) ultimo = c; i++;
+  }
+  return salida;
+}
+
 export function guardias(entrada, flujo, datos = {}) {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
@@ -582,34 +608,37 @@ export function guardias(entrada, flujo, datos = {}) {
       const js = String(parametros(n).jsCode || '');
       const sinRegistro = FUENTE_REGISTRO ? js.split(FUENTE_REGISTRO.trimEnd()).join('') : js;
       // (sin los comentarios: el módulo trae un ejemplo de `const SS_CONFIG = …` en su cabecera)
-      const codigo = js.replace(/^\s*\/\/.*$/gm, '');
+      const codigo = sinComentarios(js);
       // `cnRegistro(` fuera de `_registro.js` también es usar el módulo: llama a `ssResultadoDeCompromiso`.
       const usa = /\bss(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig|NumeroHeader)\(/.test(sinRegistro) || /\bcnRegistro\(/.test(sinRegistro);
-      const define = /function ss[A-Z]\w*\(/.test(js);
+      const define = /function\s*\*?\s*ss[A-Z]\w*\s*\(/.test(js);
       if ((usa || define) && !js.includes(FUENTE_SESION.trimEnd())) h.push(`el nodo «${n.name}» usa o define funciones de sesión (ss*) sin traer \`comun-sin-agente/src/sesion.js\` tal cual: se INCLUYE el módulo común, no se copia ni se edita`);
       if (/function (cn|ch)(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig)\(/.test(js)) h.push(`el nodo «${n.name}» trae una copia propia de los ayudantes de sesión`);
       if (usa || define) {
         // En JS gana la ÚLTIMA declaración: traer el módulo y luego REDEFINIR una función (`function ssDesdeAutorizado() { return true; }`) anularía el aislamiento. Cada `ss*` y SS_CONFIG, UNA vez por nodo.
         const cuenta = new Map();
-        for (const m of codigo.matchAll(/\b(?:function|const|let|var)\s+(ss[A-Z]\w*|SS_CONFIG)\b/g)) cuenta.set(m[1], (cuenta.get(m[1]) || 0) + 1);
+        for (const m of codigo.matchAll(/\b(?:(?:async\s+)?function\s*\*?|const|let|var)\s*(ss[A-Z]\w*|SS_CONFIG)\b/g)) cuenta.set(m[1], (cuenta.get(m[1]) || 0) + 1);
         for (const [nombre, veces] of cuenta) if (veces !== 1) h.push(`el nodo «${n.name}» declara ${nombre} ${veces} veces: cada ayudante de sesión y SS_CONFIG se declaran UNA sola vez por nodo (la última declaración gana y anularía el módulo)`);
         if (!cuenta.has('SS_CONFIG')) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
       }
     }
     // Nadie reasigna ni muta los parámetros de sesión: ni `ss*` ni `SS_CONFIG` (con `=`, por índice o con `Object.assign/defineProperty`), sobre el código de cada nodo SIN el módulo común ni el registro (que los declaran) y sin comentarios.
     {
-      const sinCom = (t) => String(t).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-      const propios = [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean).map((t) => sinCom(t).trim());
+      const propios = [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean).map((t) => t.trimEnd());
+      const OP = '(?:\\*\\*|<<|>>>?|&&|\\|\\||\\?\\?|[-+*\\/%&|^])?';
       const REGLAS = [
-        [/\b(ss[A-Z]\w*|SS_CONFIG)\s*(\.\s*\w+\s*)?[-+*\/%&|^]?=(?!=)/, 'reasigna o muta un ayudante de sesión (ss*) o SS_CONFIG con «=»'],
+        [new RegExp('\\b(?:ss[A-Z]\\w*|SS_CONFIG)(?:\\s*(?:\\.\\s*\\w+|\\[[^\\]]*\\]))*\\s*' + OP + '=(?![=>])'), 'reasigna o muta un ayudante de sesión (ss*) o SS_CONFIG con «=» (o con un operador de asignación)'],
         [/(\+\+|--)\s*ss[A-Z]|ss[A-Z]\w*\s*(\+\+|--)/, 'incrementa o decrementa un ayudante de sesión (ss*)'],
-        [/[\[{,:]\s*ss[A-Z]\w*\s*[\]},]\s*=/, 'reasigna un ayudante de sesión (ss*) por desestructuración'],
+        [/\bss[A-Z]\w*[^\[\]{}();]*[\]}](?:\s*[\]}])*\s*=(?![=>])/, 'reasigna un ayudante de sesión (ss*) por desestructuración'],
+        [/\bfor\s*(?:await\s*)?\(\s*(?:(?:const|let|var)\s*)?[[{]?\s*(?:ss[A-Z]|SS_CONFIG)/, 'usa un ayudante de sesión (ss*) o SS_CONFIG como variable de un for…of / for…in'],
+        [/\bdelete\s+(?:ss[A-Z]|SS_CONFIG)/, 'borra un ayudante de sesión (ss*) o SS_CONFIG con delete'],
         [/SS_CONFIG\s*\[/, 'accede a SS_CONFIG por índice'],
-        [/Object\.(assign|defineProperty)\(\s*SS_CONFIG/, 'muta SS_CONFIG con Object.assign o Object.defineProperty'],
+        [/(?:Object\.(?:assign|defineProperty|defineProperties|setPrototypeOf)|Reflect\.(?:set|defineProperty|deleteProperty|setPrototypeOf))\(\s*SS_CONFIG/, 'muta SS_CONFIG con Object.assign/defineProperty/defineProperties/setPrototypeOf o con Reflect'],
       ];
       for (const n of nodos) {
-        let resto = sinCom(parametros(n).jsCode || '');
+        let resto = String(parametros(n).jsCode || '');
         for (const p of propios) resto = resto.split(p).join('');
+        resto = sinComentarios(resto);
         for (const [re, que] of REGLAS) if (re.test(resto)) h.push(`el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
       }
     }

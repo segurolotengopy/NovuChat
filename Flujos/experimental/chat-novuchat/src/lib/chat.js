@@ -509,7 +509,7 @@ const CH_TOPE_SITIO = 2;                     // veces que el CÓDIGO anexa el si
 const CH_TOPE_AVISOS = 3;                    // plantillas a recepción por ventana de 24 h y por teléfono: el primero + hasta 2 empresas distintas
 const CH_HORA_MS = 60 * 60 * 1000;
 const CH_TOPE_AVISO_FALLA_HORA = 1;      // avisos a recepción por falla del compromiso (el genérico con botón), por teléfono y por hora (política del 21/09/2026: pasar con recepción = aviso + botón)
-const CH_ESTADO_AVISO_FALLA = 'no se pudo guardar el chat; se le ofreció pasar con recepción';  // ≤60: el límite de una variable de plantilla
+const CH_ESTADO_AVISO_FALLA = 'no se pudo guardar el chat; se le ofreció recepción';  // ≤60: el límite de una variable de plantilla
 const CH_TOPE_COLA = 6;                      // eventos pendientes de responder, a lo más
 const CH_ESPERA_SEG = 2.5;                   // la espera de la ráfaga (coalescencia de clics)
 const CH_MAX_MENSAJE = 1000;                 // Meta admite 1.024 en el cuerpo de un mensaje interactivo

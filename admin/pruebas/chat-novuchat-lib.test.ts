@@ -1475,15 +1475,21 @@ describe('guardias de --verificar', () => {
     // (b) sin congelar
     expect(CONSTRUIR.guardias('trigger', edita(prod(), 'Soltar mensajes', 'Object.freeze({', '({'), DATOS_CRM).join(' ')).toMatch(/SS_CONFIG tiene que declararse con Object\.freeze/);
     // (c) reasignaciones y mutaciones en el código de CUALQUIER nodo (el módulo y el registro, tal cual, no cuentan)
-    for (const mut of ["SS_CONFIG = {};", "SS_CONFIG.espacio = 'x';", "ssEspacio = () => 'x';", "ssFoo.bar = 1;", "SS_CONFIG['espacio'] = 'x';", "Object.assign(SS_CONFIG, { espacio: 'x' });", "Object.defineProperty(SS_CONFIG, 'espacio', { value: 'x' });", "const y = SS_CONFIG[k];", "ssFoo++;", "--ssFoo;", "[ssFoo] = [1];", "({ a: ssFoo } = x);"]) {
+    for (const mut of ["SS_CONFIG = {};", "SS_CONFIG.espacio = 'x';", "ssEspacio = () => 'x';", "ssFoo.bar = 1;", "SS_CONFIG['espacio'] = 'x';", "Object.assign(SS_CONFIG, { espacio: 'x' });", "Object.defineProperty(SS_CONFIG, 'espacio', { value: 'x' });", "const y = SS_CONFIG[k];", "ssFoo++;", "--ssFoo;", "[ssFoo] = [1];", "({ a: ssFoo } = x);", "[ssFoo, b] = [f, 1];", "[a, ssFoo] = [1, f];", "({ ssFoo, b } = x);", "[a, [ssFoo]] = [1, [f]];", "ssFoo &&= f;", "ssFoo ||= f;", "ssFoo ??= f;", "ssFoo **= 2;", "ssFoo <<= 1;", "ssFoo >>= 1;", "ssFoo >>>= 1;", "SS_CONFIG.espacio ??= 'x';", "for (ssFoo of xs) {}", "for (const ssFoo in o) {}", "for (SS_CONFIG of xs) {}", "const s = '/*'; ssFoo = f; const u = '*/';", "const s = `/*`; ssFoo = f; const u = `*/`;", "Object.defineProperties(SS_CONFIG, {});", "Object.setPrototypeOf(SS_CONFIG, null);", "Reflect.set(SS_CONFIG, 'espacio', 'x');", "Reflect.defineProperty(SS_CONFIG, 'espacio', {});", "delete SS_CONFIG.espacio;", "ssFoo.a.b = 1;"]) {
       const f = prod();
       f['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += '\n' + mut;
-      expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(/«Cerrar turno» (reasigna o muta|reasigna un ayudante|incrementa o decrementa|accede a SS_CONFIG|muta SS_CONFIG)/);
+      expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(/«Cerrar turno» (reasigna o muta|reasigna un ayudante|incrementa o decrementa|accede a SS_CONFIG|muta SS_CONFIG|usa un ayudante|borra un ayudante)/);
     }
     // un comentario o una comparación no son una mutación
     const limpio = prod();
-    limpio['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += "\n// SS_CONFIG = {} (ejemplo)\n/* ssX = 1 */\nconst ok = SS_CONFIG.espacio === 'chat-novuchat' && ssEspacio() !== 'z';";
+    limpio['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += "\n// SS_CONFIG = {} (ejemplo)\n/* ssX = 1 */\nconst ok = SS_CONFIG.espacio === 'chat-novuchat' && ssEspacio() !== 'z';\nconst t1 = 'a /* b'; const q = ssEspacio() >= 1 && ssEspacio() <= 2; const r = /\\/\\*/.test(t1); // */";
     expect(CONSTRUIR.guardias('trigger', limpio, DATOS_CRM)).toEqual([]);
+    // declarar una ssX como generador o async tampoco escapa a la declaración única
+    for (const redefine of ['function* ssEspacio() {}', 'async function ssEspacio() {}']) {
+      const g = prod();
+      g['nodes'].find((x: J) => x.name === 'Soltar mensajes').parameters.jsCode += '\n' + redefine;
+      expect(CONSTRUIR.guardias('trigger', g, DATOS_CRM).join(' '), redefine).toMatch(/«Soltar mensajes» declara ssEspacio 2 veces/);
+    }
   });
   it('el ESTADO SE COMPROMETE ANTES DE ENVIAR: «Armar mensajes» conectado al envío, un nodo de compromiso ausente o apuntando a otra Function, y un envío colgado de otro nodo se detectan (PR-4c2)', () => {
     const a = prod();
