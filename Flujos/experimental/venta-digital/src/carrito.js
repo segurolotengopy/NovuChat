@@ -85,7 +85,7 @@ function vcVendibles(catalogo, opciones) {
     if (typeof it.id !== 'string' || !VC_ID.test(it.id) || veces.get(it.id) !== 1) continue;
     if (typeof it.precio !== 'number' || !Number.isFinite(it.precio) || it.precio <= 0) continue;
     const sinMoneda = it.moneda === undefined || it.moneda === null;
-    if (monedaVenta === 'ARS' ? it.moneda !== 'ARS' : !(sinMoneda || it.moneda === 'BOB')) continue;
+    if (externa ? it.moneda !== monedaVenta : (monedaVenta === 'ARS' ? it.moneda !== 'ARS' : !(sinMoneda || it.moneda === 'BOB'))) continue; // una fuente externa DEBE declarar la moneda de cada ítem
     const centavos = Math.round(it.precio * 100);
     if (!Number.isSafeInteger(centavos) || centavos < 1) continue;
     if (externa && it.precioCentavos !== undefined && it.precioCentavos !== null && it.precioCentavos !== centavos) continue;
