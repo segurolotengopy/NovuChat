@@ -524,28 +524,61 @@ export function anfitrionPermitido(nombreDelNodo, url) {
  * Lo que un JSON de este flujo no puede tener, aunque alguien lo haya agregado a mano al archivo versionado. Devuelve la lista de hallazgos (vacía si está limpio).
  * `entrada`: 'trigger' | 'prueba'.
  */
-// Quita los comentarios de un código JS respetando cadenas, plantillas y literales de regex (un «/*» dentro de una cadena NO abre un comentario: borrar código real ocultaría una mutación).
+// Quita los comentarios de un código JS respetando cadenas, plantillas (con su pila de `${ }`) y literales de regex (un «/*» dentro de una cadena NO abre un comentario: borrar código real ocultaría una mutación).
+// Solo se BORRAN comentarios: cadenas y regex se conservan, así que un error de lectura de una regex nunca oculta código; en la duda un «/» se toma como regex solo tras las palabras clave y los signos que la admiten sin ambigüedad.
+const ANTES_DE_REGEX = new Set(['return', 'typeof', 'case', 'do', 'else', 'in', 'of', 'new', 'delete', 'void', 'throw', 'instanceof', 'yield', 'await']);
 export function sinComentarios(texto) {
   const t = String(texto);
   let salida = '';
   let i = 0;
-  let ultimo = '';  // último carácter significativo fuera de cadenas y comentarios: decide si un «/» abre una regex
+  let ultimo = '';     // último carácter significativo fuera de cadenas y comentarios
+  let palabra = '';    // la palabra completa que termina en `ultimo` (si es de identificador)
+  const plantillas = [];   // por cada `${` abierto: la profundidad de llaves dentro
+  const parens = [];       // por cada «(»: si la abre if/while/for/with
+  let ultimaPalabra = '';
+  const leerPlantilla = () => {  // desde el acento grave de apertura o desde el «}» que cierra un `${`: copia el texto hasta el cierre o hasta el próximo `${`
+    let j = i + 1;
+    while (j < t.length && t[j] !== '`') {
+      if (t[j] === '\\') { j += 2; continue; }
+      if (t[j] === '$' && t[j + 1] === '{') { salida += t.slice(i, j + 2); i = j + 2; plantillas.push(0); ultimo = '{'; palabra = ''; return; }
+      j++;
+    }
+    salida += t.slice(i, j + 1); i = j + 1; ultimo = '`'; palabra = '';
+  };
   while (i < t.length) {
     const c = t[i];
     const d = t[i + 1];
     if (c === '/' && d === '/') { while (i < t.length && t[i] !== '\n') i++; continue; }
     if (c === '/' && d === '*') { const fin = t.indexOf('*/', i + 2); i = fin < 0 ? t.length : fin + 2; salida += ' '; continue; }
-    if (c === '"' || c === "'" || c === '`') {
+    if (c === '"' || c === "'") {
       let j = i + 1;
-      while (j < t.length && t[j] !== c) j += t[j] === '\\' ? 2 : 1;
-      salida += t.slice(i, j + 1); i = j + 1; ultimo = c; continue;
+      while (j < t.length && t[j] !== c && t[j] !== '\n') j += t[j] === '\\' ? 2 : 1;
+      salida += t.slice(i, j + 1); i = j + 1; ultimo = c; palabra = ''; continue;
     }
-    if (c === '/' && (ultimo === '' || '(,=:[!&|?{};+-*%<>~^'.includes(ultimo))) {
-      let j = i + 1; let clase = false;
-      while (j < t.length && (clase || t[j] !== '/') && t[j] !== '\n') { if (t[j] === '\\') j++; else if (t[j] === '[') clase = true; else if (t[j] === ']') clase = false; j++; }
-      salida += t.slice(i, j + 1); i = j + 1; ultimo = '/'; continue;
+    if (c === '`') { leerPlantilla(); continue; }
+    if (c === '{' && plantillas.length) { plantillas[plantillas.length - 1]++; }
+    if (c === '}' && plantillas.length) {
+      if (plantillas[plantillas.length - 1] === 0) { plantillas.pop(); leerPlantilla(); continue; }
+      plantillas[plantillas.length - 1]--;
     }
-    salida += c; if (!/\s/.test(c)) ultimo = c; i++;
+    if (c === '(') parens.push(/^(?:if|while|for|with)$/.test(palabra));
+    let condicion = false;
+    if (c === ')') condicion = parens.pop() === true;
+    if (c === '/') {
+      const admite = ultimo === '' || '(,=:[!&|?{};+-*%<>~^}'.includes(ultimo) || ANTES_DE_REGEX.has(palabra) || (ultimo === ')' && ultimaPalabra === 'cond');
+      if (admite) {
+        let j = i + 1; let clase = false;
+        while (j < t.length && (clase || t[j] !== '/') && t[j] !== '\n') { if (t[j] === '\\') j++; else if (t[j] === '[') clase = true; else if (t[j] === ']') clase = false; j++; }
+        salida += t.slice(i, j + 1); i = j + 1; ultimo = '/'; palabra = ''; ultimaPalabra = ''; continue;
+      }
+    }
+    salida += c;
+    if (!/\s/.test(c)) {
+      ultimo = c;
+      if (/[\w$]/.test(c)) { palabra = /[\w$]/.test(t[i - 1] || '') ? palabra + c : c; } else palabra = '';
+      ultimaPalabra = c === ')' && condicion ? 'cond' : '';
+    }
+    i++;
   }
   return salida;
 }
@@ -630,7 +663,8 @@ export function guardias(entrada, flujo, datos = {}) {
         [new RegExp('\\b(?:ss[A-Z]\\w*|SS_CONFIG)(?:\\s*(?:\\.\\s*\\w+|\\[[^\\]]*\\]))*\\s*' + OP + '=(?![=>])'), 'reasigna o muta un ayudante de sesión (ss*) o SS_CONFIG con «=» (o con un operador de asignación)'],
         [/(\+\+|--)\s*ss[A-Z]|ss[A-Z]\w*\s*(\+\+|--)/, 'incrementa o decrementa un ayudante de sesión (ss*)'],
         [/\bss[A-Z]\w*[^\[\]{}();]*[\]}](?:\s*[\]}])*\s*=(?![=>])/, 'reasigna un ayudante de sesión (ss*) por desestructuración'],
-        [/\bfor\s*(?:await\s*)?\(\s*(?:(?:const|let|var)\s*)?[[{]?\s*(?:ss[A-Z]|SS_CONFIG)/, 'usa un ayudante de sesión (ss*) o SS_CONFIG como variable de un for…of / for…in'],
+        [/\bfor\s*(?:await\s*)?\([^;)]*?\b(?:ss[A-Z]|SS_CONFIG)[^;)]*?\b(?:of|in)\b/, 'usa un ayudante de sesión (ss*) o SS_CONFIG como variable de un for…of / for…in'],
+        [/\beval\s*\(|\bFunction\s*\(|\bnew\s+Function\b/, 'usa eval o Function (código armado que ninguna guardia ve)'],
         [/\bdelete\s+(?:ss[A-Z]|SS_CONFIG)/, 'borra un ayudante de sesión (ss*) o SS_CONFIG con delete'],
         [/SS_CONFIG\s*\[/, 'accede a SS_CONFIG por índice'],
         [/(?:Object\.(?:assign|defineProperty|defineProperties|setPrototypeOf)|Reflect\.(?:set|defineProperty|deleteProperty|setPrototypeOf))\(\s*SS_CONFIG/, 'muta SS_CONFIG con Object.assign/defineProperty/defineProperties/setPrototypeOf o con Reflect'],
@@ -639,6 +673,14 @@ export function guardias(entrada, flujo, datos = {}) {
         let resto = String(parametros(n).jsCode || '');
         for (const p of propios) resto = resto.split(p).join('');
         resto = sinComentarios(resto);
+        // «(ssX) = f», «((ssX))», «[(ssX)] = …»: se quitan los paréntesis (y espacios) que envuelven al nombre antes de aplicar las reglas
+        for (let k = 0; k < 8; k++) resto = resto.replace(/\(\s*((?:ss[A-Z]\w*|SS_CONFIG)(?:\s*(?:\.\s*\w+|\[[^\]]*\]))*)\s*\)/g, ' $1 ');
+        // un identificador escrito con secuencias \u que, decodificado, es un ss* o SS_CONFIG
+        for (const m of resto.matchAll(/(?:\\u(?:\{[0-9a-fA-F]+\}|[0-9a-fA-F]{4})|[\w$])+/g)) {
+          if (!m[0].includes('\\u')) continue;
+          const dec = m[0].replace(/\\u(?:\{([0-9a-fA-F]+)\}|([0-9a-fA-F]{4}))/g, (_, a, b) => String.fromCodePoint(parseInt(a || b, 16)));
+          if (/^(?:ss[A-Z]|SS_CONFIG)/.test(dec)) { h.push(`el nodo «${n.name}» escribe un ayudante de sesión (ss*) o SS_CONFIG con secuencias \\u: los parámetros de sesión son de solo lectura`); break; }
+        }
         for (const [re, que] of REGLAS) if (re.test(resto)) h.push(`el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
       }
     }
