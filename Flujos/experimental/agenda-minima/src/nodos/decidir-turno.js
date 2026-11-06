@@ -80,8 +80,8 @@ if (!boton) {
     const partes = String(cfg.palabrasClaveClinicas || '').split('|').map((p) => cnNorm(p)).filter(Boolean).map((p) => p.replace(/[.*+?^${}()[\]\\]/g, '\\$&'));
     return partes.length ? new RegExp('(?<![\\p{L}\\p{N}])(?:' + partes.join('|') + ')(?![\\p{L}\\p{N}])', 'iu') : null;
   })();
-  const pideCita = /(?<![\p{L}\p{N}])(cita|citas|agendar|agendame|agendarme|reservar|cancelar|reagendar)(?![\p{L}\p{N}])/iu;
-  if (reClin && reClin.test(norm) && !pideCita.test(norm) && String(est.paso || 'inicio').indexOf('esperando') !== 0) return salir('consulta_clinica');
+  const pideCita = /(?<![\p{L}\p{N}])(cita|citas|ficha|fichas|turno|turnos|agendar|agendame|agendarme|reservar|reserva|cancelar|cancelo|cancelame|anular|anulo|reagendar|reprogramar|mover)(?![\p{L}\p{N}])/iu;
+  if (reClin && reClin.test(norm) && !pideCita.test(norm) && String(est.paso || 'inicio').indexOf('esperando') !== 0 && est.paso !== 'cancelando' && est.paso !== 'moviendo') return salir('consulta_clinica');
 }
 
 if (boton && boton.tipo === 'h') return salir('elegir_hueco', { boton: boton });

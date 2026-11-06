@@ -2993,6 +2993,12 @@ describe('Agenda mínima: pregunta de salud y medios con pie de foto', () => {
     expect(t.aRecepcion.length).toBe(1);
     expect(textos(t)).not.toMatch(/paracetamol|dosis|ibuprofeno|\bmg\b|dale\b|bebe agua|suero/i);
   });
+  it('NIEGA: «ficha», «turno» o «cancelo» con un síntoma tampoco caen en la consulta clínica (revisión de #629)', () => {
+    for (const frase of ['quiero una ficha, tiene fiebre', 'necesito un turno, tiene tos', 'no vamos a ir, tiene fiebre, cancelo', 'quiero reprogramar, tiene fiebre']) {
+      const t = mundo({ eventos: [] }).turno(texto(MAMA, frase));
+      expect(textos(t), frase).not.toMatch(/no puedo orientarte sobre salud/);
+    }
+  });
   it('NIEGA: quien pide una cita por un motivo de salud NO cae en la consulta clínica', () => {
     const t = mundo({ eventos: [] }).turno(texto(MAMA, 'quiero una cita porque mi bebé tiene fiebre'));
     expect(textos(t)).not.toMatch(/la debe ver el doctor/);
