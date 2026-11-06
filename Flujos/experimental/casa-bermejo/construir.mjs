@@ -103,7 +103,7 @@ const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
 /** Los anfitriones de la plataforma de la tienda a los que «Traer catálogo» puede llevar el Bearer del tenant: dominio EXACTO, sin puerto ni comodín. Ampliarlo (la producción de NovuTienda) es un cambio revisado, no un dato que ponga quien publica. */
 export const ANFITRIONES_TIENDA = ['novutienda-sitio-stg.web.app'];
 /** El mercado del catálogo (BO o AR) según el prefijo del remitente: la MISMA regla que `ceMercadoDePrefijo`; una prueba compara las dos. */
-export const EXPRESION_MERCADO = "{{ String(((($('Normalizar entrada').first().json) || {}).from) || '').replace(/\\D/g, '').replace(/^0+/, '').indexOf('54') === 0 ? 'AR' : 'BO' }}";
+export const EXPRESION_MERCADO = "{{ ((d) => d.length < 10 || d.length > 15 ? 'X' : (d.indexOf('591') === 0 ? 'BO' : (d.indexOf('54') === 0 ? 'AR' : 'X')))(String(((($('Normalizar entrada').first().json) || {}).from) || '').replace(/\\D/g, '').replace(/^0+/, '')) }}";
 const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', ANFITRION_CONSOLA];
 
 // ----------------------------------------------------------------- lectura y escritura sin seguir enlaces simbólicos
@@ -429,6 +429,12 @@ export function guardiaDePublicacion({ flujo, datos }) {
   if (faltan.length) h.push(`es un ESQUELETO (PR-2) y no se puede publicar: faltan ${faltan.length} nodos de la conversación, el cotejo y los avisos (PR-3): ${faltan.map((n) => `«${n}»`).join(', ')}`);
   for (const m of new Set(marcasEn(flujo).map((x) => x.toUpperCase()))) h.push(`marcador sin sustituir: ${m}`);
   // Con los datos ya sustituidos, el host del catálogo tiene que ser uno de la lista cerrada (el Bearer del tenant no sale a otro dominio).
+  // El nodo que lleva el Bearer no puede llevar nada que lo desvíe: ni query ni cabeceras propias, ni proxy, ni certificados sin validar, ni redirecciones seguidas.
+  for (const n of nodos.filter((x) => x.name === 'Traer catálogo')) {
+    const q = n.parameters || {};
+    const o = q.options || {};
+    if (q.sendQuery || q.sendHeaders || o.proxy || o.allowUnauthorizedCerts || (o.redirect && (o.redirect.redirect || {}).followRedirects !== false)) h.push('«Traer catálogo» no puede llevar query, cabeceras propias, proxy, certificados sin validar ni redirecciones: el Bearer solo va a la URL fija');
+  }
   for (const n of nodos.filter((x) => x.name === 'Traer catálogo')) if (!anfitrionPermitido(String((n.parameters || {}).url || ''), 'Traer catálogo')) h.push('«Traer catálogo» apunta a un host que no está en ANFITRIONES_TIENDA');
   const base = nodos.find((n) => n.name === 'Config base');
   const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
