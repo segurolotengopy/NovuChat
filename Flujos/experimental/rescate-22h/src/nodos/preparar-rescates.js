@@ -25,7 +25,7 @@ for (const x of (Array.isArray(cuerpo.rescates) ? cuerpo.rescates.slice(0, 20) :
   const telefono = x.telefono;
   if (typeof telefono !== 'string' || !/^[0-9]{8,15}$/.test(telefono) || vistos.has(telefono)) continue;
   // Cota superior (ventana de Meta por cerrar) e inferior (un instante futuro, o con menos de 22 h de silencio, no se rescata).
-  if (typeof x.ultimoEntranteMs !== 'number' || !Number.isFinite(x.ultimoEntranteMs) || ahora >= x.ultimoEntranteMs + RS_CORTE_MS || ahora < x.ultimoEntranteMs + RS_MINIMO_MS) continue;
+  if (typeof x.ultimoEntranteMs !== 'number' || !Number.isFinite(x.ultimoEntranteMs) || ahora >= x.ultimoEntranteMs + RS_CORTE_MS || ahora < x.ultimoEntranteMs + RS_MINIMO_MS - RS_TOLERANCIA_MS) continue;
   // Defensa en profundidad: nada comercial a quien pidió no ser contactado, está en crisis o está bloqueado, aunque el servidor lo devolviera con la marca.
   // Mismo criterio que el servidor: cualquier valor distinto de ausente o false bloquea (incluye null, 0, '', 'false' y objetos); en `riesgoEn`, tampoco null.
   if (['noContactar', 'no_contactar', 'bloqueada', 'enCrisis'].some((k) => x[k] !== undefined && x[k] !== false)) continue;

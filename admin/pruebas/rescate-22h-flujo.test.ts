@@ -405,5 +405,8 @@ describe('cotas y exclusiones de «Preparar rescates» (defensa en profundidad)'
     expect(c.r.mensajes).toHaveLength(0);
     expect(c.modelos).toBe(0);
     expect(correr({ rescates: [rescate(TEL, { ultimoEntranteMs: AHORA - 22 * HORA })] }).r.mensajes).toHaveLength(1);
+    // El reloj de la VM puede atrasar: con 21 h 59 min de silencio (dentro de la tolerancia de 2 min) todavía sale; con 21 h 50 min no.
+    expect(correr({ rescates: [rescate(TEL, { ultimoEntranteMs: AHORA - (22 * HORA - 60000) })] }).r.mensajes).toHaveLength(1);
+    expect(correr({ rescates: [rescate(TEL, { ultimoEntranteMs: AHORA - (21 * HORA + 50 * 60000) })] }).r.mensajes).toHaveLength(0);
   });
 });

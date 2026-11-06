@@ -259,3 +259,33 @@ describe('utilidades', () => {
     expect(L.rsTextoDeGemini({})).toBe('');
   });
 });
+
+// Con el contexto REAL de Rubén (sueño e insomnio): una promesa de salud o de resultado, aunque vaya en futuro, cae al texto fijo.
+describe('rsRevisarCuerpo con el contexto de sueño de Rubén', () => {
+  const CFG_SUENO: Cfg = { ...CFG, rescateContexto: 'Rubén es autor de materiales para dormir mejor y vencer el insomnio.' };
+  const promesas = [
+    'Con el libro dormirás mejor desde la primera noche, ¿te quedó alguna duda?',
+    'Vi que te cuesta dormir y volverás a dormir de corrido, ¿te quedó alguna duda?',
+    'Vi que no descansas y te ayudará a descansar profundamente, ¿te quedó alguna duda?',
+    'Vi lo que cuentas de tus noches y tu insomnio quedará atrás, ¿te quedó alguna duda?',
+    'Vi que duermes poco y recuperarás tu descanso por completo, ¿te quedó alguna duda?',
+    'Vi tu caso de insomnio y es la solución definitiva, ¿te quedó alguna duda?',
+    'Vi que duermes mal y esto funciona en pocos días, ¿te quedó alguna duda?',
+  ];
+  for (const texto of promesas) {
+    it(`rechaza: ${texto.slice(0, 50)}…`, () => {
+      const r = L.rsRevisarCuerpo(texto, CFG_SUENO);
+      expect(r.motivo, JSON.stringify(r)).not.toBe('');
+      expect(r.texto).toBe('');
+    });
+  }
+  const legitimos = [
+    'Vi que últimamente te cuesta dormir y te despiertas de madrugada. ¿Te quedó alguna duda sobre el libro?',
+    'Vi que quieres dormir con más calma y ordenar tus noches. ¿Te quedó alguna duda para decidirte?',
+  ];
+  for (const texto of legitimos) {
+    it(`deja pasar: ${texto.slice(0, 50)}…`, () => {
+      expect(L.rsRevisarCuerpo(texto, CFG_SUENO).motivo).toBe('');
+    });
+  }
+});
