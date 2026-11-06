@@ -271,6 +271,9 @@ describe('rsRevisarCuerpo con el contexto de sueño de Rubén', () => {
     'Vi que duermes poco y recuperarás tu descanso por completo, ¿te quedó alguna duda?',
     'Vi tu caso de insomnio y es la solución definitiva, ¿te quedó alguna duda?',
     'Vi que duermes mal y esto funciona en pocos días, ¿te quedó alguna duda?',
+    'Vi que te cuesta el sueño y el libro puede ayudarte a dormir mejor, ¿te quedó alguna duda?',
+    'Vi tus noches difíciles y vas a poder dormir toda la noche, ¿te quedó alguna duda?',
+    'Vi que duermes poco y duermes mejor desde la primera noche, ¿te quedó alguna duda?',
   ];
   for (const texto of promesas) {
     it(`rechaza: ${texto.slice(0, 50)}…`, () => {
