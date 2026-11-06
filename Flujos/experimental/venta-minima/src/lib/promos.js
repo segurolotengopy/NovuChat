@@ -231,3 +231,19 @@ function prTexto(ficha, cfg) {
     botones: prBotones(ficha, cfg),
   };
 }
+
+// CAMPAÑA DE SOLO RESERVA (dato del negocio, 05/11): el comercio carga en «Config base» el texto exacto del anuncio
+// (`campanaReservaTexto`) y la respuesta (`campanaReservaMensaje`). La campaña la sigue aprobando y vigenciando el servidor:
+// esto solo se aplica a una campaña ya reconocida por `prCampanaDelTexto` (vigente) cuyo texto es IGUAL (normalizado) al dato.
+// No vende ni cobra: su único botón es «Reservar mesa», y solo con `reservasActivo === true`. Nada sale del texto del cliente.
+// Devuelve `{cuerpo, botones}` o `null` (entonces rige la ficha de siempre).
+function prSoloReserva(campana, cfg) {
+  if (typeof campana !== 'object' || campana === null || typeof campana.texto !== 'string') return null;
+  const c = typeof cfg === 'object' && cfg !== null ? cfg : {};
+  if (c.reservasActivo !== true) return null;
+  const clave = prNorm(c.campanaReservaTexto);
+  if (clave === '' || prNorm(campana.texto) !== clave) return null;
+  const cuerpo = prLinea(c.campanaReservaMensaje, 900);
+  if (cuerpo === '') return null;
+  return { cuerpo: cuerpo, botones: [{ id: 'm|reserva', title: 'Reservar mesa' }] };
+}

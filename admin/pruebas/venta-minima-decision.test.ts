@@ -110,6 +110,7 @@ function rsAnotar(sd, from, ahora){ const hoy = new Date(ahora - 4 * 3600000).to
 
 function _vig(c, ahora){ const i = Date.parse(c.inicio); const f = Date.parse(c.fin); return isFinite(i) && isFinite(f) && i <= ahora && ahora < f; }
 function prCampanaDelTexto(campanas, texto, ahora){ const n = vmNorm(texto); return campanas.find(function(c){ return vmNorm(c.texto) === n && _vig(c, ahora); }) || null; }
+function prSoloReserva(){ return null; }
 function prFicha(c, carta, ahora){ if (!c || !_vig(c, ahora)) return null; const t = ' ' + vmNorm(c.texto) + ' '; const m = carta.filter(function(i){ return t.indexOf(' ' + vmNorm(i.nombre) + ' ') >= 0; }); return m.length ? { id: String(m[0].id), nombre: m[0].nombre, precio: m[0].precio } : null; }
 function prTexto(f, cfg){ if (!f) return null; const b = []; if (cfg.pedidosActivo === true) b.push({ id: 'g|pedir|' + f.id, title: 'Pedir la promo' }); if (cfg.reservasActivo === true) b.push({ id: 'm|reserva', title: 'Reservar mesa' }); if (cfg.pedidosActivo === true) b.push({ id: 'm|pedido', title: 'Ver la carta' }); return { cuerpo: '¡Hola! Qué bueno que viste nuestra promo. ' + f.nombre + '. Precio: ' + f.precio + ' Bs.', botones: b }; }
 
@@ -544,11 +545,11 @@ describe('Plan del turno: menú, carta, consultas y promoción', () => {
 
   it('un medio que no se entiende pide escribirlo; una imagen sin pedido pendiente no es un pago', () => {
     const s = registrar(turno(crearMundo(), { tipo: 'audio', esAudio: true }));
-    expect(s.p!['mensajes'][0]['cuerpo']).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes?');
+    expect(s.p!['mensajes'][0]['cuerpo']).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
     expect(ids(s.p!['mensajes'][0])).toEqual(['m|pedido']);
     expect(titulos(s.p!['mensajes'][0])).toEqual(['Ver la carta']);
     const otro = turno(crearMundo(), { tipo: 'sticker' });
-    expect(otro.p!['mensajes'][0]['cuerpo']).toBe('No pude entender bien ese mensaje 😅. ¿Me lo escribes?');
+    expect(otro.p!['mensajes'][0]['cuerpo']).toBe('No pude entender bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
     const img = registrar(turno(crearMundo(), { tipo: 'image' }));
     expect(img.p!['mensajes'][0]['cuerpo']).toBe('¡Gracias por la imagen! Por aquí solo leo comprobantes de un pedido con QR, y ahora no tienes ninguno pendiente. ¿Qué te gustaría hacer?');
     expect(ids(img.p!['mensajes'][0])).toEqual(['m|pedido', 'm|reserva']);
@@ -855,7 +856,7 @@ describe('Plan del turno: derivar a una persona (solo se ofrece lo que se cumple
     const s = registrar(turno(m, { texto: 'tengo un problema con mi pedido de ayer, necesito ayuda de una persona', extraccion: extPedido({ quiereHablar: true }) }));
     expect(s.d['accion']).toBe('extraer_pedido');
     const msg = s.p!['mensajes'][0];
-    expect(msg).toMatchObject({ tipo: 'enlace', cuerpo: '¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo. Para volver al inicio, escribe «menú».', url: 'https://wa.me/59100000099' });
+    expect(msg).toMatchObject({ tipo: 'enlace', cuerpo: '¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo. Para volver al inicio, escribe «inicio».', url: 'https://wa.me/59100000099' });
     expect(s.p!['aviso']['tipo']).toBe('transferencia');
     expect(s.p!['aviso']['datos']).toMatchObject({ from: FROM, nombrePerfil: 'Ana Pérez', telefono: FROM, motivo: 'tengo un problema con mi pedido de ayer, necesito ayuda de una persona' });
     expect(s.p!['aviso']['datos']['codigo']).toMatch(/^[0-9A-Z]{4}$/);
