@@ -119,6 +119,7 @@ describe('guardado obligatorio: todo flujo versionado con medios lleva la rama c
     'experimental/agenda-minima/agenda-minima.v0.json', 'experimental/agenda-minima/agenda-minima.prueba.json',
     // Walisuma (#713, 30/10): main la traía con «none»/«all»; pasa a «none» como todos.
     'experimental/walisuma/walisuma.json', 'experimental/walisuma/walisuma.prueba.json',
+    'experimental/casa-bermejo/casa-bermejo.json', 'experimental/casa-bermejo/casa-bermejo.prueba.json',
   ].map((a) => [a, NADA]));
   it('la retención de ejecuciones de cada flujo cubierto es la de la tabla cerrada: nada guardado (el binario del medio quedaría en la ejecución)', () => {
     expect(Object.keys(RETENCION).sort()).toEqual([...CUBIERTOS].sort());

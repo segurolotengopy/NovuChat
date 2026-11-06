@@ -1,0 +1,412 @@
+/**
+ * RESCATE DE 22 H — EL FLUJO, con el n8n de mentira (`pruebas/lib/n8n-de-mentira.ts`).
+ *
+ * Corre de verdad el código del JSON versionado de Rubén (`Flujos/experimental/rescate-22h/rescate-22h.rroca-ruben.json`); solo los nodos de red
+ * (`Reclamar rescates`, `Redactar rescate`, `Enviar a WhatsApp`, `Enviar respaldo`, `Reportar mensaje (saliente)`) llevan doble.
+ *
+ * Lo que esta suite niega: que el texto que sale no sea EXACTAMENTE el fijo cuando el modelo falla, devuelve FIJO o redacta algo que el código rechaza; que salga
+ * un mensaje a un teléfono que el servidor no reclamó, a uno fuera de la lista de prueba, desde otra línea, o con la ventana de Meta por cerrar; que un 401, un 500
+ * o un flujo no admitido pasen en silencio; que se llame al modelo sin rescates; que salgan más de 20; que un mensaje lleve botones o no diga «asistente virtual»;
+ * que se reporte como enviado lo que Meta rechazó; y que el reporte lleve un `evento` (el rescate no enciende nada).
+ */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import type { Flujo, J } from './lib/flujo';
+import { crearMundo, type LlamadaDoble, type ResultadoTurno } from './lib/n8n-de-mentira';
+
+const ESTA = dirname(fileURLToPath(import.meta.url));
+const FLUJO = JSON.parse(readFileSync(join(ESTA, '../../Flujos/experimental/rescate-22h/rescate-22h.rroca-ruben.json'), 'utf8')) as Flujo;
+const DATOS = JSON.parse(readFileSync(join(ESTA, '../scripts/datos/rroca-ruben/rescate-22h.json'), 'utf8')) as J;
+const FIJO: string = DATOS['configBase'].rescateTextoFijo;
+const SALUDO: string = DATOS['configBase'].rescateSaludo;
+
+const HORA = 3_600_000;
+const AHORA = Date.UTC(2026, 9, 21, 15, 0, 0);
+const LINEA = '123456789';
+const TEL = '70011122';
+const OTRO = '70011133';
+const HISTORIAL = ['tengo una tienda de ropa en el mercado', 'quiero ordenar mis ventas con inteligencia artificial'];
+const BUENO = 'Vi que tienes una tienda de ropa y quieres ordenar tus ventas. ¿Te quedó alguna duda para empezar?';
+
+const gemini = (texto: string): J => ({ candidates: [{ content: { parts: [{ text: texto }] } }] });
+const enviado = (id = 'wamid.PRUEBA'): J => ({ messages: [{ id }] });
+
+interface Escenario {
+  respuesta?: J | ((l: LlamadaDoble) => J);
+  rescates?: J[];
+  modelo?: (l: LlamadaDoble) => J;
+  meta?: (l: LlamadaDoble) => J;
+  respaldo?: (l: LlamadaDoble) => J;
+  config?: Record<string, unknown>;
+}
+interface Corrida { r: ResultadoTurno; reclamos: J[]; modelos: number; reportes: J[] }
+
+const rescate = (telefono: string, extra: J = {}): J => ({ telefono, ultimoEntranteMs: AHORA - 22.1 * HORA, textos: HISTORIAL, ...extra });
+
+function correr(e: Escenario = {}): Corrida {
+  const reclamos: J[] = [];
+  let modelos = 0;
+  const reportes: J[] = [];
+  const mundo = crearMundo({
+    flujo: FLUJO,
+    ahoraMs: AHORA,
+    configBase: { phoneNumberId: LINEA, telefonosDePrueba: `${TEL},${OTRO}`, ...(e.config ?? {}) },
+    dobles: {
+      'Reclamar rescates': (l) => {
+        reclamos.push(l.cuerpo ?? {});
+        const r = e.respuesta ?? { statusCode: 200, body: { phoneNumberId: LINEA, rescates: e.rescates ?? [rescate(TEL)] } };
+        return typeof r === 'function' ? r(l) : r;
+      },
+      'Redactar rescate': (l) => { modelos++; return (e.modelo ?? (() => gemini(BUENO)))(l); },
+      'Enviar a WhatsApp': (l) => (e.meta ?? (() => enviado()))(l),
+      'Enviar respaldo': (l) => (e.respaldo ?? (() => enviado('wamid.RESPALDO')))(l),
+      'Reportar mensaje (saliente)': (l) => { reportes.push(l.cuerpo ?? {}); return {}; },
+    },
+  });
+  const r = mundo.turno({}, { via: 'Cada 10 minutos', tolerarFallo: true });
+  return { r, reclamos, modelos, reportes };
+}
+
+/** Lo que vale para TODO mensaje que sale, venga del modelo o del texto fijo. */
+function invariantes(c: Corrida): void {
+  for (const m of c.r.mensajes) {
+    expect(m.tipo, 'un rescate es texto, nunca botones ni plantilla').toBe('text');
+    expect(JSON.stringify(m.payload)).not.toMatch(/interactive|buttons|template/);
+    expect(m.cuerpo.toLowerCase()).toContain('asistente virtual');
+  }
+  for (const rep of c.reportes) expect(rep, 'el rescate no enciende nada: sin evento').not.toHaveProperty('evento');
+}
+
+describe('ruta feliz', () => {
+  it('un mensaje de texto al teléfono reclamado, que empieza con el saludo, y un reporte con idMeta y sin evento', () => {
+    const c = correr();
+    expect(c.r.fallo).toBeNull();
+    expect(c.r.mensajes).toHaveLength(1);
+    const m = c.r.mensajes[0]!;
+    expect(m.a).toBe(TEL);
+    expect(m.cuerpo.startsWith(`${SALUDO} `)).toBe(true);
+    expect(m.cuerpo).toContain(BUENO);
+    expect(m.respaldo).toBe(false);
+    expect(c.reportes).toHaveLength(1);
+    expect(c.reportes[0]).toMatchObject({ telefono: TEL, direccion: 'saliente', tipo: 'text', texto: m.cuerpo, idMeta: 'wamid.PRUEBA' });
+    invariantes(c);
+  });
+
+  it('el reclamo manda v: 1, el tope 20 y la lista de prueba, con el número de la línea en la cabecera', () => {
+    const reclamos: LlamadaDoble[] = [];
+    const mundo = crearMundo({
+      flujo: FLUJO, ahoraMs: AHORA, configBase: { phoneNumberId: LINEA, telefonosDePrueba: `${TEL},${OTRO}` },
+      dobles: { 'Reclamar rescates': (l) => { reclamos.push(l); return { statusCode: 200, body: { phoneNumberId: LINEA, rescates: [] } }; } },
+    });
+    mundo.turno({}, { via: 'Cada 10 minutos' });
+    expect(reclamos[0]!.cuerpo).toEqual({ v: 1, tope: 20, excluir: [], soloTelefonos: [TEL, OTRO] });
+    expect(reclamos[0]!.encabezados['X-NovuChat-Numero']).toBe(LINEA);
+    expect(reclamos[0]!.url).toBe('https://us-east1-novuchat-demo.cloudfunctions.net/reclamarRescates');
+  });
+});
+
+describe('el modelo falla o redacta algo que el código rechaza: sale EXACTAMENTE el texto fijo', () => {
+  const casos: [string, (l: LlamadaDoble) => J][] = [
+    ['responde FIJO', () => gemini('FIJO')],
+    ['una cifra', () => gemini('Con 60 Bs empiezas hoy mismo con tu negocio, ¿te animas a hacerlo?')],
+    ['un enlace', () => gemini('Mira www.ejemplo.com para más detalles de tu negocio, ¿te quedó alguna duda?')],
+    ['dos preguntas', () => gemini('Vi que tienes una tienda. ¿Qué vendes? ¿Te quedó alguna duda para empezar?')],
+    ['sin pregunta', () => gemini('Vi que tienes una tienda de ropa y quieres ordenar tus ventas con calma.')],
+    ['«acreditado»', () => gemini('Tu pago fue acreditado, ¿todo bien con tu negocio de ropa?')],
+    ['«soy una persona»', () => gemini('Soy una persona real y quiero ayudarte con tu tienda, ¿tienes alguna duda?')],
+    ['«ayer»', () => gemini('Ayer me contaste de tu negocio de ropa, ¿te quedó alguna duda para empezar?')],
+    ['«QR»', () => gemini('Recuerda que tu negocio puede usar un QR sin problema, ¿tienes alguna duda?')],
+    ['una promesa de Rubén', () => gemini('Rubén te escribirá pronto para ayudarte con tu tienda, ¿te quedó alguna duda?')],
+    ['un saludo propio', () => gemini('Hola, vi que tienes una tienda de ropa y quieres crecer, ¿te quedó alguna duda?')],
+    ['una garantía', () => gemini('Tu lectura tiene garantía total y sigue a tu ritmo, ¿te quedó alguna duda?')],
+    ['«garantizado»', () => gemini('Dormir mejor está garantizado con el libro, ¿te quedó alguna duda?')],
+    ['un bono', () => gemini('El libro incluye un bono para ti y tu descanso, ¿te quedó alguna duda?')],
+    ['«curar»', () => gemini('El libro puede curar tu insomnio de una vez, ¿te quedó alguna duda?')],
+    ['«sin pastillas»', () => gemini('Puedes dormir sin pastillas con este libro, ¿te quedó alguna duda?')],
+    ['«simulado»', () => gemini('Tu cobro quedó simulado y sin problema, ¿te quedó alguna duda?')],
+    ['«pago verificado»', () => gemini('Tu pago verificado ya está listo, ¿te quedó alguna duda?')],
+    ['un enlace https', () => gemini('Entra a https://ejemplo.org y mira el libro, ¿te quedó alguna duda?')],
+    ['«sanarás»', () => gemini('Vi que te interesó el libro y sanarás tu insomnio, ¿te quedó alguna duda?')],
+    ['«elimina tu insomnio»', () => gemini('Vi tu interés: el libro elimina tu insomnio con calma, ¿te quedó alguna duda?')],
+    ['«dejar los somníferos»', () => gemini('El libro te ayudará a dejar los somníferos, ¿te quedó alguna duda?')],
+    ['«zolpidem»', () => gemini('Con el libro puedes dejar el zolpidem, ¿te quedó alguna duda para decidirte?')],
+    ['«te devolvemos lo invertido»', () => gemini('Si no te sirve te devolvemos lo invertido, ¿te quedó alguna duda?')],
+    ['«te lo prometo»', () => gemini('Vi tu interés en el libro y te lo prometo, ¿te quedó alguna duda?')],
+    ['«vas a dormir mejor, seguro»', () => gemini('Vas a dormir mejor, seguro, con este libro, ¿te quedó alguna duda?')],
+    ['«el insomnio se va»', () => gemini('Con el libro tu insomnio se va del todo, ¿te quedó alguna duda?')],
+    ['«g a r a n t i z a» con espacios', () => gemini('Vi tu interés y g a r a n t i z a mos calma, ¿te quedó alguna duda?')],
+    ['«c u r a» con espacios', () => gemini('Vi tu interés: el libro c u r a el insomnio, ¿te quedó alguna duda?')],
+    ['«p a s t i l l a s» con espacios', () => gemini('Puedes olvidar las p a s t i l l a s con el libro, ¿te quedó alguna duda?')],
+    ['«h t t p s» con espacios', () => gemini('Mira h t t p s sobre el libro cuando puedas, ¿te quedó alguna duda?')],
+    ['«com» sin punto', () => gemini('Vi tu interés en nochessininsomnio com para leer, ¿te quedó alguna duda?')],
+    ['«punto co m»', () => gemini('Vi tu interés en nochessininsomnio punto co m para leer, ¿te quedó alguna duda?')],
+    ['una respuesta vacía', () => ({})],
+    ['un error HTTP del modelo', () => ({ error: { message: 'HTTP 500' } })],
+    ['una excepción del nodo', () => { throw new Error('timeout'); }],
+  ];
+  for (const [nombre, modelo] of casos) {
+    it(`el modelo ${nombre}`, () => {
+      const c = correr({ modelo });
+      expect(c.r.fallo).toBeNull();
+      expect(c.r.mensajes).toHaveLength(1);
+      expect(c.r.mensajes[0]!.cuerpo).toBe(FIJO);
+      invariantes(c);
+    });
+  }
+
+  it('un historial insuficiente sale con el texto fijo', () => {
+    const c = correr({ rescates: [rescate(TEL, { textos: ['hola'] })] });
+    expect(c.r.mensajes[0]!.cuerpo).toBe(FIJO);
+    const sin = correr({ rescates: [rescate(TEL, { textos: [] })] });
+    expect(sin.r.mensajes[0]!.cuerpo).toBe(FIJO);
+    invariantes(c);
+  });
+});
+
+describe('un seguimiento legítimo de Rubén sigue pasando', () => {
+  it('sale con origen del modelo', () => {
+    const c = correr({ modelo: () => gemini('Vi que te interesó el libro y quieres dormir con más calma. ¿Te quedó alguna duda para decidirte?') });
+    expect(c.r.mensajes).toHaveLength(1);
+    expect(c.r.mensajes[0]!.cuerpo).toContain('más calma');
+  });
+});
+
+describe('nada comercial a quien pidió no ser contactado, está en crisis o bloqueado (defensa en profundidad)', () => {
+  const valores: unknown[] = [true, 1, 0, '', 'false', {}, [], AHORA - HORA];
+  for (const marca of ['noContactar', 'no_contactar', 'bloqueada', 'riesgoEn', 'enCrisis']) {
+    for (const valor of valores) {
+    it(`con la marca «${marca}» = ${JSON.stringify(valor)}, no sale nada para él y los demás sí`, () => {
+      const c = correr({ rescates: [rescate(TEL, { [marca]: valor }), rescate(OTRO)] });
+      expect(c.r.fallo).toBeNull();
+      expect(c.r.mensajes.map((m) => m.a)).toEqual([OTRO]);
+      expect(c.reportes.map((r) => r['telefono'])).toEqual([OTRO]);
+    });
+    }
+  }
+  for (const marca of ['noContactar', 'no_contactar', 'bloqueada', 'enCrisis']) {
+    it(`«${marca}» = null también bloquea (igual que el servidor)`, () => {
+      const c = correr({ rescates: [rescate(TEL, { [marca]: null }), rescate(OTRO)] });
+      expect(c.r.mensajes.map((m) => m.a)).toEqual([OTRO]);
+    });
+  }
+  for (const valor of ['en_persona', 'pausada', '', 0, null, false]) {
+    it(`atencionEstado = ${JSON.stringify(valor)} (distinto de «normal») no recibe nada`, () => {
+      const c = correr({ rescates: [rescate(TEL, { atencionEstado: valor }), rescate(OTRO)] });
+      expect(c.r.mensajes.map((m) => m.a)).toEqual([OTRO]);
+    });
+  }
+  it('atencionEstado «normal», o ausente, y marcas en false o ausentes: sí sale', () => {
+    const c = correr({ rescates: [rescate(TEL, { atencionEstado: 'normal', noContactar: false, bloqueada: false, riesgoEn: false }), rescate(OTRO, { riesgoEn: null })] });
+    expect(c.r.mensajes.map((m) => m.a)).toEqual([TEL, OTRO]);
+  });
+  it('con la marca y una sola persona: 0 mensajes y 0 llamadas al modelo', () => {
+    const c = correr({ rescates: [rescate(TEL, { noContactar: { en: AHORA } })] });
+    expect(c.r.mensajes).toHaveLength(0);
+    expect(c.modelos).toBe(0);
+  });
+});
+
+describe('idempotencia', () => {
+  it('el mismo teléfono repetido en la respuesta sale una sola vez, con el primer reclamo', () => {
+    const c = correr({ rescates: [rescate(TEL), rescate(TEL, { textos: ['otra cosa distinta'] })] });
+    expect(c.r.mensajes).toHaveLength(1);
+    expect(c.reportes).toHaveLength(1);
+  });
+  it('si el reclamo del reintento ya no trae al contacto (el servidor lo marcó), no sale nada', () => {
+    const c = correr({ rescates: [] });
+    expect(c.r.mensajes).toHaveLength(0);
+    expect(c.modelos).toBe(0);
+  });
+});
+
+describe('a quién sale y cuándo', () => {
+  it('con 23 h 50 min ya cumplidas desde el último mensaje, no sale nada (la ventana de Meta cierra a las 24 h)', () => {
+    const c = correr({ rescates: [rescate(TEL, { ultimoEntranteMs: AHORA - 23.9 * HORA })] });
+    expect(c.r.fallo).toBeNull();
+    expect(c.r.mensajes).toHaveLength(0);
+    expect(c.modelos).toBe(0);
+    expect(c.reportes).toHaveLength(0);
+  });
+
+  it('justo antes del corte sí sale', () => {
+    expect(correr({ rescates: [rescate(TEL, { ultimoEntranteMs: AHORA - 23.8 * HORA })] }).r.mensajes).toHaveLength(1);
+  });
+
+  it('lista de prueba: con la lista vacía o con el marcador sin llenar, el reclamo lleva `soloTelefonos: []`', () => {
+    for (const lista of ['', 'REEMPLAZAR_TELEFONOS_RESCATE_RROCA_RUBEN']) {
+      const c = correr({ rescates: [], config: { telefonosDePrueba: lista } });
+      expect(c.reclamos[0], lista).toMatchObject({ soloTelefonos: [] });
+      expect(c.r.mensajes).toHaveLength(0);
+    }
+  });
+
+  it('con `listaDePrueba: false` el reclamo NO lleva `soloTelefonos`', () => {
+    const c = correr({ rescates: [], config: { listaDePrueba: false } });
+    expect(c.reclamos[0]).not.toHaveProperty('soloTelefonos');
+    expect(c.reclamos[0]).toMatchObject({ v: 1, tope: 20 });
+  });
+
+  it('defensa en profundidad: con la lista de prueba, un teléfono que el servidor devolvió pero NO está en la lista no recibe nada', () => {
+    const c = correr({ rescates: [rescate('70099988'), rescate(TEL)] });
+    expect(c.r.mensajes.map((m) => m.a)).toEqual([TEL]);
+  });
+
+  it('con `listaDePrueba: false`, salen todos los reclamados', () => {
+    const c = correr({ rescates: [rescate('70099988'), rescate(TEL)], config: { listaDePrueba: false } });
+    expect(c.r.mensajes.map((m) => m.a)).toEqual(['70099988', TEL]);
+  });
+
+  it('`payload.to` es siempre el teléfono reclamado (y no se repite uno)', () => {
+    const c = correr({ rescates: [rescate(TEL), rescate(OTRO), rescate(TEL)] });
+    expect(c.r.mensajes.map((m) => (m.payload['to'] as string))).toEqual([TEL, OTRO]);
+    expect(c.r.mensajes.map((m) => m.a)).toEqual([TEL, OTRO]);
+    invariantes(c);
+  });
+
+  it('un teléfono mal formado en la respuesta se descarta', () => {
+    const c = correr({ rescates: [rescate('abc'), rescate('123'), rescate(TEL)] });
+    expect(c.r.mensajes.map((m) => m.a)).toEqual([TEL]);
+  });
+
+  it('una línea distinta en la respuesta: falla con RS-LINEA y no sale nada', () => {
+    const c = correr({ respuesta: { statusCode: 200, body: { phoneNumberId: '555555555', rescates: [rescate(TEL)] } } });
+    expect(c.r.fallo?.mensaje).toContain('RS-LINEA');
+    expect(c.r.mensajes).toHaveLength(0);
+    expect(c.modelos).toBe(0);
+  });
+
+  it('con el número de la línea sin llenar (marcador), no hay línea que coincida: RS-LINEA', () => {
+    const c = correr({ config: { phoneNumberId: 'REEMPLAZAR_PHONE_NUMBER_ID_RROCA_RUBEN' }, respuesta: { statusCode: 200, body: { phoneNumberId: '', rescates: [rescate(TEL)] } } });
+    expect(c.r.fallo?.mensaje).toContain('RS-LINEA');
+    expect(c.r.mensajes).toHaveLength(0);
+  });
+
+  it('21 rescates en la respuesta: salen 20 como máximo', () => {
+    const muchos = Array.from({ length: 21 }, (_, i) => rescate(`7001${String(i).padStart(4, '0')}`));
+    const c = correr({ rescates: muchos, config: { listaDePrueba: false } });
+    expect(c.r.mensajes).toHaveLength(20);
+    invariantes(c);
+  });
+});
+
+describe('las respuestas del servidor', () => {
+  it('401 y 500 fallan con RS-RECLAMO-<código> y no sale nada', () => {
+    for (const codigo of [401, 500, 403]) {
+      const c = correr({ respuesta: { statusCode: codigo, body: { error: 'x' } } });
+      expect(c.r.fallo?.mensaje, String(codigo)).toContain(`RS-RECLAMO-${codigo}`);
+      expect(c.r.mensajes).toHaveLength(0);
+      expect(c.modelos).toBe(0);
+    }
+  });
+
+  it('409 (comercio suspendido) termina sin mensajes y SIN fallo', () => {
+    const c = correr({ respuesta: { statusCode: 409, body: { estado: 'suspendido' } } });
+    expect(c.r.fallo).toBeNull();
+    expect(c.r.mensajes).toHaveLength(0);
+    expect(c.modelos).toBe(0);
+  });
+
+  it('409 `flujo_no_admitido` falla con RS-FLUJO', () => {
+    const c = correr({ respuesta: { statusCode: 409, body: { estado: 'flujo_no_admitido' } } });
+    expect(c.r.fallo?.mensaje).toContain('RS-FLUJO');
+    expect(c.r.mensajes).toHaveLength(0);
+  });
+
+  it('el servidor sin rescates (por cualquier motivo): 0 llamadas al modelo y 0 mensajes', () => {
+    for (const motivo of ['lista_vacia', 'tope_diario', 'servicio_no_operativo', undefined]) {
+      const c = correr({ respuesta: { statusCode: 200, body: { phoneNumberId: LINEA, rescates: [], motivo } } });
+      expect(c.r.fallo).toBeNull();
+      expect(c.modelos).toBe(0);
+      expect(c.r.mensajes).toHaveLength(0);
+    }
+  });
+
+  it('un cuerpo que no es un objeto (o sin lista de rescates) no envía nada', () => {
+    expect(correr({ respuesta: { statusCode: 200, body: { phoneNumberId: LINEA } } }).r.mensajes).toHaveLength(0);
+    expect(correr({ respuesta: { statusCode: 200, body: { phoneNumberId: LINEA, rescates: 'x' } } }).r.mensajes).toHaveLength(0);
+  });
+});
+
+describe('el envío y el reporte', () => {
+  it('si Meta rechaza el envío, no se reporta nada como enviado y NO hay respaldo (un reenvío tras un timeout duplicaría el rescate)', () => {
+    let respaldos = 0;
+    const c = correr({ meta: () => ({ error: { message: 'rechazado' } }), respaldo: () => { respaldos++; return enviado('wamid.RESPALDO'); } });
+    expect(c.r.mensajes).toHaveLength(1);
+    expect(respaldos).toBe(0);
+    expect(c.reportes).toHaveLength(0);
+  });
+
+  it('una excepción del nodo de envío (timeout) tampoco reenvía ni reporta', () => {
+    const c = correr({ meta: () => { throw new Error('timeout'); } });
+    expect(c.r.mensajes).toHaveLength(1);
+    expect(c.reportes).toHaveLength(0);
+  });
+
+  it('Meta contesta 200 sin `messages[0].id` (cuerpo vacío): «¿Meta aceptó?» corta y no se reporta nada', () => {
+    for (const cuerpo of [{}, { messages: [] }, { messages: [{}] }]) {
+      const c = correr({ meta: () => cuerpo });
+      expect(c.r.fallo).toBeNull();
+      expect(c.r.mensajes).toHaveLength(1);
+      expect(c.reportes, JSON.stringify(cuerpo)).toHaveLength(0);
+    }
+  });
+});
+
+describe('sin historial no hay llamada al modelo, y el pareo sigue siendo por posición', () => {
+  const SEGUNDO = 'Vi que vendes comida y quieres crecer con orden. ¿Te quedó alguna duda para empezar?';
+  const TERCERO = 'Mencionaste que tu peluquería tiene muchos clientes y poco tiempo. ¿Te quedó alguna duda?';
+  it('historial insuficiente: 0 llamadas al modelo y sale el texto fijo', () => {
+    const c = correr({ rescates: [rescate(TEL, { textos: ['hola'] })] });
+    expect(c.modelos).toBe(0);
+    expect(c.r.mensajes.map((m) => m.cuerpo)).toEqual([FIJO]);
+    expect(c.reportes).toHaveLength(1);
+  });
+
+  it('3 rescates donde el modelo falla solo en el segundo: primero y tercero con el texto del modelo, el segundo con el fijo', () => {
+    const c = correr({
+      rescates: [rescate(TEL), rescate(OTRO), rescate('70011144')],
+      config: { listaDePrueba: false },
+      modelo: (l) => { if (l.n === 2) throw new Error('timeout'); return gemini(l.n === 1 ? BUENO : TERCERO); },
+    });
+    expect(c.r.fallo).toBeNull();
+    expect(c.modelos).toBe(3);
+    expect(c.r.mensajesA(TEL)[0]!.cuerpo).toBe(`${SALUDO} ${BUENO}`);
+    expect(c.r.mensajesA(OTRO)[0]!.cuerpo).toBe(FIJO);
+    expect(c.r.mensajesA('70011144')[0]!.cuerpo).toBe(`${SALUDO} ${TERCERO}`);
+    invariantes(c);
+  });
+
+  it('mezcla de suficientes e insuficientes: el modelo solo ve a los suficientes, y cada uno sale una vez con SU texto', () => {
+    const vistos: string[] = [];
+    const c = correr({
+      rescates: [rescate(TEL), rescate(OTRO, { textos: ['hola'] }), rescate('70011144')],
+      config: { listaDePrueba: false },
+      modelo: (l) => { vistos.push(JSON.stringify(l.cuerpo)); return gemini(l.n === 1 ? BUENO : SEGUNDO); },
+    });
+    expect(c.modelos).toBe(2);
+    expect(c.r.mensajes).toHaveLength(3);
+    expect(c.r.mensajesA(TEL)[0]!.cuerpo).toBe(`${SALUDO} ${BUENO}`);
+    expect(c.r.mensajesA(OTRO)[0]!.cuerpo).toBe(FIJO);
+    expect(c.r.mensajesA('70011144')[0]!.cuerpo).toBe(`${SALUDO} ${SEGUNDO}`);
+    expect(c.reportes).toHaveLength(3);
+    invariantes(c);
+  });
+});
+
+describe('cotas y exclusiones de «Preparar rescates» (defensa en profundidad)', () => {
+  it('un teléfono de `telefonosExcluidos` no recibe nada aunque el servidor lo devuelva', () => {
+    const c = correr({ rescates: [rescate(TEL), rescate(OTRO)], config: { telefonosExcluidos: TEL } });
+    expect(c.r.mensajes.map((m) => m.a)).toEqual([OTRO]);
+  });
+  it('un instante futuro, o con menos de 22 h de silencio, no se rescata; 22 h exactas sí', () => {
+    const c = correr({ rescates: [rescate(TEL, { ultimoEntranteMs: AHORA + HORA }), rescate(OTRO, { ultimoEntranteMs: AHORA - 21.9 * HORA })] });
+    expect(c.r.mensajes).toHaveLength(0);
+    expect(c.modelos).toBe(0);
+    expect(correr({ rescates: [rescate(TEL, { ultimoEntranteMs: AHORA - 22 * HORA })] }).r.mensajes).toHaveLength(1);
+    // El reloj de la VM puede atrasar: con 21 h 59 min de silencio (dentro de la tolerancia de 2 min) todavía sale; con 21 h 50 min no.
+    expect(correr({ rescates: [rescate(TEL, { ultimoEntranteMs: AHORA - (22 * HORA - 60000) })] }).r.mensajes).toHaveLength(1);
+    expect(correr({ rescates: [rescate(TEL, { ultimoEntranteMs: AHORA - (21 * HORA + 50 * 60000) })] }).r.mensajes).toHaveLength(0);
+  });
+});
