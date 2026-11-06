@@ -16,8 +16,13 @@
  * escribe SOLO el servidor (`verificarCampanas`) al ver la escritura; una campaña que rechace queda cargada y NO viaja al flujo.
  *
  * VIGENCIA. `inicio` = el día de la carga (día de Bolivia, UTC-4) y `fin` = inicio + 365 días (366 días inclusive, el máximo que admite el
- * servidor, que no acepta una campaña sin fin). Se imprime la fecha de fin: hay que RENOVAR antes. Una campaña ya cargada, idéntica y
- * todavía vigente, no se toca (no se corre su fin).
+ * servidor, que no acepta una campaña sin fin). Se imprime la fecha de fin MÁS PRÓXIMA: hay que RENOVAR antes. Una campaña ya cargada, idéntica,
+ * vigente y a 30 días o más de su fin, no se toca; a menos de 30 días se vuelve a cargar (es la renovación: correr el script de nuevo).
+ * `--aplicar` se rechaza entre las 23:50 y las 24:00 de La Paz (el día de la carga cambiaría a mitad de camino).
+ *
+ * REVISIÓN DEL SERVIDOR. Tras escribir, el script espera hasta ~60 s a que el servidor escriba `revision`, informa el estado de cada campaña
+ * (aprobada, rechazada con su motivo, pendiente) y sale con 1 si alguna no quedó aprobada. Una campaña «igual» cuya revisión no es «aprobada»
+ * tampoco se da por buena.
  *
  * RESPALDO Y REVERSA. Antes de escribir se guarda (0600, fuera de todo repositorio, nunca se pisa) el estado previo de `config/campanas`.
  * `--revertir --respaldo` quita estas campañas y repone las versiones previas de esos `id`; no toca las demás y NO pisa un cambio ajeno
@@ -32,9 +37,10 @@
  * SALIDA. 0 correcto (seco o escritura comprobada), 1 rechazo de datos o del comercio, 2 uso/salvaguarda/archivo, 3 error de ejecución.
  * COSTO. Seco: lecturas. `--aplicar`: una transacción (1 escritura de documento + 1 de auditoría). 0 mensajes por conversación.
  */
-import { lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tieneModulo } from '../../../functions/src/registro.ts';
 import { comprobarProyecto, comprobarRespaldo, guardarRespaldo } from '../../plataforma/aplicar-consola-oculta.mjs';
 
 export const TENANT = 'qtaco';
@@ -45,6 +51,11 @@ export const MAX_DIAS_HASTA_EL_INICIO = 183;
 export const MINIMO_TEXTO = 3;
 export const TOPE_TEXTO = 300;
 export const DIAS_DE_VIGENCIA = 366; // inclusive: fin = inicio + 365
+/** Una campaña igual pero a menos de estos días de su fin se vuelve a cargar: es la renovación (inicio = hoy, fin = hoy + 365). */
+export const DIAS_PARA_RENOVAR = 30;
+/** Tras `--aplicar` se espera hasta esto a que el servidor escriba su `revision`. */
+export const ESPERA_REVISION_MS = 60_000;
+export const PAUSA_REVISION_MS = 2_000;
 const MAX_CAMPANAS = 10;
 // Los únicos textos que se cargan: los del anuncio. Un texto distinto es otra campaña que el flujo no reconocería.
 export const TEXTOS_APROBADOS = {
@@ -113,7 +124,17 @@ export function validarArchivo(datos, { productosActivos = null, limite = MAX_CA
       else if (productosActivos && !productosActivos.has(c.productoId)) p.push(`${donde}.productoId: «${c.productoId}» no existe o no está activo en el catálogo del comercio (este script no crea productos)`);
     }
   });
+  for (const id of Object.keys(TEXTOS_APROBADOS)) if (!ids.has(id)) p.push(`campanas: falta la campaña «${id}» (el archivo tiene que traer exactamente las campañas de Q'Taco: ${Object.keys(TEXTOS_APROBADOS).join(', ')})`);
   return p;
+}
+
+/** ¿Está el reloj en los últimos 10 minutos del día de La Paz (23:50 a 24:00)? Ahí no se aplica. */
+export const enFranjaDeMedianoche = (ms) => { const d = new Date(ms - 4 * 3_600_000); return d.getUTCHours() === 23 && d.getUTCMinutes() >= 50; };
+
+/** El estado de una campaña según el `revision` que escribió el servidor: `{ estado, motivo }` (`sin_revision` si aún no hay). */
+export function estadoDeRevision(revision, id) {
+  const r = revision && typeof revision === 'object' ? revision.porCampana?.[id] : undefined;
+  return r && typeof r.estado === 'string' ? { estado: r.estado, motivo: typeof r.motivo === 'string' ? r.motivo : '' } : { estado: 'sin_revision', motivo: '' };
 }
 
 /** Las campañas que se escribirían: inicio = hoy, fin = hoy + 365 (366 días inclusive). */
@@ -146,7 +167,7 @@ export function planDeLista(existentes, datos, hoy) {
     const viejo = porId.get(c.id);
     if (!viejo) return { c, estado: 'nuevo' };
     const igual = (viejo.texto ?? '').trim() === c.texto && (viejo.productoId ?? null) === (c.productoId ?? null)
-      && typeof viejo.inicio === 'string' && typeof viejo.fin === 'string' && viejo.inicio <= hoy && hoy <= viejo.fin
+      && typeof viejo.inicio === 'string' && typeof viejo.fin === 'string' && viejo.inicio <= hoy && hoy <= viejo.fin && diasEntre(hoy, viejo.fin) >= DIAS_PARA_RENOVAR
       && viejo.titulares === undefined && viejo.angulo === undefined;
     return igual ? { c: viejo, estado: 'igual' } : { c, estado: 'cambia' };
   });
@@ -225,17 +246,53 @@ export function contenidoDelRespaldo({ entorno, existia, previa, escrito }) {
   return { version: 1, entorno, tenant: TENANT, creadoEn: new Date().toISOString(), previo: { documento: existia, lista: previa }, escrito };
 }
 
+const MAXIMO_RESPALDO = 64 * 1024;
+const CLAVES_ESCRITA = new Set(['id', 'texto', 'inicio', 'fin', 'productoId']);
+const CLAVES_REGLA = new Set(['id', 'texto', 'inicio', 'fin', 'titulares', 'productoId', 'angulo']);
+const esObjeto = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+const clavesDentro = (o, permitidas) => Object.keys(o).every((k) => permitidas.has(k));
+
+/** El respaldo se LEE con desconfianza: lo que trae se vuelve a escribir en producción. Valida el contenido, no solo la forma. */
+export function validarContenidoDelRespaldo(r) {
+  if (!esObjeto(r) || r.version !== 1 || !esObjeto(r.previo) || typeof r.previo.documento !== 'boolean' || !Array.isArray(r.previo.lista) || !Array.isArray(r.escrito) || r.escrito.length === 0) {
+    return 'el respaldo no tiene la forma esperada';
+  }
+  if (r.escrito.length > Object.keys(TEXTOS_APROBADOS).length) return 'el respaldo dice que se escribieron más campañas que las de Q\'Taco';
+  const idsEscritos = new Set();
+  for (const e of r.escrito) {
+    if (!esObjeto(e) || !clavesDentro(e, CLAVES_ESCRITA) || typeof e.id !== 'string' || !Object.hasOwn(TEXTOS_APROBADOS, e.id)
+      || typeof e.texto !== 'string' || e.texto.length > TOPE_TEXTO || typeof e.inicio !== 'string' || typeof e.fin !== 'string'
+      || (e.productoId !== undefined && typeof e.productoId !== 'string') || idsEscritos.has(e.id)) {
+      return 'el respaldo trae una campaña escrita que no es de Q\'Taco o con claves que este script no escribe';
+    }
+    idsEscritos.add(e.id);
+  }
+  if (r.previo.lista.length > MAX_CAMPANAS) return 'el respaldo trae más campañas previas que el máximo';
+  const idsPrevios = new Set();
+  for (const c of r.previo.lista) {
+    const n = esObjeto(c) ? Object.keys(c).length : 0;
+    if (!esObjeto(c) || n < 4 || n > 7 || !clavesDentro(c, CLAVES_REGLA) || typeof c.id !== 'string' || typeof c.texto !== 'string' || c.texto.length > TOPE_TEXTO || idsPrevios.has(c.id)) {
+      return 'el respaldo trae una campaña previa que no tiene la forma de una regla de campaña';
+    }
+    idsPrevios.add(c.id);
+  }
+  return null;
+}
+
 export function leerRespaldoDeCampanas(ruta, entorno) {
   let r;
+  let fd;
   try {
-    if (!lstatSync(ruta).isFile()) return { ok: false, motivo: 'el respaldo no es un archivo regular' };
-    r = JSON.parse(readFileSync(ruta, 'utf8'));
-  } catch { return { ok: false, motivo: 'el respaldo no se pudo leer como JSON' }; }
-  if (r?.version !== 1 || !r.previo || typeof r.previo.documento !== 'boolean' || !Array.isArray(r.previo.lista) || !Array.isArray(r.escrito) || r.escrito.length === 0) {
-    return { ok: false, motivo: 'el respaldo no tiene la forma esperada' };
-  }
-  if (r.tenant !== TENANT) return { ok: false, motivo: 'el respaldo es de otro comercio' };
-  if (r.entorno !== entorno) return { ok: false, motivo: 'el respaldo es de otro entorno (staging, produccion o emulador)' };
+    fd = openSync(ruta, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const st = fstatSync(fd);
+    if (!st.isFile()) return { ok: false, motivo: 'el respaldo no es un archivo regular' };
+    if (st.size > MAXIMO_RESPALDO) return { ok: false, motivo: 'el respaldo es demasiado grande' };
+    r = JSON.parse(readFileSync(fd, 'utf8'));
+  } catch { return { ok: false, motivo: 'el respaldo no se pudo abrir ni leer como JSON' }; } finally { if (fd !== undefined) closeSync(fd); }
+  if (esObjeto(r) && r.tenant !== TENANT) return { ok: false, motivo: 'el respaldo es de otro comercio' };
+  if (esObjeto(r) && r.entorno !== entorno) return { ok: false, motivo: 'el respaldo es de otro entorno (staging, produccion o emulador)' };
+  const malo = validarContenidoDelRespaldo(r);
+  if (malo) return { ok: false, motivo: malo };
   return { ok: true, respaldo: r };
 }
 
@@ -258,7 +315,8 @@ async function leerContexto(db, tx, datos) {
 export async function ejecutar(cfg, datos, deps) {
   const { db, Timestamp } = deps;
   const log = deps.log ?? ((t) => console.log(t));
-  const hoy = diaBolivia((deps.ahora ?? Date.now)());
+  const ahoraMs = (deps.ahora ?? Date.now)();
+  const hoy = diaBolivia(ahoraMs);
   const rotulo = `${cfg.entorno} · tenant ${TENANT}`;
 
   // ------------------------------------------------------------------ revertir
@@ -282,6 +340,7 @@ export async function ejecutar(cfg, datos, deps) {
       const repuestas = previo.lista.filter((c) => c && ids.has(c.id));
       const resto = hoyLista.filter((c) => !(c && ids.has(c.id)));
       const lista = [...repuestas, ...resto];
+      if (lista.length > MAX_CAMPANAS) { log('  ✗ La lista resultante pasaría el máximo de campañas: no se escribe nada.\n'); codigo = 2; return; }
       log(`  quita ${actuales.length} campaña(s) de Q'Taco (${[...ids].join(', ')}) · repone ${repuestas.length} previa(s) · conserva ${resto.length} ajena(s)`);
       if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar para revertir.\n'); return; }
       if (!previo.documento && lista.length === 0) tx.delete(refCamp);
@@ -295,6 +354,10 @@ export async function ejecutar(cfg, datos, deps) {
   }
 
   // -------------------------------------------------------- seco y aplicar
+  if (cfg.aplicar && enFranjaDeMedianoche(ahoraMs)) {
+    log('\n  ✗ No se aplica entre las 23:50 y las 24:00 de La Paz: el día de la carga cambiaría a mitad de camino. Corra de nuevo pasada la medianoche. No se escribió nada.\n');
+    return 2;
+  }
   const antes = validarArchivo(datos);
   if (antes.length) { log(`\n  ✗ El archivo no cumple las reglas del servidor (${antes.length}):\n    - ${antes.join('\n    - ')}\n\n  No se escribió nada.\n`); return 2; }
 
@@ -306,6 +369,7 @@ export async function ejecutar(cfg, datos, deps) {
     const c = await leerContexto(db, tx, datos);
     if (!c.tenant.exists) return { rechazo: `No existe el comercio «${TENANT}».` };
     if ((c.tenant.get('estado') ?? 'activo') !== 'activo') return { rechazo: `«${TENANT}» no está activo: no se reconfigura.` };
+    if (!tieneModulo(c.tenant.data(), 'campanas')) return { rechazo: `«${TENANT}» no tiene el módulo «campanas» encendido (tenants/${TENANT}.modulos): el servidor no revisaría ni usaría las campañas. No se escribe nada.` };
     const propio = c.cuenta.get('limites.campanas');
     const limite = Number.isInteger(propio) && propio >= 0 && propio <= MAX_CAMPANAS ? propio : (POR_PLAN[c.cuenta.get('plan')] ?? 0);
     const problemas = validarArchivo(datos, { productosActivos: c.activos, limite });
@@ -328,18 +392,30 @@ export async function ejecutar(cfg, datos, deps) {
       const r = await evaluar(tx);
       if (r.rechazo) { rechazo = r.rechazo; return; }
       plan = { ...r.p, limite: r.limite, creaDocumento: !r.c.camp.exists };
-      previa = { documento: r.c.camp.exists, lista: r.existentes };
+      previa = { documento: r.c.camp.exists, lista: r.existentes, revision: r.c.camp.get('revision') ?? null };
     });
-  } catch (e) { log(`  ✗ ${e.message}\n`); return 1; }
+  } catch (e) { log(`  ✗ error de lectura: ${e?.code ?? e?.name ?? 'desconocido'}\n`); return 1; }
   if (rechazo) { log(`\n  ✗ ${rechazo}\n`); return 1; }
 
-  const fines = plan.escribir.map((c) => c.fin);
   log(`\n  ${cfg.aplicar ? 'APLICAR' : 'SECO (solo lecturas)'} · ${rotulo}\n`);
   log(`  config/campanas${plan.creaDocumento ? ' (se crea)' : ''} · tope: ${plan.limite} · campañas del archivo: ${plan.filas.length} · ajenas que se conservan: ${plan.ajenas.length}`);
-  for (const f of plan.filas) log(`    ${f.estado.padEnd(6)} ${f.c.id.padEnd(18)} ${f.c.inicio} → ${f.c.fin}${f.c.productoId ? ' · con producto' : ''}`);
-  const finMostrado = fines.length ? fines[0] : plan.filas[0].c.fin;
-  log(`\n  RENOVAR antes del ${finMostrado} (fin de la vigencia; el servidor no admite campañas sin fin).`);
-  if (plan.escribir.length === 0) { log('\n  ✓ Las dos campañas ya están cargadas, iguales y vigentes: nada que hacer.\n'); return 0; }
+  const revisionPrevia = previa.revision;
+  for (const f of plan.filas) {
+    const rev = f.estado === 'igual' ? ` · revisión: ${estadoDeRevision(revisionPrevia, f.c.id).estado}` : '';
+    log(`    ${f.estado.padEnd(6)} ${f.c.id.padEnd(18)} ${f.c.inicio} → ${f.c.fin}${f.c.productoId ? ' · con producto' : ''}${rev}`);
+  }
+  const finMasProximo = plan.filas.map((f) => f.c.fin).sort()[0];
+  log(`\n  RENOVAR antes del ${finMasProximo} (el fin más próximo; el servidor no admite campañas sin fin).`);
+  const malasIguales = plan.filas.filter((f) => f.estado === 'igual').map((f) => ({ id: f.c.id, ...estadoDeRevision(revisionPrevia, f.c.id) })).filter((x) => x.estado !== 'aprobada');
+  if (plan.escribir.length === 0) {
+    if (malasIguales.length) {
+      for (const m of malasIguales) log(`  ✗ ${m.id}: la revisión del servidor es «${m.estado}»${m.motivo ? ` — ${m.motivo}` : ''}. Está cargada pero NO viaja al flujo.`);
+      log('\n  Las campañas están iguales, pero alguna no está aprobada por el servidor: no hay nada que escribir, hay que corregirla.\n');
+      return 1;
+    }
+    log('\n  ✓ Las dos campañas ya están cargadas, iguales, vigentes y aprobadas: nada que hacer.\n');
+    return 0;
+  }
   if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --respaldo <ruta> y --aplicar (el servidor revisará cada campaña al escribirse).\n'); return 0; }
 
   try {
@@ -362,15 +438,42 @@ export async function ejecutar(cfg, datos, deps) {
         accion: 'cargar_campanas', uid: SELLO, en: ahora, campos: ['lista'], conteos: { campanas: r.p.escribir.length, conservadas: r.p.ajenas.length },
       });
     });
-  } catch (e) { log(`  ✗ ${e.message}\n`); return 3; }
+  } catch (e) { log(`  ✗ error de escritura: ${e?.code ?? e?.name ?? 'desconocido'}\n`); return 3; }
   if (rechazo) { log(`\n  ✗ ${rechazo}\n`); return 1; }
 
   const rel = await db.doc(`tenants/${TENANT}/config/campanas`).get();
   const lista = Array.isArray(rel.get('lista')) ? rel.get('lista') : [];
   const falla = rel.get('actualizadoPor') !== SELLO || plan.escribir.some((e) => !lista.some((c) => clave(c) === clave(e)));
   log(`\n  ${falla ? '✗' : '✓'} Verificación por relectura: ${falla ? 'no coincide' : `${plan.escribir.length} campaña(s) cargadas; el servidor las revisa ahora (revision y vigentes los escribe él)`}`);
-  if (!falla) log(`  Para deshacer: --revertir --respaldo ${cfg.respaldo}\n`);
-  return falla ? 3 : 0;
+  if (falla) return 3;
+  log(`  Para deshacer: --revertir --respaldo ${cfg.respaldo}`);
+
+  // El servidor revisa al ver la escritura: se espera su `revision` (distinta de la previa, con una entrada por cada campaña escrita).
+  const espera = deps.esperaMs ?? ESPERA_REVISION_MS;
+  const pausa = deps.pausaMs ?? PAUSA_REVISION_MS;
+  const hashPrevio = previa.revision?.hash ?? null;
+  const ids = plan.escribir.map((c) => c.id);
+  const todosLosIds = plan.filas.map((f) => f.c.id);
+  let revision = null;
+  for (let t = 0; ; t += pausa) {
+    const doc = await db.doc(`tenants/${TENANT}/config/campanas`).get();
+    const rev = doc.get('revision');
+    if (rev && typeof rev === 'object' && rev.hash !== hashPrevio && ids.every((id) => rev.porCampana?.[id])) { revision = rev; break; }
+    if (t >= espera) break;
+    await new Promise((res) => setTimeout(res, pausa));
+  }
+  if (!revision) {
+    log(`\n  ✗ El servidor no escribió su revisión en ${Math.round(espera / 1000)} s. Las campañas quedaron cargadas pero sin comprobar: corra el seco más tarde (o --revertir).\n`);
+    return 1;
+  }
+  let todasBien = true;
+  for (const id of todosLosIds) {
+    const e = estadoDeRevision(revision, id);
+    if (e.estado !== 'aprobada') todasBien = false;
+    log(`    revisión ${id.padEnd(18)} ${e.estado}${e.motivo ? ` — ${e.motivo}` : ''}`);
+  }
+  log(todasBien ? '\n  ✓ El servidor aprobó las campañas cargadas.\n' : '\n  ✗ El servidor NO aprobó alguna campaña: está cargada pero no viaja al flujo. Corríjala o use --revertir.\n');
+  return todasBien ? 0 : 1;
 }
 
 async function principal() {
