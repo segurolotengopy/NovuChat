@@ -62,7 +62,7 @@ describe('aviso por líneas: la plantilla de tamaño 2, 4 o 6 y sus variables', 
 
   it('el rol completo lleva la modalidad entera (dirección, quién recibe, celular, coordenadas) y SIN los ítems', () => {
     const m = params(de(arm(pedido(3)), COMPLETO))[1];
-    expect(m).toBe('Delivery a Avenida Banzer 1234 (frente a la farmacia) · recibe Ana Pérez Mamani · cel 59100000033 · ubicación compartida -17.783300, -63.182100');
+    expect(m).toBe('Delivery a Avenida Banzer 1234 (frente a la farmacia) · recibe Ana Pérez Mamani · cel +591 0000 0033 · ubicación compartida -17.783300, -63.182100');
     expect(m).not.toContain('Producto');
   });
 
