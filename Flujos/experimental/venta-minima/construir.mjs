@@ -84,7 +84,7 @@ const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 // +1: «Guardar comprobante» (pedido de Andres del 26/10/2026: ningún comprobante se pierde; ver DISENO.md).
 // +9: el estado de la conversación y los vistos en el servidor (PR-4a; tope de Q'Taco 60 → 69, aprobado por Andres el 04/11/2026): «¿Hay estado?», «Sin estado», «¿Comprometer turno?», «Comprometer turno»,
 // «¿Replanificar compromiso?», «Comprometer turno (2.º intento)», «Soltar mensajes», «Confirmar envío» y «Comprometer compensación» (9: se quitó «¿Compensar entrega?»; queda 0 de margen). Ver DISENO.md y docs/versiones-por-cliente.md.
-// +2: los CUPOS pasan al servidor (PR-4b; tope de 69 a 71, PENDIENTE DE APROBACIÓN DE ANDRES: la pide la coordinadora por botón): «Consumir cupos» y «¿Cupo concedido?». `asentar` NO lleva nodo (segundo ítem de «Confirmar envío»).
+// +2: los CUPOS pasan al servidor (PR-4b; tope de 69 a 71, aprobado por Andres (06/11/2026, en conversación)): «Consumir cupos» y «¿Cupo concedido?». `asentar` NO lleva nodo (segundo ítem de «Confirmar envío»).
 const TOPE_DE_NODOS = 71;
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,

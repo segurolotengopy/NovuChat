@@ -480,7 +480,7 @@ if (AM_hayQueGuardar) {
   else {
     AM_bloque = amBloque(AM_ses, AM_FROM);
     AM_compromiso = AM_bloque ? ssCuerpoComprometer(AM_FROM, $execution.id, 'fin', AM_ses.version, AM_bloque) : null;
-    if (AM_compromiso) { AM_compromiso.sesion.venceEnMin = vmVenceEnMin(AM_bloque); AM_modo = 'comprometer'; } else AM_modo = 'no_cabe';
+    if (AM_compromiso) { AM_compromiso.sesion.venceEnMin = vmVenceEnMin(AM_bloque, AM_AHORA); AM_modo = 'comprometer'; } else AM_modo = 'no_cabe';
   }
 }
 
@@ -595,7 +595,7 @@ const AM_replan = AM_hechoExterno && AM_modo === 'comprometer' ? {
   pedidos: AM_pedidoGuardado && AM_idPedido && AM_bloque && AM_bloque.pedidos && Object.prototype.hasOwnProperty.call(AM_bloque.pedidos, AM_idPedido) ? { [AM_idPedido]: AM_bloque.pedidos[AM_idPedido] } : {},
   estadoMenu: AM_bloque && AM_bloque.estado ? Object.assign({}, AM_bloque.estado, AM_bloque.estado.paso === 'esperando_comprobante' ? {} : { paso: 'menu' }) : null,
   // Las reservas del día (PR-4b): `reservaHoy` es el día de este turno y `reservaSuma` dice que ESTE turno anotó una (se suma a las del ganador); el 2.º intento las conserva.
-  reservaHoy: _rsFechaLocal(AM_AHORA), reservaSuma: AM_reservaSuma,
+  reservaHoy: _rsFechaLocal(AM_AHORA), reservaSuma: AM_reservaSuma, minHastaMedianoche: vmMinHastaMedianoche(AM_AHORA).min,
 } : null;
 return [{ json: {
   hechoExterno: AM_hechoExterno, replan: AM_replan, avisoMarcas: AM_avisoMarcas, avisoFalla: AM_avisoFalla, avisoFallaN: AM_avisoFallaN, avisoFallaFecha: avFechaLocal(AM_AHORA),

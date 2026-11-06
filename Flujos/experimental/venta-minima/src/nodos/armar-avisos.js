@@ -51,7 +51,9 @@ const AA_CLAVES_YA = [];
 function aaYaAvisado(clave) {
   const m = AA_sd && AA_sd.avisosHuerfanos && typeof AA_sd.avisosHuerfanos === 'object' ? AA_sd.avisosHuerfanos : null;
   const llave = AA_FROM + '|' + clave;
-  const ms = m && clave && Object.prototype.hasOwnProperty.call(m, llave) ? Number(m[llave]) : NaN;
+  // Compatibilidad (72 h): las marcas anotadas antes de PR-4a llevan la clave SIN el teléfono; se aceptan hasta que venzan por sí solas.
+  const k = m && clave ? (Object.prototype.hasOwnProperty.call(m, llave) ? llave : (Object.prototype.hasOwnProperty.call(m, clave) ? clave : null)) : null;
+  const ms = k !== null ? Number(m[k]) : NaN;
   return Number.isFinite(ms) && AA_AHORA - ms < 72 * AA_HORA_MS && AA_AHORA - ms >= 0;
 }
 
@@ -260,7 +262,8 @@ if (!AA_items.length) {
     waGraphVersion: AA_CFG.waGraphVersion || 'v26.0', from: AA_FROM, errores: AA_errores, yaAvisado: AA_YA, clavesYa: AA_CLAVES_YA,
   } }];
 }
-AA_items[0].cupos = aaCuposDelTurno(AA_items.length);
+// La cantidad del cupo `avisos` cuenta los mensajes de aviso al local (plantilla y detalle); la imagen del comprobante acompaña al aviso y no es otro aviso.
+AA_items[0].cupos = aaCuposDelTurno(AA_items.filter((j) => j.clase !== 'imagen').length);
 AA_items[0].errores = AA_errores;
 AA_items[0].yaAvisado = AA_YA;
 AA_items[0].clavesYa = AA_CLAVES_YA;

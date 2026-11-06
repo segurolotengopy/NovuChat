@@ -12,6 +12,7 @@
  *
  * COSTO EN MENSAJES: 0 por conversación (la secuencia de abajo sigue en [1, 1, 1, 1, 1]).
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { type Flujo, type J } from './lib/flujo';
 import { boton, CLIENTE, crear, idDeBoton, panel, PHONE_ID, QTACO, texto, turno, type Mundial } from './lib/venta-minima-mundo';
@@ -342,6 +343,32 @@ describe('reservasDelDia viaja en el bloque del teléfono', () => {
     expect(tercera.mensajes.map((m) => m.cuerpo).join('\n')).toContain('No pude hacer llegar tu reserva');
   });
 
+  it('el tope diario NO se recupera por inactividad: tras 61 min entre la 2.ª y la 3.ª reserva el techo duro (2 × tope) sigue valiendo', () => {
+    const w = crear({}, QTACO, { topeReservasDia: 1 });
+    reservar(w);
+    reservar(w);
+    w.mundo.avanzar(61);
+    expect((w.sesion.bloque(CLIENTE) as J)['reservas']).toEqual({ dia: '2026-10-05', n: 2 });
+    expect(reservar(w).avisos).toHaveLength(0);
+  });
+
+  it('MUTACIÓN: si el bloque vence a los 60 min (sin la extensión hasta la medianoche) el cliente recupera el tope y la prueba de arriba lo detecta', () => {
+    const f = mutar((c) => cambiarCodigo(c, 'Armar mensajes', 'vmVenceEnMin(AM_bloque, AM_AHORA)', 'vmVenceEnMin(AM_bloque)'));
+    const w = crear({}, f, { topeReservasDia: 1 });
+    reservar(w);
+    reservar(w);
+    w.mundo.avanzar(61);
+    expect(reservar(w).avisos.length).toBeGreaterThan(0);
+  });
+
+  it('el `venceEnMin` llega hasta la medianoche de La Paz (máx. 4320) solo si las reservas son de HOY', () => {
+    const w = crear({}, QTACO, { topeReservasDia: 1 });
+    reservar(w);
+    const ve = w.sesion.compromisos.map((c) => c.cuerpo['sesion'] as J).filter((q) => q['estado'] && (q['estado'] as J)['reservas']).map((q) => q['venceEnMin'] as number);
+    expect(ve.length).toBeGreaterThan(0);
+    for (const v of ve) { expect(v).toBeGreaterThan(60); expect(v).toBeLessThanOrEqual(1440); }
+  });
+
   it('la replanificación (2.º intento) conserva las reservas del ganador y suma la de este turno', () => {
     const w = crear();
     turno(w, boton('m|reserva', 'Reservar'));
@@ -406,6 +433,13 @@ describe('tope de 71 nodos: «Consumir cupos» y «¿Cupo concedido?» no agrega
     expect(con.map((x) => (JSON.parse(x) as unknown[]).length)).toEqual([1, 1, 1, 1]);
   });
 
+  it('FIXTURE CONGELADO: la misma secuencia al cliente que el `venta-minima.qtaco.json` de origin/main (sin PR-4b), en los casos normales', () => {
+    // copia de origin/main al 06/11/2026 (antes de PR-4b); se compara lo que lee el cliente, no la estructura
+    const antes = JSON.parse(readFileSync(new URL('./fixtures/venta-minima.qtaco.main-congelado.json', import.meta.url), 'utf8')) as Flujo;
+    expect(antes.nodes.some((n) => n.name === 'Consumir cupos')).toBe(false);
+    expect(recorrido(conPanel(antes))).toEqual(recorrido(conPanel(QTACO)));
+  });
+
   it('BORDE: con el cupo agotado el cliente lee «No pude pasarle tu pedido…» y NO «pasé tu pedido»; sigue siendo UN mensaje', () => {
     const { w, id } = pedidoListo();
     w.sesion.servidor.sembrarCupo(PHONE_ID, 'avisos', 'comercio', null, 'dia', 150, 150);
@@ -452,6 +486,22 @@ describe('avisos ya enviados cuyo compromiso falló: la marca lleva el teléfono
     expect(w.sesion.consumos.length).toBe(consumos); // sin aviso que armar no se pide cupo
     expect((t2.resumen as J)['resumen'].errores.join(' ')).toMatch(/aviso_ya_enviado/);
     expect(huerfanos(w)).toEqual([]);
+  });
+
+  it('COMPATIBILIDAD (72 h): una marca anotada antes SIN el prefijo del teléfono (clave a secas) también suprime el reenvío; vencida (más de 72 h), no', () => {
+    const { w, id } = pedidoListo();
+    w.sesion.servidor.fallar = sinCompromiso;
+    turno(w, boton(id, 'Confirmar pedido'), true);
+    w.sesion.servidor.fallar = null;
+    const m = ((w.mundo.sd['ventaMinima'] ?? {}) as J)['avisosHuerfanos'] as J;
+    const [k] = Object.keys(m);
+    const clave = k!.slice(k!.indexOf('|') + 1);
+    const vieja = m[k!];
+    delete m[k!];
+    m[clave] = vieja; // la forma de antes: sin teléfono
+    const t = turno(w, boton(id, 'Confirmar pedido'), true);
+    expect(t.avisos).toHaveLength(0);
+    expect((t.resumen as J)['resumen'].errores.join(' ')).toMatch(/aviso_ya_enviado/);
   });
 
   it('MUTACIÓN: sin el prefijo del teléfono en `Armar avisos` el aviso del pedido de otro cliente se suprimiría; el de OTRO teléfono nunca tapa el de este', () => {

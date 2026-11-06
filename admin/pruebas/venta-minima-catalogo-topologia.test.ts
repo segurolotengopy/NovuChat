@@ -72,7 +72,7 @@ describe('el webhook del carrito: la segunda y última entrada de producción', 
 
   it('el JSON de producción tiene como máximo 71 nodos (50 más los 9 del guardado de medios, «Guardar comprobante», los 9 del estado en el servidor y los 2 de los cupos) y ninguno de los nodos que el diseño descartó', () => {
     // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61, y desde el contrato v2 del 30/10, 59: los 9 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md). Más «Guardar comprobante» (26/10/2026): 60.
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(71); // tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026) → 71 (PR-4b: PENDIENTE DE APROBACIÓN DE ANDRES)
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(71); // tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026) → 71 (PR-4b: aprobado por Andres (06/11/2026, en conversación))
     const nombres = QTACO.nodes.map((n) => n.name);
     for (const n of NOMBRES_QUE_NO_VAN) expect(nombres, n).not.toContain(n);
     // Dos webhooks, ninguno más; ningún WhatsApp Trigger (prohibición 7).

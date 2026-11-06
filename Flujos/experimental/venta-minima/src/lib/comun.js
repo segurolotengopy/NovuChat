@@ -398,10 +398,24 @@ function vmMarcarVisto(sd, idMensaje, ahoraMs) {
 // ---------------------------------------------------------------------------
 // Cuanto vive el bloque en el servidor, en MINUTOS (el servidor admite 1 a 4320). Con pedidos guardados, 72 h (4320): cada pedido se poda por su
 // `guardadoMs`, el bloque solo es el tope. Sin pedidos, lo que dura el estado: 24 h en `esperando_comprobante` (como el QR del servidor), 60 min en el resto.
-function vmVenceEnMin(bloque) {
+// Las reservas del día (`reservas: {dia, n}`, tope diario por teléfono) viven en el mismo bloque: si `dia` es HOY en La Paz (UTC-4 fijo), el bloque no vence antes de la medianoche local
+// (máx. 4320); si no, un cliente inactivo 60 min recuperaría el tope del día. `ahoraMs` ausente: sin esa extensión (los llamadores sin reservas).
+function vmMinHastaMedianoche(ahoraMs) {
+  const local = new Date(Number(ahoraMs) - 240 * 60000);
+  const dia = local.getUTCFullYear() + '-' + String(local.getUTCMonth() + 1).padStart(2, '0') + '-' + String(local.getUTCDate()).padStart(2, '0');
+  const minutos = local.getUTCHours() * 60 + local.getUTCMinutes() + (local.getUTCSeconds() > 0 || local.getUTCMilliseconds() > 0 ? 1 : 0);
+  return { dia: dia, min: Math.max(1, 1440 - minutos) };
+}
+function vmVenceEnMin(bloque, ahoraMs) {
   const b = _vmObjeto(bloque) ? bloque : {};
-  if (_vmObjeto(b.pedidos) && Object.keys(b.pedidos).length > 0) return 4320;
-  return _vmObjeto(b.estado) && b.estado.paso === 'esperando_comprobante' ? 1440 : 60;
+  let v;
+  if (_vmObjeto(b.pedidos) && Object.keys(b.pedidos).length > 0) v = 4320;
+  else v = _vmObjeto(b.estado) && b.estado.paso === 'esperando_comprobante' ? 1440 : 60;
+  if (ahoraMs !== undefined && _vmObjeto(b.reservas) && Number.isFinite(Number(ahoraMs))) {
+    const h = vmMinHastaMedianoche(ahoraMs);
+    if (b.reservas.dia === h.dia) v = Math.min(4320, Math.max(v, h.min));
+  }
+  return v;
 }
 
 // La vista de la sesion para el telefono `from`, con la forma de `sd`: `estados[from]` y `pedidos` (los de ESE telefono, ya sin los de mas de 72 h).

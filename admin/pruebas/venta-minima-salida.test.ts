@@ -50,7 +50,7 @@ const constanteDeComun = (nombre: string): string => {
 };
 const DE_COMUN = [
   ...['VM_PEDIDOS_MS', 'VM_MAX_PEDIDOS', 'VM_RESPALDO_HASTA_MS', 'VM_VENCE_MS', 'VM_VENCE_COMPROBANTE_MS', 'SS_CONFIG'].map(constanteDeComun),
-  ...['_vmObjeto', '_vmCadena', '_vmClaveValida', '_vmIdValido', '_vmHay', '_vmVence', 'vmSes', 'vmGuardarPedido', 'vmVenceEnMin', 'vmRetirarRespaldo', 'vmClaveAviso', 'vmReservasSd', 'vmResultadoCupos'].map(deComun),
+  ...['_vmObjeto', '_vmCadena', '_vmClaveValida', '_vmIdValido', '_vmHay', '_vmVence', 'vmSes', 'vmGuardarPedido', 'vmVenceEnMin', 'vmMinHastaMedianoche', 'vmRetirarRespaldo', 'vmClaveAviso', 'vmReservasSd', 'vmResultadoCupos'].map(deComun),
 ].join('\n');
 // El módulo común de Pedidos (qr-del-pedido.js) es REAL, no un doble: lo que arma el QR lo incluye construir.mjs en cada nodo.
 const PQR = readFileSync(join(CARPETA, '../../../../src/modulos/pedidos/qr-del-pedido.js'), 'utf8') + '\n';
@@ -1680,6 +1680,13 @@ describe('PR-4b: «Armar avisos» pide los cupos al servidor (`Consumir cupos` m
     expect(clavesDe(avisos({ aviso: { tipo: 'reserva', datos: {} } }))).toEqual(['avisos']);
   });
 
+  it('la cantidad de `avisos` cuenta solo plantillas y detalle: la imagen del comprobante que los acompaña no es otro aviso', () => {
+    const r = avisos({ pedido: PEDIDO, aviso: { tipo: 'comprobante', datos: { resultado: 'cuadra', detalle: 'Detalle.', imagen: true, mediaId: 'media-1' } } });
+    expect(r.items.map((i) => i['clase'])).toContain('imagen');
+    expect(cupo(r, 'avisos')['cantidad']).toBe(r.items.filter((i) => i['clase'] !== 'imagen').length);
+    expect(cupo(r, 'avisos')['cantidad']).toBe(r.items.length - 1);
+  });
+
   it('el comprobante exento (derivación `comprobante: true`) NO consume `transferencias`; la derivación normal sí', () => {
     const exento = avisos({ aviso: { tipo: 'transferencia', datos: { comprobante: true, motivo: 'comprobante enviado' } } });
     expect(clavesDe(exento)).toEqual(['avisos']);
@@ -1723,12 +1730,13 @@ describe('PR-4b: «Armar avisos» pide los cupos al servidor (`Consumir cupos` m
     expect(avisos({ aviso: null }).items[0]!['cupos']).toBeUndefined();
   });
 
-  it('`avisosHuerfanos` se consulta por `teléfono|clave`: la marca de otro teléfono, o sin prefijo, NO suprime el aviso', () => {
+  it('`avisosHuerfanos` se consulta por `teléfono|clave`: la marca de otro teléfono NO suprime el aviso; la de antes (sin prefijo) sí, durante las 72 h de compatibilidad', () => {
     const clave = `pedido:${PEDIDO['pedidoId']}`;
     const con = (marcas: J) => avisos({ pedido: PEDIDO, aviso: { tipo: 'pedido', datos: {} } }, { g: { ventaMinima: { avisosHuerfanos: marcas } } });
     expect(con({ [`${CLIENTE}|${clave}`]: AHORA - 1000 }).items[0]).toMatchObject({ sinAviso: true });
     expect(con({ [`59100000099|${clave}`]: AHORA - 1000 }).items[0]).toMatchObject({ sinAviso: false });
-    expect(con({ [clave]: AHORA - 1000 }).items[0]).toMatchObject({ sinAviso: false });
+    expect(con({ [clave]: AHORA - 1000 }).items[0]).toMatchObject({ sinAviso: true }); // compatibilidad: marca anotada antes de PR-4a
+    expect(con({ [clave]: AHORA - 73 * 3600 * 1000 }).items[0]).toMatchObject({ sinAviso: false }); // vencida
   });
 });
 

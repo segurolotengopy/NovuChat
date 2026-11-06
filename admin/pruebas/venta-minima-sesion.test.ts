@@ -220,6 +220,17 @@ describe('vmGuardarPedido, vmVenceEnMin y el tope en BYTES', () => {
     expect(v({ estado: { paso: 'menu' } })).toBe(60);
   });
 
+  it('vmVenceEnMin con reservas de HOY (La Paz, UTC-4): no vence antes de la medianoche local (máx. 4320); reservas de otro día o sin ahoraMs, no cambian nada', () => {
+    const ve = lib().vmVenceEnMin;
+    const ahora = Date.UTC(2026, 9, 5, 18, 0, 0); // 14:00 en La Paz
+    const hoy = { estado: { paso: 'menu' }, pedidos: {}, reservas: { dia: '2026-10-05', n: 2 } };
+    expect(ve(hoy, ahora)).toBe(600); // 10 h hasta la medianoche local
+    expect(ve({ ...hoy, reservas: { dia: '2026-10-04', n: 2 } }, ahora)).toBe(60);
+    expect(ve(hoy)).toBe(60);
+    expect(ve({ ...hoy, pedidos: { a: {} } }, ahora)).toBe(4320);
+    expect(ve(hoy, Date.UTC(2026, 9, 6, 3, 59, 30))).toBe(60); // 23:59:30 local: queda menos que el mínimo, gana el valor actual
+  });
+
   it('ssBytes mide UTF-8 sin lanzar con un surrogate suelto (cuenta U+FFFD = 3 bytes), con tildes (2), emojis (4) y sin Buffer', () => {
     const b = (t: string): number => lib().ssBytes(t);
     expect(b('abc')).toBe(3);
