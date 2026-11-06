@@ -3,6 +3,7 @@
  * el precio y el total salen del catálogo del servidor (nunca del modelo), el stock recorta, lo no disponible no se ofrece, el catálogo vuelve a leerse en cada turno, y el costo en mensajes por conversación no crece.
  */
 import { describe, expect, it } from 'vitest';
+import vm from 'node:vm';
 import { ANA, CATALOGO, ENTREGA, catalogoOk, crear, hablar, mTexto, modelo, textos } from './mundo';
 import { ceMercadoDePrefijo } from './mercado';
 
@@ -108,7 +109,7 @@ describe('Argentina (B4a): catálogo en pesos y pedido anotado; el pago por alia
   it('la expresión del mercado del nodo HTTP da lo mismo que ceMercadoDePrefijo para 591 y 54', async () => {
     const C = (await import(/* @vite-ignore */ '../../../../Flujos/experimental/casa-bermejo/construir.mjs')) as { EXPRESION_MERCADO: string };
     const cuerpo = C.EXPRESION_MERCADO.replace(/^\{\{|\}\}$/g, '').trim();
-    const evalua = (from: string): string => new Function('$', `return (${cuerpo});`)(() => ({ first: () => ({ json: { from } }) })) as string;
+    const evalua = (from: string): string => (vm.compileFunction(`return (${cuerpo});`, ['$']) as (a: unknown) => string)(() => ({ first: () => ({ json: { from } }) }));
     // Donde la función da null (otro país, número corto o largo) la expresión da «X»: el servidor responde 400 y el turno pasa con recepción.
     for (const f of [ANA, ARG, '+' + ARG, '00' + ARG, '5491', '5511900000033', '', '54' + '9'.repeat(20), '591']) expect(evalua(f)).toBe(ceMercadoDePrefijo(f) ?? 'X');
   });
