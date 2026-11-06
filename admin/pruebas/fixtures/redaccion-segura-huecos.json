@@ -1,0 +1,173 @@
+{
+ "_leeme": [
+  "Banco de los 4 huecos del filtro de redaccion segura (opciones opt-in). Lo lee admin/pruebas/comun-sin-agente-filtro-huecos.test.ts.",
+  "Cada grupo: { opcion, motivo, rechazos: [texto], pasan: [texto] }. `pasan` se prueba CON la opcion encendida: lo legitimo debe seguir saliendo.",
+  "Sin numeros de cuenta ni telefonos reales: cifras cortas inventadas."
+ ],
+ "grupos": [
+  {
+   "opcion": "sinDatosDePago",
+   "motivo": "datos_de_pago",
+   "rechazos": [
+    "Deposita a la cuenta 1234567 y listo",
+    "Puedes pagar por Tigo Money",
+    "Transfiere al banco y me avisas",
+    "Paga con TIGO MONEY",
+    "Mi alias es libros_antonio",
+    "Te paso el QR para que pagues",
+    "Hazlo por giro o billetera",
+    "Realiza el depósito y envíame el comprobante",
+    "Haz la transferencia hoy",
+    "Envía el dinero cuando quieras",
+    "Las formas de pago son varias",
+    "Tigo-Money es lo más fácil",
+    "T i g o   M o n e y",
+    "Dep0sita a la cuenta del libro",
+    "Paaaagar por aquí",
+    "El número de cuenta es el 4567",
+    "Puedes depositar en efectivo en el banco",
+    "Pásame la plata",
+    "Pásame el dinero",
+    "Puedes usar Yape",
+    "Yapéame",
+    "Puedes yapear",
+    "Lo cancelas en efectivo",
+    "Puedes abonarlo en el BCP",
+    "Te comparto los datos bancarios",
+    "Los datos para el depósito son estos",
+    "Puedes pagarlo con tarjeta",
+    "Escanea el código",
+    "Escaneá el código",
+    "Tengo una cuenta en Banco Fassil"
+   ],
+   "pasan": [
+    "El libro cuesta 49 Bs e incluye 4 bonos",
+    "Visita la página del libro para ver el índice",
+    "Los bonos incluyen plantillas y guías",
+    "Hola, ¿en qué libro estás interesado?",
+    "Te cuento de qué trata el libro",
+    "El libro cuenta con cuatro capítulos",
+    "Tienes que tener en cuenta que es digital",
+    "Puedes escribirle a Antonio con el botón",
+    "Es un pago único, sin mensualidades",
+    "Los clientes pagan una sola vez",
+    "Un giro en tu carrera",
+    "Te cuento cómo girar tu negocio",
+    "El libro paga dividendos",
+    "La entrega del material es a tu correo"
+   ],
+   "falsosPositivosConocidos": [
+    "Un QR para descargar audios"
+   ]
+  },
+  {
+   "opcion": "sinAfirmarCompra",
+   "motivo": "afirma_compra",
+   "rechazos": [
+    "Ya compraste el libro",
+    "Ya te llegó el libro",
+    "Tu pedido fue entregado",
+    "Tu compra está confirmada",
+    "Te lo enviamos hoy mismo",
+    "Ya te enviamos el libro",
+    "Tu pedido ya está en camino",
+    "Compra exitosa, disfrútalo",
+    "Gracias por tu compra",
+    "YA COMPRASTE EL LIBRO",
+    "Ya c o m p r a s t e el libro",
+    "Ya te lo entregamos",
+    "Ya tienes el libro contigo",
+    "Ya fue enviado",
+    "Ya está entregado",
+    "Ya está en camino",
+    "Te envié el PDF",
+    "Te mandé el libro",
+    "Ya despachamos tu libro",
+    "Te acabamos de enviar el libro",
+    "Vas a recibir el libro hoy",
+    "Te llegará mañana",
+    "En breve recibirás tu libro",
+    "Ya recibiste el libro",
+    "Ya lo tienes en tu correo",
+    "Gracias por comprar",
+    "Tu pedido ya salió"
+   ],
+   "pasan": [
+    "El libro cuesta 49 Bs e incluye 4 bonos",
+    "¿Ya compraste el libro?",
+    "¿Ya te llegó el libro?",
+    "Puedes comprar el libro cuando quieras",
+    "Si compras el libro recibes 4 bonos",
+    "El libro es digital y viene con una guía",
+    "Cuéntame qué te interesa del libro",
+    "El equipo lo revisa y te orienta",
+    "La entrega del material es a tu correo",
+    "Los que ya compraron lo recomiendan",
+    "¿Ya recibiste el libro?",
+    "Puedes comprarlo cuando quieras"
+   ]
+  },
+  {
+   "opcion": "sinPromesasDeAviso",
+   "motivo": "promete_aviso",
+   "rechazos": [
+    "Un asesor se comunicará contigo",
+    "Nos pondremos en contacto contigo",
+    "Te llamaremos mañana",
+    "Te escribiremos pronto",
+    "Te avisaremos cuando esté listo",
+    "Le avisaremos al equipo",
+    "Alguien se pondrá en contacto",
+    "Un asesor te contactará",
+    "Un asesor se comunicara con contigo",
+    "Te va a llamar un asesor",
+    "Estaremos en contacto",
+    "Te a-v-i-s-a-r-e-m-o-s",
+    "Te av1saremos",
+    "Te daremos seguimiento",
+    "Te informaremos",
+    "Te notificaremos",
+    "Te mantendremos informado",
+    "El equipo te escribe",
+    "Antonio te escribe en un rato",
+    "Te contacto luego",
+    "Te escribo más tarde",
+    "Te respondemos pronto",
+    "Pronto recibirás una llamada",
+    "Quedamos en contacto",
+    "Ya le pasé tu número a Antonio para que te llame"
+   ],
+   "pasan": [
+    "Puedes escribirle a Antonio con el botón",
+    "El equipo lo revisa",
+    "El libro cuesta 49 Bs e incluye 4 bonos",
+    "Hola, ¿en qué te ayudo?",
+    "Si quieres, te paso con una persona del equipo",
+    "Escríbenos cuando quieras",
+    "Te cuento cómo funciona el libro",
+    "Esto te llama la atención",
+    "Puedes contactar a Antonio con el botón"
+   ],
+   "conAvisoRespaldado": {
+    "pasan": [
+     "Le avisamos al equipo",
+     "Le avisaremos a recepción",
+     "Le avisamos al asesor."
+    ],
+    "rechazos": [
+     "Un asesor se comunicará contigo",
+     "Te llamaremos mañana",
+     "Le avisaremos cuando esté listo",
+     "Te avisaremos al equipo",
+     "Le avisamos al asesor que te llame",
+     "Le avisamos al asesor y te llama en un rato",
+     "Le avisamos al equipo y te contactan hoy",
+     "Le avisamos al doctor que te escriba",
+     "Les avisamos a los encargados para que te llamen",
+     "Le avisaremos al asesor cuando esté listo tu pedido",
+     "Te llamamos y le avisamos al equipo"
+    ]
+   }
+  }
+ ]
+}

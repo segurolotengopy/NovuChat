@@ -26,7 +26,7 @@ const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [
   'avDestinatarios', 'avParametro', 'avPlantilla', 'avTexto', 'avVentanaAbierta', 'avAnotarEntrante',
-  'avDentroDelTopeDiario', 'avContar', 'avArmar', 'avPlan', 'avLimpio', 'avFechaLegible', 'avSinProhibidas', 'avCanon', 'avEnlaceDeUbicacion',
+  'avDentroDelTopeDiario', 'avContar', 'avArmar', 'avPlan', 'avLimpio', 'avFechaLegible', 'avSinProhibidas', 'avCanon', 'avEnlaceDeUbicacion', 'avTelefonoLegible', 'avCotejoTexto', 'avParametroConMapa',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -45,6 +45,7 @@ const MIN = 60 * 1000;
 const ANDRES = '59100000011';
 const SILVANA = '59100000022';
 const CLIENTE = '59100000033';
+const CLIENTE_LEGIBLE = '+591 '+ CLIENTE.slice(3, 7) + ' ' + CLIENTE.slice(7); // formato de las variables y del detalle
 const DIRECCION = 'Avenida Banzer 1234';
 const REFERENCIA = 'frente a la farmacia azul';
 const CUENTA = '1000000000045';
@@ -343,7 +344,7 @@ describe('pedido: plantilla `pedido_registrado` y su orden', () => {
     expect(it.payload.template.language.code).toBe('es');
     expect(params(it)).toEqual([
       'N.º K7P2 de 3 ítems', 'Bs 110',
-      `Delivery a ${DIRECCION} (${REFERENCIA}) · recibe Ana Pérez · cel ${CLIENTE} · ${ITEMS_PEDIDO}`, 'comprobante: datos coinciden',
+      `Delivery a ${DIRECCION} (${REFERENCIA}) · recibe Ana Pérez · cel ${CLIENTE_LEGIBLE} · ${ITEMS_PEDIDO}`, 'datos coinciden',
     ]);
     expect(it.esPlantilla).toBe(true);
     expect(it.respaldo).toBeNull();
@@ -354,7 +355,7 @@ describe('pedido: plantilla `pedido_registrado` y su orden', () => {
     expect(it.payload.template.name).toBe('pedido_nuevo');
     expect(it.payload.template.language.code).toBe('es_MX');
     expect(params(it)).toEqual([
-      'comprobante: datos coinciden', `Delivery a ${DIRECCION} (${REFERENCIA}) · recibe Ana Pérez · cel ${CLIENTE} · ${ITEMS_PEDIDO}`, 'Bs 110', 'N.º K7P2 de 3 ítems',
+      'datos coinciden', `Delivery a ${DIRECCION} (${REFERENCIA}) · recibe Ana Pérez · cel ${CLIENTE_LEGIBLE} · ${ITEMS_PEDIDO}`, 'Bs 110', 'N.º K7P2 de 3 ítems',
     ]);
   });
   it('un orden inválido cae al de por defecto y se anota', () => {
@@ -544,7 +545,7 @@ describe('el rol cocina no ve teléfono ni dirección', () => {
     expect(c).not.toContain('Cliente: Ana Pérez');
   });
   it('el rol completo ve teléfono, dirección y referencia en delivery, y las diferencias', () => {
-    expect(todoCompleto).toContain(`tel ${CLIENTE}`);
+    expect(todoCompleto).toContain(`tel ${CLIENTE_LEGIBLE}`);
     expect(todoCompleto).toContain(`Entrega: delivery a ${DIRECCION} (${REFERENCIA})`);
     expect(todoCompleto).toContain('Diferencias: ');
     expect(todoCompleto).toContain('monto: 100 en vez de 110');
@@ -553,7 +554,7 @@ describe('el rol cocina no ve teléfono ni dirección', () => {
     const cerrada = L.avArmar('comprobante', hostil, CSV, CFG, sdCon(), AHORA);
     const varsCompleto = params(plantillaDe(cerrada, ANDRES)).join('\n');
     expect(varsCompleto).toContain(`Delivery a ${DIRECCION} (${REFERENCIA})`);
-    expect(varsCompleto).toContain(`cel ${CLIENTE}`);
+    expect(varsCompleto).toContain(`cel ${CLIENTE_LEGIBLE}`);
     const varsCocina = params(plantillaDe(cerrada, SILVANA)).join('\n');
     expect(varsCocina).not.toContain(CLIENTE);
     expect(varsCocina).not.toContain(DIRECCION);
@@ -565,7 +566,7 @@ describe('el rol cocina no ve teléfono ni dirección', () => {
     expect(cuerpo(r, ANDRES)).toContain('Entrega: recojo en el local');
     expect(cuerpo(r, ANDRES)).not.toContain(DIRECCION);
     expect(cuerpo(r, ANDRES)).not.toContain(REFERENCIA);
-    expect(cuerpo(r, ANDRES)).toContain(`tel ${CLIENTE}`);
+    expect(cuerpo(r, ANDRES)).toContain(`tel ${CLIENTE_LEGIBLE}`);
   });
   it('la reserva y la derivación tampoco muestran el teléfono a cocina', () => {
     const r1 = L.avArmar('reserva', reserva({ nombre: `Ana ${CUENTA}` }), CSV, CFG, abierta(), AHORA);
@@ -574,7 +575,7 @@ describe('el rol cocina no ve teléfono ni dirección', () => {
       const k = r.filter((i: J) => i.para === SILVANA).flatMap(textosDe).join('\n');
       expect(k).not.toContain(CLIENTE);
       expect(k).not.toMatch(/\d{7,}/);
-      expect(r.filter((i: J) => i.para === ANDRES).flatMap(textosDe).join('\n')).toContain(CLIENTE);
+      expect(r.filter((i: J) => i.para === ANDRES).flatMap(textosDe).join('\n')).toContain(CLIENTE_LEGIBLE);
     }
   });
 });
@@ -612,7 +613,7 @@ describe('el cierre del detalle', () => {
     const c = cuerpo(L.avArmar('comprobante', pedido(), CSV, CFG, abierta(), AHORA), ANDRES);
     expect(c).toBe([
       'Pedido N.º K7P2 (comprobante: datos coinciden)',
-      `Cliente: Ana Pérez · tel ${CLIENTE}`,
+      `Cliente: Ana Pérez · tel ${CLIENTE_LEGIBLE}`,
       `Entrega: delivery a ${DIRECCION} (${REFERENCIA})`,
       'Ítems:',
       '• 2 × Orden de 3 tacos de birria (sin cebolla)',
@@ -908,7 +909,7 @@ describe('R2: con la ventana cerrada, la plantilla de pedido lleva el detalle po
   ] });
   const cerrada = (datos: J) => L.avArmar('pedido', datos, CSV, CFG, sdCon(), AHORA);
   it('rol completo, delivery: modalidad, dirección con referencia, quien recibe y el celular', () => {
-    expect(params(plantillaDe(cerrada(p), ANDRES))[2]).toBe(`Delivery a ${DIRECCION} (${REFERENCIA}) · recibe Ana Pérez · cel ${CLIENTE} · ${ITEMS_PEDIDO}`);
+    expect(params(plantillaDe(cerrada(p), ANDRES))[2]).toBe(`Delivery a ${DIRECCION} (${REFERENCIA}) · recibe Ana Pérez · cel ${CLIENTE_LEGIBLE} · ${ITEMS_PEDIDO}`);
   });
   it('rol cocina: modalidad e ítems compactos con sus notas, SIN teléfono ni dirección', () => {
     const v = params(plantillaDe(cerrada(p), SILVANA))[2];
@@ -919,7 +920,7 @@ describe('R2: con la ventana cerrada, la plantilla de pedido lleva el detalle po
   });
   it('en recojo, completo recibe igual nombre, celular e ítems, pero ni dirección ni referencia (I3)', () => {
     const v = params(plantillaDe(cerrada({ ...p, modalidad: 'recojo' }), ANDRES))[2];
-    expect(v).toBe(`Recojo en el local · cliente Ana Pérez · cel ${CLIENTE} · ${ITEMS_PEDIDO}`);
+    expect(v).toBe(`Recojo en el local · cliente Ana Pérez · cel ${CLIENTE_LEGIBLE} · ${ITEMS_PEDIDO}`);
     expect(v).not.toContain('Banzer');
     expect(v).not.toContain(REFERENCIA);
     // Negado: cocina, con recojo, sigue sin teléfono ni nombre completo.
@@ -1071,7 +1072,7 @@ describe('I3 e I4: la variable 3 de la plantilla de pedido por rol', () => {
       const items = cerrada(pedido({ modalidad }));
       const completo = params(plantillaDe(items, ANDRES))[2]!;
       expect(completo, modalidad).toContain('Ana Pérez');
-      expect(completo, modalidad).toContain(`cel ${CLIENTE}`);
+      expect(completo, modalidad).toContain(`cel ${CLIENTE_LEGIBLE}`);
       expect(completo, modalidad).toContain(ITEMS_PEDIDO);
       const cocina = params(plantillaDe(items, SILVANA))[2]!;
       expect(cocina, modalidad).toContain(ITEMS_PEDIDO);
@@ -1085,7 +1086,7 @@ describe('I3 e I4: la variable 3 de la plantilla de pedido por rol', () => {
     const v = params(plantillaDe(cerrada(p), ANDRES))[2]!;
     expect(v.length).toBeLessThanOrEqual(500);
     expect(v).toContain(coordenadas);
-    expect(v).toContain(`cel ${CLIENTE}`);
+    expect(v).toContain(`cel ${CLIENTE_LEGIBLE}`);
     expect(v).toContain('recibe Ana Pérez');
     expect(params(plantillaDe(cerrada(p), SILVANA))[2]).not.toContain('ubicación');
     // Con la ventana abierta, el detalle de completo las trae en su propia línea; el de cocina no.
@@ -1111,7 +1112,7 @@ describe('I3 e I4: la variable 3 de la plantilla de pedido por rol', () => {
     expect(v.length).toBeLessThanOrEqual(500);
     expect(v).toMatch(/… y \d+ más$/);
     expect(v).toContain('ubicación compartida');
-    expect(v).toContain(`cel ${CLIENTE}`);
+    expect(v).toContain(`cel ${CLIENTE_LEGIBLE}`);
   });
 });
 
@@ -1637,7 +1638,7 @@ describe('resultado «simulado»: el aviso al restaurante dice PRUEBA y SIMULADO
     const c = cuerpo(L.avArmar('comprobante', simulado(), CSV, CFG, abierta(), AHORA), ANDRES);
     expect(c).toBe([
       'PEDIDO DE PRUEBA N.º K7P2 (cobro SIMULADO: no se movió dinero)',
-      `Cliente: Ana Pérez · tel ${CLIENTE}`,
+      `Cliente: Ana Pérez · tel ${CLIENTE_LEGIBLE}`,
       `Entrega: delivery a ${DIRECCION} (${REFERENCIA})`,
       'Ítems:',
       '• 2 × Orden de 3 tacos de birria (sin cebolla)',
@@ -1663,7 +1664,7 @@ describe('resultado «simulado»: el aviso al restaurante dice PRUEBA y SIMULADO
       expect(r.errores).toEqual([]);
       const v = params(plantillaDe(r.items, ANDRES));
       expect(v[3], tipo).not.toBe('sin QR: se cobra al entregar o al recoger');
-      expect(v[3], tipo).not.toBe('comprobante sin cotejar');
+      expect(v[3], tipo).not.toBe('sin cotejar');
     }
     // Un resultado cercano pero inválido no es simulado.
     for (const raro of ['Simulado', 'simulada', 'SIMULADO', ' simulado', 'simulado ']) {
@@ -1770,7 +1771,7 @@ describe('la forma `solicitud` de la reserva y la plantilla por rol (`solicitud_
     expect(completo.payload.template.name).toBe('solicitud_reserva');
     expect(completo.payload.template.language.code).toBe('es');
     expect(params(completo)).toEqual([
-      'R4T9 · Ana Pérez', '4 personas', 'viernes 9 de octubre a las 20:00, terraza', '+' + CLIENTE,
+      'R4T9 · Ana Pérez', '4 personas', 'viernes 9 de octubre a las 20:00, terraza', CLIENTE_LEGIBLE,
       'Celebración: cumpleaños · Pedido especial: una silla alta',
     ]);
   });
@@ -1823,7 +1824,7 @@ describe('la forma `solicitud` de la reserva y la plantilla por rol (`solicitud_
     for (const sd of [sdCon(), abierta()]) {
       const items = L.avArmar('reserva', reserva(), CSV, cfg, sd, AHORA);
       expect(params(plantillaDe(items, ANDRES))).toHaveLength(5);
-      expect(params(plantillaDe(items, ANDRES))[3]).toBe('+' + CLIENTE);
+      expect(params(plantillaDe(items, ANDRES))[3]).toBe(CLIENTE_LEGIBLE);
       const cocina = params(plantillaDe(items, SILVANA));
       expect(cocina).toEqual([
         'SOLICITUD DE RESERVA R4T9: 4 personas, viernes 9 de octubre a las 20:00, terraza',
@@ -1906,10 +1907,11 @@ describe('PR-A (05/10): el enlace al mapa de la ubicación compartida, solo en e
     expect(cuerpo(items, SILVANA)).not.toMatch(/mapa|google|https?:|ubicaci/i);
   });
 
-  it('negado: ni las plantillas (ventana cerrada) ni el recojo ni una ubicación inválida llevan el enlace', () => {
+  it('negado: la plantilla de cocina (ventana cerrada), el recojo y una ubicación inválida no llevan el enlace', () => {
     const cerrada = L.avArmar('pedido', conUbicacion(), CSV, CFG, sdCon(), AHORA);
-    for (const it of cerrada) expect(textosDe(it).join('\n'), String(it.para)).not.toMatch(/google|https?:|query=/i);
-    expect(params(plantillaDe(cerrada, ANDRES))[2]).toContain('ubicación compartida (-16,50000; -68,15000)');
+    for (const it of cerrada.filter((x: J) => x.para === SILVANA)) expect(textosDe(it).join('\n'), String(it.para)).not.toMatch(/google|https?:|query=|ubicaci|-16[,.]5/i);
+    expect(params(plantillaDe(cerrada, ANDRES))[2]).toContain(`mapa: ${ENLACE}`);
+    expect(params(plantillaDe(cerrada, ANDRES))[2]).not.toContain('(-16,50000');
     const recojo = L.avArmar('pedido', conUbicacion({ modalidad: 'recojo' }), CSV, CFG, abierta(), AHORA);
     expect(cuerpo(recojo, ANDRES)).not.toMatch(/google|https?:|mapa/i);
     for (const mala of [{ lat: 95, lng: -68 }, { lat: NaN, lng: -68 }, { lat: '-16', lng: '-68' }, { lat: 0, lng: 0 }]) {
@@ -1923,5 +1925,102 @@ describe('PR-A (05/10): el enlace al mapa de la ubicación compartida, solo en e
     const completo = cuerpo(items, ANDRES);
     expect(completo).toContain('[enlace omitido]');
     expect(completo).not.toMatch(/malo\.example|otro\.example|google/);
+  });
+});
+
+describe('variables de plantilla corregidas (05/11): mapa en la modalidad, cotejo sin prefijo repetido y celular legible', () => {
+  const ENLACE = 'https://www.google.com/maps/search/?api=1&query=-16.500000%2C-68.150000';
+  const COORD = 'ubicación compartida (-16,50000; -68,15000)';
+  const conUb = (extra: J = {}): J => pedido({ coordenadas: COORD, ubicacion: { lat: -16.5, lng: -68.15 }, ...extra });
+  const modalidad = (p: J, tel = ANDRES): string => params(plantillaDe(L.avArmar('pedido', p, CSV, CFG, sdCon(), AHORA), tel))[2]!;
+  const treinta = Array.from({ length: 20 }, (_, i) => ({ cantidad: 1, nombre: `Plato ${i + 1} con nombre largo de la carta`, detalle: 'sin picante y con salsa aparte' }));
+
+  it('negado: ubicación fuera de rango, NaN, (0, 0), con texto o ausente deja las coordenadas de siempre y ningún enlace', () => {
+    for (const mala of [{ lat: 95, lng: -68 }, { lat: -16.5, lng: 181 }, { lat: NaN, lng: -68 }, { lat: 0, lng: 0 }, { lat: '-16.5', lng: '-68.15' }, null, undefined, {}]) {
+      const v = modalidad(conUb({ ubicacion: mala }));
+      expect(v, JSON.stringify(mala)).toContain(COORD);
+      expect(v, JSON.stringify(mala)).not.toMatch(/google|https?:|mapa:|enlace omitido/i);
+    }
+  });
+  it('negado: cocina no recibe coordenadas ni enlace; completo en recojo tampoco', () => {
+    expect(modalidad(conUb(), SILVANA)).not.toMatch(/google|https?:|mapa|ubicaci|-16[,.]5/i);
+    expect(modalidad(conUb({ modalidad: 'recojo' }))).not.toMatch(/google|https?:|mapa:|ubicaci|-16[,.]5/i);
+  });
+  it('con ubicación válida, completo lleva el enlace entero en lugar de las coordenadas crudas, en una sola línea', () => {
+    const v = modalidad(conUb());
+    expect(v).toContain(`mapa: ${ENLACE}`);
+    expect(v).not.toContain('(-16,50000');
+    expect(v).not.toContain('[enlace omitido]');
+    expect(v).not.toMatch(/[\n\r\t]/);
+  });
+  it('con 20 ítems el tope de 500 se respeta, los ítems se cortan antes que el enlace y el enlace nunca queda partido', () => {
+    const v = modalidad(conUb({ lineas: treinta }));
+    expect(v.length).toBeLessThanOrEqual(500);
+    expect(v).toContain(`mapa: ${ENLACE}`);
+    expect(v).toMatch(/… y \d+ más$/);
+    const k = v.indexOf('https://');
+    expect(v.slice(k, k + ENLACE.length)).toBe(ENLACE);
+  });
+  it('negado: si el enlace no cabe entero (dirección y referencia enormes) se omite y se conservan las coordenadas', () => {
+    const v = modalidad(conUb({ direccion: 'Avenida larguísima '.repeat(20), referencia: 'frente a la casa '.repeat(20), notaPedido: 'x'.repeat(200), nombre: 'N'.repeat(100) }));
+    expect(v.length).toBeLessThanOrEqual(500);
+    expect(v).not.toMatch(/google|https?:|query=/i);
+    // Sin partes de enlace sueltas en ninguna de las variables.
+    expect(v).not.toMatch(/maps|api=1/i);
+  });
+  it('el cotejo de la variable no repite «Comprobante» y ninguna rama afirma acreditación', () => {
+    const esperado: Record<string, string> = {
+      cuadra: 'datos coinciden', no_cuadra: 'NO coinciden los datos', ilegible: 'ilegible', sin_cotejo: 'sin cotejar',
+      sin_qr: 'sin QR: se cobra al entregar o al recoger', qr_vencido: 'QR vencido: coordinar el pago', simulado: 'PRUEBA: cobro SIMULADO, no se movió dinero',
+    };
+    for (const [res, texto] of Object.entries(esperado)) {
+      const it = L.avArmar('pedido', pedido({ resultado: res }), CSV, CFG, sdCon(), AHORA);
+      for (const tel of [ANDRES, SILVANA]) {
+        const v = params(plantillaDe(it, tel))[3]!;
+        expect(v, res).toBe(texto);
+        expect(v, res).not.toMatch(/^comprobante/i);
+        expect(v, res).not.toMatch(/acreditad|verificad|recibimos/i);
+      }
+    }
+    // El texto libre sigue con la palabra.
+    expect(L.avCotejoTexto('cuadra')).toBe('comprobante: datos coinciden');
+  });
+  it('celular legible «+591 7066 1250» en la variable, el detalle y la reserva; solo con 8 a 15 dígitos y sin letras', () => {
+    expect(L.avTelefonoLegible('59100000033')).toBe('+591 0000 0033');
+    expect(L.avTelefonoLegible('+591 000 00033')).toBe('+591 0000 0033');
+    expect(L.avTelefonoLegible('5110000000012')).toBe('+5110000000012');
+    expect(L.avTelefonoLegible('00000033')).toBe('00000033');
+    expect(L.avTelefonoLegible('1234-5678-901'.replace(/-/g, ''))).toBe('1234-5678-901'.replace(/-/g, '')); // 11 dígitos de otro país: sin «+» ni grupos (no se sabe el código)
+    expect(L.avTelefonoLegible('1000000033')).toBe('1000000033');
+    for (const mal of ['1234567', '59100000033abc', 'tel 59100000033', '1234567890123456', '', null, undefined]) expect(L.avTelefonoLegible(mal), String(mal)).toBe('');
+    expect(modalidad(conUb())).toContain('cel +591 0000 0033');
+    expect(modalidad(conUb({ telefono: '1234567' }))).toContain('cel 1234567');
+    expect(modalidad(conUb({ telefono: '59100000033x' }))).toContain('cel 59100000033');
+    expect(modalidad(conUb({ telefono: '59100000033x' }))).not.toContain('+591');
+    expect(modalidad(conUb(), SILVANA)).not.toMatch(/cel|\+591|0000 0033|59100000033/);
+    const det = cuerpo(L.avArmar('pedido', conUb(), CSV, CFG, abierta(), AHORA), ANDRES);
+    expect(det).toContain('tel +591 0000 0033');
+  });
+});
+
+
+describe('avParametroConMapa: el enlace descartado no deja separadores ni «mapa:» colgando', () => {
+  const L = cargar();
+  const E = 'https://www.google.com/maps/search/?api=1&query=-16.500000%2C-68.100000';
+  it('con enlace válido y una sola marca, se repone entero', () => {
+    expect(L.avParametroConMapa(`Delivery · mapa: ${E} · 2 tacos`)).toBe(`Delivery · mapa: ${E} · 2 tacos`);
+  });
+  it('NEGANDO: un texto del cliente con la marca interna descarta el enlace sin «·  hola» ni «mapa: » colgando', () => {
+    const v = L.avParametroConMapa(`ENLACEMAPAOK hola · mapa: ${E}`);
+    expect(v).not.toMatch(/ENLACEMAPAOK|mapa:|google|^·|·$/);
+    expect(v).toBe('hola');
+    expect(L.avParametroConMapa(`a · ENLACEMAPAOK · mapa: ${E} · b`)).toBe('a · b');
+    expect(L.avParametroConMapa(`mapa: ${E} · ENLACEMAPAOK`)).not.toMatch(/ENLACEMAPAOK|mapa:|google/);
+  });
+  it('NEGANDO: si con el enlace repuesto pasa de 500 caracteres, el enlace se descarta entero', () => {
+    const v = L.avParametroConMapa(`${'x'.repeat(470)} · mapa: ${E}`);
+    expect(v).not.toMatch(/google|mapa:|ENLACEMAPAOK/);
+    expect(v.length).toBeLessThanOrEqual(500);
+    expect(v.endsWith('·')).toBe(false);
   });
 });

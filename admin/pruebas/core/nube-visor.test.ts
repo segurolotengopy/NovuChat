@@ -53,11 +53,16 @@ const TOMAR = 'tomarconversacion';
 const DEVOLVER = 'devolverconversacion';
 const RECLAMAR = 'reclamarsalidapersona';
 const CONFIRMAR = 'confirmarsalidapersona';
-const HTTP = [RECLAMAR, CONFIRMAR] as const;
+const RESCATES = 'reclamarrescates';
+const MEDIO = 'vermedio';
+const BLOQUEAR = 'bloquearcontacto';
+const DESBLOQUEAR = 'desbloquearcontacto';
+const HTTP = [RECLAMAR, CONFIRMAR, RESCATES] as const;
 const SERVICIOS = [
   [VISOR, 'verComprobante'], [BUSCADOR, 'buscarConversaciones'], [ENVIAR, 'enviarComoPersona'],
   [TOMAR, 'tomarConversacion'], [DEVOLVER, 'devolverConversacion'],
-  [RECLAMAR, 'reclamarSalidaPersona'], [CONFIRMAR, 'confirmarSalidaPersona'],
+  [RECLAMAR, 'reclamarSalidaPersona'], [CONFIRMAR, 'confirmarSalidaPersona'], [RESCATES, 'reclamarRescates'], [MEDIO, 'verMedio'],
+  [BLOQUEAR, 'bloquearContacto'], [DESBLOQUEAR, 'desbloquearContacto'],
 ] as const;
 const urlDe = (s: string) => `https://${s}-${NUMERO_FALSO}.us-east1.run.app`;
 
@@ -120,11 +125,11 @@ E="$FAKE_DIR"
 printf '%s\\n' "$*" >> "$E/curl"
 out=""; a=("$@")
 for ((i = 0; i < \${#a[@]}; i++)); do [[ "\${a[i]}" == -o ]] && out="\${a[i+1]}"; done
-# Las dos Functions HTTP (ingesta) contestan TEXTO, no el JSON de Firebase.
-http=0; [[ "\${a[\${#a[@]}-1]}" == *reclamarsalidapersona* || "\${a[\${#a[@]}-1]}" == *confirmarsalidapersona* ]] && http=1
+# Las tres Functions HTTP (ingesta) contestan TEXTO, no el JSON de Firebase.
+http=0; [[ "\${a[\${#a[@]}-1]}" == *reclamarsalidapersona* || "\${a[\${#a[@]}-1]}" == *confirmarsalidapersona* || "\${a[\${#a[@]}-1]}" == *reclamarrescates* ]] && http=1
 modo="auto"; [[ -f "$E/curl-modo" ]] && modo="$(cat "$E/curl-modo")"
 if [[ "$modo" == auto ]]; then
-  if python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); sys.exit(0 if any(b.get("role")=="roles/run.invoker" and "allUsers" in b.get("members",[]) for b in p.get("bindings",[])) else 1)' "$E/politica.json"; then modo=propio; else modo=403; fi
+  if grep -q '"allUsers"' "$E/politica.json"; then modo=propio; else modo=403; fi
 fi
 err() { printf '{"error":{"message":"x","status":"%s"}}' "$1" > "$out"; printf '%s' "$2"; }
 if (( http )) && [[ "$modo" == propio ]]; then printf 'no autorizado' > "$out"; printf '401'; exit 0; fi
@@ -230,7 +235,7 @@ describe('nube-visor.sh: uso y salvaguardas (nada se llama a gcloud)', () => {
   it('--help explica los modos y la lista cerrada, y sale 0', () => {
     const r = correr(['--help'], {}, null);
     expect(r.codigo).toBe(0);
-    for (const t of ['--servicio', '--entorno', '--aplicar', '--confirmo', '--revertir', VISOR, BUSCADOR, ENVIAR, TOMAR, DEVOLVER, RECLAMAR, CONFIRMAR]) expect(r.salida).toContain(t);
+    for (const t of ['--servicio', '--entorno', '--aplicar', '--confirmo', '--revertir', VISOR, BUSCADOR, ENVIAR, TOMAR, DEVOLVER, RECLAMAR, CONFIRMAR, RESCATES, MEDIO, BLOQUEAR, DESBLOQUEAR]) expect(r.salida).toContain(t);
     expect(llamadas()).toEqual([]);
   });
 
@@ -281,6 +286,8 @@ describe('nube-visor.sh: --servicio, lista cerrada', () => {
     ['ingesta (Function HTTP fuera de la lista)', 'ingesta', []],
     ['el nombre de la Function en camelCase (tomarConversacion)', 'tomarConversacion', []],
     ['el nombre de la Function en camelCase (devolverConversacion)', 'devolverConversacion', []],
+    ['el nombre de la Function en camelCase (verMedio)', 'verMedio', []],
+    ['vermedios (con una s de más)', 'vermedios', []],
     ['un prefijo (tomar)', 'tomarconversac', []],
     ['un prefijo (devolver)', 'devolver', []],
     ['buscarconversacion (sin la s final)', 'buscarconversacion', []],
@@ -708,8 +715,10 @@ describe('nube-visor.sh: las Functions HTTP de la ingesta (H2-3)', () => {
     expect(escrituras()).toEqual([escritura('add', STAGING, servicio)]);
   });
 
-  it.each(HTTP)('%s: cualquier respuesta distinta del 401 propio y del 403 de Google es «abierto»: revierte y sale 3', (servicio) => {
-    for (const [modo, codigo] of [['200', 200], ['http400', 400], ['http404', 404], ['http409', 409], ['http503', 503], ['500', 500], ['http200html', 200], ['http401otro', 401], ['http401json', 401]] as const) {
+  // Un caso por servicio y por modo (no un `it` que recorre los nueve): cada uno lanza bash, gcloud y curl falsos, y en un CI con poca CPU el conjunto pasaba del tiempo.
+  const MODOS_ABIERTOS = [['200', 200], ['http400', 400], ['http404', 404], ['http409', 409], ['http503', 503], ['500', 500], ['http200html', 200], ['http401otro', 401], ['http401json', 401]] as const;
+  it.each(HTTP.flatMap((servicio) => MODOS_ABIERTOS.map(([modo, codigo]) => [servicio, modo, codigo] as const)))(
+    '%s, respuesta «%s»: distinta del 401 propio y del 403 de Google es «abierto»: revierte y sale 3', (servicio, modo, codigo) => {
       politica(SIN_NADA);
       marcar('llamadas', ''); marcar('curl', ''); marcar('curl-modo', modo);
       const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
@@ -717,8 +726,8 @@ describe('nube-visor.sh: las Functions HTTP de la ingesta (H2-3)', () => {
       expect(r.salida).toContain(`REVERTIDO: respondió sin sesión (abierto:${codigo})`);
       expect(escrituras()).toEqual([escritura('add', STAGING, servicio), escritura('remove', STAGING, servicio)]);
       expect(publico()).toBe(false);
-    }
-  });
+    },
+  );
 
   it.each(HTTP)('%s: el 403 HTML de Google sigue siendo de Google (no revierte, el binding queda)', (servicio) => {
     marcar('curl-modo', '403');
@@ -765,24 +774,29 @@ describe('nube-visor.sh: la fuente', () => {
     expect(codigo).not.toMatch(/python3(?! -I )/);
   });
 
-  it('la lista cerrada: siete servicios con sus constantes, sin variable que agregue otro', () => {
+  it('la lista cerrada: doce servicios con sus constantes, sin variable que agregue otro', () => {
     for (const [c, v] of [
       ['SERVICIO_ENVIAR', 'enviarcomopersona'], ['FUNCION_ENVIAR', 'enviarComoPersona'],
       ['SERVICIO_TOMAR', 'tomarconversacion'], ['FUNCION_TOMAR', 'tomarConversacion'],
       ['SERVICIO_DEVOLVER', 'devolverconversacion'], ['FUNCION_DEVOLVER', 'devolverConversacion'],
       ['SERVICIO_RECLAMAR', 'reclamarsalidapersona'], ['FUNCION_RECLAMAR', 'reclamarSalidaPersona'],
       ['SERVICIO_CONFIRMAR', 'confirmarsalidapersona'], ['FUNCION_CONFIRMAR', 'confirmarSalidaPersona'],
+      ['SERVICIO_RESCATES', 'reclamarrescates'], ['FUNCION_RESCATES', 'reclamarRescates'],
+      ['SERVICIO_GUARDAR', 'guardarmedio'], ['FUNCION_GUARDAR', 'guardarMedio'],
+      ['SERVICIO_MEDIO', 'vermedio'], ['FUNCION_MEDIO', 'verMedio'],
+      ['SERVICIO_BLOQUEAR', 'bloquearcontacto'], ['FUNCION_BLOQUEAR', 'bloquearContacto'],
+      ['SERVICIO_DESBLOQUEAR', 'desbloquearcontacto'], ['FUNCION_DESBLOQUEAR', 'desbloquearContacto'],
     ] as const) expect(codigo).toContain(`readonly ${c}="${v}"`);
     expect(codigo).toContain('readonly SERVICIO_VISOR="vercomprobante"');
     expect(codigo).toContain('readonly FUNCION_VISOR="verComprobante"');
     expect(codigo).toContain('readonly SERVICIO_BUSCADOR="buscarconversaciones"');
     expect(codigo).toContain('readonly FUNCION_BUSCADOR="buscarConversaciones"');
     expect(codigo).toContain('readonly SERVICIO FUNCION');
-    // Solo siete asignaciones de SERVICIO, y desde las constantes.
+    // Solo doce asignaciones de SERVICIO, y desde las constantes.
     expect([...codigo.matchAll(/\bSERVICIO="([^"]*)"/g)].map((m) => m[1])).toEqual([
-      '$SERVICIO_VISOR', '$SERVICIO_BUSCADOR', '$SERVICIO_ENVIAR', '$SERVICIO_TOMAR', '$SERVICIO_DEVOLVER', '$SERVICIO_RECLAMAR', '$SERVICIO_CONFIRMAR']);
-    // Solo las dos HTTP son de tipo http.
-    expect([...codigo.matchAll(/TIPO="http"/g)]).toHaveLength(2);
+      '$SERVICIO_VISOR', '$SERVICIO_BUSCADOR', '$SERVICIO_ENVIAR', '$SERVICIO_TOMAR', '$SERVICIO_DEVOLVER', '$SERVICIO_RECLAMAR', '$SERVICIO_CONFIRMAR', '$SERVICIO_RESCATES', '$SERVICIO_GUARDAR', '$SERVICIO_MEDIO', '$SERVICIO_BLOQUEAR', '$SERVICIO_DESBLOQUEAR']);
+    // Solo las cuatro HTTP son de tipo http.
+    expect([...codigo.matchAll(/TIPO="http"/g)]).toHaveLength(4);
     expect(codigo).not.toMatch(/NUBE_VISOR_(SERVICIO|ADC)/);
   });
 

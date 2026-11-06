@@ -11,6 +11,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const modo = vi.hoisted(() => ({ falla: null as null | 500 | 503 }));
 vi.mock('../functions/src/core/turno/sesionFirestore.ts', async (original) => {
   const real = await original<typeof import('../functions/src/core/turno/sesionFirestore.ts')>();
@@ -66,7 +67,7 @@ const sesionLeer = () => ({ v: 1, accion: 'leer', espacio: 'venta', ejecucion: '
 
 beforeAll(async () => {
   await db.doc(`rutasWhatsApp/${NUMERO}`).set({ tenantId: T, flujo: 'venta', aliasSecreto: 'cliente19', estado: 'activo' });
-  await db.doc(`tenants/${T}`).set({ nombre: T, estado: 'activo', plan: 'crecimiento', flujos: ['venta'] });
+  await db.doc(`tenants/${T}`).set({ nombre: T, estado: 'activo', plan: 'crecimiento', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
   await db.doc(`tenants/${T}/config/negocio`).set({ nombreNegocio: T, numeroRecepcion: '70000001', catalogoWebActivo: true });
   for (let i = 0; i < 3; i++) {
     await db.doc(`tenants/${T}/catalogo/i${i}`).set({ nombre: `Taco ${i}`, area: 'tacos', precio: 10 + i, moneda: 'BOB', activo: true });

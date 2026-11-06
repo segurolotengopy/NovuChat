@@ -14,6 +14,7 @@ import type { J } from '../../lib/flujo';
 import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { readFileSync } from 'node:fs';
 import { ANGULOS, PRELLENADOS, COMPROBANTE, ANA, BETO, REC, crear, entrega, hablar, mAudio, mBoton, mDocumento, mImagen, mLista, mTexto, panelConAgotados, panelConQr, panelOk, valorMeta, type Opciones } from './mundo';
+import { cargarLibrerias } from './librerias';
 import { LIB, UX_CONTADOR, vigilarUx, violacionesDeParrafos, violacionesDeUx, type UxMsg } from './vigilante-ux';
 
 const PRODUCCION_JSON = JSON.parse(readFileSync(new URL('../../../../Flujos/experimental/rroca-antonio/rroca-antonio.json', import.meta.url), 'utf8')) as { nodes: J[] };
@@ -358,13 +359,12 @@ describe('`no_contactar` aunque el envío falle (y el aviso del pago ya no lleva
     const w = nuevo({ medio: { transcripcion: 'mi pareja me golpea' }, envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
     const t = hablar(w, ANA, mAudio(), { toleraFallo: true });
     expect(t.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar')).toHaveLength(1);
-    expect(t.ejecutados.has('Reportar protección')).toBe(true);
-    // Si el mensaje salió, no se duplica el reporte.
+    expect(t.ejecutados.has('Avisar al servidor')).toBe(true);
+    // Si el riesgo está escrito, viaja en el entrante Y en el saliente (el servidor marca un solo hecho; «Avisar al servidor» no corre).
     const v = nuevo();
     const u = hablar(v, ANA, mTexto('mi pareja me golpea'));
-    // El riesgo escrito viaja en el entrante Y en el saliente (el servidor marca un solo hecho; el reporte aparte no corre).
     expect(u.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar').map((c) => c['direccion']).sort()).toEqual(['entrante', 'saliente']);
-    expect(u.ejecutados.has('Reportar protección')).toBe(false);
+    expect(u.ejecutados.has('Avisar al servidor')).toBe(false);
   });
 });
 
@@ -378,28 +378,28 @@ describe('plantillas de Antonio (APPROVED en Meta): un estado distinto de APPROV
 });
 
 describe('revisión de código de #576', () => {
-  it('(1) el reporte de protección: el riesgo escrito viaja en el reporte del ENTRANTE (sin reporte aparte ni mensaje de más), y «Reportar protección» no reintenta', () => {
+  it('(1) el reporte de protección: el riesgo escrito viaja en el reporte del ENTRANTE (sin reporte aparte ni mensaje de más), y «Avisar al servidor» no reintenta', () => {
     const w = nuevo({ envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
     const t = hablar(w, ANA, mTexto('mi pareja me golpea'), { toleraFallo: true });
     const nc = t.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar');
     expect(nc).toHaveLength(1);
     expect(nc[0]!['direccion']).toBe('entrante');
-    expect(t.ejecutados.has('Reportar protección')).toBe(false);
-    const f = PRODUCCION_JSON.nodes.find((n: J) => n['name'] === 'Reportar protección')!;
+    expect(t.ejecutados.has('Avisar al servidor')).toBe(false);
+    const f = PRODUCCION_JSON.nodes.find((n: J) => n['name'] === 'Avisar al servidor')!;
     expect(f['retryOnFail']).toBeUndefined();
   });
-  it('(1) EFECTO DECLARADO: si el riesgo solo se conoce por un audio, una imagen o la marca del modelo Y fallan el envío y su respaldo, `Reportar protección` agrega UN reporte entrante (la ingesta escribe un mensaje por reporte); sin él, la persona podría recibir un rescate', () => {
+  it('(1) EFECTO DECLARADO: si el riesgo solo se conoce por un audio, una imagen o la marca del modelo Y fallan el envío y su respaldo, `Avisar al servidor` agrega UN reporte entrante (la ingesta escribe un mensaje por reporte); sin él, la persona podría recibir un rescate', () => {
     const w = nuevo({ medio: { transcripcion: 'mi marido me pega' }, envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
     const t = hablar(w, ANA, mAudio(), { toleraFallo: true });
-    expect(t.ejecutados.has('Reportar protección')).toBe(true);
+    expect(t.ejecutados.has('Avisar al servidor')).toBe(true);
     const nc = t.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar');
     expect(nc).toHaveLength(1);
     expect(nc[0]).toMatchObject({ direccion: 'entrante', idMeta: '' });
   });
-  it('(2) un botón con precio conserva SIEMPRE « <monto> Bs», con ≤ 20 caracteres, sin palabras cortadas ni preposición colgando, también con precios de 2 decimales', () => {
+  it('(2) un botón con precio conserva SIEMPRE «<monto>Bs», con ≤ 20 caracteres, el nombre del catálogo sin palabras cortadas ni preposición colgando, también con precios de 2 decimales', () => {
     const catalogo = [
-      { id: 'pack-completo', precio: 49.5 }, { id: 'libro', precio: 35.25 }, { id: 'workbook', precio: 20.75 },
-      { id: 'guia-de-conversaciones', precio: 19.9 }, { id: 'calendario-de-conexion', precio: 17.5 }, { id: 'preguntas-profundas', precio: 15.5 },
+      { id: 'pack-completo', nombre: 'Pack completo', precio: 49.5 }, { id: 'libro', nombre: 'Libro', precio: 35.25 }, { id: 'workbook', nombre: 'Workbook', precio: 20.75 },
+      { id: 'guia-de-conversaciones', nombre: 'Guía de conversaciones', precio: 19.9 }, { id: 'calendario-de-conexion', nombre: 'Calendario de conexión', precio: 17.5 }, { id: 'preguntas-profundas', nombre: 'Preguntas profundas', precio: 15.5 },
     ];
     const w = nuevo({ panel: panelOk({ catalogo }) });
     const t = hablar(w, ANA, mTexto(PRELLENADOS.calendario));
@@ -407,13 +407,16 @@ describe('revisión de código de #576', () => {
     expect(titulos.length).toBeGreaterThan(1);
     for (const x of titulos) {
       expect(x.length).toBeLessThanOrEqual(20);
-      expect(x).toMatch(/ \d+(?:,\d+)? Bs$/);
-      expect(x).not.toMatch(/\b(de|del|el|la|y)\s+\d+(?:,\d+)? Bs$/i);
+      expect(x).toMatch(/ \d+(?:,\d+)?Bs$/);
+      expect(x).not.toMatch(/\b(de|del|el|la|y)\s+\d+(?:,\d+)?Bs$/i);
     }
+    expect(titulos).toEqual(['Calendario 17,50Bs', 'Preguntas 15,50Bs', 'Pack 49,50Bs']);
     const v = nuevo({ panel: panelOk({ catalogo }) });
     hablar(v, ANA, mTexto('hola'));
+    hablar(v, ANA, mTexto('estamos pasando un momento difícil'));
     const m = hablar(v, ANA, mTexto('quiero comprar'));
-    for (const b of (m.mensajes[0]!.payload['interactive'].action.buttons as J[]).filter((x) => /\d/.test(String(x['reply'].title)))) expect(String(b['reply'].title)).toMatch(/ \d+(?:,\d+)? Bs$/);
+    const conPrecio = (m.mensajes[0]!.payload['interactive'].action.buttons as J[]).filter((x) => /\d/.test(String(x['reply'].title)));
+    expect(conPrecio.map((b) => String(b['reply'].title))).toEqual(['Pack 49,50Bs', 'Libro 35,25Bs']);   // «Pack completo 49,50Bs» mide 21: se recorta el nombre por palabras y el «49,50Bs» queda intacto
   });
   it('(4) tras un comprobante, «¿cómo pago el workbook?», «quiero el libro» y «¿cuánto cuesta el pack?» son una compra nueva (no una queja de no entrega)', () => {
     const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE } });
@@ -429,17 +432,159 @@ describe('revisión de código de #576', () => {
     const c = hablar(w, ANA, mTexto('quiero el libro'));
     expect(c.mensajes[0]!.tipo).toBe('image');
   });
-  it('(5) un toque en «Bonos sueltos» que el plan no atiende (QR abierto, o antes del saludo) NO marca el botón como usado', () => {
+  it('(5) un toque en «Ver complementos» que el plan no atiende (QR abierto, antes del saludo o antes de las opciones) NO marca el botón como usado; el que sí abre la lista, sí', () => {
     const w = nuevo();
     hablar(w, ANA, mTexto(PRELLENADOS.pack));
-    hablar(w, ANA, mBoton('b_bonos'));
-    expect((w.sd['antonio'] as J)[ANA]['usados']).not.toContain('b_bonos');
+    hablar(w, ANA, mBoton('b_comp'));
+    expect((w.sd['antonio'] as J)[ANA]['usados']).not.toContain('b_comp');
     const v = nuevo();
-    hablar(v, BETO, mBoton('b_bonos'));
-    expect((v.sd['antonio'] as J)[BETO]['usados']).not.toContain('b_bonos');
+    hablar(v, BETO, mBoton('b_comp'));
+    expect((v.sd['antonio'] as J)[BETO]['usados']).not.toContain('b_comp');
+    const s = nuevo();
+    hablar(s, ANA, mTexto('hola'));
+    hablar(s, ANA, mBoton('b_comp'));
+    expect((s.sd['antonio'] as J)[ANA]['usados']).not.toContain('b_comp');
     const u = nuevo();
     hablar(u, ANA, mTexto('hola'));
-    hablar(u, ANA, mBoton('b_bonos'));
-    expect((u.sd['antonio'] as J)[ANA]['usados']).toContain('b_bonos');
+    hablar(u, ANA, mTexto('estamos pasando un momento difícil'));
+    hablar(u, ANA, mBoton('b_comp'));
+    expect((u.sd['antonio'] as J)[ANA]['usados']).toContain('b_comp');
+  });
+});
+
+// =============================================================================================================== S2: «SOLO SE OFRECE LO QUE SE CUMPLE» EN LA REDACCIÓN DEL MODELO
+// Revisión de seguridad (23/10/2026): estas salidas pasaban el filtro. Son reglas GENERALES (deberían subir al filtro común del core); cada una tiene su prueba NEGADA y una POSITIVA (los textos legítimos no se rechazan).
+describe('S2 · el modelo no promete consultar ni volver, no afirma un aviso, no inventa beneficios ni precios, no da teléfonos y no se hace pasar por el autor', () => {
+  const L = cargarLibrerias('raExtraRedaccion, raNorm') as { raExtraRedaccion: (t: string, n: string) => string; raNorm: (t: string) => string };
+  const motivo = (x: string): string => L.raExtraRedaccion(x, L.raNorm(x));
+  const CASOS: Array<[string, string[], string[]]> = [
+    ['promesa_de_consulta', ['Déjame consultarlo.', 'Déjame consultarlo con calma y te respondo.', 'Lo reviso y vuelvo contigo.', 'Voy a hablar con Antonio y te digo.', 'Permíteme verificarlo un momento.', 'Lo consulto y te cuento luego.', 'Te respondo más tarde con eso.'], []],
+    ['aviso_afirmado', ['Ya avisé a Antonio.', 'Le avisé a Antonio de tu mensaje.', 'Ya le pasé tu consulta al equipo.', 'Antonio ya sabe de tu caso.', 'Ya quedó avisado.'], []],
+    ['beneficio_inventado', ['Tenemos 2x1 hoy.', 'Hay un 20 % menos hoy.', 'Te incluyo de regalo el calendario.', 'Si no te gusta te devolvemos el dinero.', 'Hoy hay rebaja en el libro.'], []],
+    ['precio_inventado', ['Te sale a 100.', 'Cuesta 1OO Bs.', 'Sale en cien bolis.', 'El libro vale 35 bolivianos.', 'Son 50 Bs en total.', 'Cuesta l00 pesitos.', 'Por solo Bs 80.'], []],
+    ['telefono', ['Escríbeme al 76988663.', 'Llama al 7 6 9 8 8 6 6 3.', 'Mi número es 769-886-63.', 'Es el 7698.8663.'], []],
+    ['suplanta_al_autor', ['Aquí Antonio, encantado.', 'Soy quien escribió el libro.', 'S0y Ant0nio.', 'Soy Ant@nio y te atiendo.', 'Yo escribí este libro hace años.', 'Habla Antonio Dauber.'], []],
+  ];
+  for (const [regla, malos] of CASOS) {
+    it(`NEGADA · ${regla}: cada frase se rechaza con ese motivo`, () => {
+      for (const x of malos) expect(motivo(x), x).toBe(regla);
+    });
+  }
+  const LEGITIMOS = [
+    'Entiendo lo agotador que es sentir que cada discusión termina igual. Los capítulos 4, 5 y 8 del libro enseñan a hacer pausas a tiempo.',
+    'El método propone una ruta de 30 días con ejercicios de 10 a 20 minutos al día.',
+    'Cuesta mucho hablar cuando hay enojo, pero se puede practicar de a poco.',
+    'Déjame decirte que es muy común sentirse así. ¿Desde cuándo notan esa distancia?',
+    'Puedes consultar con tu pareja un momento tranquilo para conversar sobre esto.',
+    'El libro tiene 14 capítulos y 138 páginas, con ejercicios y retos semanales.',
+    'Antes de nada, respira: lo que sientes es válido. ¿Qué es lo que más extrañas de cómo se comunicaban?',
+    'Lo vemos con calma, paso a paso. ¿Qué suele pasar cuando intentan hablar de un tema difícil?',
+    'Los 6 pilares del Método PUENTE empiezan por la pausa. ¿Te cuesta más escuchar o expresar lo que necesitas?',
+    'Esto no es terapia: es una guía práctica de lectura y ejercicios para hacer en casa.',
+    'Muchas parejas se sienten como compañeros de cuarto. ¿Hace cuánto notas eso?',
+    'Si tu pareja no quiere leerlo contigo, sirve igual: cambiar tu forma de escuchar cambia la respuesta del otro.',
+    'Lo mejor es empezar por el capítulo 2, que trabaja la escucha. ¿Quieres que te cuente de qué trata?',
+    'No hace falta saber de tecnología ni tener mucho tiempo. ¿Qué te gustaría lograr primero?',
+    'Eso que cuentas se puede trabajar. Valoro que lo compartas conmigo.',
+    'Hablar sin herir es posible con práctica. ¿En qué momento del día suelen discutir?',
+  ];
+  it('POSITIVA · los textos legítimos de la charla NO se rechazan (sin falsos positivos)', () => {
+    for (const x of LEGITIMOS) expect(motivo(x), x).toBe('');
+    // (Los textos fijos del código no pasan por este filtro: los pone el código, no el modelo.)
+  });
+  it('un descuento dicho con las palabras de siempre ya se rechazaba (otra regla): sigue rechazado', () => {
+    expect(motivo('Te llevas un 15% de descuento.')).not.toBe('');
+    expect(motivo('Hoy tenemos una promoción especial.')).not.toBe('');
+  });
+  it('de punta a punta: cada salida peligrosa del modelo cae al texto fijo y NUNCA llega al cliente', () => {
+    const peligrosas = CASOS.flatMap(([, malos]) => malos);
+    for (const crudo of peligrosas) {
+      const w = nuevo({ modeloDice: crudo });
+      hablar(w, ANA, mTexto('hola'));
+      const t = hablar(w, ANA, mTexto('estamos pasando un momento difícil'));
+      expect(t.mensajes[0]!.cuerpo, crudo).toMatch(/Gracias por escribir\. Cuéntame un poco más/);
+      expect(t.mensajes[0]!.cuerpo, crudo).not.toContain(crudo.slice(0, 14));
+      expect(t.avisos, crudo).toHaveLength(0);
+    }
+  });
+  it('de punta a punta: una respuesta legítima de la charla SÍ sale', () => {
+    for (const crudo of LEGITIMOS.slice(0, 6)) {
+      const w = nuevo({ modeloDice: crudo });
+      hablar(w, ANA, mTexto('hola'));
+      const t = hablar(w, ANA, mTexto('estamos pasando un momento difícil'));
+      expect(t.mensajes[0]!.cuerpo, crudo).toContain(crudo.slice(0, 20));
+    }
+  });
+});
+
+// =============================================================================================================== F1: CRITERIOS ESTRUCTURALES DEL FILTRO (23/10/2026)
+// (a) un solo texto normalizado antes de TODOS los patrones; (b) lista blanca de cifras; (c) el nombre «Antonio» solo en tercera persona; (d) promesa o aviso afirmado; (e) beneficios. Ante la duda, el texto cae al respaldo fijo.
+// Costo conocido (aceptado): «El 80 % de las parejas…» y «Déjame ver si entendí bien» ya no pasan. Estos criterios deberían subir al filtro común del core.
+describe('F1 · criterios estructurales del filtro de redacción', () => {
+  const L = cargarLibrerias('raExtraRedaccion, raNorm') as { raExtraRedaccion: (t: string, n: string, c?: { precios: number[] }) => string; raNorm: (t: string) => string };
+  const motivo = (x: string, precios: number[] = []): string => L.raExtraRedaccion(x, L.raNorm(x), { precios });
+  const MALOS = [
+    'Lo voy a consultar.', 'Averiguo y te digo.', 'D3jame c0nsultarlo.', 'Antonio ya está al tanto.', 'Ya le hice llegar tu consulta.', 'Le comenté a Antonio.',
+    'Dos por uno.', 'Hay 2×1 hoy.', 'Es sin costo.', 'Tiene un precio especial.', 'Sale más barato.', 'A medio precio.',
+    'Está a 120.', 'Son 99 nomás.', 'Por apenas 80.', 'Son 120 bolivianitos.', 'Cuesta 100$.', 'Cuesta noventa y nueve.',
+    'Llama al siete seis nueve ocho ocho seis seis tres.', 'Mi nombre es Antonio.', 'Antonio al habla.', 'Soy el escritor del libro.',
+  ];
+  it('NEGADA · cada texto peligroso se rechaza (con cualquier motivo)', () => {
+    for (const x of MALOS) expect(motivo(x), x).not.toBe('');
+  });
+  it('NEGADA · el precio del catálogo solo pasa EXACTO y con la compuerta abierta', () => {
+    expect(motivo('El libro cuesta 99 Bs.')).not.toBe('');
+    expect(motivo('El libro cuesta 99 Bs.', [99])).toBe('');
+    expect(motivo('El libro cuesta 98 Bs.', [99])).not.toBe('');
+    expect(motivo('Con 15 % menos.', [99])).not.toBe('');
+  });
+  it('POSITIVA · los textos legítimos de la charla pasan', () => {
+    for (const x of ['Te cuento.', 'El libro te ayuda a volver a hablar.', 'Son 14 capítulos.', 'La ruta de 30 días.', '¿Qué parte te gustaría mejorar?', 'Escríbele a Antonio si prefieres.']) expect(motivo(x), x).toBe('');
+  });
+});
+
+// =============================================================================================================== F1b: FALSOS POSITIVOS DE LA BATERÍA REAL (23/10/2026)
+// Los datos declarados del libro (`RA_PROMPT`: 138 páginas, 14 capítulos en 4 partes, 30 días, 6 pilares, 10 a 20 minutos al día, 100% digital) pasan en dígitos y en palabras; toda otra cifra sigue rechazada.
+describe('F1b · la lista blanca acepta los datos declarados del libro y no lo demás; la identidad de IA no se bloquea', () => {
+  const L = cargarLibrerias('raExtraRedaccion, raNorm') as { raExtraRedaccion: (t: string, n: string, c?: { precios?: number[]; textoCliente?: string }) => string; raNorm: (t: string) => string };
+  const motivo = (x: string, textoCliente = ''): string => L.raExtraRedaccion(x, L.raNorm(x), { precios: [], textoCliente });
+  it('POSITIVA · datos declarados, en dígitos y en palabras, y «100% digital»', () => {
+    for (const x of [
+      'Es una ruta de treinta días con ejercicios.', 'Tiene catorce capítulos en cuatro partes.', 'Es una guía de ciento treinta y ocho páginas en formato PDF.', 'Son 138 páginas y 14 capítulos.',
+      'Se practica de diez a veinte minutos al día.', 'El libro está diseñado 100% en formato digital.', 'Es 100% digital, en PDF.', 'Los seis pilares del método empiezan por la pausa.', 'Los capítulos 4, 5 y 8 ayudan con eso.',
+    ]) expect(motivo(x), x).toBe('');
+  });
+  it('NEGADA · toda otra cifra sigue rechazada, también en palabras', () => {
+    for (const x of ['Son 140 páginas.', 'Tiene doscientas páginas.', 'Dura 45 minutos al día.', 'Es una ruta de 21 días.', 'Ciento treinta páginas.', 'De quince a veinte minutos.', 'El 80 % de las parejas mejora.', 'Tiene 15 capítulos.', 'Es 90% digital.', 'Con un 20 % menos.', 'Hay 20% de descuento.', 'Tiene 2x1.', 'Es gratis.', 'Va de regalo.', 'El capítulo 20 lo explica.']) expect(motivo(x), x).not.toBe('');
+  });
+  it('POSITIVA · si la persona pregunta quién es, si es un bot o si es terapia, el asistente puede decir que es un asistente virtual con IA', () => {
+    const r = 'No soy psicólogo ni terapeuta, soy un asistente virtual con inteligencia artificial. El libro no reemplaza la terapia.';
+    for (const q of ['¿Esto es terapia?', '¿Eres un bot?', '¿Quién eres?', '¿Hablo con una persona real?']) expect(motivo(r, q), q).toBe('');
+  });
+  it('NEGADA · sin esa pregunta, presentarse otra vez sigue rechazado; y afirmar terapia también', () => {
+    expect(motivo('Soy un asistente virtual con IA.', 'cuéntame del libro')).toBe('presentacion_repetida');
+    expect(motivo('Esto es una terapia de pareja.', '¿Esto es terapia?')).toBe('terapia');
+    expect(motivo('Te ofrezco elegir entre el pack y el libro.')).not.toBe('');
+  });
+  it('POSITIVA · «elegir» del vocabulario del libro no es una oferta de compra', () => {
+    expect(motivo('El pilar Tono y palabras es elegir las que acercan.')).toBe('');
+  });
+});
+
+// =============================================================================================================== Seguridad (23/10/2026): «terapia» solo con negación pegada; una persona sin nombre conocido tampoco se suplanta
+describe('F1c · terapia afirmada y presentación con nombre propio', () => {
+  const L = cargarLibrerias('raExtraRedaccion, raNorm') as { raExtraRedaccion: (t: string, n: string, c?: { precios?: number[]; textoCliente?: string }) => string; raNorm: (t: string) => string };
+  const motivo = (x: string, textoCliente = ''): string => L.raExtraRedaccion(x, L.raNorm(x), { precios: [], textoCliente });
+  it('NEGADA · afirmar terapia con un «no» lejano se rechaza', () => {
+    for (const x of ['No te lo digo por vender, esto es terapia de verdad.', 'Sin exagerar, es una terapia completa.', 'No lo dudes: funciona como terapia.', 'No soy psicólogo, pero esto es terapia.']) expect(motivo(x), x).toBe('terapia');
+  });
+  it('POSITIVA · negar ser terapia o psicólogo pasa', () => {
+    for (const x of ['No soy psicólogo ni brindo terapia.', 'El libro no reemplaza la terapia.', 'Esto no es terapia psicológica, es una guía práctica.', 'No soy un terapeuta ni esto es terapia psicológica.']) expect(motivo(x, '¿Esto es terapia?'), x).toBe('');
+  });
+  it('NEGADA · «te atiende Carla», «habla Marta», «soy Luis del equipo» se rechazan, también ante «¿eres un bot?»', () => {
+    for (const x of ['Aquí te atiende Carla del equipo.', 'Habla Marta, encantada.', 'Soy Luis del equipo de soporte.', 'Me llamo Sofía y te ayudo.', 'Te atiende Pedro.']) expect(motivo(x, '¿eres un bot?'), x).toBe('suplanta_al_autor');
+  });
+  it('POSITIVA · «soy un asistente virtual con IA» ante la pregunta pasa', () => {
+    expect(motivo('Soy un asistente virtual con inteligencia artificial. ¿Qué te gustaría mejorar?', '¿eres un bot?')).toBe('');
   });
 });

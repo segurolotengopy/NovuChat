@@ -9,15 +9,19 @@ initializeApp();
 // Este archivo es solo el punto de entrada: cada `export` es una Function
 // desplegada, y su lista es el inventario de despliegue.
 
-export { altaTenant, bajaTenant, suspenderTenant, reactivarTenant, asignarNumero, liberarNumero, actualizarEstadoCuenta, fijarCortePrepago, otorgarAccesoSoporte, revocarAccesoSoporte } from './plataforma/tenants.js';
-export { invitarUsuario, quitarUsuario } from './central/usuarios.js';
+export { altaTenant, reactivarTenant, asignarNumero, liberarNumero, actualizarEstadoCuenta, fijarCortePrepago, otorgarAccesoSoporte, revocarAccesoSoporte } from './plataforma/tenants.js';
+export { terminosProductoDeTenant } from './plataforma/aprobarTerminoProducto.js';
+export { invitarUsuario } from './central/usuarios.js';
 export { moverReclamo } from './central/reclamos/moverReclamo.js';
 export { registrarCambioConfig } from './central/registrarCambioConfig.js';
 export { configuracionParaFlujo } from './central/negocio/configuracionParaFlujo.js';
 
 export { ingesta, configuracionFlujo } from './ingesta.js';
 // F3b-1b: el endpoint lo arma `ganchos.ts` con los ganchos de Cobros y de Agenda sobre el contrato de Core.
-export { registrarCierre } from './ganchos.js';
+export { registrarCierre, aprobarTerminoProducto, quitarUsuario, bajaTenant, suspenderTenant } from './ganchos.js';
+// EDICIÓN DEL miniCRM POR GMAIL (03/11/2026): tres callables nuevos; ver `modulos/crm/editoresCrm.ts`. `quitarUsuario` sale de
+// `ganchos.ts` porque revoca además la edición de la hoja.
+export { registrarEditorCrm, quitarEditorCrm, consultarMiEdicionCrm, revocarEditoresAlApagarCrm, reconciliarEditoresCrm } from './modulos/crm/editoresCrm.js';
 export { registrarQrDeCobro, imagenDeCobro } from './modulos/cobros/cobro.js';
 // COMPROBANTE DE PAGO DE VENTA, REGLA 2 (C1b, `cobros.md` §4duodecies.6): el
 // cotejo por plazo e intentos, la imagen guardada en Storage y la purga diaria.
@@ -36,6 +40,8 @@ export { ubicacionDeEnlace } from './central/negocio/mapa.js';
 // Recordatorio de solicitud pendiente (bloque 4, `Analisis/31` §4): el
 // barrido de la hora pregunta a quién le toca y marca ANTES de enviar.
 export { seguimientosPendientes, seguimientoEnviado } from './modulos/agenda/seguimientos.js';
+// Rescate de 22 h (Pedidos): decide y marca; el envío es de un flujo de n8n por comercio.
+export { reclamarRescates } from './modulos/pedidos/rescates.js';
 // CATÁLOGO WEB PROPIO. Tres endpoints públicos y una función de configuración;
 // el porqué de cada uno está en `catalogoWeb.ts`. Se exportan desde acá, como
 // todo lo demás, para que exista un solo inventario de lo que se despliega.
@@ -62,6 +68,7 @@ export { notificarReclamo } from './central/reclamos/reclamos.js';
 // para reintentar cuando la primera vez falló por algo pasajero. El porqué de
 // que avise en vez de bloquear está en `imagenCatalogo.ts`.
 export { comprobarImagenDelCatalogo, recomprobarImagen } from './modulos/productos/imagenCatalogo.js';
+export { registrarTerminoDeProducto } from './modulos/productos/terminoProducto.js';
 // MINI INVENTARIO. El descuento por venta lo hace el checkout; acá van los dos
 // movimientos que pide la consola. El comercio NO escribe `stock` a mano: si
 // pudiera, el saldo y su historial discreparían y el reporte dejaría de servir.
@@ -92,15 +99,19 @@ export { importarCatalogo } from './modulos/productos/limiteCatalogo.js'; // lí
 // BÚSQUEDA EN CONVERSACIONES (H1-6). Callable del Core: busca una palabra en los
 // mensajes de UN comercio con los campos derivados que escribe la ingesta. Va
 // DESPUÉS de las opciones globales (región y cuenta sa-functions, primer import
-// de este archivo). Sin la bandera `consolaConversaciones` nadie la llama; el
+// de este archivo). Desde el 24/10/2026 la pantalla nueva es la de todos; el
 // orden de puesta en producción (índices, etiqueta, invocador, bandera) está en el PR.
 export { buscarConversaciones } from './core/conversacion/buscarConversaciones.js';
 // INTERVENCIÓN DE UNA PERSONA (H2-1). Tomar y devolver una conversación: el turno que pausa al
 // asistente. Core, autorización admin u oper del comercio (el soporte no), y solo con la bandera
-// `consolaConversaciones: 'nueva'` y sin ser Bellido (comprobado en el servidor). Agregan
+// `consolaConversaciones: 'nueva'`, sin ser Bellido y (tomar/escribir) con `personaPuedeEscribir === true` (comprobado en el servidor). Agregan
 // Functions: la etiqueta que las lleve exige rama de reversión hacia adelante lista.
 export { tomarConversacion } from './core/conversacion/tomarConversacion.js';
 export { devolverConversacion } from './core/conversacion/devolverConversacion.js';
+// BLOQUEAR CONTACTO (31/10/2026, Andres, opción A): el asistente deja de responderle a un contacto, reversible. Core, solo el
+// administrador del comercio con la pantalla nueva y sin ser Bellido; no exige la salida de persona. Agregan DOS Functions:
+// la etiqueta que las lleve exige rama de reversión hacia adelante lista y el invocador público tras el despliegue.
+export { bloquearContacto, desbloquearContacto } from './core/conversacion/bloquearContacto.js';
 // ESCRIBIR COMO PERSONA (H2-3, solo TEXTO). `enviarComoPersona` valida, deja el mensaje `pendiente`
 // y toca el timbre del flujo «Salida de persona»; el flujo llama a `reclamarSalidaPersona` y
 // `confirmarSalidaPersona` con la credencial de la ingesta de su número. Core no importa Central: los
@@ -112,3 +123,15 @@ export { devolverConversacion } from './core/conversacion/devolverConversacion.j
 export { enviarComoPersona } from './central/cuenta/enviarComoPersona.js';
 export { reclamarSalidaPersona } from './core/conversacion/reclamarSalidaPersona.js';
 export { confirmarSalidaPersona } from './core/conversacion/confirmarSalidaPersona.js';
+// MEDIOS ENTRANTES GUARDADOS (H3, PR-1; Andres 20 a 23/10/2026). `guardarMedio` (HTTP, solo token, exige un
+// mensaje entrante reciente) y `purgarMedios` (03:45 La Paz, 90 días y baja). Con la bandera `guardarMedios`
+// APAGADA por defecto no guarda nada. Agregan DOS Functions: la HTTP nueva no nace invocable (paso de
+// invocador tras el despliegue en staging) y la purga necesita `storage.objectUser` de sa-functions, que ya
+// tiene por `purgarComprobantes`.
+export { guardarMedio } from './core/medios/guardarMedio.js';
+export { purgarMedios } from './core/medios/purgarMedios.js';
+// EL VISOR DE MEDIOS (M3a, 30/10/2026). `verMedio` (callable, 1 GiB, concurrencia 4 fuera de staging, App
+// Check en producción) devuelve los bytes de un medio guardado a admin, operador y soporte con ventana, con
+// auditoría fail-closed y tope por usuario en `topesDeMedios`. Una callable nueva no nace invocable: tras el
+// despliegue, `scripts/nube-visor.sh --servicio vermedio`.
+export { verMedio } from './core/medios/verMedio.js';

@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { J } from '../../lib/flujo';
+import { ejecutar, type J } from '../../lib/flujo';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
@@ -23,9 +23,11 @@ const EXP = join(REPO, 'Flujos/experimental');
 const ANTONIO = join(EXP, 'rroca-antonio');
 const leer = (r: string): string => readFileSync(r, 'utf8');
 const nodoDe = (ruta: string): string => leer(join(ANTONIO, 'src/nodos', ruta));
-const NQUITADAS = 43;
-const HUELLA = '64c6d92c2bf67d58';
-const origenChat = (a: string): string => leer(join(EXP, 'chat-novuchat/src/nodos', a));
+const NQUITADAS = 44;
+const HUELLA = 'c92ff194f2cd0cf6';
+// ORIGEN CONGELADO (estado previo a PR-4c2, commit 1fff3d59): Antonio no adopta `sesion` en ese PR. Ver `lib/origen-chat-pre-4c2/LEEME.md`.
+const ORIGEN_CHAT = join(AQUI, '../../lib/origen-chat-pre-4c2');
+const origenChat = (a: string): string => leer(join(ORIGEN_CHAT, 'nodos', a));
 
 /** Reemplaza `de` por `a` exigiendo que aparezca exactamente una vez (si el origen cambia, la sustitución deja de aplicar y la prueba lo dice). */
 function unico(t: string, de: string, a: string): string {
@@ -102,12 +104,32 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
     // Las líneas de comentario propias y los `Object.assign` sin la oferta se declaran en PROPIO.md; aquí se fija lo que cambia de comportamiento.
     const codigo = propias.filter((l) => !l.trim().startsWith('//'));
     expect(codigo).toEqual([
-      '  cfg = Object.assign({}, deBase, atencion, {',
-      '  cfg = Object.assign({}, deBase, atencion, {',
-      '  cfg = Object.assign({}, deBase, deLaConsola, atencion, {',
+      // La ubicación (02/11/2026): el enlace de Maps con LA MISMA regla que el servidor y la dirección en texto, de la Consola.
+      'const ENLACE_DE_MAPA = /^https:\\/\\/(maps\\.app\\.goo\\.gl|goo\\.gl\\/maps|www\\.google\\.com\\/maps|google\\.com\\/maps|maps\\.google\\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;',
+      "const enlaceDeMapa = (v) => (typeof v === 'string' && v.trim().length <= 200 && ENLACE_DE_MAPA.test(v.trim()) ? v.trim() : '');",
+      '  cfg = {',
+      '    ...deBase, ...atencion,',
+      '  };',
+      '  cfg = {',
+      '    ...deBase, ...atencion,',
+      '  };',
+      // Fase 2 del rehecho de Antonio: los anuncios de la Consola (≤ 20), solo en la rama 200.
+      '    direccion: util(dn.direccion) && !/https?:|www\\.|wa\\.me|maps|goo\\.gl|\\b[a-z0-9-]+\\.(?:com|net|org|bo|ly|me|io|app|link|gl)\\b|[\\u200B-\\u200F\\u2060\\uFEFF]/i.test(dn.direccion) ? linea(dn.direccion, 160) || undefined : undefined,',
+      '    direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,',
+      '  const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === \'object\' && !Array.isArray(a)).slice(0, 20) : [];',
+      '  cfg = {',
+      '    ...deBase, ...deLaConsola, ...atencion, anuncios,',
+      '  };',
       'const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;',
-      'return [{ json: Object.assign({}, cfg, {',
+      // El miniCRM (02/11/2026): el id y la pestaña de la planilla de ESTE negocio (propias; declaradas en PROPIO.md).
+      "const idDeLaPlanilla = /^[A-Za-z0-9_-]{25,100}$/.test(valor(base.planillaProspectosId)) ? valor(base.planillaProspectosId) : '';",
+      "const hojaDeLaPlanilla = idDeLaPlanilla === '' ? '' : (linea(valor(base.planillaProspectosHoja), 100) || 'Leads_CRM');",
+      'return [{ json: {',
+      '  ...cfg,',
+      '  planillaProspectosId: idDeLaPlanilla,',
+      '  planillaProspectosHoja: hojaDeLaPlanilla,',
       "  modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/.test(String(base.modelo || '')) ? String(base.modelo) : 'gemini-3.5-flash-lite',",
+      '} }];',
     ]);
   });
 
@@ -115,13 +137,44 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
     const t = nodoDe('config-del-negocio.js');
     expect(t).toContain('permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0');
     expect(t).not.toContain('permitidos.length === 0');
-    for (const ajeno of ['limpiarOferta', 'planilla', 'CH_DATOS', 'archivoPlanes', 'cargosUnicos', 'rubros']) expect(t, ajeno).not.toContain(ajeno);
+    for (const ajeno of ['limpiarOferta', 'CH_DATOS', 'archivoPlanes', 'cargosUnicos', 'rubros']) expect(t, ajeno).not.toContain(ajeno);
+    // La planilla del chat de NovuChat no está; desde el 02/11/2026 este flujo tiene la SUYA (miniCRM): solo esas líneas nombran una planilla.
+    const sinMiniCrm = t.split('\n').filter((l) => !/planillaProspectos|DeLaPlanilla|miniCRM/.test(l)).join('\n');
+    expect(sinMiniCrm).not.toContain('planilla');
+    // Semgrep `insecure-object-assign`: se arma con propagación de objetos propios, nunca con `Object.assign`.
+    expect(t).not.toContain('Object.assign');
+  });
+});
+
+describe('config-del-negocio.js sin Object.assign: el cuerpo de «Traer configuración» es entrada y no contamina (prueba negada)', () => {
+  const correr = (cuerpo: unknown, codigo = 200): Record<string, unknown> =>
+    ejecutar(`${nodoDe('_comun.js')}\n${nodoDe('config-del-negocio.js')}`, [{ statusCode: codigo, body: cuerpo }], {
+      'Config base': { nombreNegocio: 'Base', numeroRecepcion: '5917123' },
+      'Carga de entrada': { phoneNumberId: 'p1' },
+    })[0];
+
+  it('un cuerpo con __proto__, constructor y prototype no aparece en la salida ni contamina Object.prototype', () => {
+    const cuerpo = JSON.parse('{"tenantId":"t","__proto__":{"contaminado":true},"constructor":{"prototype":{"contaminado2":true}},"prototype":{"x":1},"datosDelNegocio":{"__proto__":{"contaminado3":true},"nombreNegocio":"Panel"},"operacion":{"__proto__":{"contaminado4":true}},"atencion":{"__proto__":{"contaminado5":true},"estado":"operador"}}');
+    const j = correr(cuerpo);
+    for (const k of ['contaminado', 'contaminado2', 'contaminado3', 'contaminado4', 'contaminado5']) {
+      expect(j[k], k).toBeUndefined();
+      expect(({} as Record<string, unknown>)[k], k).toBeUndefined();
+    }
+    expect(Object.keys(j)).not.toContain('constructor');
+    expect(Object.keys(j)).not.toContain('prototype');
+    expect(Object.getPrototypeOf(j)).toBe(Object.prototype);
+    expect(j).toMatchObject({ nombreNegocio: 'Panel', atencionEstado: 'operador', configDeLaConsola: true, estadoComercio: 'operativo' });
+  });
+
+  it('409 y panel sin respuesta siguen igual: suspendido con el texto neutro, y respaldo operativo', () => {
+    expect(correr({ mensajeCortesia: 'Volvemos pronto' }, 409)).toMatchObject({ estadoComercio: 'suspendido', configDeLaConsola: false, mensajeComercioSuspendido: 'Volvemos pronto' });
+    expect(correr({}, 500)).toMatchObject({ estadoComercio: 'operativo', configDeLaConsola: false, panelSinRespuesta: true, codigoDelPanel: 500, nombreNegocio: 'Base' });
   });
 });
 
 describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo salvo `id`, `notes` y `position`', () => {
   const plantilla = JSON.parse(leer(join(ANTONIO, 'flujo.plantilla.json'))) as { nodes: J[] };
-  const chat = JSON.parse(leer(join(EXP, 'chat-novuchat/flujo.plantilla.json'))) as { nodes: J[] };
+  const chat = JSON.parse(leer(join(ORIGEN_CHAT, 'flujo.plantilla.json'))) as { nodes: J[] };
   const venta = JSON.parse(leer(join(EXP, 'venta-minima/flujo.plantilla.json'))) as { nodes: J[] };
   const de = (f: { nodes: J[] }, n: string): J => f.nodes.find((x) => x.name === n) as J;
   const sinLibres = (n: J): J => { const { id: _i, notes: _n, position: _p, ...resto } = n; return resto; };
@@ -154,7 +207,7 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo 
     const propio = JSON.stringify(sinLibres(de(plantilla, 'Reportar mensaje (entrante)')));
     const viejo = origen.match(/evento: \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\) \? 'no_contactar' : undefined/);
     expect(viejo, 'el origen ya no trae la regex heredada: hay que revisar la declaración').not.toBeNull();
-    const nuevo = propio.match(/evento: \(t\.riesgoEscrito === true \|\| \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\.normalize\('NFD'\)[^]*?\)\) \? 'no_contactar' : undefined/);
+    const nuevo = propio.match(/evento: \(t\.riesgoEscrito === true \|\| \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\.normalize\('NFKC'\)\.normalize\('NFD'\)[^]*?\)\) \? 'no_contactar' : undefined/);
     expect(nuevo, 'el propio no trae el evento declarado').not.toBeNull();
     // Todo lo demás es idéntico al origen.
     expect(propio.replace(nuevo![0], 'EVENTO')).toBe(origen.replace(viejo![0], 'EVENTO'));

@@ -66,6 +66,9 @@ const MARCADORES_DECLARADOS_APARTE: Record<string, Record<string, string>> = {
   'novuchat-onboarding.json': { '¿Es un mensaje?': 'REEMPLAZAR_' },
   'salida-de-persona.json': { 'Timbre': 'REEMPLAZAR_' },
 };
+/** El nodo base que conserva los REEMPLAZAR_* cuando no se llama `Config base`. */
+const NODO_BASE_DE: Record<string, string> = { 'demo-a-recordatorios.json': 'Config base del recordatorio' };
+const nodoBase = (f: string): string => NODO_BASE_DE[f] ?? 'Config base';
 const SIN_MANIFIESTO = FLUJOS.filter((f) => leerManifiesto(f) === null);
 
 /** Una copia de `Flujos/` en un directorio temporal, para romperla sin miedo. */
@@ -81,8 +84,8 @@ afterAll(() => { for (const d of temporales) rmSync(d, { recursive: true, force:
 const bytes = (ruta: string) => readFileSync(ruta);
 
 describe('Inventario: qué flujos tienen manifiesto', () => {
-  it('hay 9 JSON de flujo, y el vertical de reservas (Demo A y Platinum) tiene manifiesto', () => {
-    expect(FLUJOS).toHaveLength(9);
+  it('hay 10 JSON de flujo, y el vertical de reservas (Demo A y Platinum) tiene manifiesto', () => {
+    expect(FLUJOS).toHaveLength(10);
     expect(CON_MANIFIESTO).toEqual(expect.arrayContaining(['demo-a-agendamiento.json', 'platinum-agendamiento.json']));
     // Desde el 28/09/2026 el Demo B y la captación también tienen manifiesto,
     // SOLO para los dos nodos de medios entrantes («Preparar transcripción» y
@@ -91,8 +94,7 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
     expect(CON_MANIFIESTO).toEqual(expect.arrayContaining(['demo-b-venta-cobro.json', 'novuchat-onboarding.json']));
     // Los que todavía no se ensamblan, dichos con nombre: son el bloque B-2.
     expect(SIN_MANIFIESTO).toEqual([
-      'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'bellido-agendamiento.json',
-      'demo-a-recordatorios.json',
+      'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'bellido-agendamiento.json', 'error-envio-incierto.json',
     ]);
   });
 
@@ -122,7 +124,7 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
       // `Config base` siempre; además, solo los marcadores fuera de él que la
       // higiene de F3a declara (higiene-flujos.test.ts exige que no falte ninguno).
       expect(m.conservanMarcadores).toEqual({
-        'Config base': 'REEMPLAZAR_',
+        [nodoBase(f)]: 'REEMPLAZAR_',
         ...(MARCADORES_DECLARADOS_APARTE[f] ?? {}),
       });
       // `scripts/verificar-saneo.sh` exige que todo `Flujos/**.json` tenga un

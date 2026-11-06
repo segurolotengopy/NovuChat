@@ -16,7 +16,7 @@ restaurante lo arma el código; los totales salen de la carta; los avisos solo d
 |---|---|
 | `flujo.plantilla.json` | El flujo sin código y sin datos del negocio. Es lo que se edita |
 | `src/lib/{comun,pedido,reserva,avisos,promos,cobro}.js` | Las seis librerías (prefijos `vm`, `pd`, `rs`, `av`, `pr`, `cb`) |
-| `src/nodos/*.js` | El código de cada nodo Code |
+| `src/nodos/*.js` | El código de cada nodo Code (PR-4a: `sin-estado`, `soltar-mensajes` y `confirmar-envio` son nuevos) |
 | `construir.mjs` | Arma los JSON. `--verificar` no escribe y sale 1 si alguno difiere o viola una guardia |
 | `venta-minima.qtaco.json` | **Producción** de Q'Taco: entrada del receptor, sin nada de prueba |
 | `venta-minima.prueba.json` | **Variante de prueba**: «Entrada de prueba» en lugar de la cadena del receptor |
@@ -58,14 +58,15 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
   - en producción, ningún webhook con ruta de prueba y solo dos entradas: la del receptor y `Carrito del catálogo` (con su forma
     exacta: POST, `headerAuth` con la credencial de la ingesta, `onReceived`, ruta como `REEMPLAZAR_RUTA_CARRITO_QTACO`, conectado solo a
     `Carga de entrada`, solo en la variante del receptor);
-  - presupuesto de nodos: los JSON de producción tienen **50 nodos como máximo** (49 + el webhook del carrito);
+  - presupuesto de nodos: **desde PR-4a el tope es 69** (ver «El estado de la conversación vive en el servidor»); antes, los JSON de producción tenían **51 nodos como máximo** (50 + el webhook del carrito; el tope subió de 50 a 51 el 26/10/2026 por «Guardar comprobante», ver «Guardar el comprobante antes de leerlo»);
   - «se entrega lo que se promete» (R1, R3, R5; ver «Entrega de lo prometido»);
   - cada `venta-minima.*.json` versionado tiene su archivo de datos (si no, queda huérfano); un `*.local.json` (lo que deja
     `preparar-import.sh`, con valores reales) no cuenta como huérfano;
   - la clave `avisarAlPropioNumero` (interruptor solo de ensayo) solo puede estar en `ensayo-demo-a.json` y en su salida (ver «La variante
     de ensayo en el Demo A»);
   - retención de ejecuciones (ver abajo).
-- **Retención de ejecuciones (decisión de Andres, 04/10/2026; reemplaza las del 02/10 y el 03/10).** Por omisión (plantilla, prueba, ensayo en el Demo A y cualquier otro
+- **Retención de ejecuciones: desde el 30/10/2026 `none` en TODO, Q'Taco incluido** (decisión de Andres en el contrato v2 de medios, §8.1: con la rama del guardado de medios el binario del medio quedaría en los datos de la ejecución; se pierde diagnóstico, por privacidad). Lo que sigue es la decisión del 04/10, REEMPLAZADA en lo que dice de Q'Taco.
+- **(Histórico) Retención de ejecuciones (decisión de Andres, 04/10/2026; reemplaza las del 02/10 y el 03/10).** Por omisión (plantilla, prueba, ensayo en el Demo A y cualquier otro
   tenant) nada se guarda: `saveDataSuccessExecution: "none"`, `saveDataErrorExecution: "none"` y `saveExecutionProgress: false`, porque las ejecuciones llevan
   texto de clientes. **La excepción es UN solo archivo, `venta-minima.qtaco.json`: guarda TODO, las fallas y los éxitos (`all`/`all`), por lo menos 24 horas, para poder
   diagnosticar** (el progreso sigue sin guardarse; las ejecuciones manuales tampoco: `saveManualExecutions: false` en todos los JSON). Decisión de Andres, 04/10:
@@ -112,7 +113,7 @@ de Q'Taco pasa de 49 a **50 como máximo**, y `--verificar` falla si crece. El �
   `Carga de entrada`, que valida el carrito SOLO si ese nodo corrió. Su ruta es el marcador propio `REEMPLAZAR_RUTA_CARRITO_QTACO` (no el del Demo B).
 - Pruebas: `venta-minima-entrega.test.ts` (negando) y `venta-minima-catalogo-topologia.test.ts`.
 
-## El grafo (50 nodos en producción de Q'Taco; 46 en la prueba)
+## El grafo (51 nodos en producción de Q'Taco; 47 en la prueba; «Guardar comprobante» cuelga de `¿Es audio?`, sin salidas, arriba de `¿Es PDF?`)
 
 ```
 Entrega del receptor → Verificar firma con el receptor → ¿Firma válida? ─sí→ Aceptar (200) → Descartar repetidos ─┐
@@ -181,6 +182,22 @@ en la prueba (L2): son 51 menos esos dos.
    dejaba pasar `formaPlantillaReserva` ni `formaPlantillaDerivacion`, y la reserva salía con la forma `cita`
    («equipo» en la variable 1). Se agregó `formaPlantilla*` a ese patrón (una línea; commit aparte, fácil de revertir si su dueño
    prefiere hacerlo él).
+
+   **Aviso de pedido por líneas (24/10/2026, aditivo).** La variable de una plantilla no admite saltos, así que el aviso de
+   `pedido_registrado` salía como un bloque continuo (« · »). Se agrega una familia de tres plantillas UTILITY (es) de 2, 4 y 6
+   productos, con el salto de línea FIJO en el cuerpo y una variable por línea: «Se registró un pedido en Q' Taco.⏎Pedido: {{1}}⏎Modalidad: {{2}}⏎Detalle pedido:⏎- {{3}}⏎… (una línea «- {{k}}» por producto, hasta N)⏎Comprobante: {{N+3}}⏎Revise el pedido
+   en la consola antes de despachar.» (las tres están APROBADAS en la WABA de Q'Taco desde el 28/10: l2 = 5 variables, l4 = 7, l6 = 9) Variables: {{1}} «N.º <código> de <n> ítems. Total de la comida: Bs <total>»; {{2}} modalidad
+   por rol SIN los ítems; {{3}}…{{N+2}} «<cant> × <producto> (<nota>)», una por variable, «—» en las sobrantes y, si hay más
+   productos que N, «… y K más» en la última (nunca a mitad de producto); {{N+3}} el cotejo. **Configuración:** `plantillasPedidoLineas`
+   = «2:nombre,4:nombre,6:nombre» e `idiomaPlantillaPedidoLineas` en `Config base` (los nombres reales viven allí; `pedido_registrado_l2`,
+   `_l4` y `_l6` son los previstos). **Con la clave vacía o ausente todo sale como hoy** (`plantillaPedido`, `ordenPedido`): el estado
+   de Q'Taco no cambia hasta cargarla. Se elige el menor tamaño que cabe (6 como máximo); si ese tamaño no tiene plantilla, cae a la
+   antigua y anota `lineas_sin_plantilla_<N>`. Solo pedido y comprobante; reserva y derivación no cambian. **Mensajes por conversación:
+   0 agregados, 0 quitados** (un ítem de plantilla por destinatario, igual que antes; el texto libre con ventana abierta no se toca).
+   Meta: cada variable queda en una línea, sin 4+ espacios y con tope de 500 caracteres (modalidad) o 200 (producto), muy por debajo
+   del tope de 1024 por variable. Suite: `admin/pruebas/venta-minima-avisos-lineas.test.ts`. **No se publica con este cambio:** espera
+   la aprobación de Meta de las tres plantillas y el botón de Andres.
+
 6. **Entrada del receptor sin «Raw Body».** El pedido de armado decía «Raw Body activado»; la referencia del
    receptor, probada en vivo el 28/09, no lo usa: el Webhook va con `options: {}` y el verificador recibe
    `JSON.stringify($json.body)`. Activar «Raw Body» mueve la carga a un binario y deja sin probar `$json.body`
@@ -300,6 +317,8 @@ Demo A». Decisiones:
 
 ## Áreas excluidas de Q'Taco: se comparan por nombre normalizado, no por parecido
 
+> **06/11/2026, decisión de Andres: se ofrece todo, incluido alcohol (revierte lo del 02/10).** `areasExcluidas` y `palabrasExcluidas` de Q'Taco quedan vacías. Riesgo aceptado por el propietario: restricción posible del número o de la WABA por la política de Meta. Referencia: Política de WhatsApp Business Messaging (https://whatsappbusiness.com/es-la/policy/, consultada 06/11/2026, actualización indicada 23/09/2026): §4 lista el alcohol entre los bienes que no se pueden comprar, vender, promover ni facilitar por WhatsApp; §5 prohíbe experiencias de comercio para sectores regulados; los mensajes de promoción solo se permiten en países listados (Bolivia no figura en lo leído). La barrera por área y por palabra sigue en el código para quien la configure.
+
 `areasExcluidas` de `qtaco.json` era `Cócteles,Cervezas,Helados`, pero la carta real usa las áreas `cocteleria`, `cervezas` y
 `postres`. La comparación es por `vmNorm` (minúsculas, sin tildes, sin signos): solo `cervezas` coincidía, y el asistente habría
 vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («excepto bebidas alcohólicas y helados»; Andres,
@@ -334,7 +353,7 @@ vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («ex
   parámetro. La suite calcula el peor caso de un turno de comprobante **desde los parámetros de los nodos**: la cadena (receptor,
   consola, reporte, medio, OCR, cotejo, 5 avisos, 3 mensajes, 3 reportes) con una latencia típica de 1 s por llamada y **un**
   nodo degradado a su peor caso (intentos × timeout + esperas), y exige que quepa en el `executionTimeout` (60 s cuando se escribió esto; hoy 120 s en Q'Taco). Para esos dos nodos supone 15 s
-  por intento (el de `Extraer`); el peor caso hoy es 57 s con «Obtener URL del medio» degradado. **El supuesto no lo hace cumplir
+  por intento (el de `Extraer`); el peor caso hoy es 58 s (57 en la prueba) con «Obtener URL del medio» degradado; «Guardar comprobante» entra a la cadena con 1 s típico y 15 s si se degrada. **El supuesto no lo hace cumplir
   n8n**: medir la latencia real del OCR es un pendiente del ensayo. Para que cupiera, `Descargar medio` pasó de 20 a 12 s y
   los reportes saliente y de cierre tienen 4 s explícitos.
 - **Límites del arnés `n8n-de-mentira.ts`** (declarados en su cabecera): `$('Nodo').all()` y `.first()` devuelven las salidas de
@@ -403,7 +422,7 @@ vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («ex
   comprobante coinciden, el cotejo **crea un cierre real** en el servidor (por eso el teléfono de prueba tiene que ser uno del
   equipo y el ensayo no debe mandar comprobantes que cuadren con un pedido real). Y la credencial «Graph WhatsApp — pruebas»
   puede tener o no acceso al número de Q'Taco: **se verifica en el ensayo**.
-- **Peor caso del comprobante: 57 s contra 120 s** (`executionTimeout` de Q'Taco desde el 04/10/2026; antes eran 60 s y el margen era de 3 s). Sigue saliendo de supuestos (15 s por intento
+- **Peor caso del comprobante: 58 s contra 120 s** (57 s hasta el 25/10; «Guardar comprobante» suma 1 s típico y, degradado, 15 s sin reintentos, menos que «Obtener URL del medio») (`executionTimeout` de Q'Taco desde el 04/10/2026; antes eran 60 s y el margen era de 3 s). Sigue saliendo de supuestos (15 s por intento
   para los dos nodos sin timeout, 1 s típico por llamada): **medir el OCR y las Functions en frío es lo primero del ensayo.**
 - **Reportes repetidos (B5).** `ingesta` **no deduplica por `idMeta`**: guarda el `idMeta` en el mensaje, pero crea un documento
   nuevo por cada llamada y suma `respuestasDelPeriodo` y `mensajesVentana` en cada saliente. Si `Reportar mensaje (saliente)`
@@ -733,6 +752,60 @@ Un audio transcrito, «quiero cuatro tacos de birria», caía al menú sin llama
 - **Pruebas:** `venta-minima-integracion` («PR-A»: botón, respaldo, negados por paso, ubicación inválida, dirección + ubicación, aviso con y sin ventana, texto de terceros, privacidad, carrito de la página), `venta-minima-catalogo-punta-a-punta` (`Carga de entrada`), `venta-minima-avisos` (enlace), `venta-minima-pedido` ((0, 0), 5 decimales, resumen) y la batería U5m (ventana cerrada: sin enlace), U6 y U6b.
 - **Costo:** 0 mensajes agregados o quitados por conversación (el pedido de dirección reemplaza al texto que ya salía; el aviso al local no cambia de cantidad).
 
+## Guardar el comprobante antes de leerlo (26/10/2026; pedido de Andres: que no se pierda ningún comprobante)
+
+Q'Taco no puede depender de la ventana de 24 h del dueño: antes el archivo solo vivía en memoria durante el turno (se bajaba, se leía con Gemini y se descartaba; el aviso al local reenviaba la imagen solo con la ventana abierta). Ahora se guarda en Storage con el mismo patrón que `rroca-ruben` (`rr-guardar-comprobante`, `cbRutaGuardada`, `Interpretar lectura`).
+
+- **Un nodo nuevo**, `Guardar comprobante` (`POST guardarComprobante`, bytes del binario `data`): cuelga de la salida «no es audio» de `¿Es audio?` (solo llegan comprobantes esperados: `¿Bajar medio?` ya filtra) y va ARRIBA de `¿Es PDF?` (orden del lienzo, `executionOrder: v1`: la rama terminal corre entera antes de la que lee). Sin salidas: no toca el binario que leen los dos Gemini. `onError: continueRegularOutput`, `neverError`, `fullResponse`, 15 s, sin reintentos. Credencial `@@cred:ingesta` (solo el token del número: una firma no cubre una imagen), cabeceras `X-NovuChat-Numero` (patrón `modoPrueba`/`phoneNumberId`), `X-NovuChat-Telefono` y `X-NovuChat-IdMeta`; el teléfono no va en la URL ni en la ruta; el tipo lo decide el servidor por los bytes.
+- **`cbRutaGuardada`** (en `cobro.js`, igual a la de Rubén) deja pasar solo `tenants/<comercio>/comprobantes/<aaaa-mm-dd>/<nombre>.<jpg|png|webp|pdf>` de un 200; todo lo demás (409 sin cobro de regla 2 abierto, 413, 415, 502, un corte, el nodo que no corrió) es `ruta: null`. `Interpretar lectura` la agrega al item y `Cotejar en el servidor` la manda en el cuerpo (`ruta: string | null`). Si falla, el cotejo y la respuesta al cliente son los de siempre.
+- **Mensajes por conversación: 0** (el nodo no envía nada a nadie; la suite lo comprueba). **Peor caso del comprobante: 58 s contra 120 s** (57 en la prueba contra 60); la suite M-OCR incluye el nodo.
+- **Presupuesto de nodos: 50 a 51.** El tope de Andres (03/10) estaba agotado; este cambio lo sube en uno (`TOPE_DE_NODOS` en `construir.mjs`, y las pruebas que lo cuentan). Declarado para que Andres lo confirme al revisar el PR.
+- **Qué NO hace todavía (para la sesión Ventas / el servidor):** `Cotejar en el servidor` de Q'Taco llama a `cotejarComprobante` (`sena.ts`), que **no lee `ruta` ni registra `comprobantesRecibidos`**; quien lo hace es `cotejarComprobanteVenta` (regla 2), el que usa Rubén. Mientras Q'Taco siga en `cotejarComprobante`, el archivo queda guardado (90 días, y el visor lo encuentra por `idMeta`: `verComprobante` reconstruye la ruta candidata y la valida con `rutaValidaDe`) pero **sin enlace en el registro de recibidos**. Además `guardarComprobante` responde 409 `sin_cobro_pendiente` si el cobro no es de regla 2 abierto/en revisión/vencido hace menos de 24 h (`puedeSubir`): con cobro simulado, regla 1 o sin QR, no se guarda nada (y el simulado ni siquiera llega aquí: T6).
+- **Vuelta atrás:** republicar el JSON anterior de Q'Taco desde el respaldo exacto con `publicar-flujo.sh`. Los archivos ya guardados siguen su purga normal de 90 días.
+
+## El estado de la conversación vive en el servidor (PR-4a, 04/11/2026)
+
+Q'Taco adopta el estado, los pedidos del teléfono y los mensajes vistos del servidor (`sesion` de `configuracionFlujo`; contrato en `docs/arquitectura/estado-de-conversacion.md`, §14). Precedente: el chat NovuChat (PR-4c2). El código es común a todas las salidas (qtaco, qtaco-3727, prueba, ensayo-demo-a), que se regeneran; la declaración está en `docs/versiones-por-cliente.md`. **Cero mensajes por conversación agregados o quitados** (ronda 2: las replanificaciones y las fallas siguen reemplazando la respuesta) (la suite compara la misma conversación con el flujo de antes: 1 mensaje por turno).
+
+**Qué se movió.** `ventaMinima.estados[tel]`, `vistos[idMensaje]` y `pedidos[pedidoId]` de `$getWorkflowStaticData` al servidor:
+
+- Un **bloque por teléfono** `{v: 1, estado, pedidos}` (espacio `venta-minima`; `venta-minima-prueba` en la variante de prueba, solo para `telefonosDePrueba` de «Config base»). Los pedidos de un teléfono solo se buscan por el mismo teléfono (`Plan del turno`, `Decidir turno`, `Interpretar entrada`), así que caben dentro de su bloque. `vmSes(from, ahoraMs)` (en `comun.js`) arma la vista `{estados, pedidos}` con la misma forma de siempre, y las funciones de antes (`vmLeerEstado`, `vmEscribirEstado`) siguen sirviendo.
+- **Vigencia.** `venceEnMin` del bloque: 60; 1440 en `esperando_comprobante`; 4320 si trae pedidos (el tope del servidor = las 72 h del pedido). Dentro del bloque cada cosa conserva su propio vencimiento (`ultimoMensajeMs` del estado, `guardadoMs` del pedido).
+- **Vistos.** «Traer configuración» manda el `leer` con el `idMensaje`; el servidor marca el visto y contesta `repetido` o `nuevo`; «Config del negocio» lo deja en `cfg.sesion.visto`. La entrada verificada del receptor y su «Descartar repetidos» NO cambian (núcleo común).
+- **Tope en bytes.** El bloque se mide en UTF-8 (`ssBytes`: sin `Buffer`, sin lanzar con un surrogate suelto) y se recorta antes de comprometer a 15.000: salen primero los pedidos más antiguos y el que espera el comprobante, el último (su copia en el estado basta para encontrarlo). Si ni el estado solo cabe, sale el genérico: nunca se manda algo que el servidor rechazaría con 413. El peor caso (40 pedidos viejos de ~500 bytes multibyte, 30 líneas con notas de 120 caracteres) está en `venta-minima-sesion.test.ts`.
+
+**El grafo cambia así (+9 nodos; Q'Taco 60 → 69, tope 60 → 69 aprobado por Andres el 04/11/2026; ronda 2: +«¿Replanificar compromiso?» y «Comprometer turno (2.º intento)», −«¿Compensar entrega?»).**
+
+```
+… ¿Atención normal? ─sí→ ¿Hay estado? ─sí→ ¿Bajar medio? … Plan del turno → Armar avisos → … → Armar mensajes
+                                      └no→ Sin estado (aviso de transferencia + botón) → Armar avisos
+Armar mensajes → ¿Comprometer turno? ─sí→ Comprometer turno → ¿Replanificar compromiso? ─sí→ Comprometer turno (2.º intento) → Soltar mensajes
+                                      └no──────────────────────────────────────────────────┴no────────────────────────────→ Soltar mensajes
+Soltar mensajes ─┬→ ¿Enviar de verdad? → Enviar a WhatsApp → … (envío y reporte, como siempre)
+                 ├→ ¿Registrar cierre? → Registrar cierre
+                 ├→ Confirmar envío → Comprometer compensación   (solo si hay que compensar: si no, «Confirmar envío» no devuelve ítems)
+                 └→ Resumen del turno                            (el hijo más bajo: corre al final, también tras la compensación)
+```
+
+- **«Armar mensajes» ya no envía ni escribe:** arma todo en un ítem (`salida`, `salidaFalla`, el `compromiso` y el `bloque`). Sigue escribiendo en `staticData` solo el residuo de PR-4b (marcas de aviso por hora, contador diario de avisos, reservas del día), porque depende de que el aviso haya SALIDO.
+- **«Soltar mensajes»** (un ítem por mensaje; de él cuelgan el envío, el cierre y «Confirmar envío») decide con lo que contestó el servidor: comprometido o nada que comprometer → sale lo armado; **conflicto de versión → SIN hecho externo la ejecución CEDE** (no envía nada; la ganadora responde); **CON hecho externo ya ocurrido (un aviso al local salió, o se cotejó) NUNCA cede (B1):** `¿Replanificar compromiso?` → `Comprometer turno (2.º intento)` compromete sobre la versión GANADORA el bloque del ganador con el pedido de este turno unido por pedidoId (gana el nuestro) y el paso en `menu` (salvo `esperando_comprobante`), con el mismo `idCompromiso` por paso (`vm-fin2-…`); si ese también falla o choca, sale el genérico con el botón (un mensaje, nunca silencio); falla del compromiso o bloque que no cabe → SOLO el genérico con el botón a recepción, sin cierre. Reemplaza la respuesta: un mensaje por turno.
+- **«Comprometer turno»** y **«Comprometer compensación»** (HTTP a `configuracionFlujo`): `retryOnFail`, `maxTries` 2, el MISMO `idCompromiso` (`vm-fin-<ejecución>` y `vm-comp-<ejecución>`; `repetido` cuenta como éxito) y sin `neverError`. `construir.mjs --verificar` lo exige.
+- **«Confirmar envío»** arma la compensación si Meta rechazó el mensaje y su respaldo: SIN hecho externo, el bloque de antes del turno entero (estado con su ancla y SUS pedidos; antes los pedidos quedaban, límite I-3); CON hecho externo, el comprometido en el paso `menu` (salvo `esperando_comprobante`). «Resumen del turno» corta la ejecución en error y cuenta cómo salió la compensación.
+- **«¿Hay estado?» / «Sin estado»:** sin una `conversacion` válida en la respuesta de configuración (servidor sin la rama, 5xx o timeout —el `leer` y el panel viajan en la MISMA llamada—, o la prueba con un teléfono que no es de `telefonosDePrueba`) sale «pasar con recepción» tal como manda la política del 21/09/2026: el aviso estándar de transferencia (a los destinatarios de «Config base», dentro de `topeTransferenciasHora`) MÁS el botón; sin modelo y sin estado nuevo. **Diferencia con antes, declarada:** con el panel caído el flujo ya no sigue con la carta de respaldo; el estado que quedó en el servidor no se toca, así que el pedido en curso se retoma donde estaba cuando vuelva el panel. Las puertas cerradas (uso extendido, bloqueado, comercio no operativo) no comprometen y no caen nunca al genérico.
+- **La prueba usa su espacio.** Todo lo que entra por «Entrada de prueba» es modo prueba (`Carga de entrada` ya lo fijaba, fallo cerrado), y SS_CONFIG manda esas llamadas a `venta-minima-prueba`, nunca al espacio de producción; `--verificar` exige que «Traer configuración» pida el estado en los MISMOS espacios que declara `SS_CONFIG`. (A diferencia del chat, no hace falta descartar lo que llegue sin `modoPrueba: true`: en este flujo «Entrada de prueba» nunca puede comportarse como producción.)
+
+**El módulo común.** `comun-sin-agente/src/sesion.js` (prefijo `ss`) se INCLUYE con el marcador `+sesion` (`@@todo+sesion:`, `@@comun+sesion:`) en los cinco nodos que lo usan («Config del negocio», «Armar mensajes», «Soltar mensajes», «Confirmar envío» y «Resumen del turno»): nunca se copia ni se edita (la guardia de `--verificar` compara el texto y que cada `ss*` y `SS_CONFIG` se declaren UNA vez). `SS_CONFIG` está en `comun.js` y `cnNodo`/`cnPrimero` son los alias que el módulo pide.
+
+**Lectura de respaldo temporal de la publicación.** Al publicar, los teléfonos con conversación en curso están en la memoria vieja de n8n. Hasta el **30/11/2026 00:00 (La Paz)**, un teléfono sin NADA en el servidor (versión 0) y con estado vigente (o pedidos suyos de menos de 72 h) en `staticData` retoma de ahí: `vmSes` lo lee, lo compromete como cualquier estado y «Soltar mensajes» lo borra de la memoria vieja (solo el teléfono y SUS pedidos). Un reintento de Meta que llegue justo al publicar tampoco se responde dos veces (`vmVistoDeRespaldo`). **Retiro:** pasada la fecha el código ni la mira y la primera ejecución borra los tres mapas viejos (`vmRetirarRespaldo`); en un PR posterior se quita el código. Pruebas negando: con estado en el servidor manda el servidor; un documento vencido (versión > 0) no resucita nada; lo vencido de la memoria vieja no se usa; pasada la fecha, nada.
+
+**Ronda 3 de revisión.** (B2) La marca del aviso ya enviado del COMPROBANTE incluye el medio y el resultado del cotejo (`comprobante:pedidoId:medio:resultado`, `vmClaveAviso`); el del pedido sigue por pedidoId: un primer comprobante malo con el compromiso fallido ya no suprime el aviso de uno correcto. (I3) La replanificación deja el paso en `menu` si el estado ganador espera el comprobante de ESTE mismo pedido y este turno ya lo cerró (ráfaga foto + texto). (Aviso en el genérico) El genérico de una falla del compromiso SIN hecho externo lleva, como un ítem más del envío (destino `recepcion`, sin nodos nuevos), el aviso estándar de transferencia a los destinatarios de «Config base» dentro de `topeTransferenciasHora`; no se arma en la variante de prueba; con hecho externo no hace falta otro; si Meta lo rechaza, no corta el turno (`Resumen del turno` y `Confirmar envío` cuentan solo los mensajes al cliente). La marca de la derivación se anota al soltar el genérico (intento, no entrega). (a) El cuerpo de la replanificación se recorta por bytes (15.000) en su expresión, y (b) su `venceEnMin` depende de si hay pedidos. **Declarado (d):** si la replanificación falla, el ganador ya movió el ancla y al reconfirmar se genera OTRO `pedidoId` que la marca del aviso ya enviado no cubre (el local puede recibir un segundo aviso, con otro código); y la marca es por tipo, no por destinatario (en Q'Taco hay uno solo). **Costo de «pasar con recepción» (I2):** +1 aviso de transferencia por destinatario, por teléfono y por hora con el panel caído o sin estado.
+
+**Ronda 4 de revisión.** (Clave única) `Armar avisos` calcula la clave del aviso ya enviado UNA sola vez (`claveAviso`, con el medio de la entrada del turno cuando el plan trae `mediaId` vacío, como con el cobro simulado), la guarda en cada ítem y `Armar mensajes` la reutiliza: dos cálculos distintos nunca coincidían y, tras un compromiso 503, la misma foto reenviaba los avisos. (Genérico) El aviso del genérico pasa por la misma limpieza de palabras prohibidas que `Armar avisos` y SÍ cuenta para `topeAvisosDia` (lo suma `Soltar mensajes` al soltar el genérico, con la fecha que calculó `Armar mensajes`; `avPlan` ya respetaba el cupo). (Replanificación) El tope en bytes sale de `SS_CONFIG.maxBytes` y el pedido que espera el comprobante se suelta el último. **Residuo declarado:** un comprobante real reenviado por el cliente llega con OTRO `mediaId` y vuelve a avisarse (el sha256 del medio de Meta hoy no se captura, `interpretar-entrada.js`); no se implementa aquí.
+
+**Residuo declarado (PR-4b).** Siguen en `staticData`: `av.dia` (contador diario de avisos), `transferencias`, `avisosPedido` (marcas por hora) y `reservasDelDia`; y `av.ventana` (la ventana de 24 h del destinatario del aviso: estado del comercio, no de un contacto; contrato §10.4). **Y una decisión de orden que PR-4b revisa:** el contrato §6 pide comprometer antes de «¿Hay avisos?»; aquí se compromete después de los avisos al local y ANTES de enviar al cliente, porque lo que se guarda depende de si el QR se arma (`Armar mensajes`). Un compromiso que falla deja un aviso ya enviado y el genérico al cliente. **Aviso ya enviado (I1):** para que el turno siguiente (el botón viejo vale) no lo repita, `Soltar mensajes` anota `tipo:pedidoId` en `sd.avisosHuerfanos` (residuo de PR-4b, 72 h) cuando el compromiso falló, `Armar avisos` omite el aviso de ese pedido (el cliente lee la frase de «pasé tu pedido», que es verdad) y la marca se borra cuando el estado avanza. **M1 (residuo declarado, igual que el chat):** si `leer` falla, `ingesta.ts` devuelve el error y se pierde la respuesta entera, incluida `atencion`: el umbral de uso extendido no se aplica ese turno; es diseño del servidor.
+
+**Riesgos conocidos.** (1) El perdedor de una ráfaga SIN hecho externo no recibe respuesta (cede): el cliente puede reenviar; con hecho externo se replanifica y responde. El genérico de una falla del compromiso no lleva aviso propio (el local ya recibió el del pedido si hubo hecho externo). (2) Con el servidor caído nadie avanza: «pasar con recepción» (aviso de transferencia + botón) es lo único que se ofrece. (3) El 30/11 caduca la lectura de respaldo: un teléfono con un estado en la memoria vieja de más de 24 h ya habría vencido de todos modos.
+
 ## Lo que falta para publicar (pendientes de la persona)
 
 - **Credenciales en n8n** (id vacío en el JSON): «NovuChat ingesta (Q'Taco)», «Graph WhatsApp Q'Taco (Bearer)» (con un
@@ -746,7 +819,9 @@ Un audio transcrito, «quiero cuatro tacos de birria», caía al menú sin llama
   Andres prefiere una plantilla propia para reservas y consultas (ver el punto 5).
 - **Consola de Q'Taco**: `catalogoWebActivo` en `false` (con más de 40 ítems la ingesta manda `catalogo: []` y el flujo
   deriva todo pedido), carta, campañas y QR; `numeroRecepcion` y `venta.aceptaDelivery`/`aceptaRetiroEnLocal`.
-- **Retención de ejecuciones (P6)**: `none` en todo, salvo `venta-minima.qtaco.json`, que guarda todo (`all`/`all`, por lo menos 24 h; decisión de Andres del 04/10; riesgo M-1 aceptado: ver «Cómo se arma»).
+- **Retención de ejecuciones (P6)**: `none` en todo desde el 30/10 (contrato v2 de medios §8.1); antes, salvo `venta-minima.qtaco.json`, que guarda todo (`all`/`all`, por lo menos 24 h; decisión de Andres del 04/10; riesgo M-1 aceptado: ver «Cómo se arma»).
+- **Marcador nuevo de PR-4a (solo la variante de prueba)**: `REEMPLAZAR_TELEFONOS_DE_PRUEBA` (`telefonosDePrueba` de «Config base»: los únicos teléfonos que usan el espacio `venta-minima-prueba`; sin ellos la prueba responde el genérico con el botón). Los demás JSON no lo llevan.
+- **Publicación de PR-4a** (con el «sí» de Andres): la Function `configuracionFlujo` con la rama `sesion` en producción ANTES que el flujo (si no, Q'Taco derivaría todo con el genérico); ensayo en el Demo A (`ensayo-demo-a`); recién entonces `publicar-flujo.sh` del flujo. Para volver atrás: republicar el JSON anterior (el estado del servidor vence solo).
 - **Marcador nuevo en el alta**: `REEMPLAZAR_RUTA_CARRITO_QTACO` (la ruta del webhook del carrito) entra a la tabla local del alta de Q'Taco.
 - Importar con `./scripts/preparar-import.sh Flujos/experimental/venta-minima/venta-minima.qtaco.json .env.qtaco`
   (el patrón de marcadores corta en comillas, barras y espacios: **no pegar dos marcadores con una coma**; la suite lo

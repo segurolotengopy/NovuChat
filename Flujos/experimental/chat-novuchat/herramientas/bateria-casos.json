@@ -2700,7 +2700,7 @@
       "sinModelo": true,
       "botones": "lista",
       "contiene": [
-       "Sí: NovuChat atiende las 24 horas, todos los días",
+       "Yo atiendo las 24 horas, todos los días",
        "Si tienes otro negocio, cuéntame de qué rubro es"
       ],
       "noContiene": [
@@ -3202,7 +3202,7 @@
      "exige": {
       "sinModelo": true,
       "contiene": [
-       "Sí: NovuChat atiende las 24 horas, todos los días, incluso fuera de tu horario"
+       "Yo atiendo las 24 horas, todos los días, incluso fuera de tu horario"
       ],
       "noContiene": [
        "No estoy seguro de haberte entendido"

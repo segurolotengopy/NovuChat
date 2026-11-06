@@ -57,7 +57,9 @@ describe('fijar-flujos: lo que NO debe hacer', () => {
     expect(planear(ANTONIO, ['venta'], [{ numero: '1234', flujo: 'venta' }]).error).toBeUndefined();
   });
   it('NEGACIÓN: rechaza una ficha que ya tiene `modulos`', () => {
-    expect(planear({ ...ANTONIO, modulos: ['agenda'] }, ['venta']).error).toContain('modulos');
+    const r = planear({ ...ANTONIO, modulos: ['agenda'] }, ['venta']);
+    expect(r.error).toBe('la ficha ya tiene modulos: use aplicar-modulos-tenant.mjs');
+    expect(r.codigo).toBe(2);
   });
   it('NEGACIÓN: rechaza flujos desconocidos, repetidos y la lista vacía', () => {
     expect(planear(ANTONIO, ['inventado']).error).toContain('desconocido');

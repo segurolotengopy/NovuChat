@@ -8,7 +8,7 @@ import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
 import { ANA, COMPROBANTE, COTEJO_VALIDO, crear, hablar, mAudio, mImagen, mTexto, panelConQr, panelOk, type Opciones } from './mundo';
 import { PLANES_CON_BOTON, PLANES_SIN_BOTON, llevaBotonDeContacto, vigilarUx, violacionesDeUx } from './vigilante-ux';
 
-const NODO = 'Cancelar cobro en el servidor';
+const NODO = 'Avisar al servidor';
 const nuevo = (o: Opciones = {}): Mundo => { const w = crear(o); vigilarUx(w); return w; };
 const conQr = (o: Opciones = {}): Mundo => { const w = nuevo({ panel: panelConQr(49), ...o }); hablar(w, ANA, mTexto('hola')); return w; };
 const fichaDe = (w: Mundo, tel = ANA): J => ((w.sd['antonio'] ?? {}) as J)[tel] as J;
@@ -41,7 +41,7 @@ describe('PARTE 1. el botón de Antonio va SOLO al derivar', () => {
       w.avanzar(31);
     }
   });
-  it('lo que DERIVA sí lleva el botón: factura, garantía, reclamo, fuera de país, repetición y «no supo» del modelo', () => {
+  it('lo que DERIVA sí lleva el botón: factura, garantía, reclamo, fuera de país y «no supo» del modelo (y la repetición NO)', () => {
     const w = nuevo();
     hablar(w, ANA, mTexto('hola'));
     for (const x of ['necesito factura', 'tengo un reclamo']) {
@@ -56,11 +56,12 @@ describe('PARTE 1. el botón de Antonio va SOLO al derivar', () => {
     expect(planDe(t)).toBe('derivar');
     expect(conBoton(t)).toBe(true);
     const r = nuevo();
-    hablar(r, ANA, mTexto('hola'));
-    hablar(r, ANA, mTexto('hola'));
+    // «hola» repetido: el saludo, luego el modelo (dos mensajes de conversación), luego el bloque de las opciones (una sola vez) y por fin la charla, cuyo texto se repite.
+    for (let i = 0; i < 4; i++) hablar(r, ANA, mTexto('hola'));
     const rep = hablar(r, ANA, mTexto('hola'));
     expect(planDe(rep)).toBe('repetido');
-    expect(conBoton(rep)).toBe(true);
+    expect(conBoton(rep)).toBe(false);   // una repetición NO deriva: texto plano, sin aviso y sin el botón
+    expect(rep.avisos).toHaveLength(0);
   });
   it('NEGANDO el vigilante: un plan que resuelve con el botón, y un plan que deriva sin él, dan violación', () => {
     const cta: J = { type: 'interactive', interactive: { type: 'cta_url', action: {} } };
@@ -70,7 +71,7 @@ describe('PARTE 1. el botón de Antonio va SOLO al derivar', () => {
       expect(violacionesDeUx(new Set(), { type: 'text' }, salida(cta), undefined, '', { plan }).join('|'), plan).toMatch(/resuelve y no deriva/);
       expect(violacionesDeUx(new Set(), { type: 'text' }, salida(plano), undefined, '', { plan }).join('|'), plan).not.toMatch(/botón/);
     }
-    for (const plan of ['derivar', 'repetido', 'fuera_pais', 'cobro_cerrado']) {
+    for (const plan of ['derivar', 'fuera_pais', 'cobro_cerrado']) {
       expect(violacionesDeUx(new Set(), { type: 'text' }, salida(plano), undefined, '', { plan }).join('|'), plan).toMatch(/deriva a Antonio, pero salió sin su botón/);
       expect(violacionesDeUx(new Set(), { type: 'text' }, salida(cta), undefined, '', { plan }).join('|'), plan).not.toMatch(/botón/);
     }

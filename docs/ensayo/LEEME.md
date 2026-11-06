@@ -1,6 +1,6 @@
 # El ensayo: probar el cambio de un cliente antes de que llegue a su número
 
-> Decisión de Andres, 21/09/2026: con Platinum en producción en su propio
+> Decisión de Andres, 21/09/2026: con un cliente en producción en su propio
 > portafolio de Meta, **ningún cambio que pida un cliente se prueba en su
 > número**. Se prueba primero en el número del Demo A, que por un rato responde
 > *como* ese cliente, con su flujo y su configuración propuestos, pero con
@@ -21,8 +21,7 @@
 | **Lo que se escribe** (conversaciones, conteos) | En `ensayo` | — | Se queda ahí; el próximo ensayo lo vacía |
 | El número, la agenda, la recepción y la configuración **del cliente** | **Nada** | — | — |
 
-**Por qué el Demo A y no el Demo B:** todos los clientes de hoy (Platinum,
-Bellido) son de agendamiento, y el Demo A es el flujo del que salieron. El
+**Por qué el Demo A y no el Demo B:** los clientes de reservas de hoy (Bellido) son de agendamiento, y el Demo A es el flujo del que salieron. El
 Demo B sirve para un cliente de venta y cobro cuando lo haya. Cada script recibe
 lo suyo: `ensayo.mjs` recibe `--proyecto` y `--numero` (el phone id del número
 que se desvía), y `ensayo-flujo.sh` recibe `--env` (el entorno de n8n del
@@ -41,7 +40,7 @@ pantalla):
 
 | Marcador | Copia de | Qué es |
 |---|---|---|
-| `REEMPLAZAR_NUMERO_RECEPCION_ENSAYO` | la recepción del demo de Platinum | El teléfono de quien prueba (hoy, Andres): recibe los avisos y el botón «Escribir a recepción» |
+| `REEMPLAZAR_NUMERO_RECEPCION_ENSAYO` | la recepción del demo | El teléfono de quien prueba (hoy, Andres): recibe los avisos y el botón «Escribir a recepción» |
 | `REEMPLAZAR_CALENDARIO_ENSAYO_1` a `_3` | los tres calendarios del Demo A | Las agendas donde el ensayo crea y borra citas |
 
 Los dos scripts traducen los marcadores del cliente a estos:
@@ -121,7 +120,7 @@ Y borrar de las agendas del demo las citas de la prueba.
   recepción del cliente, restaura solo al comercio de origen).
 - `scripts/ensayo-flujo.sh` — n8n. Sus dos cerrojos (credenciales del Demo A
   nodo por nodo y marcadores del ensayo) se probaron en seco el 21/09: con
-  Platinum genera el flujo con las credenciales del Demo A en 29 nodos; con
+  el flujo de ejemplo `platinum-agendamiento.json` se genera con las credenciales del Demo A en 29 nodos; con
   Bellido se niega por sus 6 nodos propios.
 - `scripts/marcador-local.sh --copiar-de` — las filas del ensayo, sin mostrar
   valores.
@@ -547,3 +546,108 @@ ingesta, AAB1 ni WhatsApp), relee que no quede nada y deja el respaldo previo.
 `--quitar-credenciales` borra **solo** esas tres, por nombre y tipo exactos (un homónimo de otro tipo
 o de otro alias no se toca), aborta si hay duplicados y relee que no quede ninguna. Al terminar se borra
 el respaldo (`rm -rf` de su directorio).
+
+## 9 · Ensayar el flujo de Rubén («Noches Sin Insomnio») en el Demo A
+
+> **Un solo teléfono, el de la persona de prueba, hace de cliente y de Rubén.** Escribe a la línea del
+> Demo A y el flujo de Rubén le contesta desde el n8n del Demo A; el aviso a Rubén y el botón
+> «Escribir a Rubén» le llegan **al mismo chat**. Nada de esto toca el número, el flujo ni la
+> configuración de Rubén. Diseño de la variante: `Flujos/experimental/rroca-ruben/DISENO.md`, «La
+> variante de ensayo en el Demo A». Es el mismo mecanismo del §6 (Venta mínima) con otro JSON; la
+> herramienta `flujo-de-prueba.mjs` **no se modifica**.
+
+**Las piezas.** `Flujos/experimental/rroca-ruben/rroca-ruben.ensayo-demo-a.json` (51 nodos), que sale de
+`construir.mjs` con los datos `admin/scripts/datos/rroca-ruben/ensayo-demo-a.json` (hereda de
+`rroca-ruben.json`). Pruebas: `admin/pruebas/tenants/rroca-ruben/ensayo-demo-a.test.ts` y
+`ensayo-demo-a-herramienta.test.ts` (la herramienta real contra un n8n de mentira).
+
+**Qué cambia respecto del flujo de Rubén en producción** (todo lo demás es idéntico, byte a byte, y
+agrega **0 mensajes** por conversación):
+
+| Qué | En el ensayo | Por qué |
+|---|---|---|
+| Entrada | Un `WhatsApp Trigger` (la herramienta lo reemplaza por el del Demo A vivo); sin la entrada verificada del receptor (-6, +1 nodos) | El Demo A no recibe por el receptor; nunca un Trigger con credenciales de AAB1-WA-Prod (prohibición 7) |
+| miniCRM | **Sin la rama** (-8 nodos) y `planillaProspectosId` vacío | El Demo A no tiene la credencial `Google Sheets miniCRM (crm-rroca-ruben)` y el ensayo no debe escribir en la planilla de Rubén |
+| Credenciales | Solo las del Demo A, por nombre; nodos de Graph con «Graph WhatsApp Demo A (Bearer)» (la herramienta los pasa a la predefinida `whatsAppApi`) | La herramienta se niega con cualquier otra, y `construir.mjs` también |
+| Aviso y botón a Rubén | **Interruptor `avisarAlPropioNumero`** (abajo) | Con un solo teléfono el aviso nunca saldría: «un empleado no se avisa a sí mismo» |
+| Plantillas de aviso | Marcadas `PENDING` en «Config base» | Son de la WABA de Rubén; el Demo A no las tiene. El aviso sale por **texto libre** |
+| Cobro | **Sin cambios** (ver abajo) | El flujo de Rubén solo conoce el cobro real |
+
+**El interruptor `avisarAlPropioNumero`.** Vale solo `true` (el booleano; «true», «false», 0, vacío u
+otro valor se rechazan en los datos y, en el JSON, solo cuenta `true` o el texto «true»), solo en
+«Config base» y solo en `ensayo-demo-a.json`. `construir.mjs` **falla** si la clave aparece en cualquier otro
+archivo de datos de `admin/scripts/datos/rroca-ruben/` (se mira el texto crudo, aun heredada), y
+`--verificar` falla si `rroca-ruben.json` o `rroca-ruben.prueba.json` la traen en «Config base» o su
+código la lee. Con ella, el destinatario del aviso igual a quien escribe **no** se descarta («Armar
+avisos») y el botón a Rubén se arma con el chat del propio teléfono («Armar mensajes»). Son dos
+reemplazos exactos hechos solo al armar esta variante; si el código de esos nodos cambia y el
+reemplazo ya no encuentra su sitio, el armado falla.
+
+**El cobro del ensayo (prohibición 3).** El flujo de Rubén **solo conoce el cobro real**: la imagen del
+QR sale de la Consola (`cobroReal`/`cobro.qr`) y `rrSeguro` prohíbe la palabra «simulado» en cualquier
+texto al cliente. **No hay cobro simulado con rótulo en este flujo**: `cobroSimuladoActivo` en `true` se
+rechaza en las tres variantes y no se inventa uno. Para probar QR y comprobante, el comercio `ensayo`
+tiene que cargar un **QR de NovuChat con importe simbólico y su imagen rotulada como demostración**
+(`activar-cobro-real.mjs`, como en el §7), **nunca el QR de Rubén**. El asistente, como siempre, no dice
+«pago acreditado»: dice que el comprobante llegó y que los datos coinciden. Si no se carga ese QR,
+el flujo deriva («QR no disponible») y esa rama es lo que se prueba.
+
+### Autorizaciones de Andres, en el chat, para ESTE ensayo
+
+1. **La credencial de Gemini de producción en el Demo A**, por ensayo (se pide de nuevo cada vez):
+   `--aplicar` exige `--autorizo-gemini-produccion`. Costo: unos 0,0005 USD **por llamada**; un turno
+   de texto llama una vez (`Conversar con el modelo`); un audio (`Transcribir audio`), un documento o
+   una imagen (`Describir …`) suman otra.
+2. **Que el Demo A deje de servir para una demo comercial** mientras dure, y la ventana. Un ensayo a
+   la vez (regla de coordinación del §7).
+3. **El QR de NovuChat de importe simbólico** en el comercio `ensayo`, si se va a probar el cobro.
+4. Cada `--aplicar` de abajo, uno por uno, después de leer entero su seco.
+
+### Orden (cada paso en seco primero; `--aplicar` con el «sí» de Andres)
+
+0. **Antes de empezar:** el §6 «Antes de empezar» A a D (autorizaciones, anotar el ensayo en `ESTADO.md` y
+   **una fila para el Demo A en `docs/versiones-por-cliente.md`** —«corre Rubén en ensayo», con su porqué y
+   su cierre; se retira al restaurar—, árbol al día en un worktree, línea de base de la suscripción de
+   Meta). Más: `node Flujos/experimental/rroca-ruben/construir.mjs --verificar` en 0, el teléfono de quien
+   prueba **registrado en la app del Demo A** (prohibición 6) y la tabla local con los dos marcadores:
+   `REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A) y `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono de quien
+   prueba, con prefijo 591; sin mostrar el valor, **nunca en un archivo del repositorio**).
+1. **Preparar el import:** `CONFIG_LOCAL_MD=~/NovuChat/CONFIGURACION.local.md ./scripts/preparar-import.sh
+   <worktree>/Flujos/experimental/rroca-ruben/rroca-ruben.ensayo-demo-a.json .env` (los dos marcadores
+   resueltos y ninguno sin resolver; deja `rroca-ruben.ensayo-demo-a.local.json`, ignorado por git: se
+   borra al terminar).
+2. **La plataforma:** `ensayo.mjs --preparar --cliente ruben --flujo venta --archivo <copia de
+   negocio-rroca-ruben.json en el scratchpad> --local <tabla local>` (seco leído entero y luego
+   `--aplicar`). El cliente se llama `ruben` a propósito: `REEMPLAZAR_NUMERO_RECEPCION_RUBEN` se traduce
+   solo a la recepción del ensayo (el teléfono de quien prueba), que es también donde llega el botón.
+   Con QR: cargar en `ensayo` el de NovuChat (arriba). ANTES de cargarlo, comprobar que `ensayo` no conserva el QR de otro cliente de un ensayo anterior (`ensayo.mjs` no toca el cobro): si lo hay, retirarlo primero; y AL TERMINAR, retirar también el de NovuChat. Nunca se muestra el QR real de un cliente en un ensayo.
+3. **El flujo:** `flujo-de-prueba.mjs --sobre-demo-a --flujo <…ensayo-demo-a.local.json>` con el respaldo y
+   el estado en el scratchpad, exactamente como el §6 paso 4. El seco tiene que decir: «Demo A vivo» con
+   `activo=True`, `WhatsApp Trigger: el del Demo A, tal cual («…»)` (si no, **detenerse**), los **ocho**
+   nodos de Graph con «PARÁMETROS CAMBIADOS … → predefinedCredentialType/whatsAppApi», Gemini con
+   «Google Gemini(PaLM) Api account», y «Marcadores que quedan … —». Repetir las dos lecturas de
+   Meta después del primer `--aplicar` (§6 paso 4).
+4. **Las pruebas, con UN solo teléfono:** saludo, un prellenado de la landing («Hola, vengo de la página. Quiero
+   el Libro (35 Bs).»), «¿precio y devolución?» (**aviso + botón a Rubén en el mismo chat**: el primer turno
+   solo abre la ventana de «Rubén», que con un solo teléfono es la del propio chat; el aviso sale a partir
+   del segundo turno), un audio, una imagen, un comprobante si hay QR, y la crisis (que corta la venta). El
+   flujo no guarda ejecuciones (retención `none`): vale lo que el teléfono recibió.
+5. **La restauración completa, siempre, salga bien o mal, en este orden** (§7, «Doble restauración»): (1) el flujo,
+   `flujo-de-prueba.mjs --restaurar-respaldo`; (2) el estado por teléfono, `publicar-flujo.sh
+   --reiniciar-estado`; (3) la ruta, `ensayo.mjs --restaurar`; (4) `ensayo.mjs --estado` tiene que decir
+   `Desviada  : no`. Después, la **limpieza obligatoria** del §6 paso 6.4 (respaldos, estado, el `.local.json`, la copia
+   del borrador) y retirar las filas de `ESTADO.md` y de `docs/versiones-por-cliente.md`.
+
+### Lo que este ensayo NO prueba ni garantiza
+
+| Qué | Por qué |
+|---|---|
+| **La entrada verificada del receptor** (firma, `wabaIdEsperado`, repetidos) | Aquí la entrada es el Trigger del Demo A; se prueba con la suite y en el número de Rubén |
+| **El miniCRM** (la planilla) | Sin esa rama a propósito; se prueba con `crm.test.ts` y en producción |
+| **Las plantillas de aviso fuera de la ventana** | Son de la WABA de Rubén (`PENDING` aquí): con un solo teléfono la ventana siempre está abierta |
+| **El primer aviso de una conversación nueva** | La ficha de quien prueba todavía no tiene ventana: sale a partir del segundo turno |
+| **Que el aviso llegue a OTRA persona** | Con un solo teléfono llega al mismo chat; el caso normal (destinatario distinto) lo cubre la suite |
+| **Los ángulos de anuncio** (`titular_principal`) | `ensayo` no tiene las campañas de Rubén cargadas |
+| **El cobro simulado rotulado** | No existe en este flujo (ver arriba) |
+| **Los nombres de credencial en la instancia, la credencial del Trigger vivo y la ruta de Meta** | No se pueden probar sin n8n ni Meta reales: el seco real y los pasos D y 3 |
+| **Que la herramienta vigile el nombre de la credencial de Gemini/WhatsApp** | La herramienta las resuelve por tipo; el nombre lo vigila `construir.mjs` |

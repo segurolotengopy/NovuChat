@@ -25,7 +25,7 @@
  * una ruta de webhook real, un teléfono ni un identificador de Meta).
  *
  * LAS GUARDIAS de lo armado (también se aplican al archivo versionado, aunque alguien lo haya tocado a mano):
- *   - ≤ 48 nodos; nunca un WhatsApp Trigger (prohibición 7); nunca `subscriptions` ni `subscribed_apps`; ni agente, ni memoria, ni modelo de chat de n8n;
+ *   - ≤ 47 nodos; nunca un WhatsApp Trigger (prohibición 7); nunca `subscriptions` ni `subscribed_apps`; ni agente, ni memoria, ni modelo de chat de n8n;
  *   - producción: solo el webhook del receptor, sin «Entrada de prueba»; prueba: solo «Entrada de prueba» (con credencial de cabecera) y sin receptor;
  *   - la verificación del receptor: `wabaIdEsperado` FIJO (nunca una expresión), sin «Continue on Fail» ni `onError`, y «Descartar repetidos» entre ejecuciones;
  *   - un nodo HTTP solo habla con Meta, Gemini y las Functions de la consola; `REEMPLAZAR_*` solo donde se declara; ajustes de retención, orden y zona;
@@ -34,18 +34,29 @@
  *     se pueda publicar: la guardia `--publicable` y la confirmación en `publicar-flujo.sh` son del PR-C, y hasta entonces este flujo no se publica ni se activa en un número real.
  */
 import { closeSync, constants, openSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
+import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
+import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
+import { problemasDeReferencias } from '../rroca-ruben/construir.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-antonio/rroca-antonio.json');
 export const ARCHIVO_DE_NEGOCIO = join(AQUI, '../../../admin/scripts/datos/rroca-antonio/negocio-rroca-antonio.json');
-export const TOPE_DE_NODOS = 48;
+// 47 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
+// excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
+// 56 + los 8 de la rama del miniCRM (`ramaCrm`, generada por el módulo `crm`; F4 del 02/11/2026): excepción de tope aprobada por Andres (DP1, 31/10/2026) en docs/versiones-por-cliente.md.
+// El relé de envíos B9 (Clínicas, +2, aprobado en D1) sube el tope a 66 cuando se fusione: hoy el flujo tiene 64.
+export const TOPE_DE_NODOS = 64;
+/** Los 8 nodos de la rama del miniCRM (el módulo `crm` los genera). */
+export const NODOS_DE_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
+export const CREDENCIAL_CRM = (tenant) => `Google Sheets miniCRM (crm-${tenant})`;
+const TENANT = 'rroca-antonio';
 /** Los nodos de la conversación completa (PR-B): el cotejo del comprobante, el modelo y el aviso a Antonio. La guardia los exige. */
 export const NODOS_DEL_AVISO = ['Armar avisos', '¿Hay avisos?', 'Enviar aviso'];
-export const NODOS_DE_LA_CONVERSACION = ['Interpretar lectura', '¿Cotejar?', 'Cotejar en el servidor', '¿Conversar con el modelo?', 'Conversar con el modelo', '¿Falló la protección?', 'Reportar protección', '¿Cancelar cobro?', 'Cancelar cobro en el servidor'];
+export const NODOS_DE_LA_CONVERSACION = ['Interpretar lectura', '¿Cotejar?', 'Cotejar en el servidor', '¿Conversar con el modelo?', 'Conversar con el modelo', '¿Avisar al servidor?', 'Avisar al servidor'];
 
 /**
  * El config del armador genérico. Vive aquí y no en un `construir.config.json`: el saneo del repo público trata todo JSON bajo `Flujos/` como un export de n8n.
@@ -54,7 +65,8 @@ export const NODOS_DE_LA_CONVERSACION = ['Interpretar lectura', '¿Cotejar?', 'C
 export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
-  librerias: ['src/lib/cobro.js', 'src/lib/avisos.js', 'src/lib/ra.js'],
+  // La base común de las ventas digitales (cobro, avisos y el motor de la conversación: prefijos `cb`, `av` y `vd`), los módulos del core de texto (no repetir y pregunta pendiente: prefijo `ct`) y, al final, lo PROPIO de Antonio (`ra.js`: solo datos y textos).
+  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../../src/core/texto/no-repetir.js', '../../src/core/texto/pregunta-pendiente.js', 'src/lib/ra.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
@@ -62,6 +74,8 @@ export const CONFIG = {
     'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
     'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
     'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],
+    // El miniCRM es un módulo (nunca se copia): los paquetes de código del adaptador general de señales.
+    ...Object.fromEntries(Object.entries(rutasPaqueteCrmSenales()).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
   },
   variantes: [
     { archivo: 'rroca-antonio.json', quitar: 'Entrada de prueba', nombre: 'se toma de los datos' },
@@ -103,6 +117,8 @@ function escribirSinSeguirEnlaces(ruta, texto, nombre) {
 
 // ----------------------------------------------------------------- los datos
 const MARCADOR = /^REEMPLAZAR_[A-Z0-9_]+$/;
+// Sin monto (ni «49Bs», «$49», «49 USD»), sin enlaces (`://`, `www.`, `wa.me`, `dominio.xx/`) y sin los caracteres peligrosos.
+const ETIQUETA = /^(?!.*(?:\b(?:bs|bob|bolivianos?)\b|\d\s*(?:bs|bob|\$|usd)|(?:bs|bob|\$|usd)\s*\d|:\/\/|www\.|wa\.me|\.\w{2,}\/))[^"{}\r\n<>()\\']{2,30}$/i;
 const FORMAS_CONFIG = {
   waGraphVersion: /^v\d{1,2}\.\d{1,2}$/,
   phoneNumberIdEsperado: /^(\d{6,25}|REEMPLAZAR_[A-Z0-9_]+)$/,
@@ -120,8 +136,13 @@ const FORMAS_CONFIG = {
   avisoComprobanteEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
   avisoConsultaEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
   avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
+  // Las etiquetas de los botones y de las filas: nombre con su emoji, SIN monto (el monto lo pone el código desde el catálogo): ni «Bs» ni «Bolivianos» ni paréntesis.
+  etiquetaPack: ETIQUETA, etiquetaLibro: ETIQUETA, etiquetaBonos: ETIQUETA, etiquetaWorkbook: ETIQUETA, etiquetaGuia: ETIQUETA, etiquetaCalendario: ETIQUETA, etiquetaPreguntas: ETIQUETA,
   // Textos que ve el cliente: una frase, sin comillas dobles ni llaves ni saltos.
   garantiaTexto: /^[^"{}\r\n<>]{10,300}$/,
+  // La planilla del miniCRM: el id de la hoja de Google (un marcador en el repositorio) y el nombre de su pestaña.
+  planillaProspectosId: /^(REEMPLAZAR_[A-Z0-9_]+|[A-Za-z0-9_-]{25,100})$/,
+  planillaProspectosHoja: /^[\p{L}\p{N}_ .-]{1,100}$/u,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
 
@@ -151,7 +172,19 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
       if (!['string', 'number', 'boolean'].includes(typeof v)) errores.push(`configBase.${c}: solo texto, número o booleano`);
       if (FORMAS_CONFIG[c] && !FORMAS_CONFIG[c].test(String(v))) errores.push(`configBase.${c}: forma no válida`);
     }
-    for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
+    for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio', 'planillaProspectosId', 'planillaProspectosHoja']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
+  }
+  // El mapa de columnas del miniCRM: lo valida el MISMO validador que corre en n8n.
+  if (d.crm === undefined) errores.push('crm: falta (el mapa de columnas de la planilla)');
+  else for (const m of validarMapaCrm(d.crm)) errores.push(`crm: ${m}`);
+  // La landing (dato del tenant, 24/10/2026): `dominio` solo documenta el origen (el flujo NUNCA abre ni lee la URL); `fraseEntrada` es el mensaje que manda quien llega de allí y viaja a «Config base» como `landingFrase`.
+  if (d.landing !== undefined) {
+    const l = d.landing && typeof d.landing === 'object' && !Array.isArray(d.landing) ? d.landing : null;
+    if (!l) errores.push('landing: tiene que ser un objeto');
+    else {
+      if (typeof l.dominio !== 'string' || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(l.dominio)) errores.push('landing.dominio: tiene que ser un nombre de dominio, sin https:// ni ruta');
+      if (typeof l.fraseEntrada !== 'string' || !/^[^"{}\r\n<>\\\[\]]{20,200}$/.test(l.fraseEntrada)) errores.push('landing.fraseEntrada: una frase de 20 a 200 caracteres, sin comillas dobles, llaves, corchetes ni saltos');
+    }
   }
   if (errores.length) throw new Error(`rroca-antonio.json: datos no válidos: ${errores.join('; ')}`);
   return d;
@@ -177,19 +210,42 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
   if (MARCADOR.test(url)) return true;
   // La única excepción: «Descargar medio» baja el medio de la URL que le devuelve Meta (la anterior, «¿Tamaño aceptable?», exige https://lookaside.fbsbx.com/ y un tamaño).
   if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
+  // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
+  if (nombreDelNodo === 'Descargar medio (guardado)' && url === URL_DESCARGA_GUARDADO) return true;
+  // La consulta de SOLO la fila de encabezados del miniCRM (Google Sheets API, `values.get`): la URL exacta del módulo común, con un rango A<fila>:<letra><fila>.
+  if (nombreDelNodo === 'Leer encabezados de la planilla') {
+    const [antes, despues] = urlEncabezados('@@').split('@@');
+    if (url.startsWith(antes) && url.endsWith(despues) && /^[A-Z]+\d+:[A-Z]+\d+$/.test(url.slice(antes.length, url.length - despues.length))) return true;
+  }
   const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
   if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
   return ANFITRIONES.includes(m[1].toLowerCase());
 }
 
 /** Lo que un JSON de este flujo no puede tener. `variante`: 'produccion' | 'prueba'. Devuelve la lista de hallazgos (vacía si está limpio). */
-export function guardias(variante, flujo) {
+export function guardias(variante, flujo, mapaCrm) {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   const nombres = new Set(nodos.map((n) => n.name));
   const por = (nombre) => nodos.find((n) => n.name === nombre);
   const p = (n) => (n && n.parameters) || {};
-  if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace`);
+  if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md)`);
+  // EL miniCRM (módulo `crm`): la rama completa, la credencial del tenant y las barreras del módulo (rangos que no llegan a la letra del diagnóstico del equipo, retención de ejecuciones en `none`).
+  const conexCrm = (flujo && flujo.connections) || {};
+  for (const n of NODOS_DE_CRM) if (!nombres.has(n)) h.push(`miniCRM: falta el nodo «${n}»`);
+  if (nombres.has('Prospecto para la planilla') && !((((conexCrm['Armar mensajes'] || {}).main || [])[0] || []).map((x) => x.node).includes('Prospecto para la planilla'))) h.push('miniCRM: «Armar mensajes» no está conectado a «Prospecto para la planilla»');
+  const prosCrm = por('Prospecto para la planilla'); const resumenCrm = por('Resumen del turno'); const armadoCrm = por('Armar mensajes');
+  if (prosCrm && resumenCrm && armadoCrm && !(prosCrm.position[1] < resumenCrm.position[1] && prosCrm.position[1] > armadoCrm.position[1])) h.push('miniCRM: «Prospecto para la planilla» tiene que ir debajo de «Armar mensajes» y encima de «Resumen del turno» en el lienzo (el resumen es la última rama)');
+  for (const n of nodos) {
+    const g = (n.credentials || {}).googleApi;
+    if (g && g.name !== CREDENCIAL_CRM(TENANT)) h.push(`miniCRM: «${n.name}» usa una credencial de Google que no es la de este negocio (${CREDENCIAL_CRM(TENANT)})`);
+  }
+  let mapaDeCrm = mapaCrm;
+  if (mapaDeCrm === undefined) { try { mapaDeCrm = JSON.parse(leerSiExiste(ARCHIVO_DE_DATOS, 'rroca-antonio.json')).crm; } catch (e) { mapaDeCrm = undefined; } }
+  if (!mapaDeCrm || !mapaDeCrm.columnas) h.push('miniCRM: faltan los datos `crm` (el mapa de columnas): sin él no se pueden comprobar los rangos de lectura');
+  else h.push(...hallazgosCrm(flujo || {}, mapaDeCrm).map((x) => `miniCRM: ${x}`));
+  // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
+  h.push(...hallazgosDelGuardado(flujo || {}));
   if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
   if (/subscriptions|subscribed_apps/i.test(JSON.stringify(flujo))) h.push('menciona «subscriptions» o «subscribed_apps» (prohibición 7)');
   if (/langchain\.(agent|memory\w*|lmChat\w*|chain\w*)$/i.test(nodos.map((n) => n.type).join('\n'))) h.push('lleva un agente, memoria o modelo de chat de n8n: este flujo no los lleva');
@@ -230,7 +286,7 @@ export function guardias(variante, flujo) {
     for (const n of nodos) {
       for (const [tipo, c] of Object.entries(n.credentials || {})) {
         const nombreCred = String((c || {}).name || '');
-        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && n.name !== 'Cotejar en el servidor' && n.name !== 'Reportar protección' && n.name !== 'Cancelar cobro en el servidor' && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred))) {
+        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && n.name !== 'Cotejar en el servidor' && n.name !== 'Guardar comprobante' && n.name !== 'Avisar al servidor' && !NODOS_DE_INGESTA_DEL_GUARDADO.includes(n.name) && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred))) {
           h.push(`la prueba usa una credencial de producción en «${n.name}» (${tipo})`);
         }
       }
@@ -268,9 +324,24 @@ export function guardias(variante, flujo) {
     const url = String(p(n).url || '');
     if (!anfitrionPermitido(url, n.name)) h.push(`el nodo «${n.name}» llama a un anfitrión fuera de la lista (graph.facebook.com, generativelanguage.googleapis.com, las Functions de la consola)`);
   }
+  // Las referencias a nodos del task runner de n8n (la lógica es la de Rubén, importada y no copiada): solo literales y antecesores, sin excepciones (desde el corte de nodos de la fase 2 no queda ningún hallazgo conocido).
+  for (const x of problemasDeReferencias(flujo || {})) h.push(x);
+  // «Avisar al servidor» (cancelar el cobro y reportar `no_contactar` ANTES de armar avisos y mensajes): la llamada síncrona de siempre, con el evento en una lista cerrada, y los dos caminos hacia «Armar avisos».
+  const avisar = por('Avisar al servidor');
+  if (avisar) {
+    const cuerpo = String(p(avisar).jsonBody || '');
+    if (!/ingesta$/.test(String(p(avisar).url || '')) || p(avisar).method !== 'POST') h.push('«Avisar al servidor» no hace POST a la ingesta');
+    if (!/cobro_cancelado/.test(cuerpo) || !/no_contactar/.test(cuerpo) || /evento: (?!ev\b)/.test(cuerpo)) h.push('«Avisar al servidor»: el evento tiene que salir de la lista cerrada (`cobro_cancelado` | `no_contactar`)');
+    const opc = p(avisar).options || {};
+    if (opc.timeout !== 8000 || !((opc.response || {}).response || {}).fullResponse || !((opc.response || {}).response || {}).neverError) h.push('«Avisar al servidor» tiene que llevar timeout 8000, fullResponse y neverError (la respuesta decide si se dice «cerré tu pedido»)');
+    if (avisar.onError !== 'continueRegularOutput') h.push('«Avisar al servidor» no lleva `onError: continueRegularOutput`: si la ingesta cae, el turno no puede cortarse');
+    if (!((avisar.credentials || {}).httpHeaderAuth || {}).name) h.push('«Avisar al servidor» no lleva credencial (httpHeaderAuth)');
+    if (!destinosDe('¿Avisar al servidor?', 0).includes('Avisar al servidor') || !destinosDe('¿Avisar al servidor?', 1).includes('Armar avisos') || !destinosDe('Avisar al servidor', 0).includes('Armar avisos')) h.push('«¿Avisar al servidor?» / «Avisar al servidor» no desembocan en «Armar avisos»: la llamada tiene que correr ANTES de armar el aviso y el texto');
+    if (!destinosDe('Conversar con el modelo', 0).includes('¿Avisar al servidor?') || !destinosDe('¿Conversar con el modelo?', 1).includes('¿Avisar al servidor?')) h.push('«¿Avisar al servidor?» tiene que recibir las dos ramas (con y sin modelo): la marca RIESGO del modelo también se reporta');
+  }
   // Retención de ejecuciones, orden y zona horaria.
   const st = (flujo && flujo.settings) || {};
-  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'all' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «all» y saveExecutionProgress false');
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» y saveExecutionProgress false (con la rama del guardado de medios el binario quedaría en la ejecución: decisión de Andres del 30/10, contrato v2 §8.1)');
   if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow`');
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
@@ -389,6 +460,9 @@ export function guardiaDePublicacion({ flujo, datos, negocio }) {
   h.push(...hallazgosDelNegocio(negocio));
   // 5. …y la rama de medios completa.
   h.push(...hallazgosDeMedios(flujo));
+  // 6. El miniCRM: la rama, sus rangos y sus barreras contra el mapa de columnas de los datos.
+  if (datos && datos.crm) h.push(...hallazgosCrm(flujo || {}, datos.crm).map((x) => `miniCRM: ${x}`));
+  else h.push('miniCRM: los datos no traen el mapa `crm`');
   return h;
 }
 
@@ -408,15 +482,28 @@ export function armarAntonio(proyecto, datos, v) {
   // Primero se quita lo que no corresponde: sus credenciales y rutas no tienen por qué estar resueltas.
   const quitar = new Set(Array.isArray(v.quitar) ? v.quitar : (v.quitar ? [v.quitar] : []));
   plantilla.nodes = plantilla.nodes.filter((n) => !quitar.has(n.name));
+  // LA RAMA DEL miniCRM se GENERA (módulo `crm`), no se copia: 8 nodos debajo de «Armar mensajes» y encima de «Resumen del turno», que sigue siendo el último. La credencial la calcula el tenant, no sale de los datos.
+  const rama = ramaCrm({ credencial: '@@cred:crm', desde: 'Armar mensajes', paquete: 'crm-decidir-senales', x: 6200, y: 600 });
+  plantilla.nodes.push(...rama.nodes);
+  Object.assign(plantilla.connections, rama.connections);
+  const previoDeArmar = (plantilla.connections['Armar mensajes'] && plantilla.connections['Armar mensajes'].main && plantilla.connections['Armar mensajes'].main[0]) || [];
+  plantilla.connections['Armar mensajes'] = { main: [[...previoDeArmar, { node: rama.entrada, type: 'main', index: 0 }]] };
   for (const n of plantilla.nodes) {
     n.parameters = reemplazarTextos(n.parameters, datos, `${donde} · ${n.name}`);
     for (const c of Object.values(n.credentials || {})) {
-      const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini)$/.exec(String(c.name));
+      const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini|crm)$/.exec(String(c.name));
+      // EXCEPCIÓN DECLARADA a «la prueba nunca usa credenciales de producción» (la misma de Evy, Emma y Rubén): la variante de prueba lleva el NOMBRE de la credencial del miniCRM del tenant (el id va vacío: no resuelve nada);
+      // sin id de planilla la rama no escribe.
+      if (m && m[1] === 'crm') { c.name = CREDENCIAL_CRM(TENANT); continue; }
       // La variante de PRUEBA nunca usa las credenciales de producción de Meta ni de Gemini: los nodos de medios, el aviso y el modelo van con las de prueba (como el envío).
       const clave = prueba && m && m[1] === 'graph' ? 'graphPrueba' : (prueba && m && m[1] === 'gemini' ? 'geminiPrueba' : (m ? m[1] : ''));
       if (m) c.name = dato(datos, `credenciales.${clave}`, `${donde} · ${n.name}`);
     }
-    if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
+    if (n.name === 'Config base') {
+      n.parameters.assignments.assignments = asignaciones(Object.assign({}, datos.configBase || {}, datos.landing && datos.landing.fraseEntrada ? { landingFrase: datos.landing.fraseEntrada } : {}));
+      // La variante de PRUEBA no escribe en ninguna planilla: el id va vacío (nunca la hoja de un cliente real).
+      if (prueba) for (const a of n.parameters.assignments.assignments) if (a.name === 'planillaProspectosId') a.value = '';
+    }
     // Los módulos comunes de medios se INCLUYEN desde su fuente (ya leída por el armador genérico, dentro de la raíz): el código queda tal cual, sin una sola edición.
     const js = n.parameters && n.parameters.jsCode;
     const m = typeof js === 'string' ? /^@@medio:([a-z0-9-]+)$/.exec(js) : null;
@@ -443,8 +530,12 @@ export function armarAntonio(proyecto, datos, v) {
   const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
   if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes('evento: m.evento')) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
   rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; } return JSON.stringify(r); })() }}";
+  // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
+  injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
+  // El mapa de columnas del tenant (dato, no código) dentro de los nodos del módulo y los rangos de lectura de los nodos de Google.
+  injertarCrm(flujo, datos.crm);
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);
   return JSON.stringify(flujo, null, 2) + '\n';
 }

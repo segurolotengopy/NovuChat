@@ -1,18 +1,13 @@
 /**
  * Core · texto · párrafos (`Flujos/src/core/texto/parrafos.js`). Los resultados LITERALES son los que dio `rrParrafos` de Rubén (rr.js) el 22/10/2026: el core no cambia el comportamiento ya publicado.
- * El archivo se carga con `new Function` (como lo hace el Code de n8n: sin globales de Node).
+ * El archivo se carga con `node:vm` en un contexto vacío (como el Code de n8n: sin globales de Node).
  */
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { cargarFuente } from './fuente-vm';
 
-const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../Flujos/src/core/texto');
-// El código evaluado es el de un archivo del propio repositorio: solo prueba.
-// nosemgrep: devsecops.js-eval-prohibido
-const L = new Function(readFileSync(join(RAIZ, 'parrafos.js'), 'utf8') + '\nreturn { CT_PARRAFO_MAX, ctOraciones, ctEsPregunta, ctParrafos };')() as {
+const L = cargarFuente<{
   CT_PARRAFO_MAX: number; ctOraciones: (b: string) => string[]; ctEsPregunta: (o: string) => boolean; ctParrafos: (t: unknown) => string;
-};
+}>(['Flujos/src/core/texto/parrafos.js'], ['CT_PARRAFO_MAX', 'ctOraciones', 'ctEsPregunta', 'ctParrafos']);
 
 const CASOS: Array<[string, unknown, string]> = [
   ['abreviaturas', 'Hable con el Dr. Pérez. Es el Sr. López. Atiende hoy. Vienen todos etc. Luego sigue. Nº 5. Abre.', 'Hable con el Dr. Pérez. Es el Sr. López.\n\nAtiende hoy. Vienen todos etc. Luego sigue.\n\nNº 5. Abre.'],

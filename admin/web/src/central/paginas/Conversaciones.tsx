@@ -10,9 +10,9 @@ import { ConversacionesNueva } from './ConversacionesNueva';
  * `Conversaciones`, pero ahora solo ELIGE cuál de las dos pintar según la bandera
  * `tenants/{id}.consolaConversaciones`:
  *
- *   'nueva'    `ConversacionesNueva`   (lista y hilo, búsqueda, filtros, no leídas)
- *   cualquier otra cosa, o error de lectura → `ConversacionesClasica`, que es la
- *   pantalla de siempre, sin tocar (idéntica a la de antes de H1).
+ *   'clasica' (explícito, emergencia) → `ConversacionesClasica`, la de siempre, sin tocar.
+ *   cualquier otra cosa (sin bandera, desconocida, error de lectura) → `ConversacionesNueva`
+ *   (lista y hilo, búsqueda, filtros, no leídas): es la de por defecto desde el 24/10/2026.
  *
  * Mientras la bandera carga no se pinta ninguna: así no parpadea la equivocada.
  * `key`: al cambiar de negocio con la ruta montada, la elección empieza de cero.
@@ -25,5 +25,5 @@ export function Conversaciones() {
 function ConversacionesSegunBandera({ tenantId }: { tenantId: string }) {
   const pantalla = useConsolaConversaciones(tenantId);
   if (pantalla === null) return <p>Cargando…</p>;
-  return pantalla === 'nueva' ? <ConversacionesNueva /> : <ConversacionesClasica />;
+  return pantalla === 'clasica' ? <ConversacionesClasica /> : <ConversacionesNueva />;
 }

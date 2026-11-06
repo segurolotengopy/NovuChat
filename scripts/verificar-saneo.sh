@@ -276,6 +276,10 @@ modo_patrones() {
   for json in "${ARCHIVOS[@]}"; do
     case "$json" in Flujos/*.json) ;; *) continue ;; esac
     [[ -f "$json" ]] || continue
+    # Excepcion declarada: el workflow de errores no tiene valores por
+    # negocio (sin credenciales, URL ni Config) y publicar-flujo.sh aborta ante
+    # cualquier REEMPLAZAR_ que quede en el JSON; una prueba lo garantiza.
+    case "$json" in Flujos/error-envio-incierto.json) continue ;; esac
     grep -q 'REEMPLAZAR_' "$json" || faltan+=("$json")
   done
   if [[ ${#faltan[@]} -gt 0 ]]; then

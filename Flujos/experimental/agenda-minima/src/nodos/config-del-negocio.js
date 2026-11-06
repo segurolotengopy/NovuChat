@@ -201,7 +201,15 @@ function cnTolerancia(textos) {
   return '';
 }
 
+// LA PLANILLA DEL miniCRM (modulo `crm`): el id de la hoja de Google de ESTE negocio (25 a 100 caracteres de id) y el nombre de la pestana. Un marcador `REEMPLAZAR_*`, vacio o con otra
+// forma vale '' y el flujo ni consulta Google. Sin id valido no hay hoja; con id y sin pestana, 'Leads_CRM'.
+const cnIdPlanilla = String(base.planillaProspectosId || '').trim();
+const idDeLaPlanilla = !cnIdPlanilla.startsWith('REEMPLAZAR_') && /^[A-Za-z0-9_-]{25,100}$/.test(cnIdPlanilla) ? cnIdPlanilla : '';
+const cnHojaPlanilla = String(base.planillaProspectosHoja || '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 100);
+
 return [{ json: Object.assign({}, cfg, {
+  planillaProspectosId: idDeLaPlanilla,
+  planillaProspectosHoja: idDeLaPlanilla === '' ? '' : (cnHojaPlanilla || 'Leads_CRM'),
   calendarioId: calendarioId,
   numeroRecepcionDigitos: cnDigitos(cfg.numeroRecepcion),
   numeroDoctorDigitos: cnDigitos(cfg.numeroDoctor),

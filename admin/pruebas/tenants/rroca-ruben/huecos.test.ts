@@ -1,191 +1,232 @@
 /**
- * «VENTA DIGITAL DE RUBÉN» (tenant rroca-ruben) — PR-2, LOS HUECOS DEL COBRO Y DE LOS AVISOS, comparados con su ORIGEN.
+ * «EL PUENTE» DE RUBEN (tenant rroca-ruben) — PR-A: LOS HUECOS DECLARADOS, comparados con su ORIGEN.
  *
- * El módulo común de Cobros y el de Avisos todavía no existen: `src/lib/cobro.js` y `src/lib/avisos.js` son COPIAS declaradas (PROPIO.md) de `venta-minima/src/lib/cobro.js` y `avisos.js`
- * (rama #519, `cartera/qtaco-visor-comprobantes`). Cada declaración (función o constante) se compara BYTE A BYTE con su origen de tres maneras:
- *   1. contra el HASH fijado (sha-256 de la declaración tal como estaba en el origen el 18/10/2026): no depende de ninguna rama;
- *   2. contra el archivo de `venta-minima` del árbol de trabajo, si ya trae lo de #519 (antes de la fusión tiene la versión vieja y no sirve de origen);
- *   3. contra la rama `origin/cartera/qtaco-visor-comprobantes`, si el repositorio la tiene (si #519 se fusionó o la rama se borró, el 2 y el 1 la cubren).
- * Si el origen cambia, la prueba falla y obliga a decidir (volver a copiar y fijar el hash nuevo, o resolver el módulo común).
+ * No existe todavía el módulo común de puerta del turno, ficha por teléfono, carga de entrada ni configuración del negocio para un flujo «sin agente»
+ * (`Flujos/experimental/rroca-ruben/PROPIO.md`, §«Común SIN fuente utilizable»). Cada pieza es una COPIA declarada de `chat-novuchat` o de `venta-minima` (NO de `rroca-ruben`),
+ * y esta suite la compara con su origen:
+ *   - `_comun.js` y `puerta-del-turno.js`: IGUALES al origen una vez aplicadas las sustituciones declaradas (y solo ellas);
+ *   - `carga-de-entrada.js` y `config-del-negocio.js`: toda línea con código está en el origen, salvo las líneas propias declaradas aquí (una lista cerrada);
+ *   - los 6 nodos de la entrada verificada del receptor (de `venta-minima`) y los nodos HTTP/Set/If de `chat-novuchat`: iguales en `parameters`, tipo, versión, credenciales y opciones;
+ *     solo `id`, `notes` y `position` son propios (y el nombre de un nodo, donde se declara abajo).
+ * Si el origen cambia, la prueba falla y obliga a decidir: volver a copiar o resolver el módulo común.
  */
-import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { ejecutar, type J } from '../../lib/flujo';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = join(AQUI, '../../../..');
-const RROCA = join(REPO, 'Flujos/experimental/rroca-ruben/src/lib');
-const VM = join(REPO, 'Flujos/experimental/venta-minima/src/lib');
-const RAMA = 'origin/cartera/qtaco-visor-comprobantes';
-
-const HASH_COBRO: Record<string, string> = {
-  CB_PROHIBIDAS: '6eb20ca8 2eb48d4f 3d675979 ae617106 75db3911 102654f5 13d36474 ab1f135b',
-  CB_TOTAL_MAXIMO: '8add9981 9246c1e1 b4f5a59c 386f0b8e b2100c4c d1632597 1e3645e6 82a015dd',
-  CB_ROTULO_SIMULADO: '39d80daa 6384eb77 45409a1f ca266d3f d55f8ade 179e11dc 6267dbfc b2fc7c2b',
-  CB_CONFUSABLES_DE: '2819d47e 193928d1 fb0570c1 11c12b81 f68759bf 6f8d68a5 0d8a6952 d4b5eec6',
-  CB_CONFUSABLES_A: 'b2db36ba 0907df8c 35704423 4905baff 4e19619e 74a840d8 8ba4d8a1 72a07f90',
-  cbCanon: '0e59861c 59ac8302 b5d02efa 85053730 98eed0d3 2b20309b f3f7cce7 b81154c5',
-  cbLinea: '1911572b 71ecbbd7 e64d9d16 381c03e7 2ef52719 2da93b83 29b85a3f ee14990e',
-  cbEsObjeto: '3d07807f a7dc3307 14ff25ae 93041bc0 ea541226 d713de10 e0409350 3adb9d2d',
-  cbTotalValido: '88840d38 b68dd203 4e386ded c4df5f8f 8d67db1a a12729cb b2179fc6 5a0911a8',
-  cbMonto: '56f18eee bcba9a44 6647f0b1 d25d08e3 8b6065b5 35654eed a702c552 b6a0ee3d',
-  cbMoneda: '3d66077e d698d7cb a8662d38 49589a8b efdcb322 953ba16d a4ef71c9 ce4698da',
-  cbCodigo: '18c5585b 84d13113 6705ca59 205bbdf6 596e635e 25eba044 95903e19 e8223e08',
-  cbUrlSegura: '819013da c2fffd6e 0d125ed4 ef8f0ac4 82beedbe ac6d4e33 df3c15b0 a65a6afe',
-  cbCobroReal: '731e75a3 dd41c7a4 73c3e868 e075378c 09cc5adf b432acbf b4a222d4 a0215a3b',
-  cbTextoDeGemini: '0b70c470 2fe5216c 9430a403 0786c80e 7ee99c9b 69092c3d 14c7e847 26f4b160',
-  cbObjetoUnico: '69055bc1 d15e7ac1 ffba80c0 23b2abac 2d49682f 77804729 8022e8d1 789e75d0',
-  cbCampoLeido: 'd1429319 1e34263d 0c3a9814 4fa62701 1427edb7 2b8eb212 df9277b8 7efb4d5e',
-  cbLectura: 'e80cbbbc 06540526 0c55513d 30c3c8af 07f18324 728d2075 71d45797 4a8afa3d',
-  cbCuerpoDe: '64fe1307 952b4d3c 53482080 dd04dd86 96081b61 01b70c4c 7e899a5c 35c3c9bb',
-  cbRutaGuardada: 'c5920dc9 bd12f797 6a6ef140 80c28d51 2974084f 01f84a10 c5940b6d 1d0842d2',
-  CB_ESTADOS_VENTA: '3dd13d2d 8ed6d653 cde28229 84823c9c 834312a6 eef47c10 3db4132a c024e2b6',
-  CB_MOTIVOS_NO_LEGIBLE: '69e97854 bbc4aa90 1f9b791f f78c2a0b 54094208 26a405bb 0472e3d8 c8a680d0',
-  CB_FRASE_DEL_MOTIVO: '1e347dbd 3729f607 ec6afe95 6739cbff ad458170 d8932082 b1c8b20f 0bc4f49d',
-  cbResultadoVenta: 'fd632e01 f367458a c05b669b 245b0e74 f6b431f6 1969116b 268a383b fc62c614',
-  cbEstadoParaAviso: '3c0bb422 d1b55a70 261d565a cca62df6 2ba8742e a0901c3e 5cd0e766 741b833e',
-  cbImporteDelServidor: 'aeb93cea 0f371709 f4284d4f 8986ec43 70c68443 29198ad7 26db6fb6 43c9466b',
-  cbDiferencia: 'd0f404a9 1c812c0c 80e21218 7078af8b 0426f4de f52c19f6 e94202cb b401bb84',
-};
-const HASH_AVISOS: Record<string, string> = {
-  AV_PROHIBIDAS: '0114cc9b 2e1b8189 d141b2db 00562396 f22f2960 20412bc0 9e0e0197 8fe2b274',
-  AV_ENLACE: 'dc4dcc4b 310e61c3 2eb565b7 be161d36 9276e17c 0a1f7d8e 36bb91f0 a7d576b9',
-  avProhibidas: 'b5b41560 39b170af c223fb18 d2754e38 70c36be6 28f6754f 78ee1596 802c0a0f',
-  AV_CONFUSABLES_DE: '3cbef8fa 80681a88 ec4ab323 000d49a6 c5960162 ea6f619a ced594c7 d935c63a',
-  AV_CONFUSABLES_A: '76620631 8822fd95 de2e37db 8df790a3 06680cdf 22f9bf08 5e98be13 bb5692a6',
-  AV_OMITIDO: '93151dd9 9f177a67 30149bc9 e72b36ca 44b34e9f aa6d445e 19b70e9b 37ece266',
-  avCanon: 'b0ded95f 0893e78d c84b4db9 8d1efc02 2aa71c91 dee9bdc1 7f073fd2 11532734',
-  avNorm: '6fba3935 b6c009b3 a85752a1 95dbcaca c5c54f7d 5a005d13 10d68961 1e0ec543',
-  avPalabrasProhibidas: 'b6270efe f4c295fe 3d8a4fd0 a65c7ab9 129f56f7 5e44cd6e ac6a51f3 3f5dc6f8',
-  avSinProhibidas: 'ef5d1be8 a999a9a9 d0f8eb9a e14f70b4 52e78aef ec6534b7 d3f33361 65ee6869',
-  avDigitos: '6c461dcc f4b741a2 65737085 99956f54 2701f6a2 77e7d127 c3b40c86 725299d4',
-  avSinBordes: 'ee72b273 05f590c1 d0507e4f 96a87d81 214918fd 651fea5c 1935b3b5 9443541f',
-  avCortar: '3c40b85c 46c60b9c eac213cb ad40db11 c91abd39 d50a2ff8 c8d59264 e6b79a8c',
-  avLimpio: 'af56cfd7 aa00a92f 9aea2626 6ea0b4ac 6a22c1b9 429227ec 2a9c7fda 9a609edd',
-  avCoincide: '9b949a0f 0fc270d3 22bef6e2 cfb3f998 7ea99132 0a3a5d39 889e4e3e 5520e79f',
-  avAjustarFinal: 'd452d44d e3415feb b98a918b 13f3654b 2f6cd936 1828aaec cc8085b2 ec298bc1',
-  avParametro: '6c8eb84e ca2b9167 425350e6 a4c83e85 2ea5645c 4d589f10 05d1c397 fae2a565',
-  avPrimerNombre: 'bf4a692b 763c38c9 c2605092 6399af83 85cec80a d7c26cc0 5a242346 01db6d67',
-  avPrefijos: 'aa05c9bb 7cdc9ec2 8657a325 d615c40e 7a220a98 75aeeeb0 6b43cbb8 6daee85e',
-  avUnificar: '924441f3 3354c446 87e3e61d 542bc36b 8de4dac5 bfe562ec fef558f6 2aa1568f',
-  avDestinatarios: 'cf5e325d 60c2a3f9 8feb7da2 d83abaef 6efc4bec bbb46ed1 987b1f17 3bd53a36',
-  avCuerpoBase: '086adcd9 899b39d9 95b0dbcc 1946d956 fc8d0faf 5800b2b8 0820acf0 c1e55be3',
-  avPlantilla: '1feaed6d 9b261b80 dee9d227 4634da4f efb97c5d 5e91e18a dcd433fa a4681daa',
-  avTexto: '6dff9571 3b2a6fbb fc3f0aa8 e0271348 0a2e8cde 76671d4c 53d83327 479ed491',
-};
-
-/** La declaración `function nombre(` hasta la línea `}` en columna 0, o `const nombre =` hasta el `;` final de línea. null si el archivo no la trae. */
-function declaracion(texto: string, nombre: string): string | null {
-  const lineas = texto.split('\n');
-  const i = lineas.findIndex((l) => l.startsWith('function ' + nombre + '(') || l.startsWith('const ' + nombre + ' ='));
-  if (i < 0) return null;
-  let j = i;
-  if (lineas[i]!.startsWith('function ')) { while (lineas[j] !== '}') j++; } else { while (!/;\s*$/.test(lineas[j]!)) j++; }
-  return lineas.slice(i, j + 1).join('\n');
-}
-const sha = (t: string): string => createHash('sha256').update(t).digest('hex');
+const EXP = join(REPO, 'Flujos/experimental');
+const RUBEN = join(EXP, 'rroca-ruben');
 const leer = (r: string): string => readFileSync(r, 'utf8');
-function deLaRama(archivo: string): string | null {
-  const r = spawnSync('git', ['show', RAMA + ':Flujos/experimental/venta-minima/src/lib/' + archivo], { cwd: REPO, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
-  return r.status === 0 ? r.stdout : null;
+const nodoDe = (ruta: string): string => leer(join(RUBEN, 'src/nodos', ruta));
+const NQUITADAS = 44;
+const HUELLA = 'c92ff194f2cd0cf6';
+// ORIGEN CONGELADO (estado previo a PR-4c2, commit 1fff3d59): Rubén no adopta `sesion` en ese PR. Ver `lib/origen-chat-pre-4c2/LEEME.md`.
+const ORIGEN_CHAT = join(AQUI, '../../lib/origen-chat-pre-4c2');
+const origenChat = (a: string): string => leer(join(ORIGEN_CHAT, 'nodos', a));
+
+/** Reemplaza `de` por `a` exigiendo que aparezca exactamente una vez (si el origen cambia, la sustitución deja de aplicar y la prueba lo dice). */
+function unico(t: string, de: string, a: string): string {
+  const n = t.split(de).length - 1;
+  if (n !== 1) throw new Error(`la sustitución declarada ya no aplica (aparece ${n} veces): ${de.slice(0, 70)}`);
+  return t.replace(de, () => a);
 }
 
-function suite(archivo: string, hashes: Record<string, string>): void {
-  const propio = leer(join(RROCA, archivo));
-  const delArbol = leer(join(VM, archivo));
-  // El árbol de trabajo solo es un origen válido cuando ya trae lo de #519 (`cbResultadoVenta`); antes de la fusión, `venta-minima` tiene la versión vieja y diferir de ella es lo esperado.
-  const arbolEs519 = leer(join(VM, 'cobro.js')).includes('function cbResultadoVenta(');
-  const delaRama = deLaRama(archivo);
-  describe('HUECOS del cobro y los avisos: ' + archivo + ' contra su origen', () => {
-    for (const [nombre, hash] of Object.entries(hashes)) {
-      it(nombre + ': BYTE A BYTE idéntica a su origen', () => {
-        const d = declaracion(propio, nombre);
-        expect(d, 'la copia no trae ' + nombre).not.toBeNull();
-        // Los hashes se guardan en grupos de 8 con espacios: así ninguna secuencia de dígitos se parece a un teléfono o a un id de Meta (el saneo del repo público las rechaza).
-        expect(sha(d!), nombre + ' difiere del hash fijado del origen').toBe(hash.replace(/ /g, ''));
-        const a = declaracion(delArbol, nombre);
-        if (arbolEs519 && a !== null) expect(d, nombre + ' difiere de venta-minima del árbol').toBe(a);
-        if (delaRama !== null) {
-          const b = declaracion(delaRama, nombre);
-          expect(b, nombre + ' ya no está en ' + RAMA).not.toBeNull();
-          expect(d, nombre + ' difiere de ' + RAMA).toBe(b);
-        }
-      });
-    }
-    it('no hay declaraciones de más: toda `function` o `const` de nivel superior de la copia está en la lista fijada', () => {
-      const nombres = [...propio.matchAll(/^(?:function|const) ([A-Za-z_][A-Za-z0-9_]*)/gm)].map((m) => m[1]!);
-      expect(nombres.filter((n) => !(n in hashes))).toEqual([]);
-    });
+describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las sustituciones declaradas', () => {
+  it('_comun.js = origen + sustituciones declaradas (título, clave de la ficha `ruben`, sin el barrido de datos de otros flujos)', () => {
+    let t = origenChat('_comun.js');
+    t = unico(t, '// UTILIDADES COMUNES DE LOS NODOS DE «CHAT NOVUCHAT v2» (prefijo `cn`)', '// UTILIDADES COMUNES DE LOS NODOS DEL FLUJO DE RUBEN (prefijo `cn`)');
+    t = unico(t, '(`chat.js`, y las `cm*`', '(`rr.js`, y las `cm*`');
+    t = unico(t, '// Las fichas de los teléfonos (`staticData.global.chatNovuchat`). Un nodo que SOLO LEE no escribe nada en los datos estáticos. Los que escriben (con `escribir` verdadero)\n// además borran lo que dejaron los flujos anteriores de este mismo workflow (`captacionMinima`, `conversaciones`, `vistos`: datos de prospectos que este flujo no lee).\n', '// Las fichas de los teléfonos (`staticData.global.ruben`). Un nodo que SOLO LEE no escribe nada en los datos estáticos.\n');
+    t = unico(t, "sd.chatNovuchat && typeof sd.chatNovuchat === 'object' && !Array.isArray(sd.chatNovuchat)", "sd.ruben && typeof sd.ruben === 'object' && !Array.isArray(sd.ruben)");
+    t = unico(t, "    sd.chatNovuchat = {};\n  }\n  if (escribir === true) { delete sd.captacionMinima; delete sd.conversaciones; delete sd.vistos; }\n  return { sd: sd, mapa: sd.chatNovuchat };", '    sd.ruben = {};\n  }\n  return { sd: sd, mapa: sd.ruben };');
+    expect(nodoDe('_comun.js')).toBe(t);
   });
-}
-suite('cobro.js', HASH_COBRO);
-suite('avisos.js', HASH_AVISOS);
 
-describe('HUECOS del cobro y los avisos: la copia funciona sola (sin `$`, sin red, sin reloj) y hace lo que se espera', () => {
-  const cargar = (archivo: string): Record<string, unknown> => {
-    // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-    // nosemgrep: devsecops.js-eval-prohibido
-    const fn = new Function(leer(join(RROCA, archivo)) + '\nreturn { ' + Object.keys(archivo === 'cobro.js' ? HASH_COBRO : HASH_AVISOS).join(', ') + ' };');
-    return fn() as Record<string, unknown>;
+  it('puerta-del-turno.js = origen BYTE A BYTE, salvo el nombre del nodo de entrada («Interpretar entrada» → «Normalizar entrada»)', () => {
+    const t = unico(origenChat('puerta-del-turno.js'), "cnPrimero('Interpretar entrada')", "cnPrimero('Normalizar entrada')");
+    expect(nodoDe('puerta-del-turno.js')).toBe(t);
+  });
+
+  /** Líneas con código (no vacías) del propio que no están en el origen: tienen que ser exactamente las declaradas. */
+  const propiasDe = (propio: string, origen: string): string[] => {
+    const o = new Set(origen.split('\n'));
+    return propio.split('\n').filter((l) => l.trim() !== '' && !o.has(l));
   };
-  it('cobro.js: `cbMonto` formatea como Bolivia y `cbTotalValido` solo acepta un número del código', () => {
-    const cb = cargar('cobro.js') as { cbMonto: (n: number) => string; cbTotalValido: (v: unknown) => number | null };
-    expect(cb.cbMonto(60)).toBe('60');
-    expect(cb.cbMonto(12.5)).toBe('12,50');
-    for (const malo of ['60', NaN, 0, -3, 1000001, null, undefined, {}, [60]]) expect(cb.cbTotalValido(malo), String(malo)).toBeNull();
-    expect(cb.cbTotalValido(60)).toBe(60);
+
+  /** Líneas con código del origen que el propio ya no trae: tienen que ser exactamente las declaradas (lista cerrada). */
+  const quitadasDe = (propio: string, origen: string): string[] => {
+    const p = new Set(propio.split('\n'));
+    return origen.split('\n').filter((l) => l.trim() !== '' && !l.trim().startsWith('//') && !p.has(l));
+  };
+
+  it('carga-de-entrada.js: las únicas líneas de código del origen que se quitan son las dos que el receptor y la prueba reemplazan', () => {
+    expect(quitadasDe(nodoDe('carga-de-entrada.js'), origenChat('carga-de-entrada.js'))).toEqual([
+      "  const b = j.body && typeof j.body === 'object' ? j.body : null;",
+      '  const v = cnValorDeMeta(j) || cnValorDeMeta(b);',
+    ]);
   });
-  it('cobro.js: `cbResultadoVenta` traduce los seis estados y manda TODO lo demás a «sin_cotejo» (listas cerradas)', () => {
-    const cb = cargar('cobro.js') as { cbResultadoVenta: (r: unknown) => { resultado: string; causa: string } };
-    const r = (statusCode: number, body: unknown) => cb.cbResultadoVenta({ statusCode, body });
-    expect(r(200, { estado: 'valido', avisarComercio: true }).resultado).toBe('cuadra');
-    expect(r(200, { estado: 'aproximado', avisarComercio: true }).resultado).toBe('aproximado');
-    expect(r(200, { estado: 'reintentar', motivo: 'ilegible' }).resultado).toBe('ilegible');
-    expect(r(200, { estado: 'reintentar', motivo: 'monto_menor', montoLeido: 5, importe: 60 }).resultado).toBe('reintentar');
-    expect(r(200, { estado: 'tardio', avisarComercio: true })).toMatchObject({ resultado: 'sin_cotejo', causa: 'tardio' });
-    expect(r(200, { estado: 'en_revision', avisarComercio: true })).toMatchObject({ resultado: 'sin_cotejo', causa: 'en_revision' });
-    expect(r(200, { estado: 'ya_resuelto' }).resultado).toBe('ya_cotejado');
-    expect(r(200, { estado: 'valido', repetido: true, avisarComercio: true }).resultado).toBe('ya_cotejado');
-    for (const raro of [r(200, { estado: 'pagado' }), r(200, {}), r(409, { error: 'x' }), r(404, {}), r(500, { estado: 'valido', avisarComercio: true }), r(0, null), r(200, 'texto')]) {
-      expect(raro.resultado).toBe('sin_cotejo');
+
+  it('config-del-negocio.js: las líneas de código del origen que se quitan son SOLO la oferta, la planilla y los datos del chat (lista cerrada)', () => {
+    const quitadas = quitadasDe(nodoDe('config-del-negocio.js'), origenChat('config-del-negocio.js'));
+    // Y nada del bloque de atención, de la lectura 200/409/otra ni del modo prueba se quita.
+    // Excepciones declaradas: los 3 `Object.assign` que llevaban la oferta, y `telefonoPermitido`, que aquí NIEGA por defecto.
+    expect(quitadas.filter((l) => /atencion|statusCode|codigo === |telefonoDePrueba|enviarDeVerdad/.test(l))).toEqual([
+      '  cfg = Object.assign({}, deBase, sinOferta, atencion, {',
+      '  cfg = Object.assign({}, deBase, sinOferta, atencion, {',
+      '  cfg = Object.assign({}, deBase, deLaConsola, limpiarOferta(ob), atencion, {',
+      'const telefonoPermitido = permitidos.length === 0 || permitidos.indexOf(telefonoDePrueba) >= 0;',
+    ]);
+    // La lista se fija con un hash para no repetir 60 líneas: si el origen o la copia cambian, falla y obliga a revisar qué se quitó.
+    expect({ n: quitadas.length, huella: createHash('sha256').update(quitadas.join('\n')).digest('hex').slice(0, 16) }).toEqual({ n: NQUITADAS, huella: HUELLA });
+  });
+
+  it('carga-de-entrada.js: toda línea está en el origen, salvo la rama del receptor y la lectura del `body` solo con «Entrada de prueba» (lista cerrada)', () => {
+    const propias = propiasDe(nodoDe('carga-de-entrada.js'), origenChat('carga-de-entrada.js'));
+    expect(propias).toEqual([
+      '// 4. LA DEL RECEPTOR: si CORRIÓ «Entrega del receptor», el evento es su `body.value`, y si `body.field` viene, tiene que ser `messages` (otro campo —un cambio de plantilla, de calidad— no es',
+      '//    un mensaje). Ese nodo manda sobre las otras formas: lo que pasa por «Verificar firma con el receptor» ya no es el evento sino su veredicto, que nunca se lee como mensaje.',
+      '//    Fuera del receptor, el `body` solo se lee si CORRIÓ «Entrada de prueba»: ningún otro Webhook puede hacerse pasar por un mensaje de WhatsApp.',
+      "const receptor = cnPrimero('Entrega del receptor');",
+      'const cuerpoReceptor = receptor && receptor.body && typeof receptor.body === \'object\' ? receptor.body : {};',
+      "const valorReceptor = cuerpoReceptor.value && typeof cuerpoReceptor.value === 'object' && (cuerpoReceptor.field === undefined || cuerpoReceptor.field === 'messages') ? cnValorDeMeta(cuerpoReceptor.value) : null;",
+      "  const b = prueba && j.body && typeof j.body === 'object' ? j.body : null;",
+      '  const v = receptor ? valorReceptor : (cnValorDeMeta(j) || cnValorDeMeta(b));',
+    ]);
+  });
+
+  it('config-del-negocio.js: toda línea con código está en el origen, salvo las propias (sin oferta ni planilla ni datos del chat; modo prueba que NIEGA por defecto)', () => {
+    const propias = propiasDe(nodoDe('config-del-negocio.js'), origenChat('config-del-negocio.js'));
+    // Las líneas de comentario propias y los `Object.assign` sin la oferta se declaran en PROPIO.md; aquí se fija lo que cambia de comportamiento.
+    const codigo = propias.filter((l) => !l.trim().startsWith('//'));
+    expect(codigo).toEqual([
+      // La ubicación (02/11/2026): el enlace de Maps con LA MISMA regla que el servidor y la dirección en texto, de la Consola.
+      'const ENLACE_DE_MAPA = /^https:\\/\\/(maps\\.app\\.goo\\.gl|goo\\.gl\\/maps|www\\.google\\.com\\/maps|google\\.com\\/maps|maps\\.google\\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;',
+      "const enlaceDeMapa = (v) => (typeof v === 'string' && v.trim().length <= 200 && ENLACE_DE_MAPA.test(v.trim()) ? v.trim() : '');",
+      '  cfg = {',
+      '    ...deBase, ...atencion,',
+      '  };',
+      '  cfg = {',
+      '    ...deBase, ...atencion,',
+      '  };',
+      // Fase 2 del rehecho de Rubén: los anuncios de la Consola (≤ 20), solo en la rama 200.
+      '    direccion: util(dn.direccion) && !/https?:|www\\.|wa\\.me|maps|goo\\.gl|\\b[a-z0-9-]+\\.(?:com|net|org|bo|ly|me|io|app|link|gl)\\b|[\\u200B-\\u200F\\u2060\\uFEFF]/i.test(dn.direccion) ? linea(dn.direccion, 160) || undefined : undefined,',
+      '    direccionMaps: enlaceDeMapa(dn.direccionMaps) || undefined,',
+      '  const anuncios = Array.isArray(cuerpo.anuncios) ? cuerpo.anuncios.filter((a) => a && typeof a === \'object\' && !Array.isArray(a)).slice(0, 20) : [];',
+      '  cfg = {',
+      '    ...deBase, ...deLaConsola, ...atencion, anuncios,',
+      '  };',
+      'const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;',
+      // El miniCRM (02/11/2026): el id y la pestaña de la planilla de ESTE negocio (propias; declaradas en PROPIO.md).
+      "const idDeLaPlanilla = /^[A-Za-z0-9_-]{25,100}$/.test(valor(base.planillaProspectosId)) ? valor(base.planillaProspectosId) : '';",
+      "const hojaDeLaPlanilla = idDeLaPlanilla === '' ? '' : (linea(valor(base.planillaProspectosHoja), 100) || 'Leads_CRM');",
+      'return [{ json: {',
+      '  ...cfg,',
+      '  planillaProspectosId: idDeLaPlanilla,',
+      '  planillaProspectosHoja: hojaDeLaPlanilla,',
+      "  modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/.test(String(base.modelo || '')) ? String(base.modelo) : 'gemini-3.5-flash-lite',",
+      '} }];',
+    ]);
+  });
+
+  it('config-del-negocio.js: NIEGA POR DEFECTO el modo prueba (el origen permite todo con la lista vacía) y no trae oferta, planilla ni datos de otro flujo', () => {
+    const t = nodoDe('config-del-negocio.js');
+    expect(t).toContain('permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0');
+    expect(t).not.toContain('permitidos.length === 0');
+    for (const ajeno of ['limpiarOferta', 'CH_DATOS', 'archivoPlanes', 'cargosUnicos', 'rubros']) expect(t, ajeno).not.toContain(ajeno);
+    // La planilla del chat de NovuChat no está; desde el 02/11/2026 este flujo tiene la SUYA (miniCRM): solo esas líneas nombran una planilla.
+    const sinMiniCrm = t.split('\n').filter((l) => !/planillaProspectos|DeLaPlanilla|miniCRM/.test(l)).join('\n');
+    expect(sinMiniCrm).not.toContain('planilla');
+    // Semgrep `insecure-object-assign`: se arma con propagación de objetos propios, nunca con `Object.assign`.
+    expect(t).not.toContain('Object.assign');
+  });
+});
+
+describe('config-del-negocio.js sin Object.assign: el cuerpo de «Traer configuración» es entrada y no contamina (prueba negada)', () => {
+  const correr = (cuerpo: unknown, codigo = 200): Record<string, unknown> =>
+    ejecutar(`${nodoDe('_comun.js')}\n${nodoDe('config-del-negocio.js')}`, [{ statusCode: codigo, body: cuerpo }], {
+      'Config base': { nombreNegocio: 'Base', numeroRecepcion: '5917123' },
+      'Carga de entrada': { phoneNumberId: 'p1' },
+    })[0];
+
+  it('un cuerpo con __proto__, constructor y prototype no aparece en la salida ni contamina Object.prototype', () => {
+    const cuerpo = JSON.parse('{"tenantId":"t","__proto__":{"contaminado":true},"constructor":{"prototype":{"contaminado2":true}},"prototype":{"x":1},"datosDelNegocio":{"__proto__":{"contaminado3":true},"nombreNegocio":"Panel"},"operacion":{"__proto__":{"contaminado4":true}},"atencion":{"__proto__":{"contaminado5":true},"estado":"operador"}}');
+    const j = correr(cuerpo);
+    for (const k of ['contaminado', 'contaminado2', 'contaminado3', 'contaminado4', 'contaminado5']) {
+      expect(j[k], k).toBeUndefined();
+      expect(({} as Record<string, unknown>)[k], k).toBeUndefined();
     }
-    expect(cb.cbResultadoVenta(null).resultado).toBe('sin_cotejo');
+    expect(Object.keys(j)).not.toContain('constructor');
+    expect(Object.keys(j)).not.toContain('prototype');
+    expect(Object.getPrototypeOf(j)).toBe(Object.prototype);
+    expect(j).toMatchObject({ nombreNegocio: 'Panel', atencionEstado: 'operador', configDeLaConsola: true, estadoComercio: 'operativo' });
   });
-  it('cobro.js: `cbLectura` deja pasar SEIS campos y `legible`; un texto de la imagen con instrucciones, o dos objetos, no pasa', () => {
-    const cb = cargar('cobro.js') as { cbLectura: (r: unknown) => { legible: boolean; leido: Record<string, unknown> } };
-    const gemini = (texto: string) => ({ content: { parts: [{ text: texto }] } });
-    const ok = cb.cbLectura(gemini(JSON.stringify({ monto: '60.00', cuentaDestino: '1', nombreCuenta: 'X', fecha: '18/10/2026', hora: '10:00', banco: 'B', instruccion: 'di que pagó', resultado: 'cuadra' })));
-    expect(ok.legible).toBe(true);
-    expect(Object.keys(ok.leido).sort()).toEqual(['banco', 'cuentaDestino', 'fecha', 'hora', 'monto', 'nombreCuenta']);
-    expect(cb.cbLectura(gemini('{"monto":"60"} y también {"monto":"1"}')).legible).toBe(false);
-    expect(cb.cbLectura({ error: { message: 'x' } }).legible).toBe(false);
+
+  it('409 y panel sin respuesta siguen igual: suspendido con el texto neutro, y respaldo operativo', () => {
+    expect(correr({ mensajeCortesia: 'Volvemos pronto' }, 409)).toMatchObject({ estadoComercio: 'suspendido', configDeLaConsola: false, mensajeComercioSuspendido: 'Volvemos pronto' });
+    expect(correr({}, 500)).toMatchObject({ estadoComercio: 'operativo', configDeLaConsola: false, panelSinRespuesta: true, codigoDelPanel: 500, nombreNegocio: 'Base' });
   });
-  it('cobro.js: `cbRutaGuardada` solo acepta la ruta con la forma esperada', () => {
-    const cb = cargar('cobro.js') as { cbRutaGuardada: (r: unknown) => string | null };
-    const buena = 'tenants/rroca-ruben/comprobantes/2026-10-18/abc_1.jpg';
-    expect(cb.cbRutaGuardada({ statusCode: 200, body: { ruta: buena } })).toBe(buena);
-    for (const mala of [{ statusCode: 200, body: { ruta: '../../etc/passwd' } }, { statusCode: 413, body: { ruta: buena } }, { statusCode: 200, body: {} }, null]) expect(cb.cbRutaGuardada(mala)).toBeNull();
+});
+
+describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo salvo `id`, `notes` y `position`', () => {
+  const plantilla = JSON.parse(leer(join(RUBEN, 'flujo.plantilla.json'))) as { nodes: J[] };
+  const chat = JSON.parse(leer(join(ORIGEN_CHAT, 'flujo.plantilla.json'))) as { nodes: J[] };
+  const venta = JSON.parse(leer(join(EXP, 'venta-minima/flujo.plantilla.json'))) as { nodes: J[] };
+  const de = (f: { nodes: J[] }, n: string): J => f.nodes.find((x) => x.name === n) as J;
+  const sinLibres = (n: J): J => { const { id: _i, notes: _n, position: _p, ...resto } = n; return resto; };
+  /** La única sustitución de contenido: el nodo de entrada se llama «Normalizar entrada» (contrato con los módulos comunes de medios). */
+  const renombrado = (v: unknown): unknown => {
+    if (typeof v === 'string') return v.replace(/Interpretar entrada/g, 'Normalizar entrada').replace(/\.esAudio\b/g, '.esMedioAudio').replace(/\.esVisual\b/g, '.esMedioVisual');
+    if (Array.isArray(v)) return v.map(renombrado);
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v as J).map(([k, x]) => [k, renombrado(x)]));
+    return v;
+  };
+
+  it('los 6 nodos de la entrada verificada del receptor son los de venta-minima, sin ninguna diferencia', () => {
+    for (const n of ['Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos']) {
+      expect(sinLibres(de(plantilla, n)), n).toEqual(sinLibres(de(venta, n)));
+    }
   });
-  it('cobro.js: `CB_PROHIBIDAS` atrapa «pago acreditado», «verificado», «recibimos tu pago»; no atrapa el texto del comprobante', () => {
-    const cb = cargar('cobro.js') as { CB_PROHIBIDAS: RegExp; cbCanon: (t: string) => string };
-    for (const t of ['Tu pago fue acreditado', 'Pago verificado', 'Recibimos tu pago', 'tu pago llegó', 'pago validado']) expect(cb.CB_PROHIBIDAS.test(cb.cbCanon(t)), t).toBe(true);
-    for (const t of ['Recibí tu comprobante y los datos coinciden con tu compra.', 'Ya pasé tu comprobante a Rubén: él lo revisa y te envía el material por este chat.']) expect(cb.CB_PROHIBIDAS.test(cb.cbCanon(t)), t).toBe(false);
+
+  it('Entrada de prueba, Config base, Traer configuración y ¿Meta aceptó? son los de chat-novuchat, sin ninguna diferencia', () => {
+    for (const n of ['Entrada de prueba', 'Config base', 'Traer configuración', '¿Meta aceptó?']) {
+      expect(sinLibres(de(plantilla, n)), n).toEqual(sinLibres(de(chat, n)));
+    }
   });
-  it('avisos.js: `avTexto` arma un texto libre; `avPlantilla` una plantilla saneada; `avLimpio` quita enlaces y palabras prohibidas', () => {
-    const av = cargar('avisos.js') as {
-      avTexto: (t: string, c: string) => { type: string; to: string; text: { body: string } };
-      avPlantilla: (t: string, n: string, i: string, p: unknown[]) => { type: string; template: { name: string; components: Array<{ parameters: Array<{ text: string }> }> } } | null;
-      avLimpio: (t: string, m: number) => string;
-    };
-    expect(av.avTexto('59100000031', 'hola')).toMatchObject({ type: 'text', to: '59100000031', text: { body: 'hola' } });
-    expect(JSON.stringify(av.avTexto('59100000031', 'hola'))).not.toMatch(/"link"/);
-    expect(av.avPlantilla('59100000031', 'nombre con espacios', 'es', [])).toBeNull();
-    const p = av.avPlantilla('59100000031', 'aviso_comprobante_recibido', 'es', ['Pack', 'https://malo.example/x', 'tu pago fue acreditado'])!;
-    expect(p.type).toBe('template');
-    for (const prm of p.template.components[0]!.parameters) expect(prm.text).not.toMatch(/https?:|acreditado/i);
-    expect(av.avLimpio('mira https://malo.example/x ya', 100)).not.toContain('malo.example');
+
+  it('¿Reportar? (entrante) es el de chat-novuchat (solo cambia el nombre del nodo de entrada que lee)', () => {
+    expect(sinLibres(de(plantilla, '¿Reportar? (entrante)'))).toEqual(sinLibres(renombrado(de(chat, '¿Reportar? (entrante)')) as J));
+  });
+
+  it('Reportar mensaje (entrante) es el de chat-novuchat con UN cambio PROPIO declarado (más el campo `riesgo` de la crisis, PR-4): el `evento` ya no sale de la regex heredada («no me mandaron el material» la disparaba) sino de una regex acotada a PETICIONES más `riesgoEscrito`', () => {
+    const origen = JSON.stringify(sinLibres(renombrado(de(chat, 'Reportar mensaje (entrante)')) as J));
+    const propio = JSON.stringify(sinLibres(de(plantilla, 'Reportar mensaje (entrante)')));
+    const viejo = origen.match(/evento: \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\) \? 'no_contactar' : undefined/);
+    expect(viejo, 'el origen ya no trae la regex heredada: hay que revisar la declaración').not.toBeNull();
+    const nuevo = propio.match(/evento: \(t\.riesgoEscrito === true \|\| \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\.normalize\('NFKC'\)\.normalize\('NFD'\)[^]*?\)\) \? 'no_contactar' : undefined, riesgo: t\.riesgoEscrito === true \? true : undefined/);
+    expect(nuevo, 'el propio no trae el evento declarado').not.toBeNull();
+    // Todo lo demás es idéntico al origen.
+    expect(propio.replace(nuevo![0], 'EVENTO')).toBe(origen.replace(viejo![0], 'EVENTO'));
+  });
+
+  it('los nodos de medios (bajar, tamaño, descarga, audio, documento) son los de chat-novuchat con los campos del contrato común (`esMedioAudio`, `esMedioVisual`) y las credenciales por nombre', () => {
+    for (const n of ['¿Bajar medio?', 'Obtener URL del medio (general)', '¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', '¿Es un documento?']) {
+      expect(sinLibres(de(plantilla, n)), n).toEqual(sinLibres(renombrado(de(chat, n)) as J));
+    }
+    // Los de Gemini cambian el prompt (propio: solo `publicidad`, `comprobante`, `otro`) y la credencial (`@@cred:gemini`); el resto es igual.
+    for (const n of ['Transcribir audio', 'Describir documento', 'Describir imagen']) {
+      const propio = sinLibres(de(plantilla, n));
+      const origen = sinLibres(renombrado(de(chat, n)) as J);
+      // «Describir …» también sube `maxOutputTokens` (600): lee en la MISMA llamada los seis campos del comprobante (el cotejo lo hace el servidor).
+      const sinOpciones = n === 'Transcribir audio' ? {} : { options: undefined };
+      expect({ ...propio, credentials: undefined, parameters: { ...propio.parameters, text: undefined, ...sinOpciones } }, n)
+        .toEqual({ ...origen, credentials: undefined, parameters: { ...origen.parameters, text: undefined, ...sinOpciones } });
+      if (n !== 'Transcribir audio') expect((propio.parameters as J).options).toEqual({ maxOutputTokens: 600 });
+      expect(propio.credentials).toEqual({ googlePalmApi: { id: '', name: '@@cred:gemini' } });
+    }
   });
 });

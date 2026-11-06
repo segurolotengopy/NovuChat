@@ -1,0 +1,74 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_). Misma convención que rroca-ruben, chat-novuchat y captacion-minima.",
+  "nodes": [],
+  "descripcion": "Rehecho de Antonio sobre la ENTREGA 2: 15 turnos del cliente en cuatro casos (A el camino completo, B «precio primero», C precios en general y el puente, D anuncio y duda). 7 turnos llaman al modelo. `seco` es la respuesta fija del modo --seco (no significa nada sobre el modelo real); `tema` y `duda` son las marcas que mide la batería real.",
+  "casos": [
+    {
+      "id": "A",
+      "nombre": "El camino completo: saludo, conversación, duda con las opciones, QR y una pregunta con el QR abierto",
+      "turnos": [
+        { "dice": "Hola" },
+        {
+          "dice": "Mi pareja y yo discutimos siempre por lo mismo y ya casi no nos hablamos. No sé si esto tiene solución.",
+          "tema": ["discut", "mismo"],
+          "seco": "Se nota que es un momento difícil, y que te importa lo que pasa entre ustedes. Discutir siempre por lo mismo suele ser señal de que ninguno se siente escuchado. ¿Qué es lo que más extrañas de cómo se comunicaban antes?"
+        },
+        {
+          "dice": "No sé si me servirá, porque mi pareja no quiere leer nada y siento que solo yo me esfuerzo.",
+          "duda": true,
+          "seco": "Entiendo ese cansancio de sentir que cargas con todo. El método funciona igual si lees tú sola: cambiar tu forma de escuchar y de expresarte suele cambiar la respuesta del otro, con ejercicios cortos. ¿Qué te gustaría lograr primero?"
+        },
+        { "boton": "b_pack" },
+        {
+          "dice": "¿Y el libro sirve para parejas que llevan muchos años juntos?",
+          "duda": true,
+          "seco": "Sirve justamente para esas parejas: la rutina suele hacer que dejen de escucharse, y los ejercicios ayudan a retomar la conversación con calma, de a poco."
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "nombre": "Precio primero: el precio de UN producto sale ya; el «sí» al cierre da las opciones",
+      "turnos": [
+        { "dice": "¿cuánto cuesta el libro?" },
+        { "dice": "sí" },
+        {
+          "dice": "Últimamente nos cuesta hablar sin terminar peleando.",
+          "tema": ["pele", "hablar"],
+          "seco": "Eso desgasta mucho a cualquier pareja. Lo bueno es que se puede practicar: el método propone pausas a tiempo y conversaciones cortas que ayudan a bajar la tensión. ¿Cuándo suelen empezar las peleas?"
+        },
+        { "dice": "¿tienen factura?" }
+      ]
+    },
+    {
+      "id": "C",
+      "nombre": "Precios en general antes de tiempo: el saludo, el puente y las opciones",
+      "turnos": [
+        { "dice": "¿Qué precios tienen?" },
+        {
+          "dice": "y cuánto cuesta todo?",
+          "tema": ["libro", "ejercicio"],
+          "seco": "Con gusto. Antes de verlo, una idea que suele ayudar: el libro propone ejercicios breves y una ruta de 30 días para volver a conversar con calma, aunque tengan poco tiempo."
+        },
+        { "dice": "sí" },
+        { "boton": "b_comp" }
+      ]
+    },
+    {
+      "id": "D",
+      "nombre": "Anuncio de Meta y una duda sobre qué es el método",
+      "turnos": [
+        {
+          "dice": "¿Siempre terminan discutiendo por lo mismo?",
+          "tema": ["discu"],
+          "seco": "Entiendo lo agotador que es sentir que cada discusión termina igual. Los capítulos 4, 5 y 8 del libro enseñan a hacer pausas a tiempo y a resolver los desacuerdos como equipo. ¿Qué suele pasar cuando intentan hablar de un tema difícil?"
+        },
+        {
+          "dice": "¿Esto es terapia?",
+          "duda": true,
+          "seco": "Este método no es terapia: es una guía práctica de lectura y ejercicios para que practiquen en casa nuevas formas de escuchar y de expresar lo que necesitan sin reproches. ¿Qué te gustaría mejorar primero en la comunicación?"
+        }
+      ]
+    }
+  ]
+}

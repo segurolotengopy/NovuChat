@@ -6,7 +6,7 @@
  *
  *   node Flujos/experimental/doctoras/construir.mjs               escribe doctoras.<tenant>.json y doctoras.<tenant>.prueba.json de cada tenant con datos
  *   node Flujos/experimental/doctoras/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
- *   node Flujos/experimental/doctoras/construir.mjs --publicable [--tenant <t>] [--flujo <json>] [--datos <json>] [--negocio <json>] [--etapa crear|encender]
+ *   node Flujos/experimental/doctoras/construir.mjs --publicable [--tenant <t>] [--flujo <json>] [--datos <json>] [--negocio <json>] [--etapa crear|prueba|encender]
  *                                                       no escribe: sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal (sin --tenant revisa los de todas las doctoras)
  *   (cualquier otro argumento se rechaza: la ayuda no existe como opción, para que nada escriba por error)
  *
@@ -32,10 +32,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
+import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const CARPETA_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/doctoras');
-export const TOPE_DE_NODOS = 48;
+// 48 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
+// excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
+export const TOPE_DE_NODOS = 57;
 /** Los tenants con archivo de datos (`<tenant>.json`, sin los `negocio-*.json`): hoy las dos doctoras. */
 export function tenantsConDatos(carpeta = CARPETA_DE_DATOS) {
   return readdirSync(carpeta).filter((a) => /^rroca-[a-z0-9-]+\.json$/.test(a)).map((a) => a.replace(/\.json$/, '')).sort();
@@ -112,6 +115,8 @@ const FORMAS_CONFIG = {
   numeroRecepcion: /^(\d{6,20}|REEMPLAZAR_[A-Z0-9_]+)$/,
   prefijosPermitidos: /^\d{1,4}(,\d{1,4})*$/,
   telefonosDePrueba: /^(\d{6,20}(,\d{6,20})*|REEMPLAZAR_[A-Z0-9_]+)$/,
+  // La etapa de prueba: `si` la enciende; vacío o el marcador la dejan apagada (`Config del negocio` solo reconoce `si`).
+  etapaPrueba: /^(si|REEMPLAZAR_[A-Z0-9_]+)?$/,
   // El ÚNICO modelo de este flujo (decisión de Andres): gemini-3.5-flash-lite.
   modelo: /^gemini-3\.5-flash-lite$/,
   temperatura: /^(0|1|0\.\d{1,2})$/,
@@ -247,6 +252,8 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
   if (MARCADOR.test(url)) return true;
   // La única excepción: «Descargar medio» baja el medio de la URL que le devuelve Meta (la anterior, «¿Tamaño aceptable?», exige https://lookaside.fbsbx.com/ y un tamaño).
   if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
+  // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
+  if (nombreDelNodo === 'Descargar medio (guardado)' && url === URL_DESCARGA_GUARDADO) return true;
   const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
   if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
   return ANFITRIONES.includes(m[1].toLowerCase());
@@ -259,7 +266,9 @@ export function guardias(variante, flujo) {
   const nombres = new Set(nodos.map((n) => n.name));
   const por = (nombre) => nodos.find((n) => n.name === nombre);
   const p = (n) => (n && n.parameters) || {};
-  if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace`);
+  if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}: si pasa, se rehace (el tope ya incluye los 9 del guardado de medios, excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md)`);
+  // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
+  h.push(...hallazgosDelGuardado(flujo || {}));
   if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
   if (/subscriptions|subscribed_apps/i.test(JSON.stringify(flujo))) h.push('menciona «subscriptions» o «subscribed_apps» (prohibición 7)');
   if (/langchain\.(agent|memory\w*|lmChat\w*|chain\w*)$/i.test(nodos.map((n) => n.type).join('\n'))) h.push('lleva un agente, memoria o modelo de chat de n8n: este flujo no los lleva');
@@ -297,7 +306,7 @@ export function guardias(variante, flujo) {
     for (const n of nodos) {
       for (const [tipo, c] of Object.entries(n.credentials || {})) {
         const nombreCred = String((c || {}).name || '');
-        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && n.name !== 'Reportar protección' && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred))) {
+        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && n.name !== 'Reportar protección' && !NODOS_DE_INGESTA_DEL_GUARDADO.includes(n.name) && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred))) {
           h.push(`la prueba usa una credencial de producción en «${n.name}» (${tipo})`);
         }
       }
@@ -368,12 +377,33 @@ const marcasEn = (v) => (sinComentarios(JSON.stringify(v) || '').match(/reemplaz
 
 // Etapas de la guardia: `encender` (la completa, por defecto) y `crear` (solo para CREAR un flujo INACTIVO: WAM necesita su URL de entrada). La etapa `crear` tolera exactamente dos cosas (el marcador solo en los datos de rroca-evy): el estado de la plantilla distinto
 // de APPROVED y el horario pendiente (el marcador del horario de Evy; `horarioPorConfirmar: true` de Emma). Todo lo demás se exige igual: marcadores, identidad, credenciales y los tres medios.
-export const ETAPAS = ['crear', 'encender'];
+// La etapa `prueba` (flujo ENCENDIDO en modo prueba: solo atiende a `telefonosDePrueba`) tolera lo mismo que `crear` (plantilla sin APPROVED y horario pendiente) PERO exige tres cosas: `etapaPrueba = si`, `telefonosDePrueba` lleno y
+// válido y `numeroRecepcion` dentro de esos teléfonos (el aviso de la prueba nunca llega a la recepción real). Al revés, la etapa completa (`encender`) RECHAZA `etapaPrueba = si`: un flujo en modo prueba ignora a todo cliente.
+export const ETAPAS = ['crear', 'prueba', 'encender'];
+const soloDigitos = (v) => String(v === undefined || v === null ? '' : v).replace(/\D/g, '');
+function hallazgosDeEtapaPrueba(enFlujo, etapa) {
+  const h = [];
+  const enModoPrueba = typeof enFlujo.etapaPrueba === 'string' && enFlujo.etapaPrueba.trim().toLowerCase() === 'si';
+  if (etapa === 'encender' && enModoPrueba) h.push('Config base: etapaPrueba es «si» y la etapa completa no lo admite (el flujo ignoraría a todo cliente que no sea de prueba): use la etapa prueba o vacíe etapaPrueba');
+  if (etapa !== 'prueba') return h;
+  if (!enModoPrueba) h.push('Config base: la etapa prueba exige etapaPrueba igual a «si»');
+  const lista = typeof enFlujo.telefonosDePrueba === 'string' ? enFlujo.telefonosDePrueba.split(',').map((x) => x.trim()) : [];
+  const validos = lista.length > 0 && lista.every((x) => /^\d{6,20}$/.test(x));
+  if (!validos) h.push('Config base: la etapa prueba exige telefonosDePrueba lleno y válido (solo dígitos, sin marcador)');
+  const rec = typeof enFlujo.numeroRecepcion === 'string' ? enFlujo.numeroRecepcion.trim() : '';
+  if (!/^\d{6,20}$/.test(rec) || !lista.some((x) => soloDigitos(x) === rec)) h.push('Config base: la etapa prueba exige que numeroRecepcion esté dentro de telefonosDePrueba');
+  // Cada teléfono de prueba y la recepción tienen que empezar con uno de los prefijos permitidos del negocio (un número local sin prefijo no es un destino válido de WhatsApp).
+  const prefijos = String(enFlujo.prefijosPermitidos || '591').split(',').map((x) => soloDigitos(x)).filter((x) => x !== '');
+  const sinPrefijo = (x) => !prefijos.some((p) => soloDigitos(x).startsWith(p));
+  if (validos && lista.some(sinPrefijo)) h.push('Config base: la etapa prueba exige que cada teléfono de telefonosDePrueba empiece con uno de los prefijosPermitidos');
+  if (/^\d{6,20}$/.test(rec) && sinPrefijo(rec)) h.push('Config base: la etapa prueba exige que numeroRecepcion empiece con uno de los prefijosPermitidos');
+  return h;
+}
 
 function hallazgosDeConfig(cb, donde, etapa = 'encender') {
   const h = [];
   if (!cb || typeof cb !== 'object') return [`${donde}: no trae la configuración base`];
-  if (etapa !== 'crear' && cb.avisoSolicitudEstado !== 'APPROVED') h.push(`${donde}: avisoSolicitudEstado es ${cb.avisoSolicitudEstado === undefined ? '«ausente»' : '(distinto de APPROVED)'} y tiene que ser APPROVED (Meta aún no aprobó la plantilla)`);
+  if (etapa === 'encender' && cb.avisoSolicitudEstado !== 'APPROVED') h.push(`${donde}: avisoSolicitudEstado es ${cb.avisoSolicitudEstado === undefined ? '«ausente»' : '(distinto de APPROVED)'} y tiene que ser APPROVED (Meta aún no aprobó la plantilla)`);
   if (!VALOR_LLENO(cb.avisoSolicitudPlantilla)) h.push(`${donde}: falta el nombre de la plantilla (avisoSolicitudPlantilla)`);
   if (!VALOR_LLENO(cb.avisoPlantillaIdioma)) h.push(`${donde}: falta el idioma de la plantilla (avisoPlantillaIdioma)`);
   return h;
@@ -389,7 +419,7 @@ function hallazgosDeLaDoctora(datos, etapa = 'encender', negocio = null) {
   const horarioEnConsola = !!hs && typeof hs === 'object' && Object.values(hs).some((v) => VALOR_LLENO(v));
   for (const c of ['nombreCorto', 'nombreCompleto', 'clinica', 'horario']) if (!VALOR_LLENO(d[c]) && !(c === 'horario' && horarioEnConsola)) h.push(`datos: doctora.${c} está vacío o es un marcador`);
   // Las doctoras atienden público: el horario lo confirma la doctora. Mientras el indicador esté en true (se pone en false cuando lo confirma), no se publica.
-  if (etapa !== 'crear' && d.horarioPorConfirmar === true) h.push('datos: doctora.horarioPorConfirmar es true: el horario aún no lo confirmó la doctora');
+  if (etapa === 'encender' && d.horarioPorConfirmar === true) h.push('datos: doctora.horarioPorConfirmar es true: el horario aún no lo confirmó la doctora');
   if (!Array.isArray(d.tratamientos) || !d.tratamientos.length) h.push('datos: doctora.tratamientos está vacío');
   return h;
 }
@@ -480,6 +510,7 @@ export function guardiaDePublicacion({ flujo, datos, negocio, etapa = 'encender'
   else {
     const enFlujo = Object.fromEntries(lista.map((a) => [a.name, a.value]));
     h.push(...hallazgosDeConfig(enFlujo, 'Config base', etapa));
+    h.push(...hallazgosDeEtapaPrueba(enFlujo, etapa));
     h.push(...hallazgosDeIdentidad(flujo, enFlujo, datos));
   }
   // 3. …en los datos, con lo que cada doctora tiene que traer lleno…
@@ -543,6 +574,8 @@ export function armarDoctora(proyecto, datos, v) {
   const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
   if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes('evento: m.evento')) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
   rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } return JSON.stringify(r); })() }}";
+  // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
+  injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);
@@ -590,7 +623,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const resto = args.filter((a, i) => a !== '--publicable' && !OPCIONES.includes(a) && !OPCIONES.includes(args[i - 1]));
     const uno = OPCIONES.slice(1, 4).some((n) => args.includes(n));
     if (resto.length || args.includes('--verificar') || OPCIONES.some((n) => args.includes(n) && !opcion(n)) || (uno && !opcion('--tenant'))) {
-      console.error('✗ uso: construir.mjs --publicable [--tenant <t> [--flujo <json>] [--datos <json>] [--negocio <json>]] [--etapa crear|encender]'); process.exit(2);
+      console.error('✗ uso: construir.mjs --publicable [--tenant <t> [--flujo <json>] [--datos <json>] [--negocio <json>]] [--etapa crear|prueba|encender]'); process.exit(2);
     }
     const etapa = opcion('--etapa') || 'encender';
     if (!ETAPAS.includes(etapa)) { console.error(`✗ --etapa: ${ETAPAS.join(' | ')}`); process.exit(2); }
@@ -612,7 +645,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           mal = true;
           console.error(`✗ El flujo de ${tn} NO se puede publicar todavía (etapa ${etapa}):`);
           for (const x of hallazgos) console.error(`  - ${x}`);
-        } else if (etapa === 'crear') console.log(`✓ ${tn}: etapa crear: sin marcadores (salvo el horario pendiente de Evy), con identidad, credenciales y los tres medios: se puede CREAR INACTIVO (no se enciende: falta la plantilla APPROVED y el horario confirmado).`);
+        } else if (etapa === 'prueba') console.log(`✓ ${tn}: etapa prueba: sin marcadores, con etapaPrueba = si, teléfonos de prueba válidos y la recepción dentro de ellos: se puede ENCENDER EN MODO PRUEBA (solo atiende a esos teléfonos).`);
+        else if (etapa === 'crear') console.log(`✓ ${tn}: etapa crear: sin marcadores (salvo el horario pendiente de Evy), con identidad, credenciales y los tres medios: se puede CREAR INACTIVO (no se enciende: falta la plantilla APPROVED y el horario confirmado).`);
         else console.log(`✓ ${tn}: sin marcadores REEMPLAZAR_*, con la plantilla de aviso APPROVED y los medios completos: se puede publicar (con la confirmación de quien publica).`);
       }
       process.exit(mal ? 1 : 0);

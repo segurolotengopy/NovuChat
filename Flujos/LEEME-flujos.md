@@ -98,7 +98,7 @@ El ensamblador de hoy responde a esa objeción punto por punto:
   `Flujos/src/` o `Flujos/prompts/`, se corre
   `node admin/scripts/ensamblar-flujo.mjs ensamblar`, y se commitean juntos
   el módulo y el JSON. Un módulo compartido cambia a la vez el Demo A y
-  Platinum: es lo que hace real «un cambio se aplica a todos o a ninguno»
+  el resto de los flujos de reservas: es lo que hace real «un cambio se aplica a todos o a ninguno»
   (`Analisis/20` §5).
 - **Se edita en la interfaz de n8n:** se exporta (⋯ → Download), se sanea
   (los valores reales de `Config base` vuelven a ser `REEMPLAZAR_*`), se
@@ -158,7 +158,7 @@ convierte en TEXTO y recién ese texto entra al agente. El agente nunca ve el
 medio. El 25/09 el Demo B contestó «No puedo escuchar notas de voz» y la
 captación hacía lo mismo: nunca habían tenido la rama, y ningún control lo vio.
 
-**Quién la tiene:** Demo A, Platinum, Bellido (desde el 18/09) y, desde el
+**Quién la tiene:** Demo A, Bellido (desde el 18/09) y, desde el
 28/09, Demo B y captación. La rama es la misma en los cinco, por nombre de
 nodo: `¿Trae un medio?` → `Obtener URL del medio (general)` → `Descargar
 medio` → `¿Es audio?` → `Transcribir audio` → `Preparar transcripción`; o
@@ -591,9 +591,9 @@ la Function `conocimiento` (pedido en `CLIENTES/NOVUCHAT/02-pedido-sesion-sitio.
 
 ---
 
-## 8. Flujo de reservas de Clínica Platinum (`platinum-agendamiento.json`)
+## 8. Flujo de reservas de la clínica de ejemplo (`platinum-agendamiento.json`)
 
-**Primer cliente con el flujo de agendamiento** (15/09/2026; demo el 16/09).
+**Flujo de referencia, no un cliente** (Andres, 28/10/2026; creado el 15/09/2026).
 Clínica dental y de estética facial en Santa Cruz. Es una copia del Demo A
 vigente —59 nodos, umbrales del servidor, prefijo cacheable, `nombreAsistente`,
 candado contra la doble reserva, dirección con enlace a Maps, seña por QR— con los datos del

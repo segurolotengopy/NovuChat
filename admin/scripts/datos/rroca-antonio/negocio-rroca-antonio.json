@@ -6,7 +6,7 @@
     "horarioDeRecepcion": "Abierto siempre (24/7)"
   },
   "negocio": {
-    "nombreNegocio": "El Puente",
+    "nombreNegocio": "Método Puente",
     "descripcion": "Libros y material digital para parejas: un libro, un pack con bonos y cuatro bonos sueltos. Antonio revisa el comprobante de pago y envía el material por este mismo chat.",
     "numeroRecepcionMarcador": "REEMPLAZAR_NUMERO_RECEPCION_ANTONIO",
     "zonaHoraria": "America/La_Paz",
@@ -58,21 +58,21 @@
     {
       "nombre": "Guía de conversaciones",
       "descripcion": "Bono 4: Guía Práctica para Conversaciones Difíciles",
-      "precio": 19,
+      "precio": 18,
       "moneda": "BOB",
       "activo": true
     },
     {
       "nombre": "Calendario de conexión",
       "descripcion": "Bono: Calendario de Conexión de 30 Días",
-      "precio": 17,
+      "precio": 15,
       "moneda": "BOB",
       "activo": true
     },
     {
       "nombre": "Preguntas profundas",
       "descripcion": "Bono: Banco de 100 Preguntas Profundas",
-      "precio": 15,
+      "precio": 18,
       "moneda": "BOB",
       "activo": true
     }

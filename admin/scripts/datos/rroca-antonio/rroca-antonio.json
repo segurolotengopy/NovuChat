@@ -15,22 +15,73 @@
     "wabaIdEsperado": "REEMPLAZAR_WABA_ID_RROCA_ANTONIO"
   },
   "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA",
+  "landing": {
+    "dominio": "elpuente.dhermacore.com",
+    "fraseEntrada": "Hola, quiero información del Método PUENTE y sus materiales digitales"
+  },
   "configBase": {
     "waGraphVersion": "v26.0",
     "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_ANTONIO",
     "numeroRecepcion": "REEMPLAZAR_NUMERO_RECEPCION_ANTONIO",
-    "nombreNegocio": "El Puente",
+    "nombreNegocio": "Método Puente",
     "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
     "prefijosPermitidos": "591",
     "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA",
     "modelo": "gemini-3.5-flash-lite",
     "temperatura": 0.4,
     "plazoEntregaHoras": 6,
+    "etiquetaPack": "💛 Pack Completo",
+    "etiquetaLibro": "📘 Solo Libro",
+    "etiquetaBonos": "➕ Bonos Individuales",
+    "etiquetaWorkbook": "📓 Workbook",
+    "etiquetaGuia": "🗣️ Guía Conversaciones",
+    "etiquetaPreguntas": "💬 100 Preguntas",
+    "etiquetaCalendario": "📅 Calendario 30 Días",
     "garantiaTexto": "Sobre garantía, devolución o factura, eso lo responde Antonio directamente; desde aquí no puedo prometerte nada de eso.",
     "avisoComprobantePlantilla": "aviso_comprobante_recibido",
     "avisoComprobanteEstado": "APPROVED",
     "avisoConsultaPlantilla": "aviso_consulta_para_antonio",
     "avisoConsultaEstado": "APPROVED",
-    "avisoPlantillaIdioma": "es"
+    "avisoPlantillaIdioma": "es",
+    "planillaProspectosId": "REEMPLAZAR_PLANILLA_PROSPECTOS_ID_RROCA_ANTONIO",
+    "planillaProspectosHoja": "Leads_CRM"
+  },
+  "crm": {
+    "_nota": "Mapa de columnas de la planilla miniCRM de Antonio (hoja Leads_CRM, encabezados en la fila 3). A..I y N..T las escribe el bot; J..M y U son del equipo (el bot no las toca ni lee la U). Los titulos tienen que coincidir letra por letra con la copia viva de la planilla (verificarlo antes del ensayo).",
+    "filaEncabezados": 3,
+    "prefijoId": "LEAD-",
+    "primerId": 1001,
+    "columnas": {
+      "id": { "letra": "A", "titulo": "ID Lead" },
+      "fecha": { "letra": "B", "titulo": "Fecha Registro" },
+      "nombre": { "letra": "C", "titulo": "Nombre y Apellido" },
+      "empresa": { "letra": "D", "titulo": "Empresa / Cliente" },
+      "telefono": { "letra": "E", "titulo": "Teléfono WhatsApp" },
+      "etapaInicial": { "letra": "F", "titulo": "Etapa Funnel" },
+      "origen": { "letra": "G", "titulo": "Origen / Canal" },
+      "calificacion": { "letra": "H", "titulo": "Calificación IA" },
+      "resumen": { "letra": "I", "titulo": "Resumen Chatbot IA" },
+      "clasificacion": { "letra": "N", "titulo": "Clasificación" },
+      "quePidio": { "letra": "O", "titulo": "Qué pidió" },
+      "diaPreferido": { "letra": "P", "titulo": "Día preferido" },
+      "horarioPreferido": { "letra": "Q", "titulo": "Horario preferido" },
+      "derivacion": { "letra": "R", "titulo": "Derivación a recepción" },
+      "ultimaInteraccion": { "letra": "S", "titulo": "Última interacción" },
+      "ventana24h": { "letra": "T", "titulo": "Se cierra la ventana de 24 h" }
+    },
+    "equipo": {
+      "valor": { "letra": "J", "titulo": "Valor Estimado ($)" },
+      "responsable": { "letra": "K", "titulo": "Responsable Comercial" },
+      "estado": { "letra": "L", "titulo": "Estado Comercial" },
+      "proximaAccion": { "letra": "M", "titulo": "Próxima Acción / Fecha" },
+      "diagnostico": { "letra": "U", "titulo": "Diagnóstico del equipo" }
+    },
+    "extrasDelEquipo": {},
+    "alCrear": {
+      "etapaInicial": "1. Nuevo Lead",
+      "origen": "Chatbot WhatsApp IA",
+      "origenAnuncio": "Campaña Meta Ads",
+      "estado": "Activo"
+    }
   }
 }

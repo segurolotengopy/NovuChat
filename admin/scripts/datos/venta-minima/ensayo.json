@@ -7,6 +7,7 @@
     "entradaPrueba": "Entrada de prueba Q'Taco"
   },
   "configBase": {
-    "numeroEnsayo": "REEMPLAZAR_NUMERO_ENSAYO_QTACO"
+    "numeroEnsayo": "REEMPLAZAR_NUMERO_ENSAYO_QTACO",
+    "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA"
   }
 }

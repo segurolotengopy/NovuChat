@@ -21,6 +21,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { codigoDe, configBase, ejecutar, type Flujo, type J, type Referencias } from './lib/flujo';
+import { comprometer, crearSesion, leerSesion, type SesionDeMentira } from './lib/venta-minima-sesion';
 
 const CARPETA_VM = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima');
 const QTACO = JSON.parse(readFileSync(join(CARPETA_VM, 'venta-minima.qtaco.json'), 'utf8')) as Flujo;
@@ -75,14 +76,17 @@ function relojFijo(ms: number): unknown {
   };
 }
 
-interface Mundo { global: J; ahora: number; config: J }
+interface Mundo { global: J; ahora: number; config: J; sesion: SesionDeMentira; n: number }
 function crear(config: J = {}): Mundo {
-  return { global: {}, ahora: AHORA, config: { phoneNumberIdEsperado: PHONE_ID, respaldoNumeroRecepcion: REC, horario: HORARIO_TODOS, ...config } };
+  const m: Mundo = { global: {}, ahora: AHORA, config: { phoneNumberIdEsperado: PHONE_ID, respaldoNumeroRecepcion: REC, horario: HORARIO_TODOS, ...config }, sesion: undefined as unknown as SesionDeMentira, n: 0 };
+  m.sesion = crearSesion({ pid: PHONE_ID, ahora: () => m.ahora });
+  return m;
 }
-const estadoDe = (m: Mundo): J => (m.global['ventaMinima'] as J | undefined)?.['estados']?.[CLIENTE] ?? {};
+// El estado de la conversación vive en el servidor (PR-4a).
+const estadoDe = (m: Mundo): J => m.sesion.estado(CLIENTE);
 
 function nodo(m: Mundo, nombre: string, entradas: J[], refs: Referencias): J[] {
-  return ejecutar(codigoDe(QTACO, nombre), entradas, refs, { $getWorkflowStaticData: () => m.global, Date: relojFijo(m.ahora) });
+  return ejecutar(codigoDe(QTACO, nombre), entradas, refs, { $getWorkflowStaticData: () => m.global, Date: relojFijo(m.ahora), $execution: { id: `e${m.n}` } });
 }
 
 interface Turno {
@@ -122,6 +126,7 @@ function webhookDeCarrito(m: Mundo, cuerpo: J = {}, cab: J = {}): J {
 /** Un turno entero, de la entrada al plan y a `Armar mensajes` (que guarda el estado). El reloj avanza un minuto por turno. */
 function turno(m: Mundo, entrada: { mensaje: J; wamid?: string; phoneId?: string } | { carrito: J }, panelResp: J = respuesta()): Turno {
   m.ahora += MIN;
+  m.n += 1;
   const refs: Referencias = {};
   const vacio: Turno = { parada: null, carga: [], interpretado: null, decision: null, plan: null, envio: [], textos: [] };
   let carga: J[];
@@ -135,9 +140,13 @@ function turno(m: Mundo, entrada: { mensaje: J; wamid?: string; phoneId?: string
   }
   if (!carga.length) return { ...vacio, parada: 'Carga de entrada' };
   refs['Carga de entrada'] = carga[0]!;
-  refs['Config base'] = { ...configBase(QTACO), ...m.config };
-  refs['Traer configuración'] = panelResp;
-  const cfg = nodo(m, 'Config del negocio', [panelResp], refs)[0]!;
+  // 06/11: Q'Taco ya no excluye áreas; estas pruebas conservan las anteriores para seguir cubriendo la barrera por área.
+  refs['Config base'] = { ...configBase(QTACO), areasExcluidas: 'cocteleria,cervezas,postres', ...m.config };
+  // El `leer` de la sesión viaja en la respuesta de configuración (con el id del mensaje: de ahí sale el repetido).
+  const idMsg = String(((carga[0]!['messages'] as J[] | undefined) ?? [])[0]?.['id'] ?? '');
+  const conSesion = panelResp['statusCode'] === 200 ? { ...panelResp, body: { ...(panelResp['body'] as J), ...leerSesion(m.sesion, CLIENTE, idMsg, `e${m.n}`) } } : panelResp;
+  refs['Traer configuración'] = conSesion;
+  const cfg = nodo(m, 'Config del negocio', [conSesion], refs)[0]!;
   refs['Config del negocio'] = cfg;
   const inter = nodo(m, 'Interpretar entrada', [{}], refs);
   if (!inter.length) return { ...vacio, carga, parada: 'Interpretar entrada' };
@@ -146,7 +155,12 @@ function turno(m: Mundo, entrada: { mensaje: J; wamid?: string; phoneId?: string
   refs['Decidir turno'] = dec;
   const plan = nodo(m, 'Plan del turno', [dec], refs)[0]!;
   refs['Plan del turno'] = plan;
-  const envio = nodo(m, 'Armar mensajes', [plan], refs);
+  // «Armar mensajes» arma el bloque y pide el compromiso ANTES de enviar; el servidor de mentira contesta y «Soltar mensajes» decide qué sale.
+  const armado = nodo(m, 'Armar mensajes', [plan], refs)[0]!;
+  refs['Armar mensajes'] = armado;
+  const respuesta = comprometer(m.sesion, armado['compromiso'] as J | null);
+  if (respuesta) refs['Comprometer turno'] = respuesta;
+  const envio = nodo(m, 'Soltar mensajes', [{}], refs);
   const textos = ((plan['mensajes'] ?? []) as J[]).map((x) => String(x['cuerpo']));
   return { parada: null, carga, interpretado: inter[0]!, decision: dec, plan, envio, textos };
 }
@@ -165,7 +179,7 @@ describe('la carta como enlace (el enlace llega en la respuesta de `Traer config
     const t = turno(m, { mensaje: texto('quiero ver la carta') }, conEnlace(URL_CATALOGO));
     expect(mensajes(t)).toEqual([{
       tipo: 'enlace', catalogo: true,
-      cuerpo: '¡Con gusto! Toca «Ver la carta», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «menú».',
+      cuerpo: '¡Con gusto! Toca «Ver la carta», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «inicio».',
       botones: [{ id: '', title: 'Ver la carta' }], url: URL_CATALOGO,
     }]);
     expect(estadoDe(m)['paso']).toBe('pedido');
@@ -584,6 +598,70 @@ describe('el carrito que vuelve de la página', () => {
     expect(mensajes(sinCambio)[0]!['monto']).toBe(116);
   });
 
+  it('reemplaza: el QR con id propio por un cambio del carrito web lleva el `cat_…` original como `reemplaza`; sin cambio (id cat_) no lo lleva', () => {
+    const m = crear();
+    carrito(m, {}, respuesta(COBRO_REAL));
+    const nuevoCatalogo = CATALOGO.map((i) => (i['id'] === 'nachos' ? { ...i, precio: 60 } : i));
+    const conPrecio = respuesta({ ...COBRO_REAL, catalogo: nuevoCatalogo });
+    turno(m, { mensaje: boton('p|confirmar', 'Confirmar pedido') }, conPrecio);
+    expect(estadoDe(m)['pedidoWeb']).toBeNull();
+    expect(estadoDe(m)['catOriginal']).toBe('cat_abc123_00ff'); // sobrevive a la revalidación
+    const qr = mensajes(turno(m, { mensaje: boton('p|confirmar', 'Confirmar pedido') }, conPrecio))[0]!;
+    expect(String(qr['referencia'])).toMatch(/^ped-/);
+    expect(qr['reemplaza']).toBe('cat_abc123_00ff');
+    expect(Array.isArray(qr['lineas'])).toBe(true);
+    expect(estadoDe(m)['catOriginal'] ?? null).toBeNull(); // el pedido se cerró: no queda para el siguiente
+    // Negando: con el id del checkout intacto el QR usa el `cat_…` y no reemplaza nada.
+    const n = crear();
+    carrito(n, {}, respuesta(COBRO_REAL));
+    const sin = mensajes(turno(n, { mensaje: boton('p|confirmar', 'Confirmar pedido') }, respuesta(COBRO_REAL)))[0]!;
+    expect(sin['referencia']).toBe('cat_abc123_00ff');
+    expect(sin['reemplaza']).toBeUndefined();
+  });
+
+  it('reemplaza (decisión): si el ÚNICO motivo del id propio es el costo de envío, NO se recuerda el `cat_…` (el registro web lleva nota y costoEnvio que el wa_ no lleva)', () => {
+    const m = crear();
+    const t = carrito(m, { entrega: 'delivery', direccion: 'Calle Falsa 123', costoEnvio: 10, total: 126 }, respuesta(COBRO_REAL));
+    expect(error(t)).toContain('carrito_con_id_propio: con_costo_de_envio');
+    expect(estadoDe(m)['catOriginal'] ?? null).toBeNull();
+    for (const x of mensajes(t)) expect(x['reemplaza']).toBeUndefined();
+    // Y un cambio real del carrito CON costo de envío (otro motivo) sí lo recuerda.
+    const n = crear();
+    const t2 = carrito(n, { entrega: 'delivery', direccion: 'Calle Falsa 123', costoEnvio: 10, total: 126, descartados: ['x'], items: [{ id: 'nachos', nombre: 'Nachos Supremos', cantidad: 2, precio: 58, moneda: 'BOB', subtotal: 116 }, { id: 'fantasma', nombre: 'Fantasma', cantidad: 1, precio: 1, moneda: 'BOB', subtotal: 1 }] }, respuesta(COBRO_REAL));
+    expect(error(t2).join('|')).not.toContain('con_costo_de_envio');
+    expect(estadoDe(n)['catOriginal']).toBe('cat_abc123_00ff');
+  });
+
+  it('ciclo de catOriginal: «Cambiar algo» lo conserva; cancelar lo limpia', () => {
+    const m = crear();
+    carrito(m, {}, respuesta(COBRO_REAL));
+    expect(estadoDe(m)['catOriginal']).toBe('cat_abc123_00ff');
+    turno(m, { mensaje: boton('p|cambiar', 'Cambiar algo') }, respuesta(COBRO_REAL));
+    expect(estadoDe(m)['catOriginal']).toBe('cat_abc123_00ff');
+    const n = crear();
+    carrito(n, {}, respuesta(COBRO_REAL));
+    turno(n, { mensaje: texto('cancela mi pedido') }, respuesta(COBRO_REAL));
+    expect(estadoDe(n)['carrito']).toEqual([]);
+    expect(estadoDe(n)['catOriginal'] ?? null).toBeNull();
+  });
+
+  it('ciclo de catOriginal: sin QR o con el QR vencido se limpia y no se manda `reemplaza`', () => {
+    const nuevo = CATALOGO.map((i) => (i['id'] === 'nachos' ? { ...i, precio: 60 } : i));
+    const casos: Array<[string, J]> = [
+      ['sin QR', respuesta({ catalogo: nuevo, cobro: { activo: false } })],
+      ['QR vencido', respuesta({ catalogo: nuevo, cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo', venceEl: '2026-10-04' }, cobro: { activo: true, qr: { url: QR_URL } } })],
+    ];
+    for (const [nombre, panelResp] of casos) {
+      const m = crear();
+      carrito(m, {}, panelResp);
+      expect(estadoDe(m)['catOriginal'], nombre).toBe('cat_abc123_00ff'); // el total del servidor no coincide con la carta de ahora
+      const c = turno(m, { mensaje: boton('p|confirmar', 'Confirmar pedido') }, panelResp);
+      expect(JSON.stringify(mensajes(c)), nombre).not.toContain('qr_enviado');
+      expect(JSON.stringify(mensajes(c)), nombre).not.toContain('reemplaza');
+      expect(estadoDe(m)['catOriginal'] ?? null, nombre).toBeNull();
+    }
+  });
+
   it('N1: «Dejarlo como estaba» tras un cambio de precio tampoco vuelve a poner el id `cat_…` (primero se revalida, luego se decide el id)', () => {
     const m = crear();
     carrito(m, {}, respuesta({ ...COBRO_REAL, catalogoWeb: { enlace: URL_CATALOGO } }));
@@ -676,7 +754,7 @@ describe('el carrito que vuelve de la página', () => {
     turno(m, { mensaje: boton('m|reserva', 'Reservar mesa') });
     turno(m, { mensaje: texto('hola') }); // el paso de reserva sigue
     const e0 = estadoDe(m);
-    e0['reserva'] = { personas: 4, fecha: '2026-10-06', hora: '20:00', zona: '', nombre: 'Ana Pérez', celebracion: '', requerimiento: '' };
+    m.sesion.sembrar(CLIENTE, { ...e0, reserva: { personas: 4, fecha: '2026-10-06', hora: '20:00', zona: '', nombre: 'Ana Pérez', celebracion: '', requerimiento: '' } }, m.sesion.pedidos(CLIENTE));
     carrito(m);
     const e = estadoDe(m);
     expect(e['reserva']).toMatchObject({ personas: 4, hora: '20:00' });

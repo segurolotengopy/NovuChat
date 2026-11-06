@@ -20,6 +20,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { modulosDeFlujos } from '../../../functions/src/registro.ts';
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
@@ -76,7 +77,7 @@ beforeAll(async () => {
   await db.doc('rutasWhatsApp/1000000301').set({
     tenantId: T, flujo: 'venta', aliasSecreto: 'cliente16', estado: 'activo',
   });
-  await db.doc(`tenants/${T}`).set({ nombre: T, estado: 'activo', plan: 'crecimiento', flujos: ['venta'] });
+  await db.doc(`tenants/${T}`).set({ nombre: T, estado: 'activo', plan: 'crecimiento', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
   await db.doc(`tenants/${T}/cuenta/estado`).set({
     plan: 'crecimiento', limites: limitesDe('crecimiento'), modalidad: 'demostracion',
   });

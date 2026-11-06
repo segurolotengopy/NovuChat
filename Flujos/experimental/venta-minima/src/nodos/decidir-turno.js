@@ -10,8 +10,8 @@
 // (`p|confirmar`, `r|enviar`): con un «sí», «dale» u «ok» suelto en un paso de confirmación
 // se vuelve a mostrar el paso con sus botones (`accion: 'boton'`, `boton: null`).
 //
-// El estado NO se escribe acá: se lee, se copia (`estado`) y lo fija `Plan del turno`; lo
-// guarda `Armar mensajes`.
+// El estado NO se escribe acá: se lee (del servidor: `vmSes`), se copia (`estado`) y lo fija `Plan del turno`; lo
+// compromete `Armar mensajes` ANTES de enviar.
 //
 // ORDEN (diseño §4.5, sin modelo): 1) cotejo, o comprobante simulado → `comprobante`; 2) medios (imagen o documento
 // sin QR pendiente, audio); 3) botón, validado contra el estado; 4) texto exacto de una
@@ -31,7 +31,7 @@
 // `decidirCarrito` (ventana cerrada, panel sin respuesta, otro comercio, pedidos apagados, local cerrado, QR pendiente).
 //
 // LIBRERÍAS QUE LLAMA (contrato §4.2; en la suite van dobles mínimos):
-//   comun: vmCfg, vmPrimero, vmNodo, vmSd, vmEstadoBase, vmLeerEstado, vmLeerBoton, vmNorm,
+//   comun: vmCfg, vmPrimero, vmNodo, vmSes, vmEstadoBase, vmLeerEstado, vmLeerBoton, vmNorm,
 //     vmLinea, vmRecorte, vmTextoDeGemini, vmHorario, vmAbierto.
 //   pedido: pdCarta, pdCuerpoExtraccion.   reserva: rsCuerpoExtraccion.   promos: prCampanaDelTexto.
 //
@@ -68,8 +68,8 @@
 const cfg = vmCfg();
 const t = vmPrimero('Interpretar entrada') || {};
 const ahora = Number(t.ahoraMs) || Date.now();
-const sd = vmSd();
-const previo = Object.assign(estadoBase(), vmLeerEstado(sd, t.from, ahora));
+const ses = vmSes(t.from, ahora);
+const previo = Object.assign(estadoBase(), vmLeerEstado(ses, t.from, ahora));
 const estado = Object.assign({}, previo, { ultimoMensajeMs: ahora });
 // El ANCLA de las claves estables (B0): el `ultimoMensajeMs` del estado tal como se LEYO, antes de ponerle la hora de este
 // turno. Dos ejecuciones simultaneas (doble toque) leen el mismo estado y ven la misma ancla; `Plan del turno` la usa para
@@ -98,7 +98,7 @@ const salir = (accion, extra) => [{ json: Object.assign({
 const fotoConPieFueraDelCobro = (() => {
   if (t.comprobanteSimulado !== true || previo.paso === 'esperando_comprobante' || !String(t.texto || '').trim()) return false;
   const ref = String((cfg.cobro && cfg.cobro.pedidoRef) || '');
-  const guardados = sd && sd.pedidos && typeof sd.pedidos === 'object' ? sd.pedidos : {};
+  const guardados = ses.pedidos;
   const p = ref && Object.prototype.hasOwnProperty.call(guardados, ref) ? guardados[ref] : null;
   const esRealMio = !!p && typeof p === 'object' && String(p.from) === String(t.from) && p.simulado !== true;
   return !esRealMio;
@@ -230,7 +230,7 @@ const enDatosDeEntrega = paso === 'pedido_entrega' || paso === 'pedido_datos';
 const globalCorto = paso === 'inicio' || paso === 'menu' || (norm.length <= 60 && !enDatosDeEntrega);
 const pideAlgo = /\b(quiero|quisiera|queremos|necesito|dame|me das|ponme|pedir|pedido)\b/.test(norm);
 const esPregunta = /[?¿]/.test(texto) || /\b(se puede|puedo|pueden|podria|podrian|hay|tienen|aceptan)\b/.test(norm);
-if (/^(menu|menu principal|inicio|volver al menu)$/.test(norm) || (!enComprobante && /^(hola|volver|atras)$/.test(norm))) {
+if (/^(menu|menu principal|inicio|volver al menu|volver a inicio|volver al inicio)$/.test(norm) || (!enComprobante && /^(hola|volver|atras)$/.test(norm))) {
   return salir('menu', { motivo: 'menu' });
 }
 if (!enComprobante) {

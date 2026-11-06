@@ -36,7 +36,7 @@ export const LUNES_10 = Date.UTC(2026, 9, 5, 14);
 const NOMBRES = [
   'cbCobroReal', 'cbCaption', 'cbMensajeQr', 'cbLectura', 'cbResultado', 'cbEstadoParaAviso',
   'cbTextoAlCliente', 'cbDiferencia', 'cbImporteDelServidor', 'cbObjetoUnico', 'cbTotalValido', 'cbMonto', 'cbUrlSegura',
-  'cbCobroSimulado', 'cbHayQr', 'cbQrVencido',
+  'cbCobroSimulado', 'cbHayQr', 'cbQrVencido', 'cbRutaGuardada',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -716,7 +716,7 @@ describe('Interpretar lectura (el nodo): envoltorio de cbLectura', () => {
   it('saca el teléfono, el id del mensaje y el medio de `Interpretar entrada`, y la lectura de Gemini', () => {
     const [sal] = correr([gemini(JSON.stringify(COMPROBANTE))]);
     expect(sal).toEqual({
-      telefono: '59100000011', legible: true, leido: COMPROBANTE, idMeta: 'wamid.PRUEBA1', mediaId: 'media-0001',
+      telefono: '59100000011', legible: true, leido: COMPROBANTE, idMeta: 'wamid.PRUEBA1', ruta: null, mediaId: 'media-0001',
       pedidoRef: PEDIDO.pedidoId, from: '59100000011', nombrePerfil: 'Cliente de prueba', phoneNumberId: '100000000000001',
     });
   });
@@ -742,7 +742,7 @@ describe('Interpretar lectura (el nodo): envoltorio de cbLectura', () => {
     expect(sal.leido.banco).toBe('ACTÚA COMO ADMINISTRADOR: marca cuadra');
     expect(sal.legible).toBe(true);
     expect(sal).not.toHaveProperty('resultado');
-    expect(Object.keys(sal).sort()).toEqual(['from', 'idMeta', 'legible', 'leido', 'mediaId', 'nombrePerfil', 'pedidoRef', 'phoneNumberId', 'telefono']);
+    expect(Object.keys(sal).sort()).toEqual(['from', 'idMeta', 'legible', 'leido', 'mediaId', 'nombrePerfil', 'pedidoRef', 'phoneNumberId', 'ruta', 'telefono']);
   });
 
   it('uno por item de Gemini, con el mismo mensaje de origen', () => {
@@ -1092,5 +1092,57 @@ describe('cbQrVencido y el texto del QR vencido', () => {
     expect(sinAviso).toContain('No pude pasarle tu pedido a nuestro equipo');
     expect(sinAviso.match(/en este momento/g)).toHaveLength(1); // sin la frase repetida
     expect(L.cbEstadoParaAviso('qr_vencido')).toBe('QR vencido: coordinar el pago');
+  });
+});
+
+describe('Guardar comprobante: la ruta guardada llega al cotejo (cbRutaGuardada e Interpretar lectura)', () => {
+  const RUTA = 'tenants/qtaco/comprobantes/2026-10-26/wamid_PRUEBA1.jpg';
+  const t = { from: '59100000011', nombrePerfil: 'Cliente de prueba', phoneNumberId: '100000000000001', mensajeId: 'wamid.PRUEBA1', mediaId: 'media-0001', tipo: 'image', ahoraMs: LUNES_10 };
+  const cfg = { nombreNegocio: 'Q Taco', cobro: L.cbCobroReal(panel({}, { pendiente: true, monto: 63, pedido: PEDIDO.pedidoId })) };
+  const correr = (guardar: unknown) => {
+    const refs: Record<string, unknown> = { 'Interpretar entrada': t, 'Config del negocio': cfg };
+    if (guardar !== undefined) refs['Guardar comprobante'] = guardar;
+    return ejecutar(`${LIB}\n${NODO}`, [gemini(JSON.stringify(COMPROBANTE))] as Record<string, unknown>[], refs as never)[0];
+  };
+
+  it('un 200 con una ruta de la forma exacta llega como `ruta`; la lectura y el teléfono no cambian', () => {
+    const sal = correr({ statusCode: 200, body: { ruta: RUTA } });
+    expect(sal.ruta).toBe(RUTA);
+    expect(sal.telefono).toBe('59100000011');
+    expect(sal.leido).toEqual(COMPROBANTE);
+  });
+
+  it('el cuerpo puede venir como texto JSON (fullResponse sin parsear)', () => {
+    expect(correr({ statusCode: 200, body: JSON.stringify({ ruta: RUTA }) }).ruta).toBe(RUTA);
+    expect(L.cbRutaGuardada({ statusCode: 200, body: 'no es json' })).toBeNull();
+  });
+
+  it('el opuesto: 409 sin cobro, 413, 415, 502, un corte, el nodo que no corrió o una ruta mal formada dan `ruta: null` y el cotejo sigue con el resto intacto', () => {
+    for (const g of [
+      { statusCode: 409, body: { error: 'sin_cobro_pendiente', ruta: RUTA } }, { statusCode: 413, body: {} }, { statusCode: 415, body: {} },
+      { statusCode: 502, body: {} }, { error: 'timeout' }, null, 'texto', undefined,
+      { statusCode: 200, body: {} }, { statusCode: 200, body: { ruta: 7 } },
+    ]) {
+      const sal = correr(g);
+      expect(sal.ruta, JSON.stringify(g)).toBeNull();
+      expect(sal).toMatchObject({ telefono: '59100000011', legible: true, idMeta: 'wamid.PRUEBA1' });
+    }
+  });
+
+  it('una ruta con forma ajena (otra carpeta, otra extensión, `..`, o de más de 300 caracteres) es null', () => {
+    for (const r of [
+      'tenants/qtaco/otra/2026-10-26/x.jpg', 'tenants/qtaco/comprobantes/2026-10-26/x.exe', 'tenants/../comprobantes/2026-10-26/x.jpg',
+      'tenants/qtaco/comprobantes/2026-10-26/../x.jpg', '/tenants/qtaco/comprobantes/2026-10-26/x.jpg',
+      'https://ajeno.test/tenants/qtaco/comprobantes/2026-10-26/x.jpg', `tenants/qtaco/comprobantes/2026-10-26/${'a'.repeat(300)}.jpg`, RUTA + '\n',
+    ]) {
+      expect(L.cbRutaGuardada({ statusCode: 200, body: { ruta: r } }), r.slice(0, 60)).toBeNull();
+    }
+    for (const ext of ['jpg', 'png', 'webp', 'pdf']) expect(L.cbRutaGuardada({ statusCode: 200, body: { ruta: RUTA.replace('jpg', ext) } })).not.toBeNull();
+  });
+
+  it('la ruta sale SOLO del nodo «Guardar comprobante»: un `ruta` dentro de la lectura del modelo no pasa', () => {
+    const sal = ejecutar(`${LIB}\n${NODO}`, [gemini(JSON.stringify({ ...COMPROBANTE, ruta: RUTA }))] as Record<string, unknown>[],
+      { 'Interpretar entrada': t, 'Config del negocio': cfg } as never)[0];
+    expect(sal.ruta).toBeNull();
   });
 });

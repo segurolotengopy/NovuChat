@@ -1,6 +1,6 @@
 /**
  * REFERENCIAS A NODOS del flujo de Antonio (PR-C). Reutiliza (IMPORTA, no copia) la lógica de `rroca-ruben/construir.mjs`: todo literal `$('…')` nombra un nodo que existe y es antecesor.
- * Lista permitida exacta: «¿Falló la protección?» nombra «Enviar a WhatsApp» y «Enviar respaldo», ramas paralelas que ya corrieron (executionOrder v1) y se leen con try/catch.
+ * Desde el corte de nodos de la fase 2 (que reemplazó «¿Falló la protección?» por «Avisar al servidor») NO queda ningún hallazgo permitido: la lista es VACÍA.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -13,16 +13,12 @@ import { problemasDeReferencias, referenciasDeNodos } from '../../../../Flujos/e
 const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-antonio');
 const leer = (a: string): Flujo => JSON.parse(readFileSync(join(CARPETA, a), 'utf8')) as Flujo;
 const copia = (f: Flujo): Flujo => JSON.parse(JSON.stringify(f)) as Flujo;
-const PERMITIDOS = [
-  '«¿Falló la protección?» nombra «Enviar a WhatsApp», que existe pero NO es su antecesor en el grafo',
-  '«¿Falló la protección?» nombra «Enviar respaldo», que existe pero NO es su antecesor en el grafo',
-];
 const hallazgos = (f: Flujo): string[] => (problemasDeReferencias(f) as string[]);
 
 describe('Antonio: referencias a nodos', () => {
   for (const archivo of ['rroca-antonio.json', 'rroca-antonio.prueba.json']) {
-    it(`${archivo}: solo la lista permitida exacta`, () => {
-      expect([...hallazgos(leer(archivo))].sort()).toEqual([...PERMITIDOS].sort());
+    it(`${archivo}: cero hallazgos (ninguna excepción)`, () => {
+      expect(hallazgos(leer(archivo))).toEqual([]);
       expect((referenciasDeNodos(leer(archivo).nodes) as Array<{ literales: string[] }>).reduce((n, r) => n + r.literales.length, 0)).toBeGreaterThan(5);
     });
   }

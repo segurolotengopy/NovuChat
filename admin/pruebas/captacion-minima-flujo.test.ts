@@ -45,6 +45,7 @@ import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import type { Flujo, J } from './lib/flujo';
 import { crearMundo, type Doble, type Enviado, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
+import { copiarModulosComunesAlTemporal, doblesDelGuardado } from './lib/doble-guardado';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../Flujos/experimental/captacion-minima');
@@ -204,7 +205,7 @@ const campana = (textoDeLaCampana: string, destino?: string, id = 'camp-1'): J =
   id, texto: textoDeLaCampana, inicio: new Date(AHORA - DIA).toISOString(), fin: new Date(AHORA + 5 * DIA).toISOString(), ...(destino ? { destino } : {}),
 });
 
-// La planilla «Leads_CRM»: encabezados en la fila 3 (A3:N3). Es el esquema de `decidir-fila-de-la-planilla.js`, que el contrato
+// La planilla «Leads_CRM»: encabezados en la fila 3 (A3:N3). Es el esquema del mapa `crm` (módulo `Flujos/src/modulos/crm`), que el contrato
 // manda copiar TAL CUAL.
 const ENC = ['ID Lead', 'Fecha Registro', 'Nombre y Apellido', 'Empresa / Cliente', 'Teléfono WhatsApp', 'Rubro', 'Etapa Funnel',
   'Origen / Canal', 'Calificación IA', 'Resumen Chatbot IA', 'Próxima acción', 'Notas del equipo', 'Estado Comercial', 'Responsable'];
@@ -336,6 +337,8 @@ function crear(op: OpcionesDelMundo = {}): W {
   const celdas = (f: string[]): J => Object.fromEntries(ENC.map((h, c) => [h, f[c] ?? '']));
 
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
     'Traer configuración': (ll) => {
       w.config.push({ numero: ll.encabezados['X-NovuChat-Numero'], cuerpo: ll.cuerpo });
       if (ll.encabezados['X-NovuChat-Numero'] !== PID) w.malFormado.push('Traer configuración: falta X-NovuChat-Numero');
@@ -360,10 +363,14 @@ function crear(op: OpcionesDelMundo = {}): W {
     'Buscar teléfono en planilla': (ll) => {
       registrarHoja(ll);
       if (w.hoja.falla) return errorDeGoogle();
-      // El filtro de Google (OR sobre «Teléfono WhatsApp»), con los valores YA evaluados del JSON; devuelve la primera coincidencia, de A a J.
+      // El filtro de Google (OR sobre «Teléfono WhatsApp»), con los valores YA evaluados del JSON; con `returnFirstMatch: false` (el módulo crm elige la fila MÁS RECIENTE)
+      // devuelve TODAS las coincidencias, de A a J, con el `row_number` que entrega n8n (la fila de la hoja menos 2: el código suma el desfase).
       const valores = (((ll.parametros['filtersUI'] ?? {})['values'] ?? []) as J[]).map((v) => String(v['lookupValue'] ?? ''));
-      const k = w.hoja.filas.findIndex((f) => valores.includes(String(f[4] ?? '')));
-      return k < 0 ? {} : Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, w.hoja.filas[k]![c] ?? ''])));
+      const primera = ll.parametros['options']?.['returnFirstMatch'] !== false;
+      const todas = w.hoja.filas.map((f, k) => ({ f, k })).filter(({ f }) => valores.includes(String(f[4] ?? '')));
+      if (!todas.length) return {};
+      const item = ({ f, k }: { f: (string | number)[]; k: number }): J => Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, f[c] ?? ''])));
+      return primera ? item(todas[0]!) : todas.map(item);
     },
     'Leer IDs de la planilla': (ll) => {
       registrarHoja(ll);
@@ -754,18 +761,20 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
         expect(f.settings?.['executionOrder']).toBe('v1');
         expect(f.settings?.['timezone']).toBe('America/La_Paz');
         expect(f.settings?.['saveDataSuccessExecution']).toBe('none');
-        expect(f.settings?.['saveDataErrorExecution']).toBe('all'); // D13: se guardan solo las ejecuciones que fallan
+        expect(f.settings?.['saveDataErrorExecution']).toBe('none'); // D13 reemplazada el 30/10 (Andres, contrato v2 de medios §8.1): el binario del medio quedaría en la ejecución
         expect(f.settings?.['errorWorkflow']).toBeUndefined();
         expect(f.settings?.['saveExecutionProgress']).toBe(false);
         const urlsPorExpresion = f.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && /^=\{\{[^}]*\}\}$/.test(String(n.parameters['url'] ?? ''))).map((n) => n.name).sort();
-        expect(urlsPorExpresion).toEqual(['Descargar medio', 'Guardar prospecto']);
+        // Y la descarga PROPIA del guardado de medios (módulo común), con la URL de Meta solo si el tamaño cabe.
+        expect(urlsPorExpresion).toEqual(['Descargar medio', 'Descargar medio (guardado)', 'Guardar prospecto']);
       }
     });
-    it('Planilla: rangos A3:J y A3:A; «Agregar fila» en USER_ENTERED y «Actualizar fila» en RAW', () => {
+    it('Planilla: rangos A3:J y A3:A, búsqueda con TODAS las coincidencias (el módulo crm elige la más reciente); «Agregar fila» en USER_ENTERED y «Actualizar fila» en RAW', () => {
       for (const f of [PRODUCCION, PRUEBA]) {
         const rango = (n: string): string => String(nodo(f, n)!.parameters['options']?.['dataLocationOnSheet']?.['values']?.['range']);
         expect(rango('Buscar teléfono en planilla')).toBe('A3:J');
         expect(rango('Leer IDs de la planilla')).toBe('A3:A');
+        expect(nodo(f, 'Buscar teléfono en planilla')!.parameters['options']['returnFirstMatch']).toBe(false);
         expect(nodo(f, 'Agregar fila')!.parameters['options']['cellFormat']).toBe('USER_ENTERED');
         expect(nodo(f, 'Actualizar fila')!.parameters['options']['cellFormat']).toBe('RAW');
       }
@@ -2146,6 +2155,11 @@ describe('construir.mjs: el flujo armado es el que sale de la plantilla y los da
       const datos = join(tmp, 'admin/scripts/datos/captacion-minima');
       mkdirSync(exp, { recursive: true });
       mkdirSync(datos, { recursive: true });
+      copiarModulosComunesAlTemporal(tmp);
+      // El módulo crm (se INCLUYE al armar) y su adaptador de captación.
+      mkdirSync(join(tmp, 'Flujos/src/modulos/captacion'), { recursive: true });
+      cpSync(join(CARPETA, '../../src/modulos/crm'), join(tmp, 'Flujos/src/modulos/crm'), { recursive: true });
+      cpSync(join(CARPETA, '../../src/modulos/captacion/crm-captacion.js'), join(tmp, 'Flujos/src/modulos/captacion/crm-captacion.js'));
       const sinLocal = (src: string): boolean => !src.endsWith('.local.json'); // un `.local.json` lleva valores reales: nunca a un temporal
       cpSync(CARPETA, cm, { recursive: true, filter: sinLocal });
       cpSync(join(CARPETA, '../comun-sin-agente'), join(exp, 'comun-sin-agente'), { recursive: true, filter: sinLocal });
@@ -2224,7 +2238,7 @@ describe('construir.mjs: el flujo armado es el que sale de la plantilla y los da
   it('--verificar FALLA si la retención o el orden de ejecución cambian, o si los rangos y formatos de la planilla se alteran', () => {
     const cambios: [string, (f: Flujo) => void, RegExp][] = [
       ['retención de éxitos', (f) => { f.settings!['saveDataSuccessExecution'] = 'all'; }, /saveDataSuccessExecution/],
-      ['retención de errores (tiene que ser «all»)', (f) => { f.settings!['saveDataErrorExecution'] = 'none'; }, /saveDataErrorExecution/],
+      ['retención de errores (tiene que ser «none»)', (f) => { f.settings!['saveDataErrorExecution'] = 'all'; }, /saveDataErrorExecution/],
       ['un `errorWorkflow`', (f) => { f.settings!['errorWorkflow'] = 'abc'; }, /errorWorkflow/],
       ['progreso guardado', (f) => { f.settings!['saveExecutionProgress'] = true; }, /saveExecutionProgress/],
       ['orden de ejecución', (f) => { f.settings!['executionOrder'] = 'v0'; }, /executionOrder/],
@@ -3072,9 +3086,9 @@ describe('§16: el documento comercial de Kenji, de punta a punta (los JSON vers
   const EXPLICACION_VALIDA = '¡Qué bien! 🍔 En horas pico ya no pierdes pedidos: NovuChat muestra tu menú, toma cada pedido registrando las notas especiales y realiza el cobro con QR para que pase directo a cocina.';
   const modeloPara = (w: W, extra: J): void => modelo(w, { tipo: 'respuesta', ...extra });
 
-  it('el flujo versionado es el del documento comercial: 43 nodos por variante, los datos con «pocos» y sin pregunta de dolor ni nombre de persona', () => {
-    expect(PRODUCCION_REAL.nodes).toHaveLength(43);
-    expect(PRUEBA_REAL.nodes).toHaveLength(43);
+  it('el flujo versionado es el del documento comercial: 52 nodos por variante (43 más los 9 del guardado de medios), los datos con «pocos» y sin pregunta de dolor ni nombre de persona', () => {
+    expect(PRODUCCION_REAL.nodes).toHaveLength(52);
+    expect(PRUEBA_REAL.nodes).toHaveLength(52);
     const guion = JSON.stringify(GUION_NUEVO);
     expect(guion).not.toMatch(/silvana|asesora/i);
     for (const [id, r] of Object.entries(GUION_NUEVO.rubros)) if (id !== 'otro') expect(r['dolor'], id).toBeUndefined();

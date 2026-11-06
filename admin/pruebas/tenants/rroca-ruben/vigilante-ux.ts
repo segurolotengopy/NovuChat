@@ -1,40 +1,51 @@
 /**
- * VIGILANTE DE UX de «Venta digital de Rubén» (Andres, 20/10/2026). Módulo compartido por `venta.test.ts` y `flujo.test.ts` (no es una suite: vitest solo corre `*.test.ts`).
- * `vigilarUx(mundo)` envuelve `mundo.turno`: cada escenario que habla con el flujo pasa por aquí. Invariantes:
- *   1. UN BOTÓN YA PULSADO NO REAPARECE en ningún mensaje posterior de esa conversación (ni en la respuesta al toque), por teléfono; `b_pack`/`b_libro` tampoco tras un prellenado que abrió el QR;
- *   2. NO SE OFRECE ALGO ANTES DE TIEMPO: el QR (pagar) solo sale si en ese turno el cliente eligió un producto (botón de producto o prellenado del Pack/Libro), y ningún texto de pago aparece sin QR;
- *   3. UNA SOLA PRESENTACIÓN por mensaje (contada por oración con `rrEsPresentacion`, NO por la palabra «asistente») Y UNA POR TELÉFONO (salvo a quien pregunta qué es el asistente): la presentación («asistente virtual de Rubén», el saludo largo) sale a lo más una vez en toda la conversación;
+ * VIGILANTE DE UX de «Noches Sin Insomnio» de Rubén (Andres, 20/10/2026). Módulo compartido por `venta.test.ts` y `negadas.test.ts` (no es una suite: vitest solo corre `*.test.ts`).
+ * `vigilarUx(mundo)` envuelve `mundo.turno`: cada escenario que habla con el flujo pasa por aquí, así que los invariantes valen en TODA la batería (no en estados sueltos). Invariantes:
+ *   1. UN BOTÓN (O FILA DE LISTA) YA PULSADO NO REAPARECE en ningún mensaje posterior de esa conversación, por teléfono; tampoco el del producto cuyo QR abrió un prellenado;
+ *   2. NO SE OFRECE ALGO ANTES DE TIEMPO: el QR solo sale si en ese turno el cliente eligió un producto (botón, fila de la lista o prellenado del Pack o del Libro), y ningún texto de pago aparece sin QR;
+ *   3. UNA SOLA PRESENTACIÓN por mensaje Y UNA POR TELÉFONO: «Soy el asistente virtual del <negocio de la Consola>» (y el saludo largo) sale a lo más una vez en toda la conversación, y NUNCA con el nombre de una persona;
  *   4. PÁRRAFOS: cada párrafo (separado por una línea en blanco) tiene a lo más DOS oraciones y, con dos, a lo más 220 caracteres; sin saltos triples ni espacios sobrantes. La partición en oraciones es la
- *      de la LIBRERÍA (`rrOraciones` de `rr.js`): no puede haber desacuerdo entre quien reparte y quien vigila.
- *   3b. (Silvana, 20/10/2026) LA PRESENTACIÓN SE DICE UNA SOLA VEZ: a lo más una oración de presentación por mensaje y, sumando todos los mensajes de un turno, a lo más una.
- *   5. NINGUNA PREGUNTA POR OPCIONES SIN BOTONES: un texto que pregunta por «las opciones», «¿cuál prefieres?», «¿qué opción…?» o «¿con cuál…?» sale con al menos un botón en ese mismo mensaje (solo se ofrece lo que se cumple).
- *   7. (21/10/2026) NUNCA LA MISMA RESPUESTA DE TEXTO DOS VECES SEGUIDAS al mismo teléfono. Excepciones DECLARADAS (`TEXTOS_FIJOS_DE_ESPERA`): el resultado de un comprobante (cada comprobante es un hecho distinto), el texto fijo del estado «operador» y el de comercio suspendido
- *      (los configura el comercio en la consola), y lo que dice qué ES el asistente (regla dura 4: esa respuesta nunca se sustituye). El QR (imagen) no entra: su pie lleva el pedido.
- *   8. (21/10/2026) CON UN QR ABIERTO, toda pregunta que no habla de pagar recibe una respuesta de contenido: el recordatorio («Ya tienes un QR abierto…») solo sale si el cliente habló de pagar o pidió un producto.
- *   9. (21/10/2026) NINGÚN TEXTO SALIENTE PROMETE ENVIAR imágenes, fotos, capturas, pantallazos o la portada (solo existe el QR como imagen saliente): una oración que dice «no envío imágenes» no cuenta.
- *  10. (21/10/2026) NINGÚN AVISO «TARDÍO» sin un comprobante REGISTRADO: «Guardar comprobante» tiene que haber devuelto la ruta del archivo guardado.
- *   6. MEDIOS ENTRANTES (audio, imagen, documento; 20/10/2026): la respuesta a un medio SIEMPRE trae texto (nunca vacía ni solo una marca), es UN solo mensaje, nunca un QR, y jamás dice «acreditado», «verificado»,
- *      «recibimos tu pago» (el único texto con «confirmamos / validado» es el fijo de comprobante leído, que exige un pedido abierto). Un medio sin respuesta solo es válido si el plan fue callar a propósito (pausa por persona,
- *      comercio suspendido, número extranjero ya atendido hoy); lo demás es un cliente que mandó un audio y no recibió nada.
+ *      de la LIBRERÍA (`rrOraciones` de `rr.js`): no puede haber desacuerdo entre quien reparte y quien vigila;
+ *   5. NINGUNA PREGUNTA POR OPCIONES SIN BOTONES: un texto que pregunta por «las opciones», «¿cuál prefieres?» o «¿con cuál…?» sale con al menos un botón o una lista en ese mismo mensaje;
+ *   6. LÍMITES DE WHATSAPP: título de botón ≤ 20 caracteres, de fila de lista ≤ 24, a lo más 3 botones; y NINGUNA clave `link` en ningún payload (el QR sale por `id` de medio).
+ * PR-D (22/10/2026):
+ *   7. NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS a un teléfono (exentos: el QR, el resultado de un comprobante, la protección ante violencia o miedo, la confirmación de una baja, el texto a un número extranjero y la presentación);
+ *   8. CON UN QR ABIERTO (el servidor dice `cobro.pendiente`) no hay un segundo QR ni botones de producto en ningún mensaje: solo texto plano (el botón de Rubén va solo al derivar, invariante 13);
+ *   9. SIN CONFIGURACIÓN (el panel falló o no trae catálogo) no hay montos, ni QR, ni botones de producto, y el modelo no contesta;
+ *  10. EL FLUJO NO PROMETE IMÁGENES: ningún texto dice «te envío/muestro/comparto» una foto, imagen, captura o la portada;
+ *  11. UNA NOTA DE VOZ DE MENOS DE 3 PALABRAS nunca llega al modelo;
+ *  12. EL MENÚ NO SALE ANTES DE TIEMPO: en las dos primeras respuestas a un teléfono, un mensaje libre (sin precio, catálogo, compra ni producto) no recibe botones de producto ni montos.
+ * Botón de Rubén (23/10/2026, regla de Andres):
+ *  13. EL BOTÓN DE CONTACTO VA SOLO AL DERIVAR, por tipo de plan: una respuesta RESUELTA (`PLANES_SIN_BOTON`: precio, catálogo, imágenes, resultado, menú, recordatorio del QR, saludo, conversación, puente, opciones…) sale como texto
+ *      plano o con sus botones de producto, NUNCA con el botón de Rubén; un plan que deriva (`PLANES_CON_BOTON`: derivar, consulta, fuera de país, cierre del cobro…) lo lleva siempre.
+ *      El plan `repetido` (la alternativa cuando el texto saldría idéntico) NO está en ninguna lista: no deriva, así que sale en texto plano, salvo que lo repetido fuera una derivación (conserva su botón).
+ * Rehecho de Rubén sobre la Entrega 2 (23/10/2026):
+ *  14. LA ETIQUETA DE UN BOTÓN CON PRECIO ES «<nombre DEL CATÁLOGO> <precio>Bs» (≤ 20 caracteres, el nombre completo o recortado por palabras): ningún nombre ni precio sale del código;
+ *  15. EL BOTÓN «Ver opciones» (el del puente) NO lleva precio ni dígitos, y nunca sale junto a botones de producto;
+ *  16. «Ver complementos» abre una lista: es el único botón de menú sin precio;
+ *  17. LO QUE SE OFRECE SE CUMPLE: tras «¿Te muestro las opciones?» (el puente, o el precio de un producto antes de la charla), el «sí» o el botón «Ver opciones» reciben los botones de producto con precio (salvo con un QR abierto);
+ *      y ese «sí» no es «el menú antes de tiempo» (invariante 12).
  */
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { expect } from 'vitest';
 import type { J } from '../../lib/flujo';
 import type { Mundo } from '../../lib/n8n-de-mentira';
+import { cargarLibrerias } from './librerias';
 
-const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-ruben/src/lib');
-// El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
-// nosemgrep: devsecops.js-eval-prohibido
-export const LIB = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { rrOraciones, rrEsPresentacion, rrNorm, rrTienePresentacionIA };')() as { rrOraciones: (b: string) => string[]; rrEsPresentacion: (o: string) => boolean; rrNorm: (t: string) => string; rrTienePresentacionIA: (t: string) => boolean };
+export const LIB = cargarLibrerias('rrOraciones, rrParrafos, rrNorm, rrSeguro, RR_TEXTO_CRISIS, RR_PRODUCTOS, RR_NIEGA_IA') as {
+  rrOraciones: (b: string) => string[]; rrParrafos: (t: string) => string; rrNorm: (t: string) => string; rrSeguro: (t: string) => string;
+  RR_TEXTO_CRISIS: string; RR_PRODUCTOS: Record<string, { boton: string }>; RR_NIEGA_IA: RegExp;
+};
 
 export interface UxMsg { tipo: string; cuerpo: string; payload: J }
-interface UxEstado { pulsados: Map<string, Set<string>>; presentaciones: Map<string, number>; turnos: number; ultimoTexto: Map<string, string> }
+interface UxEstado { pulsados: Map<string, Set<string>>; presentaciones: Map<string, number>; turnos: number; ultimo: Map<string, string>; respuestas: Map<string, number> }
 export const UX_ESTADO = new WeakMap<Mundo, UxEstado>();
 export const UX_CONTADOR = { turnos: 0, mundos: new Set<Mundo>() };
-export const idsDeBotones = (m: { payload: J }): string[] =>
-  ((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => String(b['reply']?.id));
+export const idsDeBotones = (m: { payload: J }): string[] => {
+  const i = (m.payload['interactive'] ?? {}) as J;
+  const botones = ((i['action']?.buttons ?? []) as J[]).map((b) => String(b['reply']?.id));
+  const filas = ((i['action']?.sections ?? []) as J[]).flatMap((s) => ((s['rows'] ?? []) as J[]).map((r) => String(r['id'])));
+  return [...botones, ...filas];
+};
 export const PARRAFO_MAX_ORACIONES = 2;
 export const PARRAFO_MAX_CARACTERES = 220;
 /** Las violaciones de párrafos de UN texto. Función pura, probada también con casos negativos. */
@@ -50,167 +61,136 @@ export function violacionesDeParrafos(cuerpo: string): string[] {
   }
   return v;
 }
-/** Cuántas veces se presenta el asistente en UN texto («Soy el asistente…», «asistente virtual de Rubén»), contadas por oración. Debe ser a lo más 1 por mensaje y por turno. */
-export const contarPresentaciones = (cuerpo: string): number => {
-  // Detector PROPIO (no `rrEsPresentacion` del flujo): cuenta «Soy el asistente de Rubén, autor de…», «Te saluda el asistente virtual», «Aquí tu asistente», «Hola, soy el asistente virtual de Rubén».
-  const es = (o: string): boolean => /\b(soy|somos) (el |la |un |una |tu |su )?(asistente|ayudante)\b|\basistente (virtual |automatico |digital )?de ruben\b|\b(te saluda|te habla|aqui) (el |tu )?asistente\b/.test(LIB.rrNorm(o));
-  return cuerpo.split('\n').reduce((n, linea) => n + LIB.rrOraciones(linea).filter(es).length, 0);
-};
 /** ¿Este mensaje contiene la presentación del asistente (la frase de presentación o el saludo largo)? */
-export const esPresentacion = (cuerpo: string): boolean => /asistente virtual de rub|qu[eé] gusto saludarte|te cuento: el libro digital/i.test(cuerpo);
+// La respuesta de identidad («¿eres un bot?») dice qué ES el asistente por la regla dura 4 y NO cuenta como la presentación gratuita.
+export const esPresentacion = (cuerpo: string): boolean => !/una inteligencia artificial, no una persona/i.test(cuerpo) && /soy el asistente virtual|qu[eé] gusto saludarte/i.test(cuerpo);
+/** Los planes que resuelven (no derivan): jamás llevan el botón de contacto de Rubén. El de `comprobante` depende del resultado y no se vigila aquí. */
+export const PLANES_SIN_BOTON = ['baja', 'identidad', 'saludo', 'angulo', 'angulo_fijo', 'modelo', 'modelo_caido', 'puente', 'puente_fijo', 'charla_fija', 'opciones', 'opciones_fijo', 'precio', 'catalogo', 'imagenes', 'resultado', 'menu', 'audios', 'qr', 'qr_pendiente', 'imagen_descrita', 'imagen_otra', 'audio_fijo', 'archivo', 'otro', 'suspendido'];
+/** Los planes que derivan a Rubén: siempre con el botón. */
+export const PLANES_CON_BOTON = ['riesgo', 'derivar', 'consulta', 'cancelacion', 'sin_configuracion', 'fuera_pais', 'cobro_cerrado', 'cobro_ya_cerrado', 'uso_extendido'];
+/** ¿El mensaje lleva el botón que abre el chat de Rubén (`cta_url`)? */
+export const llevaBotonDeContacto = (m: { payload: J }): boolean => (m.payload['interactive'] as J | undefined)?.['type'] === 'cta_url';
+const IDS_DE_PRODUCTO = ['b_pack', 'b_libro', 'b_audiolibro', 'b_meditaciones', 'b_upgrade'];
+/** Los botones de producto o de la lista (con un QR abierto o sin configuración no sale ninguno). */
+// `b_upgrade` NO es un botón del menú: lo ofrece el código en el mismo mensaje del comprobante que cuadra (el QR del Libro ya quedó cerrado en ese turno).
+const IDS_DE_MENU = [...IDS_DE_PRODUCTO.filter((x) => x !== 'b_upgrade'), 'b_audios'];
 /**
  * Las violaciones de los invariantes para UN turno; `pulsados` se actualiza con el toque de este turno ANTES de mirar la respuesta. `presentaciones` (opcional) cuenta, por teléfono,
- * los mensajes con presentación ya enviados (se actualiza aquí). Función pura, probada también con casos negativos.
+ * los mensajes con presentación ya enviados. Función pura, probada también con casos negativos.
  */
-/**
- * ¿El cliente pregunta qué ES el asistente? LISTA INDEPENDIENTE de la del flujo (no usa `rrPreguntaPorIA`, o la excepción sería tautológica) y deliberadamente ancha: solo exime la cuenta
- * de «una presentación por teléfono» (regla dura 4 sobre la de Silvana), nunca la de «una por mensaje».
- */
-export const preguntaPorIdentidad = (texto: string): boolean => {
-  const n = LIB.rrNorm(texto);
-  return /\b(eres|sos|es|usted|hablo|hablando|conversando|quien|hay|voce|estou|who|are you|is this|am i|me responde|me atiende|me contesta|respondiendo)\b.*\b(bot|b0t|vot|robot|robo|chatbot|chatgpt|gemini|ia|ai|inteligencia|maquina|programa|persona|pessoa|humano|humana|human|alguien|alguem|gente|automatic\w*|automated)\b|\b(eres|sos|usted es|es usted|hablo con|hablando con|conversando con|quien es|quien eres)\b.*\b(ruben|asistente|real|de verdad)\b|\bresponde\w* (una |un )?(ia|robot|bot|persona|maquina|humano)\b|\brespuestas son automatic\w*|\bde verdad\b|\b(real person|real human|persona real|alguien real|ser humano)\b|\bquien (eres|me|contesta|responde|atiende)\b|\bcon quien hablo\b|\bruben eres\b|^(bot|robot|chatbot|b0t|vot|contestador)$/.test(n);
-};
-/** El texto que devolvió el modelo en un turno (el doble de «Conversar con el modelo»), o ''. */
-export const textoDelModelo = (registro: { nodo: string; respuesta?: unknown }[]): string => {
-  const r = registro.find((x) => x.nodo === 'Conversar con el modelo')?.respuesta as J | undefined;
-  return String(r?.['candidates']?.[0]?.content?.parts?.[0]?.text ?? '');
-};
-/**
- * ¿El texto del modelo SE DECLARA una IA / asistente virtual / no una persona? Detector PROPIO y estrecho del vigilante (no usa `rrDiceIA` ni `rrTienePresentacionIA` del flujo: sería tautológico).
- * Mira el texto oración por oración, sin el título del libro («IA para Emprendedores»).
- */
-export const seDeclaraIA = (texto: string): boolean => {
-  const t = texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/ia para emprendedores( independientes)?/g, ' ');
-  // Primera persona + una cualidad de máquina en las palabras siguientes (ventana corta), o las formas fijas; no basta nombrar la IA («la inteligencia artificial te ayuda»).
-  const ventana = /(?<![\p{L}\p{N}]no )\b(soy|somos|me presento|respondo|funciono|trabajo|opero|estoy hech[oa]|fui cread[oa])\b(?:\s+[^\s.,;:!?]+){0,4}?[\s,;:]+(ia|ai|inteligencia artificial|artificial|automatic\w*|programa|bot|chatbot|robot|maquina|virtual|digital|inteligente|hech[oa] (con|por)|impulsad[oa] por|basad[oa] en)(?![\p{L}\p{N}])/u;
-  return ventana.test(t) || /\basistente virtual de ruben\b|\bno (soy )?(una |un )?(persona|humano|humana)\b|\bno soy ruben\b|\((una )ia\)/.test(t);
-};
-/** ¿El modelo se hizo pasar por Rubén o por una persona viva? (detector propio del vigilante). El flujo lo sustituye por la identidad, que es una presentación legítima. */
-export const suplantaARuben = (texto: string): boolean => {
-  const n = LIB.rrNorm(texto);
-  // Criterio propio e inverso: mencionar a Rubén sin que sea tercera persona o el asistente «de Rubén», o una autodescripción humana.
-  const menciona = /\b(ruben|roca)\b/.test(n);
-  const tercera = /\bruben (roca )?(es|fue|escribio|creo|explica|ensena|muestra|recomienda|dice|cuenta|tiene|trabaja)\b|\bautor( del libro)? es ruben\b|\bel libro (de|del) ruben\b|habla ruben\b.*videos|videos.*habla ruben|\basistente( \w+){0,2} (de|del) ruben\b|\bno soy ruben\b.*(asistente|ia|virtual)|\bsi (prefieres|quieres|necesitas)\b.*\bruben\b.*(boton|whatsapp|chat|directo)/.test(n);
-  return (menciona && !tercera) || /\b(soy|sou) (yo |el |la |un |una )?(autor|escritor|dueno|creador del libro|persona|humano|humana|ana|maria|mujer)\b|\bestoy viv[oa]\b|\bde carne y hueso\b|\bmi libro\b|\bescribi\b|\bmismisimo\b|\bme llamo\b|\bmi nombre es\b|\bsoy yo\b|\bte escribo\b|\bde los videos\b|\bpersona detras\b/.test(n);
-};
-/** Las oraciones del texto del modelo que (según el detector propio del vigilante) suplantan a Rubén. */
-export const frasesQueSuplantan = (textoModelo: string): string[] =>
-  // Solo oraciones de AUTODESCRIPCIÓN (primera persona, «te escribe/habla…», firma): «Eso lo ve Rubén directamente» (tercera persona, texto fijo del código) no es una suplantación.
-  textoModelo.replace(/«[^»]*»|"[^"]*"/g, ' ').replace(/\s*\n\s*/g, ' ').split(/(?<=[.!?…])\s+/).filter((o) => o.trim().length >= 6 && /\b(soy|sou|i m|i am|me llamo|nombre es|mi libro|escribi|estoy viv|hablas con|hablando con|habla ruben|aqui ruben|ruben aqui|ruben por aqui|ordenes|carne y hueso|mismisimo|personalmente|te escribe|te habla|le escribe|le habla|te saluda|te atiende)\b/.test(LIB.rrNorm(o)) && suplantaARuben(o));
-
-/** Los planes que callan a propósito: la pausa por persona, el comercio suspendido y el número de otro país al que ya se le respondió hoy. */
-export const PLANES_QUE_CALLAN = ['nada', 'bloqueado', 'suspendido', 'uso_extendido', 'extranjero_repetido'];
-const TEXTO_DE_COMPROBANTE_LEIDO = /Ya recibí tu comprobante, dame un momento mientras confirmamos tu pago/;
-const ACREDITACION = /acreditad|verificad|recibimos tu pago|pago (recibido|confirmado|aprobado)|tu pago (lleg|ingres)/i;
-/** Las violaciones del invariante 6 para UN turno. `entrante` = el mensaje de Meta; `plan` = el plan del resumen del turno. Función pura, probada también con casos negativos. */
-export function violacionesDeMedio(entrante: J, mensajes: UxMsg[], plan: string): string[] {
-  const v: string[] = [];
-  if (!['audio', 'voice', 'image', 'document'].includes(String(entrante['type'] ?? ''))) return v;
-  if (mensajes.length === 0 && !PLANES_QUE_CALLAN.includes(plan)) v.push(`un medio (${String(entrante['type'])}) se quedó sin respuesta (plan «${plan}»)`);
-  if (mensajes.length > 1) v.push(`un medio recibió ${mensajes.length} mensajes en el mismo turno`);
-  for (const m of mensajes) {
-    if (m.cuerpo.trim() === '') v.push('la respuesta a un medio no trae texto');
-    if (m.tipo === 'image') v.push('la respuesta a un medio es un QR');
-    const sinFijo = m.cuerpo.replace(TEXTO_DE_COMPROBANTE_LEIDO, ' ');
-    if (ACREDITACION.test(sinFijo)) v.push('la respuesta a un medio dice que un pago está acreditado, verificado o recibido (prohibición 3)');
-  }
-  return v;
+export interface ContextoUx {
+  /** Lo último que se le dijo a este teléfono (texto). */
+  ultimoTexto?: string;
+  /** Cuántas respuestas ha recibido ya este teléfono. */
+  respuestasPrevias?: number;
+  /** Hay un QR abierto según el servidor (`cobro.pendiente`). */
+  qrAbierto?: boolean;
+  /** El panel de la consola falló o no trae catálogo. */
+  sinConfig?: boolean;
+  /** El modelo de conversación corrió en este turno. */
+  llamoAlModelo?: boolean;
+  /** El plan que decidió el turno (`Armar mensajes`). */
+  plan?: string;
+  /** El turno fue una nota de voz. */
+  esAudio?: boolean;
+  /** Los nombres del catálogo de la consola en este momento (el de cada botón con precio sale de ahí). */
+  nombresDelCatalogo?: string[];
 }
-
-/** Los planes cuyo texto se repite A PROPÓSITO (declarados): el resultado de un comprobante y el texto fijo que el comercio configura en la consola para el estado «operador» (uso extendido) o la suspensión. */
-export const TEXTOS_FIJOS_DE_ESPERA = ['comprobante', 'uso_extendido', 'suspendido'];
-/** Invariante 7. `anterior` = el último texto (normalizado) que se le envió a ese teléfono, o ''. Función pura, probada también con casos negativos. */
-export function violacionesDeRepeticion(anterior: string, mensajes: UxMsg[], plan: string): string[] {
-  const v: string[] = [];
-  if (TEXTOS_FIJOS_DE_ESPERA.includes(plan)) return v;
-  for (const m of mensajes) {
-    if (m.tipo === 'image' || m.cuerpo.trim() === '' || seDeclaraIA(m.cuerpo)) continue;
-    if (anterior !== '' && LIB.rrNorm(m.cuerpo) === anterior) v.push(`la misma respuesta dos veces seguidas: «${m.cuerpo.slice(0, 40)}…»`);
-  }
-  return v;
-}
-/** Invariante 8. Detector PROPIO de «habla de pagar» (no usa `rrHablaDePagar` del flujo). */
-export const hablaDePagar = (texto: string): boolean => /\b(pague|pagado|pagando|transferi|transferencia|transfiero|deposite|deposito|comprobante|voucher|recibo|cancele|cancelado|qr|monto|como (te |lo )?(pago|pagar)|donde (pago|pagar)|quiero (el|la|los|las)|dame|comprar|compro)\b/.test(LIB.rrNorm(texto));
-export function violacionesDeQrAbierto(entrante: J, mensajes: UxMsg[]): string[] {
-  const v: string[] = [];
-  const inter = entrante['interactive'] as J | undefined;
-  const id = entrante['type'] === 'interactive' && inter ? String((inter['button_reply'] ?? inter['list_reply'])?.id ?? '') : '';
-  const texto = entrante['type'] === 'text' ? String((entrante['text'] as J | undefined)?.['body'] ?? '') : '';
-  const preguntaDeContenido = (texto.includes('?') && !hablaDePagar(texto)) || id === 'b_info' || id === 'b_precios';
-  if (preguntaDeContenido && mensajes.some((m) => /Ya tienes un QR abierto/.test(m.cuerpo))) v.push('con un QR abierto, una pregunta que no habla de pagar recibió el recordatorio en vez de una respuesta de contenido');
-  return v;
-}
-/** Invariante 9. */
-export function violacionesDePromesaDeImagen(mensajes: UxMsg[]): string[] {
-  const v: string[] = [];
-  const OBJETO = /\b(imagen|imagenes|foto|fotos|fotografia|fotografias|captura|capturas|pantallazo|pantallazos|screenshot|screenshots|portada)\b/;
-  const PROMETE = /\b(te (muestro|envio|mando|comparto|paso|adjunto|enviare|mandare|mostrare)|(puedo|podria|podemos|voy a) (mostrar|enviar|mandar|compartir|pasar|adjuntar)(te)?|aqui (tienes|te dejo)|te dejo|adjunto)\b/;
-  for (const m of mensajes) {
-    if (m.tipo === 'image') continue;
-    for (const o of m.cuerpo.split(/(?<=[.!?…])\s+|\n+/)) {
-      const n = LIB.rrNorm(o);
-      if (/\bno\b/.test(n)) continue; // «no tengo imágenes para mostrarte», «no envío imágenes»
-      if (PROMETE.test(n) && OBJETO.test(n)) v.push(`un texto promete enviar imágenes: «${o.slice(0, 50)}»`);
-    }
-  }
-  return v;
-}
-/** Invariante 10: `guardada` = «Guardar comprobante» devolvió la ruta del archivo; `avisos`/`mensajes` = lo que salió en el turno. */
-export function violacionesDeAvisoTardio(avisos: string[], mensajes: UxMsg[], guardada: boolean): string[] {
-  const v: string[] = [];
-  if (guardada) return v;
-  if (avisos.some((a) => /comprobante tard[ií]o/i.test(a))) v.push('salió un aviso «tardío» a Rubén sin un comprobante guardado');
-  if (mensajes.some((m) => /despu[eé]s de los 15 minutos del QR[^]*(Ya lo pas[eé]|Le avis[eé])/i.test(m.cuerpo))) v.push('el texto «tardío» dice que se pasó a Rubén sin un comprobante guardado');
-  return v;
-}
-export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, textoModelo = ''): string[] {
+/** Los mensajes EXENTOS del invariante 7, POR PLAN (no por palabras): el QR, el resultado del cotejo, la protección ante violencia o miedo y el texto a un número extranjero; y la presentación. */
+const PLANES_EXENTOS = ['identidad', 'qr', 'comprobante', 'riesgo', 'fuera_pais', 'baja'];
+const EXENTO_REPETIDO = (m: UxMsg, plan: string): boolean => m.tipo === 'image' || PLANES_EXENTOS.includes(plan) || esPresentacion(m.cuerpo);
+const TRIGGER_DE_OPCIONES = /precio|cu[aá]nto|cuesta|vale\b|cat[aá]logo|vend|lista|opciones|compr|pagar|pago|adquirir|llevo|pack|libro|audiolibro|meditaci|^hola, (quiero|me interesa|vengo)|garant|resultado|imagen|foto/i;
+export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, transcripcion = '', ctx: ContextoUx = {}): string[] {
   const v: string[] = [];
   const inter = entrante['interactive'] as J | undefined;
   const idToque = entrante['type'] === 'interactive' && inter ? String((inter['button_reply'] ?? inter['list_reply'])?.id ?? '') : '';
-  // Excepción declarada (M3): «Más información» que llega como PRIMER mensaje de un teléfono recibe el saludo, que la ofrece: el cliente aún no la ha visto, así que no cuenta como pulsada.
-  const infoSinVer = (idToque === 'b_info' || idToque === 'b_precios') && !!presentaciones && presentaciones.n === 0 && mensajes.some((m) => esPresentacion(m.cuerpo));
-  if (idToque && !infoSinVer) pulsados.add(idToque);
+  if (idToque) pulsados.add(idToque);
   const textoEntrante = entrante['type'] === 'text' ? String((entrante['text'] as J | undefined)?.['body'] ?? '') : '';
-  const modeloDijoIA = seDeclaraIA(textoModelo);
-  const preguntaIA = preguntaPorIdentidad(textoEntrante) || modeloDijoIA || suplantaARuben(textoModelo);
-  // INVARIANTE (regla dura 4, ronda 5): si el texto del modelo suplanta a Rubén, NINGÚN mensaje saliente puede contener esa oración.
-  for (const f of frasesQueSuplantan(textoModelo)) {
-    const nf = LIB.rrNorm(f);
-    // «no soy Rubén ni una persona» (la identidad fija) contiene «soy Rubén» negado: no cuenta.
-    if (mensajes.some((m) => LIB.rrNorm(m.cuerpo).replace(/\bno (soy|es|somos) (el mismo |el propio )?ruben\b/g, ' ').includes(nf))) v.push(`salió una oración que suplanta a Rubén: «${f.slice(0, 40)}»`);
-  }
-  // INVARIANTE (regla dura 4): si el modelo dijo qué es el asistente (IA, virtual…), el mensaje que salió lo trae; jamás se pierde esa respuesta.
-  if (modeloDijoIA && mensajes.length && !mensajes.some((m) => seDeclaraIA(m.cuerpo))) v.push('el modelo reconoció ser un asistente virtual/IA y el mensaje que salió no lo trae (regla dura 4)');
-  const eligioProducto = ['b_pack', 'b_libro', 'b_closer', 'b_videos'].includes(idToque) || /^Hola Rubén, quiero (el Pack Completo|el libro IA para Emprendedores)/.test(textoEntrante);
-  const enElTurno = mensajes.reduce((n, m) => n + contarPresentaciones(m.cuerpo), 0);
-  if (enElTurno > 1) v.push(`la presentación del asistente salió ${enElTurno} veces en el mismo turno`);
+  // Una confirmación en texto (o por voz) de UN producto («quiero el libro», «me llevo el pack») también es elegirlo.
+  const dicho = textoEntrante || transcripcion;
+  const confirmacion = /\b(me llevo|lo compro|quiero (comprar |pagar )?(el|la)\b|quiero comprar)/i.test(dicho) && /\b(pack|libro|audiolibro|meditaciones)\b/i.test(dicho) && !/informaci|saber|incluye|cu[aá]nto|precio/i.test(dicho);
+  const prellenadoDeProducto = /^Hola, vengo de la p[aá]gina\. Quiero el Pack/.test(dicho) ? 'b_pack' : (/^Hola, vengo de la p[aá]gina\. Quiero el Libro/.test(dicho) ? 'b_libro' : (/^Hola, vengo de la p[aá]gina\. Quiero el Audiolibro/.test(dicho) ? 'b_audiolibro' : (/^Hola, vengo de la p[aá]gina\. Quiero las 3 Meditaciones/.test(dicho) ? 'b_meditaciones' : '')));
+  const eligioProducto = IDS_DE_PRODUCTO.includes(idToque) || prellenadoDeProducto !== '' || confirmacion;
+  let ultimoTexto = ctx.ultimoTexto ?? '';
+  const palabrasDeVoz = LIB.rrNorm(transcripcion).split(' ').filter(Boolean).length;
+  if (ctx.esAudio && palabrasDeVoz < 3 && ctx.llamoAlModelo) v.push('una nota de voz de menos de 3 palabras llegó al modelo');
+  // El «sí» (o el botón «Ver opciones») a «¿Te muestro las opciones?» pide las opciones: no son «antes de tiempo» y SE DEBEN cumplir (invariante 17).
+  const dijoSi = /^\s*(s[ií]|claro|dale|ok|okey|bueno|por favor|me interesa|adelante|s[ií],? por favor)\s*[.!]*\s*$/i.test(dicho);
+  const respondeAlPuente = /¿Te muestro las opciones\?\s*$/.test(ultimoTexto) && (idToque === 'b_opciones' || dijoSi);
+  if (respondeAlPuente && !ctx.qrAbierto && !mensajes.some((m) => m.tipo === 'image' || idsDeBotones(m).some((id) => IDS_DE_MENU.includes(id)))) v.push('se ofreció «¿Te muestro las opciones?» y la respuesta no trae los botones de producto');
+  const abierto = !ctx.qrAbierto && !respondeAlPuente && (ctx.respuestasPrevias ?? 99) < 2 && entrante['type'] === 'text' && !TRIGGER_DE_OPCIONES.test(textoEntrante);
   for (const m of mensajes) {
+    if (ultimoTexto !== '' && m.cuerpo === ultimoTexto && !EXENTO_REPETIDO(m, ctx.plan ?? '')) v.push(`el mismo texto dos veces seguidas: «${m.cuerpo.slice(0, 40)}…»`);
+    ultimoTexto = m.cuerpo;
+    const botonesDeProducto = idsDeBotones(m).filter((id) => IDS_DE_MENU.includes(id));
+    if (ctx.qrAbierto) {
+      if (m.tipo === 'image') v.push('con un QR abierto salió un segundo QR');
+      if (botonesDeProducto.length) v.push(`con un QR abierto salieron botones de producto: ${botonesDeProducto.join(', ')}`);
+    }
+    if (ctx.plan && m.tipo !== 'image') {
+      if (PLANES_SIN_BOTON.includes(ctx.plan) && llevaBotonDeContacto(m)) v.push(`el plan «${ctx.plan}» resuelve y no deriva, pero salió con el botón de Rubén`);
+      if (PLANES_CON_BOTON.includes(ctx.plan) && !llevaBotonDeContacto(m)) v.push(`el plan «${ctx.plan}» deriva a Rubén, pero salió sin su botón`);
+    }
+    if (ctx.sinConfig) {
+      if (m.tipo === 'image') v.push('sin configuración salió un QR');
+      if (botonesDeProducto.length) v.push('sin configuración salieron botones de producto');
+      if (/\d\s*Bs\b/i.test(m.cuerpo)) v.push('sin configuración salió un monto');
+      if (ctx.llamoAlModelo) v.push('sin configuración contestó el modelo');
+    }
+    if (/\b(te (muestro|envio|envío|mando|comparto|paso|adjunto)|aqu[ií] (tienes|te dejo))\b[^.?!]{0,40}\b(imagen|im[aá]genes|foto|fotos|captura|capturas|portada)\b/i.test(m.cuerpo)) v.push('el texto promete una imagen que el flujo no envía');
+    if (abierto && m.tipo !== 'image' && (botonesDeProducto.length || /\d\s*Bs\b/i.test(m.cuerpo))) v.push('el menú o un monto salió antes de tiempo (en las dos primeras respuestas a un mensaje libre)');
     for (const id of idsDeBotones(m)) if (pulsados.has(id)) v.push(`el botón pulsado «${id}» reapareció`);
     if (m.tipo === 'image' && !eligioProducto) v.push('se ofreció el QR (pagar) sin que el cliente eligiera un producto en este turno');
     if (m.tipo !== 'image' && /escanea el qr/i.test(m.cuerpo)) v.push('un texto de pago fuera del QR');
-    if (m.tipo === 'interactive' && idsDeBotones(m).length && !eligioProducto && /(pagar|\bqr\b)/i.test(((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => String(b['reply']?.title)).join(' '))) v.push('un botón de pago antes de elegir producto');
     if (/opciones|¿cu[aá]l prefieres|¿qu[eé] opci[oó]n|¿con cu[aá]l/i.test(m.cuerpo) && m.tipo !== 'interactive') v.push('el texto pregunta por opciones pero el mensaje no trae ningún botón');
     v.push(...violacionesDeParrafos(m.cuerpo));
-    // (La cuenta es de PRESENTACIONES, no de la palabra «asistente»: el capítulo 9 del libro dice «asistente personal de IA».) Ver `enElTurno` arriba.
-    // La cuenta por teléfono usa `contarPresentaciones` (ve también «Soy el asistente de Rubén, autor de…»), no solo la frase «asistente virtual de Rubén».
-    if (presentaciones && (esPresentacion(m.cuerpo) || contarPresentaciones(m.cuerpo) > 0)) {
+    if ((m.cuerpo.match(/asistente virtual/gi) ?? []).length > 1) v.push('el mensaje se presenta más de una vez («asistente virtual» repetido)');
+    if (presentaciones && esPresentacion(m.cuerpo)) {
       presentaciones.n += 1;
-      // Quien PREGUNTA qué es el asistente («¿eres un bot?») recibe la presentación aunque ya la haya leído (prohibición 4).
-      if (presentaciones.n > 1 && !preguntaIA) v.push('la presentación del asistente salió más de una vez en la conversación');
+      if (presentaciones.n > 1) v.push('la presentación del asistente salió más de una vez en la conversación');
     }
+    const botones = ((m.payload['interactive']?.action?.buttons ?? []) as J[]);
+    if (botones.length > 3) v.push('más de 3 botones');
+    for (const b of botones) {
+      const titulo = String(b['reply']?.title);
+      if (/\d/.test(titulo)) {
+        // Un botón con precio es «<nombre del catálogo> <monto>Bs»: el nombre es el del catálogo (completo o recortado por palabras), sin palabras cortadas ni preposición colgando.
+        const mm = /^(.*?) (\d+(?:,\d+)?)Bs$/.exec(titulo);
+        if (!mm) v.push(`botón con precio que no termina en « <monto>Bs»: «${titulo}»`);
+        else {
+          // El emoji de una etiqueta del tenant no es parte del nombre: se compara el nombre sin él (con o sin el espacio que lo separa).
+          const sinEmoji = (x: string): string => x.replace(/^[^\p{L}\p{N}]+/u, '');
+          const nombre = sinEmoji(mm[1]!);
+          const nombres = [...(ctx.nombresDelCatalogo ?? []), 'Mejor el Pack', 'Pasar al Pack'];
+          const esDelCatalogo = nombres.some((n) => n === nombre || n.startsWith(nombre + ' '));
+          if (ctx.nombresDelCatalogo && !esDelCatalogo) v.push(`la etiqueta «${titulo}» no usa el nombre del catálogo (${nombres.join(' | ')})`);
+          if (/\b(de|del|el|la|y)$/i.test(nombre) && !nombres.includes(nombre)) v.push(`botón con una preposición colgando: «${titulo}»`);
+        }
+      }
+      if (b['reply']?.id === 'b_opciones') {
+        if (/\d/.test(titulo)) v.push('el botón «Ver opciones» lleva un precio');
+        if (botones.some((x) => IDS_DE_MENU.includes(String(x['reply']?.id)))) v.push('«Ver opciones» salió junto a botones de producto');
+      }
+    }
+    for (const b of botones) if (String(b['reply']?.title).length > 20) v.push(`título de botón de más de 20 caracteres: «${b['reply']?.title}»`);
+    for (const s of ((m.payload['interactive']?.action?.sections ?? []) as J[])) for (const r of ((s['rows'] ?? []) as J[])) if (String(r['title']).length > 24) v.push(`título de fila de más de 24 caracteres: «${r['title']}»`);
+    if (/"link"\s*:/.test(JSON.stringify(m.payload))) v.push('el payload lleva una clave `link` (el QR sale por id de medio)');
     // Un prellenado del Pack o del Libro que abrió el QR "usa" su botón: no reaparece después.
-    if (m.tipo === 'image') {
-      if (/^Hola Rubén, quiero el Pack Completo/.test(textoEntrante)) pulsados.add('b_pack');
-      if (/^Hola Rubén, quiero el libro IA para Emprendedores/.test(textoEntrante)) pulsados.add('b_libro');
-    }
+    if (m.tipo === 'image' && prellenadoDeProducto) pulsados.add(prellenadoDeProducto);
   }
   return v;
 }
 export function vigilarUx(mundo: Mundo): void {
   const original = mundo.turno.bind(mundo);
-  const estado: UxEstado = { pulsados: new Map(), presentaciones: new Map(), turnos: 0, ultimoTexto: new Map() };
+  const estado: UxEstado = { pulsados: new Map(), presentaciones: new Map(), turnos: 0, ultimo: new Map(), respuestas: new Map() };
   UX_ESTADO.set(mundo, estado);
   mundo.turno = (entrada: J, opciones?: Parameters<Mundo['turno']>[1]) => {
+    // Lo que dice el servidor ANTES del turno: un QR abierto, o la configuración caída (el doble de la consola; es una función pura de la prueba).
+    const dp = mundo.dobles['Traer configuración'];
+    const panel = (typeof dp === 'function' ? dp({} as never) : dp) as J | undefined;
+    const cuerpoPanel = (panel?.['body'] ?? {}) as J;
+    const sinConfig = !panel || Number(panel['statusCode']) !== 200 || !Array.isArray(cuerpoPanel['catalogo']) || (cuerpoPanel['catalogo'] as unknown[]).length === 0;
+    const qrAbierto = !sinConfig && cuerpoPanel['cobro']?.pendiente === true;
     const t = original(entrada, opciones);
     const msg = ((entrada['body']?.value?.messages ?? [])[0] ?? {}) as J;
     const from = String(msg['from'] ?? '');
@@ -219,19 +199,13 @@ export function vigilarUx(mundo: Mundo): void {
     const pres = { n: estado.presentaciones.get(from) ?? 0 };
     // Los mensajes al cliente de este turno (sin los avisos a Rubén ni los respaldos de texto).
     const salida = t.mensajes.filter((e) => !e.respaldo).map((e) => ({ tipo: e.tipo, cuerpo: e.cuerpo, payload: e.payload }));
-    const v = violacionesDeUx(pulsados, msg, salida, pres, textoDelModelo(t.registro));
-    // Invariante 6: los medios. Un QR abierto + comprobante es el único caso en que la respuesta a una imagen es el texto de «comprobante leído» (permitido arriba por su frase exacta).
-    v.push(...violacionesDeMedio(msg, salida, String((t.resumen ?? {})['plan'] ?? 'nada')));
-    // Invariantes 7 a 10 (21/10/2026). El plan está en `resumen.resumen.plan` del nodo «Resumen del turno».
-    const plan = String(((t.resumen ?? {})['resumen'] as J | undefined)?.['plan'] ?? 'nada');
-    v.push(...violacionesDeRepeticion(estado.ultimoTexto.get(from) ?? '', salida, plan));
-    const ultimo = [...salida].reverse().find((m) => m.tipo !== 'image' && m.cuerpo.trim() !== '');
-    if (salida.some((m) => m.tipo === 'image')) estado.ultimoTexto.set(from, '');
-    else if (ultimo) estado.ultimoTexto.set(from, LIB.rrNorm(ultimo.cuerpo));
-    v.push(...violacionesDeQrAbierto(msg, salida));
-    v.push(...violacionesDePromesaDeImagen(salida));
-    const guardado = t.registro.find((x) => x.nodo === 'Guardar comprobante')?.respuesta as J | undefined;
-    v.push(...violacionesDeAvisoTardio(t.avisos.map((a) => a.cuerpo), salida, typeof guardado?.['body']?.['ruta'] === 'string'));
+    const trans = String((t.porNodo['Preparar transcripción']?.[0]?.['userInput'] ?? '')).replace(/^\(audio transcripto\) /, '').split('\n')[0]!;
+    const nombresDelCatalogo = Array.isArray(cuerpoPanel['catalogo']) ? (cuerpoPanel['catalogo'] as J[]).map((c) => String(c['nombre'] ?? '')).filter((n) => n !== '') : undefined;
+    const v = violacionesDeUx(pulsados, msg, salida, pres, trans, {
+      nombresDelCatalogo: nombresDelCatalogo && nombresDelCatalogo.length ? nombresDelCatalogo : undefined,
+      ultimoTexto: estado.ultimo.get(from), respuestasPrevias: estado.respuestas.get(from) ?? 0, qrAbierto, sinConfig: sinConfig && Number(panel?.['statusCode']) !== 409, llamoAlModelo: t.ejecutados.has('Conversar con el modelo'), esAudio: msg['type'] === 'audio', plan: String((t.porNodo['Armar mensajes']?.[0]?.['plan'] ?? '')),
+    });
+    if (salida.length) { estado.ultimo.set(from, salida[salida.length - 1]!.cuerpo); estado.respuestas.set(from, (estado.respuestas.get(from) ?? 0) + salida.length); }
     estado.presentaciones.set(from, pres.n);
     estado.turnos += 1; UX_CONTADOR.turnos += 1; UX_CONTADOR.mundos.add(mundo);
     expect(v, `invariante de UX violado: ${v.join('; ')}`).toEqual([]);

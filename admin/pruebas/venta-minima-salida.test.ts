@@ -33,6 +33,27 @@ const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/expe
 const AVISOS = readFileSync(join(CARPETA, 'armar-avisos.js'), 'utf8');
 const MENSAJES = readFileSync(join(CARPETA, 'armar-mensajes.js'), 'utf8');
 const RESUMEN = readFileSync(join(CARPETA, 'resumen-del-turno.js'), 'utf8');
+const SOLTAR = readFileSync(join(CARPETA, 'soltar-mensajes.js'), 'utf8');
+const CONFIRMAR = readFileSync(join(CARPETA, 'confirmar-envio.js'), 'utf8');
+// El estado de la conversación en el servidor (PR-4a): el módulo común `sesion` (REAL, como lo incluye construir.mjs) y las piezas REALES de `comun.js` que arman el bloque (no dobles).
+const SESION = readFileSync(join(CARPETA, '../../../comun-sin-agente/src/sesion.js'), 'utf8');
+const COMUN_REAL = readFileSync(join(CARPETA, '../lib/comun.js'), 'utf8');
+const deComun = (nombre: string): string => {
+  const f = new RegExp(`^function ${nombre}\\([\\s\\S]*?^}\\n`, 'm').exec(COMUN_REAL);
+  if (!f) throw new Error(`comun.js no trae la función ${nombre}`);
+  return f[0];
+};
+const constanteDeComun = (nombre: string): string => {
+  const f = new RegExp(`^const ${nombre} =[^\\n]*\\n`, 'm').exec(COMUN_REAL);
+  if (!f) throw new Error(`comun.js no trae la constante ${nombre}`);
+  return f[0];
+};
+const DE_COMUN = [
+  ...['VM_PEDIDOS_MS', 'VM_MAX_PEDIDOS', 'VM_RESPALDO_HASTA_MS', 'VM_VENCE_MS', 'VM_VENCE_COMPROBANTE_MS', 'SS_CONFIG'].map(constanteDeComun),
+  ...['_vmObjeto', '_vmCadena', '_vmClaveValida', '_vmIdValido', '_vmHay', '_vmVence', 'vmSes', 'vmGuardarPedido', 'vmVenceEnMin', 'vmRetirarRespaldo', 'vmClaveAviso'].map(deComun),
+].join('\n');
+// El módulo común de Pedidos (qr-del-pedido.js) es REAL, no un doble: lo que arma el QR lo incluye construir.mjs en cada nodo.
+const PQR = readFileSync(join(CARPETA, '../../../../src/modulos/pedidos/qr-del-pedido.js'), 'utf8') + '\n';
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026, 10:00 en La Paz
 const MIN = 60 * 1000;
@@ -61,7 +82,7 @@ const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\s+
  *    `avDentroDelTopeDiario` lee `sd`; `avContar` escribe en `sd` y SOLO lo llama `Armar mensajes`.
  *  - `reserva.js` (T3): `rsAnotar(sd, from, ahoraMs)` escribe en `sd`; solo lo llama `Armar mensajes`.
  */
-const DOBLES = `
+const DOBLES = PQR + `
 const VM_PROHIBIDAS = ${PROHIBIDAS.toString()};
 function vmNodo(n) { try { const x = $(n); return x && x.isExecuted ? x : null; } catch (e) { return null; } }
 function vmPrimero(n) { const x = vmNodo(n); if (!x) return null; const i = x.first(); return i && i.json ? i.json : null; }
@@ -92,7 +113,10 @@ function avDestinatarios(csv, from, pref) {
   }
   return out;
 }
+function cnNodo(n) { return vmNodo(n); }
+function cnPrimero(n) { return vmPrimero(n); }
 function avDentroDelTopeDiario(sd, ms, tope) { return Number(sd.avisosDia || 0) < tope; }
+function avFechaLocal(ms) { return new Date(ms - 4 * 3600000).toISOString().slice(0, 10); }
 function avContar(sd, ms, n) { __bit.push(['avContar', n]); sd.avisosDia = Number(sd.avisosDia || 0) + n; }
 function rsAnotar(sd, from, ms) { __bit.push(['rsAnotar', from]); sd.reservasDia = Number(sd.reservasDia || 0) + 1; }
 function avArmar(tipo, datos, dest, cfg, sd, ms) {
@@ -134,16 +158,30 @@ interface Entrada {
   /** Código que se agrega después de los dobles (una función repetida pisa a la anterior). */
   extra?: string;
 }
-function nodo(fuente: string, e: Entrada = {}): { items: J[]; g: J; sd: J; bit: unknown[][] } {
+/** Lo que `Config del negocio` deja en `cfg.sesion` cuando el servidor contestó el `leer`: sin estado todavía (versión 0) salvo que la prueba siembre uno. */
+const SESION_VACIA: J = { ok: true, version: 0, estado: null, vencido: false, corrupta: false, visto: 'nuevo' };
+/** La sesión que habría leído el servidor para este teléfono: `bloque` = `{v, estado, pedidos}` (o null). */
+const sesionCon = (bloque: J | null, version = 1): J => ({ ...SESION_VACIA, version, estado: bloque });
+interface Salida { items: J[]; g: J; sd: J; bit: unknown[][]; armado?: J }
+function nodo(fuente: string, e: Entrada = {}): Salida {
   const g: J = e.g ?? {};
   const bit: unknown[][] = [];
-  const refs: Referencias = { 'Config del negocio': { ...CFG, ...e.cfg }, 'Interpretar entrada': { ...ENTRADA, ...e.t } };
+  const esMensajes = fuente === MENSAJES;
+  const refs: Referencias = { 'Config del negocio': { sesion: SESION_VACIA, ...CFG, ...e.cfg }, 'Interpretar entrada': { ...ENTRADA, ...e.t } };
   if (e.plan) refs[e.nombrePlan ?? 'Plan del turno'] = e.plan;
   if (e.armados) refs['Armar avisos'] = e.armados;
   if (e.enviados) refs['Enviar aviso'] = e.enviados;
   if (e.respaldos) refs['Aviso de respaldo'] = e.respaldos;
-  const items = ejecutar(`${DOBLES}\n${e.extra ?? ''}\n${fuente}`, [{}], refs, { $getWorkflowStaticData: () => g, __bit: bit });
-  return { items, g, sd: (g['ventaMinima'] ?? {}) as J, bit };
+  const items = ejecutar(`${DOBLES}\n${DE_COMUN}\n${esMensajes ? `${SESION}\n` : ''}${e.extra ?? ''}\n${fuente}`, [{}], refs, { $getWorkflowStaticData: () => g, __bit: bit, $execution: { id: 'e1' } });
+  if (!esMensajes) return { items, g, sd: (g['ventaMinima'] ?? {}) as J, bit };
+  // «Armar mensajes» ya no envía ni escribe: arma TODO en un ítem (`salida`) y el bloque a comprometer (`bloque`). Esta vista conserva la lectura de siempre: `items` = lo que sale y `sd` = los
+  // datos estáticos que SIGUEN en n8n (residuo de PR-4b) más `estados` y `pedidos` tal como quedarían en el servidor tras el compromiso.
+  const a = items[0] as J;
+  const bloque = (a['bloque'] ?? null) as J | null;
+  const sd: J = { ...((g['ventaMinima'] ?? {}) as J) };
+  if (bloque && bloque['estado']) sd['estados'] = { [String(a['from'])]: bloque['estado'] };
+  if (bloque && Object.keys((bloque['pedidos'] ?? {}) as J).length) sd['pedidos'] = bloque['pedidos'];
+  return { items: a['salida'] as J[], g, sd, bit, armado: a };
 }
 const avisos = (plan: J, e: Entrada = {}) => nodo(AVISOS, { plan, ...e });
 const mensajes = (plan: J, e: Entrada = {}) => nodo(MENSAJES, { plan, ...e });
@@ -176,7 +214,7 @@ function textosDe(j: J): string[] {
   if (typeof j['texto'] === 'string') out.push(j['texto']);
   return out;
 }
-const GENERICO = 'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Para volver al inicio, escribe «menú».';
+const GENERICO = 'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Para volver al inicio, escribe «inicio».';
 const cuerpoDe = (j: J): string => String(j['payload'].text?.body ?? j['payload'].interactive?.body.text ?? j['payload'].image?.caption);
 
 // =================================================================================================
@@ -457,7 +495,7 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
     expect(bs[2].reply.title.length).toBeLessThanOrEqual(20);
     expect(r.items[0]).toMatchObject({ tipoReporte: 'interactive' });
     expect(r.items[0]!['respaldo']).toContain('¿Qué te gustaría hacer?');
-    expect(r.items[0]!['respaldo']).toContain('escribe «menu»');
+    expect(r.items[0]!['respaldo']).toContain('escribe «inicio»');
   });
 
   it('botones sin ids válidos caen a texto; un id de más de 256 caracteres se descarta', () => {
@@ -500,15 +538,15 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
       const i = r.items[0]!;
       expect(i['payload'].type).toBe('text');
       // Sin botón no se nombra el botón («Escribir al local»): queda lo demás, con el camino de vuelta al menú.
-      expect(i['payload'].text.body).toBe('Disculpa, eso no lo puedo resolver por aquí 🙏. Para volver al inicio, escribe «menú».');
+      expect(i['payload'].text.body).toBe('Disculpa, eso no lo puedo resolver por aquí 🙏. Para volver al inicio, escribe «inicio».');
       expect(i['tipoReporte']).toBe('text');
       expect(JSON.stringify(i)).not.toMatch(/bot[oó]n/i);
     }
     // el texto con «:» conserva lo que viene antes del «:»
     const r = mensajes({ mensajes: [enlace('No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.')] }, { cfg: { numeroRecepcion: '' } });
-    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido a nuestro equipo en este momento. Para volver al inicio, escribe «menú».');
+    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido a nuestro equipo en este momento. Para volver al inicio, escribe «inicio».');
     const dos = mensajes({ mensajes: [enlace('Ya tengo el comprobante de tu pedido #K7Q2. Si necesitas algo más, toca el botón.')] }, { cfg: { numeroRecepcion: '' } });
-    expect(dos.items[0]!['payload'].text.body).toBe('Ya tengo el comprobante de tu pedido #K7Q2. Para volver al inicio, escribe «menú».');
+    expect(dos.items[0]!['payload'].text.body).toBe('Ya tengo el comprobante de tu pedido #K7Q2. Para volver al inicio, escribe «inicio».');
   });
 
   it('modo prueba: a telefonoDePrueba, sin prefijo y sin reportar; fuera de prueba, reportable', () => {
@@ -683,7 +721,7 @@ describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', ()
   const PASE = 'Listo: pasé tu pedido #K7Q2 al restaurante. El pago lo coordinas con ellos al recoger.';
   const NO_PASE_PLAN = 'No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.';
   // Lo que sale: el mensaje con botón de enlace lleva al final el camino de vuelta al menú (03/10).
-  const NO_PASE = NO_PASE_PLAN + ' Para volver al inicio, escribe «menú».';
+  const NO_PASE = NO_PASE_PLAN + ' Para volver al inicio, escribe «inicio».';
   const plan = (): J => ({
     ruta: 'confirmar', pedido: PEDIDO, aviso: { tipo: 'pedido', datos: {} }, mensajes: [],
     condicionados: { siSalio: [texto(PASE)], siNoSalio: [enlace(NO_PASE_PLAN)] },
@@ -856,51 +894,56 @@ describe('Armar mensajes — marcas de derivación y de reservas (solo si el avi
 
 // =================================================================================================
 describe('Armar mensajes — estado, pedido guardado y cierre (el único que escribe)', () => {
-  it('escribe el estado con vmBarrer antes de vmEscribirEstado; «nada» y sin estadoNuevo no escriben', () => {
+  it('arma el estado con vmEscribirEstado sobre la vista de la sesión y lo pide al servidor; «nada» y sin estadoNuevo no arman nada que comprometer', () => {
     const r = mensajes({ ruta: 'menu', estadoNuevo: { paso: 'menu' }, mensajes: [texto('Hola')] });
     const pasos = r.bit.map((b) => b[0]);
-    expect(pasos.indexOf('barrer')).toBeGreaterThanOrEqual(0);
-    expect(pasos.indexOf('barrer')).toBeLessThan(pasos.indexOf('escribirEstado'));
+    expect(pasos).toContain('escribirEstado');
     expect(r.bit.find((b) => b[0] === 'escribirEstado')).toEqual(['escribirEstado', CLIENTE, 'menu']);
     expect(r.items[0]!['resumen']).toMatchObject({ estadoDespues: { paso: 'menu' } });
+    expect(r.armado).toMatchObject({ comprometer: true, modo: 'comprometer' });
     const nada = mensajes({ ruta: 'nada', estadoNuevo: { paso: 'menu' }, mensajes: [texto('Hola')] });
     expect(nada.bit.some((b) => b[0] === 'escribirEstado')).toBe(false);
+    expect(nada.armado).toMatchObject({ comprometer: false, modo: 'sin_estado_que_guardar', compromiso: null });
     const sin = mensajes({ ruta: 'menu', estadoNuevo: null, mensajes: [texto('Hola')] });
     expect(sin.bit.some((b) => b[0] === 'escribirEstado')).toBe(false);
+    expect(sin.armado).toMatchObject({ comprometer: false, modo: 'sin_estado_que_guardar' });
     const claveMala = mensajes({ ruta: 'menu', estadoNuevo: { paso: 'menu' }, mensajes: [texto('Hola')] }, { t: { from: 'abc' } });
     expect(claveMala.bit.some((b) => b[0] === 'escribirEstado')).toBe(false);
   });
 
-  it('el estado es por teléfono: dos clientes no comparten', () => {
-    const g: J = {};
-    mensajes({ ruta: 'm', estadoNuevo: { paso: 'pedido' }, mensajes: [texto('a')] }, { g });
-    mensajes({ ruta: 'm', estadoNuevo: { paso: 'reserva' }, mensajes: [texto('b')] }, { g, t: { from: '59100000012' } });
-    expect(g['ventaMinima'].estados[CLIENTE].paso).toBe('pedido');
-    expect(g['ventaMinima'].estados['59100000012'].paso).toBe('reserva');
+  it('el estado es por teléfono: dos clientes no comparten (cada uno tiene su bloque en el servidor)', () => {
+    const a = mensajes({ ruta: 'm', estadoNuevo: { paso: 'pedido' }, mensajes: [texto('a')] });
+    const b = mensajes({ ruta: 'm', estadoNuevo: { paso: 'reserva' }, mensajes: [texto('b')] }, { t: { from: '59100000012' } });
+    expect(a.sd['estados'][CLIENTE].paso).toBe('pedido');
+    expect(a.armado!['compromiso'].telefono).toBe(CLIENTE);
+    expect(b.sd['estados'][CLIENTE]).toBeUndefined();
+    expect(b.sd['estados']['59100000012'].paso).toBe('reserva');
+    expect(b.armado!['compromiso'].telefono).toBe('59100000012');
   });
 
   it('guarda el pedido con guardadoMs y lo fusiona en el turno siguiente (mediaId, resultado)', () => {
-    const g: J = {};
-    mensajes({ ruta: 'm', pedido: PEDIDO, mensajes: [texto('a')] }, { g });
-    expect(g['ventaMinima'].pedidos[PEDIDO['pedidoId']]).toMatchObject({ total: 55, codigo: 'K7Q2', guardadoMs: AHORA });
-    mensajes({ ruta: 'm', pedido: { pedidoId: PEDIDO['pedidoId'], mediaId: 'media-1', resultado: 'cuadra' }, mensajes: [texto('b')] }, { g, t: { ahoraMs: AHORA + 5 * MIN } });
-    expect(g['ventaMinima'].pedidos[PEDIDO['pedidoId']]).toMatchObject({
+    const primero = mensajes({ ruta: 'm', pedido: PEDIDO, mensajes: [texto('a')] });
+    expect(primero.sd['pedidos'][PEDIDO['pedidoId']]).toMatchObject({ total: 55, codigo: 'K7Q2', guardadoMs: AHORA });
+    const siguiente = mensajes({ ruta: 'm', pedido: { pedidoId: PEDIDO['pedidoId'], mediaId: 'media-1', resultado: 'cuadra' }, mensajes: [texto('b')] },
+      { cfg: { sesion: sesionCon(primero.armado!['bloque'] as J) }, t: { ahoraMs: AHORA + 5 * MIN } });
+    expect(siguiente.sd['pedidos'][PEDIDO['pedidoId']]).toMatchObject({
       total: 55, lineas: PEDIDO['lineas'], mediaId: 'media-1', resultado: 'cuadra', guardadoMs: AHORA + 5 * MIN,
     });
   });
 
-  it('los pedidos de más de 72 horas se borran; los de menos, no', () => {
-    const g = { ventaMinima: { pedidos: { viejo: { guardadoMs: AHORA - 73 * HORA }, reciente: { guardadoMs: AHORA - 71 * HORA }, roto: null } } };
-    const r = mensajes({ ruta: 'm', mensajes: [texto('a')] }, { g });
-    expect(Object.keys(r.sd['pedidos'])).toEqual(['reciente']);
+  it('los pedidos de más de 72 horas se borran al comprometer; los de menos, no', () => {
+    const bloque = { v: 1, estado: null, pedidos: { viejo: { guardadoMs: AHORA - 73 * HORA }, reciente: { guardadoMs: AHORA - 71 * HORA }, roto: null } };
+    const r = mensajes({ ruta: 'm', pedido: PEDIDO, mensajes: [texto('a')] }, { cfg: { sesion: sesionCon(bloque) } });
+    expect(Object.keys(r.sd['pedidos']).sort()).toEqual(['reciente', PEDIDO['pedidoId']].sort());
   });
 
-  it('sin datos estáticos (vmSd da null) el turno responde igual, sin estado ni conteo', () => {
+  it('sin datos estáticos (vmSd da null) el turno responde igual y el estado se arma igual (vive en el servidor); solo falta el residuo de PR-4b', () => {
     const sinSd = 'function vmSd() { return null; }';
     const r = nodo(MENSAJES, { plan: { ruta: 'm', estadoNuevo: { paso: 'menu' }, pedido: PEDIDO, mensajes: [texto('Hola')] }, extra: sinSd });
     expect(r.items).toHaveLength(1);
     expect(r.items[0]!['texto']).toBe('Hola');
-    expect(r.bit).toEqual([]);
+    expect(r.armado).toMatchObject({ comprometer: true, modo: 'comprometer' });
+    expect(r.sd['estados'][CLIENTE].paso).toBe('menu');
     const a = nodo(AVISOS, { plan: { aviso: { tipo: 'pedido', datos: {} } }, extra: sinSd });
     expect(a.items).toHaveLength(2);
     expect(a.items[0]!['errores']).toEqual(['sin_datos_estaticos: no se pudo comprobar el tope de avisos']);
@@ -1076,7 +1119,7 @@ describe('Las diez reglas: nada prohibido sale, en ningún texto', () => {
 // =================================================================================================
 describe('Resumen del turno', () => {
   const corrida = (items: J[], armados: J[] = [], cfg: J = {}): J[] =>
-    ejecutar(`${DOBLES}\n${RESUMEN}`, [{}], { 'Config del negocio': { ...CFG, ...cfg }, 'Armar mensajes': items, 'Armar avisos': armados },
+    ejecutar(`${DOBLES}\n${DE_COMUN}\n${SESION}\n${RESUMEN}`, [{}], { 'Config del negocio': { ...CFG, ...cfg }, 'Soltar mensajes': items, 'Armar avisos': armados },
       { $getWorkflowStaticData: () => ({}), __bit: [] });
 
   it('junta los mensajes, los avisos armados y el resumen del primer ítem', () => {
@@ -1129,12 +1172,16 @@ describe('Los tres nodos son JavaScript plano', () => {
 
   it('solo Armar mensajes escribe estado: los otros dos no llaman a las funciones que escriben (salvo que Resumen del turno DEVUELVE el estado previo si la entrega falla del todo: R3)', () => {
     expect(AVISOS).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData/);
-    expect(RESUMEN).not.toMatch(/vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData/);
-    // La única escritura de Resumen es la reversión, y va justo antes del `throw` de la entrega fallida.
-    expect(RESUMEN.match(/vmEscribirEstado/g)).toHaveLength(1);
-    expect(RESUMEN).toMatch(/vmEscribirEstado\([\s\S]{0,200}\}\s*throw new Error\('Entrega fallida/);
+    // PR-4a: el estado vive en el servidor. Resumen ya no escribe nada (ni en los datos estáticos): solo corta con el `throw` de la entrega fallida.
+    expect(RESUMEN).not.toMatch(/vmBarrer|vmEscribirEstado|avContar|rsAnotar|\$getWorkflowStaticData|vmSd\(/);
+    expect(RESUMEN).toMatch(/throw new Error\('Entrega fallida/);
+    // La compensación la ARMA «Confirmar envío» (con el bloque de antes del turno) y la manda el nodo HTTP «Comprometer compensación»; los Code nunca llaman al servidor.
+    expect(CONFIRMAR).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData|vmSd\(|fetch|\$http/);
+    expect(SOLTAR).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|fetch|\$http/); // (solo anota las marcas del aviso ya enviado: residuo de PR-4b)
+    // «Armar mensajes» ARMA el estado (sobre la vista de la sesión) y las marcas del residuo de PR-4b; no envía ni llama a la red.
     expect(MENSAJES).toMatch(/vmEscribirEstado/);
     expect(MENSAJES).toMatch(/avContar/);
+    expect(MENSAJES).not.toMatch(/fetch|\$http|httpRequest/);
   });
 });
 
@@ -1153,6 +1200,16 @@ describe('Armar mensajes — S4: «Reenviar QR» sí reenvía, sin reabrir el co
     expect(i).toMatchObject({ referencia: PEDIDO['pedidoId'], monto: 55, tipoReporte: 'image' });
     expect(i['evento']).toBeUndefined();
     expect(r.sd['estados'][CLIENTE].paso).toBe('esperando_comprobante');
+  });
+
+  it('PR-4: lineas y entrega pasan SOLO con el evento qr_enviado, saneadas; el reenvío y los otros eventos no las llevan', () => {
+    const lineas = [{ id: 'taco', cantidad: 2, detalle: 'sin cebolla', precio: 1, nombre: 'X' }, { id: '../mal', cantidad: 1 }];
+    const con = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr({ lineas, entrega: { tipo: 'retiro' } })] });
+    expect(con.items[0]!['lineas']).toEqual([{ id: 'taco', cantidad: 2, detalle: 'sin cebolla' }]);
+    expect(con.items[0]!['entrega']).toEqual({ tipo: 'retiro' });
+    const sin = mensajes(reenvio({ lineas, entrega: { tipo: 'retiro' } }));
+    expect(sin.items[0]!['lineas']).toBeUndefined();
+    expect(sin.items[0]!['entrega']).toBeUndefined();
   });
 
   it('el evento solo lo lleva el QR que el plan pidió como evento (el primer envío)', () => {
@@ -1262,18 +1319,19 @@ describe('Armar mensajes y Armar avisos — S6: topes por teléfono y por hora, 
     expect(claves).not.toContain('59170000000'); // las más antiguas, sí
   });
 
-  it('`sd.pedidos` guarda como mucho 500 pedidos: al pasarse se expulsan los más antiguos, nunca el recién guardado', () => {
+  it('los pedidos de un teléfono caben en el tope en BYTES del servidor (15.000): al pasarse se expulsan los más antiguos, nunca el recién guardado ni el que sigue en el estado', () => {
     const viejos: J = {};
-    for (let i = 0; i < 520; i++) viejos[`ped-${i}`] = { pedidoId: `ped-${i}`, from: '59100000099', total: 10, guardadoMs: AHORA - 60 * MIN + i };
-    const r = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr()] }, { g: { ventaMinima: { pedidos: viejos } } });
+    for (let i = 0; i < 520; i++) viejos[`ped-${i}`] = { pedidoId: `ped-${i}`, from: CLIENTE, total: 10, guardadoMs: AHORA - 60 * MIN + i };
+    const r = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr()] }, { cfg: { sesion: sesionCon({ v: 1, estado: null, pedidos: viejos }) } });
     const claves = Object.keys(r.sd['pedidos']);
-    expect(claves).toHaveLength(500);
+    expect(claves.length).toBeLessThan(520);
     expect(claves).toContain(PEDIDO['pedidoId']);
     expect(claves).not.toContain('ped-0');
     expect(claves).toContain('ped-519');
+    expect(Buffer.byteLength(JSON.stringify(r.armado!['bloque']))).toBeLessThanOrEqual(15000);
     // Negado: por debajo del tope no se expulsa nada.
-    const pocos: J = { 'ped-a': { pedidoId: 'ped-a', from: '59100000099', total: 10, guardadoMs: AHORA - 60 * MIN } };
-    const q = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr()] }, { g: { ventaMinima: { pedidos: pocos } } });
+    const pocos: J = { 'ped-a': { pedidoId: 'ped-a', from: CLIENTE, total: 10, guardadoMs: AHORA - 60 * MIN } };
+    const q = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr()] }, { cfg: { sesion: sesionCon({ v: 1, estado: null, pedidos: pocos }) } });
     expect(Object.keys(q.sd['pedidos']).sort()).toEqual(['ped-a', PEDIDO['pedidoId']].sort());
   });
 });
@@ -1293,26 +1351,30 @@ describe('Armar avisos — R3: el tope de derivaciones respeta el 0 y lee solo l
 describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (03/10)', () => {
   const titulos = (j: J): string[] => (j['payload'].interactive?.action?.buttons ?? []).map((b: J) => String(b.reply.title));
   const ids = (j: J): string[] => (j['payload'].interactive?.action?.buttons ?? []).map((b: J) => String(b.reply.id));
-  const SEGUIR = 'Para volver al inicio, escribe «menú».';
+  const SEGUIR = 'Para volver al inicio, escribe «inicio».';
 
   it('todo mensaje con botones y lugar (menos de tres) sale con «Menú» (`m|menu`) al final; con tres, no se agrega nada', () => {
     const uno = mensajes({ mensajes: [botones('Elige', 'A')] }).items[0]!;
-    expect(titulos(uno)).toEqual(['A', 'Menú']);
+    expect(titulos(uno)).toEqual(['A', 'Volver a inicio']);
     expect(ids(uno)).toEqual(['b|0', 'm|menu']);
     const dos = mensajes({ mensajes: [botones('Elige', 'A', 'B')] }).items[0]!;
-    expect(titulos(dos)).toEqual(['A', 'B', 'Menú']);
+    expect(titulos(dos)).toEqual(['A', 'B', 'Volver a inicio']);
+    expect([...titulos(uno), ...titulos(dos)].every((t) => t.length <= 20), 'títulos de botón de WhatsApp ≤ 20').toBe(true);
+    // 06/11: también junto a botones de paso de pedido (la palabra «menú» se confunde con la carta en un restaurante).
+    const paso = mensajes({ mensajes: [{ tipo: 'botones', cuerpo: 'Elige', botones: [{ id: 'p|confirmar', title: 'Confirmar pedido' }, { id: 'p|cambiar', title: 'Cambiar algo' }] }] }).items[0]!;
+    expect(titulos(paso)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Volver a inicio']);
     // Negado: con tres no hay lugar; con el propio menú (`sinMenu`) no se repite; sin botones sigue siendo un texto.
     expect(titulos(mensajes({ mensajes: [botones('Elige', 'A', 'B', 'C')] }).items[0]!)).toEqual(['A', 'B', 'C']);
     expect(titulos(mensajes({ mensajes: [{ ...botones('Elige', 'A', 'B'), sinMenu: true }] }).items[0]!)).toEqual(['A', 'B']);
     expect(mensajes({ mensajes: [texto('Hola')] }).items[0]!['payload'].type).toBe('text');
     // Un botón «m|menu» que el plan ya trae no se duplica.
-    const ya = mensajes({ mensajes: [{ tipo: 'botones', cuerpo: 'Elige', botones: [{ id: 'm|menu', title: 'Menú' }] }] }).items[0]!;
+    const ya = mensajes({ mensajes: [{ tipo: 'botones', cuerpo: 'Elige', botones: [{ id: 'm|menu', title: 'Volver a inicio' }] }] }).items[0]!;
     expect(ids(ya)).toEqual(['m|menu']);
     // Agregar el botón no agrega mensajes.
     expect(mensajes({ mensajes: [botones('Elige', 'A', 'B')] }).items).toHaveLength(1);
   });
 
-  it('el mensaje con botón de enlace lleva al final «escribe «menú»», sin repetirlo si ya lo trae', () => {
+  it('el mensaje con botón de enlace lleva al final «escribe «inicio»», sin repetirlo si ya lo trae', () => {
     const e = mensajes({ mensajes: [enlace('Texto del plan.')] }).items[0]!;
     expect(e['texto']).toBe(`Texto del plan. ${SEGUIR}`);
     expect(e['payload'].interactive.body.text).toBe(`Texto del plan. ${SEGUIR}`);
@@ -1320,13 +1382,13 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
     expect(ya['texto']).toBe(`Texto del plan. ${SEGUIR}`);
   });
 
-  it('la frase de «menú» es «Para volver al inicio, escribe «menú».»: la vieja («seguir con tu pedido o tu reserva») no sale en ningún mensaje', () => {
-    expect(SEGUIR).toBe('Para volver al inicio, escribe «menú».');
+  it('la frase de «menú» es «Para volver al inicio, escribe «inicio».»: la vieja («seguir con tu pedido o tu reserva») no sale en ningún mensaje', () => {
+    expect(SEGUIR).toBe('Para volver al inicio, escribe «inicio».');
     const e = mensajes({ mensajes: [enlace('Texto del plan.')] }).items[0]!;
-    expect(e['texto']).toBe('Texto del plan. Para volver al inicio, escribe «menú».');
+    expect(e['texto']).toBe('Texto del plan. Para volver al inicio, escribe «inicio».');
     expect(JSON.stringify(e)).not.toContain('seguir con tu pedido');
     // La comparación por texto reconoce la frase NUEVA (no la repite) y ya no reconoce la vieja (se agrega la nueva).
-    const vieja = 'Texto del plan. Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
+    const vieja = 'Texto del plan. Si quieres seguir con tu pedido o tu reserva, escribe «inicio».';
     expect(mensajes({ mensajes: [enlace(vieja)] }).items[0]!['texto']).toBe(`${vieja} ${SEGUIR}`);
     // El mensaje genérico de derivación lleva la frase nueva.
     expect(String(mensajes({ mensajes: [texto('x')] }, { armados: [], enviados: [] }).items[0]!['texto'])).not.toContain('seguir con tu pedido');
@@ -1344,7 +1406,7 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
   it('el texto sin botón (recepción igual al cliente) nombra «menú» y NO el botón «Escribir al local»', () => {
     const r = mensajes({ mensajes: [enlace(GENERICO)] }, { cfg: { numeroRecepcion: CLIENTE } }).items[0]!;
     expect(r['payload'].type).toBe('text');
-    expect(r['texto']).toContain('escribe «menú»');
+    expect(r['texto']).toContain('escribe «inicio»');
     expect(r['texto']).not.toMatch(/escribir al local|bot[oó]n/i);
   });
 
@@ -1552,8 +1614,8 @@ describe('Voz y tono (05/10): sin número de recepción el texto no nombra el bo
   });
 });
 
-describe('Voz y tono (05/10): la cola «Para volver al inicio, escribe «menú».» (`amConSeguir`)', () => {
-  const COLA = 'Para volver al inicio, escribe «menú».';
+describe('Voz y tono (05/10): la cola «Para volver al inicio, escribe «inicio».» (`amConSeguir`)', () => {
+  const COLA = 'Para volver al inicio, escribe «inicio».';
   const veces = (t: string): number => t.split(COLA).length - 1;
   it('se agrega UNA vez al mensaje con botón de enlace, y no se duplica si el texto ya la trae (fila 5 y la derivación genérica)', () => {
     const sin = String(mensajes({ mensajes: [enlace('Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo.')] }).items[0]!['texto']);

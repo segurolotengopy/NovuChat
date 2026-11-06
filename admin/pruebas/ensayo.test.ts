@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { MODELO_POR_DEFECTO } from '../functions/src/central/ejes.ts';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'plataforma', 'ensayo.mjs');
 const VENTA = join(aqui, '..', 'scripts', 'datos', 'negocio-demo-venta-resto.json');
@@ -64,11 +65,11 @@ beforeAll(async () => {
   for (const d of [`rutasWhatsApp/${NUM_DEMO}`, `rutasWhatsApp/${NUM_CLIENTE}`]) await db.doc(d).delete();
   await db.recursiveDelete(db.doc('tenants/ensayo'));
   // Un demo es MODALIDAD demostración explícita en su cuenta (F1): el plan no lo dice.
-  await db.doc(`tenants/${DEMO}`).set({ nombre: 'Demo', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], plan: 'pro' });
+  await db.doc(`tenants/${DEMO}`).set({ nombre: 'Demo', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]), plan: 'pro' });
   await db.doc(`tenants/${DEMO}/cuenta/estado`).set({ plan: 'pro', modalidad: 'demostracion' });
   await db.doc(`tenants/${DEMO}/config/negocio`).set({ nombreNegocio: 'Demo de siempre' });
   // El cliente real: prepago. Y sin modalidad escrita tampoco se ensaya (se prueba abajo).
-  await db.doc(`tenants/${CLIENTE_REAL}`).set({ nombre: 'Cliente', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], plan: 'pro' });
+  await db.doc(`tenants/${CLIENTE_REAL}`).set({ nombre: 'Cliente', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]), plan: 'pro' });
   await db.doc(`tenants/${CLIENTE_REAL}/cuenta/estado`).set({ plan: 'pro', modalidad: 'prepago', periodoPagado: '2099-12' });
   await db.doc(`rutasWhatsApp/${NUM_DEMO}`).set({ tenantId: DEMO, flujo: 'agendamiento', aliasSecreto: 'demoA', estado: 'activo' });
   await db.doc(`rutasWhatsApp/${NUM_CLIENTE}`).set({ tenantId: CLIENTE_REAL, flujo: 'agendamiento', aliasSecreto: 'cliente09', estado: 'activo' });
@@ -164,7 +165,7 @@ describe('ensayo.mjs --flujo venta', () => {
     await db.recursiveDelete(db.doc('tenants/ensayo'));
     await db.doc(`rutasWhatsApp/${NUM_VENTA}`).set({ tenantId: DEMO, flujo: 'agendamiento', aliasSecreto: 'demoA', estado: 'activo' });
     await db.doc(`rutasWhatsApp/${NUM_PAGA}`).set({ tenantId: CLIENTE_REAL, flujo: 'agendamiento', aliasSecreto: 'cliente09', estado: 'activo' });
-    await db.doc(`tenants/${AJENO}`).set({ nombre: 'Ajeno', estado: 'activo', vertical: 'venta', flujos: ['venta'], plan: 'pro' });
+    await db.doc(`tenants/${AJENO}`).set({ nombre: 'Ajeno', estado: 'activo', vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]), plan: 'pro' });
     await db.doc(`tenants/${AJENO}/pedidos/p1`).set({ total: 10 });
     await db.doc(`tenants/${AJENO}/conversaciones/c1`).set({ x: 1 });
   });
@@ -188,7 +189,7 @@ describe('ensayo.mjs --flujo venta', () => {
   });
 
   it('un demo sin modalidad escrita tampoco se desvía', async () => {
-    await db.doc('tenants/ens-sin-modalidad').set({ nombre: 'S', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'] });
+    await db.doc('tenants/ens-sin-modalidad').set({ nombre: 'S', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]) });
     await db.doc('rutasWhatsApp/485173075').set({ tenantId: 'ens-sin-modalidad', flujo: 'agendamiento', aliasSecreto: 'x', estado: 'activo' });
     const r = prepararVenta('485173075', ['--flujo', 'venta', '--aplicar']);
     expect(r.codigo).not.toBe(0);
@@ -206,7 +207,9 @@ describe('ensayo.mjs --flujo venta', () => {
     const r = prepararVenta(NUM_VENTA, ['--flujo', 'venta', '--aplicar']);
     expect(r.codigo, r.salida).toBe(0);
     const ficha = (await db.doc('tenants/ensayo').get()).data() ?? {};
-    expect(ficha['flujos']).toEqual(['venta']);
+    // H2b-cierre: el script ya no escribe `flujos`; `modulos` (la única fuente) sale del flujo del ensayo.
+    expect(ficha['flujos']).toBeUndefined();
+    expect(ficha['modulos']).toEqual(modulosDeFlujos(['venta'] as never[]));
     expect(ficha['vertical']).toBe('venta');
     expect(await ruta(NUM_VENTA)).toMatchObject({ tenantId: 'ensayo', flujo: 'venta', ensayoFlujoDe: 'agendamiento' });
   });
@@ -241,7 +244,7 @@ describe('ensayo.mjs --flujo venta', () => {
     await db.doc('tenants/ensayo/conversaciones/s1/mensajes/m1').set({ t: 'a' });
     await db.doc('tenants/ensayo/conversaciones/s1/mensajes/m2').set({ t: 'b' });
     const antes = (await db.collection('tenants/ensayo/catalogo').get()).size
-      + (await db.collection('tenants/ensayo/funcionarios').get()).size + 4 /* config/contador: 4 refs */;
+      + (await db.collection('tenants/ensayo/funcionarios').get()).size + 5 /* config/contador: 5 refs (con contadores/agendas, H2b-9) */;
     const r = prepararVenta(NUM_VENTA, ['--flujo', 'venta']);
     expect(r.codigo, r.salida).toBe(0);
     const m = /se vacían (\d+) documento\(s\).*\((\d+) de venta/.exec(r.salida);
@@ -272,8 +275,10 @@ describe('ensayo.mjs --flujo venta', () => {
     expect(await ruta(NUM_VENTA)).toMatchObject({ tenantId: 'ensayo', ensayoDe: DEMO, flujo: 'venta', ensayoFlujoDe: 'agendamiento' });
     const ficha = (await db.doc('tenants/ensayo').get()).data() ?? {};
     expect(ficha['vertical']).toBe('venta');
-    expect(ficha['flujos']).toEqual(['venta']);
-    expect(ficha['modulos']).toBeUndefined();
+    // H2b-cierre: `flujos` ya no se escribe (el valor viejo queda como dato sin lectores).
+    // H2b-7: ya no se borra; se deriva del flujo del ensayo (la lista vieja ['productos','agenda'] se reemplaza).
+    expect(ficha['modulos']).toEqual(expect.arrayContaining(['productos', 'cobros', 'inventario', 'pedidos', 'catalogo-web']));
+    expect(ficha['modulos']).not.toContain('agenda');
     for (const d of ['pedidos/viejo', 'cierres/viejo', 'conversaciones/viejo', 'conversaciones/viejo/mensajes/m1']) {
       expect((await db.doc(`tenants/ensayo/${d}`).get()).exists, d).toBe(false);
     }
@@ -287,7 +292,7 @@ describe('ensayo.mjs --flujo venta', () => {
   it('--estado muestra el flujo de `ensayo` y si la ruta está desviada', () => {
     const r = correr('--numero', NUM_VENTA, '--estado');
     expect(r.codigo).toBe(0);
-    expect(r.salida).toMatch(/flujos \["venta"\] · vertical venta/);
+    expect(r.salida).toMatch(/vertical venta · modulos \d+/);
     expect(r.salida).toMatch(/Desviada {2}: sí/);
     expect(r.salida).not.toContain(NUM_VENTA);
     expect(r.salida).not.toContain('demoA');
@@ -305,7 +310,7 @@ describe('ensayo.mjs --flujo venta', () => {
     const estado = correr('--numero', NUM_VENTA, '--estado');
     expect(estado.salida).toMatch(/Desviada {2}: no/);
     // La ficha de `ensayo` sigue coherente (venta, activa) y el ajeno intacto.
-    expect((await db.doc('tenants/ensayo').get()).get('flujos')).toEqual(['venta']);
+    expect((await db.doc('tenants/ensayo').get()).get('modulos')).toEqual(modulosDeFlujos(['venta'] as never[]));
     expect((await db.doc(`tenants/${AJENO}/pedidos/p1`).get()).exists).toBe(true);
   });
 
@@ -315,9 +320,10 @@ describe('ensayo.mjs --flujo venta', () => {
     const r = preparar(NUM_VENTA, ['--aplicar']); // negocio de agendamiento (Platinum), sin --flujo
     expect(r.codigo, r.salida).toBe(0);
     const ficha = (await db.doc('tenants/ensayo').get()).data() ?? {};
-    expect(ficha['flujos']).toEqual(['agendamiento']);
     expect(ficha['vertical']).toBe('agendamiento');
-    expect(ficha['modulos']).toBeUndefined();
+    // H2b-7: `modulos` se deriva del flujo del ensayo (agendamiento), sin los restos de venta.
+    expect(ficha['modulos']).toEqual(expect.arrayContaining(['productos', 'cobros', 'agenda']));
+    expect(ficha['modulos']).not.toContain('pedidos');
     expect((await db.doc('tenants/ensayo/pedidos/de-venta-anterior').get()).exists).toBe(false);
     const d = await ruta(NUM_VENTA);
     expect(d).toMatchObject({ tenantId: 'ensayo', ensayoDe: DEMO, flujo: 'agendamiento' });

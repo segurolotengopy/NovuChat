@@ -46,9 +46,18 @@ rules:
       código (riesgo de XSS/inyección). Use funciones normales o JSON.parse.
     severity: ERROR
     languages: [javascript, typescript]
+    # `vm.compileFunction` compila texto como código igual que `new Function`.
+    # Las pruebas y las herramientas de ensayo lo usan para cargar fuentes del
+    # propio repositorio (lista cerrada en admin/pruebas/lib/new-function-permitidos.json);
+    # en el código que se despliega queda prohibido.
+    paths:
+      exclude:
+        - "admin/pruebas/**"
+        - "Flujos/**/herramientas/**"
     pattern-either:
       - pattern: eval(...)
       - pattern: new Function(...)
+      - pattern: vm.compileFunction(...)
       - pattern: setTimeout("...", ...)
       - pattern: setInterval("...", ...)
     metadata:

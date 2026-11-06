@@ -332,9 +332,16 @@ describe('los flujos que incluyen «Preparar imagen» llevan anuncio-por-titular
   it('hay flujos que lo incluyen (la prueba no es vacía)', () => {
     expect(incluyen.length).toBeGreaterThanOrEqual(10);
   });
-  it.each(incluyen)('%s', (_f, codigo) => {
-    const a = codigo.indexOf(MODULO.trimEnd());
-    const b = codigo.indexOf(PREPARAR.trimEnd());
+  // Ya no hay excepciones (05/11/2026): el flujo de Rubén «Noches» llama «Normalizar entrada» al nodo de entrada, como los demás, y lo incluye byte a byte. Si algún flujo vuelve a necesitar
+  // una traducción textual de un nombre de nodo, se declara aquí con su motivo.
+  const NOMBRES_TRADUCIDOS: Record<string, Record<string, string>> = {};
+  const traducir = (f: string, texto: string): string => {
+    const t = Object.entries(NOMBRES_TRADUCIDOS).find(([prefijo]) => f.startsWith(prefijo))?.[1] ?? {};
+    return Object.entries(t).reduce((acc, [de, a]) => acc.split(`$('${de}')`).join(`$('${a}')`), texto);
+  };
+  it.each(incluyen)('%s', (f, codigo) => {
+    const a = codigo.indexOf(traducir(f, MODULO).trimEnd());
+    const b = codigo.indexOf(traducir(f, PREPARAR).trimEnd());
     expect(a).toBeGreaterThanOrEqual(0);
     expect(b).toBeGreaterThan(a);
   });

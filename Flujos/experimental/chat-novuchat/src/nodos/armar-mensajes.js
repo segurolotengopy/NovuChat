@@ -7,8 +7,11 @@
 // MENSAJES POR TURNO: uno al cliente (salvo bloqueado, ninguno) y, si el cliente pide hablar con el equipo y no se avisó en esta ventana, la plantilla a recepción (una vez por ventana).
 // TODO mensaje del asistente, salvo la lista de rubros, el traspaso con su botón de enlace y los avisos del sistema, lleva los dos botones «Ver planes» y «Hablar con el equipo».
 //
-// LA FICHA SE ESCRIBE AQUÍ (la cola, el historial, el rubro, lo que el cliente dijo de sí mismo) y en «Registrar evento» (el evento que llega); `avisado` y `avisoFalla` los marca «Confirmar envío»
-// con lo que Meta contestó. Aquí también se recuerdan los ids de Meta y se barren las fichas de más de 48 horas.
+// EL ESTADO SE COMPROMETE ANTES DE ENVIAR (PR-4c2, enmienda §2.3): este nodo NO escribe nada ni envía. Arma TODO en UN ítem (`salida`: un ítem por mensaje; `nueva`: la ficha del turno;
+// `compromiso`: el pedido al servidor) y «Comprometer turno» lo manda; «Soltar mensajes» decide con la respuesta. `avisado` se marca ya aquí con el aviso a recepción (si Meta rechaza la
+// plantilla, «Confirmar envío» lo deshace con un compromiso compensatorio).
+// ESTE MISMO CÓDIGO corre en «Armar mensajes» (pasada 1: la ficha de «Armar turno») y en «Replanificar mensajes» (pasada 2: la ficha GANADORA del primer `conflicto_version`, con el mismo
+// resultado del modelo, sin llamarlo otra vez). Si otra ejecución ya respondió estos eventos o llegó uno más nuevo, la pasada 2 no responde (la más nueva responde por todos).
 const cfg = cnCfg();
 const t = cnPrimero('Interpretar entrada') || {};
 const from = String(t.from || '');
@@ -20,10 +23,22 @@ const puerta = cnPrimero('Puerta del turno') || {};
 const turno = cnPrimero('Armar turno');
 if (!turno || !turno.plan) return [];
 
-const fichas = cnMapaDeFichas(true);
 const claveOk = cnClaveValida(from);
-const previa = claveOk ? cnFichaDe(fichas.mapa, from) : null;
-const antes = chFichaVigente(previa, ahora);
+const pasada = cnNodo('Comprometer turno') ? 2 : 1;
+let version = Number(turno.version) || 0;
+let base = turno.ficha;
+let eventosTurno = Array.isArray(turno.eventos) ? turno.eventos : [];
+if (pasada === 2) {
+  const r1 = ssResultadoDeCompromiso(cnPrimero('Comprometer turno'));
+  if (r1.resultado !== 'conflicto') return [];
+  version = r1.version;
+  base = r1.ganador;
+}
+const antes = chFichaVigente(base, ahora);
+if (pasada === 2 && eventosTurno.length) {
+  // El ganador cambió la ficha. Si otra ejecución ya respondió estos eventos o hay uno más nuevo, responde ella; esta no (`chOtraEjecucionResponde`).
+  if (chOtraEjecucionResponde(antes, eventosTurno.map((e) => e.seq))) return [];
+}
 
 let mensajes = [];
 let nueva = antes;
@@ -44,7 +59,11 @@ const aviso = (estado, marca, yaAvisado) => {
   return payload ? { para: 'recepcion', payload: payload, texto: 'Aviso a recepción: ' + estado + '.', respaldo: '', tipoReporte: null, esAviso: true, marcaAvisado: marca, empresaAviso: chNorm(chPlano(nueva.empresa, 60)), evento: 'aviso' } : null;
 };
 
-if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
+// El genérico con botón a recepción (§6 del contrato): el texto del traspaso con el botón de enlace, más el aviso a recepción de la falla (`salidaFalla`), SIN compromiso. Sale cuando no hay estado en el servidor y cuando el compromiso falla.
+const generico = () => chMensajeEquipo(cfg, Object.assign({}, chFichaVigente(null, ahora), { nombrePedido: true }), from);
+if (plan.ruta === 'sin_estado') {
+  mensajes.push(generico());
+} else if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
   // La puerta cerró el turno: nada de modelo, planilla ni historial. Solo se recuerda el id (los repetidos de Meta no se vuelven a contar).
   nueva = chClon(antes);
   chRecordarIds(nueva, [t.mensajeId]);
@@ -57,7 +76,7 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
   }
 } else {
   conversacion = true;
-  const eventos = Array.isArray(turno.eventos) ? turno.eventos : [];
+  const eventos = pasada === 2 ? antes.cola.filter((e) => e.seq > antes.hasta) : eventosTurno;
   const validacion = chValidacion({ cfg: cfg, plan: plan, eventos: eventos, precios: turno.precios === true, ficha: antes });
   const intentos = [];
   if (turno.llamarModelo === true) {
@@ -119,39 +138,69 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
     // Con una empresa DISTINTA a las ya avisadas en la ventana, un aviso nuevo; con tope: el primero + hasta 2 empresas distintas (3 plantillas por ventana y por teléfono).
     const empresaNueva = nueva.empresa !== '' && antes.empresasAvisadas.length > 0 && !antes.empresasAvisadas.includes(chNorm(nueva.empresa)) && antes.avisosVentana < CH_TOPE_AVISOS;
     const a = aviso((chDatos(cfg).textos || {}).estadoAviso, true, antes.avisado === true && !empresaNueva);
-    if (a) mensajes.push(a);
+    if (a) {
+      mensajes.push(a);
+      // `avisado` ya aquí (se compromete antes de enviar): si Meta rechaza la plantilla, «Confirmar envío» lo deshace.
+      nueva = chClon(nueva);
+      nueva.avisado = true; nueva.avisoFalla = '';
+      const previas = Array.isArray(nueva.empresasAvisadas) ? nueva.empresasAvisadas.filter((x) => typeof x === 'string') : [];
+      nueva.empresasAvisadas = a.empresaAviso && !previas.includes(a.empresaAviso) ? previas.concat([a.empresaAviso]).slice(-3) : previas.slice(-3);
+      nueva.avisosVentana = Math.min(3, (Number(nueva.avisosVentana) || 0) + 1);
+    }
   }
 }
 
 // ====================================================== destinatarios, modo prueba, ids
 const PREFIJO_RECEPCION = '[a recepción] ';
-const salida = [];
-for (const m of mensajes) {
-  let numero = m.para === 'recepcion' ? recepcion : from;
-  if (prueba) numero = telPrueba;
-  if (!numero) continue;
-  const p = m.payload;
-  p.to = numero;
-  let tx = m.texto;
-  if (prueba && m.para === 'recepcion') {
-    tx = PREFIJO_RECEPCION + tx;
-    if (p.type === 'template') p.template.components[0].parameters[0].text = cnRecorte(PREFIJO_RECEPCION + p.template.components[0].parameters[0].text, 60);
+const aItems = (lista) => {
+  const salida = [];
+  for (const m of lista) {
+    let numero = m.para === 'recepcion' ? recepcion : from;
+    if (prueba) numero = telPrueba;
+    if (!numero) continue;
+    const p = m.payload;
+    p.to = numero;
+    let tx = m.texto;
+    if (prueba && m.para === 'recepcion') {
+      tx = PREFIJO_RECEPCION + tx;
+      if (p.type === 'template') p.template.components[0].parameters[0].text = cnRecorte(PREFIJO_RECEPCION + p.template.components[0].parameters[0].text, 60);
+    }
+    salida.push({
+      para: numero, destino: m.para, payload: p, texto: tx, respaldo: m.respaldo || m.texto,
+      tipoReporte: m.tipoReporte || null, evento: m.evento || '', esInteractivo: p.type === 'interactive',
+      esAviso: m.esAviso === true, marcaAvisado: m.marcaAvisado === true, empresaAviso: m.empresaAviso || '',
+      // Solo lo que sale al cliente se reporta; en modo prueba, nada.
+      reportar: !prueba && m.para === 'cliente' && !!m.tipoReporte,
+      phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion || 'v26.0', from: from, sinMensajes: false,
+    });
   }
-  salida.push({ json: {
-    para: numero, destino: m.para, payload: p, texto: tx, respaldo: m.respaldo || m.texto,
-    tipoReporte: m.tipoReporte || null, evento: m.evento || '', esInteractivo: p.type === 'interactive',
-    esAviso: m.esAviso === true, marcaAvisado: m.marcaAvisado === true, empresaAviso: m.empresaAviso || '',
-    // Solo lo que sale al cliente se reporta; en modo prueba, nada.
-    reportar: !prueba && m.para === 'cliente' && !!m.tipoReporte,
-    phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion || 'v26.0', from: from, sinMensajes: false,
-  } });
-}
-
-// ============================================ LA FICHA: un solo lugar, al final del turno
-if (claveOk) {
-  fichas.mapa[from] = nueva;
-  // Primero se escribe y después se barre: así el total nunca pasa del tope (5.000), contando esta ficha.
-  chBarrer(fichas.mapa, ahora);
+  return salida;
+};
+const salida = aItems(mensajes);
+const salidaFalla = aItems([generico()]);
+// «Pasar con recepción» es SIEMPRE el aviso a recepción MÁS el botón (política del 21/09/2026): el genérico de una falla (compromiso, `no_cabe`, sin estado) lleva la plantilla de aviso como un ÍTEM MÁS,
+// sin nodos nuevos. NO se arma en la variante de PRUEBA (sería un envío real a recepción), ni en las puertas cerradas (suspendido, uso extendido, bloqueado: nunca caen al genérico), ni más de
+// `CH_TOPE_AVISO_FALLA_HORA` veces por hora y por teléfono (las marcas viven en `staticData.chatNovuchatAvisoFalla`; las anota «Soltar mensajes» solo si salió el genérico). El aviso no marca `avisado`
+// de la ficha (no hay compromiso), no cuenta como `marcaAvisado` para «Confirmar envío» (un rechazo de Meta no corta el turno ni compensa) y no es una respuesta más al cliente (0 mensajes más).
+let avisoFalla = false;
+if (!prueba && claveOk && plan.ruta !== 'suspendido' && plan.ruta !== 'uso_extendido' && recepcion.length >= 6) {
+  let marcasFalla = [];
+  try {
+    const sd = $getWorkflowStaticData('global');
+    const mapa = sd && sd.chatNovuchatAvisoFalla && typeof sd.chatNovuchatAvisoFalla === 'object' && !Array.isArray(sd.chatNovuchatAvisoFalla) ? sd.chatNovuchatAvisoFalla : {};
+    marcasFalla = Object.prototype.hasOwnProperty.call(mapa, from) && Array.isArray(mapa[from]) ? mapa[from] : [];
+  } catch (e) { marcasFalla = []; }
+  if (marcasFalla.filter((ms) => ahora - Number(ms) < CH_HORA_MS && ahora - Number(ms) >= 0).length < CH_TOPE_AVISO_FALLA_HORA) {
+    const payloadFalla = chAviso({
+      avisado: false, numeroRecepcion: cfg.numeroRecepcion, desde: from, plantilla: cfg.plantillaAviso, idioma: cfg.idiomaPlantillaAviso,
+      estado: CH_ESTADO_AVISO_FALLA, empresa: antes.empresa, contacto: antes.nombre, nombrePerfil: chNombreDelPerfil(t.nombrePerfil),
+      rubro: (chRubroDe(cfg, antes.rubro) || {}).nombre || '', flujos: (chRubroDe(cfg, antes.rubro) || {}).flujo || '',
+    });
+    if (payloadFalla) {
+      const extra = aItems([{ para: 'recepcion', payload: payloadFalla, texto: 'Aviso a recepción: ' + CH_ESTADO_AVISO_FALLA + '.', respaldo: 'Aviso a recepción: ' + CH_ESTADO_AVISO_FALLA + '. Cliente: ' + from + '.', tipoReporte: null, esAviso: true, marcaAvisado: false, empresaAviso: '', evento: 'aviso_falla' }]);
+      for (const x of extra) { salidaFalla.push(x); avisoFalla = true; }
+    }
+  }
 }
 
 // ============================================ el prospecto: solo si la ficha cambió. En modo prueba la planilla NO se escribe (una prueba no llena la hoja de nadie).
@@ -162,20 +211,22 @@ const primeraVez = antes.historial.length === 0;
 const cambio = despues !== null && (primeraVez || JSON.stringify(despues) !== JSON.stringify(chProspecto(antes, cfg, datosDe)));
 const guardarPlanilla = cambio && planillaOk;
 
-// R8: la ficha de ANTES de este turno (con su cola de eventos sin responder) viaja en el primer ítem: si Meta rechaza el mensaje y su respaldo, «Confirmar envío» la restaura.
+// La ficha de ANTES de este turno (con su cola de eventos sin responder) viaja en el primer ítem: si Meta rechaza el mensaje y su respaldo, «Confirmar envío» la restaura con un compromiso compensatorio.
 const fichaAntes = claveOk ? chClon(antes) : null;
 const resumen = {
   plan: accion, contexto: plan.contexto || '', origen: origen, causas: res ? res.causas : [], eventos: (turno.eventos || []).length, mensajes: salida.length,
   fila: fila, textoModelo: res && origen === 'modelo' ? chTexto(res.texto) : '', fijo: plan.fijo || '', evento: res ? chTexto(origen === 'modelo' ? res.contexto : res.evento) : '',
   llamadasModelo: turno.llamarModelo === true ? ((cnNodo('Reintentar el modelo') ? 2 : 1)) : 0, rubro: nueva.rubro, hechos: nueva.hechos, descarte: res ? res.descarte : '',
 };
-if (!salida.length) {
-  return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: accion, resumen: resumen, fichaAntes: fichaAntes,
-    guardarPlanilla: guardarPlanilla, prospectoPlanilla: guardarPlanilla ? despues : null } }];
-}
-const primero = salida[0].json;
-primero.resumen = resumen;
-primero.fichaAntes = fichaAntes;
-primero.guardarPlanilla = guardarPlanilla;
-primero.prospectoPlanilla = guardarPlanilla ? despues : null;
-return salida;
+// El compromiso: la ficha del turno, con la versión que se leyó. Sin estado (plan `sin_estado`) no hay compromiso; si no cabe o el teléfono no es válido para el servidor, sale el genérico.
+const sinEstado = plan.ruta === 'sin_estado';
+// Por BYTES antes de comprometer (CJK y emojis): una ficha pesada se recorta, no cae al genérico.
+const ajuste = sinEstado ? null : chAjustarBytes(nueva, 14900);
+const compromiso = !sinEstado && claveOk && ajuste.cupo ? ssCuerpoComprometer(from, $execution.id, 'fin' + pasada, version, nueva) : null;
+return [{ json: {
+  from: from, ahoraMs: ahora, pasada: pasada, plan: accion, resumen: resumen, salida: salida, salidaFalla: salidaFalla, avisoFalla: avisoFalla, nueva: nueva, fichaAntes: fichaAntes, conversacion: conversacion,
+  comprometer: compromiso !== null, compromiso: compromiso, numero: ssNumeroHeader(), fallaEstado: sinEstado || compromiso === null,
+  // Las puertas cerradas (suspendido, uso extendido, bloqueado) comprometen solo para guardar los ids: si falla, sale lo suyo igual (bloqueado: nada), nunca el genérico. `seqs`: los eventos de este turno.
+  mejorEsfuerzo: plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido', seqs: eventosTurno.map((e) => e.seq),
+  despues: despues, primeraVez: primeraVez, guardarPlanilla: guardarPlanilla,
+} }];

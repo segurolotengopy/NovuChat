@@ -7,16 +7,15 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { cargarFuente } from './fuente-vm';
 
 const ARCHIVO = join(dirname(fileURLToPath(import.meta.url)), '../../../Flujos/src/core/texto/tipeo.js');
 const SRC = readFileSync(ARCHIVO, 'utf8');
 type Clave = string | { c: string; plural?: boolean };
-// El código evaluado es el de un archivo del propio repositorio: solo prueba.
-// nosemgrep: devsecops.js-eval-prohibido
-const T = new Function(SRC + '\nreturn { ctUnaEdicion, ctColapsar, ctCorregirPalabra, ctTipeo, CT_TIPEO_PROTEGIDAS };')() as {
+const T = cargarFuente<{
   ctUnaEdicion: (a: string, b: string) => boolean; ctColapsar: (w: string) => string;
   ctCorregirPalabra: (w: string, c: Clave[]) => string; ctTipeo: (t: unknown, c: Clave[]) => string; CT_TIPEO_PROTEGIDAS: string[];
-};
+}>(['Flujos/src/core/texto/tipeo.js'], ['ctUnaEdicion', 'ctColapsar', 'ctCorregirPalabra', 'ctTipeo', 'CT_TIPEO_PROTEGIDAS']);
 
 const CLAVES: Clave[] = [{ c: 'telefono', plural: true }, 'actual', 'numero', 'celular', 'whatsapp', 'coexisten', 'coexiste', 'coexistir', 'convivir', 'cobra', 'cobran', 'meta', 'mensajes', 'mensaje', 'conversaciones', 'conversacion', 'domingos', 'sabados', 'conecta', 'conectan', 'integra', 'descuentos', 'descuento', 'rebaja', 'rebajas'];
 
@@ -145,8 +144,7 @@ describe('core/texto/tipeo: idempotencia, límites y pureza', () => {
     for (const g of ['URL', 'Buffer', 'crypto', 'process', 'globalThis']) expect(SRC).not.toMatch(new RegExp(`\\b${g}\\b`));
     expect(SRC).not.toMatch(/^return\b/m);
     expect(SRC).not.toMatch(/\d{10,}/);
-    // nosemgrep: devsecops.js-eval-prohibido
-    expect(() => new Function('URL', 'Buffer', 'crypto', 'require', SRC)).not.toThrow();
+    expect(() => vm.compileFunction(SRC, ['URL', 'Buffer', 'crypto', 'require'])).not.toThrow();
   });
   it('corre en un contexto vm vacío', () => {
     const ctx = vm.createContext(Object.create(null));

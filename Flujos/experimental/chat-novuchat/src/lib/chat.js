@@ -205,9 +205,9 @@ const CH_NUMERO_PROPIO = new RegExp([
   '\\b(?:se pierde|se perdera|se pierden|se borran?|se eliminan?|voy a perder|perdere|pierdo|perderia)\\b(?: \\w+){0,3} (?:mi numero|mis chats|mis conversaciones|mis contactos|mis grupos|mi whatsapp)\\b',
 ].join('|'));
 const CH_NUM_PREGUNTA = /^(?:y |entonces |oye |disculpa |hola |una pregunta )?(?:puedo|podria|podemos|se puede|puede|pueden|es posible|tengo que|debo|necesito|necesitamos|hay que|hace falta|seguira|seguiria|va a seguir|sirve|funciona|funcionara|que numero|cual numero|que chip|coexist\w*|conecto|como conecto|quiero usar|quisiera usar|queremos usar|quiero conectar|quisiera conectar)\b|\b(?:se puede|es posible|quiero saber|quisiera saber|queria saber|me pregunto|tengo una duda)\b/;
-const chCerca = (a, b) => { a = a.replace(/s$/, ''); if (a === b) return true; if (Math.abs(a.length - b.length) > 1) return false; let i = 0; while (a[i] === b[i]) i++; return a.slice(i + 1) === b.slice(i + 1) || a.slice(i) === b.slice(i + 1) || a.slice(i + 1) === b.slice(i) || (a[i + 1] === b[i] && a[i] === b[i + 1] && a.slice(i + 2) === b.slice(i + 2)); }, chTipeo = (n) => n.split(' ').map((w) => (w.length < 5 ? w : ['actual', 'numero', 'telefono', 'celular', 'whatsapp', 'coexisten', 'coexiste', 'coexistir', 'convivir'].find((c) => chCerca(w, c)) || w)).join(' '); // (tolera UN error de tipeo —letra de más, de menos, cambiada o dos intercambiadas— y el plural en las palabras clave: «acrual», «los telefonos»; sin esto la pregunta cae al modelo, que contesta «no lo tengo a la mano»)
+const CH_CLAVES_TIPEO = ['actual', 'coexisten', 'coexiste', 'coexistir', 'convivir', 'whatsapp', 'cobra', 'meta', 'mensajes', 'conversaciones', 'domingos', 'descuento', 'descuentos', 'rebaja', 'cuesta', 'cuestan', 'precio', 'precios', { c: 'numero', plural: true }, { c: 'telefono', plural: true }, { c: 'celular', plural: true }], CH_PROTEGIDAS_TIPEO = ['rebana', 'rebanada', 'rebanadas', 'premio', 'premios', 'cuenta', 'cuentas', 'cuesto', 'cuestas']; // Palabras a las que se corrige UN error de tipeo («acrual», «cobar», «domigos»); la corrección (`ctTipeo`, core/texto/tipeo.js) se aplica UNA vez a los eventos del turno, en chDecidir y chSituacion.
 function chPreguntaNumeroActual(t) {
-  const n = chTipeo(chNorm(t));
+  const n = chNorm(t);
   if (!/\b(?:numero|numeros|whatsapp|wasap|watsap|linea|chip|telefono|celular|chats|conversaciones|contactos|que ya tengo|coexist\w*)\b/.test(n)) return false;
   if (/\b(?:cuanto|cuanta|cuesta|cuestan|precio|precios|costo|costos|tarifa|tarifas)\b/.test(n) || /\bcon (?:mi|el|un|una|nuestro|nuestra) (?:sistema|erp|crm|software|programa|sap|excel|facturacion|contabilidad|tienda|calendario|pagina|sitio|web|base de datos)\b/.test(n)) return false;
   if (!/[?¿]/.test(chTexto(t)) && !CH_NUM_PREGUNTA.test(n)) return false;
@@ -507,6 +507,9 @@ const CH_TOPE_TEXTO = 300;                   // caracteres por entrada del histo
 const CH_TOPE_EVENTO = 600;                  // caracteres de un evento del cliente
 const CH_TOPE_SITIO = 2;                     // veces que el CÓDIGO anexa el sitio web por ventana de 24 h y por teléfono
 const CH_TOPE_AVISOS = 3;                    // plantillas a recepción por ventana de 24 h y por teléfono: el primero + hasta 2 empresas distintas
+const CH_HORA_MS = 60 * 60 * 1000;
+const CH_TOPE_AVISO_FALLA_HORA = 1;      // avisos a recepción por falla del compromiso (el genérico con botón), por teléfono y por hora (política del 21/09/2026: pasar con recepción = aviso + botón)
+const CH_ESTADO_AVISO_FALLA = 'no se pudo guardar el chat; se le ofreció pasar con recepción';  // ≤60: el límite de una variable de plantilla
 const CH_TOPE_COLA = 6;                      // eventos pendientes de responder, a lo más
 const CH_ESPERA_SEG = 2.5;                   // la espera de la ráfaga (coalescencia de clics)
 const CH_MAX_MENSAJE = 1000;                 // Meta admite 1.024 en el cuerpo de un mensaje interactivo
@@ -586,7 +589,7 @@ function chFichaBase() {
     hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false, interactuo: false, descarte: '' },
     avisado: false, avisoFalla: '', planesMostrados: false, planesTocado: false, equipoTocado: false, respondidas: 0, soporte: false, anuncio: false,
     // Ajustes del 09/10: el ciclo de un negocio (explicado, nombre pedido, planes pendientes, equipo ya pedido), el primer negocio y los otros para la hoja.
-    explicado: false, nombrePedido: false, preguntaDatos: false, ofrecio: '', planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, sitiosVentana: 0, sitioUltimo: false, primero: null, otros: [], complementos: 0,
+    otroResp: 0, explicado: false, nombrePedido: false, preguntaDatos: false, ofrecio: '', planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, sitiosVentana: 0, sitioUltimo: false, primero: null, otros: [], complementos: 0,
     seq: 0, hasta: 0, cola: [], historial: [], ultimosIds: [],
   };
 }
@@ -618,7 +621,7 @@ function chFichaVigente(e, ahoraMs) {
       pidioEquipo: h.pidioEquipo === true, pidioPlanes: h.pidioPlanes === true, eligioOtro: h.eligioOtro === true, interactuo: h.interactuo === true,
       descarte: CH_DESCARTES.includes(h.descarte) ? h.descarte : '',
     },
-    avisado: e.avisado === true, avisoFalla: chPlano(e.avisoFalla, 200), planesMostrados: e.planesMostrados === true, planesTocado: e.planesTocado === true, equipoTocado: e.equipoTocado === true, respondidas: Math.max(0, Math.min(3, Math.floor(Number(e.respondidas)) || 0)), soporte: e.soporte === true, anuncio: e.anuncio === true,
+    avisado: e.avisado === true, avisoFalla: chPlano(e.avisoFalla, 200), planesMostrados: e.planesMostrados === true, planesTocado: e.planesTocado === true, equipoTocado: e.equipoTocado === true, otroResp: Math.max(0, Math.min(3, Math.floor(Number(e.otroResp) || 0))), respondidas: Math.max(0, Math.min(3, Math.floor(Number(e.respondidas)) || 0)), soporte: e.soporte === true, anuncio: e.anuncio === true,
     explicado: e.explicado === true, nombrePedido: e.nombrePedido === true, preguntaDatos: e.preguntaDatos === true, ofrecio: ['planes', 'equipo', 'ambas', 'ninguna'].includes(e.ofrecio) ? e.ofrecio : (e.ofreceEquipo === true ? (e.ofrecePlanes === true ? 'ambas' : 'equipo') : (e.ofrecePlanes === true ? 'planes' : '')), planesPendientes: e.planesPendientes === true, equipoAhora: e.equipoAhora === true,
     // Las empresas por las que ya se avisó a recepción en la ventana (a lo más 3, normalizadas) y cuántos avisos van: el tope (3) acota la plantilla por segunda empresa.
     empresasAvisadas: Array.from(new Set((Array.isArray(e.empresasAvisadas) ? e.empresasAvisadas : []).concat(typeof e.empresaAvisada === 'string' ? [e.empresaAvisada] : []).filter((x) => typeof x === 'string').map((x) => chNorm(chPlano(x, 60))).filter((x) => x !== ''))).slice(0, CH_TOPE_AVISOS),
@@ -656,6 +659,33 @@ function chRecordarIds(f, ids) {
   for (const id of ids) if (typeof id === 'string' && id !== '' && id.length <= 200 && !x.includes(id)) x.push(id);
   f.ultimosIds = x.slice(-CH_TOPE_IDS);
   return f;
+}
+// Bytes UTF-8 de un texto sin `Buffer` ni `TextEncoder` (el Code de n8n no los tiene): cada %XX de encodeURIComponent es un byte.
+// (un surrogate suelto haría lanzar a encodeURIComponent: se cuenta como U+FFFD, 3 bytes)
+function chBytes(t) { return encodeURIComponent(chTexto(t).replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD')).replace(/%[0-9A-F]{2}/g, 'x').length; }
+// El estado que se compromete al servidor pesa a lo más `max` BYTES de JSON (el servidor admite 16 KiB): con CJK o emojis (3 y 4 bytes por carácter) la peor ficha pasa de los topes por cantidad.
+// Se recorta, en este orden: (1) el historial, de lo más viejo; (2) el texto de los eventos de la cola, del más pesado, hasta 60 caracteres cada campo (el `t` y el `c`); nunca se quita un evento.
+// Devuelve la misma ficha (la modifica) y si cupo.
+function chAjustarBytes(f, max) {
+  const pesa = () => chBytes(JSON.stringify(f));
+  while (pesa() > max && f.historial.length > 0) f.historial.shift();
+  while (pesa() > max) {
+    let k = -1; let mayor = 0;
+    f.cola.forEach((e, i) => { const n = Math.max(chTexto(e.t).length, chTexto(e.c).length); if (n > 60 && chBytes(e.t) + chBytes(e.c) > mayor) { mayor = chBytes(e.t) + chBytes(e.c); k = i; } });
+    if (k < 0) break;
+    const e = f.cola[k];
+    e.t = chCortar(chTexto(e.t), Math.max(60, Math.floor(chTexto(e.t).length * 0.7)));
+    e.c = chCortar(chTexto(e.c), Math.max(60, Math.floor(chTexto(e.c).length * 0.7)));
+  }
+  return { ficha: f, cupo: pesa() <= max };
+}
+// ¿Otra ejecución va a responder estos eventos? `seqs` = los `seq` de los eventos de ESTE turno. Sí si la ficha ganadora ya respondió el último de ellos (`hasta`), si tiene un evento MÁS NUEVO (`seq`), o si lo
+// pendiente (`seq` mayor que `hasta`) ya no es exactamente lo de este turno: la más nueva responde por todos.
+function chOtraEjecucionResponde(ficha, seqs) {
+  if (!Array.isArray(seqs) || !seqs.length) return false;
+  const ultimo = seqs[seqs.length - 1];
+  const pendientes = ficha.cola.filter((e) => e.seq > ficha.hasta).map((e) => e.seq).join(',');
+  return ficha.seq > ultimo || ficha.hasta >= ultimo || pendientes !== seqs.join(',');
 }
 function chUltimoDelAsistente(f) { const h = (f && Array.isArray(f.historial) ? f.historial : []).filter((x) => x.r === 'a'); return h.length ? chTexto(h[h.length - 1].t) : ''; }
 function chPitchDicho(f) { return (f && Array.isArray(f.historial) ? f.historial : []).some((x) => x.r === 'a' && /nunca duerme/.test(chNorm(x.t))); }
@@ -713,7 +743,7 @@ function chPreguntaEmpresa(t) { const n = chNorm(t); return n !== '' && n.split(
 // «¿Atienden también los fines de semana?», «¿responde de noche?», «¿funciona en feriados?»: el documento dice «Atención en segundos 24/7». Una PREGUNTA sobre el servicio (no el horario del propio negocio del cliente).
 const CH_VERBO_HORARIO = '(?:atienden|atiende|responden|responde|contestan|contesta|funcionan|funciona|trabajan|trabaja|estan disponibles|esta disponible|opera|operan|hay atencion)';
 const CH_HORA_HORARIO = '(?:fines? de semana|sabados?|domingos?|feriados?|de noche|por la noche|en la noche|madrugada|cualquier hora|toda hora|todo el dia|las 24|24 horas|24 7|todos los dias|7 dias|siete dias|de dia y de noche)';
-const CH_PREGUNTA_HORARIO = new RegExp('\\b' + CH_VERBO_HORARIO + '\\b[^.?]{0,40}\\b' + CH_HORA_HORARIO + '\\b|\\b' + CH_HORA_HORARIO + '\\b[^.?]{0,40}\\b' + CH_VERBO_HORARIO + '\\b');
+const CH_PREGUNTA_HORARIO = new RegExp('\\b' + CH_VERBO_HORARIO + '\\b[^.?]{0,40}\\b' + CH_HORA_HORARIO + '\\b|\\b' + CH_HORA_HORARIO + '\\b[^.?]{0,40}\\b' + CH_VERBO_HORARIO + '\\b|\\ba que hora (?:atienden|abren|cierran|responden|contestan)\\b');
 function chPreguntaHorario(t) {
   const n = chNorm(t);
   const m = CH_PREGUNTA_HORARIO.exec(n);
@@ -823,7 +853,6 @@ const CH_CONTEXTOS = {
   ambiguo: 'La conversación sigue difusa: aplica el cierre hacia el equipo.',
   general: 'Responde con tu razonamiento natural usando la conversación, el rubro conocido y las reglas.',
 };
-
 // ------------------------------------------------------------------ DECIDIR: lo que se resuelve SIN el modelo, y si hace falta el modelo, con qué contexto
 //   a = { eventos, ficha (vigente), cfg, from }   ->   plan = { ruta, fijo, contexto, rubroElegido, hechos, temas, aMedida, soporte, tope }
 // ruta: 'lista' | 'planes' | 'equipo' | 'fijo' | 'modelo'. Un toque de botón o un detector del CÓDIGO decide; la etiqueta de un modelo nunca basta. ¿Hay que pedir el nombre y el negocio antes de los planes? Antes de la PRIMERA muestra de planes, siempre (decisión del 10/10), si todavía no se pidió, falta alguno de los dos y los planes no se mostraron.
@@ -832,7 +861,7 @@ function chPedirDatosAntes(f) {
   return !!f && f.nombrePedido !== true && f.planesMostrados !== true && f.equipoAhora !== true && !(chPlano(f.nombre) !== '' && chPlano(f.empresa) !== '');
 }
 function chDecidir(a) {
-  const ev = Array.isArray(a.eventos) ? a.eventos : [];
+  const ev = (Array.isArray(a.eventos) ? a.eventos : []).map((e) => (e && (e.k === 'texto' || e.k === 'audio') ? Object.assign({}, e, { c: ctTipeo(e.c, CH_CLAVES_TIPEO, CH_PROTEGIDAS_TIPEO) }) : e));
   const f = a.ficha;
   const cfg = a.cfg;
   const d = chDatos(cfg);
@@ -888,7 +917,6 @@ function chDecidir(a) {
   if (plan.contexto === 'abierta' && f.historial.length === 0 && chPlano(f.rubro) === '' && ev.every((e) => e.k === 'texto' && (chEsSaludoInicial(e.c) || chSoloPideInfo(e.c)))) { plan.ruta = 'lista'; plan.pitch = true; plan.contexto = ''; }
   return plan;
 }
-
 // ------------------------------------------------------------------ el modelo
 function chPreciosParaElModelo(cfg) {
   const est = chCargo(cfg, false);
@@ -1277,9 +1305,9 @@ function chRespaldo(a) {
     case 'datos': {
       const nombre = lec.nombre || a.ficha.nombre;
       const empresa = lec.empresa || a.ficha.empresa;
-      // Si no dijo ni el nombre ni el negocio, NO se vuelve a pedir (una sola vez): «después te cuento» recibe la cortesía; otra cosa que el modelo no pudo contestar, «ese dato lo revisa el equipo».
-      if (!nombre && !empresa) return { texto: sub(CH_EVASIVA.test(chTexto(a.dijo).trim()) || chEsAcuse(a.dijo) || chEsAgradecimiento(a.dijo) ? r.cortesia : r.sinDato), evento: 'datos' };
-      return { texto: sub(nombre && empresa ? r.datosAmbos : (nombre ? r.datosSoloNombre : r.datosSoloEmpresa)), evento: 'datos' };
+      const rep = (x) => a.ficha.historial.slice(-4).some((m) => m.r === 'a' && chNorm(m.t) === chNorm(x)), salir = (c) => { const t = c.map(sub); return { texto: t.find((x) => !rep(x)) || t.find((x) => chNorm(x) !== antes), evento: 'datos' }; }; // un mensaje idéntico a uno de los últimos del asistente no se repite: `salir` pasa a la salida que sí se cumple (nunca «Quedó anotado» si falta un dato)
+      if (!nombre && !empresa) return salir([CH_EVASIVA.test(chTexto(a.dijo).trim()) || chEsAcuse(a.dijo) || chEsAgradecimiento(a.dijo) ? r.cortesia : r.sinDato, r.generico]);
+      return salir(nombre && empresa ? [r.datosAmbos, r.cortesia] : [nombre ? r.datosSoloNombre : r.datosSoloEmpresa, r.generico]);
     }
     case 'ambiguo': return { texto: sub(/creo que tu caso es super particular/.test(antes) ? r.generico : r.equipo), evento: 'equipo' };
     case 'fuera':
@@ -1304,11 +1332,11 @@ function chResolver(a) {
     let del = { nombre: '', empresa: '' };
     for (const t of textos) { const r = chNombreYEmpresaDelTexto(t); if (r.nombre || r.empresa) { del = r; break; } }
     lectura = Object.assign({}, lectura, { nombre: lectura.nombre || del.nombre, empresa: lectura.empresa || del.empresa });
-    // Se pidió UNA sola cosa (el negocio o el nombre, porque la otra ya se sabe): la respuesta corta es esa cosa, siempre como texto literal del cliente.
+    // Se pidió UNA sola cosa (el negocio o el nombre, porque la otra ya se sabe): la respuesta corta es esa cosa, siempre como texto literal del cliente. Un negocio puede llamarse igual que la persona («Engels»): sin más, es el negocio y el nombre anotado no se pisa.
     const f0 = a.ficha || {};
     const corto = (t) => t.split(/\s+/).length <= 5 && !/[?¿]/.test(t);
     if (!lectura.empresa && f0.nombre && !f0.empresa) {
-      for (const t of textos) { const e = corto(t) ? chNombreDeEmpresa(t, true) : ''; if (e && chNorm(e) !== chNorm(f0.nombre)) { lectura = Object.assign({}, lectura, { empresa: e }); break; } }
+      for (const t of textos) { const e = corto(t) && !/^\s*(?:me llamo|soy|mi nombre es)\s/i.test(t) ? chNombreDeEmpresa(t, true) : ''; if (e) { lectura = Object.assign({}, lectura, { empresa: e, nombre: chNorm(lectura.nombre) === chNorm(e) ? '' : lectura.nombre }); break; } }
     }
     if (!lectura.nombre && f0.empresa && !f0.nombre) {
       for (const t of textos) { const n = corto(t) ? (chNombreDePersonaValido(t.replace(/^(?:me llamo|soy|mi nombre es)\s+/i, '')) || chNombreDePila(t.replace(/^(?:me llamo|soy|mi nombre es)\s+/i, ''))) : ''; if (n) { lectura = Object.assign({}, lectura, { nombre: n }); break; } }
@@ -1394,7 +1422,7 @@ function chSituacion(a) {
   const f = a.ficha || {};
   const p = a.plan || {};
   const r = a.res || {};
-  const textos = (a.eventos || []).filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').map((e) => e.c);
+  const textos = (a.eventos || []).filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').map((e) => ctTipeo(e.c, CH_CLAVES_TIPEO, CH_PROTEGIDAS_TIPEO));
   const t = textos.map(chNorm).join(' ');
   const ev = p.ruta === 'modelo' ? chTexto(r.origen === 'modelo' ? r.contexto : r.evento) : '';
   const rub = chTexto(p.rubroElegido || r.rubroId || f.rubro);
@@ -1406,6 +1434,7 @@ function chSituacion(a) {
     // declina = el cliente propone una función no documentada para su rubro, o el modelo no la puede resolver (declina o la inventó)
     declina: p.ruta === 'modelo' && ((rub !== '' && !CH_RUBROS_CON_COBRO.includes(rub) && CH_FUNCION_CLIENTE.test(t)) || chDeclinaTexto(r.texto) || (r.causas || []).includes('funcion_inventada') || modeloOfreceEq),
     modeloOfreceEq: modeloOfreceEq, planesTocado: f.planesTocado === true, planesVistos: f.planesMostrados === true, equipoTocado: f.equipoTocado === true,
+    otroTemprano: rub === 'otro' && f.equipoAhora !== true && !textos.some(chPideAMedida) && (f.otroResp || 0) + (p.rubroElegido ? 0 : textos.length) < 2,
   };
 }
 // LA TABLA: la primera fila que coincide gana. `planes` y `equipo` dicen qué botones corresponden a esa situación (true, false o 'interes': solo si el cliente mostró interés); las COMPUERTAS de `chBotonesDe` (1) los apagan si ya se pulsaron o ya se vieron.
@@ -1416,6 +1445,7 @@ const CH_TABLA = [
   { id: 'planes', cuando: (s) => s.ruta === 'planes', planes: false, equipo: 'sinPlanes', nota: 'Los planes (o su tope y complemento): respuesta completa, sin botón del equipo; el botón sale solo al derivar, y deriva cuando no hay planes ni imagen que mostrar (si no, sería un callejón sin salida).' },
   { id: 'consulta-sin-respuesta', cuando: (s) => s.ruta === 'fijo' && CH_FIJO_SIN_RESPUESTA.includes(s.fijo), planes: false, equipo: true, nota: 'Integración o costo de Meta: el chat no lo resuelve, deriva al equipo (el botón sale solo al derivar).' },
   { id: 'respuesta-fija', cuando: (s) => s.ruta === 'fijo', planes: false, equipo: false, nota: 'Identidad, disponibilidad, banco, consumo, descuento, número propio y coexistencia: se contestan completas, sin invitaciones ni botón.' },
+  { id: 'otro-temprano', cuando: (s) => s.otroTemprano && !s.declina && !CH_SIN_OFERTA.includes(s.ev) && !['sin_dato', 'no_documentado', 'equipo', 'generico', 'ambiguo', 'complemento'].includes(s.ev), planes: 'interes', equipo: false, nota: '«Otro / a medida» con menos de dos respuestas del cliente: se le consulta, sin botón del equipo (salvo que no haya dato o el modelo no pueda).' },
   { id: 'sin-respuesta', cuando: (s) => CH_SIN_RESPUESTA.includes(s.ev), planes: false, equipo: true, nota: 'Sin dato, no documentado, a medida («Otro»), cierre hacia el equipo o error del modelo: requiere al equipo.' },
   { id: 'rubro-declina', cuando: (s) => s.declina && (s.ev === 'rubro' || s.ev === 'multiple'), planes: true, equipo: true, nota: 'Eligió rubro y además propone una función no documentada: «Ver planes» y la salida al equipo.' },
   { id: 'declina-ofrece-equipo', cuando: (s) => s.declina && s.modeloOfreceEq && !['identidad', 'cortesia'].includes(s.ev), planes: false, equipo: true, nota: 'El modelo no pudo resolver y su pregunta final ofrece hablar con el equipo: se conserva esa oferta con su botón (aunque la pregunta traiga una palabra de interés).' },
@@ -1731,7 +1761,7 @@ function chAplicarTurno(a) {
   if (a.pidioDatos === true) f.nombrePedido = true;
   f.preguntaDatos = a.pidioDatos === true || a.plan.ruta === 'pedirNombre' || /como te llamas|como se llama tu (?:negocio|empresa)/.test(chNorm(a.mensaje));
   chActualizarBanderas(f, a);
-  if (a.explicacion === true) f.explicado = true;
+  if (a.explicacion === true) f.explicado = true; if (f.rubro === 'otro' && !a.plan.rubroElegido) f.otroResp = Math.min(3, f.otroResp + ev.filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').length);
   if (a.complemento === true) f.complementos = Math.min(3, f.complementos + 1);
   f.sitioUltimo = a.sitio === true; if (a.sitio === true) f.sitiosVentana = Math.min(CH_TOPE_SITIO, f.sitiosVentana + 1); // el sitio NO va en dos mensajes seguidos (la similitud con el anterior cruzaría 0,75)
   if (a.plan.soporte === true) f.soporte = true;

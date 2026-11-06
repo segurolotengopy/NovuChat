@@ -418,3 +418,44 @@ describe('endurecimientos de la revisión de seguridad (todos niegan sin escribi
     expect(noArregla.salida).toMatch(/versión ACTIVA no es la que se acaba de escribir/);
   });
 });
+
+// ---------------------------------------------------------------------------------- Agenda mínima v0 con el miniCRM (04/11/2026)
+// El ensayo en el Demo A no escribe en ninguna planilla: los 8 nodos del miniCRM quedan SIN credencial y el id de planilla va vacío; ninguna credencial de Bellido llega al Demo A.
+describe('Agenda mínima v0 (70 nodos, con miniCRM) sobre el Demo A', () => {
+  const V0 = join(aqui, '../../Flujos/experimental/agenda-minima/agenda-minima.v0.json');
+  const NODOS_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
+  const idDePlanilla = (w: J): unknown => (nodo(w, 'Config base').parameters.assignments.assignments as J[]).find((a) => a.name === 'planillaProspectosId')!.value;
+  it('el candidato tiene 70 nodos y trae la credencial de Bellido en los nodos de Google', () => {
+    const w = leerJson(V0);
+    expect(w.nodes).toHaveLength(70);
+    expect(JSON.stringify(w)).toContain('Google Sheets miniCRM (crm-bellido)');
+  });
+  it('en seco: pasa, avisa que los nodos del miniCRM quedan sin credencial y no escribe en n8n', async () => {
+    nuevo();
+    const r = await correr(['--sobre-demo-a', '--respaldo', respaldoNuevo(), '--flujo', V0]);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(mundo.puts).toHaveLength(0);
+    expect(r.salida).toContain('Buscar teléfono en planilla: googleApi → SIN credencial');
+    expect(r.salida).toMatch(/En seco: no se escribió nada en n8n/);
+  });
+  it('con --aplicar simulado: los 8 nodos del miniCRM quedan sin credencial, el id de planilla vacío y ninguna credencial de Bellido en el Demo A', async () => {
+    nuevo();
+    const r = await correr(['--sobre-demo-a', '--respaldo', respaldoNuevo(), '--flujo', V0, '--aplicar', '--autorizo-gemini-produccion']);
+    expect(r.codigo, r.salida).toBe(0);
+    const p = mundo.puts[0]!;
+    expect(p.nodes).toHaveLength(70);
+    for (const n of NODOS_CRM) expect(Object.keys(nodo(p, n).credentials ?? {}), n).toEqual([]);
+    expect(idDePlanilla(p)).toBe('');
+    const nombres = (p.nodes as J[]).flatMap((n) => Object.values(n.credentials ?? {}).map((c) => String((c as J).name)));
+    expect(nombres.join('|')).not.toMatch(/bellido|miniCRM/i);
+  });
+  it('NIEGA: un nodo FUERA del miniCRM con la credencial de Bellido sigue sin pasar', async () => {
+    nuevo();
+    const w = leerJson(V0);
+    nodo(w, 'Leer agenda').credentials = { googleApi: { id: '', name: 'Google Sheets miniCRM (crm-bellido)' } };
+    writeFileSync(join(carpeta, 'v0-torcido.json'), JSON.stringify(w));
+    const r = await correr(['--sobre-demo-a', '--respaldo', respaldoNuevo(), '--flujo', join(carpeta, 'v0-torcido.json')]);
+    expect(r.codigo).not.toBe(0);
+    expect(r.salida).toMatch(/googleApi|no está en la tabla/);
+  });
+});

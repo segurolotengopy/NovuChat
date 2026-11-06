@@ -113,15 +113,39 @@ describe('Entrantes por tipo en la ingesta', () => {
   });
 
   it('un tipo que Meta manda y la ingesta no conoce cae en «otro», nunca siembra una clave nueva', async () => {
-    // `sticker`, `video`, `contacts`, o lo que Meta agregue mañana: la clave
-    // del mapa es el tipo YA NORMALIZADO, así que la colección que factura no
-    // se llena de campos que nadie declaró.
-    for (const tipo of ['sticker', 'video', 'contacts', 'reaction', '../../otro']) {
+    // `contacts`, `reaction`, o lo que Meta agregue mañana: la clave del mapa
+    // es el tipo YA NORMALIZADO, así que la colección que factura no se llena
+    // de campos que nadie declaró. (`video` y `sticker` salieron de aquí el
+    // 30/10/2026: ahora son tipos de la lista; ver la prueba siguiente.)
+    for (const tipo of ['contacts', 'reaction', '../../otro', 'Video', 'STICKER']) {
       await entrante('5910000000108', tipo);
     }
     expect((await porTipo())?.['otro']).toBe(5);
     expect(Object.keys(await porTipo() ?? {}).sort()).toEqual(
       ['audio', 'document', 'image', 'interactive', 'location', 'otro', 'text']);
+  });
+
+  it('video y sticker (30/10/2026) se registran con su tipo real, cuentan como un entrante más y responden igual que una imagen', async () => {
+    const antes = await metricas();
+    const imagen = await entrante('5910000000110', 'image');
+    const video = await entrante('5910000000111', 'video');
+    const sticker = await entrante('5910000000112', 'sticker');
+    for (const r of [imagen, video, sticker]) expect(r.codigo).toBe(200);
+    // Misma respuesta a n8n que una imagen: mismo estado de atención, ningún aviso, 0 mensajes agregados.
+    expect(video.cuerpo).toEqual(imagen.cuerpo);
+    expect(sticker.cuerpo).toEqual(imagen.cuerpo);
+    const m = await metricas();
+    expect(m['entrantes']).toBe(Number(antes['entrantes']) + 3);
+    expect(m['mensajes']).toBe(Number(antes['mensajes']) + 3);
+    expect((await porTipo())?.['video']).toBe(1);
+    expect((await porTipo())?.['sticker']).toBe(1);
+    expect((await porTipo())?.['otro']).toBe(5);   // no se movió
+    expect(Object.values(await porTipo() ?? {}).reduce((a, b) => a + b, 0)).toBe(m['entrantes']);
+    // El mensaje queda con su tipo real, que es lo que `guardarMedio` exige.
+    for (const [tel, tipo] of [['5910000000111', 'video'], ['5910000000112', 'sticker']]) {
+      const ms = await db.collection(`tenants/${T}/conversaciones/wa_${tel}/mensajes`).get();
+      expect(ms.docs.map((d) => d.get('tipo')), tipo).toEqual([tipo]);
+    }
   });
 
   it('un saliente NO toca el mapa: cuenta lo que el cliente manda, no lo que el asistente responde', async () => {
@@ -130,7 +154,7 @@ describe('Entrantes por tipo en la ingesta', () => {
     expect(r.codigo).toBe(200);
     expect(await porTipo()).toEqual(antes);
     // Pero el mensaje sí se contó: es el que Meta cobra.
-    expect((await metricas())['mensajes']).toBe(13);
+    expect((await metricas())['mensajes']).toBe(16);
   });
 
   it('no cambia nada de lo que recibe n8n: 0 mensajes agregados', async () => {

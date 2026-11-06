@@ -107,11 +107,11 @@ colecciones.
 
 Criterio vigente: «solo se ofrece lo que se cumple» (`CLAUDE.md`).
 
-- `leer` falla o falta `conversacion`: respuesta genérica **con botón**, sin avisos
-  ni compromiso. (Hoy `Traer configuración` tiene timeout de 4 s y `neverError`; si
+- `leer` falla o falta `conversacion`: respuesta genérica **con botón** y, por la política del 21/09/2026 («pasar con recepción» = aviso a recepción MÁS botón), el aviso estándar de transferencia dentro del tope por hora (así lo hace Q'Taco, PR-4a); sin compromiso. (Hoy `Traer configuración` tiene timeout de 4 s y `neverError`; si
   falla, `Config del negocio` usa el respaldo y deriva.)
-- `comprometer` con 5xx, timeout o segundo conflicto: genérico con botón, sin
-  avisos ni cierre. **Reemplaza** la respuesta: 0 mensajes agregados.
+- `comprometer` con 5xx, timeout o segundo conflicto: genérico con botón y, por la misma política, el aviso estándar a recepción como un ítem más
+  (dentro del tope por hora y por teléfono; no en la variante de prueba ni en las puertas cerradas), sin cierre. **Reemplaza** la respuesta:
+  0 mensajes agregados al cliente (el chat de NovuChat lo adoptó en `core/chat-aviso-generico`; antes decía «sin avisos»).
 - Primer `conflicto_version`: **una** replanificación en código sobre el estado
   ganador (sin modelo) y un segundo `comprometer` (+1 llamada solo en ese caso).
 - Entrega fallida **sin** hecho externo: compromiso compensatorio con la versión
@@ -152,11 +152,12 @@ PR-4a, PR-4b, PR-6b); escritor B en paralelo (H2b, PR-6a).
 | PR-2a | Transacciones `core/turno/sesionFirestore.ts` y su suite de emulador | `core-functions` | pendiente |
 | PR-2b | Rama `sesion` en `configuracionFlujo` (despacho); renombrar la variable local `conversacion` a `docConversacion` | coordinadora | construido en la rama `core/f3b-pr2b-despacho-y-ttl`; producción con «sí» de Andres |
 | PR-3 | TTL e índices en `firestore.indexes.json` (políticas primero en staging) | coordinadora | pendiente; puede ir en la etiqueta de PR-2b |
-| PR-4a | Q'Taco adopta estado y vistos | `flujos-n8n` con Cartera | pendiente; espera PR-2b en producción y #519 |
+| PR-4a0 | Los ayudantes de sesión del chat suben al módulo común `comun-sin-agente/src/sesion.js` (prefijo `ss`, parámetros `SS_CONFIG`: espacio, vencimiento, bytes, prefijo, nodos) y el servidor falso a `comun-sin-agente/herramientas/`; el chat los INCLUYE (guardia en su `construir.mjs`) | `core-flujos` | construido; 0 mensajes. Q'Taco lo incluye en PR-4a |
+| PR-4a | Q'Taco adopta estado y vistos | `flujos-n8n` con Cartera | construido (04/11/2026), sin publicar; 0 mensajes; espera PR-2b en producción y el «sí» de Andres. Decisiones en §14 |
 | PR-4b | Q'Taco: cupos (`av.dia`, `transferencias`, `avisosPedido`) | `flujos-n8n` | pendiente; depende de PR-4a y D-7 |
-| PR-4c | El chat NovuChat adopta | a decidir | solo si Andres lo incluye (§10, 3) |
+| PR-4c | El chat NovuChat adopta | `core-flujos` | PR-4c1 (servidor falso y ayudantes) fusionado; PR-4c2 (nodos y plantilla) construido, sin publicar (el genérico de una falla lleva también el aviso a recepción, `core/chat-aviso-generico`); orden de despliegue: Functions, ensayo en el Demo A, flujo del chat |
 | PR-5 | Bellido adopta | n/a | **en espera**: Bellido no se toca |
-| PR-6a | Suites sin `new Function` (las que no son de Q'Taco, Bellido ni Platinum) | `core-flujos` | pendiente |
+| PR-6a | Suites sin `new Function` (las que no son de Q'Taco, Bellido ni el demo de la clínica) | `core-flujos` | pendiente |
 | PR-6b | Ídem para las `venta-minima-*` | `core-flujos` | pendiente; tras PR-4b |
 
 Cada PR declara 0 mensajes por conversación y pasa por `revisor-codigo` y
@@ -178,7 +179,7 @@ turno, cerca de 0,00007 USD por conversación.
 4. **`av.ventana`** (estado del comercio). Recomendación: aceptarlo como residuo
    declarado en PR-4a (si se pierde una escritura sale la plantilla de respaldo) y
    luego derivarlo de `ultimoEntranteEn` de `conversaciones/wa_{destinatario}`.
-5. **H2b en Bellido y Platinum.** Recomendación: «sí» a escribir `modulos` en sus
+5. **H2b en Bellido.** Recomendación: «sí» a escribir `modulos` en sus
    fichas (dato, sin cambio de capacidad); si no, la condición 6 no cierra.
 6. **Qué cuenta como agenda** (límite de agendas de H2b). Recomendación: los
    `calendarioId` distintos entre funcionarios activos; un comercio sin
@@ -248,3 +249,19 @@ el §2 a §5 dicen otra cosa, mandan estas.
 - `comprometer` aborta con `datos_invalidos` (sin escribir) si, tras la poda de `por`, la entrada del propio compromiso no sobrevivió: guardar `{tel}` sin cantidad dejaría un consumo que `asentar` no puede devolver.
 - Despacho en `configuracionFlujo`: con `sesion` se valida primero (400 sin leer nada más, después del 409 por comercio no activo); `comprometer` y `asentar` responden por el camino corto, antes de leer el catálogo; `leer` corre DESPUÉS de la pausa y la atención y agrega `conversacion` y `visto` a la respuesta de siempre. Un 500 o 503 de `atenderSesion` se devuelve tal cual (el flujo lo trata como falla, §6). Un `corrupta` o un `datos_invalidos` deja un renglón de registro estructurado (`estado de la conversacion anomalo`) sin el teléfono.
 - TTL: política sobre `vence` en `sesionesDeTurno`, `vistosDeTurno` y `cuposDeTurno`; `estadoJson` exento de índice. `por` NO se exenta: `asentar` consulta por `por.<id>.cantidad` y necesita el índice automático de subcampo.
+
+## 14. Decisiones al construir PR-4a (Q'Taco: estado y vistos)
+
+Flujo `Flujos/experimental/venta-minima`; todas las salidas se regeneran (qtaco, qtaco-3727, prueba, ensayo-demo-a) y se declaran en `docs/versiones-por-cliente.md`. 0 mensajes por conversación.
+
+- **Un bloque por teléfono** `{v: 1, estado, pedidos}` en el espacio `venta-minima` (`venta-minima-prueba` en la prueba, solo para `telefonosDePrueba`). `venceEnMin` 60, 1440 en `esperando_comprobante` y 4320 si el bloque trae pedidos; cada pedido se poda por su `guardadoMs` (72 h) y el estado por su `ultimoMensajeMs` (60 min, 24 h en `esperando_comprobante`), como antes.
+- **El `leer` va en «Traer configuración»** con el `idMensaje`: el servidor marca el visto y contesta `visto: 'repetido'`; «Interpretar entrada» descarta el repetido. La entrada verificada del receptor y su «Descartar repetidos» no se tocan.
+- **Compromiso ANTES de enviar al cliente:** «Armar mensajes» arma el bloque (y NO envía ni escribe), «¿Comprometer turno?» → «Comprometer turno» (HTTP, `retryOnFail`, `maxTries` 2, el MISMO `idCompromiso` `vm-fin-<ejecución>`, sin `neverError`) → «Soltar mensajes» decide qué sale. Los avisos al local siguen saliendo antes (el estado depende de si el QR se arma): residuo para PR-4b.
+- **Conflicto de versión:** SIN hecho externo la ejecución que pierde CEDE (no envía nada; la ganadora responde); costo: en una ráfaga el perdedor no recibe respuesta. CON hecho externo ya ocurrido (aviso al local o cotejo) NUNCA cede: se replanifica UNA vez sobre la versión ganadora (bloque del ganador + el pedido de este turno unido por pedidoId, paso `menu`, mismo idCompromiso por paso) y, si falla, sale el genérico con el botón; nunca silencio. Los avisos de pedido y de comprobante se deduplican por `tipo:pedidoId` si un compromiso fallido los dejó ya enviados.
+- **Falla (5xx tras el reintento, bloque que no cabe en 15.000 bytes o sin sesión):** el genérico con el botón a recepción REEMPLAZA la respuesta, sin cierre. **Sin estado** (`leer` sin `conversacion`): «¿Hay estado?» → «Sin estado»: el aviso estándar de transferencia (dentro de `topeTransferenciasHora`) MÁS el botón, sin modelo, sin compromiso. Una puerta cerrada (uso extendido, bloqueado, comercio no operativo) no compromete y nunca cae al genérico.
+- **Compensación** («Confirmar envío» → «Comprometer compensación», que solo corre si hay que compensar): si Meta rechaza el mensaje y su respaldo, SIN hecho externo vuelve el bloque entero de antes (con su ancla y sus pedidos); CON hecho externo (aviso salido o cierre registrado) el bloque comprometido queda en el paso `menu`, salvo `esperando_comprobante`. «Resumen del turno» corta la ejecución en error.
+- **Tope en bytes:** el bloque se mide en UTF-8 (`ssBytes`, sin lanzar con un surrogate suelto) y se recorta antes de comprometer: primero los pedidos más antiguos, el que espera el comprobante el último; si ni el estado solo cabe, genérico (nunca un 413).
+- **Lectura de respaldo de la publicación** con retiro el 30/11/2026 (ver `docs/versiones-por-cliente.md`).
+- **Ronda 3 de revisión:** la marca del aviso ya enviado del comprobante es `comprobante:pedidoId:medio:resultado` (el del pedido, por pedidoId): un comprobante correcto nunca se suprime por uno malo anterior. La replanificación deja el paso en `menu` si el ganador espera el comprobante de ESTE mismo pedido y este turno ya lo cerró. El genérico de una falla del compromiso SIN hecho externo lleva el aviso de transferencia a recepción como un ítem más del envío (sin nodos nuevos; con hecho externo, no). **Costo de I2:** con el panel caído o sin estado, +1 aviso de transferencia por destinatario, por teléfono y por hora (más el del genérico sin hecho externo); el cliente sigue recibiendo un mensaje.
+- **Residuos de `staticData` del chat de NovuChat:** `chatNovuchatAvisoFalla` (marcas del aviso del genérico, por teléfono y hora), `chatNovuchatSinEstado` (últimos ids en `sin_estado`) y `chatNovuchatCrm` (marca del contacto nuevo).
+- **Residuo (PR-4b):** `av.dia`, `transferencias`, `avisosPedido`, `reservasDelDia` y `av.ventana` (contrato §10.4).

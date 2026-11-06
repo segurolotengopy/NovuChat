@@ -13,7 +13,7 @@
         },
         {
           "cliente": {"tipo": "boton", "titulo": "Confirmar pedido"},
-          "esperado": {"mensajes": 1, "efectos": {"qr": true}, "estado": {"paso": "esperando_comprobante"}, "reporteQr": {"monto": 21}}
+          "esperado": {"mensajes": 1, "efectos": {"qr": true}, "estado": {"paso": "esperando_comprobante"}, "reporteQr": {"monto": 21, "lineas": {"longitud": 1}, "entrega.tipo": {"regex": "^(retiro|envio)$"}}}
         }
       ],
       "turnos": [

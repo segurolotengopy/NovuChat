@@ -45,6 +45,20 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { BORRAR, CASOS, type Caso } from './casos-config-negocio.ts';
+import { esFlujo, modulosDeFlujos } from '../../functions/src/registro.ts';
+
+/**
+ * H2b-cierre. Las fichas VIVAS tendrán `modulos` (lo escribe la migración): a toda ficha con una lista de `flujos`
+ * y sin `modulos` se le da la que hoy daba el puente (`modulosDeFlujos`), y así se sigue probando que se comportan
+ * IGUAL que con la base anterior. Las que quedan SIN lista `modulos` (ausente, nula, cadena, mapa) son la DIFERENCIA
+ * NUEVA Y NEGADA: la base anterior las leía por `flujos`/`vertical`; las reglas de ahora no les abren ningún módulo
+ * (falla cerrado). La referencia `.rules.txt` NO se toca; solo cambian las fichas de entrada.
+ */
+const viva = (f: Record<string, unknown> | null | undefined): Record<string, unknown> | null | undefined => {
+  if (!f || 'modulos' in f || !Array.isArray(f['flujos'])) return f;
+  return { ...f, modulos: modulosDeFlujos((f['flujos'] as string[]).filter(esFlujo) as never[]) };
+};
+const sinLista = (f: Record<string, unknown> | null | undefined): boolean => !!f && !Array.isArray(viva(f)?.['modulos']);
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const AHORA = readFileSync(join(aqui, '..', '..', 'firestore.rules'), 'utf8');
@@ -84,7 +98,7 @@ const resultadoDe = async (op: () => Promise<unknown>): Promise<Resultado> => {
 // ===========================================================================
 // PARTE A — config/negocio
 // ===========================================================================
-const FICHA_VENTA = { creadoEn: TS, estado: 'activo', flujos: ['venta'], vertical: 'venta', nombre: 'Q', plan: 'crecimiento' };
+const FICHA_VENTA = { creadoEn: TS, estado: 'activo', flujos: ['venta'], vertical: 'venta', nombre: 'Q', plan: 'crecimiento', modulos: modulosDeFlujos(['venta']) };
 
 async function matrizNegocio(reglas: string, casos: Caso[]): Promise<Mapa> {
   const e = await iniciar(reglas);
@@ -93,7 +107,7 @@ async function matrizNegocio(reglas: string, casos: Caso[]): Promise<Mapa> {
   for (const c of casos) {
     await e.clearFirestore();
     await e.withSecurityRulesDisabled(async (cx) => {
-      if (c.ficha !== null) await setDoc(doc(cx.firestore(), 'tenants/q'), c.ficha === undefined ? FICHA_VENTA : { creadoEn: TS, nombre: 'Q', plan: 'crecimiento', ...c.ficha });
+      if (c.ficha !== null) await setDoc(doc(cx.firestore(), 'tenants/q'), c.ficha === undefined ? FICHA_VENTA : viva({ creadoEn: TS, nombre: 'Q', plan: 'crecimiento', ...c.ficha })!);
       await setDoc(doc(cx.firestore(), 'tenants/q/config/negocio'), { ...c.semilla, actualizadoPor: 's', actualizadoEn: TS });
     });
     const parche: Record<string, unknown> = {};
@@ -221,7 +235,7 @@ async function matrizOtros(reglas: string, fichas: string[], ops: Op[] = OPS): P
   const salida: Mapa = new Map();
   for (const nombre of fichas) {
     await e.clearFirestore();
-    await sembrarTenant(e, FICHAS[nombre] ?? null);
+    await sembrarTenant(e, viva(FICHAS[nombre]) ?? null);
     for (const op of ops) {
       if (op.prep) await e.withSecurityRulesDisabled(async (ctx) => { await op.prep!(ctx.firestore()); });
       const ctx = contextoDe(e, op.actor);
@@ -257,6 +271,12 @@ describe('reglas: el recorte de config/negocio decide IGUAL que la base anterior
       + (difs.length ? `\n${difs.map((k) => `  ${k}: antes ${negocioAntes.get(k)} -> ahora ${negocioAhora.get(k)}`).join('\n')}` : ''));
     // La ÚNICA diferencia admitida: lo válido que antes no cabía en el presupuesto.
     for (const k of difs) {
+      // DIFERENCIA NUEVA Y NEGADA: ficha sin lista `modulos` — antes aceptaba por `flujos`, ahora rechaza.
+      if (sinLista(porCaso.get(k)?.ficha)) {
+        expect(negocioAntes.get(k), `${k}: antes`).toBe('P');
+        expect(negocioAhora.get(k), `${k}: ahora`).toBe('N');
+        continue;
+      }
       expect(negocioAntes.get(k), `${k}: antes no fue por presupuesto`).toBe('LIMITE');
       expect(negocioAhora.get(k), k).toBe('P');
       expect(porCaso.get(k)?.esperado, `${k}: el caso no está declarado como válido`).toBe('P');
@@ -264,10 +284,12 @@ describe('reglas: el recorte de config/negocio decide IGUAL que la base anterior
     // Y ningún caso que el recorte rechaza por presupuesto: la mejora no puede traer su propio límite.
     expect([...negocioAhora].filter(([, v]) => v === 'LIMITE').map(([k]) => k)).toEqual([]);
     // Los casos con árbitro: ahora dan exactamente lo que merecen.
+    // Control: la diferencia declarada existe de verdad (si no, la prueba no mira donde debe).
+    expect(difs.filter((k) => sinLista(porCaso.get(k)?.ficha)).length, 'fichas sin lista que dejan de abrir').toBeGreaterThan(0);
     for (const c of CASOS.filter((x) => x.esperado)) expect(negocioAhora.get(c.nombre), c.nombre).toBe(c.esperado);
     // Todo lo que no es un caso de presupuesto ya decidía igual, sin excepción: contra la base, tal cual.
     for (const c of CASOS) {
-      if (negocioAntes.get(c.nombre) === 'LIMITE') continue;
+      if (negocioAntes.get(c.nombre) === 'LIMITE' || difs.includes(c.nombre)) continue;
       expect(negocioAhora.get(c.nombre), `${c.nombre}: antes ${negocioAntes.get(c.nombre)}`).toBe(negocioAntes.get(c.nombre));
     }
   }, 1_800_000);
@@ -303,7 +325,14 @@ describe('reglas: el recorte de config/negocio decide IGUAL que la base anterior
       ['modulosSoloAgenda | update config/negocio catalogoWebActivo=true', 'P', 'N'],
       ['modulosVacia | update config/negocio catalogoWebActivo=true', 'P', 'N'],
     ] as const;
-    expect(difs.sort()).toEqual(INTENCIONALES_H2B1.map(([k]) => k).sort());
+    // H2b-cierre: además, la DIFERENCIA NUEVA Y NEGADA de las fichas sin lista `modulos` (antes P, ahora N).
+    const delFalloCerrado = difs.filter((k) => sinLista(FICHAS[k.split(' | ')[0] as string]));
+    for (const k of delFalloCerrado) {
+      expect(otrosAntes.get(k), `${k}: antes`).toBe('P');
+      expect(otrosAhora.get(k), `${k}: ahora`).toBe('N');
+    }
+    expect(delFalloCerrado.length, 'fichas sin lista que dejan de abrir').toBeGreaterThan(0);
+    expect(difs.filter((k) => !delFalloCerrado.includes(k)).sort()).toEqual(INTENCIONALES_H2B1.map(([k]) => k).sort());
     for (const [k, antes, ahora] of INTENCIONALES_H2B1) {
       expect(otrosAntes.get(k), `${k}: antes`).toBe(antes);
       expect(otrosAhora.get(k), `${k}: ahora`).toBe(ahora);
@@ -337,12 +366,12 @@ describe('reglas: el recorte de config/negocio decide IGUAL que la base anterior
     expect(diferencias(antes, ahora), 'la mutación del horario pasó inadvertida').toContain('hor=igual');
   }, 600_000);
 
-  it('control 2: un respaldo de `vertical` roto en flujosTenant SÍ lo ve la parte B', async () => {
-    const mutada = mutar(AHORA, "[get(ruta).data.get('vertical', '')]", "['']");
+  it('control 2: un tieneModulo que vuelve a abrir las fichas sin lista SÍ lo ve la parte B', async () => {
+    const mutada = mutar(AHORA, "return ficha.get('modulos', null) is list && m in ficha.modulos;", "return !(ficha.get('modulos', null) is list) || m in ficha.modulos;");
     const fichas = ['soloVerticalVenta', 'soloVerticalAgenda', 'venta'];
     const antes = await matrizOtros(ANTES, fichas);
     const ahora = await matrizOtros(mutada, fichas);
-    expect(diferencias(antes, ahora).filter((k) => k.startsWith('soloVertical')).length, 'la mutación de flujosTenant pasó inadvertida').toBeGreaterThan(0);
+    expect(diferencias(antes, ahora).filter((k) => k.startsWith('soloVertical')).length, 'la mutación de tieneModulo pasó inadvertida').toBeGreaterThan(0);
   }, 600_000);
 
   it('control 3: un tenantOperativo que deja pasar a la suspendida SÍ lo ve la parte B', async () => {

@@ -1,5 +1,7 @@
 # Prompts de sesiones dedicadas
 
+> **Nota (02/11/2026, decisión de Andres):** los prompts históricos que mencionan la «ventana de mantenimiento 23:30–01:30» o «02:00–03:00» describen la regla de su fecha. Hoy esa ventana es solo la **promesa al cliente** del anexo técnico del contrato (se mantiene); internamente se publica a cualquier hora cuando no hay riesgo para el cliente, siempre con el «sí» de Andres.
+
 Convención global, plantilla y ejemplo: `~/Claude-Proyectos/prompts/`. Esta
 carpeta guarda los de NovuChat.
 

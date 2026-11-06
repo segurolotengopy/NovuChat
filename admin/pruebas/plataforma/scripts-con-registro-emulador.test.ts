@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
+import { esFlujo, modulosDeFlujos } from '../../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const script = (ruta: string) => join(aqui, '..', '..', 'scripts', ruta);
 const PROYECTO = 'demo-novuchat-pruebas';
@@ -60,7 +61,9 @@ function correr(ruta: string, ...args: string[]) {
 beforeAll(async () => {
   for (const t of TENANTS) await db.recursiveDelete(db.doc(`tenants/${t}`));
   const ficha = (nombre: string, flujos: string[] | undefined, vertical: string) =>
-    db.doc(`tenants/${nombre}`).set({ nombre, estado: 'activo', vertical, ...(flujos ? { flujos } : {}) });
+    // H2b-cierre: `modulos` (la única fuente) sembrada desde el flujo, como el alta; `flujos` queda como dato.
+    db.doc(`tenants/${nombre}`).set({ nombre, estado: 'activo', vertical, ...(flujos ? { flujos } : {}),
+      modulos: modulosDeFlujos(((flujos ?? [vertical]).filter(esFlujo)) as never[]) });
   await ficha(AGENDA, ['agendamiento'], 'agendamiento');
   await ficha(VENTA, ['venta'], 'venta');
   await ficha(CAPTACION, ['onboarding'], 'onboarding');

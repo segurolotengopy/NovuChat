@@ -50,9 +50,9 @@ const S = 'tenant-s-sin-captacion';
 const D = 'tenant-d-suspendido';
 /** Comercio con captación, dado de baja. */
 const X = 'tenant-x-baja';
-/** Ficha vieja: sin lista `flujos`, con `vertical: 'onboarding'`. */
+/** Ficha vieja SIN `modulos` (solo `flujos`/`vertical` onboarding): falla cerrado. */
 const L = 'tenant-l-legado';
-/** Ficha contradictoria: `vertical: 'onboarding'` pero `flujos: ['venta']`. Manda la lista. */
+/** Ficha contradictoria: `vertical`/`flujos` dicen onboarding pero `modulos` no trae captacion. Manda la lista. */
 const M = 'tenant-m-lista-manda';
 /** Tenant que NO existe en Firestore. */
 const N = 'tenant-n-inexistente';
@@ -131,13 +131,13 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
     await entorno.withSecurityRulesDisabled(async (ctx) => {
       const db = ctx.firestore();
       const fichas: Record<string, object> = {
-        [A]: { estado: 'activo', vertical: 'onboarding', flujos: ['onboarding'] },
-        [B]: { estado: 'activo', vertical: 'onboarding', flujos: ['onboarding'] },
-        [S]: { estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'] },
-        [D]: { estado: 'suspendido', vertical: 'onboarding', flujos: ['onboarding'] },
-        [X]: { estado: 'dado_de_baja', vertical: 'onboarding', flujos: ['onboarding'] },
+        [A]: { estado: 'activo', vertical: 'onboarding', flujos: ['onboarding'], modulos: ['productos', 'campanas', 'captacion'] },
+        [B]: { estado: 'activo', vertical: 'onboarding', flujos: ['onboarding'], modulos: ['productos', 'campanas', 'captacion'] },
+        [S]: { estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: ['productos', 'campanas', 'cobros', 'agenda'] },
+        [D]: { estado: 'suspendido', vertical: 'onboarding', flujos: ['onboarding'], modulos: ['productos', 'campanas', 'captacion'] },
+        [X]: { estado: 'dado_de_baja', vertical: 'onboarding', flujos: ['onboarding'], modulos: ['productos', 'campanas', 'captacion'] },
         [L]: { estado: 'activo', vertical: 'onboarding' },
-        [M]: { estado: 'activo', vertical: 'onboarding', flujos: ['venta'] },
+        [M]: { estado: 'activo', vertical: 'onboarding', flujos: ['onboarding'], modulos: ['productos', 'pedidos'] },
       };
       for (const [t, ficha] of Object.entries(fichas)) {
         await setDoc(doc(db, 'tenants', t), { nombre: t, plan: 'basico', ...ficha });
@@ -170,8 +170,9 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
       await assertSucceeds(pdf(propietario(), A));
     });
 
-    it('ficha vieja sin `flujos` y con vertical onboarding: vale como [vertical]', async () => {
-      await assertSucceeds(pdf(adminL(), L));
+    it('H2b-cierre: ficha vieja SIN `modulos` (vertical/flujos onboarding) NO sube: falla cerrado', async () => {
+      await assertFails(pdf(adminL(), L));
+      await assertFails(pdf(propietario(), L));
     });
   });
 
@@ -248,7 +249,7 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
       await assertFails(pdf(adminS(), S));
     });
 
-    it('con vertical onboarding pero `flujos` sin él, manda la lista y se rechaza', async () => {
+    it('con vertical y flujos onboarding pero `modulos` sin captacion, manda la lista y se rechaza', async () => {
       await assertFails(pdf(adminM(), M));
     });
 
@@ -557,6 +558,37 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
       await sembrarArchivo(rc(X), 'image/jpeg');
       await assertFails(getMetadata(ref(adminX(), rc(X))));
       await assertFails(getMetadata(ref(adminD(), rc(D))));
+    });
+  });
+
+  // ===========================================================================
+  // MEDIOS ENTRANTES GUARDADOS (storage.rules, /tenants/{t}/medios/**; Core, H3 PR-1).
+  // Los escribe y los borra solo el servidor: ninguna persona los lee, escribe,
+  // borra ni lista desde el navegador, ni siquiera del propio comercio.
+  // ===========================================================================
+  describe('Medios entrantes guardados (Core)', () => {
+    const rm = (t: string, dia = '2026-10-23', nombre = 'objetoX.ogg') => `tenants/${t}/medios/${dia}/${nombre}`;
+    beforeEach(async () => { await sembrarArchivo(rm(A), 'audio/ogg'); });
+
+    it('nadie lee un medio: ni administrador, ni operador, ni propietario, ni ingesta, ni anónimo', async () => {
+      for (const quien of [adminA(), operA(), propietario(), ingestaA(), anonimo()]) {
+        await assertFails(getMetadata(ref(quien, rm(A))));
+        await assertFails(getDownloadURL(ref(quien, rm(A))));
+      }
+    });
+
+    it('nadie lo escribe, lo reemplaza, lo borra ni lo lista', async () => {
+      for (const quien of [adminA(), operA(), propietario(), ingestaA(), anonimo()]) {
+        await assertFails(subir(quien, rm(A, '2026-10-24', 'nuevo.ogg'), 1024, 'audio/ogg'));
+        await assertFails(subir(quien, rm(A), 1024, 'audio/ogg'));
+        await assertFails(deleteObject(ref(quien, rm(A))));
+        await assertFails(listAll(ref(quien, `tenants/${A}/medios`)));
+      }
+    });
+
+    it('el administrador de otro comercio tampoco lee el medio de A ni escribe en el suyo', async () => {
+      await assertFails(getMetadata(ref(adminB(), rm(A))));
+      await assertFails(subir(adminB(), rm(B), 1024, 'audio/ogg'));
     });
   });
 });

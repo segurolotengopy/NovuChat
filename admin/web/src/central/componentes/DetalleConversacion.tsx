@@ -7,6 +7,10 @@ import {
 import { db } from '../../core/lib/firebase';
 import { TextoSeguro } from './TextoSeguro';
 import { BarraTurno } from './BarraTurno';
+import { BloqueoContacto } from './BloqueoContacto';
+import { accionesDeBloqueo, accionesSinBloqueadas, type CapaBloqueo } from '../lib/bloqueo';
+import { VisorMedio } from './VisorMedio';
+import { accionDeMedio, enlaceWaMe, textoAnotado, AVISO_WA_ME, TEXTO_VENCIDO, TEXTO_PENDIENTE, medioDeDatos, type MedioDeMensaje } from '../lib/medios';
 import { EscribirComoPersona } from './EscribirComoPersona';
 import {
   etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, turnoDeFicha, ventanaDeFicha, type Ficha,
@@ -54,6 +58,10 @@ interface Msg {
   codigoEnvio: string;
   esperaSegundos: unknown;
   ts: number;
+  /** Campo `medio` que escribe `guardarMedio` (foto, PDF, audio); `null` si el mensaje no lo trae. */
+  medio: MedioDeMensaje | null;
+  /** El wamid del mensaje: es lo único que se manda a `verMedio`. */
+  idMeta: string;
   /** El documento, para pedir los anteriores `startAfter` de él sin una lectura de más y sin perder los empatados. */
   snap: QueryDocumentSnapshot;
 }
@@ -91,6 +99,8 @@ function aMensaje(d: QueryDocumentSnapshot): Msg {
     codigoEnvio: typeof x['codigoEnvio'] === 'string' ? x['codigoEnvio'].slice(0, 20) : '',
     esperaSegundos: x['esperaSegundos'],
     ts: ts?.toMillis ? ts.toMillis() : 0,
+    medio: medioDeDatos(x['medio']),
+    idMeta: typeof x['idMeta'] === 'string' ? x['idMeta'].slice(0, 200) : '',
     snap: d,
   };
 }
@@ -219,12 +229,16 @@ export interface PropsDetalle {
   esPropietario?: boolean;
   /** El comercio está `activo`: con otro estado las reglas niegan toda escritura y el control se deshabilita. */
   comercioActivo: boolean;
+  /** El comercio tiene activa la intervención (`usePersonaPuedeIntervenir`); falso mientras carga o si falla. */
+  puedeIntervenir: boolean;
   /** H2: el uid de quien mira (para saber si la conversación la tiene «usted»); `null` sin sesión. */
   miUid: string | null;
   /** H2: quien mira es admin del negocio (puede devolver la conversación de otra persona). */
   esAdmin: boolean;
   /** H2: las tres callables (tomar, devolver, enviar). Las pruebas la reemplazan. */
   capa: CapaTurno;
+  /** Bloquear contacto: las dos callables. */
+  capaBloqueo: CapaBloqueo;
 }
 
 export function DetalleConversacion(p: PropsDetalle) {
@@ -304,9 +318,12 @@ export function DetalleConversacion(p: PropsDetalle) {
   // Quién responde AHORA: el veredicto del servidor (Core), no el campo crudo: un turno vencido ya es del asistente.
   const turno = turnoDeFicha(ficha, p.ahora);
   const situacion = situacionDeTurno(turno, p.miUid);
-  const acciones = accionesDeTurno({
-    situacion, puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo,
+  const acciones = accionesSinBloqueadas(accionesDeTurno({
+    situacion, puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo, puedeIntervenir: p.puedeIntervenir,
     ventanaAbierta: ventanaAbiertaParaTomar(ficha.ultimoEntranteEn, p.ahora),
+  }), ficha.bloqueada);
+  const accionesBloqueo = accionesDeBloqueo({
+    puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo, bloqueada: ficha.bloqueada, situacion,
   });
 
   let diaPrevio = 0;
@@ -321,7 +338,17 @@ export function DetalleConversacion(p: PropsDetalle) {
           <strong><TextoSeguro valor={ficha.nombre || ficha.telefono} maxLargo={60} /></strong>
           <span className="text-muted">
             +<TextoSeguro valor={ficha.telefono} maxLargo={15} />
+            {enlaceWaMe(ficha.telefono) && (
+              <>
+                {' '}
+                <a href={enlaceWaMe(ficha.telefono)!} target="_blank" rel="noopener noreferrer"
+                   className="cv-wame" title={AVISO_WA_ME} data-testid="enlace-wame">Abrir en WhatsApp</a>
+              </>
+            )}
           </span>
+          {enlaceWaMe(ficha.telefono) && (
+            <span className="text-muted cv-wame-aviso" data-testid="aviso-wame">{AVISO_WA_ME}</span>
+          )}
         </div>
         {/* Sin dato (una conversación de antes de H1): no se pinta pastilla, porque «cerrada» sería falso. */}
         {ficha.ultimoEntranteEn === null && (
@@ -358,6 +385,10 @@ export function DetalleConversacion(p: PropsDetalle) {
           ficha.noContactar && <span className="cv-etiqueta">No contactar</span>
         )}
         {errorNoContactar && <span role="alert" className="cv-error">{errorNoContactar}</span>}
+        {/* «Bloquear contacto» va al lado de «No contactar»: bloquear quita visibilidad, y se decide en el mismo lugar. */}
+        <BloqueoContacto
+          tenantId={tenantId} conversacionId={ficha.id} bloqueada={ficha.bloqueada} acciones={accionesBloqueo} capa={p.capaBloqueo}
+        />
       </div>
 
       {mostrarAvisoPropietario(p.esPropietario === true) && (
@@ -406,6 +437,14 @@ export function DetalleConversacion(p: PropsDetalle) {
                   {rotuloAutor && <span className="cv-autor"><TextoSeguro valor={rotuloAutor} maxLargo={40} /></span>}
                   {ADJUNTOS[x.tipo] && <span className="adjunto">{ADJUNTOS[x.tipo]}</span>}
                   <TextoSeguro valor={x.texto} />
+                  {accionDeMedio(x.medio, p.ahora) === 'ver' && x.idMeta && x.medio && (
+                    <VisorMedio tenantId={tenantId} conversacionId={ficha.id} idMeta={x.idMeta} medio={x.medio} />
+                  )}
+                  {accionDeMedio(x.medio, p.ahora) === 'vencido' && <span className="cv-medio-texto">{TEXTO_VENCIDO}</span>}
+                  {accionDeMedio(x.medio, p.ahora) === 'pendiente' && <span className="cv-medio-texto">{TEXTO_PENDIENTE}</span>}
+                  {accionDeMedio(x.medio, p.ahora) === 'anotado' && x.medio && (
+                    <span className="cv-medio-texto">{textoAnotado(x.medio.mime)}</span>
+                  )}
                   <time dateTime={x.ts ? new Date(x.ts).toISOString() : undefined}>{x.ts ? horaCorta(x.ts) : ''}</time>
                   {esPersona && x.estadoEnvio && (
                     <span className={`cv-envio cv-envio--${vencido === 'pendiente' ? 'rechazado' : vencido === 'enviando' ? 'incierto' : x.estadoEnvio}`} data-estado={vencido ?? x.estadoEnvio}>

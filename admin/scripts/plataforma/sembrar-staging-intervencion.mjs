@@ -56,7 +56,7 @@ import { randomBytes } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { comprobarProyecto } from './verificar-reglas-staging.mjs';
-import { documentoDeFlujo } from '../../functions/src/registro.ts';
+import { documentoDeFlujo, modulosDeFlujos } from '../../functions/src/registro.ts';
 import { CATALOGO_PLANES, TARIFA_DE_ALTA, limitesDe } from '../../functions/src/central/cuenta/planes.ts';
 import { palabrasDe, trozosDeTelefono } from '../../functions/src/core/conversacion/normalizacion.ts';
 
@@ -251,7 +251,7 @@ async function sembrar(cfg, { db, auth, Timestamp, di, refTenant, ficha, usuario
   const cuenta = { plan: PLAN, limites: limitesDe(PLAN, TARIFA_DE_ALTA), catalogoPlanes: CATALOGO_PLANES, tarifa: TARIFA_DE_ALTA };
   const lote = db.batch();
   lote.set(refTenant, marcado({
-    nombre: NOMBRE_COMERCIO, estado: 'activo', plan: PLAN, vertical: FLUJO, flujos: [FLUJO],
+    nombre: NOMBRE_COMERCIO, estado: 'activo', plan: PLAN, vertical: FLUJO, flujos: [FLUJO], modulos: modulosDeFlujos([FLUJO]),
     consolaConversaciones: 'nueva', waPhoneNumberId: null, waWabaId: null,
     creadoEn: ahora, creadoPor: MARCA,
   }));

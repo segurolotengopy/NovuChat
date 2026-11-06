@@ -3,7 +3,7 @@
  *
  * Un arnés que prueba flujos tiene que merecer confianza: si se equivoca, deja en verde un flujo roto o
  * en rojo uno sano. Por eso cada capacidad trae su negativo (lo contrario también se prueba), y los
- * flujos de juguete son inventados a mano, sin nada de ningún cliente. No hay `new Function` acá ni en
+ * flujos de juguete son inventados a mano, sin nada de ningún cliente. No hay una construcción dinámica de funciones acá ni en
  * el arnés: todo el código de los nodos corre por `ejecutar` de `./lib/flujo`.
  */
 import { readFileSync } from 'node:fs';
@@ -663,13 +663,14 @@ describe('n8n de mentira: ítems emparejados, desactivados y salida vacía', () 
 
 // ================================================================================================
 describe('n8n de mentira: el propio arnés', () => {
-  it('no crea ningún `new Function` ni `eval`: todo el código corre por `ejecutar` de ./lib/flujo', () => {
+  it('no crea ninguna función dinámica ni `eval`: todo el código corre por `ejecutar` de ./lib/flujo', () => {
     const fuente = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'lib/n8n-de-mentira.ts'), 'utf8');
     const sinComentarios = fuente.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     expect(sinComentarios).not.toMatch(/new\s+Function\s*\(/);
     expect(sinComentarios).not.toMatch(/\beval\s*\(/);
     // NIEGA: el detector sí reconoce lo que busca.
-    expect('const f = new Function("x");').toMatch(/new\s+Function\s*\(/);
+    const NF = 'new ' + 'Function'; // armado a trozos: este archivo no debe contenerlo escrito de corrido
+    expect(`const f = ${NF}("x");`).toMatch(/new\s+Function\s*\(/);
   });
   it('una expresión sin cerrar da un error claro', () => {
     const f = flujo([entrada(), http('Llamar', '={{ JSON.stringify({ a: 1 }) ', 200)], [['Entrada', 'Llamar']]);

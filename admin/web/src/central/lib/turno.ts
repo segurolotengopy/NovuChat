@@ -28,7 +28,7 @@ import { httpsCallable, type Functions } from 'firebase/functions';
 // La regla del turno es de CORE y la consola usa la MISMA que el servidor (Central → Core, hacia abajo): ni una
 // cifra ni una comparación duplicadas. Un turno vencido por inactividad o por la ventana, o con fechas rotas, es «asistente».
 import {
-  INACTIVIDAD_MS, MARGEN_ENVIO_MS, VENTANA_META_MS, leerTurno, turnoVigente, ventanaDeMetaAbierta, type Turno,
+  INACTIVIDAD_MS, MARGEN_ENVIO_MS, VENTANA_META_MS, leerTurno, personaPuedeEscribirDeFicha, turnoVigente, ventanaDeMetaAbierta, type Turno,
 } from '../../../../functions/src/core/conversacion/turno';
 
 export { INACTIVIDAD_MS, MARGEN_ENVIO_MS, VENTANA_META_MS, leerTurno, turnoVigente, ventanaDeMetaAbierta };
@@ -116,9 +116,29 @@ export interface EntradaAcciones {
   comercioActivo: boolean;
   /** La ventana de 24 h está abierta (el servidor rechaza tomar con la ventana cerrada o sin dato). */
   ventanaAbierta: boolean;
+  /**
+   * El comercio tiene publicada la salida de lo que escribe una persona (`personaPuedeEscribir`, con la pantalla nueva
+   * explícita). Falso = fail closed: sin «Tomar» ni cuadro para escribir. Devolver no la necesita (liberar es seguro).
+   */
+  puedeIntervenir: boolean;
 }
 
+/**
+ * ¿Puede una persona de este comercio TOMAR y escribir? (`tenants/{id}`: `consolaConversaciones === 'nueva'` EXPLÍCITO y
+ * `personaPuedeEscribir === true`, las mismas dos condiciones del servidor, que además excluye a Bellido). Pura, para probarla.
+ * La bandera de salida es la misma función del servidor (`personaPuedeEscribirDeFicha`): no hay dos defaults.
+ */
+export function puedeIntervenirDeFicha(
+  ficha: { readonly consolaConversaciones?: unknown; readonly personaPuedeEscribir?: unknown } | null | undefined,
+): boolean {
+  return !!ficha && ficha.consolaConversaciones === 'nueva' && personaPuedeEscribirDeFicha(ficha);
+}
+
+export const AVISO_SIN_SALIDA = 'Tomar la conversación y escribir como persona todavía no está activo para su negocio.';
+
 export interface Acciones {
+  /** El asistente responde y el comercio no tiene activa la intervención: se explica en vez de ofrecer «Tomar». */
+  sinIntervencion: boolean;
   verTomar: boolean;
   sinTomarPorVentana: boolean;
   verDevolver: boolean;
@@ -134,13 +154,14 @@ export interface Acciones {
  *  · Escribir: solo quien la tiene (el servidor exige el turno de ESA persona).
  */
 export function accionesDeTurno(a: EntradaAcciones): Acciones {
-  if (!a.puedeGestionar) return { verTomar: false, sinTomarPorVentana: false, verDevolver: false, verEscribir: false, habilitados: false };
+  if (!a.puedeGestionar) return { sinIntervencion: false, verTomar: false, sinTomarPorVentana: false, verDevolver: false, verEscribir: false, habilitados: false };
   return {
-    verTomar: a.situacion === 'asistente' && a.ventanaAbierta,
+    sinIntervencion: a.situacion === 'asistente' && !a.puedeIntervenir,
+    verTomar: a.situacion === 'asistente' && a.puedeIntervenir && a.ventanaAbierta,
     // «Tomar» escondido por la ventana: la pantalla lo explica en vez de callar.
-    sinTomarPorVentana: a.situacion === 'asistente' && !a.ventanaAbierta,
+    sinTomarPorVentana: a.situacion === 'asistente' && a.puedeIntervenir && !a.ventanaAbierta,
     verDevolver: a.situacion === 'mio' || (a.situacion === 'ajeno' && a.esAdmin),
-    verEscribir: a.situacion === 'mio',
+    verEscribir: a.situacion === 'mio' && a.puedeIntervenir,
     habilitados: a.comercioActivo,
   };
 }
@@ -382,6 +403,12 @@ export function textoErrorTurno(accion: AccionTurno, codigo: string, detalles: R
     case 'permission-denied':
       return 'No tiene permiso para intervenir en esta conversación, o esta función no está habilitada para su comercio.';
     case 'failed-precondition': {
+      // El bloqueo de 45 s tras un mensaje entrante (contrato §9): el servidor manda `motivo: 'espera'`. Es la única
+      // causa de failed-precondition que hoy trae un motivo distinguible; las demás se quedan con el texto general.
+      if (accion === 'enviar' && detalles['motivo'] === 'espera') {
+        const n = segundosDe(detalles['esperaSegundos']);
+        return `Espere${n === null ? ' unos segundos' : ` ${n} ${n === 1 ? 'segundo' : 'segundos'}`}: el asistente puede estar respondiendo. Después vuelva a pulsar Enviar.`;
+      }
       const otra = typeof detalles['tomadoPor'] === 'string' && detalles['tomadoPor'] !== ''
         ? ` (${etiquetaUid(detalles['tomadoPor'], null)})` : '';
       return accion === 'tomar'

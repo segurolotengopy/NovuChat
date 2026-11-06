@@ -44,6 +44,20 @@
 //                 de la ubicación compartida (su propio segmento) y los ítems compactos;
 //                 `cocina`: «<modalidad> · <ítems compactos con sus notas>», sin teléfono, dirección, nombre completo
 //                 ni coordenadas. Los ítems se cortan por ítem y terminan en «… y N más» si no caben en las 500 de la variable.
+//                 PLANTILLAS POR LÍNEAS (aditivo, 24/10; el aviso de despachos en bloque continuo): clave `plantillasPedidoLineas`
+//                 = CSV «2:nombre,4:nombre,6:nombre» e idioma `idiomaPlantillaPedidoLineas` (def. el de la plantilla de pedido).
+//                 Con la clave vacía o ausente TODO sale como arriba (`plantillaPedido`, `ordenPedido`). Con la clave, un pedido o
+//                 comprobante usa la plantilla del MENOR tamaño N (2, 4 o 6) que cabe sus productos (más de 6: la de 6); si ese
+//                 tamaño no tiene plantilla, cae a la de siempre y anota `lineas_sin_plantilla_<N>`. Reserva y derivación no cambian.
+//                 TEXTO FIJO de las tres plantillas (UTILITY, es; los nombres reales —`pedido_registrado_l2`, `_l4`, `_l6`—
+//                 viven en la configuración, no aquí; ⏎ = salto de línea FIJO del cuerpo, lo único que Meta admite):
+//                 «Se registró un pedido en Q' Taco.⏎Pedido: {{1}}⏎Modalidad: {{2}}⏎Detalle pedido:⏎- {{3}}⏎- {{4}}⏎… (una línea
+//                 «- {{k}}» por producto, hasta N)⏎Comprobante: {{N+3}}⏎Revise el pedido en la consola antes de despachar.» (así están APROBADAS en la WABA
+//                 de Q'Taco, 28/10: l2 = 5 variables, l4 = 7, l6 = 9; solo BODY, UTILITY, es; el total va dentro de {{1}})
+//                 Variables: {{1}} «N.º <código> de <n> ítems. Total de la comida: Bs <total>» · {{2}} modalidad por rol, SIN los
+//                 ítems (`avModalidadVariable(…, true)`; cocina sin teléfono, dirección, nombre completo ni coordenadas) ·
+//                 {{3}}…{{N+2}} «<cant> × <producto> (<nota>)», una por variable; las sobrantes llevan «—»; si hay más productos
+//                 que N, la última es «… y K más» (nunca a mitad de producto) · {{N+3}} el cotejo. Misma cuenta de mensajes.
 //   reserva     → `plantillaReserva`, `idiomaPlantillaReserva`, `ordenReserva` y la FORMA `formaPlantillaReserva`:
 //                 · `cita` (def.; p. ej. `appointment_confirmed`, de la biblioteca de Meta, texto fijo; NO se edita):
 //                   orden def. `destinatario,cuando,detalle,codigo` — destinatario = nombre de quien recibe el aviso
@@ -424,9 +438,32 @@ function avPlantilla(tel, nombre, idioma, params4) {
     template: {
       name: n,
       language: { code: lang },
-      components: [{ type: 'body', parameters: lista.map((p) => ({ type: 'text', text: avParametro(p) })) }],
+      components: [{ type: 'body', parameters: lista.map((p) => ({ type: 'text', text: avParametroConMapa(p) })) }],
     },
   });
+}
+
+// Como `avParametro`, pero conserva UN enlace de mapa con la forma exacta de `avEnlaceDeUbicacion` (solo dígitos, armado por el
+// código, nunca texto del cliente) cuando va como segmento «mapa: <enlace>» al principio o tras « · » y al final o antes de « · ».
+// Los segmentos del cliente ya vienen saneados (todo enlace suyo es «[enlace omitido]»), así que un enlace con esta forma solo
+// puede venir del código. Se sustituye por una marca durante el saneo y se repone entero; si la marca no queda exactamente una
+// vez, el enlace se descarta (nunca se devuelve un enlace partido).
+const AV_MARCA_MAPA = 'ENLACEMAPAOK';
+// Sin la marca (o con el enlace descartado): quita «mapa:» colgando, separadores « · » repetidos y los de los bordes.
+function avSinMapa(t) {
+  return avSinBordes(t.split(AV_MARCA_MAPA).join('').replace(/mapa:\s*(?=$| · )/g, '').replace(/(?:\s*·){2,}/g, ' ·').replace(/\s{2,}/g, ' ')) || '—';
+}
+function avParametroConMapa(t) {
+  const s = String(t === undefined || t === null ? '' : t);
+  const re = new RegExp('(^| · )mapa: (' + AV_FORMA_ENLACE_MAPA.source.slice(1, -1) + ')(?= · |$)');
+  const m = re.exec(s);
+  if (!m) return avParametro(s);
+  const sin = s.slice(0, m.index) + m[1] + 'mapa: ' + AV_MARCA_MAPA + s.slice(m.index + m[0].length);
+  const limpio = avSinBordes(avParametro(sin));
+  const partes = limpio.split(AV_MARCA_MAPA);
+  if (partes.length !== 2 || limpio.indexOf('mapa: ' + AV_MARCA_MAPA) < 0) return avSinMapa(limpio);
+  const salida = partes.join(m[2]);
+  return salida.length <= 500 ? salida : avSinMapa(limpio);
 }
 
 /** Mensaje de texto libre (solo con ventana abierta). */
@@ -546,6 +583,24 @@ function avCotejoTexto(resultado) {
   return 'comprobante sin cotejar';
 }
 
+// El valor de la VARIABLE de plantilla del cotejo: el cuerpo de la plantilla ya dice «Comprobante: {{N}}», así que se quita la
+// palabra repetida («NO coinciden los datos», «datos coinciden», «ilegible»). El texto libre (`avDetalle`) sigue con `avCotejoTexto`.
+function avCotejoVariable(resultado) {
+  return avCotejoTexto(resultado).replace(/^comprobante:?\s+/i, '');
+}
+
+// Teléfono legible, calculado SOLO con los dígitos: «+591 7066 1250» solo si empieza por 591 y tiene 11 dígitos. Con 12 a 15
+// dígitos (otro país) «+» y los dígitos sin agrupar (no se conoce el largo del código de país); con 8 a 11 sin prefijo 591 solo
+// los dígitos, sin «+» (no se puede saber el país). Devuelve '' si el valor trae letras o no tiene entre 8 y 15 dígitos.
+function avTelefonoLegible(v) {
+  const crudo = String(v === undefined || v === null ? '' : v);
+  if (/\p{L}/u.test(crudo)) return '';
+  const d = avDigitos(crudo);
+  if (d.length < 8 || d.length > 15) return '';
+  if (d.length === 11 && d.slice(0, 3) === '591') return '+591 ' + d.slice(3, 7) + ' ' + d.slice(7);
+  return d.length >= 12 ? '+' + d : d;
+}
+
 function avModalidadTexto(m) {
   if (m === 'delivery') return 'Delivery';
   if (m === 'recojo') return 'Recojo en el local';
@@ -635,13 +690,16 @@ function avConfigPlantilla(tipo, c, errores, rol) {
   return { nombre: valida ? nombre : '', configurada: nombre !== '', evento, idioma, forma, orden: o.orden };
 }
 
+// Un ítem compacto: «2 × Taco (sin cebolla)». Lo usan `avItemsCompactos` y las líneas de la plantilla por líneas.
+function avPiezaItem(l, opc) {
+  const nota = avLimpio(l.detalle, 80, opc);
+  return l.cantidad + ' × ' + (avLimpio(l.nombre, 60, opc) || 'ítem') + (nota ? ' (' + nota + ')' : '');
+}
+
 // Los ítems compactos («2 × Taco (sin cebolla), 1 × Queso») que caben en `presupuesto` caracteres. Se corta POR ÍTEM: si no
 // entran todos, la lista termina en «… y N más» (como `avDetalle`), nunca a mitad de un ítem. '' si ni la marca cabe.
 function avItemsCompactos(lineas, opc, presupuesto) {
-  const piezas = lineas.map((l) => {
-    const nota = avLimpio(l.detalle, 80, opc);
-    return l.cantidad + ' × ' + (avLimpio(l.nombre, 60, opc) || 'ítem') + (nota ? ' (' + nota + ')' : '');
-  });
+  const piezas = lineas.map((l) => avPiezaItem(l, opc));
   for (let k = piezas.length; k >= 0; k--) {
     const resto = piezas.length - k;
     const texto = piezas.slice(0, k).join(', ') + (resto > 0 ? (k > 0 ? ', ' : '') + '… y ' + resto + ' más' : '');
@@ -657,31 +715,52 @@ function avItemsCompactos(lineas, opc, presupuesto) {
 //  - `cocina`: modalidad + los ítems compactos con sus notas; SIN teléfono, dirección, nombre completo ni coordenadas.
 // Sigue siendo UNA variable: sin saltos de línea, saneada como las demás y con el tope de la variable (500). Los segmentos
 // del cliente van primero y los ítems ocupan lo que sobra (cortados por ítem, con «… y N más»).
-function avModalidadVariable(d, dest, opc) {
+// Nota: depende de que quien la llama termine en `avPlantilla`, que vuelve a sanear la variable (aquí no se garantiza el saneo final).
+function avModalidadVariable(d, dest, opc, sinItems) {
   const tope = 500;
   const base = avModalidadTexto(d.modalidad);
   const delivery = d.modalidad === 'delivery';
   let segmentos = [base];
+  let mapa = '';
+  let posCoord = -1;
   if (dest.rol === 'completo') {
     const dir = delivery ? avLimpio(d.direccion, 160) : '';
     const ref = delivery ? avLimpio(d.referencia, 100) : '';
     const quien = avLimpio(d.nombre, 60);
     const tel = avDigitos(d.telefono);
     const coord = delivery ? avLimpio(d.coordenadas, 60) : '';
+    // Con una ubicación válida (dos números, nunca texto del cliente) el enlace al mapa reemplaza a las coordenadas crudas.
+    mapa = delivery ? avEnlaceDeUbicacion(d.ubicacion) : '';
+    const telLegible = avTelefonoLegible(d.telefono);
     segmentos = [
       base + (dir ? ' a ' + dir : '') + (ref ? ' (' + ref + ')' : ''),
       quien ? (delivery ? 'recibe ' : 'cliente ') + quien : '',
-      tel ? 'cel ' + tel : '',
+      tel ? 'cel ' + (telLegible || tel) : '',
       coord,
     ].filter(Boolean);
+    posCoord = coord ? segmentos.length - 1 : -1;
   }
   // La nota del cliente desde la pagina del catalogo (`notaPedido`) es una nota de cocina: la ven los dos roles (a cocina,
   // sin numeros largos). Va con los segmentos fijos, para que los items se corten antes que ella.
   const nota = typeof d.notaPedido === 'string' ? avLimpio(d.notaPedido, 100, opc) : '';
   if (nota) segmentos.push('nota: ' + nota);
+  // El enlace va entero o no va: se prueba en el lugar de las coordenadas y, si con él lo fijo pasa del tope, se conservan las
+  // coordenadas. No pasa por `avLimpio` (volvería «[enlace omitido]»); lo demás ya viene saneado por segmento.
+  if (mapa) {
+    const conMapa = segmentos.slice();
+    const seg = 'mapa: ' + mapa;
+    if (posCoord >= 0) conMapa[posCoord] = seg; else conMapa.splice(Math.min(3, conMapa.length), 0, seg);
+    const fijoMapa = conMapa.join(' · ');
+    if (fijoMapa.length <= tope) {
+      if (sinItems === true) return fijoMapa;
+      const itemsM = avItemsCompactos(avLineas(d.lineas), opc, tope - fijoMapa.length - 3);
+      return itemsM ? fijoMapa + ' · ' + itemsM : fijoMapa;
+    }
+  }
   const fijo = segmentos.join(' · ');
+  if (sinItems === true) return avParametro(fijo, tope, opc);
   const items = avItemsCompactos(avLineas(d.lineas), opc, tope - fijo.length - 3);
-  return items ? fijo + ' · ' + items : fijo;
+  return avParametro(items ? fijo + ' · ' + items : fijo, tope, opc);
 }
 
 // Reserva y derivación con la FORMA `pedido` (`formaPlantillaReserva` / `formaPlantillaDerivacion`): llenan las cuatro
@@ -746,7 +825,7 @@ function avVariablesSolicitud(d, dest) {
     cliente: avParametro((cod ? cod + ' · ' : '') + nombre, 90),
     personas: avParametro(Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : 'personas sin indicar', 30),
     cuando: avParametro(cuando + (zona ? ', ' + zona : ''), 100),
-    telefono: avParametro(tel && tel.length >= 8 && tel.length <= 15 ? '+' + tel : '', 20),
+    telefono: avParametro(tel && tel.length >= 8 && tel.length <= 15 ? (avTelefonoLegible(d.telefono) || tel) : '', 20),
     nota: avParametro(extras.length ? extras.join(' · ') : 'sin datos adicionales', 300),
   };
 }
@@ -764,8 +843,8 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
     return {
       items: avParametro((resultado === 'simulado' ? 'PRUEBA · ' : '') + 'N.º ' + cod + (n > 0 ? ' de ' + n + (n === 1 ? ' ítem' : ' ítems') : ''), 60),
       total: avParametro('Bs ' + avMonto(d.total) + (resultado === 'simulado' ? ' (SIMULADO)' : ''), 30),
-      modalidad: avParametro(avModalidadVariable(d, dest, opc), 500),
-      cotejo: avParametro(avCotejoTexto(resultado), 80),
+      modalidad: avModalidadVariable(d, dest, opc),
+      cotejo: avParametro(avCotejoVariable(resultado), 80),
     };
   }
   const destinatario = avParametro(dest.nombre || 'equipo', 40);
@@ -793,10 +872,55 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
   };
 }
 
+// PLANTILLAS POR LÍNEAS (aditivo, 24/10): `plantillasPedidoLineas` = CSV «2:nombre,4:nombre,6:nombre». Cada plantilla trae el
+// salto de línea FIJO en su cuerpo y UNA variable por línea de producto; las variables nunca llevan saltos. Sin la clave (vacía o
+// ausente) el pedido sale como siempre. Devuelve `{ 2: 'nombre', 4: …, 6: … }` solo con los tamaños válidos.
+const AV_TAMANOS_LINEAS = [2, 4, 6];
+function avPlantillasLineas(valor) {
+  const out = {};
+  const partes = String(valor === undefined || valor === null ? '' : valor).split(/[,;]+/);
+  for (const tok of partes) {
+    const i = tok.indexOf(':');
+    if (i < 0) continue;
+    const k = Number(tok.slice(0, i).trim());
+    const nombre = tok.slice(i + 1).trim();
+    if (AV_TAMANOS_LINEAS.indexOf(k) >= 0 && /^[a-z0-9_]{1,512}$/.test(nombre)) out[k] = nombre;
+  }
+  return out;
+}
+
+/** El menor tamaño (2, 4 o 6) que cabe `n` productos; con más de 6 productos, 6 (la última línea dice «… y K más»). */
+function avTamanoLineas(n) {
+  for (const t of AV_TAMANOS_LINEAS) if (n <= t) return t;
+  return AV_TAMANOS_LINEAS[AV_TAMANOS_LINEAS.length - 1];
+}
+
+// Las variables de la plantilla por líneas, en su orden fijo: {{1}} pedido y total · {{2}} modalidad por rol (sin ítems) ·
+// {{3}}…{{N+2}} un producto por variable («—» en las sobrantes; si sobran productos, la última dice «… y K más») · {{N+3}} cotejo.
+function avVariablesLineas(d, dest, resultado, tamano) {
+  const opc = { cocina: dest.rol === 'cocina' };
+  const lineas = avLineas(d.lineas);
+  const n = lineas.reduce((a, l) => a + l.cantidad, 0);
+  const cod = avLimpio(d.codigo, 20) || '—';
+  const primera = avParametro(
+    (resultado === 'simulado' ? 'PRUEBA · ' : '') + 'N.º ' + cod + (n > 0 ? ' de ' + n + (n === 1 ? ' ítem' : ' ítems') : '')
+    + '. Total de la comida: Bs ' + avMonto(d.total) + (resultado === 'simulado' ? ' (SIMULADO)' : ''), 120);
+  const vars = [primera, avModalidadVariable(d, dest, opc, true)];
+  const cuantos = lineas.length;
+  for (let k = 0; k < tamano; k++) {
+    if (cuantos > tamano && k === tamano - 1) vars.push(avParametro('… y ' + (cuantos - (tamano - 1)) + ' más', 40));
+    else if (k < cuantos) vars.push(avParametro(avPiezaItem(lineas[k], opc), 200, opc));
+    else vars.push('—');
+  }
+  // El cuerpo de la plantilla ya dice «Comprobante: {{N+3}}.»: sin la palabra repetida («Comprobante: comprobante: datos coinciden»).
+  vars.push(avParametro(avCotejoVariable(resultado), 80));
+  return vars;
+}
+
 // El enlace al mapa de la ubicación compartida (PR-A 05/10). Se arma SOLO con dos números —nunca con texto del cliente— y por eso NO pasa por
 // `avLimpio` (que cambia toda URL por «[enlace omitido]»); a cambio se valida con la forma exacta y se devuelve '' ante cualquier duda: tipos
 // que no son número, fuera de rango, no finitos o (0, 0) (el «punto nulo» de un GPS sin fijar). Solo lo usa el detalle de texto del rol `completo`:
-// la plantilla (ventana cerrada) sigue con las coordenadas sin enlace.
+// la variable de modalidad de la plantilla (ventana cerrada, rol completo) también lo lleva (`avModalidadVariable`).
 const AV_FORMA_ENLACE_MAPA = /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=-?\d{1,2}\.\d{6}%2C-?\d{1,3}\.\d{6}$/;
 function avEnlaceDeUbicacion(u) {
   if (!u || typeof u !== 'object') return '';
@@ -816,7 +940,7 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
   const nombre = completo ? avLimpio(d.nombre, 60) : avPrimerNombre(d.nombre, opc);
   const tel = avDigitos(d.telefono);
   const cliente = () => {
-    if (completo) return 'Cliente: ' + (nombre || 'sin nombre') + (tel ? ' · tel ' + tel : '');
+    if (completo) return 'Cliente: ' + (nombre || 'sin nombre') + (tel ? ' · tel ' + (avTelefonoLegible(d.telefono) || tel) : '');
     return nombre ? 'Cliente: ' + nombre : '';
   };
   let cierre = '';
@@ -873,7 +997,7 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
     if (avMarcasReserva(r).length) lineas.push('• ' + avMarcasReserva(r).join(' · '));
     if (avLimpio(r.celebracion, 120, opc)) lineas.push('• Celebración: ' + avLimpio(r.celebracion, 120, opc));
     if (avLimpio(r.requerimiento, 200, opc)) lineas.push('• Pedido especial: ' + avLimpio(r.requerimiento, 200, opc));
-    if (completo && tel) lineas.push('Cliente: tel ' + tel);
+    if (completo && tel) lineas.push('Cliente: tel ' + (avTelefonoLegible(d.telefono) || tel));
     cierre = AV_CIERRE_RESERVA;
   } else {
     const cod = avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs);
@@ -935,8 +1059,25 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
         if (!pl.configurada && errores.indexOf('plantilla_no_configurada_' + pl.evento) < 0) errores.push('plantilla_no_configurada_' + pl.evento);
         return false;
       }
-      const vars = avVariables(tipo, d, dest, resultado, ahoraMs, pl.forma);
-      const payload = avPlantilla(dest.tel, pl.nombre, pl.idioma, pl.orden.map((k) => vars[k]));
+      // Pedido con la plantilla por líneas (solo si `plantillasPedidoLineas` trae algo): el menor tamaño que cabe; si ese tamaño
+      // no tiene plantilla, cae a la de siempre y lo anota.
+      let nombreFinal = pl.nombre;
+      let params = null;
+      if (esPedido && String(c.plantillasPedidoLineas === undefined || c.plantillasPedidoLineas === null ? '' : c.plantillasPedidoLineas).trim() !== '') {
+        const tamano = avTamanoLineas(avLineas(d.lineas).length);
+        const porTamano = avPlantillasLineas(c.plantillasPedidoLineas);
+        if (porTamano[tamano]) {
+          nombreFinal = porTamano[tamano];
+          params = avVariablesLineas(d, dest, resultado, tamano);
+        } else if (errores.indexOf('lineas_sin_plantilla_' + tamano) < 0) errores.push('lineas_sin_plantilla_' + tamano);
+      }
+      let idiomaFinal = pl.idioma;
+      if (params) idiomaFinal = String(c.idiomaPlantillaPedidoLineas === undefined || c.idiomaPlantillaPedidoLineas === null ? '' : c.idiomaPlantillaPedidoLineas).trim() || pl.idioma;
+      if (!params) {
+        const vars = avVariables(tipo, d, dest, resultado, ahoraMs, pl.forma);
+        params = pl.orden.map((k) => vars[k]);
+      }
+      const payload = avPlantilla(dest.tel, nombreFinal, idiomaFinal, params);
       if (!payload) return false;
       items.push({ para: dest.tel, rol: dest.rol, payload, respaldo: null, esPlantilla: true, clase: 'plantilla' });
       return true;

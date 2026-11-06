@@ -48,7 +48,15 @@ export const invitarUsuario = onCall(async (peticion) => {
   return { ok: true, verificado };
 });
 
-export const quitarUsuario = onCall(async (peticion) => {
+/**
+ * GANCHO AL QUITAR A UN USUARIO (03/11/2026): lo que otra zona necesita hacer con quien sale del negocio. Central no
+ * importa módulos, así que lo recibe armado de `ganchos.ts` (patrón de `aprobarTerminoProducto`). Hoy lo usa el miniCRM
+ * para revocar la edición de la hoja. NO debe lanzar: si no puede completar su parte lo deja anotado (el del miniCRM
+ * deja `revocado_pendiente`).
+ */
+export type GanchoAlQuitarUsuario = (tenantId: string, uidDestino: string, quien: string) => Promise<void>;
+
+export const crearQuitarUsuario = (gancho?: GanchoAlQuitarUsuario) => onCall(async (peticion) => {
   const datos = peticion.data as Record<string, unknown>;
   const tenantId = texto(datos['tenantId'], 60);
   if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
@@ -80,6 +88,10 @@ export const quitarUsuario = onCall(async (peticion) => {
   // Revocación inmediata: sin esto el usuario retirado sigue leyendo hasta una
   // hora, que es lo que dura su ID token.
   await asignarRol(destino, tenantId, null, { revocarSesiones: true });
+  if (gancho) await gancho(tenantId, destino, uid);
   await auditar(tenantId, 'quitar_usuario', uid, { destino });
   return { ok: true };
 });
+
+/** La versión sin gancho: la que usan las pruebas de siempre. El despliegue exporta la de `ganchos.ts`. */
+export const quitarUsuario = crearQuitarUsuario();

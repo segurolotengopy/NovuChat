@@ -57,16 +57,14 @@
 }
 .cat-buscar:focus-visible { border-color: var(--marca); outline: 2px solid var(--marca); }
 
-/* Las áreas se desplazan en horizontal en vez de apilarse: un comercio con diez
-   categorías empujaría el catálogo entero fuera de la primera pantalla. */
+/* Las áreas se ENVUELVEN en varias filas: todas quedan a la vista y al alcance, con ratón o con el dedo. Antes iban en una sola fila con
+   `overflow-x: auto` y la barra oculta: en escritorio, sin rueda horizontal ni trackpad, las últimas áreas (Q'Taco, 05/11/2026) no se podían alcanzar. */
 .cat-areas {
-  display: flex; gap: .4rem; overflow-x: auto; margin: var(--space-3) 0;
-  padding-bottom: .25rem; scrollbar-width: none;
+  display: flex; flex-wrap: wrap; gap: .4rem; margin: var(--space-3) 0;
 }
-.cat-areas::-webkit-scrollbar { display: none; }
 .cat-areas button {
-  flex: none; padding: .45rem .8rem; font: inherit; font-size: .85rem;
-  cursor: pointer; white-space: nowrap;
+  flex: none; max-width: 100%; padding: .45rem .8rem; font: inherit; font-size: .85rem;
+  cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   background: var(--color-surface); color: var(--color-text);
   border: 1px solid var(--color-divider); border-radius: 2rem;
 }

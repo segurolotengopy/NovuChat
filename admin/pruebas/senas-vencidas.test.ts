@@ -23,6 +23,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -51,16 +52,14 @@ const destinos = (desde: string, salida = 0) => (f.connections[desde]?.['main']?
 function ejecutar(js: string, items: J[], referencias: Record<string, J[]> = {}): J[] {
   const entrada = { all: () => items.map((json) => ({ json })), first: () => ({ json: items[0] }) };
   const $ = (n: string) => ({ first: () => ({ json: referencias[n]?.[0] ?? {} }), all: () => (referencias[n] ?? []).map((json) => ({ json })) });
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$input', '$', js) as (i: unknown, r: unknown) => { json: J }[];
+  const fn = vm.compileFunction(js, ['$input', '$']) as (i: unknown, r: unknown) => { json: J }[];
   return fn(entrada, $).map((x) => x.json);
 }
 function expresion(texto: unknown, $json: J, referencias: Record<string, J> = {}): unknown {
   const m = /^=\{\{([\s\S]*)\}\}$/.exec(String(texto).trim());
   if (!m) throw new Error(`no es una expresión simple: ${String(texto).slice(0, 60)}`);
   const $ = (n: string) => ({ first: () => ({ json: referencias[n] ?? {} }), item: { json: referencias[n] ?? {} } });
-  // nosemgrep: devsecops.js-eval-prohibido
-  return (new Function('$json', '$', `return (${m[1]});`) as (...a: unknown[]) => unknown)($json, $);
+  return (vm.compileFunction(`return (${m[1]});`, ['$json', '$']) as (...a: unknown[]) => unknown)($json, $);
 }
 const configBase = (): J => Object.fromEntries(
   (nodo('Config base').parameters['assignments'].assignments as { name: string; value: unknown }[]).map((a) => [a.name, a.value]),

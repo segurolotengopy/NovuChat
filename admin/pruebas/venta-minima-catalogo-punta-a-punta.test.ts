@@ -21,12 +21,12 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type J } from './lib/flujo';
 import {
-  AHORA, boton, botonesDe, CARPETA_VM, CLIENTE, crear, entrega, estadoDe, idDeBoton, nodoDe, panel, PHONE_ID, QTACO, texto, turno,
+  AHORA, boton, botonesDe, CARPETA_VM, CATALOGO, CLIENTE, crear, entrega, estadoDe, idDeBoton, nodoDe, panel, PHONE_ID, QTACO, texto, turno,
 } from './lib/venta-minima-mundo';
 
 const CARRITO = 'Carrito del catálogo';
 // El pedido de dirección (PR-A 05/10): sale con el botón de ubicación; es el mismo mensaje de siempre, sin mensajes de más.
-const PIDE_DIRECCION = 'Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «menú».';
+const PIDE_DIRECCION = 'Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».';
 
 const cabeceras = (extra: J = {}): J => ({
   'x-novuchat-numero': PHONE_ID, 'x-novuchat-timestamp': String(AHORA), 'x-novuchat-signature': `sha256=${'0'.repeat(64)}`, ...extra,
@@ -62,7 +62,7 @@ describe('un carrito válido: UN resumen con sus tres botones, sin reportarse co
     expect(t.mensajes).toHaveLength(1);
     expect(t.mensajes[0]!.a).toBe('59100000011');
     expect(t.mensajes[0]!.cuerpo).toMatch(/110/);
-    expect(titulos(t)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Menú']);
+    expect(titulos(t)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Volver a inicio']);
     expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
     // Cada nodo corre una vez.
     const veces = new Map<string, number>();
@@ -279,7 +279,8 @@ describe('el pedido que llega de la página conserva su `cat_…` como pedidoId 
   const CAT2 = 'cat_k1a2b3c5_0a1b2c3d';
   const web = (extra: J = {}) => ({ headers: cabeceras(), body: cuerpo({ pedidoId: CAT, ...extra }) });
   const pedidoDe = (w: ReturnType<typeof crear>): J => (estadoDe(w)['pedido'] ?? {}) as J;
-  const guardados = (w: ReturnType<typeof crear>): J[] => Object.values((((w.mundo.sd['ventaMinima'] as J | undefined)?.['pedidos']) ?? {}) as J);
+  // (PR-4a: los pedidos del teléfono viven en el servidor, dentro de su bloque)
+  const guardados = (w: ReturnType<typeof crear>): J[] => Object.values(w.sesion.pedidos(CLIENTE));
   const qrAbiertos = (t: { llamadas: { ingesta: J[] } }): J[] => t.llamadas.ingesta.filter((x) => x['evento'] === 'qr_enviado');
   const confirmar = (w: ReturnType<typeof crear>, t: ReturnType<typeof carrito>) => turno(w, boton(idDeBoton(t, 'Confirmar pedido'), 'Confirmar pedido'));
   /** Plan B: sin cobro real, el pedido se registra y se avisa (cierre `registro` con la referencia del pedido). */
@@ -328,9 +329,12 @@ describe('el pedido que llega de la página conserva su `cat_…` como pedidoId 
     const id = idDeBoton(t, 'Confirmar pedido');
     w.envios['Enviar a WhatsApp'] = 'cuerpo vacío';
     w.envios['Enviar respaldo'] = 'cuerpo vacío';
-    expect(() => turno(w, boton(id, 'Confirmar pedido'))).toThrow(/Entrega fallida/);
-    const codigoFallido = String(guardados(w)[0]!['codigo']);
-    expect(guardados(w).map((p) => p['pedidoId'])).toEqual([CAT]);
+    const fallido = w.mundo.turno(entrega(CLIENTE, boton(id, 'Confirmar pedido')), { tolerarFallo: true });
+    expect(fallido.fallo?.mensaje).toMatch(/Entrega fallida/);
+    // PR-4a: la compensación devuelve el bloque entero de antes del turno, también los pedidos; el código del intento fallido es el que el cliente habría leído.
+    expect(guardados(w)).toHaveLength(0);
+    const codigoFallido = /#([0-9A-Z]{4})/.exec(JSON.stringify(fallido.mensajes[0]?.payload ?? {}))?.[1] as string;
+    expect(codigoFallido).toBeDefined();
     w.envios['Enviar a WhatsApp'] = 'acepta';
     w.envios['Enviar respaldo'] = 'acepta';
     const ok = turno(w, boton(id, 'Confirmar pedido'));
@@ -492,6 +496,35 @@ describe('el pedido que llega de la página conserva su `cat_…` como pedidoId 
 // =====================================================================================================
 // COBRO SIMULADO Y REAL SE CRUZAN (revisión del cobro simulado, H2): el comprobante de un pedido de PRUEBA nunca se coteja como real
 // =====================================================================================================
+describe('reemplaza, de punta a punta: el `cat_…` modificado en el chat viaja en el `qr_enviado` real', () => {
+  const CAT = 'cat_abc123_00ff';
+  const abiertos = (w: ReturnType<typeof crear>): J[] => w.mundo.llamadas.ingesta.filter((x) => x['evento'] === 'qr_enviado');
+  it('un cambio real de precio: el QR sale con ped-… y el reporte lleva `reemplaza` (Armar mensajes -> jsonBody), sin precios ni totales', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ pedidoId: CAT }) });
+    const nuevo = CATALOGO.map((i) => (i['id'] === 'birria3' ? { ...i, precio: 60 } : i));
+    w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 200, body: { ...panel(), catalogo: nuevo } });
+    turno(w, boton(idDeBoton(t, 'Confirmar pedido'), 'Confirmar pedido'));
+    expect(abiertos(w)).toHaveLength(0);
+    const r = turno(w, boton(idDeBoton(t, 'Confirmar pedido'), 'Confirmar pedido'));
+    expect(r.ejecutados.has('Armar mensajes')).toBe(true);
+    const q = abiertos(w);
+    expect(q).toHaveLength(1);
+    expect(String(q[0]!['referencia'])).toMatch(/^ped-/);
+    expect(q[0]!['reemplaza']).toBe(CAT);
+    expect(Object.keys(q[0]!).filter((k) => /precio|total|facturaci/i.test(k))).toEqual([]);
+  });
+  it('negado: el `cat_…` intacto sale con su propio id y sin `reemplaza`', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ pedidoId: CAT }) });
+    turno(w, boton(idDeBoton(t, 'Confirmar pedido'), 'Confirmar pedido'));
+    const q = abiertos(w);
+    expect(q).toHaveLength(1);
+    expect(q[0]!['referencia']).toBe(CAT);
+    expect(q[0]!['reemplaza']).toBeUndefined();
+  });
+});
+
 describe('un pedido SIMULADO con el cobro real encendido y una solicitud pendiente: cero cotejos y nada rotulado como pago real', () => {
   const imagen = (): J => ({ type: 'image', image: { id: 'media-9', mime_type: 'image/jpeg' } });
   it('la foto llega, no se baja, no se lee, no se coteja en el servidor y se pasa con una persona; el pedido de prueba se suelta', () => {
@@ -552,7 +585,7 @@ describe('delivery opcional: la secuencia real del 05/10 (dirección ya puesta e
     expect(t.mensajes).toHaveLength(1);
     expect(t.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234');
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/necesito|referencia|no va en el QR/i);
-    expect(titulos(t)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Menú']);
+    expect(titulos(t)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Volver a inicio']);
     expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
     expect(t.llamadas.extraer).toHaveLength(0);
   });

@@ -325,6 +325,7 @@ registerHooks({
 });
 const { CATALOGO_PLANES, PLANES, esIdPlan, limitesDe } = await import('../../functions/src/central/cuenta/planes.ts');
 const { MODELO_POR_DEFECTO, TITULARIDAD_POR_DEFECTO } = await import('../../functions/src/central/ejes.ts');
+const { contarAgendas } = await import('../../functions/src/modulos/agenda/agendasContadas.ts');
 const PLAN_DEMOS = (opcion('plan-demos') ?? 'impulso').trim();
 if (!esIdPlan(PLAN_DEMOS)) {
   console.error(`\n  ✗ --plan-demos desconocido: ${PLAN_DEMOS}. Del catálogo: ${Object.keys(PLANES).join(', ')}\n`);
@@ -409,6 +410,12 @@ for (const c of COMERCIOS) {
       ...sello,
     }, { merge: true });
   }
+  // H2b-9: contador de agendas con lo que HAY (las reglas lo exigen; el SDK Admin no lo mueve).
+  const realAg = contarAgendas((await db.collection(`tenants/${c.id}/funcionarios`).get()).docs.map((d) => d.data()));
+  await db.doc(`tenants/${c.id}/contadores/agendas`).set({
+    calendarios: realAg.calendarios, refs: realAg.refs, ultimoFuncionario: '',
+    actualizadoEn: FieldValue.serverTimestamp(),
+  });
 
   // El plan de los demos, CON su copia de límites y la versión del catálogo
   // (`functions/src/central/cuenta/planes.ts`): quien hace cumplir un límite lee la copia.

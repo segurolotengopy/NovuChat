@@ -11,6 +11,8 @@ import { vigilarUx } from './vigilante-ux';
 const nuevo = (o: Opciones = {}): Mundo => { const w = crear(o); vigilarUx(w); return w; };
 const fichaDe = (w: Mundo, tel = ANA): J => ((w.sd['antonio'] ?? {}) as J)[tel] as J;
 const esBotonDeAntonio = (t: ResultadoTurno): boolean => t.mensajes[0]?.payload['interactive']?.type === 'cta_url';
+/** Dos mensajes de conversación (el saludo y una charla): la compuerta de las opciones ya está abierta. */
+const charlar = (w: Mundo, tel = ANA): void => { hablar(w, tel, mTexto('hola')); hablar(w, tel, mTexto('estamos pasando un momento difícil')); };
 const conQr = (o: Opciones = {}): Mundo => { const w = nuevo({ panel: panelConQr(49), ...o }); hablar(w, ANA, mTexto('hola')); return w; };
 
 describe('C. con un QR abierto: se responde, no se repite el recordatorio, no se abre otro QR', () => {
@@ -19,7 +21,9 @@ describe('C. con un QR abierto: se responde, no se repite el recordatorio, no se
     const t = hablar(w, ANA, mTexto('¿qué otras opciones tengo?'));
     expect(t.mensajes).toHaveLength(1);
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
-    expect(t.mensajes[0]!.cuerpo).toMatch(/Pack Completo: 49 Bs[\s\S]*Libro[^\n]*: 35 Bs[\s\S]*Workbook: 20 Bs/);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Pack completo: 49 Bs[\s\S]*Libro[^\n]*: 35 Bs[\s\S]*Workbook: 20 Bs/);
+    // Se RESPONDE y se agrega la invitación a pagar el QR pendiente (el monto es el del pedido abierto, no el del modelo).
+    expect(t.mensajes[0]!.cuerpo).toMatch(/tu QR sigue abierto[\s\S]*Ingresa exactamente 49 Bs/);
     expect(t.mensajes[0]!.tipo).not.toBe('image');
     expect(esBotonDeAntonio(t)).toBe(false);
     expect(t.mensajes[0]!.tipo).toBe('text');
@@ -31,7 +35,7 @@ describe('C. con un QR abierto: se responde, no se repite el recordatorio, no se
       const t = hablar(w, ANA, mTexto(x));
       expect(t.avisos, x).toHaveLength(0);
       expect(t.mensajes, x).toHaveLength(1);
-      expect(t.mensajes[0]!.cuerpo, x).toMatch(/Pack Completo: 49 Bs/);
+      expect(t.mensajes[0]!.cuerpo, x).toMatch(/Pack completo: 49 Bs/);
       expect(t.mensajes[0]!.cuerpo, x).not.toMatch(/no puedo cancelar un pedido/);
       expect(t.mensajes[0]!.tipo, x).not.toBe('image');
       expect(t.ejecutados.has('Conversar con el modelo'), x).toBe(false);
@@ -67,7 +71,7 @@ describe('C. con un QR abierto: se responde, no se repite el recordatorio, no se
     const w2 = conQr();
     const o = hablar(w2, ANA, mTexto('qué más tengo'));
     expect(o.avisos).toHaveLength(0);
-    expect(o.mensajes[0]!.cuerpo).toMatch(/Pack Completo: 49 Bs/);
+    expect(o.mensajes[0]!.cuerpo).toMatch(/Pack completo: 49 Bs/);
   });
   it('(E) un PDF genérico tras una imagen recibe su texto propio (sin «sigo»); dos PDF seguidos, la alterna neutra', () => {
     const w = nuevo();
@@ -110,16 +114,23 @@ describe('C. con un QR abierto: se responde, no se repite el recordatorio, no se
     const r = hablar(w, ANA, mTexto('¿cómo pago?'));
     expect(r.mensajes[0]!.cuerpo).toMatch(/Ya tienes un QR abierto/);
   });
-  it('el recordatorio repetido escala a Antonio (qr_insistente) en vez de repetirse', () => {
+  it('el recordatorio repetido NO escala a Antonio (ya no hay qr_insistente): cambia de forma, sin aviso ni botón, y nunca sale idéntico dos veces seguidas', () => {
     const w = conQr();
     const a = hablar(w, ANA, mTexto('ya voy a pagar'));
     expect(a.mensajes[0]!.cuerpo).toMatch(/Ya tienes un QR abierto/);
     w.avanzar(1);
     const b = hablar(w, ANA, mTexto('¿cómo pago?'));
     expect(b.mensajes[0]!.cuerpo).not.toBe(a.mensajes[0]!.cuerpo);
-    expect(b.mensajes[0]!.cuerpo).toMatch(/Sigo viendo tu QR abierto/);
-    expect(b.avisos).toHaveLength(1);
-    expect(esBotonDeAntonio(b)).toBe(true);
+    expect(b.mensajes[0]!.cuerpo).toMatch(/Tu QR sigue abierto/);
+    expect(b.mensajes[0]!.cuerpo).not.toMatch(/Sigo viendo tu QR abierto/);
+    expect(b.avisos).toHaveLength(0);
+    expect(esBotonDeAntonio(b)).toBe(false);
+    for (const x of ['ya pagué, gracias', 'ya voy a pagar', '¿cómo pago?']) {
+      w.avanzar(1);
+      const c = hablar(w, ANA, mTexto(x));
+      expect(c.avisos, x).toHaveLength(0);
+      expect(esBotonDeAntonio(c), x).toBe(false);
+    }
   });
   it('una pregunta que el código no sabe con un QR abierto la contesta el modelo, sin botones de producto', () => {
     const w = conQr({ modeloDice: 'El libro tiene 14 capítulos con ejercicios prácticos para cada semana.' });
@@ -130,13 +141,16 @@ describe('C. con un QR abierto: se responde, no se repite el recordatorio, no se
 });
 
 describe('D. nunca el mismo texto dos veces seguidas, con reversión si Meta no aceptó el envío', () => {
-  it('el mismo texto dos veces seguidas sale como alternativa con el botón de Antonio; el QR y el resultado de un comprobante están exentos', () => {
+  it('el mismo texto dos veces seguidas sale como alternativa en texto PLANO (sin el botón de Antonio: una repetición no deriva); el QR y el resultado de un comprobante están exentos', () => {
     const w = nuevo();
-    hablar(w, ANA, mTexto('hola'));
+    // «hola» repetido: el saludo, el modelo, el bloque de las opciones (una sola vez) y por fin la charla, cuyo texto sí se repite.
+    for (let i = 0; i < 3; i++) hablar(w, ANA, mTexto('hola'));
     const a = hablar(w, ANA, mTexto('hola'));
     const b = hablar(w, ANA, mTexto('hola'));
     expect(b.mensajes[0]!.cuerpo).not.toBe(a.mensajes[0]!.cuerpo);
-    expect(esBotonDeAntonio(b)).toBe(true);
+    expect(esBotonDeAntonio(b)).toBe(false);
+    expect(b.mensajes[0]!.cuerpo).not.toMatch(/bot[oó]n/i);
+    expect(b.avisos).toHaveLength(0);
     expect(fichaDe(w)['ultimaFirma']).toBe('repetido');
   });
   it('la protección ante violencia o miedo NO se sustituye aunque se repita', () => {
@@ -194,7 +208,7 @@ describe('revisión de #588', () => {
     const w = nuevo({ medio: { transcripcion: 'eh' } });
     const a = hablar(w, ANA, mAudio());
     expect(a.mensajes).toHaveLength(1);
-    expect(a.mensajes[0]!.cuerpo).toMatch(/^¡Hola![^\n]*asistente virtual de Antonio Dauber\.\n\n[\s\S]*muy corta/);
+    expect(a.mensajes[0]!.cuerpo).toMatch(/^¡Hola![^\n]*asistente virtual del Puente\.\n\n[\s\S]*muy corta/);
     const b = hablar(w, ANA, mAudio());
     expect(b.mensajes[0]!.cuerpo).not.toMatch(/asistente virtual/);
   });
@@ -259,11 +273,11 @@ const BETO_ = '59100000022';
 describe('B. saludo fijo en el primer turno y el menú no antes de tiempo', () => {
   it('un primer mensaje libre recibe el saludo fijo por código (sin modelo, sin montos); la conversación sigue en la segunda y el menú llega en la tercera', () => {
     let n = 0;
-    const w = nuevo({ modeloDice: () => `Te escucho con atención, gracias por contarlo. ¿Desde cuándo pasa esto? (${++n})` });
+    const w = nuevo({ modeloDice: () => `Te escucho con atención, gracias por contarlo. ¿Desde cuándo pasa esto? (${'abcdefgh'[n++]})` });
     const a = hablar(w, ANA, mTexto('estamos discutiendo mucho y no sé qué hacer'));
     expect(a.ejecutados.has('Conversar con el modelo')).toBe(false);
-    expect(a.mensajes[0]!.cuerpo).toMatch(/asistente virtual de Antonio Dauber/);
-    expect(a.mensajes[0]!.cuerpo).not.toMatch(/Bs/);
+    expect(a.mensajes[0]!.cuerpo).toMatch(/asistente virtual del Puente\./);
+    expect(a.mensajes[0]!.cuerpo).not.toMatch(/Antonio|Dauber|Bs/);
     const b = hablar(w, ANA, mTexto('desde hace meses'));
     expect(b.ejecutados.has('Conversar con el modelo')).toBe(true);
     expect(b.mensajes[0]!.tipo).toBe('text');
@@ -277,7 +291,7 @@ describe('E y F. catálogo por código desde la consola e imágenes con texto fi
   it('«qué vendes», «catálogo» y «lista» listan SOLO lo que el catálogo de la consola trae (sin precios inventados)', () => {
     for (const x of ['¿qué vendes?', 'catálogo', 'lista']) {
       const w = nuevo({ panel: panelOk({ catalogo: [{ id: 'libro', precio: 31 }, { id: 'workbook', precio: 12 }] }) });
-      hablar(w, ANA, mTexto('hola'));
+      charlar(w);
       const t = hablar(w, ANA, mTexto(x));
       expect(t.ejecutados.has('Conversar con el modelo'), x).toBe(false);
       expect(t.mensajes[0]!.cuerpo, x).toMatch(/31 Bs/);
