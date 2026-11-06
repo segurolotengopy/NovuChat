@@ -360,7 +360,11 @@ describe('«no se copia»: dos tenants iguales salvo los datos', () => {
   it('la cadena de envío es la del módulo común (no una copia): idéntica a `nodosDeEnvio`, salvo «Enviar respaldo» (que se quita a propósito)', () => {
     const comun = nodosDeEnvio({ credenciales: { graph: 'Graph B', ingesta: 'Ingesta B' }, ingestaUrl: RS_URL_INGESTA, armado: 'Armar rescate', config: 'Config base', entrada: 'Config base', desde: [1680, 300] }) as { nodes: unknown[] };
     const propios = new Set(['Cada 10 minutos', 'Config base', 'Reclamar rescates', 'Preparar rescates', '¿Hay historial?', 'Redactar rescate', 'Armar rescate', '¿Meta aceptó?']);
-    expect(B.nodes.filter((n) => !propios.has(n.name))).toEqual((comun.nodes as { name: string }[]).filter((n) => n.name !== 'Enviar respaldo'));
+    // Única diferencia deliberada además de «Enviar respaldo»: la cabecera del número del reporte saliente lleva solo dígitos.
+    const esperados = copia((comun.nodes as { name: string; parameters: { headerParameters?: { parameters: { name: string; value: string }[] } } }[]).filter((n) => n.name !== 'Enviar respaldo'));
+    const cab = esperados.find((n) => n.name === 'Reportar mensaje (saliente)')!.parameters.headerParameters!.parameters.find((c) => c.name === 'X-NovuChat-Numero')!;
+    cab.value = "={{ String($('Config base').first().json.phoneNumberId || '').replace(/\\D/g, '') }}";
+    expect(B.nodes.filter((n) => !propios.has(n.name))).toEqual(esperados);
     expect(B.nodes.length).toBe(13);
   });
   it('los nodos Code INCLUYEN la librería y el filtro (byte a byte), no una copia retocada', () => {
@@ -375,5 +379,14 @@ describe('«no se copia»: dos tenants iguales salvo los datos', () => {
   it('las URL de las Functions son las constantes del módulo', () => {
     expect(nodo(B, 'Reclamar rescates').parameters['url']).toBe(RS_URL_RECLAMAR);
     expect(nodo(B, 'Reportar mensaje (saliente)').parameters['url']).toBe(RS_URL_INGESTA);
+  });
+});
+
+describe('la cabecera del número de la línea', () => {
+  it('«Reclamar rescates» y «Reportar mensaje (saliente)» mandan solo los dígitos del número', () => {
+    for (const nombre of ['Reclamar rescates', 'Reportar mensaje (saliente)']) {
+      const nodoX = RUBEN.nodes.find((n) => n.name === nombre)!;
+      expect(JSON.stringify(nodoX.parameters), nombre).toContain("String($('Config base').first().json.phoneNumberId || '').replace(/\\\\D/g, '')");
+    }
   });
 });

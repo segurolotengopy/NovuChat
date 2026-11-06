@@ -79,7 +79,7 @@ const RS_COBRO = /acredit|verificad|validad|\b(qrs?|bancos?|titular\w*|cuentas?|
 const RS_PROHIBIDAS = /acredit|verificad|validad|\b(qrs?|bancos?|titular\w*|cuentas?|pag\w*|comprobantes?|cobr\w*|abon\w*|cancel\w*|efectivo|tarjetas?|yape|tigo ?money|plata|dinero|precios?|cost\w*|descuent\w*|gratis|gratuit\w*|promoci\w*|ofertas?|garant\w*|devoluc\w*|reembols\w*|enlaces?|links?|paginas?|webs?|sitios?|deposit\w*|transferen\w*|derivar|ayer|hoy|manana|anoche)\b/;
 const RS_TIEMPO = /\b(ayer|hoy|manana|anoche)\b/g;
 // Regalos, plazos y promesas (también en singular), enlaces dichos en palabras, datos de acceso y plataformas. Se pasa a `cmRevisarRedaccion` como `prohibidos`.
-const RS_EXTRA = /\bregal\w*|\bbonos?\b|\bcur\w*|\bsan(ar|a|es|ado)\b|pastill\w*|medic\w*|tratamient\w*|remedi\w*|resultados?\b|esta noche|\bsemana|\bluego\b|\bpronto\b|\bdespues\b|mas tarde|en breve|punto com|\barroba\b|\bpin\b|\bclave\b|\bcontrasena\b|\bbloquead\w*|\bse comunicar\w*|\bte contact\w*|seguro que|\b(hotmart|instagram|facebook|tiktok|youtube|telegram|whatsapp)\b|\bte (escribire|escribira|llamare|llamara|busco|buscare|buscaremos)\b|\b(alguien|equipo|asesor\w*|especialista|colega)\b[^.?!]{0,40}\bte\b/;
+const RS_EXTRA = /\bregal\w*|\bbonos?\b|\bcur\w*|\bsan\w*|devolv\w*|promet\w*|asegur\w*|elimin\w*|somnifer\w*|zolpidem\w*|\bseguro\b|\bseguramente\b|\bvas a (dormir|descansar|mejorar)|insomnio\b[^.?!]{0,30}\b(se va|desaparec\w*|termin\w*)|\bhttps?\b|\bwww\b|\bcom\b|\bpunto\b|pastill\w*|medic\w*|tratamient\w*|remedi\w*|resultados?\b|esta noche|\bsemana|\bluego\b|\bpronto\b|\bdespues\b|mas tarde|en breve|punto com|\barroba\b|\bpin\b|\bclave\b|\bcontrasena\b|\bbloquead\w*|\bse comunicar\w*|\bte contact\w*|seguro que|\b(hotmart|instagram|facebook|tiktok|youtube|telegram|whatsapp)\b|\bte (escribire|escribira|llamare|llamara|busco|buscare|buscaremos)\b|\b(alguien|equipo|asesor\w*|especialista|colega)\b[^.?!]{0,40}\bte\b/;
 // Negar ser una IA (prohibición 4) con otras palabras: «Soy Rubén, no un asistente», «quien te escribe es Rubén», «aquí no responde ningún robot».
 const RS_IDENTIDAD = /\bsoy\b|\bte escribe\b|\b(en persona|directamente|yo mismo|personalmente)\b|\b(robots?|bots?|chatbots?|humanos?|humanas?|personas?|maquinas?)\b|\b(asistente|virtual)\b/;
 // Solo el alfabeto latino básico, el espacio y los signos del español: un homoglifo cirílico («pаgo») o una letra de ancho cero parten una palabra sin que se vea.
@@ -87,9 +87,24 @@ const RS_FUERA_DE_ALFABETO = /[^\p{Script=Latin} \n¿?¡!.,;:«»“”‘’"'(
 function rsAlfabetoOk(t) {
   return !RS_FUERA_DE_ALFABETO.test(String(t === undefined || t === null ? '' : t).normalize('NFC'));
 }
-// Cada lista se prueba contra el texto normalizado Y contra el «junto» (sin guiones, puntos ni asteriscos entre letras: «p-a-g-o»).
+// Cada lista se prueba contra el texto normalizado Y contra el «junto» (sin guiones, puntos ni asteriscos entre letras: «p-a-g-o») y contra las letras sueltas juntas («p a g o»).
+// Una racha de letras sueltas puede arrastrar una palabra de una letra del español («y g a r a n t i z a»: la «y» no es de la palabra): además de la racha entera
+// se prueba sin esa letra al inicio, al final o en ambos (una pasada por racha, sin cuantificadores anidados).
+function rsVariantesLetras(n) {
+  const salida = [cmJuntoLetras(n)];
+  const UNA = new Set(['a', 'y', 'o', 'e', 'u']);
+  for (const [ini, fin] of [[true, false], [false, true], [true, true]]) {
+    salida.push(n.replace(/(?<![\p{L}\p{N}])\p{L}(?:[\s\-.·_*]+\p{L}(?![\p{L}\p{N}])){2,}/gu, (m) => {
+      const t = m.split(/[\s\-.·_*]+/);
+      const pre = ini && t.length > 3 && UNA.has(t[0]) ? t.shift() + ' ' : '';
+      const pos = fin && t.length > 3 && UNA.has(t[t.length - 1]) ? ' ' + t.pop() : '';
+      return pre + t.join('') + pos;
+    }));
+  }
+  return salida;
+}
 function rsCoincide(re, n) {
-  return re.test(n) || re.test(cmJunto(n));
+  return re.test(n) || re.test(cmJunto(n)) || rsVariantesLetras(n).some((v) => re.test(v) || re.test(cmJunto(v)));
 }
 function rsOraciones(t) {
   return String(t).trim().split(/(?<=[.!?…])\s+/).filter(Boolean).length;

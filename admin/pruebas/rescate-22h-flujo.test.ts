@@ -128,6 +128,20 @@ describe('el modelo falla o redacta algo que el código rechaza: sale EXACTAMENT
     ['«simulado»', () => gemini('Tu cobro quedó simulado y sin problema, ¿te quedó alguna duda?')],
     ['«pago verificado»', () => gemini('Tu pago verificado ya está listo, ¿te quedó alguna duda?')],
     ['un enlace https', () => gemini('Entra a https://ejemplo.org y mira el libro, ¿te quedó alguna duda?')],
+    ['«sanarás»', () => gemini('Vi que te interesó el libro y sanarás tu insomnio, ¿te quedó alguna duda?')],
+    ['«elimina tu insomnio»', () => gemini('Vi tu interés: el libro elimina tu insomnio con calma, ¿te quedó alguna duda?')],
+    ['«dejar los somníferos»', () => gemini('El libro te ayudará a dejar los somníferos, ¿te quedó alguna duda?')],
+    ['«zolpidem»', () => gemini('Con el libro puedes dejar el zolpidem, ¿te quedó alguna duda para decidirte?')],
+    ['«te devolvemos lo invertido»', () => gemini('Si no te sirve te devolvemos lo invertido, ¿te quedó alguna duda?')],
+    ['«te lo prometo»', () => gemini('Vi tu interés en el libro y te lo prometo, ¿te quedó alguna duda?')],
+    ['«vas a dormir mejor, seguro»', () => gemini('Vas a dormir mejor, seguro, con este libro, ¿te quedó alguna duda?')],
+    ['«el insomnio se va»', () => gemini('Con el libro tu insomnio se va del todo, ¿te quedó alguna duda?')],
+    ['«g a r a n t i z a» con espacios', () => gemini('Vi tu interés y g a r a n t i z a mos calma, ¿te quedó alguna duda?')],
+    ['«c u r a» con espacios', () => gemini('Vi tu interés: el libro c u r a el insomnio, ¿te quedó alguna duda?')],
+    ['«p a s t i l l a s» con espacios', () => gemini('Puedes olvidar las p a s t i l l a s con el libro, ¿te quedó alguna duda?')],
+    ['«h t t p s» con espacios', () => gemini('Mira h t t p s sobre el libro cuando puedas, ¿te quedó alguna duda?')],
+    ['«com» sin punto', () => gemini('Vi tu interés en nochessininsomnio com para leer, ¿te quedó alguna duda?')],
+    ['«punto co m»', () => gemini('Vi tu interés en nochessininsomnio punto co m para leer, ¿te quedó alguna duda?')],
     ['una respuesta vacía', () => ({})],
     ['un error HTTP del modelo', () => ({ error: { message: 'HTTP 500' } })],
     ['una excepción del nodo', () => { throw new Error('timeout'); }],
@@ -151,16 +165,42 @@ describe('el modelo falla o redacta algo que el código rechaza: sale EXACTAMENT
   });
 });
 
+describe('un seguimiento legítimo de Rubén sigue pasando', () => {
+  it('sale con origen del modelo', () => {
+    const c = correr({ modelo: () => gemini('Vi que te interesó el libro y quieres dormir con más calma. ¿Te quedó alguna duda para decidirte?') });
+    expect(c.r.mensajes).toHaveLength(1);
+    expect(c.r.mensajes[0]!.cuerpo).toContain('más calma');
+  });
+});
+
 describe('nada comercial a quien pidió no ser contactado, está en crisis o bloqueado (defensa en profundidad)', () => {
+  const valores: unknown[] = [true, 1, 0, '', 'false', {}, [], AHORA - HORA];
   for (const marca of ['noContactar', 'no_contactar', 'bloqueada', 'riesgoEn', 'enCrisis']) {
-    it(`si el servicio devuelve a un contacto con la marca «${marca}», no sale nada para él y los demás sí`, () => {
-      const valor = marca === 'riesgoEn' ? AHORA - HORA : true;
+    for (const valor of valores) {
+    it(`con la marca «${marca}» = ${JSON.stringify(valor)}, no sale nada para él y los demás sí`, () => {
       const c = correr({ rescates: [rescate(TEL, { [marca]: valor }), rescate(OTRO)] });
       expect(c.r.fallo).toBeNull();
       expect(c.r.mensajes.map((m) => m.a)).toEqual([OTRO]);
       expect(c.reportes.map((r) => r['telefono'])).toEqual([OTRO]);
     });
+    }
   }
+  for (const marca of ['noContactar', 'no_contactar', 'bloqueada', 'enCrisis']) {
+    it(`«${marca}» = null también bloquea (igual que el servidor)`, () => {
+      const c = correr({ rescates: [rescate(TEL, { [marca]: null }), rescate(OTRO)] });
+      expect(c.r.mensajes.map((m) => m.a)).toEqual([OTRO]);
+    });
+  }
+  for (const valor of ['en_persona', 'pausada', '', 0, null, false]) {
+    it(`atencionEstado = ${JSON.stringify(valor)} (distinto de «normal») no recibe nada`, () => {
+      const c = correr({ rescates: [rescate(TEL, { atencionEstado: valor }), rescate(OTRO)] });
+      expect(c.r.mensajes.map((m) => m.a)).toEqual([OTRO]);
+    });
+  }
+  it('atencionEstado «normal», o ausente, y marcas en false o ausentes: sí sale', () => {
+    const c = correr({ rescates: [rescate(TEL, { atencionEstado: 'normal', noContactar: false, bloqueada: false, riesgoEn: false }), rescate(OTRO, { riesgoEn: null })] });
+    expect(c.r.mensajes.map((m) => m.a)).toEqual([TEL, OTRO]);
+  });
   it('con la marca y una sola persona: 0 mensajes y 0 llamadas al modelo', () => {
     const c = correr({ rescates: [rescate(TEL, { noContactar: { en: AHORA } })] });
     expect(c.r.mensajes).toHaveLength(0);

@@ -294,6 +294,11 @@ export function armarRescate(proyecto, datos, v) {
     entrada: 'Config base',
     desde: [1680, 300],
   });
+  // El reporte saliente manda el número de la línea igual que «Reclamar rescates»: solo dígitos (lo que no lo sea se quita).
+  const reporte = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
+  const cabecera = reporte && reporte.parameters.headerParameters.parameters.find((c) => c.name === 'X-NovuChat-Numero');
+  if (!cabecera) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no lleva X-NovuChat-Numero`);
+  cabecera.value = "={{ String($('Config base').first().json.phoneNumberId || '').replace(/\\D/g, '') }}";
   // Puerta de la entrega (propia) y SIN respaldo: la salida «sin fallo» de «¿Falló el envío?» pasa por «¿Meta aceptó?» antes de «¿Reportar? (saliente)», y «Enviar respaldo» se quita
   // de la cadena común (un reenvío tras un timeout de Meta podría duplicar el rescate). Solo se reencaminan CONEXIONES y se retira ese nodo; los demás quedan intactos.
   const falla = plantilla.connections['¿Falló el envío?'];
