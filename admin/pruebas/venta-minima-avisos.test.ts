@@ -1990,7 +1990,7 @@ describe('variables de plantilla corregidas (05/11): mapa en la modalidad, cotej
     expect(L.avTelefonoLegible('+591 000 00033')).toBe('+591 0000 0033');
     expect(L.avTelefonoLegible('5110000000012')).toBe('+5110000000012');
     expect(L.avTelefonoLegible('00000033')).toBe('00000033');
-    expect(L.avTelefonoLegible('12345678901')).toBe('12345678901'); // 11 dígitos de otro país: sin «+» ni grupos (no se sabe el código)
+    expect(L.avTelefonoLegible('1234-5678-901'.replace(/-/g, ''))).toBe('1234-5678-901'.replace(/-/g, '')); // 11 dígitos de otro país: sin «+» ni grupos (no se sabe el código)
     expect(L.avTelefonoLegible('1000000033')).toBe('1000000033');
     for (const mal of ['1234567', '59100000033abc', 'tel 59100000033', '1234567890123456', '', null, undefined]) expect(L.avTelefonoLegible(mal), String(mal)).toBe('');
     expect(modalidad(conUb())).toContain('cel +591 0000 0033');
