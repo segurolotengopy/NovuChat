@@ -444,6 +444,9 @@ export function guardias(variante, flujo, mapaCrm) {
   if (nombres.has('¿Hay avisos?') && !destinosDe('¿Hay avisos?', 0).includes('Enviar aviso')) h.push('«¿Hay avisos?» no envía por «Enviar aviso»');
   if (nombres.has('Enviar aviso') && !destinosDe('Enviar aviso', 0).includes('Armar mensajes')) h.push('«Enviar aviso» no cuelga de «Armar mensajes»: el aviso tiene que correr ANTES de armar el mensaje que dice si salió');
   if (nombres.has('¿Hay avisos?') && !destinosDe('¿Hay avisos?', 1).includes('Armar mensajes')) h.push('«¿Hay avisos?» no envía la rama sin aviso (salida 1) a «Armar mensajes»');
+  // En TODAS las variantes (en producción es inerte: no hay «Entrada de prueba»), «Carga de entrada» DESCARTA lo que llegue a «Entrada de prueba» sin `modoPrueba: true`; si no, se comportaría como producción (cualquier teléfono, envío real).
+  const cargaGuarda = por('Carga de entrada');
+  if (cargaGuarda && !/if \(corrioPrueba && !prueba\) return \[\];/.test(String(p(cargaGuarda).jsCode || ''))) h.push('«Carga de entrada» tiene que descartar lo que llegue a «Entrada de prueba» sin modoPrueba: true');
   const enviarAviso = por('Enviar aviso');
   if (enviarAviso && !((enviarAviso.credentials || {}).httpHeaderAuth || {}).name) h.push('«Enviar aviso» no lleva credencial (httpHeaderAuth)');
   if (enviarAviso && enviarAviso.onError !== 'continueRegularOutput') h.push('«Enviar aviso» no lleva `onError: continueRegularOutput`: si Meta lo rechaza, el turno se cortaría y el cliente quedaría sin respuesta');

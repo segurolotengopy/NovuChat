@@ -285,6 +285,26 @@ describe('el modo prueba y el JSON de prueba', () => {
     expect(r['mensajes'][0].payload.to).toBe(ANA);
   });
 
+  it('«Entrada de prueba» sin `modoPrueba: true` ({}, sin la marca, "true", 1, false, arreglo) se DESCARTA: 0 ítems, 0 envíos, 0 llamadas; con `modoPrueba: true` sigue funcionando', () => {
+    const base = valorMeta(mTexto('hola'), ANA);
+    for (const cuerpo of [{ ...base, telefonoDePrueba: ANA, enviarDeVerdad: true }, {}, { ...base, modoPrueba: 'true' }, { ...base, modoPrueba: 1 }, { ...base, modoPrueba: false, telefonoDePrueba: ANA, enviarDeVerdad: true }, { ...base, modoPrueba: [true] }]) {
+      const w = crear({ flujo: PRUEBA });
+      const t = w.turno({ headers: {}, body: cuerpo });
+      const rotulo = JSON.stringify(cuerpo).slice(0, 40);
+      expect(t.fallo, rotulo).toBeNull();
+      expect(t.porNodo['Carga de entrada']?.length ?? 0, rotulo).toBe(0);
+      expect(t.mensajes, rotulo).toHaveLength(0);
+      expect(t.ejecutados.has('Enviar a WhatsApp'), rotulo).toBe(false);
+      expect(t.ejecutados.has('Traer configuración'), rotulo).toBe(false);
+      expect(w.llamadas.ingesta, rotulo).toHaveLength(0);
+    }
+    const ok = crear({ flujo: PRUEBA }).turno(prueba({ enviarDeVerdad: false }));
+    expect(ok.porNodo['Carga de entrada']).toHaveLength(1);
+    expect((ok.resumen as J)['modoPrueba']).toBe(true);
+    // La guarda está en el código de AMBOS JSON (en producción es inerte: no hay «Entrada de prueba»).
+    for (const f of [PRODUCCION, PRUEBA]) expect(f.nodes.find((x) => x.name === 'Carga de entrada')!.parameters['jsCode']).toMatch(/if \(corrioPrueba && !prueba\) return \[\];/);
+  });
+
   it('el modo prueba NIEGA POR DEFECTO: sin `telefonosDePrueba` (vacío o con el marcador) no sale nada, ni al teléfono pedido', () => {
     for (const lista of ['', 'REEMPLAZAR_TELEFONOS_DE_PRUEBA']) {
       const w = crear({ flujo: PRUEBA, telefonosDePrueba: lista });

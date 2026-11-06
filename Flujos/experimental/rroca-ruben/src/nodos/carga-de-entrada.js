@@ -39,6 +39,9 @@ function cnPrueba() {
 
 const ahoraMs = Date.now();
 const prueba = cnPrueba();
+// En la variante de PRUEBA, si «Entrada de prueba» corrió y su cuerpo NO trae `modoPrueba: true`, el ítem se DESCARTA: sin esa marca la ejecución se comportaría como producción (otro espacio, cualquier teléfono, envío de verdad).
+const corrioPrueba = !!cnNodo('Entrada de prueba');
+if (corrioPrueba && !prueba) return [];
 const esperado = String((cnPrimero('Config base') || {}).phoneNumberIdEsperado || '');
 const receptor = cnPrimero('Entrega del receptor');
 const cuerpoReceptor = receptor && receptor.body && typeof receptor.body === 'object' ? receptor.body : {};
