@@ -64,6 +64,30 @@ export const CREDENCIALES_DEL_DEMO_A = {
 };
 const LECTURA_DE_LA_CLAVE = new RegExp(`base\\.${CLAVE_SOLO_ENSAYO}`);
 const NOMBRE_GRAPH_DEL_DEMO_A = 'Graph WhatsApp Demo A (Bearer)';
+const NOMBRE_INGESTA_DEL_DEMO_A = 'Cierres NovuChat A (auto)';
+// Los dos nodos que bajan un medio con una URL que Meta devuelve en su respuesta (`={{ $json.url }}`): lista CERRADA y con la credencial de Graph. Cualquier otro nodo con la URL dinámica es un hallazgo.
+const NODOS_CON_URL_DE_META = ['Descargar medio', 'Descargar medio (guardado)'];
+/** El HOST de la parte FIJA de la URL de un nodo (lo que hay antes de cualquier `{{ }}`), en minúsculas, o null si no se puede leer con certeza (espacio inicial, http, `//host`, usuario@host, host partido en una expresión, URL toda dinámica). Una lista de permitidos por destino, no una expresión sobre el host. */
+export function hostDeUrl(url) {
+  const fija = String(url ?? '').replace(/^=/, '').split('{{')[0];
+  const m = /^https:\/\/([a-z0-9.-]+)(?::\d+)?(?=[\/?#]|$)/i.exec(fija);
+  return m ? m[1].toLowerCase() : null;
+}
+/** Hallazgos de destino de un nodo httpRequest de la variante de ensayo. */
+export function hallazgosDeDestino(n) {
+  const h = [];
+  if (n.type !== 'n8n-nodes-base.httpRequest') return h;
+  const cred = ((n.credentials || {}).httpHeaderAuth || {}).name;
+  const host = hostDeUrl(((n.parameters || {}).url));
+  if (host === null) {
+    if (!(NODOS_CON_URL_DE_META.includes(n.name) && cred === NOMBRE_GRAPH_DEL_DEMO_A)) h.push(`ensayo: «${n.name}» tiene una URL cuyo destino no es fijo ni verificable (solo ${NODOS_CON_URL_DE_META.join(' y ')} bajan una URL de Meta, con la credencial de Graph)`);
+    return h;
+  }
+  if (!ANFITRIONES.includes(host)) h.push(`ensayo: «${n.name}» llama a un destino que no es de la lista permitida (${host})`);
+  if (host === 'graph.facebook.com' && cred !== NOMBRE_GRAPH_DEL_DEMO_A) h.push(`ensayo: «${n.name}» llama a graph.facebook.com sin la credencial de Graph del Demo A (con la de la ingesta le mandaría su token a Meta: la trampa del 15/09)`);
+  if (cred === NOMBRE_INGESTA_DEL_DEMO_A && host !== ANFITRION_CONSOLA) h.push(`ensayo: «${n.name}» lleva la credencial de la ingesta fuera de su host (${host})`);
+  return h;
+}
 /** Lo que el ensayo no tiene: el receptor y la «Entrada de prueba» (su entrada es el Trigger del Demo A). */
 const QUITAR_EN_EL_ENSAYO = ['Entrada de prueba', 'Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos'];
 const NODO_TRIGGER = 'WhatsApp Trigger';
@@ -459,7 +483,7 @@ export function guardias(variante, flujo, mapaCrm) {
         if (!(CREDENCIALES_DEL_DEMO_A[tipo] || []).includes(nombreCred)) h.push(`ensayo: «${n.name}» usa ${tipo} «${nombreCred}», que no es una credencial del Demo A`);
         if (/bellido|platinum|q'?taco|captaci|segurolo|otp|aab1|whatsapp-?modular|receptor|antonio|evy|emma|ruben|rubén/i.test(nombreCred)) h.push(`ensayo: la credencial de «${n.name}» nombra a un cliente o a un sistema ajeno`);
       }
-      if (n.type === 'n8n-nodes-base.httpRequest' && /^=?https:\/\/graph\.facebook\.com\//.test(String(p(n).url || '')) && ((n.credentials || {}).httpHeaderAuth || {}).name !== NOMBRE_GRAPH_DEL_DEMO_A) h.push(`ensayo: «${n.name}» llama a graph.facebook.com sin la credencial de Graph del Demo A (con la de la ingesta le mandaría su token a Meta)`);
+      h.push(...hallazgosDeDestino(n));
     }
   }
   // El cobro: el de Rubén es REAL (QR del comercio); un cobro simulado y uno real no conviven (prohibición 3). El flujo no sabe rotular un cobro simulado: `rrSeguro` prohíbe «simulado».

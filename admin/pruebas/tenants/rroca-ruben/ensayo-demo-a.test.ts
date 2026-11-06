@@ -228,12 +228,31 @@ describe('credenciales: solo las del Demo A, por nombre', () => {
     // Gemini: la de producción del Demo A, en los cuatro nodos que llaman al modelo.
     for (const n of ['Transcribir audio', 'Describir documento', 'Describir imagen', 'Conversar con el modelo']) expect(nodo(ENSAYO, n)['credentials']['googlePalmApi']['name'], n).toBe('Google Gemini(PaLM) Api account');
     // Todo nodo que habla con Graph lleva la credencial «Graph WhatsApp Demo A (Bearer)» (la herramienta la cambia a la predefinida), nunca la de la ingesta.
-    const graph = (ENSAYO['nodes'] as J[]).filter((n) => n['type'] === 'n8n-nodes-base.httpRequest' && /^=?https:\/\/graph\.facebook\.com\//.test(String(n['parameters']['url'])));
+    const graph = (ENSAYO['nodes'] as J[]).filter((n) => n['type'] === 'n8n-nodes-base.httpRequest' && mod.hostDeUrl(n['parameters']['url']) === 'graph.facebook.com');
     expect(graph.map((n) => n['name']).sort()).toEqual(['Avisar falla del guardado', 'Enviar a WhatsApp', 'Enviar aviso', 'Enviar respaldo', 'Obtener URL del medio (general)', 'Pedir el medio a Meta (guardado)'].sort());
     for (const n of graph) expect(n['credentials']['httpHeaderAuth']['name'], String(n['name'])).toBe('Graph WhatsApp Demo A (Bearer)');
     expect(JSON.stringify(ENSAYO)).not.toMatch(/googleApi|Google Sheets/);
   });
 
+  it('GUARDIA POR DESTINO (lista de permitidos): el host se lee de la parte fija de la URL; todo lo que no se pueda leer con certeza, o no sea de la lista, es hallazgo', () => {
+    const con = (n: string, url: string): string => { const f = clon(ENSAYO); nodo(f, n)['parameters']['url'] = url; return hallazgos(f); };
+    // El JSON generado y sus URLs legítimas (versión, query, expresiones después del host) NO dan hallazgos de destino:
+    expect(hallazgos(ENSAYO)).not.toMatch(/destino|lista permitida|fuera de su host|llama a graph/);
+    expect(con('Enviar aviso', '=https://graph.facebook.com/{{ $json.v }}/messages?x=1')).not.toMatch(/destino|lista permitida|llama a graph/);
+    // Cada forma que la expresión vieja o una expresión anclada dejaban pasar:
+    for (const malo of ['={{ "https://graph.facebook.com/"+$json.x }}', 'http://graph.facebook.com/v20.0/x', '=HTTPS://GRAPH.FACEBOOK.COM.EVIL.COM/x', '= https://graph.facebook.com/x', ' https://graph.facebook.com/x',
+      '=//graph.facebook.com/x', '=https://x@graph.facebook.com/x', '=https://graph.facebook.com.evil.com/x', '={{ $json.url }}', '=https://{{ $json.host }}/x', '=https://graph.{{ $json.d }}/x']) {
+      expect(con('Enviar aviso', malo), malo).toMatch(/destino no es fijo|lista permitida|sin la credencial de Graph/);
+    }
+    // La credencial de la ingesta nunca sale de su host:
+    const f = clon(ENSAYO); nodo(f, 'Traer configuración')['parameters']['url'] = 'https://graph.facebook.com/x';
+    expect(hallazgos(f)).toMatch(/fuera de su host|sin la credencial de Graph/);
+    // Solo los dos nodos de descarga de medios pueden llevar la URL que devuelve Meta, y solo con la credencial de Graph:
+    expect(con('Descargar medio', '={{ $json.url }}')).not.toMatch(/destino no es fijo/);
+    expect(con('Conversar con el modelo', '={{ $json.url }}')).toMatch(/destino no es fijo/);
+    const g = clon(ENSAYO); nodo(g, 'Descargar medio')['credentials']['httpHeaderAuth']['name'] = 'Cierres NovuChat A (auto)';
+    expect(hallazgos(g)).toMatch(/destino no es fijo/);
+  });
   it('se rechaza una credencial de producción de Rubén, la del miniCRM, una de otro cliente o la de la ingesta en un nodo de Graph', () => {
     const cambiar = (n: string, tipo: string, nombre: string): J => { const f = clon(ENSAYO); nodo(f, n)['credentials'][tipo]['name'] = nombre; return f; };
     expect(hallazgos(cambiar('Traer configuración', 'httpHeaderAuth', 'NovuChat ingesta (Ruben)'))).toContain('que no es una credencial del Demo A');
