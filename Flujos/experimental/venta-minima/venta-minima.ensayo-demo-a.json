@@ -172,7 +172,7 @@
               "id": "cb_campanaReservaMensaje",
               "name": "campanaReservaMensaje",
               "type": "string",
-              "value": "¡Hola! 🌮 Los jueves puedes agrandar tu Q'Taco Dúo: solo por Bs 8 más recibes 2 tacos extra. El total es Bs 178 para 2 personas (nachos, 2 quesabirrias con consomé, 6 tacos, 2 aguas frescas, 2 helados de tequila y 4 salsas). Esta promoción es solo los jueves, para consumo en el local; igual puedes reservar tu mesa el día que quieras. ¿Quieres hacer una reserva?"
+              "value": "¡Hola! 🌮 Los jueves puedes agrandar tu Q'Taco Dúo: solo por Bs 8 más recibes 2 tacos extra. El total es Bs 178 para 2 personas (nachos, 2 quesabirrias con consomé, 6 tacos, 2 aguas frescas, 2 helados y 4 salsas). Esta promoción es solo los jueves, para consumo en el local; igual puedes reservar tu mesa el día que quieras. ¿Quieres hacer una reserva?"
             },
             {
               "id": "cb_campanaPedidoTexto",
