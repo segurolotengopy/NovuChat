@@ -17,14 +17,17 @@
  *
  * QUÉ HACE.
  *   · SECO (sin `--aplicar`): UNA lectura de la colección (solo `nombre`, `area`, `activo`).
- *     Imprime la tabla nombre/categoría/activo de lo que habilitaría y, aparte, el conteo y
- *     los nombres de los deshabilitados de OTRAS categorías. No escribe.
+ *     Imprime el conteo por área de TODO el catálogo (total y deshabilitados), avisa si alguna
+ *     categoría objetivo no tiene coincidencias, la tabla nombre/categoría/activo de lo que
+ *     habilitaría y, aparte, conteo y nombres (con su área) de los deshabilitados de OTRAS
+ *     categorías. No escribe.
  *   · `--aplicar`: exige `--respaldo` (ruta absoluta fuera de todo repositorio, carpeta 0700,
  *     archivo 0600, nunca se pisa) con los ids a habilitar; luego, por cada ítem, un `update`
  *     SOLO del campo `activo`, con la precondición de la hora leída. Relee y compara.
- *   · `--revertir --aplicar`: devuelve `activo: false` a los ítems del respaldo que hoy estén
- *     en `true`. Los que ya no estén en `true` o ya no existan no se tocan.
- *   · IDEMPOTENTE: sin nada que habilitar, sale con 0 sin escribir. Nunca borra ni crea.
+ *   · `--revertir --aplicar`: restaura el valor previo REAL de `activo` (ausente, false o null;
+ *     si estaba ausente se quita el campo) en los ítems del respaldo que hoy estén en `true`. Los demás no
+ *     se tocan. Si el respaldo nombra un ítem que hoy no es de las categorías objetivo, se rechaza entero (2).
+ *   · IDEMPOTENTE: sin nada que habilitar, sale con 0 sin escribir. Nunca borra documentos ni crea.
  *   · El tenant es de una lista cerrada (`TENANTS_PERMITIDOS`); cualquier otro se rechaza.
  *
  * SALVAGUARDA DE PROYECTO. La de `aplicar-consola-oculta.mjs` (se importa, no se copia):
@@ -44,6 +47,10 @@ import { comprobarProyecto, comprobarRespaldo } from './aplicar-consola-oculta.m
 
 const CAMPO = 'activo';
 export const TENANTS_PERMITIDOS = Object.freeze(['qtaco']);
+/**
+ * LAS CATEGORÍAS OBJETIVO: el único lugar donde se cambian. Se escriben ya normalizadas (sin tildes, minúsculas);
+ * la comparación es de igualdad EXACTA tras `normalizar` y recorte de espacios: sin plurales ni parecidos.
+ */
 export const CATEGORIAS = Object.freeze(['cerveza', 'postres', 'helados', 'tragos']);
 const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'revertir'];
@@ -54,22 +61,35 @@ export const USO = '  node scripts/plataforma/habilitar-productos.mjs --proyecto
   + '[--aplicar] [--confirmo-produccion qtaco]\n'
   + `  tenants permitidos: ${TENANTS_PERMITIDOS.join(', ')}; categorías: ${CATEGORIAS.join(', ')}`;
 
-/** Misma función que el filtro de la consola (`normalizar` de Catalogo.tsx). */
-export const normalizar = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+/** Misma función que el filtro de la consola (`normalizar` de Catalogo.tsx), más el recorte de espacios. */
+export const normalizar = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
 /** ¿La categoría (`area`) es una de las cuatro, igual que la compara la consola? */
-export const categoriaObjetivo = (area) => typeof area === 'string' && CATEGORIAS.includes(normalizar(area));
+export const categoriaObjetivo = (area, categorias = CATEGORIAS) => typeof area === 'string' && categorias.includes(normalizar(area));
+
+/** Conteo por área (normalizada) de TODO el catálogo: total y deshabilitados. Sin área: «(sin área)». */
+export function conteoPorArea(items) {
+  const m = { __proto__: null };
+  for (const it of items) {
+    const k = typeof it.area === 'string' && normalizar(it.area) !== '' ? normalizar(it.area) : '(sin área)';
+    const c = m[k] ?? { total: 0, deshabilitados: 0 };
+    c.total += 1;
+    if (it.activo !== true) c.deshabilitados += 1;
+    m[k] = c;
+  }
+  return Object.entries(m).sort((a, b) => a[0].localeCompare(b[0]));
+}
 
 /**
  * Parte los ítems leídos en: los que se habilitarían y los deshabilitados de otras categorías.
  * Un ítem está deshabilitado si `activo !== true` (como lo pinta la consola).
  */
-export function clasificar(items) {
+export function clasificar(items, categorias = CATEGORIAS) {
   const habilitar = [];
   const otras = [];
   for (const it of items) {
     if (it.activo === true) continue;
-    (categoriaObjetivo(it.area) ? habilitar : otras).push(it);
+    (categoriaObjetivo(it.area, categorias) ? habilitar : otras).push(it);
   }
   const porNombre = (a, b) => String(a.nombre ?? '').localeCompare(String(b.nombre ?? '')) || a.id.localeCompare(b.id);
   return { habilitar: habilitar.sort(porNombre), otras: otras.sort(porNombre) };
@@ -130,12 +150,15 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
 }
 
 // ===========================================================================
-// RESPALDO: ids de los ítems y su valor previo (siempre false). Ningún dato del comercio.
+// RESPALDO: ids de los ítems y su valor previo REAL de `activo` (ausente, false o null). Ningún dato del comercio.
 // ===========================================================================
-export function contenidoDelRespaldo({ entorno, tenant, ids }) {
+export function contenidoDelRespaldo({ entorno, tenant, items }) {
   return {
     version: 1, entorno, tenant, creadoEn: new Date().toISOString(),
-    items: ids.map((id) => ({ id, previo: false })),
+    items: items.map((it) => {
+      const presente = it.activo !== undefined;
+      return { id: it.id, previo: { presente, valor: presente ? it.activo : null } };
+    }),
   };
 }
 
@@ -172,6 +195,9 @@ export function guardarRespaldo(ruta, contenido) {
 const MAXIMO_RESPALDO = 1024 * 1024;
 const ID_ITEM = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/;
 
+const previoValido = (p) => typeof p === 'object' && p !== null && typeof p.presente === 'boolean'
+  && (p.presente ? (p.valor === false || p.valor === null) : p.valor === null);
+
 export function leerRespaldo(ruta, { entorno, tenant }) {
   let texto;
   let fd;
@@ -194,11 +220,11 @@ export function leerRespaldo(ruta, { entorno, tenant }) {
   if (r.tenant !== tenant) return { ok: false, motivo: 'el respaldo es de otro comercio' };
   if (r.entorno !== entorno) return { ok: false, motivo: 'el respaldo es de otro entorno (staging, produccion o emulador)' };
   const ids = r.items.map((x) => x?.id);
-  if (r.items.some((x) => typeof x?.id !== 'string' || !ID_ITEM.test(x.id) || x.previo !== false)
+  if (r.items.some((x) => typeof x?.id !== 'string' || !ID_ITEM.test(x.id) || !previoValido(x.previo))
     || new Set(ids).size !== ids.length) {
-    return { ok: false, motivo: 'el respaldo no guardó los ítems con fidelidad (ids válidos, sin repetidos, previo false)' };
+    return { ok: false, motivo: 'el respaldo no guardó los ítems con fidelidad (ids válidos, sin repetidos, valor previo ausente, false o null)' };
   }
-  return { ok: true, ids };
+  return { ok: true, ids, previos: new Map(r.items.map((x) => [x.id, x.previo])) };
 }
 
 // ===========================================================================
@@ -230,9 +256,32 @@ export function mensajeDeInterrupcion(estado) {
   return '\n  ! Interrumpido DURANTE una escritura: puede haberse hecho o no. Corra el seco para ver el estado.\n';
 }
 
+/**
+ * Escribe `activo` ítem por ítem. Devuelve null si todo salió bien, o 3 tras avisar. Mismo estado que la
+ * interrupción: «antes» si no se escribió nada; «escrito» si ya hubo escrituras (el mensaje lo dice y recuerda --revertir).
+ */
+async function escribirTodos(lista, valorDe, marcar, log, siguiente) {
+  let hechas = 0;
+  for (const it of lista) {
+    marcar('escribiendo');
+    try {
+      await escribirActivo(it.ref, valorDe(it), it.updateTime);
+      hechas += 1;
+      marcar('escrito');
+    } catch (e) {
+      marcar(hechas === 0 ? 'antes' : 'escrito');
+      const causa = esPrecondicion(e) ? 'un ítem cambió entre la lectura y la escritura' : `error de escritura (${e?.code ?? e?.name ?? 'desconocido'})`;
+      if (hechas === 0) log(`\n  ✗ ${causa}: no se escribió nada. ${siguiente}.\n`);
+      else log(`\n  ✗ ${causa}: SÍ se escribieron ${hechas} de ${lista.length} ítem(s). ${siguiente}; para deshacer, --revertir con el mismo respaldo.\n`);
+      return 3;
+    }
+  }
+  return null;
+}
+
 /** Corre la operación ya validada. `deps`: `{ db, log, marcarEscritura }`. Devuelve el código de salida. */
 export async function ejecutar(cfg, deps) {
-  const { db } = deps;
+  const { db, FieldValue } = deps;
   const log = deps.log ?? ((t) => console.log(t));
   const marcar = deps.marcarEscritura ?? (() => {});
   const rotulo = `${cfg.entorno} · tenant ${cfg.tenant}`;
@@ -243,28 +292,31 @@ export async function ejecutar(cfg, deps) {
     const lectura = leerRespaldo(cfg.respaldo, cfg);
     if (!lectura.ok) { log(`\n  ✗ ${lectura.motivo}\n`); return 2; }
     const porId = new Map(items.map((i) => [i.id, i]));
-    const aRevertir = lectura.ids.map((id) => porId.get(id)).filter((i) => i && i.activo === true);
+    const presentes = lectura.ids.map((id) => porId.get(id)).filter(Boolean);
+    if (presentes.some((i) => !categoriaObjetivo(i.area))) {
+      log('\n  ✗ El respaldo nombra ítems que hoy no son de las categorías objetivo: se rechaza entero. No se escribe nada.\n');
+      return 2;
+    }
+    const aRevertir = presentes.filter((i) => i.activo === true);
     log(`\n  ${cfg.aplicar ? 'REVERTIR' : 'SECO (solo una lectura)'} · ${rotulo}\n`);
     log(`  ítems del respaldo        : ${lectura.ids.length}`);
-    log(`  se devuelven a «activo: false»: ${aRevertir.length}`);
+    log(`  se devuelven a su valor previo: ${aRevertir.length}`);
     if (aRevertir.length === 0) { log('\n  ✓ Nada que revertir.\n'); return 0; }
     if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar para revertir.\n'); return 1; }
-    for (const it of aRevertir) {
-      marcar('escribiendo');
-      try {
-        await escribirActivo(it.ref, false, it.updateTime);
-        marcar('escrito');
-      } catch (e) {
-        if (esPrecondicion(e)) { marcar('antes'); log('\n  ✗ Un ítem cambió entre la lectura y la escritura: se detiene. Corra el seco y reintente.\n'); return 3; }
-        throw e;
-      }
-    }
+    const previoDe = (id) => lectura.previos.get(id);
+    const falla = await escribirTodos(aRevertir, (it) => (previoDe(it.id).presente ? previoDe(it.id).valor : FieldValue.delete()), marcar, log, 'Corra el seco y reintente');
+    if (falla !== null) return falla;
     const despues = new Map((await leerCatalogo(db, cfg.tenant)).map((i) => [i.id, i]));
-    if (aRevertir.some((i) => despues.get(i.id)?.activo !== false)) {
+    const igual = (i) => {
+      const p = previoDe(i.id);
+      const d = despues.get(i.id);
+      return p.presente ? d?.activo === p.valor : d !== undefined && d.activo === undefined;
+    };
+    if (!aRevertir.every(igual)) {
       log('\n  ✗ La relectura no coincide con lo esperado. Revise con el seco.\n');
       return 3;
     }
-    log(`\n  ✓ Revertido: ${aRevertir.length} ítem(s) vuelven a «activo: false».\n`);
+    log(`\n  ✓ Revertido: ${aRevertir.length} ítem(s) vuelven a su valor previo.\n`);
     return 0;
   }
 
@@ -272,35 +324,32 @@ export async function ejecutar(cfg, deps) {
   if (items.length === 0) { log(`\n  ✗ ${cfg.tenant}: el catálogo está vacío o no existe (${cfg.entorno})\n`); return 1; }
   const { habilitar, otras } = clasificar(items);
   log(`\n  ${cfg.aplicar ? 'APLICAR' : 'SECO (solo una lectura)'} · ${rotulo}\n`);
-  log(`  Se habilitarían (${habilitar.length}) — categorías: ${CATEGORIAS.join(', ')}`);
+  log(`  Catálogo por área (${items.length} ítems; total / deshabilitados):`);
+  for (const [area, c] of conteoPorArea(items)) log(`    ${texto(area).padEnd(24)} ${c.total} / ${c.deshabilitados}`);
+  for (const c of CATEGORIAS.filter((k) => !items.some((i) => categoriaObjetivo(i.area, [k])))) {
+    log(`  ! AVISO: ninguna área coincide con «${c}» (revise los nombres reales con el conteo de arriba).`);
+  }
+  log(`\n  Se habilitarían (${habilitar.length}) — categorías: ${CATEGORIAS.join(', ')}`);
   if (habilitar.length) {
     log(`  ${'nombre'.padEnd(34)} ${'categoría'.padEnd(12)} activo`);
     for (const it of habilitar) log(`  ${celda(it.nombre, 34)} ${celda(it.area, 12)} ${it.activo === false ? 'false' : '(sin dato)'} -> true`);
   }
   log(`\n  Deshabilitados de OTRAS categorías (NO se tocan): ${otras.length}`);
-  for (const it of otras) log(`    · ${texto(it.nombre)}`);
+  for (const it of otras) log(`    · ${texto(it.nombre)} [${typeof it.area === 'string' && it.area.trim() !== '' ? texto(it.area) : '(sin área)'}]`);
 
   if (habilitar.length === 0) { log('\n  ✓ Nada que habilitar.\n'); return 0; }
   if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar (y --respaldo) para escribir.\n'); return 1; }
 
   try {
-    guardarRespaldo(cfg.respaldo, contenidoDelRespaldo({ entorno: cfg.entorno, tenant: cfg.tenant, ids: habilitar.map((i) => i.id) }));
+    guardarRespaldo(cfg.respaldo, contenidoDelRespaldo({ entorno: cfg.entorno, tenant: cfg.tenant, items: habilitar }));
   } catch (e) {
     if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe un archivo en esa ruta de respaldo: un respaldo nunca se pisa; elija otro nombre. No se escribe nada.\n'); return 2; }
     throw e;
   }
   log(`\n  Respaldo guardado y releído: ${cfg.respaldo}`);
 
-  for (const it of habilitar) {
-    marcar('escribiendo');
-    try {
-      await escribirActivo(it.ref, true, it.updateTime);
-      marcar('escrito');
-    } catch (e) {
-      if (esPrecondicion(e)) { marcar('antes'); log('\n  ✗ Un ítem cambió entre la lectura y la escritura: se detiene. Corra el seco; el respaldo permite revertir lo ya escrito.\n'); return 3; }
-      throw e;
-    }
-  }
+  const falla = await escribirTodos(habilitar, () => true, marcar, log, 'Corra el seco');
+  if (falla !== null) return falla;
   const despues = new Map((await leerCatalogo(db, cfg.tenant)).map((i) => [i.id, i]));
   if (habilitar.some((i) => despues.get(i.id)?.activo !== true)) {
     log('\n  ✗ La relectura no coincide con lo escrito. Revise con el seco; el respaldo permite revertir.\n');
@@ -319,7 +368,7 @@ async function principal() {
   }
   const { cfg } = analisis;
   const { initializeApp } = await import('firebase-admin/app');
-  const { getFirestore } = await import('firebase-admin/firestore');
+  const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
   initializeApp({ projectId: cfg.proyecto });
   const db = getFirestore();
   let estado = 'antes';
@@ -327,7 +376,7 @@ async function principal() {
     console.error(mensajeDeInterrupcion(estado));
     process.exit(130);
   });
-  const codigo = await ejecutar(cfg, { db, marcarEscritura: (v) => { estado = v; } });
+  const codigo = await ejecutar(cfg, { db, FieldValue, marcarEscritura: (v) => { estado = v; } });
   await db.terminate().catch(() => {});
   process.exit(codigo);
 }

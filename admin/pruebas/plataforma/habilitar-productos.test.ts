@@ -10,7 +10,7 @@
  *   E5. El texto del script.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, closeSync, fstatSync, mkdtempSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,8 +22,9 @@ type Cfg = Record<string, unknown>;
 type Item = Record<string, unknown>;
 const mod = await import('../../scripts/plataforma/habilitar-productos.mjs') as unknown as {
   analizarArgumentos: (argv: string[], env?: Record<string, string>) => { ok: boolean; problemas?: string[]; cfg?: Cfg };
-  clasificar: (items: Item[]) => { habilitar: Item[]; otras: Item[] };
-  categoriaObjetivo: (a: unknown) => boolean;
+  clasificar: (items: Item[], c?: readonly string[]) => { habilitar: Item[]; otras: Item[] };
+  categoriaObjetivo: (a: unknown, c?: readonly string[]) => boolean;
+  CATEGORIAS: readonly string[];
   leerRespaldo: (r: string, o: { entorno: string; tenant: string }) => { ok: boolean; motivo?: string; ids?: string[] };
   ejecutar: (cfg: Cfg, deps: Record<string, unknown>) => Promise<number>;
 };
@@ -52,7 +53,7 @@ const CATALOGO: Record<string, Item> = {
 };
 
 /** Firestore en memoria con varios tenants; registra cada lectura y escritura (ruta y campos). */
-function baseDe(catalogos: Record<string, Record<string, Item>>, opciones: { cambiaAntes?: string } = {}) {
+function baseDe(catalogos: Record<string, Record<string, Item>>, opciones: { cambiaAntes?: string; falloTrasEscrituras?: number } = {}) {
   const datos: Record<string, Record<string, Item>> = JSON.parse(JSON.stringify(catalogos));
   const horas: Record<string, number> = {};
   const lecturas: string[] = [];
@@ -60,9 +61,13 @@ function baseDe(catalogos: Record<string, Record<string, Item>>, opciones: { cam
   const hora = (r: string) => horas[r] ?? 1;
   const refDe = (col: string, id: string) => ({
     update: async (campos: Record<string, unknown>, pre: { lastUpdateTime: { hora: number } }) => {
+      if (opciones.falloTrasEscrituras !== undefined && escrituras.length >= opciones.falloTrasEscrituras) throw Object.assign(new Error('x'), { code: 'unavailable' });
       if (opciones.cambiaAntes === id) { horas[`${col}/${id}`] = hora(`${col}/${id}`) + 1; }
       if (pre.lastUpdateTime.hora !== hora(`${col}/${id}`)) throw Object.assign(new Error('pre'), { code: 9 });
-      Object.assign(datos[col]![id]!, campos);
+      for (const [k, v] of Object.entries(campos)) {
+        if (v && typeof v === 'object' && (v as { __borrar?: boolean }).__borrar) delete datos[col]![id]![k];
+        else datos[col]![id]![k] = v;
+      }
       horas[`${col}/${id}`] = hora(`${col}/${id}`) + 1;
       escrituras.push({ ruta: `${col}/${id}`, campos });
     },
@@ -88,11 +93,13 @@ function baseDe(catalogos: Record<string, Record<string, Item>>, opciones: { cam
     },
   };
 }
+const FieldValue = { delete: () => ({ __borrar: true }) };
 const cfgDe = (extra: Cfg = {}): Cfg => ({ proyecto: PROY, entorno: 'emulador', tenant: 'qtaco', aplicar: false, revertir: false, respaldo: null, ...extra });
 const correr = async (cfg: Cfg, b: ReturnType<typeof baseDe>) => {
   const salida: string[] = [];
-  const codigo = await mod.ejecutar(cfg, { db: b.db, log: (t: string) => salida.push(t) });
-  return { codigo, salida: salida.join('\n') };
+  const estados: string[] = [];
+  const codigo = await mod.ejecutar(cfg, { db: b.db, FieldValue, marcarEscritura: (v: string) => estados.push(v), log: (t: string) => salida.push(t) });
+  return { codigo, salida: salida.join('\n'), estados };
 };
 
 describe('E1. argumentos y salvaguarda', () => {
@@ -156,6 +163,17 @@ describe('E2. clasificación: solo las cuatro categorías exactas, solo deshabil
   });
 });
 
+describe('E2b. la constante de categorías', () => {
+  it('es la lista cerrada de cuatro, sin plurales; recorta espacios; y se ajusta cambiando solo la constante', () => {
+    expect([...mod.CATEGORIAS]).toEqual(['cerveza', 'postres', 'helados', 'tragos']);
+    expect(mod.categoriaObjetivo('  Cerveza  ')).toBe(true);
+    for (const a of ['cervezas', 'cocteleria', 'trago', 'postre', 'helado']) expect(mod.categoriaObjetivo(a)).toBe(false);
+    expect(mod.categoriaObjetivo('cervezas', ['cervezas'])).toBe(true);
+    const r = mod.clasificar([{ id: 'x', nombre: 'N', area: 'cocteleria', activo: false }], ['cocteleria']);
+    expect(r.habilitar).toHaveLength(1);
+  });
+});
+
 describe('E3. seco y aplicar', () => {
   it('el seco no escribe, lee solo el tenant pedido e imprime la tabla y los conteos de otras categorías', async () => {
     const b = baseDe({ qtaco: CATALOGO, ajeno: { z1: { nombre: 'Ajeno', area: 'cerveza', activo: false } } });
@@ -168,7 +186,20 @@ describe('E3. seco y aplicar', () => {
     expect(salida).toContain('OTRAS categorías (NO se tocan): 3');
     expect(salida).toContain('Gaseosa');
     expect(salida).not.toContain('Ajeno');
+    expect(salida).toContain('Catálogo por área (9 ítems; total / deshabilitados)');
+    expect(salida).toMatch(/bebidas\s+1 \/ 1/);
+    expect(salida).toContain('Gaseosa [bebidas]');
+    expect(salida).toContain('Sin categoría [(sin área)]');
+    expect(salida).not.toContain('AVISO');
     expect(salida).not.toContain(PROY);
+  });
+  it('avisa cuando una categoría objetivo no tiene coincidencias', async () => {
+    const b = baseDe({ qtaco: { a1: { nombre: 'Pilsener', area: 'cervezas', activo: false }, a2: { nombre: 'Mojito', area: 'cocteleria', activo: false } } });
+    const { codigo, salida } = await correr(cfgDe(), b);
+    expect(codigo).toBe(0);
+    for (const c of ['cerveza', 'postres', 'helados', 'tragos']) expect(salida).toContain(`ninguna área coincide con «${c}»`);
+    expect(salida).toMatch(/cocteleria\s+1 \/ 1/);
+    expect(b.escrituras).toHaveLength(0);
   });
   it('sin --aplicar no escribe aunque haya respaldo configurado', async () => {
     const b = baseDe({ qtaco: CATALOGO });
@@ -188,8 +219,14 @@ describe('E3. seco y aplicar', () => {
     expect(b.datos['qtaco']!['a6']!['activo']).toBe(false);
     expect(b.datos['qtaco']!['a7']!['activo']).toBe(false);
     expect(b.datos['ajeno']!['z1']!['activo']).toBe(false);
-    expect(statSync(r).mode & 0o777).toBe(0o600);
-    expect(readFileSync(r, 'utf8')).not.toContain('Pilsener');
+    const fd = openSync(r, 'r');
+    try {
+      const st = fstatSync(fd);
+      const buf = Buffer.alloc(st.size);
+      readSync(fd, buf, 0, st.size, 0);
+      expect(st.mode & 0o777).toBe(0o600);
+      expect(buf.toString('utf8')).not.toContain('Pilsener');
+    } finally { closeSync(fd); }
   });
   it('idempotente: sin nada que habilitar sale 0 sin escribir ni crear respaldo', async () => {
     const b = baseDe({ qtaco: { a1: { nombre: 'X', area: 'cerveza', activo: true }, a2: { nombre: 'Y', area: 'otra', activo: false } } });
@@ -206,6 +243,22 @@ describe('E3. seco y aplicar', () => {
     const { codigo } = await correr(cfgDe({ aplicar: true, respaldo: r }), b2);
     expect(codigo).toBe(2);
     expect(b2.escrituras).toHaveLength(0);
+  });
+  it('un error a mitad de las escrituras avisa que hubo escrituras y que se puede revertir; el estado es «escrito»', async () => {
+    const b = baseDe({ qtaco: CATALOGO }, { falloTrasEscrituras: 2 });
+    const { codigo, salida, estados } = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b);
+    expect(codigo).toBe(3);
+    expect(b.escrituras).toHaveLength(2);
+    expect(salida).toContain('SÍ se escribieron 2 de 5');
+    expect(salida).toContain('--revertir');
+    expect(estados.at(-1)).toBe('escrito');
+  });
+  it('si el primer ítem falla no se escribió nada y el estado es «antes»', async () => {
+    const b = baseDe({ qtaco: CATALOGO }, { falloTrasEscrituras: 0 });
+    const { codigo, salida, estados } = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b);
+    expect(codigo).toBe(3);
+    expect(salida).toContain('no se escribió nada');
+    expect(estados.at(-1)).toBe('antes');
   });
   it('si un ítem cambia entre la lectura y la escritura, se detiene con 3 sin pisarlo', async () => {
     const b = baseDe({ qtaco: CATALOGO }, { cambiaAntes: 'a2' });
@@ -226,10 +279,43 @@ describe('E4. reversa', () => {
     expect(b.escrituras).toHaveLength(0);
     const { codigo } = await correr(cfgDe({ revertir: true, aplicar: true, respaldo: r }), b);
     expect(codigo).toBe(0);
-    for (const e of b.escrituras) expect(e.campos).toEqual({ activo: false });
-    const esperado = { ...CATALOGO, a9: { ...CATALOGO['a9'], activo: false } };
-    expect(b.datos['qtaco']).toEqual(esperado);
+    for (const e of b.escrituras) expect([false, undefined]).toContain(e.campos['activo'] === false ? false : (e.campos['activo'] as { __borrar?: boolean }).__borrar ? undefined : 'otro');
+    expect(b.datos['qtaco']).toEqual(CATALOGO);
+    expect('activo' in b.datos['qtaco']!['a9']!).toBe(false);
     expect(b.datos['qtaco']!['a8']!['activo']).toBe(true);
+  });
+  it('restaura el valor previo real: null vuelve a null, false a false, ausente se quita', async () => {
+    const cat = {
+      n1: { nombre: 'A', area: 'tragos', activo: null }, n2: { nombre: 'B', area: 'tragos', activo: false }, n3: { nombre: 'C', area: 'tragos' },
+    };
+    const b = baseDe({ qtaco: cat });
+    const r = rutaRespaldo();
+    await correr(cfgDe({ aplicar: true, respaldo: r }), b);
+    expect(Object.values(b.datos['qtaco']!).every((d) => d['activo'] === true)).toBe(true);
+    await correr(cfgDe({ revertir: true, aplicar: true, respaldo: r }), b);
+    expect(b.datos['qtaco']).toEqual(cat);
+    expect(Object.keys(b.datos['qtaco']!['n3']!)).not.toContain('activo');
+  });
+  it('RECHAZA el respaldo entero (2) si algún id hoy está fuera de las categorías objetivo, sin escribir nada', async () => {
+    const b = baseDe({ qtaco: CATALOGO });
+    const r = rutaRespaldo();
+    await correr(cfgDe({ aplicar: true, respaldo: r }), b);
+    b.datos['qtaco']!['a5']!['activo'] = true;
+    const j = JSON.parse(readFileSync(r, 'utf8'));
+    j.items.push({ id: 'a5', previo: { presente: true, valor: false } });
+    const r2 = rutaRespaldo();
+    writeFileSync(r2, JSON.stringify(j), { mode: 0o600 });
+    b.escrituras.length = 0;
+    const { codigo, salida } = await correr(cfgDe({ revertir: true, aplicar: true, respaldo: r2 }), b);
+    expect(codigo).toBe(2);
+    expect(salida).toContain('se rechaza entero');
+    expect(b.escrituras).toHaveLength(0);
+    expect(b.datos['qtaco']!['a5']!['activo']).toBe(true);
+  });
+  it('rechaza un respaldo con un valor previo inventado', async () => {
+    const r = rutaRespaldo();
+    writeFileSync(r, JSON.stringify({ version: 1, entorno: 'emulador', tenant: 'qtaco', items: [{ id: 'a1', previo: { presente: true, valor: 'si' } }] }), { mode: 0o600 });
+    expect(mod.leerRespaldo(r, { entorno: 'emulador', tenant: 'qtaco' }).ok).toBe(false);
   });
   it('no toca un ítem que alguien ya cambió o que ya no está en true; segunda reversa no hace nada', async () => {
     const b = baseDe({ qtaco: CATALOGO });
@@ -258,7 +344,7 @@ describe('E5. el texto del script', () => {
     expect(f.match(/\.update\(/g)).toHaveLength(1);
     expect(f).toContain("const CAMPO = 'activo';");
     expect(f).toContain('await ref.update({ [CAMPO]: valor }, { lastUpdateTime: ultimaActualizacion });');
-    expect(f).not.toMatch(/\.(set|create|delete|add)\(/);
+    expect(f.replace(/FieldValue\.delete\(\)/g, '')).not.toMatch(/\.(set|create|delete|add)\(/);
     expect(f).not.toMatch(/\bbatch\b|runTransaction/);
   });
   it('lee solo nombre, area y activo y no imprime el proyecto', () => {
