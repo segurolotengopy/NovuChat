@@ -6,6 +6,8 @@
 //
 // Va DESPUÉS de `carrito.js` en el nodo Code de n8n (usa `vcVendibles`). JavaScript plano, sin módulos ni globales de Node. Contrato de cada función: `venta-digital/LEEME.md`.
 //
+// Sin envío condicional: el flujo NO manda `If-None-Match` (un 304 no trae cuerpo y cae en el pase `interno`); el catálogo se pide completo, a lo más una vez por turno.
+//
 // Regla de oro: ante CUALQUIER problema (credencial, límite, cotización vencida, respuesta rara, catálogo vacío) el resultado es `pase: true`: el flujo pasa la conversación a un vendedor con aviso Y botón. Nunca se promete «te aviso», «consulto» ni «te llamamos», porque nada lo cumpliría.
 
 const CE_MAX_ANTIGUEDAD_COTIZACION_MS = 24 * 60 * 60 * 1000;   // 24 horas (decisión de Andres, 05/11/2026)
@@ -85,12 +87,15 @@ function ceVendibles(respuesta, opciones) {
   if (!Number.isSafeInteger(ahora) || ahora <= 0) return cePase('cotizacion_vencida');
   const c = b.cotizacion;
   const fecha = ceObjeto(c) && ceFechaIso(c.fecha) ? Date.parse(c.fecha) : NaN;
+  if (!ceObjeto(c) || (c.estado !== 'vigente' && c.estado !== 'ultimo_verificado')) return cePase('respuesta_invalida'); // el contrato solo define esos dos estados: otro valor falla cerrado
   if (!Number.isFinite(fecha) || ahora - fecha > CE_MAX_ANTIGUEDAD_COTIZACION_MS || fecha - ahora > 5 * 60 * 1000) return cePase('cotizacion_vencida');
   if (b.items.length > CE_MAX_ITEMS_RESPUESTA) return cePase('respuesta_invalida');
   // Las fotos solo se aceptan de los dominios que el negocio declara (`opciones.hostsFoto`, coincidencia exacta, sin puerto); sin lista, ninguna foto. La foto se envía como enlace a Meta: n8n nunca la descarga.
   const hosts = Array.isArray(o.hostsFoto) ? o.hostsFoto.filter((h) => typeof h === 'string' && h !== '').map((h) => h.toLowerCase()) : [];
   const max = Number.isSafeInteger(o.max) && o.max > 0 ? Math.min(o.max, 200) : 200;
-  const vendibles = vcVendibles(b.items, { moneda: moneda, externa: true, max: max }).filter((v) => !CE_TEXTO_PELIGROSO.test(vcNorm(v.nombre + ' ' + v.descripcion + ' ' + v.area))).map((v) => {
+  // El contrato v1 trae SIEMPRE estos campos y `disponible` es el que decide si se ofrece: un ítem sin `disponible: true`, sin `precioCentavos` entero (en ARS, múltiplo de 100) o con un `stock` que no es null ni entero no se ofrece (el precio no se recalcula ni el stock se supone).
+  const completos = b.items.filter((it) => ceObjeto(it) && it.disponible === true && Number.isSafeInteger(it.precioCentavos) && (moneda !== 'ARS' || it.precioCentavos % 100 === 0) && (it.stock === null || Number.isSafeInteger(it.stock)));
+  const vendibles = vcVendibles(completos, { moneda: moneda, externa: true, max: max }).filter((v) => !CE_TEXTO_PELIGROSO.test(vcNorm(v.nombre + ' ' + v.descripcion + ' ' + v.area))).map((v) => {
     const w = { id: v.id, nombre: vcLimpiar(v.nombre, 80), precioCentavos: v.precioCentavos, area: vcLimpiar(v.area, 60), descripcion: vcLimpiar(v.descripcion, 300), moneda: v.moneda };
     if (v.stock !== undefined) w.stock = v.stock;
     if (v.foto !== undefined && hosts.indexOf(ceHostDeFoto(v.foto)) >= 0) w.foto = v.foto;
@@ -103,7 +108,7 @@ function ceVendibles(respuesta, opciones) {
     mercado: o.mercado,
     moneda: moneda,
     vendibles: vendibles,
-    cotizacion: { estado: c.estado === 'vigente' ? 'vigente' : 'ultimo_verificado', fecha: new Date(fecha).toISOString() },
+    cotizacion: { estado: c.estado, fecha: new Date(fecha).toISOString() },
   };
 }
 

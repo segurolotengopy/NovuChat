@@ -161,6 +161,25 @@ describe('endurecimiento: texto, fotos, tamaño y fechas del tercero', () => {
   });
 });
 
+describe('contrato v1 estricto: lo que falta no se supone', () => {
+  const sin = (campo: string) => { const it: Record<string, unknown> = item(); delete it[campo]; return it; };
+  it('NEGADO: sin `disponible`, sin `precioCentavos` o sin `stock` el ítem no se ofrece', () => {
+    for (const campo of ['disponible', 'precioCentavos', 'stock']) expect(leer(ok('BO', [sin(campo), item({ id: 'p2' })])).vendibles.map((v: { id: string }) => v.id)).toEqual(['p2']);
+  });
+  it('NEGADO: precio con decimales sin `precioCentavos` entero no se recalcula; en ARS un valor que no es múltiplo de 100 no se ofrece', () => {
+    expect(leer(ok('BO', [item({ precio: 120.004, precioCentavos: 12000.4 })]))).toMatchObject({ pase: true, motivo: 'sin_catalogo' });
+    expect(leer(ok('AR', [item({ moneda: 'ARS', precio: 15.5, precioCentavos: 1550 })]), 'AR')).toMatchObject({ pase: true, motivo: 'sin_catalogo' });
+  });
+  it('NEGADO: una cotización con estado desconocido, ausente o de otro tipo es una respuesta inválida', () => {
+    for (const estado of ['caida', undefined, null, 5, '']) {
+      expect(leer({ status: 200, body: cuerpo('BO', [item()], { cotizacion: { estado, fecha: hace(1) } }) })).toMatchObject({ pase: true, motivo: 'respuesta_invalida', alerta: true });
+    }
+  });
+  it('NEGADO: un 304 (el flujo no envía envío condicional) y otros 2xx/3xx no son un catálogo: pase', () => {
+    for (const status of [304, 204, 301, 202]) expect(leer({ status, body: undefined })).toMatchObject({ pase: true, motivo: 'interno' });
+  });
+});
+
 describe('P7: la cotización de más de 24 horas, ausente o futura pasa con un vendedor', () => {
   const con = (cot: unknown) => leer({ status: 200, body: cuerpo('BO', [item()], { cotizacion: cot }) });
   it('vigente de hace 1 hora y último verificado de hace 23 horas se venden', () => {
@@ -170,9 +189,10 @@ describe('P7: la cotización de más de 24 horas, ausente o futura pasa con un v
     expect(r.cotizacion.estado).toBe('ultimo_verificado');
   });
   it('NEGADO: de hace 25 horas, sin fecha, con fecha inválida o del futuro: pase', () => {
-    for (const cot of [{ estado: 'ultimo_verificado', fecha: hace(25) }, { estado: 'vigente', fecha: hace(25) }, { estado: 'vigente' }, { estado: 'vigente', fecha: 'ayer' }, { estado: 'vigente', fecha: hace(-3) }, null, 7]) {
+    for (const cot of [{ estado: 'ultimo_verificado', fecha: hace(25) }, { estado: 'vigente', fecha: hace(25) }, { estado: 'vigente' }, { estado: 'vigente', fecha: 'ayer' }, { estado: 'vigente', fecha: hace(-3) }]) {
       expect(con(cot)).toMatchObject({ pase: true, motivo: 'cotizacion_vencida' });
     }
+    for (const cot of [null, 7]) expect(con(cot)).toMatchObject({ pase: true, motivo: 'respuesta_invalida' });
   });
   it('NEGADO: sin el reloj del flujo no se vende (no se adivina la hora)', () => {
     for (const ahoraMs of [undefined, 0, -5, 1.5, '1']) expect(f('ceVendibles')(ok('BO', [item()]), { mercado: 'BO', ahoraMs })).toMatchObject({ pase: true, motivo: 'cotizacion_vencida' });
@@ -232,8 +252,8 @@ describe('contrato 11 y 12: el carrito no cambia para BOB y no se agregan mensaj
     expect(f('vcTotalCentavos')(r.lineas)).toBe(24000);
     expect(f('vcResumen')(r.lineas)).toBe('2 × Pieza — Bs 240\nTotal: Bs 240');
   });
-  it('un pase es UN mensaje al cliente (la misma frase) para cualquier motivo', () => {
-    const textos = new Set(['credencial', 'limite', 'interno', 'cotizacion_vencida'].map(() => f('ceTextoPase')()));
-    expect(textos.size).toBe(1);
+  it('PENDIENTE (suite del flujo B3): contar mensajes por conversación; un módulo puro no los envía y no puede probarlo', () => {
+    expect(f('ceTextoPase').length).toBe(0); // la frase es la misma para cualquier motivo: no recibe argumentos
   });
+
 });
