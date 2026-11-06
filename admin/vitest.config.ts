@@ -248,6 +248,7 @@ export const SUITES_PURAS = [
   'pruebas/senas-vencidas.test.ts',
   'pruebas/umbrales-atencion.test.ts',
   'pruebas/modulos/productos/xlsx.test.ts',
+  'pruebas/parametros-del-despliegue.test.ts',
 ];
 
 // Una entrada de SUITES_PURAS que no existe no falla sola: la suite movida sale
