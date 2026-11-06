@@ -1461,7 +1461,7 @@ describe('textos amables del 03/10 (pedido)', () => {
 describe('palabras excluidas: lo que el negocio NO vende por WhatsApp, aunque la carta no traiga el item', () => {
   // La lista REAL de Q'Taco, leída de su archivo de datos (así la prueba no se desincroniza).
   const RUTA_QTACO = join(CARPETA, '../../../../../admin/scripts/datos/venta-minima/qtaco.json');
-  // 05/11: Q'Taco dejó de excluir por palabra (su lista está vacía); la barrera se prueba con la lista que tenía.
+  // Lista fija de antes del 05/11 para cubrir la barrera; la lista REAL de Q'Taco (06/11, sin alcohol) se prueba en el caso siguiente.
   const PALABRAS = 'helado,paleta,postre,cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri,heladito';
   it('Q\'Taco (06/11, sin alcohol): «una cerveza» se excluye, y «un postre» sin alcohol no', () => {
     const datos = JSON.parse(readFileSync(RUTA_QTACO, 'utf8')) as { configBase: { palabrasExcluidas?: string } };
@@ -1470,6 +1470,19 @@ describe('palabras excluidas: lo que el negocio NO vende por WhatsApp, aunque la
     const motivos = (dicho: string) => L.pdAgregarLineas([], SOLO_VENDIBLE, [ln(dicho, 1)], [], lista).noEncontrados.map((n: { motivo: string }) => n.motivo);
     expect(motivos('una cerveza')).toContain('excluido');
     expect(motivos('un postre')).not.toContain('excluido');
+    // La palabra mira lo que se DICE, no un ítem activo que la lleva en su propio nombre: los helados con alcohol se excluyen si no hay ítem...
+    for (const n of ['Helado de Rompope', 'Helado de Tequila']) expect(L.pdPalabraExcluida(n, lista, true), n).not.toBe('');
+    for (const n of ['Helado de Fruta de Temporada', 'Paleta Mango - Chamoy']) expect(L.pdPalabraExcluida(n, lista, true), n).toBe('');
+    // ...pero con el ítem ACTIVO en la carta entran (la barrera por palabra ignora la palabra que está en el nombre del ítem). Por eso la CONDICIÓN
+    // OPERATIVA: «Helado de Tequila» y «Helado de Rompope» deben permanecer INACTIVOS en el catálogo (docs/versiones-por-cliente.md).
+    const conAlcohol = L.pdCarta([
+      { id: 'h-rompope', nombre: 'Helado de Rompope', precio: 23, area: 'postres' },
+      { id: 'h-tequila', nombre: 'Helado de Tequila', precio: 23, area: 'postres' },
+    ]);
+    for (const dicho of ['helado de rompope', 'helado de tequila']) {
+      const r = L.pdAgregarLineas([], conAlcohol, [ln(dicho, 1)], [], lista);
+      expect(r.carrito.length, `${dicho}: con el ítem activo, entra`).toBe(1);
+    }
   });
   // Una carta SIN ningún item de esas áreas, y ninguna lista de excluidos por área: solo la lista de palabras.
   const SOLO_VENDIBLE = L.pdCarta(CATALOGO.filter((i: { area: string }) => !['cervezas', 'cocteleria', 'postres'].includes(i.area)));

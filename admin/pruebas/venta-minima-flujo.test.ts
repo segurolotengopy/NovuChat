@@ -178,7 +178,7 @@ function crear(op: OpcionesDeLaPrueba = {}) {
       horario: HORARIO_TODOS,
       // Estas pruebas cubren la plantilla `pedido_registrado` de siempre; el aviso por líneas de Q'Taco (dato del 28/10) se prueba en venta-minima-avisos-lineas.test.ts.
       plantillasPedidoLineas: '',
-      // 05/11: Q'Taco dejó de excluir por palabra; estas pruebas conservan la lista anterior para seguir cubriendo la barrera (la de Q'Taco se prueba abajo, con `palabrasExcluidas: ''`).
+      // Estas pruebas usan una lista fija de palabras (la de antes del 05/11, con helado/paleta/postre) para cubrir la barrera; la lista REAL de Q'Taco (06/11, sin alcohol) se prueba abajo y en venta-minima-pedido.test.ts.
       // Las exclusiones de ANTES de Q'Taco (áreas y palabras) NO se inyectan por omisión: la prueba que cubre la barrera lo declara con `exclusiones: true`.
       ...(op.exclusiones === true ? EXCLUSIONES_ANTERIORES : {}),
       ...(op.config ?? {}),
@@ -2418,7 +2418,7 @@ describe('carta', () => {
       it_('taco', 'Orden de 3 tacos al pastor', 48, 'tacos'),
       it_('refresco', 'Refresco de la casa', 12, 'bebidas'),
     ];
-    // 05/11 (Samuel): Q'Taco ya NO excluye por palabra: la lista de sus datos está vacía y la barrera sigue existiendo para quien la configure.
+    // Esta prueba usa su propia LISTA corta; la lista real de Q'Taco (06/11, sin alcohol) se prueba arriba y en venta-minima-pedido.test.ts.
     const LISTA = 'helado,cerveza,coctel,vino,shot';
     expect(String(configBase(QTACO)['palabrasExcluidas'])).toMatch(/cerveza.*coctel.*vino.*shot/);
     const pedir = (dicho: string, config: J = {}) => {

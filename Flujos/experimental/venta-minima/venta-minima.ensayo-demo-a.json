@@ -160,7 +160,7 @@
               "id": "cb_palabrasExcluidas",
               "name": "palabrasExcluidas",
               "type": "string",
-              "value": "cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri"
+              "value": "cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri,rompope,mezcal,carajillo,baileys,kahlua,amaretto,licor de"
             },
             {
               "id": "cb_campanaReservaTexto",
@@ -184,7 +184,7 @@
               "id": "cb_campanaPedidoMensaje",
               "name": "campanaPedidoMensaje",
               "type": "string",
-              "value": "¡Hola! Bienvenido a Q'Taco 🌮 ¡Gracias por escribirnos por la promo de las tortas mexicanas! Tenemos opciones sin queso por Bs 15 y con queso por Bs 20 (ambas incluyen nuestra salsa mexicana especial). Puedes hacer tu pedido para recoger en el local o por delivery tocando el botón de abajo"
+              "value": "¡Hola! Bienvenido a Q'Taco 🌮 ¡Gracias por escribirnos por la promo de las tortas mexicanas! Tenemos opciones sin queso por Bs 15 y con queso por Bs 20 (ambas incluyen nuestra salsa mexicana especial). Puedes elegir entre las variedades disponibles y hacer tu pedido para recoger en el local o envío por delivery tocando el botón de abajo."
             },
             {
               "id": "cb_areasSinDelivery",
