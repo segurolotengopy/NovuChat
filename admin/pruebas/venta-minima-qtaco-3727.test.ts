@@ -1,7 +1,7 @@
 /**
  * Flujo de Q'Taco para el numero 3727 (envio directo por Graph), workflow NUEVO y SEPARADO del vivo.
  * Lee el JSON versionado y comprueba lo que no puede fallar: nada compartido con el vivo (ruta de entrada y del carrito),
- * credenciales propias, sin ids reales, plantillas por lineas vacias y el constructor al dia.
+ * credenciales propias, sin ids reales, plantillas por lineas ACTIVAS (06/11/2026) y el constructor al dia.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -56,10 +56,14 @@ describe("Q'Taco 3727: workflow nuevo, separado del vivo", () => {
     for (const n of ['Obtener URL del medio', 'Descargar medio']) expect(nodo(NUEVO, n).credentials.whatsAppApi.name, n).toBe('WhatsApp QTaco 3727 (envio)');
     expect(nodo(NUEVO, 'Carrito del catálogo').credentials.httpHeaderAuth.name).toBe('NovuChat ingesta (cliente11)');
   });
-  it('plantillasPedidoLineas vacia: todo sale por pedido_registrado', () => {
+  it('plantillasPedidoLineas activas (06/11/2026): l2/l4/l6 aprobadas en la WABA del 3727; la plantilla antigua sigue como respaldo', () => {
     const cb = nodo(NUEVO, 'Config base').parameters.assignments.assignments as J[];
-    expect(cb.find((a) => a.name === 'plantillasPedidoLineas')?.value).toBe('');
+    expect(cb.find((a) => a.name === 'plantillasPedidoLineas')?.value).toBe('2:pedido_registrado_l2,4:pedido_registrado_l4,6:pedido_registrado_l6');
+    expect(cb.find((a) => a.name === 'idiomaPlantillaPedidoLineas')?.value).toBe('es');
     expect(cb.find((a) => a.name === 'plantillaPedido')?.value).toBe('pedido_registrado');
+    // El flujo VIVO de Q'Taco (qtaco.json) NO cambia: sigue con la clave vacia.
+    const vivo = nodo(VIVO, 'Config base').parameters.assignments.assignments as J[];
+    expect(vivo.find((a) => a.name === 'plantillasPedidoLineas')?.value).toBe('');
   });
   it('sin disparador de WhatsApp ni suscripciones (prohibicion 7)', () => {
     expect(texto).not.toMatch(/whatsAppTrigger|subscribed_apps|subscriptions/);
