@@ -98,6 +98,9 @@ const deBaseDeReglas = {
   areasExcluidas: vmLista(base.areasExcluidas),
   // Solo de «Config base» (como `areasExcluidas`): ni el panel ni la consola la tocan. Ausente = sin lista.
   palabrasExcluidas: vmLista(base.palabrasExcluidas),
+  // Campaña de solo reserva (dato del negocio, solo de «Config base»): el texto exacto del anuncio y la respuesta. Ver `prSoloReserva`.
+  campanaReservaTexto: vmLinea(marcador(base.campanaReservaTexto), 500),
+  campanaReservaMensaje: vmLinea(marcador(base.campanaReservaMensaje), 900),
   areasSinDelivery: vmLista(base.areasSinDelivery),
   zonasReserva: vmLista(base.zonasReserva),
   horario: horarioBase,

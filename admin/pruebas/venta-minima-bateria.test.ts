@@ -460,7 +460,7 @@ describe('evaluarEsperado detecta cada tipo de incumplimiento (y no acusa a lo q
     expect(fallas({ botonesNo: ['p|confirmar'] })).toMatch(/no debía haber el botón/);
     expect(fallas({ titulos: ['Cambiar algo'] })).toMatch(/esperaba un botón con título/);
     expect(fallas({ titulosNo: ['Confirmar pedido'] })).toMatch(/no debía haber un botón/);
-    expect(B.evaluarEsperado({ botones: ['m|reserva'] }, resultado({ mensajes: [mensaje(['Menú'], [], [{ id: 'm|reserva', title: 'Reservar' }])] }))).toEqual([]);
+    expect(B.evaluarEsperado({ botones: ['m|reserva'] }, resultado({ mensajes: [mensaje(['Volver a inicio'], [], [{ id: 'm|reserva', title: 'Reservar' }])] }))).toEqual([]);
   });
   it('estado: escalar, regex, vacío, existe, longitud, contiene, y «igual que antes»', () => {
     expect(fallas({ estado: { paso: 'pedido' } })).toMatch(/estado\.paso: vale «pedido_confirmar» y se esperaba «pedido»/);

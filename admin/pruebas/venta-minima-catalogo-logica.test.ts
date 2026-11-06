@@ -140,7 +140,8 @@ function turno(m: Mundo, entrada: { mensaje: J; wamid?: string; phoneId?: string
   }
   if (!carga.length) return { ...vacio, parada: 'Carga de entrada' };
   refs['Carga de entrada'] = carga[0]!;
-  refs['Config base'] = { ...configBase(QTACO), ...m.config };
+  // 06/11: Q'Taco ya no excluye áreas; estas pruebas conservan las anteriores para seguir cubriendo la barrera por área.
+  refs['Config base'] = { ...configBase(QTACO), areasExcluidas: 'cocteleria,cervezas,postres', ...m.config };
   // El `leer` de la sesión viaja en la respuesta de configuración (con el id del mensaje: de ahí sale el repetido).
   const idMsg = String(((carga[0]!['messages'] as J[] | undefined) ?? [])[0]?.['id'] ?? '');
   const conSesion = panelResp['statusCode'] === 200 ? { ...panelResp, body: { ...(panelResp['body'] as J), ...leerSesion(m.sesion, CLIENTE, idMsg, `e${m.n}`) } } : panelResp;
@@ -178,7 +179,7 @@ describe('la carta como enlace (el enlace llega en la respuesta de `Traer config
     const t = turno(m, { mensaje: texto('quiero ver la carta') }, conEnlace(URL_CATALOGO));
     expect(mensajes(t)).toEqual([{
       tipo: 'enlace', catalogo: true,
-      cuerpo: '¡Con gusto! Toca «Ver la carta», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «menú».',
+      cuerpo: '¡Con gusto! Toca «Ver la carta», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «inicio».',
       botones: [{ id: '', title: 'Ver la carta' }], url: URL_CATALOGO,
     }]);
     expect(estadoDe(m)['paso']).toBe('pedido');
