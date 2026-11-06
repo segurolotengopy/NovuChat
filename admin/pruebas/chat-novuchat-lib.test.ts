@@ -1292,7 +1292,7 @@ describe('aplicar el turno a la ficha y armar el prospecto de la hoja', () => {
 const CONSTRUIR = (await import(/* @vite-ignore */ join(CARPETA, 'construir.mjs'))) as {
   CONFIG_BASE: J; cargarDatos: (a: string, dir?: string) => J; validarDatos: (d: J, a: string) => void; armarTenant: (p: unknown, d: J, a: string) => string; inyectar: (f: J, marca: string, nombre: string, valor: unknown) => void;
   guardias: (entrada: string, flujo: J, datos?: J) => string[]; construir: (o?: J) => { resultado: J[]; huerfanos: string[] }; salidaDe: (a: string) => string; huerfanos: (d: string, dd: string) => string[];
-  anfitrionPermitido: (n: string, u: string) => boolean; MARCA_DATOS: string;
+  anfitrionPermitido: (n: string, u: string) => boolean; MARCA_DATOS: string; sinComentarios: (t: string, modo?: string) => string;
 };
 
 describe('los datos de NovuChat (admin/scripts/datos/chat-novuchat/)', () => {
@@ -1478,14 +1478,24 @@ describe('guardias de --verificar', () => {
     for (const mut of ["SS_CONFIG = {};", "SS_CONFIG.espacio = 'x';", "ssEspacio = () => 'x';", "ssFoo.bar = 1;", "SS_CONFIG['espacio'] = 'x';", "Object.assign(SS_CONFIG, { espacio: 'x' });", "Object.defineProperty(SS_CONFIG, 'espacio', { value: 'x' });", "const y = SS_CONFIG[k];", "ssFoo++;", "--ssFoo;", "[ssFoo] = [1];", "({ a: ssFoo } = x);", "[ssFoo, b] = [f, 1];", "[a, ssFoo] = [1, f];", "({ ssFoo, b } = x);", "[a, [ssFoo]] = [1, [f]];", "ssFoo &&= f;", "ssFoo ||= f;", "ssFoo ??= f;", "ssFoo **= 2;", "ssFoo <<= 1;", "ssFoo >>= 1;", "ssFoo >>>= 1;", "SS_CONFIG.espacio ??= 'x';", "for (ssFoo of xs) {}", "for (const ssFoo in o) {}", "for (SS_CONFIG of xs) {}", "const s = '/*'; ssFoo = f; const u = '*/';", "const s = `/*`; ssFoo = f; const u = `*/`;", "Object.defineProperties(SS_CONFIG, {});", "Reflect.set(SS_CONFIG, 'espacio', 'x');", "Reflect.defineProperty(SS_CONFIG, 'espacio', {});", "delete SS_CONFIG.espacio;", "ssFoo.a.b = 1;", "ssFoo[a[0]] = 1;", "const o = {a:1}\n/ 2 + \"/\"; const s = \"/*\"; ssFoo = f; const z = \"*/\";", "x++ / 2 + \"/\"; const s = \"/*\"; ssFoo = f; const z = \"*/\";", "x-- / 2 + \"/\"; const s = \"/*\"; ssFoo = f; const z = \"*/\";", "o.in / 2 + '/'; const s = '/*'; ssFoo = f; const z = '*/';", "x = a++ / 2; const s = \"x\"; /* */ const t = '/'; const v = '/*'; ssFoo = f; const w = '*/';", "const a = `${`/*`}`; ssFoo = () => true; const b = `${`*/`}`;", "function g(s){ return /'/.test(s); } const a = '/*'; ssFoo = () => true; const b = '*/';", "const t = typeof /\"/; const a = '/*'; ssFoo = () => true; const b = '*/';", "function g(s){ return /a\\/*/.test(s); } ssFoo = () => true; /* */", "if (x) /'/.test(s); const a = '/*'; ssFoo = () => true; const b = '*/';", "(ssFoo) = () => true;", "((ssFoo)) = f;", "[(ssFoo)] = [f];", "(ssFoo) ||= f;", "(SS_CONFIG).espacio = 'x';", "for ([a, ssFoo] of xs) {}", "for ({ x: ssFoo } of xs) {}", "\\u0073sFoo = f;", "ssFo\\u006f = f;"]) {
       const f = prod();
       f['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += '\n' + mut;
-      expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(/«Cerrar turno» (reasigna o muta|reasigna un ayudante|incrementa o decrementa|accede a SS_CONFIG|muta SS_CONFIG|usa un ayudante|borra un ayudante|escribe un ayudante|usa eval)/);
+      expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(/«Cerrar turno» (reasigna o muta|reasigna un ayudante|incrementa o decrementa|accede a SS_CONFIG|muta SS_CONFIG|usa un ayudante|borra un ayudante)/);
     }
     // eval, Function, .constructor y prototipos: cada uno con SU texto de regla (no basta cualquier hallazgo)
-    for (const [mut, texto] of [["eval('x');", /usa eval/], ["(eval)(String.fromCharCode(120));", /usa eval/], ["eval (x);", /usa eval/], ["const e = eval; e('x');", /usa eval/], ["e\\u{76}al('x');", /usa eval/], ["const F = Function('return 1');", /usa eval/], ["new Function('a', 'return a');", /usa eval/], ["const c = ({}).constructor.constructor;", /usa eval/],
-      ["RegExp.prototype.test = () => true;", /contamina un prototipo/], ["String.prototype.trim ||= f;", /contamina un prototipo/], ["x.__proto__ = {};", /contamina un prototipo/], ["Object.defineProperty(RegExp.prototype, 'test', { value: f });", /contamina un prototipo/], ["Object.setPrototypeOf(SS_CONFIG, null);", /usa setPrototypeOf/]]) {
+    for (const [mut, texto] of [["eval('x');", /usa eval/], ["const o = {a:1}\n/ 2; const r = /\\/*/; eval(atob(\"x\")); const s = \"*/\";", /usa eval/], ["(eval)(String.fromCharCode(120));", /usa eval/], ["eval (x);", /usa eval/], ["const e = eval; e('x');", /usa eval/], ["e\\u{76}al('x');", /usa eval/], ["const F = Function('return 1');", /usa eval/], ["new Function('a', 'return a');", /usa eval/], ["const c = ({}).constructor.constructor;", /usa eval/],
+      ["RegExp.prototype.test = () => true;", /contamina un prototipo/], ["String.prototype.trim ||= f;", /contamina un prototipo/], ["x.__proto__ = {};", /contamina un prototipo/], ["Object.defineProperty(RegExp.prototype, 'test', { value: f });", /contamina un prototipo/], ["Object.setPrototypeOf(SS_CONFIG, null);", /usa setPrototypeOf/], ["Object.getPrototypeOf(x);", /getPrototypeOf/], ["Object.assign(RegExp.prototype, { test: f });", /contamina un prototipo/], ["Reflect.set(RegExp.prototype, 'test', f);", /contamina un prototipo/], ["Reflect.defineProperty(String.prototype, 'trim', {});", /contamina un prototipo/], ["const P = RegExp.prototype; P.test = f;", /contamina un prototipo/]]) {
       const f = prod();
       f['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += '\n' + mut;
       expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(texto);
+    }
+    // el tokenizador: en estos casos la lectura «todo / ambiguo es división» deja ver la reasignación que la lectura por contexto esconde
+    for (const x of ['const o = {a:1}\n/ 2 + "/"; const s = "/*"; ssFoo = f; const z = "*/";', 'x++ / 2 + "/"; const s = "/*"; ssFoo = f; const z = "*/";', 'x-- / 2 + "/"; const s = "/*"; ssFoo = f; const z = "*/";', "o.in / 2 + '/'; const s = '/*'; ssFoo = f; const z = '*/';", "x = a++ / 2; const s = \"x\"; /* */ const t = '/'; const v = '/*'; ssFoo = f; const w = '*/';"]) {
+      expect(CONSTRUIR.sinComentarios(x, 'division'), x).toContain('ssFoo = f');
+    }
+    // declarar de nuevo un ss* escondido por la lectura equivocada: se cuenta el máximo de las tres lecturas
+    for (const x of ['x++ / 2 + "/"; const s = "/*"; function ssEspacio(){return true} const z = "*/";', 'const o = {a:1}\n/ 2 + "/"; const s = "/*"; function ssEspacio(){return true} const z = "*/";']) {
+      const g = prod();
+      g['nodes'].find((n: J) => n.name === 'Soltar mensajes').parameters.jsCode += '\n' + x;
+      expect(CONSTRUIR.guardias('trigger', g, DATOS_CRM).join(' '), x).toMatch(/«Soltar mensajes» declara ssEspacio 2 veces/);
     }
     // un comentario o una comparación no son una mutación (la lectura cruda, red adicional, SÍ marcaría un comentario que escriba «ssX = »: falso positivo aceptado, el código real da 0)
     const limpio = prod();

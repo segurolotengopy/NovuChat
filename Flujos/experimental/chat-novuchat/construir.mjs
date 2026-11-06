@@ -650,8 +650,19 @@ export function guardias(entrada, flujo, datos = {}) {
       if (/function (cn|ch)(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig)\(/.test(js)) h.push(`el nodo «${n.name}» trae una copia propia de los ayudantes de sesión`);
       if (usa || define) {
         // En JS gana la ÚLTIMA declaración: traer el módulo y luego REDEFINIR una función (`function ssDesdeAutorizado() { return true; }`) anularía el aislamiento. Cada `ss*` y SS_CONFIG, UNA vez por nodo.
+        // Las declaraciones del módulo común y del registro, tal cual (leídos solos, sin ambigüedad), más el MÁXIMO por nombre del resto del nodo entre las tres lecturas del tokenizador (auto, todo «/» regex, todo «/» división): una lectura equivocada no puede esconder una redeclaración.
+        const contar = (lec) => { const una = new Map(); for (const m of lec.matchAll(/\b(?:(?:async\s+)?function\s*\*?|const|let|var)\s*(ss[A-Z]\w*|SS_CONFIG)\b/g)) una.set(m[1], (una.get(m[1]) || 0) + 1); return una; };
         const cuenta = new Map();
-        for (const m of codigo.matchAll(/\b(?:(?:async\s+)?function\s*\*?|const|let|var)\s*(ss[A-Z]\w*|SS_CONFIG)\b/g)) cuenta.set(m[1], (cuenta.get(m[1]) || 0) + 1);
+        let resto = js;
+        for (const fuente of [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean)) {
+          const f = fuente.trimEnd();
+          if (!resto.includes(f)) continue;
+          resto = resto.split(f).join('');
+          for (const [nombre, veces] of contar(sinComentarios(f))) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
+        }
+        const maximo = new Map();
+        for (const modo of ['auto', 'regex', 'division']) for (const [nombre, veces] of contar(sinComentarios(resto, modo))) maximo.set(nombre, Math.max(maximo.get(nombre) || 0, veces));
+        for (const [nombre, veces] of maximo) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
         for (const [nombre, veces] of cuenta) if (veces !== 1) h.push(`el nodo «${n.name}» declara ${nombre} ${veces} veces: cada ayudante de sesión y SS_CONFIG se declaran UNA sola vez por nodo (la última declaración gana y anularía el módulo)`);
         if (!cuenta.has('SS_CONFIG')) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
       }
@@ -667,9 +678,10 @@ export function guardias(entrada, flujo, datos = {}) {
         [/(\+\+|--)\s*ss[A-Z]|ss[A-Z]\w*\s*(\+\+|--)/, 'incrementa o decrementa un ayudante de sesión (ss*)'],
         [/\bss[A-Z]\w*[^\[\]{}();]*[\]}](?:\s*[\]}])*\s*=(?![=>])/, 'reasigna un ayudante de sesión (ss*) por desestructuración'],
         [/\bfor\s*(?:await\s*)?\([^;)]*?\b(?:ss[A-Z]|SS_CONFIG)[^;)]*?\b(?:of|in)\b/, 'usa un ayudante de sesión (ss*) o SS_CONFIG como variable de un for…of / for…in'],
-        [/(?<![\p{L}\p{N}_$])(?:eval|Function)(?![\p{L}\p{N}_$])|\.\s*constructor(?![\p{L}\p{N}_$])/u, 'usa eval, Function o .constructor en cualquier posición (cubre eval(…), (eval)(…), alias de eval, Function(…), new Function y X.constructor; no ve otros caminos hacia Function)', 'soloCodigo'],
-        [/\.\s*prototype(?:\s*\.\s*\w+)*\s*(?:\*\*|<<|>>>?|&&|\|\||\?\?|[-+*\/%&|^])?=(?![=>])|__proto__|\bdefinePropert(?:y|ies)\s*\(\s*[\w$.]*prototype|\bReflect\s*\.\s*(?:set|defineProperty)\s*\(\s*[\w$.]*prototype/, 'contamina un prototipo (asigna a .prototype, __proto__, defineProperty sobre un prototype)', 'soloCodigo'],
-        [/\bsetPrototypeOf\b/, 'usa setPrototypeOf', 'soloCodigo'],
+        [/(?<![\p{L}\p{N}_$])eval(?![\p{L}\p{N}_$])|\.\s*constructor(?![\p{L}\p{N}_$])/u, 'usa eval o .constructor en cualquier posición (cubre eval(…), (eval)(…), alias de eval y X.constructor)'],
+        [/(?<![\p{L}\p{N}_$])Function(?![\p{L}\p{N}_$])/u, 'usa Function en cualquier posición (cubre Function(…) y new Function; no ve otros caminos hacia Function); usa eval aparte', 'soloCodigo'],
+        [/\.\s*prototype(?:\s*\.\s*\w+)*\s*(?:\*\*|<<|>>>?|&&|\|\||\?\?|[-+*\/%&|^])?=(?![=>])|=\s*[\w$.]*\.prototype\b(?!\s*\.)|__proto__|\bdefinePropert(?:y|ies)\s*\(\s*[\w$.]*prototype|\bReflect\s*\.\s*(?:set|defineProperty)\s*\(\s*[\w$.]*prototype|\bObject\s*\.\s*assign\s*\(\s*[\w$.]*prototype/, 'contamina un prototipo (asigna a .prototype, asigna un .prototype a una variable, __proto__, o defineProperty/Reflect/Object.assign sobre un prototype)'],
+        [/\b(?:set|get)PrototypeOf\b/, 'usa setPrototypeOf o getPrototypeOf'],
         [/\bdelete\s+(?:ss[A-Z]|SS_CONFIG)/, 'borra un ayudante de sesión (ss*) o SS_CONFIG con delete'],
         [/SS_CONFIG\s*\[/, 'accede a SS_CONFIG por índice'],
         [/(?:Object\.(?:assign|defineProperty|defineProperties)|Reflect\.(?:set|defineProperty|deleteProperty))\(\s*SS_CONFIG/, 'muta SS_CONFIG con Object.assign/defineProperty/defineProperties o con Reflect'],
@@ -682,7 +694,7 @@ export function guardias(entrada, flujo, datos = {}) {
         for (const [k, lectura] of [sinComentarios(js, 'auto'), sinComentarios(js, 'regex'), sinComentarios(js, 'division'), js].entries()) {
           let resto = lectura.replace(/\\u(?:\{([0-9a-fA-F]+)\}|([0-9a-fA-F]{4}))/g, (_, x, y) => { const cp = parseInt(x || y, 16); return cp <= 0x10ffff ? String.fromCodePoint(cp) : ''; });  // \u en TODO el texto: `e\u{76}al`, `ssA`
           // «(ssX) = f», «((ssX))», «[(ssX)] = …»: se quitan los paréntesis (y espacios) que envuelven al nombre antes de aplicar las reglas
-          for (let k = 0; k < 8; k++) resto = resto.replace(new RegExp('\\(\\s*((?:ss[A-Z]\\w*|SS_CONFIG)' + MIEMBROS + ')\\s*\\)', 'g'), ' $1 ');
+          for (let vuelta = 0; vuelta < 8; vuelta++) resto = resto.replace(new RegExp('\\(\\s*((?:ss[A-Z]\\w*|SS_CONFIG)' + MIEMBROS + ')\\s*\\)', 'g'), ' $1 ');
           for (const [re, que, ambito] of REGLAS) if (!(k === 3 && ambito === 'soloCodigo') && re.test(resto)) hallazgos.add(`el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
         }
         for (const x of hallazgos) h.push(x);
