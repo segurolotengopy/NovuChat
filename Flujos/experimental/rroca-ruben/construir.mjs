@@ -92,6 +92,7 @@ export function hallazgosDeDestino(n) {
   if (!ANFITRIONES.includes(host)) h.push(`ensayo: «${n.name}» llama a un destino que no es de la lista permitida (${host})`);
   if (host === 'graph.facebook.com' && cred !== NOMBRE_GRAPH_DEL_DEMO_A) h.push(`ensayo: «${n.name}» llama a graph.facebook.com sin la credencial de Graph del Demo A (con la de la ingesta le mandaría su token a Meta: la trampa del 15/09)`);
   if (cred === NOMBRE_INGESTA_DEL_DEMO_A && host !== ANFITRION_CONSOLA) h.push(`ensayo: «${n.name}» lleva la credencial de la ingesta fuera de su host (${host})`);
+  if (cred === NOMBRE_GRAPH_DEL_DEMO_A && host !== 'graph.facebook.com') h.push(`ensayo: «${n.name}» lleva la credencial de Graph fuera de graph.facebook.com (${host}): el token de Meta se iría a otro destino`);
   return h;
 }
 /** Lo que el ensayo no tiene: el receptor y la «Entrada de prueba» (su entrada es el Trigger del Demo A). */

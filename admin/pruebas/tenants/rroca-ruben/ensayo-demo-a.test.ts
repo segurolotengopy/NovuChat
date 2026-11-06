@@ -244,6 +244,10 @@ describe('credenciales: solo las del Demo A, por nombre', () => {
       '=//graph.facebook.com/x', '=https://x' + String.fromCharCode(64) + 'graph.facebook.com/x', '=https://graph.facebook.com.evil.com/x', '={{ $json.url }}', '=https://{{ $json.host }}/x', '=https://graph.{{ $json.d }}/x', '=https://graph.facebook.com{{ ".evil.com" }}/', '=https://graph.facebook.com{{""}}.evil.com/']) {
       expect(con('Enviar aviso', malo), malo).toMatch(/destino no es fijo|lista permitida|sin la credencial de Graph/);
     }
+    // La credencial de Graph (el token de Meta) nunca sale de graph.facebook.com (ni hacia la consola ni hacia Google):
+    for (const destino of ['https://us-east1-novuchat-demo.cloudfunctions.net/x', 'https://generativelanguage.googleapis.com/x']) {
+      expect(con('Enviar aviso', destino), destino).toMatch(/credencial de Graph fuera de graph\.facebook\.com/);
+    }
     // La credencial de la ingesta nunca sale de su host:
     const f = clon(ENSAYO); nodo(f, 'Traer configuración')['parameters']['url'] = 'https://graph.facebook.com/x';
     expect(hallazgos(f)).toMatch(/fuera de su host|sin la credencial de Graph/);
