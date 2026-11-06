@@ -1,11 +1,11 @@
 {
-  "_fuente": "Adenda de campañas Meta Ads de Q'Taco (producción), partes 3 y 1: el texto que el anuncio deja prellenado en WhatsApp. Es DATO del negocio (módulo Campañas de la consola). El texto tiene que ser EXACTAMENTE el del anuncio: el flujo reconoce la campaña por él.",
+  "_fuente": "Adenda de campañas Meta Ads de Q'Taco (producción), partes 3 y 1: el texto que el anuncio deja prellenado en WhatsApp y los titulares que se leen en GRANDE en la imagen del anuncio (el flujo reconoce la campaña por el texto y también por la imagen). Es DATO del negocio (módulo Campañas de la consola). El texto tiene que ser EXACTAMENTE el del anuncio: el flujo reconoce la campaña por él.",
   "_uso": "node admin/scripts/datos/qtaco/cargar-campanas.mjs --proyecto <id> [--respaldo <ruta> --aplicar]   (seco por omisión; --aplicar lo corre el coordinador con la autorización de Andres)",
   "_vigencia": "inicio = el día de la carga (La Paz); fin = inicio + 365 días (366 días inclusive: el servidor no admite campaña sin fin ni de más de 366). Hay que renovarlas antes del fin.",
-  "_productos": "Las campañas del servidor admiten UN solo `productoId` (no dos). La A no lleva ninguno: el botón del anuncio abre la sección Promos, donde el cliente elige entre las dos variedades. La B tampoco: es una reserva de mesa.",
+  "_productos": "Las campañas del servidor admiten UN solo `productoId` (no dos). La A no lleva ninguno: el botón del anuncio abre la sección Promos, donde el cliente elige entre las dos variedades. La B tampoco: es una reserva de mesa. Los titulares no llevan montos (el servidor los rechaza): las insignias de precio de las imágenes no son titulares.",
   "tenant": "qtaco",
   "campanas": [
-    { "id": "tortas-mexicanas", "texto": "Hola, vi el anuncio de las tortas mexicanas y quiero hacer un pedido." },
-    { "id": "jueves-de-mas-2", "texto": "Hola, vi la promoción Jueves de +2 y quiero hacer una reserva." }
+    { "id": "tortas-mexicanas", "texto": "Hola, vi el anuncio de las tortas mexicanas y quiero hacer un pedido.", "titulares": ["Tortas Mexicanas", "Mañanas Tortas Mexicanas"] },
+    { "id": "jueves-de-mas-2", "texto": "Hola, vi la promoción Jueves de +2 y quiero hacer una reserva.", "titulares": ["Jueves de +2"] }
   ]
 }
