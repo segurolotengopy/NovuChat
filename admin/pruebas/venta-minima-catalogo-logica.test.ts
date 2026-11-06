@@ -140,8 +140,7 @@ function turno(m: Mundo, entrada: { mensaje: J; wamid?: string; phoneId?: string
   }
   if (!carga.length) return { ...vacio, parada: 'Carga de entrada' };
   refs['Carga de entrada'] = carga[0]!;
-  // 06/11: Q'Taco ya no excluye áreas; estas pruebas conservan las anteriores para seguir cubriendo la barrera por área.
-  refs['Config base'] = { ...configBase(QTACO), areasExcluidas: 'cocteleria,cervezas,postres', ...m.config };
+  refs['Config base'] = { ...configBase(QTACO), ...m.config };
   // El `leer` de la sesión viaja en la respuesta de configuración (con el id del mensaje: de ahí sale el repetido).
   const idMsg = String(((carga[0]!['messages'] as J[] | undefined) ?? [])[0]?.['id'] ?? '');
   const conSesion = panelResp['statusCode'] === 200 ? { ...panelResp, body: { ...(panelResp['body'] as J), ...leerSesion(m.sesion, CLIENTE, idMsg, `e${m.n}`) } } : panelResp;
@@ -364,7 +363,7 @@ describe('el carrito que vuelve de la página', () => {
   });
 
   it('un ítem de un área excluida (cocteleria, cervezas, postres) NO se vende: se nombra y el resto sigue', () => {
-    const m = crear();
+    const m = crear({ areasExcluidas: 'cocteleria,cervezas,postres' }); // el área postres la cubre la barrera genérica; Q'Taco la ofrece (06/11)
     const t = carrito(m, { items: [
       { id: 'nachos', nombre: 'Nachos Supremos', cantidad: 1, precio: 58, subtotal: 58 },
       { id: 'michelada', nombre: 'Michelada', cantidad: 2, precio: 35, subtotal: 70 },

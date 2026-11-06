@@ -22,7 +22,7 @@ const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [
   'prNorm', 'prLinea', 'prVigente', 'prCampanaDelTexto', 'prFicha', 'prDescripcion', 'prMoneda',
-  'prPrecioLegible', 'prBotones', 'prTexto', 'prSoloReserva',
+  'prPrecioLegible', 'prBotones', 'prTexto', 'prSoloReserva', 'prPedidoConMensaje',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -503,5 +503,27 @@ describe('prSoloReserva: campaña de solo reserva (dato del negocio)', () => {
     const r = L.prSoloReserva({ id: 'j', texto: T.toUpperCase() }, cfg);
     expect(r.cuerpo).toBe('Mensaje del negocio.');
     expect(r.botones).toEqual([{ id: 'm|reserva', title: 'Reservar mesa' }]);
+  });
+});
+
+describe('prPedidoConMensaje: campaña de pedido con mensaje del negocio (dato del negocio)', () => {
+  const T = 'Hola, vi el anuncio de las tortas mexicanas y quiero hacer un pedido.';
+  const cfg = { pedidosActivo: true, reservasActivo: false, campanaPedidoTexto: T, campanaPedidoMensaje: 'Mensaje del negocio.' };
+  it('NEGANDO: sin dato, otro texto, sin pedidos activos (o no estricto), sin mensaje o sin campaña: null', () => {
+    const c = { id: 't', texto: T };
+    expect(L.prPedidoConMensaje(c, { ...cfg, campanaPedidoTexto: '' })).toBeNull();
+    expect(L.prPedidoConMensaje({ id: 't', texto: 'Hola, vi el anuncio de las tortas mexicanas' }, cfg)).toBeNull();
+    expect(L.prPedidoConMensaje(c, { ...cfg, pedidosActivo: false })).toBeNull();
+    expect(L.prPedidoConMensaje(c, { ...cfg, pedidosActivo: 'true' })).toBeNull();
+    expect(L.prPedidoConMensaje(c, { ...cfg, campanaPedidoMensaje: '  ' })).toBeNull();
+    expect(L.prPedidoConMensaje(null, cfg)).toBeNull();
+    expect(L.prPedidoConMensaje({ id: 't' }, cfg)).toBeNull();
+    expect(L.prPedidoConMensaje(c, { ...cfg, campanaPedidoTexto: undefined })).toBeNull();
+  });
+  it('con el texto igual (normalizado): el mensaje del negocio y SOLO «Hacer un pedido» (m|pedido); no depende de reservasActivo', () => {
+    const r = L.prPedidoConMensaje({ id: 't', texto: T.toUpperCase() }, cfg);
+    expect(r.cuerpo).toBe('Mensaje del negocio.');
+    expect(r.botones).toEqual([{ id: 'm|pedido', title: 'Hacer un pedido' }]);
+    expect(L.prPedidoConMensaje({ id: 't', texto: T }, { ...cfg, reservasActivo: true }).botones).toHaveLength(1);
   });
 });
