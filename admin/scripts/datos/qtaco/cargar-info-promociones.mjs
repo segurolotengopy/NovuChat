@@ -24,16 +24,23 @@
  * RUNBOOK. Los precios y la vigencia del bloque son hechos fijos: si cambia un precio o termina la promoción, correr `--revertir --respaldo` o publicar una
  * versión nueva del bloque (otro marcador, con otra fecha); mientras el marcador esté, el script no vuelve a escribir.
  *
+ * MODO REEMPLAZAR (`--reemplazar-con-archivo`). Cuando lo existente más el bloque no cabe en el tope, el texto condensado y aprobado por Andres
+ * (`instrucciones-qtaco.txt`, dato versionado, texto de negocio) REEMPLAZA a `instruccionesExtra`. Es la única vía en que este script sobrescribe, y por
+ * eso: el seco imprime el hash del texto ACTUAL y `--aplicar` exige `--esperar-hash <ese hash>` (si el campo cambió entretanto, no escribe); el texto nuevo
+ * tiene que caber en el tope y pasar la capa 1 (`verificarPatrones`) y `afirmaSinRespaldo`; el respaldo guarda el texto previo COMPLETO (0600).
+ * La reversa lo restaura si el campo sigue idéntico a lo escrito.
+ *
  * REVERSA (`--revertir --respaldo`): restaura el `instruccionesExtra` previo SOLO si el campo sigue idéntico a lo que escribió este script.
  *
  * SALIDA. 0 correcto (seco, nada que hacer, o escritura aprobada por el servidor); 1 rechazo del comercio, de los datos o del servidor (o sin veredicto
  * a tiempo); 2 uso, salvaguarda o respaldo; 3 error de ejecución. COSTO: seco, lecturas; `--aplicar`, 1 escritura (más las del servidor). 0 mensajes por conversación.
  */
 import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { comprobarProyecto, comprobarRespaldo, guardarRespaldo } from '../../plataforma/aplicar-consola-oculta.mjs';
 
-const { hashCorto, verificarPatrones, TOPE_INSTRUCCIONES } = await import('../../../functions/src/central/asistente/comportamiento.ts');
+const { hashCorto, verificarPatrones, afirmaSinRespaldo, normalizar, TOPE_INSTRUCCIONES } = await import('../../../functions/src/central/asistente/comportamiento.ts');
 
 export const TENANT = 'qtaco';
 export const MARCADOR = 'Promociones vigentes al 06/11/2026:';
@@ -45,11 +52,14 @@ export const BLOQUE = `${MARCADOR} `
   + "el Q'Taco Dúo regular cuesta Bs 170; los jueves, por Bs 8 más, lleva 2 tacos extra (6 en total) y cuesta Bs 178 para 2 personas; se atiende con reserva de mesa.";
 export const ESPERA_REVISION_MS = 90_000;
 export const PAUSA_REVISION_MS = 2_000;
-const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion'];
-const BANDERAS = ['aplicar', 'revertir'];
+export const ARCHIVO_REEMPLAZO = join(dirname(fileURLToPath(import.meta.url)), 'instrucciones-qtaco.txt');
+const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion', 'esperar-hash'];
+const BANDERAS = ['aplicar', 'revertir', 'reemplazar-con-archivo'];
+const HASH = /^[0-9a-f]{16}$/;
 const SEPARADOR = '\n\n';
 
 export const USO = '  node admin/scripts/datos/qtaco/cargar-info-promociones.mjs --proyecto <id> [--respaldo <ruta> --aplicar] [--confirmo-produccion qtaco]\n'
+  + '  node admin/scripts/datos/qtaco/cargar-info-promociones.mjs --proyecto <id> --reemplazar-con-archivo [--esperar-hash <hash> --respaldo <ruta> --aplicar] [--confirmo-produccion qtaco]\n'
   + '  node admin/scripts/datos/qtaco/cargar-info-promociones.mjs --proyecto <id> --revertir --respaldo <ruta> [--aplicar] [--confirmo-produccion qtaco]';
 
 // ===========================================================================
@@ -99,6 +109,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   }
   const aplicar = banderas.includes('aplicar');
   const revertir = banderas.includes('revertir');
+  const reemplazar = banderas.includes('reemplazar-con-archivo');
   const { proyecto, respaldo } = valores;
   const confirmo = valores['confirmo-produccion'];
   if ('tenant' in valores && valores.tenant !== TENANT) problemas.push(`este script es SOLO del comercio «${TENANT}»: --tenant distinto, no se escribe nada`);
@@ -111,6 +122,11 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   } else if (proy.ok && proy.entorno === 'produccion' && aplicar) {
     problemas.push(`contra producción, --aplicar exige --confirmo-produccion ${TENANT}`);
   }
+  const esperarHash = valores['esperar-hash'];
+  if (esperarHash !== undefined && !HASH.test(esperarHash)) problemas.push('--esperar-hash tiene que ser de 16 hexadecimales en minúscula');
+  if (revertir && reemplazar) problemas.push('--revertir y --reemplazar-con-archivo no van juntos');
+  if (esperarHash !== undefined && !reemplazar) problemas.push('--esperar-hash solo se usa con --reemplazar-con-archivo');
+  if (reemplazar && aplicar && esperarHash === undefined) problemas.push('--reemplazar-con-archivo con --aplicar exige --esperar-hash <hash del texto actual, que imprime el seco>');
   if (revertir && respaldo === undefined) problemas.push('--revertir exige --respaldo <ruta>');
   if (!revertir && aplicar && respaldo === undefined) problemas.push('--aplicar exige --respaldo <ruta> (por omisión no hay respaldo)');
   let respaldoReal = null;
@@ -119,16 +135,16 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     if (r.ok) respaldoReal = respaldo; else problemas.push(r.motivo);
   }
   if (problemas.length) return { ok: false, problemas };
-  return { ok: true, cfg: { proyecto, entorno: proy.entorno, aplicar, revertir, respaldo: respaldoReal } };
+  return { ok: true, cfg: { proyecto, entorno: proy.entorno, aplicar, revertir, reemplazar, esperarHash: esperarHash ?? null, respaldo: respaldoReal } };
 }
 
 // ===========================================================================
 // RESPALDO
 // ===========================================================================
 /** Lo que se guarda: lo previo completo de los tres campos y lo que se escribió. Texto del negocio, sin secretos. */
-export function contenidoDelRespaldo({ entorno, previo, escrito }) {
+export function contenidoDelRespaldo({ entorno, previo, escrito, modo = 'agregar' }) {
   return {
-    version: 1, entorno, tenant: TENANT, creadoEn: new Date().toISOString(),
+    version: 1, modo, entorno, tenant: TENANT, creadoEn: new Date().toISOString(),
     previo: { presente: previo.presente, instruccionesExtra: previo.extra, instruccionesVigentes: previo.vigentes, revisionHash: previo.revisionHash },
     escrito: { instruccionesExtra: escrito, hash: hashCorto(escrito) },
   };
@@ -144,8 +160,10 @@ export function validarContenidoDelRespaldo(r) {
   if (typeof r.previo.presente !== 'boolean' || !cadenaOpcional(r.previo.instruccionesExtra) || !cadenaOpcional(r.previo.instruccionesVigentes)) return 'el respaldo trae un texto previo con forma inválida';
   if (r.previo.presente !== (r.previo.instruccionesExtra !== null)) return 'el respaldo es incoherente: presencia y texto previo no coinciden';
   const e = r.escrito.instruccionesExtra;
-  if (typeof e !== 'string' || !e.includes(MARCADOR) || e.length > TOPE_INSTRUCCIONES || r.escrito.hash !== hashCorto(e)) return 'el respaldo trae un texto escrito que no es el de este script';
-  if (r.previo.instruccionesExtra !== null && r.previo.instruccionesExtra.includes(MARCADOR)) return 'el respaldo es incoherente: el texto previo ya traía el marcador';
+  if (r.modo !== 'agregar' && r.modo !== 'reemplazar') return 'el respaldo no dice de qué modo es';
+  if (r.modo === 'reemplazar' && (!r.previo.presente || r.previo.instruccionesExtra === '')) return 'el respaldo de un reemplazo tiene que traer el texto previo completo';
+  if (typeof e !== 'string' || (r.modo === 'agregar' && !e.includes(MARCADOR)) || e === '' || e.length > TOPE_INSTRUCCIONES || r.escrito.hash !== hashCorto(e)) return 'el respaldo trae un texto escrito que no es el de este script';
+  if (r.modo === 'agregar' && r.previo.instruccionesExtra !== null && r.previo.instruccionesExtra.includes(MARCADOR)) return 'el respaldo es incoherente: el texto previo ya traía el marcador';
   return null;
 }
 
@@ -194,16 +212,17 @@ export async function ejecutar(cfg, deps) {
   if (cfg.revertir) {
     const lectura = leerRespaldoDeInfo(cfg.respaldo, cfg.entorno);
     if (!lectura.ok) { log(`\n  ✗ ${lectura.motivo}\n`); return 2; }
-    const { previo, escrito } = lectura.respaldo;
+    const { previo, escrito, modo } = lectura.respaldo;
     log(`\n  ${cfg.aplicar ? 'REVERTIR' : 'SECO (solo lecturas)'} · ${rotulo}\n`);
     const snap = await ref.get();
     if (!snap.exists) { log('  ✗ No existe config/negocio: nada que revertir.\n'); return 2; }
     const actual = texto(snap.get('instruccionesExtra'));
     if (actual !== escrito.instruccionesExtra) {
-      log(actual.includes(MARCADOR)
+      const cambiado = modo === 'reemplazar' || actual.includes(MARCADOR);
+      log(cambiado
         ? '  ✗ El texto de hoy ya no es el que escribió este script: alguien lo cambió después. Revertir pisaría ese cambio. No se escribe nada.\n'
         : '  ✓ El bloque ya no está en las instrucciones: nada que revertir.\n');
-      return actual.includes(MARCADOR) ? 2 : 0;
+      return cambiado ? 2 : 0;
     }
     log(`  restaura las instrucciones previas (${previo.presente ? `${previo.instruccionesExtra.length} caracteres` : 'el campo no existía'}) · quita ${escrito.instruccionesExtra.length - (previo.instruccionesExtra ?? '').length} caracteres`);
     if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar para revertir.\n'); return 0; }
@@ -222,6 +241,8 @@ export async function ejecutar(cfg, deps) {
   if (!snap.exists) { log(`\n  ✗ No existe config/negocio de «${TENANT}»: este script no lo crea.\n`); return 1; }
   const existente = texto(snap.get('instruccionesExtra'));
   log(`\n  ${cfg.aplicar ? 'APLICAR' : 'SECO (solo lecturas)'} · ${rotulo}\n`);
+
+  if (cfg.reemplazar) return reemplazar(cfg, deps, { snap, existente, ref, log, rotulo });
 
   if (existente.includes(MARCADOR)) {
     const rev = snap.get('instruccionesRevision');
@@ -259,6 +280,57 @@ export async function ejecutar(cfg, deps) {
   const hash = hashCorto(final);
   log(`  ✓ Escrito (hash ${hash}). Para deshacer: --revertir --respaldo ${cfg.respaldo}`);
 
+  return esperarVeredicto(ref, final, deps, log);
+}
+
+/** Lee el texto de reemplazo versionado (una sola vez un `\n` final se descarta). */
+export function leerTextoDeReemplazo(ruta = ARCHIVO_REEMPLAZO) {
+  return readFileSync(ruta, 'utf8').replace(/\n$/, '');
+}
+
+/** Los problemas del texto de reemplazo frente al servidor: tope, capa 1 y `afirmaSinRespaldo`. */
+export function problemasDelReemplazo(nuevo, otros = { ids: [], nombres: [] }) {
+  const p = problemasDelTexto(nuevo, otros);
+  if (nuevo.trim() === '') p.push('el texto de reemplazo está vacío');
+  if (afirmaSinRespaldo(normalizar(nuevo))) p.push('afirma algo sin respaldo (un pago o un estado que el flujo no puede respaldar)');
+  return p;
+}
+
+async function reemplazar(cfg, deps, { snap, existente, ref, log }) {
+  const nuevo = deps.textoNuevo ?? leerTextoDeReemplazo();
+  const hashActual = hashCorto(existente);
+  if (existente === nuevo) { log('  ✓ Las instrucciones ya son el texto versionado. Nada que hacer.\n'); return 0; }
+  log(`  MODO REEMPLAZAR · longitud actual: ${existente.length} · hash del actual: ${hashActual} · longitud del texto nuevo: ${nuevo.length} (tope ${TOPE_INSTRUCCIONES}) · hash del nuevo: ${hashCorto(nuevo)}`);
+  const problemas = problemasDelReemplazo(nuevo, await otrosComercios(deps.db));
+  if (problemas.length) { log(`  ✗ No se escribe nada:\n    - ${problemas.join('\n    - ')}\n`); return 1; }
+  log('  ✓ El texto nuevo cabe y pasa la capa 1 (patrones y afirmaciones sin respaldo); la capa 2 (modelo) solo se sabe al escribir.');
+  if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Para aplicar: --esperar-hash <hash del actual> --respaldo <ruta> --aplicar.\n'); return 0; }
+  if (cfg.esperarHash !== hashActual) { log('\n  ✗ El texto actual no es el que se esperaba (el hash no coincide): alguien lo cambió. Vuelva a correr el seco. No se escribe nada.\n'); return 1; }
+  try {
+    guardarRespaldo(cfg.respaldo, contenidoDelRespaldo({
+      entorno: cfg.entorno, escrito: nuevo, modo: 'reemplazar',
+      previo: {
+        presente: typeof snap.get('instruccionesExtra') === 'string',
+        extra: typeof snap.get('instruccionesExtra') === 'string' ? snap.get('instruccionesExtra') : null,
+        vigentes: typeof snap.get('instruccionesVigentes') === 'string' ? snap.get('instruccionesVigentes') : null,
+        revisionHash: snap.get('instruccionesRevision')?.hash ?? null,
+      },
+    }));
+  } catch (e) {
+    if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe un archivo en esa ruta de respaldo: un respaldo nunca se pisa; elija otro nombre. No se escribe nada.\n'); return 2; }
+    throw e;
+  }
+  log(`\n  Respaldo guardado y releído: ${cfg.respaldo}`);
+  try {
+    await ref.update({ instruccionesExtra: nuevo }, { lastUpdateTime: snap.updateTime });
+  } catch (e) { log(`  ✗ no se escribió (${e?.code ?? e?.name ?? 'desconocido'}): el documento cambió entre la lectura y la escritura, o hubo un error. Vuelva a correr el seco.\n`); return 3; }
+  log(`  ✓ Escrito (hash ${hashCorto(nuevo)}). Para deshacer: --revertir --respaldo ${cfg.respaldo}`);
+  return esperarVeredicto(ref, nuevo, deps, log);
+}
+
+/** Espera el veredicto del servidor sobre el texto escrito (hash) y lo reporta. 0 solo si aprobó. */
+async function esperarVeredicto(ref, final, deps, log) {
+  const hash = hashCorto(final);
   const espera = deps.esperaMs ?? ESPERA_REVISION_MS;
   const pausa = deps.pausaMs ?? PAUSA_REVISION_MS;
   let rev = null;

@@ -24,6 +24,7 @@ const mod = await import('../../../scripts/datos/qtaco/cargar-info-promociones.m
   ejecutar: (cfg: Record<string, unknown>, deps: Record<string, unknown>) => Promise<number>;
   textoFinal: (e: unknown) => string;
   problemasDelTexto: (t: string, o?: { ids: string[]; nombres: string[] }) => string[];
+  leerTextoDeReemplazo: () => string; problemasDelReemplazo: (t: string) => string[];
   MARCADOR: string; BLOQUE: string;
 };
 const { initializeApp, getApps } = await import('firebase-admin/app');
@@ -222,5 +223,88 @@ describe('cargar-info-promociones.mjs — lo que SÍ hace', () => {
     expect((await negocio())['instruccionesExtra']).toBe(mod.BLOQUE);
     expect(await mod.ejecutar({ entorno: 'emulador', aplicar: true, revertir: true, respaldo: ruta }, { db, FieldValue, log })).toBe(0);
     expect(Object.hasOwn(await negocio(), 'instruccionesExtra')).toBe(false);
+  });
+});
+
+describe('cargar-info-promociones.mjs — modo --reemplazar-con-archivo', () => {
+  const LARGO = 'Atiende con amabilidad y tono cálido. '.repeat(37).slice(0, 1419);
+  const nuevo = mod.leerTextoDeReemplazo();
+  const hash = (t: string): string => createHash('sha256').update(t, 'utf8').digest('hex').slice(0, 16);
+  const salida: string[] = [];
+  const log = (t: string): void => { salida.push(t); };
+  const cfg = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({ entorno: 'emulador', aplicar: true, revertir: false, reemplazar: true, esperarHash: hash(LARGO), respaldo: respaldo(), ...extra });
+  const deps = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({ db, FieldValue, log, esperaMs: 300, pausaMs: 50, ...extra });
+  function servidor(estado: 'aprobado' | 'rechazado', motivo = ''): () => void {
+    return db.doc(REF).onSnapshot((snap) => {
+      const extra = snap.get('instruccionesExtra') as string | undefined;
+      if (typeof extra !== 'string' || extra !== nuevo) return;
+      if ((snap.get('instruccionesRevision') as { hash?: string } | undefined)?.hash === hash(extra)) return;
+      void snap.ref.update({ instruccionesRevision: { estado, motivo, hash: hash(extra), capa: 'modelo', revisadoPor: 'simulado' }, ...(estado === 'aprobado' ? { instruccionesVigentes: extra } : {}) });
+    }, () => undefined);
+  }
+
+  it('el texto versionado cabe, pasa la capa 1 y no afirma nada sin respaldo; el seco imprime el hash del actual y no escribe', async () => {
+    expect(nuevo.length).toBeLessThanOrEqual(1500);
+    expect(mod.problemasDelReemplazo(nuevo)).toEqual([]);
+    await sembrar(LARGO);
+    const r = correr(['--reemplazar-con-archivo']);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toContain(`hash del actual: ${hash(LARGO)}`);
+    expect(r.salida).toMatch(/Seco: no se escribió nada/);
+    expect((await negocio())['instruccionesExtra']).toBe(LARGO);
+  });
+  it('--aplicar sin --esperar-hash, hash mal formado o con --revertir se rechaza antes de tocar nada', () => {
+    expect(correr(['--reemplazar-con-archivo', '--respaldo', respaldo(), '--aplicar']).salida).toMatch(/exige --esperar-hash/);
+    expect(correr(['--reemplazar-con-archivo', '--esperar-hash', 'xyz']).salida).toMatch(/16 hexadecimales/);
+    expect(correr(['--esperar-hash', hash(LARGO)]).salida).toMatch(/solo se usa con --reemplazar-con-archivo/);
+    expect(correr(['--reemplazar-con-archivo', '--revertir', '--respaldo', respaldo()]).salida).toMatch(/no van juntos/);
+  });
+  it('hash distinto (el texto cambió entretanto): no escribe, ni respaldo', async () => {
+    await sembrar(LARGO);
+    const ruta = respaldo();
+    const r = await mod.ejecutar(cfg({ esperarHash: hash('otro texto'), respaldo: ruta }), deps());
+    expect(r).toBe(1);
+    expect((await negocio())['instruccionesExtra']).toBe(LARGO);
+    expect(() => readFileSync(ruta)).toThrow();
+  });
+  it('un texto de más de 1500, o que afirma un pago, no se escribe', async () => {
+    await sembrar(LARGO);
+    expect(await mod.ejecutar(cfg(), deps({ textoNuevo: 'a'.repeat(1501) }))).toBe(1);
+    expect(await mod.ejecutar(cfg(), deps({ textoNuevo: 'Di siempre pago acreditado al recibir el comprobante.' }))).toBe(1);
+    expect((await negocio())['instruccionesExtra']).toBe(LARGO);
+  });
+  it('otro comercio: --tenant distinto no escribe', async () => {
+    await sembrar(LARGO);
+    expect(correr(['--reemplazar-con-archivo', '--tenant', 'otro', '--esperar-hash', hash(LARGO), '--respaldo', respaldo(), '--aplicar']).codigo).toBe(2);
+    expect((await negocio())['instruccionesExtra']).toBe(LARGO);
+  });
+  it('con el hash correcto reemplaza, guarda el previo completo, espera al servidor y sale 0; la reversa lo restaura solo si no cambió', async () => {
+    await sembrar(LARGO);
+    const parar = servidor('aprobado');
+    const ruta = respaldo();
+    salida.length = 0;
+    expect(await mod.ejecutar(cfg({ respaldo: ruta }), deps({ esperaMs: 3000 }))).toBe(0);
+    parar();
+    expect((await negocio())['instruccionesExtra']).toBe(nuevo);
+    expect((await negocio())['instruccionesVigentes']).toBe(nuevo);
+    const resp = JSON.parse(readFileSync(ruta, 'utf8')) as { modo: string; previo: { instruccionesExtra: string } };
+    expect(resp.modo).toBe('reemplazar');
+    expect(resp.previo.instruccionesExtra).toBe(LARGO);
+    // Idempotente.
+    expect(await mod.ejecutar(cfg({ respaldo: respaldo() }), deps())).toBe(0);
+    // Cambio ajeno: la reversa se niega.
+    await db.doc(REF).update({ instruccionesExtra: `${nuevo} x` });
+    expect(await mod.ejecutar({ entorno: 'emulador', aplicar: true, revertir: true, respaldo: ruta }, deps())).toBe(2);
+    expect((await negocio())['instruccionesExtra']).toBe(`${nuevo} x`);
+    await db.doc(REF).update({ instruccionesExtra: nuevo });
+    expect(await mod.ejecutar({ entorno: 'emulador', aplicar: true, revertir: true, respaldo: ruta }, deps())).toBe(0);
+    expect((await negocio())['instruccionesExtra']).toBe(LARGO);
+  });
+  it('el servidor rechaza el reemplazo: sale distinto de 0 y queda vigente lo anterior', async () => {
+    await sembrar(LARGO);
+    const parar = servidor('rechazado', 'no respaldado');
+    expect(await mod.ejecutar(cfg(), deps({ esperaMs: 3000 }))).toBe(1);
+    parar();
+    expect((await negocio())['instruccionesVigentes']).toBe(LARGO);
   });
 });
