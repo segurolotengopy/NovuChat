@@ -20,3 +20,6 @@ Los datos y textos de este comercio (`bm.js`), la decisión de su venta (`bm-ven
 
 ## Costo
 0 mensajes por conversación agregados respecto de la base de venta (esta librería no envía nada). El conteo real por conversación lo cuenta la suite del flujo en B3c.
+
+## Para B3c: lo que NO se copia de Walisuma
+Los nodos `Decidir turno` y `Armar *` de Walisuma llaman a `wlVendibles(panel)`, `wlSinPrecio` y `wlNombraSinPrecio`, que aquí no existen: los nodos de este flujo leen `bmCatalogo(...)` (el resultado de `ceVendibles`) y `ctx.catalogo`. El nodo HTTP del catálogo se llama exactamente **`Traer catálogo`** (lo lee `bmContexto`). Un QR abierto se compara por id, cantidad, precio, detalle y moneda (`vcMismoCarrito`): si el precio cambia con el QR abierto, el cobro se cierra y se emite uno nuevo con el total real.

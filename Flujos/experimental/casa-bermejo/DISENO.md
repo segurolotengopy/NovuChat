@@ -24,7 +24,7 @@
 | Catálogo externo (`ce*`) | `venta-digital/src/catalogo-externo.js` (B2) |
 | Medios (voz, imagen, PDF, comprobante guardado) y guardado de medios (11 nodos) | `Flujos/src/core/medios/`, `comun-sin-agente/src/guardado.mjs` |
 | Cadena de envío y reporte saliente | `comun-sin-agente/src/envio.mjs` |
-| **Propio:** `Decidir turno`, `Interpretar lectura`, `Armar avisos`, `Armar mensajes`, la librería `cbv*` (venta de este comercio: textos, entrega por país, intenciones por código) y el nodo `Traer catálogo` | `Flujos/experimental/casa-bermejo/` |
+| **Propio:** `Decidir turno`, `Interpretar lectura`, `Armar avisos`, `Armar mensajes`, la librería `bm*` (venta de este comercio: textos, entrega por país, intenciones por código) y el nodo `Traer catálogo` | `Flujos/experimental/casa-bermejo/` |
 
 ## Nodos y tope
 Referencia: Walisuma tiene 58 (47 + 11 del guardado). Este flujo agrega UN nodo HTTP (`Traer catálogo`, con «Continue on Fail» solo en ese nodo y NO en la entrada verificada) → 59. Decisión para el armado, a declarar antes de construir: **plegar `Interpretar lectura` dentro de `Decidir turno`** (queda 58) o pedir la excepción a 59. Se prefiere plegar: menos nodos, más cálculo en código.
@@ -40,7 +40,7 @@ Armado (nodos, conexiones, receptor, inclusiones byte a byte, no publicable); se
 
 ## Etapas (un PR cada una)
 - **B3a (este PR):** este diseño. Solo documentos.
-- **B3b:** `cbv*` (librería pura de la venta de Bolivia) + sus nodos de código + pruebas puras.
+- **B3b:** `bm*` (librería pura de la venta de Bolivia) + sus nodos de código + pruebas puras.
 - **B3c:** plantilla, `construir.mjs`, datos con marcadores `REEMPLAZAR_*`, JSON armado y suite del flujo (mundo de mentira).
 
 ## Condiciones antes de publicar (no de este bloque)
