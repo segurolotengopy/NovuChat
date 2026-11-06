@@ -67,7 +67,7 @@ export const USO = '  node scripts/plataforma/habilitar-productos.mjs --proyecto
 /** Misma función que el filtro de la consola (`normalizar` de Catalogo.tsx), más el recorte de espacios. */
 export const normalizar = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
-/** ¿La categoría (`area`) es una de las cuatro, igual que la compara la consola? */
+/** ¿La categoría (`area`) es una de las tres, igual que la compara la consola? */
 export const categoriaObjetivo = (area, categorias = CATEGORIAS) => typeof area === 'string' && categorias.includes(normalizar(area));
 
 /** Conteo por área (normalizada) de TODO el catálogo: total y deshabilitados. Sin área: «(sin área)». */
@@ -85,17 +85,22 @@ export function conteoPorArea(items) {
 
 /**
  * Parte los ítems leídos en: los que se habilitarían y los deshabilitados de otras categorías.
- * Un ítem está deshabilitado si `activo !== true` (como lo pinta la consola).
+ * Un ítem está deshabilitado si `activo` es false, null o está ausente. Cualquier otro valor ('no', 0…) es
+ * «no reconocido»: no se habilita ni se cuenta entre las otras; el seco lo lista aparte y no se toca.
  */
+export const activoReconocido = (v) => v === true || v === false || v === null || v === undefined;
+
 export function clasificar(items, categorias = CATEGORIAS) {
   const habilitar = [];
   const otras = [];
+  const noReconocidos = [];
   for (const it of items) {
     if (it.activo === true) continue;
+    if (!activoReconocido(it.activo)) { noReconocidos.push(it); continue; }
     (categoriaObjetivo(it.area, categorias) ? habilitar : otras).push(it);
   }
   const porNombre = (a, b) => String(a.nombre ?? '').localeCompare(String(b.nombre ?? '')) || a.id.localeCompare(b.id);
-  return { habilitar: habilitar.sort(porNombre), otras: otras.sort(porNombre) };
+  return { habilitar: habilitar.sort(porNombre), otras: otras.sort(porNombre), noReconocidos: noReconocidos.sort(porNombre) };
 }
 
 // ===========================================================================
@@ -258,9 +263,10 @@ async function leerCatalogo(db, tenant) {
 const texto = (v) => (typeof v === 'string' ? v.slice(0, 80).replace(/[\r\n\t]+/g, ' ') : '(sin dato)');
 const celda = (v, n) => texto(v).padEnd(n).slice(0, Math.max(n, texto(v).length));
 
-export function mensajeDeInterrupcion(estado) {
+export function mensajeDeInterrupcion(estado, revertir = false) {
   if (estado === 'antes') return '\n  ! Interrumpido por el operador antes de escribir. No se escribió nada.\n';
-  if (estado === 'escrito') return '\n  ! Interrumpido entre escrituras: algunas SÍ se hicieron. Corra el seco; para deshacer, --revertir con el mismo respaldo.\n';
+  if (estado === 'escrito') return '\n  ! Interrumpido entre escrituras: algunas SÍ se hicieron. Corra el seco'
+    + (revertir ? ' y vuelva a correr la reversa con el mismo respaldo.\n' : '; para deshacer, --revertir con el mismo respaldo.\n');
   return '\n  ! Interrumpido DURANTE una escritura: puede haberse hecho o no. Corra el seco para ver el estado.\n';
 }
 
@@ -268,7 +274,7 @@ export function mensajeDeInterrupcion(estado) {
  * Escribe `activo` ítem por ítem. Devuelve null si todo salió bien, o 3 tras avisar. Mismo estado que la
  * interrupción: «antes» si no se escribió nada; «escrito» si ya hubo escrituras (el mensaje lo dice y recuerda --revertir).
  */
-async function escribirTodos(lista, valorDe, marcar, log, siguiente) {
+async function escribirTodos(lista, valorDe, marcar, log, siguiente, revertir = false) {
   let hechas = 0;
   for (const it of lista) {
     marcar('escribiendo');
@@ -280,6 +286,7 @@ async function escribirTodos(lista, valorDe, marcar, log, siguiente) {
       marcar(hechas === 0 ? 'antes' : 'escrito');
       const causa = esPrecondicion(e) ? 'un ítem cambió entre la lectura y la escritura' : `error de escritura (${e?.code ?? e?.name ?? 'desconocido'})`;
       if (hechas === 0) log(`\n  ✗ ${causa}: no se escribió nada. ${siguiente}.\n`);
+      else if (revertir) log(`\n  ✗ ${causa}: SÍ se revirtieron ${hechas} de ${lista.length} ítem(s). ${siguiente}; el resto sigue habilitado y se revierte repitiendo la reversa con el mismo respaldo.\n`);
       else log(`\n  ✗ ${causa}: SÍ se escribieron ${hechas} de ${lista.length} ítem(s). ${siguiente}; para deshacer, --revertir con el mismo respaldo.\n`);
       return 3;
     }
@@ -323,7 +330,7 @@ export async function ejecutar(cfg, deps) {
     if (aRevertir.length === 0) { log('\n  ✓ Nada que revertir.\n'); return 0; }
     if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar para revertir.\n'); return 1; }
     const previoDe = (id) => lectura.previos.get(id);
-    const falla = await escribirTodos(aRevertir, (it) => (previoDe(it.id).presente ? previoDe(it.id).valor : FieldValue.delete()), marcar, log, 'Corra el seco y reintente');
+    const falla = await escribirTodos(aRevertir, (it) => (previoDe(it.id).presente ? previoDe(it.id).valor : FieldValue.delete()), marcar, log, 'Corra el seco y reintente', true);
     if (falla !== null) return falla;
     const despues = new Map((await leerCatalogo(db, cfg.tenant)).map((i) => [i.id, i]));
     const igual = (i) => {
@@ -341,7 +348,7 @@ export async function ejecutar(cfg, deps) {
 
   // -------------------------------------------------------- seco y aplicar
   if (items.length === 0) { log(`\n  ✗ ${cfg.tenant}: el catálogo está vacío o no existe (${cfg.entorno})\n`); return 1; }
-  const { habilitar, otras } = clasificar(items);
+  const { habilitar, otras, noReconocidos } = clasificar(items);
   log(`\n  ${cfg.aplicar ? 'APLICAR' : 'SECO (solo una lectura)'} · ${rotulo}\n`);
   log(`  Catálogo por área (${items.length} ítems; total / deshabilitados):`);
   for (const [area, c] of conteoPorArea(items)) log(`    ${texto(area).padEnd(24)} ${c.total} / ${c.deshabilitados}`);
@@ -355,12 +362,21 @@ export async function ejecutar(cfg, deps) {
   }
   log(`\n  Deshabilitados de OTRAS categorías (NO se tocan): ${otras.length}`);
   for (const it of otras) log(`    · ${texto(it.nombre)} [${typeof it.area === 'string' && it.area.trim() !== '' ? texto(it.area) : '(sin área)'}]`);
+  if (noReconocidos.length) {
+    log(`\n  Valor de «activo» no reconocido, no se toca: ${noReconocidos.length}`);
+    for (const it of noReconocidos) log(`    · ${texto(it.nombre)} [${typeof it.area === 'string' && it.area.trim() !== '' ? texto(it.area) : '(sin área)'}] tipo ${typeof it.activo}`);
+  }
 
   if (habilitar.length === 0) { log('\n  ✓ Nada que habilitar.\n'); return 0; }
   if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar (y --respaldo) para escribir.\n'); return 1; }
 
+  const contenido = contenidoDelRespaldo({ entorno: cfg.entorno, tenant: cfg.tenant, items: habilitar });
+  if (!contenido.items.every((x) => previoValido(x.previo))) {
+    log('\n  ✗ Algún ítem tiene un valor previo de «activo» que el respaldo no puede restaurar con fidelidad. No se escribe nada.\n');
+    return 2;
+  }
   try {
-    guardarRespaldo(cfg.respaldo, contenidoDelRespaldo({ entorno: cfg.entorno, tenant: cfg.tenant, items: habilitar }));
+    guardarRespaldo(cfg.respaldo, contenido);
   } catch (e) {
     if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe un archivo en esa ruta de respaldo: un respaldo nunca se pisa; elija otro nombre. No se escribe nada.\n'); return 2; }
     throw e;
@@ -392,7 +408,7 @@ async function principal() {
   const db = getFirestore();
   let estado = 'antes';
   process.on('SIGINT', () => {
-    console.error(mensajeDeInterrupcion(estado));
+    console.error(mensajeDeInterrupcion(estado, cfg.revertir));
     process.exit(130);
   });
   const codigo = await ejecutar(cfg, { db, FieldValue, marcarEscritura: (v) => { estado = v; } });

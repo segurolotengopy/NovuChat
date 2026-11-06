@@ -22,7 +22,8 @@ type Cfg = Record<string, unknown>;
 type Item = Record<string, unknown>;
 const mod = await import('../../scripts/plataforma/habilitar-productos.mjs') as unknown as {
   analizarArgumentos: (argv: string[], env?: Record<string, string>) => { ok: boolean; problemas?: string[]; cfg?: Cfg };
-  clasificar: (items: Item[], c?: readonly string[]) => { habilitar: Item[]; otras: Item[] };
+  clasificar: (items: Item[], c?: readonly string[]) => { habilitar: Item[]; otras: Item[]; noReconocidos: Item[] };
+  mensajeDeInterrupcion: (e: string, r?: boolean) => string;
   categoriaObjetivo: (a: unknown, c?: readonly string[]) => boolean;
   CATEGORIAS: readonly string[];
   leerRespaldo: (r: string, o: { entorno: string; tenant: string }) => { ok: boolean; motivo?: string; ids?: string[] };
@@ -151,7 +152,7 @@ describe('E1. argumentos y salvaguarda', () => {
   });
 });
 
-describe('E2. clasificación: solo las cuatro categorías exactas, solo deshabilitados', () => {
+describe('E2. clasificación: solo las tres categorías exactas, solo deshabilitados', () => {
   const items = Object.entries(CATALOGO).map(([id, d]) => ({ id, ...d }));
   const { habilitar, otras } = mod.clasificar(items);
   it('habilita cervezas, cocteleria y postres (sin tildes ni mayúsculas, como el filtro de la consola)', () => {
@@ -270,6 +271,46 @@ describe('E3. seco y aplicar', () => {
     const { codigo } = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b);
     expect(codigo).toBe(3);
     expect(b.datos['qtaco']!['a2']!['activo']).toBe(false);
+  });
+});
+
+describe('E3a. valores de «activo» no reconocidos: no se tocan', () => {
+  const cat = {
+    v1: { nombre: 'Valor no', area: 'cervezas', activo: 'no' }, v2: { nombre: 'Valor cero', area: 'postres', activo: 0 },
+    v3: { nombre: 'Normal', area: 'postres', activo: false },
+  };
+  it('clasificar los separa de lo que se habilita y de «otras»', () => {
+    const r = mod.clasificar(Object.entries(cat).map(([id, d]) => ({ id, ...d })));
+    expect(r.habilitar.map((i) => i['id'])).toEqual(['v3']);
+    expect(r.noReconocidos.map((i) => i['id']).sort()).toEqual(['v1', 'v2']);
+    expect(r.otras).toHaveLength(0);
+  });
+  it('el seco los lista aparte con su tipo y --aplicar no los escribe', async () => {
+    const b = baseDe({ qtaco: cat });
+    const seco = await correr(cfgDe(), b);
+    expect(seco.salida).toContain('no reconocido, no se toca: 2');
+    expect(seco.salida).toContain('tipo string');
+    expect(seco.salida).toContain('tipo number');
+    const ap = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b);
+    expect(ap.codigo).toBe(0);
+    expect(b.escrituras.map((e) => e.ruta)).toEqual(['qtaco/v3']);
+    expect(b.datos['qtaco']!['v1']!['activo']).toBe('no');
+    expect(b.datos['qtaco']!['v2']!['activo']).toBe(0);
+  });
+});
+
+describe('E3c. el texto de «deshacer» según la operación', () => {
+  it('la interrupción y el error a mitad de una reversa no mandan a revertir', async () => {
+    expect(mod.mensajeDeInterrupcion('escrito', false)).toContain('--revertir');
+    expect(mod.mensajeDeInterrupcion('escrito', true)).not.toContain('--revertir');
+    const b = baseDe({ qtaco: CATALOGO });
+    const r = rutaRespaldo();
+    await correr(cfgDe({ aplicar: true, respaldo: r }), b);
+    const b2 = baseDe({ qtaco: b.datos['qtaco']! }, { falloTrasEscrituras: 1 });
+    const { codigo, salida } = await correr(cfgDe({ revertir: true, aplicar: true, respaldo: r }), b2);
+    expect(codigo).toBe(3);
+    expect(salida).toContain('SÍ se revirtieron 1 de');
+    expect(salida).not.toContain('para deshacer');
   });
 });
 
