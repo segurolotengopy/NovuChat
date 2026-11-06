@@ -140,6 +140,7 @@ export const SUITES_PURAS = [
   'pruebas/central/consola-pagar.test.ts',
   'pruebas/central/consola-oculta.test.ts',
   'pruebas/plataforma/aplicar-consola-oculta.test.ts',
+  'pruebas/plataforma/habilitar-productos.test.ts',
   'pruebas/plataforma/resetear-ficha-flujo.test.ts',
   'pruebas/plataforma/aplicar-consola-conversaciones.test.ts',
   'pruebas/plataforma/rellenar-conversaciones.test.ts',
