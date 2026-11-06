@@ -66,11 +66,17 @@ const LECTURA_DE_LA_CLAVE = new RegExp(`base\\.${CLAVE_SOLO_ENSAYO}`);
 const NOMBRE_GRAPH_DEL_DEMO_A = 'Graph WhatsApp Demo A (Bearer)';
 const NOMBRE_INGESTA_DEL_DEMO_A = 'Cierres NovuChat A (auto)';
 // Los dos nodos que bajan un medio con una URL que Meta devuelve en su respuesta (`={{ $json.url }}`): lista CERRADA y con la credencial de Graph. Cualquier otro nodo con la URL dinámica es un hallazgo.
-const NODOS_CON_URL_DE_META = ['Descargar medio', 'Descargar medio (guardado)'];
+const URL_DE_META_POR_NODO = {
+  'Descargar medio': '={{ $json.url }}',
+  'Descargar medio (guardado)': "={{ (String($json.url || '').startsWith('https://lookaside.fbsbx.com/') && !(Number($json.file_size) > Number($('Preparar guardado').first().json.limite)) && !($('Preparar guardado').first().json.exigeTamano === true && !(Number($json.file_size) > 0))) ? $json.url : '' }}",
+};
+const NODOS_CON_URL_DE_META = Object.keys(URL_DE_META_POR_NODO);
 /** El HOST de la parte FIJA de la URL de un nodo (lo que hay antes de cualquier `{{ }}`), en minúsculas, o null si no se puede leer con certeza (espacio inicial, http, `//host`, usuario@host, host partido en una expresión, URL toda dinámica). Una lista de permitidos por destino, no una expresión sobre el host. */
 export function hostDeUrl(url) {
-  const fija = String(url ?? '').replace(/^=/, '').split('{{')[0];
-  const m = /^https:\/\/([a-z0-9.-]+)(?::\d+)?(?=[\/?#]|$)/i.exec(fija);
+  const t = String(url ?? '').replace(/^=/, '');
+  const fija = t.split('{{')[0];
+  // Con una expresión en la URL, la parte fija tiene que cerrar el host con `/`, `?` o `#`: si no, la expresión podría seguir armando el host (`graph.facebook.com{{ ".evil.com" }}/`).
+  const m = (t.includes('{{') ? /^https:\/\/([a-z0-9.-]+)(?::\d+)?(?=[\/?#])/i : /^https:\/\/([a-z0-9.-]+)(?::\d+)?(?=[\/?#]|$)/i).exec(fija);
   return m ? m[1].toLowerCase() : null;
 }
 /** Hallazgos de destino de un nodo httpRequest de la variante de ensayo. */
@@ -80,7 +86,7 @@ export function hallazgosDeDestino(n) {
   const cred = ((n.credentials || {}).httpHeaderAuth || {}).name;
   const host = hostDeUrl(((n.parameters || {}).url));
   if (host === null) {
-    if (!(NODOS_CON_URL_DE_META.includes(n.name) && cred === NOMBRE_GRAPH_DEL_DEMO_A)) h.push(`ensayo: «${n.name}» tiene una URL cuyo destino no es fijo ni verificable (solo ${NODOS_CON_URL_DE_META.join(' y ')} bajan una URL de Meta, con la credencial de Graph)`);
+    if (!(NODOS_CON_URL_DE_META.includes(n.name) && cred === NOMBRE_GRAPH_DEL_DEMO_A && ((n.parameters || {}).url) === URL_DE_META_POR_NODO[n.name])) h.push(`ensayo: «${n.name}» tiene una URL cuyo destino no es fijo ni verificable (solo ${NODOS_CON_URL_DE_META.join(' y ')} bajan la URL que devuelve Meta, con su expresión EXACTA y la credencial de Graph)`);
     return h;
   }
   if (!ANFITRIONES.includes(host)) h.push(`ensayo: «${n.name}» llama a un destino que no es de la lista permitida (${host})`);
