@@ -21,6 +21,9 @@
  * RESPALDO (obligatorio con `--aplicar`): ruta absoluta fuera de todo repositorio, carpeta 0700, archivo 0600, nunca pisa. Guarda el `instruccionesExtra`
  * previo completo y el `instruccionesVigentes` y el hash de revisión previos (es texto del negocio, no secreto, pero no se imprime).
  *
+ * RUNBOOK. Los precios y la vigencia del bloque son hechos fijos: si cambia un precio o termina la promoción, correr `--revertir --respaldo` o publicar una
+ * versión nueva del bloque (otro marcador, con otra fecha); mientras el marcador esté, el script no vuelve a escribir.
+ *
  * REVERSA (`--revertir --respaldo`): restaura el `instruccionesExtra` previo SOLO si el campo sigue idéntico a lo que escribió este script.
  *
  * SALIDA. 0 correcto (seco, nada que hacer, o escritura aprobada por el servidor); 1 rechazo del comercio, de los datos o del servidor (o sin veredicto
@@ -39,7 +42,7 @@ export const BLOQUE = `${MARCADOR} `
   + 'Promoción Tortas mexicanas: la torta mexicana sin queso cuesta Bs 15 y con queso Bs 20; ambas incluyen salsa mexicana especial; '
   + 'se pueden pedir para recoger en el local o por delivery. '
   + 'Promoción Jueves de +2: solo los jueves, para consumo en el restaurante; '
-  + "el Q'Taco Dúo agrandado con 2 tacos extra por Bs 8 más cuesta Bs 178 para 2 personas; se atiende con reserva de mesa.";
+  + "el Q'Taco Dúo regular cuesta Bs 170; los jueves, por Bs 8 más, lleva 2 tacos extra (6 en total) y cuesta Bs 178 para 2 personas; se atiende con reserva de mesa.";
 export const ESPERA_REVISION_MS = 90_000;
 export const PAUSA_REVISION_MS = 2_000;
 const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion'];
