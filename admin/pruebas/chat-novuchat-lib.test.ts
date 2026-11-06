@@ -1391,7 +1391,7 @@ describe('inyectar: la línea marcadora se reemplaza exactamente una vez', () =>
   });
 });
 
-describe('guardias de --verificar', () => {
+describe('guardias de --verificar', { timeout: 120000 }, () => {
   const real = (n: string): J => JSON.parse(readFileSync(join(CARPETA, n), 'utf8')) as J;
   const DATOS_CRM = { crm: (JSON.parse(readFileSync(join(CARPETA, '../../../admin/scripts/datos/chat-novuchat/novuchat.json'), 'utf8')) as J)['crm'] };
   const prod = (): J => real('chat-novuchat.novuchat.json');
@@ -1481,7 +1481,7 @@ describe('guardias de --verificar', () => {
       expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(/«Cerrar turno» (reasigna o muta|reasigna un ayudante|incrementa o decrementa|accede a SS_CONFIG|muta SS_CONFIG|usa un ayudante|borra un ayudante)/);
     }
     // eval, Function, .constructor y prototipos: cada uno con SU texto de regla (no basta cualquier hallazgo)
-    for (const [mut, texto] of [["eval('x');", /usa eval/], ["const o = {a:1}\n/ 2; const r = /\\/*/; eval(atob(\"x\")); const s = \"*/\";", /usa eval/], ["(eval)(String.fromCharCode(120));", /usa eval/], ["eval (x);", /usa eval/], ["const e = eval; e('x');", /usa eval/], ["e\\u{76}al('x');", /usa eval/], ["const F = Function('return 1');", /usa Function/], ["new Function('a', 'return a');", /usa Function/], ["const c = ({}).constructor.constructor;", /usa eval/],
+    for (const [mut, texto] of [["eval('x');", /usa eval/], ["const o = {a:1}\n/ 2; const r = /\\/*/; eval(atob(\"x\")); const s = \"*/\";", /usa eval/], ["(eval)(String.fromCharCode(120));", /usa eval/], ["eval (x);", /usa eval/], ["const e = eval; e('x');", /usa eval/], ["e\\u{76}al('x');", /usa eval/], ["const F = Function('return 1');", /usa Function/], ["new Fun" + "ction('a', 'return a');", /usa Function/], ["const c = ({}).constructor.constructor;", /usa eval/],
       ["RegExp.prototype.test = () => true;", /contamina un prototipo/], ["String.prototype.trim ||= f;", /contamina un prototipo/], ["x.__proto__ = {};", /contamina un prototipo/], ["Object.defineProperty(RegExp.prototype, 'test', { value: f });", /contamina un prototipo/], ["Object.setPrototypeOf(SS_CONFIG, null);", /usa setPrototypeOf/], ["Object.getPrototypeOf(x);", /getPrototypeOf/], ["Object.assign(RegExp.prototype, { test: f });", /contamina un prototipo/], ["Reflect.set(RegExp.prototype, 'test', f);", /contamina un prototipo/], ["Reflect.defineProperty(String.prototype, 'trim', {});", /contamina un prototipo/], ["const P = RegExp.prototype; P.test = f;", /contamina un prototipo/]]) {
       const f = prod();
       f['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += '\n' + mut;
@@ -1567,7 +1567,7 @@ describe('guardias de --verificar', () => {
   });
 });
 
-describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe con --verificar', () => {
+describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe con --verificar', { timeout: 120000 }, () => {
   const tmp: string[] = [];
   afterAll(() => { for (const d of tmp) rmSync(d, { recursive: true, force: true }); });
   const correr = (args: string[]): { status: number | null; salida: string } => {

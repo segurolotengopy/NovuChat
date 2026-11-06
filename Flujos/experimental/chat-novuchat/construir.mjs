@@ -528,7 +528,14 @@ export function anfitrionPermitido(nombreDelNodo, url) {
 // Solo se BORRAN comentarios: cadenas y regex se conservan, así que un error de lectura de una regex nunca oculta código; en la duda un «/» se toma como regex solo tras las palabras clave y los signos que la admiten sin ambigüedad.
 const ANTES_DE_REGEX = new Set(['return', 'typeof', 'case', 'do', 'else', 'in', 'of', 'new', 'delete', 'void', 'throw', 'instanceof', 'yield', 'await']);
 // `modo`: 'auto' decide por el contexto; 'regex' lee TODO «/» ambiguo como inicio de regex; 'division' lo lee siempre como división. La guardia aplica las reglas a las TRES lecturas y reporta la unión: ninguna lectura equivocada puede esconder código a las otras.
+const MEMO_SC = new Map();  // memo por modo + texto: la guardia relee los mismos nodos muchas veces
 export function sinComentarios(texto, modo = 'auto') {
+  const clave = modo + '\u0000' + texto;
+  let r = MEMO_SC.get(clave);
+  if (r === undefined) { r = sinComentariosSinMemo(texto, modo); if (MEMO_SC.size > 400) MEMO_SC.clear(); MEMO_SC.set(clave, r); }
+  return r;
+}
+function sinComentariosSinMemo(texto, modo) {
   const t = String(texto);
   let salida = '';
   let i = 0;
