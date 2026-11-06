@@ -55,6 +55,8 @@ const ajena = { id: 'otra-del-comercio', texto: 'Hola, vengo por el menú ejecut
 
 /** Deja a Q'Taco en el emulador como se pide: activo, con el plan dado y con la lista previa dada (o sin documento de campañas). */
 async function sembrar(previa: Array<Record<string, unknown>> | null, plan = 'pro', estado = 'activo', modulos: string[] = ['campanas']): Promise<void> {
+  // El emulador se comparte con otras suites que usan el mismo id de comercio: se parte siempre de cero (también la auditoría).
+  for (const d of (await db.collection(`tenants/${T}/auditoria`).get()).docs) await d.ref.delete();
   await db.doc(`tenants/${T}/config/campanas`).delete();
   await db.doc(`tenants/${T}`).set({ nombre: T, estado, vertical: 'venta', flujos: ['venta'], modulos });
   await db.doc(`tenants/${T}/cuenta/estado`).set({ plan });
