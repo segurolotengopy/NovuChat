@@ -530,6 +530,15 @@ const AM_falla = AM_jFalla ? [Object.assign(AM_jFalla, {
   resumen: Object.assign({}, AM_resumen, { estadoDespues: null, errores: AM_erroresFalla, mensajesSalientes: 1, avisoSalio: AM_AVISO_SALIO }),
 })] : [{ sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: AM_FROM, cierre: null, errores: AM_erroresFalla,
   resumen: Object.assign({}, AM_resumen, { estadoDespues: null, errores: AM_erroresFalla, mensajesSalientes: 0 }) }];
+// RÁFAGA (06/11/2026, Q'Taco): el perdedor de un conflicto de versión SIN hecho externo cede, y el mensaje que escribió quedaba sin respuesta (3 mensajes seguidos daban 2 respuestas). Ya no es silencio:
+// si lo que llegó NO fue un botón (un doble toque del mismo botón sigue cediendo en silencio: no se repite el paso), sale UN aviso corto que pide repetir lo que haya quedado sin respuesta. No promete nada, no toca el estado,
+// no avisa al local y no lleva botones. Reemplaza el silencio por un mensaje al cliente (solo en la carrera; 0 mensajes por conversación en el flujo normal).
+const AM_CEDE_CUERPO = amEmojis('Recibí varios mensajes tuyos casi al mismo tiempo 🙂. Si algo quedó sin respuesta, escríbelo otra vez.').trim();
+const AM_jCede = !AM_T.boton && AM_CONVERSA ? amSalir({ payload: amTexto(AM_CEDE_CUERPO), texto: AM_CEDE_CUERPO, respaldo: AM_CEDE_CUERPO, tipoReporte: 'text' }) : null;
+const AM_cede = AM_jCede ? [Object.assign(AM_jCede, {
+  cierre: null, errores: AM_errores.concat(['rafaga_cedida']),
+  resumen: Object.assign({}, AM_resumen, { estadoDespues: null, errores: AM_errores.concat(['rafaga_cedida']), mensajesSalientes: 1 }),
+})] : [];
 // Los avisos de pedido y de comprobante que SALIERON en este turno (o ya estaban avisados): si el compromiso falla, `Soltar mensajes` los anota para que el turno siguiente no los repita (I1).
 // La clave es la de `Armar avisos` (`vmClaveAviso`): el pedido por pedidoId; el comprobante, además, por medio y resultado del cotejo (B2: un comprobante correcto nunca se suprime por uno malo anterior).
 const AM_idPedido = AM_ped && AM_ped.pedidoId ? String(AM_ped.pedidoId) : '';
@@ -600,5 +609,5 @@ const AM_replan = AM_hechoExterno && AM_modo === 'comprometer' ? {
 return [{ json: {
   hechoExterno: AM_hechoExterno, replan: AM_replan, avisoMarcas: AM_avisoMarcas, avisoFalla: AM_avisoFalla, avisoFallaN: AM_avisoFallaN, avisoFallaFecha: avFechaLocal(AM_AHORA),
   turno: true, modo: AM_modo, comprometer: AM_compromiso !== null, compromiso: AM_compromiso, numero: ssNumeroHeader(), cupos: AM_CUPOS.estado, asentar: AM_asentar,
-  salida: AM_final, salidaFalla: AM_falla, previo: AM_ses.previo, bloque: AM_bloque, deRespaldo: AM_ses.deRespaldo, from: AM_FROM, ahoraMs: AM_AHORA,
+  salida: AM_final, salidaFalla: AM_falla, salidaCede: AM_cede, previo: AM_ses.previo, bloque: AM_bloque, deRespaldo: AM_ses.deRespaldo, from: AM_FROM, ahoraMs: AM_AHORA,
 } }];

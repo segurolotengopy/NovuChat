@@ -42,6 +42,7 @@
 //     porqué va en `motivo` (`boton_viejo`, `si_suelto`, `ubicacion`, `forma_pendiente`).
 //  7. «Pide una persona» exige «hablar con (una) persona/alguien/humano…» (o «quiero un
 //     asesor», «pásame con el encargado») o una palabra inequívoca (reclamo, queja, humano);
+//     (06/11: también «escribir al local» —la frase del botón— y «hablar con el local», que derivan igual que el botón; «escribir mi nombre» no.)
 //     «persona», «asesor» o «encargado» sueltos NO derivan («mesa para 1 persona», «déjalo con el
 //     encargado del edificio»). La pregunta por la identidad se revisa primero.
 // SUPUESTOS PROPIOS (a confirmar en la integración):
@@ -185,7 +186,7 @@ if (cfg.promosActivo === true && Array.isArray(cfg.campanas) && cfg.campanas.len
 
 // --- 5. Identidad primero; después, pide una persona ---------------------------------------
 const PREGUNTA_IDENTIDAD = /\b(eres|sos|seras|hablo con|hablando con|estoy hablando con|me atiende|me atiendes|atiende) (un |una |el |la )?(robot|bot|chatbot|ia|inteligencia artificial|maquina|programa|humano|humana|persona|real)\b|\b(robot|chatbot|bot|inteligencia artificial)\b/;
-const PIDE_PERSONA = /\b(hablar|conversar|comunicar|comunicarme|comunicarnos|contactar|contactarme|pasar|pasame|pasenme|comunicame) (con|a) (una |un |la |el |algun |alguna |otra )?(persona|alguien|humano|humana|encargad[oa]|asesor|asesora|duen[oa]|gerente|administrador|administradora|recepcion)\b|\b(quiero|necesito|prefiero|quisiera|pido) (a )?(una |un |la |el )?(persona|humano|humana|asesor|asesora|encargad[oa])\b|\b(reclamo|queja|humano|humana)\b/;
+const PIDE_PERSONA = /\b(hablar|conversar|comunicar|comunicarme|comunicarnos|contactar|contactarme|pasar|pasame|pasenme|comunicame) (con|a) (una |un |la |el |algun |alguna |otra )?(persona|alguien|humano|humana|encargad[oa]|asesor|asesora|duen[oa]|gerente|administrador|administradora|recepcion)\b|\b(quiero|necesito|prefiero|quisiera|pido) (a )?(una |un |la |el )?(persona|humano|humana|asesor|asesora|encargad[oa])\b|\b(reclamo|queja|humano|humana)\b|\b(hablar|conversar|comunicarme|comunicarnos|comunicar|contactar|contactarme) (con|a) (el|la) (local|negocio|restaurante|tienda|equipo)\b|\b(escribir|escribirle|escribirles|escribirnos) (al|a la|con el|con la) (local|negocio|restaurante|tienda|recepcion|equipo|encargad[oa]|duen[oa])\b|\b(escribanme|escribame)\b/;
 if (PREGUNTA_IDENTIDAD.test(norm)) return salir('identidad');
 if (PIDE_PERSONA.test(norm)) return salir('transferir', { motivo: 'pidió hablar con una persona' });
 

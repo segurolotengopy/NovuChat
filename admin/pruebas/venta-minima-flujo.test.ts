@@ -2765,6 +2765,27 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
     expect(tres.avisos.length).toBeGreaterThan(0);
   });
 
+  it('«escribir al local» escrito (06/11): aviso a recepción UNA vez más el botón; repetirlo dentro de la hora solo da el botón (no duplica el aviso); una frase cercana no deriva', () => {
+    const w = crear();
+    abrirVentanas(w);
+    const c = con(w);
+    const uno = c.escribe('escribir al local', { avanzarMin: 5 });
+    expect(tieneEnlace(uno)).toBe(true);
+    expect(uno.mensajes.map(urlDeEnlace)).toEqual([`https://wa.me/${REC}`]);
+    expect(uno.mensajes).toHaveLength(1);
+    expect(uno.avisos.length).toBeGreaterThan(0);
+    expect(cuerpos(uno).join(' ')).not.toMatch(/te aviso|te llamamos|te escribirán|lo consulto/i);
+    const dos = c.escribe('Escríbanme', { avanzarMin: 5 });
+    expect(tieneEnlace(dos)).toBe(true);
+    expect(dos.avisos).toHaveLength(0);
+    // negado: una frase cercana no deriva (ni aviso ni enlace)
+    const w2 = crear();
+    abrirVentanas(w2);
+    const x = con(w2).escribe('voy a escribir mi dirección', { avanzarMin: 5 });
+    expect(x.avisos).toHaveLength(0);
+    expect(tieneEnlace(x)).toBe(false);
+  });
+
   // Arreglado en la integración: la marca de derivación solo queda si el aviso SALIÓ (hecho, no dicho). Si Meta rechaza el
   // aviso de la primera derivación, la segunda, dentro de la hora, vuelve a avisar al restaurante.
   it('si el aviso de la primera derivación cae, la segunda dentro de la hora vuelve a avisar; y si salió, la segunda no avisa', () => {
@@ -6582,6 +6603,29 @@ describe('PR-4a: el estado, los pedidos y los vistos viven en el servidor, no en
     // Negado: sin rival, el mismo botón responde.
     const r2 = armarPedido({ ventana: 5 });
     expect(confirmarPedido(r2).mensajes).toHaveLength(1);
+  });
+
+  it('RÁFAGA (06/11, Q\'Taco): el TEXTO que pierde la carrera ya no queda sin respuesta: sale UN aviso corto que pide repetirlo, sin botones, sin aviso al local ni estado; un botón doble sigue en silencio', () => {
+    const w = crear();
+    const c = con(w);
+    w.sesion.servidor.antesDeComprometer = (ll) => {
+      w.sesion.servidor.antesDeComprometer = null;
+      if ((ll['sesion'] as J)['accion'] === 'comprometer') w.sesion.sembrar(CLIENTE, { ...estadoDe(w.mundo), paso: 'menu' }, w.sesion.pedidos(CLIENTE));
+    };
+    const t = c.turno(mTexto('hola'), { wamid: 'wamid.RAF1' });
+    expect(t.mensajes).toHaveLength(1);
+    expect(cuerpos(t).join(' ')).toMatch(/varios mensajes tuyos casi al mismo tiempo/);
+    expect(cuerpos(t).join(' ')).toMatch(/escríbelo otra vez/);
+    expect(cuerpos(t).join(' ')).not.toMatch(/te aviso|te llamamos|te escribirán|pago acreditado/i);
+    expect(tieneEnlace(t)).toBe(false);
+    expect(t.avisos).toHaveLength(0);
+    expect(t.llamadas.cierre).toHaveLength(0);
+    expect(t.ejecutados.has('Comprometer turno (2.º intento)')).toBe(false);
+    // negado: sin rival, el mismo texto recibe su respuesta normal y no el aviso de ráfaga
+    const w2 = crear();
+    const n = con(w2).turno(mTexto('hola'), { wamid: 'wamid.RAF2' });
+    expect(n.mensajes).toHaveLength(1);
+    expect(cuerpos(n).join(' ')).not.toMatch(/casi al mismo tiempo/);
   });
 
   it('un reintento con el MISMO idCompromiso (`repetido`) cuenta como éxito, y los dos nodos «Comprometer *» reintentan sin `neverError`', () => {

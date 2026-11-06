@@ -295,3 +295,6 @@ La rama del miniCRM (`ramaCrm`, módulo `crm`) agrega **8 nodos** a cada flujo q
 
 **Q'Taco (06/11/2026) — de nuevo sin alcohol.** Samuel pidió quitar todo lo que tiene alcohol: se vuelve a excluir `cocteleria` y `cervezas` (áreas) y la lista de palabras de alcohol; los postres sin alcohol se ofrecen. **Condición operativa:** la barrera por palabra no detiene un ítem activo con la palabra en su nombre, así que «Helado de Tequila» y «Helado de Rompope» deben permanecer INACTIVOS en el catálogo (`habilitar-productos --solo`). La excepción anterior de «sin exclusión de alcohol» (PR #811) queda **sin efecto**.
 
+## Q'Taco: ráfaga y «escribir al local» escrito (06/11/2026)
+
+Cambio en `Decidir turno`, `Armar mensajes` y `Soltar mensajes` de «Venta mínima v0» (los cuatro JSON regenerados; 71 nodos, sin nodos nuevos). Aplica a todos los flujos de venta mínima por igual (Q'Taco, Q'Taco 3727, prueba, ensayo del Demo A). Sin excepciones nuevas: el vivo queda atrasado hasta que se publique, y no se publica en este PR. Detalle: `Flujos/experimental/venta-minima/DISENO.md`.

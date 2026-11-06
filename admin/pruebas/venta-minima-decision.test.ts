@@ -320,6 +320,18 @@ describe('Decidir turno: el orden de §4.5, sin modelo', () => {
     expect(turno(crearMundo(), { texto: 'somos 3 personas' }).d['accion']).toBe('menu');
   });
 
+  it('5c. «escribir al local» ESCRITO (06/11, Q\'Taco) deriva igual que el botón: `transferir`; frases cercanas («escribir mi nombre», «voy a escribir mi dirección») NO derivan', () => {
+    for (const x of ['escribir al local', 'Escribir al local', 'quiero escribir al local', 'quiero escribirle al local', 'escríbanme', 'escribanme por favor', 'quiero hablar con el local',
+      'hablar con una persona del local', 'quiero escribirle al restaurante', 'necesito escribir a la tienda', 'quiero comunicarme con el local']) {
+      const r = turno(crearMundo(), { texto: x });
+      expect(r.d['accion'], x).toBe('transferir');
+      expect(r.d['motivo'], x).toBe('pidió hablar con una persona');
+    }
+    for (const x of ['escribir mi nombre', 'voy a escribir mi dirección', 'te escribo mi dirección', 'escribo el nombre del local donde trabajo', 'el local de la esquina', 'quiero escribir una nota para el pedido']) {
+      expect(turno(crearMundo(), { texto: x }).d['accion'], x).not.toBe('transferir');
+    }
+  });
+
   it('6. «menu», «empezar de nuevo» y «cancelar» vuelven al menú', () => {
     for (const x of ['menu', 'Menú', 'empezar de nuevo']) {
       expect(turno(crearMundo(), { texto: x }).d['accion'], x).toBe('menu');
