@@ -1,6 +1,6 @@
 /**
  * `scripts/plataforma/habilitar-productos.mjs` — HABILITA (`activo: true`) los ítems deshabilitados del catálogo
- * de un comercio cuya categoría (`area`) es cerveza, postres, helados o tragos.
+ * de un comercio cuya categoría (`area`) es cervezas, cocteleria o postres (y `--buscar`, solo lectura).
  *
  * Sin emulador ni nube: lógica pura y una base en memoria con datos sintéticos. Se NIEGA primero:
  *   E1. Argumentos y salvaguarda: tenant fuera de la lista, proyecto equivocado, producción sin confirmación.
@@ -41,15 +41,19 @@ const rutaRespaldo = () => {
 afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
 
 const CATALOGO: Record<string, Item> = {
-  a1: { nombre: 'Pilsener', area: 'cerveza', activo: false },
+  a1: { nombre: 'Pilsener', area: 'cervezas', activo: false },
   a2: { nombre: 'Brownie', area: 'Postres', activo: false },
-  a3: { nombre: 'Helado de canela', area: 'HELADOS', activo: false },
-  a4: { nombre: 'Mojito', area: 'tragos', activo: false },
+  a3: { nombre: 'Helado de canela', area: 'POSTRES', activo: false },
+  a4: { nombre: 'Mojito', area: 'Cocteleria', activo: false },
   a5: { nombre: 'Gaseosa', area: 'bebidas', activo: false },
-  a6: { nombre: 'Cervezas de lata', area: 'cervezas', activo: false },
+  a6: { nombre: 'Cerveza de lata', area: 'cerveza', activo: false },
   a7: { nombre: 'Sin categoría', activo: false },
-  a8: { nombre: 'Ya activa', area: 'cerveza', activo: true },
-  a9: { nombre: 'Sin campo activo', area: 'tragos' },
+  a8: { nombre: 'Ya activa', area: 'cervezas', activo: true },
+  a9: { nombre: 'Sin campo activo', area: 'cocteleria' },
+  a10: { nombre: "Promo Duo", area: 'promociones', activo: false },
+  a11: { nombre: 'Helado suelto', area: 'helados', activo: false },
+  a12: { nombre: 'Trago suelto', area: 'tragos', activo: false },
+  a13: { nombre: 'Taco de birria', area: 'birria', activo: false },
 };
 
 /** Firestore en memoria con varios tenants; registra cada lectura y escritura (ruta y campos). */
@@ -150,43 +154,44 @@ describe('E1. argumentos y salvaguarda', () => {
 describe('E2. clasificación: solo las cuatro categorías exactas, solo deshabilitados', () => {
   const items = Object.entries(CATALOGO).map(([id, d]) => ({ id, ...d }));
   const { habilitar, otras } = mod.clasificar(items);
-  it('habilita cerveza, postres, helados y tragos (sin tildes ni mayúsculas, como el filtro de la consola)', () => {
+  it('habilita cervezas, cocteleria y postres (sin tildes ni mayúsculas, como el filtro de la consola)', () => {
     expect(habilitar.map((i) => i['id']).sort()).toEqual(['a1', 'a2', 'a3', 'a4', 'a9']);
   });
   it('NO habilita otras categorías, plurales, sin categoría ni los que ya están activos', () => {
-    expect(otras.map((i) => i['id']).sort()).toEqual(['a5', 'a6', 'a7']);
-    expect(mod.categoriaObjetivo('cervezas')).toBe(false);
-    expect(mod.categoriaObjetivo('cerveza artesanal')).toBe(false);
+    expect(otras.map((i) => i['id']).sort()).toEqual(['a10', 'a11', 'a12', 'a13', 'a5', 'a6', 'a7']);
+    for (const a of ['cerveza', 'tragos', 'helados', 'promociones', 'bebidas', 'birria', 'tacos', 'cervezas artesanales']) {
+      expect(mod.categoriaObjetivo(a)).toBe(false);
+    }
     expect(mod.categoriaObjetivo(undefined)).toBe(false);
-    expect(mod.categoriaObjetivo(['cerveza'])).toBe(false);
+    expect(mod.categoriaObjetivo(['cervezas'])).toBe(false);
     expect(habilitar.map((i) => i['id'])).not.toContain('a8');
   });
 });
 
 describe('E2b. la constante de categorías', () => {
-  it('es la lista cerrada de cuatro, sin plurales; recorta espacios; y se ajusta cambiando solo la constante', () => {
-    expect([...mod.CATEGORIAS]).toEqual(['cerveza', 'postres', 'helados', 'tragos']);
-    expect(mod.categoriaObjetivo('  Cerveza  ')).toBe(true);
-    for (const a of ['cervezas', 'cocteleria', 'trago', 'postre', 'helado']) expect(mod.categoriaObjetivo(a)).toBe(false);
-    expect(mod.categoriaObjetivo('cervezas', ['cervezas'])).toBe(true);
-    const r = mod.clasificar([{ id: 'x', nombre: 'N', area: 'cocteleria', activo: false }], ['cocteleria']);
+  it('es la lista cerrada de tres, sin variantes; recorta espacios; y se ajusta cambiando solo la constante', () => {
+    expect([...mod.CATEGORIAS]).toEqual(['cervezas', 'cocteleria', 'postres']);
+    expect(mod.categoriaObjetivo('  Cervezas  ')).toBe(true);
+    for (const a of ['cerveza', 'tragos', 'trago', 'postre', 'helado', 'helados', 'promociones']) expect(mod.categoriaObjetivo(a)).toBe(false);
+    expect(mod.categoriaObjetivo('tragos', ['tragos'])).toBe(true);
+    const r = mod.clasificar([{ id: 'x', nombre: 'N', area: 'tragos', activo: false }], ['tragos']);
     expect(r.habilitar).toHaveLength(1);
   });
 });
 
 describe('E3. seco y aplicar', () => {
   it('el seco no escribe, lee solo el tenant pedido e imprime la tabla y los conteos de otras categorías', async () => {
-    const b = baseDe({ qtaco: CATALOGO, ajeno: { z1: { nombre: 'Ajeno', area: 'cerveza', activo: false } } });
+    const b = baseDe({ qtaco: CATALOGO, ajeno: { z1: { nombre: 'Ajeno', area: 'cervezas', activo: false } } });
     const { codigo, salida } = await correr(cfgDe(), b);
     expect(codigo).toBe(1);
     expect(b.escrituras).toHaveLength(0);
     expect(b.lecturas).toEqual(['tenants/qtaco/catalogo']);
     expect(salida).toContain('Se habilitarían (5)');
     expect(salida).toContain('Pilsener');
-    expect(salida).toContain('OTRAS categorías (NO se tocan): 3');
+    expect(salida).toContain('OTRAS categorías (NO se tocan): 7');
     expect(salida).toContain('Gaseosa');
     expect(salida).not.toContain('Ajeno');
-    expect(salida).toContain('Catálogo por área (9 ítems; total / deshabilitados)');
+    expect(salida).toContain('Catálogo por área (13 ítems; total / deshabilitados)');
     expect(salida).toMatch(/bebidas\s+1 \/ 1/);
     expect(salida).toContain('Gaseosa [bebidas]');
     expect(salida).toContain('Sin categoría [(sin área)]');
@@ -194,11 +199,11 @@ describe('E3. seco y aplicar', () => {
     expect(salida).not.toContain(PROY);
   });
   it('avisa cuando una categoría objetivo no tiene coincidencias', async () => {
-    const b = baseDe({ qtaco: { a1: { nombre: 'Pilsener', area: 'cervezas', activo: false }, a2: { nombre: 'Mojito', area: 'cocteleria', activo: false } } });
+    const b = baseDe({ qtaco: { a1: { nombre: 'Pilsener', area: 'cerveza', activo: false }, a2: { nombre: 'Mojito', area: 'tragos', activo: false } } });
     const { codigo, salida } = await correr(cfgDe(), b);
     expect(codigo).toBe(0);
-    for (const c of ['cerveza', 'postres', 'helados', 'tragos']) expect(salida).toContain(`ninguna área coincide con «${c}»`);
-    expect(salida).toMatch(/cocteleria\s+1 \/ 1/);
+    for (const c of ['cervezas', 'cocteleria', 'postres']) expect(salida).toContain(`ninguna área coincide con «${c}»`);
+    expect(salida).toMatch(/tragos\s+1 \/ 1/);
     expect(b.escrituras).toHaveLength(0);
   });
   it('sin --aplicar no escribe aunque haya respaldo configurado', async () => {
@@ -209,7 +214,7 @@ describe('E3. seco y aplicar', () => {
     expect(() => statSync(r)).toThrow();
   });
   it('--aplicar escribe solo {activo:true} en los ítems elegidos, deja respaldo 0600 y no toca otro tenant ni otras categorías', async () => {
-    const b = baseDe({ qtaco: CATALOGO, ajeno: { z1: { nombre: 'Ajeno', area: 'cerveza', activo: false } } });
+    const b = baseDe({ qtaco: CATALOGO, ajeno: { z1: { nombre: 'Ajeno', area: 'cervezas', activo: false } } });
     const r = rutaRespaldo();
     const { codigo } = await correr(cfgDe({ aplicar: true, respaldo: r }), b);
     expect(codigo).toBe(0);
@@ -229,7 +234,7 @@ describe('E3. seco y aplicar', () => {
     } finally { closeSync(fd); }
   });
   it('idempotente: sin nada que habilitar sale 0 sin escribir ni crear respaldo', async () => {
-    const b = baseDe({ qtaco: { a1: { nombre: 'X', area: 'cerveza', activo: true }, a2: { nombre: 'Y', area: 'otra', activo: false } } });
+    const b = baseDe({ qtaco: { a1: { nombre: 'X', area: 'cervezas', activo: true }, a2: { nombre: 'Y', area: 'otra', activo: false } } });
     const r = rutaRespaldo();
     const { codigo } = await correr(cfgDe({ aplicar: true, respaldo: r }), b);
     expect(codigo).toBe(0);
@@ -268,6 +273,35 @@ describe('E3. seco y aplicar', () => {
   });
 });
 
+describe('E3b. --buscar (solo lectura)', () => {
+  const base = ['--proyecto', PROY, '--tenant', 'qtaco'];
+  it('se valida: texto de 1 a 40, y no se combina con --aplicar, --revertir ni --respaldo', () => {
+    const mal = (a: string[]) => { const r = mod.analizarArgumentos(a, ENV_EMU); expect(r.ok).toBe(false); return (r.problemas ?? []).join(' | '); };
+    expect(mal([...base, '--buscar', '  '])).toContain('--buscar necesita');
+    expect(mal([...base, '--buscar', 'x'.repeat(41)])).toContain('--buscar necesita');
+    expect(mal([...base, '--buscar', 'torta', '--aplicar', '--respaldo', join(tmpdir(), 'r.json')])).toContain('solo lectura');
+    expect(mal([...base, '--buscar', 'torta', '--buscar', 'otra'])).toContain('opción repetida');
+    expect(mod.analizarArgumentos([...base, '--buscar', 'torta'], ENV_EMU).cfg).toMatchObject({ buscar: 'torta', aplicar: false });
+  });
+  it('lista área/nombre/activo de todos los ítems cuyo nombre contenga el texto, en cualquier estado, sin escribir', async () => {
+    const b = baseDe({ qtaco: { ...CATALOGO, t1: { nombre: 'Torta de milanesa', area: 'tortas', activo: true }, t2: { nombre: 'TORTA ahogada', activo: false } }, ajeno: { z: { nombre: 'Torta ajena', area: 'x', activo: true } } });
+    const { codigo, salida } = await correr(cfgDe({ buscar: 'tórta' }), b);
+    expect(codigo).toBe(0);
+    expect(b.escrituras).toHaveLength(0);
+    expect(b.lecturas).toEqual(['tenants/qtaco/catalogo']);
+    expect(salida).toContain('2 ítem(s)');
+    expect(salida).toMatch(/tortas\s+Torta de milanesa\s+true/);
+    expect(salida).toMatch(/\(sin área\)\s+TORTA ahogada\s+false/);
+    expect(salida).not.toContain('ajena');
+    expect(salida).not.toContain('Pilsener');
+  });
+  it('sin coincidencias lo dice y sale 0', async () => {
+    const { codigo, salida } = await correr(cfgDe({ buscar: 'torta' }), baseDe({ qtaco: CATALOGO }));
+    expect(codigo).toBe(0);
+    expect(salida).toContain('0 ítem(s)');
+  });
+});
+
 describe('E4. reversa', () => {
   it('restaura el estado exacto: los habilitados vuelven a false y lo demás queda igual', async () => {
     const b = baseDe({ qtaco: CATALOGO });
@@ -286,7 +320,7 @@ describe('E4. reversa', () => {
   });
   it('restaura el valor previo real: null vuelve a null, false a false, ausente se quita', async () => {
     const cat = {
-      n1: { nombre: 'A', area: 'tragos', activo: null }, n2: { nombre: 'B', area: 'tragos', activo: false }, n3: { nombre: 'C', area: 'tragos' },
+      n1: { nombre: 'A', area: 'postres', activo: null }, n2: { nombre: 'B', area: 'postres', activo: false }, n3: { nombre: 'C', area: 'postres' },
     };
     const b = baseDe({ qtaco: cat });
     const r = rutaRespaldo();

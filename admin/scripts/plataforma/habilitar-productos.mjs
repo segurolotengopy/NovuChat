@@ -2,12 +2,14 @@
  * HABILITAR PRODUCTOS DESHABILITADOS DE UNA CATEGORÍA — seco por omisión.
  *
  * QUÉ ES. Pone `activo: true` en los ítems de `tenants/{id}/catalogo` que hoy están
- * deshabilitados (`activo !== true`) y cuya categoría es exactamente cerveza, postres,
- * helados o tragos. En el catálogo la categoría vive en el campo `area` (la consola lo
- * guarda recortado y en minúsculas, y su filtro compara con `normalizar`: sin tildes y
- * en minúsculas; ver `web/src/modulos/productos/Catalogo.tsx`). Aquí se compara igual
- * que ese filtro: igualdad EXACTA tras `normalizar`. No hay plural ni parecido: «cervezas»
- * NO coincide. Los deshabilitados de otras categorías no se tocan: solo se cuentan.
+ * deshabilitados (`activo !== true`) y cuya categoría es exactamente cervezas, cocteleria o postres
+ * (nombres reales del catálogo de qtaco; los helados están dentro de postres). En el catálogo la
+ * categoría vive en el campo `area` (la consola lo guarda recortado y en minúsculas, y su filtro compara
+ * con `normalizar`: sin tildes y en minúsculas; ver `web/src/modulos/productos/Catalogo.tsx`). Aquí se
+ * compara igual que ese filtro, más recorte de espacios: igualdad EXACTA tras `normalizar`. Ni plural ni
+ * parecido: «cerveza», «tragos», «helados» o «promociones» NO coinciden y no se tocan. Los deshabilitados
+ * de otras categorías solo se cuentan. `--buscar <texto>` es SOLO LECTURA: lista área/nombre/activo de
+ * todos los ítems cuyo nombre normalizado contenga el texto, en cualquier estado.
  * Modelado sobre `aplicar-consola-oculta.mjs`: seco, salvaguarda de proyecto, respaldo y reversa.
  *
  *   node scripts/plataforma/habilitar-productos.mjs --proyecto <id> --tenant qtaco \
@@ -51,12 +53,13 @@ export const TENANTS_PERMITIDOS = Object.freeze(['qtaco']);
  * LAS CATEGORÍAS OBJETIVO: el único lugar donde se cambian. Se escriben ya normalizadas (sin tildes, minúsculas);
  * la comparación es de igualdad EXACTA tras `normalizar` y recorte de espacios: sin plurales ni parecidos.
  */
-export const CATEGORIAS = Object.freeze(['cerveza', 'postres', 'helados', 'tragos']);
-const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion'];
+export const CATEGORIAS = Object.freeze(['cervezas', 'cocteleria', 'postres']);
+const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion', 'buscar'];
 const BANDERAS = ['aplicar', 'revertir'];
 
 export const USO = '  node scripts/plataforma/habilitar-productos.mjs --proyecto <id> --tenant qtaco '
   + '[--aplicar] [--respaldo <ruta>] [--confirmo-produccion qtaco]\n'
+  + '  node scripts/plataforma/habilitar-productos.mjs --proyecto <id> --tenant qtaco --buscar <texto>   (solo lectura)\n'
   + '  node scripts/plataforma/habilitar-productos.mjs --revertir --respaldo <ruta> --tenant qtaco --proyecto <id> '
   + '[--aplicar] [--confirmo-produccion qtaco]\n'
   + `  tenants permitidos: ${TENANTS_PERMITIDOS.join(', ')}; categorías: ${CATEGORIAS.join(', ')}`;
@@ -138,6 +141,11 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     problemas.push('contra producción, --aplicar exige --confirmo-produccion <tenant> (igual a --tenant)');
   }
 
+  const buscar = valores.buscar;
+  if (buscar !== undefined) {
+    if (normalizar(buscar) === '' || buscar.length > 40) problemas.push('--buscar necesita un texto de 1 a 40 caracteres');
+    if (aplicar || revertir || respaldo !== undefined) problemas.push('--buscar es de solo lectura: no se combina con --aplicar, --revertir ni --respaldo');
+  }
   if (revertir && respaldo === undefined) problemas.push('--revertir exige --respaldo <ruta>');
   if (!revertir && aplicar && respaldo === undefined) problemas.push('--aplicar exige --respaldo <ruta> (por omisión no hay respaldo)');
   let respaldoReal = null;
@@ -146,7 +154,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     if (r.ok) respaldoReal = respaldo; else problemas.push(r.motivo);
   }
   if (problemas.length) return { ok: false, problemas };
-  return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, aplicar, revertir, respaldo: respaldoReal } };
+  return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, buscar: buscar ?? null, aplicar, revertir, respaldo: respaldoReal } };
 }
 
 // ===========================================================================
@@ -286,6 +294,17 @@ export async function ejecutar(cfg, deps) {
   const marcar = deps.marcarEscritura ?? (() => {});
   const rotulo = `${cfg.entorno} · tenant ${cfg.tenant}`;
   const items = await leerCatalogo(db, cfg.tenant);
+
+  // ------------------------------------------------------------------ buscar (solo lectura)
+  if (cfg.buscar) {
+    const q = normalizar(cfg.buscar);
+    const halladas = items.filter((i) => normalizar(i.nombre).includes(q));
+    log(`\n  BÚSQUEDA (solo lectura) · ${rotulo} · ${halladas.length} ítem(s) de ${items.length}\n`);
+    if (halladas.length) log(`  ${'área'.padEnd(16)} ${'nombre'.padEnd(34)} activo`);
+    for (const it of halladas) log(`  ${celda(typeof it.area === 'string' && it.area.trim() !== '' ? it.area : '(sin área)', 16)} ${celda(it.nombre, 34)} ${it.activo === true ? 'true' : it.activo === false ? 'false' : '(sin dato)'}`);
+    log('');
+    return 0;
+  }
 
   // ------------------------------------------------------------------ revertir
   if (cfg.revertir) {
