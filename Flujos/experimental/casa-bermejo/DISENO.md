@@ -9,7 +9,7 @@
 2. Separar por país del remitente (`ceMercadoDePrefijo`): +591 atendido en B3; +54 con texto fijo hasta B4; otro país, texto fijo.
 3. Leer el catálogo de NovuTienda (HTTP, credencial de n8n) y adaptarlo con `ceVendibles` (B2): precio exacto, `disponible`, `stock`, cotización `vigente`. Cualquier falla = pase a vendedor (aviso + botón, `ceTextoPase`).
 4. Asesorar (una llamada al modelo por turno de conversación libre) y armar el carrito por código (`vcVendibles` → `vcLineas`; el stock recorta la cantidad).
-5. Datos de entrega por país (Bolivia: nombre, CI, ciudad, empresa de flota o terminal; por confirmar con el comercio). El asistente NO calcula ni cobra el envío.
+5. Datos de entrega (Bolivia: nombre, ciudad, empresa de flota o terminal o dirección; por confirmar con el comercio). **El asistente NO toma CI ni DNI en el chat** (decisión de Andres, 05/11/2026, opción A): el comercio lo pide a mano al coordinar el envío. Motivo: la ficha de 48 h en n8n nunca guarda documentos y así el flujo queda como el de la base de venta, sin dato sensible en el almacén de n8n. El asistente tampoco calcula ni cobra el envío.
 6. Cobro real Bolivia: QR del comercio SIN monto (imagen de la consola) + lectura del comprobante y cotejo en el servidor. Nunca «pago acreditado»: «tu comprobante llegó y los datos coinciden».
 7. Pedido: aviso al comercio (plantilla de pedido, una vez cuando llega el comprobante) y registro en la consola de NovuChat (PR-4, de Clínicas). Nada se escribe en NovuTienda desde este flujo.
 8. Derivación a un vendedor (aviso Y botón), Tomar, comercio no operativo, uso extendido, guardado de medios (obligatorio), identidad (nunca niega ser una IA).

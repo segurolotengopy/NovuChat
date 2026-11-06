@@ -11,7 +11,7 @@ Cobro (`cb*`), avisos (`av*`), conversación (`vd*`), carrito (`vc*`), catálogo
 - La fuente del catálogo es HTTP (`ceVendibles`, B2) y no la consola; un catálogo ilegible pasa con un vendedor (`sin_configuracion`), nunca se improvisa.
 - La clave de la ficha es `casabermejo`; el mercado es solo Bolivia (`BM_MERCADO`); el id de pedido lleva `BM`.
 - La guía de voz es neutra: tratamiento (`tratamiento` = `usted` o tuteo) y tono los decide el comercio; no hay palabras de material ni piezas sin precio.
-- La entrega admite flota o terminal (pide dirección). **No toma documento (CI/DNI)**: decisión pendiente de Andres; la ficha nunca guarda un documento y el prompt lo prohíbe.
+- La entrega admite flota o terminal (pide dirección). **No toma documento (CI/DNI)**: decisión de Andres del 05/11/2026 (opción A); el comercio lo pide a mano al coordinar el envío. La ficha nunca guarda un documento y el prompt lo prohíbe.
 - Los dominios de las fotos son dato del negocio (`hostsFoto`); sin lista, ninguna foto.
 Cuando la venta común suba a `venta-digital/src/`, ambos archivos migran y las copias desaparecen (Walisuma incluido).
 
