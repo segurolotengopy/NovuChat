@@ -2071,7 +2071,7 @@ service cloud.firestore {
                       && conversacionValida()
                       && !request.resource.data.keys().hasAny(['turno', 'envioPersona',
                                                                'ultimoSalientePersonaEn', 'phoneNumberId',
-                                                               'rescate', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn']);
+                                                               'rescate', 'riesgoEn', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn']);
         allow delete: if false;
 
         // Dos ramas de actualización disjuntas:
@@ -2088,7 +2088,7 @@ service cloud.firestore {
                           && conversacionValida()
                           && !request.resource.data.diff(resource.data).affectedKeys()
                                 .hasAny(['turno', 'envioPersona', 'ultimoSalientePersonaEn', 'phoneNumberId',
-                                         'rescate', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn']))
+                                         'rescate', 'riesgoEn', 'bloqueada', 'bloqueadaPor', 'bloqueadaEn']))
                       || (esPersonaDelNegocio(tenantId)
                           && tenantOperativo(tenantId)
                           // `noContactar` es la lista de no molestar (bloque 4): una
@@ -2187,6 +2187,12 @@ service cloud.firestore {
                  // le PROHÍBEN al token de ingesta crearla, cambiarla o borrarla. La persona del
                  // negocio no la escribe: no está en su `soloCampos`.
                  , 'rescate'
+                 // PROTECCIÓN ANTE UNA CRISIS (05/11/2026): `riesgoEn` (cuándo se vio una señal de crisis)
+                 // lo escribe SOLO la ingesta (SDK Admin) con el hecho `no_contactar` + `riesgo`, y
+                 // `reclamarRescates` lo respeta. Se tolera aquí como `rescate`; las ramas create/update le
+                 // PROHÍBEN al token de ingesta crearlo, cambiarlo o borrarlo, y la persona del negocio no
+                 // lo tiene en su `soloCampos`: ni la consola lo apaga (a diferencia de `noContactar`).
+                 , 'riesgoEn'
                  // BLOQUEAR CONTACTO (31/10/2026): `bloqueada` (true), quién (`bloqueadaPor`) y cuándo
                  // (`bloqueadaEn`) los escribe SOLO `bloquearContacto` / `desbloquearContacto` con el SDK Admin.
                  // Se toleran acá (como `turno`) para que la ingesta pueda actualizar una conversación que ya

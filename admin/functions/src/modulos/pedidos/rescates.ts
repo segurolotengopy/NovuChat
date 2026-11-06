@@ -4,9 +4,10 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { REGION } from '../../core/region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../../core/seguridad/firma.js';
 import { milisegundosDe } from '../../core/turno/tiempo.js';
-import { registrar } from '../../core/turno/bitacora.js';
+import { enmascarar, registrar } from '../../core/turno/bitacora.js';
 import { leerTurno } from '../../core/conversacion/turno.js';
 import { decidirPausa } from '../../core/conversacion/pausa.js';
+import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
 import { periodoDe } from '../../central/cuenta/planes.js';
 import {
   consumidasDe, corteAplicable, estadoDeServicio, type CuentaCruda,
@@ -81,6 +82,8 @@ export const MAX_PAGINAS = 5;
  * se leen y una imagen o un rechazo anterior a ellos no se vería.
  */
 export const MENSAJES_A_LEER = 60;
+/** Pedidos que se leen de un contacto para saber si compró en las últimas 24 h. */
+export const PEDIDOS_A_LEER = 30;
 export const TEXTOS_MAX = 6;
 export const LARGO_TEXTO = 300;
 
@@ -90,7 +93,7 @@ export const RECHAZO =
 
 export type MotivoDescarte =
   | 'telefono_invalido' | 'excluido' | 'fuera_de_lista' | 'otra_linea' | 'ya_rescatado'
-  | 'no_contactar' | 'bloqueado' | 'atencion' | 'sin_ventana' | 'tomada' | 'compro' | 'temprano'
+  | 'no_contactar' | 'riesgo' | 'bloqueado' | 'atencion' | 'sin_ventana' | 'tomada' | 'compro' | 'temprano'
   | 'tarde' | 'medio' | 'rechazo' | 'seguimiento';
 
 export interface ContextoRescate {
@@ -117,12 +120,19 @@ export function motivoParaNoRescatar(
   if (ctx.soloTelefonos !== null && !ctx.soloTelefonos.has(telefono)) return 'fuera_de_lista';
   if (c['phoneNumberId'] !== ctx.phoneNumberId) return 'otra_linea';
   if (c['rescate'] !== undefined) return 'ya_rescatado';
+  // PROTECCIÓN ANTE UNA CRISIS. `riesgoEn` solo lo escribe el servidor (ingesta, con el hecho
+  // `no_contactar` + `riesgo`) y ninguna regla de la consola lo cambia ni lo borra. A diferencia de
+  // `noContactar` (que una persona del negocio puede apagar), cualquier valor distinto de ausente,
+  // false o null bloquea: ante la duda, no se escribe a una persona en crisis.
+  const rg = c['riesgoEn'];
+  if (rg !== undefined && rg !== null && rg !== false) return 'riesgo';
+  // Cualquier valor distinto de ausente o `false` bloquea; `null` también (no es «ausente»).
   const nc = c['noContactar'];
-  if (nc !== undefined && nc !== null && nc !== false) return 'no_contactar';
+  if (nc !== undefined && nc !== false) return 'no_contactar';
   // Contacto bloqueado por el comercio (`bloquearContacto`, core, 31/10/2026): nunca se le escribe.
   // Más estricto que `estaBloqueada` (solo `true`): ante cualquier valor distinto de ausente/false, no se escribe.
   const bl = c['bloqueada'];
-  if (bl !== undefined && bl !== null && bl !== false) return 'bloqueado';
+  if (bl !== undefined && bl !== false) return 'bloqueado';
   const estado = c['atencionEstado'];
   if (estado !== undefined && estado !== 'normal') return 'atencion';
   const ultimoMs = milisegundosDe(c['ultimoEntranteEn']);
@@ -177,7 +187,9 @@ export function leerMensajesParaRescate(
       x.ts !== null && x.ts >= desde && x.m['direccion'] === 'entrante')
     .sort((a, b) => a.ts - b.ts);
 
-  if (entrantes.some((x) => x.m['tipo'] === 'image' || x.m['tipo'] === 'document')) {
+  // `order` = pedido hecho (carrito web de `catalogoWeb.ts` o carrito nativo de Meta): cuenta como COMPRA
+  // aunque no haya `solicitud.etapa` (pago contra entrega o retiro). Nunca se le rescata a quien pidió.
+  if (entrantes.some((x) => x.m['tipo'] === 'image' || x.m['tipo'] === 'document' || x.m['tipo'] === 'order')) {
     return { motivo: 'medio', textos: [] };
   }
   const delTexto = entrantes
@@ -264,12 +276,19 @@ export const reclamarRescates = onRequest(
     const db = getFirestore();
     const ahoraMs = Date.now();
 
-    const [cuenta, metricas, plataforma, negocio] = await Promise.all([
+    const [cuenta, metricas, plataforma, negocio, ficha] = await Promise.all([
       db.doc(`tenants/${tenantId}/cuenta/estado`).get(),
       db.doc(`tenants/${tenantId}/metricas/${periodoDe(ahoraMs)}`).get(),
       db.doc('plataforma/prepago').get(),
       db.doc(`tenants/${tenantId}/config/negocio`).get(),
+      db.doc(`tenants/${tenantId}`).get(),
     ]);
+    // El módulo, DEL REGISTRO (como `verComprobante.ts`): sin Pedidos no hay rescate. 200 con
+    // motivo, como el resto de los motivos de esta función que no son un error de la llamada.
+    if (!tieneModulo(ficha.data() as FichaConCapacidades | undefined, 'pedidos')) {
+      respuesta.status(200).json({ phoneNumberId, rescates: [], motivo: 'sin_modulo' });
+      return;
+    }
     const cuentaCruda = (cuenta.data() ?? {}) as CuentaCruda;
     const servicio = estadoDeServicio(cuentaCruda, consumidasDe(metricas.data()), ahoraMs);
     if (corteAplicable(cuentaCruda, plataforma.data()) && !servicio.operativo) {
@@ -330,6 +349,16 @@ export const reclamarRescates = onRequest(
           const lectura = leerMensajesParaRescate(recientes.docs.map((m) => m.data()), ultimoMs);
           if (lectura.motivo !== '') continue;
 
+          // Un pedido ya creado en las últimas 24 h con este contacto también es una compra (el pedido
+          // del QR o del carrito web lleva `conversacionId`). Consulta de un solo campo (sin índice
+          // compuesto) y filtro de fecha en memoria; si el tope de lectura se llena sin hallar uno
+          // reciente, ante la duda, no se rescata.
+          const pedidos = await db.collection(`tenants/${tenantId}/pedidos`)
+            .where('conversacionId', '==', doc.id).limit(PEDIDOS_A_LEER).get();
+          const desdePedido = ahoraMs - 24 * HORA;
+          if (pedidos.size >= PEDIDOS_A_LEER
+            || pedidos.docs.some((p) => (milisegundosDe(p.get('creadoEn')) ?? Infinity) >= desdePedido)) continue;
+
           // LA MARCA, ANTES DE ENVIAR: se relee y se vuelve a decidir dentro de la
           // transacción; dos corridas simultáneas no pueden marcar la misma.
           const marcada = await db.runTransaction(async (tx) => {
@@ -347,8 +376,11 @@ export const reclamarRescates = onRequest(
           if (!marcada) continue;
 
           await registrar(tenantId, {
+            // RECLAMADO, no «enviado»: la marca va antes del envío y esta Function no sabe si n8n
+            // llegó a mandarlo. No hay un camino de confirmación de vuelta (límite conocido).
+            // `tipo` sigue siendo `seguimiento_enviado` (la unión de tipos de la bitácora es del core).
             tipo: 'seguimiento_enviado', resultado: 'ok', telefono,
-            conversacionId: `wa_${telefono}`, codigo: 'rescate',
+            conversacionId: `wa_${enmascarar(telefono)}`, codigo: 'rescate_reclamado',
           });
           rescates.push({ telefono, ultimoEntranteMs: ultimoMs, textos: lectura.textos });
         } catch {

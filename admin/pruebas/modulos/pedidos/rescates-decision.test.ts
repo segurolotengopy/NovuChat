@@ -63,10 +63,23 @@ describe('motivoParaNoRescatar: quién entra, y sobre todo quién no', () => {
     expect(motivo(conv())).toBe('');
   });
 
+  it('`noContactar: null` corta (null no es «ausente»)', () => {
+    expect(motivo(conv(undefined, { noContactar: null }))).toBe('no_contactar');
+  });
+
+  it('`riesgoEn` (crisis, la escribe solo el servidor): cualquier valor distinto de ausente/false/null corta, aun con noContactar apagado', () => {
+    for (const v of [ts(HORA), true, 'x', 0, 1, {}]) {
+      expect(motivo(conv(undefined, { riesgoEn: v, noContactar: false })), JSON.stringify(v)).toBe('riesgo');
+    }
+    expect(motivo(conv(undefined, { riesgoEn: false }))).toBe('');
+    expect(motivo(conv(undefined, { riesgoEn: null }))).toBe('');
+  });
+
   it('contacto bloqueado por el comercio (`bloqueada`): true, «true» o cualquier valor raro corta; false o ausente no', () => {
     for (const v of [true, 'true', 1, {}]) {
       expect(motivo(conv(undefined, { bloqueada: v })), JSON.stringify(v)).toBe('bloqueado');
     }
+    expect(motivo(conv(undefined, { bloqueada: null }))).toBe('bloqueado');
     expect(motivo(conv(undefined, { bloqueada: false }))).toBe('');
     expect(motivo(conv())).toBe('');
   });
@@ -174,6 +187,12 @@ const msj = (direccion: string, tipo: string, texto: string, msAtras: number) =>
 const ULTIMO = AHORA - 22 * HORA;
 
 describe('leerMensajesParaRescate', () => {
+  it('un pedido hecho (`order` entrante, carrito web o nativo de Meta) cuenta como compra: no se rescata', () => {
+    expect(leerMensajesParaRescate([msj('entrante', 'order', '', 23 * HORA)], ULTIMO).motivo).toBe('medio');
+    expect(leerMensajesParaRescate([msj('entrante', 'text', 'hola', 23.5 * HORA), msj('entrante', 'order', '', 23 * HORA)], ULTIMO).motivo).toBe('medio');
+    expect(leerMensajesParaRescate([msj('saliente', 'order', '', 23 * HORA)], ULTIMO).motivo).toBe('');
+  });
+
   it('imagen o documento ENTRANTE en la ventana: medio', () => {
     expect(leerMensajesParaRescate([msj('entrante', 'image', '', 23 * HORA)], ULTIMO).motivo).toBe('medio');
     expect(leerMensajesParaRescate([msj('entrante', 'document', '', 23 * HORA)], ULTIMO).motivo).toBe('medio');

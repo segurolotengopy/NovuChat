@@ -89,7 +89,7 @@ async function sembrar(
 }
 
 async function borrarTodo(t: string) {
-  for (const c of ['conversaciones', 'bitacora']) {
+  for (const c of ['conversaciones', 'bitacora', 'pedidos']) {
     for (const d of (await db.collection(`tenants/${t}/${c}`).get()).docs) {
       await db.recursiveDelete(d.ref);
     }
@@ -104,7 +104,7 @@ beforeAll(async () => {
   await db.doc(`rutasWhatsApp/${NUM_X2}`).set({ tenantId: X, flujo: 'venta', aliasSecreto: 'cliente20', estado: 'activo' });
   await db.doc(`rutasWhatsApp/${NUM_Y}`).set({ tenantId: Y, flujo: 'venta', aliasSecreto: 'cliente19', estado: 'activo' });
   for (const t of [X, Y]) {
-    await db.doc(`tenants/${t}`).set({ nombre: t, estado: 'activo', flujos: ['venta'] });
+    await db.doc(`tenants/${t}`).set({ nombre: t, estado: 'activo', flujos: ['venta'], modulos: ['productos', 'pedidos'] });
     await db.doc(`tenants/${t}/config/negocio`).set({ nombreNegocio: t, moneda: 'BOB', numeroRecepcion: '+591 000 00099' });
   }
 });
@@ -115,7 +115,7 @@ beforeEach(async () => {
   await db.doc(`tenants/${X}/cuenta/estado`).delete();
   await db.doc('plataforma/prepago').delete();
   await db.doc(`rutasWhatsApp/${NUM_X}`).set({ tenantId: X, flujo: 'venta', aliasSecreto: 'cliente20', estado: 'activo' });
-  await db.doc(`tenants/${X}`).set({ nombre: X, estado: 'activo', flujos: ['venta'] });
+  await db.doc(`tenants/${X}`).set({ nombre: X, estado: 'activo', flujos: ['venta'], modulos: ['productos', 'pedidos'] });
 });
 
 afterAll(async () => {
@@ -176,6 +176,46 @@ describe('acceso', () => {
   it('cuerpo inválido: 400', async () => {
     expect((await llamar({ cuerpo: { v: 2 } })).codigo).toBe(400);
     expect((await llamar({ cuerpo: { v: 1, mas: 1 } })).codigo).toBe(400);
+  });
+});
+
+describe('módulo y compra', () => {
+  it('comercio sin el módulo pedidos (o con la ficha sin `modulos`): 200 sin_modulo y nada marcado', async () => {
+    await sembrar(X, tel(11));
+    for (const ficha of [
+      { nombre: X, estado: 'activo', flujos: ['venta'], modulos: ['productos'] },
+      { nombre: X, estado: 'activo', flujos: ['venta'] },
+      { nombre: X, estado: 'activo', flujos: ['venta'], modulos: 'pedidos' },
+    ]) {
+      await db.doc(`tenants/${X}`).set(ficha);
+      const r = await llamar();
+      expect(r.codigo).toBe(200);
+      expect(r.cuerpo).toEqual({ phoneNumberId: NUM_X, rescates: [], motivo: 'sin_modulo' });
+      expect(await marca(X, tel(11))).toBeUndefined();
+    }
+  });
+
+  it('un `order` entrante (carrito web o nativo) o un pedido de las últimas 24 h es una compra: no se marca', async () => {
+    const ord = (hace: number) => ({ direccion: 'entrante', tipo: 'order', texto: '', hace });
+    await sembrar(X, tel(51), {}, [ord(SILENCIO_OK + MIN)]);
+    await sembrar(X, tel(52));
+    await db.doc(`tenants/${X}/pedidos/wa_ped-1`).set({ conversacionId: `wa_${tel(52)}`, creadoEn: en(23 * HORA), estado: 'recibido' });
+    await sembrar(X, tel(53));                                   // control: su pedido es de hace 3 días
+    await db.doc(`tenants/${X}/pedidos/wa_ped-2`).set({ conversacionId: `wa_${tel(53)}`, creadoEn: en(72 * HORA), estado: 'recibido' });
+    await sembrar(X, tel(54));                                   // control: el pedido es de OTRA conversación
+    await db.doc(`tenants/${X}/pedidos/wa_ped-3`).set({ conversacionId: `wa_${tel(99)}`, creadoEn: en(HORA), estado: 'recibido' });
+    const r = await llamar();
+    expect(r.cuerpo.rescates.map((x: { telefono: string }) => x.telefono).sort()).toEqual([tel(53), tel(54)]);
+    expect(await marca(X, tel(51))).toBeUndefined();
+    expect(await marca(X, tel(52))).toBeUndefined();
+  });
+
+  it('crisis: `riesgoEn` corta aunque la consola haya apagado `noContactar`', async () => {
+    await sembrar(X, tel(55), { noContactar: false, riesgoEn: en(5 * HORA) });
+    await sembrar(X, tel(56), { noContactar: false });
+    const r = await llamar();
+    expect(r.cuerpo.rescates.map((x: { telefono: string }) => x.telefono)).toEqual([tel(56)]);
+    expect(await marca(X, tel(55))).toBeUndefined();
   });
 });
 
@@ -266,7 +306,7 @@ describe('uno solo, siempre', () => {
     // Exactamente las 6, cada una una sola vez entre las dos llamadas.
     expect([...salidas].sort()).toEqual(esperadas);
     for (const t of esperadas) expect(await marca(X, t), t).toBeDefined();
-    const bitacora = await db.collection(`tenants/${X}/bitacora`).where('codigo', '==', 'rescate').get();
+    const bitacora = await db.collection(`tenants/${X}/bitacora`).where('codigo', '==', 'rescate_reclamado').get();
     expect(bitacora.size).toBe(6);
   });
 
@@ -452,7 +492,7 @@ describe('cuenta cortada', () => {
 });
 
 describe('bitácora', () => {
-  it('un seguimiento_enviado con codigo «rescate» por cada marca, sin el teléfono completo ni texto', async () => {
+  it('un seguimiento_enviado con codigo «rescate_reclamado» por cada marca, sin el teléfono completo ni texto', async () => {
     await sembrar(X, tel(11));
     await sembrar(X, tel(12));
     await sembrar(X, tel(13), { noContactar: true });
@@ -460,12 +500,10 @@ describe('bitácora', () => {
     const b = (await db.collection(`tenants/${X}/bitacora`).where('tipo', '==', 'seguimiento_enviado').get()).docs.map((d) => d.data());
     expect(b).toHaveLength(2);
     for (const e of b) {
-      expect(e['codigo']).toBe('rescate');
-      // El teléfono completo solo aparece en `conversacionId` (el id del documento, como en
-      // `seguimientos.ts` y la ingesta); el destino va enmascarado y no hay texto.
-      const { conversacionId, ...resto } = e;
-      expect(conversacionId).toMatch(/^wa_/);
-      const crudo = JSON.stringify(resto);
+      expect(e['codigo']).toBe('rescate_reclamado');
+      // El teléfono va enmascarado en todos lados, también en `conversacionId`; no hay texto.
+      expect(e['conversacionId']).toMatch(/^wa_\d{4}\*{4}\d{3}$/);
+      const crudo = JSON.stringify(e);
       expect(crudo).not.toContain('pastelería');
       expect(crudo).not.toContain(tel(11));
       expect(crudo).not.toContain(tel(12));
