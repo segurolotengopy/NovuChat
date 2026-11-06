@@ -386,7 +386,7 @@ function derivar(razon, conservarPaso, extra, sinFraseMenu, textoPropio) {
   const TEXTO_DERIVACION = typeof textoPropio === 'string' && textoPropio ? textoPropio : CUERPO_DERIVACION
     + (conservarPaso ? ' Tu pedido sigue esperando el comprobante.'
       // `sinFraseMenu` (costo del delivery, con el pedido en curso): el carrito se conserva, así que el texto no sugiere que se borra nada.
-      : (sinFraseMenu === true ? (en.carrito.length ? ' Tu pedido sigue guardado.' : '') : ' Para volver al inicio, escribe «menú».'))
+      : (sinFraseMenu === true ? (en.carrito.length ? ' Tu pedido sigue guardado.' : '') : ' Para volver al inicio, escribe «inicio».'))
     // Un pedido guardado por «Cambiar algo» sigue ahí aunque se derive: se dice cómo recuperarlo (se cumple por código en `Decidir turno`).
     + (!conservarPaso && en.carritoAnterior ? ' Tu pedido anterior sigue guardado: escribe «dejarlo como estaba» para recuperarlo.' : '');
   ruta = 'transferir:' + razon;
@@ -523,7 +523,7 @@ function mensajesDeCarta(enlace) {
   if (url) {
     return [{
       tipo: 'enlace', catalogo: true,
-      cuerpo: '¡Con gusto! Toca «Ver la carta», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «menú».',
+      cuerpo: '¡Con gusto! Toca «Ver la carta», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «inicio».',
       botones: [{ id: '', title: 'Ver la carta' }], url: url,
     }];
   }

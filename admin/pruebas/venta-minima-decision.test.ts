@@ -856,7 +856,7 @@ describe('Plan del turno: derivar a una persona (solo se ofrece lo que se cumple
     const s = registrar(turno(m, { texto: 'tengo un problema con mi pedido de ayer, necesito ayuda de una persona', extraccion: extPedido({ quiereHablar: true }) }));
     expect(s.d['accion']).toBe('extraer_pedido');
     const msg = s.p!['mensajes'][0];
-    expect(msg).toMatchObject({ tipo: 'enlace', cuerpo: '¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo. Para volver al inicio, escribe «menú».', url: 'https://wa.me/59100000099' });
+    expect(msg).toMatchObject({ tipo: 'enlace', cuerpo: '¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo. Para volver al inicio, escribe «inicio».', url: 'https://wa.me/59100000099' });
     expect(s.p!['aviso']['tipo']).toBe('transferencia');
     expect(s.p!['aviso']['datos']).toMatchObject({ from: FROM, nombrePerfil: 'Ana Pérez', telefono: FROM, motivo: 'tengo un problema con mi pedido de ayer, necesito ayuda de una persona' });
     expect(s.p!['aviso']['datos']['codigo']).toMatch(/^[0-9A-Z]{4}$/);

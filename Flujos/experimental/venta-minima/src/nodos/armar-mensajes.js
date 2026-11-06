@@ -56,9 +56,9 @@ const AM_REC = vmDigitos(AM_CFG.numeroRecepcion);
 const AM_REC_OK = AM_REC.length >= 8 && AM_REC.length <= 15 && AM_REC !== AM_FROM_DIG;
 const AM_GEN_CUERPO = AM_CONVERSA
   ? 'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. '
-    + 'Para volver al inicio, escribe «menú».'
+    + 'Para volver al inicio, escribe «inicio».'
   : 'Eso lo ve directamente nuestro equipo. Toca el botón para escribirnos.';
-const AM_SEGUIR = 'Para volver al inicio, escribe «menú».';
+const AM_SEGUIR = 'Para volver al inicio, escribe «inicio».';
 const AM_GEN_BOTON = 'Escribir al local';
 const AM_HORA_MS = 60 * 60 * 1000;
 const AM_MAX_MARCAS = 500; // teléfonos con marcas de aviso por hora
@@ -327,10 +327,10 @@ function amArmarUno(m) {
     })).filter((b) => b.id && b.id.length <= 256 && b.title).slice(0, 3);
     if (bs.some((b) => !amSeguro(b.title))) return amGenerico('boton_reemplazado_por_palabra_prohibida');
     const idMenu = vmIdDeBoton('m', 'menu');
-    if (AM_CONVERSA && m.sinMenu !== true && bs.length && bs.length < 3 && idMenu && !bs.some((b) => b.id === idMenu)) bs.push({ id: idMenu, title: bs.some((b) => /^[prf]\|/.test(b.id)) ? 'Menú' : 'Volver a inicio' });
+    if (AM_CONVERSA && m.sinMenu !== true && bs.length && bs.length < 3 && idMenu && !bs.some((b) => b.id === idMenu)) bs.push({ id: idMenu, title: 'Volver a inicio' });
     if (bs.length) {
       return Object.assign({ payload: amBotones(cuerpo, bs), texto: cuerpo,
-        respaldo: vmRecorte(cuerpo + '\n\nSi no ves los botones, escribe «menu» para volver al inicio.', 4000), tipoReporte: 'interactive' }, extra);
+        respaldo: vmRecorte(cuerpo + '\n\nSi no ves los botones, escribe «inicio» para volver al inicio.', 4000), tipoReporte: 'interactive' }, extra);
     }
   }
   return Object.assign({ payload: amTexto(cuerpo), texto: cuerpo, respaldo: cuerpo, tipoReporte: 'text' }, extra);

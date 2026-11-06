@@ -1595,7 +1595,7 @@ describe('no negociable 8: la reserva (día de la semana por código; cada error
     const r = armarReserva({ ventana: 5 });
     expect(cuerpos(r.resumen)[0]).toContain('viernes 9 de octubre a las 20:00');
     expect(cuerpos(r.resumen)[0]).toContain('4 personas');
-    expect(titulosDe(r.resumen.mensajes[0] as NonNullable<(typeof r.resumen.mensajes)[number]>)).toEqual(['Reservar', 'Corregir', 'Menú']);
+    expect(titulosDe(r.resumen.mensajes[0] as NonNullable<(typeof r.resumen.mensajes)[number]>)).toEqual(['Reservar', 'Corregir', 'Volver a inicio']);
     const enviada = enviarReserva(r);
     expect(todoElTexto(r.resumen) + todoElTexto(enviada)).not.toMatch(/confirmad/i);
     expect(plantillasA(enviada, AV1)).toHaveLength(1);
@@ -1605,7 +1605,7 @@ describe('no negociable 8: la reserva (día de la semana por código; cada error
     expect(cuerpos(enviada)[0]).not.toMatch(/todavía no es una reserva|según sus mesas|Toca el botón/);
     // Redacción: el texto sale sin la frase de «menú» ni «Todavía es una solicitud» (el texto viejo).
     expect(cuerpos(enviada)[0]).not.toContain('Todavía es una solicitud');
-    expect(cuerpos(enviada)[0]).not.toContain('escribe «menú»');
+    expect(cuerpos(enviada)[0]).not.toContain('escribe «inicio»');
     // El rol cocina usa `pedido_registrado` con la forma `pedido`: la variable 1 se rotula «SOLICITUD DE RESERVA», nunca «confirmada».
     // (El rol completo de Q'Taco usa `solicitud_reserva`: ver la prueba «plantilla por rol».)
     const plantillaReserva = plantillasA(enviada, AV2)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>;
@@ -1854,6 +1854,25 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     expect(cuerpos(con(vencida).escribe(TEXTO_DUO))[0]).toMatch(/¿Qué te gustaría hacer( ahora)?\?/);
   });
 
+  it('NEGANDO: ningún mensaje al cliente dice «menú» con sentido de inicio (botones, derivación, promoción, fuera de flujo)', () => {
+    const w = crear();
+    const c = con(w);
+    const todo: string[] = [];
+    const junta = (t: ReturnType<typeof c.escribe>) => { todo.push(...cuerpos(t), ...t.mensajes.flatMap(titulosDe)); };
+    junta(c.escribe('hola'));
+    junta(c.toca('m|pedido', 'Hacer un pedido'));
+    junta(c.escribe(TEXTO_DUO));
+    junta(c.escribe('quiero hablar con una persona'));
+    junta(c.escribe('inicio'));
+    junta(c.escribe('cancelar'));
+    junta(c.toca('m|reserva', 'Reservar mesa'));
+    expect(todo.length).toBeGreaterThan(5);
+    for (const t of todo) {
+      expect(t, t).not.toMatch(/\bmen[uú]\b/i);
+      if (t.length <= 20) expect(t.length).toBeLessThanOrEqual(20);
+    }
+  });
+
   describe('campaña de solo reserva «Jueves de +2» (dato del negocio, 05/11)', () => {
     const JUEVES = 'Hola, vi la promoción Jueves de +2 y quiero hacer una reserva.';
     const MENSAJE = "¡Hola! 🌮 Los jueves puedes agrandar tu Q'Taco Dúo: solo por Bs 8 más recibes 2 tacos extra. El total es Bs 178 para 2 personas. Esta promoción es solo los jueves, para consumo en el local; igual puedes reservar tu mesa el día que quieras. ¿Quieres hacer una reserva?";
@@ -1965,7 +1984,7 @@ describe('pedido', () => {
     expect(cuerpos(r.resumen)[0]).toContain('1 orden de 3 (55 Bs)');
     expect(cuerpos(r.resumen)[0]).toContain('3 sueltos (63 Bs)');
     expect(cuerpos(r.resumen)[0]).not.toMatch(/Total/);
-    expect(titulosDe(r.resumen.mensajes[0] as NonNullable<(typeof r.resumen.mensajes)[number]>)).toEqual(['Orden', 'Sueltos', 'Menú']);
+    expect(titulosDe(r.resumen.mensajes[0] as NonNullable<(typeof r.resumen.mensajes)[number]>)).toEqual(['Orden', 'Sueltos', 'Volver a inicio']);
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido');
     expect(r.resumen.avisos).toHaveLength(0);
     const orden = r.c.toca(idDeBoton(r.resumen, 'Orden'), 'Orden');
@@ -1980,7 +1999,7 @@ describe('pedido', () => {
     expect(cuerpos(resumenDe([ln('tacos de birria', 2, 'orden')])).join('\n')).toContain('Total de la comida: 110 Bs.');
     const cuatro = resumenDe([ln('tacos de birria', 4)]);
     expect(cuerpos(cuatro).join('\n')).toContain('Total de la comida: 84 Bs.');
-    expect(titulosDe(cuatro.mensajes[0] as NonNullable<(typeof cuatro.mensajes)[number]>)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Menú']);
+    expect(titulosDe(cuatro.mensajes[0] as NonNullable<(typeof cuatro.mensajes)[number]>)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Volver a inicio']);
     const seis = cuerpos(resumenDe([ln('tacos de birria', 6)]))[0] ?? '';
     expect(seis).toContain('110 Bs');
     expect(seis).toContain('126 Bs');
@@ -1998,7 +2017,7 @@ describe('pedido', () => {
 
   it('delivery sin dirección → la pide, SOLO la dirección (la referencia es opcional); con la dirección sola, sigue al resumen', () => {
     const r = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
-    expect(cuerpos(r.resumen)[0]).toBe('Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «menú».');
+    expect(cuerpos(r.resumen)[0]).toBe('Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».');
     expect(cuerpos(r.resumen)[0]).not.toContain('QR');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
     expect(r.resumen.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
@@ -2018,7 +2037,7 @@ describe('pedido', () => {
     const mala = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
     mala.w.estado.extraccion = EX([], { entrega: '', direccion: 'calle', referencia: '', nombre: '' });
     const t = mala.c.escribe('calle');
-    expect(cuerpos(t)[0]).toBe('Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «menú».');
+    expect(cuerpos(t)[0]).toBe('Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».');
     expect(estadoDe(mala.w.mundo)['paso']).toBe('pedido_datos');
   });
 
@@ -2119,7 +2138,7 @@ describe('pedido', () => {
       expect(t.llamadas.extraer).toHaveLength(0);
       expect(tieneEnlace(t)).toBe(true);
       expect(plantillasA(t, AV1)).toHaveLength(1); // el aviso de la derivación
-      expect(cuerpos(t)[0]).toBe('Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Para volver al inicio, escribe «menú».');
+      expect(cuerpos(t)[0]).toBe('Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Para volver al inicio, escribe «inicio».');
     }
   });
 
@@ -3591,7 +3610,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     ...op,
   });
   const titulosDelPrimero = (t: ResultadoTurno): string[] => titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>);
-  const TEXTO_SIN_BOTON = 'Disculpa, eso no lo puedo resolver por aquí 🙏. Para volver al inicio, escribe «menú».';
+  const TEXTO_SIN_BOTON = 'Disculpa, eso no lo puedo resolver por aquí 🙏. Para volver al inicio, escribe «inicio».';
 
   it('la conversación de las capturas: hola, carta, audio, helado, imagen, reserva, menú y de nuevo el pedido; ningún turno se derivó', () => {
     const w = ensayo();
@@ -3611,7 +3630,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     expect(q).toContain('Gaseosas');
     expect(q).toMatch(/1 orden de 3 \(55 Bs\)/);
     expect(q).toMatch(/3 sueltos \(63 Bs\)/);
-    expect(titulosDelPrimero(audio)).toEqual(['Orden', 'Sueltos', 'Menú']);
+    expect(titulosDelPrimero(audio)).toEqual(['Orden', 'Sueltos', 'Volver a inicio']);
     expect(audio.avisos).toHaveLength(0);
     expect(estadoDe(w.mundo)['pendiente']).toHaveLength(1);
     // 4. «quiero un helado» (una de las cosas excluidas a propósito) → el texto de excluido con la carta a un toque; NO se deriva.
@@ -3664,7 +3683,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     w.estado.extraccion = RESERVA_OK;
     const res = c.escribe('quiero reservar una mesa');
     expect(cuerpos(res)[0]).toMatch(/^Guardé tu pedido \(4 productos\)\. Cuando termines la reserva, escribe «carta» para seguir con el pedido\./);
-    expect(titulosDelPrimero(res)).toEqual(['Reservar', 'Corregir', 'Menú']);
+    expect(titulosDelPrimero(res)).toEqual(['Reservar', 'Corregir', 'Volver a inicio']);
     expect(estadoDe(w.mundo)['paso']).toBe('reserva_confirmar');
     expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
     expect(estadoDe(w.mundo)['carritoGuardado']).toBe(4);
@@ -3801,7 +3820,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     // Con la recepción igual al remitente no hay botón: el texto lo dice y manda a «menú» sin nombrar un botón que no existe.
     expect(tieneEnlace(pide)).toBe(false);
     // «Pidió una persona» sin botón: la oración del botón se quita y la frase queda útil (no solo «¡Claro!»).
-    expect(cuerpos(pide)[0]).toBe('¡Claro! Eso lo ve directamente nuestro equipo. Para volver al inicio, escribe «menú».');
+    expect(cuerpos(pide)[0]).toBe('¡Claro! Eso lo ve directamente nuestro equipo. Para volver al inicio, escribe «inicio».');
     expect(cuerpos(pide)[0]).not.toMatch(/Escribir al local|bot[oó]n/i);
     expect(plantillasA(pide, AV1)).toHaveLength(1);
     expect(estadoDe(w.mundo)['paso']).toBe('menu'); // negativo: NO queda en `pedido*`
@@ -3897,7 +3916,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: 'recojo' });
     c.toca('m|pedido', 'Hacer un pedido');
     c.escribe('quiero 4 tacos de birria para recoger');
-    const menu = c.toca('m|menu', 'Menú');
+    const menu = c.toca('m|menu', 'Volver a inicio');
     expect(cuerpos(menu)[0]).toMatch(/¿Qué te gustaría hacer( ahora)?\?/);
     expect(estadoDe(w.mundo)['paso']).toBe('menu');
     expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
@@ -4420,7 +4439,7 @@ describe('esperando_comprobante: «menú» y la derivación conservan el paso y 
 
   it('«menú» (escrito y con el botón) muestra el recordatorio con «Reenviar QR» y «Cancelar pedido», SIN botón «Menú»; el paso y el pedido siguen', () => {
     const e = conQrEnEspera();
-    for (const t of [e.c.escribe('menú'), e.c.toca('m|menu', 'Menú')]) {
+    for (const t of [e.c.escribe('menú'), e.c.toca('m|menu', 'Volver a inicio')]) {
       expect(cuerpos(t)[0]).toContain(`#${e.codigo}`);
       expect(titulosDe(t.mensajes[0]!)).toEqual(['Reenviar QR', 'Cancelar pedido']);
       expect(t.avisos).toHaveLength(0);
@@ -4434,7 +4453,7 @@ describe('esperando_comprobante: «menú» y la derivación conservan el paso y 
     expect(tieneEnlace(t)).toBe(true);
     expect(t.avisos.length).toBeGreaterThan(0);
     expect(cuerpos(t)[0]).toContain('Tu pedido sigue esperando el comprobante');
-    expect(cuerpos(t)[0]).not.toMatch(/escribe «menú»|escribe «menu»/i);
+    expect(cuerpos(t)[0]).not.toMatch(/escribe «inicio»|escribe «inicio»/i);
     sigueEsperando(e);
   });
 
@@ -5168,7 +5187,7 @@ describe('C. pedido a medias: «quiero confirmar» no deriva; cambiar a recoger;
     expect(estadoDe(w.mundo)['carrito']).toHaveLength(1); // el pedido sigue guardado
     // El opuesto: otra derivación (pedir una persona) conserva la frase de «menú».
     const otra = deliveryPendiente();
-    expect(cuerpos(otra.c.escribe('quiero hablar con una persona'))[0]).toContain('Para volver al inicio, escribe «menú».');
+    expect(cuerpos(otra.c.escribe('quiero hablar con una persona'))[0]).toContain('Para volver al inicio, escribe «inicio».');
   });
 });
 

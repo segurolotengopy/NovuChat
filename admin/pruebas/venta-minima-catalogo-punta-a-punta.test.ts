@@ -26,7 +26,7 @@ import {
 
 const CARRITO = 'Carrito del catálogo';
 // El pedido de dirección (PR-A 05/10): sale con el botón de ubicación; es el mismo mensaje de siempre, sin mensajes de más.
-const PIDE_DIRECCION = 'Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «menú».';
+const PIDE_DIRECCION = 'Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».';
 
 const cabeceras = (extra: J = {}): J => ({
   'x-novuchat-numero': PHONE_ID, 'x-novuchat-timestamp': String(AHORA), 'x-novuchat-signature': `sha256=${'0'.repeat(64)}`, ...extra,
@@ -62,7 +62,7 @@ describe('un carrito válido: UN resumen con sus tres botones, sin reportarse co
     expect(t.mensajes).toHaveLength(1);
     expect(t.mensajes[0]!.a).toBe('59100000011');
     expect(t.mensajes[0]!.cuerpo).toMatch(/110/);
-    expect(titulos(t)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Menú']);
+    expect(titulos(t)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Volver a inicio']);
     expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
     // Cada nodo corre una vez.
     const veces = new Map<string, number>();
@@ -585,7 +585,7 @@ describe('delivery opcional: la secuencia real del 05/10 (dirección ya puesta e
     expect(t.mensajes).toHaveLength(1);
     expect(t.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234');
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/necesito|referencia|no va en el QR/i);
-    expect(titulos(t)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Menú']);
+    expect(titulos(t)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Volver a inicio']);
     expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
     expect(t.llamadas.extraer).toHaveLength(0);
   });
