@@ -3,7 +3,7 @@
 // con codigo, y un campo raro del modelo se descarta, no se obedece.
 //
 // Tipos de plan (`plan`): nada, menu, emergencia, contacto_doctor, contacto_recepcion,
-// derivar_medio, audio_ilegible, imagen_sin_texto, respuesta_fija (params.clave, params.conMenu), pedir_boton, pedir_nombre, transferir, error, responder,
+// derivar_medio, consulta_clinica, audio_ilegible, imagen_sin_texto, respuesta_fija (params.clave, params.conMenu), pedir_boton, pedir_nombre, transferir, error, responder,
 // ofrecer, elegir_hueco, crear (con nombre), listar (cancelar o mover), cancelar,
 // mover_elegido.
 const d = cnPrimero('Decidir turno') || {};
@@ -71,7 +71,7 @@ function nombresValidos(lista) {
 const accion = d.accion;
 
 // --- Planes que no necesitan modelo ni calendario ---------------------------------------
-if (['nada', 'menu', 'emergencia', 'contacto_doctor', 'contacto_recepcion', 'derivar_medio', 'audio_ilegible', 'imagen_sin_texto', 'respuesta_fija'].indexOf(accion) >= 0) {
+if (['nada', 'menu', 'emergencia', 'contacto_doctor', 'contacto_recepcion', 'derivar_medio', 'audio_ilegible', 'imagen_sin_texto', 'respuesta_fija', 'consulta_clinica'].indexOf(accion) >= 0) {
   if (accion !== 'nada' && est.paso === 'inicio') en.paso = 'menu';
   // Una pregunta sencilla contestada por codigo: `clave` dice cual y `conMenu` si es el primer mensaje de la
   // conversacion (la respuesta va en el cuerpo del menu) o si el menu ya paso (va sola). Los textos los pone
