@@ -31,7 +31,7 @@
  * RESPALDO (`--aplicar` lo exige): ruta absoluta fuera de todo repositorio, carpeta 0700, archivo 0600, nunca se
  * pisa. Guarda los dos ítems creados y el contador previo. REVERSA (`--revertir --respaldo`): en una transacción
  * BORRA solo esos dos ids y SOLO si siguen idénticos a lo creado (sin contar la hora del sello); uno modificado se
- * deja y se avisa. Baja el contador en lo borrado.
+ * deja y se avisa. Baja el contador en lo borrado y deja `ultimoItem` = el último id borrado (como `bajaContada`).
  *
  * SALIDA. 0: escrito y comprobado (o revertido). 1: el seco puede aplicarse / quedó algo sin revertir. 2: uso,
  * salvaguarda o bloqueo (no se escribió nada). 3: error de ejecución. 130: Ctrl-C.
@@ -46,7 +46,7 @@ import { comprobarProyecto, comprobarRespaldo, guardarRespaldo } from '../../pla
 
 export const TENANTS_PERMITIDOS = Object.freeze(['qtaco']);
 export const SELLO = 'cargar-productos-promos';
-const DESCRIPCION = 'Campaña Tortas mexicanas. Incluye salsa mexicana especial.';
+const DESCRIPCION = 'Incluye salsa mexicana especial.';
 
 /** LOS ÚNICOS DOS ÍTEMS QUE ESTE ARCHIVO ESCRIBE (sin el sello). */
 export const PRODUCTOS = Object.freeze([
@@ -142,8 +142,10 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
 export function evaluar({ tenant, cuenta, contador, items }) {
   const bloqueos = [];
   if (!tenant || tenant.estado !== 'activo') bloqueos.push('el comercio no está operativo (estado distinto de «activo»)');
+  if (tenant && !(Array.isArray(tenant.modulos) && tenant.modulos.includes('productos'))) bloqueos.push('el comercio no tiene el módulo «productos» encendido (tenants/qtaco.modulos)');
   const limite = limiteDeProductos(cuenta);
   const hay = items.length;
+  if (contador && !Number.isInteger(contador.items)) bloqueos.push('contador corrupto: se detiene');
   const guardado = contador && Number.isInteger(contador.items) ? contador.items : null;
   if (guardado !== null && guardado !== hay) bloqueos.push(`el contador del catálogo (${guardado}) no coincide con los ítems reales (${hay}): se detiene`);
   const caben = Math.max(0, limite - Math.max(hay, guardado ?? 0));
@@ -255,7 +257,7 @@ export async function ejecutar(cfg, deps) {
       const { aBorrar, dejar, contador } = await planear(tx);
       if (aBorrar.length && (!contador || !Number.isInteger(contador.items) || contador.items < aBorrar.length)) return { error: 'el contador del catálogo no permite restar lo borrado' };
       for (const id of aBorrar) tx.delete(refCat(id));
-      if (aBorrar.length) tx.set(refContador, { items: contador.items - aBorrar.length, ultimoItem: lectura.contadorPrevio.ultimoItem, actualizadoEn: FieldValue.serverTimestamp() });
+      if (aBorrar.length) tx.set(refContador, { items: contador.items - aBorrar.length, ultimoItem: aBorrar[aBorrar.length - 1], actualizadoEn: FieldValue.serverTimestamp() });
       return { aBorrar, dejar };
     });
     marcar('escrito');
@@ -292,7 +294,7 @@ export async function ejecutar(cfg, deps) {
     const v = evaluar(e2);
     if (v.bloqueos.length) return v.bloqueos;
     for (const p of PRODUCTOS) tx.create(refCat(p.id), documento(p, FieldValue));
-    tx.set(refContador, { items: (e2.contador ? e2.contador.items : e2.items.length) + PRODUCTOS.length, ultimoItem: PRODUCTOS[PRODUCTOS.length - 1].id, actualizadoEn: FieldValue.serverTimestamp() });
+    tx.set(refContador, { items: (e2.contador && Number.isInteger(e2.contador.items) ? e2.contador.items : e2.items.length) + PRODUCTOS.length, ultimoItem: PRODUCTOS[PRODUCTOS.length - 1].id, actualizadoEn: FieldValue.serverTimestamp() });
     return [];
   });
   marcar('escrito');

@@ -86,7 +86,7 @@ function baseDe(inicial: Record<string, Doc>, opciones: { alLeerCambia?: () => v
   return { db, datos, escrituras, lecturas, prefijo };
 }
 const FieldValue = { serverTimestamp: () => '<ts>' };
-const tenantOk: Record<string, Doc> = { 'tenants/qtaco': { estado: 'activo' }, 'tenants/qtaco/cuenta/estado': { plan: 'pro' } };
+const tenantOk: Record<string, Doc> = { 'tenants/qtaco': { estado: 'activo', modulos: ['productos'] }, 'tenants/qtaco/cuenta/estado': { plan: 'pro' } };
 const catalogo = (n: number, extra: Record<string, Doc> = {}) => {
   const r: Record<string, Doc> = { ...tenantOk, 'tenants/qtaco/contadores/catalogo': { items: n, ultimoItem: 'x' }, ...extra };
   for (let i = 0; i < n; i++) r[`tenants/qtaco/catalogo/it-${i}`] = { nombre: `Ítem ${i}`, area: 'tacos' };
@@ -163,6 +163,22 @@ describe('E2. seco y bloqueos', () => {
     expect(mod.limiteDeProductos(undefined)).toBe(20);
     expect(mod.limiteDeProductos({ plan: '__proto__' })).toBe(20);
   });
+  it('contador corrupto (items no entero) bloquea y no escribe', async () => {
+    for (const items of ['3', null, 2.5, undefined]) {
+      const r = await correr(cfgSeco({ aplicar: true, respaldo: rutaRespaldo() }), catalogo(3, { 'tenants/qtaco/contadores/catalogo': { items, ultimoItem: 'x' } }));
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('contador corrupto');
+      expect(r.escrituras).toEqual([]);
+    }
+  });
+  it('sin el módulo productos bloquea', async () => {
+    for (const modulos of [undefined, [], ['agenda']]) {
+      const r = await correr(cfgSeco(), catalogo(3, { 'tenants/qtaco': { estado: 'activo', ...(modulos ? { modulos } : {}) } }));
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('módulo «productos»');
+      expect(r.escrituras).toEqual([]);
+    }
+  });
   it('comercio no activo o contador desfasado: bloquea', async () => {
     const susp = await correr(cfgSeco(), catalogo(5, { 'tenants/qtaco': { estado: 'suspendido' } }));
     expect(susp.codigo).toBe(2);
@@ -183,7 +199,7 @@ describe('E3. aplicar', () => {
       'set tenants/qtaco/contadores/catalogo',
     ]);
     expect(r.datos['tenants/qtaco/catalogo/promo-torta-sin-queso']).toEqual({
-      nombre: 'Torta mexicana sin queso', descripcion: 'Campaña Tortas mexicanas. Incluye salsa mexicana especial.', area: 'promociones',
+      nombre: 'Torta mexicana sin queso', descripcion: 'Incluye salsa mexicana especial.', area: 'promociones',
       precio: 15, moneda: 'BOB', activo: true, actualizadoPor: 'cargar-productos-promos', actualizadoEn: '<ts>',
     });
     expect(r.datos['tenants/qtaco/catalogo/promo-torta-con-queso']!.precio).toBe(20);
@@ -242,7 +258,7 @@ describe('E4. reversa', () => {
     expect(r.codigo).toBe(0);
     expect(r.escrituras.filter((e) => e.op === 'delete').map((e) => e.ruta)).toEqual([
       'tenants/qtaco/catalogo/promo-torta-sin-queso', 'tenants/qtaco/catalogo/promo-torta-con-queso']);
-    expect(r.datos['tenants/qtaco/contadores/catalogo']).toMatchObject({ items: 79, ultimoItem: 'x' });
+    expect(r.datos['tenants/qtaco/contadores/catalogo']).toMatchObject({ items: 79, ultimoItem: 'promo-torta-con-queso' });
     expect(Object.keys(r.datos).filter((k) => k.includes('catalogo/it-')).length).toBe(79);
   });
   it('no borra uno modificado (precio, o un campo de más) y solo baja el contador en lo borrado', async () => {
@@ -252,7 +268,7 @@ describe('E4. reversa', () => {
     expect(r.codigo).toBe(1);
     expect(r.salida).toContain('promo-torta-sin-queso fue modificado');
     expect(r.escrituras.filter((e) => e.op === 'delete').map((e) => e.ruta)).toEqual(['tenants/qtaco/catalogo/promo-torta-con-queso']);
-    expect(r.datos['tenants/qtaco/contadores/catalogo']).toMatchObject({ items: 80 });
+    expect(r.datos['tenants/qtaco/contadores/catalogo']).toMatchObject({ items: 80, ultimoItem: 'promo-torta-con-queso' });
     const { respaldo: r2, datos: d2 } = await crear();
     (d2['tenants/qtaco/catalogo/promo-torta-con-queso'] as Doc).extra = 1;
     const x = await revertir(r2, d2);
