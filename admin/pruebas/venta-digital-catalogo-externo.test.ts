@@ -147,12 +147,6 @@ describe('endurecimiento: texto, fotos, tamaño y fechas del tercero', () => {
     expect(leer(ok('BO', muchos), 'BO', { max: 1e9 }).vendibles).toHaveLength(200);
     expect(leer(ok('BO', muchos), 'BO', { max: 5 }).vendibles).toHaveLength(5);
   });
-  it('NEGADO: una fecha de cotización sin zona horaria o en otro formato no vale', () => {
-    const con = (fecha: string) => leer({ status: 200, body: cuerpo('BO', [item()], { cotizacion: { estado: 'vigente', fecha } }) });
-    for (const fecha of ['2026-11-05T17:00', 'Nov 5 2026 17:00', '2026-11-05', '05/11/2026 17:00']) expect(con(fecha)).toMatchObject({ pase: true, motivo: 'cotizacion_vencida' });
-    expect(con('2026-11-05T13:00:00-04:00').ok).toBe(true);
-    expect(con('2026-11-05T17:00:00.000Z').ok).toBe(true);
-  });
   it('NEGADO: una fuente externa debe declarar la moneda de cada ítem (un ítem sin moneda no se vende como BOB)', () => {
     expect(leer(ok('BO', [item({ moneda: undefined }), item({ id: 'p2' })])).vendibles.map((v: { id: string }) => v.id)).toEqual(['p2']);
   });
@@ -167,8 +161,14 @@ describe('contrato v1 estricto: lo que falta no se supone', () => {
     for (const campo of ['disponible', 'precioCentavos', 'stock']) expect(leer(ok('BO', [sin(campo), item({ id: 'p2' })])).vendibles.map((v: { id: string }) => v.id)).toEqual(['p2']);
   });
   it('NEGADO: precio con decimales sin `precioCentavos` entero no se recalcula; en ARS un valor que no es múltiplo de 100 no se ofrece', () => {
-    expect(leer(ok('BO', [item({ precio: 120.004, precioCentavos: 12000.4 })]))).toMatchObject({ pase: true, motivo: 'sin_catalogo' });
+    expect(leer(ok('BO', [item({ precio: 120, precioCentavos: '12000' })]))).toMatchObject({ pase: true, motivo: 'sin_catalogo' });
     expect(leer(ok('AR', [item({ moneda: 'ARS', precio: 15.5, precioCentavos: 1550 })]), 'AR')).toMatchObject({ pase: true, motivo: 'sin_catalogo' });
+  });
+  it('NEGADO: un id repetido no se ofrece ni siquiera si una de sus copias está incompleta (no se elige en silencio una versión)', () => {
+    for (const otra of [{ disponible: false }, { precioCentavos: 1 }, { stock: 'x' }, {}]) {
+      expect(leer(ok('BO', [item({ id: 'dup' }), item({ id: 'dup', ...otra }), item({ id: 'p2' })])).vendibles.map((v: { id: string }) => v.id)).toEqual(['p2']);
+    }
+    expect(leer(ok('BO', [item({ id: 'dup' }), item({ id: 'dup', disponible: false })]))).toMatchObject({ pase: true, motivo: 'sin_catalogo' });
   });
   it('NEGADO: una cotización con estado desconocido, ausente o de otro tipo es una respuesta inválida', () => {
     for (const estado of ['caida', undefined, null, 5, '']) {
@@ -180,19 +180,20 @@ describe('contrato v1 estricto: lo que falta no se supone', () => {
   });
 });
 
-describe('P7: la cotización de más de 24 horas, ausente o futura pasa con un vendedor', () => {
-  const con = (cot: unknown) => leer({ status: 200, body: cuerpo('BO', [item()], { cotizacion: cot }) });
-  it('vigente de hace 1 hora y último verificado de hace 23 horas se venden', () => {
-    expect(con({ estado: 'vigente', fecha: hace(1) }).ok).toBe(true);
-    const r = con({ estado: 'ultimo_verificado', fecha: hace(23) });
+describe('P7: la cotización la envejece la plataforma (días hábiles); el tope de horas va sobre `generadoEn`', () => {
+  const conCot = (cot: unknown, extra: Record<string, unknown> = {}) => leer({ status: 200, body: cuerpo('BO', [item()], { cotizacion: cot, ...extra }) });
+  it('`vigente` se vende aunque la fecha del valor sea de hace 3 días (fin de semana largo: la fecha es la del banco)', () => {
+    const r = conCot({ estado: 'vigente', fecha: '2026-11-02' });
     expect(r.ok).toBe(true);
-    expect(r.cotizacion.estado).toBe('ultimo_verificado');
+    expect(r.cotizacion.estado).toBe('vigente');
   });
-  it('NEGADO: de hace 25 horas, sin fecha, con fecha inválida o del futuro: pase', () => {
-    for (const cot of [{ estado: 'ultimo_verificado', fecha: hace(25) }, { estado: 'vigente', fecha: hace(25) }, { estado: 'vigente' }, { estado: 'vigente', fecha: 'ayer' }, { estado: 'vigente', fecha: hace(-3) }]) {
-      expect(con(cot)).toMatchObject({ pase: true, motivo: 'cotizacion_vencida' });
-    }
-    for (const cot of [null, 7]) expect(con(cot)).toMatchObject({ pase: true, motivo: 'respuesta_invalida' });
+  it('NEGADO: `ultimo_verificado` pasa con un vendedor, sin importar la fecha', () => {
+    for (const fecha of [hace(1), hace(100), undefined]) expect(conCot({ estado: 'ultimo_verificado', fecha })).toMatchObject({ pase: true, motivo: 'cotizacion_vencida' });
+  });
+  it('NEGADO: `generadoEn` de hace 25 horas, futuro, sin zona o ausente: pase (frena respuestas viejas de una caché intermedia)', () => {
+    for (const generadoEn of [hace(25), hace(-3), '2026-11-05T17:00', 'ayer', undefined, null, 7]) expect(conCot({ estado: 'vigente', fecha: '2026-11-05' }, { generadoEn })).toMatchObject({ pase: true, motivo: 'cotizacion_vencida' });
+    expect(conCot({ estado: 'vigente', fecha: '2026-11-05' }, { generadoEn: hace(23) }).ok).toBe(true);
+    expect(conCot({ estado: 'vigente', fecha: '2026-11-05' }, { generadoEn: '2026-11-05T13:00:00-04:00' }).ok).toBe(true);
   });
   it('NEGADO: sin el reloj del flujo no se vende (no se adivina la hora)', () => {
     for (const ahoraMs of [undefined, 0, -5, 1.5, '1']) expect(f('ceVendibles')(ok('BO', [item()]), { mercado: 'BO', ahoraMs })).toMatchObject({ pase: true, motivo: 'cotizacion_vencida' });

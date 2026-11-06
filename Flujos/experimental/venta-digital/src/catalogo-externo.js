@@ -65,7 +65,7 @@ function ceTextoPase() {
 // La respuesta HTTP del catálogo a un resultado:
 //   { ok: true, mercado, moneda, vendibles, cotizacion } o { ok: false, pase: true, motivo, alerta }.
 // `respuesta` = { status, body } (body ya como objeto; si llega como texto o no es un objeto, es una respuesta inválida). `opciones` = { mercado: 'BO'|'AR', ahoraMs (entero, el reloj del flujo), max (a lo más 200) }.
-// Reglas: solo el estado 200 con `version === 1`; la fecha de la cotización debe ser ISO 8601 con zona; la moneda de la respuesta DEBE ser la del mercado pedido (BO→BOB, AR→ARS); la cotización debe tener fecha válida y no ser más vieja que 24 horas ni estar en el futuro (más de 5 minutos); sin el reloj no se vende.
+// Reglas: solo el estado 200 con `version === 1`; `generadoEn` debe ser ISO 8601 con zona; la moneda de la respuesta DEBE ser la del mercado pedido (BO→BOB, AR→ARS); solo se ofrece precio con `cotizacion.estado === 'vigente'` (la plataforma la envejece en días hábiles; `ultimo_verificado` = pase) y `generadoEn` no puede ser más viejo que 24 horas ni estar en el futuro (más de 5 minutos); sin el reloj no se vende.
 // Los ítems pasan por `vcVendibles` con `externa: true` (disponible, precioCentavos, stock, foto); luego se recortan los textos (nombre 80, área 60, descripción 300), se descarta el ítem cuyo texto parezca una instrucción, un pago o una promesa, y la foto solo queda si su dominio está en `opciones.hostsFoto`. Más de 1000 ítems, o `max` mayor que 200, no amplían nada. Cero vendibles = pase.
 // Tampoco se lee ningún campo de identidad del tenant de la respuesta: el tenant sale del token en el servidor, nunca de lo que se reciba.
 function ceVendibles(respuesta, opciones) {
@@ -86,15 +86,21 @@ function ceVendibles(respuesta, opciones) {
   const ahora = o.ahoraMs;
   if (!Number.isSafeInteger(ahora) || ahora <= 0) return cePase('cotizacion_vencida');
   const c = b.cotizacion;
-  const fecha = ceObjeto(c) && ceFechaIso(c.fecha) ? Date.parse(c.fecha) : NaN;
   if (!ceObjeto(c) || (c.estado !== 'vigente' && c.estado !== 'ultimo_verificado')) return cePase('respuesta_invalida'); // el contrato solo define esos dos estados: otro valor falla cerrado
-  if (!Number.isFinite(fecha) || ahora - fecha > CE_MAX_ANTIGUEDAD_COTIZACION_MS || fecha - ahora > 5 * 60 * 1000) return cePase('cotizacion_vencida');
+  // La FRESCURA de la cotización la fija la plataforma en DÍAS HÁBILES y la declara en `estado` (su `fecha` es la del valor publicado por el banco: un sábado trae la del viernes, así que NO se envejece por horas). Solo `vigente` ofrece precio; `ultimo_verificado` = pase.
+  if (c.estado !== 'vigente') return cePase('cotizacion_vencida');
+  // Tope de horas (24, decisión de Andres) sobre `generadoEn`, la hora en que la plataforma armó la respuesta: frena una respuesta vieja servida por una caché intermedia. Debe ser ISO 8601 con zona.
+  const generado = ceFechaIso(b.generadoEn) ? Date.parse(b.generadoEn) : NaN;
+  if (!Number.isFinite(generado) || ahora - generado > CE_MAX_ANTIGUEDAD_COTIZACION_MS || generado - ahora > 5 * 60 * 1000) return cePase('cotizacion_vencida');
   if (b.items.length > CE_MAX_ITEMS_RESPUESTA) return cePase('respuesta_invalida');
   // Las fotos solo se aceptan de los dominios que el negocio declara (`opciones.hostsFoto`, coincidencia exacta, sin puerto); sin lista, ninguna foto. La foto se envía como enlace a Meta: n8n nunca la descarga.
   const hosts = Array.isArray(o.hostsFoto) ? o.hostsFoto.filter((h) => typeof h === 'string' && h !== '').map((h) => h.toLowerCase()) : [];
   const max = Number.isSafeInteger(o.max) && o.max > 0 ? Math.min(o.max, 200) : 200;
   // El contrato v1 trae SIEMPRE estos campos y `disponible` es el que decide si se ofrece: un ítem sin `disponible: true`, sin `precioCentavos` entero (en ARS, múltiplo de 100) o con un `stock` que no es null ni entero no se ofrece (el precio no se recalcula ni el stock se supone).
-  const completos = b.items.filter((it) => ceObjeto(it) && it.disponible === true && Number.isSafeInteger(it.precioCentavos) && (moneda !== 'ARS' || it.precioCentavos % 100 === 0) && (it.stock === null || Number.isSafeInteger(it.stock)));
+  // Un id repetido en la respuesta es ambiguo: no se ofrece NINGUNA de sus apariciones (se cuenta sobre TODA la respuesta, antes de filtrar, para no elegir en silencio una de las dos versiones del tercero).
+  const veces = new Map();
+  for (const it of b.items) if (ceObjeto(it) && typeof it.id === 'string') veces.set(it.id, (veces.get(it.id) || 0) + 1);
+  const completos = b.items.filter((it) => ceObjeto(it) && veces.get(it.id) === 1 && it.disponible === true && Number.isSafeInteger(it.precioCentavos) && (moneda !== 'ARS' || it.precioCentavos % 100 === 0) && (it.stock === null || Number.isSafeInteger(it.stock)));
   const vendibles = vcVendibles(completos, { moneda: moneda, externa: true, max: max }).filter((v) => !CE_TEXTO_PELIGROSO.test(vcNorm(v.nombre + ' ' + v.descripcion + ' ' + v.area))).map((v) => {
     const w = { id: v.id, nombre: vcLimpiar(v.nombre, 80), precioCentavos: v.precioCentavos, area: vcLimpiar(v.area, 60), descripcion: vcLimpiar(v.descripcion, 300), moneda: v.moneda };
     if (v.stock !== undefined) w.stock = v.stock;
@@ -108,7 +114,7 @@ function ceVendibles(respuesta, opciones) {
     mercado: o.mercado,
     moneda: moneda,
     vendibles: vendibles,
-    cotizacion: { estado: c.estado, fecha: new Date(fecha).toISOString() },
+    cotizacion: { estado: 'vigente', generadoEn: new Date(generado).toISOString() },
   };
 }
 
