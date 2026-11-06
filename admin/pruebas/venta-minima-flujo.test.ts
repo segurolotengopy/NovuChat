@@ -172,6 +172,8 @@ function crear(op: OpcionesDeLaPrueba = {}) {
       horario: HORARIO_TODOS,
       // Estas pruebas cubren la plantilla `pedido_registrado` de siempre; el aviso por líneas de Q'Taco (dato del 28/10) se prueba en venta-minima-avisos-lineas.test.ts.
       plantillasPedidoLineas: '',
+      // 05/11: Q'Taco dejó de excluir por palabra; estas pruebas conservan la lista anterior para seguir cubriendo la barrera (la de Q'Taco se prueba abajo, con `palabrasExcluidas: ''`).
+      palabrasExcluidas: 'helado,paleta,postre,cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri,heladito',
       ...(op.config ?? {}),
     },
   });
@@ -1857,7 +1859,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     const config = { campanaReservaTexto: JUEVES, campanaReservaMensaje: MENSAJE };
     const conJueves = (c: J = config, campanas: J[] = [campanaVigente('jueves', JUEVES)]) => crear({ panel: panel({ campanas }), config: c });
     it('NEGANDO: sin el dato del negocio, el texto del anuncio no dispara nada (menú normal)', () => {
-      const t = con(conJueves({})).escribe(JUEVES);
+      const t = con(conJueves({ campanaReservaTexto: '', campanaReservaMensaje: '' })).escribe(JUEVES);
       expect(cuerpos(t).join('\n')).not.toContain('agrandar');
     });
     it('NEGANDO: un texto distinto, una campaña vencida, una sin cargar en el servidor o con reservas apagadas no disparan', () => {
@@ -2161,13 +2163,13 @@ describe('pedido', () => {
     const t = con(w).audio();
     expect(t.ejecutados.has('Descargar medio')).toBe(false);
     expect(t.ejecutados.has('Transcribir audio')).toBe(false);
-    expect(cuerpos(t)[0]).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes?');
+    expect(cuerpos(t)[0]).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
     // Negativo: el de 719.999 sí se procesa.
     const chico = crear({ dobles: { 'Obtener URL del medio': () => ({ url: 'https://medios.ejemplo.invalid/m', mime_type: 'audio/ogg', file_size: 719_999 }) } });
     expect(con(chico).audio().ejecutados.has('Transcribir audio')).toBe(true);
     // Si la transcripción falla, tampoco hay un error técnico.
     const falla = crear({ dobles: { 'Transcribir audio': () => ({ error: { message: 'sin saldo' } }) } });
-    expect(cuerpos(con(falla).audio())[0]).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes?');
+    expect(cuerpos(con(falla).audio())[0]).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
   });
 
   // A3. El token de Meta viaja con la descarga del medio: solo por https, sin seguir redirecciones, y con un id de forma conocida.
@@ -2177,7 +2179,7 @@ describe('pedido', () => {
       const t = con(w).audio();
       expect(t.ejecutados.has('Descargar medio'), url).toBe(false);
       expect(t.ejecutados.has('Transcribir audio'), url).toBe(false);
-      expect(cuerpos(t)[0], url).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes?');
+      expect(cuerpos(t)[0], url).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
     }
     expect(con(crear()).audio().ejecutados.has('Descargar medio')).toBe(true);
     // Lo mismo para un comprobante: con una URL http no hay descarga, ni lectura, ni cotejo.
@@ -2225,7 +2227,7 @@ describe('carta', () => {
     const t = c.escribe('quiero 2 micheladas');
     // Es un producto EXCLUIDO a propósito: su texto amable (no «no lo encuentro»), con la carta a un toque y sin aviso al restaurante.
     expect(cuerpos(t).join('\n')).toMatch(/«Michelada» no está disponible para pedir por WhatsApp/);
-    expect(titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>)).toEqual(['Ver la carta', 'Menú']);
+    expect(titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>)).toEqual(['Ver la carta', 'Volver a inicio']);
     expect(t.avisos).toHaveLength(0);
     // Negativo: sin áreas excluidas, la michelada sí está en la carta.
     const todo = crear({ config: { areasExcluidas: '' } });
@@ -2294,7 +2296,7 @@ describe('carta', () => {
       return { t: c.escribe(`quiero ${dicho}`), carta };
     };
     for (const dicho of ['un helado', 'una cerveza', 'un cóctel', 'un vino', 'un shot']) {
-      const libre = pedir(dicho);
+      const libre = pedir(dicho, { palabrasExcluidas: '' });
       expect(cuerpos(libre.t).join('\n'), `Q'Taco sin exclusión: ${dicho}`).not.toMatch(/no está disponible para pedir por WhatsApp/);
       const { t, carta } = pedir(dicho, { palabrasExcluidas: LISTA });
       expect(cuerpos(t).join('\n'), dicho).toMatch(/no está disponible para pedir por WhatsApp/);
@@ -2511,7 +2513,7 @@ describe('cobro', () => {
     expect(t.avisos).toHaveLength(0);
     expect(t.llamadas.cierre).toHaveLength(0);
     expect(cuerpos(t).join('\n')).toMatch(/[Ii]magen/);
-    expect(t.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Menú']);
+    expect(t.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Volver a inicio']);
     // El texto reportado no es el contenido de la imagen.
     expect((t.llamadas.ingesta[0] as J)['texto']).toBe('(imagen) el cliente envió una foto');
     // Con pie de foto: se procesa como ese texto.
@@ -2710,7 +2712,7 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
     silencio(c.turno({ type: 'sticker', sticker: { id: 'st-1' } }));
     silencio(c.turno({ type: 'reaction', reaction: { emoji: '👍' } }));
     const contacto = c.turno({ type: 'contacts', contacts: [{ name: { formatted_name: 'X' } }] });
-    expect(cuerpos(contacto)[0]).toBe('No pude entender bien ese mensaje 😅. ¿Me lo escribes?');
+    expect(cuerpos(contacto)[0]).toBe('No pude entender bien ese mensaje 😅. ¿Me lo escribes o lo repites?');
     expect(contacto.avisos).toHaveLength(0);
   });
 });
@@ -3598,14 +3600,14 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     w.estado.extraccion = EX([ln('helado', 1)], { entrega: '' }); // el modelo no oyó ninguna entrega
     const helado = c.escribe('quiero un helado');
     expect(cuerpos(helado)[0]).toMatch(/no está disponible para pedir por WhatsApp/);
-    expect(titulosDelPrimero(helado)).toEqual(['Ver la carta', 'Menú']);
+    expect(titulosDelPrimero(helado)).toEqual(['Ver la carta', 'Volver a inicio']);
     expect(helado.avisos).toHaveLength(0);
     expect(cuerpos(helado).join('\n')).not.toMatch(/Eso lo ve directamente/);
     expect(estadoDe(w.mundo)['pendiente']).toHaveLength(1); // la pregunta orden/unidad sigue pendiente
     // 5. una imagen sin comprobante pendiente → texto amable con botones (no «Recibí tu imagen»).
     const imagen = c.imagen('media-5');
     expect(cuerpos(imagen)[0]).toBe('¡Gracias por la imagen! Por aquí solo leo comprobantes de un pedido con QR, y ahora no tienes ninguno pendiente. ¿Qué te gustaría hacer?');
-    expect(titulosDelPrimero(imagen)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Menú']);
+    expect(titulosDelPrimero(imagen)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Volver a inicio']);
     expect(imagen.avisos).toHaveLength(0);
     // 6. «¿puedo hacer una reserva?» en medio del pedido → la pregunta de la reserva, y el pedido sigue en el estado.
     w.estado.extraccion = RESERVA_VACIA;
@@ -3838,7 +3840,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     w.estado.extraccion = EX([ln('Coca-Cola', 2)]);
     const no = c.escribe('dos Coca-Cola');
     expect(cuerpos(no)[0]).toMatch(/Gaseosas/);
-    expect(titulosDelPrimero(no)).toEqual(['Agregar Gaseosas', 'Ver la carta', 'Menú']);
+    expect(titulosDelPrimero(no)).toEqual(['Agregar Gaseosas', 'Ver la carta', 'Volver a inicio']);
     expect(no.avisos).toHaveLength(0);
     expect(estadoDe(w.mundo)['carrito']).toEqual([]); // la sugerencia NO se agrega sola
     const si = c.toca(idDeBoton(no, 'Agregar Gaseosas'), 'Agregar Gaseosas');

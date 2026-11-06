@@ -1355,10 +1355,14 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
 
   it('todo mensaje con botones y lugar (menos de tres) sale con «Menú» (`m|menu`) al final; con tres, no se agrega nada', () => {
     const uno = mensajes({ mensajes: [botones('Elige', 'A')] }).items[0]!;
-    expect(titulos(uno)).toEqual(['A', 'Menú']);
+    expect(titulos(uno)).toEqual(['A', 'Volver a inicio']);
     expect(ids(uno)).toEqual(['b|0', 'm|menu']);
     const dos = mensajes({ mensajes: [botones('Elige', 'A', 'B')] }).items[0]!;
-    expect(titulos(dos)).toEqual(['A', 'B', 'Menú']);
+    expect(titulos(dos)).toEqual(['A', 'B', 'Volver a inicio']);
+    expect([...titulos(uno), ...titulos(dos)].every((t) => t.length <= 20), 'títulos de botón de WhatsApp ≤ 20').toBe(true);
+    // Con un botón de paso de pedido o reserva (p|, r|, f|) el botón sigue siendo «Menú».
+    const paso = mensajes({ mensajes: [{ tipo: 'botones', cuerpo: 'Elige', botones: [{ id: 'p|confirmar', title: 'Confirmar pedido' }, { id: 'p|cambiar', title: 'Cambiar algo' }] }] }).items[0]!;
+    expect(titulos(paso)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Menú']);
     // Negado: con tres no hay lugar; con el propio menú (`sinMenu`) no se repite; sin botones sigue siendo un texto.
     expect(titulos(mensajes({ mensajes: [botones('Elige', 'A', 'B', 'C')] }).items[0]!)).toEqual(['A', 'B', 'C']);
     expect(titulos(mensajes({ mensajes: [{ ...botones('Elige', 'A', 'B'), sinMenu: true }] }).items[0]!)).toEqual(['A', 'B']);
