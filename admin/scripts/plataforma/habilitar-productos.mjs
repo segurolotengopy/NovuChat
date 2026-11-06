@@ -2,18 +2,20 @@
  * HABILITAR PRODUCTOS DESHABILITADOS DE UNA CATEGORÍA — seco por omisión.
  *
  * QUÉ ES. Pone `activo: true` en los ítems de `tenants/{id}/catalogo` que hoy están
- * deshabilitados (`activo !== true`) y cuya categoría es exactamente cervezas, cocteleria o postres
- * (nombres reales del catálogo de qtaco; los helados están dentro de postres). En el catálogo la
+ * deshabilitados (`activo !== true`) y cuya categoría es exactamente postres
+ * (nombre real en el catálogo de qtaco; los helados están dentro de postres). POR DECISIÓN DE ANDRES Y SAMUEL NO SE
+ * HABILITA ALCOHOL: cervezas y cocteleria no están en la constante. Aun dentro de postres, `--solo` restringe a
+ * los nombres que se listen (obligatorio con `--aplicar`). En el catálogo la
  * categoría vive en el campo `area` (la consola lo guarda recortado y en minúsculas, y su filtro compara
  * con `normalizar`: sin tildes y en minúsculas; ver `web/src/modulos/productos/Catalogo.tsx`). Aquí se
  * compara igual que ese filtro, más recorte de espacios: igualdad EXACTA tras `normalizar`. Ni plural ni
- * parecido: «cerveza», «tragos», «helados» o «promociones» NO coinciden y no se tocan. Los deshabilitados
+ * parecido: «cervezas», «cocteleria», «tragos», «helados» o «promociones» NO coinciden y no se tocan. Los deshabilitados
  * de otras categorías solo se cuentan. `--buscar <texto>` es SOLO LECTURA: lista área/nombre/activo de
  * todos los ítems cuyo nombre normalizado contenga el texto, en cualquier estado.
  * Modelado sobre `aplicar-consola-oculta.mjs`: seco, salvaguarda de proyecto, respaldo y reversa.
  *
  *   node scripts/plataforma/habilitar-productos.mjs --proyecto <id> --tenant qtaco \
- *        [--aplicar] [--respaldo <ruta>] [--confirmo-produccion qtaco]
+ *        [--solo "<nombre exacto>[,…]"] [--aplicar] [--respaldo <ruta>] [--confirmo-produccion qtaco]
  *   node scripts/plataforma/habilitar-productos.mjs --revertir --respaldo <ruta> \
  *        --tenant qtaco --proyecto <id> [--aplicar] [--confirmo-produccion qtaco]
  *
@@ -53,12 +55,14 @@ export const TENANTS_PERMITIDOS = Object.freeze(['qtaco']);
  * LAS CATEGORÍAS OBJETIVO: el único lugar donde se cambian. Se escriben ya normalizadas (sin tildes, minúsculas);
  * la comparación es de igualdad EXACTA tras `normalizar` y recorte de espacios: sin plurales ni parecidos.
  */
-export const CATEGORIAS = Object.freeze(['cervezas', 'cocteleria', 'postres']);
-const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion', 'buscar'];
+export const CATEGORIAS = Object.freeze(['postres']);
+const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion', 'buscar', 'solo'];
+export const MAX_SOLO = 10;
 const BANDERAS = ['aplicar', 'revertir'];
 
 export const USO = '  node scripts/plataforma/habilitar-productos.mjs --proyecto <id> --tenant qtaco '
   + '[--aplicar] [--respaldo <ruta>] [--confirmo-produccion qtaco]\n'
+  + '  (--solo "<nombre exacto>[,<nombre exacto>…]" es obligatoria con --aplicar; máximo 10 nombres)\n'
   + '  node scripts/plataforma/habilitar-productos.mjs --proyecto <id> --tenant qtaco --buscar <texto>   (solo lectura)\n'
   + '  node scripts/plataforma/habilitar-productos.mjs --revertir --respaldo <ruta> --tenant qtaco --proyecto <id> '
   + '[--aplicar] [--confirmo-produccion qtaco]\n'
@@ -151,6 +155,17 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     if (normalizar(buscar) === '' || buscar.length > 40) problemas.push('--buscar necesita un texto de 1 a 40 caracteres');
     if (aplicar || revertir || respaldo !== undefined) problemas.push('--buscar es de solo lectura: no se combina con --aplicar, --revertir ni --respaldo');
   }
+  let solo = null;
+  if (valores.solo !== undefined) {
+    const nombres = valores.solo.split(',').map(normalizar);
+    if (nombres.some((n) => n === '' || n.length > 80)) problemas.push('--solo: cada nombre tiene que ser no vacío y de hasta 80 caracteres');
+    else if (nombres.length > MAX_SOLO) problemas.push(`--solo admite como máximo ${MAX_SOLO} nombres`);
+    else if (new Set(nombres).size !== nombres.length) problemas.push('--solo tiene un nombre repetido');
+    else solo = nombres;
+    if (revertir || buscar !== undefined) problemas.push('--solo no se combina con --revertir ni --buscar');
+  } else if (aplicar && !revertir) {
+    problemas.push('--aplicar exige --solo "<nombre exacto>[,…]": sin él no se aplica');
+  }
   if (revertir && respaldo === undefined) problemas.push('--revertir exige --respaldo <ruta>');
   if (!revertir && aplicar && respaldo === undefined) problemas.push('--aplicar exige --respaldo <ruta> (por omisión no hay respaldo)');
   let respaldoReal = null;
@@ -159,7 +174,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     if (r.ok) respaldoReal = respaldo; else problemas.push(r.motivo);
   }
   if (problemas.length) return { ok: false, problemas };
-  return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, buscar: buscar ?? null, aplicar, revertir, respaldo: respaldoReal } };
+  return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, buscar: buscar ?? null, solo, aplicar, revertir, respaldo: respaldoReal } };
 }
 
 // ===========================================================================
@@ -348,17 +363,28 @@ export async function ejecutar(cfg, deps) {
 
   // -------------------------------------------------------- seco y aplicar
   if (items.length === 0) { log(`\n  ✗ ${cfg.tenant}: el catálogo está vacío o no existe (${cfg.entorno})\n`); return 1; }
-  const { habilitar, otras, noReconocidos } = clasificar(items);
+  const { habilitar: candidatos, otras, noReconocidos } = clasificar(items);
+  // --solo: restringe a esos nombres (igualdad normalizada exacta). Faltan = no existe o no es deshabilitado de la categoría.
+  const habilitar = cfg.solo ? candidatos.filter((i) => cfg.solo.includes(normalizar(i.nombre))) : candidatos;
+  const noListados = cfg.solo ? candidatos.filter((i) => !cfg.solo.includes(normalizar(i.nombre))) : [];
+  const faltan = cfg.solo ? cfg.solo.filter((n) => !habilitar.some((i) => normalizar(i.nombre) === n)) : [];
+  const repetidos = cfg.solo ? cfg.solo.filter((n) => habilitar.filter((i) => normalizar(i.nombre) === n).length > 1) : [];
   log(`\n  ${cfg.aplicar ? 'APLICAR' : 'SECO (solo una lectura)'} · ${rotulo}\n`);
   log(`  Catálogo por área (${items.length} ítems; total / deshabilitados):`);
   for (const [area, c] of conteoPorArea(items)) log(`    ${texto(area).padEnd(24)} ${c.total} / ${c.deshabilitados}`);
   for (const c of CATEGORIAS.filter((k) => !items.some((i) => categoriaObjetivo(i.area, [k])))) {
     log(`  ! AVISO: ninguna área coincide con «${c}» (revise los nombres reales con el conteo de arriba).`);
   }
-  log(`\n  Se habilitarían (${habilitar.length}) — categorías: ${CATEGORIAS.join(', ')}`);
+  log(`\n  Se habilitarían (${habilitar.length}) — categorías: ${CATEGORIAS.join(', ')}${cfg.solo ? ' — restringido por --solo' : ' — SIN --solo (no se puede aplicar)'}`);
   if (habilitar.length) {
     log(`  ${'nombre'.padEnd(34)} ${'categoría'.padEnd(12)} activo`);
     for (const it of habilitar) log(`  ${celda(it.nombre, 34)} ${celda(it.area, 12)} ${it.activo === false ? 'false' : '(sin dato)'} -> true`);
+  }
+  if (cfg.solo) {
+    log(`\n  Deshabilitados de la categoría NO listados en --solo (NO se tocan): ${noListados.length}`);
+    for (const it of noListados) log(`    · ${texto(it.nombre)} [${texto(it.area)}]`);
+    for (const n of faltan) log(`  ! AVISO: «${texto(n)}» (--solo) no existe o no es un deshabilitado de la categoría.`);
+    for (const n of repetidos) log(`  ! AVISO: «${texto(n)}» (--solo) coincide con más de un ítem: ambiguo.`);
   }
   log(`\n  Deshabilitados de OTRAS categorías (NO se tocan): ${otras.length}`);
   for (const it of otras) log(`    · ${texto(it.nombre)} [${typeof it.area === 'string' && it.area.trim() !== '' ? texto(it.area) : '(sin área)'}]`);
@@ -367,7 +393,11 @@ export async function ejecutar(cfg, deps) {
     for (const it of noReconocidos) log(`    · ${texto(it.nombre)} [${typeof it.area === 'string' && it.area.trim() !== '' ? texto(it.area) : '(sin área)'}] tipo ${typeof it.activo}`);
   }
 
-  if (habilitar.length === 0) { log('\n  ✓ Nada que habilitar.\n'); return 0; }
+  if (cfg.aplicar && (faltan.length || repetidos.length)) {
+    log('\n  ✗ Algún nombre de --solo no existe, no es deshabilitado de la categoría o es ambiguo. No se escribe nada.\n');
+    return 2;
+  }
+  if (habilitar.length === 0) { log('\n  ✓ Nada que habilitar.\n'); return faltan.length || repetidos.length ? 1 : 0; }
   if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar (y --respaldo) para escribir.\n'); return 1; }
 
   const contenido = contenidoDelRespaldo({ entorno: cfg.entorno, tenant: cfg.tenant, items: habilitar });
