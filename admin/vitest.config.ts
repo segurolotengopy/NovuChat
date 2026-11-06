@@ -62,6 +62,7 @@ export const SUITES_PURAS = [
   'pruebas/comun-sin-agente-sesion.test.ts',
   'pruebas/core/origen-chat-congelado.test.ts',
   'pruebas/venta-digital-base.test.ts',
+  'pruebas/venta-digital-carrito-moneda.test.ts',
   'pruebas/venta-minima-bateria.test.ts',
   'pruebas/venta-minima-comun.test.ts',
   'pruebas/venta-minima-pedido.test.ts',
@@ -125,6 +126,7 @@ export const SUITES_PURAS = [
   'pruebas/modulos/catalogo-web/retencion-fichas.test.ts',
   'pruebas/modulos/catalogo-web/sitio-publico.test.ts',
   'pruebas/modulos/catalogo-web/area-inicial.test.ts',
+  'pruebas/modulos/catalogo-web/areas-visibles.test.ts',
   'pruebas/ci-calidad-filtro.test.ts',
   'pruebas/citas-a-calendario.test.ts',
   'pruebas/central/cobrador-doble.test.ts',
@@ -132,6 +134,7 @@ export const SUITES_PURAS = [
   'pruebas/central/consola-pagar.test.ts',
   'pruebas/central/consola-oculta.test.ts',
   'pruebas/plataforma/aplicar-consola-oculta.test.ts',
+  'pruebas/plataforma/resetear-ficha-flujo.test.ts',
   'pruebas/plataforma/aplicar-consola-conversaciones.test.ts',
   'pruebas/plataforma/rellenar-conversaciones.test.ts',
   // Conversaciones (H1-7, 16/10/2026): comprobadas una por una con FIRESTORE_EMULATOR_HOST=127.0.0.1:1

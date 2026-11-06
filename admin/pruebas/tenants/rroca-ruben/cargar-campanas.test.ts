@@ -27,7 +27,7 @@ const db = getFirestore(app);
 
 // El script solo carga el archivo de 'rroca-ruben' y solo en ese comercio: cada prueba deja el comercio del emulador en el estado que necesita.
 const T = 'rroca-ruben';
-const PRODUCTOS = ['pack-completo', 'libro-con-bono'];
+const PRODUCTOS = ['pack-completo', 'libro'];
 
 const tmp = mkdtempSync(join(tmpdir(), 'cargar-campanas-ruben-'));
 type Datos = { anuncios: Array<Record<string, unknown>>; tenant: string };
@@ -68,11 +68,11 @@ describe('cargar-campanas.mjs (las campañas de Rubén)', () => {
     expect((await db.doc(`tenants/${T}/config/campanas`).get()).exists).toBe(false);
   });
   it('una campaña marcada `pendiente_de_termino_registrado` queda FUERA del lote: se dice y no se escribe', async () => {
-    const r = correr(T, archivo('pend', bueno(T, (d) => { d.anuncios[3]!['pendiente_de_termino_registrado'] = true; })));
+    const r = correr(T, archivo('pend', bueno(T, (d) => { d.anuncios[2]!['pendiente_de_termino_registrado'] = true; })));
     expect(r.codigo, r.salida).toBe(0);
-    expect(r.salida).toMatch(/Fuera del lote \(pendientes de término registrado\): portada-del-libro/);
+    expect(r.salida).toMatch(new RegExp(`Fuera del lote \\(pendientes de término registrado\\): ${base.anuncios[2]!['id']}`));
     expect(r.salida).toMatch(new RegExp(`anuncios del archivo: ${base.anuncios.length - 1}\\b`));
-    expect(r.salida).not.toMatch(/nuevo\s+portada-del-libro/);
+    expect(r.salida).not.toMatch(new RegExp(`nuevo\\s+${base.anuncios[2]!['id']}`));
   });
   it('con --aplicar (en el emulador) escribe la lista con fechas de hoy, el sello y la auditoría; NO escribe `revision` ni `vigentes`', async () => {
     await sembrar('pro');
@@ -89,7 +89,8 @@ describe('cargar-campanas.mjs (las campañas de Rubén)', () => {
   });
   it('NEGADO: más campañas de las que admite el plan (crecimiento = 3) no se cargan ni se recortan en silencio', async () => {
     await sembrar('crecimiento');
-    const r = correr(T, archivo('chico', bueno(T)), '--aplicar');
+    const r = correr(T, archivo('chico', bueno(T, (d) => { d.anuncios.push({ ...d.anuncios[0]!, id: 'extra-del-plan', titulares: ['Titular extra del plan'] }); })), '--aplicar');   // con los 3 artes ya cabe: se agrega una cuarta para pasar el tope
+
     expect(r.codigo, r.salida).toBe(1);
     expect(r.salida).toMatch(/plan del comercio admite 3/);
     expect(await lista(T)).toEqual([]);

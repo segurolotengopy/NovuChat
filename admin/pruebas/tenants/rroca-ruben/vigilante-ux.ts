@@ -16,13 +16,13 @@
  *  11. UNA NOTA DE VOZ DE MENOS DE 3 PALABRAS nunca llega al modelo;
  *  12. EL MENÚ NO SALE ANTES DE TIEMPO: en las dos primeras respuestas a un teléfono, un mensaje libre (sin precio, catálogo, compra ni producto) no recibe botones de producto ni montos.
  * Botón de Rubén (23/10/2026, regla de Andres):
- *  13. EL BOTÓN DE CONTACTO VA SOLO AL DERIVAR, por tipo de plan: una respuesta RESUELTA (`PLANES_SIN_BOTON`: precio, catálogo, imágenes, resultado, menú, bonos, recordatorio del QR, saludo, conversación, puente, opciones…) sale como texto
+ *  13. EL BOTÓN DE CONTACTO VA SOLO AL DERIVAR, por tipo de plan: una respuesta RESUELTA (`PLANES_SIN_BOTON`: precio, catálogo, imágenes, resultado, menú, recordatorio del QR, saludo, conversación, puente, opciones…) sale como texto
  *      plano o con sus botones de producto, NUNCA con el botón de Rubén; un plan que deriva (`PLANES_CON_BOTON`: derivar, consulta, fuera de país, cierre del cobro…) lo lleva siempre.
  *      El plan `repetido` (la alternativa cuando el texto saldría idéntico) NO está en ninguna lista: no deriva, así que sale en texto plano, salvo que lo repetido fuera una derivación (conserva su botón).
  * Rehecho de Rubén sobre la Entrega 2 (23/10/2026):
  *  14. LA ETIQUETA DE UN BOTÓN CON PRECIO ES «<nombre DEL CATÁLOGO> <precio>Bs» (≤ 20 caracteres, el nombre completo o recortado por palabras): ningún nombre ni precio sale del código;
  *  15. EL BOTÓN «Ver opciones» (el del puente) NO lleva precio ni dígitos, y nunca sale junto a botones de producto;
- *  16. «Ver complementos» abre la lista de bonos: es el único botón de menú sin precio;
+ *  16. «Ver complementos» abre una lista: es el único botón de menú sin precio;
  *  17. LO QUE SE OFRECE SE CUMPLE: tras «¿Te muestro las opciones?» (el puente, o el precio de un producto antes de la charla), el «sí» o el botón «Ver opciones» reciben los botones de producto con precio (salvo con un QR abierto);
  *      y ese «sí» no es «el menú antes de tiempo» (invariante 12).
  */
@@ -71,7 +71,7 @@ export const PLANES_CON_BOTON = ['riesgo', 'derivar', 'consulta', 'cancelacion',
 /** ¿El mensaje lleva el botón que abre el chat de Rubén (`cta_url`)? */
 export const llevaBotonDeContacto = (m: { payload: J }): boolean => (m.payload['interactive'] as J | undefined)?.['type'] === 'cta_url';
 const IDS_DE_PRODUCTO = ['b_pack', 'b_libro', 'b_audiolibro', 'b_meditaciones', 'b_upgrade'];
-/** Los botones de producto o de la lista de bonos (con un QR abierto o sin configuración no sale ninguno). */
+/** Los botones de producto o de la lista (con un QR abierto o sin configuración no sale ninguno). */
 // `b_upgrade` NO es un botón del menú: lo ofrece el código en el mismo mensaje del comprobante que cuadra (el QR del Libro ya quedó cerrado en ese turno).
 const IDS_DE_MENU = [...IDS_DE_PRODUCTO.filter((x) => x !== 'b_upgrade'), 'b_audios'];
 /**
@@ -99,7 +99,7 @@ export interface ContextoUx {
 /** Los mensajes EXENTOS del invariante 7, POR PLAN (no por palabras): el QR, el resultado del cotejo, la protección ante violencia o miedo y el texto a un número extranjero; y la presentación. */
 const PLANES_EXENTOS = ['identidad', 'qr', 'comprobante', 'riesgo', 'fuera_pais', 'baja'];
 const EXENTO_REPETIDO = (m: UxMsg, plan: string): boolean => m.tipo === 'image' || PLANES_EXENTOS.includes(plan) || esPresentacion(m.cuerpo);
-const TRIGGER_DE_OPCIONES = /precio|cu[aá]nto|cuesta|vale\b|cat[aá]logo|vend|lista|opciones|compr|pagar|pago|adquirir|llevo|pack|libro|audiolibro|meditaci|bono|^hola, (quiero|me interesa|vengo)|garant|resultado|imagen|foto/i;
+const TRIGGER_DE_OPCIONES = /precio|cu[aá]nto|cuesta|vale\b|cat[aá]logo|vend|lista|opciones|compr|pagar|pago|adquirir|llevo|pack|libro|audiolibro|meditaci|^hola, (quiero|me interesa|vengo)|garant|resultado|imagen|foto/i;
 export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, transcripcion = '', ctx: ContextoUx = {}): string[] {
   const v: string[] = [];
   const inter = entrante['interactive'] as J | undefined;

@@ -3,7 +3,8 @@
 // =============================================================================
 // Los ayudantes del estado de la conversación (`ss*`) son el módulo común `comun-sin-agente/src/sesion.js` (paquete `sesion`): aquí solo se declaran sus parámetros para ESTE flujo y lo que depende
 // de los nombres de nodo del chat (`cnRegistro`).
-const SS_CONFIG = { espacio: 'chat-novuchat', espacioPrueba: 'chat-novuchat-prueba', venceMin: 2880, maxBytes: 15000, prefijo: 'chat', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' };
+// Congelado: ningún nodo puede cambiar el espacio, el prefijo ni el tope (la guardia de `construir.mjs` además rechaza reasignarlo o mutarlo en el código de cada nodo).
+const SS_CONFIG = Object.freeze({ espacio: 'chat-novuchat', espacioPrueba: 'chat-novuchat-prueba', venceMin: 2880, maxBytes: 15000, prefijo: 'chat', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' });
 // Qué quedó comprometido del registro de eventos: recorre los intentos de atrás hacia adelante y toma el último que corrió.
 //   { ok, falla, version, ficha, seq } — `ficha` es la que ESE intento propuso (la que el servidor guardó si ok).
 const CN_INTENTOS_REGISTRO = [['Comprometer evento (3.º intento)', 'Replanificar registro (2.º)'], ['Comprometer evento (2.º intento)', 'Replanificar registro'], ['Comprometer evento', 'Registrar evento']];

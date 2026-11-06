@@ -200,11 +200,10 @@ describe('PARÁMETROS del módulo (SS_CONFIG): lo que cambia de un flujo a otro 
     expect(pide('chat-novuchat')).toBe(400);
     expect(crearServidorDeSesion({ ahoraMs: () => AHORA }).atender(PNID, { telefono: TEL, sesion: { v: 1, accion: 'leer', espacio: 'chat-novuchat', ejecucion: 'e' } }).statusCode).toBe(200);
   });
-  const QTACO_AISLADO = { espacio: 'venta-minima', espacioPrueba: 'venta-minima-prueba', venceMin: 1440, maxBytes: 8000, prefijo: 'vm', nodoCarga: 'Carga de entrada', nodoBase: 'Config base' };
   it('AISLAMIENTO entre espacios: lo que Q\'Taco compromete en `venta-minima` NO lo lee el chat en `chat-novuchat` (mismo servidor, mismo teléfono, mismo número)', () => {
     // La restricción `espacios` es solo del servidor FALSO; el núcleo real no la tiene: allí el aislamiento lo da la CLAVE del documento (`{pnid}~{espacio}~wa_{tel}`).
     const servidor = crearServidorDeSesion({ ahoraMs: () => AHORA });
-    const Q = cargar(QTACO_AISLADO);
+    const Q = cargar(QTACO);
     const c = Q['ssCuerpoComprometer'](TEL, '7', 'fin1', 0, { pedido: 'secreto de Q\'Taco' });
     expect(servidor.atender(PNID, c).body['resultado']).toBe('comprometido');
     const delChat = servidor.atender(PNID, H['ssCuerpoLeer'](TEL, '8'));

@@ -263,7 +263,7 @@ function Catalogo({ items, ficha, carrito, moneda, conFotos, alSumar, alAbrir }:
         <div className="cat-areas">
           <button type="button" aria-pressed={area === ''} onClick={() => setArea('')}>Todo</button>
           {areas.map((a) => (
-            <button key={a} type="button" aria-pressed={area === a}
+            <button key={a} type="button" aria-pressed={area === a} title={a}
                     onClick={() => setArea(area === a ? '' : a)}>{a}</button>
           ))}
         </div>

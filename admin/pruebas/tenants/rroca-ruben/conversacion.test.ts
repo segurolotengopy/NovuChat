@@ -7,7 +7,7 @@
  *   - «¿precio y devolución?» da el precio Y deriva en un solo mensaje; la devolución sola nunca trae precios; jamás una promesa de devolución;
  *   - «¿me garantizan dormir?» no garantiza; dos preguntas juntas se responden en UN solo mensaje, nunca en dos;
  *   - la crisis NO se renueva con cada mensaje: vence a las 48 h de la ÚLTIMA SEÑAL; mientras dura, no hay venta; una señal nueva reinicia el plazo;
- *   - «lo voy a pensar» no abre un QR; el bono no se vende suelto; la muestra de voz solo sale si la piden; el modelo no habla de precios ni de la web;
+ *   - «lo voy a pensar» no abre un QR; la muestra de voz solo sale si la piden; el modelo no habla de precios ni de la web;
  *   - ningún aviso a Rubén dice «validado», «acreditado» ni «verificado».
  */
 import { readFileSync } from 'node:fs';
@@ -55,7 +55,7 @@ describe('CASO (a) del PDF: una captura de anuncio SIN texto abre con SU ángulo
     expect(fichaDe(w)['saludado']).toBe(true);
   });
 
-  it('cada arte de la campaña abre con SU ángulo (3 artes y la portada): el dato de la consola, no el código', () => {
+  it('cada arte de la campaña abre con SU ángulo (los 3 artes): el dato de la consola, no el código', () => {
     for (const a of ANUNCIOS) {
       const w = conAnuncios(ANUNCIOS, { medio: captura(a.titulares[0]!) });
       const t = hablar(w, ANA, mImagen({ caption: '' }));
@@ -94,7 +94,7 @@ describe('CASO (a) del PDF: una captura de anuncio SIN texto abre con SU ángulo
     mensajes.push(hablar(w, ANA, mTexto('Exacto eso me pasa, me llevo todos los pendientes de la oficina a la cama. Pero soy pésimo para leer libros largos, ¿cómo funciona esto?')));
     const precios = hablar(w, ANA, mTexto('¿y cuánto cuesta?'));
     mensajes.push(precios);
-    expect(titulos(precios)).toEqual(['Pack completo 70Bs', 'Libro con bono 35Bs', 'Solo audios']);
+    expect(titulos(precios)).toEqual(['Pack completo 70Bs', 'Libro 35Bs', 'Solo audios']);
     const qr = hablar(w, ANA, mBoton('b_pack'));
     mensajes.push(qr);
     expect(qr.mensajes[0]!.tipo).toBe('image');
@@ -122,14 +122,14 @@ describe('CASO (b) del PDF: «¿precio y devolución?» da el precio Y deriva, e
     expect(c).toMatch(/asistente virtual de Noches Sin Insomnio/);
     expect(c).toMatch(/70 Bs/);
     expect(c).toMatch(/35 Bs/);
-    expect(c).toMatch(/garantía o devolución, eso lo responde Rubén directamente/);
+    expect(c).toMatch(/no tiene garantía de devolución/);
     expect(c).not.toMatch(/\b(?:sí|si),? (?:hay|tienes|puedes)\b[^.]*devoluci|te devolvemos|te devuelvo|reembols/i);
     expect(esBotonDeRuben(t)).toBe(true);
     expect(t.avisos).toHaveLength(1);
     expect(t.avisos[0]!.a).toBe(REC);
     // La CLAVE y el motivo del aviso son los de la garantía (no `no_supo`), y un segundo «¿precio y devolución?» dentro de 30 minutos no repite el aviso.
-    expect(t.porNodo['Decidir turno']![0]!['plan']).toMatchObject({ tipo: 'derivar', clave: 'garantia', aviso: { clave: 'garantia', motivo: 'garantía o devolución' } });
-    expect(t.porNodo['Armar avisos']![0]).toMatchObject({ clave: 'garantia', planeado: true });
+    expect(t.porNodo['Decidir turno']![0]!['plan']).toMatchObject({ tipo: 'derivar', clave: 'devolucion', aviso: { clave: 'devolucion', motivo: 'devolución, garantía o reembolso' } });
+    expect(t.porNodo['Armar avisos']![0]).toMatchObject({ clave: 'devolucion', planeado: true });
     const otra = hablar(w, ANA, mTexto('perdón, ¿precio y devolución?'));
     expect(otra.avisos).toHaveLength(0);
     expect(esBotonDeRuben(otra)).toBe(true);
@@ -213,6 +213,69 @@ describe('CASOS (c) y (d) del PDF: no garantiza; dos preguntas juntas en UN solo
 });
 
 const BETO_DE_PRUEBA = '59100000022';
+
+describe('la crisis NO la levanta ni el cliente ni una pausa por persona que termina (seguridad, 05/11/2026)', () => {
+  const HORA = 60;
+  const esCrisis = (t: ResultadoTurno): boolean => /Siento mucho que estés pasando por esto/.test(t.mensajes[0]?.cuerpo ?? '');
+  const PAUSA = { ok: true, atencion: { estado: 'bloqueado' }, avisarRecepcion: '', pausadoPorPersona: true };
+  const mundo = (): { w: Mundo; poner: (v: J) => void } => {
+    const ing: J = { ok: true };
+    const w = nuevo({ ingesta: ing });
+    hablar(w, ANA, mTexto('hola'));
+    expect(esCrisis(hablar(w, ANA, mTexto('ya no quiero vivir')))).toBe(true);
+    w.avanzar(1);
+    return { w, poner: (v: J) => { for (const k of Object.keys(ing)) delete ing[k]; Object.assign(ing, v); } };
+  };
+  it('NEGANDO: «ya estoy bien», «gracias» o «mejor» del cliente NO levantan la protección', () => {
+    const { w } = mundo();
+    for (const dicho of ['ya estoy bien', 'gracias', 'estoy mejor, quiero el libro', 'fue un error, no pasa nada']) {
+      w.avanzar(HORA);
+      expect(esCrisis(hablar(w, ANA, mTexto(dicho))), dicho).toBe(true);
+      expect(fichaDe(w)['riesgo'], dicho).toBe(true);
+    }
+  });
+  it('NEGANDO: la pausa por persona que TERMINA (devolución, vencimiento por inactividad o por la ventana de 24 h: la ingesta no los distingue) NO levanta la protección', () => {
+    const { w, poner } = mundo();
+    poner(PAUSA);
+    expect(hablar(w, ANA, mTexto('gracias')).mensajes).toHaveLength(0);
+    poner({ ok: true });
+    w.avanzar(1);
+    const t = hablar(w, ANA, mTexto('hola, quiero el libro'));
+    expect(esCrisis(t)).toBe(true);
+    expect(fichaDe(w)['riesgo']).toBe(true);
+    expect(fichaDe(w)).not.toHaveProperty('pausaPersonaMs');
+  });
+  it('NEGANDO: una crisis NUEVA escrita durante la pausa renueva el plazo y, al terminar la pausa, la protección SIGUE', () => {
+    const { w, poner } = mundo();
+    const ms0 = fichaDe(w)['riesgoMs'] as number;
+    poner(PAUSA);
+    hablar(w, ANA, mTexto('me quiero morir'));
+    expect(fichaDe(w)['riesgoMs'] as number).toBeGreaterThan(ms0);
+    poner({ ok: true });
+    w.avanzar(HORA);
+    expect(esCrisis(hablar(w, ANA, mTexto('hola, quiero el libro')))).toBe(true);
+    expect(fichaDe(w)['riesgo']).toBe(true);
+  });
+  it('NEGANDO: el uso extendido y el bloqueo de un contacto tampoco levantan', () => {
+    for (const otra of [
+      { ok: true, atencion: { estado: 'operador', respuestasEnVentana: 20 }, avisarRecepcion: 'operador' },
+      { ok: true, atencion: { estado: 'bloqueado' }, avisarRecepcion: '', bloqueadoPorContacto: true },
+    ] as J[]) {
+      const { w, poner } = mundo();
+      poner(otra); hablar(w, ANA, mTexto('gracias'));
+      poner({ ok: true }); w.avanzar(1);
+      expect(esCrisis(hablar(w, ANA, mTexto('quiero el libro')))).toBe(true);
+    }
+  });
+  it('sin ninguna señal, la protección sigue venciendo SOLA a las 48 h de la última señal', () => {
+    const { w } = mundo();
+    w.avanzar(30 * HORA);
+    expect(esCrisis(hablar(w, ANA, mTexto('gracias')))).toBe(true);
+    w.avanzar(19 * HORA);
+    expect(esCrisis(hablar(w, ANA, mTexto('hola, quiero el libro')))).toBe(false);
+    expect(fichaDe(w)['riesgo']).toBe(false);
+  });
+});
 
 describe('la crisis se levanta sola: vence a las 48 h de la ÚLTIMA SEÑAL, no del último mensaje', () => {
   const HORA = 60;
@@ -352,16 +415,16 @@ describe('objeciones por código: «lo voy a pensar» y la muestra de voz', () =
   });
 
   it('NEGANDO: los precios del texto son los del catálogo (cambian con él) y un catálogo sin precios no inventa ninguno', () => {
-    const catalogo = [{ id: 'pack-completo', nombre: 'Pack completo', precio: 80 }, { id: 'libro-con-bono', nombre: 'Libro con bono', precio: 40 }];
+    const catalogo = [{ id: 'pack-completo', nombre: 'Pack completo', precio: 80 }, { id: 'libro', nombre: 'Libro', precio: 40 }];
     const t = pensando(nuevo({ panel: panelOk({ catalogo }) }));
     expect(unico(t)).toMatch(/40 Bs/);
     expect(unico(t)).toMatch(/80 Bs/);
     expect(unico(t)).not.toMatch(/35 Bs|70 Bs/);
-    const sin = pensando(nuevo({ panel: panelOk({ catalogo: [{ id: 'pack-completo', nombre: 'Pack completo', precio: 70, agotado: true }, { id: 'libro-con-bono', nombre: 'Libro', precio: 35, agotado: true }] }) }));
+    const sin = pensando(nuevo({ panel: panelOk({ catalogo: [{ id: 'pack-completo', nombre: 'Pack completo', precio: 70, agotado: true }, { id: 'libro', nombre: 'Libro', precio: 35, agotado: true }] }) }));
     expect(unico(sin)).not.toMatch(/\d+\s*Bs/);
   });
 
-  it('la muestra de voz SOLO si la piden: 50 segundos de «Cierra el día», voz sintética, sin enlaces; sin pedirla, nada de eso', () => {
+  it('la muestra de voz SOLO si la piden: 50 segundos de «Cierra el día», voz sintética, con la dirección de la landing (dato de Config base); sin pedirla, nada de eso', () => {
     const w = nuevo();
     hablar(w, ANA, mTexto('hola'));
     const t = hablar(w, ANA, mTexto('¿puedo escuchar una muestra de la voz antes de comprar?'));
@@ -369,12 +432,16 @@ describe('objeciones por código: «lo voy a pensar» y la muestra de voz', () =
     expect(c).toMatch(/50 segundos/);
     expect(c).toMatch(/Cierra el día/);
     expect(c).toMatch(/voz sintética/);
-    expect(c).not.toMatch(/https?:|www\.|\.com|\.bo\b/i);
+    expect(c).toContain('https://noches.dhermacore.com/');
+    expect(c).not.toMatch(/página del libro|Escucha un fragmento/);
     const sin = hablar(nuevo(), ANA, mTexto('quiero contarte cómo duermo'));
-    expect(unico(sin)).not.toMatch(/50 segundos|Escucha un fragmento/);
+    expect(unico(sin)).not.toMatch(/50 segundos|Escucha un fragmento|dhermacore/);
+    // Sin el dato, la muestra no inventa ninguna dirección.
+    const sinDato = hablar(nuevo({ base: { landingDominio: '' } }), ANA, mTexto('¿puedo escuchar una muestra de la voz antes de comprar?'));
+    expect(unico(sinDato)).not.toMatch(/https?:|\.com/i);
   });
 
-  it('NEGANDO: el modelo no habla de la web ni de enlaces, ni vende el bono suelto, ni da precios: cualquiera de esos textos cae al respaldo fijo', () => {
+  it('NEGANDO: el modelo no habla de la web ni de enlaces, ni ofrece un bono que no existe, ni da precios: cualquiera de esos textos cae al respaldo fijo', () => {
     for (const modeloDice of [
       'Puedes escuchar un fragmento en nuestra página web. ¿Te cuento más?',
       'Claro, el bono se vende suelto por 10 Bs. ¿Lo quieres?',
@@ -394,10 +461,10 @@ describe('el prompt del modelo: la base de conocimiento, las reglas de salud y l
   const p = L.RR_PROMPT;
   it('cabe en el tope de 4.670 caracteres (el mismo de Antonio) y trae los datos del libro', () => {
     expect(p.length).toBeLessThanOrEqual(4670);
-    for (const dato of [/208 páginas/, /14 eslabones/, /ejercicio por eslabón/, /Diario del sueño/, /registro semanal/, /Anexo C/, /plan de 21 días/, /18 páginas/, /5 pasos/, /14 capítulos/, /Cierra el día/, /Suelta el cuerpo/, /Si despiertas de madrugada/, /pago único/, /sin suscripción/]) expect(p).toMatch(dato);
+    for (const dato of [/208 páginas/, /14 eslabones/, /ejercicio por eslabón/, /Diario del sueño/, /registro semanal/, /Anexo C/, /plan de 21 días/, /14 capítulos/, /Cierra el día/, /Suelta el cuerpo/, /Si despiertas de madrugada/, /pago único/, /sin suscripción/]) expect(p).toMatch(dato);
   });
-  it('el bono es un REGALO que no se vende suelto; el audio lleva voz sintética y el libro se hizo con apoyo de IA; sin testimonios', () => {
-    expect(p).toMatch(/REGALO[^.]*NO se vende suelto/);
+  it('SIN BONO: el prompt no menciona ningún bono; el audio lleva voz sintética y el libro se hizo con apoyo de IA; sin testimonios', () => {
+    expect(p).not.toMatch(/\bbonos?\b/i);
     expect(p).toMatch(/voz sintética/);
     expect(p).toMatch(/apoyo de inteligencia artificial/);
     expect(p).toMatch(/No inventes testimonios/);

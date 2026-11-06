@@ -21,13 +21,12 @@ describe('rrSeguro: la salud y el cobro real viven también en la barrera de có
   });
 });
 
-describe('el ángulo de la portada es una instrucción que los filtros de redacción no rechazan', () => {
+describe('los ángulos de campaña son instrucciones que los filtros de redacción no rechazan', () => {
   const dir = dirname(fileURLToPath(import.meta.url));
   const datos = JSON.parse(readFileSync(join(dir, '../../../scripts/datos/rroca-ruben/campanas-rroca-ruben.json'), 'utf8')) as { anuncios: Array<{ id: string; angulo: string }> };
   it('ningún ángulo menciona lo que el filtro del modelo prohíbe (bono, pack, paquete)', () => {
     for (const a of datos.anuncios) expect(a.angulo, a.id).not.toMatch(/\b(bonos?|pack|paquete)\b/i);
-    const portada = datos.anuncios.find((a) => a.id === 'portada-del-libro')!;
-    expect(L.rrExtraRedaccion(portada.angulo, L.rrNorm(portada.angulo), {})).not.toMatch(/oferta_fuera_del_codigo/);
+    for (const a of datos.anuncios) expect(L.rrExtraRedaccion(a.angulo, L.rrNorm(a.angulo), {}), a.id).not.toMatch(/oferta_fuera_del_codigo/);
   });
 });
 

@@ -53,11 +53,11 @@ const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
 const NEGOCIO = 'Noches Sin Insomnio';
 const CATALOGO = [
   { id: 'pack-completo', nombre: 'Pack completo', precio: 70, activo: true },
-  { id: 'libro-con-bono', nombre: 'Libro con bono', precio: 35, activo: true },
+  { id: 'libro', nombre: 'Libro', precio: 35, activo: true },
   { id: 'audiolibro', nombre: 'Audiolibro', precio: 35, activo: true },
-  { id: 'meditaciones', nombre: 'Meditaciones', precio: 20, activo: true },
+  { id: '3-meditaciones', nombre: '3 Meditaciones', precio: 20, activo: true },
 ];
-// Legítimas: las del producto (14 eslabones y 14 capítulos, 208 páginas, bono de 18 páginas, plan de 21 días, 3 meditaciones de 7, 7 y 5 minutos, 5 pasos) y el número de un capítulo (1 a 14).
+// Legítimas: las del producto (14 eslabones y 14 capítulos, 208 páginas, plan de 21 días, 3 meditaciones de 7, 7 y 5 minutos, 5 pasos) y el número de un capítulo (1 a 14).
 const CIFRAS_PERMITIDAS = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '18', '21', '50', '208']);
 const UMBRAL_SIN_RESPALDO = 0.85;
 const PLANES_DEL_MODELO_BUENOS = ['modelo', 'angulo', 'puente', 'opciones'];
@@ -274,7 +274,7 @@ function violacionesDelTurno(est, turno, t) {
     const precioDeUnProducto = t.plan === 'precio' && montos.size === 1 && !titulos.some((x) => CON_PRECIO.test(x)) && !ids.some((i) => BOTONES_DE_PRODUCTO.includes(i));
     // La excepción del PR-2 (caso (b) del PDF): «¿precio y devolución?» da el precio YA, junto con la derivación a Rubén (plan `derivar`, con el botón de Rubén y sin botones de producto): es una pregunta de precio contestada por código, no el menú.
     const sinBotonesDeProducto = !titulos.some((x) => CON_PRECIO.test(x)) && !ids.some((i) => BOTONES_DE_PRODUCTO.includes(i));
-    const precioConDerivacion = t.plan === 'derivar' && ['garantia', 'otro_medio_pago', 'reclamo', 'volumen'].includes(t.clave) && t.precioPorCodigo === true && !titulos.some((x) => CON_PRECIO.test(x)) && !ids.some((i) => BOTONES_DE_PRODUCTO.includes(i));
+    const precioConDerivacion = t.plan === 'derivar' && ['devolucion', 'otro_medio_pago', 'reclamo', 'volumen'].includes(t.clave) && t.precioPorCodigo === true && !titulos.some((x) => CON_PRECIO.test(x)) && !ids.some((i) => BOTONES_DE_PRODUCTO.includes(i));
     // También del PR-2 (caso (d)): «¿cuánto cuesta el libro y me garantizan dormir?» recibe el precio y la respuesta de resultado en UN mensaje, sin botones de producto: el precio lo pidió el cliente y lo dice el código.
     const precioEnResultado = t.plan === 'resultado' && t.precioPorCodigo === true && sinBotonesDeProducto;
     if (est.charla < 2 && !est.qrVisto && !prellenado && !PLANES_EXENTOS.includes(t.plan) && !precioDeUnProducto && !precioConDerivacion && !precioEnResultado) {

@@ -68,7 +68,7 @@ describe('el saludo: una presentación, una pregunta, sin montos', () => {
     const b = hablar(w, ANA, mTexto('¿cuánto cuesta el libro?'));
     expect(b.ejecutados.has('Conversar con el modelo')).toBe(false);
     expect(b.mensajes[0]!.cuerpo).toMatch(/35 Bs/);
-    expect(titulos(b)).toEqual(['Pack completo 70Bs', 'Libro con bono 35Bs', 'Solo audios']);
+    expect(titulos(b)).toEqual(['Pack completo 70Bs', 'Libro 35Bs', 'Solo audios']);
   });
 
   it('el saludo no se repite: la presentación sale una vez por teléfono aunque vuelva a escribir «hola»', () => {
@@ -90,7 +90,7 @@ describe('la conversación libre: el modelo conversa, el código calcula', () =>
     expect(a.mensajes[0]!.tipo).toBe('text');
     // La TERCERA respuesta lleva el bloque de las opciones (por código, con el ahorro calculado) y los botones con el NOMBRE DEL CATÁLOGO y su precio.
     const b = hablar(w, ANA, mTexto('no sé si hay solución'));
-    expect(titulos(b)).toEqual(['Pack completo 70Bs', 'Libro con bono 35Bs', 'Solo audios']);
+    expect(titulos(b)).toEqual(['Pack completo 70Bs', 'Libro 35Bs', 'Solo audios']);
     expect(b.mensajes[0]!.cuerpo).toMatch(/con «Pack completo» ahorras 20 Bs/);
     for (const x of titulos(b)) expect(x.length).toBeLessThanOrEqual(20);
   });
@@ -239,7 +239,7 @@ describe('catálogo COMPLETO por defecto; la bandera `agotado` de la consola sig
     expect(ids(hablar(v, ANA, mTexto('quiero comprar')))).toEqual(['b_pack', 'b_libro', 'b_audios']);
     const a = hablar(v, ANA, mBoton('b_audios'));
     expect(ids(a)).toEqual(['b_audiolibro', 'b_meditaciones', 'b_pack']);
-    expect(titulos(a)).toEqual(['Audiolibro 35Bs', 'Meditaciones 20Bs', 'Mejor el Pack 70Bs']);
+    expect(titulos(a)).toEqual(['Audiolibro 35Bs', '3 Meditaciones 20Bs', 'Mejor el Pack 70Bs']);
   });
 
   it('con el Pack agotado, el prellenado del Pack deriva a Rubén con aviso y botón: ningún QR, ningún monto', () => {
@@ -263,7 +263,7 @@ describe('catálogo COMPLETO por defecto; la bandera `agotado` de la consola sig
   });
 
   it('pedir un producto agotado por un botón viejo deriva a Rubén; al apagar la bandera, el mismo pedido vuelve a abrir el QR (dato conmutable)', () => {
-    const w = nuevo({ panel: panelConAgotados('meditaciones') });
+    const w = nuevo({ panel: panelConAgotados('3-meditaciones') });
     const a = hablar(w, ANA, mBoton('b_meditaciones'));
     expect(a.mensajes.some((m) => m.tipo === 'image')).toBe(false);
     expect(esBotonDeRubén(a)).toBe(true);
@@ -281,8 +281,8 @@ describe('catálogo COMPLETO por defecto; la bandera `agotado` de la consola sig
   });
 });
 
-describe('los botones: Pack / Libro con bono / Solo audios', () => {
-  it('«Pack completo» y «Libro con bono»: el QR con el monto del catálogo; el botón pulsado no reaparece', () => {
+describe('los botones: Pack / Libro / Solo audios', () => {
+  it('«Pack completo» y «Libro»: el QR con el monto del catálogo; el botón pulsado no reaparece', () => {
     const w = nuevo();
     saludar(w);
     const t = hablar(w, ANA, mBoton('b_pack'));
@@ -296,7 +296,7 @@ describe('los botones: Pack / Libro con bono / Solo audios', () => {
     charlar(w);
     const l = hablar(w, ANA, mBoton('b_audios'));
     expect(l.mensajes[0]!.payload['interactive'].type).toBe('button');
-    expect(titulos(l)).toEqual(['Audiolibro 35Bs', 'Meditaciones 20Bs', 'Mejor el Pack 70Bs']);
+    expect(titulos(l)).toEqual(['Audiolibro 35Bs', '3 Meditaciones 20Bs', 'Mejor el Pack 70Bs']);
     for (const x of titulos(l)) expect(x.length).toBeLessThanOrEqual(20);
     const q = hablar(w, ANA, mBoton('b_meditaciones'));
     expect(q.mensajes[0]!.tipo).toBe('image');
@@ -581,8 +581,8 @@ describe('los avisos a Rubén: «ya le avisé» solo si salió', () => {
 
 describe('la derivación a Rubén: texto fijo, aviso y botón', () => {
   const casos: Array<[string, string, RegExp]> = [
-    ['quiero una devolución', 'garantía', /desde aquí no puedo prometerte nada de eso/],
-    ['¿hay garantía si no me sirve?', 'garantía', /eso lo responde Rubén directamente/],
+    ['quiero una devolución', 'devolución', /no tiene garantía de devolución/],
+    ['¿hay garantía si no me sirve?', 'devolución', /producto digital de pago único y no tiene garantía de devolución.*Rubén te atiende directamente/],
     ['¿puedo pagar con tarjeta?', 'otro medio', /cualquier otra forma de pago la ve Rubén directamente/],
     ['tengo un reclamo', 'reclamo', /Eso lo ve directamente Rubén/],
     ['quiero hablar con Rubén', 'persona', /Eso lo ve Rubén directamente/],
@@ -638,9 +638,13 @@ describe('la derivación a Rubén: texto fijo, aviso y botón', () => {
     expect(esBotonDeRubén(t)).toBe(true);
   });
 
-  it('la frase de garantía es un DATO de la consola del flujo', () => {
+  it('NO HAY GARANTÍA: la frase es fija en código (un dato `garantiaTexto` ya no la cambia) y no promete nada; con botón y aviso', () => {
     const w = nuevo({ base: { garantiaTexto: 'La garantía la define Rubén caso por caso y la responde por este chat.' } });
-    expect(hablar(w, ANA, mTexto('¿hay garantía?')).mensajes[0]!.cuerpo).toMatch(/La garantía la define Rubén caso por caso/);
+    const t = hablar(w, ANA, mTexto('¿hay garantía?'));
+    expect(t.mensajes[0]!.cuerpo).toMatch(/no tiene garantía de devolución/);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/caso por caso|te devolvemos|te reembolsamos|te garantizo/i);
+    expect(esBotonDeRubén(t)).toBe(true);
+    expect(t.avisos).toHaveLength(1);
   });
 
   it('a lo más UN aviso por teléfono y motivo cada 30 minutos: el segundo del mismo motivo no avisa de nuevo; cuando el contenido es variable (lo que el modelo no supo) NO dice «ya le avisé» de esta vez', () => {
@@ -927,7 +931,7 @@ describe('el paso del Libro al Pack: UNA vez, solo tras el comprobante de un Lib
   it('si el catálogo no trae el Pack (agotado) o el Libro, la oferta no existe: nunca un precio inventado', () => {
     const w = nuevo({ medio: { clasificacion: COMPROBANTE } });
     hablar(w, ANA, mBoton('b_libro'));
-    w.dobles['Traer configuración'] = () => panelConQr(35, { catalogo: [{ id: 'libro-con-bono', nombre: 'Libro con bono', precio: 35 }] });
+    w.dobles['Traer configuración'] = () => panelConQr(35, { catalogo: [{ id: 'libro', nombre: 'Libro', precio: 35 }] });
     const t = hablar(w, ANA, mImagen());
     expect(ids(t)).toEqual([]);
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/pasar al Pack|35 Bs más/);

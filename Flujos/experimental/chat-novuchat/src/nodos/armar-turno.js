@@ -7,7 +7,7 @@
 //    resuelve sin modelo; la lista de rubros al primer saludo; todo lo demás cae en el modelo («Catch All»), con su contexto.
 // 4. Una sola llamada al modelo por turno: instrucciones del documento + historial + eventos. La `systemInstruction` es estática; el turno va en `contents`.
 // Este nodo NO escribe nada. Si la puerta cerró el turno deja el plan «suspendido» o «uso_extendido»; si no hay estado en el servidor (el `leer` o el registro fallaron), «sin_estado»:
-// «Armar mensajes» lo cumple (genérico con botón, sin avisos ni compromiso).
+// «Armar mensajes» lo cumple (genérico con botón y aviso a recepción, sin compromiso).
 const t = cnPrimero('Interpretar entrada') || {};
 const puerta = cnPrimero('Puerta del turno') || {};
 const reg = cnPrimero('Registrar evento') || {};

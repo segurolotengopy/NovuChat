@@ -21,16 +21,16 @@ const AHORA = Date.now();
 const HOY = servidor.diaBolivia(AHORA);
 const SIN_OTROS = { ids: [] as string[], nombres: [] as string[] };
 // Los ids del catálogo de Rubén (salen de `idDe(nombre)`; ver `negocio-rroca-ruben.json`).
-const PRODUCTOS = new Set(['pack-completo', 'libro-con-bono', 'audiolibro', 'meditaciones']);
+const PRODUCTOS = new Set(['pack-completo', 'libro', 'audiolibro', '3-meditaciones']);
 const copia = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const delLote = (d: typeof DATOS): typeof DATOS => ({ ...d, anuncios: d.anuncios.filter((a) => a.pendiente_de_termino_registrado !== true) });
 const revisar = (d: typeof DATOS): Map<string, unknown> => servidor.revisarSinModelo(validar.armarLista(d, HOY) as servidor.Campana[], [], 10, AHORA, SIN_OTROS, PRODUCTOS);
 
 describe('el archivo de las campañas de Rubén (dato del tenant)', () => {
-  it('trae una campaña por cada arte (3 artes y la portada), para el comercio correcto, y ninguna del libro anterior', () => {
+  it('trae una campaña por cada arte (los 3 artes; la portada ya no existe), para el comercio correcto, y ninguna del libro anterior', () => {
     expect(DATOS.tenant).toBe('rroca-ruben');
     const principales = DATOS.anuncios.map((a) => a.titulares[0]);
-    expect(principales).toEqual(['3:12 a. m.', 'La mente hace cuentas de madrugada', 'Suelta el cálculo', 'Noches Sin Insomnio']);
+    expect(principales).toEqual(['3:12 a. m.', 'La mente hace cuentas de madrugada', 'Suelta el cálculo']);
     expect(JSON.stringify(DATOS.anuncios)).not.toMatch(/emprendedor|\bIA\b|closer|videos/i);
   });
   it('NEGANDO: ningún titular (≤100) ni ángulo (≤300) lleva montos, enlaces, el nombre del autor ni policía; el producto es del catálogo de Rubén', () => {
@@ -54,7 +54,7 @@ describe('el archivo de las campañas de Rubén (dato del tenant)', () => {
   });
   it('el lote vale las campañas sin marcar; el plan tiene que admitir ese número (el servidor no recorta en silencio)', () => {
     const lote = delLote(DATOS).anuncios.length;
-    expect(lote).toBeGreaterThanOrEqual(4);
+    expect(lote).toBeGreaterThanOrEqual(3);
     expect(lote).toBeLessThanOrEqual(validar.MAX_ANUNCIOS);
     expect(validar.validarArchivo(delLote(DATOS), { productosActivos: PRODUCTOS, limite: lote - 1 }).join('|')).toMatch(/plan del comercio admite/);
     expect(validar.validarArchivo(delLote(DATOS), { productosActivos: PRODUCTOS, limite: lote })).toEqual([]);

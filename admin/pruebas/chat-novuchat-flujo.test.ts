@@ -338,7 +338,9 @@ function propiedades(w: W, t: T, from: string, entrada: string, tiposSinBotones:
     // Ningún dígito en lo que sale salvo «24/7», «24 horas» y las cifras del mensaje de planes (65, 125, 25) que arma el código.
     const sinPermitidos = c.replace(/\b(?:los\s+)?7\s+d[ií]as(?:\s+(?:de|a)\s+la\s+semana)?\b(?!\s+(?:de\s+prueba|gratis|gratuit\w*|libres?|sin\s+costo|de\s+garant\w*|extra))/gi, ' ').replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' ').replace(/USD (65|125|25)\b/g, ' ');
     // (el complemento de los planes trae a propósito los tamaños de agendas y de catálogo; ver `complementoPlanes`)
-    if (!/^Te cuento un poco más de los planes/.test(c)) expect(sinPermitidos, `${que}: dígitos de más`).not.toMatch(/\d/);
+    // (el respaldo en texto del aviso de la falla a RECEPCIÓN lleva el teléfono del cliente a propósito, para que sepan a quién atender)
+    if (/^Aviso a recepción: no se pudo guardar el chat; .* Cliente: \d+\.$/.test(c)) { /* teléfono del cliente a recepción */ }
+    else if (!/^Te cuento un poco más de los planes/.test(c)) expect(sinPermitidos, `${que}: dígitos de más`).not.toMatch(/\d/);
     else expect(c, `${que}: cifras de conversaciones o de consumo`).not.toMatch(/\d+\s+(conversaciones?|mensajes?|interacciones?|respuestas?|chats?)\b|ilimitad|gratis/i);
     if (e.tipo === 'image' || e.tipo === 'document') {
       expect(e.tipo, `${que}: la imagen de planes sale como imagen`).toBe('image');
@@ -3239,7 +3241,7 @@ describe('el estado de la conversación vive en el servidor (docs/arquitectura/e
     expect(versiones[1]).toBe(4);
   });
 
-  it('SIN ESTADO (el servidor no responde el `leer`): genérico con el botón a recepción, sin aviso, sin modelo, sin hoja, sin compromiso; 1 mensaje', () => {
+  it('SIN ESTADO (el servidor no responde el `leer`): genérico con el botón a recepción MÁS el aviso a recepción (política del 21/09), sin modelo, sin hoja, sin compromiso; 1 mensaje al cliente', () => {
     const w = crear();
     w.servidor.fallar = () => 503;
     const j = jugar(w, MAMA);
@@ -3247,7 +3249,7 @@ describe('el estado de la conversación vive en el servidor (docs/arquitectura/e
     expect(t.aMi).toHaveLength(1);
     expect(tipoInter(t.aMi[0]!)).toBe('cta_url');
     expect(urlDe(t.aMi[0]!)).toContain(REC);
-    expect(t.plantillas).toHaveLength(0);
+    expect(t.plantillas).toHaveLength(1);
     expect(w.modelo.llamadas).toHaveLength(0);
     expect(w.hoja.filas).toHaveLength(0);
     expect(w.compromisos).toHaveLength(0);
@@ -3261,7 +3263,7 @@ describe('el estado de la conversación vive en el servidor (docs/arquitectura/e
     expect(w2.compromisos).toHaveLength(0);
   });
 
-  it('el compromiso del turno FALLA (5xx): sale el genérico con botón, SIN la plantilla a recepción, sin hoja, y el estado no avanza más que el registro', () => {
+  it('el compromiso del turno FALLA (5xx): sale el genérico con botón MÁS el aviso a recepción (sin marcar `avisado`), sin hoja, y el estado no avanza más que el registro', () => {
     const w = crear();
     const j = jugar(w, MAMA);
     j.texto('Hola');
@@ -3273,11 +3275,11 @@ describe('el estado de la conversación vive en el servidor (docs/arquitectura/e
     const t = j.boton('equipo');
     expect(t.aMi).toHaveLength(1);
     expect(tipoInter(t.aMi[0]!)).toBe('cta_url');
-    expect(t.plantillas).toHaveLength(0); // sin aviso: el aviso ES un efecto externo que no se hace sin compromiso
+    expect(t.plantillas).toHaveLength(1); // el aviso de la falla (política del 21/09: pasar con recepción = aviso + botón); NO es el aviso de «pidió hablar con el equipo»
     expect(w.hoja.filas).toHaveLength(filas);
     expect(w.servidor.conversacion(PID, ESPACIO, MAMA).version).toBe(versionAntes + 1); // solo el registro del evento
     expect(fichaDe(w, MAMA)!.avisado).toBe(false);
-    // y cuando el servidor vuelve, el cliente puede pedirlo otra vez: ahora sí, con aviso
+    // y cuando el servidor vuelve, el cliente puede pedirlo otra vez: ahora sí, con el aviso de verdad
     w.servidor.fallar = null;
     const t2 = j.boton('equipo');
     expect(t2.plantillas).toHaveLength(1);
@@ -3306,7 +3308,7 @@ describe('el estado de la conversación vive en el servidor (docs/arquitectura/e
     expect(fichaDe(w, MAMA)!['sitiosVentana']).toBe(1); // partió del estado ganador
   });
 
-  it('SEGUNDO conflicto al comprometer el turno: genérico con botón, sin aviso (1 mensaje)', () => {
+  it('SEGUNDO conflicto al comprometer el turno: genérico con botón más el aviso a recepción (1 mensaje al cliente)', () => {
     const w = crear();
     const j = jugar(w, MAMA);
     j.texto('Hola');
@@ -3318,7 +3320,7 @@ describe('el estado de la conversación vive en el servidor (docs/arquitectura/e
     const t = j.lista('rubro:gastronomia');
     expect(t.aMi).toHaveLength(1);
     expect(tipoInter(t.aMi[0]!)).toBe('cta_url');
-    expect(t.plantillas).toHaveLength(0);
+    expect(t.plantillas).toHaveLength(1);
     expect(w.compromisos.map((c) => c.nodo).slice(-2)).toEqual(['Comprometer turno', 'Comprometer turno (2.º intento)']);
   });
 
@@ -3342,7 +3344,7 @@ describe('el estado de la conversación vive en el servidor (docs/arquitectura/e
     const t3 = jugar(w3, MAMA).texto('Hola');
     expect(t3.aMi).toHaveLength(1);
     expect(tipoInter(t3.aMi[0]!)).toBe('cta_url');
-    expect(t3.plantillas).toHaveLength(0);
+    expect(t3.plantillas).toHaveLength(1); // el aviso de la falla
     expect(w3.modelo.llamadas).toHaveLength(0);
     expect(w3.compromisos.every((c) => /Comprometer evento/.test(c.nodo))).toBe(true); // ni compromiso del turno
   });
@@ -3531,6 +3533,96 @@ describe('revisión de #782: puertas cerradas, espacio de prueba, ráfagas, rein
     // con el servidor caído en el compromiso del turno: sigue siendo UN mensaje por turno (el genérico en lugar de la respuesta)
     w.servidor.fallar = (c) => (compromiso('chat-fin')(c) ? 503 : null);
     expect(j.texto('otra cosa más').aMi).toHaveLength(1);
+  });
+});
+
+// ------------------------------------------------------------------------------ el genérico de una falla lleva el aviso a recepción (política del 21/09/2026)
+describe('el genérico de una falla del compromiso: botón MÁS aviso a recepción (pasar con recepción), un ítem más y 0 mensajes más al cliente', () => {
+  const caeElTurno = (w: W): void => { w.servidor.fallar = (c) => (compromiso('chat-fin')(c) ? 503 : null); };
+  const OPERADOR = { atencion: { estado: 'operador', mensajeFijo: 'Gracias por tu paciencia. Una persona del equipo seguirá con tu consulta.', avisarRecepcion: 'operador', respuestasEnVentana: 30 } };
+  const enRecepcion = (t: { mensajes: Enviado[] }): Enviado[] => t.mensajes.filter((m) => m.a === REC);
+
+  it('falla del compromiso: UN genérico con botón al cliente y UNA plantilla a recepción con el motivo; la ficha no queda «avisado» y no hay hoja', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = dice(EXPLICA_GASTRO, { rubro: 'gastronomia' });
+    caeElTurno(w);
+    const filas = w.hoja.filas.length;
+    const t = j.lista('rubro:gastronomia');
+    expect(t.aMi).toHaveLength(1);
+    expect(tipoInter(t.aMi[0]!)).toBe('cta_url');
+    expect(t.plantillas).toHaveLength(1);
+    expect(enRecepcion(t)).toHaveLength(1);
+    expect(JSON.stringify(t.plantillas[0]!.cuerpo ?? t.plantillas[0])).toMatch(/no se pudo guardar el chat/);
+    expect(fichaDe(w, MAMA)!['avisado']).toBe(false);
+    expect(w.hoja.filas).toHaveLength(filas);
+  });
+
+  it('variante de PRUEBA: el aviso NO se arma (sería un envío real a recepción); el genérico sale igual', () => {
+    const PRUEBA_TEL = '59100000044';
+    const w = crear({ flujo: PRUEBA, config: { telefonosDePrueba: MAMA + ',' + PRUEBA_TEL } });
+    w.servidor.fallar = () => 503;
+    const t = jugar(w, MAMA, { prueba: { modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true }, sinPropiedades: true }).texto('Hola');
+    expect(t.mensajes.filter((m) => m.tipo !== 'template')).toHaveLength(1);
+    expect(t.plantillas).toHaveLength(0);
+  });
+
+  it('puerta cerrada (suspendido, operador, bloqueado) con el compromiso caído: nunca el genérico y ningún aviso de falla (solo el suyo)', () => {
+    for (const [ingesta, plantillas] of [[{ servicio: { estado: 'cortado' } }, 0], [OPERADOR, 1], [{ atencion: { estado: 'bloqueado', avisarRecepcion: 'bloqueado', respuestasEnVentana: 80 } }, 1]] as [J, number][]) {
+      const w = crear({ ingesta });
+      caeElTurno(w);
+      const t = jugar(w, MAMA, { sinPropiedades: true }).texto('Hola');
+      expect(t.plantillas, JSON.stringify(ingesta)).toHaveLength(plantillas);
+      for (const m of t.aMi) expect(tipoInter(m)).not.toBe('cta_url');
+      expect(JSON.stringify(t.plantillas)).not.toMatch(/no se pudo guardar el chat/);
+    }
+  });
+
+  it('tope por hora y por teléfono: la segunda falla dentro de la hora lleva solo el genérico; pasada la hora, vuelve a avisar; otro teléfono tiene su propio tope', () => {
+    const w = crear();
+    caeElTurno(w);
+    const j = jugar(w, MAMA);
+    expect(j.texto('Hola').plantillas).toHaveLength(1);
+    const t2 = j.texto('Hola otra vez');
+    expect(t2.aMi).toHaveLength(1);
+    expect(t2.plantillas).toHaveLength(0);
+    // otro teléfono
+    const otro = jugar(w, '59100000077').texto('Hola');
+    expect(otro.plantillas).toHaveLength(1);
+    // pasada la hora
+    const t3 = w.mundo.turno(valorMeta(mTexto('Sigo aquí'), MAMA, { wamid: 'wamid.HORA3' }), { avanzarMin: 61 });
+    expect(t3.mensajes.filter((m) => m.tipo === 'template')).toHaveLength(1);
+  });
+
+  it('Meta rechaza el aviso de la falla: el turno no se corta, el genérico sale y NO hay compensación (no hay compromiso que deshacer); no sale dos veces', () => {
+    const w = crear();
+    caeElTurno(w);
+    w.graph.falla = (p) => p['type'] === 'template';
+    const j = jugar(w, MAMA);
+    const t = j.texto('Hola');
+    expect(t.aMi).toHaveLength(1);
+    expect(tipoInter(t.aMi[0]!)).toBe('cta_url');
+    expect(w.compromisos.some((c) => c.nodo === 'Comprometer compensación')).toBe(false);
+    // y el mismo mensaje repetido por Meta no manda un segundo aviso
+    w.graph.falla = () => false;
+    const t2 = w.mundo.turno(valorMeta(mTexto('Hola'), MAMA, { wamid: 'wamid.DUPFALLA' }), { avanzarMin: 61 });
+    const t3 = w.mundo.turno(valorMeta(mTexto('Hola'), MAMA, { wamid: 'wamid.DUPFALLA' }), { avanzarMin: 0 });
+    expect([t2, t3].reduce((n, x) => n + x.mensajes.filter((m) => m.tipo === 'template').length, 0)).toBe(1);
+  });
+
+  it('segundo conflicto (la replanificación también falla): UN solo aviso, aunque «Armar» y «Replanificar» armen cada uno el suyo', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = dice(EXPLICA_GASTRO, { rubro: 'gastronomia' });
+    w.servidor.antesDeComprometer = (c) => {
+      if (!String((c['sesion'] as J)['idCompromiso']).startsWith('chat-fin')) return;
+      w.servidor.sembrar(PID, ESPACIO, MAMA, clonar(fichaDe(w, MAMA)!) as J);
+    };
+    const t = j.lista('rubro:gastronomia');
+    expect(t.plantillas).toHaveLength(1);
+    expect(t.aMi).toHaveLength(1);
   });
 });
 

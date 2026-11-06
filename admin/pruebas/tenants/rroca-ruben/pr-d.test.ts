@@ -290,7 +290,7 @@ describe('B. saludo fijo en el primer turno y el menú no antes de tiempo', () =
 describe('E y F. catálogo por código desde la consola e imágenes con texto fijo', () => {
   it('«qué vendes», «catálogo» y «lista» listan SOLO lo que el catálogo de la consola trae (sin precios inventados)', () => {
     for (const x of ['¿qué vendes?', 'catálogo', 'lista']) {
-      const w = nuevo({ panel: panelOk({ catalogo: [{ id: 'libro-con-bono', precio: 31 }, { id: 'meditaciones', precio: 12 }] }) });
+      const w = nuevo({ panel: panelOk({ catalogo: [{ id: 'libro', precio: 31 }, { id: '3-meditaciones', precio: 12 }] }) });
       charlar(w);
       const t = hablar(w, ANA, mTexto(x));
       expect(t.ejecutados.has('Conversar con el modelo'), x).toBe(false);

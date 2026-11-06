@@ -41,7 +41,9 @@ function vcLimpiar(t, max) {
 // (acreditado, verificado, pagado, recibimos, confirmado), se descarta ENTERO: lo que el cliente escribe como detalle nunca afirma un pago.
 function vcLimpiarDetalle(t, max) {
   const s = vcLimpiar(t);
-  if (/acreditad|verificad|pagad|recibimos|confirmad/.test(vcNorm(s))) return '';
+  if (/acredit|verificad|pagad|recibimos|confirmad|cancelad|abonad|aprobad|transferid/.test(vcNorm(s))) return '';
+  // Una cifra con otra moneda («ARS 0 promo», «$ 100 c/u») sería una cifra de cobro falsa al lado de la verdadera: el detalle se descarta entero.
+  if (/\b(ars|usd|pesos?|dolar(?:es)?|dolares)\b|[$€]/i.test(vcNorm(s) + ' ' + s)) return '';
   const limpio = s.replace(/[*_~`]/g, ' ').replace(/\bbs\b\.?/gi, ' ').replace(/\btotal\b/gi, ' ').replace(/\s+/g, ' ').trim();
   return Array.from(limpio).slice(0, max).join('').trim();
 }
@@ -49,10 +51,28 @@ function vcLimpiarDetalle(t, max) {
 // -----------------------------------------------------------------------------
 // Vendibles: lo único que el carrito puede contener
 // -----------------------------------------------------------------------------
-// `catalogo` = arreglo de ítems { id, nombre, descripcion, area, precio (en bolivianos), moneda, activo }. Es vendible solo si está activo (`=== true`), tiene un precio finito mayor que cero (que al pasar a centavos sea al menos 1),
-// la moneda es 'BOB' o falta, el `id` es un solo segmento de ruta y no se repite en el catálogo, y el nombre no queda vacío al limpiarlo. Lo demás NO es vendible. Devuelve { id, nombre, precioCentavos, area, descripcion } con el precio en centavos enteros, recortado a `max` (200 por defecto).
+// `catalogo` = arreglo de ítems { id, nombre, descripcion, area, precio (en la unidad de la moneda), moneda, activo, y opcionales precioCentavos, stock, disponible, foto }. Es vendible solo si está activo (`=== true`), tiene un precio finito mayor que cero (que al pasar a centavos sea al menos 1),
+// la moneda del ítem es la de la venta, el `id` es un solo segmento de ruta y no se repite en el catálogo, y el nombre no queda vacío al limpiarlo. Lo demás NO es vendible.
+// `opciones.moneda`: 'BOB' (por defecto) o 'ARS'. Con 'BOB' el ítem puede no traer moneda (como siempre); con 'ARS' el ítem DEBE traer 'ARS': una moneda ausente o distinta no se vende (nunca se mezclan monedas). Con `opciones.moneda` explícita cada vendible lleva `moneda`.
+// Campos de una FUENTE EXTERNA, que se leen SOLO con `opciones.externa === true` (un catálogo de la consola que trae `stock` no cambia por esto): `disponible` debe faltar o ser exactamente `true`; `precioCentavos`, si viene (null cuenta como ausente), debe ser igual a precio × 100 (si no, el ítem no se vende: dos precios distintos son ambiguos);
+// `stock` entero > 0 o null (null = no controla stock); un stock negativo, decimal o de otro tipo, o igual a 0, no es vendible; `foto` solo si es una dirección https con nombre de dominio (sin IP, localhost, usuario ni caracteres raros). Devuelve { id, nombre, precioCentavos, area, descripcion } con el precio en centavos enteros
+// (más `moneda`, `stock` y `foto` solo cuando corresponde), recortado a `max` (200 por defecto). Sin esos campos el resultado es idéntico al de siempre.
+// La foto: https con nombre de dominio (letras, dígitos, puntos y guiones; al menos un punto), puerto opcional y ruta de caracteres ASCII imprimibles sin comillas, «<», «>», «\\» ni «@». Sin IP literal, sin «localhost», sin usuario.
+function vcFotoValida(f) {
+  if (typeof f !== 'string' || f.length > 500) return false;
+  const m = /^https:\/\/([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+)(?::\d{1,5})?(?:\/[\x21-\x7E]*)?$/.exec(f);
+  if (m === null || /["<>\\@]/.test(f)) return false;
+  const host = m[1].toLowerCase();
+  return !/^\d+(?:\.\d+)*$/.test(host) && host !== 'localhost' && !/\.(?:localhost|local|internal)$/.test(host);
+}
+
 function vcVendibles(catalogo, opciones) {
   const max = vcTope(vcObjeto(opciones) ? opciones.max : undefined, 200);
+  // Fail cerrado: una moneda de venta declarada que no es 'BOB' ni 'ARS' (un error de tipeo) no vende nada; solo la AUSENCIA de moneda significa BOB.
+  if (vcObjeto(opciones) && opciones.moneda !== undefined && opciones.moneda !== 'BOB' && opciones.moneda !== 'ARS') return [];
+  const externa = vcObjeto(opciones) && opciones.externa === true;
+  const explicita = vcObjeto(opciones) && (opciones.moneda === 'BOB' || opciones.moneda === 'ARS');
+  const monedaVenta = explicita ? opciones.moneda : 'BOB';
   const out = [];
   if (!Array.isArray(catalogo)) return out;
   // Un id repetido es ambiguo: NO se vende ninguna de sus apariciones.
@@ -61,20 +81,34 @@ function vcVendibles(catalogo, opciones) {
   for (const it of catalogo) {
     if (out.length >= max) break;
     if (!vcObjeto(it) || it.activo !== true) continue;
+    if (externa && it.disponible !== undefined && it.disponible !== true) continue;
     if (typeof it.id !== 'string' || !VC_ID.test(it.id) || veces.get(it.id) !== 1) continue;
     if (typeof it.precio !== 'number' || !Number.isFinite(it.precio) || it.precio <= 0) continue;
-    if (it.moneda !== undefined && it.moneda !== null && it.moneda !== 'BOB') continue;
+    const sinMoneda = it.moneda === undefined || it.moneda === null;
+    if (monedaVenta === 'ARS' ? it.moneda !== 'ARS' : !(sinMoneda || it.moneda === 'BOB')) continue;
     const centavos = Math.round(it.precio * 100);
     if (!Number.isSafeInteger(centavos) || centavos < 1) continue;
+    if (externa && it.precioCentavos !== undefined && it.precioCentavos !== null && it.precioCentavos !== centavos) continue;
+    let stock;
+    if (!externa) stock = undefined;
+    else if (it.stock === null) stock = null;
+    else if (it.stock !== undefined) {
+      if (!Number.isSafeInteger(it.stock) || it.stock <= 0) continue;
+      stock = it.stock;
+    }
     const nombre = typeof it.nombre === 'string' ? vcLimpiar(it.nombre) : '';
     if (nombre === '') continue;
-    out.push({
+    const v = {
       id: it.id,
       nombre: nombre,
       precioCentavos: centavos,
       area: typeof it.area === 'string' ? vcLimpiar(it.area) : '',
       descripcion: typeof it.descripcion === 'string' ? vcLimpiar(it.descripcion) : '',
-    });
+    };
+    if (explicita) v.moneda = monedaVenta;
+    if (stock !== undefined) v.stock = stock;
+    if (externa && vcFotoValida(it.foto)) v.foto = it.foto;
+    out.push(v);
   }
   return out;
 }
@@ -87,9 +121,10 @@ function vcNumeroCorto(centavos) {
 }
 
 // El índice compacto para el prompt: una línea por ítem, `id|nombre|precio`. El nombre no lleva «|» ni saltos de línea.
-function vcIndice(vendibles) {
+// `moneda` opcional: con 'ARS' (o un vendible con moneda 'ARS') el precio lleva el sufijo « ARS»; en bolivianos el formato es el de siempre.
+function vcIndice(vendibles, moneda) {
   return (Array.isArray(vendibles) ? vendibles : []).filter((v) => vcObjeto(v) && typeof v.id === 'string' && VC_ID.test(v.id) && Number.isSafeInteger(v.precioCentavos) && v.precioCentavos > 0)
-    .map((v) => vcTexto(v.id) + '|' + vcLimpiar(vcTexto(v.nombre).replace(/\|/g, ' ')) + '|' + vcNumeroCorto(v.precioCentavos))
+    .map((v) => vcTexto(v.id) + '|' + vcLimpiar(vcTexto(v.nombre).replace(/\|/g, ' ')) + '|' + vcNumeroCorto(v.precioCentavos) + (moneda === 'ARS' || v.moneda === 'ARS' ? ' ARS' : ''))
     .join('\n');
 }
 
@@ -141,7 +176,7 @@ function vcSeleccion(vendibles, texto, ficha, opciones) {
 // `crudas` = lo que devuelve el modelo (se procesan a lo más 100 elementos). De cada elemento SOLO se leen `id`, `cantidad` y `detalle`: cualquier `precio`, `total`, `subtotal` o `descuento` se IGNORA. El nombre y el precio salen de `vendibles`.
 // `cantidad` es un número entero > 0 o un texto de solo dígitos («3»); «1.5», «abc», «0» y «-1» se descartan.
 // Descartes (en `descartadas`, como { id, motivo }; el id se limpia y se recorta a 100): 'desconocido' (id que no es vendible, o elemento sin forma), 'cantidad' (no es un entero mayor que cero), 'exceso' (más de `maxLineas` líneas distintas),
-// 'monto' (el subtotal no sería un entero seguro). 'tope' AVISA que una cantidad se recortó porque `maxCantidad` es POR PRODUCTO (suma de todas las líneas del mismo id): si algo cupo, la línea se conserva; si no cupo nada, no se crea. El mismo id con el MISMO detalle (comparado sin tildes ni mayúsculas) se suma en
+// 'monto' (el subtotal no sería un entero seguro). 'stock' avisa lo mismo cuando el tope es el `stock` del vendible (menor que `maxCantidad`); 'tope' AVISA que una cantidad se recortó porque `maxCantidad` es POR PRODUCTO (suma de todas las líneas del mismo id): si algo cupo, la línea se conserva; si no cupo nada, no se crea. El mismo id con el MISMO detalle (comparado sin tildes ni mayúsculas) se suma en
 // una sola línea; con otro detalle es otra línea. Nunca lanza.
 function vcLineas(crudas, vendibles, opciones) {
   const o = vcObjeto(opciones) ? opciones : {};
@@ -168,22 +203,26 @@ function vcLineas(crudas, vendibles, opciones) {
     const clave = id + '\u0000' + vcNorm(detalle);
     const previa = claves.get(clave);
     // El tope es POR PRODUCTO: se aplica a lo acumulado de ese id en todas sus líneas (con distintos detalles).
-    const cabe = maxCantidad - (acumulado.get(id) || 0);
+    // Si el vendible trae `stock` (entero), la cantidad no puede pasar de lo que hay: el motivo es 'stock', no 'tope'.
+    const limite = Number.isSafeInteger(v.stock) && v.stock >= 0 && v.stock < maxCantidad ? v.stock : maxCantidad;
+    const motivoTope = limite < maxCantidad ? 'stock' : 'tope';
+    const cabe = limite - (acumulado.get(id) || 0);
     const cantidad = Math.min(pedida, cabe);
-    if (cantidad <= 0) { descarta(id, 'tope'); continue; }
+    if (cantidad <= 0) { descarta(id, motivoTope); continue; }
     if (previa === undefined && lineas.length >= maxLineas) { descarta(id, 'exceso'); continue; }
     const base = previa === undefined ? 0 : previa.cantidad;
     if (!Number.isSafeInteger((base + cantidad) * v.precioCentavos)) { descarta(id, 'monto'); continue; }
     acumulado.set(id, (acumulado.get(id) || 0) + cantidad);
     if (previa === undefined) {
       const linea = { id: id, nombre: v.nombre, cantidad: cantidad, precioCentavos: v.precioCentavos, subtotalCentavos: cantidad * v.precioCentavos, detalle: detalle };
+      if (v.moneda === 'BOB' || v.moneda === 'ARS') linea.moneda = v.moneda;
       lineas.push(linea);
       claves.set(clave, linea);
     } else {
       previa.cantidad += cantidad;
       previa.subtotalCentavos = previa.cantidad * previa.precioCentavos;
     }
-    if (pedida > cantidad) descarta(id, 'tope');
+    if (pedida > cantidad) descarta(id, motivoTope);
   }
   return { lineas: lineas, descartadas: descartadas };
 }
@@ -199,6 +238,7 @@ function vcSubtotal(l) {
 // (y `vcMonto(null)` da ''); una línea sin cantidad o precio válidos no suma. Sin líneas, 0.
 function vcTotalCentavos(lineas) {
   let total = 0;
+  if (vcMonedaDelCarrito((Array.isArray(lineas) ? lineas : []).filter(vcObjeto), undefined) === null) return null; // monedas mezcladas: no hay un total honesto
   for (const l of Array.isArray(lineas) ? lineas : []) {
     if (!vcObjeto(l)) continue;
     const m = vcSubtotal(l);
@@ -215,24 +255,41 @@ function vcTotalCentavos(lineas) {
 // -----------------------------------------------------------------------------
 // Texto: monto, resumen y línea del aviso
 // -----------------------------------------------------------------------------
-// «Bs 1.234,50» / «Bs 450»: miles con «.», decimales con «,», y sin decimales si son 00. ATENCIÓN: recibe CENTAVOS (`cbMonto` de `cobro.js` recibe bolivianos). Si no es un entero seguro devuelve '' (como `cbMonto`).
-function vcMonto(centavos) {
+// «Bs 1.234,50» / «Bs 450» (o «ARS 1.590» con la moneda 'ARS'): miles con «.», decimales con «,», y sin decimales si son 00. ATENCIÓN: recibe CENTAVOS (`cbMonto` de `cobro.js` recibe bolivianos).
+// `moneda` es opcional: 'BOB' por defecto; una moneda que no es 'BOB' ni 'ARS' devuelve '' (nunca se escribe una cifra sin saber su moneda). Si el monto no es un entero seguro devuelve '' (como `cbMonto`).
+function vcMonto(centavos, moneda) {
   if (!Number.isSafeInteger(centavos)) return '';
+  const m = moneda === undefined || moneda === null ? 'BOB' : moneda;
+  if (m !== 'BOB' && m !== 'ARS') return '';
   const a = Math.abs(centavos);
   const enteros = String(Math.floor(a / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   const d = a % 100;
-  return (centavos < 0 ? '-' : '') + 'Bs ' + enteros + (d === 0 ? '' : ',' + (d < 10 ? '0' : '') + d);
+  return (centavos < 0 ? '-' : '') + (m === 'ARS' ? 'ARS ' : 'Bs ') + enteros + (d === 0 ? '' : ',' + (d < 10 ? '0' : '') + d);
 }
 
-// El resumen (subtotales recalculados; '' si el carrito está vacío): una línea por ítem, `cantidad × nombre (detalle) — subtotal` (el paréntesis solo si hay detalle), y el total al final. Sin emojis.
-function vcResumen(lineas) {
+// La moneda en que se escribe un carrito: la de sus líneas (las que arma `vcLineas` desde un vendible con moneda); el argumento `moneda`, si viene, debe coincidir. Líneas sin moneda: la del argumento o 'BOB' (como siempre).
+// null = ambigua (líneas de monedas distintas, una con moneda y otra sin, o un argumento que contradice las líneas): no se escribe ninguna cifra.
+function vcMonedaDelCarrito(ls, moneda) {
+  const dadas = ls.map((l) => (l.moneda === 'BOB' || l.moneda === 'ARS' ? l.moneda : ''));
+  const conMoneda = dadas.filter((m) => m !== '');
+  if (conMoneda.length === 0) return moneda === undefined || moneda === null ? 'BOB' : moneda;
+  if (conMoneda.length !== dadas.length || conMoneda.some((m) => m !== conMoneda[0])) return null;
+  if (moneda !== undefined && moneda !== null && moneda !== conMoneda[0]) return null;
+  return conMoneda[0];
+}
+
+// El resumen (subtotales recalculados, en la moneda de las líneas o en la `moneda` opcional —'BOB' por defecto—; '' si el carrito está vacío o su moneda es ambigua): una línea por ítem, `cantidad × nombre (detalle) — subtotal` (el paréntesis solo si hay detalle),
+// y el total al final. Sin emojis. Un carrito en ARS nunca sale escrito en «Bs», aunque quien llama olvide pasar la moneda.
+function vcResumen(lineas, moneda) {
   const ls = (Array.isArray(lineas) ? lineas : []).filter(vcObjeto);
   if (ls.length === 0) return '';
+  const m = vcMonedaDelCarrito(ls, moneda);
+  if (m === null) return '';
   const filas = ls.map((l) => {
     const detalle = vcLimpiar(l.detalle);
-    return vcTexto(l.cantidad) + ' × ' + vcLimpiar(l.nombre) + (detalle === '' ? '' : ' (' + detalle + ')') + ' — ' + vcMonto(vcSubtotal(l));
+    return vcTexto(l.cantidad) + ' × ' + vcLimpiar(l.nombre) + (detalle === '' ? '' : ' (' + detalle + ')') + ' — ' + vcMonto(vcSubtotal(l), m);
   });
-  filas.push('Total: ' + vcMonto(vcTotalCentavos(ls)));
+  filas.push('Total: ' + vcMonto(vcTotalCentavos(ls), m));
   return filas.join('\n');
 }
 
@@ -250,7 +307,7 @@ function vcLineaAviso(lineas, opciones) {
 // ¿Dos carritos son el mismo? Igual en id, cantidad, precio y detalle de cada línea, sin importar el orden. Sirve para saber si el carrito (o un precio) cambió con un QR abierto. Algo que no es un arreglo nunca es igual.
 function vcMismoCarrito(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-  const claves = (ls) => ls.map((l) => (vcObjeto(l) ? vcTexto(l.id) + '\u0000' + vcTexto(l.cantidad) + '\u0000' + vcTexto(l.precioCentavos) + '\u0000' + vcTexto(l.detalle) : '\u0001')).sort();
+  const claves = (ls) => ls.map((l) => (vcObjeto(l) ? vcTexto(l.id) + '\u0000' + vcTexto(l.cantidad) + '\u0000' + vcTexto(l.precioCentavos) + '\u0000' + vcTexto(l.detalle) + '\u0000' + vcTexto(l.moneda) : '\u0001')).sort();
   const ka = claves(a);
   const kb = claves(b);
   return ka.every((k, i) => k === kb[i]) && ka.indexOf('\u0001') < 0;

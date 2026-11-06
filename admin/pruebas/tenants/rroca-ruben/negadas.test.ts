@@ -399,8 +399,8 @@ describe('revisión de código de #576', () => {
   });
   it('(2) un botón con precio conserva SIEMPRE «<monto>Bs», con ≤ 20 caracteres, el nombre del catálogo sin palabras cortadas ni preposición colgando, también con precios de 2 decimales', () => {
     const catalogo = [
-      { id: 'pack-completo', nombre: 'Pack completo', precio: 70.5 }, { id: 'libro-con-bono', nombre: 'Libro con bono', precio: 35.25 }, { id: 'audiolibro', nombre: 'Audiolibro', precio: 35.75 },
-      { id: 'meditaciones', nombre: 'Meditaciones', precio: 20.5 },
+      { id: 'pack-completo', nombre: 'Pack completo', precio: 70.5 }, { id: 'libro', nombre: 'Libro', precio: 35.25 }, { id: 'audiolibro', nombre: 'Audiolibro', precio: 35.75 },
+      { id: '3-meditaciones', nombre: 'Meditaciones', precio: 20.5 },
     ];
     const v = nuevo({ panel: panelOk({ catalogo }) });
     hablar(v, ANA, mTexto('hola'));
@@ -546,7 +546,7 @@ describe('F1 · criterios estructurales del filtro de redacción', () => {
 });
 
 // =============================================================================================================== F1b: FALSOS POSITIVOS DE LA BATERÍA REAL (23/10/2026)
-// Los datos declarados del producto (`RR_PROMPT`: 208 páginas, 14 eslabones, bono de 18 páginas, plan de 21 días, 3 meditaciones de 7, 7 y 5 minutos, 14 capítulos de audio, 100% digital) pasan en dígitos y en palabras; toda otra cifra sigue rechazada.
+// Los datos declarados del producto (`RR_PROMPT`: 208 páginas, 14 eslabones, plan de 21 días, 3 meditaciones de 7, 7 y 5 minutos, 14 capítulos de audio, 100% digital) pasan en dígitos y en palabras; toda otra cifra sigue rechazada.
 describe('F1b · la lista blanca acepta los datos declarados del libro y no lo demás; la identidad de IA no se bloquea', () => {
   const L = cargarLibrerias('rrExtraRedaccion, rrNorm') as { rrExtraRedaccion: (t: string, n: string, c?: { precios?: number[]; textoCliente?: string }) => string; rrNorm: (t: string) => string };
   const motivo = (x: string, textoCliente = ''): string => L.rrExtraRedaccion(x, L.rrNorm(x), { precios: [], textoCliente });
