@@ -187,6 +187,7 @@ describe('quién se rescata', () => {
       [tel(21)]: { ultimoEntranteEn: en(21 * HORA) },                    // temprano
       [tel(22)]: { ultimoEntranteEn: en(24 * HORA) },                    // tarde
       [tel(23)]: { noContactar: true },
+      [tel(39)]: { bloqueada: true, bloqueadaPor: 'uid-1', bloqueadaEn: en(HORA) },   // bloqueado por el comercio
       [tel(24)]: { atencionEstado: 'operador' },
       [tel(25)]: { atencionEstado: 'bloqueado' },
       [tel(26)]: { solicitud: { etapa: 'agendada', cotejos: 0 } },

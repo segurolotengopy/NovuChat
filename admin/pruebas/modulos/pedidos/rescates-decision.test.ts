@@ -63,6 +63,14 @@ describe('motivoParaNoRescatar: quién entra, y sobre todo quién no', () => {
     expect(motivo(conv())).toBe('');
   });
 
+  it('contacto bloqueado por el comercio (`bloqueada`): true, «true» o cualquier valor raro corta; false o ausente no', () => {
+    for (const v of [true, 'true', 1, {}]) {
+      expect(motivo(conv(undefined, { bloqueada: v })), JSON.stringify(v)).toBe('bloqueado');
+    }
+    expect(motivo(conv(undefined, { bloqueada: false }))).toBe('');
+    expect(motivo(conv())).toBe('');
+  });
+
   it('operador, bloqueado o un valor raro no se rescatan', () => {
     for (const e of ['operador', 'bloqueado', 'raro']) {
       expect(motivo(conv(undefined, { atencionEstado: e })), e).toBe('atencion');

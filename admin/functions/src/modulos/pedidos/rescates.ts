@@ -90,7 +90,7 @@ export const RECHAZO =
 
 export type MotivoDescarte =
   | 'telefono_invalido' | 'excluido' | 'fuera_de_lista' | 'otra_linea' | 'ya_rescatado'
-  | 'no_contactar' | 'atencion' | 'sin_ventana' | 'tomada' | 'compro' | 'temprano'
+  | 'no_contactar' | 'bloqueado' | 'atencion' | 'sin_ventana' | 'tomada' | 'compro' | 'temprano'
   | 'tarde' | 'medio' | 'rechazo' | 'seguimiento';
 
 export interface ContextoRescate {
@@ -119,6 +119,10 @@ export function motivoParaNoRescatar(
   if (c['rescate'] !== undefined) return 'ya_rescatado';
   const nc = c['noContactar'];
   if (nc !== undefined && nc !== null && nc !== false) return 'no_contactar';
+  // Contacto bloqueado por el comercio (`bloquearContacto`, core, 31/10/2026): nunca se le escribe.
+  // Más estricto que `estaBloqueada` (solo `true`): ante cualquier valor distinto de ausente/false, no se escribe.
+  const bl = c['bloqueada'];
+  if (bl !== undefined && bl !== null && bl !== false) return 'bloqueado';
   const estado = c['atencionEstado'];
   if (estado !== undefined && estado !== 'normal') return 'atencion';
   const ultimoMs = milisegundosDe(c['ultimoEntranteEn']);
