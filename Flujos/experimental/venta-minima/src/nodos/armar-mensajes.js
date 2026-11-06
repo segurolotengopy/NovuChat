@@ -327,7 +327,7 @@ function amArmarUno(m) {
     })).filter((b) => b.id && b.id.length <= 256 && b.title).slice(0, 3);
     if (bs.some((b) => !amSeguro(b.title))) return amGenerico('boton_reemplazado_por_palabra_prohibida');
     const idMenu = vmIdDeBoton('m', 'menu');
-    if (AM_CONVERSA && m.sinMenu !== true && bs.length && bs.length < 3 && idMenu && !bs.some((b) => b.id === idMenu)) bs.push({ id: idMenu, title: 'Menú' });
+    if (AM_CONVERSA && m.sinMenu !== true && bs.length && bs.length < 3 && idMenu && !bs.some((b) => b.id === idMenu)) bs.push({ id: idMenu, title: bs.some((b) => /^[prf]\|/.test(b.id)) ? 'Menú' : 'Volver a inicio' });
     if (bs.length) {
       return Object.assign({ payload: amBotones(cuerpo, bs), texto: cuerpo,
         respaldo: vmRecorte(cuerpo + '\n\nSi no ves los botones, escribe «menu» para volver al inicio.', 4000), tipoReporte: 'interactive' }, extra);

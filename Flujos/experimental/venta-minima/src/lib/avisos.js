@@ -455,11 +455,11 @@ function avParametroConMapa(t) {
   const m = re.exec(s);
   if (!m) return avParametro(s);
   const sin = s.slice(0, m.index) + m[1] + 'mapa: ' + AV_MARCA_MAPA + s.slice(m.index + m[0].length);
-  const limpio = avParametro(sin);
+  const limpio = avSinBordes(avParametro(sin));
   const partes = limpio.split(AV_MARCA_MAPA);
-  if (partes.length !== 2 || limpio.indexOf('mapa: ' + AV_MARCA_MAPA) < 0) return limpio.split(AV_MARCA_MAPA).join('').replace(/mapa:\s*(?=$| · )/g, '').trim() || '—';
+  if (partes.length !== 2 || limpio.indexOf('mapa: ' + AV_MARCA_MAPA) < 0) return avSinBordes(limpio.split(AV_MARCA_MAPA).join('').replace(/mapa:\s*(?=$| · )/g, '')) || '—';
   const salida = partes.join(m[2]);
-  return salida.length <= 500 ? salida : limpio.split(AV_MARCA_MAPA).join('').trim() || '—';
+  return salida.length <= 500 ? salida : avSinBordes(limpio.split(AV_MARCA_MAPA).join('').replace(/mapa:\s*(?=$| · )/g, '')) || '—';
 }
 
 /** Mensaje de texto libre (solo con ventana abierta). */
@@ -585,16 +585,16 @@ function avCotejoVariable(resultado) {
   return avCotejoTexto(resultado).replace(/^comprobante:?\s+/i, '');
 }
 
-// Teléfono legible, calculado SOLO con los dígitos: «+591 7066 1250» (11 dígitos con prefijo 591); otros largos de 8 a 15,
-// «+» y grupos de 4 de izquierda a derecha. Devuelve '' (y quien llama conserva lo que hacía) si el valor trae letras o no
-// tiene entre 8 y 15 dígitos.
+// Teléfono legible, calculado SOLO con los dígitos: «+591 7066 1250» solo si empieza por 591 y tiene 11 dígitos. Con 12 a 15
+// dígitos (otro país) «+» y los dígitos sin agrupar (no se conoce el largo del código de país); con 8 a 11 sin prefijo 591 solo
+// los dígitos, sin «+» (no se puede saber el país). Devuelve '' si el valor trae letras o no tiene entre 8 y 15 dígitos.
 function avTelefonoLegible(v) {
   const crudo = String(v === undefined || v === null ? '' : v);
   if (/\p{L}/u.test(crudo)) return '';
   const d = avDigitos(crudo);
   if (d.length < 8 || d.length > 15) return '';
   if (d.length === 11 && d.slice(0, 3) === '591') return '+591 ' + d.slice(3, 7) + ' ' + d.slice(7);
-  return '+' + d.replace(/(\d{4})(?=\d)/g, '$1 ');
+  return d.length >= 12 ? '+' + d : d;
 }
 
 function avModalidadTexto(m) {
@@ -711,6 +711,7 @@ function avItemsCompactos(lineas, opc, presupuesto) {
 //  - `cocina`: modalidad + los ítems compactos con sus notas; SIN teléfono, dirección, nombre completo ni coordenadas.
 // Sigue siendo UNA variable: sin saltos de línea, saneada como las demás y con el tope de la variable (500). Los segmentos
 // del cliente van primero y los ítems ocupan lo que sobra (cortados por ítem, con «… y N más»).
+// Nota: depende de que quien la llama termine en `avPlantilla`, que vuelve a sanear la variable (aquí no se garantiza el saneo final).
 function avModalidadVariable(d, dest, opc, sinItems) {
   const tope = 500;
   const base = avModalidadTexto(d.modalidad);
@@ -820,7 +821,7 @@ function avVariablesSolicitud(d, dest) {
     cliente: avParametro((cod ? cod + ' · ' : '') + nombre, 90),
     personas: avParametro(Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : 'personas sin indicar', 30),
     cuando: avParametro(cuando + (zona ? ', ' + zona : ''), 100),
-    telefono: avParametro(tel && tel.length >= 8 && tel.length <= 15 ? (avTelefonoLegible(d.telefono) || '+' + tel) : '', 20),
+    telefono: avParametro(tel && tel.length >= 8 && tel.length <= 15 ? (avTelefonoLegible(d.telefono) || tel) : '', 20),
     nota: avParametro(extras.length ? extras.join(' · ') : 'sin datos adicionales', 300),
   };
 }

@@ -20,7 +20,7 @@
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
 //     pdTextoFaltanEntrega, pdLineasAviso, pdMonto (así los textos del pedido tienen un solo dueño).
 //   reserva: rsValidarExtraccion, rsFusionar, rsValidar, rsPreguntaFaltantes, rsResumen,
-//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto.
+//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto, prSoloReserva.
 //   cobro: cbCaption, cbResumenCorto, cbResultado, cbEstadoParaAviso, cbTextoAlCliente.
 //
 // SUPUESTOS DECLARADOS (los de la tarea T7a, aprobados por la coordinadora):
@@ -610,6 +610,13 @@ function aConsulta(clave) {
 function aPromo() {
   // Con un comprobante en espera, el texto de una campaña NO saca del cobro: se recuerda el comprobante (el paso y el pedido se conservan).
   if (en.paso === 'esperando_comprobante' && en.pedido) return aRecordatorio();
+  // Campaña de solo reserva: su respuesta REEMPLAZA al saludo, con «Reservar mesa» como único botón; acepta la reserva cualquier día.
+  const soloReserva = prSoloReserva(d.campana, cfg);
+  if (soloReserva) {
+    irA('menu');
+    mensajes = [{ tipo: 'botones', cuerpo: soloReserva.cuerpo, botones: soloReserva.botones, sinMenu: true }];
+    return;
+  }
   const carta = cartaDelNegocio();
   const ficha = prFicha(d.campana, carta, ahora);
   const tx = ficha ? prTexto(ficha, cfg) : null;
@@ -631,8 +638,8 @@ function aImagenSinPendiente() {
 // Un audio que no se entendió, un sticker, un contacto…: se pide que lo escriba, con la carta a un toque.
 function aMedioNoLeido() {
   const cuerpo = d.motivo === 'audio'
-    ? 'No pude escuchar bien ese mensaje 😅. ¿Me lo escribes?'
-    : 'No pude entender bien ese mensaje 😅. ¿Me lo escribes?';
+    ? 'No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?'
+    : 'No pude entender bien ese mensaje 😅. ¿Me lo escribes o lo repites?';
   mensajes = [conBotones(cuerpo, pedidosOn ? [{ id: vmIdDeBoton('m', 'pedido'), title: 'Ver la carta' }] : [])];
 }
 

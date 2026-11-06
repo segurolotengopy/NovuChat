@@ -1850,6 +1850,43 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     const vencida = crear({ panel: panel({ campanas: [campanaVigente('vieja', TEXTO_DUO, AHORA - 10 * DIA, AHORA - 2 * DIA)] }) });
     expect(cuerpos(con(vencida).escribe(TEXTO_DUO))[0]).toMatch(/¿Qué te gustaría hacer( ahora)?\?/);
   });
+
+  describe('campaña de solo reserva «Jueves de +2» (dato del negocio, 05/11)', () => {
+    const JUEVES = 'Hola, vi la promoción Jueves de +2 y quiero hacer una reserva.';
+    const MENSAJE = "¡Hola! 🌮 Los jueves puedes agrandar tu Q'Taco Dúo: solo por Bs 8 más recibes 2 tacos extra. El total es Bs 178 para 2 personas. Esta promoción es solo los jueves, para consumo en el local; igual puedes reservar tu mesa el día que quieras. ¿Quieres hacer una reserva?";
+    const config = { campanaReservaTexto: JUEVES, campanaReservaMensaje: MENSAJE };
+    const conJueves = (c: J = config, campanas: J[] = [campanaVigente('jueves', JUEVES)]) => crear({ panel: panel({ campanas }), config: c });
+    it('NEGANDO: sin el dato del negocio, el texto del anuncio no dispara nada (menú normal)', () => {
+      const t = con(conJueves({})).escribe(JUEVES);
+      expect(cuerpos(t).join('\n')).not.toContain('agrandar');
+    });
+    it('NEGANDO: un texto distinto, una campaña vencida, una sin cargar en el servidor o con reservas apagadas no disparan', () => {
+      expect(cuerpos(con(conJueves()).escribe('Hola, vi la promoción Jueves de +3 y quiero reservar'))[0]).not.toContain('agrandar');
+      const vencida = conJueves(config, [campanaVigente('jueves', JUEVES, AHORA - 10 * DIA, AHORA - 2 * DIA)]);
+      expect(cuerpos(con(vencida).escribe(JUEVES)).join('\n')).not.toContain('agrandar');
+      expect(cuerpos(con(conJueves(config, [])).escribe(JUEVES)).join('\n')).not.toContain('agrandar');
+      expect(cuerpos(con(conJueves({ ...config, reservasActivo: false })).escribe(JUEVES)).join('\n')).not.toContain('agrandar');
+      expect(cuerpos(con(conJueves({ ...config, campanaReservaMensaje: '' })).escribe(JUEVES)).join('\n')).not.toContain('agrandar');
+    });
+    it('el texto exacto responde con el mensaje del negocio y solo «Reservar mesa»; si insiste, se repite; no vende ni valida el día', () => {
+      const w = conJueves();
+      const c = con(w);
+      const t = c.escribe(JUEVES);
+      expect(cuerpos(t)[0]).toContain('Los jueves puedes agrandar');
+      expect(t.mensajes.flatMap(titulosDe)).toEqual(['Reservar mesa']);
+      expect(t.mensajes).toHaveLength(1);
+      const otra = c.escribe(JUEVES);
+      expect(cuerpos(otra)[0]).toContain('Los jueves puedes agrandar');
+      expect(otra.mensajes.flatMap(titulosDe)).toEqual(['Reservar mesa']);
+      expect(estadoDe(w.mundo)['carrito'] ?? []).toHaveLength(0);
+      expect(cuerpos(c.toca('m|reserva', 'Reservar mesa')).join('\n')).not.toMatch(/jueves/i);
+    });
+    it('el dato vive en los datos de Q\'Taco (texto exacto y mensaje del negocio)', () => {
+      const b = configBase(QTACO);
+      expect(String(b['campanaReservaTexto'])).toBe(JUEVES);
+      expect(String(b['campanaReservaMensaje'])).toContain('Bs 178');
+    });
+  });
 });
 
 
@@ -2245,7 +2282,9 @@ describe('carta', () => {
       it_('taco', 'Orden de 3 tacos al pastor', 48, 'tacos'),
       it_('refresco', 'Refresco de la casa', 12, 'bebidas'),
     ];
-    expect(configBase(QTACO)['palabrasExcluidas']).toMatch(/helado.*cerveza.*coctel.*vino.*shot/);
+    // 05/11 (Samuel): Q'Taco ya NO excluye por palabra: la lista de sus datos está vacía y la barrera sigue existiendo para quien la configure.
+    const LISTA = 'helado,cerveza,coctel,vino,shot';
+    expect(String(configBase(QTACO)['palabrasExcluidas'] ?? '')).toBe('');
     const pedir = (dicho: string, config: J = {}) => {
       const w = crear({ panel: panel({ catalogo: SIN_EXCLUIDOS }), config });
       const c = con(w);
@@ -2255,20 +2294,22 @@ describe('carta', () => {
       return { t: c.escribe(`quiero ${dicho}`), carta };
     };
     for (const dicho of ['un helado', 'una cerveza', 'un cóctel', 'un vino', 'un shot']) {
-      const { t, carta } = pedir(dicho);
+      const libre = pedir(dicho);
+      expect(cuerpos(libre.t).join('\n'), `Q'Taco sin exclusión: ${dicho}`).not.toMatch(/no está disponible para pedir por WhatsApp/);
+      const { t, carta } = pedir(dicho, { palabrasExcluidas: LISTA });
       expect(cuerpos(t).join('\n'), dicho).toMatch(/no está disponible para pedir por WhatsApp/);
       expect(t.avisos, dicho).toHaveLength(0);
       expect(t.mensajes.some((m) => botonesDe(m).some((b) => b.title === 'Confirmar pedido')), dicho).toBe(false);
       for (const sale of ['elado', 'erveza', 'óctel', 'ino', 'hot']) expect(carta, dicho).not.toContain(sale);
     }
     // Un taco SÍ se vende (la palabra «ron» no dispara en «coronavirus», ni «vino» en «vinagre»).
-    const taco = pedir('3 tacos al pastor');
+    const taco = pedir('3 tacos al pastor', { palabrasExcluidas: LISTA });
     expect(cuerpos(taco.t).join('\n')).not.toMatch(/no está disponible para pedir por WhatsApp/);
     // Negativo: sin la lista (y sin ítems en la carta) el helado NO se reconoce como excluido a propósito.
     const sinLista = pedir('un helado', { palabrasExcluidas: '' });
     expect(cuerpos(sinLista.t).join('\n')).not.toMatch(/no está disponible para pedir por WhatsApp/);
     // Y las variantes de prueba y de ensayo heredan la misma lista de `qtaco.json` (ningún archivo de datos la pierde).
-    for (const nombre of ['venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json']) {
+    for (const nombre of ['venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json', 'venta-minima.qtaco-3727.json']) {
       expect(configBase(leer(nombre))['palabrasExcluidas'], nombre).toBe(configBase(QTACO)['palabrasExcluidas']);
     }
   });

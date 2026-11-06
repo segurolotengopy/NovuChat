@@ -1988,7 +1988,9 @@ describe('variables de plantilla corregidas (05/11): mapa en la modalidad, cotej
   it('celular legible «+591 7066 1250» en la variable, el detalle y la reserva; solo con 8 a 15 dígitos y sin letras', () => {
     expect(L.avTelefonoLegible('59100000033')).toBe('+591 0000 0033');
     expect(L.avTelefonoLegible('+591 000 00033')).toBe('+591 0000 0033');
-    expect(L.avTelefonoLegible('5110000000012')).toBe('+5110 0000 0001 2');
+    expect(L.avTelefonoLegible('5110000000012')).toBe('+5110000000012');
+    expect(L.avTelefonoLegible('00000033')).toBe('00000033');
+    expect(L.avTelefonoLegible('1000000033')).toBe('1000000033');
     for (const mal of ['1234567', '59100000033abc', 'tel 59100000033', '1234567890123456', '', null, undefined]) expect(L.avTelefonoLegible(mal), String(mal)).toBe('');
     expect(modalidad(conUb())).toContain('cel +591 0000 0033');
     expect(modalidad(conUb({ telefono: '1234567' }))).toContain('cel 1234567');
