@@ -278,13 +278,15 @@ describe('versionado, no publicable y datos', () => {
   it('ningún `REEMPLAZAR_` en la variante publicable: las dos variantes los traen hoy, y la guardia los detecta uno por uno (NEGADO)', () => {
     for (const f of [PRODUCCION, PRUEBA]) expect(C.guardiaDePublicacion({ flujo: f, datos: DATOS }).filter((x: string) => /marcador sin sustituir/.test(x)).length).toBeGreaterThan(5);
     // Un flujo completo y sin marcadores pasa; basta UN marcador, una plantilla sin aprobar, un costo vacío o un nodo menos para que falle.
-    const flujoListo = JSON.parse(JSON.stringify(PRODUCCION).replace(/REEMPLAZAR_[A-Z0-9_]+/g, 'valor')) as Flujo;
+    const flujoListo = JSON.parse(JSON.stringify(PRODUCCION).replace(/REEMPLAZAR_URL_CATALOGO/g, 'https://novutienda-sitio-stg.web.app').replace(/REEMPLAZAR_[A-Z0-9_]+/g, 'valor')) as Flujo;
     const ponerBase = (f: Flujo, nombre: string, valor: string): void => {
       for (const a of (((nodo(f, 'Config base')['parameters'] as J)['assignments'] as J)['assignments']) as J[]) if (a['name'] === nombre) a['value'] = valor;
     };
     ponerBase(flujoListo, 'avisoPedidoEstado', 'APPROVED');
     ponerBase(flujoListo, 'costoDeEntrega', '10');
     expect(C.guardiaDePublicacion({ flujo: flujoListo, datos: DATOS })).toEqual([]);
+    const otroHost = JSON.parse(JSON.stringify(flujoListo).replace('novutienda-sitio-stg.web.app', 'otro.ejemplo')) as Flujo;
+    expect(C.guardiaDePublicacion({ flujo: otroHost, datos: DATOS }).join(' ')).toMatch(/ANFITRIONES_TIENDA/);
     const conMarcador = clonar(flujoListo); (nodo(conMarcador, 'Traer configuración')['parameters'] as J)['x'] = 'REEMPLAZAR_ALGO';
     expect(C.guardiaDePublicacion({ flujo: conMarcador, datos: DATOS }).join(' ')).toMatch(/REEMPLAZAR_ALGO/);
     const sinAprobar = clonar(flujoListo);

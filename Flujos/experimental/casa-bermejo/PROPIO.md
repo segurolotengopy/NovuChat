@@ -29,3 +29,9 @@ Los nodos `Decidir turno` y `Armar *` de Walisuma llaman a `wlVendibles(panel)`,
 
 ## Pendiente para publicar (no de este bloque)
 Excepción de Andres para el nodo 57; sustituir los marcadores (credenciales, receptor, WABA, número, contacto de aviso, `catalogoUrl`, `hostsFoto`, `tratamiento`, modos de entrega); plantilla de pedido aprobada en Meta; Argentina (B4) y confirmar pedido (B5); ensayo con un teléfono real y el «sí» de Andres por acción.
+
+## Seguimientos declarados (revisión del 06/11)
+- **`Traer catálogo` corre en todo mensaje entrante**, también con la puerta cerrada (Tomar, suspendido) o en un medio: suma llamadas contra el límite de NovuTienda y hasta 4 s de latencia, sin mensajes extra. Mejora posible: un `If ruta === 'sigue'` antes del nodo (+1 nodo, otro punto sobre el tope) o una caché corta en la ficha común.
+- **Aviso a quien opera** cuando el catálogo falla por un defecto (credencial revocada, versión, moneda): `catalogoAlerta` se calcula en «Decidir turno» y falta un consumidor.
+- **El aviso del pedido en el turno del comprobante con el catálogo caído** nombra las líneas por id (el `qrCarrito` no guarda el nombre).
+- **Excepción de nodos**: 57 con `Traer catálogo` (el tope de Walisuma es 56): pendiente de Andres; fila en `docs/versiones-por-cliente.md` al aprobarla.

@@ -3,7 +3,7 @@
 //   nada           la puerta está cerrada (suspendido, uso extendido, pausa por Tomar): CERO modelo, CERO medios; lo que corresponde lo dice «Armar mensajes» desde la puerta;
 //   fuera_pais     un número de otro país: el texto fijo;
 //   otro           un tipo de mensaje que este canal no lee: el texto cortés;
-//   derivar        pasar con recepción (aviso + botón): pidió hablar con una persona, volumen o regalos corporativos, factura, una pieza sin precio (tapiz a consultar), un comprobante sin pedido, un pago con problema,
+//   derivar        pasar con recepción (aviso + botón): pidió hablar con una persona, volumen o regalos corporativos, factura, algo que el catálogo no tiene (tapiz a consultar), un comprobante sin pedido, un pago con problema,
 //                  o el catálogo no se pudo leer. Lo decide el CÓDIGO sobre el texto, no el modelo;
 //   identidad      «¿eres un bot?»: el texto fijo (prohibición 4: nunca niega ser una IA);
 //   audio_fijo     una nota de voz demasiado larga o que no se entendió; archivo: un medio demasiado pesado o que no se abrió; imagen_otra: una foto o captura que no es un comprobante;

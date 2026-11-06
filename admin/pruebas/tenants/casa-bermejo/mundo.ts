@@ -68,7 +68,7 @@ export interface Opciones {
   /** Lo que devuelven los medios. */
   medio?: { bytes?: number; url?: string; mime?: string; transcripcion?: string | null; clasificacion?: J | null };
 }
-/** El catálogo de PRUEBA (no es el real): piezas con precio, un tapiz SIN precio (a consultar) y un licor apagado. */
+/** El catálogo de PRUEBA (no es el real): piezas con precio, una pieza sin precio (no se vende) y una apagada. */
 export const CATALOGO = [
   { id: 'bufanda-vicuna', nombre: 'Bufanda de vicuña', descripcion: 'Punto diagonal, 100 % vicuña.', area: 'Accesorios · Bufandas y chales', precio: 7795, moneda: 'BOB', activo: true },
   { id: 'billetera-cuero', nombre: 'Billetera de cuero', descripcion: 'Cuero curtido, tres compartimentos.', area: 'Accesorios · Billeteras', precio: 450, moneda: 'BOB', activo: true },
@@ -103,7 +103,7 @@ export const panelConQr = (monto: number, extra: J = {}): { statusCode: number; 
 export const panelSinCobro = (): { statusCode: number; body: J } => { const p = panelOk(); const { cobroReal: _c, cobro: _o, ...resto } = p.body as J; return { statusCode: 200, body: resto }; };
 export const RUTA_GUARDADA = { statusCode: 200, body: { ruta: 'tenants/casa-bermejo/comprobantes/2026-10-05/abc_1.jpg' } };
 export const COTEJO_VALIDO = { statusCode: 200, body: { estado: 'valido', importe: 45, avisarComercio: true } };
-export const COMPROBANTE = { categoria: 'comprobante', texto: 'Transferencia', monto: '450.00', cuentaDestino: '1*****9', nombreCuenta: 'WALISUMA', fecha: '05/10/2026', hora: '10:00', banco: 'Banco' };
+export const COMPROBANTE = { categoria: 'comprobante', texto: 'Transferencia', monto: '450.00', cuentaDestino: '1*****9', nombreCuenta: 'TIENDA DE PRUEBA', fecha: '05/10/2026', hora: '10:00', banco: 'Banco' };
 /** Lo que contesta el modelo (JSON de salida): texto, líneas, entrega y quiereHablar. */
 export const modelo = (texto: string, extra: J = {}): J => ({ texto, lineas: [], entrega: {}, facturacion: {}, quiereHablar: false, ...extra });
 export const ENTREGA = { modo: 'Retiro en tienda', ciudad: 'La Paz', direccion: '', nombre: 'Ana Pérez' };

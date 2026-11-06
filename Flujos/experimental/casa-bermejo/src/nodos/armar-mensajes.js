@@ -10,7 +10,7 @@
 //   «pedido_sin_cobro»      sin QR de cobro real: el pedido queda anotado y lo coordina recepción (aviso + botón);
 //   «derivar»               pasar con recepción: el aviso MÁS el botón para escribirle directo. «Ya avisé» solo sale si «Enviar aviso» devolvió un `wamid` real.
 // SOLO SE OFRECE LO QUE SE CUMPLE: ninguna promesa de «te aviso luego», «te llamamos» o «te escribirán»; el único ofrecimiento es pasar con recepción.
-// El botón de recepción va SOLO al derivar. Todo texto pasa por `bmSeguro` (NIEGA_IA y palabras prohibidas del cobro). La ficha (`walisuma[<messages[0].from>]`) se escribe AQUÍ, una vez por turno;
+// El botón de recepción va SOLO al derivar. Todo texto pasa por `bmSeguro` (NIEGA_IA y palabras prohibidas del cobro). La ficha (`casabermejo[<messages[0].from>]`) se escribe AQUÍ, una vez por turno;
 // «Resumen del turno» devuelve a la ficha lo que no salió. NIT y CI no se guardan en ningún lado.
 const c = bmContexto();
 c.modeloResp = cnPrimero('Conversar con el modelo');

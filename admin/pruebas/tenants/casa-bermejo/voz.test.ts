@@ -1,5 +1,5 @@
 /**
- * LA VOZ DE WALISUMA (guía de tono y voz del cliente) hecha código: ningún mensaje niega ser una IA, lleva más de 2 emojis, presiona con tiempo, inventa existencias ni dice un importe que no sea un precio del catálogo.
+ * LA VOZ DEL ASISTENTE (cordial, sin presión de tiempo ni de existencias) hecha código: ningún mensaje niega ser una IA, lleva más de 2 emojis, presiona con tiempo, inventa existencias ni dice un importe que no sea un precio del catálogo.
  * Se prueba NEGANDO sobre una batería de turnos donde el modelo (doble) intenta romper cada regla.
  */
 import { describe, expect, it } from 'vitest';

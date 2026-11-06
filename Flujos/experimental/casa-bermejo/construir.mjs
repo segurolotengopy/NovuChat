@@ -36,7 +36,7 @@ export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/casa-bermejo/casa-bermejo.json');
 export const ORIGEN_DEL_RECEPTOR = join(AQUI, '../venta-minima/flujo.plantilla.json');
 // 47 + los 9 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026 y v2 del 30/10):
-// excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
+// +1 nodo (`Traer catálogo`, 57): EXCEPCIÓN PENDIENTE de Andres. Excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
 export const TOPE_DE_NODOS = 57;
 export const FLUJO_PRODUCCION = 'casa-bermejo.json';
 export const FLUJO_PRUEBA = 'casa-bermejo.prueba.json';
@@ -70,7 +70,7 @@ export const EMPALMES_DEL_PR3 = [
 export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
-  // La base común de las ventas digitales (cobro, avisos, el motor de la conversación y el carrito: prefijos `cb`, `av`, `vd` y `vc`) y, al final, lo PROPIO de Casa Bermejo (`wl.js`: datos, textos y `CN_TENANT`; `wl-venta.js`: la decisión de la venta).
+  // La base común de las ventas digitales (cobro, avisos, el motor de la conversación y el carrito: prefijos `cb`, `av`, `vd` y `vc`) y, al final, lo PROPIO de Casa Bermejo (`bm.js`: datos, textos y `CN_TENANT`; `bm-venta.js`: la decisión de la venta).
   librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../venta-digital/src/carrito.js', '../venta-digital/src/catalogo-externo.js', 'src/lib/bm.js', 'src/lib/bm-venta.js'],
   comun: ['../venta-digital/src/nodos/_comun.js'],
   paquetes: {
@@ -100,6 +100,8 @@ const NODO_PRUEBA = 'Entrada de prueba';
 const NODO_RECEPTOR = 'Entrega del receptor';
 export const NODOS_DEL_RECEPTOR = [NODO_RECEPTOR, 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos'];
 const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
+/** Los anfitriones de la plataforma de la tienda a los que «Traer catálogo» puede llevar el Bearer del tenant: dominio EXACTO, sin puerto ni comodín. Ampliarlo (la producción de NovuTienda) es un cambio revisado, no un dato que ponga quien publica. */
+export const ANFITRIONES_TIENDA = ['novutienda-sitio-stg.web.app'];
 const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', ANFITRION_CONSOLA];
 
 // ----------------------------------------------------------------- lectura y escritura sin seguir enlaces simbólicos
@@ -156,7 +158,7 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
   cadena('nombreFlujo', d.nombreFlujo);
   cadena('nombreFlujoPrueba', d.nombreFlujoPrueba);
   // Repo público: las credenciales van por NOMBRE y como marcador (el publicador las empareja con las de la instancia).
-  for (const c of ['ingesta', 'graph', 'graphPrueba', 'entradaPrueba', 'gemini', 'geminiPrueba', 'catalogo']) {
+  for (const c of ['ingesta', 'graph', 'graphPrueba', 'entradaPrueba', 'gemini', 'geminiPrueba', 'catalogo', 'catalogoPrueba']) {
     const v = (d.credenciales || {})[c];
     cadena(`credenciales.${c}`, v);
     if (typeof v === 'string' && v.trim() !== '' && !MARCADOR.test(v)) errores.push(`credenciales.${c}: tiene que ser un marcador REEMPLAZAR_*`);
@@ -167,7 +169,7 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
     if (typeof v === 'string' && !MARCADOR.test(v) && !(c === 'wabaIdEsperado' && /^\d{6,25}$/.test(v))) errores.push(`receptor.${c}: tiene que ser un marcador REEMPLAZAR_*`);
   }
   if (typeof d.pruebaRuta !== 'string' || !MARCADOR.test(d.pruebaRuta)) errores.push('pruebaRuta: tiene que ser un marcador REEMPLAZAR_*');
-  if (typeof d.catalogoUrl !== 'string' || !MARCADOR.test(d.catalogoUrl)) errores.push('catalogoUrl: tiene que ser un marcador REEMPLAZAR_* (la dirección base de NovuTienda la pone quien publica)');
+  if (d.catalogoUrl !== 'REEMPLAZAR_URL_CATALOGO') errores.push('catalogoUrl: tiene que ser exactamente REEMPLAZAR_URL_CATALOGO (la dirección base de NovuTienda la pone quien publica y la guardia la valida contra ANFITRIONES_TIENDA)');
   const cb = d.configBase && typeof d.configBase === 'object' && !Array.isArray(d.configBase) ? d.configBase : null;
   if (!cb) errores.push('configBase: falta');
   else {
@@ -245,7 +247,10 @@ export function anfitrionPermitido(url, nombreDelNodo = '') {
   // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
   if (nombreDelNodo === 'Descargar medio (guardado)' && url === URL_DESCARGA_GUARDADO) return true;
   // El catálogo de la plataforma de la tienda: UNA dirección fija (la base que pone quien publica) y la ruta del contrato v1, solo del mercado de Bolivia, sin nada más.
-  if (nombreDelNodo === 'Traer catálogo') return /^=(?:REEMPLAZAR_URL_CATALOGO|https:\/\/[a-z0-9.-]+)\/api\/novuchat\/v1\/catalogo\?mercado=BO$/i.test(url);
+  if (nombreDelNodo === 'Traer catálogo') {
+    const c = /^=(?:(REEMPLAZAR_URL_CATALOGO)|https:\/\/([a-z0-9.-]+))\/api\/novuchat\/v1\/catalogo\?mercado=BO$/i.exec(url);
+    return c !== null && (c[1] !== undefined || ANFITRIONES_TIENDA.includes(String(c[2]).toLowerCase()));
+  }
   const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
   if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
   return ANFITRIONES.includes(m[1].toLowerCase());
@@ -290,7 +295,7 @@ export function guardias(variante, flujo, opciones = {}) {
   if (bajar && !/ruta === 'sigue'/.test(JSON.stringify(p(bajar)))) h.push('«¿Bajar medio?» no exige que la puerta diga «sigue» (un cliente bloqueado no descarga medios)');
   // La variante de PRUEBA nunca usa credenciales de producción: ni la de Graph ni la de Gemini.
   if (variante === 'prueba') {
-    const libres = new Set([NODO_PRUEBA, 'Traer configuración', 'Traer catálogo', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Guardar comprobante', 'Cotejar en el servidor', 'Avisar al servidor', ...NODOS_DE_INGESTA_DEL_GUARDADO]);
+    const libres = new Set([NODO_PRUEBA, 'Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Guardar comprobante', 'Cotejar en el servidor', 'Avisar al servidor', ...NODOS_DE_INGESTA_DEL_GUARDADO]);
     for (const n of nodos) {
       for (const [tipo, c] of Object.entries(n.credentials || {})) {
         const nombreCred = String((c || {}).name || '');
@@ -420,6 +425,8 @@ export function guardiaDePublicacion({ flujo, datos }) {
   const faltan = NODOS_DEL_PR3.filter((n) => !nombres.has(n));
   if (faltan.length) h.push(`es un ESQUELETO (PR-2) y no se puede publicar: faltan ${faltan.length} nodos de la conversación, el cotejo y los avisos (PR-3): ${faltan.map((n) => `«${n}»`).join(', ')}`);
   for (const m of new Set(marcasEn(flujo).map((x) => x.toUpperCase()))) h.push(`marcador sin sustituir: ${m}`);
+  // Con los datos ya sustituidos, el host del catálogo tiene que ser uno de la lista cerrada (el Bearer del tenant no sale a otro dominio).
+  for (const n of nodos.filter((x) => x.name === 'Traer catálogo')) if (!anfitrionPermitido(String((n.parameters || {}).url || ''), 'Traer catálogo')) h.push('«Traer catálogo» apunta a un host que no está en ANFITRIONES_TIENDA');
   const base = nodos.find((n) => n.name === 'Config base');
   const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
   const cb = Array.isArray(lista) ? Object.fromEntries(lista.map((a) => [a.name, a.value])) : (datos && datos.configBase);
@@ -458,7 +465,7 @@ export function armarCasaBermejo(proyecto, datos, v, origenReceptor = leerRecept
     for (const c of Object.values(n.credentials || {})) {
       const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini|catalogo)$/.exec(String(c.name));
       // La variante de PRUEBA nunca usa las credenciales de producción de Meta ni de Gemini.
-      const clave = prueba && m && m[1] === 'graph' ? 'graphPrueba' : (prueba && m && m[1] === 'gemini' ? 'geminiPrueba' : (m ? m[1] : ''));
+      const clave = prueba && m && m[1] === 'graph' ? 'graphPrueba' : (prueba && m && m[1] === 'gemini' ? 'geminiPrueba' : (prueba && m && m[1] === 'catalogo' ? 'catalogoPrueba' : (m ? m[1] : '')));
       if (m) c.name = dato(datos, `credenciales.${clave}`, `${donde} · ${n.name}`);
     }
     if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});

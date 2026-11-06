@@ -33,7 +33,7 @@
           "name": "@@cred:entradaPrueba"
         }
       },
-      "notes": "SOLO en walisuma.prueba.json, que se importa únicamente para ensayar y se DESACTIVA y BORRA al terminar. Exige una credencial de cabecera propia (la ruta, además, es una URL de capacidad). Recibe la misma carga que Meta dentro de `body` y, opcionales, modoPrueba, telefonoDePrueba y enviarDeVerdad (solo `modoPrueba === true` lo activa). Responde con «Resumen del turno»."
+      "notes": "SOLO en casa-bermejo.prueba.json, que se importa únicamente para ensayar y se DESACTIVA y BORRA al terminar. Exige una credencial de cabecera propia (la ruta, además, es una URL de capacidad). Recibe la misma carga que Meta dentro de `body` y, opcionales, modoPrueba, telefonoDePrueba y enviarDeVerdad (solo `modoPrueba === true` lo activa). Responde con «Resumen del turno»."
     },
     {
       "id": "config-base",

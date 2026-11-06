@@ -1,5 +1,5 @@
 /**
- * EL CARRITO EN EL FLUJO DE WALISUMA, con el n8n de mentira: el modelo propone, el CÓDIGO valida contra el catálogo y calcula. Se prueba NEGANDO.
+ * EL CARRITO EN EL FLUJO DE CASA BERMEJO, con el n8n de mentira: el modelo propone, el CÓDIGO valida contra el catálogo y calcula. Se prueba NEGANDO.
  */
 import { describe, expect, it } from 'vitest';
 import { ANA, BETO, CATALOGO, ENTREGA, catalogoOk, MEDIA_QR, crear, hablar, mTexto, modelo, panelConQr, panelOk, textos } from './mundo';
@@ -26,7 +26,7 @@ describe('lo que propone el modelo se valida contra el catálogo', () => {
     expect(cuerpo).toMatch(/Total: Bs 900/);
     expect(cuerpo).not.toMatch(/Bs 1\b|descuento/i);
   });
-  it('NEGADO: un ítem apagado (licor) o sin precio (tapiz) es invendible aunque el modelo lo pida', () => {
+  it('NEGADO: un ítem apagado o sin precio es invendible aunque el modelo lo pida', () => {
     const m = crear({ modeloDice: pide([{ id: 'licor-de-coca', cantidad: 1 }, { id: 'tapiz-mujer-rio', cantidad: 1 }]) });
     hablar(m, ANA, mTexto('quiero algo de la tienda'));
     expect(fichas(m)[ANA].carrito).toEqual([]);

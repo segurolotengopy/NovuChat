@@ -42,11 +42,17 @@ describe('stock y disponibilidad', () => {
     hablar(m, ANA, mTexto('cinco billeteras'));
     expect(fichas(m)[ANA].carrito[0].cantidad).toBe(2);
   });
-  it('NEGADO: un producto no disponible no entra al carrito', () => {
-    const m = crear({ catalogo: catalogoOk({}, [item({ disponible: false })]), modeloDice: pide([{ id: BIL, cantidad: 1 }]) });
+  it('NEGADO: un producto no disponible no entra al carrito aunque el modelo lo pida (hay otro disponible en el catálogo)', () => {
+    const m = crear({ catalogo: catalogoOk({}, [item({ disponible: false }), item({ id: 'otro', nombre: 'Otro', precio: 10, precioCentavos: 1000 })]), modeloDice: pide([{ id: BIL, cantidad: 1 }]) });
+    hablar(m, ANA, mTexto('una billetera'));
+    expect(fichas(m)[ANA]?.carrito ?? []).toEqual([]);
+  });
+  it('NEGADO: un tiempo agotado del catálogo (llega un error sin statusCode) pasa con recepción, sin modelo', () => {
+    const m = crear({ catalogo: { error: 'timeout' } as never });
     const t = hablar(m, ANA, mTexto('una billetera'));
     expect(t.registro.map((r) => r.nodo)).not.toContain('Conversar con el modelo');
-    expect(fichas(m)[ANA]?.carrito ?? []).toEqual([]);
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.avisos).toHaveLength(1);
   });
 });
 
@@ -73,5 +79,23 @@ describe('la foto del catálogo no sale al cliente en B3', () => {
     const m = crear({ catalogo: catalogoOk({}, [item({ foto: 'https://fotos.ejemplo.test/b.jpg' })]), modeloDice: pide([{ id: BIL, cantidad: 1 }]) });
     const t = hablar(m, ANA, mTexto('una billetera'));
     expect(t.mensajes.every((x) => x.tipo !== 'image')).toBe(true);
+  });
+});
+
+describe('el Bearer del tenant solo sale hacia el host de la tienda', () => {
+  it('NEGADO: «Traer catálogo» a otro host, con puerto, usuario, otra ruta u otro mercado viola la guardia', async () => {
+    const C = (await import(/* @vite-ignore */ '../../../../Flujos/experimental/casa-bermejo/construir.mjs')) as { anfitrionPermitido: (u: string, n: string) => boolean; ANFITRIONES_TIENDA: string[] };
+    const ruta = '/api/novuchat/v1/catalogo?mercado=BO';
+    for (const url of ['=https://otro.ejemplo' + ruta, '=https://novutienda-sitio-stg.web.app:8443' + ruta, '=https://u' + String.fromCharCode(64) + 'novutienda-sitio-stg.web.app' + ruta, '=https://novutienda-sitio-stg.web.app.evil.test' + ruta,
+      '=https://novutienda-sitio-stg.web.app/api/novuchat/v1/catalogo?mercado=AR', '=https://novutienda-sitio-stg.web.app/api/novuchat/v1/inventario', '={{ $json.url }}']) expect(C.anfitrionPermitido(url, 'Traer catálogo')).toBe(false);
+    expect(C.anfitrionPermitido('=https://novutienda-sitio-stg.web.app' + ruta, 'Traer catálogo')).toBe(true);
+    expect(C.anfitrionPermitido('=REEMPLAZAR_URL_CATALOGO' + ruta, 'Traer catálogo')).toBe(true);
+    expect(C.ANFITRIONES_TIENDA.every((h) => /^[a-z0-9.-]+$/.test(h))).toBe(true);
+  });
+  it('la prueba usa su propia credencial de catálogo (no la de producción)', async () => {
+    const { PRUEBA, PRODUCCION } = await import('./mundo');
+    const cred = (f: { nodes: { name: string; credentials?: { httpHeaderAuth?: { name: string } } }[] }) => f.nodes.find((n) => n.name === 'Traer catálogo')?.credentials?.httpHeaderAuth?.name;
+    expect(cred(PRODUCCION as never)).toBe('REEMPLAZAR_CREDENCIAL_CATALOGO');
+    expect(cred(PRUEBA as never)).toBe('REEMPLAZAR_CREDENCIAL_CATALOGO_PRUEBA');
   });
 });
