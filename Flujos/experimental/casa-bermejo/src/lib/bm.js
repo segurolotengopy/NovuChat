@@ -18,7 +18,7 @@ const BM_TOPE_FICHAS = 1000;
 const BM_TOPE_IDS = 40;
 const BM_VENTANA_FUERA_DE_PAIS_MS = 24 * 60 * 60 * 1000;   // el texto fijo a un número de otro país sale a lo más una vez en 24 h
 const BM_MODELO = 'gemini-3.5-flash-lite';
-const BM_MERCADO = 'BO';   // B3: solo Bolivia; Argentina entra en B4
+// El mercado sale del prefijo del remitente (`ceMercadoDePrefijo`: 591 → BO, 54 → AR); otro país no tiene mercado.
 
 // NIEGA_IA (prohibición 4 de CLAUDE.md): ningún texto que ve el cliente puede negar que es una IA. COPIA DECLARADA de la expresión de `rroca-antonio` (`RA_NIEGA_IA`; HUECO en PROPIO.md: no hay fuente común), idéntica salvo el nombre; una prueba de Walisuma la compara con la de Walisuma. Se aplica al texto NORMALIZADO (`bmNorm`).
 const BM_NIEGA_IA = /\bno (?:soy|es|eres|estas hablando con|hablas con)\b[^.!?]{0,20}\b(?:ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)\b|\bpersona (?:real|de verdad)\b|\bcarne y hueso\b|\bno (?:contesta|responde|atiende|hay) (?:ningun\w* )?(?:ia|inteligencia|bot|robot|maquina)\b|\bnada de (?:robots?|bots?|maquinas?)\b|\bhumano\b|\bpersonalmente\b|\bconmigo (?:hablas|conversas)\b|\bequipo humano\b|\b(?:soy|es) (?:una )?persona\b|\balguien real\b|\bhuman[oa]s?\b|\b(?:personas?|gente) (?:real(?:es)?|de verdad)\b|\b(?:persona|gente|alguien|humano|equipo|ejecutiv\w*|asesor\w*) (?:real|de verdad)\b|\bde verdad\b[^.!?]{0,20}\b(?:persona|gente|humano)\w*|\bno (?:contesta|responde|atiende|hay|habla) (?:(?:un|una|el|la|ningun\w*) )?(?:ia|inteligencia|bot|chatbot|robot|maquina|programa)\b|\bno es (?:un )?(?:mensaje |chat )?automatic\w*|\b(?:es|soy) (?:una? )?(?:chica|chico|mujer|hombre|senorita|joven)\b/;
@@ -27,7 +27,7 @@ const BM_SALUDO_MINIMO = 'Hola, soy el asistente virtual.';
 // Lo que el cliente ve cuando manda algo que este canal no lee (sticker, ubicación, contacto, mensaje no soportado o un medio sin id): texto cortés fijo, sin modelo, una sola invitación y ninguna promesa.
 const BM_TEXTO_CORTES = 'Recibí tu mensaje, pero por este chat solo puedo leer texto, notas de voz, fotos y archivos PDF.\n\nCuéntame por escrito o con una nota de voz en qué te puedo ayudar.';
 // Un número de otro país (prefijo no permitido en «Config del negocio»): un texto fijo, sin modelo, sin medios y sin promesas. PROVISIONAL: el texto definitivo lo decide el comercio.
-const BM_TEXTO_FUERA_DE_PAIS = 'Hola, soy el asistente virtual. Por este chat atendemos, por ahora, pedidos de números de Bolivia.\n\nGracias por escribirnos.';
+const BM_TEXTO_FUERA_DE_PAIS = 'Hola, soy el asistente virtual. Por este chat atendemos pedidos de números de Bolivia y de Argentina.\n\nGracias por escribirnos.';
 
 function bmTexto(v) {
   return String(v === undefined || v === null ? '' : v).trim();
@@ -208,6 +208,7 @@ const BM_INTROS = {
   comprobante_ya_visto: 'Ya tengo registrado tu comprobante anterior.',
   monto_invalido: 'No pude calcular el monto de tu pedido.',
   pedido_sin_cobro: 'Anoté tu pedido, pero el pago por QR no está disponible por ahora.',
+  pedido_ar: 'Anoté tu pedido en pesos argentinos. El pago por transferencia lo coordina recepción: no hagas ninguna transferencia todavía.',
   atencion_humana: 'Gracias por tu paciencia: una persona del equipo continúa esta conversación.',
   no_cancelo: 'Cambiaste tu pedido, pero desde aquí no puedo cerrar el cobro anterior: no pagues con ese QR.',
 };

@@ -76,7 +76,7 @@ if (puerta.ruta === 'sigue') {
     // El producto del anuncio sale POR CÓDIGO y su precio, del catálogo: nunca del modelo ni de la imagen.
     const v = c.vendibles.find((x) => x.id === d.producto);
     if (v) {
-      msgs = [texto(conSaludo('Sí, tenemos ' + v.nombre + ': ' + vcMonto(v.precioCentavos) + '.\n\n¿Cuántas unidades te gustaría?'))];
+      msgs = [texto(conSaludo('Sí, tenemos ' + v.nombre + ': ' + vcMonto(v.precioCentavos, v.moneda) + '.\n\n¿Cuántas unidades te gustaría?'))];
       nuevos.mostrados = fichaAntes.mostrados.filter((x) => x !== v.id).concat([v.id]).slice(-15); ev.mostrados = fichaAntes.mostrados;
     } else {
       tipoDePlan = 'derivar';
@@ -123,7 +123,7 @@ if (puerta.ruta === 'sigue') {
     nuevos.carrito = d.lineas.map((l) => ({ id: l.id, cantidad: l.cantidad, detalle: l.detalle })); nuevos.entrega = d.entrega; ev.carrito = fichaAntes.carrito; ev.entrega = fichaAntes.entrega;
   } else if (tipoDePlan === 'pedido_sin_cobro') {
     const lineas = bmConNombres(d.lineas, c.vendibles);
-    msgs = [conRecepcion(conSaludo('Anoté tu pedido:\n\n' + vcResumen(lineas) + '\n\n' + bmTextoDerivacion('pedido_sin_cobro', salio)))];
+    msgs = [conRecepcion(conSaludo('Anoté tu pedido:\n\n' + vcResumen(lineas) + '\n\n' + bmTextoDerivacion(d.mercado === 'AR' ? 'pedido_ar' : 'pedido_sin_cobro', salio)))];
     Object.assign(nuevos, d.patch); for (const k of Object.keys(d.patch)) ev[k] = fichaAntes[k];
   } else if (tipoDePlan === 'comprobante') {
     msgs = [conRecepcion(bmTextoComprobante(d.resultado, d.diferencia, d.totalTexto, salio))];

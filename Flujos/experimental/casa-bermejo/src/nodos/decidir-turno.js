@@ -21,7 +21,7 @@ const ahora = Number(t.ahoraMs) || Date.now();
 let textoDelTurno = '';
 const panel = bmPanelDe(cnPrimero('Traer configuración'));
 // El catálogo viene de NovuTienda (`Traer catálogo`) y se adapta con `ceVendibles`; la consola solo aporta el cobro, las campañas y la atención.
-const catalogo = bmCatalogo(cnPrimero('Traer catálogo'), ahora, base);
+const catalogo = bmCatalogo(cnPrimero('Traer catálogo'), ahora, base, ceMercadoDePrefijo(from));
 const vendibles = catalogo.ok === true ? catalogo.vendibles : [];
 const cobro = bmCobro(panel);
 const ficha = CN_TENANT.fichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora);

@@ -32,9 +32,9 @@ function bmRespuestaHttp(resp) {
 }
 // Lo que se puede vender HOY: el catálogo de NovuTienda leído y filtrado por `ceVendibles` (precio exacto del servidor, `disponible`, `stock`, cotización `vigente`). Devuelve el resultado completo de `ceVendibles`:
 // { ok: true, vendibles, ... } o { ok: false, pase: true, motivo, alerta }. Un catálogo que no se pudo leer NUNCA se improvisa: el turno pasa con un vendedor (aviso + botón).
-function bmCatalogo(resp, ahoraMs, base) {
+function bmCatalogo(resp, ahoraMs, base, mercado) {
   const hosts = cbEsObjeto(base) && typeof base.hostsFoto === 'string' ? base.hostsFoto.split(/[,;\s]+/).filter((h) => h !== '' && !/^REEMPLAZAR_/.test(h)) : [];
-  return ceVendibles(bmRespuestaHttp(resp), { mercado: BM_MERCADO, ahoraMs: ahoraMs, hostsFoto: hosts });
+  return ceVendibles(bmRespuestaHttp(resp), { mercado: mercado, ahoraMs: ahoraMs, hostsFoto: hosts });
 }
 function bmMediaId(v) {
   const s = typeof v === 'string' ? v.trim() : '';
@@ -223,9 +223,10 @@ function bmContexto() {
   const from = String(t.from || '');
   const ahora = Number(t.ahoraMs) || Date.now();
   const panel = bmPanelDe(cnPrimero('Traer configuración'));
-  const catalogo = bmCatalogo(cnPrimero('Traer catálogo'), ahora, base);
+  const mercado = ceMercadoDePrefijo(from);
+  const catalogo = bmCatalogo(cnPrimero('Traer catálogo'), ahora, base, mercado);
   return {
-    cfg: cfg, base: base, t: t, puerta: puerta, plan: plan, from: from, ahora: ahora, panel: panel, catalogo: catalogo,
+    cfg: cfg, base: base, t: t, puerta: puerta, plan: plan, from: from, ahora: ahora, panel: panel, catalogo: catalogo, mercado: mercado,
     vendibles: catalogo.ok === true ? catalogo.vendibles : [], cobro: bmCobro(panel), modos: bmModos(base),
     ficha: CN_TENANT.fichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora),
     // Se completa en «Armar mensajes»: ¿el servidor cerró el cobro abierto? (undefined mientras no se llamó)
@@ -315,9 +316,10 @@ function bmResolverModelo(c) {
     const total = vcTotalCentavos(lineas);
     const monto = total === null || total <= 0 ? null : cbTotalValido(total / 100);
     if (monto === null) return Object.assign(bmDerivar(c, 'monto_invalido'), { lineas: lineas, entrega: entrega, cierre: cierre });
-    if (c.cobro.modo !== 'real') {
+    // Argentina: el cobro por alias lo hace un servidor que aún no existe (B4b). Hasta entonces el pedido queda anotado y el pago lo coordina recepción (aviso + botón); nunca se emite un QR de Bolivia a un cliente de Argentina.
+    if (c.mercado === 'AR' || c.cobro.modo !== 'real') {
       // Sin QR de cobro real: el pedido queda anotado y lo coordina recepción (aviso + botón). El aviso lo manda «Armar avisos» con «sin comprobante aún».
-      return Object.assign(base, { tipo: 'pedido_sin_cobro', total: total, resumen: vcResumen(lineas), cierre: false, aviso: { tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: entrega, cotejo: 'sin comprobante aún', repetido: false }, patch: { carrito: [], entrega: bmEntregaBase(), cierre: false, qrCarrito: [], mostrados: [] } });
+      return Object.assign(base, { tipo: 'pedido_sin_cobro', mercado: c.mercado === 'AR' ? 'AR' : 'BO', total: total, resumen: vcResumen(lineas), cierre: false, aviso: { tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: entrega, cotejo: 'sin comprobante aún', repetido: false }, patch: { carrito: [], entrega: bmEntregaBase(), cierre: false, qrCarrito: [], mostrados: [] } });
     }
     if (abierto && !cambioConQr) return Object.assign(base, { tipo: 'qr_pendiente', total: total });
     return Object.assign(base, {

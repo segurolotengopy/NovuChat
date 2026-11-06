@@ -243,7 +243,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "=@@dato:catalogoUrl@@/api/novuchat/v1/catalogo?mercado=BO",
+        "url": "=@@dato:catalogoUrl@@/api/novuchat/v1/catalogo?mercado={{ String(((($('Normalizar entrada').first().json) || {}).from) || '').replace(/\\D/g, '').replace(/^0+/, '').indexOf('54') === 0 ? 'AR' : 'BO' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
@@ -271,7 +271,7 @@
         1760,
         440
       ],
-      "notes": "El catálogo, el precio final y el stock vienen de NovuTienda (contrato v1: GET /api/novuchat/v1/catalogo, Bearer del tenant en la credencial de n8n; nunca en el flujo). Sin «If-None-Match». Un error, un límite o una cotización no vigente NO se improvisa: «Decidir turno» pasa con recepción (aviso y botón)."
+      "notes": "El catálogo, el precio final y el stock vienen de NovuTienda (contrato v1: GET /api/novuchat/v1/catalogo?mercado=BO|AR (según el prefijo del remitente: 591 → BO, 54 → AR), Bearer del tenant en la credencial de n8n; nunca en el flujo). Sin «If-None-Match». Un error, un límite o una cotización no vigente NO se improvisa: «Decidir turno» pasa con recepción (aviso y botón)."
     },
     {
       "id": "si-bajar-medio",

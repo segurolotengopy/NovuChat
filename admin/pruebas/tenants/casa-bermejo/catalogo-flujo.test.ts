@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ANA, CATALOGO, ENTREGA, catalogoOk, crear, hablar, mTexto, modelo, textos } from './mundo';
+import { ceMercadoDePrefijo } from './mercado';
 
 const BIL = 'billetera-cuero';
 const item = (o: Record<string, unknown> = {}) => ({ ...CATALOGO[1], precioCentavos: 45000, stock: 10, disponible: true, ...o });
@@ -84,10 +85,10 @@ describe('la foto del catálogo no sale al cliente en B3', () => {
 
 describe('el Bearer del tenant solo sale hacia el host de la tienda', () => {
   it('NEGADO: «Traer catálogo» a otro host, con puerto, usuario, otra ruta u otro mercado viola la guardia', async () => {
-    const C = (await import(/* @vite-ignore */ '../../../../Flujos/experimental/casa-bermejo/construir.mjs')) as { anfitrionPermitido: (u: string, n: string) => boolean; ANFITRIONES_TIENDA: string[] };
-    const ruta = '/api/novuchat/v1/catalogo?mercado=BO';
+    const C = (await import(/* @vite-ignore */ '../../../../Flujos/experimental/casa-bermejo/construir.mjs')) as { anfitrionPermitido: (u: string, n: string) => boolean; ANFITRIONES_TIENDA: string[]; EXPRESION_MERCADO: string };
+    const ruta = '/api/novuchat/v1/catalogo?mercado=' + C.EXPRESION_MERCADO;
     for (const url of ['=https://otro.ejemplo' + ruta, '=https://novutienda-sitio-stg.web.app:8443' + ruta, '=https://u' + String.fromCharCode(64) + 'novutienda-sitio-stg.web.app' + ruta, '=https://novutienda-sitio-stg.web.app.evil.test' + ruta,
-      '=https://novutienda-sitio-stg.web.app/api/novuchat/v1/catalogo?mercado=AR', '=https://novutienda-sitio-stg.web.app/api/novuchat/v1/inventario', '={{ $json.url }}']) expect(C.anfitrionPermitido(url, 'Traer catálogo')).toBe(false);
+      '=https://novutienda-sitio-stg.web.app/api/novuchat/v1/catalogo?mercado=AR', '=https://novutienda-sitio-stg.web.app/api/novuchat/v1/catalogo?mercado=BO', '=https://novutienda-sitio-stg.web.app/api/novuchat/v1/catalogo?mercado={{ $json.m }}', '=https://novutienda-sitio-stg.web.app/api/novuchat/v1/inventario', '={{ $json.url }}']) expect(C.anfitrionPermitido(url, 'Traer catálogo')).toBe(false);
     expect(C.anfitrionPermitido('=https://novutienda-sitio-stg.web.app' + ruta, 'Traer catálogo')).toBe(true);
     expect(C.anfitrionPermitido('=REEMPLAZAR_URL_CATALOGO' + ruta, 'Traer catálogo')).toBe(true);
     expect(C.ANFITRIONES_TIENDA.every((h) => /^[a-z0-9.-]+$/.test(h))).toBe(true);
@@ -97,5 +98,41 @@ describe('el Bearer del tenant solo sale hacia el host de la tienda', () => {
     const cred = (f: { nodes: { name: string; credentials?: { httpHeaderAuth?: { name: string } } }[] }) => f.nodes.find((n) => n.name === 'Traer catálogo')?.credentials?.httpHeaderAuth?.name;
     expect(cred(PRODUCCION as never)).toBe('REEMPLAZAR_CREDENCIAL_CATALOGO');
     expect(cred(PRUEBA as never)).toBe('REEMPLAZAR_CREDENCIAL_CATALOGO_PRUEBA');
+  });
+});
+
+describe('Argentina (B4a): catálogo en pesos y pedido anotado; el pago por alias llega con el servidor (B4b)', () => {
+  const ARG = ['54', '9', '11', '5550', '0001'].join('');
+  const itemAr = (o: Record<string, unknown> = {}) => ({ ...CATALOGO[1], moneda: 'ARS', precio: 450000, precioCentavos: 45000000, stock: 10, disponible: true, ...o });
+  const catAr = (items: unknown[] = [itemAr()]) => catalogoOk({ mercado: 'AR', moneda: 'ARS' }, items as never);
+  it('la expresión del mercado del nodo HTTP da lo mismo que ceMercadoDePrefijo para 591 y 54', async () => {
+    const C = (await import(/* @vite-ignore */ '../../../../Flujos/experimental/casa-bermejo/construir.mjs')) as { EXPRESION_MERCADO: string };
+    const cuerpo = C.EXPRESION_MERCADO.replace(/^\{\{|\}\}$/g, '').trim();
+    const evalua = (from: string): string => new Function('$', `return (${cuerpo});`)(() => ({ first: () => ({ json: { from } }) })) as string;
+    for (const f of [ANA, ARG, '+' + ARG, '00' + ARG]) expect(evalua(f)).toBe(ceMercadoDePrefijo(f));
+  });
+  it('un cliente de Argentina ve precios en pesos y nunca en «Bs»', () => {
+    const m = crear({ catalogo: catAr(), modeloDice: pide([{ id: BIL, cantidad: 2 }]) });
+    const t = hablar(m, ARG, mTexto('dos billeteras'));
+    expect(textos(t).join(' ')).toMatch(/ARS 900\.000/);
+    expect(textos(t).join(' ')).not.toMatch(/Bs/);
+  });
+  it('NEGADO: al confirmar el pedido NO se emite un QR de Bolivia: queda anotado, 1 aviso al comercio con el total en ARS y el botón; nada de «acreditado»', () => {
+    const m = crear({ catalogo: catAr(), modeloDice: pide([{ id: BIL, cantidad: 1 }], { entrega: ENTREGA }) });
+    hablar(m, ARG, mTexto('una billetera'));
+    const t = hablar(m, ARG, mTexto('quiero pagar'));
+    expect(t.mensajes.every((x) => x.tipo !== 'image')).toBe(true);
+    expect(t.avisos).toHaveLength(1);
+    const vars = (t.avisos[0]?.payload['template'] as any).components[0].parameters.map((p: { text: string }) => p.text); // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect(vars[1]).toMatch(/^ARS /);
+    expect(vars[3]).toBe('sin comprobante aún');
+    expect(textos(t).join(' ')).toMatch(/pesos argentinos/);
+    expect(textos(t).join(' ')).not.toMatch(PROHIBIDO);
+    expect(t.llamadas.cotejo ?? []).toHaveLength(0);
+  });
+  it('NEGADO: un catálogo en BOB para un cliente de Argentina (o al revés) no se vende: pasa con recepción', () => {
+    const t = hablar(crear({ catalogo: catalogoOk() }), ARG, mTexto('quiero una billetera'));
+    expect(t.registro.map((r) => r.nodo)).not.toContain('Conversar con el modelo');
+    expect(t.avisos).toHaveLength(1);
   });
 });

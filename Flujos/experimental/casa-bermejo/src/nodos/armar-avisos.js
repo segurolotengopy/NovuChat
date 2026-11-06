@@ -37,7 +37,7 @@ const cliente = nombre + ' (+' + c.from + ')';
 const esPedido = aviso.tipo === 'pedido';
 const lineas = esPedido ? bmConNombres(aviso.lineas, c.vendibles) : [];
 const itemsTexto = esPedido ? vcLineaAviso(lineas) : avLimpio(aviso.motivo, 100) || 'consulta';
-const totalTexto = esPedido && Number.isSafeInteger(aviso.total) && aviso.total > 0 ? vcMonto(aviso.total) : '—';
+const totalTexto = esPedido && Number.isSafeInteger(aviso.total) && aviso.total > 0 ? vcMonto(aviso.total, Array.isArray(aviso.lineas) && aviso.lineas[0] ? aviso.lineas[0].moneda : undefined) : '—';
 const entregaTexto = esPedido ? bmEntregaTexto(aviso.entrega) : 'sin pedido';
 const cotejoTexto = esPedido ? avLimpio(aviso.cotejo, 80) || 'sin comprobante aún' : 'sin comprobante aún';
 const parametros = esPedido ? [itemsTexto, totalTexto, entregaTexto, cotejoTexto] : ['Consulta: ' + itemsTexto, '—', 'sin pedido', 'sin comprobante aún'];
