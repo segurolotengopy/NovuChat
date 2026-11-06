@@ -168,6 +168,13 @@ interface Entrante {
    * le avisó que el pedido se anuló).
    */
   reglaCobro?: 2;
+  /**
+   * SEÑAL DE CRISIS (05/11/2026), solo con `no_contactar`: el flujo detectó una posible crisis
+   * emocional de la persona. La ingesta escribe `riesgoEn` en la conversación (solo el servidor la
+   * escribe; la consola no la apaga) y `reclamarRescates` nunca le escribe a ese contacto. Cualquier otro
+   * valor, o un `riesgo` sin `no_contactar`, se ignora sin error.
+   */
+  riesgo?: true;
   referencia?: string;
   calendario?: string;
   /**
@@ -283,6 +290,8 @@ function normalizar(cuerpo: unknown): Entrante | null {
   // lo demás es regla 1, sin error.
   const reglaCobro = evento === 'qr_enviado' && c['reglaCobro'] === 2 ? 2 as const : undefined;
 
+  const riesgo = evento === 'no_contactar' && c['riesgo'] === true ? true as const : undefined;
+
   // El pedido de WhatsApp (PR-4): solo con `qr_enviado`, hasta 30 líneas, y solo objetos planos.
   // El saneo fino (ids, cantidades, tope de unidades) lo hace `armarPedidoWa`.
   const esQr = evento === 'qr_enviado';
@@ -303,6 +312,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
            ...(nombreContacto ? { nombreContacto } : {}),
            ...(evento ? { evento } : {}),
            ...(reglaCobro ? { reglaCobro } : {}),
+           ...(riesgo ? { riesgo } : {}),
            ...(referencia ? { referencia } : {}),
            ...(calendario ? { calendario } : {}),
            ...(inicio ? { inicio } : {}),
@@ -1220,6 +1230,8 @@ export const ingesta = onRequest(
         // turno pasó a una persona. Solo se ENCIENDE desde acá; apagarlo es un
         // acto de una persona del negocio, desde la consola.
         ...(mensaje.evento === 'no_contactar' ? { noContactar: true } : {}),
+        // Con la señal de crisis, además, `riesgoEn`: solo se ENCIENDE o se renueva desde acá.
+        ...(mensaje.evento === 'no_contactar' && mensaje.riesgo ? { riesgoEn: Timestamp.fromMillis(ahoraMs) } : {}),
         // Derivados de Conversaciones (H1): trozos del teléfono y palabras del
         // nombre siempre; ultimoEntranteEn, ventanaVenceEn, noLeidos y sinLeer
         // SOLO con un entrante. Van al final y no pisan ningún campo de arriba
