@@ -1466,7 +1466,8 @@ describe('palabras excluidas: lo que el negocio NO vende por WhatsApp, aunque la
   it('Q\'Taco (06/11, sin alcohol): «una cerveza» se excluye, y «un postre» sin alcohol no', () => {
     const datos = JSON.parse(readFileSync(RUTA_QTACO, 'utf8')) as { configBase: { palabrasExcluidas?: string } };
     const lista = datos.configBase.palabrasExcluidas ?? '';
-    expect(lista).not.toBe('');
+    // Cadena EXACTA (06/11, review de #823): un cambio de la lista debe ser deliberado.
+    expect(lista).toBe('cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri,rompope,mezcal,carajillo,baileys,kahlua,amaretto,licor de');
     const motivos = (dicho: string) => L.pdAgregarLineas([], SOLO_VENDIBLE, [ln(dicho, 1)], [], lista).noEncontrados.map((n: { motivo: string }) => n.motivo);
     expect(motivos('una cerveza')).toContain('excluido');
     expect(motivos('un postre')).not.toContain('excluido');

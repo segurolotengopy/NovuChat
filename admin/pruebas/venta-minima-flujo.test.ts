@@ -1937,6 +1937,12 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
   });
 
   describe('campaña de pedido «Tortas mexicanas» (dato del negocio, 06/11)', () => {
+    it('el dato de Q\'Taco: la campaña de reserva no nombra alcohol y el mensaje de pedido es el literal, sin «Promos/Ofertas»', () => {
+      const b = configBase(QTACO);
+      expect(String(b['campanaReservaMensaje'])).not.toMatch(/tequila|rompope/i);
+      expect(String(b['campanaPedidoMensaje'])).toBe("¡Hola! Bienvenido a Q'Taco 🌮 ¡Gracias por escribirnos por la promo de las tortas mexicanas! Tenemos opciones sin queso por Bs 15 y con queso por Bs 20 (ambas incluyen nuestra salsa mexicana especial). Puedes elegir entre las variedades disponibles y hacer tu pedido para recoger en el local o envío por delivery tocando el botón de abajo.");
+      expect(String(b['campanaPedidoMensaje'])).not.toMatch(/Promos|Ofertas/);
+    });
     const TORTAS = 'Hola, vi el anuncio de las tortas mexicanas y quiero hacer un pedido.';
     const MSG = "¡Hola! Bienvenido a Q'Taco 🌮 Tenemos tortas sin queso por Bs 15 y con queso por Bs 20. Toca el botón";
     const config = { campanaPedidoTexto: TORTAS, campanaPedidoMensaje: MSG };
