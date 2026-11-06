@@ -21,7 +21,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -86,6 +86,11 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 const campanaVigente = (id: string, textoC: string, desdeMs = AHORA - DIA, hastaMs = AHORA + 5 * DIA): J => ({ id, texto: textoC, inicio: iso(desdeMs), fin: iso(hastaMs) });
 const TEXTO_DUO = "¡Hola! Quiero la Promo Dúo de Q'Taco que vi en Facebook";
 
+const EXCLUSIONES_ANTERIORES = {
+  areasExcluidas: 'cocteleria,cervezas,postres',
+  palabrasExcluidas: 'helado,paleta,postre,cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri,heladito',
+};
+
 function panel(extra: J = {}): J {
   return {
     tenantId: 'qtaco',
@@ -123,6 +128,7 @@ interface OpcionesDeLaPrueba {
   flujo?: Flujo;
   panel?: J;
   config?: J;
+  exclusiones?: boolean;
   dobles?: Record<string, Doble>;
   ahoraMs?: number;
 }
@@ -173,8 +179,8 @@ function crear(op: OpcionesDeLaPrueba = {}) {
       // Estas pruebas cubren la plantilla `pedido_registrado` de siempre; el aviso por líneas de Q'Taco (dato del 28/10) se prueba en venta-minima-avisos-lineas.test.ts.
       plantillasPedidoLineas: '',
       // 05/11: Q'Taco dejó de excluir por palabra; estas pruebas conservan la lista anterior para seguir cubriendo la barrera (la de Q'Taco se prueba abajo, con `palabrasExcluidas: ''`).
-      areasExcluidas: 'cocteleria,cervezas,postres', // idem: la barrera por área se sigue cubriendo; la de Q'Taco (vacía) se prueba en «Q'Taco ofrece todo»
-      palabrasExcluidas: 'helado,paleta,postre,cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri,heladito',
+      // Las exclusiones de ANTES de Q'Taco (áreas y palabras) NO se inyectan por omisión: la prueba que cubre la barrera lo declara con `exclusiones: true`.
+      ...(op.exclusiones === true ? EXCLUSIONES_ANTERIORES : {}),
       ...(op.config ?? {}),
     },
   });
@@ -1854,22 +1860,29 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     expect(cuerpos(con(vencida).escribe(TEXTO_DUO))[0]).toMatch(/¿Qué te gustaría hacer( ahora)?\?/);
   });
 
-  it('NEGANDO: ningún mensaje al cliente dice «menú» con sentido de inicio (botones, derivación, promoción, fuera de flujo)', () => {
+  it('NEGANDO: ningún cuerpo, botón ni respaldo al cliente dice «menú» (la palabra se confunde con la carta); «inicio» es la palabra', () => {
     const w = crear();
     const c = con(w);
     const todo: string[] = [];
-    const junta = (t: ReturnType<typeof c.escribe>) => { todo.push(...cuerpos(t), ...t.mensajes.flatMap(titulosDe)); };
+    const junta = (t: ReturnType<typeof c.escribe>) => { for (const m of t.mensajes) todo.push(m.cuerpo, JSON.stringify(m.payload).replace(/m\|menu/g, '')); };
     junta(c.escribe('hola'));
     junta(c.toca('m|pedido', 'Hacer un pedido'));
     junta(c.escribe(TEXTO_DUO));
     junta(c.escribe('quiero hablar con una persona'));
-    junta(c.escribe('inicio'));
+    junta(c.escribe('volver a inicio'));
+    junta(c.escribe('volver al inicio'));
     junta(c.escribe('cancelar'));
     junta(c.toca('m|reserva', 'Reservar mesa'));
-    expect(todo.length).toBeGreaterThan(5);
-    for (const t of todo) {
-      expect(t, t).not.toMatch(/\bmen[uú]\b/i);
-      if (t.length <= 20) expect(t.length).toBeLessThanOrEqual(20);
+    junta(c.escribe('qué horarios tienen'));
+    junta(c.escribe('hacen delivery'));
+    expect(todo.length).toBeGreaterThan(10);
+    for (const t of todo) expect(t.replace(/Ver la carta/g, ''), t).not.toMatch(/\bmen[uú]\b/i);
+    // Y en el código de los nodos: ningún texto al cliente manda a escribir «menú»/«menu» (los respaldos, derivaciones y la carta incluidos).
+    const nodos = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/nodos');
+    for (const f of readdirSync(nodos).filter((x) => x.endsWith('.js'))) {
+      const codigo = readFileSync(join(nodos, f), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+      expect(codigo, f).not.toMatch(/escribe «men[uú]»|title: 'Men[uú]'/i);
+      expect(codigo, f).not.toMatch(/escribe «menu» para/i);
     }
   });
 
@@ -1902,6 +1915,19 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       expect(otra.mensajes.flatMap(titulosDe)).toEqual(['Reservar mesa']);
       expect(estadoDe(w.mundo)['carrito'] ?? []).toHaveLength(0);
       expect(cuerpos(c.toca('m|reserva', 'Reservar mesa')).join('\n')).not.toMatch(/jueves/i);
+    });
+    it('con el mensaje ENTERO de los datos de Q\'Taco: sale completo, solo «Reservar mesa»; un «sí»/«quiero» justo después no vende (rige el comportamiento actual)', () => {
+      const b = configBase(QTACO);
+      const w = conJueves({ campanaReservaTexto: String(b['campanaReservaTexto']), campanaReservaMensaje: String(b['campanaReservaMensaje']) }, [campanaVigente('jueves', String(b['campanaReservaTexto']))]);
+      const c = con(w);
+      const t = c.escribe(String(b['campanaReservaTexto']));
+      expect(cuerpos(t)[0]).toBe(String(b['campanaReservaMensaje']));
+      expect(t.mensajes.flatMap(titulosDe)).toEqual(['Reservar mesa']);
+      for (const si of ['sí', 'quiero']) {
+        const r = c.escribe(si);
+        expect(estadoDe(w.mundo)['carrito'] ?? [], si).toHaveLength(0);
+        expect(r.avisos, si).toHaveLength(0);
+      }
     });
     it('el dato vive en los datos de Q\'Taco (texto exacto y mensaje del negocio)', () => {
       const b = configBase(QTACO);
@@ -1969,7 +1995,7 @@ describe('menú y promoción', () => {
   });
 
   it('prFicha con un ítem excluido → null: la campaña de un producto de un área excluida no muestra ficha ni precio', () => {
-    const w = crear({ panel: panel({ campanas: [campanaVigente('helado', 'Quiero el Helado de Rompope de la promo')] }) });
+    const w = crear({ exclusiones: true, panel: panel({ campanas: [campanaVigente('helado', 'Quiero el Helado de Rompope de la promo')] }) });
     const t = con(w).escribe('Quiero el Helado de Rompope de la promo');
     expect(cuerpos(t).join('\n')).not.toMatch(/Precio:|23 Bs|Rompope/);
     ver('promo excluida', t);
@@ -2235,7 +2261,7 @@ describe('pedido', () => {
 
 describe('carta', () => {
   it('los ítems de «cocteleria», «cervezas» y «postres» (áreas excluidas) no aparecen en la carta, y «2 micheladas» no se encuentra', () => {
-    const w = crear();
+    const w = crear({ exclusiones: true });
     const c = con(w);
     c.escribe('hola');
     const carta = c.toca('m|pedido', 'Hacer un pedido');
@@ -2287,7 +2313,7 @@ describe('carta', () => {
       it_('helado', 'Helado de vainilla', 18, 'postres'),
     ];
     const cartaDe = (config: J = {}) => {
-      const w = crear({ panel: panel({ catalogo: CARTA_REAL }), config });
+      const w = crear({ exclusiones: true, panel: panel({ catalogo: CARTA_REAL }), config });
       const c = con(w);
       c.escribe('hola');
       return { w, c, texto: cuerpos(c.toca('m|pedido', 'Hacer un pedido')).join('\n') };
@@ -2298,7 +2324,7 @@ describe('carta', () => {
     for (const sale of ['Cóctel de la casa', 'Shot de tequila', 'Copa de vino tinto', 'Cerveza artesanal', 'Helado de vainilla']) expect(real.texto, sale).not.toContain(sale);
     // Y el modelo no puede pedirlos: ninguno se encuentra.
     for (const [nombre, id] of [['Cóctel de la casa', 'coctel'], ['Shot de tequila', 'shot'], ['Copa de vino tinto', 'vino'], ['Cerveza artesanal 500 ml', 'cerveza'], ['Helado de vainilla', 'helado']] as const) {
-      const w = crear({ panel: panel({ catalogo: CARTA_REAL }) });
+      const w = crear({ exclusiones: true, panel: panel({ catalogo: CARTA_REAL }) });
       const c = con(w);
       c.escribe('hola');
       c.toca('m|pedido', 'Hacer un pedido');
@@ -3613,7 +3639,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
   const TEXTO_SIN_BOTON = 'Disculpa, eso no lo puedo resolver por aquí 🙏. Para volver al inicio, escribe «inicio».';
 
   it('la conversación de las capturas: hola, carta, audio, helado, imagen, reserva, menú y de nuevo el pedido; ningún turno se derivó', () => {
-    const w = ensayo();
+    const w = ensayo({ exclusiones: true });
     const c = con(w);
     // 1. «hola» → el menú, amable y con sus botones (y «Promociones» porque hay una campaña vigente).
     const hola = c.escribe('hola');
@@ -3834,7 +3860,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
   });
 
   it('variante: `Extraer` en error deriva UNA sola vez, y el turno siguiente («quiero un helado») ya no deriva ni llama al modelo', () => {
-    const w = ensayo();
+    const w = ensayo({ exclusiones: true });
     const c = con(w);
     c.escribe('hola');
     c.toca('m|pedido', 'Hacer un pedido');
@@ -4627,7 +4653,7 @@ describe('excluidos de punta a punta: «jamaica shot», «limonada con tequila»
     it_('gaseosas', 'Gaseosas', 16, 'bebidas'), it_('nachos', 'Nachos Supremos', 58, 'entradas'),
   ];
   const pedir = (lineas: J[], dicho: string) => {
-    const w = crear({ panel: panel({ catalogo: ACTIVA }) });
+    const w = crear({ exclusiones: true, panel: panel({ catalogo: ACTIVA }) });
     const c = con(w);
     c.escribe('hola');
     c.toca('m|pedido', 'Hacer un pedido');

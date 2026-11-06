@@ -317,6 +317,8 @@ Demo A». Decisiones:
 
 ## Áreas excluidas de Q'Taco: se comparan por nombre normalizado, no por parecido
 
+> **06/11/2026, decisión de Andres: se ofrece todo, incluido alcohol (revierte lo del 02/10).** `areasExcluidas` y `palabrasExcluidas` de Q'Taco quedan vacías. Riesgo aceptado por el propietario: restricción posible del número o de la WABA por la política de Meta. Referencia: Política de WhatsApp Business Messaging (https://whatsappbusiness.com/es-la/policy/, consultada 06/11/2026, actualización indicada 23/09/2026): §4 lista el alcohol entre los bienes que no se pueden comprar, vender, promover ni facilitar por WhatsApp; §5 prohíbe experiencias de comercio para sectores regulados; los mensajes de promoción solo se permiten en países listados (Bolivia no figura en lo leído). La barrera por área y por palabra sigue en el código para quien la configure.
+
 `areasExcluidas` de `qtaco.json` era `Cócteles,Cervezas,Helados`, pero la carta real usa las áreas `cocteleria`, `cervezas` y
 `postres`. La comparación es por `vmNorm` (minúsculas, sin tildes, sin signos): solo `cervezas` coincidía, y el asistente habría
 vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («excepto bebidas alcohólicas y helados»; Andres,

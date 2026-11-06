@@ -449,6 +449,10 @@ function avPlantilla(tel, nombre, idioma, params4) {
 // puede venir del código. Se sustituye por una marca durante el saneo y se repone entero; si la marca no queda exactamente una
 // vez, el enlace se descarta (nunca se devuelve un enlace partido).
 const AV_MARCA_MAPA = 'ENLACEMAPAOK';
+// Sin la marca (o con el enlace descartado): quita «mapa:» colgando, separadores « · » repetidos y los de los bordes.
+function avSinMapa(t) {
+  return avSinBordes(t.split(AV_MARCA_MAPA).join('').replace(/mapa:\s*(?=$| · )/g, '').replace(/(?:\s*·){2,}/g, ' ·').replace(/\s{2,}/g, ' ')) || '—';
+}
 function avParametroConMapa(t) {
   const s = String(t === undefined || t === null ? '' : t);
   const re = new RegExp('(^| · )mapa: (' + AV_FORMA_ENLACE_MAPA.source.slice(1, -1) + ')(?= · |$)');
@@ -457,9 +461,9 @@ function avParametroConMapa(t) {
   const sin = s.slice(0, m.index) + m[1] + 'mapa: ' + AV_MARCA_MAPA + s.slice(m.index + m[0].length);
   const limpio = avSinBordes(avParametro(sin));
   const partes = limpio.split(AV_MARCA_MAPA);
-  if (partes.length !== 2 || limpio.indexOf('mapa: ' + AV_MARCA_MAPA) < 0) return avSinBordes(limpio.split(AV_MARCA_MAPA).join('').replace(/mapa:\s*(?=$| · )/g, '')) || '—';
+  if (partes.length !== 2 || limpio.indexOf('mapa: ' + AV_MARCA_MAPA) < 0) return avSinMapa(limpio);
   const salida = partes.join(m[2]);
-  return salida.length <= 500 ? salida : avSinBordes(limpio.split(AV_MARCA_MAPA).join('').replace(/mapa:\s*(?=$| · )/g, '')) || '—';
+  return salida.length <= 500 ? salida : avSinMapa(limpio);
 }
 
 /** Mensaje de texto libre (solo con ventana abierta). */
