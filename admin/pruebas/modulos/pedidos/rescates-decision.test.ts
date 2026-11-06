@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { Timestamp } from 'firebase-admin/firestore';
 import {
   HORA, LARGO_TEXTO, MS_DESDE, MS_HASTA, TEXTOS_MAX,
-  leerMensajesParaRescate, motivoParaNoRescatar, validarCuerpo, type ContextoRescate,
+  dentroDeFranja, leerMensajesParaRescate, motivoParaNoRescatar, validarCuerpo, type ContextoRescate,
 } from '../../../functions/src/modulos/pedidos/rescates.ts';
 
 const AHORA = Date.UTC(2026, 9, 20, 15, 0, 0);
@@ -288,5 +288,32 @@ describe('rescates.ts: toda escritura sobre la conversación es un merge', () =>
     expect(malos).toHaveLength(1);
     expect(CON_MERGE.test(malos[0]!)).toBe(false);
     expect(CON_MERGE.test(argumentosDeSet('tx.set(ref, { a: 1 }, { merge: true });')[0]!)).toBe(true);
+  });
+});
+
+describe('franja horaria del rescate: de 08:00 a 21:00 de La Paz (UTC-4)', () => {
+  const lp = (h: number, m = 0) => Date.UTC(2026, 10, 6, h + 4, m); // la hora de La Paz, como instante
+  it('07:59 no, 08:00 sí, 20:59 sí, 21:00 no', () => {
+    expect(dentroDeFranja(lp(7, 59))).toBe(false);
+    expect(dentroDeFranja(lp(8, 0))).toBe(true);
+    expect(dentroDeFranja(lp(20, 59))).toBe(true);
+    expect(dentroDeFranja(lp(21, 0))).toBe(false);
+  });
+  it('de noche y de madrugada no: 23:00, 00:00, 03:00 y 04:00', () => {
+    for (const h of [23, 0, 3, 4]) expect(dentroDeFranja(lp(h)), String(h)).toBe(false);
+  });
+  it('mediodía y tarde sí; el cambio de día de UTC no confunde (20:30 La Paz es 00:30 UTC del día siguiente)', () => {
+    expect(dentroDeFranja(lp(12))).toBe(true);
+    expect(dentroDeFranja(lp(20, 30))).toBe(true);
+    expect(dentroDeFranja(NaN)).toBe(false);
+  });
+  it('23:00 → se manda a las 08:00 si la ventana sigue abierta; si ya se cerró, no (silencio máximo = MS_HASTA)', () => {
+    // Último mensaje a las 09:00 del día anterior: a las 08:00 lleva 23 h de silencio (dentro de 22 h–23 h 30 min): sale.
+    const ult = lp(9) - 24 * HORA;
+    const a0800 = lp(8);
+    expect(motivoParaNoRescatar({ ...conv(), ultimoEntranteEn: Timestamp.fromMillis(ult) }, ctx(), a0800)).toBe('');
+    // Último mensaje a las 07:00 del día anterior: a las 08:00 lleva 25 h: la ventana se cerró, no se manda.
+    const viejo = lp(7) - 24 * HORA;
+    expect(motivoParaNoRescatar({ ...conv(), ultimoEntranteEn: Timestamp.fromMillis(viejo) }, ctx(), a0800)).toBe('tarde');
   });
 });

@@ -9,7 +9,7 @@
  * comparten `cliente20` y `cliente19` con números y comercios propios de esta
  * suite. Las suites no corren en paralelo y cada una siembra y limpia lo suyo.
  */
-import { beforeAll, beforeEach, afterAll, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, afterAll, afterEach, describe, expect, it } from 'vitest';
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -23,7 +23,7 @@ const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
-const { reclamarRescates, TOPE_DIARIO_POR_COMERCIO, TOPE_POR_CORRIDA } =
+const { reclamarRescates, TOPE_DIARIO_POR_COMERCIO, TOPE_POR_CORRIDA, fijarRelojDeRescates } =
   await import('../../../functions/src/modulos/pedidos/rescates.ts');
 
 const X = 'resc-tienda-x';
@@ -62,7 +62,9 @@ async function llamar(opciones: {
   return r;
 }
 
-const ahora = () => Date.now();
+// El reloj de la prueba y el de la Function son el mismo (desplazado, no congelado): ver `fijarRelojDeRescates`.
+let desfase = 0;
+const ahora = () => Date.now() + desfase;
 const en = (ms: number) => Timestamp.fromMillis(ahora() - ms);
 const SILENCIO_OK = 22 * HORA + 30 * MIN;
 
@@ -108,6 +110,15 @@ beforeAll(async () => {
     await db.doc(`tenants/${t}/config/negocio`).set({ nombreNegocio: t, moneda: 'BOB', numeroRecepcion: '+591 000 00099' });
   }
 });
+
+// El reloj (solo `Date`) queda fijo a las 15:00 de La Paz: la franja de 08:00 a 21:00 no puede hacer depender las pruebas de la hora a la que corre el CI.
+const A_LAS = (hora: number, minuto = 0) => Date.UTC(2026, 10, 6, hora + 4, minuto);
+const fijarReloj = (instante: number) => { desfase = instante - Date.now(); };
+beforeEach(() => {
+  fijarRelojDeRescates(ahora);
+  fijarReloj(A_LAS(15));
+});
+afterEach(() => { fijarRelojDeRescates(null); desfase = 0; });
 
 beforeEach(async () => {
   await borrarTodo(X);
@@ -237,6 +248,36 @@ describe('módulo y compra', () => {
     const r = await llamar();
     expect(r.cuerpo.rescates.map((x: { telefono: string }) => x.telefono)).toEqual([tel(56)]);
     expect(await marca(X, tel(55))).toBeUndefined();
+  });
+});
+
+describe('franja horaria: de 08:00 a 21:00 de La Paz, en el servidor', () => {
+  const conSilencio = (telefono: string, silencio: number) => sembrar(X, telefono, { ultimoEntranteEn: en(silencio), ultimoEn: en(silencio) }, [
+    { direccion: 'entrante', tipo: 'text', texto: 'Hola, tengo una pastelería y quiero ordenar mis ventas', hace: silencio + 10 * MIN },
+    { direccion: 'saliente', tipo: 'text', texto: 'Respuesta del asistente', hace: silencio },
+  ]);
+  it('fuera de la franja (23:00, 03:00, 07:59, 21:00) no entrega nada y no marca; a las 08:00 sí entrega lo que sigue dentro de la ventana', async () => {
+    fijarReloj(A_LAS(8));
+    await conSilencio(tel(61), 23 * HORA);                     // 23 h de silencio a las 08:00: dentro de 22 h a 23 h 30 min
+    for (const [h, m] of [[23, 0], [3, 0], [7, 59], [21, 0]] as const) {
+      fijarReloj(A_LAS(h, m));
+      const r = await llamar();
+      expect(r.codigo, `${h}:${m}`).toBe(200);
+      expect(r.cuerpo, `${h}:${m}`).toEqual({ phoneNumberId: NUM_X, rescates: [], motivo: 'fuera_de_franja' });
+      expect(await marca(X, tel(61)), `${h}:${m}`).toBeUndefined();
+    }
+    fijarReloj(A_LAS(8));
+    const dentro = await llamar();
+    expect(dentro.cuerpo.rescates.map((x: { telefono: string }) => x.telefono)).toEqual([tel(61)]);
+    expect(await marca(X, tel(61))).toBeDefined();
+  });
+
+  it('a las 08:00 una conversación cuya ventana de 24 h ya se cerró (silencio mayor que 23 h 30 min) NO se manda', async () => {
+    fijarReloj(A_LAS(8));
+    await conSilencio(tel(62), 25 * HORA);
+    const r = await llamar();
+    expect(r.cuerpo.rescates).toEqual([]);
+    expect(await marca(X, tel(62))).toBeUndefined();
   });
 });
 

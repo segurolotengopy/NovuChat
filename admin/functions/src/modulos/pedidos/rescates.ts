@@ -60,6 +60,26 @@ const TELEFONO = /^[0-9]{8,15}$/;
 
 export const HORA = 60 * 60 * 1000;
 /** El silencio mínimo para rescatar (inclusive) y el máximo (exclusivo). */
+/**
+ * FRANJA HORARIA (decisión de Andres, 06/11/2026): el rescate solo se reclama de 08:00 a 21:00 (hora de La Paz,
+ * UTC-4 fijo, sin horario de verano). Fuera de la franja el servidor no entrega nada; al abrirse la franja (08:00) las
+ * conversaciones que sigan dentro de 22 h a 23 h 30 min de silencio salen entonces, y las que ya pasaron de
+ * `MS_HASTA` (la ventana de 24 h de Meta por cerrar) NO se mandan nunca: `MS_HASTA` es la cota de «mientras la
+ * ventana siga abierta». El flujo de n8n repite su propio corte de 23 h 50 min.
+ */
+export const FRANJA_DESDE_HORA = 8;
+export const FRANJA_HASTA_HORA = 21;
+const DESFASE_LA_PAZ_MS = 4 * 60 * 60 * 1000;
+/** El reloj de la Function. Solo las pruebas lo cambian (`fijarRelojDeRescates`): la franja depende de la hora, y simular `Date` cuelga al BulkWriter del emulador. */
+let reloj: () => number = () => Date.now();
+export function fijarRelojDeRescates(nuevo: (() => number) | null): void {
+  reloj = nuevo ?? (() => Date.now());
+}
+export function dentroDeFranja(ahoraMs: number): boolean {
+  if (!Number.isFinite(ahoraMs)) return false;
+  const hora = new Date(ahoraMs - DESFASE_LA_PAZ_MS).getUTCHours();
+  return hora >= FRANJA_DESDE_HORA && hora < FRANJA_HASTA_HORA;
+}
 export const MS_DESDE = 22 * HORA;
 export const MS_HASTA = 23.5 * HORA;
 /** Lo máximo que sale en una corrida. */
@@ -273,8 +293,13 @@ export const reclamarRescates = onRequest(
       return;
     }
 
+    const ahoraMs = reloj();
+    if (!dentroDeFranja(ahoraMs)) {
+      respuesta.status(200).json({ phoneNumberId, rescates: [], motivo: 'fuera_de_franja' });
+      return;
+    }
+
     const db = getFirestore();
-    const ahoraMs = Date.now();
 
     const [cuenta, metricas, plataforma, negocio, ficha] = await Promise.all([
       db.doc(`tenants/${tenantId}/cuenta/estado`).get(),
