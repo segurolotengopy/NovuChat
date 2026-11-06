@@ -1,0 +1,268 @@
+/**
+ * `scripts/plataforma/habilitar-productos.mjs` — HABILITA (`activo: true`) los ítems deshabilitados del catálogo
+ * de un comercio cuya categoría (`area`) es cerveza, postres, helados o tragos.
+ *
+ * Sin emulador ni nube: lógica pura y una base en memoria con datos sintéticos. Se NIEGA primero:
+ *   E1. Argumentos y salvaguarda: tenant fuera de la lista, proyecto equivocado, producción sin confirmación.
+ *   E2. Clasificación: otras categorías (y plurales) no se habilitan.
+ *   E3. Seco: no escribe, solo lee un tenant; --aplicar escribe solo `activo` y solo lo elegido.
+ *   E4. Reversa: restaura el estado exacto y no toca lo que ya no está en true.
+ *   E5. El texto del script.
+ */
+import { afterAll, describe, expect, it } from 'vitest';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const aqui = dirname(fileURLToPath(import.meta.url));
+const SCRIPT = join(aqui, '..', '..', 'scripts', 'plataforma', 'habilitar-productos.mjs');
+const sinComentarios = (f: string) => f.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+type Cfg = Record<string, unknown>;
+type Item = Record<string, unknown>;
+const mod = await import('../../scripts/plataforma/habilitar-productos.mjs') as unknown as {
+  analizarArgumentos: (argv: string[], env?: Record<string, string>) => { ok: boolean; problemas?: string[]; cfg?: Cfg };
+  clasificar: (items: Item[]) => { habilitar: Item[]; otras: Item[] };
+  categoriaObjetivo: (a: unknown) => boolean;
+  leerRespaldo: (r: string, o: { entorno: string; tenant: string }) => { ok: boolean; motivo?: string; ids?: string[] };
+  ejecutar: (cfg: Cfg, deps: Record<string, unknown>) => Promise<number>;
+};
+
+const HOST = '127.0.0.1:1';
+const ENV_EMU = { FIRESTORE_EMULATOR_HOST: HOST };
+const PROY = 'demo-novuchat-pruebas';
+const ENV_REAL = { GCP_PROJECT_ID_STAGING: 'proyecto-ficticio-staging', GCP_PROJECT_ID_PROD: 'proyecto-ficticio-prod' };
+const dirs: string[] = [];
+const rutaRespaldo = () => {
+  const d = mkdtempSync(join(tmpdir(), 'hab-prod-')); chmodSync(d, 0o700); dirs.push(d);
+  return join(d, 'respaldo.json');
+};
+afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
+
+const CATALOGO: Record<string, Item> = {
+  a1: { nombre: 'Pilsener', area: 'cerveza', activo: false },
+  a2: { nombre: 'Brownie', area: 'Postres', activo: false },
+  a3: { nombre: 'Helado de canela', area: 'HELADOS', activo: false },
+  a4: { nombre: 'Mojito', area: 'tragos', activo: false },
+  a5: { nombre: 'Gaseosa', area: 'bebidas', activo: false },
+  a6: { nombre: 'Cervezas de lata', area: 'cervezas', activo: false },
+  a7: { nombre: 'Sin categoría', activo: false },
+  a8: { nombre: 'Ya activa', area: 'cerveza', activo: true },
+  a9: { nombre: 'Sin campo activo', area: 'tragos' },
+};
+
+/** Firestore en memoria con varios tenants; registra cada lectura y escritura (ruta y campos). */
+function baseDe(catalogos: Record<string, Record<string, Item>>, opciones: { cambiaAntes?: string } = {}) {
+  const datos: Record<string, Record<string, Item>> = JSON.parse(JSON.stringify(catalogos));
+  const horas: Record<string, number> = {};
+  const lecturas: string[] = [];
+  const escrituras: { ruta: string; campos: Record<string, unknown> }[] = [];
+  const hora = (r: string) => horas[r] ?? 1;
+  const refDe = (col: string, id: string) => ({
+    update: async (campos: Record<string, unknown>, pre: { lastUpdateTime: { hora: number } }) => {
+      if (opciones.cambiaAntes === id) { horas[`${col}/${id}`] = hora(`${col}/${id}`) + 1; }
+      if (pre.lastUpdateTime.hora !== hora(`${col}/${id}`)) throw Object.assign(new Error('pre'), { code: 9 });
+      Object.assign(datos[col]![id]!, campos);
+      horas[`${col}/${id}`] = hora(`${col}/${id}`) + 1;
+      escrituras.push({ ruta: `${col}/${id}`, campos });
+    },
+  });
+  return {
+    escrituras, lecturas, datos,
+    db: {
+      collection: (col: string) => ({
+        select: (...campos: string[]) => ({
+          get: async () => {
+            lecturas.push(col);
+            const c = datos[col.replace(/^tenants\//, '').replace(/\/catalogo$/, '')] ?? {};
+            return {
+              docs: Object.entries(c).map(([id, d]) => ({
+                id, ref: refDe(col.replace(/^tenants\//, '').replace(/\/catalogo$/, ''), id),
+                updateTime: { hora: hora(`${col.replace(/^tenants\//, '').replace(/\/catalogo$/, '')}/${id}`) },
+                data: () => Object.fromEntries(Object.entries(d).filter(([k]) => campos.includes(k))),
+              })),
+            };
+          },
+        }),
+      }),
+    },
+  };
+}
+const cfgDe = (extra: Cfg = {}): Cfg => ({ proyecto: PROY, entorno: 'emulador', tenant: 'qtaco', aplicar: false, revertir: false, respaldo: null, ...extra });
+const correr = async (cfg: Cfg, b: ReturnType<typeof baseDe>) => {
+  const salida: string[] = [];
+  const codigo = await mod.ejecutar(cfg, { db: b.db, log: (t: string) => salida.push(t) });
+  return { codigo, salida: salida.join('\n') };
+};
+
+describe('E1. argumentos y salvaguarda', () => {
+  const base = ['--proyecto', PROY, '--tenant', 'qtaco'];
+  const problemas = (argv: string[], env: Record<string, string> = ENV_EMU) => {
+    const r = mod.analizarArgumentos(argv, env);
+    expect(r.ok, JSON.stringify(r)).toBe(false);
+    return (r.problemas ?? []).join(' | ');
+  };
+  it('la invocación válida queda en seco', () => {
+    const r = mod.analizarArgumentos(base, ENV_EMU);
+    expect(r.ok).toBe(true);
+    expect(r.cfg).toMatchObject({ tenant: 'qtaco', aplicar: false, revertir: false, entorno: 'emulador' });
+  });
+  it('rechaza cualquier tenant fuera de la lista cerrada, con comas o formas raras', () => {
+    for (const t of ['otro-comercio', 'qtaco,otro', 'QTaco', '../qtaco', '__proto__', '']) {
+      expect(problemas(['--proyecto', PROY, '--tenant', t])).toMatch(/--tenant|sin valor/);
+    }
+    expect(problemas(['--proyecto', PROY])).toContain('falta --tenant');
+  });
+  it('--aplicar exige --respaldo; --revertir exige --respaldo; opciones raras se rechazan', () => {
+    expect(problemas([...base, '--aplicar'])).toContain('--aplicar exige --respaldo');
+    expect(problemas(['--revertir', ...base])).toContain('--revertir exige --respaldo');
+    expect(problemas([...base, '--categoria', 'bebidas'])).toContain('opción desconocida');
+    expect(problemas([...base, '--aplicar', '--aplicar'])).toContain('opción repetida');
+  });
+  it('proyecto equivocado: sin lista blanca, fuera de ella o con emulador mezclado', () => {
+    expect(problemas(['--proyecto', 'otro-proyecto-real', '--tenant', 'qtaco'], ENV_REAL)).toContain('lista blanca');
+    expect(problemas(base, {})).toContain('FIRESTORE_EMULATOR_HOST');
+    expect(problemas(['--proyecto', 'proyecto-ficticio-prod', '--tenant', 'qtaco'], { ...ENV_REAL, FIRESTORE_EMULATOR_HOST: HOST })).toContain('ambiguo');
+    expect(problemas(['--proyecto', 'proyecto-ficticio-staging', '--tenant', 'qtaco'], { GCP_PROJECT_ID_STAGING: 'proyecto-ficticio-staging' })).toContain('GCP_PROJECT_ID_PROD');
+  });
+  it('producción: --aplicar exige --confirmo-produccion igual al tenant; el seco no', () => {
+    const prod = ['--proyecto', 'proyecto-ficticio-prod', '--tenant', 'qtaco'];
+    const resp = join(mkdtempSync(join(tmpdir(), 'hab-prod-')), 'r.json');
+    dirs.push(dirname(resp)); chmodSync(dirname(resp), 0o700);
+    expect(mod.analizarArgumentos(prod, ENV_REAL).ok).toBe(true);
+    expect(problemas([...prod, '--aplicar', '--respaldo', resp], ENV_REAL)).toContain('--confirmo-produccion');
+    expect(problemas([...prod, '--aplicar', '--respaldo', resp, '--confirmo-produccion', 'otro'], ENV_REAL)).toContain('no coincide');
+    expect(mod.analizarArgumentos([...prod, '--aplicar', '--respaldo', resp, '--confirmo-produccion', 'qtaco'], ENV_REAL).ok).toBe(true);
+    expect(problemas([...base, '--confirmo-produccion', 'qtaco'])).toContain('solo se usa contra producción');
+  });
+  it('el respaldo no puede estar dentro del repositorio', () => {
+    expect(problemas([...base, '--aplicar', '--respaldo', join(aqui, 'r.json')])).toContain('repositorio');
+  });
+});
+
+describe('E2. clasificación: solo las cuatro categorías exactas, solo deshabilitados', () => {
+  const items = Object.entries(CATALOGO).map(([id, d]) => ({ id, ...d }));
+  const { habilitar, otras } = mod.clasificar(items);
+  it('habilita cerveza, postres, helados y tragos (sin tildes ni mayúsculas, como el filtro de la consola)', () => {
+    expect(habilitar.map((i) => i['id']).sort()).toEqual(['a1', 'a2', 'a3', 'a4', 'a9']);
+  });
+  it('NO habilita otras categorías, plurales, sin categoría ni los que ya están activos', () => {
+    expect(otras.map((i) => i['id']).sort()).toEqual(['a5', 'a6', 'a7']);
+    expect(mod.categoriaObjetivo('cervezas')).toBe(false);
+    expect(mod.categoriaObjetivo('cerveza artesanal')).toBe(false);
+    expect(mod.categoriaObjetivo(undefined)).toBe(false);
+    expect(mod.categoriaObjetivo(['cerveza'])).toBe(false);
+    expect(habilitar.map((i) => i['id'])).not.toContain('a8');
+  });
+});
+
+describe('E3. seco y aplicar', () => {
+  it('el seco no escribe, lee solo el tenant pedido e imprime la tabla y los conteos de otras categorías', async () => {
+    const b = baseDe({ qtaco: CATALOGO, ajeno: { z1: { nombre: 'Ajeno', area: 'cerveza', activo: false } } });
+    const { codigo, salida } = await correr(cfgDe(), b);
+    expect(codigo).toBe(1);
+    expect(b.escrituras).toHaveLength(0);
+    expect(b.lecturas).toEqual(['tenants/qtaco/catalogo']);
+    expect(salida).toContain('Se habilitarían (5)');
+    expect(salida).toContain('Pilsener');
+    expect(salida).toContain('OTRAS categorías (NO se tocan): 3');
+    expect(salida).toContain('Gaseosa');
+    expect(salida).not.toContain('Ajeno');
+    expect(salida).not.toContain(PROY);
+  });
+  it('sin --aplicar no escribe aunque haya respaldo configurado', async () => {
+    const b = baseDe({ qtaco: CATALOGO });
+    const r = rutaRespaldo();
+    await correr(cfgDe({ respaldo: r }), b);
+    expect(b.escrituras).toHaveLength(0);
+    expect(() => statSync(r)).toThrow();
+  });
+  it('--aplicar escribe solo {activo:true} en los ítems elegidos, deja respaldo 0600 y no toca otro tenant ni otras categorías', async () => {
+    const b = baseDe({ qtaco: CATALOGO, ajeno: { z1: { nombre: 'Ajeno', area: 'cerveza', activo: false } } });
+    const r = rutaRespaldo();
+    const { codigo } = await correr(cfgDe({ aplicar: true, respaldo: r }), b);
+    expect(codigo).toBe(0);
+    expect(b.escrituras.map((e) => e.ruta).sort()).toEqual(['qtaco/a1', 'qtaco/a2', 'qtaco/a3', 'qtaco/a4', 'qtaco/a9']);
+    for (const e of b.escrituras) expect(e.campos).toEqual({ activo: true });
+    expect(b.datos['qtaco']!['a5']!['activo']).toBe(false);
+    expect(b.datos['qtaco']!['a6']!['activo']).toBe(false);
+    expect(b.datos['qtaco']!['a7']!['activo']).toBe(false);
+    expect(b.datos['ajeno']!['z1']!['activo']).toBe(false);
+    expect(statSync(r).mode & 0o777).toBe(0o600);
+    expect(readFileSync(r, 'utf8')).not.toContain('Pilsener');
+  });
+  it('idempotente: sin nada que habilitar sale 0 sin escribir ni crear respaldo', async () => {
+    const b = baseDe({ qtaco: { a1: { nombre: 'X', area: 'cerveza', activo: true }, a2: { nombre: 'Y', area: 'otra', activo: false } } });
+    const r = rutaRespaldo();
+    const { codigo } = await correr(cfgDe({ aplicar: true, respaldo: r }), b);
+    expect(codigo).toBe(0);
+    expect(b.escrituras).toHaveLength(0);
+    expect(() => statSync(r)).toThrow();
+  });
+  it('un respaldo existente nunca se pisa (sale 2 sin escribir)', async () => {
+    const r = rutaRespaldo();
+    await correr(cfgDe({ aplicar: true, respaldo: r }), baseDe({ qtaco: CATALOGO }));
+    const b2 = baseDe({ qtaco: CATALOGO });
+    const { codigo } = await correr(cfgDe({ aplicar: true, respaldo: r }), b2);
+    expect(codigo).toBe(2);
+    expect(b2.escrituras).toHaveLength(0);
+  });
+  it('si un ítem cambia entre la lectura y la escritura, se detiene con 3 sin pisarlo', async () => {
+    const b = baseDe({ qtaco: CATALOGO }, { cambiaAntes: 'a2' });
+    const { codigo } = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b);
+    expect(codigo).toBe(3);
+    expect(b.datos['qtaco']!['a2']!['activo']).toBe(false);
+  });
+});
+
+describe('E4. reversa', () => {
+  it('restaura el estado exacto: los habilitados vuelven a false y lo demás queda igual', async () => {
+    const b = baseDe({ qtaco: CATALOGO });
+    const r = rutaRespaldo();
+    await correr(cfgDe({ aplicar: true, respaldo: r }), b);
+    b.escrituras.length = 0;
+    const seco = await correr(cfgDe({ revertir: true, respaldo: r }), b);
+    expect(seco.codigo).toBe(1);
+    expect(b.escrituras).toHaveLength(0);
+    const { codigo } = await correr(cfgDe({ revertir: true, aplicar: true, respaldo: r }), b);
+    expect(codigo).toBe(0);
+    for (const e of b.escrituras) expect(e.campos).toEqual({ activo: false });
+    const esperado = { ...CATALOGO, a9: { ...CATALOGO['a9'], activo: false } };
+    expect(b.datos['qtaco']).toEqual(esperado);
+    expect(b.datos['qtaco']!['a8']!['activo']).toBe(true);
+  });
+  it('no toca un ítem que alguien ya cambió o que ya no está en true; segunda reversa no hace nada', async () => {
+    const b = baseDe({ qtaco: CATALOGO });
+    const r = rutaRespaldo();
+    await correr(cfgDe({ aplicar: true, respaldo: r }), b);
+    b.datos['qtaco']!['a1']!['activo'] = false;
+    b.escrituras.length = 0;
+    await correr(cfgDe({ revertir: true, aplicar: true, respaldo: r }), b);
+    expect(b.escrituras.map((e) => e.ruta)).not.toContain('qtaco/a1');
+    b.escrituras.length = 0;
+    expect((await correr(cfgDe({ revertir: true, aplicar: true, respaldo: r }), b)).codigo).toBe(0);
+    expect(b.escrituras).toHaveLength(0);
+  });
+  it('rechaza un respaldo de otro entorno o de otro tenant', async () => {
+    const r = rutaRespaldo();
+    await correr(cfgDe({ aplicar: true, respaldo: r }), baseDe({ qtaco: CATALOGO }));
+    expect(mod.leerRespaldo(r, { entorno: 'produccion', tenant: 'qtaco' }).ok).toBe(false);
+    expect(mod.leerRespaldo(r, { entorno: 'emulador', tenant: 'otro' }).ok).toBe(false);
+    expect(mod.leerRespaldo(r, { entorno: 'emulador', tenant: 'qtaco' }).ok).toBe(true);
+  });
+});
+
+describe('E5. el texto del script', () => {
+  const f = sinComentarios(readFileSync(SCRIPT, 'utf8'));
+  it('su única escritura es update del campo activo; no crea ni borra', () => {
+    expect(f.match(/\.update\(/g)).toHaveLength(1);
+    expect(f).toContain("const CAMPO = 'activo';");
+    expect(f).toContain('await ref.update({ [CAMPO]: valor }, { lastUpdateTime: ultimaActualizacion });');
+    expect(f).not.toMatch(/\.(set|create|delete|add)\(/);
+    expect(f).not.toMatch(/\bbatch\b|runTransaction/);
+  });
+  it('lee solo nombre, area y activo y no imprime el proyecto', () => {
+    expect(f).toContain(".select('nombre', 'area', 'activo')");
+    expect(f).not.toMatch(/console\.(log|error)\([^)]*proyecto\b(?!s)/);
+  });
+});
