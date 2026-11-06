@@ -173,6 +173,7 @@ function crear(op: OpcionesDeLaPrueba = {}) {
       // Estas pruebas cubren la plantilla `pedido_registrado` de siempre; el aviso por líneas de Q'Taco (dato del 28/10) se prueba en venta-minima-avisos-lineas.test.ts.
       plantillasPedidoLineas: '',
       // 05/11: Q'Taco dejó de excluir por palabra; estas pruebas conservan la lista anterior para seguir cubriendo la barrera (la de Q'Taco se prueba abajo, con `palabrasExcluidas: ''`).
+      areasExcluidas: 'cocteleria,cervezas,postres', // idem: la barrera por área se sigue cubriendo; la de Q'Taco (vacía) se prueba en «Q'Taco ofrece todo»
       palabrasExcluidas: 'helado,paleta,postre,cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri,heladito',
       ...(op.config ?? {}),
     },
@@ -2236,10 +2237,27 @@ describe('carta', () => {
     expect(cuerpos(cc.toca('m|pedido', 'Hacer un pedido')).join('\n')).toContain('Michelada');
   });
 
+  it('Q\'Taco ofrece todo (06/11): con sus datos reales, cócteles, cervezas y postres ACTIVOS están en la carta y se pueden pedir', () => {
+    expect(String(configBase(QTACO)['areasExcluidas'] ?? '')).toBe('');
+    expect(String(configBase(QTACO)['palabrasExcluidas'] ?? '')).toBe('');
+    const CARTA: J[] = [
+      it_('taco', 'Orden de 3 tacos al pastor', 48, 'tacos'), it_('coctel', 'Cóctel de la casa', 40, 'cocteleria'),
+      it_('cerveza', 'Cerveza artesanal 500 ml', 28, 'cervezas'), it_('helado', 'Helado de vainilla', 18, 'postres'),
+    ];
+    const w = crear({ panel: panel({ catalogo: CARTA }), config: { areasExcluidas: '', palabrasExcluidas: '' } });
+    const c = con(w);
+    c.escribe('hola');
+    const texto = cuerpos(c.toca('m|pedido', 'Hacer un pedido')).join('\n');
+    for (const esta of ['Cóctel de la casa', 'Cerveza artesanal', 'Helado de vainilla']) expect(texto, esta).toContain(esta);
+    w.estado.extraccion = EX([ln('Cerveza artesanal 500 ml', 1)]);
+    const t = c.escribe('quiero una cerveza');
+    expect(cuerpos(t).join('\n')).not.toMatch(/no está disponible para pedir por WhatsApp/);
+  });
+
   it('las áreas excluidas de Q\'Taco son las REALES de su carta: un cóctel, un shot, un vino, una cerveza y un helado salen EXCLUIDOS, y un taco NO', () => {
     // La comparación es por `vmNorm` (minúsculas y sin tildes), no por parecido: «Cócteles» no excluía «cocteleria», y el asistente vendía cócteles,
     // shots, vinos y helados contra lo que pidió el comercio (nada de bebidas alcohólicas ni helados). Los nombres de área son los de su carta; los ítems, de relleno.
-    expect(configBase(QTACO)['areasExcluidas']).toBe('cocteleria,cervezas,postres');
+    expect(String(configBase(QTACO)['areasExcluidas'] ?? '')).toBe(''); // 06/11: Q'Taco ya no excluye áreas; la barrera se prueba con las áreas que tenía
     const CARTA_REAL: J[] = [
       it_('taco', 'Orden de 3 tacos al pastor', 48, 'tacos'),
       it_('refresco', 'Refresco de la casa', 12, 'bebidas'),

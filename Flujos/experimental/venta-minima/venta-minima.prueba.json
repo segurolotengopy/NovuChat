@@ -157,7 +157,7 @@
               "id": "cb_areasExcluidas",
               "name": "areasExcluidas",
               "type": "string",
-              "value": "cocteleria,cervezas,postres"
+              "value": ""
             },
             {
               "id": "cb_palabrasExcluidas",
