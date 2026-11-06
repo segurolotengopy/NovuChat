@@ -247,3 +247,19 @@ function prSoloReserva(campana, cfg) {
   if (cuerpo === '') return null;
   return { cuerpo: cuerpo, botones: [{ id: 'm|reserva', title: 'Reservar mesa' }] };
 }
+
+// CAMPAÑA DE PEDIDO CON MENSAJE DEL NEGOCIO (06/11, «Tortas mexicanas» de Q'Taco): igual que `prSoloReserva`, pero el único botón es
+// «Hacer un pedido» (`m|pedido`, el mismo que abre la carta desde el menú), y solo con `pedidosActivo === true`. El texto exacto del
+// anuncio (`campanaPedidoTexto`) y la respuesta (`campanaPedidoMensaje`, con los precios) son DATO del negocio; la campaña la sigue
+// aprobando y vigenciando el servidor (`prCampanaDelTexto`). No vende ni cobra: los precios del mensaje son informativos y el pedido
+// se arma con los de la carta. Devuelve `{cuerpo, botones}` o `null` (entonces rige la ficha de siempre).
+function prPedidoConMensaje(campana, cfg) {
+  if (typeof campana !== 'object' || campana === null || typeof campana.texto !== 'string') return null;
+  const c = typeof cfg === 'object' && cfg !== null ? cfg : {};
+  if (c.pedidosActivo !== true) return null;
+  const clave = prNorm(c.campanaPedidoTexto);
+  if (clave === '' || prNorm(campana.texto) !== clave) return null;
+  const cuerpo = prLinea(c.campanaPedidoMensaje, 900);
+  if (cuerpo === '') return null;
+  return { cuerpo: cuerpo, botones: [{ id: 'm|pedido', title: 'Hacer un pedido' }] };
+}

@@ -20,7 +20,7 @@
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
 //     pdTextoFaltanEntrega, pdLineasAviso, pdMonto (así los textos del pedido tienen un solo dueño).
 //   reserva: rsValidarExtraccion, rsFusionar, rsValidar, rsPreguntaFaltantes, rsResumen,
-//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto, prSoloReserva.
+//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto, prSoloReserva, prPedidoConMensaje.
 //   cobro: cbCaption, cbResumenCorto, cbResultado, cbEstadoParaAviso, cbTextoAlCliente.
 //
 // SUPUESTOS DECLARADOS (los de la tarea T7a, aprobados por la coordinadora):
@@ -615,6 +615,13 @@ function aPromo() {
   if (soloReserva) {
     irA('menu');
     mensajes = [{ tipo: 'botones', cuerpo: soloReserva.cuerpo, botones: soloReserva.botones, sinMenu: true }];
+    return;
+  }
+  // Campaña de pedido con mensaje del negocio (Tortas mexicanas): reemplaza al saludo, con «Hacer un pedido» como único botón.
+  const pedidoMsg = prPedidoConMensaje(d.campana, cfg);
+  if (pedidoMsg) {
+    irA('menu');
+    mensajes = [{ tipo: 'botones', cuerpo: pedidoMsg.cuerpo, botones: pedidoMsg.botones, sinMenu: true }];
     return;
   }
   const carta = cartaDelNegocio();

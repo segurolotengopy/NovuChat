@@ -1935,6 +1935,74 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       expect(String(b['campanaReservaMensaje'])).toContain('Bs 178');
     });
   });
+
+  describe('campaña de pedido «Tortas mexicanas» (dato del negocio, 06/11)', () => {
+    const TORTAS = 'Hola, vi el anuncio de las tortas mexicanas y quiero hacer un pedido.';
+    const MSG = "¡Hola! Bienvenido a Q'Taco 🌮 Tenemos tortas sin queso por Bs 15 y con queso por Bs 20. Toca el botón";
+    const config = { campanaPedidoTexto: TORTAS, campanaPedidoMensaje: MSG };
+    const catalogo = [...CATALOGO, it_('torta-sin', 'Torta mexicana sin queso', 15, 'Promociones'), it_('torta-con', 'Torta mexicana con queso', 20, 'Promociones')];
+    const conTortas = (c: J = config, campanas: J[] = [campanaVigente('tortas', TORTAS)], extra: J = {}) => crear({ panel: panel({ campanas, catalogo, ...extra }), config: c });
+    const sale = (t: ResultadoTurno): string => cuerpos(t).join('\n');
+    it('NEGANDO: sin el dato, con otro texto, vencida, ausente en el servidor, pedidos apagados o mensaje vacío: no dispara', () => {
+      expect(sale(con(conTortas({ campanaPedidoTexto: '', campanaPedidoMensaje: '' })).escribe(TORTAS))).not.toContain('sin queso por Bs 15');
+      expect(sale(con(conTortas()).escribe('Hola, vi el anuncio de las tortas mexicanas y quiero un pedido grande'))).not.toContain('sin queso por Bs 15');
+      expect(sale(con(conTortas()).escribe('hola quiero tortas'))).not.toContain('sin queso por Bs 15');
+      const vencida = conTortas(config, [campanaVigente('tortas', TORTAS, AHORA - 10 * DIA, AHORA - 2 * DIA)]);
+      expect(sale(con(vencida).escribe(TORTAS))).not.toContain('sin queso por Bs 15');
+      expect(sale(con(conTortas(config, [])).escribe(TORTAS))).not.toContain('sin queso por Bs 15');
+      expect(sale(con(conTortas(config, [campanaVigente('otra', 'Otra campaña distinta')])).escribe(TORTAS))).not.toContain('sin queso por Bs 15');
+      expect(sale(con(conTortas({ ...config, pedidosActivo: false })).escribe(TORTAS))).not.toContain('sin queso por Bs 15');
+      expect(sale(con(conTortas({ ...config, campanaPedidoMensaje: '' })).escribe(TORTAS))).not.toContain('sin queso por Bs 15');
+    });
+    it('NEGANDO: el referral y una imagen (la foto del anuncio) no la disparan', () => {
+      const w = conTortas();
+      const c = con(w);
+      const img = c.imagen('media-1', 'image/jpeg', 'foto del anuncio de tortas');
+      expect(sale(img)).not.toContain('sin queso por Bs 15');
+      const w2 = conTortas();
+      const t = w2.mundo.turno(entrega(CLIENTE, mTexto('hola'), { perfil: 'Ana Duran', referral: { source_url: 'https://fb.me/tortas', headline: TORTAS, body: TORTAS, source_type: 'ad' } }), {});
+      expect(sale(t)).not.toContain('sin queso por Bs 15');
+    });
+    it('el texto exacto responde con el mensaje del negocio y SOLO «Hacer un pedido»; un solo mensaje; no vende; el botón abre la carta', () => {
+      const w = conTortas();
+      const c = con(w);
+      const t = c.escribe(TORTAS.toUpperCase());
+      expect(t.mensajes).toHaveLength(1);
+      expect(cuerpos(t)[0]).toBe(MSG);
+      expect(t.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido']);
+      expect(idDeBoton(t, 'Hacer un pedido')).toBe('m|pedido');
+      expect(estadoDe(w.mundo)['carrito'] ?? []).toHaveLength(0);
+      expect(t.avisos).toHaveLength(0);
+      const carta = c.toca('m|pedido', 'Hacer un pedido');
+      expect(sale(carta)).toContain('Torta mexicana sin queso');
+      expect(sale(carta)).toContain('Torta mexicana con queso');
+    });
+    it('no depende de reservasActivo y «Jueves de +2» (B) sigue igual con las dos campañas cargadas', () => {
+      const JUEVES = 'Hola, vi la promoción Jueves de +2 y quiero hacer una reserva.';
+      const cfg2 = { ...config, campanaReservaTexto: JUEVES, campanaReservaMensaje: 'Mensaje de jueves agrandar.' };
+      const campanas = [campanaVigente('tortas', TORTAS), campanaVigente('jueves', JUEVES)];
+      const a = con(conTortas({ ...cfg2, reservasActivo: false }, campanas)).escribe(TORTAS);
+      expect(cuerpos(a)[0]).toBe(MSG);
+      expect(a.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido']);
+      const b = con(conTortas({ ...cfg2, reservasActivo: true }, campanas)).escribe(JUEVES);
+      expect(cuerpos(b)[0]).toBe('Mensaje de jueves agrandar.');
+      expect(b.mensajes.flatMap(titulosDe)).toEqual(['Reservar mesa']);
+    });
+    it('los datos de Q\'Taco: texto exacto y mensaje con los MISMOS precios que los ítems de la carta de prueba (si cambia un precio, cambia el mensaje)', () => {
+      const b = configBase(QTACO);
+      expect(String(b['campanaPedidoTexto'])).toBe(TORTAS);
+      const mensaje = String(b['campanaPedidoMensaje']);
+      const sin = catalogo.find((x) => x['nombre'] === 'Torta mexicana sin queso') as J;
+      const con_ = catalogo.find((x) => x['nombre'] === 'Torta mexicana con queso') as J;
+      expect(mensaje).toContain(`sin queso por Bs ${sin['precio']}`);
+      expect(mensaje).toContain(`con queso por Bs ${con_['precio']}`);
+      expect([...mensaje.matchAll(/Bs (\d+)/g)].map((m) => Number(m[1])).sort()).toEqual([sin['precio'], con_['precio']].map(Number).sort());
+      const w = conTortas({ campanaPedidoTexto: String(b['campanaPedidoTexto']), campanaPedidoMensaje: mensaje });
+      const t = con(w).escribe(TORTAS);
+      expect(cuerpos(t)[0]).toBe(mensaje);
+      expect(t.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido']);
+    });
+  });
 });
 
 
@@ -2282,27 +2350,30 @@ describe('carta', () => {
     expect(cuerpos(cc.toca('m|pedido', 'Hacer un pedido')).join('\n')).toContain('Michelada');
   });
 
-  it('Q\'Taco ofrece todo (06/11): con sus datos reales, cócteles, cervezas y postres ACTIVOS están en la carta y se pueden pedir', () => {
-    expect(String(configBase(QTACO)['areasExcluidas'] ?? '')).toBe('');
-    expect(String(configBase(QTACO)['palabrasExcluidas'] ?? '')).toBe('');
+  it('Q\'Taco sin alcohol (06/11, pedido de Samuel): con sus datos reales, un cóctel y una cerveza ACTIVOS no salen en la carta ni se pueden pedir; un postre sin alcohol sí', () => {
+    const b = configBase(QTACO);
+    expect(String(b['areasExcluidas'])).toBe('cocteleria,cervezas');
     const CARTA: J[] = [
       it_('taco', 'Orden de 3 tacos al pastor', 48, 'tacos'), it_('coctel', 'Cóctel de la casa', 40, 'cocteleria'),
       it_('cerveza', 'Cerveza artesanal 500 ml', 28, 'cervezas'), it_('helado', 'Helado de vainilla', 18, 'postres'),
     ];
-    const w = crear({ panel: panel({ catalogo: CARTA }), config: { areasExcluidas: '', palabrasExcluidas: '' } });
+    const w = crear({ panel: panel({ catalogo: CARTA }), config: { areasExcluidas: String(b['areasExcluidas']), palabrasExcluidas: String(b['palabrasExcluidas']) } });
     const c = con(w);
     c.escribe('hola');
     const texto = cuerpos(c.toca('m|pedido', 'Hacer un pedido')).join('\n');
-    for (const esta of ['Cóctel de la casa', 'Cerveza artesanal', 'Helado de vainilla']) expect(texto, esta).toContain(esta);
+    expect(texto).toContain('Helado de vainilla');
+    expect(texto).toContain('tacos al pastor');
+    for (const no of ['Cóctel de la casa', 'Cerveza artesanal']) expect(texto, no).not.toContain(no);
     w.estado.extraccion = EX([ln('Cerveza artesanal 500 ml', 1)]);
     const t = c.escribe('quiero una cerveza');
-    expect(cuerpos(t).join('\n')).not.toMatch(/no está disponible para pedir por WhatsApp/);
+    expect(estadoDe(w.mundo)['carrito'] ?? []).toHaveLength(0);
+    expect(cuerpos(t).join('\n')).not.toMatch(/resumen|total/i);
   });
 
   it('las áreas excluidas de Q\'Taco son las REALES de su carta: un cóctel, un shot, un vino, una cerveza y un helado salen EXCLUIDOS, y un taco NO', () => {
     // La comparación es por `vmNorm` (minúsculas y sin tildes), no por parecido: «Cócteles» no excluía «cocteleria», y el asistente vendía cócteles,
     // shots, vinos y helados contra lo que pidió el comercio (nada de bebidas alcohólicas ni helados). Los nombres de área son los de su carta; los ítems, de relleno.
-    expect(String(configBase(QTACO)['areasExcluidas'] ?? '')).toBe(''); // 06/11: Q'Taco ya no excluye áreas; la barrera se prueba con las áreas que tenía
+    expect(configBase(QTACO)['areasExcluidas']).toBe('cocteleria,cervezas'); // 06/11: Samuel pidió quitar el alcohol; los postres sin alcohol se ofrecen
     const CARTA_REAL: J[] = [
       it_('taco', 'Orden de 3 tacos al pastor', 48, 'tacos'),
       it_('refresco', 'Refresco de la casa', 12, 'bebidas'),
@@ -2349,7 +2420,7 @@ describe('carta', () => {
     ];
     // 05/11 (Samuel): Q'Taco ya NO excluye por palabra: la lista de sus datos está vacía y la barrera sigue existiendo para quien la configure.
     const LISTA = 'helado,cerveza,coctel,vino,shot';
-    expect(String(configBase(QTACO)['palabrasExcluidas'] ?? '')).toBe('');
+    expect(String(configBase(QTACO)['palabrasExcluidas'])).toMatch(/cerveza.*coctel.*vino.*shot/);
     const pedir = (dicho: string, config: J = {}) => {
       const w = crear({ panel: panel({ catalogo: SIN_EXCLUIDOS }), config });
       const c = con(w);

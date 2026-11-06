@@ -1463,10 +1463,13 @@ describe('palabras excluidas: lo que el negocio NO vende por WhatsApp, aunque la
   const RUTA_QTACO = join(CARPETA, '../../../../../admin/scripts/datos/venta-minima/qtaco.json');
   // 05/11: Q'Taco dejó de excluir por palabra (su lista está vacía); la barrera se prueba con la lista que tenía.
   const PALABRAS = 'helado,paleta,postre,cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri,heladito';
-  it('Q\'Taco ya no excluye por palabra: «una cerveza» y «un postre» se tratan como cualquier producto', () => {
+  it('Q\'Taco (06/11, sin alcohol): «una cerveza» se excluye, y «un postre» sin alcohol no', () => {
     const datos = JSON.parse(readFileSync(RUTA_QTACO, 'utf8')) as { configBase: { palabrasExcluidas?: string } };
-    expect(datos.configBase.palabrasExcluidas ?? '').toBe('');
-    for (const dicho of ['una cerveza', 'un postre']) expect(L.pdAgregarLineas([], SOLO_VENDIBLE, [ln(dicho, 1)], [], datos.configBase.palabrasExcluidas ?? '').noEncontrados.map((n: { motivo: string }) => n.motivo), dicho).not.toContain('excluido');
+    const lista = datos.configBase.palabrasExcluidas ?? '';
+    expect(lista).not.toBe('');
+    const motivos = (dicho: string) => L.pdAgregarLineas([], SOLO_VENDIBLE, [ln(dicho, 1)], [], lista).noEncontrados.map((n: { motivo: string }) => n.motivo);
+    expect(motivos('una cerveza')).toContain('excluido');
+    expect(motivos('un postre')).not.toContain('excluido');
   });
   // Una carta SIN ningún item de esas áreas, y ninguna lista de excluidos por área: solo la lista de palabras.
   const SOLO_VENDIBLE = L.pdCarta(CATALOGO.filter((i: { area: string }) => !['cervezas', 'cocteleria', 'postres'].includes(i.area)));
