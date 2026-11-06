@@ -21,6 +21,7 @@
  */
 import { closeSync, constants, openSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import vm from 'node:vm';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
@@ -80,7 +81,7 @@ function libreria() {
   // Excepción deliberada a `devsecops.js-eval-prohibido`: se ejecutan dos archivos NUESTROS y versionados (el cuerpo de un nodo Code de n8n no es un módulo
   // importable), con el único fin de validar los textos de los datos con el mismo código que los verificará en producción. Nada de lo que viene de los datos se evalúa.
   // nosemgrep: devsecops.js-eval-prohibido
-  LIBRERIA = new Function(`${filtro}\n${rescate}\nreturn { rsTextoFijoValido, rsSaludoValido };`)();
+  LIBRERIA = vm.compileFunction(`${filtro}\n${rescate}\nreturn { rsTextoFijoValido, rsSaludoValido };`, [])();
   return LIBRERIA;
 }
 

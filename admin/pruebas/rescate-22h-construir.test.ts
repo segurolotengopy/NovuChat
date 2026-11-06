@@ -281,10 +281,13 @@ describe('datos inválidos', () => {
 
 describe('contrato del consumidor: el tenant declara la prueba negativa de su batería', () => {
   const rechaza = (ruta: string, patron: RegExp) => expect(() => construir({ tenant: 'rroca-ruben', datos: ruta, verificar: true })).toThrow(patron);
-  it('Rubén lo declara como pendiente del PR-B, explícito (no inventa una ruta)', () => {
+  it('Rubén declara la prueba negativa de su batería, y existe', () => {
     const d = JSON.parse(leer(DATOS)) as J;
-    expect(d['contratoConsumidor']).toEqual({ estado: 'pendiente-pr-b' });
-    expect(estadoDelContrato(d['contratoConsumidor'])).toEqual({ pendiente: true, errores: [] });
+    expect(d['contratoConsumidor']).toEqual({ prueba: 'admin/pruebas/tenants/rroca-ruben/rescate-contrato.test.ts' });
+    expect(estadoDelContrato(d['contratoConsumidor'])).toEqual({ pendiente: false, errores: [] });
+  });
+  it('el estado pendiente se sigue reconociendo (y la publicación lo niega)', () => {
+    expect(estadoDelContrato({ estado: 'pendiente-pr-b' })).toEqual({ pendiente: true, errores: [] });
   });
   it('un tenant que no declara nada falla con un mensaje claro', () => {
     rechaza(datosTemporales((d) => { delete d['contratoConsumidor']; }), /contratoConsumidor: falta/);
@@ -309,7 +312,7 @@ describe('publicación: no sale con marcadores', () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('REEMPLAZAR_TELEFONOS_RESCATE_RROCA_RUBEN');
     expect(r.stderr).toContain('REEMPLAZAR_PHONE_NUMBER_ID_RROCA_RUBEN');
-    expect(r.stderr, 'mientras el contrato esté pendiente tampoco se publica').toContain('pendiente-pr-b');
+    expect(r.stderr, 'el contrato de Rubén ya no está pendiente').not.toContain('pendiente-pr-b');
   });
   it('con los marcadores sustituidos, la guardia lo deja pasar; basta uno sin sustituir para negarlo', () => {
     const lleno = copia(RUBEN);

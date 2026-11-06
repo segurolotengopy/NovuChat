@@ -7,6 +7,7 @@
  * salga sin el saludo que dice «asistente virtual» (prohibición 4) o con el saludo repetido.
  */
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -37,7 +38,7 @@ function cargar(): Lib {
   // Excepción deliberada a `devsecops.js-eval-prohibido`: se ejecutan dos archivos NUESTROS y versionados (el cuerpo de un nodo Code de n8n no es un
   // módulo importable) dentro de una prueba que no corre en ningún servidor; es el código que corre de verdad en n8n, no una copia suya.
   // nosemgrep: devsecops.js-eval-prohibido
-  return new Function(codigo)() as Lib;
+  return vm.compileFunction(codigo, [])() as Lib;
 }
 const L = cargar();
 

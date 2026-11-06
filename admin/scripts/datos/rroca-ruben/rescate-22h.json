@@ -6,7 +6,7 @@
     "graph": "Graph WhatsApp Ruben (Bearer)",
     "gemini": "Google Gemini(PaLM) Api account"
   },
-  "contratoConsumidor": { "estado": "pendiente-pr-b" },
+  "contratoConsumidor": { "prueba": "admin/pruebas/tenants/rroca-ruben/rescate-contrato.test.ts" },
   "configBase": {
     "phoneNumberId": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_RUBEN",
     "waGraphVersion": "v26.0",
@@ -15,9 +15,9 @@
     "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_RESCATE_RROCA_RUBEN",
     "telefonosExcluidos": "",
     "rescateQuien": "Rubén",
-    "rescateContexto": "Rubén Elías Roca es autor del libro digital «IA para Emprendedores Independientes», con cuatro bonos, pensado para emprendedores sin conocimientos técnicos.",
+    "rescateContexto": "Rubén Elías Roca es autor del libro digital «Noches Sin Insomnio», de pago único. No hay bono ni garantía. No se hacen promesas de salud ni de resultados.",
     "rescateSaludo": "Hola, soy el asistente virtual de Rubén.",
-    "rescateTextoFijo": "Hola, soy el asistente virtual de Rubén. Quedó pendiente tu consulta sobre «IA para Emprendedores». ¿Te quedó alguna duda para empezar?",
+    "rescateTextoFijo": "Hola, soy el asistente virtual de Rubén. Quedó pendiente tu consulta sobre «Noches Sin Insomnio». ¿Te quedó alguna duda para decidirte?",
     "quienPromete": "ruben"
   }
 }

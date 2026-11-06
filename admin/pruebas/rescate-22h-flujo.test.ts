@@ -120,6 +120,14 @@ describe('el modelo falla o redacta algo que el código rechaza: sale EXACTAMENT
     ['«QR»', () => gemini('Recuerda que tu negocio puede usar un QR sin problema, ¿tienes alguna duda?')],
     ['una promesa de Rubén', () => gemini('Rubén te escribirá pronto para ayudarte con tu tienda, ¿te quedó alguna duda?')],
     ['un saludo propio', () => gemini('Hola, vi que tienes una tienda de ropa y quieres crecer, ¿te quedó alguna duda?')],
+    ['una garantía', () => gemini('Tu lectura tiene garantía total y sigue a tu ritmo, ¿te quedó alguna duda?')],
+    ['«garantizado»', () => gemini('Dormir mejor está garantizado con el libro, ¿te quedó alguna duda?')],
+    ['un bono', () => gemini('El libro incluye un bono para ti y tu descanso, ¿te quedó alguna duda?')],
+    ['«curar»', () => gemini('El libro puede curar tu insomnio de una vez, ¿te quedó alguna duda?')],
+    ['«sin pastillas»', () => gemini('Puedes dormir sin pastillas con este libro, ¿te quedó alguna duda?')],
+    ['«simulado»', () => gemini('Tu cobro quedó simulado y sin problema, ¿te quedó alguna duda?')],
+    ['«pago verificado»', () => gemini('Tu pago verificado ya está listo, ¿te quedó alguna duda?')],
+    ['un enlace https', () => gemini('Entra a https://ejemplo.org y mira el libro, ¿te quedó alguna duda?')],
     ['una respuesta vacía', () => ({})],
     ['un error HTTP del modelo', () => ({ error: { message: 'HTTP 500' } })],
     ['una excepción del nodo', () => { throw new Error('timeout'); }],
@@ -140,6 +148,36 @@ describe('el modelo falla o redacta algo que el código rechaza: sale EXACTAMENT
     const sin = correr({ rescates: [rescate(TEL, { textos: [] })] });
     expect(sin.r.mensajes[0]!.cuerpo).toBe(FIJO);
     invariantes(c);
+  });
+});
+
+describe('nada comercial a quien pidió no ser contactado, está en crisis o bloqueado (defensa en profundidad)', () => {
+  for (const marca of ['noContactar', 'no_contactar', 'bloqueada', 'riesgoEn', 'enCrisis']) {
+    it(`si el servicio devuelve a un contacto con la marca «${marca}», no sale nada para él y los demás sí`, () => {
+      const valor = marca === 'riesgoEn' ? AHORA - HORA : true;
+      const c = correr({ rescates: [rescate(TEL, { [marca]: valor }), rescate(OTRO)] });
+      expect(c.r.fallo).toBeNull();
+      expect(c.r.mensajes.map((m) => m.a)).toEqual([OTRO]);
+      expect(c.reportes.map((r) => r['telefono'])).toEqual([OTRO]);
+    });
+  }
+  it('con la marca y una sola persona: 0 mensajes y 0 llamadas al modelo', () => {
+    const c = correr({ rescates: [rescate(TEL, { noContactar: { en: AHORA } })] });
+    expect(c.r.mensajes).toHaveLength(0);
+    expect(c.modelos).toBe(0);
+  });
+});
+
+describe('idempotencia', () => {
+  it('el mismo teléfono repetido en la respuesta sale una sola vez, con el primer reclamo', () => {
+    const c = correr({ rescates: [rescate(TEL), rescate(TEL, { textos: ['otra cosa distinta'] })] });
+    expect(c.r.mensajes).toHaveLength(1);
+    expect(c.reportes).toHaveLength(1);
+  });
+  it('si el reclamo del reintento ya no trae al contacto (el servidor lo marcó), no sale nada', () => {
+    const c = correr({ rescates: [] });
+    expect(c.r.mensajes).toHaveLength(0);
+    expect(c.modelos).toBe(0);
   });
 });
 
