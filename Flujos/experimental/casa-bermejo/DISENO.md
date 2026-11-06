@@ -1,26 +1,47 @@
-# Casa Bermejo: diseño del flujo de venta (31/10/2026)
+# Casa Bermejo: diseño del flujo del asistente, Bolivia primero (B3, 05/11/2026)
 
-Parte de la lista cerrada de 12 funcionalidades (encargo de la sesión de Casa Bermejo, autorizado por Principal el 31/10/2026), no del JSON de otro flujo (regla «basado en»). El flujo nace APAGADO, sin URL provisional y sin publicar: publicar y registrar cliente10 en el receptor son botones de Andres, uno por acción.
+**Qué es.** El asistente de WhatsApp de un comercio con tienda (tenant `casa-bermejo`). El catálogo, el precio final y el stock los sirve NovuTienda por HTTP (contrato v1: `docs/integracion-novuchat.md` del repositorio de NovuTienda); este flujo no guarda catálogo. El código calcula (carrito, montos, cobro, estados); el modelo conversa. Alcance de este bloque: **Bolivia** (+591, QR del comercio sin monto, comprobante). Argentina (alias en ARS) entra en B4, cuando exista el servidor de alias; confirmar pedido y descuento de stock es del servidor (B5). **Apagado y no publicable**: el flujo se arma, no se importa ni se enciende.
 
-## Qué se incluye de lo común (sin copiar)
-Entrada verificada del receptor, cadena de envío, medios entrantes, guardado de medios, nodos neutros y motor de venta (`Flujos/experimental/venta-digital/src/`), el armador de `comun-sin-agente`, igual que Walisuma. Zona de este flujo: solo lo propio.
+**Regla «basado en» (01/10/2026).** No se copia el flujo de Walisuma. Se parte de esta lista de funcionalidades y se reutilizan los módulos comunes (`Flujos/experimental/venta-digital/src/`, `comun-sin-agente/`, `Flujos/src/core/medios/`), incluidos desde su fuente, nunca copiados.
 
-## Lo propio (y su costo en nodos)
-1. País por prefijo del remitente (+591, +54; otro = Bolivia y aviso a la tienda): código en «Decidir turno», 0 nodos.
-2. Catálogo en vivo desde Wegic: 1 nodo HTTP (credencial de n8n, nunca en el archivo) + 1 Code que lo normaliza al formato del carrito (`id`, `nombre`, `precioCentavos`, `moneda`, `stock`, `foto`). El resto del flujo ve solo el formato normalizado: si Wegic cambia, cambia solo ese adaptador. Wegic caído = pase con vendedor (aviso + botón).
-3. Precio tal como lo publica el sitio, sin recalcular. Si resulta calculado en el navegador, el adaptador replica la fórmula y se prueba contra 10 productos (pendiente de la respuesta de Wegic).
-4. Entrega por país (datos, sin calcular ni cobrar envío): AR nombre, DNI, dirección, código postal, provincia; BO nombre, CI, ciudad, flota o terminal. Es dato de «Config del negocio».
-5. Cobro BO: QR del comercio sin monto (imagen de la Consola) + cotejo del comprobante. Cobro AR: 1 nodo HTTP «Pedir alias» al contrato del servidor (código fijo de error → frase fija → pase con vendedor); el alias se dice en texto, sin imagen. Mientras el servidor no exista, el nodo apunta a una interfaz simulada solo en la variante de prueba.
-6. Comprobante: «Cotejar en el servidor» con `moneda`. Texto: solo «llegó y los datos coinciden».
-7. Pedido a la Consola (PR-4) y aviso a la tienda; tomar; pase con vendedor; guardado de medios.
-Estimado: ~58 nodos de Walisuma + 3 (Wegic ×2, alias) = 61. Walisuma ya tiene excepción declarada de 58; este flujo necesita su propia excepción (decisión de Andres) o se recorta un nodo del propio.
+## Funcionalidades (lista corta, confirmada en el alcance cerrado del 31/10)
+1. Entrar solo por la entrega firmada del receptor; sesión por `messages[0].from`; filtro de eventos; normalización de todos los tipos de entrada.
+2. Separar por país del remitente (`ceMercadoDePrefijo`): +591 atendido en B3; +54 con texto fijo hasta B4; otro país, texto fijo.
+3. Leer el catálogo de NovuTienda (HTTP, credencial de n8n) y adaptarlo con `ceVendibles` (B2): precio exacto, `disponible`, `stock`, cotización `vigente`. Cualquier falla = pase a vendedor (aviso + botón, `ceTextoPase`).
+4. Asesorar (una llamada al modelo por turno de conversación libre) y armar el carrito por código (`vcVendibles` → `vcLineas`; el stock recorta la cantidad).
+5. Datos de entrega (Bolivia: nombre, ciudad, empresa de flota o terminal o dirección; por confirmar con el comercio). **El asistente NO toma CI ni DNI en el chat** (decisión de Andres, 05/11/2026, opción A): el comercio lo pide a mano al coordinar el envío. Motivo: la ficha de 48 h en n8n nunca guarda documentos y así el flujo queda como el de la base de venta, sin dato sensible en el almacén de n8n. El asistente tampoco calcula ni cobra el envío.
+6. Cobro real Bolivia: QR del comercio SIN monto (imagen de la consola) + lectura del comprobante y cotejo en el servidor. Nunca «pago acreditado»: «tu comprobante llegó y los datos coinciden».
+7. Pedido: aviso al comercio (plantilla de pedido, una vez cuando llega el comprobante) y registro en la consola de NovuChat (PR-4, de Clínicas). Nada se escribe en NovuTienda desde este flujo.
+8. Derivación a un vendedor (aviso Y botón), Tomar, comercio no operativo, uso extendido, guardado de medios (obligatorio), identidad (nunca niega ser una IA).
+9. Recibo: no automático (decisión de Andres, 05/11): lo envía el comercio desde su consola.
 
-## Orden de construcción (cada paso, PR chico)
-A. Esqueleto: construir.mjs, plantilla, datos con marcadores, pruebas de armado (apagado, sin clave, sin URL).
-B. Adaptador de Wegic con fuente simulada + país por prefijo.
-C. Cobro BO (QR sin monto) y cobro AR (alias del servidor, contrato simulado).
-D. Entrega por país, avisos, pase con vendedor y las pruebas negando del encargo (§4).
-Todo se declara «no publicable» (`--publicable` sale 1) hasta tener: respuesta de Wegic, alias y QR, teléfono de la tienda, servidor ARS y PR-4, método de pago en la WABA …3055.
+## Qué es común (se incluye) y qué es propio (se escribe)
+| Pieza | Origen |
+|---|---|
+| Entrada verificada del receptor, Descartar repetidos | `venta-minima/flujo.plantilla.json`, por nombre |
+| Carga de entrada, Config del negocio, Normalizar entrada, Puerta del turno, Resumen del turno | `venta-digital/src/nodos/` (neutros, parámetro `CN_TENANT`) |
+| Cobro (`cb*`), avisos (`av*`), conversación (`vd*`), carrito (`vc*`) | `venta-digital/src/` |
+| Catálogo externo (`ce*`) | `venta-digital/src/catalogo-externo.js` (B2) |
+| Medios (voz, imagen, PDF, comprobante guardado) y guardado de medios (11 nodos) | `Flujos/src/core/medios/`, `comun-sin-agente/src/guardado.mjs` |
+| Cadena de envío y reporte saliente | `comun-sin-agente/src/envio.mjs` |
+| **Propio:** `Decidir turno`, `Interpretar lectura`, `Armar avisos`, `Armar mensajes`, la librería `bm*` (venta de este comercio: textos, entrega por país, intenciones por código) y el nodo `Traer catálogo` | `Flujos/experimental/casa-bermejo/` |
 
-## Mensajes por conversación
-Los de la base de venta común: 1 por turno, 2 en el turno del QR de Bolivia, 1 a la tienda por pedido, +1 por pase. Argentina no suma imagen de QR. Este diseño agrega 0.
+## Nodos y tope
+Referencia: Walisuma tiene 58 (47 + 11 del guardado). Este flujo agrega UN nodo HTTP (`Traer catálogo`, con «Continue on Fail» solo en ese nodo y NO en la entrada verificada) → 59. Decisión para el armado, a declarar antes de construir: **plegar `Interpretar lectura` dentro de `Decidir turno`** (queda 58) o pedir la excepción a 59. Se prefiere plegar: menos nodos, más cálculo en código.
+
+## Cómo se decide un turno (por código)
+Puerta cerrada → nada. País: BO sigue; AR/otro → texto fijo. Medios: voz = texto; comprobante → cotejo; imagen/archivo → texto fijo. Sobre el texto, por código: identidad, factura, hablar con una persona → pase. Sin catálogo (`ceVendibles` ok:false) → pase con `ceTextoPase`, y `alerta` → aviso a quien opera. Solo la conversación libre llama al modelo (1 llamada: conversa Y propone `{texto, lineas, entrega}`); precios, totales y descuentos del modelo se ignoran; el QR se emite con el pedido, la entrega completa y la confirmación del cliente (detectada por código). Un QR abierto cuyo carrito cambia cierra el cobro (`cobro_cancelado`) antes de emitir otro.
+
+## Costo (unidad: conversación)
+Como la base de venta: 1 mensaje al cliente por turno (o ninguno), 2 en el turno del QR (resumen + imagen), 1 al comercio por pedido, +1 por derivación (a lo más una cada 30 min por teléfono). Argentina no lleva imagen (alias en texto). Llamadas al modelo: 0 o 1 por turno. El guardado de medios no manda mensajes. **Cero mensajes agregados respecto de la base**; la suite del flujo lo cuenta (compuerta pendiente desde B2).
+
+## Pruebas (negando)
+Armado (nodos, conexiones, receptor, inclusiones byte a byte, no publicable); sesión (dos teléfonos nunca comparten ficha); catálogo (cada código de error → pase con aviso y botón; moneda/mercado; cotización; stock); cobro (nunca «acreditado/verificado/recibimos»; QR sin monto; comprobante repetido; carrito cambiado); voz (NIEGA_IA, sin promesas ni presión); mensajes por conversación; Tomar y comercio no operativo; regresión de Walisuma.
+
+## Etapas (un PR cada una)
+- **B3a (este PR):** este diseño. Solo documentos.
+- **B3b:** `bm*` (librería pura de la venta de Bolivia) + sus nodos de código + pruebas puras.
+- **B3c:** plantilla, `construir.mjs`, datos con marcadores `REEMPLAZAR_*`, JSON armado y suite del flujo (mundo de mentira).
+
+## Condiciones antes de publicar (no de este bloque)
+Escritura anónima de Wegic cerrada y verificada (o sitio nuevo en producción); WABA con método de pago; plantilla de pedido aprobada; QR, titular, lista de envío y WhatsApp de la tienda entregados; credencial del catálogo cargada en n8n por quien opera; ensayo con teléfono real y el «sí» de Andres por acción.
