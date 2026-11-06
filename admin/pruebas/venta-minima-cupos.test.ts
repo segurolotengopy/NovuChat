@@ -382,6 +382,52 @@ describe('0 mensajes por conversación agregados o quitados', () => {
 });
 
 // =====================================================================================================
+describe('tope de 71 nodos: «Consumir cupos» y «¿Cupo concedido?» no agregan ni alteran lo que lee el cliente', () => {
+  /** Lo que el cliente recibe, tal cual (texto, botones, tipo): la secuencia completa de un recorrido con aviso. */
+  const recorrido = (w: Mundial): string[] => {
+    const v: string[] = [];
+    const anota = (t: ReturnType<typeof turno>) => v.push(JSON.stringify(t.mensajes));
+    anota(turno(w, texto('hola')));
+    anota(turno(w, texto(pide)));
+    w.mundo.avanzar(61);
+    w.estado.extraccion = { lineas: [{ producto: 'tacos de birria', cantidad: 4, forma: 'unidad', detalle: '' }], entrega: 'recojo', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+    const resumen = turno(w, texto('quiero 4 tacos de birria'));
+    anota(resumen);
+    anota(turno(w, boton(idDeBoton(resumen, 'Confirmar pedido'), 'Confirmar pedido')));
+    return v;
+  };
+  const conPanel = (flujo: Flujo = QTACO) => crear({}, flujo, {}, { 'Traer configuración': () => ({ statusCode: 200, body: { ...panel(), cobro: { activo: false } } }) });
+
+  it('misma secuencia al cliente (mensajes, botones y textos) con el servidor contando que con «Consumir cupos» fuera de servicio (el flujo anterior): ni uno más, ni uno menos, ni uno distinto', () => {
+    const con = recorrido(conPanel());
+    const sin = conPanel();
+    sin.sesion.servidor.fallar = (c) => (Array.isArray((c['sesion'] as J | undefined)?.['cupos']) ? 503 : null); // sin el servidor de cupos: lo mismo que no tener los dos nodos
+    expect(recorrido(sin)).toEqual(con);
+    expect(con.map((x) => (JSON.parse(x) as unknown[]).length)).toEqual([1, 1, 1, 1]);
+  });
+
+  it('BORDE: con el cupo agotado el cliente lee «No pude pasarle tu pedido…» y NO «pasé tu pedido»; sigue siendo UN mensaje', () => {
+    const { w, id } = pedidoListo();
+    w.sesion.servidor.sembrarCupo(PHONE_ID, 'avisos', 'comercio', null, 'dia', 150, 150);
+    const t = turno(w, boton(id, 'Confirmar pedido'));
+    expect(t.fallo).toBeNull();
+    expect(t.avisos).toHaveLength(0);
+    expect(t.mensajes).toHaveLength(1);
+    const leido = t.mensajes.map((m) => String(m.cuerpo)).join('\n');
+    expect(leido).toContain('No pude pasarle');
+    expect(leido).not.toMatch(/pas[eé] tu pedido|ya (lo |la )?pas[eé]/i);
+  });
+
+  it('el flujo versionado de Q\'Taco tiene exactamente 71 nodos y ninguno de los dos es de mensajería al cliente', () => {
+    expect(QTACO.nodes).toHaveLength(71);
+    for (const n of ['Consumir cupos', '¿Cupo concedido?']) {
+      expect(String(nodo(QTACO, n).type)).not.toMatch(/whatsapp/i);
+      expect(JSON.stringify(nodo(QTACO, n).parameters)).not.toMatch(/graph\.facebook|messages/);
+    }
+  });
+});
+
+// =====================================================================================================
 describe('avisos ya enviados cuyo compromiso falló: la marca lleva el teléfono (`teléfono|clave`)', () => {
   const sinCompromiso = (c: J): number | null => { const q = c['sesion'] as J | undefined; return q && q['accion'] === 'comprometer' && !Array.isArray(q['cupos']) ? 503 : null; };
   const huerfanos = (w: Mundial): string[] => Object.keys((((w.mundo.sd['ventaMinima'] ?? {}) as J)['avisosHuerfanos'] ?? {}) as J);

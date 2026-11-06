@@ -815,7 +815,7 @@ describe('PR-A (05/10): la dirección se pide escrita O con la ubicación; el av
     expect(c).toHaveLength(1); // 0 mensajes agregados: es el mismo mensaje que ya salía en texto
     expect(c[0]!['payload'].interactive).toEqual({
       type: 'location_request_message',
-      body: { text: 'Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «menú».' },
+      body: { text: 'Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».' },
       action: { name: 'send_location' },
     });
     expect(c[0]!['tipoReporte']).toBe('interactive');
@@ -1733,7 +1733,7 @@ describe('QR REAL VENCIDO (07/10): no se ofrece un QR que la imagen no va a serv
     expect(JSON.stringify(c.mensajes)).not.toContain('qr_enviado');
     const t = cuerpoDe(j);
     expect(t).toContain('No puedo mostrarte el QR en este momento.');
-    expect(t).toMatch(/Para volver al inicio, escribe «menú»\.$/);
+    expect(t).toMatch(/Para volver al inicio, escribe «inicio»\.$/);
     expect(t).not.toMatch(/Total a pagar|Escan[ée]alo|te avisa|te llama|te escribir|lo consulto/i);
     expect(t).not.toMatch(PROHIBIDAS);
     expect(JSON.stringify(j['payload'])).toContain('Escribir al local');

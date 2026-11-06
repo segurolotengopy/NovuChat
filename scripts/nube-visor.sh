@@ -8,6 +8,8 @@
 #   reclamarsalidapersona   → `reclamarSalidaPersona` (HTTP; la llama el flujo n8n con la credencial de la
 #                              ingesta del número, Core, H2-3)
 #   confirmarsalidapersona  → `confirmarSalidaPersona` (HTTP; ídem)
+#   reclamarrescates        → `reclamarRescates` (HTTP; la llama el flujo n8n de rescate de 22 h con la
+#                              credencial de la ingesta del número, módulo Pedidos)
 #   guardarmedio            → `guardarMedio` (HTTP; la llama el flujo n8n con el token del número, Core, H3)
 #   vermedio                → `verMedio` (callable; el visor de medios en Conversaciones, Core, M3)
 #   bloquearcontacto        → `bloquearContacto` (callable; el asistente deja de responderle a un contacto, Core)
@@ -29,7 +31,7 @@
 # `NOT_FOUND` o `RESOURCE_EXHAUSTED`, sin sesión, quiere decir que el código
 # atendió a un anónimo («abierto»).
 #
-# LAS DOS HTTP (`reclamarsalidapersona`, `confirmarsalidapersona`) NO son
+# LAS CUATRO HTTP (`reclamarsalidapersona`, `confirmarsalidapersona`, `reclamarrescates`, `guardarmedio`) NO son
 # callables: no hay sesión de Firebase ni App Check; la barrera es la credencial
 # de la ingesta del número (`rutaAutenticada`, secreto por alias), que el código
 # exige ANTES de mirar la entrada. Sin ella contestan `401` con el texto «no
@@ -91,6 +93,8 @@ readonly SERVICIO_RECLAMAR="reclamarsalidapersona"
 readonly FUNCION_RECLAMAR="reclamarSalidaPersona"
 readonly SERVICIO_CONFIRMAR="confirmarsalidapersona"
 readonly FUNCION_CONFIRMAR="confirmarSalidaPersona"
+readonly SERVICIO_RESCATES="reclamarrescates"
+readonly FUNCION_RESCATES="reclamarRescates"
 readonly SERVICIO_GUARDAR="guardarmedio"
 readonly FUNCION_GUARDAR="guardarMedio"
 readonly SERVICIO_MEDIO="vermedio"
@@ -99,7 +103,7 @@ readonly SERVICIO_BLOQUEAR="bloquearcontacto"
 readonly FUNCION_BLOQUEAR="bloquearContacto"
 readonly SERVICIO_DESBLOQUEAR="desbloquearcontacto"
 readonly FUNCION_DESBLOQUEAR="desbloquearContacto"
-readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_TOMAR}|${SERVICIO_DEVOLVER}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}|${SERVICIO_GUARDAR}|${SERVICIO_MEDIO}|${SERVICIO_BLOQUEAR}|${SERVICIO_DESBLOQUEAR}"
+readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_TOMAR}|${SERVICIO_DEVOLVER}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}|${SERVICIO_GUARDAR}|${SERVICIO_MEDIO}|${SERVICIO_BLOQUEAR}|${SERVICIO_DESBLOQUEAR}|${SERVICIO_RESCATES}"
 readonly ROL="roles/run.invoker"
 readonly MIEMBRO="allUsers"
 readonly REPO="segurolotengopy/NovuChat"
@@ -136,6 +140,7 @@ case "$PEDIDO" in
   "$SERVICIO_DEVOLVER")  SERVICIO="$SERVICIO_DEVOLVER";  FUNCION="$FUNCION_DEVOLVER";  TIPO="callable" ;;
   "$SERVICIO_RECLAMAR")  SERVICIO="$SERVICIO_RECLAMAR";  FUNCION="$FUNCION_RECLAMAR";  TIPO="http" ;;
   "$SERVICIO_CONFIRMAR") SERVICIO="$SERVICIO_CONFIRMAR"; FUNCION="$FUNCION_CONFIRMAR"; TIPO="http" ;;
+  "$SERVICIO_RESCATES")  SERVICIO="$SERVICIO_RESCATES";  FUNCION="$FUNCION_RESCATES";  TIPO="http" ;;
   "$SERVICIO_GUARDAR")   SERVICIO="$SERVICIO_GUARDAR";   FUNCION="$FUNCION_GUARDAR";   TIPO="http" ;;
   "$SERVICIO_MEDIO")     SERVICIO="$SERVICIO_MEDIO";     FUNCION="$FUNCION_MEDIO";     TIPO="callable" ;;
   "$SERVICIO_BLOQUEAR")  SERVICIO="$SERVICIO_BLOQUEAR";  FUNCION="$FUNCION_BLOQUEAR";  TIPO="callable" ;;
@@ -342,7 +347,11 @@ INTENTOS="${NUBE_VISOR_INTENTOS:-9}"; ESPERA="${NUBE_VISOR_ESPERA:-10}"
 if [[ "$TIPO" == http ]]; then
   SIN="credencial"; MSG_ESPERADO="texto 401 «no autorizado»"
   MSG_PROPIO="sin credencial contesta NUESTRO código (401 «no autorizado»), no el 403 de Google"
-  QUE_DEJA="El flujo n8n «Salida de persona» ya no puede llamar a"; BARRERA="la credencial de ingesta del número"
+  case "$SERVICIO" in
+    "$SERVICIO_RESCATES") QUE_DEJA="El flujo n8n de rescate de 22 h ya no puede llamar a" ;;
+    *)                    QUE_DEJA="El flujo n8n «Salida de persona» ya no puede llamar a" ;;
+  esac
+  BARRERA="la credencial de ingesta del número"
 else
   SIN="sesión"; MSG_ESPERADO="JSON de Firebase"
   MSG_PROPIO="sin sesión contesta NUESTRO código (JSON de Firebase), no el 403 de Google"

@@ -225,7 +225,7 @@
         {
           "cliente": {
             "tipo": "boton",
-            "titulo": "Menú"
+            "titulo": "Volver a inicio"
           },
           "esperado": {
             "estado": {
@@ -800,7 +800,7 @@
         {
           "cliente": {
             "tipo": "boton",
-            "titulo": "Menú"
+            "titulo": "Volver a inicio"
           },
           "esperado": {
             "estado": {
@@ -1076,7 +1076,7 @@
             "titulos": [
               "Seguir con mi pedido",
               "Escribir al local",
-              "Men[uú]"
+              "Volver a inicio"
             ],
             "estado": {
               "paso": "pedido_confirmar",

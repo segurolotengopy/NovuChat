@@ -36,6 +36,8 @@ import { configDefaults, defineConfig } from 'vitest/config';
  * El CI sigue corriendo `pruebas:reglas`: los dos proyectos, con emulador.
  */
 export const SUITES_PURAS = [
+  'pruebas/tenants/qtaco/cargar-productos-promos.test.ts',
+  'pruebas/modulos/pedidos/rescates-decision.test.ts',
   'pruebas/modulos/agenda/omitir-contactos-bloqueados.test.ts',
   'pruebas/central/cuenta-activa.test.ts',
   'pruebas/central/edicion-crm-pantalla.test.ts',
@@ -139,6 +141,7 @@ export const SUITES_PURAS = [
   'pruebas/central/consola-pagar.test.ts',
   'pruebas/central/consola-oculta.test.ts',
   'pruebas/plataforma/aplicar-consola-oculta.test.ts',
+  'pruebas/plataforma/habilitar-productos.test.ts',
   'pruebas/plataforma/resetear-ficha-flujo.test.ts',
   'pruebas/plataforma/aplicar-consola-conversaciones.test.ts',
   'pruebas/plataforma/rellenar-conversaciones.test.ts',
@@ -245,6 +248,7 @@ export const SUITES_PURAS = [
   'pruebas/senas-vencidas.test.ts',
   'pruebas/umbrales-atencion.test.ts',
   'pruebas/modulos/productos/xlsx.test.ts',
+  'pruebas/parametros-del-despliegue.test.ts',
 ];
 
 // Una entrada de SUITES_PURAS que no existe no falla sola: la suite movida sale

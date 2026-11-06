@@ -20,7 +20,7 @@
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
 //     pdTextoFaltanEntrega, pdLineasAviso, pdMonto (así los textos del pedido tienen un solo dueño).
 //   reserva: rsValidarExtraccion, rsFusionar, rsValidar, rsPreguntaFaltantes, rsResumen,
-//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto.
+//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto, prSoloReserva, prPedidoConMensaje.
 //   cobro: cbCaption, cbResumenCorto, cbResultado, cbEstadoParaAviso, cbTextoAlCliente.
 //
 // SUPUESTOS DECLARADOS (los de la tarea T7a, aprobados por la coordinadora):
@@ -386,7 +386,7 @@ function derivar(razon, conservarPaso, extra, sinFraseMenu, textoPropio) {
   const TEXTO_DERIVACION = typeof textoPropio === 'string' && textoPropio ? textoPropio : CUERPO_DERIVACION
     + (conservarPaso ? ' Tu pedido sigue esperando el comprobante.'
       // `sinFraseMenu` (costo del delivery, con el pedido en curso): el carrito se conserva, así que el texto no sugiere que se borra nada.
-      : (sinFraseMenu === true ? (en.carrito.length ? ' Tu pedido sigue guardado.' : '') : ' Para volver al inicio, escribe «menú».'))
+      : (sinFraseMenu === true ? (en.carrito.length ? ' Tu pedido sigue guardado.' : '') : ' Para volver al inicio, escribe «inicio».'))
     // Un pedido guardado por «Cambiar algo» sigue ahí aunque se derive: se dice cómo recuperarlo (se cumple por código en `Decidir turno`).
     + (!conservarPaso && en.carritoAnterior ? ' Tu pedido anterior sigue guardado: escribe «dejarlo como estaba» para recuperarlo.' : '');
   ruta = 'transferir:' + razon;
@@ -523,7 +523,7 @@ function mensajesDeCarta(enlace) {
   if (url) {
     return [{
       tipo: 'enlace', catalogo: true,
-      cuerpo: '¡Con gusto! Toca «Ver la carta», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «menú».',
+      cuerpo: '¡Con gusto! Toca «Ver la carta», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «inicio».',
       botones: [{ id: '', title: 'Ver la carta' }], url: url,
     }];
   }
@@ -610,6 +610,20 @@ function aConsulta(clave) {
 function aPromo() {
   // Con un comprobante en espera, el texto de una campaña NO saca del cobro: se recuerda el comprobante (el paso y el pedido se conservan).
   if (en.paso === 'esperando_comprobante' && en.pedido) return aRecordatorio();
+  // Campaña de solo reserva: su respuesta REEMPLAZA al saludo, con «Reservar mesa» como único botón; acepta la reserva cualquier día.
+  const soloReserva = prSoloReserva(d.campana, cfg);
+  if (soloReserva) {
+    irA('menu');
+    mensajes = [{ tipo: 'botones', cuerpo: soloReserva.cuerpo, botones: soloReserva.botones, sinMenu: true }];
+    return;
+  }
+  // Campaña de pedido con mensaje del negocio (Tortas mexicanas): reemplaza al saludo, con «Hacer un pedido» como único botón.
+  const pedidoMsg = prPedidoConMensaje(d.campana, cfg);
+  if (pedidoMsg) {
+    irA('menu');
+    mensajes = [{ tipo: 'botones', cuerpo: pedidoMsg.cuerpo, botones: pedidoMsg.botones, sinMenu: true }];
+    return;
+  }
   const carta = cartaDelNegocio();
   const ficha = prFicha(d.campana, carta, ahora);
   const tx = ficha ? prTexto(ficha, cfg) : null;
@@ -631,8 +645,8 @@ function aImagenSinPendiente() {
 // Un audio que no se entendió, un sticker, un contacto…: se pide que lo escriba, con la carta a un toque.
 function aMedioNoLeido() {
   const cuerpo = d.motivo === 'audio'
-    ? 'No pude escuchar bien ese mensaje 😅. ¿Me lo escribes?'
-    : 'No pude entender bien ese mensaje 😅. ¿Me lo escribes?';
+    ? 'No pude escuchar bien ese mensaje 😅. ¿Me lo escribes o lo repites?'
+    : 'No pude entender bien ese mensaje 😅. ¿Me lo escribes o lo repites?';
   mensajes = [conBotones(cuerpo, pedidosOn ? [{ id: vmIdDeBoton('m', 'pedido'), title: 'Ver la carta' }] : [])];
 }
 

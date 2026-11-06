@@ -26,7 +26,7 @@ const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [
   'avDestinatarios', 'avParametro', 'avPlantilla', 'avTexto', 'avVentanaAbierta', 'avAnotarEntrante',
-  'avDentroDelTopeDiario', 'avContar', 'avArmar', 'avPlan', 'avLimpio', 'avFechaLegible', 'avSinProhibidas', 'avCanon', 'avEnlaceDeUbicacion', 'avTelefonoLegible', 'avCotejoTexto',
+  'avDentroDelTopeDiario', 'avContar', 'avArmar', 'avPlan', 'avLimpio', 'avFechaLegible', 'avSinProhibidas', 'avCanon', 'avEnlaceDeUbicacion', 'avTelefonoLegible', 'avCotejoTexto', 'avParametroConMapa',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1988,7 +1988,10 @@ describe('variables de plantilla corregidas (05/11): mapa en la modalidad, cotej
   it('celular legible «+591 7066 1250» en la variable, el detalle y la reserva; solo con 8 a 15 dígitos y sin letras', () => {
     expect(L.avTelefonoLegible('59100000033')).toBe('+591 0000 0033');
     expect(L.avTelefonoLegible('+591 000 00033')).toBe('+591 0000 0033');
-    expect(L.avTelefonoLegible('5110000000012')).toBe('+5110 0000 0001 2');
+    expect(L.avTelefonoLegible('5110000000012')).toBe('+5110000000012');
+    expect(L.avTelefonoLegible('00000033')).toBe('00000033');
+    expect(L.avTelefonoLegible('1234-5678-901'.replace(/-/g, ''))).toBe('1234-5678-901'.replace(/-/g, '')); // 11 dígitos de otro país: sin «+» ni grupos (no se sabe el código)
+    expect(L.avTelefonoLegible('1000000033')).toBe('1000000033');
     for (const mal of ['1234567', '59100000033abc', 'tel 59100000033', '1234567890123456', '', null, undefined]) expect(L.avTelefonoLegible(mal), String(mal)).toBe('');
     expect(modalidad(conUb())).toContain('cel +591 0000 0033');
     expect(modalidad(conUb({ telefono: '1234567' }))).toContain('cel 1234567');
@@ -1997,5 +2000,27 @@ describe('variables de plantilla corregidas (05/11): mapa en la modalidad, cotej
     expect(modalidad(conUb(), SILVANA)).not.toMatch(/cel|\+591|0000 0033|59100000033/);
     const det = cuerpo(L.avArmar('pedido', conUb(), CSV, CFG, abierta(), AHORA), ANDRES);
     expect(det).toContain('tel +591 0000 0033');
+  });
+});
+
+
+describe('avParametroConMapa: el enlace descartado no deja separadores ni «mapa:» colgando', () => {
+  const L = cargar();
+  const E = 'https://www.google.com/maps/search/?api=1&query=-16.500000%2C-68.100000';
+  it('con enlace válido y una sola marca, se repone entero', () => {
+    expect(L.avParametroConMapa(`Delivery · mapa: ${E} · 2 tacos`)).toBe(`Delivery · mapa: ${E} · 2 tacos`);
+  });
+  it('NEGANDO: un texto del cliente con la marca interna descarta el enlace sin «·  hola» ni «mapa: » colgando', () => {
+    const v = L.avParametroConMapa(`ENLACEMAPAOK hola · mapa: ${E}`);
+    expect(v).not.toMatch(/ENLACEMAPAOK|mapa:|google|^·|·$/);
+    expect(v).toBe('hola');
+    expect(L.avParametroConMapa(`a · ENLACEMAPAOK · mapa: ${E} · b`)).toBe('a · b');
+    expect(L.avParametroConMapa(`mapa: ${E} · ENLACEMAPAOK`)).not.toMatch(/ENLACEMAPAOK|mapa:|google/);
+  });
+  it('NEGANDO: si con el enlace repuesto pasa de 500 caracteres, el enlace se descarta entero', () => {
+    const v = L.avParametroConMapa(`${'x'.repeat(470)} · mapa: ${E}`);
+    expect(v).not.toMatch(/google|mapa:|ENLACEMAPAOK/);
+    expect(v.length).toBeLessThanOrEqual(500);
+    expect(v.endsWith('·')).toBe(false);
   });
 });

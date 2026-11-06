@@ -272,7 +272,7 @@ describe('comun.js: red de palabras prohibidas', () => {
       'Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.',
       'No pude incluir tu nota: «tequila» no está disponible para pedir por WhatsApp.',
       'Atendemos lunes a domingo de 12:00 a 22:00.',
-      'Para volver al inicio, escribe «menú».',
+      'Para volver al inicio, escribe «inicio».',
       'Revisen el pago en su banco antes de despachar.',
       'Eso lo ve directamente nuestro equipo. Toca el botón para escribirnos.',
       'Confirmar pedido', 'Cambiar algo', 'Enviar solicitud',

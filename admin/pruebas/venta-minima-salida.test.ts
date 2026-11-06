@@ -218,7 +218,7 @@ function textosDe(j: J): string[] {
   if (typeof j['texto'] === 'string') out.push(j['texto']);
   return out;
 }
-const GENERICO = 'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Para volver al inicio, escribe «menú».';
+const GENERICO = 'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Para volver al inicio, escribe «inicio».';
 const cuerpoDe = (j: J): string => String(j['payload'].text?.body ?? j['payload'].interactive?.body.text ?? j['payload'].image?.caption);
 
 // =================================================================================================
@@ -499,7 +499,7 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
     expect(bs[2].reply.title.length).toBeLessThanOrEqual(20);
     expect(r.items[0]).toMatchObject({ tipoReporte: 'interactive' });
     expect(r.items[0]!['respaldo']).toContain('¿Qué te gustaría hacer?');
-    expect(r.items[0]!['respaldo']).toContain('escribe «menu»');
+    expect(r.items[0]!['respaldo']).toContain('escribe «inicio»');
   });
 
   it('botones sin ids válidos caen a texto; un id de más de 256 caracteres se descarta', () => {
@@ -542,15 +542,15 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
       const i = r.items[0]!;
       expect(i['payload'].type).toBe('text');
       // Sin botón no se nombra el botón («Escribir al local»): queda lo demás, con el camino de vuelta al menú.
-      expect(i['payload'].text.body).toBe('Disculpa, eso no lo puedo resolver por aquí 🙏. Para volver al inicio, escribe «menú».');
+      expect(i['payload'].text.body).toBe('Disculpa, eso no lo puedo resolver por aquí 🙏. Para volver al inicio, escribe «inicio».');
       expect(i['tipoReporte']).toBe('text');
       expect(JSON.stringify(i)).not.toMatch(/bot[oó]n/i);
     }
     // el texto con «:» conserva lo que viene antes del «:»
     const r = mensajes({ mensajes: [enlace('No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.')] }, { cfg: { numeroRecepcion: '' } });
-    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido a nuestro equipo en este momento. Para volver al inicio, escribe «menú».');
+    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido a nuestro equipo en este momento. Para volver al inicio, escribe «inicio».');
     const dos = mensajes({ mensajes: [enlace('Ya tengo el comprobante de tu pedido #K7Q2. Si necesitas algo más, toca el botón.')] }, { cfg: { numeroRecepcion: '' } });
-    expect(dos.items[0]!['payload'].text.body).toBe('Ya tengo el comprobante de tu pedido #K7Q2. Para volver al inicio, escribe «menú».');
+    expect(dos.items[0]!['payload'].text.body).toBe('Ya tengo el comprobante de tu pedido #K7Q2. Para volver al inicio, escribe «inicio».');
   });
 
   it('modo prueba: a telefonoDePrueba, sin prefijo y sin reportar; fuera de prueba, reportable', () => {
@@ -725,7 +725,7 @@ describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', ()
   const PASE = 'Listo: pasé tu pedido #K7Q2 al restaurante. El pago lo coordinas con ellos al recoger.';
   const NO_PASE_PLAN = 'No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.';
   // Lo que sale: el mensaje con botón de enlace lleva al final el camino de vuelta al menú (03/10).
-  const NO_PASE = NO_PASE_PLAN + ' Para volver al inicio, escribe «menú».';
+  const NO_PASE = NO_PASE_PLAN + ' Para volver al inicio, escribe «inicio».';
   const plan = (): J => ({
     ruta: 'confirmar', pedido: PEDIDO, aviso: { tipo: 'pedido', datos: {} }, mensajes: [],
     condicionados: { siSalio: [texto(PASE)], siNoSalio: [enlace(NO_PASE_PLAN)] },
@@ -1359,26 +1359,30 @@ describe('Armar avisos — R3: el tope de derivaciones respeta el 0 y lee solo l
 describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (03/10)', () => {
   const titulos = (j: J): string[] => (j['payload'].interactive?.action?.buttons ?? []).map((b: J) => String(b.reply.title));
   const ids = (j: J): string[] => (j['payload'].interactive?.action?.buttons ?? []).map((b: J) => String(b.reply.id));
-  const SEGUIR = 'Para volver al inicio, escribe «menú».';
+  const SEGUIR = 'Para volver al inicio, escribe «inicio».';
 
   it('todo mensaje con botones y lugar (menos de tres) sale con «Menú» (`m|menu`) al final; con tres, no se agrega nada', () => {
     const uno = mensajes({ mensajes: [botones('Elige', 'A')] }).items[0]!;
-    expect(titulos(uno)).toEqual(['A', 'Menú']);
+    expect(titulos(uno)).toEqual(['A', 'Volver a inicio']);
     expect(ids(uno)).toEqual(['b|0', 'm|menu']);
     const dos = mensajes({ mensajes: [botones('Elige', 'A', 'B')] }).items[0]!;
-    expect(titulos(dos)).toEqual(['A', 'B', 'Menú']);
+    expect(titulos(dos)).toEqual(['A', 'B', 'Volver a inicio']);
+    expect([...titulos(uno), ...titulos(dos)].every((t) => t.length <= 20), 'títulos de botón de WhatsApp ≤ 20').toBe(true);
+    // 06/11: también junto a botones de paso de pedido (la palabra «menú» se confunde con la carta en un restaurante).
+    const paso = mensajes({ mensajes: [{ tipo: 'botones', cuerpo: 'Elige', botones: [{ id: 'p|confirmar', title: 'Confirmar pedido' }, { id: 'p|cambiar', title: 'Cambiar algo' }] }] }).items[0]!;
+    expect(titulos(paso)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Volver a inicio']);
     // Negado: con tres no hay lugar; con el propio menú (`sinMenu`) no se repite; sin botones sigue siendo un texto.
     expect(titulos(mensajes({ mensajes: [botones('Elige', 'A', 'B', 'C')] }).items[0]!)).toEqual(['A', 'B', 'C']);
     expect(titulos(mensajes({ mensajes: [{ ...botones('Elige', 'A', 'B'), sinMenu: true }] }).items[0]!)).toEqual(['A', 'B']);
     expect(mensajes({ mensajes: [texto('Hola')] }).items[0]!['payload'].type).toBe('text');
     // Un botón «m|menu» que el plan ya trae no se duplica.
-    const ya = mensajes({ mensajes: [{ tipo: 'botones', cuerpo: 'Elige', botones: [{ id: 'm|menu', title: 'Menú' }] }] }).items[0]!;
+    const ya = mensajes({ mensajes: [{ tipo: 'botones', cuerpo: 'Elige', botones: [{ id: 'm|menu', title: 'Volver a inicio' }] }] }).items[0]!;
     expect(ids(ya)).toEqual(['m|menu']);
     // Agregar el botón no agrega mensajes.
     expect(mensajes({ mensajes: [botones('Elige', 'A', 'B')] }).items).toHaveLength(1);
   });
 
-  it('el mensaje con botón de enlace lleva al final «escribe «menú»», sin repetirlo si ya lo trae', () => {
+  it('el mensaje con botón de enlace lleva al final «escribe «inicio»», sin repetirlo si ya lo trae', () => {
     const e = mensajes({ mensajes: [enlace('Texto del plan.')] }).items[0]!;
     expect(e['texto']).toBe(`Texto del plan. ${SEGUIR}`);
     expect(e['payload'].interactive.body.text).toBe(`Texto del plan. ${SEGUIR}`);
@@ -1386,13 +1390,13 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
     expect(ya['texto']).toBe(`Texto del plan. ${SEGUIR}`);
   });
 
-  it('la frase de «menú» es «Para volver al inicio, escribe «menú».»: la vieja («seguir con tu pedido o tu reserva») no sale en ningún mensaje', () => {
-    expect(SEGUIR).toBe('Para volver al inicio, escribe «menú».');
+  it('la frase de «menú» es «Para volver al inicio, escribe «inicio».»: la vieja («seguir con tu pedido o tu reserva») no sale en ningún mensaje', () => {
+    expect(SEGUIR).toBe('Para volver al inicio, escribe «inicio».');
     const e = mensajes({ mensajes: [enlace('Texto del plan.')] }).items[0]!;
-    expect(e['texto']).toBe('Texto del plan. Para volver al inicio, escribe «menú».');
+    expect(e['texto']).toBe('Texto del plan. Para volver al inicio, escribe «inicio».');
     expect(JSON.stringify(e)).not.toContain('seguir con tu pedido');
     // La comparación por texto reconoce la frase NUEVA (no la repite) y ya no reconoce la vieja (se agrega la nueva).
-    const vieja = 'Texto del plan. Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
+    const vieja = 'Texto del plan. Si quieres seguir con tu pedido o tu reserva, escribe «inicio».';
     expect(mensajes({ mensajes: [enlace(vieja)] }).items[0]!['texto']).toBe(`${vieja} ${SEGUIR}`);
     // El mensaje genérico de derivación lleva la frase nueva.
     expect(String(mensajes({ mensajes: [texto('x')] }, { armados: [], enviados: [] }).items[0]!['texto'])).not.toContain('seguir con tu pedido');
@@ -1410,7 +1414,7 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
   it('el texto sin botón (recepción igual al cliente) nombra «menú» y NO el botón «Escribir al local»', () => {
     const r = mensajes({ mensajes: [enlace(GENERICO)] }, { cfg: { numeroRecepcion: CLIENTE } }).items[0]!;
     expect(r['payload'].type).toBe('text');
-    expect(r['texto']).toContain('escribe «menú»');
+    expect(r['texto']).toContain('escribe «inicio»');
     expect(r['texto']).not.toMatch(/escribir al local|bot[oó]n/i);
   });
 
@@ -1618,8 +1622,8 @@ describe('Voz y tono (05/10): sin número de recepción el texto no nombra el bo
   });
 });
 
-describe('Voz y tono (05/10): la cola «Para volver al inicio, escribe «menú».» (`amConSeguir`)', () => {
-  const COLA = 'Para volver al inicio, escribe «menú».';
+describe('Voz y tono (05/10): la cola «Para volver al inicio, escribe «inicio».» (`amConSeguir`)', () => {
+  const COLA = 'Para volver al inicio, escribe «inicio».';
   const veces = (t: string): number => t.split(COLA).length - 1;
   it('se agrega UNA vez al mensaje con botón de enlace, y no se duplica si el texto ya la trae (fila 5 y la derivación genérica)', () => {
     const sin = String(mensajes({ mensajes: [enlace('Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo.')] }).items[0]!['texto']);

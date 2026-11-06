@@ -230,7 +230,7 @@ const enDatosDeEntrega = paso === 'pedido_entrega' || paso === 'pedido_datos';
 const globalCorto = paso === 'inicio' || paso === 'menu' || (norm.length <= 60 && !enDatosDeEntrega);
 const pideAlgo = /\b(quiero|quisiera|queremos|necesito|dame|me das|ponme|pedir|pedido)\b/.test(norm);
 const esPregunta = /[?¿]/.test(texto) || /\b(se puede|puedo|pueden|podria|podrian|hay|tienen|aceptan)\b/.test(norm);
-if (/^(menu|menu principal|inicio|volver al menu)$/.test(norm) || (!enComprobante && /^(hola|volver|atras)$/.test(norm))) {
+if (/^(menu|menu principal|inicio|volver al menu|volver a inicio|volver al inicio)$/.test(norm) || (!enComprobante && /^(hola|volver|atras)$/.test(norm))) {
   return salir('menu', { motivo: 'menu' });
 }
 if (!enComprobante) {
