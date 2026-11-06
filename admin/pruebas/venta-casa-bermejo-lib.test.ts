@@ -32,7 +32,7 @@ const item = (o: Record<string, unknown> = {}) => ({ id: 'p1', nombre: 'Pieza un
 const cuerpo = (items: unknown[], o: Record<string, unknown> = {}) => ({ version: 1, mercado: 'BO', moneda: 'BOB', generadoEn: hace(0), cotizacion: { id: 'c', par: 'USD/BOB', valor: 12, fecha: '2026-11-05', fuente: 'x', estado: 'vigente' }, items, ...o });
 const http = (items: unknown[], o: Record<string, unknown> = {}) => ({ statusCode: 200, body: cuerpo(items, o) });
 const base = { hostsFoto: 'fotos.ejemplo.test', tratamiento: 'tu' };
-const catalogo = (items: unknown[] = [item(), item({ id: 'p2', nombre: 'Pieza dos', precio: 50, precioCentavos: 5000 })]) => b('bmCatalogo')(http(items), AHORA, base);
+const catalogo = (items: unknown[] = [item(), item({ id: 'p2', nombre: 'Pieza dos', precio: 50, precioCentavos: 5000 })]) => b('bmCatalogo')(http(items), AHORA, base, 'BO');
 const COBRO_REAL = { modo: 'real', mediaId: 'MEDIOQR12345', pendiente: false, monto: null, pedidoRef: '', enRevision: false, vencidoHaceMin: null };
 const ENTREGA = { modo: 'envío', ciudad: 'Cochabamba', direccion: 'Terminal de buses', nombre: 'Ana Pérez' };
 const gemini = (j: unknown) => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(j) }] } }] });
@@ -40,7 +40,7 @@ const ctx = (o: Record<string, unknown> = {}) => {
   const cat = catalogo();
   const ficha = { ...b('bmFichaBase')(), ...((o.ficha as object) ?? {}) };
   return {
-    cfg: {}, base, t: {}, puerta: {}, from: ['591', '7000', '0001'].join(''), ahora: AHORA, panel: { ok: true, cuerpo: {} }, catalogo: cat, vendibles: cat.vendibles, cobro: COBRO_REAL, modos: [],
+    cfg: {}, base, t: {}, puerta: {}, from: ['591', '7000', '0001'].join(''), ahora: AHORA, panel: { ok: true, cuerpo: {} }, catalogo: cat, mercado: 'BO', vendibles: cat.vendibles, cobro: COBRO_REAL, modos: [],
     plan: { tipo: 'modelo', textoCliente: 'quiero una pieza uno' }, modeloResp: gemini({ texto: 'Con gusto, la anoto.', lineas: [{ id: 'p1', cantidad: 2 }] }), cancelo: undefined, ...o, ficha,
   };
 };
@@ -74,20 +74,20 @@ describe('el catálogo de NovuTienda (B2) dentro de la venta', () => {
     expect(c.vendibles.map((v: { id: string; precioCentavos: number }) => [v.id, v.precioCentavos])).toEqual([['p1', 12000], ['p2', 5000]]);
   });
   it('acepta el cuerpo como texto y el estado como `statusCode`', () => {
-    expect(b('bmCatalogo')({ statusCode: 200, body: JSON.stringify(cuerpo([item()])) }, AHORA, base).ok).toBe(true);
-    expect(b('bmCatalogo')({ statusCode: 200, body: '<html>' }, AHORA, base)).toMatchObject({ ok: false, pase: true });
+    expect(b('bmCatalogo')({ statusCode: 200, body: JSON.stringify(cuerpo([item()])) }, AHORA, base, 'BO').ok).toBe(true);
+    expect(b('bmCatalogo')({ statusCode: 200, body: '<html>' }, AHORA, base, 'BO')).toMatchObject({ ok: false, pase: true });
   });
   it('NEGADO: cada falla del catálogo pasa con un vendedor, sin vendibles', () => {
     for (const r of [{ statusCode: 401, body: {} }, { statusCode: 429, body: {} }, { statusCode: 503, body: {} }, { statusCode: 500 }, undefined, http([item()], { version: 2 }), http([], {}), http([item()], { cotizacion: { estado: 'ultimo_verificado', fecha: '2026-11-02' } })]) {
-      const c = b('bmCatalogo')(r, AHORA, base);
+      const c = b('bmCatalogo')(r, AHORA, base, 'BO');
       expect(c).toMatchObject({ ok: false, pase: true });
       expect(c.vendibles).toBeUndefined();
     }
   });
   it('NEGADO: sin lista de dominios para fotos, ninguna foto; con el dominio declarado, sí', () => {
-    expect('foto' in b('bmCatalogo')(http([item()]), AHORA, {}).vendibles[0]).toBe(false);
+    expect('foto' in b('bmCatalogo')(http([item()]), AHORA, {}, 'BO').vendibles[0]).toBe(false);
     expect(catalogo().vendibles[0].foto).toBe('https://fotos.ejemplo.test/p1.jpg');
-    expect('foto' in b('bmCatalogo')(http([item()]), AHORA, { hostsFoto: 'REEMPLAZAR_HOSTS' }).vendibles[0]).toBe(false);
+    expect('foto' in b('bmCatalogo')(http([item()]), AHORA, { hostsFoto: 'REEMPLAZAR_HOSTS' }, 'BO').vendibles[0]).toBe(false);
   });
 });
 
@@ -104,12 +104,12 @@ describe('la decisión de la venta: el modelo conversa, el código calcula', () 
     expect(r.lineas).toEqual([]);
   });
   it('NEGADO: más cantidad que el stock se recorta al stock', () => {
-    const cat = b('bmCatalogo')(http([item({ stock: 2 })]), AHORA, base);
+    const cat = b('bmCatalogo')(http([item({ stock: 2 })]), AHORA, base, 'BO');
     const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: cat.vendibles, modeloResp: gemini({ texto: 'Listo.', lineas: [{ id: 'p1', cantidad: 5 }] }) }));
     expect(r.lineas[0].cantidad).toBe(2);
   });
   it('NEGADO: sin catálogo legible el turno de conversación pasa con un vendedor (aviso y botón), no se improvisa', () => {
-    const cat = b('bmCatalogo')({ statusCode: 503, body: {} }, AHORA, base);
+    const cat = b('bmCatalogo')({ statusCode: 503, body: {} }, AHORA, base, 'BO');
     const r = b('bmResolver')(ctx({ catalogo: cat, vendibles: [] }));
     expect(r).toMatchObject({ tipo: 'derivar', motivo: 'sin_configuracion' });
     expect(r.aviso).toBeTruthy();

@@ -21,7 +21,7 @@ const ahora = Number(t.ahoraMs) || Date.now();
 let textoDelTurno = '';
 const panel = bmPanelDe(cnPrimero('Traer configuración'));
 // El catálogo viene de NovuTienda (`Traer catálogo`) y se adapta con `ceVendibles`; la consola solo aporta el cobro, las campañas y la atención.
-const catalogo = bmCatalogo(cnPrimero('Traer catálogo'), ahora, base);
+const catalogo = bmCatalogo(cnPrimero('Traer catálogo'), ahora, base, ceMercadoDePrefijo(from));
 const vendibles = catalogo.ok === true ? catalogo.vendibles : [];
 const cobro = bmCobro(panel);
 const ficha = CN_TENANT.fichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora);
@@ -92,5 +92,5 @@ if (bmPideFactura(n)) return salir({ tipo: 'derivar', motivo: 'factura' });
 if (bmQuiereHablar(n)) return salir({ tipo: 'derivar', motivo: 'quiere_hablar' });
 
 // 5. La conversación libre: una sola llamada al modelo.
-const contexto = { cfg: cfg, base: base, plan: { textoCliente: texto }, ficha: ficha, vendibles: vendibles, modos: bmModos(base), ahora: ahora };
+const contexto = { cfg: cfg, base: base, plan: { textoCliente: texto }, ficha: ficha, vendibles: vendibles, modos: bmModos(base), ahora: ahora, mercado: ceMercadoDePrefijo(from) };
 return salir({ tipo: 'modelo' }, { llamarModelo: true, cuerpoModelo: bmCuerpoModelo(contexto) });

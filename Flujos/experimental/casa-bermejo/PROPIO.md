@@ -35,3 +35,11 @@ Excepción de Andres para el nodo 57; sustituir los marcadores (credenciales, re
 - **Aviso a quien opera** cuando el catálogo falla por un defecto (credencial revocada, versión, moneda): `catalogoAlerta` se calcula en «Decidir turno» y falta un consumidor.
 - **El aviso del pedido en el turno del comprobante con el catálogo caído** nombra las líneas por id (el `qrCarrito` no guarda el nombre).
 - **Excepción de nodos**: 57 con `Traer catálogo` (el tope de Walisuma es 56): pendiente de Andres; fila en `docs/versiones-por-cliente.md` al aprobarla.
+
+## B4a: Argentina hasta el pedido (sin el servidor de alias)
+- **Mercado por prefijo del remitente:** 591 → BO, 54 → AR. `Traer catálogo` pide `?mercado=` con UNA expresión fija (`EXPRESION_MERCADO`, que la guardia compara literal y una prueba contrasta con `ceMercadoDePrefijo`), así que el flujo sigue en 57 nodos. `prefijosPermitidos` pasa a `591,54`; otro país recibe el texto fijo.
+- **Precios en pesos:** el catálogo de AR trae ARS; los resúmenes, el aviso al comercio y el precio de un anuncio escriben «ARS …», nunca «Bs».
+- **El cobro NO se hace en B4a:** el cobro por alias (contador, rotación y cotejo en pesos) es de un servidor que aún no existe (encargo a Clínicas, 30/10). Hasta entonces, al confirmar el pedido en Argentina NO se emite el QR de Bolivia: el pedido queda anotado, sale UN aviso al comercio («sin comprobante aún», total en ARS) con el botón, y el cliente lee que el pago lo coordina recepción y que no transfiera todavía. Cero mensajes agregados.
+- **B4b (pendiente del servidor):** pedir el alias, decirlo en texto, cotejar el comprobante en ARS y traducir los códigos de error.
+- **Antes de encender Argentina:** el `prefijosPermitidos` del tenant VIVO debe incluir 54 (la semilla ya lo trae; el panel vivo se actualiza con un paso aparte). La hora del prompt es la de La Paz (UTC-4) también para Argentina (UTC-3): una hora de diferencia en «hoy a las…», aceptada hasta que haya un campo de zona por mercado.
+- La expresión del mercado devuelve «X» (y el servidor responde 400 → pase con recepción) donde `ceMercadoDePrefijo` da `null`: otro país, número demasiado corto o largo.
