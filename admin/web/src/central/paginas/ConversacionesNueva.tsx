@@ -7,20 +7,22 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { db, funciones } from '../../core/lib/firebase';
 import { useSesion } from '../../core/lib/contexto';
-import { useEstadoComercio } from '../componentes/ConsolaConversaciones';
+import { useEstadoComercio, usePersonaPuedeIntervenir } from '../componentes/ConsolaConversaciones';
 import { rolEn } from '../../core/lib/sesion';
 import { ListaConversaciones, type Renglon } from '../componentes/ListaConversaciones';
 import { DetalleConversacion } from '../componentes/DetalleConversacion';
 import {
   CAMPOS_FECHA, CONTADORES_CADA_MS, CONTADORES_MINIMO_MS, CONTADORES_VACIOS, PAGINA_LISTA, PAGINACION_INICIAL,
   REBOTE_MARCA_LEIDA_MS, RESUSCRIBIR_FILTROS_MS, alAceptarPagina, alSnapshot, alSuscribir, aplicarFiltro, buscarPorNombre,
-  buscarPorTelefono, clasificarConsulta, consultaDeFiltro, consultaDeIds, consultaDeNombre, consultasDeTelefono,
+  buscarPorTelefono, clasificarConsulta, consultaDeBloqueadas, consultaDeFiltro, consultaDeIds, consultaDeNombre, consultasDeTelefono,
   cursorInvalidado, debeMarcarLeida, esIdConversacion, esIdMensaje, fichaDeDocumento, filtroConReloj, mensajeContiene, mezclarLista,
   marcaBloqueada, palabraParaIndice, consultaDePersona, contadorAsistente, prefijosValidos, puedeGestionarConversaciones, respuestaVigente, rutaConversaciones,
   textoErrorBusqueda, unirFichas, vecina, PREFIJOS_PAIS_DEFECTO, MAX_DIGITOS_TELEFONO,
   type Consulta, type ConsultaPlana, type Contadores, type Ficha, type Filtro, type Paginacion,
 } from '../lib/conversaciones';
 import { capaTurnoReal } from '../lib/turno';
+import { capaBloqueoReal, filaBloqueada, type FilaBloqueada } from '../lib/bloqueo';
+import { PanelBloqueados } from '../componentes/PanelBloqueados';
 import '../estilos/conversaciones.css';
 
 /**
@@ -33,8 +35,8 @@ import '../estilos/conversaciones.css';
  * dirección (`/negocio/:t/conversaciones/:c`, con `?m=<mensaje>` si viene de una
  * búsqueda), así que se puede copiar, volver con «atrás» y compartir.
  *
- * SE MUESTRA SOLO CON LA BANDERA `tenants/{id}.consolaConversaciones = 'nueva'`
- * (ver `Conversaciones.tsx`, el selector). La pantalla de siempre queda intacta.
+ * ES LA POR DEFECTO (24/10/2026): se muestra salvo que la ficha tenga `consolaConversaciones = 'clasica'`
+ * explícito (ver `Conversaciones.tsx`, el selector). La pantalla de siempre queda intacta.
  *
  * QUÉ ESCRIBE DIRECTO EN FIRESTORE: dos cosas, y nada más. «No contactar» (en el detalle) y la marca de
  * leída: `{ noLeidos: 0, sinLeer: false }`, que las reglas solo aceptan hacia cero
@@ -304,6 +306,20 @@ function useConversacionAbierta(tenantId: string, conversacionId: string | undef
   return abierta;
 }
 
+/** Los contactos bloqueados, en vivo (solo si `activo`, o sea, el administrador). `null` = todavía no llegó. Sin orden en la consulta. */
+function useBloqueados(tenantId: string, activo: boolean): FilaBloqueada[] | 'error' | null {
+  const [filas, setFilas] = useState<FilaBloqueada[] | 'error' | null>(null);
+  useEffect(() => {
+    if (!tenantId || !activo) { setFilas(null); return; }
+    return onSnapshot(
+      consultaFirestore(tenantId, consultaDeBloqueadas()),
+      (s) => setFilas(s.docs.flatMap((d) => { const f = filaBloqueada(d.id, d.data()); return f ? [f] : []; })),
+      () => setFilas('error'),
+    );
+  }, [tenantId, activo]);
+  return filas;
+}
+
 // ── Búsqueda ─────────────────────────────────────────────────────────────────
 
 interface Hallazgo { ficha: Ficha; mensajeId: string; fragmento: string; ts: number }
@@ -344,6 +360,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
   const miUid = usuario?.uid ?? null;
   // Las tres callables de H2 (tomar, devolver, enviar): una sola capa, que las pruebas pueden reemplazar.
   const capa = useMemo(() => capaTurnoReal(funciones), []);
+  const capaBloqueo = useMemo(() => capaBloqueoReal(funciones), []);
   const visible = usePestanaVisible();
 
   // `?m=` viene de la dirección: un id con «/» arma una ruta de otro nivel. Si no sirve, es como no haberlo puesto.
@@ -383,6 +400,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
   // persona) y, si una marca FALLA (rol revocado, red), `fallidas` recuerda el `noLeidos` de entonces y no se vuelve a
   // intentar hasta que crezca: es decir, hasta que haya algo nuevo que marcar.
   const estadoComercio = useEstadoComercio(tenantId);
+  const puedeIntervenir = usePersonaPuedeIntervenir(tenantId);
   const fallidas = useRef<Map<string, number>>(new Map());
   const marcar = fichaAbierta !== null && debeMarcarLeida({
     rol, propietario: permisos.propietario, comercioActivo: estadoComercio === 'activo', visible,
@@ -401,6 +419,8 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
     return () => clearTimeout(t);
   }, [marcar, idAMarcar, noLeidosAbierta, tenantId]);
   const puedeGestionar = puedeGestionarConversaciones(rol, permisos.propietario);
+  const esAdminDelNegocio = rol === 'admin' && !permisos.propietario;
+  const bloqueados = useBloqueados(tenantId, esAdminDelNegocio);
 
   // ── Búsqueda ───────────────────────────────────────────────────────────────
   const cons: Consulta = useMemo(() => clasificarConsulta(consultaEstable), [consultaEstable]);
@@ -658,6 +678,9 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
   return (
     <section className={`cv${conversacionId ? ' cv--chat' : ''}`} ref={raizRef}>
       {lista.error && <p role="alert" className="cv-error">{lista.error}</p>}
+      {esAdminDelNegocio && (
+        <PanelBloqueados tenantId={tenantId} filas={bloqueados} comercioActivo={estadoComercio === 'activo'} capa={capaBloqueo} />
+      )}
       <div className="cv-cuerpo">
         <ListaConversaciones
           consulta={consulta} onConsulta={setConsulta} buscadorRef={buscadorRef}
@@ -675,8 +698,8 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
             hrefLista={hrefLista} hrefUltimo={hrefUltimo}
             onAnterior={vecina(claves, claveActiva, -1) ? () => irA(-1) : null}
             onSiguiente={vecina(claves, claveActiva, 1) ? () => irA(1) : null}
-            posicion={posicion} puedeGestionar={puedeGestionar} comercioActivo={estadoComercio === 'activo'}
-            miUid={miUid} esAdmin={rol === 'admin' && !permisos.propietario} capa={capa}
+            posicion={posicion} puedeGestionar={puedeGestionar} esPropietario={permisos.propietario} comercioActivo={estadoComercio === 'activo'} puedeIntervenir={puedeIntervenir}
+            miUid={miUid} esAdmin={rol === 'admin' && !permisos.propietario} capa={capa} capaBloqueo={capaBloqueo}
           />
         ) : (
           <div className="cv-detalle cv-detalle--vacio">

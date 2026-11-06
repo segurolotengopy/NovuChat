@@ -123,6 +123,12 @@ export interface Plan extends Limites {
    * con `limiteDeCampanas`.
    */
   campanas: number;
+  /**
+   * EDITORES DEL miniCRM ACTIVOS A LA VEZ (Andres, 03/11/2026): cuántas cuentas de Google puede tener el comercio con
+   * permiso de edición sobre su hoja. Va FUERA de `Limites` por la misma razón que `campanas`. Es el único lugar donde
+   * vive el número: `registrarEditorCrm` lo lee con `limiteDeEditoresCrm`, nunca lo escribe en el código.
+   */
+  editoresCrm: number;
 }
 
 /** El techo de campañas simultáneas de cualquier plan (decisión de Andres, 24/09/2026). */
@@ -193,19 +199,19 @@ export const MAXIMO_CAMBIOS_INCLUIDOS = 100;
 export const PLANES: Readonly<Record<IdPlanVendible, Readonly<Plan>>> = {
   impulso: {
     nombre: 'Impulso', precioUsd: 25, conversaciones: 200, productos: 20, agendas: 1,
-    campanas: 0, cambiosIncluidos: 0,
+    campanas: 0, cambiosIncluidos: 0, editoresCrm: 5,
   },
   crecimiento: {
     nombre: 'Crecimiento', precioUsd: 50, conversaciones: 500, productos: 100, agendas: 5,
-    campanas: 3, cambiosIncluidos: 1,
+    campanas: 3, cambiosIncluidos: 1, editoresCrm: 5,
   },
   pro: {
     nombre: 'Pro', precioUsd: 90, conversaciones: 1000, productos: 500, agendas: 10,
-    campanas: MAXIMO_CAMPANAS, cambiosIncluidos: 2,
+    campanas: MAXIMO_CAMPANAS, cambiosIncluidos: 2, editoresCrm: 5,
   },
   byoc: {
     nombre: 'BYOC', precioUsd: 50, conversaciones: 2000, productos: 500, agendas: 10,
-    campanas: MAXIMO_CAMPANAS, cambiosIncluidos: 2,
+    campanas: MAXIMO_CAMPANAS, cambiosIncluidos: 2, editoresCrm: 5,
   },
 };
 
@@ -599,6 +605,22 @@ export function limiteDeCampanas(cuenta: Record<string, unknown> | null | undefi
   if (typeof copia === 'number' && Number.isInteger(copia) && copia >= 0 && copia <= MAXIMO_CAMPANAS) return copia;
   const plan = cuenta?.['plan'];
   return esPlanVendible(plan) ? PLANES[plan].campanas : PLANES[PLAN_POR_DEFECTO].campanas;
+}
+
+/** El techo de editores del miniCRM que se puede copiar a una cuenta a mano (cota de cordura, no un valor del plan). */
+export const MAXIMO_EDITORES_CRM = 100;
+
+/**
+ * LOS EDITORES DEL miniCRM QUE PUEDE TENER UNA CUENTA A LA VEZ. Como `limiteDeCampanas`: manda la copia
+ * `cuenta.limites.editoresCrm` si es un entero de 1 a `MAXIMO_EDITORES_CRM`; si no, el número del plan; y si el plan
+ * no es del catálogo, el del más chico. Es el único origen del tope: ningún callable lleva el número escrito.
+ */
+export function limiteDeEditoresCrm(cuenta: Record<string, unknown> | null | undefined): number {
+  const crudo = cuenta?.['limites'];
+  const copia = typeof crudo === 'object' && crudo !== null ? (crudo as Record<string, unknown>)['editoresCrm'] : undefined;
+  if (typeof copia === 'number' && Number.isInteger(copia) && copia >= 1 && copia <= MAXIMO_EDITORES_CRM) return copia;
+  const plan = cuenta?.['plan'];
+  return esPlanVendible(plan) ? PLANES[plan].editoresCrm : PLANES[PLAN_POR_DEFECTO].editoresCrm;
 }
 
 // -----------------------------------------------------------------------------

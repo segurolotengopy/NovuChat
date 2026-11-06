@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'datos', 'cargar-fotos-catalogo.mjs');
 const PROYECTO = 'demo-novuchat-pruebas';
@@ -93,10 +94,10 @@ beforeAll(async () => {
     await db.doc(`tenants/${t}/config/marca`).delete();
   }
   await db.doc(`tenants/${T}`).set({
-    nombre: 'Demo de fotos', estado: 'activo', vertical: 'venta', flujos: ['venta'],
+    nombre: 'Demo de fotos', estado: 'activo', vertical: 'venta', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]),
   });
   await db.doc(`tenants/${SIN_VENTA}`).set({
-    nombre: 'Consultorio', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'],
+    nombre: 'Consultorio', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]),
   });
   for (const id of ['chuspa', 'cuello']) {
     await db.doc(`tenants/${T}/catalogo/${id}`).set({ nombre: id, precio: 10, activo: true });

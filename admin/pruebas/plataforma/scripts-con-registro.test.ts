@@ -29,8 +29,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  IDS_FLUJOS, PUENTE_DE_FLUJOS, documentoDeCobro, documentoDeFlujo, esFlujo, flujosDeFicha, modulosDeFicha,
-  tieneModulo,
+  IDS_FLUJOS, FLUJOS_DE_RUTA, documentoDeCobro, documentoDeFlujo, esFlujo, flujosDeFicha, modulosDeFicha,
+  tieneModulo, modulosDeFlujos,
   type FichaConCapacidades, type IdFlujo,
 } from '../../functions/src/registro.ts';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
@@ -91,16 +91,19 @@ describe('1. el registro da lo mismo que las listas de antes', () => {
   it.each(SUBCONJUNTOS.map((s) => [nombre(s), s] as const))(
     'activar-cobro-real, flujos %s: el documento que cobra es el de antes', (_n, flujos) => {
       const ficha = { flujos, vertical: flujos[0] };
-      expect(documentoDeCobro(modulosDeFicha(ficha))).toBe(documentoQueCobraAntes(ficha));
+      // H2b-cierre: sin `modulos` no cobra nada; sembrada desde el flujo (como el alta), cobra lo de antes.
+      expect(documentoDeCobro(modulosDeFicha(ficha))).toBeNull();
+      expect(documentoDeCobro(modulosDeFicha({ ...ficha, modulos: modulosDeFlujos(flujos) }))).toBe(documentoQueCobraAntes(ficha));
     });
 
-  it.each(FICHAS_DE_HOY)('activar-cobro-real, %s: el documento que cobra es el de antes', (_n, ficha) => {
-    expect(documentoDeCobro(modulosDeFicha(ficha))).toBe(documentoQueCobraAntes(ficha));
+  it.each(FICHAS_DE_HOY)('activar-cobro-real, %s: el documento que cobra es el de antes (con `modulos`)', (_n, ficha) => {
+    expect(documentoDeCobro(modulosDeFicha(ficha))).toBeNull();
+    expect(documentoDeCobro(modulosDeFicha({ ...ficha, modulos: modulosDeFlujos(ficha.flujos as IdFlujo[]) }))).toBe(documentoQueCobraAntes(ficha));
   });
 
   it.each(SUBCONJUNTOS.map((s) => [nombre(s), s] as const))(
     'flujos %s: las capacidades de los scripts coinciden con `flujos.includes(...)` de antes', (_n, flujos) => {
-      const ficha = { flujos, vertical: flujos[0] };
+      const ficha = { flujos, vertical: flujos[0], modulos: modulosDeFlujos(flujos) };
       // cargar-negocio (sección `agendamiento`, `funcionarios`)
       expect(tieneModulo(ficha, 'agenda')).toBe(flujos.includes('agendamiento'));
       // cargar-negocio (`catalogoWebActivo`), cargar-fotos-catalogo (logo), fijar-webhook-carrito
@@ -117,9 +120,9 @@ describe('1. el registro da lo mismo que las listas de antes', () => {
   });
 
   it('el puente de flujos nombra, para cada flujo, un módulo que la capacidad de los scripts usa', () => {
-    expect(PUENTE_DE_FLUJOS.agendamiento.modulos).toContain('agenda');
-    expect(PUENTE_DE_FLUJOS.venta.modulos).toContain('catalogo-web');
-    expect(PUENTE_DE_FLUJOS.onboarding.modulos).toContain('captacion');
+    expect(FLUJOS_DE_RUTA.agendamiento.modulos).toContain('agenda');
+    expect(FLUJOS_DE_RUTA.venta.modulos).toContain('catalogo-web');
+    expect(FLUJOS_DE_RUTA.onboarding.modulos).toContain('captacion');
   });
 
   // DIFERENCIAS DECLARADAS, solo para fichas que hoy no existen entre los comercios (todos
@@ -131,10 +134,11 @@ describe('1. el registro da lo mismo que las listas de antes', () => {
       expect(flujosDeFicha({ flujos: ['recordatorios'] })).toEqual([]);
     });
 
-    it('una ficha sin `flujos` pero con `vertical` ya cobra por el documento de su vertical (antes: ningún flujo que cobre)', () => {
+    it('H2b-cierre: una ficha sin `modulos` no cobra, ni por `flujos` ni por `vertical` (falla cerrado)', () => {
       expect(documentoQueCobraAntes({})).toBeNull();
-      expect(documentoDeCobro(modulosDeFicha({ vertical: 'venta' }))).toBe('venta');
-      expect(documentoDeCobro(modulosDeFicha({ vertical: 'agendamiento' }))).toBe('agendamiento');
+      expect(documentoDeCobro(modulosDeFicha({ vertical: 'venta' }))).toBeNull();
+      expect(documentoDeCobro(modulosDeFicha({ vertical: 'agendamiento' }))).toBeNull();
+      expect(documentoDeCobro(modulosDeFicha({ flujos: ['venta'], vertical: 'venta' }))).toBeNull();
     });
 
     it('cargar-negocio y cargar-captacion: `flujos` null caía a `vertical`, una cadena iba por String.includes y `{}` era un TypeError; ahora todo cierra', () => {
@@ -261,5 +265,74 @@ describe('3. alta-comercio.mjs y asignar-numero.mjs validan el flujo con el regi
       expect(r.salida, flujo).toMatch(/--flujo desconocido: /);
       expect(problemas(r.salida), flujo).toHaveLength(1);
     }
+  });
+});
+
+describe('4. H2b-7: los scripts escriben `modulos` junto a `flujos` (lectura de código, sin Firebase)', () => {
+  const texto = (r: string) => sinComentarios(leer(r));
+
+  it('alta-comercio.mjs escribe `modulos` derivada del registro', () => {
+    expect(texto('plataforma/alta-comercio.mjs')).toMatch(/modulos:\s*modulosDeFlujos\(FLUJOS\)/);
+  });
+  it('asignar-numero.mjs suma con arrayUnion solo si la ficha ya tiene `modulos`, y lo guarda en el respaldo', () => {
+    const t = texto('plataforma/asignar-numero.mjs');
+    expect(t).toMatch(/modulos:\s*FieldValue\.arrayUnion\(\.\.\.FLUJOS_DE_RUTA\[FLUJO\]\.modulos\)/);
+    expect(t).toMatch(/sumaModulos\s*\?/);
+    expect(t).toMatch(/modulosAntes/);
+  });
+  it('ensayo.mjs ya no borra `modulos`', () => {
+    const t = texto('plataforma/ensayo.mjs');
+    expect(t).not.toMatch(/modulos:\s*FieldValue\.delete\(\)/);
+    expect(t).toMatch(/modulos:\s*modulosDeFlujos\(\[flujoCliente\]\)/);
+  });
+  it('fijar-flujos y completar-flujos cortan con la ficha que ya tiene `modulos`', () => {
+    expect(leer('plataforma/fijar-flujos-logica.mjs')).toContain('la ficha ya tiene modulos: use aplicar-modulos-tenant.mjs');
+    expect(texto('plataforma/fijar-flujos.mjs')).toMatch(/process\.exit\(resultado\.codigo \?\? 1\)/);
+    expect(texto('plataforma/completar-flujos.mjs')).toMatch(/process\.exit\(2\)/);
+    expect(leer('plataforma/completar-flujos.mjs')).toContain('la ficha ya tiene modulos: use aplicar-modulos-tenant.mjs');
+  });
+  it('migrar-modulos.mjs cuenta los números cuyo flujo no figura en `flujos` y no escribe', () => {
+    const t = texto('plataforma/migrar-modulos.mjs');
+    expect(t).toMatch(/rutasFuera/);
+    expect(t).not.toMatch(/\.(update|create|commit|recursiveDelete)\(|\.doc\([^)]*\)\.(set|delete)\(/);
+  });
+  it('H2b-cierre: ni el alta ni asignar un número escriben `flujos` (tenants.ts, alta-comercio, asignar-numero, ensayo)', () => {
+    const tenants = sinComentarios(readFileSync(join(ADMIN, 'functions', 'src', 'plataforma', 'tenants.ts'), 'utf8'));
+    expect(tenants).not.toMatch(/\bflujos:\s*(flujos|FieldValue)/);
+    expect(tenants).not.toMatch(/vertical,\s*flujos,/);
+    for (const r of ['plataforma/alta-comercio.mjs', 'plataforma/asignar-numero.mjs', 'plataforma/ensayo.mjs']) {
+      expect(texto(r), r).not.toMatch(/\bflujos:\s*(FLUJOS|\[flujoCliente\]|FieldValue)/);
+    }
+  });
+  it('altaTenant escribe `modulos` y agregar un flujo suma con arrayUnion (tenants.ts)', () => {
+    const t = sinComentarios(readFileSync(join(ADMIN, 'functions', 'src', 'plataforma', 'tenants.ts'), 'utf8'));
+    expect(t).toMatch(/modulos:\s*modulosDeFlujos\(/);
+    expect(t).toMatch(/modulos:\s*FieldValue\.arrayUnion\(\.\.\.modulosPorSumar\)/);
+    expect(t).toMatch(/failed-precondition/);
+  });
+});
+
+// ======================================================================= 5
+describe('5. H2b-11: ningún script decide la capacidad leyendo `flujos` a mano (lectura de código)', () => {
+  const texto = (r: string) => sinComentarios(leer(r));
+
+  it('escribir-qr-comercio.mjs decide por el registro (documentoDeCobro/modulosDeFicha), no por flujosDeFicha', () => {
+    const t = texto('datos/escribir-qr-comercio.mjs');
+    expect(t).toMatch(/documentoDeCobro\(modulosDeFicha\(/);
+    expect(t).not.toMatch(/flujosDeFicha/);
+  });
+  it('ensayo.mjs vacía los restos de venta siempre que exista el comercio ensayo, sin leer `flujos` ni `vertical`', () => {
+    const t = texto('plataforma/ensayo.mjs');
+    expect(t).toMatch(/const vaciarVenta = fichaEnsayo\.exists;/);
+    expect(t).not.toMatch(/fichaEnsayo\.get\('flujos'\)/);
+  });
+  it.each(['datos/cargar-negocio.mjs', 'datos/cargar-captacion.mjs', 'plataforma/fijar-webhook-carrito.mjs'])(
+    '%s decide con tieneModulo y no con `flujosDeFicha(...).includes`', (ruta) => {
+      const t = texto(ruta);
+      expect(t).toMatch(/tieneModulo\(/);
+      expect(t).not.toMatch(/flujosDeFicha\([^)]*\)[^;\n]*\.includes\(/);
+    });
+  it('activar-cobro-real.mjs decide con modulosDeFicha', () => {
+    expect(texto('plataforma/activar-cobro-real.mjs')).toMatch(/documentoDeCobro\(modulosDeFicha\(ficha\)\)/);
   });
 });

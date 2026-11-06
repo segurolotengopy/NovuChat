@@ -71,11 +71,30 @@ cumplir es lo común; lo propio entra por su declaración.
 
 **Dónde vive:** `admin/functions/src/registro.ts`, un solo archivo con
 `IDS_MODULOS` (en orden topológico), los nueve manifiestos (`REGISTRO`),
-`carpetasDe(m)`, `manifiestoDe(m)` y dos puentes transitorios:
-`PUENTE_DE_FLUJOS` (cada flujo de hoy expresado como módulos, que se borra con
-la migración `tenants.flujos` → `tenants.modulos`) y `MODULOS_COMUNES_HOY`
+`carpetasDe(m)`, `manifiestoDe(m)` y dos tablas:
+`FLUJOS_DE_RUTA` (antes `PUENTE_DE_FLUJOS`; desde H2b-cierre ya no deduce los
+módulos de una ficha: `tenants.modulos` es la única fuente y una ficha sin esa
+lista no tiene ningún módulo. Queda para el flujo de un número de WhatsApp: su
+documento `/config/<flujo>`, los módulos que ese número ejecuta y los que el
+alta siembra en `modulos`) y `MODULOS_COMUNES_HOY`
 (Productos y Campañas, que hoy tiene todo comercio). En el PR 1 **no lo
 importa nadie**: existe, se verifica y mide.
+
+**Enlaces solo del servidor y de lectura admin**
+(`DOCUMENTOS_DE_ENLACES_SOLO_SERVIDOR`, 03/11/2026): colección
+`tenants/{t}/enlaces/`, hoy `minicrm` (`enlaceHoja`, la URL de la hoja del
+miniCRM). Va fuera de `config/` porque la lectura de `config/` es de todo
+miembro y una consulta de colección no puede excluir un documento. Solo la lee
+`esAdmin` del mismo comercio y la escritura está cerrada (la hace NovuChat con
+`scripts/plataforma/crm-enlace.mjs`). `registro.test.ts` exige la lectura
+admin-only, la escritura cerrada y la prueba negativa en `crm-reglas.test.ts`.
+
+**Editores del miniCRM** (03/11/2026): colección `editoresCrm` del módulo `crm`,
+solo servidor (`get` del admin o del propio uid, `list` del admin, escritura
+cerrada), tres Functions (`registrarEditorCrm`, `quitarEditorCrm`,
+`consultarMiEdicionCrm`) y el límite `editoresCrm`, que se lee del plan
+(`limiteDeEditoresCrm`) y se hace cumplir en el servidor. Detalle en
+`modulos/crm.md`.
 
 **Por qué no importa nada:** lo van a importar cuatro mundos que no comparten
 resolución de módulos. Las Functions compilan con `rootDir: src` e importan
@@ -132,7 +151,7 @@ otra zona que hay dentro de un archivo y que F3 separa; no cambia su zona y
 solo se achica. Las dos tienen su prueba: cada clave existe, y `SE_PARTE`
 nombra zonas reales distintas de la del archivo.
 
-**El coordinador de turno** es `ingesta.ts`, en la raíz de Functions hasta F3b;
+**El coordinador de turno** es `ingesta.ts`, en la raíz de Functions, como coordinador;
 `index.ts` es coordinador y solo reexporta (salvo `core/opcionesGlobales.ts`,
 que va primero). La prueba toma de `index.ts` el archivo que reexporta la
 Function `ingesta` y exige que sea coordinador: si alguien lo muda a una
@@ -312,7 +331,7 @@ importaciones (la raíz no es una carpeta de zona).
   `web/src/core/` (`consola`), `Flujos/manifiestos/` (`core-flujos`),
   `functions/src/index.ts` y `functions/src/ingesta.ts` (la coordinadora) y
   `.github/` (`devsecops`).
-- **El corte de `ingesta.ts` y `prompt.ts`** es de F3b.
+- **El corte de `prompt.ts`** sigue pendiente de F3b; el de `ingesta.ts` ya se hizo (F3b-1b y F3b-2e).
 
 ## Lo que sigue
 
@@ -320,7 +339,7 @@ En el carril de lógica, cada agente en su carpeta: conectar el registro (fuera
 las siete copias de la lista de flujos), `tieneModulo`, el límite de agendas,
 los chequeos de inventario y catálogo. `tenants.modulos` en ventana y **en dos
 pasos** (escribir `modulos` conservando `flujos`, desplegar, recién después
-quitar `flujos`), con Bellido y Platinum en prueba.
+quitar `flujos`), con Bellido en prueba.
 
 ## La política de capas del 06/09, que el registro reemplaza
 

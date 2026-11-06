@@ -167,16 +167,10 @@ export const registrarQrDeCobro = onCall({ region: REGION }, async (peticion: Ca
 /**
  * El documento de configuración donde vive el QR de un comercio. Lo decide el
  * registro (`documentoDeCobro(modulosDeFicha(...))`): sin `cobros`, `null`;
- * con `pedidos`, `venta` (gana); con `agenda`, `agendamiento`. Con la lista
- * `modulos` manda la lista; sin ella, los módulos de sus flujos (`flujos`, o
- * `vertical` si la lista no está).
- *
- * DIFERENCIA CONOCIDA con la lógica anterior, solo fuera del dominio bien
- * formado (el registro falla cerrado, como las reglas): `flujos` que no es
- * lista, ni ausente (`{flujos:'venta', vertical:'agendamiento'}`) o `flujos:null`
- * con `vertical` dan `null` (antes caían a `vertical`); `modulos` manda sobre
- * los flujos (`{flujos:['agendamiento'], modulos:['cobros','pedidos']}` da
- * `venta`; `modulos:[]` da `null`). Para fichas reales el resultado es idéntico.
+ * con `pedidos`, `venta` (gana); con `agenda`, `agendamiento`. Desde
+ * H2b-cierre SOLO manda la lista `modulos`: una ficha sin ella da `null`
+ * (falla cerrado, como las reglas), aunque `flujos` o `vertical` digan otra
+ * cosa; `modulos:[]` también da `null`.
  * Probado en `pruebas/modulos/cobros/documento-que-cobra.test.ts`.
  */
 export function documentoQueCobra(

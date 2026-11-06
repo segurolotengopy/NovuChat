@@ -27,7 +27,10 @@
     "Decidir fila de la planilla": "modulos/captacion/decidir-fila-de-la-planilla.js",
     "Confirmar envío": "modulos/captacion/confirmar-envio.js",
     "Preparar transcripción": "core/medios/preparar-transcripcion.js",
-    "Preparar imagen": "core/medios/preparar-imagen.js",
+    "Preparar imagen": [
+      "core/medios/anuncio-por-titular.js",
+      "core/medios/preparar-imagen.js"
+    ],
     "Filtrar categoría": "modulos/captacion/filtrar-categoria.js",
     "Medio no aceptado": "core/medios/medio-no-aceptado.js"
   },

@@ -1,543 +1,324 @@
 /**
- * «VENTA DIGITAL DE RUBÉN» (tenant rroca-ruben) — PR-1, EL ARMADO (`Flujos/experimental/rroca-ruben/`).
+ * «NOCHES SIN INSOMNIO» DE RUBÉN (tenant rroca-ruben) — PR-A: EL ARMADO. Los JSON versionados salen de `construir.mjs` (plantilla + código + datos), nunca a mano.
  *
- * Lo que esta suite niega: que el JSON versionado difiera de lo que se arma; que el flujo pase de 48 nodos; que lleve un WhatsApp Trigger, un agente, un modelo o
- * un «Continue on Fail» en la verificación del receptor; que `wabaIdEsperado` salga de una expresión; que lo COMÚN (mensajes, envío) esté copiado en vez de
- * incluido; que las copias declaradas como HUECO (núcleo sin fuente utilizable, tomado de chat-novuchat) se aparten de su origen más allá de lo declarado en
- * `PROPIO.md`; y que el JSON traiga lo que el saneo del repo público rechaza (rutas de webhook, UUID, tokens, secuencias de 10 o más dígitos sin seis ceros).
+ * Qué prueba, negando:
+ *   1. los dos JSON están AL DÍA con lo que arma la plantilla (`--verificar`), y se cuentan: ≤ 56 nodos (producción 56, prueba 51: 47 y 42 más los 9 del guardado de medios, contrato v2 del 30/10);
+ *   2. cada GUARDIA rechaza su violación (una prueba por guardia, con el caso límite): WhatsApp Trigger, `subscriptions`, receptor con «Continue on Fail», `wabaIdEsperado` como expresión, sin descartar repetidos
+ *      entre ejecuciones, entrada de prueba en producción, receptor en la prueba, anfitrión fuera de la lista, retención, orden, zona, marcadores `REEMPLAZAR_` fuera de su lugar, el reporte del entrante abajo en el lienzo;
+ *   3. los DATOS solo traen marcadores `REEMPLAZAR_*` para identificadores y rutas, y rechazan formas inválidas;
+ *   4. el SANEO del repo público (sin teléfonos completos, sin tokens) y la REGLA DE ZONAS (ningún `.js` de Rubén nombra a otro cliente);
+ *   5. la librería `rr.js`: la ficha por teléfono olvida a las 48 h y recuerda solo los últimos ids.
  */
-import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { Flujo, J } from '../../lib/flujo';
-import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
-// @ts-expect-error el armador es un .mjs sin tipos
-import { AQUI, ARCHIVO_DE_DATOS, CONFIG, NODOS_DEL_AVISO, TOPE_DE_NODOS, anfitrionPermitido, cargarDatos, guardias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
-import { nodosDeEnvio } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
+import type { J } from '../../lib/flujo';
+import { cargarLibrerias } from './librerias';
 
-const ESTA = dirname(fileURLToPath(import.meta.url));
-const FLUJOS = join(ESTA, '../../../../Flujos/experimental');
-const RROCA: string = AQUI;
-const CHAT = join(FLUJOS, 'chat-novuchat');
-const leer = (ruta: string): string => readFileSync(ruta, 'utf8');
-const flujo = (archivo: string): Flujo => JSON.parse(leer(join(RROCA, archivo))) as Flujo;
-const PRODUCCION = flujo('rroca-ruben.json');
-const PRUEBA = flujo('rroca-ruben.prueba.json');
-const copia = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
-const nodo = (f: Flujo, n: string) => f.nodes.find((x) => x.name === n)!;
-
-describe('armado: --verificar y el tope de nodos', () => {
-  it('`construir.mjs --verificar` sale en 0 y dice que las dos variantes están al día', () => {
-    const r = spawnSync(process.execPath, [join(RROCA, 'construir.mjs'), '--verificar'], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
-    expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toContain('rroca-ruben.json al día');
-    expect(r.stdout).toContain('rroca-ruben.prueba.json al día');
-  });
-
-  it('un argumento desconocido NO escribe nada: sale en 2', () => {
-    const r = spawnSync(process.execPath, [join(RROCA, 'construir.mjs'), '--ayuda'], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
-    expect(r.status).toBe(2);
-  });
-
-  it(`ninguna variante pasa de ${TOPE_DE_NODOS} nodos (48 es el tope duro: si pasa, se rehace)`, () => {
-    expect(TOPE_DE_NODOS).toBe(48);
-    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(48);
-    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(48);
-    const grande = copia(PRODUCCION);
-    while (grande.nodes.length <= 48) grande.nodes.push({ ...copia(grande.nodes[0]!), id: `x${grande.nodes.length}`, name: `Relleno ${grande.nodes.length}` });
-    expect(guardias('produccion', grande).join('|')).toMatch(/tope es 48/);
-  });
-
-  it('producción y prueba: guardias limpias, y lo versionado no las viola', () => {
-    expect(guardias('produccion', PRODUCCION)).toEqual([]);
-    expect(guardias('prueba', PRUEBA)).toEqual([]);
-  });
-});
-
-describe('armado: la entrada verificada del receptor', () => {
-  const verificar = nodo(PRODUCCION, 'Verificar firma con el receptor');
-  it('`wabaIdEsperado` va FIJO en el cuerpo (un marcador REEMPLAZAR_*), nunca como una expresión', () => {
-    const cuerpo = String(verificar.parameters['jsonBody']);
-    expect(cuerpo).toMatch(/wabaIdEsperado: "REEMPLAZAR_WABA_ID_RROCA_RUBEN"/);
-    // La contraprueba: si alguien lo lee de la entrega, la guardia lo rechaza.
-    const roto = copia(PRODUCCION);
-    nodo(roto, 'Verificar firma con el receptor').parameters['jsonBody'] = cuerpo.replace('wabaIdEsperado: "REEMPLAZAR_WABA_ID_RROCA_RUBEN"', 'wabaIdEsperado: $json.body.waba');
-    expect(guardias('produccion', roto).join('|')).toMatch(/wabaIdEsperado/);
-  });
-
-  it('sin «Continue on Fail» ni onError en la verificación ni en «¿Firma válida?» (un 503 se reintenta, no da 401)', () => {
-    expect(verificar.onError).toBeUndefined();
-    expect((verificar as J)['continueOnFail']).toBeUndefined();
-    expect((nodo(PRODUCCION, '¿Firma válida?') as J)['onError']).toBeUndefined();
-    for (const marca of [{ onError: 'continueRegularOutput' }, { continueOnFail: true }]) {
-      const roto = copia(PRODUCCION);
-      Object.assign(nodo(roto, 'Verificar firma con el receptor'), marca);
-      expect(guardias('produccion', roto).join('|')).toMatch(/Continue on Fail/);
-    }
-    const roto2 = copia(PRODUCCION);
-    Object.assign(nodo(roto2, '¿Firma válida?'), { onError: 'continueRegularOutput' });
-    expect(guardias('produccion', roto2).join('|')).toMatch(/¿Firma válida\?/);
-  });
-
-  it('los repetidos se descartan ENTRE ejecuciones (por deliveryId), antes de «Config base»', () => {
-    const d = nodo(PRODUCCION, 'Descartar repetidos');
-    expect(d.parameters['operation']).toBe('removeItemsSeenInPreviousExecutions');
-    expect(d.parameters['logic']).toBe('removeItemsWithAlreadySeenKeyValues');
-    expect(PRODUCCION.connections['Descartar repetidos']!['main']![0]!.map((c) => c.node)).toEqual(['Config base']);
-    const roto = copia(PRODUCCION);
-    nodo(roto, 'Descartar repetidos').parameters['operation'] = 'removeDuplicateInputItems';
-    expect(guardias('produccion', roto).join('|')).toMatch(/entre ejecuciones/);
-  });
-
-  it('la verificación solo se llama por el verificador (marcador) y el 401 corta: 0 mensajes, 0 avisos', () => {
-    expect(String(verificar.parameters['url'])).toMatch(/^REEMPLAZAR_URL_VERIFICADOR_RECEPTOR$/);
-    expect(PRODUCCION.connections['¿Firma válida?']!['main']![1]!.map((c) => c.node)).toEqual(['Rechazar (401)']);
-    expect(PRODUCCION.connections['Rechazar (401)']).toBeUndefined();
-  });
-
-  it('producción: solo el webhook del receptor y NINGUNA «Entrada de prueba»; la prueba, al revés, con credencial de cabecera', () => {
-    expect(PRODUCCION.nodes.filter((n) => n.type === 'n8n-nodes-base.webhook').map((n) => n.name)).toEqual(['Entrega del receptor']);
-    expect(PRODUCCION.nodes.some((n) => n.name === 'Entrada de prueba')).toBe(false);
-    expect(PRUEBA.nodes.filter((n) => n.type === 'n8n-nodes-base.webhook').map((n) => n.name)).toEqual(['Entrada de prueba']);
-    expect(nodo(PRUEBA, 'Entrada de prueba').parameters['authentication']).toBe('headerAuth');
-    const conPrueba = copia(PRODUCCION);
-    conPrueba.nodes.push(copia(nodo(PRUEBA, 'Entrada de prueba')));
-    expect(guardias('produccion', conPrueba).join('|')).toMatch(/Entrada de prueba/);
-  });
-
-  it('nunca un WhatsApp Trigger ni una llamada a las suscripciones de la app (prohibición 7)', () => {
-    for (const f of [PRODUCCION, PRUEBA]) {
-      expect(f.nodes.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')).toBe(false);
-      expect(JSON.stringify(f)).not.toMatch(/subscriptions|subscribed_apps/i);
-    }
-    const roto = copia(PRODUCCION);
-    roto.nodes.push({ id: 'wt', name: 'WhatsApp Trigger', type: 'n8n-nodes-base.whatsAppTrigger', parameters: {} });
-    expect(guardias('produccion', roto).join('|')).toMatch(/WhatsApp Trigger/);
-  });
-});
-
-describe('armado: orden del lienzo y sin modelo en PR-1', () => {
-  it('«Reportar mensaje (entrante)» está ARRIBA de «Puerta del turno» y de la rama que responde', () => {
-    for (const f of [PRODUCCION, PRUEBA]) {
-      const y = (n: string): number => nodo(f, n).position![1];
-      expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('Puerta del turno'));
-      expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('Armar mensajes'));
-      expect(y('Resumen del turno')).toBeGreaterThan(y('Armar mensajes'));
-      expect(f.settings!['executionOrder']).toBe('v1');
-    }
-  });
-
-  it('la puerta corre DESPUÉS del reporte: el reporte es su única entrada, junto con el «no reportar»', () => {
-    const destinos = (n: string, salida: number) => (PRODUCCION.connections[n]!['main']![salida] ?? []).map((c) => c.node);
-    expect(destinos('¿Reportar? (entrante)', 0)).toEqual(['Reportar mensaje (entrante)']);
-    expect(destinos('¿Reportar? (entrante)', 1)).toEqual(['Puerta del turno']);
-    expect(destinos('Reportar mensaje (entrante)', 0)).toEqual(['Puerta del turno']);
-  });
-
-  it('PR-2 lleva el modelo (HTTP a Gemini, un dato), la lectura del comprobante, el cotejo y el aviso mínimo; NO lleva agente, memoria de n8n, «Registrar cierre» ni disparadores por tiempo (el rescate es PR-4)', () => {
-    for (const f of [PRODUCCION, PRUEBA]) {
-      const tipos = f.nodes.map((n) => n.type).join('\n');
-      expect(tipos).not.toMatch(/langchain\.(agent|memory|lmChat|chain)|scheduleTrigger|cron|whatsAppTrigger/i);
-      const nombres = f.nodes.map((n) => n.name);
-      for (const n of ['Conversar con el modelo', 'Guardar comprobante', 'Cotejar en el servidor', 'Interpretar lectura', 'Decidir turno', 'Armar avisos', 'Enviar aviso']) expect(nombres, n).toContain(n);
-      expect(nombres.join('\n')).not.toMatch(/Registrar cierre|rescate|Schedule/i);
-    }
-  });
-
-  it('un nodo HTTP solo habla con Meta, Gemini y las Functions de la consola; un anfitrión ajeno lo rechaza la guardia', () => {
-    expect(anfitrionPermitido('https://graph.facebook.com/v26.0/x')).toBe(true);
-    expect(anfitrionPermitido('https://evil.example.invalid/x')).toBe(false);
-    expect(anfitrionPermitido(`https://graph.facebook.com${'@'}evil.example.invalid/x`)).toBe(false);
-    const roto = copia(PRODUCCION);
-    nodo(roto, 'Traer configuración').parameters['url'] = 'https://evil.example.invalid/x';
-    expect(guardias('produccion', roto).join('|')).toMatch(/anfitrión/);
-  });
-
-  it('los ajustes: retención solo de errores, zona de La Paz, sin errorWorkflow', () => {
-    for (const f of [PRODUCCION, PRUEBA]) {
-      expect(f.settings).toMatchObject({ saveDataSuccessExecution: 'none', saveDataErrorExecution: 'all', saveExecutionProgress: false, timezone: 'America/La_Paz' });
-    }
-    const roto = copia(PRODUCCION);
-    roto.settings!['saveDataSuccessExecution'] = 'all';
-    expect(guardias('produccion', roto).join('|')).toMatch(/retención/);
-  });
-});
-
-describe('armado: lo común se INCLUYE desde su fuente, no se copia', () => {
-  const codigo = (f: Flujo, n: string): string => String(nodo(f, n).parameters['jsCode']);
-  it('«Armar mensajes» lleva `mensajes.js` byte a byte, desde `comun-sin-agente/src/`', () => {
-    const fuente = leer(join(FLUJOS, 'comun-sin-agente/src/mensajes.js')).trimEnd();
-    expect(codigo(PRODUCCION, 'Armar mensajes')).toContain(fuente);
-    expect(CONFIG.paquetes.mensajes).toEqual(['../comun-sin-agente/src/mensajes.js']);
-  });
-
-  it('la cadena de envío es la de `envio.mjs` (`injertar`), nodo por nodo; solo el reporte se reencamina a «¿Meta aceptó?» y el reporte saliente suma el EVENTO del QR (propio)', () => {
-    const cadena = nodosDeEnvio({ credenciales: { graph: 'Graph WhatsApp Ruben (Bearer)', ingesta: 'NovuChat ingesta (Ruben)' }, ingestaUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta', desde: [5480, 160] });
-    for (const n of cadena.nodes) {
-      if (n.name === 'Reportar mensaje (saliente)') continue;
-      expect(nodo(PRODUCCION, n.name), n.name).toEqual(n);
-    }
-    // El reporte saliente es la cadena común con UN cambio declarado: el cuerpo (`jsonBody`) lleva el evento `qr_enviado`.
-    const comun = cadena.nodes.find((n) => n.name === 'Reportar mensaje (saliente)')!;
-    const propio = nodo(PRODUCCION, 'Reportar mensaje (saliente)');
-    expect({ ...propio, parameters: { ...propio.parameters, jsonBody: '' } }).toEqual({ ...comun, parameters: { ...comun.parameters, jsonBody: '' } });
-    const cuerpo = String(propio.parameters['jsonBody']);
-    for (const campo of ['r.evento = m.evento', 'r.reglaCobro = 2', 'r.referencia = m.referencia', 'r.monto = m.monto']) expect(cuerpo).toContain(campo);
-    // El evento viaja SOLO si el envío principal (la imagen) fue aceptado: si cayó el respaldo en texto, el cobro no se abre.
-    expect(cuerpo).toContain("$('Enviar a WhatsApp').item.json");
-    expect(PRODUCCION.connections['¿Reportar? (saliente)']!['main']![0]!.map((c) => c.node)).toEqual(['¿Meta aceptó?']);
-    expect(PRODUCCION.connections['¿Meta aceptó?']!['main']![0]!.map((c) => c.node)).toEqual(['Reportar mensaje (saliente)']);
-  });
-
-  it('«Armar mensajes» lleva `filtro-redaccion.js` byte a byte, desde `comun-sin-agente/src/` (el modelo no sale sin pasar por él)', () => {
-    const fuente = leer(join(FLUJOS, 'comun-sin-agente/src/filtro-redaccion.js')).trimEnd();
-    expect(codigo(PRODUCCION, 'Armar mensajes')).toContain(fuente);
-    expect(CONFIG.paquetes.filtro).toEqual(['../comun-sin-agente/src/filtro-redaccion.js']);
-    expect(codigo(PRODUCCION, 'Armar mensajes')).toContain('cmRevisarRedaccion(');
-  });
-});
-
-describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)', () => {
-  const y = (f: Flujo, n: string): number => nodo(f, n).position![1];
-  const x = (f: Flujo, n: string): number => nodo(f, n).position![0];
-  const destinos = (f: Flujo, n: string, salida = 0): string[] => (f.connections[n]!['main']![salida] ?? []).map((c) => c.node);
-
-  it('cuenta de nodos: producción y prueba dentro del tope (48) y de la meta de producción (46)', () => {
-    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(46);
-    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(46);
-    expect(PRODUCCION.nodes.length).toBe(PRUEBA.nodes.length + 5);
-  });
-
-  it('«Reportar mensaje (entrante)» sigue ARRIBA de toda la rama que responde (medios, decisión, modelo, avisos y mensajes)', () => {
-    for (const f of [PRODUCCION, PRUEBA]) {
-      const arriba = y(f, 'Reportar mensaje (entrante)');
-      for (const n of ['Puerta del turno', '¿Bajar medio?', 'Decidir turno', 'Conversar con el modelo', 'Armar avisos', 'Enviar aviso', 'Armar mensajes']) expect(arriba, n).toBeLessThan(y(f, n));
-      expect(y(f, 'Resumen del turno')).toBeGreaterThan(y(f, 'Armar mensajes'));
-    }
-  });
-
-  it('«Guardar comprobante» es un nodo TERMINAL, cuelga de «Descargar medio» y va ARRIBA de «¿Es PDF?» (corre antes: la imagen se guarda aunque la lectura falle)', () => {
-    for (const f of [PRODUCCION, PRUEBA]) {
-      expect(f.connections['Guardar comprobante']).toBeUndefined();
-      expect(destinos(f, 'Descargar medio')).toEqual(['Guardar comprobante', '¿Es PDF?']);
-      expect(y(f, 'Guardar comprobante')).toBeLessThan(y(f, '¿Es PDF?'));
-      expect(nodo(f, 'Guardar comprobante').parameters['url']).toBe('https://us-east1-novuchat-demo.cloudfunctions.net/guardarComprobante');
-    }
-  });
-
-  it('la cadena del comprobante: Puerta → ¿Bajar medio? → URL → tamaño → descarga → (guardar | PDF?) → lectura → cotejo → Decidir turno; todo lo que falla cae en «Decidir turno», que lo trata como «sin cotejar»', () => {
-    const f = PRODUCCION;
-    expect(destinos(f, 'Puerta del turno')).toEqual(['¿Bajar medio?']);
-    expect(destinos(f, '¿Bajar medio?', 0)).toEqual(['Obtener URL del medio']);
-    expect(destinos(f, '¿Bajar medio?', 1)).toEqual(['Decidir turno']);
-    expect(destinos(f, 'Obtener URL del medio')).toEqual(['¿Tamaño aceptable?']);
-    expect(destinos(f, '¿Tamaño aceptable?', 0)).toEqual(['Descargar medio']);
-    expect(destinos(f, '¿Tamaño aceptable?', 1)).toEqual(['Decidir turno']);
-    expect(destinos(f, '¿Es PDF?', 0)).toEqual(['Leer comprobante (PDF)']);
-    expect(destinos(f, '¿Es PDF?', 1)).toEqual(['Leer comprobante (imagen)']);
-    expect(destinos(f, 'Leer comprobante (PDF)')).toEqual(['Interpretar lectura']);
-    expect(destinos(f, 'Leer comprobante (imagen)')).toEqual(['Interpretar lectura']);
-    expect(destinos(f, 'Interpretar lectura')).toEqual(['Cotejar en el servidor']);
-    expect(destinos(f, 'Cotejar en el servidor')).toEqual(['Decidir turno']);
-    expect(destinos(f, 'Decidir turno')).toEqual(['¿Conversar con el modelo?']);
-    expect(destinos(f, '¿Conversar con el modelo?', 0)).toEqual(['Conversar con el modelo']);
-    expect(destinos(f, '¿Conversar con el modelo?', 1)).toEqual(['Armar avisos']);
-    expect(destinos(f, 'Conversar con el modelo')).toEqual(['Armar avisos']);
-    expect(destinos(f, 'Armar avisos')).toEqual(['¿Hay avisos?']);
-    expect(destinos(f, '¿Hay avisos?', 0)).toEqual(['Enviar aviso']);
-    expect(destinos(f, '¿Hay avisos?', 1)).toEqual(['Armar mensajes']);
-    expect(destinos(f, 'Enviar aviso')).toEqual(['Armar mensajes']);
-    expect(destinos(f, 'Armar mensajes')).toEqual(['Resumen del turno', '¿Enviar de verdad?']);
-  });
-
-  it('el avance de izquierda a derecha respeta el orden de ejecución: el aviso corre ANTES de armar el mensaje que dice si salió', () => {
-    for (const f of [PRODUCCION, PRUEBA]) {
-      expect(x(f, 'Enviar aviso')).toBeLessThan(x(f, 'Armar mensajes'));
-      expect(x(f, 'Decidir turno')).toBeLessThan(x(f, 'Armar avisos'));
-      expect(x(f, 'Cotejar en el servidor')).toBeLessThan(x(f, 'Decidir turno'));
-    }
-  });
-
-  it('la pausa por persona no baja medios ni llama al modelo: ambas puertas miran la ruta de la puerta del turno', () => {
-    expect(String(nodo(PRODUCCION, '¿Bajar medio?').parameters['conditions']!['conditions'][0].leftValue)).toContain("ruta === 'sigue'");
-    expect(String(nodo(PRODUCCION, 'Decidir turno').parameters['jsCode'])).toContain("puerta.ruta !== 'sigue'");
-  });
-
-  it('ningún JSON lleva la clave `link` (el QR sale por `id`): ni en los parámetros ni en el código de los nodos', () => {
-    for (const f of [PRODUCCION, PRUEBA]) {
-      const t = JSON.stringify(f);
-      expect(t).not.toMatch(/\blink\s*:/);
-      expect(t).not.toMatch(/\\"link\\"|"link"/);
-      expect(t).not.toMatch(/image:\s*\{\s*link/);
-    }
-    // El armado del QR usa `image: { id: … }`.
-    expect(String(nodo(PRODUCCION, 'Armar mensajes').parameters['jsCode'])).toMatch(/image: \{ id: mediaId, caption: pie \}/);
-  });
-
-  it('los medios: «Descargar medio» es el ÚNICO nodo que baja de la URL que devuelve Meta; cualquier otra expresión de URL la rechaza la guardia', () => {
-    expect(anfitrionPermitido('={{ $json.url }}', 'Descargar medio')).toBe(true);
-    expect(anfitrionPermitido('={{ $json.url }}', 'Traer configuración')).toBe(false);
-    expect(anfitrionPermitido('={{ $json.otra }}', 'Descargar medio')).toBe(false);
-    const roto = copia(PRODUCCION);
-    nodo(roto, 'Descargar medio').parameters['url'] = '={{ $json.otraCosa }}';
-    expect(guardias('produccion', roto).join('|')).toMatch(/anfitrión/);
-    const roto2 = copia(PRODUCCION);
-    nodo(roto2, 'Conversar con el modelo').parameters['url'] = 'https://evil.example.invalid/x';
-    expect(guardias('produccion', roto2).join('|')).toMatch(/anfitrión/);
-  });
-
-  it('la verificación del receptor sigue igual: sin «Continue on Fail» en ninguno de los nodos nuevos que decide el turno', () => {
-    for (const n of ['Decidir turno', 'Armar avisos', 'Armar mensajes', 'Interpretar lectura']) {
-      expect((nodo(PRODUCCION, n) as J)['onError'], n).toBeUndefined();
-    }
-  });
-
-  it('el modelo y la credencial de Gemini son DATOS (nada escrito en el flujo): el modelo sale de «Config base» y la credencial va por nombre', () => {
-    expect(String(nodo(PRODUCCION, 'Conversar con el modelo').parameters['url'])).toContain('{{ $json.modelo }}');
-    const cb = (nodo(PRODUCCION, 'Config base').parameters['assignments'] as J)['assignments'] as J[];
-    expect(cb.find((a) => a['name'] === 'modelo')!['value']).toBe('gemini-3.5-flash-lite');
-    expect(cb.find((a) => a['name'] === 'cobroSimuladoActivo')!['value']).toBe(false);
-    for (const n of ['Conversar con el modelo', 'Leer comprobante (PDF)', 'Leer comprobante (imagen)']) {
-      expect(String((nodo(PRODUCCION, n).credentials as J)['googlePalmApi'].name), n).toBe('Google Gemini(PaLM) Api account');
-    }
-  });
-});
-
-// ------------------------------------------------------------------------------------------------------------------------------------
-// LOS HUECOS DECLARADOS en PROPIO.md: núcleo sin fuente utilizable, tomado de chat-novuchat. Cada uno se compara con su ORIGEN.
-// ------------------------------------------------------------------------------------------------------------------------------------
-const NODOS_PROPIOS = join(RROCA, 'src/nodos');
-const NODOS_CHAT = join(CHAT, 'src/nodos');
-const propio = (a: string): string => leer(join(NODOS_PROPIOS, a));
-const chat = (a: string): string => leer(join(NODOS_CHAT, a));
-/** Aplica sustituciones DECLARADAS: cada `de` tiene que aparecer en el origen (si no, el origen cambió y la copia quedó atrás). */
-function derivar(origen: string, cambios: Array<[string, string]>): string {
-  let t = origen;
-  for (const [de, a] of cambios) {
-    expect(t.includes(de), `el origen ya no trae: ${de.slice(0, 80)}`).toBe(true);
-    t = t.split(de).join(a);
-  }
-  return t;
-}
-const entre = (t: string, ini: string, fin: string): string => {
-  const i = t.indexOf(ini);
-  const j = t.indexOf(fin, i);
-  expect(i, `no está: ${ini.slice(0, 60)}`).toBeGreaterThanOrEqual(0);
-  expect(j, `no está: ${fin.slice(0, 60)}`).toBeGreaterThan(i);
-  return t.slice(i, j + fin.length);
+const AQUI = dirname(fileURLToPath(import.meta.url));
+const REPO = join(AQUI, '../../../..');
+const CARPETA = join(REPO, 'Flujos/experimental/rroca-ruben');
+const mod = (await import(pathToFileURL(join(CARPETA, 'construir.mjs')).href)) as {
+  construir: (o?: J) => Array<{ archivo: string; nodos: number; alDia: boolean; existia: boolean; versionado: string[] }>;
+  guardias: (v: 'produccion' | 'prueba', f: J) => string[];
+  cargarDatos: (r?: string) => J;
+  anfitrionPermitido: (u: string, n?: string) => boolean;
+  TOPE_DE_NODOS: number;
 };
+const leerJson = (a: string): J => JSON.parse(readFileSync(join(CARPETA, a), 'utf8')) as J;
+const PRODUCCION = leerJson('rroca-ruben.json');
+const PRUEBA = leerJson('rroca-ruben.prueba.json');
+const clon = (f: J): J => JSON.parse(JSON.stringify(f)) as J;
+const nodo = (f: J, n: string): J => (f['nodes'] as J[]).find((x) => x['name'] === n) as J;
 
-describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen', () => {
-  it('«Puerta del turno»: BYTE A BYTE idéntica', () => {
-    expect(propio('puerta-del-turno.js')).toBe(chat('puerta-del-turno.js'));
+describe('el armado: lo versionado es lo que arma la plantilla', () => {
+  it('`--verificar`: los dos JSON están al día, sin guardias violadas', () => {
+    const r = mod.construir({ verificar: true });
+    expect(r.map((x) => x.archivo)).toEqual(['rroca-ruben.json', 'rroca-ruben.prueba.json']);
+    for (const x of r) {
+      expect(x.existia, x.archivo).toBe(true);
+      expect(x.alDia, x.archivo).toBe(true);
+      expect(x.versionado, x.archivo).toEqual([]);
+    }
   });
 
-  it('«Resumen del turno»: el origen más SOLO la verificación de entrega (R3: sin `messages[0].id` del principal ni del respaldo, la ejecución falla)', () => {
-    const propia = propio('resumen-del-turno.js');
-    const origen = chat('resumen-del-turno.js');
-    const ancla = "const items = cnTodos('Armar mensajes');\n";
-    expect(origen.split(ancla)).toHaveLength(2);
-    const [antes, despues] = origen.split(ancla);
-    expect(propia.startsWith(antes! + ancla)).toBe(true);
-    expect(propia.endsWith(despues!)).toBe(true);
-    const agregado = propia.slice((antes! + ancla).length, propia.length - despues!.length);
-    expect(agregado).toContain("throw new Error('Entrega fallida");
-    expect(agregado).toContain("cnNodo('Enviar a WhatsApp')");
-    expect(agregado).toContain("cnTodos('Enviar respaldo')");
+  it('nodos: producción 56 y prueba 51 (≤ 56; antes 47 y 42, +9 por el guardado de medios (eran 11 hasta el contrato v2 del 30/10); antes 48 y 43; +1 por «Guardar comprobante»); la prueba cambia el receptor (6) por la «Entrada de prueba» (1)', () => {
+    // +8 (02/11/2026): la rama del miniCRM (módulo `crm`, aprobada por Andres) → 64 y 59.
+    expect((PRODUCCION['nodes'] as J[]).length).toBe(64);
+    expect((PRUEBA['nodes'] as J[]).length).toBe(59);
+    expect(mod.TOPE_DE_NODOS).toBe(64);
   });
 
-  it('`_comun.js`: el origen más SOLO las sustituciones declaradas (la clave de la ficha y sin el barrido de datos de otros flujos)', () => {
-    const esperado = derivar(chat('_comun.js'), [
-      ['DE «CHAT NOVUCHAT v2» (prefijo', 'DE LA «VENTA DIGITAL DE RUBÉN» (prefijo'],
-      ['(`chat.js`, y las', '(`rr.js`, y las'],
-      ['Los que escriben (con `escribir` verdadero)\n// además borran lo que dejaron los flujos anteriores de este mismo workflow (`captacionMinima`, `conversaciones`, `vistos`: datos de prospectos que este flujo no lee).', 'Los que escriben (con `escribir` verdadero) crean el mapa si falta.'],
-      ['  if (escribir === true) { delete sd.captacionMinima; delete sd.conversaciones; delete sd.vistos; }\n', ''],
-      ['chatNovuchat', 'rroca'],
-    ]);
-    expect(propio('_comun.js')).toBe(esperado);
+  it('el núcleo: Config base, Carga de entrada, Traer configuración, Config del negocio, Normalizar entrada, ¿Reportar? y Reportar (entrante), Puerta del turno', () => {
+    for (const n of ['Config base', 'Carga de entrada', 'Traer configuración', 'Config del negocio', 'Normalizar entrada', '¿Reportar? (entrante)', 'Reportar mensaje (entrante)', 'Puerta del turno']) {
+      expect(nodo(PRODUCCION, n), n).toBeDefined();
+      expect(nodo(PRUEBA, n), n).toBeDefined();
+    }
   });
 
-  it('«Carga de entrada»: el origen más SOLO la rama del receptor (la verificación manda sobre las otras formas)', () => {
-    const esperado = derivar(chat('carga-de-entrada.js'), [
-      ['//   3. la carga completa de la Cloud API: {entry:[{changes:[{value:{...}}]}]}, en la raíz o dentro de `body`.\n',
-        '//   3. la carga completa de la Cloud API: {entry:[{changes:[{value:{...}}]}]}, en la raíz o dentro de `body`;\n//   4. la del receptor: si CORRIÓ «Entrega del receptor», el evento es su `body.value` (y si `body.field` viene, tiene que ser `messages`: otro campo —un cambio de plantilla, de calidad— no es un mensaje). Ese nodo manda\n//      sobre las otras tres: lo que pasa por «Verificar firma con el receptor» ya no es el evento sino su veredicto, y NUNCA se lee como un mensaje.\n'],
-      ["const esperado = String((cnPrimero('Config base') || {}).phoneNumberIdEsperado || '');\n",
-        "const esperado = String((cnPrimero('Config base') || {}).phoneNumberIdEsperado || '');\nconst receptor = cnPrimero('Entrega del receptor');\nconst cuerpoReceptor = receptor && receptor.body && typeof receptor.body === 'object' ? receptor.body : {};\n"],
-      ["  const b = j.body && typeof j.body === 'object' ? j.body : null;\n  const v = cnValorDeMeta(j) || cnValorDeMeta(b);\n",
-        "  const b = !receptor && j.body && typeof j.body === 'object' ? j.body : null;\n  const v = receptor\n    ? (cuerpoReceptor.value && typeof cuerpoReceptor.value === 'object' && (cuerpoReceptor.field === undefined || cuerpoReceptor.field === 'messages') ? cnValorDeMeta(cuerpoReceptor.value) : null)\n    : (cnValorDeMeta(j) || cnValorDeMeta(b));\n"],
-    ]);
-    expect(propio('carga-de-entrada.js')).toBe(esperado);
+  it('ajustes: orden v1, zona America/La_Paz, sin guardar ejecuciones exitosas ni el progreso, y SIN la marca de no publicable (PR-B: la conversación está completa)', () => {
+    for (const f of [PRODUCCION, PRUEBA]) {
+      expect(f['settings']).toMatchObject({ executionOrder: 'v1', timezone: 'America/La_Paz', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false });
+      expect(f['meta']).toBeUndefined();
+    }
   });
 
-  it('«Interpretar entrada»: el origen sin el contrato del chat (eventos y rubros), con la `categoria` y (PR-2) con `esComprobante`, `comprobanteSimulado` y `mimeType`', () => {
-    const esperado = derivar(chat('interpretar-entrada.js'), [
-      ['// INTERPRETAR ENTRADA: el mensaje entrante, normalizado a UN evento de texto para el modelo.', '// INTERPRETAR ENTRADA: el mensaje entrante, normalizado (tipo, texto, medio y categoría). PR-1 no tiene modelo: la categoría solo dice qué clase de entrada llegó.'],
-      ['// Este nodo SOLO LEE la ficha. Un audio, una imagen o un documento salen SIN `evento`: lo arma «Registrar evento» con lo que lean los nodos de medios.', '// Este nodo SOLO LEE la ficha. Un audio, una imagen o un documento salen con `categoria: medio` y su `mediaId`; todo lo demás conversable, con `categoria: conversacion`; cualquier otro tipo, con `categoria: otro` (el flujo igual contesta cortésmente).'],
-      ['chYaVisto(cnFichaDe(', 'rrYaVisto(cnFichaDe('],
-      ['const rubros = (cfg.datos && cfg.datos.rubros) || [];\n', ''],
-      ['let evento = null;\n', ''],
-      ['  evento = chEventoTexto(texto);\n', ''],
-      ["  // Un toque no es texto: lo que cuenta es su id (`rubro:<id>`, `planes`, `equipo`), y solo si tiene la forma esperada.\n  const id = String((sel && sel.id) || '');\n  evento = chEventoToque(/^[a-z0-9:_-]{1,200}$/.test(id) ? id : '', rubros);\n",
-        "  // Un toque no es texto: lo que cuenta es su id, y solo si tiene la forma esperada.\n  const id = String((sel && sel.id) || '');\n  texto = /^[a-z0-9:_-]{1,200}$/.test(id) ? id : '';\n"],
-      ["  // Un botón sin texto no es una imagen: queda como «una respuesta rápida».\n  evento = texto.trim() === '' ? chEventoOtro('button') : chEventoTexto(texto);\n", ''],
-      ['  evento = chEventoOtro(tipo);\n', ''],
-      ["if (tipo === 'text' && !evento) return [];", "if (tipo === 'text' && texto.trim() === '') return [];"],
-      ["const esVisual = (tipo === 'image' || tipo === 'document') && mediaId !== '';\n", "const esVisual = (tipo === 'image' || tipo === 'document') && mediaId !== '';\nconst categoria = (tipo === 'text' || tipo === 'interactive' || tipo === 'button') ? 'conversacion' : ((tipo === 'audio' || tipo === 'image' || tipo === 'document') ? 'medio' : 'otro');\n"+'// PR-2: ¿esta imagen o documento es el comprobante de un QR abierto? Lo dice el SERVIDOR (`cobro` de `Traer configuración`), nunca el texto ni la imagen. Con cobro REAL: hay un QR pendiente, el cobro está\n// en revisión o el plazo venció hace menos de 24 h (el servidor decide qué hacer). Con cobro SIMULADO: cualquier foto con el QR pendiente es el comprobante de la prueba (no se baja ni se coteja).\nconst rrCobroDelTurno = rrCobro(rrPanelDe(cnPrimero(\'Traer configuración\')), cnPrimero(\'Config base\'));\nconst rrEsVisual = (tipo === \'image\' || tipo === \'document\');\nconst esComprobante = rrEsVisual && mediaId !== \'\' && rrCobroDelTurno.modo === \'real\' && (rrCobroDelTurno.pendiente || rrCobroDelTurno.enRevision || rrCobroDelTurno.vencidoHaceMin !== null);\nconst comprobanteSimulado = rrEsVisual && rrCobroDelTurno.modo === \'simulado\' && rrCobroDelTurno.pendiente;\nconst mimeType = visual && typeof visual.mime_type === \'string\' ? visual.mime_type.slice(0, 100) : \'\';\n'],
-      ['const msg = Array.isArray(carga.messages) ? carga.messages[0] : undefined;\n', 'const msg = Array.isArray(carga.messages) ? carga.messages[0] : undefined;\n'+"// El instante en que el CLIENTE escribió (Meta manda `timestamp` en segundos): de ahí parte la hora límite del aviso. Solo vale si es un número finito, no posterior al reloj del proceso y\n// de las últimas 24 h; si no, `mensajeMs` es el reloj del proceso. `ahoraMs` (el reloj del proceso) sigue siendo el de las ventanas y las fichas.\nconst ahoraTurno = Number(carga.ahoraMs) || Date.now();\nconst tsMeta = msg && /^\\d{1,12}$/.test(String(msg.timestamp)) ? Number(msg.timestamp) * 1000 : NaN;\nconst mensajeMs = Number.isFinite(tsMeta) && tsMeta <= ahoraTurno && ahoraTurno - tsMeta <= 24 * 60 * 60 * 1000 ? tsMeta : ahoraTurno;\n"],
-      ['  ahoraMs: Number(carga.ahoraMs) || Date.now(),\n', '  ahoraMs: ahoraTurno,\n  mensajeMs: mensajeMs,\n'],
-      ['  evento: evento,\n', '  categoria: categoria,\n  esComprobante: esComprobante,\n  comprobanteSimulado: comprobanteSimulado,\n  mimeType: mimeType,\n'],
-    ]);
-    expect(propio('interpretar-entrada.js')).toBe(esperado);
+  it('la cadena de envío es la común (con lote de 1 y 1,5 s) y «¿Meta aceptó?» está entre «¿Reportar? (saliente)» y «Reportar mensaje (saliente)»', () => {
+    const c = PRODUCCION['connections'] as J;
+    expect(c['¿Reportar? (saliente)'].main[0].map((x: J) => x['node'])).toEqual(['¿Meta aceptó?']);
+    expect(c['¿Meta aceptó?'].main[0].map((x: J) => x['node'])).toEqual(['Reportar mensaje (saliente)']);
+    const env = nodo(PRODUCCION, 'Enviar a WhatsApp');
+    expect(env['parameters'].options.batching.batch).toEqual({ batchSize: 1, batchInterval: 1500 });
+    expect(env['onError']).toBe('continueRegularOutput');
+    // El reporte saliente lee la entrada del nodo «Normalizar entrada» (no de uno que no existe en este flujo).
+    expect(JSON.stringify(nodo(PRODUCCION, 'Reportar mensaje (saliente)'))).toContain("$('Normalizar entrada')");
+    expect(JSON.stringify(PRODUCCION)).not.toContain('Interpretar entrada');
   });
 
-  it('«Config del negocio»: los bloques de lectura de la respuesta, de atención y del modo prueba son IDÉNTICOS al origen', () => {
-    const o = chat('config-del-negocio.js');
-    const c = propio('config-del-negocio.js');
-    const bloques: Array<[string, string]> = [
-      ['const base = cnPrimero', "if (!cuerpo || typeof cuerpo !== 'object') cuerpo = {};\n"],
-      ['const util = (v)', "const valor = (v) => (typeof v === 'string' && !/^REEMPLAZAR_/.test(v.trim())) ? v.trim() : '';\n"],
-      ['// --- ATENCIÓN', "atencionVenceEn: util(at.ventanaVenceEn) || '',\n};\n"],
-      ['const prueba = carga.prueba', "modoPrueba === true ? carga.prueba : null;\n"],
-      ['const permitidos = valor(', ".filter((x) => x.length >= 6);\n"],
-      ['const telefonoDePrueba = prueba', "cnDigitos(prueba.telefonoDePrueba) : '';\n"],
-      ['  waGraphVersion:', "String(base.waGraphVersion) : 'v26.0',\n"],
-      ["  phoneNumberId: String(carga.phoneNumberId || ''),", "  enviarDeVerdad: prueba ? prueba.enviarDeVerdad === true && telefonoPermitido : true,\n"],
+  it('«Armar mensajes» cuelga también de «Resumen del turno», que es el nodo más bajo del lienzo (corre al final con executionOrder v1)', () => {
+    const c = PRODUCCION['connections'] as J;
+    expect(c['Armar mensajes'].main[0].map((x: J) => x['node'])).toContain('Resumen del turno');
+    const ys = (PRODUCCION['nodes'] as J[]).filter((n) => ['Resumen del turno', '¿Enviar de verdad?'].includes(n['name'])).map((n) => n['position'][1]);
+    const resumen = nodo(PRODUCCION, 'Resumen del turno')['position'][1];
+    expect(Math.max(...ys)).toBe(resumen);
+  });
+});
+
+describe('las guardias: cada una rechaza su violación', () => {
+  const hallazgos = (v: 'produccion' | 'prueba', f: J): string => mod.guardias(v, f).join(' | ');
+  it('los JSON limpios no tienen hallazgos', () => {
+    expect(mod.guardias('produccion', PRODUCCION)).toEqual([]);
+    expect(mod.guardias('prueba', PRUEBA)).toEqual([]);
+  });
+  it('un WhatsApp Trigger (prohibición 7)', () => {
+    const f = clon(PRODUCCION); (f['nodes'] as J[]).push({ name: 'WhatsApp Trigger', type: 'n8n-nodes-base.whatsAppTrigger', parameters: {}, position: [0, 0] });
+    expect(hallazgos('produccion', f)).toMatch(/WhatsApp Trigger/);
+  });
+  it('«subscriptions» o «subscribed_apps» en cualquier parte del flujo', () => {
+    for (const s of ['/subscriptions', 'subscribed_apps']) {
+      const f = clon(PRODUCCION); nodo(f, 'Config base')['notes'] = `llama a ${s}`;
+      expect(hallazgos('produccion', f), s).toMatch(/subscri/);
+    }
+  });
+  it('un agente, una memoria o un modelo de chat de n8n', () => {
+    for (const t of ['@n8n/n8n-nodes-langchain.agent', '@n8n/n8n-nodes-langchain.memoryBufferWindow', '@n8n/n8n-nodes-langchain.lmChatGoogleGemini']) {
+      const f = clon(PRODUCCION); (f['nodes'] as J[]).push({ name: 'X', type: t, parameters: {}, position: [0, 0] });
+      expect(hallazgos('produccion', f), t).toMatch(/agente, memoria o modelo/);
+    }
+  });
+  it('más de 64 nodos', () => {
+    const f = clon(PRODUCCION);
+    for (let i = (f['nodes'] as J[]).length; i < 65; i++) (f['nodes'] as J[]).push({ name: `Relleno ${i}`, type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] });
+    expect(hallazgos('produccion', f)).toMatch(/65 nodos y el tope es 64/);
+    (f['nodes'] as J[]).pop();
+    expect(hallazgos('produccion', f)).not.toMatch(/nodos y el tope es/);
+  });
+  it('la marca `meta.noPublicable` de PR-A ya no va (la conversación está completa); la guardia de publicación es del PR-C', () => {
+    const f = clon(PRODUCCION); f['meta'] = { noPublicable: 'x' };
+    expect(hallazgos('produccion', f)).toMatch(/noPublicable/);
+  });
+  it('falta un nodo de la conversación completa o del aviso a Rubén (sin el aviso, los textos que prometen revisión no tendrían respaldo)', () => {
+    for (const n of ['Cotejar en el servidor', 'Conversar con el modelo', 'Armar avisos', '¿Hay avisos?', 'Enviar aviso']) {
+      const f = clon(PRODUCCION); f['nodes'] = (f['nodes'] as J[]).filter((x) => x['name'] !== n);
+      expect(hallazgos('produccion', f), n).toMatch(/conversación completa/);
+    }
+  });
+  it('«Enviar aviso» sin `onError: continueRegularOutput` (un rechazo de Meta cortaría el turno) o sin colgar de «Armar mensajes»', () => {
+    const f = clon(PRODUCCION); delete nodo(f, 'Enviar aviso')['onError'];
+    expect(hallazgos('produccion', f)).toMatch(/onError/);
+    const g = clon(PRODUCCION); (g['connections'] as J)['Enviar aviso'] = { main: [[]] };
+    expect(hallazgos('produccion', g)).toMatch(/no cuelga de «Armar mensajes»/);
+  });
+  it('el reporte saliente sin el evento `no_contactar` (condición dura del contrato del rescate)', () => {
+    const f = clon(PRODUCCION); const r = nodo(f, 'Reportar mensaje (saliente)'); r['parameters'].jsonBody = String(r['parameters'].jsonBody).replace(/no_contactar/g, 'otro');
+    expect(hallazgos('produccion', f)).toMatch(/no_contactar/);
+  });
+  it('la PRUEBA con una credencial de producción de Gemini o de Graph (los nodos de medios, el aviso y el modelo van con las de prueba)', () => {
+    const g = clon(PRUEBA); nodo(g, 'Conversar con el modelo')['credentials'] = { googlePalmApi: { id: '', name: 'Google Gemini(PaLM) Api account' } };
+    expect(hallazgos('prueba', g)).toMatch(/credencial de producción en «Conversar con el modelo»/);
+    const h = clon(PRUEBA); nodo(h, 'Descargar medio')['credentials'] = { httpHeaderAuth: { id: '', name: 'Graph WhatsApp Rubén (Bearer)' } };
+    expect(hallazgos('prueba', h)).toMatch(/credencial de producción en «Descargar medio»/);
+  });
+  it('la «Entrada de prueba» en producción, y el receptor en la prueba', () => {
+    const f = clon(PRODUCCION); (f['nodes'] as J[]).push(clon(nodo(PRUEBA, 'Entrada de prueba')));
+    expect(hallazgos('produccion', f)).toMatch(/Entrada de prueba/);
+    const g = clon(PRUEBA); (g['nodes'] as J[]).push(clon(nodo(PRODUCCION, 'Entrega del receptor')));
+    expect(hallazgos('prueba', g)).toMatch(/Entrega del receptor/);
+  });
+  it('la «Entrada de prueba» sin credencial de cabecera', () => {
+    const g = clon(PRUEBA); delete nodo(g, 'Entrada de prueba')['credentials'];
+    expect(hallazgos('prueba', g)).toMatch(/credencial de cabecera/);
+  });
+  it('un webhook que no es el de su variante', () => {
+    const f = clon(PRODUCCION); (f['nodes'] as J[]).push({ name: 'Otro webhook', type: 'n8n-nodes-base.webhook', parameters: {}, position: [0, 0] });
+    expect(hallazgos('produccion', f)).toMatch(/no corresponde a esta variante/);
+  });
+  it('«Continue on Fail» u `onError` en el verificador, y en «¿Firma válida?»', () => {
+    const f = clon(PRODUCCION); nodo(f, 'Verificar firma con el receptor')['onError'] = 'continueRegularOutput';
+    expect(hallazgos('produccion', f)).toMatch(/Continue on Fail/);
+    const g = clon(PRODUCCION); nodo(g, '¿Firma válida?')['continueOnFail'] = true;
+    expect(hallazgos('produccion', g)).toMatch(/¿Firma válida\?/);
+  });
+  it('`wabaIdEsperado` como EXPRESIÓN (nunca un valor fijo)', () => {
+    const f = clon(PRODUCCION);
+    const v = nodo(f, 'Verificar firma con el receptor');
+    v['parameters'].jsonBody = String(v['parameters'].jsonBody).replace(/wabaIdEsperado: "[^"]*"/, 'wabaIdEsperado: $json.body.value.metadata.waba_id');
+    expect(hallazgos('produccion', f)).toMatch(/wabaIdEsperado/);
+  });
+  it('«Descartar repetidos» que no descarta entre ejecuciones', () => {
+    const f = clon(PRODUCCION); nodo(f, 'Descartar repetidos')['parameters'].operation = 'removeDuplicateInputItems';
+    expect(hallazgos('produccion', f)).toMatch(/entre ejecuciones/);
+  });
+  it('falta un nodo de la entrada verificada del receptor', () => {
+    const f = clon(PRODUCCION); f['nodes'] = (f['nodes'] as J[]).filter((n) => n['name'] !== 'Aceptar (200)');
+    expect(hallazgos('produccion', f)).toMatch(/Aceptar \(200\)/);
+  });
+  it('falta un nodo del contrato con los módulos comunes de medios', () => {
+    const f = clon(PRODUCCION); f['nodes'] = (f['nodes'] as J[]).filter((n) => n['name'] !== 'Obtener URL del medio (general)');
+    expect(hallazgos('produccion', f)).toMatch(/contrato con los módulos comunes de medios/);
+  });
+  it('un nodo HTTP que habla con un anfitrión fuera de la lista (y los parecidos engañosos)', () => {
+    for (const url of ['https://evil.example/x', 'http://graph.facebook.com/x', 'https://graph.facebook.com.evil.example/x', 'https://evil.example/graph.facebook.com']) {
+      const f = clon(PRODUCCION); nodo(f, 'Traer configuración')['parameters'].url = url;
+      expect(hallazgos('produccion', f), url).toMatch(/anfitrión fuera de la lista/);
+    }
+    expect(mod.anfitrionPermitido('https://graph.facebook.com/v26.0/x')).toBe(true);
+    // La única excepción por nombre: «Descargar medio» baja de la URL que devuelve Meta.
+    expect(mod.anfitrionPermitido('={{ $json.url }}', 'Descargar medio')).toBe(true);
+    expect(mod.anfitrionPermitido('={{ $json.url }}', 'Otro nodo')).toBe(false);
+  });
+  it('retención de ejecuciones, `errorWorkflow`, orden y zona horaria', () => {
+    const cambios: Array<[string, unknown, RegExp]> = [
+      ['saveDataSuccessExecution', 'all', /retención/], ['saveDataErrorExecution', 'all', /retención/], ['saveExecutionProgress', true, /retención/],
+      ['errorWorkflow', 'x', /errorWorkflow/], ['executionOrder', 'v0', /executionOrder/], ['timezone', 'UTC', /timezone/],
     ];
-    for (const [ini, fin] of bloques) {
-      const trozo = entre(o, ini, fin);
-      expect(c.includes(trozo), `el bloque «${ini.slice(0, 40)}» no es idéntico al origen`).toBe(true);
+    for (const [campo, valor, re] of cambios) {
+      const f = clon(PRODUCCION); (f['settings'] as J)[campo] = valor;
+      expect(hallazgos('produccion', f), campo).toMatch(re);
     }
-    // La ÚNICA diferencia del modo prueba (declarada en PROPIO.md): `telefonoPermitido` niega por defecto.
-    expect(entre(o, 'const telefonoPermitido', ';\n')).toBe('const telefonoPermitido = permitidos.length === 0 || permitidos.indexOf(telefonoDePrueba) >= 0;\n');
-    expect(entre(c, 'const telefonoPermitido', ';\n')).toBe('const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;\n');
-    // Lo QUE SE QUITÓ: la oferta (planes y cargos), la planilla y los datos propios del chat.
-    for (const quitado of ['CH_DATOS', 'limpiarOferta', 'planillaProspectosId', 'archivoPlanes', 'cargosUnicos']) expect(c).not.toContain(quitado);
   });
-
-  it('NIEGA_IA: la expresión es IDÉNTICA a `CH_NIEGA_IA` de chat-novuchat (la librería propia la declara)', () => {
-    const origen = /^const CH_NIEGA_IA = (\/.+\/);$/m.exec(leer(join(CHAT, 'src/lib/chat.js')))![1];
-    const copiaRr = /^const RR_NIEGA_IA = (\/.+\/);$/m.exec(leer(join(RROCA, 'src/lib/rr.js')))![1];
-    expect(copiaRr).toBe(origen);
+  it('un marcador `REEMPLAZAR_` fuera de «Config base», el receptor y la ruta de prueba', () => {
+    const f = clon(PRODUCCION); nodo(f, 'Decidir turno')['notes'] = 'REEMPLAZAR_ALGO';
+    expect(hallazgos('produccion', f)).toMatch(/trae un marcador REEMPLAZAR_/);
+  });
+  it('«Reportar mensaje (entrante)» debajo de la rama que responde (el aviso de uso extendido no saldría nunca)', () => {
+    for (const abajo of ['Puerta del turno', '¿Bajar medio?', 'Decidir turno', 'Armar mensajes']) {
+      const f = clon(PRODUCCION); nodo(f, 'Reportar mensaje (entrante)')['position'] = [1400, nodo(f, abajo)['position'][1] + 10];
+      expect(hallazgos('produccion', f), abajo).toMatch(new RegExp(`arriba de «${abajo.replace(/[?()¿]/g, '.')}`));
+    }
   });
 });
 
-describe('HUECOS: nodos JSON de la plantilla, comparados con sus orígenes (sin `notes`, `position` ni `id`)', () => {
-  const plantilla = (ruta: string): Flujo => JSON.parse(leer(ruta)) as Flujo;
-  const limpio = (n: J): string => {
-    const { notes: _n, position: _p, id: _i, ...resto } = n as J;
-    return JSON.stringify(resto);
-  };
-  const RR = plantilla(join(RROCA, 'flujo.plantilla.json'));
-  const comparar = (origen: Flujo, nombres: string[]): void => {
-    for (const n of nombres) {
-      const a = nodo(RR, n);
-      const b = origen.nodes.find((x) => x.name === n);
-      expect(a, `falta en rroca-ruben: ${n}`).toBeDefined();
-      expect(b, `falta en el origen: ${n}`).toBeDefined();
-      expect(limpio(a as J), n).toBe(limpio(b as J));
-    }
-  };
-  it('los 6 nodos de la entrada verificada del receptor son IDÉNTICOS a los de venta-minima', () => {
-    comparar(plantilla(join(FLUJOS, 'venta-minima/flujo.plantilla.json')), ['Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos']);
+describe('los datos: solo marcadores para identificadores y rutas', () => {
+  const ruta = join(REPO, 'admin/scripts/datos/rroca-ruben/rroca-ruben.json');
+  const datos = mod.cargarDatos(ruta);
+  it('los identificadores y las rutas son marcadores `REEMPLAZAR_*` (repo público); el modelo es gemini-3.5-flash-lite', () => {
+    const d = datos as { receptor: J; pruebaRuta: string; configBase: J };
+    for (const v of [...Object.values(d.receptor), d.pruebaRuta, d.configBase['phoneNumberIdEsperado'], d.configBase['numeroRecepcion'], d.configBase['telefonosDePrueba']]) expect(String(v)).toMatch(/^REEMPLAZAR_[A-Z0-9_]+$/);
+    expect(d.configBase['modelo']).toBe('gemini-3.5-flash-lite');
+    // Ya no hay línea de protección: el asistente no atiende denuncias y no cita recursos.
+    expect(d.configBase).not.toHaveProperty('lineaProteccion');
+    // Se reutilizan las dos plantillas ya APROBADAS en Meta (decisión de Andres, 05/11/2026): sus nombres no son secretos ni identificadores.
+    expect(d.configBase['avisoComprobantePlantilla']).toBe('aviso_comprobante_recibido');
+    expect(d.configBase['avisoConsultaPlantilla']).toBe('aviso_consulta_para_ruben');
+    expect(d.configBase['avisoConsultaEstado']).toBe('APPROVED');
+    expect(d.configBase['avisoPlantillaIdioma']).toBe('es');
+    expect(d.configBase['avisoComprobanteEstado']).toBe('APPROVED');
+    // NO HAY GARANTÍA: el dato ya no existe.
+    expect(d.configBase).not.toHaveProperty('garantiaTexto');
+    expect(d.configBase['plazoEntregaHoras']).toBe(6);
+    expect(d.configBase['temperatura']).toBe(0.4);
+    expect(d.configBase['prefijosPermitidos']).toBe('591');
   });
-  it('«Traer configuración», «Config base», «¿Reportar? (entrante)», «Reportar mensaje (entrante)» y «¿Meta aceptó?» son IDÉNTICOS a los de chat-novuchat', () => {
-    comparar(plantilla(join(CHAT, 'flujo.plantilla.json')), ['Traer configuración', 'Config base', '¿Reportar? (entrante)', 'Reportar mensaje (entrante)', '¿Meta aceptó?']);
+  it('el JSON armado lleva los marcadores solo en «Config base», el receptor y la ruta de prueba, y ningún teléfono completo', () => {
+    const texto = JSON.stringify(PRODUCCION) + JSON.stringify(PRUEBA);
+    expect(texto).not.toMatch(/\b\d{11,}\b/);
+    expect(texto).not.toMatch(/EAA[A-Za-z0-9]{20,}|Bearer [A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{20,}/);
   });
-  it('la comparación niega: un cambio en `parameters` de la copia se detecta', () => {
-    const a = copia(nodo(RR, 'Traer configuración')) as J;
-    a['parameters'] = { ...a['parameters'], url: 'https://otro.example.invalid/x' };
-    expect(limpio(a)).not.toBe(limpio(nodo(RR, 'Traer configuración') as J));
-  });
-});
-
-describe('«solo se ofrece lo que se cumple»: con el aviso a recepción (PR-3) el flujo es publicable, y la guardia EXIGE que el aviso esté', () => {
-  it('el JSON de producción ya no lleva `meta.noPublicable` y la guardia rechaza que la marca vuelva', () => {
-    expect((PRODUCCION as J)['meta']?.noPublicable).toBeUndefined();
-    expect(guardias('produccion', PRODUCCION)).toEqual([]);
-    const conMarca = copia(PRODUCCION) as J;
-    conMarca['meta'] = { noPublicable: 'x' };
-    expect(guardias('produccion', conMarca as Flujo).join('|')).toMatch(/noPublicable/);
-  });
-  it('el JSON FALLA si se quita el aviso: sin «Armar avisos», sin «¿Hay avisos?» o sin «Enviar aviso» (en producción y en la prueba)', () => {
-    for (const [variante, f] of [['produccion', PRODUCCION], ['prueba', PRUEBA]] as const) {
-      for (const n of NODOS_DEL_AVISO) {
-        const sin = copia(f) as J;
-        sin['nodes'] = sin['nodes'].filter((x: J) => x['name'] !== n);
-        expect(guardias(variante, sin as Flujo).join('|'), `${variante} sin ${n}`).toContain(`falta el nodo «${n}»`);
+  it('rechaza una forma inválida: ruta del receptor real, versión de Graph, prefijo, modelo, teléfono de prueba', () => {
+    const base = JSON.parse(readFileSync(ruta, 'utf8')) as J;
+    const intentos: Array<(d: J) => void> = [
+      (d) => { d['receptor'].ruta = 'abc123'; },
+      (d) => { d['configBase'].waGraphVersion = 'latest'; },
+      (d) => { d['configBase'].prefijosPermitidos = '+591'; },
+      (d) => { d['configBase'].modelo = 'gpt-4'; },
+      (d) => { d['configBase'].modelo = 'gemini-2.5-pro'; },
+      (d) => { d['configBase'].plazoEntregaHoras = 24; },
+      (d) => { d['configBase'].temperatura = 1.5; },
+      (d) => { d['configBase'].avisoComprobanteEstado = 'APROBADA'; },
+      (d) => { d['configBase'].telefonosDePrueba = '123'; },
+      (d) => { d['pruebaRuta'] = 'ruta-real'; },
+      (d) => { delete d['configBase'].nombreNegocio; },
+      (d) => { d['configBase'].extra = { a: 1 }; },
+    ];
+    // Carpeta temporal fuera del repositorio, solo para esta prueba.
+    const dir = mkdtempSync(join(tmpdir(), 'rroca-ruben-datos-'));
+    try {
+      for (const [i, cambio] of intentos.entries()) {
+        const d = clon(base); cambio(d);
+        const tmp = join(dir, `datos-${i}.json`);
+        writeFileSync(tmp, JSON.stringify(d));
+        expect(() => mod.cargarDatos(tmp), `intento ${i}`).toThrow(/datos no válidos/);
       }
-    }
-  });
-  it('el JSON FALLA si «Armar avisos» pierde la plantilla o la ventana de Rubén, o si el aviso se desconecta o corre DESPUÉS de armar el mensaje', () => {
-    const sinPlantilla = copia(PRODUCCION) as J;
-    const n = sinPlantilla['nodes'].find((x: J) => x['name'] === 'Armar avisos');
-    n['parameters']['jsCode'] = String(n['parameters']['jsCode']).replace(/rrPlantilla\(/g, 'rrOtra(');
-    expect(guardias('produccion', sinPlantilla as Flujo).join('|')).toMatch(/no lleva la plantilla ni la ventana/);
-    const desconectado = copia(PRODUCCION) as J;
-    desconectado['connections']['Armar avisos'] = { main: [[]] };
-    expect(guardias('produccion', desconectado as Flujo).join('|')).toMatch(/«Armar avisos» no está conectado/);
-    const tarde = copia(PRODUCCION) as J;
-    tarde['connections']['Enviar aviso'] = { main: [[]] };
-    expect(guardias('produccion', tarde as Flujo).join('|')).toMatch(/«Enviar aviso» no cuelga de «Armar mensajes»/);
-  });
-  it('el JSON FALLA si «¿Hay avisos?» no manda la rama sin aviso a «Armar mensajes», o si «Enviar aviso» pierde la credencial o su `onError` (en producción y en la prueba)', () => {
-    for (const [variante, f] of [['produccion', PRODUCCION], ['prueba', PRUEBA]] as const) {
-      expect(guardias(variante, f), variante).toEqual([]);
-      const sinRama = copia(f) as J;
-      sinRama['connections']['¿Hay avisos?'] = { main: [sinRama['connections']['¿Hay avisos?'].main[0], []] };
-      expect(guardias(variante, sinRama as Flujo).join('|'), `${variante} sin rama sin aviso`).toMatch(/«¿Hay avisos\?» no envía la rama sin aviso/);
-      const sinCred = copia(f) as J;
-      delete sinCred['nodes'].find((x: J) => x['name'] === 'Enviar aviso')['credentials'];
-      expect(guardias(variante, sinCred as Flujo).join('|'), `${variante} sin credencial`).toMatch(/«Enviar aviso» no lleva credencial/);
-      const sinError = copia(f) as J;
-      delete sinError['nodes'].find((x: J) => x['name'] === 'Enviar aviso')['onError'];
-      expect(guardias(variante, sinError as Flujo).join('|'), `${variante} sin onError`).toMatch(/«Enviar aviso» no lleva `onError: continueRegularOutput`/);
-    }
-  });
-  it('«Enviar aviso» sanea la versión de Graph y el id del número igual que «Enviar a WhatsApp»', () => {
-    for (const f of [PRODUCCION, PRUEBA]) {
-      const url = (nombre: string) => String((f['nodes'] as J[]).find((x: J) => x['name'] === nombre)!['parameters']['url']);
-      expect(url('Enviar aviso')).toBe(url('Enviar a WhatsApp'));
-      expect(url('Enviar aviso')).toContain("replace(/\\D/g, '')");
-      expect(url('Enviar aviso')).toContain('/^v\\d+\\.\\d$/');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
 
-describe('saneo del repo público: lo armado no lleva identificadores', () => {
-  const textos: Array<[string, string]> = [
-    ['rroca-ruben.json', leer(join(RROCA, 'rroca-ruben.json'))],
-    ['rroca-ruben.prueba.json', leer(join(RROCA, 'rroca-ruben.prueba.json'))],
-    ['rroca-ruben.json (datos)', leer(ARCHIVO_DE_DATOS)],
-  ];
-  for (const [nombre, t] of textos) {
-    it(`${nombre}: sin UUID, sin tokens, sin rutas de usuario, sin correos y sin secuencias de 10 o más dígitos que no sean de seis ceros`, () => {
-      expect(t).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-      expect(t).not.toMatch(/\bEAA[A-Za-z0-9]{20,}|\bAIza[0-9A-Za-z_-]{30,}|\bsk-[A-Za-z0-9_-]{20,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bxox[abprs]-/);
-      expect(t).not.toMatch(/\/(home|Users)\/[a-z][a-z0-9._-]+\//);
-      expect(t).not.toMatch(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/);
-      const largas = (t.match(/\d{10,}/g) ?? []).filter((s) => !/0{6,}/.test(s));
-      expect(largas).toEqual([]);
-    });
-  }
-
-  it('las rutas de webhook, el verificador y el waba son marcadores REEMPLAZAR_*; ninguna ruta real versionada', () => {
-    const d = cargarDatos() as J;
-    for (const v of [d['receptor'].ruta, d['receptor'].urlVerificador, d['receptor'].wabaIdEsperado, d['pruebaRuta']]) expect(String(v)).toMatch(/^REEMPLAZAR_[A-Z0-9_]+$/);
-    expect(String(nodo(PRODUCCION, 'Entrega del receptor').parameters['path'])).toBe(d['receptor'].ruta);
-    expect(String(nodo(PRUEBA, 'Entrada de prueba').parameters['path'])).toBe(d['pruebaRuta']);
-  });
-
-  it('ninguna credencial lleva id (van por nombre) y las credenciales de AAB1-WA-Prod no aparecen', () => {
-    for (const f of [PRODUCCION, PRUEBA]) {
-      for (const n of f.nodes) for (const c of Object.values(n.credentials ?? {})) expect(c.id, n.name).toBe('');
-      expect(JSON.stringify(f)).not.toMatch(/aab1-wa-prod/i);
+describe('zona: nada de otro cliente en el código de Rubén', () => {
+  const archivos = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? archivos(join(dir, e.name)) : [join(dir, e.name)]));
+  const propios = archivos(join(CARPETA, 'src')).filter((f) => f.endsWith('.js'));
+  it('ningún `.js` de Rubén nombra a otro cliente ni a otro negocio', () => {
+    expect(propios.length).toBeGreaterThan(5);
+    for (const f of propios) {
+      const sinComentarios = readFileSync(f, 'utf8').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+      expect(sinComentarios, f).not.toMatch(/antonio|dauber|bellido|platinum|q'?taco|novuchat|rroca-antonio|libro ia|emprendedores/i);
     }
   });
+  it('los textos que salen al cliente no niegan ser una IA, no prometen ni afirman un pago', () => {
+    const t = readFileSync(join(CARPETA, 'src/lib/rr.js'), 'utf8');
+    const textos = [...t.matchAll(/^const RR_TEXTO_[A-Z_]+ = '([^']*)'/gm)].map((m) => m[1]!);
+    expect(textos.length).toBeGreaterThan(0);
+    for (const x of textos) {
+      expect(x).not.toMatch(/acreditad|verificad|validad|recibimos tu pago/i);
+      expect(x).not.toMatch(/\bno soy (un |una )?(bot|ia|asistente|robot)\b|\bsoy (una )?persona\b|humano/i);
+    }
+  });
+});
 
-  it('un dato real en el archivo de datos lo rechaza el armador (la ruta del receptor tiene que ser un marcador)', () => {
-    const ruta = join(ESTA, 'no-existe.json');
-    expect(() => cargarDatos(ruta)).toThrow(/no existe/);
+describe('rr.js: la ficha por teléfono', () => {
+  const ra = cargarLibrerias('rrFichaVigente, rrYaVisto, rrRecordarIds, rrBarrer, RR_OLVIDO_MS, RR_TOPE_IDS, RR_TOPE_FICHAS') as J;
+  it('una ficha de más de 48 horas se olvida; una vigente conserva sus ids', () => {
+    const ahora = 1_000_000_000_000;
+    expect(ra.rrFichaVigente({ ultimoMs: ahora - ra.RR_OLVIDO_MS - 1, ultimosIds: ['a'] }, ahora).ultimosIds).toEqual([]);
+    expect(ra.rrFichaVigente({ ultimoMs: ahora - 1000, ultimosIds: ['a'] }, ahora).ultimosIds).toEqual(['a']);
+  });
+  it('lo que no es una ficha (arreglo, texto, nulo) es una ficha nueva', () => {
+    for (const raro of [null, undefined, [], 'x', 3]) expect(ra.rrFichaVigente(raro, 1).ultimosIds).toEqual([]);
+  });
+  it('recuerda solo los últimos 40 ids y descarta los vacíos y los de más de 200 caracteres', () => {
+    const f = ra.rrFichaVigente(null, 1);
+    ra.rrRecordarIds(f, Array.from({ length: 50 }, (_, i) => `id${i}`));
+    expect(f.ultimosIds).toHaveLength(ra.RR_TOPE_IDS);
+    expect(f.ultimosIds[39]).toBe('id49');
+    ra.rrRecordarIds(f, ['', 'x'.repeat(201), 3]);
+    expect(f.ultimosIds).toHaveLength(ra.RR_TOPE_IDS);
+    expect(ra.rrYaVisto(f, 'id49')).toBe(true);
+    expect(ra.rrYaVisto(f, 'id0')).toBe(false);
+    expect(ra.rrYaVisto(f, '')).toBe(false);
+  });
+  it('el barrido saca las fichas viejas o sin hora y no deja pasar de 1.000 (cada ficha guarda hasta 15 mensajes de memoria)', () => {
+    const ahora = 10 ** 12;
+    const mapa: J = { a: { ultimoMs: ahora - ra.RR_OLVIDO_MS - 1 }, b: { ultimoMs: 0 }, c: { ultimoMs: ahora } };
+    ra.rrBarrer(mapa, ahora);
+    expect(Object.keys(mapa)).toEqual(['c']);
+    const grande: J = {};
+    for (let i = 0; i < ra.RR_TOPE_FICHAS + 3; i++) grande[`k${i}`] = { ultimoMs: ahora - i };
+    ra.rrBarrer(grande, ahora);
+    expect(Object.keys(grande)).toHaveLength(ra.RR_TOPE_FICHAS);
+    expect(grande['k0']).toBeDefined();
   });
 });

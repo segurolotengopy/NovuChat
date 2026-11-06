@@ -1,0 +1,35 @@
+{
+  "nombreFlujo": "NovuChat — Walisuma (walisuma)",
+  "nombreFlujoPrueba": "NovuChat — Walisuma (walisuma, prueba)",
+  "credenciales": {
+    "ingesta": "REEMPLAZAR_CREDENCIAL_INGESTA",
+    "graph": "REEMPLAZAR_CREDENCIAL_GRAPH",
+    "graphPrueba": "REEMPLAZAR_CREDENCIAL_GRAPH_PRUEBA",
+    "entradaPrueba": "REEMPLAZAR_CREDENCIAL_ENTRADA_PRUEBA",
+    "gemini": "REEMPLAZAR_CREDENCIAL_GEMINI",
+    "geminiPrueba": "REEMPLAZAR_CREDENCIAL_GEMINI_PRUEBA"
+  },
+  "receptor": {
+    "ruta": "REEMPLAZAR_RUTA_RECEPTOR_WALISUMA",
+    "urlVerificador": "REEMPLAZAR_URL_VERIFICADOR_RECEPTOR",
+    "wabaIdEsperado": "REEMPLAZAR_WABA_ID_WALISUMA"
+  },
+  "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA",
+  "configBase": {
+    "waGraphVersion": "v26.0",
+    "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_WALISUMA",
+    "numeroRecepcion": "REEMPLAZAR_NUMERO_RECEPCION_WALISUMA",
+    "contactoAviso": "REEMPLAZAR_CONTACTO_DESIGNADO_AVISO",
+    "nombreNegocio": "REEMPLAZAR_NOMBRE_DEL_NEGOCIO",
+    "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
+    "prefijosPermitidos": "591",
+    "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA",
+    "modelo": "gemini-3.5-flash-lite",
+    "temperatura": 0.4,
+    "modosDeEntrega": "REEMPLAZAR_MODOS_DE_ENTREGA",
+    "costoDeEntrega": "",
+    "avisoPedidoPlantilla": "pedido_registrado",
+    "avisoPedidoEstado": "REEMPLAZAR_ESTADO_DE_LA_PLANTILLA",
+    "avisoPlantillaIdioma": "es"
+  }
+}

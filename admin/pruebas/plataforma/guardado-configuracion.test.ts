@@ -41,6 +41,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { documentoAlmacenado, horarioDe, payloadDeLaConsola, type Calendario, type Forma } from './guardado-configuracion-lib.ts';
 
+import { modulosDeFlujos } from '../../functions/src/registro.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const AHORA = readFileSync(join(aqui, '..', '..', 'firestore.rules'), 'utf8');
 const PRODUCCION = readFileSync(join(aqui, 'firestore-base-v0.13.2.rules.txt'), 'utf8');
@@ -51,9 +52,9 @@ const UID = 'u-admin-q';
 
 const comun = { creadoEn: TS, creadoPor: 'u-x', estado: 'activo', plan: 'crecimiento', waPhoneNumberId: 'pn', waWabaId: 'wb', nombre: 'Q' };
 const FICHAS = {
-  venta: { ...comun, flujos: ['venta'], vertical: 'venta' },
-  soloVertical: { ...comun, vertical: 'venta' },
-  agenda: { ...comun, flujos: ['agendamiento'], vertical: 'agendamiento' },
+  venta: { ...comun, flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]), vertical: 'venta' },
+  soloVertical: { ...comun, vertical: 'venta', modulos: modulosDeFlujos(['venta']) },
+  agenda: { ...comun, flujos: ['agendamiento'], modulos: modulosDeFlujos(['agendamiento'] as never[]), vertical: 'agendamiento' },
 } as const;
 
 type Resultado = 'P' | 'N' | 'LIMITE';

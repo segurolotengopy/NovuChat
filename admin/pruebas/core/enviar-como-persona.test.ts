@@ -90,7 +90,7 @@ const enviar = (data: unknown, a: Actor | null = ANA, entorno: ReturnType<typeof
 
 // --- Semillas ------------------------------------------------------------------
 async function ficha(t: string, o: Record<string, unknown> = {}) {
-  await db.doc(`tenants/${t}`).set({ nombre: t, estado: 'activo', consolaConversaciones: 'nueva', ...o });
+  await db.doc(`tenants/${t}`).set({ nombre: t, estado: 'activo', consolaConversaciones: 'nueva', personaPuedeEscribir: true, ...o });
 }
 async function conversacion(t: string, id: string, o: Record<string, unknown> = {}, quien = 'u-ana') {
   await db.doc(`tenants/${t}/conversaciones/${id}`).set({
@@ -318,6 +318,39 @@ describe('quién puede', () => {
     }
     expect(timbres).toHaveLength(0);
   });
+
+  it('NEGATIVA (25/10): sin `personaPuedeEscribir === true` exacto no se escribe: ni mensaje, ni timbre, ni cupo, ni auditoría', async () => {
+    for (const valor of [undefined, false, null, 'true', 1, {}]) {
+      await db.doc(`tenants/${A}`).set({ nombre: A, estado: 'activo', consolaConversaciones: 'nueva', ...(valor === undefined ? {} : { personaPuedeEscribir: valor }) });
+      const e = await rechazo(enviar(base()));
+      expect({ code: e.code, message: e.message }, String(valor)).toEqual({ code: 'permission-denied', message: 'Esta función todavía no está activa para su negocio.' });
+      await sinEscrituras();
+      expect(timbres).toHaveLength(0);
+    }
+  });
+
+  it('NEGATIVA (25/10): la bandera de A no habilita a B; con ella en true y `consolaConversaciones` clasica sigue denegado', async () => {
+    await db.doc(`tenants/${OTRO}`).set({ nombre: OTRO, estado: 'activo', consolaConversaciones: 'nueva' });
+    await conversacion(OTRO, CONV1);
+    const e = await rechazo(enviar(base({ tenantId: OTRO }), oper(OTRO, 'u-ana')));
+    expect(e.message).toBe('Esta función todavía no está activa para su negocio.');
+    await db.doc(`tenants/${A}`).update({ consolaConversaciones: 'clasica' });
+    expect((await rechazo(enviar(base()))).message).toBe('Esta función no está habilitada para su comercio.');
+    expect(await mensajes(OTRO)).toHaveLength(0);
+    expect(await mensajes()).toHaveLength(0);
+    expect(timbres).toHaveLength(0);
+  });
+
+  it('CONCURRENCIA (25/10): si la bandera se apaga entre la lectura previa y la transacción, no se crea el mensaje ni suena el timbre', async () => {
+    const real = db.runTransaction.bind(db);
+    vi.spyOn(db, 'runTransaction').mockImplementation(((f: never, o?: never) =>
+      db.doc(`tenants/${A}`).update({ personaPuedeEscribir: false }).then(() => real(f, o))) as never);
+    const e = await rechazo(enviar(base()));
+    expect(e.message).toBe('Esta función todavía no está activa para su negocio.');
+    expect(await mensajes()).toHaveLength(0);
+    expect(timbres).toHaveLength(0);
+    expect(await topes()).toEqual([]);
+  });
 });
 
 // ===========================================================================
@@ -340,6 +373,16 @@ describe('el turno de ESA persona, vigente', () => {
   it('NEGATIVA: turno ilegible no habilita el envío', async () => {
     await conversacion(A, CONV1, { turno: 'persona' });
     expect((await rechazo(enviar(base()))).code).toBe('failed-precondition');
+  });
+
+  it('NEGATIVA (bloquear contacto, 31/10/2026): con el turno tomado y la conversación BLOQUEADA, no se escribe ni se toca el timbre', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ bloqueada: true, bloqueadaPor: 'u-admin', bloqueadaEn: ts(AHORA - MIN) });
+    const antes = await leerConv();
+    expect(await rechazo(enviar(base()))).toMatchObject({ code: 'failed-precondition', message: 'Este contacto está bloqueado. Desbloquéelo para atenderlo.' });
+    expect(await mensajes()).toHaveLength(0);
+    expect(await auditorias()).toHaveLength(0);
+    expect(timbres).toHaveLength(0);
+    expect(await leerConv()).toEqual(antes);
   });
 
   it('la conversación inexistente: not-found', async () => {
@@ -704,7 +747,7 @@ describe('las reglas de Firestore cierran lo que escribe el servidor', () => {
   }, 60_000);
   beforeEach(async () => {
     await entorno.withSecurityRulesDisabled(async (ctx) => {
-      await escribirDoc(docCliente(ctx.firestore(), 'tenants/tienda-a'), { nombre: 'A', estado: 'activo', consolaConversaciones: 'nueva' });
+      await escribirDoc(docCliente(ctx.firestore(), 'tenants/tienda-a'), { nombre: 'A', estado: 'activo', consolaConversaciones: 'nueva', personaPuedeEscribir: true });
       await escribirDoc(docCliente(ctx.firestore(), 'topesDeEnvio/u_u-ana'), { min: 'x', n: 1 });
       await escribirDoc(docCliente(ctx.firestore(), `tenants/tienda-a/conversaciones/${CONV1}`), {
         telefono: TEL1, canal: 'whatsapp', turno: { responde: 'persona', tomadoPor: 'u-ana' },

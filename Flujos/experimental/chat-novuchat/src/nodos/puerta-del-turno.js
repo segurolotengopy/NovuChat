@@ -4,6 +4,7 @@
 //                    que el negocio debe dinero. El texto es neutro y sale de «Config del negocio». Se corta ANTES de cualquier llamada al modelo, a la planilla o a recepción.
 //   uso_extendido -> el cliente pasó el umbral de operador o el de bloqueo: operador responde el aviso fijo (cuenta como cualquier respuesta) y la PRIMERA vez avisa a recepción;
 //                    bloqueado no responde nada. NO se llama al modelo.
+//   sin_estado    -> el servidor no entregó el estado de la conversación: genérico con el botón a recepción más el aviso a recepción (tope por hora), sin compromiso.
 //   sigue         -> todo lo demás: medios, registro del evento, espera de la ráfaga, modelo.
 //
 // La atención sale de lo que devolvió la ingesta del entrante si lo trae y, si no, de `configuracionFlujo` (`cnAtencion`). Sin modelo; sin ficha.
@@ -29,4 +30,6 @@ if (a.estado !== 'normal') {
       : 'llegó a ' + a.respuestas + ' respuestas en su ventana de 24 horas; el asistente no le responde más',
   } }];
 }
+// Sin estado en el servidor (el `leer` falló o no trajo la conversación) no se puede seguir sin arriesgar una ficha falsa: genérico con botón, sin medios, sin modelo y sin compromiso, con el aviso a recepción de la falla (§6).
+if (!cfg.sesion || cfg.sesion.ok !== true) return [{ json: { ruta: 'sin_estado', texto: '', responder: false, transferir: false, motivo: '', from: t.from } }];
 return [{ json: { ruta: 'sigue', texto: '', responder: false, transferir: false, motivo: '', from: t.from } }];

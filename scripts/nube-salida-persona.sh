@@ -77,7 +77,7 @@
 # Salida: 0 nada que hacer, o escrito y comprobado · 1 el seco encontró algo pendiente
 # · 2 uso o salvaguarda (nada escrito) · 3 error de ejecución.
 #
-# Contra producción: con el «sí» de Andres, en la ventana 23:30–01:30, seco primero
+# Contra producción: con el «sí» de Andres, a cualquier hora (la ventana 23:30–01:30 es solo promesa al cliente, no regla interna), seco primero
 # (.github/DESPLIEGUE-FIREBASE.md).
 set -euo pipefail
 ESTE="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
@@ -183,7 +183,7 @@ SA_DEP="sa-deploy-prod@${P}.iam.gserviceaccount.com"
 
 if (( APLICAR )); then ESTADO="APLICANDO"; else ESTADO="seco (no escribe)"; fi
 echo "Entorno: produccion  ·  secreto ${SECRETO}  ·  modo ${MODO}  ·  ${ESTADO}"
-(( ! APLICAR )) || nota "producción: solo con el «sí» de Andres, en la ventana 23:30–01:30 y después del seco"
+(( ! APLICAR )) || nota "producción: solo con el «sí» de Andres, a cualquier hora, y después del seco"
 echo
 
 PENDIENTES=0

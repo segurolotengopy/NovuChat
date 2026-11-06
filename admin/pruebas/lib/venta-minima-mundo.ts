@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 import { type Flujo, type J } from './flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type ResultadoTurno } from './n8n-de-mentira';
+import { copiarModulosComunesAlTemporal, doblesDelGuardado } from './doble-guardado';
+import { crearSesion } from './venta-minima-sesion';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 export const CARPETA_PRUEBAS = join(AQUI, '..');
@@ -64,8 +66,10 @@ export const ACEPTA = (nodo: string) => (ll: LlamadaDoble): J => ({ messaging_pr
 
 export type ModoDeEnvio = 'acepta' | 'lanza' | string;
 
-export function crear(envios: Partial<Record<'Enviar a WhatsApp' | 'Enviar respaldo', ModoDeEnvio>> = {}, flujo: Flujo = QTACO) {
+export function crear(envios: Partial<Record<'Enviar a WhatsApp' | 'Enviar respaldo', ModoDeEnvio>> = {}, flujo: Flujo = QTACO, config: J = {}, doblesExtra: Record<string, Doble> = {}) {
   const estado = { extraccion: null as J | null };
+  const reloj = { ahora: (): number => AHORA };
+  const sesion = crearSesion({ pid: PHONE_ID, ahora: () => reloj.ahora() });
   const doble = (nodo: 'Enviar a WhatsApp' | 'Enviar respaldo'): Doble => (ll: LlamadaDoble) => {
     const modo = envios[nodo] ?? 'acepta';
     if (modo === 'acepta') return ACEPTA(nodo)(ll);
@@ -75,6 +79,10 @@ export function crear(envios: Partial<Record<'Enviar a WhatsApp' | 'Enviar respa
     return r(ll);
   };
   const dobles: Record<string, Doble> = {
+    // La rama común del GUARDADO de medios: el doble del servidor responde «guardado_apagado» (la bandera por defecto), sin mensajes de más.
+    ...doblesDelGuardado().dobles,
+    // El estado de la conversación vive en el servidor (PR-4a): los compromisos del turno y de la compensación los contesta el servidor de sesión de mentira.
+    ...sesion.dobles,
     'Verificar firma con el receptor': (ll) => ({ valido: true, deliveryId: ll.cuerpo?.['deliveryId'] }),
     'Traer configuración': () => ({ statusCode: 200, body: panel() }),
     'Reportar mensaje (entrante)': () => ({ ok: true }),
@@ -82,6 +90,7 @@ export function crear(envios: Partial<Record<'Enviar a WhatsApp' | 'Enviar respa
     'Registrar cierre': () => ({ ok: true }),
     'Obtener URL del medio': () => ({ url: 'https://medios.ejemplo.invalid/m', mime_type: 'image/jpeg', file_size: 100_000 }),
     'Descargar medio': () => ({}),
+    'Guardar comprobante': (ll) => ({ statusCode: 200, body: { ruta: `tenants/qtaco/comprobantes/2026-10-26/${String(ll.encabezados['X-NovuChat-IdMeta'] ?? 'x').replace(/[^A-Za-z0-9_-]/g, '_')}.jpg` } }),
     'Transcribir audio': () => ({ content: { parts: [{ text: 'quiero 4 tacos de birria' }] } }),
     'Leer comprobante (imagen)': () => ({}),
     'Leer comprobante (PDF)': () => ({}),
@@ -91,19 +100,23 @@ export function crear(envios: Partial<Record<'Enviar a WhatsApp' | 'Enviar respa
     'Enviar respaldo': doble('Enviar respaldo'),
     'Enviar aviso': ACEPTA('Enviar aviso'),
     'Aviso de respaldo': ACEPTA('Aviso de respaldo'),
+    ...doblesExtra,
   };
   const mundo = crearMundo({
     flujo,
     dobles,
     ahoraMs: AHORA,
+    alResponder: sesion.alResponder,
     configBase: {
       phoneNumberIdEsperado: PHONE_ID,
       destinatariosAviso: `completo:${AV1},cocina:${AV2}`,
       respaldoNumeroRecepcion: REC,
       horario: HORARIO_TODOS,
+      ...config,
     },
   });
-  return { mundo, estado, envios };
+  reloj.ahora = () => mundo.ahora();
+  return { mundo, estado, envios, sesion };
 }
 export type Mundial = ReturnType<typeof crear>;
 
@@ -140,7 +153,7 @@ export function idDeBoton(t: ResultadoTurno, titulo: string): string {
 export const marcar = (w: Mundial) => ({ ingesta: w.mundo.llamadas.ingesta.length });
 export type Marca = ReturnType<typeof marcar>;
 export const salientes = (w: Mundial, desde: Marca = { ingesta: 0 }): J[] => w.mundo.llamadas.ingesta.slice(desde.ingesta).filter((x) => x['direccion'] === 'saliente');
-export const estadoDe = (w: Mundial): J => ((w.mundo.sd['ventaMinima'] as J | undefined)?.['estados']?.[CLIENTE] ?? {}) as J;
+export const estadoDe = (w: Mundial): J => w.sesion.estado(CLIENTE);
 export const cobrosAbiertos = (w: Mundial, desde: Marca = { ingesta: 0 }): J[] => w.mundo.llamadas.ingesta.slice(desde.ingesta).filter((x) => x['evento'] === 'qr_enviado');
 
 
@@ -153,6 +166,7 @@ export function verificarEnCopia(modifica: (vm: string) => void, args: string[] 
     const datos = join(tmp, 'admin/scripts/datos/venta-minima');
     mkdirSync(vm, { recursive: true });
     mkdirSync(datos, { recursive: true });
+    copiarModulosComunesAlTemporal(tmp);
     cpSync(CARPETA_VM, vm, { recursive: true, filter: (src) => !src.endsWith('.local.json') }); // un `.local.json` lleva valores reales: nunca a un temporal
     cpSync(join(AQUI, '../../scripts/datos/venta-minima'), datos, { recursive: true });
     modifica(vm);

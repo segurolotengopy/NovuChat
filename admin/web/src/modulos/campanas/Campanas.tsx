@@ -14,15 +14,15 @@
  * `revision` y `vigentes` son del servidor y la regla rechaza tocarlos.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { Link, useParams } from 'react-router-dom';
 import { auth, db } from '../../core/lib/firebase';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { PLANES, PLANES_PUBLICADOS, esPlanPublicado, esPlanVendible, limiteDeCampanas, nombreDePlan } from '../../central/lib/planes';
 import {
-  TOPE_TEXTO_CAMPANA, diaBolivia, estadoVisible, fechaLegible, hashListaEnNavegador, idNuevo,
-  leerCampanas, problemaEnPantalla, sumarDias,
-  type Campana, type RevisionDeCampana,
+  MAX_LARGO_TITULAR, MAX_TITULARES, TOPE_ANGULO, TOPE_TEXTO_CAMPANA, campanaParaGuardar, diaBolivia, estadoVisible, fechaLegible, hashListaEnNavegador, idNuevo,
+  ilegiblesAlLeer, leerCampanas, problemaDeTitular, problemaEnPantalla, productosElegibles, sumarDias,
+  type Campana, type ProductoElegible, type RevisionDeCampana,
 } from './campanas';
 
 const VACIA = (hoy: string): Campana => ({ id: '', texto: '', inicio: hoy, fin: sumarDias(hoy, 30) });
@@ -60,31 +60,45 @@ export function Campanas() {
   const [original, setOriginal] = useState<Campana | null>(null);
   const [estado, setEstado] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  const [ilegibles, setIlegibles] = useState(0);
+  const [productos, setProductos] = useState<ProductoElegible[]>([]);
 
   useEffect(() => {
     if (!tenantId) return;
     const a = onSnapshot(doc(db, 'tenants', tenantId, 'config', 'campanas'), (d) => {
       setExiste(d.exists());
       setLista(leerCampanas(d.get('lista')));
+      setIlegibles(ilegiblesAlLeer(d.get('lista')));
       setRevision(leerRevisiones(d.get('revision')));
     }, () => setEstado('No se pudieron leer las campañas.'));
     const b = onSnapshot(doc(db, 'tenants', tenantId, 'cuenta', 'estado'),
       (d) => setCuenta(d.exists() ? d.data() : null), () => setCuenta(null));
-    return () => { a(); b(); };
+    // Solo el catálogo de ESTE negocio; se ofrecen los productos activos, para mostrar nombre y precio.
+    const p = onSnapshot(collection(db, 'tenants', tenantId, 'catalogo'),
+      (s) => setProductos(productosElegibles(s.docs.map((x) => ({ id: x.id, data: x.data() })))),
+      () => setProductos([]));
+    return () => { a(); b(); p(); };
   }, [tenantId]);
 
   useEffect(() => { void hashListaEnNavegador(lista).then(setHashActual); }, [lista]);
-  // Sin hash en el navegador se confía en el servidor, como en Configuración.
-  const fresca = hashActual === null || (revision.hash !== '' && revision.hash === hashActual);
+  // Sin hash en el navegador no se puede saber si la revisión es de lo escrito: cuenta como «Revisando…».
+  const fresca = hashActual !== null && (revision.hash !== '' && revision.hash === hashActual);
 
   const limite = limiteDeCampanas(cuenta);
   const plan = cuenta?.['plan'];
   const siguiente = planConMasCampanas(plan, limite);
   const editando = original !== null;
   const lleno = !editando && lista.length >= limite;
-  const problema = useMemo(() => problemaEnPantalla(edicion, lista, original, hoy), [edicion, lista, original, hoy]);
+  const activos = useMemo(() => new Set(productos.map((x) => x.id)), [productos]);
+  // Si el catálogo aún no cargó no se acusa al producto: lo decide el servidor.
+  const problema = useMemo(
+    () => problemaEnPantalla(edicion, lista, original, hoy, productos.length > 0 ? activos : undefined),
+    [edicion, lista, original, hoy, productos, activos]);
+  const titulares = edicion.titulares ?? [];
+  const problemasDeTitulares = titulares.map((x) => (x.trim() === '' ? null : problemaDeTitular(x)));
+  const productoElegido = productos.find((x) => x.id === edicion.productoId);
 
-  const escribir = async (nueva: Campana[]) => {
+  const escribir = async (nueva: Array<Campana | Record<string, unknown>>) => {
     const datos = { lista: nueva, actualizadoPor: auth.currentUser?.uid ?? '', actualizadoEn: serverTimestamp() };
     const ref = doc(db, 'tenants', tenantId, 'config', 'campanas');
     await (existe ? updateDoc(ref, datos) : setDoc(ref, datos));
@@ -93,8 +107,8 @@ export function Campanas() {
   const guardar = async (evento: React.FormEvent) => {
     evento.preventDefault();
     if (problema) { setEstado(problema.texto); return; }
-    const c: Campana = { ...edicion, id: edicion.id || idNuevo(), texto: edicion.texto.trim() };
-    const nueva = editando ? lista.map((x) => (x.id === c.id ? c : x)) : [...lista, c];
+    const c: Campana = { ...edicion, id: edicion.id || idNuevo() };
+    const nueva = (editando ? lista.map((x) => (x.id === c.id ? c : x)) : [...lista, c]).map(campanaParaGuardar);
     setGuardando(true); setEstado(null);
     try {
       await escribir(nueva);
@@ -110,7 +124,7 @@ export function Campanas() {
   const eliminar = async (c: Campana) => {
     if (!window.confirm('¿Eliminar esta campaña? Deja de aplicarse enseguida.')) return;
     try {
-      await escribir(lista.filter((x) => x.id !== c.id));
+      await escribir(lista.filter((x) => x.id !== c.id).map(campanaParaGuardar));
       if (original?.id === c.id) { setEdicion(VACIA(hoy)); setOriginal(null); }
       setEstado('Campaña eliminada.');
     } catch { setEstado('No se pudo eliminar la campaña.'); }
@@ -155,15 +169,34 @@ export function Campanas() {
         )}
       </div>
 
+      {ilegibles > 0 && (
+        <p className="ayuda alerta" role="alert">
+          {ilegibles} {ilegibles === 1 ? 'campaña ilegible se eliminará' : 'campañas ilegibles se eliminarán'} al
+          guardar: no tienen el formato que el sistema lee o pasan del máximo de 10.
+        </p>
+      )}
+
       {lista.length > 0 && (
         <table>
-          <thead><tr><th>Texto del anuncio</th><th>Desde</th><th>Hasta</th><th>Estado</th><th /></tr></thead>
+          <thead><tr><th>Anuncio</th><th>Desde</th><th>Hasta</th><th>Estado</th><th /></tr></thead>
           <tbody>
             {lista.map((c) => {
               const v = estadoVisible(c, revision.porCampana[c.id], fresca, hoy);
               return (
                 <tr key={c.id} className={v.clase === 'mal' ? 'alerta' : ''}>
-                  <td><TextoSeguro valor={c.texto} maxLargo={TOPE_TEXTO_CAMPANA} /></td>
+                  <td>
+                    {(c.titulares ?? []).map((t, i) => (
+                      <div key={`${i}-${t}`}>
+                        <TextoSeguro valor={t} maxLargo={MAX_LARGO_TITULAR} />
+                        {i === 0 && <span className="ayuda"> (principal)</span>}
+                      </div>
+                    ))}
+                    {c.texto !== '' && <div><TextoSeguro valor={c.texto} maxLargo={TOPE_TEXTO_CAMPANA} /></div>}
+                    {c.productoId && (
+                      <div className="ayuda">Producto: {productos.find((x) => x.id === c.productoId)?.nombre
+                        ? <TextoSeguro valor={productos.find((x) => x.id === c.productoId)?.nombre ?? ''} maxLargo={100} /> : 'no disponible'}</div>
+                    )}
+                  </td>
                   <td>{fechaLegible(c.inicio)}</td>
                   <td>{fechaLegible(c.fin)}</td>
                   <td>
@@ -184,8 +217,63 @@ export function Campanas() {
       {(editando || limite > lista.length) && (
         <form onSubmit={(e) => void guardar(e)}>
           <h3>{editando ? 'Editar campaña' : 'Nueva campaña'}</h3>
+          <fieldset>
+            <legend>Titulares del anuncio (de 1 a {MAX_TITULARES})</legend>
+            <p className="ayuda">
+              Son los títulos que ve la persona en Meta. El primero es el principal; los demás son
+              variantes del mismo anuncio. Sin precios: el precio se toma del producto.
+            </p>
+            {titulares.map((t, i) => (
+              <div key={i}>
+                <label>
+                  {i === 0 ? 'Titular principal' : `Variante ${i}`}
+                  <input type="text" value={t} maxLength={MAX_LARGO_TITULAR}
+                    aria-invalid={problemasDeTitulares[i] !== null}
+                    aria-describedby={problemasDeTitulares[i] ? `titular-error-${i}` : undefined}
+                    onChange={(e) => setEdicion({ ...edicion, titulares: titulares.map((x, j) => (j === i ? e.target.value : x)) })} />
+                </label>{' '}
+                <button type="button" aria-label={`Quitar el titular ${i + 1}`}
+                  onClick={() => setEdicion({ ...edicion, titulares: titulares.filter((_, j) => j !== i) })}>Quitar</button>
+                {problemasDeTitulares[i] && <p id={`titular-error-${i}`} role="alert" className="ayuda alerta">{problemasDeTitulares[i]}</p>}
+              </div>
+            ))}
+            {titulares.length < MAX_TITULARES && (
+              <button type="button" onClick={() => setEdicion({ ...edicion, titulares: [...titulares, ''] })}>
+                Agregar titular
+              </button>
+            )}
+          </fieldset>
           <label>
-            Texto exacto que deja el anuncio
+            Producto del anuncio (opcional)
+            <select value={edicion.productoId ?? ''} aria-invalid={problema?.campo === 'productoId'}
+              onChange={(e) => {
+                const nuevo: Campana = { ...edicion };
+                if (e.target.value === '') delete nuevo.productoId; else nuevo.productoId = e.target.value;
+                setEdicion(nuevo);
+              }}>
+              <option value="">Ninguno</option>
+              {productos.map((x) => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+            </select>
+          </label>
+          {productoElegido && (
+            <p className="ayuda">
+              <TextoSeguro valor={productoElegido.nombre} maxLargo={100} />
+              {productoElegido.precio !== null ? `: ${productoElegido.precio} ${productoElegido.moneda}` : ': precio a consultar'}.
+              {' '}Se toma del catálogo; para cambiarlo, edítalo en Catálogo.
+            </p>
+          )}
+          <label>
+            Ángulo del anuncio (opcional)
+            <textarea value={edicion.angulo ?? ''} maxLength={TOPE_ANGULO} rows={3}
+              aria-invalid={problema?.campo === 'angulo'} aria-describedby="angulo-ayuda"
+              onChange={(e) => setEdicion({ ...edicion, angulo: e.target.value })} />
+          </label>
+          <p id="angulo-ayuda" className="ayuda">
+            {(edicion.angulo ?? '').length} de {TOPE_ANGULO}. Lo revisa el sistema antes de aplicarse:
+            no puede negar que es un asistente virtual ni afirmar pagos.
+          </p>
+          <label>
+            Texto exacto que deja el anuncio {titulares.some((x) => x.trim() !== '') ? '(opcional si hay titulares)' : ''}
             <textarea value={edicion.texto} maxLength={TOPE_TEXTO_CAMPANA} rows={3}
               aria-invalid={problema?.campo === 'texto'}
               onChange={(e) => setEdicion({ ...edicion, texto: e.target.value })} />
@@ -202,7 +290,9 @@ export function Campanas() {
               aria-invalid={problema?.campo === 'fin'}
               onChange={(e) => setEdicion({ ...edicion, fin: e.target.value })} />
           </label>
-          {problema && edicion.texto.trim() !== '' && <p className="ayuda alerta">{problema.texto}</p>}
+          {problema && (edicion.texto.trim() !== '' || problema.campo !== 'titulares' || titulares.length > 0) && (
+            <p className="ayuda alerta" role="alert">{problema.texto}</p>
+          )}
           <button type="submit" disabled={guardando || problema !== null}>
             {editando ? 'Guardar cambios' : 'Agregar campaña'}
           </button>

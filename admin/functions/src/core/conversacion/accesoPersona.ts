@@ -32,6 +32,17 @@
  * variable de entorno nueva exige tocar el `.env` exacto del CI de producción, y la lista fija
  * ya cubre a Bellido.
  *
+ *  5. SALIDA PUBLICADA (25/10/2026): además, `tenants/{id}.personaPuedeEscribir === true` EXACTO, para tomar y
+ *     para escribir (no para devolver). Lo escrito como persona sale por el flujo n8n «Salida de persona» de
+ *     cada número, y hoy no todo comercio con la pantalla nueva lo tiene publicado: sin él, tomar silenciaba
+ *     al asistente y lo escrito caducaba. La enciende NovuChat (`aplicar-persona-puede-escribir.mjs`) cuando la
+ *     salida existe; ningún navegador la escribe. DEVOLVER no la exige: devolver es la dirección segura (le
+ *     da la palabra al asistente) y un comercio que ya tenía una conversación tomada y pierde la bandera no
+ *     puede quedar con el asistente callado. Orden de las comprobaciones: rol del token, comercio `activo`,
+ *     habilitación (`nueva`, no Bellido), bandera de salida; todas ANTES de cualquier escritura (el tope por
+ *     usuario también), y la transacción de tomar y la de escribir la vuelven a leer dentro de sí misma,
+ *     para que apagarla en medio de una llamada no deje pasar la toma.
+ *
  * Errores: de infraestructura (Firestore caído) = `unavailable`, JAMÁS un permiso: decirle «sin
  * permiso» a quien lo tiene es una mentira, y dejar pasar por una falla abriría la puerta.
  */
@@ -39,7 +50,7 @@ import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import type { DocumentData, Firestore } from 'firebase-admin/firestore';
 import { esAdminDe, esOperDe, exigirAutenticado } from '../seguridad/autorizacion.js';
 import { ID_COMERCIO } from './acceso.js';
-import { ErroresDeTurno } from './turno.js';
+import { ErroresDeTurno, personaPuedeEscribirDeFicha } from './turno.js';
 
 /** El rol con el que una persona del negocio fue autorizada. */
 export type RolDePersona = 'admin' | 'oper';
@@ -85,8 +96,13 @@ export function exigirRolDePersona(p: CallableRequest, tenantId: unknown): RolDe
   throw sinPermiso();
 }
 
-/** El comercio: `activo` y habilitado (bandera `nueva`, no Bellido). Devuelve su ficha. */
-export async function exigirComercioHabilitado(tenantId: string, db: Firestore): Promise<DocumentData> {
+/**
+ * El comercio: `activo`, habilitado (bandera `nueva`, no Bellido) y, salvo `exigirSalida: false` (devolver), con
+ * `personaPuedeEscribir === true`. Devuelve su ficha.
+ */
+export async function exigirComercioHabilitado(
+  tenantId: string, db: Firestore, { exigirSalida = true }: { exigirSalida?: boolean } = {},
+): Promise<DocumentData> {
   try {
     const snap = await db.doc(`tenants/${tenantId}`).get();
     const ficha = snap.exists ? snap.data() : undefined;
@@ -95,6 +111,9 @@ export async function exigirComercioHabilitado(tenantId: string, db: Firestore):
     }
     if (!habilitadoParaPersona(tenantId, ficha)) {
       throw new HttpsError(ErroresDeTurno.noHabilitado.code, ErroresDeTurno.noHabilitado.message);
+    }
+    if (exigirSalida && !personaPuedeEscribirDeFicha(ficha)) {
+      throw new HttpsError(ErroresDeTurno.sinSalida.code, ErroresDeTurno.sinSalida.message);
     }
     return ficha;
   } catch (e) {

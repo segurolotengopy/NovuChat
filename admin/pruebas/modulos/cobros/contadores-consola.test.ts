@@ -58,8 +58,8 @@ describe('la pantalla de contadores', () => {
     expect(texto).not.toMatch(/setDoc|updateDoc|addDoc|deleteDoc/);
   });
 
-  it('avisa que aproximado y en revisión los confirma una persona del negocio', () => {
-    expect(texto).toMatch(/aproximados.*en revisión.*confirma una persona/s);
+  it('avisa que los que coinciden en parte y los que están en revisión los confirma una persona del negocio', () => {
+    expect(texto).toMatch(/coinciden en parte.*en revisión.*confirma una persona/s);
   });
 
   it('Cobros.tsx monta el componente', () => {
@@ -81,8 +81,8 @@ describe('columnas y meses', () => {
   it('cada cabecera lleva su dato', () => {
     const por = Object.fromEntries(COLUMNAS.map((c) => [c.titulo, c.valor(l)]));
     expect(por).toEqual({
-      'QR enviados': 1, 'Datos coinciden': 2, 'Aproximados': 3, 'Pasaron a revisión': 4,
-      'Comprobantes que no coinciden': 5, 'Cancelados': 6, 'Vencidos': 7, 'Tardíos': 8,
+      'QR enviados': 1, 'Datos coinciden': 2, 'Coinciden en parte': 3, 'En revisión': 4,
+      'Comprobantes que no coinciden': 5, 'Cancelados': 6, 'Vencidos': 7, 'Llegaron fuera de plazo': 8,
     });
   });
 

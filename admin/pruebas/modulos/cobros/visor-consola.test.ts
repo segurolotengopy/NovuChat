@@ -148,8 +148,9 @@ describe('PDF: se baja, nunca se abre', () => {
     const c = sinComentarios(leer('VisorComprobante.tsx'));
     expect(c).toContain("'verComprobante'");
     const plano = c.replace(/\s+/g, ' ');
-    // La llamada misma, no la firma del componente: exactamente una, con solo esas dos claves.
-    expect(plano.split("'verComprobante')({ tenantId, cierreId })").length - 1).toBe(1);
+    // La llamada misma, no la firma del componente: exactamente una, con el tenant y el origen (por cierre, o
+    // por conversación e idMeta: las dos formas excluyentes de la callable), nunca una ruta.
+    expect(plano.split("'verComprobante')({ tenantId, ...origen })").length - 1).toBe(1);
     expect(plano.split("'verComprobante'").length - 1).toBe(1);
     expect(c).not.toMatch(/ruta/i);
   });
@@ -227,7 +228,7 @@ describe('guardas de fuente de la ronda de revisión del #466', () => {
 
   it('al desmontar o cambiar de cobro se descartan los bytes', () => {
     expect(visor()).toContain(
-      "return () => { vuelta.current += 1; setEstado({ tipo: 'reposo' }); }; }, [tenantId, cierreId]);");
+      "return () => { vuelta.current += 1; setEstado({ tipo: 'reposo' }); }; }, [tenantId, clave]);");
   });
 
   it('el texto del detalle depende del rol real, no de un valor fijo', () => {

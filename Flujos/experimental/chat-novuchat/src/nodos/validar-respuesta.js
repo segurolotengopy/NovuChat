@@ -7,7 +7,7 @@
 const turno = cnPrimero('Armar turno') || {};
 const cfg = cnCfg();
 const t = cnPrimero('Interpretar entrada') || {};
-const f = chFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, t.from), t.ahoraMs);
+const f = chFichaVigente(turno.ficha, t.ahoraMs); // la ficha del turno: la que «Armar turno» tomó del estado comprometido en el servidor
 const entrada = $input.first();
 const r = chRevisarModelo((entrada && entrada.json) || {}, chValidacion({ cfg: cfg, plan: turno.plan, eventos: turno.eventos || [], precios: turno.precios === true, ficha: f }));
 const reintentar = chReintentable(r.causa);

@@ -26,6 +26,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { modulosDeFlujos } from '../functions/src/registro.ts';
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
@@ -130,7 +131,7 @@ beforeAll(async () => {
   await db.doc(`rutasWhatsApp/${NUMERO}`).set({
     tenantId: T, flujo: 'venta', aliasSecreto: 'cliente18', estado: 'activo',
   });
-  await db.doc(`tenants/${T}`).set({ nombre: 'Tienda', estado: 'activo', flujos: ['venta'] });
+  await db.doc(`tenants/${T}`).set({ nombre: 'Tienda', estado: 'activo', flujos: ['venta'], modulos: modulosDeFlujos(['venta'] as never[]) });
   await db.doc(`tenants/${T}/cuenta/estado`).set({ plan: 'impulso', estadoPago: 'al_dia' });
   await db.doc(`tenants/${T}/config/negocio`).set({
     nombreNegocio: 'Tienda', zonaHoraria: 'America/La_Paz', moneda: 'BOB',

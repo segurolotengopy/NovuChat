@@ -18,6 +18,8 @@
  *     más, para no repetir código que el nodo no usa:
  *       `"@@comun:nodos/<archivo>.js"`  solo `comun.js` + el archivo;
  *       `"@@solo:nodos/<archivo>.js"`   solo el archivo.
+ *     Y el sufijo `+sesion` (`@@todo+sesion:…`, `@@comun+sesion:…`) pega ENTRE las librerías y el nodo el módulo común
+ *     `comun-sin-agente/src/sesion.js` (el estado de la conversación en el servidor, PR-4a): se INCLUYE, nunca se copia ni se edita.
  *   - `@@dato:a.b.c@@` (dentro de cualquier texto) se reemplaza por ese dato del tenant;
  *   - `@@cred:ingesta|graph|medios|entradaPrueba|trigger` (en el nombre de una credencial) por el nombre que da el tenant;
  *   - `Config base` se llena con `configBase` del tenant (tipos string, number o boolean).
@@ -45,14 +47,19 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const DATOS = join(AQUI, '../../../admin/scripts/datos/venta-minima');
 const verificar = process.argv.includes('--verificar');
 
 const leer = (ruta) => readFileSync(join(AQUI, ruta), 'utf8');
+// El módulo común del estado de la conversación (PR-4a): lo INCLUYEN los nodos que marcan `+sesion`; la guardia compara con esta fuente.
+const FUENTE_SESION = leer('../comun-sin-agente/src/sesion.js').trimEnd();
 const ORDEN_LIBS = ['comun', 'pedido', 'reserva', 'avisos', 'promos', 'cobro'];
-const LIB = ORDEN_LIBS.map((n) => leer(`src/lib/${n}.js`).trimEnd()).join('\n\n');
+// Módulos comunes que se INCLUYEN (no se copian): viven en Flujos/src/modulos/<m>/ y van detrás de las librerías propias.
+const MODULOS_COMUNES = ['../../src/modulos/pedidos/qr-del-pedido.js'];
+const LIB = [...ORDEN_LIBS.map((n) => leer(`src/lib/${n}.js`)), ...MODULOS_COMUNES.map((r) => leer(r))].map((t) => t.trimEnd()).join('\n\n');
 const COMUN = leer('src/lib/comun.js').trimEnd();
 const plantilla = JSON.parse(leer('flujo.plantilla.json'));
 
@@ -69,10 +76,15 @@ const SOLO_PRUEBA = ['Simular aviso', '¿Avisar de verdad?'];
 const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 
 // PRESUPUESTO DE NODOS (Andres, 03/10/2026): la complejidad de los nodos de n8n ya impidió salir otras veces. El JSON de producción
-// de Q'Taco tiene como MÁXIMO 50 nodos (49 + el webhook del carrito). Todo lo demás se hace dentro de los nodos que ya existen
+// de Q'Taco tiene como MÁXIMO 51 nodos (50 + el webhook del carrito; el 51 es «Guardar comprobante», por el pedido del 26/10 de que ningún comprobante se pierda; ver DISENO.md). Todo lo demás se hace dentro de los nodos que ya existen
 // (el código vive en `src/lib` y `src/nodos`). `--verificar` falla si un JSON de producción (todo el que no es la variante de
 // prueba) pasa de este tope.
-const TOPE_DE_NODOS = 50;
+// 50 + los 11 de la rama común del GUARDADO de medios (Flujos/experimental/comun-sin-agente/src/guardado.mjs, contrato M1↔M2 del 29/10/2026):
+// excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos desde el contrato v2 del 30/10 (eran 11): docs/versiones-por-cliente.md.
+// +1: «Guardar comprobante» (pedido de Andres del 26/10/2026: ningún comprobante se pierde; ver DISENO.md).
+// +9: el estado de la conversación y los vistos en el servidor (PR-4a; tope de Q'Taco 60 → 69, aprobado por Andres el 04/11/2026): «¿Hay estado?», «Sin estado», «¿Comprometer turno?», «Comprometer turno»,
+// «¿Replanificar compromiso?», «Comprometer turno (2.º intento)», «Soltar mensajes», «Confirmar envío» y «Comprometer compensación» (9: se quitó «¿Compensar entrega?»; queda 0 de margen). Ver DISENO.md y docs/versiones-por-cliente.md.
+const TOPE_DE_NODOS = 69;
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,
 // su credencial de cabecera (la de la ingesta), `responseMode: onReceived` y la ruta como marcador (una URL de capacidad que
@@ -80,23 +92,32 @@ const TOPE_DE_NODOS = 50;
 const WEBHOOK_DEL_CARRITO = 'Carrito del catálogo';
 const WEBHOOK_DEL_RECEPTOR = 'Entrega del receptor';
 // Marcadores que NO vienen de los datos del tenant (la plantilla los trae fijos) y la forma que deben tener.
-const MARCADORES_FIJOS = { REEMPLAZAR_RUTA_CARRITO_QTACO: /^REEMPLAZAR_[A-Z0-9_]+$/ };
+const MARCADORES_FIJOS = { REEMPLAZAR_RUTA_CARRITO_QTACO: /^REEMPLAZAR_[A-Z0-9_]+$/, REEMPLAZAR_RUTA_CARRITO_QTACO_3727: /^REEMPLAZAR_[A-Z0-9_]+$/ };
 const MARCADOR_DEL_CARRITO = 'REEMPLAZAR_RUTA_CARRITO_QTACO';
+// Un segundo workflow del MISMO comercio (el de 3727) convive con el vivo: no puede compartir la ruta del carrito (n8n no activa dos webhooks en la misma ruta).
+// El dato `carritoMarcador` (solo uno de estos dos valores) cambia el marcador de ESA salida; sin el rige el de siempre.
+
+// Los NOMBRES de credencial y el marcador del carrito del 3727 son datos del tenant (`qtaco-3727.json`); aqui solo la lista de marcadores validos.
+const MARCADORES_DEL_CARRITO = [MARCADOR_DEL_CARRITO, 'REEMPLAZAR_RUTA_CARRITO_QTACO_3727'];
+const marcadorDelCarrito = (datos) => ((datos || {}).carritoMarcador) || MARCADOR_DEL_CARRITO;
 
 // RETENCIÓN DE EJECUCIONES POR SALIDA. DECISIÓN DE ANDRES (04/10/2026, reemplaza la del 03/10): en el flujo de Q'Taco se guarda TODO, las fallas Y los
 // éxitos (`all`/`all`), por lo menos 24 horas, para poder diagnosticar. El riesgo (M-1 de la revisión de seguridad del PR #382) está ACEPTADO por Andres y
 // declarado en DISENO.md (sección «Retención de ejecuciones»): n8n guardará en su base el encabezado `Authorization` del webhook del carrito, los enlaces, la
 // URL del QR y datos de clientes. Es la excepción de UN solo archivo: las variantes de prueba y de ensayo y cualquier otro tenant conservan `none` en todo
 // (llevan texto de clientes) y no pueden guardar nada sin declararlo aquí. Cambiar esta entrada exige la decisión de Andres y una revisión de `seguridad`.
-const RETENCION_POR_SALIDA = { 'venta-minima.qtaco.json': { exito: 'all', error: 'all' } };
-const RETENCION_DECLARADA = new Set(['venta-minima.qtaco.json']);
+// DECISIÓN DE ANDRES (30/10/2026, contrato v2 de medios §8.1) que REEMPLAZA la del 04/10: con la rama del guardado de medios, el BINARIO del medio quedaría
+// en los datos de la ejecución; Q'Taco deja de guardar ejecuciones (`none`/`none`), como todo flujo con medios. Se pierde diagnóstico, por privacidad.
+const RETENCION_POR_SALIDA = {};
+const RETENCION_DECLARADA = new Set();
 const RETENCION_POR_OMISION = { exito: 'none', error: 'none' };
 const retencionDe = (destino) => RETENCION_POR_SALIDA[destino] || RETENCION_POR_OMISION;
 
 // TIEMPO LÍMITE DE LA EJECUCIÓN (`settings.executionTimeout`, en segundos) POR SALIDA. Decisión de Andres (04/10/2026): el flujo de Q'Taco sube a 120 s porque el
 // peor caso del comprobante (57 s, ver DISENO.md) quedaba a 3 s de los 60 de la plantilla. SOLO Q'Taco: las variantes de prueba y de ensayo (aunque hereden sus
 // datos) y la plantilla conservan los 60 s. Un tiempo más largo no cambia mensajes ni costo por conversación: solo deja de cortar una ejecución lenta.
-const TIMEOUT_POR_SALIDA = { 'venta-minima.qtaco.json': 120 };
+// `qtaco-3727` (numero definitivo de Q'Taco, envio directo, 04/11/2026) es el MISMO comercio y el mismo peor caso: 120 s.
+const TIMEOUT_POR_SALIDA = { 'venta-minima.qtaco.json': 120, 'venta-minima.qtaco-3727.json': 120 };
 const timeoutDe = (destino) => TIMEOUT_POR_SALIDA[destino] || plantilla.settings.executionTimeout;
 
 // COBRO SIMULADO (piloto de Q'Taco, 03/10/2026): la ÚNICA imagen permitida es el QR de demostración versionado, con el rótulo
@@ -107,12 +128,16 @@ const URL_QR_SIMULADO = /^https:\/\/raw\.githubusercontent\.com\/segurolotengopy
 const MODOS_COBRO = ['simulado', 'real', 'sin_qr'];
 
 function codigoDe(marca, nodo) {
-  const modo = marca.startsWith('@@solo:') ? 'solo' : (marca.startsWith('@@comun:') ? 'comun' : 'todo');
-  const ruta = marca.slice(modo === 'solo' ? '@@solo:'.length : (modo === 'comun' ? '@@comun:'.length : '@@'.length));
-  if (!/^nodos\/[a-z0-9-]+\.js$/.test(ruta)) throw new Error(`${nodo}: ruta de código no válida: ${marca}`);
+  const m = /^@@(?:(solo|comun|todo)(\+sesion)?:)?(nodos\/[a-z0-9-]+\.js)$/.exec(marca);
+  if (!m) throw new Error(`${nodo}: ruta de código no válida: ${marca}`);
+  const modo = m[1] || 'todo';
+  const conSesion = m[2] === '+sesion';
+  const ruta = m[3];
+  if (conSesion && modo === 'solo') throw new Error(`${nodo}: «+sesion» no va con «solo» (el módulo de sesión depende de comun.js)`);
   if (!existsSync(join(AQUI, 'src', ruta))) throw new Error(`${nodo}: no existe src/${ruta}`);
   const propio = leer(`src/${ruta}`).trimEnd();
-  return (modo === 'solo' ? propio : (modo === 'comun' ? `${COMUN}\n\n${propio}` : `${LIB}\n\n${propio}`)) + '\n';
+  const base = modo === 'solo' ? [] : [modo === 'comun' ? COMUN : LIB];
+  return base.concat(conSesion ? [FUENTE_SESION] : []).concat([propio]).join('\n\n') + '\n';
 }
 
 // --- los datos del tenant ---------------------------------------------------------------------------
@@ -237,6 +262,10 @@ function armar(datos, archivo) {
       if (m) cred.name = dato(datos, `credenciales.${m[1]}`, `${archivo} · ${n.name}`);
     }
     if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
+    if (n.name === WEBHOOK_DEL_CARRITO && datos.carritoMarcador) {
+      if (!MARCADORES_DEL_CARRITO.includes(datos.carritoMarcador)) throw new Error(`${archivo}: «carritoMarcador» no es uno de ${MARCADORES_DEL_CARRITO.join(', ')}`);
+      n.parameters.path = datos.carritoMarcador;
+    }
   }
   const vivos = new Set(flujo.nodes.map((n) => n.name));
   const conexiones = {};
@@ -245,6 +274,8 @@ function armar(datos, archivo) {
     conexiones[de] = { main: (salidas.main || []).map((s) => (s || []).filter((c) => vivos.has(c.node))) };
   }
   flujo.connections = conexiones;
+  // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
+  injertarGuardado(flujo, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = JSON.stringify(flujo, null, 2) + '\n';
   // Una marca sin reemplazar: en cualquier texto salvo el código de los nodos (las librerías mencionan
   // «@@solo:» en un comentario) o, en el código, al principio del `jsCode`.
@@ -269,8 +300,9 @@ function guardiaDelCarrito(entrada, n, datos) {
   if (p.httpMethod !== 'POST') h.push(`«${n.name}» debe recibir POST`);
   if (p.authentication !== 'headerAuth') h.push(`«${n.name}» debe autenticar con headerAuth (sin eso cualquiera puede mandar un carrito)`);
   if (p.responseMode !== 'onReceived') h.push(`«${n.name}» debe responder al recibir (responseMode onReceived)`);
-  if (p.path !== MARCADOR_DEL_CARRITO || !MARCADORES_FIJOS[MARCADOR_DEL_CARRITO].test(String(p.path))) {
-    h.push(`«${n.name}» debe llevar la ruta como marcador ${MARCADOR_DEL_CARRITO} (una URL de capacidad no se versiona)`);
+  const marca = marcadorDelCarrito(datos);
+  if (!MARCADORES_DEL_CARRITO.includes(marca) || p.path !== marca || !MARCADORES_FIJOS[marca].test(String(p.path))) {
+    h.push(`«${n.name}» debe llevar la ruta como marcador ${marca} (una URL de capacidad no se versiona)`);
   }
   const cred = (((n.credentials || {}).httpHeaderAuth) || {}).name;
   if (!cred || cred !== (datos.credenciales || {}).ingesta) h.push(`«${n.name}» debe usar la credencial de cabecera de la ingesta (${(datos.credenciales || {}).ingesta || 'sin dato'}), no «${cred || 'ninguna'}»`);
@@ -380,6 +412,69 @@ function guardiasDeEntrega(flujo) {
   return h;
 }
 
+// =====================================================================================================
+// EL ESTADO DE LA CONVERSACIÓN EN EL SERVIDOR (PR-4a): lo que `--verificar` exige sobre el JSON, armado y versionado.
+//   - los nodos que usan o definen funciones `ss*` traen `comun-sin-agente/src/sesion.js` TAL CUAL (se INCLUYE, no se copia ni se edita) y declaran `SS_CONFIG` y cada `ss*` UNA vez;
+//   - «Armar mensajes» cuelga SOLO de «¿Comprometer turno?»; el envío al cliente y el cierre cuelgan de «Soltar mensajes» y de ningún otro;
+//   - los nodos «Comprometer *» llaman a configuracionFlujo, reintentan con el mismo idCompromiso (retryOnFail, maxTries >= 2) y no llevan `neverError`;
+//   - «Traer configuración» pide el `leer` en los MISMOS espacios que declara `SS_CONFIG` (si divergen se lee un documento y se compromete otro) y manda el id del mensaje;
+//   - la variante de PRUEBA nunca toca los documentos de producción: «Traer configuración» usa el espacio de prueba solo para `telefonosDePrueba`, «Carga de entrada» solo da `modoPrueba` si corrió «Entrada de prueba»;
+//   - los avisos al local y los envíos nunca cuelgan de otro nodo que «Soltar mensajes» (nada sale antes del compromiso del estado).
+// =====================================================================================================
+const NODOS_DE_SESION = ['Comprometer turno', 'Comprometer turno (2.º intento)', 'Comprometer compensación'];
+function guardiasDeSesion(entrada, flujo) {
+  const h = [];
+  const nodos = flujo.nodes || [];
+  const porNombre = new Map(nodos.map((n) => [n.name, n]));
+  const conex = flujo.connections || {};
+  const destinosDe = (nombre) => [...new Set(((conex[nombre] || {}).main || []).flat().map((c) => c && c.node))];
+  const parametros = (n) => n.parameters || {};
+  for (const nombre of ['¿Hay estado?', 'Sin estado', '¿Comprometer turno?', 'Comprometer turno', '¿Replanificar compromiso?', 'Comprometer turno (2.º intento)', 'Soltar mensajes', 'Confirmar envío', 'Comprometer compensación']) {
+    if (!porNombre.has(nombre)) h.push(`sesión: falta el nodo «${nombre}» (el estado de la conversación vive en el servidor)`);
+  }
+  if (destinosDe('Armar mensajes').join('|') !== '¿Comprometer turno?') h.push('sesión: «Armar mensajes» tiene que colgar SOLO de «¿Comprometer turno?»: el estado se compromete antes de enviar');
+  if (!destinosDe('Soltar mensajes').includes('¿Enviar de verdad?')) h.push('sesión: «¿Enviar de verdad?» tiene que colgar de «Soltar mensajes» (el envío va después del compromiso)');
+  for (const [desde, a] of Object.entries(conex)) {
+    const hijos = ((a && a.main) || []).flat().map((x) => x && x.node);
+    if (desde !== 'Soltar mensajes' && hijos.includes('¿Enviar de verdad?')) h.push(`sesión: «${desde}» conecta con «¿Enviar de verdad?»: solo «Soltar mensajes» puede`);
+    if (!['Soltar mensajes', 'Armar mensajes'].includes(desde) && hijos.includes('¿Registrar cierre?')) h.push(`sesión: «${desde}» conecta con «¿Registrar cierre?»: solo «Soltar mensajes» puede`);
+  }
+  for (const nombre of NODOS_DE_SESION) {
+    const n = porNombre.get(nombre);
+    if (!n) continue;
+    if (!/\/configuracionFlujo$/.test(String(parametros(n).url || ''))) h.push(`sesión: «${nombre}» tiene que llamar a configuracionFlujo`);
+    // Un 5xx o un timeout se reintenta con el MISMO idCompromiso (el servidor contesta `repetido` si ya se aplicó): reintento activo y sin `neverError` (con él un 5xx no se reintenta).
+    if (n.retryOnFail !== true || !(n.maxTries >= 2) || JSON.stringify(parametros(n)).includes('neverError')) h.push(`sesión: «${nombre}» tiene que reintentar (retryOnFail, maxTries >= 2) y no llevar neverError`);
+  }
+  // El módulo común, tal cual, en todo nodo que lo use; y ninguna copia propia ni función redefinida (en JS gana la ÚLTIMA declaración).
+  for (const n of nodos) {
+    const js = String(parametros(n).jsCode || '');
+    const codigo = js.replace(/^\s*\/\/.*$/gm, '');
+    const usa = /\bss(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig|NumeroHeader)\(/.test(codigo);
+    const define = /function ss[A-Z]\w*\(/.test(codigo);
+    if ((usa || define) && !js.includes(FUENTE_SESION)) h.push(`sesión: el nodo «${n.name}» usa o define funciones de sesión (ss*) sin traer \`comun-sin-agente/src/sesion.js\` tal cual: se INCLUYE el módulo común, no se copia ni se edita`);
+    if (/function (cn|vm)(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig)\(/.test(codigo)) h.push(`sesión: el nodo «${n.name}» trae una copia propia de los ayudantes de sesión`);
+    if (usa || define) {
+      const cuenta = new Map();
+      for (const m of codigo.matchAll(/\b(?:function|const|let|var)\s+(ss[A-Z]\w*|SS_CONFIG)\b/g)) cuenta.set(m[1], (cuenta.get(m[1]) || 0) + 1);
+      for (const [nombre, veces] of cuenta) if (veces !== 1) h.push(`sesión: el nodo «${n.name}» declara ${nombre} ${veces} veces: cada ayudante de sesión y SS_CONFIG se declaran UNA sola vez por nodo (la última declaración gana y anularía el módulo)`);
+      if (!cuenta.has('SS_CONFIG')) h.push(`sesión: el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
+    }
+  }
+  // Los espacios de «Traer configuración» (el `leer`) y los de SS_CONFIG (los de `comprometer`) tienen que ser LOS MISMOS; el id del mensaje viaja en el `leer` (de ahí salen los repetidos).
+  const traer = porNombre.get('Traer configuración');
+  const declarados = /espacio: '([a-z0-9-]+)', espacioPrueba: '([a-z0-9-]+)'/.exec(COMUN);
+  const cuerpo = String((traer && parametros(traer).jsonBody) || '');
+  const enCuerpo = /prueba \? '([a-z0-9-]+)' : '([a-z0-9-]+)'/.exec(cuerpo);
+  if (traer && (!declarados || !enCuerpo || enCuerpo[1] !== declarados[2] || enCuerpo[2] !== declarados[1])) h.push('sesión: «Traer configuración» tiene que pedir el estado en el MISMO espacio que declara SS_CONFIG (espacioPrueba cuando es una prueba, espacio en producción)');
+  if (traer && !/idMensaje: id/.test(cuerpo)) h.push('sesión: «Traer configuración» tiene que mandar el idMensaje (de ahí sale el visto/repetido del servidor)');
+  if (traer && !/telefonosDePrueba/.test(cuerpo)) h.push('sesión: «Traer configuración» en la prueba solo pide el estado para los `telefonosDePrueba`');
+  // La variante de PRUEBA: «Entrada de prueba» siempre es modo prueba (nunca toca el espacio de producción); y producción no tiene «Entrada de prueba».
+  const carga = porNombre.get('Carga de entrada');
+  if (carga && !/modoPrueba: true/.test(String(parametros(carga).jsCode || ''))) h.push('sesión: «Carga de entrada» tiene que dejar `modoPrueba: true` siempre que corra «Entrada de prueba» (la prueba nunca toca los documentos de producción)');
+  return h;
+}
+
 // LO QUE UN JSON DE PRODUCCIÓN NO PUEDE TENER, aunque alguien lo haya agregado a mano al archivo versionado.
 //   - «Entrada de prueba»: es el único nodo que activa `modoPrueba`; en producción no debe existir, porque
 //     una carga que lo trajera podría encender el modo prueba (mensajes a otro número, avisos simulados);
@@ -404,6 +499,12 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   if (!!aAct !== !!aUrl) hallazgos.push('«Config base» trae solo una de cobroSimuladoActivo / qrSimuladoUrl: van juntas o ninguna');
   if (aUrl && !(typeof aUrl.value === 'string' && URL_QR_SIMULADO.test(aUrl.value))) hallazgos.push('«Config base».qrSimuladoUrl no es la imagen rotulada permitida');
   if (aAct && datos.modoCobro !== 'simulado') hallazgos.push(`«Config base» trae el cobro simulado y los datos dicen modoCobro «${datos.modoCobro}»`);
+  // EL NIT/CI NO SALE EN EL REPORTE: el cuerpo de «Reportar mensaje (saliente)» lleva lineas y entrega del qr_enviado, jamas la facturacion.
+  for (const n of flujo.nodes) {
+    if (n.name === 'Reportar mensaje (saliente)' && /facturacion|\bnit\b|documento|\bci\b/i.test(JSON.stringify((n.parameters || {}).jsonBody || ''))) {
+      hallazgos.push('el cuerpo de «Reportar mensaje (saliente)» menciona «facturacion», «nit», «documento» o «ci»: el NIT/CI no viaja en el reporte');
+    }
+  }
   const nombres = new Set(flujo.nodes.map((n) => n.name));
   const tipos = flujo.nodes.map((n) => n.type);
   if (entrada !== 'prueba' && nombres.has('Entrada de prueba')) hallazgos.push('contiene el nodo «Entrada de prueba» (activa modoPrueba): solo va en el JSON de prueba');
@@ -411,7 +512,7 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
     if (entrada !== 'prueba' && nombres.has(solo)) hallazgos.push(`contiene el nodo «${solo}» (inventa avisos «salidos»): solo va en el JSON de prueba`);
   }
   // Retención de ejecuciones: por omisión NADA se guarda (las ejecuciones llevan texto de clientes) y el progreso y las ejecuciones manuales nunca se guardan. La UNICA excepción
-  // declarada es el JSON de Q'Taco, que guarda todo (`all`/`all`) por decisión de Andres (04/10/2026): ver `RETENCION_POR_SALIDA`.
+  // declarada era el JSON de Q'Taco (04/10/2026); desde el 30/10 tampoco guarda (guardado de medios, contrato v2 §8.1): ver `RETENCION_POR_SALIDA`.
   const st = flujo.settings || {};
   const ret = retencionDe(destino);
   if (st.saveDataSuccessExecution !== ret.exito || st.saveDataErrorExecution !== ret.error || st.saveExecutionProgress !== false || st.saveManualExecutions !== false) {
@@ -424,6 +525,14 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   // Presupuesto de nodos de producción.
   if (entrada !== 'prueba' && flujo.nodes.length > TOPE_DE_NODOS) {
     hallazgos.push(`tiene ${flujo.nodes.length} nodos y el tope de producción es ${TOPE_DE_NODOS}: reutilice los nodos existentes (el código vive en src/lib y src/nodos)`);
+  }
+  // EL FLUJO DEL 3727 NO COMPARTE NADA CON EL VIVO: ni marcador de ruta, WABA o numero, ni credencial de Q'Taco (cada una cae en el flujo equivocado).
+  if (/(^|\.)qtaco-3727\.json$/.test(destino)) {
+    const t3727 = JSON.stringify(flujo);
+    const vivo = [...new Set(t3727.match(/REEMPLAZAR_(RUTA_RECEPTOR|RUTA_CARRITO|WABA_ID|PHONE_NUMBER_ID)_QTACO(?!_3727)[A-Z0-9_]*/g) || [])];
+    if (vivo.length) hallazgos.push(`el flujo del 3727 trae marcadores del flujo vivo: ${vivo.join(', ')}`);
+    const credVivas = [...new Set(flujo.nodes.flatMap((n) => Object.values(n.credentials || {}).map((c) => String((c || {}).name || ''))).filter((x) => /Q'Taco/.test(x)))];
+    if (credVivas.length) hallazgos.push(`el flujo del 3727 usa credenciales del flujo vivo: ${credVivas.join(', ')}`);
   }
   if (entrada === 'receptor' && tipos.includes('n8n-nodes-base.whatsAppTrigger')) hallazgos.push('contiene un «WhatsApp Trigger» en la variante del receptor (prohibición 7)');
   // L1. Ninguna llamada a las suscripciones de la app de Meta, en ningún nodo, texto ni código (prohibición 7).
@@ -445,8 +554,8 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   }
   if (entrada === 'prueba' && nombres.has(WEBHOOK_DEL_CARRITO)) hallazgos.push(`la variante de prueba no lleva el webhook «${WEBHOOK_DEL_CARRITO}»`);
   // El marcador de la ruta aparece UNA vez (en `path`): repetido en una nota, `preparar-import.sh` pondría la URL de capacidad en texto visible.
-  if (nombres.has(WEBHOOK_DEL_CARRITO) && JSON.stringify(flujo).split(MARCADOR_DEL_CARRITO).length - 1 !== 1) {
-    hallazgos.push(`el marcador ${MARCADOR_DEL_CARRITO} debe aparecer una sola vez (en el path del webhook), no repetido en notas ni en código`);
+  if (nombres.has(WEBHOOK_DEL_CARRITO) && JSON.stringify(flujo).split(marcadorDelCarrito(datos)).length - 1 !== 1) {
+    hallazgos.push(`el marcador ${marcadorDelCarrito(datos)} debe aparecer una sola vez (en el path del webhook), no repetido en notas ni en código`);
   }
   // El carrito llega a `Carga de entrada` y a nada más (lo valida ese Code, SOLO si el webhook corrió).
   if (nombres.has(WEBHOOK_DEL_CARRITO)) {
@@ -457,6 +566,9 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   const traer = flujo.nodes.find((n) => n.name === 'Traer configuración');
   if (!traer || !/catalogoCompleto:\s*true/.test(String((traer.parameters || {}).jsonBody || ''))) hallazgos.push('«Traer configuración» no pide `catalogoCompleto: true` (sin eso no llega el enlace del catálogo web)');
   hallazgos.push(...guardiasDeEntrega(flujo));
+  hallazgos.push(...guardiasDeSesion(entrada, flujo));
+  // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
+  hallazgos.push(...hallazgosDelGuardado(flujo));
   // L1. Un WhatsApp Trigger (camino A) exige su credencial explícita, y nunca la de AAB1-WA-Prod (prohibición 7).
   for (const n of flujo.nodes.filter((x) => x.type === 'n8n-nodes-base.whatsAppTrigger')) {
     const nombre = String(((n.credentials || {}).whatsAppTriggerApi || {}).name || '');
@@ -476,6 +588,8 @@ const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', 
 function anfitrionPermitido(nombreDelNodo, url) {
   if (/^REEMPLAZAR_[A-Z0-9_]+$/.test(url)) return true;
   if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
+  // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
+  if (nombreDelNodo === 'Descargar medio (guardado)' && url === URL_DESCARGA_GUARDADO) return true;
   const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
   if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
   return ANFITRIONES.includes(m[1].toLowerCase());

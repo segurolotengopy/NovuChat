@@ -1,0 +1,80 @@
+{
+  "_fuente": "Datos del negocio de «El Puente» de Antonio (tenant rroca-antonio, flujo Flujos/experimental/rroca-antonio/). Se carga con admin/scripts/datos/cargar-negocio.mjs, que solo admite las secciones negocio, agendamiento, catalogo y funcionarios: aquí van negocio y catalogo. Las claves que empiezan con `_` son notas y no se escriben. Los ids del catálogo salen del nombre (idDe) y son los que lee el flujo (raCatalogo): el monto de un QR sale de aquí y de ningún otro lado.",
+  "_pendiente": {
+    "_nota": "Resuelto el 21/10/2026: razón comercial del guion y horario abierto siempre (24/7), decisión de Andres del 19/10/2026. El número de recepción sigue siendo un marcador de la tabla local. NovuChat no entrega enlaces: Antonio los envía a mano.",
+    "razonComercial": "Antonio Dauber — Libros digitales El Puente",
+    "horarioDeRecepcion": "Abierto siempre (24/7)"
+  },
+  "negocio": {
+    "nombreNegocio": "Método Puente",
+    "descripcion": "Libros y material digital para parejas: un libro, un pack con bonos y cuatro bonos sueltos. Antonio revisa el comprobante de pago y envía el material por este mismo chat.",
+    "numeroRecepcionMarcador": "REEMPLAZAR_NUMERO_RECEPCION_ANTONIO",
+    "zonaHoraria": "America/La_Paz",
+    "moneda": "BOB",
+    "tratamiento": "tu",
+    "estiloEmojis": "pocos",
+    "prefijosPermitidos": [
+      "591"
+    ],
+    "datosQueNoTenemos": [
+      "garantía y devolución",
+      "factura",
+      "otros medios de pago",
+      "plazo exacto de entrega"
+    ],
+    "horarios": {
+      "_nota": "Abierto siempre (24/7), decisión de Andres del 19/10/2026. El asistente no promete plazo de respuesta humana.",
+      "lun": "00:00-23:59",
+      "mar": "00:00-23:59",
+      "mie": "00:00-23:59",
+      "jue": "00:00-23:59",
+      "vie": "00:00-23:59",
+      "sab": "00:00-23:59",
+      "dom": "00:00-23:59"
+    }
+  },
+  "catalogo": [
+    {
+      "nombre": "Pack completo",
+      "descripcion": "Pack Completo de Reconexión: el libro y 4 bonos prácticos",
+      "precio": 49,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Libro",
+      "descripcion": "Libro «El Puente que nos vuelve a unir»",
+      "precio": 35,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Workbook",
+      "descripcion": "Bono: Workbook de Transformación de Pareja",
+      "precio": 20,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Guía de conversaciones",
+      "descripcion": "Bono 4: Guía Práctica para Conversaciones Difíciles",
+      "precio": 18,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Calendario de conexión",
+      "descripcion": "Bono: Calendario de Conexión de 30 Días",
+      "precio": 15,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Preguntas profundas",
+      "descripcion": "Bono: Banco de 100 Preguntas Profundas",
+      "precio": 18,
+      "moneda": "BOB",
+      "activo": true
+    }
+  ]
+}

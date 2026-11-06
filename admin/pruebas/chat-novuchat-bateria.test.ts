@@ -266,10 +266,9 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect(v).toEqual(expect.arrayContaining(['muletilla']));
   });
   it('si no se coalescen los clics (cada ejecución responde solo a su evento y nada se consume), tres clics en 2 s dan tres respuestas: «mas_de_un_mensaje_por_turno»', async () => {
-    // La coalescencia tiene DOS cerrojos independientes (el último evento de cada teléfono y lo ya respondido); para revertirla hay que quitar los dos.
-    let f = estropear('if (f.seq !== reg.seq) return [];', '', ['Armar turno']);
-    f = estropear('const eventos = f.cola.filter((e) => e.seq > f.hasta);', 'const eventos = f.cola.filter((e) => e.seq === reg.seq);', ['Armar turno'], f);
-    f = estropear('f.cola = f.cola.filter((e) => e.seq > a.hasta);', '', undefined, f);
+    // Con el estado en el servidor, la coalescencia la hace el compromiso final: quien choca (`conflicto_version`) y ve que otra ejecución ya respondió o que llegó un evento más nuevo, NO responde.
+    // Para revertirla se quita ese «no respondo» y cada ejecución que choca replanifica y responde por su cuenta.
+    const f = estropear("if (chOtraEjecucionResponde(antes, eventosTurno.map((e) => e.seq))) return [];", '', ['Replanificar mensajes']);
     expect(await violacionesCon(f, 'E1')).toContain('mas_de_un_mensaje_por_turno');
   });
   it('si el código confía en la etiqueta del modelo («derivar_equipo» sin que el cliente lo pida), se avisa a recepción de más', async () => {
@@ -287,7 +286,8 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect(await violacionesCon(f, 'D1')).toEqual(expect.arrayContaining(['llamo_al_modelo_sin_necesidad']));
   });
   it('si al pedir los planes ya no sale la imagen de la consola, se dice «sin_imagen_de_planes»', async () => {
-    const f = estropear("  else if (archivo) payload.interactive.header = pdf ?", "  else if (false) payload.interactive.header = pdf ?");
+    // (los planes sin botones —el botón del equipo sale solo al derivar, 23/10— salen como mensaje `image` con pie)
+    const f = estropear("payload = !archivo ? cmTexto(cuerpo) : Object.assign(cmBase(", "payload = true ? cmTexto(cuerpo) : Object.assign(cmBase(");
     expect(await violacionesCon(f, 'D2')).toEqual(expect.arrayContaining(['sin_imagen_de_planes']));
   });
   it('ajustes del 09/10: la base (sin estropear) da cero violaciones en los casos nuevos A1 a A5', async () => {
@@ -362,12 +362,13 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     const g = estropear('no lo tengo documentado|', 'xx_no_coincide|');
     expect(await violacionesCon(g, 'C2')).toContain('declina_sin_boton');
   });
-  it('el número propio del prospecto: si el detector del código se apaga, la pregunta cae al modelo y se dice (`ruta_inesperada`, `llamo_al_modelo_sin_necesidad`); si la ruta fija pierde el botón del equipo, `botones_inesperados`', async () => {
+  it('el número propio del prospecto: si el detector del código se apaga, la pregunta cae al modelo y se dice (`ruta_inesperada`, `llamo_al_modelo_sin_necesidad`); si la ruta fija recupera el botón del equipo (23/10: no lo lleva), `botones_inesperados`', async () => {
     const sin = estropear("if (cx !== 'otroRespuesta' && (cx !== 'datos' || /[?¿]/.test(dijo))) { if (cx === 'datos') plan.extraerDatos = true; return fijo(/\\bcoexist|\\bconviv/.test(chNorm(dijo)) ? 'coexistencia' : 'numeroActual'); }", '');
     const v = await violacionesCon(sin, 'NUM1');
     expect(v).toEqual(expect.arrayContaining(['ruta_inesperada']));
-    const sinBoton = estropear("'descuento', 'numeroActual', 'coexistencia'];", "'descuento'];");
-    expect(await violacionesCon(sinBoton, 'NUM1')).toContain('botones_inesperados');
+    // (Andres, 23/10) la respuesta fija del número propio NO lleva botón: si la ruta vuelve a la lista de las que derivan, sale con botón y la batería lo dice
+    const conBoton = estropear("const CH_FIJO_SIN_RESPUESTA = ['costoMeta', 'integracion'];", "const CH_FIJO_SIN_RESPUESTA = ['costoMeta', 'integracion', 'numeroActual'];");
+    expect(await violacionesCon(conBoton, 'NUM1')).toContain('botones_inesperados');
     expect(await violacionesCon(FLUJO, 'NUM1')).toEqual([]);
     // la alternativa de continuidad vuelve a tomar «sigue»/«queda» sueltos: la descripción del problema pasa a la ruta fija
     let suelta2 = estropear('(?:(?:seguira|seguiria|va a seguir|podra seguir|podre seguir) funcionando|funcionara|funcionaria', '(?:queda|sigue|funcionando|funcionara|funcionaria');

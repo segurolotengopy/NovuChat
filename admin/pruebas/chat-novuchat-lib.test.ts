@@ -27,6 +27,8 @@ const DATOS_DIR = join(aqui, '../scripts/datos/chat-novuchat');
 const LIB = readFileSync(join(CARPETA, 'src/lib/chat.js'), 'utf8');
 const MENSAJES = readFileSync(join(EXPERIMENTAL, 'comun-sin-agente/src/mensajes.js'), 'utf8');
 const FILTRO = readFileSync(join(EXPERIMENTAL, 'comun-sin-agente/src/filtro-redaccion.js'), 'utf8');
+const SESION = readFileSync(join(EXPERIMENTAL, 'comun-sin-agente/src/sesion.js'), 'utf8');
+const TIPEO = readFileSync(join(aqui, '../../Flujos/src/core/texto/tipeo.js'), 'utf8');
 const RUTA_ORIGINAL = join(EXPERIMENTAL, 'captacion-minima/src/lib/captacion.js');
 const ORIGINAL = existsSync(RUTA_ORIGINAL) ? readFileSync(RUTA_ORIGINAL, 'utf8') : '';
 
@@ -36,7 +38,7 @@ type Fn = (...a: any[]) => any;
 type J = Record<string, any>;
 const DECLARADAS = [...LIB.matchAll(/^function (ch\w+)/gm)].map((m) => m[1]!);
 const CONSTANTES = [...LIB.matchAll(/^const (CH_\w+)/gm)].map((m) => m[1]!);
-const L = ejecutar(`${LIB}\n${MENSAJES}\n${FILTRO}\nreturn [{ json: { ${DECLARADAS.join(', ')}, ${CONSTANTES.join(', ')} } }];`, [{}])[0] as Record<string, Fn>;
+const L = ejecutar(`${LIB}\n${MENSAJES}\n${FILTRO}\n${TIPEO}\nreturn [{ json: { ${DECLARADAS.join(', ')}, ${CONSTANTES.join(', ')}, ctTipeo } }];`, [{}])[0] as Record<string, Fn>;
 const f = (n: string): Fn => L[n] as Fn;
 const K = (n: string): unknown => (L as unknown as J)[n];
 
@@ -76,8 +78,8 @@ describe('la biblioteca es autosuficiente y pura', () => {
     expect(d.filter((n) => !/^(ch[A-Z]|CH_)/.test(n))).toEqual([]);
     expect(sinComentarios).not.toMatch(/\bcc[A-Z]\w*\(|\bCC_[A-Z]/);
   });
-  it('mide menos de 1.800 líneas (el viejo, 2.224) y no trae los contadores ni las listas que se dejaron fuera a propósito', () => {
-    expect(LIB.split('\n').length).toBeLessThan(1800); // (tope autoimpuesto; la tabla única de botones lo devuelve a 1.800) 1.500 en la entrega original; los ajustes del 09/10 (nombre, botones por estado, complemento, empresa) lo subieron
+  it('mide menos de 1.850 líneas (el viejo, 2.224) y no trae los contadores ni las listas que se dejaron fuera a propósito', () => {
+    expect(LIB.split('\n').length).toBeLessThan(1850); // (PR-4c2: +25 líneas de recorte por bytes y de «otra ejecución responde») (tope autoimpuesto; la tabla única de botones lo devuelve a 1.800) 1.500 en la entrega original; los ajustes del 09/10 (nombre, botones por estado, complemento, empresa) lo subieron
     expect(sinComentarios).not.toMatch(/\brot\b|\bfijas\b|\bofertas\b|\bsueltas\b|\brepetidas\b|chVariante|chRotBase|CH_ROT_|CH_PASOS|chCampana|chPresentacion|chRetomar|ccPideLista/);
   });
   it('ningún nombre de persona del equipo en lo que se arma para el cliente (el patrón del filtro sí los nombra, para rechazarlos)', () => {
@@ -333,6 +335,52 @@ describe('la ficha por teléfono: saneada campo por campo, con tope y con olvido
     expect(a25.hechos.pidioEquipo).toBe(true);
     expect(a25.historial).toHaveLength(1);
     expect(f('chFichaVigente')({ ...base, ultimoMs: AHORA - 49 * H }, AHORA)).toEqual(fichaBase());
+  });
+  it('chAjustarBytes: el peor caso (6 eventos de 600+600 CJK y 8 entradas de historial con emojis) se recorta por BYTES a ≤14.900 sin quitar ningún evento; una ficha chica no se toca; chBytes cuenta UTF-8', () => {
+    const cjk = '漢字'.repeat(300);
+    const peor: J = { ...fichaBase(), seq: 6, cola: [1, 2, 3, 4, 5, 6].map((i) => ({ seq: i, id: 'w' + i, k: 'texto', t: cjk, c: cjk, ms: 1, rubro: '', boton: '' })), historial: Array.from({ length: 8 }, () => ({ r: 'u', t: '😀'.repeat(75) + '漢'.repeat(120) })) };
+    expect(f('chBytes')(JSON.stringify(peor))).toBeGreaterThan(15000);
+    const r = f('chAjustarBytes')(clonar(peor), 14900);
+    expect(r.cupo).toBe(true);
+    expect(f('chBytes')(JSON.stringify(r.ficha))).toBeLessThanOrEqual(14900);
+    expect(r.ficha.cola).toHaveLength(6); // nunca se quita un evento
+    expect(r.ficha.cola.every((e: J) => String(e.t).length >= 60 && String(e.c).length >= 60)).toBe(true);
+    const chica: J = { ...fichaBase(), historial: [{ r: 'u', t: 'hola' }] };
+    expect(f('chAjustarBytes')(clonar(chica), 14900).ficha).toEqual(chica);
+    expect(f('chBytes')('ñ😀a')).toBe(7);
+    // un tope imposible (más chico que lo que queda sin historial ni texto) lo dice: `cupo` falso, no un recorte infinito
+    expect(f('chAjustarBytes')(clonar(peor), 100).cupo).toBe(false);
+  });
+  it('chBytes / chAjustarBytes con un surrogate SUELTO no lanzan (se cuenta como U+FFFD, 3 bytes) y el recorte termina', () => {
+    expect(() => f('chBytes')('a\uD800b')).not.toThrow();
+    expect(f('chBytes')('a\uD800b')).toBe(5); // a + U+FFFD (3) + b
+    expect(f('chBytes')('\uDC00')).toBe(3);
+    const suelto = 'x\uD83D'.repeat(400); // surrogates altos sueltos
+    const ficha: J = { ...fichaBase(), seq: 2, cola: [1, 2].map((i) => ({ seq: i, id: 'w' + i, k: 'texto', t: suelto, c: suelto, ms: 1, rubro: '', boton: '' })), historial: [] };
+    const r = f('chAjustarBytes')(clonar(ficha), 2500);
+    expect(r.cupo).toBe(true);
+    expect(f('chBytes')(JSON.stringify(r.ficha))).toBeLessThanOrEqual(2500);
+  });
+  it('el recorte por bytes del turno (armar-mensajes) es defensa en profundidad INALCANZABLE con los topes actuales: la ficha de DESPUÉS de un turno (cola vacía) con todos los campos al máximo pesa muy por debajo de 14.900 bytes', () => {
+    const grande = '漢'.repeat(400);
+    const maxima: J = {
+      ...fichaBase(), ultimoMs: AHORA, rubro: 'x'.repeat(40), nombre: grande, empresa: grande, necesidad: grande, temas: Array.from({ length: 20 }, () => 'costos'), avisoFalla: grande, ofrecio: 'ambas',
+      empresasAvisadas: [grande, grande, grande, grande], primero: { rubro: 'salud', empresa: grande }, otros: Array.from({ length: 10 }, () => ({ e: grande, r: 'salud' })),
+      historial: Array.from({ length: 20 }, () => ({ r: 'u', t: grande })), ultimosIds: Array.from({ length: 20 }, () => 'w'.repeat(300)), cola: [],
+    };
+    const tras = f('chFichaVigente')(maxima, AHORA);
+    expect(tras.historial).toHaveLength(8);
+    expect(f('chBytes')(JSON.stringify(tras))).toBeLessThan(14900 - 3000);
+  });
+  it('chOtraEjecucionResponde: ya respondió (`hasta`), hay un evento más nuevo (`seq`) o lo pendiente ya no es lo de este turno; sin eventos o idéntico, no', () => {
+    const ficha = (seq: number, hasta: number, cola: number[]): J => ({ seq, hasta, cola: cola.map((x) => ({ seq: x })) });
+    const o = f('chOtraEjecucionResponde');
+    expect(o(ficha(3, 3, []), [2, 3])).toBe(true); // ya respondió
+    expect(o(ficha(4, 0, [2, 3, 4]), [2, 3])).toBe(true); // llegó uno más nuevo
+    expect(o(ficha(3, 1, [3]), [2, 3])).toBe(true); // lo pendiente cambió
+    expect(o(ficha(3, 1, [2, 3]), [2, 3])).toBe(false); // es exactamente lo de este turno
+    expect(o(ficha(3, 1, [2, 3]), [])).toBe(false);
+    expect(o(ficha(3, 1, [2, 3]), undefined)).toBe(false);
   });
   it('chBarrer: fuera las de más de 48 h y las sin hora; con más de 300, quedan las más nuevas; chYaVisto mira los ids y la cola', () => {
     const mapa: J = { '1': { ultimoMs: AHORA }, '2': { ultimoMs: AHORA - 49 * H }, '3': {}, '4': null };
@@ -1040,6 +1088,28 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
       expect([q, JSON.stringify(ficha), p.ruta, p.fijo]).toEqual([q, JSON.stringify(ficha), 'fijo', esperado]);
     }
   });
+  it('BANCO DE TIPEO (22/10): las 9 frases con error de tipeo y «¿A qué hora atienden?» llegan a su respuesta fija en CUALQUIER punto de la conversación; «cuanto cuesa» cuenta como interés', () => {
+    // [con error de tipeo, la misma frase bien escrita, ruta esperada]: lo que se exige es que el error NO cambie la ruta (la versión bien escrita manda) y que nunca caiga al modelo
+    const BANCO: Array<[string, string, string]> = [['¿Meta cobar por los mensajes?', '¿Meta cobra por los mensajes?', 'costoMeta'], ['¿Metta cobra por los mensajes?', '¿Meta cobra por los mensajes?', 'costoMeta'], ['¿Cuantos mensajs incluye el plan?', '¿Cuantos mensajes incluye el plan?', ''], ['¿Cuantas conversasiones incluye?', '¿Cuantas conversaciones incluye?', 'consumo'], ['¿Atiende los domigos?', '¿Atiende los domingos?', 'disponibilidad'], ['Dame un descuneto', 'Dame un descuento', 'descuento'], ['¿Hay descuentoss?', '¿Hay descuentos?', 'descuento'], ['¿Me haces rebja?', '¿Me haces rebaja?', 'descuento'], ['Puedo usar mi numero acrual?', 'Puedo usar mi numero actual?', 'numeroActual'], ['¿A qué hora atienden?', '¿A que hora atienden?', 'disponibilidad']];
+    const FICHAS: J[] = [{}, { rubro: 'gastronomia' }, { rubro: 'gastronomia', explicado: true, respondidas: 2 }, { rubro: 'retail', explicado: true, ofrecio: 'equipo' }, { equipoTocado: true }, { planesTocado: true, planesMostrados: true }, { rubro: 'salud', respondidas: 5, explicado: true, nombre: 'Ana', empresa: 'Sol' }];
+    const decidir2 = (q: string, ficha: J): J => f('chDecidir')({ eventos: [ev(q)], ficha: { ...fichaBase(), ...ficha }, cfg: CFG, from: '59100000011' });
+    for (const [q, bien, esperado] of BANCO) for (const ficha of FICHAS) {
+      const p = decidir2(q, ficha);
+      const ref = decidir2(bien, ficha);
+      expect([q, JSON.stringify(ficha), p.ruta, p.fijo]).toEqual([q, JSON.stringify(ficha), ref.ruta, ref.fijo]);
+      expect([q, p.ruta]).not.toEqual([q, 'modelo']);
+      if (esperado !== '') expect([q, JSON.stringify(ficha), p.ruta, p.fijo]).toEqual([q, JSON.stringify(ficha), 'fijo', esperado]);
+    }
+    // palabras reales a una edición de una clave NO se corrigen (hallazgo de seguridad): no cambian de ruta
+    for (const q of ['Quiero una rebanada de torta', '¿Cuánto es el premio?', 'Abrí una cuenta de ahorros', 'cuanto cuesto yo', '¿Tienen rebana?']) expect([q, decidir2(q, {}).ruta]).not.toEqual([q, 'fijo']);
+    expect(decidir2('¿Cuánto es el premio?', {}).ruta).toBe('modelo');
+    // lo corregido llega también a la situación (botones): «cuanto cuesa» sin plan es interés
+    const s = f('chSituacion')({ plan: { ruta: 'modelo' }, res: null, eventos: [ev('cuanto cuesa el servicio')], ficha: fichaBase() });
+    expect(s.interes).toBe(true);
+    // (el detector solo NO corrige por sí mismo: que ctTipeo se aplica a los eventos lo prueba la comparación contra la versión bien escrita, arriba)
+    for (const q of ['¿A qué hora funciona el pago?', '¿A qué hora atiende el doctor?', '¿A qué hora llega mi pedido?']) expect([q, decidir2(q, {}).fijo]).not.toEqual([q, 'disponibilidad']);
+    expect(f('chPreguntaCostoMeta')('¿Meta cobar por los mensajes?')).toBe(false);
+  });
   it('el NÚMERO PROPIO del prospecto: cada variante (acentos, mayúsculas, sin signos, audio transcrito) va a la ruta fija `numeroActual`; los negativos no', () => {
     const SI = ['¿Puedo usar mi número actual?', 'puedo usar mi numero', 'PUEDO USAR MI NUMERO ACTUAL', '¿Puedo usar mi WhatsApp?', '¿Puedo usar mi línea?', '¿Puedo utilizar mi número personal?', '¿Tengo que comprar un número nuevo?', '¿Tengo que comprar otra línea?', '¿Tengo que comprar otro chip?', '¿Necesito un número nuevo para el asistente?', '¿Debo sacar un número aparte?', '¿Mi número seguirá funcionando en el celular?', '¿Mi número va a seguir funcionando en la app?', '¿Mi WhatsApp seguirá funcionando en WhatsApp normal?', '¿Puedo seguir usando mi WhatsApp en mi celular?', '¿Se pierde mi número?', '¿Se pierden mis chats?', '¿Pierdo mi número si lo conecto?', '¿Puedo conectar el que ya tengo?', '¿Qué número necesito?', '¿Coexisten?', '¿Pueden coexistir los dos?', '¿Puedo usar los dos, el WhatsApp del celular y el del asistente?', 'Quiero usar mi número actual, se puede', 'puedo conectar mi numero', '¿Mi número actual sirve?', '¿Necesito otro chip?', '¿Mi WhatsApp personal sirve?', '¿Mi número cambia?', '¿Se puede vincular mi número?', '¿Puedo integrar mi WhatsApp?', '¿Coexiste con mi WhatsApp personal?', '¿Funciona con mi número actual?', '¿Voy a perder mis conversaciones?', '¿Se borran mis chats?', '¿Puedo usar mi número o uno nuevo?', '¿Puedo usar mi WhatsApp para el asistente?', '¿Pueden convivir los dos, mi WhatsApp del celular y el asistente?', 'Puedo usar mi numero acrual?', 'Hola, mi teléfono es el 71234567 y quiero saber si puedo usar mi teléfono actual', 'Puedo usar mi numero actal?', 'Y coexisten los telefonos?', 'coexisten los telefonos?', 'Puedo usar mi celular actual?', 'Puedo usar mi telefono actual?', 'Puedo usar mi mismo numero?', 'mi numero de ahora lo puedo usar?', '¿Se pueden usar los dos telefonos?', '¿Coexiste?'];
     const NO = ['¿Cuánto cuesta el número?', '¿Cuánto cuesta usar mi número?', 'Mi número de teléfono es 71234567', 'Me llamo Ana, mi número es 7123', '¿Cuál es tu número?', '¿Atienden en este número?', 'Quiero ver mi número de pedidos', '¿Cuántos mensajes incluye?', '¿Se conecta a mi calendario?', '¿Se conecta con mi WhatsApp?', '¿Puedo usar mi calendario?', 'Tengo una línea de crédito', '¿Puedo dejar mi número?', 'Hola', '¿Qué incluye el setup?', '¿Pueden usar el sistema los dos socios?',
@@ -1052,7 +1122,8 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
       '¿Puedo usar mi WhatsApp para vender?', '¿Puedo usar mi WhatsApp para campañas?', '¿Puedo usar mi WhatsApp con Instagram?', '¿Puedo usar mi número para el catálogo?', '¿Puedo conectar mi WhatsApp a Google Calendar?', '¿Por qué mi WhatsApp se bloquea?',
       // «coexiste» suelto en una frase que no habla del número ni de WhatsApp, y «teléfono» como dato de contacto
       'mi consulta coexiste con otra', '¿Mi consulta coexiste con la anterior?', '¿Puedo dejar mi teléfono?', '¿Puedo usar mi teléfono para pagar?', 'Mi teléfono es 71234567', '¿Puedo dar mi teléfono personal?', 'Mi celular es 71234567', '¿Puedo usar mi celular para el catálogo?', '¿Funciona en mi celular?', 'mi celular se queda sin batería', 'actuar con mi numero', 'Necesito un teléfono nuevo'];
-    const det = f('chPreguntaNumeroActual');
+    // (la corrección de tipeo se aplica a los eventos en chDecidir; el detector directo la recibe ya aplicada)
+    const det = (x: string): boolean => f('chPreguntaNumeroActual')(f('ctTipeo')(x, (L as unknown as J)['CH_CLAVES_TIPEO']));
     const decidir = (eventos: J[]): J => f('chDecidir')({ eventos, ficha: fichaBase(), cfg: CFG, from: '59100000011' });
     for (const x of SI) { expect(det(x), x).toBe(true); const p = decidir([ev(x)]); expect([x, p.ruta, p.fijo]).toEqual([x, 'fijo', /coexist|conviv/i.test(x) ? 'coexistencia' : 'numeroActual']); }
     for (const x of NO) { expect(det(x), x).toBe(false); expect([x, decidir([ev(x)]).fijo]).not.toEqual([x, 'numeroActual']); }
@@ -1067,17 +1138,26 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
     expect(conFicha({ planesPendientes: true }, '¿Puedo usar mi número actual?')).toMatchObject({ ruta: 'fijo', fijo: 'numeroActual', extraerDatos: true });
     expect(conFicha({}, '¿Puedo usar mi número actual?')['extraerDatos']).not.toBe(true);
     const t = f('chRespuestaFija')('numeroActual', CFG);
-    expect(t).toBe('Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar. ¿Te gustaría hablar con alguien de nuestro equipo para revisarlo en tu caso? 🤝');
+    expect(t).toBe('Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente.');
+    expect(t).not.toMatch(/hablar con alguien de nuestro equipo|Lo revisamos contigo/i);
     expect(t).not.toMatch(/coexisten|certificad|https?:/i);
-    expect(f('chRespuestaFija')('coexistencia', CFG)).toBe('Meta ofrece un modo en que la app WhatsApp Business y la API conviven, con limitaciones (por ejemplo, sin grupos). Hoy no lo ofrecemos. ¿Te gustaría hablar con alguien de nuestro equipo para ver qué opción te sirve? 🤝');
-    expect(f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'fijo', fijo: 'numeroActual' }, res: null, eventos: [ev('¿Puedo usar mi número actual?')], ficha: fichaBase() }))).toMatchObject({ fila: 'consulta-sin-respuesta', equipo: true, planes: false, ofrecio: 'equipo' });
+    expect(f('chRespuestaFija')('coexistencia', CFG)).toBe('Meta ofrece un modo en que la app WhatsApp Business y la API conviven, con limitaciones (por ejemplo, sin grupos). Hoy no lo ofrecemos.');
+    expect(f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'fijo', fijo: 'numeroActual' }, res: null, eventos: [ev('¿Puedo usar mi número actual?')], ficha: fichaBase() }))).toMatchObject({ fila: 'respuesta-fija', equipo: false, planes: false, ofrecio: 'ninguna' });
   });
-  it('chRespuestaFija: el dato más la invitación al equipo, sin ninguna cifra', () => {
-    for (const id of ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento']) {
+  it('chRespuestaFija: solo costoMeta e integracion invitan al equipo (con botón); banco, consumo, descuento, numeroActual y coexistencia NO invitan ni llevan botón; ninguna con cifras', () => {
+    for (const id of ['costoMeta', 'integracion']) {
       const t = f('chRespuestaFija')(id, CFG);
       expect(t, id).toMatch(/hablar con alguien de nuestro equipo/);
       expect(t, id).not.toMatch(/\d/);
       expect((t.match(/\?/g) ?? []).length, id).toBe(1);
+      expect(f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'fijo', fijo: id }, res: null, eventos: [ev('hola')], ficha: fichaBase() })), id).toMatchObject({ fila: 'consulta-sin-respuesta', equipo: true, planes: false, ofrecio: 'equipo' });
+    }
+    for (const id of ['consumo', 'banco', 'descuento', 'numeroActual', 'coexistencia']) {
+      const t = f('chRespuestaFija')(id, CFG);
+      expect(t, id).not.toMatch(/hablar con alguien de nuestro equipo|Lo revisamos contigo/i);
+      expect(t, id).not.toMatch(/\d/);
+      expect(t, id).not.toMatch(/\?/);
+      expect(f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'fijo', fijo: id }, res: null, eventos: [ev('hola')], ficha: fichaBase() })), id).toMatchObject({ fila: 'respuesta-fija', equipo: false, planes: false, ofrecio: 'ninguna' });
     }
     expect(f('chRespuestaFija')('banco', CFG)).toMatch(/solo revisa visualmente el comprobante/);
   });
@@ -1313,11 +1393,12 @@ describe('inyectar: la línea marcadora se reemplaza exactamente una vez', () =>
 
 describe('guardias de --verificar', () => {
   const real = (n: string): J => JSON.parse(readFileSync(join(CARPETA, n), 'utf8')) as J;
+  const DATOS_CRM = { crm: (JSON.parse(readFileSync(join(CARPETA, '../../../admin/scripts/datos/chat-novuchat/novuchat.json'), 'utf8')) as J)['crm'] };
   const prod = (): J => real('chat-novuchat.novuchat.json');
   const prueba = (): J => real('chat-novuchat.prueba.json');
   it('lo versionado no viola ninguna', () => {
-    expect(CONSTRUIR.guardias('trigger', prod())).toEqual([]);
-    expect(CONSTRUIR.guardias('prueba', prueba())).toEqual([]);
+    expect(CONSTRUIR.guardias('trigger', prod(), DATOS_CRM)).toEqual([]);
+    expect(CONSTRUIR.guardias('prueba', prueba(), DATOS_CRM)).toEqual([]);
   });
   it('«Entrada de prueba» en producción, «WhatsApp Trigger» en la prueba y una credencial de AAB1-WA-Prod se detectan', () => {
     const a = prod(); a['nodes'].push({ name: 'Entrada de prueba', type: 'n8n-nodes-base.webhook', parameters: { path: 'x', authentication: 'headerAuth' }, credentials: { httpHeaderAuth: { name: 'x' } } });
@@ -1328,6 +1409,97 @@ describe('guardias de --verificar', () => {
     expect(CONSTRUIR.guardias('trigger', c).join(' ')).toMatch(/AAB1-WA-Prod/);
     const d = prod(); delete d['nodes'].find((n: J) => n.name === 'WhatsApp Trigger').credentials;
     expect(CONSTRUIR.guardias('trigger', d).join(' ')).toMatch(/no trae una credencial explícita/);
+  });
+  it('el estado de la conversación es el MÓDULO COMÚN `comun-sin-agente/src/sesion.js`: un nodo con una copia propia, editada o sin el módulo se detecta (PR-4a0)', () => {
+    const modulo = readFileSync(join(CARPETA, '../comun-sin-agente/src/sesion.js'), 'utf8').trimEnd();
+    expect(prod()['nodes'].filter((n: J) => String(n.parameters?.jsCode ?? '').includes(modulo)).length).toBeGreaterThanOrEqual(8); // lo traen los nodos que lo usan, tal cual
+    // (a) un nodo con el módulo EDITADO (una copia que se aparta)
+    const a = prod();
+    const na = a['nodes'].find((n: J) => n.name === 'Soltar mensajes');
+    na.parameters.jsCode = String(na.parameters.jsCode).replace('function ssBytes(t) {', 'function ssBytes(t) { /* editado */');
+    expect(CONSTRUIR.guardias('trigger', a, DATOS_CRM).join(' ')).toMatch(/«Soltar mensajes» usa o define funciones de sesión \(ss\*\) sin traer/);
+    // (b) un nodo que usa las funciones pero NO trae el módulo
+    const b = prod();
+    const nb = b['nodes'].find((n: J) => n.name === 'Soltar mensajes');
+    nb.parameters.jsCode = String(nb.parameters.jsCode).replace(modulo, '');
+    expect(CONSTRUIR.guardias('trigger', b, DATOS_CRM).join(' ')).toMatch(/«Soltar mensajes» usa o define funciones de sesión/);
+    // (c) una copia propia con el prefijo viejo
+    const c = prod();
+    c['nodes'].find((n: J) => n.name === 'Cerrar turno').parameters.jsCode += '\nfunction cnCuerpoComprometer(a) { return a; }';
+    expect(CONSTRUIR.guardias('trigger', c, DATOS_CRM).join(' ')).toMatch(/copia propia de los ayudantes de sesión/);
+    // (d) dos declaraciones de SS_CONFIG
+    const d = prod();
+    d['nodes'].find((n: J) => n.name === 'Soltar mensajes').parameters.jsCode += "\nconst SS_CONFIG = { espacio: 'otro' };";
+    expect(CONSTRUIR.guardias('trigger', d, DATOS_CRM).join(' ')).toMatch(/«Soltar mensajes» declara SS_CONFIG 2 veces/);
+    // (e) el módulo TAL CUAL y luego una REDEFINICIÓN (en JS gana la última declaración: anularía el aislamiento de la prueba)
+    for (const redefine of ['function ssDesdeAutorizado() { return true; }', 'function ssEspacio() { return "chat-novuchat"; }', 'const ssBytes = () => 0;']) {
+      const e = prod();
+      e['nodes'].find((n: J) => n.name === 'Soltar mensajes').parameters.jsCode += '\n' + redefine;
+      expect(CONSTRUIR.guardias('trigger', e, DATOS_CRM).join(' '), redefine).toMatch(/«Soltar mensajes» declara ss\w+ 2 veces/);
+    }
+    // (f) «Armar turno» llama a `cnRegistro` (que usa `ssResultadoDeCompromiso`): sin el módulo se detecta aunque no nombre ninguna función `ss*`
+    const f2 = prod();
+    const nf = f2['nodes'].find((n: J) => n.name === 'Armar turno');
+    expect(String(nf.parameters.jsCode)).toContain(modulo);
+    nf.parameters.jsCode = String(nf.parameters.jsCode).replace(modulo, '');
+    expect(CONSTRUIR.guardias('trigger', f2, DATOS_CRM).join(' ')).toMatch(/«Armar turno» usa o define funciones de sesión/);
+    // (g) «Traer configuración» pide el estado en un espacio que NO es el de SS_CONFIG
+    for (const [de, a] of [["'chat-novuchat-prueba'", "'otro-prueba'"], [": 'chat-novuchat',", ": 'otro',"]] as const) {
+      const g = prod();
+      const t = g['nodes'].find((n: J) => n.name === 'Traer configuración');
+      const antes = String(t.parameters.jsonBody);
+      t.parameters.jsonBody = antes.replace(de, a);
+      expect(t.parameters.jsonBody, `la mutación ${de} no se aplicó`).not.toBe(antes);
+      expect(CONSTRUIR.guardias('trigger', g, DATOS_CRM).join(' ')).toMatch(/«Traer configuración» tiene que pedir el estado en el MISMO espacio/);
+    }
+    // lo versionado, limpio; y el armador pide el paquete común, no uno propio
+    expect(CONSTRUIR.guardias('trigger', prod(), DATOS_CRM)).toEqual([]);
+    expect(CONSTRUIR.CONFIG_BASE.paquetes.sesion).toEqual(['../comun-sin-agente/src/sesion.js']);
+  });
+  it('SS_CONFIG: espacioPrueba distinto de espacio y terminado en «-prueba», congelado, y ningún nodo lo reasigna ni lo muta (hallazgos LOW de #794)', () => {
+    const edita = (f: J, nodo: string, de: string | RegExp, a: string): J => {
+      const n = f['nodes'].find((x: J) => x.name === nodo);
+      const antes = String(n.parameters.jsCode);
+      n.parameters.jsCode = antes.replace(de, a);
+      expect(n.parameters.jsCode, `la mutación ${String(de)} no se aplicó`).not.toBe(antes);
+      return f;
+    };
+    // (a) el espacio de prueba igual al de producción, o sin el sufijo
+    for (const a of ["espacioPrueba: 'chat-novuchat'", "espacioPrueba: 'chat-novuchat-ensayo'"]) {
+      const f = edita(prod(), 'Soltar mensajes', "espacioPrueba: 'chat-novuchat-prueba'", a);
+      expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), a).toMatch(/espacioPrueba tiene que ser distinto de espacio y terminar en «-prueba»/);
+    }
+    // (a2) iguales Y con el sufijo: la regla «distinto» sola tiene que saltar
+    const iguales = edita(prod(), 'Soltar mensajes', "espacio: 'chat-novuchat', espacioPrueba: 'chat-novuchat-prueba'", "espacio: 'chat-novuchat-prueba', espacioPrueba: 'chat-novuchat-prueba'");
+    expect(CONSTRUIR.guardias('trigger', iguales, DATOS_CRM).join(' ')).toMatch(/espacioPrueba tiene que ser distinto de espacio/);
+    // (b) sin congelar
+    expect(CONSTRUIR.guardias('trigger', edita(prod(), 'Soltar mensajes', 'Object.freeze({', '({'), DATOS_CRM).join(' ')).toMatch(/SS_CONFIG tiene que declararse con Object\.freeze/);
+    // (c) reasignaciones y mutaciones en el código de CUALQUIER nodo (el módulo y el registro, tal cual, no cuentan)
+    for (const mut of ["SS_CONFIG = {};", "SS_CONFIG.espacio = 'x';", "ssEspacio = () => 'x';", "ssFoo.bar = 1;", "SS_CONFIG['espacio'] = 'x';", "Object.assign(SS_CONFIG, { espacio: 'x' });", "Object.defineProperty(SS_CONFIG, 'espacio', { value: 'x' });", "const y = SS_CONFIG[k];", "ssFoo++;", "--ssFoo;", "[ssFoo] = [1];", "({ a: ssFoo } = x);"]) {
+      const f = prod();
+      f['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += '\n' + mut;
+      expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(/«Cerrar turno» (reasigna o muta|reasigna un ayudante|incrementa o decrementa|accede a SS_CONFIG|muta SS_CONFIG)/);
+    }
+    // un comentario o una comparación no son una mutación
+    const limpio = prod();
+    limpio['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += "\n// SS_CONFIG = {} (ejemplo)\n/* ssX = 1 */\nconst ok = SS_CONFIG.espacio === 'chat-novuchat' && ssEspacio() !== 'z';";
+    expect(CONSTRUIR.guardias('trigger', limpio, DATOS_CRM)).toEqual([]);
+  });
+  it('el ESTADO SE COMPROMETE ANTES DE ENVIAR: «Armar mensajes» conectado al envío, un nodo de compromiso ausente o apuntando a otra Function, y un envío colgado de otro nodo se detectan (PR-4c2)', () => {
+    const a = prod();
+    a['connections']['Armar mensajes'].main[0].push({ node: '¿Enviar de verdad?', type: 'main', index: 0 });
+    const ha = CONSTRUIR.guardias('trigger', a, DATOS_CRM).join(' ');
+    expect(ha).toMatch(/«Armar mensajes» tiene que colgar SOLO de «¿Comprometer turno\?»/);
+    expect(ha).toMatch(/«Armar mensajes» conecta con «¿Enviar de verdad\?»|solo «Soltar mensajes» puede/);
+    const b = prod();
+    b['nodes'] = b['nodes'].filter((n: J) => n.name !== 'Comprometer turno');
+    expect(CONSTRUIR.guardias('trigger', b, DATOS_CRM).join(' ')).toMatch(/falta el nodo «Comprometer turno»/);
+    const c = prod();
+    c['nodes'].find((n: J) => n.name === 'Comprometer evento').parameters.url = 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta';
+    expect(CONSTRUIR.guardias('trigger', c, DATOS_CRM).join(' ')).toMatch(/«Comprometer evento» tiene que llamar a configuracionFlujo/);
+    const d = prod();
+    d['connections']['Soltar mensajes'].main[0] = d['connections']['Soltar mensajes'].main[0].filter((x: J) => x.node !== '¿Enviar de verdad?');
+    expect(CONSTRUIR.guardias('trigger', d, DATOS_CRM).join(' ')).toMatch(/tiene que colgar de «Soltar mensajes»/);
   });
   it('subscriptions, un anfitrión ajeno, un agente, la memoria, un modelo de chat y un marcador REEMPLAZAR_ fuera de «Config base» se detectan', () => {
     const a = prod(); a['nodes'].find((n: J) => n.name === 'Enviar a WhatsApp').parameters.url = 'https://graph.facebook.com/v26.0/123/subscribed_apps';
@@ -1355,7 +1527,10 @@ describe('guardias de --verificar', () => {
   });
   it('la planilla: solo A3:J y A3:A, USER_ENTERED para agregar y RAW para actualizar', () => {
     const a = prod(); a['nodes'].find((n: J) => n.name === 'Buscar teléfono en planilla').parameters.options.dataLocationOnSheet.values.range = 'A3:N';
-    expect(CONSTRUIR.guardias('trigger', a).join(' ')).toMatch(/A3:J/);
+    expect(CONSTRUIR.guardias('trigger', a, DATOS_CRM).join(' ')).toMatch(/A3:J/);
+    expect(CONSTRUIR.guardias('trigger', prod()).join(' ')).toMatch(/faltan los datos `crm`/);
+    const c = prod(); c['nodes'].find((n: J) => n.name === 'Buscar teléfono en planilla').parameters.options.returnFirstMatch = true;
+    expect(CONSTRUIR.guardias('trigger', c, DATOS_CRM).join(' ')).toMatch(/TODAS las coincidencias/);
     const b = prod(); b['nodes'].find((n: J) => n.name === 'Actualizar fila').parameters.options.cellFormat = 'USER_ENTERED';
     expect(CONSTRUIR.guardias('trigger', b).join(' ')).toMatch(/RAW/);
   });
@@ -1396,7 +1571,8 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     const r = CONSTRUIR.construir({ verificar: true });
     expect(r.resultado.map((x) => [x.archivo, x.alDia, x.versionado])).toEqual([['chat-novuchat.prueba.json', true, []], ['chat-novuchat.novuchat.json', true, []]]);
     expect(r.huerfanos).toEqual([]);
-    expect(r.resultado.map((x) => x.nodos)).toEqual([44, 44]);
+    // 53 de antes (44 + los 9 de la rama común del guardado de medios) y los 20 del estado de la conversación en el servidor (PR-4c2).
+    expect(r.resultado.map((x) => x.nodos)).toEqual([73, 73]);
   });
   it('un dato cambiado, un archivo borrado a mano o una guardia violada a mano hacen fallar `--verificar` en una copia temporal; un JSON sin datos es un huérfano', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chat-novuchat-'));
@@ -1407,6 +1583,12 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     cpSync(CARPETA, carpeta, { recursive: true, filter: (s) => !/fuentes|herramientas/.test(s) });
     cpSync(join(EXPERIMENTAL, 'comun-sin-agente'), join(dir, 'flujos', 'experimental', 'comun-sin-agente'), { recursive: true });
     cpSync(DATOS_DIR, datos, { recursive: true });
+    mkdirSync(join(dir, 'flujos', 'src', 'core', 'texto'), { recursive: true });
+    cpSync(join(aqui, '../../Flujos/src/core/texto/tipeo.js'), join(dir, 'flujos', 'src', 'core', 'texto', 'tipeo.js'));
+    // El módulo crm (se INCLUYE, no se copia al flujo) y su adaptador de captación.
+    mkdirSync(join(dir, 'flujos', 'src', 'modulos', 'captacion'), { recursive: true });
+    cpSync(join(aqui, '../../Flujos/src/modulos/crm'), join(dir, 'flujos', 'src', 'modulos', 'crm'), { recursive: true });
+    cpSync(join(aqui, '../../Flujos/src/modulos/captacion/crm-captacion.js'), join(dir, 'flujos', 'src', 'modulos', 'captacion', 'crm-captacion.js'));
     const tope = join(dir, 'flujos');
     const armar = (): { resultado: J[]; huerfanos: string[] } => CONSTRUIR.construir({ carpeta, datos, verificar: true, tope });
     expect(armar().resultado.every((x) => x.alDia)).toBe(true);
@@ -1475,14 +1657,17 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
       const js = codigo(n.name);
       if (m[1]!.includes('+mensajes')) { expect(js, `«${n.name}» no trae mensajes.js tal cual`).toContain(MENSAJES.trimEnd()); revisados++; }
       if (m[1]!.includes('+filtro')) { expect(js, `«${n.name}» no trae filtro-redaccion.js tal cual`).toContain(FILTRO.trimEnd()); revisados++; }
+      if (m[1]!.includes('+sesion')) { expect(js, `«${n.name}» no trae sesion.js (módulo común) tal cual`).toContain(SESION.trimEnd()); revisados++; }
+      if (m[1]!.includes('+tipeo')) { expect(js, `«${n.name}» no trae core/texto/tipeo.js tal cual`).toContain(TIPEO.trimEnd()); revisados++; }
     }
     expect(revisados).toBeGreaterThanOrEqual(3);
-    expect(marca('Armar mensajes')).toBe('@@todo+mensajes+filtro:nodos/armar-mensajes.js');
+    expect(marca('Armar mensajes')).toBe('@@todo+mensajes+filtro+tipeo+sesion:nodos/armar-mensajes.js');
+    expect(marca('Armar turno')).toBe('@@todo+tipeo+sesion:nodos/armar-turno.js');
   });
   it('la cadena de envío (enviar, respaldo en texto, reporte saliente) es la de `comun-sin-agente/src/envio.mjs`, injertada sin cambios', async () => {
     const { nodosDeEnvio } = (await import(/* @vite-ignore */ join(EXPERIMENTAL, 'comun-sin-agente/src/envio.mjs'))) as { nodosDeEnvio: Fn };
     const datos = DATOS_BRUTOS['credenciales'] as J;
-    const fuente = nodosDeEnvio({ credenciales: { graph: datos['graph'], ingesta: datos['ingesta'] }, ingestaUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta', desde: [5720, 160] });
+    const fuente = nodosDeEnvio({ credenciales: { graph: datos['graph'], ingesta: datos['ingesta'] }, ingestaUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta', desde: [9560, 160], armado: 'Soltar mensajes' });
     for (const n of fuente.nodes as J[]) expect((flujo['nodes'] as J[]).find((x) => x.name === n.name), `«${n.name}» difiere de la fuente común`).toEqual(n);
     expect((fuente.nodes as J[]).map((n) => n.name)).toEqual(['¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)', 'Reportar mensaje (saliente)']);
     // Una sola conexión es propia: «¿Reportar? (saliente)» cuelga de la puerta «¿Meta aceptó?» (regla I-ENTREGA 3) y no directo del reporte.
@@ -1508,23 +1693,27 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
     for (const malo of [{}, { error: { message: 'x' } }, { messages: [] }, { messages: [{}] }, { messages: [{ id: 'wamid.X' }], error: {} }, null, { messages: 'x' }]) expect(evalua(malo), JSON.stringify(malo)).toBe(false);
     expect((flujo['connections'] as J)['¿Meta aceptó?'].main[1]).toEqual([]);
   });
-  (existsSync(join(EXPERIMENTAL, 'captacion-minima/src/nodos')) ? it : it.skip)('las dos copias declaradas de la hoja son idénticas a las de Captación mínima (hasta que haya un módulo común: PROPIO.md)', () => {
-    const leer = (base: string, n: string): string => readFileSync(join(base, 'src/nodos', n), 'utf8');
-    expect(leer(CARPETA, 'prospecto-para-la-planilla.js')).toBe(leer(join(EXPERIMENTAL, 'captacion-minima'), 'prospecto-para-la-planilla.js'));
-    // `decidir-fila` diverge en UNA línea a propósito (L2 de la revisión de seguridad del PR #464: quitar TODOS los bloques de signos de fórmula del comienzo, «= =1»). Todo lo demás, idéntico.
-    // (y en el bloque «otros negocios» del resumen J: R5, ajustes del 09/10)
-    const mia = leer(CARPETA, 'decidir-fila-de-la-planilla.js').replace(/ *\/\/ >>> otros negocios[\s\S]*?\/\/ <<< otros negocios\n/, '').split('\n');
-    const orig = leer(join(EXPERIMENTAL, 'captacion-minima'), 'decidir-fila-de-la-planilla.js').split('\n');
-    const distintas = mia.filter((l) => !orig.includes(l));
-    expect(distintas.filter((l) => !l.trimStart().startsWith('//'))).toEqual(["const seguro = (v) => limpio(v).replace(/^(?:[=+\\-@]\\s*)+/, '');"]);
-    expect(orig.filter((l) => !mia.includes(l))).toEqual(["const seguro = (v) => limpio(v).replace(/^[=+\\-@]+\\s*/, '');"]);
+  it('la hoja de prospectos se INCLUYE del módulo crm (no hay copias en este flujo) y el código del flujo es byte a byte el del módulo', () => {
+    expect(existsSync(join(CARPETA, 'src/nodos/decidir-fila-de-la-planilla.js'))).toBe(false);
+    expect(existsSync(join(CARPETA, 'src/nodos/prospecto-para-la-planilla.js'))).toBe(false);
+    const plantilla = JSON.parse(readFileSync(join(CARPETA, 'flujo.plantilla.json'), 'utf8')) as J;
+    const js = (nombre: string): string => (plantilla['nodes'] as J[]).find((n) => n.name === nombre)!.parameters.jsCode;
+    expect(js('Prospecto para la planilla')).toBe('@@medio:crm-prospecto');
+    expect(js('Decidir fila de la planilla')).toBe('@@medio:crm-decidir');
+    const modulo = (f: string): string => readFileSync(join(CARPETA, '../../src/modulos', f), 'utf8').trimEnd();
+    const flujoJs = (nombre: string): string => ((JSON.parse(readFileSync(join(CARPETA, 'chat-novuchat.novuchat.json'), 'utf8')) as J)['nodes'] as J[]).find((n) => n.name === nombre)!.parameters.jsCode as string;
+    expect(flujoJs('Decidir fila de la planilla')).toContain(modulo('crm/nodo-decidir-fila.js'));
+    expect(flujoJs('Decidir fila de la planilla')).toContain(modulo('captacion/crm-captacion.js'));
+    expect(flujoJs('Prospecto para la planilla')).toContain(modulo('crm/nodo-prospecto.js'));
   });
-  it('L2: «Decidir fila» quita TODOS los bloques de signos de fórmula del comienzo (revertir la línea hace fallar esta prueba)', () => {
-    const js = readFileSync(join(CARPETA, 'src/nodos/decidir-fila-de-la-planilla.js'), 'utf8');
-    const linea = js.split('\n').find((l) => l.startsWith('const seguro'))!;
-    const seguro = (runInNewContext(`(function (limpio) { ${linea}\nreturn seguro; })`, {}) as (l: (x: string) => string) => (v: string) => string)((x: string) => String(x).trim());
-    for (const x of ['= =1', '=+-@ =HYPERLINK("x")', '+ - @ cmd', '=1']) expect(seguro(x), x).not.toMatch(/^[=+\-@]/);
-    expect(seguro('Panadería Luna')).toBe('Panadería Luna');
+  it('L2: el módulo crm (`crmSeguro`) quita TODOS los bloques de signos de fórmula del comienzo (revertir la línea hace fallar esta prueba)', () => {
+    for (const ruta of ['crm/crm.js']) {
+      const js = readFileSync(join(CARPETA, '../../src/modulos', ruta), 'utf8');
+      const linea = js.split('\n').find((l) => l.startsWith('const crmSeguro'))!;
+      const seguro = (runInNewContext(`(function () { const crmLimpio = (x) => String(x).trim(); ${linea}\nreturn crmSeguro; })`, {}) as () => (v: string) => string)();
+      for (const x of ['= =1', '=+-@ =HYPERLINK("x")', '+ - @ cmd', '=1']) expect(seguro(x), x).not.toMatch(/^[=+\-@]/);
+      expect(seguro('Panadería Luna')).toBe('Panadería Luna');
+    }
   });
 });
 
@@ -2272,7 +2461,7 @@ function* situaciones(): Generator<J> {
   }
 }
 function tablaEnMarkdown(tabla: J[]): string {
-  const celda = (x: unknown): string => (x === true ? 'sí' : x === 'interes' ? 'solo con interés' : 'no');
+  const celda = (x: unknown): string => (x === true ? 'sí' : x === 'interes' ? 'solo con interés' : x === 'sinPlanes' ? 'solo sin planes' : 'no');
   const oferta = (f: J): string => (f.planes !== false && f.equipo ? 'planes y equipo' : f.planes !== false ? 'planes' : f.equipo ? 'equipo' : 'ninguna');
   return ['| # | Fila | «Ver planes» | «Hablar con el equipo» | Oferta del texto | Cuándo y por qué |', '|---|---|---|---|---|---|', ...tabla.map((f, k) => `| ${k + 1} | \`${f.id}\` | ${celda(f.planes)} | ${celda(f.equipo)} | ${oferta(f)} | ${f.nota} |`)].join('\n');
 }
@@ -2286,6 +2475,14 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
     expect(m![1]).toBe(tablaEnMarkdown(T));
     expect(new Set(T.map((x) => x['id'])).size, 'ids únicos').toBe(T.length);
     expect(T.at(-1)!['id']).toBe('ordinaria'); // la última fila siempre coincide: toda situación tiene fila
+  });
+  it('PLANES sin planes ni imagen que mostrar: SÍ deriva (no hay callejón sin salida); con planes o imagen, no; y lo pulsado no reaparece', () => {
+    const s = (extra: J): J => f('chSituacion')({ plan: { ruta: 'planes', ...extra }, res: null, eventos: [ev('Planes por favor')], ficha: fichaBase() });
+    expect(botones(s({ sinPlanes: true }))).toMatchObject({ fila: 'planes', equipo: true, planes: false });
+    expect(botones(s({ sinPlanes: false }))).toMatchObject({ fila: 'planes', equipo: false, planes: false });
+    expect(botones(s({}))).toMatchObject({ fila: 'planes', equipo: false });
+    const tocado = f('chSituacion')({ plan: { ruta: 'planes', sinPlanes: true }, res: null, eventos: [ev('Planes por favor')], ficha: { ...fichaBase(), equipoTocado: true } });
+    expect(botones(tocado)).toMatchObject({ fila: 'planes', equipo: false });
   });
   it('PROPIEDADES sobre las 6.336 situaciones: lo pulsado no reaparece; «Ver planes» nunca sin interés; el equipo solo si es requerido o se acabaron las preguntas; nunca un callejón sin salida; el pedido de datos no lleva botón de planes', () => {
     const cuenta: Record<string, number> = {};
@@ -2307,19 +2504,20 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
       // (3) el equipo solo si es REQUERIDO o se ACABARON las preguntas (la oferta de planes, el cierre de precios, una consulta sin respuesta, a medida, función no documentada)
       if (r.equipo) {
         const ordinaria = s.ruta === 'modelo' && !sinRespuesta.includes(s.ev) && (!sinOferta.includes(s.ev) || (s.ev === 'datos' && s.interes)) && s.ev !== 'rubro' && s.ev !== 'multiple';
-        const requerido = s.ruta === 'planes' || (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev)))) || (ordinaria && (s.aMedida || s.acabadas));
+        const requerido = s.ruta === 'planes' || (s.ruta === 'fijo' && ['costoMeta', 'integracion'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev)))) || (ordinaria && (s.aMedida || s.acabadas));
         expect(requerido, donde).toBe(true);
       }
       ok('3 equipo si es requerido o se acabaron las preguntas');
       // (4) nunca un callejón sin salida: lo que el chat no resuelve lleva al equipo (si no se pulsó en este ciclo)
-      const noResuelve = (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev))));
+      const noResuelve = (s.ruta === 'fijo' && ['costoMeta', 'integracion'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev))));
       if (noResuelve && !s.equipoTocado) expect(r.equipo, donde).toBe(true);
       ok('4 sin callejón sin salida');
       // (5) el pedido de datos, la lista y el traspaso no llevan botones de la tabla
       if (['pedirNombre', 'lista', 'equipo'].includes(s.ruta)) expect([r.planes, r.equipo], donde).toEqual([false, false]);
       ok('5 pedido de datos, lista y traspaso sin botones');
-      // (6) el cierre de precios: los planes se acaban con la oferta del equipo
-      if (s.ruta === 'planes' && !s.equipoTocado) expect(r.equipo, donde).toBe(true);
+      // (6) los planes ya NO cierran con la oferta del equipo (Andres, 23/10): el botón sale solo al derivar
+      if (s.ruta === 'planes') expect([r.planes, r.equipo], donde).toEqual([false, false]);
+      if (s.ruta === 'fijo' && ['consumo', 'banco', 'descuento', 'numeroActual', 'coexistencia'].includes(s.fijo)) expect([r.planes, r.equipo], donde).toEqual([false, false]);
       // (7) la oferta (`ofrecio`) es exactamente lo que lleva
       expect(r.ofrecio, donde).toBe(r.planes && r.equipo ? 'ambas' : r.planes ? 'planes' : r.equipo ? 'equipo' : 'ninguna');
       ok('7 ofrecio = botones');
@@ -2498,5 +2696,92 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
     expect(c('Hola, te cuento algo.', CFG, 'x', { botones: ['planes', 'equipo'] }).botones).toEqual(['planes', 'equipo']);
     expect(c('Hola, te cuento algo.', CFG, 'x').payload.type).toBe('text');
     expect(c('Respuesta útil. Puedo mostrarte los planes.', CFG, 'x', { lista: true, botones: [] }).payload.interactive.type).toBe('list');
+  });
+});
+
+describe('bucle del paso de los datos (29/10): «Engels» no puede repetir cinco veces «¿Y cómo se llama tu negocio?»', () => {
+  const DATOS = NOVUCHAT['respaldos'] as J;
+  const turnoDatos = (ficha: J, texto: string, nombre = '', empresa = ''): J => {
+    const eventos = [ev(texto)];
+    const plan = { ruta: 'modelo', fijo: '', contexto: 'datos', rubroElegido: '', temas: [], hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false } };
+    const lectura = f('chLeerModelo')({ candidates: [{ content: { parts: [{ text: JSON.stringify({ mensaje: 'Gracias por contarme, seguimos con lo que necesitas.', accion: 'ninguna', rubro: 'ninguno', necesidad: '', nombre, empresa, descarte: 'ninguno' }) }] } }] }, { cfg: CFG, textos: [texto] });
+    const res = f('chResolver')({ plan, intentos: [{ lectura, causa: 'formato' }], cfg: CFG, ficha, eventos });
+    const nueva = f('chAplicarTurno')({ ficha, eventos, hasta: 1, plan, res, mensaje: res.texto, cfg: CFG, pidioDatos: false });
+    return { res, nueva };
+  };
+  const pedido = (extra: J = {}): J => ({ ...fichaBase(), preguntaDatos: true, nombrePedido: true, explicado: true, historial: [{ r: 'a', t: '¿Cómo te llamas y cómo se llama tu negocio?' }], ...extra });
+  it('la captura: nombre «Juan», luego «Engels» → «Engels» es el NEGOCIO y Juan sigue siendo el nombre', () => {
+    const uno = turnoDatos(pedido(), 'Juan', 'Juan');
+    expect(uno.res.texto).toBe(DATOS.datosSoloNombre);
+    for (const modelo of [['Engels', ''], ['Engels', 'Engels'], ['', 'Engels'], ['', '']]) {
+      const dos = turnoDatos(uno.nueva, 'Engels', modelo[0], modelo[1]);
+      expect(dos.nueva).toMatchObject({ nombre: 'Juan', empresa: 'Engels' });
+      expect(dos.res.texto).toBe(DATOS.datosAmbos);
+    }
+  });
+  it('si la ficha ya quedó con nombre «Engels» y sin negocio (el estado del bucle), repetir «Engels» lo anota como negocio', () => {
+    const r = turnoDatos(pedido({ nombre: 'Engels' }), 'Engels', 'Engels');
+    expect(r.nueva).toMatchObject({ nombre: 'Engels', empresa: 'Engels' });
+    expect(r.res.texto).toBe(DATOS.datosAmbos);
+  });
+  it('NIEGA: lo que no es un negocio no se anota como tal (corrección de nombre, evasiva, pedido)', () => {
+    const base = pedido({ nombre: 'Juan' });
+    expect(turnoDatos(base, 'me llamo Pedro', 'Pedro').nueva.empresa).toBe('');
+    expect(turnoDatos(base, 'soy Pedro', 'Pedro').nueva.empresa).toBe('');
+    expect(turnoDatos(base, 'después te cuento').nueva.empresa).toBe('');
+    expect(turnoDatos(base, 'precios').nueva.empresa).toBe('');
+  });
+  it('anti-bucle general: la misma pregunta de datos NUNCA sale dos veces seguidas, diga lo que diga el cliente', () => {
+    for (const dice of ['soy Juan', 'me llamo Juan', 'después te cuento', '???']) {
+      let fi = pedido({ nombre: 'Juan' });
+      let anterior = '';
+      for (let i = 0; i < 5; i++) {
+        const r = turnoDatos(fi, dice, i === 0 ? 'Juan' : '', '');
+        if (anterior !== '') expect(r.res.texto).not.toBe(anterior);
+        // mientras falte el negocio, nunca se dice que quedó anotado todo
+        if (r.nueva.empresa === '') expect(r.res.texto).not.toBe(DATOS.datosAmbos);
+        anterior = r.res.texto;
+        fi = r.nueva;
+      }
+    }
+  });
+});
+
+describe('«Otro / a medida» no ofrece al equipo hasta dos respuestas del cliente (29/10): primero se le consulta', () => {
+  const sit = (o: { otroResp?: number; rubro?: string; texto?: string; ev?: string; rubroElegido?: string; res?: J; ficha?: J }): J => {
+    const ficha = { ...fichaBase(), rubro: o.rubro ?? 'otro', otroResp: o.otroResp ?? 0, historial: [], ...(o.ficha ?? {}) };
+    const eventos = o.texto === undefined ? [] : [{ ...f('chEventoTexto')(o.texto), seq: 1, id: '', ms: 0 }];
+    return f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'modelo', rubroElegido: o.rubroElegido ?? '', hechos: {} }, res: { origen: 'respaldo', evento: o.ev ?? 'otro', causas: [], ...(o.res ?? {}) }, eventos, ficha }));
+  };
+  it('al elegir «Otro» (botón o escrito) y tras la 1.ª respuesta, SIN botón del equipo; desde la 2.ª, sí', () => {
+    expect(sit({ rubroElegido: 'otro' })).toMatchObject({ equipo: false, fila: 'otro-temprano' });
+    expect(sit({ rubroElegido: 'otro', texto: 'Otro' })).toMatchObject({ equipo: false, fila: 'otro-temprano' }); // escribir «Otro» no cuenta como respuesta
+    expect(sit({ otroResp: 0, texto: 'Vendo software y licencias', ev: 'otroRespuesta' })).toMatchObject({ equipo: false, fila: 'otro-temprano' });
+    expect(sit({ otroResp: 1, texto: 'Me cuesta responder rápido', ev: 'otroRespuesta' })).toMatchObject({ equipo: true });
+  });
+  it('el conteo es de la FICHA: no lo borra un historial largo ni cambia por responder con audio', () => {
+    const largo = Array.from({ length: 8 }, (_, k) => ({ r: k % 2 ? 'a' : 'u', t: k % 2 ? 'respuesta del asistente' : '[Envió una imagen]' }));
+    expect(sit({ otroResp: 2, texto: 'otra cosa', ficha: { historial: largo } })).toMatchObject({ equipo: true });
+    const audio = f('chEventoTexto')('[Nota de voz] vendo licencias');
+    const fi = { ...fichaBase(), rubro: 'otro', otroResp: 0, historial: [] };
+    const sitAudio = f('chSituacion')({ plan: { ruta: 'modelo', rubroElegido: '', hechos: {} }, res: { origen: 'respaldo', evento: 'otro', causas: [] }, eventos: [{ k: 'audio', c: 'vendo licencias', t: audio.t, seq: 1, id: '', ms: 0 }], ficha: fi });
+    expect(f('chBotonesDe')(sitAudio)).toMatchObject({ equipo: false });
+    const aplicada = f('chAplicarTurno')({ ficha: fi, eventos: [{ k: 'audio', c: 'vendo licencias', t: audio.t, seq: 1, id: '', ms: 0 }], hasta: 1, plan: { ruta: 'modelo', rubroElegido: '', hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false }, temas: [] }, res: { lectura: {} }, mensaje: 'hola', cfg: CFG });
+    expect(aplicada.otroResp).toBe(1);
+    const eleccion = f('chAplicarTurno')({ ficha: { ...fichaBase() }, eventos: [{ ...f('chEventoTexto')('Otro'), seq: 1, id: '', ms: 0 }], hasta: 1, plan: { ruta: 'modelo', rubroElegido: 'otro', hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: true }, temas: [] }, res: { lectura: {} }, mensaje: 'hola', cfg: CFG });
+    expect(eleccion.otroResp).toBe(0);
+  });
+  it('NIEGA: pedir algo a medida, que el modelo declina u ofrezca al equipo, sin dato o ya habló con el equipo LIBERAN el botón', () => {
+    expect(sit({ texto: 'Necesito algo personalizado a medida', ev: 'otroRespuesta' }).equipo).toBe(true);
+    expect(sit({ texto: 'vendo software', ev: 'otroRespuesta', res: { origen: 'modelo', contexto: 'otroRespuesta', texto: 'Eso lo vemos mejor. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝' } }).equipo).toBe(true);
+    expect(sit({ texto: 'vendo software', ev: 'sin_dato' }).equipo).toBe(true);
+    expect(sit({ texto: 'vendo software', ev: 'otroRespuesta', ficha: { equipoAhora: true } }).fila).not.toBe('otro-temprano');
+  });
+  it('NIEGA: fuera de contexto, cortesía o identidad en esa etapa NO muestran «Ver planes» (siguen sin botones)', () => {
+    for (const ev of ['fuera', 'cortesia', 'identidad', 'medio']) expect(sit({ texto: 'cuánto cuesta', ev })).toMatchObject({ equipo: false, planes: false });
+  });
+  it('NIEGA: un rubro estándar no cambia (la regla es solo de «Otro»)', () => {
+    expect(sit({ rubro: 'salud', texto: 'hola', ev: 'general' }).fila).not.toBe('otro-temprano');
+    expect(sit({ rubro: 'salud', texto: 'hola', ev: 'sin_dato' }).equipo).toBe(true);
   });
 });

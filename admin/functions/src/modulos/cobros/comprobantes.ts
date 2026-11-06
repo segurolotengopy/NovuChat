@@ -424,6 +424,9 @@ export async function purgarComprobantesDe(
         const n = await a.borrarPrefijo(base);
         if (n > 0) r.tenantsDeBajaBorrados++;
         r.objetosBorrados += n;
+        // El registro de comprobantes recibidos del comercio también se va con la baja:
+        // sin las fotos, sus filas ya no sirven y guardan un id de conversación.
+        await getFirestore().recursiveDelete(getFirestore().collection(`tenants/${ficha.id}/comprobantesRecibidos`));
         continue;
       }
       for (const nombre of await a.subcarpetas(base)) {

@@ -26,11 +26,14 @@
  */
 import { closeSync, constants, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
+import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
 // LA CADENA DE ENVÍO ES COMÚN (no se copia): se injerta desde `comun-sin-agente/src/envio.mjs` (enviar, respaldo en texto, reporte saliente).
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
+// EL miniCRM ES UN MÓDULO (no se copia): los paquetes `crm-prospecto` y `crm-decidir`, y el injerto del mapa de columnas del tenant (dato `crm`).
+import { injertarCrm, rutasPaquetesCrm, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const DATOS = join(AQUI, '../../../admin/scripts/datos/chat-novuchat');
@@ -40,10 +43,14 @@ export const CONFIG_BASE = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   librerias: ['src/lib/chat.js'],
-  comun: ['src/nodos/_comun.js'],
+  comun: ['src/nodos/_comun.js', 'src/nodos/_registro.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
     filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
+    tipeo: ['../../src/core/texto/tipeo.js'],
+    // El estado de la conversación en el servidor es un MÓDULO COMÚN (PR-4a0): se INCLUYE, no se copia. Sus parámetros (`SS_CONFIG`) los declara `src/nodos/_registro.js`.
+    sesion: ['../comun-sin-agente/src/sesion.js'],
+    ...Object.fromEntries(Object.entries(rutasPaquetesCrm(join(AQUI, '..', '..', 'src', 'modulos', 'captacion', 'crm-captacion.js'))).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
   },
 };
 
@@ -103,6 +110,10 @@ export function cargarDatos(archivo, dir = DATOS, pila = []) {
 
 // ----------------------------------------------------------------- las expresiones de la librería (UNA fuente: `src/lib/chat.js`)
 const FUENTE = leerSiExiste(join(AQUI, 'src/lib/chat.js'), 'src/lib/chat.js') || '';
+// El módulo común del estado de la conversación (PR-4a0): los nodos lo INCLUYEN tal cual; la guardia compara con esta fuente.
+const FUENTE_SESION = leerSiExiste(join(AQUI, '../comun-sin-agente/src/sesion.js'), 'comun-sin-agente/src/sesion.js') || '';
+// (`_registro.js`, propio del chat y presente en todo nodo, llama a `ssResultadoDeCompromiso` dentro de una función: eso no cuenta como usar el módulo)
+const FUENTE_REGISTRO = leerSiExiste(join(AQUI, 'src/nodos/_registro.js'), 'src/nodos/_registro.js') || '';
 function regexDeLaLibreria(nombre) {
   const m = new RegExp(`^const ${nombre} = \\/(.+)\\/([a-z]*);`, 'm').exec(FUENTE);
   if (!m) throw new Error(`src/lib/chat.js: no se encontró la línea «const ${nombre} = /…/;»`);
@@ -147,7 +158,7 @@ const CIERRE_RUBRO_EXACTO = '¿Te gustaría ver nuestros planes? 🤝'; // (el e
 const CIERRE_PRECIOS_EXACTO = '¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝';
 const MARCADORES = ['asistente', 'negocio', 'cierreRubro', 'cierrePrecios', 'cierreEquipo'];
 const CLAVES_INSTRUCCIONES = ['rol', 'tono', 'rubros', 'cierreRubro', 'otros', 'precios', 'limites', 'restricciones', 'ambiguedad', 'abierta', 'salida', 'seguridad'];
-const CLAVES_CIERRES = ['rubro', 'precios', 'equipo', 'consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad', 'numeroActual', 'coexistencia'];
+const CLAVES_CIERRES = ['rubro', 'precios', 'equipo', 'costoMeta', 'integracion'];
 const CLAVES_RESPUESTAS = ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad', 'numeroActual', 'coexistencia'];
 const CLAVES_RESPALDOS = ['multiple', 'otroElegido', 'otroLibre', 'fuera', 'equipo', 'generico', 'identidad', 'cortesia', 'datosAmbos', 'datosSoloNombre', 'datosSoloEmpresa', 'datosNinguno', 'empresa', 'complemento', 'noDocumentado', 'sinDato'];
 const CLAVES_TEXTOS = ['saludo', 'listaBoton', 'listaTitulo', 'planesIntro', 'planesIntroRepite', 'planesIntroTopes', 'planesSinPrecios', 'traspasoConPregunta', 'traspasoSinPregunta',
@@ -230,6 +241,10 @@ export function validarDatos(datos, archivo) {
     if (typeof cb.planillaProspectosHoja === 'string' && (cb.planillaProspectosHoja.trim() === '' || cb.planillaProspectosHoja.length > 100)) e('configBase.planillaProspectosHoja', 'tiene que tener de 1 a 100 caracteres (o el marcador)');
     if (typeof cb.mensajeComercioSuspendido === 'string' && (cb.mensajeComercioSuspendido.trim() === '' || cb.mensajeComercioSuspendido.length > 300)) e('configBase.mensajeComercioSuspendido', 'tiene que tener de 1 a 300 caracteres');
   }
+
+  // --- el mapa de columnas de la hoja de prospectos (módulo crm): lo valida el MISMO validador que corre en n8n
+  if (d.crm === undefined) e('crm', 'falta (el mapa de columnas de la hoja de prospectos)');
+  else for (const m of validarMapaCrm(d.crm)) e('crm', m);
 
   // --- los datos propios del chat
   const k = d.datos && typeof d.datos === 'object' && !Array.isArray(d.datos) ? d.datos : null;
@@ -495,7 +510,7 @@ export function inyectar(flujo, marca, nombre, valor) {
 const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
 const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', ANFITRION_CONSOLA];
 // Una URL por expresión (`={{ … }}`) solo vale para la descarga del medio (la URL que devuelve Meta): las del modelo llevan el host fijo y solo el id del modelo por expresión.
-const URL_POR_EXPRESION = { 'Descargar medio': '={{ $json.url }}' };
+const URL_POR_EXPRESION = { 'Descargar medio': '={{ $json.url }}', 'Descargar medio (guardado)': URL_DESCARGA_GUARDADO };
 export function anfitrionPermitido(nombreDelNodo, url) {
   if (/^REEMPLAZAR_[A-Z0-9_]+$/.test(url)) return true;
   if (URL_POR_EXPRESION[nombreDelNodo] === url) return true;
@@ -514,6 +529,8 @@ export function guardias(entrada, flujo, datos = {}) {
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   const nombres = new Set(nodos.map((n) => n.name));
   const parametros = (n) => (n && n.parameters) || {};
+  // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
+  if (nodos.length) h.push(...hallazgosDelGuardado(flujo));
   // «Entrada de prueba» nunca en producción: es el único nodo que activa el modo prueba. «WhatsApp Trigger» nunca en la prueba.
   if (entrada !== 'prueba' && nombres.has(NODO_PRUEBA)) h.push(`contiene el nodo «${NODO_PRUEBA}» (activa el modo prueba): solo va en el JSON de prueba`);
   if (entrada === 'prueba' && nombres.has(NODO_TRIGGER)) h.push(`contiene el nodo «${NODO_TRIGGER}» en la prueba: activarlo registra el webhook en Meta y se lo quita al flujo vivo`);
@@ -544,9 +561,75 @@ export function guardias(entrada, flujo, datos = {}) {
   // La coalescencia de clics necesita su espera y el modelo, su reintento: sin ellos el flujo responde una vez por clic o sin validar.
   const espera = nodos.find((n) => n.name === 'Esperar ráfaga');
   if (nodos.length && (!espera || espera.type !== 'n8n-nodes-base.wait')) h.push('falta el nodo «Esperar ráfaga» (n8n-nodes-base.wait): sin él no hay coalescencia de clics');
+  // El ESTADO SE COMPROMETE ANTES DE ENVIAR (PR-4c2, enmienda §2.3): «Armar mensajes» nunca cuelga del envío; solo de «¿Comprometer turno?». Y los nodos de compromiso existen y llaman a la consola.
+  const conex = (flujo && flujo.connections) || {};
+  const destinosDe = (n) => (((conex[n] || {}).main || []).flat().map((x) => x && x.node));
+  if (nodos.length) {
+    for (const n of ['¿Comprometer turno?', 'Comprometer turno', '¿Conflicto de versión?', 'Replanificar mensajes', 'Comprometer turno (2.º intento)', '¿Comprometer turno? (2.º)', '¿Comprometer evento? (2.º)', '¿Comprometer evento? (3.º)', 'Soltar mensajes', 'Comprometer evento', 'Comprometer evento (2.º intento)', 'Comprometer evento (3.º intento)', 'Comprometer compensación', 'Cerrar turno']) {
+      if (!nombres.has(n)) h.push(`falta el nodo «${n}» (estado de la conversación en el servidor)`);
+    }
+    if (destinosDe('Armar mensajes').join('|') !== '¿Comprometer turno?') h.push('«Armar mensajes» tiene que colgar SOLO de «¿Comprometer turno?»: el estado se compromete antes de enviar');
+    if (!destinosDe('Soltar mensajes').includes('¿Enviar de verdad?')) h.push('«¿Enviar de verdad?» tiene que colgar de «Soltar mensajes» (el envío va después del compromiso)');
+    for (const [desde, a] of Object.entries(conex)) if (desde !== 'Soltar mensajes' && ((a.main || []).flat().some((x) => x && x.node === '¿Enviar de verdad?'))) h.push(`«${desde}» conecta con «¿Enviar de verdad?»: solo «Soltar mensajes» puede`);
+    for (const n of nodos.filter((x) => /^Comprometer /.test(x.name))) {
+      if (!/\/configuracionFlujo$/.test(String(parametros(n).url || ''))) h.push(`«${n.name}» tiene que llamar a configuracionFlujo`);
+      // Un 5xx o un timeout se reintenta con el MISMO idCompromiso (el servidor contesta `repetido` si ya se aplicó): reintento activo y sin `neverError` (con él un 5xx no se reintenta).
+      if (n.retryOnFail !== true || !(n.maxTries >= 2) || JSON.stringify(parametros(n)).includes('neverError')) h.push(`«${n.name}» tiene que reintentar (retryOnFail, maxTries >= 2) y no llevar neverError`);
+    }
+    // EL ESTADO DE LA CONVERSACIÓN ES UN MÓDULO COMÚN (PR-4a0): todo nodo que usa sus funciones `ss*` trae el texto de `comun-sin-agente/src/sesion.js` TAL CUAL, y ninguno lleva una copia propia o editada.
+    if (!FUENTE_SESION) h.push('falta `comun-sin-agente/src/sesion.js` (el módulo común del estado de la conversación)');
+    for (const n of nodos) {
+      const js = String(parametros(n).jsCode || '');
+      const sinRegistro = FUENTE_REGISTRO ? js.split(FUENTE_REGISTRO.trimEnd()).join('') : js;
+      // (sin los comentarios: el módulo trae un ejemplo de `const SS_CONFIG = …` en su cabecera)
+      const codigo = js.replace(/^\s*\/\/.*$/gm, '');
+      // `cnRegistro(` fuera de `_registro.js` también es usar el módulo: llama a `ssResultadoDeCompromiso`.
+      const usa = /\bss(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig|NumeroHeader)\(/.test(sinRegistro) || /\bcnRegistro\(/.test(sinRegistro);
+      const define = /function ss[A-Z]\w*\(/.test(js);
+      if ((usa || define) && !js.includes(FUENTE_SESION.trimEnd())) h.push(`el nodo «${n.name}» usa o define funciones de sesión (ss*) sin traer \`comun-sin-agente/src/sesion.js\` tal cual: se INCLUYE el módulo común, no se copia ni se edita`);
+      if (/function (cn|ch)(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig)\(/.test(js)) h.push(`el nodo «${n.name}» trae una copia propia de los ayudantes de sesión`);
+      if (usa || define) {
+        // En JS gana la ÚLTIMA declaración: traer el módulo y luego REDEFINIR una función (`function ssDesdeAutorizado() { return true; }`) anularía el aislamiento. Cada `ss*` y SS_CONFIG, UNA vez por nodo.
+        const cuenta = new Map();
+        for (const m of codigo.matchAll(/\b(?:function|const|let|var)\s+(ss[A-Z]\w*|SS_CONFIG)\b/g)) cuenta.set(m[1], (cuenta.get(m[1]) || 0) + 1);
+        for (const [nombre, veces] of cuenta) if (veces !== 1) h.push(`el nodo «${n.name}» declara ${nombre} ${veces} veces: cada ayudante de sesión y SS_CONFIG se declaran UNA sola vez por nodo (la última declaración gana y anularía el módulo)`);
+        if (!cuenta.has('SS_CONFIG')) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
+      }
+    }
+    // Nadie reasigna ni muta los parámetros de sesión: ni `ss*` ni `SS_CONFIG` (con `=`, por índice o con `Object.assign/defineProperty`), sobre el código de cada nodo SIN el módulo común ni el registro (que los declaran) y sin comentarios.
+    {
+      const sinCom = (t) => String(t).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      const propios = [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean).map((t) => sinCom(t).trim());
+      const REGLAS = [
+        [/\b(ss[A-Z]\w*|SS_CONFIG)\s*(\.\s*\w+\s*)?[-+*\/%&|^]?=(?!=)/, 'reasigna o muta un ayudante de sesión (ss*) o SS_CONFIG con «=»'],
+        [/(\+\+|--)\s*ss[A-Z]|ss[A-Z]\w*\s*(\+\+|--)/, 'incrementa o decrementa un ayudante de sesión (ss*)'],
+        [/[\[{,:]\s*ss[A-Z]\w*\s*[\]},]\s*=/, 'reasigna un ayudante de sesión (ss*) por desestructuración'],
+        [/SS_CONFIG\s*\[/, 'accede a SS_CONFIG por índice'],
+        [/Object\.(assign|defineProperty)\(\s*SS_CONFIG/, 'muta SS_CONFIG con Object.assign o Object.defineProperty'],
+      ];
+      for (const n of nodos) {
+        let resto = sinCom(parametros(n).jsCode || '');
+        for (const p of propios) resto = resto.split(p).join('');
+        for (const [re, que] of REGLAS) if (re.test(resto)) h.push(`el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
+      }
+    }
+    // En la variante de PRUEBA, «Carga de entrada» DESCARTA lo que llegue a «Entrada de prueba» sin `modoPrueba: true` (si no, se comportaría como producción); producción no tiene «Entrada de prueba».
+    const carga = nodos.find((x) => x.name === 'Carga de entrada');
+    if (entrada === 'prueba' && carga && !/if \(corrioPrueba && !prueba\) return \[\];/.test(String(parametros(carga).jsCode || ''))) h.push('«Carga de entrada» tiene que descartar lo que llegue a «Entrada de prueba» sin modoPrueba: true');
+    // El estado va en OTRO espacio en la variante de PRUEBA, y los espacios de «Traer configuración» (que lleva el `leer` fijo en su cuerpo) tienen que ser LOS MISMOS que declara SS_CONFIG (los de `comprometer`): si divergen, se lee un documento y se compromete otro.
+    const traer = nodos.find((x) => x.name === 'Traer configuración');
+    // (lo que declara el código ARMADO de «Soltar mensajes», que es el que corre; si no está, la fuente)
+    const textoSS = String(parametros(nodos.find((x) => x.name === 'Soltar mensajes') || {}).jsCode || FUENTE_REGISTRO);
+    const declarados = /espacio: '([a-z0-9-]+)', espacioPrueba: '([a-z0-9-]+)'/.exec(textoSS);
+    const enCuerpo = /prueba \? '([a-z0-9-]+)' : '([a-z0-9-]+)'/.exec(String((traer && parametros(traer).jsonBody) || ''));
+    // El espacio de prueba tiene que ser OTRO y terminar en «-prueba»: si coincidiera con el de producción, una prueba pisaría las fichas de los clientes.
+    if (!declarados || declarados[1] === declarados[2] || !declarados[2].endsWith('-prueba')) h.push('SS_CONFIG.espacioPrueba tiene que ser distinto de espacio y terminar en «-prueba»');
+    if (!/const SS_CONFIG = Object\.freeze\(\{/.test(textoSS)) h.push('SS_CONFIG tiene que declararse con Object.freeze');
+    if (traer && (!declarados || !enCuerpo || enCuerpo[1] !== declarados[2] || enCuerpo[2] !== declarados[1])) h.push('«Traer configuración» tiene que pedir el estado en el MISMO espacio que declara SS_CONFIG (espacioPrueba cuando es una prueba, espacio en producción)');
+  }
   // Retención de ejecuciones, orden y zona horaria (decisión de Andres, 03/10/2026: se guardan solo las ejecuciones que fallan).
   const st = (flujo && flujo.settings) || {};
-  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'all' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «all» y saveExecutionProgress false (solo se guardan las ejecuciones que fallan; llevan el texto del turno)');
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» y saveExecutionProgress false (con la rama del guardado de medios el binario quedaría en la ejecución: decisión de Andres del 30/10, contrato v2 §8.1)');
   if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow` (D13)');
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
@@ -554,8 +637,17 @@ export function guardias(entrada, flujo, datos = {}) {
   const sheet = (nombre) => nodos.find((n) => n.name === nombre);
   const rango = (n) => (((parametros(n).options || {}).dataLocationOnSheet || {}).values || {}).range;
   const formato = (n) => (parametros(n).options || {}).cellFormat;
-  if (sheet('Buscar teléfono en planilla') && rango(sheet('Buscar teléfono en planilla')) !== 'A3:J') h.push('«Buscar teléfono en planilla» tiene que leer solo el rango A3:J (nunca las columnas del equipo)');
-  if (sheet('Leer IDs de la planilla') && rango(sheet('Leer IDs de la planilla')) !== 'A3:A') h.push('«Leer IDs de la planilla» tiene que leer solo el rango A3:A');
+  // Los rangos salen del mapa de columnas del tenant (`datos.crm`): hasta la última columna DEL BOT, nunca las del equipo.
+  const mapa = datos && datos.crm;
+  if (!mapa || !mapa.columnas) h.push('faltan los datos `crm` (el mapa de columnas): sin él no se puede comprobar el rango de lectura de la planilla');
+  else {
+    const f = mapa.filaEncabezados;
+    const ultima = Object.values(mapa.columnas).map((c) => c.letra).sort().pop();
+    if (sheet('Buscar teléfono en planilla') && rango(sheet('Buscar teléfono en planilla')) !== `A${f}:${ultima}`) h.push(`«Buscar teléfono en planilla» tiene que leer solo el rango A${f}:${ultima} (nunca las columnas del equipo)`);
+    if (sheet('Leer IDs de la planilla') && rango(sheet('Leer IDs de la planilla')) !== `A${f}:A`) h.push(`«Leer IDs de la planilla» tiene que leer solo el rango A${f}:A`);
+    const busca = sheet('Buscar teléfono en planilla');
+    if (busca && parametros(busca).options && parametros(busca).options.returnFirstMatch !== false) h.push('«Buscar teléfono en planilla» tiene que traer TODAS las coincidencias (returnFirstMatch false): el módulo crm elige la fila más reciente');
+  }
   if (sheet('Agregar fila') && formato(sheet('Agregar fila')) !== 'USER_ENTERED') h.push('«Agregar fila» tiene que escribir en USER_ENTERED (la fecha queda como fecha)');
   if (sheet('Actualizar fila') && formato(sheet('Actualizar fila')) !== 'RAW') h.push('«Actualizar fila» tiene que escribir en RAW (nada se interpreta)');
   // `REEMPLAZAR_` solo en «Config base» (y en la ruta de «Entrada de prueba»).
@@ -595,15 +687,19 @@ export function armarTenant(proyecto, datos, archivo) {
     }
     if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
   }
-  // La cadena de envío común, con las credenciales por NOMBRE del archivo de datos y la ingesta de la consola. Cuelga de «Armar mensajes», arriba de la hoja y de «Confirmar envío».
-  injertar(plantilla, { credenciales: { graph: dato(datos, 'credenciales.graph', archivo), ingesta: dato(datos, 'credenciales.ingesta', archivo) }, ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`, desde: [5720, 160] });
+  // La cadena de envío común, con las credenciales por NOMBRE del archivo de datos y la ingesta de la consola. Cuelga de «Soltar mensajes» (después de comprometer el estado), arriba de la hoja y de «Confirmar envío».
+  injertar(plantilla, { credenciales: { graph: dato(datos, 'credenciales.graph', archivo), ingesta: dato(datos, 'credenciales.ingesta', archivo) }, ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`, desde: [9560, 160], armado: 'Soltar mensajes' });
   // Puerta de la entrega (propia): el reporte saliente cuelga de «¿Meta aceptó?», que lee `messages[0].id`. Solo se reencamina la CONEXION de la cadena común; sus nodos quedan intactos.
   const reporta = plantilla.connections['¿Reportar? (saliente)'];
   if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${archivo}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);
   reporta.main[0] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
+  // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
+  injertarGuardado(plantilla, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: salidaDe(archivo), nombre: dato(datos, 'nombreFlujo', archivo), quitar: [] });
   const flujo = JSON.parse(texto);
   inyectar(flujo, MARCA_DATOS, 'CH_DATOS', datos.datos);
+  // El miniCRM: el mapa del tenant dentro del código de los nodos y el rango/encabezados de los 4 nodos de Google.
+  injertarCrm(flujo, datos.crm);
   const final = JSON.stringify(flujo, null, 2) + '\n';
   if (!sinMarcas(flujo, false)) throw new Error(`${archivo}: quedó una marca @@ sin reemplazar`);
   return final;

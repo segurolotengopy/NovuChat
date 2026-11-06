@@ -1,0 +1,12 @@
+{
+  "archivos": [
+    "Flujos/experimental/captacion-minima/herramientas/bateria.mjs",
+    "Flujos/experimental/chat-novuchat/herramientas/bateria.mjs",
+    "admin/pruebas/bellido-flujo.test.ts",
+    "admin/pruebas/platinum-flujo.test.ts",
+    "admin/pruebas/tenants/doctoras/armado.test.ts",
+    "admin/pruebas/tenants/doctoras/huecos.test.ts",
+    "admin/pruebas/tenants/doctoras/vigilante-ux.ts",
+    "admin/pruebas/venta-minima-catalogo-punta-a-punta.test.ts"
+  ]
+}

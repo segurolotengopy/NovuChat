@@ -33,7 +33,7 @@ export type Calendario = 'vacio' | 'grupo' | 'correo' | 'invalido';
 
 const DIAS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'];
 /** Un rango por día, de lunes a `k`. */
-export const horarioDe = (k: number): Record<string, string> => Object.fromEntries(DIAS.slice(0, k).map((d) => [d, '09:00-18:00']));
+export const horarioDe = (k: number, tramos = 1): Record<string, string> => Object.fromEntries(DIAS.slice(0, k).map((d) => [d, tramos === 3 ? '08:00-10:00,11:00-13:00,14:00-18:00' : '09:00-18:00']));
 
 const GRUPO = `${'a'.repeat(64)}@group.calendar.google.com`;
 const CORREO = 'reservas.local@ejemplo.com';
@@ -48,6 +48,8 @@ export type Opciones = {
   calendario?: Calendario;
   /** Lo que ya estaba guardado en `catalogoWebActivo`. */
   catalogoWebGuardado?: boolean;
+  /** Opt-in: tres tramos por día (turno partido) y `nombreQuienAtiende` presente en su tope. Las filas históricas no lo usan (se comparan con reglas que no los admiten). */
+  tramosYQuienAtiende?: boolean;
 };
 
 /** El documento tal como está guardado antes de que el comercio abra la pantalla. */
@@ -55,7 +57,8 @@ export function documentoAlmacenado(forma: Forma, o: Opciones): Record<string, u
   const ubic = o.ubicacion ?? true;
   const calendario = calendarioDe(o.calendario ?? (forma === 'tope' ? 'grupo' : 'correo'));
   const comun = {
-    horarios: horarioDe(o.dias),
+    horarios: horarioDe(o.dias, o.tramosYQuienAtiende ? 3 : 1),
+    ...(o.tramosYQuienAtiende ? { nombreQuienAtiende: 'q'.repeat(60) } : {}),
     ...(o.catalogoWebGuardado ? { catalogoWebActivo: true } : {}),
     ...(ubic ? { direccionMaps: 'https://maps.app.goo.gl/AbCdEfGh12', ubicacion: { lat: -17.8, lng: -63.2 } } : {}),
     actualizadoPor: 'siembra', actualizadoEn: TS,
@@ -129,6 +132,8 @@ export function payloadDeLaConsola(almacenado: Record<string, unknown>, uid: str
     teniaUbicacion: { direccionMaps: 'direccionMaps' in almacenado, ubicacion: 'ubicacion' in almacenado },
     nombre: (typeof almacenado['nombreAsistente'] === 'string' ? almacenado['nombreAsistente'] : '').replace(/[\r\n]+/g, ' ').trim(),
     teniaNombreAsistente: 'nombreAsistente' in almacenado,
+    quienAtiende: typeof almacenado['nombreQuienAtiende'] === 'string' ? almacenado['nombreQuienAtiende'] : '',
+    teniaQuienAtiende: 'nombreQuienAtiende' in almacenado,
     horarios: (almacenado['horarios'] ?? {}) as Record<string, string>,
     catalogoWeb: catalogoWeb ?? almacenado['catalogoWebActivo'] === true,
     uid,

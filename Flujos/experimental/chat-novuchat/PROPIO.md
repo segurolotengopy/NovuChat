@@ -11,6 +11,7 @@ Regla (Andres, 09/10/2026): **flujo propio = composición propia + núcleo comú
 | Filtro de redacción del modelo (promesas, afirmar hechos, negar ser IA, montos, enlaces) | `comun-sin-agente/src/filtro-redaccion.js` (paquete `filtro`) |
 | Cadena de envío: ¿Enviar de verdad?, Enviar a WhatsApp (lote de 1, 1,5 s), respaldo en texto, reporte saliente | `comun-sin-agente/src/envio.mjs`, `injertar()` desde `construir.mjs` |
 | Armador (plantilla + código → JSON, variantes, `--verificar`) | `comun-sin-agente/construir.mjs` (`leerProyecto`, `armarVariante`) |
+| Hoja de prospectos (miniCRM): `Prospecto para la planilla` y `Decidir fila de la planilla` | **Módulo `crm`** (`Flujos/src/modulos/crm/`: paquetes `crm-prospecto` y `crm-decidir`; la calificación y el resumen, del adaptador `Flujos/src/modulos/captacion/crm-captacion.js`). El mapa de columnas es DATO del tenant: la clave `crm` de `admin/scripts/datos/chat-novuchat/novuchat.json` (el ensayo la hereda); `injertarCrm` lo pone en el código y fija los rangos de los 4 nodos de Google. Ya no hay copias en `src/nodos/` |
 
 ## Común SIN fuente utilizable: copiado y declarado (HUECOS, a resolver en el módulo común)
 
@@ -21,7 +22,6 @@ Regla (Andres, 09/10/2026): **flujo propio = composición propia + núcleo comú
 | Puerta del turno (comercio no operativo + uso extendido) | `core/comercio-no-operativo.js` y `core/uso-extendido.js` son del contrato del agente y hay 4 versiones divergentes de `uso-extendido` |
 | Config del negocio (consola → configuración) | `core/config-del-negocio.js` (403 líneas) es del agente; este nodo toma solo precios, imagen, recepción, voz y atención |
 | `chAviso` (plantilla `solicitud_contacto` a recepción) | `cmContactoConBoton` cubre solo el botón; no hay constructor común de la plantilla |
-| `decidir-fila-de-la-planilla.js`, `prospecto-para-la-planilla.js` (hoja Leads_CRM) | `Flujos/src/modulos/captacion/` existe pero está ATRASADO (sin calificación por hechos ni resumen J). Copia de `captacion-minima/src/nodos/`; una prueba compara byte a byte. `prospecto` es idéntico; `decidir-fila` diverge a propósito en la línea `seguro` (quita todos los bloques de signos de fórmula del comienzo, «= =1»; revisión del PR #464) y en el bloque «otros negocios» del resumen J (ajustes del 09/10); la prueba declara esas diferencias |
 | Detectores, extracción literal de nombre y empresa, filtros de redacción propios (`src/lib/chat.js`, primer bloque) | Existían solo en Captación mínima: son piezas propias de NovuChat portadas con sus pruebas (y comparadas con la original) |
 
 ## Propio de NovuChat
@@ -38,3 +38,11 @@ Propio también: el sitio web (`sitioWeb`) que anexa el código en las rutas esp
 
 Un mensaje por turno del cliente (una ráfaga de clics es UN turno) más la plantilla a recepción UNA vez por ventana de 24 h. **0 agregados y 0 quitados** respecto de Captación mínima por turno, salvo (ajustes del 09/10): **+1 mensaje** en el camino «Ver planes» como primera respuesta (pide el nombre y el negocio antes de los planes; el camino de texto libre lo pide en el mismo mensaje, 0 agregados) y **+1 plantilla** a recepción cuando un segundo traspaso trae una empresa distinta, con tope de **3 plantillas por teléfono y por ventana de 24 h**;
 las llamadas al modelo son 0 o 1 por turno (2 si una guardia rechaza el mensaje). Diferencia de la cadena común: ante el rechazo de la plantilla de aviso, envía además el texto de respaldo a recepción.
+
+## Delta del paso a incluir el módulo `crm` (PR-B, 30/10/2026; sin publicar)
+
+- **«Buscar teléfono en planilla» pasa de `returnFirstMatch: true` a `false`.** Antes traía solo la fila MÁS ANTIGUA del teléfono y la actualizaba; ahora trae todas las coincidencias y el módulo elige la MÁS RECIENTE (mayor `row_number`), como pidió Andres. Con un solo registro por teléfono la salida es la misma.
+- Los rangos de lectura (`A3:J` y `A3:A`), la fila de encabezados y la columna de búsqueda salen del mapa `crm` de los datos; las guardias de `construir.mjs` los comparan con lo que da el mapa.
+- Antes de escribir se comprueba el encabezado LETRA POR LETRA (A hasta J); un encabezado movido o renombrado da `encabezados_distintos` y no se escribe.
+- `config/crm.activo === false` apaga la escritura (el nodo del prospecto devuelve vacío). La Function que lo entrega es el PR-B3, aparte: hoy el flujo siempre escribe.
+- Mensajes de WhatsApp por conversación: 0 agregados o quitados.

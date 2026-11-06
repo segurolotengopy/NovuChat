@@ -60,6 +60,8 @@ import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { registerHooks } from 'node:module';
+// `registro.ts` no tiene `import`: Node lo carga quitando los tipos.
+import { modulosDeFlujos } from '../../functions/src/registro.ts';
 
 const ENSAYO = 'ensayo';
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -134,7 +136,7 @@ console.log(`  Apunta a  : ${actual}${origen ? ` (en ensayo; su comercio es ${or
 
 if (MODO[0] === '--estado') {
   const fe = await db.doc(`tenants/${ENSAYO}`).get();
-  console.log(`  Ensayo    : ${fe.exists ? `flujos ${JSON.stringify(fe.get('flujos') ?? [])} · vertical ${fe.get('vertical') ?? '?'}` : 'el comercio `ensayo` no existe'}`);
+  console.log(`  Ensayo    : ${fe.exists ? `vertical ${fe.get('vertical') ?? '?'} · modulos ${Array.isArray(fe.get('modulos')) ? fe.get('modulos').length : 0}` : 'el comercio `ensayo` no existe'}`);
   console.log(`  Desviada  : ${actual === ENSAYO ? 'sí' : 'no'}${ruta.get('ensayoFlujoDe') ? ` · flujo de la ruta restaurable a ${ruta.get('ensayoFlujoDe')}` : ''}`);
   await salir(0);
 }
@@ -230,11 +232,10 @@ const refEnsayo = db.doc(`tenants/${ENSAYO}`);
 const fichaEnsayo = await refEnsayo.get();
 const colecciones = ['catalogo', 'funcionarios'];
 const aBorrar = [];
-// Los restos de venta se vacían si el ensayo es de venta O si la ficha traía venta
-// (un ensayo de agendamiento después de uno de venta no hereda pedidos viejos).
-const fichaTraiaVenta = fichaEnsayo.exists && (fichaEnsayo.get('vertical') === 'venta'
-  || (Array.isArray(fichaEnsayo.get('flujos')) && fichaEnsayo.get('flujos').includes('venta')));
-const vaciarVenta = fichaEnsayo.exists && (flujoCliente === 'venta' || fichaTraiaVenta);
+// Los restos de venta se vacían SIEMPRE que el comercio `ensayo` exista, sea cual sea su ficha (H2b-11): decidirlo por
+// la ficha dejaba pedidos viejos de un ensayo anterior cuando la ficha migrada ya no tenía `pedidos`. Solo se toca
+// `tenants/ensayo`, y contar una colección vacía no escribe nada.
+const vaciarVenta = fichaEnsayo.exists;
 /** Cuenta documentos (y los de sus subcolecciones) de una colección. */
 async function contar(col) {
   let n = 0;
@@ -248,7 +249,7 @@ let deVenta = 0;
 if (fichaEnsayo.exists) {
   for (const c of colecciones) aBorrar.push(...(await db.collection(`tenants/${ENSAYO}/${c}`).select().get()).docs.map((d) => d.ref));
   if (vaciarVenta) for (const c of COLECCIONES_DE_VENTA) deVenta += await contar(db.collection(`tenants/${ENSAYO}/${c}`));
-  for (const d of ['config/negocio', 'config/agendamiento', 'config/venta', 'contadores/catalogo']) aBorrar.push(db.doc(`tenants/${ENSAYO}/${d}`));
+  for (const d of ['config/negocio', 'config/agendamiento', 'config/venta', 'contadores/catalogo', 'contadores/agendas']) aBorrar.push(db.doc(`tenants/${ENSAYO}/${d}`));
 }
 console.log(`  Ensayo    : ${fichaEnsayo.exists ? `existe; se vacían ${aBorrar.length + deVenta} documento(s) antes de cargar${vaciarVenta ? ` (${deVenta} de venta, con sus mensajes)` : ''}` : 'se crea'}`);
 console.log(`  Ruta      : ${actual} -> ${ENSAYO}${FLUJO && FLUJO !== flujoOriginalRuta ? ` · flujo ${flujoOriginalRuta} -> ${FLUJO} (se devuelve al restaurar)` : ''}`);
@@ -282,7 +283,9 @@ if (APLICAR) {
     });
     const { MODELO_POR_DEFECTO } = await import('../../functions/src/central/ejes.ts');
     await refEnsayo.set({
-      nombre: 'Ensayo de NovuChat', estado: 'activo', vertical: flujoCliente, flujos: [flujoCliente],
+      nombre: 'Ensayo de NovuChat', estado: 'activo', vertical: flujoCliente,
+      // H2b-cierre: `modulos` (la unica fuente) coherente con el flujo del ensayo; sin `flujos`.
+      modulos: modulosDeFlujos([flujoCliente]),
       plan: 'pro', modelo: MODELO_POR_DEFECTO, creadoPor: 'ensayo', creadoEn: Timestamp.now(),
     });
     await db.doc(`tenants/${ENSAYO}/cuenta/estado`).set({
@@ -290,9 +293,13 @@ if (APLICAR) {
       estadoPago: 'sin_cargo', montoMensual: 0, moneda: 'USD', actualizadoEn: Timestamp.now(),
     }, { merge: true });
   } else {
-    // SIEMPRE un solo flujo, el de este ensayo, y sin lista `modulos` propia
-    // (que mandaría sobre `flujos`): nada de acumular flujos de ensayos anteriores.
-    await refEnsayo.update({ estado: 'activo', vertical: flujoCliente, flujos: [flujoCliente], modulos: FieldValue.delete() });
+    // SIEMPRE un solo flujo, el de este ensayo, y `modulos` derivada de ESE flujo (H2b-7: antes se
+    // borraba, y la lista que manda en las reglas desaparecía): nada de acumular de ensayos anteriores.
+    // `--restaurar` no toca la ficha `ensayo` (solo devuelve la ruta del demo), así que no hay valor
+    // previo que devolver: cada `--preparar` la reescribe entera.
+    await refEnsayo.update({
+      estado: 'activo', vertical: flujoCliente, modulos: modulosDeFlujos([flujoCliente]),
+    });
     // Los documentos de venta con subcolecciones (conversaciones/mensajes) se
     // borran enteros; el resto va en lote.
     if (vaciarVenta) {

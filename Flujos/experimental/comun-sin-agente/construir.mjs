@@ -142,6 +142,14 @@ const MARCA = /^@@(?:(todo|comun|solo)((?:\+[a-z][a-z0-9-]*)*):)?(.+)$/;
 
 /** El código con que se reemplaza una marca `@@…`. Lanza si la marca o la ruta no son válidas. */
 export function codigoDe(p, marca, nodo) {
+  // `@@medio:<paquete>`: un módulo común de medios (`Flujos/src/core/medios/`), declarado como paquete en el config,
+  // se INCLUYE tal cual (una sola fuente por paquete, sin una edición). Es lo que hace Antonio y ahora Agenda mínima.
+  const medio = /^@@medio:([a-z][a-z0-9-]*)$/.exec(marca);
+  if (medio) {
+    const fuente = p.paquetes[medio[1]];
+    if (!fuente || fuente.length < 1) throw new Error(`${nodo}: el config no declara el paquete «${medio[1]}»`);
+    return fuente.join('\n') + '\n';
+  }
   const m = MARCA.exec(marca);
   if (!m) throw new Error(`${nodo}: marca no válida: ${marca}`);
   const modo = m[1] || 'todo';

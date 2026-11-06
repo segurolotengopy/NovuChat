@@ -50,6 +50,9 @@ const bandera = (n) => args.includes(`--${n}`);
 const morir = (m) => { console.error(`✗ ${m}`); process.exit(1); };
 
 // `--actualizar-codigo` corre SOLO: antes, con `--borrar` al lado, corría `--borrar` (revisión de seguridad del #364).
+if (bandera('desde-b') && !bandera('sobre-bellido')) morir('--desde-b solo se usa con --sobre-bellido');
+if (bandera('sobre-bellido') && ['borrar', 'restaurar-respaldo', 'sobre-demo-a', 'turno', 'actualizar-codigo'].some((m) => args.includes(`--${m}`))) morir('--sobre-bellido no se combina con otro modo');
+if (bandera('actualizar-codigo') && ['desde-b'].some((m) => args.includes(`--${m}`))) morir('--actualizar-codigo no se combina con --desde-b');
 if (bandera('actualizar-codigo') && ['borrar', 'sobre-bellido', 'sobre-demo-a', 'restaurar-respaldo', 'turno'].some((m) => args.includes(`--${m}`))) morir('--actualizar-codigo no se combina con otro modo');
 const ENV = opcion('env') ?? morir('falta --env <archivo .env del Demo A>');
 // `--actualizar-codigo` no guarda ningún estado: no necesita (ni lee) `--estado`.
@@ -76,7 +79,7 @@ function leerEnv(ruta, claves, opcionales = []) {
   for (const c of claves) if (!out[c]) morir(`el .env no tiene ${c}`);
   return out;
 }
-const env = leerEnv(ENV, ['N8N_BASE_URL', 'N8N_API_KEY', 'N8N_WORKFLOW_ID'], ['WA_PHONE_ID']);
+const env = leerEnv(ENV, ['N8N_BASE_URL', 'N8N_API_KEY', 'N8N_WORKFLOW_ID'], ['WA_PHONE_ID', 'PLANILLA_PROSPECTOS_ID_BELLIDO']);
 const API = `${env.N8N_BASE_URL.replace(/\/$/, '')}/api/v1`;
 
 async function llamar(metodo, ruta, cuerpo) {
@@ -187,7 +190,7 @@ const MARCA_PHONE = /REEMPLAZAR_PHONE_NUMBER_ID_[A-Z0-9_]+/g;
 
 // ---------------------------------------------------------------- sobre Bellido (publicación definitiva)
 /*
- * --sobre-bellido --respaldo <archivo fuera del repo> [--flujo <json>] [--aplicar]
+ * --sobre-bellido --respaldo <archivo fuera del repo> [--flujo <json>] [--desde-b] [--aplicar]
  *   Pone el candidato (por omisión agenda-minima.v0.json) EN el flujo vivo de Bellido (id del .env que se
  *   pase, que tiene que ser el de Bellido). Es la publicación definitiva y solo va con el «sí» de Andres.
  *   - El «WhatsApp Trigger» es EL DE BELLIDO, tal cual.
@@ -199,6 +202,22 @@ const MARCA_PHONE = /REEMPLAZAR_PHONE_NUMBER_ID_[A-Z0-9_]+/g;
  *     valores del «Config base» del vivo de Bellido, sin mostrarlos. El calendario no tiene respaldo.
  *   - Respaldo exacto del vivo antes de escribir; la vuelta atrás es --restaurar-respaldo con el mismo .env.
  */
+// La credencial del miniCRM de Bellido (rama `ramaCrm`): el vivo todavia no la usa, asi que su id se resuelve en la LISTA de credenciales de n8n,
+// SOLO por este nombre exacto (constante: nunca por patron, ni otro nombre, ni otro tenant) y con exactamente UNA coincidencia. Nunca se imprime el id.
+const CRED_CRM_BELLIDO = 'Google Sheets miniCRM (crm-bellido)';
+let listaDeCredenciales = null;
+async function idDeCredencialCrm() {
+  if (listaDeCredenciales === null) {
+    const r = await llamar('GET', '/credentials?limit=250');
+    if (r.cod !== 200) morir(`no pude leer la lista de credenciales de n8n (GET /credentials → ${r.cod})`);
+    listaDeCredenciales = Array.isArray(r.datos.data) ? r.datos.data : (Array.isArray(r.datos) ? r.datos : []);
+  }
+  const m = listaDeCredenciales.filter((c) => c && c.name === CRED_CRM_BELLIDO && c.type === 'googleApi' && c.id);
+  if (m.length !== 1) morir(`la credencial «${CRED_CRM_BELLIDO}» (googleApi) tiene que existir en n8n exactamente una vez; hay ${m.length}. Cree la credencial antes de publicar`);
+  return String(m[0].id);
+}
+const ID_PLANILLA_VALIDO = (v) => typeof v === 'string' && !v.startsWith('REEMPLAZAR_') && /^[A-Za-z0-9_-]{25,100}$/.test(v);
+const NODOS_CRM_DE_BELLIDO = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
 const AJENOS_A_BELLIDO = /platinum|q'?taco|captaci|segurolo|otp|aab1|whatsapp-?modular|receptor|demo ?a\b|NovuChat A|pruebas/i;
 if (bandera('sobre-bellido')) {
   const RESPALDO = resolve(opcion('respaldo') ?? morir('falta --respaldo <archivo fuera del repositorio>'));
@@ -206,6 +225,9 @@ if (bandera('sobre-bellido')) {
   const vivo = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`);
   if (vivo.cod !== 200) morir(`GET del flujo vivo → ${vivo.cod}`);
   if (!/bellido/i.test(vivo.datos.name)) morir(`el flujo del .env no es el de Bellido («${vivo.datos.name}»)`);
+  if (/platinum|qtaco|captacion|segurolo|otp|aab1|whatsappmodular|receptor/.test(String(vivo.datos.name).toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, ''))) morir(`el flujo del .env tiene el nombre de un sistema ajeno («${vivo.datos.name}»): no se pisa`);
+  // Un vivo inactivo no se reactiva desde acá (reactivaría la suscripción del número): se decide aparte.
+  if (bandera('desde-b') && vivo.datos.active !== true) morir('el vivo de Bellido está INACTIVO: --desde-b no lo reactiva');
   const cuerpoPut = (w) => ({ name: w.name, nodes: w.nodes, connections: w.connections, settings: w.settings ?? {} });
   if (existsSync(RESPALDO)) {
     const previo = JSON.parse(readFileSync(RESPALDO, 'utf8'));
@@ -213,7 +235,15 @@ if (bandera('sobre-bellido')) {
     if (JSON.stringify(cuerpoPut(previo)) !== JSON.stringify(cuerpoPut(vivo.datos))) morir('el respaldo existente difiere del vivo: no se pisa (use --restaurar-respaldo o elija otra ruta)');
   }
   const PROPIOS_DE_B = ['Plan del turno', 'Resolver con agenda', 'Candado', 'Resumen del turno'];
-  if (vivo.datos.nodes.some((n) => PROPIOS_DE_B.includes(n.name))) morir('el vivo de Bellido ya tiene el candidato B');
+  // `--desde-b`: el vivo YA es B y el cambio es de ESTRUCTURA (nodos nuevos, como la rama de medios del 23/10/2026).
+  // Es el mismo camino de esta publicación (trigger, credenciales por tipo e id, «Config base» desde el vivo, respaldo
+  // exacto y lectura de vuelta); solo cambia lo que se exige del vivo. Para cambiar SOLO código: --actualizar-codigo.
+  const vivoYaEsB = PROPIOS_DE_B.every((x) => vivo.datos.nodes.some((n) => n.name === x));
+  if (bandera('desde-b')) {
+    if (!vivoYaEsB) morir('--desde-b es para un vivo que YA es B (le faltan los nodos propios de B): use --sobre-bellido sin --desde-b');
+  } else if (vivo.datos.nodes.some((n) => PROPIOS_DE_B.includes(n.name))) {
+    morir('el vivo de Bellido ya tiene el candidato B: para un cambio de estructura use --desde-b; para solo código, --actualizar-codigo');
+  }
   const ARCHIVO = resolve(opcion('flujo') ?? join(AQUI, '..', 'agenda-minima.v0.json'));
   const b = JSON.parse(readFileSync(ARCHIVO, 'utf8'));
   if (b.nodes.some((n) => n.type === 'n8n-nodes-base.webhook')) morir('el candidato no puede traer un Webhook de prueba');
@@ -233,6 +263,11 @@ if (bandera('sobre-bellido')) {
     const requerida = CRED_POR_TIPO_DE_NODO[n.type];
     if (requerida && !(n.credentials && n.credentials[requerida])) { n.credentials = Object.assign({}, n.credentials, { [requerida]: {} }); tabla.push(`  ${n.name}: venía SIN credencial ${requerida}; se pone la de Bellido de ese tipo`); }
     for (const [tipo, c] of Object.entries(n.credentials ?? {})) {
+      if (tipo === 'googleApi' && c && c.name === CRED_CRM_BELLIDO) {
+        n.credentials[tipo] = { id: await idDeCredencialCrm(), name: CRED_CRM_BELLIDO };
+        tabla.push(`  ${n.name}: ${tipo} → «${CRED_CRM_BELLIDO}» (de la lista de n8n)`);
+        continue;
+      }
       const usadas = delVivo[tipo] ?? morir(`el vivo de Bellido no usa ninguna credencial ${tipo} («${n.name}»)`);
       let elegida = null;
       if (c && c.name) {
@@ -254,10 +289,22 @@ if (bandera('sobre-bellido')) {
   const baseB = b.nodes.find((n) => n.name === 'Config base') ?? morir('el candidato no tiene «Config base»');
   const llenados = [];
   for (const a of baseB.parameters.assignments.assignments) {
-    const origen = { respaldoNumeroRecepcion: 'numeroRecepcion', respaldoNumeroDoctor: 'numeroDoctor', horarioAtencion: 'horarioAtencion' }[a.name];
+    // Con `--desde-b` el vivo ya es B: su «Config base» tiene los MISMOS campos (los llena la publicación anterior);
+    // el flujo viejo de 96 nodos los tenía con otro nombre (`numeroRecepcion`, `numeroDoctor`).
+    const origen = bandera('desde-b')
+      ? (['respaldoNumeroRecepcion', 'respaldoNumeroDoctor', 'horarioAtencion', 'planillaProspectosId'].includes(a.name) ? a.name : undefined)
+      : { respaldoNumeroRecepcion: 'numeroRecepcion', respaldoNumeroDoctor: 'numeroDoctor', horarioAtencion: 'horarioAtencion' }[a.name];
     if (!origen || !/^REEMPLAZAR_/.test(String(a.value))) continue;
     const v = String(valorVivo(origen) ?? '');
     if (v && !v.startsWith('REEMPLAZAR_') && !v.startsWith('=')) { a.value = v; llenados.push(a.name); }
+  }
+  // El id de la planilla del miniCRM: si el vivo no lo trae, se siembra del archivo de entorno (PLANILLA_PROSPECTOS_ID_BELLIDO). Nunca se imprime ni se guarda en el respaldo.
+  let sembradoDelEntorno = false;
+  const campoPlanilla = baseB.parameters.assignments.assignments.find((a) => a.name === 'planillaProspectosId');
+  if (campoPlanilla && /^REEMPLAZAR_/.test(String(campoPlanilla.value)) && env.PLANILLA_PROSPECTOS_ID_BELLIDO !== undefined) {
+    if (!ID_PLANILLA_VALIDO(env.PLANILLA_PROSPECTOS_ID_BELLIDO)) morir('PLANILLA_PROSPECTOS_ID_BELLIDO del entorno no tiene la forma de un id de planilla (25 a 100 letras, digitos, guion o guion bajo; no puede empezar con REEMPLAZAR_)');
+    campoPlanilla.value = env.PLANILLA_PROSPECTOS_ID_BELLIDO;
+    sembradoDelEntorno = true;
   }
   const marcas = [...new Set(JSON.stringify(b).match(/REEMPLAZAR_[A-Z][A-Z0-9_]*/g) ?? [])];
   const nv = new Set(vivo.datos.nodes.map((n) => n.name)); const nb = new Set(b.nodes.map((n) => n.name));
@@ -265,7 +312,11 @@ if (bandera('sobre-bellido')) {
   console.log(`Candidato (${ARCHIVO.split(sep).slice(-2).join('/')}): ${b.nodes.length} nodos. El nombre del flujo queda «${vivo.datos.name}».`);
   console.log(`Nodos que se van: ${[...nv].filter((x) => !nb.has(x)).length} · que llegan: ${[...nb].filter((x) => !nv.has(x)).length} · en los dos: ${[...nb].filter((x) => nv.has(x)).length}`);
   console.log('Credenciales, nodo por nodo:'); tabla.forEach((l) => console.log(l));
+  const estable = (x) => JSON.stringify(x, (_, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([p], [q]) => (p < q ? -1 : 1))) : v));
+  const cambiadosCompartidos = b.nodes.filter((n) => vivo.datos.nodes.some((x) => x.name === n.name && estable(x.parameters) !== estable(n.parameters))).map((n) => n.name);
+  console.log(`Nodos en los dos con PARÁMETROS que cambian (${cambiadosCompartidos.length}; se sobrescriben con los del candidato, sin mostrar valores): ${cambiadosCompartidos.join(', ') || '—'}`);
   console.log(`Respaldo de «Config base» llenado desde el vivo (sin mostrar valores): ${llenados.join(', ') || '—'}`);
+  if (sembradoDelEntorno) console.log('Id de la planilla del miniCRM: llenado desde el entorno (no se muestra)');
   console.log(`Marcadores que quedan: ${marcas.join(', ') || 'ninguno'}`);
   console.log(`Respaldo del vivo: ${RESPALDO}`);
   guardarRespaldo(RESPALDO, vivo.datos);
@@ -273,17 +324,23 @@ if (bandera('sobre-bellido')) {
   if (!APLICAR) { console.log('\nEn seco: no se escribió nada en n8n (solo el respaldo local). Agregue --aplicar.'); process.exit(0); }
   if (marcas.length) morir(`quedan marcadores sin reponer: ${marcas.join(', ')}`);
   const put = await llamar('PUT', `/workflows/${env.N8N_WORKFLOW_ID}`, { name: vivo.datos.name, nodes: b.nodes, connections: b.connections, settings: b.settings ?? vivo.datos.settings ?? {} });
-  if (put.cod !== 200) morir(`PUT → ${put.cod}: ${JSON.stringify(put.datos.message ?? '').slice(0, 300)}. Revise y use --restaurar-respaldo`);
+  if (put.cod !== 200) morir(`PUT → ${put.cod}: ${JSON.stringify(put.datos.message ?? '').slice(0, 300).replace(/\d{6,}/g, '<num>')}. Revise y use --restaurar-respaldo`);
   const leer = async () => { const r = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`); if (r.cod !== 200) morir(`GET después del PUT → ${r.cod}. Revise n8n y use --restaurar-respaldo`); return r.datos; };
   let tras = await leer();
-  if (tras.active !== true) {
+  // n8n separa borrador y versión publicada: si no coinciden, se activa de nuevo (como --actualizar-codigo) y se vuelve a leer.
+  if (tras.active !== true || (tras.versionId && tras.activeVersionId && tras.versionId !== tras.activeVersionId)) {
     const a = await llamar('POST', `/workflows/${env.N8N_WORKFLOW_ID}/activate`);
     tras = await leer();
     if (tras.active !== true) morir(`el flujo de Bellido quedó INACTIVO (activate → ${a.cod}). Use --restaurar-respaldo YA`);
   }
   // Activo no prueba que la versión PUBLICADA sea el candidato (n8n separa borrador y publicada).
   if (!PROPIOS_DE_B.every((x) => tras.nodes.some((n) => n.name === x))) morir('el flujo leído después del PUT no tiene los nodos del candidato. Use --restaurar-respaldo');
+  const faltan = b.nodes.filter((n) => !tras.nodes.some((x) => x.name === n.name)).map((n) => n.name);
+  if (faltan.length || tras.nodes.length !== b.nodes.length) morir(`el flujo leído después del PUT no coincide con el candidato (faltan: ${faltan.join(', ') || 'ninguno'}; ${tras.nodes.length} nodos de ${b.nodes.length}). Use --restaurar-respaldo`);
   if (tras.versionId && tras.activeVersionId && tras.versionId !== tras.activeVersionId) morir('la versión ACTIVA no es la que se acaba de escribir (versionId ≠ activeVersionId). Revise n8n y use --restaurar-respaldo');
+  // Lo que el mensaje afirma, se LEYÓ: las credenciales de cada nodo y las conexiones, contra el candidato que se escribió.
+  const credsDe = (w) => JSON.stringify(Object.fromEntries(w.nodes.map((n) => [n.name, n.credentials ?? null]).sort(([x], [y]) => (x < y ? -1 : 1))));
+  if (credsDe(tras) !== credsDe(b) || JSON.stringify(tras.connections) !== JSON.stringify(b.connections)) morir('después del PUT las credenciales o las conexiones leídas no coinciden con el candidato. Use --restaurar-respaldo');
   console.log(`✓ candidato sobre Bellido: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
   console.log('FALTA, ya: verificar-meta.sh --env .env.bellido (suscripción), un mensaje real desde un teléfono registrado y su ejecución en n8n. Si algo falla: --restaurar-respaldo.');
   process.exit(0);
@@ -553,6 +610,12 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
       n.credentials = { whatsAppApi: {} };
       tabla.push(`  ${n.name}: PARÁMETROS CAMBIADOS ${antes} → predefinedCredentialType/whatsAppApi`);
     }
+    // El ENSAYO en el Demo A no escribe en ninguna planilla: los nodos de Google del miniCRM quedan SIN credencial (declarada aqui), con el id de planilla vacio.
+    // Ninguna credencial de Bellido ni de otro cliente llega al Demo A; es la unica excepcion y solo para esos 8 nodos por nombre y por su credencial exacta.
+    if (NODOS_CRM_DE_BELLIDO.includes(n.name) && n.credentials && n.credentials.googleApi && n.credentials.googleApi.name === CRED_CRM_BELLIDO) {
+      delete n.credentials.googleApi;
+      tabla.push(`  ${n.name}: googleApi → SIN credencial (el ensayo no escribe en la planilla del miniCRM)`);
+    }
     for (const tipo of Object.keys(n.credentials ?? {})) {
       const regla = CRED_DEMO_A[tipo];
       const origen = (n.credentials[tipo] && n.credentials[tipo].name) || '';
@@ -566,10 +629,13 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
       tabla.push(`  ${n.name}: ${tipo} → «${c.name}»`);
     }
   }
-  const sinCred = b.nodes.filter((n) => Object.values(n.credentials ?? {}).some((c) => !c || !c.id)
+  const sinCred = b.nodes.filter((n) => !NODOS_CRM_DE_BELLIDO.includes(n.name) && (Object.values(n.credentials ?? {}).some((c) => !c || !c.id)
     // L4: un HTTP con autenticación y sin credencial fallaría en ejecución.
-    || (n.type === 'n8n-nodes-base.httpRequest' && (n.parameters?.authentication ?? 'none') !== 'none' && !Object.keys(n.credentials ?? {}).length));
+    || (n.type === 'n8n-nodes-base.httpRequest' && (n.parameters?.authentication ?? 'none') !== 'none' && !Object.keys(n.credentials ?? {}).length)));
   if (sinCred.length) morir(`nodos sin credencial resuelta: ${sinCred.map((n) => n.name).join(', ')}`);
+  // El id de la planilla del miniCRM va VACIO en el ensayo (aunque el JSON trajera otro): sin planilla no se escribe nada.
+  const idPlanillaDemo = b.nodes.find((n) => n.name === 'Config base')?.parameters?.assignments?.assignments?.find((a) => a.name === 'planillaProspectosId');
+  if (idPlanillaDemo) idPlanillaDemo.value = '';
   // La trampa del 15/09: un nodo que habla con Graph (Meta) con una credencial de cabecera genérica (la de la ingesta) le manda el token
   // de la consola a Meta. Tras resolver, ningún nodo con URL al anfitrión de Graph (Meta) puede conservar `httpHeaderAuth`: va con `whatsAppApi`.
   const graphConCabecera = b.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && llamaAGraph(n.parameters?.url)
@@ -582,7 +648,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   // Solo se admiten marcadores de RESPALDO del cliente en «Config base» (recepción, doctor, calendario,
   // horario): con la ruta del Demo A en «ensayo», los manda el panel; sin reemplazar no son números ni
   // calendarios válidos, así que nunca llegan al doctor ni a la agenda reales.
-  const RESPALDO_OK = /^REEMPLAZAR_(NUMERO_(RECEPCION|DOCTOR)|CALENDARIO|HORARIO_ATENCION)_[A-Z0-9_]+$/;
+  const RESPALDO_OK = /^REEMPLAZAR_(NUMERO_(RECEPCION|DOCTOR)|CALENDARIO|HORARIO_ATENCION|PLANILLA_PROSPECTOS_ID)_[A-Z0-9_]+$/;
   const marcasMal = marcas.filter((m) => !RESPALDO_OK.test(m));
   const fueraDeConfigBase = b.nodes.filter((n) => n.name !== 'Config base' && /REEMPLAZAR_[A-Z]/.test(JSON.stringify(n.parameters ?? {}))).map((n) => n.name);
   if (fueraDeConfigBase.length) morir(`hay marcadores fuera de «Config base»: ${fueraDeConfigBase.join(', ')}`);

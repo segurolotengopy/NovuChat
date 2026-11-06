@@ -129,7 +129,14 @@ const permitidos = valor(base.telefonosDePrueba).split(',').map((x) => cnDigitos
 const telefonoDePrueba = prueba ? cnDigitos(prueba.telefonoDePrueba) : '';
 const telefonoPermitido = permitidos.length === 0 || permitidos.indexOf(telefonoDePrueba) >= 0;
 
+// En la variante de PRUEBA el estado vive en OTRO espacio y solo para los teléfonos de `telefonosDePrueba` (sin lista, ninguno: ruta sin_estado). Producción: cualquiera.
+const deMeta = ((Array.isArray(carga.messages) ? carga.messages[0] : null) || {}).from;
+const sesion = prueba && !(permitidos.length > 0 && permitidos.indexOf(cnDigitos(deMeta)) >= 0)
+  ? { ok: false, version: 0, estado: null, vencido: false, corrupta: false }
+  : ssSesionDeLaConfig(codigo, cuerpo);
 return [{ json: Object.assign({}, cfg, planilla, {
+  // El estado de la conversación que contestó `leer` (en la respuesta de configuración). Sin él, o con otro código que 200, `ok` es falso: genérico con botón (§6 del contrato).
+  sesion: sesion,
   datos: datos,
   nombreAsistente: cfg.nombreAsistente || linea(datos.asistente, 40),
   // El modelo es un parámetro de los datos (para pasar de `gemini-3.5-flash-lite` a `gemini-3.5-flash` sin tocar código); solo un id con forma de modelo de Gemini.
