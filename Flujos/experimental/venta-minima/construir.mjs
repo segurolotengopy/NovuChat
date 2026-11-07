@@ -49,6 +49,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -600,6 +601,13 @@ function guardiasDeSesion(entrada, flujo) {
   return h;
 }
 
+// EL SANDBOX DE EXPRESIONES DE n8n (07/11/2026). En una expresión (`={{ … }}`, cualquier parámetro de nodo que empiece con «=») n8n 2.36.5 NO deja leer
+// `prototype`, `__proto__` ni `constructor`: la expresión revienta («Cannot access "prototype" due to security concerns») y, en un IF sin `onError`, la ejecución
+// muere sin dejar registro (así se perdieron las imágenes del 07/11 con `Object.prototype.hasOwnProperty` en «¿Es comprobante?»). Los nodos Code tienen otro
+// sandbox y no entran aquí (su código no empieza con «=»). Para saber si una clave es propia en una expresión: `Object.keys(o).indexOf(k) >= 0`.
+// La regla vive en `comun-sin-agente/src/expresiones.mjs` (la usan todos los armadores de Flujos/experimental).
+const guardiaDeExpresiones = (flujo) => hallazgosDeExpresionesN8n(flujo);
+
 // LO QUE UN JSON DE PRODUCCIÓN NO PUEDE TENER, aunque alguien lo haya agregado a mano al archivo versionado.
 //   - «Entrada de prueba»: es el único nodo que activa `modoPrueba`; en producción no debe existir, porque
 //     una carga que lo trajera podría encender el modo prueba (mensajes a otro número, avisos simulados);
@@ -690,6 +698,7 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   // `Traer configuración` pide el catálogo completo: de ahí sale el enlace del catálogo web (`catalogoWeb.enlace`).
   const traer = flujo.nodes.find((n) => n.name === 'Traer configuración');
   if (!traer || !/catalogoCompleto:\s*true/.test(String((traer.parameters || {}).jsonBody || ''))) hallazgos.push('«Traer configuración» no pide `catalogoCompleto: true` (sin eso no llega el enlace del catálogo web)');
+  hallazgos.push(...guardiaDeExpresiones(flujo));
   hallazgos.push(...guardiasDeEntrega(flujo));
   hallazgos.push(...guardiasDeSesion(entrada, flujo));
   hallazgos.push(...guardiasDeCrm(flujo, datos));

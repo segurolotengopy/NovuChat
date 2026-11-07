@@ -16,6 +16,8 @@ import { describe, expect, it } from 'vitest';
 import { configBase, ejecutar, type Flujo, type J } from './lib/flujo';
 import { crearMundo, type Doble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
 import { doblesDelGuardado } from './lib/doble-guardado';
+import { editarJson, verificarEnCopia } from './lib/venta-minima-mundo';
+import { hallazgosDeExpresiones } from '../../Flujos/experimental/comun-sin-agente/src/expresiones.mjs';
 import { crearSesion, type SesionDeMentira } from './lib/venta-minima-sesion';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -63,7 +65,7 @@ function panel(base: number, extra: J = {}): J {
   };
 }
 
-interface Opciones { ahoraMs?: number; panel?: J; config?: J; extraccion?: J }
+interface Opciones { ahoraMs?: number; panel?: J; config?: J; extraccion?: J; flujo?: Flujo; clasifica?: J }
 let contador = 0;
 function crear(op: Opciones = {}) {
   const ahora = op.ahoraMs ?? JUEVES_10;
@@ -85,7 +87,7 @@ function crear(op: Opciones = {}) {
     'Cotejar en el servidor': () => ({ statusCode: 200, body: { resultado: 'cuadra', diferencias: [], cierreId: 'venta_prueba' } }),
     'Clasificar imagen': (ll) => {
       if (ll.parametros['binaryPropertyName'] !== 'data') throw new Error('no binary field');
-      return { content: { parts: [{ text: JSON.stringify({ categoria: 'otro', titular_principal: '', campana: 'ninguna' }) }] } };
+      return { content: { parts: [{ text: JSON.stringify(op.clasifica ?? { categoria: 'otro', titular_principal: '', campana: 'ninguna' }) }] } };
     },
     Extraer: () => (w.extraccion ? { candidates: [{ content: { parts: [{ text: JSON.stringify(w.extraccion) }] } }] } : { error: { message: 'sin extracción declarada' } }),
     'Enviar a WhatsApp': (ll) => ({ messaging_product: 'whatsapp', messages: [{ id: `wamid.EW${ll.n}` }] }),
@@ -94,7 +96,7 @@ function crear(op: Opciones = {}) {
     'Aviso de respaldo': (ll) => ({ messaging_product: 'whatsapp', messages: [{ id: `wamid.EB${ll.n}` }] }),
   };
   const mundo: Mundo = crearMundo({
-    flujo: QTACO, dobles, alResponder: sesion.alResponder, ahoraMs: ahora,
+    flujo: op.flujo ?? QTACO, dobles, alResponder: sesion.alResponder, ahoraMs: ahora,
     configBase: {
       phoneNumberIdEsperado: PHONE_ID, destinatariosAviso: `completo:59100000021,cocina:59100000022`, respaldoNumeroRecepcion: REC,
       horario: HORARIO_PEDIDOS, plantillasPedidoLineas: '', ...(op.config ?? {}),
@@ -421,3 +423,65 @@ describe('F. El aviso de una derivación se lee como lo que es con la plantilla 
   });
 });
 
+
+// -------------------------------------------------------------------------------------------------------------------------------- SANDBOX
+describe('El sandbox de EXPRESIONES de n8n no deja leer prototype/__proto__/constructor (causa de las imágenes perdidas del 07/11/2026)', () => {
+  const RX = /\b(prototype|__proto__|constructor)\b/;
+  const expresionesProhibidas = (f: Flujo): string[] => {
+    const h: string[] = [];
+    const recorrer = (v: unknown, nodo: string): void => {
+      if (typeof v === 'string') { if (v.startsWith('=') && RX.test(v)) h.push(nodo); }
+      else if (v && typeof v === 'object') for (const x of Object.values(v as J)) recorrer(x, nodo);
+    };
+    for (const n of f.nodes) recorrer(n.parameters ?? {}, n.name);
+    return h;
+  };
+  it('ninguna expresión de las cuatro salidas armadas, de la plantilla ni de los derivados que comparten nodos (Emma, Evy, doctoras) lee esas propiedades', () => {
+    const archivos = ['flujo.plantilla.json', 'venta-minima.qtaco.json', 'venta-minima.qtaco-3727.json', 'venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json',
+      '../rroca-emma/rroca-emma.json', '../rroca-emma/rroca-emma.prueba.json', '../rroca-evy/rroca-evy.json', '../rroca-evy/rroca-evy.prueba.json',
+      '../doctoras/doctoras.rroca-emma.json', '../doctoras/doctoras.rroca-emma.prueba.json', '../doctoras/doctoras.rroca-evy.json', '../doctoras/doctoras.rroca-evy.prueba.json'];
+    for (const a of archivos) {
+      const f = JSON.parse(readFileSync(join(CARPETA_VM, a), 'utf8')) as Flujo;
+      expect(expresionesProhibidas(f), a).toEqual([]);
+      expect(hallazgosDeExpresiones(f), a).toEqual([]); // la misma regla que usa `construir.mjs --verificar`
+    }
+    // NEGANDO: la regla común reconoce la construcción en una copia, y no la confunde con el jsCode de un nodo Code (otro sandbox).
+    const copia = JSON.parse(JSON.stringify(QTACO)) as Flujo;
+    const c = ((copia.nodes.find((x) => x.name === '¿Es comprobante?')!.parameters as J)['conditions']['conditions'][0]) as J;
+    c['leftValue'] = String(c['leftValue']).replace('Object.keys(a.titulares).indexOf(k) >= 0', 'Object.prototype.hasOwnProperty.call(a.titulares, k)');
+    expect(hallazgosDeExpresiones(copia).map((h) => h.nodo)).toEqual(['¿Es comprobante?']);
+    expect(expresionesProhibidas(copia)).toEqual(['¿Es comprobante?']);
+  });
+  it('NEGANDO: `construir.mjs --verificar` FALLA si una expresión lee `Object.prototype.hasOwnProperty` (en el JSON versionado o en la plantilla)', () => {
+    const meter = (f: Flujo): void => {
+      const n = f.nodes.find((x) => x.name === '¿Es comprobante?')!;
+      const c = (n.parameters as J)['conditions']['conditions'][0];
+      c.leftValue = String(c.leftValue).replace('Object.keys(a.titulares).indexOf(k) >= 0', 'Object.prototype.hasOwnProperty.call(a.titulares, k)');
+      expect(String(c.leftValue)).toContain('Object.prototype.hasOwnProperty');
+    };
+    const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco-3727.json', meter));
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/lee «prototype»/);
+    const r2 = verificarEnCopia((vm) => editarJson(vm, 'flujo.plantilla.json', meter), []);
+    expect(r2.status).not.toBe(0);
+    expect(r2.stderr).toMatch(/lee «prototype»/);
+  });
+  it('el n8n de mentira rechaza la expresión como n8n: con la expresión vieja del IF, una imagen con QR pendiente y campañas vigentes hace fallar el turno; con la de hoy, no', () => {
+    const viejo = JSON.parse(JSON.stringify(QTACO)) as Flujo;
+    const n = viejo.nodes.find((x) => x.name === '¿Es comprobante?')!;
+    const c = (n.parameters as J)['conditions']['conditions'][0];
+    c.leftValue = String(c.leftValue).replace('Object.keys(a.titulares).indexOf(k) >= 0', 'Object.prototype.hasOwnProperty.call(a.titulares, k)');
+    const COBRO = { cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: 63, pedido: 'ped1' } };
+    const PED = { pedidoId: 'ped1', from: CLIENTE, codigo: 'OXJL', total: 63, lineas: [], modalidad: 'recojo' };
+    const lectura = { categoria: 'publicidad', titular_principal: 'Jueves de +2', campana: 'B' };
+    const conQr = (flujo?: Flujo) => {
+      const w = crear({ panel: panel(JUEVES_10, COBRO), flujo, clasifica: lectura });
+      w.sesion.sembrar(CLIENTE, { paso: 'esperando_comprobante', pedido: PED, carrito: [], ultimoMensajeMs: JUEVES_10 - 60_000 }, { ped1: { ...PED, guardadoMs: JUEVES_10 } });
+      return w;
+    };
+    expect(() => conversacion(conQr(viejo)).imagen()).toThrow(/Cannot access "prototype" due to security concerns/);
+    const hoy = conversacion(conQr()).imagen();
+    expect(hoy.mensajes).toHaveLength(1);
+    expect(cuerpos(hoy)[0]).toContain('agrandar');
+  });
+});
