@@ -1324,6 +1324,18 @@ describe('Plan del turno: reserva de mañana (decisión de Andres 06/11/2026: pe
     expect(NOTA).toBe('Reserva de mañana (antes de las ' + s.p!['aviso']['datos']['reserva']['reservaManana'] + '): contactar para confirmar o cambiar la hora');
   });
 
+  it('pedidos y recojo con horario 10:00–22:00 (La Paz = UTC-4): 09:59 fuera, 10:00 atiende, 21:59 atiende, 22:00 y 22:01 fuera', () => {
+    const accion = (h: number, mi: number): unknown => turno(crearMundo(dato(), Date.UTC(2026, 9, 5, h + 4, mi)), { texto: 'quiero 3 tacos de birria' }).d['accion'];
+    expect(accion(9, 59)).toBe('fuera_de_horario');
+    expect(accion(10, 0)).not.toBe('fuera_de_horario');
+    expect(accion(21, 59)).not.toBe('fuera_de_horario');
+    expect(accion(22, 0)).toBe('fuera_de_horario');
+    expect(accion(22, 1)).toBe('fuera_de_horario');
+    // El botón «Hacer un pedido» obedece al mismo horario.
+    expect(turno(crearMundo(dato(), Date.UTC(2026, 9, 5, 13, 59)), { boton: 'm|pedido' }).d['accion']).toBe('fuera_de_horario');
+    expect(turno(crearMundo(dato(), Date.UTC(2026, 9, 5, 14, 0)), { boton: 'm|pedido' }).d['accion']).not.toBe('fuera_de_horario');
+  });
+
   it('quien pide el horario recibe el texto de horarioAtencion tal cual, con el paréntesis; fuera del horario de pedidos usa el mismo texto', () => {
     const consulta = registrar(turno(crearMundo(dato()), { texto: 'a qué hora abren' })).cuerpos[0]!;
     expect(consulta).toBe('Atendemos ' + ATENCION + '.');
