@@ -592,6 +592,8 @@ tiene que cargar un **QR de NovuChat con importe simbólico y su imagen rotulada
 «pago acreditado»: dice que el comprobante llegó y que los datos coinciden. Si no se carga ese QR,
 el flujo deriva («QR no disponible») y esa rama es lo que se prueba.
 
+> **Excepción expresa de Andres (07/11/2026) a «nunca el QR de Rubén».** Para el ensayo de Rubén, Andres decidió usar el QR REAL de Rubén (monto abierto) y pagar 1 Bs; el dinero va a la cuenta de Rubén. Es cobro REAL: el asistente nunca dice «pago acreditado», «verificado» ni «simulado»; dice que el comprobante llegó y que los datos coinciden. Se ejecuta con `admin/scripts/plataforma/cobro-ensayo-ruben.mjs --copiar` (copia solo `cobroReal`, con ficha nueva) y la imagen del QR subida con el número del Demo A (`scripts/subir-qr.sh`) y escrita con `escribir-qr-comercio.mjs`; la reversa, al restaurar el Demo A, es `cobro-ensayo-ruben.mjs --quitar` (borra `cobroReal` y `mediaIdQr` de `ensayo`). Vale solo para este ensayo y se pide de nuevo cada vez.
+
 ### Autorizaciones de Andres, en el chat, para ESTE ensayo
 
 1. **La credencial de Gemini de producción en el Demo A**, por ensayo (se pide de nuevo cada vez):
