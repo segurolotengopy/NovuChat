@@ -561,6 +561,22 @@ export function nombreCoincideConUnaLetra(
   return imperfectas > 0 ? 'aproximado' : 'exacto';
 }
 
+/**
+ * LOS MOTIVOS EN EL ORDEN EN QUE SE LE DICEN AL CLIENTE: primero el DESTINATARIO (cuenta, nombre o destino: si pagó a otra persona, eso es lo primero que hay que
+ * saber), luego el monto, luego la fecha y lo demás. `calificarComprobante` los calcula en el orden de su prioridad interna (monto, fecha, destino), que es el del
+ * motivo primario que ya consumen los flujos; esta función solo los REORDENA para mostrarlos, sin quitar ni agregar ninguno (y sin repetidos).
+ */
+export function motivosParaElCliente(motivos: readonly string[]): string[] {
+  const grupo = (m: string): number => {
+    if (m === 'cuenta_distinta' || m === 'nombre_distinto' || m === 'destino_no_coincide' || m === 'destino_no_verificable') return 0;
+    if (m === 'monto_menor' || m === 'monto_mayor' || m === 'monto_distinto') return 1;
+    if (m === 'fecha_anterior' || m === 'fecha_posterior' || m === 'fecha_sin_hora') return 2;
+    return 3;
+  };
+  const unicos = motivos.filter((m, i) => typeof m === 'string' && motivos.indexOf(m) === i);
+  return unicos.map((m, i) => ({ m, i })).sort((a, b) => grupo(a.m) - grupo(b.m) || a.i - b.i).map((x) => x.m);
+}
+
 function noEsComprobante(motivo: MotivoCalificacion, montoLeido: number | null): Calificacion {
   return { estado: 'no_es_comprobante', motivo, motivos: [motivo], montoLeido, montoDistinto: false };
 }
