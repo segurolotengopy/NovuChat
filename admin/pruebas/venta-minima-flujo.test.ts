@@ -2812,7 +2812,7 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
     expect(d.escribe('necesito hablar con alguien por favor', { avanzarMin: 10 }).avisos).toHaveLength(0);
   });
 
-  it('la derivación avisa con `pedido_registrado` en la forma `pedido` (variables del 07/11/2026): «NO ES UN PEDIDO — consulta …», «sin cobro», «responderle por WhatsApp», «no aplica»', () => {
+  it('la derivación avisa con `pedido_registrado` en la forma `pedido` (variables del 07/11/2026): «NO ES UN PEDIDO — consulta …», «sin cobro», «responder a <cliente> por WhatsApp», «no aplica»', () => {
     const w = crear();
     const t = con(w).escribe('quiero hablar con una persona');
     const plantillas = t.avisos.filter((a) => a.tipo === 'template');
@@ -2822,7 +2822,9 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
       const vars = parametrosDe(a);
       expect(vars).toHaveLength(4);
       expect(vars[0]).toMatch(/^NO ES UN PEDIDO — consulta /);
-      expect(vars.slice(1)).toEqual(['sin cobro', 'responderle por WhatsApp', 'no aplica']);
+      expect(vars[1]).toBe('sin cobro');
+      expect(vars[2]).toMatch(/^responder a \S.* por WhatsApp$/);
+      expect(vars[3]).toBe('no aplica');
     }
   });
 

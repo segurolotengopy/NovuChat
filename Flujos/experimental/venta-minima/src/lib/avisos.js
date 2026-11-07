@@ -802,24 +802,40 @@ function avVariablesDeForma(tipo, d, dest, ahoraMs) {
   }
   const cod = avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs);
   const motivo = avLimpio(d.motivo, 120, opc);
+  // A QUIÉN RESPONDER (Andres, 07/11/2026: el aviso llegaba sin ningún dato de la persona). Mismas reglas que la forma `solicitud` de la reserva: el teléfono
+  // solo para el rol `completo`; `cocina` ve el primer nombre y nunca el teléfono.
+  const quien = avClienteDeConsulta(d, dest);
+  const aQuien = quien.nombre + (quien.telefono ? ' · ' + quien.telefono : '');
   // `comprobante: true`: no es una consulta, es la foto de un comprobante que el flujo no pudo revisar porque cambio el modo de cobro.
   const esComprobante = d.comprobante === true;
   if (esComprobante) {
     return {
       items: avParametro('COMPROBANTE ' + cod + (motivo ? ': ' + motivo : ''), 200),
       total: avParametro('sin cobro', 30),
-      modalidad: avParametro('el cliente envió un comprobante que no se pudo revisar (cambió el modo de cobro)', 500),
+      modalidad: avParametro('el cliente envió un comprobante que no se pudo revisar (cambió el modo de cobro); responder a ' + aQuien + ' por WhatsApp', 500),
       cotejo: avParametro('no aplica', 80),
     };
   }
   // UNA CONSULTA (07/11/2026, decisión de Andres: mientras WAM no apruebe una plantilla propia, se reescriben las VARIABLES): con el texto fijo de la plantilla de
-  // pedido («Se registró un pedido… Pedido: {{1}}…») el local debe leer de entrada que NO es un pedido y qué tiene que hacer: responderle al cliente por WhatsApp.
+  // pedido («Se registró un pedido… Pedido: {{1}}…») el local debe leer de entrada que NO es un pedido, a quién y qué tiene que hacer: responderle por WhatsApp.
   return {
     items: avParametro('NO ES UN PEDIDO — consulta ' + cod + ': ' + (motivo || 'el cliente pide hablar con una persona'), 200),
     total: avParametro('sin cobro', 30),
-    modalidad: avParametro('responderle por WhatsApp', 500),
+    modalidad: avParametro('responder a ' + aQuien + ' por WhatsApp', 500),
     cotejo: avParametro('no aplica', 80),
   };
+}
+
+// El cliente de una consulta, ya saneado por rol: `{nombre, telefono, motivo}`. `nombre` es el de perfil (o el que dio) con `avLimpio`; vacío = «cliente». `telefono`
+// es el legible (`avTelefonoLegible`) SOLO para el rol `completo`; para `cocina`, el primer nombre y '' (sin teléfono). Queda listo para mapear, más adelante, a la
+// plantilla propia de consultas (en revisión de Meta: {{1}} cliente, {{2}} motivo, {{3}} consulta); hoy NO se usa con ella.
+function avClienteDeConsulta(d, dest) {
+  const x = d && typeof d === 'object' ? d : {};
+  const opc = { cocina: !dest || dest.rol === 'cocina' };
+  const crudo = x.nombre || x.nombrePerfil || '';
+  const nombre = (dest && dest.rol === 'completo' ? avLimpio(crudo, 60) : avPrimerNombre(crudo, opc)) || 'cliente';
+  const tel = dest && dest.rol === 'completo' ? (avTelefonoLegible(x.telefono || x.from) || '') : '';
+  return { nombre: nombre, telefono: tel, motivo: avLimpio(x.motivo, 120, opc) };
 }
 
 // Reserva con la FORMA `solicitud` (plantilla `solicitud_reserva`, 5 variables). Cada una se recorta por campo para que Meta nunca la

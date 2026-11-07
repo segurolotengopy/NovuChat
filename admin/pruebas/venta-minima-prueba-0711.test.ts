@@ -404,7 +404,7 @@ describe('E. «Volver a inicio» siempre responde (informe de Andres, 03:51)', (
 
 // -------------------------------------------------------------------------------------------------------------------------------- F
 describe('F. El aviso de una derivación se lee como lo que es con la plantilla de pedido (variables reescritas)', () => {
-  it('«quiero hablar con una persona»: {{1}} dice «NO ES UN PEDIDO — consulta …», {{2}} «sin cobro», {{3}} «responderle por WhatsApp», {{4}} «no aplica»', () => {
+  it('«quiero hablar con una persona»: {{1}} dice «NO ES UN PEDIDO — consulta …», {{2}} «sin cobro», {{3}} «responder a <cliente> por WhatsApp» (con el teléfono solo para el rol completo), {{4}} «no aplica»', () => {
     const t = conversacion(crear()).escribe('quiero hablar con una persona');
     const p = plantillas(t);
     expect(p.length).toBeGreaterThan(0);
@@ -413,7 +413,8 @@ describe('F. El aviso de una derivación se lee como lo que es con la plantilla 
       expect(v).toHaveLength(4);
       expect(v[0]).toMatch(/^NO ES UN PEDIDO — consulta [A-Z0-9]+: /);
       expect(v[1]).toBe('sin cobro');
-      expect(v[2]).toBe('responderle por WhatsApp');
+      // El local sabe a quién responder (Andres, 07/11/2026 08:55): nombre de perfil y, solo para `completo`, el teléfono legible.
+      expect(v[2]).toMatch(a.a === '59100000021' ? /^responder a Carlos Pérez · \+591 0000 0011 por WhatsApp$/ : /^responder a Carlos por WhatsApp$/);
       expect(v[3]).toBe('no aplica');
       expect(v.join(' ')).not.toMatch(/CONSULTA|el cliente pide hablar con una persona\b.*Modalidad/);
     }
