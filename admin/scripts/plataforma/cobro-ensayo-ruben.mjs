@@ -12,7 +12,7 @@
  *   `ficha` NUEVA al azar (la ficha sirve la imagen del QR y no puede repetirse entre comercios) y encendido. Se niega si el QR de origen no existe,
  *   venció, trae monto fijo (en una venta nunca cuadra), o si `ensayo` ya tiene un cobroReal de OTRO origen.
  * --quitar: borra `cobroReal` y `mediaIdQr` de `tenants/ensayo/config/venta` (la reversa; es lo que hay que correr al restaurar el Demo A).
- * Origen y destino están escritos aquí y no son parámetros. Escribe una auditoría sin valores. Nunca imprime la carga útil, la cuenta ni la ficha.
+ * La excepción vence el 09/11/2026 (`EXCEPCION_HASTA`); se copia una lista fija de campos (sin `registradoPor` ni `registradoEn`). Mientras el cobro está encendido, quien escriba al Demo A durante el ensayo recibe el QR de Rubén y lo que pague va a su cuenta. Origen y destino están escritos aquí y no son parámetros. Escribe una auditoría sin valores. Nunca imprime la carga útil, la cuenta ni la ficha.
  * El media id de la imagen del QR (ligado al número del Demo A) lo escribe `escribir-qr-comercio.mjs`; este script no lo toca al copiar.
  * Salida: 0 hecho o sin cambios · 1 el seco encontró diferencias · 2 uso, salvaguarda o rechazo · 3 error.
  */
@@ -24,12 +24,17 @@ import { comprobarProyecto } from './aplicar-consola-oculta.mjs';
 export const ORIGEN = 'rroca-ruben';
 export const DESTINO = 'ensayo';
 const MARCA = 'ensayo-rroca-ruben';
+/** La excepción de Andres vale solo hasta esta fecha (inclusive); después hay que pedirla de nuevo y cambiarla aquí. */
+export const EXCEPCION_HASTA = '2026-11-09';
+/** Lo único que se copia del QR de origen (sin `registradoPor` ni `registradoEn`, que son de Rubén). */
+export const CAMPOS = Object.freeze(['cargaUtil', 'nombreCuenta', 'nombreEnElQr', 'cuentas', 'familia', 'banco', 'venceEl', 'moneda', 'montoFijo']);
 
 /** Núcleo puro. `io`: leerOrigen() → cobroReal|undefined; leerDestino() → cobroReal|undefined; escribir(cobro); quitar(); auditar(accion). */
 export async function ejecutar({ modo, aplicar, hoy, io, nuevaFicha = () => randomBytes(16).toString('hex'), log = (t) => console.log(t) }) {
   if (modo === 'quitar') {
     const d = await io.leerDestino();
     const hayMedia = await io.hayMediaId();
+    if (d && d.copiadoDe !== MARCA) { log('  ✗ el cobro de ensayo no lo copió este script (otro origen): no se borra'); return 2; }
     if (!d && !hayMedia) { log('\n  ✓ ensayo no tiene cobro ni media id del QR: nada que quitar.\n'); return 0; }
     log(`\n  ${aplicar ? 'QUITAR' : 'SECO'} · ensayo: ${d ? 'cobroReal' : ''}${d && hayMedia ? ' y ' : ''}${hayMedia ? 'mediaIdQr' : ''} se borrarían de config/venta`);
     if (!aplicar) { log('  Seco: no se escribió nada. Agregue --aplicar --confirmo-produccion ensayo.\n'); return 1; }
@@ -41,6 +46,7 @@ export async function ejecutar({ modo, aplicar, hoy, io, nuevaFicha = () => rand
   }
   const o = await io.leerOrigen();
   const problemas = [];
+  if (hoy > EXCEPCION_HASTA) problemas.push(`la excepción de Andres venció el ${EXCEPCION_HASTA}: hay que pedirla de nuevo`);
   if (!o || typeof o !== 'object') problemas.push('el comercio de origen no tiene un QR registrado');
   else {
     if (typeof o.cargaUtil !== 'string' || o.cargaUtil === '') problemas.push('el QR de origen no tiene carga útil');
@@ -51,7 +57,8 @@ export async function ejecutar({ modo, aplicar, hoy, io, nuevaFicha = () => rand
   const d = await io.leerDestino();
   if (d && d.copiadoDe !== MARCA) problemas.push('ensayo ya tiene un cobro de otro origen: no se pisa (quitarlo primero con --quitar)');
   if (problemas.length) { for (const p of problemas) log(`  ✗ ${p}`); return 2; }
-  const copia = { ...o, ficha: nuevaFicha(), activo: true, copiadoDe: MARCA };
+  const copia = { ficha: nuevaFicha(), activo: true, copiadoDe: MARCA };
+  for (const c of CAMPOS) if (o[c] !== undefined) copia[c] = o[c];
   log(`\n  ${aplicar ? 'COPIAR' : 'SECO'} · QR de Rubén -> ensayo (venta, cobro REAL, monto abierto, vence ${String(o.venceEl)}). Se escribe solo cobroReal, con ficha nueva.`);
   if (!aplicar) { log('  Seco: no se escribió nada. Agregue --aplicar --confirmo-produccion ensayo.\n'); return 1; }
   await io.escribir(copia);

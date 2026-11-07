@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { analizarArgumentos, ejecutar } from '../../scripts/plataforma/cobro-ensayo-ruben.mjs';
 
 const ENV = { GCP_PROJECT_ID_STAGING: 'proy-staging-x', GCP_PROJECT_ID_PROD: 'proy-prod-x' };
-const ORIGEN = { cargaUtil: 'CARGA-DE-PRUEBA', venceEl: '2027-06-30', activo: true, ficha: 'f'.repeat(32), nombreCuenta: 'Cuenta de prueba' };
+const ORIGEN = { registradoPor: 'uid-de-rubén', registradoEn: 'ayer', cargaUtil: 'CARGA-DE-PRUEBA', venceEl: '2027-06-30', activo: true, ficha: 'f'.repeat(32), nombreCuenta: 'Cuenta de prueba' };
 const mundo = (origen: any, destino: any = undefined, media = false) => {
   const e = { origen, destino, media, escrituras: [] as any[], quitadas: 0, auditorias: [] as string[] };
   return {
@@ -57,6 +57,9 @@ describe('cobro-ensayo-ruben: copiar', () => {
     expect(m.e.escrituras[0].ficha).not.toBe(ORIGEN.ficha);
     expect(m.e.escrituras[0].activo).toBe(true);
     expect(m.e.escrituras[0].copiadoDe).toBe('ensayo-rroca-ruben');
+    expect(m.e.escrituras[0].registradoPor).toBeUndefined();
+    expect(m.e.escrituras[0].registradoEn).toBeUndefined();
+    expect(m.e.escrituras[0].cargaUtil).toBe('CARGA-DE-PRUEBA');
     expect(m.e.auditorias).toEqual(['copiar_cobro_ensayo_ruben']);
   });
   it('NIEGA origen ausente, vencido, de monto fijo, sin carga o apagado', async () => {
@@ -83,6 +86,19 @@ describe('cobro-ensayo-ruben: copiar', () => {
   });
 });
 
+describe('cobro-ensayo-ruben: vencimiento y reversa ajena', () => {
+  it('NIEGA copiar después de la fecha de la excepción', async () => {
+    const m = mundo(ORIGEN);
+    expect(await ejecutar({ hoy: '2026-11-10', log: mudo, modo: 'copiar', aplicar: true, io: m.io })).toBe(2);
+    expect(m.e.escrituras).toHaveLength(0);
+  });
+  it('NIEGA quitar un cobro que este script no copió', async () => {
+    const m = mundo(ORIGEN, { ...ORIGEN, copiadoDe: undefined }, true);
+    expect(await ejecutar({ ...base, modo: 'quitar', aplicar: true, io: m.io })).toBe(2);
+    expect(m.e.quitadas).toBe(0);
+  });
+});
+
 describe('cobro-ensayo-ruben: quitar (reversa)', () => {
   it('en seco no borra; aplicar borra cobro y media id y audita; sin nada, sale 0', async () => {
     const m = mundo(ORIGEN, { ...ORIGEN, copiadoDe: 'ensayo-rroca-ruben' }, true);
@@ -102,6 +118,7 @@ describe('cobro-ensayo-ruben: el script', () => {
     expect(f).toContain("ORIGEN = 'rroca-ruben'");
     expect(f).toContain("DESTINO = 'ensayo'");
     expect(f).not.toMatch(/(refD|refO|db\.doc\([^)]*\))\.delete\(/);
+    expect(f).not.toMatch(/refO\.(set|update|delete|create)\(/);
     expect(f).not.toMatch(/console\.(log|error)\([^)]*cargaUtil/);
   });
 });
