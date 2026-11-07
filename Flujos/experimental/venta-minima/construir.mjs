@@ -372,7 +372,7 @@ function guardiasDeCrm(flujo, datos) {
   for (const n of NODOS_DE_CRM) {
     const nodo = porNombre.get(n);
     if (esEnvioAMeta(nodo)) h.push(`miniCRM: «${n}» envía a Meta (el miniCRM agrega 0 mensajes por conversación)`);
-    if (JSON.stringify(nodo.parameters || {}).includes('graph.facebook.com')) h.push(`miniCRM: «${n}» menciona graph.facebook.com`);
+    if (/graph\.facebook\.com/.test(JSON.stringify(nodo.parameters || {}))) h.push(`miniCRM: «${n}» menciona graph.facebook.com`);
   }
   // 3. La rama solo cuelga de «Armar mensajes»: nadie más entra a ella ni sale de ella hacia el resto del flujo.
   for (const [de, a] of Object.entries(flujo.connections)) {
