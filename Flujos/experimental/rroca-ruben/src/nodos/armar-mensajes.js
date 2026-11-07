@@ -194,6 +194,11 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     const op = qrAbierto ? [] : menuAbierto();
     const cuerpoContenido = rrTextoContenido(plan.producto, nom);
     m = qrAbierto ? texto(invitar(conPresentacion(cuerpoContenido))) : conBotones(conPresentacion(cuerpoContenido) + (op.length > 0 ? '\n\n¿Qué opción prefieres?' : ''), op);
+    // La MISMA pregunta de contenido otra vez (ronda 2 de Silvana, 07/11/2026): quien la hace de nuevo quiere la respuesta, no «ya te lo conté». Se vuelve a dar, con una frase que la distingue del mensaje anterior (nunca el mismo texto dos veces seguidas).
+    if (m && fichaAntes.ultimoHash !== '' && ctHashTexto(m.texto) === fichaAntes.ultimoHash) {
+      const otra = 'Claro, te lo cuento de nuevo:\n\n' + cuerpoContenido;
+      m = qrAbierto ? texto(otra) : conBotones(otra + (op.length > 0 ? '\n\n¿Qué opción prefieres?' : ''), op);
+    }
   } else if (tipoDePlan === 'menu') {
     const op = menu1();
     if (op.length) m = conBotones(RR_TEXTO_OPCIONES, op);
@@ -216,7 +221,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     if (precioR !== '') antes.push(precioR);
     if (plan.duracion === true) antes.push(RR_TEXTO_DURACION);
     const delante = antes.length ? antes.join('\n\n') + '\n\n' : '';
-    m = qrAbierto ? texto(invitar(conPresentacion(delante + rrTextoResultado(false)))) : conBotones(conPresentacion(delante + rrTextoResultado(op.length > 0)), op);
+    m = qrAbierto ? texto(invitar(conPresentacion(delante + rrTextoResultado()))) : conBotones(conPresentacion(delante + rrTextoResultado()), op);
   } else if (tipoDePlan === 'qr') {
     const monto = rrPrecio(cat, plan.producto);
     const mediaId = rrMediaId(plan.mediaId);

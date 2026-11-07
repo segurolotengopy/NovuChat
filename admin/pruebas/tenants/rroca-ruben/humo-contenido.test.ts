@@ -41,6 +41,16 @@ describe('el contenido de un producto lo dice el código', () => {
     expect(b.mensajes[0]!.cuerpo).toMatch(/208 páginas/);
     expect(b.mensajes[0]!.cuerpo).not.toMatch(/tu QR sigue abierto|Ya tienes un QR abierto/);
   });
+  it('la MISMA pregunta de contenido otra vez (Silvana, ronda 2): se vuelve a explicar, NUNCA «ya te lo conté», y no es el mismo texto dos veces seguidas', () => {
+    for (const w of [conQr({ modeloDice: 'cae' }), nuevo({ modeloDice: 'cae' })]) {
+      const a = hablar(w, ANA, mTexto('¿Qué incluye el pack?'));
+      const b = hablar(w, ANA, mTexto('¿Qué incluye el pack?'));
+      expect(b.ejecutados.has('Conversar con el modelo')).toBe(false);
+      expect(b.mensajes[0]!.cuerpo).toMatch(/208 páginas/);
+      expect(b.mensajes[0]!.cuerpo).not.toMatch(/ya te lo cont|Prefiero no repetirte|ya está más arriba/i);
+      expect(b.mensajes[0]!.cuerpo).not.toBe(a.mensajes[0]!.cuerpo);
+    }
+  });
   it('sin QR abierto el contenido sale con la presentación si es el primer mensaje, y sin botón de Rubén', () => {
     const w = nuevo({ modeloDice: 'cae' });
     const t = hablar(w, ANA, mTexto('¿Qué incluye el pack?'));

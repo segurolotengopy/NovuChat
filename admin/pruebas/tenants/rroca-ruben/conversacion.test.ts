@@ -122,7 +122,7 @@ describe('CASO (b) del PDF: «¿precio y devolución?» da el precio Y deriva, e
     expect(c).toMatch(/asistente virtual de Noches Sin Insomnio/);
     expect(c).toMatch(/70 Bs/);
     expect(c).toMatch(/35 Bs/);
-    expect(c).toMatch(/no tiene garantía de devolución/);
+    expect(c).toMatch(/Déjame confirmarte las condiciones de garantía o devolución directamente con Rubén/);
     expect(c).not.toMatch(/\b(?:sí|si),? (?:hay|tienes|puedes)\b[^.]*devoluci|te devolvemos|te devuelvo|reembols/i);
     expect(esBotonDeRuben(t)).toBe(true);
     expect(t.avisos).toHaveLength(1);
@@ -171,7 +171,7 @@ describe('CASOS (c) y (d) del PDF: no garantiza; dos preguntas juntas en UN solo
     hablar(w, ANA, mTexto('hola'));
     const t = hablar(w, ANA, mTexto('¿me garantizan que con esto voy a dormir?'));
     const c = unico(t);
-    expect(c).toMatch(/No puedo prometerte/);
+    expect(c).toMatch(/No, y desconfía de quien lo prometa:\s+cada persona es distinta\.\s+El libro te da un método educativo para identificar qué afecta tus noches y un plan de 21 días para practicar\.\s+Los resultados dependen de tu constancia y de tu situación personal 🌙/);
     expect(c).toMatch(/plan de 21 días/);
     expect(c).not.toMatch(/garantizado|te garantizo|desde la primera noche|sin pastillas|cura/i);
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
@@ -186,7 +186,7 @@ describe('CASOS (c) y (d) del PDF: no garantiza; dos preguntas juntas en UN solo
     expect(c).toMatch(/7 minutos/);
     expect(c).toMatch(/5/);
     expect(c).toMatch(/voz sintética/);
-    expect(c).toMatch(/No puedo prometerte/);
+    expect(c).toMatch(/No, y desconfía de quien lo prometa:\s+cada persona es distinta\.\s+El libro te da un método educativo para identificar qué afecta tus noches y un plan de 21 días para practicar\.\s+Los resultados dependen de tu constancia y de tu situación personal 🌙/);
     expect(c).toMatch(/21 días/);
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
   });
@@ -196,7 +196,7 @@ describe('CASOS (c) y (d) del PDF: no garantiza; dos preguntas juntas en UN solo
     const t = hablar(w, ANA, mTexto('¿cuánto cuesta el libro y me garantizan que voy a dormir?'));
     const c = unico(t);
     expect(c).toMatch(/cuesta 35 Bs/);
-    expect(c).toMatch(/No puedo prometerte/);
+    expect(c).toMatch(/No, y desconfía de quien lo prometa:\s+cada persona es distinta\.\s+El libro te da un método educativo para identificar qué afecta tus noches y un plan de 21 días para practicar\.\s+Los resultados dependen de tu constancia y de tu situación personal 🌙/);
     expect(c).toMatch(/asistente virtual/);
     expect(c).not.toMatch(/70 Bs/);
   });

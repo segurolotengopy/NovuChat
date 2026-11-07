@@ -199,7 +199,8 @@ if (esVisual) {
       const n = rrNorm(x);
       return /reembols|devol|devuelt|reintegr|anulad|rechazad|gratis|gratuit|descuent|promet|promoci|oferta|garant|regal|dinero|plata/.test(n) || CB_PROHIBIDAS.test(cbCanon(x)) || RR_NIEGA_IA.test(n);
     });
-    const descripcion = categoriaMedio === 'publicidad' ? 'una imagen publicitaria' : (mutilada || prometedora ? '' : String(prep.descripcionMedio || ''));
+    // Una publicidad que NO es de los anuncios de la Consola no se nombra «imagen publicitaria» (ronda 2: una foto, una captura de la web y un PDF salían así): sin descripción, el texto neutro «Recibí tu imagen/archivo».
+    const descripcion = categoriaMedio === 'publicidad' ? '' : (mutilada || prometedora ? '' : String(prep.descripcionMedio || ''));
     return salir({ tipo: 'imagen_descrita', documento: t.esDocumento === true, descripcion: descripcion, cat: cat });
   }
   // Una captura de anuncio: se reconoce el ángulo por el texto leído; sin ángulo, se sigue como una charla.
