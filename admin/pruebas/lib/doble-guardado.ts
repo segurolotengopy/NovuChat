@@ -87,7 +87,9 @@ export function doblesDelGuardado(o: OpcionesDelGuardado = {}): { dobles: Record
 const FLUJOS_REALES = join(dirname(fileURLToPath(import.meta.url)), '../../../Flujos');
 export function copiarModulosComunesAlTemporal(raiz: string): void {
   // `guardado.mjs` importa `envio.mjs` (las piezas del canal «rele»), y este lee `src/core/rele/*.js`: van también.
-  for (const rel of ['experimental/comun-sin-agente/src/guardado.mjs', 'experimental/comun-sin-agente/src/envio.mjs', 'experimental/comun-sin-agente/src/sesion.js', 'src/core/rele/codigos.js', 'src/core/rele/decidir-envio.js', 'src/core/medios/guardado-preparar.js', 'src/core/medios/guardado-cupo.js','src/core/medios/guardado-resultado.js', 'src/core/medios/guardado-reintento.js', 'src/modulos/pedidos/qr-del-pedido.js', 'src/core/medios/anuncio-por-titular.js']) {
+  for (const rel of ['experimental/comun-sin-agente/src/guardado.mjs', 'experimental/comun-sin-agente/src/envio.mjs', 'experimental/comun-sin-agente/src/sesion.js', 'src/core/rele/codigos.js', 'src/core/rele/decidir-envio.js', 'src/core/medios/guardado-preparar.js', 'src/core/medios/guardado-cupo.js','src/core/medios/guardado-resultado.js', 'src/core/medios/guardado-reintento.js', 'src/modulos/pedidos/qr-del-pedido.js',
+    // el miniCRM de Q'Taco (`construir-crm.mjs` y los paquetes del módulo `crm`)
+    'experimental/comun-sin-agente/construir-crm.mjs', 'src/modulos/crm/crm.js', 'src/modulos/crm/adaptador-senales.js', 'src/modulos/crm/nodo-prospecto.js', 'src/modulos/crm/nodo-decidir-fila.js', 'src/core/medios/anuncio-por-titular.js']) {
     const destino = join(raiz, 'Flujos', rel);
     mkdirSync(dirname(destino), { recursive: true });
     cpSync(join(FLUJOS_REALES, rel), destino);
