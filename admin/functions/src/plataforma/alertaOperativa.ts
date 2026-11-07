@@ -20,7 +20,7 @@
  *   4. Guarda el evento en `plataforma/alertas/eventos/{id_unico}` (idempotente: el mismo `id_unico`
  *      no se vuelve a guardar ni a enviar).
  *   5. Si es CRÍTICO: máximo 1 correo inmediato por hora por tipo de error y tope diario. El tope es de
- *      5 correos por día para NovuChat; UNO queda reservado al resumen, así que salen 4 inmediatos.
+ *      5 correos por día por defecto (`plataforma/alertas.topeDiario`); UNO queda reservado al resumen, así que salen 4 inmediatos.
  *      El resto queda `en_resumen`.
  *   6. `Idempotency-Key = id_unico` en la llamada a Resend. Si el envío FALLA, el evento queda guardado
  *      (`envio_fallido`, entra al resumen) y la reserva del tope se devuelve: un fallo no gasta cupo.
@@ -45,6 +45,10 @@ import { defineSecret } from 'firebase-functions/params';
 import { getFirestore } from 'firebase-admin/firestore';
 import { REGION } from '../core/region.js';
 import { firmaValida } from '../core/seguridad/firma.js';
+import { ErrorAlerta, validarEvento, type EventoAlerta } from './alertaContenido.js';
+
+// El contenido (contrato, sin PII, enlace) vive en `alertaContenido.ts`; se reexporta para quien lo importaba de aquí.
+export { ErrorAlerta, LIMITES, NIVELES, sanearTexto, validarEvento, type EventoAlerta, type Nivel } from './alertaContenido.js';
 
 export const ALERTA_OPERATIVA_HMAC = defineSecret('ALERTA_OPERATIVA_HMAC');
 export const RESEND_API_KEY_ALERTAS = defineSecret('RESEND_API_KEY_ALERTAS');
@@ -54,41 +58,19 @@ export const RESEND_API_KEY_ALERTAS = defineSecret('RESEND_API_KEY_ALERTAS');
 // ---------------------------------------------------------------------------
 export const VENTANA_ALERTA_MS = 2 * 60 * 1000;
 export const MAX_CUERPO_ALERTA = 8 * 1024;
-/** Presupuesto de NovuChat dentro de los 50 compartidos de Resend (Free). */
+/**
+ * Tope diario de correos de NovuChat dentro de los 50 compartidos de Resend (Free): VALOR POR DEFECTO.
+ * El vigente sale de `plataforma/alertas.topeDiario` (entero de 1 a 50), que se cambia sin desplegar.
+ * (No es `defineInt`: un parámetro de Functions exige su nombre en el `.env` de despliegue y el de
+ * producción es de exactamente dos nombres; ver `parametros-del-despliegue.test.ts`.)
+ */
 export const TOPE_DIARIO = 5;
-/** Uno de los cinco queda para el resumen diario. */
-export const TOPE_INMEDIATOS = TOPE_DIARIO - 1;
+/** Uno de los correos del tope queda reservado al resumen diario. */
+export const inmediatosDe = (tope: number): number => Math.max(0, tope - 1);
+export const topeValido = (v: unknown): number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 50 ? v : TOPE_DIARIO;
 export const HORA_MS = 3_600_000;
-export const NIVELES = ['critico', 'aviso', 'info'] as const;
-export type Nivel = (typeof NIVELES)[number];
 export type EstadoEvento = 'enviado' | 'en_resumen' | 'envio_fallido';
-
-export const LIMITES = { asunto: 70, que_paso: 150, que_se_espera_de_andres: 130, flujo: 60, nodo: 60 } as const;
-const CAMPOS = [
-  'nivel', 'proyecto', 'asunto', 'que_paso', 'que_se_espera_de_andres', 'enlace', 'ocurrido_en', 'id_unico',
-  // Extensión declarada al contrato común: lo mínimo para agrupar «por tipo de error».
-  'tipo_error', 'flujo', 'nodo',
-] as const;
-const OBLIGATORIOS = ['nivel', 'proyecto', 'asunto', 'que_paso', 'que_se_espera_de_andres', 'enlace', 'ocurrido_en', 'id_unico', 'tipo_error'] as const;
-
-export interface EventoAlerta {
-  nivel: Nivel;
-  proyecto: 'novuchat';
-  asunto: string;
-  que_paso: string;
-  que_se_espera_de_andres: string;
-  enlace: string;
-  ocurrido_en: string;
-  id_unico: string;
-  tipo_error: string;
-  flujo: string;
-  nodo: string;
-}
-
-export class ErrorAlerta extends Error {
-  constructor(readonly codigo: string, readonly estado: number) { super(codigo); }
-}
-
 // ---------------------------------------------------------------------------
 // FIRMA
 // ---------------------------------------------------------------------------
@@ -101,78 +83,6 @@ export function verificarFirmaAlerta(
   if (!/^[0-9a-f]{64}$/i.test(limpia)) return false;
   const esperada = createHmac('sha256', secreto).update(`${marca}.`).update(crudo).digest('hex');
   return firmaValida(esperada, limpia.toLowerCase());
-}
-
-// ---------------------------------------------------------------------------
-// SIN PII
-// ---------------------------------------------------------------------------
-const OMITIDO = '[omitido]';
-
-/** Quita de un texto libre lo que parece un dato personal o un identificador de ejecución. */
-export function sanearTexto(t: string): { texto: string; saneado: boolean } {
-  const limpio = t
-    .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, OMITIDO)                                         // correos
-    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, OMITIDO) // uuid
-    .replace(/\b[0-9a-f]{16,}\b/gi, OMITIDO)                                                 // hash o id largo
-    .replace(/\+?\d[\d ()\-.]{4,}\d/g, OMITIDO)                                              // teléfonos y ids de 6+ cifras
-    .replace(/\d{6,}/g, OMITIDO);
-  return { texto: limpio, saneado: limpio !== t };
-}
-
-/** Un campo estructural (flujo, nodo, tipo) no se sanea: si parece un dato personal, se rechaza. */
-const pareceDatoPersonal = (t: string): boolean => sanearTexto(t).saneado;
-
-const MARCAS_DE_EJECUCION = /^(\d{6,}|[0-9a-f]{16,})$/i;
-const TIPO = /^[a-z0-9_.-]{1,60}$/;
-const ID_UNICO = /^[A-Za-z0-9_-]{8,64}$/;
-
-function enlaceValido(enlace: string, hosts: string[]): boolean {
-  // Un runbook del repositorio: ruta relativa a `docs/`, sin esquema ni `..`.
-  if (/^docs\/[A-Za-z0-9_./#-]{1,150}$/.test(enlace) && !enlace.includes('..')) return true;
-  let u: URL;
-  try { u = new URL(enlace); } catch { return false; }
-  if (u.protocol !== 'https:' || u.username || u.password || u.port) return false;
-  const host = u.hostname.toLowerCase();
-  // Nunca una URL interna: IP, localhost o dominios de red interna.
-  if (/^[\d.]+$/.test(host) || host.includes(':') || host === 'localhost' || /\.(internal|local|lan)$/.test(host)) return false;
-  return hosts.map((h) => h.trim().toLowerCase()).filter(Boolean).includes(host);
-}
-
-export function validarEvento(cuerpo: unknown, hostsEnlace: string[]): { evento: EventoAlerta; saneado: boolean } {
-  if (!cuerpo || typeof cuerpo !== 'object' || Array.isArray(cuerpo)) throw new ErrorAlerta('cuerpo_invalido', 400);
-  const d = cuerpo as Record<string, unknown>;
-  for (const k of Object.keys(d)) if (!(CAMPOS as readonly string[]).includes(k)) throw new ErrorAlerta('campo_no_permitido', 400);
-  for (const k of OBLIGATORIOS) if (typeof d[k] !== 'string' || !(d[k] as string).trim()) throw new ErrorAlerta('campo_faltante', 400);
-  for (const k of ['flujo', 'nodo'] as const) if (d[k] !== undefined && typeof d[k] !== 'string') throw new ErrorAlerta('campo_invalido', 400);
-  const s = (k: string): string => String(d[k] ?? '').trim();
-
-  if (!(NIVELES as readonly string[]).includes(s('nivel'))) throw new ErrorAlerta('nivel_invalido', 400);
-  if (s('proyecto') !== 'novuchat') throw new ErrorAlerta('proyecto_invalido', 400);
-  if (!TIPO.test(s('tipo_error'))) throw new ErrorAlerta('tipo_error_invalido', 400);
-  if (!ID_UNICO.test(s('id_unico')) || MARCAS_DE_EJECUCION.test(s('id_unico'))) throw new ErrorAlerta('id_unico_invalido', 400);
-  const ms = Date.parse(s('ocurrido_en'));
-  if (!/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(s('ocurrido_en')) || Number.isNaN(ms)) throw new ErrorAlerta('ocurrido_en_invalido', 400);
-  if (!enlaceValido(s('enlace'), hostsEnlace)) throw new ErrorAlerta('enlace_invalido', 400);
-
-  for (const k of ['flujo', 'nodo'] as const) {
-    if (s(k).length > LIMITES[k] || pareceDatoPersonal(s(k))) throw new ErrorAlerta('dato_personal', 422);
-  }
-  if (pareceDatoPersonal(s('tipo_error'))) throw new ErrorAlerta('dato_personal', 422);
-
-  let saneado = false;
-  const libre = (k: 'asunto' | 'que_paso' | 'que_se_espera_de_andres'): string => {
-    if (s(k).length > LIMITES[k]) throw new ErrorAlerta('texto_largo', 422);
-    const r = sanearTexto(s(k));
-    saneado ||= r.saneado;
-    return r.texto;
-  };
-  const evento: EventoAlerta = {
-    nivel: s('nivel') as Nivel, proyecto: 'novuchat',
-    asunto: libre('asunto'), que_paso: libre('que_paso'), que_se_espera_de_andres: libre('que_se_espera_de_andres'),
-    enlace: s('enlace'), ocurrido_en: new Date(ms).toISOString(), id_unico: s('id_unico'),
-    tipo_error: s('tipo_error'), flujo: s('flujo'), nodo: s('nodo'),
-  };
-  return { evento, saneado };
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +102,7 @@ export interface AlmacenAlertas {
   crear(e: EventoGuardado): Promise<boolean>;
   poner(id: string, estado: EstadoEvento): Promise<void>;
   /** Reserva atómica: cupo del día y 1 por hora por tipo. */
-  reservar(tipo: string, dia: string, ahoraMs: number): Promise<Reserva>;
+  reservar(tipo: string, dia: string, ahoraMs: number, tope: number): Promise<Reserva>;
   liberar(tipo: string, dia: string, previoUltimoMs: number | null): Promise<void>;
   desde(ms: number): Promise<EventoGuardado[]>;
 }
@@ -221,7 +131,7 @@ export interface Resultado { estado: EstadoEvento | 'duplicado' }
 
 export async function procesarEvento(
   e: EventoAlerta, saneado: boolean,
-  deps: { almacen: AlmacenAlertas; enviar: Enviar | null; ahoraMs: number },
+  deps: { almacen: AlmacenAlertas; enviar: Enviar | null; ahoraMs: number; tope?: number },
 ): Promise<Resultado> {
   const ms = Date.parse(e.ocurrido_en);
   const g: EventoGuardado = { ...e, ocurrido_ms: ms, recibido_ms: deps.ahoraMs, dia: diaLaPaz(deps.ahoraMs), estado: 'en_resumen', saneado };
@@ -229,7 +139,7 @@ export async function procesarEvento(
   if (!await deps.almacen.crear(g)) return { estado: 'duplicado' };
   if (e.nivel !== 'critico' || !deps.enviar) return { estado: 'en_resumen' };
   // 2. Cupo.
-  const r = await deps.almacen.reservar(e.tipo_error, g.dia, deps.ahoraMs);
+  const r = await deps.almacen.reservar(e.tipo_error, g.dia, deps.ahoraMs, deps.tope ?? TOPE_DIARIO);
   if (!r.ok) return { estado: 'en_resumen' };
   // 3. Envío; si falla, se devuelve el cupo y el evento pasa al resumen.
   try {
@@ -248,7 +158,7 @@ export interface RespuestaAlerta { status: number; cuerpo: string }
 /** Toda la puerta HTTP, sin depender de Express: se prueba con cabeceras y bytes. */
 export async function atenderAlerta(
   p: { metodo: string; cabecera(n: string): string | undefined; crudo: Buffer | undefined },
-  deps: { almacen: AlmacenAlertas; enviar: Enviar | null; secreto: string; hostsEnlace: string[]; ahoraMs: number },
+  deps: { almacen: AlmacenAlertas; enviar: Enviar | null; secreto: string; hostsEnlace: string[]; ahoraMs: number; tope?: number },
 ): Promise<RespuestaAlerta> {
   if (p.metodo !== 'POST') return { status: 405, cuerpo: 'metodo' };
   const crudo = p.crudo ?? Buffer.from('');
@@ -320,12 +230,12 @@ export function almacenFirestore(): AlmacenAlertas {
       }
     },
     async poner(id, estado) { await eventos().doc(id).update({ estado }); },
-    async reservar(tipo, dia, ahoraMs) {
+    async reservar(tipo, dia, ahoraMs, tope) {
       return db.runTransaction(async (t) => {
         const [d, h] = await Promise.all([t.get(ctl(idDia(dia))), t.get(ctl(idTipo(tipo)))]);
         const usados = Number(d.get('enviados') ?? 0);
         const ultimo = h.exists ? Number(h.get('ultimoMs') ?? 0) : null;
-        if (usados >= TOPE_INMEDIATOS || (ultimo !== null && ahoraMs - ultimo < HORA_MS)) return { ok: false, previoUltimoMs: ultimo };
+        if (usados >= inmediatosDe(tope) || (ultimo !== null && ahoraMs - ultimo < HORA_MS)) return { ok: false, previoUltimoMs: ultimo };
         t.set(ctl(idDia(dia)), { enviados: usados + 1, dia }, { merge: true });
         t.set(ctl(idTipo(tipo)), { ultimoMs: ahoraMs, tipo }, { merge: true });
         return { ok: true, previoUltimoMs: ultimo };
@@ -358,12 +268,12 @@ export function enviarPorResend(clave: string, remitente: string, destinatario: 
   };
 }
 
-interface ConfigAlertas { dominio: string; destinatario: string; hosts: string[] }
+interface ConfigAlertas { dominio: string; destinatario: string; hosts: string[]; tope: number }
 
 async function configuracion(): Promise<ConfigAlertas> {
   const d = await getFirestore().doc('plataforma/alertas').get();
   const t = (k: string): string => (typeof d.get(k) === 'string' ? String(d.get(k)).trim() : '');
-  return { dominio: t('dominioAvisos'), destinatario: t('destinatario'), hosts: t('enlaceHosts').split(',').map((h) => h.trim()).filter(Boolean) };
+  return { dominio: t('dominioAvisos'), destinatario: t('destinatario'), hosts: t('enlaceHosts').split(',').map((h) => h.trim()).filter(Boolean), tope: topeValido(d.get('topeDiario')) };
 }
 
 function enviadorConfigurado(c: ConfigAlertas): Enviar | null {
@@ -381,7 +291,7 @@ export const alertaOperativa = onRequest(
     if (!enviar) console.error('ALERTA_OPERATIVA_SIN_CONFIGURACION (plataforma/alertas sin dominioAvisos o destinatario: se guarda, no se envía)');
     const r = await atenderAlerta(
       { metodo: peticion.method, cabecera: (n) => peticion.get(n), crudo: peticion.rawBody },
-      { almacen: almacenFirestore(), enviar, secreto: ALERTA_OPERATIVA_HMAC.value(), hostsEnlace: c.hosts, ahoraMs: Date.now() });
+      { almacen: almacenFirestore(), enviar, secreto: ALERTA_OPERATIVA_HMAC.value(), hostsEnlace: c.hosts, ahoraMs: Date.now(), tope: c.tope });
     respuesta.status(r.status).send(r.cuerpo);
   },
 );

@@ -9,7 +9,7 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  TOPE_INMEDIATOS, atenderAlerta, armarCorreo, armarResumen, enviarPorResend, enviarResumenDiario, sanearTexto,
+  TOPE_DIARIO, inmediatosDe, topeValido, atenderAlerta, armarCorreo, armarResumen, enviarPorResend, enviarResumenDiario, sanearTexto,
   validarEvento, verificarFirmaAlerta,
   type AlmacenAlertas, type Enviar, type Envio, type EventoGuardado,
 } from '../../functions/src/plataforma/alertaOperativa.ts';
@@ -27,10 +27,10 @@ function almacenEnMemoria(): AlmacenAlertas & { eventos: Map<string, EventoGuard
     eventos, dias, tipos,
     async crear(e) { if (eventos.has(e.id_unico)) return false; eventos.set(e.id_unico, { ...e }); return true; },
     async poner(id, estado) { const e = eventos.get(id); if (e) e.estado = estado; },
-    async reservar(tipo, dia, ahora) {
+    async reservar(tipo, dia, ahora, tope) {
       const usados = dias.get(dia) ?? 0;
       const ultimo = tipos.has(tipo) ? tipos.get(tipo)! : null;
-      if (usados >= TOPE_INMEDIATOS || (ultimo !== null && ahora - ultimo < HORA)) return { ok: false, previoUltimoMs: ultimo };
+      if (usados >= inmediatosDe(tope) || (ultimo !== null && ahora - ultimo < HORA)) return { ok: false, previoUltimoMs: ultimo };
       dias.set(dia, usados + 1); tipos.set(tipo, ahora);
       return { ok: true, previoUltimoMs: ultimo };
     },
@@ -56,13 +56,13 @@ function firmar(cuerpo: unknown, marca = AHORA, secreto = SECRETO): { crudo: Buf
 
 function llamar(
   almacen: AlmacenAlertas, enviar: Enviar | null, cuerpo: unknown,
-  op: { marca?: number; secreto?: string; sinFirma?: boolean; ahora?: number; metodo?: string } = {},
+  op: { marca?: number; secreto?: string; sinFirma?: boolean; ahora?: number; metodo?: string; tope?: number } = {},
 ) {
   const f = firmar(cuerpo, op.marca ?? AHORA, op.secreto ?? SECRETO);
   const cab: Record<string, string> = op.sinFirma ? {} : f.cabeceras;
   return atenderAlerta(
     { metodo: op.metodo ?? 'POST', cabecera: (n) => cab[n.toLowerCase()], crudo: f.crudo },
-    { almacen, enviar, secreto: SECRETO, hostsEnlace: HOSTS, ahoraMs: op.ahora ?? AHORA });
+    { almacen, enviar, secreto: SECRETO, hostsEnlace: HOSTS, ahoraMs: op.ahora ?? AHORA, ...(op.tope !== undefined ? { tope: op.tope } : {}) });
 }
 
 const envioFalso = () => {
@@ -203,13 +203,31 @@ describe('topes, agrupado e idempotencia', () => {
     for (let i = 0; i < 8; i++) {
       estados.push((await llamar(a, enviar, buenEvento({ id_unico: `evt-tope-${i}00000`, tipo_error: `tipo_${i}` }))).cuerpo);
     }
-    expect(estados.filter((s) => s === 'enviado')).toHaveLength(TOPE_INMEDIATOS);
-    expect(estados.slice(TOPE_INMEDIATOS).every((s) => s === 'en_resumen')).toBe(true);
+    expect(estados.filter((s) => s === 'enviado')).toHaveLength(inmediatosDe(TOPE_DIARIO));
+    expect(estados.slice(inmediatosDe(TOPE_DIARIO)).every((s) => s === 'en_resumen')).toBe(true);
     expect(enviados).toHaveLength(4);
     expect(a.eventos.size).toBe(8); // nada se pierde
     // Un día nuevo reinicia el cupo.
     const manana = AHORA + 24 * HORA;
     expect((await llamar(a, enviar, buenEvento({ id_unico: 'evt-tope-manana', tipo_error: 'tipo_9' }), { ahora: manana, marca: manana })).cuerpo).toBe('enviado');
+  });
+
+  it('el tope sale de la configuración (plataforma/alertas.topeDiario), no está fijo en el código', async () => {
+    for (const [tope, esperados] of [[8, 7], [3, 2], [1, 0]] as const) {
+      const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
+      for (let i = 0; i < 10; i++) {
+        await llamar(a, enviar, buenEvento({ id_unico: `evt-cfg-${tope}-${i}0000`, tipo_error: `tipo_${i}` }), { tope });
+      }
+      expect(enviados, `tope ${tope}`).toHaveLength(esperados);
+      expect(a.eventos.size).toBe(10);
+    }
+    // Valores inválidos o ausentes caen al 5 por defecto; nunca abren el tope.
+    for (const mal of [undefined, 0, -3, 4.5, 51, '8', null, NaN]) expect(topeValido(mal), String(mal)).toBe(5);
+    expect(topeValido(8)).toBe(8);
+    // Sin configuración, `atenderAlerta` usa el 5 por defecto: 4 inmediatos.
+    const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
+    for (let i = 0; i < 9; i++) await llamar(a, enviar, buenEvento({ id_unico: `evt-def-${i}00000`, tipo_error: `tipo_${i}` }));
+    expect(enviados).toHaveLength(4);
   });
 
   it('solo el nivel crítico manda correo inmediato: aviso e info van al resumen', async () => {
