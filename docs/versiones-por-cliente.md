@@ -346,6 +346,6 @@ Cambio en `Decidir turno`, `Armar mensajes` y `Soltar mensajes` de «Venta míni
 
 Mismo criterio que la sección anterior (base común de venta): los módulos comunes `respuesta-de-la-sena.js` y `respuesta-del-cobro.js` nombran ahora TODAS las diferencias que lista el servidor (destinatario primero), con frases fijas y SIN copiar lo leído de la imagen (antes mostraban solo la primera y, si era el depósito, copiaban la cuenta o el nombre leídos). Recepción sigue recibiendo el detalle completo.
 
-- **Flujos regenerados (sin publicar):** `platinum-agendamiento`, `demo-a-agendamiento` y `demo-b-venta-cobro`. **Excepción declarada:** los vivos de Platinum y de los demos siguen con el texto anterior hasta su próxima publicación; **cierra:** esa publicación (los demos con su ensayo previo).
+- **Flujos regenerados (sin publicar):** `demo-a-agendamiento` y `demo-b-venta-cobro` (más `platinum-agendamiento.json`, que se regenera solo porque comparte el módulo y la prueba de identidad del ensamblador lo exige; no es un cliente). **Excepción declarada:** los vivos de los demos siguen con el texto anterior hasta su próxima publicación; **cierra:** esa publicación, con su ensayo previo.
 - **No cubierto por este PR:** `bellido-agendamiento` (no sale de un manifiesto: su texto del comprobante vive en su propio JSON, que es de su sesión) y Q'Taco/`venta-minima` (sesión de Q'Taco).
 - **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos; el texto del mensaje que ya sale pasa de una frase a varias.
