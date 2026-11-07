@@ -80,7 +80,7 @@ describe('vmProspectoCrm: qué es un evento y qué dice el prospecto (hechos del
     expect(dice('no_cuadra')).toBe('N.º K7P2, 4 ítems, Bs 84, recojo, comprobante recibido, datos no coinciden');
     expect(dice('ilegible')).toBe('N.º K7P2, 4 ítems, Bs 84, recojo, comprobante recibido, ilegible');
     expect(dice('sin_cotejo')).toBe('N.º K7P2, 4 ítems, Bs 84, recojo, comprobante recibido');
-    expect(prospecto({ plan: { ruta: 'comprobante:cuadra', pedido: PEDIDO } })!['quePidio']).toBe('Comprobante');
+    expect(prospecto({ plan: { ruta: 'comprobante:cuadra', pedido: PEDIDO } })!['quePidio']).toBe('');   // «Eligió» no dice «Comprobante»
   });
   it('un comprobante simulado o ya cotejado NO es un evento (ni se escribe nada)', () => {
     for (const r of ['simulado', 'ya_cotejado', 'otra_cosa']) expect(prospecto({ plan: { ruta: `comprobante:${r}`, pedido: PEDIDO }, anteriorMs: AHORA - 1000 }), r).toBeNull();
@@ -90,14 +90,14 @@ describe('vmProspectoCrm: qué es un evento y qué dice el prospecto (hechos del
     expect(p['resumenVenta']).toContain('N.º K7P2');
   });
   it('reserva solicitada: Caliente, «Reserva», con el código', () => {
-    const p = prospecto({ plan: { ruta: 'reserva:enviada', aviso: { tipo: 'reserva', datos: { codigo: 'R5X9' } } } })!;
+    const p = prospecto({ plan: { ruta: 'reserva:enviada', aviso: { tipo: 'reserva', datos: { codigo: 'R5X9' } } }, pasoSalio: true })!;
     expect(p['quePidio']).toBe('Reserva');
     expect(p['senales']).toMatchObject({ inicioCompra: true });
     expect(p['resumenVenta']).toBe('Reserva N.º R5X9');
   });
-  it('primer contacto de la ventana: Tibio, «Consulta»; dentro de las 24 h sin evento no hay prospecto', () => {
+  it('primer contacto de la ventana: Tibio, sin «Eligió»; dentro de las 24 h sin evento no hay prospecto', () => {
     const p = prospecto({ plan: { ruta: 'menu' } })!;
-    expect(p['quePidio']).toBe('Consulta');
+    expect(p['quePidio']).toBe('');
     expect(celda(decidir(p), 'clasificacion')).toBe('Tibio');
     expect(prospecto({ plan: { ruta: 'menu' }, anteriorMs: AHORA - 3600_000 })).toBeNull();
     expect(prospecto({ plan: { ruta: 'menu' }, anteriorMs: AHORA - 25 * 3600_000 })).not.toBeNull();
@@ -154,13 +154,102 @@ describe('vmProspectoCrm: qué es un evento y qué dice el prospecto (hechos del
   });
 });
 
+// ================================================================================================ «Eligió», «Reserva» y «Pedido» (07/11/2026)
+describe('vmProspectoCrm: Eligió (O), Reserva (P) y Pedido (Q); celda en blanco si no concretó, nunca «No»', () => {
+  const RES = { ruta: 'reserva:enviada', aviso: { tipo: 'reserva', datos: { codigo: 'R5X9' } } };
+  it('el botón de pedido o de reserva escribe UNA vez «Eligió»; los turnos siguientes dentro del mismo paso no escriben', () => {
+    const ped = prospecto({ plan: { ruta: 'pedido_pide' }, pasoAntes: 'menu', pasoDespues: 'pedido_datos', anteriorMs: AHORA - 1000 })!;
+    expect(ped['quePidio']).toBe('Pedido');
+    expect(ped['diaPreferido']).toBeUndefined();
+    expect(ped['horarioPreferido']).toBeUndefined();
+    expect(celda(decidir(ped), 'quePidio')).toBe("'Pedido");
+    const res = prospecto({ plan: { ruta: 'reserva_pide' }, pasoAntes: undefined, pasoDespues: 'reserva_datos', anteriorMs: AHORA - 1000 })!;
+    expect(res['quePidio']).toBe('Reserva');
+    expect(prospecto({ plan: { ruta: 'pedido_pide' }, pasoAntes: 'pedido_datos', pasoDespues: 'pedido_entrega', anteriorMs: AHORA - 1000 })).toBeNull();
+    expect(prospecto({ plan: { ruta: 'reserva_pide' }, pasoAntes: 'reserva_datos', pasoDespues: 'reserva_confirmar', anteriorMs: AHORA - 1000 })).toBeNull();
+    // un paso que no es de pedido ni de reserva no es elección
+    expect(prospecto({ plan: { ruta: 'menu' }, pasoAntes: 'menu', pasoDespues: 'esperando_comprobante', anteriorMs: AHORA - 1000 })).toBeNull();
+  });
+  it('un primer contacto de la ventana que ya está en pedido o reserva cuenta como elección; la carta conserva el Frío', () => {
+    const p = prospecto({ plan: { ruta: 'pedido_datos' }, pasoAntes: 'pedido_datos', pasoDespues: 'pedido_datos', anteriorMs: AHORA - 30 * 3600_000 })!;
+    expect(p['quePidio']).toBe('Pedido');
+    const frio = prospecto({ plan: { ruta: 'carta' }, pasoAntes: 'menu', pasoDespues: 'pedido_datos' })!;
+    expect(frio['senales']).toMatchObject({ preguntoPrecioYCerro: true, inicioCompra: false });
+  });
+  it('reserva con aviso salido: P dice «Enviada <fecha-hora>»; con el aviso caído no escribe P ni «Eligió»', () => {
+    const ok = prospecto({ plan: RES, pasoSalio: true, pasoAntes: 'reserva_confirmar', pasoDespues: 'menu' })!;
+    expect(ok['quePidio']).toBe('Reserva');
+    expect(ok['diaPreferido']).toBe('Enviada ' + new Date(AHORA - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' '));
+    const r = decidir(ok);
+    expect(celda(r, 'diaPreferido')).toMatch(/^'Enviada \d{4}-\d\d-\d\d \d\d:\d\d$/);
+    const caido = prospecto({ plan: RES, pasoSalio: false, pasoAntes: 'reserva_confirmar', pasoDespues: 'menu' })!;
+    expect(caido['quePidio']).toBe('');
+    expect(caido['diaPreferido']).toBeUndefined();
+    const rc = decidir(caido);
+    expect(celda(rc, 'diaPreferido')).toBeUndefined();
+    expect(celda(rc, 'quePidio')).toBeUndefined();
+    expect(JSON.stringify(rc)).not.toMatch(/No\b/);
+  });
+  it('pedido: con QR (o QR simulado) Q dice «Confirmado»; sin QR o QR vencido solo si el aviso salió', () => {
+    const q = (ruta: string, pasoSalio: boolean): J => prospecto({ plan: { ruta, pedido: PEDIDO }, pasoSalio })!;
+    expect(q('pedido:qr', false)['horarioPreferido']).toMatch(/^Confirmado \d{4}-\d\d-\d\d \d\d:\d\d$/);
+    expect(q('pedido:qr_simulado', false)['horarioPreferido']).toMatch(/^Confirmado /);
+    for (const ruta of ['pedido:sin_qr', 'pedido:qr_vencido']) {
+      expect(q(ruta, true)['horarioPreferido'], ruta).toMatch(/^Confirmado /);
+      expect(q(ruta, false)['horarioPreferido'], ruta).toBeUndefined();
+      expect(celda(decidir(q(ruta, false)), 'horarioPreferido'), ruta).toBeUndefined();
+    }
+    expect(q('pedido:qr', true)['diaPreferido']).toBeUndefined();
+    expect(celda(decidir(q('pedido:qr', true)), 'horarioPreferido')).toMatch(/^'Confirmado /);
+  });
+  it('pedido seguido de elegir reserva no pisa P ni Q; un contacto a 24-48 h no borra «Eligió»', () => {
+    const previa = fila(9, { 'Teléfono WhatsApp': TEL, 'Nombre y Apellido': 'Carlos', 'Clasificación': 'Caliente', 'Eligió': 'Pedido', 'Pedido': 'Confirmado 2026-10-05 10:00' });
+    const eleccion = decidir(prospecto({ plan: { ruta: 'reserva_pide' }, pasoAntes: 'menu', pasoDespues: 'reserva_datos', anteriorMs: AHORA - 1000 })!, [previa]);
+    expect(eleccion['Pedido']).toBeUndefined();
+    expect(eleccion['Reserva']).toBeUndefined();
+    expect(eleccion['Eligió']).toBe('Reserva');
+    const contacto = decidir(prospecto({ plan: { ruta: 'menu' }, anteriorMs: AHORA - 30 * 3600_000 })!, [previa]);
+    expect(contacto['Eligió']).toBeUndefined();
+    expect(contacto['Pedido']).toBeUndefined();
+  });
+  it('la fecha va en hora de La Paz (UTC-4) también cerca de la medianoche UTC', () => {
+    const casos: Array<[string, string]> = [['2026-10-06T02:30:00Z', '2026-10-05 22:30'], ['2026-10-06T03:59:00Z', '2026-10-05 23:59'], ['2026-10-06T04:00:00Z', '2026-10-06 00:00']];
+    for (const [utc, paz] of casos) expect(prospecto({ plan: RES, pasoSalio: true, ahoraMs: Date.parse(utc) })!['diaPreferido']).toBe('Enviada ' + paz);
+  });
+  it('nunca dice pagado, acreditado, simulado ni verificado, en ningún evento', () => {
+    const todos = [prospecto({ plan: { ruta: 'pedido:qr_simulado', pedido: PEDIDO }, pasoSalio: true })!, prospecto({ plan: { ruta: 'pedido:sin_qr', pedido: PEDIDO }, pasoSalio: true })!, prospecto({ plan: RES, pasoSalio: true })!,
+      prospecto({ plan: { ruta: 'x' }, pasoAntes: 'menu', pasoDespues: 'pedido_datos' })!];
+    expect(JSON.stringify(todos)).not.toMatch(/pagad|acreditad|simulad|verificad/i);
+  });
+  it('negación: sin `pasoSalio` verdadero no se anota «Reserva» ni «Pedido sin QR» (si se mutara el código, esta prueba falla)', () => {
+    const src = lib('crm.js');
+    expect(src).toContain('x.pasoSalio === true');
+    const mutado = src.split('x.pasoSalio === true').join('true');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const Lm: any = compileFunction(`${lib('comun.js')}\n${lib('pedido.js')}\n${mutado}\nreturn { vmProspectoCrm };`, [])();
+    const mut = Lm.vmProspectoCrm(turnoCrm({ plan: RES, pasoSalio: false })) as J;
+    // con la mutación el aviso caído SÍ escribiría: la prueba real lo detecta
+    expect(mut['diaPreferido']).toBeDefined();
+    expect(prospecto({ plan: RES, pasoSalio: false })!['diaPreferido']).toBeUndefined();
+  });
+  it('un mapa con un campo desconocido sigue rechazado (no se amplió el contrato)', () => {
+    const mapa = copia(MAPA) as J;
+    (mapa['columnas'] as J)['campoNuevo'] = { letra: 'V', titulo: 'Otro' };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const V: any = compileFunction(`${inyectarMapa(mod('crm/crm.js'), MAPA)}\nreturn { crmValidarMapa };`, [])();
+    expect(V.crmValidarMapa(copia(MAPA))).toEqual([]);
+    expect((V.crmValidarMapa(mapa) as string[]).join('|')).toContain('no es una columna del bot');
+  });
+});
+
+
 // ================================================================================================ A5, A6, A7, A8, A9 sobre el módulo
 describe('aceptación (unidades)', () => {
   it('A5 cobro real: ningún texto escrito dice «pagado», «acreditado» ni «simulado» (todos los eventos)', () => {
     const todos: J[] = [
       prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO } })!, prospecto({ plan: { ruta: 'pedido:qr_simulado', pedido: { ...PEDIDO, simulado: true } } })!,
       ...['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo'].map((r) => prospecto({ plan: { ruta: `comprobante:${r}`, pedido: PEDIDO } })!),
-      prospecto({ plan: { ruta: 'reserva:enviada' } })!, prospecto({ plan: { ruta: 'menu' } })!, prospecto({ plan: { ruta: 'carta' } })!,
+      prospecto({ plan: { ruta: 'reserva:enviada' }, pasoSalio: true })!, prospecto({ plan: { ruta: 'menu' }, pasoAntes: 'menu', pasoDespues: 'pedido_datos' })!, prospecto({ plan: { ruta: 'menu' } })!, prospecto({ plan: { ruta: 'carta' } })!,
     ];
     for (const p of todos) {
       const escrito = [decidir(p), decidir(p, [fila(7, { 'Teléfono WhatsApp': TEL })])].map((x) => JSON.stringify(x)).join(' ');
@@ -210,7 +299,7 @@ describe('aceptación (unidades)', () => {
     expect(emoji['nombre']).toBe('Ana María');
     expect(celda(decidir(emoji), 'nombre')).toBe("'Ana María");
     expect(() => prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, nombrePerfil: '😀😀😀' })).not.toThrow();
-    // los textos libres no se interpretan como fórmula: el resumen y «Qué pidió» van con apóstrofo al agregar
+    // los textos libres no se interpretan como fórmula: el resumen y «Eligió» van con apóstrofo al agregar
     expect(String(celda(decidir(prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO } })!), 'resumen'))).toMatch(/^'/);
   });
 });
@@ -297,7 +386,7 @@ describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
     expect(turnos.every((x) => x.t.fallo === null)).toBe(true);
     // 1. el saludo agregó la fila (la hoja de prueba no guarda: cada evento posterior vuelve a «agregar»; lo que importa es qué dice cada escritura y que sea UNA por turno)
     const porTurno = turnos.map((x) => (x.t.porNodo['Agregar fila'] ?? []).length + (x.t.porNodo['Actualizar fila'] ?? []).length);
-    expect(porTurno).toEqual([1, 0, 1, 1, 0, 0, 1, 1]);   // saludo, resumen, QR, comprobante, (reserva: pide, datos), envía, derivación
+    expect(porTurno).toEqual([1, 1, 1, 1, 1, 0, 1, 1]);   // saludo, elige pedido (resumen), QR, comprobante, elige reserva, (datos: nada), envía, derivación
     expect(pl.escrituras[0]!['Clasificación']).toBe('Tibio');
     expect(pl.escrituras[0]!['ID Lead']).toBe('LEAD-1011');
     expect(String(pl.escrituras[0]!['Teléfono WhatsApp'])).toBe(`'${CLIENTE}`);
@@ -306,7 +395,7 @@ describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
     const resumenes = escrito.map((e) => String(e['Resumen Chatbot IA'] ?? ''));
     expect(resumenes.some((r) => /^'N\.º \S+, 4 ítems, Bs 84, recojo$/.test(r))).toBe(true);
     expect(resumenes.some((r) => /^'N\.º \S+, 4 ítems, Bs 84, recojo, comprobante recibido, datos coinciden$/.test(r))).toBe(true);
-    expect(escrito.some((e) => e['Qué pidió'] === "'Reserva")).toBe(true);
+    expect(escrito.some((e) => e['Eligió'] === "'Reserva")).toBe(true);
     expect(escrito.some((e) => e['Derivación a recepción'] === "'Sí")).toBe(true);
   });
   it('un turno sin evento (el cliente sigue conversando dentro de la ventana) no toca Google', () => {
@@ -328,7 +417,7 @@ describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
     expect((comp.porNodo['Agregar fila'] ?? []).length + (comp.porNodo['Actualizar fila'] ?? []).length).toBe(1);
     const p = (comp.porNodo['Prospecto para la planilla'] ?? [])[0]!;
     expect(String(p['resumenVenta'])).toMatch(/N\.º \S+, 4 ítems, Bs 84, recojo, comprobante recibido, datos coinciden/);
-    expect(p['quePidio']).toBe('Comprobante');
+    expect(p['quePidio']).toBe('');
   });
   it('A4 (módulo) pedido + comprobante en el MISMO turno: un prospecto, una acción, una escritura', () => {
     const p = prospecto({ plan: { ruta: 'comprobante:cuadra', pedido: PEDIDO, aviso: { tipo: 'comprobante', datos: PEDIDO } } })!;

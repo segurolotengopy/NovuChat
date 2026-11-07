@@ -349,3 +349,12 @@ Cambio en `Decidir turno`, `Armar mensajes` y `Soltar mensajes` de «Venta míni
 - **Adopta en este PR:** Rubén (fuente y JSON regenerados, sin publicar). **Excepción declarada:** el flujo vivo de Rubén sigue diciendo UNA diferencia hasta su publicación; **cierra:** esa publicación, tras la prueba conjunta. Con el servidor sin desplegar el texto cae al motivo primario de siempre.
 - **Pendiente de adopción (no es de este PR; prioridad: salir con Rubén):** Antonio/Emma/Evy, Casa Bermejo y Walisuma (trabajo ya hecho en la rama `plataforma-casos/todas-las-diferencias-otros-flujos`, sin PR), Q'Taco/`venta-minima` (su sesión) y la agenda con seña.
 - **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos.
+
+## Estado al 07/11/2026: miniCRM de Q'Taco con «Eligió», «Reserva» y «Pedido» (sin publicar)
+
+**Qué cambia.** El código de `venta-minima` es común a sus salidas, así que se regeneran las cuatro (`qtaco-3727`, `qtaco`, `prueba`, `ensayo-demo-a`) y ninguna se publica con este PR. Solo el 3727 tiene planilla (dato `crm`), de modo que el cambio solo tiene efecto en Q'Taco 3727; los demás clientes quedan byte a byte iguales.
+- Columna O «Eligió» (antes «Qué pidió»): «Pedido» o «Reserva» cuando la persona entra a esa familia de pasos; en blanco si no. Deja de decir «Consulta» y «Comprobante».
+- Columna P «Reserva»: «Enviada <fecha-hora>» solo si el aviso al local salió. Columna Q «Pedido»: «Confirmado <fecha-hora>» con QR, o sin QR / QR vencido solo si el aviso salió. Celda en blanco = no concretó (nunca «No»).
+- **Corrección incluida:** «Reserva» y «Pedido sin QR» ya no se anotan si el aviso al local no salió.
+- **Excepción declarada:** el flujo vivo de Q'Taco 3727 sigue con el miniCRM anterior hasta su publicación y el cambio de títulos de las columnas O, P y Q en la copia viva de la hoja (lo opera Andres). **Cierra:** esa publicación.
+- **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos (81, 73, 69 y 67).
