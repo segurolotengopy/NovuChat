@@ -855,3 +855,11 @@ Confirmar envío ─→ Comprometer compensación   (hasta DOS ítems: la compen
 - Importar con `./scripts/preparar-import.sh Flujos/experimental/venta-minima/venta-minima.qtaco.json .env.qtaco`
   (el patrón de marcadores corta en comillas, barras y espacios: **no pegar dos marcadores con una coma**; la suite lo
   verifica) y **Publish**, con la ventana de mantenimiento y el «sí» de Andres.
+
+## Reserva de mañana (Q'Taco, decisión de Andres 06/11/2026; C-05)
+
+- **Claves (solo «Config base», dato del negocio):** `reservaDesde` («HH:MM», vacío o inválido = no aplica) y `reservaMananaTexto` (la frase aprobada de la confirmación). Valor de Q'Taco: 12:00 y «Como pediste una hora de la mañana, Samuel se contactará contigo para confirmar o cambiar la hora.».
+- **Horario:** `rsValidar` valida contra `cfg.horario`, que es el de PEDIDOS (no existe un horario propio de reservas); con 10:00–22:00 se aceptan reservas de 10:00 a 21:30 (cierre menos 30 minutos) y se rechazan, como hoy, las de antes de las 10:00 y después de las 21:30. `rsValidar` no cambia.
+- **Código:** `rsEsDeManana(reserva, desde)` (reserva.js) devuelve `desde` normalizado si la hora es anterior. `Plan del turno` (enviarReserva) marca `reserva.reservaManana` DESPUÉS de calcular el código estable (como `diaLleno`); `avMarcasReserva` (avisos.js) agrega la nota a todas las formas de aviso (variable de notas de `solicitud`, detalle de `cita`, `pedido` y ventana abierta). La frase del cliente solo sale en `siSalio` (el aviso respalda la promesa de contacto); en `siNoSalio` no se promete nada.
+- **Horario informado:** `horarioAtencion` se dice tal cual (con el paréntesis «de 10 a 12 AM solo delivery o recojo en local»), en la consulta y en el mensaje de fuera de horario de pedidos.
+- **Costo:** 0 mensajes por conversación (la nota viaja dentro del mismo aviso; la frase, dentro de la misma confirmación).

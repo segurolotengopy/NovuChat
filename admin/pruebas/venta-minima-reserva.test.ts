@@ -26,7 +26,7 @@ const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [
   'rsCuerpoExtraccion', 'rsValidarExtraccion', 'rsFusionar', 'rsValidar', 'rsPreguntaFaltantes',
-  'rsResumen', 'rsLineaCompacta', 'rsFraseDeConfirmacion', 'rsDentroDelTope', 'rsAnotar', 'rsHoraSuelta', 'rsReclamo',
+  'rsResumen', 'rsLineaCompacta', 'rsFraseDeConfirmacion', 'rsEsDeManana', 'rsDentroDelTope', 'rsAnotar', 'rsHoraSuelta', 'rsReclamo',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -618,6 +618,30 @@ describe('rsResumen y rsLineaCompacta', () => {
     // El resumen al cliente nunca lo muestra.
     expect(L.rsResumen(Object.assign({}, r, { diaLleno: true }))).not.toMatch(/lleno/i);
   });
+  it('rsEsDeManana: solo una hora anterior a `desde` válido marca; vacío o inválido = no aplica', () => {
+    expect(L.rsEsDeManana({ hora: '11:00' }, '12:00')).toBe('12:00');
+    expect(L.rsEsDeManana({ hora: '09:59' }, '12:00')).toBe('12:00');
+    expect(L.rsEsDeManana({ hora: '12:00' }, '12:00')).toBe('');
+    expect(L.rsEsDeManana({ hora: '19:00' }, '12:00')).toBe('');
+    expect(L.rsEsDeManana({ hora: '11:00' }, '')).toBe('');
+    expect(L.rsEsDeManana({ hora: '11:00' }, 'mediodía')).toBe('');
+    expect(L.rsEsDeManana({ hora: '' }, '12:00')).toBe('');
+    expect(L.rsEsDeManana(null, '12:00')).toBe('');
+  });
+
+  it('horario de pedidos 10:00–22:00 (06/11): 09:59 y 22:01 se rechazan; 10:00, 11:00, 12:00 y 21:30 se aceptan (rsValidar no cambia)', () => {
+    const H10 = { horario: 'lun=10:00-22:00,mar=10:00-22:00,mie=10:00-22:00,jue=10:00-22:00,vie=10:00-22:00,sab=10:00-22:00,dom=10:00-22:00' };
+    for (const hora of ['09:59', '22:01']) {
+      const v = validar({ hora }, H10);
+      expect(v.completa, hora).toBe(false);
+      expect(v.error?.campo, hora).toBe('hora');
+      expect(v.error?.texto, hora).toContain('de 10:00 a 21:30');
+    }
+    for (const hora of ['10:00', '11:00', '12:00', '21:30']) {
+      expect(validar({ hora }, H10).completa, hora).toBe(true);
+    }
+  });
+
   it('rsFraseDeConfirmacion: fecha, hora, personas y zona; sin nombre ni notas', () => {
     expect(L.rsFraseDeConfirmacion({ personas: 4, fecha: VIE, hora: '20:00', nombre: 'Ana Pérez', zona: 'salón', celebracion: 'cumpleaños' }))
       .toBe('el viernes 9 de octubre a las 20:00, 4 personas, salón');

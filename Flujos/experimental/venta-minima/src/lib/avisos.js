@@ -773,6 +773,8 @@ function avMarcasReserva(r) {
   const m = [];
   if (r && r.grupoGrande === true) m.push('GRUPO GRANDE');
   if (r && r.diaLleno === true) m.push('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+  // Reserva de mañana (antes de `reservaDesde`, dato del negocio): una nota DENTRO del mismo aviso, 0 mensajes extra.
+  if (r && typeof r.reservaManana === 'string' && /^\d{2}:\d{2}$/.test(r.reservaManana)) m.push('Reserva de mañana (antes de las ' + r.reservaManana + '): contactar para confirmar o cambiar la hora');
   return m;
 }
 function avVariablesDeForma(tipo, d, dest, ahoraMs) {
