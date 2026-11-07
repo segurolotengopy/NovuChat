@@ -216,7 +216,7 @@ function crmEncabezadosEsperados(mapa) {
   const ultimaBot = letras.filter((l) => porLetra[l].bot).pop();
   return letras.filter((l) => l <= ultimaBot).map((l) => porLetra[l].titulo);
 }
-// Las columnas del equipo que quedan DESPUES de la ultima del bot: si el rango de lectura llega hasta ellas (hoy el injerto lee hasta la ultima letra del BOT, T; la U no se lee) y llegan, deben ser las declaradas.
+// Las columnas del equipo que quedan DESPUES de la ultima del bot: si el rango de lectura llega hasta ellas (el injerto lee hasta la ultima letra del BOT; la del diagnostico del equipo, que queda despues, no se lee) y llegan, deben ser las declaradas.
 function crmEncabezadosCola(mapa) {
   const porLetra = crmLetrasDeclaradas(mapa);
   const letras = Object.keys(porLetra).sort();
@@ -305,7 +305,10 @@ function crmDecidirFila(a) {
     if (faltan.length) return nada(i, faltan[0] === CRM_COLUMNAS_DE_MAS ? 'encabezados_distintos: columnas de más en la fila ' + mapa.filaEncabezados
       : 'encabezados_distintos: la fila ' + mapa.filaEncabezados + ' no tiene «' + faltan[0] + '»');
     // Una persona que vuelve tras 48 h (ficha nueva: `nuevoContacto`) es un registro NUEVO; si no, se actualiza SIEMPRE la fila mas reciente de ese telefono.
-    const actual = p.nuevoContacto === true ? undefined : crmFilaMasReciente(coincidencias.filter((f) => crmDigitos(f[T('telefono')]) === p.telefono));
+    // Excepcion: cancelar o reprogramar una cita (hechos verificados) pasadas las 48 h actualiza la fila mas reciente SOLO en «Agendo» y «Fecha y hora de la cita»:
+    // la cita vive en la fila donde se agendo, y dejarla en «Si» con una cita ya borrada seria un dato falso.
+    const afectaCita = p.citaCancelada === true || p.citaReprogramada === true;
+    const actual = p.nuevoContacto === true && !afectaCita ? undefined : crmFilaMasReciente(coincidencias.filter((f) => crmDigitos(f[T('telefono')]) === p.telefono));
     // Los hechos viajan dentro del prospecto; `cerrado` sigue siendo un pedido de una persona.
     const prospecto = { ...p, ...(p.hechos && typeof p.hechos === 'object' ? p.hechos : {}),
       pidioAsesor: p.estado === 'cerrado' || p.hechos?.pidioAsesor === true };
@@ -339,8 +342,9 @@ function crmDecidirFila(a) {
       const nuevo = { nombre: crmSeguro(p.nombre), empresa: crmSeguro(p.empresa), interes: crmSeguro(p.rubro), calificacion,
         resumen: crmSeguro(adaptador.resumir(prospecto, false, quedaEnI)) };
       const celdas = {};
+      const soloCita = p.nuevoContacto === true;
       for (const campo of ['nombre', 'empresa', 'interes', 'calificacion', 'resumen']) {
-        if (!mapeado(campo)) continue;
+        if (soloCita || !mapeado(campo)) continue;
         const v = nuevo[campo];
         const antes = actual[T(campo)];
         if (!v || crmLimpio(antes) === v) continue;
@@ -350,6 +354,7 @@ function crmDecidirFila(a) {
         celdas[T(campo)] = v;
       }
       for (const [campo, v] of extras) {
+        if (soloCita && campo !== 'agendo' && campo !== 'fechaCita') continue;
         const antes = actual[T(campo)];
         const nuevoV = crmSeguro(v);
         if (!nuevoV || crmLimpio(antes) === nuevoV) continue;
@@ -364,10 +369,18 @@ function crmDecidirFila(a) {
         // Al actualizar NINGUN valor lleva apostrofo: `Actualizar fila` escribe RAW y el apostrofo se veria. Una fecha escrita asi queda como texto.
         celdas[T(campo)] = nuevoV;
       }
-      // Cancelacion explicita de la cita: «No» y fecha vacia (solo si hay algo que cambiar).
+      // Cancelacion explicita de la cita. Si QUEDAN otras citas a ese telefono, el «Si» se mantiene: solo cambia la fecha cuando la cancelada era la de la fila
+      // (pasa a la proxima que queda). Si no queda ninguna: «No» y fecha vacia (solo si hay algo que cambiar).
       if (cancelo) {
-        if (mapeado('agendo') && crmLimpio(actual[T('agendo')]) !== 'No') celdas[T('agendo')] = 'No';
-        if (mapeado('fechaCita') && crmLimpio(actual[T('fechaCita')]) !== '') celdas[T('fechaCita')] = '';
+        const quedan = Number.isInteger(p.citasRestantes) && p.citasRestantes > 0;
+        const proxima = crmFechaHoraLaPaz(p.proximaCitaMs);
+        const eraLaDeLaFila = crmFechaHoraLaPaz(p.citaCanceladaMs) !== '' && crmLimpio(actual[T('fechaCita')]) === crmFechaHoraLaPaz(p.citaCanceladaMs);
+        if (quedan && proxima) {
+          if (eraLaDeLaFila && mapeado('fechaCita')) celdas[T('fechaCita')] = proxima;
+        } else if (!quedan || eraLaDeLaFila) {
+          if (mapeado('agendo') && crmLimpio(actual[T('agendo')]) !== 'No') celdas[T('agendo')] = 'No';
+          if (mapeado('fechaCita') && crmLimpio(actual[T('fechaCita')]) !== '') celdas[T('fechaCita')] = '';
+        }
       }
       if (!Object.keys(celdas).length) return nada(i, 'sin_cambios');
       out.push({ json: { accionPlanilla: 'actualizar', veredictoPlanilla: 'actualizar', row_number: Number(actual.row_number) + DESFASE, ...celdas }, pairedItem: { item: i } });

@@ -404,4 +404,6 @@ cuesta 250 Bs. Si quieres, te ayudo a agendarla.») es un dato del cliente en «
 
 Columnas U «Servicio elegido», V «Agendó» y W «Fecha y hora de la cita» (opcionales en el contrato común); «Diagnóstico del equipo» pasa de la U a la X (decisión
 de Andres), así el rango de lectura es A:W y nunca cruza el diagnóstico. Un «No» posterior nunca pisa un «Sí»: solo la cancelación verificada lo vuelve «No» y
-limpia la fecha. La hoja viva necesita los encabezados U, V y W y mover el Diagnóstico a la X ANTES de publicar.
+limpia la fecha. Procedimiento de la hoja viva: **insertar 3 columnas antes de la U** (el Diagnóstico pasa a la X con su contenido) y escribir los encabezados nuevos en U, V y W. Antes de publicar se
+comprueba que U, V y W estén vacías en las filas existentes. Cancelar o reprogramar pasadas las 48 h actualiza la fila más reciente solo en «Agendó» y la fecha; cancelar una de varias
+citas no pone «No»: la fila conserva «Sí» y, si la cancelada era la de la fila, la fecha pasa a la próxima cita que queda (sin mensajes nuevos).

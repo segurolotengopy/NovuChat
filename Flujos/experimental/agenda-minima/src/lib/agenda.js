@@ -678,7 +678,16 @@ function agmProspectoCrm(d) {
     p.agendo = 'Sí';
     const msCita = x.inicioCita ? msDe(x.inicioCita) : NaN;
     if (!Number.isNaN(msCita)) p.fechaCita = msCita;
-  } else if (canceloCita) { p.agendo = 'No'; p.citaCancelada = true; }
+    if (reprogramo) p.citaReprogramada = true;
+  } else if (canceloCita) {
+    // Cancelar UNA de varias citas no es «No»: la planilla decide con cuantas quedan, la cancelada y la proxima.
+    p.agendo = 'No'; p.citaCancelada = true;
+    const rest = (Array.isArray(x.restantes) ? x.restantes : []).map(msDe).filter((m) => !Number.isNaN(m)).sort((a, b) => a - b);
+    p.citasRestantes = rest.length;
+    if (rest.length) p.proximaCitaMs = rest[0];
+    const mc = x.canceladaInicio ? msDe(x.canceladaInicio) : NaN;
+    if (!Number.isNaN(mc)) p.citaCanceladaMs = mc;
+  }
   else p.agendo = 'No';
   return p;
 }

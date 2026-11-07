@@ -143,7 +143,7 @@ describe('guardia de hallazgosCrm sobre el flujo de Bellido (se NIEGA con mutaci
 
 // ------------------------------------------------------------------------------------------------ la función pura
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const L: any = compileFunction(`${leer(`${AM}/src/lib/agenda.js`)}\nreturn { agmProspectoCrm };`, [])();
+const L: any = compileFunction(`${leer(`${AM}/src/lib/agenda.js`)}\nreturn { agmProspectoCrm, citasDeHermanos };`, [])();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const M: any = runInNewContext(`${inyectarMapa(leer('Flujos/src/modulos/crm/crm.js'), MAPA)}\n${leer('Flujos/src/modulos/crm/adaptador-senales.js')}\n({ crmDecidirFila, CRM_ADAPTADOR })`, {});
 const TEL = ['591', '7', '00', '01234'].join('');
@@ -266,8 +266,19 @@ describe('unidades: agmProspectoCrm (vocabulario cerrado)', () => {
     expect([c['agendo'], c['citaCancelada']]).toEqual(['No', true]);
     expect(prospecto({ plan: 'cancelar', cancelada: false })!['citaCancelada']).toBeUndefined();
   });
-  it('con dos hermanos la fecha es la de la primera cita (la que lleva `inicioCita`)', () => {
-    expect(prospecto({ plan: 'crear', creada: true, inicioCita: '2026-10-08T09:00:00-04:00' })!['fechaCita']).toBe(Date.parse('2026-10-08T09:00:00-04:00'));
+  it('con dos hermanos (dos citas armadas de verdad) la fecha es la de la PRIMERA cita', () => {
+    const citas = L.citasDeHermanos({ inicio: '2026-10-08T09:00:00-04:00', servicio: 'control_nino_sano', telefono: TEL, nombrePerfil: 'Ana Perez',
+      pacientes: [{ nombres: 'Ana', apellidos: 'Perez Gomez' }, { nombres: 'Luis', apellidos: 'Perez Gomez' }] }) as Array<{ inicio: string }>;
+    expect(citas).toHaveLength(2);
+    expect(citas[1]!.inicio).not.toBe(citas[0]!.inicio);
+    const p = prospecto({ plan: 'crear', creada: true, inicioCita: citas[0]!.inicio })!;
+    expect(p['fechaCita']).toBe(Date.parse('2026-10-08T09:00:00-04:00'));
+    expect(p['fechaCita']).not.toBe(Date.parse(citas[1]!.inicio));
+  });
+  it('cancelar con otras citas pendientes lleva cuántas quedan, la cancelada y la próxima (orden por hora)', () => {
+    const p = prospecto({ plan: 'cancelar', cancelada: true, canceladaInicio: '2026-10-08T09:00:00-04:00', restantes: ['2026-10-12T10:00:00-04:00', '2026-10-09T10:00:00-04:00'] })!;
+    expect([p['citasRestantes'], p['citaCanceladaMs'], p['proximaCitaMs']]).toEqual([2, Date.parse('2026-10-08T09:00:00-04:00'), Date.parse('2026-10-09T10:00:00-04:00')]);
+    expect(prospecto({ plan: 'cancelar', cancelada: true })!['citasRestantes']).toBe(0);
   });
   it('NIEGA: sin teléfono válido no hay prospecto', () => {
     expect(prospecto({ from: '' })).toBeNull();
