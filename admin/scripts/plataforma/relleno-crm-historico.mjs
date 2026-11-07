@@ -48,13 +48,19 @@ import { comprobarProyecto, comprobarRespaldo, guardarRespaldo, leerRespaldoGene
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = resolve(AQUI, '..', '..', '..');
 export const TENANTS = Object.freeze(['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio']);
+/**
+ * Los comercios cuya hoja se puede rellenar. Q'Taco (`qtaco`, restaurante con `venta-minima`) usa la MISMA hoja `Leads_CRM` que los rroca (A..U, encabezados en
+ * la fila 3). `TENANTS` NO cambia: lo importan `vaciar-chats-tenant` y `vaciar-hoja-crm`, y agregar un comercio ahí le daría a esas herramientas permiso para
+ * borrar sus chats y su hoja. Rellenar es solo agregar filas nuevas; vaciar es destruir: dos listas, dos decisiones.
+ */
+export const TENANTS_RELLENO = Object.freeze([...TENANTS, 'qtaco']);
 const HOJA = 'Leads_CRM';
 // Un contacto anterior al miniCRM está SIN EVALUAR: la calificación y la clasificación se dejan vacías (no un juicio sobre la persona) y las escribe el bot.
 const RESUMEN = 'Contacto anterior al miniCRM; calificación sin evaluar.';
 const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'revertir'];
 
-export const USO = '  ENV_FILE=… SHEET_ID=… node scripts/plataforma/relleno-crm-historico.mjs --proyecto <id> --tenant <rroca-evy|rroca-emma|rroca-ruben|rroca-antonio> '
+export const USO = '  ENV_FILE=… SHEET_ID=… node scripts/plataforma/relleno-crm-historico.mjs --proyecto <id> --tenant <rroca-evy|rroca-emma|rroca-ruben|rroca-antonio|qtaco> '
   + '[--aplicar --respaldo <ruta> [--confirmo-produccion <tenant>]]\n'
   + '  ENV_FILE=… SHEET_ID=… node scripts/plataforma/relleno-crm-historico.mjs --revertir --respaldo <ruta> --tenant <t> --proyecto <id> [--aplicar] [--confirmo-produccion <tenant>]';
 
@@ -62,7 +68,7 @@ export const USO = '  ENV_FILE=… SHEET_ID=… node scripts/plataforma/relleno-
 const CRM = runInNewContext(`${readFileSync(join(RAIZ, 'Flujos', 'src', 'modulos', 'crm', 'crm.js'), 'utf8')}\n({ crmDigitos, crmSeguro, crmComoTexto, crmFechaLaPaz, crmFechaHoraLaPaz })`, {});
 
 export function leerMapa(tenant, raiz = RAIZ) {
-  if (!TENANTS.includes(tenant)) throw new Error('tenant fuera de la lista');
+  if (!TENANTS_RELLENO.includes(tenant)) throw new Error('tenant fuera de la lista');
   const m = JSON.parse(readFileSync(join(raiz, 'admin', 'scripts', 'datos', tenant, `${tenant}.json`), 'utf8')).crm;
   delete m._nota;
   return m;
@@ -94,7 +100,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   const proy = proyecto === undefined ? { ok: false } : comprobarProyecto(proyecto, env);
   if (proyecto === undefined) problemas.push('falta --proyecto'); else if (!proy.ok) problemas.push(proy.motivo);
   if (tenant === undefined) problemas.push('falta --tenant');
-  else if (!TENANTS.includes(tenant)) problemas.push(`--tenant tiene que ser uno de: ${TENANTS.join(', ')} (un comercio por corrida)`);
+  else if (!TENANTS_RELLENO.includes(tenant)) problemas.push(`--tenant tiene que ser uno de: ${TENANTS_RELLENO.join(', ')} (un comercio por corrida)`);
   // LA HOJA ES SIEMPRE LA REAL: la lectura y la escritura pasan por el n8n real, con la credencial y el SHEET_ID reales, aunque Firestore sea el emulador
   // o staging. Por eso TODO --aplicar (y --revertir --aplicar) exige la confirmación con el nombre del comercio, sea cual sea el proyecto.
   if (confirmo !== undefined && confirmo !== tenant) problemas.push('--confirmo-produccion no coincide con --tenant');
