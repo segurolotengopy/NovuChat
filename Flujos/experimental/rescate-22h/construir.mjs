@@ -25,6 +25,7 @@ import vm from 'node:vm';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { injertar } from '../comun-sin-agente/src/envio.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const CARPETA_DE_DATOS = join(AQUI, '../../../admin/scripts/datos');
@@ -178,6 +179,8 @@ export function guardias(flujo) {
   const por = (nombre) => nodos.find((n) => n.name === nombre);
   const p = (n) => (n && n.parameters) || {};
   if (nodos.length > TOPE_DE_NODOS) h.push(`tiene ${nodos.length} nodos y el tope es ${TOPE_DE_NODOS}`);
+  // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
+  h.push(...hallazgosDeExpresionesN8n(flujo || {}));
   // Un solo disparador: el programado, cada 10 minutos.
   const programados = nodos.filter((n) => n.type === 'n8n-nodes-base.scheduleTrigger');
   const cronOk = (n) => { const iv = (p(n).rule || {}).interval; return Array.isArray(iv) && iv.length === 1 && iv[0].field === 'cronExpression' && iv[0].expression === '*/10 * * * *'; };
