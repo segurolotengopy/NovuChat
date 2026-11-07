@@ -217,7 +217,8 @@ switch (p.plan) {
     const c = leerLista().filter((x) => x.id === prm.id)[0];
     if (!c) return salir('sin_citas', { params: { motivo: 'tocó cancelar una cita que no figura a su nombre' } });
     en.paso = 'inicio'; en.moverId = null; en.moverInicio = null; en.moverTitulo = '';
-    return salir('cancelar', { borrarId: c.id, cancelada: c, params: prm });
+    // `restantes`: los inicios de las OTRAS citas del telefono (solo dato para la planilla; no genera ningun mensaje).
+    return salir('cancelar', { borrarId: c.id, cancelada: c, restantes: leerLista().filter((x) => x.id !== c.id).map((x) => x.inicio), params: prm });
   }
 
   case 'mover_elegido': {

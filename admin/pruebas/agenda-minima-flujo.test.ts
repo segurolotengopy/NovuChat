@@ -3626,6 +3626,41 @@ describe('Agenda mínima v0: el miniCRM', () => {
     // El nombre del niño de la cita NO viaja al prospecto.
     expect(JSON.stringify(t.prospecto)).not.toMatch(/P[eé]rez|G[oó]mez|Ana P/);
   });
+  it('de punta a punta: cita creada y VERIFICADA por el candado = «Agendó: Sí» con la fecha de la cita; el texto del modelo no cuenta', () => {
+    const m = mundo({ eventos: [], configBase: CON });
+    hastaPedirNombre(m);
+    m.gemini.redactar = 'Listo, quedó agendada.';
+    m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+    const t = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
+    expect(m.calendario.eventos).toHaveLength(1);
+    expect(t.prospecto).toMatchObject({ agendo: 'Sí', fechaCita: Date.parse(iso(JUEVES, '14:00')), servicioElegido: 'Control niño sano' });
+  });
+  it('de punta a punta: cruce deshecho por el candado = «Agendó: No» y sin fecha, aunque el modelo diga que quedó agendada', () => {
+    const m = mundo({ eventos: [], configBase: CON });
+    hastaPedirNombre(m);
+    m.gemini.redactar = 'Listo, quedó agendada.';
+    m.calendario.despuesDeCrear = (c) => { c.push(evento('rival-1', JUEVES, '14:00', '14:30', 'Otro paciente')); };
+    m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+    const t = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
+    expect(t.prospecto).toMatchObject({ agendo: 'No' });
+    expect(t.prospecto!['fechaCita']).toBeUndefined();
+  });
+  it('de punta a punta: dos hermanos = dos citas creadas y la fecha es la de la PRIMERA', () => {
+    const m = mundo({ eventos: [], configBase: CON });
+    hastaPedirNombre(m);
+    m.gemini.extraer = extraccion({ hermanos: true, pacientes: ['Ana Pérez Gómez', 'Luis Pérez Gómez'] });
+    const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+    expect(m.calendario.eventos).toHaveLength(2);
+    expect(t.prospecto).toMatchObject({ agendo: 'Sí', fechaCita: Date.parse(iso(JUEVES, '14:00')) });
+  });
+  it('de punta a punta: cancelar UNA de dos citas lleva cuántas quedan y la cancelada (la planilla decide; no es un «No» ciego)', () => {
+    const m = mundo({ eventos: [citaDe(MAMA, 'a', JUEVES, '14:00', '14:30', 'Pérez Gómez, Ana (CNS)'), citaDe(MAMA, 'b', JUEVES, '14:30', '15:00', 'Pérez Gómez, Luis (CNS)')], configBase: CON });
+    m.gemini.extraer = extraccion({ intencion: 'cancelar' });
+    m.turno(texto(MAMA, 'quiero cancelar mi cita'));
+    const t = m.turno(boton(MAMA, 'c|a'));
+    expect(t.bitacora).toEqual(['borrar:a']);
+    expect(t.prospecto).toMatchObject({ citaCancelada: true, citasRestantes: 1, citaCanceladaMs: Date.parse(iso(JUEVES, '14:00')), proximaCitaMs: Date.parse(iso(JUEVES, '14:30')) });
+  });
   it('NIEGA: si el candado deshizo la cita (cruce) no hay hecho de agendar', () => {
     const m = mundo({ eventos: [], configBase: CON });
     hastaPedirNombre(m);
@@ -3671,11 +3706,16 @@ describe('Agenda mínima v0: el miniCRM', () => {
     const t = m.turno(boton(MAMA, 'c|vieja'));
     expect(t.bitacora).toEqual([]);
     expect(String(t.prospecto?.['quePidio'] ?? '')).not.toBe('Cancelar cita');
+    // Y la planilla no recibe ninguna cancelación: ni «No» por cancelación ni fecha limpiada.
+    expect(t.prospecto?.['citaCancelada']).toBeUndefined();
   });
-  it('NIEGA: la emergencia no deja prospecto, aunque haya id de planilla', () => {
+  it('la emergencia deja fila (Andres, 07/11/2026) con SOLO teléfono, nombre de perfil y «Emergencia»: el texto del mensaje no pasa', () => {
     const t = mundo({ eventos: [], configBase: CON }).turno(texto(MAMA, 'emergencia, mi bebé no respira'));
-    expect(t.armado['guardarPlanilla']).toBe(false);
-    expect(t.prospecto).toBeNull();
+    expect(t.armado['guardarPlanilla']).toBe(true);
+    expect(Object.keys(t.prospecto ?? {}).sort()).toEqual(['nombre', 'nombreDePerfil', 'nuevoContacto', 'servicioElegido', 'telefono', 'ultimaInteraccionMs']);
+    expect(t.prospecto?.['servicioElegido']).toBe('Emergencia');
+    const vista = JSON.stringify([t.armado['prospectoPlanilla'], t.prospecto]);
+    for (const x of ['bebé', 'respira', 'emergencia,']) expect(vista, x).not.toContain(x);
   });
   it('NIEGA: un mensaje con síntomas, el nombre del niño y montos NO llega a la planilla', () => {
     const m = mundo({ eventos: [], configBase: CON });

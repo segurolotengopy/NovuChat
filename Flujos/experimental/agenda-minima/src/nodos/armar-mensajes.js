@@ -676,6 +676,7 @@ if (planillaOk && !prueba && salida.length > 0 && cnClaveValida(t.from)) {
       from: t.from, plan: plan, servicio: srv, clave: params.clave,
       creada: base.creada === true, reprogramo: !!base.borrarId && !!bBorrar && !bBorrar.error, cancelada: !!bBorrar && !bBorrar.error,
       inicioCita: base.crear && base.crear.inicio ? base.crear.inicio : '',
+      canceladaInicio: base.cancelada && base.cancelada.inicio ? base.cancelada.inicio : '', restantes: Array.isArray(base.restantes) ? base.restantes : [],
       huecos: base.oferta && Array.isArray(base.oferta.huecos) ? base.oferta.huecos.map((h) => h.inicio) : [],
       derivo: plan === 'contacto_doctor' ? 'doctor' : (conBoton ? 'recepcion' : ''),
       nombrePerfil: t.nombrePerfil, anuncio: t.origen === 'anuncio', nuevoContacto: nuevoContacto, ahoraMs: ahora,

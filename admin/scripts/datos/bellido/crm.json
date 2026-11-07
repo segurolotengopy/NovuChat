@@ -21,14 +21,17 @@
       "horarioPreferido": { "letra": "Q", "titulo": "Horario preferido" },
       "derivacion": { "letra": "R", "titulo": "Derivación a recepción" },
       "ultimaInteraccion": { "letra": "S", "titulo": "Última interacción" },
-      "ventana24h": { "letra": "T", "titulo": "Se cierra la ventana de 24 h" }
+      "ventana24h": { "letra": "T", "titulo": "Se cierra la ventana de 24 h" },
+      "servicioElegido": { "letra": "U", "titulo": "Servicio elegido" },
+      "agendo": { "letra": "V", "titulo": "Agendó" },
+      "fechaCita": { "letra": "W", "titulo": "Fecha y hora de la cita" }
     },
     "equipo": {
       "valor": { "letra": "J", "titulo": "Valor Estimado ($)" },
       "responsable": { "letra": "K", "titulo": "Responsable Comercial" },
       "estado": { "letra": "L", "titulo": "Estado Comercial" },
       "proximaAccion": { "letra": "M", "titulo": "Próxima Acción / Fecha" },
-      "diagnostico": { "letra": "U", "titulo": "Diagnóstico del equipo" }
+      "diagnostico": { "letra": "X", "titulo": "Diagnóstico del equipo" }
     },
     "extrasDelEquipo": {},
     "alCrear": {

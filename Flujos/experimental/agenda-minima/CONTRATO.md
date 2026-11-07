@@ -263,3 +263,10 @@ hoy solo si lo pide; 18. nada clínico; 19. el JSON no tiene identificadores
 ni secuencias de 10 dígitos o más; 20. el reporte del entrante está antes de
 la rama del modelo, por posición y por conexiones; 21. dos teléfonos no
 comparten estado; 22. un mensaje por saliente reportado.
+
+## miniCRM: servicio elegido, agendó y fecha de la cita (Andres, 07/11/2026)
+
+El prospecto (`agmProspectoCrm`) suma `servicioElegido` (lista cerrada: Emergencia, Recién nacido, Control niño sano, Vacunas y/o otros), `agendo`
+(«Sí» SOLO si el plan es `crear` y el candado verificó la cita creada; nunca por lo que dijo el modelo; si no, «No») y `fechaCita` (primera cita, solo con
+«Sí»), más `citaCancelada` cuando el borrado se verificó. La emergencia deja fila con solo teléfono, nombre de perfil y «Emergencia» (sin texto del mensaje).
+Los tres campos son opcionales en el core: solo escribe quien los mapea. 0 mensajes por conversación.

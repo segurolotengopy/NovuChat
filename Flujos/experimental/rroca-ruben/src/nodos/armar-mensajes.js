@@ -69,7 +69,10 @@ const conBotones = (cuerpo, botones, extra, respaldoPropio) => {
   return cmMensaje('cliente', cmBotones(c, botones), c, respaldo, Object.assign({ tipoReporte: 'interactive' }, extra || {}));
 };
 const conRuben = (cuerpo, extra) => {
-  const c = rrSeguro(cuerpo);
+  // Sin el número de Rubén no hay botón: el texto de Silvana («Déjame confirmarte… con Rubén») quedaría como una promesa sin respaldo (revisión de seguridad, LOW). Sin número, no promete: dice la verdad.
+  const sinBotonRubenNum = String(cfg['numeroRecepcion'] || '').replace(/\D/g, '') === '';
+  const cuerpoOk = sinBotonRubenNum && String(cuerpo).indexOf(RR_TEXTO_DEVOLUCION) >= 0 ? String(cuerpo).split(RR_TEXTO_DEVOLUCION).join('Por este chat no puedo confirmarte las condiciones de garantía o devolución: eso lo ve Rubén directamente.') : cuerpo;
+  const c = rrSeguro(cuerpoOk);
   return cmContactoConBoton(Object.assign({ numero: cnDigitos(cfg.numeroRecepcion), desde: from, cuerpo: c, botonTexto: RR_BOTON_RUBEN, saludo: 'Hola Rubén, vengo del asistente virtual.', textoDelRespaldo: 'Escríbele aquí:', sinNumero: 'Eso lo ve Rubén directamente.', esRepetido: (x) => fichaAntes.ultimoHash !== '' && ctHashTexto(x) === fichaAntes.ultimoHash }, extra || {}));
 };
 const usadosHoy = () => fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
@@ -194,6 +197,11 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     const op = qrAbierto ? [] : menuAbierto();
     const cuerpoContenido = rrTextoContenido(plan.producto, nom);
     m = qrAbierto ? texto(invitar(conPresentacion(cuerpoContenido))) : conBotones(conPresentacion(cuerpoContenido) + (op.length > 0 ? '\n\n¿Qué opción prefieres?' : ''), op);
+    // La MISMA pregunta de contenido otra vez (ronda 2 de Silvana, 07/11/2026): quien la hace de nuevo quiere la respuesta, no «ya te lo conté». Se vuelve a dar, con una frase que la distingue del mensaje anterior (nunca el mismo texto dos veces seguidas).
+    if (m && fichaAntes.ultimoHash !== '' && ctHashTexto(m.texto) === fichaAntes.ultimoHash) {
+      const otra = 'Claro, te lo cuento de nuevo:\n\n' + cuerpoContenido;
+      m = qrAbierto ? texto(otra) : conBotones(otra + (op.length > 0 ? '\n\n¿Qué opción prefieres?' : ''), op);
+    }
   } else if (tipoDePlan === 'menu') {
     const op = menu1();
     if (op.length) m = conBotones(RR_TEXTO_OPCIONES, op);
@@ -216,7 +224,7 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     if (precioR !== '') antes.push(precioR);
     if (plan.duracion === true) antes.push(RR_TEXTO_DURACION);
     const delante = antes.length ? antes.join('\n\n') + '\n\n' : '';
-    m = qrAbierto ? texto(invitar(conPresentacion(delante + rrTextoResultado(false)))) : conBotones(conPresentacion(delante + rrTextoResultado(op.length > 0)), op);
+    m = qrAbierto ? texto(invitar(conPresentacion(delante + rrTextoResultado()))) : conBotones(conPresentacion(delante + rrTextoResultado()), op);
   } else if (tipoDePlan === 'qr') {
     const monto = rrPrecio(cat, plan.producto);
     const mediaId = rrMediaId(plan.mediaId);

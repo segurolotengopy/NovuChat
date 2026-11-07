@@ -166,11 +166,11 @@ describe('una descripción que promete o afirma (reembolso, devolución, regalo,
 });
 
 describe('publicidad: el ángulo conocido manda; sin ángulo, el mismo texto de «Veo»', () => {
-  it('sin ángulo reconocido: «Veo una imagen publicitaria» (frase del código) y la oferta; sin modelo ni precios de la imagen', () => {
+  it('sin ángulo reconocido: «Recibí tu imagen» (nunca «imagen publicitaria»: una foto o una captura de la web también salían así) y la oferta; sin modelo ni precios de la imagen', () => {
     const w = saludado(clasif({ categoria: 'publicidad', texto: 'Oferta de zapatos a Bs 99', descripcion: 'un anuncio de calzado con precio' }));
     const t = hablar(w, ANA, mImagen());
     expect(t.mensajes).toHaveLength(1);
-    expect(t.mensajes[0]!.cuerpo).toBe('Veo una imagen publicitaria. ' + OFRECE);
+    expect(t.mensajes[0]!.cuerpo).toBe('Recibí tu imagen. ' + OFRECE);
     expect(t.ejecutados.has(MODELO)).toBe(false);
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/99|zapatos|calzado/);
   });

@@ -581,10 +581,10 @@ describe('los avisos a Rubén: «ya le avisé» solo si salió', () => {
 
 describe('la derivación a Rubén: texto fijo, aviso y botón', () => {
   const casos: Array<[string, string, RegExp]> = [
-    ['quiero una devolución', 'devolución', /no tiene garantía de devolución/],
-    ['¿hay garantía si no me sirve?', 'devolución', /producto digital de pago único y no tiene garantía de devolución.*Rubén te atiende directamente/],
+    ['quiero una devolución', 'devolución', /Déjame confirmarte las condiciones de garantía o devolución directamente con Rubén/],
+    ['¿hay garantía si no me sirve?', 'devolución', /Déjame confirmarte las condiciones de garantía o devolución directamente con Rubén\. Puedes tocar el botón de aquí abajo para conversar con él personalmente/],
     ['¿puedo pagar con tarjeta?', 'otro medio', /cualquier otra forma de pago la ve Rubén directamente/],
-    ['tengo un reclamo', 'reclamo', /Eso lo ve directamente Rubén/],
+    ['tengo un reclamo', 'reclamo', /Déjame confirmarte las condiciones de garantía o devolución directamente con Rubén/],
     ['quiero hablar con Rubén', 'persona', /Eso lo ve Rubén directamente/],
     ['quiero comprar 20 copias para revender', 'volumen o reventa', /Las compras en cantidad o para reventa las conversa Rubén directamente contigo/],
     ['no puedo abrir el PDF', 'material que no abre', /Eso lo ve Rubén directamente/],
@@ -596,7 +596,9 @@ describe('la derivación a Rubén: texto fijo, aviso y botón', () => {
       const t = hablar(w, ANA, mTexto(texto));
       expect(t.mensajes, rotulo).toHaveLength(1);
       expect(t.mensajes[0]!.cuerpo, rotulo).toMatch(re);
-      expect(t.mensajes[0]!.cuerpo, rotulo).toMatch(/[Ll]e avisé; también puedes escribirle directo con el botón/);
+      // Garantía o devolución (Silvana, 07/11/2026): el texto va solo, sin «Le avisé» ni «No pude avisarle»; el aviso a Rubén sale igual.
+      if (rotulo === 'devolución' || rotulo === 'reclamo') expect(t.mensajes[0]!.cuerpo, rotulo).not.toMatch(/[Ll]e avisé|No pude avisarle/);
+      else expect(t.mensajes[0]!.cuerpo, rotulo).toMatch(/[Ll]e avisé; también puedes escribirle directo con el botón/);
       expect(esBotonDeRubén(t), rotulo).toBe(true);
       expect(t.avisos, rotulo).toHaveLength(1);
       expect(t.ejecutados.has('Conversar con el modelo'), rotulo).toBe(false);
@@ -630,18 +632,20 @@ describe('la derivación a Rubén: texto fijo, aviso y botón', () => {
     }
   });
 
-  it('si el aviso NO salió, el texto dice que no se pudo avisar (nunca «ya le avisé») y trae el botón', () => {
+  it('si el aviso NO salió, el texto no dice «ya le avisé»; la garantía/devolución NO muestra ningún error al cliente (Silvana, 07/11/2026) y trae el botón', () => {
     const w = nuevo({ aviso: 'error' });
     const t = hablar(w, ANA, mTexto('quiero una devolución'));
-    expect(t.mensajes[0]!.cuerpo).toMatch(/No pude avisarle; escríbele directo con el botón/);
-    expect(t.mensajes[0]!.cuerpo).not.toMatch(/ya le avisé/i);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Déjame confirmarte las condiciones de garantía o devolución directamente con Rubén/);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/No pude avisarle|ya le avisé|Le avisé|no tiene garantía/i);
+    const o = hablar(nuevo({ aviso: 'error' }), ANA, mTexto('quiero hablar con Rubén'));
+    expect(o.mensajes[0]!.cuerpo).toMatch(/No pude avisarle/);
     expect(esBotonDeRubén(t)).toBe(true);
   });
 
   it('NO HAY GARANTÍA: la frase es fija en código (un dato `garantiaTexto` ya no la cambia) y no promete nada; con botón y aviso', () => {
     const w = nuevo({ base: { garantiaTexto: 'La garantía la define Rubén caso por caso y la responde por este chat.' } });
     const t = hablar(w, ANA, mTexto('¿hay garantía?'));
-    expect(t.mensajes[0]!.cuerpo).toMatch(/no tiene garantía de devolución/);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Déjame confirmarte las condiciones de garantía o devolución directamente con Rubén/);
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/caso por caso|te devolvemos|te reembolsamos|te garantizo/i);
     expect(esBotonDeRubén(t)).toBe(true);
     expect(t.avisos).toHaveLength(1);
@@ -676,8 +680,8 @@ describe('la derivación a Rubén: texto fijo, aviso y botón', () => {
     const w = nuevo();
     saludar(w);
     const t = hablar(w, ANA, mTexto('¿me garantizan que voy a dormir en 21 días?'));
-    expect(t.mensajes[0]!.cuerpo).toMatch(/No puedo prometerte que vayas a dormir de una forma o desde una fecha/);
-    expect(t.mensajes[0]!.cuerpo).toMatch(/No es un consejo médico/);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/No, y desconfía de quien lo prometa:\s+cada persona es distinta\.\s+El libro te da un método educativo para identificar qué afecta tus noches y un plan de 21 días para practicar\.\s+Los resultados dependen de tu constancia y de tu situación personal 🌙/);
+    expect(esBotonDeRubén(t)).toBe(false);
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
     expect(t.avisos).toHaveLength(0);
   });
