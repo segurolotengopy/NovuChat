@@ -27,6 +27,11 @@ const mod = await import('../../../scripts/datos/qtaco/cargar-campanas.mjs') as 
   sumarDias: (f: string, n: number) => string;
   diasEntre: (a: string, b: string) => number;
   TEXTOS_APROBADOS: Record<string, string>;
+  TITULARES_APROBADOS: Record<string, string[]>;
+  validarContenidoDelRespaldo: (r: unknown) => string | null;
+  armarLista: (d: unknown, hoy: string) => Array<Record<string, unknown>>;
+  planDeLista: (e: unknown[], d: unknown, hoy: string) => { filas: Array<{ estado: string }> };
+  MAX_TITULARES: number; MIN_LARGO_TITULAR: number; MAX_LARGO_TITULAR: number; MAX_TITULARES_AL_FLUJO: number;
   ejecutar: (cfg: Record<string, unknown>, datos: unknown, deps: Record<string, unknown>) => Promise<number>;
   enFranjaDeMedianoche: (ms: number) => boolean;
   MAX_DIAS_DE_DURACION: number; MAX_DIAS_HASTA_EL_INICIO: number; MINIMO_TEXTO: number; TOPE_TEXTO: number; DIAS_DE_VIGENCIA: number;
@@ -41,7 +46,7 @@ const tmp = mkdtempSync(join(tmpdir(), 'cargar-campanas-qtaco-'));
 chmodSync(tmp, 0o700);
 let n = 0;
 const respaldo = (): string => join(tmp, `respaldo-${n++}.json`);
-type Camp = { id: string; texto: string; productoId?: string };
+type Camp = { id: string; texto: string; titulares?: string[]; productoId?: string };
 type Datos = { tenant: string; campanas: Camp[] };
 const base = JSON.parse(readFileSync(ARCHIVO, 'utf8')) as Datos;
 const bueno = (mod2: (d: Datos) => void = () => undefined, tenant = T): Datos => { const d = JSON.parse(JSON.stringify(base)) as Datos; d.tenant = tenant; mod2(d); return d; };
@@ -106,6 +111,11 @@ describe('cargar-campanas.mjs de Q\'Taco — lo que se NIEGA', () => {
       ['invisible', (d) => { d.campanas[0]!.texto = `${mod.TEXTOS_APROBADOS['tortas-mexicanas']}​`; }, /invisibles/],
       ['id-ajeno', (d) => { d.campanas[0]!.id = 'otra-promo'; }, /no es una de las campañas de Q'Taco/],
       ['repetido', (d) => { d.campanas[1] = { ...d.campanas[0]! }; }, /repetido/],
+      ['monto', (d) => { d.campanas[0]!.titulares = ['Tortas Mexicanas Bs 15']; }, /titulares\[0\]: un titular no lleva montos/],
+      ['corto', (d) => { d.campanas[1]!.titulares = ['Jueve']; }, /de 6 a 100 caracteres/],
+      ['repetido-entre-campanas', (d) => { d.campanas[1]!.titulares = ['Tortas Mexicanas']; }, /ya lo usa la campaña «tortas-mexicanas»/],
+      ['distintos-de-los-aprobados', (d) => { d.campanas[0]!.titulares = ['Tortas Gigantes']; }, /no son los titulares exactos de la imagen/],
+      ['sin-titulares', (d) => { delete d.campanas[0]!.titulares; }, /titulares: obligatorios/],
       ['clave', (d) => { (d.campanas[0] as Record<string, unknown>)['fin'] = '2099-01-01'; }, /clave desconocida/],
     ];
     for (const [nombre, mut, esperado] of casos) {
@@ -186,7 +196,7 @@ describe('cargar-campanas.mjs de Q\'Taco — lo que SÍ hace', () => {
     const codigo = await mod.ejecutar({ entorno: 'emulador', aplicar: true, revertir: false, respaldo: respaldo(), ...extra }, datos, { db, Timestamp, log, ahora: () => ahora, esperaMs: 3000, pausaMs: 50 });
     return { codigo, salida: salida.join('\n') };
   }
-  const iguales = (fin: string) => (id: string) => ({ id, texto: mod.TEXTOS_APROBADOS[id]!, inicio: mod.sumarDias(HOY, -10), fin });
+  const iguales = (fin: string) => (id: string) => ({ id, texto: mod.TEXTOS_APROBADOS[id]!, inicio: mod.sumarDias(HOY, -10), fin, titulares: mod.TITULARES_APROBADOS[id]! });
 
   it('en SECO (por omisión) dice qué cargaría, la fecha de renovación, y NO escribe: ni la lista, ni el sello, ni la auditoría, ni el respaldo', async () => {
     await sembrar(null);
@@ -217,7 +227,7 @@ describe('cargar-campanas.mjs de Q\'Taco — lo que SÍ hace', () => {
     expect(l.find((c) => c['id'] === 'otra-del-comercio')).toEqual(ajena);
     for (const id of ['tortas-mexicanas', 'jueves-de-mas-2']) {
       const c = l.find((x) => x['id'] === id)!;
-      expect(Object.keys(c).sort()).toEqual(['fin', 'id', 'inicio', 'texto']);
+      expect(Object.keys(c).sort()).toEqual(['fin', 'id', 'inicio', 'texto', 'titulares']);
       expect(c['texto']).toBe(mod.TEXTOS_APROBADOS[id]);
       expect(c['inicio']).toBe(HOY);
       expect(c['fin']).toBe(mod.sumarDias(HOY, 365));
@@ -262,6 +272,25 @@ describe('cargar-campanas.mjs de Q\'Taco — lo que SÍ hace', () => {
     const buena = await aplicar();
     expect(buena.codigo, buena.salida).toBe(0);
     expect(buena.salida).toMatch(/nada que hacer/);
+  });
+  it('«igual» con los titulares viejos (sin titulares) es «cambia»: la huella del servidor cambia y se revisa de nuevo', () => {
+    const viejo = { id: 'tortas-mexicanas', texto: mod.TEXTOS_APROBADOS['tortas-mexicanas']!, inicio: mod.sumarDias(HOY, -10), fin: mod.sumarDias(HOY, 100) };
+    expect(mod.planDeLista([viejo], bueno(), HOY).filas[0]!.estado).toBe('cambia');
+    expect(mod.planDeLista([{ ...viejo, titulares: mod.TITULARES_APROBADOS['tortas-mexicanas'] }], bueno(), HOY).filas[0]!.estado).toBe('igual');
+    expect(mod.planDeLista([{ ...viejo, titulares: ['Otro titular'] }], bueno(), HOY).filas[0]!.estado).toBe('cambia');
+    expect(mod.planDeLista([{ ...viejo, titulares: mod.TITULARES_APROBADOS['tortas-mexicanas'], angulo: 'x' }], bueno(), HOY).filas[0]!.estado).toBe('cambia');
+  });
+  it('las cifras de los titulares son las del servidor, y las dos campañas del JSON pasan `revisarSinModelo` (el servidor de verdad)', async () => {
+    const srv = await import('../../../functions/src/modulos/campanas/campanas.ts');
+    expect(mod.MAX_TITULARES).toBe(srv.MAX_TITULARES);
+    expect(mod.MIN_LARGO_TITULAR).toBe(srv.MIN_LARGO_TITULAR);
+    expect(mod.MAX_LARGO_TITULAR).toBe(srv.MAX_LARGO_TITULAR);
+    expect(mod.MAX_TITULARES_AL_FLUJO).toBe(srv.MAX_TITULARES_AL_FLUJO);
+    const ahora = Date.now();
+    const hoy = srv.diaBolivia(ahora);
+    const veredictos = srv.revisarSinModelo(mod.armarLista(bueno(), hoy) as never, [], 10, ahora, { ids: [], nombres: [] }, new Set());
+    expect([...veredictos.keys()].sort()).toEqual(['jueves-de-mas-2', 'tortas-mexicanas']);
+    for (const [id, v] of veredictos) expect(v, id).toBeNull();
   });
   it('RENOVACIÓN: igual pero a menos de 30 días del fin = «cambia» (fin a 5 días); a 30 o más = «igual»; RENOVAR muestra el fin MÁS PRÓXIMO', async () => {
     const aprobada = { hash: 'x', porCampana: { 'tortas-mexicanas': { estado: 'aprobada' }, 'jueves-de-mas-2': { estado: 'aprobada' } } };
@@ -390,6 +419,14 @@ describe('cargar-campanas.mjs de Q\'Taco — lo que SÍ hace', () => {
     // 4) Un respaldo que no existe se rechaza.
     expect(correr(['--revertir', '--respaldo', join(tmp, 'no-existe.json')]).codigo).toBe(2);
   });
+  it('un respaldo con titulares (hasta 3) es válido; con 4, inválido', () => {
+    const r = (t: string[]) => ({
+      version: 1, entorno: 'emulador', tenant: T, creadoEn: 'x', previo: { documento: true, lista: [ajena] },
+      escrito: [{ id: 'tortas-mexicanas', texto: mod.TEXTOS_APROBADOS['tortas-mexicanas'], inicio: '2026-11-10', fin: '2027-11-10', titulares: t }],
+    });
+    expect(mod.validarContenidoDelRespaldo(r(['Tortas Mexicanas', 'Mañanas Tortas Mexicanas']))).toBeNull();
+    expect(mod.validarContenidoDelRespaldo(r(['a a a a', 'b b b b', 'c c c c', 'd d d d']))).not.toBeNull();
+  });
   it('NEGADO: un respaldo con contenido malo (id ajeno, claves de más, demasiadas campañas, enlace simbólico, archivo enorme) se rechaza con 2 y no escribe', async () => {
     const buenoR = (mut: (r: Record<string, any>) => void = () => undefined): Record<string, unknown> => {
       const r: Record<string, any> = {
@@ -404,7 +441,8 @@ describe('cargar-campanas.mjs de Q\'Taco — lo que SÍ hace', () => {
     const antes = await lista();
     const casos: Array<[string, string]> = [
       ['ajeno', guardar('ajeno', buenoR((r) => { r['escrito'][0].id = 'otra-del-comercio'; }))],
-      ['clave-escrita', guardar('clave-escrita', buenoR((r) => { r['escrito'][0].titulares = ['x']; }))],
+      ['clave-escrita', guardar('clave-escrita', buenoR((r) => { r['escrito'][0].angulo = 'x'; }))],
+      ['cuatro-titulares', guardar('cuatro-titulares', buenoR((r) => { r['escrito'][0].titulares = ['Uno uno', 'Dos dos', 'Tres tres', 'Cuatro cuatro']; }))],
       ['clave-regla', guardar('clave-regla', buenoR((r) => { r['previo'].lista[0].admin = true; }))],
       ['regla-corta', guardar('regla-corta', buenoR((r) => { r['previo'].lista = [{ id: 'x', texto: 'y' }]; }))],
       ['texto-largo', guardar('texto-largo', buenoR((r) => { r['previo'].lista[0].texto = 'a'.repeat(301); }))],
