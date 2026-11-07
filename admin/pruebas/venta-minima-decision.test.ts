@@ -114,6 +114,13 @@ function _vig(c, ahora){ const i = Date.parse(c.inicio); const f = Date.parse(c.
 function prCampanaDelTexto(campanas, texto, ahora){ const n = vmNorm(texto); return campanas.find(function(c){ return vmNorm(c.texto) === n && _vig(c, ahora); }) || null; }
 function prSoloReserva(){ return null; }
 function prPedidoConMensaje(){ return null; }
+function prVariacion(){ return null; }
+function prCampanaDelReferral(){ return null; }
+function prCampanaDeLaImagen(){ return null; }
+function prTipoDeCampana(){ return ''; }
+function prAreaDelPedido(){ return ''; }
+function prRespuestaDeVariante(){ return null; }
+function anuncioPorTitular(){ return null; }
 function prFicha(c, carta, ahora){ if (!c || !_vig(c, ahora)) return null; const t = ' ' + vmNorm(c.texto) + ' '; const m = carta.filter(function(i){ return t.indexOf(' ' + vmNorm(i.nombre) + ' ') >= 0; }); return m.length ? { id: String(m[0].id), nombre: m[0].nombre, precio: m[0].precio } : null; }
 function prTexto(f, cfg){ if (!f) return null; const b = []; if (cfg.pedidosActivo === true) b.push({ id: 'g|pedir|' + f.id, title: 'Pedir la promo' }); if (cfg.reservasActivo === true) b.push({ id: 'm|reserva', title: 'Reservar mesa' }); if (cfg.pedidosActivo === true) b.push({ id: 'm|pedido', title: 'Ver la carta' }); return { cuerpo: '¡Hola! Qué bueno que viste nuestra promo. ' + f.nombre + '. Precio: ' + f.precio + ' Bs.', botones: b }; }
 

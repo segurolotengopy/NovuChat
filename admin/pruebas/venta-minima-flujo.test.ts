@@ -156,6 +156,8 @@ function crear(op: OpcionesDeLaPrueba = {}) {
     'Descargar medio': () => ({}),
     'Guardar comprobante': (ll) => ({ statusCode: 200, body: { ruta: `tenants/qtaco/comprobantes/2026-10-26/${String(ll.encabezados['X-NovuChat-IdMeta'] ?? 'x').replace(/[^A-Za-z0-9_-]/g, '_')}.jpg` } }),
     'Transcribir audio': () => ({ content: { parts: [{ text: 'quiero 4 tacos de birria' }] } }),
+    // Adenda de campañas (06/11): una foto sin cobro pendiente y con campañas vigentes se clasifica; por omisión Gemini «no responde» (sin saldo) = el comportamiento de antes.
+    'Clasificar imagen': () => ({ error: { message: 'sin saldo' } }),
     'Leer comprobante (imagen)': () => lecturaCorrecta('63.00'),
     'Leer comprobante (PDF)': () => lecturaCorrecta('63.00'),
     'Cotejar en el servidor': () => estado.cotejo,
@@ -1888,8 +1890,9 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
 
   describe('campaña de solo reserva «Jueves de +2» (dato del negocio, 05/11)', () => {
     const JUEVES = 'Hola, vi la promoción Jueves de +2 y quiero hacer una reserva.';
-    const MENSAJE = "¡Hola! 🌮 Los jueves puedes agrandar tu Q'Taco Dúo: solo por Bs 8 más recibes 2 tacos extra. El total es Bs 178 para 2 personas. Esta promoción es solo los jueves, para consumo en el local; igual puedes reservar tu mesa el día que quieras. ¿Quieres hacer una reserva?";
-    const config = { campanaReservaTexto: JUEVES, campanaReservaMensaje: MENSAJE };
+    const MENSAJE = "¡Hola! 🌮 Los jueves puedes agrandar tu Q'Taco Dúo: solo por Bs 8 más recibes 2 tacos extra. El total es Bs 178 para 2 personas. Esta promoción está disponible solo los jueves para consumo en el restaurante. ¿Quieres hacer una reserva?";
+    // `campanaReservaNoJueves: ''`: estas pruebas corren un lunes y cubren el mensaje de la campaña; el día se prueba en venta-minima-anuncio-campanas.test.ts (C-12).
+    const config = { campanaReservaTexto: JUEVES, campanaReservaMensaje: MENSAJE, campanaReservaNoJueves: '' };
     const conJueves = (c: J = config, campanas: J[] = [campanaVigente('jueves', JUEVES)]) => crear({ panel: panel({ campanas }), config: c });
     it('NEGANDO: sin el dato del negocio, el texto del anuncio no dispara nada (menú normal)', () => {
       const t = con(conJueves({ campanaReservaTexto: '', campanaReservaMensaje: '' })).escribe(JUEVES);
@@ -1918,7 +1921,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     });
     it('con el mensaje ENTERO de los datos de Q\'Taco: sale completo, solo «Reservar mesa»; un «sí»/«quiero» justo después no vende (rige el comportamiento actual)', () => {
       const b = configBase(QTACO);
-      const w = conJueves({ campanaReservaTexto: String(b['campanaReservaTexto']), campanaReservaMensaje: String(b['campanaReservaMensaje']) }, [campanaVigente('jueves', String(b['campanaReservaTexto']))]);
+      const w = conJueves({ campanaReservaTexto: String(b['campanaReservaTexto']), campanaReservaMensaje: String(b['campanaReservaMensaje']), campanaReservaNoJueves: '' }, [campanaVigente('jueves', String(b['campanaReservaTexto']))]);
       const c = con(w);
       const t = c.escribe(String(b['campanaReservaTexto']));
       expect(cuerpos(t)[0]).toBe(String(b['campanaReservaMensaje']));
@@ -1937,21 +1940,22 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
   });
 
   describe('campaña de pedido «Tortas mexicanas» (dato del negocio, 06/11)', () => {
-    it('el dato de Q\'Taco: la campaña de reserva no nombra alcohol y el mensaje de pedido es el literal, sin «Promos/Ofertas»', () => {
+    it('el dato de Q\'Taco: la campaña de reserva no nombra alcohol y el mensaje de pedido es el de la adenda (con «Promos/Ofertas»: el botón ya lleva a esa área, C-04)', () => {
       const b = configBase(QTACO);
       expect(String(b['campanaReservaMensaje'])).not.toMatch(/tequila|rompope/i);
-      expect(String(b['campanaPedidoMensaje'])).toBe("¡Hola! Bienvenido a Q'Taco 🌮 ¡Gracias por escribirnos por la promo de las tortas mexicanas! Tenemos opciones sin queso por Bs 15 y con queso por Bs 20 (ambas incluyen nuestra salsa mexicana especial). Puedes elegir entre las variedades disponibles y hacer tu pedido para recoger en el local o envío por delivery tocando el botón de abajo.");
-      expect(String(b['campanaPedidoMensaje'])).not.toMatch(/Promos|Ofertas/);
+      expect(String(b['campanaPedidoMensaje'])).toBe("¡Hola! Bienvenido a Q'Taco 🌮 ¡Gracias por escribirnos por la promo de las tortas mexicanas! Tenemos opciones sin queso por Bs 15 y con queso por Bs 20 (ambas incluyen nuestra salsa mexicana especial). Puedes elegir entre las variedades disponibles y hacer tu pedido para recoger en el local o envío por delivery tocando el botón de abajo, que te llevará directo a la sección de Promos/Ofertas de nuestra carta.");
+      expect(String(b['campanaPedidoArea'])).toBe('promociones');
     });
     const TORTAS = 'Hola, vi el anuncio de las tortas mexicanas y quiero hacer un pedido.';
     const MSG = "¡Hola! Bienvenido a Q'Taco 🌮 Tenemos tortas sin queso por Bs 15 y con queso por Bs 20. Toca el botón";
-    const config = { campanaPedidoTexto: TORTAS, campanaPedidoMensaje: MSG };
+    const config = { campanaPedidoTexto: TORTAS, campanaPedidoMensaje: MSG, campanaPedidoArea: '', campanaReservaNoJueves: '' };
     const catalogo = [...CATALOGO, it_('torta-sin', 'Torta mexicana sin queso', 15, 'Promociones'), it_('torta-con', 'Torta mexicana con queso', 20, 'Promociones')];
     const conTortas = (c: J = config, campanas: J[] = [campanaVigente('tortas', TORTAS)], extra: J = {}) => crear({ panel: panel({ campanas, catalogo, ...extra }), config: c });
     const sale = (t: ResultadoTurno): string => cuerpos(t).join('\n');
     it('NEGANDO: sin el dato, con otro texto, vencida, ausente en el servidor, pedidos apagados o mensaje vacío: no dispara', () => {
       expect(sale(con(conTortas({ campanaPedidoTexto: '', campanaPedidoMensaje: '' })).escribe(TORTAS))).not.toContain('sin queso por Bs 15');
-      expect(sale(con(conTortas()).escribe('Hola, vi el anuncio de las tortas mexicanas y quiero un pedido grande'))).not.toContain('sin queso por Bs 15');
+      // (C-07, 06/11) Con otras palabras SÍ es la campaña: una variación con la promo nombrada muestra el mismo mensaje (ver venta-minima-anuncio-campanas.test.ts).
+      expect(sale(con(conTortas()).escribe('Hola, vi el anuncio de las tortas mexicanas y quiero un pedido grande'))).toContain('sin queso por Bs 15');
       expect(sale(con(conTortas()).escribe('hola quiero tortas'))).not.toContain('sin queso por Bs 15');
       const vencida = conTortas(config, [campanaVigente('tortas', TORTAS, AHORA - 10 * DIA, AHORA - 2 * DIA)]);
       expect(sale(con(vencida).escribe(TORTAS))).not.toContain('sin queso por Bs 15');
@@ -2003,7 +2007,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       expect(mensaje).toContain(`sin queso por Bs ${sin['precio']}`);
       expect(mensaje).toContain(`con queso por Bs ${con_['precio']}`);
       expect([...mensaje.matchAll(/Bs (\d+)/g)].map((m) => Number(m[1])).sort()).toEqual([sin['precio'], con_['precio']].map(Number).sort());
-      const w = conTortas({ campanaPedidoTexto: String(b['campanaPedidoTexto']), campanaPedidoMensaje: mensaje });
+      const w = conTortas({ campanaPedidoTexto: String(b['campanaPedidoTexto']), campanaPedidoMensaje: mensaje, campanaPedidoArea: String(b['campanaPedidoArea']) }, undefined, { catalogoWeb: { enlace: 'https://catalogo.ejemplo.com/c/x' } });
       const t = con(w).escribe(TORTAS);
       expect(cuerpos(t)[0]).toBe(mensaje);
       expect(t.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido']);
@@ -2646,7 +2650,8 @@ describe('cobro', () => {
   });
 
   it('una imagen sin QR pendiente NO es un pago: no se baja, no se lee, no se coteja, no se avisa; con pie de foto, el pie es un texto más', () => {
-    const w = crear({ panel: panel(COBRO_REAL) });
+    // Sin campañas vigentes que reconocer la foto no se baja (con campañas se clasifica: ver venta-minima-anuncio-campanas.test.ts).
+    const w = crear({ panel: panel({ ...COBRO_REAL, campanas: [] }) });
     const c = con(w);
     const t = c.imagen('media-5');
     for (const n of ['Obtener URL del medio', 'Descargar medio', 'Leer comprobante (imagen)', 'Cotejar en el servidor']) expect(t.ejecutados.has(n), n).toBe(false);
@@ -3124,8 +3129,8 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(71); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 9 del estado en el servidor (PR-4a) + los 2 de los cupos (PR-4b, aprobado por Andres (06/11/2026, en conversación)): el tope de producción es 71 (`construir.mjs` lo impone)
-    expect(PRUEBA.nodes).toHaveLength(67);
+    expect(QTACO.nodes).toHaveLength(73); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 9 del estado en el servidor (PR-4a) + los 2 de los cupos (PR-4b, aprobado por Andres (06/11/2026, en conversación)) + los 2 de la imagen del anuncio (aprobados por Andres el 06/11/2026): el tope de producción es 73 (`construir.mjs` lo impone)
+    expect(PRUEBA.nodes).toHaveLength(69);
   });
 
   it('L2: en producción un `wamid.SIMULADO-…` NO cuenta como aviso salido: el cliente no lee «pasé tu pedido» y el cierre no lo toma de referencia', () => {
@@ -4966,9 +4971,9 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
     expect(sim.qr.mensajes[0]?.payload['image']?.link).toBe(URL_SIMULADO); // es el QR de prueba, no el plan B que también da 3
   });
 
-  it('el JSON de Q\'Taco sigue en 71 nodos o menos (50 más los 9 del guardado de medios, «Guardar comprobante», los 9 del estado en el servidor y los 2 de los cupos) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
+  it('el JSON de Q\'Taco sigue en 73 nodos o menos (50 más los 9 del guardado de medios, «Guardar comprobante», los 9 del estado en el servidor y los 2 de los cupos) y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
     // Tope de Andres del 03/10/2026: 50. Desde el 29/10/2026, 61, y desde el contrato v2 del 30/10, 59: los 9 de la rama común del GUARDADO de medios (excepción declarada por Andres el 29/10/2026 para el guardado de medios, +9 nodos: docs/versiones-por-cliente.md).
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(71); // tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026) → 71 (PR-4b: aprobado por Andres (06/11/2026, en conversación))
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(73); // tope 60 → 69 (PR-4a, aprobado por Andres el 04/11/2026) → 71 (PR-4b: aprobado por Andres (06/11/2026, en conversación))
     const base = configBase(QTACO);
     expect(base['cobroSimuladoActivo']).toBe(true);
     expect(base['qrSimuladoUrl']).toBe(URL_SIMULADO);
