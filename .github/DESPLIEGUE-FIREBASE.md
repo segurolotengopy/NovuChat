@@ -199,15 +199,16 @@ del proyecto de producción. Lo que hay:
     para `sa-functions`, secreto por secreto). Después, `--cargar-resend <archivo>` carga la clave
     real (que Andres crea en el panel de Resend y deja en un archivo de modo 600 dentro de
     `$XDG_RUNTIME_DIR`; el script no la muestra y borra el archivo) y `--entregar-hmac` deja la
-    clave HMAC en otro archivo de modo 600 para el cargador de credenciales de n8n (nadie lo lee).
+    clave HMAC en otro archivo de modo 600 para el cargador de credenciales de n8n (nadie lo lee). **`--entregar-hmac --aplicar` está BLOQUEADO hasta que exista ese cargador** (hoy no existe; no se construye en el PR de la alerta): solo se corre en seco.
     **Una versión agregada después de desplegar no la ve ninguna instancia hasta el próximo
     despliegue.** Orden: pasos 1 a 3 → `--cargar-resend` → `--entregar-hmac` → desplegar la
     etiqueta → **`--invocador`** (paso aparte: delega en `nube-visor.sh --servicio alertaoperativa`,
     que da `run.invoker` a `allUsers` solo sobre ese servicio y comprueba que sin firma contesta
     401 «no autorizado»). La vuelta atrás de la condición es `--revertir-iam`. Staging:
-    `scripts/preparar-staging.sh alertas`. La configuración del correo (`dominioAvisos`,
-    `destinatario`, `enlaceHosts`, `avisosDenegar`, `topeDiario`) vive en el documento
-    `plataforma/alertas` de Firestore, no en el `.env` (el de producción es de dos nombres).
+    **Staging, ANTES de fusionar** (fusionar a `main` despliega a staging la Function y la tarea programada, y sin la condición de IAM ni los secretos el despliegue falla con 403): `scripts/preparar-staging.sh alertas` en seco y luego con `--aplicar`, y `verificar`. La configuración del correo (`dominioAvisos`,
+    `destinatario`, `enlaceHosts`, `enlaceRepos`, `avisosDenegar`, `topeDiario`) vive en el documento
+    `plataforma/alertas` de Firestore, no en el `.env` (el de producción es de dos nombres); se escribe con
+    `admin/scripts/plataforma/alertas-config.mjs` (seco por omisión, con respaldo y reversa).
   - **Ampliar la reserva de clientes** (más de 20) exige un paso **a mano**:
     dar `secretAccessor` sobre cada secreto nuevo a la cuenta de las Functions,
     **`sa-functions`**, secreto por secreto.

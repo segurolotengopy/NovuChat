@@ -63,7 +63,7 @@ export class ErrorAlerta extends Error {
 export class ErrorContrato extends Error {
   readonly estado: number;
   /** `id_unico` ya validado (forma y detectores) si se puede enviar el aviso `:bloqueado`; si no, `null`. */
-  constructor(readonly violaciones: Violacion[], readonly idParaBloqueo: string | null, readonly nivelOriginal: Nivel | null) {
+  constructor(readonly violaciones: Violacion[], readonly idParaBloqueo: string | null, readonly nivelOriginal: Nivel | null, readonly bloqueoSinId = false) {
     super('contrato_invalido');
     this.estado = violaciones.some((v) => REGLAS_DE_CONTENIDO.has(v.regla)) ? 422 : 400;
   }
@@ -82,10 +82,14 @@ const OTP_6 = /(?<!\p{Nd})\p{Nd}{6}(?!\p{Nd})/u;
 const IPV4 = /(?<!\p{Nd})\p{Nd}{1,3}(?:\.\p{Nd}{1,3}){3}(?!\p{Nd})/u;
 /** Dominio sin esquema (un host escrito en el texto). Las URL van solo en `enlace`. */
 const DOMINIO_SIN_ESQUEMA = /\b[a-z0-9-]+\.(?:com|net|org|bo|site|website|io|app|dev|test)\b/i;
-// Una fecha, una hora ISO o una versión (2.36.5) no son teléfonos: se tapan antes de buscar rachas de cifras.
-const FECHA_O_VERSION = /\p{Nd}{4}-\p{Nd}{2}-\p{Nd}{2}(?:T\p{Nd}{2}:\p{Nd}{2}(?::\p{Nd}{2})?Z?)?|(?<![\p{Nd}.])\p{Nd}{1,2}(?:\.\p{Nd}{1,3}){2}(?![\p{Nd}]|\.\p{Nd})/gu;
-// 7 o más cifras con hasta 3 separadores (espacio, NBSP, paréntesis, punto, guion) entre cada par: un teléfono escrito a mano.
-const RACHA_DE_TELEFONO = /\p{Nd}(?:[\s().-]{0,3}\p{Nd}){6,}/u;
+// Se tapan SOLO una fecha ISO con año plausible y una versión `d.dd.dd` (un solo dígito de versión mayor): lo demás
+// con forma de número separado es un teléfono. Antes se tapaba cualquier `dddd-dd-dd` y `dd.ddd.ddd`, y ahí cabía uno.
+const FECHA_ISO = /(?:19|20)\p{Nd}{2}-\p{Nd}{2}-\p{Nd}{2}(?:T\p{Nd}{2}:\p{Nd}{2}(?::\p{Nd}{2})?Z?)?/gu;
+const VERSION = /(?<![\p{Nd}.])\p{Nd}\.\p{Nd}{1,3}\.\p{Nd}{1,3}(?!\p{Nd}|\.\p{Nd})/gu;
+// 7 o más cifras con hasta 3 separadores entre cada par: espacio, NBSP, paréntesis, punto, cualquier guion Unicode
+// (\p{Pd}), barra, guion bajo, dos puntos o coma: «7123-45-67», «71.234.567», «7123/4567», «71,23,45,67».
+const RACHA_DE_TELEFONO = /\p{Nd}(?:[\s().\p{Pd}/_:,]{0,3}\p{Nd}){6,}/u;
+const sinFechasNiVersiones = (t: string): string => t.replace(FECHA_ISO, '#').replace(VERSION, '#');
 
 /**
  * `texto`: campos libres (ADR). `id`: `id_unico` (palabra larga sin guiones). `tipo`: `tipo_error`, una lista cerrada de
@@ -102,7 +106,8 @@ export function detectar(texto: string, denegar: readonly string[] = [], perfil:
   const palabra = perfil === 'texto' ? PALABRA_LARGA_TEXTO : perfil === 'tipo' ? null : PALABRA_LARGA_ESTRICTA;
   if (PREFIJOS_SECRETO.test(t) || (palabra !== null && partes.some((x) => palabra.test(x)))) reglas.push('secreto_posible');
   if (/\+\s?\p{Nd}/u.test(t) || DIGITOS_7.test(t)) reglas.push('telefono_o_identificador');
-  else if (RACHA_DE_TELEFONO.test(t.replace(FECHA_O_VERSION, '#'))) reglas.push('telefono_con_separadores');
+  else if (RACHA_DE_TELEFONO.test(sinFechasNiVersiones(t))) reglas.push('telefono_con_separadores');
+  if (perfil === 'id' && !reglas.includes('telefono_o_identificador') && t.replace(FECHA_ISO, '').replace(/\P{Nd}/gu, '').length >= 7) reglas.push('telefono_o_identificador');
   if (OTP_6.test(t)) reglas.push('codigo_tipo_otp');
   if (t.includes('@')) reglas.push('correo');
   if (perfil !== 'ruta' && (t.includes('://') || /\bwww\./i.test(t) || IPV4.test(t) || /localhost/i.test(t)
@@ -126,11 +131,19 @@ const tieneControl = (t: string, permiteSalto: boolean): boolean => CONTROL.test
 // ---------------------------------------------------------------------------
 // ENLACE: https, sin puerto/consulta/fragmento/IP, host EXACTO de la lista; se guarda `href` normalizado
 // ---------------------------------------------------------------------------
-/** La ruta de una ejecución de Actions (ids numéricos de ejecución y de job): no es un teléfono. */
-const RUTA_DE_EJECUCION = /^\/[^/]+\/[^/]+\/actions\/runs\/\d+(?:\/job\/\d+)?$/;
+/**
+ * La ruta de una ejecución de Actions de un repositorio de la lista CERRADA `plataforma/alertas.enlaceRepos`
+ * (`dueño/repo`), con ids de ejecución y de job de 8 a 12 cifras. Solo esos dos segmentos numéricos se reemplazan por `#`;
+ * TODO lo demás (dueño, repo, el resto de la ruta) pasa por los detectores completos. Sin repos configurados (defecto) no
+ * hay enlaces de Actions: los ids de 8 a 12 cifras son un «teléfono». Límite inherente: un id de ejecución de 11 cifras no se
+ * distingue de un teléfono de 11 cifras; lo cierra la lista de repos, no el detector.
+ */
+const RUTA_DE_EJECUCION = /^\/([^/]+)\/([^/]+)\/actions\/runs\/\d{8,12}(\/job\/\d{8,12})?$/;
 
 /** `href` normalizado, o la regla que lo rechaza. */
-export function analizarEnlace(enlace: string, hosts: readonly string[], denegar: readonly string[] = []): { href: string } | { regla: string } {
+export function analizarEnlace(
+  enlace: string, hosts: readonly string[], denegar: readonly string[] = [], repos: readonly string[] = [],
+): { href: string } | { regla: string } {
   const no = (regla = 'enlace_no_permitido'): { regla: string } => ({ regla });
   if (enlace.length > LIMITES.enlace || /[\s\\@?#]/.test(enlace) || CONTROL.test(enlace)) return no();
   let u: URL;
@@ -140,20 +153,22 @@ export function analizarEnlace(enlace: string, hosts: readonly string[], denegar
   if (/^[\d.]+$/.test(host) || host.includes(':') || host.includes('[')) return no();
   const permitidos = hosts.map((h) => h.trim().toLowerCase()).filter(Boolean);
   if (!permitidos.includes(host)) return no();
-  // La ruta también es contenido: se decodifica y pasa por los detectores (un secreto o un correo escondidos en el
-  // path). Solo la regla de 7+ cifras se exime para la ruta de una ejecución de Actions (interpretación del contrato,
-  // a confirmar con WAM).
+  // La ruta también es contenido: se decodifica y pasa por los detectores (un secreto o un correo escondidos en el path).
   let ruta: string;
   try { ruta = decodeURIComponent(u.pathname); } catch { return no(); }
   if (CONTROL.test(ruta)) return no('caracter_control');
-  const exenta = RUTA_DE_EJECUCION.test(ruta);
-  const malas = detectar(ruta, denegar, 'ruta').filter((r) => !(exenta && (r === 'telefono_o_identificador' || r === 'telefono_con_separadores')));
+  const m = RUTA_DE_EJECUCION.exec(ruta);
+  const listados = repos.map((r) => r.trim().toLowerCase()).filter(Boolean);
+  const aMirar = m && listados.includes(`${m[1]}/${m[2]}`.toLowerCase())
+    ? ruta.replace(/\/runs\/\d+/, '/runs/#').replace(/\/job\/\d+/, '/job/#')
+    : ruta;
+  const malas = detectar(aMirar, denegar, 'ruta');
   if (malas.length > 0) return no(malas[0]);
   return { href: u.href };
 }
 
-export function enlaceNormalizado(enlace: string, hosts: readonly string[], denegar: readonly string[] = []): string | null {
-  const r = analizarEnlace(enlace, hosts, denegar);
+export function enlaceNormalizado(enlace: string, hosts: readonly string[], denegar: readonly string[] = [], repos: readonly string[] = []): string | null {
+  const r = analizarEnlace(enlace, hosts, denegar, repos);
   return 'href' in r ? r.href : null;
 }
 
@@ -173,7 +188,7 @@ export const MAX_ID_PARA_BLOQUEO = 108;
 
 const recortar = (t: string, max: number): string => [...t].slice(0, max).join('');
 
-export interface ConfigContenido { hosts: readonly string[]; denegar: readonly string[]; ahoraMs: number }
+export interface ConfigContenido { hosts: readonly string[]; denegar: readonly string[]; ahoraMs: number; repos?: readonly string[] }
 
 export function validarEntrada(cuerpo: unknown, cfg: ConfigContenido): EventoValidado {
   if (!cuerpo || typeof cuerpo !== 'object' || Array.isArray(cuerpo)) throw new ErrorAlerta('cuerpo_invalido', 400);
@@ -217,7 +232,7 @@ export function validarEntrada(cuerpo: unknown, cfg: ConfigContenido): EventoVal
   // Enlace.
   let enlace: string | null = null;
   if (typeof d['enlace'] === 'string' && s('enlace')) {
-    const a = analizarEnlace(s('enlace'), cfg.hosts, cfg.denegar);
+    const a = analizarEnlace(s('enlace'), cfg.hosts, cfg.denegar, cfg.repos ?? []);
     if ('href' in a) enlace = a.href; else mal('enlace', a.regla);
   }
 
@@ -268,7 +283,10 @@ export function validarEntrada(cuerpo: unknown, cfg: ConfigContenido): EventoVal
 
   if (v.length > 0) {
     const nivelOk = (NIVELES as readonly string[]).includes(s('nivel')) ? (s('nivel') as Nivel) : null;
-    throw new ErrorContrato(v, proyectoOk && idOk && s('id_unico').length <= MAX_ID_PARA_BLOQUEO ? s('id_unico') : null, nivelOk);
+    const idBloqueo = proyectoOk && idOk && s('id_unico').length <= MAX_ID_PARA_BLOQUEO ? s('id_unico') : null;
+    // Un `id_unico` inválido NO pierde la alerta: sale un aviso bloqueado con un id del SERVIDOR (`id-invalido-<hora UTC>`),
+    // sin ningún valor del llamador y, por el id, a lo más uno por hora.
+    throw new ErrorContrato(v, idBloqueo, nivelOk, proyectoOk && idBloqueo === null);
   }
   return {
     aviso: {
@@ -288,7 +306,7 @@ export function avisoBloqueado(e: ErrorContrato, ahoraMs: number): AvisoV1 {
     que_paso: `Un aviso de ${PROYECTO} no cumplió el contrato v1.\nFalló en: ${lista}.\nSu contenido no se envió.`,
     que_se_espera_de_andres: `nada; la sesión de ${PROYECTO} corrige el emisor`,
     enlace: null, ocurrido_en: new Date(ahoraMs).toISOString().slice(0, 19) + 'Z',
-    id_unico: `${e.idParaBloqueo}:bloqueado`,
+    id_unico: e.idParaBloqueo !== null ? `${e.idParaBloqueo}:bloqueado` : `id-invalido-${new Date(ahoraMs).toISOString().slice(0, 13)}`,
   };
 }
 

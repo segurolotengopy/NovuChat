@@ -122,4 +122,19 @@ describe('preparar-staging.sh alertas', () => {
     const fuente = readFileSync(SCRIPT, 'utf8');
     expect(fuente).toContain('(INGESTA_, GEMINI_API_KEY, COBRADOR_, SALIDA_PERSONA_, ALERTAS_)');
   });
+  it('la nota de `cuentas` nombra las dos fases que amplían la condición', () => {
+    expect(readFileSync(SCRIPT, 'utf8')).toContain('para ampliarlo, fases salida-persona y alertas');
+  });
+  it('`verificar` comprueba que la condición cubre ALERTAS_ y que los dos secretos existen; sin la fase, falla', () => {
+    const antes = correr('verificar');
+    expect(antes.salida).toContain('NO cubre ALERTAS_');
+    expect(antes.salida).toContain('ALERTAS_HMAC no existe');
+    expect(antes.salida).toContain('ALERTAS_RESEND_API_KEY no existe');
+    correr('alertas', ['--aplicar']);
+    const despues = correr('verificar');
+    expect(despues.salida).toContain('cubre ALERTAS_');
+    expect(despues.salida).not.toContain('NO cubre ALERTAS_');
+    expect(despues.salida).toContain('ALERTAS_HMAC existe');
+    expect(despues.salida).toContain('ALERTAS_RESEND_API_KEY existe');
+  });
 });

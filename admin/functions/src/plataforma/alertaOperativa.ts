@@ -129,6 +129,10 @@ export interface AlmacenAlertas {
   pendientesDeResumen(): Promise<EventoGuardado[]>;
   /** Marca esos eventos como incluidos en un resumen ya ENVIADO. */
   marcarResumidos(ids: string[], ms: number): Promise<void>;
+  /** La lista de ids (y la hora) que se fijó para el resumen del día ANTES de enviarlo, o `null`. */
+  resumenDelDia(dia: string): Promise<{ ids: string[]; ahoraMs: number } | null>;
+  fijarResumenDelDia(dia: string, ids: string[], ahoraMs: number): Promise<void>;
+  eventosPorId(ids: string[]): Promise<EventoGuardado[]>;
   /** Hasta cuándo (ms) no se llama a Resend por cuota agotada, o `null`. */
   cuotaHasta(): Promise<number | null>;
   marcarCuota(hastaMs: number): Promise<void>;
@@ -199,21 +203,25 @@ export function autenticar(p: Peticion, secreto: string, ahoraMs: number): { ok:
   return ok ? { ok: true, crudo } : { ok: false, respuesta: { status: 401, cuerpo: 'no autorizado' } };
 }
 
-export interface ConfigProceso extends DepsProceso { hosts: readonly string[]; denegar: readonly string[] }
+export interface ConfigProceso extends DepsProceso { hosts: readonly string[]; denegar: readonly string[]; repos?: readonly string[] }
 
 export async function procesar(crudo: Buffer, cfg: ConfigProceso): Promise<RespuestaAlerta> {
   try {
-    const ev = validarEntrada(JSON.parse(crudo.toString('utf8')), { hosts: cfg.hosts, denegar: cfg.denegar, ahoraMs: cfg.ahoraMs });
+    const ev = validarEntrada(JSON.parse(crudo.toString('utf8')), { hosts: cfg.hosts, denegar: cfg.denegar, ahoraMs: cfg.ahoraMs, repos: cfg.repos ?? [] });
     const r = await procesarEvento(ev, cfg);
     return { status: 200, cuerpo: r.estado };
   } catch (error) {
     if (error instanceof ErrorContrato) {
       // Rechazado entero. Si proyecto e id_unico son válidos, sale el aviso de texto fijo (solo campo y regla).
-      if (error.idParaBloqueo !== null) {
+      if (error.idParaBloqueo !== null || error.bloqueoSinId) {
         const b = avisoBloqueado(error, cfg.ahoraMs);
         try {
           await procesarEvento({ aviso: b, tipo_error: 'contenido_bloqueado', flujo: '', nodo: '', saneado: false }, cfg);
-        } catch { console.error('ALERTA_OPERATIVA_BLOQUEADO_FALLO'); }
+        } catch {
+          // La base falló: el aviso del bloqueo NO se pierde; se intenta el correo directo (misma Idempotency-Key).
+          console.error('ALERTA_OPERATIVA_BLOQUEADO_FALLO');
+          if (cfg.enviar) { try { await cfg.enviar(armarCorreo(b)); } catch { console.error('ALERTA_OPERATIVA_BLOQUEADO_ENVIO_FALLO'); } }
+        }
       }
       return { status: error.estado, cuerpo: error.cuerpo };
     }
@@ -261,24 +269,41 @@ export function armarResumen(eventos: EventoGuardado[], ahoraMs: number): Envio 
 
 /**
  * Sale SOLO si hay eventos que ningún resumen incluyó (`resumido_en == null`). Sin eventos no hay correo (el latido es
- * de la vigía de FinOps). LA CARRERA, resuelta sin ventanas de tiempo: cada evento incluido se marca `resumido_en` DESPUÉS de
- * que el envío salió bien. Uno que llega mientras se envía no estaba en la lista, queda sin marca y va en el resumen
- * siguiente; si el envío falla, nada se marca y el reintento vuelve a juntar los mismos. El costo: si marcar falla a
- * medias, esos eventos se repiten en el resumen siguiente (nunca se pierden).
+ * de la vigía de FinOps).
+ *
+ * LA CARRERA Y EL 409, resueltos con UNA lista fija por día: la lista de ids (y la hora) del resumen se guarda en
+ * `control/resumen_<día>` ANTES de enviar, y todo reintento del mismo día reusa ESA lista y esa hora: el cuerpo es
+ * idéntico (la Idempotency-Key `novuchat:resumen-<día>` no choca) y solo se marcan esos ids. Un evento que llega después
+ * (C) no está en la lista: queda pendiente para el resumen del día siguiente, aunque Resend conteste 409 al reintento.
+ * Si el envío falla, nada se marca. Si marcar falla a medias, el reintento reenvía la misma lista y vuelve a marcar.
+ * Una vez que todos los de la lista están marcados, ese día no sale otro resumen.
  */
 export async function enviarResumenDiario(deps: { almacen: AlmacenAlertas; enviar: Enviar | null; ahoraMs: number }): Promise<{ eventos: number; enviado: boolean }> {
-  const eventos = await deps.almacen.pendientesDeResumen();
-  if (eventos.length === 0) return { eventos: 0, enviado: false };
+  const dia = diaUtc(deps.ahoraMs);
+  const previo = await deps.almacen.resumenDelDia(dia);
+  let eventos: EventoGuardado[];
+  let momento = deps.ahoraMs;
+  if (previo) {
+    eventos = await deps.almacen.eventosPorId(previo.ids);
+    momento = previo.ahoraMs;
+    if (eventos.every((e) => e.resumido_en !== null)) return { eventos: 0, enviado: false }; // el resumen de hoy ya salió
+  } else {
+    eventos = await deps.almacen.pendientesDeResumen();
+    if (eventos.length === 0) return { eventos: 0, enviado: false };
+  }
+  eventos = [...eventos].sort((a, b) => b.recibido_ms - a.recibido_ms || (a.id_unico < b.id_unico ? -1 : 1));
   if (!deps.enviar) return { eventos: eventos.length, enviado: false };
   const hasta = await deps.almacen.cuotaHasta();
   if (hasta !== null && hasta > deps.ahoraMs) return { eventos: eventos.length, enviado: false };
+  const ids = eventos.map((e) => e.id_unico);
+  if (!previo) await deps.almacen.fijarResumenDelDia(dia, ids, momento);   // ANTES de enviar
   try {
-    await deps.enviar(armarResumen(eventos, deps.ahoraMs));
+    await deps.enviar(armarResumen(eventos, momento));
   } catch (error) {
     if ((error as Error).message === 'resend_cuota') await deps.almacen.marcarCuota(siguienteMedianocheUtc(deps.ahoraMs));
     throw error;
   }
-  await deps.almacen.marcarResumidos(eventos.map((e) => e.id_unico), deps.ahoraMs);
+  await deps.almacen.marcarResumidos(ids, deps.ahoraMs);
   return { eventos: eventos.length, enviado: true };
 }
 
@@ -318,9 +343,9 @@ export function almacenFirestore(): AlmacenAlertas {
       }, { maxAttempts: 10 });
     },
     async pendientesDeResumen() {
-      // Una sola condición de igualdad (índice automático): se ordena en memoria.
-      const q = await eventos().where('resumido_en', '==', null).limit(MAX_EVENTOS_RESUMEN).get();
-      return q.docs.map((x) => x.data() as EventoGuardado).sort((a, b) => b.recibido_ms - a.recibido_ms);
+      // Con orden por `recibido_ms` (índice compuesto en `firestore.indexes.json`): si hay más de 500, entran los MÁS NUEVOS.
+      const q = await eventos().where('resumido_en', '==', null).orderBy('recibido_ms', 'desc').limit(MAX_EVENTOS_RESUMEN).get();
+      return q.docs.map((x) => x.data() as EventoGuardado);
     },
     async marcarResumidos(ids, ms) {
       for (let i = 0; i < ids.length; i += 400) {
@@ -328,6 +353,19 @@ export function almacenFirestore(): AlmacenAlertas {
         for (const id of ids.slice(i, i + 400)) lote.update(eventos().doc(id), { resumido_en: ms });
         await lote.commit();
       }
+    },
+    async resumenDelDia(dia) {
+      const d = await ctl(`resumen_${dia}`).get();
+      return d.exists && Array.isArray(d.get('ids')) ? { ids: d.get('ids') as string[], ahoraMs: Number(d.get('ahoraMs')) } : null;
+    },
+    async fijarResumenDelDia(dia, ids, ahoraMs) { await ctl(`resumen_${dia}`).set({ ids, ahoraMs }); },
+    async eventosPorId(ids) {
+      const salida: EventoGuardado[] = [];
+      for (let i = 0; i < ids.length; i += 100) {
+        const docs = await db.getAll(...ids.slice(i, i + 100).map((id) => eventos().doc(id)));
+        for (const d of docs) if (d.exists) salida.push(d.data() as EventoGuardado);
+      }
+      return salida;
     },
     async cuotaHasta() {
       const d = await ctl('cuota').get();
@@ -378,13 +416,13 @@ export function enviarPorResend(
   };
 }
 
-interface ConfigAlertas { dominio: string; destinatario: string; hosts: string[]; denegar: string[]; tope: number }
+interface ConfigAlertas { dominio: string; destinatario: string; hosts: string[]; repos: string[]; denegar: string[]; tope: number }
 
 async function configuracion(): Promise<ConfigAlertas> {
   const d = await getFirestore().doc('plataforma/alertas').get();
   const t = (k: string): string => (typeof d.get(k) === 'string' ? String(d.get(k)).trim() : '');
   const lista = (k: string): string[] => t(k).split(',').map((h) => h.trim()).filter(Boolean);
-  return { dominio: t('dominioAvisos'), destinatario: t('destinatario'), hosts: lista('enlaceHosts'), denegar: lista('avisosDenegar'), tope: topeValido(d.get('topeDiario')) };
+  return { dominio: t('dominioAvisos'), destinatario: t('destinatario'), hosts: lista('enlaceHosts'), repos: lista('enlaceRepos'), denegar: lista('avisosDenegar'), tope: topeValido(d.get('topeDiario')) };
 }
 
 function enviadorConfigurado(c: ConfigAlertas): Enviar | null {
@@ -403,7 +441,7 @@ export const alertaOperativa = onRequest(
           const c = await configuracion();
           const enviar = enviadorConfigurado(c);
           if (!enviar) console.error('ALERTA_OPERATIVA_SIN_CONFIGURACION (plataforma/alertas sin dominioAvisos o destinatario: se guarda, no se envía)');
-          return { almacen: almacenFirestore(), enviar, hosts: c.hosts, denegar: c.denegar, tope: c.tope };
+          return { almacen: almacenFirestore(), enviar, hosts: c.hosts, repos: c.repos, denegar: c.denegar, tope: c.tope };
         },
       });
     respuesta.status(r.status).send(r.cuerpo);

@@ -183,6 +183,20 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "eventos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "resumido_en",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "recibido_ms",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [

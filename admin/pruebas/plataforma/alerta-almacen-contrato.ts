@@ -77,6 +77,24 @@ export function bateriaDelAlmacen(nombre: string, nuevo: () => Promise<Fabrica>)
       expect(v.map((e) => e.id_unico)).toEqual(['evt-srv-0003']);
     });
 
+    it('la lista del resumen del día se guarda y se lee; eventosPorId devuelve solo los que existen', async () => {
+      const { almacen } = await nuevo();
+      expect(await almacen.resumenDelDia(DIA)).toBeNull();
+      await almacen.crear(eventoGuardado('evt-lis-0001'));
+      await almacen.fijarResumenDelDia(DIA, ['evt-lis-0001', 'evt-no-existe'], AHORA);
+      expect(await almacen.resumenDelDia(DIA)).toEqual({ ids: ['evt-lis-0001', 'evt-no-existe'], ahoraMs: AHORA });
+      expect((await almacen.eventosPorId(['evt-lis-0001', 'evt-no-existe'])).map((e) => e.id_unico)).toEqual(['evt-lis-0001']);
+      expect(await almacen.resumenDelDia('2026-11-08')).toBeNull();
+    });
+
+    it('pendientesDeResumen entrega los MÁS NUEVOS primero', async () => {
+      const { almacen } = await nuevo();
+      await almacen.crear(eventoGuardado('evt-ord-0001', { recibido_ms: AHORA - 5000 }));
+      await almacen.crear(eventoGuardado('evt-ord-0002', { recibido_ms: AHORA - 1000 }));
+      await almacen.crear(eventoGuardado('evt-ord-0003', { recibido_ms: AHORA - 3000 }));
+      expect((await almacen.pendientesDeResumen()).map((e) => e.id_unico)).toEqual(['evt-ord-0002', 'evt-ord-0003', 'evt-ord-0001']);
+    });
+
     it('la cuota de Resend: empieza vacía, se marca y se lee', async () => {
       const { almacen } = await nuevo();
       expect(await almacen.cuotaHasta()).toBeNull();

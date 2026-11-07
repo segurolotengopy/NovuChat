@@ -321,3 +321,72 @@ describe('nube-alertas.sh: la clave de Resend, la clave HMAC y el invocador', ()
     expect(existe(join(dir, 'visor'))).toBe(false);
   });
 });
+
+describe('nube-alertas.sh: xtrace, respaldo y entrega ajena (cuarta ronda)', () => {
+  const traza = (bashArgs: string[], args: string[], vars: Record<string, string> = {}) => {
+    const r = spawnSync('env', [`CLOUDSDK_CONFIG=${gcloudCfg}`, 'bash', ...bashArgs, SCRIPT, ...args], {
+      encoding: 'utf8',
+      env: entornoDelEmulador(undefined, {
+        PATH: `${bin}:/usr/bin:/bin`, FAKE_DIR: dir, GCP_PROJECT_ID_PROD: PROD, GCP_PROJECT_ID_STAGING: '',
+        XDG_RUNTIME_DIR: runtime, TMPDIR: join(dir, 'tmp'), ...vars,
+      }),
+    });
+    return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
+  };
+
+  it('con `bash -x` o SHELLOPTS=xtrace se NIEGA (2) antes de tocar gcloud y la clave NO sale en la traza', () => {
+    aplicarPasos();
+    const antes = llamadas().length;
+    const ruta = archivoClave();
+    for (const [bashArgs, vars] of [[['-x'], {}], [[], { SHELLOPTS: 'xtrace' }], [['-x'], { SHELLOPTS: 'xtrace' }]] as const) {
+      const r = traza([...bashArgs], ['--cargar-resend', ruta, ...APLICAR], { ...vars });
+      expect(r.codigo, JSON.stringify([bashArgs, vars])).toBe(2);
+      expect(r.salida).toContain('xtrace');
+      expect(r.salida).not.toContain(CLAVE_RESEND);
+    }
+    expect(llamadas().length).toBe(antes);           // ni una llamada nueva a gcloud
+    expect(existe(ruta)).toBe(true);                 // y el archivo de la clave sigue ahí
+    expect(leer(`secreto-${RESEND}`)).toBe('PENDIENTE-DE-CARGAR');
+  });
+
+  it('sin xtrace, la carga normal no imprime la clave ni siquiera con -v', () => {
+    aplicarPasos();
+    const ruta = archivoClave();
+    const r = traza(['-v'], ['--cargar-resend', ruta, ...APLICAR]);
+    expect(r.salida).not.toContain(CLAVE_RESEND);
+  });
+
+  it('con --aplicar el respaldo de la política anterior QUEDA (modo 600, con la política vieja) y se imprime su ruta', () => {
+    const r = correr(APLICAR);
+    expect(r.codigo).toBe(0);
+    const m = /respaldo de la política anterior[^:]*: (\S+)/.exec(r.salida);
+    expect(m, r.salida).not.toBeNull();
+    const ruta = m![1]!;
+    expect(existe(ruta)).toBe(true);
+    expect(modoDe(ruta)).toBe(0o600);
+    const guardada = JSON.parse(readFileSync(ruta, 'utf8')) as { bindings: Array<{ condition?: { expression: string } }> };
+    expect(guardada.bindings.find((b) => b.condition)!.condition!.expression).toBe(CONDICION_VIEJA);
+  });
+
+  it('si set-iam-policy falla NO se deja respaldo', () => {
+    writeFileSync(join(dir, 'falla-set'), '');
+    expect(/respaldo de la política anterior/.test(correr(APLICAR).salida)).toBe(false);
+  });
+
+  it('--entregar-hmac NO borra ni pisa un archivo ajeno que ya esté en el destino', () => {
+    aplicarPasos();
+    const destino = join(runtime, 'novuchat-alertas-hmac');
+    writeFileSync(destino, 'contenido-ajeno', { mode: 0o600 });
+    const r = correr(['--entregar-hmac', ...APLICAR]);
+    expect(r.codigo).toBe(2);
+    expect(readFileSync(destino, 'utf8')).toBe('contenido-ajeno');
+  });
+
+  it('--entregar-hmac: si gcloud falla borra SOLO lo que creó', () => {
+    aplicarPasos();
+    rmSync(join(dir, `secreto-${HMAC}`));              // el gcloud falso no tiene qué entregar
+    const r = correr(['--entregar-hmac', ...APLICAR]);
+    expect(r.codigo).toBe(3);
+    expect(existe(join(runtime, 'novuchat-alertas-hmac'))).toBe(false);
+  });
+});

@@ -28,6 +28,7 @@
 #       $XDG_RUNTIME_DIR (tmpfs del usuario, modo 700), ser un archivo regular del usuario de modo 600 y traer
 #       una sola línea con la forma `re_…`. El script no imprime su contenido y, con éxito, lo BORRA.
 #   ./scripts/nube-alertas.sh --entregar-hmac [--aplicar --confirmo produccion]
+#       BLOQUEADO HASTA QUE EXISTA EL CARGADOR DE n8n (no existe todavía): no se corre con --aplicar. Solo el seco.
 #       Entrega el valor vigente de ALERTAS_HMAC a un archivo de modo 600 (O_EXCL) dentro de $XDG_RUNTIME_DIR:
 #       es la clave con que el nodo del errorWorkflow firma. Solo imprime la RUTA del archivo. NINGÚN agente ni
 #       persona lo lee (ni cat ni la herramienta de lectura): lo consume el cargador de credenciales de n8n,
@@ -58,6 +59,11 @@
 #
 # Contra producción: con el «sí» de Andres, seco primero (.github/DESPLIEGUE-FIREBASE.md).
 set -euo pipefail
+# NUNCA con xtrace: `bash -x` (o SHELLOPTS=xtrace) imprimiría cada comando ya expandido, y con él el valor de la clave de
+# Resend o del HMAC. Se rechaza antes de tocar nada y, por si acaso, se apaga.
+case "$-" in *x*) echo "✗ xtrace activo (bash -x o SHELLOPTS=xtrace): imprimiría el valor de los secretos. No se escribió nada." >&2; exit 2 ;; esac
+[[ "${SHELLOPTS:-}" != *xtrace* ]] || { echo "✗ SHELLOPTS=xtrace en el entorno: imprimiría el valor de los secretos. No se escribió nada." >&2; exit 2; }
+set +x
 ESTE="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$ESTE")/.." || exit 1
 
@@ -109,8 +115,9 @@ if [[ "$MODO" == cargar ]]; then
   [[ -f "$ARCHIVO" && ! -L "$ARCHIVO" && -O "$ARCHIVO" && "$(stat -c '%a' "$ARCHIVO" 2>/dev/null)" == "600" ]] \
     || { echo "✗ el archivo tiene que ser regular (no un enlace), del usuario y de modo 600" >&2; exit 2; }
   [[ "$(stat -c '%s' "$ARCHIVO")" -le 512 ]] || { echo "✗ el archivo es demasiado grande para ser una clave" >&2; exit 2; }
-  # La forma, sin imprimir el contenido: una sola línea `re_…`.
-  [[ "$(tr -d '\n' <"$ARCHIVO")" =~ ^re_[A-Za-z0-9_]{10,200}$ ]] || { echo "✗ el contenido del archivo no tiene la forma de una clave de Resend (re_…); no se muestra" >&2; exit 2; }
+  # La forma, SIN llevar el valor a una variable ni a una expansión (grep sobre el archivo): una sola línea `re_…`.
+  grep -Eqx 're_[A-Za-z0-9_]{10,200}' "$ARCHIVO" && [[ "$(grep -c '' "$ARCHIVO")" == 1 ]] \
+    || { echo "✗ el contenido del archivo no tiene la forma de una clave de Resend (una línea re_…); no se muestra" >&2; exit 2; }
 fi
 
 # --- El proyecto, sin imprimirlo ----------------------------------------------
@@ -345,8 +352,12 @@ DESTINO="${XDG_RUNTIME_DIR}/novuchat-alertas-hmac"
 hacer "escribir el valor vigente de ${SECRETO_HMAC} en un archivo de modo 600 (no se imprime) y mostrar solo la ruta"
 PENDIENTES=$((PENDIENTES + 1))
 if (( APLICAR )); then
-  # noclobber = O_EXCL; umask 077 = modo 600 desde el primer byte.
-  if ! ( umask 077; set -o noclobber; gc secrets versions access latest --secret "$SECRETO_HMAC" >"$DESTINO" 2>|"$ERR" ); then
+  # Primero se CREA el archivo vacío (noclobber = O_EXCL; umask 077 = modo 600): si alguien lo creó entretanto, no se
+  # toca. Solo lo que este script creó se borra si algo falla.
+  if ! ( umask 077; set -o noclobber; : >"$DESTINO" ) 2>/dev/null; then
+    falla "no pude crear la entrega (¿ya existe?): no se toca nada"; exit 2
+  fi
+  if ! gc secrets versions access latest --secret "$SECRETO_HMAC" >"$DESTINO" 2>"$ERR"; then
     rm -f "$DESTINO"; falla "no pude entregar el valor:"; sanear; exit 3
   fi
   ok "entrega (modo 600, memoria): ${DESTINO}"

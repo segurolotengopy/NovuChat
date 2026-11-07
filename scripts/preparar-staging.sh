@@ -350,7 +350,7 @@ fase_cuentas() {
   # está, esta fase no lo toca; ampliarlo es trabajo de las fases `salida-persona` y `alertas`,
   # que lo edita en su lugar con `set-iam-policy` (con etag).
   if (( rc_b == 0 )); then
-    nota "el binding con condición «secretos-de-las-functions» ya existe: no se toca (para ampliarlo, fase salida-persona)"
+    nota "el binding con condición «secretos-de-las-functions» ya existe: no se toca (para ampliarlo, fases salida-persona y alertas)"
   else
     local cond="expression=resource.name.startsWith(\"projects/${num}/secrets/INGESTA_\") || resource.name.startsWith(\"projects/${num}/secrets/GEMINI_API_KEY\") || resource.name.startsWith(\"projects/${num}/secrets/COBRADOR_\") || resource.name.startsWith(\"projects/${num}/secrets/SALIDA_PERSONA_\") || resource.name.startsWith(\"projects/${num}/secrets/ALERTAS_\"),title=secretos-de-las-functions"
     correr "sa-deploy-staging: desplegadorSecretos con condición" -- gc_mudo projects add-iam-policy-binding "$P" \
@@ -571,6 +571,13 @@ fase_verificar() {
       || { falla "$s sin invocador allUsers (fase invocadores)"; sin=$((sin + 1)); }
   done < <(invocables)
   (( sin == 0 )) && hecho "las $total Functions HTTP o callables son invocables"
+  # Alerta operativa: la condición de desplegadorSecretos cubre ALERTAS_ y los dos secretos existen (fase alertas).
+  local sa_al
+  if gc projects get-iam-policy "$P" --format=json 2>/dev/null | grep -q "secrets/${PREFIJO_ALERTAS}"; then hecho "la condición de desplegadorSecretos cubre ${PREFIJO_ALERTAS}"
+  else falla "la condición de desplegadorSecretos NO cubre ${PREFIJO_ALERTAS} (fase alertas)"; fi
+  for sa_al in "${SECRETOS_ALERTAS[@]}"; do
+    if existe gc secrets describe "$sa_al"; then hecho "$sa_al existe"; else falla "$sa_al no existe (fase alertas)"; fi
+  done
   # Los permisos que más veces hundieron un despliegue de producción, antes
   # de gastar una corrida (memoria «despliegues: verificar antes de aprobar»).
   local num; num="$(numero_proyecto)"
