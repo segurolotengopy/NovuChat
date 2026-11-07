@@ -274,7 +274,7 @@
               "id": "cb_reservaMananaTexto",
               "name": "reservaMananaTexto",
               "type": "string",
-              "value": "Como pediste una hora de la mañana, Samuel se contactará contigo para confirmar o cambiar la hora."
+              "value": "Como pediste una hora de la mañana, nos contactaremos contigo para confirmar o cambiar la hora."
             },
             {
               "id": "cb_topeReservasDia",
