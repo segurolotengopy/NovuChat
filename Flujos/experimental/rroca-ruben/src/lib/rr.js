@@ -996,26 +996,6 @@ function rrTextoDerivacion(motivo, salio, clave, base) {
 }
 // El texto al cliente según el cotejo. `resultado`: cuadra | aproximado | reintentar | ilegible | sin_cotejo | ya_cotejado. Devuelve { cuerpo, boton }.
 // Nunca «acreditado», «verificado», «validado» ni «ya te lo enviamos»: el comprobante llegó y los datos coinciden; quien confirma que entró la plata es el banco, y Rubén.
-// TODAS las diferencias de un comprobante que no cuadra, con el DESTINATARIO primero (humo de Silvana, 07/11/2026: pagó a otra persona y solo se le dijo el monto). Salen del `motivos[]` que devuelve el servidor
-// (códigos fijos; nada de lo leído de la imagen se copia al texto). Sin `motivos` (un servidor que aún no lo trae, o un repetido) devuelve [] y se usa el motivo primario de siempre.
-function rrDiferenciasComprobante(cuerpo) {
-  const c = cuerpo && typeof cuerpo === 'object' ? cuerpo : {};
-  const ms = Array.isArray(c.motivos) ? c.motivos.filter((m) => typeof m === 'string') : [];
-  const leido = Number.isFinite(c.montoLeido) && c.montoLeido > 0 ? c.montoLeido : null;
-  const pedido = Number.isFinite(c.importe) && c.importe > 0 ? c.importe : null;
-  const frases = [];
-  const agregar = (f) => { if (frases.indexOf(f) < 0) frases.push(f); };
-  for (const m of ms) {
-    if (m === 'cuenta_distinta') agregar('la cuenta de destino no es la del QR');
-    else if (m === 'nombre_distinto') agregar('el nombre del destinatario no coincide con el de la cuenta');
-    else if (m === 'destino_no_coincide') agregar('el destinatario no coincide con el de la cuenta');
-    else if (m === 'destino_no_verificable') agregar('en el comprobante no se ve a qué cuenta se depositó');
-    else if (m === 'monto_menor' || m === 'monto_mayor' || m === 'monto_distinto') agregar(leido !== null && pedido !== null ? 'el comprobante dice ' + rrMontoBs(leido) + ' y tu pedido es de ' + rrMontoBs(pedido) : 'el monto del comprobante no coincide con tu pedido');
-    else if (m === 'fecha_anterior') agregar('la fecha del comprobante es anterior a tu pedido');
-    else if (m === 'fecha_posterior') agregar('la fecha del comprobante no es correcta');
-  }
-  return frases;
-}
 function rrTextoComprobante(resultado, causa, salio, diferencia, base) {
   const sinAviso = 'Recibí tu comprobante pero no pude avisarle a Rubén. Escríbele directo con el botón.';
   if (resultado === 'aproximado') {
@@ -1030,9 +1010,8 @@ function rrTextoComprobante(resultado, causa, salio, diferencia, base) {
       : { cuerpo: sinAviso, boton: true };
   }
   if (resultado === 'reintentar') {
-    // UNA diferencia (texto) o VARIAS (lista, destinatario primero): «veo varias diferencias con tu compra: a, b y c».
-    const lista = Array.isArray(diferencia) ? diferencia.filter((x) => typeof x === 'string' && x !== '') : [];
-    const cuales = lista.length > 1 ? 'varias diferencias con tu compra: ' + lista.slice(0, -1).join(', ') + ' y ' + lista[lista.length - 1] : 'una diferencia con tu compra' + (diferencia && !Array.isArray(diferencia) ? ': ' + diferencia : (lista.length === 1 ? ': ' + lista[0] : ''));
+    // UNA diferencia (texto) o VARIAS (lista, destinatario primero): la base común arma el tramo («una diferencia con tu compra: X» / «varias diferencias con tu compra: a, b y c»).
+    const cuales = cdFraseDeDiferencias(diferencia);
     return { cuerpo: 'Recibí tu comprobante, pero veo ' + cuales + '. Si te equivocaste, envíame de nuevo el comprobante correcto (en foto o en PDF desde la app de tu banco). Si prefieres, escríbele a Rubén con el botón.', boton: true };
   }
   if (resultado === 'ilegible') {

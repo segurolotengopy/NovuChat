@@ -341,3 +341,11 @@ Cambio en `Decidir turno`, `Armar mensajes` y `Soltar mensajes` de «Venta míni
 - **Qué cambia:** dos claves nuevas de «Config base» (`reservaDesde`, `reservaMananaTexto`; solo `qtaco.json`, que hereda `qtaco-3727` y el ensayo). Una reserva con hora anterior a `reservaDesde` se ACEPTA (el horario válido sigue siendo `horario`, el de pedidos: no hay horario propio de reservas); la confirmación agrega el texto del negocio y el aviso al local lleva la nota «Reserva de mañana (antes de las 12:00): contactar para confirmar o cambiar la hora» dentro del mismo aviso (variable de notas existente; ninguna variable de plantilla cambia). Horas fuera de 10:00–21:30 se rechazan como hoy. `reservaDesde` vacío = comportamiento anterior.
 - **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos. Código común a todas las salidas de `venta-minima` (regeneradas); solo Q'Taco trae `reservaDesde`, así que el resto no cambia de comportamiento.
 - **No se publica con este PR.**
+
+## Todas las diferencias de un comprobante, en todos los flujos de venta (Andres, 07/11/2026)
+
+**Decisión de Andres:** un comprobante que no cuadra le dice al cliente TODAS sus diferencias, el destinatario primero, en todos los flujos con cobro (no solo Rubén). El servidor ya devuelve `motivos[]` (PR de Functions, aditivo) y la base común (`venta-digital/src/diferencias.js`, nueva) arma el texto.
+
+- **Flujos que la adoptan en este PR (fuente y JSON regenerados, sin publicar):** Rubén, Antonio/Emma/Evy (`rroca-antonio`), Casa Bermejo y Walisuma. **Excepción declarada:** el flujo vivo de cada uno sigue diciendo UNA diferencia hasta que se republique; **cierra:** su próxima publicación con ensayo previo (Rubén ya está en esa cola; Antonio/Emma/Evy con la republicación posterior a la etiqueta del servidor v2). Además el servidor con `motivos[]` debe estar desplegado antes (sin él, el texto cae al motivo primario de siempre).
+- **Pendiente de adopción (no es de este PR):** Q'Taco/`venta-minima` (su `cobro.js` es de la sesión de Q'Taco: usa la misma base) y los flujos de agenda con seña (el módulo común `respuesta-de-la-sena.js` ya recibe la lista completa del servidor y hoy muestra solo la primera al cliente).
+- **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos; el texto del mensaje que ya sale pasa de una frase a varias.

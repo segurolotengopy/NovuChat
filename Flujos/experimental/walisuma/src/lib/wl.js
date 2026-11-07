@@ -229,7 +229,7 @@ function wlTextoComprobante(resultado, diferencia, totalTexto, salio) {
     return salio === true ? base + ' Ya avisé a recepción para que lo revise en su cuenta; también puedes escribirle directo con el botón.' : base + ' No pude avisar a recepción; escríbele directo con el botón.';
   }
   if (resultado === 'reintentar') {
-    return 'Revisé tu comprobante y hay una diferencia' + (diferencia ? ': ' + diferencia : '') + '.\n\nEnvíame el comprobante correcto, por favor.';
+    return 'Revisé tu comprobante y hay ' + cdFraseDeDiferencias(diferencia, false) + '.\n\nEnvíame el comprobante correcto, por favor.';
   }
   if (resultado === 'ilegible') return WL_TEXTO_COMPROBANTE_ILEGIBLE;
   if (resultado === 'ya_cotejado') return wlTextoDerivacion('comprobante_ya_visto', 'repetido');
