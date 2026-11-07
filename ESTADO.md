@@ -27,8 +27,10 @@ está en `bitacora/2026-11.md`.
   sin publicar. El Demo A sigue con el flujo de Q'Taco del ensayo hasta que el
   Auxiliar 1 lo restaure (sin verificar).
 - **Copia base `~/NovuChat`:** atrasada 2.694 commits; da falsos atrasos en
-  `estado-de-versiones.sh`. Desde un worktree al día, el Demo A solo difiere en
-  «Preparar imagen» y los settings del flujo.
+  `estado-de-versiones.sh`. Lo medido el 06/11 desde un worktree al día
+  contra `main`: el Demo A difiere solo en «Preparar imagen» y los settings del
+  flujo. `docs/versiones-por-cliente.md` declara hoy otro nodo («Procesar
+  respuesta») y está pendiente de corrección (Auxiliar 1).
 
 ## Obra
 
