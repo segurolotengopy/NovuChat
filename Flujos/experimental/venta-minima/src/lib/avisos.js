@@ -308,7 +308,9 @@ function avLimpio(t, max, opc) {
   // decimales y las horas («4.50», «12.30», «1.25L») no se tocan.
   s = s.replace(/(?<=[\p{L}\p{M}])(?<![ºª])\.(?=[\p{L}\p{M}\p{N}])(?![ºª])|(?<=\p{N})\.(?=\p{L}{2})/gu, '. ');
   if (opc && opc.cocina) {
-    s = s.replace(/\+?\d[\d\s.-]{5,}\d/g, (m) => (m.replace(/\D/g, '').length >= 7 ? '…' : m));
+    // Un número de teléfono partido con separadores («0000/0000», «(591) 0000-0000», «+591·0000 0000») también se quita para cocina (revisión de seguridad,
+    // 07/11/2026). Las horas («20:00, 21:30») no: «:» y «,» no son separadores aquí.
+    s = s.replace(/\+?\(?\d[\d\s.\-/()·]{5,}\d\)?/g, (m) => (m.replace(/\D/g, '').length >= 7 ? '…' : m));
     s = s.replace(/\d{7,}/g, '…');
   }
   // Se colapsan espacios y « · » ANTES de comparar con la red: quitar `*_~` deja huecos que juntan frases («te *avisamos»).

@@ -602,10 +602,11 @@ function guardiasDeSesion(entrada, flujo) {
 }
 
 // EL SANDBOX DE EXPRESIONES DE n8n (07/11/2026). En una expresión (`={{ … }}`, cualquier parámetro de nodo que empiece con «=») n8n 2.36.5 NO deja leer
-// `prototype`, `__proto__` ni `constructor`: la expresión revienta («Cannot access "prototype" due to security concerns») y, en un IF sin `onError`, la ejecución
+// `prototype`, `__proto__`, `constructor` ni `getPrototypeOf` (tampoco entre comillas): la expresión revienta («Cannot access "prototype" due to security concerns») y, en un IF sin `onError`, la ejecución
 // muere sin dejar registro (así se perdieron las imágenes del 07/11 con `Object.prototype.hasOwnProperty` en «¿Es comprobante?»). Los nodos Code tienen otro
 // sandbox y no entran aquí (su código no empieza con «=»). Para saber si una clave es propia en una expresión: `Object.keys(o).indexOf(k) >= 0`.
-// La regla vive en `comun-sin-agente/src/expresiones.mjs` (la usan todos los armadores de Flujos/experimental).
+// La regla (qué se revisa y qué no cuenta) vive en `comun-sin-agente/src/expresiones.mjs`; la aplican las guardias de cada armador de
+// `Flujos/experimental/*` (en `--verificar` y al construir) y la suite `admin/pruebas/core/expresiones-n8n.test.ts`.
 const guardiaDeExpresiones = (flujo) => hallazgosDeExpresionesN8n(flujo);
 
 // LO QUE UN JSON DE PRODUCCIÓN NO PUEDE TENER, aunque alguien lo haya agregado a mano al archivo versionado.

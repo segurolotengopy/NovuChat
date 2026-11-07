@@ -2058,6 +2058,19 @@ describe('variables de plantilla corregidas (05/11): mapa en la modalidad, cotej
 });
 
 
+describe('cocina: un teléfono partido con separadores en un nombre o una nota no llega a cocina (revisión de seguridad, 07/11/2026)', () => {
+  it('«0000/0033», «(591) 0000-0033», «+591·0000 0033», «000.000.33» se quitan; las horas y los números cortos quedan; el rol completo no cambia', () => {
+    for (const t of ['Ana 0000/0033', 'Ana (591) 0000-0033', 'Ana +591·0000 0033', 'Ana 000.000.33', 'Ana 591 0000 0033']) {
+      const c = L.avLimpio(t, 60, { cocina: true });
+      expect(c.replace(/\D/g, '').length, t).toBeLessThan(7);
+      expect(c, t).toContain('Ana');
+    }
+    expect(L.avLimpio('mesa 4, a las 20:00, 21:30 o 22:15', 120, { cocina: true })).toBe('mesa 4, a las 20:00, 21:30 o 22:15');
+    expect(L.avLimpio('2 tacos y 3 quesadillas', 60, { cocina: true })).toBe('2 tacos y 3 quesadillas');
+    expect(L.avLimpio('Ana 0000/0033', 60)).toBe('Ana 0000/0033');
+  });
+});
+
 describe('avParametroConMapa: el enlace descartado no deja separadores ni «mapa:» colgando', () => {
   const L = cargar();
   const E = 'https://www.google.com/maps/search/?api=1&query=-16.500000%2C-68.100000';
