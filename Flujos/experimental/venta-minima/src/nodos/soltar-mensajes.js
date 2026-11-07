@@ -16,7 +16,11 @@ let r = a.comprometer === true ? ssResultadoDeCompromiso(vmPrimero('Comprometer 
 let bloqueComprometido = a.bloque;
 let replanificado = false;
 if (a.comprometer === true && r.resultado === 'conflicto') {
-  if (a.hechoExterno !== true) return [];
+  if (a.hechoExterno !== true) {
+    // Ráfaga: la que pierde no envía nada de lo suyo (la ganadora responde a su mensaje), pero un TEXTO perdido no queda sin respuesta: sale el aviso corto que pide repetirlo (cualquier botón perdido sigue en silencio).
+    const cede = Array.isArray(a.salidaCede) ? a.salidaCede : [];
+    return cede.map((x) => ({ json: Object.assign({}, x, { sesion: { replanificado: false, modo: a.modo, resultado: 'conflicto', comprometido: false, version: null, cedio: true }, comprometido: false, versionComprometida: 0, previo: null, bloque: null, numero: a.numero, asentar: null }) }));
+  }
   replanificado = true;
   const intento2 = vmNodo('Comprometer turno (2.º intento)') ? vmPrimero('Comprometer turno (2.º intento)') : null;
   r = intento2 ? ssResultadoDeCompromiso(intento2) : { resultado: 'falla', version: 0, ganador: null };

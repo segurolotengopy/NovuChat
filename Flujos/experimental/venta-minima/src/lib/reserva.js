@@ -590,6 +590,16 @@ function rsResumen(r) {
   return lineas.join('\n');
 }
 
+// Reserva de MAÑANA (06/11/2026, decision de Andres): la hora pedida es anterior a `desde` («HH:MM», dato `reservaDesde` del negocio).
+// Se ACEPTA (el horario valido sigue siendo el de pedidos); solo marca que el local debe contactar al cliente. Devuelve `desde` normalizado
+// («12:00») o '' (sin `desde` valido, sin hora valida, o la hora no es anterior: no aplica). No valida el horario: eso es de `rsValidar`.
+function rsEsDeManana(r, desde) {
+  const d = _rsHora(desde);
+  const h = _rsHora(r && r.hora);
+  if (!d || !h) return '';
+  return _rsMin(h) < _rsMin(d) ? d : '';
+}
+
 // La frase de la confirmacion al cliente: «el lunes 6 de octubre a las 19:00, 4 personas, terraza» (sin nombre ni notas).
 function rsFraseDeConfirmacion(r) {
   const x = rsValidarExtraccion(r);

@@ -28,7 +28,9 @@ const LIBRERIAS = ['comun', 'pedido', 'reserva', 'promos', 'avisos', 'cobro'].ma
 const PQR = readFileSync(join(RAIZ, '../../../src/modulos/pedidos/qr-del-pedido.js'), 'utf8');
 // El estado de la conversación en el servidor (PR-4a): el módulo común `sesion` lo incluyen los nodos que lo usan, como arma construir.mjs.
 const SESION = readFileSync(join(RAIZ, '../../comun-sin-agente/src/sesion.js'), 'utf8');
-const LIBS = [...LIBRERIAS, PQR].join('\n');
+// Y el reconocedor de anuncios por titular (core/medios), también incluido por construir.mjs.
+const APT = readFileSync(join(RAIZ, '../../../src/core/medios/anuncio-por-titular.js'), 'utf8');
+const LIBS = [...LIBRERIAS, PQR, APT].join('\n');
 const CODIGO: Record<string, string> = {};
 const CON_SESION = ['config-del-negocio', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes'];
 for (const n of ['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'interpretar-lectura', 'decidir-turno', 'plan-del-turno', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes', 'sin-estado']) {
@@ -1785,5 +1787,32 @@ describe('QR REAL VENCIDO (07/10): no se ofrece un QR que la imagen no va a serv
     expect(cuerpos(r).join('\n')).toContain('No puedo mostrarte el QR en este momento.');
     expect(JSON.stringify(r.mensajes.map((x) => x['payload']))).toContain('Escribir al local');
     expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
+  });
+});
+
+describe('horario de Q\'Taco (06/11/2026): el paréntesis sobrevive al saneo REAL de «Armar mensajes» (sin dobles)', () => {
+  const ATENCION = 'todos los días de 12:00 a 22:00 (de 10 a 12 AM solo delivery o recojo en local)';
+  const PAREN = '(de 10 a 12 AM solo delivery o recojo en local)';
+  const HORARIO_PEDIDOS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'].map((d) => `${d}=10:00-22:00`).join(',');
+  const mundo = (ahora?: number): Mundo => crear({
+    base: { ...BASE, horario: HORARIO_PEDIDOS, horarioAtencion: ATENCION, horarioAtencionManda: 'si' },
+    panel: panel({ operacion: { moneda: 'BOB', numeroRecepcion: REC, horarioAtencion: ATENCION, prefijosPermitidos: ['591'] } }),
+    ahora,
+  });
+
+  it('«¿qué horarios tienen?» sale por Armar mensajes con el paréntesis literal', () => {
+    const r = turno(mundo(), { texto: 'a qué hora abren' });
+    expect(cuerpos(r).join('\n')).toContain(PAREN);
+    expect(cuerpos(r).join('\n')).toContain('Atendemos ' + ATENCION + '.');
+  });
+
+  it('fuera del horario de pedidos (23:00 La Paz) el mensaje real lo contiene literal; a las 09:59 también y a las 10:00 ya atiende', () => {
+    for (const ahora of [Date.UTC(2026, 9, 6, 3), Date.UTC(2026, 9, 5, 13, 59)]) {
+      const r = turno(mundo(ahora), { texto: 'quiero 3 tacos de birria' });
+      expect(cuerpos(r).join('\n'), String(ahora)).toContain(PAREN);
+      expect(cuerpos(r).join('\n')).toContain('fuera de nuestro horario de pedidos');
+    }
+    const abierto = turno(mundo(Date.UTC(2026, 9, 5, 14, 0)), { texto: 'quiero 3 tacos de birria' });
+    expect(cuerpos(abierto).join('\n')).not.toContain('fuera de nuestro horario de pedidos');
   });
 });

@@ -26,8 +26,9 @@ const G = 'Guardar comprobante';
 describe('Guardar comprobante: el cableado', () => {
   for (const [nombre, f] of Object.entries({ QTACO, PRUEBA, DEMO_A, PLANTILLA })) {
     it(`${nombre}: cuelga de «¿Es audio?» (salida no-audio), primero que «¿Es PDF?», y es terminal`, () => {
-      expect(destinos(f, '¿Es audio?', 1)).toEqual([G, '¿Es PDF?']);
-      expect(entradas(f, G)).toEqual(['¿Es audio?']);
+      expect(destinos(f, '¿Es audio?', 1)).toEqual(['¿Es comprobante?']);
+      expect(destinos(f, '¿Es comprobante?', 0)).toEqual([G, '¿Es PDF?']);
+      expect(entradas(f, G)).toEqual(['¿Es comprobante?']);
       expect(destinos(f, G)).toEqual([]);
       expect(f.connections[G]).toBeUndefined();
       // ARRIBA de «¿Es PDF?» (la misma columna, menor y): n8n corre primero la rama de arriba.

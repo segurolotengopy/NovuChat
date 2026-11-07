@@ -773,6 +773,10 @@ function avMarcasReserva(r) {
   const m = [];
   if (r && r.grupoGrande === true) m.push('GRUPO GRANDE');
   if (r && r.diaLleno === true) m.push('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+  // Reserva de mañana (antes de `reservaDesde`, dato del negocio): una nota DENTRO del mismo aviso, 0 mensajes extra.
+  if (r && typeof r.reservaManana === 'string' && /^\d{2}:\d{2}$/.test(r.reservaManana)) m.push('Reserva de mañana (antes de las ' + r.reservaManana + '): contactar para confirmar o cambiar la hora');
+  // C-13 (06/11/2026): una marca de origen ya redactada por quien arma la reserva (`marcaOrigen`) va en el MISMO aviso, en la variable de notas; 0 mensajes extra.
+  if (r && typeof r.marcaOrigen === 'string' && avLimpio(r.marcaOrigen, 80)) m.push(avLimpio(r.marcaOrigen, 80));
   return m;
 }
 function avVariablesDeForma(tipo, d, dest, ahoraMs) {
@@ -785,11 +789,13 @@ function avVariablesDeForma(tipo, d, dest, ahoraMs) {
       Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : 'personas sin indicar',
       avFechaLegible(r.fecha, r.hora) || 'fecha sin indicar',
       avLimpio(r.zona, 40, opc),
-    ].concat(avMarcasReserva(r)).filter(Boolean);
+    ].filter(Boolean);
+    // Las marcas (grupo grande, día lleno, reserva de mañana y origen del anuncio) van en `modalidad` (tope 500) y no en `items` (tope 200): juntas se cortaban a mitad de la nota.
+    const marcas = avMarcasReserva(r);
     return {
       items: avParametro('SOLICITUD DE RESERVA' + (cod ? ' ' + cod : '') + ': ' + partes.join(', '), 200),
       total: avParametro('sin cobro', 30),
-      modalidad: avParametro('reserva de mesa por confirmar con el cliente', 500),
+      modalidad: avParametro('reserva de mesa por confirmar con el cliente' + (marcas.length ? ' — ' + marcas.join(', ') : ''), 500),
       cotejo: avParametro('no aplica', 80),
     };
   }

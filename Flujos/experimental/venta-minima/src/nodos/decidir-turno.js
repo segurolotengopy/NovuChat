@@ -33,7 +33,7 @@
 // LIBRERÍAS QUE LLAMA (contrato §4.2; en la suite van dobles mínimos):
 //   comun: vmCfg, vmPrimero, vmNodo, vmSes, vmEstadoBase, vmLeerEstado, vmLeerBoton, vmNorm,
 //     vmLinea, vmRecorte, vmTextoDeGemini, vmHorario, vmAbierto.
-//   pedido: pdCarta, pdCuerpoExtraccion.   reserva: rsCuerpoExtraccion.   promos: prCampanaDelTexto.
+//   pedido: pdCarta, pdCuerpoExtraccion.   reserva: rsCuerpoExtraccion.   promos: prCampanaDelTexto, prVariacion, prPreguntaSinResponder, prCampanaDelReferral, prCampanaDeLaImagen, prTipoDeCampana.   core/medios: anuncioPorTitular.
 //
 // SUPUESTOS DECLARADOS (los de la tarea T7a, aprobados por la coordinadora):
 //  1. `entrega` (en el estado) = {entrega, modalidad, direccion, referencia, nombre}.
@@ -42,6 +42,7 @@
 //     porqué va en `motivo` (`boton_viejo`, `si_suelto`, `ubicacion`, `forma_pendiente`).
 //  7. «Pide una persona» exige «hablar con (una) persona/alguien/humano…» (o «quiero un
 //     asesor», «pásame con el encargado») o una palabra inequívoca (reclamo, queja, humano);
+//     (06/11: también «escribir al local» —la frase del botón— y «hablar con el local», que derivan igual que el botón; «escribir mi nombre» no.)
 //     «persona», «asesor» o «encargado» sueltos NO derivan («mesa para 1 persona», «déjalo con el
 //     encargado del edificio»). La pregunta por la identidad se revisa primero.
 // SUPUESTOS PROPIOS (a confirmar en la integración):
@@ -120,6 +121,19 @@ if (t.tipo === 'audio') {
 } else if (t.tipo === 'image' || t.tipo === 'document') {
   // Una imagen o un documento NO son un pago si no hay un QR esperando comprobante (si lo hubiera,
   // `esComprobante` ya los habría mandado arriba). Con pie de foto, el pie es un texto más.
+  // EL ARTE DE UN ANUNCIO (adenda de campañas, 06/11/2026): una IMAGEN que `Interpretar entrada` marcó `esPosibleAnuncio` pasó por `Clasificar imagen`. Si el código
+  // reconoce una campaña VIGENTE del servidor por su titular y/o por el campo `campana` (`prCampanaDeLaImagen`), se muestra el mensaje de esa promoción (o la respuesta
+  // a la pregunta del pie, `prVariacion`). Lo leído en la imagen nunca llega al cliente ni a un modelo; Gemini sin saldo o con error = sin lectura = comportamiento de siempre.
+  if (t.tipo === 'image' && t.esPosibleAnuncio === true && cfg.promosActivo === true) {
+    const lectura = vmTextoDeGemini(vmPrimero('Clasificar imagen'));
+    const deLaImagen = lectura ? prCampanaDeLaImagen(cfg.campanas, cfg.anuncios, lectura, ahora, anuncioPorTitular, cfg) : null;
+    if (deLaImagen) {
+      const delPie = texto ? prVariacion(texto, cfg.campanas, cfg, ahora, prTipoDeCampana(deLaImagen, cfg)) : null;
+      const especifica = delPie && delPie.campana.id === deLaImagen.id ? delPie.variante : 'promo';
+      // C-09: un pie de foto que pregunta algo que el mensaje no contesta se pasa con el local, además de la bienvenida de la promo.
+      return salir('promo', { campana: deLaImagen, variante: especifica, via: 'imagen', sinResponder: especifica === 'promo' && prPreguntaSinResponder(texto) });
+    }
+  }
   if (texto) tipoEf = 'text';
   else return salir('imagen_sin_pendiente');
 } else if (t.tipo === 'location' || t.ubicacion) {
@@ -185,7 +199,7 @@ if (cfg.promosActivo === true && Array.isArray(cfg.campanas) && cfg.campanas.len
 
 // --- 5. Identidad primero; después, pide una persona ---------------------------------------
 const PREGUNTA_IDENTIDAD = /\b(eres|sos|seras|hablo con|hablando con|estoy hablando con|me atiende|me atiendes|atiende) (un |una |el |la )?(robot|bot|chatbot|ia|inteligencia artificial|maquina|programa|humano|humana|persona|real)\b|\b(robot|chatbot|bot|inteligencia artificial)\b/;
-const PIDE_PERSONA = /\b(hablar|conversar|comunicar|comunicarme|comunicarnos|contactar|contactarme|pasar|pasame|pasenme|comunicame) (con|a) (una |un |la |el |algun |alguna |otra )?(persona|alguien|humano|humana|encargad[oa]|asesor|asesora|duen[oa]|gerente|administrador|administradora|recepcion)\b|\b(quiero|necesito|prefiero|quisiera|pido) (a )?(una |un |la |el )?(persona|humano|humana|asesor|asesora|encargad[oa])\b|\b(reclamo|queja|humano|humana)\b/;
+const PIDE_PERSONA = /\b(hablar|conversar|comunicar|comunicarme|comunicarnos|contactar|contactarme|pasar|pasame|pasenme|comunicame) (con|a) (una |un |la |el |algun |alguna |otra )?(persona|alguien|humano|humana|encargad[oa]|asesor|asesora|duen[oa]|gerente|administrador|administradora|recepcion)\b|\b(quiero|necesito|prefiero|quisiera|pido) (a )?(una |un |la |el )?(persona|humano|humana|asesor|asesora|encargad[oa])\b|\b(reclamo|queja|humano|humana)\b|\b(hablar|conversar|comunicarme|comunicarnos|comunicar|contactar|contactarme) (con|a) (el|la) (local|negocio|restaurante|tienda|equipo)\b|\b(escribir|escribirle|escribirles|escribirnos) (al|a la|con el|con la) (local|negocio|restaurante|tienda|recepcion|equipo|encargad[oa]|duen[oa])\b|^(escribanme|escribame)( por favor)?$/;
 if (PREGUNTA_IDENTIDAD.test(norm)) return salir('identidad');
 if (PIDE_PERSONA.test(norm)) return salir('transferir', { motivo: 'pidió hablar con una persona' });
 
@@ -200,6 +214,15 @@ if (PIDE_PERSONA.test(norm)) return salir('transferir', { motivo: 'pidió hablar
 const hayDatoDelLocal = !!vmLinea(cfg.direccion, 200).replace(/[.\s]+$/, '') || !!vmEnlaceDeMapa(cfg.direccionMaps);
 const pidiendoSuDireccion = paso === 'pedido_datos' && !!previo.entrega && previo.entrega.entrega === 'delivery';
 if (hayDatoDelLocal && pideElLocal(norm, pidiendoSuDireccion)) return salir('consulta', { consulta: 'direccion_local', motivo: 'ubicacion_del_local' });
+
+// --- 5c. El anuncio por el que llegó (`referral`, adenda de campañas 06/11/2026) -----------------------------------------------
+// El `referral` solo ELIGE qué promoción mostrar: compara su titular y su cuerpo con los titulares de los anuncios vigentes del servidor (`anuncioPorTitular`). Nunca vende,
+// cobra ni abre un pedido. Solo en `inicio` (el primer mensaje), con un mensaje corto que no pide otra cosa (un pedido, una mesa para otro anuncio, hablar con alguien ya salieron).
+if (paso === 'inicio' && cfg.promosActivo === true && Array.isArray(cfg.campanas) && cfg.campanas.length && t.referral && typeof t.referral === 'object'
+  && Array.isArray(cfg.anuncios) && cfg.anuncios.length && norm.split(' ').filter(Boolean).length <= 8 && !intencionDePedir(norm)) {
+  const delAnuncio = prCampanaDelReferral(cfg.campanas, cfg.anuncios, t.referral, ahora, anuncioPorTitular);
+  if (delAnuncio && !(/reserv|\bmesa\b/.test(norm) && prTipoDeCampana(delAnuncio, cfg) === 'A')) return salir('promo', { campana: delAnuncio, via: 'referral' });
+}
 
 // --- 6. Intenciones GLOBALES: valen en cualquier paso, antes del «por paso» ------------------------
 // Con un comprobante en espera (`esperando_comprobante`) «menú» no sale del cobro (muestra el recordatorio) y lo
@@ -218,6 +241,16 @@ if (cancelacion === 'no') {
 if (pedidosOn && !enComprobante && /^(ver |mostrar |muestrame |dime |cual es |quiero ver )?(mi |el )?(pedido|carrito)( guardado| actual)?$|^(que|cual) (tengo|llevo|pedi)( guardado| en mi pedido| en el pedido| pedido)?$|^cuanto (va|llevo)( en mi pedido| en el pedido| mi pedido)?$|^(mi pedido|mi carrito)$/.test(norm)
   && /\b(pedido|carrito|tengo|llevo|pedi|va)\b/.test(norm) && norm !== 'pedido' && norm.length <= 40) {
   return salir('boton', { motivo: 'ver_pedido' });
+}
+// --- 6a. VARIACIONES del texto de una campaña (adenda 06/11/2026, C-07) -----------------------------------------------------
+// Quien pregunta con otras palabras por «las tortas mexicanas» o por «Jueves de +2», o hace la pregunta que sigue al mensaje («¿qué incluye?», «¿por qué dice solo delivery?»).
+// Por código, solo con la campaña vigente del servidor y nunca con un saludo común (ver `prVariacion`). SOLO en `inicio` y `menu` (en un pedido o una reserva en curso el
+// mensaje sigue ese camino), y DESPUÉS de pedir una persona y de cancelar (esas intenciones ganan). La pregunta suelta solo cuenta en `menu`, con la campaña que se acaba
+// de mostrar (`campanaVista` del estado). El texto EXACTO de la campaña (paso 4) vale en cualquier paso, como siempre.
+if (!cancelacion && (paso === 'inicio' || paso === 'menu') && cfg.promosActivo === true && Array.isArray(cfg.campanas) && cfg.campanas.length) {
+  const vista = paso === 'menu' && (previo.campanaVista === 'A' || previo.campanaVista === 'B') ? previo.campanaVista : '';
+  const variacion = prVariacion(texto, cfg.campanas, cfg, ahora, vista);
+  if (variacion) return salir('promo', { campana: variacion.campana, variante: variacion.variante, sinResponder: variacion.sinResponder === true });
 }
 const quierePedir = /\b(pedir|pedido)\b|\bdelivery\b|para llevar|\bquiero \d/.test(norm) || intencionDePedir(norm);
 const quiereReservar = /reserv|\bmesa\b/.test(norm);

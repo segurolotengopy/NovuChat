@@ -147,6 +147,12 @@ const pedidoDeLaRef = (() => {
 })();
 const pedidoSimulado = !!pedidoDeLaRef && pedidoDeLaRef.simulado === true;
 const llegaComoComprobanteReal = (tipo === 'image' || tipo === 'document') && cobro.activo === true && cobro.modo !== 'simulado' && cobro.pendiente === true;
+// UNA FOTO QUE PUEDE SER EL ARTE DE UN ANUNCIO (adenda de campañas, 06/11/2026): una IMAGEN (no un PDF ni otro medio) que NO es un comprobante, con alguna campaña
+// vigente que reconocer y SIN cobro pendiente (real o simulado: con un QR esperando, la foto se lee como comprobante y nunca como anuncio). Solo entonces se baja y se
+// clasifica (`Clasificar imagen`, ~0,0001 USD); una imagen nunca vende ni cobra por sí sola.
+const hayCampanaQueReconocer = cfg.promosActivo === true && Array.isArray(cfg.campanas) && cfg.campanas.length > 0;
+const esImagenPosibleAnuncio = tipo === 'image' && mediaId !== '' && /^image\//i.test(mimeType) && cobro.pendiente !== true
+  && !pedidoSimulado && !llegaComoComprobanteReal && hayCampanaQueReconocer;
 
 return [{ json: {
   from: from,
@@ -159,6 +165,10 @@ return [{ json: {
   texto: texto,
   textoReporte: textoReporte,
   origen: ref ? 'anuncio' : 'directo',
+  // Del `referral` del anuncio SOLO el titular y el cuerpo, saneados (texto de un tercero, no confiable): `Decidir turno` los compara con los titulares de los
+  // anuncios vigentes del servidor para elegir QUÉ promoción mostrar; nunca vende ni abre nada. Lo demás (enlaces, ids, imágenes) no pasa.
+  referral: ref ? { headline: vmLinea(ref.headline, 200), body: vmLinea(ref.body, 300) } : null,
+  esPosibleAnuncio: esImagenPosibleAnuncio,
   boton: boton,
   esAudio: tipo === 'audio' && mediaId !== '',
   esComprobante: llegaComoComprobanteReal && mediaId !== '' && !pedidoSimulado,

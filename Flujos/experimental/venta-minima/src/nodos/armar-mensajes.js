@@ -530,6 +530,15 @@ const AM_falla = AM_jFalla ? [Object.assign(AM_jFalla, {
   resumen: Object.assign({}, AM_resumen, { estadoDespues: null, errores: AM_erroresFalla, mensajesSalientes: 1, avisoSalio: AM_AVISO_SALIO }),
 })] : [{ sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: AM_FROM, cierre: null, errores: AM_erroresFalla,
   resumen: Object.assign({}, AM_resumen, { estadoDespues: null, errores: AM_erroresFalla, mensajesSalientes: 0 }) }];
+// RÁFAGA (06/11/2026, Q'Taco): el perdedor de un conflicto de versión SIN hecho externo cede, y el mensaje que escribió quedaba sin respuesta (3 mensajes seguidos daban 2 respuestas). Ya no es silencio:
+// si lo que llegó NO fue un botón (cualquier botón perdido, incluido el doble toque, sigue cediendo en silencio: no se repite el paso), sale UN aviso corto que pide repetir lo que haya quedado sin respuesta. No promete nada, no toca el estado,
+// no avisa al local y no lleva botones. Reemplaza el silencio por un mensaje al cliente (solo en la carrera; 0 mensajes por conversación en el flujo normal).
+const AM_CEDE_CUERPO = amEmojis('Recibí varios mensajes tuyos casi al mismo tiempo 🙂. Si algo quedó sin respuesta, envíalo otra vez.').trim();
+const AM_jCede = !AM_T.boton && AM_CONVERSA ? amSalir({ payload: amTexto(AM_CEDE_CUERPO), texto: AM_CEDE_CUERPO, respaldo: AM_CEDE_CUERPO, tipoReporte: 'text' }) : null;
+const AM_cede = AM_jCede ? [Object.assign(AM_jCede, {
+  cierre: null, errores: AM_errores.concat(['rafaga_cedida']),
+  resumen: Object.assign({}, AM_resumen, { estadoDespues: null, errores: AM_errores.concat(['rafaga_cedida']), mensajesSalientes: 1 }),
+})] : [];
 // Los avisos de pedido y de comprobante que SALIERON en este turno (o ya estaban avisados): si el compromiso falla, `Soltar mensajes` los anota para que el turno siguiente no los repita (I1).
 // La clave es la de `Armar avisos` (`vmClaveAviso`): el pedido por pedidoId; el comprobante, además, por medio y resultado del cotejo (B2: un comprobante correcto nunca se suprime por uno malo anterior).
 const AM_idPedido = AM_ped && AM_ped.pedidoId ? String(AM_ped.pedidoId) : '';
@@ -597,8 +606,21 @@ const AM_replan = AM_hechoExterno && AM_modo === 'comprometer' ? {
   // Las reservas del día (PR-4b): `reservaHoy` es el día de este turno y `reservaSuma` dice que ESTE turno anotó una (se suma a las del ganador); el 2.º intento las conserva.
   reservaHoy: _rsFechaLocal(AM_AHORA), reservaSuma: AM_reservaSuma, minHastaMedianoche: vmMinHastaMedianoche(AM_AHORA).min,
 } : null;
+// EL miniCRM (módulo `crm`, solo Q'Taco 3727): el prospecto del turno, calculado con HECHOS (el plan y el pedido guardado), nunca con lo que diga el modelo. Solo con planilla (id y hoja), sin modo prueba, en una
+// conversación y con el estado a salvo (si el compromiso no cabe o no hay sesión, sale el genérico y no se escribe). LA PLANILLA NUNCA TUMBA LA ATENCIÓN: si calcular el prospecto lanza, el turno responde igual y no se escribe.
+// Los 8 nodos de la planilla cuelgan de aquí, debajo del envío y del cierre. 0 mensajes: nada de esto envía.
+let AM_prospectoCrm = null;
+try {
+  if (vmCrmActiva(AM_CFG, AM_PRUEBA) && AM_CONVERSA && AM_claveValida && (AM_modo === 'comprometer' || AM_modo === 'sin_estado_que_guardar')) {
+    AM_prospectoCrm = vmProspectoCrm({
+      from: AM_FROM, plan: AM_PLAN, pedidoEstado: AM_estadoDespues && AM_estadoDespues.pedido, nombrePerfil: AM_T.nombrePerfil, ahoraMs: AM_AHORA,
+      avisoSalio: AM_AVISO_SALIO && AM_tiposSalidos.indexOf('transferencia') >= 0, anteriorMs: vmCrmMarcarVisto(AM_sd, AM_FROM, AM_AHORA),
+    });
+  }
+} catch (e) { AM_prospectoCrm = null; }
 return [{ json: {
   hechoExterno: AM_hechoExterno, replan: AM_replan, avisoMarcas: AM_avisoMarcas, avisoFalla: AM_avisoFalla, avisoFallaN: AM_avisoFallaN, avisoFallaFecha: avFechaLocal(AM_AHORA),
+  guardarPlanilla: AM_prospectoCrm !== null, prospectoPlanilla: AM_prospectoCrm,
   turno: true, modo: AM_modo, comprometer: AM_compromiso !== null, compromiso: AM_compromiso, numero: ssNumeroHeader(), cupos: AM_CUPOS.estado, asentar: AM_asentar,
-  salida: AM_final, salidaFalla: AM_falla, previo: AM_ses.previo, bloque: AM_bloque, deRespaldo: AM_ses.deRespaldo, from: AM_FROM, ahoraMs: AM_AHORA,
+  salida: AM_final, salidaFalla: AM_falla, salidaCede: AM_cede, previo: AM_ses.previo, bloque: AM_bloque, deRespaldo: AM_ses.deRespaldo, from: AM_FROM, ahoraMs: AM_AHORA,
 } }];

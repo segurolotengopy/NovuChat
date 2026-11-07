@@ -471,6 +471,38 @@ describe('reserva: marcas «GRUPO GRANDE» y «VARIAS RESERVAS HOY DE ESTE NÚME
   });
 });
 
+describe('forma pedido: las cuatro marcas juntas no se cortan (revisión del PR de integración)', () => {
+  it('día lleno + reserva de mañana + campaña B + zona larga: la nota de mañana y la marca de campaña llegan ENTERAS', () => {
+    const r = reserva({ reserva: { ...reserva().reserva, diaLleno: true, grupoGrande: true, personas: 15, zona: 'salón principal junto a la ventana', reservaManana: '12:00', marcaOrigen: 'Campaña: Jueves de +2' } });
+    const ped = L.avArmar('reserva', r, CSV, { ...CFG, formaPlantillaReserva: 'pedido' }, sdCon(), AHORA);
+    const todo = params(plantillaDe(ped, ANDRES)).join(' | ');
+    expect(todo).toContain('Reserva de mañana (antes de las 12:00): contactar para confirmar o cambiar la hora');
+    expect(todo).toContain('Campaña: Jueves de +2');
+    expect(todo).toContain('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+    expect(todo).toContain('GRUPO GRANDE');
+  });
+});
+
+describe('reserva de mañana (antes de `reservaDesde`): la nota viaja DENTRO del mismo aviso', () => {
+  const NOTA = 'Reserva de mañana (antes de las 12:00): contactar para confirmar o cambiar la hora';
+  const con = (m: J): J => reserva({ reserva: { ...reserva().reserva, ...m } });
+  it('forma solicitud: la variable de notas la lleva, concatenada con otras marcas; sin la marca, nada cambia', () => {
+    const cfg = { ...CFG, formaPlantillaReservaCompleto: 'solicitud' };
+    const p = (r: J): string => params(plantillaDe(L.avArmar('reserva', r, CSV, cfg, sdCon(), AHORA), ANDRES)).join(' | ');
+    expect(p(con({ reservaManana: '12:00', hora: '11:00' }))).toContain(NOTA);
+    expect(p(con({ reservaManana: '12:00', diaLleno: true }))).toContain('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar · ' + NOTA);
+    expect(p(reserva())).not.toContain('Reserva de mañana');
+    expect(p(con({ reservaManana: 'cualquier cosa' }))).not.toContain('Reserva de mañana');
+  });
+  it('forma cita y ventana abierta: también la llevan; mismo número de ítems (0 mensajes extra)', () => {
+    const base = L.avArmar('reserva', reserva(), CSV, CFG, sdCon(), AHORA);
+    const man = L.avArmar('reserva', con({ reservaManana: '12:00' }), CSV, CFG, sdCon(), AHORA);
+    expect(man.length).toBe(base.length);
+    expect(params(plantillaDe(man, ANDRES)).join(' | ')).toContain(NOTA);
+    expect(cuerpo(L.avArmar('reserva', con({ reservaManana: '12:00' }), CSV, CFG, abierta(), AHORA), ANDRES)).toContain('• ' + NOTA);
+  });
+});
+
 describe('derivación: texto libre con ventana, plantilla sin ella', () => {
   const datos = { nombre: 'Ana Pérez', telefono: CLIENTE, motivo: 'quiero hablar de un evento para 40 personas', codigo: 'C1D2' };
   it('ventana abierta → solo texto libre, sin plantilla', () => {
