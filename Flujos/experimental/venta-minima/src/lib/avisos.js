@@ -790,7 +790,7 @@ function avVariablesDeForma(tipo, d, dest, ahoraMs) {
       avFechaLegible(r.fecha, r.hora) || 'fecha sin indicar',
       avLimpio(r.zona, 40, opc),
     ].filter(Boolean);
-    // Las marcas (grupo grande, día lleno, reserva de mañana, campaña) van en `modalidad` (tope 500) y no en `items` (tope 200): juntas se cortaban a mitad de la nota.
+    // Las marcas (grupo grande, día lleno, reserva de mañana y origen del anuncio) van en `modalidad` (tope 500) y no en `items` (tope 200): juntas se cortaban a mitad de la nota.
     const marcas = avMarcasReserva(r);
     return {
       items: avParametro('SOLICITUD DE RESERVA' + (cod ? ' ' + cod : '') + ': ' + partes.join(', '), 200),
