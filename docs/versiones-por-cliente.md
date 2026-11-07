@@ -341,3 +341,11 @@ Cambio en `Decidir turno`, `Armar mensajes` y `Soltar mensajes` de «Venta míni
 - **Qué cambia:** dos claves nuevas de «Config base» (`reservaDesde`, `reservaMananaTexto`; solo `qtaco.json`, que hereda `qtaco-3727` y el ensayo). Una reserva con hora anterior a `reservaDesde` se ACEPTA (el horario válido sigue siendo `horario`, el de pedidos: no hay horario propio de reservas); la confirmación agrega el texto del negocio y el aviso al local lleva la nota «Reserva de mañana (antes de las 12:00): contactar para confirmar o cambiar la hora» dentro del mismo aviso (variable de notas existente; ninguna variable de plantilla cambia). Horas fuera de 10:00–21:30 se rechazan como hoy. `reservaDesde` vacío = comportamiento anterior.
 - **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos. Código común a todas las salidas de `venta-minima` (regeneradas); solo Q'Taco trae `reservaDesde`, así que el resto no cambia de comportamiento.
 - **No se publica con este PR.**
+
+## Todas las diferencias del comprobante en la agenda con seña y en el cobro de venta de demo (Andres, 07/11/2026)
+
+Mismo criterio que la sección anterior (base común de venta): los módulos comunes `respuesta-de-la-sena.js` y `respuesta-del-cobro.js` nombran ahora TODAS las diferencias que lista el servidor (destinatario primero), con frases fijas y SIN copiar lo leído de la imagen (antes mostraban solo la primera y, si era el depósito, copiaban la cuenta o el nombre leídos). Recepción sigue recibiendo el detalle completo.
+
+- **Flujos regenerados (sin publicar):** `platinum-agendamiento`, `demo-a-agendamiento` y `demo-b-venta-cobro`. **Excepción declarada:** los vivos de Platinum y de los demos siguen con el texto anterior hasta su próxima publicación; **cierra:** esa publicación (los demos con su ensayo previo).
+- **No cubierto por este PR:** `bellido-agendamiento` (no sale de un manifiesto: su texto del comprobante vive en su propio JSON, que es de su sesión) y Q'Taco/`venta-minima` (sesión de Q'Taco).
+- **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos; el texto del mensaje que ya sale pasa de una frase a varias.

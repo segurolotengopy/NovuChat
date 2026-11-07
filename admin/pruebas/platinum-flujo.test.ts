@@ -2500,10 +2500,34 @@ describe.each([
       expect(r).toContain('https://maps.app.goo.gl/AbCdEfGh12');
     });
 
+    it('no cuadra con VARIAS diferencias: las nombra TODAS, el destinatario primero, con frases fijas, SIN copiar lo leído de la imagen (07/11/2026)', () => {
+      const s = responder(OK({ resultado: 'no_cuadra', diferencias: [
+        'El comprobante dice 40 y el pedido es de 100.',
+        'El comprobante es anterior al pedido: parece un pago de otra vez.',
+        'El depósito fue a la cuenta 987654321, que no es la del QR.',
+        'El depósito figura a «PERSONA AJENA SA» y la cuenta es de «UN NEGOCIO».',
+      ] }));
+      const r = String(s['respuesta']);
+      expect(r).toMatch(/Hay varios datos que no me coinciden \(la cuenta de destino no es la del QR, el nombre del destinatario no coincide con el de la cuenta, el comprobante dice 40 y la seña es de 100 y la fecha del comprobante es anterior a la reserva\)/);
+      // Nada leído de la imagen ni el titular del negocio llega al cliente.
+      expect(r).not.toMatch(/987654321|PERSONA AJENA|UN NEGOCIO»/);
+      // Recepción sí recibe el detalle completo.
+      expect(String(s['motivoTransferencia'])).toContain('PERSONA AJENA');
+      expect(r).not.toMatch(/acreditad|verificad|simulad/i);
+    });
+
+    it('no cuadra con UNA sola diferencia conocida: «un dato que no me coincide» con su frase fija (sin lo leído)', () => {
+      const r = String(responder(OK({ resultado: 'no_cuadra', diferencias: ['El depósito fue a la cuenta 987654321, que no es la del QR.'] }))['respuesta']);
+      expect(r).toMatch(/Hay un dato que no me coincide \(la cuenta de destino no es la del QR\)/);
+      expect(r).not.toMatch(/987654321/);
+      expect(r).not.toMatch(/Hay varios datos/);
+    });
+
     it('no cuadra: dice cuál dato no coincide, lo revisa una persona y el horario sigue reservado', () => {
       const s = responder(OK({ resultado: 'no_cuadra', diferencias: ['El monto leído (40) no es el de la seña (100).', 'Otra.'] }));
       const r = String(s['respuesta']);
-      expect(r).toMatch(/Recibí (su|tu) comprobante\. Hay un dato que no me coincide \(El monto leído \(40\) no es el de la seña \(100\)\)/);
+      // TODAS las diferencias (condición general, 07/11/2026): las dos, no solo la primera.
+      expect(r).toMatch(/Recibí (su|tu) comprobante\. Hay varios datos que no me coinciden \(El monto leído \(40\) no es el de la seña \(100\) y Otra\)/);
       expect(r).toContain('una persona de Un Negocio');
       expect(r).toMatch(/(Su|Tu) horario sigue reservado/);
       expect(s).toMatchObject({ transferir: true, resultadoSena: 'no_cuadra', confirmarCita: false });

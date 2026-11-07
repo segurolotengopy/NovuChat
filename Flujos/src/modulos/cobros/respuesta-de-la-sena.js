@@ -31,6 +31,30 @@ const conEmojis = String(cfg.nivelEmojis || '') !== 'ninguno';
 const negocio = String(cfg.nombreNegocio || '').trim() || 'el negocio';
 const importe = `${String(cfg.senaImporte || '').trim()} ${String(cfg.senaMoneda || 'Bs').trim()}`.trim();
 
+// TODAS LAS DIFERENCIAS AL CLIENTE, el destinatario primero (Andres, 07/11/2026: condicion general del sistema). El servidor lista TODAS en `diferencias`; antes el texto al cliente mostraba solo la
+// primera y, peor, copiaba lo leido de la imagen («El deposito fue a la cuenta <la que leyo>», «figura a <el nombre que leyo>»). Ahora cada diferencia conocida sale en su frase FIJA (nada leido de la
+// imagen; solo los dos importes que el servidor ya tradujo) y las que no se reconocen salen tal como las dio el servidor (su catalogo es fijo). Recepcion sigue recibiendo el detalle completo en el motivo.
+const frasesParaElCliente = (lista, referencia) => {
+  const grupo = (d) => (/^El dep[oó]sito (fue a la cuenta|figura a)|^El comprobante no muestra a qu[eé] cuenta/.test(d) ? 0 : (/^(El comprobante dice|No se pudo leer el importe)/.test(d) ? 1 : 2));
+  const traducir = (d) => {
+    if (/^El dep[oó]sito fue a la cuenta/.test(d)) return 'la cuenta de destino no es la del QR';
+    if (/^El dep[oó]sito figura a/.test(d)) return 'el nombre del destinatario no coincide con el de la cuenta';
+    if (/^El comprobante no muestra a qu[eé] cuenta/.test(d)) return 'en el comprobante no se ve a qué cuenta se depositó';
+    const m = /^El comprobante dice (\d+(?:[.,]\d+)*) y (?:el pedido|la seña) es de (\d+(?:[.,]\d+)*)/i.exec(d);
+    if (m) return `el comprobante dice ${m[1]} y ${referencia} es de ${m[2]}`;
+    if (/^No se pudo leer el importe/.test(d)) return 'no pude leer el importe';
+    if (/^No se pudo leer la fecha/.test(d)) return 'no pude leer la fecha';
+    if (/^El comprobante es anterior al pedido/.test(d)) return `la fecha del comprobante es anterior a ${referencia === 'la seña' ? 'la reserva' : 'tu pedido'}`;
+    if (/^El comprobante tiene una fecha posterior/.test(d)) return 'la fecha del comprobante no es correcta';
+    return d.replace(/\.$/, '');
+  };
+  const orden = lista.map((d, i) => ({ d, i })).sort((a, b) => grupo(a.d) - grupo(b.d) || a.i - b.i).map((x) => traducir(x.d));
+  return orden.filter((f, i) => f !== '' && orden.indexOf(f) === i);
+};
+const detalleDeDiferencias = (frases) => (frases.length > 1
+  ? { plural: true, texto: ` (${frases.slice(0, -1).join(', ')} y ${frases[frases.length - 1]})` }
+  : { plural: false, texto: frases[0] ? ` (${frases[0]})` : '' });
+
 for (let i = 0; i < items.length; i++) {
   const previo = (previos[i] ?? previos[previos.length - 1] ?? { json: {} }).json;
   const r = items[i].json ?? {};
@@ -72,8 +96,8 @@ for (let i = 0; i < items.length; i++) {
       + `coinciden (monto leído ${montoLeido || 'sin dato'}${banco ? `, banco ${banco}` : ''}); `
       + 'confirmar en el banco que el dinero entró antes de darla por cobrada';
   } else if (resultado === 'no_cuadra') {
-    const detalle = diferencias[0] ? ` (${diferencias[0].replace(/\.$/, '')})` : '';
-    respuesta = `Recibí ${su} comprobante. Hay un dato que no me coincide${detalle}, así que lo va a revisar `
+    const dif = detalleDeDiferencias(frasesParaElCliente(diferencias, 'la seña'));
+    respuesta = `Recibí ${su} comprobante. ${dif.plural ? 'Hay varios datos que no me coinciden' : 'Hay un dato que no me coincide'}${dif.texto}, así que lo va a revisar `
       + `una persona de ${negocio} y ${deUsted ? 'le' : 'te'} escribe por acá. `
       + `${deUsted ? 'Su' : 'Tu'} horario sigue reservado mientras tanto.`;
     motivo = `comprobante con diferencia: ${diferencias.join('; ') || 'sin detalle'}; la seña es de ${importe}; `
