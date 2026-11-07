@@ -92,6 +92,11 @@ export function crear(envios: Partial<Record<'Enviar a WhatsApp' | 'Enviar respa
     'Descargar medio': () => ({}),
     'Guardar comprobante': (ll) => ({ statusCode: 200, body: { ruta: `tenants/qtaco/comprobantes/2026-10-26/${String(ll.encabezados['X-NovuChat-IdMeta'] ?? 'x').replace(/[^A-Za-z0-9_-]/g, '_')}.jpg` } }),
     'Transcribir audio': () => ({ content: { parts: [{ text: 'quiero 4 tacos de birria' }] } }),
+    // Como n8n: sin el campo binario `data` (el comprobante sin campañas que reconocer) falla ANTES de llamar a Gemini; con él, sin lectura.
+    'Clasificar imagen': (ll) => {
+      if (ll.parametros['binaryPropertyName'] !== 'data') throw new Error('no binary field');
+      return { error: { message: 'sin clasificación' } };
+    },
     'Leer comprobante (imagen)': () => ({}),
     'Leer comprobante (PDF)': () => ({}),
     'Cotejar en el servidor': () => ({ statusCode: 200, body: { resultado: 'cuadra', diferencias: [], cierreId: 'venta_prueba' } }),
