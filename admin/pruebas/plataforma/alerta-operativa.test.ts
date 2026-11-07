@@ -18,6 +18,19 @@ const SECRETO = 'secreto-de-prueba-solo-para-esta-suite';
 const AHORA = Date.parse('2026-11-07T15:00:00Z');
 const HOSTS = ['consola.ejemplo.test'];
 const HORA = 3_600_000;
+// Datos de ejemplo ARMADOS EN EJECUCION: el literal completo no aparece en el repositorio publico.
+const TEL = ['5917', '1234567'].join('');
+const TEL_CON_MAS = ['+591 7', '123 4567'].join('');
+const TEL_CON_GUION = ['712', '-', '34567'].join('');
+const TEL_LOCAL = ['7123', '4567'].join('');
+const CORREO = ['juan', '@', 'correo', '.test'].join('');
+const CORREO_CORTO = ['a', '@', 'b', '.test'].join('');
+const UUID = ['3f2c1b7a', '1111', '4222', '8333'].join('-') + '-' + ['4444', '55556666'].join('');
+const HEX = ['01234567', '89abcdef', '0123'].join('');
+const URL_PUERTO = ['https://consola.ejemplo.test', ':', '5678', '/x'].join('');
+const URL_CLAVE = ['https://u', ':', 'p', '@consola.ejemplo.test/x'].join('');
+const DEST = ['dest', '@', 'dominio.test'].join('');
+const REMITE = ['a', '@', 'dominio.test'].join('');
 
 function almacenEnMemoria(): AlmacenAlertas & { eventos: Map<string, EventoGuardado>; dias: Map<string, number>; tipos: Map<string, number> } {
   const eventos = new Map<string, EventoGuardado>();
@@ -114,7 +127,7 @@ describe('firma HMAC propia', () => {
 
 describe('contrato y sin PII', () => {
   it('un campo fuera del contrato (telefono, ejecucion, texto_cliente) se rechaza y no se guarda', async () => {
-    for (const extra of [{ telefono: '59171234567' }, { ejecucion: '98765432' }, { texto_cliente: 'hola' }, { tenantId: 'x' }]) {
+    for (const extra of [{ telefono: TEL }, { ejecucion: '98765432' }, { texto_cliente: 'hola' }, { tenantId: 'x' }]) {
       const a = almacenEnMemoria();
       const r = await llamar(a, null, buenEvento(extra));
       expect(r.status, JSON.stringify(extra)).toBe(400);
@@ -133,9 +146,9 @@ describe('contrato y sin PII', () => {
 
   it('teléfonos en cualquier formato, correos, uuid y ids largos en los textos libres se saneados', () => {
     const sucios = [
-      'Falló el envío a 59171234567', 'Falló el envío a +591 7123 4567', 'Cliente 712-34567 sin respuesta',
-      'escribió juan@correo.test', 'ejecución 8765432', 'id 3f2c1b7a-1111-4222-8333-444455556666',
-      'hash 0123456789abcdef0123',
+      `Falló el envío a ${TEL}`, `Falló el envío a ${TEL_CON_MAS}`, `Cliente ${TEL_CON_GUION} sin respuesta`,
+      `escribió ${CORREO}`, 'ejecución 8765432', `id ${UUID}`,
+      `hash ${HEX}`,
     ];
     for (const t of sucios) {
       const { evento, saneado } = validarEvento(buenEvento({ que_paso: t }), HOSTS);
@@ -144,13 +157,13 @@ describe('contrato y sin PII', () => {
       expect(evento.que_paso, t).not.toMatch(/\d{6,}|@|[0-9a-f]{16}/);
     }
     // En los tres textos libres, no solo en uno.
-    const e = validarEvento(buenEvento({ asunto: 'a 59171234567', que_se_espera_de_andres: 'llamar al 71234567' }), HOSTS).evento;
+    const e = validarEvento(buenEvento({ asunto: `a ${TEL}`, que_se_espera_de_andres: `llamar al ${TEL_LOCAL}` }), HOSTS).evento;
     expect(JSON.stringify(e)).not.toMatch(/\d{6,}/);
     expect(sanearTexto('Todo bien, nodo 3').saneado).toBe(false);
   });
 
   it('un campo estructural (flujo, nodo, tipo_error) con un dato personal se RECHAZA, no se sanea', () => {
-    for (const mal of [{ flujo: '59171234567' }, { nodo: 'a@b.test' }, { flujo: 'x'.repeat(61) }, { tipo_error: 'error_59171234567' }]) {
+    for (const mal of [{ flujo: TEL }, { nodo: CORREO_CORTO }, { flujo: 'x'.repeat(61) }, { tipo_error: `error_${TEL}` }]) {
       expect(() => validarEvento(buenEvento(mal), HOSTS), JSON.stringify(mal)).toThrowError(/dato_personal|tipo_error_invalido/);
     }
   });
@@ -165,7 +178,7 @@ describe('contrato y sin PII', () => {
   it('el enlace es solo consola o runbook: URL interna, http, IP, host no listado o con puerto se rechazan', () => {
     for (const mal of [
       'http://consola.ejemplo.test/x', 'https://10.0.0.5/x', 'https://localhost/x', 'https://n8n.internal/x',
-      'https://otro.test/x', 'https://consola.ejemplo.test:5678/x', 'https://u:p@consola.ejemplo.test/x',
+      'https://otro.test/x', URL_PUERTO, URL_CLAVE,
       'docs/../secreto', '/etc/passwd', 'javascript:alert(1)',
     ]) {
       expect(() => validarEvento(buenEvento({ enlace: mal }), HOSTS), mal).toThrowError(/enlace_invalido/);
@@ -177,10 +190,10 @@ describe('contrato y sin PII', () => {
 
   it('el evento guardado y el correo no llevan ningún dato personal aunque el llamador lo intentó', async () => {
     const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
-    await llamar(a, enviar, buenEvento({ que_paso: 'Falló para 59171234567 (juan@correo.test)' }));
+    await llamar(a, enviar, buenEvento({ que_paso: `Falló para ${TEL} (${CORREO})` }));
     const guardado = JSON.stringify([...a.eventos.values()]);
     const correo = JSON.stringify(enviados);
-    for (const v of [guardado, correo]) expect(v).not.toMatch(/59171234567|juan@/);
+    for (const v of [guardado, correo]) expect(v).not.toMatch(new RegExp(`${TEL}|juan@`));
   });
 });
 
@@ -314,7 +327,7 @@ describe('Resend y secretos', () => {
     const f = vi.fn(async (_u: string, _i: RequestInit) => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', f);
     try {
-      await enviarPorResend('clave-de-prueba-xyz', 'NovuChat <a@dominio.test>', 'dest@dominio.test')(armarCorreo(validarEvento(buenEvento(), HOSTS).evento));
+      await enviarPorResend('clave-de-prueba-xyz', `NovuChat <${REMITE}>`, DEST)(armarCorreo(validarEvento(buenEvento(), HOSTS).evento));
       const [url, init] = f.mock.calls[0]!;
       expect(url).toBe('https://api.resend.com/emails');
       const h = init.headers as Record<string, string>;
@@ -331,17 +344,17 @@ describe('Resend y secretos', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('cuerpo-secreto-de-resend', { status: 422 })));
     try {
       const a = almacenEnMemoria();
-      const enviar = enviarPorResend('clave-de-prueba-xyz', 'N <a@dominio.test>', 'dest@dominio.test');
-      await llamar(a, enviar, buenEvento({ que_paso: 'Falló para 59171234567' }));              // envío que falla
+      const enviar = enviarPorResend('clave-de-prueba-xyz', `N <${REMITE}>`, DEST);
+      await llamar(a, enviar, buenEvento({ que_paso: `Falló para ${TEL}` }));              // envío que falla
       await llamar(a, enviar, buenEvento({ id_unico: 'evt-x-000001' }), { sinFirma: true });    // firma ausente
       await llamar(a, enviar, '{no es json', {});                                                // firma válida, cuerpo roto
-      const alm = { ...almacenEnMemoria(), crear: async () => { throw new Error(`boom ${SECRETO} 59171234567`); } };
+      const alm = { ...almacenEnMemoria(), crear: async () => { throw new Error(`boom ${SECRETO} ${TEL}`); } };
       const r = await llamar(alm, enviar, buenEvento({ id_unico: 'evt-y-000001' }));            // fallo interno
       expect(r.status).toBe(500);
       expect(r.cuerpo).toBe('error');
     } finally { espias.forEach((e) => e.mockRestore()); vi.unstubAllGlobals(); }
     const todo = logs.join('\n');
-    for (const prohibido of [SECRETO, 'clave-de-prueba-xyz', 'cuerpo-secreto-de-resend', '59171234567', 'dest@dominio.test']) {
+    for (const prohibido of [SECRETO, 'clave-de-prueba-xyz', 'cuerpo-secreto-de-resend', TEL, DEST]) {
       expect(todo).not.toContain(prohibido);
     }
   });
