@@ -541,6 +541,19 @@ describe('G. Avisos en viñetas de punta a punta (plantillas nuevas por tipo, 07
     const t2 = c.imagen('media-2');
     expect(t2.avisos).toHaveLength(0);
   });
+  it('delivery con ubicación: el rol completo recibe `pedido_lista_mapa` y «Armar avisos» deja INTACTO el parámetro del botón (no lo trata como texto)', () => {
+    const conUbicacion: J = { ...PED, modalidad: 'delivery', direccion: 'Calle Ejemplo 123', ubicacion: { lat: -16.5, lng: -68.15 } };
+    const w = crear({ panel: panel(JUEVES_10, COBRO), config: VINETAS });
+    w.sesion.sembrar(CLIENTE, { paso: 'esperando_comprobante', pedido: conUbicacion, carrito: [], ultimoMensajeMs: JUEVES_10 - 60_000 }, { ped1: { ...conUbicacion, guardadoMs: JUEVES_10 - 60_000 } });
+    w.mundo.dobles['Cotejar en el servidor'] = () => ({ statusCode: 200, body: { resultado: 'cuadra', diferencias: [], cierreId: 'venta_prueba' } });
+    const t = conversacion(w).imagen('media-1');
+    const completo = plantillas(t).find((a) => a.a === '59100000021')!;
+    expect(nombre(completo)).toBe('pedido_lista_mapa');
+    const comp = (completo.payload['template']?.components ?? []) as J[];
+    expect(comp.map((c) => c['type'])).toEqual(['body', 'button']);
+    expect(comp[1]).toEqual({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: '-16.500000%2C-68.150000' }] });
+    expect(nombre(plantillas(t).find((a) => a.a === '59100000022')!)).toBe('pedido_lista');
+  });
   it('NEGANDO un envío de más: si la nueva sale para uno y falla para el otro, el respaldo va SOLO al que falló', () => {
     const w = conQr();
     w.mundo.dobles['Enviar aviso'] = rechaza('pedido_lista', '59100000022');

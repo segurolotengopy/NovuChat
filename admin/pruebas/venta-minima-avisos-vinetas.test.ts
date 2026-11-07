@@ -113,6 +113,12 @@ describe('pedido_lista: sin ubicación válida, en recojo o para cocina; nunca u
     const it0 = plantillaDe(plan('pedido', pedido(), { ...CON, plantillaPedidoMapaEstado: 'PENDING' }), COMPLETO);
     expect(it0.payload.template.name).toBe('pedido_lista');
     expect(botones(it0)).toEqual([]);
+    // Sin botón, el rol completo conserva el enlace al mapa en {{3}}, entero, como hoy (revisión del PR #850).
+    expect(cuerpo(it0)[2]).toBe('Delivery a Calle Ejemplo 123 (frente a la farmacia) · mapa: https://www.google.com/maps/search/?api=1&query=-16.500000%2C-68.150000');
+    // NEGANDO: cocina nunca lo recibe, ni con la de mapa sin aprobar.
+    expect(cuerpo(plantillaDe(plan('pedido', pedido(), { ...CON, plantillaPedidoMapaEstado: 'PENDING' }), COCINA)).join(' ')).not.toMatch(/mapa|google/);
+    // Con el botón, el enlace no se repite en el cuerpo.
+    expect(cuerpo(plantillaDe(plan('pedido', pedido()), COMPLETO)).join(' ')).not.toMatch(/mapa|google/);
   });
   it('rol cocina: pedido_lista, primer nombre, sin teléfono, dirección, referencia ni ubicación', () => {
     const it0 = plantillaDe(plan('pedido', pedido({ notaPedido: 'tocar timbre 77712345' })), COCINA);
@@ -142,6 +148,35 @@ describe('{{5}}: los ítems en UNA línea, cortados por ítem a 500 caracteres',
         mostrados.forEach((p, i) => expect(p).toBe(`${(i % 3) + 1} × Taco especial de la casa número ${i + 1}${i % 2 ? ' (sin cebolla y con salsa aparte)' : ''}`));
       }
     }
+  });
+  it('NEGANDO el error 132005 de Meta: 30 ítems con dirección, referencia y nota largas ⇒ el CUERPO entero (texto fijo + variables) ≤ 1024 y sigue en viñetas', () => {
+    const FIJO = "Se registró un pedido en Q'Taco.\n• Pedido: \n• Total de la comida: \n• Modalidad: \n• Cliente: \n• Detalle: \n• Comprobante: \nRevise el pedido en la consola antes de despachar.";
+    const largo = (t: string): number => Array.from(t).length;
+    const d = pedido({
+      lineas: muchos(30), nombre: 'Ana María de los Ángeles Pérez Mamani Gutiérrez', notaPedido: 'tocar el timbre dos veces y esperar en la puerta '.repeat(4),
+      direccion: 'Avenida Arce esquina calle Rosendo Gutiérrez edificio Torres del Poeta bloque B piso 12 departamento 1204 '.repeat(2),
+      referencia: 'frente a la plaza grande, al lado de la farmacia con el portón verde '.repeat(2),
+    });
+    for (const [tel, cfg, nombre] of [[COMPLETO, CON, 'pedido_lista_mapa'], [COMPLETO, { ...CON, plantillaPedidoMapaEstado: 'PENDING' }, 'pedido_lista'], [COCINA, CON, 'pedido_lista']] as [string, J, string][]) {
+      const it0 = plantillaDe(plan('pedido', d, cfg), tel);
+      expect(it0.payload.template.name).toBe(nombre);
+      const v = cuerpo(it0);
+      expect(v).toHaveLength(6);
+      expect(largo(FIJO) + v.reduce((a, x) => a + largo(x), 0), `${tel} ${nombre}`).toBeLessThanOrEqual(1024);
+      // Los ítems y el total nunca se recortan para hacer lugar: el total entero y la lista cortada por ítem.
+      expect(v[1]).toBe('Bs 80');
+      const m = / … y (\d+) más$/.exec(v[4]!);
+      expect(m, v[4]).not.toBeNull();
+      const mostrados = v[4]!.slice(0, m!.index).split(' · ');
+      expect(mostrados.length).toBeGreaterThan(0);
+      expect(mostrados.length + Number(m![1])).toBe(30);
+      mostrados.forEach((p, i) => expect(p).toBe(`${(i % 3) + 1} × Taco especial de la casa número ${i + 1}${i % 2 ? ' (sin cebolla y con salsa aparte)' : ''}`));
+    }
+    // Con los topes por variable de hoy, el presupuesto se cubre recortando la lista de ítems (por ítem); {{3}} conserva la nota y el mapa entero.
+    // (El recorte de nota, referencia y dirección de {{3}} es la segunda red: solo corre si a los ítems no les quedaran ni 150 caracteres.)
+    const recortado = cuerpo(plantillaDe(plan('pedido', d, { ...CON, plantillaPedidoMapaEstado: 'PENDING' }), COMPLETO))[2]!;
+    expect(recortado).toContain('nota: tocar el timbre');
+    expect(recortado).toMatch(/ · mapa: https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=-16\.500000%2C-68\.150000$/);
   });
   it('si caben van todos, sin marca; sin ítems dice «sin ítems»', () => {
     expect(cuerpo(plantillaDe(plan('pedido', pedido({ lineas: muchos(3) })), COMPLETO))[4]).not.toMatch(/más$/);
@@ -229,6 +264,8 @@ describe('caída a la plantilla de hoy y cero mensajes agregados', () => {
       {},
       { ...VINETAS, plantillaPedidoMapaEstado: 'PENDING', plantillaPedidoListaEstado: 'REJECTED', plantillaReservaListaEstado: 'PAUSED' },
       { ...VINETAS, plantillaPedidoMapaEstado: '', plantillaPedidoListaEstado: undefined, plantillaReservaListaEstado: 'approved ya' },
+      // El estado vale EXACTAMENTE «APPROVED» (revisión de seguridad del PR #850).
+      { ...VINETAS, plantillaPedidoMapaEstado: 'approved', plantillaPedidoListaEstado: 'Approved', plantillaReservaListaEstado: ' APPROVED' },
       { ...VINETAS, plantillaPedidoMapa: 'Pedido Lista', plantillaPedidoLista: 'pedido-lista', plantillaReservaLista: '' },
     ];
     for (const extra of variantes) {
@@ -286,14 +323,18 @@ describe("los datos de Q'Taco: el 3727 las enciende; el vivo y los demás client
     for (const [k, v] of Object.entries(VINETAS)) expect(c[k], k).toBe(v);
   });
   it('el flujo vivo de Q\'Taco, la prueba, el ensayo y los derivados (Emma, Evy, doctoras) no traen ninguna clave nueva', () => {
+    let revisados = 0;
     const otros = ['venta-minima.qtaco.json', 'venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json', '../rroca-emma/rroca-emma.json', '../rroca-evy/rroca-evy.json', '../doctoras/doctoras.rroca-emma.json', '../doctoras/doctoras.rroca-evy.json'];
     for (const f of otros) {
       const f0 = JSON.parse(readFileSync(join(VM, f), 'utf8')) as Flujo;
       const nodo = f0.nodes.find((n) => n.name === 'Config base');
-      if (!nodo) continue;
+      // Ningún archivo se salta en silencio: todos tienen que traer «Config base».
+      expect(nodo, `${f}: sin «Config base»`).toBeDefined();
+      revisados++;
       const c = configBase(f0);
       for (const k of Object.keys(VINETAS)) expect(c[k], `${f}: ${k}`).toBeUndefined();
     }
+    expect(revisados).toBe(otros.length);
   });
   it('el 3727 sigue con 81 nodos (ninguno agregado)', () => {
     expect((JSON.parse(readFileSync(join(VM, 'venta-minima.qtaco-3727.json'), 'utf8')) as Flujo).nodes).toHaveLength(81);

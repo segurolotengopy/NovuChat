@@ -93,11 +93,17 @@
 //   (o sin la clave) el aviso sale como hoy. Sin ninguna de estas claves, NADA cambia. Cuando rige, reemplaza al ítem de plantilla de ese
 //   destinatario y lleva como `respaldo` el payload de HOY (el que habría salido sin ella): si Meta no devuelve `messages[0].id`, `Reunir
 //   avisos` lo manda por `Aviso de respaldo` en el mismo turno; si la nueva salió, el respaldo no se envía (0 mensajes agregados).
+//   LÍMITE CONOCIDO (aceptado en la revisión del PR #850): «salió» se decide SOLO por un `messages[0].id` real. Si Meta ACEPTA la nueva
+//   pero su respuesta no llega (vence el timeout de 15 s de `Enviar aviso` o se corta la red después del envío), el flujo la da por caída
+//   y manda también el respaldo: el local recibe el MISMO aviso dos veces (nueva + la de siempre). Pasa solo con esa condición (Meta
+//   responde en general en menos de 1 s) y se prefiere a la alternativa: dar por salido un aviso sin id y perderlo. No se cambia la regla.
 //     · pedido/comprobante → `pedido_lista_mapa` (botón URL «Ver en Google Maps») SOLO en delivery, rol `completo` y con ubicación válida
-//       (latitud y longitud numéricas); si no, `pedido_lista` (sin botón). Cuerpo: «Se registró un pedido en Q'Taco.⏎• Pedido: {{1}}⏎• Total
+//       (latitud y longitud numéricas); si no, `pedido_lista` (sin botón; si la de mapa no rige y la ubicación es válida, el rol `completo`
+//       conserva el segmento «mapa: <enlace>» en {{3}}, como hoy). Cuerpo: «Se registró un pedido en <negocio>.⏎• Pedido: {{1}}⏎• Total
 //       de la comida: {{2}}⏎• Modalidad: {{3}}⏎• Cliente: {{4}}⏎• Detalle: {{5}}⏎• Comprobante: {{6}}⏎Revise el pedido en la consola antes de
 //       despachar.» (6 variables de cuerpo + 1 del botón, que va al final de la URL: `lat%2Clon`). {{5}} = los ítems en UNA línea separados
-//       por « · », cortados por ítem a 500 caracteres con « … y K más».
+//       por « · », cortados por ítem con « … y K más». CUERPO ≤ 1024 (Meta, error 132005): {{5}} usa a lo sumo 500 y lo que dejan
+//       1024 − texto fijo − margen − las otras variables; si ni así hay lugar, se recortan nota, referencia y dirección de {{3}} (nunca ítems ni total).
 //     · reserva → `reserva_lista` (5 variables, las de la forma `solicitud`: código · cliente, personas, cuándo, teléfono, notas; sin botón).
 //     · derivación → `consulta_atencion` (3 variables: cliente, motivo, consulta), con ventana cerrada, igual que hoy.
 //   Teléfono del cliente y ubicación: SOLO el rol `completo`; `cocina` recibe el primer nombre, sin teléfono ni botón de mapa.
@@ -1068,7 +1074,8 @@ function avVinetas(c) {
   const texto = (v) => String(v === undefined || v === null ? '' : v).trim();
   const activa = (clave) => {
     const n = texto(c[clave]);
-    return /^[a-z0-9_]{1,512}$/.test(n) && texto(c[clave + 'Estado']).toUpperCase() === 'APPROVED' ? n : '';
+    // El estado vale EXACTAMENTE `APPROVED` (el valor de Meta): «approved», « APPROVED» o cualquier otro texto no la activan.
+    return /^[a-z0-9_]{1,512}$/.test(n) && c[clave + 'Estado'] === 'APPROVED' ? n : '';
   };
   return {
     pedidoMapa: activa('plantillaPedidoMapa'),
@@ -1091,8 +1098,8 @@ function avParametroDeUbicacion(u) {
 
 // Los ítems del pedido en UNA línea, separados por « · », con tope de 500 caracteres: se corta POR ÍTEM y la lista termina en
 // « … y K más» (K = productos que no entraron); nunca a mitad de un producto.
-function avItemsEnLinea(lineas, opc) {
-  const tope = 500;
+function avItemsEnLinea(lineas, opc, max) {
+  const tope = Number.isFinite(max) ? Math.max(0, Math.min(500, Math.floor(max))) : 500;
   const piezas = lineas.map((l) => avPiezaItem(l, opc));
   if (!piezas.length) return 'sin ítems';
   for (let k = piezas.length; k >= 0; k--) {
@@ -1103,30 +1110,50 @@ function avItemsEnLinea(lineas, opc) {
   return '… y ' + piezas.length + ' más';
 }
 
-// Las 6 variables del cuerpo de `pedido_lista_mapa` / `pedido_lista`, en su orden. `conMapa`: la ubicación va en el botón y no se repite.
-function avVariablesVinetaPedido(d, dest, resultado, ahoraMs, conMapa) {
-  const opc = { cocina: dest.rol === 'cocina' };
-  const base = avVariables('pedido', d, dest, resultado, ahoraMs, 'cita');
-  const delivery = d.modalidad === 'delivery';
+// EL CUERPO ENTERO DE UNA PLANTILLA NO PASA DE 1024 CARACTERES (Meta, error 132005); el tope de 500 es por variable. El texto fijo del cuerpo de
+// `pedido_lista` / `pedido_lista_mapa` mide 171 (medido sobre el aprobado, sin las `{{n}}`); con el margen, lo que queda para las 6 variables:
+const AV_CUERPO_MAX = 1024;
+const AV_FIJO_PEDIDO_VINETAS = 171;
+const AV_MARGEN_CUERPO = 40;
+// Lo mínimo que se quiere para los ítems antes de empezar a recortar {{3}}: todos si caben en esto, o al menos esto.
+const AV_ITEMS_MINIMO = 150;
+const avLargo = (s) => Array.from(String(s)).length;
+
+// {{3}} de la plantilla en viñetas por NIVEL de recorte (0 = entero): 1 sin la nota, 2 sin la referencia, 3 con la dirección corta (60), 4 solo la
+// modalidad. El enlace del mapa («mapa: <enlace>», solo rol `completo` cuando no va en el botón) va entero o no va y nunca pasa por `avLimpio`
+// (volvería «[enlace omitido]»): `avPlantilla` lo conserva con `avParametroConMapa`.
+function avModalidadVineta(d, dest, opc, enlaceMapa, nivel, conBoton) {
   const segmentos = [avModalidadTexto(d.modalidad)];
-  if (dest.rol === 'completo' && delivery) {
-    const dir = avLimpio(d.direccion, 160);
-    const ref = avLimpio(d.referencia, 100);
+  if (dest.rol === 'completo' && d.modalidad === 'delivery') {
+    const dir = nivel >= 4 ? '' : avLimpio(d.direccion, nivel >= 3 ? 60 : 160);
+    const ref = nivel >= 2 ? '' : avLimpio(d.referencia, 100);
     segmentos[0] += (dir ? ' a ' + dir : '') + (ref ? ' (' + ref + ')' : '');
-    const coord = conMapa ? '' : avLimpio(d.coordenadas, 60);
+    const coord = enlaceMapa || conBoton ? '' : avLimpio(d.coordenadas, 60);
     if (coord) segmentos.push(coord);
   }
-  const nota = typeof d.notaPedido === 'string' ? avLimpio(d.notaPedido, 100, opc) : '';
+  const nota = nivel >= 1 || typeof d.notaPedido !== 'string' ? '' : avLimpio(d.notaPedido, 100, opc);
   if (nota) segmentos.push('nota: ' + nota);
+  const texto = avParametro(segmentos.join(' · '), 500 - (enlaceMapa ? avLargo(' · mapa: ' + enlaceMapa) : 0), opc);
+  return enlaceMapa ? texto + ' · mapa: ' + enlaceMapa : texto;
+}
+
+// Las 6 variables del cuerpo de `pedido_lista_mapa` / `pedido_lista`, en su orden. `enlaceMapa`: el enlace al mapa que va en {{3}} (solo cuando
+// la ubicación es válida y NO hay botón); '' si la ubicación va en el botón (`conBoton`: tampoco van las coordenadas) o no hay. {{5}} se ajusta al presupuesto del cuerpo (≤ 1024).
+function avVariablesVinetaPedido(d, dest, resultado, ahoraMs, enlaceMapa, conBoton) {
+  const opc = { cocina: dest.rol === 'cocina' };
+  const base = avVariables('pedido', d, dest, resultado, ahoraMs, 'cita');
   const quien = avClienteDeConsulta(d, dest);
-  return [
-    base.items,
-    base.total,
-    avParametro(segmentos.join(' · '), 500, opc),
-    avParametro(quien.nombre + (quien.telefono ? ' · ' + quien.telefono : ''), 100),
-    avParametro(avItemsEnLinea(avLineas(d.lineas), opc), 500, opc),
-    base.cotejo,
-  ];
+  const cliente = avParametro(quien.nombre + (quien.telefono ? ' · ' + quien.telefono : ''), 100);
+  const lineas = avLineas(d.lineas);
+  const itemsEnteros = avLargo(avItemsEnLinea(lineas, opc));
+  const libre = AV_CUERPO_MAX - AV_FIJO_PEDIDO_VINETAS - AV_MARGEN_CUERPO - avLargo(base.items) - avLargo(base.total) - avLargo(cliente) - avLargo(base.cotejo);
+  let modalidad = '';
+  for (let nivel = 0; nivel <= 4; nivel++) {
+    modalidad = avModalidadVineta(d, dest, opc, enlaceMapa, nivel, conBoton);
+    if (libre - avLargo(modalidad) >= Math.min(itemsEnteros, AV_ITEMS_MINIMO)) break;
+  }
+  const items = avParametro(avItemsEnLinea(lineas, opc, libre - avLargo(modalidad)), 500, opc);
+  return [base.items, base.total, modalidad, cliente, items, base.cotejo];
 }
 
 // La plantilla en viñetas de este evento y destinatario, o `null` si no rige (sin clave, sin `APPROVED` o datos que no sirven).
@@ -1137,7 +1164,9 @@ function avPlantillaVineta(tipo, d, dest, resultado, ahoraMs, c) {
     const conMapa = !!(coord && v.pedidoMapa);
     const nombre = conMapa ? v.pedidoMapa : v.pedidoLista;
     if (!nombre) return null;
-    const p = avPlantilla(dest.tel, nombre, v.idioma, avVariablesVinetaPedido(d, dest, resultado, ahoraMs, conMapa));
+    // Sin botón (la de mapa no rige) y con ubicación válida del rol `completo`: el enlace va en {{3}}, como hoy.
+    const enlace = !conMapa && coord ? avEnlaceDeUbicacion(d.ubicacion) : '';
+    const p = avPlantilla(dest.tel, nombre, v.idioma, avVariablesVinetaPedido(d, dest, resultado, ahoraMs, enlace, conMapa));
     if (p && conMapa) p.template.components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: coord }] });
     return p;
   }
