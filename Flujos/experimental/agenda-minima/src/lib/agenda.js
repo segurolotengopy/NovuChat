@@ -295,7 +295,9 @@ function huecosDelDia(p) {
 function ofertaDeHuecos(p) {
   const cfg = p.cfg || {};
   const maximo = Number(p.maximo) > 0 ? Math.floor(Number(p.maximo)) : 3;
-  const duracion = Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30;
+  // `p.duracionMin` (dos hermanos: dos citas seguidas = 60 min libres contiguos) reemplaza la duracion por defecto.
+  const duracion = Number(p.duracionMin) > 0 ? Number(p.duracionMin)
+    : (Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30);
   const hoy = fechaLocal(p.ahoraMs);
   const limite = Number(cfg.anticipacionMaximaDias) > 0 ? sumarDias(hoy, Math.floor(Number(cfg.anticipacionMaximaDias))) : null;
   const preferida = _agmEsFecha(p.fechaPreferida) ? p.fechaPreferida : null;
@@ -379,7 +381,9 @@ function hayCruce(p) {
   const inicioMs = msDe(p.inicio);
   const finMs = msDe(p.fin);
   if (Number.isNaN(inicioMs) || Number.isNaN(finMs) || !(finMs > inicioMs)) return { cruce: true, con: [] };
-  const con = ocupados(p.eventos, { ignorarIds: p.exceptoId ? [p.exceptoId] : [] })
+  // `exceptoIds` (lista): varios eventos propios, como las dos citas de dos hermanos.
+  const excepto = (Array.isArray(p.exceptoIds) ? p.exceptoIds : []).concat(p.exceptoId ? [p.exceptoId] : []).filter(Boolean).map(String);
+  const con = ocupados(p.eventos, { ignorarIds: excepto })
     .filter((o) => _agmSeCruza(o, inicioMs, finMs)).map((o) => o.id);
   return { cruce: con.length > 0, con: con };
 }
@@ -450,6 +454,28 @@ function descripcionDeLaCita(p) {
   if (nombres.length) lineas.push((nombres.length > 1 ? 'Pacientes: ' : 'Paciente: ') + nombres.join(' / '));
   lineas.push('Agendado por NovuChat.');
   return lineas.join('\n');
+}
+
+// Dos hermanos = DOS citas seguidas, una por hermano (Andres, 07/11/2026): cada una con su titulo y su
+// descripcion de UN paciente, de modo que cancelar o mover una no toca la otra. La 2a empieza donde termina
+// la 1a. Con un paciente sale una sola cita. `inicio` es ISO local; `duracionMin` es la de CADA cita.
+function citasDeHermanos(p) {
+  const pacientes = _agmLista(p.pacientes).filter((x) => x && _agmNombreCompleto(x));
+  const dur = Number(p.duracionMin) > 0 ? Number(p.duracionMin) : 30;
+  const out = [];
+  let desdeMs = msDe(p.inicio);
+  if (Number.isNaN(desdeMs)) return out;
+  for (const uno of pacientes) {
+    const finMs = desdeMs + dur * 60000;
+    out.push({
+      inicio: isoLocal(fechaLocal(desdeMs), horaLocal(desdeMs)),
+      fin: isoLocal(fechaLocal(finMs), horaLocal(finMs)),
+      titulo: tituloDeLaCita({ pacientes: [uno], servicio: p.servicio }),
+      descripcion: descripcionDeLaCita({ telefono: p.telefono, servicio: p.servicio, pacientes: [uno], nombrePerfil: p.nombrePerfil }),
+    });
+    desdeMs = finMs;
+  }
+  return out;
 }
 
 // Las citas FUTURAS (inicio desde `ahoraMs`) cuya descripcion trae una linea de telefono

@@ -27,7 +27,7 @@ const FUENTE = readFileSync(RUTA, 'utf8');
 const NOMBRES = [
   'fechaLocal', 'horaLocal', 'diaDeLaSemana', 'isoLocal', 'msDe', 'sumarDias', 'etiquetaDeHueco', 'textoDeFecha',
   'tramosDelDia', 'ocupados', 'huecosDelDia', 'ofertaDeHuecos', 'rangoALeer', 'hayCruce', 'tituloDeLaCita',
-  'descripcionDeLaCita', 'citasDelTelefono', 'idDeBoton', 'leerIdDeBoton', 'partirNombre',
+  'descripcionDeLaCita', 'citasDeHermanos', 'citasDelTelefono', 'idDeBoton', 'leerIdDeBoton', 'partirNombre',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -637,6 +637,17 @@ describe('hayCruce: el candado', () => {
     expect(cruce('10:00', '10:30', {}, [ev('propio', VIE, '10:00', '10:30')]).cruce).toBe(true);
     expect(cruce('10:00', '10:30', { exceptoId: '' }, [ev('propio', VIE, '10:00', '10:30')]).cruce).toBe(true);
   });
+  it('dos hermanos: `exceptoIds` (lista) excluye a los dos propios, pero no a un ajeno; `exceptoId` sigue funcionando', () => {
+    const dos = [ev('p1', VIE, '10:00', '10:30'), ev('p2', VIE, '10:30', '11:00')];
+    expect(cruce('10:00', '11:00', { exceptoIds: ['p1', 'p2'] }, dos)).toEqual({ cruce: false, con: [] });
+    // Niega: con uno solo excluido, el otro propio cuenta como cruce.
+    expect(cruce('10:00', '11:00', { exceptoIds: ['p1'] }, dos)).toEqual({ cruce: true, con: ['p2'] });
+    expect(cruce('10:00', '11:00', {}, dos).cruce).toBe(true);
+    // Un ajeno se ve aunque los dos propios estén excluidos.
+    expect(cruce('10:00', '11:00', { exceptoIds: ['p1', 'p2'] }, [...dos, ev('x', VIE, '10:45', '11:15')])).toEqual({ cruce: true, con: ['x'] });
+    // `exceptoId` y `exceptoIds` se suman.
+    expect(cruce('10:00', '11:00', { exceptoId: 'p1', exceptoIds: ['p2'] }, dos).cruce).toBe(false);
+  });
   it('los eventos cancelados o `transparent` no cruzan; el de día entero sí', () => {
     expect(cruce('10:00', '10:30', {}, [ev('c', VIE, '10:00', '10:30', { status: 'cancelled' })]).cruce).toBe(false);
     expect(cruce('10:00', '10:30', {}, [ev('t', VIE, '10:00', '10:30', { transparency: 'transparent' })]).cruce).toBe(false);
@@ -938,5 +949,38 @@ describe('citasDelTelefono: la línea del teléfono es la que toca, no cualquier
     const d = L.descripcionDeLaCita({ telefono: TEL, servicio: 'control_nino_sano', pacientes: [{ apellidos: 'Pérez', nombres: 'Ana' }], nombrePerfil: 'Mamá\nTelefono: ' + TEL_OTRO });
     expect(ids([con('w', d)], TEL)).toEqual(['w']);
     expect(ids([con('w', d)], TEL_OTRO)).toEqual([]);
+  });
+});
+
+// =============================================================================================
+describe('hermanos: duracionMin en la oferta y citasDeHermanos', () => {
+  it('ofertaDeHuecos con `duracionMin` 60 solo ofrece horarios con 60 minutos libres contiguos; sin ella, la duración por defecto', () => {
+    const oc = [ev('o', VIE, '11:30', '12:00')];
+    const uno = oferta({ eventos: oc, fechaPreferida: VIE, maximo: 3 });
+    const dos = oferta({ eventos: oc, fechaPreferida: VIE, maximo: 3, duracionMin: 60 });
+    expect(horas(uno.huecos)).toContain('11:00');
+    expect(horas(dos.huecos)).not.toContain('11:00');
+    expect(horas(dos.huecos)).not.toContain('11:30');
+    expect(dos.huecos.every((h: { inicio: string; fin: string }) => L.msDe(h.fin) - L.msDe(h.inicio) === 60 * 60000)).toBe(true);
+  });
+  const pac = [{ apellidos: 'Pérez Gómez', nombres: 'Ana' }, { apellidos: 'Pérez Gómez', nombres: 'Luis' }];
+  const base = { inicio: L.isoLocal(VIE, '14:00'), duracionMin: 30, servicio: 'control_nino_sano', telefono: '59100000011', nombrePerfil: 'Mamá' };
+  it('dos pacientes dan dos citas seguidas, cada una con su título y su descripción de UN paciente', () => {
+    const c = L.citasDeHermanos({ ...base, pacientes: pac });
+    expect(c).toHaveLength(2);
+    expect(c[0].inicio).toBe(L.isoLocal(VIE, '14:00'));
+    expect(c[0].fin).toBe(L.isoLocal(VIE, '14:30'));
+    expect(c[1].inicio).toBe(c[0].fin);
+    expect(c[1].fin).toBe(L.isoLocal(VIE, '15:00'));
+    expect(c[0].titulo).toBe('Pérez Gómez, Ana (CNS)');
+    expect(c[1].titulo).toBe('Pérez Gómez, Luis (CNS)');
+    expect(c[0].descripcion).toContain('Paciente: Pérez Gómez, Ana');
+    expect(c[0].descripcion).not.toContain('Luis');
+    expect(c[1].descripcion).not.toContain('Ana');
+  });
+  it('NIEGA: un paciente da UNA sola cita; sin pacientes o con inicio ilegible, ninguna', () => {
+    expect(L.citasDeHermanos({ ...base, pacientes: [pac[0]] })).toHaveLength(1);
+    expect(L.citasDeHermanos({ ...base, pacientes: [] })).toEqual([]);
+    expect(L.citasDeHermanos({ ...base, inicio: 'luego', pacientes: pac })).toEqual([]);
   });
 });
