@@ -387,3 +387,22 @@ describe('la ruta de la imagen llega al cierre (privado/datos.rutaComprobante), 
     }
   });
 });
+
+// Va al final: genera un inválido y las demás pruebas cuentan `cobrosInvalidos` exactos.
+describe('todos los motivos (humo de Silvana, 07/11/2026)', () => {
+  it('devuelve TODOS los motivos, con el destinatario primero, y `motivo` sigue siendo el primario de siempre (humo de Silvana 07/11)', async () => {
+    await sembrar('59100000039', 2);
+    const leido = leidoDe('150', { cuentaDestino: '1000000999', nombreCuenta: 'OTRA PERSONA SOCIEDAD' });
+    const r = await comp('59100000039', leido, 'wamid.i-todos');
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo).toMatchObject({ estado: 'reintentar', motivo: 'monto_mayor' });
+    expect(r.cuerpo.motivos).toEqual(['cuenta_distinta', 'nombre_distinto', 'monto_mayor']);
+    // Nada de lo leído de la imagen vuelve: solo códigos fijos.
+    expect(JSON.stringify(r.cuerpo)).not.toContain('OTRA PERSONA');
+    expect(JSON.stringify(r.cuerpo)).not.toContain('1000000999');
+    // El mismo comprobante otra vez repite lo que se contestó: sin `motivos` (el primario basta).
+    const otra = await comp('59100000039', leido, 'wamid.i-todos');
+    expect(otra.cuerpo).toMatchObject({ repetido: true, motivo: 'monto_mayor' });
+    expect(otra.cuerpo.motivos).toBeUndefined();
+  });
+});
