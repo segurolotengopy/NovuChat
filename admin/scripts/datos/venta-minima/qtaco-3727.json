@@ -30,7 +30,7 @@
     "planillaProspectosHoja": "Leads_CRM"
   },
   "crm": {
-    "_nota": "Mapa de columnas de la planilla miniCRM de Q'Taco (hoja Leads_CRM, encabezados en la fila 3), opcion (b) del 06/11/2026: SIN ampliar el contrato de columnas del core; las columnas son las de la plantilla actual. A..I y N..T las escribe el bot; J..M y U son del equipo (el bot no las toca ni lee la U). O «Eligio» (campo quePidio) dice si la persona escogio Pedido o Reserva; P «Reserva» (campo diaPreferido) y Q «Pedido» (campo horarioPreferido) llevan «Enviada»/«Confirmado» con fecha y hora, y quedan en blanco si no se concreto; los campos conservan el nombre del contrato. Los titulos tienen que coincidir letra por letra con la copia viva de la planilla.",
+    "_nota": "Mapa de columnas de la planilla miniCRM de Q'Taco (hoja Leads_CRM, encabezados en la fila 3), opcion (b) del 06/11/2026: SIN ampliar el contrato de columnas del core; las columnas son las de la plantilla actual. A..I y N..T las escribe el bot; J..M y U son del equipo (el bot no las toca ni lee la U). O «Eligio» (campo quePidio) dice si la persona escogio Pedido o Reserva; P «Reserva» (campo diaPreferido) y Q «Pedido» (campo horarioPreferido) llevan «Enviada»/«Registrado» con fecha y hora, y quedan en blanco si no se concreto; los campos conservan el nombre del contrato. Los titulos tienen que coincidir letra por letra con la copia viva de la planilla.",
     "filaEncabezados": 3,
     "prefijoId": "LEAD-",
     "primerId": 1001,

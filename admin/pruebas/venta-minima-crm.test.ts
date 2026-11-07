@@ -72,7 +72,7 @@ describe('vmProspectoCrm: qué es un evento y qué dice el prospecto (hechos del
     expect(celda(r, 'origen')).toBe('Chatbot WhatsApp IA');
   });
   it('un ítem va en singular, el total con centavos lleva coma y el delivery se dice', () => {
-    expect(prospecto({ plan: { ruta: 'pedido:sin_qr', pedido: { ...PEDIDO, nItems: 1, total: 21.5, modalidad: 'delivery' } } })!['resumenVenta']).toBe('N.º K7P2, 1 ítem, Bs 21,50, delivery');
+    expect(prospecto({ plan: { ruta: 'pedido:sin_qr', pedido: { ...PEDIDO, nItems: 1, total: 21.5, modalidad: 'delivery' } }, pasoSalio: true })!['resumenVenta']).toBe('N.º K7P2, 1 ítem, Bs 21,50, delivery');
   });
   it('comprobante: «comprobante recibido, datos coinciden | no coinciden | ilegible»; sin cotejo solo «comprobante recibido»', () => {
     const dice = (resultado: string): unknown => prospecto({ plan: { ruta: `comprobante:${resultado}`, pedido: PEDIDO } })!['resumenVenta'];
@@ -158,53 +158,66 @@ describe('vmProspectoCrm: qué es un evento y qué dice el prospecto (hechos del
 describe('vmProspectoCrm: Eligió (O), Reserva (P) y Pedido (Q); celda en blanco si no concretó, nunca «No»', () => {
   const RES = { ruta: 'reserva:enviada', aviso: { tipo: 'reserva', datos: { codigo: 'R5X9' } } };
   it('el botón de pedido o de reserva escribe UNA vez «Eligió»; los turnos siguientes dentro del mismo paso no escriben', () => {
-    const ped = prospecto({ plan: { ruta: 'pedido_pide' }, pasoAntes: 'menu', pasoDespues: 'pedido_datos', anteriorMs: AHORA - 1000 })!;
+    const ped = prospecto({ plan: { ruta: 'pedido_pide' }, pasoAntes: 'menu', pasoDespues: 'pedido', anteriorMs: AHORA - 1000 })!;
     expect(ped['quePidio']).toBe('Pedido');
     expect(ped['diaPreferido']).toBeUndefined();
     expect(ped['horarioPreferido']).toBeUndefined();
     expect(celda(decidir(ped), 'quePidio')).toBe("'Pedido");
-    const res = prospecto({ plan: { ruta: 'reserva_pide' }, pasoAntes: undefined, pasoDespues: 'reserva_datos', anteriorMs: AHORA - 1000 })!;
+    const res = prospecto({ plan: { ruta: 'reserva_pide' }, pasoAntes: undefined, pasoDespues: 'reserva', anteriorMs: AHORA - 1000 })!;
     expect(res['quePidio']).toBe('Reserva');
+    // los pasos reales de la familia: `pedido`, `pedido_datos`, `pedido_entrega`, `pedido_confirmar`, `reserva`, `reserva_confirmar`; pasar de uno a otro de la MISMA familia no es elección
+    const pares: Array<[string, string]> = [['pedido', 'pedido_datos'], ['pedido_datos', 'pedido_entrega'], ['pedido_entrega', 'pedido_confirmar'], ['pedido_confirmar', 'pedido'], ['reserva', 'reserva_confirmar'], ['reserva_confirmar', 'reserva']];
+    for (const [antes, despues] of pares) expect(prospecto({ plan: { ruta: 'x' }, pasoAntes: antes, pasoDespues: despues, anteriorMs: AHORA - 1000 }), `${antes} -> ${despues}`).toBeNull();
+    // de otra familia a la exacta `pedido` o `reserva` sí es elección
+    expect(prospecto({ plan: { ruta: 'x' }, pasoAntes: 'menu', pasoDespues: 'pedido', anteriorMs: AHORA - 1000 })!['quePidio']).toBe('Pedido');
+    expect(prospecto({ plan: { ruta: 'x' }, pasoAntes: 'pedido_confirmar', pasoDespues: 'reserva', anteriorMs: AHORA - 1000 })!['quePidio']).toBe('Reserva');
     expect(prospecto({ plan: { ruta: 'pedido_pide' }, pasoAntes: 'pedido_datos', pasoDespues: 'pedido_entrega', anteriorMs: AHORA - 1000 })).toBeNull();
-    expect(prospecto({ plan: { ruta: 'reserva_pide' }, pasoAntes: 'reserva_datos', pasoDespues: 'reserva_confirmar', anteriorMs: AHORA - 1000 })).toBeNull();
+    expect(prospecto({ plan: { ruta: 'reserva_pide' }, pasoAntes: 'reserva', pasoDespues: 'reserva_confirmar', anteriorMs: AHORA - 1000 })).toBeNull();
     // un paso que no es de pedido ni de reserva no es elección
     expect(prospecto({ plan: { ruta: 'menu' }, pasoAntes: 'menu', pasoDespues: 'esperando_comprobante', anteriorMs: AHORA - 1000 })).toBeNull();
   });
   it('un primer contacto de la ventana que ya está en pedido o reserva cuenta como elección; la carta conserva el Frío', () => {
-    const p = prospecto({ plan: { ruta: 'pedido_datos' }, pasoAntes: 'pedido_datos', pasoDespues: 'pedido_datos', anteriorMs: AHORA - 30 * 3600_000 })!;
+    const p = prospecto({ plan: { ruta: 'pedido_datos' }, pasoAntes: 'pedido', pasoDespues: 'pedido', anteriorMs: AHORA - 30 * 3600_000 })!;
     expect(p['quePidio']).toBe('Pedido');
-    const frio = prospecto({ plan: { ruta: 'carta' }, pasoAntes: 'menu', pasoDespues: 'pedido_datos' })!;
+    const frio = prospecto({ plan: { ruta: 'carta' }, pasoAntes: 'menu', pasoDespues: 'pedido' })!;
     expect(frio['senales']).toMatchObject({ preguntoPrecioYCerro: true, inicioCompra: false });
   });
-  it('reserva con aviso salido: P dice «Enviada <fecha-hora>»; con el aviso caído no escribe P ni «Eligió»', () => {
+  it('reserva con aviso salido: P dice «Enviada <fecha-hora>»; con el aviso caído se rebaja a elección: O «Reserva», sin P, sin Caliente ni resumen', () => {
     const ok = prospecto({ plan: RES, pasoSalio: true, pasoAntes: 'reserva_confirmar', pasoDespues: 'menu' })!;
     expect(ok['quePidio']).toBe('Reserva');
     expect(ok['diaPreferido']).toBe('Enviada ' + new Date(AHORA - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' '));
     const r = decidir(ok);
     expect(celda(r, 'diaPreferido')).toMatch(/^'Enviada \d{4}-\d\d-\d\d \d\d:\d\d$/);
     const caido = prospecto({ plan: RES, pasoSalio: false, pasoAntes: 'reserva_confirmar', pasoDespues: 'menu' })!;
-    expect(caido['quePidio']).toBe('');
+    expect(caido['quePidio']).toBe('Reserva');
     expect(caido['diaPreferido']).toBeUndefined();
+    expect(caido['resumenVenta']).toBeUndefined();
+    expect(caido['senales']).toMatchObject({ inicioCompra: false });
     const rc = decidir(caido);
     expect(celda(rc, 'diaPreferido')).toBeUndefined();
-    expect(celda(rc, 'quePidio')).toBeUndefined();
+    expect(celda(rc, 'quePidio')).toBe("'Reserva");
+    expect(celda(rc, 'clasificacion')).not.toBe('Caliente');
     expect(JSON.stringify(rc)).not.toMatch(/No\b/);
   });
-  it('pedido: con QR (o QR simulado) Q dice «Confirmado»; sin QR o QR vencido solo si el aviso salió', () => {
+  it('pedido: con QR (o QR simulado) Q dice «Registrado»; sin QR o QR vencido sin aviso salido se rebaja a elección (simétrico a la reserva)', () => {
     const q = (ruta: string, pasoSalio: boolean): J => prospecto({ plan: { ruta, pedido: PEDIDO }, pasoSalio })!;
-    expect(q('pedido:qr', false)['horarioPreferido']).toMatch(/^Confirmado \d{4}-\d\d-\d\d \d\d:\d\d$/);
-    expect(q('pedido:qr_simulado', false)['horarioPreferido']).toMatch(/^Confirmado /);
+    expect(q('pedido:qr', false)['horarioPreferido']).toMatch(/^Registrado \d{4}-\d\d-\d\d \d\d:\d\d$/);
+    expect(q('pedido:qr_simulado', false)['horarioPreferido']).toMatch(/^Registrado /);
     for (const ruta of ['pedido:sin_qr', 'pedido:qr_vencido']) {
-      expect(q(ruta, true)['horarioPreferido'], ruta).toMatch(/^Confirmado /);
+      expect(q(ruta, true)['horarioPreferido'], ruta).toMatch(/^Registrado /);
       expect(q(ruta, false)['horarioPreferido'], ruta).toBeUndefined();
+      expect(q(ruta, false)['quePidio'], ruta).toBe('Pedido');
+      expect(q(ruta, false)['resumenVenta'], ruta).toBeUndefined();
+      expect(q(ruta, false)['senales'], ruta).toMatchObject({ inicioCompra: false });
       expect(celda(decidir(q(ruta, false)), 'horarioPreferido'), ruta).toBeUndefined();
     }
     expect(q('pedido:qr', true)['diaPreferido']).toBeUndefined();
-    expect(celda(decidir(q('pedido:qr', true)), 'horarioPreferido')).toMatch(/^'Confirmado /);
+    expect(celda(decidir(q('pedido:qr', true)), 'horarioPreferido')).toMatch(/^'Registrado /);
   });
   it('pedido seguido de elegir reserva no pisa P ni Q; un contacto a 24-48 h no borra «Eligió»', () => {
-    const previa = fila(9, { 'Teléfono WhatsApp': TEL, 'Nombre y Apellido': 'Carlos', 'Clasificación': 'Caliente', 'Eligió': 'Pedido', 'Pedido': 'Confirmado 2026-10-05 10:00' });
-    const eleccion = decidir(prospecto({ plan: { ruta: 'reserva_pide' }, pasoAntes: 'menu', pasoDespues: 'reserva_datos', anteriorMs: AHORA - 1000 })!, [previa]);
+    // O es la ÚLTIMA elección (aquí pasa de «Pedido» a «Reserva»); lo concretado queda en P y Q, que no se pisan entre sí.
+    const previa = fila(9, { 'Teléfono WhatsApp': TEL, 'Nombre y Apellido': 'Carlos', 'Clasificación': 'Caliente', 'Eligió': 'Pedido', 'Pedido': 'Registrado 2026-10-05 10:00' });
+    const eleccion = decidir(prospecto({ plan: { ruta: 'reserva_pide' }, pasoAntes: 'menu', pasoDespues: 'reserva', anteriorMs: AHORA - 1000 })!, [previa]);
     expect(eleccion['Pedido']).toBeUndefined();
     expect(eleccion['Reserva']).toBeUndefined();
     expect(eleccion['Eligió']).toBe('Reserva');
@@ -378,6 +391,68 @@ const CIERRE_TRY = '} catch (e) { AM_prospectoCrm = null; }';
 const FORZADO = "\nfunction vmProspectoCrm() { throw new Error('prospecto inesperado'); }";
 const corrioLaRama = (t: ResultadoTurno): boolean => t.ejecutados.has('Prospecto para la planilla') && t.ejecutados.has('Decidir fila de la planilla');
 
+describe('flujo: «Reserva» (P) y «Pedido» (Q) solo con lo que de verdad salió', () => {
+  const SIN_AVISO = { error: { message: 'rechazado' } };
+  type Hoja = ReturnType<typeof planilla>;
+  /** Lo que el turno escribió en la hoja (los dobles de Google guardan el ítem que recibieron). */
+  const escritas = (pl: Hoja, antes: number): J[] => [...pl.escrituras, ...pl.actualizaciones].slice(antes);
+  const total = (pl: Hoja): number => pl.escrituras.length + pl.actualizaciones.length;
+  const caerAvisos = (w: Mundial): void => { w.mundo.dobles['Enviar aviso'] = () => SIN_AVISO; w.mundo.dobles['Aviso de respaldo'] = () => SIN_AVISO; };
+  const enviaReserva = (o: { flujo?: Flujo; cae?: boolean } = {}): J[] => {
+    const pl = planilla();
+    const w = mundo({ pl, flujo: o.flujo });
+    if (o.cae) caerAvisos(w);
+    turno(w, texto('hola'));
+    w.estado.extraccion = EXT_RESERVA;
+    turno(w, boton('m|reserva', 'Reservar mesa'));
+    turno(w, texto('quiero reservar una mesa'));
+    const antes = total(pl);
+    turno(w, boton('r|enviar', 'Reservar'));
+    return escritas(pl, antes);
+  };
+  const pedidoSinQr = (cae: boolean): J[] => {
+    const pl = planilla();
+    const w = mundo({ pl });
+    w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 200, body: { ...panel(), cobro: { activo: false } } });
+    if (cae) caerAvisos(w);
+    turno(w, texto('hola'));
+    w.estado.extraccion = EXT_PEDIDO();
+    const resumen = turno(w, texto('quiero 4 tacos de birria'));
+    const antes = total(pl);
+    turno(w, boton(idDeBoton(resumen, 'Confirmar pedido'), 'Confirmar pedido'));
+    return escritas(pl, antes);
+  };
+  it('el turno que envía la reserva escribe P «\'Enviada …»; con «Enviar aviso» caído no escribe P y O dice «Reserva»', () => {
+    const ok = enviaReserva();
+    expect(ok).toHaveLength(1);
+    expect(String(ok[0]!['Reserva'])).toMatch(/^'Enviada \d{4}-\d\d-\d\d \d\d:\d\d$/);
+    const caido = enviaReserva({ cae: true });
+    expect(caido).toHaveLength(1);
+    expect(caido[0]!['Reserva']).toBeUndefined();
+    expect(caido[0]!['Eligió']).toBe("'Reserva");
+  });
+  it('pedido con QR escribe Q «\'Registrado …»; sin QR con el aviso salido también; sin QR y sin aviso no escribe Q', () => {
+    const pl = planilla();
+    const w = mundo({ pl });
+    const ts = conversacion(w);
+    expect(ts.find((x) => x.nombre === 'pedido (QR)')).toBeDefined();
+    expect(pl.escrituras.some((e) => String(e['Pedido'] ?? '').startsWith("'Registrado ")), 'el turno del QR escribe Q').toBe(true);
+    expect(String([...pl.escrituras, ...pl.actualizaciones].map((e) => e['Pedido']).find((v) => v !== undefined))).toMatch(/^'Registrado \d{4}-\d\d-\d\d \d\d:\d\d$/);
+    const conAviso = pedidoSinQr(false);
+    expect(conAviso).toHaveLength(1);
+    expect(String(conAviso[0]!['Pedido'])).toMatch(/^'Registrado /);
+    const sinAviso = pedidoSinQr(true);
+    expect(sinAviso).toHaveLength(1);
+    expect(sinAviso[0]!['Pedido']).toBeUndefined();
+    expect(sinAviso[0]!['Eligió']).toBe("'Pedido");
+  });
+  it('negación: si `pasoSalio` llegara undefined, la prueba del aviso salido FALLA (la mutación se detecta)', () => {
+    const mutado = conPrueba(CRM, (js) => { expect(js).toContain('pasoSalio: AM_PASO'); return js.replace('pasoSalio: AM_PASO', 'pasoSalio: undefined'); });
+    const mut = enviaReserva({ flujo: mutado });
+    expect(mut[0]!['Reserva']).toBeUndefined();   // el código bueno escribe P aquí (prueba de arriba): con la mutación no, así que esa prueba se pone roja
+  });
+});
+
 describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
   it('saludo -> UNA fila (Tibio); pedido -> actualiza (Caliente, «N.º …»); comprobante -> actualiza «comprobante recibido, datos coinciden»', () => {
     const pl = planilla();
@@ -396,6 +471,7 @@ describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
     expect(resumenes.some((r) => /^'N\.º \S+, 4 ítems, Bs 84, recojo$/.test(r))).toBe(true);
     expect(resumenes.some((r) => /^'N\.º \S+, 4 ítems, Bs 84, recojo, comprobante recibido, datos coinciden$/.test(r))).toBe(true);
     expect(escrito.some((e) => e['Eligió'] === "'Reserva")).toBe(true);
+    expect(escrito.some((e) => String(e['Reserva'] ?? '').startsWith("'Enviada "))).toBe(true);
     expect(escrito.some((e) => e['Derivación a recepción'] === "'Sí")).toBe(true);
   });
   it('un turno sin evento (el cliente sigue conversando dentro de la ventana) no toca Google', () => {
