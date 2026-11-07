@@ -197,6 +197,15 @@ if (AA_armar) {
     }
     // Un comprobante ya cotejado no se vuelve a avisar (el cliente solo lee «Ya tengo el comprobante»).
     if (tipo === 'comprobante' && datos.resultado === 'ya_cotejado') { AA_errores.push('sin_aviso_ya_cotejado'); continue; }
+    // UN AVISO POR PEDIDO, SALVO QUE CAMBIE EL RESULTADO (decisiones de Andres, 07/11/2026). Lo decide `Plan del turno`, que no pide el aviso de un comprobante cuyo
+    // resultado ya se avisó (`comprobanteAvisadoResultado`, escrito solo con un `wamid` real). Esta es la segunda barrera: si igual llegara, no se arma y NO cuenta como
+    // aviso salido (el cliente nunca lee «ya lo pasé» sin un aviso de este turno).
+    const pedPlan = AA_PLAN.pedido && typeof AA_PLAN.pedido === 'object' ? AA_PLAN.pedido : {};
+    if (tipo === 'comprobante' && Number(pedPlan.comprobanteAvisadoMs) > 0 && String(pedPlan.pedidoId || '') === String(datos.pedidoId || '')
+      && String(pedPlan.comprobanteAvisadoResultado || '') !== '' && String(pedPlan.comprobanteAvisadoResultado) === String(datos.resultado || '')) {
+      AA_errores.push('aviso_de_comprobante_mismo_resultado: ' + String(datos.pedidoId).slice(0, 60));
+      continue;
+    }
     let crudo = null;
     try {
       // `avPlan` trae también los errores (p. ej. `plantilla_no_configurada_<evento>`) y respeta el cupo del día.

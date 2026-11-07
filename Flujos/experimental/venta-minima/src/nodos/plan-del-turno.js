@@ -616,7 +616,9 @@ function aConsulta(clave) {
 
 function aPromo() {
   // Con un comprobante en espera, el texto de una campaña NO saca del cobro: se recuerda el comprobante (el paso y el pedido se conservan).
-  if (en.paso === 'esperando_comprobante' && en.pedido) return aRecordatorio();
+  // El ARTE de una campaña mandado con el QR pendiente (07/11/2026): UN solo mensaje, la promoción SIN sus botones (no valen con un QR pendiente: solo se ofrece lo
+  // que se cumple) y, debajo, el recordatorio del comprobante con «Reenviar QR» y «Cancelar pedido». El paso, el pedido y el cobro no se tocan.
+  if (en.paso === 'esperando_comprobante' && en.pedido) return d.via === 'imagen_con_qr_pendiente' ? promoConRecordatorio() : aRecordatorio();
   // Campaña de solo reserva: su respuesta REEMPLAZA al saludo, con «Reservar mesa» como único botón; acepta la reserva cualquier día.
   const tipoCampana = prTipoDeCampana(d.campana, cfg);
   // C-12 (06/11): el «Jueves de +2» un día que NO es jueves (La Paz, calculado aquí) se evalúa ANTES que cualquier variante: solo se dice que vale los jueves en el local,
@@ -676,6 +678,25 @@ function aPromo() {
   }
   irA('menu');
   mensajes = [{ tipo: 'botones', cuerpo: tx.cuerpo, botones: tx.botones }];
+}
+
+// La promoción reconocida en la imagen, en texto y sin lo que apunta a sus botones, delante del recordatorio del comprobante (un mensaje, 0 agregados). Si no cabe
+// en un mensaje con botones o no hay texto de la promoción, sale solo el recordatorio de siempre.
+function promoConRecordatorio() {
+  aRecordatorio();
+  ruta = 'promo:imagen_con_qr_pendiente';
+  const tipoCampana = prTipoDeCampana(d.campana, cfg);
+  const soloReserva = prSoloReserva(d.campana, cfg);
+  const noJueves = tipoCampana === 'B' && soloReserva && !prEsJueves(ahora) ? vmLinea(cfg.campanaReservaNoJueves, 600) : '';
+  const base = soloReserva || prPedidoConMensaje(d.campana, cfg);
+  let promo = noJueves ? prCuerpoSinBoton(noJueves) : (base ? prCuerpoSinBoton(base.cuerpo) : '');
+  if (!promo) {
+    const ficha = prFicha(d.campana, cartaDelNegocio(), ahora);
+    const tx = ficha ? prTexto(ficha, cfg) : null;
+    promo = tx ? tx.cuerpo : '';
+  }
+  const m = mensajes.length === 1 ? mensajes[0] : null;
+  if (promo && m && m.tipo === 'botones' && (promo + '\n\n' + m.cuerpo).length <= 1000) mensajes = [Object.assign({}, m, { cuerpo: promo + '\n\n' + m.cuerpo })];
 }
 
 function aImagenSinPendiente() {
@@ -1526,11 +1547,24 @@ function aComprobante() {
     }
     return;
   }
+  // UN AVISO POR PEDIDO, SALVO QUE CAMBIE EL RESULTADO (decisiones de Andres, 07/11/2026): si el aviso de un comprobante de ESTE pedido ya salió con este MISMO
+  // resultado (`comprobanteAvisadoResultado`, que `Armar mensajes` escribe solo con un `wamid` real), no se avisa de nuevo. El comprobante se guardó y se cotejó igual;
+  // el cliente recibe UN mensaje que NO dice que se pasó (en este turno no salió ningún aviso), con el botón para escribir al local. Con otro resultado, aviso de actualización.
+  if (Number(ped.comprobanteAvisadoMs) > 0 && String(ped.comprobanteAvisadoResultado || '') === resultado) {
+    pedidoGuardar = Object.assign({}, ped, { resultado: resultado, estado: cbEstadoParaAviso(resultado), diferencias: diferencias, mediaId: String(t.mediaId || ''), cierreId: cierreId });
+    mensajes = [enlace('Gracias por enviarlo. Da el mismo resultado que el comprobante anterior de tu pedido #' + ped.codigo
+      + ', que nuestro equipo ya tiene; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.')];
+    limpiarConfirmado();
+    irA('menu');
+    return;
+  }
   const sinAviso = cbTextoAlCliente(resultado, Object.assign({ avisoSalio: false }, base));
   pedidoGuardar = Object.assign({}, ped, {
     resultado: resultado, estado: cbEstadoParaAviso(resultado), diferencias: diferencias, mediaId: String(t.mediaId || ''), cierreId: cierreId,
   });
-  aviso = { tipo: 'comprobante', datos: Object.assign(datosDePedido(pedidoGuardar, resultado, diferencias), { mediaId: String(t.mediaId || '') }) };
+  // La imagen que el filtro tomó por un anuncio y `Decidir turno` no confirmó (07/11/2026): ni se guardó ni se cotejó, y el aviso lo dice así (`sinGuardar`).
+  const sinGuardar = d.motivo === 'anuncio_no_confirmado' && !vmNodo('Cotejar en el servidor');
+  aviso = { tipo: 'comprobante', datos: Object.assign(datosDePedido(pedidoGuardar, resultado, diferencias), { mediaId: String(t.mediaId || '') }, sinGuardar ? { sinGuardar: true } : {}) };
   condicionados = { siSalio: [mensajeDeCb(conAviso)], siNoSalio: [mensajeDeCb(sinAviso)] };
   mensajes = [];
   limpiarConfirmado();
@@ -1541,8 +1575,11 @@ function aComprobante() {
 // RESERVA
 // =============================================================================================
 function limitesReserva() {
+  // El horario de las RESERVAS (07/11/2026): el propio del negocio si lo tiene (`horarioReservas`), nunca el «abierto/cerrado» de los pedidos. Un dato que no sirve
+  // cae al horario de pedidos y queda anotado en `errores` (una vez por turno), para que se vea en el resumen del turno.
+  if (rsHorarioDeReservasInvalido(cfg.horarioReservas, cfg.horario) && errores.indexOf('horario_reservas_invalido') < 0) errores.push('horario_reservas_invalido');
   return {
-    horario: cfg.horario, zonas: lista(cfg.zonasReserva), maxPersonas: cfg.maxPersonasReserva,
+    horario: rsHorarioDeReservas(cfg.horarioReservas, cfg.horario), zonas: lista(cfg.zonasReserva), maxPersonas: cfg.maxPersonasReserva,
     anticipacionMin: cfg.anticipacionReservaMin, maxDias: cfg.maxDiasReserva,
   };
 }

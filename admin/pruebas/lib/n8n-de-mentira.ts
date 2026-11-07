@@ -34,7 +34,8 @@
  *   error del flujo, y `onError` no lo esconde). Un doble tiene prioridad sobre
  *   el tipo del nodo: también sirve para reemplazar un Code o un Set.
  *
- * EXPRESIONES. Cada `={{ … }}` se evalúa con `$json`, `$('Nodo')` (`first`,
+ * EXPRESIONES. Como en n8n 2.36.5, una expresión que lee `prototype`, `__proto__` o `constructor` revienta
+ * («Cannot access "prototype" due to security concerns»; 07/11/2026). Cada `={{ … }}` se evalúa con `$json`, `$('Nodo')` (`first`,
  * `all`, `item`, `isExecuted`), `$input`, `$getWorkflowStaticData`, `$workflow`
  * y `$execution`, y con el reloj congelado. El cierre `}}` se busca probando
  * candidatos hasta que lo de adentro compila, así que las llaves y las
@@ -97,6 +98,9 @@
  */
 import vm from 'node:vm';
 import { ejecutar, GLOBALES_FUERA_DEL_SANDBOX, type Flujo, type J, type Nodo, type Referencias } from './flujo';
+
+/** Lo que el sandbox de expresiones de n8n no deja leer (ver `evaluarUna`). */
+export const RE_PROPIEDAD_PROHIBIDA = /\b(prototype|__proto__|constructor)\b/;
 
 // ----------------------------------------------------------------------------- tipos públicos
 
@@ -472,6 +476,10 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   }
 
   function evaluarUna(expresion: string, it: Item | null): unknown {
+    // Como el sandbox de EXPRESIONES de n8n 2.36.5 (distinto del de los nodos Code): leer `prototype`, `__proto__` o `constructor` revienta la expresión
+    // («Cannot access "prototype" due to security concerns»). El 07/11/2026 una expresión con `Object.prototype.hasOwnProperty` mató ejecuciones sin dejar registro.
+    const prohibida = RE_PROPIEDAD_PROHIBIDA.exec(expresion);
+    if (prohibida) throw new Error(`Cannot access "${prohibida[1]}" due to security concerns`);
     const codigo = expresion.replace(RE_ITEM, '$__item($1$2$1)');
     return ejecutar(`return [{ json: { v: (${codigo}\n) } }];`, it ? [it.json] : [], refs, globalesDe(it))[0]?.['v'];
   }

@@ -1967,8 +1967,10 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     it('NEGANDO: el referral y una imagen (la foto del anuncio) no la disparan', () => {
       const w = conTortas();
       const c = con(w);
-      const img = c.imagen('media-1', 'image/jpeg', 'foto del anuncio de tortas');
+      const img = c.imagen('media-1', 'image/jpeg', 'foto de mi almuerzo');
       expect(sale(img)).not.toContain('sin queso por Bs 15');
+      // C (07/11/2026, decisión de Andres): un pie que dice «anuncio de tortas» SÍ nombra la promo (palabra de promoción pegada a «tortas»): es una variación del texto.
+      expect(sale(con(conTortas()).imagen('media-1', 'image/jpeg', 'foto del anuncio de tortas'))).toContain('sin queso por Bs 15');
       const w2 = conTortas();
       const t = w2.mundo.turno(entrega(CLIENTE, mTexto('hola'), { perfil: 'Ana Duran', referral: { source_url: 'https://fb.me/tortas', headline: TORTAS, body: TORTAS, source_type: 'ad' } }), {});
       expect(sale(t)).not.toContain('sin queso por Bs 15');
@@ -2810,7 +2812,7 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
     expect(d.escribe('necesito hablar con alguien por favor', { avanzarMin: 10 }).avisos).toHaveLength(0);
   });
 
-  it('la derivación avisa con `pedido_registrado` en la forma `pedido`: «CONSULTA …», «sin cobro», «el cliente pide hablar con una persona», «no aplica»', () => {
+  it('la derivación avisa con `pedido_registrado` en la forma `pedido` (variables del 07/11/2026): «NO ES UN PEDIDO — consulta …», «sin cobro», «responder a <cliente> por WhatsApp», «no aplica»', () => {
     const w = crear();
     const t = con(w).escribe('quiero hablar con una persona');
     const plantillas = t.avisos.filter((a) => a.tipo === 'template');
@@ -2819,8 +2821,10 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
       expect(a.payload['template']?.name).toBe('pedido_registrado');
       const vars = parametrosDe(a);
       expect(vars).toHaveLength(4);
-      expect(vars[0]).toMatch(/^CONSULTA /);
-      expect(vars.slice(1)).toEqual(['sin cobro', 'el cliente pide hablar con una persona', 'no aplica']);
+      expect(vars[0]).toMatch(/^NO ES UN PEDIDO — consulta /);
+      expect(vars[1]).toBe('sin cobro');
+      expect(vars[2]).toMatch(/^responder a \S.* por WhatsApp$/);
+      expect(vars[3]).toBe('no aplica');
     }
   });
 
@@ -5043,7 +5047,7 @@ describe('A. reserva: una hora suelta se toma como la hora (la toma el código, 
   const vacia: J = { personas: 0, fecha: '', hora: '', zona: '', nombre: '', celebracion: '', requerimiento: '' };
   /** «2 personas, aniversario el jueves a las 11 am»: a las 11 el restaurante no recibe reservas (abre a las 12). */
   function conHoraPendiente(perfil = 'Daniela') {
-    const w = crear({ config: { horario: HORARIO_12_22 } });
+    const w = crear({ config: { horario: HORARIO_12_22, horarioReservas: HORARIO_12_22 } });
     const c = con(w, CLIENTE, perfil);
     c.escribe('hola');
     c.toca('m|reserva', 'Reservar mesa');
@@ -5100,7 +5104,7 @@ describe('A. reserva: una hora suelta se toma como la hora (la toma el código, 
   });
 
   it('negando: sin personas conocidas un número suelto no es la hora (queda para el modelo), y con la hora ya puesta no se pisa', () => {
-    const w = crear({ config: { horario: HORARIO_12_22 } });
+    const w = crear({ config: { horario: HORARIO_12_22, horarioReservas: HORARIO_12_22 } });
     const c = con(w, CLIENTE, 'Daniela');
     c.escribe('hola');
     c.toca('m|reserva', 'Reservar mesa');

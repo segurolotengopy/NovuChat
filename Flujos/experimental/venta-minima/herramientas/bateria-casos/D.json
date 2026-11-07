@@ -5,18 +5,18 @@
   "casos": [
     {
       "id": "D1",
-      "titulo": "Reserva «el jueves a las 11 am»: dice el horario de ese día y pide la hora",
+      "titulo": "Reserva «el jueves a las 9 am» (07/11: horario propio de reservas, 10:00 a 21:30): dice el horario de ese día y pide la hora",
       "estadoPrevio": [
         {"cliente": {"tipo": "texto", "texto": "hola"}},
         {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["cu[eé]ntame en un solo mensaje"], "estado": {"paso": "reserva"}}}
       ],
       "turnos": [
         {
-          "cliente": {"tipo": "texto", "texto": "2 personas, aniversario el jueves a las 11 am"},
-          "seco": {"personas": 2, "fecha": "2026-10-08", "hora": "11:00", "zona": "", "nombre": "", "celebracion": "aniversario", "requerimiento": ""},
+          "cliente": {"tipo": "texto", "texto": "2 personas, aniversario el jueves a las 9 am"},
+          "seco": {"personas": 2, "fecha": "2026-10-08", "hora": "09:00", "zona": "", "nombre": "", "celebracion": "aniversario", "requerimiento": ""},
           "esperado": {
             "mensajes": 1,
-            "textos": ["El jueves el restaurante recibe reservas de 12:00 a 15:30 y de 18:00 a 21:30", "¿A qué hora"],
+            "textos": ["El jueves el restaurante recibe reservas de 10:00 a 21:30", "¿A qué hora"],
             "titulosNo": ["Enviar solicitud|^Reservar$"],
             "estado": {"reserva.hora": {"vacio": true}, "reserva.personas": 2, "reserva.fecha": "2026-10-08"},
             "efectos": {"derivacion": false, "aviso": false}
@@ -31,8 +31,8 @@
         {"cliente": {"tipo": "texto", "texto": "hola"}},
         {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["cu[eé]ntame en un solo mensaje"], "estado": {"paso": "reserva"}}},
         {
-          "cliente": {"tipo": "texto", "texto": "2 personas, aniversario el jueves a las 11 am"},
-          "seco": {"personas": 2, "fecha": "2026-10-08", "hora": "11:00", "celebracion": "aniversario"},
+          "cliente": {"tipo": "texto", "texto": "2 personas, aniversario el jueves a las 9 am"},
+          "seco": {"personas": 2, "fecha": "2026-10-08", "hora": "09:00", "celebracion": "aniversario"},
           "esperado": {"textos": ["¿A qué hora"], "estado": {"reserva.hora": {"vacio": true}}}
         }
       ],
@@ -59,8 +59,8 @@
         {"cliente": {"tipo": "texto", "texto": "hola"}},
         {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["cu[eé]ntame en un solo mensaje"], "estado": {"paso": "reserva"}}},
         {
-          "cliente": {"tipo": "texto", "texto": "2 personas, aniversario el jueves a las 11 am"},
-          "seco": {"personas": 2, "fecha": "2026-10-08", "hora": "11:00", "celebracion": "aniversario"},
+          "cliente": {"tipo": "texto", "texto": "2 personas, aniversario el jueves a las 9 am"},
+          "seco": {"personas": 2, "fecha": "2026-10-08", "hora": "09:00", "celebracion": "aniversario"},
           "esperado": {"textos": ["¿A qué hora"], "estado": {"reserva.hora": {"vacio": true}}}
         }
       ],
@@ -125,7 +125,7 @@
           "seco": {"personas": 4, "fecha": "2026-10-08", "hora": "23:00", "nombre": "Ana Duran"},
           "esperado": {
             "mensajes": 1,
-            "textos": ["recibe reservas de 12:00 a 15:30 y de 18:00 a 21:30", "¿A qué hora"],
+            "textos": ["recibe reservas de 10:00 a 21:30", "¿A qué hora"],
             "titulosNo": ["Enviar solicitud|^Reservar$"],
             "estado": {"reserva.hora": {"vacio": true}},
             "efectos": {"derivacion": false, "aviso": false}

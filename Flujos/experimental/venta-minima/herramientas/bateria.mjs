@@ -582,6 +582,12 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
     // La rama común del GUARDADO de medios: sin red, el servidor responde «guardado_apagado» (la bandera por defecto).
     ...doblesDeBateriaDelGuardado(),
     'Transcribir audio': () => ({ content: { parts: [{ text: String(turnoActual.t?.cliente?.transcripcion ?? '') }] } }),
+    // «Clasificar imagen» (07/11/2026 cuelga también de la salida no-audio): como n8n, sin el campo binario `data` falla ANTES de llamar a Gemini; con él, la batería no
+    // clasifica (sin lectura = el comportamiento de siempre: la imagen con QR pendiente es comprobante).
+    'Clasificar imagen': (ll) => {
+      if (ll.parametros?.binaryPropertyName !== 'data') throw new Error('no binary field ' + String(ll.parametros?.binaryPropertyName));
+      return { error: { message: 'la batería no clasifica imágenes' } };
+    },
     'Leer comprobante (imagen)': () => lecturaDe(turnoActual.t, captura),
     'Leer comprobante (PDF)': () => lecturaDe(turnoActual.t, captura),
     'Cotejar en el servidor': () => cotejoDe(turnoActual.t),

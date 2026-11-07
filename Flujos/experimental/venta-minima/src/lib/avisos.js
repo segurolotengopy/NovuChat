@@ -580,6 +580,7 @@ function avCotejoTexto(resultado) {
   if (resultado === 'ilegible') return 'comprobante ilegible';
   if (resultado === 'sin_qr') return 'sin QR: se cobra al entregar o al recoger';
   if (resultado === 'qr_vencido') return 'QR vencido: coordinar el pago';
+  if (resultado === 'sin_guardar') return 'comprobante sin guardar ni cotejar';
   return 'comprobante sin cotejar';
 }
 
@@ -589,7 +590,7 @@ function avCotejoVariable(resultado) {
   return avCotejoTexto(resultado).replace(/^comprobante:?\s+/i, '');
 }
 
-// Teléfono legible, calculado SOLO con los dígitos: «+591 7066 1250» solo si empieza por 591 y tiene 11 dígitos. Con 12 a 15
+// Teléfono legible, calculado SOLO con los dígitos: «+591 0000 0000» solo si empieza por 591 y tiene 11 dígitos. Con 12 a 15
 // dígitos (otro país) «+» y los dígitos sin agrupar (no se conoce el largo del código de país); con 8 a 11 sin prefijo 591 solo
 // los dígitos, sin «+» (no se puede saber el país). Devuelve '' si el valor trae letras o no tiene entre 8 y 15 dígitos.
 function avTelefonoLegible(v) {
@@ -609,7 +610,7 @@ function avModalidadTexto(m) {
 
 function avResultado(tipo, r) {
   const v = String(r === undefined || r === null ? '' : r);
-  if (['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_qr', 'qr_vencido', 'ya_cotejado', 'simulado'].indexOf(v) >= 0) return v;
+  if (['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_guardar', 'sin_qr', 'qr_vencido', 'ya_cotejado', 'simulado'].indexOf(v) >= 0) return v;
   return tipo === 'pedido' ? 'sin_qr' : 'sin_cotejo';
 }
 
@@ -801,14 +802,40 @@ function avVariablesDeForma(tipo, d, dest, ahoraMs) {
   }
   const cod = avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs);
   const motivo = avLimpio(d.motivo, 120, opc);
+  // A QUIÉN RESPONDER (Andres, 07/11/2026: el aviso llegaba sin ningún dato de la persona). Mismas reglas que la forma `solicitud` de la reserva: el teléfono
+  // solo para el rol `completo`; `cocina` ve el primer nombre y nunca el teléfono.
+  const quien = avClienteDeConsulta(d, dest);
+  const aQuien = quien.nombre + (quien.telefono ? ' · ' + quien.telefono : '');
   // `comprobante: true`: no es una consulta, es la foto de un comprobante que el flujo no pudo revisar porque cambio el modo de cobro.
   const esComprobante = d.comprobante === true;
+  if (esComprobante) {
+    return {
+      items: avParametro('COMPROBANTE ' + cod + (motivo ? ': ' + motivo : ''), 200),
+      total: avParametro('sin cobro', 30),
+      modalidad: avParametro('el cliente envió un comprobante que no se pudo revisar (cambió el modo de cobro); responder a ' + aQuien + ' por WhatsApp', 500),
+      cotejo: avParametro('no aplica', 80),
+    };
+  }
+  // UNA CONSULTA (07/11/2026, decisión de Andres: mientras WAM no apruebe una plantilla propia, se reescriben las VARIABLES): con el texto fijo de la plantilla de
+  // pedido («Se registró un pedido… Pedido: {{1}}…») el local debe leer de entrada que NO es un pedido, a quién y qué tiene que hacer: responderle por WhatsApp.
   return {
-    items: avParametro((esComprobante ? 'COMPROBANTE ' : 'CONSULTA ') + cod + (motivo ? ': ' + motivo : ''), 200),
+    items: avParametro('NO ES UN PEDIDO — consulta ' + cod + ': ' + (motivo || 'el cliente pide hablar con una persona'), 200),
     total: avParametro('sin cobro', 30),
-    modalidad: avParametro(esComprobante ? 'el cliente envió un comprobante que no se pudo revisar (cambió el modo de cobro)' : 'el cliente pide hablar con una persona', 500),
+    modalidad: avParametro('responder a ' + aQuien + ' por WhatsApp', 500),
     cotejo: avParametro('no aplica', 80),
   };
+}
+
+// El cliente de una consulta, ya saneado por rol: `{nombre, telefono, motivo}`. `nombre` es el de perfil (o el que dio) con `avLimpio`; vacío = «cliente». `telefono`
+// es el legible (`avTelefonoLegible`) SOLO para el rol `completo`; para `cocina`, el primer nombre y '' (sin teléfono). Queda listo para mapear, más adelante, a la
+// plantilla propia de consultas (en revisión de Meta: {{1}} cliente, {{2}} motivo, {{3}} consulta); hoy NO se usa con ella.
+function avClienteDeConsulta(d, dest) {
+  const x = d && typeof d === 'object' ? d : {};
+  const opc = { cocina: !dest || dest.rol === 'cocina' };
+  const crudo = x.nombre || x.nombrePerfil || '';
+  const nombre = (dest && dest.rol === 'completo' ? avLimpio(crudo, 60) : avPrimerNombre(crudo, opc)) || 'cliente';
+  const tel = dest && dest.rol === 'completo' ? (avTelefonoLegible(x.telefono || x.from) || '') : '';
+  return { nombre: nombre, telefono: tel, motivo: avLimpio(x.motivo, 120, opc) };
 }
 
 // Reserva con la FORMA `solicitud` (plantilla `solicitud_reserva`, 5 variables). Cada una se recorta por campo para que Meta nunca la
@@ -1036,7 +1063,8 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
   const errores = [];
   if (AV_TIPOS.indexOf(tipo) < 0) return { items: [], errores: ['tipo_desconocido'] };
   const esPedido = tipo === 'pedido' || tipo === 'comprobante';
-  const resultado = esPedido ? avResultado(tipo, d.resultado) : '';
+  // `sinGuardar` (07/11/2026): la imagen que el filtro tomó por un anuncio y el código no confirmó; no se guardó ni se cotejó y el aviso lo dice tal cual.
+  const resultado = esPedido ? avResultado(tipo, tipo === 'comprobante' && d.sinGuardar === true ? 'sin_guardar' : d.resultado) : '';
   if (resultado === 'ya_cotejado') return { items: [], errores: ['sin_aviso_ya_cotejado'] };
   if (tipo === 'reserva' && !(d.reserva && typeof d.reserva === 'object')) return { items: [], errores: ['sin_datos_reserva'] };
   const dests = avNormalizarDestinatarios(destinatarios, d, c);

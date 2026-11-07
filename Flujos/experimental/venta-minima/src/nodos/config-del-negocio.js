@@ -116,6 +116,9 @@ const deBaseDeReglas = {
   areasSinDelivery: vmLista(base.areasSinDelivery),
   zonasReserva: vmLista(base.zonasReserva),
   horario: horarioBase,
+  // El horario PROPIO de las reservas (07/11/2026; opcional, solo de «Config base»): un rango «HH:MM-HH:MM» o un horario por día. Ausente o marcador = el de
+  // pedidos, como hasta hoy (`rsHorarioDeReservas`).
+  horarioReservas: (base.horarioReservas && typeof base.horarioReservas === 'object') ? base.horarioReservas : marcador(base.horarioReservas),
   maxPersonasReserva: vmEntero(base.maxPersonasReserva, 1, 500, 12),
   anticipacionReservaMin: vmEntero(base.anticipacionReservaMin, 0, 10080, 60),
   maxDiasReserva: vmEntero(base.maxDiasReserva, 1, 365, 30),
