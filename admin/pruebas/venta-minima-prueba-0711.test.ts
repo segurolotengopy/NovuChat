@@ -1,0 +1,363 @@
+/**
+ * CORRECCIONES DE LA PRUEBA EN VIVO DE ANDRES (07/11/2026) SOBRE Q'TACO, DE PUNTA A PUNTA: el JSON ARMADO de Q'Taco con los DATOS REALES de
+ * `qtaco.json`, corrido con el n8n de mentira (solo la red es doble). Cada bloque reproduce lo que pasó y NIEGA primero.
+ *
+ *   A. Un solo aviso al local por pedido: el segundo comprobante del mismo pedido no avisa de nuevo (salvo que el primer aviso no haya salido).
+ *   C. La promo escrita con variaciones («promo de jueves +2», «promo tortas», «promo tortaa») se reconoce; un pedido de carta no.
+ *   D. Las reservas no dependen del horario de pedidos: se validan contra su horario propio (`horarioReservas`).
+ *   E. «Volver a inicio» siempre responde (los casos del informe de las 03:51).
+ *   F. El aviso de una derivación se lee como lo que es con la plantilla de pedido (sus variables).
+ * (B, el arte de una campaña con un QR pendiente, está en `venta-minima-anuncio-campanas.test.ts`.)
+ */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { configBase, type Flujo, type J } from './lib/flujo';
+import { crearMundo, type Doble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
+import { doblesDelGuardado } from './lib/doble-guardado';
+import { crearSesion, type SesionDeMentira } from './lib/venta-minima-sesion';
+
+const AQUI = dirname(fileURLToPath(import.meta.url));
+const CARPETA_VM = join(AQUI, '../../Flujos/experimental/venta-minima');
+const QTACO = JSON.parse(readFileSync(join(CARPETA_VM, 'venta-minima.qtaco.json'), 'utf8')) as Flujo;
+const DATOS = configBase(QTACO);
+
+const JUEVES_10 = Date.UTC(2026, 10, 5, 14); // jueves 05/11/2026, 10:00 en La Paz
+const JUEVES_23 = Date.UTC(2026, 10, 6, 3); // jueves 05/11/2026, 23:00 en La Paz
+const DIA = 86_400_000;
+const CLIENTE = '59100000011';
+const PHONE_ID = '100000000000042';
+const REC = '59100000031';
+const URL_CATALOGO = 'https://catalogo.ejemplo.com/c/ficha123';
+const HORARIO_PEDIDOS = 'lun=12:00-22:00,mar=12:00-22:00,mie=12:00-22:00,jue=12:00-22:00,vie=12:00-22:00,sab=12:00-22:00,dom=12:00-22:00';
+const HORARIO_24H = 'lun=00:00-24:00,mar=00:00-24:00,mie=00:00-24:00,jue=00:00-24:00,vie=00:00-24:00,sab=00:00-24:00,dom=00:00-24:00';
+
+const TORTAS = String(DATOS['campanaPedidoTexto']);
+const JUEVES = String(DATOS['campanaReservaTexto']);
+const A = String(DATOS['campanaPedidoMensaje']);
+const B = String(DATOS['campanaReservaMensaje']);
+const iso = (ms: number): string => new Date(ms).toISOString();
+const campana = (id: string, texto: string, base: number): J => ({ id, texto, inicio: iso(base - DIA), fin: iso(base + 5 * DIA) });
+const CATALOGO: J[] = [
+  { id: 'torta-sin', nombre: 'Torta mexicana sin queso', precio: 15, area: 'Promociones', descripcion: '' },
+  { id: 'torta-con', nombre: 'Torta mexicana con queso', precio: 20, area: 'Promociones', descripcion: '' },
+  { id: 'nachos', nombre: 'Nachos Supremos', precio: 58, area: 'Entradas', descripcion: '' },
+  { id: 'taco', nombre: 'Taco de Birria (unidad)', precio: 21, area: 'Birria', descripcion: '' },
+];
+const ANUNCIOS: J[] = [
+  { id: 'tortas', titulares: ['Tortas Mexicanas'], angulo: '', producto: null },
+  { id: 'jueves', titulares: ['Jueves de +2'], angulo: '', producto: null },
+];
+
+function panel(base: number, extra: J = {}): J {
+  return {
+    tenantId: 'qtaco', estadoComercio: 'activo',
+    datosDelNegocio: { nombreNegocio: "Q'Taco", direccion: 'Calle Ejemplo 123' },
+    operacion: { horarioAtencion: 'todos los días de 12 a 22', moneda: 'BOB', numeroRecepcion: REC, prefijosPermitidos: ['591'] },
+    voz: { nombreAsistente: 'Taqui', nivelEmojis: 'pocos' },
+    venta: { aceptaDelivery: true, aceptaRetiroEnLocal: true },
+    catalogo: CATALOGO, campanas: [campana('tortas', TORTAS, base), campana('jueves', JUEVES, base)], anuncios: ANUNCIOS, catalogoWeb: { enlace: URL_CATALOGO },
+    atencion: { estado: 'normal' },
+    ...extra,
+  };
+}
+
+interface Opciones { ahoraMs?: number; panel?: J; config?: J; extraccion?: J }
+let contador = 0;
+function crear(op: Opciones = {}) {
+  const ahora = op.ahoraMs ?? JUEVES_10;
+  const sesion: SesionDeMentira = crearSesion({ pid: PHONE_ID, ahora: () => w.mundo.ahora() });
+  const dobles: Record<string, Doble> = {
+    ...doblesDelGuardado().dobles,
+    ...sesion.dobles,
+    'Verificar firma con el receptor': (ll) => ({ valido: true, deliveryId: ll.cuerpo?.['deliveryId'] }),
+    'Traer configuración': () => ({ statusCode: 200, body: op.panel ?? panel(ahora) }),
+    'Reportar mensaje (entrante)': () => ({ ok: true }),
+    'Reportar mensaje (saliente)': () => ({ ok: true }),
+    'Registrar cierre': () => ({ ok: true }),
+    'Obtener URL del medio': () => ({ url: 'https://medios.ejemplo.invalid/m', mime_type: 'image/jpeg', file_size: 100_000 }),
+    'Descargar medio': () => ({}),
+    'Guardar comprobante': () => ({ statusCode: 200, body: { ruta: 'tenants/qtaco/comprobantes/2026-11-05/x.jpg' } }),
+    'Transcribir audio': () => ({ content: { parts: [{ text: 'hola' }] } }),
+    'Leer comprobante (imagen)': () => ({ content: { parts: [{ text: JSON.stringify({ monto: '63.00', cuentaDestino: '***4321', nombreCuenta: 'Q TACO SRL', fecha: '05/11/2026', hora: '10:05', banco: 'X' }) }] } }),
+    'Leer comprobante (PDF)': () => ({ content: { parts: [{ text: '{}' }] } }),
+    'Cotejar en el servidor': () => ({ statusCode: 200, body: { resultado: 'cuadra', diferencias: [], cierreId: 'venta_prueba' } }),
+    'Clasificar imagen': (ll) => {
+      if (ll.parametros['binaryPropertyName'] !== 'data') throw new Error('no binary field');
+      return { content: { parts: [{ text: JSON.stringify({ categoria: 'otro', titular_principal: '', campana: 'ninguna' }) }] } };
+    },
+    Extraer: () => (w.extraccion ? { candidates: [{ content: { parts: [{ text: JSON.stringify(w.extraccion) }] } }] } : { error: { message: 'sin extracción declarada' } }),
+    'Enviar a WhatsApp': (ll) => ({ messaging_product: 'whatsapp', messages: [{ id: `wamid.EW${ll.n}` }] }),
+    'Enviar respaldo': (ll) => ({ messaging_product: 'whatsapp', messages: [{ id: `wamid.ER${ll.n}` }] }),
+    'Enviar aviso': (ll) => ({ messaging_product: 'whatsapp', messages: [{ id: `wamid.EA${ll.n}` }] }),
+    'Aviso de respaldo': (ll) => ({ messaging_product: 'whatsapp', messages: [{ id: `wamid.EB${ll.n}` }] }),
+  };
+  const mundo: Mundo = crearMundo({
+    flujo: QTACO, dobles, alResponder: sesion.alResponder, ahoraMs: ahora,
+    configBase: {
+      phoneNumberIdEsperado: PHONE_ID, destinatariosAviso: `completo:59100000021,cocina:59100000022`, respaldoNumeroRecepcion: REC,
+      horario: HORARIO_PEDIDOS, plantillasPedidoLineas: '', ...(op.config ?? {}),
+    },
+  });
+  const w = { mundo, sesion, extraccion: op.extraccion as J | undefined };
+  return w;
+}
+type W = ReturnType<typeof crear>;
+
+interface Mensaje { type: string; [k: string]: unknown }
+const entrega = (mensaje: Mensaje): J => ({
+  headers: { 'x-aab1-signature': 'v1=abc', 'x-aab1-timestamp': '1', 'x-aab1-delivery-id': `entrega-${++contador}`, 'x-aab1-attempt': '1' },
+  body: {
+    field: 'messages',
+    value: {
+      messaging_product: 'whatsapp', metadata: { display_phone_number: '59100000001', phone_number_id: PHONE_ID },
+      contacts: [{ profile: { name: 'Carlos Pérez' }, wa_id: CLIENTE }],
+      messages: [{ from: CLIENTE, id: `wamid.ENT${++contador}`, timestamp: '1', ...mensaje }],
+    },
+  },
+});
+function conversacion(w: W) {
+  const turno = (m: Mensaje): ResultadoTurno => w.mundo.turno(entrega(m), {});
+  return {
+    escribe: (t: string) => turno({ type: 'text', text: { body: t } }),
+    toca: (id: string, titulo = 'x') => turno({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title: titulo } } }),
+    imagen: (id = 'media-1') => turno({ type: 'image', image: { id, mime_type: 'image/jpeg' } }),
+  };
+}
+const cuerpos = (t: ResultadoTurno): string[] => t.mensajes.map((m) => m.cuerpo);
+const botonesDe = (m: { payload: J }): { id: string; title: string }[] =>
+  ((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => ({ id: String(b['reply']?.id), title: String(b['reply']?.title) }));
+const titulos = (t: ResultadoTurno): string[] => t.mensajes.flatMap((m) => botonesDe(m).map((b) => b.title));
+const idDe = (t: ResultadoTurno, titulo: string): string => {
+  for (const m of t.mensajes) { const b = botonesDe(m).find((x) => x.title === titulo); if (b) return b.id; }
+  throw new Error(`no hay un botón «${titulo}» en ${JSON.stringify(titulos(t))}`);
+};
+const estadoDe = (w: W): J => w.sesion.estado(CLIENTE);
+const ruta = (t: ResultadoTurno): string => String(t.resumen?.['ruta'] ?? '');
+const plantillas = (t: ResultadoTurno): ResultadoTurno['avisos'] => t.avisos.filter((a) => a.tipo === 'template' && a.ok);
+const variables = (a: { payload: J }): string[] =>
+  ((a.payload['template']?.components ?? []) as J[]).flatMap((c) => ((c['parameters'] ?? []) as J[]).map((p) => String(p['text'] ?? '')));
+const RESERVA = (hora: string, fecha = '2026-11-06'): J => ({ personas: 4, fecha, hora, zona: '', nombre: 'Carlos Pérez', celebracion: '', requerimiento: '' });
+
+// -------------------------------------------------------------------------------------------------------------------------------- A
+describe('A. Un solo aviso al local por pedido (decisión de Andres: «Un aviso por pedido»)', () => {
+  const COBRO = { cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: 63, pedido: 'ped1' } };
+  const PED = (id = 'ped1', codigo = 'OXJL'): J => ({ pedidoId: id, from: CLIENTE, codigo, total: 63, lineas: [{ id: 'taco', nombre: 'Taco de Birria (unidad)', cantidad: 3, precio: 21 }], modalidad: 'recojo', resultado: 'qr_enviado' });
+  const conQr = (extra: J = {}) => {
+    const w = crear({ panel: panel(JUEVES_10, { ...COBRO, ...extra }) });
+    w.sesion.sembrar(CLIENTE, { paso: 'esperando_comprobante', pedido: PED(), carrito: [], ultimoMensajeMs: JUEVES_10 - 60_000 }, { ped1: { ...PED(), guardadoMs: JUEVES_10 - 60_000 } });
+    return w;
+  };
+  const cotejo = (w: W, resultado: string) => {
+    w.mundo.dobles['Cotejar en el servidor'] = () => ({ statusCode: 200, body: { resultado, diferencias: resultado === 'no_cuadra' ? ['El comprobante dice 60.00 y el pedido es de 63.00'] : [], cierreId: 'venta_prueba' } });
+  };
+  it('el caso OXJL: dos comprobantes del MISMO pedido (el primero «no coinciden», el segundo distinto) → UN aviso; el segundo se coteja y el cliente lee su respuesta', () => {
+    const w = conQr();
+    const c = conversacion(w);
+    cotejo(w, 'no_cuadra');
+    const t1 = c.imagen('media-1');
+    expect(plantillas(t1).length).toBeGreaterThan(0);
+    expect(variables(plantillas(t1)[0]!).join(' ')).toContain('OXJL');
+    expect(w.sesion.pedidos(CLIENTE)['ped1']['comprobanteAvisadoMs']).toBeGreaterThan(0);
+    cotejo(w, 'cuadra');
+    const t2 = c.imagen('media-2');
+    expect(t2.ejecutados.has('Cotejar en el servidor')).toBe(true);
+    expect(t2.avisos).toHaveLength(0);
+    expect(t2.mensajes).toHaveLength(1);
+    expect(cuerpos(t2)[0]).toContain('Gracias por enviar tu comprobante');
+    // Un tercero, tampoco.
+    cotejo(w, 'no_cuadra');
+    expect(c.imagen('media-3').avisos).toHaveLength(0);
+  });
+  it('NEGANDO: si el PRIMER aviso no salió (Meta sin wamid, ni el respaldo), no hay marca y el comprobante siguiente SÍ avisa', () => {
+    const w = conQr();
+    const c = conversacion(w);
+    cotejo(w, 'no_cuadra');
+    w.mundo.dobles['Enviar aviso'] = () => ({ error: { message: 'Meta caído' } });
+    w.mundo.dobles['Aviso de respaldo'] = () => ({ error: { message: 'Meta caído' } });
+    const t1 = c.imagen('media-1');
+    expect(t1.avisos.some((a) => a.ok)).toBe(false);
+    expect(w.sesion.pedidos(CLIENTE)['ped1']?.['comprobanteAvisadoMs']).toBeUndefined();
+    w.mundo.dobles['Enviar aviso'] = (ll) => ({ messaging_product: 'whatsapp', messages: [{ id: `wamid.EA${ll.n}` }] });
+    w.mundo.dobles['Aviso de respaldo'] = (ll) => ({ messaging_product: 'whatsapp', messages: [{ id: `wamid.EB${ll.n}` }] });
+    cotejo(w, 'cuadra');
+    const t2 = c.imagen('media-2');
+    expect(plantillas(t2).length).toBeGreaterThan(0);
+  });
+  it('NEGANDO: la marca es del pedido: el comprobante de OTRO pedido del mismo cliente sí avisa', () => {
+    const w = conQr();
+    const c = conversacion(w);
+    cotejo(w, 'cuadra');
+    expect(plantillas(c.imagen('media-1')).length).toBeGreaterThan(0);
+    // Un pedido nuevo (ped2) con su QR pendiente.
+    w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 200, body: panel(JUEVES_10, { ...COBRO, cobro: { ...COBRO.cobro, pedido: 'ped2' } }) });
+    w.sesion.sembrar(CLIENTE, { ...estadoDe(w), paso: 'esperando_comprobante', pedido: PED('ped2', 'ZQ7K') }, { ...w.sesion.pedidos(CLIENTE), ped2: { ...PED('ped2', 'ZQ7K'), guardadoMs: JUEVES_10 } });
+    const t2 = c.imagen('media-2');
+    expect(plantillas(t2).length).toBeGreaterThan(0);
+    expect(variables(plantillas(t2)[0]!).join(' ')).toContain('ZQ7K');
+  });
+  it('0 mensajes agregados al cliente: cada comprobante recibe UN mensaje, con o sin aviso', () => {
+    const w = conQr();
+    const c = conversacion(w);
+    cotejo(w, 'no_cuadra');
+    expect(c.imagen('media-1').mensajes).toHaveLength(1);
+    expect(c.imagen('media-2').mensajes).toHaveLength(1);
+  });
+});
+
+// -------------------------------------------------------------------------------------------------------------------------------- C
+describe('C. La promo escrita con variaciones se reconoce por código (y un pedido de carta no)', () => {
+  const B_TEXTOS = ['Quiero la promo de jueves +2', 'quiero la promo jueves', 'jueves de más 2', 'jueves +2', 'JUEVES MAS 2', 'la promo del jueves', 'quiero la promo de jueves de 2 mas', 'Promoción de los jueves', 'jueves de 2 mas'];
+  const A_TEXTOS = ['Quiero la promo tortas', 'Quiero la promo tortaa', 'promo tortas', 'la promo de tortas', 'quiero la promo tortas mexicanas', 'Promoción de tortas', 'promo torta mexicana', 'PROMO DE LAS TORTAS', 'oferta de tortas', 'tortas de la promo'];
+  it('B (Jueves de +2): cada variación muestra el mensaje de la campaña B', () => {
+    for (const texto of B_TEXTOS) expect(cuerpos(conversacion(crear()).escribe(texto))[0], texto).toBe(B);
+  });
+  it('B es de RESERVA: a las 23:00, con los pedidos cerrados, «Quiero la promo de jueves +2» muestra la campaña, no «fuera de horario» (el caso del 07/11)', () => {
+    const t = conversacion(crear({ ahoraMs: JUEVES_23 })).escribe('Quiero la promo de jueves +2');
+    expect(cuerpos(t)[0]).toBe(B);
+    expect(cuerpos(t).join(' ')).not.toMatch(/fuera de nuestro horario/);
+    expect(titulos(t)).toContain('Reservar mesa');
+  });
+  it('A (Tortas mexicanas): cada variación, con mayúsculas, tildes o una letra de más o de menos, muestra el mensaje de la campaña A', () => {
+    for (const texto of A_TEXTOS) expect(cuerpos(conversacion(crear()).escribe(texto))[0], texto).toBe(A);
+  });
+  it('también desde el menú (después de «hola»): «Quiero la promo tortaa» ya no devuelve «¿Qué te gustaría hacer ahora?»', () => {
+    const c = conversacion(crear());
+    c.escribe('hola');
+    expect(cuerpos(c.escribe('Quiero la promo tortaa'))[0]).toBe(A);
+    expect(cuerpos(c.escribe('promo de jueves +2'))[0]).toBe(B);
+  });
+  it('NEGANDO (falsos positivos): un pedido de carta, un horario, una mesa para 2 o la promo que no está pegada a la palabra NO activan nada', () => {
+    const NEG = ['quiero una torta mexicana con queso', 'quiero 2 tortas mexicanas con queso', 'quiero tortas', 'qué tienen de tortas', 'tengo reserva el jueves de 2 a 4',
+      'quiero una mesa el jueves de 2 personas, vi su promo', 'mesa para el jueves de 2 mas personas', 'quiero una torta con mi promo', 'el jueves quiero tortas', 'promo de tacos'];
+    for (const texto of NEG) {
+      const t = conversacion(crear()).escribe(texto);
+      expect([A, B].includes(cuerpos(t)[0] ?? ''), texto).toBe(false);
+    }
+  });
+  it('NEGANDO: nombrar las dos a la vez es ambiguo; y sin campaña vigente del servidor nada se activa', () => {
+    expect([A, B].includes(cuerpos(conversacion(crear()).escribe('promo tortas y promo jueves'))[0] ?? '')).toBe(false);
+    const sin = crear({ panel: panel(JUEVES_10, { campanas: [] }) });
+    expect([A, B].includes(cuerpos(conversacion(sin).escribe('promo tortas'))[0] ?? '')).toBe(false);
+  });
+});
+
+// -------------------------------------------------------------------------------------------------------------------------------- D
+describe('D. Las reservas NO dependen del horario de pedidos (Andres, 07/11/2026)', () => {
+  it('a las 23:00 (pedidos cerrados) se reserva una mesa para mañana de punta a punta: resumen, «Reservar» y «Anotamos tu reserva» con el aviso al local', () => {
+    const w = crear({ ahoraMs: JUEVES_23, extraccion: RESERVA('20:00') });
+    const c = conversacion(w);
+    const r = c.escribe('quiero reservar una mesa para 4 mañana a las 20:00 a nombre de Carlos Pérez');
+    expect(cuerpos(r)[0]).toContain('Tu reserva');
+    const fin = c.toca(idDe(r, 'Reservar'), 'Reservar');
+    expect(cuerpos(fin).join(' ')).toContain('Anotamos tu reserva');
+    expect(fin.avisos.some((a) => a.ok)).toBe(true);
+  });
+  it('desde el botón «Reservar mesa» del mensaje de fuera de horario de pedidos', () => {
+    const w = crear({ ahoraMs: JUEVES_23, extraccion: RESERVA('20:00') });
+    const c = conversacion(w);
+    const fuera = c.escribe('quiero 2 tacos de birria');
+    expect(cuerpos(fuera)[0]).toMatch(/fuera de nuestro horario de pedidos/);
+    const r = c.toca(idDe(fuera, 'Reservar mesa'), 'Reservar mesa');
+    expect(cuerpos(r)[0]).toMatch(/Para tu reserva/);
+    expect(cuerpos(c.escribe('somos 4 mañana a las 20:00, Carlos Pérez'))[0]).toContain('Tu reserva');
+  });
+  it('la hora se valida contra el horario PROPIO de las reservas (`horarioReservas` = 10:00-22:00 → de 10:00 a 21:30), no contra el de pedidos', () => {
+    // Pedidos de 12 a 22: una reserva a las 10:30 se acepta (y es «de mañana», #831).
+    const t1030 = conversacion(crear({ ahoraMs: JUEVES_23, extraccion: RESERVA('10:30') })).escribe('mesa para 4 mañana 10:30');
+    expect(cuerpos(t1030)[0]).toContain('Tu reserva');
+    expect(cuerpos(conversacion(crear({ ahoraMs: JUEVES_23, extraccion: RESERVA('21:30') })).escribe('mesa para 4 mañana 21:30'))[0]).toContain('Tu reserva');
+    // Pedidos 24 h (el valor temporal de producción): las 03:00 y las 21:45 se siguen rechazando, como antes.
+    for (const hora of ['03:00', '09:30', '21:45']) {
+      const t = conversacion(crear({ ahoraMs: JUEVES_23, config: { horario: HORARIO_24H }, extraccion: RESERVA(hora) })).escribe('mesa para 4 mañana ' + hora);
+      expect(cuerpos(t)[0], hora).toContain('recibe reservas de 10:00 a 21:30');
+    }
+  });
+  it('el día que el horario de pedidos marca CERRADO no se reserva', () => {
+    const conDomingoCerrado = HORARIO_PEDIDOS.replace('dom=12:00-22:00', 'dom=cerrado');
+    const t = conversacion(crear({ ahoraMs: JUEVES_23, config: { horario: conDomingoCerrado }, extraccion: RESERVA('20:00', '2026-11-08') })).escribe('mesa para 4 el domingo a las 20:00');
+    expect(cuerpos(t)[0]).toMatch(/no abre el domingo/);
+  });
+  it('NEGANDO: sin `horarioReservas` (dato opcional) rige el horario de pedidos, como hasta hoy', () => {
+    const t = conversacion(crear({ ahoraMs: JUEVES_23, config: { horarioReservas: '' }, extraccion: RESERVA('10:30') })).escribe('mesa para 4 mañana 10:30');
+    expect(cuerpos(t)[0]).toContain('recibe reservas de 12:00 a 21:30');
+  });
+  it('el dato de Q\'Taco es «10:00-22:00» y el horario de pedidos no se tocó (sigue siendo el marcador)', () => {
+    expect(DATOS['horarioReservas']).toBe('10:00-22:00');
+    expect(DATOS['horario']).toBe('REEMPLAZAR_HORARIO_PEDIDOS_QTACO');
+  });
+});
+
+// -------------------------------------------------------------------------------------------------------------------------------- E
+describe('E. «Volver a inicio» siempre responde (informe de Andres, 03:51)', () => {
+  const volver = (c: ReturnType<typeof conversacion>, t: ResultadoTurno): ResultadoTurno => c.toca(idDe(t, 'Volver a inicio'), 'Volver a inicio');
+  it('tras «¿qué horarios tienen?»', () => {
+    const c = conversacion(crear());
+    c.escribe('hola');
+    const h = c.escribe('¿qué horarios tienen?');
+    const t = volver(c, h);
+    expect(t.mensajes).toHaveLength(1);
+    expect(titulos(t)).toEqual(['Hacer un pedido', 'Reservar mesa']);
+  });
+  it('tras una promo (A y B no llevan «Volver a inicio»: se toca el botón del menú de un mensaje anterior, y también se escribe)', () => {
+    const c = conversacion(crear());
+    const hola = c.escribe('hola');
+    c.escribe(TORTAS);
+    const t = c.toca('m|menu', 'Volver a inicio');
+    expect(t.mensajes).toHaveLength(1);
+    expect(titulos(t)).toContain('Reservar mesa');
+    c.escribe(JUEVES);
+    expect(c.escribe('volver a inicio').mensajes).toHaveLength(1);
+    expect(titulos(hola)).toContain('Hacer un pedido');
+  });
+  it('fuera del horario de pedidos, con el botón del propio mensaje de «fuera de horario»', () => {
+    const c = conversacion(crear({ ahoraMs: JUEVES_23 }));
+    const fuera = c.escribe('quiero 2 tacos de birria');
+    const t = volver(c, fuera);
+    expect(t.mensajes).toHaveLength(1);
+    expect(titulos(t)).toEqual(['Hacer un pedido', 'Reservar mesa']);
+  });
+  it('con un comprobante en espera: responde con el recordatorio (no saca del cobro)', () => {
+    const w = crear({ panel: panel(JUEVES_10, { cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: 63, pedido: 'ped1' } }) });
+    const ped = { pedidoId: 'ped1', from: CLIENTE, codigo: 'OXJL', total: 63, lineas: [], modalidad: 'recojo' };
+    w.sesion.sembrar(CLIENTE, { paso: 'esperando_comprobante', pedido: ped, carrito: [], ultimoMensajeMs: JUEVES_10 - 60_000 }, { ped1: { ...ped, guardadoMs: JUEVES_10 } });
+    const c = conversacion(w);
+    const t = c.toca('m|menu', 'Volver a inicio');
+    expect(t.mensajes).toHaveLength(1);
+    expect(cuerpos(t)[0]).toContain('OXJL');
+    expect(c.escribe('Volver a inicio').mensajes).toHaveLength(1);
+  });
+  it('un toque DOBLE (dos ejecuciones que leen el mismo estado): una responde y la otra cede en silencio (diseño de la carrera); entre las dos, UNA respuesta', () => {
+    const w = crear();
+    const c = conversacion(w);
+    const h = c.escribe('¿qué horarios tienen?');
+    const id = idDe(h, 'Volver a inicio');
+    const primera = c.toca(id, 'Volver a inicio');
+    w.sesion.servidor.antesDeComprometer = (ll) => {
+      w.sesion.servidor.antesDeComprometer = null;
+      if ((ll['sesion'] as J)['accion'] === 'comprometer') w.sesion.sembrar(CLIENTE, { ...estadoDe(w), paso: 'menu' }, w.sesion.pedidos(CLIENTE));
+    };
+    const segunda = c.toca(id, 'Volver a inicio');
+    expect(primera.mensajes.length + segunda.mensajes.length).toBe(1);
+  });
+});
+
+// -------------------------------------------------------------------------------------------------------------------------------- F
+describe('F. El aviso de una derivación se lee como lo que es con la plantilla de pedido (variables reescritas)', () => {
+  it('«quiero hablar con una persona»: {{1}} dice «NO ES UN PEDIDO — consulta …», {{2}} «sin cobro», {{3}} «responderle por WhatsApp», {{4}} «no aplica»', () => {
+    const t = conversacion(crear()).escribe('quiero hablar con una persona');
+    const p = plantillas(t);
+    expect(p.length).toBeGreaterThan(0);
+    for (const a of p) {
+      const v = variables(a);
+      expect(v).toHaveLength(4);
+      expect(v[0]).toMatch(/^NO ES UN PEDIDO — consulta [A-Z0-9]+: /);
+      expect(v[1]).toBe('sin cobro');
+      expect(v[2]).toBe('responderle por WhatsApp');
+      expect(v[3]).toBe('no aplica');
+      expect(v.join(' ')).not.toMatch(/CONSULTA|el cliente pide hablar con una persona\b.*Modalidad/);
+    }
+  });
+});
+

@@ -1227,14 +1227,15 @@ describe('la forma `pedido` de la reserva y de la derivación (plantilla `pedido
     }
     expect(plantillaDe(items, ANDRES).payload.template.name).toBe('pedido_registrado');
   });
-  it('derivación: {{1}} «CONSULTA <código>: <motivo>», {{2}} «sin cobro», {{3}} pide hablar con una persona, {{4}} «no aplica»', () => {
+  it('derivación (07/11/2026, variables legibles con el texto fijo de la plantilla de pedido): {{1}} «NO ES UN PEDIDO — consulta <código>: <motivo>», {{2}} «sin cobro», {{3}} «responderle por WhatsApp», {{4}} «no aplica»', () => {
     const items = L.avArmar('transferencia', deriva, CSV, FORMA, sdCon(), AHORA);
     expect(params(plantillaDe(items, ANDRES))).toEqual([
-      'CONSULTA C1D2: quiero hablar de un evento para 40 personas', 'sin cobro', 'el cliente pide hablar con una persona', 'no aplica',
+      'NO ES UN PEDIDO — consulta C1D2: quiero hablar de un evento para 40 personas', 'sin cobro', 'responderle por WhatsApp', 'no aplica',
     ]);
-    // Sin código ni motivo: igual hay un código corto y la variable no queda vacía.
+    // Sin código ni motivo: igual hay un código corto y la variable dice qué pasó.
     const sin = params(plantillaDe(L.avArmar('transferencia', { telefono: CLIENTE }, CSV, FORMA, sdCon(), AHORA), ANDRES));
-    expect(sin[0]).toMatch(/^CONSULTA [0-9A-Z]{4}$/);
+    expect(sin[0]).toMatch(/^NO ES UN PEDIDO — consulta [0-9A-Z]{4}: el cliente pide hablar con una persona$/);
+    expect(sin.join(' ')).not.toMatch(VM_PROHIBIDAS);
   });
   it('sin forma configurada rige `cita` (las 4 variables de siempre); una forma desconocida cae a `cita` y se anota', () => {
     const cita = L.avArmar('reserva', reserva(), CSV, CFG, sdCon(), AHORA);
@@ -1767,13 +1768,13 @@ describe('transferencia con `comprobante: true`: el restaurante lee que es un co
       const v = params(it);
       expect(v[0]).toMatch(/^COMPROBANTE K7P2: comprobante enviado por el cliente/);
       expect(v[2]).toContain('no se pudo revisar');
-      expect(v.join(' ')).not.toMatch(/pide hablar con una persona|CONSULTA/);
+      expect(v.join(' ')).not.toMatch(/pide hablar con una persona|consulta|NO ES UN PEDIDO/i);
       expect(v.join(' ')).not.toMatch(VM_PROHIBIDAS);
     }
-    // NEGANDO: sin la marca sigue siendo la consulta de siempre.
+    // NEGANDO: sin la marca sigue siendo la consulta (con las variables del 07/11/2026).
     const consulta = L.avArmar('transferencia', datos({ comprobante: undefined, motivo: 'quiero hablar' }), CSV, FORMA_P, sdCon(), AHORA).filter((i: J) => i.clase === 'plantilla');
-    expect(params(consulta[0]!)[0]).toMatch(/^CONSULTA K7P2/);
-    expect(params(consulta[0]!)[2]).toContain('pide hablar con una persona');
+    expect(params(consulta[0]!)[0]).toMatch(/^NO ES UN PEDIDO — consulta K7P2/);
+    expect(params(consulta[0]!)[2]).toBe('responderle por WhatsApp');
   });
 
   it('forma `cita` y detalle con la ventana abierta: dicen «Comprobante de cliente» y llevan el código del pedido', () => {

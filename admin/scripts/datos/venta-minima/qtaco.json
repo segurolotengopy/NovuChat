@@ -43,6 +43,7 @@
     "campanaPedidoEntrega": "¡Claro! Aunque el anuncio diga «Solo delivery», puedes hacer tu pedido de tortas mexicanas para envío por delivery o para recoger directamente en el local. Toca «Hacer un pedido» y elige la opción que prefieras 👇",
     "areasSinDelivery": "",
     "horario": "REEMPLAZAR_HORARIO_PEDIDOS_QTACO",
+    "horarioReservas": "10:00-22:00",
     "zonasReserva": "salón,terraza",
     "maxPersonasReserva": 12,
     "anticipacionReservaMin": 60,

@@ -803,10 +803,20 @@ function avVariablesDeForma(tipo, d, dest, ahoraMs) {
   const motivo = avLimpio(d.motivo, 120, opc);
   // `comprobante: true`: no es una consulta, es la foto de un comprobante que el flujo no pudo revisar porque cambio el modo de cobro.
   const esComprobante = d.comprobante === true;
+  if (esComprobante) {
+    return {
+      items: avParametro('COMPROBANTE ' + cod + (motivo ? ': ' + motivo : ''), 200),
+      total: avParametro('sin cobro', 30),
+      modalidad: avParametro('el cliente envió un comprobante que no se pudo revisar (cambió el modo de cobro)', 500),
+      cotejo: avParametro('no aplica', 80),
+    };
+  }
+  // UNA CONSULTA (07/11/2026, decisión de Andres: mientras WAM no apruebe una plantilla propia, se reescriben las VARIABLES): con el texto fijo de la plantilla de
+  // pedido («Se registró un pedido… Pedido: {{1}}…») el local debe leer de entrada que NO es un pedido y qué tiene que hacer: responderle al cliente por WhatsApp.
   return {
-    items: avParametro((esComprobante ? 'COMPROBANTE ' : 'CONSULTA ') + cod + (motivo ? ': ' + motivo : ''), 200),
+    items: avParametro('NO ES UN PEDIDO — consulta ' + cod + ': ' + (motivo || 'el cliente pide hablar con una persona'), 200),
     total: avParametro('sin cobro', 30),
-    modalidad: avParametro(esComprobante ? 'el cliente envió un comprobante que no se pudo revisar (cambió el modo de cobro)' : 'el cliente pide hablar con una persona', 500),
+    modalidad: avParametro('responderle por WhatsApp', 500),
     cotejo: avParametro('no aplica', 80),
   };
 }

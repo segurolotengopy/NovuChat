@@ -616,7 +616,9 @@ function aConsulta(clave) {
 
 function aPromo() {
   // Con un comprobante en espera, el texto de una campaña NO saca del cobro: se recuerda el comprobante (el paso y el pedido se conservan).
-  if (en.paso === 'esperando_comprobante' && en.pedido) return aRecordatorio();
+  // El ARTE de una campaña mandado con el QR pendiente (07/11/2026): UN solo mensaje, la promoción SIN sus botones (no valen con un QR pendiente: solo se ofrece lo
+  // que se cumple) y, debajo, el recordatorio del comprobante con «Reenviar QR» y «Cancelar pedido». El paso, el pedido y el cobro no se tocan.
+  if (en.paso === 'esperando_comprobante' && en.pedido) return d.via === 'imagen_con_qr_pendiente' ? promoConRecordatorio() : aRecordatorio();
   // Campaña de solo reserva: su respuesta REEMPLAZA al saludo, con «Reservar mesa» como único botón; acepta la reserva cualquier día.
   const tipoCampana = prTipoDeCampana(d.campana, cfg);
   // C-12 (06/11): el «Jueves de +2» un día que NO es jueves (La Paz, calculado aquí) se evalúa ANTES que cualquier variante: solo se dice que vale los jueves en el local,
@@ -676,6 +678,25 @@ function aPromo() {
   }
   irA('menu');
   mensajes = [{ tipo: 'botones', cuerpo: tx.cuerpo, botones: tx.botones }];
+}
+
+// La promoción reconocida en la imagen, en texto y sin lo que apunta a sus botones, delante del recordatorio del comprobante (un mensaje, 0 agregados). Si no cabe
+// en un mensaje con botones o no hay texto de la promoción, sale solo el recordatorio de siempre.
+function promoConRecordatorio() {
+  aRecordatorio();
+  ruta = 'promo:imagen_con_qr_pendiente';
+  const tipoCampana = prTipoDeCampana(d.campana, cfg);
+  const soloReserva = prSoloReserva(d.campana, cfg);
+  const noJueves = tipoCampana === 'B' && soloReserva && !prEsJueves(ahora) ? vmLinea(cfg.campanaReservaNoJueves, 600) : '';
+  const base = soloReserva || prPedidoConMensaje(d.campana, cfg);
+  let promo = noJueves ? prCuerpoSinBoton(noJueves) : (base ? prCuerpoSinBoton(base.cuerpo) : '');
+  if (!promo) {
+    const ficha = prFicha(d.campana, cartaDelNegocio(), ahora);
+    const tx = ficha ? prTexto(ficha, cfg) : null;
+    promo = tx ? tx.cuerpo : '';
+  }
+  const m = mensajes.length === 1 ? mensajes[0] : null;
+  if (promo && m && m.tipo === 'botones' && (promo + '\n\n' + m.cuerpo).length <= 1000) mensajes = [Object.assign({}, m, { cuerpo: promo + '\n\n' + m.cuerpo })];
 }
 
 function aImagenSinPendiente() {
@@ -1541,8 +1562,9 @@ function aComprobante() {
 // RESERVA
 // =============================================================================================
 function limitesReserva() {
+  // El horario de las RESERVAS (07/11/2026): el propio del negocio si lo tiene (`horarioReservas`), nunca el «abierto/cerrado» de los pedidos.
   return {
-    horario: cfg.horario, zonas: lista(cfg.zonasReserva), maxPersonas: cfg.maxPersonasReserva,
+    horario: rsHorarioDeReservas(cfg.horarioReservas, cfg.horario), zonas: lista(cfg.zonasReserva), maxPersonas: cfg.maxPersonasReserva,
     anticipacionMin: cfg.anticipacionReservaMin, maxDias: cfg.maxDiasReserva,
   };
 }

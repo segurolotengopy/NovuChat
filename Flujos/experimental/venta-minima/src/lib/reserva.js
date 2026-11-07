@@ -590,8 +590,30 @@ function rsResumen(r) {
   return lineas.join('\n');
 }
 
+// EL HORARIO DE LAS RESERVAS (07/11/2026, Andres: «las reservas no dependen del horario de atención»). `propio` es el dato OPCIONAL `horarioReservas`
+// del negocio y `pedidos` el horario de pedidos (`cfg.horario`):
+//   - sin `propio` (vacío, o un marcador que `Config del negocio` ya dejó vacío): el horario de pedidos, como hasta hoy;
+//   - un solo rango «HH:MM-HH:MM» (Q'Taco: «10:00-22:00»): ese rango, los días que abre el horario de pedidos (el día que el local cierra no se reserva);
+//     las horas de reserva ya no salen del horario de pedidos. Sin un horario de pedidos válido no hay días: falla cerrado como hoy;
+//   - un horario completo (texto por día u objeto, las formas de `rsValidar`): ese, con sus propios días.
+// Devuelve lo que `rsValidar` recibe en `horario`. La última hora sigue siendo el cierre menos 30 minutos («10:00-22:00» = de 10:00 a 21:30).
+// Nunca mira si el local está abierto AHORA: eso es solo de los pedidos.
+function rsHorarioDeReservas(propio, pedidos) {
+  if (propio && typeof propio === 'object' && !Array.isArray(propio)) return propio;
+  const p = typeof propio === 'string' ? propio.trim() : '';
+  if (!p) return pedidos;
+  const m = /^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/.exec(p);
+  if (!m) return p;
+  if (!_rsTramo(m[1], m[2])) return null;
+  const dias = _rsHorario(pedidos);
+  if (!dias) return null;
+  const salida = {};
+  RS_CLAVES_DIA.forEach(function (k) { salida[k] = dias[k].length ? m[1] + '-' + m[2] : 'cerrado'; });
+  return salida;
+}
+
 // Reserva de MAÑANA (06/11/2026, decision de Andres): la hora pedida es anterior a `desde` («HH:MM», dato `reservaDesde` del negocio).
-// Se ACEPTA (el horario valido sigue siendo el de pedidos); solo marca que el local debe contactar al cliente. Devuelve `desde` normalizado
+// Se ACEPTA (el horario valido es el de las reservas, `rsHorarioDeReservas`); solo marca que el local debe contactar al cliente. Devuelve `desde` normalizado
 // («12:00») o '' (sin `desde` valido, sin hora valida, o la hora no es anterior: no aplica). No valida el horario: eso es de `rsValidar`.
 function rsEsDeManana(r, desde) {
   const d = _rsHora(desde);

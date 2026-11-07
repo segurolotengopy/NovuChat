@@ -862,7 +862,8 @@ describe('Interpretar entrada', () => {
       ubicacion: null, ahoraMs: AHORA, prueba: null,
     });
     expect(Object.keys(t).sort()).toEqual([
-      'ahoraMs', 'boton', 'comprobanteCruzado', 'comprobanteSimulado', 'esAudio', 'esComprobante', 'esPosibleAnuncio', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
+      // 07/11/2026: `clasificarAntes` y `anuncioImagen` (el arte de una campaña con un QR pendiente, punto B).
+      'ahoraMs', 'anuncioImagen', 'boton', 'clasificarAntes', 'comprobanteCruzado', 'comprobanteSimulado', 'esAudio', 'esComprobante', 'esPosibleAnuncio', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
       'phoneNumberId', 'prueba', 'referral', 'texto', 'textoReporte', 'tipo', 'ubicacion',
     ]);
   });

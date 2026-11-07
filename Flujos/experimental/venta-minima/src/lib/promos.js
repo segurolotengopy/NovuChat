@@ -328,14 +328,55 @@ const PR_PREGUNTA_DELIVERY = /\b(solo|solamente|unicamente|nomas)\b.*\b(delivery
 // ¿El texto habla de la promo de las tortas mexicanas? Exige «tortas mexicanas» Y una palabra de promoción/anuncio: «quiero tortas», «quiero 2 tortas mexicanas
 // con queso» (un pedido) o «una torta» NO la activan, y siguen el camino de siempre.
 function prMencionaA(n) {
-  return /\btortas? mexicanas?\b/.test(n) && PR_DICE_PROMO.test(n);
+  return (/\btortas? mexicanas?\b/.test(n) && PR_DICE_PROMO.test(n)) || prPromoJuntoA(n, prEsTorta);
 }
-// ¿Habla del «Jueves de +2» o de agrandar el Q'Taco Dúo? «jueves de +2» / «jueves de mas 2» valen solos; «jueves de 2» (sin el «+») solo con una palabra de
-// promoción y sin ser un horario («jueves de 2 a 4»); «agrandar … Q'Taco Dúo» en cualquier orden.
+// ¿Habla del «Jueves de +2» o de agrandar el Q'Taco Dúo? «jueves de +2» / «jueves de mas 2» / «jueves +2» / «jueves mas 2» valen solos; «jueves de 2» (sin el
+// «+») solo con una palabra de promoción y sin ser un horario («jueves de 2 a 4»); «jueves de 2 mas» con una palabra de promoción o al final del mensaje; la
+// palabra de promoción PEGADA al jueves («promo jueves», «la promo del jueves», «oferta de los jueves»); «agrandar … Q'Taco Dúo» en cualquier orden.
 function prMencionaB(crudo, n) {
-  if (/jueves de ?(\+|mas) ?2\b/.test(crudo)) return true;
+  if (/\bjueves ?(de |del )?(\+ ?|mas ?)2\b/.test(crudo)) return true;
   if (/\bjueves de 2\b/.test(n) && !/\bjueves de 2 (a|al|am|pm|hrs?|horas?|y|hasta|de la|en la|personas?|pax|gente|amig\w+|invitad\w+)\b/.test(n) && PR_DICE_PROMO.test(n)) return true;
+  if (/\bjueves (de |del )?2 mas\b/.test(n) && (PR_DICE_PROMO.test(n) || /\bjueves (de |del )?2 mas$/.test(n))) return true;
+  // Pegada al jueves, salvo que nombre OTRA cifra («la promoción Jueves de +3» no es el «Jueves de +2»).
+  const otraCifra = /\bjueves ?(de |del )?(\+ ?|mas ?)?(\d+)/.exec(crudo);
+  if (!(otraCifra && otraCifra[3] !== '2') && prPromoJuntoA(n, (w) => w === 'jueves')) return true;
   return /\bagrand\w*\b/.test(n) && /\b(q ?taco|qtaco) duo\b/.test(n);
+}
+// C (07/11/2026, prueba de Andres): «quiero la promo tortas», «promo tortaa», «promoción de tortas», «la promo de las tortas», «tortas de la promo». Solo cuando una
+// palabra de PROMOCIÓN está PEGADA a la palabra (a lo sumo con «de/del/la/las/el/los» entre medio), en cualquiera de los dos órdenes. «quiero una torta mexicana con
+// queso» (sin palabra de promoción) es un pedido de carta y no activa nada.
+const PR_PALABRA_PROMO = ['promo', 'promos', 'promocion', 'promociones', 'oferta', 'ofertas', 'anuncio', 'anuncios'];
+const PR_RELLENO_PROMO = ['de', 'del', 'la', 'las', 'el', 'los'];
+function prPromoJuntoA(n, esLaPalabra) {
+  const ps = n.split(' ').filter(Boolean);
+  for (let i = 0; i < ps.length; i++) {
+    if (PR_PALABRA_PROMO.indexOf(ps[i]) < 0) continue;
+    for (const paso of [1, -1]) {
+      let j = i + paso;
+      let saltos = 0;
+      while (j >= 0 && j < ps.length && PR_RELLENO_PROMO.indexOf(ps[j]) >= 0 && saltos < 2) { j += paso; saltos += 1; }
+      if (j >= 0 && j < ps.length && esLaPalabra(ps[j])) return true;
+    }
+  }
+  return false;
+}
+// «torta» o «tortas», o una de ellas con UNA letra cambiada, de más o de menos («tortaa», «tortss», «trtas»), empezando con «t».
+function prEsTorta(w) {
+  if (typeof w !== 'string' || w.charAt(0) !== 't' || w.length < 4 || w.length > 7) return false;
+  return prDistanciaUno(w, 'torta') || prDistanciaUno(w, 'tortas');
+}
+// ¿Distancia de edición (Levenshtein) de 1 o menos entre dos palabras cortas?
+function prDistanciaUno(a, b) {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let fila = [];
+  for (let j = 0; j <= b.length; j++) fila.push(j);
+  for (let i = 1; i <= a.length; i++) {
+    const nueva = [i];
+    for (let j = 1; j <= b.length; j++) nueva.push(Math.min(fila[j] + 1, nueva[j - 1] + 1, fila[j - 1] + (a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1)));
+    fila = nueva;
+  }
+  return fila[b.length] <= 1;
 }
 
 // Palabras que una pregunta SOBRE la promoción puede traer sin pedir nada más (saludos, la propia promo, precio, pedir o reservar). Si queda alguna otra, la

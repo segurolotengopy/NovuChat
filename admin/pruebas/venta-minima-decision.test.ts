@@ -108,6 +108,7 @@ function rsEsDeManana(r, desde){ const m = function(h){ const x = /^(\d{1,2}):(\
 function rsLineaCompacta(r, rol){ return (rol === 'completo' ? r.nombre : r.nombre.split(' ')[0]) + ' · ' + r.fecha + ' ' + r.hora + ' · ' + r.personas + ' personas'; }
 function rsReclamo(t){ return false; }
 function rsHoraSuelta(t, r, c, a){ return ''; }
+function rsHorarioDeReservas(propio, pedidos){ return propio || pedidos; }
 function rsDentroDelTope(sd, from, ahora, tope){ const max = Number(tope); if (!sd || !isFinite(max)) return false; const hoy = new Date(ahora - 4 * 3600000).toISOString().slice(0, 10); const t = sd.reservasDelDia && sd.reservasDelDia[from]; return (t && t.dia === hoy ? t.n : 0) < max; }
 function rsAnotar(sd, from, ahora){ const hoy = new Date(ahora - 4 * 3600000).toISOString().slice(0, 10); sd.reservasDelDia = sd.reservasDelDia || {}; const t = sd.reservasDelDia[from]; const n = (t && t.dia === hoy ? t.n : 0) + 1; sd.reservasDelDia[from] = { dia: hoy, n: n }; return n; }
 

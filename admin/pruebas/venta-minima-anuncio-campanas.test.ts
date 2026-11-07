@@ -82,6 +82,8 @@ function crear(op: Opciones = {}) {
     'Leer comprobante (PDF)': () => ({ content: { parts: [{ text: '{}' }] } }),
     'Cotejar en el servidor': () => ({ statusCode: 200, body: { resultado: 'cuadra', diferencias: [], cierreId: 'venta_prueba' } }),
     'Clasificar imagen': (ll) => {
+      // Como n8n 2.36.5 (`baseAnalyze`): sin el campo binario pedido, el nodo falla ANTES de llamar a Gemini (no hay llamada ni costo).
+      if (ll.parametros['binaryPropertyName'] !== 'data') throw new Error('no binary field ' + String(ll.parametros['binaryPropertyName']));
       clasificaciones.push(ll);
       if (clasifica === null) return { error: { message: 'sin saldo' } };
       return { content: { parts: [{ text: typeof clasifica === 'string' ? clasifica : JSON.stringify(clasifica) }] } };
@@ -441,15 +443,12 @@ describe('IMAGEN del anuncio (foto o captura)', () => {
     expect(ninguna(c.imagen(undefined, 'application/pdf'))).toBe(true);
     expect(w.clasificaciones).toHaveLength(0);
   });
-  it('con un cobro REAL pendiente la foto se lee como comprobante y NO como anuncio: no se clasifica', () => {
+  it('con un cobro REAL pendiente y SIN campañas vigentes la foto se lee como comprobante: no se llama a Gemini para clasificar', () => {
     const cobro = { cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: 63, pedido: 'ped1' } };
-    const w = crear({ panel: panel(cobro), clasifica: { categoria: 'publicidad', titular_principal: 'Tortas Mexicanas', campana: 'A' } });
+    const w = crear({ panel: panel({ ...cobro, campanas: [] }), clasifica: { categoria: 'publicidad', titular_principal: 'Tortas Mexicanas', campana: 'A' } });
     const t = conversacion(w).imagen();
     expect(w.clasificaciones).toHaveLength(0);
-    expect(esA(t)).toBe(false);
-    // Se leyó como comprobante: corrieron el guardado, la lectura y el cotejo (en positivo).
     for (const n of ['Guardar comprobante', 'Leer comprobante (imagen)', 'Cotejar en el servidor']) expect(t.ejecutados.has(n), n).toBe(true);
-    expect(t.ejecutados.has('Clasificar imagen')).toBe(false);
   });
   it('con un cobro SIMULADO pendiente tampoco se clasifica', () => {
     const w = crear({ panel: panel({ cobroSimulado: {}, cobro: { pendiente: true, pedido: 'ped1' } }), clasifica: { categoria: 'publicidad', titular_principal: 'Tortas Mexicanas', campana: 'A' } });
@@ -619,5 +618,71 @@ describe('C-07 (revisión #829): las variaciones solo en inicio y menú, y despu
   });
   it('«el jueves de 2 personas» no es el «Jueves de +2»', () => {
     expect(ninguna(conversacion(crear()).escribe('quiero una mesa el jueves de 2 personas, vi su promo'))).toBe(true);
+  });
+});
+
+describe('B (07/11/2026, decisión de Andres «Reconocer anuncio antes»): el arte de una campaña con un QR pendiente', () => {
+  const COBRO = { cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: 63, pedido: 'ped1' } };
+  const PED: J = { pedidoId: 'ped1', from: CLIENTE, codigo: 'OXJL', total: 63, lineas: [{ id: 'taco', nombre: 'Taco de Birria (unidad)', cantidad: 3, precio: 21 }], modalidad: 'recojo', resultado: 'qr_enviado' };
+  const conQr = (clasifica: J | string | null, extra: J = {}) => {
+    const w = crear({ panel: panel({ ...COBRO, ...extra }), clasifica });
+    w.sesion.sembrar(CLIENTE, { paso: 'esperando_comprobante', pedido: PED, carrito: [], ultimoMensajeMs: AHORA - 60_000 }, { ped1: { ...PED, guardadoMs: AHORA - 60_000 } });
+    return w;
+  };
+  const COMPROBANTE = ['Guardar comprobante', 'Leer comprobante (imagen)', 'Cotejar en el servidor'];
+  it('el arte de «Tortas mexicanas» (titular y letra): UN mensaje con la promo SIN sus botones y el recordatorio del comprobante; no se guarda, no se coteja, no avisa; el pedido sigue esperando', () => {
+    const w = conQr({ categoria: 'publicidad', titular_principal: 'Tortas Mexicanas', campana: 'A' });
+    const t = conversacion(w).imagen();
+    expect(w.clasificaciones).toHaveLength(1);
+    for (const n of COMPROBANTE) expect(t.ejecutados.has(n), n).toBe(false);
+    expect(t.mensajes).toHaveLength(1);
+    expect(cuerpos(t)[0]).toContain('tortas mexicanas');
+    expect(cuerpos(t)[0]).toContain('Sigo esperando el comprobante de tu pedido #OXJL');
+    expect(cuerpos(t)[0]).not.toMatch(/tocando el bot/);
+    expect(titulos(t)).toEqual(['Reenviar QR', 'Cancelar pedido']);
+    expect(t.avisos).toHaveLength(0);
+    expect(t.llamadas.cierre).toHaveLength(0);
+    expect(estadoDe(w)['paso']).toBe('esperando_comprobante');
+    expect((estadoDe(w)['pedido'] as J)['pedidoId']).toBe('ped1');
+  });
+  it('el arte de «Jueves de +2» (el caso del 07/11): la promo B y el recordatorio; nada se deriva a una persona', () => {
+    const w = conQr({ categoria: 'publicidad', titular_principal: 'Jueves de +2', campana: 'B' });
+    const t = conversacion(w).imagen();
+    expect(cuerpos(t)[0]).toContain('agrandar tu Q\'Taco Dúo');
+    expect(cuerpos(t)[0]).not.toContain('¿Quieres hacer una reserva?');
+    expect(cuerpos(t)[0]).toContain('Sigo esperando el comprobante');
+    expect(t.avisos).toHaveLength(0);
+    for (const n of COMPROBANTE) expect(t.ejecutados.has(n), n).toBe(false);
+  });
+  it('NEGANDO: otra categoría, letra y titular que se contradicen, texto que no es JSON o Gemini con error → COMPROBANTE, como hoy (guardado, lectura y cotejo)', () => {
+    const casos: (J | string | null)[] = [
+      { categoria: 'otro', titular_principal: 'Tortas Mexicanas', campana: 'A' },
+      { categoria: 'publicidad', titular_principal: 'Tortas Mexicanas', campana: 'B' },
+      { categoria: 'publicidad', titular_principal: 'Zapatos', campana: 'ninguna' },
+      'es un anuncio de tortas',
+      null,
+    ];
+    for (const caso of casos) {
+      const w = conQr(caso);
+      const t = conversacion(w).imagen();
+      for (const n of COMPROBANTE) expect(t.ejecutados.has(n), `${JSON.stringify(caso)} ${n}`).toBe(true);
+      expect(ninguna(t), JSON.stringify(caso)).toBe(true);
+    }
+  });
+  it('un comprobante real nunca se pierde: si la comprobación completa del código no confirma lo que vio el filtro, se trata como comprobante (aviso con la foto al local)', () => {
+    // El titular del dato lleva un precio: el filtro estricto lo reconoce por igualdad, pero `prCampanaDeLaImagen` descarta un titular con precio.
+    const anuncios = [{ id: 'jueves', titulares: ['Jueves Bs 178'], angulo: '', producto: null }];
+    const w = conQr({ categoria: 'publicidad', titular_principal: 'Jueves Bs 178', campana: 'ninguna' }, { anuncios });
+    const t = conversacion(w).imagen();
+    expect(t.ejecutados.has('Cotejar en el servidor')).toBe(false);
+    expect(ninguna(t)).toBe(true);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    expect(JSON.stringify(t.avisos)).toContain('OXJL');
+    expect(cuerpos(t).join('\n')).toContain('Gracias por enviar el comprobante de tu pedido #OXJL');
+  });
+  it('un PDF con el QR pendiente no se clasifica: comprobante directo', () => {
+    const w = conQr({ categoria: 'publicidad', titular_principal: 'Tortas Mexicanas', campana: 'A' });
+    conversacion(w).documento();
+    expect(w.clasificaciones).toHaveLength(0);
   });
 });
