@@ -15,7 +15,7 @@ const CASO2 = /No, y desconfía de quien lo prometa:\s+cada persona es distinta\
 const NUNCA_EN_1 = /no tiene garant|sin garant|pago único|No pude avisarle|ya le avisé|Le avisé|te devolvemos|reembolsamos/i;
 
 describe('CASO 1: garantía de compra o devolución de dinero', () => {
-  for (const frase of ['¿Tiene garantía?', '¿Hay garantía?', '¿Hay devolución?', '¿Qué pasa si quiero reembolso?', '¿Qué pasa si no me gusta, me devuelven?', '¿hay garantía si no me sirve?']) {
+  for (const frase of ['Tengo un reclamo', '¿Tiene garantía?', '¿Hay garantía?', '¿Hay devolución?', '¿Qué pasa si quiero reembolso?', '¿Qué pasa si no me gusta, me devuelven?', '¿hay garantía si no me sirve?']) {
     it(`«${frase}»: el texto exacto, con el botón de Rubén y el aviso; sin modelo; sin afirmar si hay o no garantía`, () => {
       const w = nuevo({ modeloDice: 'cae' });
       hablar(w, ANA, mTexto('hola'));

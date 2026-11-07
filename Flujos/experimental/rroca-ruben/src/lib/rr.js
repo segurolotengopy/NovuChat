@@ -966,16 +966,16 @@ const RR_TEXTO_COBRO_CERRADO = 'Listo, cerré tu pedido.\n\nNo pagues con ese QR
 const RR_TEXTO_COBRO_YA_CERRADO = 'Tu pedido ya quedó cerrado.\n\nNo pagues con ese QR: si ya lo hiciste, envíame el comprobante o escríbele a Rubén con el botón; el pago lo revisa él.';
 // Derivación a Rubén. `salio` = el aviso devolvió un `wamid` real (true), no salió (false) o se suprimió por el límite de 30 minutos ('repetido'): SOLO con true se dice «le avisé».
 function rrTextoDerivacion(motivo, salio, clave, base) {
-  if (salio === 'repetido' && motivo === 'consulta' && clave !== 'devolucion') return 'Eso lo ve Rubén directamente. Rubén ya recibió el aviso de tu consulta anterior; si quieres, escríbele directo con el botón.';
+  if (salio === 'repetido' && motivo === 'consulta' && clave !== 'devolucion' && clave !== 'reclamo') return 'Eso lo ve Rubén directamente. Rubén ya recibió el aviso de tu consulta anterior; si quieres, escríbele directo con el botón.';
   // Devolución (no hay garantía), otros medios de pago, reclamos, volumen y pagos que no aparecen se conversan DIRECTAMENTE con Rubén: aviso + botón, y NUNCA una promesa de garantía, devolución ni resultado.
   if (motivo === 'consulta' && (clave === 'devolucion' || clave === 'otro_medio_pago' || clave === 'reclamo' || clave === 'no_entrega' || clave === 'volumen' || clave === 'medica')) {
     const intro = clave === 'no_entrega' ? 'Lamento la espera. Rubén revisa los comprobantes y envía el material por este chat en cuanto los revisa; desde aquí no puedo confirmarte si ya salió.'
-      : (clave === 'devolucion' ? RR_TEXTO_DEVOLUCION
+      : (clave === 'devolucion' || clave === 'reclamo' ? RR_TEXTO_DEVOLUCION
         : (clave === 'otro_medio_pago' ? 'El pago de este material se hace con el QR que te muestro por este chat; cualquier otra forma de pago la ve Rubén directamente.'
           : (clave === 'volumen' ? 'Las compras en cantidad o para reventa las conversa Rubén directamente contigo.'
             : (clave === 'medica' ? 'Esa es una pregunta de salud específica y por aquí no puedo darte consejo médico: lo mejor es consultarla con un profesional de la salud.' : 'Eso lo ve directamente Rubén y puedes conversarlo con él.'))));
     // Garantía o devolución: el texto de Silvana va SOLO, con el botón, haya salido el aviso o no (si falla por la ventana de 24 h, el cliente no ve ningún error).
-    if (clave === 'devolucion') return intro;
+    if (clave === 'devolucion' || clave === 'reclamo') return intro;
     return salio === true ? intro + ' Le avisé; también puedes escribirle directo con el botón.' : intro + ' No pude avisarle; escríbele directo con el botón.';
   }
   // «cancela mi pedido» / «no quiero comprar» que NO se pudo cerrar por código (el servidor no respondió 200, o hay un comprobante previo): NUNCA dice que el pedido quedó cancelado, dice que Rubén lo atiende.

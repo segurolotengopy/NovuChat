@@ -584,7 +584,7 @@ describe('la derivación a Rubén: texto fijo, aviso y botón', () => {
     ['quiero una devolución', 'devolución', /Déjame confirmarte las condiciones de garantía o devolución directamente con Rubén/],
     ['¿hay garantía si no me sirve?', 'devolución', /Déjame confirmarte las condiciones de garantía o devolución directamente con Rubén\. Puedes tocar el botón de aquí abajo para conversar con él personalmente/],
     ['¿puedo pagar con tarjeta?', 'otro medio', /cualquier otra forma de pago la ve Rubén directamente/],
-    ['tengo un reclamo', 'reclamo', /Eso lo ve directamente Rubén/],
+    ['tengo un reclamo', 'reclamo', /Déjame confirmarte las condiciones de garantía o devolución directamente con Rubén/],
     ['quiero hablar con Rubén', 'persona', /Eso lo ve Rubén directamente/],
     ['quiero comprar 20 copias para revender', 'volumen o reventa', /Las compras en cantidad o para reventa las conversa Rubén directamente contigo/],
     ['no puedo abrir el PDF', 'material que no abre', /Eso lo ve Rubén directamente/],
@@ -597,7 +597,7 @@ describe('la derivación a Rubén: texto fijo, aviso y botón', () => {
       expect(t.mensajes, rotulo).toHaveLength(1);
       expect(t.mensajes[0]!.cuerpo, rotulo).toMatch(re);
       // Garantía o devolución (Silvana, 07/11/2026): el texto va solo, sin «Le avisé» ni «No pude avisarle»; el aviso a Rubén sale igual.
-      if (rotulo === 'devolución') expect(t.mensajes[0]!.cuerpo, rotulo).not.toMatch(/[Ll]e avisé|No pude avisarle/);
+      if (rotulo === 'devolución' || rotulo === 'reclamo') expect(t.mensajes[0]!.cuerpo, rotulo).not.toMatch(/[Ll]e avisé|No pude avisarle/);
       else expect(t.mensajes[0]!.cuerpo, rotulo).toMatch(/[Ll]e avisé; también puedes escribirle directo con el botón/);
       expect(esBotonDeRubén(t), rotulo).toBe(true);
       expect(t.avisos, rotulo).toHaveLength(1);
