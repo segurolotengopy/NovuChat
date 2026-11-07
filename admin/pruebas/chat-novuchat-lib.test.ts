@@ -1292,7 +1292,7 @@ describe('aplicar el turno a la ficha y armar el prospecto de la hoja', () => {
 const CONSTRUIR = (await import(/* @vite-ignore */ join(CARPETA, 'construir.mjs'))) as {
   CONFIG_BASE: J; cargarDatos: (a: string, dir?: string) => J; validarDatos: (d: J, a: string) => void; armarTenant: (p: unknown, d: J, a: string) => string; inyectar: (f: J, marca: string, nombre: string, valor: unknown) => void;
   guardias: (entrada: string, flujo: J, datos?: J) => string[]; construir: (o?: J) => { resultado: J[]; huerfanos: string[] }; salidaDe: (a: string) => string; huerfanos: (d: string, dd: string) => string[];
-  anfitrionPermitido: (n: string, u: string) => boolean; MARCA_DATOS: string; sinComentarios: (t: string, modo?: string) => string;
+  anfitrionPermitido: (n: string, u: string) => boolean; MARCA_DATOS: string;
 };
 
 describe('los datos de NovuChat (admin/scripts/datos/chat-novuchat/)', () => {
@@ -1481,17 +1481,13 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
       expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(/«Cerrar turno» (reasigna o muta|reasigna un ayudante|incrementa o decrementa|accede a SS_CONFIG|muta SS_CONFIG|usa un ayudante|borra un ayudante)/);
     }
     // eval, Function, .constructor y prototipos: cada uno con SU texto de regla (no basta cualquier hallazgo)
-    for (const [mut, texto] of [["eval('x');", /usa eval/], ["const o = {a:1}\n/ 2; const r = /\\/*/; eval(atob(\"x\")); const s = \"*/\";", /usa eval/], ["(eval)(String.fromCharCode(120));", /usa eval/], ["eval (x);", /usa eval/], ["const e = eval; e('x');", /usa eval/], ["e\\u{76}al('x');", /usa eval/], ["const F = Function('return 1');", /usa Function/], ["new Fun" + "ction('a', 'return a');", /usa Function/], ["const c = ({}).constructor.constructor;", /usa eval/],
+    for (const [mut, texto] of [["eval('x');", /usa eval/], ["const o = {a:1}\n/ 2; const r = /\\/*/; eval(atob(\"x\")); const s = \"*/\";", /usa eval/], ["(eval)(String.fromCharCode(120));", /usa eval/], ["eval (x);", /usa eval/], ["const e = eval; e('x');", /usa eval/], ["e\\u{76}al('x');", /usa eval/], ["const F = Function('return 1');", /usa Function/], ["new Fun" + "ction('a', 'return a');", /usa Function/], ["const cCtor = ({}).constructor.constructor;", /usa eval/],
       ["RegExp.prototype.test = () => true;", /contamina un prototipo/], ["String.prototype.trim ||= f;", /contamina un prototipo/], ["x.__proto__ = {};", /contamina un prototipo/], ["Object.defineProperty(RegExp.prototype, 'test', { value: f });", /contamina un prototipo/], ["Object.setPrototypeOf(SS_CONFIG, null);", /usa setPrototypeOf/], ["Object.getPrototypeOf(x);", /getPrototypeOf/], ["Object.assign(RegExp.prototype, { test: f });", /contamina un prototipo/], ["Reflect.set(RegExp.prototype, 'test', f);", /contamina un prototipo/], ["Reflect.defineProperty(String.prototype, 'trim', {});", /contamina un prototipo/], ["const P = RegExp.prototype; P.test = f;", /contamina un prototipo/]]) {
       const f = prod();
       f['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += '\n' + mut;
       expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(texto);
     }
-    // el tokenizador: en estos casos la lectura «todo / ambiguo es división» deja ver la reasignación que la lectura por contexto esconde
-    for (const x of ['const o = {a:1}\n/ 2 + "/"; const s = "/*"; ssFoo = f; const z = "*/";', 'x++ / 2 + "/"; const s = "/*"; ssFoo = f; const z = "*/";', 'x-- / 2 + "/"; const s = "/*"; ssFoo = f; const z = "*/";', "o.in / 2 + '/'; const s = '/*'; ssFoo = f; const z = '*/';", "x = a++ / 2; const s = \"x\"; /* */ const t = '/'; const v = '/*'; ssFoo = f; const w = '*/';"]) {
-      expect(CONSTRUIR.sinComentarios(x, 'division'), x).toContain('ssFoo = f');
-    }
-    // declarar de nuevo un ss* escondido por la lectura equivocada: se cuenta el máximo de las tres lecturas
+    // declarar de nuevo un ss* con una forma de código que engaña a un tokenizador (división, regex, cadenas que abren comentarios): el parser la cuenta
     for (const x of ['x++ / 2 + "/"; const s = "/*"; function ssEspacio(){return true} const z = "*/";', 'const o = {a:1}\n/ 2 + "/"; const s = "/*"; function ssEspacio(){return true} const z = "*/";']) {
       const g = prod();
       g['nodes'].find((n: J) => n.name === 'Soltar mensajes').parameters.jsCode += '\n' + x;
@@ -1501,6 +1497,30 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
     const limpio = prod();
     limpio['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += "\n// un comentario cualquiera\n/* otro comentario */\nconst ok = SS_CONFIG.espacio === 'chat-novuchat' && ssEspacio() !== 'z';\nconst t1 = 'a /* b'; const q = ssEspacio() >= 1 && ssEspacio() <= 2; const r = /\\/\\*/.test(t1); const pl = `${'x'} /* ${`y`}`; if (q) /'/.test(t1); const dv = (1 + 2) / 3 / 4; // */";
     expect(CONSTRUIR.guardias('trigger', limpio, DATOS_CRM)).toEqual([]);
+    // el PARSER (acorn) ve lo que el motor ve: claves computadas resueltas por plegado de constantes, y formas de código que engañan a un tokenizador
+    const conCodigo = (codigo: string, nodo = 'Cerrar turno'): string[] => { const f = prod(); f['nodes'].find((x: J) => x.name === nodo).parameters.jsCode += '\n' + codigo; return CONSTRUIR.guardias('trigger', f, DATOS_CRM); };
+    for (const [codigo, texto] of [
+      ["globalThis['ev' + 'al']('x');", /usa eval/], ["const kAst1 = 'ev'; globalThis[kAst1 + 'al']('x');", /usa eval/], ["globalThis[['ev', 'al'].join('')]('x');", /usa eval/], ["globalThis[`ev${'al'}`]('x');", /usa eval/],
+      ["[].filter['constr' + 'uctor']('return 1')();", /usa eval o \.constructor/], ["globalThis['Fun' + 'ction']('return 1');", /usa Function/], ["const kAst2 = 'Fun'; globalThis[kAst2.concat('ction')]('x');", /usa Function/],
+      ["Object['assign'](SS_CONFIG, {});", /muta SS_CONFIG/], ["Reflect['de' + 'fineProperty'](SS_CONFIG, 'espacio', {});", /muta SS_CONFIG/], ["Object.assign(ssFoo, {});", /muta un ayudante de sesión/],
+      ["ssFoo['x' + 'y'] = 1;", /reasigna o muta/], ["globalThis['ssFoo'] = f;", /reasigna o muta/], ["(0, ssFoo).x = 1;", /reasigna o muta/], ["(cAst || SS_CONFIG).espacio = 'x';", /reasigna o muta/],
+      ["Object['set' + 'PrototypeOf'](xAst, null);", /setPrototypeOf/], ["xAst['__pro' + 'to__'] = {};", /contamina un prototipo/], ["const oAst = { ['__proto__']: {} };", /contamina un prototipo/], ["RegExp['proto' + 'type'].test = f;", /contamina un prototipo/],
+      // división o regex, comentarios y cadenas que abren o cierran comentarios: la mutación real se ve
+      ["const dAst = 8 / 2 / 1; const rAst = /a+b/g; ssFoo = f;", /reasigna o muta/], ["const sAst = '//'; ssFoo = f; // fin", /reasigna o muta/], ["const sAst = \"/*\"; /* c */ ssFoo = f; const uAst = \"*/\";", /reasigna o muta/],
+      ["const tAst = `${xAst} ${`y`} /*`; ssFoo = f; const vAst = `*/`;", /reasigna o muta/], ["const rAst = /[/*]/.test(xAst); ssFoo = f; /* */", /reasigna o muta/], ["const hAst = { a: 1 } / 2; ssFoo = f;", /reasigna o muta/],
+      // falla cerrada: código que no se puede analizar es un hallazgo
+      ["ssFoo = ;", /no se puede analizar/], ["const cAst = {", /no se puede analizar/], ["const sAst = 'sin cerrar; ssFoo = f;", /no se puede analizar/], ["function (", /no se puede analizar/], ["const dup = 1; const dup = 2;", /no se puede analizar/],
+    ] as const) expect(conCodigo(codigo).join(' '), codigo).toMatch(texto);
+    // lo que PARECE código pero no lo es (comentarios, cadenas, plantillas, regex, divisiones) no es un hallazgo
+    expect(conCodigo([
+      "const q1Ast = \"ssFoo = f; eval('x'); new Fun" + "ction('a'); delete SS_CONFIG.espacio; x.constructor; x.__proto__\";",
+      "const q2Ast = 'Object.assign(SS_CONFIG, {})' + ' // ' + '/* ssFoo++ */';",
+      "const q3Ast = `ssFoo++ ${'x'} Function.prototype = 1`;",
+      "const q4Ast = /ssFoo = 1|eval\\(/.test(q1Ast);",
+      "const q5Ast = (10 / 2) / 5 + 4 / 2;",
+      '// ssFoo = f; eval("x"); Function("y"); Object.assign(SS_CONFIG, {});',
+      '/* ssFoo = f; globalThis["ev" + "al"]("x"); x.__proto__ = {}; */',
+    ].join('\n'))).toEqual([]);
     // declarar una ssX como generador o async tampoco escapa a la declaración única
     for (const redefine of ['function*ssEspacio() {}', 'function * ssEspacio() {}', 'async function*ssEspacio() {}']) {
       const g = prod();

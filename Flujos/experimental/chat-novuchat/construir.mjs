@@ -28,6 +28,7 @@ import { closeSync, constants, openSync, readdirSync, readFileSync, writeFileSyn
 import { runInNewContext } from 'node:vm';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { contarDeclaraciones, hallazgosDelCodigo, TEXTOS as TEXTOS_GUARDA } from './guarda-ast.mjs';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
 // LA CADENA DE ENVÍO ES COMÚN (no se copia): se injerta desde `comun-sin-agente/src/envio.mjs` (enviar, respaldo en texto, reporte saliente).
@@ -524,73 +525,6 @@ export function anfitrionPermitido(nombreDelNodo, url) {
  * Lo que un JSON de este flujo no puede tener, aunque alguien lo haya agregado a mano al archivo versionado. Devuelve la lista de hallazgos (vacía si está limpio).
  * `entrada`: 'trigger' | 'prueba'.
  */
-// Quita los comentarios de un código JS respetando cadenas, plantillas (con su pila de `${ }`) y literales de regex (un «/*» dentro de una cadena NO abre un comentario: borrar código real ocultaría una mutación).
-// Solo se BORRAN comentarios: cadenas y regex se conservan, así que un error de lectura de una regex nunca oculta código; en la duda un «/» se toma como regex solo tras las palabras clave y los signos que la admiten sin ambigüedad.
-const ANTES_DE_REGEX = new Set(['return', 'typeof', 'case', 'do', 'else', 'in', 'of', 'new', 'delete', 'void', 'throw', 'instanceof', 'yield', 'await']);
-// `modo`: 'auto' decide por el contexto; 'regex' lee TODO «/» ambiguo como inicio de regex; 'division' lo lee siempre como división. La guardia aplica las reglas a las TRES lecturas y reporta la unión: ninguna lectura equivocada puede esconder código a las otras.
-const MEMO_SC = new Map();  // memo por modo + texto: la guardia relee los mismos nodos muchas veces
-export function sinComentarios(texto, modo = 'auto') {
-  const clave = modo + '\u0000' + texto;
-  let r = MEMO_SC.get(clave);
-  if (r === undefined) { r = sinComentariosSinMemo(texto, modo); if (MEMO_SC.size > 400) MEMO_SC.clear(); MEMO_SC.set(clave, r); }
-  return r;
-}
-function sinComentariosSinMemo(texto, modo) {
-  const t = String(texto);
-  let salida = '';
-  let i = 0;
-  let ultimo = '';     // último carácter significativo fuera de cadenas y comentarios
-  let palabra = '';    // la palabra completa que termina en `ultimo` (si es de identificador)
-  const plantillas = [];   // por cada `${` abierto: la profundidad de llaves dentro
-  const parens = [];       // por cada «(»: si la abre if/while/for/with
-  let ultimaPalabra = '';
-  const leerPlantilla = () => {  // desde el acento grave de apertura o desde el «}» que cierra un `${`: copia el texto hasta el cierre o hasta el próximo `${`
-    let j = i + 1;
-    while (j < t.length && t[j] !== '`') {
-      if (t[j] === '\\') { j += 2; continue; }
-      if (t[j] === '$' && t[j + 1] === '{') { salida += t.slice(i, j + 2); i = j + 2; plantillas.push(0); ultimo = '{'; palabra = ''; return; }
-      j++;
-    }
-    salida += t.slice(i, j + 1); i = j + 1; ultimo = '`'; palabra = '';
-  };
-  while (i < t.length) {
-    const c = t[i];
-    const d = t[i + 1];
-    if (c === '/' && d === '/') { while (i < t.length && t[i] !== '\n') i++; continue; }
-    if (c === '/' && d === '*') { const fin = t.indexOf('*/', i + 2); i = fin < 0 ? t.length : fin + 2; salida += ' '; continue; }
-    if (c === '"' || c === "'") {
-      let j = i + 1;
-      while (j < t.length && t[j] !== c && t[j] !== '\n') j += t[j] === '\\' ? 2 : 1;
-      salida += t.slice(i, j + 1); i = j + 1; ultimo = c; palabra = ''; continue;
-    }
-    if (c === '`') { leerPlantilla(); continue; }
-    if (c === '{' && plantillas.length) { plantillas[plantillas.length - 1]++; }
-    if (c === '}' && plantillas.length) {
-      if (plantillas[plantillas.length - 1] === 0) { plantillas.pop(); leerPlantilla(); continue; }
-      plantillas[plantillas.length - 1]--;
-    }
-    if (c === '(') parens.push(/^(?:if|while|for|with)$/.test(palabra));
-    let condicion = false;
-    if (c === ')') condicion = parens.pop() === true;
-    if (c === '/') {
-      const admite = modo === 'regex' || (modo === 'auto' && (ultimo === '' || '(,=:[!&|?{};+-*%<>~^}'.includes(ultimo) || ANTES_DE_REGEX.has(palabra) || (ultimo === ')' && ultimaPalabra === 'cond')));
-      if (admite) {
-        let j = i + 1; let clase = false;
-        while (j < t.length && (clase || t[j] !== '/') && t[j] !== '\n') { if (t[j] === '\\') j++; else if (t[j] === '[') clase = true; else if (t[j] === ']') clase = false; j++; }
-        salida += t.slice(i, j + 1); i = j + 1; ultimo = '/'; palabra = ''; ultimaPalabra = ''; continue;
-      }
-    }
-    salida += c;
-    if (!/\s/.test(c)) {
-      ultimo = c;
-      if (/[\w$]/.test(c)) { palabra = /[\w$]/.test(t[i - 1] || '') ? palabra + c : c; } else palabra = '';
-      ultimaPalabra = c === ')' && condicion ? 'cond' : '';
-    }
-    i++;
-  }
-  return salida;
-}
-
 export function guardias(entrada, flujo, datos = {}) {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
@@ -648,8 +582,6 @@ export function guardias(entrada, flujo, datos = {}) {
     for (const n of nodos) {
       const js = String(parametros(n).jsCode || '');
       const sinRegistro = FUENTE_REGISTRO ? js.split(FUENTE_REGISTRO.trimEnd()).join('') : js;
-      // (sin los comentarios: el módulo trae un ejemplo de `const SS_CONFIG = …` en su cabecera)
-      const codigo = sinComentarios(js);
       // `cnRegistro(` fuera de `_registro.js` también es usar el módulo: llama a `ssResultadoDeCompromiso`.
       const usa = /\bss(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig|NumeroHeader)\(/.test(sinRegistro) || /\bcnRegistro\(/.test(sinRegistro);
       const define = /function\s*\*?\s*ss[A-Z]\w*\s*\(/.test(js);
@@ -657,54 +589,28 @@ export function guardias(entrada, flujo, datos = {}) {
       if (/function (cn|ch)(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig)\(/.test(js)) h.push(`el nodo «${n.name}» trae una copia propia de los ayudantes de sesión`);
       if (usa || define) {
         // En JS gana la ÚLTIMA declaración: traer el módulo y luego REDEFINIR una función (`function ssDesdeAutorizado() { return true; }`) anularía el aislamiento. Cada `ss*` y SS_CONFIG, UNA vez por nodo.
-        // Las declaraciones del módulo común y del registro, tal cual (leídos solos, sin ambigüedad), más el MÁXIMO por nombre del resto del nodo entre las tres lecturas del tokenizador (auto, todo «/» regex, todo «/» división): una lectura equivocada no puede esconder una redeclaración.
-        const contar = (lec) => { const una = new Map(); for (const m of lec.matchAll(/\b(?:(?:async\s+)?function\s*\*?|const|let|var)\s*(ss[A-Z]\w*|SS_CONFIG)\b/g)) una.set(m[1], (una.get(m[1]) || 0) + 1); return una; };
+        // Las declaraciones se cuentan por AST (los comentarios y las cadenas no son declaraciones): las del módulo común y del registro, tal cual, más las del resto del nodo. Un código que no se puede analizar ya lo reporta la guardia de mutación (falla cerrada).
         const cuenta = new Map();
         let resto = js;
         for (const fuente of [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean)) {
           const f = fuente.trimEnd();
           if (!resto.includes(f)) continue;
           resto = resto.split(f).join('');
-          for (const [nombre, veces] of contar(sinComentarios(f))) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
+          for (const [nombre, veces] of contarDeclaraciones(f) || []) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
         }
-        const maximo = new Map();
-        for (const modo of ['auto', 'regex', 'division']) for (const [nombre, veces] of contar(sinComentarios(resto, modo))) maximo.set(nombre, Math.max(maximo.get(nombre) || 0, veces));
-        for (const [nombre, veces] of maximo) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
+        for (const [nombre, veces] of contarDeclaraciones(resto) || []) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
         for (const [nombre, veces] of cuenta) if (veces !== 1) h.push(`el nodo «${n.name}» declara ${nombre} ${veces} veces: cada ayudante de sesión y SS_CONFIG se declaran UNA sola vez por nodo (la última declaración gana y anularía el módulo)`);
         if (!cuenta.has('SS_CONFIG')) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
       }
     }
-    // Nadie reasigna ni muta los parámetros de sesión: ni `ss*` ni `SS_CONFIG` (con `=`, por índice o con `Object.assign/defineProperty`), sobre el código de cada nodo SIN el módulo común ni el registro (que los declaran) y sin comentarios.
+    // Nadie reasigna ni muta los parámetros de sesión (`ss*` y `SS_CONFIG`), ni usa eval/Function/.constructor, ni toca prototipos: se analiza el ÁRBOL (acorn, `guarda-ast.mjs`) del código de cada nodo SIN el módulo común ni el registro (que los declaran). Los comentarios y las cadenas no son código; las claves computadas se resuelven por plegado de constantes. Falla cerrada: un código que no se puede analizar es un hallazgo.
     {
       const propios = [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean).map((t) => t.trimEnd());
-      const OP = '(?:\\*\\*|<<|>>>?|&&|\\|\\||\\?\\?|[-+*\\/%&|^])?';
-      const IDX = '\\[(?:[^\\[\\]]|\\[[^\\]]*\\])*\\]';   // un índice, con un nivel de corchetes anidados: ssFoo[a[0]] = 1
-      const MIEMBROS = '(?:\\s*(?:\\.\\s*\\w+|' + IDX + '))*';
-      const REGLAS = [
-        [new RegExp('\\b(?:ss[A-Z]\\w*|SS_CONFIG)' + MIEMBROS + '\\s*' + OP + '=(?![=>])'), 'reasigna o muta un ayudante de sesión (ss*) o SS_CONFIG con «=» (o con un operador de asignación)'],
-        [/(\+\+|--)\s*ss[A-Z]|ss[A-Z]\w*\s*(\+\+|--)/, 'incrementa o decrementa un ayudante de sesión (ss*)'],
-        [/\bss[A-Z]\w*[^\[\]{}();]*[\]}](?:\s*[\]}])*\s*=(?![=>])/, 'reasigna un ayudante de sesión (ss*) por desestructuración'],
-        [/\bfor\s*(?:await\s*)?\([^;)]*?\b(?:ss[A-Z]|SS_CONFIG)[^;)]*?\b(?:of|in)\b/, 'usa un ayudante de sesión (ss*) o SS_CONFIG como variable de un for…of / for…in'],
-        [/(?<![\p{L}\p{N}_$])eval(?![\p{L}\p{N}_$])|\.\s*constructor(?![\p{L}\p{N}_$])/u, 'usa eval o .constructor en cualquier posición (cubre eval(…), (eval)(…), alias de eval y X.constructor)'],
-        [/(?<![\p{L}\p{N}_$])Function(?![\p{L}\p{N}_$])/u, 'usa Function en cualquier posición (cubre Function(…) y new Function; no ve otros caminos hacia Function)', 'soloCodigo'],
-        [/\.\s*prototype(?:\s*\.\s*\w+)*\s*(?:\*\*|<<|>>>?|&&|\|\||\?\?|[-+*\/%&|^])?=(?![=>])|=\s*[\w$.]*\.prototype\b(?!\s*\.)|__proto__|\bdefinePropert(?:y|ies)\s*\(\s*[\w$.]*prototype|\bReflect\s*\.\s*(?:set|defineProperty)\s*\(\s*[\w$.]*prototype|\bObject\s*\.\s*assign\s*\(\s*[\w$.]*prototype/, 'contamina un prototipo (asigna a .prototype, asigna un .prototype a una variable, __proto__, o defineProperty/Reflect/Object.assign sobre un prototype)'],
-        [/\b(?:set|get)PrototypeOf\b/, 'usa setPrototypeOf o getPrototypeOf'],
-        [/\bdelete\s+(?:ss[A-Z]|SS_CONFIG)/, 'borra un ayudante de sesión (ss*) o SS_CONFIG con delete'],
-        [/SS_CONFIG\s*\[/, 'accede a SS_CONFIG por índice'],
-        [/(?:Object\.(?:assign|defineProperty|defineProperties)|Reflect\.(?:set|defineProperty|deleteProperty))\(\s*SS_CONFIG/, 'muta SS_CONFIG con Object.assign/defineProperty/defineProperties o con Reflect'],
-      ];
       for (const n of nodos) {
         let js = String(parametros(n).jsCode || '');
+        if (!js) continue;
         for (const p of propios) js = js.split(p).join('');
-        // Cuatro lecturas del MISMO texto y la UNIÓN de sus hallazgos: con los comentarios quitados según el contexto, con todo «/» ambiguo leído como regex, leído como división, y el texto crudo (red adicional, solo para las reglas de mutación de ss*/SS_CONFIG: un comentario que nombre «ssX = » sería un falso positivo aceptable). Ninguna lectura equivocada del tokenizador puede esconder código a las otras.
-        const hallazgos = new Set();
-        for (const [k, lectura] of [sinComentarios(js, 'auto'), sinComentarios(js, 'regex'), sinComentarios(js, 'division'), js].entries()) {
-          let resto = lectura.replace(/\\u(?:\{([0-9a-fA-F]+)\}|([0-9a-fA-F]{4}))/g, (_, x, y) => { const cp = parseInt(x || y, 16); return cp <= 0x10ffff ? String.fromCodePoint(cp) : ''; });  // \u en TODO el texto: `e\u{76}al`, `ssA`
-          // «(ssX) = f», «((ssX))», «[(ssX)] = …»: se quitan los paréntesis (y espacios) que envuelven al nombre antes de aplicar las reglas
-          for (let vuelta = 0; vuelta < 8; vuelta++) resto = resto.replace(new RegExp('\\(\\s*((?:ss[A-Z]\\w*|SS_CONFIG)' + MIEMBROS + ')\\s*\\)', 'g'), ' $1 ');
-          for (const [re, que, ambito] of REGLAS) if (!(k === 3 && ambito === 'soloCodigo') && re.test(resto)) hallazgos.add(`el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
-        }
-        for (const x of hallazgos) h.push(x);
+        for (const que of hallazgosDelCodigo(js)) h.push(que === TEXTOS_GUARDA.noAnalizable ? `el nodo «${n.name}» ${que}: se rechaza por precaución (la guardia de los parámetros de sesión no puede leerlo)` : `el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
       }
     }
     // En la variante de PRUEBA, «Carga de entrada» DESCARTA lo que llegue a «Entrada de prueba» sin `modoPrueba: true` (si no, se comportaría como producción); producción no tiene «Entrada de prueba».

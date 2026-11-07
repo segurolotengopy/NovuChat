@@ -31,6 +31,9 @@ importers:
       '@playwright/test':
         specifier: ^1.64.1
         version: 1.64.1
+      acorn:
+        specifier: 8.18.0
+        version: 8.18.0
       firebase:
         specifier: ^11.6.0
         version: 11.10.0
