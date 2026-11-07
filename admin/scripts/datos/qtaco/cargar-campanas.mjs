@@ -62,13 +62,25 @@ export const TEXTOS_APROBADOS = {
   'tortas-mexicanas': 'Hola, vi el anuncio de las tortas mexicanas y quiero hacer un pedido.',
   'jueves-de-mas-2': 'Hola, vi la promoción Jueves de +2 y quiero hacer una reserva.',
 };
+// Los titulares: lo que dice en GRANDE la imagen del anuncio (el flujo reconoce la campaña también por la imagen). Sin montos: el precio no es titular.
+export const TITULARES_APROBADOS = {
+  'tortas-mexicanas': ['Tortas Mexicanas', 'Mañanas Tortas Mexicanas'],
+  'jueves-de-mas-2': ['Jueves de +2'],
+};
+// Las cifras del servidor para los titulares (`campanas.ts`: MAX_TITULARES, MIN/MAX_LARGO_TITULAR, MAX_TITULARES_AL_FLUJO); la prueba las compara.
+export const MAX_TITULARES = 5;
+export const MIN_LARGO_TITULAR = 6;
+export const MAX_LARGO_TITULAR = 100;
+export const MAX_TITULARES_AL_FLUJO = 3;
+const MONTO = /(\bbs\.?|\busd|\$)\s*\d|\d\s*(bs|usd|\$)/;
+const sinTildes = (t) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const POR_PLAN = { impulso: 0, crecimiento: 3, pro: 10, byoc: 10 };
 const ID = /^[a-z0-9-]{1,40}$/;
 const ID_PRODUCTO = /^[A-Za-z0-9_-]{1,100}$/;
 const INVISIBLES = /[\p{Cf}\p{Cc}]/u;
 const ENLACE = /https?:|www\.|\b\S+\.(?:com|net|org|bo|io|app|me|link|ly)\b/i;
 const CLAVES_ARCHIVO = new Set(['tenant', 'campanas']);
-const CLAVES_CAMPANA = new Set(['id', 'texto', 'productoId']);
+const CLAVES_CAMPANA = new Set(['id', 'texto', 'titulares', 'productoId']);
 const CON_VALOR = ['proyecto', 'tenant', 'archivo', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'revertir'];
 
@@ -82,7 +94,8 @@ export const diaBolivia = (ms) => new Date(ms - 4 * 3_600_000).toISOString().sli
 export const sumarDias = (fecha, n) => new Date(Date.parse(`${fecha}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 export const diasEntre = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 const palabras = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-const clave = (c) => JSON.stringify([c?.id, (c?.texto ?? '').trim(), c?.inicio, c?.fin, c?.productoId ?? null]);
+const colapsar = (x) => (typeof x === 'string' ? x.replace(/\s+/g, ' ').trim() : x);
+const clave = (c) => JSON.stringify([c?.id, (c?.texto ?? '').trim(), c?.inicio, c?.fin, c?.productoId ?? null, Array.isArray(c?.titulares) ? c.titulares.map(colapsar) : null]);
 
 // ===========================================================================
 // VALIDACIÓN DEL ARCHIVO (igual al servidor, sin modelo)
@@ -97,6 +110,7 @@ export function validarArchivo(datos, { productosActivos = null, limite = MAX_CA
   if (lista.length > Math.min(limite, MAX_CAMPANAS)) p.push(`campanas: ${lista.length}, y el comercio admite ${Math.min(limite, MAX_CAMPANAS)} a la vez (no se recorta en silencio)`);
   const ids = new Set();
   const textos = new Map();
+  const titularesVistos = new Map();
   lista.forEach((c, i) => {
     const donde = `campanas[${i}]`;
     if (!c || typeof c !== 'object' || Array.isArray(c)) { p.push(`${donde}: tiene que ser un objeto`); return; }
@@ -117,6 +131,28 @@ export function validarArchivo(datos, { productosActivos = null, limite = MAX_CA
       const otro = textos.get(n);
       if (otro !== undefined) p.push(`${donde}.texto: ya lo usa la campaña «${otro}»`);
       textos.set(n, c.id);
+    }
+    if (!Array.isArray(c.titulares) || c.titulares.length === 0) p.push(`${donde}.titulares: obligatorios (de 1 a ${MAX_TITULARES}; el flujo reconoce el anuncio por su imagen)`);
+    else {
+      if (c.titulares.length > MAX_TITULARES) p.push(`${donde}.titulares: de 1 a ${MAX_TITULARES}`);
+      if (c.titulares.length > MAX_TITULARES_AL_FLUJO) p.push(`${donde}.titulares: al flujo viajan ${MAX_TITULARES_AL_FLUJO}, no más`);
+      c.titulares.forEach((t, j) => {
+        const d2 = `${donde}.titulares[${j}]`;
+        if (typeof t !== 'string') { p.push(`${d2}: tiene que ser un texto`); return; }
+        const u = colapsar(t);
+        if (u.length < MIN_LARGO_TITULAR || u.length > MAX_LARGO_TITULAR) p.push(`${d2}: de ${MIN_LARGO_TITULAR} a ${MAX_LARGO_TITULAR} caracteres`);
+        if (MONTO.test(sinTildes(u))) p.push(`${d2}: un titular no lleva montos (el precio sale del producto)`);
+        if (INVISIBLES.test(t.normalize('NFKC'))) p.push(`${d2}: caracteres invisibles o de control`);
+        if (ENLACE.test(t)) p.push(`${d2}: un titular no lleva enlaces`);
+        const n = palabras(u);
+        const otro = titularesVistos.get(n);
+        if (otro !== undefined && otro !== c.id) p.push(`${d2}: ya lo usa la campaña «${otro}»`);
+        titularesVistos.set(n, c.id);
+      });
+      if (typeof c.id === 'string' && Object.hasOwn(TITULARES_APROBADOS, c.id)
+        && JSON.stringify(c.titulares.map(colapsar)) !== JSON.stringify(TITULARES_APROBADOS[c.id])) {
+        p.push(`${donde}.titulares: no son los titulares exactos de la imagen de «${c.id}» (el flujo reconoce el anuncio por ellos)`);
+      }
     }
     if (typeof c.id === 'string' && !Object.hasOwn(TEXTOS_APROBADOS, c.id)) p.push(`${donde}.id: «${c.id.slice(0, 40)}» no es una de las campañas de Q'Taco (${Object.keys(TEXTOS_APROBADOS).join(', ')})`);
     if (c.productoId !== undefined) {
@@ -140,7 +176,7 @@ export function estadoDeRevision(revision, id) {
 /** Las campañas que se escribirían: inicio = hoy, fin = hoy + 365 (366 días inclusive). */
 export function armarLista(datos, hoy) {
   const fin = sumarDias(hoy, DIAS_DE_VIGENCIA - 1);
-  return datos.campanas.map((c) => ({ id: c.id, texto: c.texto.trim(), inicio: hoy, fin, ...(c.productoId !== undefined ? { productoId: c.productoId } : {}) }));
+  return datos.campanas.map((c) => ({ id: c.id, texto: c.texto.trim(), inicio: hoy, fin, titulares: c.titulares.map(colapsar), ...(c.productoId !== undefined ? { productoId: c.productoId } : {}) }));
 }
 
 /** Las mismas comprobaciones de fechas del servidor sobre lo que se va a escribir (nunca debería fallar; si falla, no se escribe). */
@@ -168,7 +204,7 @@ export function planDeLista(existentes, datos, hoy) {
     if (!viejo) return { c, estado: 'nuevo' };
     const igual = (viejo.texto ?? '').trim() === c.texto && (viejo.productoId ?? null) === (c.productoId ?? null)
       && typeof viejo.inicio === 'string' && typeof viejo.fin === 'string' && viejo.inicio <= hoy && hoy <= viejo.fin && diasEntre(hoy, viejo.fin) >= DIAS_PARA_RENOVAR
-      && viejo.titulares === undefined && viejo.angulo === undefined;
+      && JSON.stringify(viejo.titulares ?? null) === JSON.stringify(c.titulares) && viejo.angulo === undefined;
     return igual ? { c: viejo, estado: 'igual' } : { c, estado: 'cambia' };
   });
   const ids = new Set(deArchivo.map((c) => c.id));
@@ -247,7 +283,7 @@ export function contenidoDelRespaldo({ entorno, existia, previa, escrito }) {
 }
 
 const MAXIMO_RESPALDO = 64 * 1024;
-const CLAVES_ESCRITA = new Set(['id', 'texto', 'inicio', 'fin', 'productoId']);
+const CLAVES_ESCRITA = new Set(['id', 'texto', 'inicio', 'fin', 'titulares', 'productoId']);
 const CLAVES_REGLA = new Set(['id', 'texto', 'inicio', 'fin', 'titulares', 'productoId', 'angulo']);
 const esObjeto = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const clavesDentro = (o, permitidas) => Object.keys(o).every((k) => permitidas.has(k));
@@ -262,7 +298,8 @@ export function validarContenidoDelRespaldo(r) {
   for (const e of r.escrito) {
     if (!esObjeto(e) || !clavesDentro(e, CLAVES_ESCRITA) || typeof e.id !== 'string' || !Object.hasOwn(TEXTOS_APROBADOS, e.id)
       || typeof e.texto !== 'string' || e.texto.length > TOPE_TEXTO || typeof e.inicio !== 'string' || typeof e.fin !== 'string'
-      || (e.productoId !== undefined && typeof e.productoId !== 'string') || idsEscritos.has(e.id)) {
+      || (e.productoId !== undefined && typeof e.productoId !== 'string')
+      || (e.titulares !== undefined && (!Array.isArray(e.titulares) || e.titulares.length > MAX_TITULARES_AL_FLUJO || e.titulares.some((t) => typeof t !== 'string' || t.length > MAX_LARGO_TITULAR))) || idsEscritos.has(e.id)) {
       return 'el respaldo trae una campaña escrita que no es de Q\'Taco o con claves que este script no escribe';
     }
     idsEscritos.add(e.id);
@@ -379,8 +416,9 @@ export async function ejecutar(cfg, datos, deps) {
     const malasFechas = problemasDeFechas(p.escribir, hoy);
     if (malasFechas.length) return { rechazo: `Las fechas no cumplen las reglas del servidor:\n    - ${malasFechas.join('\n    - ')}` };
     const textosAjenos = new Set(p.ajenas.map((a) => palabras(a.texto)).filter((t) => t !== ''));
-    const choque = p.filas.find((f) => textosAjenos.has(palabras(f.c.texto)));
-    if (choque) return { rechazo: `Otra campaña del comercio ya tiene el mismo texto que «${choque.c.id}»: el flujo no sabría de cuál viene. No se recorta nada en silencio.` };
+    const titularesAjenos = new Set(p.ajenas.flatMap((a) => (Array.isArray(a.titulares) ? a.titulares : []).map(palabras)).filter((t) => t !== ''));
+    const choque = p.filas.find((f) => textosAjenos.has(palabras(f.c.texto)) || f.c.titulares.some((t) => titularesAjenos.has(palabras(t))));
+    if (choque) return { rechazo: `Otra campaña del comercio ya tiene el mismo texto o titular que «${choque.c.id}»: el flujo no sabría de cuál viene. No se recorta nada en silencio.` };
     if (p.lista.length > Math.min(limite, MAX_CAMPANAS)) {
       return { rechazo: `Con las campañas que el comercio ya tiene (${existentes.length}), la lista tendría ${p.lista.length} y su plan admite ${limite}. Es una decisión comercial: no se recorta nada en silencio.` };
     }
