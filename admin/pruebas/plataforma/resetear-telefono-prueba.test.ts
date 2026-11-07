@@ -18,7 +18,7 @@ const VECINO = '591000000011'; // comparte el prefijo con TEL
 const SUFIJO = '99900000001'; // otro país, mismos 8 últimos dígitos
 const PN = 'pn0001';
 const PROY = 'proyecto-ficticio-staging';
-const ENV = { GCP_PROJECT_ID_STAGING: PROY, GCP_PROJECT_ID_PROD: 'proyecto-ficticio-prod', TELEFONOS_PRUEBA: `${TEL},${OTRO}` };
+const ENV = { GCP_PROJECT_ID_STAGING: PROY, GCP_PROJECT_ID_PROD: 'proyecto-ficticio-prod', TELEFONOS_PRUEBA: `${TEL},${OTRO}`, N8N_WORKFLOWS_PERMITIDOS: 'abc123XYZ,otro999' };
 const BASE = ['--proyecto', PROY, '--tenant', 'qtaco', '--tel', TEL];
 const dirs: string[] = [];
 const rutaRespaldo = () => { const d = mkdtempSync(join(tmpdir(), 'est-turno-')); chmodSync(d, 0o700); dirs.push(d); return join(d, 'respaldo.json'); };
@@ -367,8 +367,8 @@ describe('E5b. la solicitud de cobro pendiente', () => {
 });
 
 // ---- n8n en memoria (el módulo reutiliza sinFicha de resetear-ficha-flujo.mjs)
-function n8nDe(staticData: any, opciones: { ignorarPut?: boolean; reponerTrasPut?: boolean } = {}) {
-  let vivo: any = { name: 'Flujo', active: true, nodes: [{ id: 'n1' }], connections: { n1: {} }, settings: { executionOrder: 'v1' }, staticData: clon(staticData) };
+function n8nDe(staticData: any, opciones: { ignorarPut?: boolean; reponerTrasPut?: boolean; nodes?: any[] } = {}) {
+  let vivo: any = { name: 'Flujo', active: true, nodes: opciones.nodes ?? [{ id: 'n1' }], connections: { n1: {} }, settings: { executionOrder: 'v1' }, staticData: clon(staticData) };
   const puts: any[] = []; let esperas = 0;
   return {
     puts, get vivo() { return vivo; }, get esperas() { return esperas; },
@@ -466,6 +466,9 @@ describe('E5c. UN solo reseteo: también la ficha de n8n y la verificación de �
   it('--workflow mal formado se rechaza', () => {
     expect(problemas(m.analizarArgumentos([...BASE, '--workflow', 'a/b'], ENV))).toContain('--workflow');
     expect(m.analizarArgumentos([...BASE, '--workflow', 'abc123XYZ'], ENV).cfg.workflow).toBe('abc123XYZ');
+    const { N8N_WORKFLOWS_PERMITIDOS: _w, ...sinLista } = ENV;
+    expect(problemas(m.analizarArgumentos([...BASE, '--workflow', 'abc123XYZ'], sinLista))).toContain('N8N_WORKFLOWS_PERMITIDOS');
+    expect(problemas(m.analizarArgumentos([...BASE, '--workflow', 'zzz999ZZZ'], ENV))).toContain('lista cerrada');
   });
   it('contacto bloqueado en la Consola: no se toca y el resultado NO dice limpio (sale con 3)', async () => {
     const d = inicial(); (d as any)[`${T}/conversaciones/wa_${TEL}`] = conv({ bloqueada: true, bloqueadaPor: 'uid1' });
@@ -580,6 +583,94 @@ describe('E5e. la atención (operador/bloqueado) y la pausa por persona', () => 
   });
 });
 
+describe('E5f. revisión de seguridad (M1, M2, M3, redirect, aviso de facturación)', () => {
+  const cfgN = (extra: Cfg = {}) => cfgDe({ workflow: 'abc123XYZ', ...extra });
+  const conRespaldo = async (d: any, n: any, cambio: (j: any) => void = () => {}) => {
+    const w = mundoDe(d); const ruta = rutaRespaldo();
+    await m.ejecutar(cfgN({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, n8n: n?.deps, log: () => {} });
+    const j = leido(ruta).json; cambio(j); const r = rutaRespaldo(); writeFileSync(r, JSON.stringify(j), { mode: 0o600 });
+    return { w, r, j };
+  };
+  const revertir = (w: any, r: string, n: any, extra: Cfg = {}) => { const s = salida(); return m.ejecutar(cfgN({ revertir: true, aplicar: true, respaldo: r, ...extra }), { db: w.db, FieldValue, n8n: n?.deps, log: s.log }).then((c: number) => ({ c, t: s.texto() })); };
+
+  it('M1: un respaldo de otro teléfono se rechaza, también con docs vacío, y uno sin telHash también', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(0, 'normal', 2, { solicitud: { etapa: 'qr_enviado' } }); d[`${T}/conversaciones/wa_${OTRO}`] = conv({ solicitud: undefined });
+    const { w, r, j } = await conRespaldo(d, null);
+    expect(j.docs).toEqual([]); expect(j.telHash).toMatch(/^[0-9a-f]{64}$/); expect(JSON.stringify(j)).not.toContain(TEL);
+    expect((await revertir(w, r, null, { tel: OTRO })).c).toBe(2);
+    expect(w.datos.get(`${T}/conversaciones/wa_${OTRO}`).solicitud).toBeUndefined();
+    const w2 = mundoDe(d); const ruta = rutaRespaldo(); await m.ejecutar(cfgN({ aplicar: true, respaldo: ruta }), { db: w2.db, FieldValue, log: () => {} });
+    const j2 = leido(ruta).json; delete j2.telHash; const r2 = rutaRespaldo(); writeFileSync(r2, JSON.stringify(j2), { mode: 0o600 });
+    expect((await revertir(w2, r2, null)).c).toBe(2);
+  });
+  it('M2: la reversa solo repone los tres campos de atención con tipos válidos; un campo ajeno del archivo no se escribe', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador');
+    const { w, r } = await conRespaldo(d, null, (j) => { j.atencion.mensajesTotal = 1; j.atencion.periodoContado = 'x'; });
+    expect((await revertir(w, r, null)).c).toBe(0);
+    const c = w.datos.get(rutaC); expect(c.mensajesVentana).toBe(50); expect(c.mensajesTotal).toBe(400); expect(c.periodoContado).toBe('2026-11');
+  });
+  it.each([
+    ['conteo negativo', (j: any) => { j.atencion.mensajesVentana = -1; }],
+    ['conteo no numérico', (j: any) => { j.atencion.mensajesVentana = '50'; }],
+    ['estado fuera de la lista', (j: any) => { j.atencion.atencionEstado = 'zzz'; }],
+    ['fecha inválida', (j: any) => { j.atencion.atencionDesde = 'ayer'; }],
+    ['turno que no es una toma de persona', (j: any) => { j.turno = { responde: 'asistente', tomadoPor: 'uid1' }; }],
+    ['turno con uid inválido', (j: any) => { j.turno = { responde: 'persona', tomadoPor: '../x' }; }],
+  ])('NEGADO M2: %s ⇒ respaldo rechazado, no escribe', async (_n, cambio) => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador', 2, { turno: turnoDe() });
+    const { w, r } = await conRespaldo(d, null, cambio);
+    const antes = w.llamadas.length;
+    expect((await revertir(w, r, null)).c).toBe(2); expect(w.llamadas.length).toBe(antes);
+  });
+  it('M2: n8n solo se repone si el respaldo difiere de lo dejado únicamente en lo del teléfono; si no, avisa y no escribe', async () => {
+    const n = n8nDe(sdN8n());
+    const { w, r } = await conRespaldo(inicial(), n, (j) => { j.n8n.staticData.global.ajuste = { a: 99 }; });
+    const s = await revertir(w, r, n);
+    expect(s.c).toBe(0); expect(s.t).toContain('NO es coherente'); expect(n.puts).toHaveLength(1); // solo el PUT del reseteo; la reversa no escribió
+  });
+  it('M3: sin lista cerrada de flujos o con un flujo fuera de ella no se corre', () => {
+    const { N8N_WORKFLOWS_PERMITIDOS: _w, ...sin } = ENV;
+    expect(problemas(m.analizarArgumentos([...BASE, '--workflow', 'abc123XYZ'], sin))).toContain('N8N_WORKFLOWS_PERMITIDOS');
+    expect(problemas(m.analizarArgumentos([...BASE, '--workflow', 'abc123XYZ'], { ...sin, N8N_WORKFLOWS_PERMITIDOS: 'otro999' }))).toContain('lista cerrada');
+  });
+  it.each([
+    ['un WhatsApp Trigger', [{ id: 'n1', type: 'n8n-nodes-base.whatsAppTrigger' }]],
+    ['una llamada a /subscriptions', [{ id: 'n1', type: 'n8n-nodes-base.httpRequest', parameters: { url: 'https://x.test/v1/123/subscriptions' } }]],
+    ['subscribed_apps', [{ id: 'n1', parameters: { url: 'https://x.test/subscribed_apps' } }]],
+    ['nodos ilegibles', 'no-es-lista'],
+  ])('NEGADO M3: un flujo con %s no se reescribe (ni en seco ni al aplicar)', async (_n, nodes) => {
+    const w = mundoDe(inicial()); const n = n8nDe(sdN8n(), { nodes: nodes as any[] });
+    for (const aplicar of [false, true]) {
+      const s = salida();
+      expect(await m.ejecutar(cfgN({ aplicar, respaldo: aplicar ? rutaRespaldo() : null }), { db: w.db, FieldValue, n8n: n.deps, log: s.log })).toBe(3);
+      expect(s.texto()).toContain('prohibiciones 5 y 7');
+    }
+    expect(n.puts).toEqual([]); expect(w.llamadas).toEqual([]);
+  });
+  it('NEGADO M3: la reversa tampoco repone n8n si el flujo vivo ahora tiene un trigger prohibido', async () => {
+    const n = n8nDe(sdN8n());
+    const { w, r } = await conRespaldo(inicial(), n);
+    const malo = n8nDe(n.vivo.staticData, { nodes: [{ id: 'n1', type: 'n8n-nodes-base.whatsAppTrigger' }] });
+    const s = await revertir(w, r, malo);
+    expect(malo.puts).toEqual([]); expect(s.t).toContain('prohibiciones 5 y 7');
+  });
+  it('aviso de facturación: se imprime al aplicar contra producción y no contra staging', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador');
+    const prod = salida(); const w = mundoDe(d);
+    await m.ejecutar(cfgDe({ entorno: 'produccion', aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: prod.log });
+    expect(prod.texto()).toContain('AVISO DE FACTURACIÓN'); expect(prod.texto()).toContain('UNA conversación más');
+    const d2 = sinSesiones(); d2[rutaC] = convAt(50, 'operador'); const stg = salida(); const w2 = mundoDe(d2);
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w2.db, FieldValue, log: stg.log });
+    expect(stg.texto()).not.toContain('AVISO DE FACTURACIÓN');
+  });
+  it('los fetch a n8n no siguen redirecciones (LOW)', () => {
+    for (const f of ['resetear-telefono-prueba.mjs', 'resetear-ficha-flujo.mjs']) {
+      const src = readFileSync(join(aqui, '..', '..', 'scripts', 'plataforma', f), 'utf8');
+      expect(src).toContain("redirect: 'error'");
+    }
+  });
+});
+
 describe('E5d. el nombre viejo es un envoltorio', () => {
   it('avisa y delega en resetear-telefono-prueba.mjs', () => {
     const src = readFileSync(join(aqui, '..', '..', 'scripts', 'plataforma', 'resetear-estado-turno.mjs'), 'utf8');
@@ -593,7 +684,7 @@ describe('E6. el texto del script', () => {
   it('borra documentos de turno y crea los del respaldo; de la conversación solo toca solicitud, atención y turno; nunca contadores de facturación', () => {
     expect(codigo).not.toMatch(/\.set\(/);
     expect(codigo).not.toMatch(/metricas|\/mensajes|mensajesTotal|respuestasDelPeriodo|periodoContado|cuenta\/estado/); // contadores de facturación: jamás
-    expect(codigo.match(/\.update\(/g)).toHaveLength(2); // quitar y reponer solo `solicitud`
+    expect(codigo.match(/\.update\(/g)).toHaveLength(3); // quitar y reponer en la conversación (2) y el hash del teléfono (1)
     expect(codigo.match(/\.update\(campos, /g)).toHaveLength(2);
     expect(codigo.match(/\.delete\(/g)).toHaveLength(5); // el documento de turno y 4 FieldValue.delete()
     expect(codigo.match(/FieldValue\.delete\(\)/g)).toHaveLength(4);

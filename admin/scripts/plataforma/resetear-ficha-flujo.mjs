@@ -197,7 +197,7 @@ async function principal() {
   const BASE = v.origen;
   const cab = { [['X', 'N8N', 'API', 'KEY'].join('-')]: process.env.N8N_API_KEY, 'Content-Type': 'application/json' };
   const llamar = async (metodo, cuerpo) => {
-    const r = await fetch(`${BASE}/api/v1/workflows/${cfg.workflow}`, { method: metodo, headers: cab, body: cuerpo ? JSON.stringify(cuerpo) : undefined, signal: AbortSignal.timeout(60000) });
+    const r = await fetch(`${BASE}/api/v1/workflows/${cfg.workflow}`, { method: metodo, headers: cab, redirect: 'error', body: cuerpo ? JSON.stringify(cuerpo) : undefined, signal: AbortSignal.timeout(60000) });
     if (!r.ok) throw Object.assign(new Error('n8n'), { code: `n8n-${metodo}-${r.status}` });
     return { status: r.status, json: await r.json() };
   };

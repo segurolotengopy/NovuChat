@@ -59,6 +59,7 @@
  * COSTO. Seco: lecturas de dos colecciones del tenant (solo `phoneNumberId`), una de la conversación (solo tres campos) y un GET de n8n.
  * `--aplicar`: lo mismo dos veces más, N lecturas completas, N escrituras y un PUT. 0 mensajes por conversación. NO se corre contra producción sin el «sí» de Andres.
  */
+import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { comprobarProyecto, comprobarRespaldo } from './aplicar-consola-oculta.mjs';
@@ -72,6 +73,13 @@ export const CLAVES_CUPO = Object.freeze(['transferencias', 'pedidos']);
 export const COLECCIONES = Object.freeze(['sesionesDeTurno', 'cuposDeTurno']);
 export const MAX_ESCANEO = 20000;
 export const MAX_DOCUMENTOS = 200;
+export const hashTel = (tel) => createHash('sha256').update(`resetear-telefono-prueba|${tel}`).digest('hex');
+/** Prohibiciones 5 y 7 de CLAUDE.md: nunca un WhatsApp Trigger ni una llamada a `/subscriptions` / `subscribed_apps` en el flujo que se reescribe. */
+export function nodosProhibidos(nodes) {
+  if (!Array.isArray(nodes)) return true;
+  return nodes.some((n) => n?.type === 'n8n-nodes-base.whatsAppTrigger' || /\/subscriptions|subscribed_apps/i.test(JSON.stringify(n ?? {})));
+}
+const ATENCION_ESTADOS = ['normal', 'operador', 'bloqueado'];
 const CAMPO = 'resetear-telefono-prueba';
 const CON_VALOR = ['proyecto', 'tenant', 'tel', 'workflow', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'revertir'];
@@ -101,7 +109,15 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   const aplicar = banderas.includes('aplicar');
   const revertir = banderas.includes('revertir');
   const { proyecto, tenant, tel, respaldo, workflow } = valores;
-  if (workflow !== undefined && !/^[A-Za-z0-9]{6,40}$/.test(workflow)) problemas.push('--workflow: id alfanumérico del flujo de n8n');
+  if (workflow !== undefined) {
+    if (!/^[A-Za-z0-9]{6,40}$/.test(workflow)) problemas.push('--workflow: id alfanumérico del flujo de n8n');
+    else {
+      // Lista cerrada de flujos que este script puede reescribir (el repositorio es público: viene del entorno).
+      const permitidos = typeof env.N8N_WORKFLOWS_PERMITIDOS === 'string' ? env.N8N_WORKFLOWS_PERMITIDOS.split(',').map((x) => x.trim()).filter(Boolean) : [];
+      if (!permitidos.length) problemas.push('--workflow exige N8N_WORKFLOWS_PERMITIDOS en el entorno (ids de flujos permitidos, separados por coma)');
+      else if (!permitidos.includes(workflow)) problemas.push('--workflow no está en la lista cerrada N8N_WORKFLOWS_PERMITIDOS');
+    }
+  }
   const confirmo = valores['confirmo-produccion'];
 
   if (proyecto === undefined) problemas.push('falta --proyecto');
@@ -257,6 +273,7 @@ export function leerRespaldo(ruta, { entorno, tenant, tel }) {
   const r = l.respaldo;
   if (r?.version !== 1 || r.campo !== CAMPO || !Array.isArray(r.docs)) return { ok: false, motivo: 'el respaldo no tiene la forma esperada' };
   if (r.tenant !== tenant) return { ok: false, motivo: 'el respaldo es de otro comercio' };
+  if (typeof r.telHash !== 'string' || r.telHash !== hashTel(tel)) return { ok: false, motivo: 'el respaldo es de otro teléfono (o no dice de cuál)' };
   if (r.entorno !== entorno) return { ok: false, motivo: 'el respaldo es de otro entorno (staging, produccion o emulador)' };
   if (r.docs.length > MAX_DOCUMENTOS) return { ok: false, motivo: 'el respaldo trae demasiados documentos' };
   const vistos = new Set();
@@ -271,8 +288,23 @@ export function leerRespaldo(ruta, { entorno, tenant, tel }) {
   if (n !== undefined && !(esObjeto(n) && typeof n.workflow === 'string' && /^[A-Za-z0-9]{6,40}$/.test(n.workflow) && 'staticData' in n && typeof n.huellaDespues === 'string')) {
     return { ok: false, motivo: 'el respaldo trae un bloque de n8n que no tiene la forma esperada' };
   }
-  if ((r.atencion !== undefined && !esObjeto(r.atencion)) || (r.turno !== undefined && !esObjeto(r.turno))) return { ok: false, motivo: 'el respaldo trae una atención o un turno que no es un objeto' };
-  return { ok: true, docs: r.docs, solicitud: r.solicitud ?? null, atencion: r.atencion ?? null, turno: r.turno ?? null, n8n: n ?? null };
+  // La atención y el turno se FILTRAN a lo que este script escribió y se validan los tipos: la reversa nunca escribe campos que vengan del archivo.
+  let atencion = null;
+  if (r.atencion !== undefined) {
+    if (!esObjeto(r.atencion)) return { ok: false, motivo: 'el respaldo trae una atención que no es un objeto' };
+    const a = {};
+    const { atencionDesde: d, mensajesVentana: n, atencionEstado: e } = r.atencion;
+    if (d !== undefined) { if (!(esObjeto(d) && Object.keys(d).length === 1 && decodificar(d) instanceof Date)) return { ok: false, motivo: 'el respaldo trae una atención con una fecha inválida' }; a.atencionDesde = d; }
+    if (n !== undefined) { if (!(Number.isInteger(n) && n >= 0)) return { ok: false, motivo: 'el respaldo trae una atención con un conteo inválido' }; a.mensajesVentana = n; }
+    if (e !== undefined) { if (!ATENCION_ESTADOS.includes(e)) return { ok: false, motivo: 'el respaldo trae una atención con un estado inválido' }; a.atencionEstado = e; }
+    atencion = Object.keys(a).length ? a : null;
+  }
+  let turno = null;
+  if (r.turno !== undefined) {
+    if (!(esObjeto(r.turno) && r.turno.responde === 'persona' && typeof r.turno.tomadoPor === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(r.turno.tomadoPor))) return { ok: false, motivo: 'el respaldo trae un turno que no es una toma de persona válida' };
+    turno = { responde: 'persona', tomadoPor: r.turno.tomadoPor };
+  }
+  return { ok: true, docs: r.docs, solicitud: r.solicitud ?? null, atencion, turno, n8n: n ?? null };
 }
 
 const esPrecondicion = (e) => e?.code === 9 || e?.code === 'failed-precondition' || e?.code === 'FAILED_PRECONDITION';
@@ -291,7 +323,7 @@ async function leerTodo(cfg, db, n8n) {
   const e = await escanear(db, cfg.tenant, cfg.tel);
   const s = await leerSolicitud(db, cfg.tenant, cfg.tel);
   let n = null;
-  if (n8n) { const vivo = await n8n.leer(); n = { vivo, r: sinFicha(vivo.staticData, cfg.tel), huella: huellaN8n(vivo) }; }
+  if (n8n) { const vivo = await n8n.leer(); n = { vivo, r: sinFicha(vivo.staticData, cfg.tel), huella: huellaN8n(vivo), prohibido: nodosProhibidos(vivo.nodes) }; }
   return { e, s, n };
 }
 const sucio = (t) => t.e.borrar.length + (t.s.hay ? 1 : 0) + (t.s.at.sucia ? 1 : 0) + (t.s.turnoPersona ? 1 : 0) + (t.n ? t.n.r.total : 0);
@@ -337,6 +369,7 @@ export async function ejecutar(cfg, deps) {
 async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
   const t1 = await leerTodo(cfg, db, n8n);
   mostrar(log, t1, `${cfg.aplicar ? 'APLICAR' : 'SECO (solo lecturas)'} · ${cfg.entorno} · tenant ${cfg.tenant}`);
+  if (t1.n?.prohibido) { log('\n  ✗ El flujo de n8n tiene un WhatsApp Trigger o una llamada a /subscriptions o subscribed_apps (prohibiciones 5 y 7): este script no lo reescribe. No se escribió nada.\n'); return 3; }
   if (sucio(t1) === 0) return veredicto(log, t1, 'Nada que borrar. ');
   if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar --respaldo <ruta> (y --confirmo-produccion <tenant> contra producción).\n'); return 1; }
   if (t1.e.borrar.length > MAX_DOCUMENTOS) { log(`\n  ✗ Hay más de ${MAX_DOCUMENTOS} documentos del teléfono: no es un reseteo de prueba. No se escribió nada.\n`); return 3; }
@@ -356,7 +389,7 @@ async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
   const tocaN8n = t2.n !== null && t2.n.r.total > 0;
   try {
     guardarRespaldo(cfg.respaldo, {
-      version: 1, campo: CAMPO, entorno: cfg.entorno, tenant: cfg.tenant, creadoEn: new Date().toISOString(), docs,
+      version: 1, campo: CAMPO, entorno: cfg.entorno, tenant: cfg.tenant, telHash: hashTel(cfg.tel), creadoEn: new Date().toISOString(), docs,
       ...(t2.s.hay ? { solicitud: codificar(t2.s.valor) } : {}),
       // Valores anteriores de la atención (solo los campos que existían) y del turno de persona, para la reversa.
       ...(t2.s.at.sucia ? { atencion: codificar(t2.s.at.previo) } : {}),
@@ -367,6 +400,7 @@ async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
     if (err?.code === 'EEXIST') { log('\n  ✗ Ya existe un archivo en esa ruta de respaldo: un respaldo nunca se pisa. No se escribe nada.\n'); return 2; }
     throw err;
   }
+  if (cfg.entorno === 'produccion') log('\n  AVISO DE FACTURACIÓN: sin ancla de ventana, el PRÓXIMO entrante de ese teléfono abre una atención nueva y cuenta UNA conversación más en el período (facturable y en las métricas del comercio); el contador de la ventana vuelve a 0. No se tocan los contadores acumulados.');
   log(`\n  Respaldo ÚNICO de documentos, campo solicitud y staticData de n8n COMPLETOS (datos de personas, se destruye al cerrar la prueba): ${cfg.respaldo}`);
 
   let hechas = 0;
@@ -461,8 +495,12 @@ async function revertir(cfg, db, FieldValue, n8n, log, marcar) {
     if (!n8n) n8nNota = 'OMITIDO (sin configuración de n8n): no se repone';
     else {
       vivoN8n = await n8n.leer();
-      n8nRepone = canon(vivoN8n.staticData ?? {}) === l.n8n.huellaDespues;
-      if (!n8nRepone) n8nNota = 'el flujo cambió desde el reseteo: NO se repone (se pisarían cambios posteriores)';
+      // El respaldo solo puede diferir de lo que dejó el reseteo en lo del teléfono: si no, el archivo no es de este reseteo y no se repone.
+      const coherente = canon(sinFicha(decodificar(l.n8n.staticData), cfg.tel).nuevo) === l.n8n.huellaDespues;
+      n8nRepone = coherente && canon(vivoN8n.staticData ?? {}) === l.n8n.huellaDespues && !nodosProhibidos(vivoN8n.nodes);
+      if (!coherente) n8nNota = 'el respaldo de n8n NO es coherente con lo que dejó el reseteo (difiere en algo ajeno al teléfono): NO se repone';
+      else if (nodosProhibidos(vivoN8n.nodes)) n8nNota = 'el flujo tiene un WhatsApp Trigger o llamadas a /subscriptions (prohibiciones 5 y 7): NO se repone';
+      else if (!n8nRepone) n8nNota = 'el flujo cambió desde el reseteo: NO se repone (se pisarían cambios posteriores)';
     }
   }
   log(`\n  ${cfg.aplicar ? 'REVERTIR' : 'SECO de la reversa (solo lecturas)'} · ${cfg.entorno} · tenant ${cfg.tenant}`);
@@ -526,7 +564,7 @@ export async function principal(argv = process.argv.slice(2)) {
     if (!v.ok) throw Object.assign(new Error('url'), { code: v.codigo });
     const cab = { [['X', 'N8N', 'API', 'KEY'].join('-')]: process.env.N8N_API_KEY, 'Content-Type': 'application/json' };
     const llamar = async (metodo, cuerpo) => {
-      const r = await fetch(`${v.origen}/api/v1/workflows/${cfg.workflow}`, { method: metodo, headers: cab, body: cuerpo ? JSON.stringify(cuerpo) : undefined, signal: AbortSignal.timeout(60000) });
+      const r = await fetch(`${v.origen}/api/v1/workflows/${cfg.workflow}`, { method: metodo, headers: cab, redirect: 'error', body: cuerpo ? JSON.stringify(cuerpo) : undefined, signal: AbortSignal.timeout(60000) });
       if (!r.ok) throw Object.assign(new Error('n8n'), { code: `n8n-${metodo}-${r.status}` });
       return { status: r.status, json: await r.json() };
     };
