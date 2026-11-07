@@ -148,11 +148,38 @@ const pedidoDeLaRef = (() => {
 const pedidoSimulado = !!pedidoDeLaRef && pedidoDeLaRef.simulado === true;
 const llegaComoComprobanteReal = (tipo === 'image' || tipo === 'document') && cobro.activo === true && cobro.modo !== 'simulado' && cobro.pendiente === true;
 // UNA FOTO QUE PUEDE SER EL ARTE DE UN ANUNCIO (adenda de campañas, 06/11/2026): una IMAGEN (no un PDF ni otro medio) que NO es un comprobante, con alguna campaña
-// vigente que reconocer y SIN cobro pendiente (real o simulado: con un QR esperando, la foto se lee como comprobante y nunca como anuncio). Solo entonces se baja y se
+// vigente que reconocer y SIN cobro pendiente (con un QR esperando, la foto es comprobante por omisión: ver `clasificarAntes`, abajo). Solo entonces se baja y se
 // clasifica (`Clasificar imagen`, ~0,0001 USD); una imagen nunca vende ni cobra por sí sola.
 const hayCampanaQueReconocer = cfg.promosActivo === true && Array.isArray(cfg.campanas) && cfg.campanas.length > 0;
 const esImagenPosibleAnuncio = tipo === 'image' && mediaId !== '' && /^image\//i.test(mimeType) && cobro.pendiente !== true
   && !pedidoSimulado && !llegaComoComprobanteReal && hayCampanaQueReconocer;
+// RECONOCER EL ANUNCIO ANTES DEL COMPROBANTE (decisión de Andres, 07/11/2026: el arte de «Jueves de +2» llegó con un QR pendiente y se derivó a una persona como «comprobante
+// sin pedido»). Con el cobro REAL pendiente la IMAGEN sigue siendo un comprobante POR OMISIÓN (`esComprobante`), pero antes pasa por `Clasificar imagen`
+// (~0,0001 USD, una llamada por imagen con QR pendiente y alguna campaña vigente) y `¿Es comprobante?` la manda a `Decidir turno` SOLO si el clasificador dice
+// `publicidad` y su letra o su titular (igualdad exacta, normalizada) apuntan a UNA campaña vigente (`anuncioImagen`, abajo). `Decidir turno` lo vuelve a comprobar con
+// el criterio completo (`prCampanaDeLaImagen`) y, si no coincide, la trata como comprobante sin cotejo (aviso con la foto): un comprobante real nunca se pierde.
+// Sin lectura, con error o con duda: comprobante, como siempre. Un PDF no se clasifica.
+const clasificarAntes = tipo === 'image' && mediaId !== '' && /^image\//i.test(mimeType) && llegaComoComprobanteReal && !pedidoSimulado && hayCampanaQueReconocer;
+// Lo que `¿Es comprobante?` necesita para su comprobación estricta (una expresión no tiene las librerías): la campaña vigente de cada letra («A» pedido, «B» reserva) y
+// los titulares de los anuncios vigentes, normalizados igual que en la expresión. Un titular que apunta a dos campañas distintas queda vacío (no reconoce nada).
+const anuncioImagen = (() => {
+  if (!clasificarAntes) return null;
+  const n = (s) => String(s === undefined || s === null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const id = (c) => (c && typeof c.id === 'string' ? c.id : '');
+  const letras = { A: id(prCampanaDeTipo(cfg.campanas, cfg, 'A', ahoraMs)), B: id(prCampanaDeTipo(cfg.campanas, cfg, 'B', ahoraMs)) };
+  const titulares = {};
+  const anuncios = Array.isArray(cfg.anuncios) ? cfg.anuncios.slice(0, 50) : [];
+  for (const a of anuncios) {
+    const vigente = a && typeof a === 'object' ? id(prCampanaPorId(cfg.campanas, a.id, ahoraMs)) : '';
+    if (!vigente || !Array.isArray(a.titulares)) continue;
+    for (const tit of a.titulares.slice(0, 3)) {
+      const k = n(vmLinea(tit, 100));
+      if (!k) continue;
+      titulares[k] = Object.prototype.hasOwnProperty.call(titulares, k) && titulares[k] !== vigente ? '' : vigente;
+    }
+  }
+  return { letras: letras, titulares: titulares };
+})();
 
 return [{ json: {
   from: from,
@@ -169,6 +196,8 @@ return [{ json: {
   // anuncios vigentes del servidor para elegir QUÉ promoción mostrar; nunca vende ni abre nada. Lo demás (enlaces, ids, imágenes) no pasa.
   referral: ref ? { headline: vmLinea(ref.headline, 200), body: vmLinea(ref.body, 300) } : null,
   esPosibleAnuncio: esImagenPosibleAnuncio,
+  clasificarAntes: clasificarAntes,
+  anuncioImagen: anuncioImagen,
   boton: boton,
   esAudio: tipo === 'audio' && mediaId !== '',
   esComprobante: llegaComoComprobanteReal && mediaId !== '' && !pedidoSimulado,
