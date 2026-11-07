@@ -773,8 +773,8 @@ function avMarcasReserva(r) {
   const m = [];
   if (r && r.grupoGrande === true) m.push('GRUPO GRANDE');
   if (r && r.diaLleno === true) m.push('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
-  // C-13 (06/11/2026): la reserva que viene de una campaña lleva su nombre en el MISMO aviso (variable de notas), 0 mensajes extra.
-  if (r && typeof r.campana === 'string' && avLimpio(r.campana, 60)) m.push('Campaña: ' + avLimpio(r.campana, 60));
+  // C-13 (06/11/2026): una marca de origen ya redactada por quien arma la reserva (`marcaOrigen`) va en el MISMO aviso, en la variable de notas; 0 mensajes extra.
+  if (r && typeof r.marcaOrigen === 'string' && avLimpio(r.marcaOrigen, 80)) m.push(avLimpio(r.marcaOrigen, 80));
   return m;
 }
 function avVariablesDeForma(tipo, d, dest, ahoraMs) {

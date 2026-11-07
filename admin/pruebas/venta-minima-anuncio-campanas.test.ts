@@ -167,6 +167,14 @@ describe('los datos de Q\'Taco (la adenda)', () => {
   });
 });
 
+describe('el mensaje de la campaña B (decisión de Andres, 06/11/2026)', () => {
+  it('es el del MD, sin «igual puedes reservar tu mesa el día que quieras»', () => {
+    expect(B).toBe("¡Hola! 🌮 Los jueves puedes agrandar tu Q'Taco Dúo: solo por Bs 8 más recibes 2 tacos extra. El total es Bs 178 para 2 personas. Esta promoción está disponible solo los jueves para consumo en el restaurante. ¿Quieres hacer una reserva?");
+    expect(B).not.toMatch(/día que quieras/);
+    expect(DETALLE).toContain('2 helados y');
+  });
+});
+
 describe('AISLAMIENTO: el cliente regular no ve nunca una campaña', () => {
   it('«hola», «hola quiero pedir», «quiero tortas», «quiero reservar una mesa» → el flujo de siempre', () => {
     for (const t of ['hola', 'Hola, quiero hacer un pedido', 'quiero tortas', 'Hola, quiero reservar una mesa', 'buenas noches', 'qué tienen de tortas', 'tengo reserva el jueves de 2 a 4']) {
@@ -296,6 +304,24 @@ describe('CAMPAÑA A «Tortas mexicanas»', () => {
   });
 });
 
+describe('CAMPAÑA A: la promesa de «directo a Promos» solo si se cumple (revisión #829)', () => {
+  it('sin enlace válido del catálogo web: el mensaje no promete la sección de Promos y el botón es el de la carta de siempre', () => {
+    const t = conversacion(crear({ panel: panel({ catalogoWeb: { enlace: '' } }) })).escribe(TORTAS);
+    expect(cuerpos(t)[0]).not.toMatch(/directo|Promos/);
+    expect(cuerpos(t)[0]).toMatch(/tocando el botón de abajo\.$/);
+    expect(idDe(t, 'Hacer un pedido')).toBe('m|pedido');
+  });
+  it('sin área en los datos: igual', () => {
+    const t = conversacion(crear({ config: { campanaPedidoArea: '' } })).escribe(TORTAS);
+    expect(cuerpos(t)[0]).not.toMatch(/directo|Promos/);
+    expect(idDe(t, 'Hacer un pedido')).toBe('m|pedido');
+  });
+  it('con enlace y área: el mensaje termina en «de nuestra carta.» y promete la sección de Promos', () => {
+    expect(A).toMatch(/Promos\/Ofertas de nuestra carta\.$/);
+    expect(cuerpos(conversacion(crear()).escribe(TORTAS))[0]).toBe(A);
+  });
+});
+
 describe('CAMPAÑA B «Jueves de +2»', () => {
   it('el texto exacto: UN mensaje del negocio con «Reservar mesa»', () => {
     const t = conversacion(crear()).escribe(JUEVES);
@@ -421,7 +447,9 @@ describe('IMAGEN del anuncio (foto o captura)', () => {
     const t = conversacion(w).imagen();
     expect(w.clasificaciones).toHaveLength(0);
     expect(esA(t)).toBe(false);
-    expect(t.llamadas.cotejo.length).toBeGreaterThanOrEqual(0);
+    // Se leyó como comprobante: corrieron el guardado, la lectura y el cotejo (en positivo).
+    for (const n of ['Guardar comprobante', 'Leer comprobante (imagen)', 'Cotejar en el servidor']) expect(t.ejecutados.has(n), n).toBe(true);
+    expect(t.ejecutados.has('Clasificar imagen')).toBe(false);
   });
   it('con un cobro SIMULADO pendiente tampoco se clasifica', () => {
     const w = crear({ panel: panel({ cobroSimulado: {}, cobro: { pendiente: true, pedido: 'ped1' } }), clasifica: { categoria: 'publicidad', titular_principal: 'Tortas Mexicanas', campana: 'A' } });
@@ -450,14 +478,30 @@ describe('C-09: una pregunta que el mensaje de la promo no contesta se pasa con 
     expect(cuerpos(t)[0]).toContain('Bienvenido a Q\'Taco');
     expect(cuerpos(t)[0]).toContain('Escribir al local');
     expect(cuerpos(t)[0]).not.toMatch(/te avisamos|te llamamos|te escribir/i);
+    // El único botón es «Escribir al local»: el cuerpo no nombra el botón de la campaña ni «Promos», y la puntuación es buena.
+    expect(cuerpos(t)[0]).not.toMatch(/bot[oó]n de abajo|Promos|Hacer un pedido/);
+    expect(cuerpos(t)[0]).toMatch(/por delivery\. Tu pregunta la ve mejor/);
     expect(t.mensajes[0]?.payload['interactive']?.type).toBe('cta_url');
     expect(t.avisos.length).toBeGreaterThan(0);
+  });
+  it('en B con pregunta ajena: sin la invitación «¿Quieres hacer una reserva?» (no hay botón de reservar) y con punto antes de «Tu pregunta»', () => {
+    const t = conversacion(crear()).escribe('vi la promo jueves de +2, ¿tienen parqueo?');
+    expect(cuerpos(t)[0]).not.toMatch(/¿Quieres/);
+    expect(cuerpos(t)[0]).toMatch(/[.!?] Tu pregunta la ve mejor/);
+    expect(t.mensajes[0]?.payload['interactive']?.type).toBe('cta_url');
   });
   it('pie de foto con otra pregunta en el arte B: igual', () => {
     const t = conversacion(crear({ clasifica: { categoria: 'publicidad', titular_principal: 'Jueves de +2' } })).imagen('¿tienen estacionamiento?');
     expect(t.mensajes).toHaveLength(1);
     expect(cuerpos(t)[0]).toContain('Escribir al local');
     expect(t.avisos.length).toBeGreaterThan(0);
+  });
+  it('NEGANDO (revisión #829): preguntas sobre envío, recojo, variedades o sabores las responde la campaña y NO derivan', () => {
+    for (const v of ['vi la promo de tortas mexicanas, ¿hacen delivery?', 'promo de las tortas mexicanas: ¿puedo recoger en el local?', 'anuncio de las tortas mexicanas ¿qué variedades hay?', 'promo tortas mexicanas ¿qué sabores tienen?']) {
+      const t = conversacion(crear()).escribe(v);
+      expect(esA(t), v).toBe(true);
+      expect(t.avisos, v).toHaveLength(0);
+    }
   });
   it('NEGANDO: la pregunta sobre la propia promo, el texto exacto y «qué incluye» NO derivan', () => {
     for (const v of ['¿cuánto cuestan las tortas mexicanas de la promo?', '¿cuál es la promo de las tortas mexicanas?', TORTAS]) {
@@ -489,6 +533,22 @@ describe('C-12: «Jueves de +2» un día que no es jueves (America/La_Paz, calcu
       expect(titulos(t)).toEqual(['Hacer un pedido', 'Reservar mesa']);
       expect(cuerpos(t)[0]).not.toMatch(/reserv/i);
     }
+  });
+  it('viernes con «¿qué incluye el jueves de +2?»: el detalle SIN invitar a reservar, sin «Reservar mesa» de la campaña y sin marcar el origen de campaña', () => {
+    const w = crear({ ahoraMs: VIERNES });
+    const t = conversacion(w).escribe('hola, ¿qué incluye el jueves de +2?');
+    expect(t.mensajes).toHaveLength(1);
+    expect(cuerpos(t)[0]).toContain('nachos, 2 quesabirrias');
+    expect(cuerpos(t)[0]).toMatch(/únicamente los jueves/);
+    expect(cuerpos(t)[0]).not.toMatch(/¿Quieres|Reservar mesa|reservar tu mesa/);
+    expect(titulos(t)).toEqual(['Hacer un pedido', 'Reservar mesa']);
+    expect(estadoDe(w)['campanaOrigen'] ?? '').toBe('');
+    expect(estadoDe(w)['campanaVista'] ?? '').toBe('');
+  });
+  it('viernes con solo «Jueves de +2»: tampoco marca el origen de campaña', () => {
+    const w = crear({ ahoraMs: VIERNES });
+    conversacion(w).escribe(JUEVES);
+    expect(estadoDe(w)['campanaOrigen'] ?? '').toBe('');
   });
   it('jueves: el mensaje de la promo con «Reservar mesa» (y «¿qué incluye?» sigue igual)', () => {
     expect(esB(conversacion(crear()).escribe(JUEVES))).toBe(true);
@@ -527,5 +587,37 @@ describe('C-13: el aviso de la reserva que viene de la campaña B lleva «Campa�
     const desdeA = reservar((c) => { c.escribe(TORTAS); });
     expect(textoDeAvisos(desdeA)).not.toContain('Campaña:');
     expect(desdeB.mensajes.length).toBe(regular.mensajes.length);
+  });
+});
+
+describe('C-07 (revisión #829): las variaciones solo en inicio y menú, y después de pedir una persona o cancelar', () => {
+  it('en un pedido en curso «2 tortas mexicanas de la promo con queso» toma el pedido (no muestra la bienvenida)', () => {
+    const w = crear({ extraccion: { lineas: [{ producto: 'torta mexicana con queso', cantidad: 2, forma: '', detalle: '' }], entrega: 'recojo', direccion: '', referencia: '', nombre: '', quiereHablar: false } });
+    const c = conversacion(w);
+    c.toca('m|pedido', 'Hacer un pedido');
+    const t = c.escribe('2 tortas mexicanas de la promo con queso');
+    expect(ninguna(t)).toBe(true);
+    expect(String(estadoDe(w)['paso'])).toMatch(/^pedido/);
+  });
+  it('en una reserva en curso «somos 4 para el jueves de +2» sigue la reserva', () => {
+    const w = crear({ extraccion: { personas: 4, fecha: '2026-11-12', hora: '20:00', zona: 'salón', nombre: 'Carlos Pérez', celebracion: '', requerimiento: '' } });
+    const c = conversacion(w);
+    c.toca('m|reserva', 'Reservar mesa');
+    const t = c.escribe('somos 4 para el jueves de +2');
+    expect(esB(t)).toBe(false);
+    expect(String(estadoDe(w)['paso'])).toMatch(/^reserva/);
+  });
+  it('«quiero hablar con una persona por la promo de tortas mexicanas» deriva; «cancela las tortas mexicanas de la promo» cancela', () => {
+    const d = conversacion(crear()).escribe('quiero hablar con una persona por la promo de tortas mexicanas');
+    expect(esA(d)).toBe(false);
+    expect(d.avisos.length).toBeGreaterThan(0);
+    const w = crear();
+    const c = conversacion(w);
+    c.toca('m|pedido', 'Hacer un pedido');
+    const t = c.escribe('cancela las tortas mexicanas de la promo');
+    expect(esA(t)).toBe(false);
+  });
+  it('«el jueves de 2 personas» no es el «Jueves de +2»', () => {
+    expect(ninguna(conversacion(crear()).escribe('quiero una mesa el jueves de 2 personas, vi su promo'))).toBe(true);
   });
 });

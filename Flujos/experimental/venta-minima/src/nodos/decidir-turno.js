@@ -194,12 +194,6 @@ if (idBoton) {
 if (cfg.promosActivo === true && Array.isArray(cfg.campanas) && cfg.campanas.length) {
   const campana = prCampanaDelTexto(cfg.campanas, texto, ahora);
   if (campana) return salir('promo', { campana: campana });
-  // VARIACIONES (adenda de campañas, 06/11/2026): quien pregunta con otras palabras por «las tortas mexicanas» o por «Jueves de +2», o hace la pregunta que sigue al mensaje
-  // («¿qué incluye?», «¿por qué dice solo delivery?»). Por código, solo con la campaña vigente del servidor y nunca con un saludo común (ver `prVariacion`). La
-  // pregunta suelta solo cuenta en `menu`, con la campaña que se acaba de mostrar (`campanaVista` del estado).
-  const vista = paso === 'menu' && (previo.campanaVista === 'A' || previo.campanaVista === 'B') ? previo.campanaVista : '';
-  const variacion = prVariacion(texto, cfg.campanas, cfg, ahora, vista);
-  if (variacion) return salir('promo', { campana: variacion.campana, variante: variacion.variante, sinResponder: variacion.sinResponder === true });
 }
 
 // --- 5. Identidad primero; después, pide una persona ---------------------------------------
@@ -246,6 +240,16 @@ if (cancelacion === 'no') {
 if (pedidosOn && !enComprobante && /^(ver |mostrar |muestrame |dime |cual es |quiero ver )?(mi |el )?(pedido|carrito)( guardado| actual)?$|^(que|cual) (tengo|llevo|pedi)( guardado| en mi pedido| en el pedido| pedido)?$|^cuanto (va|llevo)( en mi pedido| en el pedido| mi pedido)?$|^(mi pedido|mi carrito)$/.test(norm)
   && /\b(pedido|carrito|tengo|llevo|pedi|va)\b/.test(norm) && norm !== 'pedido' && norm.length <= 40) {
   return salir('boton', { motivo: 'ver_pedido' });
+}
+// --- 6a. VARIACIONES del texto de una campaña (adenda 06/11/2026, C-07) -----------------------------------------------------
+// Quien pregunta con otras palabras por «las tortas mexicanas» o por «Jueves de +2», o hace la pregunta que sigue al mensaje («¿qué incluye?», «¿por qué dice solo delivery?»).
+// Por código, solo con la campaña vigente del servidor y nunca con un saludo común (ver `prVariacion`). SOLO en `inicio` y `menu` (en un pedido o una reserva en curso el
+// mensaje sigue ese camino), y DESPUÉS de pedir una persona y de cancelar (esas intenciones ganan). La pregunta suelta solo cuenta en `menu`, con la campaña que se acaba
+// de mostrar (`campanaVista` del estado). El texto EXACTO de la campaña (paso 4) vale en cualquier paso, como siempre.
+if (!cancelacion && (paso === 'inicio' || paso === 'menu') && cfg.promosActivo === true && Array.isArray(cfg.campanas) && cfg.campanas.length) {
+  const vista = paso === 'menu' && (previo.campanaVista === 'A' || previo.campanaVista === 'B') ? previo.campanaVista : '';
+  const variacion = prVariacion(texto, cfg.campanas, cfg, ahora, vista);
+  if (variacion) return salir('promo', { campana: variacion.campana, variante: variacion.variante, sinResponder: variacion.sinResponder === true });
 }
 const quierePedir = /\b(pedir|pedido)\b|\bdelivery\b|para llevar|\bquiero \d/.test(norm) || intencionDePedir(norm);
 const quiereReservar = /reserv|\bmesa\b/.test(norm);

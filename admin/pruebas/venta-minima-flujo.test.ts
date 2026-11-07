@@ -1890,7 +1890,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
 
   describe('campaña de solo reserva «Jueves de +2» (dato del negocio, 05/11)', () => {
     const JUEVES = 'Hola, vi la promoción Jueves de +2 y quiero hacer una reserva.';
-    const MENSAJE = "¡Hola! 🌮 Los jueves puedes agrandar tu Q'Taco Dúo: solo por Bs 8 más recibes 2 tacos extra. El total es Bs 178 para 2 personas. Esta promoción es solo los jueves, para consumo en el local; igual puedes reservar tu mesa el día que quieras. ¿Quieres hacer una reserva?";
+    const MENSAJE = "¡Hola! 🌮 Los jueves puedes agrandar tu Q'Taco Dúo: solo por Bs 8 más recibes 2 tacos extra. El total es Bs 178 para 2 personas. Esta promoción está disponible solo los jueves para consumo en el restaurante. ¿Quieres hacer una reserva?";
     // `campanaReservaNoJueves: ''`: estas pruebas corren un lunes y cubren el mensaje de la campaña; el día se prueba en venta-minima-anuncio-campanas.test.ts (C-12).
     const config = { campanaReservaTexto: JUEVES, campanaReservaMensaje: MENSAJE, campanaReservaNoJueves: '' };
     const conJueves = (c: J = config, campanas: J[] = [campanaVigente('jueves', JUEVES)]) => crear({ panel: panel({ campanas }), config: c });
@@ -1943,7 +1943,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     it('el dato de Q\'Taco: la campaña de reserva no nombra alcohol y el mensaje de pedido es el de la adenda (con «Promos/Ofertas»: el botón ya lleva a esa área, C-04)', () => {
       const b = configBase(QTACO);
       expect(String(b['campanaReservaMensaje'])).not.toMatch(/tequila|rompope/i);
-      expect(String(b['campanaPedidoMensaje'])).toBe("¡Hola! Bienvenido a Q'Taco 🌮 ¡Gracias por escribirnos por la promo de las tortas mexicanas! Tenemos opciones sin queso por Bs 15 y con queso por Bs 20 (ambas incluyen nuestra salsa mexicana especial). Puedes elegir entre las variedades disponibles y hacer tu pedido para recoger en el local o envío por delivery tocando el botón de abajo, que te llevará directo a la sección de Promos/Ofertas de nuestro menú");
+      expect(String(b['campanaPedidoMensaje'])).toBe("¡Hola! Bienvenido a Q'Taco 🌮 ¡Gracias por escribirnos por la promo de las tortas mexicanas! Tenemos opciones sin queso por Bs 15 y con queso por Bs 20 (ambas incluyen nuestra salsa mexicana especial). Puedes elegir entre las variedades disponibles y hacer tu pedido para recoger en el local o envío por delivery tocando el botón de abajo, que te llevará directo a la sección de Promos/Ofertas de nuestra carta.");
       expect(String(b['campanaPedidoArea'])).toBe('promociones');
     });
     const TORTAS = 'Hola, vi el anuncio de las tortas mexicanas y quiero hacer un pedido.';
@@ -2007,7 +2007,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       expect(mensaje).toContain(`sin queso por Bs ${sin['precio']}`);
       expect(mensaje).toContain(`con queso por Bs ${con_['precio']}`);
       expect([...mensaje.matchAll(/Bs (\d+)/g)].map((m) => Number(m[1])).sort()).toEqual([sin['precio'], con_['precio']].map(Number).sort());
-      const w = conTortas({ campanaPedidoTexto: String(b['campanaPedidoTexto']), campanaPedidoMensaje: mensaje });
+      const w = conTortas({ campanaPedidoTexto: String(b['campanaPedidoTexto']), campanaPedidoMensaje: mensaje, campanaPedidoArea: String(b['campanaPedidoArea']) }, undefined, { catalogoWeb: { enlace: 'https://catalogo.ejemplo.com/c/x' } });
       const t = con(w).escribe(TORTAS);
       expect(cuerpos(t)[0]).toBe(mensaje);
       expect(t.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido']);
@@ -3108,7 +3108,7 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(73); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 9 del estado en el servidor (PR-4a) + los 2 de los cupos (PR-4b, aprobado por Andres (06/11/2026, en conversación)): el tope de producción es 71 (`construir.mjs` lo impone)
+    expect(QTACO.nodes).toHaveLength(73); // 49 + el webhook del carrito + los 9 del guardado de medios (contrato v2 del 30/10) + «Guardar comprobante» (26/10) + los 9 del estado en el servidor (PR-4a) + los 2 de los cupos (PR-4b, aprobado por Andres (06/11/2026, en conversación)) + los 2 de la imagen del anuncio (aprobados por Andres el 06/11/2026): el tope de producción es 73 (`construir.mjs` lo impone)
     expect(PRUEBA.nodes).toHaveLength(69);
   });
 

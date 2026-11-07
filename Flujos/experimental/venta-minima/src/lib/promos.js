@@ -261,8 +261,10 @@ function prPedidoConMensaje(campana, cfg) {
   if (c.pedidosActivo !== true) return null;
   const clave = prNorm(c.campanaPedidoTexto);
   if (clave === '' || prNorm(campana.texto) !== clave) return null;
-  const cuerpo = prLinea(c.campanaPedidoMensaje, 900);
+  let cuerpo = prLinea(c.campanaPedidoMensaje, 900);
   if (cuerpo === '') return null;
+  // Solo se promete «te lleva directo a Promos» si se cumple (hay área y un enlace https del catálogo web); si no, el mismo mensaje sin esa promesa (C-03/revisión #829).
+  if (prAreaDelPedido(c) === '') cuerpo = prLinea(cuerpo.replace(/,?\s*que te llevar[aá] directo a [^.]*\./i, '.'), 900);
   return { cuerpo: cuerpo, botones: [prBotonHacerPedido(c)] };
 }
 
@@ -271,6 +273,8 @@ function prPedidoConMensaje(campana, cfg) {
 function prAreaDelPedido(cfg) {
   const c = typeof cfg === 'object' && cfg !== null ? cfg : {};
   const a = prLinea(c.campanaPedidoArea, 60);
+  // Sin un enlace https del catálogo web no hay a dónde llevar: el botón abre la carta de siempre (en texto).
+  if (!/^https:\/\/[^\s<>"']+$/.test(typeof c.catalogoWebEnlace === 'string' ? c.catalogoWebEnlace.trim() : '')) return '';
   return a !== '' && /^[\p{L}\p{N} _-]{1,60}$/u.test(a) ? a : '';
 }
 
@@ -330,7 +334,7 @@ function prMencionaA(n) {
 // promoción y sin ser un horario («jueves de 2 a 4»); «agrandar … Q'Taco Dúo» en cualquier orden.
 function prMencionaB(crudo, n) {
   if (/jueves de ?(\+|mas) ?2\b/.test(crudo)) return true;
-  if (/\bjueves de 2\b/.test(n) && !/\bjueves de 2 (a|al|am|pm|hrs?|horas?|y|hasta|de la|en la)\b/.test(n) && PR_DICE_PROMO.test(n)) return true;
+  if (/\bjueves de 2\b/.test(n) && !/\bjueves de 2 (a|al|am|pm|hrs?|horas?|y|hasta|de la|en la|personas?|pax|gente|amig\w+|invitad\w+)\b/.test(n) && PR_DICE_PROMO.test(n)) return true;
   return /\bagrand\w*\b/.test(n) && /\b(q ?taco|qtaco) duo\b/.test(n);
 }
 
@@ -339,7 +343,7 @@ function prMencionaB(crudo, n) {
 const PR_VOCABULARIO_PROMO = ('hola buenas buenos dias tardes noches vi vimos el la las los lo un una unos unas de del al en a y o u e que cual cuales como cuanto cuantos cuesta cuestan precio precios '
   + 'es son hay tienen tiene tienes quiero quisiera queria quisieramos saber info informacion promo promos promocion promociones anuncio anuncios oferta ofertas torta tortas mexicana mexicanas '
   + 'jueves mas 2 agrandar agranda agrandan agrandarlo q taco tacos qtaco duo por para con sin queso facebook face fb instagram insta ig redes publicidad publicacion me puedes pueden favor gracias '
-  + 'ver sobre acerca esta esa ese este se mi su tu si no pedido pedir hacer reserva reservar mesa dime decir dinos puede puedo agrandado dia dias solo disponible vigente aun todavia valida valido').split(' ');
+  + 'ver sobre acerca esta esa ese este se mi su tu si no pedido pedir hacer reserva reservar mesa dime decir dinos delivery envio envios domicilio recoger recojo recogerlo llevar local restaurante sucursal variedades variedad sabores sabor tamano tamanos hacen hace venden manejan puede puedo agrandado dia dias solo disponible vigente aun todavia valida valido').split(' ');
 // ¿Es una PREGUNTA (con «?» o que empieza con una palabra interrogativa) que el mensaje de la promoción NO contesta? Solo se dice cuando queda al menos una
 // palabra fuera del vocabulario de la promo. Ante la duda se pasa con el local: hay falsos positivos (se avisa de más), nunca una promesa.
 function prPreguntaSinResponder(texto) {
@@ -353,6 +357,15 @@ function prPreguntaSinResponder(texto) {
     if (palabras[i] !== '' && PR_VOCABULARIO_PROMO.indexOf(palabras[i]) === -1) return true;
   }
   return false;
+}
+
+// El mensaje de una campaña SIN lo que apunta a su botón: se corta desde «tocando/toca el botón…» y se quita una pregunta final («¿Quieres…?») y lo que le sigue, para
+// los casos en que el único botón del mensaje es otro («Escribir al local»). Siempre termina en punto.
+function prCuerpoSinBoton(cuerpo) {
+  let t = prLinea(cuerpo, 900);
+  t = t.replace(/\s*(tocando|toca)\s+el\s+bot[oó]n.*$/i, '').replace(/\s*¿[^¿?]*\?.*$/, '').replace(/\s*(\.\s*)?(👇|👉)\s*$/u, '').replace(/[\s,;:]+$/, '');
+  if (t === '') return '';
+  return /[.!?]$/.test(t) ? t : t + '.';
 }
 
 // La VARIACIÓN del texto de una campaña: `{campana, variante}` o `null`. `variante`: 'promo' (el mensaje de la promoción), 'detalle' (campaña B: «¿qué incluye?»)

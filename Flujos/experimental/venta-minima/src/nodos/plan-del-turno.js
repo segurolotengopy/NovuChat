@@ -20,7 +20,7 @@
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
 //     pdTextoFaltanEntrega, pdLineasAviso, pdMonto (así los textos del pedido tienen un solo dueño).
 //   reserva: rsValidarExtraccion, rsFusionar, rsValidar, rsPreguntaFaltantes, rsResumen,
-//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto, prSoloReserva, prPedidoConMensaje, prAreaDelPedido, prTipoDeCampana, prRespuestaDeVariante, prEsJueves.   (C-09) con `d.sinResponder` la bienvenida de la promo sale como UN mensaje con «Escribir al local» y un aviso a recepción (`derivar`).
+//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto, prSoloReserva, prPedidoConMensaje, prAreaDelPedido, prTipoDeCampana, prRespuestaDeVariante, prEsJueves, prCuerpoSinBoton.   (C-09) con `d.sinResponder` la bienvenida de la promo sale como UN mensaje con «Escribir al local» y un aviso a recepción (`derivar`).
 //   cobro: cbCaption, cbResumenCorto, cbResultado, cbEstadoParaAviso, cbTextoAlCliente.
 //
 // SUPUESTOS DECLARADOS (los de la tarea T7a, aprobados por la coordinadora):
@@ -619,6 +619,16 @@ function aPromo() {
   if (en.paso === 'esperando_comprobante' && en.pedido) return aRecordatorio();
   // Campaña de solo reserva: su respuesta REEMPLAZA al saludo, con «Reservar mesa» como único botón; acepta la reserva cualquier día.
   const tipoCampana = prTipoDeCampana(d.campana, cfg);
+  // C-12 (06/11): el «Jueves de +2» un día que NO es jueves (La Paz, calculado aquí) se evalúa ANTES que cualquier variante: solo se dice que vale los jueves en el local,
+  // con los botones de inicio de siempre (sin «Reservar mesa» propio de la campaña ni fecha) y SIN marcar el origen de campaña. Con «¿qué incluye?» se da el detalle del
+  // combo sin la invitación a reservar. La pregunta específica del pie de foto se pierde fuera del jueves (declarado). Sin el dato del negocio rige lo de siempre.
+  const noJueves = tipoCampana === 'B' ? vmLinea(cfg.campanaReservaNoJueves, 600) : '';
+  if (noJueves && !prEsJueves(ahora) && prSoloReserva(d.campana, cfg)) {
+    const detalle = d.variante === 'detalle' ? prCuerpoSinBoton(cfg.campanaReservaDetalle) : '';
+    if (en.paso === 'inicio' || en.paso === 'menu' || d.variante !== 'detalle') irA('menu');
+    mensajes = [conMenu(detalle || noJueves)];
+    return;
+  }
   // Una pregunta específica (adenda de campañas, 06/11): «¿qué incluye?» (B) o «¿por qué dice solo delivery?» (A) se contesta con el dato del negocio y el botón de la
   // campaña, SIN cambiar el paso ni el pedido en curso. Sin ese dato, rige el mensaje de la promoción. Cuenta como el mensaje que reemplaza al saludo: 0 agregados.
   if (d.variante === 'detalle' || d.variante === 'solo_delivery') {
@@ -632,19 +642,12 @@ function aPromo() {
     }
   }
   // C-09 (06/11/2026): la pregunta del cliente que el mensaje de la promo no contesta se pasa con el local: la bienvenida de la promo + «Escribir al local» en UN solo
-  // mensaje (0 agregados) y el aviso de transferencia de siempre. Sin promesas («te avisamos…»): el cliente escribe él al local.
+  // mensaje (0 agregados) y el aviso de transferencia de siempre. El cuerpo va SIN la frase que apunta al botón de la campaña (aquí el único botón es «Escribir al local»).
+  // Sin promesas («te avisamos…»): el cliente escribe él al local.
   const conPregunta = (cuerpo) => {
-    derivar('pregunta sobre una promoción que el mensaje no contesta', false, undefined, false, cuerpo + ' Tu pregunta la ve mejor nuestro equipo: toca «Escribir al local».');
+    derivar('pregunta sobre una promoción que el mensaje no contesta', false, undefined, false, prCuerpoSinBoton(cuerpo) + ' Tu pregunta la ve mejor nuestro equipo: toca «Escribir al local».');
     en.campanaVista = tipoCampana;
   };
-  // C-12 (06/11): el «Jueves de +2» un día que NO es jueves (La Paz, calculado aquí): solo se dice que vale los jueves en el local, con los botones de inicio de siempre
-  // (sin «Reservar mesa» propio de la campaña ni fecha). Sin el dato del negocio rige lo de siempre.
-  const noJueves = tipoCampana === 'B' ? vmLinea(cfg.campanaReservaNoJueves, 600) : '';
-  if (noJueves && !prEsJueves(ahora) && prSoloReserva(d.campana, cfg)) {
-    irA('menu');
-    mensajes = [conMenu(noJueves)];
-    return;
-  }
   if (tipoCampana === 'B') en.campanaOrigen = 'B';
   const soloReserva = prSoloReserva(d.campana, cfg);
   if (soloReserva && d.sinResponder === true) return conPregunta(soloReserva.cuerpo);
@@ -1631,7 +1634,7 @@ function enviarReserva() {
   const diaLleno = !rsDentroDelTope(sd, t.from, ahora, Number(cfg.topeReservasDia));
   // C-13: la reserva que viene de la campaña «B» lleva el nombre de la campaña (dato del negocio) en su aviso; sale del estado, nunca de lo que escribe el cliente.
   const nombreCampana = en.campanaOrigen === 'B' ? vmLinea(cfg.campanaReservaNombre, 60) : '';
-  const reserva = Object.assign({}, v.reserva, diaLleno ? { diaLleno: true } : {}, nombreCampana ? { campana: nombreCampana } : {});
+  const reserva = Object.assign({}, v.reserva, diaLleno ? { diaLleno: true } : {}, nombreCampana ? { marcaOrigen: 'Campaña: ' + nombreCampana } : {});
   // La referencia y el codigo salen del ancla y de los datos de la reserva (no del reloj): un doble toque en «Reservar»
   // da el mismo codigo y la misma referencia de cierre, y el servidor cuenta UN cierre.
   const clave = vmIdEstable('res', t.from, v.reserva, ancla, ahora); // con la reserva SIN la marca `diaLleno`: el código no cambia entre reintentos

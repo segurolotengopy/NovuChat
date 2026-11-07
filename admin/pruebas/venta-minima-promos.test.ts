@@ -584,8 +584,9 @@ describe('adenda de campañas: funciones puras', () => {
     expect(L.prEsJueves(NaN)).toBe(false);
   });
   it('prBotonHacerPedido: con área es `m|pedido|promos`, sin área o con un área rara es `m|pedido`', () => {
-    expect(L.prBotonHacerPedido({ campanaPedidoArea: 'promociones' }).id).toBe('m|pedido|promos');
+    expect(L.prBotonHacerPedido({ campanaPedidoArea: 'promociones', catalogoWebEnlace: 'https://catalogo.ejemplo.com/c/x' }).id).toBe('m|pedido|promos');
+    expect(L.prBotonHacerPedido({ campanaPedidoArea: 'promociones' }).id).toBe('m|pedido'); // sin enlace del catálogo no hay a dónde llevar
     expect(L.prBotonHacerPedido({}).id).toBe('m|pedido');
-    expect(L.prBotonHacerPedido({ campanaPedidoArea: 'a&b=c#' }).id).toBe('m|pedido');
+    expect(L.prBotonHacerPedido({ campanaPedidoArea: 'a&b=c#', catalogoWebEnlace: 'https://catalogo.ejemplo.com/c/x' }).id).toBe('m|pedido');
   });
 });

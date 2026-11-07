@@ -219,6 +219,8 @@ La rama común del **guardado de medios** (`Flujos/experimental/comun-sin-agente
 | `venta-minima.prueba.json` | 67 → **69** |
 | `venta-minima.ensayo-demo-a.json` | 65 → **67** |
 
+**Avisos extra declarados (C-09):** un texto o pie de foto con una pregunta ajena a la promo envía ≈1 aviso de transferencia al local por mensaje de campaña (sujeto al límite por hora del cupo `transferencias`). Fuera del jueves, la pregunta del pie de foto en la campaña B se pierde (solo se dice que la promo es los jueves).
+
 Ver `Flujos/experimental/venta-minima/DISENO.md`, «Adenda de campañas de Q'Taco» (C-01, C-04, C-07, C-08, C-09, C-12, C-13, C-17). Queda sin publicar (la publica la sesión que corresponda con el «sí» de Andres); los `titulares` de las campañas A y B ("Tortas Mexicanas", "Mañanas Tortas Mexicanas"; "Jueves de +2") deben estar cargados y aprobados en `config/campanas` para el reconocimiento por titular (la letra `campana` del clasificador funciona sin ellos).
 
 ## Estado al 05/11/2026 (PR-4b): los cupos de aviso de Q'Taco pasan al servidor
