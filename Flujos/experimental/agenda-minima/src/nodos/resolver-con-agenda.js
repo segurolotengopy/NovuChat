@@ -42,6 +42,8 @@ if (falloAgenda) {
   return salir('error', { errores: ['no se pudo leer la agenda del calendario'], params: { motivo: 'no se pudo leer la agenda del calendario' } });
 }
 
+// Dos hermanos = dos citas seguidas de la duracion por defecto: solo se ofrece lo que tiene ese tiempo libre CONTIGUO.
+const dur = (Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30) * ((en.pacientes || []).length === 2 ? 2 : 1);
 const esMover = !!en.moverId;
 const ignorar = esMover ? [en.moverId] : [];
 const leerLista = () => citasDelTelefono({ eventos: eventos, telefono: t.from, ahoraMs: ahora });
@@ -92,7 +94,7 @@ function armarOferta(o) {
   const excluir = (o.excluir || []).filter(Boolean);
   const llamar = (fechaPref, pidioHoy) => ofertaDeHuecos({
     eventos: eventos, cfg: cfgAg, ahoraMs: ahora, fechaPreferida: fechaPref, horaPreferida: o.horaPreferida,
-    franja: o.franja || 'cualquiera', pidioHoy: pidioHoy === true, ignorarIds: ignorar, maximo: 3 + excluir.length + (en.moverInicio ? 1 : 0),
+    franja: o.franja || 'cualquiera', pidioHoy: pidioHoy === true, ignorarIds: ignorar, duracionMin: dur, maximo: 3 + excluir.length + (en.moverInicio ? 1 : 0),
   });
   const propia = en.moverInicio ? msDe(en.moverInicio) : null;
   const filtrar = (r) => r.huecos.filter((h) => excluir.indexOf(h.inicio) < 0 && !(propia !== null && msDe(h.inicio) === propia));
@@ -136,7 +138,7 @@ function terminarOferta(oferta, pregunta, extraAviso) {
 function huecoValido(inicio) {
   const fecha = fechaLocal(msDe(inicio));
   const libres = huecosDelDia({
-    eventos: eventos, fecha: fecha, horario: cfg.horario, duracionMin: cfg.duracionPorDefectoMin, ahoraMs: ahora,
+    eventos: eventos, fecha: fecha, horario: cfg.horario, duracionMin: dur, ahoraMs: ahora,
     anticipacionMin: cfg.anticipacionMinimaMin, franja: 'cualquiera', ignorarIds: ignorar,
   });
   const h = libres.filter((x) => x.inicio === inicio)[0];
@@ -167,21 +169,29 @@ switch (p.plan) {
       const diaDelBoton = fechaLocal(msDe(inicio));
       const oferta = armarOferta({ servicio: srv, fechaPreferida: diaDelBoton > fechaLocal(ahora) ? diaDelBoton : null, pidioHoy: diaDelBoton === fechaLocal(ahora), franja: 'cualquiera' });
       en.huecoElegido = null;
-      return terminarOferta(oferta, null, oferta.huecos.length ? 'hueco_perdido' : null);
+      // Si el hueco tenia 30 minutos y ahora son dos hermanos, se dice que faltan dos seguidos.
+      return terminarOferta(oferta, null, oferta.huecos.length ? (dur > (Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30) ? 'sin_dos_seguidos' : 'hueco_perdido') : null);
     }
     const pac = (en.pacientes || []).map((n) => partirNombre(String(n))).filter((n) => n && n.apellidos && n.nombres);
     const titulo = tituloDeLaCita({ pacientes: pac, servicio: srv });
-    if (!titulo) {
+    // Nunca crear una sola cita omitiendo a un hermano: si algun nombre no se pudo partir, se pide el nombre.
+    if (!titulo || pac.length !== (en.pacientes || []).length) {
       en.paso = 'esperando_nombre';
       en.huecoElegido = inicio;
       en.servicio = srv;
       return salir('pedir_nombre', { params: { inicio: inicio, servicio: srv } });
     }
     en.servicio = srv;
+    // Una cita por paciente (hermanos: dos seguidas); `inicio` es el de la primera y `fin` el de la ultima.
+    const citas = citasDeHermanos({
+      inicio: h.inicio, duracionMin: Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30,
+      pacientes: pac, servicio: srv, telefono: t.from, nombrePerfil: t.nombrePerfil,
+    });
     return salir('crear', {
       crear: {
-        inicio: h.inicio, fin: h.fin, titulo: titulo, servicio: srv, pacientes: pac,
+        inicio: citas[0].inicio, fin: citas[citas.length - 1].fin, titulo: titulo, servicio: srv, pacientes: pac,
         descripcion: descripcionDeLaCita({ telefono: t.from, servicio: srv, pacientes: pac, nombrePerfil: t.nombrePerfil }),
+        citas: citas,
       },
       borrarId: en.moverId || '',
       params: Object.assign({}, prm, { servicio: srv }),

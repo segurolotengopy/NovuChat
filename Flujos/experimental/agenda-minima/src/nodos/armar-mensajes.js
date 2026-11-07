@@ -255,6 +255,7 @@ function textoFijoDeOferta(o, srvTxt) {
     hora_ocupada: 'A esa hora no está disponible. Las más cercanas son:',
     hora_propia: 'Esa hora ya es la de tu cita actual. Estas son otras opciones:',
     hueco_perdido: 'Ese horario ya no está disponible. Estos son los más cercanos:',
+    sin_dos_seguidos: 'Para los dos hermanos necesito dos horarios seguidos de ' + (Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30) + ' minutos, y ese ya no los tiene. Estos sí:',
     cruce: 'Ese horario se ocupó justo ahora y no pude dejar tu cita. Estos son los más cercanos:',
   }[o.aviso] || ('Estos son los horarios más cercanos para ' + srvTxt + ':');
   return intro + '\n' + o.huecos.map((h) => '• ' + textoDeFecha(h.inicio)).join('\n') + '\n\nToca el horario que prefieras.';
@@ -535,8 +536,14 @@ switch (plan) {
     }
     const c = base.crear;
     const nombres = c.titulo.replace(/\s*\((?:CNS|RN)\)\s*$/, '');
+    const dosCitas = Array.isArray(c.citas) && c.citas.length === 2;
+    const sinMarca = (x) => String(x.titulo).replace(/\s*\((?:CNS|RN)\)\s*$/, '');
     const partes = [
-      conEmoji('✅') + 'Listo, quedó agendada la cita de ' + nombres + ' (' + (CN_NOMBRE_SERVICIO[c.servicio] || 'consulta') + '): ' + textoDeFecha(c.inicio) + '.',
+      // Dos hermanos: dos citas seguidas, UN solo mensaje de confirmacion.
+      dosCitas
+        ? conEmoji('✅') + 'Listo, quedaron agendadas las citas de ' + sinMarca(c.citas[0]) + ' (' + textoDeFecha(c.citas[0].inicio) + ') y '
+          + sinMarca(c.citas[1]) + ' (' + horaLocal(msDe(c.citas[1].inicio)) + ') (' + (CN_NOMBRE_SERVICIO[c.servicio] || 'consulta') + ').'
+        : conEmoji('✅') + 'Listo, quedó agendada la cita de ' + nombres + ' (' + (CN_NOMBRE_SERVICIO[c.servicio] || 'consulta') + '): ' + textoDeFecha(c.inicio) + '.',
       cfg.direccion ? 'Te esperamos en ' + cfg.direccion + '.' + (MAPA ? '\nMapa: ' + MAPA : '') : '',
       // P10: la tolerancia va dentro del mismo mensaje y sale de la configuracion; sin frase, no se agrega.
       String(cfg.toleranciaTexto || ''),
@@ -569,7 +576,9 @@ switch (plan) {
 
   case 'error':
   default: {
-    const motivo = params.motivo || errores.join('; ') || 'error del flujo';
+    let motivo = params.motivo || errores.join('; ') || 'error del flujo';
+    // Creación parcial: un evento con error pudo haberse creado igual y no quedar registrado.
+    if (params.revisarCalendarioInicio) motivo += '. Pudo quedar un evento sin registrar: REVISAR el calendario el ' + textoDeFecha(params.revisarCalendarioInicio);
     const cuerpo = String(cfg.mensajeErrorTemporal || '').trim() + ' Si prefieres, escríbele directo a recepción.';
     transferir(motivo, cuerpo);
   }
@@ -577,13 +586,16 @@ switch (plan) {
 
 // La cita cruzada no se pudo deshacer: dos eventos quedaron en el calendario.
 if (base.deshacerId) {
-  const d = cnPrimero('Deshacer cita');
+  // Dos hermanos: un evento por hermano. Si CUALQUIERA no se pudo deshacer, queda una cita suelta: se avisa con todos los ids.
+  const ids = Array.isArray(base.deshacerIds) && base.deshacerIds.length ? base.deshacerIds : [base.deshacerId];
+  const ds = cnTodos('Deshacer cita');
   // Un 404 o 410 de Google es que el evento ya no está: el deshacer cumplió.
-  const yaNoEsta = !!(d && d.error) && /\b(404|410)\b|not found|has been deleted|resource has been deleted/i.test(JSON.stringify(d.error));
-  if ((!d || d.error) && !yaNoEsta) {
+  const yaNoEsta = (d) => !!(d && d.error) && /\b(404|410)\b|not found|has been deleted|resource has been deleted/i.test(JSON.stringify(d.error));
+  const fallo = ids.length > ds.length || ds.some((d) => (!d || d.error) && !yaNoEsta(d));
+  if (fallo) {
     deshacerFallo = true;
     errores.push('no se pudo deshacer la cita cruzada');
-    const motivo = 'la cita cruzada no se pudo borrar del calendario (evento ' + base.deshacerId + '): revisar la agenda de ese horario';
+    const motivo = 'la cita cruzada no se pudo borrar del calendario (' + (ids.length > 1 ? 'eventos ' : 'evento ') + ids.join(', ') + '): revisar la agenda de ese horario';
     if (rec && rec !== desdeDigitos) avisarARecepcion(motivo);
     else if (doc && doc !== desdeDigitos) {
       const aviso = '🔔 NovuChat (' + nombreNegocio + '): ' + motivo + '.';

@@ -129,7 +129,13 @@ export interface Opciones {
   /** URL que devuelve el doble de «Obtener URL del medio (general)» (por omisión, la de lookaside de Meta). */
   medioUrl?: string;
 }
-interface Fallas { leer?: boolean; crear?: boolean; releer?: boolean; borrar?: boolean; deshacer?: boolean | '404' }
+interface Fallas {
+  leer?: boolean; crear?: boolean; releer?: boolean; borrar?: boolean; deshacer?: boolean | '404';
+  /** Falla solo la creación número N (1, 2…) del caso: el 2º «Crear evento» de dos hermanos. */
+  crearNro?: number;
+  /** «Deshacer cita» falla solo para estos ids de evento. */
+  deshacerIds?: string[];
+}
 
 type Extraccion = J | ((cuerpo: J) => J) | 'ERROR';
 
@@ -144,7 +150,7 @@ function mundo(op: Opciones = {}) {
   const desactivados = new Set(op.desactivados ?? []);
 
   const sd: J = {};
-  const calendario = { eventos: (op.eventos ?? []).slice(), seq: 0, fallas: {} as Fallas, despuesDeCrear: null as null | ((c: J[]) => void) };
+  const calendario = { eventos: (op.eventos ?? []).slice(), seq: 0, creaciones: 0, fallas: {} as Fallas, despuesDeCrear: null as null | ((c: J[]) => void) };
   const gemini = { extraer: 'ERROR' as Extraccion, redactar: null as null | string | ((cuerpo: J) => string), transcripcion: null as null | string, lectura: { categoria: 'otro', descripcion: '', texto: '' } as null | J };
   const graph = { falla: (_p: J): boolean => false };
   const log = {
@@ -181,6 +187,8 @@ function mundo(op: Opciones = {}) {
     // La rama del miniCRM (módulo `crm`): corre «Prospecto para la planilla» (código real, para ver qué se guardaría); de ahí en adelante son Google Sheets y el
     // módulo, que se prueban aparte (`tenants/bellido/crm.test.ts`, `modulos/crm`). Aquí no devuelven nada: la rama termina sin tocar la conversación.
     if (RAMA_CRM_SIN_RED.has(n.name)) return [[]];
+    // `executeOnce` de n8n: el nodo corre una sola vez, con el primer ítem.
+    if ((n as { executeOnce?: boolean }).executeOnce) items = items.slice(0, 1);
     const cada =(f: (it: Item) => J[]): Item[] => items.flatMap((it) => f(it).map((json) => ({ json, pair: it.pair })));
 
     if (entrada && entrada.nombre === n.name) return [[{ json: entrada.json, pair: {} }]];
@@ -271,7 +279,8 @@ function mundo(op: Opciones = {}) {
       case 'Crear evento': {
         return [cada((it) => {
           const cal = evaluarValor((p['calendar'] as { value: string }).value, it, refs);
-          if (calendario.fallas.crear || !calendarioValido(cal)) return [{ error: 'no se pudo crear' }];
+          calendario.creaciones++;
+          if (calendario.fallas.crear || calendario.fallas.crearNro === calendario.creaciones || !calendarioValido(cal)) return [{ error: 'no se pudo crear' }];
           const extra = p['additionalFields'] as J;
           const e: J = {
             id: `ev-${++calendario.seq}`, status: 'confirmed',
@@ -291,7 +300,7 @@ function mundo(op: Opciones = {}) {
           const falla = n.name === 'Borrar evento' ? calendario.fallas.borrar : calendario.fallas.deshacer;
           const id = String(evaluarValor(p['eventId'], it, refs));
           if (falla === '404') return [{ error: { message: 'The resource you are requesting could not be found', httpCode: '404' } }];
-          if (falla || !calendarioValido(cal)) return [{ error: 'no se pudo borrar' }];
+          if (falla || (n.name === 'Deshacer cita' && (calendario.fallas.deshacerIds ?? []).includes(id)) || !calendarioValido(cal)) return [{ error: 'no se pudo borrar' }];
           const antes = calendario.eventos.length;
           calendario.eventos = calendario.eventos.filter((e) => e['id'] !== id);
           if (calendario.eventos.length === antes) return [{ error: 'no existe' }];
@@ -779,19 +788,231 @@ describe('Agenda mínima v0: el flujo, de punta a punta', () => {
   });
 
   // ---------------------------------------------------------------------------------------- (i)
-  describe('(i) hermanos: UNA cita con los dos nombres', () => {
-    it('crea un solo evento de 30 minutos con los dos nombres en el título', () => {
+  describe('(i) hermanos: DOS citas seguidas, una por hermano (Andres, 07/11/2026)', () => {
+    const DOS = ['Ana Pérez Gómez', 'Luis Pérez Gómez'];
+    /** Llega al turno que crea las dos citas: hueco de las 14:00 tocado y luego los dos nombres. */
+    function conDosNombres(m: ReturnType<typeof mundo>): Turno {
+      hastaPedirNombre(m);
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: DOS });
+      return m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+    }
+    const idsDeOferta = (t: Turno): string[] => botonesDe(t.enviados[0]!).map((b) => b.id);
+    const fin = (e: J): string => (e['end'] as J)['dateTime'] as string;
+    const inicio = (e: J): string => (e['start'] as J)['dateTime'] as string;
+
+    it('con 60 minutos libres crea DOS eventos de 30 seguidos, cada uno con su título; un cierre y UNA confirmación', () => {
+      const m = mundo({ eventos: [] });
+      const t = conDosNombres(m);
+      expect(m.calendario.eventos).toHaveLength(2);
+      const [uno, dos] = m.calendario.eventos as [J, J];
+      expect(uno['summary']).toBe('Pérez Gómez, Ana (CNS)');
+      expect(dos['summary']).toBe('Pérez Gómez, Luis (CNS)');
+      expect(inicio(uno)).toBe(iso(JUEVES, '14:00'));
+      expect(fin(uno)).toBe(iso(JUEVES, '14:30'));
+      expect(inicio(dos)).toBe(fin(uno));
+      expect(fin(dos)).toBe(iso(JUEVES, '15:00'));
+      // Cada evento nombra a UN solo paciente.
+      expect(String(uno['description'])).toContain('Paciente: Pérez Gómez, Ana');
+      expect(String(uno['description'])).not.toContain('Luis');
+      expect(String(dos['description'])).not.toContain('Pérez Gómez, Ana');
+      expect(t.bitacora).toEqual(['crear:ev-1', 'crear:ev-2']);
+      expect(t.cierres).toHaveLength(1); // un cierre por par, no dos
+      const confirmaciones = t.enviados.filter((e) => /Listo, quedaron agendadas/.test(e.cuerpo));
+      expect(confirmaciones).toHaveLength(1);
+      expect(confirmaciones[0]!.cuerpo).toMatch(/Ana.*14:00.*Luis.*14:30/);
+      expect(t.resumen!['resumen']).toMatchObject({ accion: 'cita_creada', eventoCreadoId: 'ev-1' });
+    });
+    it('NIEGA: con un solo paciente sigue siendo UN evento de 30 minutos', () => {
       const m = mundo({ eventos: [] });
       hastaPedirNombre(m);
-      m.gemini.extraer = extraccion({ hermanos: true, pacientes: ['Ana Pérez Gómez', 'Luis Pérez Gómez'] });
-      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+      m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
       expect(m.calendario.eventos).toHaveLength(1);
-      const cita = m.calendario.eventos[0]!;
-      expect(cita['summary']).toBe('Pérez Gómez, Ana y Luis (CNS)');
-      expect((cita['end'] as J)['dateTime']).toBe(iso(JUEVES, '14:30'));
-      expect(t.bitacora).toEqual(['crear:ev-1']);
-      expect(t.cierres).toHaveLength(1); // un cierre, no dos
-      expect(t.enviados[0]!.cuerpo).toMatch(/Ana.*Luis/);
+      expect(fin(m.calendario.eventos[0]!)).toBe(iso(JUEVES, '14:30'));
+      expect(t.enviados[0]!.cuerpo).toMatch(CONFIRMA);
+    });
+
+    function ofertaPara(pacientes: string[], eventos: J[]): string[] {
+      const m = mundo({ eventos });
+      m.turno(texto(MAMA, 'quiero cita el jueves en la tarde'));
+      m.gemini.extraer = extraccion({ fechaPreferida: JUEVES, franja: 'tarde', hermanos: pacientes.length === 2, pacientes });
+      m.gemini.redactar = 'Tengo estos horarios. Toca el que prefieras.';
+      return idsDeOferta(m.turno(lista(MAMA, SERV_CNS, 'Control niño sano')));
+    }
+    it('solo se ofrecen horarios con 60 minutos libres contiguos (14:00 libre y 14:30 ocupado: no a dos hermanos, sí a uno)', () => {
+      const ocupado = [evento('o1', JUEVES, '14:30', '15:00', 'Otro paciente')];
+      const dos = ofertaPara(DOS, ocupado);
+      expect(dos).not.toContain(idHueco(JUEVES, '14:00'));
+      expect(dos).toEqual([idHueco(JUEVES, '15:00'), idHueco(JUEVES, '15:30'), idHueco(JUEVES, '16:00')]);
+      const uno = ofertaPara(['Ana Pérez Gómez'], ocupado);
+      expect(uno).toContain(idHueco(JUEVES, '14:00'));
+    });
+
+    it('si la 2ª creación falla se borra la 1ª, no hay confirmación ni cierre y lo ajeno no se toca', () => {
+      const ajena = citaDe(MAMA, 'vieja', VIERNES, '11:00', '11:30', 'Pérez Gómez, Ana (CNS)');
+      const m = mundo({ eventos: [ajena] });
+      hastaPedirNombre(m);
+      m.calendario.fallas.crearNro = 2;
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: DOS });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+      expect(t.bitacora).toEqual(['crear:ev-1', 'borrar:ev-1']);
+      expect(m.calendario.eventos.map((e) => e['id'])).toEqual(['vieja']);
+      // Un «Crear evento» con error pudo haberse creado igual: recepción debe revisar el calendario en ese tramo.
+      expect(t.aRecepcion).toHaveLength(1);
+      expect(t.aRecepcion[0]!.cuerpo).toMatch(/REVISAR el calendario/);
+      expect(t.aRecepcion[0]!.cuerpo).toMatch(/14:00/);
+      expect(textos(t)).not.toMatch(/quedaron agendadas|quedó agendada/);
+      expect(t.cierres).toHaveLength(0);
+      expect(t.aRecepcion).toHaveLength(1);
+    });
+    it('NIEGA: la primera creación falla: no se crea nada, no hay nada que deshacer', () => {
+      const m = mundo({ eventos: [] });
+      hastaPedirNombre(m);
+      m.calendario.fallas.crear = true;
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: DOS });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+      expect(m.calendario.eventos).toHaveLength(0);
+      expect(t.bitacora).toEqual([]);
+      expect(t.cierres).toHaveLength(0);
+    });
+
+    it('un cruce en la 2ª cita tras crear: se borran AMBAS, no se confirma y se reoferta con 60 minutos', () => {
+      const m = mundo({ eventos: [evento('o2', JUEVES, '16:00', '16:30', 'Otro paciente')] });
+      hastaPedirNombre(m);
+      m.calendario.despuesDeCrear = (c) => {
+        if (c.some((e) => e['id'] === 'ev-2') && !c.some((e) => e['id'] === 'rival-1')) c.push(evento('rival-1', JUEVES, '14:30', '15:00', 'Otro paciente'));
+      };
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: DOS });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+      expect(t.bitacora).toEqual(['crear:ev-1', 'crear:ev-2', 'borrar:ev-1', 'borrar:ev-2']);
+      expect(m.calendario.eventos.map((e) => e['id']).sort()).toEqual(['o2', 'rival-1']);
+      expect(textos(t)).not.toMatch(/quedaron agendadas|quedó agendada/);
+      expect(t.cierres).toHaveLength(0);
+      expect(t.enviados).toHaveLength(1);
+      expect(t.enviados[0]!.cuerpo).toMatch(/se ocupó justo ahora/);
+      // La reoferta usa la duración de DOS citas: 15:30 (solo 30 libres antes de las 16:00) no se ofrece.
+      expect(idsDeOferta(t)).toEqual([idHueco(JUEVES, '15:00'), idHueco(JUEVES, '16:30'), idHueco(JUEVES, '17:00')]);
+      expect(t.resumen!['resumen']).toMatchObject({ accion: 'cruce_deshecho', eventoCreadoId: '' });
+    });
+    it('NIEGA: un evento creado no aparece al releer: se deshacen ambos y no se confirma', () => {
+      const m = mundo({ eventos: [] });
+      hastaPedirNombre(m);
+      m.calendario.despuesDeCrear = (c) => {
+        const i = c.findIndex((e) => e['id'] === 'ev-2');
+        if (i >= 0) c.splice(i, 1);
+      };
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: DOS });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+      // ev-2 ya no existe en el calendario (el doble no registra borrar de un id ausente): se intenta deshacer ambos y queda limpio.
+      expect(t.bitacora).toEqual(expect.arrayContaining(['crear:ev-1', 'crear:ev-2', 'borrar:ev-1']));
+      expect(m.calendario.eventos.map((e) => e['id'])).not.toContain('ev-1');
+      expect(textos(t)).not.toMatch(/quedaron agendadas|quedó agendada/);
+      expect(t.cierres).toHaveLength(0);
+    });
+    it('NIEGA: las dos citas no quedan contiguas en la relectura: se deshacen ambas y no se confirma', () => {
+      const m = mundo({ eventos: [] });
+      hastaPedirNombre(m);
+      m.calendario.despuesDeCrear = (c) => {
+        const e2 = c.find((e) => e['id'] === 'ev-2');
+        if (e2 && !e2['movida']) {
+          e2['movida'] = true;
+          e2['start'] = { dateTime: `${JUEVES}T17:00:00-04:00` };
+          e2['end'] = { dateTime: `${JUEVES}T17:30:00-04:00` };
+        }
+      };
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: DOS });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+      expect(t.bitacora).toEqual(expect.arrayContaining(['borrar:ev-1', 'borrar:ev-2']));
+      expect(m.calendario.eventos).toHaveLength(0);
+      expect(textos(t)).not.toMatch(/quedaron agendadas|quedó agendada/);
+      expect(t.cierres).toHaveLength(0);
+    });
+    it('NIEGA: si un nombre de hermano no se puede partir, no se crea una sola cita: se pide el nombre', () => {
+      const m = mundo({ eventos: [] });
+      hastaPedirNombre(m);
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: ['Ana Pérez Gómez', 'Luis'] });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis'));
+      expect(m.calendario.eventos).toHaveLength(0);
+      expect(t.bitacora).toEqual([]);
+      expect(t.cierres).toHaveLength(0);
+    });
+    it('si la relectura falla se deshacen ambas (falla cerrado) y no se confirma', () => {
+      const m = mundo({ eventos: [] });
+      hastaPedirNombre(m);
+      m.calendario.fallas.releer = true;
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: DOS });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+      expect(t.bitacora).toEqual(['crear:ev-1', 'crear:ev-2', 'borrar:ev-1', 'borrar:ev-2']);
+      expect(m.calendario.eventos).toHaveLength(0);
+      expect(textos(t)).not.toMatch(/quedaron agendadas|quedó agendada/);
+      expect(t.cierres).toHaveLength(0);
+    });
+    it('si «Deshacer cita» falla en uno, recepción recibe el aviso con TODOS los ids', () => {
+      const m = mundo({ eventos: [] });
+      hastaPedirNombre(m);
+      m.calendario.despuesDeCrear = (c) => {
+        if (c.some((e) => e['id'] === 'ev-2') && !c.some((e) => e['id'] === 'rival-1')) c.push(evento('rival-1', JUEVES, '14:30', '15:00', 'Otro paciente'));
+      };
+      m.calendario.fallas.deshacerIds = ['ev-2'];
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: DOS });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+      expect(m.calendario.eventos.map((e) => e['id']).sort()).toEqual(['ev-2', 'rival-1']);
+      expect(t.aRecepcion).toHaveLength(1);
+      expect(t.aRecepcion[0]!.cuerpo).toContain('ev-1, ev-2');
+      expect(t.resumen!['resumen']).toMatchObject({ eventoBorradoId: '' });
+    });
+    it('NIEGA: si «Deshacer cita» no falla, recepción no recibe ningún aviso', () => {
+      const m = mundo({ eventos: [] });
+      hastaPedirNombre(m);
+      m.calendario.despuesDeCrear = (c) => {
+        if (c.some((e) => e['id'] === 'ev-2') && !c.some((e) => e['id'] === 'rival-1')) c.push(evento('rival-1', JUEVES, '14:30', '15:00', 'Otro paciente'));
+      };
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: DOS });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+      expect(t.aRecepcion).toHaveLength(0);
+    });
+
+    describe('cada hermano es su propia cita', () => {
+      const MARTES = '2026-10-06'; // «mover» ofrece desde mañana (lunes 05/10)
+      const dosCitas = (): J[] => [
+        citaDe(MAMA, 'h1', MARTES, '11:00', '11:30', 'Pérez Gómez, Ana (CNS)'),
+        citaDe(MAMA, 'h2', MARTES, '11:30', '12:00', 'Pérez Gómez, Luis (CNS)'),
+      ];
+      it('listar muestra las dos citas y cancelar una deja la otra', () => {
+        const m = mundo({ eventos: dosCitas() });
+        m.gemini.extraer = extraccion({ intencion: 'cancelar' });
+        const lst = m.turno(texto(MAMA, 'quiero cancelar una cita'));
+        expect(botonesDe(lst.enviados[0]!).map((b) => b.id)).toEqual(['c|h1', 'c|h2']);
+        const t = m.turno(boton(MAMA, 'c|h1'));
+        expect(t.bitacora).toEqual(['borrar:h1']);
+        expect(m.calendario.eventos.map((e) => e['id'])).toEqual(['h2']);
+      });
+      it('mover una pide 30 minutos (no 60) y no toca la otra', () => {
+        const eventos = [...dosCitas(), evento('o3', MARTES, '12:30', '13:00', 'Otro paciente')];
+        const m = mundo({ eventos });
+        m.gemini.extraer = extraccion({ intencion: 'mover' });
+        const lst = m.turno(texto(MAMA, 'quiero mover mi cita'));
+        expect(botonesDe(lst.enviados[0]!).map((b) => b.id)).toEqual(['m|h1', 'm|h2']);
+        const of = m.turno(boton(MAMA, 'm|h2'));
+        // 12:00-12:30 tiene SOLO 30 minutos libres: se ofrece porque mover es de un hermano.
+        expect(botonesDe(of.enviados[0]!).map((b) => b.id)).toContain(idHueco(MARTES, '12:00'));
+        const t = m.turno(boton(MAMA, idHueco(MARTES, '12:00')));
+        expect(t.bitacora).toEqual(['crear:ev-1', 'borrar:h2']);
+        expect(m.calendario.eventos.map((e) => e['id']).sort()).toEqual(['ev-1', 'h1', 'o3']);
+        expect(m.calendario.eventos.find((e) => e['id'] === 'h1')).toBeDefined();
+      });
+    });
+
+    it('un hueco tocado para uno (30 libres) y luego el 2º nombre: se reofrece con el aviso «sin dos seguidos» y no se crea nada', () => {
+      const m = mundo({ eventos: [evento('o1', JUEVES, '14:30', '15:00', 'Otro paciente')] });
+      hastaPedirNombre(m); // 14:00 (30 libres) tocado con un solo paciente conocido
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: DOS });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+      expect(m.calendario.eventos.map((e) => e['id'])).toEqual(['o1']);
+      expect(t.bitacora).toEqual([]);
+      expect(t.cierres).toHaveLength(0);
+      expect(t.enviados[0]!.cuerpo).toMatch(/dos horarios seguidos de 30 minutos/);
+      expect(idsDeOferta(t)).not.toContain(idHueco(JUEVES, '14:00'));
     });
     it('NIEGA: si dice que son hermanos pero da un solo nombre, se pide el segundo antes de crear', () => {
       const m = mundo({ eventos: [] });
