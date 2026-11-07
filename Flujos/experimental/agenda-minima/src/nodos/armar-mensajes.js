@@ -381,8 +381,25 @@ switch (plan) {
 
   case 'consulta_clinica':
     // Pregunta de salud: no se orienta. Lo único que se ofrece es pasar con recepción, que es aviso + botón (política «solo se ofrece lo que se cumple»).
-    transferir('el paciente hizo una consulta de salud que el asistente no responde',
-      'Esa consulta la debe ver el doctor y yo no puedo orientarte sobre salud. Para hacérsela, escríbele a recepción tocando el botón.');
+    // Un aviso de salud a recepción por teléfono cada 24 h (decisión de Andres, 06/11/2026): los siguientes mensajes con síntoma solo reciben el botón.
+    // El estado por teléfono vence a los 30 min, así que la hora del último aviso vive aparte, en `avisosSalud` (se poda a las 24 h).
+    {
+      const cuerpoClinico = 'Esa consulta la debe ver el doctor y yo no puedo orientarte sobre salud. Para hacérsela, escríbele a recepción tocando el botón.';
+      let sdAviso = null;
+      try { sdAviso = $getWorkflowStaticData('global'); } catch (err) { sdAviso = null; }
+      const claveAviso = String(t.from || '');
+      const prevAviso = sdAviso && sdAviso.avisosSalud && typeof sdAviso.avisosSalud === 'object' ? Number(sdAviso.avisosSalud[claveAviso] || 0) : 0;
+      if (prevAviso > 0 && ahora - prevAviso < 24 * 3600 * 1000) {
+        mensajeConBoton(rec, cuerpoClinico, 'Escribir a recepción', 'Hola, escribo desde el asistente de ' + nombreNegocio + '.', 'no_contactar');
+      } else {
+        transferir('el paciente hizo una consulta de salud que el asistente no responde', cuerpoClinico);
+        if (sdAviso && cfg.modoPrueba !== true && cnClaveValida(claveAviso) && rec && rec !== desdeDigitos) {
+          if (!sdAviso.avisosSalud || typeof sdAviso.avisosSalud !== 'object') sdAviso.avisosSalud = {};
+          for (const k of Object.keys(sdAviso.avisosSalud)) { if (!(ahora - Number(sdAviso.avisosSalud[k] || 0) < 24 * 3600 * 1000)) delete sdAviso.avisosSalud[k]; }
+          sdAviso.avisosSalud[claveAviso] = ahora;
+        }
+      }
+    }
     break;
 
   case 'audio_ilegible': {

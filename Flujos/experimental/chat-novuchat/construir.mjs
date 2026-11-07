@@ -28,6 +28,8 @@ import { closeSync, constants, openSync, readdirSync, readFileSync, writeFileSyn
 import { runInNewContext } from 'node:vm';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { contarDeclaraciones, hallazgosDelCodigo, TEXTOS as TEXTOS_GUARDA } from './guarda-ast.mjs';
+const TEXTO_NO_ANALIZABLE = TEXTOS_GUARDA.noAnalizable;
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
 // LA CADENA DE ENVÍO ES COMÚN (no se copia): se injerta desde `comun-sin-agente/src/envio.mjs` (enviar, respaldo en texto, reporte saliente).
@@ -670,10 +672,28 @@ export function guardias(entrada, flujo, datos = {}) {
         const maximo = new Map();
         for (const modo of ['auto', 'regex', 'division']) for (const [nombre, veces] of contar(sinComentarios(resto, modo))) maximo.set(nombre, Math.max(maximo.get(nombre) || 0, veces));
         for (const [nombre, veces] of maximo) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
+        const configPorTexto = cuenta.has('SS_CONFIG');   // lo que ve la lectura por texto ANTES de la unión: el hallazgo de main se emite siempre que main lo emitiría
+        // LA GUARDIA ES LA UNIÓN: a la lectura por texto (arriba) se suma la del árbol (acorn) y se toma el MÁXIMO por nombre. El árbol se lee sobre el código COMPLETO (nunca con el módulo quitado) y sobre las piezas por separado (el módulo, el registro y lo de fuera de ellos). Así el parser solo suma: no puede dejar pasar lo que la lectura por texto cuenta.
+        const porArbol = new Map();
+        const maxArbol = (m) => { for (const [nombre, veces] of m || []) porArbol.set(nombre, Math.max(porArbol.get(nombre) || 0, veces)); };
+        maxArbol(contarDeclaraciones(js));
+        {
+          const piezas = new Map(); let fuera = js;
+          for (const fuente of [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean)) {
+            const f = fuente.trimEnd();
+            if (!fuera.includes(f)) continue;
+            fuera = fuera.split(f).join('');
+            for (const [nombre, veces] of contarDeclaraciones(f) || []) piezas.set(nombre, (piezas.get(nombre) || 0) + veces);
+          }
+          for (const [nombre, veces] of contarDeclaraciones(fuera) || []) piezas.set(nombre, (piezas.get(nombre) || 0) + veces);
+          maxArbol(piezas);
+        }
+        for (const [nombre, veces] of porArbol) if (veces > (cuenta.get(nombre) || 0)) cuenta.set(nombre, veces);
         for (const [nombre, veces] of cuenta) if (veces !== 1) h.push(`el nodo «${n.name}» declara ${nombre} ${veces} veces: cada ayudante de sesión y SS_CONFIG se declaran UNA sola vez por nodo (la última declaración gana y anularía el módulo)`);
-        if (!cuenta.has('SS_CONFIG')) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
+        if (!configPorTexto || !cuenta.has('SS_CONFIG')) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
       }
     }
+    // LA GUARDIA ES LA UNIÓN de dos lecturas: las reglas por texto (con el tokenizador, abajo) Y el análisis del árbol (acorn). El parser es una red ADITIVA: solo suma hallazgos, nunca quita los de las reglas por texto.
     // Nadie reasigna ni muta los parámetros de sesión: ni `ss*` ni `SS_CONFIG` (con `=`, por índice o con `Object.assign/defineProperty`), sobre el código de cada nodo SIN el módulo común ni el registro (que los declaran) y sin comentarios.
     {
       const propios = [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean).map((t) => t.trimEnd());
@@ -704,6 +724,9 @@ export function guardias(entrada, flujo, datos = {}) {
           for (let vuelta = 0; vuelta < 8; vuelta++) resto = resto.replace(new RegExp('\\(\\s*((?:ss[A-Z]\\w*|SS_CONFIG)' + MIEMBROS + ')\\s*\\)', 'g'), ' $1 ');
           for (const [re, que, ambito] of REGLAS) if (!(k === 3 && ambito === 'soloCodigo') && re.test(resto)) hallazgos.add(`el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
         }
+        // La unión con el ÁRBOL (acorn, `guarda-ast.mjs`): sobre el código completo del nodo y sobre el que queda sin el módulo común ni el registro. Falla cerrada: lo que no se puede analizar es un hallazgo.
+        const completo = String(parametros(n).jsCode || '');
+        for (const que of [...hallazgosDelCodigo(completo), ...hallazgosDelCodigo(js)]) hallazgos.add(que === TEXTO_NO_ANALIZABLE ? `el nodo «${n.name}» ${que}: se rechaza por precaución (la guardia de los parámetros de sesión no puede leerlo)` : `el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
         for (const x of hallazgos) h.push(x);
       }
     }

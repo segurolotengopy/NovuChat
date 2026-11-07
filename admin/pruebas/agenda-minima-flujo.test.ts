@@ -2993,6 +2993,34 @@ describe('Agenda mínima: pregunta de salud y medios con pie de foto', () => {
     expect(t.aRecepcion.length).toBe(1);
     expect(textos(t)).not.toMatch(/paracetamol|dosis|ibuprofeno|\bmg\b|dale\b|bebe agua|suero/i);
   });
+  it('NIEGA: un segundo mensaje con síntoma dentro de 24 h NO avisa otra vez a recepción: solo el botón (decisión de Andres, 06/11)', () => {
+    const m = mundo({ eventos: [] });
+    expect(m.turno(texto(MAMA, 'Si tiene fiebre que hago?')).aRecepcion.length).toBe(1);
+    const t2 = m.turno(texto(MAMA, 'y tiene tos'), { avanzarMin: 120 });
+    expect(t2.aRecepcion).toHaveLength(0);
+    expect(t2.aPaciente(MAMA)).toHaveLength(1);
+    expect(JSON.stringify(t2.aPaciente(MAMA)[0])).toContain('Escribir a recepción');
+    const t3 = m.turno(texto(MAMA, 'le duele la garganta'), { avanzarMin: 21 * 60 });
+    expect(t3.aRecepcion).toHaveLength(0);
+    // Pasadas 24 h desde el último aviso, vuelve a avisar; y otro teléfono avisa por su cuenta.
+    expect(m.turno(texto(MAMA, 'tiene fiebre otra vez'), { avanzarMin: 26 * 60 }).aRecepcion.length).toBe(1);
+    expect(m.turno(texto(OTRA, 'tiene fiebre')).aRecepcion.length).toBe(1);
+  });
+  it('la hora del aviso se anota por teléfono y los avisos vencidos (más de 24 h) se podan', () => {
+    const m = mundo({ eventos: [] });
+    m.turno(texto(MAMA, 'Si tiene fiebre que hago?'));
+    const av = (m.sd['avisosSalud'] ?? {}) as Record<string, number>;
+    expect(Object.keys(av)).toEqual([MAMA]);
+    m.turno(texto(OTRA, 'tiene fiebre'), { avanzarMin: 25 * 60 });
+    expect(Object.keys((m.sd['avisosSalud'] ?? {}) as J)).toEqual([OTRA]);
+  });
+  it('NIEGA: «oído» y «golpe» ya no son palabras de salud: «se enfermó de golpe ayer» y «le molesta el oído» ya no desvían a salud', () => {
+    const m = mundo({ eventos: [] });
+    for (const frase of ['he oído que atienden sábados', 'se enfermó de golpe ayer', 'le molesta el oído']) {
+      const t = m.turno(texto(MAMA, frase));
+      expect(textos(t), frase).not.toMatch(/no puedo orientarte sobre salud/);
+    }
+  });
   it('NIEGA: «ficha», «turno» o «cancelo» con un síntoma tampoco caen en la consulta clínica (revisión de #629)', () => {
     for (const frase of ['quiero una ficha, tiene fiebre', 'necesito un turno, tiene tos', 'no vamos a ir, tiene fiebre, cancelo', 'quiero reprogramar, tiene fiebre']) {
       const t = mundo({ eventos: [] }).turno(texto(MAMA, frase));
