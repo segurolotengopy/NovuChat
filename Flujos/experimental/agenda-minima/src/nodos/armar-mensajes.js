@@ -393,7 +393,7 @@ switch (plan) {
         mensajeConBoton(rec, cuerpoClinico, 'Escribir a recepción', 'Hola, escribo desde el asistente de ' + nombreNegocio + '.', 'no_contactar');
       } else {
         transferir('el paciente hizo una consulta de salud que el asistente no responde', cuerpoClinico);
-        if (sdAviso && cnClaveValida(claveAviso) && rec && rec !== desdeDigitos) {
+        if (sdAviso && cfg.modoPrueba !== true && cnClaveValida(claveAviso) && rec && rec !== desdeDigitos) {
           if (!sdAviso.avisosSalud || typeof sdAviso.avisosSalud !== 'object') sdAviso.avisosSalud = {};
           for (const k of Object.keys(sdAviso.avisosSalud)) { if (!(ahora - Number(sdAviso.avisosSalud[k] || 0) < 24 * 3600 * 1000)) delete sdAviso.avisosSalud[k]; }
           sdAviso.avisosSalud[claveAviso] = ahora;

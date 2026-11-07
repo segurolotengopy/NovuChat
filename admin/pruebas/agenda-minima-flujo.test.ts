@@ -3006,9 +3006,17 @@ describe('Agenda mínima: pregunta de salud y medios con pie de foto', () => {
     expect(m.turno(texto(MAMA, 'tiene fiebre otra vez'), { avanzarMin: 26 * 60 }).aRecepcion.length).toBe(1);
     expect(m.turno(texto(OTRA, 'tiene fiebre')).aRecepcion.length).toBe(1);
   });
-  it('NIEGA: «oído» y «golpe» ya no son palabras de salud: «me duele el oído, quiero cita» no desvía y «de golpe» tampoco', () => {
+  it('la hora del aviso se anota por teléfono y los avisos vencidos (más de 24 h) se podan', () => {
     const m = mundo({ eventos: [] });
-    for (const frase of ['he oído que atienden sábados', 'se enfermó de golpe, quiero cita', 'me duele el oído, quiero cita']) {
+    m.turno(texto(MAMA, 'Si tiene fiebre que hago?'));
+    const av = (m.sd['avisosSalud'] ?? {}) as Record<string, number>;
+    expect(Object.keys(av)).toEqual([MAMA]);
+    m.turno(texto(OTRA, 'tiene fiebre'), { avanzarMin: 25 * 60 });
+    expect(Object.keys((m.sd['avisosSalud'] ?? {}) as J)).toEqual([OTRA]);
+  });
+  it('NIEGA: «oído» y «golpe» ya no son palabras de salud: «se enfermó de golpe ayer» y «le molesta el oído» ya no desvían a salud', () => {
+    const m = mundo({ eventos: [] });
+    for (const frase of ['he oído que atienden sábados', 'se enfermó de golpe ayer', 'le molesta el oído']) {
       const t = m.turno(texto(MAMA, frase));
       expect(textos(t), frase).not.toMatch(/no puedo orientarte sobre salud/);
     }
