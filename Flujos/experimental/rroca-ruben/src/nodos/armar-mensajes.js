@@ -81,10 +81,10 @@ const presentacion = !fichaAntes.saludado;
 const textoPresentacion = rrPresentacion(negocio);
 const conPresentacion = (cuerpo) => (presentacion ? textoPresentacion + '\n\n' + cuerpo : cuerpo);
 // La invitación a pagar el QR pendiente: se agrega al final de toda respuesta que se da con un QR abierto (el producto y el monto son del código, nunca del modelo).
-// Una sola vez por QR: `ficha.qrInvitado` guarda el contador de pedidos MÁS UNO del QR al que ya se invitó (así un QR abierto por el servidor, con 0 pedidos del flujo, también se invita una vez) (repetirla en cada mensaje es repetirse como loro; el QR sigue abierto y el cliente lo ve más arriba).
+// Una sola invitación por QR: `ficha.qrInvitadoMs` guarda cuándo se hizo; dentro de `RR_VENTANA_INVITACION_MS` no se repite (repetirla en cada mensaje es repetirse como loro; el QR sigue abierto y el cliente lo ve más arriba). Un QR nuevo reinicia la marca.
 let invitoAhora = false;
 const invitar = (cuerpo) => {
-  if (!qrAbierto || fichaAntes.qrInvitado === fichaAntes.pedidos + 1) return cuerpo;
+  if (!qrAbierto || (fichaAntes.qrInvitadoMs > 0 && ahora - fichaAntes.qrInvitadoMs < RR_VENTANA_INVITACION_MS)) return cuerpo;
   invitoAhora = true;
   return cuerpo + '\n\n' + rrInvitacionQr(plan.qrProducto, plan.qrMonto, nom);
 };
@@ -328,7 +328,7 @@ if (claveOk) {
   if (usadoNuevo && ficha.usados.indexOf(usadoNuevo) < 0) ficha.usados = ficha.usados.concat([usadoNuevo]).slice(-10);
   if (respuestaDelModelo) ficha.modeloN += 1;
   // Lo anterior de la conversación: «Resumen del turno» lo restaura si Meta no aceptó el envío (la conversación solo cuenta lo que se entregó).
-  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma, c: ficha.charlaN, po: ficha.pidioOpciones, ov: ficha.opcionesVistas, u: ficha.upgrade, preg: { pendientes: ficha.pendientes.map((x) => ({ p: x.p, ms: x.ms, i: x.i, c: x.c, b: x.b })) } };
+  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma, c: ficha.charlaN, po: ficha.pidioOpciones, ov: ficha.opcionesVistas, u: ficha.upgrade, qi: ficha.qrInvitadoMs, preg: { pendientes: ficha.pendientes.map((x) => ({ p: x.p, ms: x.ms, i: x.i, c: x.c, b: x.b })) } };
   if (m && puerta.ruta === 'sigue') {
     // LA CONVERSACIÓN ANTES DE LAS OPCIONES: cuenta el mensaje que salió si es conversación (`vdCuentaComoCharla`: el saludo solo si lleva presentación; el ángulo cuenta como respuesta del modelo; el precio de un producto antes de la charla,
     // si es el primer mensaje, lleva la presentación y cuenta como saludo). NO cuentan los textos fijos que no son conversación (modelo caído, repetido, información, derivaciones).
@@ -339,7 +339,7 @@ if (claveOk) {
     if (['opciones', 'opciones_fijo', 'catalogo', 'menu', 'audios'].indexOf(tipoDePlan) >= 0 || (tipoDePlan === 'precio' && plan.temprano !== true)) { ficha.opcionesVistas = true; ficha.pidioOpciones = false; }
     // Lo último que se le dijo (hash del texto y tipo de plan): el recordatorio del QR no se repite dos veces seguidas y ningún texto sale idéntico dos veces seguidas. Solo cuenta el turno que contesta de verdad.
     ctRecordarEnviado(ficha, m.texto, tipoDePlan, m.tipoReporte === 'image');
-    if (invitoAhora) ficha.qrInvitado = ficha.pedidos + 1;
+    if (invitoAhora && tipoDePlan !== 'repetido') ficha.qrInvitadoMs = ahora;
     // Las preguntas pendientes (para entender un «Sí» o un «No» suelto): salen del texto que de verdad se envía, con la intención `ver_opciones` si lo que se preguntó es «¿Te muestro las opciones?» (puente o precio antes de la charla). Un botón pulsado contesta su pregunta.
     if (t.tipo === 'interactive') ctConsumirPorBoton(ficha, String(t.seleccionId || ''));
     const preguntaDelPuente = tipoDePlan === 'puente' || tipoDePlan === 'puente_fijo' || (tipoDePlan === 'precio' && plan.temprano === true && !qrAbierto);
@@ -358,7 +358,7 @@ if (claveOk) {
   }
   // MARCA PROVISIONAL del QR: se fija aquí (el id del pedido y la guarda de 15 minutos necesitan existir ya) pero `Resumen del turno` la DESCARTA con `qrPrevio` si Meta no devolvió el `wamid` del QR
   // (sale el respaldo en texto): un QR que no salió no deja al cliente 15 minutos con «Ya tienes un QR abierto».
-  if (pedidoNuevo) { qrPrevio = { pedidos: ficha.pedidos, producto: ficha.producto, qrHastaMs: ficha.qrHastaMs, upgrade: ficha.upgrade }; ficha.pedidos += 1; ficha.producto = pedidoNuevo.producto; ficha.qrHastaMs = ahora + RR_MINUTOS_QR * 60 * 1000; if (pedidoNuevo.producto === 'upgrade') ficha.upgrade = 2; }
+  if (pedidoNuevo) { qrPrevio = { pedidos: ficha.pedidos, producto: ficha.producto, qrHastaMs: ficha.qrHastaMs, upgrade: ficha.upgrade }; ficha.pedidos += 1; ficha.qrInvitadoMs = 0; ficha.producto = pedidoNuevo.producto; ficha.qrHastaMs = ahora + RR_MINUTOS_QR * 60 * 1000; if (pedidoNuevo.producto === 'upgrade') ficha.upgrade = 2; }
   // El comprobante resuelto (todo menos «reintentar» e «ilegible», que siguen con el cobro abierto) cierra el cobro o lo pasa a Rubén: la guarda de 15 minutos del QR ya no tiene sentido.
   // Se guarda el valor previo para restaurarlo si la respuesta no sale (`Resumen del turno`).
   const huboComprobante = tipoDePlan === 'comprobante';

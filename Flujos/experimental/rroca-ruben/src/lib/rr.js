@@ -110,7 +110,7 @@ function rrSeguro(texto) {
 function rrFichaBase() {
   return {
     v: 2, ultimoMs: 0, ultimosIds: [], turnos: 0, saludado: false, usados: [], pedidos: 0, qrHastaMs: 0, comprobanteMs: 0, avisosConsulta: {}, producto: '', hist: [], modeloN: 0, riesgo: false, riesgoMs: 0, fueraDePaisMs: 0,
-    charlaN: 0, pidioOpciones: false, opcionesVistas: false, pendientes: [], ultimoHash: '', ultimaFirma: '', upgrade: 0, qrInvitado: 0,
+    charlaN: 0, pidioOpciones: false, opcionesVistas: false, pendientes: [], ultimoHash: '', ultimaFirma: '', upgrade: 0, qrInvitadoMs: 0,
   };
 }
 // La ficha vigente de un teléfono: si pasó el olvido, es una ficha nueva.
@@ -144,8 +144,8 @@ function rrFichaVigente(e, ahoraMs) {
     riesgoMs: e.riesgo === true && !((nums(e.riesgoMs) || ultimo) > 0 && ahoraMs - Math.min(nums(e.riesgoMs) || ultimo, ahoraMs) > RR_OLVIDO_MS) ? Math.min(nums(e.riesgoMs) || ultimo, ahoraMs) : 0,
     upgrade: e.upgrade === 1 || e.upgrade === 2 ? e.upgrade : 0,
     fueraDePaisMs: nums(e.fueraDePaisMs),
-    // La invitación a pagar el QR abierto se agrega UNA vez por QR (el valor es el contador de pedidos MÁS UNO del QR al que ya se invitó): repetirla en cada mensaje es repetirse como loro.
-    qrInvitado: Number.isFinite(e.qrInvitado) && e.qrInvitado > 0 ? Math.floor(e.qrInvitado) : 0,
+    // La invitación a pagar el QR abierto se agrega UNA vez por QR (cuándo se hizo: `RR_VENTANA_INVITACION_MS`; un QR nuevo la reinicia): repetirla en cada mensaje es repetirse como loro.
+    qrInvitadoMs: nums(e.qrInvitadoMs),
     charlaN: charla.charlaN,
     pidioOpciones: charla.pidioOpciones,
     opcionesVistas: charla.opcionesVistas,
@@ -678,16 +678,26 @@ function rrPideImagenes(n) {
   return objeto && pide;
 }
 // «¿Qué incluye el pack?», «¿qué contiene el libro?», «¿qué trae?»: el CONTENIDO de un producto lo dice el CÓDIGO (el modelo no puede nombrar el pack: el filtro de `oferta_fuera_del_codigo` tira su texto y la persona se quedaba sin respuesta).
-// Devuelve la clave del producto nombrado; sin producto nombrado, `fallback` (el del QR abierto) y, si no hay, '' (lo contesta el modelo). Corta: a lo más 16 palabras.
+// Devuelve la clave del producto nombrado; sin producto nombrado, `fallback` (el del QR abierto) y, si no hay, '' (lo contesta el modelo). Corta: a lo más 10 palabras y SIN texto sobrante.
 function rrPideContenido(n, fallback) {
   const palabras = n === '' ? 0 : n.split(' ').length;
-  if (palabras > 16) return '';
+  if (palabras > 10) return '';
   const pregunta = /\b(que|cual|cuales) (incluye|incluyen|contiene|contienen|trae|traen|viene|vienen|lleva|llevan)\b|\b(que hay|de que consta|en que consiste)\b[^.?!]{0,20}\b(pack|paquete|libro|audiolibro|meditaciones)\b|\b(incluye|contiene|trae|incluyen|contienen) (el |la |los |las )?(pack|paquete|libro|audiolibro|meditaciones)\b/.test(n);
   if (!pregunta) return '';
-  if (/\b(pack|paquete|completo)\b/.test(n)) return 'pack';
+  // SOLO LA PREGUNTA SOLA (revisión de seguridad del #847): si sobra algo más que muletillas («hola», «por favor», «no me explicaste nada»), la frase puede traer otra cosa (una crisis que las raíces no reconocen: «¿qué trae el pack para dejar de existir?»)
+  // y va al modelo, que puede marcar RIESGO. Se quitan la pregunta, el producto, los artículos y las muletillas; si queda una palabra, no es una pregunta de contenido.
+  const resto = n
+    .replace(/\b(que|cual|cuales|de que|en que) (incluye|incluyen|contiene|contienen|trae|traen|viene|vienen|lleva|llevan|hay|consta|consiste)\b/g, ' ')
+    .replace(/\b(incluye|incluyen|contiene|contienen|trae|traen)\b/g, ' ')
+    .replace(/\b(el|la|los|las|del|de|en|con|dentro|pack|paquete|completo|libro|audiolibro|audio|meditaciones|meditacion)\b/g, ' ')
+    .replace(/\b(hola|buenas|buenos|dias|tardes|noches|buen|dia|por favor|porfa|favor|me puedes decir|me podrias decir|me dices|me puedes contar|dime|cuentame|y|entonces|pero|es|que|nada|no me (explicaste|dijiste|has explicado|has dicho)|aun|todavia|ya|mas|primero|antes)\b/g, ' ')
+    .replace(/[^a-z]+/g, ' ').trim();
+  if (resto !== '') return '';
+  if (/\b(pack|paquete)\b/.test(n)) return 'pack';
   if (/\baudiolibro|\baudio libro\b/.test(n)) return 'audiolibro';
   if (/\bmeditaciones?\b/.test(n)) return 'meditaciones';
   if (/\blibro\b/.test(n)) return 'libro';
+  if (/\bcompleto\b/.test(n)) return 'pack';
   return typeof fallback === 'string' && ['pack', 'libro', 'audiolibro', 'meditaciones'].indexOf(fallback) >= 0 ? fallback : '';
 }
 // El contenido de cada producto, de la planilla y la guía de Rubén (sin precios, sin bono: no se vende ni se regala). El nombre del Pack sale del catálogo de la Consola.
@@ -845,6 +855,8 @@ function rrTextoOpciones(cat, usados, nom) {
 const RR_PROMETE_DEBILES = ['pack', 'bono', 'bonos', 'audios', 'audiolibro', 'meditaciones'];
 
 // Las alternativas PROPIAS de Rubén cuando el texto que sigue sería IDÉNTICO al último enviado: SIN el botón de Rubén ni una invitación a usarlo (el botón va solo cuando se deriva, con aviso). Se pasan a `ctAlternaDeRepetido` como `alternas`.
+// Cuánto dura «ya se le invitó a pagar este QR»: el QR vive 15 minutos; pasado este tiempo, un QR nuevo (de este flujo o abierto por el servidor) vuelve a invitar.
+const RR_VENTANA_INVITACION_MS = 30 * 60 * 1000;
 const RR_ALTERNAS = {
   contenido: [
     'Eso ya te lo conté en mi mensaje anterior. Si te quedó alguna duda, cuéntame cuál con otras palabras.',

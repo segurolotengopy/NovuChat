@@ -49,19 +49,40 @@ describe('el contenido de un producto lo dice el código', () => {
     expect(t.mensajes[0]!.cuerpo).toMatch(/208 páginas/);
     expect(t.mensajes[0]!.payload['interactive']?.type).not.toBe('cta_url');
   });
-  it('NEGADA: una pregunta que no es de contenido no se toma por tal («qué hay de nuevo», «¿cuánto incluye?» sin producto)', () => {
-    for (const frase of ['¿qué hay de nuevo?', 'hola, ¿qué tal?', 'no me explicaste nada']) {
+  it('NEGADA (seguridad): solo la pregunta SOLA recibe el contenido; una frase con algo más (aunque las raíces de crisis no la vean) va al modelo', () => {
+    for (const frase of ['ya no quiero seguir, ¿qué trae el pack para dejar de existir?', 'qué trae el pack para no despertar más', 'que incluye el libro para desaparecer', '¿qué incluye el pack? estoy harta de todo, quiero acabar con esto']) {
+      const w = conQr({ modeloDice: 'Claro, cuéntame un poco más.' });
+      const t = hablar(w, ANA, mTexto(frase));
+      expect(t.mensajes[0]!.cuerpo, frase).not.toMatch(/208 páginas|14 capítulos/);
+    }
+  });
+  it('NEGADA: con precio o compra en la misma frase ceden a su ruta («¿cuánto cuesta el pack y qué incluye?», «quiero el pack, ¿qué trae?»)', () => {
+    const w = nuevo({ modeloDice: 'cae' });
+    hablar(w, ANA, mTexto('hola'));
+    hablar(w, ANA, mTexto('estoy cansada de dormir mal'));
+    const a = hablar(w, ANA, mTexto('¿cuánto cuesta el pack y qué incluye?'));
+    expect(a.mensajes[0]!.cuerpo).toMatch(/70 Bs/);
+    const b = hablar(w, ANA, mTexto('quiero el pack, ¿qué trae?'));
+    expect(b.mensajes[0]!.tipo).toBe('image');
+  });
+  it('«¿qué incluye el libro completo?» responde el libro, no el pack', () => {
+    const w = conQr({ modeloDice: 'cae' });
+    const t = hablar(w, ANA, mTexto('¿qué incluye el libro completo?'));
+    expect(t.mensajes[0]!.cuerpo).toMatch(/208 páginas/);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/audiolibro con los 14 capítulos y las 3 meditaciones/);
+  });
+  it('NEGADA: una pregunta que no es de contenido no se toma por tal («qué hay de nuevo», «el cansancio que trae no dormir»)', () => {
+    for (const frase of ['¿qué hay de nuevo?', 'hola, ¿qué tal?', 'no me explicaste nada', 'el cansancio que trae no dormir me tiene mal', 'la semana que viene me animo']) {
       const w = conQr({ modeloDice: 'Claro, cuéntame un poco más.' });
       const t = hablar(w, ANA, mTexto(frase));
       expect(t.mensajes[0]!.cuerpo, frase).not.toMatch(/208 páginas/);
     }
   });
   it('si lo repetido era un texto de RESPALDO (el modelo cayó), la alternativa no dice «ya te lo conté»', () => {
-    const w = nuevo({ modeloDice: 'cae' });
-    hablar(w, ANA, mTexto('hola'));
-    hablar(w, ANA, mTexto('estoy cansada de dormir mal'));
+    // Con el QR abierto y el modelo caído, la misma pregunta repetida termina en «repetido»: la alternativa de respaldo no afirma nada que no se dijo.
+    const w = conQr({ modeloDice: 'cae' });
     const dichos: string[] = [];
-    for (let i = 0; i < 4; i += 1) dichos.push(hablar(w, ANA, mTexto('cuéntame del método')).mensajes[0]?.cuerpo ?? '');
+    for (let i = 0; i < 8; i += 1) dichos.push(hablar(w, ANA, mTexto('cuéntame del método')).mensajes[0]?.cuerpo ?? '');
     for (const d of dichos) expect(d).not.toMatch(/ya te lo cont|ya est[aá] m[aá]s arriba|prefiero no repetirte/i);
   });
   it('el botón del Pack sigue abriendo el QR (el contenido no lo reemplaza)', () => {
