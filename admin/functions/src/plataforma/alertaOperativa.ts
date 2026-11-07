@@ -29,25 +29,25 @@
  *
  * LOS SECRETOS: `ALERTA_OPERATIVA_HMAC` y `RESEND_API_KEY_ALERTAS` (Secret Manager). Nunca se imprimen:
  * los registros llevan códigos fijos y nada del cuerpo, de la clave ni de la respuesta de Resend.
- * El remitente (dominio de avisos), el destinatario y los hosts de enlace permitidos son PARÁMETROS
- * (`ALERTA_DOMINIO_AVISOS`, `ALERTA_DESTINATARIO`, `ALERTA_ENLACE_HOSTS`): el repo es público y no
- * escribe el dominio ni el correo reales. Sin ellos, la Function guarda el evento y NO envía.
+ * El remitente (dominio de avisos), el destinatario y los hosts de enlace permitidos son CONFIGURACIÓN
+ * en `plataforma/alertas` (`dominioAvisos`, `destinatario`, `enlaceHosts`), que escribe el servidor
+ * con un script de operador: el repo es público y no escribe el dominio ni el correo reales. NO son
+ * parámetros de Functions (`defineString`): el `.env` de producción es de exactamente dos nombres
+ * (`pruebas/parametros-del-despliegue.test.ts`). Sin esa configuración, la Function guarda el evento
+ * y NO envía.
  *
  * 0 mensajes de WhatsApp por conversación: esto no toca el canal.
  */
 import { createHmac } from 'node:crypto';
 import { onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { defineSecret, defineString } from 'firebase-functions/params';
+import { defineSecret } from 'firebase-functions/params';
 import { getFirestore } from 'firebase-admin/firestore';
 import { REGION } from '../core/region.js';
 import { firmaValida } from '../core/seguridad/firma.js';
 
 export const ALERTA_OPERATIVA_HMAC = defineSecret('ALERTA_OPERATIVA_HMAC');
 export const RESEND_API_KEY_ALERTAS = defineSecret('RESEND_API_KEY_ALERTAS');
-const DOMINIO_AVISOS = defineString('ALERTA_DOMINIO_AVISOS', { default: '' });
-const DESTINATARIO = defineString('ALERTA_DESTINATARIO', { default: '' });
-const HOSTS_ENLACE = defineString('ALERTA_ENLACE_HOSTS', { default: '' });
 
 // ---------------------------------------------------------------------------
 // CONSTANTES DEL CONTRATO
@@ -358,24 +358,30 @@ export function enviarPorResend(clave: string, remitente: string, destinatario: 
   };
 }
 
-function enviadorConfigurado(): Enviar | null {
-  const dominio = DOMINIO_AVISOS.value().trim();
-  const para = DESTINATARIO.value().trim();
-  if (!dominio || !para) return null;
-  return enviarPorResend(RESEND_API_KEY_ALERTAS.value(), `NovuChat Alertas <alertas-novuchat@${dominio}>`, para);
+interface ConfigAlertas { dominio: string; destinatario: string; hosts: string[] }
+
+async function configuracion(): Promise<ConfigAlertas> {
+  const d = await getFirestore().doc('plataforma/alertas').get();
+  const t = (k: string): string => (typeof d.get(k) === 'string' ? String(d.get(k)).trim() : '');
+  return { dominio: t('dominioAvisos'), destinatario: t('destinatario'), hosts: t('enlaceHosts').split(',').map((h) => h.trim()).filter(Boolean) };
+}
+
+function enviadorConfigurado(c: ConfigAlertas): Enviar | null {
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(c.dominio) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.destinatario)) return null;
+  return enviarPorResend(RESEND_API_KEY_ALERTAS.value(), `NovuChat Alertas <alertas-novuchat@${c.dominio}>`, c.destinatario);
 }
 
 export const alertaOperativa = onRequest(
   { region: REGION, secrets: [ALERTA_OPERATIVA_HMAC, RESEND_API_KEY_ALERTAS], cors: false, maxInstances: 3 },
   async (peticion, respuesta) => {
-    const enviar = enviadorConfigurado();
-    if (!enviar) console.error('ALERTA_OPERATIVA_SIN_PARAMETROS (dominio o destinatario sin configurar: se guarda, no se envía)');
+    // La firma se verifica DENTRO de `atenderAlerta`, antes de cualquier lectura; la configuración se lee
+    // una vez por llamada (las alertas son raras: no hay costo que justifique una caché).
+    const c = await configuracion();
+    const enviar = enviadorConfigurado(c);
+    if (!enviar) console.error('ALERTA_OPERATIVA_SIN_CONFIGURACION (plataforma/alertas sin dominioAvisos o destinatario: se guarda, no se envía)');
     const r = await atenderAlerta(
       { metodo: peticion.method, cabecera: (n) => peticion.get(n), crudo: peticion.rawBody },
-      {
-        almacen: almacenFirestore(), enviar, secreto: ALERTA_OPERATIVA_HMAC.value(),
-        hostsEnlace: HOSTS_ENLACE.value().split(','), ahoraMs: Date.now(),
-      });
+      { almacen: almacenFirestore(), enviar, secreto: ALERTA_OPERATIVA_HMAC.value(), hostsEnlace: c.hosts, ahoraMs: Date.now() });
     respuesta.status(r.status).send(r.cuerpo);
   },
 );
@@ -384,8 +390,8 @@ export const alertaOperativa = onRequest(
 export const resumenAlertasOperativas = onSchedule(
   { schedule: '0 8 * * *', timeZone: 'America/La_Paz', region: REGION, secrets: [RESEND_API_KEY_ALERTAS], retryCount: 2, maxInstances: 1 },
   async () => {
-    const enviar = enviadorConfigurado();
-    if (!enviar) { console.error('ALERTA_OPERATIVA_SIN_PARAMETROS (el resumen diario no salió)'); return; }
+    const enviar = enviadorConfigurado(await configuracion());
+    if (!enviar) { console.error('ALERTA_OPERATIVA_SIN_CONFIGURACION (el resumen diario no salió)'); return; }
     try {
       const r = await enviarResumenDiario({ almacen: almacenFirestore(), enviar, ahoraMs: Date.now() });
       console.info(`resumen de alertas: eventos=${r.eventos} enviado=${r.enviado}`);
