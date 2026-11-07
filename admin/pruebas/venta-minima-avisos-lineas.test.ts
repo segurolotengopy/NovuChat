@@ -208,6 +208,9 @@ describe('el dato de Q\'Taco 3727 (06/11/2026): las tres plantillas por líneas,
   const ruta = (r: string) => join(dirname(fileURLToPath(import.meta.url)), r);
   const d3727 = JSON.parse(readFileSync(ruta('../scripts/datos/venta-minima/qtaco-3727.json'), 'utf8')) as J;
   const cfg = { ...BASE, ...(d3727['configBase'] as J) };
+  // Desde el 07/11/2026 el 3727 enciende las plantillas EN VIÑETAS (`venta-minima-avisos-vinetas.test.ts`): la plantilla por líneas pasa a ser el RESPALDO
+  // del aviso (sale solo si Meta rechaza la nueva). `cfgHoy` es el mismo dato sin las claves de viñetas: lo que sale como respaldo, que aquí se sigue probando entero.
+  const cfgHoy = Object.fromEntries(Object.entries(cfg).filter(([k]) => !/^plantilla(PedidoMapa|PedidoLista|ReservaLista|ConsultaAtencion)|^idiomaPlantillasVinetas$/.test(k))) as J;
   it('el dato trae «2:l2,4:l4,6:l6» en español y la base (qtaco.json) sigue vacía', () => {
     expect(cfg['plantillasPedidoLineas']).toBe('2:pedido_registrado_l2,4:pedido_registrado_l4,6:pedido_registrado_l6');
     expect(cfg['idiomaPlantillaPedidoLineas']).toBe('es');
@@ -217,8 +220,10 @@ describe('el dato de Q\'Taco 3727 (06/11/2026): las tres plantillas por líneas,
   it('con 1–2, 3–4, 5–6 y 7+ productos usa l2/l4/l6 con 5/7/9 variables y «… y K más»', () => {
     const esperado: Array<[number, string, number]> = [[1, 'l2', 5], [2, 'l2', 5], [3, 'l4', 7], [4, 'l4', 7], [5, 'l6', 9], [6, 'l6', 9], [7, 'l6', 9], [10, 'l6', 9]];
     for (const [n, tam, vars] of esperado) {
-      const it = de(arm(pedido(n), cfg), COMPLETO);
+      const it = de(arm(pedido(n), cfgHoy), COMPLETO);
       expect(it.payload.template.name, `n=${n}`).toBe(`pedido_registrado_${tam}`);
+      // Con el dato completo, esa misma plantilla por líneas va EXACTA como respaldo de la de viñetas.
+      expect(de(arm(pedido(n), cfg), COMPLETO).respaldo, `n=${n}`).toEqual(it.payload);
       expect(it.payload.template.language.code, `n=${n}`).toBe('es');
       const p = params(it);
       expect(p.length, `n=${n}`).toBe(vars);
@@ -229,7 +234,8 @@ describe('el dato de Q\'Taco 3727 (06/11/2026): las tres plantillas por líneas,
   it('NEGADA: con la clave vacía todo sale como antes; la reserva y la derivación no usan las plantillas por líneas', () => {
     const vacia = { ...cfg, plantillasPedidoLineas: '' };
     expect(JSON.stringify(arm(pedido(3), vacia))).not.toContain('pedido_registrado_l');
-    expect(de(arm(pedido(3), vacia), COMPLETO).payload.template.name).toBe('pedido_registrado');
+    expect(de(arm(pedido(3), { ...cfgHoy, plantillasPedidoLineas: '' }), COMPLETO).payload.template.name).toBe('pedido_registrado');
+    expect(de(arm(pedido(3), vacia), COMPLETO).respaldo.template.name).toBe('pedido_registrado');
     for (const tipo of ['reserva', 'derivacion']) {
       const items = L.avArmar(tipo, pedido(3), CSV, cfg, sd(), AHORA) as J[];
       expect(JSON.stringify(items), tipo).not.toContain('pedido_registrado_l');

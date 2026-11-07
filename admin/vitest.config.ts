@@ -88,6 +88,7 @@ export const SUITES_PURAS = [
   'pruebas/venta-minima-qtaco-3727.test.ts',
   'pruebas/venta-minima-catalogo-punta-a-punta.test.ts',
   'pruebas/venta-minima-sesion.test.ts', 'pruebas/venta-minima-cupos.test.ts', 'pruebas/venta-minima-prueba-0711.test.ts',
+  'pruebas/venta-minima-avisos-vinetas.test.ts',
   'pruebas/n8n-de-mentira.test.ts',
   'pruebas/comun-sin-agente-construir.test.ts',
   'pruebas/comun-sin-agente-envio.test.ts',

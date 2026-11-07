@@ -25,7 +25,8 @@
 // comprobante (solo rol `completo`, si `datos.mediaId` viene) también va solo con
 // ventana abierta. Derivación: ventana abierta → solo texto libre; cerrada → plantilla.
 // Con ventana abierta el texto de detalle hace de respaldo de la plantilla, así que
-// `respaldo` es siempre `null` y T7b salta «Aviso de respaldo» cuando es null.
+// `respaldo` es `null` y T7b salta «Aviso de respaldo» cuando es null. La única excepción son las
+// PLANTILLAS EN VIÑETAS (ver abajo): su `respaldo` es la plantilla de siempre, que sale solo si la nueva no salió.
 //
 // PLANTILLAS POR EVENTO, configurables (claves de `cfg`, que salen de `configBase`). NO HAY NOMBRE
 // POR OMISIÓN: ninguna plantilla se inventa en el código. Sin plantilla configurada para el evento, ningún
@@ -85,6 +86,21 @@
 //   antes de despachar») la da la plantilla y no el código: por eso la variable 1 se rotula siempre «SOLICITUD DE
 //   RESERVA» o «CONSULTA», y nunca dice «confirmada».
 //   Sin forma configurada, o con un valor desconocido (se anota `forma_invalida_<evento>`), rige `cita`.
+//   PLANTILLAS EN VIÑETAS (aditivo, 07/11/2026, decisión de Andres «plantillas nuevas por tipo»). Claves OPCIONALES, por plantilla,
+//   el nombre y su estado en Meta: `plantillaPedidoMapa` + `plantillaPedidoMapaEstado`, `plantillaPedidoLista` + `plantillaPedidoListaEstado`,
+//   `plantillaReservaLista` + `plantillaReservaListaEstado`, `plantillaConsultaAtencion` + `plantillaConsultaAtencionEstado`, e idioma común
+//   `idiomaPlantillasVinetas` (def. `es`). Una plantilla rige SOLO con nombre válido y estado exactamente `APPROVED`; con cualquier otro estado
+//   (o sin la clave) el aviso sale como hoy. Sin ninguna de estas claves, NADA cambia. Cuando rige, reemplaza al ítem de plantilla de ese
+//   destinatario y lleva como `respaldo` el payload de HOY (el que habría salido sin ella): si Meta no devuelve `messages[0].id`, `Reunir
+//   avisos` lo manda por `Aviso de respaldo` en el mismo turno; si la nueva salió, el respaldo no se envía (0 mensajes agregados).
+//     · pedido/comprobante → `pedido_lista_mapa` (botón URL «Ver en Google Maps») SOLO en delivery, rol `completo` y con ubicación válida
+//       (latitud y longitud numéricas); si no, `pedido_lista` (sin botón). Cuerpo: «Se registró un pedido en Q'Taco.⏎• Pedido: {{1}}⏎• Total
+//       de la comida: {{2}}⏎• Modalidad: {{3}}⏎• Cliente: {{4}}⏎• Detalle: {{5}}⏎• Comprobante: {{6}}⏎Revise el pedido en la consola antes de
+//       despachar.» (6 variables de cuerpo + 1 del botón, que va al final de la URL: `lat%2Clon`). {{5}} = los ítems en UNA línea separados
+//       por « · », cortados por ítem a 500 caracteres con « … y K más».
+//     · reserva → `reserva_lista` (5 variables, las de la forma `solicitud`: código · cliente, personas, cuándo, teléfono, notas; sin botón).
+//     · derivación → `consulta_atencion` (3 variables: cliente, motivo, consulta), con ventana cerrada, igual que hoy.
+//   Teléfono del cliente y ubicación: SOLO el rol `completo`; `cocina` recibe el primer nombre, sin teléfono ni botón de mapa.
 //   Otras claves: `prefijosPermitidos` (def. «591»), `topeAvisosDia` (def. 150, en MENSAJES de aviso; 0 = ninguno).
 //   Una variable de plantilla no admite saltos de línea, 5+ espacios seguidos ni vacío:
 //   `avParametro` las sanea siempre (vacío → «—»).
@@ -1045,6 +1061,104 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
   return avSinProhibidas(lineas.filter(Boolean).join('\n')).trim();
 }
 
+// --- Plantillas en viñetas (07/11/2026) -------------------------------------------------------
+
+// Las plantillas en viñetas que RIGEN para este negocio: el nombre, solo si es válido y su estado es exactamente `APPROVED`; si no, ''.
+function avVinetas(c) {
+  const texto = (v) => String(v === undefined || v === null ? '' : v).trim();
+  const activa = (clave) => {
+    const n = texto(c[clave]);
+    return /^[a-z0-9_]{1,512}$/.test(n) && texto(c[clave + 'Estado']).toUpperCase() === 'APPROVED' ? n : '';
+  };
+  return {
+    pedidoMapa: activa('plantillaPedidoMapa'),
+    pedidoLista: activa('plantillaPedidoLista'),
+    reserva: activa('plantillaReservaLista'),
+    consulta: activa('plantillaConsultaAtencion'),
+    idioma: texto(c.idiomaPlantillasVinetas) || 'es',
+  };
+}
+
+// El parámetro del botón «Ver en Google Maps» (va al final de `…&query=`): «lat%2Clon» con 6 decimales. Sale SOLO de dos números
+// (`avEnlaceDeUbicacion`, nunca de texto del cliente) y se valida con su forma exacta; '' ante cualquier duda.
+const AV_FORMA_PARAMETRO_MAPA = /^-?\d{1,2}\.\d{6}%2C-?\d{1,3}\.\d{6}$/;
+function avParametroDeUbicacion(u) {
+  const url = avEnlaceDeUbicacion(u);
+  const i = url.indexOf('query=');
+  const p = i >= 0 ? url.slice(i + 6) : '';
+  return AV_FORMA_PARAMETRO_MAPA.test(p) ? p : '';
+}
+
+// Los ítems del pedido en UNA línea, separados por « · », con tope de 500 caracteres: se corta POR ÍTEM y la lista termina en
+// « … y K más» (K = productos que no entraron); nunca a mitad de un producto.
+function avItemsEnLinea(lineas, opc) {
+  const tope = 500;
+  const piezas = lineas.map((l) => avPiezaItem(l, opc));
+  if (!piezas.length) return 'sin ítems';
+  for (let k = piezas.length; k >= 0; k--) {
+    const resto = piezas.length - k;
+    const t = piezas.slice(0, k).join(' · ') + (resto > 0 ? (k > 0 ? ' ' : '') + '… y ' + resto + ' más' : '');
+    if (Array.from(t).length <= tope) return t;
+  }
+  return '… y ' + piezas.length + ' más';
+}
+
+// Las 6 variables del cuerpo de `pedido_lista_mapa` / `pedido_lista`, en su orden. `conMapa`: la ubicación va en el botón y no se repite.
+function avVariablesVinetaPedido(d, dest, resultado, ahoraMs, conMapa) {
+  const opc = { cocina: dest.rol === 'cocina' };
+  const base = avVariables('pedido', d, dest, resultado, ahoraMs, 'cita');
+  const delivery = d.modalidad === 'delivery';
+  const segmentos = [avModalidadTexto(d.modalidad)];
+  if (dest.rol === 'completo' && delivery) {
+    const dir = avLimpio(d.direccion, 160);
+    const ref = avLimpio(d.referencia, 100);
+    segmentos[0] += (dir ? ' a ' + dir : '') + (ref ? ' (' + ref + ')' : '');
+    const coord = conMapa ? '' : avLimpio(d.coordenadas, 60);
+    if (coord) segmentos.push(coord);
+  }
+  const nota = typeof d.notaPedido === 'string' ? avLimpio(d.notaPedido, 100, opc) : '';
+  if (nota) segmentos.push('nota: ' + nota);
+  const quien = avClienteDeConsulta(d, dest);
+  return [
+    base.items,
+    base.total,
+    avParametro(segmentos.join(' · '), 500, opc),
+    avParametro(quien.nombre + (quien.telefono ? ' · ' + quien.telefono : ''), 100),
+    avParametro(avItemsEnLinea(avLineas(d.lineas), opc), 500, opc),
+    base.cotejo,
+  ];
+}
+
+// La plantilla en viñetas de este evento y destinatario, o `null` si no rige (sin clave, sin `APPROVED` o datos que no sirven).
+function avPlantillaVineta(tipo, d, dest, resultado, ahoraMs, c) {
+  const v = avVinetas(c);
+  if (tipo === 'pedido' || tipo === 'comprobante') {
+    const coord = dest.rol === 'completo' && d.modalidad === 'delivery' ? avParametroDeUbicacion(d.ubicacion) : '';
+    const conMapa = !!(coord && v.pedidoMapa);
+    const nombre = conMapa ? v.pedidoMapa : v.pedidoLista;
+    if (!nombre) return null;
+    const p = avPlantilla(dest.tel, nombre, v.idioma, avVariablesVinetaPedido(d, dest, resultado, ahoraMs, conMapa));
+    if (p && conMapa) p.template.components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: coord }] });
+    return p;
+  }
+  if (tipo === 'reserva') {
+    if (!v.reserva) return null;
+    const x = avVariablesSolicitud(d, dest);
+    return avPlantilla(dest.tel, v.reserva, v.idioma, AV_ORDEN_SOLICITUD.map((k) => x[k]));
+  }
+  if (tipo === 'transferencia') {
+    if (!v.consulta) return null;
+    const quien = avClienteDeConsulta(d, dest);
+    const motivo = d.comprobante === true ? 'envió un comprobante que no se pudo revisar (cambió el modo de cobro)' : (quien.motivo || 'pide hablar con una persona');
+    return avPlantilla(dest.tel, v.consulta, v.idioma, [
+      avParametro(quien.nombre + (quien.telefono ? ' · ' + quien.telefono : ''), 100),
+      avParametro(motivo, 200),
+      avParametro(avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs), 20),
+    ]);
+  }
+  return null;
+}
+
 // --- Armado -----------------------------------------------------------------------------------
 
 function avNormalizarDestinatarios(destinatarios, d, c) {
@@ -1080,7 +1194,8 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
       const cuerpo = avDetalle(tipo, d, dest.rol, resultado, ahoraMs);
       items.push({ para: dest.tel, rol: dest.rol, payload: avTexto(dest.tel, cuerpo), respaldo: null, esPlantilla: false, clase: 'detalle' });
     };
-    const conPlantilla = () => {
+    // La plantilla de SIEMPRE (la de hoy): su payload o `null`, con los mismos errores de siempre.
+    const plantillaActual = () => {
       // La reserva del rol `completo` puede tener su propia plantilla (`*ReservaCompleto`); el resto, la del evento.
       let pl = plEvento;
       if (tipo === 'reserva') {
@@ -1091,7 +1206,7 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
       if (!pl.nombre) {
         // Sin plantilla configurada no se inventa un nombre: el evento falla cerrado (con ventana abierta cae al texto).
         if (!pl.configurada && errores.indexOf('plantilla_no_configurada_' + pl.evento) < 0) errores.push('plantilla_no_configurada_' + pl.evento);
-        return false;
+        return null;
       }
       // Pedido con la plantilla por líneas (solo si `plantillasPedidoLineas` trae algo): el menor tamaño que cabe; si ese tamaño
       // no tiene plantilla, cae a la de siempre y lo anota.
@@ -1111,9 +1226,18 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
         const vars = avVariables(tipo, d, dest, resultado, ahoraMs, pl.forma);
         params = pl.orden.map((k) => vars[k]);
       }
-      const payload = avPlantilla(dest.tel, nombreFinal, idiomaFinal, params);
-      if (!payload) return false;
-      items.push({ para: dest.tel, rol: dest.rol, payload, respaldo: null, esPlantilla: true, clase: 'plantilla' });
+      return avPlantilla(dest.tel, nombreFinal, idiomaFinal, params);
+    };
+    const conPlantilla = () => {
+      const actual = plantillaActual();
+      // PLANTILLA EN VIÑETAS (solo si rige, ver `avVinetas`): sale ella y la de siempre queda de RESPALDO (se manda solo si la nueva no salió).
+      const vineta = avPlantillaVineta(tipo, d, dest, resultado, ahoraMs, c);
+      if (vineta) {
+        items.push({ para: dest.tel, rol: dest.rol, payload: vineta, respaldo: actual || null, esPlantilla: true, clase: 'plantilla' });
+        return true;
+      }
+      if (!actual) return false;
+      items.push({ para: dest.tel, rol: dest.rol, payload: actual, respaldo: null, esPlantilla: true, clase: 'plantilla' });
       return true;
     };
     if (tipo === 'transferencia') {
