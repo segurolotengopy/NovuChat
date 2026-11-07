@@ -27,7 +27,7 @@
  * arreglo o como texto separado por comas). El tope va de 1 a 8 (el código no permite más; un valor mayor se RECHAZA aquí).
  * Salida: 0 hecho o seco · 2 uso o valores inválidos (nada escrito) · 3 la relectura no coincide.
  */
-import { closeSync, openSync, readFileSync, writeFileSync, constants } from 'node:fs';
+import { closeSync, openSync, readFileSync, writeSync, constants } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const args = process.argv.slice(2);
@@ -164,9 +164,9 @@ const base = RESPALDO ?? join(process.env.XDG_RUNTIME_DIR || '', `alertas-config
 if (!RESPALDO && !process.env.XDG_RUNTIME_DIR) { console.error('  ✗ sin $XDG_RUNTIME_DIR ni --respaldo no hay dónde dejar el respaldo: no se escribió nada'); process.exit(2); }
 const ruta = resolve(base);
 try {
+  // Se escribe POR EL DESCRIPTOR que se abrió con O_EXCL (no se reabre por ruta: eso es una carrera de archivo).
   const fd = openSync(ruta, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-  closeSync(fd);
-  writeFileSync(ruta, JSON.stringify(antes), { mode: 0o600 });
+  try { writeSync(fd, JSON.stringify(antes)); } finally { closeSync(fd); }
 } catch { console.error('  ✗ no pude crear el respaldo (¿ya existe?): no se escribió nada'); process.exit(2); }
 
 await ref.set(valores, { merge: true });
