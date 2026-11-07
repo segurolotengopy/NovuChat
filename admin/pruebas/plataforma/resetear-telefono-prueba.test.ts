@@ -98,12 +98,13 @@ describe('E2. clasificación de ids', () => {
 let reloj = 0;
 const BORRAR = Symbol('borrar');
 const FieldValue = { delete: () => BORRAR };
-const tsDe = (n: number) => ({ n, toDate: () => new Date(1_700_000_000_000 + n * 1000) });
+const tsDe = (n: number) => ({ n, toDate: () => new Date(1_700_000_000_000 + n * 1000), toMillis: () => 1_700_000_000_000 + n * 1000 });
+const haceHoras = (h: number) => ({ toMillis: () => Date.now() - h * 3_600_000, toDate: () => new Date(Date.now() - h * 3_600_000) });
 const clon = (v: any): any => (v && typeof v.toDate === 'function' ? v : v instanceof Date ? v : Array.isArray(v) ? v.map(clon) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, clon(x)])) : v);
 function mundoDe(docsIniciales: Record<string, Record<string, any>>) {
   const datos = new Map<string, any>(); const hora = new Map<string, any>();
   const llamadas: string[] = [];
-  const gancho: { alBorrar: ((ruta: string) => void) | null; alEscanear: ((col: string, n: number) => void) | null } = { alBorrar: null, alEscanear: null };
+  const gancho: { alBorrar: ((ruta: string) => void) | null; alEscanear: ((col: string, n: number) => void) | null; ignorarUpdate: boolean } = { alBorrar: null, alEscanear: null, ignorarUpdate: false };
   const escaneos: Record<string, number> = {};
   for (const [ruta, d] of Object.entries(docsIniciales)) { datos.set(ruta, clon(d)); hora.set(ruta, tsDe(++reloj)); }
   const snap = (ruta: string): any => ({
@@ -118,7 +119,13 @@ function mundoDe(docsIniciales: Record<string, Record<string, any>>) {
       if (!datos.has(ruta)) throw Object.assign(new Error('x'), { code: 5 });
       if (pre?.lastUpdateTime && pre.lastUpdateTime.n !== hora.get(ruta).n) throw Object.assign(new Error('x'), { code: 9 });
       const d = datos.get(ruta);
-      for (const [k, v] of Object.entries(campos)) { if (v === BORRAR) delete d[k]; else d[k] = clon(v); }
+      if (gancho.ignorarUpdate) return;
+      for (const [k, v] of Object.entries(campos)) {
+        const partes = k.split('.'); let o = d;
+        for (const p of partes.slice(0, -1)) o = o[p];
+        const ult = partes[partes.length - 1];
+        if (v === BORRAR) delete o[ult]; else o[ult] = clon(v);
+      }
       hora.set(ruta, tsDe(++reloj));
     },
     delete: async (pre?: any) => {
@@ -460,12 +467,116 @@ describe('E5c. UN solo reseteo: también la ficha de n8n y la verificación de �
     expect(problemas(m.analizarArgumentos([...BASE, '--workflow', 'a/b'], ENV))).toContain('--workflow');
     expect(m.analizarArgumentos([...BASE, '--workflow', 'abc123XYZ'], ENV).cfg.workflow).toBe('abc123XYZ');
   });
-  it('marcas de pausa/bloqueo de la conversación se informan, no se borran', async () => {
-    const d = inicial(); (d as any)[`${T}/conversaciones/wa_${TEL}`] = conv({ turno: { de: 'persona' }, bloqueada: true });
+  it('contacto bloqueado en la Consola: no se toca y el resultado NO dice limpio (sale con 3)', async () => {
+    const d = inicial(); (d as any)[`${T}/conversaciones/wa_${TEL}`] = conv({ bloqueada: true, bloqueadaPor: 'uid1' });
+    const w = mundoDe(d); const s = salida();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(3);
+    expect(s.texto()).toContain('BLOQUEADO'); expect(s.texto()).not.toContain('ESTADO LIMPIO'); expect(s.texto()).not.toContain('✓');
+    const c = w.datos.get(`${T}/conversaciones/wa_${TEL}`); expect(c.bloqueada).toBe(true); expect(c.bloqueadaPor).toBe('uid1'); expect(c.solicitud).toBeUndefined();
+  });
+});
+
+const turnoDe = (extra: Record<string, any> = {}) => ({ responde: 'persona', tomadoPor: 'uid1', tomadoEn: tsDe(11), actividadPersonaEn: tsDe(12), ...extra });
+const convAt = (n: number, estado: string, horas = 2, extra: Record<string, any> = {}) => conv({
+  solicitud: undefined, atencionDesde: haceHoras(horas), mensajesVentana: n, atencionEstado: estado,
+  mensajesTotal: 400, periodoContado: '2026-11', respuestasDelPeriodo: 77, ultimoMensaje: 'hola', ...extra,
+});
+const sinSesiones = () => { const d: any = inicial(); for (const k of Object.keys(d)) if (k.includes('Turno/') && k.includes(`wa_${TEL}`)) delete d[k]; delete d[`${T}/conversaciones/wa_${TEL}`]; return d; };
+const rutaC = `${T}/conversaciones/wa_${TEL}`;
+
+describe('E5e. la atención (operador/bloqueado) y la pausa por persona', () => {
+  it.each([[50, 'operador'], [100, 'bloqueado']])('%i respuestas = %s: el seco lo informa; --aplicar lo deja normal con 0, sin tocar contadores acumulados ni otros campos', async (n, est) => {
+    const d = sinSesiones(); d[rutaC] = convAt(n, est as string); d[`${T}/conversaciones/wa_${OTRO}`] = convAt(n, est as string);
+    const w = mundoDe(d); const seco = salida();
+    expect(await m.ejecutar(cfgDe(), { db: w.db, FieldValue, log: seco.log })).toBe(1);
+    expect(seco.texto()).toContain(`atención: ${est} (${n} respuestas en la ventana)`);
+    expect(w.llamadas).toEqual([]);
+    const antes = clon(w.datos.get(rutaC)); const ajena = JSON.stringify(w.datos.get(`${T}/conversaciones/wa_${OTRO}`));
+    const s = salida(); const ruta = rutaRespaldo();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    const c = w.datos.get(rutaC);
+    expect(c.atencionEstado).toBe('normal'); expect(c.mensajesVentana).toBe(0); expect(c.atencionDesde).toBeUndefined();
+    for (const k of ['mensajesTotal', 'periodoContado', 'respuestasDelPeriodo', 'ultimoMensaje', 'etiquetas', 'estado', 'nombre']) expect(c[k]).toEqual(antes[k]);
+    expect(JSON.stringify(w.datos.get(`${T}/conversaciones/wa_${OTRO}`))).toBe(ajena); // otro teléfono intacto
+    expect(s.texto()).toContain('atención=normal (0 respuestas)'); expect(s.texto()).toContain('ESTADO: cobro pendiente=no');
+    expect(w.llamadas.filter((x) => x.startsWith('update:'))).toEqual([`update:${rutaC}`]); // UNA sola escritura
+    expect(leido(ruta).json.atencion.mensajesVentana).toBe(n);
+  });
+  it('ventana vencida con un estado viejo en «operador»: se normaliza el estado y se conserva el ancla vencida', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(60, 'operador', 30);
+    const w = mundoDe(d); const s = salida();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    const c = w.datos.get(rutaC); expect(c.atencionEstado).toBe('normal'); expect(c.mensajesVentana).toBe(0); expect(c.atencionDesde).toBeDefined();
+  });
+  it('una ventana vigente con pocas respuestas (3) tampoco es «como nuevo»: se pone en 0', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(3, 'normal');
     const w = mundoDe(d); const s = salida();
     await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log });
-    expect(s.texto()).toContain('pausa por persona (turno)=sí · contacto bloqueado=sí');
-    const c = w.datos.get(`${T}/conversaciones/wa_${TEL}`); expect(c.turno).toEqual({ de: 'persona' }); expect(c.bloqueada).toBe(true);
+    expect(w.datos.get(rutaC).mensajesVentana).toBe(0); expect(s.texto()).toContain('atención=normal (0 respuestas)');
+  });
+  it('ya normal con 0 respuestas y sin pausa: no escribe nada', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(0, 'normal');
+    const w = mundoDe(d); const s = salida();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    expect(w.llamadas).toEqual([]); expect(s.texto()).toContain('atención: normal (0 respuestas)');
+  });
+  it('pausa por persona vigente (Tomar): se devuelve al asistente como devolución manual; un turno ya devuelto o ilegible no se toca', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(0, 'normal', 2, { turno: turnoDe() });
+    const w = mundoDe(d); const seco = salida();
+    await m.ejecutar(cfgDe(), { db: w.db, FieldValue, log: seco.log });
+    expect(seco.texto()).toContain('pausa por persona (Tomar) que hace callar al asistente: sí');
+    const ruta = rutaRespaldo();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} })).toBe(0);
+    const t = w.datos.get(rutaC).turno;
+    expect(t.responde).toBe('asistente'); expect(t.motivoDevolucion).toBe('manual'); expect(t.devueltoEn).toBeInstanceOf(Date); expect(t.tomadoPor).toBe('uid1');
+    expect(leido(ruta).json.turno.responde).toBe('persona');
+    for (const turno of [turnoDe({ responde: 'asistente', devueltoEn: tsDe(13), motivoDevolucion: 'manual' }), { de: 'persona' }]) {
+      const d2 = sinSesiones(); d2[rutaC] = convAt(0, 'normal', 2, { turno });
+      const w2 = mundoDe(d2);
+      expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w2.db, FieldValue, log: () => {} })).toBe(0);
+      expect(w2.llamadas).toEqual([]);
+    }
+  });
+  it('NEGADO: si llega un mensaje (la conversación cambia) entre las lecturas, no se escribe nada', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador');
+    const w = mundoDe(d); const s = salida();
+    let n = 0; const original = w.db.getAll;
+    w.db.getAll = async (...a: any[]) => { if (a[0]?.path === rutaC && ++n === 2) w.hora.set(rutaC, tsDe(++reloj)); return original(...a); };
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(3);
+    expect(w.llamadas).toEqual([]); expect(w.datos.get(rutaC).mensajesVentana).toBe(50);
+  });
+  it('NEGADO: si la escritura no surte efecto, el resultado NO dice limpio y la atención sale en la línea de estado', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador');
+    const w = mundoDe(d); w.gancho.ignorarUpdate = true; const s = salida();
+    expect(await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: s.log })).toBe(3);
+    expect(s.texto()).toContain('NO QUEDÓ LIMPIO'); expect(s.texto()).toContain('atención=operador (50 respuestas en la ventana)'); expect(s.texto()).not.toContain('ESTADO LIMPIO');
+  });
+  it('NEGADO: la conversación de otro tenant o de un teléfono vecino con 50 respuestas no se toca', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador'); d[`tenants/otro-comercio/conversaciones/wa_${TEL}`] = convAt(50, 'operador'); d[`${T}/conversaciones/wa_${VECINO}`] = convAt(50, 'operador');
+    const w = mundoDe(d);
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), { db: w.db, FieldValue, log: () => {} });
+    expect(w.datos.get(`tenants/otro-comercio/conversaciones/wa_${TEL}`).mensajesVentana).toBe(50);
+    expect(w.datos.get(`${T}/conversaciones/wa_${VECINO}`).mensajesVentana).toBe(50);
+  });
+  it('reversa: repone atención, turno y solicitud si nada cambió desde el reseteo', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador', 2, { turno: turnoDe(), solicitud: { etapa: 'qr_enviado' } });
+    const w = mundoDe(d); const ruta = rutaRespaldo();
+    const original = clon(w.datos.get(rutaC));
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} });
+    expect(await m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} })).toBe(0);
+    const c = w.datos.get(rutaC);
+    expect(c.mensajesVentana).toBe(50); expect(c.atencionEstado).toBe('operador'); expect(Math.abs((c.atencionDesde as Date).getTime() - original.atencionDesde.toMillis())).toBeLessThan(5000);
+    expect(c.turno.responde).toBe('persona'); expect(c.turno.motivoDevolucion).toBeUndefined(); expect(c.solicitud.etapa).toBe('qr_enviado');
+    expect(c.mensajesTotal).toBe(400);
+  });
+  it('NEGADO: la reversa no pisa una atención o un turno que cambiaron desde el reseteo', async () => {
+    const d = sinSesiones(); d[rutaC] = convAt(50, 'operador', 2, { turno: turnoDe() });
+    const w = mundoDe(d); const ruta = rutaRespaldo();
+    await m.ejecutar(cfgDe({ aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: () => {} });
+    const c = w.datos.get(rutaC); c.mensajesVentana = 4; c.atencionDesde = haceHoras(1); c.turno = turnoDe({ responde: 'asistente', tomadoPor: 'otro', motivoDevolucion: 'inactividad', devueltoEn: tsDe(14) });
+    const s = salida();
+    expect(await m.ejecutar(cfgDe({ revertir: true, aplicar: true, respaldo: ruta }), { db: w.db, FieldValue, log: s.log })).toBe(0);
+    expect(c.mensajesVentana).toBe(4); expect(c.turno.responde).toBe('asistente'); expect(s.texto()).toContain('no se pisa');
   });
 });
 
@@ -479,13 +590,13 @@ describe('E5d. el nombre viejo es un envoltorio', () => {
 describe('E6. el texto del script', () => {
   const src = readFileSync(join(aqui, '..', '..', 'scripts', 'plataforma', 'resetear-telefono-prueba.mjs'), 'utf8');
   const codigo = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  it('borra documentos de turno y crea los del respaldo; de la conversación solo toca `solicitud`; sin métricas ni mensajes', () => {
+  it('borra documentos de turno y crea los del respaldo; de la conversación solo toca solicitud, atención y turno; nunca contadores de facturación', () => {
     expect(codigo).not.toMatch(/\.set\(/);
-    expect(codigo).not.toMatch(/metricas|mensajes/);
+    expect(codigo).not.toMatch(/metricas|\/mensajes|mensajesTotal|respuestasDelPeriodo|periodoContado|cuenta\/estado/); // contadores de facturación: jamás
     expect(codigo.match(/\.update\(/g)).toHaveLength(2); // quitar y reponer solo `solicitud`
-    expect(codigo.match(/\.update\(\{ solicitud: /g)).toHaveLength(2);
-    expect(codigo.match(/\.delete\(/g)).toHaveLength(2); // el documento de turno y FieldValue.delete()
-    expect(codigo.match(/FieldValue\.delete\(\)/g)).toHaveLength(1);
+    expect(codigo.match(/\.update\(campos, /g)).toHaveLength(2);
+    expect(codigo.match(/\.delete\(/g)).toHaveLength(5); // el documento de turno y 4 FieldValue.delete()
+    expect(codigo.match(/FieldValue\.delete\(\)/g)).toHaveLength(4);
     expect(codigo.match(/\bb\.ref\.delete\(/g)).toHaveLength(1);
     expect(codigo.match(/\.create\(/g)).toHaveLength(1);
   });

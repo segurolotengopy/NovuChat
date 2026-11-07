@@ -11,16 +11,26 @@
  *      (estado, pedidos y `reservas` del día: el cupo de reservas por teléfono vive DENTRO de este documento, PR-4b).
  *   2. `tenants/{tenant}/cuposDeTurno/{pnid}~{clave}~wa_{tel}~{periodo}` con clave `transferencias` o `pedidos` (cupos por contacto y hora, PR-4b).
  *      En 1 y 2, el prefijo del id (`pnid`) tiene que ser igual al campo `phoneNumberId` del propio documento.
- *   3. SOLO el campo `solicitud` de `tenants/{tenant}/conversaciones/wa_{tel}` (el cobro pendiente: etapa `qr_enviado`, 24 h; sin quitarlo, toda
- *      imagen siguiente se lee como comprobante «sin pedido en el flujo»). Ese documento es la conversación REAL del cliente en la Consola: nunca
- *      se borra el documento ni se toca otro campo; se hace `update({solicitud: FieldValue.delete()})` con la precondición de la hora leída.
+ *   3. De `tenants/{tenant}/conversaciones/wa_{tel}` —la conversación REAL del cliente en la Consola— SOLO estos campos, en UNA escritura con la
+ *      precondición de la hora leída (nunca se borra el documento ni se toca mensajes, etiquetas ni otro campo):
+ *      · `solicitud` (cobro pendiente: etapa `qr_enviado`, 24 h; sin quitarlo, toda imagen siguiente se lee como comprobante «sin pedido en el flujo»);
+ *      · LA ATENCIÓN (`core/conteo/atencion.ts`): con la ventana de 24 h vigente (`atencionDesde`) y `mensajesVentana` >= 50 el asistente pasa a
+ *        «operador» (responde un aviso fijo a todo) y con >= 100 a «bloqueado» (calla). Se deja `atencionEstado`='normal', `mensajesVentana`=0 y, con la
+ *        ventana vigente, se quita `atencionDesde` (ventana sin ancla, como un teléfono nuevo). El seco informa «atención: normal / operador (N
+ *        respuestas) / bloqueado». DECLARADO: esto NO toca contadores acumulados (`mensajesTotal`, `periodoContado`, `respuestasDelPeriodo`, métricas,
+ *        cuenta, bolsa ni corte); pero, sin ancla, el PRÓXIMO entrante abre una atención nueva y la ingesta cuenta UNA conversación más en el período
+ *        (facturable y en las métricas del comercio); y el contador de la ventana vuelve a 0, así que los bloques de 25 que ya se habían facturado en
+ *        esa ventana no se vuelven a abrir. Para un teléfono de la lista cerrada es aceptable; no se usa con clientes reales;
+ *      · la PAUSA POR PERSONA: `turno.responde === 'persona'` (Tomar) hace callar al asistente (`decidirPausa`, `pausa.ts`; vence sola a los 30 min sin
+ *        actividad). Se devuelve al asistente como una devolución manual (`turno.responde`='asistente', `devueltoEn`, `motivoDevolucion`='manual'),
+ *        sin la fila de auditoría de la callable. Un turno ilegible o ya devuelto no se toca.
  *   4. La ficha y la memoria del teléfono en el `staticData` del flujo de n8n (con `--workflow <id>` y N8N_BASE_URL/N8N_API_KEY en el ENTORNO):
  *      reutiliza `sinFicha`/`quedan` de `resetear-ficha-flujo.mjs` (no se duplica la lógica). Sin n8n configurado el paso se informa «omitido» y el
  *      resultado dice ⚠, no ✓. (`vaciar-memoria-flujo.mjs` es de otra familia —las fichas de Rubén— y no aplica a venta-minima.)
  *
  * QUÉ SOLO SE INFORMA, SIN BORRAR (lo dudoso o lo que no es estado de prueba reproducible):
- *   · Marcas de la conversación que pueden impedir empezar «como nuevo»: `turno` (pausa por persona / Tomar) y `bloqueada` (contacto bloqueado).
- *     Se informa si existen; las gestiona la Consola. Los contadores de conteo y facturación de la conversación NO se tocan nunca.
+ *   · `bloqueada` (contacto bloqueado en la Consola por un administrador): el asistente calla del todo. NO se toca; si está, el resultado dice
+ *     «NO ES UN TELÉFONO LIMPIO» y sale con 3: se desbloquea en la Consola.
  *   · `vistosDeTurno`: el id lleva un hash sin el teléfono, no se puede atar a un teléfono; vencen a las 24 h y no impiden probar de nuevo.
  *   · Cupo `avisos` del comercio (de todos los contactos), sesiones de otros espacios (el chat) y las efímeras `vmc-…`/`vmcp-…` (1 minuto).
  *   · «Posibles restos»: otra forma de clave del mismo teléfono (`wa_+{tel}`, sin código de país…) en Firestore, o entradas de n8n que contienen los
@@ -175,15 +185,50 @@ export async function escanear(db, tenant, tel) {
   return r;
 }
 
-/** Lee SOLO el campo `solicitud` de la conversación del teléfono (ruta derivada del teléfono y del tenant; nunca de un dato leído). */
-export async function leerSolicitud(db, tenant, tel) {
+export const MS_VENTANA_ATENCION = 24 * 60 * 60 * 1000; // igual que `core/conteo/atencion.ts` (ventana de facturación de 24 h)
+const msDe = (v) => {
+  if (v && typeof v.toMillis === 'function') return v.toMillis();
+  if (v && typeof v.toDate === 'function') return v.toDate().getTime();
+  if (v && typeof v.seconds === 'number') return v.seconds * 1000;
+  return null;
+};
+
+/**
+ * Lee SOLO unos campos de la conversación del teléfono (ruta derivada del teléfono y del tenant; nunca de un dato leído):
+ *   · `solicitud` (cobro pendiente);
+ *   · la ATENCIÓN (`core/conteo/atencion.ts`, `ingesta.ts`): `atencionDesde` (ancla de la ventana de 24 h), `mensajesVentana` (respuestas del
+ *     asistente en la ventana vigente) y `atencionEstado` (`normal`/`operador`/`bloqueado`, anotado por la ingesta). Con la ventana vigente y 50 o
+ *     más respuestas el asistente pasa al aviso fijo de «operador»; con 100, calla. Se calcula como el servidor: sin ancla o con la ventana vencida
+ *     las respuestas valen 0;
+ *   · la PAUSA POR PERSONA (`turno.responde === 'persona'`, Tomar): hace callar al asistente (`decidirPausa`, `pausa.ts`);
+ *   · `bloqueada` (contacto bloqueado en la Consola): solo informativa, nunca se toca.
+ */
+export async function leerSolicitud(db, tenant, tel, ahoraMs = Date.now()) {
   const ref = db.doc(`${rutaColeccion(tenant, 'conversaciones')}/wa_${tel}`);
-  const [snap] = await db.getAll(ref, { fieldMask: ['solicitud', 'turno', 'bloqueada'] });
-  const valor = snap.exists ? snap.get('solicitud') : undefined;
+  const [snap] = await db.getAll(ref, { fieldMask: ['solicitud', 'turno', 'bloqueada', 'atencionDesde', 'mensajesVentana', 'atencionEstado'] });
+  const g = (c) => (snap.exists ? snap.get(c) : undefined);
+  const valor = g('solicitud');
   const hay = esObjeto(valor);
-  // Solo informativas (no se borran): pausa por persona / Tomar (`turno`) y contacto bloqueado.
-  const marcas = snap.exists ? { turno: snap.get('turno') != null, bloqueada: snap.get('bloqueada') != null && snap.get('bloqueada') !== false } : { turno: false, bloqueada: false };
-  return { ref, marcas, hay, valor: hay ? valor : null, sello: sello(snap.updateTime), updateTime: snap.updateTime, existe: snap.exists };
+  const ancla = msDe(g('atencionDesde'));
+  const vigente = ancla !== null && ahoraMs - ancla < MS_VENTANA_ATENCION;
+  const crudoN = g('mensajesVentana');
+  const respuestas = vigente && typeof crudoN === 'number' && Number.isFinite(crudoN) ? Math.max(0, Math.trunc(crudoN)) : 0;
+  const crudoE = g('atencionEstado');
+  const estado = crudoE === 'operador' || crudoE === 'bloqueado' ? crudoE : 'normal';
+  const at = { estado, respuestas, vigente, sucia: respuestas > 0 || estado !== 'normal', previo: {
+    ...(g('atencionDesde') !== undefined ? { atencionDesde: g('atencionDesde') } : {}),
+    ...(crudoN !== undefined ? { mensajesVentana: crudoN } : {}),
+    ...(crudoE !== undefined ? { atencionEstado: crudoE } : {}),
+  } };
+  const turno = g('turno');
+  const turnoPersona = esObjeto(turno) && turno.responde === 'persona';
+  const bloqueada = g('bloqueada') != null && g('bloqueada') !== false;
+  const sucia = hay || at.sucia || turnoPersona;
+  return {
+    ref, hay, valor: hay ? valor : null, at, turnoPersona, turno: turnoPersona ? turno : null, turnoCrudo: turno, bloqueada, sucia,
+    anclaMs: ancla,
+    sello: sello(snap.updateTime), updateTime: snap.updateTime, existe: snap.exists,
+  };
 }
 
 const clave = (b) => b.map((x) => `${x.coleccion}/${x.id}@${x.sello}`).sort().join('|');
@@ -226,7 +271,8 @@ export function leerRespaldo(ruta, { entorno, tenant, tel }) {
   if (n !== undefined && !(esObjeto(n) && typeof n.workflow === 'string' && /^[A-Za-z0-9]{6,40}$/.test(n.workflow) && 'staticData' in n && typeof n.huellaDespues === 'string')) {
     return { ok: false, motivo: 'el respaldo trae un bloque de n8n que no tiene la forma esperada' };
   }
-  return { ok: true, docs: r.docs, solicitud: r.solicitud ?? null, n8n: n ?? null };
+  if ((r.atencion !== undefined && !esObjeto(r.atencion)) || (r.turno !== undefined && !esObjeto(r.turno))) return { ok: false, motivo: 'el respaldo trae una atención o un turno que no es un objeto' };
+  return { ok: true, docs: r.docs, solicitud: r.solicitud ?? null, atencion: r.atencion ?? null, turno: r.turno ?? null, n8n: n ?? null };
 }
 
 const esPrecondicion = (e) => e?.code === 9 || e?.code === 'failed-precondition' || e?.code === 'FAILED_PRECONDITION';
@@ -248,29 +294,32 @@ async function leerTodo(cfg, db, n8n) {
   if (n8n) { const vivo = await n8n.leer(); n = { vivo, r: sinFicha(vivo.staticData, cfg.tel), huella: huellaN8n(vivo) }; }
   return { e, s, n };
 }
-const sucio = (t) => t.e.borrar.length + (t.s.hay ? 1 : 0) + (t.n ? t.n.r.total : 0);
+const sucio = (t) => t.e.borrar.length + (t.s.hay ? 1 : 0) + (t.s.at.sucia ? 1 : 0) + (t.s.turnoPersona ? 1 : 0) + (t.n ? t.n.r.total : 0);
+const textoAtencion = (a) => (a.respuestas > 0 || a.estado !== 'normal' ? `${a.estado} (${a.respuestas} respuestas en la ventana)` : 'normal (0 respuestas)');
 const restosDe = (t) => t.e.resto + (t.n ? t.n.r.restos : 0);
 
 function mostrar(log, t, rotulo) {
   log(`\n  ${rotulo}`);
   for (const c of COLECCIONES) log(`    ${c}: ${t.e.porColeccion[c]} documento(s) del teléfono`);
   log(`    solicitud de cobro pendiente: ${t.s.hay ? 'sí' : 'no'}`);
+  log(`    atención: ${textoAtencion(t.s.at)}`);
+  log(`    pausa por persona (Tomar) que hace callar al asistente: ${t.s.turnoPersona ? 'sí' : 'no'}`);
   log(`    n8n (staticData del flujo): ${t.n ? `${t.n.r.total} entrada(s) del teléfono` : 'OMITIDO (sin --workflow o sin N8N_BASE_URL/N8N_API_KEY)'}`);
   log(`  de otros espacios o claves del mismo teléfono (no se tocan): ${t.e.otro}`);
   log(`  posibles restos (otra forma de clave, no se borran): ${restosDe(t)}`);
-  log(`  marcas de la conversación que NO se borran: pausa por persona (turno)=${t.s.marcas.turno ? 'sí' : 'no'} · contacto bloqueado=${t.s.marcas.bloqueada ? 'sí' : 'no'}`);
+  log(`  marca de la conversación que NO se toca nunca: contacto bloqueado en la Consola=${t.s.bloqueada ? 'SÍ (el asistente calla del todo)' : 'no'}`);
   log('  vistosDeTurno: no se puede atar a un teléfono (id con hash); vencen a las 24 h y no impiden probar de nuevo');
 }
 
 /** La verificación de «estado limpio»: una línea con los números y un veredicto. Devuelve 0 limpio (con ⚠ si hay avisos) o 3 si algo quedó sucio. */
 function veredicto(log, t, previo) {
   const ses = t.e.porColeccion.sesionesDeTurno; const cup = t.e.porColeccion.cuposDeTurno;
-  log(`\n  ESTADO: cobro pendiente=${t.s.hay ? 'SÍ' : 'no'} · sesiones=${ses} · cupos=${cup} · entradas en n8n=${t.n ? t.n.r.total : 'omitido'} · solicitud=${t.s.hay ? 'SÍ' : 'no'}`);
+  log(`\n  ESTADO: cobro pendiente=${t.s.hay ? 'SÍ' : 'no'} · sesiones=${ses} · cupos=${cup} · entradas en n8n=${t.n ? t.n.r.total : 'omitido'} · solicitud=${t.s.hay ? 'SÍ' : 'no'} · atención=${textoAtencion(t.s.at)} · pausa por persona=${t.s.turnoPersona ? 'SÍ' : 'no'}`);
+  if (t.s.bloqueada) { log('\n  ✗ NO ES UN TELÉFONO LIMPIO: el contacto está BLOQUEADO en la Consola (el asistente calla del todo). Este script no lo toca: desbloquéelo allí.\n'); return 3; }
   if (sucio(t) > 0) { log('\n  ✗ NO QUEDÓ LIMPIO: lo de arriba con valor distinto de «no»/0 sigue ahí. Revise; el respaldo permite reponer.\n'); return 3; }
   const avisos = [];
   if (!t.n) avisos.push('el paso de n8n se OMITIÓ: no se puede afirmar que el flujo no recuerde al teléfono');
   if (restosDe(t) > 0) avisos.push(`hay ${restosDe(t)} posibles restos (otra forma de clave): revíselos`);
-  if (t.s.marcas.turno || t.s.marcas.bloqueada) avisos.push('la conversación tiene pausa por persona o contacto bloqueado (no se borran: son de la Consola)');
   log(avisos.length ? `\n  ⚠ ${previo}Sin entradas del teléfono en lo que este script limpia, pero: ${avisos.join('; ')}.\n` : `\n  ✓ ${previo}ESTADO LIMPIO (releído).\n`);
   return 0;
 }
@@ -282,7 +331,7 @@ export async function ejecutar(cfg, deps) {
   const n8n = deps.n8n ?? null;
   const log = deps.log ?? ((t) => console.log(t));
   const marcar = deps.marcarEscritura ?? (() => {});
-  return cfg.revertir ? revertir(cfg, db, n8n, log, marcar) : limpiar(cfg, db, FieldValue, n8n, log, marcar);
+  return cfg.revertir ? revertir(cfg, db, FieldValue, n8n, log, marcar) : limpiar(cfg, db, FieldValue, n8n, log, marcar);
 }
 
 async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
@@ -294,7 +343,7 @@ async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
 
   // Relectura justo antes de escribir: mismos documentos, misma hora y misma huella de n8n, o no se escribe nada.
   const t2 = await leerTodo(cfg, db, n8n);
-  if (clave(t1.e.borrar) !== clave(t2.e.borrar) || t1.s.hay !== t2.s.hay || (t2.s.hay && t1.s.sello !== t2.s.sello) || (t2.n && t1.n.huella !== t2.n.huella)) {
+  if (clave(t1.e.borrar) !== clave(t2.e.borrar) || t1.s.sucia !== t2.s.sucia || (t2.s.sucia && t1.s.sello !== t2.s.sello) || (t2.n && t1.n.huella !== t2.n.huella)) {
     log('\n  ✗ El estado cambió entre la lectura y la escritura (hay tráfico de ese teléfono): no se escribió nada. Vuelva a correrlo.\n'); return 3;
   }
   const completos = t2.e.borrar.length ? await db.getAll(...t2.e.borrar.map((b) => b.ref)) : [];
@@ -309,6 +358,9 @@ async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
     guardarRespaldo(cfg.respaldo, {
       version: 1, campo: CAMPO, entorno: cfg.entorno, tenant: cfg.tenant, creadoEn: new Date().toISOString(), docs,
       ...(t2.s.hay ? { solicitud: codificar(t2.s.valor) } : {}),
+      // Valores anteriores de la atención (solo los campos que existían) y del turno de persona, para la reversa.
+      ...(t2.s.at.sucia ? { atencion: codificar(t2.s.at.previo) } : {}),
+      ...(t2.s.turnoPersona ? { turno: codificar(t2.s.turno) } : {}),
       ...(tocaN8n ? { n8n: { workflow: cfg.workflow, staticData: t2.n.vivo.staticData ?? {}, huellaDespues: canon(t2.n.r.nuevo) } } : {}),
     });
   } catch (err) {
@@ -318,7 +370,7 @@ async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
   log(`\n  Respaldo ÚNICO de documentos, campo solicitud y staticData de n8n COMPLETOS (datos de personas, se destruye al cerrar la prueba): ${cfg.respaldo}`);
 
   let hechas = 0;
-  const total = t2.e.borrar.length + (t2.s.hay ? 1 : 0) + (tocaN8n ? 1 : 0);
+  const total = t2.e.borrar.length + (t2.s.sucia ? 1 : 0) + (tocaN8n ? 1 : 0);
   const falla = (err, que) => {
     marcar(hechas === 0 ? 'antes' : 'escrito');
     const causa = esPrecondicion(err) ? `${que} cambió entre la lectura y la escritura` : `error de escritura (${err?.code ?? err?.name ?? 'desconocido'})`;
@@ -342,11 +394,20 @@ async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
       }
     } catch (err) { return falla(err, 'el flujo de n8n'); }
   }
-  // 2) la solicitud: es la conversación real del cliente; si llegó un mensaje, la precondición lo impide.
-  if (t2.s.hay) {
+  // 2) la conversación, UNA sola escritura con la precondición de la hora leída (si llegó un mensaje, no se escribe nada). Solo estos campos:
+  //    `solicitud` (cobro pendiente); la atención (`atencionEstado`=normal, `mensajesVentana`=0 y, si la ventana está vigente, sin `atencionDesde`);
+  //    y, si una persona tomó la conversación, `turno` devuelto al asistente (los tres subcampos de una devolución manual). Nada más.
+  if (t2.s.sucia) {
     marcar('escribiendo');
     try {
-      await t2.s.ref.update({ solicitud: FieldValue.delete() }, { lastUpdateTime: t2.s.updateTime });
+      const campos = {};
+      if (t2.s.hay) campos.solicitud = FieldValue.delete();
+      if (t2.s.at.sucia) {
+        campos.atencionEstado = 'normal'; campos.mensajesVentana = 0;
+        if (t2.s.at.vigente) campos.atencionDesde = FieldValue.delete();
+      }
+      if (t2.s.turnoPersona) { campos['turno.responde'] = 'asistente'; campos['turno.devueltoEn'] = new Date(); campos['turno.motivoDevolucion'] = 'manual'; }
+      await t2.s.ref.update(campos, { lastUpdateTime: t2.s.updateTime });
       hechas += 1; marcar('escrito');
     } catch (err) { return falla(err, 'la conversación'); }
   }
@@ -367,15 +428,34 @@ async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
   return veredicto(log, t3, '');
 }
 
-async function revertir(cfg, db, n8n, log, marcar) {
+async function revertir(cfg, db, FieldValue, n8n, log, marcar) {
   const l = leerRespaldo(cfg.respaldo, { entorno: cfg.entorno, tenant: cfg.tenant, tel: cfg.tel });
   if (!l.ok) { log(`\n  ✗ ${l.motivo}\n`); return 2; }
   if (l.n8n && cfg.workflow !== l.n8n.workflow) { log('\n  ✗ El respaldo trae el staticData de un flujo de n8n: indique el mismo --workflow con el que se hizo.\n'); return 2; }
   const refs = l.docs.map((d) => db.doc(`${rutaColeccion(cfg.tenant, d.coleccion)}/${d.id}`));
   const hoy = refs.length ? await db.getAll(...refs) : [];
   const faltan = l.docs.filter((_d, i) => !hoy[i].exists);
-  const sol = l.solicitud === null ? null : await leerSolicitud(db, cfg.tenant, cfg.tel);
-  const solRepone = sol !== null && sol.existe && !sol.hay;
+  const hayConv = l.solicitud !== null || l.atencion !== null || l.turno !== null;
+  const sol = hayConv ? await leerSolicitud(db, cfg.tenant, cfg.tel) : null;
+  // Qué de la conversación se repone, SIN pisar nada que haya cambiado desde el reseteo.
+  const campos = {}; const notas = [];
+  if (sol !== null && l.solicitud !== null) {
+    if (!sol.existe) notas.push('la conversación no existe (no se crea)'); else if (sol.hay) notas.push('solicitud ya existe (no se pisa)'); else campos.solicitud = decodificar(l.solicitud);
+  }
+  if (sol !== null && l.atencion !== null && sol.existe) {
+    const previo = decodificar(l.atencion);
+    const anclaPrevia = msDe(previo.atencionDesde);
+    const intacta = sol.anclaMs === null || sol.anclaMs === anclaPrevia;
+    const sinUso = sol.at.respuestas === 0 && (typeof sol.at.previo.mensajesVentana !== 'number' || sol.at.previo.mensajesVentana === 0) && sol.at.estado === 'normal';
+    if (intacta && sinUso) Object.assign(campos, previo); else notas.push('la atención cambió desde el reseteo (no se pisa)');
+  }
+  if (sol !== null && l.turno !== null && sol.existe) {
+    const actual = sol.turnoCrudo;
+    if (esObjeto(actual) && actual.responde === 'asistente' && actual.motivoDevolucion === 'manual' && actual.tomadoPor === l.turno.tomadoPor) {
+      campos['turno.responde'] = 'persona'; campos['turno.devueltoEn'] = FieldValue.delete(); campos['turno.motivoDevolucion'] = FieldValue.delete();
+    } else notas.push('el turno cambió desde el reseteo (no se pisa)');
+  }
+  const convRepone = Object.keys(campos).length > 0;
   let n8nRepone = false; let n8nNota = null; let vivoN8n = null;
   if (l.n8n) {
     if (!n8n) n8nNota = 'OMITIDO (sin configuración de n8n): no se repone';
@@ -387,9 +467,9 @@ async function revertir(cfg, db, n8n, log, marcar) {
   }
   log(`\n  ${cfg.aplicar ? 'REVERTIR' : 'SECO de la reversa (solo lecturas)'} · ${cfg.entorno} · tenant ${cfg.tenant}`);
   log(`  documentos del respaldo: ${l.docs.length} · por reponer: ${faltan.length} · ya existen (no se pisan): ${l.docs.length - faltan.length}`);
-  if (sol !== null) log(`  solicitud de cobro del respaldo: ${solRepone ? 'se repone' : sol.hay ? 'ya existe (no se pisa)' : 'la conversación no existe (no se crea)'}`);
+  if (sol !== null) log(`  conversación (solicitud, atención, turno): ${convRepone ? `se repone ${Object.keys(campos).length} campo(s)` : 'nada que reponer'}${notas.length ? ` · ${notas.join(' · ')}` : ''}`);
   if (l.n8n) log(`  staticData de n8n del respaldo: ${n8nRepone ? 'se repone' : n8nNota}`);
-  const pendientes = faltan.length + (solRepone ? 1 : 0) + (n8nRepone ? 1 : 0);
+  const pendientes = faltan.length + (convRepone ? 1 : 0) + (n8nRepone ? 1 : 0);
   const aviso = l.n8n && !n8nRepone ? ' ⚠ n8n no se repuso.' : '';
   if (pendientes === 0) { log(`\n  ${aviso ? '⚠' : '✓'} Nada que reponer.${aviso}\n`); return 0; }
   if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar (y --confirmo-produccion <tenant> contra producción).\n'); return 1; }
@@ -408,9 +488,9 @@ async function revertir(cfg, db, n8n, log, marcar) {
       hechas += 1; marcar('escrito');
     } catch (err) { return falla(err); }
   }
-  if (solRepone) {
+  if (convRepone) {
     marcar('escribiendo');
-    try { await sol.ref.update({ solicitud: decodificar(l.solicitud) }, { lastUpdateTime: sol.updateTime }); hechas += 1; marcar('escrito'); } catch (err) { return falla(err); }
+    try { await sol.ref.update(campos, { lastUpdateTime: sol.updateTime }); hechas += 1; marcar('escrito'); } catch (err) { return falla(err); }
   }
   for (const d of faltan) {
     marcar('escribiendo');
@@ -421,7 +501,9 @@ async function revertir(cfg, db, n8n, log, marcar) {
   }
   const despues = refs.length ? await db.getAll(...refs) : [];
   const faltantes = despues.filter((s) => !s.exists).length;
-  const solOk = !solRepone || (await leerSolicitud(db, cfg.tenant, cfg.tel)).hay;
+  const despuesConv = convRepone ? await leerSolicitud(db, cfg.tenant, cfg.tel) : null;
+  const solOk = !convRepone || ((!('solicitud' in campos) || despuesConv.hay) && (!('turno.responde' in campos) || despuesConv.turnoPersona)
+    && (!('atencionEstado' in campos) || despuesConv.at.previo.atencionEstado === campos.atencionEstado));
   const n8nOk = !n8nRepone || canon((await n8n.leer()).staticData ?? {}) === canon(decodificar(l.n8n.staticData));
   log(`  Repuestos: ${hechas} · faltan tras releer: ${faltantes + (solOk ? 0 : 1) + (n8nOk ? 0 : 1)}`);
   if (faltantes !== 0 || !solOk || !n8nOk) { log('\n  ✗ La verificación no coincide: repita la reversa.\n'); return 3; }
