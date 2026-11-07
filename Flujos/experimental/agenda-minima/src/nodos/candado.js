@@ -47,7 +47,8 @@ if (ids.length < citas.length || creados.length !== citas.length) {
   return deshaciendo(ids, {
     plan: 'error', crear: null, borrarId: '', eventoCreadoId: '', eventosCreadosIds: [],
     errores: (r.errores || []).concat(['no se pudieron crear todas las citas en el calendario']),
-    params: { motivo: 'no se pudieron crear todas las citas en el calendario' },
+    // Un «Crear evento» con error pudo haberse creado igual (timeout/5xx) y no quedar registrado: recepcion revisa ese tramo.
+    params: { motivo: 'no se pudieron crear todas las citas en el calendario', revisarCalendarioInicio: r.crear.inicio },
   });
 }
 

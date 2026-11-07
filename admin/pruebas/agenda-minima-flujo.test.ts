@@ -857,6 +857,10 @@ describe('Agenda mínima v0: el flujo, de punta a punta', () => {
       const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
       expect(t.bitacora).toEqual(['crear:ev-1', 'borrar:ev-1']);
       expect(m.calendario.eventos.map((e) => e['id'])).toEqual(['vieja']);
+      // Un «Crear evento» con error pudo haberse creado igual: recepción debe revisar el calendario en ese tramo.
+      expect(t.aRecepcion).toHaveLength(1);
+      expect(t.aRecepcion[0]!.cuerpo).toMatch(/REVISAR el calendario/);
+      expect(t.aRecepcion[0]!.cuerpo).toMatch(/14:00/);
       expect(textos(t)).not.toMatch(/quedaron agendadas|quedó agendada/);
       expect(t.cierres).toHaveLength(0);
       expect(t.aRecepcion).toHaveLength(1);
@@ -889,6 +893,48 @@ describe('Agenda mínima v0: el flujo, de punta a punta', () => {
       // La reoferta usa la duración de DOS citas: 15:30 (solo 30 libres antes de las 16:00) no se ofrece.
       expect(idsDeOferta(t)).toEqual([idHueco(JUEVES, '15:00'), idHueco(JUEVES, '16:30'), idHueco(JUEVES, '17:00')]);
       expect(t.resumen!['resumen']).toMatchObject({ accion: 'cruce_deshecho', eventoCreadoId: '' });
+    });
+    it('NIEGA: un evento creado no aparece al releer: se deshacen ambos y no se confirma', () => {
+      const m = mundo({ eventos: [] });
+      hastaPedirNombre(m);
+      m.calendario.despuesDeCrear = (c) => {
+        const i = c.findIndex((e) => e['id'] === 'ev-2');
+        if (i >= 0) c.splice(i, 1);
+      };
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: DOS });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+      // ev-2 ya no existe en el calendario (el doble no registra borrar de un id ausente): se intenta deshacer ambos y queda limpio.
+      expect(t.bitacora).toEqual(expect.arrayContaining(['crear:ev-1', 'crear:ev-2', 'borrar:ev-1']));
+      expect(m.calendario.eventos.map((e) => e['id'])).not.toContain('ev-1');
+      expect(textos(t)).not.toMatch(/quedaron agendadas|quedó agendada/);
+      expect(t.cierres).toHaveLength(0);
+    });
+    it('NIEGA: las dos citas no quedan contiguas en la relectura: se deshacen ambas y no se confirma', () => {
+      const m = mundo({ eventos: [] });
+      hastaPedirNombre(m);
+      m.calendario.despuesDeCrear = (c) => {
+        const e2 = c.find((e) => e['id'] === 'ev-2');
+        if (e2 && !e2['movida']) {
+          e2['movida'] = true;
+          e2['start'] = { dateTime: `${JUEVES}T17:00:00-04:00` };
+          e2['end'] = { dateTime: `${JUEVES}T17:30:00-04:00` };
+        }
+      };
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: DOS });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis Pérez Gómez'));
+      expect(t.bitacora).toEqual(expect.arrayContaining(['borrar:ev-1', 'borrar:ev-2']));
+      expect(m.calendario.eventos).toHaveLength(0);
+      expect(textos(t)).not.toMatch(/quedaron agendadas|quedó agendada/);
+      expect(t.cierres).toHaveLength(0);
+    });
+    it('NIEGA: si un nombre de hermano no se puede partir, no se crea una sola cita: se pide el nombre', () => {
+      const m = mundo({ eventos: [] });
+      hastaPedirNombre(m);
+      m.gemini.extraer = extraccion({ hermanos: true, pacientes: ['Ana Pérez Gómez', 'Luis'] });
+      const t = m.turno(texto(MAMA, 'Ana Pérez Gómez y Luis'));
+      expect(m.calendario.eventos).toHaveLength(0);
+      expect(t.bitacora).toEqual([]);
+      expect(t.cierres).toHaveLength(0);
     });
     it('si la relectura falla se deshacen ambas (falla cerrado) y no se confirma', () => {
       const m = mundo({ eventos: [] });

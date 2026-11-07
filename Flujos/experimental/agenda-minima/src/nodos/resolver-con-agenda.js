@@ -170,11 +170,12 @@ switch (p.plan) {
       const oferta = armarOferta({ servicio: srv, fechaPreferida: diaDelBoton > fechaLocal(ahora) ? diaDelBoton : null, pidioHoy: diaDelBoton === fechaLocal(ahora), franja: 'cualquiera' });
       en.huecoElegido = null;
       // Si el hueco tenia 30 minutos y ahora son dos hermanos, se dice que faltan dos seguidos.
-      return terminarOferta(oferta, null, oferta.huecos.length ? (dur > cfg.duracionPorDefectoMin ? 'sin_dos_seguidos' : 'hueco_perdido') : null);
+      return terminarOferta(oferta, null, oferta.huecos.length ? (dur > (Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30) ? 'sin_dos_seguidos' : 'hueco_perdido') : null);
     }
     const pac = (en.pacientes || []).map((n) => partirNombre(String(n))).filter((n) => n && n.apellidos && n.nombres);
     const titulo = tituloDeLaCita({ pacientes: pac, servicio: srv });
-    if (!titulo) {
+    // Nunca crear una sola cita omitiendo a un hermano: si algun nombre no se pudo partir, se pide el nombre.
+    if (!titulo || pac.length !== (en.pacientes || []).length) {
       en.paso = 'esperando_nombre';
       en.huecoElegido = inicio;
       en.servicio = srv;

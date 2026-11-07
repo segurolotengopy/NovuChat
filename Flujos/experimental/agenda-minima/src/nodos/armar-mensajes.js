@@ -255,7 +255,7 @@ function textoFijoDeOferta(o, srvTxt) {
     hora_ocupada: 'A esa hora no está disponible. Las más cercanas son:',
     hora_propia: 'Esa hora ya es la de tu cita actual. Estas son otras opciones:',
     hueco_perdido: 'Ese horario ya no está disponible. Estos son los más cercanos:',
-    sin_dos_seguidos: 'Para los dos hermanos necesito dos horarios seguidos de 30 minutos, y ese ya no los tiene. Estos sí:',
+    sin_dos_seguidos: 'Para los dos hermanos necesito dos horarios seguidos de ' + (Number(cfg.duracionPorDefectoMin) > 0 ? Number(cfg.duracionPorDefectoMin) : 30) + ' minutos, y ese ya no los tiene. Estos sí:',
     cruce: 'Ese horario se ocupó justo ahora y no pude dejar tu cita. Estos son los más cercanos:',
   }[o.aviso] || ('Estos son los horarios más cercanos para ' + srvTxt + ':');
   return intro + '\n' + o.huecos.map((h) => '• ' + textoDeFecha(h.inicio)).join('\n') + '\n\nToca el horario que prefieras.';
@@ -559,7 +559,9 @@ switch (plan) {
 
   case 'error':
   default: {
-    const motivo = params.motivo || errores.join('; ') || 'error del flujo';
+    let motivo = params.motivo || errores.join('; ') || 'error del flujo';
+    // Creación parcial: un evento con error pudo haberse creado igual y no quedar registrado.
+    if (params.revisarCalendarioInicio) motivo += '. Pudo quedar un evento sin registrar: REVISAR el calendario el ' + textoDeFecha(params.revisarCalendarioInicio);
     const cuerpo = String(cfg.mensajeErrorTemporal || '').trim() + ' Si prefieres, escríbele directo a recepción.';
     transferir(motivo, cuerpo);
   }
