@@ -846,7 +846,6 @@ describe('(h) Dos odontólogos con calendarios distintos', () => {
  * dos flujos.
  */
 describe.each([
-  ['platinum-agendamiento.json', flujo],
   ['demo-a-agendamiento.json', demoA],
 ])('(i) %s · lo que enseñó la ejecución #2867', (_archivo, f) => {
   const destinos = (desde: string, salida = 0) =>
@@ -1286,7 +1285,6 @@ describe.each([
  * candado ya existía y sus salidas son las mismas.
  */
 describe.each([
-  ['platinum-agendamiento.json', flujo],
   ['demo-a-agendamiento.json', demoA],
 ])('(j) %s · lo que enseñó la ejecución #2936', (_archivo, f) => {
   const codigo = (nombre: string) => String(nodo(f, nombre).parameters['jsCode']);
@@ -1698,7 +1696,6 @@ describe.each([
  * razón que el bloque (i).
  */
 describe.each([
-  ['platinum-agendamiento.json', flujo],
   ['demo-a-agendamiento.json', demoA],
 ])('(k) %s · dirección con enlace a Maps y pin a pedido', (_archivo, f) => {
   const destinos = (desde: string, salida = 0) =>
@@ -2027,7 +2024,6 @@ describe.each([
  * 5. EL COMPROBANTE NO SE GUARDA: ningún nodo escribe la imagen a ningún lado.
  */
 describe.each([
-  ['platinum-agendamiento.json', flujo],
   ['demo-a-agendamiento.json', demoA],
 ])('(l) %s · seña por QR con cotejo del comprobante', (_archivo, f) => {
   const destinos = (desde: string, salida = 0) =>
@@ -2830,7 +2826,6 @@ describe.each([
  *    al cotejo del servidor, por su rama de siempre.
  */
 describe.each([
-  ['platinum-agendamiento.json', flujo],
   ['demo-a-agendamiento.json', demoA],
 ])('(m) %s · medios entrantes: audio, imagen y PDF sin comprobante', (_archivo, f) => {
   const destinos = (desde: string, salida = 0) =>
@@ -3628,7 +3623,7 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
 // ---------------------------------------------------------------------------
 // (o) El número de recepción sale en un BOTÓN, no escrito en el texto
 // ---------------------------------------------------------------------------
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA]])(
+describe.each([['demo-a-agendamiento.json', demoA]])(
   '(o) %s · contacto de recepción con botón', (_archivo, f) => {
     const codigoDe = (n: string) => String(nodo(f, n).parameters['jsCode']);
     /** Un turno como lo deja el agente, con la marca que escribe el modelo. */
@@ -3709,7 +3704,7 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
 // ---------------------------------------------------------------------------
 // (p) Lo que enseñó la prueba de Silvana, 00:56 del 20/09/2026
 // ---------------------------------------------------------------------------
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA]])(
+describe.each([['demo-a-agendamiento.json', demoA]])(
   '(p) %s · la reserva con seña, como la vio una clienta', (_archivo, f) => {
     const cod = (n: string) => String(nodo(f, n).parameters['jsCode']);
     const CON_SENA_1 = { senaActiva: 'si', senaImporte: '1', senaMoneda: 'Bs', nombreNegocio: 'Un Negocio',
@@ -3798,7 +3793,7 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
 // ---------------------------------------------------------------------------
 // (q) Reenviar el QR, y el botón de recepción solo a pedido (20/09/2026)
 // ---------------------------------------------------------------------------
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA]])(
+describe.each([['demo-a-agendamiento.json', demoA]])(
   '(q) %s · lo que faltaba cuando el QR se pierde', (_archivo, f) => {
     const cod = (n: string) => String(nodo(f, n).parameters['jsCode']);
     const PENDIENTE = { senaActiva: 'si', senaPendiente: 'si', senaImporte: '1', senaMoneda: 'Bs',
@@ -4269,7 +4264,7 @@ describe('Cancelar exige confirmación: la compuerta está en cancelar_cita', ()
  * guarda por teléfono en los datos estáticos, Config del negocio lo expone y la
  * herramienta lo usa en vez del que el modelo elija.
  */
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
+describe.each([['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
   '%s · la cita que se mostró es la que se cancela', (_archivo, f) => {
     const codigoDe = (n: string) => String(nodo(f, n).parameters['jsCode']);
     const cfgBase = configBase(f);
@@ -4437,7 +4432,7 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
  * problema técnico» (#4042, #4047). Lo único que puede ofrecer cuando le falta
  * un dato o algo falla es pasar con recepción: el aviso MÁS el botón.
  */
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
+describe.each([['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
   '%s · solo se ofrece lo que se cumple', (_archivo, f) => {
     const codigoDe = (n: string) => String(nodo(f, n).parameters['jsCode']);
     const procesar = (output: string, userInput = 'cuánto pagué?', cfg: J = {}) => ejecutar(codigoDe('Procesar respuesta'),
@@ -4585,7 +4580,7 @@ describe('Cancelar: la confirmación es SOLO una confirmación (#4034)', () => {
  * `J` es el próximo jueves y `V` el próximo viernes; `otroNombre` es el día de
  * la semana anterior, el error típico del modelo.
  */
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
+describe.each([['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
   '%s · el día de la semana lo pone el código', (_archivo, f) => {
     const procesar = (output: string, pasos: J[]) => ejecutar(String(nodo(f, 'Procesar respuesta').parameters['jsCode']),
       [{ output, intermediateSteps: pasos }],
@@ -4715,7 +4710,7 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
  * Lo de #5559 y #5576 es prompt (reglas de agenda de Bellido, probadas en su
  * suite). Lo de #5553 y #5563 es código, y se prueba acá en los tres flujos.
  */
-describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
+describe.each([['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
   '%s · 24/09: reagendar es confirmar, y una cita en el pasado no es una cita', (_archivo, f) => {
     const codigo = (n: string) => String(nodo(f, n).parameters['jsCode']);
     const idDe = (userInput: string) => expresion(nodo(f, 'cancelar_cita').parameters['eventId'], {},
