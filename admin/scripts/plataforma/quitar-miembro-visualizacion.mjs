@@ -21,7 +21,7 @@
  * Salida: 0 hecho o seco sin problemas · 1 algún comercio saltado o error · 2 llamada mal hecha.
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
@@ -36,19 +36,23 @@ export function motivoParaSaltar({ miembro, claimRol, titularUid, uid }) {
   return '';
 }
 
-/** Valida que el respaldo esté fuera de todo repositorio (no hay .git hacia arriba), carpeta 0700 y archivo nuevo. */
-export function comprobarRespaldo(ruta, { existe = existsSync, stat = statSync } = {}) {
+/** ¿Hay un `.git` en esta carpeta o en alguna de arriba? Recursiva: cada llamada tiene su propia carpeta. */
+export function dentroDeRepositorio(carpeta, existe = existsSync, profundidad = 0) {
+  if (profundidad > 40) return false;
+  if (existe(`${carpeta}/.git`)) return true;
+  const arriba = dirname(carpeta);
+  return arriba === carpeta ? false : dentroDeRepositorio(arriba, existe, profundidad + 1);
+}
+
+/** Valida que el respaldo esté fuera de todo repositorio (resuelve enlaces), carpeta 0700 y archivo nuevo. */
+export function comprobarRespaldo(ruta, { existe = existsSync, stat = statSync, real = realpathSync } = {}) {
   if (!ruta || !isAbsolute(ruta)) return 'el respaldo debe ser una ruta absoluta';
-  let d = dirname(ruta);
-  try { if (existe(d)) d = realpathSync(d); } catch { /* sin realpath: se sigue con la ruta dada */ }
-  for (let i = 0; i < 40; i += 1) {
-    if (existe(join(d, '.git'))) return 'el respaldo no puede estar dentro de un repositorio';
-    const p = dirname(d);
-    if (p === d) break;
-    d = p;
-  }
+  const carpeta = dirname(ruta);
+  let resuelta = carpeta;
+  try { if (existe(carpeta)) resuelta = real(carpeta); } catch { /* sin realpath: se sigue con la ruta dada */ }
+  if (dentroDeRepositorio(resuelta, existe)) return 'el respaldo no puede estar dentro de un repositorio';
   if (existe(ruta)) return 'el respaldo ya existe: no se pisa';
-  if (existe(dirname(ruta)) && (stat(dirname(ruta)).mode & 0o077) !== 0) return 'la carpeta del respaldo debe ser 0700';
+  if (existe(carpeta) && (stat(carpeta).mode & 0o077) !== 0) return 'la carpeta del respaldo debe ser 0700';
   return '';
 }
 
