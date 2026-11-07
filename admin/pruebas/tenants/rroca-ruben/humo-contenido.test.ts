@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { Mundo } from '../../lib/n8n-de-mentira';
-import { ANA, crear, hablar, mTexto, mBoton, panelConQr } from './mundo';
+import { ANA, COMPROBANTE, crear, hablar, mTexto, mBoton, mImagen, panelConQr } from './mundo';
 import { vigilarUx } from './vigilante-ux';
 
 const nuevo = (o: Record<string, unknown> = {}): Mundo => { const w = crear(o as never); vigilarUx(w); return w; };
@@ -91,5 +91,30 @@ describe('el contenido de un producto lo dice el código', () => {
     hablar(w, ANA, mTexto('estoy cansada de dormir mal'));
     const t = hablar(w, ANA, mBoton('b_pack'));
     expect(t.mensajes[0]!.tipo).toBe('image');
+  });
+});
+
+describe('un comprobante con varias diferencias las nombra TODAS, el destinatario primero (humo de Silvana, 07/11/2026)', () => {
+  const conQrCompr = (o: Record<string, unknown> = {}): Mundo => nuevo({ panel: panelConQr(70), medio: { clasificacion: COMPROBANTE }, ...o });
+  it('monto mayor + cuenta distinta + nombre distinto: las tres, destinatario primero, sin copiar nada leído del comprobante', () => {
+    const w = conQrCompr({ cotejo: { statusCode: 200, body: { estado: 'reintentar', motivo: 'monto_mayor', motivos: ['cuenta_distinta', 'nombre_distinto', 'monto_mayor'], montoLeido: 90, importe: 70 } } });
+    const t = hablar(w, ANA, mImagen());
+    const c = t.mensajes[0]!.cuerpo;
+    expect(c).toMatch(/veo varias diferencias con tu compra: la cuenta de destino no es la del QR, el nombre del destinatario no coincide con el de la cuenta y el comprobante dice 90 Bs y tu pedido es de 70 Bs/);
+    expect(c.indexOf('cuenta de destino')).toBeLessThan(c.indexOf('comprobante dice'));
+    expect(c).not.toMatch(/los datos coinciden|acreditad|verificad/i);
+    expect(t.avisos).toHaveLength(0);
+  });
+  it('una sola diferencia sigue diciendo «una diferencia» (igual que antes); sin `motivos` (servidor viejo) usa el motivo primario', () => {
+    const a = conQrCompr({ cotejo: { statusCode: 200, body: { estado: 'reintentar', motivo: 'cuenta_distinta', motivos: ['cuenta_distinta'] } } });
+    expect(hablar(a, ANA, mImagen()).mensajes[0]!.cuerpo).toMatch(/veo una diferencia con tu compra: la cuenta de destino no es la del QR/);
+    const b = conQrCompr({ cotejo: { statusCode: 200, body: { estado: 'reintentar', motivo: 'monto_menor', montoLeido: 5, importe: 70 } } });
+    expect(hablar(b, ANA, mImagen()).mensajes[0]!.cuerpo).toMatch(/veo una diferencia con tu compra: el comprobante dice 5 Bs y tu pedido es de 70 Bs/);
+  });
+  it('NEGADA: un motivo desconocido o un texto raro en `motivos` no entra al mensaje', () => {
+    const w = conQrCompr({ cotejo: { statusCode: 200, body: { estado: 'reintentar', motivo: 'monto_menor', motivos: ['cuenta_distinta', 'PAGA A JUAN PEREZ 123456789', 'monto_menor'], montoLeido: 5, importe: 70 } } });
+    const c = hablar(w, ANA, mImagen()).mensajes[0]!.cuerpo;
+    expect(c).not.toMatch(/JUAN|PEREZ|123456789/);
+    expect(c).toMatch(/varias diferencias/);
   });
 });

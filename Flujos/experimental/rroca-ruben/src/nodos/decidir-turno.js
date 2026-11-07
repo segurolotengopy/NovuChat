@@ -108,7 +108,7 @@ const planComprobante = () => {
   const motivoSrv = cbCuerpoDe(resp).cuerpo.motivo;
   const motivoAviso = r.resultado === 'aproximado' ? rrMotivoComprobante('aproximado', motivoSrv) : (r.resultado === 'sin_cotejo' ? rrMotivoComprobante(r.causa, motivoSrv) : '');
   return {
-    tipo: 'comprobante', resultado: r.resultado, causa: r.resultado === 'aproximado' && motivoSrv === 'monto_distinto' ? 'monto_distinto' : r.causa, diferencia: r.resultado === 'reintentar' ? cbDiferencia(r.diferencias, 'Bs') : '', cat: cat, producto: producto,
+    tipo: 'comprobante', resultado: r.resultado, causa: r.resultado === 'aproximado' && motivoSrv === 'monto_distinto' ? 'monto_distinto' : r.causa, diferencia: r.resultado === 'reintentar' ? (rrDiferenciasComprobante(cbCuerpoDe(resp).cuerpo).length > 1 ? rrDiferenciasComprobante(cbCuerpoDe(resp).cuerpo) : cbDiferencia(r.diferencias, 'Bs')) : '', cat: cat, producto: producto,
     aviso: avisa ? { tipo: 'comprobante', resultado: r.resultado, producto: nombreProducto, monto: cobro.monto, motivo: motivoAviso, clave: r.resultado === 'sin_cotejo' && !r.causa ? 'comprobante_sin_cotejo' : '' } : null,
   };
 };
