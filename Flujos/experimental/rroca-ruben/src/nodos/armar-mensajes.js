@@ -69,7 +69,10 @@ const conBotones = (cuerpo, botones, extra, respaldoPropio) => {
   return cmMensaje('cliente', cmBotones(c, botones), c, respaldo, Object.assign({ tipoReporte: 'interactive' }, extra || {}));
 };
 const conRuben = (cuerpo, extra) => {
-  const c = rrSeguro(cuerpo);
+  // Sin el número de Rubén no hay botón: el texto de Silvana («Déjame confirmarte… con Rubén») quedaría como una promesa sin respaldo (revisión de seguridad, LOW). Sin número, no promete: dice la verdad.
+  const sinBotonRubenNum = String(cfg['numeroRecepcion'] || '').replace(/\D/g, '') === '';
+  const cuerpoOk = sinBotonRubenNum && String(cuerpo).indexOf(RR_TEXTO_DEVOLUCION) >= 0 ? String(cuerpo).split(RR_TEXTO_DEVOLUCION).join('Por este chat no puedo confirmarte las condiciones de garantía o devolución: eso lo ve Rubén directamente.') : cuerpo;
+  const c = rrSeguro(cuerpoOk);
   return cmContactoConBoton(Object.assign({ numero: cnDigitos(cfg.numeroRecepcion), desde: from, cuerpo: c, botonTexto: RR_BOTON_RUBEN, saludo: 'Hola Rubén, vengo del asistente virtual.', textoDelRespaldo: 'Escríbele aquí:', sinNumero: 'Eso lo ve Rubén directamente.', esRepetido: (x) => fichaAntes.ultimoHash !== '' && ctHashTexto(x) === fichaAntes.ultimoHash }, extra || {}));
 };
 const usadosHoy = () => fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);

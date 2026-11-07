@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Mundo } from '../../lib/n8n-de-mentira';
 import type { ResultadoTurno } from './mundo';
-import { ANA, crear, hablar, mTexto } from './mundo';
+import { ANA, crear, hablar, mTexto, panelOk } from './mundo';
 import { vigilarUx } from './vigilante-ux';
 
 const nuevo = (o: Record<string, unknown> = {}): Mundo => { const w = crear(o as never); vigilarUx(w); return w; };
@@ -35,6 +35,15 @@ describe('CASO 1: garantía de compra o devolución de dinero', () => {
     expect(t.mensajes[0]!.cuerpo).toMatch(CASO1);
     expect(t.mensajes[0]!.cuerpo).not.toMatch(NUNCA_EN_1);
     expect(esBoton(t)).toBe(true);
+  });
+  it('NEGADA: sin número de Rubén no hay botón, y entonces el texto NO promete («Déjame confirmarte…»): dice que lo ve Rubén directamente', () => {
+    // Sin vigilante de UX: sin número no hay con qué armar el botón, y esa regla (deriva = botón) no puede cumplirse; lo que se vigila aquí es que el texto no prometa.
+    const w = crear({ base: { numeroRecepcion: '' }, panel: panelOk({ operacion: { numeroRecepcion: '', prefijosPermitidos: ['591'] } }) } as never);
+    hablar(w, ANA, mTexto('hola'));
+    const t = hablar(w, ANA, mTexto('¿Tiene garantía?'));
+    expect(esBoton(t)).toBe(false);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/Déjame confirmarte|Puedes tocar el botón|no tiene garant|sin garant/i);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/lo ve Rubén directamente/);
   });
   it('como PRIMER mensaje el texto exacto no lo sustituye la barrera final (con la presentación delante)', () => {
     const w = nuevo();
