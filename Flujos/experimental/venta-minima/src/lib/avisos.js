@@ -330,7 +330,16 @@ function avLimpio(t, max, opc) {
   // decimales y las horas («4.50», «12.30», «1.25L») no se tocan.
   s = s.replace(/(?<=[\p{L}\p{M}])(?<![ºª])\.(?=[\p{L}\p{M}\p{N}])(?![ºª])|(?<=\p{N})\.(?=\p{L}{2})/gu, '. ');
   if (opc && opc.cocina) {
-    s = s.replace(/\+?\d[\d\s.-]{5,}\d/g, (m) => (m.replace(/\D/g, '').length >= 7 ? '…' : m));
+    // Un número de teléfono partido con separadores («0000/0000», «(591) 0000-0000», «+591·0000 0000», «0000–0000», «0000|0000», «0000,0000») también se quita
+    // para cocina (revisión de seguridad, 07/11/2026; revisión de #848). Se quita solo si junta 7 dígitos o más Y tiene al menos DOS grupos de 3 o más dígitos (o uno de
+    // 7): una fecha («08/11/2026»), una lista numerada («2) 3) 4) 5) 6) 7) 8)») o unas horas («20:00, 21:30») no son un teléfono y quedan.
+    s = s.replace(/\+?\(?\d[\d\s.\-\u2010-\u2015/()·|,:]{5,}\d\)?/g, (m) => {
+      if (m.replace(/\D/g, '').length < 7) return m;
+      if (/^\(?\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}\)?$/.test(m.trim())) return m; // una fecha
+      const grupos = m.match(/\d+/g) || [];
+      const largos = grupos.filter((g) => g.length >= 3).length;
+      return largos >= 2 || grupos.some((g) => g.length >= 7) ? '…' : m;
+    });
     s = s.replace(/\d{7,}/g, '…');
   }
   // Se colapsan espacios y « · » ANTES de comparar con la red: quitar `*_~` deja huecos que juntan frases («te *avisamos»).

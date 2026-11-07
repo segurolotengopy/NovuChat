@@ -341,3 +341,11 @@ Cambio en `Decidir turno`, `Armar mensajes` y `Soltar mensajes` de «Venta míni
 - **Qué cambia:** dos claves nuevas de «Config base» (`reservaDesde`, `reservaMananaTexto`; solo `qtaco.json`, que hereda `qtaco-3727` y el ensayo). Una reserva con hora anterior a `reservaDesde` se ACEPTA (el horario válido sigue siendo `horario`, el de pedidos: no hay horario propio de reservas); la confirmación agrega el texto del negocio y el aviso al local lleva la nota «Reserva de mañana (antes de las 12:00): contactar para confirmar o cambiar la hora» dentro del mismo aviso (variable de notas existente; ninguna variable de plantilla cambia). Horas fuera de 10:00–21:30 se rechazan como hoy. `reservaDesde` vacío = comportamiento anterior.
 - **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos. Código común a todas las salidas de `venta-minima` (regeneradas); solo Q'Taco trae `reservaDesde`, así que el resto no cambia de comportamiento.
 - **No se publica con este PR.**
+
+## Todas las diferencias de un comprobante: primero Rubén (Andres, 07/11/2026)
+
+**Decisión de Andres:** un comprobante que no cuadra le dice al cliente TODAS sus diferencias, el destinatario primero (condición general del sistema). El servidor ya devuelve `motivos[]` (PR de Functions #849, aditivo) y la base común (`venta-digital/src/diferencias.js`, nueva; `cobro.js` no se toca) arma el texto.
+
+- **Adopta en este PR:** Rubén (fuente y JSON regenerados, sin publicar). **Excepción declarada:** el flujo vivo de Rubén sigue diciendo UNA diferencia hasta su publicación; **cierra:** esa publicación, tras la prueba conjunta. Con el servidor sin desplegar el texto cae al motivo primario de siempre.
+- **Pendiente de adopción (no es de este PR; prioridad: salir con Rubén):** Antonio/Emma/Evy, Casa Bermejo y Walisuma (trabajo ya hecho en la rama `plataforma-casos/todas-las-diferencias-otros-flujos`, sin PR), Q'Taco/`venta-minima` (su sesión) y la agenda con seña.
+- **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos.

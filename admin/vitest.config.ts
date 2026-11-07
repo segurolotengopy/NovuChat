@@ -89,6 +89,8 @@ export const SUITES_PURAS = [
   'pruebas/venta-minima-catalogo-punta-a-punta.test.ts',
   'pruebas/venta-minima-sesion.test.ts', 'pruebas/venta-minima-cupos.test.ts', 'pruebas/venta-minima-prueba-0711.test.ts',
   'pruebas/venta-minima-avisos-vinetas.test.ts',
+  // La guardia del sandbox de expresiones de n8n y el chequeo de ejecuciones (07/11/2026): sin red ni emulador.
+  'pruebas/core/expresiones-n8n.test.ts', 'pruebas/plataforma/auditar-ejecuciones-n8n.test.ts',
   'pruebas/n8n-de-mentira.test.ts',
   'pruebas/comun-sin-agente-construir.test.ts',
   'pruebas/comun-sin-agente-envio.test.ts',
@@ -145,6 +147,7 @@ export const SUITES_PURAS = [
   'pruebas/plataforma/aplicar-consola-oculta.test.ts',
   'pruebas/plataforma/habilitar-productos.test.ts',
   'pruebas/plataforma/resetear-ficha-flujo.test.ts',
+  'pruebas/plataforma/resetear-telefono-prueba.test.ts',
   'pruebas/plataforma/aplicar-consola-conversaciones.test.ts',
   'pruebas/plataforma/rellenar-conversaciones.test.ts',
   // Conversaciones (H1-7, 16/10/2026): comprobadas una por una con FIRESTORE_EMULATOR_HOST=127.0.0.1:1

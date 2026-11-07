@@ -474,12 +474,24 @@ describe('El sandbox de EXPRESIONES de n8n no deja leer prototype/__proto__/cons
     const COBRO = { cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: 63, pedido: 'ped1' } };
     const PED = { pedidoId: 'ped1', from: CLIENTE, codigo: 'OXJL', total: 63, lineas: [], modalidad: 'recojo' };
     const lectura = { categoria: 'publicidad', titular_principal: 'Jueves de +2', campana: 'B' };
-    const conQr = (flujo?: Flujo) => {
-      const w = crear({ panel: panel(JUEVES_10, COBRO), flujo, clasifica: lectura });
+    const conQr = (flujo?: Flujo, clasifica: J = lectura) => {
+      const w = crear({ panel: panel(JUEVES_10, COBRO), flujo, clasifica });
       w.sesion.sembrar(CLIENTE, { paso: 'esperando_comprobante', pedido: PED, carrito: [], ultimoMensajeMs: JUEVES_10 - 60_000 }, { ped1: { ...PED, guardadoMs: JUEVES_10 } });
       return w;
     };
-    expect(() => conversacion(conQr(viejo)).imagen()).toThrow(/Cannot access "prototype" due to security concerns/);
+    // Sin `onError` (como estaba el 07/11) la ejecución muere; con `onError` (desde la segunda ronda) el IF manda el ítem por su salida falsa y el turno sigue.
+    const sinOnError = JSON.parse(JSON.stringify(viejo)) as Flujo;
+    delete (sinOnError.nodes.find((x) => x.name === '¿Es comprobante?') as J)['onError'];
+    expect(() => conversacion(conQr(sinOnError)).imagen()).toThrow(/Cannot access "prototype" due to security concerns/);
+    expect(conversacion(conQr(viejo)).imagen().mensajes).toHaveLength(1);
+    // El escenario del 07/11 con la expresión vieja y `onError` (revisión de #848): un COMPROBANTE real (el clasificador dice «otro») con el QR pendiente y
+    // campañas vigentes llega al local como comprobante (aviso con el código del pedido), y el cliente nunca lee que el pago entró.
+    const comp = conversacion(conQr(viejo, { categoria: 'otro', titular_principal: '', campana: 'ninguna' })).imagen();
+    expect(comp.mensajes).toHaveLength(1);
+    expect(comp.avisos.some((a) => a.ok)).toBe(true);
+    expect(JSON.stringify(comp.avisos)).toContain('OXJL');
+    expect(cuerpos(comp).join(' ')).not.toMatch(/pago (acreditado|verificado|confirmado)|recibimos tu pago|tu pago (ya )?(entr|lleg|ingres)|ya pagaste/i);
+    expect(cuerpos(comp).join(' ')).toMatch(/comprobante/i);
     const hoy = conversacion(conQr()).imagen();
     expect(hoy.mensajes).toHaveLength(1);
     expect(cuerpos(hoy)[0]).toContain('agrandar');
@@ -595,5 +607,40 @@ describe('G. Avisos en viñetas de punta a punta (plantillas nuevas por tipo, 07
       if (!falla) expect(resp).toHaveLength(0);
       else expect(resp.map((a) => [a.a, nombre(a)]).sort()).toEqual([['59100000021', 'solicitud_reserva'], ['59100000022', 'pedido_registrado']]);
     }
+  });
+});
+
+// -------------------------------------------------------------------------------------------------------------------------------- ONERROR
+describe('Una excepción en los IF del camino de los medios NO mata la ejecución sin rastro (revisión del PR #842): ante la duda, comprobante', () => {
+  const COBRO = { cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: 63, pedido: 'ped1' } };
+  const PED = { pedidoId: 'ped1', from: CLIENTE, codigo: 'OXJL', total: 63, lineas: [], modalidad: 'recojo' };
+  const conFalla = (onError: boolean): Flujo => {
+    const f = JSON.parse(JSON.stringify(QTACO)) as Flujo;
+    const n = f.nodes.find((x) => x.name === '¿Es comprobante?')!;
+    ((n.parameters as J)['conditions']['conditions'][0] as J)['leftValue'] = "={{ (() => { throw new Error('falla de prueba'); })() }}";
+    if (!onError) delete (n as J)['onError'];
+    return f;
+  };
+  const turno = (flujo: Flujo) => {
+    const w = crear({ panel: panel(JUEVES_10, { ...COBRO, campanas: [] }), flujo });
+    w.sesion.sembrar(CLIENTE, { paso: 'esperando_comprobante', pedido: PED, carrito: [], ultimoMensajeMs: JUEVES_10 - 60_000 }, { ped1: { ...PED, guardadoMs: JUEVES_10 } });
+    return conversacion(w).imagen();
+  };
+  it('los cinco IF del camino de los medios llevan `onError: continueRegularOutput`, y la expresión de «¿Es comprobante?» cae en «comprobante» si lanza', () => {
+    for (const nombre of ['¿Bajar medio?', '¿Tamaño aceptable?', '¿Es audio?', '¿Es PDF?', '¿Es comprobante?']) {
+      expect((QTACO.nodes.find((x) => x.name === nombre) as J)['onError'], nombre).toBe('continueRegularOutput');
+    }
+    const v = String(((QTACO.nodes.find((x) => x.name === '¿Es comprobante?')!.parameters as J)['conditions']['conditions'][0] as J)['leftValue']);
+    expect(v.startsWith('={{ (() => { try { ')).toBe(true);
+    expect(v.endsWith(' } catch (e) { return true; } })() }}')).toBe(true);
+  });
+  it('si «¿Es comprobante?» lanza, el turno sigue: la foto llega al local como comprobante (aviso) y el cliente recibe UN mensaje', () => {
+    const t = turno(conFalla(true));
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.avisos.some((a) => a.ok)).toBe(true);
+    expect(JSON.stringify(t.avisos)).toContain('OXJL');
+  });
+  it('NEGANDO: sin `onError`, la misma falla mata la ejecución (lo que pasaba antes)', () => {
+    expect(() => turno(conFalla(false))).toThrow(/falla de prueba/);
   });
 });

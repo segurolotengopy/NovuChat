@@ -2058,6 +2058,23 @@ describe('variables de plantilla corregidas (05/11): mapa en la modalidad, cotej
 });
 
 
+describe('cocina: un teléfono partido con separadores en un nombre o una nota no llega a cocina (revisión de seguridad, 07/11/2026)', () => {
+  it('«0000/0033», «(591) 0000-0033», «+591·0000 0033», «0000–0033», «0000|0033», «0000,0033» se quitan; las horas, las fechas, las listas y los números cortos quedan; el rol completo no cambia', () => {
+    for (const t of ['Ana 0000/0033', 'Ana (591) 0000-0033', 'Ana +591·0000 0033', 'Ana 591 0000 0033', 'Ana 0000–0033', 'Ana 0000|0033', 'Ana 0000,0033', 'Ana 0000:0033']) {
+      const c = L.avLimpio(t, 60, { cocina: true });
+      expect(c.replace(/\D/g, '').length, t).toBeLessThan(7);
+      expect(c, t).toContain('Ana');
+    }
+    expect(L.avLimpio('mesa 4, a las 20:00, 21:30 o 22:15', 120, { cocina: true })).toBe('mesa 4, a las 20:00, 21:30 o 22:15');
+    expect(L.avLimpio('2 tacos y 3 quesadillas', 60, { cocina: true })).toBe('2 tacos y 3 quesadillas');
+    expect(L.avLimpio('Ana 0000/0033', 60)).toBe('Ana 0000/0033');
+    // Revisión de #848: una fecha y una lista numerada no son un teléfono; antes del cambio, «0000/0033» llegaba entero a cocina.
+    expect(L.avLimpio('para el 08/11/2026 a las 20:00', 80, { cocina: true })).toBe('para el 08/11/2026 a las 20:00');
+    expect(L.avLimpio('opciones 2) 3) 4) 5) 6) 7) 8)', 80, { cocina: true })).toBe('opciones 2) 3) 4) 5) 6) 7) 8)');
+    expect(L.avLimpio('Ana 0000/0033', 60, { cocina: true })).not.toContain('0000/0033');
+  });
+});
+
 describe('avParametroConMapa: el enlace descartado no deja separadores ni «mapa:» colgando', () => {
   const L = cargar();
   const E = 'https://www.google.com/maps/search/?api=1&query=-16.500000%2C-68.100000';

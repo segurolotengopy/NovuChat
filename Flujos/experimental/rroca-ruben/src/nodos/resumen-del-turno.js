@@ -38,7 +38,7 @@ if (cnNodo('Enviar a WhatsApp')) {
       ctRestaurarEnviado(rrF3, { h: rrHp.h, f: rrHp.f });
       // Las preguntas pendientes vuelven a las de antes del turno; la conversación (el contador y las dos marcas de las opciones) solo cuenta lo que Meta aceptó.
       ctRestaurarPreguntas(rrF3, rrHp.preg);
-      rrF3.charlaN = Number(rrHp.c) || 0; rrF3.pidioOpciones = rrHp.po === true; rrF3.opcionesVistas = rrHp.ov === true; rrF3.upgrade = Number(rrHp.u) || 0;
+      rrF3.charlaN = Number(rrHp.c) || 0; rrF3.pidioOpciones = rrHp.po === true; rrF3.opcionesVistas = rrHp.ov === true; rrF3.upgrade = Number(rrHp.u) || 0; rrF3.qrInvitadoMs = Number(rrHp.qi) || 0;
     }
   }
   const rrEsperados = items.filter((i) => i && i.sinMensajes !== true).length;

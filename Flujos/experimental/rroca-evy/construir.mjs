@@ -35,6 +35,7 @@ import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 import { hallazgosDelEnvioRele, injertar, MARCADOR_URL_DEL_RELE, parametrosDeMensajeRele, PREFIJO_CREDENCIAL_RELE } from '../comun-sin-agente/src/envio.mjs';
 import { hallazgosDelGuardado, injertarGuardado, NODOS_DE_INGESTA_DEL_GUARDADO, URL_DESCARGA_GUARDADO, urlDescargaRele } from '../comun-sin-agente/src/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-evy/rroca-evy.json');
@@ -333,6 +334,8 @@ export function guardias(variante, flujo, mapaCrm) {
   else h.push(...hallazgosCrm(flujo || {}, mapa).map((x) => `miniCRM: ${x}`));
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   h.push(...hallazgosDelGuardado(flujo || {}));
+  // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
+  h.push(...hallazgosDeExpresionesN8n(flujo || {}));
   // Las imágenes y el aviso SALEN antes de armar el texto: «Armar previos» → «¿Hay previos?» → «Enviar aviso» → «Armar mensajes»; la rama sin previos también llega a «Armar mensajes».
   if (nombres.has('Armar previos') && !destinosDe('Armar previos', 0).includes('¿Hay previos?')) h.push('«Armar previos» no está conectado a «¿Hay previos?»');
   if (nombres.has('¿Hay previos?') && !destinosDe('¿Hay previos?', 0).includes('Enviar aviso')) h.push('«¿Hay previos?» no envía por «Enviar aviso»');

@@ -116,6 +116,28 @@
           "dice": "Ah qué bueno que tenga audio. ¿Pero los audios duran mucho? ¿Y me garantizan que con eso ya duermo toda la noche?"
         }
       ]
+    },
+    {
+      "id": "G",
+      "nombre": "Humo de Silvana (07/11): con el QR abierto, «¿qué incluye el pack?» y «¿qué contiene?» deben responder el contenido",
+      "turnos": [
+        {
+          "dice": "Ya no aguanto más sin dormir"
+        },
+        {
+          "dice": "Que la mente no se apague",
+          "seco": "Se nota lo cansada que estás, y que la mente no te da tregua. ¿Qué es lo que más te da vueltas al acostarte?"
+        },
+        {
+          "boton": "b_pack"
+        },
+        {
+          "dice": "¿Qué incluye el pack? No me explicaste nada"
+        },
+        {
+          "dice": "¿Qué contiene el pack?"
+        }
+      ]
     }
   ]
 }

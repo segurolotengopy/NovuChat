@@ -33,6 +33,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hallazgosDelGuardado, injertarGuardado } from '../comun-sin-agente/src/guardado.mjs';
+import { textosDeHallazgos as hallazgosDeExpresionesN8n } from '../comun-sin-agente/src/expresiones.mjs';
 import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -117,6 +118,9 @@ function armar(v) {
   // La misma guardia que la prueba de CI «guardado obligatorio»: nueve nodos, ningún Code que lea el binario, retención en «none» (contrato v2 del 30/10).
   const hallazgosGuardado = hallazgosDelGuardado(flujo, { exigir: true });
   if (hallazgosGuardado.length) throw new Error(`${v.archivo}: ${hallazgosGuardado.join('; ')}`);
+  // El sandbox de EXPRESIONES de n8n (07/11/2026): ninguna expresión lee prototype/__proto__/constructor ni usa Function, eval, process, require, globalThis o this.
+  const hallazgosExpr = hallazgosDeExpresionesN8n(flujo);
+  if (hallazgosExpr.length) throw new Error(`${v.archivo}: ${hallazgosExpr.join('; ')}`);
   // El mapa de columnas del tenant (dato, no codigo) dentro de los nodos del modulo y los rangos de lectura de los nodos de Google; y la guardia del miniCRM
   // (rangos que no llegan a la letra del diagnostico del equipo ni pasan de la ultima del bot; retencion de ejecuciones en «none»; la rama completa y su credencial).
   injertarCrm(flujo, MAPA_CRM);
