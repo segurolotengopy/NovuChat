@@ -3672,10 +3672,13 @@ describe('Agenda mínima v0: el miniCRM', () => {
     expect(t.bitacora).toEqual([]);
     expect(String(t.prospecto?.['quePidio'] ?? '')).not.toBe('Cancelar cita');
   });
-  it('NIEGA: la emergencia no deja prospecto, aunque haya id de planilla', () => {
+  it('la emergencia deja fila (Andres, 07/11/2026) con SOLO teléfono, nombre de perfil y «Emergencia»: el texto del mensaje no pasa', () => {
     const t = mundo({ eventos: [], configBase: CON }).turno(texto(MAMA, 'emergencia, mi bebé no respira'));
-    expect(t.armado['guardarPlanilla']).toBe(false);
-    expect(t.prospecto).toBeNull();
+    expect(t.armado['guardarPlanilla']).toBe(true);
+    expect(Object.keys(t.prospecto ?? {}).sort()).toEqual(['nombre', 'nombreDePerfil', 'nuevoContacto', 'servicioElegido', 'telefono', 'ultimaInteraccionMs']);
+    expect(t.prospecto?.['servicioElegido']).toBe('Emergencia');
+    const vista = JSON.stringify([t.armado['prospectoPlanilla'], t.prospecto]);
+    for (const x of ['bebé', 'respira', 'emergencia,']) expect(vista, x).not.toContain(x);
   });
   it('NIEGA: un mensaje con síntomas, el nombre del niño y montos NO llega a la planilla', () => {
     const m = mundo({ eventos: [], configBase: CON });

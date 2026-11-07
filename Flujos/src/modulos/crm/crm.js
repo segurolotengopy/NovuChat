@@ -12,7 +12,8 @@ const CRM_MAPA = null; // @@crm-mapa
 // Los campos del contrato de columnas v1 que son del bot (espejo de `COLUMNAS_V1` de Functions; una prueba los compara).
 const CRM_CAMPOS_BOT = ['id', 'fecha', 'nombre', 'empresa', 'telefono', 'etapaInicial', 'origen', 'calificacion', 'resumen', 'interes',
   'ultimaInteraccion', 'etapaSugerida', 'idCampana', 'noContactar', 'ultimaActualizacionBot', 'estadoRecordatorio',
-  'clasificacion', 'quePidio', 'diaPreferido', 'horarioPreferido', 'derivacion', 'ventana24h'];
+  'clasificacion', 'quePidio', 'diaPreferido', 'horarioPreferido', 'derivacion', 'ventana24h',
+  'servicioElegido', 'agendo', 'fechaCita'];
 const CRM_CAMPOS_EQUIPO = ['valor', 'responsable', 'estado', 'proximaAccion', 'diagnostico'];
 // De los del equipo, los que el mapa debe declarar siempre (columna o null); `diagnostico` es opcional: solo existe en las planillas que la traen.
 const CRM_EQUIPO_DECLARADO = ['valor', 'responsable', 'estado', 'proximaAccion'];
@@ -55,6 +56,11 @@ function crmNeutralizarTexto(valor, largoMax) {
     .slice(0, max);
   return /^[\s ]*[=+\-@]/.test(limpio) ? "'" + limpio : limpio;
 }
+
+// SERVICIO ELEGIDO (opcional, lista cerrada): cualquier otro valor se descarta. AGENDO: solo «Sí» o «No».
+const CRM_SERVICIOS_ELEGIDOS = ['Emergencia', 'Recién nacido', 'Control niño sano', 'Vacunas y/o otros'];
+const crmServicioElegido = (v) => (typeof v === 'string' && CRM_SERVICIOS_ELEGIDOS.indexOf(v.trim()) >= 0 ? v.trim() : '');
+const crmAgendo = (v) => (v === 'Sí' || v === 'No' ? v : '');
 
 // Un elemento de una lista de la consola: un texto recortado de hasta 40 caracteres, neutralizado. Lo demas (largo, numero, objeto) se descarta (null).
 function crmElemento(v) {
@@ -317,7 +323,14 @@ function crmDecidirFila(a) {
       ['derivacion', crmDerivacion(p.derivacion)],
       ['ultimaInteraccion', crmFechaHoraLaPaz(ultimaMs)],
       ['ventana24h', crmFechaHoraLaPaz(crmVentana24h(ultimaMs))],
-    ].filter(([campo, v]) => v !== '' && mapeado(campo));
+      ['servicioElegido', crmServicioElegido(p.servicioElegido)],
+    ];
+    // «Agendó» y «Fecha y hora de la cita» (opcionales). «Sí» viaja siempre, con su fecha (ms). «No» solo en fila NUEVA (por defecto) o por cancelacion
+    // explicita (`citaCancelada === true`, que ademas limpia la fecha): un «No» de un turno posterior NUNCA pisa un «Sí» existente. La fecha solo viaja con «Sí».
+    const agendoP = crmAgendo(p.agendo);
+    if (agendoP === 'Sí') { extras.push(['agendo', 'Sí']); extras.push(['fechaCita', crmFechaHoraLaPaz(p.fechaCita)]); }
+    const cancelo = p.citaCancelada === true && agendoP === 'No';
+    for (let k = extras.length - 1; k >= 0; k--) if (extras[k][1] === '' || !mapeado(extras[k][0])) extras.splice(k, 1);
 
     if (actual) {
       // YA EXISTE: solo nombre, empresa, interes, calificacion y resumen, y solo si el dato nuevo no esta vacio y cambia algo. La calificacion no baja.
@@ -351,6 +364,11 @@ function crmDecidirFila(a) {
         // Al actualizar NINGUN valor lleva apostrofo: `Actualizar fila` escribe RAW y el apostrofo se veria. Una fecha escrita asi queda como texto.
         celdas[T(campo)] = nuevoV;
       }
+      // Cancelacion explicita de la cita: «No» y fecha vacia (solo si hay algo que cambiar).
+      if (cancelo) {
+        if (mapeado('agendo') && crmLimpio(actual[T('agendo')]) !== 'No') celdas[T('agendo')] = 'No';
+        if (mapeado('fechaCita') && crmLimpio(actual[T('fechaCita')]) !== '') celdas[T('fechaCita')] = '';
+      }
       if (!Object.keys(celdas).length) return nada(i, 'sin_cambios');
       out.push({ json: { accionPlanilla: 'actualizar', veredictoPlanilla: 'actualizar', row_number: Number(actual.row_number) + DESFASE, ...celdas }, pairedItem: { item: i } });
       return;
@@ -379,6 +397,7 @@ function crmDecidirFila(a) {
     };
     if (mapeado('interes')) fila[T('interes')] = crmComoTexto(p.rubro);
     for (const [campo, v] of extras) fila[T(campo)] = campo === 'clasificacion' ? v : crmComoTexto(v);
+    if (mapeado('agendo') && agendoP !== 'Sí') fila[T('agendo')] = 'No';
     if (mapa.alCrear.estado !== undefined && mapa.equipo.estado) fila[mapa.equipo.estado.titulo] = mapa.alCrear.estado;
     out.push({ json: fila, pairedItem: { item: i } });
   });
