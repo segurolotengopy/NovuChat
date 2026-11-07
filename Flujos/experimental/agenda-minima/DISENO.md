@@ -399,3 +399,11 @@ cuesta 250 Bs. Si quieres, te ayudo a agendarla.») es un dato del cliente en «
 - Humo del 23/10 leído en la Consola, sin errores; observación pendiente: tras agendar, la primera pregunta de golpe en la cabeza vuelve al menú de bienvenida (la transferencia con botón llega en el segundo intento).
 - Vuelta atrás: `--restaurar-respaldo` (con «sí» de Andres) o republicar `9d3bc4c2`.
 - Pendientes no-código a producción: ver el asiento de `bitacora/2026-10.md` del 24/10.
+
+## miniCRM: tres columnas del bot (07/11/2026)
+
+Columnas U «Servicio elegido», V «Agendó» y W «Fecha y hora de la cita» (opcionales en el contrato común); «Diagnóstico del equipo» pasa de la U a la X (decisión
+de Andres), así el rango de lectura es A:W y nunca cruza el diagnóstico. Un «No» posterior nunca pisa un «Sí»: solo la cancelación verificada lo vuelve «No» y
+limpia la fecha. Procedimiento de la hoja viva: **insertar 3 columnas antes de la U** (el Diagnóstico pasa a la X con su contenido) y escribir los encabezados nuevos en U, V y W. Antes de publicar se
+comprueba que U, V y W estén vacías en las filas existentes. Cancelar o reprogramar pasadas las 48 h actualiza la fila más reciente solo en «Agendó» y la fecha; cancelar una de varias
+citas no pone «No»: la fila conserva «Sí» y, si la cancelada era la de la fila, la fecha pasa a la próxima cita que queda (sin mensajes nuevos).
