@@ -2524,10 +2524,10 @@ describe.each([
     });
 
     it('no cuadra: dice cuál dato no coincide, lo revisa una persona y el horario sigue reservado', () => {
-      const s = responder(OK({ resultado: 'no_cuadra', diferencias: ['El monto leído (40) no es el de la seña (100).', 'Otra.'] }));
+      const s = responder(OK({ resultado: 'no_cuadra', diferencias: ['El comprobante dice 40 y el pedido es de 100.', 'Otra.'] }));
       const r = String(s['respuesta']);
       // TODAS las diferencias (condición general, 07/11/2026): las dos, no solo la primera.
-      expect(r).toMatch(/Recibí (su|tu) comprobante\. Hay varios datos que no me coinciden \(El monto leído \(40\) no es el de la seña \(100\) y Otra\)/);
+      expect(r).toMatch(/Recibí (su|tu) comprobante\. Hay varios datos que no me coinciden \(el comprobante dice 40 y la seña es de 100 y otro dato del comprobante\)/);
       expect(r).toContain('una persona de Un Negocio');
       expect(r).toMatch(/(Su|Tu) horario sigue reservado/);
       expect(s).toMatchObject({ transferir: true, resultadoSena: 'no_cuadra', confirmarCita: false });

@@ -33,7 +33,7 @@ const importe = `${String(cfg.senaImporte || '').trim()} ${String(cfg.senaMoneda
 
 // TODAS LAS DIFERENCIAS AL CLIENTE, el destinatario primero (Andres, 07/11/2026: condicion general del sistema). El servidor lista TODAS en `diferencias`; antes el texto al cliente mostraba solo la
 // primera y, peor, copiaba lo leido de la imagen («El deposito fue a la cuenta <la que leyo>», «figura a <el nombre que leyo>»). Ahora cada diferencia conocida sale en su frase FIJA (nada leido de la
-// imagen; solo los dos importes que el servidor ya tradujo) y las que no se reconocen salen tal como las dio el servidor (su catalogo es fijo). Recepcion sigue recibiendo el detalle completo en el motivo.
+// imagen; solo los dos importes que el servidor ya tradujo) y una que no se reconoce sale como «otro dato del comprobante» (nunca cruda: el detalle va solo a Recepcion). Recepcion sigue recibiendo el detalle completo en el motivo.
 const frasesParaElCliente = (lista, referencia) => {
   const grupo = (d) => (/^El dep[oó]sito (fue a la cuenta|figura a)|^El comprobante no muestra a qu[eé] cuenta/.test(d) ? 0 : (/^(El comprobante dice|No se pudo leer el importe)/.test(d) ? 1 : 2));
   const traducir = (d) => {
@@ -46,7 +46,7 @@ const frasesParaElCliente = (lista, referencia) => {
     if (/^No se pudo leer la fecha/.test(d)) return 'no pude leer la fecha';
     if (/^El comprobante es anterior al pedido/.test(d)) return `la fecha del comprobante es anterior a ${referencia === 'la seña' ? 'la reserva' : 'tu pedido'}`;
     if (/^El comprobante tiene una fecha posterior/.test(d)) return 'la fecha del comprobante no es correcta';
-    return d.replace(/\.$/, '');
+    return 'otro dato del comprobante';
   };
   const orden = lista.map((d, i) => ({ d, i })).sort((a, b) => grupo(a.d) - grupo(b.d) || a.i - b.i).map((x) => traducir(x.d));
   return orden.filter((f, i) => f !== '' && orden.indexOf(f) === i);
