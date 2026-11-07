@@ -19,7 +19,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ejecutar, type J, type Referencias } from './lib/flujo';
-import { comprometer, crearSesion, leerSesion, type SesionDeMentira } from './lib/venta-minima-sesion';
+import { asentarCupos, comprometer, consumirCupos, crearSesion, leerSesion, type SesionDeMentira } from './lib/venta-minima-sesion';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src');
 const leer = (r: string): string => readFileSync(join(RAIZ, r), 'utf8');
@@ -30,7 +30,7 @@ const PQR = readFileSync(join(RAIZ, '../../../src/modulos/pedidos/qr-del-pedido.
 const SESION = readFileSync(join(RAIZ, '../../comun-sin-agente/src/sesion.js'), 'utf8');
 const LIBS = [...LIBRERIAS, PQR].join('\n');
 const CODIGO: Record<string, string> = {};
-const CON_SESION = ['config-del-negocio', 'armar-mensajes', 'soltar-mensajes'];
+const CON_SESION = ['config-del-negocio', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes'];
 for (const n of ['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'interpretar-lectura', 'decidir-turno', 'plan-del-turno', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes', 'sin-estado']) {
   CODIGO[n] = `${LIBS}\n${CON_SESION.includes(n) ? `${SESION}\n` : ''}${leer(`nodos/${n}.js`)}`;
 }
@@ -200,14 +200,20 @@ function turno(m: Mundo, e: Entrada = {}): Salida {
   const avisos = correr('armar-avisos', [{}], refs);
   refs['Armar avisos'] = avisos;
   const armados = avisos.filter((i) => i['sinAviso'] !== true && i['payload']);
-  const enviados = armados.length ? (e.envio ?? ((a: J[]) => a.map((_, i) => OK(i + 1))))(armados) : [];
-  if (armados.length) refs['Enviar aviso'] = enviados;
+  // PR-4b: «Consumir cupos» (una llamada por turno, con el cuerpo que armó «Armar avisos»); solo `cupo_negado` impide los avisos.
+  const consumo = armados.length ? consumirCupos(m.sesion, avisos[0]!['cupos'] as J | null) : undefined;
+  if (consumo) refs['Consumir cupos'] = consumo;
+  const negado = ((consumo?.['body'] ?? {}) as J)['resultado'] === 'cupo_negado';
+  const enviados = armados.length && !negado ? (e.envio ?? ((a: J[]) => a.map((_, i) => OK(i + 1))))(armados) : [];
+  if (armados.length && !negado) refs['Enviar aviso'] = enviados;
   // «Armar mensajes» arma el bloque y pide el compromiso ANTES de enviar; el servidor de mentira contesta y «Soltar mensajes» decide qué sale.
   const armado = correr('armar-mensajes', [{}], refs)[0]!;
   refs['Armar mensajes'] = armado;
   const respuesta = comprometer(m.sesion, armado['compromiso'] as J | null);
   if (respuesta) refs['Comprometer turno'] = respuesta;
   const mensajes = correr('soltar-mensajes', [{}], refs);
+  // PR-4b: el cupo se devuelve si el servidor lo concedió y ningún aviso fue aceptado (lo manda «Confirmar envío» por «Comprometer compensación»).
+  asentarCupos(m.sesion, mensajes[0]?.['asentar'] as J | null);
   return { descartado: false, t, d, p, cfg, avisos, armados, enviados, mensajes, tiempoMs: performance.now() - ini };
 }
 
@@ -457,13 +463,15 @@ describe('R3: la marca de derivación es por hecho, y el tope respeta el 0', () 
   it('negado: si el primer aviso SÍ salió, el segundo del mismo teléfono dentro de la hora no se arma', () => {
     const m = crear();
     turno(m, { texto: pide });
-    expect(sdDe(m)['transferencias'][CLIENTE]).toEqual([m.ahora]);
+    // PR-4b: la derivación la cuenta el SERVIDOR (cupo `transferencias`, por teléfono y por hora); la memoria de n8n no guarda nada.
+    expect(sdDe(m)['transferencias']).toBeUndefined();
+    expect(m.sesion.servidor.usados(PNID, 'transferencias', 'contacto', CLIENTE, 'hora')).toBe(1);
     const b = turno(m, { despues: MIN, texto: pide });
-    expect(b.armados).toEqual([]);
-    expect(erroresAvisos(b).some((e) => e.startsWith('derivacion_repetida'))).toBe(true);
+    expect(b.enviados).toEqual([]); // el cupo se negó: ningún aviso salió
+    expect(errores(b).some((e) => e.startsWith('cupo_negado: transferencias: agotado'))).toBe(true);
     // Pasada la hora vuelve a avisar, y otro teléfono tiene su propio tope.
-    expect(turno(m, { despues: 61 * MIN, texto: pide }).armados.length).toBeGreaterThan(0);
-    expect(turno(m, { from: OTRO, texto: pide }).armados.length).toBeGreaterThan(0);
+    expect(turno(m, { despues: 61 * MIN, texto: pide }).enviados.length).toBeGreaterThan(0);
+    expect(turno(m, { from: OTRO, texto: pide }).enviados.length).toBeGreaterThan(0);
   });
 
   it('topeTransferenciasHora = 0 significa «ninguna derivación avisa» (antes caía a 1)', () => {
@@ -1090,15 +1098,16 @@ describe('S6: los topes por teléfono y por hora, de punta a punta', () => {
       expect(s.armados.length, `pedido ${i + 1}`).toBeGreaterThan(0);
       m.ahora += MIN;
     }
-    expect(sdDe(m)['avisosPedido'][CLIENTE]).toHaveLength(6);
+    expect(sdDe(m)['avisosPedido']).toBeUndefined(); // PR-4b: lo cuenta el servidor
+    expect(m.sesion.servidor.usados(PNID, 'pedidos', 'contacto', CLIENTE, 'hora')).toBe(6);
     const septimo = pedirYConfirmar(m);
-    expect(septimo.armados).toEqual([]);
-    expect(erroresAvisos(septimo).some((e) => e.startsWith('tope_pedidos_hora'))).toBe(true);
+    expect(septimo.enviados).toEqual([]);
+    expect(errores(septimo).some((e) => e.startsWith('cupo_negado: pedidos: agotado'))).toBe(true);
     // El cliente no lee que se pasó el pedido: lo que sale es el aviso honesto con el botón.
     expect(cuerpos(septimo).join('\n')).toContain('No pude pasarle tu pedido a nuestro equipo');
-    expect(pedirYConfirmar(m, OTRO).armados.length).toBeGreaterThan(0);
+    expect(pedirYConfirmar(m, OTRO).enviados.length).toBeGreaterThan(0);
     m.ahora += 61 * MIN;
-    expect(pedirYConfirmar(m).armados.length).toBeGreaterThan(0);
+    expect(pedirYConfirmar(m).enviados.length).toBeGreaterThan(0);
   });
 
   it('un aviso de pedido que falló en Graph no cuenta para el tope', () => {
@@ -1328,16 +1337,18 @@ describe('M1: los topes en 0 se respetan de punta a punta', () => {
     hastaResumen(m, 'recojo');
     const a = turno(m, { boton: 'p|confirmar' });
     expect(a.armados).toHaveLength(2);
-    expect(sdDe(m)['av']['dia']['n']).toBe(2);
-    // Se arma otro pedido y se intenta confirmar: el cupo del día está agotado.
+    expect(sdDe(m)['av']?.['dia']).toBeUndefined(); // PR-4b: el contador diario es un cupo del servidor
+    expect(m.sesion.servidor.usados(PNID, 'avisos', 'comercio', null, 'dia')).toBe(2);
+    // Se arma otro pedido y se intenta confirmar: el cupo del día está agotado (ningún aviso sale; todo o nada).
     hastaResumen(m, 'recojo');
     const c = turno(m, { boton: 'p|confirmar' });
-    expect(c.armados).toEqual([]);
-    expect(erroresAvisos(c).some((e) => e.startsWith('tope_diario_de_avisos'))).toBe(true);
+    expect(c.enviados).toEqual([]);
+    expect(errores(c).some((e) => e.startsWith('cupo_negado: avisos: agotado'))).toBe(true);
+    expect(cuerpos(c).join('\n')).toContain('No pude pasarle tu pedido a nuestro equipo');
     // Al día siguiente (La Paz), el cupo vuelve.
     m.ahora += 24 * HORA;
     hastaResumen(m, 'recojo');
-    expect(turno(m, { boton: 'p|confirmar' }).armados.length).toBeGreaterThan(0);
+    expect(turno(m, { boton: 'p|confirmar' }).enviados.length).toBeGreaterThan(0);
   });
   it('topePedidosHora = 0 y topeReservasDia = 0 tampoco caen a su valor por omisión', () => {
     const p = crear({ base: { ...BASE, topePedidosHora: 0 } });

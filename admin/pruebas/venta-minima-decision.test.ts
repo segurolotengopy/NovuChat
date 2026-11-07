@@ -57,6 +57,8 @@ function vmJsonDeGemini(j){ const t = vmTextoDeGemini(j).trim(); if (!t) return 
 function vmSd(){ try { const g = $getWorkflowStaticData('global'); if (!g.ventaMinima) g.ventaMinima = {}; return g.ventaMinima; } catch (e) { return null; } }
 // PR-4a: el estado y los pedidos de un teléfono vienen de la sesión del servidor (vmSes); esta suite los guarda donde siempre (los mapas de ventaMinima), que es lo que hace Armar mensajes al comprometer.
 function vmSes(from, ahora){ const sd = vmSd(); sd.estados = sd.estados || {}; sd.pedidos = sd.pedidos || {}; return sd; }
+// PR-4b: las reservas del día viajan en el bloque del servidor; aquí siguen en el mapa de ventaMinima (la vista de la sesión ES sd).
+function vmReservasSd(ses, from){ return ses; }
 function vmEstadoBase(){ return { paso: 'inicio', ultimoMensajeMs: 0 }; }
 function vmLeerEstado(sd, from, ahora){ const e = sd && sd.estados && sd.estados[from]; if (!e) return vmEstadoBase(); const vida = e.paso === 'esperando_comprobante' ? 86400000 : 3600000; return ahora - e.ultimoMensajeMs < vida ? JSON.parse(JSON.stringify(e)) : vmEstadoBase(); }
 function vmIdDeBoton(){ return Array.prototype.slice.call(arguments).join('|'); }

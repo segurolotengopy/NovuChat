@@ -7,21 +7,26 @@
  * Cada «Traer configuración» estrena un número de ejecución que se suma al idCompromiso (el n8n de mentira da SIEMPRE el mismo `$execution.id`; en n8n real cada ejecución tiene el suyo).
  * Un reintento de n8n (retryOnFail) vuelve a mandar el MISMO idCompromiso: el servidor contesta `repetido`.
  */
-import { crearServidorDeSesion, type ServidorDeSesion } from '../../../Flujos/experimental/comun-sin-agente/herramientas/servidor-de-sesion.mjs';
+import { crearServidorConCupos, type ServidorConCupos } from './servidor-de-cupos';
 import type { J } from './flujo';
 import type { Doble, LlamadaDoble } from './n8n-de-mentira';
 
 export const ESPACIO = 'venta-minima';
 export const ESPACIO_PRUEBA = 'venta-minima-prueba';
 export const NODOS_COMPROMETER = ['Comprometer turno', 'Comprometer turno (2.º intento)', 'Comprometer compensación'] as const;
+export const NODO_CUPOS = 'Consumir cupos';
 
 const clonar = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 
 export interface SesionDeMentira {
-  servidor: ServidorDeSesion;
+  servidor: ServidorConCupos;
   pid: string;
   /** Todo `comprometer` que llegó, por nodo, tal cual salió del flujo (antes de sumarle el número de ejecución). */
   compromisos: { nodo: string; cuerpo: J }[];
+  /** Todo `comprometer` con cupos que llegó a `Consumir cupos`, tal cual salió del flujo (PR-4b). */
+  consumos: J[];
+  /** Todo `asentar` que llegó (lo manda `Comprometer compensación` con el segundo ítem de `Confirmar envío`). */
+  asentados: J[];
   /** Cosas que el flujo no debía hacer (cabecera, URL o cuerpo mal formados). */
   malFormado: string[];
   /** Con `true`, el servidor es uno VIEJO sin la rama `sesion`: la respuesta de configuración no trae `conversacion` ni `visto`. */
@@ -46,11 +51,11 @@ export interface SesionDeMentira {
   sembrar(tel: string, estado: J | null, pedidos?: J, espacio?: string, venceEnMin?: number): void;
 }
 
-export function crearSesion(op: { pid: string; ahora: () => number; servidor?: ServidorDeSesion; espacios?: string[] | null }): SesionDeMentira {
-  const servidor = op.servidor ?? crearServidorDeSesion({ ahoraMs: op.ahora, espacios: op.espacios ?? null });
+export function crearSesion(op: { pid: string; ahora: () => number; servidor?: ServidorConCupos; espacios?: string[] | null }): SesionDeMentira {
+  const servidor = op.servidor ?? crearServidorConCupos({ ahoraMs: op.ahora, espacios: op.espacios ?? null });
   let ejecucion = 0;
   const s: SesionDeMentira = {
-    servidor, pid: op.pid, compromisos: [], malFormado: [], sinRama: false,
+    servidor, pid: op.pid, compromisos: [], consumos: [], asentados: [], malFormado: [], sinRama: false,
     alResponder: (ll, r) => {
       if (ll.nodo !== 'Traer configuración') return r;
       ejecucion++;
@@ -81,11 +86,27 @@ export function crearSesion(op: { pid: string; ahora: () => number; servidor?: S
       if (!/cloudfunctions\.net\/configuracionFlujo$/.test(ll.url)) s.malFormado.push(`${nodo}: URL inesperada ${ll.url}`);
       const cuerpo = (ll.cuerpo ?? {}) as J;
       if (Object.keys(cuerpo).sort().join() !== 'sesion,telefono') s.malFormado.push(`${nodo}: el cuerpo trae más que telefono y sesion`);
-      s.compromisos.push({ nodo, cuerpo: clonar(cuerpo) });
       const q = cuerpo['sesion'] as J;
+      // PR-4b: «Comprometer compensación» recibe también el `asentar` del cupo (segundo ítem de «Confirmar envío»): se anota aparte y el idCompromiso lleva el mismo sufijo que el del consumo.
+      if (q['accion'] === 'asentar') {
+        s.asentados.push(clonar(cuerpo));
+        return servidor.atender(op.pid, { ...cuerpo, sesion: { ...q, idCompromiso: `${String(q['idCompromiso'])}-x${ejecucion}`, espacio: `${String(q['espacio'])}-x${ejecucion}` } });
+      }
+      s.compromisos.push({ nodo, cuerpo: clonar(cuerpo) });
       return servidor.atender(op.pid, { ...cuerpo, sesion: { ...q, idCompromiso: `${String(q['idCompromiso'])}-x${ejecucion}` } });
     };
   }
+  // «Consumir cupos» (PR-4b): un espacio NUEVO por turno (en n8n real cada ejecución tiene su id; el de mentira es siempre el mismo, así que se le suma el número de ejecución) y NADA del estado de la conversación.
+  s.dobles[NODO_CUPOS] = (ll) => {
+    if (!ll.encabezados['X-NovuChat-Numero'] || ll.encabezados['X-NovuChat-Numero'] !== op.pid) s.malFormado.push(`${NODO_CUPOS}: falta X-NovuChat-Numero (${String(ll.encabezados['X-NovuChat-Numero'])})`);
+    if (!/cloudfunctions\.net\/configuracionFlujo$/.test(ll.url)) s.malFormado.push(`${NODO_CUPOS}: URL inesperada ${ll.url}`);
+    const cuerpo = (ll.cuerpo ?? {}) as J;
+    s.consumos.push(clonar(cuerpo));
+    const q = cuerpo['sesion'] as J | undefined;
+    // cuerpo vacío (sin teléfono, o prueba con un teléfono que no es de `telefonosDePrueba`): el servidor real lo rechaza con 400 sin leer nada; aquí ni siquiera se registra como llamada de sesión (se anota en `consumos`)
+    if (!q) return { statusCode: 400, body: { error: 'sesion: forma invalida' } };
+    return servidor.atender(op.pid, { ...cuerpo, sesion: { ...q, idCompromiso: `${String(q['idCompromiso'])}-x${ejecucion}`, espacio: `${String(q['espacio'])}-x${ejecucion}` } });
+  };
   return s;
 }
 
@@ -100,4 +121,18 @@ export function comprometer(s: SesionDeMentira, compromiso: J | null | undefined
   if (!compromiso) return undefined;
   s.compromisos.push({ nodo: 'Comprometer turno', cuerpo: clonar(compromiso) });
   return s.servidor.atender(s.pid, compromiso) as unknown as J;
+}
+
+/** La respuesta del nodo HTTP «Consumir cupos» (PR-4b) al cuerpo que armó «Armar avisos» en `cupos.cuerpo` (para las suites que corren los nodos Code uno por uno), o undefined si no pidió cupos. */
+export function consumirCupos(s: SesionDeMentira, cupos: J | null | undefined): J | undefined {
+  if (!cupos) return undefined;
+  const cuerpo = (cupos['cuerpo'] ?? {}) as J;
+  s.consumos.push(clonar(cuerpo));
+  return s.servidor.atender(s.pid, cuerpo) as unknown as J;
+}
+/** El `asentar` que «Confirmar envío» manda por «Comprometer compensación» (un segundo ítem), o undefined si no hay nada que devolver. */
+export function asentarCupos(s: SesionDeMentira, asentar: J | null | undefined): J | undefined {
+  if (!asentar) return undefined;
+  s.asentados.push(clonar(asentar));
+  return s.servidor.atender(s.pid, asentar) as unknown as J;
 }

@@ -566,8 +566,11 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
       if (sesion && sesion.statusCode !== 200) return { statusCode: sesion.statusCode, body: sesion.body };
       return { statusCode: 200, body: sesion ? { ...clonar(panel), conversacion: sesion.body.conversacion, visto: sesion.body.visto } : clonar(panel) };
     },
+    // PR-4b: la batería NO mide cupos (eso lo hace `venta-minima-cupos.test.ts` con el núcleo real): «Consumir cupos» concede siempre y el `asentar` no tiene nada que devolver.
+    'Consumir cupos': () => ({ statusCode: 200, body: { resultado: 'comprometido', conversacion: { version: 1, estado: null, desde: null, vence: null, vencido: false } } }),
     ...Object.fromEntries(['Comprometer turno', 'Comprometer turno (2.º intento)', 'Comprometer compensación'].map((nodo) => [nodo, (ll) => {
       const q = ll.cuerpo.sesion;
+      if (q && q.accion === 'asentar') return { statusCode: 200, body: { resultado: 'nada_que_asentar', conversacion: { version: 0, estado: null, desde: null, vence: null, vencido: false } } };
       return servidor.atender(PID, { ...ll.cuerpo, sesion: { ...q, idCompromiso: `${q.idCompromiso}-x${ejec}` } });
     }])),
     'Reportar mensaje (entrante)': (ll) => { captura.ingesta.push(ll.cuerpo ?? {}); return { ok: true }; },

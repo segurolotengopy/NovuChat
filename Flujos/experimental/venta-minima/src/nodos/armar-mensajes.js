@@ -2,7 +2,8 @@
 // se arma acá, con código, y sale un ítem por mensaje:
 // {para, payload, texto, respaldo, tipoReporte, evento, referencia, monto, reportar, ...}.
 // También es el ÚNICO lugar donde se ARMA el estado por teléfono y sus pedidos guardados (PR-4a): NO envía ni escribe, pide el compromiso del bloque al servidor ANTES
-// de enviar (`Comprometer turno`) y `Soltar mensajes` decide qué sale con lo que contestó. Las marcas de aviso por hora (`staticData`) siguen aquí (residuo de PR-4b).
+// de enviar (`Comprometer turno`) y `Soltar mensajes` decide qué sale con lo que contestó. PR-4b: los CUPOS de aviso los cuenta el servidor (`Consumir cupos`); aquí quedan las marcas
+// locales SOLO si ese consumo falló y el aviso salió igual (fail-open), y las reservas del día viajan en el bloque del teléfono.
 //
 // LO QUE NUNCA HACE:
 //   - decir «pasé tu pedido al restaurante» o «tu solicitud llegó al restaurante» si Meta no
@@ -23,9 +24,10 @@
 //   - bloquear un mensaje por el texto de un TERCERO: la dirección, la referencia, las notas y el nombre llegan ya
 //     saneados por `Plan del turno` (las palabras prohibidas en «…»); esta red queda para el texto fijo y el compuesto.
 //
-// ESTADO QUE ARMA (solo este nodo): el estado por teléfono y sus pedidos guardados (72 h) en UN bloque `{v, estado, pedidos}` para el servidor, recortado por BYTES
-// (tope 15.000: primero salen los pedidos más antiguos, nunca el que espera el comprobante). Si no hay sesión o el bloque no cabe, sale el genérico con botón (reemplaza la respuesta). LO QUE SIGUE EN `staticData` (residuo de PR-4b): las marcas de
-// aviso por hora, SOLO si el aviso salió: `transferencias` y `avisosPedido` (pedido y comprobante), que `Armar avisos` lee para sus topes; un aviso que falló no deja marca.
+// ESTADO QUE ARMA (solo este nodo): el estado por teléfono, sus pedidos guardados (72 h) y las reservas del día (`reservas: {dia, n}`) en UN bloque `{v, estado, pedidos, reservas}` para el servidor, recortado por BYTES
+// (tope 15.000: primero salen los pedidos más antiguos, nunca el que espera el comprobante). Si no hay sesión o el bloque no cabe, sale el genérico con botón (reemplaza la respuesta). LO QUE SIGUE EN `staticData` (PR-4b):
+// SOLO el tope local de caída: cuando `Consumir cupos` falló (el servidor no contestó) y el aviso SALIÓ igual, se cuenta aquí (`transferencias`, `avisosPedido`, `av.dia`), que `Armar avisos` lee; con el servidor sano no se escribe nada local.
+// `asentar`: si el consumo del servidor fue ok y NINGÚN aviso fue aceptado por Meta, el cupo se devuelve (`Confirmar envío` lo manda); si algún aviso salió, el cupo queda consumido.
 //
 // BOTÓN «MENÚ» (03/10): todo mensaje interactivo con botones de respuesta que tenga lugar (menos de tres) sale con `m|menu`
 // como último botón (salvo el propio menú: `sinMenu`), para que el cliente siempre pueda volver al inicio; el mensaje con botón de enlace (uno solo) lleva al
@@ -125,6 +127,17 @@ if (AM_wamids.length && AM_enviados.length === AM_armados.length) {
 }
 // Lo que el cliente puede leer como «ya pasó»: el aviso salió; y, en una reserva, el del local completo.
 const AM_PASO = AM_ES_RESERVA ? (AM_AVISO_SALIO && AM_completoSalio) : AM_AVISO_SALIO;
+
+// ----------------------------------------------------------------- los cupos de aviso (PR-4b)
+// `ok`: cuenta el servidor y no se escribe nada local; `negado`: ningún aviso salió (el cliente lee la frase honesta con «Escribir al local»); `falla`: fail-open, el aviso salió igual y se cuenta
+// aquí (tope LOCAL DE CAÍDA); `sin_consumo`: no hubo avisos que pedir. El aviso del genérico (falla del compromiso) conserva su marca local de hora.
+const AM_CUPOS = vmResultadoCupos();
+const AM_CUPOS_PEDIDO = AM_avisosArmados[0] && AM_avisosArmados[0].cupos && typeof AM_avisosArmados[0].cupos === 'object' ? AM_avisosArmados[0].cupos : null;
+if (AM_CUPOS.estado === 'negado') AM_errores.push('cupo_negado: ' + AM_CUPOS.clave + ': ' + AM_CUPOS.motivo + ' (no se mandó ningún aviso)');
+else if (AM_CUPOS.estado === 'falla') AM_errores.push('cupos_sin_servidor: el aviso salió igual y se cuenta con el tope local de caída');
+const AM_SERVIDOR_CUENTA = AM_CUPOS.estado === 'ok';
+// Devolver el cupo: el servidor lo concedió y NINGÚN aviso fue aceptado por Meta (con `wamid`). `Confirmar envío` lo manda al final; un 5xx del `asentar` deja el cupo consumido (lado conservador).
+const AM_asentar = AM_SERVIDOR_CUENTA && AM_wamids.length === 0 && AM_CUPOS_PEDIDO && AM_CUPOS_PEDIDO.asentar ? AM_CUPOS_PEDIDO.asentar : null;
 
 // ----------------------------------------------------------------- red de palabras
 function amSeguro(x) {
@@ -403,6 +416,7 @@ if (AM_sd) {
       if (marcas.length) m[k] = marcas; else delete m[k];
     }
   }
+  // Con el servidor contando (`Consumir cupos` ok) NO se marca nada local; solo cuando falló (fail-open) o cuando no se pidió consumo.
   const amMarcar = (mapa) => {
     if (!AM_sd[mapa] || typeof AM_sd[mapa] !== 'object') AM_sd[mapa] = {};
     const m = AM_sd[mapa];
@@ -413,13 +427,22 @@ if (AM_sd) {
       for (const k of claves.slice(0, claves.length - AM_MAX_MARCAS)) delete m[k];
     }
   };
-  if (AM_AVISO_SALIO && AM_claveValida && AM_tiposSalidos.indexOf('transferencia') >= 0) amMarcar('transferencias');
-  if (AM_AVISO_SALIO && AM_claveValida && (AM_tiposSalidos.indexOf('pedido') >= 0 || AM_tiposSalidos.indexOf('comprobante') >= 0)) amMarcar('avisosPedido');
-  // El tope de reservas por día (`rsDentroDelTope`) cuenta solo solicitudes cuyo aviso SALIÓ: `rsAnotar`
-  // escribe en `sd`, y por eso lo llama este nodo, que es el único que escribe estado.
-  if (AM_AVISO_SALIO && AM_claveValida && AM_tiposSalidos.indexOf('reserva') >= 0) rsAnotar(AM_sd, AM_FROM, AM_AHORA);
-  // El tope diario cuenta los avisos que Meta aceptó (con `wamid`), no los armados.
-  if (AM_wamids.length) avContar(AM_sd, AM_AHORA, AM_wamids.length);
+  if (!AM_SERVIDOR_CUENTA) {
+    if (AM_AVISO_SALIO && AM_claveValida && AM_tiposSalidos.indexOf('transferencia') >= 0) amMarcar('transferencias');
+    if (AM_AVISO_SALIO && AM_claveValida && (AM_tiposSalidos.indexOf('pedido') >= 0 || AM_tiposSalidos.indexOf('comprobante') >= 0)) amMarcar('avisosPedido');
+    // El tope local diario cuenta los avisos que Meta aceptó (con `wamid`), no los armados.
+    if (AM_wamids.length) avContar(AM_sd, AM_AHORA, AM_wamids.length);
+  }
+}
+// El tope de reservas por día (`rsDentroDelTope`) cuenta solo solicitudes cuyo aviso SALIÓ: `rsAnotar` escribe en la copia de las reservas de este teléfono (la lee `Plan del turno` del bloque del servidor) y el bloque
+// las compromete (`reservas`, PR-4b). No es un cupo del servidor: el plan necesita LEER el contador (aviso suave de «día lleno» y techo duro de 2 × `topeReservasDia`) y el servidor no tiene lectura de cupos.
+let AM_reservaSuma = false;
+if (AM_AVISO_SALIO && AM_claveValida && AM_tiposSalidos.indexOf('reserva') >= 0) {
+  const shim = vmReservasSd(AM_ses, AM_FROM);
+  if (rsAnotar(shim, AM_FROM, AM_AHORA) > 0) {
+    AM_ses.reservas = shim.reservasDelDia[AM_FROM.replace(/\D/g, '')];
+    AM_reservaSuma = true;
+  }
 }
 
 // EL BLOQUE A COMPROMETER: el estado de este teléfono y SUS pedidos, recortado por BYTES al tope del servidor (`SS_CONFIG.maxBytes`, medido en UTF-8: `ssBytes` no lanza con un surrogate
@@ -430,7 +453,9 @@ function amBloque(ses, from) {
   const pedidos = {};
   for (const k of Object.keys(ses.pedidos)) pedidos[k] = ses.pedidos[k];
   const activo = estado && typeof estado.pedido === 'object' && estado.pedido ? String(estado.pedido.pedidoId || '') : '';
-  const arma = () => ({ v: 1, estado: estado, pedidos: pedidos });
+  // Las reservas anotadas HOY por este teléfono viajan en el bloque (un día viejo no se guarda).
+  const reservas = ses.reservas && ses.reservas.dia === _rsFechaLocal(AM_AHORA) ? { dia: ses.reservas.dia, n: ses.reservas.n } : null;
+  const arma = () => (reservas ? { v: 1, estado: estado, pedidos: pedidos, reservas: reservas } : { v: 1, estado: estado, pedidos: pedidos });
   const pesa = () => ssBytes(JSON.stringify(arma()));
   const antiguos = Object.keys(pedidos).sort((a, b) => Number(pedidos[a].guardadoMs || 0) - Number(pedidos[b].guardadoMs || 0));
   const orden = antiguos.filter((k) => k !== activo).concat(antiguos.filter((k) => k === activo));
@@ -446,7 +471,7 @@ function amBloque(ses, from) {
 //   comprometer             el bloque cabe y hay versión: `Comprometer turno` lo manda, `Soltar mensajes` decide con lo que conteste;
 //   sin_sesion              hay estado que guardar pero el servidor no dio versión (no debería llegar aquí: `¿Hay estado?` manda al aviso con el botón antes): falla cerrada, sale el genérico con botón;
 //   no_cabe                 el bloque no cabe en el tope o el teléfono no vale para el servidor: sale el genérico con botón (reemplaza la respuesta).
-const AM_hayQueGuardar = AM_estadoDespues !== null || AM_pedidoGuardado;
+const AM_hayQueGuardar = AM_estadoDespues !== null || AM_pedidoGuardado || AM_reservaSuma;
 let AM_modo = 'sin_estado_que_guardar';
 let AM_bloque = null;
 let AM_compromiso = null;
@@ -455,7 +480,7 @@ if (AM_hayQueGuardar) {
   else {
     AM_bloque = amBloque(AM_ses, AM_FROM);
     AM_compromiso = AM_bloque ? ssCuerpoComprometer(AM_FROM, $execution.id, 'fin', AM_ses.version, AM_bloque) : null;
-    if (AM_compromiso) { AM_compromiso.sesion.venceEnMin = vmVenceEnMin(AM_bloque); AM_modo = 'comprometer'; } else AM_modo = 'no_cabe';
+    if (AM_compromiso) { AM_compromiso.sesion.venceEnMin = vmVenceEnMin(AM_bloque, AM_AHORA); AM_modo = 'comprometer'; } else AM_modo = 'no_cabe';
   }
 }
 
@@ -511,8 +536,9 @@ const AM_idPedido = AM_ped && AM_ped.pedidoId ? String(AM_ped.pedidoId) : '';
 // (la clave la calculó `Armar avisos` y viaja en cada ítem: aquí NO se recalcula)
 const AM_claves = [];
 if (AM_AVISO_SALIO && AM_idPedido) {
-  for (const x of AM_armados) if (x.claveAviso && AM_tiposSalidos.indexOf(x.tipoAviso) >= 0 && AM_claves.indexOf(x.claveAviso) < 0) AM_claves.push(x.claveAviso);
-  for (const c of (AM_avisosArmados[0] && Array.isArray(AM_avisosArmados[0].clavesYa) ? AM_avisosArmados[0].clavesYa : [])) if (AM_claves.indexOf(c) < 0) AM_claves.push(c);
+  // La marca lleva el TELÉFONO (`teléfono|clave`, la misma forma que lee `Armar avisos`).
+  for (const x of AM_armados) if (x.claveAviso && AM_tiposSalidos.indexOf(x.tipoAviso) >= 0 && AM_claves.indexOf(AM_FROM + '|' + x.claveAviso) < 0) AM_claves.push(AM_FROM + '|' + x.claveAviso);
+  for (const c of (AM_avisosArmados[0] && Array.isArray(AM_avisosArmados[0].clavesYa) ? AM_avisosArmados[0].clavesYa : [])) if (AM_claves.indexOf(AM_FROM + '|' + c) < 0) AM_claves.push(AM_FROM + '|' + c);
 }
 const AM_avisoMarcas = AM_claves;
 // HECHO EXTERNO ya ocurrido antes del compromiso: un aviso al local salió (o ya estaba avisado) o se cotejó el comprobante en el servidor. Con él, ceder en un conflicto de versión es un defecto (B1).
@@ -568,9 +594,11 @@ const AM_replan = AM_hechoExterno && AM_modo === 'comprometer' ? {
   telefono: AM_FROM, maxBytes: SS_CONFIG.maxBytes, espacio: ssEspacio(), ejecucion: ssEjecucion($execution.id), idCompromiso: ssIdCompromiso($execution.id, 'fin2'), pedidoId: AM_idPedido,
   pedidos: AM_pedidoGuardado && AM_idPedido && AM_bloque && AM_bloque.pedidos && Object.prototype.hasOwnProperty.call(AM_bloque.pedidos, AM_idPedido) ? { [AM_idPedido]: AM_bloque.pedidos[AM_idPedido] } : {},
   estadoMenu: AM_bloque && AM_bloque.estado ? Object.assign({}, AM_bloque.estado, AM_bloque.estado.paso === 'esperando_comprobante' ? {} : { paso: 'menu' }) : null,
+  // Las reservas del día (PR-4b): `reservaHoy` es el día de este turno y `reservaSuma` dice que ESTE turno anotó una (se suma a las del ganador); el 2.º intento las conserva.
+  reservaHoy: _rsFechaLocal(AM_AHORA), reservaSuma: AM_reservaSuma, minHastaMedianoche: vmMinHastaMedianoche(AM_AHORA).min,
 } : null;
 return [{ json: {
   hechoExterno: AM_hechoExterno, replan: AM_replan, avisoMarcas: AM_avisoMarcas, avisoFalla: AM_avisoFalla, avisoFallaN: AM_avisoFallaN, avisoFallaFecha: avFechaLocal(AM_AHORA),
-  turno: true, modo: AM_modo, comprometer: AM_compromiso !== null, compromiso: AM_compromiso, numero: ssNumeroHeader(),
+  turno: true, modo: AM_modo, comprometer: AM_compromiso !== null, compromiso: AM_compromiso, numero: ssNumeroHeader(), cupos: AM_CUPOS.estado, asentar: AM_asentar,
   salida: AM_final, salidaFalla: AM_falla, previo: AM_ses.previo, bloque: AM_bloque, deRespaldo: AM_ses.deRespaldo, from: AM_FROM, ahoraMs: AM_AHORA,
 } }];

@@ -17,9 +17,12 @@
 // `vmSes` arma, con la misma forma de siempre (`estados`, `pedidos`, `vistos` por mapa), la vista que leen `Decidir turno`, `Plan del
 // turno` e `Interpretar entrada`; `Armar mensajes` la cambia y compromete el bloque ANTES de enviar.
 //
-// RESIDUO DECLARADO (PR-4b): en `$getWorkflowStaticData('global').ventaMinima` siguen `av` (contador diario y ventana de aviso: `av.ventana`
-// es del comercio, contrato §10.4), `transferencias`, `avisosPedido` y `reservasDelDia`. Y, SOLO hasta el RETIRO del respaldo
-// (`VM_RESPALDO_HASTA_MS`), los mapas viejos `estados`, `vistos` y `pedidos`: la lectura de respaldo de la publicacion (`vmSes`).
+// PR-4b (los CUPOS pasan al servidor): el contador diario de avisos (`av.dia`), las marcas por hora de derivaciones (`transferencias`) y de avisos de
+// pedido (`avisosPedido`) son cupos del servidor (`Consumir cupos`); `reservasDelDia` viaja DENTRO del bloque del telefono (`reservas: {dia, n}`).
+// En `$getWorkflowStaticData('global').ventaMinima` quedan: `av.ventana` (la ventana de 24 h del destinatario del aviso: estado del COMERCIO, no de un
+// contacto; contrato §10.4); `av.dia`, `transferencias` y `avisosPedido` SOLO como tope LOCAL DE CAIDA (cuando `Consumir cupos` falla se avisa igual,
+// fail-open, y se cuenta aqui) y para el aviso del generico; `avisosHuerfanos` (avisos ya enviados cuyo compromiso fallo, por `telefono|clave`).
+// Y, SOLO hasta el RETIRO del respaldo (`VM_RESPALDO_HASTA_MS`), los mapas viejos `estados`, `vistos`, `pedidos` y `reservasDelDia`: la lectura de respaldo de la publicacion (`vmSes`).
 
 const VM_VENCE_MS = 60 * 60 * 1000;
 const VM_VENCE_COMPROBANTE_MS = 24 * 60 * 60 * 1000;
@@ -299,17 +302,15 @@ function _vmVence(paso) {
   return paso === 'esperando_comprobante' ? VM_VENCE_COMPROBANTE_MS : VM_VENCE_MS;
 }
 
-// `ventaMinima` de los datos estaticos: el RESIDUO que sigue ahi (`av`, `transferencias`, `avisosPedido`, `reservasDelDia`: son de PR-4b) y, hasta el
-// retiro del respaldo, los mapas viejos `estados`, `vistos` y `pedidos` (YA NO se crean: el estado vive en el servidor, ver `vmSes`). `null` si el nodo
-// no tiene datos estaticos. Crea `reservasDelDia` (vacio): es de `reserva.js` (T3, tope diario de reservas por telefono, `{dia, n}`), que se limpia sola.
+// `ventaMinima` de los datos estaticos: lo que sigue ahi tras PR-4b (`av.ventana`, y como tope local de caida `av.dia`, `transferencias`, `avisosPedido`;
+// `avisosHuerfanos`) y, hasta el retiro del respaldo, los mapas viejos `estados`, `vistos`, `pedidos` y `reservasDelDia` (YA NO se crean: el estado y las
+// reservas del dia viven en el servidor, ver `vmSes`). `null` si el nodo no tiene datos estaticos.
 function vmSd() {
   let raiz = null;
   try { raiz = $getWorkflowStaticData('global'); } catch (e) { return null; }
   if (!_vmObjeto(raiz)) return null;
   if (!_vmObjeto(raiz.ventaMinima)) raiz.ventaMinima = {};
-  const sd = raiz.ventaMinima;
-  if (!_vmObjeto(sd.reservasDelDia)) sd.reservasDelDia = {};
-  return sd;
+  return raiz.ventaMinima;
 }
 
 function vmEstadoBase() {
@@ -397,10 +398,24 @@ function vmMarcarVisto(sd, idMensaje, ahoraMs) {
 // ---------------------------------------------------------------------------
 // Cuanto vive el bloque en el servidor, en MINUTOS (el servidor admite 1 a 4320). Con pedidos guardados, 72 h (4320): cada pedido se poda por su
 // `guardadoMs`, el bloque solo es el tope. Sin pedidos, lo que dura el estado: 24 h en `esperando_comprobante` (como el QR del servidor), 60 min en el resto.
-function vmVenceEnMin(bloque) {
+// Las reservas del día (`reservas: {dia, n}`, tope diario por teléfono) viven en el mismo bloque: si `dia` es HOY en La Paz (UTC-4 fijo), el bloque no vence antes de la medianoche local
+// (máx. 4320); si no, un cliente inactivo 60 min recuperaría el tope del día. `ahoraMs` ausente: sin esa extensión (los llamadores sin reservas).
+function vmMinHastaMedianoche(ahoraMs) {
+  const local = new Date(Number(ahoraMs) - 240 * 60000);
+  const dia = local.getUTCFullYear() + '-' + String(local.getUTCMonth() + 1).padStart(2, '0') + '-' + String(local.getUTCDate()).padStart(2, '0');
+  const minutos = local.getUTCHours() * 60 + local.getUTCMinutes() + (local.getUTCSeconds() > 0 || local.getUTCMilliseconds() > 0 ? 1 : 0);
+  return { dia: dia, min: Math.max(1, 1440 - minutos) };
+}
+function vmVenceEnMin(bloque, ahoraMs) {
   const b = _vmObjeto(bloque) ? bloque : {};
-  if (_vmObjeto(b.pedidos) && Object.keys(b.pedidos).length > 0) return 4320;
-  return _vmObjeto(b.estado) && b.estado.paso === 'esperando_comprobante' ? 1440 : 60;
+  let v;
+  if (_vmObjeto(b.pedidos) && Object.keys(b.pedidos).length > 0) v = 4320;
+  else v = _vmObjeto(b.estado) && b.estado.paso === 'esperando_comprobante' ? 1440 : 60;
+  if (ahoraMs !== undefined && _vmObjeto(b.reservas) && Number.isFinite(Number(ahoraMs))) {
+    const h = vmMinHastaMedianoche(ahoraMs);
+    if (b.reservas.dia === h.dia) v = Math.min(4320, Math.max(v, h.min));
+  }
+  return v;
 }
 
 // La vista de la sesion para el telefono `from`, con la forma de `sd`: `estados[from]` y `pedidos` (los de ESE telefono, ya sin los de mas de 72 h).
@@ -414,7 +429,7 @@ function vmSes(from, ahoraMs) {
   const cfg = vmCfg();
   const s = _vmObjeto(cfg.sesion) ? cfg.sesion : {};
   const ahora = Number(ahoraMs);
-  const ses = { ok: s.ok === true, version: Number.isInteger(s.version) && s.version >= 0 ? s.version : 0, estados: {}, pedidos: {}, vistos: {}, previo: null, deRespaldo: false };
+  const ses = { ok: s.ok === true, version: Number.isInteger(s.version) && s.version >= 0 ? s.version : 0, estados: {}, pedidos: {}, vistos: {}, reservas: null, previo: null, deRespaldo: false };
   const f = _vmCadena(from);
   if (!ses.ok || !_vmClaveValida(f) || !Number.isFinite(ahora)) return ses;
   const copia = (x) => JSON.parse(JSON.stringify(x));
@@ -426,6 +441,8 @@ function vmSes(from, ahoraMs) {
       // (al LEER solo se descarta el que tiene una marca de tiempo de mas de 72 h; `vmGuardarPedido` poda tambien los que no la traen)
       if (_vmIdValido(k) && _vmObjeto(ps[k]) && !(Number.isFinite(Number(ps[k].guardadoMs)) && ahora - Number(ps[k].guardadoMs) >= VM_PEDIDOS_MS)) ses.pedidos[k] = copia(ps[k]);
     }
+    // Las reservas ya anotadas HOY por este telefono (`{dia, n}`): el tope diario de reservas (`rsDentroDelTope`) lee de aqui; un dia viejo o una forma rara no cuentan.
+    if (_vmObjeto(bloque.reservas) && typeof bloque.reservas.dia === 'string' && Number.isInteger(bloque.reservas.n) && bloque.reservas.n >= 0) ses.reservas = { dia: bloque.reservas.dia, n: bloque.reservas.n };
     ses.previo = copia(bloque);
     return ses;
   }
@@ -447,6 +464,32 @@ function vmSes(from, ahoraMs) {
     }
   }
   return ses;
+}
+
+// Las reservas del dia de este telefono con la forma que lee `rsDentroDelTope` / escribe `rsAnotar` (`sd.reservasDelDia[digitos] = {dia, n}`): un objeto
+// de AQUI, nunca el `staticData`. PR-4b: el contador viaja en el bloque del telefono (`reservas`), no en la memoria de n8n. Falla cerrado (sin sesion, sin
+// bloque): `rsDentroDelTope` cuenta 0 y el servidor se queda con lo que comprometa `Armar mensajes`.
+function vmReservasSd(ses, from) {
+  const clave = _vmCadena(from).replace(/\D/g, '');
+  const sd = { reservasDelDia: {} };
+  if (clave && ses && _vmObjeto(ses.reservas)) sd.reservasDelDia[clave] = { dia: ses.reservas.dia, n: ses.reservas.n };
+  return sd;
+}
+
+// PR-4b. Lo que contesto «Consumir cupos» (el consumo de los cupos de aviso en el servidor), para quien decide despues:
+//   { estado: 'sin_consumo' }   el nodo no corrio (no hubo avisos que armar)
+//   { estado: 'ok' }            el servidor concedio (o ya habia concedido, `repetido`): CUENTA EL SERVIDOR, nada local
+//   { estado: 'negado', motivo, clave }   `cupo_negado` (agotado, sin tope, datos invalidos): ningun aviso sale
+//   { estado: 'falla' }         5xx, timeout, forma rara o un resultado que no es de cupos: fail-open, el aviso sale y se aplica el tope LOCAL DE CAIDA
+function vmResultadoCupos() {
+  const j = vmPrimero('Consumir cupos');
+  if (!j) return { estado: 'sin_consumo' };
+  let cuerpo = j.body;
+  if (typeof cuerpo === 'string') { try { cuerpo = JSON.parse(cuerpo); } catch (e) { cuerpo = null; } }
+  if (Number(j.statusCode) !== 200 || !_vmObjeto(cuerpo)) return { estado: 'falla' };
+  if (cuerpo.resultado === 'comprometido' || cuerpo.resultado === 'repetido') return { estado: 'ok' };
+  if (cuerpo.resultado === 'cupo_negado') return { estado: 'negado', motivo: _vmCadena(cuerpo.motivo).slice(0, 30), clave: _vmCadena(cuerpo.clave).slice(0, 32) };
+  return { estado: 'falla' };
 }
 
 // El pedido a guardar, con la ventana de 72 h desde su ultima escritura (`guardadoMs`): se podan los vencidos y, pasado el tope, los mas antiguos
@@ -491,7 +534,7 @@ function vmRetirarRespaldo(from, ahoraMs, migrado) {
   try { viejo = $getWorkflowStaticData('global').ventaMinima; } catch (e) { return false; }
   if (!_vmObjeto(viejo)) return false;
   if (!(Number(ahoraMs) < VM_RESPALDO_HASTA_MS)) {
-    for (const k of ['estados', 'vistos', 'pedidos']) delete viejo[k];
+    for (const k of ['estados', 'vistos', 'pedidos', 'reservasDelDia']) delete viejo[k];
     return true;
   }
   if (migrado !== true) return false;
