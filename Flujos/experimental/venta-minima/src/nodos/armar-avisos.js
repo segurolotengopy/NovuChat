@@ -197,13 +197,13 @@ if (AA_armar) {
     }
     // Un comprobante ya cotejado no se vuelve a avisar (el cliente solo lee «Ya tengo el comprobante»).
     if (tipo === 'comprobante' && datos.resultado === 'ya_cotejado') { AA_errores.push('sin_aviso_ya_cotejado'); continue; }
-    // UN AVISO POR PEDIDO (decisión de Andres, 07/11/2026): si el aviso de un comprobante de ESTE pedido ya salió (`comprobanteAvisadoMs`, que `Armar mensajes` escribe
-    // solo con un `wamid` real), los comprobantes siguientes se guardan y se cotejan, y el cliente lee lo de siempre, pero el local no recibe otro aviso (ni por un
-    // resultado distinto). Cuenta como aviso ya enviado (`yaAvisado`): el local ya tiene el pedido. Si el primer aviso falló, no hay marca y este sí avisa.
+    // UN AVISO POR PEDIDO, SALVO QUE CAMBIE EL RESULTADO (decisiones de Andres, 07/11/2026). Lo decide `Plan del turno`, que no pide el aviso de un comprobante cuyo
+    // resultado ya se avisó (`comprobanteAvisadoResultado`, escrito solo con un `wamid` real). Esta es la segunda barrera: si igual llegara, no se arma y NO cuenta como
+    // aviso salido (el cliente nunca lee «ya lo pasé» sin un aviso de este turno).
     const pedPlan = AA_PLAN.pedido && typeof AA_PLAN.pedido === 'object' ? AA_PLAN.pedido : {};
-    if (tipo === 'comprobante' && Number(pedPlan.comprobanteAvisadoMs) > 0 && String(pedPlan.pedidoId || '') === String(datos.pedidoId || '')) {
-      AA_errores.push('aviso_de_comprobante_ya_enviado_del_pedido: ' + String(datos.pedidoId).slice(0, 60));
-      AA_YA.push(tipo);
+    if (tipo === 'comprobante' && Number(pedPlan.comprobanteAvisadoMs) > 0 && String(pedPlan.pedidoId || '') === String(datos.pedidoId || '')
+      && String(pedPlan.comprobanteAvisadoResultado || '') !== '' && String(pedPlan.comprobanteAvisadoResultado) === String(datos.resultado || '')) {
+      AA_errores.push('aviso_de_comprobante_mismo_resultado: ' + String(datos.pedidoId).slice(0, 60));
       continue;
     }
     let crudo = null;

@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { configBase, type Flujo, type J } from './lib/flujo';
+import { configBase, ejecutar, type Flujo, type J } from './lib/flujo';
 import { crearMundo, type Doble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
 import { doblesDelGuardado } from './lib/doble-guardado';
 import { crearSesion, type SesionDeMentira } from './lib/venta-minima-sesion';
@@ -141,7 +141,7 @@ const variables = (a: { payload: J }): string[] =>
 const RESERVA = (hora: string, fecha = '2026-11-06'): J => ({ personas: 4, fecha, hora, zona: '', nombre: 'Carlos Pérez', celebracion: '', requerimiento: '' });
 
 // -------------------------------------------------------------------------------------------------------------------------------- A
-describe('A. Un solo aviso al local por pedido (decisión de Andres: «Un aviso por pedido»)', () => {
+describe('A. Un aviso al local por pedido, y otro solo si cambia el resultado (decisiones de Andres, 07/11/2026)', () => {
   const COBRO = { cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: 63, pedido: 'ped1' } };
   const PED = (id = 'ped1', codigo = 'OXJL'): J => ({ pedidoId: id, from: CLIENTE, codigo, total: 63, lineas: [{ id: 'taco', nombre: 'Taco de Birria (unidad)', cantidad: 3, precio: 21 }], modalidad: 'recojo', resultado: 'qr_enviado' });
   const conQr = (extra: J = {}) => {
@@ -152,23 +152,63 @@ describe('A. Un solo aviso al local por pedido (decisión de Andres: «Un aviso 
   const cotejo = (w: W, resultado: string) => {
     w.mundo.dobles['Cotejar en el servidor'] = () => ({ statusCode: 200, body: { resultado, diferencias: resultado === 'no_cuadra' ? ['El comprobante dice 60.00 y el pedido es de 63.00'] : [], cierreId: 'venta_prueba' } });
   };
-  it('el caso OXJL: dos comprobantes del MISMO pedido (el primero «no coinciden», el segundo distinto) → UN aviso; el segundo se coteja y el cliente lee su respuesta', () => {
+  // El cliente nunca lee que se pasó algo sin un aviso con `wamid` en ESE turno.
+  const PASE = /ya lo pas[eé]|lo pas[eé] a nuestro equipo/i;
+  const avisosOk = (t: ResultadoTurno): number => t.avisos.filter((a) => a.ok).length;
+  it('el caso OXJL (decisión «Re-avisar si cambia el resultado»): «no coinciden» y después «coinciden» → DOS avisos (el segundo, de actualización); el segundo se coteja', () => {
     const w = conQr();
     const c = conversacion(w);
     cotejo(w, 'no_cuadra');
     const t1 = c.imagen('media-1');
     expect(plantillas(t1).length).toBeGreaterThan(0);
     expect(variables(plantillas(t1)[0]!).join(' ')).toContain('OXJL');
-    expect(w.sesion.pedidos(CLIENTE)['ped1']['comprobanteAvisadoMs']).toBeGreaterThan(0);
+    expect(w.sesion.pedidos(CLIENTE)['ped1']['comprobanteAvisadoResultado']).toBe('no_cuadra');
     cotejo(w, 'cuadra');
+    const t2 = c.imagen('media-2');
+    expect(t2.ejecutados.has('Cotejar en el servidor')).toBe(true);
+    expect(plantillas(t2).length).toBeGreaterThan(0);
+    expect(variables(plantillas(t2)[0]!).join(' ')).toMatch(/datos coinciden/);
+    expect(w.sesion.pedidos(CLIENTE)['ped1']['comprobanteAvisadoResultado']).toBe('cuadra');
+    expect(t2.mensajes).toHaveLength(1);
+  });
+  it('el MISMO resultado otra vez no avisa: «no coinciden» dos veces → un aviso; el segundo se coteja y el cliente NO lee «ya lo pasé»', () => {
+    const w = conQr();
+    const c = conversacion(w);
+    cotejo(w, 'no_cuadra');
+    expect(avisosOk(c.imagen('media-1'))).toBeGreaterThan(0);
     const t2 = c.imagen('media-2');
     expect(t2.ejecutados.has('Cotejar en el servidor')).toBe(true);
     expect(t2.avisos).toHaveLength(0);
     expect(t2.mensajes).toHaveLength(1);
-    expect(cuerpos(t2)[0]).toContain('Gracias por enviar tu comprobante');
-    // Un tercero, tampoco.
-    cotejo(w, 'no_cuadra');
-    expect(c.imagen('media-3').avisos).toHaveLength(0);
+    expect(cuerpos(t2)[0]).not.toMatch(PASE);
+    expect(cuerpos(t2)[0]).toContain('mismo resultado');
+    expect(JSON.stringify(t2.mensajes[0]!.payload)).toContain('wa.me/'); // el botón «Escribir al local»
+  });
+  it('ilegible → ilegible: el segundo ilegible avisa (pide revisar), un tercero ilegible NO avisa; ilegible ×2 → legible SÍ avisa', () => {
+    const w = conQr();
+    const c = conversacion(w);
+    cotejo(w, 'ilegible');
+    const i1 = c.imagen('media-1');
+    expect(i1.avisos).toHaveLength(0); // el primero se pide de nuevo, como siempre
+    const i2 = c.imagen('media-2');
+    expect(avisosOk(i2)).toBeGreaterThan(0);
+    expect(w.sesion.pedidos(CLIENTE)['ped1']['comprobanteAvisadoResultado']).toBe('ilegible');
+    const i3 = c.imagen('media-3');
+    expect(i3.avisos).toHaveLength(0);
+    expect(cuerpos(i3).join(' ')).not.toMatch(PASE);
+    cotejo(w, 'cuadra');
+    const leg = c.imagen('media-4');
+    expect(avisosOk(leg)).toBeGreaterThan(0);
+    expect(cuerpos(leg).join(' ')).toMatch(PASE); // ESTE turno sí tiene aviso con wamid
+  });
+  it('en toda la secuencia, cada mensaje que dice «ya lo pasé» va en un turno con un aviso aceptado por Meta', () => {
+    const w = conQr();
+    const c = conversacion(w);
+    for (const r of ['no_cuadra', 'no_cuadra', 'ilegible', 'ilegible', 'cuadra', 'cuadra']) {
+      cotejo(w, r);
+      const t = c.imagen('media-' + r);
+      if (PASE.test(cuerpos(t).join(' '))) expect(avisosOk(t), r).toBeGreaterThan(0);
+    }
   });
   it('NEGANDO: si el PRIMER aviso no salió (Meta sin wamid, ni el respaldo), no hay marca y el comprobante siguiente SÍ avisa', () => {
     const w = conQr();
@@ -230,7 +270,9 @@ describe('C. La promo escrita con variaciones se reconoce por código (y un pedi
   });
   it('NEGANDO (falsos positivos): un pedido de carta, un horario, una mesa para 2 o la promo que no está pegada a la palabra NO activan nada', () => {
     const NEG = ['quiero una torta mexicana con queso', 'quiero 2 tortas mexicanas con queso', 'quiero tortas', 'qué tienen de tortas', 'tengo reserva el jueves de 2 a 4',
-      'quiero una mesa el jueves de 2 personas, vi su promo', 'mesa para el jueves de 2 mas personas', 'quiero una torta con mi promo', 'el jueves quiero tortas', 'promo de tacos'];
+      'quiero una mesa el jueves de 2 personas, vi su promo', 'mesa para el jueves de 2 mas personas', 'quiero una torta con mi promo', 'el jueves quiero tortas', 'promo de tacos',
+      // Revisión del PR #842: «el jueves más 2 amigos» sin palabra de promoción no es la promo; «tarta» y «tosta» no son «torta».
+      'el jueves más 2 amigos', 'reservo el jueves mas 2 personas', 'promo tarta', 'promo tostas', 'promo de tartas'];
     for (const texto of NEG) {
       const t = conversacion(crear()).escribe(texto);
       expect([A, B].includes(cuerpos(t)[0] ?? ''), texto).toBe(false);
@@ -282,6 +324,23 @@ describe('D. Las reservas NO dependen del horario de pedidos (Andres, 07/11/2026
   it('NEGANDO: sin `horarioReservas` (dato opcional) rige el horario de pedidos, como hasta hoy', () => {
     const t = conversacion(crear({ ahoraMs: JUEVES_23, config: { horarioReservas: '' }, extraccion: RESERVA('10:30') })).escribe('mesa para 4 mañana 10:30');
     expect(cuerpos(t)[0]).toContain('recibe reservas de 12:00 a 21:30');
+  });
+  it('NEGANDO (revisión del PR #842): un `horarioReservas` que no sirve («25:00-22:00», texto ilegible) vuelve al horario de pedidos y queda ANOTADO; no rechaza todo en silencio', () => {
+    for (const malo of ['25:00-22:00', 'todos los dias', '22:00-10:00']) {
+      const t = conversacion(crear({ ahoraMs: JUEVES_23, config: { horarioReservas: malo }, extraccion: RESERVA('20:00') })).escribe('mesa para 4 mañana 20:00');
+      expect(cuerpos(t)[0], malo).toContain('Tu reserva'); // con el horario de pedidos (12 a 22) las 20:00 valen
+      expect(JSON.stringify(t.porNodo['Plan del turno'] ?? []), malo).toContain('horario_reservas_invalido');
+    }
+    // La librería: un arreglo, un rango imposible o un rango sin días abiertos caen al horario de pedidos y se marcan; el vacío no es un error.
+    const FUENTE = readFileSync(join(CARPETA_VM, 'src/lib/reserva.js'), 'utf8');
+    const L = ejecutar(`${FUENTE}\nreturn [{ json: { rsHorarioDeReservas, rsHorarioDeReservasInvalido } }];`, [{}])[0] as Record<string, (...a: unknown[]) => unknown>;
+    for (const malo of [['10:00-22:00'], '25:00-22:00', 'cualquier cosa', { lun: 'x' }]) {
+      expect(L['rsHorarioDeReservas']!(malo, HORARIO_PEDIDOS), JSON.stringify(malo)).toBe(HORARIO_PEDIDOS);
+      expect(L['rsHorarioDeReservasInvalido']!(malo, HORARIO_PEDIDOS), JSON.stringify(malo)).toBe(true);
+    }
+    expect(L['rsHorarioDeReservasInvalido']!('10:00-22:00', 'lun=cerrado,mar=cerrado')).toBe(true); // sin días abiertos
+    expect(L['rsHorarioDeReservasInvalido']!('', HORARIO_PEDIDOS)).toBe(false);
+    expect(L['rsHorarioDeReservasInvalido']!('10:00-22:00', HORARIO_PEDIDOS)).toBe(false);
   });
   it('el dato de Q\'Taco es «10:00-22:00» y el horario de pedidos no se tocó (sigue siendo el marcador)', () => {
     expect(DATOS['horarioReservas']).toBe('10:00-22:00');

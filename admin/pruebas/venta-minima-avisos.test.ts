@@ -2018,7 +2018,7 @@ describe('variables de plantilla corregidas (05/11): mapa en la modalidad, cotej
     // El texto libre sigue con la palabra.
     expect(L.avCotejoTexto('cuadra')).toBe('comprobante: datos coinciden');
   });
-  it('celular legible «+591 7066 1250» en la variable, el detalle y la reserva; solo con 8 a 15 dígitos y sin letras', () => {
+  it('celular legible «+591 0000 0000» en la variable, el detalle y la reserva; solo con 8 a 15 dígitos y sin letras', () => {
     expect(L.avTelefonoLegible('59100000033')).toBe('+591 0000 0033');
     expect(L.avTelefonoLegible('+591 000 00033')).toBe('+591 0000 0033');
     expect(L.avTelefonoLegible('5110000000012')).toBe('+5110000000012');

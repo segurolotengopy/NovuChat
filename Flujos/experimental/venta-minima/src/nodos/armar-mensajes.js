@@ -399,13 +399,14 @@ if (AM_estadoNuevo && AM_claveValida && String(AM_PLAN.ruta || '') !== 'nada' &&
   vmEscribirEstado(AM_ses, AM_FROM, AM_estadoDespues, AM_AHORA);
 }
 // El pedido guardado vive 72 horas desde su última escritura (`vmGuardarPedido` poda lo vencido).
-// UN AVISO DE COMPROBANTE POR PEDIDO (decisión de Andres, 07/11/2026): el pedido guardado lleva `comprobanteAvisadoMs` SOLO cuando el aviso de su comprobante SALIÓ
-// (hecho: un `wamid` de Meta en este turno, o el de un turno anterior cuyo compromiso falló, `yaAvisado`). `Armar avisos` lo lee y no avisa los comprobantes siguientes de
-// ese pedido. Si el aviso no salió, no hay marca y el comprobante siguiente puede avisar.
+// UN AVISO DE COMPROBANTE POR PEDIDO, SALVO QUE CAMBIE EL RESULTADO (decisiones de Andres, 07/11/2026): el pedido guardado lleva `comprobanteAvisadoMs` y
+// `comprobanteAvisadoResultado` (el resultado del cotejo que se avisó) SOLO cuando el aviso de su comprobante SALIÓ (hecho: un `wamid` de Meta en este turno, o el de un
+// turno anterior cuyo compromiso falló, `yaAvisado`). `Plan del turno` no vuelve a avisar un comprobante de ese pedido con el MISMO resultado; con otro resultado sale un
+// aviso de actualización y la marca pasa a ese resultado. Si el aviso no salió, la marca no cambia y el comprobante siguiente puede avisar.
 const AM_comprobanteSalio = AM_tiposSalidos.indexOf('comprobante') >= 0 || (AM_yaAvisado.indexOf('comprobante') >= 0 && AM_armados.length === 0);
 const AM_pedPlan = AM_PLAN.pedido && typeof AM_PLAN.pedido === 'object' ? AM_PLAN.pedido : null;
-const AM_ped = AM_pedPlan && AM_comprobanteSalio && !(Number(AM_pedPlan.comprobanteAvisadoMs) > 0)
-  ? Object.assign({}, AM_pedPlan, { comprobanteAvisadoMs: AM_AHORA }) : AM_pedPlan;
+const AM_ped = AM_pedPlan && AM_comprobanteSalio
+  ? Object.assign({}, AM_pedPlan, { comprobanteAvisadoMs: AM_AHORA, comprobanteAvisadoResultado: String(AM_pedPlan.resultado || '') }) : AM_pedPlan;
 if (AM_ped && AM_ped.pedidoId && !AM_sinQr) AM_pedidoGuardado = vmGuardarPedido(AM_ses, AM_ped, AM_AHORA) !== null;
 if (AM_sd) {
   // Los mapas VIEJOS (`estados`, `vistos`) que quedan en la memoria de n8n hasta el retiro del respaldo se siguen podando por su vencimiento.

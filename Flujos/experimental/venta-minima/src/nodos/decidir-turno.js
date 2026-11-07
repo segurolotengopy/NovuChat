@@ -107,7 +107,9 @@ const fotoConPieFueraDelCobro = (() => {
 // EL ARTE DE UN ANUNCIO CON UN QR PENDIENTE (decisión de Andres, 07/11/2026): `¿Es comprobante?` mandó la imagen aquí, sin guardarla ni cotejarla, porque `Clasificar
 // imagen` la reconoció como el arte de una campaña vigente. Se vuelve a comprobar con el criterio completo (`prCampanaDeLaImagen`): si coincide, se muestra la promoción
 // (`Plan del turno` no toca el cobro ni el pedido y recuerda el comprobante pendiente); si NO coincide, es un comprobante, sin cotejo (aviso con la foto al local):
-// un comprobante real nunca se pierde. La imagen no vende ni cobra por sí sola.
+// un comprobante real nunca se pierde; el aviso dice «comprobante sin guardar ni cotejar» (`motivo: 'anuncio_no_confirmado'`), nada más. La imagen no vende ni cobra
+// por sí sola. CRITERIO del filtro (`¿Es comprobante?`): `publicidad` y, si la lectura trae letra («A»/«B») Y titular, los DOS deben apuntar a la misma campaña vigente;
+// con solo uno de los dos, ese basta. Aquí `prCampanaDeLaImagen` solo puede confirmar o descartar lo que el filtro ya dejó pasar.
 const llegoComoAnuncio = t.esComprobante === true && t.clasificarAntes === true && !!vmNodo('Clasificar imagen')
   && !vmNodo('Cotejar en el servidor') && !vmNodo('Guardar comprobante') && !vmNodo('¿Es PDF?');
 if (llegoComoAnuncio && cfg.promosActivo === true) {
@@ -115,6 +117,7 @@ if (llegoComoAnuncio && cfg.promosActivo === true) {
   const deLaImagen = lectura ? prCampanaDeLaImagen(cfg.campanas, cfg.anuncios, lectura, ahora, anuncioPorTitular, cfg) : null;
   if (deLaImagen) return salir('promo', { campana: deLaImagen, variante: 'promo', via: 'imagen_con_qr_pendiente' });
 }
+if (llegoComoAnuncio) return salir('comprobante', { motivo: 'anuncio_no_confirmado' });
 if (vmNodo('Cotejar en el servidor') || t.esComprobante === true || (t.comprobanteSimulado === true && !fotoConPieFueraDelCobro)) return salir('comprobante');
 // Un pedido SIMULADO con el cobro real encendido y su QR pendiente: la foto no es un comprobante real ni se coteja; se pasa con una persona.
 if (t.comprobanteCruzado === true) return salir('transferir', { motivo: 'el modo de cobro cambió: comprobante de un pedido simulado' });

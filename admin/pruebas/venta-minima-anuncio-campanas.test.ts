@@ -659,6 +659,8 @@ describe('B (07/11/2026, decisión de Andres «Reconocer anuncio antes»): el ar
       { categoria: 'otro', titular_principal: 'Tortas Mexicanas', campana: 'A' },
       { categoria: 'publicidad', titular_principal: 'Tortas Mexicanas', campana: 'B' },
       { categoria: 'publicidad', titular_principal: 'Zapatos', campana: 'ninguna' },
+      // Letra Y titular presentes: los DOS deben apuntar a la misma campaña (revisión del PR #842); un titular ajeno con letra «A» es comprobante.
+      { categoria: 'publicidad', titular_principal: 'Zapatos en oferta', campana: 'A' },
       'es un anuncio de tortas',
       null,
     ];
@@ -678,6 +680,9 @@ describe('B (07/11/2026, decisión de Andres «Reconocer anuncio antes»): el ar
     expect(ninguna(t)).toBe(true);
     expect(t.avisos.length).toBeGreaterThan(0);
     expect(JSON.stringify(t.avisos)).toContain('OXJL');
+    // El aviso dice lo que pasó y nada más (revisión del PR #842): ni se guardó ni se cotejó.
+    expect(JSON.stringify(t.avisos)).toContain('sin guardar ni cotejar');
+    expect(t.ejecutados.has('Guardar comprobante')).toBe(false);
     expect(cuerpos(t).join('\n')).toContain('Gracias por enviar el comprobante de tu pedido #OXJL');
   });
   it('un PDF con el QR pendiente no se clasifica: comprobante directo', () => {

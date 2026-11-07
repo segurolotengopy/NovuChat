@@ -330,13 +330,16 @@ const PR_PREGUNTA_DELIVERY = /\b(solo|solamente|unicamente|nomas)\b.*\b(delivery
 function prMencionaA(n) {
   return (/\btortas? mexicanas?\b/.test(n) && PR_DICE_PROMO.test(n)) || prPromoJuntoA(n, prEsTorta);
 }
-// ¿Habla del «Jueves de +2» o de agrandar el Q'Taco Dúo? «jueves de +2» / «jueves de mas 2» / «jueves +2» / «jueves mas 2» valen solos; «jueves de 2» (sin el
-// «+») solo con una palabra de promoción y sin ser un horario («jueves de 2 a 4»); «jueves de 2 mas» con una palabra de promoción o al final del mensaje; la
-// palabra de promoción PEGADA al jueves («promo jueves», «la promo del jueves», «oferta de los jueves»); «agrandar … Q'Taco Dúo» en cualquier orden.
+// ¿Habla del «Jueves de +2» o de agrandar el Q'Taco Dúo? «jueves de +2» / «jueves +2» / «jueves de mas 2» valen solos (las dos primeras, la marca del anuncio; la
+// tercera, como antes del 07/11); «jueves mas 2» (sin «de») y «jueves de 2 mas» solo con una palabra de promoción o si son el mensaje ENTERO («el jueves más 2
+// amigos» no es la promo); «jueves de 2» (sin el «+») solo con una palabra de promoción y sin ser un horario («jueves de 2 a 4»); la palabra de promoción PEGADA al
+// jueves («promo jueves», «la promo del jueves», «oferta de los jueves»); «agrandar … Q'Taco Dúo» en cualquier orden.
 function prMencionaB(crudo, n) {
-  if (/\bjueves ?(de |del )?(\+ ?|mas ?)2\b/.test(crudo)) return true;
+  if (/\bjueves ?(de |del )?\+ ?2\b/.test(crudo) || /\bjueves de ?mas ?2\b/.test(crudo)) return true;
+  const entero = /^((quiero|quisiera) )?((la|el) )?((promo|promocion|oferta) )?((de|del) )?(los |el )?jueves /.test(n);
+  if (/\bjueves (del )?mas 2\b/.test(n) && (PR_DICE_PROMO.test(n) || (entero && /\bjueves (del )?mas 2$/.test(n)))) return true;
   if (/\bjueves de 2\b/.test(n) && !/\bjueves de 2 (a|al|am|pm|hrs?|horas?|y|hasta|de la|en la|personas?|pax|gente|amig\w+|invitad\w+)\b/.test(n) && PR_DICE_PROMO.test(n)) return true;
-  if (/\bjueves (de |del )?2 mas\b/.test(n) && (PR_DICE_PROMO.test(n) || /\bjueves (de |del )?2 mas$/.test(n))) return true;
+  if (/\bjueves (de |del )?2 mas\b/.test(n) && (PR_DICE_PROMO.test(n) || (entero && /\bjueves (de |del )?2 mas$/.test(n)))) return true;
   // Pegada al jueves, salvo que nombre OTRA cifra («la promoción Jueves de +3» no es el «Jueves de +2»).
   const otraCifra = /\bjueves ?(de |del )?(\+ ?|mas ?)?(\d+)/.exec(crudo);
   if (!(otraCifra && otraCifra[3] !== '2') && prPromoJuntoA(n, (w) => w === 'jueves')) return true;
@@ -360,9 +363,10 @@ function prPromoJuntoA(n, esLaPalabra) {
   }
   return false;
 }
-// «torta» o «tortas», o una de ellas con UNA letra cambiada, de más o de menos («tortaa», «tortss», «trtas»), empezando con «t».
+// «torta» o «tortas», o una de ellas con UNA letra cambiada, de más o de menos («tortaa», «tortss»), SIEMPRE con el prefijo «tort» («tarta» o «tosta» no son
+// tortas).
 function prEsTorta(w) {
-  if (typeof w !== 'string' || w.charAt(0) !== 't' || w.length < 4 || w.length > 7) return false;
+  if (typeof w !== 'string' || w.slice(0, 4) !== 'tort' || w.length < 5 || w.length > 7) return false;
   return prDistanciaUno(w, 'torta') || prDistanciaUno(w, 'tortas');
 }
 // ¿Distancia de edición (Levenshtein) de 1 o menos entre dos palabras cortas?

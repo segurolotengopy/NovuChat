@@ -580,6 +580,7 @@ function avCotejoTexto(resultado) {
   if (resultado === 'ilegible') return 'comprobante ilegible';
   if (resultado === 'sin_qr') return 'sin QR: se cobra al entregar o al recoger';
   if (resultado === 'qr_vencido') return 'QR vencido: coordinar el pago';
+  if (resultado === 'sin_guardar') return 'comprobante sin guardar ni cotejar';
   return 'comprobante sin cotejar';
 }
 
@@ -589,7 +590,7 @@ function avCotejoVariable(resultado) {
   return avCotejoTexto(resultado).replace(/^comprobante:?\s+/i, '');
 }
 
-// Teléfono legible, calculado SOLO con los dígitos: «+591 7066 1250» solo si empieza por 591 y tiene 11 dígitos. Con 12 a 15
+// Teléfono legible, calculado SOLO con los dígitos: «+591 0000 0000» solo si empieza por 591 y tiene 11 dígitos. Con 12 a 15
 // dígitos (otro país) «+» y los dígitos sin agrupar (no se conoce el largo del código de país); con 8 a 11 sin prefijo 591 solo
 // los dígitos, sin «+» (no se puede saber el país). Devuelve '' si el valor trae letras o no tiene entre 8 y 15 dígitos.
 function avTelefonoLegible(v) {
@@ -609,7 +610,7 @@ function avModalidadTexto(m) {
 
 function avResultado(tipo, r) {
   const v = String(r === undefined || r === null ? '' : r);
-  if (['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_qr', 'qr_vencido', 'ya_cotejado', 'simulado'].indexOf(v) >= 0) return v;
+  if (['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_guardar', 'sin_qr', 'qr_vencido', 'ya_cotejado', 'simulado'].indexOf(v) >= 0) return v;
   return tipo === 'pedido' ? 'sin_qr' : 'sin_cotejo';
 }
 
@@ -1046,7 +1047,8 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
   const errores = [];
   if (AV_TIPOS.indexOf(tipo) < 0) return { items: [], errores: ['tipo_desconocido'] };
   const esPedido = tipo === 'pedido' || tipo === 'comprobante';
-  const resultado = esPedido ? avResultado(tipo, d.resultado) : '';
+  // `sinGuardar` (07/11/2026): la imagen que el filtro tomó por un anuncio y el código no confirmó; no se guardó ni se cotejó y el aviso lo dice tal cual.
+  const resultado = esPedido ? avResultado(tipo, tipo === 'comprobante' && d.sinGuardar === true ? 'sin_guardar' : d.resultado) : '';
   if (resultado === 'ya_cotejado') return { items: [], errores: ['sin_aviso_ya_cotejado'] };
   if (tipo === 'reserva' && !(d.reserva && typeof d.reserva === 'object')) return { items: [], errores: ['sin_datos_reserva'] };
   const dests = avNormalizarDestinatarios(destinatarios, d, c);

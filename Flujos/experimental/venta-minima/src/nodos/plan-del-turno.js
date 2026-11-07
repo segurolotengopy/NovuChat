@@ -1547,11 +1547,24 @@ function aComprobante() {
     }
     return;
   }
+  // UN AVISO POR PEDIDO, SALVO QUE CAMBIE EL RESULTADO (decisiones de Andres, 07/11/2026): si el aviso de un comprobante de ESTE pedido ya salió con este MISMO
+  // resultado (`comprobanteAvisadoResultado`, que `Armar mensajes` escribe solo con un `wamid` real), no se avisa de nuevo. El comprobante se guardó y se cotejó igual;
+  // el cliente recibe UN mensaje que NO dice que se pasó (en este turno no salió ningún aviso), con el botón para escribir al local. Con otro resultado, aviso de actualización.
+  if (Number(ped.comprobanteAvisadoMs) > 0 && String(ped.comprobanteAvisadoResultado || '') === resultado) {
+    pedidoGuardar = Object.assign({}, ped, { resultado: resultado, estado: cbEstadoParaAviso(resultado), diferencias: diferencias, mediaId: String(t.mediaId || ''), cierreId: cierreId });
+    mensajes = [enlace('Gracias por enviarlo. Da el mismo resultado que el comprobante anterior de tu pedido #' + ped.codigo
+      + ', que nuestro equipo ya tiene; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.')];
+    limpiarConfirmado();
+    irA('menu');
+    return;
+  }
   const sinAviso = cbTextoAlCliente(resultado, Object.assign({ avisoSalio: false }, base));
   pedidoGuardar = Object.assign({}, ped, {
     resultado: resultado, estado: cbEstadoParaAviso(resultado), diferencias: diferencias, mediaId: String(t.mediaId || ''), cierreId: cierreId,
   });
-  aviso = { tipo: 'comprobante', datos: Object.assign(datosDePedido(pedidoGuardar, resultado, diferencias), { mediaId: String(t.mediaId || '') }) };
+  // La imagen que el filtro tomó por un anuncio y `Decidir turno` no confirmó (07/11/2026): ni se guardó ni se cotejó, y el aviso lo dice así (`sinGuardar`).
+  const sinGuardar = d.motivo === 'anuncio_no_confirmado' && !vmNodo('Cotejar en el servidor');
+  aviso = { tipo: 'comprobante', datos: Object.assign(datosDePedido(pedidoGuardar, resultado, diferencias), { mediaId: String(t.mediaId || '') }, sinGuardar ? { sinGuardar: true } : {}) };
   condicionados = { siSalio: [mensajeDeCb(conAviso)], siNoSalio: [mensajeDeCb(sinAviso)] };
   mensajes = [];
   limpiarConfirmado();
@@ -1562,7 +1575,9 @@ function aComprobante() {
 // RESERVA
 // =============================================================================================
 function limitesReserva() {
-  // El horario de las RESERVAS (07/11/2026): el propio del negocio si lo tiene (`horarioReservas`), nunca el «abierto/cerrado» de los pedidos.
+  // El horario de las RESERVAS (07/11/2026): el propio del negocio si lo tiene (`horarioReservas`), nunca el «abierto/cerrado» de los pedidos. Un dato que no sirve
+  // cae al horario de pedidos y queda anotado en `errores` (una vez por turno), para que se vea en el resumen del turno.
+  if (rsHorarioDeReservasInvalido(cfg.horarioReservas, cfg.horario) && errores.indexOf('horario_reservas_invalido') < 0) errores.push('horario_reservas_invalido');
   return {
     horario: rsHorarioDeReservas(cfg.horarioReservas, cfg.horario), zonas: lista(cfg.zonasReserva), maxPersonas: cfg.maxPersonasReserva,
     anticipacionMin: cfg.anticipacionReservaMin, maxDias: cfg.maxDiasReserva,
