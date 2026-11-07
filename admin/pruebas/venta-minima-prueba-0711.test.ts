@@ -474,8 +474,8 @@ describe('El sandbox de EXPRESIONES de n8n no deja leer prototype/__proto__/cons
     const COBRO = { cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: 63, pedido: 'ped1' } };
     const PED = { pedidoId: 'ped1', from: CLIENTE, codigo: 'OXJL', total: 63, lineas: [], modalidad: 'recojo' };
     const lectura = { categoria: 'publicidad', titular_principal: 'Jueves de +2', campana: 'B' };
-    const conQr = (flujo?: Flujo) => {
-      const w = crear({ panel: panel(JUEVES_10, COBRO), flujo, clasifica: lectura });
+    const conQr = (flujo?: Flujo, clasifica: J = lectura) => {
+      const w = crear({ panel: panel(JUEVES_10, COBRO), flujo, clasifica });
       w.sesion.sembrar(CLIENTE, { paso: 'esperando_comprobante', pedido: PED, carrito: [], ultimoMensajeMs: JUEVES_10 - 60_000 }, { ped1: { ...PED, guardadoMs: JUEVES_10 } });
       return w;
     };
@@ -484,6 +484,14 @@ describe('El sandbox de EXPRESIONES de n8n no deja leer prototype/__proto__/cons
     delete (sinOnError.nodes.find((x) => x.name === '¿Es comprobante?') as J)['onError'];
     expect(() => conversacion(conQr(sinOnError)).imagen()).toThrow(/Cannot access "prototype" due to security concerns/);
     expect(conversacion(conQr(viejo)).imagen().mensajes).toHaveLength(1);
+    // El escenario del 07/11 con la expresión vieja y `onError` (revisión de #848): un COMPROBANTE real (el clasificador dice «otro») con el QR pendiente y
+    // campañas vigentes llega al local como comprobante (aviso con el código del pedido), y el cliente nunca lee que el pago entró.
+    const comp = conversacion(conQr(viejo, { categoria: 'otro', titular_principal: '', campana: 'ninguna' })).imagen();
+    expect(comp.mensajes).toHaveLength(1);
+    expect(comp.avisos.some((a) => a.ok)).toBe(true);
+    expect(JSON.stringify(comp.avisos)).toContain('OXJL');
+    expect(cuerpos(comp).join(' ')).not.toMatch(/pago (acreditado|verificado|confirmado)|recibimos tu pago|tu pago (ya )?(entr|lleg|ingres)|ya pagaste/i);
+    expect(cuerpos(comp).join(' ')).toMatch(/comprobante/i);
     const hoy = conversacion(conQr()).imagen();
     expect(hoy.mensajes).toHaveLength(1);
     expect(cuerpos(hoy)[0]).toContain('agrandar');

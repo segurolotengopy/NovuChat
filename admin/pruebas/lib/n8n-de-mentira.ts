@@ -101,7 +101,7 @@
 import vm from 'node:vm';
 import { ejecutar, GLOBALES_FUERA_DEL_SANDBOX, type Flujo, type J, type Nodo, type Referencias } from './flujo';
 
-import { rechazoDeCodigo } from '../../../Flujos/experimental/comun-sin-agente/src/expresiones.mjs';
+import { rechazoDeExpresion } from '../../../Flujos/experimental/comun-sin-agente/src/expresiones.mjs';
 
 // ----------------------------------------------------------------------------- tipos públicos
 
@@ -479,16 +479,20 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   function evaluarUna(expresion: string, it: Item | null): unknown {
     // Como el sandbox de EXPRESIONES de n8n 2.36.5 (distinto del de los nodos Code): leer `prototype`, `__proto__` o `constructor` revienta la expresión
     // («Cannot access "prototype" due to security concerns»). El 07/11/2026 una expresión con `Object.prototype.hasOwnProperty` mató ejecuciones sin dejar registro.
-    // La MISMA regla que la guardia de los armadores (`comun-sin-agente/src/expresiones.mjs`): lo que n8n rechaza, aquí también revienta.
-    const rechazo = rechazoDeCodigo(expresion);
-    if (rechazo && rechazo.regla === 'prototype') throw new Error(`Cannot access "${rechazo.palabra}" due to security concerns`);
-    if (rechazo) throw new Error(`expresión rechazada por el sandbox de n8n: ${rechazo.texto}`);
     const codigo = expresion.replace(RE_ITEM, '$__item($1$2$1)');
     return ejecutar(`return [{ json: { v: (${codigo}\n) } }];`, it ? [it.json] : [], refs, globalesDe(it))[0]?.['v'];
   }
 
   function evaluar(valor: unknown, it: Item | null): unknown {
-    if (typeof valor === 'string') return valor.startsWith('=') ? plantilla(valor.slice(1), (e) => evaluarUna(e, it)) : valor;
+    if (typeof valor === 'string') {
+      if (!valor.startsWith('=')) return valor;
+      // La MISMA función y el MISMO alcance que la guardia de los armadores (`comun-sin-agente/src/expresiones.mjs`, el código de cada bloque `{{ … }}`):
+      // lo que el sandbox de expresiones de n8n rechaza, aquí también revienta.
+      const rechazo = rechazoDeExpresion(valor);
+      if (rechazo && rechazo.regla === 'prototype') throw new Error(`Cannot access "${rechazo.palabra}" due to security concerns`);
+      if (rechazo) throw new Error(`expresión rechazada por el sandbox de n8n: ${rechazo.texto}`);
+      return plantilla(valor.slice(1), (e) => evaluarUna(e, it));
+    }
     if (Array.isArray(valor)) return valor.map((v) => evaluar(v, it));
     if (valor !== null && typeof valor === 'object') return Object.fromEntries(Object.entries(valor as J).map(([k, v]) => [k, evaluar(v, it)]));
     return valor;

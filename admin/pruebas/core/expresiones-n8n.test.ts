@@ -31,6 +31,13 @@ const flujos = versionados('Flujos/*.json')
   .filter((x): x is { ruta: string; flujo: Flujo } => !!x && Array.isArray(x.flujo.nodes));
 const QTACO = JSON.parse(readFileSync(join(RAIZ, 'Flujos/experimental/venta-minima/venta-minima.qtaco.json'), 'utf8')) as Flujo;
 const copia = (): Flujo => JSON.parse(JSON.stringify(QTACO)) as Flujo;
+const flujoCon = (expresion: string): Flujo => ({
+  name: 'x', settings: { executionOrder: 'v1' }, connections: { Inicio: { main: [[{ node: 'Usar', type: 'main', index: 0 }]] } },
+  nodes: [
+    { id: '1', name: 'Inicio', type: 'n8n-nodes-base.noOp', typeVersion: 1, position: [0, 0], parameters: {} },
+    { id: '2', name: 'Usar', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: [200, 0], parameters: { mode: 'manual', includeOtherFields: false, assignments: { assignments: [{ id: 'a', name: 'v', type: 'string', value: expresion }] }, options: {} } },
+  ],
+} as unknown as Flujo);
 const condicionDe = (f: Flujo): J => ((f.nodes.find((n) => n.name === '¿Es comprobante?')!.parameters as J)['conditions']['conditions'][0]) as J;
 
 describe('ningún flujo versionado tiene una expresión que el sandbox de n8n rechaza', () => {
@@ -84,7 +91,7 @@ describe('NEGANDO: las reglas reconocen cada construcción en una copia de un fl
     (code.parameters as J)['jsCode'] = String((code.parameters as J)['jsCode']) + '\nconst x = Object.prototype.hasOwnProperty;';
     expect(hallazgosDeExpresiones(f)).toEqual([]);
   });
-  it('revisa TODO el texto tras el «=», no solo hasta el primer «}}»; no marca una clave de objeto literal ni una propiedad del dato', () => {
+  it('revisa el código de CADA bloque `{{ … }}` (un `}}` dentro del código no lo corta); no marca una clave de objeto literal ni una propiedad del dato', () => {
     const uno = (texto: string) => hallazgosDeExpresiones({ nodes: [{ name: 'X', parameters: { v: texto } }] });
     expect(uno('={{ JSON.stringify({ a: { b: 1 }}) }} y {{ Object.prototype.toString.call(1) }}')).toHaveLength(1);
     expect(uno('={{ JSON.stringify({ a: { b: 1 }}) + String(Object.getPrototypeOf({})) }}')).toHaveLength(1);
@@ -92,6 +99,23 @@ describe('NEGANDO: las reglas reconocen cada construcción en una copia de un fl
     expect(uno('={{ $json.process + $json.module + $json.global }}')).toEqual([]);
     expect(uno('={{ process.env.X }}')).toHaveLength(1);
     expect(uno('={{ $json.constructor }}')).toHaveLength(1); // como propiedad del dato, n8n también la rechaza
+  });
+  it('revisión de #848: lo interpolado en `${…}` de una plantilla SÍ se revisa; solo el código de los bloques cuenta (la prosa de fuera ni marca ni esconde); una regex con comilla no confunde', () => {
+    const uno = (texto: string) => hallazgosDeExpresiones({ nodes: [{ name: 'X', parameters: { v: texto } }] });
+    expect(uno('={{ `${Object.prototype.toString.call(1)}` }}')).toHaveLength(1);
+    expect(uno('={{ `x ${process.env.X}` }}')).toHaveLength(1);
+    expect(uno('={{ `texto con constructor y process` }}')).toEqual([]);
+    // Un apóstrofo de la prosa («Q'Taco», «cliente's») no esconde el código del bloque.
+    expect(uno('=Hola desde Q\'Taco {{ Object.prototype.hasOwnProperty.call($json, "a") }} y el cliente\'s')).toHaveLength(1);
+    // La prosa fuera de los bloques no cuenta.
+    expect(uno('=Usa el modulo global para el proceso {{ $json.a }}')).toEqual([]);
+    expect(uno('={{ "a".replace(/["]/g, "") }} y luego constructor')).toEqual([]);
+    expect(uno('={{ "a".replace(/["]/g, "") + Object.prototype.x }}')).toHaveLength(1);
+  });
+  it('el n8n de mentira y la guardia usan la MISMA función con el MISMO alcance: la prosa de fuera no hace fallar la expresión; el código de dentro sí', () => {
+    const correr = (expresion: string) => crearMundo({ flujo: flujoCon(expresion), dobles: {}, ahoraMs: Date.UTC(2026, 10, 7, 12) }).turno({ a: 1 }, {});
+    expect(() => correr('=Usa el modulo global para el proceso {{ $json.a }}')).not.toThrow();
+    expect(() => correr('=Hola desde Q\'Taco {{ Object.prototype.hasOwnProperty.call($json, "a") }}')).toThrow(/Cannot access "prototype" due to security concerns/);
   });
   it('un texto que no empieza con «=» no es una expresión', () => {
     expect(hallazgosDeExpresiones({ nodes: [{ name: 'X', parameters: { text: 'Object.prototype {{ a.constructor }}' } }] })).toEqual([]);
@@ -115,13 +139,7 @@ describe('todos los armadores de Flujos/experimental aplican la guardia en su --
 });
 
 describe('el n8n de mentira rechaza esas expresiones como n8n (la prueba de punta a punta no las deja pasar)', () => {
-  const flujoCon = (expresion: string): Flujo => ({
-    name: 'x', settings: { executionOrder: 'v1' }, connections: { Inicio: { main: [[{ node: 'Usar', type: 'main', index: 0 }]] } },
-    nodes: [
-      { id: '1', name: 'Inicio', type: 'n8n-nodes-base.noOp', typeVersion: 1, position: [0, 0], parameters: {} },
-      { id: '2', name: 'Usar', type: 'n8n-nodes-base.set', typeVersion: 3.4, position: [200, 0], parameters: { mode: 'manual', includeOtherFields: false, assignments: { assignments: [{ id: 'a', name: 'v', type: 'string', value: expresion }] }, options: {} } },
-    ],
-  } as unknown as Flujo);
+
   const correr = (expresion: string) => crearMundo({ flujo: flujoCon(expresion), dobles: {}, ahoraMs: Date.UTC(2026, 10, 7, 12) }).turno({ a: 1 }, {});
   it('«Object.prototype…» → «Cannot access "prototype" due to security concerns»', () => {
     expect(() => correr("={{ Object.prototype.hasOwnProperty.call({ a: 1 }, 'a') }}")).toThrow(/Cannot access "prototype" due to security concerns/);
