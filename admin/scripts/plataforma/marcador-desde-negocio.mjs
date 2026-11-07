@@ -10,7 +10,7 @@
  *
  * USO (SECO por omisión: lee y valida, no escribe nada)
  *   node scripts/plataforma/marcador-desde-negocio.mjs --proyecto <id-consola> --tenant <id> \
- *       --marcador REEMPLAZAR_NUMERO_RECEPCION_<ALIAS> [--aplicar]
+ *       --marcador REEMPLAZAR_NUMERO_RECEPCION_<ALIAS> --archivo scripts/datos/<tenant>/negocio-<tenant>.json [--aplicar]
  * Con --aplicar delega la escritura en `scripts/marcador-local.sh` (valida la forma 591…, respalda y NO pisa una fila existente);
  * el valor viaja por el entorno, nunca por argumentos.
  *
@@ -19,7 +19,8 @@
  * 2 uso o salvaguarda (nada escrito) · 3 la fila ya existía y NO se comparó su valor.
  */
 import { spawnSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
@@ -28,16 +29,30 @@ export const FORMA_NUMERO = /^591[0-9]{7,8}$/;
 
 /** Deja solo los dígitos (la Consola puede guardar «+591 …»). Un valor con letras u otros signos no se acepta. */
 export function normalizar(valor) {
-  const s = String(valor ?? '').trim();
+  if (typeof valor !== 'string' && typeof valor !== 'number') return '';
+  const s = String(valor).trim();
   if (!/^\+?[0-9 ]+$/.test(s)) return '';
   return s.replace(/[+ ]/g, '');
 }
 
+/**
+ * Atadura marcador ↔ tenant (revisión de seguridad de #836): el marcador debe ser el `numeroRecepcionMarcador` que declara el JSON
+ * versionado del negocio de ESE tenant (`negocio-<tenant>.json`). Sin esto, `--tenant A --marcador …_B` crearía la fila de B con el
+ * número de A y `cargar-negocio --aplicar` lo escribiría en la Consola de B (el defecto del 15/09).
+ */
+export function marcadorDeclarado(archivo, tenant, leerArchivo = (r) => readFileSync(r, 'utf8')) {
+  if (basename(String(archivo ?? '')) !== `negocio-${tenant}.json`) return undefined;
+  try { return JSON.parse(leerArchivo(archivo))?.negocio?.numeroRecepcionMarcador; } catch { return undefined; }
+}
+
 /** Núcleo puro: `leer(tenant)` devuelve el valor de `numeroRecepcion`; `escribir(marcador, valor)` devuelve {codigo, salida}. */
-export async function copiar({ tenant, marcador, aplicar, leer, escribir }) {
+export async function copiar({ tenant, marcador, declarado, aplicar, leer, escribir }) {
   if (!ID_TENANT.test(tenant ?? '')) return { codigo: 2, mensajes: ['--tenant inválido'] };
   if (!MARCADOR_NUMERO.test(marcador ?? '')) {
     return { codigo: 2, mensajes: ['--marcador debe ser REEMPLAZAR_NUMERO_RECEPCION_<ALIAS>'] };
+  }
+  if (declarado !== marcador) {
+    return { codigo: 2, mensajes: ['el marcador no es el numeroRecepcionMarcador del negocio de ese tenant (--archivo). No se escribió nada.'] };
   }
   const crudo = await leer(tenant);
   if (crudo === undefined || crudo === null || crudo === '') {
@@ -79,7 +94,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
   initializeApp({ projectId: proyecto });
   const db = getFirestore();
   const res = await copiar({
-    tenant: arg('--tenant'), marcador: arg('--marcador'), aplicar: a.includes('--aplicar'),
+    tenant: arg('--tenant'), marcador: arg('--marcador'), declarado: marcadorDeclarado(arg('--archivo'), arg('--tenant')), aplicar: a.includes('--aplicar'),
     leer: async (t) => (await db.doc(`tenants/${t}/config/negocio`).get()).get('numeroRecepcion'),
     escribir: escribirConMarcadorLocal,
   });
