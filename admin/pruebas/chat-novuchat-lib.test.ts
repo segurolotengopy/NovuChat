@@ -1292,7 +1292,7 @@ describe('aplicar el turno a la ficha y armar el prospecto de la hoja', () => {
 const CONSTRUIR = (await import(/* @vite-ignore */ join(CARPETA, 'construir.mjs'))) as {
   CONFIG_BASE: J; cargarDatos: (a: string, dir?: string) => J; validarDatos: (d: J, a: string) => void; armarTenant: (p: unknown, d: J, a: string) => string; inyectar: (f: J, marca: string, nombre: string, valor: unknown) => void;
   guardias: (entrada: string, flujo: J, datos?: J) => string[]; construir: (o?: J) => { resultado: J[]; huerfanos: string[] }; salidaDe: (a: string) => string; huerfanos: (d: string, dd: string) => string[];
-  anfitrionPermitido: (n: string, u: string) => boolean; MARCA_DATOS: string;
+  anfitrionPermitido: (n: string, u: string) => boolean; MARCA_DATOS: string; sinComentarios: (t: string, modo?: string) => string;
 };
 
 describe('los datos de NovuChat (admin/scripts/datos/chat-novuchat/)', () => {
@@ -1487,6 +1487,10 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
       f['nodes'].find((x: J) => x.name === 'Cerrar turno').parameters.jsCode += '\n' + mut;
       expect(CONSTRUIR.guardias('trigger', f, DATOS_CRM).join(' '), mut).toMatch(texto);
     }
+    // el tokenizador: en estos casos la lectura «todo / ambiguo es división» deja ver la reasignación que la lectura por contexto esconde
+    for (const x of ['const o = {a:1}\n/ 2 + "/"; const s = "/*"; ssFoo = f; const z = "*/";', 'x++ / 2 + "/"; const s = "/*"; ssFoo = f; const z = "*/";', 'x-- / 2 + "/"; const s = "/*"; ssFoo = f; const z = "*/";', "o.in / 2 + '/'; const s = '/*'; ssFoo = f; const z = '*/';", "x = a++ / 2; const s = \"x\"; /* */ const t = '/'; const v = '/*'; ssFoo = f; const w = '*/';"]) {
+      expect(CONSTRUIR.sinComentarios(x, 'division'), x).toContain('ssFoo = f');
+    }
     // declarar de nuevo un ss* con una forma de código que engaña a un tokenizador (división, regex, cadenas que abren comentarios): el parser la cuenta
     for (const x of ['x++ / 2 + "/"; const s = "/*"; function ssEspacio(){return true} const z = "*/";', 'const o = {a:1}\n/ 2 + "/"; const s = "/*"; function ssEspacio(){return true} const z = "*/";']) {
       const g = prod();
@@ -1511,22 +1515,24 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
       ["const fAst = (nAst) => globalThis[nAst]; fAst('eval');", /usa eval/], ["Reflect.get(fAst, 'constructor');", /usa eval o \.constructor/], ["const { constructor: CAst } = () => {};", /usa eval o \.constructor/], ["const oAst = { ['constr' + 'uctor']: 1 };", /usa eval o \.constructor/],
       ["globalThis.Object.assign(SS_CONFIG, { espacio: 'x' });", /muta SS_CONFIG/], ["this.Reflect.set(SS_CONFIG, 'espacio', 'x');", /muta SS_CONFIG/], ["globalThis.Object.defineProperty(Array.prototype, 'x', {});", /contamina un prototipo/],
       ["function fpAst(p = Array.prototype) { return p; }", /contamina un prototipo/], ["class AAst { p = Array.prototype; }", /contamina un prototipo/], ["const rAst = 'ev' + 'al'; globalThis[rAst];", /usa eval/],
+      // la guarda es la UNIÓN con la lectura por texto: una cadena con eval/Function en cualquier posición sigue marcada
+      ["globalThis[' eval'.trim()]('x');", /usa eval/], ["'eval,x'.split(',')[0];", /usa eval/], ["'Function x'.split(' ')[0];", /usa Function/],
+      ["globalThis[JSON.parse('\"eval\"')];", /usa eval/], ["globalThis[/eval/.source];", /usa eval/], ["globalThis['Function '.trim()];", /usa Function/], ["globalThis[/Function/.source];", /usa Function/], ["x2Ast = `a __proto__ b`;", /contamina un prototipo/],
+      ["with (SS_CONFIG) { espacio = 'x'; }", /usa with/],
+      // comentarios HTML (Annex B): para el motor son comentarios, para un tokenizador no
+      ["x0Ast = 1;\n<!-- nada", /comentario HTML/], ["x1Ast = 1;\n--> nada", /comentario HTML/],
       // división o regex, comentarios y cadenas que abren o cierran comentarios: la mutación real se ve
       ["const dAst = 8 / 2 / 1; const rAst = /a+b/g; ssFoo = f;", /reasigna o muta/], ["const sAst = '//'; ssFoo = f; // fin", /reasigna o muta/], ["const sAst = \"/*\"; /* c */ ssFoo = f; const uAst = \"*/\";", /reasigna o muta/],
       ["const tAst = `${xAst} ${`y`} /*`; ssFoo = f; const vAst = `*/`;", /reasigna o muta/], ["const rAst = /[/*]/.test(xAst); ssFoo = f; /* */", /reasigna o muta/], ["const hAst = { a: 1 } / 2; ssFoo = f;", /reasigna o muta/],
       // falla cerrada: código que no se puede analizar es un hallazgo
       ["ssFoo = ;", /no se puede analizar/], ["const cAst = {", /no se puede analizar/], ["const sAst = 'sin cerrar; ssFoo = f;", /no se puede analizar/], ["function (", /no se puede analizar/], ["const dup = 1; const dup = 2;", /no se puede analizar/],
     ] as const) expect(conCodigo(codigo).join(' '), codigo).toMatch(texto);
-    // lo que PARECE código pero no lo es (comentarios, cadenas, plantillas, regex, divisiones) no es un hallazgo
+    // lo que PARECE código pero no lo es (divisiones, sumas, la clase con `constructor`) no es un hallazgo; las cadenas y comentarios que nombran eval/ssX = son falsos positivos aceptados de la lectura por texto
     expect(conCodigo([
-      "const q1Ast = \"ssFoo = f; eval('x'); new Fun" + "ction('a'); delete SS_CONFIG.espacio; x.constructor; x.__proto__\";",
-      "const q2Ast = 'Object.assign(SS_CONFIG, {})' + ' // ' + '/* ssFoo++ */';",
-      "const q3Ast = `ssFoo++ ${'x'} Function.prototype = 1`;",
-      "const q4Ast = /ssFoo = 1|eval\\(/.test(q1Ast);",
+      "const q4Ast = /abc|d+/.test('x');",
       "const q5Ast = (10 / 2) / 5 + 4 / 2;",
-      'const nAst = 100 + 1; const zAst = [1, 2][nAst]; class KAst { constructor() { this.v = nAst; } }; const sAst1 = function ssNombreLocalAst() { return 1; }; const sAst2 = class ssClaseLocalAst {};',
-      '// ssFoo = f; eval("x"); Function("y"); Object.assign(SS_CONFIG, {});',
-      '/* ssFoo = f; globalThis["ev" + "al"]("x"); x.__proto__ = {}; */',
+      'const wAst = { constructor() {} }; wAst.v = 1;',
+      'const nAst = 100 + 1; const zAst = [1, 2][nAst]; class KAst { constructor() { this.v = nAst; } };',
     ].join('\n'))).toEqual([]);
     // el módulo común NO se quita antes de analizar: un `//` abierto antes de él no puede esconder código que SÍ se ejecuta (revisión de seguridad de #835)
     {
@@ -1535,6 +1541,8 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
       expect(conModulo((m) => "void 0; //" + m + "; ssDesdeAutorizado = () => true;\n").join(' ')).toMatch(/«Soltar mensajes» reasigna o muta/);
       expect(conModulo((m) => m + "\nssDesdeAutorizado = () => true;\n").join(' ')).toMatch(/reasigna o muta/);
       expect(conModulo((m) => m + "\nfunction ssDesdeAutorizado() { return true; }\n").join(' ')).toMatch(/declara ssDesdeAutorizado 2 veces/);
+      // el módulo dentro de un comentario y a continuación una copia EDITADA: el chequeo textual del módulo se cumple, pero lo que corre es la copia
+      expect(conModulo((m) => '/*' + m + '*/\n' + m.replace(/function ssDesdeAutorizado\([^)]*\) \{/, 'function ssDesdeAutorizado() { return true; ')).join(' ')).toMatch(/declara ssDesdeAutorizado 2 veces/);
       // negado: un comentario o una línea inofensiva antes y después del módulo no es hallazgo
       expect(conModulo((m) => "// nada\nvoid 0;\n" + m + "\nvoid 0; // fin\n")).toEqual([]);
     }

@@ -16,7 +16,7 @@
  * porque `Flujos/` no tiene `node_modules`: la guardia corre desde `admin/` (pruebas) o con la instalación de `admin/` presente. Sin acorn instalado, la carga falla ruidosamente: no hay guardia en silencio.
  *
  * LÍMITES CONOCIDOS (declarados en `DISENO.md`, límite 4): una clave computada que no se pueda plegar (`o[f()]`) no se ve; un alias (`const c = SS_CONFIG; c.x = 1`, `const { assign } = Object`) tampoco;
- * `import()` y `require` no se vigilan aquí. El nombre se compara sin ámbito: un `ssFoo` local también cuenta (conservador).
+ * `import()` y `require` no se vigilan aquí; tampoco `const O = Object; O.assign(SS_CONFIG)`, `Object.assign(...[SS_CONFIG])` ni las plantillas con etiqueta dentro de join/concat. El nombre se compara sin ámbito: un `ssFoo` local también cuenta (conservador).
  */
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -40,7 +40,9 @@ export const TEXTOS = {
   indice: 'accede a SS_CONFIG por índice',
   mutaConfig: 'muta SS_CONFIG con Object.assign/defineProperty/defineProperties o con Reflect',
   mutaAyudante: 'muta un ayudante de sesión (ss*) con Object.assign/defineProperty/defineProperties o con Reflect',
+  conWith: 'usa with (cambia el ámbito de los nombres: `with (SS_CONFIG) { espacio = 1 }` muta sin nombrarlo)',
   noAnalizable: 'tiene código que no se puede analizar',
+  comentarioHtml: 'usa un comentario HTML («<!--» o «-->»), que esconde código a una guardia por patrones',
 };
 
 const esSS = (nombre) => nombre === 'SS_CONFIG' || /^ss[A-Z]/.test(nombre);
@@ -51,7 +53,12 @@ export function analizar(codigo) {
   const texto = String(codigo);
   let r = MEMO.get(texto);
   if (r === undefined) {
-    try { r = { ok: true, ast: acorn.parse(texto, OPCIONES) }; } catch (x) { r = { ok: false, error: String((x && x.message) || x) }; }
+    try {
+      // los comentarios HTML de Annex B (`<!--`, `-->` al inicio de línea) son comentarios para el motor y no para un tokenizador: se rechazan (fuera de cadenas y plantillas, porque el parser los ve como lo que son)
+      let html = false;
+      const ast = acorn.parse(texto, { ...OPCIONES, onComment: (bloque, _t, ini) => { if (!bloque && (texto.startsWith('<!--', ini) || texto.startsWith('-->', ini))) html = true; } });
+      r = { ok: true, ast, html };
+    } catch (x) { r = { ok: false, error: String((x && x.message) || x) }; }
     if (MEMO.size > 400) MEMO.clear();
     MEMO.set(texto, r);
   }
@@ -213,8 +220,10 @@ export function hallazgosDelCodigo(codigo) {
   if (!a.ok) return [TEXTOS.noAnalizable];
   const plegar = plegador(a.ast);
   const h = new Set();
+  if (a.html) h.add(TEXTOS.comentarioHtml);
   const nombreDe = (m) => nombreDeMiembro(m, plegar);
 
+  const PALABRA_PELIGROSA = /(?<![\p{L}\p{N}_$])(eval|Function|__proto__|[gs]etPrototypeOf)(?![\p{L}\p{N}_$])/u;
   const NOMBRES_PELIGROSOS = new Map([['eval', TEXTOS.eval], ['constructor', TEXTOS.eval], ['Function', TEXTOS.funcion], ['__proto__', TEXTOS.prototipo], ['getPrototypeOf', TEXTOS.protoDe], ['setPrototypeOf', TEXTOS.protoDe]]);
   recorrer(a.ast, (n, padre) => {
     // Toda expresión (fuera de una clave) cuyo valor plegado sea EXACTAMENTE uno de esos nombres: una cadena que vale `eval` no tiene otro uso que llegar a `eval` (`Reflect.get(globalThis, 'eval')`, `let k = 'eval'`, `f('eval')`, `['eval'][0]`). Una cadena que solo CONTIENE «eval» en un texto más largo no se marca.
@@ -222,6 +231,12 @@ export function hallazgosDelCodigo(codigo) {
       const esClave = padre && ((padre.type === 'MemberExpression' && padre.property === n && !padre.computed) || ((padre.type === 'Property' || padre.type === 'MethodDefinition' || padre.type === 'PropertyDefinition') && padre.key === n && !padre.computed));
       if (!esClave) { const v = plegar(n); if (typeof v === 'string' && NOMBRES_PELIGROSOS.has(v)) h.add(NOMBRES_PELIGROSOS.get(v)); }
     }
+    // Toda cadena, patrón de regex o fragmento de plantilla que contenga COMO PALABRA eval, Function, __proto__ o get/setPrototypeOf: se transforman (`' eval'.trim()`, `JSON.parse('"eval"')`, `'eval,x'.split(',')[0]`, `/eval/.source`) y llegan a su destino sin que el plegado las vea.
+    {
+      const texto = n.type === 'Literal' ? (typeof n.value === 'string' ? n.value : (n.regex ? n.regex.pattern : undefined)) : (n.type === 'TemplateElement' ? n.value.cooked ?? n.value.raw : undefined);
+      if (typeof texto === 'string') { const m = PALABRA_PELIGROSA.exec(texto); if (m) h.add(NOMBRES_PELIGROSOS.get(m[1] === 'eval' || m[1] === 'Function' || m[1] === '__proto__' ? m[1] : 'getPrototypeOf')); }
+    }
+    if (n.type === 'WithStatement') h.add(TEXTOS.conWith);
     switch (n.type) {
       case 'Identifier':
         if (n.name === 'eval') h.add(TEXTOS.eval);
@@ -237,7 +252,7 @@ export function hallazgosDelCodigo(codigo) {
           const v = n.computed ? plegar(n.key) : (n.key.type === 'Identifier' ? n.key.name : (n.key.type === 'Literal' ? n.key.value : undefined));
           const k = v === undefined ? undefined : String(v);
           if (k === '__proto__') h.add(TEXTOS.prototipo);
-          else if (k === 'eval' || (k === 'constructor' && n.type === 'Property')) h.add(TEXTOS.eval);
+          else if (k === 'eval' || (k === 'constructor' && n.type === 'Property' && !n.method)) h.add(TEXTOS.eval);
           else if (k === 'Function') h.add(TEXTOS.funcion);
           else if (k === 'getPrototypeOf' || k === 'setPrototypeOf') h.add(TEXTOS.protoDe);
         }
