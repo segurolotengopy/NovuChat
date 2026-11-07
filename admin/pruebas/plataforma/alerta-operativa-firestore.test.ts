@@ -39,7 +39,7 @@ describe('almacén real: el evento guardado y la configuración', () => {
     const d = await db.doc('plataforma/alertas/eventos/evt-real-0001').get();
     expect(Object.keys(d.data()!).sort()).toEqual([
       'asunto', 'contrato', 'dia', 'enlace', 'estado', 'flujo', 'id_unico', 'nivel', 'nodo', 'ocurrido_en', 'ocurrido_ms',
-      'proyecto', 'que_paso', 'que_se_espera_de_andres', 'recibido_ms', 'saneado', 'tipo_error',
+      'proyecto', 'que_paso', 'que_se_espera_de_andres', 'recibido_ms', 'resumido_en', 'saneado', 'tipo_error',
     ]);
   });
   it('una llamada sin firma no lee la configuración de plataforma/alertas (no cuesta una lectura)', async () => {

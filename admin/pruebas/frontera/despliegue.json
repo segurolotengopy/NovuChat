@@ -46,10 +46,10 @@
     ],
     "secretEnvironmentVariables": [
       {
-        "key": "ALERTA_OPERATIVA_HMAC"
+        "key": "ALERTAS_HMAC"
       },
       {
-        "key": "RESEND_API_KEY_ALERTAS"
+        "key": "ALERTAS_RESEND_API_KEY"
       }
     ],
     "labels": {},
@@ -2101,7 +2101,7 @@
     ],
     "secretEnvironmentVariables": [
       {
-        "key": "RESEND_API_KEY_ALERTAS"
+        "key": "ALERTAS_RESEND_API_KEY"
       }
     ],
     "labels": {},

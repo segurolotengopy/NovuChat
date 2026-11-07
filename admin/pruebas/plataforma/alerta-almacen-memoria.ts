@@ -3,31 +3,32 @@
  * MISMA batería (`alerta-almacen-contrato.ts`) corre contra esta copia (`alerta-operativa.test.ts`) y contra la real en el
  * emulador (`alerta-operativa-firestore.test.ts`).
  */
-import { inmediatosDe, HORA_MS, type AlmacenAlertas, type EventoGuardado } from '../../functions/src/plataforma/alertaOperativa.ts';
+import { inmediatosDe, topeValido, HORA_MS, type AlmacenAlertas, type EventoGuardado } from '../../functions/src/plataforma/alertaOperativa.ts';
 
 export type AlmacenMemoria = AlmacenAlertas & {
-  eventos: Map<string, EventoGuardado>; dias: Map<string, number>; tipos: Map<string, number>; marca: { ms: number | null };
+  eventos: Map<string, EventoGuardado>; dias: Map<string, number>; tipos: Map<string, number>; cuota: { hasta: number | null };
 };
 
 export function almacenEnMemoria(): AlmacenMemoria {
   const eventos = new Map<string, EventoGuardado>();
   const dias = new Map<string, number>();
   const tipos = new Map<string, number>();
-  const marca: { ms: number | null } = { ms: null };
+  const cuota: { hasta: number | null } = { hasta: null };
   return {
-    eventos, dias, tipos, marca,
+    eventos, dias, tipos, cuota,
     async crear(e) { if (eventos.has(e.id_unico)) return false; eventos.set(e.id_unico, { ...e }); return true; },
     async poner(id, estado) { const e = eventos.get(id); if (e) e.estado = estado; },
     async reservar(tipo, dia, ahora, tope) {
       const usados = dias.get(dia) ?? 0;
       const ultimo = tipos.has(tipo) ? tipos.get(tipo)! : null;
-      if (usados >= inmediatosDe(tope) || (ultimo !== null && ahora - ultimo < HORA_MS)) return { ok: false, previoUltimoMs: ultimo };
+      if (usados >= inmediatosDe(topeValido(tope)) || (ultimo !== null && ahora - ultimo < HORA_MS)) return { ok: false, previoUltimoMs: ultimo };
       dias.set(dia, usados + 1); tipos.set(tipo, ahora);
       return { ok: true, previoUltimoMs: ultimo };
     },
     async liberar(tipo, dia, previo) { dias.set(dia, Math.max(0, (dias.get(dia) ?? 0) - 1)); tipos.set(tipo, previo ?? 0); },
-    async desde(ms) { return [...eventos.values()].filter((e) => e.recibido_ms >= ms).sort((a, b) => b.recibido_ms - a.recibido_ms).slice(0, 500); },
-    async marcaResumen() { return marca.ms; },
-    async fijarMarcaResumen(ms) { marca.ms = ms; },
+    async pendientesDeResumen() { return [...eventos.values()].filter((e) => e.resumido_en === null).sort((a, b) => b.recibido_ms - a.recibido_ms).slice(0, 500); },
+    async marcarResumidos(ids, ms) { for (const id of ids) { const e = eventos.get(id); if (e) e.resumido_en = ms; } },
+    async cuotaHasta() { return cuota.hasta; },
+    async marcarCuota(hasta) { cuota.hasta = hasta; },
   };
 }

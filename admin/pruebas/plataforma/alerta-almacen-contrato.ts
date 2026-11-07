@@ -12,7 +12,7 @@ export const eventoGuardado = (id: string, extra: Partial<EventoGuardado> = {}):
   contrato: 'avisos-correo/v1', nivel: 'urgente', proyecto: 'novuchat', asunto: 'Envío incierto', que_paso: 'Falló un envío.',
   que_se_espera_de_andres: 'Revisar el flujo.', enlace: null, ocurrido_en: '2026-11-07T14:59:00Z', id_unico: id,
   tipo_error: 'envio_incierto', flujo: 'demo-a', nodo: 'Enviar', ocurrido_ms: AHORA - 60_000, recibido_ms: AHORA, dia: DIA,
-  estado: 'en_resumen', saneado: false, ...extra,
+  estado: 'en_resumen', saneado: false, resumido_en: null, ...extra,
 });
 
 export interface Fabrica {
@@ -58,26 +58,36 @@ export function bateriaDelAlmacen(nombre: string, nuevo: () => Promise<Fabrica>)
       const { almacen } = await nuevo();
       expect(await almacen.crear(eventoGuardado('evt-dup-0001', { asunto: 'Original' }))).toBe(true);
       await expect(almacen.crear(eventoGuardado('evt-dup-0001', { asunto: 'Otro' }))).resolves.toBe(false);
-      const v = await almacen.desde(AHORA - HORA_MS);
+      const v = await almacen.pendientesDeResumen();
       expect(v.filter((e) => e.id_unico === 'evt-dup-0001')).toHaveLength(1);
       expect(v.find((e) => e.id_unico === 'evt-dup-0001')!.asunto).toBe('Original');
     });
 
-    it('poner cambia el estado; desde() filtra por la hora del SERVIDOR (recibido_ms), no por ocurrido_en', async () => {
+    it('poner cambia el estado; pendientesDeResumen ve solo lo no resumido y marcarResumidos lo saca', async () => {
       const { almacen } = await nuevo();
-      await almacen.crear(eventoGuardado('evt-srv-0001', { ocurrido_ms: AHORA - 20 * 86_400_000, recibido_ms: AHORA }));
-      await almacen.crear(eventoGuardado('evt-srv-0002', { ocurrido_ms: AHORA, recibido_ms: AHORA - 3 * 86_400_000 }));
+      await almacen.crear(eventoGuardado('evt-srv-0001', { recibido_ms: AHORA }));
+      await almacen.crear(eventoGuardado('evt-srv-0002', { recibido_ms: AHORA - 3 * 86_400_000 }));
+      await almacen.crear(eventoGuardado('evt-srv-0003', { recibido_ms: AHORA - 1000 }));
       await almacen.poner('evt-srv-0001', 'enviado');
-      const v = await almacen.desde(AHORA - 86_400_000);
-      expect(v.map((e) => e.id_unico)).toEqual(['evt-srv-0001']);
+      let v = await almacen.pendientesDeResumen();
+      expect(v.map((e) => e.id_unico)).toEqual(['evt-srv-0001', 'evt-srv-0003', 'evt-srv-0002']); // más nuevos primero
       expect(v[0]!.estado).toBe('enviado');
+      await almacen.marcarResumidos(['evt-srv-0001', 'evt-srv-0002'], AHORA);
+      v = await almacen.pendientesDeResumen();
+      expect(v.map((e) => e.id_unico)).toEqual(['evt-srv-0003']);
     });
 
-    it('la marca del resumen empieza vacía y se fija', async () => {
+    it('la cuota de Resend: empieza vacía, se marca y se lee', async () => {
       const { almacen } = await nuevo();
-      expect(await almacen.marcaResumen()).toBeNull();
-      await almacen.fijarMarcaResumen(AHORA);
-      expect(await almacen.marcaResumen()).toBe(AHORA);
+      expect(await almacen.cuotaHasta()).toBeNull();
+      await almacen.marcarCuota(AHORA + HORA_MS);
+      expect(await almacen.cuotaHasta()).toBe(AHORA + HORA_MS);
+    });
+
+    it('el tope se valida DENTRO del almacén: un tope de 50 no deja pasar más de 7', async () => {
+      const { almacen } = await nuevo();
+      const r = await Promise.all(Array.from({ length: 12 }, (_, i) => almacen.reservar(`tt_${i}`, DIA, AHORA, 50)));
+      expect(r.filter((x) => x.ok)).toHaveLength(7);
     });
   });
 }

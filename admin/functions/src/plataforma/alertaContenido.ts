@@ -74,43 +74,87 @@ export class ErrorContrato extends Error {
 // DETECTORES (ADR-011 §2.1), sobre TODOS los campos de texto
 // ---------------------------------------------------------------------------
 const PREFIJOS_SECRETO = /(?:\bre_|\bBearer\s|\bgh[pousr]_|\bgithub_pat_|\bAKIA|\bAIza|\bxox|\bEAA|\beyJ|-----BEGIN)/i;
-const PALABRA_LARGA = /[A-Za-z0-9+/=_-]{32,}/;
-// Dos grupos de cifras separados por espacio, punto o guion (712-34567, 7123 4567, 591 712 34567): un teléfono
-// escrito con separadores. Una fecha (2026-11-07) y una versión (2.36.5) no entran: sus grupos son de 1 a 2 cifras.
-const TELEFONO_SEPARADO = /(?<!\d)\d{3,4}[ .-]\d{3,5}(?!\d)|(?<!\d)\d{2,3}[ .-]\d{3}[ .-]\d{3,5}(?!\d)/;
-const IPV4 = /(?<!\d)\d{1,3}(?:\.\d{1,3}){3}(?!\d)/;
+const PALABRA_LARGA_TEXTO = /[A-Za-z0-9+/=_-]{32,}/;
+/** Para ids y rutas: 32 o más alfanuméricos SIN guiones (un nombre largo con guiones no es un secreto). */
+const PALABRA_LARGA_ESTRICTA = /[A-Za-z0-9]{32,}/;
+const DIGITOS_7 = /\p{Nd}{7,}/u;
+const OTP_6 = /(?<!\p{Nd})\p{Nd}{6}(?!\p{Nd})/u;
+const IPV4 = /(?<!\p{Nd})\p{Nd}{1,3}(?:\.\p{Nd}{1,3}){3}(?!\p{Nd})/u;
+/** Dominio sin esquema (un host escrito en el texto). Las URL van solo en `enlace`. */
+const DOMINIO_SIN_ESQUEMA = /\b[a-z0-9-]+\.(?:com|net|org|bo|site|website|io|app|dev|test)\b/i;
+// Una fecha, una hora ISO o una versión (2.36.5) no son teléfonos: se tapan antes de buscar rachas de cifras.
+const FECHA_O_VERSION = /\p{Nd}{4}-\p{Nd}{2}-\p{Nd}{2}(?:T\p{Nd}{2}:\p{Nd}{2}(?::\p{Nd}{2})?Z?)?|(?<![\p{Nd}.])\p{Nd}{1,2}(?:\.\p{Nd}{1,3}){2}(?![\p{Nd}]|\.\p{Nd})/gu;
+// 7 o más cifras con hasta 3 separadores (espacio, NBSP, paréntesis, punto, guion) entre cada par: un teléfono escrito a mano.
+const RACHA_DE_TELEFONO = /\p{Nd}(?:[\s().-]{0,3}\p{Nd}){6,}/u;
 
-export function detectar(texto: string, denegar: readonly string[] = []): string[] {
+/**
+ * `texto`: campos libres (ADR). `id`: `id_unico` (palabra larga sin guiones). `tipo`: `tipo_error`, una lista cerrada de
+ * minúsculas (sin la regla de palabra larga). `ruta`: la ruta decodificada de un enlace (palabra larga por segmento y
+ * sin las reglas de URL, porque el host ya está validado).
+ */
+export type Perfil = 'texto' | 'id' | 'tipo' | 'ruta';
+
+export function detectar(texto: string, denegar: readonly string[] = [], perfil: Perfil = 'texto'): string[] {
+  // NFKC: «５９１…» de ancho completo, NBSP y demás formas compatibles pasan a su forma normal antes de mirar.
+  const t = texto.normalize('NFKC');
   const reglas: string[] = [];
-  if (PREFIJOS_SECRETO.test(texto) || PALABRA_LARGA.test(texto)) reglas.push('secreto_posible');
-  if (/\+\s?\d/.test(texto) || /\d{7,}/.test(texto)) reglas.push('telefono_o_identificador');
-  else if (TELEFONO_SEPARADO.test(texto)) reglas.push('telefono_con_separadores');
-  if (/(?<!\d)\d{6}(?!\d)/.test(texto)) reglas.push('codigo_tipo_otp');
-  if (texto.includes('@')) reglas.push('correo');
-  if (texto.includes('://') || /\bwww\./i.test(texto) || IPV4.test(texto) || /localhost/i.test(texto)
-    || /\.internal\b/i.test(texto) || /\.local\b/i.test(texto)) reglas.push('url_en_texto');
+  const partes = perfil === 'ruta' ? t.split('/') : [t];
+  const palabra = perfil === 'texto' ? PALABRA_LARGA_TEXTO : perfil === 'tipo' ? null : PALABRA_LARGA_ESTRICTA;
+  if (PREFIJOS_SECRETO.test(t) || (palabra !== null && partes.some((x) => palabra.test(x)))) reglas.push('secreto_posible');
+  if (/\+\s?\p{Nd}/u.test(t) || DIGITOS_7.test(t)) reglas.push('telefono_o_identificador');
+  else if (RACHA_DE_TELEFONO.test(t.replace(FECHA_O_VERSION, '#'))) reglas.push('telefono_con_separadores');
+  if (OTP_6.test(t)) reglas.push('codigo_tipo_otp');
+  if (t.includes('@')) reglas.push('correo');
+  if (perfil !== 'ruta' && (t.includes('://') || /\bwww\./i.test(t) || IPV4.test(t) || /localhost/i.test(t)
+    || /\.internal\b/i.test(t) || /\.local\b/i.test(t) || DOMINIO_SIN_ESQUEMA.test(t))) reglas.push('url_en_texto');
   // Lista cargada de `plataforma/alertas.avisosDenegar`: nunca se imprime, ni siquiera en el nombre de la regla.
-  const bajo = texto.toLowerCase();
-  if (denegar.some((d) => d && bajo.includes(d.toLowerCase()))) reglas.push('denegado_por_proyecto');
+  const bajo = t.toLowerCase();
+  if (denegar.some((d) => d && bajo.includes(d.normalize('NFKC').toLowerCase()))) reglas.push('denegado_por_proyecto');
   return reglas;
 }
 
-/** Controles C0/C1, bidi, ancho cero y separadores de línea Unicode. El salto `\n` solo se admite donde se pide. */
-const CONTROL = new RegExp('[\\u0000-\\u0009\\u000B-\\u001F\\u007F-\\u009F\\u00AD\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u2069\\uFEFF]');
-const tieneControl = (t: string, permiteSalto: boolean): boolean => CONTROL.test(t) || (!permiteSalto && t.includes('\n'));
+/**
+ * Controles (Cc), formato invisible (Cf: bidi, ancho cero, etiquetas), rellenos de Hangul, separadores de línea Unicode,
+ * VS/CGJ y marca de Arabic Letter. Los puntos de código se arman con `fromCodePoint` (sin escapes en el fuente).
+ * El salto `\n` solo se admite donde se pide.
+ */
+const OTROS_INVISIBLES = [0x115f, 0x1160, 0x3164, 0xffa0, 0x180e, 0x034f, 0x061c, 0x2028, 0x2029].map((c) => String.fromCodePoint(c)).join('');
+const ETIQUETAS = `${String.fromCodePoint(0xe0000)}-${String.fromCodePoint(0xe007f)}`;
+const CONTROL = new RegExp(`[\\p{Cc}\\p{Cf}${OTROS_INVISIBLES}${ETIQUETAS}]`, 'u');
+const tieneControl = (t: string, permiteSalto: boolean): boolean => CONTROL.test(permiteSalto ? t.replace(/\n/g, '') : t);
 
 // ---------------------------------------------------------------------------
 // ENLACE: https, sin puerto/consulta/fragmento/IP, host EXACTO de la lista; se guarda `href` normalizado
 // ---------------------------------------------------------------------------
-export function enlaceNormalizado(enlace: string, hosts: readonly string[]): string | null {
-  if (enlace.length > LIMITES.enlace || /[\s\\@?#]/.test(enlace) || CONTROL.test(enlace)) return null;
+/** La ruta de una ejecución de Actions (ids numéricos de ejecución y de job): no es un teléfono. */
+const RUTA_DE_EJECUCION = /^\/[^/]+\/[^/]+\/actions\/runs\/\d+(?:\/job\/\d+)?$/;
+
+/** `href` normalizado, o la regla que lo rechaza. */
+export function analizarEnlace(enlace: string, hosts: readonly string[], denegar: readonly string[] = []): { href: string } | { regla: string } {
+  const no = (regla = 'enlace_no_permitido'): { regla: string } => ({ regla });
+  if (enlace.length > LIMITES.enlace || /[\s\\@?#]/.test(enlace) || CONTROL.test(enlace)) return no();
   let u: URL;
-  try { u = new URL(enlace); } catch { return null; }
-  if (u.protocol !== 'https:' || u.username || u.password || u.port || u.search || u.hash) return null;
+  try { u = new URL(enlace); } catch { return no(); }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port || u.search || u.hash) return no();
   const host = u.hostname.toLowerCase();
-  if (/^[\d.]+$/.test(host) || host.includes(':') || host.includes('[')) return null;
+  if (/^[\d.]+$/.test(host) || host.includes(':') || host.includes('[')) return no();
   const permitidos = hosts.map((h) => h.trim().toLowerCase()).filter(Boolean);
-  return permitidos.includes(host) ? u.href : null;
+  if (!permitidos.includes(host)) return no();
+  // La ruta también es contenido: se decodifica y pasa por los detectores (un secreto o un correo escondidos en el
+  // path). Solo la regla de 7+ cifras se exime para la ruta de una ejecución de Actions (interpretación del contrato,
+  // a confirmar con WAM).
+  let ruta: string;
+  try { ruta = decodeURIComponent(u.pathname); } catch { return no(); }
+  if (CONTROL.test(ruta)) return no('caracter_control');
+  const exenta = RUTA_DE_EJECUCION.test(ruta);
+  const malas = detectar(ruta, denegar, 'ruta').filter((r) => !(exenta && (r === 'telefono_o_identificador' || r === 'telefono_con_separadores')));
+  if (malas.length > 0) return no(malas[0]);
+  return { href: u.href };
+}
+
+export function enlaceNormalizado(enlace: string, hosts: readonly string[], denegar: readonly string[] = []): string | null {
+  const r = analizarEnlace(enlace, hosts, denegar);
+  return 'href' in r ? r.href : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,9 +165,11 @@ const TIPO = /^[a-z0-9_.-]{1,60}$/;
 const PROYECTO_FORMA = /^[a-z][a-z0-9-]{1,29}$/;
 const FECHA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 /** flujo y nodo son nombres: letras, cifras, espacio y la puntuación de un nombre. Lo demás se cambia por «_». */
-const PERMITIDOS_NOMBRE = /^[\p{L}\p{N} .,()_\-–—:/·'&]+$/u;
+const PERMITIDOS_NOMBRE = /^[\p{L}\p{N} .,()_\-–—:/·'&¿?]+$/u;
 export const VENTANA_FUTURO_MS = 10 * 60_000;
 export const VENTANA_PASADO_MS = 30 * 86_400_000;
+/** `<id>:bloqueado` nunca pasa de 120: un id de más de 108 no se puede avisar como bloqueado. */
+export const MAX_ID_PARA_BLOQUEO = 108;
 
 const recortar = (t: string, max: number): string => [...t].slice(0, max).join('');
 
@@ -147,13 +193,16 @@ export function validarEntrada(cuerpo: unknown, cfg: ConfigContenido): EventoVal
   if (typeof d['proyecto'] === 'string' && !proyectoOk) mal('proyecto', 'proyecto_invalido');
   let idOk = ID_UNICO.test(s('id_unico'));
   if (typeof d['id_unico'] === 'string' && !idOk) mal('id_unico', 'forma');
-  // I1: un `id_unico` con forma de teléfono o de id de ejecución (7+ cifras, `+cifra`, número de 6) se RECHAZA. Es
-  // determinista y sale en el `ref` del correo; derivar un hash lo volvería ilegible y rompería la
-  // Idempotency-Key `novuchat:<id_unico>` del ADR. El emisor usa un id tipo `envio-<flujo>-<hash corto>`.
+  // I1: un `id_unico` con forma de dato personal se RECHAZA: es determinista, sale en el `ref` del correo y es la
+  // Idempotency-Key `novuchat:<id_unico>`; derivar un hash lo volvería ilegible. Pasa por TODOS los detectores
+  // (prefijos de secreto, 32+ alfanuméricos sin guiones, teléfono, número de 6, correo, IP, localhost, dominios,
+  // denegados). Una coincidencia deja `idOk = false`: sin aviso `:bloqueado`, solo 4xx.
+  if (idOk && s('id_unico').startsWith('resumen-')) { idOk = false; mal('id_unico', 'forma'); } // el prefijo es del resumen propio
   if (idOk) {
-    const r = detectar(s('id_unico')).filter((x) => x === 'telefono_o_identificador' || x === 'codigo_tipo_otp');
-    if (r.length > 0) { idOk = false; mal('id_unico', 'forma_de_dato_personal'); }
+    const r = detectar(s('id_unico'), cfg.denegar, 'id');
+    if (r.length > 0) { idOk = false; for (const x of r) mal('id_unico', x); }
   }
+  if (idOk && s('id_unico').length > MAX_ID_PARA_BLOQUEO) idOk = false; // sin bloqueo posible; igual se valida el resto
   if (typeof d['nivel'] === 'string' && !(NIVELES as readonly string[]).includes(s('nivel'))) mal('nivel', 'nivel_invalido');
   if (typeof d['tipo_error'] === 'string' && !TIPO.test(s('tipo_error'))) mal('tipo_error', 'forma');
 
@@ -168,8 +217,8 @@ export function validarEntrada(cuerpo: unknown, cfg: ConfigContenido): EventoVal
   // Enlace.
   let enlace: string | null = null;
   if (typeof d['enlace'] === 'string' && s('enlace')) {
-    enlace = enlaceNormalizado(s('enlace'), cfg.hosts);
-    if (enlace === null) mal('enlace', 'enlace_no_permitido');
+    const a = analizarEnlace(s('enlace'), cfg.hosts, cfg.denegar);
+    if ('href' in a) enlace = a.href; else mal('enlace', a.regla);
   }
 
   // Textos libres: controles (422), detectores (422), exceso (se recorta).
@@ -187,7 +236,7 @@ export function validarEntrada(cuerpo: unknown, cfg: ConfigContenido): EventoVal
 
   let paso = '';
   if (typeof d['que_paso'] === 'string' && s('que_paso')) {
-    const t = s('que_paso');
+    const t = s('que_paso').replace(/\r\n/g, '\n').replace(/\t/g, ' ');
     if (tieneControl(t, true)) mal('que_paso', 'caracter_control');
     else {
       for (const r of detectar(t, cfg.denegar)) mal('que_paso', r);
@@ -214,12 +263,12 @@ export function validarEntrada(cuerpo: unknown, cfg: ConfigContenido): EventoVal
   const nodo = nombre('nodo');
   // `tipo_error` ya pasó su forma de minúsculas; también se mira que no sea un dato personal.
   if (typeof d['tipo_error'] === 'string' && TIPO.test(s('tipo_error'))) {
-    for (const r of detectar(s('tipo_error'), cfg.denegar)) mal('tipo_error', r);
+    for (const r of detectar(s('tipo_error'), cfg.denegar, 'tipo')) mal('tipo_error', r);
   }
 
   if (v.length > 0) {
     const nivelOk = (NIVELES as readonly string[]).includes(s('nivel')) ? (s('nivel') as Nivel) : null;
-    throw new ErrorContrato(v, proyectoOk && idOk ? s('id_unico') : null, nivelOk);
+    throw new ErrorContrato(v, proyectoOk && idOk && s('id_unico').length <= MAX_ID_PARA_BLOQUEO ? s('id_unico') : null, nivelOk);
   }
   return {
     aviso: {

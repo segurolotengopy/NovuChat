@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
   TOPE_DIARIO, TOPE_MAXIMO, armarCorreo, armarResumen, atenderAlerta, autenticar, enviarPorResend, enviarResumenDiario,
-  inmediatosDe, topeValido, validarEntrada, verificarFirmaAlerta, MAX_CUERPO_ALERTA,
+  inmediatosDe, topeValido, validarEntrada, verificarFirmaAlerta, MAX_CUERPO_ALERTA, siguienteMedianocheUtc, diaUtc,
   type AlmacenAlertas, type Enviar, type Envio,
 } from '../../functions/src/plataforma/alertaOperativa.ts';
 import { ErrorContrato, detectar, enlaceNormalizado } from '../../functions/src/plataforma/alertaContenido.ts';
@@ -156,7 +156,8 @@ describe('contrato: entrada interna -> aviso v1', () => {
     const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
     const r = await llamar(a, enviar, buenEvento({ que_paso: `Falló para ${TEL} (${CORREO})` }));
     expect(r.status).toBe(422);
-    expect(r.cuerpo).toBe('contrato_invalido:que_paso(telefono_o_identificador),que_paso(correo)');
+    expect(r.cuerpo).toContain('que_paso(telefono_o_identificador)');
+    expect(r.cuerpo).toContain('que_paso(correo)');
     expect(enviados).toHaveLength(1);
     const e = enviados[0]!;
     expect(e.idempotencia).toBe('novuchat:evt-0001-abcdef:bloqueado');
@@ -309,7 +310,6 @@ describe('ocurrido_en e id_unico', () => {
   });
   it('id_unico: la forma del ADR; con forma de teléfono o de id de ejecución se rechaza', () => {
     expect(violaciones(buenEvento({ id_unico: 'envio:demo-a_x.1' }))).toEqual([]);
-    expect(violaciones(buenEvento({ id_unico: 'resumen-2026-11-07' }))).toEqual([]);
     for (const mal of ['abc', '-empieza-mal-1', 'con espacio 123', 'x'.repeat(121), `evt-${TEL}`, `ejec-${'1234'}${'5678'}`, `ev-${OTP}-x`, `+${TEL}`]) {
       expect(violaciones(buenEvento({ id_unico: mal })).filter((v) => v.startsWith('id_unico')), mal).not.toEqual([]);
     }
@@ -485,7 +485,7 @@ describe('plantilla del correo (ADR-011 §2.2)', () => {
     expect(e.texto.split('\n')[0]).toBe('URGENTE · novuchat · 2026-11-07T14:59:00Z');
     expect(e.texto).toContain(`Enlace: ${ENLACE}`);
     expect(armarCorreo(validar(buenEvento({ enlace: null })).aviso).texto).not.toContain('Enlace:');
-    expect(armarCorreo(validar(buenEvento({ id_unico: 'resumen-2026-11-07' })).aviso).asunto).toContain('[AAB1 RESUMEN]');
+    expect(armarCorreo({ ...validar(buenEvento()).aviso, id_unico: 'resumen-2026-11-07' }).asunto).toContain('[AAB1 RESUMEN]');
     expect(armarCorreo({ ...validar(buenEvento()).aviso, asunto: relleno(100) }).asunto.length).toBeLessThanOrEqual(150);
   });
 
@@ -511,18 +511,17 @@ describe('plantilla del correo (ADR-011 §2.2)', () => {
   });
 });
 
-describe('resumen: solo si hay eventos acumulados; ventana por la hora del servidor y marca de la última corrida', () => {
+describe('resumen: solo si hay eventos sin resumir; cada evento incluido se marca (sin ventanas de tiempo)', () => {
   const guardar = async (a: AlmacenAlertas, id: string, recibido: number, extra: Record<string, unknown> = {}) =>
     a.crear(eventoGuardado(id, { recibido_ms: recibido, ocurrido_ms: recibido, ...extra }));
 
-  it('con 0 eventos NO se envía nada (el latido es de la vigía de FinOps) pero la marca avanza', async () => {
+  it('con 0 eventos NO se envía nada (el latido es de la vigía de FinOps)', async () => {
     const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
     expect(await enviarResumenDiario({ almacen: a, enviar, ahoraMs: AHORA })).toEqual({ eventos: 0, enviado: false });
     expect(enviados).toHaveLength(0);
-    expect(a.marca.ms).toBe(AHORA);
   });
 
-  it('con eventos sale, con idempotencia propia del día, asunto RESUMEN y sin «0 errores»; la marca avanza', async () => {
+  it('con eventos sale, con idempotencia propia del día, asunto RESUMEN y sin «0 errores»; los marca resumidos', async () => {
     const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
     await guardar(a, 'evt-r-0001-abcd', AHORA - HORA);
     await guardar(a, 'evt-r-0002-abcd', AHORA - 2 * HORA, { tipo_error: 'otro_tipo', estado: 'enviado' });
@@ -533,30 +532,34 @@ describe('resumen: solo si hay eventos acumulados; ventana por la hora del servi
     expect(enviados[0]!.texto).toContain('2 avisos desde el último resumen');
     expect(enviados[0]!.texto).toContain('- otro_tipo: 1');
     expect(enviados[0]!.texto).not.toContain('0 errores');
-    expect(a.marca.ms).toBe(AHORA);
+    expect([...a.eventos.values()].every((e) => e.resumido_en === AHORA)).toBe(true);
+    // Una segunda corrida no repite lo ya resumido.
+    expect(await enviarResumenDiario({ almacen: a, enviar, ahoraMs: AHORA + 1000 })).toEqual({ eventos: 0, enviado: false });
+    expect(enviados).toHaveLength(1);
   });
 
-  it('cuenta desde la última corrida exitosa (marca) y por recibido_ms, no por ocurrido_en', async () => {
-    const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
-    a.marca.ms = AHORA - 2 * HORA;
-    await guardar(a, 'evt-m-0001-abcd', AHORA - 3 * HORA);                              // antes de la marca: ya resumido
-    await guardar(a, 'evt-m-0002-abcd', AHORA - HORA, { ocurrido_ms: AHORA - 40 * 86_400_000 }); // ocurrió hace mucho, llegó hoy: entra
-    await guardar(a, 'evt-m-0003-abcd', AHORA - 90 * 60_000, { ocurrido_ms: AHORA + 99 * HORA }); // ocurrido_en mentido al futuro: igual solo por recibido
+  it('LA CARRERA: un evento que llega mientras el resumen se envía NO se pierde ni se marca; va en el siguiente', async () => {
+    const a = almacenEnMemoria(); const { enviados } = envioFalso();
+    await guardar(a, 'evt-c-0001-abcd', AHORA - HORA);
+    const enviar: Enviar = async (e) => { enviados.push(e); await guardar(a, 'evt-c-0002-abcd', AHORA); };
     await enviarResumenDiario({ almacen: a, enviar, ahoraMs: AHORA });
-    expect(enviados[0]!.texto).toContain('2 avisos');
-    // Sin marca, la ventana es 24 h.
-    const b = almacenEnMemoria(); const { enviados: e2, enviar: s2 } = envioFalso();
-    await guardar(b, 'evt-m-0004-abcd', AHORA - 30 * HORA);
-    await guardar(b, 'evt-m-0005-abcd', AHORA - 20 * HORA);
-    await enviarResumenDiario({ almacen: b, enviar: s2, ahoraMs: AHORA });
-    expect(e2[0]!.texto).toContain('1 aviso desde');
+    expect(a.eventos.get('evt-c-0001-abcd')!.resumido_en).toBe(AHORA);
+    expect(a.eventos.get('evt-c-0002-abcd')!.resumido_en).toBeNull();
+    await enviarResumenDiario({ almacen: a, enviar: async (e) => { enviados.push(e); }, ahoraMs: AHORA + 1000 });
+    expect(enviados).toHaveLength(2);
+    expect(enviados[1]!.texto).toContain('1 aviso desde');
+    expect(a.eventos.get('evt-c-0002-abcd')!.resumido_en).toBe(AHORA + 1000);
   });
 
-  it('el envío del resumen falla: lanza (el programador reintenta) y la marca NO avanza', async () => {
+  it('el envío del resumen falla: lanza (el programador reintenta) y NADA se marca', async () => {
     const a = almacenEnMemoria();
     await guardar(a, 'evt-f-0001-abcd', AHORA - HORA);
     await expect(enviarResumenDiario({ almacen: a, enviar: async () => { throw new Error('resend_503'); }, ahoraMs: AHORA })).rejects.toThrow('resend_503');
-    expect(a.marca.ms).toBeNull();
+    expect(a.eventos.get('evt-f-0001-abcd')!.resumido_en).toBeNull();
+    // El reintento vuelve a juntar el mismo evento.
+    const { enviados, enviar } = envioFalso();
+    expect((await enviarResumenDiario({ almacen: a, enviar, ahoraMs: AHORA + 1000 })).enviado).toBe(true);
+    expect(enviados).toHaveLength(1);
   });
 
   it('500 o más: el titular dice «500 o más» y el texto cabe en el contrato (≤30 líneas, ≤1500)', () => {
@@ -568,11 +571,20 @@ describe('resumen: solo si hay eventos acumulados; ventana por la hora del servi
     expect(paso.join('\n').length).toBeLessThanOrEqual(1500);
   });
 
-  it('sin configuración de envío no sale ni se adelanta la marca', async () => {
+  it('sin configuración de envío no sale ni se marca nada', async () => {
     const a = almacenEnMemoria();
     await guardar(a, 'evt-s-0001-abcd', AHORA - HORA);
     expect(await enviarResumenDiario({ almacen: a, enviar: null, ahoraMs: AHORA })).toEqual({ eventos: 1, enviado: false });
-    expect(a.marca.ms).toBeNull();
+    expect(a.eventos.get('evt-s-0001-abcd')!.resumido_en).toBeNull();
+  });
+
+  it('con la cuota de Resend agotada el resumen no llama a Resend ni marca; pasada la medianoche UTC sale', async () => {
+    const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
+    await guardar(a, 'evt-q-0001-abcd', AHORA - HORA);
+    a.cuota.hasta = siguienteMedianocheUtc(AHORA);
+    expect(await enviarResumenDiario({ almacen: a, enviar, ahoraMs: AHORA })).toEqual({ eventos: 1, enviado: false });
+    expect(enviados).toHaveLength(0);
+    expect((await enviarResumenDiario({ almacen: a, enviar, ahoraMs: siguienteMedianocheUtc(AHORA) + 1 })).enviado).toBe(true);
   });
 });
 
@@ -651,6 +663,203 @@ describe('Resend: Idempotency-Key, reintentos y errores', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// TERCERA RONDA: despliegue, detectores sobre enlace/id/Unicode, tope y día UTC, cuota, menores
+// ---------------------------------------------------------------------------
+const cp = (...codigos: number[]): string => String.fromCodePoint(...codigos);
+const NBSP = cp(0xa0);
+
+describe('enlace: la ruta también es contenido (decodificada, con los detectores)', () => {
+  const base = 'https://github.com';
+  it('un secreto, un correo, 7+ cifras o una cadena denegada escondidos en la ruta (también codificados) se rechazan', () => {
+    const casos: Array<[string, string, string]> = [
+      ['palabra de 32+', `${base}/org/repo/blob/${'a1'.repeat(16)}/x.md`, 'secreto_posible'],
+      ['prefijo de secreto', `${base}/org/repo/${['gh', 'p_', 'abc'].join('')}`, 'secreto_posible'],
+      ['correo codificado', `${base}/org/repo/${['juan', '%40', 'correo.test'].join('')}`, 'correo'],
+      ['correo en la ruta', `${base}/org/repo/${['juan', '%40', 'x'].join('')}`, 'correo'],
+      ['teléfono en la ruta', `${base}/org/repo/issues/${TEL}`, 'telefono_o_identificador'],
+      ['teléfono codificado', `${base}/org/repo/${TEL.split('').map((c) => `%3${c}`).join('')}`, 'telefono_o_identificador'],
+      ['denegado', `${base}/org/proyecto-ficticio-xyz/x`, 'denegado_por_proyecto'],
+    ];
+    for (const [nombre, url, regla] of casos) {
+      const r = (() => { try { validar(buenEvento({ enlace: url }), { denegar: ['proyecto-ficticio-xyz'] }); return []; } catch (e) { return (e as ErrorContrato).violaciones.map((v) => `${v.campo}:${v.regla}`); } })();
+      expect(r, nombre).toContain(`enlace:${regla}`);
+    }
+  });
+  it('control invisible decodificado o %-secuencia rota: se rechaza', () => {
+    expect(violaciones(buenEvento({ enlace: `${base}/org/repo/x%E2%80%AEy` }))).toContain('enlace:caracter_control');
+    expect(violaciones(buenEvento({ enlace: `${base}/org/repo/%E0%A4%A` }))).toContain('enlace:enlace_no_permitido');
+  });
+  it('la ruta de una ejecución de Actions (ids numéricos) NO es un teléfono; otra ruta con 7+ cifras, sí', () => {
+    const run = `${base}/org/repo/actions/runs/${'9'.repeat(10)}`;
+    const job = `${run}/job/${'8'.repeat(11)}`;
+    expect(violaciones(buenEvento({ enlace: run }))).toEqual([]);
+    expect(violaciones(buenEvento({ enlace: job }))).toEqual([]);
+    expect(violaciones(buenEvento({ enlace: `${base}/org/repo/actions/runs/${'9'.repeat(10)}/otra` }))).toContain('enlace:telefono_o_identificador');
+    expect(violaciones(buenEvento({ enlace: `${base}/org/repo/pull/${'9'.repeat(10)}` }))).toContain('enlace:telefono_o_identificador');
+    // La exención es solo de la regla de cifras: un secreto en esa ruta sigue rechazado.
+    expect(violaciones(buenEvento({ enlace: `${base}/${'z'.repeat(40)}/repo/actions/runs/${'9'.repeat(10)}` }))).toContain('enlace:secreto_posible');
+  });
+  it('un nombre largo con guiones en el runbook NO se toma por secreto', () => {
+    expect(violaciones(buenEvento({ enlace: `${base}/org/repo/blob/main/docs/produccion/timbre-salida-de-persona-clientes-reales.md` }))).toEqual([]);
+  });
+});
+
+describe('id_unico: TODOS los detectores; una coincidencia = sin aviso :bloqueado y 4xx', () => {
+  const malos: Array<[string, string]> = [
+    ['prefijo de secreto', ['evt', 'AK' + 'IA', 'x1234'].join('-')],
+    ['32+ alfanuméricos sin guiones', `evt-${'a1'.repeat(16)}`],
+    ['IPv4', `ip-${IP}-abcd`],
+    ['localhost', 'evt-localhost-abcd'],
+    ['.internal', 'evt-n8n.internal-ab'],
+    ['.local', 'evt-maquina.local-ab'],
+    ['dominio sin esquema', 'evt-sitio.com-abcd'],
+    ['denegado', 'evt-proyecto-ficticio-xyz-1'],
+    ['teléfono', `evt-${TEL}`],
+    ['número de 6', `evt-${OTP}-x`],
+  ];
+  for (const [nombre, id] of malos) {
+    it(`${nombre}: rechazado, sin bloqueado, 4xx`, async () => {
+      const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
+      const r = await llamar(a, enviar, buenEvento({ id_unico: id }), { denegar: ['proyecto-ficticio-xyz'] });
+      expect(r.status, nombre).toBeGreaterThanOrEqual(400);
+      expect(r.status).toBeLessThan(500);
+      expect(enviados, nombre).toHaveLength(0);
+      expect(a.eventos.size).toBe(0);
+    });
+  }
+  it('un id largo CON guiones y legítimo pasa (no es una palabra de 32 alfanuméricos)', () => {
+    expect(violaciones(buenEvento({ id_unico: 'novuchat-envio-incierto-demo-a-0001-abcd' }))).toEqual([]);
+  });
+  it('resumen- es del resumen propio: un emisor externo no puede usar ese prefijo', async () => {
+    expect(violaciones(buenEvento({ id_unico: 'resumen-2026-11-07' }))).toContain('id_unico:forma');
+    const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
+    const r = await llamar(a, enviar, buenEvento({ id_unico: 'resumen-2026-11-07' }));
+    expect(r.status).toBe(400);
+    expect(enviados).toHaveLength(0);
+  });
+  it('<id>:bloqueado nunca pasa de 120: con id de 108 sale el aviso; con 109 o más, 4xx sin aviso', async () => {
+    const id = (n: number): string => `evt-${'ab-'.repeat(60)}`.slice(0, n - 1) + '1';
+    const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
+    const r108 = await llamar(a, enviar, buenEvento({ id_unico: id(108), que_paso: `falló ${TEL}` }));
+    expect(r108.status).toBe(422);
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0]!.idempotencia.length).toBeLessThanOrEqual('novuchat:'.length + 120);
+    expect([...a.eventos.keys()][0]!.length).toBeLessThanOrEqual(120);
+    const b = almacenEnMemoria(); const { enviados: e2, enviar: s2 } = envioFalso();
+    const r109 = await llamar(b, s2, buenEvento({ id_unico: id(109), que_paso: `falló ${TEL}` }));
+    expect(r109.status).toBe(422);
+    expect(e2).toHaveLength(0);
+    expect(b.eventos.size).toBe(0);
+  });
+});
+
+describe('Unicode: normalización NFKC, dígitos de cualquier escritura, invisibles y dominios sin esquema', () => {
+  it('teléfono con cifras de ancho completo, arábigo-índicas, NBSP, paréntesis y guiones intercalados', () => {
+    const ancho = [...TEL].map((c) => cp(0xff10 + Number(c))).join('');
+    const arabe = [...TEL_LOCAL.slice(0, 7)].map((c) => cp(0x660 + Number(c))).join('');
+    const casos = [
+      ancho, arabe, `712${NBSP}34567`, `(591) 7${NBSP}123${NBSP}4567`, '712 - 34567', `71-23-45-67-8`, `+${NBSP}591`.replace('591', '7'),
+      `7.1.2.3.4.5.6`,
+    ];
+    for (const c of casos) {
+      const r = violaciones(buenEvento({ que_paso: `Cliente ${c} sin respuesta` }));
+      expect(r.some((x) => /telefono_/.test(x)), JSON.stringify(c)).toBe(true);
+    }
+    // Lo legítimo sigue pasando: fecha ISO, hora, versión y números sueltos pequeños.
+    expect(violaciones(buenEvento({ que_paso: 'Pasó el 2026-11-07T14:59:00Z con v2.36.5, 3 de 4 intentos y 12 mensajes' }))).toEqual([]);
+  });
+  it('NFKC: la arroba, el «+», el prefijo de un secreto y «www.» de ancho completo se ven igual que los normales', () => {
+    const ancho = (t: string): string => [...t].map((c) => cp(c.charCodeAt(0) + 0xfee0)).join('');
+    expect(violaciones(buenEvento({ que_paso: `escribió juan${ancho('@')}correo` }))).toContain('que_paso:correo');
+    expect(violaciones(buenEvento({ que_paso: `clave ${ancho('AKIA')}x` }))).toContain('que_paso:secreto_posible');
+    expect(violaciones(buenEvento({ que_paso: `en ${ancho('www')}.sitio` }))).toContain('que_paso:url_en_texto');
+    expect(violaciones(buenEvento({ que_paso: `llamar al ${ancho('+')}5` }))).toContain('que_paso:telefono_o_identificador');
+  });
+  it('caracteres invisibles (Cf, rellenos de Hangul, VS, CGJ, ALM, etiquetas) se rechazan en todo campo', () => {
+    const invisibles = [0x2060, 0x200d, 0x115f, 0x1160, 0x3164, 0xffa0, 0x180e, 0x034f, 0x061c, 0xe0041, 0xad, 0x2066];
+    for (const campo of ['asunto', 'que_paso', 'que_se_espera_de_andres', 'flujo', 'nodo']) {
+      for (const c of invisibles) {
+        expect(violaciones(buenEvento({ [campo]: `Texto${cp(c)}normal` })), `${campo} U+${c.toString(16)}`).toContain(`${campo}:caracter_control`);
+      }
+    }
+  });
+  it('dominios sin esquema se rechazan; las palabras con punto que no son dominio, no', () => {
+    for (const d of ['ejemplo.com', 'sitio.bo', 'x.io', 'mi-app.dev', 'otro.website', 'a.org', 'b.net', 'c.site', 'd.app', 'e.test']) {
+      expect(violaciones(buenEvento({ que_paso: `falló en ${d}` })), d).toContain('que_paso:url_en_texto');
+    }
+    expect(violaciones(buenEvento({ que_paso: 'Falló el nodo n8n. Revisar luego.' }))).toEqual([]);
+  });
+});
+
+describe('menores: tab, CRLF, ¿?, bloqueado y tipo_error', () => {
+  it('en que_paso un tab pasa a espacio y CRLF a LF; cualquier otro control se rechaza', () => {
+    const v = validar(buenEvento({ que_paso: 'Titular\tcon tab\r\nsegunda línea' }));
+    expect(v.aviso.que_paso).toBe('Titular con tab\nsegunda línea');
+    expect(violaciones(buenEvento({ que_paso: 'Titular\rsuelto' }))).toContain('que_paso:caracter_control');
+    expect(violaciones(buenEvento({ que_paso: `Titular${cp(7)}x` }))).toContain('que_paso:caracter_control');
+    // En una sola línea el tab sigue siendo un control.
+    expect(violaciones(buenEvento({ asunto: 'Con\ttab' }))).toContain('asunto:caracter_control');
+  });
+  it('flujo y nodo admiten ¿ y ? (nombres reales de nodos) sin cambiarlos', () => {
+    const v = validar(buenEvento({ nodo: '¿Hay stock?', flujo: '¿Cómo va? (demo)' }));
+    expect([v.nodo, v.flujo, v.saneado]).toEqual(['¿Hay stock?', '¿Cómo va? (demo)', false]);
+  });
+  it('tipo_error: una lista cerrada de minúsculas; uno de 40 caracteres pasa (sin la regla de palabra larga) y un secreto no', () => {
+    const largo = 'error_envio_incierto_flujo_demo_a_n8n_x1';
+    expect(largo).toHaveLength(40);
+    expect(violaciones(buenEvento({ tipo_error: largo }))).toEqual([]);
+    expect(violaciones(buenEvento({ tipo_error: `error_${TEL}` }))).toContain('tipo_error:telefono_o_identificador');
+    expect(violaciones(buenEvento({ tipo_error: ['re', '_', 'abc'].join('') }))).toContain('tipo_error:secreto_posible');
+    // En un texto libre la palabra larga SÍ se rechaza.
+    expect(violaciones(buenEvento({ que_paso: largo }))).toContain('que_paso:secreto_posible');
+  });
+});
+
+describe('tope: validado dentro del procesamiento, y por día UTC', () => {
+  it('con deps.tope = 50 o 1000 (sin pasar por la configuración) salen 7 como máximo; el resumen es aparte', async () => {
+    for (const tope of [50, 1000, 9]) {
+      const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
+      for (let i = 0; i < 20; i++) await llamar(a, enviar, buenEvento({ id_unico: `evt-ia-${i}-abcd`, tipo_error: `tipo_${i}` }), { tope });
+      expect(enviados, `tope ${tope}`).toHaveLength(7);
+      expect(a.eventos.size).toBe(20);
+    }
+  });
+  it('el contador es por día UTC: a las 03:59Z y 04:01Z (antes y después de la medianoche de La Paz) cuentan en el MISMO día', async () => {
+    const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
+    const t1 = Date.parse('2026-11-08T03:59:00Z'); const t2 = Date.parse('2026-11-08T04:01:00Z');
+    expect((await llamar(a, enviar, buenEvento({ id_unico: 'evt-d1-0001-abcd', tipo_error: 'tipo_a' }), { tope: 2, ahora: t1, marca: t1 })).cuerpo).toBe('enviado');
+    expect((await llamar(a, enviar, buenEvento({ id_unico: 'evt-d2-0001-abcd', tipo_error: 'tipo_b' }), { tope: 2, ahora: t2, marca: t2 })).cuerpo).toBe('en_resumen');
+    expect(enviados).toHaveLength(1);
+    expect([...a.dias.keys()]).toEqual(['2026-11-08']);
+    // Cruzar la medianoche UTC SÍ reinicia el cupo.
+    const t3 = Date.parse('2026-11-09T00:01:00Z');
+    expect((await llamar(a, enviar, buenEvento({ id_unico: 'evt-d3-0001-abcd', tipo_error: 'tipo_c' }), { tope: 2, ahora: t3, marca: t3 })).cuerpo).toBe('enviado');
+  });
+});
+
+describe('cuota de Resend agotada: no se vuelve a llamar hasta las 00:00 UTC', () => {
+  it('resend_cuota marca la cuota; los eventos siguientes van al resumen SIN llamar a Resend; tras la medianoche UTC se reanuda', async () => {
+    const a = almacenEnMemoria();
+    let llamadas = 0; let falla = true;
+    const enviar: Enviar = async () => { llamadas++; if (falla) throw new Error('resend_cuota'); };
+    expect((await llamar(a, enviar, buenEvento({ id_unico: 'evt-q1-0001-abcd', tipo_error: 'tipo_a' }))).cuerpo).toBe('envio_fallido');
+    expect(a.cuota.hasta).toBe(siguienteMedianocheUtc(AHORA));
+    expect(a.dias.get(diaUtc(AHORA))).toBe(0);                                   // no gastó cupo
+    expect((await llamar(a, enviar, buenEvento({ id_unico: 'evt-q2-0001-abcd', tipo_error: 'tipo_b' }))).cuerpo).toBe('en_resumen');
+    expect(llamadas).toBe(1);                                                    // el segundo ni siquiera llamó
+    falla = false;
+    const manana = siguienteMedianocheUtc(AHORA) + 60_000;
+    expect((await llamar(a, enviar, buenEvento({ id_unico: 'evt-q3-0001-abcd', tipo_error: 'tipo_c' }), { ahora: manana, marca: manana })).cuerpo).toBe('enviado');
+    expect(llamadas).toBe(2);
+  });
+  it('otros errores de Resend (5xx, 4xx) NO marcan la cuota', async () => {
+    const a = almacenEnMemoria();
+    await llamar(a, async () => { throw new Error('resend_500'); }, buenEvento());
+    expect(a.cuota.hasta).toBeNull();
+  });
+});
+
 describe('registros y fuente: ningún secreto, valor ni dominio real', () => {
   it('ningún valor de secreto, cuerpo, respuesta de Resend, dato personal ni cadena denegada llega a los registros', async () => {
     const logs: string[] = [];
@@ -684,8 +893,8 @@ describe('registros y fuente: ningún secreto, valor ni dominio real', () => {
       expect(fuente, n).not.toMatch(/\bdefine(String|Int|Boolean)\(/);
     }
     const f = readFileSync(join(dir, 'alertaOperativa.ts'), 'utf8');
-    expect(f).toContain("defineSecret('ALERTA_OPERATIVA_HMAC')");
-    expect(f).toContain("defineSecret('RESEND_API_KEY_ALERTAS')");
+    expect(f).toContain("defineSecret('ALERTAS_HMAC')");
+    expect(f).toContain("defineSecret('ALERTAS_RESEND_API_KEY')");
     // El tope máximo está escrito una sola vez y es 8; el valor vigente sale de plataforma/alertas.
     expect(f).toMatch(/TOPE_MAXIMO = 8;/);
     expect(f).toContain("d.get('topeDiario')");

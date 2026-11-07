@@ -183,6 +183,31 @@ del proyecto de producción. Lo que hay:
     (sin control de concurrencia: dos altas simultáneas se pisan); (d) `--quitar-alias`
     no destruye las versiones anteriores del secreto ni borra la credencial ni el
     webhook de n8n: eso se hace aparte. Staging: `scripts/preparar-staging.sh salida-persona`.
+  - **Los secretos de la alerta operativa «envío incierto»** (07/11/2026;
+    `admin/functions/src/plataforma/alertaOperativa.ts`): `ALERTAS_HMAC` (la clave con que el
+    errorWorkflow de n8n firma) y `ALERTAS_RESEND_API_KEY` (la clave de Resend, solo envío,
+    limitada al dominio de avisos). **Un prefijo común y exacto, `ALERTAS_`, es obligatorio**: la
+    condición de IAM de `desplegadorSecretos` solo cubre `INGESTA_`, `GEMINI_API_KEY`,
+    `COBRADOR_` y `SALIDA_PERSONA_`, y un secreto con otro nombre rompe el despliegue con
+    *«403 secretmanager.secrets.get denied»* (le pasó a `SALIDA_PERSONA_RUTAS`). La prueba
+    `admin/pruebas/plataforma/secretos-iam-prefijos.test.ts` lee la condición de
+    `preparar-staging.sh` y falla antes de fusionar si un `defineSecret` no cae en un prefijo.
+    **Producción**, un solo script, en seco y luego con `--aplicar --confirmo produccion`:
+    `scripts/nube-alertas.sh` (1: amplía EN SU LUGAR la condición con `set-iam-policy` y el etag
+    leído, con respaldo; 2: crea `ALERTAS_HMAC` con un valor aleatorio y `ALERTAS_RESEND_API_KEY`
+    con el marcador `PENDIENTE-DE-CARGAR`, ambos por tubería, sin imprimir; 3: `secretAccessor`
+    para `sa-functions`, secreto por secreto). Después, `--cargar-resend <archivo>` carga la clave
+    real (que Andres crea en el panel de Resend y deja en un archivo de modo 600 dentro de
+    `$XDG_RUNTIME_DIR`; el script no la muestra y borra el archivo) y `--entregar-hmac` deja la
+    clave HMAC en otro archivo de modo 600 para el cargador de credenciales de n8n (nadie lo lee).
+    **Una versión agregada después de desplegar no la ve ninguna instancia hasta el próximo
+    despliegue.** Orden: pasos 1 a 3 → `--cargar-resend` → `--entregar-hmac` → desplegar la
+    etiqueta → **`--invocador`** (paso aparte: delega en `nube-visor.sh --servicio alertaoperativa`,
+    que da `run.invoker` a `allUsers` solo sobre ese servicio y comprueba que sin firma contesta
+    401 «no autorizado»). La vuelta atrás de la condición es `--revertir-iam`. Staging:
+    `scripts/preparar-staging.sh alertas`. La configuración del correo (`dominioAvisos`,
+    `destinatario`, `enlaceHosts`, `avisosDenegar`, `topeDiario`) vive en el documento
+    `plataforma/alertas` de Firestore, no en el `.env` (el de producción es de dos nombres).
   - **Ampliar la reserva de clientes** (más de 20) exige un paso **a mano**:
     dar `secretAccessor` sobre cada secreto nuevo a la cuenta de las Functions,
     **`sa-functions`**, secreto por secreto.

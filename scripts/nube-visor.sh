@@ -14,6 +14,8 @@
 #   vermedio                → `verMedio` (callable; el visor de medios en Conversaciones, Core, M3)
 #   bloquearcontacto        → `bloquearContacto` (callable; el asistente deja de responderle a un contacto, Core)
 #   desbloquearcontacto     → `desbloquearContacto` (callable; revierte el bloqueo, Core)
+#   alertaoperativa         → `alertaOperativa` (HTTP; la llama el errorWorkflow de n8n con la firma HMAC propia de
+#                              las alertas; sin firma contesta 401 «no autorizado», Plataforma)
 #
 # POR QUÉ EXISTE. Una Function HTTP o callable nueva no nace invocable si su
 # creación no salió limpia: sin `roles/run.invoker` para `allUsers`, Google
@@ -103,7 +105,9 @@ readonly SERVICIO_BLOQUEAR="bloquearcontacto"
 readonly FUNCION_BLOQUEAR="bloquearContacto"
 readonly SERVICIO_DESBLOQUEAR="desbloquearcontacto"
 readonly FUNCION_DESBLOQUEAR="desbloquearContacto"
-readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_TOMAR}|${SERVICIO_DEVOLVER}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}|${SERVICIO_GUARDAR}|${SERVICIO_MEDIO}|${SERVICIO_BLOQUEAR}|${SERVICIO_DESBLOQUEAR}|${SERVICIO_RESCATES}"
+readonly SERVICIO_ALERTAS="alertaoperativa"
+readonly FUNCION_ALERTAS="alertaOperativa"
+readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_TOMAR}|${SERVICIO_DEVOLVER}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}|${SERVICIO_GUARDAR}|${SERVICIO_MEDIO}|${SERVICIO_BLOQUEAR}|${SERVICIO_DESBLOQUEAR}|${SERVICIO_RESCATES}|${SERVICIO_ALERTAS}"
 readonly ROL="roles/run.invoker"
 readonly MIEMBRO="allUsers"
 readonly REPO="segurolotengopy/NovuChat"
@@ -145,6 +149,7 @@ case "$PEDIDO" in
   "$SERVICIO_MEDIO")     SERVICIO="$SERVICIO_MEDIO";     FUNCION="$FUNCION_MEDIO";     TIPO="callable" ;;
   "$SERVICIO_BLOQUEAR")  SERVICIO="$SERVICIO_BLOQUEAR";  FUNCION="$FUNCION_BLOQUEAR";  TIPO="callable" ;;
   "$SERVICIO_DESBLOQUEAR") SERVICIO="$SERVICIO_DESBLOQUEAR"; FUNCION="$FUNCION_DESBLOQUEAR"; TIPO="callable" ;;
+  "$SERVICIO_ALERTAS")   SERVICIO="$SERVICIO_ALERTAS";   FUNCION="$FUNCION_ALERTAS";   TIPO="http" ;;
   "") echo "✗ Falta --servicio ${LISTA_SERVICIOS} (no hay servicio por omisión)" >&2; exit 2 ;;
   *)  echo "✗ --servicio tiene que ser uno de ${LISTA_SERVICIOS}, escrito así (lista cerrada)" >&2; exit 2 ;;
 esac
@@ -349,9 +354,11 @@ if [[ "$TIPO" == http ]]; then
   MSG_PROPIO="sin credencial contesta NUESTRO código (401 «no autorizado»), no el 403 de Google"
   case "$SERVICIO" in
     "$SERVICIO_RESCATES") QUE_DEJA="El flujo n8n de rescate de 22 h ya no puede llamar a" ;;
+    "$SERVICIO_ALERTAS")  QUE_DEJA="El errorWorkflow de n8n ya no puede avisar a" ;;
     *)                    QUE_DEJA="El flujo n8n «Salida de persona» ya no puede llamar a" ;;
   esac
   BARRERA="la credencial de ingesta del número"
+  [[ "$SERVICIO" != "$SERVICIO_ALERTAS" ]] || BARRERA="la firma HMAC propia de las alertas"
 else
   SIN="sesión"; MSG_ESPERADO="JSON de Firebase"
   MSG_PROPIO="sin sesión contesta NUESTRO código (JSON de Firebase), no el 403 de Google"

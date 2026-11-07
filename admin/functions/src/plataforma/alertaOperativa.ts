@@ -9,7 +9,7 @@
  * No reemplaza al latido de n8n/OCI (la vigía de FinOps): si n8n está caído el errorWorkflow no corre.
  *
  * LO QUE HACE, EN ORDEN (cada paso cierra la puerta antes de gastar lo siguiente):
- *   1. AUTENTICA (`autenticar`) con FIRMA HMAC PROPIA (`ALERTA_OPERATIVA_HMAC`): marca de tiempo + cuerpo
+ *   1. AUTENTICA (`autenticar`) con FIRMA HMAC PROPIA (`ALERTAS_HMAC`): marca de tiempo + cuerpo
  *      crudo, ventana de 2 minutos, comparación en tiempo constante. NO reutiliza la firma de ingesta (por
  *      número de WhatsApp). SOLO DESPUÉS de autenticar se lee `plataforma/alertas`: una llamada sin firma
  *      no cuesta ni una lectura de la base.
@@ -24,11 +24,12 @@
  *   5. `Idempotency-Key = novuchat:<id_unico>`; hasta 3 intentos (1 s y 4 s) ante red, 5xx o 429/409
  *      concurrente; nunca ante otro 4xx ni ante cuota diaria. Si el envío FALLA, el evento queda guardado
  *      (`envio_fallido`, entra al resumen) y el cupo se devuelve: un fallo no gasta tope.
- *   6. RESUMEN (`resumenAlertasOperativas`, 08:00 La Paz): sale SOLO si hay eventos desde la última corrida
- *      exitosa (el latido de «todo bien» es de la vigía de FinOps, D-5 del ADR). Se cuenta por `recibido_ms`,
- *      la hora del servidor, no por la que declara el llamador.
+ *   6. RESUMEN (`resumenAlertasOperativas`, 08:00 La Paz): sale SOLO si hay eventos sin resumir (`resumido_en == null`);
+ *      el latido de «todo bien» es de la vigía de FinOps (D-5 del ADR). Cada evento incluido se marca después de enviar.
+ *      Si Resend dice que la cuota se agotó, no se le llama hasta las 00:00 UTC (marca en `control/cuota`); el día
+ *      del tope es UTC porque el pool de Resend lo es.
  *
- * SECRETOS: `ALERTA_OPERATIVA_HMAC` y `RESEND_API_KEY_ALERTAS` (Secret Manager). Nunca se imprimen: los
+ * SECRETOS: `ALERTAS_HMAC` y `ALERTAS_RESEND_API_KEY` (Secret Manager). Nunca se imprimen: los
  * registros llevan códigos fijos y nada del cuerpo, de la clave, de la respuesta de Resend ni de la lista de
  * denegados. Dominio de avisos, destinatario, hosts de enlace, lista `avisosDenegar` y `topeDiario` son
  * configuración en `plataforma/alertas` (el repo es público; y NO son `defineString`: el `.env` de producción
@@ -52,8 +53,10 @@ import {
 // El contenido (contrato, detectores, enlace, plantilla) vive en `alertaContenido.ts`; se reexporta lo que usan las pruebas.
 export { ErrorAlerta, ErrorContrato, armarCorreo, avisoBloqueado, validarEntrada, type AvisoV1, type Envio } from './alertaContenido.js';
 
-export const ALERTA_OPERATIVA_HMAC = defineSecret('ALERTA_OPERATIVA_HMAC');
-export const RESEND_API_KEY_ALERTAS = defineSecret('RESEND_API_KEY_ALERTAS');
+// Prefijo común EXACTO `ALERTAS_`: la condición de IAM de `desplegadorSecretos` (preparar-staging.sh, nube-alertas.sh)
+// cubre los secretos por prefijo; un nombre fuera de ellos rompe el despliegue con 403 (`secretos-iam-prefijos.test.ts`).
+export const ALERTAS_HMAC = defineSecret('ALERTAS_HMAC');
+export const ALERTAS_RESEND_API_KEY = defineSecret('ALERTAS_RESEND_API_KEY');
 
 // ---------------------------------------------------------------------------
 // CONSTANTES
@@ -78,8 +81,9 @@ export const HORA_MS = 3_600_000;
 export const MAX_EVENTOS_RESUMEN = 500;
 export type EstadoEvento = 'enviado' | 'en_resumen' | 'envio_fallido';
 
-/** Día calendario de La Paz (UTC-4 fijo). */
-export const diaLaPaz = (ms: number): string => new Date(ms - 4 * HORA_MS).toISOString().slice(0, 10);
+/** Día calendario UTC: el pool de 100 correos/día de Resend se reinicia a las 00:00 UTC, no a medianoche de La Paz. */
+export const diaUtc = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+export const siguienteMedianocheUtc = (ms: number): number => (Math.floor(ms / 86_400_000) + 1) * 86_400_000;
 const aIsoSegundos = (ms: number): string => `${new Date(ms).toISOString().slice(0, 19)}Z`;
 
 // ---------------------------------------------------------------------------
@@ -108,6 +112,8 @@ export interface EventoGuardado extends AvisoV1 {
   dia: string;
   estado: EstadoEvento;
   saneado: boolean;
+  /** Hora (servidor) en que un resumen lo incluyó; `null` mientras espera. Evita depender de una ventana de tiempo. */
+  resumido_en: number | null;
 }
 export interface Reserva { ok: boolean; previoUltimoMs: number | null }
 
@@ -119,11 +125,13 @@ export interface AlmacenAlertas {
   reservar(tipo: string, dia: string, ahoraMs: number, tope: number): Promise<Reserva>;
   /** Devuelve una reserva: baja el contador del día y restaura la hora del tipo. */
   liberar(tipo: string, dia: string, previoUltimoMs: number | null): Promise<void>;
-  /** Eventos recibidos desde `ms` (por la hora del SERVIDOR), los más nuevos primero, hasta 500. */
-  desde(ms: number): Promise<EventoGuardado[]>;
-  /** Marca (ms del servidor) de la última corrida exitosa del resumen, o `null`. */
-  marcaResumen(): Promise<number | null>;
-  fijarMarcaResumen(ms: number): Promise<void>;
+  /** Eventos que ningún resumen incluyó todavía (`resumido_en == null`), los más nuevos primero, hasta 500. */
+  pendientesDeResumen(): Promise<EventoGuardado[]>;
+  /** Marca esos eventos como incluidos en un resumen ya ENVIADO. */
+  marcarResumidos(ids: string[], ms: number): Promise<void>;
+  /** Hasta cuándo (ms) no se llama a Resend por cuota agotada, o `null`. */
+  cuotaHasta(): Promise<number | null>;
+  marcarCuota(hastaMs: number): Promise<void>;
 }
 export type Enviar = (e: Envio) => Promise<void>;
 
@@ -134,16 +142,22 @@ export async function procesarEvento(ev: EventoValidado, deps: DepsProceso): Pro
   const a = ev.aviso;
   const g: EventoGuardado = {
     ...a, tipo_error: ev.tipo_error, flujo: ev.flujo, nodo: ev.nodo, ocurrido_ms: Date.parse(a.ocurrido_en),
-    recibido_ms: deps.ahoraMs, dia: diaLaPaz(deps.ahoraMs), estado: 'en_resumen', saneado: ev.saneado,
+    recibido_ms: deps.ahoraMs, dia: diaUtc(deps.ahoraMs), estado: 'en_resumen', saneado: ev.saneado, resumido_en: null,
   };
   // 1. Primero se guarda: lo que pase después no puede perder el evento.
   if (!await deps.almacen.crear(g)) return { estado: 'duplicado' };
   // `informativo` nunca sale solo; sin configuración de envío, tampoco.
   if (a.nivel === 'informativo' || !deps.enviar) return { estado: 'en_resumen' };
-  // 2. Cupo.
+  // 2. Cupo. El tope se valida AQUÍ también (no solo al leer la configuración): nunca pasa de TOPE_MAXIMO.
+  const tope = topeValido(deps.tope);
+  try {
+    // Resend avisó que la cuota se agotó: no se le llama hasta las 00:00 UTC; el evento va al resumen.
+    const hasta = await deps.almacen.cuotaHasta();
+    if (hasta !== null && hasta > deps.ahoraMs) return { estado: 'en_resumen' };
+  } catch { console.error('ALERTA_OPERATIVA_CUOTA_LECTURA_FALLO'); }
   let r: Reserva;
   try {
-    r = await deps.almacen.reservar(ev.tipo_error, g.dia, deps.ahoraMs, deps.tope ?? TOPE_DIARIO);
+    r = await deps.almacen.reservar(ev.tipo_error, g.dia, deps.ahoraMs, tope);
   } catch {
     // Contención o caída de la base: el evento ya está guardado; va al resumen en vez de perderse con un 500.
     console.error('ALERTA_OPERATIVA_RESERVA_FALLO');
@@ -153,7 +167,10 @@ export async function procesarEvento(ev: EventoValidado, deps: DepsProceso): Pro
   // 3. Envío; si falla, se devuelve el cupo y el evento pasa al resumen como `envio_fallido`.
   try {
     await deps.enviar(armarCorreo(a));
-  } catch {
+  } catch (error) {
+    if ((error as Error).message === 'resend_cuota') {
+      try { await deps.almacen.marcarCuota(siguienteMedianocheUtc(deps.ahoraMs)); } catch { console.error('ALERTA_OPERATIVA_CUOTA_MARCA_FALLO'); }
+    }
     try { await deps.almacen.liberar(ev.tipo_error, g.dia, r.previoUltimoMs); } catch {
       console.error('ALERTA_OPERATIVA_LIBERAR_FALLO');
     }
@@ -237,25 +254,31 @@ export function armarResumen(eventos: EventoGuardado[], ahoraMs: number): Envio 
     contrato: CONTRATO, nivel: 'informativo', proyecto: PROYECTO, asunto: 'Resumen de avisos operativos',
     que_paso: [...lineas.join('\n')].slice(0, 1500).join(''),
     que_se_espera_de_andres: 'Revisar los tipos de abajo; los «enviado» ya se avisaron por correo.',
-    enlace: null, ocurrido_en: aIsoSegundos(ahoraMs), id_unico: `resumen-${diaLaPaz(ahoraMs)}`,
+    enlace: null, ocurrido_en: aIsoSegundos(ahoraMs), id_unico: `resumen-${diaUtc(ahoraMs)}`,
   };
   return armarCorreo(aviso);
 }
 
-const SIETE_DIAS_MS = 7 * 86_400_000;
-
 /**
- * Sale SOLO si hay eventos desde la última corrida exitosa (marca guardada en `control/`). Sin eventos no hay correo
- * (el latido es de la vigía de FinOps). Si el envío falla, lanza (el programador reintenta) y NO adelanta la marca.
+ * Sale SOLO si hay eventos que ningún resumen incluyó (`resumido_en == null`). Sin eventos no hay correo (el latido es
+ * de la vigía de FinOps). LA CARRERA, resuelta sin ventanas de tiempo: cada evento incluido se marca `resumido_en` DESPUÉS de
+ * que el envío salió bien. Uno que llega mientras se envía no estaba en la lista, queda sin marca y va en el resumen
+ * siguiente; si el envío falla, nada se marca y el reintento vuelve a juntar los mismos. El costo: si marcar falla a
+ * medias, esos eventos se repiten en el resumen siguiente (nunca se pierden).
  */
 export async function enviarResumenDiario(deps: { almacen: AlmacenAlertas; enviar: Enviar | null; ahoraMs: number }): Promise<{ eventos: number; enviado: boolean }> {
-  const marca = await deps.almacen.marcaResumen();
-  const desde = Math.max(marca ?? deps.ahoraMs - 24 * HORA_MS, deps.ahoraMs - SIETE_DIAS_MS);
-  const eventos = await deps.almacen.desde(desde);
-  if (eventos.length === 0) { await deps.almacen.fijarMarcaResumen(deps.ahoraMs); return { eventos: 0, enviado: false }; }
+  const eventos = await deps.almacen.pendientesDeResumen();
+  if (eventos.length === 0) return { eventos: 0, enviado: false };
   if (!deps.enviar) return { eventos: eventos.length, enviado: false };
-  await deps.enviar(armarResumen(eventos, deps.ahoraMs));
-  await deps.almacen.fijarMarcaResumen(deps.ahoraMs);
+  const hasta = await deps.almacen.cuotaHasta();
+  if (hasta !== null && hasta > deps.ahoraMs) return { eventos: eventos.length, enviado: false };
+  try {
+    await deps.enviar(armarResumen(eventos, deps.ahoraMs));
+  } catch (error) {
+    if ((error as Error).message === 'resend_cuota') await deps.almacen.marcarCuota(siguienteMedianocheUtc(deps.ahoraMs));
+    throw error;
+  }
+  await deps.almacen.marcarResumidos(eventos.map((e) => e.id_unico), deps.ahoraMs);
   return { eventos: eventos.length, enviado: true };
 }
 
@@ -281,7 +304,7 @@ export function almacenFirestore(): AlmacenAlertas {
         const [d, h] = await Promise.all([t.get(ctl(idDia(dia))), t.get(ctl(idTipo(tipo)))]);
         const usados = Number(d.get('enviados') ?? 0);
         const ultimo = h.exists ? Number(h.get('ultimoMs') ?? 0) : null;
-        if (usados >= inmediatosDe(tope) || (ultimo !== null && ahoraMs - ultimo < HORA_MS)) return { ok: false, previoUltimoMs: ultimo };
+        if (usados >= inmediatosDe(topeValido(tope)) || (ultimo !== null && ahoraMs - ultimo < HORA_MS)) return { ok: false, previoUltimoMs: ultimo };
         t.set(ctl(idDia(dia)), { enviados: usados + 1, dia }, { merge: true });
         t.set(ctl(idTipo(tipo)), { ultimoMs: ahoraMs, tipo }, { merge: true });
         return { ok: true, previoUltimoMs: ultimo };
@@ -294,15 +317,23 @@ export function almacenFirestore(): AlmacenAlertas {
         t.set(ctl(idTipo(tipo)), { ultimoMs: previo ?? 0, tipo }, { merge: true });
       }, { maxAttempts: 10 });
     },
-    async desde(ms) {
-      const q = await eventos().where('recibido_ms', '>=', ms).orderBy('recibido_ms', 'desc').limit(MAX_EVENTOS_RESUMEN).get();
-      return q.docs.map((x) => x.data() as EventoGuardado);
+    async pendientesDeResumen() {
+      // Una sola condición de igualdad (índice automático): se ordena en memoria.
+      const q = await eventos().where('resumido_en', '==', null).limit(MAX_EVENTOS_RESUMEN).get();
+      return q.docs.map((x) => x.data() as EventoGuardado).sort((a, b) => b.recibido_ms - a.recibido_ms);
     },
-    async marcaResumen() {
-      const d = await ctl('resumen').get();
-      return d.exists && typeof d.get('ultimoMs') === 'number' ? (d.get('ultimoMs') as number) : null;
+    async marcarResumidos(ids, ms) {
+      for (let i = 0; i < ids.length; i += 400) {
+        const lote = db.batch();
+        for (const id of ids.slice(i, i + 400)) lote.update(eventos().doc(id), { resumido_en: ms });
+        await lote.commit();
+      }
     },
-    async fijarMarcaResumen(ms) { await ctl('resumen').set({ ultimoMs: ms }, { merge: true }); },
+    async cuotaHasta() {
+      const d = await ctl('cuota').get();
+      return d.exists && typeof d.get('hastaMs') === 'number' ? (d.get('hastaMs') as number) : null;
+    },
+    async marcarCuota(hastaMs) { await ctl('cuota').set({ hastaMs }, { merge: true }); },
   };
 }
 
@@ -358,16 +389,16 @@ async function configuracion(): Promise<ConfigAlertas> {
 
 function enviadorConfigurado(c: ConfigAlertas): Enviar | null {
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(c.dominio) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.destinatario)) return null;
-  return enviarPorResend(RESEND_API_KEY_ALERTAS.value(), `alertas-${PROYECTO}@${c.dominio}`, c.destinatario);
+  return enviarPorResend(ALERTAS_RESEND_API_KEY.value(), `alertas-${PROYECTO}@${c.dominio}`, c.destinatario);
 }
 
 export const alertaOperativa = onRequest(
-  { region: REGION, secrets: [ALERTA_OPERATIVA_HMAC, RESEND_API_KEY_ALERTAS], cors: false, maxInstances: 3 },
+  { region: REGION, secrets: [ALERTAS_HMAC, ALERTAS_RESEND_API_KEY], cors: false, maxInstances: 3 },
   async (peticion, respuesta) => {
     const r = await atenderAlerta(
       { metodo: peticion.method, cabecera: (n) => peticion.get(n), crudo: peticion.rawBody },
       {
-        secreto: ALERTA_OPERATIVA_HMAC.value(), ahoraMs: Date.now(),
+        secreto: ALERTAS_HMAC.value(), ahoraMs: Date.now(),
         cargar: async () => {
           const c = await configuracion();
           const enviar = enviadorConfigurado(c);
@@ -381,7 +412,7 @@ export const alertaOperativa = onRequest(
 
 /** Todos los días a las 08:00 de La Paz. Sale solo si hay eventos acumulados. */
 export const resumenAlertasOperativas = onSchedule(
-  { schedule: '0 8 * * *', timeZone: 'America/La_Paz', region: REGION, secrets: [RESEND_API_KEY_ALERTAS], retryCount: 2, maxInstances: 1 },
+  { schedule: '0 8 * * *', timeZone: 'America/La_Paz', region: REGION, secrets: [ALERTAS_RESEND_API_KEY], retryCount: 2, maxInstances: 1 },
   async () => {
     const enviar = enviadorConfigurado(await configuracion());
     if (!enviar) { console.error('ALERTA_OPERATIVA_SIN_CONFIGURACION (el resumen no salió)'); return; }
