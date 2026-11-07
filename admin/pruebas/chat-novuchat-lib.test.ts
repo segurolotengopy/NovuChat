@@ -1431,6 +1431,13 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
     const d = prod();
     d['nodes'].find((n: J) => n.name === 'Soltar mensajes').parameters.jsCode += "\nconst SS_CONFIG = { espacio: 'otro' };";
     expect(CONSTRUIR.guardias('trigger', d, DATOS_CRM).join(' ')).toMatch(/«Soltar mensajes» declara SS_CONFIG 2 veces/);
+    // (d2) SS_CONFIG dentro de un declarador múltiple: la lectura por texto no lo cuenta y el árbol sí; el hallazgo de texto («tiene que declarar SS_CONFIG exactamente una vez») se emite igual
+    const d2 = prod();
+    const nd2 = d2['nodes'].find((n: J) => n.name === 'Soltar mensajes');
+    const antesD2 = String(nd2.parameters.jsCode);
+    nd2.parameters.jsCode = antesD2.replace('const SS_CONFIG = ', 'var a0Ast = 1, SS_CONFIG = ');
+    expect(nd2.parameters.jsCode, 'la mutación no se aplicó').not.toBe(antesD2);
+    expect(CONSTRUIR.guardias('trigger', d2, DATOS_CRM).join(' ')).toMatch(/«Soltar mensajes» tiene que declarar SS_CONFIG exactamente una vez/);
     // (e) el módulo TAL CUAL y luego una REDEFINICIÓN (en JS gana la última declaración: anularía el aislamiento de la prueba)
     for (const redefine of ['function ssDesdeAutorizado() { return true; }', 'function ssEspacio() { return "chat-novuchat"; }', 'const ssBytes = () => 0;']) {
       const e = prod();

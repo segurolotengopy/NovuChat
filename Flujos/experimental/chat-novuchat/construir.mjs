@@ -672,6 +672,7 @@ export function guardias(entrada, flujo, datos = {}) {
         const maximo = new Map();
         for (const modo of ['auto', 'regex', 'division']) for (const [nombre, veces] of contar(sinComentarios(resto, modo))) maximo.set(nombre, Math.max(maximo.get(nombre) || 0, veces));
         for (const [nombre, veces] of maximo) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
+        const configPorTexto = cuenta.has('SS_CONFIG');   // lo que ve la lectura por texto ANTES de la unión: el hallazgo de main se emite siempre que main lo emitiría
         // LA GUARDIA ES LA UNIÓN: a la lectura por texto (arriba) se suma la del árbol (acorn) y se toma el MÁXIMO por nombre. El árbol se lee sobre el código COMPLETO (nunca con el módulo quitado) y sobre las piezas por separado (el módulo, el registro y lo de fuera de ellos). Así el parser solo suma: no puede dejar pasar lo que la lectura por texto cuenta.
         const porArbol = new Map();
         const maxArbol = (m) => { for (const [nombre, veces] of m || []) porArbol.set(nombre, Math.max(porArbol.get(nombre) || 0, veces)); };
@@ -689,7 +690,7 @@ export function guardias(entrada, flujo, datos = {}) {
         }
         for (const [nombre, veces] of porArbol) if (veces > (cuenta.get(nombre) || 0)) cuenta.set(nombre, veces);
         for (const [nombre, veces] of cuenta) if (veces !== 1) h.push(`el nodo «${n.name}» declara ${nombre} ${veces} veces: cada ayudante de sesión y SS_CONFIG se declaran UNA sola vez por nodo (la última declaración gana y anularía el módulo)`);
-        if (!cuenta.has('SS_CONFIG')) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
+        if (!configPorTexto || !cuenta.has('SS_CONFIG')) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
       }
     }
     // LA GUARDIA ES LA UNIÓN de dos lecturas: las reglas por texto (con el tokenizador, abajo) Y el análisis del árbol (acorn). El parser es una red ADITIVA: solo suma hallazgos, nunca quita los de las reglas por texto.
