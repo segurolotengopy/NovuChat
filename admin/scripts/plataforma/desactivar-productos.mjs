@@ -57,7 +57,7 @@ export function analizarArgumentos(argv, env = process.env) {
     if (v.ids === undefined) problemas.push('falta --ids');
     else {
       ids = v.ids.split(',');
-      const permitidos = IDS_PERMITIDOS[tenant] ?? [];
+      const permitidos = Object.hasOwn(IDS_PERMITIDOS, tenant) ? IDS_PERMITIDOS[tenant] : [];
       if (ids.some((x) => !permitidos.includes(x)) || new Set(ids).size !== ids.length) problemas.push(`--ids: solo ids de la lista cerrada y sin repetir (${permitidos.join(', ')})`);
     }
   } else if (v.ids !== undefined) problemas.push('--revertir no lleva --ids: sale del respaldo');
@@ -101,7 +101,7 @@ export function leerRespaldoPropio(ruta, { entorno, tenant }) {
     if (typeof process.getuid === 'function' && s.uid !== process.getuid()) return { ok: false, motivo: 'el respaldo no es del usuario' };
     const r = JSON.parse(readFileSync(fd, 'utf8'));
     if (r?.version !== 1 || r.tenant !== tenant || r.entorno !== entorno || !Array.isArray(r.items)) return { ok: false, motivo: 'el respaldo es de otro comercio o entorno, o no tiene la forma esperada' };
-    const permitidos = IDS_PERMITIDOS[tenant] ?? [];
+    const permitidos = Object.hasOwn(IDS_PERMITIDOS, tenant) ? IDS_PERMITIDOS[tenant] : [];
     const ids = r.items.map((x) => x?.id);
     if (ids.some((x) => !permitidos.includes(x)) || new Set(ids).size !== ids.length || r.items.some((x) => x?.previo !== true)) {
       return { ok: false, motivo: 'el respaldo nombra ids fuera de la lista cerrada, repetidos, o un valor previo distinto de true' };

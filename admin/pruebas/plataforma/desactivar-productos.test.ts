@@ -15,13 +15,14 @@ const carpeta = () => { const d = mkdtempSync(join(tmpdir(), 'desact-')); chmodS
 afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
 
 /** db falso: cada doc guarda `activo` y un registro de lo escrito. */
-const dbFalso = (estado: Record<string, any>) => {
+const dbFalso = (estado: Record<string, any>, falla9En = 0) => {
+  let n = 0;
   const escrituras: Array<[string, any, any]> = [];
   const doc = (ruta: string) => {
     const id = ruta.split('/').pop() as string;
     return {
       get: async () => ({ exists: id in estado, get: (c: string) => (c === 'nombre' ? `Prod ${id}` : estado[id]?.[c]), updateTime: `t-${id}`, ref: doc(ruta) }),
-      update: async (campos: any, pre: any) => { escrituras.push([id, campos, pre]); estado[id] = { ...estado[id], ...campos }; },
+      update: async (campos: any, pre: any) => { n += 1; if (n === falla9En) throw Object.assign(new Error('x'), { code: 9 }); escrituras.push([id, campos, pre]); estado[id] = { ...estado[id], ...campos }; },
     };
   };
   return { db: { doc }, escrituras, estado };
@@ -41,6 +42,17 @@ describe('desactivar-productos: argumentos', () => {
     expect(r.ok).toBe(false);
     expect(r.problemas.join(' ')).toMatch(/respaldo/);
     expect(r.problemas.join(' ')).toMatch(/confirmo-produccion/);
+  });
+  it('--tenant __proto__ se rechaza como argumento (no revienta)', () => {
+    expect(analizarArgumentos(['--proyecto', 'proy-prod-x', '--tenant', '__proto__', '--ids', 'libro-bonos'], ENV).ok).toBe(false);
+  });
+  it('--revertir acepta un respaldo existente y --aplicar de desactivar lo rechaza', () => {
+    const r = join(carpeta(), 'r.json');
+    writeFileSync(r, '{}'); chmodSync(r, 0o600);
+    const rev = analizarArgumentos(['--proyecto', 'proy-prod-x', '--tenant', 'rroca-ruben', '--revertir', '--respaldo', r], ENV);
+    expect(rev.problemas ?? []).not.toContain(expect.stringMatching(/respaldo/));
+    const ap = analizarArgumentos(['--proyecto', 'proy-prod-x', '--tenant', 'rroca-ruben', '--ids', 'libro-bonos', '--aplicar', '--respaldo', r, '--confirmo-produccion', 'rroca-ruben'], ENV);
+    expect(ap.ok).toBe(false);
   });
   it('--revertir no lleva --ids y exige respaldo', () => {
     expect(analizarArgumentos(['--proyecto', 'proy-prod-x', '--tenant', 'rroca-ruben', '--revertir', '--ids', 'libro-bonos'], ENV).ok).toBe(false);
@@ -81,6 +93,15 @@ describe('desactivar-productos: plan y ejecución', () => {
     expect(await ejecutar(cfg({ revertir: true, aplicar: true, respaldo: ruta, ids: [] }), { db: w.db, ...mudo })).toBe(0);
     expect(w.escrituras.map((e) => [e[0], e[1].activo])).toEqual([['closer-ventas', true], ['libro-bonos', true]]);
     expect(w.estado['videos-ia'].activo).toBe(false); // el que ya estaba inactivo no se toca
+  });
+  it('si un ítem cambia entre lectura y escritura (code 9) no sigue y avisa; la precondición usa el updateTime leído de ese documento', async () => {
+    const w = dbFalso({ 'closer-ventas': { activo: true }, 'libro-bonos': { activo: true }, 'videos-ia': { activo: true } }, 2);
+    const salida: string[] = [];
+    const r = await ejecutar(cfg({ aplicar: true, respaldo: join(carpeta(), 'r.json') }), { db: w.db, log: (t: string) => salida.push(t) });
+    expect(r).toBe(3);
+    expect(w.escrituras).toHaveLength(1);
+    expect(w.escrituras[0][2].lastUpdateTime).toBe('t-closer-ventas');
+    expect(salida.join('')).toMatch(/cambió entre la lectura y la escritura/);
   });
   it('la reversa NIEGA un respaldo con ids ajenos, permisos abiertos u otro entorno', () => {
     const d = carpeta();
