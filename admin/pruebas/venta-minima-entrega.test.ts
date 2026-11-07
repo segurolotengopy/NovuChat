@@ -324,9 +324,9 @@ describe('presupuesto de nodos de producción (Andres, 03/10/2026: 50; 30/10/202
     expect(QTACO.nodes.map((n) => n.name)).not.toContain('Entrega fallida');
   });
 
-  it('`--verificar` FALLA si un JSON de producción crece por encima de 81 nodos (71 de ahora: 50 más los 9 del guardado de medios, «Guardar comprobante», los 9 del estado en el servidor y los 2 de los cupos; tope 71 → 81 por los 2 de la imagen y los 8 del miniCRM, D2 de Andres, 06/11/2026)', () => {
+  it('`--verificar` FALLA si un JSON de producción crece por encima de 81 nodos (73 de ahora en `venta-minima.qtaco.json`: 50 más los 9 del guardado de medios, «Guardar comprobante», los 9 del estado en el servidor y los 2 de los cupos; tope 71 → 81 por los 2 de la imagen y los 8 del miniCRM, D2 de Andres, 06/11/2026)', () => {
     const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => {
-      for (let i = 0; i < 11; i++) f.nodes.push({ id: `uno-de-mas-${i}`, name: `Uno de más ${i}`, type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
+      for (let i = 0; i < 9; i++) f.nodes.push({ id: `uno-de-mas-${i}`, name: `Uno de más ${i}`, type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
     }));
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/tiene 82 nodos y el tope de producción es 81/);

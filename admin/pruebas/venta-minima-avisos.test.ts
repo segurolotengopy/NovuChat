@@ -471,6 +471,18 @@ describe('reserva: marcas «GRUPO GRANDE» y «VARIAS RESERVAS HOY DE ESTE NÚME
   });
 });
 
+describe('forma pedido: las cuatro marcas juntas no se cortan (revisión del PR de integración)', () => {
+  it('día lleno + reserva de mañana + campaña B + zona larga: la nota de mañana y la marca de campaña llegan ENTERAS', () => {
+    const r = reserva({ reserva: { ...reserva().reserva, diaLleno: true, grupoGrande: true, personas: 15, zona: 'salón principal junto a la ventana', reservaManana: '12:00', marcaOrigen: 'Campaña: Jueves de +2' } });
+    const ped = L.avArmar('reserva', r, CSV, { ...CFG, formaPlantillaReserva: 'pedido' }, sdCon(), AHORA);
+    const todo = params(plantillaDe(ped, ANDRES)).join(' | ');
+    expect(todo).toContain('Reserva de mañana (antes de las 12:00): contactar para confirmar o cambiar la hora');
+    expect(todo).toContain('Campaña: Jueves de +2');
+    expect(todo).toContain('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+    expect(todo).toContain('GRUPO GRANDE');
+  });
+});
+
 describe('reserva de mañana (antes de `reservaDesde`): la nota viaja DENTRO del mismo aviso', () => {
   const NOTA = 'Reserva de mañana (antes de las 12:00): contactar para confirmar o cambiar la hora';
   const con = (m: J): J => reserva({ reserva: { ...reserva().reserva, ...m } });

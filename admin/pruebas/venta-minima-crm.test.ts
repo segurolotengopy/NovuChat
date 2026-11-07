@@ -561,6 +561,14 @@ describe('los nodos del miniCRM NO afectan las respuestas (A2, A3)', () => {
     expect(r.status).not.toBe(0);
     expect(r.stderr).toMatch(/miniCRM: «Agregar fila» envía a Meta|menciona graph\.facebook\.com/);
   });
+  it('el negativo de A2 con mayúsculas: una llamada a Graph que no es /messages, escrita en mayúsculas, también hace fallar `--verificar`', () => {
+    const r = verificarEnCopia((vm) => editarJson(vm, F3727, (f) => {
+      nodoDe(f, 'Agregar fila').type = 'n8n-nodes-base.httpRequest';
+      nodoDe(f, 'Agregar fila').parameters = { method: 'POST', url: '=https://GRAPH.facebook.com/v26.0/123/subscribed_apps' };
+    }));
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/menciona graph\.facebook\.com/);
+  });
 });
 
 // ================================================================================================ LA ACEPTACIÓN SOBRE EL JSON (A1, A10, A11, A12)

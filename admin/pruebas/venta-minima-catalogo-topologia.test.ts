@@ -155,15 +155,15 @@ describe('`--verificar` impone la forma del webhook del carrito y el presupuesto
     const n = nodoDe(f, 'Traer configuración');
     n.parameters['jsonBody'] = String(n.parameters['jsonBody']).replace(', catalogoCompleto: true', '');
   }, /«Traer configuración» no pide `catalogoCompleto: true`/);
-  // Tope 71 → 81 (D2 de Andres, 06/11/2026: +2 de la imagen de las campañas y +8 del miniCRM de Q'Taco 3727): el JSON vivo tiene 71, así que se le agregan 11 para pasar del tope.
-  rompe('el JSON de producción pasa de 81 nodos (se agregaron 11 a los 71 de ahora)', (f) => {
-    for (let i = 0; i < 11; i++) f.nodes.push({ id: `uno-mas-${i}`, name: `Uno más ${i}`, type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
+  // Tope 71 → 81 (D2 de Andres, 06/11/2026: +2 de la imagen de las campañas y +8 del miniCRM de Q'Taco 3727): `venta-minima.qtaco.json` tiene 73 (sin el miniCRM), así que se le agregan 9 para pasar del tope.
+  rompe('el JSON de producción pasa de 81 nodos (se agregaron 9 a los 73 de ahora)', (f) => {
+    for (let i = 0; i < 9; i++) f.nodes.push({ id: `uno-mas-${i}`, name: `Uno más ${i}`, type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
   }, /tiene 82 nodos y el tope de producción es 81/);
   rompe('el JSON de producción pasa de 81 nodos por MUCHO (se reintrodujeron los nodos del diseño descartado)', (f) => {
     for (const nombre of ['¿Pedir enlace?', 'Pedir enlace del catálogo', 'Validar carrito', 'Carga del carrito']) {
       f.nodes.push({ id: nombre.toLowerCase().replace(/\W+/g, '-'), name: nombre, type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
     }
-    for (let i = 0; i < 10; i++) f.nodes.push({ id: `de-mas-${i}`, name: `De más ${i}`, type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
+    for (let i = 0; i < 8; i++) f.nodes.push({ id: `de-mas-${i}`, name: `De más ${i}`, type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
   }, /tiene 85 nodos y el tope de producción es 81/);
 
   it('la guardia existe en `construir.mjs` (si alguien la borra, esta prueba lo dice aunque los JSON sigan limpios)', () => {

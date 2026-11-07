@@ -789,11 +789,13 @@ function avVariablesDeForma(tipo, d, dest, ahoraMs) {
       Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : 'personas sin indicar',
       avFechaLegible(r.fecha, r.hora) || 'fecha sin indicar',
       avLimpio(r.zona, 40, opc),
-    ].concat(avMarcasReserva(r)).filter(Boolean);
+    ].filter(Boolean);
+    // Las marcas (grupo grande, día lleno, reserva de mañana, campaña) van en `modalidad` (tope 500) y no en `items` (tope 200): juntas se cortaban a mitad de la nota.
+    const marcas = avMarcasReserva(r);
     return {
       items: avParametro('SOLICITUD DE RESERVA' + (cod ? ' ' + cod : '') + ': ' + partes.join(', '), 200),
       total: avParametro('sin cobro', 30),
-      modalidad: avParametro('reserva de mesa por confirmar con el cliente', 500),
+      modalidad: avParametro('reserva de mesa por confirmar con el cliente' + (marcas.length ? ' — ' + marcas.join(', ') : ''), 500),
       cotejo: avParametro('no aplica', 80),
     };
   }

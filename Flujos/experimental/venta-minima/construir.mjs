@@ -90,7 +90,7 @@ const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 // «¿Replanificar compromiso?», «Comprometer turno (2.º intento)», «Soltar mensajes», «Confirmar envío» y «Comprometer compensación» (9: se quitó «¿Compensar entrega?»; queda 0 de margen). Ver DISENO.md y docs/versiones-por-cliente.md.
 // +2: los CUPOS pasan al servidor (PR-4b; tope de 69 a 71, aprobado por Andres (06/11/2026, en conversación)): «Consumir cupos» y «¿Cupo concedido?». `asentar` NO lleva nodo (segundo ítem de «Confirmar envío»).
 // +10: el miniCRM de Q'Taco 3727 (módulo `crm`, `ramaCrm`: 8 nodos) y la IMAGEN de las campañas (2 nodos), de 71 a 81 (Andres, 06/11/2026: «D2 = tope de nodos aprobado»). 81 = 69 + 2 (cupos) + 2 (imagen) + 8 (miniCRM).
-// El miniCRM solo lo lleva `venta-minima.qtaco-3727.json` (dato `crm`); quien fusione último reconcilia este número con los nodos de la imagen. Ver DISENO.md y docs/versiones-por-cliente.md.
+// El miniCRM solo lo lleva `venta-minima.qtaco-3727.json` (dato `crm`); reconciliado en la integración: el 3727 queda en 81 (el tope, sin margen), qtaco en 73. Ver DISENO.md y docs/versiones-por-cliente.md.
 const TOPE_DE_NODOS = 81;
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,
@@ -372,7 +372,7 @@ function guardiasDeCrm(flujo, datos) {
   for (const n of NODOS_DE_CRM) {
     const nodo = porNombre.get(n);
     if (esEnvioAMeta(nodo)) h.push(`miniCRM: «${n}» envía a Meta (el miniCRM agrega 0 mensajes por conversación)`);
-    if (JSON.stringify(nodo.parameters || {}).includes(['graph', 'facebook', 'com'].join('.'))) h.push(`miniCRM: «${n}» menciona graph.facebook.com`);
+    if (JSON.stringify(nodo.parameters || {}).toLowerCase().includes(['graph', 'facebook', 'com'].join('.'))) h.push(`miniCRM: «${n}» menciona graph.facebook.com`);
   }
   // 3. La rama solo cuelga de «Armar mensajes»: nadie más entra a ella ni sale de ella hacia el resto del flujo.
   for (const [de, a] of Object.entries(flujo.connections)) {

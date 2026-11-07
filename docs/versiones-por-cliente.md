@@ -243,11 +243,11 @@ Ver `Flujos/experimental/venta-minima/DISENO.md`, «Adenda de campañas de Q'Tac
 
 ## Estado al 06/11/2026: el miniCRM de Q'Taco 3727 (módulo `crm`), sin publicar
 
-**Tope de nodos de 71 a 81: aprobado por Andres (D2, 06/11/2026).** 81 = 69 + 2 (cupos, PR-4b) + 2 (la imagen de las campañas, otra rama) + **8 (miniCRM)**. Esta rama deja el 3727 en **79** nodos (71 + 8) y `TOPE_DE_NODOS` en 81; quien fusione último reconcilia el número con los 2 nodos de la imagen. **Decisión D1 = opción (b):** SIN ampliar el contrato de columnas del core (usa Clasificación N, Qué pidió O, Resumen I, Derivación, Última interacción y «Se cierra la ventana de 24 h»).
+**Tope de nodos de 71 a 81: aprobado por Andres (D2, 06/11/2026).** 81 = 69 + 2 (cupos, PR-4b) + 2 (la imagen de las campañas, otra rama) + **8 (miniCRM)**. Con la integración (PR de reemplazo de #828-#831) el 3727 queda en **81** nodos = `TOPE_DE_NODOS`, **sin margen**; el resto de las salidas queda en 73 (qtaco), 69 (prueba) y 67 (ensayo). Antes: quien fusione último reconcilia el número con los 2 nodos de la imagen. **Decisión D1 = opción (b):** SIN ampliar el contrato de columnas del core (usa Clasificación N, Qué pidió O, Resumen I, Derivación, Última interacción y «Se cierra la ventana de 24 h»).
 
 | Salida | Nodos antes → después | Qué cambia |
 |---|---|---|
-| `venta-minima.qtaco-3727.json` | 71 → **79** | los 8 nodos de `ramaCrm()` (Prospecto para la planilla, Buscar teléfono, Leer IDs, Leer encabezados, Decidir fila, ¿Acción?, Agregar fila, Actualizar fila), el dato `crm`, la credencial `Google Sheets miniCRM (crm-qtaco)` y los marcadores `planillaProspectosId/Hoja` |
+| `venta-minima.qtaco-3727.json` | 73 → **81** (tope, sin margen) | los 8 nodos de `ramaCrm()` (Prospecto para la planilla, Buscar teléfono, Leer IDs, Leer encabezados, Decidir fila, ¿Acción?, Agregar fila, Actualizar fila), el dato `crm`, la credencial `Google Sheets miniCRM (crm-qtaco)` y los marcadores `planillaProspectosId/Hoja` |
 | `venta-minima.qtaco.json`, `.prueba.json`, `.ensayo-demo-a.json` | sin cambio | **solo cambia el código de «Armar mensajes»** (la librería `src/lib/crm.js` se pega ahí; y «Config del negocio» deja `planillaProspectosId/Hoja` vacíos). **Sin el dato `crm` no hay un solo nodo de planilla ni se calcula nada**: el vivo y la redirección #788 no llevan miniCRM. |
 
 - **Mensajes por conversación: 0 agregados o quitados.** Ningún nodo nuevo envía a Meta (`construir.mjs --verificar` lo vigila); la suite `venta-minima-crm.test.ts` demuestra que la secuencia de mensajes y avisos es idéntica con la planilla, sin la rama, con Google caído y con `vmProspectoCrm` lanzando.
@@ -326,7 +326,7 @@ La rama del miniCRM (`ramaCrm`, módulo `crm`) agrega **8 nodos** a cada flujo q
 
 ## Q'Taco: ráfaga y «escribir al local» escrito (06/11/2026)
 
-Cambio en `Decidir turno`, `Armar mensajes` y `Soltar mensajes` de «Venta mínima v0» (los cuatro JSON regenerados; 71 nodos, sin nodos nuevos). Aplica a todos los flujos de venta mínima por igual (Q'Taco, Q'Taco 3727, prueba, ensayo del Demo A). Sin excepciones nuevas: el vivo queda atrasado hasta que se publique, y no se publica en este PR. Detalle: `Flujos/experimental/venta-minima/DISENO.md`.
+Cambio en `Decidir turno`, `Armar mensajes` y `Soltar mensajes` de «Venta mínima v0» (los cuatro JSON regenerados; sin nodos nuevos por sí sola; con la integración el 3727 queda en 81). Aplica a todos los flujos de venta mínima por igual (Q'Taco, Q'Taco 3727, prueba, ensayo del Demo A). Sin excepciones nuevas: el vivo queda atrasado hasta que se publique, y no se publica en este PR. Detalle: `Flujos/experimental/venta-minima/DISENO.md`.
 
 
 ## Estado al 06/11/2026 (Q'Taco: reserva de mañana, C-05 resuelto)
