@@ -111,22 +111,26 @@ function nombresDe(p, salida) {
 function plegador(ast) {
   const consts = tablaDeConstantes(ast);
   const enCurso = new Set();
+  // devuelve un valor primitivo (cadena, número o booleano) o undefined si no hay certeza
   const plegar = (e) => {
     if (!e) return undefined;
     switch (e.type) {
-      case 'Literal': return typeof e.value === 'string' || typeof e.value === 'number' || typeof e.value === 'boolean' ? String(e.value) : undefined;
+      case 'Literal': return typeof e.value === 'string' || typeof e.value === 'number' || typeof e.value === 'boolean' ? e.value : undefined;
       case 'TemplateLiteral': {
         let s = '';
         for (let i = 0; i < e.quasis.length; i++) {
           s += e.quasis[i].value.cooked ?? '';
-          if (i < e.expressions.length) { const v = plegar(e.expressions[i]); if (v === undefined) return undefined; s += v; }
+          if (i < e.expressions.length) { const v = plegar(e.expressions[i]); if (v === undefined) return undefined; s += String(v); }
         }
         return s;
       }
       case 'BinaryExpression': {
         if (e.operator !== '+') return undefined;
         const a = plegar(e.left); const b = plegar(e.right);
-        return a === undefined || b === undefined ? undefined : a + b;
+        if (a === undefined || b === undefined) return undefined;
+        if (typeof a === 'number' && typeof b === 'number') return a + b;   // suma numérica: 100 + 1 es 101, no «1001»
+        if (typeof a === 'string' || typeof b === 'string') return String(a) + String(b);
+        return undefined;   // sin certeza del tipo (booleanos…)
       }
       case 'Identifier': {
         if (!consts.has(e.name) || enCurso.has(e.name)) return undefined;
@@ -141,11 +145,11 @@ function plegador(ast) {
         if (m === 'join' && c.object.type === 'ArrayExpression') {
           const partes = c.object.elements.map((x) => (x && x.type !== 'SpreadElement' ? plegar(x) : undefined));
           const sep = e.arguments.length ? plegar(e.arguments[0]) : ',';
-          return partes.includes(undefined) || sep === undefined ? undefined : partes.join(sep);
+          return partes.includes(undefined) || sep === undefined ? undefined : partes.map(String).join(String(sep));
         }
-        if (m === 'concat') { const base = plegar(c.object); const resto = e.arguments.map((x) => plegar(x)); return base === undefined || resto.includes(undefined) ? undefined : base + resto.join(''); }
+        if (m === 'concat') { const base = plegar(c.object); const resto = e.arguments.map((x) => plegar(x)); return typeof base !== 'string' || resto.includes(undefined) ? undefined : base + resto.map(String).join(''); }
         if (m === 'fromCharCode' && c.object.type === 'Identifier' && c.object.name === 'String') {
-          const cs = e.arguments.map((x) => { const v = plegar(x); return v === undefined || !/^\d+$/.test(v) ? undefined : Number(v); });
+          const cs = e.arguments.map((x) => { const v = plegar(x); return typeof v !== 'number' ? undefined : v; });
           return cs.includes(undefined) ? undefined : String.fromCharCode(...cs);
         }
         return undefined;
@@ -159,7 +163,8 @@ function plegador(ast) {
 // El nombre de la propiedad de un miembro: `a.b` → 'b'; `a['b'+'c']` → 'bc'; si no se resuelve, undefined.
 function nombreDeMiembro(m, plegar) {
   if (!m.computed) return m.property.type === 'Identifier' ? m.property.name : (m.property.type === 'PrivateIdentifier' ? '#' + m.property.name : undefined);
-  return plegar(m.property);
+  const v = plegar(m.property);
+  return v === undefined ? undefined : String(v);
 }
 
 // Descompone una expresión de acceso en sus «raíces» y los nombres de propiedad de la cadena: `(a || ssFoo).x.y` → raíces [a, ssFoo], nombres [x, y].
@@ -210,7 +215,13 @@ export function hallazgosDelCodigo(codigo) {
   const h = new Set();
   const nombreDe = (m) => nombreDeMiembro(m, plegar);
 
-  recorrer(a.ast, (n) => {
+  const NOMBRES_PELIGROSOS = new Map([['eval', TEXTOS.eval], ['constructor', TEXTOS.eval], ['Function', TEXTOS.funcion], ['__proto__', TEXTOS.prototipo], ['getPrototypeOf', TEXTOS.protoDe], ['setPrototypeOf', TEXTOS.protoDe]]);
+  recorrer(a.ast, (n, padre) => {
+    // Toda expresión (fuera de una clave) cuyo valor plegado sea EXACTAMENTE uno de esos nombres: una cadena que vale `eval` no tiene otro uso que llegar a `eval` (`Reflect.get(globalThis, 'eval')`, `let k = 'eval'`, `f('eval')`, `['eval'][0]`). Una cadena que solo CONTIENE «eval» en un texto más largo no se marca.
+    if (n.type === 'Literal' || n.type === 'TemplateLiteral' || n.type === 'BinaryExpression' || n.type === 'CallExpression' || n.type === 'Identifier') {
+      const esClave = padre && ((padre.type === 'MemberExpression' && padre.property === n && !padre.computed) || ((padre.type === 'Property' || padre.type === 'MethodDefinition' || padre.type === 'PropertyDefinition') && padre.key === n && !padre.computed));
+      if (!esClave) { const v = plegar(n); if (typeof v === 'string' && NOMBRES_PELIGROSOS.has(v)) h.add(NOMBRES_PELIGROSOS.get(v)); }
+    }
     switch (n.type) {
       case 'Identifier':
         if (n.name === 'eval') h.add(TEXTOS.eval);
@@ -221,15 +232,21 @@ export function hallazgosDelCodigo(codigo) {
       case 'Property':
       case 'MethodDefinition':
       case 'PropertyDefinition': {
-        // clave literal o computada resuelta: `{ ['__proto__']: x }`, `{ '__proto__': x }`
-        if (!n.key) break;
-        const k = n.computed || n.key.type === 'Literal' ? plegar(n.key) : undefined;
-        if (k === '__proto__') h.add(TEXTOS.prototipo);
-        else if (k === 'eval') h.add(TEXTOS.eval);
-        else if (k === 'Function') h.add(TEXTOS.funcion);
-        else if (k === 'getPrototypeOf' || k === 'setPrototypeOf') h.add(TEXTOS.protoDe);
+        // clave: `{ eval: 1 }`, `{ ['__proto__']: x }`, `{ ['constr' + 'uctor']: C }` (también en patrones). La clase `constructor() {}` es legítima.
+        if (n.key) {
+          const v = n.computed ? plegar(n.key) : (n.key.type === 'Identifier' ? n.key.name : (n.key.type === 'Literal' ? n.key.value : undefined));
+          const k = v === undefined ? undefined : String(v);
+          if (k === '__proto__') h.add(TEXTOS.prototipo);
+          else if (k === 'eval' || (k === 'constructor' && n.type === 'Property')) h.add(TEXTOS.eval);
+          else if (k === 'Function') h.add(TEXTOS.funcion);
+          else if (k === 'getPrototypeOf' || k === 'setPrototypeOf') h.add(TEXTOS.protoDe);
+        }
+        if (n.type === 'PropertyDefinition' && n.value && terminaEnPrototype(n.value, plegar)) h.add(TEXTOS.prototipo);
         break;
       }
+      case 'AssignmentPattern':
+        if (terminaEnPrototype(n.right, plegar)) h.add(TEXTOS.prototipo);
+        break;
       case 'MemberExpression': {
         const k = nombreDe(n);
         if (k === 'eval') h.add(TEXTOS.eval);
@@ -272,9 +289,11 @@ export function hallazgosDelCodigo(codigo) {
         break;
       case 'CallExpression': {
         const c = n.callee;
-        if (c.type !== 'MemberExpression' || c.object.type !== 'Identifier') break;
+        if (c.type !== 'MemberExpression') break;
+        // el objeto se resuelve por la cadena de miembros: `Object`, `globalThis.Object`, `globalThis['Obj' + 'ect']`
+        const cabeza = cadena(c.object, plegar);
         const funcion = nombreDe(c);
-        const permitidas = Object.prototype.hasOwnProperty.call(FUNCIONES_DE_MUTACION, c.object.name) ? FUNCIONES_DE_MUTACION[c.object.name] : null;
+        const permitidas = [cabeza.ultimo, ...cabeza.raices].filter((x) => x !== undefined).map((x) => (Object.prototype.hasOwnProperty.call(FUNCIONES_DE_MUTACION, x) ? FUNCIONES_DE_MUTACION[x] : null)).find(Boolean) || null;
         if (!permitidas || !permitidas.has(funcion) || !n.arguments.length) break;
         const primero = cadena(n.arguments[0], plegar);
         if (primero.raices.includes('SS_CONFIG') || primero.nombres.includes('SS_CONFIG')) h.add(TEXTOS.mutaConfig);
@@ -296,7 +315,7 @@ function terminaEnPrototype(e, plegar) {
 }
 
 /**
- * Cuántas veces se declara cada `ss*` y `SS_CONFIG` en el código (declaraciones de variable, desestructuradas incluidas, funciones, nombradas o no, y clases). Un Map nombre → veces.
+ * Cuántas veces se declara cada `ss*` y `SS_CONFIG` en el código (declaraciones de variable, desestructuradas incluidas, declaraciones de función y de clase; no las expresiones, cuyo nombre no entra en el ámbito). Un Map nombre → veces.
  * Si el código no se puede analizar devuelve `null` (el llamador ya reporta el hallazgo `noAnalizable`).
  */
 export function contarDeclaraciones(codigo) {
@@ -306,7 +325,7 @@ export function contarDeclaraciones(codigo) {
   const suma = (nombre) => { if (esSS(nombre)) cuenta.set(nombre, (cuenta.get(nombre) || 0) + 1); };
   recorrer(a.ast, (n) => {
     if (n.type === 'VariableDeclarator') { const nombres = []; nombresDe(n.id, nombres); nombres.forEach(suma); }
-    else if ((n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression' || n.type === 'ClassDeclaration' || n.type === 'ClassExpression') && n.id) suma(n.id.name);
+    else if ((n.type === 'FunctionDeclaration' || n.type === 'ClassDeclaration') && n.id) suma(n.id.name);
   });
   return cuenta;
 }

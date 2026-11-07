@@ -589,29 +589,29 @@ export function guardias(entrada, flujo, datos = {}) {
       if (/function (cn|ch)(CuerpoComprometer|CuerpoLeer|ResultadoDeCompromiso|SesionDeLaConfig)\(/.test(js)) h.push(`el nodo «${n.name}» trae una copia propia de los ayudantes de sesión`);
       if (usa || define) {
         // En JS gana la ÚLTIMA declaración: traer el módulo y luego REDEFINIR una función (`function ssDesdeAutorizado() { return true; }`) anularía el aislamiento. Cada `ss*` y SS_CONFIG, UNA vez por nodo.
-        // Las declaraciones se cuentan por AST (los comentarios y las cadenas no son declaraciones): las del módulo común y del registro, tal cual, más las del resto del nodo. Un código que no se puede analizar ya lo reporta la guardia de mutación (falla cerrada).
-        const cuenta = new Map();
-        let resto = js;
-        for (const fuente of [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean)) {
-          const f = fuente.trimEnd();
-          if (!resto.includes(f)) continue;
-          resto = resto.split(f).join('');
-          for (const [nombre, veces] of contarDeclaraciones(f) || []) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
+        // Las declaraciones se cuentan por AST sobre el código COMPLETO del nodo (con el módulo y el registro dentro: así se ve también lo que un comentario abierto antes del módulo o una redeclaración posterior dejan en pie). Un código que no se puede analizar ya lo reporta la guardia de mutación (falla cerrada).
+        let cuenta = contarDeclaraciones(js);
+        if (!cuenta) {
+          // El código completo no se analiza (p. ej. un `const SS_CONFIG` repetido: acorn rechaza la redeclaración). Ya es un hallazgo de la guardia de mutación; aquí solo se cuenta, para dar el mensaje preciso, sobre las piezas por separado (el módulo, el registro y el resto). Esta lectura NO sirve para dar nada por limpio: el hallazgo de falla cerrada ya está.
+          cuenta = new Map();
+          let resto = js;
+          for (const fuente of [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean)) {
+            const f = fuente.trimEnd();
+            if (!resto.includes(f)) continue;
+            resto = resto.split(f).join('');
+            for (const [nombre, veces] of contarDeclaraciones(f) || []) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
+          }
+          for (const [nombre, veces] of contarDeclaraciones(resto) || []) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
         }
-        for (const [nombre, veces] of contarDeclaraciones(resto) || []) cuenta.set(nombre, (cuenta.get(nombre) || 0) + veces);
         for (const [nombre, veces] of cuenta) if (veces !== 1) h.push(`el nodo «${n.name}» declara ${nombre} ${veces} veces: cada ayudante de sesión y SS_CONFIG se declaran UNA sola vez por nodo (la última declaración gana y anularía el módulo)`);
         if (!cuenta.has('SS_CONFIG')) h.push(`el nodo «${n.name}» tiene que declarar SS_CONFIG exactamente una vez`);
       }
     }
-    // Nadie reasigna ni muta los parámetros de sesión (`ss*` y `SS_CONFIG`), ni usa eval/Function/.constructor, ni toca prototipos: se analiza el ÁRBOL (acorn, `guarda-ast.mjs`) del código de cada nodo SIN el módulo común ni el registro (que los declaran). Los comentarios y las cadenas no son código; las claves computadas se resuelven por plegado de constantes. Falla cerrada: un código que no se puede analizar es un hallazgo.
-    {
-      const propios = [FUENTE_SESION, FUENTE_REGISTRO].filter(Boolean).map((t) => t.trimEnd());
-      for (const n of nodos) {
-        let js = String(parametros(n).jsCode || '');
-        if (!js) continue;
-        for (const p of propios) js = js.split(p).join('');
-        for (const que of hallazgosDelCodigo(js)) h.push(que === TEXTOS_GUARDA.noAnalizable ? `el nodo «${n.name}» ${que}: se rechaza por precaución (la guardia de los parámetros de sesión no puede leerlo)` : `el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
-      }
+    // Nadie reasigna ni muta los parámetros de sesión (`ss*` y `SS_CONFIG`), ni usa eval/Function/.constructor, ni toca prototipos: se analiza el ÁRBOL (acorn, `guarda-ast.mjs`) del código COMPLETO de cada nodo, módulo común y registro incluidos (quitar el módulo antes de analizar dejaría un `//` abierto antes de él esconder código que sí se ejecuta). Los comentarios y las cadenas no son código; las claves computadas se resuelven por plegado de constantes. Falla cerrada: un código que no se puede analizar es un hallazgo.
+    for (const n of nodos) {
+      const js = String(parametros(n).jsCode || '');
+      if (!js) continue;
+      for (const que of hallazgosDelCodigo(js)) h.push(que === TEXTOS_GUARDA.noAnalizable ? `el nodo «${n.name}» ${que}: se rechaza por precaución (la guardia de los parámetros de sesión no puede leerlo)` : `el nodo «${n.name}» ${que}: los parámetros de sesión son de solo lectura`);
     }
     // En la variante de PRUEBA, «Carga de entrada» DESCARTA lo que llegue a «Entrada de prueba» sin `modoPrueba: true` (si no, se comportaría como producción); producción no tiene «Entrada de prueba».
     const carga = nodos.find((x) => x.name === 'Carga de entrada');

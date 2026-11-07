@@ -1505,6 +1505,12 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
       ["Object['assign'](SS_CONFIG, {});", /muta SS_CONFIG/], ["Reflect['de' + 'fineProperty'](SS_CONFIG, 'espacio', {});", /muta SS_CONFIG/], ["Object.assign(ssFoo, {});", /muta un ayudante de sesión/],
       ["ssFoo['x' + 'y'] = 1;", /reasigna o muta/], ["globalThis['ssFoo'] = f;", /reasigna o muta/], ["(0, ssFoo).x = 1;", /reasigna o muta/], ["(cAst || SS_CONFIG).espacio = 'x';", /reasigna o muta/],
       ["Object['set' + 'PrototypeOf'](xAst, null);", /setPrototypeOf/], ["xAst['__pro' + 'to__'] = {};", /contamina un prototipo/], ["const oAst = { ['__proto__']: {} };", /contamina un prototipo/], ["RegExp['proto' + 'type'].test = f;", /contamina un prototipo/],
+      // evasiones que dependen de dónde está la cadena: se marca toda expresión (fuera de una clave) cuyo valor es EXACTAMENTE eval, Function, constructor o __proto__
+      ["Reflect.get(globalThis, 'eval');", /usa eval/], ["Reflect.get(globalThis, 'Function')('return 1')();", /usa Function/], ["Object.getOwnPropertyDescriptor(globalThis, 'eval').value;", /usa eval/], ["globalThis[['eval'][0]];", /usa eval/],
+      ["globalThis['eval'.toString()];", /usa eval/], ["let kAst3 = 'eval'; globalThis[kAst3];", /usa eval/], ["var kAst4 = 'Function'; globalThis[kAst4];", /usa Function/], ["const kAst5 = 'eval'; { let kAst5 = 0; } globalThis[kAst5];", /usa eval/],
+      ["const fAst = (nAst) => globalThis[nAst]; fAst('eval');", /usa eval/], ["Reflect.get(fAst, 'constructor');", /usa eval o \.constructor/], ["const { constructor: CAst } = () => {};", /usa eval o \.constructor/], ["const oAst = { ['constr' + 'uctor']: 1 };", /usa eval o \.constructor/],
+      ["globalThis.Object.assign(SS_CONFIG, { espacio: 'x' });", /muta SS_CONFIG/], ["this.Reflect.set(SS_CONFIG, 'espacio', 'x');", /muta SS_CONFIG/], ["globalThis.Object.defineProperty(Array.prototype, 'x', {});", /contamina un prototipo/],
+      ["function fpAst(p = Array.prototype) { return p; }", /contamina un prototipo/], ["class AAst { p = Array.prototype; }", /contamina un prototipo/], ["const rAst = 'ev' + 'al'; globalThis[rAst];", /usa eval/],
       // división o regex, comentarios y cadenas que abren o cierran comentarios: la mutación real se ve
       ["const dAst = 8 / 2 / 1; const rAst = /a+b/g; ssFoo = f;", /reasigna o muta/], ["const sAst = '//'; ssFoo = f; // fin", /reasigna o muta/], ["const sAst = \"/*\"; /* c */ ssFoo = f; const uAst = \"*/\";", /reasigna o muta/],
       ["const tAst = `${xAst} ${`y`} /*`; ssFoo = f; const vAst = `*/`;", /reasigna o muta/], ["const rAst = /[/*]/.test(xAst); ssFoo = f; /* */", /reasigna o muta/], ["const hAst = { a: 1 } / 2; ssFoo = f;", /reasigna o muta/],
@@ -1518,9 +1524,20 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
       "const q3Ast = `ssFoo++ ${'x'} Function.prototype = 1`;",
       "const q4Ast = /ssFoo = 1|eval\\(/.test(q1Ast);",
       "const q5Ast = (10 / 2) / 5 + 4 / 2;",
+      'const nAst = 100 + 1; const zAst = [1, 2][nAst]; class KAst { constructor() { this.v = nAst; } }; const sAst1 = function ssNombreLocalAst() { return 1; }; const sAst2 = class ssClaseLocalAst {};',
       '// ssFoo = f; eval("x"); Function("y"); Object.assign(SS_CONFIG, {});',
       '/* ssFoo = f; globalThis["ev" + "al"]("x"); x.__proto__ = {}; */',
     ].join('\n'))).toEqual([]);
+    // el módulo común NO se quita antes de analizar: un `//` abierto antes de él no puede esconder código que SÍ se ejecuta (revisión de seguridad de #835)
+    {
+      const modulo = readFileSync(join(CARPETA, '../comun-sin-agente/src/sesion.js'), 'utf8').trimEnd();
+      const conModulo = (envoltura: (m: string) => string): string[] => { const f = prod(); const nd = f['nodes'].find((x: J) => x.name === 'Soltar mensajes'); expect(String(nd.parameters.jsCode)).toContain(modulo); nd.parameters.jsCode = String(nd.parameters.jsCode).replace(modulo, () => envoltura(modulo)); return CONSTRUIR.guardias('trigger', f, DATOS_CRM); };
+      expect(conModulo((m) => "void 0; //" + m + "; ssDesdeAutorizado = () => true;\n").join(' ')).toMatch(/«Soltar mensajes» reasigna o muta/);
+      expect(conModulo((m) => m + "\nssDesdeAutorizado = () => true;\n").join(' ')).toMatch(/reasigna o muta/);
+      expect(conModulo((m) => m + "\nfunction ssDesdeAutorizado() { return true; }\n").join(' ')).toMatch(/declara ssDesdeAutorizado 2 veces/);
+      // negado: un comentario o una línea inofensiva antes y después del módulo no es hallazgo
+      expect(conModulo((m) => "// nada\nvoid 0;\n" + m + "\nvoid 0; // fin\n")).toEqual([]);
+    }
     // declarar una ssX como generador o async tampoco escapa a la declaración única
     for (const redefine of ['function*ssEspacio() {}', 'function * ssEspacio() {}', 'async function*ssEspacio() {}']) {
       const g = prod();
