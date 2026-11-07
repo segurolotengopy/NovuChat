@@ -83,7 +83,7 @@ const esObjeto = (v) => v !== null && typeof v === 'object';
 const segmento = (k) => k.replace(/\d{6,}/g, '#').slice(0, 40);
 /** Una clave de teléfono completo (solo dígitos): la ficha de ALGUIEN; si no es la del teléfono pedido, no se entra ni se toca. */
 const esClaveDeTelefono = (k) => /^\d{8,}$/.test(k);
-const canon = (v) => JSON.stringify(v, (_k, x) => (esObjeto(x) && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
+export const canon = (v) => JSON.stringify(v, (_k, x) => (esObjeto(x) && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
 
 /** Valida la dirección de n8n: https (o http solo en esta misma máquina), sin credenciales, ruta, consulta ni fragmento. Pura. */
 export function validarBaseUrl(valor) {
