@@ -342,10 +342,10 @@ Cambio en `Decidir turno`, `Armar mensajes` y `Soltar mensajes` de «Venta míni
 - **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos. Código común a todas las salidas de `venta-minima` (regeneradas); solo Q'Taco trae `reservaDesde`, así que el resto no cambia de comportamiento.
 - **No se publica con este PR.**
 
-## Todas las diferencias de un comprobante, en todos los flujos de venta (Andres, 07/11/2026)
+## Todas las diferencias de un comprobante: primero Rubén (Andres, 07/11/2026)
 
-**Decisión de Andres:** un comprobante que no cuadra le dice al cliente TODAS sus diferencias, el destinatario primero, en todos los flujos con cobro (no solo Rubén). El servidor ya devuelve `motivos[]` (PR de Functions, aditivo) y la base común (`venta-digital/src/diferencias.js`, nueva) arma el texto.
+**Decisión de Andres:** un comprobante que no cuadra le dice al cliente TODAS sus diferencias, el destinatario primero (condición general del sistema). El servidor ya devuelve `motivos[]` (PR de Functions #849, aditivo) y la base común (`venta-digital/src/diferencias.js`, nueva; `cobro.js` no se toca) arma el texto.
 
-- **Flujos que la adoptan en este PR (fuente y JSON regenerados, sin publicar):** Rubén, Antonio/Emma/Evy (`rroca-antonio`), Casa Bermejo y Walisuma. **Excepción declarada:** el flujo vivo de cada uno sigue diciendo UNA diferencia hasta que se republique; **cierra:** su próxima publicación con ensayo previo (Rubén ya está en esa cola; Antonio/Emma/Evy con la republicación posterior a la etiqueta del servidor v2). Además el servidor con `motivos[]` debe estar desplegado antes (sin él, el texto cae al motivo primario de siempre).
-- **Pendiente de adopción (no es de este PR):** Q'Taco/`venta-minima` (su `cobro.js` es de la sesión de Q'Taco: usa la misma base) y los flujos de agenda con seña (el módulo común `respuesta-de-la-sena.js` ya recibe la lista completa del servidor y hoy muestra solo la primera al cliente).
-- **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos; el texto del mensaje que ya sale pasa de una frase a varias.
+- **Adopta en este PR:** Rubén (fuente y JSON regenerados, sin publicar). **Excepción declarada:** el flujo vivo de Rubén sigue diciendo UNA diferencia hasta su publicación; **cierra:** esa publicación, tras la prueba conjunta. Con el servidor sin desplegar el texto cae al motivo primario de siempre.
+- **Pendiente de adopción (no es de este PR; prioridad: salir con Rubén):** Antonio/Emma/Evy, Casa Bermejo y Walisuma (trabajo ya hecho en la rama `plataforma-casos/todas-las-diferencias-otros-flujos`, sin PR), Q'Taco/`venta-minima` (su sesión) y la agenda con seña.
+- **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos.

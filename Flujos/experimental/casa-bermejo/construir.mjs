@@ -71,7 +71,7 @@ export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   // La base común de las ventas digitales (cobro, avisos, el motor de la conversación y el carrito: prefijos `cb`, `av`, `vd` y `vc`) y, al final, lo PROPIO de Casa Bermejo (`bm.js`: datos, textos y `CN_TENANT`; `bm-venta.js`: la decisión de la venta).
-  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/diferencias.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../venta-digital/src/carrito.js', '../venta-digital/src/catalogo-externo.js', 'src/lib/bm.js', 'src/lib/bm-venta.js'],
+  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../venta-digital/src/carrito.js', '../venta-digital/src/catalogo-externo.js', 'src/lib/bm.js', 'src/lib/bm-venta.js'],
   comun: ['../venta-digital/src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],

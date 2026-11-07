@@ -14,7 +14,7 @@ import { cargarFuente } from './core/fuente-vm';
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const FLUJOS = join(AQUI, '../../Flujos/experimental');
 const RUTAS = [
-  'venta-digital/src/cobro.js', 'venta-digital/src/diferencias.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js',
+  'venta-digital/src/cobro.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'venta-digital/src/catalogo-externo.js',
   'comun-sin-agente/src/mensajes.js', 'comun-sin-agente/src/filtro-redaccion.js', 'casa-bermejo/src/lib/bm.js', 'casa-bermejo/src/lib/bm-venta.js', 'venta-digital/src/nodos/_comun.js',
 ].map((r) => join(FLUJOS, r));
 const NOMBRES = [

@@ -274,7 +274,7 @@ function wlResolverComprobante(c) {
   const total = lineas.length ? vcTotalCentavos(lineas) : (c.cobro.monto !== null ? Math.round(c.cobro.monto * 100) : null);
   const totalTexto = total !== null && total > 0 ? vcMonto(total) : '';
   const pedido = (cotejo) => ({ tipo: 'pedido', clave: 'pedido', lineas: lineas, total: total, entrega: f.entrega, cotejo: cotejo, repetido: false });
-  const d = { resultado: r.resultado, diferencia: cdDiferenciaParaElTexto(cnNodo('Cotejar en el servidor') ? cbCuerpoDe(cnPrimero('Cotejar en el servidor')).cuerpo : {}, r, 'BOB'), totalTexto: totalTexto, aviso: null };
+  const d = { resultado: r.resultado, diferencia: cbDiferencia(r.diferencias, 'BOB'), totalTexto: totalTexto, aviso: null };
   if (r.resultado === 'cuadra') { d.tipo = 'comprobante'; d.aviso = pedido('llegó y los datos coinciden'); }
   else if (r.resultado === 'aproximado') { d.tipo = 'comprobante'; d.aviso = pedido('llegó; los datos casi coinciden, revisar'); }
   else if (r.resultado === 'reintentar' || r.resultado === 'ilegible') { d.tipo = 'comprobante_pedir'; }

@@ -71,7 +71,7 @@ export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
   // La base común de las ventas digitales (cobro, avisos, el motor de la conversación y el carrito: prefijos `cb`, `av`, `vd` y `vc`) y, al final, lo PROPIO de Walisuma (`wl.js`: datos, textos y `CN_TENANT`; `wl-venta.js`: la decisión de la venta).
-  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/diferencias.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../venta-digital/src/carrito.js', 'src/lib/wl.js', 'src/lib/wl-venta.js'],
+  librerias: ['../venta-digital/src/cobro.js', '../venta-digital/src/avisos.js', '../venta-digital/src/conversacion.js', '../venta-digital/src/carrito.js', 'src/lib/wl.js', 'src/lib/wl-venta.js'],
   comun: ['../venta-digital/src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],

@@ -207,7 +207,7 @@ describe('prohibición 7 y rutas de webhook', () => {
 describe('lo incluido es byte a byte igual a su fuente', () => {
   const codigo = (f: Flujo, n: string): string => String((nodo(f, n)['parameters'] as J)['jsCode']);
   const fuente = (r: string): string => leer(join(FLUJOS, r)).trimEnd();
-  const LIBS = ['venta-digital/src/cobro.js', 'venta-digital/src/diferencias.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'walisuma/src/lib/wl.js', 'walisuma/src/lib/wl-venta.js'];
+  const LIBS = ['venta-digital/src/cobro.js', 'venta-digital/src/avisos.js', 'venta-digital/src/conversacion.js', 'venta-digital/src/carrito.js', 'walisuma/src/lib/wl.js', 'walisuma/src/lib/wl-venta.js'];
   it('los módulos comunes de medios, tal cual de Flujos/src/core/medios', () => {
     const medios = join(RAIZ, 'Flujos/src/core/medios');
     expect(codigo(PRODUCCION, 'Preparar transcripción')).toBe(leer(join(medios, 'preparar-transcripcion.js')).trimEnd() + '\n');

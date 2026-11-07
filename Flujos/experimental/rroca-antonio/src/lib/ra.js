@@ -954,7 +954,7 @@ function raTextoComprobante(resultado, causa, salio, diferencia, base) {
       : { cuerpo: sinAviso, boton: true };
   }
   if (resultado === 'reintentar') {
-    return { cuerpo: 'Recibí tu comprobante, pero veo ' + cdFraseDeDiferencias(diferencia) + '. Si te equivocaste, envíame de nuevo el comprobante correcto (en foto o en PDF desde la app de tu banco). Si prefieres, escríbele a Antonio con el botón.', boton: true };
+    return { cuerpo: 'Recibí tu comprobante, pero veo una diferencia con tu compra' + (diferencia ? ': ' + diferencia : '') + '. Si te equivocaste, envíame de nuevo el comprobante correcto (en foto o en PDF desde la app de tu banco). Si prefieres, escríbele a Antonio con el botón.', boton: true };
   }
   if (resultado === 'ilegible') {
     return { cuerpo: 'Recibí tu archivo, pero no pude leer bien el comprobante. ¿Me lo envías de nuevo, más nítido o en PDF desde la app de tu banco?', boton: false };

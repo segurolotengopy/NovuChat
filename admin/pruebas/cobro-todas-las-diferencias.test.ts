@@ -3,15 +3,12 @@
  * Se prueba NEGANDO: ningún flujo muestra una sola diferencia cuando el servidor trae varias, ni copia lo leído del comprobante, ni dice «pago acreditado/verificado/simulado».
  *
  *   A. La base común (`venta-digital/src/diferencias.js`): orden, sin repetidos, sin inventar, sin lo leído.
- *   B. Cada flujo de venta que incluye la base (Rubén, Antonio/Emma/Evy, Casa Bermejo, Walisuma): con `motivos[]` de varias diferencias, el mensaje al cliente las nombra todas.
+ *   B. El flujo de Rubén (el primero en adoptarla; los demás flujos de venta la adoptan después, en su propia rama): con `motivos[]` de varias diferencias, el mensaje al cliente las nombra todas.
  */
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cargarFuente } from './core/fuente-vm';
 import * as ruben from './tenants/rroca-ruben/mundo';
-import * as antonio from './tenants/rroca-antonio/mundo';
-import * as bermejo from './tenants/casa-bermejo/mundo';
-import * as walisuma from './tenants/walisuma/mundo';
 
 const COMUN = join(__dirname, '../../Flujos/experimental/venta-digital/src');
 type F = (...a: unknown[]) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -57,34 +54,21 @@ describe('A. la base común nombra todas las diferencias, el destinatario primer
 interface Caso { nombre: string; texto: (cuerpo: Record<string, unknown>) => string }
 const PROHIBIDO = /pago acreditado|pago verificado|acreditad[oa]|verificad[oa]|simulad[oa]|los datos coinciden/i;
 
-function rubenOAntonio(m: typeof ruben | typeof antonio, monto: number): Caso['texto'] {
+function rubenOAntonio(m: typeof ruben, monto: number): Caso['texto'] {
   return (cuerpo) => {
     const w = m.crear({ panel: m.panelConQr(monto), medio: { clasificacion: m.COMPROBANTE }, cotejo: { statusCode: 200, body: cuerpo } } as never);
     m.hablar(w, m.ANA, m.mTexto('hola'));
     return m.hablar(w, m.ANA, m.mImagen()).mensajes.map((x: { cuerpo: string }) => x.cuerpo).join(' ');
   };
 }
-function bermejoOWalisuma(m: typeof bermejo | typeof walisuma, monto: number): Caso['texto'] {
-  return (cuerpo) => {
-    const w = m.crear({ modeloDice: m.modelo('Con gusto, lo anoto.', { lineas: [{ id: 'billetera-cuero', cantidad: 1 }], entrega: m.ENTREGA }), medio: { clasificacion: m.COMPROBANTE }, cotejo: { statusCode: 200, body: cuerpo } } as never);
-    m.hablar(w, m.ANA, m.mTexto('una billetera'));
-    m.hablar(w, m.ANA, m.mTexto('quiero pagar'));
-    w.dobles['Traer configuración'] = () => m.panelConQr(monto);
-    return m.textos(m.hablar(w, m.ANA, m.mImagen({ caption: '' }))).join(' ');
-  };
-}
-
 const CASOS: Caso[] = [
   { nombre: 'Rubén (Noches Sin Insomnio)', texto: rubenOAntonio(ruben, 70) },
-  { nombre: 'Antonio, Emma y Evy', texto: rubenOAntonio(antonio, 49) },
-  { nombre: 'Casa Bermejo', texto: bermejoOWalisuma(bermejo, 450) },
-  { nombre: 'Walisuma', texto: bermejoOWalisuma(walisuma, 450) },
 ];
 
 describe('B. cada flujo de venta nombra TODAS las diferencias (nunca una sola cuando el servidor trae varias)', () => {
   for (const c of CASOS) {
     it(c.nombre + ': monto + cuenta + nombre distintos → las tres, destinatario primero, sin lo leído ni frases prohibidas', () => {
-      const t = c.texto({ ...CUERPO, importe: c.nombre.startsWith('Rubén') ? 70 : (c.nombre.startsWith('Antonio') ? 49 : 450) });
+      const t = c.texto({ ...CUERPO, importe: 70 });
       expect(t, c.nombre).toMatch(/varias diferencias/);
       expect(t, c.nombre).toMatch(/la cuenta de destino no es la del QR/);
       expect(t, c.nombre).toMatch(/el nombre del destinatario no coincide con el de la cuenta/);
