@@ -28,7 +28,16 @@ function vmCrmActiva(cfg, prueba) {
   return prueba !== true && String(c.planillaProspectosId || '').trim() !== '' && String(c.planillaProspectosHoja || '').trim() !== '';
 }
 
-// El último mensaje visto de cada teléfono (memoria de n8n, `sd.crmVisto`): de ahí salen el «primer contacto de la ventana» y las 48 h. Devuelve el instante ANTERIOR
+// La clave con que se recuerda un teléfono en la memoria de n8n: un hash FNV-1a de 64 bits recortado a 53 (JavaScript puro), NUNCA el número en claro. No es un secreto (el espacio de números es chico):
+// solo evita dejar teléfonos legibles en los datos del flujo.
+function vmCrmClave(tel) {
+  let h = 0xcbf29ce484222325n;
+  const texto = String(tel === undefined || tel === null ? '' : tel).replace(/\D/g, '');
+  for (let i = 0; i < texto.length; i++) h = ((h ^ BigInt(texto.charCodeAt(i))) * 0x100000001b3n) & 0xffffffffffffffffn;
+  return 'h' + (h & ((1n << 53n) - 1n)).toString(16);
+}
+
+// El último mensaje visto de cada teléfono (memoria de n8n, `sd.crmVisto`, por `vmCrmClave`): de ahí salen el «primer contacto de la ventana» y las 48 h. Devuelve el instante ANTERIOR
 // (o null si no había) y deja anotado el de ahora. Poda lo vencido (180 días) y limita a 5.000 teléfonos. Sin `sd` no anota nada y devuelve null.
 function vmCrmMarcarVisto(sd, from, ahoraMs) {
   const ahora = Number(ahoraMs);
@@ -36,8 +45,9 @@ function vmCrmMarcarVisto(sd, from, ahoraMs) {
   if (!sd || typeof sd !== 'object' || !Number.isFinite(ahora) || !tel) return null;
   if (!sd.crmVisto || typeof sd.crmVisto !== 'object' || Array.isArray(sd.crmVisto)) sd.crmVisto = {};
   const mapa = sd.crmVisto;
-  const previo = Object.prototype.hasOwnProperty.call(mapa, tel) && Number.isFinite(Number(mapa[tel])) ? Number(mapa[tel]) : null;
-  mapa[tel] = ahora;
+  const clave = vmCrmClave(tel);
+  const previo = Object.prototype.hasOwnProperty.call(mapa, clave) && Number.isFinite(Number(mapa[clave])) ? Number(mapa[clave]) : null;
+  mapa[clave] = ahora;
   const claves = Object.keys(mapa);
   for (const k of claves) if (!(ahora - Number(mapa[k]) < VM_CRM_VISTO_VIGENCIA_MS)) delete mapa[k];
   const vivas = Object.keys(mapa);

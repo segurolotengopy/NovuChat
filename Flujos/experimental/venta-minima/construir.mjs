@@ -311,7 +311,8 @@ const PAQUETES_CRM = (() => {
   const r = rutasPaqueteCrmSenales();
   const lee = (rutas) => rutas.map((x) => readFileSync(x, 'utf8').trimEnd());
   return {
-    'crm-prospecto': lee(r['crm-prospecto']),
+    // La puerta del compromiso (`crm-prospecto.js`) va entre el módulo `crm.js` y el nodo: descarta el prospecto de un turno cuyo estado no quedó comprometido.
+    'crm-prospecto-qtaco': [...lee(r['crm-prospecto'].slice(0, 1)), leer('src/lib/crm-prospecto.js').trimEnd(), ...lee(r['crm-prospecto'].slice(1))],
     // El adaptador de señales del módulo + el de Q'Taco (solo el resumen de la venta), antes del nodo de decidir fila.
     'crm-decidir-qtaco': [...lee(r['crm-decidir-senales'].slice(0, 2)), leer('src/lib/crm-planilla.js').trimEnd(), ...lee(r['crm-decidir-senales'].slice(2))],
   };
@@ -322,6 +323,11 @@ function injertarRamaCrm(flujo, datos, archivo) {
   const nombreCred = dato(datos, 'credenciales.crm', archivo);
   const rama = ramaCrm({ credencial: '@@cred:crm', desde: 'Armar mensajes', paquete: 'crm-decidir-qtaco', x: 8400, y: 700 });
   for (const n of rama.nodes) {
+    if (n.name === 'Prospecto para la planilla') n.parameters.jsCode = '@@medio:crm-prospecto-qtaco';
+    // Un fallo de estos dos Code no corta nada (el cliente ya recibió su respuesta): se continúa y «Decidir fila» lo trata como «sin teléfono».
+    if (n.type === 'n8n-nodes-base.code') n.onError = 'continueRegularOutput';
+    // Timeout explícito de 10 s en los nodos de Google Sheets (el HTTP de encabezados trae el suyo de 20 s).
+    if (n.type === 'n8n-nodes-base.googleSheets') n.parameters.options = { ...n.parameters.options, timeout: 10000 };
     const m = typeof n.parameters.jsCode === 'string' ? /^@@medio:([a-z0-9-]+)$/.exec(n.parameters.jsCode) : null;
     if (m) {
       if (!PAQUETES_CRM[m[1]]) throw new Error(`${archivo} · ${n.name}: paquete «${m[1]}» desconocido`);
@@ -366,7 +372,7 @@ function guardiasDeCrm(flujo, datos) {
   for (const n of NODOS_DE_CRM) {
     const nodo = porNombre.get(n);
     if (esEnvioAMeta(nodo)) h.push(`miniCRM: «${n}» envía a Meta (el miniCRM agrega 0 mensajes por conversación)`);
-    if (/graph\.facebook\.com/.test(JSON.stringify(nodo.parameters || {}))) h.push(`miniCRM: «${n}» menciona graph.facebook.com`);
+    if (JSON.stringify(nodo.parameters || {}).includes('graph.facebook.com')) h.push(`miniCRM: «${n}» menciona graph.facebook.com`);
   }
   // 3. La rama solo cuelga de «Armar mensajes»: nadie más entra a ella ni sale de ella hacia el resto del flujo.
   for (const [de, a] of Object.entries(flujo.connections)) {

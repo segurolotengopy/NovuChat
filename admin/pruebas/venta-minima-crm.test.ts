@@ -16,7 +16,7 @@ import { type Flujo, type J } from './lib/flujo';
 import type { Doble, ResultadoTurno } from './lib/n8n-de-mentira';
 // @ts-expect-error módulo .mjs sin tipos
 import { hallazgosCrm, inyectarMapa } from '../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
-import { AHORA, CLIENTE, boton, crear, editarJson, idDeBoton, leer, nodoDe, panel, texto, turno, verificarEnCopia, type Mundial } from './lib/venta-minima-mundo';
+import { AHORA, CLIENTE, estadoDe, boton, crear, editarJson, idDeBoton, leer, nodoDe, panel, texto, turno, verificarEnCopia, type Mundial } from './lib/venta-minima-mundo';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VM = join(RAIZ, 'Flujos', 'experimental', 'venta-minima');
@@ -31,7 +31,7 @@ const lib = (n: string): string => readFileSync(join(VM, 'src', 'lib', n), 'utf8
 
 // ------------------------------------------------------------------------------------------------ el código, tal como corre en n8n
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const L: any = compileFunction(`${lib('comun.js')}\n${lib('pedido.js')}\n${lib('crm.js')}\nreturn { vmProspectoCrm, vmCrmMarcarVisto, vmCrmActiva, vmCrmResumen, vmCrmNombre };`, [])();
+const L: any = compileFunction(`${lib('comun.js')}\n${lib('pedido.js')}\n${lib('crm.js')}\nreturn { vmProspectoCrm, vmCrmClave, vmCrmMarcarVisto, vmCrmActiva, vmCrmResumen, vmCrmNombre };`, [])();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const M: any = compileFunction(`${inyectarMapa(mod('crm/crm.js'), MAPA)}\n${mod('crm/adaptador-senales.js')}\n${lib('crm-planilla.js')}\nreturn { crmDecidirFila, CRM_ADAPTADOR };`, [])();
 
@@ -137,13 +137,19 @@ describe('vmProspectoCrm: qué es un evento y qué dice el prospecto (hechos del
     expect(L.vmCrmActiva({}, false)).toBe(false);
     expect(L.vmCrmActiva(null, false)).toBe(false);
   });
-  it('vmCrmMarcarVisto: devuelve el instante anterior, anota el nuevo, poda lo vencido y limita el mapa', () => {
+  it('vmCrmMarcarVisto: devuelve el instante anterior, anota el nuevo POR HASH (nunca el teléfono), poda lo vencido y limita el mapa', () => {
     const sd: J = {};
+    const clave = L.vmCrmClave(TEL) as string;
+    expect(clave).toMatch(/^h[0-9a-f]{1,14}$/);
+    expect(clave).not.toContain(TEL);
+    expect(L.vmCrmClave(`+${TEL}`)).toBe(clave);
+    expect(L.vmCrmClave('59100000012')).not.toBe(clave);
     expect(L.vmCrmMarcarVisto(sd, TEL, 1_800_000_000_000)).toBeNull();
     expect(L.vmCrmMarcarVisto(sd, `+${TEL}`, 1_800_000_060_000)).toBe(1_800_000_000_000);
-    sd['crmVisto'][['591', '000', '999'].join('')] = 1_800_000_000_000 - 200 * 24 * 3600_000;
+    sd['crmVisto']['hviejo'] = 1_800_000_000_000 - 200 * 24 * 3600_000;
     L.vmCrmMarcarVisto(sd, TEL, 1_800_000_120_000);
-    expect(Object.keys(sd['crmVisto'])).toEqual([TEL]);
+    expect(Object.keys(sd['crmVisto'])).toEqual([clave]);
+    expect(JSON.stringify(sd)).not.toContain(TEL);
     expect(L.vmCrmMarcarVisto(null, TEL, 1)).toBeNull();
   });
 });
@@ -361,7 +367,8 @@ describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
     expect(pl.actualizaciones).toHaveLength(1);
     expect(pl.actualizaciones[0]!['row_number']).toBe(9 + 2);
     const sd = (w.mundo.sd['ventaMinima'] as J)['crmVisto'] as J;
-    expect(Object.keys(sd)).toEqual([CLIENTE]);
+    expect(Object.keys(sd)).toEqual([L.vmCrmClave(CLIENTE)]);
+    expect(JSON.stringify(w.mundo.sd)).not.toContain(CLIENTE);
     w.mundo.avanzar(50 * 60);                      // 50 h sin mensajes
     turno(w, texto('buenas'));
     expect(pl.escrituras).toHaveLength(1);
@@ -396,6 +403,74 @@ describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
 });
 
 // ================================================================================================ EL REQUISITO CLAVE: NO AFECTAN LAS RESPUESTAS
+describe('I-1: si el estado no quedó comprometido, la hoja NO recibe un pedido que no existe', () => {
+  const hastaConfirmar = (pl: Planilla, flujo: Flujo = CRM): { w: Mundial; id: string } => {
+    const w = mundo({ pl, flujo });
+    turno(w, texto('hola'));
+    w.estado.extraccion = EXT_PEDIDO();
+    const resumen = turno(w, texto('quiero 4 tacos de birria'));
+    pl.escrituras.length = 0; pl.actualizaciones.length = 0; pl.lecturas.length = 0;
+    return { w, id: idDeBoton(resumen, 'Confirmar pedido') };
+  };
+  const SIN_PUERTA = (js: string): string => js.replace(/\{\n  let descartar = false;[\s\S]*?if \(descartar\) return \[\];\n\}\n/, '');
+  const sinPuerta = (): Flujo => { const f = copia(CRM); const n = nodoDe(f, 'Prospecto para la planilla'); n.parameters['jsCode'] = SIN_PUERTA(String(n.parameters['jsCode'])); return f; };
+  it('control: con el servidor sano el QR confirma el pedido y la hoja SÍ recibe «Pedido» con su N.º', () => {
+    const pl = planilla();
+    const { w, id } = hastaConfirmar(pl);
+    const t = turno(w, boton(id, 'Confirmar pedido'));
+    expect(t.mensajes.some((m) => m.tipo === 'image')).toBe(true);
+    expect(pl.escrituras.length + pl.actualizaciones.length).toBe(1);
+    expect(String([...pl.escrituras, ...pl.actualizaciones][0]!['Resumen Chatbot IA'])).toMatch(/N\.º \S+, 4 ítems, Bs 84, recojo/);
+  });
+  it('Comprometer turno en 5xx: solo sale el genérico, el pedido no se guardó y la hoja NO recibe nada', () => {
+    const pl = planilla();
+    const { w, id } = hastaConfirmar(pl);
+    w.sesion.servidor.fallar = (c: J) => ((c['sesion'] as J)['accion'] === 'comprometer' ? 503 : null);
+    const t = turno(w, boton(id, 'Confirmar pedido'), true);
+    expect(t.mensajes.some((m) => m.tipo === 'image')).toBe(false);
+    expect(t.ejecutados.has('Prospecto para la planilla')).toBe(true);   // la rama arrancó…
+    expect(t.ejecutados.has('Buscar teléfono en planilla')).toBe(false);  // …y la puerta cortó antes de tocar Google
+    expect(pl.lecturas).toEqual([]);
+    expect(pl.escrituras).toEqual([]);
+    expect(pl.actualizaciones).toEqual([]);
+  });
+  it('Comprometer turno con CONFLICTO de versión sin hecho externo: el turno cede sin enviar nada y la hoja NO recibe nada', () => {
+    const pl = planilla();
+    const { w, id } = hastaConfirmar(pl);
+    w.sesion.servidor.antesDeComprometer = (c: J) => {
+      w.sesion.servidor.antesDeComprometer = null;
+      if ((c['sesion'] as J)['accion'] === 'comprometer') w.sesion.sembrar(CLIENTE, { ...estadoDe(w), paso: 'menu' }, w.sesion.pedidos(CLIENTE));
+    };
+    const t = turno(w, boton(id, 'Confirmar pedido'), true);
+    expect(t.mensajes).toHaveLength(0);
+    expect(pl.lecturas).toEqual([]);
+    expect(pl.escrituras).toEqual([]);
+    expect(pl.actualizaciones).toEqual([]);
+  });
+  it('MUTACIÓN: sin la puerta, el mismo 5xx y el mismo conflicto SÍ escriben un pedido que no existe (la prueba de arriba detecta la puerta)', () => {
+    const pl = planilla();
+    const { w, id } = hastaConfirmar(pl, sinPuerta());
+    w.sesion.servidor.fallar = (c: J) => ((c['sesion'] as J)['accion'] === 'comprometer' ? 503 : null);
+    turno(w, boton(id, 'Confirmar pedido'), true);
+    expect(pl.escrituras.length + pl.actualizaciones.length).toBeGreaterThan(0);
+    const pl2 = planilla();
+    const r2 = hastaConfirmar(pl2, sinPuerta());
+    r2.w.sesion.servidor.antesDeComprometer = (c: J) => {
+      r2.w.sesion.servidor.antesDeComprometer = null;
+      if ((c['sesion'] as J)['accion'] === 'comprometer') r2.w.sesion.sembrar(CLIENTE, { ...estadoDe(r2.w), paso: 'menu' }, r2.w.sesion.pedidos(CLIENTE));
+    };
+    turno(r2.w, boton(r2.id, 'Confirmar pedido'), true);
+    expect(pl2.escrituras.length + pl2.actualizaciones.length).toBeGreaterThan(0);
+  });
+  it('la puerta existe en el JSON y no cambia nada para un turno que no compromete (el saludo sigue escribiendo)', () => {
+    expect(String(nodoDe(CRM, 'Prospecto para la planilla').parameters['jsCode'])).toContain('if (descartar) return [];');
+    expect(SIN_PUERTA(String(nodoDe(CRM, 'Prospecto para la planilla').parameters['jsCode']))).not.toContain('descartar');
+    const pl = planilla();
+    turno(mundo({ pl }), texto('hola'));
+    expect(pl.escrituras).toHaveLength(1);
+  });
+});
+
 describe('los nodos del miniCRM NO afectan las respuestas (A2, A3)', () => {
   const baseline = (): Array<{ nombre: string; s: J }> => conversacion(mundo({ flujo: sinLaRama(), conHoja: false })).map((x) => ({ nombre: x.nombre, s: salida(x.t) }));
   const igual = (otros: { nombre: string; t: ResultadoTurno }[], etiqueta: string): void => {
@@ -553,7 +628,7 @@ describe('aceptación sobre el JSON versionado', () => {
     expect(real.stderr).toMatch(/planillaProspectosId/);
   });
   // El modelo de M-OCR (venta-minima-flujo.test.ts): un nodo degradado a su peor caso (intentos × timeout), los demás con 1 s típico. Google Sheets no admite un timeout por parámetro: se supone el de «Extraer» (15 s por intento).
-  const SUPUESTO_SIN_TIMEOUT_S = 15;
+  const SUPUESTO_SIN_TIMEOUT_S = 15;       // (solo si un nodo perdiera su timeout explícito; hoy los 4 de Sheets llevan 10 s y el HTTP 20 s)
   const PEOR_ACTUAL_S = 58;                 // el peor caso del comprobante de hoy (M-OCR / DISENO.md)
   const CAMINO = ['Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Actualizar fila'];   // agregar o actualizar: una sola de las dos
   const peorDeCadaNodo = (f: Flujo): Record<string, number> => Object.fromEntries(CAMINO.map((nombre) => {
@@ -571,17 +646,23 @@ describe('aceptación sobre el JSON versionado', () => {
     const peor = peorDeCadaNodo(CRM);
     expect(peor['Leer encabezados de la planilla']).toBe(20);
     expect(peorCaso(CRM)).toBeLessThan(limite);
+    for (const n of ['Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Agregar fila', 'Actualizar fila']) expect((nodoDe(CRM, n).parameters['options'] as J)['timeout'], n).toBe(10000);
+    for (const n of ['Prospecto para la planilla', 'Decidir fila de la planilla']) expect((nodoDe(CRM, n) as unknown as J)['onError'], n).toBe('continueRegularOutput');
     // la suma de TODOS los nodos de Google a su peor caso a la vez (cota pesimista): se declara; por eso la rama corre DESPUÉS del cliente (A1) y no puede retrasar nada de lo que él recibe
-    expect(Object.values(peor).reduce((a, b) => a + b, 0)).toBe(65);
-    expect(Object.values(peor).reduce((a, b) => a + b, 0) + PEOR_ACTUAL_S).toBeGreaterThan(limite);
+    expect(Object.values(peor)).toEqual([10, 10, 20, 10]);
+    expect(Object.values(peor).reduce((a, b) => a + b, 0)).toBe(50);
+    // si un nodo de Sheets perdiera su timeout explícito vuelve el supuesto de 15 s y la cota pesimista pasa del tope
+    const sin = copia(CRM);
+    for (const n of sin.nodes) if (n.type === 'n8n-nodes-base.googleSheets') delete (n.parameters['options'] as J)['timeout'];
+    expect(Object.values(peorDeCadaNodo(sin)).reduce((a, b) => a + b, 0) + PEOR_ACTUAL_S).toBeGreaterThan(limite);
     expect(y(CRM, 'Prospecto para la planilla')).toBeGreaterThan(y(CRM, 'Enviar a WhatsApp'));
   });
   it('A11, el negativo: si un nodo de Google gana intentos o un timeout largo, la cuenta se pone roja (no es tautológica)', () => {
     const base = peorCaso(CRM);
-    expect(base).toBeGreaterThan(60);
+    expect(base).toBeGreaterThan(60);   // 58 + 3 + 20
     const con = (cambia: (n: J) => void, nombre: string): number => { const c = copia(CRM); cambia(nodoDe(c, nombre) as unknown as J); return peorCaso(c); };
     expect(con((n) => { n['parameters']['options']['timeout'] = 60000; }, 'Leer encabezados de la planilla')).toBeGreaterThanOrEqual(120);
-    expect(con((n) => { n['retryOnFail'] = true; n['maxTries'] = 4; }, 'Buscar teléfono en planilla')).toBeGreaterThanOrEqual(120);
+    expect(con((n) => { n['retryOnFail'] = true; n['maxTries'] = 8; }, 'Buscar teléfono en planilla')).toBeGreaterThanOrEqual(120);
   });
   it('A12 `construir.mjs --verificar` en 0 para todas las salidas; `executionOrder: v1` y retención `none` en el 3727', () => {
     const r = verificarEnCopia(() => undefined);
@@ -591,9 +672,15 @@ describe('aceptación sobre el JSON versionado', () => {
     expect(r.stdout).toContain('venta-minima.prueba.json al día');
     expect(CRM.settings).toMatchObject({ executionOrder: 'v1', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false, saveManualExecutions: false, executionTimeout: 120 });
   });
-  it('A12 cierre de `executionOrder`: la prueba falla si la rama sale del orden (la ejecución usa v1)', () => {
+  it('A12 negativo: si el 3727 guardara las ejecuciones (retención `all`, con datos de la hoja), `--verificar` FALLA con ese motivo', () => {
     const r = verificarEnCopia((vm) => editarJson(vm, F3727, (f) => { (f.settings as J)['saveDataSuccessExecution'] = 'all'; }));
     expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/saveDataSuccessExecution «none»|la retencion de ejecuciones tiene que ser none/);
+  });
+  it('A12 negativo: si la ejecución dejara de ser `executionOrder: v1` el JSON versionado deja de coincidir y `--verificar` FALLA', () => {
+    const r = verificarEnCopia((vm) => editarJson(vm, F3727, (f) => { (f.settings as J)['executionOrder'] = 'v0'; }));
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/difiere de lo que arma la plantilla/);
   });
   it('el tope de nodos de producción es 81 y el 3727 lleva exactamente 8 nodos más que el vivo', () => {
     const vivo = leer('venta-minima.qtaco.json');
