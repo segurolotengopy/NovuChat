@@ -348,10 +348,16 @@ vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («ex
 
 - **Arreglados en la integración (ya no son `it.fails`):** «Reenviar QR» sí manda la imagen del QR (con monto y referencia, sin
   evento), y una derivación cuyo aviso cayó no deja la marca de la hora: la segunda vuelve a avisar.
-- **`avisos.js` nunca trae respaldo** (`respaldo: null`): `Aviso de respaldo` **no corre en producción**; una plantilla que cae no
-  se reintenta con un texto. Está fijado con una prueba normal: si algún día trae respaldos, se pone roja y avisa que hay que
-  revisar el costo (un mensaje más por aviso caído). Lo que cubre al cliente es que `Armar mensajes` elige «No pude pasarle…»
-  (con el botón) cuando ningún aviso salió. El cableado se prueba con un doble de `Armar avisos`.
+- **`avisos.js` no trae respaldo** (`respaldo: null`) **salvo con las plantillas en viñetas** (07/11/2026, PR #850; solo los
+  datos que traen `plantilla…Estado = APPROVED`, hoy el 3727 de Q'Taco): ahí el respaldo es la plantilla de siempre y `Aviso de
+  respaldo` la manda solo si la nueva no devolvió `messages[0].id` (un aviso caído no se reintenta con un texto). Sin esas claves,
+  `Aviso de respaldo` no corre. Lo que cubre al cliente es que `Armar mensajes` elige «No pude pasarle…» (con el botón) cuando
+  ningún aviso salió. Pruebas: `venta-minima-avisos-vinetas.test.ts` y la sección G de `venta-minima-prueba-0711.test.ts`.
+- **Límite conocido de la caída (aceptado en la revisión del PR #850): aviso DOBLE si Meta aceptó pero la respuesta no llegó.**
+  «Salió» se decide solo por un `wamid` real. Si `Enviar aviso` vence por tiempo (15 s) o se corta la red DESPUÉS de que Meta
+  aceptó la plantilla nueva, el flujo la da por caída y manda también el respaldo: el local recibe el mismo aviso dos veces.
+  Requiere esa condición (Meta suele responder en menos de 1 s), así que es poco probable; se prefiere a perder un aviso dando
+  por salido uno sin id. La regla no se cambia.
 - **La imagen del comprobante** se reenvía por su id al rol `completo` con la ventana abierta (el plano la dejaba fuera
   del lunes, P9): no está verificado que Meta acepte ese id; si lo rechaza, no cambia nada de lo que lee el cliente.
 - **Los dos nodos sin timeout propio** (Gemini 1.2 y «Obtener URL del medio», el nodo de WhatsApp) no se pueden acotar con un
