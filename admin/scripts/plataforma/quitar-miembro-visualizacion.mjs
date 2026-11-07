@@ -11,7 +11,7 @@
  * LO QUE HACE Y LO QUE NO.
  *   · SOLO borra la fila del espejo de los comercios que se nombran en `--tenants`, y solo si la fila está en `baja`, la cuenta NO tiene
  *     ya el rol en ese comercio (claim) y NO es la titular de la cuenta. Si algo no cuadra, ese comercio se salta y se dice por qué.
- *   · NUNCA borra la cuenta de Auth, ni toca claims, ni tokens, ni la colección de auditoría, ni nada de Plataforma.
+ *   · NUNCA borra la cuenta de Auth, ni toca claims, ni tokens, ni nada de Plataforma; en la auditoría solo AGREGA una entrada por borrado (no modifica ni borra las existentes).
  *   · `--aplicar` exige `--respaldo` (ruta absoluta FUERA de todo repositorio, carpeta 0700, archivo 0600, no se pisa) con el contenido
  *     de cada fila borrada; `--revertir --respaldo <ruta>` la restituye. El correo de la persona no se imprime nunca.
  *
