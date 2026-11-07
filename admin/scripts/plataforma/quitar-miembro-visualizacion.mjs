@@ -6,6 +6,8 @@
  * POR QUÉ. `asignar-rol.mjs --quitar` quita el rol y cierra sesiones, pero deja la fila con `estado: 'baja'`, y la consola la sigue mostrando
  * (Usuarios.tsx lista todo el espejo). Pedido de Andres (07/11/2026): que un correo deje de verse en la consola de todos los clientes.
  *
+ * El respaldo guarda la fila tal cual (incluye el correo): por eso 0600 y fuera del repositorio. Cada borrado deja una auditoría `quitar_miembro_visualizacion` (tenant, uid, fecha; sin correo) y usa precondición de `lastUpdateTime`.
+ *
  * LO QUE HACE Y LO QUE NO.
  *   · SOLO borra la fila del espejo de los comercios que se nombran en `--tenants`, y solo si la fila está en `baja`, la cuenta NO tiene
  *     ya el rol en ese comercio (claim) y NO es la titular de la cuenta. Si algo no cuadra, ese comercio se salta y se dice por qué.
@@ -38,6 +40,7 @@ export function motivoParaSaltar({ miembro, claimRol, titularUid, uid }) {
 export function comprobarRespaldo(ruta, { existe = existsSync, stat = statSync } = {}) {
   if (!ruta || !isAbsolute(ruta)) return 'el respaldo debe ser una ruta absoluta';
   let d = dirname(ruta);
+  try { if (existe(d)) d = realpathSync(d); } catch { /* sin realpath: se sigue con la ruta dada */ }
   for (let i = 0; i < 40; i += 1) {
     if (existe(join(d, '.git'))) return 'el respaldo no puede estar dentro de un repositorio';
     const p = dirname(d);
@@ -54,15 +57,32 @@ export async function quitar({ uid, tenants, aplicar, io }) {
   const filas = [];
   const saltados = [];
   for (const t of tenants) {
-    const { miembro, claimRol, titularUid } = await io.leer(t);
+    const { miembro, claimRol, titularUid, actualizado } = await io.leer(t);
     const motivo = motivoParaSaltar({ miembro, claimRol, titularUid, uid });
-    if (motivo) saltados.push({ tenant: t, motivo }); else filas.push({ tenant: t, datos: miembro });
+    if (motivo) saltados.push({ tenant: t, motivo }); else filas.push({ tenant: t, datos: miembro, actualizado });
   }
   if (aplicar && filas.length) {
     await io.respaldar(filas);
-    for (const f of filas) await io.borrar(f.tenant);
+    for (const f of filas) { await io.borrar(f.tenant, f.actualizado); await io.auditar(f.tenant); }
   }
   return { filas, saltados, codigo: saltados.length ? 1 : 0 };
+}
+
+/** Reversa pura: solo restituye filas en `baja`, de comercios válidos que existen y SIN fila actual (create, nunca pisa). */
+export async function restituir({ uidRespaldo, uid, filas, aplicar, io }) {
+  if (uidRespaldo !== uid) return { codigo: 1, mensajes: ['el respaldo no es de esa cuenta'] };
+  const mensajes = [];
+  let codigo = 0;
+  for (const f of filas ?? []) {
+    const t = f?.tenant;
+    if (!ID_TENANT.test(String(t))) return { codigo: 1, mensajes: [...mensajes, 'comercio inválido en el respaldo'] };
+    if (f.datos?.estado !== 'baja') { codigo = 1; mensajes.push(`${t}: la fila del respaldo no está en baja: no se restituye`); continue; }
+    if (!(await io.fichaExiste(t))) { codigo = 1; mensajes.push(`${t}: el comercio no existe`); continue; }
+    if (await io.filaExiste(t)) { codigo = 1; mensajes.push(`${t}: ya hay una fila: no se pisa`); continue; }
+    if (aplicar) await io.crear(t, f.datos);
+    mensajes.push(`${aplicar ? '✓ restituida' : 'seco: se restituiría'} la fila de ${t}`);
+  }
+  return { codigo, mensajes };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
@@ -83,7 +103,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
   if (mal.length) { console.error(`  ✗ ${mal.join('\n  ✗ ')}`); process.exit(2); }
 
   const { initializeApp } = await import('firebase-admin/app');
-  const { getFirestore } = await import('firebase-admin/firestore');
+  const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
   const { getAuth } = await import('firebase-admin/auth');
   initializeApp({ projectId: proyecto });
   const db = getFirestore();
@@ -93,13 +113,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
 
   if (revertir) {
     const guardado = JSON.parse(readFileSync(respaldo, 'utf8'));
-    if (guardado.uid !== u.uid) { console.error('  ✗ el respaldo no es de esa cuenta'); process.exit(1); }
-    for (const f of guardado.filas) {
-      if (!ID_TENANT.test(f.tenant)) { console.error('  ✗ comercio inválido en el respaldo'); process.exit(1); }
-      console.log(`  ${aplicar ? '✓ restituida' : 'seco: se restituiría'} la fila de ${f.tenant}`);
-      if (aplicar) await db.doc(`tenants/${f.tenant}/miembros/${u.uid}`).set(f.datos);
-    }
-    process.exit(0);
+    const rev = await restituir({
+      uidRespaldo: guardado.uid, uid: u.uid, filas: guardado.filas, aplicar,
+      io: {
+        fichaExiste: async (t) => (await db.doc(`tenants/${t}`).get()).exists,
+        filaExiste: async (t) => (await db.doc(`tenants/${t}/miembros/${u.uid}`).get()).exists,
+        crear: async (t, datos) => { await db.doc(`tenants/${t}/miembros/${u.uid}`).create(datos); },
+      },
+    });
+    for (const m of rev.mensajes) console.log(`  ${m}`);
+    process.exit(rev.codigo);
   }
 
   const res = await quitar({
@@ -109,14 +132,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
         const ficha = await db.doc(`tenants/${t}`).get();
         if (!ficha.exists) return { miembro: null, claimRol: null, titularUid: null };
         const m = await db.doc(`tenants/${t}/miembros/${u.uid}`).get();
-        return { miembro: m.exists ? m.data() : null, claimRol: claimsT[t] ?? null, titularUid: ficha.get('titularCuentaUid') ?? null };
+        return { miembro: m.exists ? m.data() : null, actualizado: m.exists ? m.updateTime : undefined, claimRol: claimsT[t] ?? null, titularUid: ficha.get('titularCuentaUid') ?? null };
       },
       respaldar: async (filas) => {
         mkdirSync(dirname(respaldo), { recursive: true, mode: 0o700 });
         writeFileSync(respaldo, JSON.stringify({ uid: u.uid, filas: filas.map((f) => ({ tenant: f.tenant, datos: f.datos })) }), { flag: 'wx', mode: 0o600 });
         chmodSync(respaldo, 0o600);
       },
-      borrar: async (t) => { await db.doc(`tenants/${t}/miembros/${u.uid}`).delete(); },
+      borrar: async (t, actualizado) => { await db.doc(`tenants/${t}/miembros/${u.uid}`).delete(actualizado ? { lastUpdateTime: actualizado } : undefined); },
+      auditar: async (t) => { await db.collection(`tenants/${t}/auditoria`).add({ accion: 'quitar_miembro_visualizacion', uid: u.uid, en: Timestamp.now(), por: 'plataforma' }); },
     },
   });
   for (const f of res.filas) console.log(`  ${aplicar ? '✓ borrada' : 'seco: se borraría'} la fila de ${f.tenant} (estaba en baja)`);

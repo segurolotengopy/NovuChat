@@ -6,18 +6,20 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error módulo .mjs sin tipos
-import { comprobarRespaldo, motivoParaSaltar, quitar } from '../../scripts/plataforma/quitar-miembro-visualizacion.mjs';
+import { comprobarRespaldo, motivoParaSaltar, quitar, restituir } from '../../scripts/plataforma/quitar-miembro-visualizacion.mjs';
 
 const UID = 'uid-de-prueba';
 const mundo = (filas: Record<string, any>) => {
   const borradas: string[] = [];
   const respaldos: any[] = [];
+  const auditadas: string[] = [];
   return {
-    borradas, respaldos,
+    borradas, respaldos, auditadas,
     io: {
       leer: async (t: string) => filas[t] ?? { miembro: null, claimRol: null, titularUid: null },
       respaldar: async (f: any) => { respaldos.push(f); },
       borrar: async (t: string) => { borradas.push(t); },
+      auditar: async (t: string) => { auditadas.push(t); },
     },
   };
 };
@@ -37,6 +39,7 @@ describe('quitar-miembro-visualizacion', () => {
     expect(r.codigo).toBe(0);
     expect(m.borradas).toEqual(['a']);
     expect(m.respaldos).toHaveLength(1);
+    expect(m.auditadas).toEqual(['a']);
   });
   it('NIEGA una fila activa, con claim vigente, de la titular o inexistente', async () => {
     const m = mundo({
@@ -60,6 +63,21 @@ describe('quitar-miembro-visualizacion', () => {
     expect(comprobarRespaldo('/r/y.json', { existe: (p: string) => p === '/r/y.json', stat: () => ({ mode: 0o40700 }) })).toMatch(/existe/);
     expect(comprobarRespaldo('/r/y.json', { existe: (p: string) => p === '/r', stat: () => ({ mode: 0o40755 }) })).toMatch(/0700/);
     expect(comprobarRespaldo('/r/y.json', { existe: (p: string) => p === '/r', stat: () => ({ mode: 0o40700 }) })).toBe('');
+  });
+  it('restituir NIEGA uid ajeno, comercio inválido, fila no en baja, comercio inexistente y fila ya existente', async () => {
+    const creadas: string[] = [];
+    const io = (ficha = true, fila = false) => ({ fichaExiste: async () => ficha, filaExiste: async () => fila, crear: async (t: string) => { creadas.push(t); } });
+    const ok = { tenant: 'aaa', datos: { estado: 'baja' } };
+    expect((await restituir({ uidRespaldo: 'x', uid: UID, filas: [ok], aplicar: true, io: io() })).codigo).toBe(1);
+    expect((await restituir({ uidRespaldo: UID, uid: UID, filas: [{ tenant: '../x', datos: { estado: 'baja' } }], aplicar: true, io: io() })).codigo).toBe(1);
+    expect((await restituir({ uidRespaldo: UID, uid: UID, filas: [{ tenant: 'aaa', datos: { estado: 'activo' } }], aplicar: true, io: io() })).codigo).toBe(1);
+    expect((await restituir({ uidRespaldo: UID, uid: UID, filas: [ok], aplicar: true, io: io(false) })).codigo).toBe(1);
+    expect((await restituir({ uidRespaldo: UID, uid: UID, filas: [ok], aplicar: true, io: io(true, true) })).codigo).toBe(1);
+    expect(creadas).toHaveLength(0);
+    expect((await restituir({ uidRespaldo: UID, uid: UID, filas: [ok], aplicar: false, io: io() })).codigo).toBe(0);
+    expect(creadas).toHaveLength(0);
+    expect((await restituir({ uidRespaldo: UID, uid: UID, filas: [ok], aplicar: true, io: io() })).codigo).toBe(0);
+    expect(creadas).toEqual(['aaa']);
   });
   it('el script no toca Auth ni claims ni imprime el correo', () => {
     const f = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../scripts/plataforma/quitar-miembro-visualizacion.mjs'), 'utf8');
