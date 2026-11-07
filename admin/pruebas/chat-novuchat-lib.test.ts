@@ -1526,6 +1526,7 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
       ["globalThis[' eval'.trim()]('x');", /usa eval/], ["'eval,x'.split(',')[0];", /usa eval/], ["'Function x'.split(' ')[0];", /usa Function/],
       ["globalThis[JSON.parse('\"eval\"')];", /usa eval/], ["globalThis[/eval/.source];", /usa eval/], ["globalThis['Function '.trim()];", /usa Function/], ["globalThis[/Function/.source];", /usa Function/], ["x2Ast = `a __proto__ b`;", /contamina un prototipo/],
       ["with (SS_CONFIG) { espacio = 'x'; }", /usa with/],
+      ["let kAst6 = 'ev'; globalThis[kAst6 + 'al']('x');", /accede al objeto global/], ["const kAst7 = 'ev'; { let kAst7 = 'q'; } globalThis[kAst7 + 'al'];", /usa eval|accede al objeto global/],
       // comentarios HTML (Annex B): para el motor son comentarios, para un tokenizador no
       ["x0Ast = 1;\n<!-- nada", /comentario HTML/], ["x1Ast = 1;\n--> nada", /comentario HTML/],
       // división o regex, comentarios y cadenas que abren o cierran comentarios: la mutación real se ve
@@ -1534,6 +1535,13 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
       // falla cerrada: código que no se puede analizar es un hallazgo
       ["ssFoo = ;", /no se puede analizar/], ["const cAst = {", /no se puede analizar/], ["const sAst = 'sin cerrar; ssFoo = f;", /no se puede analizar/], ["function (", /no se puede analizar/], ["const dup = 1; const dup = 2;", /no se puede analizar/],
     ] as const) expect(conCodigo(codigo).join(' '), codigo).toMatch(texto);
+    // plegado exponencial: 28 niveles de `k(n+1) = kn + kn` no cuelgan la guardia ni lanzan una excepción: se corta, no se pliega y la clave computada sobre el objeto global se marca
+    {
+      const niveles = ["const kq0 = 'ab';", ...Array.from({ length: 28 }, (_, i) => `const kq${i + 1} = kq${i} + kq${i};`), 'globalThis[kq28];'].join('\n');
+      const t0 = Date.now();
+      expect(conCodigo(niveles).join(' ')).toMatch(/accede al objeto global/);
+      expect(Date.now() - t0, 'el plegado no puede ser exponencial').toBeLessThan(5000);
+    }
     // lo que PARECE código pero no lo es (divisiones, sumas, la clase con `constructor`) no es un hallazgo; las cadenas y comentarios que nombran eval/ssX = son falsos positivos aceptados de la lectura por texto
     expect(conCodigo([
       "const q4Ast = /abc|d+/.test('x');",

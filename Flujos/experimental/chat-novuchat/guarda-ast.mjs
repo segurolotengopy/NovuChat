@@ -40,6 +40,7 @@ export const TEXTOS = {
   indice: 'accede a SS_CONFIG por índice',
   mutaConfig: 'muta SS_CONFIG con Object.assign/defineProperty/defineProperties o con Reflect',
   mutaAyudante: 'muta un ayudante de sesión (ss*) con Object.assign/defineProperty/defineProperties o con Reflect',
+  claveGlobal: 'accede al objeto global (globalThis, global, self, window, this) con una clave computada que no se puede resolver',
   conWith: 'usa with (cambia el ámbito de los nombres: `with (SS_CONFIG) { espacio = 1 }` muta sin nombrarlo)',
   noAnalizable: 'tiene código que no se puede analizar',
   comentarioHtml: 'usa un comentario HTML («<!--» o «-->»), que esconde código a una guardia por patrones',
@@ -115,11 +116,27 @@ function nombresDe(p, salida) {
   }
 }
 
+const TOPE_PLEGADO = 256;     // una cadena plegada más larga que esto se trata como «no se puede plegar»
+const TOPE_PROFUNDIDAD = 200;
 function plegador(ast) {
   const consts = tablaDeConstantes(ast);
   const enCurso = new Set();
+  const memo = new Map();   // nodo → valor (o NO_PLEGABLE): sin memo, `k1 = k0 + k0; k2 = k1 + k1; …` es exponencial
+  const NO_PLEGABLE = Symbol('no plegable');
+  let profundidad = 0;
   // devuelve un valor primitivo (cadena, número o booleano) o undefined si no hay certeza
   const plegar = (e) => {
+    if (!e) return undefined;
+    if (memo.has(e)) { const m = memo.get(e); return m === NO_PLEGABLE ? undefined : m; }
+    if (profundidad > TOPE_PROFUNDIDAD) return undefined;
+    profundidad++;
+    let v;
+    try { v = plegarSinMemo(e); } finally { profundidad--; }
+    if (typeof v === 'string' && v.length > TOPE_PLEGADO) v = undefined;
+    memo.set(e, v === undefined ? NO_PLEGABLE : v);
+    return v;
+  };
+  const plegarSinMemo = (e) => {
     if (!e) return undefined;
     switch (e.type) {
       case 'Literal': return typeof e.value === 'string' || typeof e.value === 'number' || typeof e.value === 'boolean' ? e.value : undefined;
@@ -213,9 +230,21 @@ function destinos(p, desestructurado = false, salida = []) {
 const FUNCIONES_DE_MUTACION = { Object: new Set(['assign', 'defineProperty', 'defineProperties']), Reflect: new Set(['set', 'defineProperty', 'deleteProperty']) };
 
 /**
- * Los hallazgos del código de un nodo (SIN el módulo común ni el registro, que declaran `ss*` y `SS_CONFIG`): un arreglo de textos, sin repetidos, vacío si está limpio.
+ * Los hallazgos de un código (el del nodo completo, o el que queda sin el módulo común y el registro, que declaran `ss*` y `SS_CONFIG`): un arreglo de textos, sin repetidos, vacío si está limpio.
  */
+const MEMO_HALLAZGOS = new Map();
 export function hallazgosDelCodigo(codigo) {
+  const texto = String(codigo);
+  let r = MEMO_HALLAZGOS.get(texto);
+  if (r === undefined) {
+    // falla cerrada: un error del análisis (p. ej. un RangeError por anidamiento extremo) es un hallazgo, no una excepción suelta
+    try { r = hallazgosSinMemo(texto); } catch (x) { r = [TEXTOS.noAnalizable]; }
+    if (MEMO_HALLAZGOS.size > 100) MEMO_HALLAZGOS.clear();
+    MEMO_HALLAZGOS.set(texto, r);
+  }
+  return [...r];
+}
+function hallazgosSinMemo(codigo) {
   const a = analizar(codigo);
   if (!a.ok) return [TEXTOS.noAnalizable];
   const plegar = plegador(a.ast);
@@ -269,6 +298,8 @@ export function hallazgosDelCodigo(codigo) {
         else if (k === 'Function') h.add(TEXTOS.funcion);
         else if (k === '__proto__') h.add(TEXTOS.prototipo);
         else if (k === 'getPrototypeOf' || k === 'setPrototypeOf') h.add(TEXTOS.protoDe);
+        // clave computada que no se pliega sobre el objeto global: `let k = 'ev'; globalThis[k + 'al']`
+        if (n.computed && plegar(n.property) === undefined && ((n.object.type === 'Identifier' && ['globalThis', 'global', 'self', 'window'].includes(n.object.name)) || n.object.type === 'ThisExpression')) h.add(TEXTOS.claveGlobal);
         // SS_CONFIG[…]: cualquier acceso por índice
         if (n.computed && n.object.type === 'Identifier' && n.object.name === 'SS_CONFIG') h.add(TEXTOS.indice);
         break;
@@ -333,7 +364,18 @@ function terminaEnPrototype(e, plegar) {
  * Cuántas veces se declara cada `ss*` y `SS_CONFIG` en el código (declaraciones de variable, desestructuradas incluidas, declaraciones de función y de clase; no las expresiones, cuyo nombre no entra en el ámbito). Un Map nombre → veces.
  * Si el código no se puede analizar devuelve `null` (el llamador ya reporta el hallazgo `noAnalizable`).
  */
+const MEMO_CUENTA = new Map();
 export function contarDeclaraciones(codigo) {
+  const texto = String(codigo);
+  let r = MEMO_CUENTA.get(texto);
+  if (r === undefined) {
+    try { r = contarSinMemo(texto); } catch (x) { r = null; }
+    if (MEMO_CUENTA.size > 100) MEMO_CUENTA.clear();
+    MEMO_CUENTA.set(texto, r);
+  }
+  return r === null ? null : new Map(r);
+}
+function contarSinMemo(codigo) {
   const a = analizar(codigo);
   if (!a.ok) return null;
   const cuenta = new Map();
