@@ -128,7 +128,8 @@ function plegador(ast) {
   const plegar = (e) => {
     if (!e) return undefined;
     if (memo.has(e)) { const m = memo.get(e); return m === NO_PLEGABLE ? undefined : m; }
-    if (profundidad > TOPE_PROFUNDIDAD) return undefined;
+    // pasar el tope es un HALLAZGO (falla cerrada): `hallazgosDelCodigo` convierte este error en «no se puede analizar». Devolver «no plegable» dejaría pasar `Reflect.get(globalThis, k260 + 'al')`.
+    if (profundidad > TOPE_PROFUNDIDAD) throw new RangeError('tope de plegado');
     profundidad++;
     let v;
     try { v = plegarSinMemo(e); } finally { profundidad--; }

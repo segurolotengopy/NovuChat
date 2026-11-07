@@ -1542,6 +1542,14 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
       expect(conCodigo(niveles).join(' ')).toMatch(/accede al objeto global/);
       expect(Date.now() - t0, 'el plegado no puede ser exponencial').toBeLessThan(5000);
     }
+    // pasar el tope de profundidad del plegado es un hallazgo, en los dos órdenes de lectura (la función antes o después de la cadena de `const`)
+    {
+      const cadenaKd = ["const kd0 = 'ev';", ...Array.from({ length: 260 }, (_, i) => `const kd${i + 1} = kd${i};`), "const zzPoc = kd260 + 'al';"].join('\n');
+      const usoKd = "function fPoc() { return Reflect.get(globalThis, zzPoc)('1'); }";
+      expect(conCodigo(usoKd + '\n' + cadenaKd).join(' ')).toMatch(/no se puede analizar/);
+      // (con la cadena primero, el memo pliega de abajo arriba sin pasar el tope y el uso se ve como lo que es: eval)
+      expect(conCodigo(cadenaKd + '\n' + usoKd).join(' ')).toMatch(/no se puede analizar|usa eval/);
+    }
     // lo que PARECE código pero no lo es (divisiones, sumas, la clase con `constructor`) no es un hallazgo; las cadenas y comentarios que nombran eval/ssX = son falsos positivos aceptados de la lectura por texto
     expect(conCodigo([
       "const q4Ast = /abc|d+/.test('x');",
