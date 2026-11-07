@@ -18,6 +18,7 @@
  *     más, para no repetir código que el nodo no usa:
  *       `"@@comun:nodos/<archivo>.js"`  solo `comun.js` + el archivo;
  *       `"@@solo:nodos/<archivo>.js"`   solo el archivo.
+ *     El sufijo `+crm` (`@@todo+sesion+crm:…`, solo «Armar mensajes») agrega `src/lib/crm.js` (`vmProspectoCrm`, el miniCRM de Q'Taco).
  *     Y el sufijo `+sesion` (`@@todo+sesion:…`, `@@comun+sesion:…`) pega ENTRE las librerías y el nodo el módulo común
  *     `comun-sin-agente/src/sesion.js` (el estado de la conversación en el servidor, PR-4a): se INCLUYE, nunca se copia ni se edita.
  *   - `@@dato:a.b.c@@` (dentro de cualquier texto) se reemplaza por ese dato del tenant;
@@ -48,6 +49,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hallazgosDelGuardado, injertarGuardado, URL_DESCARGA_GUARDADO } from '../comun-sin-agente/src/guardado.mjs';
+import { hallazgosCrm, injertarCrm, ramaCrm, rutasPaqueteCrmSenales, urlEncabezados, validarMapaCrm } from '../comun-sin-agente/construir-crm.mjs';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const DATOS = join(AQUI, '../../../admin/scripts/datos/venta-minima');
@@ -61,6 +63,8 @@ const ORDEN_LIBS = ['comun', 'pedido', 'reserva', 'avisos', 'promos', 'cobro'];
 const MODULOS_COMUNES = ['../../src/modulos/pedidos/qr-del-pedido.js'];
 const LIB = [...ORDEN_LIBS.map((n) => leer(`src/lib/${n}.js`)), ...MODULOS_COMUNES.map((r) => leer(r))].map((t) => t.trimEnd()).join('\n\n');
 const COMUN = leer('src/lib/comun.js').trimEnd();
+// El miniCRM de Q'Taco (`vmProspectoCrm`): se pega SOLO delante de «Armar mensajes» (`+crm`), no en todos los nodos.
+const LIB_CRM = leer('src/lib/crm.js').trimEnd();
 const plantilla = JSON.parse(leer('flujo.plantilla.json'));
 
 const NODOS_DE_ENTRADA = {
@@ -85,7 +89,9 @@ const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 // +9: el estado de la conversación y los vistos en el servidor (PR-4a; tope de Q'Taco 60 → 69, aprobado por Andres el 04/11/2026): «¿Hay estado?», «Sin estado», «¿Comprometer turno?», «Comprometer turno»,
 // «¿Replanificar compromiso?», «Comprometer turno (2.º intento)», «Soltar mensajes», «Confirmar envío» y «Comprometer compensación» (9: se quitó «¿Compensar entrega?»; queda 0 de margen). Ver DISENO.md y docs/versiones-por-cliente.md.
 // +2: los CUPOS pasan al servidor (PR-4b; tope de 69 a 71, aprobado por Andres (06/11/2026, en conversación)): «Consumir cupos» y «¿Cupo concedido?». `asentar` NO lleva nodo (segundo ítem de «Confirmar envío»).
-const TOPE_DE_NODOS = 71;
+// +10: el miniCRM de Q'Taco 3727 (módulo `crm`, `ramaCrm`: 8 nodos) y la IMAGEN de las campañas (2 nodos), de 71 a 81 (Andres, 06/11/2026: «D2 = tope de nodos aprobado»). 81 = 69 + 2 (cupos) + 2 (imagen) + 8 (miniCRM).
+// El miniCRM solo lo lleva `venta-minima.qtaco-3727.json` (dato `crm`); quien fusione último reconcilia este número con los nodos de la imagen. Ver DISENO.md y docs/versiones-por-cliente.md.
+const TOPE_DE_NODOS = 81;
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,
 // su credencial de cabecera (la de la ingesta), `responseMode: onReceived` y la ruta como marcador (una URL de capacidad que
@@ -129,16 +135,18 @@ const URL_QR_SIMULADO = /^https:\/\/raw\.githubusercontent\.com\/segurolotengopy
 const MODOS_COBRO = ['simulado', 'real', 'sin_qr'];
 
 function codigoDe(marca, nodo) {
-  const m = /^@@(?:(solo|comun|todo)(\+sesion)?:)?(nodos\/[a-z0-9-]+\.js)$/.exec(marca);
+  const m = /^@@(?:(solo|comun|todo)(\+sesion)?(\+crm)?:)?(nodos\/[a-z0-9-]+\.js)$/.exec(marca);
   if (!m) throw new Error(`${nodo}: ruta de código no válida: ${marca}`);
   const modo = m[1] || 'todo';
   const conSesion = m[2] === '+sesion';
-  const ruta = m[3];
+  const ruta = m[4];
+  const conCrm = m[3] === '+crm';
+  if (conCrm && modo !== 'todo') throw new Error(`${nodo}: «+crm» solo va con «todo» (la librería del miniCRM usa los ayudantes de pedido)`);
   if (conSesion && modo === 'solo') throw new Error(`${nodo}: «+sesion» no va con «solo» (el módulo de sesión depende de comun.js)`);
   if (!existsSync(join(AQUI, 'src', ruta))) throw new Error(`${nodo}: no existe src/${ruta}`);
   const propio = leer(`src/${ruta}`).trimEnd();
   const base = modo === 'solo' ? [] : [modo === 'comun' ? COMUN : LIB];
-  return base.concat(conSesion ? [FUENTE_SESION] : []).concat([propio]).join('\n\n') + '\n';
+  return base.concat(conSesion ? [FUENTE_SESION] : []).concat(conCrm ? [LIB_CRM] : []).concat([propio]).join('\n\n') + '\n';
 }
 
 // --- los datos del tenant ---------------------------------------------------------------------------
@@ -259,7 +267,7 @@ function armar(datos, archivo) {
     const js = n.parameters && n.parameters.jsCode;
     if (typeof js === 'string' && js.startsWith('@@')) n.parameters.jsCode = codigoDe(js, n.name);
     for (const cred of Object.values(n.credentials || {})) {
-      const m = /^@@cred:(ingesta|graph|medios|entradaPrueba|trigger)$/.exec(cred.name);
+      const m = /^@@cred:(ingesta|graph|medios|entradaPrueba|trigger|crm)$/.exec(cred.name);
       if (m) cred.name = dato(datos, `credenciales.${m[1]}`, `${archivo} · ${n.name}`);
     }
     if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
@@ -275,6 +283,8 @@ function armar(datos, archivo) {
     conexiones[de] = { main: (salidas.main || []).map((s) => (s || []).filter((c) => vivos.has(c.node))) };
   }
   flujo.connections = conexiones;
+  // EL miniCRM (módulo `crm`, solo con el dato `crm`): la rama de 8 nodos se GENERA (no se copia), cuelga de «Armar mensajes» por debajo del envío y del cierre y por encima de «Resumen del turno».
+  if (datos.crm !== undefined) injertarRamaCrm(flujo, datos, archivo);
   // El GUARDADO de medios (módulo común, nunca copiado): cuelga de «Reportar mensaje (entrante)», debajo de todo; credenciales tomadas por nombre del flujo ya armado.
   injertarGuardado(flujo, { guardarUrl: `https://${ANFITRION_CONSOLA}/guardarMedio` });
   const texto = JSON.stringify(flujo, null, 2) + '\n';
@@ -290,6 +300,93 @@ function armar(datos, archivo) {
   const ids = flujo.nodes.map((n) => n.id);
   if (new Set(ids).size !== ids.length) throw new Error(`${archivo}: ids de nodo repetidos`);
   return texto;
+}
+
+// =====================================================================================================
+// EL miniCRM DE Q'TACO (módulo `crm`). SOLO con el dato `crm` (hoy `qtaco-3727.json`); sin él no hay un solo nodo de planilla y «Armar mensajes» no calcula nada.
+// La rama de 8 nodos la genera `ramaCrm` (no se copia); el mapa de columnas es DATO del tenant y lo valida el mismo `crmValidarMapa` que corre en n8n. MENSAJES: 0.
+// =====================================================================================================
+const NODOS_DE_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
+const PAQUETES_CRM = (() => {
+  const r = rutasPaqueteCrmSenales();
+  const lee = (rutas) => rutas.map((x) => readFileSync(x, 'utf8').trimEnd());
+  return {
+    'crm-prospecto': lee(r['crm-prospecto']),
+    // El adaptador de señales del módulo + el de Q'Taco (solo el resumen de la venta), antes del nodo de decidir fila.
+    'crm-decidir-qtaco': [...lee(r['crm-decidir-senales'].slice(0, 2)), leer('src/lib/crm-planilla.js').trimEnd(), ...lee(r['crm-decidir-senales'].slice(2))],
+  };
+})();
+function injertarRamaCrm(flujo, datos, archivo) {
+  const errores = validarMapaCrm(datos.crm);
+  if (errores.length) throw new Error(`${archivo}: el mapa \`crm\` no es válido: ${errores.join('; ')}`);
+  const nombreCred = dato(datos, 'credenciales.crm', archivo);
+  const rama = ramaCrm({ credencial: '@@cred:crm', desde: 'Armar mensajes', paquete: 'crm-decidir-qtaco', x: 8400, y: 700 });
+  for (const n of rama.nodes) {
+    const m = typeof n.parameters.jsCode === 'string' ? /^@@medio:([a-z0-9-]+)$/.exec(n.parameters.jsCode) : null;
+    if (m) {
+      if (!PAQUETES_CRM[m[1]]) throw new Error(`${archivo} · ${n.name}: paquete «${m[1]}» desconocido`);
+      n.parameters.jsCode = PAQUETES_CRM[m[1]].join('\n\n') + '\n';
+    }
+    for (const c of Object.values(n.credentials || {})) c.name = nombreCred;
+  }
+  flujo.nodes.push(...rama.nodes);
+  Object.assign(flujo.connections, rama.connections);
+  const previo = (((flujo.connections['Armar mensajes'] || {}).main || [])[0]) || [];
+  flujo.connections['Armar mensajes'] = { main: [[...previo, { node: rama.entrada, type: 'main', index: 0 }]] };
+  injertarCrm(flujo, datos.crm);
+}
+
+// La rama del miniCRM contra el JSON armado: presente solo con el dato `crm`, en su lugar del lienzo, sin ningún envío a Meta y con la credencial del tenant.
+function guardiasDeCrm(flujo, datos) {
+  const h = [];
+  const nodos = flujo.nodes || [];
+  const porNombre = new Map(nodos.map((n) => [n.name, n]));
+  const conCrm = datos && datos.crm !== undefined;
+  const presentes = NODOS_DE_CRM.filter((n) => porNombre.has(n));
+  if (!conCrm) {
+    if (presentes.length) h.push(`miniCRM: los datos no traen \`crm\` y el flujo lleva los nodos ${presentes.join(', ')}`);
+    return h;
+  }
+  for (const n of NODOS_DE_CRM) if (!porNombre.has(n)) h.push(`miniCRM: falta el nodo «${n}»`);
+  if (presentes.length !== NODOS_DE_CRM.length) return h;
+  const y = (n) => ((porNombre.get(n) || {}).position || [])[1];
+  const primero = 'Prospecto para la planilla';
+  const destinos = [...new Set((((flujo.connections['Armar mensajes'] || {}).main || [])[0] || []).map((c) => c.node))];
+  if (!destinos.includes(primero)) h.push('miniCRM: «Armar mensajes» no está conectado con «Prospecto para la planilla»');
+  // 1. Posición: debajo del envío y del cierre, encima de «Resumen del turno», que sigue siendo el nodo más bajo del lienzo.
+  for (const arriba of ['Enviar a WhatsApp', '¿Registrar cierre?', 'Registrar cierre']) {
+    if (!(y(primero) > y(arriba))) h.push(`miniCRM: «${primero}» tiene que ir debajo de «${arriba}» en el lienzo (con executionOrder v1 el cliente recibe su mensaje y se registra el cierre antes de tocar Google)`);
+  }
+  // (la rama del guardado de medios cuelga de «Reportar mensaje (entrante)», corre antes y va más abajo en el lienzo: no cuenta; la comparación es entre lo que cuelga de «Armar mensajes»)
+  const deArmar = alcanzables(flujo, 'Armar mensajes');
+  const maxY = Math.max(...nodos.filter((n) => deArmar.has(n.name)).map((n) => (n.position || [0, 0])[1]));
+  if (y('Resumen del turno') !== maxY) h.push('miniCRM: «Resumen del turno» tiene que seguir siendo el nodo más bajo de lo que cuelga de «Armar mensajes»');
+  for (const n of NODOS_DE_CRM) if (!(y(n) < y('Resumen del turno'))) h.push(`miniCRM: «${n}» tiene que ir encima de «Resumen del turno»`);
+  // 2. Cero mensajes: ningún nodo de la rama habla con Meta (ni cuelga de un envío).
+  for (const n of NODOS_DE_CRM) {
+    const nodo = porNombre.get(n);
+    if (esEnvioAMeta(nodo)) h.push(`miniCRM: «${n}» envía a Meta (el miniCRM agrega 0 mensajes por conversación)`);
+    if (/graph\.facebook\.com/.test(JSON.stringify(nodo.parameters || {}))) h.push(`miniCRM: «${n}» menciona graph.facebook.com`);
+  }
+  // 3. La rama solo cuelga de «Armar mensajes»: nadie más entra a ella ni sale de ella hacia el resto del flujo.
+  for (const [de, a] of Object.entries(flujo.connections)) {
+    const hijos = ((a && a.main) || []).flat().map((c) => c && c.node);
+    if (!NODOS_DE_CRM.includes(de) && de !== 'Armar mensajes' && hijos.some((x) => NODOS_DE_CRM.includes(x))) h.push(`miniCRM: «${de}» conecta con la rama de la planilla: solo «Armar mensajes» puede`);
+    if (NODOS_DE_CRM.includes(de) && hijos.some((x) => !NODOS_DE_CRM.includes(x))) h.push(`miniCRM: «${de}» conecta con un nodo fuera de la rama de la planilla`);
+  }
+  // 4. La credencial de Google es la de ESTE tenant y de nadie más; todos los nodos de Google con onError continuar y alwaysOutputData (un fallo de Google no corta nada).
+  const cred = (datos.credenciales || {}).crm;
+  for (const n of nodos.filter((x) => NODOS_DE_CRM.includes(x.name))) {
+    for (const c of Object.values(n.credentials || {})) if (c.name !== cred) h.push(`miniCRM: «${n.name}» usa la credencial «${c.name}» y no la de este negocio («${cred}»)`);
+    if (n.type === 'n8n-nodes-base.googleSheets' && n.parameters.operation === 'read' && (n.onError !== 'continueRegularOutput' || n.alwaysOutputData !== true)) h.push(`miniCRM: «${n.name}» tiene que ser onError continueRegularOutput y alwaysOutputData`);
+  }
+  // 5. El id real de la hoja nunca va en el repositorio: solo el marcador (o vacío).
+  const asign = (((porNombre.get('Config base') || {}).parameters || {}).assignments || {}).assignments || [];
+  const id = asign.find((a) => a && a.name === 'planillaProspectosId');
+  if (!id || !/^REEMPLAZAR_[A-Z0-9_]+$/.test(String(id.value))) h.push('miniCRM: «Config base».planillaProspectosId tiene que ser un marcador REEMPLAZAR_* (el id real de la hoja solo va en la tabla local o el .env)');
+  // 6. Los rangos, la retención y la lectura de encabezados (módulo `crm`).
+  h.push(...hallazgosCrm(flujo, datos.crm).map((x) => `miniCRM: ${x}`));
+  return h;
 }
 
 // LA ENTRADA DEL CARRITO: la única segunda entrada de producción, con una forma exacta.
@@ -433,7 +530,8 @@ function guardiasDeSesion(entrada, flujo) {
   for (const nombre of ['¿Hay estado?', 'Sin estado', '¿Comprometer turno?', 'Comprometer turno', '¿Replanificar compromiso?', 'Comprometer turno (2.º intento)', 'Soltar mensajes', 'Confirmar envío', 'Comprometer compensación', 'Consumir cupos', '¿Cupo concedido?']) {
     if (!porNombre.has(nombre)) h.push(`sesión: falta el nodo «${nombre}» (el estado de la conversación vive en el servidor)`);
   }
-  if (destinosDe('Armar mensajes').join('|') !== '¿Comprometer turno?') h.push('sesión: «Armar mensajes» tiene que colgar SOLO de «¿Comprometer turno?»: el estado se compromete antes de enviar');
+  // (la rama del miniCRM cuelga de «Armar mensajes» PERO debajo de todo: corre cuando el envío, el cierre y el compromiso ya terminaron; `guardiasDeCrm` la vigila)
+  if (destinosDe('Armar mensajes').filter((x) => x !== 'Prospecto para la planilla').join('|') !== '¿Comprometer turno?') h.push('sesión: «Armar mensajes» tiene que colgar SOLO de «¿Comprometer turno?»: el estado se compromete antes de enviar');
   if (!destinosDe('Soltar mensajes').includes('¿Enviar de verdad?')) h.push('sesión: «¿Enviar de verdad?» tiene que colgar de «Soltar mensajes» (el envío va después del compromiso)');
   for (const [desde, a] of Object.entries(conex)) {
     const hijos = ((a && a.main) || []).flat().map((x) => x && x.node);
@@ -588,6 +686,7 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   if (!traer || !/catalogoCompleto:\s*true/.test(String((traer.parameters || {}).jsonBody || ''))) hallazgos.push('«Traer configuración» no pide `catalogoCompleto: true` (sin eso no llega el enlace del catálogo web)');
   hallazgos.push(...guardiasDeEntrega(flujo));
   hallazgos.push(...guardiasDeSesion(entrada, flujo));
+  hallazgos.push(...guardiasDeCrm(flujo, datos));
   // El GUARDADO de medios (obligatorio en todo flujo con medios): la rama común completa, en su lugar y con las credenciales correctas.
   hallazgos.push(...hallazgosDelGuardado(flujo));
   // L1. Un WhatsApp Trigger (camino A) exige su credencial explícita, y nunca la de AAB1-WA-Prod (prohibición 7).
@@ -611,6 +710,11 @@ function anfitrionPermitido(nombreDelNodo, url) {
   if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
   // La descarga del GUARDADO: la URL del CDN de Meta solo si el tamaño que informó Meta cabe (la expresión exacta del módulo común).
   if (nombreDelNodo === 'Descargar medio (guardado)' && url === URL_DESCARGA_GUARDADO) return true;
+  // La consulta de SOLO la fila de encabezados del miniCRM (Google Sheets API, `values.get`): la URL exacta del módulo común, con un rango A<fila>:<letra><fila>.
+  if (nombreDelNodo === 'Leer encabezados de la planilla') {
+    const [antes, despues] = urlEncabezados('@@').split('@@');
+    if (url.startsWith(antes) && url.endsWith(despues) && /^[A-Z]+\d+:[A-Z]+\d+$/.test(url.slice(antes.length, url.length - despues.length))) return true;
+  }
   const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
   if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
   return ANFITRIONES.includes(m[1].toLowerCase());

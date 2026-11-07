@@ -239,7 +239,14 @@ const prueba = carga.prueba && carga.prueba.modoPrueba === true ? carga.prueba :
 // `visto` ('nuevo' o 'repetido') lo marca el servidor al leer; `Interpretar entrada` descarta el repetido.
 const sesion = Object.assign(ssSesionDeLaConfig(codigo, cuerpo), { visto: codigo === 200 && (cuerpo.visto === 'nuevo' || cuerpo.visto === 'repetido') ? cuerpo.visto : null });
 
+// LA PLANILLA DEL miniCRM (módulo `crm`, solo con el dato `crm` del negocio): el id de la hoja de Google de ESTE negocio (25 a 100 caracteres de id) y el nombre de la pestaña. Un marcador `REEMPLAZAR_*`, vacío o con otra forma vale ''
+// y el flujo ni calcula el prospecto ni consulta Google. Sin id válido no hay hoja; con id y sin pestaña, 'Leads_CRM'.
+const idPlanillaCrudo = String(base.planillaProspectosId || '').trim();
+const idPlanilla = !idPlanillaCrudo.startsWith('REEMPLAZAR_') && /^[A-Za-z0-9_-]{25,100}$/.test(idPlanillaCrudo) ? idPlanillaCrudo : '';
+const hojaPlanilla = String(base.planillaProspectosHoja || '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 100);
+
 return [{ json: Object.assign({}, cfg, {
+  planillaProspectosId: idPlanilla, planillaProspectosHoja: idPlanilla === '' ? '' : (hojaPlanilla || 'Leads_CRM'),
   sesion: sesion,
   phoneNumberId: String(carga.phoneNumberId || ''),
   modoPrueba: prueba !== null,

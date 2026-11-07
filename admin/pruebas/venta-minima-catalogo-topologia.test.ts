@@ -155,18 +155,20 @@ describe('`--verificar` impone la forma del webhook del carrito y el presupuesto
     const n = nodoDe(f, 'Traer configuración');
     n.parameters['jsonBody'] = String(n.parameters['jsonBody']).replace(', catalogoCompleto: true', '');
   }, /«Traer configuración» no pide `catalogoCompleto: true`/);
-  rompe('el JSON de producción pasa de 71 nodos (se agregó uno a los 71 de ahora)', (f) => {
-    f.nodes.push({ id: 'uno-mas', name: 'Uno más', type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
-  }, /tiene 72 nodos y el tope de producción es 71/);
-  rompe('el JSON de producción pasa de 71 nodos por MUCHO (se reintrodujeron los nodos del diseño descartado)', (f) => {
+  // Tope 71 → 81 (D2 de Andres, 06/11/2026: +2 de la imagen de las campañas y +8 del miniCRM de Q'Taco 3727): el JSON vivo tiene 71, así que se le agregan 11 para pasar del tope.
+  rompe('el JSON de producción pasa de 81 nodos (se agregaron 11 a los 71 de ahora)', (f) => {
+    for (let i = 0; i < 11; i++) f.nodes.push({ id: `uno-mas-${i}`, name: `Uno más ${i}`, type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
+  }, /tiene 82 nodos y el tope de producción es 81/);
+  rompe('el JSON de producción pasa de 81 nodos por MUCHO (se reintrodujeron los nodos del diseño descartado)', (f) => {
     for (const nombre of ['¿Pedir enlace?', 'Pedir enlace del catálogo', 'Validar carrito', 'Carga del carrito']) {
       f.nodes.push({ id: nombre.toLowerCase().replace(/\W+/g, '-'), name: nombre, type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
     }
-  }, /tiene 75 nodos y el tope de producción es 71/);
+    for (let i = 0; i < 10; i++) f.nodes.push({ id: `de-mas-${i}`, name: `De más ${i}`, type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
+  }, /tiene 85 nodos y el tope de producción es 81/);
 
   it('la guardia existe en `construir.mjs` (si alguien la borra, esta prueba lo dice aunque los JSON sigan limpios)', () => {
     const fuente = readFileSync(join(CARPETA_VM, 'construir.mjs'), 'utf8');
-    for (const pieza of ['const TOPE_DE_NODOS = 71', 'function guardiaDelCarrito', 'function guardiasDeEntrega', "const WEBHOOK_DEL_CARRITO = 'Carrito del catálogo'", `const MARCADOR_DEL_CARRITO = '${MARCADOR}'`, 'MARCADORES_FIJOS']) {
+    for (const pieza of ['const TOPE_DE_NODOS = 81', 'function guardiaDelCarrito', 'function guardiasDeEntrega', "const WEBHOOK_DEL_CARRITO = 'Carrito del catálogo'", `const MARCADOR_DEL_CARRITO = '${MARCADOR}'`, 'MARCADORES_FIJOS']) {
       expect(fuente, pieza).toContain(pieza);
     }
     // El marcador está declarado con su formato.

@@ -597,8 +597,21 @@ const AM_replan = AM_hechoExterno && AM_modo === 'comprometer' ? {
   // Las reservas del día (PR-4b): `reservaHoy` es el día de este turno y `reservaSuma` dice que ESTE turno anotó una (se suma a las del ganador); el 2.º intento las conserva.
   reservaHoy: _rsFechaLocal(AM_AHORA), reservaSuma: AM_reservaSuma, minHastaMedianoche: vmMinHastaMedianoche(AM_AHORA).min,
 } : null;
+// EL miniCRM (módulo `crm`, solo Q'Taco 3727): el prospecto del turno, calculado con HECHOS (el plan y el pedido guardado), nunca con lo que diga el modelo. Solo con planilla (id y hoja), sin modo prueba, en una
+// conversación y con el estado a salvo (si el compromiso no cabe o no hay sesión, sale el genérico y no se escribe). LA PLANILLA NUNCA TUMBA LA ATENCIÓN: si calcular el prospecto lanza, el turno responde igual y no se escribe.
+// Los 8 nodos de la planilla cuelgan de aquí, debajo del envío y del cierre. 0 mensajes: nada de esto envía.
+let AM_prospectoCrm = null;
+try {
+  if (vmCrmActiva(AM_CFG, AM_PRUEBA) && AM_CONVERSA && AM_claveValida && (AM_modo === 'comprometer' || AM_modo === 'sin_estado_que_guardar')) {
+    AM_prospectoCrm = vmProspectoCrm({
+      from: AM_FROM, plan: AM_PLAN, pedidoEstado: AM_estadoDespues && AM_estadoDespues.pedido, nombrePerfil: AM_T.nombrePerfil, ahoraMs: AM_AHORA,
+      avisoSalio: AM_AVISO_SALIO && AM_tiposSalidos.indexOf('transferencia') >= 0, anteriorMs: vmCrmMarcarVisto(AM_sd, AM_FROM, AM_AHORA),
+    });
+  }
+} catch (e) { AM_prospectoCrm = null; }
 return [{ json: {
   hechoExterno: AM_hechoExterno, replan: AM_replan, avisoMarcas: AM_avisoMarcas, avisoFalla: AM_avisoFalla, avisoFallaN: AM_avisoFallaN, avisoFallaFecha: avFechaLocal(AM_AHORA),
+  guardarPlanilla: AM_prospectoCrm !== null, prospectoPlanilla: AM_prospectoCrm,
   turno: true, modo: AM_modo, comprometer: AM_compromiso !== null, compromiso: AM_compromiso, numero: ssNumeroHeader(), cupos: AM_CUPOS.estado, asentar: AM_asentar,
   salida: AM_final, salidaFalla: AM_falla, previo: AM_ses.previo, bloque: AM_bloque, deRespaldo: AM_ses.deRespaldo, from: AM_FROM, ahoraMs: AM_AHORA,
 } }];

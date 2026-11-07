@@ -27,7 +27,8 @@ describe("Q'Taco 3727: workflow nuevo, separado del vivo", () => {
   });
   it('nombre distinto del vivo y mismos nodos', () => {
     expect(NUEVO.name).not.toBe(VIVO.name);
-    expect(NUEVO.nodes.length).toBe(VIVO.nodes.length);
+    // el 3727 lleva los 8 nodos del miniCRM (módulo `crm`, 06/11/2026; ver venta-minima-crm.test.ts); el resto es el mismo flujo
+    expect(NUEVO.nodes.length).toBe(VIVO.nodes.length + 8);
     expect(NUEVO.settings.executionTimeout).toBe(120);
   });
   it('rutas propias: la de entrada y la del carrito no se comparten con el vivo', () => {

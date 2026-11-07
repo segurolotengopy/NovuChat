@@ -1368,7 +1368,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "@@todo+sesion:nodos/armar-mensajes.js"
+        "jsCode": "@@todo+sesion+crm:nodos/armar-mensajes.js"
       },
       "notes": "Segunda etapa: todo lo que sale AL CLIENTE, con código. Elige el texto por lo que PASÓ con el aviso (hecho, no dicho). ARMA el estado por teléfono y sus pedidos (un bloque para el servidor) y pide el compromiso ANTES de enviar; no envía ni escribe el estado (las marcas de aviso por hora siguen en los datos estáticos: residuo de PR-4b)."
     },
