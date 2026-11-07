@@ -21,9 +21,10 @@
  *        cuenta, bolsa ni corte); pero, sin ancla, el PRÓXIMO entrante abre una atención nueva y la ingesta cuenta UNA conversación más en el período
  *        (facturable y en las métricas del comercio); y el contador de la ventana vuelve a 0, así que los bloques de 25 que ya se habían facturado en
  *        esa ventana no se vuelven a abrir. Para un teléfono de la lista cerrada es aceptable; no se usa con clientes reales;
- *      · la PAUSA POR PERSONA: `turno.responde === 'persona'` (Tomar) hace callar al asistente (`decidirPausa`, `pausa.ts`; vence sola a los 30 min sin
- *        actividad). Se devuelve al asistente como una devolución manual (`turno.responde`='asistente', `devueltoEn`, `motivoDevolucion`='manual'),
- *        sin la fila de auditoría de la callable. Un turno ilegible o ya devuelto no se toca.
+ *      · la PAUSA POR PERSONA VIGENTE (Tomar): mismo criterio que `leerTurno`/`turnoVigente`/`decidirPausa` (`turno.ts`, `pausa.ts`): `responde:'persona'`, `tomadoPor`
+ *        con forma de uid, fechas legibles y sin vencer (30 min de inactividad o 24 h desde el último entrante). Se devuelve al asistente como una devolución
+ *        manual (`turno.responde`='asistente', `devueltoEn`, `motivoDevolucion`='manual'), sin la fila de auditoría de la callable. Un turno ilegible
+ *        (sin `tomadoPor` válido, fechas rotas), vencido o ya devuelto NO pausa al asistente y no se toca.
  *   4. La ficha y la memoria del teléfono en el `staticData` del flujo de n8n (con `--workflow <id>` y N8N_BASE_URL/N8N_API_KEY en el ENTORNO):
  *      reutiliza `sinFicha`/`quedan` de `resetear-ficha-flujo.mjs` (no se duplica la lógica). Sin n8n configurado el paso se informa «omitido» y el
  *      resultado dice ⚠, no ✓. (`vaciar-memoria-flujo.mjs` es de otra familia —las fichas de Rubén— y no aplica a venta-minima.)
@@ -35,6 +36,12 @@
  *   · Cupo `avisos` del comercio (de todos los contactos), sesiones de otros espacios (el chat) y las efímeras `vmc-…`/`vmcp-…` (1 minuto).
  *   · «Posibles restos»: otra forma de clave del mismo teléfono (`wa_+{tel}`, sin código de país…) en Firestore, o entradas de n8n que contienen los
  *     8 últimos dígitos sin ser la ficha exacta. Se cuentan sin imprimir y no se borran. Un teléfono vecino (otro número) no se toca nunca.
+ *
+ * RIESGO REAL DEL PASO DE n8n (léalo antes de correrlo contra producción): el PUT de n8n REEMPLAZA TODO el `staticData` del flujo, y el GET previo y el
+ * PUT no son atómicos. La huella del flujo cambia con CADA mensaje de CUALQUIER cliente (las ejecuciones escriben su staticData), así que en producción
+ * el script abortará seguido («el flujo cambió»): hay que correrlo en BAJA ACTIVIDAD y, si aborta, repetirlo. Aun así, una ejecución que empiece entre
+ * la última lectura y el PUT puede perder su escritura. Por eso el script mide el tiempo entre esa lectura y el PUT y aborta si pasa de ~500 ms
+ * (`LIMITE_JUSTO_PUT_MS`), y trata cualquier fallo posterior al envío del PUT como AMBIGUO («PUEDE haberse aplicado: corra el seco»).
  *
  * LISTA CERRADA. El repositorio es público: los teléfonos de prueba NO están en el código. Se leen de `TELEFONOS_PRUEBA` (dígitos separados por
  * coma) y `--tel` tiene que estar en ella. El tenant es de una lista cerrada (`TENANTS_PERMITIDOS`); el proyecto, de la lista blanca
@@ -62,9 +69,9 @@
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { comprobarProyecto, comprobarRespaldo } from './aplicar-consola-oculta.mjs';
-import { guardarRespaldo } from './habilitar-productos.mjs';
-import { leerRespaldoGenerico } from './aplicar-consola-conversaciones.mjs';
+import { comprobarProyecto } from './aplicar-consola-oculta.mjs';
+// La validación ESTRICTA del respaldo (la de `resetear-ficha-flujo.mjs`): solo el scratchpad (/tmp, /var/tmp) o una carpeta ignorada por git; nunca ~/ ni carpetas personales.
+import { comprobarRespaldo, guardarRespaldo, leerRespaldoGenerico, rutaDelRespaldoSigueIgual } from './aplicar-consola-conversaciones.mjs';
 import { sinFicha, quedan, validarBaseUrl, canon, ESPERA_FINAL_MS } from './resetear-ficha-flujo.mjs';
 
 export const TENANTS_PERMITIDOS = Object.freeze(['qtaco']);
@@ -73,6 +80,8 @@ export const CLAVES_CUPO = Object.freeze(['transferencias', 'pedidos']);
 export const COLECCIONES = Object.freeze(['sesionesDeTurno', 'cuposDeTurno']);
 export const MAX_ESCANEO = 20000;
 export const MAX_DOCUMENTOS = 200;
+/** Tope entre la última lectura de n8n y el PUT: más que eso, la ventana de carrera es demasiado grande y se aborta. */
+export const LIMITE_JUSTO_PUT_MS = 500;
 export const hashTel = (tel) => createHash('sha256').update(`resetear-telefono-prueba|${tel}`).digest('hex');
 /** Prohibiciones 5 y 7 de CLAUDE.md: nunca un WhatsApp Trigger ni una llamada a `/subscriptions` / `subscribed_apps` en el flujo que se reescribe. */
 export function nodosProhibidos(nodes) {
@@ -150,10 +159,10 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   let respaldoReal = null;
   if (respaldo !== undefined) {
     const r = comprobarRespaldo(respaldo, { ...opciones, lectura: revertir, permitirExistente: false });
-    if (r.ok) respaldoReal = respaldo; else problemas.push(r.motivo);
+    if (r.ok) respaldoReal = r.real; else problemas.push(r.motivo);
   }
   if (problemas.length) return { ok: false, problemas };
-  return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, tel, workflow: workflow ?? null, aplicar, revertir, respaldo: respaldoReal } };
+  return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, tel, workflow: workflow ?? null, aplicar, revertir, respaldo: respaldo ?? null, respaldoResuelto: respaldoReal } };
 }
 
 /**
@@ -209,6 +218,27 @@ const msDe = (v) => {
   return null;
 };
 
+const UID_DE_PERSONA = /^[A-Za-z0-9_-]{1,128}$/;
+const INACTIVIDAD_MS = 30 * 60_000; // `turno.ts`: la persona se queda 30 min sin actividad
+const MARGEN_RELOJ_MS = 5 * 60_000;
+/**
+ * ¿La pausa por persona está VIGENTE? Mismo criterio que `leerTurno` + `turnoVigente` (turno.ts): `responde: 'persona'`, `tomadoPor` con forma de uid,
+ * `tomadoEn` y `actividadPersonaEn` legibles (y no del futuro lejano), y sin vencer ni por inactividad (30 min) ni por la ventana de 24 h del último
+ * entrante (sin dato = cerrada). Un turno ilegible o vencido NO pausa al asistente y no se reescribe.
+ */
+export function pausaVigente(turno, ultimoEntranteEn, ahoraMs) {
+  if (!esObjeto(turno) || turno.responde !== 'persona') return false;
+  if (typeof turno.tomadoPor !== 'string' || !UID_DE_PERSONA.test(turno.tomadoPor)) return false;
+  const tomado = msDe(turno.tomadoEn); const actividad = msDe(turno.actividadPersonaEn);
+  if (tomado === null || actividad === null) return false;
+  if (turno.devueltoEn !== undefined && msDe(turno.devueltoEn) === null) return false;
+  if (turno.motivoDevolucion !== undefined && !['manual', 'inactividad', 'ventana'].includes(turno.motivoDevolucion)) return false;
+  if (actividad > ahoraMs + MARGEN_RELOJ_MS || tomado > ahoraMs + MARGEN_RELOJ_MS) return false;
+  const ultimo = msDe(ultimoEntranteEn);
+  if (ultimo === null || ultimo > ahoraMs + MARGEN_RELOJ_MS) return false;
+  return ahoraMs < ultimo + MS_VENTANA_ATENCION && ahoraMs < actividad + INACTIVIDAD_MS;
+}
+
 /**
  * Lee SOLO unos campos de la conversación del teléfono (ruta derivada del teléfono y del tenant; nunca de un dato leído):
  *   · `solicitud` (cobro pendiente);
@@ -221,7 +251,7 @@ const msDe = (v) => {
  */
 export async function leerSolicitud(db, tenant, tel, ahoraMs = Date.now()) {
   const ref = db.doc(`${rutaColeccion(tenant, 'conversaciones')}/wa_${tel}`);
-  const [snap] = await db.getAll(ref, { fieldMask: ['solicitud', 'turno', 'bloqueada', 'atencionDesde', 'mensajesVentana', 'atencionEstado'] });
+  const [snap] = await db.getAll(ref, { fieldMask: ['solicitud', 'turno', 'bloqueada', 'atencionDesde', 'mensajesVentana', 'atencionEstado', 'ultimoEntranteEn'] });
   const g = (c) => (snap.exists ? snap.get(c) : undefined);
   const valor = g('solicitud');
   const hay = esObjeto(valor);
@@ -237,11 +267,13 @@ export async function leerSolicitud(db, tenant, tel, ahoraMs = Date.now()) {
     ...(crudoE !== undefined ? { atencionEstado: crudoE } : {}),
   } };
   const turno = g('turno');
-  const turnoPersona = esObjeto(turno) && turno.responde === 'persona';
-  const bloqueada = g('bloqueada') != null && g('bloqueada') !== false;
+  const turnoPersona = pausaVigente(turno, g('ultimoEntranteEn'), ahoraMs);
+  // Solo `true` exacto bloquea (como `estaBloqueada`, pausa.ts); cualquier otro valor raro se informa aparte y NO cuenta como bloqueo.
+  const bloqueada = g('bloqueada') === true;
+  const bloqueadaRara = g('bloqueada') !== undefined && g('bloqueada') !== null && g('bloqueada') !== false && g('bloqueada') !== true;
   const sucia = hay || at.sucia || turnoPersona;
   return {
-    ref, hay, valor: hay ? valor : null, at, turnoPersona, turno: turnoPersona ? turno : null, turnoCrudo: turno, bloqueada, sucia,
+    ref, hay, valor: hay ? valor : null, at, turnoPersona, turno: turnoPersona ? turno : null, turnoCrudo: turno, bloqueada, bloqueadaRara, sucia,
     anclaMs: ancla,
     sello: sello(snap.updateTime), updateTime: snap.updateTime, existe: snap.exists,
   };
@@ -340,6 +372,7 @@ function mostrar(log, t, rotulo) {
   log(`  de otros espacios o claves del mismo teléfono (no se tocan): ${t.e.otro}`);
   log(`  posibles restos (otra forma de clave, no se borran): ${restosDe(t)}`);
   log(`  marca de la conversación que NO se toca nunca: contacto bloqueado en la Consola=${t.s.bloqueada ? 'SÍ (el asistente calla del todo)' : 'no'}`);
+  if (t.s.bloqueadaRara) log('  nota: la conversación trae un valor inesperado en `bloqueada` (no es `true`): no se interpreta como bloqueo y no se toca');
   log('  vistosDeTurno: no se puede atar a un teléfono (id con hash); vencen a las 24 h y no impiden probar de nuevo');
 }
 
@@ -363,10 +396,11 @@ export async function ejecutar(cfg, deps) {
   const n8n = deps.n8n ?? null;
   const log = deps.log ?? ((t) => console.log(t));
   const marcar = deps.marcarEscritura ?? (() => {});
-  return cfg.revertir ? revertir(cfg, db, FieldValue, n8n, log, marcar) : limpiar(cfg, db, FieldValue, n8n, log, marcar);
+  const ahoraFn = deps.ahora ?? Date.now;
+  return cfg.revertir ? revertir(cfg, db, FieldValue, n8n, log, marcar) : limpiar(cfg, db, FieldValue, n8n, log, marcar, ahoraFn);
 }
 
-async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
+async function limpiar(cfg, db, FieldValue, n8n, log, marcar, ahora = Date.now) {
   const t1 = await leerTodo(cfg, db, n8n);
   mostrar(log, t1, `${cfg.aplicar ? 'APLICAR' : 'SECO (solo lecturas)'} · ${cfg.entorno} · tenant ${cfg.tenant}`);
   if (t1.n?.prohibido) { log('\n  ✗ El flujo de n8n tiene un WhatsApp Trigger o una llamada a /subscriptions o subscribed_apps (prohibiciones 5 y 7): este script no lo reescribe. No se escribió nada.\n'); return 3; }
@@ -387,6 +421,7 @@ async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
     docs.push({ coleccion: b.coleccion, id: b.id, data: codificar(s.data()) });
   }
   const tocaN8n = t2.n !== null && t2.n.r.total > 0;
+  if (!rutaDelRespaldoSigueIgual(cfg)) { log('\n  ✗ La ruta del respaldo ya no es la que se validó (cambió un enlace o una carpeta): no se escribió nada.\n'); return 2; }
   try {
     guardarRespaldo(cfg.respaldo, {
       version: 1, campo: CAMPO, entorno: cfg.entorno, tenant: cfg.tenant, telHash: hashTel(cfg.tel), creadoEn: new Date().toISOString(), docs,
@@ -414,19 +449,31 @@ async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
   // 1) n8n primero (lo más lento y lo único sin precondición atómica): si cambió o falla, Firestore queda intacto.
   if (tocaN8n) {
     marcar('escribiendo');
+    let enviado = false;
     try {
       const justo = await n8n.leer();
-      if (huellaN8n(justo) !== t2.n.huella) { marcar('antes'); log('\n  ✗ El flujo de n8n cambió justo antes de escribir: no se escribió nada. Vuelva a correrlo con poco tráfico.\n'); return 3; }
+      const tJusto = ahora();
+      if (huellaN8n(justo) !== t2.n.huella) { marcar('antes'); log('\n  ✗ El flujo de n8n cambió justo antes de escribir (la huella cambia con cada mensaje de cualquier cliente): no se escribió nada. Vuelva a correrlo en baja actividad.\n'); return 3; }
+      if (ahora() - tJusto > LIMITE_JUSTO_PUT_MS) { marcar('antes'); log(`\n  ✗ Pasaron más de ${LIMITE_JUSTO_PUT_MS} ms entre la última lectura de n8n y el PUT: la ventana de carrera es demasiado grande. No se escribió nada.\n`); return 3; }
+      enviado = true; // desde acá el PUT cuenta como hecho: cualquier fallo posterior es AMBIGUO
       const http = await n8n.escribir(t2.n.vivo, t2.n.r.nuevo);
       const despues = await n8n.leer();
+      // El PUT manda `settings ?? {}` (ver `principal`): la verificación compara con el MISMO valor.
       const iguales = JSON.stringify(despues.nodes) === JSON.stringify(t2.n.vivo.nodes) && JSON.stringify(despues.connections) === JSON.stringify(t2.n.vivo.connections)
-        && JSON.stringify(despues.settings) === JSON.stringify(t2.n.vivo.settings);
+        && JSON.stringify(despues.settings ?? {}) === JSON.stringify(t2.n.vivo.settings ?? {});
       hechas += 1; marcar('escrito');
       log(`  n8n: PUT HTTP ${http} · nodos, conexiones y ajustes iguales=${iguales} · activo=${despues.active}`);
       if (despues.active !== t2.n.vivo.active || !iguales || canon(despues.staticData ?? {}) !== canon(t2.n.r.nuevo)) {
         log('\n  ✗ La verificación de n8n no coincide (o el flujo cambió de estado de activación): revíselo; el respaldo permite reponer. Firestore NO se tocó.\n'); return 3;
       }
-    } catch (err) { return falla(err, 'el flujo de n8n'); }
+    } catch (err) {
+      if (enviado) {
+        marcar('escribiendo');
+        log(`\n  ✗ Falló algo DESPUÉS de enviar el PUT a n8n (${err?.code ?? err?.name ?? 'desconocido'}): el PUT PUEDE haberse aplicado. Corra el seco para ver el estado real del flujo; el respaldo permite reponer. Firestore NO se tocó.\n`);
+        return 3;
+      }
+      return falla(err, 'el flujo de n8n');
+    }
   }
   // 2) la conversación, UNA sola escritura con la precondición de la hora leída (si llegó un mensaje, no se escribe nada). Solo estos campos:
   //    `solicitud` (cobro pendiente); la atención (`atencionEstado`=normal, `mensajesVentana`=0 y, si la ventana está vigente, sin `atencionDesde`);
@@ -455,7 +502,8 @@ async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
   }
   // Relectura de TODO. n8n se vuelve a leer tras la espera: una ejecución que empezó antes del PUT puede reponer la ficha al terminar.
   let t3 = await leerTodo(cfg, db, n8n);
-  const intactos = t3.e.otro === t2.e.otro && t3.e.resto === t2.e.resto && t3.s.existe === t2.s.existe;
+  // Solo los restos y la existencia de la conversación: las sesiones de otros espacios y las efímeras `vmc-…`/`vmcp-…` se mueven solas con el tráfico.
+  const intactos = t3.e.resto === t2.e.resto && t3.s.existe === t2.s.existe;
   log(`  Hecho: ${hechas} de ${total} · el resto de la conversación y de los documentos igual=${intactos}`);
   if (n8n?.esperar && tocaN8n) { await n8n.esperar(ESPERA_FINAL_MS); t3 = await leerTodo(cfg, db, n8n); }
   if (!intactos) { log('\n  ✗ La verificación no coincide (¿una conversación de ese teléfono escribió justo en medio?): revise; el respaldo permite reponer.'); veredicto(log, t3, ''); return 3; }
@@ -463,6 +511,7 @@ async function limpiar(cfg, db, FieldValue, n8n, log, marcar) {
 }
 
 async function revertir(cfg, db, FieldValue, n8n, log, marcar) {
+  if (!rutaDelRespaldoSigueIgual(cfg)) { log('\n  ✗ La ruta del respaldo ya no es la que se validó: no se escribió nada.\n'); return 2; }
   const l = leerRespaldo(cfg.respaldo, { entorno: cfg.entorno, tenant: cfg.tenant, tel: cfg.tel });
   if (!l.ok) { log(`\n  ✗ ${l.motivo}\n`); return 2; }
   if (l.n8n && cfg.workflow !== l.n8n.workflow) { log('\n  ✗ El respaldo trae el staticData de un flujo de n8n: indique el mismo --workflow con el que se hizo.\n'); return 2; }
@@ -481,7 +530,11 @@ async function revertir(cfg, db, FieldValue, n8n, log, marcar) {
     const anclaPrevia = msDe(previo.atencionDesde);
     const intacta = sol.anclaMs === null || sol.anclaMs === anclaPrevia;
     const sinUso = sol.at.respuestas === 0 && (typeof sol.at.previo.mensajesVentana !== 'number' || sol.at.previo.mensajesVentana === 0) && sol.at.estado === 'normal';
-    if (intacta && sinUso) Object.assign(campos, previo); else notas.push('la atención cambió desde el reseteo (no se pisa)');
+    if (intacta && sinUso) {
+      Object.assign(campos, previo);
+      // Los campos que NO existían antes del reseteo (y el script dejó escritos) se quitan, no se dejan con el valor del reseteo.
+      for (const k of ['atencionDesde', 'mensajesVentana', 'atencionEstado']) if (!(k in previo)) campos[k] = FieldValue.delete();
+    } else notas.push('la atención cambió desde el reseteo (no se pisa)');
   }
   if (sol !== null && l.turno !== null && sol.existe) {
     const actual = sol.turnoCrudo;
@@ -541,7 +594,8 @@ async function revertir(cfg, db, FieldValue, n8n, log, marcar) {
   const faltantes = despues.filter((s) => !s.exists).length;
   const despuesConv = convRepone ? await leerSolicitud(db, cfg.tenant, cfg.tel) : null;
   const solOk = !convRepone || ((!('solicitud' in campos) || despuesConv.hay) && (!('turno.responde' in campos) || despuesConv.turnoPersona)
-    && (!('atencionEstado' in campos) || despuesConv.at.previo.atencionEstado === campos.atencionEstado));
+    && (typeof campos.atencionEstado !== 'string' || despuesConv.at.previo.atencionEstado === campos.atencionEstado)
+    && (!('atencionEstado' in campos) || typeof campos.atencionEstado === 'string' || !('atencionEstado' in despuesConv.at.previo)));
   const n8nOk = !n8nRepone || canon((await n8n.leer()).staticData ?? {}) === canon(decodificar(l.n8n.staticData));
   log(`  Repuestos: ${hechas} · faltan tras releer: ${faltantes + (solOk ? 0 : 1) + (n8nOk ? 0 : 1)}`);
   if (faltantes !== 0 || !solOk || !n8nOk) { log('\n  ✗ La verificación no coincide: repita la reversa.\n'); return 3; }
