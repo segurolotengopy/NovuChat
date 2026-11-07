@@ -28,7 +28,7 @@ function cdFrasesDeMotivos(cuerpo) {
   for (let i = 0; i < ordenados.length; i++) {
     const m = ordenados[i];
     let f = '';
-    if (/^monto_(menor|mayor|distinto)$/.test(m)) f = leido !== null && pedido !== null ? 'El comprobante dice ' + leido + ' y el pedido es de ' + pedido : '';
+    if (/^monto_(menor|mayor|distinto)$/.test(m)) f = leido !== null && pedido !== null ? 'El comprobante dice ' + leido + ' y el pedido es de ' + pedido : 'El monto del comprobante no coincide';
     else if (Object.prototype.hasOwnProperty.call(CB_FRASE_DEL_MOTIVO, m)) f = CB_FRASE_DEL_MOTIVO[m];
     if (f !== '' && frases.indexOf(f) < 0) frases.push(f);
   }
@@ -41,7 +41,8 @@ function cdDiferenciasDe(cuerpo, moneda) {
   const frases = [];
   const crudas = cdFrasesDeMotivos(cuerpo);
   for (let i = 0; i < crudas.length; i++) {
-    const f = cbDiferencia([crudas[i]], moneda);
+    // Sin los dos montos (el servidor no los trajo) el monto se dice sin cifras: frase fija, nada leído.
+    const f = crudas[i] === 'El monto del comprobante no coincide' ? 'el monto del comprobante no coincide con tu pedido' : cbDiferencia([crudas[i]], moneda);
     if (f !== '' && frases.indexOf(f) < 0) frases.push(f);
   }
   return frases.length > 1 ? frases : [];

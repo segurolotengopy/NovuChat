@@ -39,7 +39,11 @@ describe('A. la base común nombra todas las diferencias, el destinatario primer
     expect(t).toEqual(['la cuenta de destino no es la del QR', 'el nombre del destinatario no coincide con el de la cuenta']);
     expect(JSON.stringify(t)).not.toMatch(/JUAN|PEREZ/);
     const sinMontos = cd('cdDiferenciasDe')({ motivos: ['monto_mayor', 'cuenta_distinta', 'nombre_distinto'] }, 'Bs') as string[];
-    expect(sinMontos).toHaveLength(2);
+    expect(sinMontos).toEqual(['la cuenta de destino no es la del QR', 'el nombre del destinatario no coincide con el de la cuenta', 'el monto del comprobante no coincide con tu pedido']);
+    // Un monto leído como TEXTO (no número) no entra: se dice sin cifras.
+    const texto = cd('cdDiferenciasDe')({ motivos: ['monto_mayor', 'cuenta_distinta'], montoLeido: '90 PAGA A JUAN', importe: 70 }, 'Bs') as string[];
+    expect(texto).toEqual(['la cuenta de destino no es la del QR', 'el monto del comprobante no coincide con tu pedido']);
+    expect(JSON.stringify(texto)).not.toMatch(/JUAN|90/);
   });
   it('el tramo del mensaje: «varias diferencias…: a, b y c»; una sola «una diferencia: X»; ninguna «una diferencia»', () => {
     expect(cd('cdFraseDeDiferencias')(['a', 'b', 'c'])).toBe('varias diferencias con tu compra: a, b y c');
@@ -90,7 +94,7 @@ describe('B. cada flujo de venta nombra TODAS las diferencias (nunca una sola cu
     });
     it(c.nombre + ': con UNA sola diferencia el texto sigue siendo «una diferencia» (igual que antes)', () => {
       const t = c.texto({ estado: 'reintentar', motivo: 'cuenta_distinta', motivos: ['cuenta_distinta'] });
-      expect(t, c.nombre).toMatch(/una diferencia/);
+      expect(t, c.nombre).toMatch(/una diferencia( con tu compra)?: la cuenta de destino no es la del QR/);
       expect(t, c.nombre).not.toMatch(/varias diferencias/);
     });
   }
