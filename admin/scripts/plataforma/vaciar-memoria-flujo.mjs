@@ -17,7 +17,7 @@
  * `--aplicar`: exige `--confirmo-produccion <id del flujo>` (igual a `--workflow`) y `--respaldo` (ruta absoluta, 0600, fuera de todo repositorio, nunca se pisa: guarda el
  * staticData COMPLETO, por si hay que reponerlo). Relee justo antes de escribir y, si el flujo cambió, no escribe. Solo cambia `staticData`:
  * nodos, conexiones y ajustes se reescriben TAL CUAL. Relee al final y verifica que no se perdió nada más. El PUT sobre un flujo activo puede
- * reiniciar sus webhooks: aplicarlo con poco tráfico. Lista cerrada de claves: `rroca`.
+ * reiniciar sus webhooks: aplicarlo con poco tráfico. Lista cerrada de claves: `rroca` (el flujo del libro anterior de Rubén) y `ruben` (el flujo nuevo «Noches Sin Insomnio»: `staticData.global.ruben`, mapa teléfono → ficha, con `riesgo` y `riesgoMs` de la protección de crisis de 48 h).
  *
  * SALIDA. 0 hecho o nada que borrar; 1 el seco encontró fichas; 2 uso o salvaguarda; 3 error de ejecución.
  */
@@ -25,7 +25,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { comprobarRespaldo, guardarRespaldo } from './aplicar-consola-conversaciones.mjs';
 
-export const CLAVES = Object.freeze(['rroca']);
+export const CLAVES = Object.freeze(['rroca', 'ruben']);
 export const ESPERA_FINAL_MS = 150_000;
 /** Claves hermanas que solo se borran con --con-topes (por clave). */
 const TOPES = Object.freeze({ rroca: ['rrTopes', 'rrExtranjeros'] });
