@@ -104,6 +104,7 @@ function rsValidar(r, c, perfil, ahora){ const x = rsValidarExtraccion(r); const
 function rsPreguntaFaltantes(f, o){ if (f.indexOf('personas') >= 0 && f.indexOf('fecha') >= 0 && f.indexOf('hora') >= 0) return 'Para tu solicitud de reserva dime, en un solo mensaje: cuántas personas, qué día y a qué hora, si prefieres ' + (o.zonas || []).join(' o ') + ' y a nombre de quién.'; return f.length ? 'Para tu solicitud de reserva me falta saber ' + f.join(', ') + '.' : ''; }
 function rsResumen(r){ return 'Tu reserva:\n• ' + r.fecha + ' ' + r.hora + '\n• ' + r.personas + ' personas' + (r.zona ? ', ' + r.zona : '') + '\n• A nombre de ' + r.nombre; }
 function rsFraseDeConfirmacion(r){ return 'el ' + r.fecha + ' a las ' + r.hora + ', ' + r.personas + ' personas' + (r.zona ? ', ' + r.zona : ''); }
+function rsEsDeManana(r, desde){ const m = function(h){ const x = /^(\d{1,2}):(\d{2})$/.exec(String(h === undefined || h === null ? '' : h).trim()); return x && Number(x[1]) <= 23 && Number(x[2]) <= 59 ? Number(x[1]) * 60 + Number(x[2]) : -1; }; const d = m(desde); const h = m(r && r.hora); if (d < 0 || h < 0) return ''; const dd = String(desde).trim().split(':'); return h < d ? ('0' + Number(dd[0])).slice(-2) + ':' + dd[1] : ''; }
 function rsLineaCompacta(r, rol){ return (rol === 'completo' ? r.nombre : r.nombre.split(' ')[0]) + ' · ' + r.fecha + ' ' + r.hora + ' · ' + r.personas + ' personas'; }
 function rsReclamo(t){ return false; }
 function rsHoraSuelta(t, r, c, a){ return ''; }
@@ -1285,6 +1286,83 @@ describe('Plan del turno: la reserva', () => {
     expect(s.p!['aviso']).toBeNull();
     expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^No pude hacer llegar tu reserva/);
     expect(s.p!['mensajes'][0]['tipo']).toBe('enlace');
+  });
+});
+
+describe('Plan del turno: reserva de mañana (decisión de Andres 06/11/2026: pedidos 10:00–22:00, reservas desde las 12:00)', () => {
+  const HORARIO_PEDIDOS = 'lun=10:00-22:00,mar=10:00-22:00,mie=10:00-22:00,jue=10:00-22:00,vie=10:00-22:00,sab=10:00-22:00,dom=10:00-22:00';
+  const ATENCION = 'todos los días de 12:00 a 22:00 (de 10 a 12 AM solo delivery o recojo en local)';
+  const TEXTO = 'Como pediste una hora de la mañana, Samuel se contactará contigo para confirmar o cambiar la hora.';
+  const NOTA = 'Reserva de mañana (antes de las 12:00): contactar para confirmar o cambiar la hora';
+  const dato = (o: J = {}): J => ({ horario: HORARIO_PEDIDOS, horarioAtencion: ATENCION, reservaDesde: '12:00', reservaMananaTexto: TEXTO, ...o });
+  const enviarA = (hora: string, cfg: J = dato()): Salida => {
+    const m = crearMundo(cfg);
+    turno(m, { boton: 'm|reserva' });
+    const r = turno(m, { texto: 'mesa', extraccion: extReserva({ personas: 4, fecha: '2026-10-09', hora, zona: 'salón', nombre: 'Ana Pérez' }) });
+    if (r.p!['aviso']) return r;
+    return turno(m, { boton: 'r|enviar' });
+  };
+
+  it('11:00 (y las 10:00) se ACEPTAN: la confirmación agrega la frase aprobada y el aviso lleva la marca; el mismo único mensaje (0 extra)', () => {
+    for (const hora of ['10:00', '11:00', '11:59']) {
+      const s = registrar(enviarA(hora));
+      expect(s.p!['aviso']['tipo'], hora).toBe('reserva');
+      expect(s.p!['aviso']['datos']['reserva']['reservaManana'], hora).toBe('12:00');
+      const siSalio = s.p!['condicionados']['siSalio'];
+      expect(siSalio.length, hora).toBe(1);
+      expect(siSalio[0]['cuerpo'], hora).toMatch(/^¡Listo, Ana! Anotamos tu reserva para .*\. Te esperamos en Av\. Ejemplo 123\. Como pediste una hora de la mañana, Samuel se contactará contigo para confirmar o cambiar la hora\.$/);
+      expect(s.p!['condicionados']['siNoSalio'][0]['cuerpo'], hora).not.toContain('Samuel');
+      expect(s.p!['anotarReserva']).toBe(true);
+    }
+  });
+
+  it('12:00, 19:00 y 21:30: sin frase y sin marca (como hoy)', () => {
+    for (const hora of ['12:00', '19:00', '21:30']) {
+      const s = registrar(enviarA(hora));
+      expect(s.p!['aviso']['datos']['reserva']['reservaManana'], hora).toBeUndefined();
+      expect(s.p!['condicionados']['siSalio'][0]['cuerpo'], hora).not.toContain('Samuel');
+      expect(s.p!['condicionados']['siSalio'][0]['cuerpo'], hora).toMatch(/^¡Listo, Ana! Anotamos tu reserva para .*Te esperamos en Av\. Ejemplo 123\.$/);
+    }
+  });
+
+  it('`reservaDesde` vacío o inválido = comportamiento de hoy (se acepta la hora, sin frase ni marca)', () => {
+    for (const reservaDesde of ['', 'mediodía', undefined]) {
+      const s = registrar(enviarA('11:00', dato({ reservaDesde })));
+      expect(s.p!['aviso']['datos']['reserva']['reservaManana']).toBeUndefined();
+      expect(JSON.stringify(s.p!['condicionados'])).not.toContain('Samuel');
+    }
+    // Sin el texto del negocio, la marca del aviso sigue (respalda al local) y la confirmación no inventa nada.
+    const sinTexto = registrar(enviarA('11:00', dato({ reservaMananaTexto: '' })));
+    expect(sinTexto.p!['aviso']['datos']['reserva']['reservaManana']).toBe('12:00');
+    expect(JSON.stringify(sinTexto.p!['condicionados'])).not.toContain('Samuel');
+  });
+
+  it('el texto de la frase y de la marca no tropieza con las redes de «prometer lo que no se cumple»', () => {
+    const s = registrar(enviarA('11:00'));
+    expect(s.p!['condicionados']['siSalio'][0]['cuerpo']).toContain(TEXTO);
+    expect(NOTA).toBe('Reserva de mañana (antes de las ' + s.p!['aviso']['datos']['reserva']['reservaManana'] + '): contactar para confirmar o cambiar la hora');
+  });
+
+  it('pedidos y recojo con horario 10:00–22:00 (La Paz = UTC-4): 09:59 fuera, 10:00 atiende, 21:59 atiende, 22:00 y 22:01 fuera', () => {
+    const accion = (h: number, mi: number): unknown => turno(crearMundo(dato(), Date.UTC(2026, 9, 5, h + 4, mi)), { texto: 'quiero 3 tacos de birria' }).d['accion'];
+    expect(accion(9, 59)).toBe('fuera_de_horario');
+    expect(accion(10, 0)).not.toBe('fuera_de_horario');
+    expect(accion(21, 59)).not.toBe('fuera_de_horario');
+    expect(accion(22, 0)).toBe('fuera_de_horario');
+    expect(accion(22, 1)).toBe('fuera_de_horario');
+    // El botón «Hacer un pedido» obedece al mismo horario.
+    expect(turno(crearMundo(dato(), Date.UTC(2026, 9, 5, 13, 59)), { boton: 'm|pedido' }).d['accion']).toBe('fuera_de_horario');
+    expect(turno(crearMundo(dato(), Date.UTC(2026, 9, 5, 14, 0)), { boton: 'm|pedido' }).d['accion']).not.toBe('fuera_de_horario');
+  });
+
+  it('quien pide el horario recibe el texto de horarioAtencion tal cual, con el paréntesis; fuera del horario de pedidos usa el mismo texto', () => {
+    const consulta = registrar(turno(crearMundo(dato()), { texto: 'a qué hora abren' })).cuerpos[0]!;
+    expect(consulta).toBe('Atendemos ' + ATENCION + '.');
+    const fuera = registrar(turno(crearMundo(dato(), Date.UTC(2026, 9, 6, 3)), { texto: 'quiero 3 tacos de birria' }));
+    expect(String(fuera.p!['mensajes'][0]['cuerpo'])).toContain('Atendemos ' + ATENCION + '.');
+    // 10:00 La Paz (14:00 UTC) ya es horario de pedidos; las 09:00 La Paz no.
+    expect(turno(crearMundo(dato(), Date.UTC(2026, 9, 5, 14)), { texto: 'quiero 3 tacos de birria' }).d['accion']).not.toBe('fuera_de_horario');
+    expect(turno(crearMundo(dato(), Date.UTC(2026, 9, 5, 13, 59)), { texto: 'quiero 3 tacos de birria' }).d['accion']).toBe('fuera_de_horario');
   });
 });
 

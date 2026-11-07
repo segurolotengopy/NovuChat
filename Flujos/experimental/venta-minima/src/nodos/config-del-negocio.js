@@ -119,6 +119,10 @@ const deBaseDeReglas = {
   maxPersonasReserva: vmEntero(base.maxPersonasReserva, 1, 500, 12),
   anticipacionReservaMin: vmEntero(base.anticipacionReservaMin, 0, 10080, 60),
   maxDiasReserva: vmEntero(base.maxDiasReserva, 1, 365, 30),
+  // Reserva de mañana (06/11): una hora anterior a `reservaDesde` («HH:MM»; vacío = no aplica) se acepta, y la confirmación agrega `reservaMananaTexto`
+  // (dato del negocio) mientras el aviso al local lleva la nota. Solo de «Config base».
+  reservaDesde: /^([01]?\d|2[0-3]):[0-5]\d$/.test(vmLinea(base.reservaDesde, 5)) ? vmLinea(base.reservaDesde, 5) : '',
+  reservaMananaTexto: vmLinea(marcador(base.reservaMananaTexto), 300),
   topeReservasDia: vmEntero(base.topeReservasDia, 0, 1000, 3),
   topeAvisosDia: vmEntero(base.topeAvisosDia, 0, 100000, 150),
   topeTransferenciasHora: vmEntero(base.topeTransferenciasHora, 0, 1000, 1),

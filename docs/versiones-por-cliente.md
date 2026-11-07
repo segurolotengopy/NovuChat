@@ -327,3 +327,12 @@ La rama del miniCRM (`ramaCrm`, módulo `crm`) agrega **8 nodos** a cada flujo q
 ## Q'Taco: ráfaga y «escribir al local» escrito (06/11/2026)
 
 Cambio en `Decidir turno`, `Armar mensajes` y `Soltar mensajes` de «Venta mínima v0» (los cuatro JSON regenerados; 71 nodos, sin nodos nuevos). Aplica a todos los flujos de venta mínima por igual (Q'Taco, Q'Taco 3727, prueba, ensayo del Demo A). Sin excepciones nuevas: el vivo queda atrasado hasta que se publique, y no se publica en este PR. Detalle: `Flujos/experimental/venta-minima/DISENO.md`.
+
+
+## Estado al 06/11/2026 (Q'Taco: reserva de mañana, C-05 resuelto)
+
+**Decisión de Andres (06/11/2026):** el horario de PEDIDOS (delivery o recojo) pasa a 10:00–22:00 todos los días y el restaurante atiende de 12:00 a 22:00; «en caso que alguien reserve en la mañana, Samuel se contactará para cambiar la reserva».
+
+- **Qué cambia:** dos claves nuevas de «Config base» (`reservaDesde`, `reservaMananaTexto`; solo `qtaco.json`, que hereda `qtaco-3727` y el ensayo). Una reserva con hora anterior a `reservaDesde` se ACEPTA (el horario válido sigue siendo `horario`, el de pedidos: no hay horario propio de reservas); la confirmación agrega el texto del negocio y el aviso al local lleva la nota «Reserva de mañana (antes de las 12:00): contactar para confirmar o cambiar la hora» dentro del mismo aviso (variable de notas existente; ninguna variable de plantilla cambia). Horas fuera de 10:00–21:30 se rechazan como hoy. `reservaDesde` vacío = comportamiento anterior.
+- **Mensajes por conversación: 0 agregados o quitados.** Sin nodos nuevos. Código común a todas las salidas de `venta-minima` (regeneradas); solo Q'Taco trae `reservaDesde`, así que el resto no cambia de comportamiento.
+- **No se publica con este PR.**

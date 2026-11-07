@@ -47,6 +47,8 @@
     "maxPersonasReserva": 12,
     "anticipacionReservaMin": 60,
     "maxDiasReserva": 30,
+    "reservaDesde": "12:00",
+    "reservaMananaTexto": "Como pediste una hora de la mañana, Samuel se contactará contigo para confirmar o cambiar la hora.",
     "topeReservasDia": 3,
     "topeAvisosDia": 150,
     "topeTransferenciasHora": 1,
