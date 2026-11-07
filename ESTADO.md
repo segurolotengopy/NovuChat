@@ -8,7 +8,7 @@
 > bitácora del mes. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos. (`Analisis/41` §5.5 y §9.4.)
 
-**Última actualización:** 2026-11-06, armada desde git, `docs/versiones-por-cliente.md`
+**Última actualización:** 2026-11-07, armada desde git, `docs/versiones-por-cliente.md`
 y la bitácora; `./scripts/estado-generado.sh` **no se corrió** (necesita nube, n8n
 y Firestore). Lo que no se pudo verificar dice «sin verificar». El detalle del día
 está en `bitacora/2026-11.md`.
@@ -47,8 +47,10 @@ está en `bitacora/2026-11.md`.
 1. Restaurar el Demo A (Auxiliar 1) y publicar Q'Taco PR-4a/4b con ensayo previo.
 2. 20/11/2026: una persona renueva la llave de la API de n8n «NovuChat» (vence el
    27/11; la «Principal» no vence).
-3. `migrar-ejes` en producción: sigue sin aplicarse (el seco crea `cuenta/estado`
-   en 6 fichas con los mismos valores); decidir si se aplica.
+3. `migrar-ejes` ya no es pendiente: se aplicó el 07/11/2026 con el «sí» de
+   Andres (solo pone `modelo = gemini-3.5-flash-lite` en 6 fichas que decían
+   «ninguno»; no toca plan, modalidad ni titularidad ni crea `cuenta/estado`).
+   El segundo seco dio 0 cambios. Ver la bitácora del 07/11.
 
 ## Requiere a Andres (cada una con su «sí»; las corre Claude)
 
