@@ -20,7 +20,7 @@
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
 //     pdTextoFaltanEntrega, pdLineasAviso, pdMonto (así los textos del pedido tienen un solo dueño).
 //   reserva: rsValidarExtraccion, rsFusionar, rsValidar, rsPreguntaFaltantes, rsResumen,
-//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto, prSoloReserva, prPedidoConMensaje.
+//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto, prSoloReserva, prPedidoConMensaje, prAreaDelPedido, prTipoDeCampana, prRespuestaDeVariante, prEsJueves.   (C-09) con `d.sinResponder` la bienvenida de la promo sale como UN mensaje con «Escribir al local» y un aviso a recepción (`derivar`).
 //   cobro: cbCaption, cbResumenCorto, cbResultado, cbEstadoParaAviso, cbTextoAlCliente.
 //
 // SUPUESTOS DECLARADOS (los de la tarea T7a, aprobados por la coordinadora):
@@ -139,6 +139,8 @@ let anotarReserva = false;
 let ruta = String(d.accion || '');
 
 despachar();
+// La campaña que se acaba de mostrar (`campanaVista`) vale solo para la pregunta que sigue: cualquier otra acción la borra.
+if (d.accion !== 'promo') delete en.campanaVista;
 // Se guarda el último nombre de perfil visto (solo de un turno de WhatsApp) para el turno del carrito web, que no lo trae.
 if (String(t.nombrePerfil || '').trim()) en.nombrePerfil = delCliente(t.nombrePerfil, 60);
 if (d.accion === 'carta') notaDelPedidoGuardado();
@@ -275,7 +277,7 @@ function limpiarConfirmado() {
   en.pedido = null;
   en.ilegibles = 0;
 }
-function limpiarReserva() { en.reserva = null; }
+function limpiarReserva() { en.reserva = null; en.campanaOrigen = ''; }
 // `que` = lo que pide `Decidir turno` al cancelar: 'pedido' (carrito y pedido en espera), 'reserva' o 'todo'.
 function limpiarSegun(que) {
   if (que === 'pedido' || que === 'todo') { limpiarCarrito(); limpiarConfirmado(); }
@@ -515,16 +517,20 @@ function cartaDelNegocio() {
 // la carta sale como UN mensaje con el boton «Ver la carta» que abre la pagina (el servidor recalcula los precios y escribe el
 // pedido; el carrito vuelve por `aCarrito`). Sin enlace —la consola no lo dio, el catalogo esta apagado, un 409, un timeout o una
 // URL que no pasa la validacion— sale la carta en texto de siempre: solo se ofrece lo que se cumple. Un solo mensaje en los dos casos.
-function mensajesDeCarta(enlace) {
+function mensajesDeCarta(enlace, area) {
   const carta = cartaDelNegocio();
   if (!carta.length) return derivar('carta sin cargar');
   const crudo = enlace === undefined ? cfg.catalogoWebEnlace : enlace;
   const url = urlDelCatalogo(crudo);
   if (url) {
+    // «Hacer un pedido» de la campaña de pedido (`m|pedido|promos`): el MISMO enlace de la carta con `?area=<área del negocio>` (la web ya filtra por área; si el área no
+    // existe abre «Todo»). Un enlace que ya trae `?` o `#` se deja como está (no se inventa una URL). El área sale del dato del negocio, nunca del botón.
+    const conArea = area && !/[?#]/.test(url) && urlDelCatalogo(url + '?area=' + encodeURIComponent(area)) ? url + '?area=' + encodeURIComponent(area) : url;
+    const titulo = conArea !== url ? 'Ver las promos' : 'Ver la carta';
     return [{
       tipo: 'enlace', catalogo: true,
-      cuerpo: '¡Con gusto! Toca «Ver la carta», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «inicio».',
-      botones: [{ id: '', title: 'Ver la carta' }], url: url,
+      cuerpo: '¡Con gusto! Toca «' + titulo + '», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «inicio».',
+      botones: [{ id: '', title: titulo }], url: conArea,
     }];
   }
   if (typeof crudo === 'string' && crudo.trim() !== '') errores.push('catalogo_url_invalida');
@@ -542,7 +548,8 @@ function mensajesDeCarta(enlace) {
 }
 
 function aCarta() {
-  const m = mensajesDeCarta();
+  const b = d.boton && typeof d.boton === 'object' && Array.isArray(d.boton.partes) ? d.boton : null;
+  const m = mensajesDeCarta(undefined, b && b.tipo === 'm' && b.partes[0] === 'pedido' && b.partes[1] === 'promos' ? prAreaDelPedido(cfg) : '');
   if (!m) return;
   // Después de la carta, cualquier texto es un pedido (aunque no diga «quiero»).
   en.paso = 'pedido';
@@ -611,16 +618,48 @@ function aPromo() {
   // Con un comprobante en espera, el texto de una campaña NO saca del cobro: se recuerda el comprobante (el paso y el pedido se conservan).
   if (en.paso === 'esperando_comprobante' && en.pedido) return aRecordatorio();
   // Campaña de solo reserva: su respuesta REEMPLAZA al saludo, con «Reservar mesa» como único botón; acepta la reserva cualquier día.
+  const tipoCampana = prTipoDeCampana(d.campana, cfg);
+  // Una pregunta específica (adenda de campañas, 06/11): «¿qué incluye?» (B) o «¿por qué dice solo delivery?» (A) se contesta con el dato del negocio y el botón de la
+  // campaña, SIN cambiar el paso ni el pedido en curso. Sin ese dato, rige el mensaje de la promoción. Cuenta como el mensaje que reemplaza al saludo: 0 agregados.
+  if (d.variante === 'detalle' || d.variante === 'solo_delivery') {
+    const r = prRespuestaDeVariante(d.campana, cfg, d.variante);
+    if (r) {
+      if (en.paso === 'inicio') en.paso = 'menu';
+      en.campanaVista = tipoCampana;
+      if (tipoCampana === 'B') en.campanaOrigen = 'B';
+      mensajes = [{ tipo: 'botones', cuerpo: r.cuerpo, botones: r.botones, sinMenu: true }];
+      return;
+    }
+  }
+  // C-09 (06/11/2026): la pregunta del cliente que el mensaje de la promo no contesta se pasa con el local: la bienvenida de la promo + «Escribir al local» en UN solo
+  // mensaje (0 agregados) y el aviso de transferencia de siempre. Sin promesas («te avisamos…»): el cliente escribe él al local.
+  const conPregunta = (cuerpo) => {
+    derivar('pregunta sobre una promoción que el mensaje no contesta', false, undefined, false, cuerpo + ' Tu pregunta la ve mejor nuestro equipo: toca «Escribir al local».');
+    en.campanaVista = tipoCampana;
+  };
+  // C-12 (06/11): el «Jueves de +2» un día que NO es jueves (La Paz, calculado aquí): solo se dice que vale los jueves en el local, con los botones de inicio de siempre
+  // (sin «Reservar mesa» propio de la campaña ni fecha). Sin el dato del negocio rige lo de siempre.
+  const noJueves = tipoCampana === 'B' ? vmLinea(cfg.campanaReservaNoJueves, 600) : '';
+  if (noJueves && !prEsJueves(ahora) && prSoloReserva(d.campana, cfg)) {
+    irA('menu');
+    mensajes = [conMenu(noJueves)];
+    return;
+  }
+  if (tipoCampana === 'B') en.campanaOrigen = 'B';
   const soloReserva = prSoloReserva(d.campana, cfg);
+  if (soloReserva && d.sinResponder === true) return conPregunta(soloReserva.cuerpo);
   if (soloReserva) {
     irA('menu');
+    en.campanaVista = tipoCampana;
     mensajes = [{ tipo: 'botones', cuerpo: soloReserva.cuerpo, botones: soloReserva.botones, sinMenu: true }];
     return;
   }
   // Campaña de pedido con mensaje del negocio (Tortas mexicanas): reemplaza al saludo, con «Hacer un pedido» como único botón.
   const pedidoMsg = prPedidoConMensaje(d.campana, cfg);
+  if (pedidoMsg && d.sinResponder === true) return conPregunta(pedidoMsg.cuerpo);
   if (pedidoMsg) {
     irA('menu');
+    en.campanaVista = tipoCampana;
     mensajes = [{ tipo: 'botones', cuerpo: pedidoMsg.cuerpo, botones: pedidoMsg.botones, sinMenu: true }];
     return;
   }
@@ -1590,7 +1629,9 @@ function enviarReserva() {
     return (mensajes = [enlace('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.')]);
   }
   const diaLleno = !rsDentroDelTope(sd, t.from, ahora, Number(cfg.topeReservasDia));
-  const reserva = diaLleno ? Object.assign({}, v.reserva, { diaLleno: true }) : v.reserva;
+  // C-13: la reserva que viene de la campaña «B» lleva el nombre de la campaña (dato del negocio) en su aviso; sale del estado, nunca de lo que escribe el cliente.
+  const nombreCampana = en.campanaOrigen === 'B' ? vmLinea(cfg.campanaReservaNombre, 60) : '';
+  const reserva = Object.assign({}, v.reserva, diaLleno ? { diaLleno: true } : {}, nombreCampana ? { campana: nombreCampana } : {});
   // La referencia y el codigo salen del ancla y de los datos de la reserva (no del reloj): un doble toque en «Reservar»
   // da el mismo codigo y la misma referencia de cierre, y el servidor cuenta UN cierre.
   const clave = vmIdEstable('res', t.from, v.reserva, ancla, ahora); // con la reserva SIN la marca `diaLleno`: el código no cambia entre reintentos

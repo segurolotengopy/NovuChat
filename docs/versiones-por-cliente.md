@@ -208,6 +208,19 @@ La rama común del **guardado de medios** (`Flujos/experimental/comun-sin-agente
 - **Diferencia de comportamiento con el panel caído (declarada):** el `leer` de la sesión viaja en la MISMA llamada que el panel, así que con el panel caído tampoco hay estado y sale «pasar con recepción» (aviso estándar de transferencia dentro de `topeTransferenciasHora` MÁS el botón; política del 21/09/2026). Antes, con la carta de respaldo, el flujo seguía y derivaba solo lo que pedía delivery o confirmaba un pedido.
 - **Avisos al local antes del compromiso (declarado):** el contrato §6 pide comprometer antes de `¿Hay avisos?`; aquí se compromete DESPUÉS de los avisos y ANTES de enviar al cliente, porque el estado depende de si el QR se arma (`Armar mensajes`). Un compromiso que falla deja un aviso ya enviado y el genérico al cliente; el turno siguiente no repite ese aviso (marca por `tipo:pedidoId`). Se decide con Andres en PR-4b.
 
+## Estado al 06/11/2026: imagen del anuncio de las campañas de Q'Taco (tope de nodos 71 a 73)
+
+**Tope de nodos de 71 a 73: aprobado por Andres (06/11/2026).** Dos nodos nuevos, sin mensajes: `¿Es comprobante?` (IF) y `Clasificar imagen` (Gemini, ~0,0001 USD por imagen sin comprobante pendiente). 0 mensajes por conversación agregados (la respuesta de campaña reemplaza al saludo). Excepción declarada: el cambio llega a las cuatro salidas generadas de venta mínima (el nodo es común) y no cambia a doctoras, Emma ni Evy.
+
+| Salida | Nodos antes → después |
+|---|---|
+| `venta-minima.qtaco-3727.json` | 71 → **73** |
+| `venta-minima.qtaco.json` | 71 → **73** |
+| `venta-minima.prueba.json` | 67 → **69** |
+| `venta-minima.ensayo-demo-a.json` | 65 → **67** |
+
+Ver `Flujos/experimental/venta-minima/DISENO.md`, «Adenda de campañas de Q'Taco» (C-01, C-04, C-07, C-08, C-09, C-12, C-13, C-17). Queda sin publicar (la publica la sesión que corresponda con el «sí» de Andres); los `titulares` de las campañas A y B ("Tortas Mexicanas", "Mañanas Tortas Mexicanas"; "Jueves de +2") deben estar cargados y aprobados en `config/campanas` para el reconocimiento por titular (la letra `campana` del clasificador funciona sin ellos).
+
 ## Estado al 05/11/2026 (PR-4b): los cupos de aviso de Q'Taco pasan al servidor
 
 **Tope de nodos de 69 a 71: aprobado por Andres (06/11/2026, en conversación).** Condición de Andres: los dos nodos nuevos (`Consumir cupos`, HTTP; `¿Cupo concedido?`, IF; cuelgan de la rama de avisos al local) NO agregan ni alteran mensajes, botones ni textos al cliente; lo demuestra `admin/pruebas/venta-minima-cupos.test.ts`, «tope de 71 nodos» (misma secuencia con y sin el servidor de cupos, y el borde de cupo agotado: el cliente lee «No pude pasarle…» y no «pasé tu pedido»). **Limitación conocida, no defecto nuevo:** una ráfaga de 3 mensajes seguidos del cliente da 2 respuestas (reproducida 2 veces en el ensayo); es del comportamiento por turno que ya existía, no de estos nodos. Se regeneran **todas** las salidas de `venta-minima` con `construir.mjs`; ninguna se publica con este PR:

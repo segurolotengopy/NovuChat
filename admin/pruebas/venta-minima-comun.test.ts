@@ -862,8 +862,8 @@ describe('Interpretar entrada', () => {
       ubicacion: null, ahoraMs: AHORA, prueba: null,
     });
     expect(Object.keys(t).sort()).toEqual([
-      'ahoraMs', 'boton', 'comprobanteCruzado', 'comprobanteSimulado', 'esAudio', 'esComprobante', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
-      'phoneNumberId', 'prueba', 'texto', 'textoReporte', 'tipo', 'ubicacion',
+      'ahoraMs', 'boton', 'comprobanteCruzado', 'comprobanteSimulado', 'esAudio', 'esComprobante', 'esPosibleAnuncio', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
+      'phoneNumberId', 'prueba', 'referral', 'texto', 'textoReporte', 'tipo', 'ubicacion',
     ]);
   });
   it('recorta el texto a 1.500 caracteres y el nombre de perfil a 60, sin < > & ni saltos', () => {

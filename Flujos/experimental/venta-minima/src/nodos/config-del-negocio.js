@@ -104,6 +104,15 @@ const deBaseDeReglas = {
   // Campaña de pedido con mensaje del negocio (06/11): igual, con el botón «Hacer un pedido». Ver `prPedidoConMensaje`.
   campanaPedidoTexto: vmLinea(marcador(base.campanaPedidoTexto), 500),
   campanaPedidoMensaje: vmLinea(marcador(base.campanaPedidoMensaje), 900),
+  // Adenda de campañas (06/11): la respuesta a «¿por qué dice solo delivery?» (campaña de pedido), a «¿qué incluye?» (campaña de reserva), el área del catálogo
+  // web a la que lleva «Hacer un pedido» y la descripción de los artes para el clasificador de imágenes. Todo dato del negocio, solo de «Config base».
+  campanaPedidoEntrega: vmLinea(marcador(base.campanaPedidoEntrega), 900),
+  campanaPedidoArea: vmLinea(marcador(base.campanaPedidoArea), 60),
+  campanaReservaDetalle: vmLinea(marcador(base.campanaReservaDetalle), 900),
+  // C-12/C-13: lo que se responde al «Jueves de +2» un día que no es jueves, y el nombre de la campaña de reserva para el aviso.
+  campanaReservaNoJueves: vmLinea(marcador(base.campanaReservaNoJueves), 600),
+  campanaReservaNombre: vmLinea(marcador(base.campanaReservaNombre), 60),
+  campanaImagenDescripcion: vmLinea(marcador(base.campanaImagenDescripcion), 2500),
   areasSinDelivery: vmLista(base.areasSinDelivery),
   zonasReserva: vmLista(base.zonasReserva),
   horario: horarioBase,
@@ -157,13 +166,19 @@ function campanas(lista) {
   return salida;
 }
 
+// Los anuncios vigentes con titulares (solo viajan los aprobados y en curso): {id, titulares, angulo, producto}. A lo más 20, solo objetos; el reconocimiento por titular
+// lo hace el módulo común `anuncioPorTitular` (que vuelve a sanear cada campo). Sin anuncios, la lista va vacía y todo queda como antes.
+function anuncios(lista) {
+  return (Array.isArray(lista) ? lista : []).filter((a) => a && typeof a === 'object' && !Array.isArray(a)).slice(0, 20);
+}
+
 let cfg;
 if (codigo === 409) {
   cfg = Object.assign({}, RESPALDO, deBase, deBaseDeReglas, deBasePlantillas, atencion, {
     estadoComercio: 'suspendido',
     mensajeComercioSuspendido: util(cuerpo.mensajeCortesia) || deBase.mensajeComercioSuspendido || RESPALDO.mensajeComercioSuspendido,
     configDeLaConsola: false, panelDice: 'no operativo', panelSinRespuesta: false,
-    catalogo: [], campanas: [], aceptaDelivery: false, aceptaRetiroEnLocal: false, cobro: COBRO_APAGADO,
+    catalogo: [], campanas: [], anuncios: [], aceptaDelivery: false, aceptaRetiroEnLocal: false, cobro: COBRO_APAGADO,
   });
 } else if (!(codigo === 200 && typeof cuerpo.tenantId === 'string')) {
   cfg = Object.assign({}, RESPALDO, deBase, deBaseDeReglas, deBasePlantillas, atencion, {
@@ -171,7 +186,7 @@ if (codigo === 409) {
     // Sin respuesta del panel NO se sabe qué modalidades acepta: no se fija ninguna. OJO: «falta = sí» valdría para el
     // servidor, pero aquí NO se puede leer como «hay delivery»: `Plan del turno` mira `panelSinRespuesta` y, con él en `true`,
     // ni ofrece ni afirma delivery ni confirma un pedido: deriva (aviso + botón).
-    catalogo: [], campanas: [], cobro: COBRO_APAGADO,
+    catalogo: [], campanas: [], anuncios: [], cobro: COBRO_APAGADO,
   });
 } else {
   const dn = objeto(cuerpo.datosDelNegocio);
@@ -217,6 +232,7 @@ if (codigo === 409) {
     // Sin enlace válido, '' y la confirmación de la reserva sale sin el botón «Ver ubicación».
     direccionMaps: vmEnlaceDeMapa(dn.direccionMaps),
     campanas: campanas(cuerpo.campanas),
+    anuncios: anuncios(cuerpo.anuncios),
     // Solo se apagan con `false`: la falta del dato es «sí», igual que en el servidor (`!== false`).
     aceptaDelivery: venta.aceptaDelivery !== false,
     aceptaRetiroEnLocal: venta.aceptaRetiroEnLocal !== false,

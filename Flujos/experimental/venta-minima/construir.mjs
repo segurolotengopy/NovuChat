@@ -58,7 +58,7 @@ const leer = (ruta) => readFileSync(join(AQUI, ruta), 'utf8');
 const FUENTE_SESION = leer('../comun-sin-agente/src/sesion.js').trimEnd();
 const ORDEN_LIBS = ['comun', 'pedido', 'reserva', 'avisos', 'promos', 'cobro'];
 // Módulos comunes que se INCLUYEN (no se copian): viven en Flujos/src/modulos/<m>/ y van detrás de las librerías propias.
-const MODULOS_COMUNES = ['../../src/modulos/pedidos/qr-del-pedido.js'];
+const MODULOS_COMUNES = ['../../src/modulos/pedidos/qr-del-pedido.js', '../../src/core/medios/anuncio-por-titular.js'];
 const LIB = [...ORDEN_LIBS.map((n) => leer(`src/lib/${n}.js`)), ...MODULOS_COMUNES.map((r) => leer(r))].map((t) => t.trimEnd()).join('\n\n');
 const COMUN = leer('src/lib/comun.js').trimEnd();
 const plantilla = JSON.parse(leer('flujo.plantilla.json'));
@@ -85,7 +85,9 @@ const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
 // +9: el estado de la conversación y los vistos en el servidor (PR-4a; tope de Q'Taco 60 → 69, aprobado por Andres el 04/11/2026): «¿Hay estado?», «Sin estado», «¿Comprometer turno?», «Comprometer turno»,
 // «¿Replanificar compromiso?», «Comprometer turno (2.º intento)», «Soltar mensajes», «Confirmar envío» y «Comprometer compensación» (9: se quitó «¿Compensar entrega?»; queda 0 de margen). Ver DISENO.md y docs/versiones-por-cliente.md.
 // +2: los CUPOS pasan al servidor (PR-4b; tope de 69 a 71, aprobado por Andres (06/11/2026, en conversación)): «Consumir cupos» y «¿Cupo concedido?». `asentar` NO lleva nodo (segundo ítem de «Confirmar envío»).
-const TOPE_DE_NODOS = 71;
+// +2: la IMAGEN del anuncio (adenda de campañas de Q'Taco; tope de 71 a 73, aprobado por Andres el 06/11/2026): «¿Es comprobante?» (separa el comprobante de la foto que puede ser el arte de una campaña)
+// y «Clasificar imagen» (Gemini, ~0,0001 USD por imagen sin comprobante pendiente). Ver DISENO.md y docs/versiones-por-cliente.md.
+const TOPE_DE_NODOS = 73;
 
 // LA SEGUNDA ENTRADA DE PRODUCCIÓN: el carrito del catálogo web (como el del Demo B). Un solo webhook, con este nombre exacto,
 // su credencial de cabecera (la de la ingesta), `responseMode: onReceived` y la ruta como marcador (una URL de capacidad que

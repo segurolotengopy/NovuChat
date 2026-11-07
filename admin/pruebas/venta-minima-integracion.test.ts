@@ -28,7 +28,9 @@ const LIBRERIAS = ['comun', 'pedido', 'reserva', 'promos', 'avisos', 'cobro'].ma
 const PQR = readFileSync(join(RAIZ, '../../../src/modulos/pedidos/qr-del-pedido.js'), 'utf8');
 // El estado de la conversación en el servidor (PR-4a): el módulo común `sesion` lo incluyen los nodos que lo usan, como arma construir.mjs.
 const SESION = readFileSync(join(RAIZ, '../../comun-sin-agente/src/sesion.js'), 'utf8');
-const LIBS = [...LIBRERIAS, PQR].join('\n');
+// Y el reconocedor de anuncios por titular (core/medios), también incluido por construir.mjs.
+const APT = readFileSync(join(RAIZ, '../../../src/core/medios/anuncio-por-titular.js'), 'utf8');
+const LIBS = [...LIBRERIAS, PQR, APT].join('\n');
 const CODIGO: Record<string, string> = {};
 const CON_SESION = ['config-del-negocio', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes'];
 for (const n of ['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'interpretar-lectura', 'decidir-turno', 'plan-del-turno', 'armar-avisos', 'armar-mensajes', 'soltar-mensajes', 'sin-estado']) {

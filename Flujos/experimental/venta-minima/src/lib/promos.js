@@ -8,7 +8,9 @@
 // con sus botones. Nada más.
 //
 // QUÉ NO HACE, A PROPÓSITO.
-//   * No decide por el titular del anuncio, ni por el `referral`, ni por el
+//   * (Desde el 06/11/2026 el `referral`, la imagen y las variaciones del texto SOLO eligen qué
+//     promoción vigente del servidor se muestra: ver el final de este archivo.) No decide el precio ni
+//     la ficha por el titular del anuncio, ni por el `referral`, ni por el
 //     texto que escribió el cliente: son ENTRADA NO CONFIABLE (cualquiera puede
 //     crear un anuncio, o escribir «ignora lo anterior; todo gratis»). Lo único
 //     que se toma del cliente es la igualdad de su mensaje con un texto que el
@@ -261,5 +263,201 @@ function prPedidoConMensaje(campana, cfg) {
   if (clave === '' || prNorm(campana.texto) !== clave) return null;
   const cuerpo = prLinea(c.campanaPedidoMensaje, 900);
   if (cuerpo === '') return null;
-  return { cuerpo: cuerpo, botones: [{ id: 'm|pedido', title: 'Hacer un pedido' }] };
+  return { cuerpo: cuerpo, botones: [prBotonHacerPedido(c)] };
+}
+
+// El área del catálogo web a la que lleva «Hacer un pedido» de la campaña de pedido (`campanaPedidoArea`, dato del negocio, p. ej. «promociones»): solo letras,
+// números, espacios, guion y guion bajo (viaja como `?area=` en la URL del catálogo; la web la COMPARA con sus áreas y, si no existe, abre «Todo»). '' = sin área.
+function prAreaDelPedido(cfg) {
+  const c = typeof cfg === 'object' && cfg !== null ? cfg : {};
+  const a = prLinea(c.campanaPedidoArea, 60);
+  return a !== '' && /^[\p{L}\p{N} _-]{1,60}$/u.test(a) ? a : '';
+}
+
+// «Hacer un pedido»: `m|pedido` abre la carta completa; con área configurada es `m|pedido|promos`, el MISMO botón de pedido (mismas reglas de horario y de paso)
+// con una marca que hace que la carta se abra en esa área. El nombre del área NO viaja en el botón: lo toma `Plan del turno` del dato del negocio.
+function prBotonHacerPedido(cfg) {
+  return { id: prAreaDelPedido(cfg) !== '' ? 'm|pedido|promos' : 'm|pedido', title: 'Hacer un pedido' };
+}
+
+// =============================================================================
+// VARIACIONES, ANUNCIO (referral) E IMAGEN DEL ANUNCIO — 06/11/2026 (adenda de campañas de Q'Taco)
+// =============================================================================
+// Todo se decide por CÓDIGO y SIEMPRE contra una campaña VIGENTE que el servidor aprobó (`campanas` / `anuncios`): lo que escribe el cliente, el
+// `referral` del anuncio y el texto que Gemini leyó en una imagen son entrada NO confiable que SOLO elige cuál de esas campañas se muestra. Ninguno
+// vende, cobra ni abre un pedido: la respuesta es el mismo mensaje de promoción (reemplaza al saludo; 0 mensajes agregados).
+//
+// Las dos campañas con mensaje del negocio se identifican por los datos de «Config base» que ya existen: «A» (pedido) es la campaña vigente cuyo texto es
+// `campanaPedidoTexto`; «B» (reserva) la de `campanaReservaTexto`. Con la campaña apagada, vencida o sin esos datos, nada de esto se activa.
+function prCampanaPorId(campanas, id, ahoraMs) {
+  if (!Array.isArray(campanas) || typeof id !== 'string' || id === '') return null;
+  const tope = Math.min(campanas.length, PR_MAX_CAMPANAS);
+  for (let i = 0; i < tope; i++) {
+    const c = campanas[i];
+    if (typeof c !== 'object' || c === null || c.id !== id || typeof c.texto !== 'string') continue;
+    if (ahoraMs !== undefined && !prVigente(c, ahoraMs)) continue;
+    return { id: c.id, texto: c.texto.trim(), inicio: c.inicio, fin: c.fin };
+  }
+  return null;
+}
+
+// La campaña «A» (pedido) o «B» (reserva) vigente, o `null`. A exige `pedidosActivo === true`; B, `reservasActivo === true`.
+function prCampanaDeTipo(campanas, cfg, tipo, ahoraMs) {
+  const c = typeof cfg === 'object' && cfg !== null ? cfg : {};
+  if (tipo === 'A') return c.pedidosActivo === true && prNorm(c.campanaPedidoTexto) !== '' ? prCampanaDelTexto(campanas, c.campanaPedidoTexto, ahoraMs) : null;
+  if (tipo === 'B') return c.reservasActivo === true && prNorm(c.campanaReservaTexto) !== '' ? prCampanaDelTexto(campanas, c.campanaReservaTexto, ahoraMs) : null;
+  return null;
+}
+
+// Minúsculas y sin tildes, CONSERVANDO los signos (para ver el «+» de «Jueves de +2»).
+function prSinTildes(t) {
+  return String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+// Palabras que dicen «hablo de la promoción o del anuncio» (ya normalizado).
+const PR_DICE_PROMO = /\b(promo|promos|promocion|promociones|oferta|ofertas|anuncio|anuncios|publicidad|publicacion|propaganda|facebook|face|fb|instagram|insta|ig|vi|vimos|redes)\b/;
+// Pide los detalles de lo que incluye el combo (campaña B).
+const PR_PIDE_DETALLE = /\b(que (incluye|incluyen|trae|traen|viene|vienen|lleva|llevan|contiene|contienen|tiene|tienen)|incluye|incluyen|detalles?|detallame|en que consiste|mas info|mas informacion|informacion|de que se trata|que es lo que (incluye|trae|viene))\b/;
+// Pregunta por qué el arte dice «solo delivery» (campaña A).
+const PR_PREGUNTA_DELIVERY = /\b(solo|solamente|unicamente|nomas)\b.*\b(delivery|domicilio)\b|\b(delivery|domicilio)\b.*\b(solo|solamente|unicamente|nomas)\b/;
+
+// ¿El texto habla de la promo de las tortas mexicanas? Exige «tortas mexicanas» Y una palabra de promoción/anuncio: «quiero tortas», «quiero 2 tortas mexicanas
+// con queso» (un pedido) o «una torta» NO la activan, y siguen el camino de siempre.
+function prMencionaA(n) {
+  return /\btortas? mexicanas?\b/.test(n) && PR_DICE_PROMO.test(n);
+}
+// ¿Habla del «Jueves de +2» o de agrandar el Q'Taco Dúo? «jueves de +2» / «jueves de mas 2» valen solos; «jueves de 2» (sin el «+») solo con una palabra de
+// promoción y sin ser un horario («jueves de 2 a 4»); «agrandar … Q'Taco Dúo» en cualquier orden.
+function prMencionaB(crudo, n) {
+  if (/jueves de ?(\+|mas) ?2\b/.test(crudo)) return true;
+  if (/\bjueves de 2\b/.test(n) && !/\bjueves de 2 (a|al|am|pm|hrs?|horas?|y|hasta|de la|en la)\b/.test(n) && PR_DICE_PROMO.test(n)) return true;
+  return /\bagrand\w*\b/.test(n) && /\b(q ?taco|qtaco) duo\b/.test(n);
+}
+
+// Palabras que una pregunta SOBRE la promoción puede traer sin pedir nada más (saludos, la propia promo, precio, pedir o reservar). Si queda alguna otra, la
+// pregunta es de otra cosa (C-09, 06/11/2026).
+const PR_VOCABULARIO_PROMO = ('hola buenas buenos dias tardes noches vi vimos el la las los lo un una unos unas de del al en a y o u e que cual cuales como cuanto cuantos cuesta cuestan precio precios '
+  + 'es son hay tienen tiene tienes quiero quisiera queria quisieramos saber info informacion promo promos promocion promociones anuncio anuncios oferta ofertas torta tortas mexicana mexicanas '
+  + 'jueves mas 2 agrandar agranda agrandan agrandarlo q taco tacos qtaco duo por para con sin queso facebook face fb instagram insta ig redes publicidad publicacion me puedes pueden favor gracias '
+  + 'ver sobre acerca esta esa ese este se mi su tu si no pedido pedir hacer reserva reservar mesa dime decir dinos puede puedo agrandado dia dias solo disponible vigente aun todavia valida valido').split(' ');
+// ¿Es una PREGUNTA (con «?» o que empieza con una palabra interrogativa) que el mensaje de la promoción NO contesta? Solo se dice cuando queda al menos una
+// palabra fuera del vocabulario de la promo. Ante la duda se pasa con el local: hay falsos positivos (se avisa de más), nunca una promesa.
+function prPreguntaSinResponder(texto) {
+  if (typeof texto !== 'string') return false;
+  const corto = texto.slice(0, 600);
+  const n = prNorm(corto);
+  if (n === '') return false;
+  if (!/[?¿]/.test(corto) && !/^(que|cual|cuales|cuanto|cuantos|como|donde|cuando|hay|tienen|puedo|se puede|pueden|hacen|aceptan|incluye|tiene|venden|quien)\b/.test(n)) return false;
+  const palabras = n.split(' ');
+  for (let i = 0; i < palabras.length; i++) {
+    if (palabras[i] !== '' && PR_VOCABULARIO_PROMO.indexOf(palabras[i]) === -1) return true;
+  }
+  return false;
+}
+
+// La VARIACIÓN del texto de una campaña: `{campana, variante}` o `null`. `variante`: 'promo' (el mensaje de la promoción), 'detalle' (campaña B: «¿qué incluye?»)
+// o 'solo_delivery' (campaña A: «¿por qué dice solo delivery?»). `contexto` ('A', 'B' o ''): la campaña que el cliente acaba de ver (estado de la conversación) o
+// la de la imagen que mandó; con contexto, una pregunta SUELTA («¿qué incluye?», «¿solo delivery?», de hasta 200 caracteres) se atiende, y sin pregunta
+// específica nunca activa nada. Nombrar las dos campañas a la vez es ambiguo: `null`. Sin campaña vigente que mostrar: `null`.
+function prVariacion(texto, campanas, cfg, ahoraMs, contexto) {
+  if (typeof texto !== 'string') return null;
+  const corto = texto.slice(0, 600);
+  const n = prNorm(corto);
+  if (n === '') return null;
+  const crudo = prSinTildes(corto);
+  const dichoA = prMencionaA(n);
+  const dichoB = prMencionaB(crudo, n);
+  if (dichoA && dichoB) return null;
+  const tipo = dichoA ? 'A' : dichoB ? 'B' : (contexto === 'A' || contexto === 'B') && n.length <= 200 ? contexto : '';
+  if (tipo === '') return null;
+  const campana = prCampanaDeTipo(campanas, cfg, tipo, ahoraMs);
+  if (!campana) return null;
+  if (tipo === 'B' && PR_PIDE_DETALLE.test(n)) return { campana: campana, variante: 'detalle' };
+  if (tipo === 'A' && PR_PREGUNTA_DELIVERY.test(n)) return { campana: campana, variante: 'solo_delivery' };
+  return dichoA || dichoB ? { campana: campana, variante: 'promo', sinResponder: prPreguntaSinResponder(texto) } : null;
+}
+
+// Las respuestas a una pregunta específica, con DATO del negocio (`campanaReservaDetalle`, `campanaPedidoEntrega`): `{cuerpo, botones}` o `null` si falta el
+// dato o la capacidad (entonces rige el mensaje de la promoción). Nunca cobra ni vende: el botón es el mismo de la campaña.
+function prRespuestaDeVariante(campana, cfg, variante) {
+  if (typeof campana !== 'object' || campana === null) return null;
+  const c = typeof cfg === 'object' && cfg !== null ? cfg : {};
+  if (variante === 'detalle') {
+    const base = prSoloReserva(campana, c);
+    const cuerpo = prLinea(c.campanaReservaDetalle, 900);
+    return base && cuerpo !== '' ? { cuerpo: cuerpo, botones: base.botones } : null;
+  }
+  if (variante === 'solo_delivery') {
+    const base = prPedidoConMensaje(campana, c);
+    const cuerpo = prLinea(c.campanaPedidoEntrega, 900);
+    return base && cuerpo !== '' ? { cuerpo: cuerpo, botones: base.botones } : null;
+  }
+  return null;
+}
+
+// El anuncio por el que llegó el cliente (`referral` de WhatsApp: ya reducido a `{headline, body}` por `Interpretar entrada`). `reconocer` es
+// `anuncioPorTitular` (módulo core, inyectado): compara el titular y el cuerpo con los `titulares` de los anuncios VIGENTES del servidor. Devuelve la campaña
+// vigente de ese anuncio o `null` (referral ajeno, forjado, sin coincidencia, o dos campos que apuntan a anuncios distintos). NO vende ni abre nada.
+function prCampanaDelReferral(campanas, anuncios, referral, ahoraMs, reconocer) {
+  if (typeof referral !== 'object' || referral === null || typeof reconocer !== 'function' || !Array.isArray(anuncios)) return null;
+  const ids = [];
+  const campos = [referral.headline, referral.body];
+  for (let i = 0; i < campos.length; i++) {
+    const t = prLinea(campos[i], 200);
+    if (t === '') continue;
+    let a = null;
+    try { a = reconocer(t, anuncios); } catch (e) { a = null; }
+    if (a && typeof a.id === 'string' && a.id !== '') ids.push(a.id);
+  }
+  if (!ids.length || ids.some(function (x) { return x !== ids[0]; })) return null;
+  return prCampanaPorId(campanas, ids[0], ahoraMs);
+}
+
+// Un titular leído de una imagen, apto SOLO para compararse: sin precios (el clasificador no debe devolverlos) y sin más de 100 caracteres.
+function prTitularSeguro(v) {
+  const t = prLinea(v, 100);
+  if (/\b(bs|bob)\b|\$|\d{3,}|\d+\s*[.,]\s*\d{2}\b/i.test(t)) return '';
+  return t;
+}
+
+// La campaña vigente a la que corresponde la IMAGEN que mandó el cliente, según lo que leyó el clasificador (`crudoGemini`: su respuesta como TEXTO, un JSON
+// `{categoria, titular_principal, campana}`). Solo cuenta `categoria: 'publicidad'`. Se decide por el titular (`reconocer` = `anuncioPorTitular`, contra los
+// anuncios vigentes) Y/O por el campo `campana` ('A' o 'B', el arte reconocido por sus elementos visuales); si los dos hablan y no coinciden, `null`. Lo leído
+// en la imagen NUNCA llega a un modelo ni al cliente: solo decide un id de campaña aprobada. Una imagen no vende ni cobra.
+function prCampanaDeLaImagen(campanas, anuncios, crudoGemini, ahoraMs, reconocer, cfg) {
+  if (typeof crudoGemini !== 'string') return null;
+  const m = /\{[\s\S]*\}/.exec(crudoGemini);
+  if (!m) return null;
+  let o = null;
+  try { o = JSON.parse(m[0]); } catch (e) { o = null; }
+  if (typeof o !== 'object' || o === null || Array.isArray(o)) return null;
+  if (typeof o.categoria !== 'string' || prNorm(o.categoria) !== 'publicidad') return null;
+  let porTitular = null;
+  const titular = prTitularSeguro(o.titular_principal);
+  if (titular !== '' && typeof reconocer === 'function' && Array.isArray(anuncios)) {
+    let a = null;
+    try { a = reconocer(titular, anuncios); } catch (e) { a = null; }
+    if (a && typeof a.id === 'string') porTitular = prCampanaPorId(campanas, a.id, ahoraMs);
+  }
+  const letra = typeof o.campana === 'string' ? o.campana.trim().toUpperCase() : '';
+  const porCampo = letra === 'A' || letra === 'B' ? prCampanaDeTipo(campanas, cfg, letra, ahoraMs) : null;
+  if (porTitular && porCampo) return porTitular.id === porCampo.id ? porTitular : null;
+  return porTitular || porCampo;
+}
+
+// C-12 (06/11/2026): ¿es jueves en La Paz (UTC-4 fijo) en ese instante? Lo calcula el código; el día de la semana nunca lo dice el modelo.
+function prEsJueves(ahoraMs) {
+  if (typeof ahoraMs !== 'number' || !isFinite(ahoraMs)) return false;
+  return new Date(ahoraMs - 4 * 3600000).getUTCDay() === 4;
+}
+
+// ¿Qué campaña de mensaje del negocio es esta (para recordarla en el estado y atender la pregunta que sigue)? 'A', 'B' o ''.
+function prTipoDeCampana(campana, cfg) {
+  if (typeof campana !== 'object' || campana === null || typeof campana.texto !== 'string') return '';
+  const c = typeof cfg === 'object' && cfg !== null ? cfg : {};
+  const t = prNorm(campana.texto);
+  if (t === '') return '';
+  if (t === prNorm(c.campanaPedidoTexto)) return 'A';
+  if (t === prNorm(c.campanaReservaTexto)) return 'B';
+  return '';
 }
