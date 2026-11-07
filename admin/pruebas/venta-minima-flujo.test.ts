@@ -6615,7 +6615,7 @@ describe('PR-4a: el estado, los pedidos y los vistos viven en el servidor, no en
     const t = c.turno(mTexto('hola'), { wamid: 'wamid.RAF1' });
     expect(t.mensajes).toHaveLength(1);
     expect(cuerpos(t).join(' ')).toMatch(/varios mensajes tuyos casi al mismo tiempo/);
-    expect(cuerpos(t).join(' ')).toMatch(/escríbelo otra vez/);
+    expect(cuerpos(t).join(' ')).toMatch(/envíalo otra vez/);
     expect(cuerpos(t).join(' ')).not.toMatch(/te aviso|te llamamos|te escribirán|pago acreditado/i);
     expect(tieneEnlace(t)).toBe(false);
     expect(t.avisos).toHaveLength(0);

@@ -17,7 +17,7 @@ let bloqueComprometido = a.bloque;
 let replanificado = false;
 if (a.comprometer === true && r.resultado === 'conflicto') {
   if (a.hechoExterno !== true) {
-    // Ráfaga: la que pierde no envía nada de lo suyo (la ganadora responde a su mensaje), pero un TEXTO perdido no queda sin respuesta: sale el aviso corto que pide repetirlo (un botón doble sigue en silencio).
+    // Ráfaga: la que pierde no envía nada de lo suyo (la ganadora responde a su mensaje), pero un TEXTO perdido no queda sin respuesta: sale el aviso corto que pide repetirlo (cualquier botón perdido sigue en silencio).
     const cede = Array.isArray(a.salidaCede) ? a.salidaCede : [];
     return cede.map((x) => ({ json: Object.assign({}, x, { sesion: { replanificado: false, modo: a.modo, resultado: 'conflicto', comprometido: false, version: null, cedio: true }, comprometido: false, versionComprometida: 0, previo: null, bloque: null, numero: a.numero, asentar: null }) }));
   }

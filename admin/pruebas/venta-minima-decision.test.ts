@@ -327,7 +327,7 @@ describe('Decidir turno: el orden de §4.5, sin modelo', () => {
       expect(r.d['accion'], x).toBe('transferir');
       expect(r.d['motivo'], x).toBe('pidió hablar con una persona');
     }
-    for (const x of ['escribir mi nombre', 'voy a escribir mi dirección', 'te escribo mi dirección', 'escribo el nombre del local donde trabajo', 'el local de la esquina', 'quiero escribir una nota para el pedido']) {
+    for (const x of ['escribir mi nombre', 'voy a escribir mi dirección', 'te escribo mi dirección', 'escríbanme cuando esté listo', 'escríbame el precio del combo', 'calle 5 número 10, escríbame al llegar', 'escribo el nombre del local donde trabajo', 'el local de la esquina', 'quiero escribir una nota para el pedido']) {
       expect(turno(crearMundo(), { texto: x }).d['accion'], x).not.toBe('transferir');
     }
   });

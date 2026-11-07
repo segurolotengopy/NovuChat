@@ -531,9 +531,9 @@ const AM_falla = AM_jFalla ? [Object.assign(AM_jFalla, {
 })] : [{ sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: AM_FROM, cierre: null, errores: AM_erroresFalla,
   resumen: Object.assign({}, AM_resumen, { estadoDespues: null, errores: AM_erroresFalla, mensajesSalientes: 0 }) }];
 // RÁFAGA (06/11/2026, Q'Taco): el perdedor de un conflicto de versión SIN hecho externo cede, y el mensaje que escribió quedaba sin respuesta (3 mensajes seguidos daban 2 respuestas). Ya no es silencio:
-// si lo que llegó NO fue un botón (un doble toque del mismo botón sigue cediendo en silencio: no se repite el paso), sale UN aviso corto que pide repetir lo que haya quedado sin respuesta. No promete nada, no toca el estado,
+// si lo que llegó NO fue un botón (cualquier botón perdido, incluido el doble toque, sigue cediendo en silencio: no se repite el paso), sale UN aviso corto que pide repetir lo que haya quedado sin respuesta. No promete nada, no toca el estado,
 // no avisa al local y no lleva botones. Reemplaza el silencio por un mensaje al cliente (solo en la carrera; 0 mensajes por conversación en el flujo normal).
-const AM_CEDE_CUERPO = amEmojis('Recibí varios mensajes tuyos casi al mismo tiempo 🙂. Si algo quedó sin respuesta, escríbelo otra vez.').trim();
+const AM_CEDE_CUERPO = amEmojis('Recibí varios mensajes tuyos casi al mismo tiempo 🙂. Si algo quedó sin respuesta, envíalo otra vez.').trim();
 const AM_jCede = !AM_T.boton && AM_CONVERSA ? amSalir({ payload: amTexto(AM_CEDE_CUERPO), texto: AM_CEDE_CUERPO, respaldo: AM_CEDE_CUERPO, tipoReporte: 'text' }) : null;
 const AM_cede = AM_jCede ? [Object.assign(AM_jCede, {
   cierre: null, errores: AM_errores.concat(['rafaga_cedida']),
