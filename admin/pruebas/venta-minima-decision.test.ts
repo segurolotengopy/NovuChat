@@ -1294,7 +1294,7 @@ describe('Plan del turno: la reserva', () => {
 describe('Plan del turno: reserva de mañana (decisión de Andres 06/11/2026: pedidos 10:00–22:00, reservas desde las 12:00)', () => {
   const HORARIO_PEDIDOS = 'lun=10:00-22:00,mar=10:00-22:00,mie=10:00-22:00,jue=10:00-22:00,vie=10:00-22:00,sab=10:00-22:00,dom=10:00-22:00';
   const ATENCION = 'todos los días de 12:00 a 22:00 (de 10 a 12 AM solo delivery o recojo en local)';
-  const TEXTO = 'Como pediste una hora de la mañana, Samuel se contactará contigo para confirmar o cambiar la hora.';
+  const TEXTO = 'Como pediste una hora de la mañana, nos contactaremos contigo para confirmar o cambiar la hora.';
   const NOTA = 'Reserva de mañana (antes de las 12:00): contactar para confirmar o cambiar la hora';
   const dato = (o: J = {}): J => ({ horario: HORARIO_PEDIDOS, horarioAtencion: ATENCION, reservaDesde: '12:00', reservaMananaTexto: TEXTO, ...o });
   const enviarA = (hora: string, cfg: J = dato()): Salida => {
@@ -1312,7 +1312,7 @@ describe('Plan del turno: reserva de mañana (decisión de Andres 06/11/2026: pe
       expect(s.p!['aviso']['datos']['reserva']['reservaManana'], hora).toBe('12:00');
       const siSalio = s.p!['condicionados']['siSalio'];
       expect(siSalio.length, hora).toBe(1);
-      expect(siSalio[0]['cuerpo'], hora).toMatch(/^¡Listo, Ana! Anotamos tu reserva para .*\. Te esperamos en Av\. Ejemplo 123\. Como pediste una hora de la mañana, Samuel se contactará contigo para confirmar o cambiar la hora\.$/);
+      expect(siSalio[0]['cuerpo'], hora).toMatch(/^¡Listo, Ana! Anotamos tu reserva para .*\. Te esperamos en Av\. Ejemplo 123\. Como pediste una hora de la mañana, nos contactaremos contigo para confirmar o cambiar la hora\.$/);
       expect(s.p!['condicionados']['siNoSalio'][0]['cuerpo'], hora).not.toContain('Samuel');
       expect(s.p!['anotarReserva']).toBe(true);
     }
