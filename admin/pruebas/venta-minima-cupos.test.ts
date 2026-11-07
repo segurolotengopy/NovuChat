@@ -361,6 +361,62 @@ describe('reservasDelDia viaja en el bloque del teléfono', () => {
     expect(reservar(w).avisos.length).toBeGreaterThan(0);
   });
 
+  it('la COMPENSACIÓN (el aviso salió y el envío al cliente falló) también vence a medianoche: tras 61 min la tercera reserva sigue rechazada', () => {
+    const w = crear({}, QTACO, { topeReservasDia: 1 });
+    reservar(w);
+    turno(w, boton('m|reserva', 'Reservar'));
+    w.estado.extraccion = { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: 'terraza', nombre: 'Ana Pérez', celebracion: '', requerimiento: '' };
+    turno(w, texto('mesa para 4 el viernes a las 8 de la noche en la terraza'));
+    w.envios['Enviar a WhatsApp'] = 'error explícito (media ID vencido)';
+    w.envios['Enviar respaldo'] = 'error explícito (media ID vencido)';
+    const t = turno(w, boton('r|enviar', 'Enviar'), true);
+    expect(t.avisos.length).toBeGreaterThan(0); // el hecho externo sí ocurrió
+    expect(t.fallo?.mensaje).toMatch(/Entrega fallida/);
+    delete w.envios['Enviar a WhatsApp']; delete w.envios['Enviar respaldo'];
+    w.mundo.avanzar(61);
+    expect(((w.sesion.bloque(CLIENTE) as J)['reservas'] as J)['n']).toBe(2);
+    expect(reservar(w).avisos).toHaveLength(0);
+  });
+
+  it('MUTACIÓN: sin la hora en `vmVenceEnMin` de «Confirmar envío», el bloque de la compensación vence a los 60 min y la tercera reserva pasa', () => {
+    const f = mutar((c) => cambiarCodigo(c, 'Confirmar envío', 'vmVenceEnMin(bloque, Number(primero.ahoraMs) || Date.now())', 'vmVenceEnMin(bloque)'));
+    const w = crear({}, f, { topeReservasDia: 1 });
+    reservar(w);
+    turno(w, boton('m|reserva', 'Reservar'));
+    w.estado.extraccion = { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: 'terraza', nombre: 'Ana Pérez', celebracion: '', requerimiento: '' };
+    turno(w, texto('mesa para 4 el viernes a las 8 de la noche en la terraza'));
+    w.envios['Enviar a WhatsApp'] = 'error explícito (media ID vencido)';
+    w.envios['Enviar respaldo'] = 'error explícito (media ID vencido)';
+    turno(w, boton('r|enviar', 'Enviar'), true);
+    delete w.envios['Enviar a WhatsApp']; delete w.envios['Enviar respaldo'];
+    w.mundo.avanzar(61);
+    expect(reservar(w).avisos.length).toBeGreaterThan(0);
+  });
+
+  it('el 2.º intento (replanificación) arma `venceEnMin` > 60 con las reservas de hoy; MUTACIÓN: sin `minHastaMedianoche` vence a los 60', () => {
+    const correr = (flujo: Flujo): number => {
+      const w = crear({}, flujo);
+      turno(w, boton('m|reserva', 'Reservar'));
+      w.estado.extraccion = { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: 'terraza', nombre: 'Ana Pérez', celebracion: '', requerimiento: '' };
+      turno(w, texto('mesa para 4 el viernes a las 8 de la noche en la terraza'));
+      let rival = false;
+      w.sesion.servidor.antesDeComprometer = (c) => {
+        const q = c['sesion'] as J;
+        if (rival || q['accion'] !== 'comprometer' || Array.isArray(q['cupos'])) return;
+        rival = true;
+        const b = (w.sesion.bloque(CLIENTE) ?? { v: 1, estado: {}, pedidos: {} }) as J;
+        w.sesion.sembrarBloque(CLIENTE, { ...b, reservas: { dia: '2026-10-05', n: 2 } });
+      };
+      const t = turno(w, boton('r|enviar', 'Enviar'), true);
+      expect(t.ejecutados.has('Comprometer turno (2.º intento)')).toBe(true);
+      const dos = w.sesion.compromisos.filter((x) => x.nodo === 'Comprometer turno (2.º intento)');
+      return (dos.at(-1)!.cuerpo['sesion'] as J)['venceEnMin'] as number;
+    };
+    expect(correr(QTACO)).toBeGreaterThan(60);
+    const f = mutar((c) => cambiarCodigo(c, 'Armar mensajes', 'minHastaMedianoche: vmMinHastaMedianoche(AM_AHORA).min,', ''));
+    expect(correr(f)).toBe(60);
+  });
+
   it('el `venceEnMin` llega hasta la medianoche de La Paz (máx. 4320) solo si las reservas son de HOY', () => {
     const w = crear({}, QTACO, { topeReservasDia: 1 });
     reservar(w);
