@@ -421,13 +421,13 @@ describe('endurecimientos de la revisión de seguridad (todos niegan sin escribi
 
 // ---------------------------------------------------------------------------------- Agenda mínima v0 con el miniCRM (04/11/2026)
 // El ensayo en el Demo A no escribe en ninguna planilla: los 8 nodos del miniCRM quedan SIN credencial y el id de planilla va vacío; ninguna credencial de Bellido llega al Demo A.
-describe('Agenda mínima v0 (70 nodos, con miniCRM) sobre el Demo A', () => {
+describe('Agenda mínima v0 (71 nodos, con miniCRM) sobre el Demo A', () => {
   const V0 = join(aqui, '../../Flujos/experimental/agenda-minima/agenda-minima.v0.json');
   const NODOS_CRM = ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Leer encabezados de la planilla', 'Decidir fila de la planilla', '¿Acción de la planilla?', 'Agregar fila', 'Actualizar fila'];
   const idDePlanilla = (w: J): unknown => (nodo(w, 'Config base').parameters.assignments.assignments as J[]).find((a) => a.name === 'planillaProspectosId')!.value;
-  it('el candidato tiene 70 nodos y trae la credencial de Bellido en los nodos de Google', () => {
+  it('el candidato tiene 71 nodos y trae la credencial de Bellido en los nodos de Google', () => {
     const w = leerJson(V0);
-    expect(w.nodes).toHaveLength(70);
+    expect(w.nodes).toHaveLength(71);
     expect(JSON.stringify(w)).toContain('Google Sheets miniCRM (crm-bellido)');
   });
   it('en seco: pasa, avisa que los nodos del miniCRM quedan sin credencial y no escribe en n8n', async () => {
@@ -443,7 +443,7 @@ describe('Agenda mínima v0 (70 nodos, con miniCRM) sobre el Demo A', () => {
     const r = await correr(['--sobre-demo-a', '--respaldo', respaldoNuevo(), '--flujo', V0, '--aplicar', '--autorizo-gemini-produccion']);
     expect(r.codigo, r.salida).toBe(0);
     const p = mundo.puts[0]!;
-    expect(p.nodes).toHaveLength(70);
+    expect(p.nodes).toHaveLength(71);
     for (const n of NODOS_CRM) expect(Object.keys(nodo(p, n).credentials ?? {}), n).toEqual([]);
     expect(idDePlanilla(p)).toBe('');
     const nombres = (p.nodes as J[]).flatMap((n) => Object.values(n.credentials ?? {}).map((c) => String((c as J).name)));
