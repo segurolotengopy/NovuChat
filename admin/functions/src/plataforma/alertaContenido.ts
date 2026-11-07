@@ -89,7 +89,11 @@ const VERSION = /(?<![\p{Nd}.])\p{Nd}\.\p{Nd}{1,3}\.\p{Nd}{1,3}(?!\p{Nd}|\.\p{Nd
 // 7 o más cifras con hasta 3 separadores entre cada par: espacio, NBSP, paréntesis, punto, cualquier guion Unicode
 // (\p{Pd}), barra, guion bajo, dos puntos o coma: «7123-45-67», «71.234.567», «7123/4567», «71,23,45,67».
 const RACHA_DE_TELEFONO = /\p{Nd}(?:[\s().\p{Pd}/_:,]{0,3}\p{Nd}){6,}/u;
-const sinFechasNiVersiones = (t: string): string => t.replace(FECHA_ISO, '#').replace(VERSION, '#');
+// Formas de fecha y hora que NO son un teléfono: «07/11/2026», «07/11/2026 14:59:03», «07/11 17:00» (la barra solo cuenta como
+// fecha si lo que sigue no es otra cifra ni «/cifra»: «71/23/4567» sigue siendo un teléfono) y «10:30:15.123».
+const FECHA_BARRA = /(?<![\p{Nd}/])\p{Nd}{2}\/\p{Nd}{2}(?:\/(?:19|20)\p{Nd}{2})?(?: \p{Nd}{2}:\p{Nd}{2}(?::\p{Nd}{2}(?:\.\p{Nd}{3})?)?)?(?!\/?\p{Nd})/gu;
+const HORA_MS = /(?<!\p{Nd})\p{Nd}{2}:\p{Nd}{2}:\p{Nd}{2}\.\p{Nd}{3}(?!\p{Nd})/gu;
+const sinFechasNiVersiones = (t: string): string => t.replace(FECHA_ISO, '#').replace(FECHA_BARRA, '#').replace(HORA_MS, '#').replace(VERSION, '#');
 
 /**
  * `texto`: campos libres (ADR). `id`: `id_unico` (palabra larga sin guiones). `tipo`: `tipo_error`, una lista cerrada de
@@ -212,7 +216,9 @@ export function validarEntrada(cuerpo: unknown, cfg: ConfigContenido): EventoVal
   // Idempotency-Key `novuchat:<id_unico>`; derivar un hash lo volvería ilegible. Pasa por TODOS los detectores
   // (prefijos de secreto, 32+ alfanuméricos sin guiones, teléfono, número de 6, correo, IP, localhost, dominios,
   // denegados). Una coincidencia deja `idOk = false`: sin aviso `:bloqueado`, solo 4xx.
-  if (idOk && s('id_unico').startsWith('resumen-')) { idOk = false; mal('id_unico', 'forma'); } // el prefijo es del resumen propio
+  // Prefijos y sufijos RESERVADOS del servidor: `resumen-` (el resumen propio), `id-invalido-` (el aviso de un id inválido) y
+  // `:bloqueado` (el aviso de contenido bloqueado). Un emisor que los use podría pisar o suplantar esos avisos.
+  if (idOk && (s('id_unico').startsWith('resumen-') || s('id_unico').startsWith('id-invalido-') || s('id_unico').endsWith(':bloqueado'))) { idOk = false; mal('id_unico', 'forma'); }
   if (idOk) {
     const r = detectar(s('id_unico'), cfg.denegar, 'id');
     if (r.length > 0) { idOk = false; for (const x of r) mal('id_unico', x); }

@@ -6,7 +6,7 @@
  * sintéticos armados en ejecución (ningún dominio ni correo real en el repositorio).
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, closeSync, fstatSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +31,7 @@ const CORREO = ['persona', '@', 'ejemplo', '.test'].join('');
 const DENEGADA = 'cadena-denegada-ficticia';
 let tmp: string;
 let runtime: string;
+let n = 0;
 
 const doc = async () => (await ref.get());
 const leer = (r: string): string => readFileSync(r, 'utf8');
@@ -46,19 +47,26 @@ function correr(...a: string[]) {
   expect(salida).not.toContain(DENEGADA);
   return { codigo: r.status, salida };
 }
-const BASE = ['--dominio', DOMINIO, '--destinatario', CORREO, '--hosts', 'github.com', '--repos', 'dueno/repo-uno'];
+/** Un archivo local con lo pedido (el destinatario y las denegadas SOLO entran por aquí). */
+const archivo = (extra: Record<string, unknown> = {}, base: Record<string, unknown> | null = null): string[] => {
+  const ruta = join(tmp, `pedido-${++n}.local.json`);
+  writeFileSync(ruta, JSON.stringify({ dominioAvisos: DOMINIO, destinatario: CORREO, enlaceHosts: 'github.com', enlaceRepos: 'dueno/repo-uno', ...(base ?? {}), ...extra }));
+  return ['--archivo', ruta];
+};
+const respaldoDe = (salida: string): string => /\(modo 600\): (\S+)/.exec(salida)![1]!;
 
 beforeEach(async () => {
   tmp = mkdtempSync(join(tmpdir(), 'alertas-config-'));
-  runtime = join(tmp, 'run'); (await import('node:fs')).mkdirSync(runtime, { mode: 0o700 }); chmodSync(runtime, 0o700);
+  runtime = join(tmp, 'run'); mkdirSync(runtime, { mode: 0o700 }); chmodSync(runtime, 0o700);
   await ref.delete();
 });
-afterAll(async () => { await ref.delete(); await deleteApp(app); });
+afterAll(async () => { await ref.delete(); await deleteApp(app); rmSync(tmp, { recursive: true, force: true }); });
 
 describe('alertas-config.mjs: seco por omisión, escritura con respaldo y relectura', () => {
-  it('sin --aplicar NO escribe nada y dice qué haría, con el destinatario enmascarado', async () => {
-    const r = correr(...BASE, '--denegar', DENEGADA);
+  it('sin --aplicar NO escribe nada y dice qué haría, con el destino a la vista y el destinatario enmascarado', async () => {
+    const r = correr(...archivo({ avisosDenegar: [DENEGADA] }));
     expect(r.codigo).toBe(0);
+    expect(r.salida).toContain(`Destino   : emulador ${HOST}`);
     expect(r.salida).toContain('Sin --aplicar no se escribió nada');
     expect(r.salida).toContain('p***@e***');
     expect(r.salida).toContain('1 cadena(s), no se imprimen');
@@ -67,7 +75,7 @@ describe('alertas-config.mjs: seco por omisión, escritura con respaldo y relect
 
   it('--aplicar escribe SOLO los campos pedidos, deja el respaldo (modo 600) y relee', async () => {
     await ref.set({ otroCampo: 'ajeno', topeDiario: 4 });
-    const r = correr(...BASE, '--tope', '6', '--aplicar');
+    const r = correr(...archivo({ topeDiario: 6 }), '--aplicar');
     expect(r.codigo).toBe(0);
     expect(r.salida).toContain('escrito y comprobado');
     const d = await doc();
@@ -77,22 +85,29 @@ describe('alertas-config.mjs: seco por omisión, escritura con respaldo y relect
     expect(d.get('enlaceRepos')).toBe('dueno/repo-uno');
     expect(d.get('topeDiario')).toBe(6);
     expect(d.get('otroCampo')).toBe('ajeno');                       // no toca lo que no es suyo
-    const ruta = /Respaldo \(modo 600\): (\S+)/.exec(r.salida)![1]!;
+    const ruta = respaldoDe(r.salida);
     expect(modoDe(ruta)).toBe(0o600);
     expect(JSON.parse(leer(ruta))).toEqual({ existia: true, datos: { topeDiario: 4 } });
   });
 
+  it('por argumentos (sin destinatario ni denegadas) también sirve', async () => {
+    const r = correr('--dominio', DOMINIO, '--hosts', 'github.com', '--repos', 'dueno/repo-uno', '--tope', '7', '--aplicar');
+    expect(r.codigo).toBe(0);
+    expect((await doc()).get('topeDiario')).toBe(7);
+  });
+
   it('repetir lo mismo: «Nada que cambiar» y no escribe ni deja otro respaldo', async () => {
-    correr(...BASE, '--aplicar');
-    const r = correr(...BASE, '--aplicar');
+    const f = archivo();
+    correr(...f, '--aplicar');
+    const r = correr(...f, '--aplicar');
     expect(r.codigo).toBe(0);
     expect(r.salida).toContain('Nada que cambiar');
     expect(r.salida).not.toContain('Respaldo');
   });
 
-  it('--revertir devuelve el documento anterior (o lo borra si no existía) y relee', async () => {
-    const a = correr(...BASE, '--aplicar');
-    const ruta = /Respaldo \(modo 600\): (\S+)/.exec(a.salida)![1]!;
+  it('--revertir devuelve el documento anterior (o lo borra si no existía), relee y deja respaldo del estado ACTUAL', async () => {
+    const a = correr(...archivo(), '--aplicar');
+    const ruta = respaldoDe(a.salida);
     expect((await doc()).exists).toBe(true);
     const seco = correr('--revertir', ruta);
     expect(seco.codigo).toBe(0);
@@ -100,24 +115,22 @@ describe('alertas-config.mjs: seco por omisión, escritura con respaldo y relect
     const r = correr('--revertir', ruta, '--aplicar');
     expect(r.codigo).toBe(0);
     expect(r.salida).toContain('revertido y comprobado');
-    const d = await doc();
-    expect(d.get('dominioAvisos')).toBeUndefined();
-    expect(d.get('destinatario')).toBeUndefined();
+    expect((await doc()).exists).toBe(false);
+    const previo = respaldoDe(r.salida);                            // el estado que había ANTES de revertir
+    expect(modoDe(previo)).toBe(0o600);
+    expect(JSON.parse(leer(previo)).datos.dominioAvisos).toBe(DOMINIO);
   });
 
   it('--revertir restaura los valores previos de un documento que ya existía', async () => {
     await ref.set({ dominioAvisos: 'previo.ejemplo.test', topeDiario: 3 });
-    const a = correr(...BASE, '--tope', '7', '--aplicar');
-    const ruta = /Respaldo \(modo 600\): (\S+)/.exec(a.salida)![1]!;
-    expect(correr('--revertir', ruta, '--aplicar').codigo).toBe(0);
+    const a = correr(...archivo({ topeDiario: 7 }), '--aplicar');
+    expect(correr('--revertir', respaldoDe(a.salida), '--aplicar').codigo).toBe(0);
     const d = await doc();
     expect([d.get('dominioAvisos'), d.get('topeDiario'), d.get('destinatario')]).toEqual(['previo.ejemplo.test', 3, undefined]);
   });
 
   it('un archivo local *.local.json sirve; las cadenas denegadas entran y NO se imprimen', async () => {
-    const f = join(tmp, 'alertas.local.json');
-    writeFileSync(f, JSON.stringify({ dominioAvisos: DOMINIO, destinatario: CORREO, enlaceHosts: ['github.com'], enlaceRepos: [], avisosDenegar: [DENEGADA, 'otra-cadena-ficticia'], topeDiario: 8 }));
-    const r = correr('--archivo', f, '--aplicar');
+    const r = correr(...archivo({ enlaceRepos: [], avisosDenegar: [DENEGADA, 'otra-cadena-ficticia'], topeDiario: 8 }), '--aplicar');
     expect(r.codigo).toBe(0);
     const d = await doc();
     expect(d.get('avisosDenegar')).toBe(`${DENEGADA},otra-cadena-ficticia`);
@@ -131,9 +144,10 @@ describe('alertas-config.mjs: lo que se NIEGA (sale 2 y no escribe)', () => {
     const r = correr(...a, '--aplicar');
     expect(r.codigo, a.join(' ')).toBe(2);
     expect((await doc()).exists).toBe(false);
+    return r;
   };
   it('tope mayor que el máximo del código (9, 50), cero, negativo, decimal o texto: se RECHAZA, no se recorta', async () => {
-    for (const t of ['9', '50', '0', '-1', '4.5', 'x', '']) await sinEscribir(...BASE, '--tope', t);
+    for (const t of ['9', '50', '0', '-1', '4.5', 'x', '']) await sinEscribir('--dominio', DOMINIO, '--tope', t);
   });
   it('el máximo de este script es el del código', () => {
     expect(readFileSync(SCRIPT, 'utf8')).toContain(`const TOPE_MAXIMO = ${TOPE_MAXIMO};`);
@@ -141,54 +155,116 @@ describe('alertas-config.mjs: lo que se NIEGA (sale 2 y no escribe)', () => {
   it('dominio con esquema o ruta, destinatario sin forma, host IP o con puerto, repo mal formado, cadena denegada corta', async () => {
     await sinEscribir('--dominio', `https://${DOMINIO}`);
     await sinEscribir('--dominio', `${DOMINIO}/x`);
-    await sinEscribir('--destinatario', 'no-es-un-correo');
+    await sinEscribir(...archivo({ destinatario: 'no-es-un-correo' }));
     await sinEscribir('--hosts', '10.0.0.5');
     await sinEscribir('--hosts', 'github.com:8443');
     await sinEscribir('--hosts', '');
     await sinEscribir('--repos', 'sin-barra');
     await sinEscribir('--repos', 'a/b/c');
-    await sinEscribir('--denegar', 'ab');
+    await sinEscribir(...archivo({ avisosDenegar: ['ab'] }));
+  });
+  it('--destinatario y --denegar por ARGUMENTO se rechazan (se ven en ps): solo por --archivo', async () => {
+    const a = await sinEscribir('--dominio', DOMINIO, '--destinatario', CORREO);
+    expect(a.salida).toContain('--archivo');
+    const b = await sinEscribir('--dominio', DOMINIO, '--denegar', DENEGADA);
+    expect(b.salida).toContain('--archivo');
+  });
+  it('una bandera final sin valor, o que consume otra bandera como valor, es error de uso (2), no silencio', async () => {
+    await sinEscribir('--dominio', DOMINIO, '--tope');
+    await sinEscribir('--dominio', '--aplicar');
+    await sinEscribir('--hosts', '--repos', 'dueno/repo-uno');
+    expect(correr('--dominio').codigo).toBe(2);
   });
   it('sin proyecto, con proyecto mal formado o sin ningún campo pedido', async () => {
-    const sin = spawnSync(process.execPath, [SCRIPT, ...BASE], { encoding: 'utf8', env: entornoDelEmulador(HOST) });
+    const sin = spawnSync(process.execPath, [SCRIPT, '--dominio', DOMINIO], { encoding: 'utf8', env: entornoDelEmulador(HOST) });
     expect(sin.status).toBe(2);
     expect(correr('--aplicar').codigo).toBe(2);
-    const mal = spawnSync(process.execPath, [SCRIPT, '--proyecto', 'X', ...BASE, '--aplicar'], { encoding: 'utf8', env: entornoDelEmulador(HOST) });
+    const mal = spawnSync(process.execPath, [SCRIPT, '--proyecto', 'X', '--dominio', DOMINIO, '--aplicar'], { encoding: 'utf8', env: entornoDelEmulador(HOST) });
     expect(mal.status).toBe(2);
   });
   it('un archivo que no se llama *.local.json (versionable) o con campos ajenos: se niega', async () => {
     const f = join(tmp, 'alertas.json');
     writeFileSync(f, JSON.stringify({ dominioAvisos: DOMINIO }));
     await sinEscribir('--archivo', f);
-    const g = join(tmp, 'otra.local.json');
-    writeFileSync(g, JSON.stringify({ dominioAvisos: DOMINIO, tenantId: 'x' }));
-    await sinEscribir('--archivo', g);
+    await sinEscribir(...archivo({ tenantId: 'x' }));
   });
   it('sin $XDG_RUNTIME_DIR ni --respaldo no hay dónde dejar el respaldo: no escribe', async () => {
-    const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...BASE, '--aplicar'], { encoding: 'utf8', env: entornoDelEmulador(HOST, { XDG_RUNTIME_DIR: '' }) });
+    const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...archivo(), '--aplicar'], { encoding: 'utf8', env: entornoDelEmulador(HOST, { XDG_RUNTIME_DIR: '' }) });
     expect(r.status).toBe(2);
     expect((await doc()).exists).toBe(false);
   });
   it('un respaldo que ya existe no se pisa: no escribe', async () => {
     const respaldo = join(tmp, 'ya-existe.json');
     writeFileSync(respaldo, 'contenido-previo');
-    const r = correr(...BASE, '--respaldo', respaldo, '--aplicar');
+    const r = correr(...archivo(), '--respaldo', respaldo, '--aplicar');
     expect(r.codigo).toBe(2);
     expect(leer(respaldo)).toBe('contenido-previo');
     expect((await doc()).exists).toBe(false);
   });
-  it('--revertir con un respaldo ilegible o con campos ajenos se niega', async () => {
-    const f = join(tmp, 'resp.json');
-    writeFileSync(f, 'no-json');
-    expect(correr('--revertir', f, '--aplicar').codigo).toBe(2);
-    writeFileSync(f, JSON.stringify({ existia: true, datos: { tenantId: 'x' } }));
-    expect(correr('--revertir', f, '--aplicar').codigo).toBe(2);
+  it('--respaldo dentro del repositorio (donde un git add lo versionaría) se rechaza; dentro de $XDG_RUNTIME_DIR o fuera del repo, no', async () => {
+    const dentro = join(aqui, 'respaldo-de-prueba.json');
+    const r = await sinEscribir(...archivo(), '--respaldo', dentro);
+    expect(r.salida).toContain('fuera del repositorio');
+    expect(spawnSync('test', ['-e', dentro]).status).not.toBe(0);   // y no lo creó
+    expect(correr(...archivo(), '--respaldo', join(runtime, 'r.json'), '--aplicar').codigo).toBe(0);
+  });
+  it('contra un proyecto REAL (sin emulador) --aplicar exige --confirmo produccion y GCP_PROJECT_ID_PROD igual; el destino se imprime', async () => {
+    const real = (extra: string[], vars: Record<string, string>) => spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...archivo(), ...extra], {
+      encoding: 'utf8', // Sin credenciales posibles: ni un intento de tocar un proyecto real desde la prueba.
+      env: { ...process.env, FIRESTORE_EMULATOR_HOST: '', GOOGLE_APPLICATION_CREDENTIALS: join(tmp, 'no-existe.json'), CLOUDSDK_CONFIG: join(tmp, 'gcloud'), XDG_RUNTIME_DIR: runtime, ...vars },
+    });
+    const seco = real([], {});
+    expect(`${seco.stdout}${seco.stderr}`).toContain('Destino   : proyecto real');
+    expect(real(['--aplicar'], {}).status).toBe(2);                                                 // sin --confirmo
+    expect(real(['--aplicar', '--confirmo', 'staging'], { GCP_PROJECT_ID_PROD: PROYECTO }).status).toBe(2);
+    expect(real(['--aplicar', '--confirmo', 'produccion'], {}).status).toBe(2);                     // sin la variable
+    expect(real(['--aplicar', '--confirmo', 'produccion'], { GCP_PROJECT_ID_PROD: 'otro-proyecto-xyz' }).status).toBe(2);
+    expect((await doc()).exists).toBe(false);
   });
   it('solo escribe plataforma/alertas: no crea ningún otro documento de plataforma', async () => {
-    correr(...BASE, '--aplicar');
+    correr(...archivo(), '--aplicar');
     const otros = await db.collection('plataforma').get();
     expect(otros.docs.map((d) => d.id)).toEqual(['alertas']);
   });
 });
 
-afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+describe('alertas-config.mjs --revertir: el respaldo pasa por la MISMA validación (un respaldo editado no es una puerta trasera)', () => {
+  const revertirCon = async (datos: unknown, existia = true) => {
+    const f = join(tmp, `respaldo-${++n}.json`);
+    writeFileSync(f, JSON.stringify({ existia, datos }));
+    await ref.set({ dominioAvisos: 'actual.ejemplo.test' });
+    const r = correr('--revertir', f, '--aplicar');
+    return { r, d: (await doc()).get('dominioAvisos') as string };
+  };
+  it('destinatario sin forma, tope > 8, hosts con IP, repos mal formados, denegadas que no son texto o tipos ajenos: se NIEGA y no cambia nada', async () => {
+    for (const datos of [
+      { destinatario: 'no-es-un-correo' }, { topeDiario: 999 }, { topeDiario: '5' }, { enlaceHosts: `evil.ejemplo.test,${['1', '2', '3', '4'].join('.')}` },
+      { enlaceRepos: '../../x' }, { avisosDenegar: { x: 1 } }, { avisosDenegar: ['arreglo'] }, { dominioAvisos: 'https://x.ejemplo.test' },
+      { dominioAvisos: 'MAYUSCULAS.ejemplo.test' },                                                // no normalizado
+    ]) {
+      const { r, d } = await revertirCon(datos);
+      expect(r.codigo, JSON.stringify(datos)).toBe(2);
+      expect(d).toBe('actual.ejemplo.test');
+    }
+  });
+  it('un respaldo válido sí revierte', async () => {
+    const { r, d } = await revertirCon({ dominioAvisos: 'previo.ejemplo.test', topeDiario: 3 });
+    expect(r.codigo).toBe(0);
+    expect(d).toBe('previo.ejemplo.test');
+  });
+  it('el respaldo del estado actual queda ANTES de revertir; si no hay dónde dejarlo, no revierte', async () => {
+    const f = join(tmp, 'resp.json');
+    writeFileSync(f, JSON.stringify({ existia: true, datos: { dominioAvisos: 'previo.ejemplo.test' } }));
+    await ref.set({ dominioAvisos: 'actual.ejemplo.test' });
+    const sin = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--revertir', f, '--aplicar'], { encoding: 'utf8', env: entornoDelEmulador(HOST, { XDG_RUNTIME_DIR: '' }) });
+    expect(sin.status).toBe(2);
+    expect((await doc()).get('dominioAvisos')).toBe('actual.ejemplo.test');
+  });
+  it('--revertir con un respaldo ilegible o con campos ajenos se niega', async () => {
+    const f = join(tmp, 'resp2.json');
+    writeFileSync(f, 'no-json');
+    expect(correr('--revertir', f, '--aplicar').codigo).toBe(2);
+    writeFileSync(f, JSON.stringify({ existia: true, datos: { tenantId: 'x' } }));
+    expect(correr('--revertir', f, '--aplicar').codigo).toBe(2);
+  });
+});

@@ -14,12 +14,20 @@
  *     `$XDG_RUNTIME_DIR` o de `--respaldo`), escribe y RELEE para confirmar lo escrito (si no coincide, sale 3);
  *   - `--revertir <respaldo>`: vuelve al documento anterior (si no existía, lo borra) y relee.
  *
+ * EL DESTINATARIO Y LAS CADENAS DENEGADAS SOLO POR `--archivo`: un argumento de la línea de comandos se ve en `ps` y queda en el
+ * historial. `--destinatario` y `--denegar` por argv se RECHAZAN (salida 2).
+ *
+ * CONTRA UN PROYECTO REAL (sin FIRESTORE_EMULATOR_HOST): `--aplicar` exige `--confirmo produccion` y GCP_PROJECT_ID_PROD igual al
+ * proyecto (como nube-alertas.sh). El destino se imprime SIEMPRE («emulador <host>» o «proyecto real»).
+ * `--revertir` pasa los valores del respaldo por la MISMA validación del modo normal y se niega ante cualquiera inválido; antes de
+ * revertir deja un respaldo del estado actual. `--respaldo` solo dentro de $XDG_RUNTIME_DIR o fuera del repositorio.
+ *
  * LOS VALORES NO SE VERSIONAN NI SE IMPRIMEN ENTEROS. Vienen por argumento o de un archivo local `*.local.json` (ignorado
  * por git; el script se niega a leer otro nombre). El destinatario se muestra enmascarado (`a***@e***`) y la lista
  * `avisosDenegar` nunca se imprime (solo cuántas cadenas son). Sin valores reales en ningún archivo del repositorio.
  *
- *   node scripts/plataforma/alertas-config.mjs --proyecto <id> --dominio <avisos...> --destinatario <correo> \
- *        --hosts github.com --repos <dueño/repo>[,...] [--denegar a,b] [--tope 5] [--aplicar] [--respaldo <ruta>]
+ *   node scripts/plataforma/alertas-config.mjs --proyecto <id> --dominio <avisos...> --hosts github.com \
+ *        --repos <dueño/repo>[,...] [--tope 5] [--aplicar] [--respaldo <ruta>]      (destinatario y denegadas: --archivo)
  *   node scripts/plataforma/alertas-config.mjs --proyecto <id> --archivo ./alertas.local.json [--aplicar]
  *   node scripts/plataforma/alertas-config.mjs --proyecto <id> --revertir <respaldo.json> [--aplicar]
  *
@@ -28,10 +36,18 @@
  * Salida: 0 hecho o seco · 2 uso o valores inválidos (nada escrito) · 3 la relectura no coincide.
  */
 import { closeSync, openSync, readFileSync, writeSync, constants } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { join, resolve, sep } from 'node:path';
 
 const args = process.argv.slice(2);
-const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
+// Una bandera final sin valor, o que consume OTRA bandera como valor (`--denegar --aplicar`), es un error de uso.
+function opcion(n) {
+  const i = args.indexOf(`--${n}`);
+  if (i < 0) return null;
+  const v = args[i + 1];
+  if (v === undefined || v.startsWith('--')) usoMal(`--${n} necesita un valor`);
+  return v;
+}
 const APLICAR = args.includes('--aplicar');
 const PROYECTO = opcion('proyecto');
 const ARCHIVO = opcion('archivo');
@@ -90,12 +106,12 @@ function mostrar(campo, valor) {
   return String(valor);
 }
 
-const usoMal = (m) => {
+function usoMal(m) {
   console.error(`\n  ✗ ${m}`);
   console.error('\n  node scripts/plataforma/alertas-config.mjs --proyecto <id> [--dominio D --destinatario C --hosts H --repos R --denegar X --tope N | --archivo f.local.json] [--aplicar]');
   console.error('  node scripts/plataforma/alertas-config.mjs --proyecto <id> --revertir <respaldo.json> [--aplicar]\n');
   process.exit(2);
-};
+}
 
 if (!PROYECTO || !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(PROYECTO)) usoMal('--proyecto inválido o ausente');
 
@@ -107,7 +123,8 @@ if (!REVERTIR) {
     if (!pedido || typeof pedido !== 'object' || Array.isArray(pedido)) usoMal('--archivo tiene que ser un objeto JSON');
     for (const k of Object.keys(pedido)) if (!CAMPOS.includes(k)) usoMal(`--archivo: campo no permitido «${k.slice(0, 30)}»`);
   } else {
-    const por = { dominioAvisos: 'dominio', destinatario: 'destinatario', enlaceHosts: 'hosts', enlaceRepos: 'repos', avisosDenegar: 'denegar', topeDiario: 'tope' };
+    for (const k of ['destinatario', 'denegar']) if (args.includes(`--${k}`)) usoMal(`--${k} no se admite por argumento (se ve en ps): use --archivo *.local.json`);
+    const por = { dominioAvisos: 'dominio', enlaceHosts: 'hosts', enlaceRepos: 'repos', topeDiario: 'tope' };
     for (const [campo, nombre] of Object.entries(por)) { const v = opcion(nombre); if (v !== null) pedido[campo] = v; }
   }
   if (Object.keys(pedido).length === 0) usoMal('no se pidió ningún campo');
@@ -121,6 +138,37 @@ initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 const ref = db.doc('plataforma/alertas');
 
+// EL DESTINO, SIEMPRE A LA VISTA, y la doble llave contra un proyecto real.
+const HOST_EMULADOR = process.env.FIRESTORE_EMULATOR_HOST || '';
+console.log(`\n  Destino   : ${HOST_EMULADOR ? `emulador ${HOST_EMULADOR}` : 'proyecto real'}`);
+if (!HOST_EMULADOR && APLICAR) {
+  if (opcion('confirmo') !== 'produccion') usoMal('contra un proyecto real, --aplicar exige --confirmo produccion (escrito a mano). No se escribió nada.');
+  if (!process.env.GCP_PROJECT_ID_PROD || process.env.GCP_PROJECT_ID_PROD !== PROYECTO) usoMal('contra un proyecto real, --aplicar exige GCP_PROJECT_ID_PROD en el entorno, igual a --proyecto (doble llave). No se escribió nada.');
+}
+
+/** Un respaldo solo dentro de $XDG_RUNTIME_DIR o fuera del repositorio (donde un `git add` lo versionaría). */
+function rutaDeRespaldoPermitida(ruta) {
+  const r = resolve(ruta);
+  const xdg = process.env.XDG_RUNTIME_DIR ? resolve(process.env.XDG_RUNTIME_DIR) : '';
+  if (xdg && (r === xdg || r.startsWith(xdg + sep))) return true;
+  const g = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+  if (g.status !== 0) return false;                      // no sé dónde está el repositorio: no se arriesga
+  const raiz = resolve(g.stdout.trim());
+  return !(r === raiz || r.startsWith(raiz + sep));
+}
+
+/** Crea el respaldo con O_EXCL, modo 600, y escribe POR EL DESCRIPTOR. Devuelve la ruta o sale 2. */
+function crearRespaldo(contenido) {
+  if (!RESPALDO && !process.env.XDG_RUNTIME_DIR) usoMal('sin $XDG_RUNTIME_DIR ni --respaldo no hay dónde dejar el respaldo: no se escribió nada');
+  const ruta = resolve(RESPALDO ?? join(process.env.XDG_RUNTIME_DIR, `alertas-config-respaldo-${Date.now()}.json`));
+  if (!rutaDeRespaldoPermitida(ruta)) usoMal('--respaldo tiene que estar dentro de $XDG_RUNTIME_DIR o fuera del repositorio: no se escribió nada');
+  try {
+    const fd = openSync(ruta, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+    try { writeSync(fd, JSON.stringify(contenido)); } finally { closeSync(fd); }
+  } catch { usoMal('no pude crear el respaldo (¿ya existe?): no se escribió nada'); }
+  return ruta;
+}
+
 const instantanea = async () => { const d = await ref.get(); return d.exists ? { existia: true, datos: Object.fromEntries(CAMPOS.filter((c) => d.get(c) !== undefined).map((c) => [c, d.get(c)])) } : { existia: false, datos: {} }; };
 const igual = (a, b) => JSON.stringify(CAMPOS.map((c) => a[c] ?? null)) === JSON.stringify(CAMPOS.map((c) => b[c] ?? null));
 
@@ -132,9 +180,18 @@ if (REVERTIR) {
   try { previo = JSON.parse(readFileSync(REVERTIR, 'utf8')); } catch { usoMal('no pude leer el respaldo'); }
   if (typeof previo?.existia !== 'boolean' || typeof previo?.datos !== 'object') usoMal('el respaldo no tiene la forma esperada');
   for (const k of Object.keys(previo.datos)) if (!CAMPOS.includes(k)) usoMal('el respaldo trae campos que este script no maneja');
+  // Los valores del respaldo pasan por la MISMA validación que el modo normal (un respaldo editado no es una puerta trasera):
+  // tipos exactos (texto salvo el tope), formato válido y ya normalizados.
+  const tiposMal = Object.entries(previo.datos).filter(([c, v]) => (c === 'topeDiario' ? typeof v !== 'number' : typeof v !== 'string')).map(([c]) => c);
+  if (tiposMal.length) usoMal(`el respaldo trae valores de un tipo inválido: ${tiposMal.join(', ')}`);
+  const rev = validar(previo.datos);
+  const noNormal = Object.entries(rev.valores).filter(([c, v]) => v !== previo.datos[c]).map(([c]) => c);
+  if (rev.problemas.length || noNormal.length) usoMal(`el respaldo no pasa la validación: ${[...rev.problemas, ...noNormal.map((c) => `${c}: no normalizado`)].join('; ')}`);
   console.log(`  Volvería a: ${previo.existia ? 'el documento anterior' : 'sin documento (se borra)'}`);
   for (const c of CAMPOS) console.log(`    ${c.padEnd(14)} ${mostrar(c, previo.datos[c])}`);
   if (!APLICAR) { console.log('\n  Sin --aplicar no se escribió nada.\n'); process.exit(0); }
+  const actual = await instantanea();
+  const rutaRespaldo = crearRespaldo(actual);       // el estado ACTUAL se respalda antes de revertir
   if (previo.existia) {
     // Se reemplazan los seis campos: los que el respaldo no trae se borran.
     const { FieldValue } = await import('firebase-admin/firestore');
@@ -144,7 +201,7 @@ if (REVERTIR) {
   }
   const ahora = await instantanea();
   if (!igual(ahora.datos, previo.datos)) { console.error('  ✗ al releer, el documento NO quedó como el respaldo'); process.exit(3); }
-  console.log('\n  ✓ revertido y comprobado por relectura\n');
+  console.log(`\n  ✓ revertido y comprobado por relectura\n  Respaldo del estado anterior a la reversa (modo 600): ${rutaRespaldo}\n`);
   process.exit(0);
 }
 
@@ -160,14 +217,7 @@ if (igual(antes.datos, despues)) { console.log('\n  Nada que cambiar.\n'); proce
 if (!APLICAR) { console.log('\n  Sin --aplicar no se escribió nada.\n'); process.exit(0); }
 
 // RESPALDO primero (O_EXCL, modo 600): sin respaldo no se escribe.
-const base = RESPALDO ?? join(process.env.XDG_RUNTIME_DIR || '', `alertas-config-respaldo-${Date.now()}.json`);
-if (!RESPALDO && !process.env.XDG_RUNTIME_DIR) { console.error('  ✗ sin $XDG_RUNTIME_DIR ni --respaldo no hay dónde dejar el respaldo: no se escribió nada'); process.exit(2); }
-const ruta = resolve(base);
-try {
-  // Se escribe POR EL DESCRIPTOR que se abrió con O_EXCL (no se reabre por ruta: eso es una carrera de archivo).
-  const fd = openSync(ruta, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-  try { writeSync(fd, JSON.stringify(antes)); } finally { closeSync(fd); }
-} catch { console.error('  ✗ no pude crear el respaldo (¿ya existe?): no se escribió nada'); process.exit(2); }
+const ruta = crearRespaldo(antes);
 
 await ref.set(valores, { merge: true });
 const ahora = await instantanea();

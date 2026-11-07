@@ -95,6 +95,36 @@ export function bateriaDelAlmacen(nombre: string, nuevo: () => Promise<Fabrica>)
       expect((await almacen.pendientesDeResumen()).map((e) => e.id_unico)).toEqual(['evt-ord-0002', 'evt-ord-0003', 'evt-ord-0001']);
     });
 
+    it('reservar con tope por tipo y día: a lo más N, aunque pase la hora; liberar devuelve ese cupo', async () => {
+      const { almacen } = await nuevo();
+      expect((await almacen.reservar('bloq', DIA, AHORA, 8, 1)).ok).toBe(true);
+      expect((await almacen.reservar('bloq', DIA, AHORA + 2 * HORA_MS, 8, 1)).ok).toBe(false);   // misma UTC, pasó la hora: sigue negado
+      expect((await almacen.reservar('bloq', '2026-11-08', AHORA + 24 * HORA_MS, 8, 1)).ok).toBe(true); // otro día
+      await almacen.liberar('bloq', DIA, null);
+      expect((await almacen.reservar('bloq', DIA, AHORA + 3 * HORA_MS, 8, 1)).ok).toBe(true);
+      // Sin el parámetro, el tipo no tiene tope diario propio (solo 1 por hora).
+      expect((await almacen.reservar('normal', DIA, AHORA, 8)).ok).toBe(true);
+      expect((await almacen.reservar('normal', DIA, AHORA + 2 * HORA_MS, 8)).ok).toBe(true);
+    });
+
+    it('sumarRepetido cuenta en el documento existente', async () => {
+      const { almacen } = await nuevo();
+      await almacen.crear(eventoGuardado('id-invalido-2026-11-07T15'));
+      await almacen.sumarRepetido('id-invalido-2026-11-07T15');
+      await almacen.sumarRepetido('id-invalido-2026-11-07T15');
+      expect((await almacen.pendientesDeResumen())[0]!.repetidos).toBe(2);
+    });
+
+    it('fijar la lista de un día nuevo borra las de días anteriores', async () => {
+      const { almacen } = await nuevo();
+      await almacen.fijarResumenDelDia('2026-11-05', ['a'], AHORA);
+      await almacen.fijarResumenDelDia('2026-11-06', ['b'], AHORA);
+      await almacen.fijarResumenDelDia('2026-11-07', ['c'], AHORA);
+      expect(await almacen.resumenDelDia('2026-11-05')).toBeNull();
+      expect(await almacen.resumenDelDia('2026-11-06')).toBeNull();
+      expect(await almacen.resumenDelDia('2026-11-07')).toEqual({ ids: ['c'], ahoraMs: AHORA });
+    });
+
     it('la cuota de Resend: empieza vacía, se marca y se lee', async () => {
       const { almacen } = await nuevo();
       expect(await almacen.cuotaHasta()).toBeNull();

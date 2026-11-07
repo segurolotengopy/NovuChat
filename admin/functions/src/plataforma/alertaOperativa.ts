@@ -42,7 +42,7 @@ import { createHmac } from 'node:crypto';
 import { onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineSecret } from 'firebase-functions/params';
-import { getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { REGION } from '../core/region.js';
 import { firmaValida } from '../core/seguridad/firma.js';
 import {
@@ -112,6 +112,8 @@ export interface EventoGuardado extends AvisoV1 {
   dia: string;
   estado: EstadoEvento;
   saneado: boolean;
+  /** Cuántas veces se repitió un aviso del servidor (`id-invalido-<hora>`). */
+  repetidos?: number;
   /** Hora (servidor) en que un resumen lo incluyó; `null` mientras espera. Evita depender de una ventana de tiempo. */
   resumido_en: number | null;
 }
@@ -122,8 +124,10 @@ export interface AlmacenAlertas {
   crear(e: EventoGuardado): Promise<boolean>;
   poner(id: string, estado: EstadoEvento): Promise<void>;
   /** Reserva atómica: cupo del día (`tope - 1` inmediatos) y 1 por hora por tipo. */
-  reservar(tipo: string, dia: string, ahoraMs: number, tope: number): Promise<Reserva>;
-  /** Devuelve una reserva: baja el contador del día y restaura la hora del tipo. */
+  reservar(tipo: string, dia: string, ahoraMs: number, tope: number, maxDelTipoPorDia?: number): Promise<Reserva>;
+  /** Cuenta un aviso repetido (mismo `id_unico` del servidor en la misma hora) en el documento que ya existe. */
+  sumarRepetido(id: string): Promise<void>;
+  /** Devuelve una reserva: baja el contador del día (y el del tipo, si lo había) y restaura la hora del tipo. */
   liberar(tipo: string, dia: string, previoUltimoMs: number | null): Promise<void>;
   /** Eventos que ningún resumen incluyó todavía (`resumido_en == null`), los más nuevos primero, hasta 500. */
   pendientesDeResumen(): Promise<EventoGuardado[]>;
@@ -149,7 +153,10 @@ export async function procesarEvento(ev: EventoValidado, deps: DepsProceso): Pro
     recibido_ms: deps.ahoraMs, dia: diaUtc(deps.ahoraMs), estado: 'en_resumen', saneado: ev.saneado, resumido_en: null,
   };
   // 1. Primero se guarda: lo que pase después no puede perder el evento.
-  if (!await deps.almacen.crear(g)) return { estado: 'duplicado' };
+  if (!await deps.almacen.crear(g)) {
+    if (a.id_unico.startsWith('id-invalido-')) { try { await deps.almacen.sumarRepetido(a.id_unico); } catch { console.error('ALERTA_OPERATIVA_REPETIDO_FALLO'); } }
+    return { estado: 'duplicado' };
+  }
   // `informativo` nunca sale solo; sin configuración de envío, tampoco.
   if (a.nivel === 'informativo' || !deps.enviar) return { estado: 'en_resumen' };
   // 2. Cupo. El tope se valida AQUÍ también (no solo al leer la configuración): nunca pasa de TOPE_MAXIMO.
@@ -159,9 +166,12 @@ export async function procesarEvento(ev: EventoValidado, deps: DepsProceso): Pro
     const hasta = await deps.almacen.cuotaHasta();
     if (hasta !== null && hasta > deps.ahoraMs) return { estado: 'en_resumen' };
   } catch { console.error('ALERTA_OPERATIVA_CUOTA_LECTURA_FALLO'); }
+  // Los avisos del servidor (`contenido_bloqueado`: `:bloqueado` e `id-invalido-*`) gastan COMO MÁXIMO 1 correo inmediato por
+  // día y NUNCA el último que quede: un emisor que mande basura no puede dejar sin cupo a una alerta real.
+  const esBloqueo = ev.tipo_error === 'contenido_bloqueado';
   let r: Reserva;
   try {
-    r = await deps.almacen.reservar(ev.tipo_error, g.dia, deps.ahoraMs, tope);
+    r = await deps.almacen.reservar(ev.tipo_error, g.dia, deps.ahoraMs, esBloqueo ? Math.max(1, tope - 1) : tope, esBloqueo ? 1 : undefined);
   } catch {
     // Contención o caída de la base: el evento ya está guardado; va al resumen en vez de perderse con un 500.
     console.error('ALERTA_OPERATIVA_RESERVA_FALLO');
@@ -203,6 +213,10 @@ export function autenticar(p: Peticion, secreto: string, ahoraMs: number): { ok:
   return ok ? { ok: true, crudo } : { ok: false, respuesta: { status: 401, cuerpo: 'no autorizado' } };
 }
 
+/** Horas en que esta instancia ya mandó el correo de respaldo de un bloqueo con la base caída. */
+const respaldoUsado = new Set<string>();
+export const reiniciarCandadoDeRespaldo = (): void => { respaldoUsado.clear(); };
+
 export interface ConfigProceso extends DepsProceso { hosts: readonly string[]; denegar: readonly string[]; repos?: readonly string[] }
 
 export async function procesar(crudo: Buffer, cfg: ConfigProceso): Promise<RespuestaAlerta> {
@@ -220,7 +234,14 @@ export async function procesar(crudo: Buffer, cfg: ConfigProceso): Promise<Respu
         } catch {
           // La base falló: el aviso del bloqueo NO se pierde; se intenta el correo directo (misma Idempotency-Key).
           console.error('ALERTA_OPERATIVA_BLOQUEADO_FALLO');
-          if (cfg.enviar) { try { await cfg.enviar(armarCorreo(b)); } catch { console.error('ALERTA_OPERATIVA_BLOQUEADO_ENVIO_FALLO'); } }
+          // SIN saltarse el tope: con la base caída no hay contador, así que se permite UN solo correo por hora por instancia
+          // (candado en memoria con clave `bloqueado-<hora>`).
+          const clave = `bloqueado-${new Date(cfg.ahoraMs).toISOString().slice(0, 13)}`;
+          if (cfg.enviar && !respaldoUsado.has(clave)) {
+            respaldoUsado.add(clave);
+            if (respaldoUsado.size > 48) respaldoUsado.delete(respaldoUsado.values().next().value as string);
+            try { await cfg.enviar(armarCorreo(b)); } catch { console.error('ALERTA_OPERATIVA_BLOQUEADO_ENVIO_FALLO'); }
+          }
         }
       }
       return { status: error.estado, cuerpo: error.cuerpo };
@@ -324,21 +345,26 @@ export function almacenFirestore(): AlmacenAlertas {
       }
     },
     async poner(id, estado) { await eventos().doc(id).update({ estado }); },
-    async reservar(tipo, dia, ahoraMs, tope) {
+    async sumarRepetido(id) { await eventos().doc(id).update({ repetidos: FieldValue.increment(1) }); },
+    async reservar(tipo, dia, ahoraMs, tope, maxDelTipoPorDia) {
       return db.runTransaction(async (t) => {
-        const [d, h] = await Promise.all([t.get(ctl(idDia(dia))), t.get(ctl(idTipo(tipo)))]);
+        const [d, h, dt] = await Promise.all([t.get(ctl(idDia(dia))), t.get(ctl(idTipo(tipo))), t.get(ctl(`diatipo_${dia}_${tipo}`))]);
         const usados = Number(d.get('enviados') ?? 0);
+        const delTipo = Number(dt.get('n') ?? 0);
+        if (maxDelTipoPorDia !== undefined && delTipo >= maxDelTipoPorDia) return { ok: false, previoUltimoMs: h.exists ? Number(h.get('ultimoMs') ?? 0) : null };
         const ultimo = h.exists ? Number(h.get('ultimoMs') ?? 0) : null;
         if (usados >= inmediatosDe(topeValido(tope)) || (ultimo !== null && ahoraMs - ultimo < HORA_MS)) return { ok: false, previoUltimoMs: ultimo };
         t.set(ctl(idDia(dia)), { enviados: usados + 1, dia }, { merge: true });
         t.set(ctl(idTipo(tipo)), { ultimoMs: ahoraMs, tipo }, { merge: true });
+        if (maxDelTipoPorDia !== undefined) t.set(ctl(`diatipo_${dia}_${tipo}`), { n: delTipo + 1, dia, tipo }, { merge: true });
         return { ok: true, previoUltimoMs: ultimo };
       }, { maxAttempts: 10 });
     },
     async liberar(tipo, dia, previo) {
       await db.runTransaction(async (t) => {
-        const d = await t.get(ctl(idDia(dia)));
+        const [d, dt] = await Promise.all([t.get(ctl(idDia(dia))), t.get(ctl(`diatipo_${dia}_${tipo}`))]);
         t.set(ctl(idDia(dia)), { enviados: Math.max(0, Number(d.get('enviados') ?? 0) - 1), dia }, { merge: true });
+        if (dt.exists) t.set(ctl(`diatipo_${dia}_${tipo}`), { n: Math.max(0, Number(dt.get('n') ?? 0) - 1), dia, tipo }, { merge: true });
         t.set(ctl(idTipo(tipo)), { ultimoMs: previo ?? 0, tipo }, { merge: true });
       }, { maxAttempts: 10 });
     },
@@ -358,7 +384,12 @@ export function almacenFirestore(): AlmacenAlertas {
       const d = await ctl(`resumen_${dia}`).get();
       return d.exists && Array.isArray(d.get('ids')) ? { ids: d.get('ids') as string[], ahoraMs: Number(d.get('ahoraMs')) } : null;
     },
-    async fijarResumenDelDia(dia, ids, ahoraMs) { await ctl(`resumen_${dia}`).set({ ids, ahoraMs }); },
+    async fijarResumenDelDia(dia, ids, ahoraMs) {
+      await ctl(`resumen_${dia}`).set({ ids, ahoraMs });
+      // Limpieza: las listas de días anteriores ya no sirven (solo el reintento del mismo día las usa).
+      const viejos = (await db.collection('plataforma/alertas/control').listDocuments()).filter((r) => r.id.startsWith('resumen_') && r.id < `resumen_${dia}`);
+      await Promise.all(viejos.map((r) => r.delete()));
+    },
     async eventosPorId(ids) {
       const salida: EventoGuardado[] = [];
       for (let i = 0; i < ids.length; i += 100) {

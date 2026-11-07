@@ -137,4 +137,18 @@ describe('preparar-staging.sh alertas', () => {
     expect(despues.salida).toContain('ALERTAS_HMAC existe');
     expect(despues.salida).toContain('ALERTAS_RESEND_API_KEY existe');
   });
+  it('`verificar` busca ALERTAS_ DENTRO del binding «secretos-de-las-functions»: en otro binding o en otra cuenta no cuenta', () => {
+    const m = `serviceAccount:sa-deploy-staging@${STAGING}.iam.gserviceaccount.com`;
+    writeFileSync(join(dir, 'proyecto.json'), JSON.stringify({
+      etag: 'x', version: 3,
+      bindings: [
+        { role: 'roles/run.admin', members: [m], condition: { title: 'otra-condicion', expression: CLAUSULA } },
+        { role: `projects/${STAGING}/roles/desplegadorSecretos`, members: [m], condition: { title: 'secretos-de-las-functions', expression: VIEJA } },
+      ],
+    }));
+    expect(correr('verificar').salida).toContain('NO cubre ALERTAS_');
+    politica(`${VIEJA} || ${CLAUSULA}`);
+    expect(correr('verificar').salida).toContain('cubre ALERTAS_');
+    expect(correr('verificar').salida).not.toContain('NO cubre ALERTAS_');
+  });
 });

@@ -295,18 +295,18 @@ describe('nube-alertas.sh: la clave de Resend, la clave HMAC y el invocador', ()
     expect(existe(ruta)).toBe(true);
     expect(leer(`secreto-${RESEND}`)).toBe('PENDIENTE-DE-CARGAR');
   });
-  it('--entregar-hmac: archivo de modo 600 con el valor, que NO sale en pantalla; la ruta sí; no pisa uno pendiente', () => {
+  it('--entregar-hmac --aplicar está BLOQUEADO EN CÓDIGO (2): no llama a gcloud ni crea el archivo; el seco sigue disponible', () => {
     aplicarPasos();
+    const antes = llamadas().length;
+    const r = correr(['--entregar-hmac', ...APLICAR]);
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain('bloqueado hasta que exista el cargador de n8n');
+    expect(llamadas().length).toBe(antes);
+    expect(existe(join(runtime, 'novuchat-alertas-hmac'))).toBe(false);
     const seco = correr(['--entregar-hmac']);
     expect(seco.codigo).toBe(1);
+    expect(seco.salida).toContain('(haría)');
     expect(existe(join(runtime, 'novuchat-alertas-hmac'))).toBe(false);
-    const r = correr(['--entregar-hmac', ...APLICAR]);
-    expect(r.codigo).toBe(0);
-    const destino = join(runtime, 'novuchat-alertas-hmac');
-    expect(r.salida).toContain(destino);
-    expect(modoDe(destino)).toBe(0o600);
-    expect(readFileSync(destino, 'utf8')).toBe(leer(`secreto-${HMAC}`));
-    expect(correr(['--entregar-hmac', ...APLICAR]).codigo).toBe(2);   // ya hay uno pendiente
   });
   it('--invocador delega en nube-visor.sh con el servicio y el entorno fijos; solo con --aplicar le pasa --aplicar', () => {
     expect(correr(['--invocador']).codigo).toBe(0);
@@ -373,20 +373,11 @@ describe('nube-alertas.sh: xtrace, respaldo y entrega ajena (cuarta ronda)', () 
     expect(/respaldo de la política anterior/.test(correr(APLICAR).salida)).toBe(false);
   });
 
-  it('--entregar-hmac NO borra ni pisa un archivo ajeno que ya esté en el destino', () => {
+  it('--entregar-hmac --aplicar sobre un archivo ajeno: sigue bloqueado y no lo toca', () => {
     aplicarPasos();
     const destino = join(runtime, 'novuchat-alertas-hmac');
     writeFileSync(destino, 'contenido-ajeno', { mode: 0o600 });
-    const r = correr(['--entregar-hmac', ...APLICAR]);
-    expect(r.codigo).toBe(2);
+    expect(correr(['--entregar-hmac', ...APLICAR]).codigo).toBe(2);
     expect(readFileSync(destino, 'utf8')).toBe('contenido-ajeno');
-  });
-
-  it('--entregar-hmac: si gcloud falla borra SOLO lo que creó', () => {
-    aplicarPasos();
-    rmSync(join(dir, `secreto-${HMAC}`));              // el gcloud falso no tiene qué entregar
-    const r = correr(['--entregar-hmac', ...APLICAR]);
-    expect(r.codigo).toBe(3);
-    expect(existe(join(runtime, 'novuchat-alertas-hmac'))).toBe(false);
   });
 });

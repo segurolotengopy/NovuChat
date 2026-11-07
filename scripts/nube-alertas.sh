@@ -28,7 +28,7 @@
 #       $XDG_RUNTIME_DIR (tmpfs del usuario, modo 700), ser un archivo regular del usuario de modo 600 y traer
 #       una sola línea con la forma `re_…`. El script no imprime su contenido y, con éxito, lo BORRA.
 #   ./scripts/nube-alertas.sh --entregar-hmac [--aplicar --confirmo produccion]
-#       BLOQUEADO HASTA QUE EXISTA EL CARGADOR DE n8n (no existe todavía): no se corre con --aplicar. Solo el seco.
+#       BLOQUEADO EN CÓDIGO hasta que exista el cargador de n8n (no existe todavía): con --aplicar sale 2. Solo el seco.
 #       Entrega el valor vigente de ALERTAS_HMAC a un archivo de modo 600 (O_EXCL) dentro de $XDG_RUNTIME_DIR:
 #       es la clave con que el nodo del errorWorkflow firma. Solo imprime la RUTA del archivo. NINGÚN agente ni
 #       persona lo lee (ni cat ni la herramienta de lectura): lo consume el cargador de credenciales de n8n,
@@ -92,6 +92,12 @@ while [[ $# -gt 0 ]]; do
 done
 if (( APLICAR )) && [[ "$CONFIRMO" != "produccion" ]]; then
   echo "✗ --aplicar exige --confirmo produccion (escrito a mano). No se escribió nada." >&2; exit 2
+fi
+
+# --entregar-hmac --aplicar está BLOQUEADO EN CÓDIGO hasta que exista el cargador de credenciales de n8n (hoy no existe): la
+# clave quedaría en un archivo que nadie puede consumir y borrar sin leerlo. El seco sigue disponible.
+if [[ "$MODO" == entregar ]] && (( APLICAR )); then
+  echo "✗ --entregar-hmac --aplicar: bloqueado hasta que exista el cargador de n8n. No se escribió nada." >&2; exit 2
 fi
 
 # --- El invocador: delega en nube-visor.sh (la lista cerrada que ya sabe hacerlo y probarlo) ----------------------

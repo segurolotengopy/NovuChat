@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
   TOPE_DIARIO, TOPE_MAXIMO, armarCorreo, armarResumen, atenderAlerta, autenticar, enviarPorResend, enviarResumenDiario,
-  inmediatosDe, topeValido, validarEntrada, verificarFirmaAlerta, MAX_CUERPO_ALERTA, siguienteMedianocheUtc, diaUtc,
+  inmediatosDe, topeValido, reiniciarCandadoDeRespaldo, validarEntrada, verificarFirmaAlerta, MAX_CUERPO_ALERTA, siguienteMedianocheUtc, diaUtc,
   type AlmacenAlertas, type Enviar, type Envio,
 } from '../../functions/src/plataforma/alertaOperativa.ts';
 import { ErrorContrato, detectar, enlaceNormalizado } from '../../functions/src/plataforma/alertaContenido.ts';
@@ -359,7 +359,7 @@ describe('B2: una alerta no se pierde por un nombre largo o un símbolo raro', (
   const NOMBRE_REAL = 'NovuChat — Venta digital de Rubén (rroca-ruben, Noches Sin Insomnio)';
   it('un nombre real de 68 caracteres con raya, tilde y paréntesis pasa tal cual y sin marcar', () => {
     expect([...NOMBRE_REAL]).toHaveLength(68);
-    const v = validar(buenEvento({ flujo: NOMBRE_REAL, nodo: 'Enviar respuesta (relé) · v2.36.5 - 2026-11-07' }));
+    const v = validar(buenEvento({ flujo: NOMBRE_REAL, nodo: 'Enviar respuesta (relé) · v2.36.5 - 07/11/2026' }));
     expect(v.flujo).toBe(NOMBRE_REAL);
     expect(v.saneado).toBe(false);
   });
@@ -1030,6 +1030,117 @@ describe('resumen: lista fija del día, reintento idéntico y el 409', () => {
     expect(cuerpos).toHaveLength(2);
     expect(cuerpos[1]).toBe(cuerpos[0]);
     expect(a.eventos.get('evt-j-0002-abcd')!.resumido_en).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// QUINTA RONDA: respaldo con la base caída, tope de los avisos del servidor, fechas con barras, índice
+// ---------------------------------------------------------------------------
+describe('fechas con barras y horas con milisegundos NO son teléfonos; los teléfonos de siempre siguen rechazados', () => {
+  it('«El 07/11/2026 falló», «a las 07/11 17:00», «10:30:15.123» y variantes pasan', () => {
+    for (const t of [
+      'El 07/11/2026 falló', 'a las 07/11 17:00', '10:30:15.123', '07/11/2026 14:59', '07/11/2026 14:59:03', 'Falló el 07/11/2026 a las 10:30:15.123 con v2.36.5',
+      'Pasó a las 07/11 17:00:45', 'Desde el 01/02/1999 hasta el 31/12/2099',
+    ]) expect(violaciones(buenEvento({ que_paso: t })), t).toEqual([]);
+  });
+  it('la prueba original del nombre con «v2.36.5 - 07/11/2026» pasa como flujo y como nodo', () => {
+    const v = validar(buenEvento({ flujo: 'Enviar respuesta (relé) · v2.36.5 - 07/11/2026', nodo: 'Enviar respuesta (relé) · v2.36.5 - 07/11/2026' }));
+    expect(v.saneado).toBe(false);
+  });
+  it('un teléfono no se disfraza de fecha con barras: 71/23/4567, 5917/12/34, 07/11/20261234 y 7123/4567 se rechazan', () => {
+    for (const c of ['71/23/4567', '5917/12/34', '07/11/20261234', '7123/4567', '12/34/5678', '59/17/1234 567']) {
+      expect(violaciones(buenEvento({ que_paso: `Cliente ${c} sin respuesta` })).some((x) => /telefono_/.test(x)), c).toBe(true);
+    }
+    // Y los de la ronda anterior.
+    for (const c of ['7123-45-67', '71.234.567', '7123_4567', '71,23,45,67', 'evt:591:7123:4567']) {
+      expect(violaciones(buenEvento({ que_paso: `Cliente ${c} sin respuesta` })).some((x) => /telefono_/.test(x)), c).toBe(true);
+    }
+  });
+});
+
+describe('ids reservados del servidor: id-invalido- y :bloqueado', () => {
+  it('un emisor no puede usar el prefijo id-invalido- ni el sufijo :bloqueado (regla forma, 4xx, sale el aviso del servidor)', async () => {
+    for (const id of ['id-invalido-2026-11-07T15', 'id-invalido-xyz-0001', 'evt-0001-abcd:bloqueado']) {
+      expect(violaciones(buenEvento({ id_unico: id })), id).toContain('id_unico:forma');
+      const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
+      const r = await llamar(a, enviar, buenEvento({ id_unico: id }));
+      expect(r.status, id).toBe(400);
+      expect(enviados[0]!.idempotencia, id).toBe('novuchat:id-invalido-2026-11-07T15');
+    }
+    // Lo parecido pero legítimo pasa.
+    expect(violaciones(buenEvento({ id_unico: 'envio-invalido-x-0001' }))).toEqual([]);
+    expect(violaciones(buenEvento({ id_unico: 'evt-0001-bloqueado' }))).toEqual([]);
+  });
+  it('los ids inválidos repetidos de la misma hora se CUENTAN en el documento del servidor', async () => {
+    const a = almacenEnMemoria(); const { enviar } = envioFalso();
+    for (const id of ['abc', 'abd', 'abe', 'abf']) await llamar(a, enviar, buenEvento({ id_unico: id }));
+    expect(a.eventos.size).toBe(1);
+    expect(a.eventos.get('id-invalido-2026-11-07T15')!.repetidos).toBe(3);
+    // Un duplicado de un id normal NO suma (no es un aviso del servidor).
+    await llamar(a, enviar, buenEvento()); await llamar(a, enviar, buenEvento());
+    expect(a.eventos.get('evt-0001-abcdef')!.repetidos).toBeUndefined();
+  });
+});
+
+describe('contenido_bloqueado: como máximo 1 inmediato por día y nunca el último disponible', () => {
+  const hora = (h: number): number => Date.parse(`2026-11-07T${String(h).padStart(2, '0')}:00:00Z`);
+  it('N horas seguidas de ids inválidos y luego una urgente real: la urgente SALE y solo salió un bloqueado', async () => {
+    const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
+    for (let h = 0; h < 15; h++) await llamar(a, enviar, buenEvento({ id_unico: `malo${h}`, ocurrido_en: '2026-11-07T00:00:00Z' }), { ahora: hora(h), marca: hora(h) });
+    const bloqueados = enviados.filter((e) => e.idempotencia.startsWith('novuchat:id-invalido-'));
+    expect(bloqueados).toHaveLength(1);
+    const r = await llamar(a, enviar, buenEvento({ id_unico: 'real-0001-abcd', tipo_error: 'envio_real' }), { ahora: hora(15), marca: hora(15) });
+    expect(r.cuerpo).toBe('enviado');
+    expect(enviados.at(-1)!.idempotencia).toBe('novuchat:real-0001-abcd');
+  });
+  it('mezclando :bloqueado e id-invalido en el mismo día, siguen siendo 1; con tope 2 (1 inmediato) un bloqueado NUNCA lo gasta', async () => {
+    const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
+    await llamar(a, enviar, buenEvento({ que_paso: `falló ${TEL}` }));                                             // :bloqueado
+    await llamar(a, enviar, buenEvento({ id_unico: 'malo' }), { ahora: hora(17), marca: hora(17) });          // id-invalido
+    await llamar(a, enviar, buenEvento({ que_paso: `falló ${TEL}`, id_unico: 'otro-id-0002' }), { ahora: hora(19), marca: hora(19) });
+    expect(enviados).toHaveLength(1);
+    const b = almacenEnMemoria(); const { enviados: e2, enviar: s2 } = envioFalso();
+    for (let h = 0; h < 6; h++) await llamar(b, s2, buenEvento({ id_unico: `malo${h}`, ocurrido_en: '2026-11-07T00:00:00Z' }), { tope: 2, ahora: hora(h), marca: hora(h) });
+    expect(e2).toHaveLength(0);
+    expect((await llamar(b, s2, buenEvento({ id_unico: 'real-0002-abcd', tipo_error: 'envio_real', ocurrido_en: '2026-11-07T06:59:00Z' }), { tope: 2, ahora: hora(7), marca: hora(7) })).cuerpo).toBe('enviado');
+  });
+  it('un bloqueado nunca toma el último cupo: con tope 5 deja libre el 4.º inmediato', async () => {
+    const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
+    for (let i = 0; i < 3; i++) await llamar(a, enviar, buenEvento({ id_unico: `real-${i}-abcd`, tipo_error: `tipo_${i}` }));   // 3 de 4
+    await llamar(a, enviar, buenEvento({ que_paso: `falló ${TEL}`, id_unico: 'rechazado-0001' }));                            // no pasa: sería el último
+    expect(enviados).toHaveLength(3);
+    expect((await llamar(a, enviar, buenEvento({ id_unico: 'real-9-abcd', tipo_error: 'tipo_9' }))).cuerpo).toBe('enviado');
+  });
+});
+
+describe('envío directo de respaldo con la base caída: un solo correo por hora por instancia', () => {
+  it('N avisos bloqueados con `crear` caído salen como MÁXIMO 1 correo; otra hora, otro; y el contenido nunca viaja', async () => {
+    reiniciarCandadoDeRespaldo();
+    const a: AlmacenMemoria = almacenEnMemoria();
+    a.crear = async () => { throw new Error('base caída'); };
+    const { enviados, enviar } = envioFalso();
+    for (let i = 0; i < 12; i++) await llamar(a, enviar, buenEvento({ que_paso: `falló ${TEL}`, id_unico: `evt-${i}-abcd` }));
+    expect(enviados).toHaveLength(1);
+    expect(JSON.stringify(enviados)).not.toContain(TEL);
+    const t = AHORA + HORA;
+    await llamar(a, enviar, buenEvento({ que_paso: `falló ${TEL}`, id_unico: 'evt-x-abcd' }), { ahora: t, marca: t });
+    expect(enviados).toHaveLength(2);
+    reiniciarCandadoDeRespaldo();
+  });
+});
+
+describe('el emulador no exige índices: esta prueba SÍ', () => {
+  it('firestore.indexes.json trae el índice compuesto de `eventos` que usa el resumen (resumido_en ASC, recibido_ms DESC, COLLECTION)', () => {
+    const aqui2 = dirname(fileURLToPath(import.meta.url));
+    const idx = JSON.parse(readFileSync(join(aqui2, '..', '..', 'firestore.indexes.json'), 'utf8')) as {
+      indexes: Array<{ collectionGroup: string; queryScope: string; fields: Array<{ fieldPath: string; order?: string }> }>;
+    };
+    const hay = idx.indexes.some((i) => i.collectionGroup === 'eventos' && i.queryScope === 'COLLECTION'
+      && JSON.stringify(i.fields) === JSON.stringify([{ fieldPath: 'resumido_en', order: 'ASCENDING' }, { fieldPath: 'recibido_ms', order: 'DESCENDING' }]));
+    expect(hay, 'falta el índice (resumido_en ASC, recibido_ms DESC) de `eventos`: la consulta del resumen falla en producción').toBe(true);
+    // Y la consulta del código es la que ese índice sirve.
+    const fuente = readFileSync(join(aqui2, '..', '..', 'functions', 'src', 'plataforma', 'alertaOperativa.ts'), 'utf8');
+    expect(fuente).toContain(".where('resumido_en', '==', null).orderBy('recibido_ms', 'desc')");
   });
 });
 
