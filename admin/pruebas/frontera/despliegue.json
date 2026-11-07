@@ -31,6 +31,30 @@
     "labels": {},
     "callableTrigger": {}
   },
+  "alertaOperativa": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 3,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "ALERTA_OPERATIVA_HMAC"
+      },
+      {
+        "key": "RESEND_API_KEY_ALERTAS"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
   "altaTenant": {
     "availableMemoryMb": null,
     "timeoutSeconds": null,
@@ -2060,6 +2084,33 @@
         "document": "tenants/{tenantId}/catalogo/{itemId}"
       },
       "retry": false
+    }
+  },
+  "resumenAlertasOperativas": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 1,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "RESEND_API_KEY_ALERTAS"
+      }
+    ],
+    "labels": {},
+    "scheduleTrigger": {
+      "schedule": "0 8 * * *",
+      "retryConfig": {
+        "retryCount": 2
+      },
+      "timeZone": "America/La_Paz"
     }
   },
   "revocarAccesoSoporte": {
