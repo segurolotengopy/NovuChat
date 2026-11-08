@@ -655,6 +655,9 @@ const EV_PROHIBIDO_MEDICO = [
   ['medicamento_o_dosis', /\b(ibuprofeno|paracetamol|aspirina|antibiotic\w*|antiinflamatori\w*|corticoid\w*|antihistaminic\w*|analgesic\w*|pomada|dosis|miligramos|\d+ ?mg)\b/],
   ['indica_suspender_o_ajustar', /\b(suspende|suspenda|suspender|suspendas|deja de tomar|dejes de tomar|ajusta|ajustar|cambia|cambiar)\b[^.!?]{0,30}\b(medicamento\w*|anticoagulante\w*|insulina|pastilla\w*|medicacion|tratamiento)\b/],
   ['diagnostico', /\b(tienes|tiene|padeces|sufres|presentas|parece (una?|que tienes)) (una? )?(infeccion|alergia|inflamacion|reaccion|rosacea|acne|dermatitis|cancer|enfermedad|lesion)\b/],
+  // Revisión de seguridad del PR 873 (08/11/2026): al dejar de borrar cuidados (orden de Andres), el modelo no puede AUTORIZAR tratarse con una contraindicación ni mandar esperar ante una señal de alarma.
+  ['autoriza_contraindicacion', /\b(embaraz\w*|lactancia|amamant\w*|anticoagulante\w*|diabet\w*)\b[^.!?]{0,80}\b(puedes|puede|no hay problema|sin problema|no pasa nada|igual|tambien|tranquila)\b|\b(puedes|puede|no hay problema|sin problema|no pasa nada|igual|tranquila)\b[^.!?]{0,80}\b(embaraz\w*|lactancia|amamant\w*|anticoagulante\w*)\b/],
+  ['espera_ante_alarma', /\b(piel (?:blanca|palida|morada|negra|gris)|dolor intenso|bulto|necrosis|ampolla\w*|pus)\b[^.!?]{0,90}\b(espera|esperar|se pasa solo|se quita solo|es normal|no te preocupes|masaje\w*|masajea\w*|solo|sola)\b/],
   ['minimiza_sintoma', /\b(es normal|no es grave|no te preocupes|no pasa nada|es comun)\b[^.!?]{0,40}\b(hinchaz\w*|moret\w*|dolor|enrojec\w*|inflam\w*|sangr\w*|fiebre)\b/],
   ['indica_hacer_algo', /\b(deberias|debes|tienes que|te recomiendo|te aconsejo) (tomar|aplicar|usar|ponerte|suspender|dejar de|ir a urgencias|acudir)\b/],
   // Precios y rangos: una cifra junto a una palabra de precio, o un «desde / entre / alrededor de» con cifra. La única cifra permitida (250) ya viene como marca.
@@ -1029,7 +1032,9 @@ function evTextoCierre(cfg, nombre, conMaps, avisado) {
   const donde = clinica && dir ? 'La consulta es en la ' + clinica + ' (' + dir + ').' : (clinica ? 'La consulta es en la ' + clinica + '.' : (dir ? 'La consulta es en ' + dir + '.' : ''));
   // DECISIÓN DE ANDRES (08/11/2026, «CIERRE: vamos con lo que dice el MD»): el cierre es la letra del MD (REGLA DE CIERRE, paso 2): «está 100% bonificada», el enlace wa.me a recepción en el texto y «te asignarán tu espacio de inmediato».
   // Sin número de recepción (no debería pasar) queda la invitación a usar el botón. El botón «Escribir a recepción» y el aviso a recepción no cambian.
-  const digitos = evTexto(c.numeroRecepcion).replace(/\D/g, '');
+  const nac = evTelefonoNacional(c.numeroRecepcion);   // 8 dígitos nacionales -> 591…; de 7 a 15 dígitos o vacío (revisión de seguridad del PR 873)
+  const d0 = evTexto(c.numeroRecepcion).replace(/\D/g, '');
+  const digitos = nac === '' ? '' : (/^591\d{8}$/.test(d0) ? d0 : (/^\d{8}$/.test(d0) ? '591' + d0 : (d0.length >= 10 ? d0 : '')));
   return ['¡Excelente decisión' + (n ? ', ' + n : '') + '! Recuerda que tu valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' está 100% bonificada (sin costo ni pago de reserva).',
     donde,
     conMaps === true && evEnlaceDeMapa(c.direccionMaps) !== '' ? '📍 Ubicación: ' + evEnlaceDeMapa(c.direccionMaps) : '',

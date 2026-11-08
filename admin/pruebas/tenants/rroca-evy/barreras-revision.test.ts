@@ -195,7 +195,8 @@ describe('cuidados (letra del MD, Andres 08/11/2026): el código ya NO borra cui
 });
 
 describe('NEGADAS que siguen vigentes tras levantar la barrera de cuidados: la barrera MÉDICA (medicamentos, dosis, suspender tratamiento, diagnóstico)', () => {
-  for (const x of ['Toma ibuprofeno después del tratamiento.', 'Puedes tomar 400 mg de paracetamol si duele.', 'Suspende tu medicamento antes de la cita.', 'Tienes una infección en la piel.']) {
+  for (const x of ['Toma ibuprofeno después del tratamiento.', 'Puedes tomar 400 mg de paracetamol si duele.', 'Suspende tu medicamento antes de la cita.', 'Tienes una infección en la piel.',
+    'Si tomas anticoagulantes no hay problema, igual puedes aplicártelo.', 'Si estás embarazada también puedes hacerte el tratamiento.', 'Si aparece un bulto, masajéalo tú misma.', 'Si sientes dolor intenso o la piel se pone blanca, espera unos días, se pasa solo.']) {
     it(`NEGADA: «${x}»`, () => { expect(fallo(sale(`${x} ¿Cómo te llamas?`, '¿qué cuidados tengo que tener después?')), x).toBe(true); });
   }
 });
