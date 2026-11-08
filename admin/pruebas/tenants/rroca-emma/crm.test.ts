@@ -322,37 +322,58 @@ describe('flujo: quién guarda y quién no', () => {
   });
 });
 
-describe('flujo: 48 horas y la fila más reciente', () => {
+describe('flujo: una fila por conversación (24 h fijas) y la fila más reciente', () => {
   const previa = (n: number, extra: J = {}): { json: J } => fila(n, { 'Teléfono WhatsApp': ANA, 'Nombre y Apellido': 'Ana', ...extra });
-  it('con la ficha VIGENTE (menos de 48 h) el contacto no es nuevo y se ACTUALIZA la fila más reciente', () => {
-    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio' }), previa(9, { 'Clasificación': 'Tibio' })] });
-    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles });
+  const lp = (ms: number): string => new Date(ms - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
+  // La ingesta dice cuándo vence la ventana: el ancla de la conversación es ese instante menos 24 h.
+  const conAncla = (anclaMs: number): J => ({ atencion: { ventanaVenceEn: new Date(anclaMs + 24 * 3600_000).toISOString() } });
+  it('NIEGA: un segundo mensaje DENTRO de la ventana no crea fila: se ACTUALIZA la más reciente', () => {
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', 'Última interacción': lp(AHORA - 3600_000) }), previa(9, { 'Clasificación': 'Tibio', 'Última interacción': lp(AHORA - 1800_000) })] });
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(AHORA - 3600_000) });
     hablar(m, ANA, mTexto('hola'));
     pl.escrituras.length = 0; pl.actualizaciones.length = 0;
     m.avanzar(60);
     const t = hablar(m, ANA, mTexto('cual es la ubicación?'));
-    expect(prospectoDe(t)?.['nuevoContacto']).toBe(false);
+    expect(prospectoDe(t)?.['conversacionDesdeMs']).toBe(AHORA - 3600_000);
     expect(pl.escrituras).toHaveLength(0);
     expect(pl.actualizaciones).toHaveLength(1);
     expect(pl.actualizaciones[0]!['row_number']).toBe(9 + 2);   // la más reciente (fila 9 de la lectura -> fila 11 en la hoja: el desfase de los encabezados)
     expect(pl.actualizaciones[0]!['Clasificación']).toBe('Caliente');
   });
-  it('con 48 h vencidas el contacto es nuevo y se AGREGA una fila (con el ID siguiente)', () => {
-    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio' })] });
-    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles });
+  it('NIEGA: a las 23 h 59 del ancla NO crea fila', () => {
+    const ancla = AHORA - (24 * 60 - 1) * 60_000;
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', 'Última interacción': lp(ancla) })] });
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(ancla) });
     hablar(m, ANA, mTexto('hola'));
-    pl.escrituras.length = 0; pl.actualizaciones.length = 0;
-    m.avanzar(49 * 60);
+    expect(pl.escrituras).toHaveLength(0);
+  });
+  it('a las 24 h exactas del ancla anterior la conversación es otra y se AGREGA una fila (con el ID siguiente)', () => {
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', 'Última interacción': lp(AHORA - 24 * 3600_000) })] });
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(AHORA) });
     const t = hablar(m, ANA, mTexto('hola de nuevo'));
-    expect(prospectoDe(t)?.['nuevoContacto']).toBe(true);
+    expect(prospectoDe(t)?.['conversacionDesdeMs']).toBe(AHORA);
     expect(pl.escrituras).toHaveLength(1);
     expect(pl.actualizaciones).toHaveLength(0);
     expect(pl.escrituras[0]!['ID Lead']).toBe('LEAD-1011');
   });
-  it('el primer contacto de un teléfono también es nuevo', () => {
-    const pl = planilla();
-    const t = hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles }), ANA, mTexto('hola'));
+  it('NIEGA: con la ingesta caída (sin ancla) se actualiza la más reciente y NO se crea', () => {
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', 'Última interacción': lp(AHORA - 72 * 3600_000) })] });
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles });
+    const t = hablar(m, ANA, mTexto('cual es la ubicación?'));
+    expect(prospectoDe(t)?.['conversacionDesdeMs']).toBeNull();
+    expect(pl.escrituras).toHaveLength(0);
+  });
+  it('NIEGA: `nuevoContacto` verdadero con la ventana vigente NO crea fila (regresión de la regla de 48 h)', () => {
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', 'Última interacción': lp(AHORA - 1800_000) })] });
+    const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(AHORA - 3600_000) });
+    const t = hablar(m, ANA, mTexto('hola'));
     expect(prospectoDe(t)?.['nuevoContacto']).toBe(true);
+    expect(pl.escrituras).toHaveLength(0);
+  });
+  it('el primer contacto de un teléfono también crea la fila', () => {
+    const pl = planilla();
+    hablar(crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(AHORA) }), ANA, mTexto('hola'));
+    expect(pl.escrituras).toHaveLength(1);
   });
 });
 

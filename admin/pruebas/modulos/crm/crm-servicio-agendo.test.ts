@@ -57,6 +57,12 @@ function decidir(M: any, mapa: typeof MAPA_BASE, p: J, fila?: J): J { // eslint-
 const nuevaCon = (p: J): J => decidir(CON, MAPA_CON, p);
 const actCon = (p: J, previo: J = {}): J => decidir(CON, MAPA_CON, p, existente(previo));
 const SI = { agendo: 'Sí', fechaCita: CITA };
+// Una fila por conversación: el mapa trae «Última interacción» y la fila es de una conversación ANTERIOR a la que abre en `DESDE_NUEVA`.
+const MAPA_CONV: typeof MAPA_BASE = clonar(MAPA_CON);
+Object.assign(MAPA_CONV.columnas, { ultimaInteraccion: { letra: 'M', titulo: 'Última interacción' } });
+const CONV: any = modulo(MAPA_CONV); // eslint-disable-line @typescript-eslint/no-explicit-any
+const DESDE_NUEVA = Date.UTC(2026, 10, 8, 12, 0, 0);
+const actConv = (p: J, previo: J = {}): J => decidir(CONV, MAPA_CONV, p, existente({ 'Última interacción': '2026-11-06 10:00', ...previo }));
 
 describe('contrato', () => {
   it('los tres campos son del bot, nuevos, con sus títulos, y el módulo de n8n los conoce', () => {
@@ -139,42 +145,42 @@ describe('«Agendó» y «Fecha y hora de la cita»', () => {
   });
 });
 
-describe('cancelar o reprogramar tras 48 h (nuevoContacto) y cancelar una de varias citas', () => {
+describe('cancelar o reprogramar en OTRA conversación (la fila es de una anterior) y cancelar una de varias citas', () => {
   const PREVIO = { 'Agendó': 'Sí', 'Fecha y hora de la cita': '2026-11-09 15:30', 'Nombre y Apellido': 'Ana' };
   const CANC = { agendo: 'No', citaCancelada: true, citaCanceladaMs: CITA };
-  it('NIEGA: cancelar pasadas las 48 h NO crea una fila nueva: actualiza la más reciente del teléfono, solo en «Agendó» y fecha', () => {
-    const r = actCon({ ...CANC, nuevoContacto: true, citasRestantes: 0, nombre: 'Luis', quePidio: 'Cancelar cita' }, PREVIO);
+  it('NIEGA: cancelar en otra conversación NO crea una fila nueva: actualiza la más reciente del teléfono, solo en «Agendó» y fecha', () => {
+    const r = actConv({ ...CANC, conversacionDesdeMs: DESDE_NUEVA, citasRestantes: 0, nombre: 'Luis', quePidio: 'Cancelar cita' }, PREVIO);
     expect(r['accionPlanilla']).toBe('actualizar');
     expect(r['row_number']).toBe(5 + 2);
     expect(r['Agendó']).toBe('No');
     expect(r['Fecha y hora de la cita']).toBe('');
     expect(Object.keys(r).filter((k) => !['accionPlanilla', 'veredictoPlanilla', 'row_number', 'Agendó', 'Fecha y hora de la cita'].includes(k))).toEqual([]);
   });
-  it('reprogramar pasadas las 48 h actualiza la fila vieja con la nueva fecha (y solo eso)', () => {
+  it('reprogramar en otra conversación actualiza la fila vieja con la nueva fecha (y solo eso)', () => {
     const nueva = Date.UTC(2026, 10, 12, 18, 0, 0);
-    const r = actCon({ agendo: 'Sí', fechaCita: nueva, citaReprogramada: true, nuevoContacto: true, nombre: 'Luis', quePidio: 'Reprogramar cita' }, PREVIO);
+    const r = actConv({ agendo: 'Sí', fechaCita: nueva, citaReprogramada: true, conversacionDesdeMs: DESDE_NUEVA, nombre: 'Luis', quePidio: 'Reprogramar cita' }, PREVIO);
     expect(r['accionPlanilla']).toBe('actualizar');
     expect(r['Fecha y hora de la cita']).toBe('2026-11-12 14:00');
     expect(Object.keys(r).filter((k) => !['accionPlanilla', 'veredictoPlanilla', 'row_number', 'Fecha y hora de la cita'].includes(k))).toEqual([]);
   });
-  it('sin cancelar ni reprogramar, pasadas las 48 h sigue siendo una fila NUEVA (no cambia)', () => {
-    expect(actCon({ agendo: 'No', nuevoContacto: true }, PREVIO)['accionPlanilla']).toBe('agregar');
-    expect(actCon({ agendo: 'Sí', fechaCita: CITA, nuevoContacto: true }, PREVIO)['accionPlanilla']).toBe('agregar');
+  it('sin cancelar ni reprogramar, en otra conversación sigue siendo una fila NUEVA (no cambia)', () => {
+    expect(actConv({ agendo: 'No', conversacionDesdeMs: DESDE_NUEVA }, PREVIO)['accionPlanilla']).toBe('agregar');
+    expect(actConv({ agendo: 'Sí', fechaCita: CITA, conversacionDesdeMs: DESDE_NUEVA }, PREVIO)['accionPlanilla']).toBe('agregar');
   });
   it('NIEGA: cancelar UNA de varias citas que NO es la de la fila no pone «No» ni limpia la fecha', () => {
-    const r = actCon({ ...CANC, citaCanceladaMs: Date.UTC(2026, 10, 10, 19, 0, 0), citasRestantes: 1, proximaCitaMs: CITA, nombre: 'Luis' }, PREVIO);
+    const r = actConv({ ...CANC, citaCanceladaMs: Date.UTC(2026, 10, 10, 19, 0, 0), citasRestantes: 1, proximaCitaMs: CITA, nombre: 'Luis' }, PREVIO);
     expect(r['Agendó']).toBeUndefined();
     expect(r['Fecha y hora de la cita']).toBeUndefined();
   });
   it('cancelar la cita de la fila cuando QUEDAN otras: sigue «Sí» y la fecha pasa a la próxima', () => {
     const prox = Date.UTC(2026, 10, 11, 19, 0, 0);
-    const r = actCon({ ...CANC, citasRestantes: 1, proximaCitaMs: prox, nombre: 'Luis' }, PREVIO);
+    const r = actConv({ ...CANC, citasRestantes: 1, proximaCitaMs: prox, nombre: 'Luis' }, PREVIO);
     expect(r['Agendó']).toBeUndefined();
     expect(r['Fecha y hora de la cita']).toBe('2026-11-11 15:00');
   });
   it('cancelar la última cita (no queda ninguna): «No» y fecha vacía; sin dato de cuántas quedan se comporta como antes', () => {
     for (const extra of [{ citasRestantes: 0 }, {}]) {
-      const r = actCon({ ...CANC, ...extra }, PREVIO);
+      const r = actConv({ ...CANC, ...extra }, PREVIO);
       expect([r['Agendó'], r['Fecha y hora de la cita']]).toEqual(['No', '']);
     }
   });
@@ -187,12 +193,12 @@ describe('«Servicio elegido» (lista cerrada)', () => {
   it('NIEGA: cualquier otro valor se descarta (texto libre, fórmula, clínico, otro idioma, no-texto)', () => {
     for (const s of ['dolor de pecho', '=1+1', 'Control del niño sano', 'emergencia', 'Vacunas', 7, null, ['Emergencia'], { a: 1 }]) {
       expect(nuevaCon({ servicioElegido: s })['Servicio elegido'], String(s)).toBeUndefined();
-      expect(actCon({ servicioElegido: s, nombre: 'Luis' })['Servicio elegido'], String(s)).toBeUndefined();
+      expect(actConv({ servicioElegido: s, nombre: 'Luis' })['Servicio elegido'], String(s)).toBeUndefined();
     }
   });
   it('en una fila existente se sobrescribe con el último valor válido, y un turno sin servicio no lo borra', () => {
-    expect(actCon({ servicioElegido: 'Vacunas y/o otros' }, { 'Servicio elegido': 'Recién nacido' })['Servicio elegido']).toBe('Vacunas y/o otros');
-    expect(actCon({ nombre: 'Luis' }, { 'Servicio elegido': 'Recién nacido' })['Servicio elegido']).toBeUndefined();
-    expect(actCon({ servicioElegido: 'inventado' }, { 'Servicio elegido': 'Recién nacido' })['Servicio elegido']).toBeUndefined();
+    expect(actConv({ servicioElegido: 'Vacunas y/o otros' }, { 'Servicio elegido': 'Recién nacido' })['Servicio elegido']).toBe('Vacunas y/o otros');
+    expect(actConv({ nombre: 'Luis' }, { 'Servicio elegido': 'Recién nacido' })['Servicio elegido']).toBeUndefined();
+    expect(actConv({ servicioElegido: 'inventado' }, { 'Servicio elegido': 'Recién nacido' })['Servicio elegido']).toBeUndefined();
   });
 });

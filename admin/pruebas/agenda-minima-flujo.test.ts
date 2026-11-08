@@ -3750,7 +3750,7 @@ describe('Agenda mínima v0: el miniCRM', () => {
   it('la emergencia deja fila (Andres, 07/11/2026) con SOLO teléfono, nombre de perfil y «Emergencia»: el texto del mensaje no pasa', () => {
     const t = mundo({ eventos: [], configBase: CON }).turno(texto(MAMA, 'emergencia, mi bebé no respira'));
     expect(t.armado['guardarPlanilla']).toBe(true);
-    expect(Object.keys(t.prospecto ?? {}).sort()).toEqual(['nombre', 'nombreDePerfil', 'nuevoContacto', 'servicioElegido', 'telefono', 'ultimaInteraccionMs']);
+    expect(Object.keys(t.prospecto ?? {}).sort()).toEqual(['conversacionDesdeMs', 'nombre', 'nombreDePerfil', 'nuevoContacto', 'servicioElegido', 'telefono', 'ultimaInteraccionMs']);
     expect(t.prospecto?.['servicioElegido']).toBe('Emergencia');
     const vista = JSON.stringify([t.armado['prospectoPlanilla'], t.prospecto]);
     for (const x of ['bebé', 'respira', 'emergencia,']) expect(vista, x).not.toContain(x);

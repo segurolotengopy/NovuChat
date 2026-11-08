@@ -287,17 +287,23 @@ describe('aceptación (unidades)', () => {
     expect(JSON.stringify(r)).not.toMatch(/Marta|Negociando|nota interna|Llamar el viernes/);
     expect(r['Clasificación']).toBe('Caliente');
   });
-  it('A8 teléfono con otro formato encuentra la misma fila; 48 h: misma fila dentro, fila nueva fuera', () => {
+  it('A8 teléfono con otro formato encuentra la misma fila; una fila por conversación (24 h fijas): misma fila dentro, fila nueva fuera', () => {
+    const ULT = 'Última interacción'; // «AAAA-MM-DD HH:MM» en La Paz
+    const lp = (ms: number) => new Date(ms - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
     for (const formato of [`+${TEL}`, `'${TEL}`, `${TEL.slice(0, 3)} ${TEL.slice(3)}`]) {
-      const r = decidir(prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 3600_000 })!, [fila(5, { 'Teléfono WhatsApp': formato })]);
+      const r = decidir({ ...prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 3600_000 })!, conversacionDesdeMs: AHORA - 3600_000 }, [fila(5, { 'Teléfono WhatsApp': formato, [ULT]: lp(AHORA - 1800_000) })]);
       expect(r['accionPlanilla'], formato).toBe('actualizar');
     }
-    const dentro = prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 47 * 3600_000 })!;
-    expect(dentro['nuevoContacto']).toBe(false);
-    expect(decidir(dentro, [fila(5, { 'Teléfono WhatsApp': TEL })])['accionPlanilla']).toBe('actualizar');
-    const fuera = prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 49 * 3600_000 })!;
-    expect(fuera['nuevoContacto']).toBe(true);
-    expect(decidir(fuera, [fila(5, { 'Teléfono WhatsApp': TEL })])['accionPlanilla']).toBe('agregar');
+    const base = prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 3600_000 })!;
+    const previa = (ms: number) => [fila(5, { 'Teléfono WhatsApp': TEL, [ULT]: lp(ms) })];
+    // NIEGA: dentro de la ventana de 24 h, ni 23 h 59 después del ancla crea una fila.
+    expect(decidir({ ...base, conversacionDesdeMs: AHORA - (24 * 60 - 1) * 60_000 }, previa(AHORA - (24 * 60 - 1) * 60_000))['accionPlanilla']).toBe('actualizar');
+    // A las 24 h exactas del ancla anterior la conversación es otra: la fila previa (del ancla anterior) es anterior al inicio y se agrega.
+    expect(decidir({ ...base, conversacionDesdeMs: AHORA }, previa(AHORA - 24 * 3600_000))['accionPlanilla']).toBe('agregar');
+    // `nuevoContacto` (la regla de 48 h) ya no decide: con la ventana vigente NO crea.
+    expect(decidir({ ...base, nuevoContacto: true, conversacionDesdeMs: AHORA - 3600_000 }, previa(AHORA - 1800_000))['accionPlanilla']).toBe('actualizar');
+    // Ingesta caída (sin ancla): se actualiza la más reciente, no se crea.
+    expect(decidir({ ...base, nuevoContacto: true, conversacionDesdeMs: null }, previa(AHORA - 48 * 3600_000))['accionPlanilla']).toBe('actualizar');
   });
   it('A8 de las varias filas del mismo teléfono se actualiza la más reciente', () => {
     const r = decidir(prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 1000 })!, [fila(5, { 'Teléfono WhatsApp': TEL }), fila(9, { 'Teléfono WhatsApp': TEL }), fila(7, { 'Teléfono WhatsApp': TEL })]);
@@ -525,22 +531,34 @@ describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
     expect(todo.length).toBeGreaterThan(100);
     expect(todo).not.toMatch(/pagad|acreditad|simulad|\bpago\b/i);
   });
-  it('A8 (flujo) la memoria de n8n: dentro de 48 h se actualiza la fila más reciente; pasadas 48 h se AGREGA una fila nueva', () => {
-    const previa = (n: number): { json: J } => fila(n, { 'Teléfono WhatsApp': `+${CLIENTE}`, 'Nombre y Apellido': 'Carlos', 'Clasificación': 'Tibio' });
+  it('A8 (flujo) una fila por conversación: dentro de la ventana de 24 h se actualiza la fila más reciente; una conversación nueva AGREGA una fila', () => {
+    const lp = (ms: number): string => new Date(ms - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
+    let ancla: number | null = null;   // el inicio de la conversación que dice la ingesta (null = ingesta caída)
+    const w0 = mundo({ pl: planilla() });
+    const t0 = w0.mundo.ahora();
+    const previa = (n: number): { json: J } => fila(n, { 'Teléfono WhatsApp': `+${CLIENTE}`, 'Nombre y Apellido': 'Carlos', 'Clasificación': 'Tibio', 'Última interacción': lp(t0 - 1800_000) });
     const pl = planilla({ filas: [previa(5), previa(9)] });
     const w = mundo({ pl });
-    turno(w, texto('hola'));                       // primer contacto: sin registro previo, actualiza la más reciente
-    expect(pl.actualizaciones.length + pl.escrituras.length).toBeLessThanOrEqual(1);
+    w.mundo.dobles['Reportar mensaje (entrante)'] = () => (ancla === null ? { ok: true } : { ok: true, atencion: { ventanaVenceEn: new Date(ancla + 24 * 3600_000).toISOString() } });
+    ancla = t0 - 3600_000;
+    turno(w, texto('hola'));                       // primer mensaje que vemos de la conversación abierta una hora antes: actualiza la más reciente
+    expect(pl.escrituras).toHaveLength(0);
     pl.escrituras.length = 0; pl.actualizaciones.length = 0;
-    w.mundo.avanzar(26 * 60);                      // 26 h: ventana nueva, dentro de las 48 h
+    w.mundo.avanzar(26 * 60);                      // 26 h después con el MISMO ancla (la ingesta sigue dando la ventana vencida: cortesía): no es otra conversación
     turno(w, texto('hola de nuevo'));
-    expect(pl.escrituras).toHaveLength(0);         // dentro de las 48 h NO se agrega una fila: se actualiza la más reciente
+    expect(pl.escrituras).toHaveLength(0);         // NIEGA: sin ancla nuevo no se agrega una fila (aunque pasen 48 h de la regla vieja): se actualiza la más reciente
     expect(pl.actualizaciones).toHaveLength(1);
     expect(pl.actualizaciones[0]!['row_number']).toBe(9 + 2);
     const sd = (w.mundo.sd['ventaMinima'] as J)['crmVisto'] as J;
     expect(Object.keys(sd)).toEqual([L.vmCrmClave(CLIENTE)]);
     expect(JSON.stringify(w.mundo.sd)).not.toContain(CLIENTE);
-    w.mundo.avanzar(50 * 60);                      // 50 h sin mensajes
+    pl.escrituras.length = 0; pl.actualizaciones.length = 0;
+    ancla = null;                                  // NIEGA: con la ingesta caída tampoco se crea fila
+    w.mundo.avanzar(30 * 60);
+    turno(w, texto('seguimos'));
+    expect(pl.escrituras).toHaveLength(0);
+    ancla = w.mundo.ahora() + 60_000;              // conversación nueva: la ingesta da otro ancla, posterior a la última interacción de las filas
+    w.mundo.avanzar(26 * 60);
     turno(w, texto('buenas'));
     expect(pl.escrituras).toHaveLength(1);
     expect(pl.escrituras[0]!['ID Lead']).toBe('LEAD-1011');

@@ -46,7 +46,7 @@ operativo.
 
 ## Reglas de negocio para el PR-B (contrato fijado por Andres)
 
-1. **Contacto nuevo** = sin mensajes en las últimas 48 h (`HORAS_CONTACTO_NUEVO`).
+1. **Una fila por conversación** (Andres, 08/11/2026; reemplaza la regla de 48 h): la conversación es la del cobro, ventana fija de 24 h desde el primer mensaje de consulta (ancla = `atencion.ventanaVenceEn` - 24 h). Sin ancla (ingesta caída) se actualiza la más reciente sin crear. Exige `ultimaInteraccion` en el mapa.
 2. Se actualiza la fila **más reciente** del teléfono.
 3. **Un negocio por fila.**
 4. No se tocan las columnas del equipo.

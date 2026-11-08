@@ -196,8 +196,8 @@ prospectos.forEach((it, i) => {
     faltan[0] + '»');
 
   // >>> filas nuevas (29/10): diverge a propósito de la copia de Captación mínima; la prueba lo declara.
-  // Una persona que vuelve tras 48 h (ficha nueva: `nuevoContacto`) es un registro NUEVO; dentro de la conversación se actualiza SIEMPRE la fila más reciente de ese teléfono.
-  const actual = p.nuevoContacto === true ? undefined : coincidencias.filter((f) => digitos(f[H.E]) === p.telefono).reduce((m, f) => (!m || Number(f.row_number) > Number(m.row_number) ? f : m), undefined);
+  // ACTUALIZADO 08/11/2026 (una fila por conversación): sin `conversacionDesdeMs` (los casos de esta tabla no lo traen) se actualiza SIEMPRE la fila más reciente de ese teléfono y `nuevoContacto` (48 h) se ignora.
+  const actual = coincidencias.filter((f) => digitos(f[H.E]) === p.telefono).reduce((m, f) => (!m || Number(f.row_number) > Number(m.row_number) ? f : m), undefined);
   // <<< filas nuevas
   // Los hechos viajan dentro del prospecto (`Salida`); un item de antes de ese
   // cambio no los trae, y `cerrado` sigue siendo un pedido de una persona.
