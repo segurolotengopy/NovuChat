@@ -102,6 +102,13 @@ if (CN_SERVICIOS.indexOf(t.eleccion) >= 0) {
   }
   return salir('ofrecer');
 }
+// --- Elegir QUE cita cancelar o mover, dicho o escrito (incidente del humo, 07/11) -------------
+// Con la lista de citas ya mostrada (paso `cancelando`, o `moviendo` sin cita elegida), un texto o un audio
+// transcripto se compara por CODIGO con las citas del telefono (dia, hora, fecha, ordinal, nombre). No pasa por el
+// modelo: antes volvia a listar lo mismo una y otra vez. Un «si» suelto no cancela nada (hay que tocar el boton).
+if (tipoEf === 'text' && !boton && (est.paso === 'cancelando' || (est.paso === 'moviendo' && !est.moverId))) {
+  return salir('elegir_cita_escrita', { modo: est.paso === 'cancelando' ? 'c' : 'm' });
+}
 // Cancelar o mover una cita no necesita el menu: se va directo a entender el mensaje. Y gana sobre
 // CUALQUIER paso (HB3): con una oferta pendiente, «quiero reagendar mi cita» no es otra oferta. El
 // modelo recibe el paso en su contexto y puede tomarlo por «agendar»; por eso la intencion la

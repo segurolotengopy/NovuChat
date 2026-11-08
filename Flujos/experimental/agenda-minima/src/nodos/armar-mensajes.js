@@ -323,8 +323,13 @@ switch (plan) {
     // repite ningún detalle (puede ser clínico); solo se dice qué tipo de cosa se recibió y que por este chat no se valora.
     // La frase de lo que se ve solo se usa en una captura de pantalla. No se ofrece nada que el flujo no cumpla.
     const cat = String(base.categoriaMedio || '');
-    const ve = cat === 'captura_de_pantalla' ? String(base.descripcionMedio || '').trim() : '';
-    if (cat === 'foto') menu('Recibí tu foto. Por este chat no puedo valorarla. ¿Qué necesitas?');
+    // La frase del modelo de visión ya trae su punto: se le quita para no decir «..» (humo del 07/11).
+    const ve = cat === 'captura_de_pantalla' ? String(base.descripcionMedio || '').trim().replace(/[\s.]+$/, '') : '';
+    // Una captura de MAPA o de ubicación: no se valora, se responde con lo que el negocio configuró (dirección y mapa). No se afirma
+    // que sea SU consultorio (la descripción no lleva nombres): se dice «si buscas nuestro consultorio, estamos en…».
+    const esMapa = /\b(mapa|ubicacion|direccion)\b/.test(cnNorm(ve));
+    if (esMapa && cfg.direccion) menu('Recibí tu captura del mapa. Si buscas nuestro consultorio, estamos en ' + cfg.direccion + '.' + (MAPA ? '\nMapa: ' + MAPA : '') + '\n¿Quieres agendar una cita o necesitas otra cosa?');
+    else if (cat === 'foto') menu('Recibí tu foto. Por este chat no puedo valorarla. ¿Qué necesitas?');
     else if (cat === 'captura_de_pantalla') menu('Recibí tu captura' + (ve ? ': ' + ve : '') + '. Por este chat no puedo valorarla. ¿Qué necesitas?');
     else menu('Recibí tu imagen. ¿Qué necesitas?');
     break;
@@ -499,7 +504,9 @@ switch (plan) {
     const filas = (base.citas || []).map((c) => ({ c: c, id: idDeBoton(modo, { id: c.id }) })).filter((x) => x.id);
     if (!filas.length) { transferir('no se pudo listar sus citas', 'No pude mostrarte tus citas. Escríbele directo a recepción tocando el botón.'); break; }
     const detalle = filas.map((x) => '• ' + textoDeFecha(x.c.inicio)).join('\n');
-    const cuerpo = (modo === 'm' ? '¿Cuál de tus citas quieres mover?' : (filas.length === 1 ? 'Esta es tu cita. Para cancelarla, toca el botón:' : '¿Cuál de tus citas quieres cancelar?'))
+    const cuerpo = (params.noEntendi
+      ? 'No te entendí bien cuál de tus citas. ' + (filas.length === 1 ? 'Toca el botón, o dime el día y la hora:' : 'Toca una, o dime el día y la hora de la que quieres ' + (modo === 'm' ? 'mover' : 'cancelar') + ':')
+      : (modo === 'm' ? '¿Cuál de tus citas quieres mover?' : (filas.length === 1 ? 'Esta es tu cita. Para cancelarla, toca el botón:' : '¿Cuál de tus citas quieres cancelar?')))
       + '\n' + detalle;
     if (filas.length <= 3) {
       const botones = filas.map((x) => ({ id: x.id, title: verbo + ' ' + x.c.etiqueta }));
