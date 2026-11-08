@@ -331,3 +331,45 @@ describe('P8. Revisión: relecturas, ID, hoja y celdas no texto', () => {
     expect(v[1][20]).toBe(`${MARCA_CELDA}-1`);
   });
 });
+
+
+describe('P9. El error de Google se ve sin filtrar id ni celdas', () => {
+  const ID = 'IDDELAPLANILLA1234567890abcdefXYZ';
+  const filtrar = (json: unknown) => new Function('$input', S.CODIGO_FILTRO)({ first: () => ({ json }) })[0].json;
+  it('403: deja estado, status y reason; nunca el mensaje (que nombra el id) ni el cuerpo', () => {
+    const o = filtrar({ statusCode: 403, body: { error: { code: 403, status: 'PERMISSION_DENIED', message: `sin acceso a ${ID} ${MARCA_CELDA}`,
+      details: [{ '@type': 'x', reason: 'SERVICE_DISABLED', metadata: { u: ID } }] } } });
+    expect(o).toEqual({ __errorGoogle: true, estado: 403, google: 'PERMISSION_DENIED', razon: 'SERVICE_DISABLED' });
+    expect(JSON.stringify(o)).not.toContain(ID);
+    expect(JSON.stringify(o)).not.toContain(MARCA_CELDA);
+  });
+  it('un status o reason con forma de texto libre se descarta', () => {
+    const o = filtrar({ statusCode: 404, body: { error: { status: `no existe ${ID}`, details: [{ reason: `la hoja ${MARCA_CELDA}` }] } } });
+    expect(o).toEqual({ __errorGoogle: true, estado: 404, google: null, razon: null });
+  });
+  it('fallo del nodo sin respuesta: solo el estado numérico', () => {
+    const o = filtrar({ error: { message: `fallo con ${ID}`, httpCode: '401' } });
+    expect(o).toEqual({ __errorGoogle: true, estado: 401, google: null, razon: null });
+    expect(JSON.stringify(filtrar({ error: { message: ID } }))).not.toContain(ID);
+  });
+  it('2xx pasa el cuerpo (los valores se usan en memoria)', () => {
+    expect(filtrar({ statusCode: 200, body: { values: [['a']] } })).toEqual({ values: [['a']] });
+  });
+  it('interpretar lanza con un motivo legible sin id ni celdas; con éxito devuelve el resultado', () => {
+    let e: any;
+    try { S.interpretar({ __errorGoogle: true, estado: 403, google: 'PERMISSION_DENIED', razon: 'SERVICE_DISABLED' }); } catch (x) { e = x; }
+    expect(e.motivo).toBe('Google respondió 403 PERMISSION_DENIED (SERVICE_DISABLED)');
+    expect(e.code).toBe('google-403');
+    try { S.interpretar({ __errorGoogle: true, estado: 7, google: `x ${ID}`, razon: MARCA_CELDA }); } catch (x) { e = x; }
+    expect(e.motivo).not.toContain(ID); expect(e.motivo).not.toContain(MARCA_CELDA);
+    expect(S.interpretar({ values: [] })).toEqual({ values: [] });
+  });
+  it('el paso contra Google no corta ante errores y termina en el filtro', () => {
+    const http = (id: string, name: string, x: number, p: any) => ({ id, name, position: [x, 0], parameters: { ...p } });
+    const [h, f] = S.pasoSeguro(http, 'leer', 'Leer', 240, { url: 'u' });
+    expect(h.onError).toBe('continueRegularOutput');
+    expect(h.parameters.options.response.response).toMatchObject({ neverError: true, fullResponse: true });
+    expect(f.type).toBe('n8n-nodes-base.code');
+    expect(f.parameters.jsCode.split('}}').length).toBe(1);
+  });
+});

@@ -364,17 +364,50 @@ const urlHoja = (sheet, ruta) => `https://sheets.googleapis.com/v4/spreadsheets/
  */
 export const expresionEscribir = (rangoA1) => `={{ JSON.stringify({ range: ${JSON.stringify(`'${HOJA}'!${rangoA1}`)}, majorDimension: 'ROWS', values: $('Entrada').first().json.body.valores }) }}`;
 
+/**
+ * EL ERROR DE GOOGLE, VISIBLE SIN FILTRAR NADA. El nodo HTTP del flujo temporal no corta ante un 4xx/5xx (`neverError` + respuesta completa)
+ * y un nodo Code posterior deja pasar, si fue un error, SOLO: el estado HTTP numérico, `error.status` y el primer `reason` de Google, y
+ * solo si tienen forma de constante (MAYÚSCULAS_Y_GUIONES). Nunca el mensaje (puede nombrar el id o el rango), nunca el cuerpo, nunca la URL.
+ * Si la respuesta es 2xx, pasa el cuerpo tal cual (los valores de la hoja, que solo se usan en memoria).
+ */
+export const CODIGO_FILTRO = `const r = $input.first().json;
+const cte = (v) => (typeof v === 'string' && /^[A-Z][A-Z0-9_]{2,59}$/.test(v) ? v : null);
+const st = Number.isInteger(r.statusCode) ? r.statusCode : (r.error && Number.isInteger(Number(r.error.httpCode)) ? Number(r.error.httpCode) : 0);
+if (st >= 200 && st < 300 && r.body !== undefined) return [{ json: (r.body && typeof r.body === 'object') ? r.body : {} }];
+const e = (r.body && typeof r.body === 'object' && r.body.error && typeof r.body.error === 'object') ? r.body.error : {};
+const d = Array.isArray(e.details) ? e.details.find((x) => x && cte(x.reason)) : null;
+return [{ json: { __errorGoogle: true, estado: st, google: cte(e.status), razon: d ? cte(d.reason) : null } }];`;
+
+/** Un paso contra Google: el nodo HTTP que no corta ante errores y el filtro que deja solo el motivo. */
+export function pasoSeguro(http, id, nombre, x, parametros) {
+  const h = http(id, nombre, x, { ...parametros, options: { timeout: 30000, response: { response: { neverError: true, fullResponse: true, responseFormat: 'json' } } } });
+  h.onError = 'continueRegularOutput';
+  const filtro = { id: `${id}-motivo`, name: `${nombre} (motivo)`, type: 'n8n-nodes-base.code', typeVersion: 2, position: [x + 120, 0], parameters: { mode: 'runOnceForAllItems', language: 'javaScript', jsCode: CODIGO_FILTRO } };
+  return [h, filtro];
+}
+
+/** Si el resultado es el motivo de un error de Google, lanza con un texto sin id ni celdas; si no, lo devuelve. */
+export function interpretar(r) {
+  if (r && r.__errorGoogle === true) {
+    const cte = (v) => (typeof v === 'string' && /^[A-Z][A-Z0-9_]{2,59}$/.test(v) ? v : null);
+    const estado = Number.isInteger(r.estado) ? r.estado : 0;
+    const partes = [estado ? String(estado) : 'sin respuesta', cte(r.google), cte(r.razon) ? `(${cte(r.razon)})` : null].filter(Boolean);
+    throw Object.assign(new Error('google'), { code: `google-${estado}`, motivo: `Google respondió ${partes.join(' ')}` });
+  }
+  return r;
+}
+
 export function depsDeRed({ envFile, sheet }) {
   const base = { envFile, tenant: TENANT };
   const urlRango = (a1) => encodeURIComponent(`'${HOJA}'!${a1}`);
   return {
     leer: async () => {
-      const r = await correrEnN8n({ ...base, hacer: ({ http }) => ({ nodos: [http('leer', 'Leer', 240, { method: 'GET', url: `${urlHoja(sheet, urlRango('A3:X'))}?valueRenderOption=FORMULA` })] }) });
+      const r = interpretar(await correrEnN8n({ ...base, hacer: ({ http }) => ({ nodos: pasoSeguro(http, 'leer', 'Leer', 240, { method: 'GET', url: `${urlHoja(sheet, urlRango('A3:X'))}?valueRenderOption=FORMULA` }) }) }));
       return Array.isArray(r.values) ? r.values : [];
     },
-    escribir: (a1, valores) => correrEnN8n({ ...base, cuerpo: { valores }, hacer: ({ http }) => ({ nodos: [http('escribir', 'Escribir', 240, {
-      method: 'PUT', url: `${urlHoja(sheet, urlRango(a1))}?valueInputOption=RAW`, sendBody: true, contentType: 'json', specifyBody: 'json', jsonBody: expresionEscribir(a1) })] }) }),
-    limpiar: (a1) => correrEnN8n({ ...base, hacer: ({ http }) => ({ nodos: [http('limpiar', 'Limpiar', 240, { method: 'POST', url: `${urlHoja(sheet, urlRango(a1))}:clear` })] }) }),
+    escribir: async (a1, valores) => interpretar(await correrEnN8n({ ...base, cuerpo: { valores }, hacer: ({ http }) => ({ nodos: pasoSeguro(http, 'escribir', 'Escribir', 240, {
+      method: 'PUT', url: `${urlHoja(sheet, urlRango(a1))}?valueInputOption=RAW`, sendBody: true, contentType: 'json', specifyBody: 'json', jsonBody: expresionEscribir(a1) }) }) })),
+    limpiar: async (a1) => interpretar(await correrEnN8n({ ...base, hacer: ({ http }) => ({ nodos: pasoSeguro(http, 'limpiar', 'Limpiar', 240, { method: 'POST', url: `${urlHoja(sheet, urlRango(a1))}:clear` }) }) })),
     respaldos: respaldosEnDisco(),
     ahora: () => new Date(),
   };
@@ -391,5 +424,5 @@ function seEjecutaDirecto() {
   try { return Boolean(process.argv[1]) && fileURLToPath(import.meta.url) === realpathSync(process.argv[1]); } catch { return false; }
 }
 if (seEjecutaDirecto()) {
-  try { await principal(); } catch (e) { console.error(`\n  ✗ error de ejecución: ${e?.code ?? e?.name ?? 'desconocido'}\n`); process.exit(3); }
+  try { await principal(); } catch (e) { console.error(`\n  ✗ error de ejecución: ${e?.code ?? e?.name ?? 'desconocido'}${e?.motivo ? ` · ${e.motivo}` : ''}\n`); process.exit(3); }
 }
