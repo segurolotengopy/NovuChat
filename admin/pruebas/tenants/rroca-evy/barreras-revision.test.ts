@@ -299,7 +299,7 @@ describe('la pregunta por la gratuidad se contesta con un texto fijo cuando el m
     expect(avisosARecepcion(t).length).toBe(0);
   });
   // AJUSTE (28/10/2026): sin «hoy está bonificado»; el valor habitual, solo en el primer turno de la ficha (estas pruebas son el primer turno; el turno siguiente se prueba en observaciones-ruben.test.ts).
-  const FIJO = 'Sí, la valoración con la Dra. Evy Karina Rojas es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar. (Su valor habitual es de 250 Bs).';
+  const FIJO = 'Sí, la valoración con la Dra. Evy Karina Rojas es 100% gratuita por la campaña. No pagas los 250 Bs de consulta ni tienes que dejar ningún anticipo para reservar.\n\nSolo si después de la evaluación decides hacerte el tratamiento, la Dra. te da el presupuesto.';
   const PREGUNTAS = ['¿De verdad es gratis?', '¿Hay algún costo escondido o pago de reserva?', '¿tengo que dejar un anticipo?'];
   for (const q of PREGUNTAS) {
     it(`POSITIVA: «${q}» con el modelo rechazado o caído: texto fijo, sin botón ni aviso`, () => {

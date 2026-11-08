@@ -354,19 +354,31 @@ describe('(3) «no gracias» / «lo voy a pensar»: la oferta fija de llamada', 
 describe('(4) sin «bonificado»; los 250 Bs en la bienvenida y al preguntar el precio', () => {
   const BIENVENIDA = 'Hoy tu valoración es 100% gratuita y sin compromiso (su costo habitual es de 250 Bs, hoy bonificado). ¿Cómo te llamas?';
   const BONIFICADA = ES_EVY ? BIENVENIDA : 'Hoy tu valoración es 100% gratuita y sin compromiso, hoy bonificado. ¿Cómo te llamas?';
-  it('NEGADA: «hoy bonificado» / «100% bonificada» nunca salen (se reescriben a «gratuita» o se quitan)', () => {
+  (ES_EVY ? it.skip : it)('NEGADA (Emma): «hoy bonificado» / «100% bonificada» nunca salen (se reescriben a «gratuita» o se quitan)', () => {
     for (const x of [BONIFICADA, 'Tu valoración está 100% bonificada. ¿Cómo te llamas?', 'Hoy está bonificada y es gratuita. ¿Cómo te llamas?', 'Justamente por eso bonificamos el 100% de la valoración. ¿Te gustaría agendar?', 'Es bonificable. ¿Cómo te llamas?']) {
       const t = textos(hablar(crear({ modeloDice: dice(x) }), ANA, mTexto('hola')))[0]!;
       expect(t, x).not.toMatch(/bonific/i);
       expect(t, x).not.toMatch(/inconveniente para responderte/);
     }
   });
-  it('NEGADA: ningún texto fijo dice «bonific» (cierre, gratuidad, oferta, preferencia, saludo) y el prompt tampoco', () => {
+  (ES_EVY ? it.skip : it)('NEGADA (Emma): ningún texto fijo dice «bonific» (cierre, gratuidad, oferta, preferencia, saludo) y el prompt tampoco', () => {
     expect(LIB).not.toMatch(/'[^'\n]*bonific[^'\n]*'/i);
     const prompt = readFileSync(join(RAIZ, CLIENTE, `prompts/${ES_EVY ? 'evy' : 'emma'}.md`), 'utf8');
     expect(prompt).not.toMatch(/bonific/i);
     expect(prompt).toContain('sin pagar nada para agendar');
   });
+  if (ES_EVY) {
+    it('POSITIVA (letra del MD, Andres 08/11/2026): «bonificada / bonificamos» ya NO se reescribe en Evy', () => {
+      for (const x of ['Tu valoración está 100% bonificada. ¿Cómo te llamas?', 'Justamente por eso bonificamos el 100% de la valoración (que habitualmente cuesta 250 Bs). ¿Te gustaría agendar?']) {
+        expect(textos(hablar(crear({ modeloDice: dice(x) }), ANA, mTexto('hola')))[0]!, x).toMatch(/bonific/i);
+      }
+    });
+    it('el prompt de Evy dice «bonificada» y «bonificamos» como el MD', () => {
+      const prompt = readFileSync(join(RAIZ, CLIENTE, 'prompts/evy.md'), 'utf8');
+      expect(prompt).toContain('bonificamos el 100% de la valoración (que habitualmente cuesta 250 Bs)');
+      expect(prompt).toContain('bonificando los 250 Bs habituales');
+    });
+  }
   if (ES_EVY) {
     it('POSITIVA: en la bienvenida (primer turno de la ficha) los 250 Bs salen, junto con la gratuidad', () => {
       const t = textos(hablar(crear({ modeloDice: dice(BIENVENIDA) }), ANA, mTexto('hola')))[0]!;
@@ -403,7 +415,7 @@ describe('(4) sin «bonificado»; los 250 Bs en la bienvenida y al preguntar el 
       hablar(f, ANA, mTexto('hola'));
       const g = todo(hablar(f, ANA, mTexto('¿de verdad es gratis?')));
       expect(g).toContain('100% gratuita');
-      expect(g).toContain('(Su valor habitual es de 250 Bs).');
+      expect(g).toContain('No pagas los 250 Bs de consulta ni tienes que dejar ningún anticipo para reservar');
       expect(g).not.toMatch(/bonific/);
     });
   } else {
@@ -539,7 +551,7 @@ describe('rendimiento de las expresiones nuevas (CodeQL js/redos)', () => {
 
 describe('la copia es la misma en las dos doctoras', () => {
   it('el bloque de las observaciones es idéntico byte a byte en los dos flujos', () => {
-    const bloque = (c: string) => { const t = readFileSync(join(RAIZ, `${c}/src/lib/ev.js`), 'utf8'); return t.slice(t.indexOf('// OBSERVACIONES DE RUBÉN (decisiones de Andres, 28/10/2026)')); };
+    const bloque = (c: string) => { const t = readFileSync(join(RAIZ, `${c}/src/lib/ev.js`), 'utf8'); return t.slice(t.indexOf('// OBSERVACIONES DE RUBÉN (decisiones de Andres, 28/10/2026)')).replace(/\/\/ (?:\(4\) SIN «BONIFICADO»|DECISIÓN DE ANDRES \(08\/11\/2026, «la letra del MD»\))[\s\S]*?\nfunction evSinBonificado\(texto\) \{[\s\S]*?\n\}\n/, ''); };
     const [a, b] = ['rroca-' + 'evy', 'rroca-emma'].map(bloque);
     expect(a!.length).toBeGreaterThan(1000);
     expect(a).toBe(b);
