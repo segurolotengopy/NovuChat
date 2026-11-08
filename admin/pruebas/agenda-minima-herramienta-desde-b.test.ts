@@ -49,7 +49,7 @@ interface Mundo { credenciales: J[]; flujo: J; puts: J[]; putFalla: boolean; gua
 let mundo: Mundo;
 let servidor: Server;
 let carpeta = '';
-const leerCuerpo = (r: IncomingMessage): Promise<string> => new Promise((ok) => { let t = ''; r.on('data', (c) => { t += String(c); }); r.on('end', () => ok(t)); });
+const leerCuerpo = (r: IncomingMessage): Promise<string> => new Promise((ok) => { const trozos: Buffer[] = []; r.on('data', (c: Buffer) => { trozos.push(c); }); r.on('end', () => ok(Buffer.concat(trozos).toString('utf8'))); });
 
 beforeAll(async () => {
   carpeta = mkdtempSync(join(tmpdir(), 'herramienta-desde-b-'));
