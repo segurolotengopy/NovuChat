@@ -155,7 +155,8 @@ describe('saludo neutro (decisión de Andres, 24/10/2026): la campaña no se men
       const f = JSON.parse(t) as { nodes?: Array<{ name: string }> };
       return JSON.stringify({ ...f, nodes: (f.nodes ?? []).filter((n) => !(NODOS_DE_CRM as string[]).includes(n.name)) });
     };
-    for (const a of archivos) expect(textoRevisado(a), a).not.toMatch(/campa[ñn]a/i);
+    // 07/11/2026: los NOMBRES de los datos y del código del texto literal del anuncio (campanaFrase, campanaTexto, campana_literal, evEsEntradaCampana…) no son un texto al cliente: se quitan antes de buscar la palabra.
+    for (const a of archivos) expect(textoRevisado(a).replace(/[A-Za-z_]*[Cc]ampana[A-Za-z_]*/g, ''), a).not.toMatch(/campa[ñn]a/i);
     // AJUSTE (observaciones de Rubén, 28/10/2026): sin «hoy bonificado» y con «sin pagar nada para agendar».
     expect(readFileSync(join(CARPETA, 'prompts/evy.md'), 'utf8')).toContain('Hoy tu valoración con la Dra. Evy es **100% gratuita y sin compromiso**, sin pagar nada para agendar (su costo habitual es de 250 Bs)');
   });

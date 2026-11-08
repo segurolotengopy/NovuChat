@@ -211,6 +211,9 @@ const FORMAS_CONFIG = {
   etapaPrueba: /^(si|REEMPLAZAR_[A-Z0-9_]+)?$/,
   // D6 (Andres, 23/10/2026): `si` enciende el texto con marcas (Radiesse®, HArmonyCa™) y el comparativo; vacío lo apaga.
   usarMarcas: /^(si)?$/,
+  // Texto literal de campaña (Andres, 07/11/2026): la frase exacta de entrada (20 a 200 caracteres, sin comillas dobles, llaves, corchetes ni saltos) y el texto fijo que recibe (50 a 1500; sin comillas dobles, barra invertida, llaves, corchetes ni signos < >).
+  campanaFrase: /^[^"{}\r\n<>\\\[\]]{20,200}$/,
+  campanaTexto: /^[^"{}<>\\\[\]=][^"{}<>\\\[\]]{49,1499}$/,
   // El ÚNICO modelo de este flujo (decisión de Andres): gemini-3.5-flash-lite.
   modelo: /^gemini-3\.5-flash-lite$/,
   temperatura: /^(0|1|0\.\d{1,2})$/,
@@ -265,6 +268,10 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
     for (const c of ['planillaProspectosId', 'planillaProspectosHoja']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
     for (const c of ['phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio', 'tenantId', 'clinica', 'arteComparativoMediaId', 'arteAntesDespuesMediaId', 'arteAutoridadMediaId']) if (cb[c] === undefined || cb[c] === '') errores.push(`configBase.${c}: falta`);
     if (cb.tenantId !== undefined && cb.tenantId !== d.tenant) errores.push('configBase.tenantId: tiene que ser el tenant de este archivo');
+    // La campaña: frase y texto van juntos o ninguno; la frase tiene al menos 5 palabras (sin «hola» ni puntuación: se compara por igualdad, nunca por inclusión); el texto solo enlaza a Google Maps.
+    if ((cb.campanaFrase === undefined) !== (cb.campanaTexto === undefined)) errores.push('configBase.campanaFrase y campanaTexto: van juntos o ninguno');
+    if (typeof cb.campanaFrase === 'string' && cb.campanaFrase.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z0-9ñ]+/).filter((w) => w !== '' && w !== 'hola').length < 5) errores.push('configBase.campanaFrase: tiene que tener al menos 5 palabras (sin contar «hola»)');
+    if (typeof cb.campanaTexto === 'string') for (const u of cb.campanaTexto.match(/https?:\/\/\S+|www\.\S+|wa\.me\S*/gi) || []) if (!/^https:\/\/maps\.app\.goo\.gl\/[A-Za-z0-9_-]{6,40}$/.test(u)) errores.push('configBase.campanaTexto: el único enlace permitido es uno corto de Google Maps (https://maps.app.goo.gl/…)');
     for (const c of TEXTOS_LIBRES) if (typeof cb[c] === 'string' && (/https?:|www\.|wa\.me|[<>{}\[\]]/i.test(cb[c]))) errores.push(`configBase.${c}: no puede llevar enlaces, llaves ni corchetes`);
     if (typeof cb.direccionRespaldo === 'string' && /\d{7,}/.test(cb.direccionRespaldo.replace(/\s/g, ''))) errores.push('configBase.direccionRespaldo: no puede llevar un número largo');
   }
