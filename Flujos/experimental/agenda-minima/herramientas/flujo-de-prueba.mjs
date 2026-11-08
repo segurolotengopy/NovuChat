@@ -587,6 +587,17 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   const nombreB = trigB[0].name; const t = structuredClone(trigVivo[0]);
   b.nodes = b.nodes.map((n) => (n === trigB[0] ? t : n));
   if (t.name !== nombreB) { b.connections[t.name] = b.connections[nombreB]; delete b.connections[nombreB]; }
+  // 2b. El ENSAYO en el Demo A no escribe en ninguna planilla: la rama del miniCRM (8 nodos de Google) SALE del candidato, con todas sus
+  // conexiones. n8n 2.x no publica un nodo con credencial requerida vacía, y ninguna credencial de Bellido puede llegar al Demo A.
+  // La rama cuelga de «Armar mensajes» en paralelo: al quitar solo esa conexión, el resto del flujo no cambia. Un candidato sin esos nodos (Q'Taco) no pierde nada.
+  const quitadosCrm = b.nodes.filter((n) => NODOS_CRM_DE_BELLIDO.includes(n.name)).length;
+  if (quitadosCrm) {
+    b.nodes = b.nodes.filter((n) => !NODOS_CRM_DE_BELLIDO.includes(n.name));
+    for (const k of NODOS_CRM_DE_BELLIDO) delete b.connections[k];
+    for (const salidas of Object.values(b.connections)) for (const [tipoSalida, grupos] of Object.entries(salidas)) {
+      salidas[tipoSalida] = grupos.map((g) => (g ?? []).filter((c) => !NODOS_CRM_DE_BELLIDO.includes(c.node)));
+    }
+  }
   // 3. credenciales por nombre
   const lista = (await llamar('GET', '/credentials?limit=250')).datos.data ?? [];
   const repetidos = lista.map((c) => c.name).filter((x, i, a) => a.indexOf(x) !== i);
@@ -610,12 +621,6 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
       n.credentials = { whatsAppApi: {} };
       tabla.push(`  ${n.name}: PARÁMETROS CAMBIADOS ${antes} → predefinedCredentialType/whatsAppApi`);
     }
-    // El ENSAYO en el Demo A no escribe en ninguna planilla: los nodos de Google del miniCRM quedan SIN credencial (declarada aqui), con el id de planilla vacio.
-    // Ninguna credencial de Bellido ni de otro cliente llega al Demo A; es la unica excepcion y solo para esos 8 nodos por nombre y por su credencial exacta.
-    if (NODOS_CRM_DE_BELLIDO.includes(n.name) && n.credentials && n.credentials.googleApi && n.credentials.googleApi.name === CRED_CRM_BELLIDO) {
-      delete n.credentials.googleApi;
-      tabla.push(`  ${n.name}: googleApi → SIN credencial (el ensayo no escribe en la planilla del miniCRM)`);
-    }
     for (const tipo of Object.keys(n.credentials ?? {})) {
       const regla = CRED_DEMO_A[tipo];
       const origen = (n.credentials[tipo] && n.credentials[tipo].name) || '';
@@ -629,7 +634,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
       tabla.push(`  ${n.name}: ${tipo} → «${c.name}»`);
     }
   }
-  const sinCred = b.nodes.filter((n) => !NODOS_CRM_DE_BELLIDO.includes(n.name) && (Object.values(n.credentials ?? {}).some((c) => !c || !c.id)
+  const sinCred = b.nodes.filter((n) => (Object.values(n.credentials ?? {}).some((c) => !c || !c.id)
     // L4: un HTTP con autenticación y sin credencial fallaría en ejecución.
     || (n.type === 'n8n-nodes-base.httpRequest' && (n.parameters?.authentication ?? 'none') !== 'none' && !Object.keys(n.credentials ?? {}).length)));
   if (sinCred.length) morir(`nodos sin credencial resuelta: ${sinCred.map((n) => n.name).join(', ')}`);
@@ -661,6 +666,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   console.log(`Trigger vivo: webhookId …${String(t.webhookId ?? '').slice(-4) || '(sin webhookId)'}; flujo vivo activo=${vivo.datos.active}`);
   console.log(`Candidato (${ARCHIVO.split(sep).slice(-2).join('/')}): ${b.nodes.length} nodos (con el disparador del Demo A). El nombre del flujo queda «${vivo.datos.name}».`);
   console.log(`Phone id del cliente en el JSON: ${MARCA_PHONE.test(readFileSync(ARCHIVO, 'utf8')) ? 'reemplazado en memoria por el del Demo A (no se muestra)' : 'no trae'}`);
+  if (quitadosCrm) console.log(`Nodos quitados del candidato: ${quitadosCrm} (la rama del miniCRM de Bellido): el ensayo en el Demo A no escribe en ninguna planilla y n8n 2.x no publica nodos de Google sin credencial.`);
   console.log(`Nodos que se van: ${[...nv].filter((x) => !nb.has(x)).length} · que llegan: ${[...nb].filter((x) => !nv.has(x)).length} · en los dos: ${[...nb].filter((x) => nv.has(x)).length}`);
   console.log('Credenciales, nodo por nodo:'); tabla.forEach((l) => console.log(l));
   console.log(`Marcadores que quedan (solo respaldo de «Config base»; el panel de «ensayo» manda): ${marcas.join(', ') || '—'}`);

@@ -216,7 +216,7 @@ resumen.mensajes = sale ? ms.length : 0;
 if (!sale) {
   return cmNumerar([{ sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen, guardarPlanilla: false, prospectoPlanilla: null }]).map((json) => ({ json }));
 }
-// El relé B9 exige el número del mensaje (Idempotency-Key): cmNumerar lo agrega (n = 1, 2, …) en el orden en que salen.
+// Número del mensaje (n = 1, 2, …) en el orden en que salen: cmNumerar lo agrega; lo usa la clave de idempotencia de un canal de envío con reintentos; con envío directo es inocuo.
 return cmNumerar(ms.map((m, i) => {
   m.payload.to = numero;
   return {

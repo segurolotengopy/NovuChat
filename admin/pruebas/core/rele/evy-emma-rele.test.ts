@@ -35,7 +35,8 @@ const leerPrueba = (carpeta: string, archivo: string): Flujo => JSON.parse(readF
 const copia = (f: Flujo): Flujo => JSON.parse(JSON.stringify(f)) as Flujo;
 const nodo = (f: Flujo, n: string): Nodo => { const x = f.nodes.find((y) => y.name === n); if (!x) throw new Error(`falta ${n}`); return x; };
 
-describe.each(CLIENTES)('$nombre por el relé', ({ carpeta, archivo, cliente, cred, c }) => {
+// Tanda 1 de Evy (07/11/2026): mientras CANAL_DE_ENVIO sea 'graph', Evy no va por el relé y sus pruebas del relé no aplican (las de graph están en tenants/rroca-evy/armado.test.ts); Emma sigue por el relé.
+describe.each(CLIENTES.filter((x) => x.nombre !== 'Evy' || evy.ES_RELE))('$nombre por el relé', ({ carpeta, archivo, cliente, cred, c }) => {
   const prod = leerFlujo(carpeta, archivo);
   const prueba = leerPrueba(carpeta, archivo);
   const mapa = (f: Flujo) => JSON.parse(JSON.stringify(f)) as Flujo;
