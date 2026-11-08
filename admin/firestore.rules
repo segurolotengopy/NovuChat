@@ -2794,6 +2794,19 @@ service cloud.firestore {
       allow list, create, update, delete: if false;
     }
 
+    // /plataforma/alertas/eventos/{id} — LAS ALERTAS OPERATIVAS (envío incierto del
+    // errorWorkflow de n8n): flujo, nodo, tipo de error y hora, SIN datos personales.
+    // Las escribe solo `alertaOperativa` (SDK Admin); las lee el propietario.
+    // `/plataforma/alertas/control/{id}` guarda los contadores del tope de correos:
+    // negado entero para el navegador (solo el servidor).
+    match /plataforma/alertas/eventos/{id} {
+      allow get, list: if esPropietario();
+      allow create, update, delete: if false;
+    }
+    match /plataforma/alertas/control/{id} {
+      allow read, write: if false;
+    }
+
     // /plataforma/prepago/historial/{id} — cada cambio de la bandera del modo
     // observación del prepago (DISENO §4undecies.4): quién, cuándo, por qué y
     // sobre qué tenant. La escribe solo `fijarCortePrepago` (SDK Admin); la
