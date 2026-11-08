@@ -46,7 +46,11 @@ operativo.
 
 ## Reglas de negocio para el PR-B (contrato fijado por Andres)
 
-1. **Una fila por conversación** (Andres, 08/11/2026; reemplaza la regla de 48 h): la conversación es la del cobro, ventana fija de 24 h desde el primer mensaje de consulta (ancla = `atencion.ventanaVenceEn` - 24 h). Sin ancla (ingesta caída) se actualiza la más reciente sin crear. Exige `ultimaInteraccion` en el mapa.
+1. **Una fila por conversación** (Andres, 08/11/2026; reemplaza la regla de 48 h): la conversación es la del cobro, ventana fija de 24 h desde el primer mensaje de consulta. La ingesta devuelve el ancla en `atencion.conversacionDesde` (ISO UTC) y `atencion.conversacionNueva`; el módulo acota el ancla a [ahora - 24 h - 5 min, ahora + 5 min] (fuera de ahí, o sin ancla: se actualiza la fila más reciente SIN crear). La fila es de la conversación por su celda «Se cierra la ventana de 24 h» (>= desde + 24 h) o, sin esa columna, por la fecha de registro CON hora (`alCrear.fechaConHora`). Cancelar y reprogramar van a la fila más reciente. Q'Taco 3727 y los demás con miniCRM vivo heredan el módulo y hay que republicarlos (orden: Bellido, Q'Taco, NovuChat, Rubén, Evy, Antonio, Emma, cada uno con botón, tras desplegar Core).
+   - **Fila mínima neutra:** si este mensaje abre la conversación y el flujo filtró su contenido (protección, plan, otro país), se crea la fila con SOLO teléfono, fecha y última interacción; Etapa, Origen y clasificación vacíos; Estado «Sin seguimiento».
+   - **Bloques de 25 respuestas (decisión de Andres):** la consola cuenta otra conversación cada 25 respuestas; el CRM NO crea fila por bloque, solo por conversación. La diferencia se informa aparte en el cuadre contra la consola.
+   - **Carrera (limitación conocida):** dos mensajes simultáneos del mismo teléfono al abrirse la conversación pueden leer la hoja antes de que el otro escriba y crear DOS filas de la misma conversación. El script de cuadre las detecta (misma ventana, mismo teléfono, más de una fila); no se corrige en línea porque Sheets no ofrece una escritura condicional.
+   - **Escrituras:** «Última interacción» sola no escribe antes de 60 min (cuota de Google Sheets); detalle y números en `docs/versiones-por-cliente.md`.
 2. Se actualiza la fila **más reciente** del teléfono.
 3. **Un negocio por fila.**
 4. No se tocan las columnas del equipo.

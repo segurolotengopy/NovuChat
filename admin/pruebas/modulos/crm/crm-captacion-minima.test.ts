@@ -32,7 +32,7 @@ type Item = { json: J; error?: unknown };
 /** El mapa REAL del tenant (dato versionado), el mismo que el flujo lleva dentro del código. */
 const MAPA = (JSON.parse(readFileSync(join(DATOS, 'novuchat.json'), 'utf8')) as J)['crm'];
 const clonar = <T,>(o: T): T => JSON.parse(JSON.stringify(o));
-const TITULOS = ['ID Lead', 'Fecha Registro', 'Nombre y Apellido', 'Empresa / Cliente', 'Teléfono WhatsApp', 'Rubro', 'Etapa Funnel', 'Origen / Canal', 'Calificación IA', 'Resumen Chatbot IA', 'Próxima acción', 'Notas del equipo', 'Estado Comercial', 'Responsable', 'Última interacción'];
+const TITULOS = ['ID Lead', 'Fecha Registro', 'Nombre y Apellido', 'Empresa / Cliente', 'Teléfono WhatsApp', 'Rubro', 'Etapa Funnel', 'Origen / Canal', 'Calificación IA', 'Resumen Chatbot IA'];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function correr(codigo: string, entrada: Item[], nodos: Record<string, Item[]> = {}): any {
@@ -59,7 +59,11 @@ afterEach(() => { vi.useRealTimers(); });
 function nuevo(prospectos: J[], busqueda: Item[], ids: Item[]) {
   const pros = prospectos.map((json) => ({ json }));
   const nodos = { 'Prospecto para la planilla': pros, 'Buscar teléfono en planilla': busqueda };
-  return { oraculo: correr(ORACULO, ids, nodos), nodo: correr(CODIGO_NODO, ids, nodos) };
+  // DELTA DECLARADO (08/11/2026): el oráculo es la foto con la regla de 48 h; `nuevoContacto` ya no decide, así que el oráculo lo recibe en falso.
+  const sin48h = { ...nodos, 'Prospecto para la planilla': pros.map(({ json }) => ({ json: { ...json, nuevoContacto: false } })) };
+  // Y la fecha de registro de NovuChat ahora lleva la hora (`alCrear.fechaConHora`, identifica la conversación sin columna nueva): se compara el día.
+  const soloDia = (r: unknown): unknown => JSON.parse(JSON.stringify(r), (k, v) => (k === 'Fecha Registro' && typeof v === 'string' ? v.replace(/^'?(\d{4}-\d{2}-\d{2}).*$/, '$1') : v));
+  return { oraculo: correr(ORACULO, ids, sin48h), nodo: soloDia(correr(CODIGO_NODO, ids, nodos)) };
 }
 const fila = (n: number, tel: string, extra: J = {}): Item => ({ json: { row_number: n, ...Object.fromEntries(TITULOS.map((t) => [t, ''])), 'Teléfono WhatsApp': tel, ...extra } });
 const TEL = ['59', '17', '000', '001'].join('');
@@ -116,7 +120,7 @@ describe('misma salida que hoy: 300 casos con semilla fija', () => {
       const tipo = R();
       if (tipo < 0.07) bus = [{ json: { error: fallo }, error: fallo }];
       else if (tipo < 0.12) ids = [{ json: { error: fallo } }];
-      else if (tipo < 0.17 && bus.length) { const f = clonar(bus[0].json); delete f[elige(TITULOS.slice(0, 10))]; bus = [{ json: f }, ...bus.slice(1)]; }
+      else if (tipo < 0.17 && bus.length) { const f = clonar(bus[0].json); delete f[elige(TITULOS)]; bus = [{ json: f }, ...bus.slice(1)]; }
       else if (tipo < 0.21) ids = [{ json: { row_number: 2, 'Otro título': 'LEAD-1' } }];
       const r = nuevo([p], bus, ids);
       expect(r.nodo).toEqual(r.oraculo);

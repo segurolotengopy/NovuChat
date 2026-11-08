@@ -59,10 +59,10 @@ const actCon = (p: J, previo: J = {}): J => decidir(CON, MAPA_CON, p, existente(
 const SI = { agendo: 'Sí', fechaCita: CITA };
 // Una fila por conversación: el mapa trae «Última interacción» y la fila es de una conversación ANTERIOR a la que abre en `DESDE_NUEVA`.
 const MAPA_CONV: typeof MAPA_BASE = clonar(MAPA_CON);
-Object.assign(MAPA_CONV.columnas, { ultimaInteraccion: { letra: 'M', titulo: 'Última interacción' } });
+Object.assign(MAPA_CONV.columnas, { ventana24h: { letra: 'M', titulo: 'Se cierra la ventana de 24 h' } });
 const CONV: any = modulo(MAPA_CONV); // eslint-disable-line @typescript-eslint/no-explicit-any
 const DESDE_NUEVA = Date.UTC(2026, 10, 8, 12, 0, 0);
-const actConv = (p: J, previo: J = {}): J => decidir(CONV, MAPA_CONV, p, existente({ 'Última interacción': '2026-11-06 10:00', ...previo }));
+const actConv = (p: J, previo: J = {}): J => decidir(CONV, MAPA_CONV, p, existente({ 'Se cierra la ventana de 24 h': '2026-11-07 10:00', ...previo }));
 
 describe('contrato', () => {
   it('los tres campos son del bot, nuevos, con sus títulos, y el módulo de n8n los conoce', () => {

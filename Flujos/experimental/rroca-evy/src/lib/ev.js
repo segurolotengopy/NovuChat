@@ -1214,6 +1214,7 @@ function evProspectoCrm(d) {
   // Seguridad: a la columna C solo van letras (con tildes), espacios, apóstrofo y guion; cualquier otro carácter se descarta.
   const perfil = evLinea(x.nombrePerfil, 60).replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim();
   const dadoEnElPerfil = dado !== '' && evNorm(perfil.split(' ')[0]) === evNorm(dado);
+  // nuevoContacto NO tiene efecto en el miniCRM desde el 08/11/2026 (una fila por conversacion de 24 h: la decide el modulo crm con atencion.conversacionDesde); se conserva solo por compatibilidad.
   const p = { telefono: evTexto(x.from).replace(/\D/g, ''), nombre: dadoEnElPerfil ? perfil : (dado || perfil), nombreDePerfil: dado === '', anuncio: x.anuncio === true, nuevoContacto: x.nuevoContacto === true, senales: senales, ultimaInteraccionMs: Number(x.ahoraMs) };
   if (quePidio !== '') p.quePidio = quePidio;
   if (tok.dia !== '') p.diaPreferido = tok.dia;

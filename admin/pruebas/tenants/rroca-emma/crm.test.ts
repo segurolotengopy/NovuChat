@@ -16,6 +16,7 @@ import { hallazgosCrm, inyectarMapa, urlEncabezados } from '../../../../Flujos/e
 // @ts-expect-error el armador es un .mjs sin tipos
 import { CREDENCIAL_CRM, NODOS_DE_CRM, anfitrionPermitido, guardias } from '../../../../Flujos/experimental/rroca-emma/construir.mjs';
 import { ANA, BETO, CARPETA, PRODUCCION, PRUEBA, SUSPENDIDO, crear, datos, hablar, mTexto, textos } from './mundo';
+import { respuestaDeIngesta } from '../../modulos/crm/ingesta-conversacion';
 
 const RAIZ = join(CARPETA, '..', '..', '..');
 const leerMod = (r: string): string => readFileSync(join(RAIZ, 'Flujos', 'src', 'modulos', r), 'utf8');
@@ -325,10 +326,11 @@ describe('flujo: quién guarda y quién no', () => {
 describe('flujo: una fila por conversación (24 h fijas) y la fila más reciente', () => {
   const previa = (n: number, extra: J = {}): { json: J } => fila(n, { 'Teléfono WhatsApp': ANA, 'Nombre y Apellido': 'Ana', ...extra });
   const lp = (ms: number): string => new Date(ms - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
-  // La ingesta dice cuándo vence la ventana: el ancla de la conversación es ese instante menos 24 h.
-  const conAncla = (anclaMs: number): J => ({ atencion: { ventanaVenceEn: new Date(anclaMs + 24 * 3600_000).toISOString() } });
+  // El contrato de la ingesta (helper único): `atencion.conversacionDesde` y `conversacionNueva`. Una fila es de la conversación si su ventana cierra 24 h después del ancla.
+  const conAncla = (anclaMs: number, nueva = false): J => respuestaDeIngesta({ desdeMs: anclaMs, nueva });
+  const deConv = (desdeMs: number): J => ({ 'Se cierra la ventana de 24 h': lp(desdeMs + 24 * 3600_000) });
   it('NIEGA: un segundo mensaje DENTRO de la ventana no crea fila: se ACTUALIZA la más reciente', () => {
-    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', 'Última interacción': lp(AHORA - 3600_000) }), previa(9, { 'Clasificación': 'Tibio', 'Última interacción': lp(AHORA - 1800_000) })] });
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', ...deConv(AHORA - 3600_000) }), previa(9, { 'Clasificación': 'Tibio', ...deConv(AHORA - 1800_000) })] });
     const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(AHORA - 3600_000) });
     hablar(m, ANA, mTexto('hola'));
     pl.escrituras.length = 0; pl.actualizaciones.length = 0;
@@ -342,13 +344,13 @@ describe('flujo: una fila por conversación (24 h fijas) y la fila más reciente
   });
   it('NIEGA: a las 23 h 59 del ancla NO crea fila', () => {
     const ancla = AHORA - (24 * 60 - 1) * 60_000;
-    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', 'Última interacción': lp(ancla) })] });
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', ...deConv(ancla) })] });
     const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(ancla) });
     hablar(m, ANA, mTexto('hola'));
     expect(pl.escrituras).toHaveLength(0);
   });
   it('a las 24 h exactas del ancla anterior la conversación es otra y se AGREGA una fila (con el ID siguiente)', () => {
-    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', 'Última interacción': lp(AHORA - 24 * 3600_000) })] });
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', ...deConv(AHORA - 24 * 3600_000) })] });
     const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(AHORA) });
     const t = hablar(m, ANA, mTexto('hola de nuevo'));
     expect(prospectoDe(t)?.['conversacionDesdeMs']).toBe(AHORA);
@@ -357,14 +359,14 @@ describe('flujo: una fila por conversación (24 h fijas) y la fila más reciente
     expect(pl.escrituras[0]!['ID Lead']).toBe('LEAD-1011');
   });
   it('NIEGA: con la ingesta caída (sin ancla) se actualiza la más reciente y NO se crea', () => {
-    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', 'Última interacción': lp(AHORA - 72 * 3600_000) })] });
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', ...deConv(AHORA - 72 * 3600_000) })] });
     const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles });
     const t = hablar(m, ANA, mTexto('cual es la ubicación?'));
     expect(prospectoDe(t)?.['conversacionDesdeMs']).toBeNull();
     expect(pl.escrituras).toHaveLength(0);
   });
   it('NIEGA: `nuevoContacto` verdadero con la ventana vigente NO crea fila (regresión de la regla de 48 h)', () => {
-    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', 'Última interacción': lp(AHORA - 1800_000) })] });
+    const pl = planilla({ filas: [previa(5, { 'Clasificación': 'Tibio', ...deConv(AHORA - 1800_000) })] });
     const m = crear({ base: BASE_CON_PLANILLA, dobles: pl.dobles, ingesta: conAncla(AHORA - 3600_000) });
     const t = hablar(m, ANA, mTexto('hola'));
     expect(prospectoDe(t)?.['nuevoContacto']).toBe(true);

@@ -4,7 +4,7 @@
 // (calificar, resumir) llega como argumento (`adaptador`), nunca se importa.
 // MENSAJES POR CONVERSACION: 0. Escribir en la hoja no envia WhatsApp.
 // UNA FILA POR CONVERSACION (Andres, 08/11/2026; reemplaza la regla de 48 h): la conversacion es la MISMA del cobro, ventana FIJA de 24 h desde el primer
-// mensaje de consulta del cliente (`conversacionDesdeMs` = `atencion.ventanaVenceEn` - 24 h, que devuelve la ingesta). Asi el CRM se valida contra la consola.
+// mensaje de consulta del cliente (`conversacionDesdeMs` = `atencion.conversacionDesde`, que devuelve la ingesta). Asi el CRM se valida contra la consola.
 //
 // REGLAS FIJAS (Andres, 28 a 30/10/2026): se actualiza la fila MAS RECIENTE del telefono (mayor row_number); un negocio por fila; las columnas del
 // equipo (valor, responsable, estado, proxima accion, extras) NUNCA se pisan -- el estado inicial se escribe solo al CREAR la fila--; con
@@ -165,20 +165,32 @@ function crmValidarMapa(m) {
   return e;
 }
 
-// UNA FILA POR CONVERSACION. `desdeMs` = el instante en que abrio la conversacion (primer mensaje de consulta de la ventana fija de 24 h). La fila es de ESTA
-// conversacion si su «Ultima interaccion» (AAAA-MM-DD HH:MM en La Paz, UTC-4 fijo), truncada al minuto, es >= `desdeMs` truncado al minuto. Dato ilegible = no.
+const CRM_ESTADO_MINIMA = 'Sin seguimiento'; // el estado de una fila minima: nadie la sigue hasta que una persona la tome
+// UNA FILA POR CONVERSACION. `desdeMs` = el instante en que abrio la conversacion (`atencion.conversacionDesde` de la ingesta). La fila es de ESTA conversacion si su celda
+// «Se cierra la ventana de 24 h» (= desde + 24 h; se escribe al crear y no cambia) es >= `desdeMs` + 24 h, ambos truncados al minuto. Una conversacion anterior termina su
+// ventana antes de que abra la siguiente, asi que nunca la alcanza. Si el mapa no tiene esa columna, vale la fecha de registro CON hora (`alCrear.fechaConHora`, que se
+// escribe con el `desdeMs`): es de esta conversacion si es >= `desdeMs` truncado al minuto. Dato ilegible = no. Sin ninguna de las dos no se puede decidir (no se escribe).
 function crmMsDeCelda(texto) {
   const m = /^\s*(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(texto ?? ''));
   return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] + 4, +m[5]) : null;
 }
-function crmMismaConversacion(fila, desdeMs) {
-  const ultima = crmMsDeCelda(fila && fila.__ultima);
-  return ultima !== null && typeof desdeMs === 'number' && ultima >= Math.floor(desdeMs / 60000) * 60000;
+const crmMinuto = (ms) => Math.floor(ms / 60000) * 60000;
+function crmIdentificadorDeConversacion(mapa) {
+  if (mapa.columnas.ventana24h) return 'ventana24h';
+  if (mapa.columnas.fecha && mapa.alCrear && mapa.alCrear.fechaConHora === true) return 'fecha';
+  return null;
 }
-// El inicio de la conversacion desde `atencion.ventanaVenceEn` (ISO, lo devuelve la ingesta): vencimiento - 24 h. Sin dato o ilegible = null (la ingesta no respondio).
-function crmDesdeVentana(venceEn) {
-  const ms = typeof venceEn === 'string' && venceEn ? Date.parse(venceEn) : NaN;
-  return crmMsValido(ms) === null ? null : ms - 24 * 3600 * 1000;
+function crmMismaConversacion(fila, mapa, desdeMs) {
+  const id = crmIdentificadorDeConversacion(mapa);
+  if (id === null || typeof desdeMs !== 'number') return false;
+  const celda = crmMsDeCelda(fila[mapa.columnas[id].titulo]);
+  return celda !== null && celda >= crmMinuto(id === 'ventana24h' ? desdeMs + 24 * 3600 * 1000 : desdeMs);
+}
+// El inicio de la conversacion que dice la ingesta (`atencion.conversacionDesde`, ISO UTC). Se acota a [ahora - 24 h - 5 min, ahora + 5 min]: fuera de ahi, o ilegible, es
+// null (la ingesta no respondio bien: se actualiza la fila mas reciente SIN crear).
+function crmDesdeVentana(conversacionDesde, ahoraMs) {
+  const ms = typeof conversacionDesde === 'string' && conversacionDesde ? Date.parse(conversacionDesde) : NaN;
+  return crmMsValido(ms) !== null && ms >= ahoraMs - 24 * 3600 * 1000 - 300000 && ms <= ahoraMs + 300000 ? ms : null;
 }
 
 // La fila mas RECIENTE entre las coincidencias de un telefono: la de mayor row_number (la primera si empatan).
@@ -328,9 +340,9 @@ function crmDecidirFila(a) {
     // la cita vive en la fila donde se agendo, y dejarla en «Si» con una cita ya borrada seria un dato falso. NUNCA crea fila.
     const afectaCita = p.citaCancelada === true || p.citaReprogramada === true;
     const desdeMs = crmMsValido(p.conversacionDesdeMs);
-    if (desdeMs !== null && !afectaCita && !mapeado('ultimaInteraccion')) return nada(i, 'sin_ultima_interaccion');
+    if (desdeMs !== null && !afectaCita && crmIdentificadorDeConversacion(mapa) === null) return nada(i, 'sin_identificador_de_conversacion');
     const reciente = crmFilaMasReciente(coincidencias.filter((f) => crmDigitos(f[T('telefono')]) === p.telefono));
-    const esDeEsta = !reciente || desdeMs === null || !mapeado('ultimaInteraccion') || crmMismaConversacion({ __ultima: reciente[T('ultimaInteraccion')] }, desdeMs);
+    const esDeEsta = !reciente || desdeMs === null || crmIdentificadorDeConversacion(mapa) === null || crmMismaConversacion(reciente, mapa, desdeMs);
     const actual = esDeEsta || afectaCita ? reciente : undefined;
     // Los hechos viajan dentro del prospecto; `cerrado` sigue siendo un pedido de una persona.
     // FILA MINIMA (Andres, 08/11/2026): la conversacion abrio y el flujo no armo prospecto porque filtro su CONTENIDO (proteccion, prueba, plan). Se crea la fila con SOLO
@@ -409,8 +421,14 @@ function crmDecidirFila(a) {
           if (mapeado('fechaCita') && crmLimpio(actual[T('fechaCita')]) !== '') celdas[T('fechaCita')] = '';
         }
       }
-      // FILA MINIMA (`p.minima`): solo se refresca «Última interacción»; nada mas de una fila existente se toca.
+      // FILA MINIMA (`p.minima`): jamas toca una fila existente (solo «Ultima interaccion», y solo si pasaron 60 min).
       if (minima) for (const k of Object.keys(celdas)) if (k !== T('ultimaInteraccion')) delete celdas[k];
+      // «Ultima interaccion» sola NO justifica una escritura (cuota de Google Sheets): se refresca solo si la celda tiene 60 min o mas de antiguedad, o si ya se escribe otra celda.
+      if (mapeado('ultimaInteraccion') && celdas[T('ultimaInteraccion')] !== undefined) {
+        const previa = crmMsDeCelda(actual[T('ultimaInteraccion')]);
+        const otras = Object.keys(celdas).some((k) => k !== T('ultimaInteraccion') && !(mapeado('ventana24h') && k === T('ventana24h')));
+        if (!otras && previa !== null && ultimaMs !== null && ultimaMs - previa < 3600 * 1000) { delete celdas[T('ultimaInteraccion')]; if (mapeado('ventana24h')) delete celdas[T('ventana24h')]; }
+      }
       if (!Object.keys(celdas).length) return nada(i, 'sin_cambios');
       out.push({ json: { accionPlanilla: 'actualizar', veredictoPlanilla: 'actualizar', row_number: Number(actual.row_number) + DESFASE, ...celdas }, pairedItem: { item: i } });
       return;
@@ -428,19 +446,20 @@ function crmDecidirFila(a) {
       accionPlanilla: 'agregar',
       veredictoPlanilla: 'agregar',
       [T('id')]: mapa.prefijoId + siguiente,
-      [T('fecha')]: crmFechaLaPaz(a.ahoraMs),
+      [T('fecha')]: mapa.alCrear.fechaConHora === true && !mapeado('ventana24h') ? crmComoTexto(crmFechaHoraLaPaz(desdeMs !== null ? desdeMs : a.ahoraMs)) : crmFechaLaPaz(a.ahoraMs),
       [T('nombre')]: minima ? '' : crmComoTexto(p.nombre),
       [T('empresa')]: minima ? '' : crmComoTexto(p.empresa),
       [T('telefono')]: "'" + p.telefono,
-      [T('etapaInicial')]: mapa.alCrear.etapaInicial,
-      [T('origen')]: p.anuncio ? mapa.alCrear.origenAnuncio : mapa.alCrear.origen,
+      // FILA MINIMA NEUTRA: sin etapa ni origen (no dice etapa ni de donde vino) y sin clasificacion; el estado dice que nadie la sigue.
+      [T('etapaInicial')]: minima ? '' : mapa.alCrear.etapaInicial,
+      [T('origen')]: minima ? '' : (p.anuncio ? mapa.alCrear.origenAnuncio : mapa.alCrear.origen),
       [T('calificacion')]: minima ? '' : calificacion,
       [T('resumen')]: minima ? '' : crmComoTexto(adaptador.resumir(prospecto, true, calificacion)),
     };
     if (mapeado('interes')) fila[T('interes')] = minima ? '' : crmComoTexto(p.rubro);
-    for (const [campo, v] of extras) if (!minima || ['clasificacion', 'ultimaInteraccion', 'ventana24h'].includes(campo)) fila[T(campo)] = campo === 'clasificacion' ? v : crmComoTexto(v);
+    for (const [campo, v] of extras) if (!minima || ['ultimaInteraccion', 'ventana24h'].includes(campo)) fila[T(campo)] = campo === 'clasificacion' ? v : crmComoTexto(v);
     if (mapeado('agendo') && agendoP !== 'Sí' && !minima) fila[T('agendo')] = 'No';
-    if (mapa.alCrear.estado !== undefined && mapa.equipo.estado) fila[mapa.equipo.estado.titulo] = mapa.alCrear.estado;
+    if (mapa.alCrear.estado !== undefined && mapa.equipo.estado) fila[mapa.equipo.estado.titulo] = minima ? CRM_ESTADO_MINIMA : mapa.alCrear.estado;
     out.push({ json: fila, pairedItem: { item: i } });
   });
   return out;

@@ -629,6 +629,7 @@ function agmProspectoCrm(d) {
   const nombrePerfil = String(x.nombrePerfil === undefined || x.nombrePerfil === null ? '' : x.nombrePerfil)
     .replace(/[^\p{L} '’-]/gu, '').replace(/\s{2,}/g, ' ').trim().slice(0, 60);
   if (plan === 'emergencia') {
+    // nuevoContacto NO tiene efecto en el miniCRM desde el 08/11/2026 (una fila por conversacion de 24 h: la decide el modulo crm con atencion.conversacionDesde); se conserva solo por compatibilidad.
     return { telefono: telefono, nombre: nombrePerfil, nombreDePerfil: true, nuevoContacto: x.nuevoContacto === true, servicioElegido: 'Emergencia',
       ultimaInteraccionMs: Number(x.ahoraMs) };
   }
@@ -662,6 +663,7 @@ function agmProspectoCrm(d) {
   // Solo la derivacion a recepcion va a la columna R: el adaptador comun resume «Derivado a recepción.» y con el doctor se contradiria. Al doctor basta `quePidio`.
   if (x.derivo === 'recepcion') derivacion = 'Consulta para recepción';
   const p = {
+    // nuevoContacto NO tiene efecto en el miniCRM desde el 08/11/2026 (una fila por conversacion de 24 h: la decide el modulo crm con atencion.conversacionDesde); se conserva solo por compatibilidad.
     telefono: telefono, nombre: nombrePerfil, nombreDePerfil: true, anuncio: x.anuncio === true, nuevoContacto: x.nuevoContacto === true,
     senales: { aceptoAgendar: agendo, pidioUbicacion: plan === 'respuesta_fija' && x.clave === 'direccion', llegoPorAnuncio: x.anuncio === true },
     ultimaInteraccionMs: Number(x.ahoraMs),

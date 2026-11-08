@@ -17,6 +17,7 @@ import type { Doble, ResultadoTurno } from './lib/n8n-de-mentira';
 // @ts-expect-error módulo .mjs sin tipos
 import { hallazgosCrm, inyectarMapa } from '../../Flujos/experimental/comun-sin-agente/construir-crm.mjs';
 import { AHORA, CLIENTE, estadoDe, boton, crear, editarJson, idDeBoton, leer, nodoDe, panel, texto, turno, verificarEnCopia, type Mundial } from './lib/venta-minima-mundo';
+import { respuestaDeIngesta } from './modulos/crm/ingesta-conversacion';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const VM = join(RAIZ, 'Flujos', 'experimental', 'venta-minima');
@@ -288,8 +289,8 @@ describe('aceptación (unidades)', () => {
     expect(r['Clasificación']).toBe('Caliente');
   });
   it('A8 teléfono con otro formato encuentra la misma fila; una fila por conversación (24 h fijas): misma fila dentro, fila nueva fuera', () => {
-    const ULT = 'Última interacción'; // «AAAA-MM-DD HH:MM» en La Paz
-    const lp = (ms: number) => new Date(ms - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
+    const ULT = 'Se cierra la ventana de 24 h'; // «AAAA-MM-DD HH:MM» en La Paz: desde + 24 h
+    const lp = (ms: number) => new Date(ms + 24 * 3600_000 - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' '); // ventana de una conversación que abrió en `ms`
     for (const formato of [`+${TEL}`, `'${TEL}`, `${TEL.slice(0, 3)} ${TEL.slice(3)}`]) {
       const r = decidir({ ...prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 3600_000 })!, conversacionDesdeMs: AHORA - 3600_000 }, [fila(5, { 'Teléfono WhatsApp': formato, [ULT]: lp(AHORA - 1800_000) })]);
       expect(r['accionPlanilla'], formato).toBe('actualizar');
@@ -534,17 +535,19 @@ describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
   it('A8 (flujo) una fila por conversación: dentro de la ventana de 24 h se actualiza la fila más reciente; una conversación nueva AGREGA una fila', () => {
     const lp = (ms: number): string => new Date(ms - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
     let ancla: number | null = null;   // el inicio de la conversación que dice la ingesta (null = ingesta caída)
+    let nueva = false;
     const w0 = mundo({ pl: planilla() });
     const t0 = w0.mundo.ahora();
-    const previa = (n: number): { json: J } => fila(n, { 'Teléfono WhatsApp': `+${CLIENTE}`, 'Nombre y Apellido': 'Carlos', 'Clasificación': 'Tibio', 'Última interacción': lp(t0 - 1800_000) });
+    const deConv = (desdeMs: number): J => ({ 'Se cierra la ventana de 24 h': lp(desdeMs + 24 * 3600_000) });
+    const previa = (n: number): { json: J } => fila(n, { 'Teléfono WhatsApp': `+${CLIENTE}`, 'Nombre y Apellido': 'Carlos', 'Clasificación': 'Tibio', ...deConv(t0 - 3600_000) });
     const pl = planilla({ filas: [previa(5), previa(9)] });
     const w = mundo({ pl });
-    w.mundo.dobles['Reportar mensaje (entrante)'] = () => (ancla === null ? { ok: true } : { ok: true, atencion: { ventanaVenceEn: new Date(ancla + 24 * 3600_000).toISOString() } });
+    w.mundo.dobles['Reportar mensaje (entrante)'] = () => respuestaDeIngesta({ desdeMs: ancla, nueva });
     ancla = t0 - 3600_000;
     turno(w, texto('hola'));                       // primer mensaje que vemos de la conversación abierta una hora antes: actualiza la más reciente
     expect(pl.escrituras).toHaveLength(0);
     pl.escrituras.length = 0; pl.actualizaciones.length = 0;
-    w.mundo.avanzar(26 * 60);                      // 26 h después con el MISMO ancla (la ingesta sigue dando la ventana vencida: cortesía): no es otra conversación
+    w.mundo.avanzar(26 * 60);                      // 26 h después con el MISMO ancla (ya fuera de la cota de la ventana: cuenta como ingesta sin ancla): no es otra conversación
     turno(w, texto('hola de nuevo'));
     expect(pl.escrituras).toHaveLength(0);         // NIEGA: sin ancla nuevo no se agrega una fila (aunque pasen 48 h de la regla vieja): se actualiza la más reciente
     expect(pl.actualizaciones).toHaveLength(1);
@@ -557,11 +560,31 @@ describe('flujo: el miniCRM escribe lo que debe, una vez por evento', () => {
     w.mundo.avanzar(30 * 60);
     turno(w, texto('seguimos'));
     expect(pl.escrituras).toHaveLength(0);
-    ancla = w.mundo.ahora() + 60_000;              // conversación nueva: la ingesta da otro ancla, posterior a la última interacción de las filas
-    w.mundo.avanzar(26 * 60);
+    w.mundo.avanzar(26 * 60);                      // conversación nueva: la ingesta da otro ancla (este mensaje abre) y la fila previa es de la anterior
+    ancla = w.mundo.ahora(); nueva = true;
     turno(w, texto('buenas'));
     expect(pl.escrituras).toHaveLength(1);
     expect(pl.escrituras[0]!['ID Lead']).toBe('LEAD-1011');
+  });
+  it('fila MÍNIMA de punta a punta: este mensaje abre la conversación y «Armar mensajes» no arma prospecto (turno sin novedad): 1 fila neutra con el teléfono del turno, sin texto ni nombre', () => {
+    const pl = planilla();
+    const w = mundo({ pl });
+    const t0 = w.mundo.ahora();
+    let nueva = true;
+    w.mundo.dobles['Reportar mensaje (entrante)'] = () => respuestaDeIngesta({ desdeMs: t0, nueva });
+    turno(w, texto('hola'));                       // el primer contacto arma su prospecto normal
+    pl.escrituras.length = 0; pl.actualizaciones.length = 0;
+    w.mundo.avanzar(30);                           // dentro de la memoria del productor: sin evento, sin prospecto
+    nueva = true;                                  // pero la ingesta dice que este mensaje abre un bloque/conversación nuevo
+    const t = turno(w, texto('hola de nuevo'));
+    const prospectos = (t.porNodo['Prospecto para la planilla'] ?? []);
+    expect(prospectos).toHaveLength(1);
+    expect(prospectos[0]).toMatchObject({ minima: true, telefono: CLIENTE });
+    expect(Object.keys(prospectos[0]!).sort()).toEqual(['conversacionDesdeMs', 'minima', 'senales', 'telefono', 'ultimaInteraccionMs']);
+    expect(pl.escrituras).toHaveLength(1);
+    const f = pl.escrituras[0]!;
+    expect(f['Estado Comercial'] ?? f['Estado']).toBe('Sin seguimiento');
+    expect(JSON.stringify(f)).not.toMatch(/Pedido|Reserva|hola de nuevo|Carlos/);
   });
   it('sin id de planilla (marcador / vacío / variante de prueba) NO calcula el prospecto, ni consulta Google', () => {
     const pl = planilla();

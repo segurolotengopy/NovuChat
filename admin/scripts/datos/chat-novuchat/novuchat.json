@@ -65,10 +65,6 @@
       "resumen": {
         "letra": "J",
         "titulo": "Resumen Chatbot IA"
-      },
-      "ultimaInteraccion": {
-        "letra": "O",
-        "titulo": "Última interacción"
       }
     },
     "equipo": {
@@ -93,6 +89,7 @@
       "etapaInicial": "1. Nuevo Lead",
       "origen": "Chatbot WhatsApp IA",
       "origenAnuncio": "Campaña Meta Ads",
+      "fechaConHora": true,
       "estado": "Activo"
     }
   },
