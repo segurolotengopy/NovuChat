@@ -29,7 +29,7 @@
  *
  * LO QUE NUNCA LEE: el texto de un mensaje (de cada conversación solo pide la hora del primero, `select('ts')`), ni la columna U de la hoja.
  *
- * IDEMPOTENTE POR TELÉFONO: un contacto cuyo teléfono ya está en la hoja se SALTA (jamás se actualiza una fila existente). Correr dos veces
+ * IDEMPOTENTE POR TELÉFONO: un contacto cuyo teléfono ya está en la hoja se SALTA (no se crea otra fila; una fila existente SOLO se toca en O/P/Q de Q'Taco y solo si esas celdas están vacías, ver «COMPLETAR O/P/Q»). Correr dos veces
  * escribe una vez. Los teléfonos se comparan solo por sus dígitos.
  *
  * SECO: lee la hoja (A3:T, sin la U) y Firestore y IMPRIME SOLO CONTEOS (nunca teléfonos ni nombres).
@@ -47,7 +47,7 @@
  * SALIDA. 0 hecho o seco sin diferencias; 1 el seco encontró filas por crear; 2 uso o salvaguarda (nada escrito); 3 error de ejecución.
  */
 import { randomBytes } from 'node:crypto';
-import { readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -176,7 +176,8 @@ export function reunirCompras(eventos, { excluir = [], ahoraMs = Date.now(), cla
   }
   const porTelefono = new Map();
   for (const u of unicos.values()) {
-    const f = porTelefono.get(u.telefono) ?? { pedidoMs: null, reservaMs: null };
+    const f = porTelefono.get(u.telefono) ?? { pedidoMs: null, reservaMs: null, eventos: [] };
+    f.eventos.push({ tipo: u.tipo, ms: u.ms });
     const campo = u.tipo === 'pedido' ? 'pedidoMs' : 'reservaMs';
     if (f[campo] === null || u.ms > f[campo]) f[campo] = u.ms;
     porTelefono.set(u.telefono, f);
@@ -196,36 +197,56 @@ export function celdasDeCompra(c) {
 }
 
 /**
- * PROPUESTA (no se aplica desde este script): para las filas que YA están en la hoja, qué se completaría en O, P y Q. Solo una celda VACÍA se completa;
- * una con dato (del bot o del equipo) no se toca. Con varias filas del mismo teléfono se toma la última de la hoja (la más reciente).
+ * Para las filas que YA están en la hoja, qué se completa en O, P y Q (el seco lo cuenta; `--aplicar` lo escribe, ver `completarExistentes`). Solo una celda VACÍA se completa;
+ * una con dato (del bot o del equipo) no se toca. Con varias filas del mismo teléfono, cada compra va a la fila cuya fecha (B) es la última anterior o igual a la compra (la más reciente).
  * Devuelve { propuestas: [{ fila, celdas: { O?, P?, Q? } }], conteos }.
  */
 export function construirActualizaciones({ valores, mapa, compras }) {
   const idx = (campo) => mapa.columnas[campo].letra.charCodeAt(0) - 65;
-  const filaDe = new Map(); const repetidos = new Set();
+  const filasDe = new Map();
   valores.slice(1).forEach((f, i) => {
     const tel = CRM.crmDigitos(f[idx('telefono')] ?? '');
     if (!tel) return;
-    if (filaDe.has(tel)) repetidos.add(tel);
-    filaDe.set(tel, { f, fila: mapa.filaEncabezados + 1 + i });
+    const dia = /^\d{4}-\d{2}-\d{2}/.exec(String(f[idx('fecha')] ?? '').trim())?.[0] ?? '';
+    if (!filasDe.has(tel)) filasDe.set(tel, []);
+    filasDe.get(tel).push({ f, fila: mapa.filaEncabezados + 1 + i, dia });
   });
   const propuestas = [];
   const conteos = { existentesConCompra: 0, aCompletar: 0, celdas: 0, sinHuecos: 0, conVariasFilas: 0 };
   for (const [tel, c] of compras) {
-    const fila = filaDe.get(tel);
-    if (!fila) continue;
+    const filas = filasDe.get(tel);
+    if (!filas) continue;
     conteos.existentesConCompra += 1;
-    if (repetidos.has(tel)) conteos.conVariasFilas += 1;
-    const deseadas = celdasDeCompra(c);
-    const celdas = {};
-    for (const campo of ['quePidio', 'diaPreferido', 'horarioPreferido']) {
-      const letra = mapa.columnas[campo].letra;
-      if (deseadas[campo] !== '' && String(fila.f[idx(campo)] ?? '').trim() === '') celdas[letra] = deseadas[campo];
+    if (filas.length > 1) conteos.conVariasFilas += 1;
+    // El bot abre una fila NUEVA tras 48 h: cada compra va a la fila cuya fecha (B) es la última anterior o igual al día de la compra; sin fila anterior, a la primera.
+    // Una fila sin fecha legible cuenta como anterior (con todas sin fecha, la compra va a la última, la más reciente de la hoja).
+    const porFila = new Map();
+    const eventos = Array.isArray(c.eventos) && c.eventos.length ? c.eventos : [{ tipo: 'pedido', ms: c.pedidoMs }, { tipo: 'reserva', ms: c.reservaMs }].filter((e) => e.ms !== null);
+    for (const e of eventos) {
+      const diaE = CRM.crmFechaLaPaz(e.ms);
+      let destino = filas[0];
+      for (const fila of filas) if (fila.dia <= diaE) destino = fila;
+      const acum = porFila.get(destino) ?? { pedidoMs: null, reservaMs: null };
+      const campo = e.tipo === 'pedido' ? 'pedidoMs' : 'reservaMs';
+      if (acum[campo] === null || e.ms > acum[campo]) acum[campo] = e.ms;
+      porFila.set(destino, acum);
     }
-    if (Object.keys(celdas).length === 0) { conteos.sinHuecos += 1; continue; }
-    conteos.aCompletar += 1; conteos.celdas += Object.keys(celdas).length;
-    propuestas.push({ fila: fila.fila, telefono: tel, celdas });
+    let alguna = false;
+    for (const [fila, acum] of porFila) {
+      const deseadas = celdasDeCompra(acum);
+      const celdas = {};
+      for (const campo of ['quePidio', 'diaPreferido', 'horarioPreferido']) {
+        const letra = mapa.columnas[campo].letra;
+        if (deseadas[campo] !== '' && String(fila.f[idx(campo)] ?? '').trim() === '') celdas[letra] = deseadas[campo];
+      }
+      if (Object.keys(celdas).length === 0) continue;
+      alguna = true;
+      conteos.aCompletar += 1; conteos.celdas += Object.keys(celdas).length;
+      propuestas.push({ fila: fila.fila, telefono: tel, celdas });
+    }
+    if (!alguna) conteos.sinHuecos += 1;
   }
+  propuestas.sort((x, y) => x.fila - y.fila);
   return { propuestas, conteos };
 }
 
@@ -485,7 +506,7 @@ async function leerConversaciones(db, tenant) {
  * Pedidos y reservas anteriores (solo Q'Taco). Lee metadatos: tipo, referencia, fecha y teléfono; del `detalle` de un cierre solo se usa su comienzo para clasificarlo.
  * Nada de esto se imprime ni se devuelve salvo el evento mínimo { telefono, tipo, clave, ms } que `reunirCompras` agrupa.
  */
-async function leerCompras(db, tenant, excluir) {
+export async function leerCompras(db, tenant, excluir) {
   const ms = (t) => (t && typeof t.toMillis === 'function' ? t.toMillis() : null);
   const eventos = []; const clavesDePrueba = [];
   const cierres = (await db.collection(`tenants/${tenant}/cierres`).where('tipo', 'in', ['registro', 'venta']).select('tipo', 'ocurridoEn', 'referencia').get()).docs;
@@ -527,11 +548,18 @@ async function completarExistentes({ cfg, deps, mapa, compras, log, rutaRespaldo
   try {
     guardarRespaldo(rutaRespaldo, { version: 1, campo: 'relleno-crm-historico-completar', entorno: cfg.entorno, tenant: cfg.tenant, creadoEn: new Date().toISOString(), escrito: celdas.map((c) => ({ celda: c.celda, valor: c.valor })) });
   } catch (e) {
-    if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe un archivo en esa ruta de respaldo: un respaldo nunca se pisa. No se completa nada.\n'); return 2; }
+    if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe el respaldo de las celdas (<ruta>.completar): un respaldo nunca se pisa. No se completó nada; use otra ruta y vuelva a correr.\n'); return 2; }
     throw e;
   }
   log(`  Respaldo de las ${celdas.length} celdas a completar (solo celda y valor, sin teléfonos): ${rutaRespaldo}`);
-  await deps.completar(celdas.map((c) => ({ rango: `'${HOJA}'!${c.celda}`, valor: c.valor, fila: c.fila, tel: c.tel })));
+  try {
+    await deps.completar(celdas.map((c) => ({ rango: `'${HOJA}'!${c.celda}`, valor: c.valor, fila: c.fila, tel: c.tel })));
+  } catch (e) {
+    // «celda ocupada» (alguien escribió, o la fila se movió, entre la relectura y la escritura) u otro fallo: el flujo corta ANTES de escribir, así que la hoja no cambia.
+    // El respaldo queda con las celdas que se iban a escribir; revertirlo no borra nada (las celdas no tienen ese valor). Vuelva a correr el seco.
+    log(`\n  ✗ No se completó nada (${e?.code ?? e?.name ?? 'error'}): la hoja cambió o el flujo falló antes de escribir. Vuelva a correr el seco. El respaldo guardado no corresponde a una escritura.\n`);
+    return 3;
+  }
   const despues = await deps.leer();
   const mal = celdas.filter((c) => leerCelda(despues, mapa, c.celda).trim() !== c.valor).length;
   if (mal) { log(`\n  ✗ La relectura no coincide en ${mal} celda(s). Revise la hoja; el respaldo permite revertir lo que sí quedó.\n`); return 3; }
@@ -602,6 +630,10 @@ export async function ejecutar(cfg, deps) {
   }
 
   const conCompras = TENANTS_CON_COMPRAS.includes(cfg.tenant) && typeof deps.compras === 'function';
+  if (conCompras && cfg.aplicar && (deps.excluir ?? []).map((t) => CRM.crmDigitos(t)).filter(Boolean).length === 0) {
+    log('\n  ✗ --aplicar en este comercio exige TELEFONOS_EXCLUIDOS (los teléfonos de prueba, dígitos separados por comas) en el entorno: sin ellos se cargarían pedidos de prueba. No se escribe nada.\n');
+    return 2;
+  }
   const [conversacionesTodas, valores, resultadoCompras] = await Promise.all([deps.conversaciones(), deps.leer(), conCompras ? deps.compras() : Promise.resolve(null)]);
   const compras = resultadoCompras?.porTelefono ?? new Map();
   // Los teléfonos de prueba (TELEFONOS_EXCLUIDOS) tampoco entran como contactos nuevos.
@@ -628,7 +660,7 @@ export async function ejecutar(cfg, deps) {
     log(`  contactos que solo están en sus compras (sin conversación): ${conteos.soloCompra}`);
     log(`  filas a crear con compra    : ${conteos.conCompra}  (con pedido: ${conteos.conPedido}; con reserva: ${conteos.conReserva})`);
     a = construirActualizaciones({ valores, mapa, compras }).conteos;
-    log(`  filas YA en la hoja con compra: ${a.existentesConCompra}  -> a completar: ${a.aCompletar} fila(s), ${a.celdas} celda(s) O/P/Q vacías; sin huecos: ${a.sinHuecos}; con varias filas del teléfono: ${a.conVariasFilas}`);
+    log(`  filas YA en la hoja con compra: ${a.existentesConCompra}  -> a completar: ${a.aCompletar} fila(s), ${a.celdas} celda(s) O/P/Q vacías; sin huecos: ${a.sinHuecos}; teléfonos con varias filas: ${a.conVariasFilas}`);
     log(cfg.aplicar ? '  (con --aplicar se completan SOLO esas celdas O/P/Q vacías; lo que ya tenga dato no se toca)' : '  (seco: las celdas a completar solo se escriben con --aplicar)');
   }
   const porCompletar = a.aCompletar;
@@ -646,6 +678,8 @@ export async function ejecutar(cfg, deps) {
   // El rango es explícito: antes de escribir se relee y, si el bot agregó una fila mientras tanto, NO se escribe (se pisaría).
   const ahora = resumenDeLaHoja(await deps.leer(), mapa);
   if (ahora.ultimaFila !== hoja.ultimaFila) { log('\n  ✗ La hoja cambió mientras se preparaba (el bot escribió una fila): no se escribe nada. Vuelva a correr el seco.\n'); return 3; }
+  // Si también hay celdas por completar, su respaldo no puede existir: se comprueba ANTES de escribir las filas nuevas (así nunca queda a medias por eso).
+  if (porCompletar > 0 && existsSync(`${cfg.respaldo}.completar`)) { log('\n  ✗ Ya existe <ruta>.completar: use otra ruta de respaldo. No se escribió nada.\n'); return 2; }
   try {
     guardarRespaldo(cfg.respaldo, { version: 1, campo: 'relleno-crm-historico', entorno: cfg.entorno, tenant: cfg.tenant, creadoEn: new Date().toISOString(),
       rango, filaDesde, escrito: filas });
