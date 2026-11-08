@@ -7248,6 +7248,9 @@ describe('ubicación obligatoria: qué es (y qué no es) una negativa explícita
     'no se preocupe, le mando la ubicación',
     'no se demoren, ahí va mi ubicación',
     'no sé cómo, ahí va la ubicación',
+    'no tengo saldo, le mando la ubicación después',
+    '¿no tengo que mandar la ubicación?',
+    'no tengo problema, dale, ahí va la ubicación',
   ])('NEGADO: «%s» promete enviarla y NO deriva', (dicho) => {
     const { c } = pendiente();
     const t = c.escribe(dicho);
@@ -7264,6 +7267,9 @@ describe('ubicación obligatoria: qué es (y qué no es) una negativa explícita
     'no tengo gps',
     'no sé cómo mandar la ubicación',
     'no encuentro el botón de ubicación',
+    'no sé usar el gps',
+    'no sé dónde está la ubicación',
+    'no me funciona la ubicación',
     'no tengo datos para mandar la ubicación',
     'no tengo internet para enviar la ubicación',
     'no me sale el botón de ubicación',

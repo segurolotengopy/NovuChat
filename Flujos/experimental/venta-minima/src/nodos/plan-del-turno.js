@@ -1035,11 +1035,14 @@ function esConfirmarSinUbicacion() {
 function niegaLaUbicacion(n) {
   if (pareceDireccion(n)) return false; // un texto con rasgos de dirección es un dato, no una negativa
   // Acotado a pocas palabras entre el verbo y la ubicación: «ahorita no puedo, en un rato te mando la ubicación» promete enviarla, no la niega.
-  return /\bno (puedo|quiero|logro|tengo|me deja|me sale) (\w+ ){0,2}(compart|envi|mand|activ)\w* (\w+ ){0,3}(ubicacion|gps|pin|mapa)\b/.test(n)
-    || /\bno (puedo|quiero|me deja|me sale|funciona) (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
+  return /\bno (puedo|quiero|logro|me deja|me sale) (\w+ ){0,2}(compart|envi|mand|activ)\w* (\w+ ){0,3}(ubicacion|gps|pin|mapa)\b/.test(n)
+    || /\bno (puedo|quiero|me deja|me sale|me funciona|funciona) (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
+    // «no tengo» solo si falta con qué mandarla (datos, internet, saldo, señal, megas) «para/como» + verbo de envío; «no tengo saldo, te la mando después» NO la niega.
+    || /\bno tengo (datos|internet|saldo|senal|megas) (para|como) (\w+ ){0,1}(compart|envi|mand)\w* (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
     || /\bno tengo (\w+ )?(gps|ubicacion)\b/.test(n)
-    // «no sé» solo con «cómo/dónde» + verbo de envío (el «se» reflexivo de «no se preocupe» no es una negativa); «no encuentro el botón de ubicación».
-    || /\bno se (como|donde) (\w+ ){0,3}(compart|envi|mand)\w* (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
+    // «no sé» solo con el INFINITIVO de envío o de uso («no sé cómo mandar la ubicación», «no sé usar el gps») o «dónde está/queda»; el «se» reflexivo de «no se preocupe, le mando…» no es una negativa.
+    || /\bno se (como |donde )?(\w+ ){0,2}(compartir|enviar|mandar|usar|activar)\b (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
+    || /\bno se donde (esta|queda) (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
     || /\bno encuentro (\w+ ){0,4}(ubicacion|gps)\b/.test(n)
     || /\bsin (gps|ubicacion)\b/.test(n);
 }
@@ -1234,7 +1237,7 @@ function hablaDeDelivery(n) { return /\b(delivery|envio|envios|enviar\w*|envien\
 function sinCortesias(n) {
   let t = String(n).replace(/\b(no hay|sin|ningun|ninguna)\s+(problema|problemas|queja|quejas)\b/g, ' ');
   // «no tengo problema» es cortesía solo si sigue gracias/ahí/ya o termina el texto; «no, tengo problemas con el pago» es un pedido de ayuda.
-  t = t.replace(/\bno tengo (problema|problemas)(?= (gracias|ahi|ya)\b|$)/g, ' ');
+  t = t.replace(/\bno tengo (problema|problemas)(?= (gracias|ahi|ya|dale|perfecto|esta bien|con esperar)\b|$)/g, ' ');
   if (/\b(recib\w*|recog\w*|recoj\w*|retir\w*)\b/.test(t)) t = t.replace(/\b(alguien|persona|personas)\b/g, ' ');
   t = t.replace(/\bpara (una|un|1|dos|tres|cuatro) (persona|personas)\b/g, ' ');
   return t;
