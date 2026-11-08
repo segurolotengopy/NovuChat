@@ -19,6 +19,11 @@
  * NUNCA escribe: lo que dijo el cliente, datos de salud, motivos ni montos; «qué pidió», día, horario, derivación y diagnóstico quedan
  * vacíos (no se inventan). Ninguna fila dice que alguien pagó.
  *
+ * Q'TACO (`--tenant qtaco`): además de los contactos, trae las COMPRAS anteriores (ver «COMPRAS ANTERIORES» más abajo) y, en las filas nuevas, completa O «Eligió»
+ * (Pedido|Reserva, la última), P «Reserva» («Enviada AAAA-MM-DD HH:MM») y Q «Pedido» («Registrado AAAA-MM-DD HH:MM»), hora de La Paz, con el mapa de
+ * `datos/venta-minima/qtaco-3727.json`. Para las filas que YA estaban en la hoja, el seco cuenta cuántas celdas vacías de O/P/Q se completarían: es solo una propuesta
+ * (`construirActualizaciones`), este script NO la aplica. `TELEFONOS_EXCLUIDOS` (dígitos separados por comas, en el entorno, nunca en un archivo) deja fuera los teléfonos de prueba.
+ *
  * LO QUE NUNCA LEE: el texto de un mensaje (de cada conversación solo pide la hora del primero, `select('ts')`), ni la columna U de la hoja.
  *
  * IDEMPOTENTE POR TELÉFONO: un contacto cuyo teléfono ya está en la hoja se SALTA (jamás se actualiza una fila existente). Correr dos veces
@@ -47,14 +52,18 @@ import { comprobarProyecto, comprobarRespaldo, guardarRespaldo, leerRespaldoGene
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = resolve(AQUI, '..', '..', '..');
-export const TENANTS = Object.freeze(['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio']);
+export const TENANTS = Object.freeze(['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio', 'qtaco']);
+// Los rroca-* leen su mapa de `admin/scripts/datos/<t>/<t>.json`; Q'Taco lo trae en el JSON de datos de su flujo (`venta-minima/qtaco-3727.json`, clave `crm`).
+const MAPA_PROPIO = Object.freeze({ qtaco: ['admin', 'scripts', 'datos', 'venta-minima', 'qtaco-3727.json'] });
+// Los comercios cuyo pasado incluye PEDIDOS y RESERVAS registrados (cierres `registro`/`venta` y la colección `pedidos`): además de los contactos, completan O, P y Q.
+export const TENANTS_CON_COMPRAS = Object.freeze(['qtaco']);
 const HOJA = 'Leads_CRM';
 // Un contacto anterior al miniCRM está SIN EVALUAR: la calificación y la clasificación se dejan vacías (no un juicio sobre la persona) y las escribe el bot.
 const RESUMEN = 'Contacto anterior al miniCRM; calificación sin evaluar.';
 const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'revertir'];
 
-export const USO = '  ENV_FILE=… SHEET_ID=… node scripts/plataforma/relleno-crm-historico.mjs --proyecto <id> --tenant <rroca-evy|rroca-emma|rroca-ruben|rroca-antonio> '
+export const USO = '  ENV_FILE=… SHEET_ID=… [TELEFONOS_EXCLUIDOS=<dígitos separados por comas>] node scripts/plataforma/relleno-crm-historico.mjs --proyecto <id> --tenant <rroca-evy|rroca-emma|rroca-ruben|rroca-antonio|qtaco> '
   + '[--aplicar --respaldo <ruta> [--confirmo-produccion <tenant>]]\n'
   + '  ENV_FILE=… SHEET_ID=… node scripts/plataforma/relleno-crm-historico.mjs --revertir --respaldo <ruta> --tenant <t> --proyecto <id> [--aplicar] [--confirmo-produccion <tenant>]';
 
@@ -63,7 +72,8 @@ const CRM = runInNewContext(`${readFileSync(join(RAIZ, 'Flujos', 'src', 'modulos
 
 export function leerMapa(tenant, raiz = RAIZ) {
   if (!TENANTS.includes(tenant)) throw new Error('tenant fuera de la lista');
-  const m = JSON.parse(readFileSync(join(raiz, 'admin', 'scripts', 'datos', tenant, `${tenant}.json`), 'utf8')).crm;
+  const ruta = MAPA_PROPIO[tenant] ?? ['admin', 'scripts', 'datos', tenant, `${tenant}.json`];
+  const m = JSON.parse(readFileSync(join(raiz, ...ruta), 'utf8')).crm;
   delete m._nota;
   return m;
 }
@@ -118,13 +128,109 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
 // ===========================================================================
 const finito = (n) => typeof n === 'number' && Number.isFinite(n);
 
+// ===========================================================================
+// COMPRAS ANTERIORES (puro): pedidos y reservas que el sistema registró antes del miniCRM
+// ===========================================================================
+// DE DÓNDE SALEN (Q'Taco, `venta-minima`): (1) cierres `registro` en `tenants/{t}/cierres`: el pedido SIN QR / QR vencido (detalle «Pedido #…», referencia = pedidoId)
+// y la solicitud de reserva (detalle «Solicitud de reserva #…», referencia `res-…`); (2) cierres `venta`: el pedido con QR cuyo comprobante cuadró (referencia = pedidoId);
+// (3) la colección `pedidos` (módulo Pedidos), origen `whatsapp`: el pedido cuyo QR salió. El detalle de un cierre se usa SOLO para clasificarlo y se descarta; el teléfono sale
+// de `/privado` (cierres) o de `conversacionId` (pedidos) y nunca se imprime. Un pedido que está en dos fuentes cuenta UNA vez (misma clave = su referencia) con su hora más temprana.
+// LO QUE NO SE ESCRIBE: monto, líneas, dirección, notas ni nada del comprobante. Ni «pagado» ni «acreditado»: P dice «Enviada <fecha>» y Q «Registrado <fecha>» (el vocabulario del bot).
+export const PREFIJO_RESERVA = 'Enviada';
+export const PREFIJO_PEDIDO = 'Registrado';
+
+/** Qué es un cierre: 'pedido' | 'reserva' | 'prueba' | 'otro'. Pura; `detalle` solo se mira por su comienzo y no sale de aquí. */
+export function clasificarCierre({ tipo, referencia, detalle }) {
+  const ref = typeof referencia === 'string' ? referencia.trim() : '';
+  const det = typeof detalle === 'string' ? detalle.trimStart() : '';
+  if (/^PRUEBA\b/i.test(det)) return 'prueba';
+  if (tipo === 'venta') return /^res-/.test(ref) ? 'otro' : 'pedido';
+  if (tipo !== 'registro') return 'otro';
+  if (/^res-/.test(ref) || /^Solicitud de reserva/i.test(det)) return 'reserva';
+  if (/^Pedido #/i.test(det)) return 'pedido';
+  return 'otro';
+}
+
+/**
+ * De los eventos sueltos [{ telefono, tipo: 'pedido'|'reserva', clave, ms }] al mapa por teléfono (solo dígitos):
+ * { pedidoMs, reservaMs } con el MÁS RECIENTE de cada clase (como hace el bot: cada evento pisa al anterior), y los conteos de eventos distintos.
+ */
+export function reunirCompras(eventos, { excluir = [], ahoraMs = Date.now() } = {}) {
+  const fuera = new Set(excluir.map((t) => CRM.crmDigitos(t)).filter(Boolean));
+  const conteos = { pedidos: 0, reservas: 0, descartados: { sinTelefono: 0, sinFecha: 0, excluidos: 0 } };
+  const unicos = new Map(); // `${tipo}:${clave}` -> { telefono, ms }
+  for (const e of eventos) {
+    if (e?.tipo !== 'pedido' && e?.tipo !== 'reserva') continue;
+    const tel = CRM.crmDigitos(e.telefono);
+    if (tel.length < 8 || tel.length > 15) { conteos.descartados.sinTelefono += 1; continue; }
+    if (fuera.has(tel)) { conteos.descartados.excluidos += 1; continue; }
+    if (!finito(e.ms) || e.ms < Date.UTC(2020, 0, 1) || e.ms > ahoraMs + 86_400_000) { conteos.descartados.sinFecha += 1; continue; }
+    const k = `${e.tipo}:${String(e.clave ?? '').replace(/^wa_/, '') || `${tel}:${e.ms}`}`;
+    const previo = unicos.get(k);
+    if (!previo || e.ms < previo.ms) unicos.set(k, { telefono: tel, tipo: e.tipo, ms: e.ms });
+  }
+  const porTelefono = new Map();
+  for (const u of unicos.values()) {
+    const f = porTelefono.get(u.telefono) ?? { pedidoMs: null, reservaMs: null };
+    const campo = u.tipo === 'pedido' ? 'pedidoMs' : 'reservaMs';
+    if (f[campo] === null || u.ms > f[campo]) f[campo] = u.ms;
+    porTelefono.set(u.telefono, f);
+    if (u.tipo === 'pedido') conteos.pedidos += 1; else conteos.reservas += 1;
+  }
+  return { porTelefono, conteos };
+}
+
+/** Lo que va en O, P y Q para un teléfono con compras. Vacío = no hay dato (no se escribe, nunca «No»). */
+export function celdasDeCompra(c) {
+  const ultimo = c.pedidoMs !== null && (c.reservaMs === null || c.pedidoMs >= c.reservaMs) ? 'Pedido' : (c.reservaMs !== null ? 'Reserva' : '');
+  return {
+    quePidio: ultimo,
+    diaPreferido: c.reservaMs !== null ? `${PREFIJO_RESERVA} ${CRM.crmFechaHoraLaPaz(c.reservaMs)}` : '',
+    horarioPreferido: c.pedidoMs !== null ? `${PREFIJO_PEDIDO} ${CRM.crmFechaHoraLaPaz(c.pedidoMs)}` : '',
+  };
+}
+
+/**
+ * PROPUESTA (no se aplica desde este script): para las filas que YA están en la hoja, qué se completaría en O, P y Q. Solo una celda VACÍA se completa;
+ * una con dato (del bot o del equipo) no se toca. Con varias filas del mismo teléfono se toma la última de la hoja (la más reciente).
+ * Devuelve { propuestas: [{ fila, celdas: { O?, P?, Q? } }], conteos }.
+ */
+export function construirActualizaciones({ valores, mapa, compras }) {
+  const idx = (campo) => mapa.columnas[campo].letra.charCodeAt(0) - 65;
+  const filaDe = new Map(); const repetidos = new Set();
+  valores.slice(1).forEach((f, i) => {
+    const tel = CRM.crmDigitos(f[idx('telefono')] ?? '');
+    if (!tel) return;
+    if (filaDe.has(tel)) repetidos.add(tel);
+    filaDe.set(tel, { f, fila: mapa.filaEncabezados + 1 + i });
+  });
+  const propuestas = [];
+  const conteos = { existentesConCompra: 0, aCompletar: 0, celdas: 0, sinHuecos: 0, conVariasFilas: 0 };
+  for (const [tel, c] of compras) {
+    const fila = filaDe.get(tel);
+    if (!fila) continue;
+    conteos.existentesConCompra += 1;
+    if (repetidos.has(tel)) conteos.conVariasFilas += 1;
+    const deseadas = celdasDeCompra(c);
+    const celdas = {};
+    for (const campo of ['quePidio', 'diaPreferido', 'horarioPreferido']) {
+      const letra = mapa.columnas[campo].letra;
+      if (deseadas[campo] !== '' && String(fila.f[idx(campo)] ?? '').trim() === '') celdas[letra] = deseadas[campo];
+    }
+    if (Object.keys(celdas).length === 0) { conteos.sinHuecos += 1; continue; }
+    conteos.aCompletar += 1; conteos.celdas += Object.keys(celdas).length;
+    propuestas.push({ fila: fila.fila, celdas });
+  }
+  return { propuestas, conteos };
+}
+
 /**
  * De las conversaciones + lo que ya hay en la hoja a las filas nuevas.
  *   conversaciones: [{ telefono, nombre?, origen?, primeroMs?, ultimoMs? }]   (sin ningún texto de mensaje)
  *   hoja: { telefonos: string[] (solo dígitos o crudos), ids: string[], ultimaFila: number }
  * Devuelve { filas: string[][] (A..ultima letra del bot), omitidos, conteos }.
  */
-export function construirFilas({ conversaciones, hoja, mapa }) {
+export function construirFilas({ conversaciones: conversacionesBase, hoja, mapa, compras = new Map() }) {
   const col = (c) => mapa.columnas[c];
   const letras = Object.values(mapa.columnas).map((c) => c.letra).sort();
   const ultima = letras[letras.length - 1];
@@ -136,9 +242,16 @@ export function construirFilas({ conversaciones, hoja, mapa }) {
   const re = new RegExp(`^\\s*${mapa.prefijoId.replace(/[^A-Za-z0-9]/g, '\\$&')}(\\d+)\\s*$`, 'i');
   let proximo = Math.max(mapa.primerId - 1, ...hoja.ids.map((v) => { const m = re.exec(String(v ?? '')); return m ? Number(m[1]) : 0; })) + 1;
   const omitidos = { sinTelefono: 0, yaTienenFila: 0, repetidos: 0 };
+  // Quien tiene pedido o reserva registrados pero ya no tiene conversación (o nunca se leyó) igual es un contacto: su primera y su última marca son las de sus compras.
+  const conTelefono = new Set(conversacionesBase.map((c) => CRM.crmDigitos(c.telefono)));
+  const soloCompra = [...compras].filter(([tel]) => !conTelefono.has(tel)).map(([tel, c]) => {
+    const ms = [c.pedidoMs, c.reservaMs].filter((m) => m !== null);
+    return { telefono: tel, primeroMs: Math.min(...ms), ultimoMs: Math.max(...ms) };
+  });
+  const conversaciones = [...conversacionesBase, ...soloCompra];
   const vistos = new Set();
   const filas = [];
-  let conAnuncio = 0; let conNombre = 0;
+  let conAnuncio = 0; let conNombre = 0; let conCompra = 0; let conPedido = 0; let conReserva = 0;
   // Orden estable: el contacto más antiguo recibe el ID más bajo.
   const ordenadas = [...conversaciones].sort((a, b) => (finito(a.primeroMs) ? a.primeroMs : Infinity) - (finito(b.primeroMs) ? b.primeroMs : Infinity));
   for (const c of ordenadas) {
@@ -164,10 +277,16 @@ export function construirFilas({ conversaciones, hoja, mapa }) {
     poner('resumen', `'${RESUMEN}`);
     poner('ultimaInteraccion', finito(c.ultimoMs) ? CRM.crmFechaHoraLaPaz(c.ultimoMs) : '');
     if (tieneEstado && mapa.alCrear.estado) fila[idx(estado.letra)] = mapa.alCrear.estado;
+    // O «Eligió», P «Reserva» y Q «Pedido» (Q'Taco): solo si hay una compra registrada, con el vocabulario y el formato del bot.
+    const compra = compras.get(tel);
+    if (compra) {
+      conCompra += 1; if (compra.pedidoMs !== null) conPedido += 1; if (compra.reservaMs !== null) conReserva += 1;
+      for (const [campo, valor] of Object.entries(celdasDeCompra(compra))) poner(campo, valor);
+    }
     filas.push(fila);
     proximo += 1;
   }
-  return { filas, omitidos, conteos: { conversaciones: conversaciones.length, aCrear: filas.length, conAnuncio, conNombre, ancho, ultima } };
+  return { filas, omitidos, conteos: { conversaciones: conversacionesBase.length, soloCompra: soloCompra.length, aCrear: filas.length, conAnuncio, conNombre, conCompra, conPedido, conReserva, ancho, ultima } };
 }
 
 // ===========================================================================
@@ -333,6 +452,31 @@ async function leerConversaciones(db, tenant) {
   return salida;
 }
 
+/**
+ * Pedidos y reservas anteriores (solo Q'Taco). Lee metadatos: tipo, referencia, fecha y teléfono; del `detalle` de un cierre solo se usa su comienzo para clasificarlo.
+ * Nada de esto se imprime ni se devuelve salvo el evento mínimo { telefono, tipo, clave, ms } que `reunirCompras` agrupa.
+ */
+async function leerCompras(db, tenant, excluir) {
+  const ms = (t) => (t && typeof t.toMillis === 'function' ? t.toMillis() : null);
+  const eventos = [];
+  const cierres = (await db.collection(`tenants/${tenant}/cierres`).where('tipo', 'in', ['registro', 'venta']).select('tipo', 'ocurridoEn', 'referencia').get()).docs;
+  for (let i = 0; i < cierres.length; i += 100) {
+    const lote = cierres.slice(i, i + 100);
+    const privados = await db.getAll(...lote.map((d) => d.ref.collection('privado').doc('datos')), { fieldMask: ['telefono', 'detalle'] });
+    lote.forEach((d, j) => {
+      const x = d.data(); const p = privados[j].exists ? privados[j].data() : {};
+      const tipo = clasificarCierre({ tipo: x.tipo, referencia: x.referencia, detalle: p.detalle });
+      if (tipo === 'pedido' || tipo === 'reserva') eventos.push({ telefono: p.telefono ?? '', tipo, clave: x.referencia, ms: ms(x.ocurridoEn) });
+    });
+  }
+  const pedidos = (await db.collection(`tenants/${tenant}/pedidos`).where('origen', '==', 'whatsapp').select('conversacionId', 'creadoEn').get()).docs;
+  for (const d of pedidos) {
+    const x = d.data();
+    eventos.push({ telefono: String(x.conversacionId ?? '').replace(/^wa_/, ''), tipo: 'pedido', clave: d.id, ms: ms(x.creadoEn) });
+  }
+  return reunirCompras(eventos, { excluir });
+}
+
 // ===========================================================================
 // EJECUCIÓN
 // ===========================================================================
@@ -376,20 +520,31 @@ export async function ejecutar(cfg, deps) {
     return 0;
   }
 
-  const [conversaciones, valores] = await Promise.all([deps.conversaciones(), deps.leer()]);
+  const conCompras = TENANTS_CON_COMPRAS.includes(cfg.tenant) && typeof deps.compras === 'function';
+  const [conversaciones, valores, resultadoCompras] = await Promise.all([deps.conversaciones(), deps.leer(), conCompras ? deps.compras() : Promise.resolve(null)]);
+  const compras = resultadoCompras?.porTelefono ?? new Map();
   if (valores.length === 0) { log('\n  ✗ la hoja no se pudo leer (fila de encabezados vacía): no se escribe nada.\n'); return 3; }
   // Los títulos de la fila de encabezados tienen que ser los del mapa, letra por letra: si el equipo movió columnas, se escribiría en las equivocadas.
   const esperados = encabezadosEsperados(mapa);
   const malos = esperados.map((t, j) => (String(valores[0][j] ?? '').trim() === t ? null : t)).filter((t) => t !== null);
   if (malos.length) { log(`\n  ✗ Los encabezados de la fila ${mapa.filaEncabezados} no son los del mapa (${malos.length} distinto/s, p. ej. «${malos[0]}»): no se escribe nada.\n`); return 3; }
   const hoja = resumenDeLaHoja(valores, mapa);
-  const { filas, omitidos, conteos } = construirFilas({ conversaciones, hoja, mapa });
+  const { filas, omitidos, conteos } = construirFilas({ conversaciones, hoja, mapa, compras });
   log(`\n  ${cfg.aplicar ? 'APLICAR' : 'SECO (solo lecturas)'} · ${rotulo}\n`);
   log(`  conversaciones en Firestore : ${conteos.conversaciones}`);
   log(`  filas ya en la hoja         : ${hoja.telefonos.filter((t) => String(t).trim() !== '').length}`);
   log(`  se saltan (ya tienen fila)  : ${omitidos.yaTienenFila}`);
   log(`  se saltan (sin teléfono)    : ${omitidos.sinTelefono + omitidos.repetidos}`);
   log(`  filas a crear               : ${conteos.aCrear}  (con anuncio: ${conteos.conAnuncio}; con nombre: ${conteos.conNombre})`);
+  if (conCompras) {
+    const c = resultadoCompras.conteos; const d = c.descartados;
+    log(`  compras registradas antes   : ${c.pedidos} pedidos y ${c.reservas} reservas distintos, de ${compras.size} teléfonos (descartados: sin teléfono ${d.sinTelefono}, sin fecha ${d.sinFecha}, excluidos ${d.excluidos})`);
+    log(`  contactos que solo están en sus compras (sin conversación): ${conteos.soloCompra}`);
+    log(`  filas a crear con compra    : ${conteos.conCompra}  (con pedido: ${conteos.conPedido}; con reserva: ${conteos.conReserva})`);
+    const a = construirActualizaciones({ valores, mapa, compras }).conteos;
+    log(`  filas YA en la hoja con compra: ${a.existentesConCompra}  -> a completar: ${a.aCompletar} fila(s), ${a.celdas} celda(s) O/P/Q vacías; sin huecos: ${a.sinHuecos}; con varias filas del teléfono: ${a.conVariasFilas}`);
+    log('  (la actualización de filas existentes es solo una PROPUESTA: este script no la aplica)');
+  }
   if (conteos.aCrear === 0) { log('\n  ✓ Nada que crear: la hoja ya tiene a todos.\n'); return 0; }
   if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar --respaldo <ruta> para escribir.\n'); return 1; }
 
@@ -440,6 +595,7 @@ async function principal() {
   const codigo = await ejecutar(cfg, {
     mapa,
     conversaciones: () => leerConversaciones(db, cfg.tenant),
+    compras: () => leerCompras(db, cfg.tenant, String(process.env.TELEFONOS_EXCLUIDOS ?? '').split(',')),
     leer: () => leerHoja(args),
     agregar: (filas, filaDesde) => agregarFilas({ ...args, filas, filaDesde }),
     limpiar: (rango) => limpiarRango({ ...args, rango }),

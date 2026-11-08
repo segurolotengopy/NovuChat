@@ -23,6 +23,10 @@ const mod = await import('../../scripts/plataforma/relleno-crm-historico.mjs') a
   resumenDeLaHoja: (valores: string[][], mapa: Record<string, any>) => { telefonos: string[]; ids: string[]; ultimaFila: number };
   pedidoDeFormato: (a: { mapa: Record<string, any>; filaDesde: number; cantidad: number }) => { origen: Record<string, number>; destino: Record<string, number>; pegados: string[] };
   ejecutar: (cfg: Cfg, deps: Record<string, any>) => Promise<number>;
+  clasificarCierre: (c: Record<string, unknown>) => string;
+  reunirCompras: (e: any[], o?: Record<string, unknown>) => { porTelefono: Map<string, { pedidoMs: number | null; reservaMs: number | null }>; conteos: Record<string, any> };
+  celdasDeCompra: (c: { pedidoMs: number | null; reservaMs: number | null }) => Record<string, string>;
+  construirActualizaciones: (a: { valores: string[][]; mapa: Record<string, any>; compras: Map<string, any> }) => { propuestas: { fila: number; celdas: Record<string, string> }[]; conteos: Record<string, number> };
 };
 
 const PROY = 'demo-novuchat-pruebas';
@@ -48,11 +52,11 @@ describe('B1. argumentos y salvaguarda', () => {
   const base = ['--proyecto', PROY, '--tenant', 'rroca-ruben'];
   const problemas = (argv: string[], env: Record<string, string> = ENV) => { const r = mod.analizarArgumentos(argv, env); expect(r.ok, JSON.stringify(r)).toBe(false); return (r.problemas ?? []).join(' | '); };
   it('la invocación completa es válida y queda en seco; los cuatro comercios valen', () => {
-    for (const t of ['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio']) expect(mod.analizarArgumentos(['--proyecto', PROY, '--tenant', t], ENV).ok, t).toBe(true);
+    for (const t of ['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio', 'qtaco']) expect(mod.analizarArgumentos(['--proyecto', PROY, '--tenant', t], ENV).ok, t).toBe(true);
     expect(mod.analizarArgumentos(base, ENV).cfg).toMatchObject({ aplicar: false, revertir: false, entorno: 'emulador' });
   });
-  it('NEGADO: otro comercio (Bellido, Q\'Taco, el chat), varios a la vez o sin tenant', () => {
-    for (const t of ['bellido', 'qtaco', 'novuchat', 'rroca-evy,rroca-emma', 'todos', '__proto__']) expect(problemas(['--proyecto', PROY, '--tenant', t]), t).toContain('tiene que ser uno de');
+  it('NEGADO: otro comercio (Bellido, el chat), varios a la vez o sin tenant', () => {
+    for (const t of ['bellido', 'novuchat', 'rroca-evy,qtaco', 'rroca-evy,rroca-emma', 'todos', '__proto__']) expect(problemas(['--proyecto', PROY, '--tenant', t]), t).toContain('tiene que ser uno de');
     expect(problemas(['--proyecto', PROY])).toContain('falta --tenant');
   });
   it('NEGADO: sin SHEET_ID o con uno malformado, sin ENV_FILE', () => {
@@ -405,5 +409,133 @@ describe('B4. revertir', () => {
     expect(m.llamadas.limpiar).toEqual([]);
     expect(await mod.ejecutar(cfgDe('rroca-evy', { revertir: true, aplicar: true, respaldo: resp }), { ...m.deps, mapa: mapaDe('rroca-evy') })).toBe(2);
     expect(m.llamadas.limpiar).toEqual([]);
+  });
+});
+
+
+// ===========================================================================
+// Q'TACO: contactos + pedidos + reservas anteriores
+// ===========================================================================
+describe('Q1. Q\'Taco: mapa propio y clasificación de lo registrado antes', () => {
+  it('qtaco usa su mapa (venta-minima/qtaco-3727.json): O Eligió, P Reserva, Q Pedido; los rroca-* siguen con el suyo', () => {
+    const m = mapaDe('qtaco');
+    expect(m['columnas'].quePidio).toMatchObject({ letra: 'O', titulo: 'Eligió' });
+    expect(m['columnas'].diaPreferido).toMatchObject({ letra: 'P', titulo: 'Reserva' });
+    expect(m['columnas'].horarioPreferido).toMatchObject({ letra: 'Q', titulo: 'Pedido' });
+    expect(mapaDe('rroca-evy')['columnas'].quePidio.titulo).not.toBe('Eligió');
+  });
+  it('clasifica cierres: pedido sin QR, reserva, pedido con QR cotejado; NEGADO: PRUEBA, sin detalle reconocible, otros tipos', () => {
+    expect(mod.clasificarCierre({ tipo: 'registro', referencia: 'ped-1', detalle: 'Pedido #AB12 (sin QR, delivery): 2 x X. Total Bs 10.' })).toBe('pedido');
+    expect(mod.clasificarCierre({ tipo: 'registro', referencia: 'res-2026-11-05-0001-abc', detalle: 'Solicitud de reserva #K9: x' })).toBe('reserva');
+    expect(mod.clasificarCierre({ tipo: 'registro', referencia: 'res-2026-11-05-0001-abc', detalle: undefined })).toBe('reserva');
+    expect(mod.clasificarCierre({ tipo: 'venta', referencia: 'ped-1', detalle: 'lo que sea' })).toBe('pedido');
+    expect(mod.clasificarCierre({ tipo: 'registro', referencia: 'ped-9', detalle: 'PRUEBA · cobro SIMULADO (sin dinero) · Pedido #A1' })).toBe('prueba');
+    expect(mod.clasificarCierre({ tipo: 'registro', referencia: 'ped-9', detalle: 'Solicitud registrada: revisar el chat con el cliente.' })).toBe('otro');
+    expect(mod.clasificarCierre({ tipo: 'cita', referencia: 'x', detalle: 'Pedido #1' })).toBe('otro');
+  });
+});
+
+describe('Q2. reunir compras (puro)', () => {
+  const T = Date.UTC(2026, 10, 5, 18, 30); // 2026-11-05 14:30 La Paz
+  it('un pedido que está en el cierre y en la colección cuenta UNA vez, con la hora más temprana; el más reciente de cada clase gana', () => {
+    const r = mod.reunirCompras([
+      { telefono: '59171111111', tipo: 'pedido', clave: 'ped-1', ms: T + 60_000 },
+      { telefono: '59171111111', tipo: 'pedido', clave: 'wa_ped-1', ms: T },
+      { telefono: '59171111111', tipo: 'pedido', clave: 'ped-2', ms: T + 3600_000 },
+      { telefono: '59171111111', tipo: 'reserva', clave: 'res-1', ms: T - 3600_000 },
+    ], { ahoraMs: T + 86_400_000 });
+    expect(r.conteos).toMatchObject({ pedidos: 2, reservas: 1 });
+    expect(r.porTelefono.get('59171111111')).toEqual({ pedidoMs: T + 3600_000, reservaMs: T - 3600_000 });
+  });
+  it('NEGADO: sin teléfono, sin fecha válida (o futura) o excluido no entran; nada de eso crea una compra', () => {
+    const r = mod.reunirCompras([
+      { telefono: '', tipo: 'pedido', clave: 'a', ms: T }, { telefono: '59171111111', tipo: 'pedido', clave: 'b', ms: null },
+      { telefono: '59171111111', tipo: 'pedido', clave: 'c', ms: T + 10 * 86_400_000 }, { telefono: '+591 7222-2222', tipo: 'reserva', clave: 'd', ms: T },
+      { telefono: '59173333333', tipo: 'otro', clave: 'e', ms: T },
+    ], { excluir: ['59172222222', ''], ahoraMs: T + 86_400_000 });
+    expect(r.porTelefono.size).toBe(0);
+    expect(r.conteos.descartados).toEqual({ sinTelefono: 1, sinFecha: 2, excluidos: 1 });
+  });
+  it('las celdas usan el vocabulario del bot: Enviada / Registrado + fecha hora La Paz; O es la última elección; vacío si no hay dato; nunca pagado/acreditado', () => {
+    expect(mod.celdasDeCompra({ pedidoMs: T, reservaMs: null })).toEqual({ quePidio: 'Pedido', diaPreferido: '', horarioPreferido: 'Registrado 2026-11-05 14:30' });
+    expect(mod.celdasDeCompra({ pedidoMs: T, reservaMs: T + 60_000 })).toEqual({ quePidio: 'Reserva', diaPreferido: 'Enviada 2026-11-05 14:31', horarioPreferido: 'Registrado 2026-11-05 14:30' });
+    expect(JSON.stringify(mod.celdasDeCompra({ pedidoMs: T, reservaMs: T }))).not.toMatch(/pag[óo]|pagado|acredit|simulad|Bs/i);
+  });
+});
+
+describe('Q3. filas nuevas de Q\'Taco con compras', () => {
+  const mapa = mapaDe('qtaco');
+  const L = (c: string) => c.charCodeAt(0) - 65;
+  const T = Date.UTC(2026, 10, 5, 18, 30);
+  const compras = new Map([['59170000001', { pedidoMs: T, reservaMs: null }], ['59170000009', { pedidoMs: null, reservaMs: T }]]);
+  it('el contacto con pedido lleva O y Q; el que solo tiene compra (sin conversación) también es una fila, con P; el que no compró deja O/P/Q vacías', () => {
+    const r = mod.construirFilas({ conversaciones: [conv(1), conv(2)], hoja: { telefonos: [], ids: [], ultimaFila: 3 }, mapa, compras });
+    expect(r.filas).toHaveLength(3);
+    expect(r.conteos).toMatchObject({ aCrear: 3, soloCompra: 1, conCompra: 2, conPedido: 1, conReserva: 1 });
+    const por = (tel: string) => r.filas.find((f) => f[L(mapa['columnas'].telefono.letra)] === `'${tel}`)!;
+    const a = por('59170000001'), b = por('59170000002'), c = por('59170000009');
+    expect([a[L('O')], a[L('P')], a[L('Q')]]).toEqual(['Pedido', '', 'Registrado 2026-11-05 14:30']);
+    expect([b[L('O')], b[L('P')], b[L('Q')]]).toEqual(['', '', '']);
+    expect([c[L('O')], c[L('P')], c[L('Q')]]).toEqual(['Reserva', 'Enviada 2026-11-05 14:30', '']);
+    expect(c[L(mapa['columnas'].fecha.letra)]).toBe('2026-11-05'); // fecha de su primera compra, no inventada
+    for (const f of r.filas) { expect(f.join('|')).not.toMatch(/pag[óo]|pagado|acredit|Bs \d/i); expect(f[L('N')]).toBe(''); expect(f[L('H')]).toBe(''); }
+  });
+  it('NEGADO: quien ya tiene fila en la hoja no se duplica aunque tenga compras; sin compras el resultado es el de siempre', () => {
+    const r = mod.construirFilas({ conversaciones: [conv(1)], hoja: { telefonos: ["'59170000001", '59170000009'], ids: [], ultimaFila: 5 }, mapa, compras });
+    expect(r.filas).toHaveLength(0);
+    const sin = mod.construirFilas({ conversaciones: [conv(1)], hoja: { telefonos: [], ids: [], ultimaFila: 3 }, mapa });
+    expect([sin.filas[0][L('O')], sin.filas[0][L('P')], sin.filas[0][L('Q')]]).toEqual(['', '', '']);
+  });
+});
+
+describe('Q4. propuesta para filas existentes: solo celdas vacías de O/P/Q, y nunca se aplica', () => {
+  const mapa = mapaDe('qtaco');
+  const T = Date.UTC(2026, 10, 5, 18, 30);
+  const fila = (tel: string, o = '', p = '', q = '') => { const f = new Array(20).fill(''); f[4] = tel; f[14] = o; f[15] = p; f[16] = q; return f; };
+  it('completa solo lo vacío; no pisa un dato del bot ni del equipo; toma la última fila del teléfono', () => {
+    const valores = [ENCABEZADOS(mapa), fila('59170000001'), fila('59170000002', 'Reserva', 'Enviada 2026-11-01 10:00', ''), fila('59170000003', 'Pedido', '', 'Registrado 2026-11-02 10:00'), fila('59170000001', 'Consulta')];
+    const compras = new Map([
+      ['59170000001', { pedidoMs: T, reservaMs: null }], ['59170000002', { pedidoMs: T, reservaMs: T }], ['59170000003', { pedidoMs: T, reservaMs: null }], ['59170000004', { pedidoMs: T, reservaMs: null }],
+    ]);
+    const r = mod.construirActualizaciones({ valores, mapa, compras });
+    expect(r.conteos).toMatchObject({ existentesConCompra: 3, aCompletar: 2, sinHuecos: 1, conVariasFilas: 1 });
+    // 59170000001: última fila (la 7): O ya dice «Consulta» (no se pisa), solo Q
+    expect(r.propuestas).toContainEqual({ fila: 7, celdas: { Q: 'Registrado 2026-11-05 14:30' } });
+    // 59170000002: P ya tenía dato, O también; solo Q (vacía)
+    expect(r.propuestas).toContainEqual({ fila: 5, celdas: { Q: 'Registrado 2026-11-05 14:30' } });
+    expect(r.propuestas.find((p) => p.fila === 6)).toBeUndefined(); // sin huecos: nada
+    for (const p of r.propuestas) expect(Object.keys(p.celdas).every((l) => ['O', 'P', 'Q'].includes(l))).toBe(true); // jamás J..M ni U
+  });
+  it('NEGADO: el SECO y --aplicar no escriben sobre filas existentes; --aplicar solo agrega las filas nuevas; y no hay código de actualización en --aplicar', async () => {
+    const existente = fila('59170000001'); existente[0] = 'LEAD-1001';
+    const m = mundo('qtaco', [conv(1), conv(2)], [existente]);
+    const compras = { porTelefono: new Map([['59170000001', { pedidoMs: T, reservaMs: null }], ['59170000002', { pedidoMs: T, reservaMs: null }]]), conteos: { pedidos: 2, reservas: 0, descartados: { sinTelefono: 0, sinFecha: 0, excluidos: 0 } } };
+    const deps = { ...m.deps, compras: async () => compras };
+    expect(await mod.ejecutar(cfgDe('qtaco'), deps)).toBe(1);
+    expect(m.llamadas.agregar).toBe(0);
+    expect(m.texto()).toContain('filas YA en la hoja con compra: 1  -> a completar: 1 fila(s), 2 celda(s)');
+    expect(m.texto()).toContain('filas a crear               : 1');
+    expect(m.texto()).not.toMatch(/59170000|Contacto \d/);
+    expect(await mod.ejecutar(cfgDe('qtaco', { aplicar: true, respaldo: rutaRespaldo() }), deps)).toBe(0);
+    expect(m.llamadas.agregar).toBe(1);
+    expect(m.valores[1][14]).toBe(''); // la fila existente no se tocó
+    expect(m.valores[1][16]).toBe('');
+    expect(m.valores).toHaveLength(3);
+    expect(m.valores[2][14]).toBe('Pedido');
+    expect(m.valores[2][16]).toBe('Registrado 2026-11-05 14:30');
+    // idempotente: la segunda corrida no escribe
+    expect(await mod.ejecutar(cfgDe('qtaco', { aplicar: true, respaldo: rutaRespaldo() }), { ...deps, log: () => {} })).toBe(0);
+    expect(m.llamadas.agregar).toBe(1);
+  });
+  it('NEGADO: los rroca-* no leen compras aunque la dependencia exista; la salida del seco no trae teléfonos ni nombres', async () => {
+    const m = mundo('rroca-evy', [conv(1)]);
+    let llamada = 0;
+    await mod.ejecutar(cfgDe('rroca-evy'), { ...m.deps, compras: async () => { llamada += 1; return { porTelefono: new Map(), conteos: {} }; } });
+    expect(llamada).toBe(0);
+    expect(m.texto()).not.toContain('compras registradas');
+  });
+  it('el script no imprime teléfonos, nombres ni detalles: sus log() solo llevan conteos', () => {
+    const f = readFileSync(new URL('../../scripts/plataforma/relleno-crm-historico.mjs', import.meta.url), 'utf8');
+    expect(f).not.toMatch(/log\([^)]*\.(telefono|nombre|detalle)\b/);
   });
 });
