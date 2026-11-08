@@ -133,7 +133,7 @@ const perfil = String(t.nombrePerfil || '').trim() ? t.nombrePerfil : (typeof en
 let mensajes = [];
 let condicionados = null;
 let aviso = null;
-let turnoConDatos = false; // este turno trajo líneas o datos de entrega: no cuenta como «sin progreso» ni como negación de la ubicación
+let turnoConDatos = false; // este turno trajo líneas o datos de entrega (los fija `aExtraerPedido`; otros turnos lo dejan en false): `niegaLaUbicacion` no se evalúa; el «sin progreso» lo da la clave de `pidioDatos`
 let pedidoGuardar = null;
 let cierre = null;
 let anotarReserva = false;
@@ -1034,8 +1034,12 @@ function esConfirmarSinUbicacion() {
 // El cliente dice que no puede o no quiere compartir la ubicación («no puedo compartir la ubicación», «no tengo gps»): solo si el texto habla de la ubicación.
 function niegaLaUbicacion(n) {
   if (pareceDireccion(n)) return false; // un texto con rasgos de dirección es un dato, no una negativa
-  return /\bno (puedo|quiero|logro|me deja|me sale|funciona)\b.*\b(compart\w*|envi\w*|mand\w*|activ\w*)\b.*\b(ubicacion|gps|pin|mapa)\b/.test(n)
-    || /\bno (puedo|quiero|me deja|me sale|tengo|funciona)\b.*\b(ubicacion|gps)\b/.test(n)
+  // Acotado a pocas palabras entre el verbo y la ubicación: «ahorita no puedo, en un rato te mando la ubicación» promete enviarla, no la niega.
+  // Acotado a pocas palabras entre el verbo y la ubicación: «ahorita no puedo, en un rato te mando la ubicación» promete enviarla, no la niega.
+  return /\bno (puedo|quiero|logro|me deja|me sale) (\w+ ){0,2}(compart|envi|mand|activ)\w* (\w+ ){0,3}(ubicacion|gps|pin|mapa)\b/.test(n)
+    || /\bno (puedo|quiero|me deja|me sale|funciona) (\w+ ){0,2}(ubicacion|gps)\b/.test(n)
+    || /\bno tengo (\w+ )?(gps|ubicacion)\b/.test(n)
+    || /\bno (se|encuentro) (\w+ ){0,4}(ubicacion|gps)\b/.test(n)
     || /\bsin (gps|ubicacion)\b/.test(n);
 }
 // Sin ubicación el delivery no se confirma: lo único que se ofrece es pasar con el local (aviso + «Escribir al local»). El carrito no se toca.
@@ -1227,7 +1231,7 @@ function hablaDeDelivery(n) { return /\b(delivery|envio|envios|enviar\w*|envien\
 // No cuenta como ayuda: una cortesía («no hay problema», «sin problema», «ningún problema»), ni «alguien/persona» cuando hay verbo de recibir o recoger («alguien lo recibe»,
 // «que lo reciba alguien», «cualquier persona lo recibe») ni «es para una persona». Sí: «ayúdenme», «auxilio».
 function sinCortesias(n) {
-  let t = String(n).replace(/\b(no hay|sin|ningun|ninguna)\s+(problema|problemas|queja|quejas)\b/g, ' ');
+  let t = String(n).replace(/\b(no hay|no tengo|sin|ningun|ninguna)\s+(problema|problemas|queja|quejas)\b/g, ' ');
   if (/\b(recib\w*|recog\w*|recoj\w*|retir\w*)\b/.test(t)) t = t.replace(/\b(alguien|persona|personas)\b/g, ' ');
   t = t.replace(/\bpara (una|un|1|dos|tres|cuatro) (persona|personas)\b/g, ' ');
   return t;

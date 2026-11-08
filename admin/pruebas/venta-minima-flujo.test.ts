@@ -7228,3 +7228,39 @@ describe('ubicación obligatoria en delivery (07/11): dirección escrita Y pin; 
     expect(todoElTexto(r.resumen)).not.toMatch(/ubicación compartida|compartas tu ubicación/i);
   });
 });
+
+describe('ubicación obligatoria: qué es (y qué no es) una negativa explícita', () => {
+  const pendiente = () => {
+    const w = crear({ panel: panel(COBRO_REAL) });
+    const c = con(w, CLIENTE, 'Carlos');
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery' });
+    c.escribe('quiero 4 tacos de birria con delivery');
+    w.estado.extraccion = EX([], { entrega: '' });
+    return { w, c };
+  };
+  it.each([
+    'ahorita no puedo, en un rato te mando la ubicación',
+    'no puedo esperar mucho, ya te envío la ubicación',
+    'no quiero que se demore, ya te comparto mi ubicación',
+    'no tengo problema, ahí va la ubicación',
+  ])('NEGADO: «%s» promete enviarla y NO deriva', (dicho) => {
+    const { c } = pendiente();
+    const t = c.escribe(dicho);
+    expect(tieneEnlace(t), dicho).toBe(false);
+    expect(t.avisos, dicho).toHaveLength(0);
+  });
+  it.each([
+    'no puedo compartir mi ubicación',
+    'no quiero enviar la ubicación',
+    'no tengo gps',
+    'no sé cómo mandar la ubicación',
+    'no encuentro el botón de ubicación',
+    'sin gps',
+  ])('«%s» es una negativa explícita: deriva a la primera', (dicho) => {
+    const { c } = pendiente();
+    const t = c.escribe(dicho);
+    expect(tieneEnlace(t), dicho).toBe(true);
+  });
+});
