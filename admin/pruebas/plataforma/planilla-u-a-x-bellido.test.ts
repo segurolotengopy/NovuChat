@@ -333,23 +333,24 @@ describe('P8. Revisión: relecturas, ID, hoja y celdas no texto', () => {
 });
 
 
+const CAUSAS_VALIDAS = ['SCOPES_INSUFICIENTES', 'SIN_PERMISO_EN_LA_HOJA', 'API_NO_HABILITADA', 'HOJA_NO_ENCONTRADA', 'RANGO_INVALIDO', 'CREDENCIAL_INVALIDA', 'OTRA'];
 describe('P9. El error de Google se ve sin filtrar id ni celdas', () => {
   const ID = 'IDDELAPLANILLA123abcdefXYZ45';
   const filtrar = (json: unknown) => new Function('$input', S.CODIGO_FILTRO)({ first: () => ({ json }) })[0].json;
   it('403: deja estado, status y reason; nunca el mensaje (que nombra el id) ni el cuerpo', () => {
     const o = filtrar({ statusCode: 403, body: { error: { code: 403, status: 'PERMISSION_DENIED', message: `sin acceso a ${ID} ${MARCA_CELDA}`,
       details: [{ '@type': 'x', reason: 'SERVICE_DISABLED', metadata: { u: ID } }] } } });
-    expect(o).toEqual({ __errorGoogle: true, estado: 403, google: 'PERMISSION_DENIED', razon: 'SERVICE_DISABLED' });
+    expect(o).toEqual({ __errorGoogle: true, estado: 403, google: 'PERMISSION_DENIED', razon: 'SERVICE_DISABLED', causa: 'OTRA' });
     expect(JSON.stringify(o)).not.toContain(ID);
     expect(JSON.stringify(o)).not.toContain(MARCA_CELDA);
   });
   it('un status o reason con forma de texto libre se descarta', () => {
     const o = filtrar({ statusCode: 404, body: { error: { status: `no existe ${ID}`, details: [{ reason: `la hoja ${MARCA_CELDA}` }] } } });
-    expect(o).toEqual({ __errorGoogle: true, estado: 404, google: null, razon: null });
+    expect(o).toEqual({ __errorGoogle: true, estado: 404, google: null, razon: null, causa: 'OTRA' });
   });
   it('fallo del nodo sin respuesta: solo el estado numérico', () => {
     const o = filtrar({ error: { message: `fallo con ${ID}`, httpCode: '401' } });
-    expect(o).toEqual({ __errorGoogle: true, estado: 401, google: null, razon: null });
+    expect(o).toEqual({ __errorGoogle: true, estado: 401, google: null, razon: null, causa: 'OTRA' });
     expect(JSON.stringify(filtrar({ error: { message: ID } }))).not.toContain(ID);
   });
   it('2xx pasa el cuerpo (los valores se usan en memoria)', () => {
@@ -358,7 +359,7 @@ describe('P9. El error de Google se ve sin filtrar id ni celdas', () => {
   it('interpretar lanza con un motivo legible sin id ni celdas; con éxito devuelve el resultado', () => {
     let e: any;
     try { S.interpretar({ __errorGoogle: true, estado: 403, google: 'PERMISSION_DENIED', razon: 'SERVICE_DISABLED' }); } catch (x) { e = x; }
-    expect(e.motivo).toBe('Google respondió 403 PERMISSION_DENIED (SERVICE_DISABLED)');
+    expect(e.motivo).toBe('Google respondió 403 PERMISSION_DENIED (SERVICE_DISABLED) causa: OTRA');
     expect(e.code).toBe('google-403');
     try { S.interpretar({ __errorGoogle: true, estado: 7, google: `x ${ID}`, razon: MARCA_CELDA }); } catch (x) { e = x; }
     expect(e.motivo).not.toContain(ID); expect(e.motivo).not.toContain(MARCA_CELDA);
@@ -371,5 +372,28 @@ describe('P9. El error de Google se ve sin filtrar id ni celdas', () => {
     expect(h.parameters.options.response.response).toMatchObject({ neverError: true, fullResponse: true });
     expect(f.type).toBe('n8n-nodes-base.code');
     expect(f.parameters.jsCode.split('}}').length).toBe(1);
+  });
+  it('clasifica la causa contra frases conocidas y devuelve solo la etiqueta', () => {
+    const caso = (message: string) => filtrar({ statusCode: 403, body: { error: { code: 403, status: 'PERMISSION_DENIED', message } } }).causa;
+    expect(caso('Request had insufficient authentication scopes.')).toBe('SCOPES_INSUFICIENTES');
+    expect(caso('The caller does not have permission')).toBe('SIN_PERMISO_EN_LA_HOJA');
+    expect(caso('Google Sheets API has not been used in project 1 before or it is disabled')).toBe('API_NO_HABILITADA');
+    expect(caso('Requested entity was not found.')).toBe('HOJA_NO_ENCONTRADA');
+    expect(caso("Unable to parse range: 'Leads_CRM'!A3:X")).toBe('RANGO_INVALIDO');
+    expect(caso('invalid_grant: Invalid JWT')).toBe('CREDENCIAL_INVALIDA');
+    expect(caso('algo nunca visto')).toBe('OTRA');
+  });
+  it('un message con el id o con texto de celdas produce solo la etiqueta, jamás el texto', () => {
+    for (const message of [`La hoja ${ID} no existe: ${MARCA_CELDA}`, `The caller does not have permission on ${ID} ${MARCA_CELDA}`, `Requested entity was not found. ${ID}`]) {
+      const o = filtrar({ statusCode: 403, body: { error: { status: 'PERMISSION_DENIED', message } }, error: { message } });
+      expect(CAUSAS_VALIDAS).toContain(o.causa);
+      expect(JSON.stringify(o)).not.toContain(ID);
+      expect(JSON.stringify(o)).not.toContain(MARCA_CELDA);
+      let e: any; try { S.interpretar(o); } catch (x) { e = x; }
+      expect(e.motivo).not.toContain(ID); expect(e.motivo).not.toContain(MARCA_CELDA);
+      expect(e.motivo).toMatch(/causa: [A-Z_]+$/);
+    }
+    let e: any; try { S.interpretar({ __errorGoogle: true, estado: 403, causa: `texto ${ID}` }); } catch (x) { e = x; }
+    expect(e.motivo).toBe('Google respondió 403 causa: OTRA');
   });
 });

@@ -368,6 +368,7 @@ export const expresionEscribir = (rangoA1) => `={{ JSON.stringify({ range: ${JSO
  * EL ERROR DE GOOGLE, VISIBLE SIN FILTRAR NADA. El nodo HTTP del flujo temporal no corta ante un 4xx/5xx (`neverError` + respuesta completa)
  * y un nodo Code posterior deja pasar, si fue un error, SOLO: el estado HTTP numérico, `error.status` y el primer `reason` de Google, y
  * solo si tienen forma de constante (MAYÚSCULAS_Y_GUIONES). Nunca el mensaje (puede nombrar el id o el rango), nunca el cuerpo, nunca la URL.
+ * La CAUSA se clasifica del mensaje contra una lista cerrada de frases conocidas y sale solo la etiqueta constante (o `OTRA`); el texto crudo nunca sale.
  * Si la respuesta es 2xx, pasa el cuerpo tal cual (los valores de la hoja, que solo se usan en memoria).
  */
 export const CODIGO_FILTRO = `const r = $input.first().json;
@@ -376,7 +377,10 @@ const st = Number.isInteger(r.statusCode) ? r.statusCode : (r.error && Number.is
 if (st >= 200 && st < 300 && r.body !== undefined) return [{ json: (r.body && typeof r.body === 'object') ? r.body : {} }];
 const e = (r.body && typeof r.body === 'object' && r.body.error && typeof r.body.error === 'object') ? r.body.error : {};
 const d = Array.isArray(e.details) ? e.details.find((x) => x && cte(x.reason)) : null;
-return [{ json: { __errorGoogle: true, estado: st, google: cte(e.status), razon: d ? cte(d.reason) : null } }];`;
+const msg = String((typeof e.message === 'string' ? e.message : '') + ' ' + (r.error && typeof r.error.message === 'string' ? r.error.message : '')).toLowerCase();
+const causas = [['SCOPES_INSUFICIENTES', ['insufficient authentication scopes', 'insufficient scopes', 'access_token_scope_insufficient']], ['API_NO_HABILITADA', ['has not been used', 'is disabled', 'not been enabled']], ['HOJA_NO_ENCONTRADA', ['requested entity was not found']], ['RANGO_INVALIDO', ['unable to parse range']], ['CREDENCIAL_INVALIDA', ['invalid_grant', 'invalid_client']], ['SIN_PERMISO_EN_LA_HOJA', ['does not have permission', 'permission denied', 'the caller does not have']]];
+const hit = causas.find((c) => c[1].some((f) => msg.includes(f)));
+return [{ json: { __errorGoogle: true, estado: st, google: cte(e.status), razon: d ? cte(d.reason) : null, causa: hit ? hit[0] : 'OTRA' } }];`;
 
 /** Un paso contra Google: el nodo HTTP que no corta ante errores y el filtro que deja solo el motivo. */
 export function pasoSeguro(http, id, nombre, x, parametros) {
@@ -387,11 +391,13 @@ export function pasoSeguro(http, id, nombre, x, parametros) {
 }
 
 /** Si el resultado es el motivo de un error de Google, lanza con un texto sin id ni celdas; si no, lo devuelve. */
+export const CAUSAS = ['SCOPES_INSUFICIENTES', 'SIN_PERMISO_EN_LA_HOJA', 'API_NO_HABILITADA', 'HOJA_NO_ENCONTRADA', 'RANGO_INVALIDO', 'CREDENCIAL_INVALIDA', 'OTRA'];
 export function interpretar(r) {
   if (r && r.__errorGoogle === true) {
     const cte = (v) => (typeof v === 'string' && /^[A-Z][A-Z0-9_]{2,59}$/.test(v) ? v : null);
     const estado = Number.isInteger(r.estado) ? r.estado : 0;
-    const partes = [estado ? String(estado) : 'sin respuesta', cte(r.google), cte(r.razon) ? `(${cte(r.razon)})` : null].filter(Boolean);
+    const causa = CAUSAS.includes(r.causa) ? r.causa : 'OTRA';
+    const partes = [estado ? String(estado) : 'sin respuesta', cte(r.google), cte(r.razon) ? `(${cte(r.razon)})` : null, `causa: ${causa}`].filter(Boolean);
     throw Object.assign(new Error('google'), { code: `google-${estado}`, motivo: `Google respondió ${partes.join(' ')}` });
   }
   return r;
