@@ -624,16 +624,19 @@ const EV_CONTEXTO_GRATIS = /\b(bonific\w*|gratuit\w*|gratis|sin costo|sin pagar|
 // siempre junto con la gratuidad. `permitido` = primer turno O el cliente pregunta por precio/costo (`evPreguntaPrecio`); fuera de eso la oración se quita.
 const EV_PREGUNTA_PRECIO = /\b(cuest\w*|precio\w*|costo\w*|cuanto (?:vale|valen|sale|salen|es|cobran|cobra|pagar|pago|hay que pagar)|tarifa\w*|inversion|cobr\w*|pagar|pago|gratis|gratuit\w*)\b/;
 function evPreguntaPrecio(textoCliente) { return EV_PREGUNTA_PRECIO.test(evNorm(textoCliente || '')); }
-// Revisión de seguridad del PR 866 (lista blanca): la cifra «250» sale SOLO pegada a la valoración, con una de estas formas, y en una oración que habla de la valoración/consulta/cita y NO nombra
-// tratamiento, marca, zona, producto, mililitros ni «luego/después pagas». Cada «250» de la oración tiene que estar dentro de una de las formas: si queda alguno suelto, se quita la oración entera.
+// Revisión de seguridad del PR 866 (dos rondas): el MODELO NUNCA ESCRIBE el monto. Toda oración del modelo que lleve «250» se QUITA; y, solo si se permite (primer turno o pregunta de precio) y esa oración hablaba de la valoración
+// con contexto de gratuidad, en su lugar (UNA vez) el código pone la frase canónica del MD con el monto. Así «Radiesse: 250 Bs…», «el hilo tensor cuesta 250 Bs…» o cualquier redacción nueva no pueden usar la cifra como precio de nada.
 const EV_SE_REFIERE_A_VALORACION = /\b(valoracion|valoraciones|consulta|cita)\b/;
-const EV_SE_REFIERE_A_TRATAMIENTO = /\b(tratamientos?|sesion\w*|aplicacion\w*|radiesse|harmonyca|jeringa\w*|zonas?|productos?|bioestimulador\w*|procedimientos?|relleno\w*|lifting|armonizacion|ml|mililitros?|cada|pomulos?|menton|mandibula|hialuronic\w*|ampolla\w*|paquetes?|luego|despues de|mientras|ademas de)\b/;
-const EV_FORMAS_DEL_VALOR = /\b(?:costo|valor|precio) habitual (?:de la valoracion |de la consulta )?(?:es |seria )?(?:de )?250\b|\bhabitualmente (?:cuesta |vale |son |es )?(?:de )?250\b|\bvalorad[ao]s? en 250\b|\bvaloracion de 250\b|\b250 (?:bs|bolivianos) (?:de consulta|de la valoracion|habituales)\b|\b(?:ahorras|ahorro de) (?:los )?250\b|\bbonificand\w* (?:los )?250\b|\bpagas? (?:los )?250 (?:bs|bolivianos) de consulta\b/g;
+const EV_FRASE_DEL_VALOR = 'Tu valoración con la Dra. Evy tiene un costo habitual de 250 Bs, pero hoy está totalmente bonificada y no pagas nada para reservar.';
 function evProtegerValor(texto, permitido) {
-  const valorSuelto = (n) => (n.match(/\b250\b/g) || []).length !== (n.match(EV_FORMAS_DEL_VALOR) || []).length;
-  // El tratamiento/marca/zona se busca en la CLÁUSULA (entre «;», «:», «,», «pero», «sino», paréntesis) que lleva el 250, no en toda la oración (el guion junta «El tratamiento no tiene un precio fijo; por eso la valoración (habitualmente 250 Bs)…»).
-  const clausulaDelTratamiento = (o) => String(o).split(/[;:,()]|\bpero\b|\bsino\b/i).some((c) => /\b250\b/.test(c) && EV_SE_REFIERE_A_TRATAMIENTO.test(evNorm(c)));
-  return evQuitarOraciones(texto, (n, o) => /\b250\b/.test(n) && (permitido !== true || !EV_CONTEXTO_GRATIS.test(n) || !EV_SE_REFIERE_A_VALORACION.test(n) || clausulaDelTratamiento(o) || valorSuelto(n)));
+  let puesta = false;
+  const lista = evPartirEnOraciones(texto).map((o) => {
+    const n = evNorm(o);
+    if (!/\b250\b/.test(n)) return o;
+    if (permitido === true && !puesta && EV_CONTEXTO_GRATIS.test(n) && EV_SE_REFIERE_A_VALORACION.test(n)) { puesta = true; return EV_FRASE_DEL_VALOR; }
+    return '\u0002';
+  });
+  return evUnirOraciones(evSinHuerfanos(lista, (o) => o === '\u0002'));
 }
 function evMarcarValor(texto) {
   return evTexto(texto).replace(/\b250\s*(?:bs\.?|bolivianos)?/gi, EV_MARCA_VALOR);
