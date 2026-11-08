@@ -624,8 +624,14 @@ const EV_CONTEXTO_GRATIS = /\b(bonific\w*|gratuit\w*|gratis|sin costo|sin pagar|
 // siempre junto con la gratuidad. `permitido` = primer turno O el cliente pregunta por precio/costo (`evPreguntaPrecio`); fuera de eso la oración se quita.
 const EV_PREGUNTA_PRECIO = /\b(cuest\w*|precio\w*|costo\w*|cuanto (?:vale|valen|sale|salen|es|cobran|cobra|pagar|pago|hay que pagar)|tarifa\w*|inversion|cobr\w*|pagar|pago|gratis|gratuit\w*)\b/;
 function evPreguntaPrecio(textoCliente) { return EV_PREGUNTA_PRECIO.test(evNorm(textoCliente || '')); }
+// Revisión de seguridad del PR 866: la cifra sale SOLO si la oración habla de la VALORACIÓN (o la consulta/cita) y NO nombra el tratamiento, una sesión, una marca, una zona ni un producto:
+// «El tratamiento cuesta 250 Bs, pero la valoración es gratis» NO pasa (sería un precio del tratamiento).
+const EV_SE_REFIERE_A_VALORACION = /\b(valoracion|valoraciones|consulta|cita)\b/;
+const EV_SE_REFIERE_A_TRATAMIENTO = /\b(tratamientos?|sesion\w*|aplicacion\w*|radiesse|harmonyca|jeringa\w*|zonas?|productos?|bioestimulador\w*|procedimientos?|relleno\w*)\b/;
 function evProtegerValor(texto, permitido) {
-  return evQuitarOraciones(texto, (n) => /\b250\b/.test(n) && (permitido !== true || !EV_CONTEXTO_GRATIS.test(n)));
+  // La cláusula (entre «;», «:», «,», «pero», «sino») que lleva el 250 es la que tiene que hablar de la valoración y no del tratamiento.
+  const clausulaMala = (n, original) => !EV_SE_REFIERE_A_VALORACION.test(n) || String(original).split(/[;:,]|\bpero\b|\bsino\b/i).some((c) => /\b250\b/.test(c) && EV_SE_REFIERE_A_TRATAMIENTO.test(evNorm(c)));
+  return evQuitarOraciones(texto, (n, o) => /\b250\b/.test(n) && (permitido !== true || !EV_CONTEXTO_GRATIS.test(n) || clausulaMala(n, o)));
 }
 function evMarcarValor(texto) {
   return evTexto(texto).replace(/\b250\s*(?:bs\.?|bolivianos)?/gi, EV_MARCA_VALOR);
@@ -1001,7 +1007,7 @@ function evDioNombre(historial, textoCliente) {
   return re.test(evTexto(textoCliente)) || (Array.isArray(historial) && historial.some((h) => h && h.r === 'u' && re.test(evTexto(h.t))));
 }
 // Observaciones de Rubén (28/10/2026): sin «bonificado»; el valor habitual (250 Bs) solo en el PRIMER turno de la ficha, como en la bienvenida.
-function evTextoGratis(cfg, dioNombre, primerTurno) {
+function evTextoGratis(cfg, dioNombre) {
   const negocio = evLinea(cfg && cfg.nombreNegocio, 60) || 'Dra. Evy';
   // Letra del MD (línea «¿De verdad es gratis?»): «Sí, es 100% gratuita por la campaña. No pagas los 250 Bs de consulta ni tienes que dejar ningún anticipo para reservar. Solo si después de la evaluación decides hacerte el tratamiento, la Dra. te da el presupuesto.»
   const cuerpo = 'Sí, la valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' es 100% gratuita por la campaña. No pagas los 250 Bs de consulta ni tienes que dejar ningún anticipo para reservar. Solo si después de la evaluación decides hacerte el tratamiento, la Dra. te da el presupuesto.';
