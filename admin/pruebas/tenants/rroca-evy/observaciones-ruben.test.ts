@@ -389,15 +389,20 @@ describe('(4) sin «bonificado»; los 250 Bs en la bienvenida y al preguntar el 
       hablar(m, ANA, mTexto('hola'));
       expect(todo(hablar(m, ANA, mTexto('¿cuánto cuesta?')))).not.toMatch(/250/);
     });
-    it('NEGADA (revisión de seguridad del PR 866): la cifra de la VALORACIÓN no se usa de precio del tratamiento, ni al preguntar el precio ni en la bienvenida', () => {
-      for (const x of ['El tratamiento cuesta 250 Bs, pero la valoración es gratis. ¿Cómo te llamas?', 'Una sesión de Radiesse sale 250 Bs y la valoración es gratis. ¿Cómo te llamas?',
-        'Radiesse: 250 Bs; la valoración es gratuita. ¿Cómo te llamas?', 'La valoración es gratis (el tratamiento, 250 Bs). ¿Cómo te llamas?', 'La valoración es gratuita y el lifting cuesta 250 Bs. ¿Cómo te llamas?',
-        'La valoración es gratis y luego pagas 250 Bs. ¿Cómo te llamas?', 'Solo 250 Bs la sesión, y la valoración es gratis. ¿Cómo te llamas?', 'La valoración es gratis; cada ml cuesta 250 Bs. ¿Cómo te llamas?']) {
-        const m = crear({ modeloDice: dice(x) });
-        expect(todo(hablar(m, ANA, mTexto('hola'))), x).not.toMatch(/250/);
-        const n = crear({ modeloDice: dice(x) });
-        hablar(n, ANA, mTexto('hola'));
-        expect(todo(hablar(n, ANA, mTexto('¿cuánto cuesta?'))), x).not.toMatch(/250/);
+    it('NEGADA (revisión de seguridad del PR 866): el modelo NUNCA escribe el monto; solo sale la frase canónica del código, y solo sobre la valoración', () => {
+      const CANONICA = 'Tu valoración con la Dra. Evy tiene un costo habitual de 250 Bs, pero hoy es 100% gratuita y no pagas nada para reservar.';
+      const ATAQUES = ['El tratamiento cuesta 250 Bs, pero la valoración es gratis.', 'Una sesión de Radiesse sale 250 Bs y la valoración es gratis.', 'Radiesse: 250 Bs; la valoración es gratuita.',
+        'La valoración es gratis (el tratamiento, 250 Bs).', 'La valoración es gratuita y el lifting cuesta 250 Bs.', 'La valoración es gratis y luego pagas 250 Bs.', 'Solo 250 Bs la sesión, y la valoración es gratis.',
+        'La valoración es gratis; cada ml cuesta 250 Bs.', 'Radiesse: habitualmente 250 Bs y la valoración es gratuita.', 'El lifting (habitualmente 250 Bs) incluye valoración gratuita.', 'Lifting: valorado en 250 Bs; la consulta es gratis.',
+        'La valoración es gratuita y el hilo tensor tiene un costo habitual de 250 Bs.', 'Valoración gratis y 250 Bs habituales por el hilo.', 'La valoración es gratuita y el botox habitualmente cuesta 250 Bs.'];
+      for (const x of ATAQUES) {
+        for (const pregunta of ['hola', '¿cuánto cuesta?']) {
+          const m = crear({ modeloDice: dice(`${x} ¿Cómo te llamas?`) });
+          if (pregunta !== 'hola') hablar(m, ANA, mTexto('hola'));
+          const t = todo(hablar(m, ANA, mTexto(pregunta)));
+          expect(t.split(CANONICA).join(''), `${x} / ${pregunta}`).not.toMatch(/250/);   // el monto solo está dentro de la frase canónica
+          expect(t, x).not.toMatch(/radiesse|tratamiento|sesi[oó]n|lifting|hilo|botox|\bml\b/i);
+        }
       }
     });
     it('POSITIVA: el texto fijo de gratuidad conserva el valor habitual (también fuera del primer turno), sin «bonificado»', () => {
