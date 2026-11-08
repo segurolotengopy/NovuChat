@@ -272,6 +272,13 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
     if ((cb.campanaFrase === undefined) !== (cb.campanaTexto === undefined)) errores.push('configBase.campanaFrase y campanaTexto: van juntos o ninguno');
     if (typeof cb.campanaFrase === 'string' && cb.campanaFrase.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z0-9ñ]+/).filter((w) => w !== '' && w !== 'hola').length < 5) errores.push('configBase.campanaFrase: tiene que tener al menos 5 palabras (sin contar «hola»)');
     if (typeof cb.campanaTexto === 'string') for (const u of cb.campanaTexto.match(/https?:\/\/\S+|www\.\S+|wa\.me\S*/gi) || []) if (!/^https:\/\/maps\.app\.goo\.gl\/[A-Za-z0-9_-]{6,40}$/.test(u)) errores.push('configBase.campanaTexto: el único enlace permitido es uno corto de Google Maps (https://maps.app.goo.gl/…)');
+    // Revisión de seguridad (07/11/2026, LOW): sin el enlace de Maps permitido, el texto de campaña no puede llevar un dominio suelto (bit.ly/x, evil.com/pago), un número largo ni palabras que el negocio no puede decir.
+    if (typeof cb.campanaTexto === 'string') {
+      const resto = cb.campanaTexto.normalize('NFKC').replace(/https:\/\/maps\.app\.goo\.gl\/[A-Za-z0-9_-]{6,40}/g, ' ');
+      if (/[a-z0-9-]+\.[a-z]{2,}(?:\/|\b)/i.test(resto.replace(/\b(?:Dra|Dr|Sra|Sr)\./gi, ' '))) errores.push('configBase.campanaTexto: no puede llevar un dominio o enlace suelto (solo el enlace de Maps permitido)');
+      if (/\d{7,}/.test(resto.replace(/\s/g, ''))) errores.push('configBase.campanaTexto: no puede llevar un número largo (teléfono)');
+      if (/acreditad|verificad|garant|descuent|promoci|reembols|devoluc|soy una persona|no soy un (?:bot|asistente)/i.test(resto)) errores.push('configBase.campanaTexto: lleva una palabra que el negocio no puede decir (acreditado, verificado, garantía, descuento…)');
+    }
     for (const c of TEXTOS_LIBRES) if (typeof cb[c] === 'string' && (/https?:|www\.|wa\.me|[<>{}\[\]]/i.test(cb[c]))) errores.push(`configBase.${c}: no puede llevar enlaces, llaves ni corchetes`);
     if (typeof cb.direccionRespaldo === 'string' && /\d{7,}/.test(cb.direccionRespaldo.replace(/\s/g, ''))) errores.push('configBase.direccionRespaldo: no puede llevar un número largo');
   }

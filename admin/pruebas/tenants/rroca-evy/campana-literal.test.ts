@@ -2,7 +2,11 @@
  * EL TEXTO LITERAL DE CAMPAÑA (Andres, 07/11/2026, a pedido de la Dra. Evy). SOLO la frase exacta «Quiero agendar mi valoración gratuita» recibe un texto fijo del tenant, por código, sin modelo.
  * La frase y el texto son datos de «Config base» (`campanaFrase`, `campanaTexto`). Cualquier otro inicio sigue como siempre. Se compara por igualdad de palabras (patrón de Rubén), nunca por inclusión.
  */
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { ARCHIVO_DE_DATOS, cargarDatos } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
 import type { J } from '../../lib/flujo';
 import { ANA, PRODUCCION, PRUEBA, avisosARecepcion, crear, datos, hablar, mAudio, mImagen, mTexto, textos } from './mundo';
 
@@ -112,5 +116,24 @@ describe('el texto literal de campaña', () => {
     const nodos = (PRODUCCION as unknown as { nodes: { name: string; parameters: J }[] }).nodes;
     expect(JSON.stringify(nodos.find((x) => x.name === 'Config base'))).toContain('campanaTexto');
     expect(nodos.filter((x) => x.name !== 'Config base').map((x) => JSON.stringify(x.parameters)).join('')).not.toContain(TROZO);
+  });
+});
+
+describe('el constructor NIEGA un texto de campaña peligroso (revisión de seguridad, 07/11/2026)', () => {
+  const conTexto = (texto: string): string[] => {
+    const d = JSON.parse(readFileSync(ARCHIVO_DE_DATOS, 'utf8')) as { configBase: Record<string, unknown> };
+    d.configBase['campanaTexto'] = texto;
+    const dir = mkdtempSync(join(tmpdir(), 'evy-campana-'));
+    const ruta = join(dir, 'datos.json');
+    writeFileSync(ruta, JSON.stringify(d));
+    try { cargarDatos(ruta); return []; } catch (e) { return [String((e as Error).message)]; } finally { rmSync(dir, { recursive: true, force: true }); }
+  };
+  it('el texto de la doctora (con el enlace de Maps permitido) sí pasa', () => {
+    expect(conTexto(LITERAL)).toEqual([]);
+  });
+  it('NO pasan: dominios sueltos, enlaces, números largos y palabras prohibidas', () => {
+    for (const malo of [LITERAL + '\nbit.ly/abc', LITERAL + '\nevil.com/pago', LITERAL + '\nt.me/x', LITERAL + '\nwww.ejemplo.com', LITERAL + '\nhttps://evil.com/x', LITERAL + '\nEscríbeme al ' + ['5917', '0000000'].join(''), LITERAL + '\nTu pago fue acreditado', LITERAL + '\nCon garantía total', LITERAL + '\nDescuento del 50%']) {
+      expect(conTexto(malo).length, malo).toBeGreaterThan(0);
+    }
   });
 });
