@@ -10,7 +10,7 @@
  *   node scripts/plataforma/planilla-u-a-x-bellido.mjs <contar|respaldar|trasladar> [opciones]
  *
  *   contar                       SOLO LECTURA. Cuántas filas tienen dato en U, V, W y X; títulos de la fila 3; verifica U3.
- *   respaldar [--aplicar]        Seco: cuenta lo que guardaría. --aplicar: guarda la hoja entera (valores crudos, A3:X) en
+ *   respaldar [--aplicar]        Seco: cuenta lo que guardaría. --aplicar: guarda A (ID) y U..X, valores crudos de las filas 3.., en
  *                                ~/CLAUDE_DESCARGAS/BELLIDO_planilla-respaldo_<AAAA-MM-DD-HHMM>.json (0600, nunca se pisa).
  *   trasladar [--aplicar]        Seco: valida y dice qué haría. --aplicar: copia U→X (datos y título), RELEE X y la compara
  *                                celda por celda con el respaldo (si difiere, aborta sin vaciar U), vacía U4:U y escribe los
@@ -24,6 +24,15 @@
  * LA CREDENCIAL es la del miniCRM de Bellido en n8n, «Google Sheets miniCRM (crm-bellido)», por el mecanismo de
  * `relleno-crm-historico.mjs` (`correrEnN8n`: flujo temporal que se crea, se llama y se borra; el .env se lee sin ejecutarlo; la
  * clave no pasa por este proceso). Ningún valor de secreto se lee ni se imprime; el id de la planilla viene del entorno.
+ *
+ * EL RESPALDO lleva SOLO la columna A (ID, para identificar la fila) y U..X (lo que se mueve): el resto de la planilla (nombres,
+ * teléfonos, resúmenes) no se copia. Aun así U puede llevar datos de salud: el archivo es 0600, NO es entregable, NO se sube a Drive ni
+ * se comparte, y se BORRA cuando Andres confirme que el traslado quedó bien (hasta entonces es la reversa).
+ *
+ * VENTANA DE CARRERA. La API de Sheets no admite escrituras condicionales («escribir solo si no cambió»): entre la última relectura y la
+ * escritura siguiente queda una ventana de UNA llamada. Se reduce, no se elimina, con relecturas completas (mismo número de filas, U..X
+ * iguales) antes de cada escritura y antes de vaciar U; la columna A (ID) y los últimos 6 del id de la planilla viajan en el respaldo y
+ * se comparan. Cualquier diferencia aborta sin vaciar U.
  *
  * SALIDA. 0 hecho (o lectura sin novedad); 1 el seco encontró trabajo pendiente; 2 uso o salvaguarda (nada escrito);
  * 3 error de ejecución o relectura que no coincide (revise; el respaldo y --revertir permiten volver).
@@ -104,6 +113,7 @@ const columna = (m, j, n = m.length) => Array.from({ length: n }, (_, i) => celd
 const iguales = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const filas = (m) => m.slice(1);
 const contarCol = (m, j) => filas(m).filter((f) => lleno(f[j])).length;
+const noTexto = (m, j) => filas(m).filter((f) => lleno(f[j]) && typeof f[j] !== 'string').length;
 const hayFormula = (m, j) => filas(m).some((f) => typeof f[j] === 'string' && f[j].startsWith('='));
 
 /** Cuántas celdas difieren entre dos columnas (solo el número). */
@@ -170,11 +180,15 @@ export function respaldosEnDisco(dir = DIR_RESPALDOS) {
 }
 
 /** Forma del respaldo; devuelve la matriz normalizada o null. */
-function matrizDeRespaldo(r, mapa) {
+function matrizDeRespaldo(r, mapa, hojaFin) {
+  if (r?.hojaFin !== hojaFin) return null;
   if (r?.version !== 1 || r.campo !== 'planilla-u-a-x' || r.tenant !== TENANT || r.hoja !== HOJA || r.filaEncabezados !== mapa.filaEncabezados
       || !Array.isArray(r.valores) || r.valores.length === 0) return null;
   return normalizar(r.valores);
 }
+
+/** La columna A (ID) de la hoja tiene que ser la del respaldo en las filas que el respaldo tiene (y la hoja no puede tener menos). */
+const mismaA = (hoja, resp) => hoja.length >= resp.length && diferencias(columna(hoja, 0, resp.length), columna(resp, 0)) === 0;
 
 /** Elige el respaldo: el pedido, o el más reciente (con `mismoDia`, solo uno de hoy). */
 function elegirRespaldo({ cfg, deps, ahora, mismoDia }) {
@@ -224,6 +238,7 @@ export async function ejecutar(cfg, deps, mapa, log = (t) => console.log(t)) {
   if (cfg.modo === 'contar') {
     log(`\n  LECTURA · contar · hoja ${HOJA} (id termina en …${cfg.hojaFin ?? '??????'})`);
     resumen();
+    log(`  celdas de U que no son texto (números, fechas, booleanos): ${noTexto(hoja, COL.U)}`);
     const u3 = String(enc[COL.U]).trim();
     const estadoU = u3 === T.diag ? 'U3 es «Diagnóstico del equipo»: falta trasladar' : u3 === T.u ? 'U3 ya es «Servicio elegido»' : 'U3 tiene un título inesperado';
     log(`  ${u3 === T.diag ? '✓' : '!'} ${estadoU}\n`);
@@ -239,7 +254,7 @@ export async function ejecutar(cfg, deps, mapa, log = (t) => console.log(t)) {
     const nombre = nombreRespaldo(ahora);
     let ruta;
     try {
-      ruta = deps.respaldos.guardar(nombre, { version: 1, campo: 'planilla-u-a-x', tenant: TENANT, hoja: HOJA, filaEncabezados: fe, rango: `A${fe}:X`, creadoEn: ahora.toISOString(), valores: hoja });
+      ruta = deps.respaldos.guardar(nombre, { version: 1, campo: 'planilla-u-a-x', tenant: TENANT, hoja: HOJA, filaEncabezados: fe, hojaFin: cfg.hojaFin, rango: `A${fe}:X`, creadoEn: ahora.toISOString(), valores: hoja.map((f) => f.map((v, j) => (j === 0 || j >= COL.U ? v : ''))) });
     } catch (e) {
       if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe un respaldo con ese nombre (mismo minuto): un respaldo nunca se pisa. Espere un minuto.\n'); return 2; }
       throw e;
@@ -259,8 +274,10 @@ export async function ejecutar(cfg, deps, mapa, log = (t) => console.log(t)) {
   if (hayFormula(hoja, COL.U)) { log('\n  ✗ Hay fórmulas en U: este script no las traslada. No se escribe nada.\n'); return 2; }
   const r = elegirRespaldo({ cfg, deps, ahora, mismoDia: true });
   if (!r.ok) { log(`\n  ✗ ${r.motivo}. No se escribe nada.\n`); return 2; }
-  const resp = matrizDeRespaldo(r.respaldo, mapa);
+  const resp = matrizDeRespaldo(r.respaldo, mapa, cfg.hojaFin);
   if (resp === null) { log('\n  ✗ el respaldo no es de esta planilla o no tiene la forma esperada. No se escribe nada.\n'); return 2; }
+  if (!mismaA(hoja, resp)) { log('\n  ✗ La columna A (ID) de la hoja no coincide con la del respaldo (¿otra planilla, filas movidas o borradas?). No se escribe nada.\n'); return 2; }
+  if (noTexto(hoja, COL.U) > 0) { log(`\n  ✗ ${noTexto(hoja, COL.U)} celda/s de U no son texto (número, fecha o booleano): RAW podría cambiarlas. No se escribe nada.\n`); return 2; }
   const n = Math.max(hoja.length, resp.length);
   for (const j of [COL.U, COL.V, COL.W, COL.X]) {
     if (diferencias(columna(resp, j, n), columna(hoja, j, n)) > 0) {
@@ -273,13 +290,19 @@ export async function ejecutar(cfg, deps, mapa, log = (t) => console.log(t)) {
   // El bot sigue vivo: si U..X cambió entre la primera lectura y ahora, se corta.
   const otra = await leerNorm();
   for (const j of [COL.U, COL.V, COL.W, COL.X]) {
-    if (!iguales(columna(otra, j, hoja.length), columna(hoja, j)) || otra.length < hoja.length) { log('\n  ✗ La hoja cambió mientras se preparaba: no se escribe nada. Vuelva a correr el seco.\n'); return 3; }
+    if (otra.length !== hoja.length || !iguales(columna(otra, j), columna(hoja, j))) { log('\n  ✗ La hoja cambió mientras se preparaba: no se escribe nada. Vuelva a correr el seco.\n'); return 3; }
   }
   const aU = hoja.length; // filas fe..ultima
   await deps.escribir(rango('X', fe, ultima), columna(hoja, COL.U, aU).map((v) => [v]));
   const tras = await leerNorm();
   const esperado = columna(resp, COL.U, Math.max(tras.length, resp.length));
   const dif = diferencias(columna(tras, COL.X, esperado.length), esperado);
+  // Antes de vaciar U: la hoja tiene las mismas filas y U sigue siendo, celda por celda, la del respaldo (nadie escribió en el medio).
+  const uCambio = tras.length !== hoja.length || diferencias(columna(tras, COL.U, esperado.length), esperado) > 0;
+  if (uCambio) {
+    log('\n  ✗ Entre la copia y el vaciado la hoja cambió (otro número de filas o U distinta del respaldo). NO se vació U. Revise; X ya tiene la copia: trasladar --revertir la quita.\n');
+    return 3;
+  }
   if (dif > 0) {
     log(`\n  ✗ La relectura de X no coincide con el respaldo (${dif} celda/s distintas). NO se vació U. Revise; si hace falta, trasladar --revertir.\n`);
     return 3;
@@ -288,7 +311,8 @@ export async function ejecutar(cfg, deps, mapa, log = (t) => console.log(t)) {
   if (ultima > fe) await deps.limpiar(rango('U', fe + 1, ultima));
   await deps.escribir(`U${fe}:W${fe}`, [[T.u, T.v, T.w]]);
   const fin = await leerNorm();
-  const bien = fin[0][COL.U] === T.u && fin[0][COL.V] === T.v && fin[0][COL.W] === T.w && fin[0][COL.X] === T.diag
+  const t = (j) => String(fin[0][j]).trim();
+  const bien = t(COL.U) === T.u && t(COL.V) === T.v && t(COL.W) === T.w && t(COL.X) === T.diag
     && contarCol(fin, COL.U) === 0 && contarCol(fin, COL.V) === 0 && contarCol(fin, COL.W) === 0
     && diferencias(columna(fin, COL.X, esperado.length), esperado) === 0;
   if (!bien) { log('\n  ✗ La relectura final no coincide (títulos, U vacía o X). Revise la hoja; «trasladar --revertir» la devuelve al respaldo.\n'); return 3; }
@@ -302,9 +326,10 @@ async function revertir({ cfg, deps, mapa, log, ahora, hoja, enc, cuenta, rotulo
   resumen();
   const r = elegirRespaldo({ cfg, deps, ahora, mismoDia: false });
   if (!r.ok) { log(`\n  ✗ ${r.motivo}. No se escribe nada.\n`); return 2; }
-  const resp = matrizDeRespaldo(r.respaldo, mapa);
+  const resp = matrizDeRespaldo(r.respaldo, mapa, cfg.hojaFin);
   if (resp === null) { log('\n  ✗ el respaldo no es de esta planilla o no tiene la forma esperada. No se escribe nada.\n'); return 2; }
   if (String(resp[0][COL.U]).trim() !== T.diag) { log('\n  ✗ el respaldo no trae «Diagnóstico del equipo» en U: no sirve para revertir. No se escribe nada.\n'); return 2; }
+  if (!mismaA(hoja, resp)) { log('\n  ✗ La columna A (ID) de la hoja no coincide con la del respaldo: no se revierte, ni siquiera con --acepto-perder-datos-nuevos. No se escribe nada.\n'); return 2; }
   const n = Math.max(hoja.length, resp.length);
   const respU = columna(resp, COL.U, n);
   // Lo que se va a pisar o vaciar: U (si ya tiene datos distintos), V, W y X (si no es copia del respaldo). Todo lo que no es «nuestro» se protege.

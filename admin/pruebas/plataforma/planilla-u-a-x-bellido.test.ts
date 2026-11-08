@@ -14,7 +14,7 @@ import * as S from '../../scripts/plataforma/planilla-u-a-x-bellido.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const mapa = S.leerMapa();
-const SECRETO = 'SECRETO-DIAGNOSTICO-777';
+const MARCA_CELDA = 'dato-de-salud-de-prueba';
 
 const letraAIdx = (l: string) => l.charCodeAt(0) - 65;
 function encabezadoViejo(): string[] {
@@ -69,7 +69,7 @@ function respaldosEnMemoria(inicial: Record<string, unknown> = {}) {
 
 const AHORA = new Date('2026-11-07T15:30:00Z'); // 11:30 en La Paz
 const cfg = (o: Record<string, unknown> = {}) => ({ modo: 'trasladar', aplicar: true, revertir: false, aceptoPerder: false, hojaFin: 'ABC123', respaldo: null, ...o });
-const sucio = (): any[][] => [encabezadoViejo(), filaDatos(1, `${SECRETO}-1`), filaDatos(2, ''), filaDatos(3, `${SECRETO}-3`)];
+const sucio = (): any[][] => [encabezadoViejo(), filaDatos(1, `${MARCA_CELDA}-1`), filaDatos(2, ''), filaDatos(3, `${MARCA_CELDA}-3`)];
 function correr(c: Record<string, unknown>, hoja: ReturnType<typeof crearHoja>, resp: ReturnType<typeof respaldosEnMemoria>) {
   const salida: string[] = [];
   return S.ejecutar(c, { ...hoja.deps, respaldos: resp, ahora: () => AHORA }, mapa, (t: string) => salida.push(t)).then((codigo: number) => ({ codigo, texto: salida.join('\n') }));
@@ -105,7 +105,7 @@ describe('P2. contar: solo lectura y sin contenido', () => {
     expect(r.codigo).toBe(0);
     expect(r.texto).toContain('U=2 · V=0 · W=0 · X=0');
     expect(r.texto).toContain('Diagnóstico del equipo');
-    expect(r.texto).not.toContain(SECRETO);
+    expect(r.texto).not.toContain(MARCA_CELDA);
     expect(r.texto).not.toContain('Persona');
     expect(hoja.ops).toEqual([]);
   });
@@ -124,7 +124,7 @@ describe('P3. respaldar', () => {
     const ap = await correr(cfg({ modo: 'respaldar' }), hoja, resp);
     expect(ap.codigo).toBe(0);
     expect([...resp.arch.keys()]).toEqual(['/r/BELLIDO_planilla-respaldo_2026-11-07-1130.json']);
-    expect(ap.texto).not.toContain(SECRETO);
+    expect(ap.texto).not.toContain(MARCA_CELDA);
     expect((await correr(cfg({ modo: 'respaldar' }), hoja, resp)).codigo).toBe(2);
   });
   it('el respaldo en disco es 0600 y no pisa', () => {
@@ -195,10 +195,10 @@ describe('P5. trasladar --aplicar', () => {
     const antes = JSON.parse(JSON.stringify(hoja.m));
     const r = await correr(cfg(), hoja, resp);
     expect(r.codigo).toBe(0);
-    expect(r.texto).not.toContain(SECRETO);
+    expect(r.texto).not.toContain(MARCA_CELDA);
     expect(r.texto).not.toContain('Persona');
     expect(hoja.m[0].slice(20, 24)).toEqual(['Servicio elegido', 'Agendó', 'Fecha y hora de la cita', 'Diagnóstico del equipo']);
-    expect(hoja.m.map((f: any) => f[23]).slice(1)).toEqual([`${SECRETO}-1`, '', `${SECRETO}-3`]);
+    expect(hoja.m.map((f: any) => f[23]).slice(1)).toEqual([`${MARCA_CELDA}-1`, '', `${MARCA_CELDA}-3`]);
     expect(hoja.m.slice(1).every((f: any) => f[20] === '')).toBe(true);
     for (let i = 0; i < antes.length; i++) expect(hoja.m[i].slice(0, 20)).toEqual(antes[i].slice(0, 20));
     expect(hoja.m.length).toBe(antes.length); // nunca borra filas
@@ -213,9 +213,9 @@ describe('P5. trasladar --aplicar', () => {
     const r = await correr(cfg(), hoja, base.resp);
     expect(r.codigo).toBe(3);
     expect(hoja.ops.some((o) => o.startsWith('L '))).toBe(false);
-    expect(hoja.m[1][20]).toBe(`${SECRETO}-1`);
+    expect(hoja.m[1][20]).toBe(`${MARCA_CELDA}-1`);
     expect(hoja.m[0][20]).toBe('Diagnóstico del equipo');
-    expect(r.texto).not.toContain(SECRETO);
+    expect(r.texto).not.toContain(MARCA_CELDA);
   });
   it('si el bot escribió entre la lectura y la escritura, no escribe', async () => {
     const { hoja, resp } = await conRespaldo();
@@ -233,7 +233,7 @@ describe('P6. --revertir restaura', () => {
     expect((await correr(cfg(), hoja, resp)).codigo).toBe(0);
     const r = await correr(cfg({ revertir: true }), hoja, resp);
     expect(r.codigo).toBe(0);
-    expect(r.texto).not.toContain(SECRETO);
+    expect(r.texto).not.toContain(MARCA_CELDA);
     expect(hoja.m).toEqual(original);
   });
   it('si V/W/X traen datos que no están en el respaldo, se niega salvo --acepto-perder-datos-nuevos', async () => {
@@ -244,7 +244,7 @@ describe('P6. --revertir restaura', () => {
     expect((await correr(cfg({ revertir: true }), hoja, resp)).codigo).toBe(2);
     expect(hoja.ops.length).toBe(ops0);
     expect((await correr(cfg({ revertir: true, aceptoPerder: true }), hoja, resp)).codigo).toBe(0);
-    expect(hoja.m[1][20]).toBe(`${SECRETO}-1`);
+    expect(hoja.m[1][20]).toBe(`${MARCA_CELDA}-1`);
   });
   it('sin respaldo no revierte; seco no escribe', async () => {
     const hoja = crearHoja(sucio());
@@ -270,5 +270,64 @@ describe('P7. El texto del script', () => {
     expect(src).not.toMatch(/deleteDimension|batchUpdate|:append/);
     expect(src).toContain('correrEnN8n');
     expect(src).toContain("TENANT = 'bellido'");
+  });
+});
+
+
+describe('P8. Revisión: relecturas, ID, hoja y celdas no texto', () => {
+  it('fila vacía entera en medio no rompe el traslado', async () => {
+    const f: any = sucio(); f.splice(2, 0, []);
+    const { hoja, resp } = await conRespaldo(f.map((x: any[]) => (x.length ? x : Array(24).fill(''))));
+    expect((await correr(cfg(), hoja, resp)).codigo).toBe(0);
+  });
+  it('fila nueva durante el traslado (entre lecturas): aborta sin escribir', async () => {
+    const { hoja, resp } = await conRespaldo();
+    let n = 0; const leer = hoja.deps.leer;
+    hoja.deps.leer = async () => { n += 1; if (n === 2) hoja.m.push(filaDatos(9)); return leer(); };
+    const r = await correr(cfg(), hoja, resp);
+    expect(r.codigo).toBe(3); expect(hoja.ops).toEqual([]);
+  });
+  it('fila nueva tras copiar X: no vacía U', async () => {
+    const { hoja, resp } = await conRespaldo();
+    let n = 0; const leer = hoja.deps.leer;
+    hoja.deps.leer = async () => { n += 1; if (n === 3) hoja.m.push(filaDatos(9)); return leer(); };
+    const r = await correr(cfg(), hoja, resp);
+    expect(r.codigo).toBe(3); expect(hoja.ops.some((o) => o.startsWith('L '))).toBe(false);
+  });
+  it('edición de U entre la copia y el vaciado: no vacía U', async () => {
+    const { hoja, resp } = await conRespaldo();
+    let n = 0; const leer = hoja.deps.leer;
+    hoja.deps.leer = async () => { n += 1; if (n === 3) hoja.m[1][20] = 'editado en el medio'; return leer(); };
+    const r = await correr(cfg(), hoja, resp);
+    expect(r.codigo).toBe(3); expect(hoja.ops.some((o) => o.startsWith('L '))).toBe(false);
+    expect(r.texto).not.toContain('editado en el medio');
+  });
+  it('columna A distinta del respaldo: traslado y reversa abortan (aun con --acepto-perder-datos-nuevos)', async () => {
+    const { hoja, resp } = await conRespaldo();
+    hoja.m[1][0] = 'LEAD-9999';
+    expect((await correr(cfg(), hoja, resp)).codigo).toBe(2);
+    expect((await correr(cfg({ revertir: true, aceptoPerder: true }), hoja, resp)).codigo).toBe(2);
+    expect(hoja.ops).toEqual([]);
+  });
+  it('respaldo de otra planilla (hojaFin distinto) no vale', async () => {
+    const { hoja, resp } = await conRespaldo();
+    expect((await correr(cfg({ hojaFin: 'ZZZZZZ' }), hoja, resp)).codigo).toBe(2);
+    expect((await correr(cfg({ hojaFin: 'ZZZZZZ', revertir: true, aceptoPerder: true }), hoja, resp)).codigo).toBe(2);
+    expect(hoja.ops).toEqual([]);
+  });
+  it('celdas de U que no son texto: contar las informa y trasladar aborta', async () => {
+    const f: any = sucio(); f[2][20] = 4500;
+    const hoja = crearHoja(f); const resp = respaldosEnMemoria();
+    const c = await correr(cfg({ modo: 'contar', aplicar: false }), hoja, resp);
+    expect(c.texto).toContain('no son texto (números, fechas, booleanos): 1');
+    await correr(cfg({ modo: 'respaldar' }), hoja, resp);
+    expect((await correr(cfg(), hoja, resp)).codigo).toBe(2); expect(hoja.ops).toEqual([]);
+  });
+  it('el respaldo solo lleva A y U..X', async () => {
+    const { resp } = await conRespaldo();
+    const v = (resp.arch.get('/r/BELLIDO_planilla-respaldo_2026-11-07-1130.json') as any).valores;
+    expect(JSON.stringify(v)).not.toContain('Persona');
+    expect(v[1][0]).toBe('LEAD-1001');
+    expect(v[1][20]).toBe(`${MARCA_CELDA}-1`);
   });
 });
