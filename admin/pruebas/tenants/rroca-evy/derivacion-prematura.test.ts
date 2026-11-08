@@ -351,7 +351,8 @@ describe('tope de 1000 caracteres por mensaje (Andres 08/11/2026: la bienvenida 
 
 describe('PRIMER CONTACTO: la etiqueta del modelo se ignora sin historial y sin nombre dado', () => {
   const SIN_GRATUITA = 'Hola, vi su anuncio y quiero agendar mi valoración';
-  const PRELLENADO = 'Hola Dra. Evy, vi su anuncio y quiero agendar mi valoración gratuita 🙌';
+  // Andres 08/11/2026: el prellenado con «quiero agendar mi valoración gratuita» ahora recibe el literal por código (campana-literal.test.ts); estas pruebas siguen el flujo del MODELO con un inicio SIN esa frase.
+const PRELLENADO = 'Hola Dra. Evy, vi su anuncio y quiero información de la valoración 🙌';
   const SALUDO = '¡Hola! 👋 Soy el asistente virtual de la Dra. Evy. Tu valoración es 100% gratuita y sin compromiso. ¿Cómo te llamas y qué te gustaría mejorar?';
   it('NEGADA: con el texto prellenado, ni la etiqueta con texto, ni la etiqueta sola, ni la etiqueta con nombre cierran: sin botón ni aviso', () => {
     for (const modelo of [SALUDO + ' [DERIVAR_RECEPCION]', SALUDO + ' [DERIVAR_RECEPCION: Ana]']) {

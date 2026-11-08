@@ -88,3 +88,5 @@ Andres ordenó seguir el MD de la doctora (23/10/2026) en estos puntos, que hast
 | «Lo voy a pensar» | oferta de llamada (28/10) | SIN cambio: Andres eligió mantener la observación del 28/10 | — |
 
 El texto literal de campaña (#860, Caso A del MD del 07/11) NO pasa por ninguna de estas barreras: sale por código tal cual (prueba en `campana-literal.test.ts`, antes y después de levantarlas).
+
+**Literal de campaña (Andres, 08/11/2026, su botón sobre mayúsculas):** el literal del Caso A del MD del 07/11 sale cuando el TEXTO INICIAL de la conversación INCLUYE «Quiero agendar mi valoración gratuita» (dentro de un texto más largo, sin importar mayúsculas ni tildes; palabras completas). Antes, solo la frase exacta. Solo el texto inicial: un mensaje posterior que la contenga sigue el flujo normal. Cualquier otro inicio sigue el protocolo del MD del 23/10. El mensaje prellenado del anuncio («Hola Dra. Evy, vi su anuncio… quiero agendar mi valoración gratuita 🙌») ahora ACTIVA el literal. El texto que rodea a la frase nunca llega al modelo.

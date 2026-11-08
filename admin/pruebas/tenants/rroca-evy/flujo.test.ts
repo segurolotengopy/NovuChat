@@ -162,7 +162,7 @@ describe('la letra del MD sobre la campaña (orden de Andres, 08/11/2026; reempl
 describe('el texto prellenado del anuncio en el primer contacto', () => {
   const saludo = '¡Hola! 👋 Soy el asistente virtual de la Dra. Evy. Tu valoración es 100% gratuita y sin compromiso. ¿Cómo te llamas y qué te gustaría mejorar?';
   it('NO cierra de golpe (ni botón ni aviso a recepción): el saludo pide nombre y deseo', () => {
-    const t = hablar(crear({ modeloDice: saludo }), ANA, mTexto('Hola Dra. Evy, vi su anuncio de armonización facial y quiero agendar mi valoración gratuita 🙌'));
+    const t = hablar(crear({ modeloDice: saludo }), ANA, mTexto('Hola Dra. Evy, vi su anuncio de armonización facial y quiero información de la valoración 🙌'));
     expect(t.mensajes.every((e) => e.tipo !== 'interactive')).toBe(true);
     expect(t.avisos.length).toBe(0);
     expect(textos(t).join(' ')).toContain('¿Cómo te llamas');
