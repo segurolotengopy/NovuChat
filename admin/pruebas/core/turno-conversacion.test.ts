@@ -309,11 +309,9 @@ describe('tomar: exige `personaPuedeEscribir === true` (salida publicada), antes
     }
   });
 
-  it('Bellido con ambas banderas: denegado', async () => {
+  it('Bellido con ambas banderas: PUEDE tomar (orden de Andres, 08/11/2026: se levantó la exclusión del 09/10)', async () => {
     await ficha('bellido'); await conversacion('bellido', CONV1);
-    expect(cm(await rechazo(tomar({ tenantId: 'bellido', conversacionId: CONV1 }, oper('bellido'))))).toEqual({ code: 'permission-denied', message: FIJOS.noHabilitado });
-    expect((await leerConv('bellido', CONV1))['turno']).toBeUndefined();
-    expect(await hayEscrituras()).toEqual({ tope: 0, aud: 0 });
+    expect(await turnoDe({ tenantId: 'bellido', conversacionId: CONV1 }, oper('bellido'))).toMatchObject({ responde: 'persona' });
   });
 
   it('la bandera de A no habilita a B', async () => {
@@ -502,14 +500,13 @@ for (const [clave, nombre] of Object.entries(NOMBRES) as Array<[keyof typeof NOM
       }
     });
 
-    it('Bellido: rechazo AUNQUE tenga la bandera `nueva` (por el id, contenido en el id y por el nombre de la ficha)', async () => {
-      expect(cm(await rechazaHabilitacion('bellido'))).toEqual({ code: 'permission-denied', message: FIJOS.noHabilitado });
-      expect(cm(await rechazaHabilitacion('consultorio-bellido'))).toEqual({ code: 'permission-denied', message: FIJOS.noHabilitado });
-      expect(cm(await rechazaHabilitacion('tienda-clasica', { nombre: 'Consultorio Béllido' }))).toEqual({ code: 'permission-denied', message: FIJOS.noHabilitado });
+    it('Bellido YA NO se rechaza por su id ni por su nombre (orden de Andres, 08/11/2026); sin la bandera `nueva` sigue rechazado como cualquiera', async () => {
+      expect(cm(await rechazaHabilitacion('bellido', { consolaConversaciones: 'clasica' }))).toEqual({ code: 'permission-denied', message: FIJOS.noHabilitado });
+      expect(cm(await rechazaHabilitacion('consultorio-bellido', { consolaConversaciones: 'clasica' }))).toEqual({ code: 'permission-denied', message: FIJOS.noHabilitado });
     });
 
     it('un rechazo por habilitación no deja turno, auditoría NI cupo gastado: la ficha se lee ANTES del tope', async () => {
-      await rechazaHabilitacion('bellido');
+      await rechazaHabilitacion('bellido', { consolaConversaciones: 'clasica' });
       await rechazaHabilitacion('tienda-clasica', { consolaConversaciones: 'clasica' });
       expect((await leerConv('bellido', CONV1))['turno']).toBeUndefined();
       expect(await hayEscrituras()).toEqual({ tope: 0, aud: 0 });
