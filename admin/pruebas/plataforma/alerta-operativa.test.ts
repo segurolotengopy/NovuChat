@@ -1114,17 +1114,23 @@ describe('contenido_bloqueado: como máximo 1 inmediato por día y nunca el últ
 });
 
 describe('envío directo de respaldo con la base caída: un solo correo por DÍA por instancia', () => {
-  it('48 h de bloqueos con `crear` caído: como MÁXIMO 2 correos (1 por día UTC) y el contenido nunca viaja', async () => {
+  it('48 h de bloqueos con `crear` caído: UN correo por día UTC (3 días tocados = 3 correos; nunca 2 en el mismo día) y el contenido nunca viaja', async () => {
     reiniciarCandadoDeRespaldo();
     const a: AlmacenMemoria = almacenEnMemoria();
     a.crear = async () => { throw new Error('base caída'); };
     const { enviados, enviar } = envioFalso();
+    const porDia = new Map<string, number>();
     for (let h = 0; h < 48; h++) {
-      const t = Date.parse('2026-11-07T00:30:00Z') + h * HORA;
-      await llamar(a, enviar, buenEvento({ que_paso: `falló ${TEL}`, id_unico: `evt-${h}-abcd`, ocurrido_en: new Date(t - 60_000).toISOString().slice(0, 19) + 'Z' }), { ahora: t, marca: t });
-      await llamar(a, enviar, buenEvento({ que_paso: `falló ${TEL}`, id_unico: `evt-${h}-efgh`, ocurrido_en: new Date(t - 60_000).toISOString().slice(0, 19) + 'Z' }), { ahora: t, marca: t });
+      const t = Date.parse('2026-11-07T20:30:00Z') + h * HORA;                     // una ventana de 48 h NO alineada: toca 3 días UTC
+      const antes = enviados.length;
+      for (const sufijo of ['abcd', 'efgh']) {
+        await llamar(a, enviar, buenEvento({ que_paso: `falló ${TEL}`, id_unico: `evt-${h}-${sufijo}`, ocurrido_en: new Date(t - 60_000).toISOString().slice(0, 19) + 'Z' }), { ahora: t, marca: t });
+      }
+      const dia = new Date(t).toISOString().slice(0, 10);
+      porDia.set(dia, (porDia.get(dia) ?? 0) + enviados.length - antes);
     }
-    expect(enviados).toHaveLength(2);
+    expect([...porDia.values()].every((n) => n <= 1)).toBe(true);
+    expect(enviados).toHaveLength(3);
     expect(JSON.stringify(enviados)).not.toContain(TEL);
     reiniciarCandadoDeRespaldo();
   });
@@ -1174,6 +1180,27 @@ describe('fechas y horas con RANGOS VÁLIDOS: lo que parece fecha pero no lo es,
   });
   it('una fecha ISO inválida (mes 99, día 00) no se tapa', () => {
     expect(violaciones(buenEvento({ que_paso: 'Cliente 2026-99-99 sin respuesta 1234' })).some((x) => /telefono_/.test(x))).toBe(true);
+  });
+});
+
+describe('fecha ISO con hora separada por espacio, otra fecha a continuación y fecha en un id (séptima ronda)', () => {
+  it('«2026-11-07 14:00», «… 14:00:03», «… 10:30:15 (America/La_Paz, UTC-4)», «2026-11-07/2026-11-08», «2026-11-07 07/11» y «07/11/2026 - 120 eventos» pasan', () => {
+    for (const t of [
+      '2026-11-07 14:00', '2026-11-07 14:00:03', '2026-11-07 10:30:15 (America/La_Paz, UTC-4)', '2026-11-07/2026-11-08', '2026-11-07 07/11',
+      '07/11/2026 - 120 eventos', '2026-11-07T14:00:03Z', 'Entre el 2026-11-07 y el 2026-11-08 hubo 3 fallos',
+    ]) expect(violaciones(buenEvento({ que_paso: t })), t).toEqual([]);
+  });
+  it('ids con fecha ISO y una secuencia corta pasan: evt-2026-11-07-0001, ci-2026-11-07-123', () => {
+    for (const id of ['evt-2026-11-07-0001', 'ci-2026-11-07-123', 'envio-demo:2026-11-07T14:00:03Z-7']) expect(violaciones(buenEvento({ id_unico: id })), id).toEqual([]);
+  });
+  it('siguen RECHAZADOS: los 9 teléfonos con barras, «2026-11-07 4567», «4567 2026-11-07», «2026-11-07 45 67» y los ids con 7+ cifras', () => {
+    for (const c of ['71/23 4567', '71/23-4567', '71/23.4567', '77/12 34 56', '12/34 5678', '71/23 45:67', '71/23/2045', '77/12/2034 567', '71:23:45.678',
+      '2026-11-07 4567', '4567 2026-11-07', '2026-11-07 45 67', '07/11/2026 4567']) {
+      expect(violaciones(buenEvento({ que_paso: `Cliente ${c} sin respuesta` })).some((x) => /telefono_/.test(x)), c).toBe(true);
+    }
+    for (const id of [`evt-2026-11-07-${TEL}`, 'evt-2026-11-07-5917-1234', 'evt-5917123-2026-11-07', 'evt-2026-11-07-1234567', 'evt-2026-11-07-591-7123']) {
+      expect(violaciones(buenEvento({ id_unico: id })).some((x) => x.startsWith('id_unico')), id).toBe(true);
+    }
   });
 });
 

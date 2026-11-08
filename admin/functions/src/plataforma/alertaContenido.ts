@@ -94,8 +94,16 @@ const HORA = '(?:[01][0-9]|2[0-3])';
 const MIN = '[0-5][0-9]';
 const SEP = '[\\s().\\p{Pd}/_:,]';
 const ANTES = `(?<!\\p{Nd}{3}${SEP}{0,3})(?<![\\p{Nd}/])`;
-const DESPUES = `(?!\\p{Nd})(?!${SEP}{0,3}(?:\\p{Nd}{3}|\\p{Nd}{2}${SEP}{0,3}\\p{Nd}))`;
-const FECHA_ISO = new RegExp(`${ANTES}${ANIO}-${MES}-${DIA}(?:T${HORA}:${MIN}(?::${MIN})?Z?)?${DESPUES}`, 'gu');
+// Lo que sigue a una fecha la delata como teléfono si son 4 o más cifras (`2026-11-07 4567`) o dos pares de dos (`07/11 45 67`);
+// una secuencia corta («- 120 eventos») o OTRA FECHA («2026-11-07/2026-11-08», «2026-11-07 07/11») no.
+const OTRA_FECHA = `(?:${ANIO}-${MES}-${DIA}|${DIA}/${MES})`;
+const DESPUES = `(?!\\p{Nd})(?!${SEP}{0,3}(?!${OTRA_FECHA})(?:\\p{Nd}{4}|\\p{Nd}{2}${SEP}{0,3}\\p{Nd}{2}))`;
+const HORA_ISO = `(?:[T ]${HORA}:${MIN}(?::${MIN})?Z?)?`;      // «2026-11-07T14:00:03Z» y «2026-11-07 14:00:03»
+// Una fecha ISO puede ir tras una «/» (otra fecha: «2026-11-07/2026-11-08»); la «/» solo se excluye para las fechas con barras.
+const ANTES_ISO = `(?<!\\p{Nd}{3}${SEP}{0,3})(?<!\\p{Nd})`;
+const FECHA_ISO = new RegExp(`${ANTES_ISO}${ANIO}-${MES}-${DIA}${HORA_ISO}${DESPUES}`, 'gu');
+// En un `id_unico` la fecha ISO válida se quita SIN guardas («evt-2026-11-07-0001»): lo que cuenta es lo que queda (7+ cifras = teléfono).
+const FECHA_ISO_ID = new RegExp(`${ANIO}-${MES}-${DIA}${HORA_ISO}`, 'gu');
 const VERSION = /(?<![\p{Nd}.])\p{Nd}\.\p{Nd}{1,3}\.\p{Nd}{1,3}(?!\p{Nd}|\.\p{Nd})/gu;
 // 7 o más cifras con hasta 3 separadores entre cada par: espacio, NBSP, paréntesis, punto, cualquier guion Unicode
 // (\p{Pd}), barra, guion bajo, dos puntos o coma: «7123-45-67», «71.234.567», «7123/4567», «71,23,45,67».
@@ -120,8 +128,8 @@ export function detectar(texto: string, denegar: readonly string[] = [], perfil:
   const palabra = perfil === 'texto' ? PALABRA_LARGA_TEXTO : perfil === 'tipo' ? null : PALABRA_LARGA_ESTRICTA;
   if (PREFIJOS_SECRETO.test(t) || (palabra !== null && partes.some((x) => palabra.test(x)))) reglas.push('secreto_posible');
   if (/\+\s?\p{Nd}/u.test(t) || DIGITOS_7.test(t)) reglas.push('telefono_o_identificador');
-  else if (RACHA_DE_TELEFONO.test(sinFechasNiVersiones(t))) reglas.push('telefono_con_separadores');
-  if (perfil === 'id' && !reglas.includes('telefono_o_identificador') && t.replace(FECHA_ISO, '').replace(/\P{Nd}/gu, '').length >= 7) reglas.push('telefono_o_identificador');
+  else if (RACHA_DE_TELEFONO.test(perfil === 'id' ? t.replace(FECHA_ISO_ID, '#').replace(VERSION, '#') : sinFechasNiVersiones(t))) reglas.push('telefono_con_separadores');
+  if (perfil === 'id' && !reglas.includes('telefono_o_identificador') && t.replace(FECHA_ISO_ID, '').replace(/\P{Nd}/gu, '').length >= 7) reglas.push('telefono_o_identificador');
   if (OTP_6.test(t)) reglas.push('codigo_tipo_otp');
   if (t.includes('@')) reglas.push('correo');
   if (perfil !== 'ruta' && (t.includes('://') || /\bwww\./i.test(t) || IPV4.test(t) || /localhost/i.test(t)

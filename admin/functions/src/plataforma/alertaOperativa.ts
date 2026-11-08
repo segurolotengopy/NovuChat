@@ -235,7 +235,8 @@ export async function procesar(crudo: Buffer, cfg: ConfigProceso): Promise<Respu
           // La base falló: el aviso del bloqueo NO se pierde; se intenta el correo directo (misma Idempotency-Key).
           console.error('ALERTA_OPERATIVA_BLOQUEADO_FALLO');
           // CON LA BASE CAÍDA NO HAY CONTADOR DEL TOPE, y este camino NO lo cuenta: queda acotado por un candado EN MEMORIA de
-          // UN correo por DÍA UTC por instancia (clave `bloqueado-<AAAA-MM-DD>`). Con `maxInstances: 3` son a lo más 3 por día
+          // UN correo por DÍA UTC por instancia (clave `bloqueado-<AAAA-MM-DD>`). Lo que se garantiza es eso: 1 por día UTC por instancia
+          // (en una ventana de 48 h que cruza tres días UTC pueden ser hasta 3, y con `maxInstances: 3` hasta 9). Con `maxInstances: 3` son a lo más 3 por día
           // (el candado no se comparte entre instancias ni sobrevive a un reinicio). Es la excepción declarada al tope, no un cumplimiento.
           const clave = `bloqueado-${diaUtc(cfg.ahoraMs)}`;
           if (cfg.enviar && !respaldoUsado.has(clave)) {
