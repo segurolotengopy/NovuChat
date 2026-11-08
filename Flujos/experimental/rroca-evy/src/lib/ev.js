@@ -1072,6 +1072,18 @@ function evTextoComparacion(nombre) {
     '✨ HArmonyCa®: combina ácido hialurónico e hidroxiapatita de calcio. El ácido hialurónico da un efecto lifting desde la aplicación y la hidroxiapatita sigue estimulando tu colágeno con el tiempo. Suele indicarse para flacidez más marcada.',
     'La Dra. Evy analiza tu rostro en la valoración gratuita y te dice cuál es el ideal para ti. ¿Te ayudo a agendarla?'].join('\n\n');
 }
+// TEXTO LITERAL DEL ANUNCIO (Andres, 07/11/2026): quien entra con la frase EXACTA del anuncio (dato del tenant: `campanaFrase`) recibe el texto fijo `campanaTexto` por código, sin modelo. Se compara por igualdad de palabras
+// (patrón de `rrEsEntradaLanding` de Rubén), nunca por inclusión: sin tildes, mayúsculas ni puntuación y sin «hola»; una palabra de más (una instrucción, otro pedido) ya no es la frase. La frase tiene que tener 5 palabras o más.
+function evClaveCampana(t) { return evNorm(t).split(' ').filter((w) => w !== '' && w !== 'hola').join(' '); }
+function evEsEntradaCampana(textoCliente, frase) {
+  const f = evClaveCampana(frase);
+  return f.split(' ').length >= 5 && evClaveCampana(textoCliente) === f;
+}
+// ¿Lo último que dijo el asistente ya fue ese texto? (la memoria guarda el principio y el final de lo largo: se compara el principio normalizado)
+function evYaDijoElTextoDeCampana(ultimoAsistente, texto) {
+  const t = evNorm(texto).slice(0, 80);
+  return t !== '' && evNorm(ultimoAsistente).slice(0, 80) === t;
+}
 // Una palabra de nombre propio: solo letras, 2 a 20, sin mezcla de alfabetos. Para el nombre del perfil de WhatsApp (el nombre que da el cliente llega por la etiqueta).
 function evPrimerNombre(n) {
   const x = evTexto(n).normalize('NFKC').replace(/[^\p{L}\p{M} '’.-]/gu, ' ').trim().split(/\s+/)[0] || '';

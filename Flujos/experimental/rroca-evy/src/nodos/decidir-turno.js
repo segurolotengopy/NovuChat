@@ -72,6 +72,14 @@ if (t.tipo === 'audio' && !deAudio) {
 }
 if ((t.tipo === 'audio' || t.tipo === 'image') && t.mediaId === '') return salir({ tipo: 'fijo', clave: 'archivo_no_abierto' });
 
+// 5a. TEXTO LITERAL DEL ANUNCIO (Andres, 07/11/2026): SOLO la frase exacta del anuncio (`campanaFrase`, igualdad de palabras), escrita (no un audio, ni una imagen con ese pie), recibe el texto fijo `campanaTexto` por código, sin modelo
+// y sin preguntas de perfilamiento. Cualquier otro inicio sigue el flujo de siempre. Si lo último que dijo el asistente ya fue ese texto, NO se repite: la frase vuelve al flujo normal (si la pregunta de nombre y día
+// estaba pendiente, la respuesta cierra como siempre). Va después de violencia, baja y salud: esas ya no son esta frase.
+const ultimoDelAsistenteCampana = (evHistorialVigente(fichaBruta, ahora).filter((h) => h.r === 'a').slice(-1)[0] || {}).t || '';
+if (!deAudio && !lec && t.categoria === 'conversacion' && t.tipo === 'text' && typeof cfg.campanaTexto === 'string' && cfg.campanaTexto !== '' && evEsEntradaCampana(textoCliente, cfg.campanaFrase)
+  && !evYaDijoElTextoDeCampana(ultimoDelAsistenteCampana, cfg.campanaTexto)) {
+  return salir({ tipo: 'campana_literal' }, { entradaHistorial: evEntradaCliente(t) });
+}
 // 5b. LA COMPARACIÓN «Radiesse® o HArmonyCa®»: texto fijo por código (solo con `usarMarcas`), sin llamar al modelo.
 // Un pedido explícito de agendar que ya puede cerrar (nombre dado o conversación previa) gana: sale el cierre, no la comparación.
 const historiaDeLaComparacion = evHistorialVigente(fichaBruta, ahora);
@@ -91,7 +99,8 @@ if (!lec && textoCliente.trim() !== '') {
   // LA PREGUNTA DE DÍA Y HORARIO SE HACE UNA SOLA VEZ (revisión del PR #694): si fue lo último que dijo el asistente, lo que conteste la persona CIERRA (aviso + botón + cierre), con la preferencia si la dio o
   // «sin horario indicado» si no («¿qué horarios tienen?», «ustedes díganme», «no sé», «sí», otro pedido de agendar). Solo no cierran: un saludo solo (se saluda y se repite la pregunta pendiente), un rechazo
   // o un aplazamiento («lo voy a pensar», «luego te digo»: van a la oferta de llamada, abajo) y una negación de agendar.
-  const preferenciaPendiente = !!ultimoDelAsistente && evEsPreguntaDePreferencia(ultimoDelAsistente) && !(ficha.cierreMs > 0);
+  // El texto literal del anuncio termina preguntando nombre y día: cuenta como la pregunta de preferencia (la respuesta cierra como siempre).
+  const preferenciaPendiente = !!ultimoDelAsistente && (evEsPreguntaDePreferencia(ultimoDelAsistente) || (typeof cfg.campanaTexto === 'string' && cfg.campanaTexto !== '' && evYaDijoElTextoDeCampana(ultimoDelAsistente, cfg.campanaTexto))) && !(ficha.cierreMs > 0);
   if (preferenciaPendiente && evSoloSaludo(textoCliente, cfg.nombreNegocio)) {
     return salir({ tipo: 'saludo', pedirNombre: false, preguntaPendiente: EV_PIDE_NOMBRE.test(evNorm(ultimoDelAsistente)) ? 'nombre' : 'dia' }, { entradaHistorial: entradaDelTurno });
   }

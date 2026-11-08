@@ -168,7 +168,8 @@ describe('la ubicación en el cierre', () => {
   it('D5: ni los datos versionados, ni el prompt, ni los dos JSON, ni el código llevan un enlace de Maps', () => {
     for (const ruta of [join(CARPETA_DE_DATOS, 'rroca-evy.json'), join(CARPETA_DE_DATOS, 'negocio-rroca-evy.json'), join(CARPETA, 'prompts/evy.md'), join(CARPETA, 'rroca-evy.json'), join(CARPETA, 'rroca-evy.prueba.json')]) {
       const t = readFileSync(ruta, 'utf8');
-      expect(t, ruta).not.toMatch(/maps\.app\.goo\.gl\/[A-Za-z0-9]|"direccionMaps"\s*:\s*"https/i);
+      // 07/11/2026: el ÚNICO enlace permitido es el corto del texto literal del anuncio (dato de la doctora, en «Config base»): se quita antes de buscar.
+      expect(t.split('https://maps.app.goo.gl/5E6xfGydC3PRnnRSA').join(''), ruta).not.toMatch(/maps\.app\.goo\.gl\/[A-Za-z0-9]|"direccionMaps"\s*:\s*"https/i);
     }
   });
 });
