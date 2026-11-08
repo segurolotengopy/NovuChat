@@ -1,6 +1,6 @@
 {
  "_leeme": [
-  "Banco de los 4 huecos del filtro de redaccion segura (opciones opt-in). Lo lee admin/pruebas/comun-sin-agente-filtro-huecos.test.ts.",
+  "Banco de los 4 huecos del filtro de redaccion segura (opciones opt-in). Lo lee admin/pruebas/core/texto-filtro-redaccion-huecos.test.ts.",
   "Cada grupo: { opcion, motivo, rechazos: [texto], pasan: [texto] }. `pasan` se prueba CON la opcion encendida: lo legitimo debe seguir saliendo.",
   "Sin numeros de cuenta ni telefonos reales: cifras cortas inventadas."
  ],

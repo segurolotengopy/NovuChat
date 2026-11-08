@@ -761,3 +761,7 @@ bytes quedan en la base de n8n fuera del plazo y del borrado de arriba. Ninguna
 bandera se enciende antes de que la purga esté desplegada y probada.
 
 **Costo en mensajes por conversación: 0** (guardar no envía nada).
+
+## Filtro común de redacción en `Flujos/src/core/texto/` (08/11/2026)
+
+`Flujos/src/core/texto/filtro-redaccion.js` (`cmMotivoDeRechazo`, `cmPulirRedaccion`, `cmRevisarRedaccion`…) es la **única fuente** del filtro de lo que redacta el modelo; antes vivía en `Flujos/experimental/comun-sin-agente/src/` y el core no puede depender de experimental. `comun-sin-agente/src/filtro-redaccion.js` es ahora un ESPEJO byte a byte del archivo del core (un enlace simbólico no sirve: el armador rechaza lo que sale de su raíz, a propósito; `texto-filtro-redaccion-espejo.test.ts` falla si difieren): las construcciones de los flujos por cliente (`../comun-sin-agente/src/filtro-redaccion.js`) siguen incluyendo el mismo texto byte a byte, y las copias por cliente (`bm-venta.js`, `ev.js`, `wl-venta.js`, `chat.js`) se retiran cuando cada cliente adopte el core. Suites: `admin/pruebas/core/texto-filtro-redaccion*.test.ts`. Costo: 0 mensajes por conversación, 0 nodos.
