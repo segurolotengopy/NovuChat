@@ -2,9 +2,12 @@
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
+import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
 const dir = join(__dirname, '..', '..', 'scripts', 'plataforma');
-const correr = (script: string, args: string[]) => spawnSync('node', [join(dir, script), ...args], { encoding: 'utf8', timeout: 20000 });
+const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
+// Regla #245: el hijo de una suite hereda el emulador, nunca las ADC (pruebas/core/hijos-hermeticos.test.ts).
+const correr = (script: string, args: string[]) => spawnSync(process.execPath, [join(dir, script), ...args], { encoding: 'utf8', timeout: 20000, env: entornoDelEmulador(HOST) });
 
 describe('renombrar-comercio.mjs', () => {
   it('rechaza sin proyecto, con nombre corto o con marcas < >', () => {
