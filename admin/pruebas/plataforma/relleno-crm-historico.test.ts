@@ -733,11 +733,14 @@ describe('Q7. varias filas por teléfono, exclusiones obligatorias, leerCompras,
     const llamadas: any[] = [];
     const privados = new Map<string, Record<string, unknown> | undefined>();
     const db = {
-      collection: (ruta: string) => ({ where: (campo: string, op: string, v: unknown) => ({ select: (...campos: string[]) => ({ get: async () => {
-        llamadas.push({ ruta, campo, op, v, campos });
-        if (ruta.endsWith('/cierres')) return { docs: cierres.map((c) => { privados.set(c.id, c.priv); return { id: c.id, data: () => c.x, ref: { collection: () => ({ doc: () => ({ __id: c.id }) }) } }; }) };
-        return { docs: pedidos.map((p) => ({ id: p.id, data: () => p.x })) };
-      } }) }) }),
+      collection: (ruta: string) => {
+        const consulta = (filtro: { campo: string; op: string; v: unknown } | null) => ({ select: (...campos: string[]) => ({ get: async () => {
+          llamadas.push({ ruta, ...(filtro ?? {}), campos });
+          if (ruta.endsWith('/cierres')) return { docs: cierres.map((c) => { privados.set(c.id, c.priv); return { id: c.id, data: () => c.x, ref: { collection: () => ({ doc: () => ({ __id: c.id }) }) } }; }) };
+          return { docs: pedidos.map((p) => ({ id: p.id, data: () => p.x })) };
+        } }) });
+        return { where: (campo: string, op: string, v: unknown) => consulta({ campo, op, v }), select: (...campos: string[]) => consulta(null).select(...campos) };
+      },
       getAll: async (...args: any[]) => { const opciones = args.pop(); llamadas.push({ getAll: opciones }); return args.map((r) => ({ exists: privados.get(r.__id) !== undefined, data: () => privados.get(r.__id) })); },
     };
     return { db, llamadas };
@@ -750,13 +753,15 @@ describe('Q7. varias filas por teléfono, exclusiones obligatorias, leerCompras,
       { id: 'registro_res-1', x: { tipo: 'registro', referencia: 'res-2026-11-05-0004-x', ocurridoEn: ts(T) }, priv: { telefono: '59170000001', detalle: 'Solicitud de reserva #K9' } },
       { id: 'registro_ped-X', x: { tipo: 'registro', referencia: 'ped-X', ocurridoEn: ts(T) }, priv: { telefono: '59170000009', detalle: 'Pedido #XX (sin QR, recojo)' } },
     ], [
-      { id: 'wa_ped-A', x: { conversacionId: 'wa_59170000001', creadoEn: ts(T - 120_000) } },
-      { id: 'wa_ped-B', x: { conversacionId: 'wa_59170000002', creadoEn: ts(T + 30_000) } },
-      { id: 'wa_ped-P', x: { conversacionId: 'wa_59170000003', creadoEn: ts(T) } },
-      { id: 'wa_ped-C', x: { conversacionId: 'wa_59170000004', creadoEn: ts(T) } },
+      { id: 'wa_ped-A', x: { origen: 'whatsapp', conversacionId: 'wa_59170000001', creadoEn: ts(T - 120_000) } },
+      { id: 'wa_ped-B', x: { origen: 'whatsapp', conversacionId: 'wa_59170000002', creadoEn: ts(T + 30_000) } },
+      { id: 'wa_ped-P', x: { origen: 'whatsapp', conversacionId: 'wa_59170000003', creadoEn: ts(T) } },
+      { id: 'wa_ped-C', x: { origen: 'whatsapp', conversacionId: 'wa_59170000004', creadoEn: ts(T) } },
+      { id: 'cat_web1', x: { origen: 'catalogo-web', estado: 'recibido', conversacionId: 'wa_59170000005', creadoEn: ts(T) } },
+      { id: 'wa_ped-Z', x: { origen: 'whatsapp', estado: 'cancelado', conversacionId: 'wa_59170000006', creadoEn: ts(T) } },
     ]);
     const r = await mod.leerCompras(db, 'qtaco', ['59170000009']);
-    expect(r.conteos).toMatchObject({ pedidos: 3, reservas: 1 }); // A (una vez), B (una vez), C; la reserva
+    expect(r.conteos).toMatchObject({ pedidos: 5, reservas: 1 }); expect(r.conteos.porOrigen).toEqual({ whatsapp: 4, 'catalogo-web': 1 }); expect(r.porTelefono.get('59170000005')).toMatchObject({ pedidoMs: T }); expect(r.porTelefono.get('59170000006')).toMatchObject({ pedidoMs: T }); // el pedido web y el cancelado SÍ cuentan; // A, B, C, la web y la cancelada; la reserva
     expect(r.conteos.descartados).toMatchObject({ pruebas: 1, excluidos: 1 }); // el pedido de la colección cuyo cierre es de prueba (el cierre mismo ni se cuenta); el teléfono excluido
     expect(r.porTelefono.get('59170000001')).toMatchObject({ pedidoMs: T - 120_000, reservaMs: T }); // hora más temprana de la clave repetida
     expect(r.porTelefono.has('59170000003')).toBe(false);
@@ -764,7 +769,8 @@ describe('Q7. varias filas por teléfono, exclusiones obligatorias, leerCompras,
     const cierresLlamada = llamadas.find((l) => l.ruta === 'tenants/qtaco/cierres');
     expect(cierresLlamada).toMatchObject({ campo: 'tipo', op: 'in', v: ['registro', 'venta'], campos: ['tipo', 'ocurridoEn', 'referencia'] });
     expect(llamadas.find((l) => l.getAll)?.getAll).toEqual({ fieldMask: ['telefono', 'detalle'] });
-    expect(llamadas.find((l) => l.ruta === 'tenants/qtaco/pedidos')).toMatchObject({ campo: 'origen', v: 'whatsapp', campos: ['conversacionId', 'creadoEn'] });
+    expect(llamadas.find((l) => l.ruta === 'tenants/qtaco/pedidos')).toMatchObject({ campos: ['origen', 'conversacionId', 'creadoEn'] });
+    expect(llamadas.find((l) => l.ruta === 'tenants/qtaco/pedidos').campo).toBeUndefined(); // sin filtro de origen
     expect(JSON.stringify([...r.porTelefono])).not.toMatch(/Taco|Bs 40|Pedido #/);
   });
 });

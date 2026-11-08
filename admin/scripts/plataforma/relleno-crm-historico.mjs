@@ -136,7 +136,7 @@ const finito = (n) => typeof n === 'number' && Number.isFinite(n);
 // ===========================================================================
 // DE DÓNDE SALEN (Q'Taco, `venta-minima`): (1) cierres `registro` en `tenants/{t}/cierres`: el pedido SIN QR / QR vencido (detalle «Pedido #…», referencia = pedidoId)
 // y la solicitud de reserva (detalle «Solicitud de reserva #…», referencia `res-…`); (2) cierres `venta`: el pedido con QR cuyo comprobante cuadró (referencia = pedidoId);
-// (3) la colección `pedidos` (módulo Pedidos), origen `whatsapp`: el pedido cuyo QR salió. El detalle de un cierre se usa SOLO para clasificarlo y se descarta; el teléfono sale
+// (3) la colección `pedidos` (módulo Pedidos), de TODOS los orígenes (`whatsapp`: el pedido cuyo QR salió; `catalogo-web`: el carrito web), cualquiera sea su estado. El detalle de un cierre se usa SOLO para clasificarlo y se descarta; el teléfono sale
 // de `/privado` (cierres) o de `conversacionId` (pedidos) y nunca se imprime. Un pedido que está en dos fuentes cuenta UNA vez (misma clave = su referencia) con su hora más temprana.
 // LO QUE NO SE ESCRIBE: monto, líneas, dirección, notas ni nada del comprobante. Ni «pagado» ni «acreditado»: P dice «Enviada <fecha>» y Q «Registrado <fecha>» (el vocabulario del bot).
 export const PREFIJO_RESERVA = 'Enviada';
@@ -161,7 +161,7 @@ export function clasificarCierre({ tipo, referencia, detalle }) {
 export function reunirCompras(eventos, { excluir = [], ahoraMs = Date.now(), clavesDePrueba = [] } = {}) {
   const pruebas = new Set(clavesDePrueba.map((c) => String(c ?? '').replace(/^wa_/, '')).filter(Boolean));
   const fuera = new Set(excluir.map((t) => CRM.crmDigitos(t)).filter(Boolean));
-  const conteos = { pedidos: 0, reservas: 0, descartados: { sinTelefono: 0, sinFecha: 0, excluidos: 0, pruebas: 0 } };
+  const conteos = { pedidos: 0, reservas: 0, porOrigen: {}, descartados: { sinTelefono: 0, sinFecha: 0, excluidos: 0, pruebas: 0 } };
   const unicos = new Map(); // `${tipo}:${clave}` -> { telefono, ms }
   for (const e of eventos) {
     if (e?.tipo !== 'pedido' && e?.tipo !== 'reserva') continue;
@@ -172,7 +172,10 @@ export function reunirCompras(eventos, { excluir = [], ahoraMs = Date.now(), cla
     if (!finito(e.ms) || e.ms < Date.UTC(2020, 0, 1) || e.ms > ahoraMs + 86_400_000) { conteos.descartados.sinFecha += 1; continue; }
     const k = `${e.tipo}:${String(e.clave ?? '').replace(/^wa_/, '') || `${tel}:${e.ms}`}`;
     const previo = unicos.get(k);
-    if (!previo || e.ms < previo.ms) unicos.set(k, { telefono: tel, tipo: e.tipo, ms: e.ms });
+    const origen = typeof e.origen === 'string' && e.origen !== '' ? e.origen.slice(0, 30) : 'cierre';
+    // Misma clave en dos fuentes: la hora más temprana y, como origen, el de la colección `pedidos` (whatsapp, catalogo-web…) si lo hay.
+    if (!previo) unicos.set(k, { telefono: tel, tipo: e.tipo, ms: e.ms, origen });
+    else { if (e.ms < previo.ms) previo.ms = e.ms; if (previo.origen === 'cierre') previo.origen = origen; }
   }
   const porTelefono = new Map();
   for (const u of unicos.values()) {
@@ -181,7 +184,7 @@ export function reunirCompras(eventos, { excluir = [], ahoraMs = Date.now(), cla
     const campo = u.tipo === 'pedido' ? 'pedidoMs' : 'reservaMs';
     if (f[campo] === null || u.ms > f[campo]) f[campo] = u.ms;
     porTelefono.set(u.telefono, f);
-    if (u.tipo === 'pedido') conteos.pedidos += 1; else conteos.reservas += 1;
+    if (u.tipo === 'pedido') { conteos.pedidos += 1; conteos.porOrigen[u.origen] = (conteos.porOrigen[u.origen] ?? 0) + 1; } else conteos.reservas += 1;
   }
   return { porTelefono, conteos };
 }
@@ -520,10 +523,12 @@ export async function leerCompras(db, tenant, excluir) {
       if (tipo === 'pedido' || tipo === 'reserva') eventos.push({ telefono: p.telefono ?? '', tipo, clave: x.referencia, ms: ms(x.ocurridoEn) });
     });
   }
-  const pedidos = (await db.collection(`tenants/${tenant}/pedidos`).where('origen', '==', 'whatsapp').select('conversacionId', 'creadoEn').get()).docs;
+  // TODOS los orígenes de `pedidos` (whatsapp, catalogo-web…), con solo origen, conversación y fecha. Los estados `cancelado` y `reemplazado` TAMBIÉN cuentan: el bot escribió
+  // «Registrado» al registrarse el pedido y nunca lo borra al cancelarse; este dato es «hubo un pedido registrado», no «se entregó».
+  const pedidos = (await db.collection(`tenants/${tenant}/pedidos`).select('origen', 'conversacionId', 'creadoEn').get()).docs;
   for (const d of pedidos) {
     const x = d.data();
-    eventos.push({ telefono: String(x.conversacionId ?? '').replace(/^wa_/, ''), tipo: 'pedido', clave: d.id, ms: ms(x.creadoEn) });
+    eventos.push({ telefono: String(x.conversacionId ?? '').replace(/^wa_/, ''), tipo: 'pedido', clave: d.id, ms: ms(x.creadoEn), origen: typeof x.origen === 'string' ? x.origen : 'sin-origen' });
   }
   return reunirCompras(eventos, { excluir, clavesDePrueba });
 }
@@ -658,6 +663,7 @@ export async function ejecutar(cfg, deps) {
     const c = resultadoCompras.conteos; const d = c.descartados;
     log(`  compras registradas antes   : ${c.pedidos} pedidos y ${c.reservas} reservas distintos, de ${compras.size} teléfonos (descartados: sin teléfono ${d.sinTelefono}, sin fecha ${d.sinFecha}, excluidos ${d.excluidos}, de prueba ${d.pruebas ?? 0})`);
     log(`  contactos que solo están en sus compras (sin conversación): ${conteos.soloCompra}`);
+    log(`  pedidos por origen          : ${Object.entries(c.porOrigen ?? {}).map(([o, n]) => `${o} ${n}`).join(', ') || 'ninguno'} (cierre = solo figura en un cierre)`);
     log(`  filas a crear con compra    : ${conteos.conCompra}  (con pedido: ${conteos.conPedido}; con reserva: ${conteos.conReserva})`);
     a = construirActualizaciones({ valores, mapa, compras }).conteos;
     log(`  filas YA en la hoja con compra: ${a.existentesConCompra}  -> a completar: ${a.aCompletar} fila(s), ${a.celdas} celda(s) O/P/Q vacías; sin huecos: ${a.sinHuecos}; teléfonos con varias filas: ${a.conVariasFilas}`);
