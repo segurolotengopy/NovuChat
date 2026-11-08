@@ -47,14 +47,16 @@ import { comprobarProyecto, comprobarRespaldo, guardarRespaldo, leerRespaldoGene
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = resolve(AQUI, '..', '..', '..');
-export const TENANTS = Object.freeze(['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio']);
+export const TENANTS = Object.freeze(['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio', 'bellido']);
+// Bellido guarda su mapa en `datos/bellido/crm.json` (no en `<tenant>/<tenant>.json`): U «Servicio elegido», V «Agendó», W «Fecha y hora de la cita»; X es del equipo.
+const ARCHIVO_DEL_MAPA = { bellido: ['bellido', 'crm.json'] };
 const HOJA = 'Leads_CRM';
 // Un contacto anterior al miniCRM está SIN EVALUAR: la calificación y la clasificación se dejan vacías (no un juicio sobre la persona) y las escribe el bot.
 const RESUMEN = 'Contacto anterior al miniCRM; calificación sin evaluar.';
 const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'revertir'];
 
-export const USO = '  ENV_FILE=… SHEET_ID=… node scripts/plataforma/relleno-crm-historico.mjs --proyecto <id> --tenant <rroca-evy|rroca-emma|rroca-ruben|rroca-antonio> '
+export const USO = '  ENV_FILE=… SHEET_ID=… node scripts/plataforma/relleno-crm-historico.mjs --proyecto <id> --tenant <rroca-evy|rroca-emma|rroca-ruben|rroca-antonio|bellido> '
   + '[--aplicar --respaldo <ruta> [--confirmo-produccion <tenant>]]\n'
   + '  ENV_FILE=… SHEET_ID=… node scripts/plataforma/relleno-crm-historico.mjs --revertir --respaldo <ruta> --tenant <t> --proyecto <id> [--aplicar] [--confirmo-produccion <tenant>]';
 
@@ -63,7 +65,8 @@ const CRM = runInNewContext(`${readFileSync(join(RAIZ, 'Flujos', 'src', 'modulos
 
 export function leerMapa(tenant, raiz = RAIZ) {
   if (!TENANTS.includes(tenant)) throw new Error('tenant fuera de la lista');
-  const m = JSON.parse(readFileSync(join(raiz, 'admin', 'scripts', 'datos', tenant, `${tenant}.json`), 'utf8')).crm;
+  const [dir, archivo] = ARCHIVO_DEL_MAPA[tenant] ?? [tenant, `${tenant}.json`];
+  const m = JSON.parse(readFileSync(join(raiz, 'admin', 'scripts', 'datos', dir, archivo), 'utf8')).crm;
   delete m._nota;
   return m;
 }

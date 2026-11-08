@@ -51,8 +51,8 @@ describe('B1. argumentos y salvaguarda', () => {
     for (const t of ['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio']) expect(mod.analizarArgumentos(['--proyecto', PROY, '--tenant', t], ENV).ok, t).toBe(true);
     expect(mod.analizarArgumentos(base, ENV).cfg).toMatchObject({ aplicar: false, revertir: false, entorno: 'emulador' });
   });
-  it('NEGADO: otro comercio (Bellido, Q\'Taco, el chat), varios a la vez o sin tenant', () => {
-    for (const t of ['bellido', 'qtaco', 'novuchat', 'rroca-evy,rroca-emma', 'todos', '__proto__']) expect(problemas(['--proyecto', PROY, '--tenant', t]), t).toContain('tiene que ser uno de');
+  it('NEGADO: otro comercio (Q\'Taco, el chat; Bellido SÍ entra desde el 08/11/2026, orden de Andres), varios a la vez o sin tenant', () => {
+    for (const t of ['qtaco', 'novuchat', 'rroca-evy,rroca-emma', 'todos', '__proto__']) expect(problemas(['--proyecto', PROY, '--tenant', t]), t).toContain('tiene que ser uno de');
     expect(problemas(['--proyecto', PROY])).toContain('falta --tenant');
   });
   it('NEGADO: sin SHEET_ID o con uno malformado, sin ENV_FILE', () => {
@@ -405,5 +405,28 @@ describe('B4. revertir', () => {
     expect(m.llamadas.limpiar).toEqual([]);
     expect(await mod.ejecutar(cfgDe('rroca-evy', { revertir: true, aplicar: true, respaldo: resp }), { ...m.deps, mapa: mapaDe('rroca-evy') })).toBe(2);
     expect(m.llamadas.limpiar).toEqual([]);
+  });
+});
+
+describe('B5. Bellido (mapa propio en datos/bellido/crm.json)', () => {
+  it('Bellido está en la lista y su mapa llega hasta la W (U servicio, V agendó, W fecha de la cita)', () => {
+    expect(mod.TENANTS).toContain('bellido');
+    const m = mapaDe('bellido');
+    expect(m.columnas.servicioElegido.letra).toBe('U');
+    expect(m.columnas.agendo.letra).toBe('V');
+    expect(m.columnas.fechaCita.letra).toBe('W');
+  });
+  it('construye filas de ancho A..W, sin texto del cliente y sin inventar servicio, agendó ni fecha', () => {
+    const r = mod.construirFilas({
+      conversaciones: [{ telefono: '59100000001', nombre: 'Prueba Uno', primeroMs: 1, ultimoMs: 2 }],
+      hoja: { telefonos: [], ids: [], ultimaFila: 3 }, mapa: mapaDe('bellido'),
+    });
+    expect(r.filas).toHaveLength(1);
+    expect(r.filas[0]).toHaveLength(23);
+    expect(r.filas[0].slice(20, 23)).toEqual(['', '', '']);
+    expect(r.filas[0][0]).toMatch(/^LEAD-1001$/);
+  });
+  it('NIEGA: un comercio fuera de la lista sigue rechazado', () => {
+    expect(() => mod.leerMapa('otro-comercio')).toThrow();
   });
 });
