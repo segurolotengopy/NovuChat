@@ -37,7 +37,7 @@
  * SALIDA. 0 hecho (o lectura sin novedad); 1 el seco encontró trabajo pendiente; 2 uso o salvaguarda (nada escrito);
  * 3 error de ejecución o relectura que no coincide (revise; el respaldo y --revertir permiten volver).
  */
-import { chmodSync, closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, writeSync } from 'node:fs';
+import { chmodSync, closeSync, constants, fstatSync, openSync, readFileSync, readdirSync, realpathSync, writeSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -167,10 +167,10 @@ export function respaldosEnDisco(dir = DIR_RESPALDOS) {
   const leer = (ruta) => {
     let fd;
     try {
-      const l = lstatSync(ruta);
-      if (!l.isFile()) return { ok: false, motivo: 'el respaldo no es un archivo regular (¿enlace?)' };
+      // Sin lstat previo (carrera entre comprobar y abrir): O_NOFOLLOW rechaza un enlace al abrir y todo se comprueba sobre el descriptor.
       fd = openSync(ruta, constants.O_RDONLY | constants.O_NOFOLLOW);
       const s = fstatSync(fd);
+      if (!s.isFile()) return { ok: false, motivo: 'el respaldo no es un archivo regular (¿enlace?)' };
       if ((s.mode & 0o077) !== 0) return { ok: false, motivo: 'el respaldo tiene permisos de más (debe ser 0600)' };
       if (s.size > 64 * 1024 * 1024) return { ok: false, motivo: 'el respaldo es demasiado grande' };
       return { ok: true, respaldo: JSON.parse(readFileSync(fd, 'utf8')) };
