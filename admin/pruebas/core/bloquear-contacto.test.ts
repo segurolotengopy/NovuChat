@@ -260,12 +260,16 @@ describe('NEGATIVAS: quién NO bloquea ni desbloquea (y no se escribe nada)', ()
     await nada();
   });
 
-  it('Bellido (con la bandera encendida) y su variante: denegado', async () => {
-    for (const id of ['bellido', 'consultorio-bellido']) {
-      await ficha(id); await conversacion(id, CONV1);
-      expect(await rechazo(bloquear({ tenantId: id, conversacionId: CONV1 }, admin(id)))).toEqual({ code: 'permission-denied', message: FIJOS.noHabilitado });
-      expect((await leerConv(id, CONV1))['bloqueada']).toBeUndefined();
-    }
+  it('Bellido (con la bandera encendida): desde el 08/11/2026 ya no está excluido, bloquea como cualquiera', async () => {
+    await ficha('bellido'); await conversacion('bellido', CONV1);
+    expect(await bloquear({ tenantId: 'bellido', conversacionId: CONV1 }, admin('bellido'))).toEqual({ bloqueada: true });
+    expect((await leerConv('bellido', CONV1))['bloqueada']).toBe(true);
+  });
+
+  it('Bellido SIN la bandera «nueva»: denegado por habilitación, como cualquiera', async () => {
+    await ficha('bellido', { consolaConversaciones: 'clasica' }); await conversacion('bellido', CONV1);
+    expect(await rechazo(bloquear({ tenantId: 'bellido', conversacionId: CONV1 }, admin('bellido')))).toEqual({ code: 'permission-denied', message: FIJOS.noHabilitado });
+    expect((await leerConv('bellido', CONV1))['bloqueada']).toBeUndefined();
   });
 
   it('consola vieja (`clasica` o sin bandera): denegado por habilitación', async () => {

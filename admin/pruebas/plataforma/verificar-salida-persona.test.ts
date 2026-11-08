@@ -153,8 +153,6 @@ describe('argumentos hostiles', () => {
     ['tenant con comas', ['--proyecto', M.proyProd, '--alias', ALIAS, '--tenant', 'a-b,c-d']],
     ['tenant con mayúsculas', ['--proyecto', M.proyProd, '--alias', ALIAS, '--tenant', 'Tienda']],
     ['proyecto fuera de la lista blanca', ['--proyecto', 'otro-proyecto-x', '--alias', ALIAS, '--tenant', TENANT]],
-    ['bellido', ['--proyecto', M.proyProd, '--alias', ALIAS, '--tenant', 'bellido']],
-    ['bellido dentro de otro id', ['--proyecto', M.proyProd, '--alias', ALIAS, '--tenant', 'clinica-bellido-2']],
     ['aplicar sin encender', [...buenos, '--aplicar']],
     ['respaldo sin encender', [...buenos, '--respaldo', '/tmp/x']],
     ['aplicar sin respaldo', [...buenos, '--encender', '--aplicar', '--confirmo-produccion', TENANT]],
@@ -162,6 +160,13 @@ describe('argumentos hostiles', () => {
     ['confirmo que no coincide', [...buenos, '--encender', '--aplicar', '--respaldo', '/tmp/x', '--confirmo-produccion', 'otro-comercio']],
   ])('se niega: %s', (_n, argv) => {
     expect(mod.analizarArgumentos(argv as string[], ENV).ok).toBe(false);
+  });
+  it('un comercio de NOVUCHAT_TENANTS_EXCLUIDOS se niega (el mecanismo sigue; Bellido ya no está en la lista, 08/11/2026)', () => {
+    const exc = { ...ENV, NOVUCHAT_TENANTS_EXCLUIDOS: 'tienda-excluida' };
+    for (const t of ['tienda-excluida', 'clinica-tienda-excluida-2']) {
+      expect(mod.analizarArgumentos(['--proyecto', M.proyProd, '--alias', ALIAS, '--tenant', t], exc).ok).toBe(false);
+    }
+    expect(mod.analizarArgumentos(['--proyecto', M.proyProd, '--alias', ALIAS, '--tenant', 'bellido'], ENV).ok).toBe(true);
   });
   it('sin la lista blanca en el entorno se niega', () => {
     expect(mod.analizarArgumentos(buenos, {}).ok).toBe(false);
@@ -183,8 +188,8 @@ describe('argumentos hostiles', () => {
 
 describe('el proceso (sin red: los argumentos malos salen antes de tocar nada)', () => {
   const corrida = (args: string[]) => spawnSync(process.execPath, [SCRIPT, ...args], { env: entornoDelEmulador(HOST_EMU), encoding: 'utf8' });
-  it('Bellido: salida 2 y sin id de proyecto', () => {
-    const r = corrida(['--proyecto', PROY_DEMO, '--alias', ALIAS, '--tenant', 'bellido']);
+  it('un comercio excluido por NOVUCHAT_TENANTS_EXCLUIDOS: salida 2 y sin id de proyecto', () => {
+    const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROY_DEMO, '--alias', ALIAS, '--tenant', 'tienda-excluida'], { env: { ...entornoDelEmulador(HOST_EMU), NOVUCHAT_TENANTS_EXCLUIDOS: 'tienda-excluida' }, encoding: 'utf8' });
     expect(r.status).toBe(2);
     expect(r.stderr).toContain('EXCLUIDO');
     sinSecretos(r.stdout + r.stderr);
@@ -256,7 +261,6 @@ describe('1 · Firestore', () => {
     ['comercio inactivo', { ficha: { estado: 'suspendido' } }],
     ['consola clásica', { ficha: { consolaConversaciones: 'clasica' } }],
     ['consola ausente', { ficha: { consolaConversaciones: undefined } }],
-    ['nombre de Bellido', { ficha: { nombre: 'Clínica Bellido' } }],
   ])('1b FALLA: %s', async (_n, o) => {
     const r = await corre(o as Over);
     expect(r.estado('1b')).toBe('FALLA');
@@ -273,9 +277,10 @@ describe('1 · Firestore', () => {
     expect(r.codigo).not.toBe(0);
     sinSecretos(r.texto);
   });
-  it('Bellido por id: el verificador se niega con salida 2 sin leer nada', async () => {
+  it('un comercio excluido por id: el verificador se niega con salida 2 sin leer nada', async () => {
     const m = mundo();
-    const c = await mod.verificar(cfgBase({ tenant: 'bellido' }), m.deps);
+    (m.deps as Record<string, unknown>)['env'] = { ...ENV, NOVUCHAT_TENANTS_EXCLUIDOS: 'tienda-excluida' };
+    const c = await mod.verificar(cfgBase({ tenant: 'tienda-excluida' }), m.deps);
     expect(c).toBe(2);
     expect(m.llamadas.gcloud).toHaveLength(0);
     expect(m.llamadas.n8n).toHaveLength(0);
@@ -566,8 +571,8 @@ describe('envoltorio .sh', () => {
     const r = spawnSync('bash', [ENVOLTORIO, '--alias', ALIAS, '--tenant', TENANT], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
     expect(r.status).toBe(2);
   });
-  it('un Bellido por el envoltorio: salida 2', () => {
-    const r = spawnSync('bash', [ENVOLTORIO, '--proyecto', PROY_DEMO, '--alias', ALIAS, '--tenant', 'bellido'], { encoding: 'utf8', env: entornoDelEmulador(HOST_EMU) });
+  it('un comercio excluido por el envoltorio: salida 2', () => {
+    const r = spawnSync('bash', [ENVOLTORIO, '--proyecto', PROY_DEMO, '--alias', ALIAS, '--tenant', 'tienda-excluida'], { encoding: 'utf8', env: { ...entornoDelEmulador(HOST_EMU), NOVUCHAT_TENANTS_EXCLUIDOS: 'tienda-excluida' } });
     expect(r.status).toBe(2);
     sinSecretos(r.stdout + r.stderr);
   });
