@@ -4,6 +4,7 @@
  * (ancla = `atencion.ventanaVenceEn` - 24 h, lo que devuelve «Reportar mensaje (entrante)»). Así el CRM se valida contra la consola.
  * Mensajes por conversación: 0 (escribir en la hoja no envía WhatsApp). Ningún literal de teléfono: se construyen en tiempo de ejecución.
  */
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -149,5 +150,48 @@ describe('una fila por conversación: el nodo «Prospecto para la planilla»', (
     expect(correrNodo([{ ...sinProspecto, planillaMinima: undefined }], venc, ANCLA + 60_000)).toHaveLength(0);
     expect(correrNodo([sinProspecto], venc, ANCLA + 11 * 60_000)).toHaveLength(0);
     expect(correrNodo([sinProspecto], undefined, ANCLA + 60_000)).toHaveLength(0);
+  });
+});
+
+describe('una fila por conversación: las cuatro negaciones nombradas (coordinadora, 08/11/2026)', () => {
+  it('(1) un saliente de campaña NO crea fila: el nodo no produce prospecto', () => {
+    const nodos: Record<string, unknown> = {
+      'Traer configuración': { first: () => ({ json: {} }) },
+      'Reportar mensaje (entrante)': { first: () => ({ json: { atencion: { ventanaVenceEn: new Date(ANCLA + 24 * H).toISOString() } } }) },
+    };
+    const dolar = (n: string) => { if (!nodos[n]) throw new Error('no existe'); return nodos[n]; };
+    const salientes = [{ guardarPlanilla: false, prospectoPlanilla: null, saliente: true, campana: true }, { guardarPlanilla: true, prospectoPlanilla: null }];
+    const r = compileFunction(`${conMapa(MAPA)}\n${leer('crm/nodo-prospecto.js')}`, ['$', '$input'])(dolar, { all: () => salientes.map((json) => ({ json })) }) as unknown[];
+    expect(r).toHaveLength(0);
+  });
+  it('(2) `nuevoContacto=true` con la ventana vigente NO crea fila (regresión de la regla de 48 h)', () => {
+    const r = decidir(p({ nuevoContacto: true, conversacionDesdeMs: ANCLA }), previa(ANCLA + H));
+    expect(r['accionPlanilla']).toBe('actualizar');
+    expect(r['row_number']).toBe(8 + 2);
+  });
+  it('(3) cancelar al día siguiente toca SOLO la fila más reciente y no crea otra', () => {
+    const filas = [fila(3, { [T.ultima]: lp(ANCLA - 90 * H) }), ...previa(ANCLA, 9)];
+    const r = decidir(p({ conversacionDesdeMs: ANCLA + 30 * H, agendo: 'No', citaCancelada: true, citasRestantes: 0 }), filas);
+    expect(r['accionPlanilla']).toBe('actualizar');
+    expect(r['row_number']).toBe(9 + 2);
+    expect(Object.keys(r).filter((k) => !['accionPlanilla', 'veredictoPlanilla', 'row_number', 'Agendó', 'Fecha y hora de la cita'].includes(k))).toEqual([]);
+  });
+  it('(4) sin mensajes de Meta nuevos: los 15 JSON regenerados conservan los nodos (conteo, nombres y tipos) de origin/main', () => {
+    const raiz = join(FLUJOS, '..', '..', '..');
+    const archivos = [
+      'agenda-minima/agenda-minima.prueba.json', 'agenda-minima/agenda-minima.v0.json', 'captacion-minima/captacion-minima.novuchat.json', 'captacion-minima/captacion-minima.prueba.json',
+      'chat-novuchat/chat-novuchat.novuchat.json', 'chat-novuchat/chat-novuchat.prueba.json', 'rroca-antonio/rroca-antonio.json', 'rroca-antonio/rroca-antonio.prueba.json',
+      'rroca-emma/rroca-emma.json', 'rroca-emma/rroca-emma.prueba.json', 'rroca-evy/rroca-evy.json', 'rroca-evy/rroca-evy.prueba.json',
+      'rroca-ruben/rroca-ruben.json', 'rroca-ruben/rroca-ruben.prueba.json', 'venta-minima/venta-minima.qtaco-3727.json',
+    ].map((a) => `Flujos/experimental/${a}`);
+    expect(archivos).toHaveLength(15);
+    type F = { nodes: Array<{ name: string; type: string }> };
+    for (const a of archivos) {
+      const antes = JSON.parse(execFileSync('git', ['-C', raiz, 'show', `origin/main:${a}`], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })) as F;
+      const ahora = JSON.parse(readFileSync(join(raiz, a), 'utf8')) as F;
+      const firma = (f: F) => f.nodes.map((n) => `${n.name}|${n.type}`).sort();
+      expect(ahora.nodes.length, a).toBe(antes.nodes.length);
+      expect(firma(ahora), a).toEqual(firma(antes));
+    }
   });
 });
