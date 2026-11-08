@@ -37,13 +37,18 @@ describe('la derivación', () => {
     expect((e.payload['interactive'] as J)['type']).toBe('cta_url');
     expect(urlDe(e.payload)).toBe(`https://wa.me/${REC}?text=${encodeURIComponent('Hola, escribo desde el chat de Dra. Evy Karina Rojas.')}`);
     expect(e.cuerpo).toContain('¡Excelente decisión, Ana!');
-    expect(e.cuerpo).toContain('100% gratuita');
+    expect(e.cuerpo).toContain('100% bonificada (sin costo ni pago de reserva)');
+    expect(e.cuerpo).toMatch(/👉 wa\.me\/\d+/);
+    expect(e.cuerpo).toContain('te asignarán tu espacio de inmediato');
     expect(e.cuerpo).toContain('Calle Sapocó');
     // AJUSTE (observaciones de Rubén, 28/10/2026): el cierre termina en la frase fija de Andres (el aviso salió) y no dice «bonificada»; antes terminaba en «la recepción te ayudará…».
     expect(e.cuerpo.endsWith('Ya pasé tus datos a recepción; te contactarán para confirmar tu hora.')).toBe(true);
-    expect(e.cuerpo).not.toMatch(/bonific/i);
+    expect(e.cuerpo).toMatch(/bonific/i);   // letra del MD (Andres 08/11/2026)
     // las dos frases sin mecanismo del guion ya no están
-    expect(e.cuerpo).not.toMatch(/de inmediato|asignar[áa]n|Google Maps|te llamamos/i);
+    // Andres 08/11/2026 («CIERRE: vamos con lo que dice el MD»): las dos frases del MD vuelven («recibir la ubicación exacta en Google Maps», «te asignarán tu espacio de inmediato»); lo que sigue prohibido es prometer una llamada.
+    expect(e.cuerpo).toMatch(/de inmediato/);
+    expect(e.cuerpo).toMatch(/ubicación exacta en Google Maps/);
+    expect(e.cuerpo).not.toMatch(/te llamamos|te llamar[ée]/i);
     expect(e.cuerpo).not.toMatch(/\[|\]|DERIVAR/);
   });
   it('sin el nombre en la etiqueta no inventa uno', () => {

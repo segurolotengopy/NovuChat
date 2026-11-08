@@ -120,7 +120,8 @@ describe('la ubicación en el cierre', () => {
     expect(c).toContain(`📍 Ubicación: ${MAPS}`);
     const partes = c.split('\n\n');
     expect(partes[partes.length - 1]).toBe('Ya pasé tus datos a recepción; te contactarán para confirmar tu hora.');
-    expect(partes[partes.length - 2]).toBe(`📍 Ubicación: ${MAPS}`);
+    expect(partes[partes.length - 2]).toMatch(/^Para elegir el día y horario.*\n👉 wa\.me\/\d+\n¡Haz clic ahí y te asignarán tu espacio de inmediato!$/s);
+    expect(partes[partes.length - 3]).toBe(`📍 Ubicación: ${MAPS}`);
     expect(c.length).toBeLessThanOrEqual(1024);
     expect(avisosARecepcion(t).length).toBe(1);
   });

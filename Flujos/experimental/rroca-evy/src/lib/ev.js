@@ -555,7 +555,8 @@ function evSinHuerfanos(lista, borrar) {
 // TOPE DE CADA MENSAJE: se intenta que ningún mensaje del modelo pase de 700 caracteres (ya con los saltos de párrafo). Se RECORTA por oración, nunca a mitad de oración, quitando de atrás hacia adelante primero lo accesorio,
 // luego la valoración y la primera oración, luego «asistente virtual» y las aclaraciones de salud; NO se quitan nunca las preguntas ni las aclaraciones fijas de resultado y cuidados. Si el recorte dejaría el texto vacío o
 // solo con la pregunta, o aun así no cabe, se devuelve el ORIGINAL sin tocar y decide el filtro común (1500): el código garantiza «recortar por oración o no tocar», no «700 siempre».
-const EV_RECORTE_A = 700;
+// DECISIÓN DE ANDRES (08/11/2026): la bienvenida del MD mide 837 caracteres y tiene que entrar COMPLETA en el mensaje: el tope sube de 700 a 1000.
+const EV_RECORTE_A = 1000;
 const EV_SEGURIDAD = /\b(responde distinto|no prometemos|cuidados posteriores)\b/;
 const EV_ESENCIAL = /\b(gratuit\w*|gratis|bonific\w*|sin compromiso|sin costo|valoracion)\b/;
 function evRecortar(texto, tope) {
@@ -1023,9 +1024,16 @@ function evTextoCierre(cfg, nombre, conMaps, avisado) {
   const clinica = evLinea(c.clinica, 60);
   const dir = evLinea(c.direccion, 160);
   const donde = clinica && dir ? 'La consulta es en la ' + clinica + ' (' + dir + ').' : (clinica ? 'La consulta es en la ' + clinica + '.' : (dir ? 'La consulta es en ' + dir + '.' : ''));
-  return ['¡Excelente decisión' + (n ? ', ' + n : '') + '! Recuerda que tu valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' es 100% gratuita y sin compromiso (sin pago de reserva).',
+  // DECISIÓN DE ANDRES (08/11/2026, «CIERRE: vamos con lo que dice el MD»): el cierre es la letra del MD (REGLA DE CIERRE, paso 2): «está 100% bonificada», el enlace wa.me a recepción en el texto y «te asignarán tu espacio de inmediato».
+  // Sin número de recepción (no debería pasar) queda la invitación a usar el botón. El botón «Escribir a recepción» y el aviso a recepción no cambian.
+  const digitos = evTexto(c.numeroRecepcion).replace(/\D/g, '');
+  return ['¡Excelente decisión' + (n ? ', ' + n : '') + '! Recuerda que tu valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' está 100% bonificada (sin costo ni pago de reserva).',
     donde,
     conMaps === true && evEnlaceDeMapa(c.direccionMaps) !== '' ? '📍 Ubicación: ' + evEnlaceDeMapa(c.direccionMaps) : '',
+    digitos !== ''
+      ? 'Para elegir el día y horario que mejor te queden y recibir la ubicación exacta en Google Maps, haz clic en este enlace para hablar directo con nuestra recepción:\n👉 wa.me/' + digitos + '\n¡Haz clic ahí y te asignarán tu espacio de inmediato!'
+      : '',
+    // La última línea sigue siendo la verdad del aviso (observación 1 de Rubén): «Ya pasé tus datos…» SOLO si el aviso salió; si no, la invitación al botón.
     avisado === true ? EV_TEXTO_CIERRE_AVISADO : EV_TEXTO_CIERRE_SIN_AVISO].filter((x) => x !== '').join('\n\n');
 }
 // EL ENLACE DE GOOGLE MAPS del negocio (`direccionMaps`, de la Consola): LA MISMA regla que `enlaceDeMapaValido` del servidor (https, uno de los dominios de mapas, hasta 200 caracteres, sin espacios). Se comprueba en

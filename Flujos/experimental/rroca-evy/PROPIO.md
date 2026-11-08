@@ -72,3 +72,19 @@ P. **Promesa de llamada:** «recepción te llama / te contactará…» se quita 
 - **Propio de Evy (dato del tenant):** `campanaFrase` y `campanaTexto` en `Config base` (archivo de datos `admin/scripts/datos/rroca-evy/rroca-evy.json`); el texto no vive en el prompt ni en el código de los nodos. `construir.mjs` los valida (juntos o ninguno; frase de 5 palabras o más; el único enlace permitido es uno corto de Google Maps).
 - **Código:** `evEsEntradaCampana` (`src/lib/ev.js`, igualdad de palabras como `rrEsEntradaLanding` de Rubén) en «Decidir turno»; plan `campana_literal` en «Armar mensajes». Mensajes por conversación: 0 agregados (reemplaza la respuesta del modelo).
 - **Pruebas:** `admin/pruebas/tenants/rroca-evy/campana-literal.test.ts`.
+
+## Decisiones de Andres del 08/11/2026: la letra del MD (sin aprobación previa de la doctora)
+
+Andres ordenó seguir el MD de la doctora (23/10/2026) en estos puntos, que hasta entonces el flujo cambiaba por reglas anteriores. Cada uno revierte una decisión previa suya, a sabiendas:
+
+| Punto | Antes | Ahora (MD) | Revierte |
+|---|---|---|---|
+| Los 250 Bs | solo en la bienvenida | también al preguntar por precio o costo, siempre con la gratuidad y solo pegados a la valoración (lista blanca en `evProtegerValor`) | observación 4 de Rubén (28/10) |
+| «Efecto lifting inmediato» | se quitaba «inmediato» | sale tal cual; cualquier otra promesa de inmediatez se sigue quitando | criterio de la clínica |
+| «Bonificada / bonificamos / por la campaña» | prohibido y reescrito | sale como en el MD | observación 4 de Rubén (28/10) y «saludo neutro» (24/10) |
+| Cuidados y recuperación | el código borraba cuidados concretos y agregaba «Los cuidados posteriores te los explica la Dra.» | el modelo dice el texto del MD; la barrera MÉDICA (medicamentos, dosis, diagnóstico) sigue | política de cuidados del 29/10 |
+| Cierre | variante propia con «Ya pasé tus datos…» | texto del MD (bonificada, enlace wa.me a recepción, «te asignarán tu espacio de inmediato»); la última línea sigue diciendo la verdad del aviso | «solo se ofrece lo que se cumple» en este punto |
+| Bienvenida | corta, tope de 600 (700 por mensaje) | la del MD (837 caracteres) completa; tope por mensaje 1000 | decisión de brevedad del 24/10 |
+| «Lo voy a pensar» | oferta de llamada (28/10) | SIN cambio: Andres eligió mantener la observación del 28/10 | — |
+
+El texto literal de campaña (#860, Caso A del MD del 07/11) NO pasa por ninguna de estas barreras: sale por código tal cual (prueba en `campana-literal.test.ts`, antes y después de levantarlas).
