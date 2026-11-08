@@ -12,7 +12,7 @@
  * Valores sintéticos armados en ejecución (la guarda de saneo del repositorio público).
  */
 import { spawn } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, copyFileSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -141,14 +141,24 @@ function correr(args: string[], vars: Record<string, string> = {}, bashArgs: str
 const APLICAR = ['--aplicar', '--confirmo', 'produccion'];
 const cred = (extra: Partial<Cred> = {}): Cred => ({ id: 'cred9abcd', name: NOMBRE_CRED, type: 'crypto', ...extra });
 
-/** Ningún archivo bajo el directorio de ejecución y el temporal contiene el secreto ni la URL. */
+const HOST_FN = new URL(URL_FN).hostname;
+/** ¿El texto trae una URL https cuyo host sea EXACTAMENTE el de la Function? (se parsea; no se busca por subcadena). */
+function citaElHostDeLaFunction(texto: string): boolean {
+  return (texto.match(/https?:\/\/[^\s"'<>)\\]+/g) ?? []).some((c) => { try { return new URL(c).hostname === HOST_FN; } catch { return false; } });
+}
+/** Ningún archivo bajo el directorio de ejecución y el temporal contiene el secreto ni la URL. Cada archivo se abre UNA vez y se lee por descriptor. */
 function archivosConSecreto(): string[] {
   const hallados: string[] = [];
   const recorrer = (d: string): void => {
-    for (const n of readdirSync(d)) {
-      const r = join(d, n); const s = statSync(r);
-      if (s.isDirectory()) recorrer(r);
-      else { const t = readFileSync(r, 'utf8'); if (t.includes(SECRETO) || t.includes(URL_FN)) hallados.push(r); }
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const r = join(d, e.name);
+      if (e.isDirectory()) { recorrer(r); continue; }
+      const fd = openSync(r, 'r');
+      try {
+        if (!fstatSync(fd).isFile()) continue;
+        const t = readFileSync(fd, 'utf8');
+        if (t.includes(SECRETO) || citaElHostDeLaFunction(t)) hallados.push(r);
+      } finally { closeSync(fd); }
     }
   };
   recorrer(runtime); recorrer(join(dir, 'tmp'));
