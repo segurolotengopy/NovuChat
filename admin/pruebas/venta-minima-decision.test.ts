@@ -62,6 +62,7 @@ function vmReservasSd(ses, from){ return ses; }
 function vmEstadoBase(){ return { paso: 'inicio', ultimoMensajeMs: 0 }; }
 function vmLeerEstado(sd, from, ahora){ const e = sd && sd.estados && sd.estados[from]; if (!e) return vmEstadoBase(); const vida = e.paso === 'esperando_comprobante' ? 86400000 : 3600000; return ahora - e.ultimoMensajeMs < vida ? JSON.parse(JSON.stringify(e)) : vmEstadoBase(); }
 function vmIdDeBoton(){ return Array.prototype.slice.call(arguments).join('|'); }
+function vmHuella(t){ t = String(t); let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; }
 function vmLeerBoton(id){ const p = String(id).split('|'); return p.length >= 2 && /^[a-z]$/.test(p[0]) ? { tipo: p[0], partes: p.slice(1) } : null; }
 function vmCodigoCorto(ms){ return ms.toString(36).slice(-4).toUpperCase(); }
 function vmSinProhibidas(t){ return String(t == null ? '' : t).replace(new RegExp(${JSON.stringify(PROHIBIDAS.source)}, 'gi'), '…'); }
