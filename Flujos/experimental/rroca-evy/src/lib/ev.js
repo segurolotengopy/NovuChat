@@ -1003,7 +1003,8 @@ function evDioNombre(historial, textoCliente) {
 // Observaciones de Rubén (28/10/2026): sin «bonificado»; el valor habitual (250 Bs) solo en el PRIMER turno de la ficha, como en la bienvenida.
 function evTextoGratis(cfg, dioNombre, primerTurno) {
   const negocio = evLinea(cfg && cfg.nombreNegocio, 60) || 'Dra. Evy';
-  const cuerpo = 'Sí, la valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' es 100% gratuita y sin compromiso: no pagas nada por adelantado ni dejas ningún anticipo para reservar. (Su valor habitual es de 250 Bs).';
+  // Letra del MD (línea «¿De verdad es gratis?»): «Sí, es 100% gratuita por la campaña. No pagas los 250 Bs de consulta ni tienes que dejar ningún anticipo para reservar. Solo si después de la evaluación decides hacerte el tratamiento, la Dra. te da el presupuesto.»
+  const cuerpo = 'Sí, la valoración con ' + (/^dra?\.? /i.test(negocio) ? 'la ' : '') + negocio + ' es 100% gratuita por la campaña. No pagas los 250 Bs de consulta ni tienes que dejar ningún anticipo para reservar. Solo si después de la evaluación decides hacerte el tratamiento, la Dra. te da el presupuesto.';
   return dioNombre ? cuerpo : cuerpo + '\n\n¿Cómo te llamas y qué te gustaría mejorar en tu rostro?';
 }
 const EV_TEXTO_DERIVAR_DE_NUEVO_2 = 'Con gusto, el botón sigue disponible para escribirle a recepción.';
@@ -1234,15 +1235,10 @@ function evProspectoCrm(d) {
 // =============================================================================
 
 // (4) SIN «BONIFICADO»: ningún texto que sale dice «hoy bonificado» ni «100% bonificada». Se reescriben las formas conocidas y, si queda una oración con «bonific…», se quita entera.
+// DECISIÓN DE ANDRES (08/11/2026, «la letra del MD»): el MD usa «bonificada / bonificamos / por la campaña», así que el filtro de la observación 4 de Rubén (28/10) YA NO reescribe ni quita nada.
+// Se conserva la función (misma firma) para no tocar a quien la llama; solo normaliza el texto.
 function evSinBonificado(texto) {
-  const t = evTexto(texto)
-    .replace(/(?:\s*,\s*|\s+)hoy (?:est[aá] )?bonificad[oa]s?\b/gi, '')
-    .replace(/\b(?:est[aá]|es) (?:100 ?% )?bonificad[oa]s? y (?:es )?(gratuit[oa]s?)\b/gi, 'es $1')
-    .replace(/\bbonificamos (?:el )?(?:100 ?%|cien por ciento) de (la valoraci[oó]n)/gi, '$1 es 100% gratuita')
-    .replace(/\bbonificando (?:los )?(250 Bs) habituales\b/gi, 'sin pagar los $1 habituales')
-    .replace(/\b(?:100 ?% )?bonificad([oa])(s?) al (?:100 ?%|cien por ciento)/gi, '100% gratuit$1$2')
-    .replace(/\b(?:100 ?% |totalmente )?bonificad([oa])(s?)\b/gi, '100% gratuit$1$2');
-  return /bonific/i.test(t) ? evQuitarOraciones(t, (n) => /\bbonific\w*/.test(n)) : t;
+  return evTexto(texto);
 }
 
 // (3) LA DESPEDIDA DE DÍA («¡Que tengas un excelente día!»): ninguna respuesta del modelo cierra con ella.
