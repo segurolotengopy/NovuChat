@@ -168,6 +168,27 @@ function crmFilaMasReciente(coincidencias) {
   return (Array.isArray(coincidencias) ? coincidencias : []).reduce((m, f) => (!m || Number(f.row_number) > Number(m.row_number) ? f : m), undefined);
 }
 
+// PEDIDOS (Andres, 08/11/2026: «todos los pedidos deben tener una nueva linea»). Ayudantes de `crmDecidirFila`; solo actuan si el prospecto trae `ventaEvento`.
+// «AAAA-MM-DD HH:MM[:SS]» o «D/M/AAAA HH:MM[:SS]» (los dos formatos que hay en la hoja), en hora de La Paz (UTC-4 fijo) -> milisegundos; ilegible = null.
+function crmParsearFechaLaPaz(v) {
+  const t = String(v ?? '').replace(/^'/, '').replace(/[\u00ad\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, '').trim();
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t);
+  let y; let mo; let d;
+  if (m) { y = Number(m[1]); mo = Number(m[2]); d = Number(m[3]); } else {
+    m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t);
+    if (!m) return null;
+    d = Number(m[1]); mo = Number(m[2]); y = Number(m[3]);
+  }
+  const h = Number(m[4]); const mi = Number(m[5]); const se = m[6] === undefined ? 0 : Number(m[6]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || se > 59) return null;
+  const ms = Date.UTC(y, mo - 1, d, h, mi, se) + 4 * 3600 * 1000;
+  return crmMsValido(ms);
+}
+// El N.º de un pedido, tal como lo escribe el flujo en el resumen: solo letras, digitos, guion y guion bajo (hasta 20).
+const crmCodigoPedido = (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,20}$/.test(v) ? v : '');
+// ¿El resumen de la fila nombra ese pedido? «N.º <codigo>» sin letras ni digitos pegados despues; «Reserva N.º …» no cuenta.
+const crmResumenTienePedido = (resumen, codigo) => new RegExp('(?<!Reserva )N\\.º\\s*' + codigo + '(?![A-Za-z0-9_-])').test(crmLimpio(resumen));
+
 // Quita invisibles y marcas de direccion (U+00AD, U+061C, U+200B a U+200F, U+202A a U+202E, U+2060 a U+2069, BOM): nada que el cliente no ve llega a la hoja.
 const crmLimpio = (v) => String(v ?? '').replace(/[\u00ad\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, '').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
 const crmDigitos = (v) => String(v ?? '').replace(/\D/g, '');
@@ -308,7 +329,33 @@ function crmDecidirFila(a) {
     // Excepcion: cancelar o reprogramar una cita (hechos verificados) pasadas las 48 h actualiza la fila mas reciente SOLO en «Agendo» y «Fecha y hora de la cita»:
     // la cita vive en la fila donde se agendo, y dejarla en «Si» con una cita ya borrada seria un dato falso.
     const afectaCita = p.citaCancelada === true || p.citaReprogramada === true;
-    const actual = p.nuevoContacto === true && !afectaCita ? undefined : crmFilaMasReciente(coincidencias.filter((f) => crmDigitos(f[T('telefono')]) === p.telefono));
+    const delTel = coincidencias.filter((f) => crmDigitos(f[T('telefono')]) === p.telefono);
+    const reciente = crmFilaMasReciente(delTel);
+    // Respaldo de las 48 h: sin registro de su ultimo mensaje (`sinRegistroPrevio`: la memoria de n8n se pierde al republicar y los contactos anteriores al CRM nunca la tuvieron), se
+    // usa «Ultima interaccion» de la fila mas reciente del telefono. Si no se puede leer, rige lo de siempre (se actualiza esa fila).
+    let nuevoEfectivo = p.nuevoContacto === true;
+    if (!nuevoEfectivo && p.sinRegistroPrevio === true && reciente && mapeado('ultimaInteraccion')) {
+      const vista = crmParsearFechaLaPaz(reciente[T('ultimaInteraccion')]);
+      if (vista !== null && a.ahoraMs - vista > 48 * 3600 * 1000) nuevoEfectivo = true;
+    }
+    // PEDIDO = FILA NUEVA. El evento `pedido` agrega SIEMPRE, salvo dos casos: (1) la fila ya nombra ese N.º (el mismo mensaje reprocesado no duplica) y (2) la fila mas reciente es una
+    // ELECCION en curso del mismo flujo (O «Pedido», Q vacia, ultima interaccion de las ultimas 24 h): se completa, asi un solo pedido es una sola fila. El `comprobante` actualiza la fila
+    // cuyo resumen nombra SU pedido; si ninguna lo nombra, rige lo de siempre (la mas reciente).
+    const codigoPedido = crmCodigoPedido(p.codigoPedido);
+    const filaDelPedido = codigoPedido ? crmFilaMasReciente(delTel.filter((f) => crmResumenTienePedido(f[T('resumen')], codigoPedido))) : undefined;
+    const eleccionEnCurso = (f) => {
+      if (!f || !mapeado('quePidio') || !mapeado('horarioPreferido') || !mapeado('ultimaInteraccion')) return false;
+      if (crmLimpio(f[T('quePidio')]) !== 'Pedido' || crmLimpio(f[T('horarioPreferido')]) !== '') return false;
+      // Una fila cuyo resumen ya nombra un pedido (N.º) NO es una eleccion en curso: es un pedido anotado, y otro pedido no lo pisa.
+      if (/(?<!Reserva )N\.º\s*[A-Za-z0-9]/.test(crmLimpio(f[T('resumen')]))) return false;
+      const vista = crmParsearFechaLaPaz(f[T('ultimaInteraccion')]);
+      const edad = vista === null ? NaN : a.ahoraMs - vista;
+      return edad > -3600 * 1000 && edad < 24 * 3600 * 1000;
+    };
+    let actual;
+    if (p.ventaEvento === 'pedido') actual = filaDelPedido || (eleccionEnCurso(reciente) ? reciente : undefined);
+    else if (p.ventaEvento === 'comprobante' && filaDelPedido) actual = filaDelPedido;
+    else actual = nuevoEfectivo && !afectaCita ? undefined : reciente;
     // Los hechos viajan dentro del prospecto; `cerrado` sigue siendo un pedido de una persona.
     const prospecto = { ...p, ...(p.hechos && typeof p.hechos === 'object' ? p.hechos : {}),
       pidioAsesor: p.estado === 'cerrado' || p.hechos?.pidioAsesor === true };
@@ -342,7 +389,7 @@ function crmDecidirFila(a) {
       const nuevo = { nombre: crmSeguro(p.nombre), empresa: crmSeguro(p.empresa), interes: crmSeguro(p.rubro), calificacion,
         resumen: crmSeguro(adaptador.resumir(prospecto, false, quedaEnI)) };
       const celdas = {};
-      const soloCita = p.nuevoContacto === true;
+      const soloCita = nuevoEfectivo && !p.ventaEvento;
       for (const campo of ['nombre', 'empresa', 'interes', 'calificacion', 'resumen']) {
         if (soloCita || !mapeado(campo)) continue;
         const v = nuevo[campo];

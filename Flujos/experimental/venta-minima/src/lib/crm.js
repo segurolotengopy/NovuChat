@@ -136,8 +136,14 @@ function vmProspectoCrm(d) {
     // El nombre del perfil de WhatsApp si existe; si no, el que el cliente dio al pedir. El módulo no pisa con el del perfil un nombre ya dado.
     nombre: nombrePerfil || nombreEntrega,
     nombreDePerfil: nombrePerfil !== '',
-    // 48 h sin mensajes: fila NUEVA (el módulo la agrega en vez de actualizar la más reciente). Sin registro previo no se puede saber: se actualiza la más reciente.
+    // 48 h sin mensajes: fila NUEVA (el módulo la agrega en vez de actualizar la más reciente). Sin registro previo lo decide el módulo con «Última interacción» (`sinRegistroPrevio`).
     nuevoContacto: anterior !== null && ahora - anterior > VM_CRM_NUEVO_MS,
+    // Sin registro previo (la memoria se pierde al republicar; los contactos anteriores al CRM nunca la tuvieron): el módulo usa «Última interacción» de la fila más reciente para decidir las 48 h.
+    sinRegistroPrevio: anterior === null,
+    // PEDIDO = FILA NUEVA (Andres, 08/11/2026): `ventaEvento` y `codigoPedido` le dicen al módulo que el evento es un pedido o un comprobante y de QUÉ pedido (N.º). Un `pedido` agrega fila
+    // siempre (salvo completar una elección en curso o el mismo N.º ya anotado); un `comprobante` actualiza la fila de SU pedido.
+    ventaEvento: evento === 'pedido' || evento === 'comprobante' ? evento : '',
+    codigoPedido: (evento === 'pedido' || evento === 'comprobante') && ped ? String(ped.codigo === undefined || ped.codigo === null ? '' : ped.codigo).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 20) : '',
     // Frío = lo primero que hizo fue ver la carta y no avanzó (solo en el primer contacto); Caliente = compra (pedido, reserva o comprobante); Tibio = escribió.
     senales: { inicioCompra: compra, preguntoPrecioYCerro: (evento === 'contacto' || evento === 'eleccion') && primerContacto && ruta === 'carta' },
     // «Eligió»: solo pedido, reserva o elección; en comprobante, derivación y contacto va vacío (un valor vacío no se escribe, no borra lo anotado).

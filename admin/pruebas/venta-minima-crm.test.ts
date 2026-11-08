@@ -126,7 +126,7 @@ describe('vmProspectoCrm: qué es un evento y qué dice el prospecto (hechos del
     expect(prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, nombrePerfil: 'Ana Gómez' })).toMatchObject({ nombre: 'Ana Gómez', nombreDePerfil: true });
     expect(prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, nombrePerfil: '' })).toMatchObject({ nombre: 'Carlos Pérez', nombreDePerfil: false });
     const previa = [fila(7, { 'Teléfono WhatsApp': TEL, 'Nombre y Apellido': 'Carlos Pérez Rojas' })];
-    const r = decidir(prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, nombrePerfil: 'Charly 😎' })!, previa);
+    const r = decidir(prospecto({ plan: { ruta: 'comprobante:cuadra', pedido: PEDIDO }, nombrePerfil: 'Charly 😎' })!, previa);
     expect(r['accionPlanilla']).toBe('actualizar');
     expect(r['Nombre y Apellido']).toBeUndefined();
   });
@@ -280,27 +280,27 @@ describe('aceptación (unidades)', () => {
   it('A7 no pisa al equipo: una fila con J a M y «Diagnóstico del equipo» llenos conserva esos valores tras actualizar', () => {
     const equipo = { 'Valor Estimado ($)': '500', 'Responsable Comercial': 'Marta', 'Estado Comercial': 'Negociando', 'Próxima Acción / Fecha': 'Llamar el viernes', 'Diagnóstico del equipo': 'nota interna' };
     const previa = fila(9, { 'Teléfono WhatsApp': TEL, 'Nombre y Apellido': 'Carlos', 'Clasificación': 'Tibio', ...equipo });
-    const r = decidir(prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO } })!, [previa]);
+    const r = decidir(prospecto({ plan: { ruta: 'comprobante:cuadra', pedido: PEDIDO } })!, [previa]);
     expect(r['accionPlanilla']).toBe('actualizar');
     expect(r['row_number']).toBe(9 + 2);
     for (const k of Object.keys(equipo)) expect(r[k], k).toBeUndefined();
     expect(JSON.stringify(r)).not.toMatch(/Marta|Negociando|nota interna|Llamar el viernes/);
     expect(r['Clasificación']).toBe('Caliente');
   });
-  it('A8 teléfono con otro formato encuentra la misma fila; 48 h: misma fila dentro, fila nueva fuera', () => {
+  it('A8 (comprobante; el pedido es fila nueva, ver el último bloque) teléfono con otro formato encuentra la misma fila; 48 h: misma fila dentro, fila nueva fuera', () => {
     for (const formato of [`+${TEL}`, `'${TEL}`, `${TEL.slice(0, 3)} ${TEL.slice(3)}`]) {
-      const r = decidir(prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 3600_000 })!, [fila(5, { 'Teléfono WhatsApp': formato })]);
+      const r = decidir(prospecto({ plan: { ruta: 'comprobante:cuadra', pedido: PEDIDO }, anteriorMs: AHORA - 3600_000 })!, [fila(5, { 'Teléfono WhatsApp': formato })]);
       expect(r['accionPlanilla'], formato).toBe('actualizar');
     }
-    const dentro = prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 47 * 3600_000 })!;
+    const dentro = prospecto({ plan: { ruta: 'comprobante:cuadra', pedido: PEDIDO }, anteriorMs: AHORA - 47 * 3600_000 })!;
     expect(dentro['nuevoContacto']).toBe(false);
     expect(decidir(dentro, [fila(5, { 'Teléfono WhatsApp': TEL })])['accionPlanilla']).toBe('actualizar');
-    const fuera = prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 49 * 3600_000 })!;
+    const fuera = prospecto({ plan: { ruta: 'comprobante:cuadra', pedido: PEDIDO }, anteriorMs: AHORA - 49 * 3600_000 })!;
     expect(fuera['nuevoContacto']).toBe(true);
     expect(decidir(fuera, [fila(5, { 'Teléfono WhatsApp': TEL })])['accionPlanilla']).toBe('agregar');
   });
   it('A8 de las varias filas del mismo teléfono se actualiza la más reciente', () => {
-    const r = decidir(prospecto({ plan: { ruta: 'pedido:qr', pedido: PEDIDO }, anteriorMs: AHORA - 1000 })!, [fila(5, { 'Teléfono WhatsApp': TEL }), fila(9, { 'Teléfono WhatsApp': TEL }), fila(7, { 'Teléfono WhatsApp': TEL })]);
+    const r = decidir(prospecto({ plan: { ruta: 'comprobante:cuadra', pedido: PEDIDO }, anteriorMs: AHORA - 1000 })!, [fila(5, { 'Teléfono WhatsApp': TEL }), fila(9, { 'Teléfono WhatsApp': TEL }), fila(7, { 'Teléfono WhatsApp': TEL })]);
     expect(r['row_number']).toBe(9 + 2);
   });
   it('A9 neutralización: un nombre que empieza con =, +, - o @ sale con apóstrofo; un nombre con emoji no rompe nada', () => {
@@ -888,5 +888,146 @@ describe('sin el dato `crm` no se activa nada (las demás salidas)', () => {
       const con = leer(f).nodes.filter((n) => String(n.parameters['jsCode'] ?? '').includes('function vmProspectoCrm('));
       expect(con.map((n) => n.name), f).toEqual(['Armar mensajes']);
     }
+  });
+});
+
+// ================================================================================================ PEDIDO = FILA NUEVA (Andres, 08/11/2026)
+describe('pedido = fila nueva: cada pedido es una fila, el comprobante actualiza la de SU pedido, el respaldo de las 48 h', () => {
+  const TELF = { 'Teléfono WhatsApp': TEL };
+  const hora = (ms: number): string => new Date(ms - 4 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
+  const ped = (codigo: string): J => ({ ...PEDIDO, pedidoId: `ped-${codigo}`, codigo });
+  const pedidoDe = (codigo: string, o: J = {}): J => prospecto({ plan: { ruta: 'pedido:qr', pedido: ped(codigo) }, anteriorMs: AHORA - 3600_000, ...o })!;
+  const compDe = (codigo: string, o: J = {}): J => prospecto({ plan: { ruta: 'comprobante:cuadra', pedido: ped(codigo) }, anteriorMs: AHORA - 3600_000, ...o })!;
+  /** Una fila ya escrita por el bot para un pedido (O «Pedido», Q «Registrado …», resumen con su N.º). */
+  const filaPedido = (n: number, codigo: string, ms = AHORA - 3600_000): { json: J } => fila(n, { ...TELF, Eligió: 'Pedido', Pedido: `Registrado ${hora(ms)}`, 'Resumen Chatbot IA': `N.º ${codigo}, 4 ítems, Bs 84, recojo`, 'Última interacción': hora(ms) });
+  const filaEleccion = (n: number, ms: number, formato: 'iso' | 'latam' = 'iso'): { json: J } => {
+    const d = new Date(ms - 4 * 3600_000);
+    const latam = `${d.getUTCDate()}/${d.getUTCMonth() + 1}/${d.getUTCFullYear()} ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}:00`;
+    return fila(n, { ...TELF, Eligió: 'Pedido', 'Última interacción': formato === 'iso' ? hora(ms) : latam });
+  };
+
+  it('el pedido de un teléfono SIN filas agrega; el prospecto lleva el evento y el N.º', () => {
+    const p = pedidoDe('A1');
+    expect(p['ventaEvento']).toBe('pedido');
+    expect(p['codigoPedido']).toBe('A1');
+    expect(decidir(p)['accionPlanilla']).toBe('agregar');
+  });
+  it('NEGACIÓN: un segundo pedido del mismo teléfono, el mismo día, es OTRA fila (no pisa el primero)', () => {
+    const r = decidir(pedidoDe('B2'), [filaPedido(7, 'A1')]);
+    expect(r['accionPlanilla']).toBe('agregar');
+    expect(celda(r, 'resumen')).toMatch(/N\.º B2/);
+    expect(celda(r, 'id')).toBe('LEAD-1011');
+    expect(celda(r, 'horarioPreferido')).toMatch(/^'Registrado /);
+  });
+  it('elección + pedido = UNA sola fila: se completa la elección en curso (O «Pedido», Q vacía, menos de 24 h)', () => {
+    for (const formato of ['iso', 'latam'] as const) {
+      const r = decidir(pedidoDe('A1'), [filaEleccion(9, AHORA - 2 * 3600_000, formato)]);
+      expect(r['accionPlanilla'], formato).toBe('actualizar');
+      expect(r['row_number']).toBe(9 + 2);
+      expect(celda(r, 'resumen')).toBe('N.º A1, 4 ítems, Bs 84, recojo');
+      expect(celda(r, 'horarioPreferido')).toMatch(/^Registrado /);
+    }
+  });
+  it('NEGACIÓN: una elección de más de 24 h, de «Reserva», o con Q ya llena NO se completa: fila nueva', () => {
+    expect(decidir(pedidoDe('A1'), [filaEleccion(9, AHORA - 25 * 3600_000)])['accionPlanilla']).toBe('agregar');
+    expect(decidir(pedidoDe('A1'), [{ json: { ...filaEleccion(9, AHORA - 3600_000).json, Eligió: 'Reserva' } }])['accionPlanilla']).toBe('agregar');
+    expect(decidir(pedidoDe('A1'), [{ json: { ...filaEleccion(9, AHORA - 3600_000).json, Pedido: 'Registrado 2026-10-05 09:00' } }])['accionPlanilla']).toBe('agregar');
+    // la fila de «Última interacción» ilegible tampoco se completa
+    expect(decidir(pedidoDe('A1'), [{ json: { ...filaEleccion(9, AHORA - 3600_000).json, 'Última interacción': 'ayer' } }])['accionPlanilla']).toBe('agregar');
+  });
+  it('NEGACIÓN: la elección completada es la MÁS RECIENTE; si la elección en curso quedó atrás de otra fila, es fila nueva', () => {
+    const r = decidir(pedidoDe('A1'), [filaEleccion(5, AHORA - 3600_000), fila(8, { ...TELF, Eligió: 'Reserva', 'Última interacción': hora(AHORA - 1800_000) })]);
+    expect(r['accionPlanilla']).toBe('agregar');
+  });
+  it('idempotencia: el mismo pedido reprocesado NO duplica la fila (se reconoce por su N.º)', () => {
+    const r = decidir(pedidoDe('A1'), [filaPedido(7, 'A1'), filaPedido(8, 'B2')]);
+    expect(r['accionPlanilla']).not.toBe('agregar');
+    // «A1» no se confunde con «A10»
+    expect(decidir(pedidoDe('A1'), [filaPedido(7, 'A10')])['accionPlanilla']).toBe('agregar');
+  });
+  it('teléfono con filas VIEJAS (octubre) y sin `crmVisto` + pedido = fila nueva; las viejas no se tocan', () => {
+    const viejas = [fila(3, { ...TELF, Eligió: 'Pedido', 'Última interacción': '2026-10-02 11:00', 'Resumen Chatbot IA': 'N.º Z9, 1 ítem, Bs 21, recojo' }), fila(4, { ...TELF, Eligió: 'Pedido', 'Última interacción': '2/10/2026 11:00:00' })];
+    const p = prospecto({ plan: { ruta: 'pedido:qr', pedido: ped('A1') }, anteriorMs: null })!;
+    expect(p['sinRegistroPrevio']).toBe(true);
+    const r = decidir(p, viejas);
+    expect(r['accionPlanilla']).toBe('agregar');
+    expect(r['row_number']).toBeUndefined();
+  });
+  it('comprobante: actualiza la fila de SU pedido, no la de otro (aunque haya una más reciente)', () => {
+    const r = decidir(compDe('A1'), [filaPedido(7, 'A1'), filaPedido(8, 'B2')]);
+    expect(r['accionPlanilla']).toBe('actualizar');
+    expect(r['row_number']).toBe(7 + 2);
+    expect(celda(r, 'resumen')).toMatch(/^N\.º A1, .*comprobante recibido, datos coinciden$/);
+  });
+  it('comprobante cuyo pedido no se encuentra: la fila más reciente (como hoy); sin filas, agrega; nunca dice «pagado»', () => {
+    const r = decidir(compDe('Q9'), [filaPedido(7, 'A1'), filaPedido(8, 'B2')]);
+    expect(r['accionPlanilla']).toBe('actualizar');
+    expect(r['row_number']).toBe(8 + 2);
+    expect(JSON.stringify(r)).not.toMatch(/pagad|acreditad|simulad/i);
+  });
+  it('comprobante con el pedido de una fila de hace más de 48 h: actualiza esa fila (no abre otra)', () => {
+    const r = decidir(compDe('A1', { anteriorMs: AHORA - 60 * 3600_000 }), [filaPedido(7, 'A1', AHORA - 60 * 3600_000)]);
+    expect(r['accionPlanilla']).toBe('actualizar');
+    expect(r['row_number']).toBe(7 + 2);
+  });
+  it('contacto SIN pedido: dentro de 48 h actualiza la fila más reciente; pasadas 48 h agrega (con `crmVisto`)', () => {
+    const contacto = (anteriorMs: number): J => prospecto({ plan: { ruta: 'menu', pedido: null }, anteriorMs })!;
+    const f = [fila(5, { ...TELF, 'Nombre y Apellido': 'Carlos', Clasificación: 'Tibio' })];
+    expect(decidir(contacto(AHORA - 30 * 3600_000), f)['accionPlanilla']).toBe('actualizar');
+    expect(decidir(contacto(AHORA - 50 * 3600_000), f)['accionPlanilla']).toBe('agregar');
+  });
+  it('respaldo de las 48 h SIN `crmVisto`: «Última interacción» de la fila más reciente (dos formatos); ilegible = comportamiento actual', () => {
+    const contacto = (): J => prospecto({ plan: { ruta: 'menu', pedido: null }, anteriorMs: null })!;
+    const con = (s: string): Array<{ json: J }> => [fila(5, { ...TELF, 'Nombre y Apellido': 'Carlos', Clasificación: 'Tibio', 'Última interacción': s })];
+    expect(decidir(contacto(), con(hora(AHORA - 60 * 3600_000)))['accionPlanilla']).toBe('agregar');
+    expect(decidir(contacto(), con('3/10/2026 09:00:00'))['accionPlanilla']).toBe('agregar');   // 05/10 10:00 La Paz menos 3 de octubre: más de 48 h
+    expect(decidir(contacto(), con(hora(AHORA - 20 * 3600_000)))['accionPlanilla']).toBe('actualizar');
+    expect(decidir(contacto(), con('4/10/2026 08:00:00'))['accionPlanilla']).toBe('actualizar');
+    for (const ilegible of ['', 'ayer', '31/02/2026', '2026-13-01 10:00', '99/99/9999 10:00']) expect(decidir(contacto(), con(ilegible))['accionPlanilla'], ilegible).toBe('actualizar');
+  });
+  it('un prospecto de otro flujo (sin `ventaEvento` ni `sinRegistroPrevio`) se decide EXACTAMENTE como antes', () => {
+    const base: J = { telefono: TEL, nombre: 'Ana', nombreDePerfil: false, nuevoContacto: false, senales: {}, quePidio: 'Pedido', ultimaInteraccionMs: AHORA };
+    const f = [filaEleccion(9, AHORA - 3600_000)];
+    expect(decidir(base, f)['accionPlanilla']).toBe('actualizar');
+    expect(decidir({ ...base, nuevoContacto: true }, f)['accionPlanilla']).toBe('agregar');
+  });
+  it('CASO REAL (a) LEAD-1001: fila vieja «Contacto anterior al miniCRM», sin `crmVisto`, pedido + comprobante = fila NUEVA para el pedido; la vieja queda intacta', () => {
+    const vieja = fila(4, { ...TELF, 'ID Lead': 'LEAD-1001', 'Resumen Chatbot IA': 'Contacto anterior al miniCRM', 'Nombre y Apellido': 'Cliente de prueba' });
+    const p = prospecto({ plan: { ruta: 'pedido:qr', pedido: ped('A1') }, anteriorMs: null })!;
+    const r = decidir(p, [vieja]);
+    expect(r['accionPlanilla']).toBe('agregar');
+    expect(r['row_number']).toBeUndefined();
+    expect(celda(r, 'resumen')).toMatch(/N\.º A1/);
+    // el comprobante llega con la fila nueva ya escrita (row 11): actualiza ESA, nunca la vieja
+    const nueva = fila(11, { ...TELF, 'ID Lead': 'LEAD-1011', 'Resumen Chatbot IA': 'N.º A1, 4 ítems, Bs 84, recojo', Eligió: 'Pedido', Pedido: `Registrado ${hora(AHORA)}`, 'Última interacción': hora(AHORA) });
+    const c = decidir(compDe('A1', { anteriorMs: null }), [vieja, nueva]);
+    expect(c['accionPlanilla']).toBe('actualizar');
+    expect(c['row_number']).toBe(11 + 2);
+    expect(c['row_number']).not.toBe(4 + 2);
+  });
+  it('CASO REAL (b) LEAD-1002: fila con un pedido registrado hace horas + otro pedido = fila nueva (la anterior no se pisa)', () => {
+    const previa = filaPedido(5, 'A1', AHORA - 5 * 3600_000);
+    for (const anteriorMs of [null, AHORA - 5 * 3600_000]) {
+      const r = decidir(prospecto({ plan: { ruta: 'pedido:qr', pedido: ped('B2') }, anteriorMs })!, [previa]);
+      expect(r['accionPlanilla'], String(anteriorMs)).toBe('agregar');
+      expect(r['row_number']).toBeUndefined();
+      expect(celda(r, 'resumen')).toMatch(/N\.º B2/);
+    }
+  });
+  it('CASO REAL (c) LEAD-1003: fila con datos de pedido del MISMO día (sin Q) + nuevo pedido del mismo día = fila nueva si el pedido anterior ya tiene N.º', () => {
+    const delDia = fila(6, { ...TELF, Eligió: 'Pedido', 'Resumen Chatbot IA': 'N.º A1, 4 ítems, Bs 84, recojo', 'Última interacción': hora(AHORA - 3600_000) });
+    const r = decidir(prospecto({ plan: { ruta: 'pedido:qr', pedido: ped('B2') }, anteriorMs: AHORA - 3600_000 })!, [delDia]);
+    expect(r['accionPlanilla']).toBe('agregar');
+    expect(r['row_number']).toBeUndefined();
+    expect(celda(r, 'resumen')).toMatch(/N\.º B2/);
+  });
+  it('flujo completo: elección de pedido y QR en dos turnos = UNA sola fila agregada por el pedido (O «Pedido» no se duplica)', () => {
+    const pl = planilla();
+    const w = mundo({ pl });
+    conversacion(w);
+    // la hoja de prueba no guarda: el turno del QR no encuentra la elección y agrega la fila del pedido con su N.º; la del comprobante busca ese N.º y, sin hoja, agrega
+    const qr = [...pl.escrituras].filter((e) => /N\.º \S+, 4 ítems, Bs 84, recojo$/.test(String(e['Resumen Chatbot IA'] ?? '')));
+    expect(qr).toHaveLength(1);
+    expect(String(qr[0]!['Pedido'])).toMatch(/^'Registrado /);
   });
 });
