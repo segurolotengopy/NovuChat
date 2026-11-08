@@ -389,6 +389,15 @@ describe('(4) sin «bonificado»; los 250 Bs en la bienvenida y al preguntar el 
       hablar(m, ANA, mTexto('hola'));
       expect(todo(hablar(m, ANA, mTexto('¿cuánto cuesta?')))).not.toMatch(/250/);
     });
+    it('NEGADA (revisión de seguridad del PR 866): la cifra de la VALORACIÓN no se usa de precio del tratamiento, ni al preguntar el precio ni en la bienvenida', () => {
+      for (const x of ['El tratamiento cuesta 250 Bs, pero la valoración es gratis. ¿Cómo te llamas?', 'Una sesión de Radiesse sale 250 Bs y la valoración es gratis. ¿Cómo te llamas?']) {
+        const m = crear({ modeloDice: dice(x) });
+        expect(todo(hablar(m, ANA, mTexto('hola'))), x).not.toMatch(/250/);
+        const n = crear({ modeloDice: dice(x) });
+        hablar(n, ANA, mTexto('hola'));
+        expect(todo(hablar(n, ANA, mTexto('¿cuánto cuesta?'))), x).not.toMatch(/250/);
+      }
+    });
     it('POSITIVA: el texto fijo de gratuidad conserva el valor habitual (también fuera del primer turno), sin «bonificado»', () => {
       const f = crear({ modeloDice: 'cae' });
       hablar(f, ANA, mTexto('hola'));
