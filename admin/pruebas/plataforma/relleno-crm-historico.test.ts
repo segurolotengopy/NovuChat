@@ -27,7 +27,7 @@ const mod = await import('../../scripts/plataforma/relleno-crm-historico.mjs') a
   reunirCompras: (e: any[], o?: Record<string, unknown>) => { porTelefono: Map<string, { pedidoMs: number | null; reservaMs: number | null }>; conteos: Record<string, any> };
   celdasDeCompra: (c: { pedidoMs: number | null; reservaMs: number | null }) => Record<string, string>;
   completarCeldas: (a: Record<string, any>) => Promise<unknown>;
-  construirActualizaciones: (a: { valores: string[][]; mapa: Record<string, any>; compras: Map<string, any> }) => { propuestas: { fila: number; celdas: Record<string, string> }[]; conteos: Record<string, number> };
+  construirActualizaciones: (a: { valores: string[][]; mapa: Record<string, any>; compras: Map<string, any> }) => { propuestas: { fila: number; telefono: string; celdas: Record<string, string> }[]; conteos: Record<string, number> };
 };
 
 const PROY = 'demo-novuchat-pruebas';
@@ -440,22 +440,22 @@ describe('Q2. reunir compras (puro)', () => {
   const T = Date.UTC(2026, 10, 5, 18, 30); // 2026-11-05 14:30 La Paz
   it('un pedido que está en el cierre y en la colección cuenta UNA vez, con la hora más temprana; el más reciente de cada clase gana', () => {
     const r = mod.reunirCompras([
-      { telefono: '59171111111', tipo: 'pedido', clave: 'ped-1', ms: T + 60_000 },
-      { telefono: '59171111111', tipo: 'pedido', clave: 'wa_ped-1', ms: T },
-      { telefono: '59171111111', tipo: 'pedido', clave: 'ped-2', ms: T + 3600_000 },
-      { telefono: '59171111111', tipo: 'reserva', clave: 'res-1', ms: T - 3600_000 },
+      { telefono: '59170000001', tipo: 'pedido', clave: 'ped-1', ms: T + 60_000 },
+      { telefono: '59170000001', tipo: 'pedido', clave: 'wa_ped-1', ms: T },
+      { telefono: '59170000001', tipo: 'pedido', clave: 'ped-2', ms: T + 3600_000 },
+      { telefono: '59170000001', tipo: 'reserva', clave: 'res-1', ms: T - 3600_000 },
     ], { ahoraMs: T + 86_400_000 });
     expect(r.conteos).toMatchObject({ pedidos: 2, reservas: 1 });
-    expect(r.porTelefono.get('59171111111')).toEqual({ pedidoMs: T + 3600_000, reservaMs: T - 3600_000 });
+    expect(r.porTelefono.get('59170000001')).toEqual({ pedidoMs: T + 3600_000, reservaMs: T - 3600_000 });
   });
   it('NEGADO: sin teléfono, sin fecha válida (o futura) o excluido no entran; nada de eso crea una compra', () => {
     const r = mod.reunirCompras([
-      { telefono: '', tipo: 'pedido', clave: 'a', ms: T }, { telefono: '59171111111', tipo: 'pedido', clave: 'b', ms: null },
-      { telefono: '59171111111', tipo: 'pedido', clave: 'c', ms: T + 10 * 86_400_000 }, { telefono: '+591 7222-2222', tipo: 'reserva', clave: 'd', ms: T },
-      { telefono: '59173333333', tipo: 'otro', clave: 'e', ms: T },
-    ], { excluir: ['59172222222', ''], ahoraMs: T + 86_400_000 });
+      { telefono: '', tipo: 'pedido', clave: 'a', ms: T }, { telefono: '59170000001', tipo: 'pedido', clave: 'b', ms: null },
+      { telefono: '59170000001', tipo: 'pedido', clave: 'c', ms: T + 10 * 86_400_000 }, { telefono: '+591 7000-0002', tipo: 'reserva', clave: 'd', ms: T },
+      { telefono: '59170000003', tipo: 'otro', clave: 'e', ms: T },
+    ], { excluir: ['59170000002', ''], ahoraMs: T + 86_400_000 });
     expect(r.porTelefono.size).toBe(0);
-    expect(r.conteos.descartados).toEqual({ sinTelefono: 1, sinFecha: 2, excluidos: 1 });
+    expect(r.conteos.descartados).toEqual({ sinTelefono: 1, sinFecha: 2, excluidos: 1, pruebas: 0 });
   });
   it('las celdas usan el vocabulario del bot: Enviada / Registrado + fecha hora La Paz; O es la última elección; vacío si no hay dato; nunca pagado/acreditado', () => {
     expect(mod.celdasDeCompra({ pedidoMs: T, reservaMs: null })).toEqual({ quePidio: 'Pedido', diaPreferido: '', horarioPreferido: 'Registrado 2026-11-05 14:30' });
@@ -501,9 +501,9 @@ describe('Q4. propuesta para filas existentes: solo celdas vacías de O/P/Q, y n
     const r = mod.construirActualizaciones({ valores, mapa, compras });
     expect(r.conteos).toMatchObject({ existentesConCompra: 3, aCompletar: 2, sinHuecos: 1, conVariasFilas: 1 });
     // 59170000001: última fila (la 7): O ya dice «Consulta» (no se pisa), solo Q
-    expect(r.propuestas).toContainEqual({ fila: 7, celdas: { Q: 'Registrado 2026-11-05 14:30' } });
+    expect(r.propuestas).toContainEqual({ fila: 7, telefono: '59170000001', celdas: { Q: 'Registrado 2026-11-05 14:30' } });
     // 59170000002: P ya tenía dato, O también; solo Q (vacía)
-    expect(r.propuestas).toContainEqual({ fila: 5, celdas: { Q: 'Registrado 2026-11-05 14:30' } });
+    expect(r.propuestas).toContainEqual({ fila: 5, telefono: '59170000002', celdas: { Q: 'Registrado 2026-11-05 14:30' } });
     expect(r.propuestas.find((p) => p.fila === 6)).toBeUndefined(); // sin huecos: nada
     for (const p of r.propuestas) expect(Object.keys(p.celdas).every((l) => ['O', 'P', 'Q'].includes(l))).toBe(true); // jamás J..M ni U
   });
@@ -631,14 +631,44 @@ describe('Q5. --aplicar completa O/P/Q de filas existentes (solo vacías) y --re
       return resp({});
     }) as typeof fetch;
     try {
-      await mod.completarCeldas({ envFile, tenant: 'qtaco', sheet: 'HOJA', celdas: [{ rango: "'Leads_CRM'!O4", valor: 'Pedido' }, { rango: "'Leads_CRM'!Q4", valor: 'Registrado 2026-11-05 14:30' }] });
+      await mod.completarCeldas({ envFile, tenant: 'qtaco', sheet: 'HOJA', celdas: [{ rango: "'Leads_CRM'!O4", valor: 'Pedido', fila: 4, tel: '59170000001' }, { rango: "'Leads_CRM'!Q4", valor: 'Registrado 2026-11-05 14:30', fila: 4, tel: '59170000001' }] });
       expect(flujo.nodes.map((n: any) => n.name)).toEqual(['Entrada', 'Destino', 'Escribir']);
       const dest = flujo.nodes.find((n: any) => n.name === 'Destino').parameters.url;
-      expect(dest).toContain('values:batchGet'); expect(decodeURIComponent(dest)).toContain("ranges='Leads_CRM'!O4"); expect(decodeURIComponent(dest)).toContain("ranges='Leads_CRM'!Q4");
+      expect(dest).toContain('values:batchGet'); expect(decodeURIComponent(dest)).toContain("ranges='Leads_CRM'!O4"); expect(decodeURIComponent(dest)).toContain("ranges='Leads_CRM'!Q4"); expect(decodeURIComponent(dest)).toContain("ranges='Leads_CRM'!E4");
+      expect(cuerpoEntrada.telefonos).toEqual(['59170000001']); expect(cuerpoEntrada.n).toBe(2);
+      // La expresión del flujo, evaluada con datos simulados: coincide -> escribe; fila movida o celda ocupada -> se corta.
+      const evaluar = (valueRanges: unknown[]) => { const e = flujo.nodes.find((n: any) => n.name === 'Escribir').parameters.jsonBody as string;
+        const $ = (nombre: string) => ({ first: () => ({ json: nombre === 'Destino' ? { valueRanges } : { body: cuerpoEntrada } }) });
+        return new Function('$', `return ${e.slice(3, e.length - 2)}`)($) as string; };
+      const vacio = { values: undefined }; const tel = (v: string) => ({ values: [[v]] });
+      expect(JSON.parse(evaluar([vacio, vacio, tel("'59170000001")])).data).toHaveLength(2);
+      expect(() => evaluar([vacio, vacio, tel('59170000009')])).toThrow('celda ocupada'); // la fila se reordenó entre la relectura y la escritura
+      expect(() => evaluar([vacio, vacio, vacio])).toThrow('celda ocupada'); // la fila desapareció
+      expect(() => evaluar([vacio, { values: [['x']] }, tel('59170000001')])).toThrow('celda ocupada'); // una celda dejó de estar vacía
       const esc = flujo.nodes.find((n: any) => n.name === 'Escribir').parameters;
       expect(esc.url).toContain('values:batchUpdate'); expect(esc.jsonBody).toContain("$('Destino')"); expect(esc.jsonBody).toContain('celda ocupada');
       expect(esc.jsonBody.slice(3, esc.jsonBody.length - 3)).not.toContain('}}');
       expect(cuerpoEntrada.datos).toEqual([{ range: "'Leads_CRM'!O4", majorDimension: 'ROWS', values: [['Pedido']] }, { range: "'Leads_CRM'!Q4", majorDimension: 'ROWS', values: [['Registrado 2026-11-05 14:30']] }]);
     } finally { globalThis.fetch = real; rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+
+describe('Q6. teléfonos de prueba: fuera de los contactos nuevos y fuera los pedidos de cierres de prueba', () => {
+  const T = Date.UTC(2026, 10, 5, 18, 30);
+  it('TELEFONOS_EXCLUIDOS (deps.excluir) quita también a los contactos antes de construir filas; solo se imprime el conteo', async () => {
+    const m = mundo('qtaco', [conv(1), conv(2), conv(3)]);
+    const deps = { ...m.deps, excluir: ['+591 70000002', ''] };
+    expect(await mod.ejecutar(cfgDe('qtaco'), deps)).toBe(1);
+    expect(m.texto()).toContain('filas a crear               : 2');
+    expect(m.texto()).toContain('más 1 excluidas');
+    expect(m.texto()).not.toMatch(/59170000/);
+  });
+  it('NEGADO: un pedido de la colección cuya clave coincide con un cierre de prueba no cuenta (con o sin el prefijo wa_)', () => {
+    const r = mod.reunirCompras([
+      { telefono: '59170000001', tipo: 'pedido', clave: 'wa_ped-prueba', ms: T }, { telefono: '59170000001', tipo: 'pedido', clave: 'ped-real', ms: T },
+    ], { clavesDePrueba: ['ped-prueba'], ahoraMs: T + 86_400_000 });
+    expect(r.conteos).toMatchObject({ pedidos: 1 });
+    expect(r.conteos.descartados.pruebas).toBe(1);
   });
 });

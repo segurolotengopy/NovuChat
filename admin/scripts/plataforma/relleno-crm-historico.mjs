@@ -158,12 +158,14 @@ export function clasificarCierre({ tipo, referencia, detalle }) {
  * De los eventos sueltos [{ telefono, tipo: 'pedido'|'reserva', clave, ms }] al mapa por teléfono (solo dígitos):
  * { pedidoMs, reservaMs } con el MÁS RECIENTE de cada clase (como hace el bot: cada evento pisa al anterior), y los conteos de eventos distintos.
  */
-export function reunirCompras(eventos, { excluir = [], ahoraMs = Date.now() } = {}) {
+export function reunirCompras(eventos, { excluir = [], ahoraMs = Date.now(), clavesDePrueba = [] } = {}) {
+  const pruebas = new Set(clavesDePrueba.map((c) => String(c ?? '').replace(/^wa_/, '')).filter(Boolean));
   const fuera = new Set(excluir.map((t) => CRM.crmDigitos(t)).filter(Boolean));
-  const conteos = { pedidos: 0, reservas: 0, descartados: { sinTelefono: 0, sinFecha: 0, excluidos: 0 } };
+  const conteos = { pedidos: 0, reservas: 0, descartados: { sinTelefono: 0, sinFecha: 0, excluidos: 0, pruebas: 0 } };
   const unicos = new Map(); // `${tipo}:${clave}` -> { telefono, ms }
   for (const e of eventos) {
     if (e?.tipo !== 'pedido' && e?.tipo !== 'reserva') continue;
+    if (pruebas.has(String(e.clave ?? '').replace(/^wa_/, ''))) { conteos.descartados.pruebas += 1; continue; }
     const tel = CRM.crmDigitos(e.telefono);
     if (tel.length < 8 || tel.length > 15) { conteos.descartados.sinTelefono += 1; continue; }
     if (fuera.has(tel)) { conteos.descartados.excluidos += 1; continue; }
@@ -222,7 +224,7 @@ export function construirActualizaciones({ valores, mapa, compras }) {
     }
     if (Object.keys(celdas).length === 0) { conteos.sinHuecos += 1; continue; }
     conteos.aCompletar += 1; conteos.celdas += Object.keys(celdas).length;
-    propuestas.push({ fila: fila.fila, celdas });
+    propuestas.push({ fila: fila.fila, telefono: tel, celdas });
   }
   return { propuestas, conteos };
 }
@@ -438,11 +440,17 @@ export async function agregarFilas({ envFile, tenant, sheet, mapa, filas, filaDe
 const CAMPOS_COMPRA = ['quePidio', 'diaPreferido', 'horarioPreferido'];
 /** Las celdas O/P/Q de una lista de filas, con una lectura previa DENTRO del flujo: si alguna ya tiene dato (el bot o el equipo escribió a la vez), se corta y no se escribe ninguna. */
 export async function completarCeldas({ envFile, tenant, sheet, celdas }) {
-  const consulta = celdas.map((c) => `ranges=${encodeURIComponent(c.rango)}`).join('&');
+  // Integridad: además de las celdas, el flujo lee la columna del teléfono (E) de cada fila y la compara con los dígitos esperados; si la fila se movió o cambió, se corta.
+  const filas = [...new Set(celdas.map((c) => c.fila))];
+  const telefonos = filas.map((f) => celdas.find((c) => c.fila === f).tel);
+  const rangosTel = filas.map((f) => `'${HOJA}'!E${f}`);
+  const consulta = [...celdas.map((c) => c.rango), ...rangosTel].map((r) => `ranges=${encodeURIComponent(r)}`).join('&');
   const aborta = "(() => { throw new Error('celda ocupada'); })()";
+  const B = "$('Entrada').first().json.body";
   // Los datos viajan como DATO en el cuerpo de la entrada (regla: ninguna expresión lleva JSON ni «}}» incrustados).
-  const cuerpo = `={{ $('Destino').first().json.valueRanges.some((r) => Array.isArray(r.values) && r.values.some((f) => f.some((v) => String(v).trim() !== ''))) ? ${aborta} : JSON.stringify({ valueInputOption: 'USER_ENTERED', data: $('Entrada').first().json.body.datos }) }}`;
-  return correrEnN8n({ envFile, tenant, cuerpo: { datos: celdas.map((c) => ({ range: c.rango, majorDimension: 'ROWS', values: [[c.valor]] })) }, hacer: ({ http }) => ({ nodos: [
+  const ocupada = `$('Destino').first().json.valueRanges.some((r, i) => i < ${B}.n ? (Array.isArray(r.values) && r.values.some((f) => f.some((v) => String(v).trim() !== ''))) : String((r.values && r.values[0] && r.values[0][0]) || '').replace(/\\D/g, '') !== ${B}.telefonos[i - ${B}.n])`;
+  const cuerpo = `={{ ${ocupada} ? ${aborta} : JSON.stringify({ valueInputOption: 'USER_ENTERED', data: ${B}.datos }) }}`;
+  return correrEnN8n({ envFile, tenant, cuerpo: { n: celdas.length, telefonos, datos: celdas.map((c) => ({ range: c.rango, majorDimension: 'ROWS', values: [[c.valor]] })) }, hacer: ({ http }) => ({ nodos: [
     http('destino', 'Destino', 240, { method: 'GET', url: `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheet)}/values:batchGet?${consulta}&valueRenderOption=FORMATTED_VALUE` }),
     http('escribir', 'Escribir', 480, { method: 'POST', url: `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheet)}/values:batchUpdate`, sendBody: true, contentType: 'json', specifyBody: 'json', jsonBody: cuerpo }),
   ] }) });
@@ -479,7 +487,7 @@ async function leerConversaciones(db, tenant) {
  */
 async function leerCompras(db, tenant, excluir) {
   const ms = (t) => (t && typeof t.toMillis === 'function' ? t.toMillis() : null);
-  const eventos = [];
+  const eventos = []; const clavesDePrueba = [];
   const cierres = (await db.collection(`tenants/${tenant}/cierres`).where('tipo', 'in', ['registro', 'venta']).select('tipo', 'ocurridoEn', 'referencia').get()).docs;
   for (let i = 0; i < cierres.length; i += 100) {
     const lote = cierres.slice(i, i + 100);
@@ -487,6 +495,7 @@ async function leerCompras(db, tenant, excluir) {
     lote.forEach((d, j) => {
       const x = d.data(); const p = privados[j].exists ? privados[j].data() : {};
       const tipo = clasificarCierre({ tipo: x.tipo, referencia: x.referencia, detalle: p.detalle });
+      if (tipo === 'prueba') clavesDePrueba.push(x.referencia);
       if (tipo === 'pedido' || tipo === 'reserva') eventos.push({ telefono: p.telefono ?? '', tipo, clave: x.referencia, ms: ms(x.ocurridoEn) });
     });
   }
@@ -495,7 +504,7 @@ async function leerCompras(db, tenant, excluir) {
     const x = d.data();
     eventos.push({ telefono: String(x.conversacionId ?? '').replace(/^wa_/, ''), tipo: 'pedido', clave: d.id, ms: ms(x.creadoEn) });
   }
-  return reunirCompras(eventos, { excluir });
+  return reunirCompras(eventos, { excluir, clavesDePrueba });
 }
 
 
@@ -512,17 +521,17 @@ const leerCelda = (valores, mapa, celda) => {
 async function completarExistentes({ cfg, deps, mapa, compras, log, rutaRespaldo }) {
   const valores = await deps.leer(); // justo antes de escribir: lo que dejó de estar vacío se respeta
   const { propuestas } = construirActualizaciones({ valores, mapa, compras });
-  const celdas = propuestas.flatMap((p) => Object.entries(p.celdas).map(([letra, valor]) => ({ celda: celdaDe(letra, p.fila), valor })));
+  const celdas = propuestas.flatMap((p) => Object.entries(p.celdas).map(([letra, valor]) => ({ celda: celdaDe(letra, p.fila), valor, fila: p.fila, tel: p.telefono })));
   if (celdas.length === 0) { log('  ✓ Filas existentes: no hay celdas O/P/Q vacías que completar.'); return 0; }
   if (cfg.respaldo === null || rutaRespaldo === null) { log('\n  ✗ falta la ruta del respaldo\n'); return 2; }
   try {
-    guardarRespaldo(rutaRespaldo, { version: 1, campo: 'relleno-crm-historico-completar', entorno: cfg.entorno, tenant: cfg.tenant, creadoEn: new Date().toISOString(), escrito: celdas });
+    guardarRespaldo(rutaRespaldo, { version: 1, campo: 'relleno-crm-historico-completar', entorno: cfg.entorno, tenant: cfg.tenant, creadoEn: new Date().toISOString(), escrito: celdas.map((c) => ({ celda: c.celda, valor: c.valor })) });
   } catch (e) {
     if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe un archivo en esa ruta de respaldo: un respaldo nunca se pisa. No se completa nada.\n'); return 2; }
     throw e;
   }
   log(`  Respaldo de las ${celdas.length} celdas a completar (solo celda y valor, sin teléfonos): ${rutaRespaldo}`);
-  await deps.completar(celdas.map((c) => ({ rango: `'${HOJA}'!${c.celda}`, valor: c.valor })));
+  await deps.completar(celdas.map((c) => ({ rango: `'${HOJA}'!${c.celda}`, valor: c.valor, fila: c.fila, tel: c.tel })));
   const despues = await deps.leer();
   const mal = celdas.filter((c) => leerCelda(despues, mapa, c.celda).trim() !== c.valor).length;
   if (mal) { log(`\n  ✗ La relectura no coincide en ${mal} celda(s). Revise la hoja; el respaldo permite revertir lo que sí quedó.\n`); return 3; }
@@ -593,8 +602,12 @@ export async function ejecutar(cfg, deps) {
   }
 
   const conCompras = TENANTS_CON_COMPRAS.includes(cfg.tenant) && typeof deps.compras === 'function';
-  const [conversaciones, valores, resultadoCompras] = await Promise.all([deps.conversaciones(), deps.leer(), conCompras ? deps.compras() : Promise.resolve(null)]);
+  const [conversacionesTodas, valores, resultadoCompras] = await Promise.all([deps.conversaciones(), deps.leer(), conCompras ? deps.compras() : Promise.resolve(null)]);
   const compras = resultadoCompras?.porTelefono ?? new Map();
+  // Los teléfonos de prueba (TELEFONOS_EXCLUIDOS) tampoco entran como contactos nuevos.
+  const fuera = new Set((deps.excluir ?? []).map((t) => CRM.crmDigitos(t)).filter(Boolean));
+  const conversaciones = conversacionesTodas.filter((c) => !fuera.has(CRM.crmDigitos(c.telefono)));
+  const conversacionesExcluidas = conversacionesTodas.length - conversaciones.length;
   if (valores.length === 0) { log('\n  ✗ la hoja no se pudo leer (fila de encabezados vacía): no se escribe nada.\n'); return 3; }
   // Los títulos de la fila de encabezados tienen que ser los del mapa, letra por letra: si el equipo movió columnas, se escribiría en las equivocadas.
   const esperados = encabezadosEsperados(mapa);
@@ -603,7 +616,7 @@ export async function ejecutar(cfg, deps) {
   const hoja = resumenDeLaHoja(valores, mapa);
   const { filas, omitidos, conteos } = construirFilas({ conversaciones, hoja, mapa, compras });
   log(`\n  ${cfg.aplicar ? 'APLICAR' : 'SECO (solo lecturas)'} · ${rotulo}\n`);
-  log(`  conversaciones en Firestore : ${conteos.conversaciones}`);
+  log(`  conversaciones en Firestore : ${conteos.conversaciones}${conversacionesExcluidas ? ` (más ${conversacionesExcluidas} excluidas por TELEFONOS_EXCLUIDOS)` : ''}`);
   log(`  filas ya en la hoja         : ${hoja.telefonos.filter((t) => String(t).trim() !== '').length}`);
   log(`  se saltan (ya tienen fila)  : ${omitidos.yaTienenFila}`);
   log(`  se saltan (sin teléfono)    : ${omitidos.sinTelefono + omitidos.repetidos}`);
@@ -611,7 +624,7 @@ export async function ejecutar(cfg, deps) {
   let a = { aCompletar: 0 };
   if (conCompras) {
     const c = resultadoCompras.conteos; const d = c.descartados;
-    log(`  compras registradas antes   : ${c.pedidos} pedidos y ${c.reservas} reservas distintos, de ${compras.size} teléfonos (descartados: sin teléfono ${d.sinTelefono}, sin fecha ${d.sinFecha}, excluidos ${d.excluidos})`);
+    log(`  compras registradas antes   : ${c.pedidos} pedidos y ${c.reservas} reservas distintos, de ${compras.size} teléfonos (descartados: sin teléfono ${d.sinTelefono}, sin fecha ${d.sinFecha}, excluidos ${d.excluidos}, de prueba ${d.pruebas ?? 0})`);
     log(`  contactos que solo están en sus compras (sin conversación): ${conteos.soloCompra}`);
     log(`  filas a crear con compra    : ${conteos.conCompra}  (con pedido: ${conteos.conPedido}; con reserva: ${conteos.conReserva})`);
     a = construirActualizaciones({ valores, mapa, compras }).conteos;
@@ -672,6 +685,7 @@ async function principal() {
   if (!a.ok) { console.error(`\n  ✗ ${a.problemas.join('\n  ✗ ')}\n\n${USO}\n`); process.exit(2); }
   const { cfg } = a;
   const mapa = leerMapa(cfg.tenant);
+  const excluir = String(process.env.TELEFONOS_EXCLUIDOS ?? '').split(',').map((t) => t.trim()).filter(Boolean);
   const args = { envFile: process.env.ENV_FILE, tenant: cfg.tenant, sheet: process.env.SHEET_ID, mapa };
   const { initializeApp } = await import('firebase-admin/app');
   const { getFirestore } = await import('firebase-admin/firestore');
@@ -680,7 +694,8 @@ async function principal() {
   const codigo = await ejecutar(cfg, {
     mapa,
     conversaciones: () => leerConversaciones(db, cfg.tenant),
-    compras: () => leerCompras(db, cfg.tenant, String(process.env.TELEFONOS_EXCLUIDOS ?? '').split(',')),
+    excluir,
+    compras: () => leerCompras(db, cfg.tenant, excluir),
     leer: () => leerHoja(args),
     agregar: (filas, filaDesde) => agregarFilas({ ...args, filas, filaDesde }),
     limpiar: (rango) => limpiarRango({ ...args, rango }),
