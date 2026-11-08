@@ -641,6 +641,13 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   // El id de la planilla del miniCRM va VACIO en el ensayo (aunque el JSON trajera otro): sin planilla no se escribe nada.
   const idPlanillaDemo = b.nodes.find((n) => n.name === 'Config base')?.parameters?.assignments?.assignments?.find((a) => a.name === 'planillaProspectosId');
   if (idPlanillaDemo) idPlanillaDemo.value = '';
+  // El doctor del ENSAYO es quien prueba (PREPARACION.md §3). `configuracionFlujo` no entrega `numeroDoctor`, así que sin esto el respaldo
+  // queda en marcador, el flujo no tiene a quién apuntar y retira la frase del botón («Vacunas y otros» salía como texto, humo del 08/11).
+  // El número llega por la variable de entorno NUMERO_DOCTOR_ENSAYO (nunca por argumento ni impreso).
+  const doctorEnsayo = String(process.env.NUMERO_DOCTOR_ENSAYO ?? '').replace(/\D/g, '');
+  if (process.env.NUMERO_DOCTOR_ENSAYO !== undefined && !/^\d{8,15}$/.test(doctorEnsayo)) morir('NUMERO_DOCTOR_ENSAYO no tiene la forma de un teléfono (8 a 15 dígitos)');
+  const campoDoctorDemo = b.nodes.find((n) => n.name === 'Config base')?.parameters?.assignments?.assignments?.find((a) => a.name === 'respaldoNumeroDoctor');
+  if (campoDoctorDemo && doctorEnsayo) campoDoctorDemo.value = doctorEnsayo;
   // La trampa del 15/09: un nodo que habla con Graph (Meta) con una credencial de cabecera genérica (la de la ingesta) le manda el token
   // de la consola a Meta. Tras resolver, ningún nodo con URL al anfitrión de Graph (Meta) puede conservar `httpHeaderAuth`: va con `whatsAppApi`.
   const graphConCabecera = b.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && llamaAGraph(n.parameters?.url)
