@@ -78,7 +78,7 @@ function panel(extra: J = {}, oferta: J = {}): J {
 
 // La hoja «Leads_CRM»: encabezados en la fila 3 (A3:N3). Es el esquema de `decidir-fila-de-la-planilla.js` (módulo crm, mapa de NovuChat).
 const ENC = ['ID Lead', 'Fecha Registro', 'Nombre y Apellido', 'Empresa / Cliente', 'Teléfono WhatsApp', 'Rubro', 'Etapa Funnel', 'Origen / Canal', 'Calificación IA', 'Resumen Chatbot IA',
-  'Próxima acción', 'Notas del equipo', 'Estado Comercial', 'Responsable'];
+  'Próxima acción', 'Notas del equipo', 'Estado Comercial', 'Responsable', 'Última interacción'];
 const COL = { empresa: 'Empresa / Cliente', nombre: 'Nombre y Apellido', rubro: 'Rubro', origen: 'Origen / Canal', calificacion: 'Calificación IA', resumen: 'Resumen Chatbot IA', id: 'ID Lead' };
 
 // ------------------------------------------------------------------------------ mensajes entrantes
@@ -238,7 +238,7 @@ function crear(op: OpcionesDelMundo = {}): W {
       const valores = (((ll.parametros['filtersUI'] ?? {})['values'] ?? []) as J[]).map((v) => String(v['lookupValue'] ?? ''));
       // (como Google: TODAS las filas con ese teléfono, no solo la primera)
       const hallazgos = w.hoja.filas.map((f, k) => ({ f, k })).filter(({ f }) => valores.includes(String(f[4] ?? '')));
-      return hallazgos.length === 0 ? {} : hallazgos.map(({ f, k }) => Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, f[c] ?? ''])))) as unknown as J;
+      return hallazgos.length === 0 ? {} : hallazgos.map(({ f, k }) => Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.map((h, c) => [h, f[c] ?? ''])))) as unknown as J;
     },
     'Leer IDs de la planilla': (ll) => {
       registrarHoja(ll);
@@ -301,7 +301,7 @@ function propiedades(w: W, t: T, from: string, entrada: string, tiposSinBotones:
   const ctx = `turno «${entrada.slice(0, 70)}»`;
   expect(w.malFormado, `${ctx}: formas de pedido`).toEqual([]);
   expect(w.hoja.formulas, `${ctx}: una celda de la hoja quedó como fórmula`).toEqual([]);
-  expect(w.hoja.llamadas.every((l) => !/K|L|M|N/.test(l.rango.replace(/^A3:/, '').replace(/[0-9]/g, '')) || l.rango === ''), `${ctx}: la hoja se lee fuera de A3:J / A3:A`).toBe(true);
+  expect(w.hoja.llamadas.every((l) => l.rango === '' || /^A3:(O|A)$/.test(l.rango)), `${ctx}: la hoja se lee fuera de A3:O / A3:A`).toBe(true); // 08/11/2026: «Última interacción» en O obliga a leer K a N (equipo); pendiente de decisión de Andres
   const salientes = t.mensajes.filter((e) => e.tipo !== 'template');
   // MENSAJES POR TURNO: UNO al cliente (más, a lo sumo, la plantilla a recepción).
   expect(t.aMi.length, `${ctx}: más de un mensaje al cliente en un turno`).toBeLessThanOrEqual(1);
@@ -1291,7 +1291,7 @@ describe('la hoja Leads_CRM: fila, nombre, empresa, rubro, necesidad y calificac
     const w = crear();
     jugar(w, MAMA).texto('Hola');
     const rangos = w.hoja.llamadas.filter((l) => l.nodo.startsWith('Buscar') || l.nodo.startsWith('Leer')).map((l) => l.rango);
-    expect(new Set(rangos)).toEqual(new Set(['A3:J', 'A3:A']));
+    expect(new Set(rangos)).toEqual(new Set(['A3:O', 'A3:A']));
     expect(w.hoja.llamadas.find((l) => l.nodo === 'Agregar fila')!.formato).toBe('USER_ENTERED');
   });
 });

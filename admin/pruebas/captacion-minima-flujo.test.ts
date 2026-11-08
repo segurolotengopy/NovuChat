@@ -208,7 +208,7 @@ const campana = (textoDeLaCampana: string, destino?: string, id = 'camp-1'): J =
 // La planilla «Leads_CRM»: encabezados en la fila 3 (A3:N3). Es el esquema del mapa `crm` (módulo `Flujos/src/modulos/crm`), que el contrato
 // manda copiar TAL CUAL.
 const ENC = ['ID Lead', 'Fecha Registro', 'Nombre y Apellido', 'Empresa / Cliente', 'Teléfono WhatsApp', 'Rubro', 'Etapa Funnel',
-  'Origen / Canal', 'Calificación IA', 'Resumen Chatbot IA', 'Próxima acción', 'Notas del equipo', 'Estado Comercial', 'Responsable'];
+  'Origen / Canal', 'Calificación IA', 'Resumen Chatbot IA', 'Próxima acción', 'Notas del equipo', 'Estado Comercial', 'Responsable', 'Última interacción'];
 const COL_EMPRESA = 'Empresa / Cliente';
 const COL_RUBRO = 'Rubro';
 const COL_ORIGEN = 'Origen / Canal';
@@ -369,7 +369,7 @@ function crear(op: OpcionesDelMundo = {}): W {
       const primera = ll.parametros['options']?.['returnFirstMatch'] !== false;
       const todas = w.hoja.filas.map((f, k) => ({ f, k })).filter(({ f }) => valores.includes(String(f[4] ?? '')));
       if (!todas.length) return {};
-      const item = ({ f, k }: { f: (string | number)[]; k: number }): J => Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, f[c] ?? ''])));
+      const item = ({ f, k }: { f: (string | number)[]; k: number }): J => Object.assign({ row_number: k + 2 }, Object.fromEntries(ENC.map((h, c) => [h, f[c] ?? ''])));
       return primera ? item(todas[0]!) : todas.map(item);
     },
     'Leer IDs de la planilla': (ll) => {
@@ -772,7 +772,7 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
     it('Planilla: rangos A3:J y A3:A, búsqueda con TODAS las coincidencias (el módulo crm elige la más reciente); «Agregar fila» en USER_ENTERED y «Actualizar fila» en RAW', () => {
       for (const f of [PRODUCCION, PRUEBA]) {
         const rango = (n: string): string => String(nodo(f, n)!.parameters['options']?.['dataLocationOnSheet']?.['values']?.['range']);
-        expect(rango('Buscar teléfono en planilla')).toBe('A3:J');
+        expect(rango('Buscar teléfono en planilla')).toBe('A3:O');
         expect(rango('Leer IDs de la planilla')).toBe('A3:A');
         expect(nodo(f, 'Buscar teléfono en planilla')!.parameters['options']['returnFirstMatch']).toBe(false);
         expect(nodo(f, 'Agregar fila')!.parameters['options']['cellFormat']).toBe('USER_ENTERED');
@@ -900,7 +900,7 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
         expect(l.documento, l.nodo).toBe(ID_PLANILLA);
         expect(l.hoja, l.nodo).toBe('Leads_CRM');
       }
-      expect(w.hoja.llamadas.find((l) => l.nodo === 'Buscar teléfono en planilla')!.rango).toBe('A3:J');
+      expect(w.hoja.llamadas.find((l) => l.nodo === 'Buscar teléfono en planilla')!.rango).toBe('A3:O');
       expect(w.hoja.llamadas.find((l) => l.nodo === 'Leer IDs de la planilla')!.rango).toBe('A3:A');
       expect(w.hoja.llamadas.find((l) => l.nodo === 'Agregar fila')!.formato).toBe('USER_ENTERED');
       expect(w.hoja.llamadas.find((l) => l.nodo === 'Actualizar fila')!.formato).toBe('RAW');
@@ -2243,7 +2243,7 @@ describe('construir.mjs: el flujo armado es el que sale de la plantilla y los da
       ['progreso guardado', (f) => { f.settings!['saveExecutionProgress'] = true; }, /saveExecutionProgress/],
       ['orden de ejecución', (f) => { f.settings!['executionOrder'] = 'v0'; }, /executionOrder/],
       ['zona horaria', (f) => { f.settings!['timezone'] = 'UTC'; }, /timezone/],
-      ['rango de búsqueda', (f) => { f.nodes.find((x) => x.name === 'Buscar teléfono en planilla')!.parameters['options']['dataLocationOnSheet']['values']['range'] = 'A3:Z'; }, /A3:J/],
+      ['rango de búsqueda', (f) => { f.nodes.find((x) => x.name === 'Buscar teléfono en planilla')!.parameters['options']['dataLocationOnSheet']['values']['range'] = 'A3:Z'; }, /A3:O/],
       ['rango de IDs', (f) => { f.nodes.find((x) => x.name === 'Leer IDs de la planilla')!.parameters['options']['dataLocationOnSheet']['values']['range'] = 'A3:N'; }, /A3:A/],
       ['formato de agregar', (f) => { f.nodes.find((x) => x.name === 'Agregar fila')!.parameters['options']['cellFormat'] = 'RAW'; }, /USER_ENTERED/],
       ['formato de actualizar', (f) => { f.nodes.find((x) => x.name === 'Actualizar fila')!.parameters['options']['cellFormat'] = 'USER_ENTERED'; }, /RAW/],

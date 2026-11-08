@@ -1453,7 +1453,7 @@ const plantillaDeEjemplo = (): J => ({
     // La hoja de prospectos la INCLUYE el módulo crm (paquetes `crm-prospecto` y `crm-decidir`); el mapa del tenant fija los rangos de Google.
     nodo('Prospecto para la planilla', 'n8n-nodes-base.code', { jsCode: '@@medio:crm-prospecto' }),
     nodo('Decidir fila de la planilla', 'n8n-nodes-base.code', { jsCode: '@@medio:crm-decidir' }),
-    nodo('Buscar teléfono en planilla', 'n8n-nodes-base.googleSheets', { filtersUI: { values: [{ lookupColumn: 'x', lookupValue: 'y' }] }, options: { returnFirstMatch: false, dataLocationOnSheet: { values: { range: 'A3:J' } } } }, { credentials: cred('googleApi', '@@cred:planilla') }),
+    nodo('Buscar teléfono en planilla', 'n8n-nodes-base.googleSheets', { filtersUI: { values: [{ lookupColumn: 'x', lookupValue: 'y' }] }, options: { returnFirstMatch: false, dataLocationOnSheet: { values: { range: 'A3:O' } } } }, { credentials: cred('googleApi', '@@cred:planilla') }),
     nodo('Leer IDs de la planilla', 'n8n-nodes-base.googleSheets', { options: { dataLocationOnSheet: { values: { range: 'A3:A' } } } }, { credentials: cred('googleApi', '@@cred:planilla') }),
     nodo('Agregar fila', 'n8n-nodes-base.googleSheets', { options: { cellFormat: 'USER_ENTERED', locationDefine: { values: { headerRow: 3 } } } }, { credentials: cred('googleApi', '@@cred:planilla') }),
     nodo('Actualizar fila', 'n8n-nodes-base.googleSheets', { options: { cellFormat: 'RAW', locationDefine: { values: { headerRow: 3, firstDataRow: 4 } } } }, { credentials: cred('googleApi', '@@cred:planilla') }),
@@ -1568,10 +1568,10 @@ describe('guardias de --verificar', () => {
     delete sinAjustes['settings'];
     expect(G('trigger', sinAjustes).length).toBeGreaterThanOrEqual(3);
   });
-  it('la planilla: rangos A3:J y A3:A, «Agregar fila» en USER_ENTERED y «Actualizar fila» en RAW', () => {
+  it('la planilla: rangos A3:O y A3:A, «Agregar fila» en USER_ENTERED y «Actualizar fila» en RAW', () => {
     const r1 = armado('trigger');
     nodoDe(r1, 'Buscar teléfono en planilla')['parameters']['options']['dataLocationOnSheet']['values']['range'] = 'A3:N';
-    expect(hay(G('trigger', r1), /«Buscar teléfono en planilla» tiene que leer solo el rango A3:J/)).toBe(true);
+    expect(hay(G('trigger', r1), /«Buscar teléfono en planilla» tiene que leer solo el rango A3:O/)).toBe(true);
     // Sin el mapa `crm` no se puede comprobar el rango; y la búsqueda tiene que traer TODAS las coincidencias (el módulo elige la más reciente).
     expect(hay(C.guardias('trigger', armado('trigger')), /faltan los datos `crm`/)).toBe(true);
     const r1b = armado('trigger');

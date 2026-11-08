@@ -1616,9 +1616,9 @@ describe('guardias de --verificar', { timeout: 120000 }, () => {
     const e = prod(); e['settings'].errorWorkflow = 'x';
     expect(CONSTRUIR.guardias('trigger', e).join(' ')).toMatch(/errorWorkflow/);
   });
-  it('la planilla: solo A3:J y A3:A, USER_ENTERED para agregar y RAW para actualizar', () => {
+  it('la planilla: solo A3:O y A3:A, USER_ENTERED para agregar y RAW para actualizar', () => {
     const a = prod(); a['nodes'].find((n: J) => n.name === 'Buscar teléfono en planilla').parameters.options.dataLocationOnSheet.values.range = 'A3:N';
-    expect(CONSTRUIR.guardias('trigger', a, DATOS_CRM).join(' ')).toMatch(/A3:J/);
+    expect(CONSTRUIR.guardias('trigger', a, DATOS_CRM).join(' ')).toMatch(/A3:O/);
     expect(CONSTRUIR.guardias('trigger', prod()).join(' ')).toMatch(/faltan los datos `crm`/);
     const c = prod(); c['nodes'].find((n: J) => n.name === 'Buscar teléfono en planilla').parameters.options.returnFirstMatch = true;
     expect(CONSTRUIR.guardias('trigger', c, DATOS_CRM).join(' ')).toMatch(/TODAS las coincidencias/);

@@ -108,18 +108,41 @@ describe('una fila por conversación: la ventana fija de 24 h', () => {
     expect(r['accionPlanilla']).toBe('nada');
     expect(r['veredictoPlanilla']).toBe('sin_ultima_interaccion');
   });
-  it('la fila nueva sale «Tibio» cuando el prospecto es el mínimo (sin ninguna señal)', () => {
-    const r = decidir({ telefono: TEL, nombre: 'Ana P', nombreDePerfil: true, senales: {}, conversacionDesdeMs: ANCLA, ultimaInteraccionMs: ANCLA });
+  it('fila MÍNIMA (protección, prueba o plan): crea la fila con SOLO teléfono, fecha, «Última interacción», ventana y «Tibio»; ni nombre, ni texto, ni motivo', () => {
+    const r = decidir({ telefono: TEL, minima: true, senales: {}, nombre: 'Dato Que No Debe Pasar', quePidio: 'texto', resumen: 'motivo', rubro: 'x', empresa: 'y', conversacionDesdeMs: ANCLA, ultimaInteraccionMs: ANCLA });
     expect(r['accionPlanilla']).toBe('agregar');
     expect(r[T.clasif]).toBe('Tibio');
+    expect(r[T.telefono]).toBe("'" + TEL);
+    expect(r[T.ultima]).toBe("'" + lp(ANCLA));
+    const vacias = [T.nombre, T.empresa, T.calif, T.resumen, 'Agendó'];
+    for (const k of vacias) expect([undefined, ''], k).toContain(r[k]);
+    expect(JSON.stringify(r)).not.toMatch(/Dato Que No Debe|texto|motivo/);
+  });
+  it('una conversación sin prospecto produce exactamente 1 fila; la 2.ª en la misma ventana no crea otra (solo refresca «Última interacción»)', () => {
+    const primera = decidir({ telefono: TEL, minima: true, senales: {}, conversacionDesdeMs: ANCLA, ultimaInteraccionMs: ANCLA });
+    expect(primera['accionPlanilla']).toBe('agregar');
+    const escrita = fila(8, { [T.ultima]: lp(ANCLA), [T.clasif]: 'Tibio' });
+    const segunda = decidir({ telefono: TEL, minima: true, senales: {}, nombre: 'No', conversacionDesdeMs: ANCLA, ultimaInteraccionMs: ANCLA + 2 * H }, [escrita]);
+    expect(segunda['accionPlanilla']).toBe('actualizar');
+    expect(Object.keys(segunda).filter((k) => !['accionPlanilla', 'veredictoPlanilla', 'row_number'].includes(k))).toEqual([T.ultima]);
+    const igual = decidir({ telefono: TEL, minima: true, senales: {}, conversacionDesdeMs: ANCLA, ultimaInteraccionMs: ANCLA }, [escrita]);
+    expect(igual['accionPlanilla']).toBe('nada');
+  });
+  it('una fila MÍNIMA nunca pisa una fila con datos: no escribe nombre, calificación ni clasificación', () => {
+    const rica = fila(8, { [T.ultima]: lp(ANCLA), [T.nombre]: 'Ana', [T.clasif]: 'Caliente', [T.calif]: 'Alta' });
+    const r = decidir({ telefono: TEL, minima: true, senales: {}, nombre: 'Otro', conversacionDesdeMs: ANCLA, ultimaInteraccionMs: ANCLA + H }, [rica]);
+    expect(Object.keys(r)).not.toContain(T.nombre);
+    expect(Object.keys(r)).not.toContain(T.clasif);
+    expect(Object.keys(r)).not.toContain(T.calif);
   });
 });
 
 describe('una fila por conversación: el nodo «Prospecto para la planilla»', () => {
   const CODIGO = `${conMapa(MAPA)}\n${leer('crm/nodo-prospecto.js')}`;
-  const correrNodo = (items: J[], ventanaVenceEn: unknown, ahoraMs: number): J[] => {
+  const correrNodo = (items: J[], ventanaVenceEn: unknown, ahoraMs: number, planilla: J | null = { planillaProspectosId: 'id-de-hoja-de-prueba', planillaProspectosHoja: 'Leads' }): J[] => {
     const nodos: Record<string, unknown> = {
       'Traer configuración': { first: () => ({ json: {} }) },
+      ...(planilla === null ? {} : { 'Config del negocio': { first: () => ({ json: planilla }) } }),
       ...(ventanaVenceEn === undefined ? {} : { 'Reportar mensaje (entrante)': { first: () => ({ json: { atencion: { ventanaVenceEn } } }) } }),
     };
     const dolar = (n: string) => { if (!nodos[n]) throw new Error('no existe'); return nodos[n]; };
@@ -137,19 +160,26 @@ describe('una fila por conversación: el nodo «Prospecto para la planilla»', (
   it('sin la respuesta de la ingesta (o con un dato ilegible) el ancla es null: no se crea fila', () => {
     for (const v of [undefined, null, '', 'ayer', 5]) expect(correrNodo([base], v, ANCLA)[0]!['conversacionDesdeMs'], String(v)).toBeNull();
   });
-  it('NIEGA: un saliente de campaña (sin prospecto) no produce nada', () => {
-    expect(correrNodo([{ guardarPlanilla: false, prospectoPlanilla: null }], venc, ANCLA + H)).toHaveLength(0);
-  });
-  it('fila mínima: la conversación abre en este turno y el flujo declaró la planilla lista, sin prospecto', () => {
-    const sinProspecto = { guardarPlanilla: false, prospectoPlanilla: null, from: TEL, nombrePerfil: 'Ana P', planillaMinima: true };
-    const r = correrNodo([sinProspecto], venc, ANCLA + 60_000);
+  it('fila mínima: hay ancla, la planilla está configurada y el flujo no armó prospecto (se filtró el contenido): sale SOLO el teléfono', () => {
+    const filtrado = { guardarPlanilla: false, prospectoPlanilla: null, from: TEL, nombrePerfil: 'Ana P', texto: 'algo de la protección', plan: 'riesgo' };
+    const r = correrNodo([filtrado], venc, ANCLA + 60_000);
     expect(r).toHaveLength(1);
-    expect(r[0]).toMatchObject({ telefono: TEL, nombre: 'Ana P', nombreDePerfil: true, conversacionDesdeMs: ANCLA, senales: {} });
-    // NIEGA: sin la declaración del flujo (prueba, protección, sin planilla), nunca; ni en un turno posterior; ni sin ancla
-    expect(correrNodo([{ ...sinProspecto, planillaMinima: false }], venc, ANCLA + 60_000)).toHaveLength(0);
-    expect(correrNodo([{ ...sinProspecto, planillaMinima: undefined }], venc, ANCLA + 60_000)).toHaveLength(0);
-    expect(correrNodo([sinProspecto], venc, ANCLA + 11 * 60_000)).toHaveLength(0);
-    expect(correrNodo([sinProspecto], undefined, ANCLA + 60_000)).toHaveLength(0);
+    expect(Object.keys(r[0]!).sort()).toEqual(['conversacionDesdeMs', 'minima', 'senales', 'telefono', 'ultimaInteraccionMs']);
+    expect(r[0]).toMatchObject({ telefono: TEL, minima: true, conversacionDesdeMs: ANCLA, senales: {} });
+    expect(JSON.stringify(r)).not.toMatch(/Ana P|protección|riesgo/);
+    // también en un turno posterior de la misma conversación (el módulo no crea otra: ve la fila de esta conversación)
+    expect(correrNodo([filtrado], venc, ANCLA + 5 * H)).toHaveLength(1);
+  });
+  it('NIEGA: sin ancla, sin planilla configurada (id u hoja vacíos) o sin teléfono, no hay fila mínima', () => {
+    const filtrado = { guardarPlanilla: false, prospectoPlanilla: null, from: TEL };
+    expect(correrNodo([filtrado], undefined, ANCLA)).toHaveLength(0);
+    expect(correrNodo([filtrado], venc, ANCLA, null)).toHaveLength(0);
+    expect(correrNodo([filtrado], venc, ANCLA, { planillaProspectosId: '', planillaProspectosHoja: 'Leads' })).toHaveLength(0);
+    expect(correrNodo([filtrado], venc, ANCLA, { planillaProspectosId: 'x', planillaProspectosHoja: '' })).toHaveLength(0);
+    expect(correrNodo([{ guardarPlanilla: false, prospectoPlanilla: null }], venc, ANCLA)).toHaveLength(0);
+  });
+  it('NIEGA: con un prospecto armado no sale además una fila mínima', () => {
+    expect(correrNodo([base, { guardarPlanilla: false, prospectoPlanilla: null, from: TEL }], venc, ANCLA + H)).toHaveLength(1);
   });
 });
 
@@ -175,6 +205,17 @@ describe('una fila por conversación: las cuatro negaciones nombradas (coordinad
     expect(r['accionPlanilla']).toBe('actualizar');
     expect(r['row_number']).toBe(9 + 2);
     expect(Object.keys(r).filter((k) => !['accionPlanilla', 'veredictoPlanilla', 'row_number', 'Agendó', 'Fecha y hora de la cita'].includes(k))).toEqual([]);
+  });
+  it('(5) cada flujo regenerado con miniCRM lleva la declaración de la fila mínima en su nodo «Prospecto para la planilla»', () => {
+    const raiz = join(FLUJOS, '..', '..', '..');
+    const archivos = ['agenda-minima/agenda-minima.v0.json', 'captacion-minima/captacion-minima.novuchat.json', 'chat-novuchat/chat-novuchat.novuchat.json', 'rroca-antonio/rroca-antonio.json',
+      'rroca-emma/rroca-emma.json', 'rroca-evy/rroca-evy.json', 'rroca-ruben/rroca-ruben.json', 'venta-minima/venta-minima.qtaco-3727.json'];
+    for (const a of archivos) {
+      const j = JSON.parse(readFileSync(join(raiz, 'Flujos', 'experimental', a), 'utf8')) as { nodes: Array<{ name: string; parameters: { jsCode?: string } }> };
+      const codigo = j.nodes.find((n) => n.name === 'Prospecto para la planilla')?.parameters.jsCode ?? '';
+      expect(codigo, a).toContain('minima: true');
+      expect(codigo, a).toContain('conversacionDesdeMs');
+    }
   });
   it('(4) sin mensajes de Meta nuevos: los 15 JSON regenerados conservan los nodos (conteo, nombres y tipos) de origin/main', () => {
     const raiz = join(FLUJOS, '..', '..', '..');

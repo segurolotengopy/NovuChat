@@ -333,6 +333,9 @@ function crmDecidirFila(a) {
     const esDeEsta = !reciente || desdeMs === null || !mapeado('ultimaInteraccion') || crmMismaConversacion({ __ultima: reciente[T('ultimaInteraccion')] }, desdeMs);
     const actual = esDeEsta || afectaCita ? reciente : undefined;
     // Los hechos viajan dentro del prospecto; `cerrado` sigue siendo un pedido de una persona.
+    // FILA MINIMA (Andres, 08/11/2026): la conversacion abrio y el flujo no armo prospecto porque filtro su CONTENIDO (proteccion, prueba, plan). Se crea la fila con SOLO
+    // telefono, fecha, «Ultima interaccion», ventana y clasificacion generica; ni nombre, ni texto, ni motivo. Se filtra el contenido, no la fila.
+    const minima = p.minima === true;
     const prospecto = { ...p, ...(p.hechos && typeof p.hechos === 'object' ? p.hechos : {}),
       pidioAsesor: p.estado === 'cerrado' || p.hechos?.pidioAsesor === true };
     const calificacion = adaptador.calificar(prospecto);
@@ -406,6 +409,8 @@ function crmDecidirFila(a) {
           if (mapeado('fechaCita') && crmLimpio(actual[T('fechaCita')]) !== '') celdas[T('fechaCita')] = '';
         }
       }
+      // FILA MINIMA (`p.minima`): solo se refresca «Última interacción»; nada mas de una fila existente se toca.
+      if (minima) for (const k of Object.keys(celdas)) if (k !== T('ultimaInteraccion')) delete celdas[k];
       if (!Object.keys(celdas).length) return nada(i, 'sin_cambios');
       out.push({ json: { accionPlanilla: 'actualizar', veredictoPlanilla: 'actualizar', row_number: Number(actual.row_number) + DESFASE, ...celdas }, pairedItem: { item: i } });
       return;
@@ -424,17 +429,17 @@ function crmDecidirFila(a) {
       veredictoPlanilla: 'agregar',
       [T('id')]: mapa.prefijoId + siguiente,
       [T('fecha')]: crmFechaLaPaz(a.ahoraMs),
-      [T('nombre')]: crmComoTexto(p.nombre),
-      [T('empresa')]: crmComoTexto(p.empresa),
+      [T('nombre')]: minima ? '' : crmComoTexto(p.nombre),
+      [T('empresa')]: minima ? '' : crmComoTexto(p.empresa),
       [T('telefono')]: "'" + p.telefono,
       [T('etapaInicial')]: mapa.alCrear.etapaInicial,
       [T('origen')]: p.anuncio ? mapa.alCrear.origenAnuncio : mapa.alCrear.origen,
-      [T('calificacion')]: calificacion,
-      [T('resumen')]: crmComoTexto(adaptador.resumir(prospecto, true, calificacion)),
+      [T('calificacion')]: minima ? '' : calificacion,
+      [T('resumen')]: minima ? '' : crmComoTexto(adaptador.resumir(prospecto, true, calificacion)),
     };
-    if (mapeado('interes')) fila[T('interes')] = crmComoTexto(p.rubro);
-    for (const [campo, v] of extras) fila[T(campo)] = campo === 'clasificacion' ? v : crmComoTexto(v);
-    if (mapeado('agendo') && agendoP !== 'Sí') fila[T('agendo')] = 'No';
+    if (mapeado('interes')) fila[T('interes')] = minima ? '' : crmComoTexto(p.rubro);
+    for (const [campo, v] of extras) if (!minima || ['clasificacion', 'ultimaInteraccion', 'ventana24h'].includes(campo)) fila[T(campo)] = campo === 'clasificacion' ? v : crmComoTexto(v);
+    if (mapeado('agendo') && agendoP !== 'Sí' && !minima) fila[T('agendo')] = 'No';
     if (mapa.alCrear.estado !== undefined && mapa.equipo.estado) fila[mapa.equipo.estado.titulo] = mapa.alCrear.estado;
     out.push({ json: fila, pairedItem: { item: i } });
   });

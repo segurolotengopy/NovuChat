@@ -33,15 +33,25 @@ $input.all().forEach((it, i) => {
   const e = it.json;
   const p = e.prospectoPlanilla;
   if (e.guardarPlanilla === true && p && typeof p === 'object' && p.telefono) {
-    out.push({ json: Object.assign({}, p, { conversacionDesdeMs: desdeMs }), pairedItem: { item: i } });
-    return;
-  }
-  // Fila minima: la conversacion abre en este turno (primer mensaje de la ventana hace menos de 10 minutos) y el flujo no armo prospecto, pero declaro que la
-  // planilla esta lista y el turno es apto (`planillaMinima === true`: hay planilla, no es prueba ni proteccion). Telefono, nombre de perfil y «Tibio» por defecto.
-  const tel = String(e.from === undefined || e.from === null ? '' : e.from).replace(/\D/g, '');
-  if (e.planillaMinima === true && tel && desdeMs !== null && Date.now() - desdeMs >= 0 && Date.now() - desdeMs <= 10 * 60 * 1000) {
-    out.push({ json: { telefono: tel, nombre: typeof e.nombrePerfil === 'string' ? e.nombrePerfil : '', nombreDePerfil: true, senales: {},
-      ultimaInteraccionMs: Date.now(), conversacionDesdeMs: desdeMs }, pairedItem: { item: i } });
+    // «Ultima interaccion»: si el productor no la trae (captacion, chat), es el instante de este turno; sin ella la fila no se reconoceria como de esta conversacion.
+    const ult = typeof p.ultimaInteraccionMs === 'number' && Number.isFinite(p.ultimaInteraccionMs) ? p.ultimaInteraccionMs : Date.now();
+    out.push({ json: Object.assign({}, p, { ultimaInteraccionMs: ult, conversacionDesdeMs: desdeMs }), pairedItem: { item: i } });
   }
 });
+// FILA MINIMA (Andres, 08/11/2026): hay ancla (la conversacion abrio) y NINGUN item trajo prospecto porque el flujo filtro su CONTENIDO (proteccion por violencia o miedo,
+// modo prueba, plan que no es de conversacion). Se filtra el contenido, no la fila: sale un prospecto con SOLO el telefono y `minima: true`; el modulo escribe telefono,
+// fecha, «Ultima interaccion» y clasificacion generica, sin nombre, texto ni motivo. La planilla tiene que estar configurada (id y hoja en `Config del negocio`).
+// Una 2.a vez en la misma ventana no crea otra: el modulo ve la fila de esta conversacion.
+if (!out.length && desdeMs !== null) {
+  let lista = false;
+  try {
+    const c = $('Config del negocio').first().json || {};
+    lista = String(c.planillaProspectosId || '').trim() !== '' && String(c.planillaProspectosHoja || '').trim() !== '';
+  } catch (e) { lista = false; }
+  let tel = '';
+  const todos = $input.all();
+  for (let k = 0; k < todos.length && !tel; k++) tel = String((todos[k].json || {}).from || '').replace(/\D/g, '');
+  if (!tel) { try { tel = String($('Normalizar entrada').first().json.from || '').replace(/\D/g, ''); } catch (e) { tel = ''; } }
+  if (lista && tel) out.push({ json: { telefono: tel, minima: true, senales: {}, ultimaInteraccionMs: Date.now(), conversacionDesdeMs: desdeMs }, pairedItem: { item: 0 } });
+}
 return out;

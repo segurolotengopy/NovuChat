@@ -69,6 +69,10 @@
       "resumen": {
         "letra": "J",
         "titulo": "Resumen Chatbot IA"
+      },
+      "ultimaInteraccion": {
+        "letra": "O",
+        "titulo": "Última interacción"
       }
     },
     "equipo": {

@@ -32,7 +32,7 @@ type Item = { json: J; error?: unknown };
 /** El mapa REAL del tenant (dato versionado), el mismo que el flujo lleva dentro del código. */
 const MAPA = (JSON.parse(readFileSync(join(DATOS, 'novuchat.json'), 'utf8')) as J)['crm'];
 const clonar = <T,>(o: T): T => JSON.parse(JSON.stringify(o));
-const TITULOS = ['ID Lead', 'Fecha Registro', 'Nombre y Apellido', 'Empresa / Cliente', 'Teléfono WhatsApp', 'Rubro', 'Etapa Funnel', 'Origen / Canal', 'Calificación IA', 'Resumen Chatbot IA'];
+const TITULOS = ['ID Lead', 'Fecha Registro', 'Nombre y Apellido', 'Empresa / Cliente', 'Teléfono WhatsApp', 'Rubro', 'Etapa Funnel', 'Origen / Canal', 'Calificación IA', 'Resumen Chatbot IA', 'Próxima acción', 'Notas del equipo', 'Estado Comercial', 'Responsable', 'Última interacción'];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function correr(codigo: string, entrada: Item[], nodos: Record<string, Item[]> = {}): any {
@@ -116,7 +116,7 @@ describe('misma salida que hoy: 300 casos con semilla fija', () => {
       const tipo = R();
       if (tipo < 0.07) bus = [{ json: { error: fallo }, error: fallo }];
       else if (tipo < 0.12) ids = [{ json: { error: fallo } }];
-      else if (tipo < 0.17 && bus.length) { const f = clonar(bus[0].json); delete f[elige(TITULOS)]; bus = [{ json: f }, ...bus.slice(1)]; }
+      else if (tipo < 0.17 && bus.length) { const f = clonar(bus[0].json); delete f[elige(TITULOS.slice(0, 10))]; bus = [{ json: f }, ...bus.slice(1)]; }
       else if (tipo < 0.21) ids = [{ json: { row_number: 2, 'Otro título': 'LEAD-1' } }];
       const r = nuevo([p], bus, ids);
       expect(r.nodo).toEqual(r.oraculo);
