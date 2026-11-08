@@ -4,7 +4,7 @@
  * clave y cuerpo del relé en cada campo posible no deja nada de eso en la salida.
  */
 import { describe, expect, it } from 'vitest';
-import { codigoDe, ejecutar, leerFlujo, GLOBALES_FUERA_DEL_SANDBOX } from '../lib/flujo';
+import { codigoDe, destinos, ejecutar, leerFlujo, nodo, GLOBALES_FUERA_DEL_SANDBOX } from '../lib/flujo';
 
 const f = leerFlujo('error-envio-incierto.json');
 const codigo = codigoDe(f, 'Registrar flujo y hora');
@@ -59,8 +59,10 @@ describe('errorWorkflow «Error de envío incierto»', () => {
     }
   });
 
-  it('el JSON no trae ningún REEMPLAZAR_ (publicar-flujo.sh aborta ante uno)', () => {
-    expect(JSON.stringify(f)).not.toMatch(/REEMPLAZAR_[A-Z]/);
+  it('el único marcador REEMPLAZAR_ es la URL de la alerta, dentro del código de «Armar alerta» (verificar-saneo.sh lo admite ahí); lo repone scripts/cargar-alerta-n8n.sh', () => {
+    expect(JSON.stringify(f).match(/REEMPLAZAR_[A-Z_]+/g)).toEqual(['REEMPLAZAR_URL_ALERTA_OPERATIVA']);
+    expect(codigoDe(f, 'Armar alerta')).toContain("const url = 'REEMPLAZAR_URL_ALERTA_OPERATIVA';");
+    for (const n of f.nodes) expect(JSON.stringify({ ...n.parameters, jsCode: undefined }), n.name).not.toContain('REEMPLAZAR_');
   });
 
   it('sin workflow o con tipos raros no falla ni filtra', () => {
@@ -78,13 +80,36 @@ describe('errorWorkflow «Error de envío incierto»', () => {
   });
 
   it('el código no usa globales que el Code de n8n no tiene', () => {
-    for (const g of GLOBALES_FUERA_DEL_SANDBOX) expect(codigo, g).not.toMatch(new RegExp(`\\b${g}\\b`));
+    for (const g of GLOBALES_FUERA_DEL_SANDBOX) {
+      expect(codigo, g).not.toMatch(new RegExp(`\\b${g}\\b`));
+      expect(codigoDe(f, 'Armar alerta'), g).not.toMatch(new RegExp(`\\b${g}\\b`));
+    }
   });
 
-  it('el JSON no envía nada, no tiene credenciales ni URL y los id son cortos', () => {
+  it('el JSON no envía WhatsApp, no trae triggers de WhatsApp y su única llamada es la alerta firmada', () => {
     const texto = JSON.stringify(f);
-    expect(texto).not.toMatch(/credentials|httpRequest|whatsApp|https?:\/\//i);
-    expect(f.nodes.map((n) => n.type).sort()).toEqual(['n8n-nodes-base.code', 'n8n-nodes-base.errorTrigger']);
+    expect(texto).not.toMatch(/whatsApp|graph\.facebook|run\.app|cloudfunctions/i);
+    expect(f.nodes.map((n) => n.type)).toEqual([
+      'n8n-nodes-base.errorTrigger', 'n8n-nodes-base.code', 'n8n-nodes-base.code', 'n8n-nodes-base.crypto', 'n8n-nodes-base.httpRequest',
+    ]);
     for (const n of f.nodes) expect(String((n as { id: string }).id)).toMatch(/^[a-z-]{1,20}$/);
+    expect(destinos(f, 'Registrar flujo y hora')).toEqual(['Armar alerta']);
+    expect(destinos(f, 'Armar alerta')).toEqual(['Firmar alerta (HMAC)']);
+    expect(destinos(f, 'Firmar alerta (HMAC)')).toEqual(['Enviar alerta operativa']);
+  });
+
+  it('las credenciales: solo la de tipo crypto, por nombre y con id vacío', () => {
+    const con = f.nodes.filter((n) => n.credentials);
+    expect(con.map((n) => n.name)).toEqual(['Firmar alerta (HMAC)']);
+    expect(con[0]!.credentials).toEqual({ crypto: { id: '', name: 'NovuChat alertas (HMAC)' } });
+  });
+
+  it('el nodo Crypto firma HMAC SHA256 en hexadecimal y el HTTP manda el cuerpo crudo con las dos cabeceras', () => {
+    expect(nodo(f, 'Firmar alerta (HMAC)').parameters).toMatchObject({ action: 'hmac', type: 'SHA256', encoding: 'hex', binaryData: false });
+    const h = nodo(f, 'Enviar alerta operativa');
+    expect(h.parameters).toMatchObject({ method: 'POST', sendBody: true, contentType: 'raw', rawContentType: 'application/json', body: '={{ $json.cuerpo }}', url: '={{ $json.url }}' });
+    expect(h.parameters['headerParameters'].parameters.map((x: { name: string }) => x.name)).toEqual(['X-NovuChat-Alerta-Timestamp', 'X-NovuChat-Alerta-Signature']);
+    expect(h.parameters['options'].timeout).toBe(10000);
+    expect(h).toMatchObject({ retryOnFail: true, maxTries: 2, onError: 'continueRegularOutput' });
   });
 });

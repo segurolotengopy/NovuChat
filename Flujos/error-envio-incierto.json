@@ -19,12 +19,122 @@
       "parameters": {
         "jsCode": "// Registra SOLO el nombre del flujo y la hora. Todo lo demas de la entrada del Error Trigger\n// (ids de ejecucion, url, mensaje de error, nodo, datos) se descarta aqui: nunca se copia ni se reenvia.\nconst entrada = $input.first().json || {};\nconst wf = entrada.workflow && typeof entrada.workflow === 'object' ? entrada.workflow : {};\nconst flujo = typeof wf.name === 'string' ? wf.name.replace(/[^\\p{L}\\p{N} ._()\\u00b7\\u2014-]/gu, '_').replace(/\\d(?:[\\s.-]?\\d){5,}/g, '_').slice(0, 80) : 'flujo desconocido';\nconst l = new Date(Date.now() - 4 * 60 * 60 * 1000);\nconst dos = (n) => String(n).padStart(2, '0');\nconst hora = l.getUTCFullYear() + '-' + dos(l.getUTCMonth() + 1) + '-' + dos(l.getUTCDate()) + ' ' + dos(l.getUTCHours()) + ':' + dos(l.getUTCMinutes()) + ':' + dos(l.getUTCSeconds()) + ' (America/La_Paz, UTC-4)';\nreturn [{ json: { flujo, hora } }];"
       },
-      "notes": "Deja como salida SOLO {flujo, hora}. No envía mensajes ni llama a nada: 0 mensajes por conversación. Se ve en Ejecuciones de este flujo."
+      "notes": "Deja como salida SOLO {flujo, hora}. No envía mensajes ni llama a nada: 0 mensajes por conversación. Se ve en Ejecuciones de este flujo. Su salida alimenta «Armar alerta»."
+    },
+    {
+      "id": "armar-alerta",
+      "name": "Armar alerta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 0],
+      "parameters": {
+        "jsCode": "// Arma la alerta operativa y su cuerpo FIRMABLE. Todo el texto es CONSTANTE: de la entrada del Error Trigger solo se\n// compara el NOMBRE del ultimo nodo ejecutado (para el nivel); nunca se copia. El flujo ya viene saneado de\n// «Registrar flujo y hora». El cuerpo sale con todo caracter no ASCII escapado (\\uXXXX): los bytes que se firman son\n// exactamente los que viajan, sea cual sea la codificacion que use el envio.\nconst NODO_DETENER = 'Detener por envío incierto';\nconst entrada = $('Error del flujo').first().json || {};\nconst ejec = entrada.execution && typeof entrada.execution === 'object' ? entrada.execution : {};\nconst urgente = ejec.lastNodeExecuted === NODO_DETENER;\nconst reg = $input.first().json || {};\nconst flujo = typeof reg.flujo === 'string' ? reg.flujo : '';\nconst ahora = Date.now();\nconst ocurrido = new Date(ahora).toISOString().slice(0, 19) + 'Z';\nconst tipo = urgente ? 'envio_incierto' : 'error_de_flujo';\nconst alerta = urgente\n  ? {\n      nivel: 'urgente', proyecto: 'novuchat',\n      asunto: 'Envío incierto: un flujo se detuvo',\n      que_paso: 'Un flujo con relé se detuvo: no se sabe si un envío salió o no.\\nNo se reintentó para no duplicar el mensaje.\\nEl detalle no se copia aquí.',\n      que_se_espera_de_andres: 'Revisar en n8n el flujo indicado antes de reintentar; no reenviar a ciegas.',\n    }\n  : {\n      nivel: 'aviso', proyecto: 'novuchat',\n      asunto: 'Error en un flujo de n8n',\n      que_paso: 'Un flujo terminó con error.\\nEl detalle no se copia aquí.',\n      que_se_espera_de_andres: 'Revisar en n8n el flujo indicado cuando haya tiempo.',\n    };\nalerta.enlace = 'https://github.com/segurolotengopy/NovuChat/blob/main/docs/produccion/error-workflow-envio-incierto.md';\nalerta.ocurrido_en = ocurrido;\nalerta.id_unico = tipo + '-' + ocurrido.slice(0, -1);\nalerta.tipo_error = tipo;\nif (flujo) alerta.flujo = flujo;\nif (urgente) alerta.nodo = NODO_DETENER;\nconst cuerpo = JSON.stringify(alerta).replace(/[^\\x00-\\x7f]/g, (c) => '\\\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));\nconst marca = String(ahora);\n// La direccion de la Function se repone al CARGAR el flujo en n8n (scripts/cargar-alerta-n8n.sh); en el repositorio queda el marcador.\nconst url = 'REEMPLAZAR_URL_ALERTA_OPERATIVA';\nreturn [{ json: { cuerpo, marca, aFirmar: marca + '.' + cuerpo, url } }];"
+      },
+      "notes": "Arma el aviso del contrato avisos-correo/v1 con TEXTOS CONSTANTES (nada de la entrada del Error Trigger se copia; solo se compara el nombre del último nodo para el nivel: «Detener por envío incierto» = urgente, cualquier otro error = aviso). Deja {cuerpo, marca, aFirmar, url}: la url lleva el marcador de la URL de la Function (va dentro del código a propósito: verificar-saneo.sh solo admite marcadores fuera del código si un manifiesto los declara). El cuerpo lleva todo carácter no ASCII escapado, así los bytes firmados son los enviados."
+    },
+    {
+      "id": "firmar-alerta",
+      "name": "Firmar alerta (HMAC)",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [720, 0],
+      "parameters": {
+        "action": "hmac",
+        "binaryData": false,
+        "type": "SHA256",
+        "value": "={{ $json.aFirmar }}",
+        "dataPropertyName": "firma",
+        "encoding": "hex"
+      },
+      "credentials": {
+        "crypto": {
+          "id": "",
+          "name": "NovuChat alertas (HMAC)"
+        }
+      },
+      "notes": "HMAC-SHA256 en hexadecimal de «marca.cuerpo» con la clave de la credencial «NovuChat alertas (HMAC)» (tipo Crypto, campo Hmac Secret). La carga la hace scripts/cargar-alerta-n8n.sh sin mostrar el valor."
+    },
+    {
+      "id": "enviar-alerta",
+      "name": "Enviar alerta operativa",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Alerta-Timestamp",
+              "value": "={{ $json.marca }}"
+            },
+            {
+              "name": "X-NovuChat-Alerta-Signature",
+              "value": "={{ $json.firma }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.cuerpo }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "onError": "continueRegularOutput",
+      "notes": "POST del cuerpo crudo a la Function alertaOperativa (la URL llega de «Armar alerta», donde scripts/cargar-alerta-n8n.sh repone el marcador al cargar el flujo). Un fallo no rompe el flujo de errores. No envía ningún mensaje a clientes."
     }
   ],
   "connections": {
     "Error del flujo": {
-      "main": [[{ "node": "Registrar flujo y hora", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Registrar flujo y hora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar flujo y hora": {
+      "main": [
+        [
+          {
+            "node": "Armar alerta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar alerta": {
+      "main": [
+        [
+          {
+            "node": "Firmar alerta (HMAC)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firmar alerta (HMAC)": {
+      "main": [
+        [
+          {
+            "node": "Enviar alerta operativa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
