@@ -58,7 +58,7 @@ No cobra, no tiene catálogo, pedidos ni QR; no agenda (lo hace la recepción); 
 - **El fallo del modelo avisa a recepción** (política general «aviso + botón»), con tope por teléfono y por hora; el texto solo dice «ya avisé» si el aviso salió.
 - **Cierre:** el texto del modelo se descarta y sale el fijo; el nombre sale de la etiqueta (`[DERIVAR_RECEPCION: Ana]`) o del perfil de WhatsApp saneado.
 - **`cmPulirRedaccion` no se usa** (borraría la presentación del saludo, que el guion manda hacer); sí `cmMotivoDeRechazo`.
-- El «250 Bs» y el antes y después van con su aclaración por código; «inmediato» se quita por código además del prompt.
+- El «250 Bs» y el antes y después van con su aclaración por código; «efecto lifting inmediato» sale como dice el MD (Andres, 08/11/2026); cualquier otra promesa de inmediatez («resultado inmediato», «de inmediato») se quita por código.
 
 ## Límites conocidos (revisión de código, 24/10/2026)
 - **Ráfagas.** La ficha, la memoria y los contadores viven en `staticData`; dos ejecuciones SIMULTÁNEAS del mismo teléfono leen el mismo estado y gana la última escritura (puede perderse una entrada de la memoria o repetirse un aviso). Es el mismo límite de Rubén y de las doctoras; el servidor cuenta las conversaciones y los avisos tienen su tope por hora.

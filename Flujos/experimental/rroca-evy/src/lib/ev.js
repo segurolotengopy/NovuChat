@@ -756,9 +756,12 @@ function evRepararIdentidad(texto, nombreNegocio) {
 // GARANTÍAS Y PROMESAS DE RESULTADO, REPARADAS POR ORACIÓN: una oración con «garantiz…», «asegur…», «prometer…», «resultado idéntico/exacto/igual/perfecto» se BORRA (negada o afirmativa: la forma negada que manda el guion
 // la sustituye el CÓDIGO por la aclaración fija «cada rostro responde distinto y no prometemos un resultado idéntico», una sola vez). Nunca deja pasar un «te garantizo / garantizamos». Si no queda texto, cae al fallo.
 const EV_TOCA_GARANTIA = /\bgarant\w*|\basegur\w*|\bpromet\w*|\bprometid\w*|resultados? (?:identic\w*|exact\w*|igual\w*|perfect\w*|asegurad\w*|garantizad\w*)|\b(?:mismo|identico|exacto) resultado/;
-// Promete efecto inmediato (el arte comparativo trae «efecto lifting inmediato»; la clínica no lo promete).
+// DECISIÓN DE ANDRES (08/11/2026, «la letra del MD»): «efecto lifting inmediato» SALE, como dice el MD y el arte comparativo. Cualquier OTRA promesa
+// de inmediatez («resultado inmediato», «de inmediato te asignan…») se sigue quitando: no es del MD y no tiene respaldo.
+const EV_LIFTING_INMEDIATO = /\blifting\s+inmediat[oa]s?\b|\binmediat[oa]s?\s+lifting\b/g;
 function evSinInmediato(texto) {
-  return evQuitarOraciones(evTexto(texto).replace(/(lifting)\s+inmediat[oa]s?/gi, '$1').replace(/\binmediat[oa]s?\s+(lifting)/gi, '$1'), (n) => /\binmediat\w*/.test(n));
+  // Se descuenta «lifting inmediato» y lo que quede con «inmediat…» (p. ej. «de inmediato») se quita con su oración.
+  return evQuitarOraciones(evTexto(texto), (n) => /\binmediat\w*/.test(String(n).replace(EV_LIFTING_INMEDIATO, ' ')));
 }
 // COPIA de la de Emma (batería real de Evy del 29/10/2026, caso B4: «¿esto es real?» sobre la foto del antes y después caía al fallo por la barrera común «identidad»).
 // «¿esto es real?» sobre una FOTO no es la pregunta «¿eres real?» sobre la identidad: al filtro común (que no se toca) se le pasa «es verdad». «¿Eres real?», «¿eres un bot?» siguen intactas.
