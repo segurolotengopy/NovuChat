@@ -6,12 +6,12 @@
  * lo mueve SIN perderlo. Encabezados en la fila 3, datos desde la 4. Nunca toca otras columnas ni otras hojas, nunca borra filas
  * y NUNCA imprime el contenido de una celda: solo conteos y los títulos de la fila 3.
  *
- *   ENV_FILE=<.env con N8N_BASE_URL y N8N_API_KEY> SHEET_ID=<id de la planilla> \
+ *   ENV_FILE=<.env con N8N_BASE_URL y N8N_API_KEY> SHEET_ID=<id de la planilla> DIR_RESPALDOS=<carpeta absoluta> \
  *   node scripts/plataforma/planilla-u-a-x-bellido.mjs <contar|respaldar|trasladar> [opciones]
  *
  *   contar                       SOLO LECTURA. Cuántas filas tienen dato en U, V, W y X; títulos de la fila 3; verifica U3.
  *   respaldar [--aplicar]        Seco: cuenta lo que guardaría. --aplicar: guarda A (ID) y U..X, valores crudos de las filas 3.., en
- *                                ~/CLAUDE_DESCARGAS/BELLIDO_planilla-respaldo_<AAAA-MM-DD-HHMM>.json (0600, nunca se pisa).
+ *                                $DIR_RESPALDOS/BELLIDO_planilla-respaldo_<AAAA-MM-DD-HHMM>.json (0600, nunca se pisa).
  *   trasladar [--aplicar]        Seco: valida y dice qué haría. --aplicar: copia U→X (datos y título), RELEE X y la compara
  *                                celda por celda con el respaldo (si difiere, aborta sin vaciar U), vacía U4:U y escribe los
  *                                títulos U3, V3, W3. Exige respaldo del MISMO DÍA y que U..X siga igual que en el respaldo.
@@ -38,7 +38,6 @@
  * 3 error de ejecución o relectura que no coincide (revise; el respaldo y --revertir permiten volver).
  */
 import { chmodSync, closeSync, constants, fstatSync, openSync, readFileSync, readdirSync, realpathSync, writeSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { correrEnN8n, estado } from './relleno-crm-historico.mjs';
@@ -50,7 +49,9 @@ export const MODOS = ['contar', 'respaldar', 'trasladar'];
 const COL = { U: 20, V: 21, W: 22, X: 23 };
 const ANCHO = 24; // A..X
 const NOMBRE_RESPALDO = /^BELLIDO_planilla-respaldo_(\d{4}-\d{2}-\d{2})-(\d{4})\.json$/;
-export const DIR_RESPALDOS = join(homedir(), 'CLAUDE_DESCARGAS');
+// La carpeta de los respaldos la fija quien corre el script (DIR_RESPALDOS, ruta absoluta; en la práctica ~/CLAUDE_DESCARGAS): ningún script de admin/scripts
+// nombra el directorio personal (pruebas/plataforma/enlace-privado.test.ts).
+export const DIR_RESPALDOS = process.env.DIR_RESPALDOS ?? '';
 
 export const USO = '  ENV_FILE=… SHEET_ID=… node scripts/plataforma/planilla-u-a-x-bellido.mjs <contar|respaldar|trasladar> '
   + '[--aplicar --confirmo-hoja <últimos 6 del SHEET_ID>] [--revertir [--acepto-perder-datos-nuevos]] [--respaldo <ruta>]';
@@ -154,6 +155,7 @@ export function nombreRespaldo(ahora) {
 export const diaDe = (ahora) => nombreRespaldo(ahora).match(NOMBRE_RESPALDO)[1];
 
 export function respaldosEnDisco(dir = DIR_RESPALDOS) {
+  if (typeof dir !== 'string' || !dir.startsWith('/')) throw new Error('falta DIR_RESPALDOS (ruta absoluta de la carpeta de respaldos)');
   const guardar = (nombre, objeto) => {
     if (!NOMBRE_RESPALDO.test(nombre)) throw new Error('nombre de respaldo inválido');
     const ruta = join(dir, nombre);

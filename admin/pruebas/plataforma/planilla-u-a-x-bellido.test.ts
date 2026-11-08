@@ -4,6 +4,7 @@
  * Sin red ni nube: una hoja en memoria que imita la API de Sheets (recorta celdas vacías del final). Los datos son sintéticos.
  * Se niega primero: sin respaldo no traslada; X con datos aborta; relectura distinta no vacía U; nunca imprime celdas; --revertir restaura.
  */
+import { compileFunction } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { readFileSync, mkdtempSync, rmSync, statSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -336,7 +337,7 @@ describe('P8. Revisión: relecturas, ID, hoja y celdas no texto', () => {
 const CAUSAS_VALIDAS = ['SCOPES_INSUFICIENTES', 'SIN_PERMISO_EN_LA_HOJA', 'API_NO_HABILITADA', 'HOJA_NO_ENCONTRADA', 'RANGO_INVALIDO', 'CREDENCIAL_INVALIDA', 'OTRA'];
 describe('P9. El error de Google se ve sin filtrar id ni celdas', () => {
   const ID = 'IDDELAPLANILLA123abcdefXYZ45';
-  const filtrar = (json: unknown) => new Function('$input', S.CODIGO_FILTRO)({ first: () => ({ json }) })[0].json;
+  const filtrar = (json: unknown) => compileFunction(S.CODIGO_FILTRO, ['$input'])({ first: () => ({ json }) })[0].json;
   it('403: deja estado, status y reason; nunca el mensaje (que nombra el id) ni el cuerpo', () => {
     const o = filtrar({ statusCode: 403, body: { error: { code: 403, status: 'PERMISSION_DENIED', message: `sin acceso a ${ID} ${MARCA_CELDA}`,
       details: [{ '@type': 'x', reason: 'SERVICE_DISABLED', metadata: { u: ID } }] } } });
