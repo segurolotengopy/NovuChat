@@ -60,7 +60,7 @@ export function configDe(tenants = tenantsConDatos()) {
     comun: ['src/nodos/_comun.js'],
     paquetes: {
       mensajes: ['../comun-sin-agente/src/mensajes.js'],
-      filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
+      filtro: ['../../src/core/texto/filtro-redaccion.js'],
       'm-transcripcion': ['../../src/core/medios/preparar-transcripcion.js'],
       'm-imagen': ['../../src/core/medios/anuncio-por-titular.js', '../../src/core/medios/preparar-imagen.js'],
       'm-no-aceptado': ['../../src/core/medios/medio-no-aceptado.js'],

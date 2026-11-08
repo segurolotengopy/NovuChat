@@ -8,7 +8,7 @@ Regla (Andres, 09/10/2026): **flujo propio = composición propia + núcleo comú
 | Pieza | Fuente |
 |---|---|
 | Mensajes de WhatsApp: texto, botones, lista, `cta_url`, `cmContactoConBoton` | `Flujos/experimental/comun-sin-agente/src/mensajes.js` (paquete `mensajes`) |
-| Filtro de redacción del modelo (promesas, afirmar hechos, negar ser IA, montos, enlaces) | `comun-sin-agente/src/filtro-redaccion.js` (paquete `filtro`) |
+| Filtro de redacción del modelo (promesas, afirmar hechos, negar ser IA, montos, enlaces) | `Flujos/src/core/texto/filtro-redaccion.js` (paquete `filtro`) |
 | Cadena de envío: ¿Enviar de verdad?, Enviar a WhatsApp (lote de 1, 1,5 s), respaldo en texto, reporte saliente | `comun-sin-agente/src/envio.mjs`, `injertar()` desde `construir.mjs` |
 | Armador (plantilla + código → JSON, variantes, `--verificar`) | `comun-sin-agente/construir.mjs` (`leerProyecto`, `armarVariante`) |
 | Hoja de prospectos (miniCRM): `Prospecto para la planilla` y `Decidir fila de la planilla` | **Módulo `crm`** (`Flujos/src/modulos/crm/`: paquetes `crm-prospecto` y `crm-decidir`; la calificación y el resumen, del adaptador `Flujos/src/modulos/captacion/crm-captacion.js`). El mapa de columnas es DATO del tenant: la clave `crm` de `admin/scripts/datos/chat-novuchat/novuchat.json` (el ensayo la hereda); `injertarCrm` lo pone en el código y fija los rangos de los 4 nodos de Google. Ya no hay copias en `src/nodos/` |

@@ -26,7 +26,7 @@ const CARPETA = join(EXPERIMENTAL, 'chat-novuchat');
 const DATOS_DIR = join(aqui, '../scripts/datos/chat-novuchat');
 const LIB = readFileSync(join(CARPETA, 'src/lib/chat.js'), 'utf8');
 const MENSAJES = readFileSync(join(EXPERIMENTAL, 'comun-sin-agente/src/mensajes.js'), 'utf8');
-const FILTRO = readFileSync(join(EXPERIMENTAL, 'comun-sin-agente/src/filtro-redaccion.js'), 'utf8');
+const FILTRO = readFileSync(join(EXPERIMENTAL, '../src/core/texto/filtro-redaccion.js'), 'utf8');
 const SESION = readFileSync(join(EXPERIMENTAL, 'comun-sin-agente/src/sesion.js'), 'utf8');
 const TIPEO = readFileSync(join(aqui, '../../Flujos/src/core/texto/tipeo.js'), 'utf8');
 const RUTA_ORIGINAL = join(EXPERIMENTAL, 'captacion-minima/src/lib/captacion.js');
@@ -1676,6 +1676,7 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     cpSync(DATOS_DIR, datos, { recursive: true });
     mkdirSync(join(dir, 'flujos', 'src', 'core', 'texto'), { recursive: true });
     cpSync(join(aqui, '../../Flujos/src/core/texto/tipeo.js'), join(dir, 'flujos', 'src', 'core', 'texto', 'tipeo.js'));
+    cpSync(join(aqui, '../../Flujos/src/core/texto/filtro-redaccion.js'), join(dir, 'flujos', 'src', 'core', 'texto', 'filtro-redaccion.js'));
     // El módulo crm (se INCLUYE, no se copia al flujo) y su adaptador de captación.
     mkdirSync(join(dir, 'flujos', 'src', 'modulos', 'captacion'), { recursive: true });
     cpSync(join(aqui, '../../Flujos/src/modulos/crm'), join(dir, 'flujos', 'src', 'modulos', 'crm'), { recursive: true });

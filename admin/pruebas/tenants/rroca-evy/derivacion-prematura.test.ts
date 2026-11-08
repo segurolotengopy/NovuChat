@@ -16,7 +16,7 @@ const ANTES = '[ENVIAR_ARTE_ANTES_DESPUES] Mira el caso real de una paciente de 
 const esBoton = (t: ReturnType<typeof hablar>): boolean => t.mensajes.some((e) => e.tipo === 'interactive');
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental');
-const lib = runInNewContext(`const EV_PROMPT='';\n${readFileSync(join(RAIZ, 'comun-sin-agente/src/filtro-redaccion.js'), 'utf8')}\n${readFileSync(join(RAIZ, 'rroca-evy/src/lib/ev.js'), 'utf8')}\n({ evOfreceAgendar })`, {}) as { evOfreceAgendar: (t: string) => boolean };
+const lib = runInNewContext(`const EV_PROMPT='';\n${readFileSync(join(RAIZ, '../src/core/texto/filtro-redaccion.js'), 'utf8')}\n${readFileSync(join(RAIZ, 'rroca-evy/src/lib/ev.js'), 'utf8')}\n({ evOfreceAgendar })`, {}) as { evOfreceAgendar: (t: string) => boolean };
 
 describe('la oferta de agendar: raíces de verbo con exclusiones (la función sola)', () => {
   it('son ofertas', () => {

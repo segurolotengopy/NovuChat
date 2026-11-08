@@ -369,7 +369,7 @@ describe('«no se copia»: dos tenants iguales salvo los datos', () => {
   });
   it('los nodos Code INCLUYEN la librería y el filtro (byte a byte), no una copia retocada', () => {
     const rescate = leer(join(RESCATE, 'src/rescate.js')).trimEnd();
-    const filtro = leer(join(ESTA, '../../Flujos/experimental/comun-sin-agente/src/filtro-redaccion.js')).trimEnd();
+    const filtro = leer(join(ESTA, '../../Flujos/src/core/texto/filtro-redaccion.js')).trimEnd();
     expect(String(nodo(B, 'Preparar rescates').parameters['jsCode'])).toContain(rescate);
     const armar = String(nodo(B, 'Armar rescate').parameters['jsCode']);
     expect(armar).toContain(rescate);

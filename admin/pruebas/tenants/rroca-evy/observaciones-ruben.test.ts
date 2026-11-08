@@ -22,7 +22,7 @@ const ES_EVY = CLIENTE === 'rroca-' + 'evy';
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental');
 const LIB = readFileSync(join(RAIZ, `${CLIENTE}/src/lib/ev.js`), 'utf8');
 type Lib = { evPulirSalida: (t: string, c: J) => { texto: string; motivo: string }; evDeclina: (t: string, h: J[]) => boolean; evSoloSaludo: (t: string, n: string) => boolean; evTelefonoNacional: (n: string) => string };
-const lib = runInNewContext(`const EV_PROMPT='';\n${readFileSync(join(RAIZ, 'comun-sin-agente/src/filtro-redaccion.js'), 'utf8')}\n${LIB}\n({ evPulirSalida, evDeclina, evSoloSaludo, evTelefonoNacional })`, {}) as Lib;
+const lib = runInNewContext(`const EV_PROMPT='';\n${readFileSync(join(RAIZ, '../src/core/texto/filtro-redaccion.js'), 'utf8')}\n${LIB}\n({ evPulirSalida, evDeclina, evSoloSaludo, evTelefonoNacional })`, {}) as Lib;
 
 const CIERRE_AVISADO = 'Ya pasé tus datos a recepción; te contactarán para confirmar tu hora.';
 // La oferta sale en dos párrafos (regla de párrafos de Andres, 20/10/2026: la pregunta final va sola).

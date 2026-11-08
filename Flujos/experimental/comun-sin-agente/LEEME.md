@@ -8,7 +8,7 @@ código, y el modelo solo redacta lo que el código verifica. Sacado de `Flujos/
 |---|---|
 | `construir.mjs` | Armador genérico: plantilla + código de los nodos → un JSON por variante (producción y prueba), con `--verificar`. Se configura con un `construir.config.json` en la carpeta del flujo. Reproduce, byte por byte, los JSON de Agenda mínima. |
 | `src/mensajes.js` | Constructores de lo que sale por WhatsApp: texto, botones, lista, enlace, URL de wa.me y «pasar con una persona» (botón, o solo texto sin mención del botón si no hay a quién). Prefijo `cm`. |
-| `src/filtro-redaccion.js` (ESPEJO byte a byte de `Flujos/src/core/texto/filtro-redaccion.js`, la única fuente; `core/texto-filtro-redaccion-espejo.test.ts` falla si difieren) | Lo que el modelo redacta se **verifica** antes de salir: monto (también en letra), promesas, afirmar un hecho que solo el código puede afirmar (cita, pedido, pago, ✅), negar ser una IA, huecos de plantilla, **enlaces: por defecto ninguno sale**, identidad. Y se **pule**; `cmRevisarRedaccion` pule y valida lo pulido. Las reglas de NovuChat no se apagan con opciones. Normaliza (NFKC, sin invisibles). |
+| (`filtro-redaccion.js` ya no vive aquí: es `Flujos/src/core/texto/filtro-redaccion.js`, único origen; los constructores lo piden con `"filtro": ["../../src/core/texto/filtro-redaccion.js"]`, porque su raíz `../..` es `Flujos/`) | Lo que el modelo redacta se **verifica** antes de salir: monto (también en letra), promesas, afirmar un hecho que solo el código puede afirmar (cita, pedido, pago, ✅), negar ser una IA, huecos de plantilla, **enlaces: por defecto ninguno sale**, identidad. Y se **pule**; `cmRevisarRedaccion` pule y valida lo pulido. Las reglas de NovuChat no se apagan con opciones. Normaliza (NFKC, sin invisibles). |
 | `src/envio.mjs` | La cadena de envío: nodos y conexiones (¿Enviar de verdad?, envío con lote de 1 y 1,5 s, respaldo en texto, reporte saliente), sin credenciales por id. El `phoneNumberId` y la versión de Graph se validan antes de entrar a la URL, y lo que ni el respaldo pudo enviar no se reporta como enviado. `injertar()` la cuelga de una plantilla. |
 
 ## Estado y límites (leer antes de adoptarlo)
@@ -33,7 +33,7 @@ código, y el modelo solo redacta lo que el código verifica. Sacado de `Flujos/
      "comun": ["src/nodos/comun.js"],
      "paquetes": {
        "mensajes": ["../comun-sin-agente/src/mensajes.js"],
-       "filtro": ["../comun-sin-agente/src/filtro-redaccion.js"]
+       "filtro": ["../../src/core/texto/filtro-redaccion.js"]
      },
      "variantes": [
        { "archivo": "mi-flujo.v0.json", "quitar": "Entrada de prueba", "nombre": "Mi flujo (v0)" },

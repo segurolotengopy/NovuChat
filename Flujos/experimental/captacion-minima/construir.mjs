@@ -61,7 +61,7 @@ export const CONFIG_BASE = {
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
-    filtro: ['../comun-sin-agente/src/filtro-redaccion.js'],
+    filtro: ['../../src/core/texto/filtro-redaccion.js'],
     ...Object.fromEntries(Object.entries(rutasPaquetesCrm(join(AQUI, '..', '..', 'src', 'modulos', 'captacion', 'crm-captacion.js'))).map(([k, rutas]) => [k, rutas.map((r) => relative(AQUI, r))])),
   },
 };

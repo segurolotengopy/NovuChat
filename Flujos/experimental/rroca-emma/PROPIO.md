@@ -4,7 +4,7 @@ Regla (Andres, 09/10/2026): flujo propio = composición propia + núcleo común 
 Este flujo se construyó el 24/10/2026 **adaptando el flujo nuevo de la Dra. Evy** (`Flujos/experimental/rroca-evy/`, ya probado y fusionado), no el asistente anterior de las doctoras (`Flujos/experimental/doctoras/`, que sigue siendo de Emma y no se toca). Su diseño, topología (36 nodos en producción, 31 en la prueba) y barreras son los de Evy; ver `DISENO.md` y el de Evy.
 
 ## Incluido desde su fuente (nunca copiado)
-- Mensajes (`comun-sin-agente/src/mensajes.js`), filtro de redacción (`comun-sin-agente/src/filtro-redaccion.js`: `cmMotivoDeRechazo`), cadena de envío (`injertar`) y armador: `comun-sin-agente/`.
+- Mensajes (`comun-sin-agente/src/mensajes.js`), filtro de redacción (`Flujos/src/core/texto/filtro-redaccion.js`: `cmMotivoDeRechazo`), cadena de envío (`injertar`) y armador: `comun-sin-agente/`.
 - Avisos (`venta-minima/src/lib/avisos.js`) y la transcripción de audio (`Flujos/src/core/medios/preparar-transcripcion.js`, byte a byte).
 
 ## Copia declarada de Evy (sin tocar la lógica de las barreras)
