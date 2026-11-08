@@ -16,6 +16,7 @@ type Cfg = Record<string, unknown>;
 type Fila = string[];
 const mod = await import('../../scripts/plataforma/relleno-crm-historico.mjs') as unknown as {
   TENANTS: readonly string[];
+  TENANTS_RELLENO: readonly string[];
   analizarArgumentos: (argv: string[], env?: Record<string, string>, op?: Record<string, unknown>) => { ok: boolean; problemas?: string[]; cfg?: Cfg };
   leerMapa: (t: string) => Record<string, any>;
   construirFilas: (a: { conversaciones: any[]; hoja: { telefonos: string[]; ids: string[]; ultimaFila: number }; mapa: Record<string, any> }) =>
@@ -410,7 +411,8 @@ describe('B4. revertir', () => {
 
 describe('B5. Bellido (mapa propio en datos/bellido/crm.json)', () => {
   it('Bellido está en la lista y su mapa llega hasta la W (U servicio, V agendó, W fecha de la cita)', () => {
-    expect(mod.TENANTS).toContain('bellido');
+    expect(mod.TENANTS_RELLENO).toContain('bellido');
+    expect(mod.TENANTS).not.toContain('bellido'); // el script destructivo vaciar-hoja-crm.mjs no lo admite
     const m = mapaDe('bellido');
     expect(m.columnas.servicioElegido.letra).toBe('U');
     expect(m.columnas.agendo.letra).toBe('V');
