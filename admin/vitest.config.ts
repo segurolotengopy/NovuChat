@@ -174,6 +174,7 @@ export const SUITES_PURAS = [
   'pruebas/resetear-fichas-chat-novuchat.test.ts',
   'pruebas/core/marcador-desde-archivo.test.ts',
   'pruebas/conteo-bloques.test.ts',
+  'pruebas/conversacion-desde.test.ts',
   'pruebas/central/contrasena-minimo.test.ts',
   'pruebas/frontera/despliegue.test.ts',
   'pruebas/frontera/fronteras.test.ts',
