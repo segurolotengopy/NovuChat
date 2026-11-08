@@ -81,7 +81,7 @@ function pdQuitarSinDelivery(carrito, carta, areas){ const ex = areas.map(vmNorm
 function pdTotal(carrito){ return carrito.reduce(function(s, l){ return s + Math.round(l.precio * 100) * l.cantidad; }, 0) / 100; }
 function _pdUbicacion(u){ return !!u && typeof u === 'object' && Number.isFinite(u.lat) && Number.isFinite(u.lng) && Math.abs(u.lat) <= 90 && Math.abs(u.lng) <= 180 && !(Math.round(u.lat * 1e5) === 0 && Math.round(u.lng * 1e5) === 0); }
 function _pdCopiaUbicacion(u){ return { lat: Math.round(u.lat * 1e5) / 1e5, lng: Math.round(u.lng * 1e5) / 1e5 }; }
-function pdFaltanEntrega(e, perfil){ const f = []; if (!e.direccion && !e.ubicacion) f.push('direccion'); return f; }
+function pdFaltanEntrega(e, perfil){ const f = []; if (e.entrega !== 'delivery') return f; if (!e.direccion || String(e.direccion).length < 5) f.push('direccion'); if (!_pdUbicacion(e.ubicacion)) f.push('ubicacion'); return f; }
 function pdResumen(carrito, e, o){ return 'Tu pedido:\n' + carrito.map(function(l){ return '• ' + l.cantidad + ' × ' + l.nombre + (l.detalle ? ' (' + l.detalle + ')' : '') + ': ' + (l.precio * l.cantidad) + ' ' + o.moneda; }).join('\n') + '\nEntrega: ' + (e.entrega === 'delivery' ? 'delivery a ' + e.direccion + (e.referencia ? ' (' + e.referencia + ')' : '') + ', recibe ' + e.nombre : 'recojo en el local') + '.\nTotal de la comida: ' + pdTotal(carrito) + ' ' + o.moneda + '.' + (e.entrega === 'delivery' ? '\nEl delivery no está incluido: se lo pagas al repartidor al recibir.' : ''); }
 function pdLineaCompacta(carrito, max){ return carrito.map(function(l){ return l.cantidad + ' ' + l.nombre; }).join(', ').slice(0, max); }
 function vmIdEstable(pre, from, cont, ancla, resp){ const a = ancla > 0 ? ancla : resp; const t = JSON.stringify([pre, a, from, cont]); let h = 7; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) % 0x100000000; return { id: pre + '-2026-10-05-' + String(from).slice(-4) + '-' + h.toString(36), codigo: vmCodigoCorto(h), huella: h }; }
@@ -95,7 +95,7 @@ function pdNombreCorto(i){ return String(i.nombre).replace(/\s*\([^)]*(orden|uni
 function pdEjemploDePedido(c){ const v = []; const n = []; (Array.isArray(c) ? c : []).forEach(function(i){ const k = i.clave || pdNombreCorto(i); if (n.length < 2 && v.indexOf(k) < 0) { v.push(k); n.push('1 ' + pdNombreCorto(i)); } }); return n.join(' y '); }
 function pdTextoExcluido(n){ return 'Lo siento, «' + n + '» no está disponible para pedir por WhatsApp. ¿Te muestro la carta?'; }
 function pdBotonAgregar(i, c){ return { id: 'g|agregar|' + i.id + '|' + c, title: 'Agregar ' + pdNombreCorto(i) }; }
-function pdTextoFaltanEntrega(f){ return 'Para el delivery necesito la dirección exacta.'; }
+function pdTextoFaltanEntrega(f){ const d = f.indexOf('direccion') >= 0; const u = f.indexOf('ubicacion') >= 0; if (d && u) return 'Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación'; if (u) return 'Para el delivery necesito que compartas tu ubicación'; return 'Para el delivery necesito tu dirección exacta, escrita, con una referencia (por ejemplo, el color del portón o un negocio cercano).'; }
 
 function rsCuerpoExtraccion(texto, o){ if (!isFinite(Number(o.ahoraMs))) throw new Error('ahoraMs'); return { marcador: 'reserva', texto: texto, zonas: o.zonas }; }
 function rsValidarExtraccion(o){ o = o || {}; return { personas: Number(o.personas) || 0, fecha: o.fecha || '', hora: o.hora || '', zona: o.zona || '', nombre: o.nombre || '', celebracion: o.celebracion || '', requerimiento: o.requerimiento || '' }; }
@@ -227,7 +227,9 @@ function hastaResumen(m: Mundo, mod: 'recojo' | 'delivery' = 'recojo'): Salida {
   const s = turno(m, { texto: 'quiero 1 orden de tacos de birria', extraccion: extPedido({ lineas: [linea('tacos de birria', 1, 'orden')], entrega: mod === 'recojo' ? 'recojo' : '' }) });
   if (mod === 'recojo') return s;
   turno(m, { boton: 'e|delivery' });
-  return turno(m, { texto: 'Calle Falsa 123, casa azul', extraccion: extPedido({ direccion: 'Calle Falsa 123', referencia: 'casa azul' }) });
+  turno(m, { texto: 'Calle Falsa 123, casa azul', extraccion: extPedido({ direccion: 'Calle Falsa 123', referencia: 'casa azul' }) });
+  // 07/11: el delivery exige también la ubicación compartida; con el pin llega el resumen.
+  return turno(m, { tipo: 'location', ubicacion: { latitud: -16.5, longitud: -68.15 } });
 }
 
 // =================================================================================================
@@ -708,10 +710,13 @@ describe('Plan del turno: el pedido', () => {
     turno(m, { texto: 'quiero 1 queso fundido', extraccion: extPedido({ lineas: [linea('queso fundido', 1)] }) });
     expect(estadoDe(m)['paso']).toBe('pedido_entrega');
     const datos = registrar(turno(m, { boton: 'e|delivery' }));
-    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón.');
+    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación con el botón.');
     expect(estadoDe(m)['paso']).toBe('pedido_datos');
-    // Con la dirección sola ya sigue al resumen (ni referencia ni nombre se exigen).
-    const fin = registrar(turno(m, { texto: 'Calle 5', extraccion: extPedido({ direccion: 'Calle 5' }) }));
+    // La dirección sola ya NO sigue al resumen (07/11): se pide solo la ubicación; con el pin sí (ni referencia ni nombre se exigen).
+    const dir = registrar(turno(m, { texto: 'Calle 5', extraccion: extPedido({ direccion: 'Calle 5' }) }));
+    expect(dir.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito que compartas tu ubicación con el botón.');
+    expect(estadoDe(m)['paso']).toBe('pedido_datos');
+    const fin = registrar(turno(m, { tipo: 'location', ubicacion: { latitud: -16.5, longitud: -68.15 } }));
     expect(fin.p!['mensajes'][0]['cuerpo']).toContain('Entrega: delivery a Calle 5, recibe Ana Pérez.');
     expect(fin.p!['mensajes'][0]['cuerpo']).toContain('El delivery no está incluido');
     expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
@@ -911,6 +916,7 @@ describe('Plan del turno: derivar a una persona (solo se ofrece lo que se cumple
     turno(m, { texto: 'quiero pedir queso', extraccion: extPedido({ lineas: [linea('queso fundido', 1)] }) });
     turno(m, { boton: 'e|delivery' });
     turno(m, { texto: 'Calle 5', extraccion: extPedido({ direccion: 'Calle 5' }) });
+    turno(m, { tipo: 'location', ubicacion: { latitud: -16.5, longitud: -68.15 } });
     const s = turno(m, { texto: 'casa azul', extraccion: extPedido({ referencia: 'casa azul' }) });
     expect(s.p!['aviso']).toBeNull();
     expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
@@ -1901,7 +1907,8 @@ describe('Plan del turno: correcciones de la revisión', () => {
     const m = crearMundo();
     turno(m, { texto: 'hola' });
     turno(m, { texto: 'quiero 1 orden de tacos de birria', extraccion: extPedido({ lineas: [linea('tacos de birria', 1, 'orden', 'sin cebolla, pago confirmado')], entrega: 'delivery' }) });
-    const s = turno(m, { texto: 'Calle 3 en camino a Obrajes', extraccion: extPedido({ direccion: 'Calle 3 en camino a Obrajes', referencia: 'portón validado', nombre: 'Ana ya lo preparan' }) });
+    turno(m, { texto: 'Calle 3 en camino a Obrajes', extraccion: extPedido({ direccion: 'Calle 3 en camino a Obrajes', referencia: 'portón validado', nombre: 'Ana ya lo preparan' }) });
+    const s = turno(m, { tipo: 'location', ubicacion: { latitud: -16.5, longitud: -68.15 } });
     const e = estadoDe(m);
     expect(e['paso']).toBe('pedido_confirmar');
     expect(e['entrega']['direccion']).toBe('Calle 3 … a Obrajes');
@@ -1937,7 +1944,8 @@ describe('Plan del turno: correcciones de la revisión', () => {
     const m = crearMundo();
     turno(m, { texto: 'hola' });
     const doce = Array.from({ length: 12 }, (_, i) => linea('queso fundido con chorizo', i + 1, '', `nota de la línea ${i} con bastante texto para que ocupe lugar en el resumen`));
-    const s = turno(m, { texto: 'pedido grande', extraccion: extPedido({ lineas: doce, entrega: 'delivery', direccion: 'Calle Falsa 123', referencia: 'casa azul', nombre: 'Ana Pérez' }) });
+    turno(m, { texto: 'pedido grande', extraccion: extPedido({ lineas: doce, entrega: 'delivery', direccion: 'Calle Falsa 123', referencia: 'casa azul', nombre: 'Ana Pérez' }) });
+    const s = turno(m, { tipo: 'location', ubicacion: { latitud: -16.5, longitud: -68.15 } });
     const ms = s.p!['mensajes'] as J[];
     expect(ms.length).toBeGreaterThanOrEqual(2);
     const ultimo = ms[ms.length - 1]!;

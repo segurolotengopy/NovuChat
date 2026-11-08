@@ -654,7 +654,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "Entrega: delivery a Av\\. Banzer 1234, recibe Lucía Ejemplo"
+              "Entrega: delivery a Av\\. Banzer 1234, con la ubicación que compartiste, recibe Lucía Ejemplo"
             ],
             "textosNo": [
               "necesito",
@@ -730,7 +730,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "Entrega: delivery a calle 1 (numero|numerro) 2 Irpavi, recibe Lucía Ejemplo"
+              "Entrega: delivery a calle 1 (numero|numerro) 2 Irpavi, con la ubicación que compartiste, recibe Lucía Ejemplo"
             ],
             "textosNo": [
               "necesito",
@@ -766,7 +766,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "Entrega: delivery a calle 1 (numero|numerro) 2 Irpavi \\(a media cuadra del gas\\), recibe Lucía Ejemplo"
+              "Entrega: delivery a calle 1 (numero|numerro) 2 Irpavi \\(a media cuadra del gas\\), con la ubicación que compartiste, recibe Lucía Ejemplo"
             ],
             "textosNo": [
               "necesito",
@@ -797,7 +797,7 @@
     },
     {
       "id": "A14",
-      "titulo": "Cliente con nombre de perfil y carrito de delivery SIN dirección: pide SOLO la dirección (sin referencia ni frase del QR)",
+      "titulo": "Cliente con nombre de perfil y carrito de delivery SIN dirección (con la ubicación de la página): pide SOLO la dirección escrita, con una referencia opcional y sin frase del QR",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -827,10 +827,9 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "direcci[oó]n"
+              "direcci[oó]n exacta, escrita"
             ],
             "textosNo": [
-              "referencia",
               "nombre de quien",
               "no va en el QR",
               "Confirmar pedido"

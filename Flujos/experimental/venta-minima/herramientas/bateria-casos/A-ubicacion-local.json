@@ -1161,7 +1161,7 @@
     },
     {
       "id": "UN3",
-      "titulo": "Delivery pidiendo SU dirección: compartir SU ubicación (mensaje `location`) sigue valiendo como dirección de entrega y no dispara el mapa del local",
+      "titulo": "Delivery pidiendo SU dirección: compartir SU ubicación (mensaje `location`) queda guardada pero ya no alcanza sola (07/11: falta la dirección escrita) y no dispara el mapa del local",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -1184,7 +1184,8 @@
               }
             ],
             "entrega": "envio",
-            "direccion": ""
+            "direccion": "",
+            "ubicacion": null
           },
           "esperado": {
             "mensajes": 1,
@@ -1214,7 +1215,7 @@
             "ruta": "^(?!consulta:direccion_local)",
             "mensajes": 1,
             "estado": {
-              "paso": "pedido_confirmar",
+              "paso": "pedido_datos",
               "entrega.entrega": "delivery",
               "entrega.ubicacion.lat": -16.5
             },

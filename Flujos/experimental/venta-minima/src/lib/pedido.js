@@ -906,15 +906,16 @@ function _pdDireccionValida(dir) {
   return dir.length >= 5 && /[a-z]/.test(n) && n.split(' ').filter(Boolean).length >= 2;
 }
 
-// Que datos faltan para entregar: solo con delivery, y SOLO la direccion (decision de Andres y Silvana, 04/10/2026: la referencia es OPCIONAL y
-// «quien recibe» no es obligatorio; el pedido sigue al resumen y se envia igual). Una ubicacion compartida vale como direccion. `nombrePerfil` se
-// conserva en la firma por compatibilidad: ya no hace falta para decidir si falta algo.
+// Que datos faltan para entregar: solo con delivery, y son DOS obligatorios (decision de Andres, 07/11/2026): la direccion ESCRITA valida ('direccion') Y la
+// ubicacion compartida valida ('ubicacion', el pin nativo de WhatsApp). La referencia sigue siendo OPCIONAL y «quien recibe» no es obligatorio. Ya no se acepta una
+// sola de las dos. `nombrePerfil` se conserva en la firma por compatibilidad: ya no hace falta para decidir si falta algo.
 function pdFaltanEntrega(entrega, nombrePerfil) {
   if (_pdTipoDe(entrega) !== 'delivery') return [];
   const e = entrega;
   const faltan = [];
   const dir = _pdTexto(e.direccion, 200);
-  if (!_pdDireccionValida(dir) && !_pdUbicacion(e.ubicacion)) faltan.push('direccion');
+  if (!_pdDireccionValida(dir)) faltan.push('direccion');
+  if (!_pdUbicacion(e.ubicacion)) faltan.push('ubicacion');
   return faltan;
 }
 
@@ -1090,10 +1091,15 @@ function pdEjemploDePedido(carta) {
   return nombres.join(' y ');
 }
 
-// ADITIVO. «Para el delivery necesito {lista}…» (texto fijo del diseno) para lo que devuelve pdFaltanEntrega.
-// Lo único que se exige del delivery es la dirección; la referencia se ofrece como opcional (sin la frase del QR, decisión del 04/10/2026).
+// ADITIVO. «Para el delivery necesito…» (texto fijo del diseno) para lo que devuelve pdFaltanEntrega. SIN punto final en los casos que piden la ubicacion: quien
+// lo arma le agrega «con el botón.» o la via del clip, segun si el mensaje sale con el boton nativo. La referencia se ofrece como opcional (sin la frase del QR).
 function pdTextoFaltanEntrega(faltan) {
-  return 'Para el delivery necesito la dirección exacta.';
+  const f = Array.isArray(faltan) ? faltan : [];
+  const dir = f.indexOf('direccion') >= 0;
+  const ubi = f.indexOf('ubicacion') >= 0;
+  if (dir && ubi) return 'Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación';
+  if (ubi) return 'Para el delivery necesito que compartas tu ubicación';
+  return 'Para el delivery necesito tu dirección exacta, escrita, con una referencia (por ejemplo, el color del portón o un negocio cercano).';
 }
 
 // ---------------------------------------------------------------------------

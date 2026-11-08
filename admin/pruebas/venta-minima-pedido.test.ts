@@ -742,38 +742,43 @@ describe('pdFaltanEntrega y pdFusionarEntrega', () => {
     expect(L.pdFaltanEntrega(undefined, 'Juan')).toEqual([]);
     expect(L.pdFaltanEntrega(null, '')).toEqual([]);
   });
-  it('delivery sin datos pide SOLO la direccion: la referencia y el nombre ya no se exigen (decision del 04/10: delivery opcional)', () => {
-    expect(L.pdFaltanEntrega(deliv(), 'Juan')).toEqual(['direccion']);
-    expect(L.pdFaltanEntrega(deliv(), '')).toEqual(['direccion']);
+  it('delivery sin datos pide la direccion Y la ubicacion (07/11): la referencia y el nombre siguen sin exigirse', () => {
+    expect(L.pdFaltanEntrega(deliv(), 'Juan')).toEqual(['direccion', 'ubicacion']);
+    expect(L.pdFaltanEntrega(deliv(), '')).toEqual(['direccion', 'ubicacion']);
   });
   it('el nombre (de perfil o dado) ya no cuenta para lo que falta: nunca aparece «nombre» ni «referencia»', () => {
     for (const perfil of ['Juan Pérez', 'Juan', '']) {
       for (const extra of [{}, { nombre: 'Ana' }, { nombre: 'x' }, { referencia: 'ab' }, { referencia: 'casa verde' }]) {
         const falta = L.pdFaltanEntrega(deliv(extra), perfil);
-        expect(falta, `${perfil} ${JSON.stringify(extra)}`).toEqual(['direccion']);
+        expect(falta, `${perfil} ${JSON.stringify(extra)}`).toEqual(['direccion', 'ubicacion']);
       }
     }
   });
-  it('una direccion de verdad (5 o mas caracteres, con letras y al menos dos palabras o numeros) completa los datos, con o sin referencia ni nombre; una mala sigue pidiendose', () => {
-    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345' }), '')).toEqual([]);
-    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', referencia: 'casa verde', nombre: 'Ana' }), '')).toEqual([]);
-    expect(L.pdFaltanEntrega(deliv({ direccion: 'calle 21 de Calacoto' }), '')).toEqual([]);
-    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', referencia: 'ab' }), '')).toEqual([]);
+  it('una direccion de verdad (5 o mas caracteres, con letras y al menos dos palabras o numeros) completa la direccion, con o sin referencia ni nombre; sola NO completa el delivery: falta la ubicacion', () => {
+    const U = { ubicacion: { lat: -16.5, lng: -68.15 } };
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', ...U }), '')).toEqual([]);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', referencia: 'casa verde', nombre: 'Ana', ...U }), '')).toEqual([]);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'calle 21 de Calacoto', ...U }), '')).toEqual([]);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', referencia: 'ab', ...U }), '')).toEqual([]);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345' }), '')).toEqual(['ubicacion']);
     for (const mala of ['', 'x', 'calle', 'Calacoto', 'a 1', '12345', '#### 123']) {
-      expect(L.pdFaltanEntrega(deliv({ direccion: mala, referencia: 'casa', nombre: 'Ana' }), '')).toEqual(['direccion']);
+      expect(L.pdFaltanEntrega(deliv({ direccion: mala, referencia: 'casa', nombre: 'Ana', ...U }), '')).toEqual(['direccion']);
+      expect(L.pdFaltanEntrega(deliv({ direccion: mala, referencia: 'casa', nombre: 'Ana' }), '')).toEqual(['direccion', 'ubicacion']);
     }
   });
-  it('una ubicacion compartida valida vale como direccion; una invalida no', () => {
+  it('una ubicacion compartida valida YA NO vale como direccion (07/11): sola, falta la direccion escrita; una invalida tampoco cuenta', () => {
     const ok = deliv({ ubicacion: { lat: -16.5, lng: -68.15 }, referencia: 'frente al parque', nombre: 'Ana' });
-    expect(L.pdFaltanEntrega(ok, '')).toEqual([]);
+    expect(L.pdFaltanEntrega(ok, '')).toEqual(['direccion']);
+    expect(L.pdFaltanEntrega({ ...ok, direccion: 'Av. Arce 2345' }, '')).toEqual([]);
     for (const mala of [{ lat: 200, lng: 0 }, { lat: 'a', lng: 1 }, { lat: 1 }, null, 'x']) {
-      expect(L.pdFaltanEntrega({ ...ok, ubicacion: mala }, '')).toEqual(['direccion']);
+      expect(L.pdFaltanEntrega({ ...ok, ubicacion: mala }, '')).toEqual(['direccion', 'ubicacion']);
+      expect(L.pdFaltanEntrega({ ...ok, direccion: 'Av. Arce 2345', ubicacion: mala }, '')).toEqual(['ubicacion']);
     }
   });
   it('la forma principal es {entrega, modalidad, ...}; `tipo` solo se acepta por compatibilidad, y manda `entrega` > `modalidad` > `tipo`', () => {
-    expect(L.pdFaltanEntrega({ entrega: 'delivery' }, 'Juan')).toEqual(['direccion']);
-    expect(L.pdFaltanEntrega({ modalidad: 'delivery' }, 'Juan')).toEqual(['direccion']);
-    expect(L.pdFaltanEntrega({ tipo: 'delivery' }, 'Juan')).toEqual(['direccion']); // estado guardado antes del cambio
+    expect(L.pdFaltanEntrega({ entrega: 'delivery' }, 'Juan')).toEqual(['direccion', 'ubicacion']);
+    expect(L.pdFaltanEntrega({ modalidad: 'delivery' }, 'Juan')).toEqual(['direccion', 'ubicacion']);
+    expect(L.pdFaltanEntrega({ tipo: 'delivery' }, 'Juan')).toEqual(['direccion', 'ubicacion']); // estado guardado antes del cambio
     // negando: con recojo en la forma principal, un `tipo` viejo no lo vuelve delivery
     expect(L.pdFaltanEntrega({ entrega: 'recojo', modalidad: 'recojo', tipo: 'delivery' }, 'Juan')).toEqual([]);
     expect(L.pdFaltanEntrega({ modalidad: 'recojo', tipo: 'delivery' }, 'Juan')).toEqual([]);
@@ -876,10 +881,16 @@ describe('pdResumen y pdLineaCompacta', () => {
 });
 
 describe('textos fijos del pedido', () => {
-  it('«Para el delivery necesito la dirección exacta.»: sin la frase del QR y sin pedir el nombre', () => {
-    const txt = 'Para el delivery necesito la dirección exacta.';
-    for (const f of [['direccion'], ['direccion', 'referencia', 'nombre'], [], undefined]) expect(L.pdTextoFaltanEntrega(f as string[])).toBe(txt);
-    expect(txt).not.toMatch(/QR|nombre de quien|repartidor|referencia/); // la referencia NUNCA se pide en el chat (la ofrece el catálogo; regla de Silvana, 05/10)
+  it('los textos de lo que falta del delivery (07/11): dos cosas, solo la ubicación o solo la dirección; sin la frase del QR, sin pedir el nombre y sin palabras de cobro', () => {
+    const ambas = L.pdTextoFaltanEntrega(['direccion', 'ubicacion']);
+    expect(ambas).toBe('Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación');
+    const soloUbicacion = L.pdTextoFaltanEntrega(['ubicacion']);
+    expect(soloUbicacion).toBe('Para el delivery necesito que compartas tu ubicación');
+    const soloDireccion = L.pdTextoFaltanEntrega(['direccion']);
+    expect(soloDireccion).toContain('tu dirección exacta, escrita');
+    for (const t of [ambas, soloUbicacion, soloDireccion]) {
+      expect(t).not.toMatch(/QR|nombre de quien|repartidor|pagado|acreditad|recibimos tu pago/i);
+    }
   });
   it('«No encontré …»: con 1, 2 o 3 sugerencias (sin repetir, con su precio) y sin ellas', () => {
     const s = (k: string) => porId(k);
@@ -1697,18 +1708,18 @@ describe('PR-A (05/10): la ubicación compartida, con la misma regla que el serv
   const deliv = (extra: Record<string, unknown> = {}) => ({ entrega: 'delivery', modalidad: 'delivery', direccion: '', referencia: '', nombre: '', ...extra });
   const carrito = () => agregar([ln('tacos de birria', 1, 'orden')]).carrito;
   it('negado: (0, 0), el punto nulo de un GPS sin fijar, no vale como dirección ni se guarda', () => {
-    expect(L.pdFaltanEntrega(deliv({ ubicacion: { lat: 0, lng: 0 } }), '')).toEqual(['direccion']);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', ubicacion: { lat: 0, lng: 0 } }), '')).toEqual(['ubicacion']);
     expect(L.pdFusionarEntrega({ entrega: 'delivery', modalidad: 'delivery' }, { ubicacion: { lat: 0, lng: 0 } }).ubicacion).toBeUndefined();
     expect(L.pdNuevoPedido(TEL, 'x', [], deliv({ ubicacion: { lat: 0, lng: 0 } }), 0, 'BOB', AHORA).entrega.ubicacion).toBeUndefined();
     // Una sola coordenada en 0 sí es un lugar (el ecuador o el meridiano de Greenwich).
-    expect(L.pdFaltanEntrega(deliv({ ubicacion: { lat: 0, lng: -68.15 } }), '')).toEqual([]);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', ubicacion: { lat: 0, lng: -68.15 } }), '')).toEqual([]);
   });
   it('negado: lo que redondea a (0, 0) a 5 decimales tampoco vale (el (0, 0) se juzga DESPUÉS de redondear)', () => {
     const casi = { lat: 0.000004, lng: -0.000003 };
-    expect(L.pdFaltanEntrega(deliv({ ubicacion: casi }), '')).toEqual(['direccion']);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', ubicacion: casi }), '')).toEqual(['ubicacion']);
     expect(L.pdFusionarEntrega({ entrega: 'delivery', modalidad: 'delivery' }, { ubicacion: casi }).ubicacion).toBeUndefined();
     expect(L.pdNuevoPedido(TEL, 'x', [], deliv({ ubicacion: casi }), 0, 'BOB', AHORA).entrega.ubicacion).toBeUndefined();
-    expect(L.pdFaltanEntrega(deliv({ ubicacion: { lat: 0.000006, lng: 0 } }), '')).toEqual([]); // 0,00001: sí es un punto
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', ubicacion: { lat: 0.000006, lng: 0 } }), '')).toEqual([]); // 0,00001: sí es un punto
   });
   it('minimización: el pedido guardado de un RECOJO no copia dirección, referencia ni ubicación del estado', () => {
     const p = L.pdNuevoPedido(TEL, 'x', carrito(), { entrega: 'recojo', modalidad: 'recojo', direccion: 'Av. Arce 2345', referencia: 'casa verde', nombre: 'Ana Soria', ubicacion: { lat: -16.5, lng: -68.15 } }, 118, 'BOB', AHORA);

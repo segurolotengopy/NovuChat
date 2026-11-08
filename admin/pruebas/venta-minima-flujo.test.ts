@@ -319,8 +319,10 @@ function armarPedido(op: OpPedido = {}) {
     ...(delivery ? { direccion: 'Calle Falsa 123', referencia: 'portón verde', nombre: 'Carlos Pérez' } : {}),
     ...(op.extra ?? {}),
   });
-  const resumen = c.escribe(op.msg ?? 'quiero 4 tacos de birria', op.ventana === undefined ? {} : { avanzarMin: op.ventana });
-  return { w, c, resumen };
+  const primero = c.escribe(op.msg ?? 'quiero 4 tacos de birria', op.ventana === undefined ? {} : { avanzarMin: op.ventana });
+  // 07/11: en delivery la dirección escrita no basta; el resumen llega cuando el cliente comparte su ubicación (el pin).
+  const resumen = delivery ? c.ubicacion() : primero;
+  return { w, c, resumen, primero };
 }
 type Armado = ReturnType<typeof armarPedido>;
 
@@ -1832,7 +1834,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     const texto = cuerpos(delivery.resumen).join('\n');
     expect(texto).not.toMatch(/× Horchata/); // no queda en el pedido…
     expect(texto).toMatch(/1 × Queso Fundido/);
-    expect(texto).toContain('Quité «Horchata» de tu pedido porque no lo enviamos por delivery.'); // …y se le dice que se quitó
+    expect(cuerpos(delivery.primero).join('\n')).toContain('Quité «Horchata» de tu pedido porque no lo enviamos por delivery.'); // …y se le dice que se quitó (en el turno de la dirección, antes del pin)
     expect(texto).toContain('Total de la comida: 75 Bs.'); // el total es solo lo que queda
     const recojo = armarPedido({ entrega: 'recojo', config: { areasSinDelivery: 'Bebidas' }, lineas: [ln('horchata', 2), ln('queso fundido', 1)] });
     expect(cuerpos(recojo.resumen).join('\n')).toMatch(/2 × Horchata/);
@@ -2121,40 +2123,45 @@ describe('pedido', () => {
     expect(cuerpos(sug).join('\n')).toMatch(/Queso Fundido/);
   });
 
-  it('delivery sin dirección → la pide, SOLO la dirección (la referencia es opcional); con la dirección sola, sigue al resumen', () => {
+  it('delivery sin dirección ni ubicación → pide las DOS en un solo mensaje; con la dirección sola pide la ubicación; con las dos, resumen (07/11: ambas obligatorias)', () => {
+    const DOS = 'Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».';
     const r = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
-    expect(cuerpos(r.resumen)[0]).toBe('Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».');
-    expect(cuerpos(r.resumen)[0]).not.toContain('QR');
+    // (el helper ya mandó el pin: la dirección sigue faltando)
+    expect(cuerpos(r.primero)).toEqual([DOS]);
+    expect(r.primero.mensajes).toHaveLength(1);
+    expect(cuerpos(r.primero)[0]).not.toContain('QR');
+    expect(r.primero.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
+    expect(cuerpos(r.resumen)[0]).toBe('Para el delivery necesito tu dirección exacta, escrita, con una referencia (por ejemplo, el color del portón o un negocio cercano).');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
     expect(r.resumen.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
-    // Con la dirección y SIN referencia ni nombre: directo al resumen (la referencia ya no se pide).
+    // Pin y luego la dirección escrita (sin referencia ni nombre): directo al resumen, y queda como DIRECCIÓN, no como referencia.
     r.w.estado.extraccion = EX([], { entrega: '', direccion: 'Calle Falsa 123', referencia: '', nombre: '' });
     const siguiente = r.c.escribe('Calle Falsa 123');
-    ver('delivery: dirección sola', siguiente);
-    expect(cuerpos(siguiente).join('\n')).toContain('Entrega: delivery a Calle Falsa 123');
+    ver('delivery: dirección después del pin', siguiente);
+    expect(cuerpos(siguiente).join('\n')).toContain('Entrega: delivery a Calle Falsa 123, con la ubicación que compartiste');
     expect(siguiente.mensajes.flatMap(titulosDe)).toContain('Confirmar pedido');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
     expect(cuerpos(siguiente).join('\n')).not.toMatch(/referencia|\(\)/);
-    // Con la referencia opcional, el resumen la muestra.
-    const conRef = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
-    conRef.w.estado.extraccion = EX([], { entrega: '', direccion: 'Calle Falsa 123', referencia: 'portón verde', nombre: '' });
-    expect(cuerpos(conRef.c.escribe('Calle Falsa 123, portón verde')).join('\n')).toContain('Entrega: delivery a Calle Falsa 123 (portón verde)');
+    // Dirección y luego el pin: +1 mensaje (el resumen actualizado), solo en este caso.
+    const alReves = armarPedido({ entrega: 'delivery', extra: { direccion: 'Calle Falsa 123', referencia: 'portón verde', nombre: '' } });
+    expect(cuerpos(alReves.primero)).toEqual(['Para el delivery necesito que compartas tu ubicación con el botón. Para volver al inicio, escribe «inicio».']);
+    expect(cuerpos(alReves.resumen).join('\n')).toContain('Entrega: delivery a Calle Falsa 123 (portón verde), con la ubicación que compartiste');
     // Una dirección inválida («calle») se sigue pidiendo.
     const mala = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
     mala.w.estado.extraccion = EX([], { entrega: '', direccion: 'calle', referencia: '', nombre: '' });
     const t = mala.c.escribe('calle');
-    expect(cuerpos(t)[0]).toBe('Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».');
+    expect(cuerpos(t)[0]).toBe('Para el delivery necesito tu dirección exacta, escrita, con una referencia (por ejemplo, el color del portón o un negocio cercano).');
     expect(estadoDe(mala.w.mundo)['paso']).toBe('pedido_datos');
   });
 
-  it('una ubicación compartida cuenta como la dirección: va directo al resumen (sin pedir referencia ni nombre), y sin confirmar nada', () => {
+  it('una ubicación compartida YA NO cuenta sola como la dirección (07/11): sin dirección escrita no hay resumen ni confirmación', () => {
     const r = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
-    const t = r.c.ubicacion();
-    expect(cuerpos(t).join('\n')).toContain('Entrega: delivery a ubicación compartida');
-    expect(cuerpos(t).join('\n')).not.toMatch(/necesito/);
-    expect(t.mensajes.flatMap(titulosDe)).toContain('Confirmar pedido');
+    const t = r.resumen; // el helper ya compartió la ubicación
+    expect(cuerpos(t).join('\n')).not.toContain('Entrega: delivery a ubicación compartida');
+    expect(cuerpos(t).join('\n')).toMatch(/necesito tu dirección exacta/);
+    expect(t.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
     expect(t.avisos).toHaveLength(0);
-    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
   });
 
   it('fuera de horario → «Ahora estamos fuera de nuestro horario de pedidos», sin carrito y sin llamar al modelo; con el horario abierto, sí', () => {
@@ -4668,6 +4675,7 @@ describe('intenciones globales: «mesa» en una dirección, «qué tienen» dent
     w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery' });
     c.escribe('quiero 4 tacos de birria para delivery');
     expect(estadoDe(w.mundo)['paso']).toBe('pedido_datos');
+    c.ubicacion();
     w.estado.extraccion = EX([], { entrega: 'delivery', direccion: 'Av. Banzer, edificio Mesa Grande, piso 3', referencia: 'puerta azul', nombre: 'Carlos Pérez' });
     const t = c.escribe('Av. Banzer, edificio Mesa Grande, piso 3, puerta azul');
     expect(estadoDe(w.mundo)['paso']).toBe('pedido_confirmar');
@@ -5970,8 +5978,9 @@ describe('E. delivery OPCIONAL (decisión de Andres y Silvana, 04/10): referenci
   it('el pedido por delivery con la dirección sola se envía igual: el aviso no dice «sin referencia» ni pide nada más', () => {
     const r = armarPedido({ ventana: 5, cobro: false, entrega: 'delivery', extra: { direccion: 'Calle Falsa 123', referencia: '', nombre: '' } });
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
-    expect(r.resumen.mensajes).toHaveLength(1); // directo al resumen: 0 mensajes de `pedido_datos`
-    expect(r.resumen.llamadas.extraer).toHaveLength(1); // una sola llamada al modelo (la del pedido)
+    expect(r.resumen.mensajes).toHaveLength(1); // con la dirección y el pin, directo al resumen
+    expect(r.primero.mensajes).toHaveLength(1); // el mensaje de pedir la ubicación (0 de `pedido_datos` con la dirección ya escrita)
+    expect(r.primero.llamadas.extraer).toHaveLength(1); // una sola llamada al modelo (la del pedido); el pin no llama a ninguno
     const t = confirmarPedido(r);
     expect(t.avisos.length).toBeGreaterThan(0);
     const texto = JSON.stringify(t.avisos);
@@ -6039,7 +6048,7 @@ describe('(1) cambio de entrega con tipeo y variantes naturales; nunca deriva an
     const q = r.c.escribe('quiero que me mandn por favor ahorita');
     const d = r.c.toca(idDeBoton(q, 'Delivery'), 'Delivery');
     expect((estadoDe(r.w.mundo)['entrega'] as J)['entrega']).toBe('delivery');
-    expect(cuerpos(d)[0]).toMatch(/necesito la dirección/);
+    expect(cuerpos(d)[0]).toMatch(/necesito dos cosas: escribe tu dirección/);
   });
 });
 
@@ -6059,6 +6068,7 @@ describe('(3) el texto libre que el modelo no asignó lo toma el código (direcc
   it('«calle 1 numerro 2 Irpavi»: si el modelo devuelve solo `{lineas: []}`, el código la toma como la dirección y sigue al resumen', () => {
     const { w, c } = deliverySinDireccion();
     w.estado.extraccion = vacio;
+    c.ubicacion();
     const t = c.escribe('calle 1 numerro 2 Irpavi');
     expect((estadoDe(w.mundo)['entrega'] as J)['direccion']).toBe('calle 1 numerro 2 Irpavi');
     expect(estadoDe(w.mundo)['paso']).toBe('pedido_confirmar');
@@ -6069,6 +6079,7 @@ describe('(3) el texto libre que el modelo no asignó lo toma el código (direcc
   it('dirección en un mensaje y referencia en otro: «a media cuadra de la calle foton» (sin asignar por el modelo) queda como referencia y sale en el resumen', () => {
     const { w, c } = deliverySinDireccion();
     w.estado.extraccion = vacio;
+    c.ubicacion();
     c.escribe('calle 1 numerro 2 Irpavi');
     const t = c.escribe('a media cuadra de la calle foton');
     expect((estadoDe(w.mundo)['entrega'] as J)['referencia']).toBe('a media cuadra de la calle foton');
@@ -7078,5 +7089,142 @@ describe('PR-4a ronda 4', () => {
     const q = armarPedido({ ventana: 5, config: { topeAvisosDia: 0 } });
     falla503(q.w, true);
     expect(confirmarPedido(q).mensajes.filter((m) => m.a !== CLIENTE)).toHaveLength(0);
+  });
+});
+
+// =================================================================================================
+// 07/11/2026 (decisión de Andres): en DELIVERY son obligatorias la dirección escrita Y la ubicación compartida (pin). Sin ubicación no se confirma.
+// =================================================================================================
+describe('ubicación obligatoria en delivery (07/11): dirección escrita Y pin; sin ubicación no se confirma', () => {
+  const PROHIBIDO_COBRO = /pagado|acreditad|recibimos tu pago/i;
+  const sinDatos = () => {
+    const w = crear({ panel: panel(COBRO_REAL) });
+    const c = con(w, CLIENTE, 'Carlos');
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery' });
+    const t = c.escribe('quiero 4 tacos de birria con delivery');
+    return { w, c, t };
+  };
+  const sinPedido = (w: Mundial, t?: ResultadoTurno): void => {
+    expect(pedidosGuardados(w.mundo)).toHaveLength(0);
+    expect(estadoDe(w.mundo)['pedido'] ?? null).toBeNull();
+    expect(estadoDe(w.mundo)['paso']).not.toBe('esperando_comprobante');
+    if (t) {
+      expect(t.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
+      expect(todoElTexto(t)).not.toMatch(/Total de la comida|qr_enviado/);
+    }
+  };
+
+  it('delivery sin datos: UN solo mensaje, con el botón de ubicación y el texto nuevo (0 mensajes extra en el camino normal)', () => {
+    const { w, t } = sinDatos();
+    expect(t.mensajes).toHaveLength(1);
+    expect(cuerpos(t)[0]).toBe('Para el delivery necesito dos cosas: escribe tu dirección exacta con una referencia (por ejemplo, el color del portón o un negocio cercano) y comparte tu ubicación con el botón. Para volver al inicio, escribe «inicio».');
+    expect(t.mensajes[0]!.payload['interactive']?.type).toBe('location_request_message');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_datos');
+    sinPedido(w, t);
+  });
+
+  it('NEGADO: ni la dirección sola, ni la ubicación sola, ni nada confirman el delivery', () => {
+    // dirección sin ubicación
+    const a = sinDatos();
+    a.w.estado.extraccion = EX([], { entrega: 'delivery', direccion: 'Av. Banzer 1234' });
+    const ta = a.c.escribe('Av. Banzer 1234');
+    expect(cuerpos(ta)[0]).toMatch(/necesito que compartas tu ubicación/);
+    expect(estadoDe(a.w.mundo)['paso']).toBe('pedido_datos');
+    sinPedido(a.w, ta);
+    // ubicación sin dirección
+    const b = sinDatos();
+    const tb = b.c.ubicacion();
+    expect(cuerpos(tb)[0]).toMatch(/necesito tu dirección exacta, escrita/);
+    expect(estadoDe(b.w.mundo)['paso']).toBe('pedido_datos');
+    sinPedido(b.w, tb);
+    // ninguna de las dos
+    const c = sinDatos();
+    sinPedido(c.w, c.t);
+  });
+
+  it('dirección y luego el pin: resumen «con la ubicación que compartiste» (+1 mensaje, solo en este caso); pin y luego dirección a mano: queda como DIRECCIÓN', () => {
+    const a = sinDatos();
+    a.w.estado.extraccion = EX([], { entrega: 'delivery', direccion: 'Av. Banzer 1234' });
+    expect(a.c.escribe('Av. Banzer 1234').mensajes).toHaveLength(1); // pide solo la ubicación
+    const pin = a.c.ubicacion();
+    expect(pin.mensajes).toHaveLength(1); // el resumen actualizado
+    expect(cuerpos(pin).join('\n')).toContain('Entrega: delivery a Av. Banzer 1234, con la ubicación que compartiste');
+    expect(estadoDe(a.w.mundo)['paso']).toBe('pedido_confirmar');
+    // pin y luego dirección escrita, SIN que el modelo la asigne
+    const b = sinDatos();
+    b.c.ubicacion();
+    b.w.estado.extraccion = EX([], { entrega: '' });
+    const t = b.c.escribe('Av. Banzer 1234 zona norte');
+    const e = estadoDe(b.w.mundo)['entrega'] as J;
+    expect(e['direccion']).toBe('Av. Banzer 1234 zona norte');
+    expect(e['referencia']).toBe('');
+    expect(estadoDe(b.w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(cuerpos(t).join('\n')).toContain('con la ubicación que compartiste');
+  });
+
+  it('«Confirmar pedido» sin ubicación (un botón viejo) deriva a recepción y NO crea pedido ni QR ni aviso de pedido', () => {
+    const a = sinDatos();
+    a.w.estado.extraccion = EX([], { entrega: 'delivery', direccion: 'Av. Banzer 1234' });
+    a.c.escribe('Av. Banzer 1234');
+    const t = a.c.toca('p|confirmar', 'Confirmar pedido');
+    expect(t.mensajes).toHaveLength(1);
+    expect(tieneEnlace(t)).toBe(true); // «Escribir al local»
+    expect(cuerpos(t)[0]).toMatch(/necesito tu ubicación/);
+    expect(cuerpos(t)[0]).not.toMatch(PROHIBIDO_COBRO);
+    expect(t.avisos.length).toBeGreaterThan(0); // el aviso a recepción (transferencia)
+    expect(todoElTexto(t)).not.toMatch(/Total de la comida|Tacos de birria|4 ×/i);
+    sinPedido(a.w, t);
+  });
+
+  it('sin bucle: «no puedo compartirla» deriva a la primera; diez textos sin pin nunca repiten el mismo mensaje de pedir los datos', () => {
+    const a = sinDatos();
+    a.w.estado.extraccion = EX([], { entrega: '' });
+    const t = a.c.escribe('no puedo compartir mi ubicación');
+    expect(tieneEnlace(t)).toBe(true);
+    sinPedido(a.w, t);
+    const b = sinDatos();
+    b.w.estado.extraccion = EX([], { entrega: '' });
+    const vistos: string[] = [cuerpos(b.t)[0]!];
+    let derivo = false;
+    for (let i = 0; i < 10; i++) {
+      const r = b.c.escribe('ok ' + i);
+      const cuerpo = cuerpos(r)[0] ?? '';
+      if (/necesito/.test(cuerpo)) expect(vistos, `turno ${i}`).not.toContain(cuerpo); // la misma petición de datos NUNCA se repite
+      vistos.push(cuerpo);
+      if (tieneEnlace(r)) derivo = true;
+      sinPedido(b.w, r);
+    }
+    expect(vistos.filter((x) => x.startsWith('Para el delivery necesito dos cosas'))).toHaveLength(1); // el mensaje de pedir sale UNA vez
+    expect(derivo).toBe(true); // y a la segunda o tercera se pasa con el local (aviso + «Escribir al local»)
+  });
+
+  it('ningún texto nuevo presenta un cobro que no es (prohibición 3)', () => {
+    const a = sinDatos();
+    const textos = [cuerpos(a.t)[0]!];
+    a.w.estado.extraccion = EX([], { entrega: '' });
+    textos.push(cuerpos(a.c.escribe('ok'))[0]!); // el recordatorio
+    textos.push(cuerpos(a.c.escribe('ok'))[0]!); // la derivación
+    const b = sinDatos();
+    b.w.estado.extraccion = EX([], { entrega: 'delivery', direccion: 'Av. Banzer 1234' });
+    textos.push(cuerpos(b.c.escribe('Av. Banzer 1234'))[0]!);
+    textos.push(cuerpos(sinDatos().c.ubicacion())[0]!);
+    expect(textos.filter(Boolean).length).toBeGreaterThanOrEqual(5);
+    for (const x of textos) expect(x).not.toMatch(PROHIBIDO_COBRO);
+  });
+
+  it('recojo y reserva: los mismos textos de siempre (la ubicación no se pide)', () => {
+    const w = crear({ panel: panel(COBRO_REAL) });
+    const c = con(w, CLIENTE, 'Carlos');
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'recojo' });
+    const t = c.escribe('quiero 4 tacos de birria para recoger');
+    expect(cuerpos(t).join('\n')).toContain('Entrega: recojo en el local');
+    expect(cuerpos(t).join('\n')).not.toMatch(/ubicaci/i);
+    expect(t.mensajes.flatMap(titulosDe)).toContain('Confirmar pedido');
+    const r = armarReserva();
+    expect(todoElTexto(r.resumen)).not.toMatch(/ubicación compartida|compartas tu ubicación/i);
   });
 });
