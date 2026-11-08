@@ -573,14 +573,15 @@ fase_verificar() {
   (( sin == 0 )) && hecho "las $total Functions HTTP o callables son invocables"
   # Alerta operativa: la condición de desplegadorSecretos cubre ALERTAS_ y los dos secretos existen (fase alertas).
   local sa_al
-  # La condición tiene que estar DENTRO del binding «secretos-de-las-functions» de sa-deploy-staging (no en cualquier parte).
+  # La condición tiene que estar DENTRO del binding «secretos-de-las-functions» (rol desplegadorSecretos) de sa-deploy-staging.
   if gc projects get-iam-policy "$P" --format=json 2>/dev/null | python3 -I -c '
 import json, sys
 d = json.load(sys.stdin)
 sys.exit(0 if any((b.get("condition") or {}).get("title") == "secretos-de-las-functions"
                   and b.get("role", "").endswith("/desplegadorSecretos")
+                  and "serviceAccount:" + sys.argv[2] in b.get("members", [])
                   and "secrets/" + sys.argv[1] + "\"" in (b["condition"].get("expression") or "")
-                  for b in d.get("bindings", [])) else 1)' "$PREFIJO_ALERTAS"; then hecho "la condición de desplegadorSecretos cubre ${PREFIJO_ALERTAS}"
+                  for b in d.get("bindings", [])) else 1)' "$PREFIJO_ALERTAS" "$SA_DEPLOY"; then hecho "la condición de desplegadorSecretos cubre ${PREFIJO_ALERTAS}"
   else falla "la condición de desplegadorSecretos NO cubre ${PREFIJO_ALERTAS} (fase alertas)"; fi
   for sa_al in "${SECRETOS_ALERTAS[@]}"; do
     if existe gc secrets describe "$sa_al"; then hecho "$sa_al existe"; else falla "$sa_al no existe (fase alertas)"; fi

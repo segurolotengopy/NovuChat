@@ -82,3 +82,5 @@ Flujos/ensayo-*.json
 # Líneas base de las pruebas de PR-4c2 y PR-4a0 (medidas en el worktree; nunca se versionan)
 .claude/base-4a0/
 .claude/base-4c2/
+# Respaldos de scripts/plataforma/alertas-config.mjs (el estado anterior de plataforma/alertas): nunca versionados.
+alertas-config-respaldo-*

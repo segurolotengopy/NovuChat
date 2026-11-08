@@ -6,11 +6,11 @@
  * sintéticos armados en ejecución (ningún dominio ni correo real en el repositorio).
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, closeSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, fstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TOPE_MAXIMO } from '../../functions/src/plataforma/alertaOperativa.ts';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
@@ -25,6 +25,9 @@ const { getFirestore } = await import('firebase-admin/firestore');
 const app = getApps().find((a) => a.name === 'alertas-config') ?? initializeApp({ projectId: PROYECTO }, 'alertas-config');
 const db = getFirestore(app);
 const ref = db.doc('plataforma/alertas');
+
+// Cada prueba lanza procesos de Node contra el emulador: con la máquina cargada 5 s no alcanzan (fallo intermitente observado).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 const DOMINIO = ['avisos', 'ejemplo', 'test'].join('.');
 const CORREO = ['persona', '@', 'ejemplo', '.test'].join('');
@@ -266,5 +269,84 @@ describe('alertas-config.mjs --revertir: el respaldo pasa por la MISMA validaci�
     expect(correr('--revertir', f, '--aplicar').codigo).toBe(2);
     writeFileSync(f, JSON.stringify({ existia: true, datos: { tenantId: 'x' } }));
     expect(correr('--revertir', f, '--aplicar').codigo).toBe(2);
+  });
+});
+
+describe('alertas-config.mjs: argumentos estrictos y la ruta del respaldo (sexta ronda)', () => {
+  const repoRaiz = (): string => spawnSync('git', ['-C', aqui, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).stdout.trim();
+  const comunPadre = (): string => dirname(spawnSync('git', ['-C', aqui, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).stdout.trim());
+  const sinEscribir = async (...a: string[]) => {
+    const r = correr(...a, '--aplicar');
+    expect(r.codigo, a.join(' ')).toBe(2);
+    expect((await doc()).exists).toBe(false);
+    return r;
+  };
+
+  it('un argumento desconocido o suelto, o --destinatario/--denegar (también con = y con --archivo): salida 2 y el valor no se repite', async () => {
+    for (const extra of [['--cualquiera', 'x'], ['suelto'], ['--tope=5'], ['--dominio=' + DOMINIO]]) await sinEscribir('--dominio', DOMINIO, ...extra);
+    const a = await sinEscribir(...archivo(), `--destinatario=${CORREO}`);
+    expect(a.salida).toContain('--archivo');
+    await sinEscribir(...archivo(), '--destinatario', CORREO);
+    await sinEscribir(...archivo(), `--denegar=${DENEGADA}`);
+    await sinEscribir(...archivo(), '--denegar', DENEGADA);
+    const u = correr('--dominio', DOMINIO, '--misterio-secreto-123', '--aplicar');
+    expect(u.codigo).toBe(2);
+    expect(u.salida).not.toContain('misterio-secreto-123');          // el argumento no se imprime
+    expect(u.salida).not.toContain('--destinatario C');              // la ayuda ya no lo ofrece
+    expect(u.salida).not.toContain('--denegar X');
+  });
+
+  it('--revertir con «datos»: null (o un arreglo) sale 2 y no cambia nada', async () => {
+    for (const datos of [null, [], 'texto', 5]) {
+      const f = join(tmp, `nulo-${++n}.json`);
+      writeFileSync(f, JSON.stringify({ existia: true, datos }));
+      await ref.set({ dominioAvisos: 'actual.ejemplo.test' });
+      expect(correr('--revertir', f, '--aplicar').codigo, JSON.stringify(datos)).toBe(2);
+      expect((await doc()).get('dominioAvisos')).toBe('actual.ejemplo.test');
+    }
+    const g = join(tmp, 'nulo-total.json');
+    writeFileSync(g, 'null');
+    expect(correr('--revertir', g, '--aplicar').codigo).toBe(2);
+  });
+
+  it('--respaldo: un symlink que apunta DENTRO del repositorio no lo disfraza (ruta real del directorio padre)', async () => {
+    const enlace = join(tmp, 'enlace-al-repo');
+    symlinkSync(aqui, enlace);
+    const r = await sinEscribir(...archivo(), '--respaldo', join(enlace, 'r-por-enlace.json'));
+    expect(r.salida).toContain('fuera del repositorio');
+    expect(spawnSync('test', ['-e', join(aqui, 'r-por-enlace.json')]).status).not.toBe(0);
+  });
+
+  it('--respaldo: desde OTRO cwd la raíz del repositorio sale del directorio del script, no del cwd', async () => {
+    const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...archivo(), '--respaldo', join(aqui, 'r-otro-cwd.json'), '--aplicar'], {
+      encoding: 'utf8', cwd: tmp, env: entornoDelEmulador(HOST, { XDG_RUNTIME_DIR: runtime }),
+    });
+    expect(r.status).toBe(2);
+    expect(spawnSync('test', ['-e', join(aqui, 'r-otro-cwd.json')]).status).not.toBe(0);
+    expect((await doc()).exists).toBe(false);
+  });
+
+  it('--respaldo: tampoco en el checkout PRINCIPAL (el padre del .git común) ni en la raíz del repositorio', async () => {
+    await sinEscribir(...archivo(), '--respaldo', join(comunPadre(), 'r-checkout-principal.json'));
+    await sinEscribir(...archivo(), '--respaldo', join(repoRaiz(), 'r-raiz.json'));
+  });
+
+  it('$XDG_RUNTIME_DIR dentro del repositorio, o con modo distinto de 700, no sirve como destino por omisión', async () => {
+    const dentro = join(aqui, 'xdg-de-prueba');
+    mkdirSync(dentro, { mode: 0o700 }); chmodSync(dentro, 0o700);
+    try {
+      const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...archivo(), '--aplicar'], { encoding: 'utf8', env: entornoDelEmulador(HOST, { XDG_RUNTIME_DIR: dentro }) });
+      expect(r.status).toBe(2);
+      expect(readdirSync(dentro)).toEqual([]);                       // no dejó ningún respaldo dentro del repositorio
+    } finally { rmSync(dentro, { recursive: true, force: true }); }
+    const abierto = join(tmp, 'xdg-755'); mkdirSync(abierto); chmodSync(abierto, 0o755);
+    const s = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...archivo(), '--aplicar'], { encoding: 'utf8', env: entornoDelEmulador(HOST, { XDG_RUNTIME_DIR: abierto }) });
+    expect(s.status).toBe(2);
+    expect(readdirSync(abierto)).toEqual([]);
+    expect((await doc()).exists).toBe(false);
+  });
+
+  it('el .gitignore (raíz y admin/) ignora los respaldos alertas-config-respaldo-*', () => {
+    for (const g of [join(aqui, '..', '..', '..', '.gitignore'), join(aqui, '..', '..', '.gitignore')]) expect(readFileSync(g, 'utf8')).toContain('alertas-config-respaldo-*');
   });
 });

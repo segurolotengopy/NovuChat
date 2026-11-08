@@ -20,3 +20,5 @@ storage-debug.log
 pruebas/.emu-storage.*/
 coverage/
 *.tsbuildinfo
+# Respaldos de scripts/plataforma/alertas-config.mjs (el estado anterior de plataforma/alertas): nunca versionados.
+alertas-config-respaldo-*

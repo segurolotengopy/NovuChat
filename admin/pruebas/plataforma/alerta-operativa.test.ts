@@ -1113,18 +1113,19 @@ describe('contenido_bloqueado: como máximo 1 inmediato por día y nunca el últ
   });
 });
 
-describe('envío directo de respaldo con la base caída: un solo correo por hora por instancia', () => {
-  it('N avisos bloqueados con `crear` caído salen como MÁXIMO 1 correo; otra hora, otro; y el contenido nunca viaja', async () => {
+describe('envío directo de respaldo con la base caída: un solo correo por DÍA por instancia', () => {
+  it('48 h de bloqueos con `crear` caído: como MÁXIMO 2 correos (1 por día UTC) y el contenido nunca viaja', async () => {
     reiniciarCandadoDeRespaldo();
     const a: AlmacenMemoria = almacenEnMemoria();
     a.crear = async () => { throw new Error('base caída'); };
     const { enviados, enviar } = envioFalso();
-    for (let i = 0; i < 12; i++) await llamar(a, enviar, buenEvento({ que_paso: `falló ${TEL}`, id_unico: `evt-${i}-abcd` }));
-    expect(enviados).toHaveLength(1);
-    expect(JSON.stringify(enviados)).not.toContain(TEL);
-    const t = AHORA + HORA;
-    await llamar(a, enviar, buenEvento({ que_paso: `falló ${TEL}`, id_unico: 'evt-x-abcd' }), { ahora: t, marca: t });
+    for (let h = 0; h < 48; h++) {
+      const t = Date.parse('2026-11-07T00:30:00Z') + h * HORA;
+      await llamar(a, enviar, buenEvento({ que_paso: `falló ${TEL}`, id_unico: `evt-${h}-abcd`, ocurrido_en: new Date(t - 60_000).toISOString().slice(0, 19) + 'Z' }), { ahora: t, marca: t });
+      await llamar(a, enviar, buenEvento({ que_paso: `falló ${TEL}`, id_unico: `evt-${h}-efgh`, ocurrido_en: new Date(t - 60_000).toISOString().slice(0, 19) + 'Z' }), { ahora: t, marca: t });
+    }
     expect(enviados).toHaveLength(2);
+    expect(JSON.stringify(enviados)).not.toContain(TEL);
     reiniciarCandadoDeRespaldo();
   });
 });
@@ -1141,6 +1142,67 @@ describe('el emulador no exige índices: esta prueba SÍ', () => {
     // Y la consulta del código es la que ese índice sirve.
     const fuente = readFileSync(join(aqui2, '..', '..', 'functions', 'src', 'plataforma', 'alertaOperativa.ts'), 'utf8');
     expect(fuente).toContain(".where('resumido_en', '==', null).orderBy('recibido_ms', 'desc')");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SEXTA RONDA: fechas con rangos válidos, tipo reservado, repetidos en el resumen
+// ---------------------------------------------------------------------------
+describe('fechas y horas con RANGOS VÁLIDOS: lo que parece fecha pero no lo es, se mira como teléfono', () => {
+  it('«71/23 4567», «71/23-4567», «71/23.4567», «77/12 34 56», «12/34 5678», «71/23 45:67», «71/23/2045», «77/12/2034 567» y «71:23:45.678» se rechazan', () => {
+    for (const c of ['71/23 4567', '71/23-4567', '71/23.4567', '77/12 34 56', '12/34 5678', '71/23 45:67', '71/23/2045', '77/12/2034 567', '71:23:45.678']) {
+      expect(violaciones(buenEvento({ que_paso: `Cliente ${c} sin respuesta` })).some((x) => /telefono_/.test(x)), c).toBe(true);
+    }
+  });
+  it('una fecha VÁLIDA a la que sigue o precede un resto que la haría teléfono tampoco se tapa', () => {
+    for (const c of ['07/11 4567', '07/11 45 67', '07/11/2026 4567', '4567 07/11', '07/11 17:00 4567']) {
+      expect(violaciones(buenEvento({ que_paso: `Cliente ${c} sin respuesta` })).some((x) => /telefono_/.test(x)), c).toBe(true);
+    }
+  });
+  it('rangos: día 32, mes 13, hora 24, minuto 60 o año 1899 NO son una fecha', () => {
+    for (const c of ['32/11/2026 17:00', '07/13/2026 17:00', '07/11/2026 24:00:00', '07/11/2026 17:60:00', '07/11/1899 17:00', '10:30:60.123', '24:30:15.123']) {
+      expect(violaciones(buenEvento({ que_paso: `Falló ${c} y 5 más` })).some((x) => /telefono_/.test(x)), c).toBe(true);
+    }
+  });
+  it('«El 07/11/2026 falló», «a las 07/11 17:00», «10:30:15.123», «07/11/2026 17:00», «07/11/2026, 3 intentos» y los nombres reales pasan', () => {
+    for (const t of ['El 07/11/2026 falló', 'a las 07/11 17:00', '10:30:15.123', '07/11/2026 17:00', '07/11/2026, 3 intentos', 'Desde el 31/12/1999 23:59:59.999']) {
+      expect(violaciones(buenEvento({ que_paso: t })), t).toEqual([]);
+    }
+    for (const n of ['NovuChat — Rescate 22 h (rroca-ruben)', 'Todos los días 17:00', 'Enviar respuesta (relé) · v2.36.5 - 07/11/2026', 'Enviar · v2.36.5 - 2026-11-07']) {
+      expect(violaciones(buenEvento({ flujo: n, nodo: n })), n).toEqual([]);
+    }
+  });
+  it('una fecha ISO inválida (mes 99, día 00) no se tapa', () => {
+    expect(violaciones(buenEvento({ que_paso: 'Cliente 2026-99-99 sin respuesta 1234' })).some((x) => /telefono_/.test(x))).toBe(true);
+  });
+});
+
+describe('el tipo contenido_bloqueado es del servidor', () => {
+  it('un llamador que lo manda recibe 400 (forma) y no gasta el tope de los avisos del servidor', async () => {
+    expect(violaciones(buenEvento({ tipo_error: 'contenido_bloqueado' }))).toContain('tipo_error:forma');
+    const a = almacenEnMemoria(); const { enviados, enviar } = envioFalso();
+    const r = await llamar(a, enviar, buenEvento({ tipo_error: 'contenido_bloqueado' }));
+    expect(r.status).toBe(400);
+    // Lo único que sale es el aviso del servidor por el campo inválido (id propio, tipo propio).
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0]!.idempotencia).toBe('novuchat:evt-0001-abcdef:bloqueado');
+    expect(a.eventos.get('evt-0001-abcdef')).toBeUndefined();
+    // Un tipo parecido sí es del llamador.
+    expect(violaciones(buenEvento({ tipo_error: 'contenido_bloqueado_x' }))).toEqual([]);
+  });
+});
+
+describe('el resumen muestra los avisos repetidos', () => {
+  it('una línea «<id>: N repetidos» por cada aviso del servidor con repetidos, y no más de 5', () => {
+    const ev = [
+      eventoGuardado('id-invalido-2026-11-07T15', { repetidos: 7 }),
+      eventoGuardado('evt-r-0001-abcd'),
+      ...Array.from({ length: 6 }, (_, i) => eventoGuardado(`id-invalido-2026-11-07T0${i}`, { repetidos: i + 1 })),
+    ];
+    const t = armarResumen(ev, AHORA).texto;
+    expect(t).toContain('- id-invalido-2026-11-07T15: 7 repetidos');
+    expect((t.match(/ repetidos/g) ?? []).length).toBe(5);
+    expect(armarResumen([eventoGuardado('evt-s-0001-abcd')], AHORA).texto).not.toContain('repetidos');
   });
 });
 

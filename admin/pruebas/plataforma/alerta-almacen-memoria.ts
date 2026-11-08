@@ -39,7 +39,13 @@ export function almacenEnMemoria(): AlmacenMemoria {
     async pendientesDeResumen() { return [...eventos.values()].filter((e) => e.resumido_en === null).sort((a, b) => b.recibido_ms - a.recibido_ms).slice(0, 500); },
     async marcarResumidos(ids, ms) { for (const id of ids) { const e = eventos.get(id); if (e) e.resumido_en = ms; } },
     async resumenDelDia(dia) { return resumenes.get(dia) ?? null; },
-    async fijarResumenDelDia(dia, ids, ahoraMs) { for (const k of [...resumenes.keys()]) if (k < dia) resumenes.delete(k); resumenes.set(dia, { ids, ahoraMs }); },
+    async fijarResumenDelDia(dia, ids, ahoraMs) {
+      for (const k of [...resumenes.keys()]) if (k < dia) resumenes.delete(k);
+      const corte = new Date(Date.parse(`${dia}T00:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10);
+      for (const k of [...dias.keys()]) if (k < corte) dias.delete(k);
+      for (const k of [...delTipo.keys()]) if (k.slice(0, 10) < corte) delTipo.delete(k);
+      resumenes.set(dia, { ids, ahoraMs });
+    },
     async eventosPorId(ids) { return ids.map((i) => eventos.get(i)).filter((e): e is EventoGuardado => e !== undefined); },
     async cuotaHasta() { return cuota.hasta; },
     async marcarCuota(hasta) { cuota.hasta = hasta; },

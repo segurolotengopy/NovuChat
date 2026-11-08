@@ -151,4 +151,19 @@ describe('preparar-staging.sh alertas', () => {
     expect(correr('verificar').salida).toContain('cubre ALERTAS_');
     expect(correr('verificar').salida).not.toContain('NO cubre ALERTAS_');
   });
+  it('`verificar` exige también el MIEMBRO sa-deploy-staging y el ROL desplegadorSecretos del binding', () => {
+    const otra = `serviceAccount:otra-cuenta@${STAGING}.iam.gserviceaccount.com`;
+    const m = `serviceAccount:sa-deploy-staging@${STAGING}.iam.gserviceaccount.com`;
+    const escribir = (bindings: unknown[]) => writeFileSync(join(dir, 'proyecto.json'), JSON.stringify({ etag: 'x', version: 3, bindings }));
+    const condicion = { title: 'secretos-de-las-functions', expression: `${VIEJA} || ${CLAUSULA}` };
+    // Binding correcto (título, rol y expresión) pero de OTRA cuenta.
+    escribir([{ role: `projects/${STAGING}/roles/desplegadorSecretos`, members: [otra], condition: condicion }]);
+    expect(correr('verificar').salida).toContain('NO cubre ALERTAS_');
+    // Título correcto y expresión correcta, pero con OTRO rol.
+    escribir([{ role: 'roles/run.admin', members: [m], condition: condicion }]);
+    expect(correr('verificar').salida).toContain('NO cubre ALERTAS_');
+    // El binding completo sí cuenta.
+    escribir([{ role: `projects/${STAGING}/roles/desplegadorSecretos`, members: [m], condition: condicion }]);
+    expect(correr('verificar').salida).not.toContain('NO cubre ALERTAS_');
+  });
 });

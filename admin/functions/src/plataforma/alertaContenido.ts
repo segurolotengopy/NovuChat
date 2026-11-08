@@ -84,15 +84,25 @@ const IPV4 = /(?<!\p{Nd})\p{Nd}{1,3}(?:\.\p{Nd}{1,3}){3}(?!\p{Nd})/u;
 const DOMINIO_SIN_ESQUEMA = /\b[a-z0-9-]+\.(?:com|net|org|bo|site|website|io|app|dev|test)\b/i;
 // Se tapan SOLO una fecha ISO con año plausible y una versión `d.dd.dd` (un solo dígito de versión mayor): lo demás
 // con forma de número separado es un teléfono. Antes se tapaba cualquier `dddd-dd-dd` y `dd.ddd.ddd`, y ahí cabía uno.
-const FECHA_ISO = /(?:19|20)\p{Nd}{2}-\p{Nd}{2}-\p{Nd}{2}(?:T\p{Nd}{2}:\p{Nd}{2}(?::\p{Nd}{2})?Z?)?/gu;
+// Fechas y horas VÁLIDAS (día 01-31, mes 01-12, hora 00-23, minutos y segundos 00-59, año 19xx o 20xx): «71/23 4567» o
+// «77/12/2034 567» NO son fechas y se miran como teléfonos. Además una fecha no se tapa si le sigue o la precede un resto de
+// separadores + cifras que la convertiría en un teléfono («07/11 4567», «07/11 45 67»).
+const DIA = '(?:0[1-9]|[12][0-9]|3[01])';
+const MES = '(?:0[1-9]|1[0-2])';
+const ANIO = '(?:19|20)[0-9]{2}';
+const HORA = '(?:[01][0-9]|2[0-3])';
+const MIN = '[0-5][0-9]';
+const SEP = '[\\s().\\p{Pd}/_:,]';
+const ANTES = `(?<!\\p{Nd}{3}${SEP}{0,3})(?<![\\p{Nd}/])`;
+const DESPUES = `(?!\\p{Nd})(?!${SEP}{0,3}(?:\\p{Nd}{3}|\\p{Nd}{2}${SEP}{0,3}\\p{Nd}))`;
+const FECHA_ISO = new RegExp(`${ANTES}${ANIO}-${MES}-${DIA}(?:T${HORA}:${MIN}(?::${MIN})?Z?)?${DESPUES}`, 'gu');
 const VERSION = /(?<![\p{Nd}.])\p{Nd}\.\p{Nd}{1,3}\.\p{Nd}{1,3}(?!\p{Nd}|\.\p{Nd})/gu;
 // 7 o más cifras con hasta 3 separadores entre cada par: espacio, NBSP, paréntesis, punto, cualquier guion Unicode
 // (\p{Pd}), barra, guion bajo, dos puntos o coma: «7123-45-67», «71.234.567», «7123/4567», «71,23,45,67».
 const RACHA_DE_TELEFONO = /\p{Nd}(?:[\s().\p{Pd}/_:,]{0,3}\p{Nd}){6,}/u;
-// Formas de fecha y hora que NO son un teléfono: «07/11/2026», «07/11/2026 14:59:03», «07/11 17:00» (la barra solo cuenta como
-// fecha si lo que sigue no es otra cifra ni «/cifra»: «71/23/4567» sigue siendo un teléfono) y «10:30:15.123».
-const FECHA_BARRA = /(?<![\p{Nd}/])\p{Nd}{2}\/\p{Nd}{2}(?:\/(?:19|20)\p{Nd}{2})?(?: \p{Nd}{2}:\p{Nd}{2}(?::\p{Nd}{2}(?:\.\p{Nd}{3})?)?)?(?!\/?\p{Nd})/gu;
-const HORA_MS = /(?<!\p{Nd})\p{Nd}{2}:\p{Nd}{2}:\p{Nd}{2}\.\p{Nd}{3}(?!\p{Nd})/gu;
+// Formas con barras que NO son un teléfono: «07/11/2026», «07/11/2026 14:59:03», «07/11 17:00» y «10:30:15.123», con rangos válidos.
+const FECHA_BARRA = new RegExp(`${ANTES}${DIA}/${MES}(?:/${ANIO})?(?: ${HORA}:${MIN}(?::${MIN}(?:\\.[0-9]{3})?)?)?${DESPUES}`, 'gu');
+const HORA_MS = new RegExp(`${ANTES}${HORA}:${MIN}:${MIN}\\.[0-9]{3}${DESPUES}`, 'gu');
 const sinFechasNiVersiones = (t: string): string => t.replace(FECHA_ISO, '#').replace(FECHA_BARRA, '#').replace(HORA_MS, '#').replace(VERSION, '#');
 
 /**
@@ -189,6 +199,8 @@ export const VENTANA_FUTURO_MS = 10 * 60_000;
 export const VENTANA_PASADO_MS = 30 * 86_400_000;
 /** `<id>:bloqueado` nunca pasa de 120: un id de más de 108 no se puede avisar como bloqueado. */
 export const MAX_ID_PARA_BLOQUEO = 108;
+/** El tipo de error de los avisos que fabrica el servidor; reservado. */
+export const TIPO_DEL_SERVIDOR = 'contenido_bloqueado';
 
 const recortar = (t: string, max: number): string => [...t].slice(0, max).join('');
 
@@ -226,6 +238,8 @@ export function validarEntrada(cuerpo: unknown, cfg: ConfigContenido): EventoVal
   if (idOk && s('id_unico').length > MAX_ID_PARA_BLOQUEO) idOk = false; // sin bloqueo posible; igual se valida el resto
   if (typeof d['nivel'] === 'string' && !(NIVELES as readonly string[]).includes(s('nivel'))) mal('nivel', 'nivel_invalido');
   if (typeof d['tipo_error'] === 'string' && !TIPO.test(s('tipo_error'))) mal('tipo_error', 'forma');
+  // `contenido_bloqueado` es del SERVIDOR (avisos `:bloqueado` e `id-invalido-*`): el llamador no puede usarlo para gastar su tope.
+  if (s('tipo_error') === TIPO_DEL_SERVIDOR) mal('tipo_error', 'forma');
 
   // ocurrido_en: UTC con Z, sin fracciones; entre -30 días y +10 min.
   const ms = FECHA.test(s('ocurrido_en')) ? Date.parse(s('ocurrido_en')) : NaN;

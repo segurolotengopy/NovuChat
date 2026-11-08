@@ -46,7 +46,7 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { REGION } from '../core/region.js';
 import { firmaValida } from '../core/seguridad/firma.js';
 import {
-  CONTRATO, ErrorAlerta, ErrorContrato, PROYECTO, armarCorreo, avisoBloqueado, validarEntrada,
+  CONTRATO, ErrorAlerta, ErrorContrato, PROYECTO, TIPO_DEL_SERVIDOR, armarCorreo, avisoBloqueado, validarEntrada,
   type AvisoV1, type Envio, type EventoValidado,
 } from './alertaContenido.js';
 
@@ -168,7 +168,7 @@ export async function procesarEvento(ev: EventoValidado, deps: DepsProceso): Pro
   } catch { console.error('ALERTA_OPERATIVA_CUOTA_LECTURA_FALLO'); }
   // Los avisos del servidor (`contenido_bloqueado`: `:bloqueado` e `id-invalido-*`) gastan COMO MÁXIMO 1 correo inmediato por
   // día y NUNCA el último que quede: un emisor que mande basura no puede dejar sin cupo a una alerta real.
-  const esBloqueo = ev.tipo_error === 'contenido_bloqueado';
+  const esBloqueo = ev.tipo_error === TIPO_DEL_SERVIDOR;
   let r: Reserva;
   try {
     r = await deps.almacen.reservar(ev.tipo_error, g.dia, deps.ahoraMs, esBloqueo ? Math.max(1, tope - 1) : tope, esBloqueo ? 1 : undefined);
@@ -213,7 +213,7 @@ export function autenticar(p: Peticion, secreto: string, ahoraMs: number): { ok:
   return ok ? { ok: true, crudo } : { ok: false, respuesta: { status: 401, cuerpo: 'no autorizado' } };
 }
 
-/** Horas en que esta instancia ya mandó el correo de respaldo de un bloqueo con la base caída. */
+/** Días (UTC) en que esta instancia ya mandó el correo de respaldo de un bloqueo con la base caída. */
 const respaldoUsado = new Set<string>();
 export const reiniciarCandadoDeRespaldo = (): void => { respaldoUsado.clear(); };
 
@@ -230,16 +230,17 @@ export async function procesar(crudo: Buffer, cfg: ConfigProceso): Promise<Respu
       if (error.idParaBloqueo !== null || error.bloqueoSinId) {
         const b = avisoBloqueado(error, cfg.ahoraMs);
         try {
-          await procesarEvento({ aviso: b, tipo_error: 'contenido_bloqueado', flujo: '', nodo: '', saneado: false }, cfg);
+          await procesarEvento({ aviso: b, tipo_error: TIPO_DEL_SERVIDOR, flujo: '', nodo: '', saneado: false }, cfg);
         } catch {
           // La base falló: el aviso del bloqueo NO se pierde; se intenta el correo directo (misma Idempotency-Key).
           console.error('ALERTA_OPERATIVA_BLOQUEADO_FALLO');
-          // SIN saltarse el tope: con la base caída no hay contador, así que se permite UN solo correo por hora por instancia
-          // (candado en memoria con clave `bloqueado-<hora>`).
-          const clave = `bloqueado-${new Date(cfg.ahoraMs).toISOString().slice(0, 13)}`;
+          // CON LA BASE CAÍDA NO HAY CONTADOR DEL TOPE, y este camino NO lo cuenta: queda acotado por un candado EN MEMORIA de
+          // UN correo por DÍA UTC por instancia (clave `bloqueado-<AAAA-MM-DD>`). Con `maxInstances: 3` son a lo más 3 por día
+          // (el candado no se comparte entre instancias ni sobrevive a un reinicio). Es la excepción declarada al tope, no un cumplimiento.
+          const clave = `bloqueado-${diaUtc(cfg.ahoraMs)}`;
           if (cfg.enviar && !respaldoUsado.has(clave)) {
             respaldoUsado.add(clave);
-            if (respaldoUsado.size > 48) respaldoUsado.delete(respaldoUsado.values().next().value as string);
+            if (respaldoUsado.size > 14) respaldoUsado.delete(respaldoUsado.values().next().value as string);
             try { await cfg.enviar(armarCorreo(b)); } catch { console.error('ALERTA_OPERATIVA_BLOQUEADO_ENVIO_FALLO'); }
           }
         }
@@ -277,6 +278,7 @@ export function armarResumen(eventos: EventoGuardado[], ahoraMs: number): Envio 
     `${cuenta} ${n === 1 ? 'aviso' : 'avisos'} desde el último resumen.`,
     `Avisados al momento: ${por('enviado')} | En este resumen: ${por('en_resumen')} | Con envío fallido: ${por('envio_fallido')}`,
     ...[...tipos].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([t, c]) => `- ${t}: ${c}`),
+    ...eventos.filter((x) => (x.repetidos ?? 0) > 0).slice(0, 5).map((x) => `- ${x.id_unico}: ${x.repetidos} repetidos`),
     ...eventos.slice(0, 12).map((x) => `${aIsoSegundos(x.recibido_ms).slice(5, 16)}Z | ${x.flujo || '-'} | ${x.tipo_error} | ${x.estado}`),
   ].slice(0, 30);
   const aviso: AvisoV1 = {
@@ -387,8 +389,16 @@ export function almacenFirestore(): AlmacenAlertas {
     async fijarResumenDelDia(dia, ids, ahoraMs) {
       await ctl(`resumen_${dia}`).set({ ids, ahoraMs });
       // Limpieza: las listas de días anteriores ya no sirven (solo el reintento del mismo día las usa).
-      const viejos = (await db.collection('plataforma/alertas/control').listDocuments()).filter((r) => r.id.startsWith('resumen_') && r.id < `resumen_${dia}`);
-      await Promise.all(viejos.map((r) => r.delete()));
+      // Es mantenimiento: si falla, solo se registra (el resumen ya quedó fijado). También se limpian los contadores `dia_*` y
+      // `diatipo_*` de más de 7 días.
+      try {
+        const corte = diaUtc(Date.parse(`${dia}T00:00:00Z`) - 7 * 86_400_000);
+        const viejos = (await db.collection('plataforma/alertas/control').listDocuments()).filter((r) => {
+          const m = /^(resumen|dia|diatipo)_(\d{4}-\d{2}-\d{2})/.exec(r.id);
+          return m !== null && (m[1] === 'resumen' ? m[2]! < dia : m[2]! < corte);
+        });
+        await Promise.all(viejos.map((r) => r.delete()));
+      } catch { console.error('ALERTA_OPERATIVA_LIMPIEZA_FALLO'); }
     },
     async eventosPorId(ids) {
       const salida: EventoGuardado[] = [];

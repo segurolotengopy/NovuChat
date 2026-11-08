@@ -35,11 +35,29 @@
  * arreglo o como texto separado por comas). El tope va de 1 a 8 (el código no permite más; un valor mayor se RECHAZA aquí).
  * Salida: 0 hecho o seco · 2 uso o valores inválidos (nada escrito) · 3 la relectura no coincide.
  */
-import { closeSync, openSync, readFileSync, writeSync, constants } from 'node:fs';
+import { closeSync, openSync, readFileSync, realpathSync, statSync, writeSync, constants } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join, resolve, sep } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const args = process.argv.slice(2);
+// ARGUMENTOS ESTRICTOS: solo estas banderas. `--destinatario` y `--denegar` (también como `--destinatario=…`) NO existen por
+// argv, ni con --archivo (se ven en `ps`); lo desconocido es error de uso. Un valor nunca se repite en un mensaje.
+{
+  const CON_VALOR = new Set(['proyecto', 'dominio', 'hosts', 'repos', 'tope', 'archivo', 'revertir', 'respaldo', 'confirmo']);
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (/^--(destinatario|denegar)(=|$)/.test(a)) usoMal(`${a.split('=')[0]} no se admite por argumento (se ve en ps): use --archivo *.local.json`);
+    if (a === '--aplicar') continue;
+    if (a.startsWith('--') && CON_VALOR.has(a.slice(2))) {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('--')) usoMal(`${a} necesita un valor`);
+      i++;
+      continue;
+    }
+    usoMal(`argumento desconocido (posición ${i + 1})`);
+  }
+}
 // Una bandera final sin valor, o que consume OTRA bandera como valor (`--denegar --aplicar`), es un error de uso.
 function opcion(n) {
   const i = args.indexOf(`--${n}`);
@@ -108,7 +126,7 @@ function mostrar(campo, valor) {
 
 function usoMal(m) {
   console.error(`\n  ✗ ${m}`);
-  console.error('\n  node scripts/plataforma/alertas-config.mjs --proyecto <id> [--dominio D --destinatario C --hosts H --repos R --denegar X --tope N | --archivo f.local.json] [--aplicar]');
+  console.error('\n  node scripts/plataforma/alertas-config.mjs --proyecto <id> [--dominio D --hosts H --repos R --tope N | --archivo f.local.json] [--aplicar]');
   console.error('  node scripts/plataforma/alertas-config.mjs --proyecto <id> --revertir <respaldo.json> [--aplicar]\n');
   process.exit(2);
 }
@@ -146,22 +164,48 @@ if (!HOST_EMULADOR && APLICAR) {
   if (!process.env.GCP_PROJECT_ID_PROD || process.env.GCP_PROJECT_ID_PROD !== PROYECTO) usoMal('contra un proyecto real, --aplicar exige GCP_PROJECT_ID_PROD en el entorno, igual a --proyecto (doble llave). No se escribió nada.');
 }
 
-/** Un respaldo solo dentro de $XDG_RUNTIME_DIR o fuera del repositorio (donde un `git add` lo versionaría). */
+/** $XDG_RUNTIME_DIR utilizable: existe, es del usuario y de modo 700 (como nube-alertas.sh). Devuelve su ruta real o `null`. */
+function xdgValido() {
+  const x = process.env.XDG_RUNTIME_DIR;
+  if (!x) return null;
+  try {
+    const r = realpathSync(x);
+    const st = statSync(r);
+    return st.isDirectory() && st.uid === process.getuid() && (st.mode & 0o777) === 0o700 ? r : null;
+  } catch { return null; }
+}
+
+/** Las raíces del repositorio (este checkout, el `.git` común y el checkout principal), vistas DESDE EL DIRECTORIO DEL SCRIPT, no del cwd. */
+function raicesDelRepo() {
+  const aqui = dirname(fileURLToPath(import.meta.url));
+  const git = (a) => { const g = spawnSync('git', ['-C', aqui, ...a], { encoding: 'utf8' }); return g.status === 0 ? g.stdout.trim() : null; };
+  const top = git(['rev-parse', '--show-toplevel']);
+  if (!top) return null;
+  const raices = [realpathSync(top)];
+  const comun = git(['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  if (comun) { const c = realpathSync(comun); raices.push(c, dirname(c)); }
+  return raices;
+}
+const dentroDe = (r, base) => r === base || r.startsWith(base + sep);
+
+/**
+ * Un respaldo NUNCA dentro del repositorio (donde un `git add` lo versionaría), con la ruta real del directorio padre (un
+ * symlink no lo disfraza). Por omisión va a $XDG_RUNTIME_DIR, que tiene que ser del usuario y de modo 700.
+ */
 function rutaDeRespaldoPermitida(ruta) {
-  const r = resolve(ruta);
-  const xdg = process.env.XDG_RUNTIME_DIR ? resolve(process.env.XDG_RUNTIME_DIR) : '';
-  if (xdg && (r === xdg || r.startsWith(xdg + sep))) return true;
-  const g = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-  if (g.status !== 0) return false;                      // no sé dónde está el repositorio: no se arriesga
-  const raiz = resolve(g.stdout.trim());
-  return !(r === raiz || r.startsWith(raiz + sep));
+  let real;
+  try { real = join(realpathSync(dirname(resolve(ruta))), basename(ruta)); } catch { return false; }
+  const raices = raicesDelRepo();
+  if (!raices) return false;                              // no sé dónde está el repositorio: no se arriesga
+  return !raices.some((b) => dentroDe(real, b));
 }
 
 /** Crea el respaldo con O_EXCL, modo 600, y escribe POR EL DESCRIPTOR. Devuelve la ruta o sale 2. */
 function crearRespaldo(contenido) {
-  if (!RESPALDO && !process.env.XDG_RUNTIME_DIR) usoMal('sin $XDG_RUNTIME_DIR ni --respaldo no hay dónde dejar el respaldo: no se escribió nada');
-  const ruta = resolve(RESPALDO ?? join(process.env.XDG_RUNTIME_DIR, `alertas-config-respaldo-${Date.now()}.json`));
-  if (!rutaDeRespaldoPermitida(ruta)) usoMal('--respaldo tiene que estar dentro de $XDG_RUNTIME_DIR o fuera del repositorio: no se escribió nada');
+  const xdg = xdgValido();
+  if (!RESPALDO && !xdg) usoMal('sin un $XDG_RUNTIME_DIR válido (del usuario y de modo 700) ni --respaldo no hay dónde dejar el respaldo: no se escribió nada');
+  const ruta = resolve(RESPALDO ?? join(xdg, `alertas-config-respaldo-${Date.now()}.json`));
+  if (!rutaDeRespaldoPermitida(ruta)) usoMal('el respaldo tiene que quedar fuera del repositorio (y su directorio tiene que existir): no se escribió nada');
   try {
     const fd = openSync(ruta, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
     try { writeSync(fd, JSON.stringify(contenido)); } finally { closeSync(fd); }
@@ -178,7 +222,7 @@ console.log(`  Modo      : ${APLICAR ? 'APLICANDO' : 'seco (no escribe)'}${REVER
 if (REVERTIR) {
   let previo;
   try { previo = JSON.parse(readFileSync(REVERTIR, 'utf8')); } catch { usoMal('no pude leer el respaldo'); }
-  if (typeof previo?.existia !== 'boolean' || typeof previo?.datos !== 'object') usoMal('el respaldo no tiene la forma esperada');
+  if (previo === null || typeof previo !== 'object' || typeof previo.existia !== 'boolean' || previo.datos === null || typeof previo.datos !== 'object' || Array.isArray(previo.datos)) usoMal('el respaldo no tiene la forma esperada');
   for (const k of Object.keys(previo.datos)) if (!CAMPOS.includes(k)) usoMal('el respaldo trae campos que este script no maneja');
   // Los valores del respaldo pasan por la MISMA validación que el modo normal (un respaldo editado no es una puerta trasera):
   // tipos exactos (texto salvo el tope), formato válido y ya normalizados.

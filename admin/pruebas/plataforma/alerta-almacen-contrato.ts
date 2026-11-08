@@ -125,6 +125,18 @@ export function bateriaDelAlmacen(nombre: string, nuevo: () => Promise<Fabrica>)
       expect(await almacen.resumenDelDia('2026-11-07')).toEqual({ ids: ['c'], ahoraMs: AHORA });
     });
 
+    it('fijar la lista de un día nuevo limpia también los contadores dia_* de más de 7 días (y deja los recientes)', async () => {
+      const { almacen, contadores } = await nuevo();
+      await almacen.reservar('t_viejo', '2026-11-01', Date.parse('2026-11-01T10:00:00Z'), 8, 1);
+      await almacen.reservar('t_reciente', '2026-11-18', Date.parse('2026-11-18T10:00:00Z'), 8);
+      expect((await contadores('t_viejo', '2026-11-01')).enviados).toBe(1);
+      await almacen.fijarResumenDelDia('2026-11-20', ['x'], AHORA);
+      expect((await contadores('t_viejo', '2026-11-01')).enviados).toBe(0);
+      expect((await contadores('t_reciente', '2026-11-18')).enviados).toBe(1);
+      // El contador por tipo y día también se fue: el mismo tipo vuelve a poder usar su cupo de ese día.
+      expect((await almacen.reservar('t_viejo', '2026-11-01', Date.parse('2026-11-01T11:30:00Z'), 8, 1)).ok).toBe(true);
+    });
+
     it('la cuota de Resend: empieza vacía, se marca y se lee', async () => {
       const { almacen } = await nuevo();
       expect(await almacen.cuotaHasta()).toBeNull();
