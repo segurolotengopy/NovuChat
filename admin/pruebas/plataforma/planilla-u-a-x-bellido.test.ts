@@ -334,7 +334,7 @@ describe('P8. Revisión: relecturas, ID, hoja y celdas no texto', () => {
 
 
 describe('P9. El error de Google se ve sin filtrar id ni celdas', () => {
-  const ID = 'IDDELAPLANILLA1234567890abcdefXYZ';
+  const ID = 'IDDELAPLANILLA123abcdefXYZ45';
   const filtrar = (json: unknown) => new Function('$input', S.CODIGO_FILTRO)({ first: () => ({ json }) })[0].json;
   it('403: deja estado, status y reason; nunca el mensaje (que nombra el id) ni el cuerpo', () => {
     const o = filtrar({ statusCode: 403, body: { error: { code: 403, status: 'PERMISSION_DENIED', message: `sin acceso a ${ID} ${MARCA_CELDA}`,
