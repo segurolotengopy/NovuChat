@@ -318,9 +318,12 @@ describe('sin palabras de la red de prohibidas en ninguna variable', () => {
 
 describe("los datos de Q'Taco: el 3727 las enciende; el vivo y los demás clientes no las traen", () => {
   const cb = (f: string): Record<string, unknown> => configBase(JSON.parse(readFileSync(join(VM, f), 'utf8')) as Flujo);
-  it('venta-minima.qtaco-3727.json: las tres aprobadas en APPROVED y consulta_atencion en PENDING', () => {
+  it('venta-minima.qtaco-3727.json (07/11 20:47: Q\'Taco volvió al formato por líneas): las tres plantillas en viñetas quedan DESACTIVADAS (nombres intactos) y consulta_atencion en PENDING', () => {
     const c = cb('venta-minima.qtaco-3727.json');
-    for (const [k, v] of Object.entries(VINETAS)) expect(c[k], k).toBe(v);
+    const apagadas = { ...VINETAS, plantillaPedidoMapaEstado: 'DESACTIVADA', plantillaPedidoListaEstado: 'DESACTIVADA', plantillaReservaListaEstado: 'DESACTIVADA' };
+    for (const [k, v] of Object.entries(apagadas)) expect(c[k], k).toBe(v);
+    // el código solo las usa con APPROVED exacto: con el dato real del 3727 el aviso es el de siempre (por líneas), y con su propia config de prueba (VINETAS) la viñeta sigue cubierta en el resto de la suite
+    for (const k of ['plantillaPedidoMapaEstado', 'plantillaPedidoListaEstado', 'plantillaReservaListaEstado']) expect(c[k], k).not.toBe('APPROVED');
   });
   it('el flujo vivo de Q\'Taco, la prueba, el ensayo y los derivados (Emma, Evy, doctoras) no traen ninguna clave nueva', () => {
     let revisados = 0;
