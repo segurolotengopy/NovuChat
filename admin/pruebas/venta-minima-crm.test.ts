@@ -196,7 +196,8 @@ describe('vmProspectoCrm: Eligió (O), Reserva (P) y Pedido (Q); celda en blanco
     const rc = decidir(caido);
     expect(celda(rc, 'diaPreferido')).toBeUndefined();
     expect(celda(rc, 'quePidio')).toBe("'Reserva");
-    expect(celda(rc, 'clasificacion')).not.toBe('Caliente');
+    expect(String(celda(rc, 'clasificacion'))).toMatch(/Tibio|Frío/);   // la celda lleva apóstrofo: se compara con toMatch
+    expect(String(celda(rc, 'clasificacion'))).not.toMatch(/Caliente/);
     expect(JSON.stringify(rc)).not.toMatch(/No\b/);
   });
   it('pedido: con QR (o QR simulado) Q dice «Registrado»; sin QR o QR vencido sin aviso salido se rebaja a elección (simétrico a la reserva)', () => {
@@ -434,10 +435,14 @@ describe('flujo: «Reserva» (P) y «Pedido» (Q) solo con lo que de verdad sali
   it('pedido con QR escribe Q «\'Registrado …»; sin QR con el aviso salido también; sin QR y sin aviso no escribe Q', () => {
     const pl = planilla();
     const w = mundo({ pl });
-    const ts = conversacion(w);
-    expect(ts.find((x) => x.nombre === 'pedido (QR)')).toBeDefined();
-    expect(pl.escrituras.some((e) => String(e['Pedido'] ?? '').startsWith("'Registrado ")), 'el turno del QR escribe Q').toBe(true);
-    expect(String([...pl.escrituras, ...pl.actualizaciones].map((e) => e['Pedido']).find((v) => v !== undefined))).toMatch(/^'Registrado \d{4}-\d\d-\d\d \d\d:\d\d$/);
+    turno(w, texto('hola'));
+    w.estado.extraccion = EXT_PEDIDO();
+    const resumen = turno(w, texto('quiero 4 tacos de birria'));
+    const antes = total(pl);
+    turno(w, boton(idDeBoton(resumen, 'Confirmar pedido'), 'Confirmar pedido'));
+    const delQr = escritas(pl, antes);   // solo lo que escribió el turno del QR
+    expect(delQr).toHaveLength(1);
+    expect(String(delQr[0]!['Pedido'])).toMatch(/^'Registrado \d{4}-\d\d-\d\d \d\d:\d\d$/);
     const conAviso = pedidoSinQr(false);
     expect(conAviso).toHaveLength(1);
     expect(String(conAviso[0]!['Pedido'])).toMatch(/^'Registrado /);
@@ -449,6 +454,7 @@ describe('flujo: «Reserva» (P) y «Pedido» (Q) solo con lo que de verdad sali
   it('negación: si `pasoSalio` llegara undefined, la prueba del aviso salido FALLA (la mutación se detecta)', () => {
     const mutado = conPrueba(CRM, (js) => { expect(js).toContain('pasoSalio: AM_PASO'); return js.replace('pasoSalio: AM_PASO', 'pasoSalio: undefined'); });
     const mut = enviaReserva({ flujo: mutado });
+    expect(mut).toHaveLength(1);
     expect(mut[0]!['Reserva']).toBeUndefined();   // el código bueno escribe P aquí (prueba de arriba): con la mutación no, así que esa prueba se pone roja
   });
 });
