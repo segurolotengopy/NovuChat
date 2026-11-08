@@ -230,7 +230,7 @@
               "id": "cb_horarioAtencion",
               "name": "horarioAtencion",
               "type": "string",
-              "value": "REEMPLAZAR_HORARIO_ATENCION_QTACO"
+              "value": "todos los días de 10:00 a 22:00 (de 10:00 a 12:00 solo delivery)"
             },
             {
               "id": "cb_horarioAtencionManda",
