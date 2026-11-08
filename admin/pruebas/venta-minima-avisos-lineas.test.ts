@@ -208,8 +208,10 @@ describe('el dato de Q\'Taco 3727 (06/11/2026): las tres plantillas por líneas,
   const ruta = (r: string) => join(dirname(fileURLToPath(import.meta.url)), r);
   const d3727 = JSON.parse(readFileSync(ruta('../scripts/datos/venta-minima/qtaco-3727.json'), 'utf8')) as J;
   const cfg = { ...BASE, ...(d3727['configBase'] as J) };
-  // Desde el 07/11/2026 el 3727 enciende las plantillas EN VIÑETAS (`venta-minima-avisos-vinetas.test.ts`): la plantilla por líneas pasa a ser el RESPALDO
-  // del aviso (sale solo si Meta rechaza la nueva). `cfgHoy` es el mismo dato sin las claves de viñetas: lo que sale como respaldo, que aquí se sigue probando entero.
+  // Estado vigente del 3727 (07/11 20:47): las plantillas EN VIÑETAS están DESACTIVADAS (Q'Taco volvió al formato por líneas), así que la plantilla por líneas es el `payload`
+  // principal y `respaldo` es null. `cfgEnc` es una config propia de prueba con las tres en APPROVED: ahí la plantilla por líneas pasa a ser el RESPALDO de la de viñetas
+  // (sale solo si Meta rechaza la nueva), que es el caso que sigue cubierto. `cfgHoy` es el mismo dato sin las claves de viñetas.
+  const cfgEnc = { ...cfg, plantillaPedidoMapaEstado: 'APPROVED', plantillaPedidoListaEstado: 'APPROVED', plantillaReservaListaEstado: 'APPROVED' } as J;
   const cfgHoy = Object.fromEntries(Object.entries(cfg).filter(([k]) => !/^plantilla(PedidoMapa|PedidoLista|ReservaLista|ConsultaAtencion)|^idiomaPlantillasVinetas$/.test(k))) as J;
   it('el dato trae «2:l2,4:l4,6:l6» en español y la base (qtaco.json) sigue vacía', () => {
     expect(cfg['plantillasPedidoLineas']).toBe('2:pedido_registrado_l2,4:pedido_registrado_l4,6:pedido_registrado_l6');
@@ -222,8 +224,11 @@ describe('el dato de Q\'Taco 3727 (06/11/2026): las tres plantillas por líneas,
     for (const [n, tam, vars] of esperado) {
       const it = de(arm(pedido(n), cfgHoy), COMPLETO);
       expect(it.payload.template.name, `n=${n}`).toBe(`pedido_registrado_${tam}`);
-      // Con el dato completo, esa misma plantilla por líneas va EXACTA como respaldo de la de viñetas.
-      expect(de(arm(pedido(n), cfg), COMPLETO).respaldo, `n=${n}`).toEqual(it.payload);
+      // Con el dato vigente del 3727 (viñetas apagadas) la de líneas es el payload principal y no hay respaldo.
+      expect(de(arm(pedido(n), cfg), COMPLETO).payload, `n=${n}`).toEqual(it.payload);
+      expect(de(arm(pedido(n), cfg), COMPLETO).respaldo, `n=${n}`).toBeNull();
+      // Con viñetas encendidas (config propia, tres en APPROVED), esa misma plantilla por líneas va EXACTA como respaldo de la de viñetas.
+      expect(de(arm(pedido(n), cfgEnc), COMPLETO).respaldo, `n=${n}`).toEqual(it.payload);
       expect(it.payload.template.language.code, `n=${n}`).toBe('es');
       const p = params(it);
       expect(p.length, `n=${n}`).toBe(vars);
@@ -235,7 +240,8 @@ describe('el dato de Q\'Taco 3727 (06/11/2026): las tres plantillas por líneas,
     const vacia = { ...cfg, plantillasPedidoLineas: '' };
     expect(JSON.stringify(arm(pedido(3), vacia))).not.toContain('pedido_registrado_l');
     expect(de(arm(pedido(3), { ...cfgHoy, plantillasPedidoLineas: '' }), COMPLETO).payload.template.name).toBe('pedido_registrado');
-    expect(de(arm(pedido(3), vacia), COMPLETO).respaldo.template.name).toBe('pedido_registrado');
+    expect(de(arm(pedido(3), vacia), COMPLETO).respaldo).toBeNull();
+    expect(de(arm(pedido(3), { ...cfgEnc, plantillasPedidoLineas: '' }), COMPLETO).respaldo.template.name).toBe('pedido_registrado');
     for (const tipo of ['reserva', 'derivacion']) {
       const items = L.avArmar(tipo, pedido(3), CSV, cfg, sd(), AHORA) as J[];
       expect(JSON.stringify(items), tipo).not.toContain('pedido_registrado_l');
