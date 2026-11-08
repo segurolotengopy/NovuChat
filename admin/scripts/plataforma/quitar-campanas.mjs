@@ -26,9 +26,9 @@ const CONFIRMO = opcion('confirmo-produccion');
 
 const problemas = [];
 if (!PROYECTO) problemas.push('falta --proyecto');
-if (!PERMITIDOS[TENANT]) problemas.push('--tenant fuera de la lista cerrada');
+if (!Object.hasOwn(PERMITIDOS, TENANT)) problemas.push('--tenant fuera de la lista cerrada');
 if (!IDS.length) problemas.push('falta --ids');
-for (const id of IDS) if (!(PERMITIDOS[TENANT] ?? []).includes(id)) problemas.push(`id fuera de la lista cerrada: ${id.slice(0, 40)}`);
+for (const id of IDS) if (!(Object.hasOwn(PERMITIDOS, TENANT) ? PERMITIDOS[TENANT] : []).includes(id)) problemas.push(`id fuera de la lista cerrada: ${id.slice(0, 40)}`);
 if (APLICAR && CONFIRMO !== TENANT) problemas.push('--aplicar exige --confirmo-produccion igual a --tenant');
 if (APLICAR && (!RESPALDO || !isAbsolute(RESPALDO) || existsSync(RESPALDO))) problemas.push('--aplicar exige --respaldo con ruta absoluta que no exista');
 if (problemas.length) { console.error(`\n  ✗ ${problemas.join('\n  ✗ ')}\n`); process.exit(2); }

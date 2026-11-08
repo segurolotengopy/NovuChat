@@ -11,6 +11,7 @@ describe('renombrar-comercio.mjs', () => {
     expect(correr('renombrar-comercio.mjs', ['--tenant', 'rroca-ruben', '--nombre', 'Nombre válido']).status).toBe(2);
     expect(correr('renombrar-comercio.mjs', ['--proyecto', 'x', '--tenant', 'rroca-ruben', '--nombre', 'ab']).status).toBe(2);
     expect(correr('renombrar-comercio.mjs', ['--proyecto', 'x', '--tenant', 'rroca-ruben', '--nombre', '<b>Hola</b>']).status).toBe(2);
+    expect(correr('renombrar-comercio.mjs', ['--proyecto', 'x', '--tenant', 'rroca-ruben', '--nombre', 'Hola‮abc']).status).toBe(2);
   });
   it('--aplicar exige confirmación igual al tenant y respaldo absoluto', () => {
     const base = ['--proyecto', 'x', '--tenant', 'rroca-ruben', '--nombre', 'Nombre válido', '--aplicar'];
@@ -25,6 +26,10 @@ describe('quitar-campanas.mjs', () => {
     expect(correr('quitar-campanas.mjs', ['--proyecto', 'x', '--tenant', 'rroca-ruben', '--ids', 'tres-doce-am']).status).toBe(2);
     expect(correr('quitar-campanas.mjs', ['--proyecto', 'x', '--tenant', 'otro-comercio', '--ids', 'que-publicar']).status).toBe(2);
     expect(correr('quitar-campanas.mjs', ['--proyecto', 'x', '--tenant', 'rroca-ruben']).status).toBe(2);
+  });
+  it('un tenant como __proto__ o constructor sale con 2, no con un error sin controlar', () => {
+    expect(correr('quitar-campanas.mjs', ['--proyecto', 'x', '--tenant', '__proto__', '--ids', 'que-publicar']).status).toBe(2);
+    expect(correr('quitar-campanas.mjs', ['--proyecto', 'x', '--tenant', 'constructor', '--ids', 'que-publicar']).status).toBe(2);
   });
   it('--aplicar exige confirmación y respaldo', () => {
     const base = ['--proyecto', 'x', '--tenant', 'rroca-ruben', '--ids', 'que-publicar', '--aplicar'];

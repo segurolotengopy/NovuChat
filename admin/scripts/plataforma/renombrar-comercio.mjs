@@ -30,7 +30,7 @@ const CONFIRMO = opcion('confirmo-produccion');
 const problemas = [];
 if (!PROYECTO) problemas.push('falta --proyecto');
 if (!/^[a-z0-9][a-z0-9-]{2,59}$/.test(TENANT)) problemas.push('--tenant inválido');
-if (NOMBRE.length < 3 || NOMBRE.length > 80 || /[\u0000-\u001f<>]/.test(NOMBRE)) problemas.push('--nombre debe tener de 3 a 80 caracteres, sin controles ni < >');
+if (NOMBRE.length < 3 || NOMBRE.length > 80 || /[\u0000-\u001f<>‪-‮⁦-⁩]/.test(NOMBRE)) problemas.push('--nombre debe tener de 3 a 80 caracteres, sin controles ni < >');
 if (APLICAR && CONFIRMO !== TENANT) problemas.push('--aplicar exige --confirmo-produccion igual a --tenant');
 if (APLICAR && (!RESPALDO || !isAbsolute(RESPALDO) || existsSync(RESPALDO))) problemas.push('--aplicar exige --respaldo con ruta absoluta que no exista');
 if (problemas.length) { console.error(`\n  ✗ ${problemas.join('\n  ✗ ')}\n`); process.exit(2); }
