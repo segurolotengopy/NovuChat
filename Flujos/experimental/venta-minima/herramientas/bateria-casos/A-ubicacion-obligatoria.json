@@ -1,0 +1,573 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "UO",
+  "nota": "Escenarios de la ubicación OBLIGATORIA en delivery (decisión de Andres, 07/11/2026): el delivery exige la dirección escrita Y la ubicación compartida; sin ubicación no se confirma y se pasa con el local (aviso + «Escribir al local»). Recojo y reserva no cambian. Costo: 0 mensajes por conversación en el camino normal; +1 solo cuando el pin llega después de la dirección.",
+  "casos": [
+    {
+      "id": "UO1",
+      "titulo": "Delivery sin dirección ni ubicación: UN mensaje que pide las dos; «no puedo compartir mi ubicación» pasa con el local (aviso + botón), sin resumen ni pedido",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "",
+            "ubicacion": null
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "dos cosas",
+              "direcci[oó]n exacta",
+              "comparte tu ubicaci[oó]n con el bot[oó]n"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_datos"
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "no puedo compartir mi ubicación"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "^transferir",
+            "titulos": [
+              "Escribir al local"
+            ],
+            "enlaces": [
+              "wa\\.me/59100000031"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "textosNo": [
+              "Entrega: delivery a"
+            ],
+            "efectos": {
+              "derivacion": true,
+              "aviso": true,
+              "qr": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "UO2",
+      "titulo": "Dirección escrita sin ubicación: se pide SOLO la ubicación; «Confirmar pedido» (un botón viejo) sin ubicación NUNCA confirma: pasa con el local, sin QR ni pedido",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234",
+            "ubicacion": null
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "necesito que compartas tu ubicaci[oó]n"
+            ],
+            "textosNo": [
+              "dos cosas",
+              "Entrega: delivery a"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.direccion": "Av. Banzer 1234"
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "boton",
+            "id": "p|confirmar",
+            "titulo": "Confirmar pedido"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "^transferir",
+            "titulos": [
+              "Escribir al local"
+            ],
+            "textosNo": [
+              "Entrega: delivery a"
+            ],
+            "efectos": {
+              "derivacion": true,
+              "aviso": true,
+              "qr": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "UO3",
+      "titulo": "Dirección y luego el pin (+1 mensaje, declarado): el resumen sale con «con la ubicación que compartiste» y el botón para confirmar",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234",
+            "ubicacion": null
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "necesito que compartas tu ubicaci[oó]n"
+            ],
+            "estado": {
+              "paso": "pedido_datos"
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": -16.5,
+            "longitud": -68.15
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Av\\. Banzer 1234, con la ubicaci[oó]n que compartiste"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.ubicacion.lat": -16.5
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "UO4",
+      "titulo": "Ubicación y luego la dirección escrita a mano (sin modelo): queda como DIRECCIÓN, no como referencia, y sigue al resumen",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "",
+            "ubicacion": null
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "dos cosas"
+            ],
+            "estado": {
+              "paso": "pedido_datos"
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": -16.5,
+            "longitud": -68.15
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "tu direcci[oó]n exacta, escrita"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_datos"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Calle 1 número 2 Irpavi"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Calle 1 número 2 Irpavi, con la ubicaci[oó]n que compartiste"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": "Calle 1 número 2 Irpavi",
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "X1",
+      "titulo": "Agregar productos mientras se espera el pin: es progreso, NO cuenta como insistir y no deriva",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234",
+            "ubicacion": null
+          },
+          "esperado": {
+            "mensajes": 1
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "agrega 2 tacos al pastor"
+          },
+          "seco": {
+            "lineas": [
+              {
+                "producto": "tacos al pastor",
+                "cantidad": 2,
+                "forma": "",
+                "detalle": ""
+              }
+            ]
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "estado": {
+              "paso": "pedido_datos"
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "y 4 tacos de birria"
+          },
+          "seco": {
+            "lineas": [
+              {
+                "producto": "tacos de birria",
+                "cantidad": 4,
+                "forma": "unidad",
+                "detalle": ""
+              }
+            ]
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "estado": {
+              "paso": "pedido_datos"
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "X2",
+      "titulo": "Dirección escrita con «no hay timbre … mandar al portero»: es un dato de entrega, no una negativa de la ubicación; no deriva",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "",
+            "ubicacion": null
+          },
+          "esperado": {
+            "mensajes": 1
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Av. Arce 2345, no hay timbre, me lo pueden mandar al portero"
+          },
+          "seco": {
+            "lineas": [],
+            "direccion": "Av. Arce 2345",
+            "referencia": "no hay timbre, al portero"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "necesito que compartas tu ubicaci[oó]n"
+            ],
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "X3",
+      "titulo": "Tras derivar por falta de ubicación, un pin tardío con el carrito guardado retoma el resumen (+1 mensaje solo ahí)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234",
+            "ubicacion": null
+          },
+          "esperado": {
+            "mensajes": 1
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "ok"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "efectos": {
+              "derivacion": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "ya"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "^transferir",
+            "efectos": {
+              "derivacion": true,
+              "aviso": true
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": -16.5,
+            "longitud": -68.15
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Av\\. Banzer 1234, con la ubicaci[oó]n que compartiste"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar"
+            },
+            "efectos": {
+              "derivacion": false,
+              "qr": false
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

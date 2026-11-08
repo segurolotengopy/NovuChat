@@ -133,6 +133,7 @@ const perfil = String(t.nombrePerfil || '').trim() ? t.nombrePerfil : (typeof en
 let mensajes = [];
 let condicionados = null;
 let aviso = null;
+let turnoConDatos = false; // este turno trajo líneas o datos de entrega (los fija `aExtraerPedido`; otros turnos lo dejan en false): `niegaLaUbicacion` no se evalúa; el «sin progreso» lo da la clave de `pidioDatos`
 let pedidoGuardar = null;
 let cierre = null;
 let anotarReserva = false;
@@ -259,6 +260,8 @@ function estadoDe(e) {
   s.preguntoDejar = s.preguntoDejar === true;
   s.aclaro = s.aclaro === true;
   s.excepDelivery = s.excepDelivery === true;
+  // Lo último que se le pidió al cliente en el delivery a medias (07/11/2026, ubicación obligatoria): la misma petición NO se repite, se pasa con el local.
+  s.pidioDatos = typeof s.pidioDatos === 'string' ? s.pidioDatos.slice(0, 80) : '';
   return s;
 }
 
@@ -272,6 +275,7 @@ function limpiarCarrito() {
   en.catOriginal = null;
   en.carritoAnterior = null;
   en.preguntoDejar = false;
+  en.pidioDatos = '';
 }
 function limpiarConfirmado() {
   en.pedido = null;
@@ -840,11 +844,14 @@ function tomarUbicacion() {
   const u = t.ubicacion;
   if (!u || typeof u !== 'object' || typeof u.latitud !== 'number' || typeof u.longitud !== 'number') return;
   if (!isFinite(u.latitud) || !isFinite(u.longitud) || Math.abs(u.latitud) > 90 || Math.abs(u.longitud) > 180) return;
-  if (en.paso.indexOf('pedido') !== 0 || en.entrega.entrega !== 'delivery') return;
+  // Tras derivar por falta de ubicación el paso queda en `menu` con el carrito de delivery guardado: el pin tardío se acepta y retoma el resumen.
+  const retoma = en.paso === 'menu' && en.carrito.length > 0 && !en.pendiente.length && en.entrega.entrega === 'delivery' && !_pdUbicacion(en.entrega.ubicacion);
+  if ((en.paso.indexOf('pedido') !== 0 && !retoma) || en.entrega.entrega !== 'delivery') return;
   // La misma regla que el servidor, sobre el valor redondeado: el punto nulo (0, 0) de un GPS sin fijar no es una ubicación.
   const r = { lat: Math.round(u.latitud * 1e5) / 1e5, lng: Math.round(u.longitud * 1e5) / 1e5 };
   if (!_pdUbicacion(r)) return;
   en.entrega.ubicacion = r;
+  return retoma;
 }
 
 // Vuelve a mostrar el paso actual (botón viejo, «sí» suelto, ubicación, pregunta pendiente).
@@ -852,7 +859,9 @@ function mostrarPaso() {
   ruta = 'boton:' + (d.motivo || 'paso_actual');
   if (d.motivo === 'dejar_o_elegir') return preguntarDejarOElegir();
   if (d.motivo === 'ver_pedido') return verPedido();
-  if (d.motivo === 'ubicacion') tomarUbicacion();
+  if (d.motivo === 'ubicacion' && tomarUbicacion() === true) return mostrarPedido(); // +1 mensaje solo aquí: el resumen tras la derivación
+  // «Confirmar pedido» (un botón del resumen) sin la ubicación compartida NUNCA confirma: con el delivery a medias se pasa con el local (07/11/2026).
+  if (d.motivo === 'boton_viejo' && esConfirmarSinUbicacion()) return derivarSinUbicacion();
   const p = en.paso;
   if (p === 'inicio' || p === 'menu') return aMenu();
   if (p === 'esperando_comprobante') return aRecordatorio();
@@ -978,15 +987,31 @@ function siguientePasoPedido() {
     const faltan = pdFaltanEntrega(en.entrega, perfil);
     if (faltan.length) {
       en.paso = 'pedido_datos';
-      // PR-A 05/10: la dirección se pide escrita O con la ubicación (botón nativo de WhatsApp); es el MISMO mensaje que ya salía (0 agregados) y solo
-      // aquí, donde `tomarUbicacion` acepta la ubicación. `Armar mensajes` lo manda con el botón y, si no cabe o falla, en texto sin nombrarlo.
+      // 07/11/2026 (Andres): en delivery son obligatorias la dirección ESCRITA y la ubicación compartida (pin nativo de WhatsApp). Sin ubicación no se confirma.
+      // El mensaje de pedir los datos sale UNA vez; si el cliente escribe algo que no aporta nada, sale UN recordatorio distinto y más corto; a la tercera, o si dice que no
+      // puede compartirla, se pasa con el local (aviso + «Escribir al local», el mecanismo de siempre). Así la misma petición nunca se repite y no hay bucle.
+      // `en.pidioDatos` guarda «lo que faltaba#veces»; cualquier progreso (otro dato) cambia la clave y reinicia la cuenta. Es un mensaje por turno: 0 agregados.
+      // La huella del carrito entra en la clave: agregar o quitar productos es progreso y no cuenta como insistir sin el pin.
+      const clave = faltan.join('+') + (en.entrega.referencia ? '+ref' : '') + '+c' + String(vmHuella(en.carrito.map((l) => String(l.id) + 'x' + String(l.cantidad)).join(';')));
+      const sinUbicacion = faltan.indexOf('ubicacion') >= 0;
+      const previo = String(en.pidioDatos || '').split('#');
+      const veces = previo[0] === clave ? (Number(previo[1]) || 1) + 1 : 1;
+      if (sinUbicacion && previo[0] && ((previo[0] === clave && veces >= 3) || (!turnoConDatos && niegaLaUbicacion(vmNorm(d.texto))))) return derivarSinUbicacion();
+      en.pidioDatos = clave + '#' + veces;
+      if (!sinUbicacion) return [texto(pdTextoFaltanEntrega(faltan))];
+      // `Armar mensajes` lo manda con el botón nativo y, si no cabe o falla, en texto sin nombrarlo.
+      if (veces >= 2) {
+        const falta = faltan.length > 1 ? 'Todavía necesito tu dirección escrita y tu ubicación.' : 'Todavía necesito tu ubicación.';
+        return [{ tipo: 'ubicacion', cuerpo: falta + ' Compártela con el botón.', cuerpoSinBoton: falta + ' Compártela desde el clip de WhatsApp, opción «Ubicación».' }];
+      }
       const base = pdTextoFaltanEntrega(faltan);
-      return [{ tipo: 'ubicacion', cuerpo: base + ' Escríbela aquí o comparte tu ubicación con el botón.',
-        cuerpoSinBoton: base + ' Escríbela aquí o comparte tu ubicación.' }];
+      return [{ tipo: 'ubicacion', cuerpo: base + ' con el botón.',
+        cuerpoSinBoton: base + ' desde el clip de WhatsApp, opción «Ubicación».' }];
     }
   }
   if (!en.entrega.nombre) en.entrega.nombre = vmLinea(perfil, 60);
   en.paso = 'pedido_confirmar';
+  en.pidioDatos = '';
   en.carritoAnterior = null; // ya hay un pedido nuevo: el de antes de «Cambiar algo» quedó reemplazado
   en.preguntoDejar = false;
   return [{ tipo: 'botones', cuerpo: pdResumen(en.carrito, en.entrega, { moneda: monedaTxt, nombrePerfil: perfil, maxDetalle: 3000 })
@@ -996,6 +1021,36 @@ function siguientePasoPedido() {
     { id: vmIdDeBoton('p', 'confirmar'), title: 'Confirmar pedido' },
     { id: vmIdDeBoton('p', 'cambiar'), title: 'Cambiar algo' },
   ] }];
+}
+
+// El botón tocado es «Confirmar pedido» y el delivery sigue sin la ubicación compartida (el botón es de un resumen anterior: ya no hay resumen que confirmar).
+function esConfirmarSinUbicacion() {
+  if (en.paso !== 'pedido_datos' || en.entrega.entrega !== 'delivery' || !en.carrito.length || en.pendiente.length) return false;
+  if (pdFaltanEntrega(en.entrega, perfil).indexOf('ubicacion') < 0) return false;
+  const id = t.boton;
+  const b = id && typeof id === 'object' ? id : vmLeerBoton(String(id || ''));
+  return !!b && b.tipo === 'p' && String(b.partes && b.partes[0]) === 'confirmar';
+}
+// El cliente dice que no puede o no quiere compartir la ubicación («no puedo compartir la ubicación», «no tengo gps»): solo si el texto habla de la ubicación.
+function niegaLaUbicacion(n) {
+  if (pareceDireccion(n)) return false; // un texto con rasgos de dirección es un dato, no una negativa
+  // Acotado a pocas palabras entre el verbo y la ubicación: «ahorita no puedo, en un rato te mando la ubicación» promete enviarla, no la niega.
+  return /\bno (puedo|quiero|logro|me deja|me sale) (\w+ ){0,2}(compart|envi|mand|activ)\w* (\w+ ){0,3}(ubicacion|gps|pin|mapa)\b/.test(n)
+    || /\bno (puedo|quiero|me deja|me sale|me funciona|funciona) (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
+    // «no tengo» solo si falta con qué mandarla (datos, internet, saldo, señal, megas) «para/como» + verbo de envío; «no tengo saldo, te la mando después» NO la niega.
+    || /\bno tengo (datos|internet|saldo|senal|megas) (para|como) (\w+ ){0,1}(compart|envi|mand)\w* (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
+    || /\bno tengo (\w+ )?(gps|ubicacion)\b/.test(n)
+    // «no sé» solo con el INFINITIVO de envío o de uso («no sé cómo mandar la ubicación», «no sé usar el gps») o «dónde está/queda»; el «se» reflexivo de «no se preocupe, le mando…» no es una negativa.
+    || /\bno se (como |donde )?(\w+ ){0,2}(compartir|enviar|mandar|usar|activar)\b (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
+    || /\bno se donde (esta|queda) (\w+ ){0,3}(ubicacion|gps)\b/.test(n)
+    || /\bno encuentro (\w+ ){0,4}(ubicacion|gps)\b/.test(n)
+    || /\bsin (gps|ubicacion)\b/.test(n);
+}
+// Sin ubicación el delivery no se confirma: lo único que se ofrece es pasar con el local (aviso + «Escribir al local»). El carrito no se toca.
+function derivarSinUbicacion() {
+  en.pidioDatos = '';
+  return derivar('delivery sin ubicación compartida', false, undefined, false,
+    'Para enviarte el pedido por delivery necesito tu ubicación y por aquí no puedo continuar sin ella 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo.');
 }
 
 function mostrarPedido() {
@@ -1076,6 +1131,7 @@ function aExtraerPedido() {
     x.direccion = '';
   }
   const datosEntrega = ['entrega', 'direccion', 'referencia', 'nombre'].some((k) => x[k]);
+  turnoConDatos = lineas.length > 0 || datosEntrega;
   // Una marca `quiereHablar` del modelo sobre un texto que NO parece un dato de entrega («necesito ayuda», «tengo un problema con mi pedido») deriva SIEMPRE:
   // el texto libre no se adopta como dirección o referencia (revisión de seguridad del PR #435, M1).
   // (La primera vez, sin una petición explícita, sale UNA aclaración con «Escribir al local» —o la pregunta de entrega—; con una petición explícita o al insistir, deriva.)
@@ -1180,6 +1236,8 @@ function hablaDeDelivery(n) { return /\b(delivery|envio|envios|enviar\w*|envien\
 // «que lo reciba alguien», «cualquier persona lo recibe») ni «es para una persona». Sí: «ayúdenme», «auxilio».
 function sinCortesias(n) {
   let t = String(n).replace(/\b(no hay|sin|ningun|ninguna)\s+(problema|problemas|queja|quejas)\b/g, ' ');
+  // «no tengo problema» es cortesía solo si sigue gracias/ahí/ya o termina el texto; «no, tengo problemas con el pago» es un pedido de ayuda.
+  t = t.replace(/\bno tengo (problema|problemas)(?= (gracias|ahi|ya|dale|perfecto|esta bien|con esperar)\b|$)/g, ' ');
   if (/\b(recib\w*|recog\w*|recoj\w*|retir\w*)\b/.test(t)) t = t.replace(/\b(alguien|persona|personas)\b/g, ' ');
   t = t.replace(/\bpara (una|un|1|dos|tres|cuatro) (persona|personas)\b/g, ' ');
   return t;
@@ -1248,14 +1306,16 @@ function puedeSerDatoDeEntrega(crudo, n) {
 // La dirección que falta, tomada del texto: solo si el texto puede ser un dato, tiene rasgos de DIRECCIÓN (un dígito o una vía fuerte: no «portero», «cuadra», «frente»)
 // y, saneado, es una dirección válida (≥5 caracteres, letras y dos palabras). Si no alcanza, NO se guarda nada: se vuelve a pedir (y a la segunda vez seguida se pasa con el
 // local). Una referencia igual a la dirección se quita (sin duplicar).
+// Con la ubicación obligatoria, «falta algo» ya no significa «falta la dirección»: aquí solo importa la dirección escrita.
+function faltaLaDireccion() { return pdFaltanEntrega(en.entrega, perfil).indexOf('direccion') >= 0; }
 function adoptarDireccionDelTexto() {
-  if (en.entrega.entrega !== 'delivery' || !en.carrito.length || en.pendiente.length || !pdFaltanEntrega(en.entrega, perfil).length) return false;
+  if (en.entrega.entrega !== 'delivery' || !en.carrito.length || en.pendiente.length || !faltaLaDireccion()) return false;
   const crudo = String(d.texto || '');
   const n = vmNorm(crudo);
   if (!puedeSerDatoDeEntrega(crudo, n) || !pareceDireccion(n) || crudo.trim().length < 5) return false;
   const antes = en.entrega.direccion;
   en.entrega.direccion = textoDeDato(crudo, 160);
-  if (pdFaltanEntrega(en.entrega, perfil).length) { en.entrega.direccion = antes; return false; }
+  if (faltaLaDireccion()) { en.entrega.direccion = antes; return false; }
   if (vmNorm(en.entrega.referencia) === vmNorm(en.entrega.direccion)) en.entrega.referencia = '';
   return true;
 }
@@ -1269,7 +1329,7 @@ function adoptarTextoLibre() {
   const crudo = String(d.texto || '');
   const n = vmNorm(crudo);
   if (!puedeSerDatoDeEntrega(crudo, n)) return false;
-  if (pdFaltanEntrega(en.entrega, perfil).length) {
+  if (faltaLaDireccion()) {
     if (adoptarDireccionDelTexto()) {
       ruta = 'boton:direccion_del_texto';
       mostrarPedido();
@@ -1355,6 +1415,8 @@ function confirmarPedido() {
   if (cambio) return mostrarPedido();
   const completo = en.pendiente.length === 0 && en.carrito.length > 0 && en.entrega.entrega
     && !(en.entrega.entrega === 'delivery' && pdFaltanEntrega(en.entrega, perfil).length);
+  // «Confirmar pedido» sin la ubicación compartida NUNCA confirma: se pasa con el local (ya se la pidió el mensaje de los datos).
+  if (!completo && en.entrega.entrega === 'delivery' && en.carrito.length && !en.pendiente.length && pdFaltanEntrega(en.entrega, perfil).indexOf('ubicacion') >= 0) return derivarSinUbicacion();
   if (!completo) return mostrarPedido();
   const ped = armarPedido();
   if (!ped) {

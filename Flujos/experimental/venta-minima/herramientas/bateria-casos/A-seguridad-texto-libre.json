@@ -454,7 +454,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "Entrega: delivery a Av\\. Banzer 1234, recibe Lucía Ejemplo"
+              "Entrega: delivery a Av\\. Banzer 1234, con la ubicación que compartiste, recibe Lucía Ejemplo"
             ],
             "textosNo": [
               "referencia",
