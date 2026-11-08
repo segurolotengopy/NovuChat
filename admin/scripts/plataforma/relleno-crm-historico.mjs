@@ -21,8 +21,11 @@
  *
  * Q'TACO (`--tenant qtaco`): además de los contactos, trae las COMPRAS anteriores (ver «COMPRAS ANTERIORES» más abajo) y, en las filas nuevas, completa O «Eligió»
  * (Pedido|Reserva, la última), P «Reserva» («Enviada AAAA-MM-DD HH:MM») y Q «Pedido» («Registrado AAAA-MM-DD HH:MM»), hora de La Paz, con el mapa de
- * `datos/venta-minima/qtaco-3727.json`. Para las filas que YA estaban en la hoja, el seco cuenta cuántas celdas vacías de O/P/Q se completarían: es solo una propuesta
- * (`construirActualizaciones`), este script NO la aplica. `TELEFONOS_EXCLUIDOS` (dígitos separados por comas, en el entorno, nunca en un archivo) deja fuera los teléfonos de prueba.
+ * `datos/venta-minima/qtaco-3727.json`. Para las filas que YA estaban en la hoja, el seco cuenta cuántas celdas vacías de O/P/Q se completarían
+ * (`construirActualizaciones`) y `--aplicar` la ejecuta: relee la hoja justo antes, escribe SOLO las celdas O/P/Q hoy vacías (un `values:batchUpdate` por rangos explícitos, que el flujo
+ * temporal corta si alguna ya tiene dato), guarda antes un respaldo de celda y valor (`<ruta>.completar` si en la misma corrida también hay filas nuevas), relee y compara;
+ * `--revertir` con ese respaldo limpia solo esas celdas y solo si siguen igual. DATO HISTÓRICO POR CIERRE: «Enviada» y «Registrado» salen de la fecha del cierre/pedido; un cierre
+ * prueba que se registró, no que el aviso al local salió (aproximación aceptada por Andres). `TELEFONOS_EXCLUIDOS` (dígitos separados por comas, en el entorno, nunca en un archivo) deja fuera los teléfonos de prueba.
  *
  * LO QUE NUNCA LEE: el texto de un mensaje (de cada conversación solo pide la hora del primero, `select('ts')`), ni la columna U de la hoja.
  *
@@ -432,6 +435,24 @@ export async function agregarFilas({ envFile, tenant, sheet, mapa, filas, filaDe
   ] }) });
 }
 
+const CAMPOS_COMPRA = ['quePidio', 'diaPreferido', 'horarioPreferido'];
+/** Las celdas O/P/Q de una lista de filas, con una lectura previa DENTRO del flujo: si alguna ya tiene dato (el bot o el equipo escribió a la vez), se corta y no se escribe ninguna. */
+export async function completarCeldas({ envFile, tenant, sheet, celdas }) {
+  const consulta = celdas.map((c) => `ranges=${encodeURIComponent(c.rango)}`).join('&');
+  const aborta = "(() => { throw new Error('celda ocupada'); })()";
+  // Los datos viajan como DATO en el cuerpo de la entrada (regla: ninguna expresión lleva JSON ni «}}» incrustados).
+  const cuerpo = `={{ $('Destino').first().json.valueRanges.some((r) => Array.isArray(r.values) && r.values.some((f) => f.some((v) => String(v).trim() !== ''))) ? ${aborta} : JSON.stringify({ valueInputOption: 'USER_ENTERED', data: $('Entrada').first().json.body.datos }) }}`;
+  return correrEnN8n({ envFile, tenant, cuerpo: { datos: celdas.map((c) => ({ range: c.rango, majorDimension: 'ROWS', values: [[c.valor]] })) }, hacer: ({ http }) => ({ nodos: [
+    http('destino', 'Destino', 240, { method: 'GET', url: `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheet)}/values:batchGet?${consulta}&valueRenderOption=FORMATTED_VALUE` }),
+    http('escribir', 'Escribir', 480, { method: 'POST', url: `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheet)}/values:batchUpdate`, sendBody: true, contentType: 'json', specifyBody: 'json', jsonBody: cuerpo }),
+  ] }) });
+}
+
+export async function limpiarCeldas({ envFile, tenant, sheet, rangos }) {
+  return correrEnN8n({ envFile, tenant, cuerpo: { rangos }, hacer: ({ http }) => ({ nodos: [http('limpiar', 'Limpiar', 240, { method: 'POST', url: `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheet)}/values:batchClear`,
+    sendBody: true, contentType: 'json', specifyBody: 'json', jsonBody: "={{ JSON.stringify({ ranges: $('Entrada').first().json.body.rangos }) }}" })] }) });
+}
+
 export async function limpiarRango({ envFile, tenant, sheet, rango }) {
   return correrEnN8n({ envFile, tenant, hacer: ({ http }) => ({ nodos: [http('limpiar', 'Limpiar', 240, { method: 'POST', url: `${urlHoja(sheet, encodeURIComponent(rango))}:clear` })] }) });
 }
@@ -477,6 +498,56 @@ async function leerCompras(db, tenant, excluir) {
   return reunirCompras(eventos, { excluir });
 }
 
+
+// ===========================================================================
+// COMPLETAR O/P/Q DE FILAS EXISTENTES (aplicar y revertir)
+// ===========================================================================
+const celdaDe = (letra, fila) => `${letra}${fila}`;
+const leerCelda = (valores, mapa, celda) => {
+  const m = /^([A-Z])(\d+)$/.exec(celda);
+  return m ? String(valores[Number(m[2]) - mapa.filaEncabezados]?.[m[1].charCodeAt(0) - 65] ?? '') : '';
+};
+
+/** Relee la hoja, recalcula qué celdas O/P/Q siguen vacías y escribe SOLO esas (con respaldo previo, relectura y comparación). Devuelve el código de salida. */
+async function completarExistentes({ cfg, deps, mapa, compras, log, rutaRespaldo }) {
+  const valores = await deps.leer(); // justo antes de escribir: lo que dejó de estar vacío se respeta
+  const { propuestas } = construirActualizaciones({ valores, mapa, compras });
+  const celdas = propuestas.flatMap((p) => Object.entries(p.celdas).map(([letra, valor]) => ({ celda: celdaDe(letra, p.fila), valor })));
+  if (celdas.length === 0) { log('  ✓ Filas existentes: no hay celdas O/P/Q vacías que completar.'); return 0; }
+  if (cfg.respaldo === null || rutaRespaldo === null) { log('\n  ✗ falta la ruta del respaldo\n'); return 2; }
+  try {
+    guardarRespaldo(rutaRespaldo, { version: 1, campo: 'relleno-crm-historico-completar', entorno: cfg.entorno, tenant: cfg.tenant, creadoEn: new Date().toISOString(), escrito: celdas });
+  } catch (e) {
+    if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe un archivo en esa ruta de respaldo: un respaldo nunca se pisa. No se completa nada.\n'); return 2; }
+    throw e;
+  }
+  log(`  Respaldo de las ${celdas.length} celdas a completar (solo celda y valor, sin teléfonos): ${rutaRespaldo}`);
+  await deps.completar(celdas.map((c) => ({ rango: `'${HOJA}'!${c.celda}`, valor: c.valor })));
+  const despues = await deps.leer();
+  const mal = celdas.filter((c) => leerCelda(despues, mapa, c.celda).trim() !== c.valor).length;
+  if (mal) { log(`\n  ✗ La relectura no coincide en ${mal} celda(s). Revise la hoja; el respaldo permite revertir lo que sí quedó.\n`); return 3; }
+  log(`  ✓ Filas existentes completadas y releídas: ${celdas.length} celda(s) O/P/Q.`);
+  return 0;
+}
+
+async function revertirCompletar({ cfg, deps, mapa, r, log, rotulo }) {
+  const letras = new Set(CAMPOS_COMPRA.map((c) => mapa.columnas[c].letra));
+  const valido = r.version === 1 && r.tenant === cfg.tenant && r.entorno === cfg.entorno && Array.isArray(r.escrito) && r.escrito.length > 0 && r.escrito.length <= 2000
+    && r.escrito.every((c) => c && typeof c.celda === 'string' && typeof c.valor === 'string' && c.valor !== '' && /^[A-Z]\d+$/.test(c.celda)
+      && letras.has(c.celda[0]) && Number(c.celda.slice(1)) > mapa.filaEncabezados);
+  if (!valido) { log('\n  ✗ el respaldo no es de este comercio y entorno, o no tiene la forma esperada (solo celdas O/P/Q): no se borra nada\n'); return 2; }
+  const hoy = await deps.leer();
+  const cambiadas = r.escrito.filter((c) => leerCelda(hoy, mapa, c.celda).trim() !== c.valor).length;
+  log(`\n  ${cfg.aplicar ? 'REVERTIR' : 'SECO'} · ${rotulo}: ${r.escrito.length} celdas O/P/Q escritas por este script.`);
+  if (cambiadas) { log(`  ✗ ${cambiadas} celda(s) ya no tienen lo que escribió este script: alguien las cambió. No se borra nada.\n`); return 2; }
+  if (!cfg.aplicar) { log('  Seco: no se borró nada. Agregue --aplicar para limpiar esas celdas.\n'); return 1; }
+  await deps.limpiarCeldas(r.escrito.map((c) => `'${HOJA}'!${c.celda}`));
+  const despues = await deps.leer();
+  if (r.escrito.some((c) => leerCelda(despues, mapa, c.celda).trim() !== '')) { log('  ✗ Alguna celda no quedó vacía; revise la hoja.\n'); return 3; }
+  log('  ✓ Celdas limpiadas.\n');
+  return 0;
+}
+
 // ===========================================================================
 // EJECUCIÓN
 // ===========================================================================
@@ -489,6 +560,7 @@ export async function ejecutar(cfg, deps) {
     const l = leerRespaldoGenerico(cfg.respaldo, { limite: 512 * 1024 });
     if (!l.ok) { log(`\n  ✗ ${l.motivo}\n`); return 2; }
     const r = l.respaldo;
+    if (r?.campo === 'relleno-crm-historico-completar') return revertirCompletar({ cfg, deps, mapa, r, log, rotulo });
     if (r?.version !== 1 || r.campo !== 'relleno-crm-historico' || r.tenant !== cfg.tenant || r.entorno !== cfg.entorno || !Array.isArray(r.escrito)) {
       log('\n  ✗ el respaldo no es de este comercio y entorno, o no tiene la forma esperada\n'); return 2;
     }
@@ -536,16 +608,24 @@ export async function ejecutar(cfg, deps) {
   log(`  se saltan (ya tienen fila)  : ${omitidos.yaTienenFila}`);
   log(`  se saltan (sin teléfono)    : ${omitidos.sinTelefono + omitidos.repetidos}`);
   log(`  filas a crear               : ${conteos.aCrear}  (con anuncio: ${conteos.conAnuncio}; con nombre: ${conteos.conNombre})`);
+  let a = { aCompletar: 0 };
   if (conCompras) {
     const c = resultadoCompras.conteos; const d = c.descartados;
     log(`  compras registradas antes   : ${c.pedidos} pedidos y ${c.reservas} reservas distintos, de ${compras.size} teléfonos (descartados: sin teléfono ${d.sinTelefono}, sin fecha ${d.sinFecha}, excluidos ${d.excluidos})`);
     log(`  contactos que solo están en sus compras (sin conversación): ${conteos.soloCompra}`);
     log(`  filas a crear con compra    : ${conteos.conCompra}  (con pedido: ${conteos.conPedido}; con reserva: ${conteos.conReserva})`);
-    const a = construirActualizaciones({ valores, mapa, compras }).conteos;
+    a = construirActualizaciones({ valores, mapa, compras }).conteos;
     log(`  filas YA en la hoja con compra: ${a.existentesConCompra}  -> a completar: ${a.aCompletar} fila(s), ${a.celdas} celda(s) O/P/Q vacías; sin huecos: ${a.sinHuecos}; con varias filas del teléfono: ${a.conVariasFilas}`);
-    log('  (la actualización de filas existentes es solo una PROPUESTA: este script no la aplica)');
+    log(cfg.aplicar ? '  (con --aplicar se completan SOLO esas celdas O/P/Q vacías; lo que ya tenga dato no se toca)' : '  (seco: las celdas a completar solo se escriben con --aplicar)');
   }
-  if (conteos.aCrear === 0) { log('\n  ✓ Nada que crear: la hoja ya tiene a todos.\n'); return 0; }
+  const porCompletar = a.aCompletar;
+  if (conteos.aCrear === 0) {
+    if (porCompletar === 0) { log('\n  ✓ Nada que crear ni completar: la hoja ya tiene a todos.\n'); return 0; }
+    if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar --respaldo <ruta> --confirmo-produccion <tenant> para completar.\n'); return 1; }
+    const c = await completarExistentes({ cfg, deps, mapa, compras, log, rutaRespaldo: cfg.respaldo });
+    log('');
+    return c;
+  }
   if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar --respaldo <ruta> para escribir.\n'); return 1; }
 
   const filaDesde = hoja.ultimaFila + 1;
@@ -579,6 +659,11 @@ export async function ejecutar(cfg, deps) {
   if (rIds || rTel) { log(`\n  ✗ La hoja quedó con ${rIds} ID(s) y ${rTel} teléfono(s) repetidos (el bot escribió a la vez). Revise esas filas a mano.\n`); return 3; }
   log(`\n  ✓ Escritas y releídas: ${filas.length} filas (${rango.split('!')[1]}).`);
   log('  Para deshacer: --revertir con el mismo respaldo, comercio y proyecto.\n');
+  if (porCompletar > 0) {
+    const c = await completarExistentes({ cfg, deps, mapa, compras, log, rutaRespaldo: `${cfg.respaldo}.completar` });
+    log('');
+    return c;
+  }
   return 0;
 }
 
@@ -599,6 +684,8 @@ async function principal() {
     leer: () => leerHoja(args),
     agregar: (filas, filaDesde) => agregarFilas({ ...args, filas, filaDesde }),
     limpiar: (rango) => limpiarRango({ ...args, rango }),
+    completar: (celdas) => completarCeldas({ ...args, celdas }),
+    limpiarCeldas: (rangos) => limpiarCeldas({ ...args, rangos }),
   });
   await db.terminate().catch(() => {});
   process.exit(estado.limpiezaFallida ? 3 : codigo);

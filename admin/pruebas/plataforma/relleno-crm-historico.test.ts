@@ -26,6 +26,7 @@ const mod = await import('../../scripts/plataforma/relleno-crm-historico.mjs') a
   clasificarCierre: (c: Record<string, unknown>) => string;
   reunirCompras: (e: any[], o?: Record<string, unknown>) => { porTelefono: Map<string, { pedidoMs: number | null; reservaMs: number | null }>; conteos: Record<string, any> };
   celdasDeCompra: (c: { pedidoMs: number | null; reservaMs: number | null }) => Record<string, string>;
+  completarCeldas: (a: Record<string, any>) => Promise<unknown>;
   construirActualizaciones: (a: { valores: string[][]; mapa: Record<string, any>; compras: Map<string, any> }) => { propuestas: { fila: number; celdas: Record<string, string> }[]; conteos: Record<string, number> };
 };
 
@@ -506,27 +507,6 @@ describe('Q4. propuesta para filas existentes: solo celdas vacías de O/P/Q, y n
     expect(r.propuestas.find((p) => p.fila === 6)).toBeUndefined(); // sin huecos: nada
     for (const p of r.propuestas) expect(Object.keys(p.celdas).every((l) => ['O', 'P', 'Q'].includes(l))).toBe(true); // jamás J..M ni U
   });
-  it('NEGADO: el SECO y --aplicar no escriben sobre filas existentes; --aplicar solo agrega las filas nuevas; y no hay código de actualización en --aplicar', async () => {
-    const existente = fila('59170000001'); existente[0] = 'LEAD-1001';
-    const m = mundo('qtaco', [conv(1), conv(2)], [existente]);
-    const compras = { porTelefono: new Map([['59170000001', { pedidoMs: T, reservaMs: null }], ['59170000002', { pedidoMs: T, reservaMs: null }]]), conteos: { pedidos: 2, reservas: 0, descartados: { sinTelefono: 0, sinFecha: 0, excluidos: 0 } } };
-    const deps = { ...m.deps, compras: async () => compras };
-    expect(await mod.ejecutar(cfgDe('qtaco'), deps)).toBe(1);
-    expect(m.llamadas.agregar).toBe(0);
-    expect(m.texto()).toContain('filas YA en la hoja con compra: 1  -> a completar: 1 fila(s), 2 celda(s)');
-    expect(m.texto()).toContain('filas a crear               : 1');
-    expect(m.texto()).not.toMatch(/59170000|Contacto \d/);
-    expect(await mod.ejecutar(cfgDe('qtaco', { aplicar: true, respaldo: rutaRespaldo() }), deps)).toBe(0);
-    expect(m.llamadas.agregar).toBe(1);
-    expect(m.valores[1][14]).toBe(''); // la fila existente no se tocó
-    expect(m.valores[1][16]).toBe('');
-    expect(m.valores).toHaveLength(3);
-    expect(m.valores[2][14]).toBe('Pedido');
-    expect(m.valores[2][16]).toBe('Registrado 2026-11-05 14:30');
-    // idempotente: la segunda corrida no escribe
-    expect(await mod.ejecutar(cfgDe('qtaco', { aplicar: true, respaldo: rutaRespaldo() }), { ...deps, log: () => {} })).toBe(0);
-    expect(m.llamadas.agregar).toBe(1);
-  });
   it('NEGADO: los rroca-* no leen compras aunque la dependencia exista; la salida del seco no trae teléfonos ni nombres', async () => {
     const m = mundo('rroca-evy', [conv(1)]);
     let llamada = 0;
@@ -537,5 +517,128 @@ describe('Q4. propuesta para filas existentes: solo celdas vacías de O/P/Q, y n
   it('el script no imprime teléfonos, nombres ni detalles: sus log() solo llevan conteos', () => {
     const f = readFileSync(new URL('../../scripts/plataforma/relleno-crm-historico.mjs', import.meta.url), 'utf8');
     expect(f).not.toMatch(/log\([^)]*\.(telefono|nombre|detalle)\b/);
+  });
+});
+
+
+describe('Q5. --aplicar completa O/P/Q de filas existentes (solo vacías) y --revertir lo deshace', () => {
+  const T = Date.UTC(2026, 10, 5, 18, 30);
+  const fila = (id: string, tel: string, o = '', p = '', q = '') => { const f = new Array(20).fill(''); f[0] = id; f[4] = tel; f[14] = o; f[15] = p; f[16] = q; f[9] = '150'; f[10] = 'Ana'; return f; };
+  const comprasDe = (m: Record<string, { pedidoMs: number | null; reservaMs: number | null }>) => ({ porTelefono: new Map(Object.entries(m)), conteos: { pedidos: 1, reservas: 0, descartados: { sinTelefono: 0, sinFecha: 0, excluidos: 0 } } });
+  /** Un mundo de Q'Taco con las dos escrituras nuevas simuladas sobre la hoja en memoria. */
+  function mundoQ(contactos: any[], filas: string[][], compras: ReturnType<typeof comprasDe>) {
+    const m = mundo('qtaco', contactos, filas);
+    const cel = (c: string) => ({ f: Number(c.slice(1)) - 3, c: c.charCodeAt(0) - 65 });
+    const escrituras: { rango: string; valor: string }[][] = [];
+    const limpiezas: string[][] = [];
+    const deps = { ...m.deps, compras: async () => compras,
+      completar: async (celdas: { rango: string; valor: string }[]) => { escrituras.push(celdas); for (const c of celdas) { const { f, c: j } = cel(c.rango.split('!')[1]); m.valores[f][j] = c.valor; } },
+      limpiarCeldas: async (rangos: string[]) => { limpiezas.push(rangos); for (const r of rangos) { const { f, c: j } = cel(r.split('!')[1]); m.valores[f][j] = ''; } } };
+    return { m, deps, escrituras, limpiezas };
+  }
+  const base = () => [fila('LEAD-1001', '59170000001'), fila('LEAD-1002', '59170000002', 'Consulta', '', ''), fila('LEAD-1003', '59170000003', 'Pedido', '', 'Registrado 2026-11-01 09:00')];
+  const compras = () => comprasDe({ '59170000001': { pedidoMs: T, reservaMs: T + 60_000 }, '59170000002': { pedidoMs: T, reservaMs: null }, '59170000003': { pedidoMs: T, reservaMs: null } });
+
+  it('--aplicar escribe solo las celdas vacías (O/P/Q), por rango explícito, con respaldo sin teléfonos; nunca J..M ni U; la segunda corrida no escribe', async () => {
+    const w = mundoQ([], base(), compras());
+    const resp = rutaRespaldo();
+    expect(await mod.ejecutar(cfgDe('qtaco'), w.deps)).toBe(1); // seco
+    expect(w.escrituras).toHaveLength(0);
+    expect(w.m.texto()).toContain('a completar: 2 fila(s), 4 celda(s)');
+    expect(await mod.ejecutar(cfgDe('qtaco', { aplicar: true, respaldo: resp }), w.deps), w.m.texto()).toBe(0);
+    expect(w.escrituras).toHaveLength(1);
+    const rangos = w.escrituras[0].map((c) => c.rango).sort();
+    expect(rangos).toEqual(["'Leads_CRM'!O4", "'Leads_CRM'!P4", "'Leads_CRM'!Q4", "'Leads_CRM'!Q5"]); // 1002 conserva su «Consulta»; 1003 no tiene huecos
+    expect(w.m.valores[1].slice(14, 17)).toEqual(['Reserva', 'Enviada 2026-11-05 14:31', 'Registrado 2026-11-05 14:30']);
+    expect(w.m.valores[2].slice(14, 17)).toEqual(['Consulta', '', 'Registrado 2026-11-05 14:30']);
+    expect(w.m.valores[3].slice(14, 17)).toEqual(['Pedido', '', 'Registrado 2026-11-01 09:00']); // intacta
+    for (const f of w.m.valores.slice(1)) { expect(f[9]).toBe('150'); expect(f[10]).toBe('Ana'); expect(f[20] ?? '').toBe(''); }
+    const rr = JSON.parse(readFileSync(resp, 'utf8'));
+    expect(rr.campo).toBe('relleno-crm-historico-completar');
+    expect(rr.escrito).toHaveLength(4);
+    expect(readFileSync(resp, 'utf8')).not.toMatch(/59170000|LEAD-/);
+    expect(w.m.texto()).not.toMatch(/59170000/);
+    expect(await mod.ejecutar(cfgDe('qtaco', { aplicar: true, respaldo: rutaRespaldo() }), { ...w.deps, log: () => {} })).toBe(0);
+    expect(w.escrituras).toHaveLength(1);
+  });
+
+  it('NEGADO: una celda que el equipo llenó entre el seco y la escritura NO se pisa (se relee justo antes)', async () => {
+    const w = mundoQ([], base(), compras());
+    const leer = w.deps.leer; let n = 0;
+    w.deps.leer = async () => { n += 1; const v = await leer(); if (n === 2) v[1][16] = 'Lo escribió el equipo'; return v; };
+    expect(await mod.ejecutar(cfgDe('qtaco', { aplicar: true, respaldo: rutaRespaldo() }), w.deps)).toBe(0);
+    const escritos = w.escrituras.flat().map((c) => c.rango);
+    expect(escritos).not.toContain("'Leads_CRM'!Q4");
+  });
+
+  it('NEGADO: un respaldo existente no se pisa (2, sin escribir); sin compras no se escribe nada', async () => {
+    const w = mundoQ([], base(), compras());
+    const resp = rutaRespaldo();
+    writeFileSync(resp, '{}', { mode: 0o600 });
+    expect(await mod.ejecutar(cfgDe('qtaco', { aplicar: true, respaldo: resp }), w.deps)).toBe(2);
+    expect(w.escrituras).toHaveLength(0);
+    const v = mundoQ([], base(), comprasDe({}));
+    expect(await mod.ejecutar(cfgDe('qtaco', { aplicar: true, respaldo: rutaRespaldo() }), v.deps)).toBe(0);
+    expect(v.escrituras).toHaveLength(0);
+  });
+
+  it('con filas nuevas y existentes a la vez: el respaldo de filas es el indicado y el de celdas es «<ruta>.completar»', async () => {
+    const w = mundoQ([conv(7)], base(), compras());
+    const resp = rutaRespaldo();
+    expect(await mod.ejecutar(cfgDe('qtaco', { aplicar: true, respaldo: resp }), w.deps), w.m.texto()).toBe(0);
+    expect(JSON.parse(readFileSync(resp, 'utf8')).campo).toBe('relleno-crm-historico');
+    expect(JSON.parse(readFileSync(`${resp}.completar`, 'utf8')).campo).toBe('relleno-crm-historico-completar');
+    expect(w.m.valores).toHaveLength(1 + 3 + 1);
+  });
+
+  it('REVERTIR limpia solo las celdas escritas y solo si siguen igual; NEGADO: una celda cambiada, otro comercio o una celda fuera de O/P/Q no borran nada', async () => {
+    const w = mundoQ([], base(), compras());
+    const resp = rutaRespaldo();
+    await mod.ejecutar(cfgDe('qtaco', { aplicar: true, respaldo: resp }), w.deps);
+    expect(await mod.ejecutar(cfgDe('qtaco', { revertir: true, respaldo: resp }), w.deps)).toBe(1); // seco
+    expect(w.limpiezas).toHaveLength(0);
+    // el equipo cambió una celda escrita
+    w.m.valores[1][16] = 'Cambiada por el equipo';
+    expect(await mod.ejecutar(cfgDe('qtaco', { revertir: true, aplicar: true, respaldo: resp }), w.deps)).toBe(2);
+    expect(w.limpiezas).toHaveLength(0);
+    w.m.valores[1][16] = 'Registrado 2026-11-05 14:30';
+    // respaldo alterado: una celda J (del equipo)
+    const original = JSON.parse(readFileSync(resp, 'utf8'));
+    const mala = rutaRespaldo();
+    writeFileSync(mala, JSON.stringify({ ...original, escrito: [{ celda: 'J4', valor: '150' }] }), { mode: 0o600 });
+    expect(await mod.ejecutar(cfgDe('qtaco', { revertir: true, aplicar: true, respaldo: mala }), w.deps)).toBe(2);
+    expect(await mod.ejecutar(cfgDe('rroca-evy', { revertir: true, aplicar: true, respaldo: resp }), { ...w.deps, mapa: mapaDe('rroca-evy') })).toBe(2);
+    expect(w.limpiezas).toHaveLength(0);
+    // el revertir correcto
+    expect(await mod.ejecutar(cfgDe('qtaco', { revertir: true, aplicar: true, respaldo: resp }), w.deps)).toBe(0);
+    expect(w.limpiezas).toHaveLength(1);
+    expect(w.limpiezas[0].sort()).toEqual(["'Leads_CRM'!O4", "'Leads_CRM'!P4", "'Leads_CRM'!Q4", "'Leads_CRM'!Q5"]);
+    expect(w.m.valores[1].slice(14, 17)).toEqual(['', '', '']);
+    expect(w.m.valores[2][14]).toBe('Consulta'); // lo que ya estaba antes se conserva
+    expect(w.m.valores[3].slice(14, 17)).toEqual(['Pedido', '', 'Registrado 2026-11-01 09:00']);
+  });
+
+  it('el flujo temporal de n8n lee las celdas antes de escribir y se corta si alguna tiene dato; ninguna expresión lleva «}}» en medio', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'crm-')); const envFile = join(dir, 'env');
+    writeFileSync(envFile, 'N8N_BASE_URL=https://n8n.ejemplo.test\nN8N_API_KEY=clave-de-prueba\n');
+    const real = globalThis.fetch; let flujo: any = null; let cuerpoEntrada: any = null;
+    const resp = (j: unknown) => new Response(JSON.stringify(j), { status: 200 });
+    globalThis.fetch = (async (url: string, init: any) => {
+      const u = String(url);
+      if (u.includes('/credentials')) return resp({ data: [{ id: '7', name: mod.nombreCredencial('qtaco') }] });
+      if (u.endsWith('/api/v1/workflows') && init.method === 'POST') { flujo = JSON.parse(init.body); return resp({ id: 'wf1' }); }
+      if (u.includes('/webhook/')) { cuerpoEntrada = JSON.parse(init.body); return resp({ totalUpdatedCells: 2 }); }
+      return resp({});
+    }) as typeof fetch;
+    try {
+      await mod.completarCeldas({ envFile, tenant: 'qtaco', sheet: 'HOJA', celdas: [{ rango: "'Leads_CRM'!O4", valor: 'Pedido' }, { rango: "'Leads_CRM'!Q4", valor: 'Registrado 2026-11-05 14:30' }] });
+      expect(flujo.nodes.map((n: any) => n.name)).toEqual(['Entrada', 'Destino', 'Escribir']);
+      const dest = flujo.nodes.find((n: any) => n.name === 'Destino').parameters.url;
+      expect(dest).toContain('values:batchGet'); expect(decodeURIComponent(dest)).toContain("ranges='Leads_CRM'!O4"); expect(decodeURIComponent(dest)).toContain("ranges='Leads_CRM'!Q4");
+      const esc = flujo.nodes.find((n: any) => n.name === 'Escribir').parameters;
+      expect(esc.url).toContain('values:batchUpdate'); expect(esc.jsonBody).toContain("$('Destino')"); expect(esc.jsonBody).toContain('celda ocupada');
+      expect(esc.jsonBody.slice(3, esc.jsonBody.length - 3)).not.toContain('}}');
+      expect(cuerpoEntrada.datos).toEqual([{ range: "'Leads_CRM'!O4", majorDimension: 'ROWS', values: [['Pedido']] }, { range: "'Leads_CRM'!Q4", majorDimension: 'ROWS', values: [['Registrado 2026-11-05 14:30']] }]);
+    } finally { globalThis.fetch = real; rmSync(dir, { recursive: true, force: true }); }
   });
 });
