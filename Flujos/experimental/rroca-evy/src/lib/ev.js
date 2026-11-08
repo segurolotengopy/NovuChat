@@ -601,9 +601,6 @@ function evConAclaracion(texto, frase) {
   return evUnirOraciones(lista);
 }
 // CUIDADOS POSTERIORES / RECUPERACIÓN: el modelo no inventa qué evitar ni por cuánto tiempo (consejo médico). La oración se borra y el código deja la remisión a la valoración.
-const EV_CUIDADOS = /\b(?:evit\w+[^.!?]{0,50}\b(?:activid\w*|ejercicio\w*|esfuerzo\w*|deporte\w*|gimnasio|sol|alcohol|masaje\w*|calor|sauna|maquill\w*|dormir|tomar|comer|fumar|recost\w*)\b|no (?:\w+ ){0,2}(?:hagas|hacer|realices|realizar|tomes|tomar|expongas|exponerte|te expongas|consumas|consumir|te maquilles|maquillarte|duermas|dormir|te recuestes|recostarte|fumes|fumar)\b|reposo (?:absoluto|total|relativo)|expon\w+ al sol|exposicion (?:al )?sol|(?:tomar|consumir|consumo de) alcohol|protector solar|filtro solar|duerm\w* boca|boca arriba|sauna|bebe\w* (?:mucha |bastante )?agua|hidrat\w* (?:la|tu) piel|hielo|compresas?|masajea\w*|masajes? (?:en|sobre) |maquill\w* (?:la|las|tu)|boca abajo|recost\w*|por \d+ (?:horas|dias)|durante (?:los|las) (?:primer\w+|proxim\w+) (?:\d+ )?(?:dias|horas|semanas)|(?:las )?primeras \d+ (?:horas|dias)|aplica\w* (?:hielo|frio|calor|crema|pomada)|(?:puedes|podras|puede) (?:retomar|reanudar|volver a)\b[^.!?]{0,30}\b(?:rutina|actividad\w*|ejercicio|trabajo)\b[^.!?]{0,30}\b(?:dia siguiente|manana|inmediat\w*|horas|dias))/;
-// Si ya se borró una indicación de cuidados, la que dice cuándo retomar la rutina tampoco tiene respaldo («evita el ejercicio por 2 días. Puedes retomar tu rutina normal»). Sola es legítima («puedes retomar tus actividades rápido»).
-const EV_RETOMA = /\b(?:retom\w*|volver a|reanud\w*|reincorpor\w*) (?:a |con )?(?:tu |tus |las |la |el )?(?:rutina|actividad\w*|ejercicio|trabajo|vida normal)|\brutina\b/;
 const EV_REMISION_CUIDADOS = 'Los cuidados posteriores te los explica la Dra. en la valoración.';
 // Enlaces y teléfonos: el modelo no los escribe. Se borran del texto (la recepción llega SOLO como botón, por el cierre).
 function evQuitarEnlacesYTelefonos(texto) {
@@ -800,14 +797,8 @@ function evPulirSalida(crudo, ctx) {
   if (enviados.length === 0) t = evQuitarOraciones(t, (n) => EV_PROMETE_IMAGEN.test(n));
   if (enviados.indexOf('antes_despues') < 0) t = evQuitarOraciones(t, (n) => EV_PACIENTE_REAL.test(n));
   t = evQuitarOraciones(t, (n) => EV_PROMETE_RECEPCION.test(n) || EV_PROMETE_DESPUES.test(n));
-  let cuidados = false;
-  t = evQuitarOraciones(t, (n) => { if (EV_CUIDADOS.test(n)) { cuidados = true; return true; } return false; });
-  // Si el cliente PREGUNTA por cuidados o recuperación, toda oración imperativa («Duerme…», «Bebe…», «No vayas…») es una indicación sin respaldo.
-  if (/\b(cuidados?|recuperacion|recuperar|despues del tratamiento|post ?tratamiento|reposo|que debo evitar|que hago despues)\b/.test(evNorm(c.textoCliente || ''))) {
-    t = evQuitarOraciones(t, (n) => { if (/^(?:no )?(?:duerme|duerma|bebe|toma|usa|aplica|evita|descansa|mantente|cuida|lava|limpia|haz|realiza|consume|come|vayas|vayan|hagas|uses|tomes)\b/.test(n)) { cuidados = true; return true; } return false; });
-  }
-  if (cuidados) t = evQuitarOraciones(t, (n) => EV_RETOMA.test(n));
-  if (cuidados && t !== '' && !/cuidados posteriores/.test(evNorm(t))) t = evConAclaracion(t, EV_REMISION_CUIDADOS);
+  // DECISIÓN DE ANDRES (08/11/2026, «la letra del MD», sin aprobación de la doctora): el MD manda «Los cuidados específicos dependen de la zona y la Dra. Evy te los detalla en la consulta gratuita».
+  // Ya NO se borran las oraciones de cuidados ni se agrega la frase fija «Los cuidados posteriores te los explica la Dra. en la valoración.»: el modelo dice el texto del MD. Lo que sigue vigente es la barrera MÉDICA (medicamentos, dosis, diagnóstico, «suspende tu tratamiento»…).
   const idt = evRepararIdentidad(t, c.nombreNegocio);
   // Una afirmación directa no se repara: sale el texto fijo de admisión (la respuesta del modelo se descarta entera).
   if (idt.afirma) return { texto: evParrafos(EV_TEXTO_ADMISION_FIJA), motivo: '', detalle: 'identidad afirmada («' + idt.afirma + '…»): se cambió por el texto fijo de admisión' };

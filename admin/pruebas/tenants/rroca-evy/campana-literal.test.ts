@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ARCHIVO_DE_DATOS, cargarDatos } from '../../../../Flujos/experimental/rroca-evy/construir.mjs';
 import type { J } from '../../lib/flujo';
-import { ANA, PRODUCCION, PRUEBA, avisosARecepcion, crear, datos, hablar, mAudio, mImagen, mTexto, textos } from './mundo';
+import { ANA, PRODUCCION, PRUEBA, avisosARecepcion, crear, datos, dice, hablar, mAudio, mImagen, mTexto, textos } from './mundo';
 
 const CB = (): J => datos()['configBase'] as J;
 const FRASE = String(CB()['campanaFrase']);
@@ -135,5 +135,27 @@ describe('el constructor NIEGA un texto de campaña peligroso (revisión de segu
     for (const malo of [LITERAL + '\nbit.ly/abc', LITERAL + '\nevil.com/pago', LITERAL + '\nt.me/x', LITERAL + '\nwww.ejemplo.com', LITERAL + '\nhttps://evil.com/x', LITERAL + '\nEscríbeme al ' + ['5917', '0000000'].join(''), LITERAL + '\nTu pago fue acreditado', LITERAL + '\nCon garantía total', LITERAL + '\nDescuento del 50%']) {
       expect(conTexto(malo).length, malo).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('el literal NO pasa por ninguna barrera del flujo normal (pedido de Andres, 08/11/2026: vale ANTES y DESPUÉS de levantar las barreras de «inmediato», «bonificado», cuidados y 250 Bs)', () => {
+  it('el plan «campana_literal» de «Armar mensajes» no llama a evPulirSalida, evProtegerValor, evSinInmediato, evSinBonificado, evQuitarEnlacesYTelefonos ni evParrafos', () => {
+    const codigo = readFileSync(join(__dirname, '../../../../Flujos/experimental/rroca-evy/src/nodos/armar-mensajes.js'), 'utf8');
+    const i = codigo.indexOf("efectivo === 'campana_literal'");
+    expect(i).toBeGreaterThan(0);
+    const tramo = codigo.slice(i, codigo.indexOf("} else if (efectivo === 'gratis')", i)).split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    expect(tramo.length).toBeGreaterThan(50);
+    for (const f of ['evPulirSalida', 'evProtegerValor', 'evSinInmediato', 'evSinBonificado', 'evQuitarEnlacesYTelefonos', 'evParrafos', 'evTextoGratis']) expect(tramo, f).not.toContain(f);
+  });
+  it('el literal conserva su enlace de Maps y su formato byte a byte', () => {
+    expect(LITERAL).toContain('https://maps.app.goo.gl/');
+    const { m, llamadas } = mundo();
+    const t = hablar(m, ANA, mTexto(FRASE));
+    expect(textos(t)).toEqual([LITERAL]);
+    expect(llamadas.n).toBe(0);
+  });
+  it('NEGADA: el flujo NORMAL sigue sin dejar pasar un enlace de Maps del modelo (la barrera de enlaces vale para todo lo que no es el literal)', () => {
+    const t = hablar(crear({ modeloDice: dice('Estamos en la clínica, mira https://maps.app.goo.gl/AAAA y escríbenos. ¿Cómo te llamas?') }), ANA, mTexto('hola'));
+    expect(textos(t).join(' ')).not.toMatch(/maps\.app\.goo\.gl|https?:\/\//i);
   });
 });
