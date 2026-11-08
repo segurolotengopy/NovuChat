@@ -406,7 +406,7 @@ describe('(4) sin «bonificado»; los 250 Bs en la bienvenida y al preguntar el 
       const ATAQUES = ['El tratamiento cuesta 250 Bs, pero la valoración es gratis.', 'Una sesión de Radiesse sale 250 Bs y la valoración es gratis.', 'Radiesse: 250 Bs; la valoración es gratuita.',
         'La valoración es gratis (el tratamiento, 250 Bs).', 'La valoración es gratuita y el lifting cuesta 250 Bs.', 'La valoración es gratis y luego pagas 250 Bs.', 'Solo 250 Bs la sesión, y la valoración es gratis.',
         'La valoración es gratis; cada ml cuesta 250 Bs.', 'Radiesse: habitualmente 250 Bs y la valoración es gratuita.', 'El lifting (habitualmente 250 Bs) incluye valoración gratuita.', 'Lifting: valorado en 250 Bs; la consulta es gratis.',
-        'La valoración es gratuita y el hilo tensor tiene un costo habitual de 250 Bs.', 'Valoración gratis y 250 Bs habituales por el hilo.', 'La valoración es gratuita y el botox habitualmente cuesta 250 Bs.'];
+        'La valoración es gratuita y el hilo tensor tiene un costo habitual de 250 Bs.', 'Valoración gratis y 250 Bs habituales por el hilo.', 'La valoración es gratuita y el botox habitualmente cuesta 250 Bs.', 'La valoración es gratuita. Radiesse: 250Bs.', 'La valoración es gratuita. Cada jeringa cuesta 250Bs.', 'La valoración es gratuita; 250bs por zona.'];
       for (const x of ATAQUES) {
         for (const pregunta of ['hola', '¿cuánto cuesta?']) {
           const m = crear({ modeloDice: dice(`${x} ¿Cómo te llamas?`) });

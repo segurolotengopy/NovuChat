@@ -64,7 +64,7 @@ function evEsBaja(t) {
 // URGENCIA, SÍNTOMA, REACCIÓN O PROBLEMA DE SALUD (también tras un tratamiento): el CÓDIGO responde un texto fijo, sin consejo, y avisa a recepción. Antes de llamar al modelo. Un falso positivo solo manda
 // a la persona a la recepción. Variante acotada de `DR_MEDICA` de las doctoras: SOLO urgencia, síntoma, reacción o problema tras un tratamiento. El embarazo, las enfermedades de base y los medicamentos los contesta el modelo
 // remitiendo a la valoración (el guion), con la barrera de «sin consejo médico» de `evPulirSalida`; las condiciones de la piel son el motivo comercial de la consulta.
-const EV_MEDICA = /\b(urgente|urgencia|emergencia|sangr\w*|hemorragia|infeccion|infectad\w*|fiebre|alergi\w*|reaccion (alergica|adversa)|hinchaz\w*|hinchad[oa]s?|se me hincho|enrojecid[oa]s?|inflam\w*|moreton\w*|necrosis|no puedo respirar|me falta el aire|desmay\w*|me duele mucho|tengo (mucho )?dolor|complicacion\w*|efectos? secundarios?|me aplique|me inyecte|me puse (algo|el|la|un|una) |me puse (radiesse|harmonyca|harmony ca|relleno|producto)|despues de (la aplicacion|aplicarme|inyectarme|ponerme)|un bulto|(cara|rostro|zona|mejillas?|labios?) (roja|rojo|hinchada|hinchado|morada|morado))\b/;
+const EV_MEDICA = /\b(lactar|bultit\w*|bulto|se pone (?:blanca|morada|palida|gris)|piel (?:blanca|palida|morada)|urgente|urgencia|emergencia|sangr\w*|hemorragia|infeccion|infectad\w*|fiebre|alergi\w*|reaccion (alergica|adversa)|hinchaz\w*|hinchad[oa]s?|se me hincho|enrojecid[oa]s?|inflam\w*|moreton\w*|necrosis|no puedo respirar|me falta el aire|desmay\w*|me duele mucho|tengo (mucho )?dolor|complicacion\w*|efectos? secundarios?|me aplique|me inyecte|me puse (algo|el|la|un|una) |me puse (radiesse|harmonyca|harmony ca|relleno|producto)|despues de (la aplicacion|aplicarme|inyectarme|ponerme)|un bulto|(cara|rostro|zona|mejillas?|labios?) (roja|rojo|hinchada|hinchado|morada|morado))\b/;
 
 // -----------------------------------------------------------------------------
 // BÁSICOS DE TEXTO
@@ -630,7 +630,7 @@ function evProtegerValor(texto, permitido) {
   let puesta = false;
   const lista = evPartirEnOraciones(texto).map((o) => {
     const n = evNorm(o);
-    if (!/\b250\b/.test(n)) return o;
+    if (!/\b250\b/.test(n) && !/(?<!\d)250(?!\d)/.test(o)) return o;   // «250Bs» pegado también cuenta (revisión de seguridad del PR 874)
     if (permitido === true && !puesta && EV_CONTEXTO_GRATIS.test(n) && EV_SE_REFIERE_A_VALORACION.test(n)) { puesta = true; return EV_FRASE_DEL_VALOR; }
     return '\u0002';
   });
@@ -656,8 +656,9 @@ const EV_PROHIBIDO_MEDICO = [
   ['indica_suspender_o_ajustar', /\b(suspende|suspenda|suspender|suspendas|deja de tomar|dejes de tomar|ajusta|ajustar|cambia|cambiar)\b[^.!?]{0,30}\b(medicamento\w*|anticoagulante\w*|insulina|pastilla\w*|medicacion|tratamiento)\b/],
   ['diagnostico', /\b(tienes|tiene|padeces|sufres|presentas|parece (una?|que tienes)) (una? )?(infeccion|alergia|inflamacion|reaccion|rosacea|acne|dermatitis|cancer|enfermedad|lesion)\b/],
   // Revisión de seguridad del PR 873 (08/11/2026): al dejar de borrar cuidados (orden de Andres), el modelo no puede AUTORIZAR tratarse con una contraindicación ni mandar esperar ante una señal de alarma.
-  ['autoriza_contraindicacion', /\b(embaraz\w*|lactancia|amamant\w*|anticoagulante\w*|diabet\w*)\b[^.!?]{0,80}\b(puedes|puede|no hay problema|sin problema|no pasa nada|igual|tambien|tranquila)\b|\b(puedes|puede|no hay problema|sin problema|no pasa nada|igual|tranquila)\b[^.!?]{0,80}\b(embaraz\w*|lactancia|amamant\w*|anticoagulante\w*)\b/],
-  ['espera_ante_alarma', /\b(piel (?:blanca|palida|morada|negra|gris)|dolor intenso|bulto|necrosis|ampolla\w*|pus)\b[^.!?]{0,90}\b(espera|esperar|se pasa solo|se quita solo|es normal|no te preocupes|masaje\w*|masajea\w*|solo|sola)\b/],
+  ['autoriza_contraindicacion', /\b(embaraz\w*|lactancia|lactar|amamant\w*|anticoagulante\w*|diabet\w*)\b[^.!?]{0,90}\b(puedes|puede|no hay problema|sin problema|no pasa nada|igual|tambien|tranquila|no impide|no es impedimento|se aplica|no afecta)\b|\b(puedes|puede|no hay problema|sin problema|no pasa nada|igual|tranquila|no impide|no es impedimento|se aplica)\b[^.!?]{0,90}\b(embaraz\w*|lactancia|lactar|amamant\w*|anticoagulante\w*|diabet\w*)\b/],
+  ['espera_ante_alarma', /\b(piel (?:se pone )?(?:blanca|palida|morada|negra|gris)|se pone (?:blanca|morada|palida|gris)|dolor intenso|bulto|bultito|necrosis|ampolla\w*|pus|sangrado)\b[^.!?]{0,120}\b(espera|esperar|se pasa solo|se quita solo|desaparece|suele desaparecer|dale unos dias|es normal|no te preocupes|masaje\w*|masajea\w*|compresas?|solo|sola)\b/],
+  ['precio_relativo', /\b(el doble|el triple|(?:dos|tres|cuatro|cinco|\d+) veces (?:mas|el|lo)|bastante mas caro|mucho mas caro)\b[^.!?]{0,60}\b(tratamiento|sesion|aplicacion|radiesse|harmonyca)\b|\b(tratamiento|sesion|aplicacion|radiesse|harmonyca)\b[^.!?]{0,60}\b(el doble|el triple|(?:dos|tres|cuatro|cinco|\d+) veces (?:mas|el|lo))\b/],
   ['minimiza_sintoma', /\b(es normal|no es grave|no te preocupes|no pasa nada|es comun)\b[^.!?]{0,40}\b(hinchaz\w*|moret\w*|dolor|enrojec\w*|inflam\w*|sangr\w*|fiebre)\b/],
   ['indica_hacer_algo', /\b(deberias|debes|tienes que|te recomiendo|te aconsejo) (tomar|aplicar|usar|ponerte|suspender|dejar de|ir a urgencias|acudir)\b/],
   // Precios y rangos: una cifra junto a una palabra de precio, o un «desde / entre / alrededor de» con cifra. La única cifra permitida (250) ya viene como marca.
