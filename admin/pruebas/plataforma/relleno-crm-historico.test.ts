@@ -11,6 +11,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { runInNewContext } from 'node:vm';
 
 type Cfg = Record<string, unknown>;
 type Fila = string[];
@@ -640,7 +641,7 @@ describe('Q5. --aplicar completa O/P/Q de filas existentes (solo vacías) y --re
       // La expresión del flujo, evaluada con datos simulados: coincide -> escribe; fila movida o celda ocupada -> se corta.
       const evaluar = (valueRanges: unknown[]) => { const e = flujo.nodes.find((n: any) => n.name === 'Escribir').parameters.jsonBody as string;
         const $ = (nombre: string) => ({ first: () => ({ json: nombre === 'Destino' ? { valueRanges } : { body: cuerpoEntrada } }) });
-        return new Function('$', `return ${e.slice(3, e.length - 2)}`)($) as string; };
+        return runInNewContext(`(function ($) { return ${e.slice(3, e.length - 2)}; })`, {})($) as string; };
       const vacio = { values: undefined }; const tel = (v: string) => ({ values: [[v]] });
       expect(JSON.parse(evaluar([vacio, vacio, tel("'59170000001")])).data).toHaveLength(2);
       expect(() => evaluar([vacio, vacio, tel('59170000009')])).toThrow('celda ocupada'); // la fila se reordenó entre la relectura y la escritura
@@ -772,5 +773,16 @@ describe('Q7. varias filas por teléfono, exclusiones obligatorias, leerCompras,
     expect(llamadas.find((l) => l.ruta === 'tenants/qtaco/pedidos')).toMatchObject({ campos: ['origen', 'conversacionId', 'creadoEn'] });
     expect(llamadas.find((l) => l.ruta === 'tenants/qtaco/pedidos').campo).toBeUndefined(); // sin filtro de origen
     expect(JSON.stringify([...r.porTelefono])).not.toMatch(/Taco|Bs 40|Pedido #/);
+  });
+});
+
+
+describe('Q8. Q\'Taco entra solo al relleno: TENANTS (el de las salvaguardas de vaciar) no lo incluye', () => {
+  it('TENANTS exportado = solo los rroca-*; el relleno acepta qtaco por su lista aparte; vaciar-hoja-crm lo rechaza', async () => {
+    const m = mod as unknown as { TENANTS: readonly string[]; TENANTS_RELLENO: readonly string[] };
+    expect(m.TENANTS).not.toContain('qtaco');
+    expect(m.TENANTS_RELLENO).toContain('qtaco');
+    const v = await import('../../scripts/plataforma/vaciar-hoja-crm.mjs') as unknown as { analizarArgumentos: (a: string[], e?: Record<string, string>) => { ok: boolean } };
+    expect(v.analizarArgumentos(['--proyecto', PROY, '--tenant', 'qtaco'], ENV).ok).toBe(false);
   });
 });

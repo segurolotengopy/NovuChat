@@ -55,7 +55,9 @@ import { comprobarProyecto, comprobarRespaldo, guardarRespaldo, leerRespaldoGene
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = resolve(AQUI, '..', '..', '..');
-export const TENANTS = Object.freeze(['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio', 'qtaco']);
+// `TENANTS` (solo los rroca-*) lo importan también `vaciar-hoja-crm` y `vaciar-chats-tenant` como salvaguarda: vaciar la hoja de Q'Taco NO debe aceptarse. Q'Taco entra únicamente al relleno.
+export const TENANTS = Object.freeze(['rroca-evy', 'rroca-emma', 'rroca-ruben', 'rroca-antonio']);
+export const TENANTS_RELLENO = Object.freeze([...TENANTS, 'qtaco']);
 // Los rroca-* leen su mapa de `admin/scripts/datos/<t>/<t>.json`; Q'Taco lo trae en el JSON de datos de su flujo (`venta-minima/qtaco-3727.json`, clave `crm`).
 const MAPA_PROPIO = Object.freeze({ qtaco: ['admin', 'scripts', 'datos', 'venta-minima', 'qtaco-3727.json'] });
 // Los comercios cuyo pasado incluye PEDIDOS y RESERVAS registrados (cierres `registro`/`venta` y la colección `pedidos`): además de los contactos, completan O, P y Q.
@@ -74,7 +76,7 @@ export const USO = '  ENV_FILE=… SHEET_ID=… [TELEFONOS_EXCLUIDOS=<dígitos s
 const CRM = runInNewContext(`${readFileSync(join(RAIZ, 'Flujos', 'src', 'modulos', 'crm', 'crm.js'), 'utf8')}\n({ crmDigitos, crmSeguro, crmComoTexto, crmFechaLaPaz, crmFechaHoraLaPaz })`, {});
 
 export function leerMapa(tenant, raiz = RAIZ) {
-  if (!TENANTS.includes(tenant)) throw new Error('tenant fuera de la lista');
+  if (!TENANTS_RELLENO.includes(tenant)) throw new Error('tenant fuera de la lista');
   const ruta = MAPA_PROPIO[tenant] ?? ['admin', 'scripts', 'datos', tenant, `${tenant}.json`];
   const m = JSON.parse(readFileSync(join(raiz, ...ruta), 'utf8')).crm;
   delete m._nota;
@@ -107,7 +109,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   const proy = proyecto === undefined ? { ok: false } : comprobarProyecto(proyecto, env);
   if (proyecto === undefined) problemas.push('falta --proyecto'); else if (!proy.ok) problemas.push(proy.motivo);
   if (tenant === undefined) problemas.push('falta --tenant');
-  else if (!TENANTS.includes(tenant)) problemas.push(`--tenant tiene que ser uno de: ${TENANTS.join(', ')} (un comercio por corrida)`);
+  else if (!TENANTS_RELLENO.includes(tenant)) problemas.push(`--tenant tiene que ser uno de: ${TENANTS_RELLENO.join(', ')} (un comercio por corrida)`);
   // LA HOJA ES SIEMPRE LA REAL: la lectura y la escritura pasan por el n8n real, con la credencial y el SHEET_ID reales, aunque Firestore sea el emulador
   // o staging. Por eso TODO --aplicar (y --revertir --aplicar) exige la confirmación con el nombre del comercio, sea cual sea el proyecto.
   if (confirmo !== undefined && confirmo !== tenant) problemas.push('--confirmo-produccion no coincide con --tenant');
