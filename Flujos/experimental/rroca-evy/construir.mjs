@@ -454,7 +454,7 @@ function guardiasDelEnvioDirecto(nodos) {
     if (n.type === 'n8n-nodes-base.httpRequest') {
       const cab = ((((n.parameters || {}).headerParameters || {}).parameters) || []);
       if (cab.some((x) => normal((x && x.name) || '').replace(/[^a-z]/g, '') === 'authorization')) h.push(`envío directo: «${n.name}» escribe un header Authorization en headerParameters (la llave va solo por la credencial)`);
-      if (/graph\.facebook\.com/.test(String((n.parameters || {}).url || '')) && !((n.credentials || {}).httpHeaderAuth || {}).name) h.push(`envío directo: «${n.name}» habla con Graph sin credencial por nombre`);
+      if (String((n.parameters || {}).url || '').includes('graph.facebook.com') && !((n.credentials || {}).httpHeaderAuth || {}).name) h.push(`envío directo: «${n.name}» habla con Graph sin credencial por nombre`);
     }
   }
   for (const n of ['Detener por envío incierto', 'Leer respuesta del relé', '¿Qué hacer con el envío?', 'Esperar reintento']) if (nodos.some((x) => x.name === n)) h.push(`envío directo: no puede existir «${n}» (es del canal rele)`);
