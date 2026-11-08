@@ -213,8 +213,9 @@ describe('alertas-config.mjs: lo que se NIEGA (sale 2 y no escribe)', () => {
   });
   it('contra un proyecto REAL (sin emulador) --aplicar exige --confirmo produccion y GCP_PROJECT_ID_PROD igual; el destino se imprime', async () => {
     const real = (extra: string[], vars: Record<string, string>) => spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...archivo(), ...extra], {
-      encoding: 'utf8', // Sin credenciales posibles: ni un intento de tocar un proyecto real desde la prueba.
-      env: { ...process.env, FIRESTORE_EMULATOR_HOST: '', GOOGLE_APPLICATION_CREDENTIALS: join(tmp, 'no-existe.json'), CLOUDSDK_CONFIG: join(tmp, 'gcloud'), XDG_RUNTIME_DIR: runtime, ...vars },
+      // Sin emulador (el script lo toma por un proyecto real) pero SIN credenciales posibles (`entornoDelEmulador` las anula):
+      // ni un intento de tocar un proyecto real desde la prueba.
+      encoding: 'utf8', env: entornoDelEmulador(undefined, { FIRESTORE_EMULATOR_HOST: '', XDG_RUNTIME_DIR: runtime, ...vars }),
     });
     const seco = real([], {});
     expect(`${seco.stdout}${seco.stderr}`).toContain('Destino   : proyecto real');
@@ -346,7 +347,11 @@ describe('alertas-config.mjs: argumentos estrictos y la ruta del respaldo (sexta
     expect((await doc()).exists).toBe(false);
   });
 
-  it('el .gitignore (raíz y admin/) ignora los respaldos alertas-config-respaldo-*', () => {
-    for (const g of [join(aqui, '..', '..', '..', '.gitignore'), join(aqui, '..', '..', '.gitignore')]) expect(readFileSync(g, 'utf8')).toContain('alertas-config-respaldo-*');
+  it('git IGNORA los respaldos alertas-config-respaldo-* en la raíz y en admin/ (sin leer el .gitignore: lo pregunta a git)', () => {
+    for (const dir of [repoRaiz(), join(repoRaiz(), 'admin')]) {
+      const r = spawnSync('git', ['-C', aqui, 'check-ignore', '-q', join(dir, 'alertas-config-respaldo-1731000000000.json')]);
+      expect(r.status, dir).toBe(0);
+    }
+    expect(spawnSync('git', ['-C', aqui, 'check-ignore', '-q', join(repoRaiz(), 'alertas-config.mjs')]).status).toBe(1);   // control: lo demás no se ignora
   });
 });
