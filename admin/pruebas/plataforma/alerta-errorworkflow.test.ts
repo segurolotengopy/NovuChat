@@ -179,7 +179,7 @@ describe('PII: nada de la entrada sale en la alerta', () => {
       }
       expect(ev.saneado).toBe(false);
       expect(c.id_unico).not.toMatch(ID_PROHIBIDO);
-      expect(c.id_unico).toBe(`${c.tipo_error}-${c.ocurrido_en.slice(0, -1)}`);
+      expect(c.id_unico).toMatch(new RegExp(`^${c.tipo_error}-${c.ocurrido_en.slice(0, -1)}-[a-z]{6}$`));
     });
   }
 
@@ -195,6 +195,17 @@ describe('PII: nada de la entrada sale en la alerta', () => {
       expect([...c.flujo].length).toBeLessThanOrEqual(80);
       expect(() => validarEntrada(c, { hosts: HOSTS, denegar: [], ahoraMs: AHORA }), n).not.toThrow();
     }
+  });
+
+  it('dos flujos distintos en el mismo segundo dan ids distintos; el mismo flujo, el mismo id; todos pasan el contrato', () => {
+    const ids = ['Demo A', 'Demo B', 'Bellido · Agenda', 'Año nuevo — Agenda', 'Q Taco', 'Ruben'].map((n) => {
+      const c = JSON.parse(armar(entradaDe({}, n)).cuerpo);
+      expect(() => validarEntrada(c, { hosts: HOSTS, denegar: [], ahoraMs: AHORA }), n).not.toThrow();
+      expect(c.id_unico, n).not.toMatch(ID_PROHIBIDO);
+      return c.id_unico as string;
+    });
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(JSON.parse(armar(entradaDe({}, 'Demo A')).cuerpo).id_unico).toBe(ids[0]);
   });
 
   it('el id es determinista (misma hora, mismo id) y cambia con el segundo', () => {

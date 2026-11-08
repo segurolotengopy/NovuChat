@@ -110,6 +110,12 @@ describe('errorWorkflow «Error de envío incierto»', () => {
     expect(h.parameters).toMatchObject({ method: 'POST', sendBody: true, contentType: 'raw', rawContentType: 'application/json', body: '={{ $json.cuerpo }}', url: '={{ $json.url }}' });
     expect(h.parameters['headerParameters'].parameters.map((x: { name: string }) => x.name)).toEqual(['X-NovuChat-Alerta-Timestamp', 'X-NovuChat-Alerta-Signature']);
     expect(h.parameters['options'].timeout).toBe(10000);
-    expect(h).toMatchObject({ retryOnFail: true, maxTries: 2, onError: 'continueRegularOutput' });
+    expect(h).toMatchObject({ retryOnFail: true, maxTries: 2 });
+    // Sin onError: si la Function responde 401/422/5xx o hay timeout tras los 2 intentos, la ejecución queda en ERROR.
+    expect(h).not.toHaveProperty('onError');
+  });
+
+  it('guarda solo las ejecuciones con error (none en éxito, all en error): decisión de Andres', () => {
+    expect(f.settings).toMatchObject({ saveDataSuccessExecution: 'none', saveDataErrorExecution: 'all' });
   });
 });

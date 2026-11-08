@@ -36,7 +36,7 @@
 # SOLO PARA PRUEBAS con un n8n falso: ALERTA_PERMITIR_HTTP_LOCAL=1 admite http://127.0.0.1:<puerto>, y solo si el --env
 # está bajo el directorio temporal (${TMPDIR:-/tmp}).
 #
-# Salida: 0 hecho y comprobado, o seco sin hallazgos · 1 seco con algo pendiente · 2 uso, salvaguarda o validación
+# Salida: 0 hecho y comprobado, o seco sin hallazgos (--flujo: el flujo ya existe) · 1 seco con algo pendiente (falta la credencial o el flujo) · 2 uso, salvaguarda o validación
 # previa (nada escrito) · 3 error de ejecución o respuesta inesperada de n8n o de gcloud (puede haber escrito).
 set -euo pipefail
 # NUNCA con xtrace: imprimiría cada comando ya expandido.
@@ -82,6 +82,14 @@ N8N_BASE_URL="$(valor_env N8N_BASE_URL)"
 if [[ -n "${ALERTA_PERMITIR_HTTP_LOCAL:-}" ]]; then
   _tmp="$(realpath -e -- "${TMPDIR:-/tmp}" 2>/dev/null || true)"; _env="$(realpath -e -- "$ENV_FILE" 2>/dev/null || true)"
   if [[ -z "$_tmp" || -z "$_env" || "$_env" != "$_tmp"/* ]]; then unset ALERTA_PERMITIR_HTTP_LOCAL; fi
+  # Con --aplicar la excepción exige además que las credenciales de gcloud también estén bajo el directorio temporal:
+  # unas credenciales de producción reales nunca se combinan con un n8n http local.
+  if [[ -n "${ALERTA_PERMITIR_HTTP_LOCAL:-}" ]] && (( APLICAR )); then
+    _gc="$(realpath -e -- "${CLOUDSDK_CONFIG:-${HOME:-/nonexistent}/.config/gcloud-novuchat-prod}" 2>/dev/null || true)"
+    if [[ -z "$_gc" || "$_gc" != "$_tmp"/* ]]; then
+      echo "✗ ALERTA_PERMITIR_HTTP_LOCAL con --aplicar exige CLOUDSDK_CONFIG bajo \$TMPDIR (solo pruebas). No se escribió nada." >&2; exit 2
+    fi
+  fi
 fi
 [[ -n "$N8N_BASE_URL" ]] || { echo "✗ Falta N8N_BASE_URL en --env" >&2; exit 2; }
 [[ "$N8N_BASE_URL" =~ ^https://[^/[:space:]@]+(/.*)?$ ]] || [[ -n "${ALERTA_PERMITIR_HTTP_LOCAL:-}" && "$N8N_BASE_URL" =~ ^http://127\.0\.0\.1:[0-9]+$ ]] \
@@ -294,7 +302,7 @@ def flujo():
     print("    URL de la Function: resuelta con gcloud (no se muestra)")
     if not APLICAR:
         print("  Seco: no se escribió nada. Con --aplicar --confirmo produccion se " + ("actualiza." if existente else "crea."))
-        sys.exit(0)
+        sys.exit(0 if existente else 1)
     respaldar("flujo", {"nombre": wf["name"], "id": wid, "existiaAntes": existente is not None,
                          "activo": bool(existente.get("active")) if existente else False,
                          "nota": "estado previo sin nodos ni valores"})
@@ -351,7 +359,9 @@ correr_tuberia() { # <comando de gcloud ya armado como arreglo en TUBERIA_GC>
   "${TUBERIA_GC[@]}" 2>"$ERR" | python3 -I -c "$PROGRAMA" "$MODO"
   local estados=("${PIPESTATUS[@]}")
   set -e
-  if [[ "${estados[0]}" -ne 0 ]]; then
+  # Si el programa terminó con un estado distinto de 0 (p. ej. 1 = seco con algo pendiente), ese es el que se devuelve; el 141
+  # de gcloud es solo SIGPIPE porque el programa dejó de leer. Un fallo REAL de gcloud (otro estado) es 3.
+  if [[ "${estados[0]}" -ne 0 && "${estados[0]}" -ne 141 ]]; then
     echo "  ✗ gcloud no pudo entregar el dato (no se escribió nada en n8n):" >&2; sanear; exit 3
   fi
   exit "${estados[1]}"

@@ -52,7 +52,7 @@ esac
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'cargar-alerta-'));
-  bin = join(dir, 'bin'); gcloudCfg = join(dir, 'gcloud'); runtime = join(dir, 'run');
+  bin = join(dir, 'bin'); gcloudCfg = join(dir, 'tmp', 'gcloud'); runtime = join(dir, 'run');
   mkdirSync(join(dir, 'tmp')); mkdirSync(bin); mkdirSync(gcloudCfg); mkdirSync(runtime, { mode: 0o700 }); chmodSync(runtime, 0o700);
   mkdirSync(join(dir, 'repo', 'scripts'), { recursive: true });
   mkdirSync(join(dir, 'repo', 'Flujos'), { recursive: true });
@@ -119,9 +119,9 @@ const gcloudLlamadas = (): string[] => leer('gcloud-llamadas').split('\n').filte
 const escrituras = (): Llamada[] => llamadas.filter((l) => l.metodo !== 'GET');
 const sacar = (...nombres: string[]) => nombres.forEach((n) => rmSync(join(dir, n), { force: true }));
 
-function correr(args: string[], vars: Record<string, string> = {}, bashArgs: string[] = []): Promise<{ codigo: number; salida: string }> {
+function correr(args: string[], vars: Record<string, string> = {}, bashArgs: string[] = [], cfg = gcloudCfg): Promise<{ codigo: number; salida: string }> {
   return new Promise((ok) => {
-    const h = spawn('env', [`CLOUDSDK_CONFIG=${gcloudCfg}`, 'bash', ...bashArgs, SCRIPT, ...args], {
+    const h = spawn('env', [`CLOUDSDK_CONFIG=${cfg}`, 'bash', ...bashArgs, SCRIPT, ...args], {
       cwd: RAIZ,
       env: entornoDelEmulador(undefined, {
         PATH: `${bin}:/usr/bin:/bin`, FAKE_DIR: dir, GCP_PROJECT_ID_PROD: PROD, GCP_PROJECT_ID_STAGING: '',
@@ -189,6 +189,16 @@ describe('cargar-alerta-n8n.sh: uso y salvaguardas (ni una escritura)', () => {
     chmodSync(envArchivo, 0o600);
     expect((await correr(['--credencial', '--env', envArchivo], { ALERTA_PERMITIR_HTTP_LOCAL: '' })).codigo).toBe(2);
     expect(llamadas).toEqual([]);
+  });
+  it('ALERTA_PERMITIR_HTTP_LOCAL con --aplicar y credenciales de gcloud FUERA del temporal: 2 sin tocar nada; en seco no estorba', async () => {
+    const fuera = join(dir, 'gcloud-fuera'); mkdirSync(fuera);
+    writeFileSync(join(fuera, 'application_default_credentials.json'), JSON.stringify({ type: 'authorized_user', quota_project_id: PROD }));
+    const r = await correr(['--credencial', ...APLICAR, '--env', envArchivo], {}, [], fuera);
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain('CLOUDSDK_CONFIG');
+    expect(llamadas).toEqual([]);
+    expect(gcloudLlamadas()).toEqual([]);
+    expect((await correr(['--credencial', '--env', envArchivo], {}, [], fuera)).codigo).toBe(1);
   });
   it('con xtrace (bash -x o SHELLOPTS=xtrace) se NIEGA (2) antes de tocar nada', async () => {
     expect((await correr(['--credencial', ...APLICAR, '--env', envArchivo], {}, ['-x'])).codigo).toBe(2);
@@ -268,9 +278,12 @@ describe('cargar-alerta-n8n.sh --flujo', () => {
   it('seco: resuelve la URL sin mostrarla y solo hace GET; sin la credencial aborta (2)', async () => {
     creds.push(cred());
     const r = await correr(['--flujo', '--env', envArchivo]);
-    expect(r.codigo, r.salida).toBe(0);
+    expect(r.codigo, r.salida).toBe(1); // algo pendiente: el flujo no existe y se crearía
     expect(r.salida).toContain('NO existe, se crea INACTIVO');
     expect(escrituras()).toEqual([]);
+    flujos.push({ id: 'wf7abcd', name: NOMBRE_FLUJO, active: false });
+    expect((await correr(['--flujo', '--env', envArchivo])).codigo).toBe(0); // ya existe: nada pendiente
+    flujos = [];
     creds = [];
     expect((await correr(['--flujo', '--env', envArchivo])).codigo).toBe(2);
     expect(escrituras()).toEqual([]);
